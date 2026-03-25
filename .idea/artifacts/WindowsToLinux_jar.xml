@@ -1,0 +1,14 @@
+<component name="ArtifactManager">
+  <artifact name="WindowsToLinux:jar">
+    <output-path>$PROJECT_DIR$/target/jar</output-path>
+    <root id="root">
+      <element id="archive" name="WindowsToLinux.jar">
+        <element id="module-output" name="WindowsToLinux" />
+      </element>
+      <element id="directory" name="lib">
+        <element id="library" level="project" name="Maven: com.formdev:flatlaf:3.7" />
+        <element id="library" level="project" name="Maven: com.github.mwiede:jsch:2.27.7" />
+      </element>
+    </root>
+  </artifact>
+</component>
