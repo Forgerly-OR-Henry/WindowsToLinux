@@ -9,12 +9,7 @@ public class MyException extends RuntimeException {
     /**
      * 默认错误码
      */
-    public static final int DEFAULT_ERROR_CODE = -1;
-
-    /**
-     * 错误信息
-     */
-    private final String message;
+    public static final String ERROR_DEFAULT_CODE = "ERROR_DEFAULT_CODE";
 
     /**
      * 产生异常的类
@@ -27,9 +22,14 @@ public class MyException extends RuntimeException {
     private final String sourceMethod;
 
     /**
+     * 错误信息
+     */
+    private final String message;
+
+    /**
      * 错误码
      */
-    private final int errorCode;
+    private final String errorCode;
 
     /**
      * 最完整构造器
@@ -40,18 +40,18 @@ public class MyException extends RuntimeException {
      * @param message      错误信息
      * @param cause        原始异常
      */
-    public MyException(Class<?> sourceClass, String sourceMethod, int errorCode, String message, Throwable cause) {
+    public MyException(Class<?> sourceClass, String sourceMethod, String errorCode, String message, Throwable cause) {
         super(message == null ? "Unknown problem" : message, cause);
         this.sourceClass = sourceClass;
         this.sourceMethod = sourceMethod;
-        this.errorCode = errorCode;
+        this.errorCode = errorCode == null || errorCode.isBlank() ? ERROR_DEFAULT_CODE : errorCode;
         this.message = message == null ? "Unknown problem" : message;
     }
 
     /**
      * 不带 cause 的完整构造器
      */
-    public MyException(Class<?> sourceClass, String sourceMethod, int errorCode, String message) {
+    public MyException(Class<?> sourceClass, String sourceMethod, String errorCode, String message) {
         this(sourceClass, sourceMethod, errorCode, message, null);
     }
 
@@ -59,14 +59,14 @@ public class MyException extends RuntimeException {
      * 不带错误码，使用默认错误码
      */
     public MyException(Class<?> sourceClass, String sourceMethod, String message, Throwable cause) {
-        this(sourceClass, sourceMethod, DEFAULT_ERROR_CODE, message, cause);
+        this(sourceClass, sourceMethod, ERROR_DEFAULT_CODE, message, cause);
     }
 
     /**
      * 不带错误码，也不带 cause
      */
     public MyException(Class<?> sourceClass, String sourceMethod, String message) {
-        this(sourceClass, sourceMethod, DEFAULT_ERROR_CODE, message, null);
+        this(sourceClass, sourceMethod, ERROR_DEFAULT_CODE, message, null);
     }
 
     /**
@@ -108,7 +108,7 @@ public class MyException extends RuntimeException {
     /**
      * 获取错误码
      */
-    public int getErrorCode() {
+    public String getErrorCode() {
         return errorCode;
     }
 
@@ -125,14 +125,14 @@ public class MyException extends RuntimeException {
     /**
      * 快速抛出：完整参数
      */
-    public static void fail(Class<?> sourceClass, String sourceMethod, int errorCode, String message, Throwable cause) {
+    public static void fail(Class<?> sourceClass, String sourceMethod, String errorCode, String message, Throwable cause) {
         throw new MyException(sourceClass, sourceMethod, errorCode, message, cause);
     }
 
     /**
      * 快速抛出：不带 cause
      */
-    public static void fail(Class<?> sourceClass, String sourceMethod, int errorCode, String message) {
+    public static void fail(Class<?> sourceClass, String sourceMethod, String errorCode, String message) {
         throw new MyException(sourceClass, sourceMethod, errorCode, message);
     }
 
@@ -140,20 +140,20 @@ public class MyException extends RuntimeException {
      * 快速抛出：使用默认错误码，带 cause
      */
     public static void fail(Class<?> sourceClass, String sourceMethod, String message, Throwable cause) {
-        throw new MyException(sourceClass, sourceMethod, DEFAULT_ERROR_CODE, message, cause);
+        throw new MyException(sourceClass, sourceMethod, ERROR_DEFAULT_CODE, message, cause);
     }
 
     /**
      * 快速抛出：使用默认错误码，不带 cause
      */
     public static void fail(Class<?> sourceClass, String sourceMethod, String message) {
-        throw new MyException(sourceClass, sourceMethod, DEFAULT_ERROR_CODE, message);
+        throw new MyException(sourceClass, sourceMethod, ERROR_DEFAULT_CODE, message);
     }
 
     @Override
     public String toString() {
         return "MyException{" +
-                "errorCode=" + errorCode +
+                "errorCode='" + errorCode + '\'' +
                 ", sourceClass=" + getSourceClassName() +
                 ", sourceMethod='" + getSourceMethod() + '\'' +
                 ", message='" + message + '\'' +
