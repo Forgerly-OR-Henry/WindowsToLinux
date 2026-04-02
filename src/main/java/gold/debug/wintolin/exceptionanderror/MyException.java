@@ -40,33 +40,33 @@ public class MyException extends RuntimeException {
      * @param message      错误信息
      * @param cause        原始异常
      */
-    public MyException(Class<?> sourceClass, String sourceMethod, String errorCode, String message, Throwable cause) {
+    public MyException(Class<?> sourceClass, String sourceMethod, String message, String errorCode, Throwable cause) {
         super(message == null ? "Unknown problem" : message, cause);
         this.sourceClass = sourceClass;
         this.sourceMethod = sourceMethod;
-        this.errorCode = errorCode == null || errorCode.isBlank() ? ERROR_DEFAULT_CODE : errorCode;
         this.message = message == null ? "Unknown problem" : message;
+        this.errorCode = errorCode == null || errorCode.isBlank() ? ERROR_DEFAULT_CODE : errorCode;
     }
 
     /**
      * 不带 cause 的完整构造器
      */
-    public MyException(Class<?> sourceClass, String sourceMethod, String errorCode, String message) {
-        this(sourceClass, sourceMethod, errorCode, message, null);
+    public MyException(Class<?> sourceClass, String sourceMethod, String message, String errorCode) {
+        this(sourceClass, sourceMethod, message, errorCode, null);
     }
 
     /**
      * 不带错误码，使用默认错误码
      */
     public MyException(Class<?> sourceClass, String sourceMethod, String message, Throwable cause) {
-        this(sourceClass, sourceMethod, ERROR_DEFAULT_CODE, message, cause);
+        this(sourceClass, sourceMethod, message, ERROR_DEFAULT_CODE, cause);
     }
 
     /**
      * 不带错误码，也不带 cause
      */
     public MyException(Class<?> sourceClass, String sourceMethod, String message) {
-        this(sourceClass, sourceMethod, ERROR_DEFAULT_CODE, message, null);
+        this(sourceClass, sourceMethod, message, ERROR_DEFAULT_CODE, null);
     }
 
     /**
@@ -125,29 +125,29 @@ public class MyException extends RuntimeException {
     /**
      * 快速抛出：完整参数
      */
-    public static void fail(Class<?> sourceClass, String sourceMethod, String errorCode, String message, Throwable cause) {
-        throw new MyException(sourceClass, sourceMethod, errorCode, message, cause);
+    public static void fail(Class<?> sourceClass, String sourceMethod, String message, String errorCode, Throwable cause) {
+        throw new MyException(sourceClass, sourceMethod, message, errorCode, cause);
     }
 
     /**
      * 快速抛出：不带 cause
      */
-    public static void fail(Class<?> sourceClass, String sourceMethod, String errorCode, String message) {
-        throw new MyException(sourceClass, sourceMethod, errorCode, message);
+    public static void fail(Class<?> sourceClass, String sourceMethod, String message, String errorCode) {
+        throw new MyException(sourceClass, sourceMethod, message, errorCode);
     }
 
     /**
      * 快速抛出：使用默认错误码，带 cause
      */
     public static void fail(Class<?> sourceClass, String sourceMethod, String message, Throwable cause) {
-        throw new MyException(sourceClass, sourceMethod, ERROR_DEFAULT_CODE, message, cause);
+        throw new MyException(sourceClass, sourceMethod, message, ERROR_DEFAULT_CODE, cause);
     }
 
     /**
      * 快速抛出：使用默认错误码，不带 cause
      */
     public static void fail(Class<?> sourceClass, String sourceMethod, String message) {
-        throw new MyException(sourceClass, sourceMethod, ERROR_DEFAULT_CODE, message);
+        throw new MyException(sourceClass, sourceMethod, message, ERROR_DEFAULT_CODE);
     }
 
     @Override
