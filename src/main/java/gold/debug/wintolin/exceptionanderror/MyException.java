@@ -100,6 +100,7 @@ public class MyException extends RuntimeException {
     /**
      * 获取错误信息
      */
+    @Override // 重名函数多，建议使用Override重写
     public String getMessage() {
         return message;
     }
