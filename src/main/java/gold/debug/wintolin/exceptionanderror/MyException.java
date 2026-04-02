@@ -70,14 +70,6 @@ public class MyException extends RuntimeException {
     }
 
     /**
-     * 获取错误信息
-     */
-    @Override
-    public String getMessage() {
-        return message;
-    }
-
-    /**
      * 获取产生异常的类对象
      */
     public Class<?> getSourceClass() {
@@ -103,6 +95,13 @@ public class MyException extends RuntimeException {
      */
     public String getSourceMethod() {
         return sourceMethod == null ? "UnknownMethod" : sourceMethod;
+    }
+
+    /**
+     * 获取错误信息
+     */
+    public String getMessage() {
+        return message;
     }
 
     /**
