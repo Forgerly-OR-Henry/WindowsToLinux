@@ -4,118 +4,283 @@ import com.jcraft.jsch.JSch;
 import com.jcraft.jsch.JSchException;
 import com.jcraft.jsch.Session;
 import gold.debug.wintolin.attribute.system.ALinux;
-import gold.debug.wintolin.exceptionanderror.MyResult;
+import gold.debug.wintolin.exceptionanderror.MyException;
 
 import java.util.Properties;
 
 public class LinkSSH {
-    // 默认配置：端口 22，超时 2 分钟
+
     private static final int DEFAULT_PORT = 22;
-    private static final int DEFAULT_TIMEOUT_MS = 2 * 60 * 1000; // 120000
+    private static final int DEFAULT_TIMEOUT_MS = 2 * 60 * 1000;
+
+    private static final String ERROR_NULL_LINUX = "ERROR_NULL_LINUX";
+    private static final String ERROR_EMPTY_HOST = "ERROR_EMPTY_HOST";
+    private static final String ERROR_EMPTY_USER = "ERROR_EMPTY_USER";
+    private static final String ERROR_NULL_PASSWORD = "ERROR_NULL_PASSWORD";
+    private static final String ERROR_DISCONNECT_OLD_SESSION = "ERROR_DISCONNECT_OLD_SESSION";
+    private static final String ERROR_CREATE_SESSION = "ERROR_CREATE_SESSION";
+    private static final String ERROR_SET_PASSWORD = "ERROR_SET_PASSWORD";
+    private static final String ERROR_SET_CONFIG = "ERROR_SET_CONFIG";
+    private static final String ERROR_CONNECT_TIMEOUT = "ERROR_CONNECT_TIMEOUT";
+    private static final String ERROR_AUTH_FAILED = "ERROR_AUTH_FAILED";
+    private static final String ERROR_CONNECTION_REFUSED = "ERROR_CONNECTION_REFUSED";
+    private static final String ERROR_UNKNOWN_HOST = "ERROR_UNKNOWN_HOST";
+    private static final String ERROR_NO_ROUTE_TO_HOST = "ERROR_NO_ROUTE_TO_HOST";
+    private static final String ERROR_CONNECT_SSH = "ERROR_CONNECT_SSH";
+    private static final String ERROR_UNEXPECTED = "ERROR_UNEXPECTED";
+    private static final String ERROR_DISCONNECT_SSH = "ERROR_DISCONNECT_SSH";
 
     /**
-     * 连接 SSH：只传入 ALinux
+     * 连接 SSH
      * - 端口默认 22
      * - 超时默认 2 分钟
-     * 成功后写回 linux.setSession(session)
+     * - 成功后写回 linux.setSession(session)
      *
-     * @return 成功 true，失败 false
+     * 成功：正常返回
+     * 失败：抛出 MyException
      */
-    public static MyResult connectSSH(ALinux linux) {
-        if (linux == null) return MyResult.fail("ALinux is null");
+    public static void connectSSH(ALinux linux) {
+        final String methodName = "connectSSH";
+
+        if (linux == null) {
+            throw new MyException(
+                    LinkSSH.class,
+                    methodName,
+                    "ALinux is null",
+                    ERROR_NULL_LINUX
+            );
+        }
 
         String host = safeTrim(linux.getIp());
         String user = safeTrim(linux.getUser());
         String pass = linux.getPassword();
 
-        if (isBlank(host)) return MyResult.fail("IP/Host is empty");
-        if (isBlank(user)) return MyResult.fail("User is empty");
-        if (pass == null) return MyResult.fail("Password is null");
+        if (isBlank(host)) {
+            throw new MyException(
+                    LinkSSH.class,
+                    methodName,
+                    "IP/Host is empty",
+                    ERROR_EMPTY_HOST
+            );
+        }
 
-        // 断开旧连接
+        if (isBlank(user)) {
+            throw new MyException(
+                    LinkSSH.class,
+                    methodName,
+                    "User is empty",
+                    ERROR_EMPTY_USER
+            );
+        }
+
+        if (pass == null) {
+            throw new MyException(
+                    LinkSSH.class,
+                    methodName,
+                    "Password is null",
+                    ERROR_NULL_PASSWORD
+            );
+        }
+
         Session old = linux.getSession();
         if (old != null) {
-            try { old.disconnect(); } catch (Exception ignored) {}
+            try {
+                old.disconnect();
+            } catch (Exception e) {
+                throw new MyException(
+                        LinkSSH.class,
+                        methodName,
+                        "Failed to disconnect old session",
+                        ERROR_DISCONNECT_OLD_SESSION,
+                        e
+                );
+            }
         }
         linux.setSession(null);
 
         Session session = null;
         try {
             JSch jsch = new JSch();
-            session = jsch.getSession(user, host, DEFAULT_PORT);
-            session.setPassword(pass);
 
-            Properties config = new Properties();
-            config.put("StrictHostKeyChecking", "no"); // 生产环境建议开启 host key 校验
-            session.setConfig(config);
+            try {
+                session = jsch.getSession(user, host, DEFAULT_PORT);
+            } catch (JSchException e) {
+                throw new MyException(
+                        LinkSSH.class,
+                        methodName,
+                        "Failed to create SSH session",
+                        ERROR_CREATE_SESSION,
+                        e
+                );
+            }
 
-            session.connect(DEFAULT_TIMEOUT_MS);
+            try {
+                session.setPassword(pass);
+            } catch (Exception e) {
+                safeDisconnect(session);
+                linux.setSession(null);
+                throw new MyException(
+                        LinkSSH.class,
+                        methodName,
+                        "Failed to set SSH password",
+                        ERROR_SET_PASSWORD,
+                        e
+                );
+            }
+
+            try {
+                Properties config = new Properties();
+                config.put("StrictHostKeyChecking", "no");
+                session.setConfig(config);
+            } catch (Exception e) {
+                safeDisconnect(session);
+                linux.setSession(null);
+                throw new MyException(
+                        LinkSSH.class,
+                        methodName,
+                        "Failed to set SSH config",
+                        ERROR_SET_CONFIG,
+                        e
+                );
+            }
+
+            try {
+                session.connect(DEFAULT_TIMEOUT_MS);
+            } catch (JSchException e) {
+                safeDisconnect(session);
+                linux.setSession(null);
+                throw convertJSchException(methodName, e);
+            }
 
             linux.setSession(session);
-            return MyResult.ok();
 
-        } catch (JSchException e) {
-            // 失败时确保清理
-            try { if (session != null) session.disconnect(); } catch (Exception ignored) {}
-            linux.setSession(null);
-
-            // 尽量把常见问题翻译成“可给用户看的文本”
-            return MyResult.fail(prettyProblem(e));
-
+        } catch (MyException e) {
+            throw e;
         } catch (Exception e) {
-            try { if (session != null) session.disconnect(); } catch (Exception ignored) {}
+            safeDisconnect(session);
             linux.setSession(null);
-            return MyResult.fail("Unexpected error: " + e.getClass().getSimpleName() + ": " + e.getMessage());
+            throw new MyException(
+                    LinkSSH.class,
+                    methodName,
+                    "Unexpected error: " + e.getClass().getSimpleName() + ": " + e.getMessage(),
+                    ERROR_UNEXPECTED,
+                    e
+            );
         }
-    }
-
-    public static void disconnectSSH(ALinux linux) {
-        if (linux == null) return;
-        Session s = linux.getSession();
-        if (s != null) {
-            try { s.disconnect(); } catch (Exception ignored) {}
-        }
-        linux.setSession(null);
-    }
-
-    private static boolean isBlank(String s) {
-        return s == null || s.trim().isEmpty();
-    }
-
-    private static String safeTrim(String s) {
-        return s == null ? null : s.trim();
     }
 
     /**
-     * 把 JSchException 常见报错转换成更直观的说明
+     * 断开 SSH
+     *
+     * 成功：正常返回
+     * 失败：抛出 MyException
      */
-    private static String prettyProblem(JSchException e) {
+    public static void disconnectSSH(ALinux linux) {
+        final String methodName = "disconnectSSH";
+
+        if (linux == null) {
+            throw new MyException(
+                    LinkSSH.class,
+                    methodName,
+                    "ALinux is null",
+                    ERROR_NULL_LINUX
+            );
+        }
+
+        Session session = linux.getSession();
+        if (session != null) {
+            try {
+                session.disconnect();
+            } catch (Exception e) {
+                throw new MyException(
+                        LinkSSH.class,
+                        methodName,
+                        "Failed to disconnect SSH session",
+                        ERROR_DISCONNECT_SSH,
+                        e
+                );
+            }
+        }
+
+        linux.setSession(null);
+    }
+
+    private static MyException convertJSchException(String methodName, JSchException e) {
         String msg = e.getMessage() == null ? "" : e.getMessage().toLowerCase();
 
-        // 认证失败
         if (msg.contains("auth fail")) {
-            return "Authentication failed: wrong username or password";
+            return new MyException(
+                    LinkSSH.class,
+                    methodName,
+                    "Authentication failed: wrong username or password",
+                    ERROR_AUTH_FAILED,
+                    e
+            );
         }
 
-        // 超时
         if (msg.contains("timeout") || msg.contains("socket is not established")) {
-            return "Connection timeout or network unreachable";
+            return new MyException(
+                    LinkSSH.class,
+                    methodName,
+                    "Connection timeout or network unreachable",
+                    ERROR_CONNECT_TIMEOUT,
+                    e
+            );
         }
 
-        // 连接被拒绝（端口不通/SSH服务没开）
         if (msg.contains("connection refused")) {
-            return "Connection refused: SSH service may be down or port 22 blocked";
+            return new MyException(
+                    LinkSSH.class,
+                    methodName,
+                    "Connection refused: SSH service may be down or port 22 blocked",
+                    ERROR_CONNECTION_REFUSED,
+                    e
+            );
         }
 
-        // unknown host / no route
         if (msg.contains("unknownhostexception") || msg.contains("unknown host")) {
-            return "Unknown host: cannot resolve IP/host";
-        }
-        if (msg.contains("no route to host")) {
-            return "No route to host: network routing issue or firewall";
+            return new MyException(
+                    LinkSSH.class,
+                    methodName,
+                    "Unknown host: cannot resolve IP/host",
+                    ERROR_UNKNOWN_HOST,
+                    e
+            );
         }
 
-        // 默认兜底
-        return "SSH connect failed: " + e.getMessage();
+        if (msg.contains("no route to host")) {
+            return new MyException(
+                    LinkSSH.class,
+                    methodName,
+                    "No route to host: network routing issue or firewall",
+                    ERROR_NO_ROUTE_TO_HOST,
+                    e
+            );
+        }
+
+        return new MyException(
+                LinkSSH.class,
+                methodName,
+                "SSH connect failed: " + e.getMessage(),
+                ERROR_CONNECT_SSH,
+                e
+        );
+    }
+
+    private static void safeDisconnect(Session session) {
+        if (session != null) {
+            try {
+                session.disconnect();
+            } catch (Exception ignored) {
+            }
+        }
+    }
+
+    private static boolean isBlank(String value) {
+        return value == null || value.trim().isEmpty();
+    }
+
+    private static String safeTrim(String value) {
+        return value == null ? null : value.trim();
     }
 }
