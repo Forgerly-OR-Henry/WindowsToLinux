@@ -10,7 +10,7 @@ import gold.debug.wintolin.exceptionanderror.MyException;
 import java.lang.reflect.Method;
 import java.util.Properties;
 
-public class LinkSSH {
+public final class LinkSSH {
 
     private static final int DEFAULT_PORT = 22;
     private static final int DEFAULT_TIMEOUT_MS = 2 * 60 * 1000;
