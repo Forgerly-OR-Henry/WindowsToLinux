@@ -4,8 +4,10 @@ import com.jcraft.jsch.JSch;
 import com.jcraft.jsch.JSchException;
 import com.jcraft.jsch.Session;
 import gold.debug.wintolin.attribute.system.ALinux;
+import gold.debug.wintolin.exceptionanderror.MethodUtils;
 import gold.debug.wintolin.exceptionanderror.MyException;
 
+import java.lang.reflect.Method;
 import java.util.Properties;
 
 public class LinkSSH {
@@ -30,6 +32,15 @@ public class LinkSSH {
     private static final String ERROR_UNEXPECTED = "ERROR_UNEXPECTED";
     private static final String ERROR_DISCONNECT_SSH = "ERROR_DISCONNECT_SSH";
 
+    private static final Method METHOD_CONNECT_SSH =
+            MethodUtils.getCurrentMethod(LinkSSH.class, "connectSSH", ALinux.class);
+
+    private static final Method METHOD_DISCONNECT_SSH =
+            MethodUtils.getCurrentMethod(LinkSSH.class, "disconnectSSH", ALinux.class);
+
+    private LinkSSH() {
+    }
+
     /**
      * 连接 SSH
      * - 端口默认 22
@@ -40,12 +51,10 @@ public class LinkSSH {
      * 失败：抛出 MyException
      */
     public static void connectSSH(ALinux linux) {
-        final String methodName = "connectSSH";
-
         if (linux == null) {
-            throw new MyException(
+            MyException.fail(
                     LinkSSH.class,
-                    methodName,
+                    METHOD_CONNECT_SSH,
                     "ALinux is null",
                     ERROR_NULL_LINUX
             );
@@ -56,27 +65,27 @@ public class LinkSSH {
         String pass = linux.getPassword();
 
         if (isBlank(host)) {
-            throw new MyException(
+            MyException.fail(
                     LinkSSH.class,
-                    methodName,
+                    METHOD_CONNECT_SSH,
                     "IP/Host is empty",
                     ERROR_EMPTY_HOST
             );
         }
 
         if (isBlank(user)) {
-            throw new MyException(
+            MyException.fail(
                     LinkSSH.class,
-                    methodName,
+                    METHOD_CONNECT_SSH,
                     "User is empty",
                     ERROR_EMPTY_USER
             );
         }
 
         if (pass == null) {
-            throw new MyException(
+            MyException.fail(
                     LinkSSH.class,
-                    methodName,
+                    METHOD_CONNECT_SSH,
                     "Password is null",
                     ERROR_NULL_PASSWORD
             );
@@ -87,9 +96,9 @@ public class LinkSSH {
             try {
                 old.disconnect();
             } catch (Exception e) {
-                throw new MyException(
+                MyException.fail(
                         LinkSSH.class,
-                        methodName,
+                        METHOD_CONNECT_SSH,
                         "Failed to disconnect old session",
                         ERROR_DISCONNECT_OLD_SESSION,
                         e
@@ -105,9 +114,9 @@ public class LinkSSH {
             try {
                 session = jsch.getSession(user, host, DEFAULT_PORT);
             } catch (JSchException e) {
-                throw new MyException(
+                MyException.fail(
                         LinkSSH.class,
-                        methodName,
+                        METHOD_CONNECT_SSH,
                         "Failed to create SSH session",
                         ERROR_CREATE_SESSION,
                         e
@@ -119,9 +128,9 @@ public class LinkSSH {
             } catch (Exception e) {
                 safeDisconnect(session);
                 linux.setSession(null);
-                throw new MyException(
+                MyException.fail(
                         LinkSSH.class,
-                        methodName,
+                        METHOD_CONNECT_SSH,
                         "Failed to set SSH password",
                         ERROR_SET_PASSWORD,
                         e
@@ -135,9 +144,9 @@ public class LinkSSH {
             } catch (Exception e) {
                 safeDisconnect(session);
                 linux.setSession(null);
-                throw new MyException(
+                MyException.fail(
                         LinkSSH.class,
-                        methodName,
+                        METHOD_CONNECT_SSH,
                         "Failed to set SSH config",
                         ERROR_SET_CONFIG,
                         e
@@ -149,7 +158,7 @@ public class LinkSSH {
             } catch (JSchException e) {
                 safeDisconnect(session);
                 linux.setSession(null);
-                throw convertJSchException(methodName, e);
+                throw convertJSchException(METHOD_CONNECT_SSH, e);
             }
 
             linux.setSession(session);
@@ -159,9 +168,9 @@ public class LinkSSH {
         } catch (Exception e) {
             safeDisconnect(session);
             linux.setSession(null);
-            throw new MyException(
+            MyException.fail(
                     LinkSSH.class,
-                    methodName,
+                    METHOD_CONNECT_SSH,
                     "Unexpected error: " + e.getClass().getSimpleName() + ": " + e.getMessage(),
                     ERROR_UNEXPECTED,
                     e
@@ -176,12 +185,10 @@ public class LinkSSH {
      * 失败：抛出 MyException
      */
     public static void disconnectSSH(ALinux linux) {
-        final String methodName = "disconnectSSH";
-
         if (linux == null) {
-            throw new MyException(
+            MyException.fail(
                     LinkSSH.class,
-                    methodName,
+                    METHOD_DISCONNECT_SSH,
                     "ALinux is null",
                     ERROR_NULL_LINUX
             );
@@ -192,9 +199,9 @@ public class LinkSSH {
             try {
                 session.disconnect();
             } catch (Exception e) {
-                throw new MyException(
+                MyException.fail(
                         LinkSSH.class,
-                        methodName,
+                        METHOD_DISCONNECT_SSH,
                         "Failed to disconnect SSH session",
                         ERROR_DISCONNECT_SSH,
                         e
@@ -205,13 +212,13 @@ public class LinkSSH {
         linux.setSession(null);
     }
 
-    private static MyException convertJSchException(String methodName, JSchException e) {
+    private static MyException convertJSchException(Method sourceMethod, JSchException e) {
         String msg = e.getMessage() == null ? "" : e.getMessage().toLowerCase();
 
         if (msg.contains("auth fail")) {
             return new MyException(
                     LinkSSH.class,
-                    methodName,
+                    sourceMethod,
                     "Authentication failed: wrong username or password",
                     ERROR_AUTH_FAILED,
                     e
@@ -221,7 +228,7 @@ public class LinkSSH {
         if (msg.contains("timeout") || msg.contains("socket is not established")) {
             return new MyException(
                     LinkSSH.class,
-                    methodName,
+                    sourceMethod,
                     "Connection timeout or network unreachable",
                     ERROR_CONNECT_TIMEOUT,
                     e
@@ -231,7 +238,7 @@ public class LinkSSH {
         if (msg.contains("connection refused")) {
             return new MyException(
                     LinkSSH.class,
-                    methodName,
+                    sourceMethod,
                     "Connection refused: SSH service may be down or port 22 blocked",
                     ERROR_CONNECTION_REFUSED,
                     e
@@ -241,7 +248,7 @@ public class LinkSSH {
         if (msg.contains("unknownhostexception") || msg.contains("unknown host")) {
             return new MyException(
                     LinkSSH.class,
-                    methodName,
+                    sourceMethod,
                     "Unknown host: cannot resolve IP/host",
                     ERROR_UNKNOWN_HOST,
                     e
@@ -251,7 +258,7 @@ public class LinkSSH {
         if (msg.contains("no route to host")) {
             return new MyException(
                     LinkSSH.class,
-                    methodName,
+                    sourceMethod,
                     "No route to host: network routing issue or firewall",
                     ERROR_NO_ROUTE_TO_HOST,
                     e
@@ -260,7 +267,7 @@ public class LinkSSH {
 
         return new MyException(
                 LinkSSH.class,
-                methodName,
+                sourceMethod,
                 "SSH connect failed: " + e.getMessage(),
                 ERROR_CONNECT_SSH,
                 e

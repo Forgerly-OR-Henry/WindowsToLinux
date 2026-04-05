@@ -1,5 +1,7 @@
 package gold.debug.wintolin.exceptionanderror;
 
+import java.lang.reflect.Method;
+
 /**
  * 自定义业务异常：
  * 支持记录错误信息、错误类、错误方法、错误码以及原始异常原因。
@@ -17,9 +19,9 @@ public class MyException extends RuntimeException {
     private final Class<?> sourceClass;
 
     /**
-     * 产生异常的方法名
+     * 产生异常的方法对象
      */
-    private final String sourceMethod;
+    private final Method sourceMethod;
 
     /**
      * 错误信息
@@ -35,37 +37,37 @@ public class MyException extends RuntimeException {
      * 最完整构造器
      *
      * @param sourceClass  产生异常的类
-     * @param sourceMethod 产生异常的方法名
-     * @param errorCode    错误码
+     * @param sourceMethod 产生异常的方法对象
      * @param message      错误信息
+     * @param errorCode    错误码
      * @param cause        原始异常
      */
-    public MyException(Class<?> sourceClass, String sourceMethod, String message, String errorCode, Throwable cause) {
+    public MyException(Class<?> sourceClass, Method sourceMethod, String message, String errorCode, Throwable cause) {
         super(message == null ? "Unknown problem" : message, cause);
         this.sourceClass = sourceClass;
         this.sourceMethod = sourceMethod;
         this.message = message == null ? "Unknown problem" : message;
-        this.errorCode = errorCode == null || errorCode.isBlank() ? ERROR_DEFAULT_CODE : errorCode;
+        this.errorCode = (errorCode == null || errorCode.isBlank()) ? ERROR_DEFAULT_CODE : errorCode;
     }
 
     /**
      * 不带 cause 的完整构造器
      */
-    public MyException(Class<?> sourceClass, String sourceMethod, String message, String errorCode) {
+    public MyException(Class<?> sourceClass, Method sourceMethod, String message, String errorCode) {
         this(sourceClass, sourceMethod, message, errorCode, null);
     }
 
     /**
      * 不带错误码，使用默认错误码
      */
-    public MyException(Class<?> sourceClass, String sourceMethod, String message, Throwable cause) {
+    public MyException(Class<?> sourceClass, Method sourceMethod, String message, Throwable cause) {
         this(sourceClass, sourceMethod, message, ERROR_DEFAULT_CODE, cause);
     }
 
     /**
      * 不带错误码，也不带 cause
      */
-    public MyException(Class<?> sourceClass, String sourceMethod, String message) {
+    public MyException(Class<?> sourceClass, Method sourceMethod, String message) {
         this(sourceClass, sourceMethod, message, ERROR_DEFAULT_CODE, null);
     }
 
@@ -91,16 +93,23 @@ public class MyException extends RuntimeException {
     }
 
     /**
+     * 获取产生异常的方法对象
+     */
+    public Method getSourceMethod() {
+        return sourceMethod;
+    }
+
+    /**
      * 获取产生异常的方法名
      */
-    public String getSourceMethod() {
-        return sourceMethod == null ? "UnknownMethod" : sourceMethod;
+    public String getSourceMethodName() {
+        return sourceMethod == null ? "UnknownMethod" : sourceMethod.getName();
     }
 
     /**
      * 获取错误信息
      */
-    @Override // 重名函数多，建议使用Override重写
+    @Override
     public String getMessage() {
         return message;
     }
@@ -125,28 +134,28 @@ public class MyException extends RuntimeException {
     /**
      * 快速抛出：完整参数
      */
-    public static void fail(Class<?> sourceClass, String sourceMethod, String message, String errorCode, Throwable cause) {
+    public static void fail(Class<?> sourceClass, Method sourceMethod, String message, String errorCode, Throwable cause) {
         throw new MyException(sourceClass, sourceMethod, message, errorCode, cause);
     }
 
     /**
      * 快速抛出：不带 cause
      */
-    public static void fail(Class<?> sourceClass, String sourceMethod, String message, String errorCode) {
+    public static void fail(Class<?> sourceClass, Method sourceMethod, String message, String errorCode) {
         throw new MyException(sourceClass, sourceMethod, message, errorCode);
     }
 
     /**
      * 快速抛出：使用默认错误码，带 cause
      */
-    public static void fail(Class<?> sourceClass, String sourceMethod, String message, Throwable cause) {
+    public static void fail(Class<?> sourceClass, Method sourceMethod, String message, Throwable cause) {
         throw new MyException(sourceClass, sourceMethod, message, ERROR_DEFAULT_CODE, cause);
     }
 
     /**
      * 快速抛出：使用默认错误码，不带 cause
      */
-    public static void fail(Class<?> sourceClass, String sourceMethod, String message) {
+    public static void fail(Class<?> sourceClass, Method sourceMethod, String message) {
         throw new MyException(sourceClass, sourceMethod, message, ERROR_DEFAULT_CODE);
     }
 
@@ -155,7 +164,7 @@ public class MyException extends RuntimeException {
         return "MyException{" +
                 "errorCode='" + errorCode + '\'' +
                 ", sourceClass=" + getSourceClassName() +
-                ", sourceMethod='" + getSourceMethod() + '\'' +
+                ", sourceMethod='" + getSourceMethodName() + '\'' +
                 ", message='" + message + '\'' +
                 ", cause=" + (getCause() == null ? "null" : getCause().getClass().getName()) +
                 '}';

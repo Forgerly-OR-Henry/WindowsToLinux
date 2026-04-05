@@ -1,8 +1,10 @@
 package gold.debug.wintolin.tools.system.linux;
 
 import gold.debug.wintolin.attribute.system.ALinux;
+import gold.debug.wintolin.exceptionanderror.MethodUtils;
 import gold.debug.wintolin.exceptionanderror.MyException;
 
+import java.lang.reflect.Method;
 import java.net.IDN;
 import java.net.Inet6Address;
 import java.net.InetAddress;
@@ -43,6 +45,15 @@ public final class JudgeIPRight {
     private static final String ERROR_NOT_DOMAIN = "ERROR_NOT_DOMAIN";
 
     /**
+     * 当前类中需要记录的方法对象
+     */
+    private static final Method METHOD_IS_IP_RIGHT =
+            MethodUtils.getCurrentMethod(JudgeIPRight.class, "isIPRight", ALinux.class);
+
+    private static final Method METHOD_IS_DOMAIN_NAME =
+            MethodUtils.getCurrentMethod(JudgeIPRight.class, "isDomainName", ALinux.class);
+
+    /**
      * 严格 IPv4 正则：
      * 每段范围 0~255
      */
@@ -68,42 +79,25 @@ public final class JudgeIPRight {
      * 校验失败：抛出 MyException
      */
     public static void isIPRight(ALinux linux) {
-        final String methodName = "isIPRight";
-
         if (linux == null) {
-            throw new MyException(
-                    JudgeIPRight.class,
-                    methodName,
-                    "ALinux is null",
-                    ERROR_NULL_LINUX
-            );
+            MyException.fail(JudgeIPRight.class, METHOD_IS_IP_RIGHT, "ALinux is null", ERROR_NULL_LINUX);
         }
 
         String raw = linux.getIp();
         if (raw == null) {
-            throw new MyException(
-                    JudgeIPRight.class,
-                    methodName,
-                    "IP/Host is null",
-                    ERROR_NULL_HOST
-            );
+            MyException.fail(JudgeIPRight.class, METHOD_IS_IP_RIGHT, "IP/Host is null", ERROR_NULL_HOST);
         }
 
         String host = raw.trim();
         if (host.isEmpty()) {
-            throw new MyException(
-                    JudgeIPRight.class,
-                    methodName,
-                    "IP/Host is empty",
-                    ERROR_EMPTY_HOST
-            );
+            MyException.fail(JudgeIPRight.class, METHOD_IS_IP_RIGHT, "IP/Host is empty", ERROR_EMPTY_HOST);
         }
 
         // 不允许协议头
         if (containsScheme(host)) {
-            throw new MyException(
+            MyException.fail(
                     JudgeIPRight.class,
-                    methodName,
+                    METHOD_IS_IP_RIGHT,
                     "IP/Host must NOT contain scheme like http:// or https://",
                     ERROR_SCHEME_NOT_ALLOWED
             );
@@ -111,9 +105,9 @@ public final class JudgeIPRight {
 
         // 不允许路径、反斜杠、空格
         if (host.contains("/") || host.contains("\\") || host.contains(" ")) {
-            throw new MyException(
+            MyException.fail(
                     JudgeIPRight.class,
-                    methodName,
+                    METHOD_IS_IP_RIGHT,
                     "IP/Host must NOT contain path, backslash, or spaces",
                     ERROR_INVALID_CHAR
             );
@@ -121,9 +115,9 @@ public final class JudgeIPRight {
 
         // 不允许 []
         if (host.contains("[") || host.contains("]")) {
-            throw new MyException(
+            MyException.fail(
                     JudgeIPRight.class,
-                    methodName,
+                    METHOD_IS_IP_RIGHT,
                     "IP/Host must NOT contain '[' or ']'",
                     ERROR_BRACKET_NOT_ALLOWED
             );
@@ -133,9 +127,9 @@ public final class JudgeIPRight {
         if (host.endsWith(".")) {
             host = host.substring(0, host.length() - 1);
             if (host.isEmpty()) {
-                throw new MyException(
+                MyException.fail(
                         JudgeIPRight.class,
-                        methodName,
+                        METHOD_IS_IP_RIGHT,
                         "IP/Host is invalid",
                         ERROR_INVALID_HOST
                 );
@@ -156,9 +150,9 @@ public final class JudgeIPRight {
             if (first == last) {
                 String right = host.substring(first + 1);
                 if (right.matches("\\d+")) {
-                    throw new MyException(
+                    MyException.fail(
                             JudgeIPRight.class,
-                            methodName,
+                            METHOD_IS_IP_RIGHT,
                             "Port is NOT allowed (e.g., host:22)",
                             ERROR_PORT_NOT_ALLOWED
                     );
@@ -167,9 +161,9 @@ public final class JudgeIPRight {
 
             // zone id 不允许，例如 fe80::1%eth0
             if (host.contains("%")) {
-                throw new MyException(
+                MyException.fail(
                         JudgeIPRight.class,
-                        methodName,
+                        METHOD_IS_IP_RIGHT,
                         "IPv6 zone id is NOT allowed (e.g., %eth0)",
                         ERROR_INVALID_IPV6
                 );
@@ -179,9 +173,9 @@ public final class JudgeIPRight {
                 return;
             }
 
-            throw new MyException(
+            MyException.fail(
                     JudgeIPRight.class,
-                    methodName,
+                    METHOD_IS_IP_RIGHT,
                     "Invalid IPv6 format or contains port",
                     ERROR_INVALID_IPV6
             );
@@ -192,9 +186,9 @@ public final class JudgeIPRight {
             return;
         }
 
-        throw new MyException(
+        MyException.fail(
                 JudgeIPRight.class,
-                methodName,
+                METHOD_IS_IP_RIGHT,
                 "IP/Host format is invalid (not IPv4/IPv6/domain)",
                 ERROR_INVALID_IP_OR_HOST
         );
@@ -207,47 +201,25 @@ public final class JudgeIPRight {
      * 校验失败：抛出 MyException
      */
     public static void isDomainName(ALinux linux) {
-        final String methodName = "isDomainName";
-
         if (linux == null) {
-            throw new MyException(
-                    JudgeIPRight.class,
-                    methodName,
-                    "ALinux is null",
-                    ERROR_NULL_LINUX
-            );
+            MyException.fail(JudgeIPRight.class, METHOD_IS_DOMAIN_NAME, "ALinux is null", ERROR_NULL_LINUX);
         }
 
         String raw = linux.getIp();
         if (raw == null) {
-            throw new MyException(
-                    JudgeIPRight.class,
-                    methodName,
-                    "IP/Host is null",
-                    ERROR_NULL_HOST
-            );
+            MyException.fail(JudgeIPRight.class, METHOD_IS_DOMAIN_NAME, "IP/Host is null", ERROR_NULL_HOST);
         }
 
         String host = raw.trim();
         if (host.isEmpty()) {
-            throw new MyException(
-                    JudgeIPRight.class,
-                    methodName,
-                    "IP/Host is empty",
-                    ERROR_EMPTY_HOST
-            );
+            MyException.fail(JudgeIPRight.class, METHOD_IS_DOMAIN_NAME, "IP/Host is empty", ERROR_EMPTY_HOST);
         }
 
         // 去掉末尾点（example.com.）
         if (host.endsWith(".")) {
             host = host.substring(0, host.length() - 1);
             if (host.isEmpty()) {
-                throw new MyException(
-                        JudgeIPRight.class,
-                        methodName,
-                        "Not a domain name",
-                        ERROR_NOT_DOMAIN
-                );
+                MyException.fail(JudgeIPRight.class, METHOD_IS_DOMAIN_NAME, "Not a domain name", ERROR_NOT_DOMAIN);
             }
         }
 
@@ -255,12 +227,7 @@ public final class JudgeIPRight {
             return;
         }
 
-        throw new MyException(
-                JudgeIPRight.class,
-                methodName,
-                "Not a domain name",
-                ERROR_NOT_DOMAIN
-        );
+        MyException.fail(JudgeIPRight.class, METHOD_IS_DOMAIN_NAME, "Not a domain name", ERROR_NOT_DOMAIN);
     }
 
     /**
