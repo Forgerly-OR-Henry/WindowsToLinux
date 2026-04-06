@@ -9,30 +9,14 @@ public class ALinux {
         UBUNTU, DEBIAN, FEDORA, CENTOS, ARCH, MINT, OPENSUSE
     }
 
-    private LinuxDistribution linuxDistribution; // Linux 发行版
-    private String linuxVersion; // Linux 发行版版本号
     private String ip; // IP 地址或域名
     private String user; // SSH 用户名
     private String password; // 用户名对应密码
     private Session session; // SSH 连接通道
+    private LinuxDistribution linuxDistribution; // Linux 发行版
+    private String linuxVersion; // Linux 发行版版本号
 
     // GET AND SET 方法
-    public LinuxDistribution getLinuxDistribution() {
-        return linuxDistribution;
-    }
-
-    public void setLinuxDistribution(LinuxDistribution linuxDistribution) {
-        this.linuxDistribution = linuxDistribution;
-    }
-
-    public String getLinuxVersion() {
-        return linuxVersion;
-    }
-
-    public void setLinuxVersion(String linuxVersion) {
-        this.linuxVersion = linuxVersion;
-    }
-
     public String getIp() {
         return ip;
     }
@@ -63,5 +47,21 @@ public class ALinux {
 
     public void setSession(Session session) {
         this.session = session;
+    }
+
+    public LinuxDistribution getLinuxDistribution() {
+        return linuxDistribution;
+    }
+
+    public void setLinuxDistribution(LinuxDistribution linuxDistribution) {
+        this.linuxDistribution = linuxDistribution;
+    }
+
+    public String getLinuxVersion() {
+        return linuxVersion;
+    }
+
+    public void setLinuxVersion(String linuxVersion) {
+        this.linuxVersion = linuxVersion;
     }
 }
