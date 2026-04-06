@@ -6,7 +6,22 @@ public class ALinux {
 
     // 常见 Linux 发行版
     public enum LinuxDistribution {
-        UBUNTU, DEBIAN, FEDORA, CENTOS, ARCH, MINT, OPENSUSE
+        UBUNTU,
+        DEBIAN,
+        FEDORA,
+        CENTOS,
+        RHEL,
+        ROCKY,
+        ALMALINUX,
+        ORACLE,
+        ARCH,
+        MANJARO,
+        MINT,
+        OPENSUSE,
+        ALPINE,
+        KALI,
+        AMAZON_LINUX,
+        UNKNOWN
     }
 
     private String ip; // IP 地址或域名
