@@ -5,6 +5,7 @@ import gold.debug.wintolin.exceptionanderror.MethodUtils;
 import gold.debug.wintolin.exceptionanderror.MyException;
 
 import java.lang.reflect.Method;
+import java.nio.file.Path;
 
 /**
  * Linux 版本检查
@@ -19,7 +20,7 @@ final class TJLinuxVersionCheck {
         throw new UnsupportedOperationException("TJLinuxVersionCheck is a utility class.");
     }
 
-    static AJava check(String javaSourcePath) {
+    static AJava check(Path sourcePath) {
         throw new MyException(
                 TJLinuxVersionCheck.class,
                 METHOD_CHECK,

@@ -15,7 +15,6 @@ import java.lang.reflect.Method;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.Paths;
 
 /**
  * Windows 版本检查
@@ -23,13 +22,13 @@ import java.nio.file.Paths;
 final class TJWindowsVersionCheck {
 
     private static final Method METHOD_CHECK =
-            MethodUtils.getCurrentMethod(TJWindowsVersionCheck.class, "check", String.class);
+            MethodUtils.getCurrentMethod(TJWindowsVersionCheck.class, "check", Path.class);
 
     private static final Method METHOD_VALIDATE_WINDOWS_SYSTEM =
             MethodUtils.getCurrentMethod(TJWindowsVersionCheck.class, "validateWindowsSystem");
 
     private static final Method METHOD_VALIDATE_SOURCE_PATH =
-            MethodUtils.getCurrentMethod(TJWindowsVersionCheck.class, "validateSourcePath", String.class);
+            MethodUtils.getCurrentMethod(TJWindowsVersionCheck.class, "validateSourcePath", Path.class);
 
     private static final Method METHOD_FIND_PROJECT_ROOT =
             MethodUtils.getCurrentMethod(TJWindowsVersionCheck.class, "findProjectRoot", Path.class);
@@ -95,17 +94,17 @@ final class TJWindowsVersionCheck {
         throw new UnsupportedOperationException("TJWindowsVersionCheck is a utility class.");
     }
 
-    static AJava check(String javaSourcePath) {
+    static AJava check(Path sourcePath) {
         try {
             validateWindowsSystem();
 
-            Path sourcePath = validateSourcePath(javaSourcePath);
-            Path projectRoot = findProjectRoot(sourcePath);
-            Path pomPath = projectRoot == null ? null : projectRoot.resolve("pom.xml");
+            Path normalizedSourcePath = validateSourcePath(sourcePath);
+            Path projectRoot = findProjectRoot(normalizedSourcePath);
+            Path pomPath = projectRoot.resolve("pom.xml");
 
             AJava aJava = new AJava();
 
-            boolean isMavenProject = pomPath != null && Files.exists(pomPath) && Files.isRegularFile(pomPath);
+            boolean isMavenProject = Files.exists(pomPath) && Files.isRegularFile(pomPath);
             aJava.setMaven(isMavenProject);
 
             if (isMavenProject) {
@@ -148,8 +147,8 @@ final class TJWindowsVersionCheck {
         }
     }
 
-    private static Path validateSourcePath(String javaSourcePath) {
-        if (isBlank(javaSourcePath)) {
+    private static Path validateSourcePath(Path sourcePath) {
+        if (sourcePath == null) {
             throw new MyException(
                     TJWindowsVersionCheck.class,
                     METHOD_VALIDATE_SOURCE_PATH,
@@ -159,34 +158,34 @@ final class TJWindowsVersionCheck {
         }
 
         try {
-            Path path = Paths.get(javaSourcePath).toAbsolutePath().normalize();
+            Path normalizedPath = sourcePath.toAbsolutePath().normalize();
 
-            if (!Files.exists(path)) {
+            if (!Files.exists(normalizedPath)) {
                 throw new MyException(
                         TJWindowsVersionCheck.class,
                         METHOD_VALIDATE_SOURCE_PATH,
-                        "Java 源码路径不存在：" + path,
+                        "Java 源码路径不存在：" + normalizedPath,
                         "JAVA_SOURCE_PATH_NOT_EXISTS"
                 );
             }
 
-            if (!Files.isDirectory(path)) {
+            if (!Files.isDirectory(normalizedPath)) {
                 throw new MyException(
                         TJWindowsVersionCheck.class,
                         METHOD_VALIDATE_SOURCE_PATH,
-                        "Java 源码路径不是文件夹：" + path,
+                        "Java 源码路径不是文件夹：" + normalizedPath,
                         "JAVA_SOURCE_PATH_NOT_DIRECTORY"
                 );
             }
 
-            return path;
+            return normalizedPath;
         } catch (MyException e) {
             throw e;
         } catch (Exception e) {
             throw new MyException(
                     TJWindowsVersionCheck.class,
                     METHOD_VALIDATE_SOURCE_PATH,
-                    "Java 源码路径格式无效：" + javaSourcePath,
+                    "Java 源码路径格式无效：" + sourcePath,
                     "JAVA_SOURCE_PATH_INVALID",
                     e
             );
@@ -384,7 +383,7 @@ final class TJWindowsVersionCheck {
 
         String mavenHome = getEnvIgnoreBlank("MAVEN_HOME");
         if (!isBlank(mavenHome)) {
-            Path mvnCmd = Paths.get(mavenHome, "bin", "mvn.cmd");
+            Path mvnCmd = Path.of(mavenHome, "bin", "mvn.cmd");
             if (Files.exists(mvnCmd) && Files.isRegularFile(mvnCmd)) {
                 version = parseMavenVersion(executeCommand(projectRoot, mvnCmd.toString(), "-version"));
                 if (!isBlank(version)) {
@@ -397,7 +396,7 @@ final class TJWindowsVersionCheck {
 
         String m2Home = getEnvIgnoreBlank("M2_HOME");
         if (!isBlank(m2Home)) {
-            Path mvnCmd = Paths.get(m2Home, "bin", "mvn.cmd");
+            Path mvnCmd = Path.of(m2Home, "bin", "mvn.cmd");
             if (Files.exists(mvnCmd) && Files.isRegularFile(mvnCmd)) {
                 version = parseMavenVersion(executeCommand(projectRoot, mvnCmd.toString(), "-version"));
                 if (!isBlank(version)) {
@@ -427,8 +426,8 @@ final class TJWindowsVersionCheck {
         } else {
             String javaHome = getEnvIgnoreBlank("JAVA_HOME");
             if (!isBlank(javaHome)) {
-                Path javacExe = Paths.get(javaHome, "bin", "javac.exe");
-                Path javaExe = Paths.get(javaHome, "bin", "java.exe");
+                Path javacExe = Path.of(javaHome, "bin", "javac.exe");
+                Path javaExe = Path.of(javaHome, "bin", "java.exe");
 
                 if (Files.exists(javacExe) && Files.isRegularFile(javacExe)) {
                     javacVersion = parseJavacVersion(executeCommand(null, javacExe.toString(), "-version"));

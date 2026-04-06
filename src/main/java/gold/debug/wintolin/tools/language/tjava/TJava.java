@@ -2,6 +2,8 @@ package gold.debug.wintolin.tools.language.tjava;
 
 import gold.debug.wintolin.attribute.language.AJava;
 
+import java.nio.file.Path;
+
 /**
  * Java 工具门面类
  */
@@ -14,21 +16,21 @@ public final class TJava {
     /**
      * Windows 版本检查
      *
-     * @param javaSourcePath Java 源码路径
+     * @param sourcePath Java 源码路径
      * @return Java 环境属性
      */
-    public static AJava windowsVersionCheck(String javaSourcePath) {
-        return TJWindowsVersionCheck.check(javaSourcePath);
+    public static AJava windowsVersionCheck(Path sourcePath) {
+        return TJWindowsVersionCheck.check(sourcePath);
     }
 
     /**
      * Linux 版本检查（二期工程）
      *
-     * @param javaSourcePath Java 源码路径
+     * @param sourcePath Java 源码路径
      * @return Java 环境属性
      */
-    public static AJava linuxVersionCheck(String javaSourcePath) {
-        return TJLinuxVersionCheck.check(javaSourcePath);
+    public static AJava linuxVersionCheck(Path sourcePath) {
+        return TJLinuxVersionCheck.check(sourcePath);
     }
 
     /**
