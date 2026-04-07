@@ -1,4 +1,4 @@
-package gold.debug.wintolin.tool.system;
+package gold.debug.wintolin.tools.system.linux;
 
 import com.jcraft.jsch.ChannelExec;
 import com.jcraft.jsch.JSchException;
@@ -13,7 +13,7 @@ import java.lang.reflect.Method;
 import java.nio.charset.StandardCharsets;
 import java.util.Locale;
 
-public final class TLinux {
+final class TLGetDistribution {
 
     private static final String ERROR_LINUX_NULL = "ERROR_LINUX_NULL";
     private static final String ERROR_SESSION_NOT_CONNECTED = "ERROR_SESSION_NOT_CONNECTED";
@@ -21,12 +21,13 @@ public final class TLinux {
 
     private static final Method METHOD_LINUX_DISTRIBUTION_GET =
             MethodUtils.getCurrentMethod(
-                    TLinux.class,
-                    "LinuxDistributionGet",
+                    TLGetDistribution.class,
+                    "getDistribution",
                     ALinux.class
             );
 
-    private TLinux() {
+    private TLGetDistribution() {
+        throw new UnsupportedOperationException("TLDistributionGet is a utility class.");
     }
 
     /**
@@ -34,10 +35,10 @@ public final class TLinux {
      *
      * @param aLinux Linux 属性对象
      */
-    public static void LinuxDistributionGet(ALinux aLinux) {
+    public static void getDistribution(ALinux aLinux) {
         if (aLinux == null) {
             MyException.fail(
-                    TLinux.class,
+                    TLGetDistribution.class,
                     METHOD_LINUX_DISTRIBUTION_GET,
                     "ALinux对象不能为空。",
                     ERROR_LINUX_NULL
@@ -47,7 +48,7 @@ public final class TLinux {
         Session session = aLinux.getSession();
         if (session == null || !session.isConnected()) {
             MyException.fail(
-                    TLinux.class,
+                    TLGetDistribution.class,
                     METHOD_LINUX_DISTRIBUTION_GET,
                     "Session未连接，无法获取Linux发行版信息。",
                     ERROR_SESSION_NOT_CONNECTED
@@ -87,7 +88,7 @@ public final class TLinux {
 
             if (stdOut == null || stdOut.isBlank()) {
                 MyException.fail(
-                        TLinux.class,
+                        TLGetDistribution.class,
                         METHOD_LINUX_DISTRIBUTION_GET,
                         "远程系统未返回有效的 /etc/os-release 内容。错误输出：" + stdErr,
                         ERROR_LINUX_DISTRIBUTION_GET_FAILED
@@ -97,7 +98,7 @@ public final class TLinux {
             return stdOut;
         } catch (JSchException e) {
             MyException.fail(
-                    TLinux.class,
+                    TLGetDistribution.class,
                     METHOD_LINUX_DISTRIBUTION_GET,
                     "获取Linux发行版信息失败。",
                     ERROR_LINUX_DISTRIBUTION_GET_FAILED,
@@ -107,7 +108,7 @@ public final class TLinux {
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             MyException.fail(
-                    TLinux.class,
+                    TLGetDistribution.class,
                     METHOD_LINUX_DISTRIBUTION_GET,
                     "线程在获取Linux发行版信息时被中断。",
                     ERROR_LINUX_DISTRIBUTION_GET_FAILED,
