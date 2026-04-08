@@ -15,7 +15,7 @@ public class APackageInfo {
     /**
      * 本地待打包的源码根目录
      */
-    private Path sourceDirectory;
+    private Path localSourceDirectory;
 
     /**
      * 本地临时目录，用于生成归档文件
@@ -136,7 +136,7 @@ public class APackageInfo {
     /**
      * 远端归档校验是否成功
      */
-    private boolean remoteVerifySuccess;
+    private boolean remoteArchiveVerifySuccess;
 
     /**
      * 解包是否成功
@@ -148,16 +148,15 @@ public class APackageInfo {
      */
     private boolean replaceSuccess;
 
-
     public APackageInfo() {
     }
 
-    public Path getSourceDirectory() {
-        return sourceDirectory;
+    public Path getLocalSourceDirectory() {
+        return localSourceDirectory;
     }
 
-    public void setSourceDirectory(Path sourceDirectory) {
-        this.sourceDirectory = sourceDirectory;
+    public void setLocalSourceDirectory(Path localSourceDirectory) {
+        this.localSourceDirectory = localSourceDirectory;
     }
 
     public Path getLocalTempDirectory() {
@@ -181,7 +180,7 @@ public class APackageInfo {
     }
 
     public void setExcludeRules(List<String> excludeRules) {
-        this.excludeRules = excludeRules;
+        this.excludeRules = (excludeRules == null) ? new ArrayList<>() : excludeRules;
     }
 
     public String getRemoteTempDirectory() {
@@ -312,12 +311,12 @@ public class APackageInfo {
         this.backupPath = backupPath;
     }
 
-    public boolean isRemoteVerifySuccess() {
-        return remoteVerifySuccess;
+    public boolean isRemoteArchiveVerifySuccess() {
+        return remoteArchiveVerifySuccess;
     }
 
-    public void setRemoteVerifySuccess(boolean remoteVerifySuccess) {
-        this.remoteVerifySuccess = remoteVerifySuccess;
+    public void setRemoteArchiveVerifySuccess(boolean remoteArchiveVerifySuccess) {
+        this.remoteArchiveVerifySuccess = remoteArchiveVerifySuccess;
     }
 
     public boolean isUnpackSuccess() {
