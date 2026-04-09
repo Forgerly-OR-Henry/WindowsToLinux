@@ -1,6 +1,7 @@
 package gold.debug.wintolin.tools.language.tjava;
 
 import gold.debug.wintolin.attribute.language.AJava;
+import gold.debug.wintolin.attribute.system.ALinux;
 
 import java.nio.file.Path;
 
@@ -43,7 +44,7 @@ public final class TJava {
     /**
      * Linux 部署（二期工程）
      */
-    public static void linuxDeploy() {
-        TJLinuxDeploy.deploy();
+    public static void linuxDeploy(AJava aJava, ALinux linux) {
+        TJLinuxDeploy.deploy(aJava, linux);
     }
 }
