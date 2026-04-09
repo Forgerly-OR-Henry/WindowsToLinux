@@ -5,7 +5,7 @@ import gold.debug.wintolin.exceptionanderror.MyException;
 
 import java.lang.reflect.Method;
 
-/**
+/**很好，现在我们在检查完环境后，现在应远程部署到Linux上，请编写TJLinuxDeploy，内部函数传入
  * Linux 部署
  * 二期工程，暂不实现
  */

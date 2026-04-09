@@ -21,6 +21,16 @@ import java.nio.file.Path;
  */
 final class TJWindowsVersionCheck {
 
+    private static final String ERROR_WINDOWS_JAVA_VERSION_CHECK_ERROR = "WINDOWS_JAVA_VERSION_CHECK_ERROR";
+    private static final String ERROR_OS_NOT_WINDOWS = "OS_NOT_WINDOWS";
+    private static final String ERROR_JAVA_SOURCE_PATH_EMPTY = "JAVA_SOURCE_PATH_EMPTY";
+    private static final String ERROR_JAVA_SOURCE_PATH_NOT_EXISTS = "JAVA_SOURCE_PATH_NOT_EXISTS";
+    private static final String ERROR_JAVA_SOURCE_PATH_NOT_DIRECTORY = "JAVA_SOURCE_PATH_NOT_DIRECTORY";
+    private static final String ERROR_JAVA_SOURCE_PATH_INVALID = "JAVA_SOURCE_PATH_INVALID";
+    private static final String ERROR_POM_PARSE_ERROR = "POM_PARSE_ERROR";
+    private static final String ERROR_MAVEN_VERSION_NOT_FOUND = "MAVEN_VERSION_NOT_FOUND";
+    private static final String ERROR_JAVA_VERSION_NOT_FOUND = "JAVA_VERSION_NOT_FOUND";
+
     private static final Method METHOD_CHECK =
             MethodUtils.getCurrentMethod(TJWindowsVersionCheck.class, "check", Path.class);
 
@@ -30,65 +40,14 @@ final class TJWindowsVersionCheck {
     private static final Method METHOD_VALIDATE_SOURCE_PATH =
             MethodUtils.getCurrentMethod(TJWindowsVersionCheck.class, "validateSourcePath", Path.class);
 
-    private static final Method METHOD_FIND_PROJECT_ROOT =
-            MethodUtils.getCurrentMethod(TJWindowsVersionCheck.class, "findProjectRoot", Path.class);
-
-    private static final Method METHOD_APPLY_PROJECT_JAVA_VERSION_FROM_POM =
-            MethodUtils.getCurrentMethod(TJWindowsVersionCheck.class, "applyProjectJavaVersionFromPom", AJava.class, Path.class);
-
     private static final Method METHOD_PARSE_POM_JAVA_VERSION =
             MethodUtils.getCurrentMethod(TJWindowsVersionCheck.class, "parsePomJavaVersion", Path.class);
-
-    private static final Method METHOD_GET_PROPERTY_VALUE =
-            MethodUtils.getCurrentMethod(TJWindowsVersionCheck.class, "getPropertyValue", Element.class, String.class);
-
-    private static final Method METHOD_GET_MAVEN_COMPILER_PLUGIN_VALUE =
-            MethodUtils.getCurrentMethod(TJWindowsVersionCheck.class, "getMavenCompilerPluginValue", Element.class, String.class);
-
-    private static final Method METHOD_RESOLVE_POM_PROPERTY_REFERENCE =
-            MethodUtils.getCurrentMethod(TJWindowsVersionCheck.class, "resolvePomPropertyReference", Element.class, String.class);
-
-    private static final Method METHOD_GET_DIRECT_CHILD_TEXT =
-            MethodUtils.getCurrentMethod(TJWindowsVersionCheck.class, "getDirectChildText", Element.class, String.class);
 
     private static final Method METHOD_APPLY_MAVEN_VERSION =
             MethodUtils.getCurrentMethod(TJWindowsVersionCheck.class, "applyMavenVersion", AJava.class, Path.class);
 
     private static final Method METHOD_APPLY_JAVA_VERSIONS =
             MethodUtils.getCurrentMethod(TJWindowsVersionCheck.class, "applyJavaVersions", AJava.class);
-
-    private static final Method METHOD_APPLY_COMPATIBILITY =
-            MethodUtils.getCurrentMethod(TJWindowsVersionCheck.class, "applyCompatibility", AJava.class);
-
-    private static final Method METHOD_EXECUTE_COMMAND =
-            MethodUtils.getCurrentMethod(TJWindowsVersionCheck.class, "executeCommand", Path.class, String[].class);
-
-    private static final Method METHOD_PARSE_JAVA_VERSION =
-            MethodUtils.getCurrentMethod(TJWindowsVersionCheck.class, "parseJavaVersion", String.class);
-
-    private static final Method METHOD_PARSE_JAVAC_VERSION =
-            MethodUtils.getCurrentMethod(TJWindowsVersionCheck.class, "parseJavacVersion", String.class);
-
-    private static final Method METHOD_PARSE_MAVEN_VERSION =
-            MethodUtils.getCurrentMethod(TJWindowsVersionCheck.class, "parseMavenVersion", String.class);
-
-    private static final Method METHOD_NORMALIZE_JAVA_VERSION =
-            MethodUtils.getCurrentMethod(TJWindowsVersionCheck.class, "normalizeJavaVersion", String.class);
-
-    private static final Method METHOD_TO_COMPARABLE_JAVA_MAJOR =
-            MethodUtils.getCurrentMethod(TJWindowsVersionCheck.class, "toComparableJavaMajor", String.class);
-
-    private static final Method METHOD_TRY_PARSE_INT =
-            MethodUtils.getCurrentMethod(TJWindowsVersionCheck.class, "tryParseInt", String.class);
-
-    private static final Method METHOD_FIRST_NON_BLANK =
-            MethodUtils.getCurrentMethod(TJWindowsVersionCheck.class, "firstNonBlank", String.class, String.class);
-
-    private static final Method METHOD_GET_ENV_IGNORE_BLANK =
-            MethodUtils.getCurrentMethod(TJWindowsVersionCheck.class, "getEnvIgnoreBlank", String.class);
-
-    private static final Method METHOD_IS_BLANK =
-            MethodUtils.getCurrentMethod(TJWindowsVersionCheck.class, "isBlank", String.class);
 
     private TJWindowsVersionCheck() {
         throw new UnsupportedOperationException("TJWindowsVersionCheck is a utility class.");
@@ -125,35 +84,36 @@ final class TJWindowsVersionCheck {
         } catch (MyException e) {
             throw e;
         } catch (Exception e) {
-            throw new MyException(
+            MyException.fail(
                     TJWindowsVersionCheck.class,
                     METHOD_CHECK,
                     "Windows Java 版本检查失败。",
-                    "WINDOWS_JAVA_VERSION_CHECK_ERROR",
+                    ERROR_WINDOWS_JAVA_VERSION_CHECK_ERROR,
                     e
             );
+            return null;
         }
     }
 
     private static void validateWindowsSystem() {
         String osName = System.getProperty("os.name");
         if (osName == null || !osName.toLowerCase().contains("windows")) {
-            throw new MyException(
+            MyException.fail(
                     TJWindowsVersionCheck.class,
                     METHOD_VALIDATE_WINDOWS_SYSTEM,
                     "当前系统不是 Windows，不能执行 Windows 版本检查。",
-                    "OS_NOT_WINDOWS"
+                    ERROR_OS_NOT_WINDOWS
             );
         }
     }
 
     private static Path validateSourcePath(Path sourcePath) {
         if (sourcePath == null) {
-            throw new MyException(
+            MyException.fail(
                     TJWindowsVersionCheck.class,
                     METHOD_VALIDATE_SOURCE_PATH,
                     "Java 源码路径不能为空。",
-                    "JAVA_SOURCE_PATH_EMPTY"
+                    ERROR_JAVA_SOURCE_PATH_EMPTY
             );
         }
 
@@ -161,20 +121,20 @@ final class TJWindowsVersionCheck {
             Path normalizedPath = sourcePath.toAbsolutePath().normalize();
 
             if (!Files.exists(normalizedPath)) {
-                throw new MyException(
+                MyException.fail(
                         TJWindowsVersionCheck.class,
                         METHOD_VALIDATE_SOURCE_PATH,
                         "Java 源码路径不存在：" + normalizedPath,
-                        "JAVA_SOURCE_PATH_NOT_EXISTS"
+                        ERROR_JAVA_SOURCE_PATH_NOT_EXISTS
                 );
             }
 
             if (!Files.isDirectory(normalizedPath)) {
-                throw new MyException(
+                MyException.fail(
                         TJWindowsVersionCheck.class,
                         METHOD_VALIDATE_SOURCE_PATH,
                         "Java 源码路径不是文件夹：" + normalizedPath,
-                        "JAVA_SOURCE_PATH_NOT_DIRECTORY"
+                        ERROR_JAVA_SOURCE_PATH_NOT_DIRECTORY
                 );
             }
 
@@ -182,13 +142,14 @@ final class TJWindowsVersionCheck {
         } catch (MyException e) {
             throw e;
         } catch (Exception e) {
-            throw new MyException(
+            MyException.fail(
                     TJWindowsVersionCheck.class,
                     METHOD_VALIDATE_SOURCE_PATH,
                     "Java 源码路径格式无效：" + sourcePath,
-                    "JAVA_SOURCE_PATH_INVALID",
+                    ERROR_JAVA_SOURCE_PATH_INVALID,
                     e
             );
+            return null;
         }
     }
 
@@ -261,13 +222,14 @@ final class TJWindowsVersionCheck {
 
             return new PomJavaVersionInfo(null, "unknown");
         } catch (Exception e) {
-            throw new MyException(
+            MyException.fail(
                     TJWindowsVersionCheck.class,
                     METHOD_PARSE_POM_JAVA_VERSION,
                     "解析 pom.xml 中的 Java 版本失败：" + pomPath,
-                    "POM_PARSE_ERROR",
+                    ERROR_POM_PARSE_ERROR,
                     e
             );
+            return null;
         }
     }
 
@@ -407,11 +369,11 @@ final class TJWindowsVersionCheck {
             }
         }
 
-        throw new MyException(
+        MyException.fail(
                 TJWindowsVersionCheck.class,
                 METHOD_APPLY_MAVEN_VERSION,
                 "检测到当前项目为 Maven 项目，但未找到可用的 Maven 版本。检测顺序：mvnw.cmd -> PATH -> MAVEN_HOME -> M2_HOME。",
-                "MAVEN_VERSION_NOT_FOUND"
+                ERROR_MAVEN_VERSION_NOT_FOUND
         );
     }
 
@@ -443,11 +405,11 @@ final class TJWindowsVersionCheck {
         }
 
         if (isBlank(javacVersion) && isBlank(javaVersion)) {
-            throw new MyException(
+            MyException.fail(
                     TJWindowsVersionCheck.class,
                     METHOD_APPLY_JAVA_VERSIONS,
                     "未找到可用的 Java 环境。检测顺序：PATH -> JAVA_HOME。",
-                    "JAVA_VERSION_NOT_FOUND"
+                    ERROR_JAVA_VERSION_NOT_FOUND
             );
         }
 

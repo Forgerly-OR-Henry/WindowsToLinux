@@ -20,11 +20,7 @@ final class TLGetDistribution {
     private static final String ERROR_LINUX_DISTRIBUTION_GET_FAILED = "ERROR_LINUX_DISTRIBUTION_GET_FAILED";
 
     private static final Method METHOD_LINUX_DISTRIBUTION_GET =
-            MethodUtils.getCurrentMethod(
-                    TLGetDistribution.class,
-                    "getDistribution",
-                    ALinux.class
-            );
+            MethodUtils.getCurrentMethod(TLGetDistribution.class, "getDistribution", ALinux.class);
 
     private TLGetDistribution() {
         throw new UnsupportedOperationException("TLDistributionGet is a utility class.");
