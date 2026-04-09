@@ -281,7 +281,7 @@ final class TJLinuxDeploy {
         return trimToNull(execute(session, command, false, null));
     }
 
-    private static String resolveRemoteMAVEN_HOMEFallback(Session session) {
+    private static String resolveRemoteMavenHome(Session session) {
         String command = """
                 if command -v mvn >/dev/null 2>&1; then
                   readlink -f "$(command -v mvn)" | sed 's|/bin/mvn$||'
@@ -290,10 +290,6 @@ final class TJLinuxDeploy {
                 fi
                 """;
         return trimToNull(execute(session, command, false, null));
-    }
-
-    private static String resolveRemoteMavenHome(Session session) {
-        return resolveRemoteMAVEN_HOMEFallback(session);
     }
 
     private static ALinux.LinuxDistribution detectDistributionFromRemote(Session session) {
