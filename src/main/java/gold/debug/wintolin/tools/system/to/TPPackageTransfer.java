@@ -18,7 +18,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Vector;
 
-public final class PackageTransfer {
+final class TPPackageTransfer {
 
     private static final String ERROR_TRANSFER_PACKAGE_INFO_NULL = "ERROR_TRANSFER_PACKAGE_INFO_NULL";
     private static final String ERROR_TRANSFER_LINUX_INFO_NULL = "ERROR_TRANSFER_LINUX_INFO_NULL";
@@ -36,30 +36,30 @@ public final class PackageTransfer {
     private static final String ERROR_TRANSFER_EXEC_COMMAND_FAILED = "ERROR_TRANSFER_EXEC_COMMAND_FAILED";
 
     private static final Method METHOD_TRANSFER =
-            MethodUtils.getCurrentMethod(PackageTransfer.class, "transfer", APackageInfo.class, ALinux.class);
+            MethodUtils.getCurrentMethod(TPPackageTransfer.class, "transfer", APackageInfo.class, ALinux.class);
 
     private static final Method METHOD_VALIDATE_INFO =
-            MethodUtils.getCurrentMethod(PackageTransfer.class, "validateInfo", APackageInfo.class, ALinux.class);
+            MethodUtils.getCurrentMethod(TPPackageTransfer.class, "validateInfo", APackageInfo.class, ALinux.class);
 
     private static final Method METHOD_BUILD_REMOTE_ARCHIVE_PATH =
-            MethodUtils.getCurrentMethod(PackageTransfer.class, "buildRemoteArchivePath", APackageInfo.class);
+            MethodUtils.getCurrentMethod(TPPackageTransfer.class, "buildRemoteArchivePath", APackageInfo.class);
 
     private static final Method METHOD_OPEN_SFTP_CHANNEL =
-            MethodUtils.getCurrentMethod(PackageTransfer.class, "openSftpChannel", ALinux.class);
+            MethodUtils.getCurrentMethod(TPPackageTransfer.class, "openSftpChannel", ALinux.class);
 
     private static final Method METHOD_ENSURE_REMOTE_DIRECTORY_EXISTS =
-            MethodUtils.getCurrentMethod(PackageTransfer.class, "ensureRemoteDirectoryExists", ChannelSftp.class, String.class);
+            MethodUtils.getCurrentMethod(TPPackageTransfer.class, "ensureRemoteDirectoryExists", ChannelSftp.class, String.class);
 
     private static final Method METHOD_UPLOAD_ARCHIVE =
-            MethodUtils.getCurrentMethod(PackageTransfer.class, "uploadArchive", ChannelSftp.class, Path.class, String.class);
+            MethodUtils.getCurrentMethod(TPPackageTransfer.class, "uploadArchive", ChannelSftp.class, Path.class, String.class);
 
     private static final Method METHOD_QUERY_REMOTE_SHA256 =
-            MethodUtils.getCurrentMethod(PackageTransfer.class, "queryRemoteSha256", ALinux.class, String.class);
+            MethodUtils.getCurrentMethod(TPPackageTransfer.class, "queryRemoteSha256", ALinux.class, String.class);
 
     private static final Method METHOD_EXECUTE_COMMAND =
-            MethodUtils.getCurrentMethod(PackageTransfer.class, "executeCommand", ALinux.class, String.class);
+            MethodUtils.getCurrentMethod(TPPackageTransfer.class, "executeCommand", ALinux.class, String.class);
 
-    public void transfer(APackageInfo aPackageInfo, ALinux aLinux) {
+    static void transfer(APackageInfo aPackageInfo, ALinux aLinux) {
         validateInfo(aPackageInfo, aLinux);
 
         String remoteArchivePath = buildRemoteArchivePath(aPackageInfo);
@@ -79,10 +79,10 @@ public final class PackageTransfer {
         aPackageInfo.setRemoteArchiveSha256(queryRemoteSha256(aLinux, remoteArchivePath));
     }
 
-    private void validateInfo(APackageInfo aPackageInfo, ALinux aLinux) {
+    private static void validateInfo(APackageInfo aPackageInfo, ALinux aLinux) {
         if (aPackageInfo == null) {
             MyException.fail(
-                    PackageTransfer.class,
+                    TPPackageTransfer.class,
                     METHOD_VALIDATE_INFO,
                     "APackageInfo 不能为空。",
                     ERROR_TRANSFER_PACKAGE_INFO_NULL
@@ -91,7 +91,7 @@ public final class PackageTransfer {
 
         if (aLinux == null) {
             MyException.fail(
-                    PackageTransfer.class,
+                    TPPackageTransfer.class,
                     METHOD_VALIDATE_INFO,
                     "ALinux 不能为空。",
                     ERROR_TRANSFER_LINUX_INFO_NULL
@@ -100,7 +100,7 @@ public final class PackageTransfer {
 
         if (aLinux.getSession() == null) {
             MyException.fail(
-                    PackageTransfer.class,
+                    TPPackageTransfer.class,
                     METHOD_VALIDATE_INFO,
                     "Linux Session 为空，当前未建立 SSH 连接。",
                     ERROR_TRANSFER_SESSION_NULL
@@ -109,7 +109,7 @@ public final class PackageTransfer {
 
         if (!aLinux.getSession().isConnected()) {
             MyException.fail(
-                    PackageTransfer.class,
+                    TPPackageTransfer.class,
                     METHOD_VALIDATE_INFO,
                     "Linux Session 未连接，无法执行传输。",
                     ERROR_TRANSFER_SESSION_NOT_CONNECTED
@@ -118,7 +118,7 @@ public final class PackageTransfer {
 
         if (aPackageInfo.getLocalArchivePath() == null) {
             MyException.fail(
-                    PackageTransfer.class,
+                    TPPackageTransfer.class,
                     METHOD_VALIDATE_INFO,
                     "本地归档文件路径为空，请先完成打包。",
                     ERROR_TRANSFER_LOCAL_ARCHIVE_PATH_NULL
@@ -127,7 +127,7 @@ public final class PackageTransfer {
 
         if (!Files.exists(aPackageInfo.getLocalArchivePath()) || !Files.isRegularFile(aPackageInfo.getLocalArchivePath())) {
             MyException.fail(
-                    PackageTransfer.class,
+                    TPPackageTransfer.class,
                     METHOD_VALIDATE_INFO,
                     "本地归档文件不存在或无效：" + aPackageInfo.getLocalArchivePath(),
                     ERROR_TRANSFER_LOCAL_ARCHIVE_NOT_EXISTS
@@ -136,7 +136,7 @@ public final class PackageTransfer {
 
         if (isBlank(aPackageInfo.getRemoteTempDirectory())) {
             MyException.fail(
-                    PackageTransfer.class,
+                    TPPackageTransfer.class,
                     METHOD_VALIDATE_INFO,
                     "远端临时目录不能为空。",
                     ERROR_TRANSFER_REMOTE_TEMP_DIRECTORY_INVALID
@@ -145,7 +145,7 @@ public final class PackageTransfer {
 
         if (isBlank(aPackageInfo.getLocalArchiveFileName())) {
             MyException.fail(
-                    PackageTransfer.class,
+                    TPPackageTransfer.class,
                     METHOD_VALIDATE_INFO,
                     "本地归档文件名为空，请先完成打包。",
                     ERROR_TRANSFER_REMOTE_ARCHIVE_FILE_NAME_INVALID
@@ -153,19 +153,19 @@ public final class PackageTransfer {
         }
     }
 
-    private String buildRemoteArchivePath(APackageInfo aPackageInfo) {
+    private static String buildRemoteArchivePath(APackageInfo aPackageInfo) {
         String remoteTempDirectory = normalizeRemoteDirectory(aPackageInfo.getRemoteTempDirectory());
         return remoteTempDirectory + "/" + aPackageInfo.getLocalArchiveFileName();
     }
 
-    private ChannelSftp openSftpChannel(ALinux aLinux) {
+    private static ChannelSftp openSftpChannel(ALinux aLinux) {
         try {
             Channel channel = aLinux.getSession().openChannel("sftp");
             channel.connect();
             return (ChannelSftp) channel;
         } catch (JSchException e) {
             MyException.fail(
-                    PackageTransfer.class,
+                    TPPackageTransfer.class,
                     METHOD_OPEN_SFTP_CHANNEL,
                     "打开 SFTP 通道失败。",
                     ERROR_TRANSFER_OPEN_SFTP_FAILED,
@@ -175,11 +175,11 @@ public final class PackageTransfer {
         }
     }
 
-    private void ensureRemoteDirectoryExists(ChannelSftp channelSftp, String remoteDirectory) {
+    private static void ensureRemoteDirectoryExists(ChannelSftp channelSftp, String remoteDirectory) {
         try {
             if (isBlank(remoteDirectory)) {
                 MyException.fail(
-                        PackageTransfer.class,
+                        TPPackageTransfer.class,
                         METHOD_ENSURE_REMOTE_DIRECTORY_EXISTS,
                         "远端目录为空，无法创建。",
                         ERROR_TRANSFER_CREATE_REMOTE_DIRECTORY_FAILED
@@ -211,7 +211,7 @@ public final class PackageTransfer {
             }
         } catch (SftpException e) {
             MyException.fail(
-                    PackageTransfer.class,
+                    TPPackageTransfer.class,
                     METHOD_ENSURE_REMOTE_DIRECTORY_EXISTS,
                     "创建远端目录失败：" + remoteDirectory,
                     ERROR_TRANSFER_CREATE_REMOTE_DIRECTORY_FAILED,
@@ -220,12 +220,12 @@ public final class PackageTransfer {
         }
     }
 
-    private void uploadArchive(ChannelSftp channelSftp, Path localArchivePath, String remoteArchivePath) {
+    private static void uploadArchive(ChannelSftp channelSftp, Path localArchivePath, String remoteArchivePath) {
         try {
             channelSftp.put(localArchivePath.toString(), remoteArchivePath);
         } catch (SftpException e) {
             MyException.fail(
-                    PackageTransfer.class,
+                    TPPackageTransfer.class,
                     METHOD_UPLOAD_ARCHIVE,
                     "上传归档文件失败：" + localArchivePath + " -> " + remoteArchivePath,
                     ERROR_TRANSFER_UPLOAD_FAILED,
@@ -234,13 +234,13 @@ public final class PackageTransfer {
         }
     }
 
-    private String queryRemoteSha256(ALinux aLinux, String remoteArchivePath) {
+    private static String queryRemoteSha256(ALinux aLinux, String remoteArchivePath) {
         String command = "sha256sum '" + escapeSingleQuotes(remoteArchivePath) + "'";
         String output = executeCommand(aLinux, command).trim();
 
         if (output.isEmpty()) {
             MyException.fail(
-                    PackageTransfer.class,
+                    TPPackageTransfer.class,
                     METHOD_QUERY_REMOTE_SHA256,
                     "远端 SHA-256 输出为空：" + remoteArchivePath,
                     ERROR_TRANSFER_REMOTE_HASH_FAILED
@@ -250,7 +250,7 @@ public final class PackageTransfer {
         String[] parts = output.split("\\s+");
         if (parts.length < 1 || parts[0].isBlank()) {
             MyException.fail(
-                    PackageTransfer.class,
+                    TPPackageTransfer.class,
                     METHOD_QUERY_REMOTE_SHA256,
                     "远端 SHA-256 输出格式无效：" + output,
                     ERROR_TRANSFER_REMOTE_HASH_FAILED
@@ -260,7 +260,7 @@ public final class PackageTransfer {
         return parts[0];
     }
 
-    private String executeCommand(ALinux aLinux, String command) {
+    private static String executeCommand(ALinux aLinux, String command) {
         ChannelExec channelExec = null;
         InputStream inputStream = null;
         ByteArrayOutputStream errorStream = null;
@@ -284,7 +284,7 @@ public final class PackageTransfer {
                 } catch (InterruptedException e) {
                     Thread.currentThread().interrupt();
                     MyException.fail(
-                            PackageTransfer.class,
+                            TPPackageTransfer.class,
                             METHOD_EXECUTE_COMMAND,
                             "执行远端命令时线程被中断：" + command,
                             ERROR_TRANSFER_EXEC_COMMAND_FAILED,
@@ -298,7 +298,7 @@ public final class PackageTransfer {
 
             if (exitStatus != 0) {
                 MyException.fail(
-                        PackageTransfer.class,
+                        TPPackageTransfer.class,
                         METHOD_EXECUTE_COMMAND,
                         "执行远端命令失败，exitStatus=" + exitStatus + "，command=" + command +
                                 (errorOutput.isEmpty() ? "" : "，stderr=" + errorOutput),
@@ -309,7 +309,7 @@ public final class PackageTransfer {
             return standardOutput;
         } catch (JSchException | IOException e) {
             MyException.fail(
-                    PackageTransfer.class,
+                    TPPackageTransfer.class,
                     METHOD_EXECUTE_COMMAND,
                     "执行远端命令失败：" + command,
                     ERROR_TRANSFER_EXEC_COMMAND_FAILED,
@@ -323,7 +323,7 @@ public final class PackageTransfer {
         }
     }
 
-    private boolean remoteDirectoryExists(ChannelSftp channelSftp, String remoteDirectory) {
+    private static boolean remoteDirectoryExists(ChannelSftp channelSftp, String remoteDirectory) {
         try {
             Vector<?> result = channelSftp.ls(remoteDirectory);
             return result != null;
@@ -332,12 +332,12 @@ public final class PackageTransfer {
         }
     }
 
-    private long readLocalFileSize(Path localArchivePath) {
+    private static long readLocalFileSize(Path localArchivePath) {
         try {
             return Files.size(localArchivePath);
         } catch (IOException e) {
             MyException.fail(
-                    PackageTransfer.class,
+                    TPPackageTransfer.class,
                     METHOD_TRANSFER,
                     "读取本地归档文件大小失败：" + localArchivePath,
                     ERROR_TRANSFER_READ_LOCAL_FILE_SIZE_FAILED,
@@ -347,7 +347,7 @@ public final class PackageTransfer {
         }
     }
 
-    private String extractParentDirectory(String remoteFilePath) {
+    private static String extractParentDirectory(String remoteFilePath) {
         int lastSlashIndex = remoteFilePath.lastIndexOf('/');
         if (lastSlashIndex <= 0) {
             return "/";
@@ -355,7 +355,7 @@ public final class PackageTransfer {
         return remoteFilePath.substring(0, lastSlashIndex);
     }
 
-    private String normalizeRemoteDirectory(String remoteDirectory) {
+    private static String normalizeRemoteDirectory(String remoteDirectory) {
         String normalized = remoteDirectory.trim().replace('\\', '/');
         while (normalized.endsWith("/") && normalized.length() > 1) {
             normalized = normalized.substring(0, normalized.length() - 1);
@@ -363,11 +363,11 @@ public final class PackageTransfer {
         return normalized;
     }
 
-    private String escapeSingleQuotes(String text) {
+    private static String escapeSingleQuotes(String text) {
         return text.replace("'", "'\"'\"'");
     }
 
-    private String readAll(InputStream inputStream) throws IOException {
+    private static String readAll(InputStream inputStream) throws IOException {
         ByteArrayOutputStream byteArrayOutputStream = new ByteArrayOutputStream();
         byte[] buffer = new byte[4096];
         int length;
@@ -379,13 +379,13 @@ public final class PackageTransfer {
         return byteArrayOutputStream.toString();
     }
 
-    private void disconnectChannel(Channel channel) {
+    private static void disconnectChannel(Channel channel) {
         if (channel != null) {
             channel.disconnect();
         }
     }
 
-    private void closeQuietly(AutoCloseable autoCloseable) {
+    private static void closeQuietly(AutoCloseable autoCloseable) {
         if (autoCloseable == null) {
             return;
         }
@@ -395,7 +395,7 @@ public final class PackageTransfer {
         }
     }
 
-    private boolean isBlank(String value) {
+    private static boolean isBlank(String value) {
         return value == null || value.isBlank();
     }
 }

@@ -13,7 +13,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.lang.reflect.Method;
 
-public final class LinuxUnpacker {
+final class TPLinuxUnpacker {
 
     private static final String ERROR_UNPACK_PACKAGE_INFO_NULL = "ERROR_UNPACK_PACKAGE_INFO_NULL";
     private static final String ERROR_UNPACK_LINUX_INFO_NULL = "ERROR_UNPACK_LINUX_INFO_NULL";
@@ -29,36 +29,36 @@ public final class LinuxUnpacker {
     private static final String ERROR_UNPACK_REPLACE_FAILED = "ERROR_UNPACK_REPLACE_FAILED";
 
     private static final Method METHOD_UNPACK =
-            MethodUtils.getCurrentMethod(LinuxUnpacker.class, "unpack", APackageInfo.class, ALinux.class);
+            MethodUtils.getCurrentMethod(TPLinuxUnpacker.class, "unpack", APackageInfo.class, ALinux.class);
 
     private static final Method METHOD_VALIDATE_INFO =
-            MethodUtils.getCurrentMethod(LinuxUnpacker.class, "validateInfo", APackageInfo.class, ALinux.class);
+            MethodUtils.getCurrentMethod(TPLinuxUnpacker.class, "validateInfo", APackageInfo.class, ALinux.class);
 
     private static final Method METHOD_VERIFY_REMOTE_ARCHIVE =
-            MethodUtils.getCurrentMethod(LinuxUnpacker.class, "verifyRemoteArchive", APackageInfo.class, ALinux.class);
+            MethodUtils.getCurrentMethod(TPLinuxUnpacker.class, "verifyRemoteArchive", APackageInfo.class, ALinux.class);
 
     private static final Method METHOD_BUILD_UNPACK_ROOT_DIRECTORY =
-            MethodUtils.getCurrentMethod(LinuxUnpacker.class, "buildUnpackRootDirectory", APackageInfo.class);
+            MethodUtils.getCurrentMethod(TPLinuxUnpacker.class, "buildUnpackRootDirectory", APackageInfo.class);
 
     private static final Method METHOD_BUILD_UNPACK_WORK_DIRECTORY =
-            MethodUtils.getCurrentMethod(LinuxUnpacker.class, "buildUnpackWorkDirectory", APackageInfo.class);
+            MethodUtils.getCurrentMethod(TPLinuxUnpacker.class, "buildUnpackWorkDirectory", APackageInfo.class);
 
     private static final Method METHOD_UNPACK_ARCHIVE =
-            MethodUtils.getCurrentMethod(LinuxUnpacker.class, "unpackArchive", APackageInfo.class, ALinux.class, String.class);
+            MethodUtils.getCurrentMethod(TPLinuxUnpacker.class, "unpackArchive", APackageInfo.class, ALinux.class, String.class);
 
     private static final Method METHOD_VERIFY_EXPECTED_ROOT_DIRECTORY =
-            MethodUtils.getCurrentMethod(LinuxUnpacker.class, "verifyExpectedRootDirectory", APackageInfo.class, ALinux.class, String.class);
+            MethodUtils.getCurrentMethod(TPLinuxUnpacker.class, "verifyExpectedRootDirectory", APackageInfo.class, ALinux.class, String.class);
 
     private static final Method METHOD_REPLACE_TARGET_DIRECTORY =
-            MethodUtils.getCurrentMethod(LinuxUnpacker.class, "replaceTargetDirectory", APackageInfo.class, ALinux.class, String.class);
+            MethodUtils.getCurrentMethod(TPLinuxUnpacker.class, "replaceTargetDirectory", APackageInfo.class, ALinux.class, String.class);
 
     private static final Method METHOD_BUILD_BACKUP_PATH =
-            MethodUtils.getCurrentMethod(LinuxUnpacker.class, "buildBackupPath", APackageInfo.class);
+            MethodUtils.getCurrentMethod(TPLinuxUnpacker.class, "buildBackupPath", APackageInfo.class);
 
     private static final Method METHOD_EXECUTE_COMMAND =
-            MethodUtils.getCurrentMethod(LinuxUnpacker.class, "executeCommand", ALinux.class, String.class);
+            MethodUtils.getCurrentMethod(TPLinuxUnpacker.class, "executeCommand", ALinux.class, String.class);
 
-    public void unpack(APackageInfo aPackageInfo, ALinux aLinux) {
+    static void unpack(APackageInfo aPackageInfo, ALinux aLinux) {
         validateInfo(aPackageInfo, aLinux);
 
         verifyRemoteArchive(aPackageInfo, aLinux);
@@ -77,10 +77,10 @@ public final class LinuxUnpacker {
         aPackageInfo.setFinalDeployPath(normalizeRemoteDirectory(aPackageInfo.getRemoteTargetDirectory()));
     }
 
-    private void validateInfo(APackageInfo aPackageInfo, ALinux aLinux) {
+    private static void validateInfo(APackageInfo aPackageInfo, ALinux aLinux) {
         if (aPackageInfo == null) {
             MyException.fail(
-                    LinuxUnpacker.class,
+                    TPLinuxUnpacker.class,
                     METHOD_VALIDATE_INFO,
                     "APackageInfo 不能为空。",
                     ERROR_UNPACK_PACKAGE_INFO_NULL
@@ -89,7 +89,7 @@ public final class LinuxUnpacker {
 
         if (aLinux == null) {
             MyException.fail(
-                    LinuxUnpacker.class,
+                    TPLinuxUnpacker.class,
                     METHOD_VALIDATE_INFO,
                     "ALinux 不能为空。",
                     ERROR_UNPACK_LINUX_INFO_NULL
@@ -98,7 +98,7 @@ public final class LinuxUnpacker {
 
         if (aLinux.getSession() == null) {
             MyException.fail(
-                    LinuxUnpacker.class,
+                    TPLinuxUnpacker.class,
                     METHOD_VALIDATE_INFO,
                     "Linux Session 为空，当前未建立 SSH 连接。",
                     ERROR_UNPACK_SESSION_NULL
@@ -107,7 +107,7 @@ public final class LinuxUnpacker {
 
         if (!aLinux.getSession().isConnected()) {
             MyException.fail(
-                    LinuxUnpacker.class,
+                    TPLinuxUnpacker.class,
                     METHOD_VALIDATE_INFO,
                     "Linux Session 未连接，无法执行解包。",
                     ERROR_UNPACK_SESSION_NOT_CONNECTED
@@ -116,7 +116,7 @@ public final class LinuxUnpacker {
 
         if (isBlank(aPackageInfo.getRemoteArchivePath())) {
             MyException.fail(
-                    LinuxUnpacker.class,
+                    TPLinuxUnpacker.class,
                     METHOD_VALIDATE_INFO,
                     "远端归档文件路径为空，请先完成上传。",
                     ERROR_UNPACK_REMOTE_ARCHIVE_PATH_NULL
@@ -125,7 +125,7 @@ public final class LinuxUnpacker {
 
         if (isBlank(aPackageInfo.getRemoteTargetDirectory())) {
             MyException.fail(
-                    LinuxUnpacker.class,
+                    TPLinuxUnpacker.class,
                     METHOD_VALIDATE_INFO,
                     "远端目标部署目录不能为空。",
                     ERROR_UNPACK_REMOTE_TARGET_DIRECTORY_NULL
@@ -134,7 +134,7 @@ public final class LinuxUnpacker {
 
         if (isBlank(aPackageInfo.getRemoteTempDirectory())) {
             MyException.fail(
-                    LinuxUnpacker.class,
+                    TPLinuxUnpacker.class,
                     METHOD_VALIDATE_INFO,
                     "远端临时目录不能为空。",
                     ERROR_UNPACK_REMOTE_TEMP_DIRECTORY_NULL
@@ -143,7 +143,7 @@ public final class LinuxUnpacker {
 
         if (isBlank(aPackageInfo.getExpectedRootDirectoryName())) {
             MyException.fail(
-                    LinuxUnpacker.class,
+                    TPLinuxUnpacker.class,
                     METHOD_VALIDATE_INFO,
                     "期望的解包根目录名称不能为空。",
                     ERROR_UNPACK_EXPECTED_ROOT_DIRECTORY_NAME_NULL
@@ -151,7 +151,7 @@ public final class LinuxUnpacker {
         }
     }
 
-    private void verifyRemoteArchive(APackageInfo aPackageInfo, ALinux aLinux) {
+    private static void verifyRemoteArchive(APackageInfo aPackageInfo, ALinux aLinux) {
         String expectedSha256 = aPackageInfo.getRemoteArchiveSha256();
         if (isBlank(expectedSha256)) {
             expectedSha256 = aPackageInfo.getLocalArchiveSha256();
@@ -159,7 +159,7 @@ public final class LinuxUnpacker {
 
         if (isBlank(expectedSha256)) {
             MyException.fail(
-                    LinuxUnpacker.class,
+                    TPLinuxUnpacker.class,
                     METHOD_VERIFY_REMOTE_ARCHIVE,
                     "缺少用于校验的归档 SHA-256。",
                     ERROR_UNPACK_REMOTE_HASH_VERIFY_FAILED
@@ -171,7 +171,7 @@ public final class LinuxUnpacker {
 
         if (output.isEmpty()) {
             MyException.fail(
-                    LinuxUnpacker.class,
+                    TPLinuxUnpacker.class,
                     METHOD_VERIFY_REMOTE_ARCHIVE,
                     "远端 SHA-256 校验输出为空：" + aPackageInfo.getRemoteArchivePath(),
                     ERROR_UNPACK_REMOTE_HASH_VERIFY_FAILED
@@ -181,7 +181,7 @@ public final class LinuxUnpacker {
         String[] parts = output.split("\\s+");
         if (parts.length < 1 || parts[0].isBlank()) {
             MyException.fail(
-                    LinuxUnpacker.class,
+                    TPLinuxUnpacker.class,
                     METHOD_VERIFY_REMOTE_ARCHIVE,
                     "远端 SHA-256 输出格式无效：" + output,
                     ERROR_UNPACK_REMOTE_HASH_VERIFY_FAILED
@@ -191,7 +191,7 @@ public final class LinuxUnpacker {
         String actualSha256 = parts[0];
         if (!actualSha256.equalsIgnoreCase(expectedSha256)) {
             MyException.fail(
-                    LinuxUnpacker.class,
+                    TPLinuxUnpacker.class,
                     METHOD_VERIFY_REMOTE_ARCHIVE,
                     "远端归档校验失败，expected=" + expectedSha256 + "，actual=" + actualSha256,
                     ERROR_UNPACK_REMOTE_HASH_VERIFY_FAILED
@@ -199,17 +199,17 @@ public final class LinuxUnpacker {
         }
     }
 
-    private String buildUnpackWorkDirectory(APackageInfo aPackageInfo) {
+    private static String buildUnpackWorkDirectory(APackageInfo aPackageInfo) {
         String remoteTempDirectory = normalizeRemoteDirectory(aPackageInfo.getRemoteTempDirectory());
         String expectedRootDirectoryName = aPackageInfo.getExpectedRootDirectoryName();
         return remoteTempDirectory + "/unpack_" + expectedRootDirectoryName;
     }
 
-    private String buildUnpackRootDirectory(APackageInfo aPackageInfo) {
+    private static String buildUnpackRootDirectory(APackageInfo aPackageInfo) {
         return buildUnpackWorkDirectory(aPackageInfo) + "/" + aPackageInfo.getExpectedRootDirectoryName();
     }
 
-    private void unpackArchive(APackageInfo aPackageInfo, ALinux aLinux, String unpackWorkDirectory) {
+    private static void unpackArchive(APackageInfo aPackageInfo, ALinux aLinux, String unpackWorkDirectory) {
         String remoteArchivePath = aPackageInfo.getRemoteArchivePath();
         String expectedRootDirectoryName = aPackageInfo.getExpectedRootDirectoryName();
 
@@ -222,13 +222,13 @@ public final class LinuxUnpacker {
         executeCommand(aLinux, command);
     }
 
-    private void verifyExpectedRootDirectory(APackageInfo aPackageInfo, ALinux aLinux, String unpackRootDirectory) {
+    private static void verifyExpectedRootDirectory(APackageInfo aPackageInfo, ALinux aLinux, String unpackRootDirectory) {
         String command = "test -d '" + escapeSingleQuotes(unpackRootDirectory) + "'";
         try {
             executeCommand(aLinux, command);
         } catch (MyException e) {
             MyException.fail(
-                    LinuxUnpacker.class,
+                    TPLinuxUnpacker.class,
                     METHOD_VERIFY_EXPECTED_ROOT_DIRECTORY,
                     "解包后未找到期望根目录：" + unpackRootDirectory,
                     ERROR_UNPACK_ARCHIVE_ROOT_NOT_EXISTS,
@@ -237,7 +237,7 @@ public final class LinuxUnpacker {
         }
     }
 
-    private void replaceTargetDirectory(APackageInfo aPackageInfo, ALinux aLinux, String unpackRootDirectory) {
+    private static void replaceTargetDirectory(APackageInfo aPackageInfo, ALinux aLinux, String unpackRootDirectory) {
         String remoteTargetDirectory = normalizeRemoteDirectory(aPackageInfo.getRemoteTargetDirectory());
         String remoteTargetParentDirectory = extractParentDirectory(remoteTargetDirectory);
         String backupPath = buildBackupPath(aPackageInfo);
@@ -266,7 +266,7 @@ public final class LinuxUnpacker {
             executeCommand(aLinux, commandBuilder.toString());
         } catch (MyException e) {
             MyException.fail(
-                    LinuxUnpacker.class,
+                    TPLinuxUnpacker.class,
                     METHOD_REPLACE_TARGET_DIRECTORY,
                     "替换目标目录失败：" + remoteTargetDirectory,
                     ERROR_UNPACK_REPLACE_FAILED,
@@ -275,11 +275,11 @@ public final class LinuxUnpacker {
         }
     }
 
-    private String buildBackupPath(APackageInfo aPackageInfo) {
+    private static String buildBackupPath(APackageInfo aPackageInfo) {
         return normalizeRemoteDirectory(aPackageInfo.getRemoteTargetDirectory()) + "_backup";
     }
 
-    private String executeCommand(ALinux aLinux, String command) {
+    private static String executeCommand(ALinux aLinux, String command) {
         ChannelExec channelExec = null;
         InputStream inputStream = null;
         ByteArrayOutputStream errorStream = null;
@@ -303,7 +303,7 @@ public final class LinuxUnpacker {
                 } catch (InterruptedException e) {
                     Thread.currentThread().interrupt();
                     MyException.fail(
-                            LinuxUnpacker.class,
+                            TPLinuxUnpacker.class,
                             METHOD_EXECUTE_COMMAND,
                             "执行远端命令时线程被中断：" + command,
                             ERROR_UNPACK_EXEC_COMMAND_FAILED,
@@ -317,7 +317,7 @@ public final class LinuxUnpacker {
 
             if (exitStatus != 0) {
                 MyException.fail(
-                        LinuxUnpacker.class,
+                        TPLinuxUnpacker.class,
                         METHOD_EXECUTE_COMMAND,
                         "执行远端命令失败，exitStatus=" + exitStatus + "，command=" + command +
                                 (errorOutput.isEmpty() ? "" : "，stderr=" + errorOutput),
@@ -328,7 +328,7 @@ public final class LinuxUnpacker {
             return standardOutput;
         } catch (JSchException | IOException e) {
             MyException.fail(
-                    LinuxUnpacker.class,
+                    TPLinuxUnpacker.class,
                     METHOD_EXECUTE_COMMAND,
                     "执行远端命令失败：" + command,
                     ERROR_UNPACK_EXEC_COMMAND_FAILED,
@@ -342,7 +342,7 @@ public final class LinuxUnpacker {
         }
     }
 
-    private String extractParentDirectory(String remotePath) {
+    private static String extractParentDirectory(String remotePath) {
         int lastSlashIndex = remotePath.lastIndexOf('/');
         if (lastSlashIndex <= 0) {
             return "/";
@@ -350,7 +350,7 @@ public final class LinuxUnpacker {
         return remotePath.substring(0, lastSlashIndex);
     }
 
-    private String normalizeRemoteDirectory(String remoteDirectory) {
+    private static String normalizeRemoteDirectory(String remoteDirectory) {
         String normalized = remoteDirectory.trim().replace('\\', '/');
         while (normalized.endsWith("/") && normalized.length() > 1) {
             normalized = normalized.substring(0, normalized.length() - 1);
@@ -358,11 +358,11 @@ public final class LinuxUnpacker {
         return normalized;
     }
 
-    private String escapeSingleQuotes(String text) {
+    private static String escapeSingleQuotes(String text) {
         return text.replace("'", "'\"'\"'");
     }
 
-    private String readAll(InputStream inputStream) throws IOException {
+    private static String readAll(InputStream inputStream) throws IOException {
         ByteArrayOutputStream byteArrayOutputStream = new ByteArrayOutputStream();
         byte[] buffer = new byte[4096];
         int length;
@@ -374,13 +374,13 @@ public final class LinuxUnpacker {
         return byteArrayOutputStream.toString();
     }
 
-    private void disconnectChannel(Channel channel) {
+    private static void disconnectChannel(Channel channel) {
         if (channel != null) {
             channel.disconnect();
         }
     }
 
-    private void closeQuietly(AutoCloseable autoCloseable) {
+    private static void closeQuietly(AutoCloseable autoCloseable) {
         if (autoCloseable == null) {
             return;
         }
@@ -390,7 +390,7 @@ public final class LinuxUnpacker {
         }
     }
 
-    private boolean isBlank(String value) {
+    private static boolean isBlank(String value) {
         return value == null || value.isBlank();
     }
 }

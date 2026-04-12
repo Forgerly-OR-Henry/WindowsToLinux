@@ -21,7 +21,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.stream.Stream;
 
-public final class WindowsPacker {
+final class TPWindowsPacker {
 
     private static final String ERROR_PACK_INFO_NULL = "ERROR_PACK_INFO_NULL";
     private static final String ERROR_PACK_SOURCE_DIRECTORY_NULL = "ERROR_PACK_SOURCE_DIRECTORY_NULL";
@@ -35,39 +35,39 @@ public final class WindowsPacker {
     private static final String ERROR_PACK_COUNT_FAILED = "ERROR_PACK_COUNT_FAILED";
 
     private static final Method METHOD_PACK =
-            MethodUtils.getCurrentMethod(WindowsPacker.class, "pack", APackageInfo.class);
+            MethodUtils.getCurrentMethod(TPWindowsPacker.class, "pack", APackageInfo.class);
 
     private static final Method METHOD_VALIDATE_INFO =
-            MethodUtils.getCurrentMethod(WindowsPacker.class, "validateInfo", APackageInfo.class);
+            MethodUtils.getCurrentMethod(TPWindowsPacker.class, "validateInfo", APackageInfo.class);
 
     private static final Method METHOD_PREPARE_DEFAULT_VALUES =
-            MethodUtils.getCurrentMethod(WindowsPacker.class, "prepareDefaultValues", APackageInfo.class);
+            MethodUtils.getCurrentMethod(TPWindowsPacker.class, "prepareDefaultValues", APackageInfo.class);
 
     private static final Method METHOD_BUILD_ARCHIVE_FILE_NAME =
-            MethodUtils.getCurrentMethod(WindowsPacker.class, "buildArchiveFileName", APackageInfo.class);
+            MethodUtils.getCurrentMethod(TPWindowsPacker.class, "buildArchiveFileName", APackageInfo.class);
 
     private static final Method METHOD_CREATE_ARCHIVE =
-            MethodUtils.getCurrentMethod(WindowsPacker.class, "createArchive", APackageInfo.class, Path.class);
+            MethodUtils.getCurrentMethod(TPWindowsPacker.class, "createArchive", APackageInfo.class, Path.class);
 
     private static final Method METHOD_WRITE_SOURCE_TO_ARCHIVE =
-            MethodUtils.getCurrentMethod(WindowsPacker.class, "writeSourceToArchive", APackageInfo.class, TarArchiveOutputStream.class);
+            MethodUtils.getCurrentMethod(TPWindowsPacker.class, "writeSourceToArchive", APackageInfo.class, TarArchiveOutputStream.class);
 
     private static final Method METHOD_ADD_PATH_TO_ARCHIVE =
-            MethodUtils.getCurrentMethod(WindowsPacker.class, "addPathToArchive", APackageInfo.class, Path.class, Path.class, String.class, TarArchiveOutputStream.class);
+            MethodUtils.getCurrentMethod(TPWindowsPacker.class, "addPathToArchive", APackageInfo.class, Path.class, Path.class, String.class, TarArchiveOutputStream.class);
 
     private static final Method METHOD_SHOULD_EXCLUDE =
-            MethodUtils.getCurrentMethod(WindowsPacker.class, "shouldExclude", APackageInfo.class, Path.class, String.class);
+            MethodUtils.getCurrentMethod(TPWindowsPacker.class, "shouldExclude", APackageInfo.class, Path.class, String.class);
 
     private static final Method METHOD_BUILD_ENTRY_NAME =
-            MethodUtils.getCurrentMethod(WindowsPacker.class, "buildEntryName", Path.class, Path.class, String.class);
+            MethodUtils.getCurrentMethod(TPWindowsPacker.class, "buildEntryName", Path.class, Path.class, String.class);
 
     private static final Method METHOD_CALCULATE_SHA256 =
-            MethodUtils.getCurrentMethod(WindowsPacker.class, "calculateSha256", Path.class);
+            MethodUtils.getCurrentMethod(TPWindowsPacker.class, "calculateSha256", Path.class);
 
     private static final Method METHOD_COUNT_PACKED_FILES =
-            MethodUtils.getCurrentMethod(WindowsPacker.class, "countPackedFiles", APackageInfo.class);
+            MethodUtils.getCurrentMethod(TPWindowsPacker.class, "countPackedFiles", APackageInfo.class);
 
-    public void pack(APackageInfo aPackageInfo) {
+    static void pack(APackageInfo aPackageInfo) {
         validateInfo(aPackageInfo);
         prepareDefaultValues(aPackageInfo);
 
@@ -83,10 +83,10 @@ public final class WindowsPacker {
         aPackageInfo.setPackedFileCount(countPackedFiles(aPackageInfo));
     }
 
-    private void validateInfo(APackageInfo aPackageInfo) {
+    private static void validateInfo(APackageInfo aPackageInfo) {
         if (aPackageInfo == null) {
             MyException.fail(
-                    WindowsPacker.class,
+                    TPWindowsPacker.class,
                     METHOD_VALIDATE_INFO,
                     "APackageInfo 不能为空。",
                     ERROR_PACK_INFO_NULL
@@ -95,7 +95,7 @@ public final class WindowsPacker {
 
         if (aPackageInfo.getLocalSourceDirectory() == null) {
             MyException.fail(
-                    WindowsPacker.class,
+                    TPWindowsPacker.class,
                     METHOD_VALIDATE_INFO,
                     "本地源码目录不能为空。",
                     ERROR_PACK_SOURCE_DIRECTORY_NULL
@@ -104,7 +104,7 @@ public final class WindowsPacker {
 
         if (!Files.exists(aPackageInfo.getLocalSourceDirectory())) {
             MyException.fail(
-                    WindowsPacker.class,
+                    TPWindowsPacker.class,
                     METHOD_VALIDATE_INFO,
                     "本地源码目录不存在：" + aPackageInfo.getLocalSourceDirectory(),
                     ERROR_PACK_SOURCE_DIRECTORY_NOT_EXISTS
@@ -113,7 +113,7 @@ public final class WindowsPacker {
 
         if (!Files.isDirectory(aPackageInfo.getLocalSourceDirectory())) {
             MyException.fail(
-                    WindowsPacker.class,
+                    TPWindowsPacker.class,
                     METHOD_VALIDATE_INFO,
                     "本地源码目录不是有效目录：" + aPackageInfo.getLocalSourceDirectory(),
                     ERROR_PACK_SOURCE_DIRECTORY_INVALID
@@ -122,7 +122,7 @@ public final class WindowsPacker {
 
         if (aPackageInfo.getLocalTempDirectory() == null) {
             MyException.fail(
-                    WindowsPacker.class,
+                    TPWindowsPacker.class,
                     METHOD_VALIDATE_INFO,
                     "本地临时目录不能为空。",
                     ERROR_PACK_TEMP_DIRECTORY_NULL
@@ -130,13 +130,13 @@ public final class WindowsPacker {
         }
     }
 
-    private void prepareDefaultValues(APackageInfo aPackageInfo) {
+    private static void prepareDefaultValues(APackageInfo aPackageInfo) {
         Path localTempDirectory = aPackageInfo.getLocalTempDirectory();
         try {
             Files.createDirectories(localTempDirectory);
         } catch (IOException e) {
             MyException.fail(
-                    WindowsPacker.class,
+                    TPWindowsPacker.class,
                     METHOD_PREPARE_DEFAULT_VALUES,
                     "创建本地临时目录失败：" + localTempDirectory,
                     ERROR_PACK_CREATE_DIRECTORY_FAILED,
@@ -155,11 +155,11 @@ public final class WindowsPacker {
         }
     }
 
-    private String buildArchiveFileName(APackageInfo aPackageInfo) {
+    private static String buildArchiveFileName(APackageInfo aPackageInfo) {
         String archiveBaseName = aPackageInfo.getArchiveBaseName();
         if (isBlank(archiveBaseName)) {
             MyException.fail(
-                    WindowsPacker.class,
+                    TPWindowsPacker.class,
                     METHOD_BUILD_ARCHIVE_FILE_NAME,
                     "归档基础名称不能为空。",
                     ERROR_PACK_ARCHIVE_BASE_NAME_INVALID
@@ -168,7 +168,7 @@ public final class WindowsPacker {
         return archiveBaseName + ".tar.gz";
     }
 
-    private void createArchive(APackageInfo aPackageInfo, Path archivePath) {
+    private static void createArchive(APackageInfo aPackageInfo, Path archivePath) {
         try {
             if (Files.exists(archivePath)) {
                 Files.delete(archivePath);
@@ -194,7 +194,7 @@ public final class WindowsPacker {
 
         } catch (IOException e) {
             MyException.fail(
-                    WindowsPacker.class,
+                    TPWindowsPacker.class,
                     METHOD_CREATE_ARCHIVE,
                     "生成归档文件失败：" + archivePath,
                     ERROR_PACK_CREATE_ARCHIVE_FAILED,
@@ -203,7 +203,7 @@ public final class WindowsPacker {
         }
     }
 
-    private void writeSourceToArchive(APackageInfo aPackageInfo, TarArchiveOutputStream tarOutputStream) {
+    private static void writeSourceToArchive(APackageInfo aPackageInfo, TarArchiveOutputStream tarOutputStream) {
         Path sourceRoot = aPackageInfo.getLocalSourceDirectory();
         String rootDirectoryName = aPackageInfo.getExpectedRootDirectoryName();
 
@@ -211,7 +211,7 @@ public final class WindowsPacker {
             pathStream.forEach(path -> addPathToArchive(aPackageInfo, sourceRoot, path, rootDirectoryName, tarOutputStream));
         } catch (IOException e) {
             MyException.fail(
-                    WindowsPacker.class,
+                    TPWindowsPacker.class,
                     METHOD_WRITE_SOURCE_TO_ARCHIVE,
                     "遍历源码目录失败：" + sourceRoot,
                     ERROR_PACK_CREATE_ARCHIVE_FAILED,
@@ -220,7 +220,7 @@ public final class WindowsPacker {
         }
     }
 
-    private void addPathToArchive(
+    private static void addPathToArchive(
             APackageInfo aPackageInfo,
             Path sourceRoot,
             Path currentPath,
@@ -252,7 +252,7 @@ public final class WindowsPacker {
             tarOutputStream.closeArchiveEntry();
         } catch (IOException e) {
             MyException.fail(
-                    WindowsPacker.class,
+                    TPWindowsPacker.class,
                     METHOD_ADD_PATH_TO_ARCHIVE,
                     "写入归档条目失败：" + currentPath,
                     ERROR_PACK_CREATE_ARCHIVE_FAILED,
@@ -261,7 +261,7 @@ public final class WindowsPacker {
         }
     }
 
-    private boolean shouldExclude(APackageInfo aPackageInfo, Path currentPath, String entryName) {
+    private static boolean shouldExclude(APackageInfo aPackageInfo, Path currentPath, String entryName) {
         List<String> excludeRules = aPackageInfo.getExcludeRules();
         if (excludeRules == null || excludeRules.isEmpty()) {
             return false;
@@ -286,7 +286,7 @@ public final class WindowsPacker {
         return false;
     }
 
-    private String buildEntryName(Path sourceRoot, Path currentPath, String rootDirectoryName) {
+    private static String buildEntryName(Path sourceRoot, Path currentPath, String rootDirectoryName) {
         if (sourceRoot.equals(currentPath)) {
             return rootDirectoryName;
         }
@@ -295,7 +295,7 @@ public final class WindowsPacker {
         return rootDirectoryName + "/" + relativePath;
     }
 
-    private String calculateSha256(Path filePath) {
+    private static String calculateSha256(Path filePath) {
         try (InputStream inputStream = Files.newInputStream(filePath)) {
             MessageDigest messageDigest = MessageDigest.getInstance("SHA-256");
             byte[] buffer = new byte[8192];
@@ -308,7 +308,7 @@ public final class WindowsPacker {
             return toHex(messageDigest.digest());
         } catch (IOException | NoSuchAlgorithmException e) {
             MyException.fail(
-                    WindowsPacker.class,
+                    TPWindowsPacker.class,
                     METHOD_CALCULATE_SHA256,
                     "计算 SHA-256 失败：" + filePath,
                     ERROR_PACK_HASH_FAILED,
@@ -318,7 +318,7 @@ public final class WindowsPacker {
         }
     }
 
-    private int countPackedFiles(APackageInfo aPackageInfo) {
+    private static int countPackedFiles(APackageInfo aPackageInfo) {
         Path sourceRoot = aPackageInfo.getLocalSourceDirectory();
 
         try (Stream<Path> pathStream = Files.walk(sourceRoot)) {
@@ -335,7 +335,7 @@ public final class WindowsPacker {
                     .count();
         } catch (IOException e) {
             MyException.fail(
-                    WindowsPacker.class,
+                    TPWindowsPacker.class,
                     METHOD_COUNT_PACKED_FILES,
                     "统计被打包文件数量失败：" + sourceRoot,
                     ERROR_PACK_COUNT_FAILED,
@@ -345,12 +345,12 @@ public final class WindowsPacker {
         }
     }
 
-    private long readFileSize(Path filePath) {
+    private static long readFileSize(Path filePath) {
         try {
             return Files.size(filePath);
         } catch (IOException e) {
             MyException.fail(
-                    WindowsPacker.class,
+                    TPWindowsPacker.class,
                     METHOD_PACK,
                     "读取归档文件大小失败：" + filePath,
                     ERROR_PACK_CREATE_ARCHIVE_FAILED,
@@ -360,7 +360,7 @@ public final class WindowsPacker {
         }
     }
 
-    private String normalizeRule(String value) {
+    private static String normalizeRule(String value) {
         if (value == null) {
             return "";
         }
@@ -374,11 +374,11 @@ public final class WindowsPacker {
         return normalized;
     }
 
-    private boolean isBlank(String value) {
+    private static boolean isBlank(String value) {
         return value == null || value.isBlank();
     }
 
-    private String toHex(byte[] bytes) {
+    private static String toHex(byte[] bytes) {
         StringBuilder builder = new StringBuilder(bytes.length * 2);
         for (byte currentByte : bytes) {
             builder.append(String.format(Locale.ROOT, "%02x", currentByte));
