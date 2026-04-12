@@ -1,10 +1,53 @@
 package gold.debug.wintolin.appui;
 
+import gold.debug.wintolin.exceptionanderror.MyException;
+
 import javax.swing.*;
 import java.awt.*;
 
 public final class PopUp {
     // ====== 业务弹窗：集中管理文案 ======
+
+    /**
+     * 标准报错弹窗
+     *
+     * @param e 标准错误
+     * @param parent 当前报错产生的窗口（用于将弹窗居中）
+     */
+    public static void showErrorDialog(MyException e, Component parent) {
+        if (e == null) {
+            JOptionPane.showMessageDialog(
+                    parent,
+                    "发生未知错误：MyException 对象为空。",
+                    "错误",
+                    JOptionPane.ERROR_MESSAGE
+            );
+            return;
+        }
+
+        StringBuilder content = new StringBuilder();
+        content.append("错误码：").append(e.getErrorCode()).append("\n")
+               .append("来源类：").append(e.getSourceClassName()).append("\n")
+               .append("来源方法：").append(e.getSourceMethodName()).append("\n")
+               .append("错误信息：").append(e.getMessage());
+
+        if (e.getCause() != null) {
+            content.append("\n")
+                   .append("原始异常：").append(e.getCause().getClass().getName());
+
+            if (e.getCause().getMessage() != null && !e.getCause().getMessage().isBlank()) {
+                content.append("\n")
+                       .append("原始异常信息：").append(e.getCause().getMessage());
+            }
+        }
+
+        JOptionPane.showMessageDialog(
+                parent,
+                content.toString(),
+                "错误",
+                JOptionPane.ERROR_MESSAGE
+        );
+    }
 
     /** 用户须知：点击不同意后的提示 */
     public static void userNotesDisagree(Window owner) {
