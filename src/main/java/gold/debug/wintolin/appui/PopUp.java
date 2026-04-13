@@ -50,9 +50,9 @@ public final class PopUp {
     }
 
     /** 用户须知：点击不同意后的提示 */
-    public static void userNotesDisagree(Window owner) {
+    public static void userNotesDisagree(Component parent) {
         JOptionPane.showMessageDialog(
-                owner,
+                parent,
                 "如不同意用户须知，可联系开发者获取授权或更换软件。\n将返回开始欢迎界面。",
                 "提示",
                 JOptionPane.INFORMATION_MESSAGE
@@ -62,7 +62,7 @@ public final class PopUp {
     /** 设置页面暂未实现 */
     public static void settingsNotReady(Component parent) {
         JOptionPane.showMessageDialog(
-                SwingUtilities.getWindowAncestor(parent),
+                parent,
                 "设置界面后续开发（当前仅占位）",
                 "设置",
                 JOptionPane.INFORMATION_MESSAGE
@@ -72,7 +72,7 @@ public final class PopUp {
     /** 教程页面暂未实现 */
     public static void tutorialNotReady(Component parent) {
         JOptionPane.showMessageDialog(
-                SwingUtilities.getWindowAncestor(parent),
+                parent,
                 "教程页面后续开发（当前仅占位）",
                 "教程",
                 JOptionPane.INFORMATION_MESSAGE
