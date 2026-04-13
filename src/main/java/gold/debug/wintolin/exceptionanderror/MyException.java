@@ -127,7 +127,7 @@ public class MyException extends RuntimeException {
     public String getFormattedMessage() {
         return "[errorCode=" + errorCode +
                 ", class=" + getSourceClassName() +
-                ", method=" + getSourceMethod() +
+                ", method=" + getSourceMethodName() +
                 "] " + message;
     }
 

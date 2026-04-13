@@ -20,11 +20,11 @@ import java.lang.reflect.Method;
  *
  * <p><b>推荐写法：</b></p>
  * <pre>
- * private static final Method METHOD_LINUX_DISTRIBUTION_GET =
+ * private static final Method METHOD_ZZZ =
  *         MethodUtils.getCurrentMethod(
- *                 TLinux.class,
- *                 "LinuxDistributionGet",
- *                 ALinux.class
+ *                 XXX.class,
+ *                 "methodName",
+ *                 YYY.class
  *         );
  * </pre>
  *
