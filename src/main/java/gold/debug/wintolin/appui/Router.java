@@ -1,5 +1,9 @@
 package gold.debug.wintolin.appui;
 
+import gold.debug.wintolin.appui.home.Home;
+import gold.debug.wintolin.appui.welcome.UserNotes;
+import gold.debug.wintolin.appui.welcome.Welcome;
+
 import javax.swing.*;
 import java.awt.*;
 import java.util.LinkedHashMap;

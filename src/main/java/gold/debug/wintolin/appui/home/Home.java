@@ -1,4 +1,4 @@
-package gold.debug.wintolin.appui;
+package gold.debug.wintolin.appui.home;
 
 import javax.swing.*;
 import javax.swing.border.EmptyBorder;
