@@ -1,4 +1,4 @@
-package gold.debug;
+package gold.debug.wtlweb;
 
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;

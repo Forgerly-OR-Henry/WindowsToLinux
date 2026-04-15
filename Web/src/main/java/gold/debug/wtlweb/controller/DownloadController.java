@@ -1,4 +1,4 @@
-package gold.debug.controller;
+package gold.debug.wtlweb.controller;
 
 import org.springframework.core.io.ByteArrayResource;
 import org.springframework.core.io.Resource;
