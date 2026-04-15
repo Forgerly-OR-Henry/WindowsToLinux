@@ -1,0 +1,316 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DlProjX - Terminal Download</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;700&display=swap');
+
+        :root {
+            --bg-color: #050505;
+            --main-color: #0cca4a;
+            --glow-color: rgba(12, 202, 74, 0.6);
+            --highlight-bg: #0cca4a;
+            --highlight-text: #050505;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            cursor: none;
+        }
+
+        body {
+            background-color: var(--bg-color);
+            color: var(--main-color);
+            font-family: 'Fira Code', 'Courier New', monospace;
+            font-size: 16px;
+            line-height: 1.6;
+            overflow-x: hidden;
+            text-shadow: 0 0 4px var(--glow-color);
+        }
+
+        .crt-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.25) 50%), linear-gradient(90deg, rgba(255, 0, 0, 0.06), rgba(0, 255, 0, 0.02), rgba(0, 0, 255, 0.06));
+            background-size: 100% 4px, 3px 100%;
+            pointer-events: none;
+            z-index: 100;
+        }
+
+        .crt-vignette {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            background: radial-gradient(circle at center, transparent 50%, rgba(0, 0, 0, 0.6) 100%);
+            pointer-events: none;
+            z-index: 99;
+        }
+
+        @keyframes crt-flicker {
+            0% {
+                opacity: 0.95;
+            }
+
+            5% {
+                opacity: 0.85;
+            }
+
+            10% {
+                opacity: 0.95;
+            }
+
+            100% {
+                opacity: 1;
+            }
+        }
+
+        .container {
+            animation: crt-flicker 4s infinite scattered;
+            padding: 40px;
+            max-width: 900px;
+            margin: 0 auto;
+            position: relative;
+            z-index: 10;
+        }
+
+        pre.ascii-art {
+            font-size: 12px;
+            font-weight: bold;
+            margin-bottom: 30px;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+        }
+
+        .prompt::before {
+            content: "root@dlprojx:~$ ";
+            color: #fff;
+            text-shadow: 0 0 5px rgba(255, 255, 255, 0.5);
+        }
+
+        .output-block {
+            margin-bottom: 20px;
+            opacity: 0;
+        }
+
+        .download-btn {
+            display: inline-block;
+            margin: 5px 0;
+            padding: 2px 8px;
+            color: var(--main-color);
+            text-decoration: none;
+            transition: all 0.1s;
+            border: 1px solid transparent;
+        }
+
+        .download-btn:hover {
+            background-color: var(--highlight-bg);
+            color: var(--highlight-text);
+            text-shadow: none;
+            box-shadow: 0 0 15px var(--glow-color);
+        }
+
+        .custom-cursor {
+            position: fixed;
+            width: 12px;
+            height: 20px;
+            background-color: var(--main-color);
+            pointer-events: none;
+            z-index: 9999;
+            transform: translate(-50%, -50%);
+            animation: blink 1s step-end infinite;
+            mix-blend-mode: difference;
+        }
+
+        @keyframes blink {
+
+            0%,
+            100% {
+                opacity: 1;
+            }
+
+            50% {
+                opacity: 0;
+            }
+        }
+
+        .matrix-bg {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            z-index: 0;
+            opacity: 0.1;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="crt-overlay"></div>
+    <div class="crt-vignette"></div>
+    <div class="custom-cursor" id="cursor"></div>
+    <canvas class="matrix-bg" id="matrix"></canvas>
+
+    <div class="container" id="terminal">
+        <pre class="ascii-art output-block">
+ ____  _   ____            _  __
+|  _ \| | |  _ \ _ __ ___ (_) \ \ 
+| | | | | | |_) | '__/ _ \| |  \ \
+| |_| | | |  __/| | | (_) | |  / /
+|____/|_| |_|   |_|  \___// | /_/ 
+                        |__/      
+        </pre>
+        <div class="output-block">
+            <span class="prompt"></span><span>cat /etc/dlprojx/system_info.txt</span><br>
+            [SYSTEM] Initialization Complete... OK<br>
+            [INFO] DlProjX v2.4.0 (Build 9482) - Ultimate Dev Tool<br>
+            [MEM] 0x00A1F4C0: Segment Mounted<br>
+        </div>
+
+        <div class="output-block">
+            <span class="prompt"></span><span>ls -la /downloads/bin/</span><br>
+            total 4096<br>
+            drwxr-xr-x 2 root root 4096 Apr 13 14:00 .<br>
+            -rwxr-xr-x 1 root root 45M Apr 13 12:00 dlprojx-setup.exe<br>
+            -rw-r--r-- 1 root root 42M Apr 13 12:00 dlprojx-setup.msi<br>
+            -rw-r--r-- 1 root root 38M Apr 13 12:01 dlprojx-portable.zip<br>
+            -rwxr-xr-x 1 root root 20M Apr 13 12:05 dlprojx-core.jar<br>
+        </div>
+
+        <div class="output-block" id="download-section">
+            <span class="prompt"></span><span>echo "Select package format to initiate download transfer:"</span><br>
+            <br>
+            > <a href="#" class="download-btn" data-target="exe">wget https://dlprojx.io/dlprojx-setup.exe</a><br>
+            > <a href="#" class="download-btn" data-target="msi">wget https://dlprojx.io/dlprojx-setup.msi</a><br>
+            > <a href="#" class="download-btn" data-target="zip">curl -O https://dlprojx.io/dlprojx-portable.zip</a><br>
+            > <a href="#" class="download-btn" data-target="jar">curl -O https://dlprojx.io/dlprojx-core.jar</a><br>
+        </div>
+
+        <div id="dynamic-output"></div>
+    </div>
+
+    <script>
+        // 自定义光标移动
+        const cursor = document.getElementById('cursor');
+        document.addEventListener('mousemove', e => {
+            cursor.style.left = e.clientX + 'px';
+            cursor.style.top = e.clientY + 'px';
+        });
+
+        // 简单的矩阵代码雨背景
+        const canvas = document.getElementById('matrix');
+        const ctx = canvas.getContext('2d');
+        canvas.width = window.innerWidth;
+        canvas.height = window.innerHeight;
+        const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789$+-*/=%""\'#&_(),.;:?!\\|{}<>[]^~'.split('');
+        const fontSize = 14;
+        const columns = canvas.width / fontSize;
+        const drops = Array.from({ length: columns }).fill(1);
+
+        function drawMatrix() {
+            ctx.fillStyle = 'rgba(5, 5, 5, 0.05)';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            ctx.fillStyle = '#0cca4a';
+            ctx.font = fontSize + 'px Fira Code';
+
+            for (let i = 0; i < drops.length; i++) {
+                const text = chars[Math.floor(Math.random() * chars.length)];
+                ctx.fillText(text, i * fontSize, drops[i] * fontSize);
+                if (drops[i] * fontSize > canvas.height && Math.random() > 0.975) drops[i] = 0;
+                drops[i]++;
+            }
+        }
+        setInterval(drawMatrix, 50);
+
+        const btns = document.querySelectorAll('.download-btn');
+        btns.forEach(btn => {
+            let originalText = btn.innerText;
+            btn.addEventListener('mouseenter', () => {
+                let iter = 0;
+                const interval = setInterval(() => {
+                    btn.innerText = originalText.split('').map((c, i) => {
+                        if (i < iter) return originalText[i];
+                        return chars[Math.floor(Math.random() * chars.length)];
+                    }).join('');
+                    if (iter >= originalText.length) clearInterval(interval);
+                    iter += 1 / 3;
+                }, 30);
+            });
+            btn.addEventListener('mouseleave', () => {
+                btn.innerText = originalText;
+            });
+
+            btn.addEventListener('click', (e) => {
+                e.preventDefault();
+                simulateDownload(btn.dataset.target);
+            });
+        });
+
+        const blocks = document.querySelectorAll('.output-block');
+        let currentBlock = 0;
+
+        function showNextBlock() {
+            if (currentBlock < blocks.length) {
+                blocks[currentBlock].style.opacity = '1';
+                blocks[currentBlock].style.transition = 'opacity 0.2s';
+                currentBlock++;
+                setTimeout(showNextBlock, 400); // 间隔呈现
+            }
+        }
+        setTimeout(showNextBlock, 500);
+
+        function simulateDownload(format) {
+            const output = document.getElementById('dynamic-output');
+            const logs = [
+                `<span class="prompt"></span>Executing download sequence for format [.${format}]...`,
+                `[INFO] Resolving host dlprojx.io (192.168.1.104)... OK`,
+                `[INFO] Connecting to dlprojx.io:443... connected.`,
+                `[INFO] HTTP request sent, awaiting response... 200 OK`,
+                `Length: ${Math.floor(Math.random() * 20 + 20)}M [application/octet-stream]`,
+                `Saving to: 'dlprojx-v2.4.0.${format}'`,
+                `<br>`,
+                `10%  [==>                  ]  ETA 00:03`,
+                `45%  [=========>           ]  ETA 00:02`,
+                `88%  [==================>  ]  ETA 00:00`,
+                `100% [====================>]  SUCCESS`,
+                `<br>`,
+                `[HASH] SHA-256 Checksum Calculation:`,
+                `> ${Array.from({ length: 64 }, () => Math.floor(Math.random() * 16).toString(16)).join('')}`,
+                `[SUCCESS] File integrity verified. Transmission terminated.`
+            ];
+
+            output.innerHTML += `<div style="margin-top: 20px;" id="dl-${Date.now()}"></div>`;
+            const container = output.lastElementChild;
+            let logIdx = 0;
+
+            function printLog() {
+                if (logIdx < logs.length) {
+                    container.innerHTML += logs[logIdx] + '<br>';
+                    window.scrollTo(0, document.body.scrollHeight); // 自动滚屏
+                    logIdx++;
+                    setTimeout(printLog, Math.random() * 200 + 100);
+                } else {
+                    const downloadMsg = '<span style="color: #fff; background: #0cca4a;">[SYSTEM] Initiating file stream... Check your browser downloads.</span><br>';
+                    container.innerHTML += downloadMsg;
+                    window.scrollTo(0, document.body.scrollHeight);
+                    setTimeout(() => {
+                        window.location.href = '/api/download/' + format;
+                    }, 500);
+                }
+            }
+            printLog();
+        }
+    </script>
+</body>
+
+</html>
