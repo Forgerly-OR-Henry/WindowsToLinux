@@ -3,7 +3,7 @@
     <output-path>$PROJECT_DIR$/target/jar</output-path>
     <root id="root">
       <element id="archive" name="WindowsToLinux.jar">
-        <element id="module-output" name="WindowsToLinux" />
+        <element id="module-output" name="Main" />
       </element>
       <element id="directory" name="lib">
         <element id="library" level="project" name="Maven: com.formdev:flatlaf:3.7" />
