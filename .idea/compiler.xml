@@ -8,11 +8,9 @@
         <outputRelativeToContentRoot value="true" />
         <module name="Main" />
         <module name="Web" />
+        <module name="WindowsToLinux" />
       </profile>
     </annotationProcessing>
-    <bytecodeTargetLevel>
-      <module name="WindowsToLinux" target="21" />
-    </bytecodeTargetLevel>
   </component>
   <component name="JavacSettings">
     <option name="ADDITIONAL_OPTIONS_OVERRIDE">
