@@ -1,0 +1,16 @@
+<component name="ArtifactManager">
+  <artifact name="Main:jar">
+    <output-path>$PROJECT_DIR$/out/jar</output-path>
+    <root id="root">
+      <element id="archive" name="Main.jar">
+        <element id="module-output" name="Main" />
+      </element>
+      <element id="library" level="project" name="Maven: org.apache.commons:commons-compress:1.28.0" />
+      <element id="library" level="project" name="Maven: org.apache.commons:commons-lang3:3.18.0" />
+      <element id="library" level="project" name="Maven: commons-codec:commons-codec:1.19.0" />
+      <element id="library" level="project" name="Maven: commons-io:commons-io:2.20.0" />
+      <element id="library" level="project" name="Maven: com.formdev:flatlaf:3.7" />
+      <element id="library" level="project" name="Maven: com.github.mwiede:jsch:2.27.7" />
+    </root>
+  </artifact>
+</component>
