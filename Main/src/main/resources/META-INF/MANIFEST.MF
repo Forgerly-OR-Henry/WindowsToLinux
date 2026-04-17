@@ -1,0 +1,5 @@
+Manifest-Version: 1.0
+Main-Class: gold.debug.wintolin.AppMain
+Class-Path: commons-compress-1.28.0.jar commons-lang3-3.18.0.jar commons
+ -codec-1.19.0.jar commons-io-2.20.0.jar flatlaf-3.7.jar jsch-2.27.7.jar
+
