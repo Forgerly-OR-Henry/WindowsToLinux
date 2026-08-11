@@ -7,6 +7,7 @@ import gold.debug.windowstolinux.app.service.ai.AiAnalysisOutcome;
 import gold.debug.windowstolinux.app.service.ai.AiProfile;
 import gold.debug.windowstolinux.app.service.ai.AiUseCases;
 import gold.debug.windowstolinux.app.service.concurrency.ServerOperationLocks;
+import gold.debug.windowstolinux.app.service.config.PhaseTwoConfigurationUseCase;
 import gold.debug.windowstolinux.app.service.deployment.DeploymentOutcome;
 import gold.debug.windowstolinux.app.service.deployment.DeploymentUseCase;
 import gold.debug.windowstolinux.app.service.environment.EnvironmentPreparationUseCase;
@@ -18,6 +19,9 @@ import gold.debug.windowstolinux.app.service.server.ServerProfile;
 import gold.debug.windowstolinux.app.service.server.ServerUseCases;
 import gold.debug.windowstolinux.app.service.source.SourcePreparation;
 import gold.debug.windowstolinux.app.service.source.SourcePreparationUseCase;
+import gold.debug.windowstolinux.app.db.entity.StoredApplicationSecretRevision;
+import gold.debug.windowstolinux.shared.config.revision.ConfigurationSnapshot;
+import gold.debug.windowstolinux.shared.config.secretref.SecretReference;
 import gold.debug.windowstolinux.app.windows.workspace.WindowsSourceWorkspace;
 import gold.debug.windowstolinux.shared.analyze.core.StaticProjectAnalyzer;
 import gold.debug.windowstolinux.shared.deploy.environment.PhaseOneEnvironmentPreparationService;
@@ -56,6 +60,7 @@ public final class DesktopApplicationService {
     private final SourcePreparationUseCase source;
     private final ServerUseCases servers;
     private final AiUseCases ai;
+    private final PhaseTwoConfigurationUseCase phaseTwoConfiguration;
     private final EnvironmentPreparationUseCase environment;
     private final DeploymentUseCase deployment;
     private final LifecycleUseCase lifecycle;
@@ -78,6 +83,7 @@ public final class DesktopApplicationService {
         this.servers = new ServerUseCases(database, secrets, linuxGateway);
         this.source = new SourcePreparationUseCase(new StaticProjectAnalyzer(), new WindowsSourceWorkspace(workDirectory));
         this.ai = new AiUseCases(database, secrets);
+        this.phaseTwoConfiguration = new PhaseTwoConfigurationUseCase(database, secrets);
         this.environment = new EnvironmentPreparationUseCase(
                 new PhaseOneEnvironmentPreparationService(), linuxGateway, servers, locks);
         this.deployment = new DeploymentUseCase(
@@ -173,6 +179,35 @@ public final class DesktopApplicationService {
      */
     public Optional<AiProfile> findAiProfile() throws SQLException {
         return ai.find();
+    }
+
+    /**
+     * Stores an immutable non-secret Phase Two configuration snapshot.
+     *
+     * <p>保存一个不可变的非秘密二期配置快照。
+     */
+    public void savePhaseTwoConfigurationSnapshot(ConfigurationSnapshot snapshot) throws SQLException {
+        phaseTwoConfiguration.saveSnapshot(snapshot);
+    }
+
+    /**
+     * Stores one immutable application-secret revision without exposing its plaintext after this call.
+     *
+     * <p>保存一个不可变应用秘密修订；此调用后不再暴露其明文。
+     */
+    public void savePhaseTwoSecretRevision(StoredApplicationSecretRevision revision, SecretStore store, char[] value)
+            throws SQLException, SecretStoreException {
+        phaseTwoConfiguration.saveSecretRevision(revision, store, value);
+    }
+
+    /**
+     * Verifies and binds immutable secret revisions to a release identity before it may be used for deployment or rollback.
+     *
+     * <p>在可用于部署或回滚前，验证并将不可变秘密修订绑定到发布标识。
+     */
+    public void bindPhaseTwoReleaseSecrets(String applicationId, String releaseIdentity, List<SecretReference> references,
+                                            char[] masterPassword) throws SQLException, SecretStoreException {
+        phaseTwoConfiguration.bindReleaseSecrets(applicationId, releaseIdentity, references, masterPassword);
     }
 
     /**

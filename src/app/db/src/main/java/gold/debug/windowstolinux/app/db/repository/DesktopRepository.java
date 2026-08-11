@@ -387,8 +387,8 @@ public final class DesktopRepository implements AutoCloseable {
      */
     public void bindApplicationReleaseSecrets(String applicationId, String releaseIdentity, List<SecretReference> references)
             throws SQLException {
-        applicationId = requireReleaseIdentity(applicationId, "applicationId");
-        releaseIdentity = requireReleaseIdentity(releaseIdentity, "releaseIdentity");
+        String normalizedApplicationId = requireReleaseIdentity(applicationId, "applicationId");
+        String normalizedReleaseIdentity = requireReleaseIdentity(releaseIdentity, "releaseIdentity");
         Set<SecretReference> expected = Set.copyOf(Objects.requireNonNull(references, "references"));
         if (expected.size() != references.size()) {
             throw new IllegalArgumentException("release secret references must be unique");
@@ -400,8 +400,8 @@ public final class DesktopRepository implements AutoCloseable {
                         throw new SQLException("release secret reference has not been registered");
                     }
                 }
-                boolean bindingExists = applicationReleaseSecretBindingExists(connection, applicationId, releaseIdentity);
-                Set<SecretReference> existing = findApplicationReleaseSecrets(connection, applicationId, releaseIdentity);
+                boolean bindingExists = applicationReleaseSecretBindingExists(connection, normalizedApplicationId, normalizedReleaseIdentity);
+                Set<SecretReference> existing = findApplicationReleaseSecrets(connection, normalizedApplicationId, normalizedReleaseIdentity);
                 if (bindingExists) {
                     if (!existing.equals(expected)) {
                         throw new SQLException("application release secret references are immutable");
@@ -412,8 +412,8 @@ public final class DesktopRepository implements AutoCloseable {
                         INSERT INTO application_release_secret_binding (application_id, release_identity)
                         VALUES (?, ?)
                         """)) {
-                    statement.setString(1, applicationId);
-                    statement.setString(2, releaseIdentity);
+                    statement.setString(1, normalizedApplicationId);
+                    statement.setString(2, normalizedReleaseIdentity);
                     statement.executeUpdate();
                 }
                 try (PreparedStatement statement = connection.prepareStatement("""
@@ -422,8 +422,8 @@ public final class DesktopRepository implements AutoCloseable {
                         ) VALUES (?, ?, ?, ?)
                         """)) {
                     for (SecretReference reference : expected) {
-                        statement.setString(1, applicationId);
-                        statement.setString(2, releaseIdentity);
+                        statement.setString(1, normalizedApplicationId);
+                        statement.setString(2, normalizedReleaseIdentity);
                         statement.setString(3, reference.identifier());
                         statement.setLong(4, reference.revision());
                         statement.addBatch();

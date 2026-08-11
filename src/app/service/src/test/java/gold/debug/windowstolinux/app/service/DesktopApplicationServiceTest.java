@@ -2,6 +2,7 @@ package gold.debug.windowstolinux.app.service;
 
 import gold.debug.windowstolinux.app.db.DesktopDatabase;
 import gold.debug.windowstolinux.app.db.entity.CurrentRelease;
+import gold.debug.windowstolinux.app.db.entity.StoredApplicationSecretRevision;
 import gold.debug.windowstolinux.app.service.ai.AiProfile;
 import gold.debug.windowstolinux.app.service.lifecycle.LifecycleOutcome;
 import gold.debug.windowstolinux.app.service.server.ServerProfile;
@@ -23,6 +24,7 @@ import gold.debug.windowstolinux.shared.model.lifecycle.RuntimeState;
 import gold.debug.windowstolinux.shared.model.lifecycle.AutostartState;
 import gold.debug.windowstolinux.shared.model.server.ServerIdentity;
 import gold.debug.windowstolinux.shared.model.archive.SourceArchiveDescriptor;
+import gold.debug.windowstolinux.shared.config.secretref.SecretReference;
 import gold.debug.windowstolinux.shared.model.project.SourceProjectFacts;
 import gold.debug.windowstolinux.shared.linux.connection.HostKeyDecision;
 import gold.debug.windowstolinux.shared.linux.connection.PhaseOneLinuxGateway;
@@ -82,6 +84,28 @@ class DesktopApplicationServiceTest {
                     service.hostKeyVerifier(profile, fingerprint -> true).verify(profile.endpoint(), "SHA256:changed"));
             assertEquals("SHA256:first", database.findServer(profile.id()).orElseThrow().hostKeySha256(),
                     "a changed host key must not overwrite first-use trust");
+        }
+    }
+
+    @Test
+    void storesImmutableApplicationSecretsOnlyInThePlatformSecretStore() throws Exception {
+        SecretReference reference = new SecretReference("database-password", 1);
+        StoredApplicationSecretRevision revision = new StoredApplicationSecretRevision(reference,
+                "application-secret/database-password/1", CredentialStorageMode.MASTER_PASSWORD, Instant.parse("2026-08-12T00:00:00Z"));
+        try (DesktopDatabase database = DesktopDatabase.open(temporaryDirectory);
+             Argon2AesSecretStore secretStore = new Argon2AesSecretStore(database, "correct master password".toCharArray())) {
+            DesktopApplicationService service = new DesktopApplicationService(database, temporaryDirectory.resolve("work"), unusedGateway());
+            service.savePhaseTwoSecretRevision(revision, secretStore, "database-password".toCharArray());
+
+            assertEquals(revision, database.findApplicationSecretRevision(reference).orElseThrow());
+            char[] stored = secretStore.read(revision.credentialKey()).orElseThrow();
+            try {
+                assertArrayEquals("database-password".toCharArray(), stored);
+            } finally {
+                java.util.Arrays.fill(stored, '\0');
+            }
+            assertThrows(java.sql.SQLException.class,
+                    () -> service.savePhaseTwoSecretRevision(revision, secretStore, "replacement".toCharArray()));
         }
     }
 
