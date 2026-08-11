@@ -3,10 +3,14 @@ package gold.debug.windowstolinux.app.db;
 import gold.debug.windowstolinux.app.db.connection.DesktopConnectionFactory;
 import gold.debug.windowstolinux.app.db.entity.CurrentRelease;
 import gold.debug.windowstolinux.app.db.entity.OpaqueSecret;
+import gold.debug.windowstolinux.app.db.entity.StoredAiProviderProfile;
 import gold.debug.windowstolinux.app.db.entity.StoredAiProfile;
+import gold.debug.windowstolinux.app.db.entity.StoredApplicationSecretRevision;
 import gold.debug.windowstolinux.app.db.entity.StoredServerProfile;
 import gold.debug.windowstolinux.app.db.migration.DesktopSchemaMigrator;
 import gold.debug.windowstolinux.app.db.repository.DesktopRepository;
+import gold.debug.windowstolinux.shared.config.revision.ConfigurationSnapshot;
+import gold.debug.windowstolinux.shared.config.secretref.SecretReference;
 import gold.debug.windowstolinux.shared.model.lifecycle.LifecycleObservation;
 import gold.debug.windowstolinux.shared.model.managed.ManagedApplication;
 import gold.debug.windowstolinux.shared.model.managed.ManagedApplicationRuntimeConfiguration;
@@ -139,6 +143,71 @@ public final class DesktopDatabase implements AutoCloseable {
      * @throws SQLException if the operation cannot be completed / 无法完成操作时
      */
     public Optional<StoredAiProfile> findAiProfile() throws SQLException { return repository.findAiProfile(); }
+    /**
+     * Stores non-secret metadata for a named AI provider profile.
+     *
+     * <p>保存命名 AI 提供者配置的非秘密元数据。
+     */
+    public void saveAiProviderProfile(StoredAiProviderProfile profile) throws SQLException {
+        repository.saveAiProviderProfile(profile);
+    }
+    /**
+     * Lists named AI provider profiles without their credential values.
+     *
+     * <p>列出不含凭据值的命名 AI 提供者配置。
+     */
+    public List<StoredAiProviderProfile> listAiProviderProfiles() throws SQLException {
+        return repository.listAiProviderProfiles();
+    }
+    /**
+     * Stores one immutable normal configuration snapshot.
+     *
+     * <p>保存一个不可变普通配置快照。
+     */
+    public void saveConfigurationSnapshot(ConfigurationSnapshot snapshot) throws SQLException {
+        repository.saveConfigurationSnapshot(snapshot);
+    }
+    /**
+     * Finds one immutable normal configuration snapshot.
+     *
+     * <p>查找一个不可变普通配置快照。
+     */
+    public Optional<ConfigurationSnapshot> findConfigurationSnapshot(String applicationId, long revision) throws SQLException {
+        return repository.findConfigurationSnapshot(applicationId, revision);
+    }
+    /**
+     * Stores immutable application-secret metadata without accepting a secret value.
+     *
+     * <p>保存不可变应用秘密元数据，且不接收秘密值。
+     */
+    public void saveApplicationSecretRevision(StoredApplicationSecretRevision revision) throws SQLException {
+        repository.saveApplicationSecretRevision(revision);
+    }
+    /**
+     * Finds immutable application-secret metadata without reading a secret value.
+     *
+     * <p>在不读取秘密值的情况下查找不可变应用秘密元数据。
+     */
+    public Optional<StoredApplicationSecretRevision> findApplicationSecretRevision(SecretReference reference) throws SQLException {
+        return repository.findApplicationSecretRevision(reference);
+    }
+    /**
+     * Binds the exact immutable secret revisions to one release identity.
+     *
+     * <p>将精确的不可变秘密修订绑定到一个发布标识。
+     */
+    public void bindApplicationReleaseSecrets(String applicationId, String releaseIdentity, List<SecretReference> references)
+            throws SQLException {
+        repository.bindApplicationReleaseSecrets(applicationId, releaseIdentity, references);
+    }
+    /**
+     * Reports whether a secret revision remains retained by a release.
+     *
+     * <p>报告一个秘密修订是否仍由发布保留。
+     */
+    public boolean isApplicationSecretRevisionReferenced(SecretReference reference) throws SQLException {
+        return repository.isApplicationSecretRevisionReferenced(reference);
+    }
     /**
      * Stores data through {@code saveManagedApplication}.
      *

@@ -19,7 +19,7 @@ public final class DesktopSchemaMigrator {
      *
      * <p>公开 {@code CURRENT_SCHEMA_VERSION} 常量。
      */
-    public static final int CURRENT_SCHEMA_VERSION = 3;
+    public static final int CURRENT_SCHEMA_VERSION = 4;
 
     private DesktopSchemaMigrator() {
     }
@@ -113,6 +113,73 @@ public final class DesktopSchemaMigrator {
                               name TEXT PRIMARY KEY,
                               value TEXT NOT NULL
                             )
+                            """);
+                }
+                if (version < 4) {
+                    statement.execute("""
+                            CREATE TABLE IF NOT EXISTS application_configuration_snapshot (
+                              application_id TEXT NOT NULL,
+                              revision TEXT NOT NULL,
+                              schema_version TEXT NOT NULL,
+                              created_at INTEGER NOT NULL,
+                              sha256 TEXT NOT NULL,
+                              PRIMARY KEY (application_id, revision)
+                            )
+                            """);
+                    statement.execute("""
+                            CREATE TABLE IF NOT EXISTS application_configuration_entry (
+                              application_id TEXT NOT NULL,
+                              revision TEXT NOT NULL,
+                              config_key TEXT NOT NULL,
+                              value_type TEXT NOT NULL,
+                              config_scope TEXT NOT NULL,
+                              value_text TEXT NOT NULL,
+                              PRIMARY KEY (application_id, revision, config_key),
+                              FOREIGN KEY (application_id, revision)
+                                REFERENCES application_configuration_snapshot(application_id, revision) ON DELETE RESTRICT
+                            )
+                            """);
+                    statement.execute("""
+                            CREATE TABLE IF NOT EXISTS application_secret_revision (
+                              secret_identifier TEXT NOT NULL,
+                              revision TEXT NOT NULL,
+                              credential_key TEXT NOT NULL,
+                              credential_mode TEXT NOT NULL,
+                              created_at INTEGER NOT NULL,
+                              PRIMARY KEY (secret_identifier, revision)
+                            )
+                            """);
+                    statement.execute("""
+                            CREATE TABLE IF NOT EXISTS application_release_secret_binding (
+                              application_id TEXT NOT NULL,
+                              release_identity TEXT NOT NULL,
+                              PRIMARY KEY (application_id, release_identity)
+                            )
+                            """);
+                    statement.execute("""
+                            CREATE TABLE IF NOT EXISTS application_release_secret_reference (
+                              application_id TEXT NOT NULL,
+                              release_identity TEXT NOT NULL,
+                              secret_identifier TEXT NOT NULL,
+                              secret_revision TEXT NOT NULL,
+                              PRIMARY KEY (application_id, release_identity, secret_identifier, secret_revision),
+                              FOREIGN KEY (secret_identifier, secret_revision)
+                                REFERENCES application_secret_revision(secret_identifier, revision) ON DELETE RESTRICT
+                            )
+                            """);
+                    statement.execute("""
+                            CREATE TABLE IF NOT EXISTS ai_provider_profile (
+                              profile_id TEXT PRIMARY KEY,
+                              endpoint TEXT NOT NULL,
+                              model TEXT NOT NULL,
+                              credential_key TEXT NOT NULL,
+                              credential_mode TEXT NOT NULL
+                            )
+                            """);
+                    statement.execute("""
+                            INSERT OR IGNORE INTO ai_provider_profile (
+                              profile_id, endpoint, model, credential_key, credential_mode
+                            ) SELECT id, endpoint, model, credential_key, credential_mode FROM ai_profile
                             """);
                 }
                 statement.execute("PRAGMA user_version = " + CURRENT_SCHEMA_VERSION);

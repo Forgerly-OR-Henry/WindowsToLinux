@@ -2,15 +2,23 @@ package gold.debug.windowstolinux.app.db;
 
 import gold.debug.windowstolinux.app.db.entity.CurrentRelease;
 import gold.debug.windowstolinux.app.db.entity.OpaqueSecret;
+import gold.debug.windowstolinux.app.db.entity.StoredAiProviderProfile;
 import gold.debug.windowstolinux.app.db.entity.StoredAiProfile;
+import gold.debug.windowstolinux.app.db.entity.StoredApplicationSecretRevision;
 import gold.debug.windowstolinux.app.db.entity.StoredServerProfile;
 
+import gold.debug.windowstolinux.shared.config.definition.ConfigurationScope;
+import gold.debug.windowstolinux.shared.config.definition.ConfigurationValue;
+import gold.debug.windowstolinux.shared.config.revision.ConfigurationEntry;
+import gold.debug.windowstolinux.shared.config.revision.ConfigurationSnapshot;
+import gold.debug.windowstolinux.shared.config.secretref.SecretReference;
 import gold.debug.windowstolinux.shared.model.lifecycle.AutostartState;
 import gold.debug.windowstolinux.shared.model.lifecycle.LifecycleObservation;
 import gold.debug.windowstolinux.shared.model.managed.ManagedApplication;
 import gold.debug.windowstolinux.shared.model.managed.ManagedApplicationRuntimeConfiguration;
 import gold.debug.windowstolinux.shared.model.lifecycle.RuntimeState;
 import gold.debug.windowstolinux.shared.model.server.ServerIdentity;
+import gold.debug.windowstolinux.shared.model.security.CredentialStorageMode;
 import gold.debug.windowstolinux.shared.model.health.HealthCheck;
 import gold.debug.windowstolinux.shared.model.health.UserAccessUrl;
 import org.junit.jupiter.api.Test;
@@ -27,6 +35,7 @@ import java.time.Instant;
 import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class DesktopDatabaseTest {
@@ -148,6 +157,56 @@ class DesktopDatabaseTest {
             assertTrue(database.findManagedApplication("demo").isPresent());
             assertTrue(database.findManagedApplicationRuntimeConfiguration("demo").isEmpty(),
                     "旧记录不允许根据观测或 UI 默认值伪造运行配置");
+        }
+    }
+
+    @Test
+    void persistsImmutableConfigurationAndSecretRevisionBindingsWithoutSecretValues() throws Exception {
+        ConfigurationSnapshot first = ConfigurationSnapshot.create("demo", 1, "v1", Instant.parse("2026-08-12T00:00:00Z"),
+                java.util.List.of(new ConfigurationEntry("PORT", ConfigurationScope.RUNTIME, new ConfigurationValue.Number(18080))));
+        SecretReference databasePassword = new SecretReference("database-password", 1);
+        SecretReference rotatedPassword = new SecretReference("database-password", 2);
+        StoredApplicationSecretRevision firstSecret = new StoredApplicationSecretRevision(databasePassword,
+                "application-secret/database-password/1", CredentialStorageMode.MASTER_PASSWORD,
+                Instant.parse("2026-08-12T00:00:00Z"));
+
+        try (DesktopDatabase database = DesktopDatabase.open(temporaryDirectory)) {
+            database.saveConfigurationSnapshot(first);
+            database.saveConfigurationSnapshot(first);
+            assertEquals(first, database.findConfigurationSnapshot("demo", 1).orElseThrow());
+
+            ConfigurationSnapshot replacement = ConfigurationSnapshot.create("demo", 1, "v1",
+                    Instant.parse("2026-08-12T00:00:01Z"),
+                    java.util.List.of(new ConfigurationEntry("PORT", ConfigurationScope.RUNTIME, new ConfigurationValue.Number(19090))));
+            assertThrows(java.sql.SQLException.class, () -> database.saveConfigurationSnapshot(replacement));
+
+            database.saveApplicationSecretRevision(firstSecret);
+            database.saveApplicationSecretRevision(firstSecret);
+            database.saveApplicationSecretRevision(new StoredApplicationSecretRevision(rotatedPassword,
+                    "application-secret/database-password/2", CredentialStorageMode.MASTER_PASSWORD,
+                    Instant.parse("2026-08-12T00:00:01Z")));
+            database.bindApplicationReleaseSecrets("demo", "release-a", java.util.List.of(databasePassword));
+
+            assertEquals(firstSecret, database.findApplicationSecretRevision(databasePassword).orElseThrow());
+            assertTrue(database.isApplicationSecretRevisionReferenced(databasePassword));
+            assertThrows(java.sql.SQLException.class, () -> database.bindApplicationReleaseSecrets(
+                    "demo", "release-a", java.util.List.of(rotatedPassword)));
+        }
+    }
+
+    @Test
+    void keepsNamedAiProviderProfilesIndependentFromTheLegacyDefaultProfile() throws Exception {
+        try (DesktopDatabase database = DesktopDatabase.open(temporaryDirectory)) {
+            database.saveAiProfile(new StoredAiProfile("https://default.example.test/v1", "default-model",
+                    "ai/default", "MASTER_PASSWORD"));
+            database.saveAiProviderProfile(new StoredAiProviderProfile("analysis", "https://analysis.example.test/v1",
+                    "analysis-model", "ai/analysis", "WINDOWS_CREDENTIAL_MANAGER"));
+            database.saveAiProviderProfile(new StoredAiProviderProfile("review", "https://review.example.test/v1",
+                    "review-model", "ai/review", "MASTER_PASSWORD"));
+
+            assertEquals("default-model", database.findAiProfile().orElseThrow().model());
+            assertEquals(java.util.List.of("analysis", "review"), database.listAiProviderProfiles().stream()
+                    .map(StoredAiProviderProfile::id).toList());
         }
     }
 }

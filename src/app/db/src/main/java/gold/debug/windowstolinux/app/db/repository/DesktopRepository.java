@@ -3,9 +3,16 @@ package gold.debug.windowstolinux.app.db.repository;
 import gold.debug.windowstolinux.app.db.connection.DesktopConnectionFactory;
 import gold.debug.windowstolinux.app.db.entity.CurrentRelease;
 import gold.debug.windowstolinux.app.db.entity.OpaqueSecret;
+import gold.debug.windowstolinux.app.db.entity.StoredAiProviderProfile;
 import gold.debug.windowstolinux.app.db.entity.StoredAiProfile;
+import gold.debug.windowstolinux.app.db.entity.StoredApplicationSecretRevision;
 import gold.debug.windowstolinux.app.db.entity.StoredServerProfile;
 
+import gold.debug.windowstolinux.shared.config.definition.ConfigurationScope;
+import gold.debug.windowstolinux.shared.config.definition.ConfigurationValue;
+import gold.debug.windowstolinux.shared.config.revision.ConfigurationEntry;
+import gold.debug.windowstolinux.shared.config.revision.ConfigurationSnapshot;
+import gold.debug.windowstolinux.shared.config.secretref.SecretReference;
 import gold.debug.windowstolinux.shared.model.lifecycle.AutostartState;
 import gold.debug.windowstolinux.shared.model.health.HealthCheck;
 import gold.debug.windowstolinux.shared.model.lifecycle.LifecycleObservation;
@@ -26,6 +33,8 @@ import java.util.Optional;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
+import java.util.LinkedHashSet;
+import java.util.Set;
 
 /**
  * SQLite storage for non-secret identities, deployed runtime configuration and observations.
@@ -218,6 +227,230 @@ public final class DesktopRepository implements AutoCloseable {
                     result.getString("endpoint"), result.getString("model"), result.getString("credential_key"),
                     result.getString("credential_mode")
             )) : Optional.empty();
+        }
+    }
+
+    /**
+     * Stores one named AI provider profile without persisting its credential value.
+     *
+     * <p>保存一个命名 AI 提供者配置，而不持久化其凭据值。
+     */
+    public void saveAiProviderProfile(StoredAiProviderProfile profile) throws SQLException {
+        Objects.requireNonNull(profile, "profile");
+        try (Connection connection = connect();
+             PreparedStatement statement = connection.prepareStatement("""
+                     INSERT INTO ai_provider_profile (profile_id, endpoint, model, credential_key, credential_mode)
+                     VALUES (?, ?, ?, ?, ?)
+                     ON CONFLICT(profile_id) DO UPDATE SET endpoint=excluded.endpoint, model=excluded.model,
+                     credential_key=excluded.credential_key, credential_mode=excluded.credential_mode
+                     """)) {
+            statement.setString(1, profile.id());
+            statement.setString(2, profile.endpoint());
+            statement.setString(3, profile.model());
+            statement.setString(4, profile.credentialKey());
+            statement.setString(5, profile.credentialMode());
+            statement.executeUpdate();
+        }
+    }
+
+    /**
+     * Lists isolated named AI provider profiles in stable identifier order.
+     *
+     * <p>按稳定标识顺序列出相互隔离的命名 AI 提供者配置。
+     */
+    public List<StoredAiProviderProfile> listAiProviderProfiles() throws SQLException {
+        try (Connection connection = connect();
+             PreparedStatement statement = connection.prepareStatement("""
+                     SELECT profile_id, endpoint, model, credential_key, credential_mode
+                     FROM ai_provider_profile ORDER BY profile_id
+                     """);
+             ResultSet result = statement.executeQuery()) {
+            List<StoredAiProviderProfile> profiles = new ArrayList<>();
+            while (result.next()) {
+                profiles.add(new StoredAiProviderProfile(result.getString("profile_id"), result.getString("endpoint"),
+                        result.getString("model"), result.getString("credential_key"), result.getString("credential_mode")));
+            }
+            return List.copyOf(profiles);
+        }
+    }
+
+    /**
+     * Stores a normal configuration snapshot only when its immutable revision has not been stored before.
+     *
+     * <p>仅当不可变修订此前未保存时才保存普通配置快照。
+     */
+    public void saveConfigurationSnapshot(ConfigurationSnapshot snapshot) throws SQLException {
+        Objects.requireNonNull(snapshot, "snapshot");
+        try (Connection connection = connect()) {
+            inTransaction(connection, () -> {
+                Optional<ConfigurationSnapshot> existing = findConfigurationSnapshot(connection,
+                        snapshot.applicationId(), snapshot.revision());
+                if (existing.isPresent()) {
+                    ConfigurationSnapshot stored = existing.orElseThrow();
+                    if (!stored.schemaVersion().equals(snapshot.schemaVersion())
+                            || !stored.createdAt().equals(snapshot.createdAt())
+                            || !stored.sha256().equals(snapshot.sha256())) {
+                        throw new SQLException("application configuration revisions are immutable");
+                    }
+                    return;
+                }
+                try (PreparedStatement statement = connection.prepareStatement("""
+                        INSERT INTO application_configuration_snapshot (
+                            application_id, revision, schema_version, created_at, sha256
+                        ) VALUES (?, ?, ?, ?, ?)
+                        """)) {
+                    statement.setString(1, snapshot.applicationId());
+                    statement.setLong(2, snapshot.revision());
+                    statement.setString(3, snapshot.schemaVersion());
+                    statement.setLong(4, snapshot.createdAt().toEpochMilli());
+                    statement.setString(5, snapshot.sha256());
+                    statement.executeUpdate();
+                }
+                try (PreparedStatement statement = connection.prepareStatement("""
+                        INSERT INTO application_configuration_entry (
+                            application_id, revision, config_key, value_type, config_scope, value_text
+                        ) VALUES (?, ?, ?, ?, ?, ?)
+                        """)) {
+                    for (ConfigurationEntry entry : snapshot.entries()) {
+                        statement.setString(1, snapshot.applicationId());
+                        statement.setLong(2, snapshot.revision());
+                        statement.setString(3, entry.key());
+                        statement.setString(4, configurationValueType(entry.value()));
+                        statement.setString(5, entry.scope().name());
+                        statement.setString(6, entry.value().canonicalValue());
+                        statement.addBatch();
+                    }
+                    statement.executeBatch();
+                }
+            });
+        }
+    }
+
+    /**
+     * Finds one immutable normal configuration snapshot.
+     *
+     * <p>查找一个不可变普通配置快照。
+     */
+    public Optional<ConfigurationSnapshot> findConfigurationSnapshot(String applicationId, long revision) throws SQLException {
+        try (Connection connection = connect()) {
+            return findConfigurationSnapshot(connection, applicationId, revision);
+        }
+    }
+
+    /**
+     * Stores the metadata for one immutable secret revision; the raw secret remains in app/secret.
+     *
+     * <p>保存一个不可变秘密修订的元数据；原始秘密仍保留在 app/secret 中。
+     */
+    public void saveApplicationSecretRevision(StoredApplicationSecretRevision revision) throws SQLException {
+        Objects.requireNonNull(revision, "revision");
+        try (Connection connection = connect()) {
+            inTransaction(connection, () -> {
+                Optional<StoredApplicationSecretRevision> existing = findApplicationSecretRevision(connection, revision.reference());
+                if (existing.isPresent()) {
+                    if (!existing.orElseThrow().equals(revision)) {
+                        throw new SQLException("application secret revisions are immutable");
+                    }
+                    return;
+                }
+                try (PreparedStatement statement = connection.prepareStatement("""
+                        INSERT INTO application_secret_revision (
+                            secret_identifier, revision, credential_key, credential_mode, created_at
+                        ) VALUES (?, ?, ?, ?, ?)
+                        """)) {
+                    statement.setString(1, revision.reference().identifier());
+                    statement.setLong(2, revision.reference().revision());
+                    statement.setString(3, revision.credentialKey());
+                    statement.setString(4, revision.credentialMode().name());
+                    statement.setLong(5, revision.createdAt().toEpochMilli());
+                    statement.executeUpdate();
+                }
+            });
+        }
+    }
+
+    /**
+     * Finds metadata for one immutable secret revision without reading any secret value.
+     *
+     * <p>在不读取任何秘密值的情况下查找一个不可变秘密修订的元数据。
+     */
+    public Optional<StoredApplicationSecretRevision> findApplicationSecretRevision(SecretReference reference) throws SQLException {
+        try (Connection connection = connect()) {
+            return findApplicationSecretRevision(connection, reference);
+        }
+    }
+
+    /**
+     * Binds the exact secret revision set to a release identity and refuses to rewrite an existing binding.
+     *
+     * <p>将精确的秘密修订集合绑定到发布标识，并拒绝改写既有绑定。
+     */
+    public void bindApplicationReleaseSecrets(String applicationId, String releaseIdentity, List<SecretReference> references)
+            throws SQLException {
+        applicationId = requireReleaseIdentity(applicationId, "applicationId");
+        releaseIdentity = requireReleaseIdentity(releaseIdentity, "releaseIdentity");
+        Set<SecretReference> expected = Set.copyOf(Objects.requireNonNull(references, "references"));
+        if (expected.size() != references.size()) {
+            throw new IllegalArgumentException("release secret references must be unique");
+        }
+        try (Connection connection = connect()) {
+            inTransaction(connection, () -> {
+                for (SecretReference reference : expected) {
+                    if (findApplicationSecretRevision(connection, reference).isEmpty()) {
+                        throw new SQLException("release secret reference has not been registered");
+                    }
+                }
+                boolean bindingExists = applicationReleaseSecretBindingExists(connection, applicationId, releaseIdentity);
+                Set<SecretReference> existing = findApplicationReleaseSecrets(connection, applicationId, releaseIdentity);
+                if (bindingExists) {
+                    if (!existing.equals(expected)) {
+                        throw new SQLException("application release secret references are immutable");
+                    }
+                    return;
+                }
+                try (PreparedStatement statement = connection.prepareStatement("""
+                        INSERT INTO application_release_secret_binding (application_id, release_identity)
+                        VALUES (?, ?)
+                        """)) {
+                    statement.setString(1, applicationId);
+                    statement.setString(2, releaseIdentity);
+                    statement.executeUpdate();
+                }
+                try (PreparedStatement statement = connection.prepareStatement("""
+                        INSERT INTO application_release_secret_reference (
+                            application_id, release_identity, secret_identifier, secret_revision
+                        ) VALUES (?, ?, ?, ?)
+                        """)) {
+                    for (SecretReference reference : expected) {
+                        statement.setString(1, applicationId);
+                        statement.setString(2, releaseIdentity);
+                        statement.setString(3, reference.identifier());
+                        statement.setLong(4, reference.revision());
+                        statement.addBatch();
+                    }
+                    statement.executeBatch();
+                }
+            });
+        }
+    }
+
+    /**
+     * Reports whether an immutable secret revision remains retained by a release binding.
+     *
+     * <p>报告一个不可变秘密修订是否仍由发布绑定保留。
+     */
+    public boolean isApplicationSecretRevisionReferenced(SecretReference reference) throws SQLException {
+        Objects.requireNonNull(reference, "reference");
+        try (Connection connection = connect();
+             PreparedStatement statement = connection.prepareStatement("""
+                     SELECT 1 FROM application_release_secret_reference
+                     WHERE secret_identifier=? AND secret_revision=? LIMIT 1
+                     """)) {
+            statement.setString(1, reference.identifier());
+            statement.setLong(2, reference.revision());
+            try (ResultSet result = statement.executeQuery()) {
+                return result.next();
+            }
         }
     }
 
@@ -480,6 +713,138 @@ public final class DesktopRepository implements AutoCloseable {
                 )) : Optional.empty();
             }
         }
+    }
+
+    private static Optional<ConfigurationSnapshot> findConfigurationSnapshot(
+            Connection connection, String applicationId, long revision
+    ) throws SQLException {
+        try (PreparedStatement statement = connection.prepareStatement("""
+                SELECT schema_version, created_at, sha256 FROM application_configuration_snapshot
+                WHERE application_id=? AND revision=?
+                """)) {
+            statement.setString(1, applicationId);
+            statement.setLong(2, revision);
+            try (ResultSet result = statement.executeQuery()) {
+                if (!result.next()) {
+                    return Optional.empty();
+                }
+                String schemaVersion = result.getString("schema_version");
+                Instant createdAt = Instant.ofEpochMilli(result.getLong("created_at"));
+                String sha256 = result.getString("sha256");
+                List<ConfigurationEntry> entries = new ArrayList<>();
+                try (PreparedStatement entryStatement = connection.prepareStatement("""
+                        SELECT config_key, value_type, config_scope, value_text FROM application_configuration_entry
+                        WHERE application_id=? AND revision=? ORDER BY config_key, config_scope
+                        """)) {
+                    entryStatement.setString(1, applicationId);
+                    entryStatement.setLong(2, revision);
+                    try (ResultSet entryResult = entryStatement.executeQuery()) {
+                        while (entryResult.next()) {
+                            entries.add(new ConfigurationEntry(entryResult.getString("config_key"),
+                                    ConfigurationScope.valueOf(entryResult.getString("config_scope")),
+                                    configurationValue(entryResult.getString("value_type"), entryResult.getString("value_text"))));
+                        }
+                    }
+                }
+                try {
+                    return Optional.of(new ConfigurationSnapshot(applicationId, revision, schemaVersion, createdAt, entries, sha256));
+                } catch (IllegalArgumentException exception) {
+                    throw new SQLException("saved application configuration snapshot violates current validation rules", exception);
+                }
+            }
+        }
+    }
+
+    private static Optional<StoredApplicationSecretRevision> findApplicationSecretRevision(
+            Connection connection, SecretReference reference
+    ) throws SQLException {
+        Objects.requireNonNull(reference, "reference");
+        try (PreparedStatement statement = connection.prepareStatement("""
+                SELECT credential_key, credential_mode, created_at FROM application_secret_revision
+                WHERE secret_identifier=? AND revision=?
+                """)) {
+            statement.setString(1, reference.identifier());
+            statement.setLong(2, reference.revision());
+            try (ResultSet result = statement.executeQuery()) {
+                if (!result.next()) {
+                    return Optional.empty();
+                }
+                try {
+                    return Optional.of(new StoredApplicationSecretRevision(reference, result.getString("credential_key"),
+                            gold.debug.windowstolinux.shared.model.security.CredentialStorageMode.valueOf(
+                                    result.getString("credential_mode")), Instant.ofEpochMilli(result.getLong("created_at"))));
+                } catch (IllegalArgumentException exception) {
+                    throw new SQLException("saved application secret revision violates current validation rules", exception);
+                }
+            }
+        }
+    }
+
+    private static Set<SecretReference> findApplicationReleaseSecrets(
+            Connection connection, String applicationId, String releaseIdentity
+    ) throws SQLException {
+        try (PreparedStatement statement = connection.prepareStatement("""
+                SELECT secret_identifier, secret_revision FROM application_release_secret_reference
+                WHERE application_id=? AND release_identity=? ORDER BY secret_identifier, secret_revision
+                """)) {
+            statement.setString(1, applicationId);
+            statement.setString(2, releaseIdentity);
+            try (ResultSet result = statement.executeQuery()) {
+                Set<SecretReference> references = new LinkedHashSet<>();
+                while (result.next()) {
+                    references.add(new SecretReference(result.getString("secret_identifier"), result.getLong("secret_revision")));
+                }
+                return Set.copyOf(references);
+            }
+        }
+    }
+
+    private static boolean applicationReleaseSecretBindingExists(
+            Connection connection, String applicationId, String releaseIdentity
+    ) throws SQLException {
+        try (PreparedStatement statement = connection.prepareStatement("""
+                SELECT 1 FROM application_release_secret_binding WHERE application_id=? AND release_identity=?
+                """)) {
+            statement.setString(1, applicationId);
+            statement.setString(2, releaseIdentity);
+            try (ResultSet result = statement.executeQuery()) {
+                return result.next();
+            }
+        }
+    }
+
+    private static String configurationValueType(ConfigurationValue value) {
+        return switch (value) {
+            case ConfigurationValue.Text ignored -> "TEXT";
+            case ConfigurationValue.Number ignored -> "NUMBER";
+            case ConfigurationValue.Flag ignored -> "FLAG";
+        };
+    }
+
+    private static ConfigurationValue configurationValue(String type, String text) throws SQLException {
+        try {
+            return switch (type) {
+                case "TEXT" -> new ConfigurationValue.Text(text);
+                case "NUMBER" -> new ConfigurationValue.Number(Long.parseLong(text));
+                case "FLAG" -> {
+                    if (!"true".equals(text) && !"false".equals(text)) {
+                        throw new IllegalArgumentException("flag configuration values must be true or false");
+                    }
+                    yield new ConfigurationValue.Flag(Boolean.parseBoolean(text));
+                }
+                default -> throw new IllegalArgumentException("unknown configuration value type");
+            };
+        } catch (IllegalArgumentException exception) {
+            throw new SQLException("saved application configuration entry violates current validation rules", exception);
+        }
+    }
+
+    private static String requireReleaseIdentity(String value, String name) {
+        value = Objects.requireNonNull(value, name).trim();
+        if (!value.matches("[A-Za-z0-9][A-Za-z0-9._:-]{0,127}")) {
+            throw new IllegalArgumentException(name + " must be a bounded release identity");
+        }
+        return value;
     }
 
     private static String requirePreferenceText(String value, String name) {
