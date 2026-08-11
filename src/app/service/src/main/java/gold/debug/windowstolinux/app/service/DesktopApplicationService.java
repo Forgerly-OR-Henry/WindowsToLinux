@@ -5,7 +5,9 @@ import gold.debug.windowstolinux.app.secret.api.SecretStore;
 import gold.debug.windowstolinux.app.secret.api.SecretStoreException;
 import gold.debug.windowstolinux.app.service.ai.AiAnalysisOutcome;
 import gold.debug.windowstolinux.app.service.ai.AiProfile;
+import gold.debug.windowstolinux.app.service.ai.AiProviderProfile;
 import gold.debug.windowstolinux.app.service.ai.AiUseCases;
+import gold.debug.windowstolinux.app.service.ai.ReadOnlyPhaseTwoAgentTools;
 import gold.debug.windowstolinux.app.service.concurrency.ServerOperationLocks;
 import gold.debug.windowstolinux.app.service.config.PhaseTwoConfigurationUseCase;
 import gold.debug.windowstolinux.app.service.deployment.DeploymentOutcome;
@@ -26,6 +28,8 @@ import gold.debug.windowstolinux.app.windows.workspace.WindowsSourceWorkspace;
 import gold.debug.windowstolinux.shared.analyze.core.StaticProjectAnalyzer;
 import gold.debug.windowstolinux.shared.deploy.environment.PhaseOneEnvironmentPreparationService;
 import gold.debug.windowstolinux.shared.deploy.plan.DeploymentRequest;
+import gold.debug.windowstolinux.shared.deploy.plan.PhaseTwoDeploymentPlan;
+import gold.debug.windowstolinux.shared.deploy.plan.PhaseTwoDeploymentRequest;
 import gold.debug.windowstolinux.shared.deploy.result.DeploymentResult;
 import gold.debug.windowstolinux.shared.deploy.result.LifecycleActionResult;
 import gold.debug.windowstolinux.shared.deploy.transaction.PhaseOneDeploymentService;
@@ -34,6 +38,8 @@ import gold.debug.windowstolinux.shared.linux.connection.LinuxOperationException
 import gold.debug.windowstolinux.shared.linux.connection.PhaseOneLinuxGateway;
 import gold.debug.windowstolinux.shared.linux.connection.SshCredential;
 import gold.debug.windowstolinux.shared.model.deployment.BuildLimits;
+import gold.debug.windowstolinux.shared.model.analysis.PhaseTwoProjectAssessment;
+import gold.debug.windowstolinux.shared.model.project.PhaseTwoProjectType;
 import gold.debug.windowstolinux.shared.model.deployment.PhaseOneEnvironmentPreparationResult;
 import gold.debug.windowstolinux.shared.model.health.HealthCheck;
 import gold.debug.windowstolinux.shared.model.health.UserAccessUrl;
@@ -60,6 +66,7 @@ public final class DesktopApplicationService {
     private final SourcePreparationUseCase source;
     private final ServerUseCases servers;
     private final AiUseCases ai;
+    private final ReadOnlyPhaseTwoAgentTools phaseTwoAgentTools;
     private final PhaseTwoConfigurationUseCase phaseTwoConfiguration;
     private final EnvironmentPreparationUseCase environment;
     private final DeploymentUseCase deployment;
@@ -83,6 +90,7 @@ public final class DesktopApplicationService {
         this.servers = new ServerUseCases(database, secrets, linuxGateway);
         this.source = new SourcePreparationUseCase(new StaticProjectAnalyzer(), new WindowsSourceWorkspace(workDirectory));
         this.ai = new AiUseCases(database, secrets);
+        this.phaseTwoAgentTools = new ReadOnlyPhaseTwoAgentTools();
         this.phaseTwoConfiguration = new PhaseTwoConfigurationUseCase(database, secrets);
         this.environment = new EnvironmentPreparationUseCase(
                 new PhaseOneEnvironmentPreparationService(), linuxGateway, servers, locks);
@@ -102,6 +110,24 @@ public final class DesktopApplicationService {
      */
     public SourcePreparation prepareSource(Path sourceDirectory) throws IOException {
         return source.prepare(sourceDirectory);
+    }
+
+    /**
+     * Performs the Phase Two bounded static inspection made available to the optional read-only agent.
+     *
+     * <p>执行供可选只读 Agent 使用的二期有界静态检查。
+     */
+    public PhaseTwoProjectAssessment analyzePhaseTwoSource(Path sourceDirectory, PhaseTwoProjectType projectType) {
+        return phaseTwoAgentTools.analyze(sourceDirectory, projectType);
+    }
+
+    /**
+     * Renders a fully validated Phase Two plan without opening SSH, invoking a build, or reading a secret.
+     *
+     * <p>渲染完整校验的二期计划，不打开 SSH、不调用构建，也不读取秘密。
+     */
+    public PhaseTwoDeploymentPlan planPhaseTwoDeployment(PhaseTwoDeploymentRequest request) {
+        return phaseTwoAgentTools.plan(request);
     }
 
     /**
@@ -182,6 +208,25 @@ public final class DesktopApplicationService {
     }
 
     /**
+     * Stores an explicitly named AI provider without replacing the default profile.
+     *
+     * <p>保存一个显式命名的 AI 提供者，而不替换默认配置。
+     */
+    public void saveAiProviderProfile(AiProviderProfile profile, char[] masterPassword, char[] apiKey)
+            throws SQLException, SecretStoreException {
+        ai.saveNamed(profile, masterPassword, apiKey);
+    }
+
+    /**
+     * Lists configured AI providers without returning any API key.
+     *
+     * <p>列出已配置的 AI 提供者，而不返回任何 API Key。
+     */
+    public List<AiProviderProfile> listAiProviderProfiles() throws SQLException {
+        return ai.listNamed();
+    }
+
+    /**
      * Stores an immutable non-secret Phase Two configuration snapshot.
      *
      * <p>保存一个不可变的非秘密二期配置快照。
@@ -226,6 +271,16 @@ public final class DesktopApplicationService {
                                                    CredentialStorageMode mode, char[] masterPassword,
                                                    String languageTag) {
         return ai.explain(preparation, profile, mode, masterPassword, languageTag);
+    }
+
+    /**
+     * Requests an explanation from exactly one persisted named provider.
+     *
+     * <p>从恰好一个已持久化的命名提供者请求解释。
+     */
+    public AiAnalysisOutcome requestAiExplanationFromProvider(SourcePreparation preparation, String providerId,
+                                                               char[] masterPassword, String languageTag) {
+        return ai.explainNamed(preparation, providerId, masterPassword, languageTag);
     }
 
     /**

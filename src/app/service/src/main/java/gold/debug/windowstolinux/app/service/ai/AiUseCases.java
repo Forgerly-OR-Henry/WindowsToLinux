@@ -14,6 +14,7 @@ import gold.debug.windowstolinux.shared.model.security.CredentialStorageMode;
 
 import java.sql.SQLException;
 import java.util.Arrays;
+import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 
@@ -80,6 +81,32 @@ public final class AiUseCases {
     }
 
     /**
+     * Stores one explicitly named AI provider without changing the legacy default provider.
+     *
+     * <p>保存一个显式命名的 AI 提供者，而不改变旧版默认提供者。
+     */
+    public void saveNamed(AiProviderProfile profile, char[] masterPassword, char[] apiKey)
+            throws SQLException, SecretStoreException {
+        Objects.requireNonNull(profile, "profile");
+        try (SecretStore store = secrets.open(profile.credentialMode(), masterPassword)) {
+            store.save(profile.credentialKey(), apiKey);
+            database.saveAiProviderProfile(profile.stored());
+        } finally {
+            clear(masterPassword);
+            clear(apiKey);
+        }
+    }
+
+    /**
+     * Lists named AI providers without reading their API keys.
+     *
+     * <p>列出命名 AI 提供者，而不读取其 API Key。
+     */
+    public List<AiProviderProfile> listNamed() throws SQLException {
+        return database.listAiProviderProfiles().stream().map(AiProviderProfile::fromStored).toList();
+    }
+
+    /**
      * Performs the {@code explain} operation.
      *
      * <p>执行 {@code explain} 操作。
@@ -117,6 +144,30 @@ public final class AiUseCases {
             return AiAnalysisOutcome.unavailable(exception.userMessage(), exception.diagnostic());
         } finally {
             clear(masterPassword);
+        }
+    }
+
+    /**
+     * Calls only the named provider selected by its stored identifier; no alternative provider is consulted on failure.
+     *
+     * <p>仅调用由已存储标识选定的命名提供者；失败时不会咨询其他提供者。
+     */
+    public AiAnalysisOutcome explainNamed(SourcePreparation preparation, String providerId, char[] masterPassword,
+                                          String languageTag) {
+        try {
+            AiProviderProfile profile = database.listAiProviderProfiles().stream()
+                    .filter(candidate -> candidate.id().equals(providerId))
+                    .map(AiProviderProfile::fromStored)
+                    .findFirst()
+                    .orElse(null);
+            if (profile == null) {
+                return AiAnalysisOutcome.unavailable(LocalizedMessage.of("ai.status.providerMissing"));
+            }
+            return explain(preparation, profile.selectedProfile(), profile.credentialMode(), masterPassword, languageTag);
+        } catch (SQLException exception) {
+            clear(masterPassword);
+            return AiAnalysisOutcome.unavailable(LocalizedMessage.of("ai.status.providerMissing"),
+                    "The selected AI provider metadata could not be read");
         }
     }
 

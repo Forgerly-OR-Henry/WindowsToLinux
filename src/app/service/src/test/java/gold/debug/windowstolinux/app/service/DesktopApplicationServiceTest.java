@@ -4,6 +4,8 @@ import gold.debug.windowstolinux.app.db.DesktopDatabase;
 import gold.debug.windowstolinux.app.db.entity.CurrentRelease;
 import gold.debug.windowstolinux.app.db.entity.StoredApplicationSecretRevision;
 import gold.debug.windowstolinux.app.service.ai.AiProfile;
+import gold.debug.windowstolinux.app.service.ai.AiAnalysisOutcome;
+import gold.debug.windowstolinux.app.service.ai.AiProviderProfile;
 import gold.debug.windowstolinux.app.service.lifecycle.LifecycleOutcome;
 import gold.debug.windowstolinux.app.service.server.ServerProfile;
 import gold.debug.windowstolinux.app.service.source.SourcePreparation;
@@ -106,6 +108,39 @@ class DesktopApplicationServiceTest {
             }
             assertThrows(java.sql.SQLException.class,
                     () -> service.savePhaseTwoSecretRevision(revision, secretStore, "replacement".toCharArray()));
+        }
+    }
+
+    @Test
+    void keepsNamedAiProvidersExplicitAndDoesNotUseTheLegacyDefaultAsFallback() throws Exception {
+        try (DesktopDatabase database = DesktopDatabase.open(temporaryDirectory)) {
+            DesktopApplicationService service = new DesktopApplicationService(database, temporaryDirectory.resolve("work"), unusedGateway());
+            AiProviderProfile provider = new AiProviderProfile("analysis", URI.create("https://analysis.example.test/v1/chat/completions"),
+                    "gpt-5", "ai/analysis/api-key", CredentialStorageMode.MASTER_PASSWORD);
+            service.saveAiProviderProfile(provider, "correct master password".toCharArray(), "analysis-key".toCharArray());
+
+            assertEquals(java.util.List.of(provider), service.listAiProviderProfiles());
+            AiAnalysisOutcome unavailable = service.requestAiExplanationFromProvider(
+                    new SourcePreparation(ProjectAssessment.rejected(java.util.List.of(
+                            new gold.debug.windowstolinux.shared.model.analysis.RejectionReason("TEST_REJECTED",
+                                    LocalizedMessage.of("test.rejected"), "test"))), Optional.empty(), java.util.List.of()),
+                    "missing", "correct master password".toCharArray(), "en");
+            assertEquals("ai.status.providerMissing", unavailable.status().key());
+        }
+    }
+
+    @Test
+    void exposesOnlyReadOnlyTypedToolsToTheOptionalPhaseTwoAgent() throws Exception {
+        Path source = Files.createDirectories(temporaryDirectory.resolve("phase-two-source"));
+        Files.writeString(source.resolve("package.json"), """
+                {"name":"demo","scripts":{"build":"vite","start":"node server.js"}}
+                """);
+        Files.writeString(source.resolve("package-lock.json"), "{}");
+        try (DesktopDatabase database = DesktopDatabase.open(temporaryDirectory)) {
+            DesktopApplicationService service = new DesktopApplicationService(database, temporaryDirectory.resolve("work"), unusedGateway());
+            assertEquals(gold.debug.windowstolinux.shared.model.analysis.PhaseTwoAdmission.READY_FOR_PLANNING,
+                    service.analyzePhaseTwoSource(source, gold.debug.windowstolinux.shared.model.project.PhaseTwoProjectType.NODE_SERVICE)
+                            .admission());
         }
     }
 
