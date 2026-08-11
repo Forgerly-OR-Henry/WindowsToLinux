@@ -1,0 +1,475 @@
+#!/usr/bin/env bash
+set -euo pipefail
+IFS=$' \\t\\n'
+PATH=/usr/sbin:/usr/bin:/sbin:/bin
+umask 077
+helper_path=/usr/local/lib/windowstolinux/phase1-helper
+helper_directory=/usr/local/lib/windowstolinux
+base_root=/var/lib/windowstolinux
+applications_root="$base_root/apps"
+work_root="$base_root/work"
+snapshots_root="$base_root/snapshots"
+reject() {
+  printf 'PHASE1_HELPER_REJECT=%s\\n' "$1" >&2
+  exit 64
+}
+require_root() {
+  [ "$(id -u)" -eq 0 ] || reject not-root
+  [ ! -L "$helper_path" ] || reject helper-symlink
+  [ "$(stat -c '%u:%g' -- "$helper_path")" = 0:0 ] || reject helper-owner
+  [ "$(stat -c '%u:%g' -- "$helper_directory")" = 0:0 ] || reject helper-directory-owner
+  [ -z "$(find -P "$helper_path" -maxdepth 0 -perm /022 -print -quit)" ] || reject helper-writable
+  [ -z "$(find -P "$helper_directory" -maxdepth 0 -perm /022 -print -quit)" ] || reject helper-directory-writable
+}
+require_deployer() {
+  deployer="${SUDO_USER:-}"
+  [[ "$deployer" =~ ^[a-z_][a-z0-9_-]{0,31}$ ]] || reject deployer
+  id "$deployer" >/dev/null 2>&1 || reject deployer
+  deployer_group="$(id -gn "$deployer")"
+}
+require_app() {
+  [[ "$1" =~ ^[a-z0-9][a-z0-9-]{0,62}$ ]] || reject application-id
+}
+require_candidate() {
+  local app="$1"
+  local candidate_id="$2"
+  [[ "$candidate_id" =~ ^${app}-[0-9a-f]{16}$ ]] || reject candidate-id
+}
+require_digest() {
+  [[ "$1" =~ ^[0-9a-f]{64}$ ]] || reject digest
+}
+require_snapshot_token() {
+  [[ "$1" =~ ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$ ]] || reject snapshot-token
+}
+app_root() {
+  printf '%s/apps/%s' "$base_root" "$1"
+}
+unit_name() {
+  printf 'windowstolinux-%s.service' "$1"
+}
+unit_path() {
+  printf '/etc/systemd/system/windowstolinux-%s.service' "$1"
+}
+candidate_root() {
+  printf '%s/%s' "$work_root" "$1"
+}
+snapshot_root() {
+  printf '%s/%s-%s' "$snapshots_root" "$1" "$2"
+}
+assert_root_owned_directory() {
+  local path="$1"
+  [ -d "$path" ] || reject controlled-directory
+  [ ! -L "$path" ] || reject controlled-directory-symlink
+  [ "$(stat -c '%u:%g' -- "$path")" = 0:0 ] || reject controlled-directory-owner
+}
+assert_root_owned_regular() {
+  local path="$1"
+  [ -f "$path" ] || reject controlled-file
+  [ ! -L "$path" ] || reject controlled-file-symlink
+  [ "$(stat -c '%u:%g' -- "$path")" = 0:0 ] || reject controlled-file-owner
+}
+assert_candidate_for_deployer() {
+  local candidate="$1"
+  assert_root_owned_directory "$candidate"
+  assert_root_owned_regular "$candidate/.deployer"
+  [ "$(cat -- "$candidate/.deployer")" = "$deployer" ] || reject candidate-deployer
+}
+render_unit() {
+  local app="$1"
+  local root
+  root="$(app_root "$app")"
+  cat <<UNIT
+[Unit]
+Description=WindowsToLinux managed $app
+After=network.target
+[Service]
+Type=simple
+User=$deployer
+WorkingDirectory=$root/current
+ExecStart=/usr/bin/java -jar $root/current/app.jar
+Restart=on-failure
+RestartSec=5
+SuccessExitStatus=143
+[Install]
+WantedBy=multi-user.target
+UNIT
+}
+expected_unit_digest() {
+  render_unit "$1" | sha256sum | awk '{print $1}'
+}
+initialise_controlled_roots() {
+  install -d -o root -g root -m 755 -- "$base_root" "$applications_root" "$work_root" "$snapshots_root"
+  assert_root_owned_directory "$base_root"
+  assert_root_owned_directory "$applications_root"
+  assert_root_owned_directory "$work_root"
+  assert_root_owned_directory "$snapshots_root"
+}
+assert_application_root_or_absent() {
+  local app="$1"
+  local root
+  root="$(app_root "$app")"
+  if [ -e "$root" ] || [ -L "$root" ]; then
+    assert_root_owned_directory "$root"
+  fi
+}
+assert_current_or_empty() {
+  local app="$1"
+  local manifest="$2"
+  local root unit releases current expected
+  root="$(app_root "$app")"
+  unit="$(unit_path "$app")"
+  releases="$root/releases"
+  expected="$(expected_unit_digest "$app")"
+  previous_present=0
+  previous_path=
+  previous_running=0
+  if [ -e "$root/current" ] || [ -L "$root/current" ]; then
+    assert_root_owned_directory "$root"
+    [ -L "$root/current" ] || reject current-not-link
+    current="$(readlink -f -- "$root/current")"
+    case "$current" in "$releases"/[0-9a-f]*) ;; *) reject current-path ;; esac
+    local current_digest="${current##*/}"
+    require_digest "$current_digest"
+    [ "$current" = "$releases/$current_digest" ] || reject current-path
+    assert_root_owned_directory "$current"
+    assert_root_owned_regular "$current/.windowstolinux-owner"
+    [ "$(cat -- "$current/.windowstolinux-owner")" = "$manifest" ] || reject current-owner
+    [ "$(systemctl show --value --property FragmentPath "$(unit_name "$app")")" = "$unit" ] || reject unit-fragment
+    [ -z "$(systemctl show --value --property DropInPaths "$(unit_name "$app")")" ] || reject unit-dropins
+    assert_root_owned_regular "$unit"
+    [ "$(sha256sum -- "$unit" | awk '{print $1}')" = "$expected" ] || reject unit-digest
+    previous_present=1
+    previous_path="$current"
+    if systemctl is-active --quiet "$(unit_name "$app")"; then
+      previous_running=1
+    fi
+  else
+    [ ! -e "$unit" ] && [ ! -L "$unit" ] || reject unmanaged-unit
+    ! systemctl cat "$(unit_name "$app")" >/dev/null 2>&1 || reject unmanaged-unit
+    if [ -e "$root" ] || [ -L "$root" ]; then
+      assert_root_owned_directory "$root"
+      if [ -e "$releases" ] || [ -L "$releases" ]; then
+        assert_root_owned_directory "$releases"
+        [ -z "$(find -P "$releases" -mindepth 1 -maxdepth 1 -print -quit)" ] || reject unmanaged-release
+      fi
+    fi
+  fi
+}
+create_candidate() {
+  [ "$#" -eq 2 ] || reject candidate-arguments
+  local app="$1"
+  local candidate_id="$2"
+  require_app "$app"
+  require_candidate "$app" "$candidate_id"
+  initialise_controlled_roots
+  local candidate mutable
+  candidate="$(candidate_root "$candidate_id")"
+  mutable="$candidate/mutable"
+  [ ! -e "$candidate" ] && [ ! -L "$candidate" ] || reject candidate-exists
+  install -d -o root -g root -m 711 -- "$candidate"
+  install -d -o "$deployer" -g "$deployer_group" -m 700 -- "$mutable"
+  printf '%s\\n' "$deployer" > "$candidate/.deployer"
+  chown root:root -- "$candidate/.deployer"
+  chmod 444 -- "$candidate/.deployer"
+  assert_candidate_for_deployer "$candidate"
+  printf 'CANDIDATE=%s\\n' "$candidate"
+}
+cleanup_candidate() {
+  [ "$#" -eq 2 ] || reject cleanup-arguments
+  local app="$1"
+  local candidate_id="$2"
+  require_app "$app"
+  require_candidate "$app" "$candidate_id"
+  local candidate
+  candidate="$(candidate_root "$candidate_id")"
+  if [ -e "$candidate" ] || [ -L "$candidate" ]; then
+    assert_candidate_for_deployer "$candidate"
+    rm -rf --one-file-system -- "$candidate"
+  fi
+  printf 'CANDIDATE_CLEANED=1\\n'
+}
+create_snapshot() {
+  [ "$#" -eq 2 ] || reject snapshot-arguments
+  local app="$1"
+  local manifest="$2"
+  require_app "$app"
+  require_digest "$manifest"
+  initialise_controlled_roots
+  assert_application_root_or_absent "$app"
+  assert_current_or_empty "$app" "$manifest"
+  if [ "$previous_present" -eq 0 ]; then
+    printf 'PREVIOUS=0\\n'
+    return
+  fi
+  local token snapshot unit
+  token="$(cat /proc/sys/kernel/random/uuid)"
+  require_snapshot_token "$token"
+  snapshot="$(snapshot_root "$app" "$token")"
+  unit="$(unit_path "$app")"
+  [ ! -e "$snapshot" ] && [ ! -L "$snapshot" ] || reject snapshot-exists
+  install -d -o root -g root -m 700 -- "$snapshot"
+  printf '%s\\n' "$previous_path" > "$snapshot/current-path"
+  install -o root -g root -m 600 -- "$unit" "$snapshot/unit"
+  systemctl is-enabled "$(unit_name "$app")" > "$snapshot/enabled" 2>/dev/null || true
+  if [ "$previous_running" -eq 1 ]; then
+    printf 'active\\n' > "$snapshot/runtime"
+  else
+    printf 'inactive\\n' > "$snapshot/runtime"
+  fi
+  chown root:root -- "$snapshot/current-path" "$snapshot/enabled" "$snapshot/runtime"
+  chmod 600 -- "$snapshot/current-path" "$snapshot/enabled" "$snapshot/runtime"
+  printf 'SNAPSHOT_TOKEN=%s\\n' "$token"
+  printf 'PREVIOUS=1\\n'
+  printf 'PREVIOUS_RUNNING=%s\\n' "$previous_running"
+}
+seal_candidate_artifact() {
+  local app="$1"
+  local candidate_id="$2"
+  local expected_digest="$3"
+  local candidate mutable source target
+  candidate="$(candidate_root "$candidate_id")"
+  mutable="$candidate/mutable"
+  assert_candidate_for_deployer "$candidate"
+  [ -d "$mutable" ] && [ ! -L "$mutable" ] || reject mutable-workspace
+  # The candidate parent is root-owned, so the deployment account cannot replace
+  # the mutable entry while ownership is being transferred.
+  chown root:root -- "$mutable"
+  chmod 700 -- "$mutable"
+  [ -z "$(find -P "$mutable" -xdev -type l -print -quit)" ] || reject mutable-symlink
+  [ -z "$(find -P "$mutable" -xdev ! -type f ! -type d -print -quit)" ] || reject mutable-special-file
+  source="$mutable/source"
+  target="$source/target"
+  [ -d "$source" ] && [ ! -L "$source" ] || reject source-directory
+  [ -d "$target" ] && [ ! -L "$target" ] || reject target-directory
+  mapfile -d '' -t jars < <(find -P "$target" -maxdepth 1 -type f -name '*.jar' ! -name 'original-*.jar' -print0 | LC_ALL=C sort -z)
+  [ "${#jars[@]}" -eq 1 ] || reject artifact-count
+  artifact="${jars[0]}"
+  [ ! -L "$artifact" ] || reject artifact-symlink
+  [ "$(sha256sum -- "$artifact" | awk '{print $1}')" = "$expected_digest" ] || reject artifact-digest
+  sealed_artifact="$artifact"
+}
+publish_release() {
+  [ "$#" -eq 4 ] || reject publish-arguments
+  local app="$1"
+  local candidate_id="$2"
+  local artifact_digest="$3"
+  local manifest="$4"
+  require_app "$app"
+  require_candidate "$app" "$candidate_id"
+  require_digest "$artifact_digest"
+  require_digest "$manifest"
+  initialise_controlled_roots
+  assert_application_root_or_absent "$app"
+  assert_current_or_empty "$app" "$manifest"
+  seal_candidate_artifact "$app" "$candidate_id" "$artifact_digest"
+  local root releases release unit tmp
+  root="$(app_root "$app")"
+  releases="$root/releases"
+  release="$releases/$artifact_digest"
+  unit="$(unit_path "$app")"
+  install -d -o root -g root -m 755 -- "$root" "$releases"
+  [ ! -e "$release" ] && [ ! -L "$release" ] || reject release-exists
+  install -d -o root -g root -m 755 -- "$release"
+  install -o root -g root -m 555 -- "$sealed_artifact" "$release/app.jar"
+  [ "$(sha256sum -- "$release/app.jar" | awk '{print $1}')" = "$artifact_digest" ] || reject release-digest
+  printf '%s\\n' "$manifest" > "$release/.windowstolinux-owner"
+  chown root:root -- "$release/.windowstolinux-owner"
+  chmod 444 -- "$release/.windowstolinux-owner"
+  if [ "$previous_present" -eq 1 ]; then
+    systemctl stop "$(unit_name "$app")"
+    stopped=0
+    for attempt in {1..20}; do
+      if ! systemctl is-active --quiet "$(unit_name "$app")" \
+        && [ "$(systemctl show --value --property MainPID "$(unit_name "$app")")" = 0 ]; then
+        stopped=1
+        break
+      fi
+      sleep 0.25
+    done
+    [ "$stopped" -eq 1 ] || reject stop-incomplete
+  fi
+  ln -sfnT -- "$release" "$root/current"
+  tmp="$(mktemp /etc/systemd/system/.windowstolinux-phase1.XXXXXX)"
+  trap 'rm -f -- "$tmp"' EXIT
+  render_unit "$app" > "$tmp"
+  install -o root -g root -m 644 -- "$tmp" "$unit"
+  rm -f -- "$tmp"
+  trap - EXIT
+  systemctl daemon-reload
+  systemctl start "$(unit_name "$app")"
+  printf 'PUBLISHED=1\\n'
+}
+retain_releases() {
+  [ "$#" -eq 2 ] || reject retain-arguments
+  local app="$1"
+  local manifest="$2"
+  require_app "$app"
+  require_digest "$manifest"
+  local root releases current current_digest
+  root="$(app_root "$app")"
+  releases="$root/releases"
+  assert_root_owned_directory "$root"
+  assert_root_owned_directory "$releases"
+  [ -L "$root/current" ] || reject current-not-link
+  current="$(readlink -f -- "$root/current")"
+  current_digest="${current##*/}"
+  require_digest "$current_digest"
+  [ "$current" = "$releases/$current_digest" ] || reject current-path
+  mapfile -t releases_by_age < <(find -P "$releases" -mindepth 1 -maxdepth 1 -type d -printf '%T@ %f\\n' | LC_ALL=C sort -nr | awk '{print $2}')
+  retained_noncurrent=0
+  for release_digest in "${releases_by_age[@]}"; do
+    require_digest "$release_digest"
+    release="$releases/$release_digest"
+    assert_root_owned_directory "$release"
+    assert_root_owned_regular "$release/.windowstolinux-owner"
+    [ "$(cat -- "$release/.windowstolinux-owner")" = "$manifest" ] || reject release-owner
+    if [ "$release" = "$current" ]; then
+      continue
+    elif [ "$retained_noncurrent" -lt 2 ]; then
+      retained_noncurrent=$((retained_noncurrent + 1))
+    else
+      rm -rf --one-file-system -- "$release"
+    fi
+  done
+  printf 'RETAINED=%s\\n' "$((retained_noncurrent + 1))"
+}
+rollback_previous() {
+  [ "$#" -eq 4 ] || reject rollback-arguments
+  local app="$1"
+  local candidate_digest="$2"
+  local manifest="$3"
+  local token="$4"
+  require_app "$app"
+  require_digest "$candidate_digest"
+  require_digest "$manifest"
+  require_snapshot_token "$token"
+  local root releases candidate snapshot unit expected previous previous_digest previous_runtime
+  root="$(app_root "$app")"
+  releases="$root/releases"
+  candidate="$releases/$candidate_digest"
+  snapshot="$(snapshot_root "$app" "$token")"
+  unit="$(unit_path "$app")"
+  expected="$(expected_unit_digest "$app")"
+  assert_root_owned_directory "$root"
+  assert_root_owned_directory "$releases"
+  assert_root_owned_directory "$snapshot"
+  for file in current-path unit runtime enabled; do assert_root_owned_regular "$snapshot/$file"; done
+  previous="$(cat -- "$snapshot/current-path")"
+  previous_digest="${previous##*/}"
+  require_digest "$previous_digest"
+  [ "$previous" = "$releases/$previous_digest" ] || reject snapshot-current
+  previous_runtime="$(cat -- "$snapshot/runtime")"
+  [ "$previous_runtime" = active ] || [ "$previous_runtime" = inactive ] || reject snapshot-runtime
+  assert_root_owned_directory "$previous"
+  assert_root_owned_regular "$previous/.windowstolinux-owner"
+  [ "$(cat -- "$previous/.windowstolinux-owner")" = "$manifest" ] || reject previous-owner
+  [ "$(sha256sum -- "$snapshot/unit" | awk '{print $1}')" = "$expected" ] || reject snapshot-unit
+  if [ -e "$candidate" ] || [ -L "$candidate" ]; then
+    assert_root_owned_directory "$candidate"
+    assert_root_owned_regular "$candidate/.windowstolinux-owner"
+    [ "$(cat -- "$candidate/.windowstolinux-owner")" = "$manifest" ] || reject candidate-owner
+  fi
+  if [ -e "$root/current" ] || [ -L "$root/current" ]; then
+    [ -L "$root/current" ] || reject current-not-link
+    current="$(readlink -f -- "$root/current")"
+    [ "$current" = "$candidate" ] || [ "$current" = "$previous" ] || reject rollback-current
+  fi
+  assert_root_owned_regular "$unit"
+  [ "$(sha256sum -- "$unit" | awk '{print $1}')" = "$expected" ] || reject current-unit
+  systemctl stop "$(unit_name "$app")" || true
+  ln -sfnT -- "$previous" "$root/current"
+  install -o root -g root -m 644 -- "$snapshot/unit" "$unit"
+  systemctl daemon-reload
+  if [ "$(cat -- "$snapshot/enabled")" = enabled ]; then
+    systemctl enable "$(unit_name "$app")"
+  else
+    systemctl disable "$(unit_name "$app")"
+  fi
+  if [ "$previous_runtime" = active ]; then
+    systemctl start "$(unit_name "$app")"
+  else
+    systemctl stop "$(unit_name "$app")" || true
+  fi
+  if [ -e "$candidate" ] || [ -L "$candidate" ]; then
+    rm -rf --one-file-system -- "$candidate"
+  fi
+  rm -rf --one-file-system -- "$snapshot"
+  printf 'ROLLED_BACK=1\\n'
+}
+rollback_first() {
+  [ "$#" -eq 3 ] || reject rollback-first-arguments
+  local app="$1"
+  local candidate_digest="$2"
+  local manifest="$3"
+  require_app "$app"
+  require_digest "$candidate_digest"
+  require_digest "$manifest"
+  local root releases candidate unit expected
+  root="$(app_root "$app")"
+  releases="$root/releases"
+  candidate="$releases/$candidate_digest"
+  unit="$(unit_path "$app")"
+  expected="$(expected_unit_digest "$app")"
+  assert_root_owned_directory "$root"
+  assert_root_owned_directory "$releases"
+  if [ -e "$root/current" ] || [ -L "$root/current" ]; then
+    [ -L "$root/current" ] || reject current-not-link
+    current="$(readlink -f -- "$root/current")"
+    [ "$current" = "$candidate" ] || reject rollback-current
+    assert_root_owned_regular "$root/current/.windowstolinux-owner"
+    [ "$(cat -- "$root/current/.windowstolinux-owner")" = "$manifest" ] || reject candidate-owner
+  fi
+  if [ -e "$unit" ] || [ -L "$unit" ]; then
+    assert_root_owned_regular "$unit"
+    [ "$(sha256sum -- "$unit" | awk '{print $1}')" = "$expected" ] || reject current-unit
+    systemctl stop "$(unit_name "$app")" || true
+    rm -f -- "$unit"
+  fi
+  if [ -e "$root/current" ] || [ -L "$root/current" ]; then
+    rm -f -- "$root/current"
+  fi
+  if [ -e "$candidate" ] || [ -L "$candidate" ]; then
+    assert_root_owned_directory "$candidate"
+    assert_root_owned_regular "$candidate/.windowstolinux-owner"
+    [ "$(cat -- "$candidate/.windowstolinux-owner")" = "$manifest" ] || reject candidate-owner
+    rm -rf --one-file-system -- "$candidate"
+  fi
+  systemctl daemon-reload
+  printf 'ROLLED_BACK=1\\n'
+}
+lifecycle() {
+  [ "$#" -eq 3 ] || reject lifecycle-arguments
+  local app="$1"
+  local action="$2"
+  local manifest="$3"
+  require_app "$app"
+  require_digest "$manifest"
+  case "$action" in
+    start|stop|restart|enable|disable) ;;
+    *) reject lifecycle-action ;;
+  esac
+  assert_current_or_empty "$app" "$manifest"
+  [ "$previous_present" -eq 1 ] || reject lifecycle-unmanaged
+  systemctl "$action" "$(unit_name "$app")"
+  printf 'LIFECYCLE=%s\\n' "$action"
+}
+require_root
+require_deployer
+[ "$#" -ge 1 ] || reject verb
+verb="$1"
+shift
+case "$verb" in
+  probe)
+    [ "$#" -eq 0 ] || reject probe-arguments
+    printf 'HELPER=1\\n'
+    ;;
+  candidate-create) create_candidate "$@" ;;
+  candidate-cleanup) cleanup_candidate "$@" ;;
+  snapshot) create_snapshot "$@" ;;
+  publish) publish_release "$@" ;;
+  retain) retain_releases "$@" ;;
+  rollback-previous) rollback_previous "$@" ;;
+  rollback-first) rollback_first "$@" ;;
+  lifecycle) lifecycle "$@" ;;
+  *) reject verb ;;
+esac

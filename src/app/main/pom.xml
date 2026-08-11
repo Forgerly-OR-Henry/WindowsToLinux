@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0">
+    <modelVersion>4.0.0</modelVersion>
+    <parent><groupId>gold.debug.windowstolinux</groupId><artifactId>windowstolinux-app</artifactId><version>0.1.0-SNAPSHOT</version><relativePath>../pom.xml</relativePath></parent>
+    <artifactId>windowstolinux-app-main</artifactId>
+    <dependencies>
+        <dependency><groupId>gold.debug.windowstolinux</groupId><artifactId>windowstolinux-app-ui</artifactId><version>${project.version}</version></dependency>
+        <dependency><groupId>gold.debug.windowstolinux</groupId><artifactId>windowstolinux-app-windows</artifactId><version>${project.version}</version></dependency>
+        <dependency><groupId>gold.debug.windowstolinux</groupId><artifactId>windowstolinux-app-db</artifactId><version>${project.version}</version></dependency>
+        <dependency><groupId>gold.debug.windowstolinux</groupId><artifactId>windowstolinux-app-secret</artifactId><version>${project.version}</version></dependency>
+        <dependency><groupId>gold.debug.windowstolinux</groupId><artifactId>windowstolinux-app-service</artifactId><version>${project.version}</version></dependency>
+        <dependency><groupId>gold.debug.windowstolinux</groupId><artifactId>windowstolinux-shared-model</artifactId><version>${project.version}</version></dependency>
+        <dependency><groupId>gold.debug.windowstolinux</groupId><artifactId>windowstolinux-shared-git</artifactId><version>${project.version}</version></dependency>
+        <dependency><groupId>gold.debug.windowstolinux</groupId><artifactId>windowstolinux-shared-analyze</artifactId><version>${project.version}</version></dependency>
+        <dependency><groupId>gold.debug.windowstolinux</groupId><artifactId>windowstolinux-shared-ai</artifactId><version>${project.version}</version></dependency>
+        <dependency><groupId>gold.debug.windowstolinux</groupId><artifactId>windowstolinux-shared-config</artifactId><version>${project.version}</version></dependency>
+        <dependency><groupId>gold.debug.windowstolinux</groupId><artifactId>windowstolinux-shared-linux</artifactId><version>${project.version}</version></dependency>
+        <dependency><groupId>gold.debug.windowstolinux</groupId><artifactId>windowstolinux-shared-linux-sshd</artifactId><version>${project.version}</version></dependency>
+        <dependency><groupId>gold.debug.windowstolinux</groupId><artifactId>windowstolinux-shared-deploy</artifactId><version>${project.version}</version></dependency>
+        <dependency><groupId>gold.debug.windowstolinux</groupId><artifactId>windowstolinux-shared-backup</artifactId><version>${project.version}</version></dependency>
+        <dependency><groupId>org.slf4j</groupId><artifactId>slf4j-nop</artifactId><version>${slf4j.version}</version></dependency>
+        <dependency><groupId>org.junit.jupiter</groupId><artifactId>junit-jupiter</artifactId><scope>test</scope></dependency>
+    </dependencies>
+</project>

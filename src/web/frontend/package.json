@@ -1,0 +1,30 @@
+{
+  "name": "@windowstolinux/web-frontend",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22 <25"
+  },
+  "scripts": {
+    "dev": "vite",
+    "typecheck": "vue-tsc --noEmit -p tsconfig.app.json",
+    "test": "vitest run",
+    "build": "npm run typecheck && vite build",
+    "preview": "vite preview",
+    "install:e2e-browser": "node scripts/playwright-local.mjs install chromium",
+    "test:e2e": "node scripts/playwright-local.mjs test"
+  },
+  "dependencies": {
+    "vue": "3.5.41"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.62.1",
+    "@types/node": "24.10.1",
+    "@vitejs/plugin-vue": "6.0.1",
+    "typescript": "5.9.3",
+    "vite": "^7.3.6",
+    "vitest": "^3.2.7",
+    "vue-tsc": "3.0.6"
+  }
+}
