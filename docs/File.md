@@ -2,14 +2,14 @@
 
 ## 文档信息
 
-- 文档版本：`2.2.2-bilingual-comments`
-- 文档状态：**正式目标模块、职责、依赖方向和叶子模块内部目标包结构已确认；28 个 Maven reactor 工程及一期已有代码的职责迁移已落地；桌面端采用英文基准与简体中文 UI 映射，代码注释采用中英双语；一期 Ubuntu 24.04 真实验收结论保持，本次改造未重新连接远程主机**
+- 文档版本：`2.3.0-phase2-local-implementation`
+- 文档状态：**正式目标模块、职责、依赖方向和叶子模块内部目标包结构已确认；28 个 Maven reactor 工程及一期已有代码的职责迁移已落地；二期本地实现复用既有模块和包结构，真实运行环境验收保持待执行**
 - 已确认范围：`shared` 共用模块、`app` Windows 桌面应用模块、`web` Web 应用模块
 - 已确认能力边界：受管应用生命周期复用既有模块，不新增独立 Maven 模块
 - 更新日期：2026-08-12
 - 开发总纲：[DEVELOPMENT.md](DEVELOPMENT.md)
 
-> 本文是正式目标目录、模块职责、依赖方向和内部包结构的来源。当前 reactor 已包含根工程、3 个聚合模块和 24 个叶子模块，共 28 个 POM。`shared/source` 和 `shared/linux-sshd` 及一期相关代码迁移已落地；`shared/config` 已进入 reactor，但按当前范围仅有 POM 和依赖边界，没有配置 API、空包或数据库表。`shared/git`、`shared/backup` 和 Web Java 叶子模块仍只保留 POM。
+> 本文是正式目标目录、模块职责、依赖方向和内部包结构的来源。当前 reactor 已包含根工程、3 个聚合模块和 24 个叶子模块，共 28 个 POM。`shared/source`、`shared/config`、`shared/git`、`shared/linux-sshd`、`analyze`、`deploy`、`app/db` 与 `app/service` 已承载对应的一期或二期代码；`shared/backup` 和 Web Java 叶子模块仍只保留 POM。二期代码仅完成本地自动化验证，不构成新类型或新发行版的正式支持结论。
 
 ## 1. 完整目标结构
 
@@ -41,6 +41,7 @@ WindowsToLinux/
    │  │  └─ windows/          Windows Credential Manager 适配
    │  ├─ service/             桌面业务流程整合
    │  │  ├─ ai/               AI 配置与分析用例
+   │  │  ├─ config/           二期配置快照与秘密修订用例
    │  │  ├─ concurrency/      同服务器互斥、后台执行和取消
    │  │  ├─ deployment/       部署用例
    │  │  ├─ environment/      环境准备用例
@@ -228,7 +229,7 @@ WindowsToLinux/
 - WindowsToLinux 自身构建使用开发机的系统 Maven 和系统本地仓库；项目 POM 不声明仓库位置，不创建项目专用 Maven 仓库，也不新增 Maven Wrapper 作为本项目构建入口。
 - 构建插件确需额外构建期依赖时，在根 POM 对应插件的 `<dependencies>` 中显式声明，供系统 Maven 同步；不得为了补插件缓存而把依赖加入业务叶子模块的运行时 classpath。
 - 一期正式 Java 源码已按第 1 节的实际职责分包迁移；模块根包只保留 `DesktopDatabase`、`DesktopApplicationService` 等稳定门面。`SafeSourceArchiver` 与源码归档类型已进入 `shared/source.archive`，Apache SSHD 实现已进入 `shared/linux-sshd`。
-- `shared/git`、`shared/backup` 和 Web Java 叶子模块目前只有 POM；`shared/config` 也仅有 POM，不创建空 `src` 目录。`web/frontend` 已包含最小页面、单元测试和浏览器测试。
+- `shared/backup` 和 Web Java 叶子模块目前只有 POM。`shared/config`、`shared/git` 已有二期 API；`web/frontend` 已包含最小页面、单元测试和浏览器测试。
 
 ## 2. 模块职责
 
@@ -587,6 +588,7 @@ linux-sshd 通过 linux 契约采集服务器已有环境
 
 | 版本 | 日期 | 说明 |
 | --- | --- | --- |
+| 2.3.0-phase2-local-implementation | 2026-08-12 | 同步二期已实现的 Git、配置、分析、部署计划、Linux/容器和桌面服务包；明确所有二期真实运行环境验收仍待执行。 |
 | 2.2.2-bilingual-comments | 2026-08-12 | 明确 Java 行注释、块注释和 Javadoc 采用英文在前、简体中文紧随其后的双语格式；同步将生产汉字门禁限定为 Java 非注释内容和非 Java 文本资源，注释不进入 UI 消息目录。 |
 | 2.2.1-i18n-policy | 2026-08-12 | 固定桌面端英文基准与简体中文 UI 映射，规定消息键/参数同步、结构化用户消息与英文/原始诊断分离、AI 响应语言传递及生产目录汉字门禁；不新增模块，不修改 SQLite schema、部署、安全或凭据边界。 |
 | 2.2.0-structure-implementation | 2026-08-11 | 落地 28-POM reactor，新增 `shared/config`、`shared/source`、`shared/linux-sshd`，完成一期共享层、桌面层、组合根和测试的职责分包与原子迁移；`shared/config` 仅接通 POM 依赖，SQLite 仍为 schema v3，本次不执行真实 Ubuntu 操作。 |

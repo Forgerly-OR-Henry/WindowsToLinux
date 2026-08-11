@@ -4,12 +4,12 @@
 
 - 项目名称：WindowsToLinux
 - 文档角色：产品边界、五期路线、跨期规则与完整开发流程的唯一总入口
-- 文档版本：`2.0.8-structure-implementation`
-- 文档状态：**五期需求基线；一期桌面端、完整本地回归和 Ubuntu 24.04 裸机真实验收均已完成；`File.md` 正式目标架构已落地为 28-POM reactor 和实际代码分包，本次结构重构未重新执行真实 Ubuntu 操作**
-- 更新日期：2026-08-11
+- 文档版本：`2.0.9-phase2-local-implementation`
+- 文档状态：**一期桌面端、完整本地回归和 Ubuntu 24.04 裸机真实验收均已完成；二期本地实现与自动化验证已完成，但所有二期运行环境验收仍为 `RUNTIME-PENDING`**
+- 更新日期：2026-08-12
 - 项目结构：[File.md](File.md)
 
-> 文档中的“支持”必须具有实现和验收证据。当前仓库已完成一期桌面端的静态分析、安全 `tar.gz` 归档、凭据与 SQLite、SSH/SFTP 受控适配、目标机环境准备、构建/发布/回滚编排及受管生命周期的本地实现和自动化验证；并已由程序在新装 Ubuntu 24.04 上实际验证环境准备、Maven 与 Maven Wrapper 构建、复杂 Spring Boot 发布、短停机发布、HTTP/TCP 健康、失败回滚、断连恢复、资源限制、受管归属、业务 URL 交付和完整生命周期。现有源码归档已迁入 `shared/source`，Apache SSHD 具体实现已迁入 `shared/linux-sshd`，由 `app/main` 装配后通过 `shared/linux` 契约注入业务服务。本次只做本地自动化回归，不以此替代或伪造重构后的实时 Ubuntu 验收。备份、迁移与 Web 业务尚未实现，不能因文档完整而标记为可用。
+> 文档中的“支持”必须具有实现和验收证据。当前仓库已完成一期桌面端的静态分析、安全 `tar.gz` 归档、凭据与 SQLite、SSH/SFTP 受控适配、目标机环境准备、构建/发布/回滚编排及受管生命周期的本地实现和自动化验证；并已由程序在新装 Ubuntu 24.04 上实际验证环境准备、Maven 与 Maven Wrapper 构建、复杂 Spring Boot 发布、短停机发布、HTTP/TCP 健康、失败回滚、断连恢复、资源限制、受管归属、业务 URL 交付和完整生命周期。二期已补齐 Git 只读快照、配置/密钥修订、类型化分析与计划、Linux/容器契约和受限 AI 边界的本地代码与自动化测试，但没有连接二期目标机；这不能替代或伪造 Gradle、普通 JAR、Node、Python、静态站点、容器或新发行版的真实验收。备份、迁移与 Web 业务尚未实现，不能因文档完整而标记为可用。
 
 ## 1. 产品定位
 
@@ -21,11 +21,11 @@ WindowsToLinux 是面向个人和小型自托管场景的部署管理工具。�
 
 | 项目 | 当前状态 | 可以据此声称的结论 |
 | --- | --- | --- |
-| Maven | 当前 reactor 由根工程、3 个聚合模块和 24 个叶子模块组成，共 28 个 POM；`shared/config`、`shared/source`、`shared/linux-sshd` 已进入 reactor | `File.md` 的正式目标模块结构已落地；但 POM-only 模块仍不代表对应业务已实现 |
-| Java | Java 21；一期 shared 与桌面代码已按职责分包，并通过 28-POM Maven reactor 离线 `verify`；`shared/config`、`shared/git`、`shared/backup` 和 Web Java 模块目前只有 POM | 一期支持边界不扩展至二期项目类型，POM 骨架不能视为业务实现 |
+| Maven | 当前 reactor 由根工程、3 个聚合模块和 24 个叶子模块组成，共 28 个 POM；二期复用既有叶子模块，没有新增 Maven 模块 | `File.md` 的正式目标模块结构保持不变；`backup` 和 Web Java 模块仍为 POM-only |
+| Java | Java 21；一期 shared 与桌面代码已按职责分包；`shared/config`、`shared/git`、`analyze`、`deploy`、`linux`、`linux-sshd`、`app/db`、`app/service` 已含二期本地实现与测试 | 二期新类型尚未通过真实 Linux 验收，不能标记正式支持 |
 | Web 前端 | Vue 3、TypeScript、Vite、Vitest、Playwright 骨架 | 只可展示骨架页，尚无业务接口 |
 | 桌面/Web 业务 | 一期 Swing 部署与受管生命周期用例已实现；Web 业务未实现 | Ubuntu 真实部署/回滚/生命周期矩阵已由桌面程序执行；Web 不可部署或管理应用 |
-| Linux 运行验证 | Ubuntu 24.04 x86-64 的产品环境准备、Maven/Wrapper、复杂 Spring Boot、systemd、HTTP/TCP、失败恢复、归属、访问交付和生命周期均已实际验证 | 容器和其他发行版仍属后续阶段 |
+| Linux 运行验证 | Ubuntu 24.04 x86-64 的一期产品环境准备、Maven/Wrapper、复杂 Spring Boot、systemd、HTTP/TCP、失败恢复、归属、访问交付和生命周期均已实际验证；二期新增矩阵仅完成本地能力模型/探测代码测试 | 容器和其他发行版及二期类型仍为 `RUNTIME-PENDING` |
 
 ### 2.1 正式目标架构与当前实现边界
 
@@ -41,7 +41,7 @@ WindowsToLinux 是面向个人和小型自托管场景的部署管理工具。�
 2. 源码快照、可重复归档和安全校验归 `shared/source`；桌面本地入口、Web 上传工作区和 Git 仓库来源分别归 `app/windows`、`web/file` 和 `shared/git`。源码归档不与 `shared/backup` 的应用数据备份语义混用。
 3. `shared/linux` 只定义公共契约，`shared/linux-sshd` 承接 Apache SSHD 具体实现；`deploy`、`app/service` 和 `web/service` 只依赖 `shared/linux`，只有 `app/main`、`web/main` 负责选择并装配 `shared/linux-sshd`。
 
-`shared/source` 已承接源码快照、归档与安全校验，`shared/linux-sshd` 已承接 Apache SSHD 与一期远程执行；`shared/config` 当前仅固定模块和依赖边界，未新增 Java API、配置实例存储或数据库表。
+`shared/source` 已承接源码快照、归档与安全校验，`shared/linux-sshd` 已承接 Apache SSHD 与一期远程执行并新增二期只读能力探测；`shared/config` 定义了类型化普通配置快照和不透明秘密引用，配置实例与秘密修订元数据保存于桌面 SQLite v4，原始值仍只经 `app/secret` 短时处理。
 
 开发 WindowsToLinux 本身使用开发机安装的系统 Maven 及其系统本地仓库，不由项目覆盖仓库位置，也不把 Maven Wrapper 作为本项目构建入口；同时使用 JDK 21、Node 和相应测试工具。产品处理的用户项目不得在 Windows 桌面主机或 Web 后端主机安装依赖、执行项目脚本或构建；用户项目构建只发生在目标 Linux，届时可按受控适配规则使用用户项目自带的 Wrapper。
 
@@ -201,6 +201,7 @@ Playwright 浏览器固定保存在 `src/web/frontend/.playwright-browsers`，�
 
 | 版本 | 日期 | 阶段 | 状态 | 说明 |
 | --- | --- | --- | --- | --- |
+| 2.0.9-phase2-local-implementation | 2026-08-12 | 二期 | 本地实现与自动化验证完成；运行环境待验收 | Git 快照、六类项目的静态分析/计划、配置/秘密修订、Linux/容器契约、命名 Provider 和只读 Agent 已落地；未连接二期目标机，不能作正式支持结论。 |
 | 2.0.8-structure-implementation | 2026-08-11 | 一期至五期 | 正式目标结构已落地；一期能力边界不变 | 记录 28-POM reactor、`shared/source` 与 `shared/linux-sshd` 迁移、桌面层职责分包和组合根注入；`shared/config` 仅建 POM，本次不执行真实 Ubuntu 操作。 |
 | 2.0.7-architecture-sync | 2026-08-11 | 一期至五期 | 正式目标架构摘要已同步；一期状态不变 | 同步 `shared/config`、`shared/source`、`shared/linux-sshd` 及配置、源码归档和 Linux 契约/实现边界；不创建模块，不迁移源码，不改变阶段范围。 |
 | 2.0.6-phase1-complete | 2026-08-10 | 一期 | 一期真实验收完成 | 新装 Ubuntu 24.04 上由产品完成环境准备和全链路部署验证；不进入二期或 Web 实施。 |
