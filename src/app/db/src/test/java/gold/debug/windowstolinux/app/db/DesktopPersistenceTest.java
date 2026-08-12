@@ -38,7 +38,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-class DesktopDatabaseTest {
+class DesktopPersistenceTest {
     @TempDir
     Path temporaryDirectory;
 
@@ -50,36 +50,36 @@ class DesktopDatabaseTest {
                 application, RuntimeState.RUNNING, AutostartState.ENABLED, true, Instant.now(), "remote observation"
         );
 
-        try (DesktopDatabase database = DesktopDatabase.open(temporaryDirectory)) {
-            database.saveManagedApplication(application);
-            database.saveCurrentRelease(new CurrentRelease("demo", "b".repeat(64), Instant.now()));
-            database.saveLastObservation(observation);
-            database.saveOpaqueSecret(new OpaqueSecret("ssh/server-one", "test", new byte[]{1}, new byte[]{2}, new byte[]{3}));
-            database.saveServerProfile(new StoredServerProfile("server-one", "example.test", 22, "deployer", "ssh/server-one/password", "MASTER_PASSWORD"));
-            database.saveAiProfile(new StoredAiProfile("https://example.test/v1/chat/completions", "gpt-5", "ai/default/api-key", "MASTER_PASSWORD"));
+        try (DesktopPersistence database = DesktopPersistence.open(temporaryDirectory)) {
+            database.managedApplications().save(application);
+            database.managedApplications().saveRelease(new CurrentRelease("demo", "b".repeat(64), Instant.now()));
+            database.managedApplications().saveObservation(observation);
+            database.encryptedSecrets().save(new OpaqueSecret("ssh/server-one", "test", new byte[]{1}, new byte[]{2}, new byte[]{3}));
+            database.servers().saveServerProfile(new StoredServerProfile("server-one", "example.test", 22, "deployer", "ssh/server-one/password", "MASTER_PASSWORD"));
+            database.aiProfiles().saveDefault(new StoredAiProfile("https://example.test/v1/chat/completions", "gpt-5", "ai/default/api-key", "MASTER_PASSWORD"));
 
-            assertEquals(server, database.findServer("server-one").orElseThrow());
-            assertEquals(RuntimeState.RUNNING, database.findLastObservation(application).orElseThrow().runtimeState());
-            assertTrue(database.findOpaqueSecret("ssh/server-one").isPresent());
-            assertEquals("deployer", database.findServerProfile("server-one").orElseThrow().username());
-            assertEquals("gpt-5", database.findAiProfile().orElseThrow().model());
-            assertEquals(application, database.findManagedApplication("demo").orElseThrow());
-            assertEquals("b".repeat(64), database.findCurrentRelease("demo").orElseThrow().artifactSha256());
-            assertEquals(1, database.listManagedApplications().size());
+            assertEquals(server, database.servers().findServer("server-one").orElseThrow());
+            assertEquals(RuntimeState.RUNNING, database.managedApplications().findObservation(application).orElseThrow().runtimeState());
+            assertTrue(database.encryptedSecrets().find("ssh/server-one").isPresent());
+            assertEquals("deployer", database.servers().findServerProfile("server-one").orElseThrow().username());
+            assertEquals("gpt-5", database.aiProfiles().findDefault().orElseThrow().model());
+            assertEquals(application, database.managedApplications().find("demo").orElseThrow());
+            assertEquals("b".repeat(64), database.managedApplications().findRelease("demo").orElseThrow().artifactSha256());
+            assertEquals(1, database.managedApplications().list().size());
         }
     }
 
     @Test
     void storesNonSecretDesktopPreferences() throws Exception {
-        try (DesktopDatabase database = DesktopDatabase.open(temporaryDirectory)) {
-            assertTrue(database.findDesktopPreference(DesktopDatabase.UI_LOCALE_SETTING).isEmpty());
-            assertTrue(database.findDesktopPreference(DesktopDatabase.UI_THEME_SETTING).isEmpty());
+        try (DesktopPersistence database = DesktopPersistence.open(temporaryDirectory)) {
+            assertTrue(database.preferences().find(DesktopPersistence.UI_LOCALE_SETTING).isEmpty());
+            assertTrue(database.preferences().find(DesktopPersistence.UI_THEME_SETTING).isEmpty());
 
-            database.saveDesktopPreference(DesktopDatabase.UI_LOCALE_SETTING, "zh-CN");
-            database.saveDesktopPreference(DesktopDatabase.UI_THEME_SETTING, "SYSTEM");
+            database.preferences().save(DesktopPersistence.UI_LOCALE_SETTING, "zh-CN");
+            database.preferences().save(DesktopPersistence.UI_THEME_SETTING, "SYSTEM");
 
-            assertEquals("zh-CN", database.findDesktopPreference(DesktopDatabase.UI_LOCALE_SETTING).orElseThrow());
-            assertEquals("SYSTEM", database.findDesktopPreference(DesktopDatabase.UI_THEME_SETTING).orElseThrow());
+            assertEquals("zh-CN", database.preferences().find(DesktopPersistence.UI_LOCALE_SETTING).orElseThrow());
+            assertEquals("SYSTEM", database.preferences().find(DesktopPersistence.UI_THEME_SETTING).orElseThrow());
         }
     }
 
@@ -92,9 +92,9 @@ class DesktopDatabaseTest {
             statement.execute("PRAGMA user_version = 2");
         }
 
-        try (DesktopDatabase database = DesktopDatabase.open(dataDirectory)) {
-            database.saveDesktopPreference(DesktopDatabase.UI_THEME_SETTING, "DARK");
-            assertEquals("DARK", database.findDesktopPreference(DesktopDatabase.UI_THEME_SETTING).orElseThrow());
+        try (DesktopPersistence database = DesktopPersistence.open(dataDirectory)) {
+            database.preferences().save(DesktopPersistence.UI_THEME_SETTING, "DARK");
+            assertEquals("DARK", database.preferences().find(DesktopPersistence.UI_THEME_SETTING).orElseThrow());
         }
     }
 
@@ -108,21 +108,21 @@ class DesktopDatabaseTest {
         );
         Instant initialTime = Instant.parse("2026-08-10T00:00:00Z");
 
-        try (DesktopDatabase database = DesktopDatabase.open(temporaryDirectory)) {
-            database.recordSuccessfulDeployment(application, http,
+        try (DesktopPersistence database = DesktopPersistence.open(temporaryDirectory)) {
+            database.managedApplications().recordSuccessfulDeployment(application, http,
                     new CurrentRelease(application.id(), "b".repeat(64), initialTime));
 
-            assertEquals(http, database.findManagedApplicationRuntimeConfiguration(application.id()).orElseThrow());
-            assertEquals("b".repeat(64), database.findCurrentRelease(application.id()).orElseThrow().artifactSha256());
+            assertEquals(http, database.managedApplications().findRuntime(application.id()).orElseThrow());
+            assertEquals("b".repeat(64), database.managedApplications().findRelease(application.id()).orElseThrow().artifactSha256());
 
             ManagedApplicationRuntimeConfiguration tcp = new ManagedApplicationRuntimeConfiguration(
                     new HealthCheck.Tcp(19092, 15, 2), Optional.empty()
             );
-            database.recordSuccessfulDeployment(application, tcp,
+            database.managedApplications().recordSuccessfulDeployment(application, tcp,
                     new CurrentRelease(application.id(), "c".repeat(64), initialTime.plusSeconds(1)));
 
-            assertEquals(tcp, database.findManagedApplicationRuntimeConfiguration(application.id()).orElseThrow());
-            assertEquals("c".repeat(64), database.findCurrentRelease(application.id()).orElseThrow().artifactSha256());
+            assertEquals(tcp, database.managedApplications().findRuntime(application.id()).orElseThrow());
+            assertEquals("c".repeat(64), database.managedApplications().findRelease(application.id()).orElseThrow().artifactSha256());
         }
     }
 
@@ -153,9 +153,9 @@ class DesktopDatabaseTest {
             statement.execute("PRAGMA user_version = 1");
         }
 
-        try (DesktopDatabase database = DesktopDatabase.open(dataDirectory)) {
-            assertTrue(database.findManagedApplication("demo").isPresent());
-            assertTrue(database.findManagedApplicationRuntimeConfiguration("demo").isEmpty(),
+        try (DesktopPersistence database = DesktopPersistence.open(dataDirectory)) {
+            assertTrue(database.managedApplications().find("demo").isPresent());
+            assertTrue(database.managedApplications().findRuntime("demo").isEmpty(),
                     "旧记录不允许根据观测或 UI 默认值伪造运行配置");
         }
     }
@@ -170,42 +170,42 @@ class DesktopDatabaseTest {
                 "application-secret/database-password/1", CredentialStorageMode.MASTER_PASSWORD,
                 Instant.parse("2026-08-12T00:00:00Z"));
 
-        try (DesktopDatabase database = DesktopDatabase.open(temporaryDirectory)) {
-            database.saveConfigurationSnapshot(first);
-            database.saveConfigurationSnapshot(first);
-            assertEquals(first, database.findConfigurationSnapshot("demo", 1).orElseThrow());
+        try (DesktopPersistence database = DesktopPersistence.open(temporaryDirectory)) {
+            database.configurations().save(first);
+            database.configurations().save(first);
+            assertEquals(first, database.configurations().find("demo", 1).orElseThrow());
 
             ConfigurationSnapshot replacement = ConfigurationSnapshot.create("demo", 1, "v1",
                     Instant.parse("2026-08-12T00:00:01Z"),
                     java.util.List.of(new ConfigurationEntry("PORT", ConfigurationScope.RUNTIME, new ConfigurationValue.Number(19090))));
-            assertThrows(java.sql.SQLException.class, () -> database.saveConfigurationSnapshot(replacement));
+            assertThrows(java.sql.SQLException.class, () -> database.configurations().save(replacement));
 
-            database.saveApplicationSecretRevision(firstSecret);
-            database.saveApplicationSecretRevision(firstSecret);
-            database.saveApplicationSecretRevision(new StoredApplicationSecretRevision(rotatedPassword,
+            database.applicationSecrets().saveRevision(firstSecret);
+            database.applicationSecrets().saveRevision(firstSecret);
+            database.applicationSecrets().saveRevision(new StoredApplicationSecretRevision(rotatedPassword,
                     "application-secret/database-password/2", CredentialStorageMode.MASTER_PASSWORD,
                     Instant.parse("2026-08-12T00:00:01Z")));
-            database.bindApplicationReleaseSecrets("demo", "release-a", java.util.List.of(databasePassword));
+            database.applicationSecrets().bindRelease("demo", "release-a", java.util.List.of(databasePassword));
 
-            assertEquals(firstSecret, database.findApplicationSecretRevision(databasePassword).orElseThrow());
-            assertTrue(database.isApplicationSecretRevisionReferenced(databasePassword));
-            assertThrows(java.sql.SQLException.class, () -> database.bindApplicationReleaseSecrets(
+            assertEquals(firstSecret, database.applicationSecrets().findRevision(databasePassword).orElseThrow());
+            assertTrue(database.applicationSecrets().isReferenced(databasePassword));
+            assertThrows(java.sql.SQLException.class, () -> database.applicationSecrets().bindRelease(
                     "demo", "release-a", java.util.List.of(rotatedPassword)));
         }
     }
 
     @Test
     void keepsNamedAiProviderProfilesIndependentFromTheLegacyDefaultProfile() throws Exception {
-        try (DesktopDatabase database = DesktopDatabase.open(temporaryDirectory)) {
-            database.saveAiProfile(new StoredAiProfile("https://default.example.test/v1", "default-model",
+        try (DesktopPersistence database = DesktopPersistence.open(temporaryDirectory)) {
+            database.aiProfiles().saveDefault(new StoredAiProfile("https://default.example.test/v1", "default-model",
                     "ai/default", "MASTER_PASSWORD"));
-            database.saveAiProviderProfile(new StoredAiProviderProfile("analysis", "https://analysis.example.test/v1",
+            database.aiProfiles().saveNamed(new StoredAiProviderProfile("analysis", "https://analysis.example.test/v1",
                     "analysis-model", "ai/analysis", "WINDOWS_CREDENTIAL_MANAGER"));
-            database.saveAiProviderProfile(new StoredAiProviderProfile("review", "https://review.example.test/v1",
+            database.aiProfiles().saveNamed(new StoredAiProviderProfile("review", "https://review.example.test/v1",
                     "review-model", "ai/review", "MASTER_PASSWORD"));
 
-            assertEquals("default-model", database.findAiProfile().orElseThrow().model());
-            assertEquals(java.util.List.of("analysis", "review"), database.listAiProviderProfiles().stream()
+            assertEquals("default-model", database.aiProfiles().findDefault().orElseThrow().model());
+            assertEquals(java.util.List.of("analysis", "review"), database.aiProfiles().listNamed().stream()
                     .map(StoredAiProviderProfile::id).toList());
         }
     }

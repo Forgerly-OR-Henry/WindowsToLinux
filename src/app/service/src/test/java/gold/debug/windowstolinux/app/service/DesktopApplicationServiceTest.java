@@ -1,6 +1,6 @@
 package gold.debug.windowstolinux.app.service;
 
-import gold.debug.windowstolinux.app.db.DesktopDatabase;
+import gold.debug.windowstolinux.app.db.DesktopPersistence;
 import gold.debug.windowstolinux.app.db.entity.CurrentRelease;
 import gold.debug.windowstolinux.app.db.entity.StoredApplicationSecretRevision;
 import gold.debug.windowstolinux.app.service.ai.AiProfile;
@@ -65,8 +65,8 @@ class DesktopApplicationServiceTest {
         ServerProfile profile = new ServerProfile(
                 "server-one", "example.test", 22, "deployer", "ssh/server-one/password", CredentialStorageMode.MASTER_PASSWORD
         );
-        try (DesktopDatabase database = DesktopDatabase.open(temporaryDirectory);
-             Argon2AesSecretStore secretStore = new Argon2AesSecretStore(database, "correct master password".toCharArray())) {
+        try (DesktopPersistence database = DesktopPersistence.open(temporaryDirectory);
+             Argon2AesSecretStore secretStore = new Argon2AesSecretStore(database.encryptedSecrets(), "correct master password".toCharArray())) {
             DesktopApplicationService service = new DesktopApplicationService(
                     database, temporaryDirectory.resolve("work"), unusedGateway());
             service.saveServerProfile(profile, secretStore, "ssh-password".toCharArray());
@@ -84,7 +84,7 @@ class DesktopApplicationServiceTest {
                     service.hostKeyVerifier(profile, fingerprint -> fingerprint.equals("SHA256:first")).verify(profile.endpoint(), "SHA256:first"));
             assertEquals(HostKeyDecision.REJECT,
                     service.hostKeyVerifier(profile, fingerprint -> true).verify(profile.endpoint(), "SHA256:changed"));
-            assertEquals("SHA256:first", database.findServer(profile.id()).orElseThrow().hostKeySha256(),
+            assertEquals("SHA256:first", database.servers().findServer(profile.id()).orElseThrow().hostKeySha256(),
                     "a changed host key must not overwrite first-use trust");
         }
     }
@@ -94,12 +94,12 @@ class DesktopApplicationServiceTest {
         SecretReference reference = new SecretReference("database-password", 1);
         StoredApplicationSecretRevision revision = new StoredApplicationSecretRevision(reference,
                 "application-secret/database-password/1", CredentialStorageMode.MASTER_PASSWORD, Instant.parse("2026-08-12T00:00:00Z"));
-        try (DesktopDatabase database = DesktopDatabase.open(temporaryDirectory);
-             Argon2AesSecretStore secretStore = new Argon2AesSecretStore(database, "correct master password".toCharArray())) {
+        try (DesktopPersistence database = DesktopPersistence.open(temporaryDirectory);
+             Argon2AesSecretStore secretStore = new Argon2AesSecretStore(database.encryptedSecrets(), "correct master password".toCharArray())) {
             DesktopApplicationService service = new DesktopApplicationService(database, temporaryDirectory.resolve("work"), unusedGateway());
             service.saveDeploymentSecretRevision(revision, secretStore, "database-password".toCharArray());
 
-            assertEquals(revision, database.findApplicationSecretRevision(reference).orElseThrow());
+            assertEquals(revision, database.applicationSecrets().findRevision(reference).orElseThrow());
             char[] stored = secretStore.read(revision.credentialKey()).orElseThrow();
             try {
                 assertArrayEquals("database-password".toCharArray(), stored);
@@ -113,7 +113,7 @@ class DesktopApplicationServiceTest {
 
     @Test
     void keepsNamedAiProvidersExplicitAndDoesNotUseTheLegacyDefaultAsFallback() throws Exception {
-        try (DesktopDatabase database = DesktopDatabase.open(temporaryDirectory)) {
+        try (DesktopPersistence database = DesktopPersistence.open(temporaryDirectory)) {
             DesktopApplicationService service = new DesktopApplicationService(database, temporaryDirectory.resolve("work"), unusedGateway());
             AiProviderProfile provider = new AiProviderProfile("analysis", URI.create("https://analysis.example.test/v1/chat/completions"),
                     "gpt-5", "ai/analysis/api-key", CredentialStorageMode.MASTER_PASSWORD);
@@ -136,7 +136,7 @@ class DesktopApplicationServiceTest {
                 {"name":"demo","scripts":{"build":"vite","start":"node server.js"}}
                 """);
         Files.writeString(source.resolve("package-lock.json"), "{}");
-        try (DesktopDatabase database = DesktopDatabase.open(temporaryDirectory)) {
+        try (DesktopPersistence database = DesktopPersistence.open(temporaryDirectory)) {
             DesktopApplicationService service = new DesktopApplicationService(database, temporaryDirectory.resolve("work"), unusedGateway());
             assertEquals(gold.debug.windowstolinux.shared.model.analysis.DeploymentAdmission.READY_FOR_PLANNING,
                     service.analyzeDeploymentSource(source, gold.debug.windowstolinux.shared.model.project.DeploymentProjectType.NODE_SERVICE)
@@ -153,7 +153,7 @@ class DesktopApplicationServiceTest {
                 """);
         Files.writeString(source.resolve(".env"), "must-not-be-archived");
         Path work = temporaryDirectory.resolve("fixed-data/work");
-        try (DesktopDatabase database = DesktopDatabase.open(temporaryDirectory.resolve("data"))) {
+        try (DesktopPersistence database = DesktopPersistence.open(temporaryDirectory.resolve("data"))) {
             SourcePreparation preparation = new DesktopApplicationService(database, work, unusedGateway()).prepareSource(source);
             assertTrue(preparation.archive().orElseThrow().localArchive().startsWith(work.toAbsolutePath()));
             assertTrue(preparation.excludedEntries().contains(".env"));
@@ -165,8 +165,8 @@ class DesktopApplicationServiceTest {
         ServerIdentity savedServer = server("server-one", "192.0.2.10", "SHA256:AAAAAAAAAAAA");
         ServerIdentity requestedServer = server("server-one", "192.0.2.10", "SHA256:AAAAAAAAAAAA");
         ManagedApplication saved = ManagedApplication.forManaged("demo", savedServer, "a".repeat(64));
-        try (DesktopDatabase database = DesktopDatabase.open(temporaryDirectory.resolve("data"))) {
-            database.saveManagedApplication(saved);
+        try (DesktopPersistence database = DesktopPersistence.open(temporaryDirectory.resolve("data"))) {
+            database.managedApplications().save(saved);
             DesktopApplicationService service = new DesktopApplicationService(
                     database, temporaryDirectory.resolve("work"), unusedGateway());
 
@@ -186,8 +186,8 @@ class DesktopApplicationServiceTest {
         ServerIdentity savedServer = server("server-one", "192.0.2.10", "SHA256:AAAAAAAAAAAA");
         ServerIdentity anotherServer = server("server-two", "192.0.2.11", "SHA256:BBBBBBBBBBBB");
         ManagedApplication saved = ManagedApplication.forManaged("demo", savedServer, "a".repeat(64));
-        try (DesktopDatabase database = DesktopDatabase.open(temporaryDirectory.resolve("data"))) {
-            database.saveManagedApplication(saved);
+        try (DesktopPersistence database = DesktopPersistence.open(temporaryDirectory.resolve("data"))) {
+            database.managedApplications().save(saved);
             DesktopApplicationService service = new DesktopApplicationService(
                     database, temporaryDirectory.resolve("work"), unusedGateway());
 
@@ -196,7 +196,7 @@ class DesktopApplicationServiceTest {
             ));
 
             assertEquals("deployment.applicationServerConflict", exception.userMessage().key());
-            assertEquals(saved, database.findManagedApplication("demo").orElseThrow());
+            assertEquals(saved, database.managedApplications().find("demo").orElseThrow());
         }
     }
 
@@ -206,8 +206,8 @@ class DesktopApplicationServiceTest {
         ManagedApplication nonCanonical = new ManagedApplication(
                 "demo", server, "windowstolinux-other.service", "/var/lib/windowstolinux/apps/demo", "a".repeat(64)
         );
-        try (DesktopDatabase database = DesktopDatabase.open(temporaryDirectory.resolve("data"))) {
-            database.saveManagedApplication(nonCanonical);
+        try (DesktopPersistence database = DesktopPersistence.open(temporaryDirectory.resolve("data"))) {
+            database.managedApplications().save(nonCanonical);
             DesktopApplicationService service = new DesktopApplicationService(
                     database, temporaryDirectory.resolve("work"), unusedGateway());
 
@@ -216,7 +216,7 @@ class DesktopApplicationServiceTest {
             ));
 
             assertEquals("deployment.applicationIdentityInvalid", exception.userMessage().key());
-            assertEquals(nonCanonical, database.findManagedApplication("demo").orElseThrow());
+            assertEquals(nonCanonical, database.managedApplications().find("demo").orElseThrow());
         }
     }
 
@@ -225,7 +225,7 @@ class DesktopApplicationServiceTest {
         ServerIdentity server = server("server-one", "192.0.2.10", "SHA256:AAAAAAAAAAAA");
         BuildLimits rootLimits = new BuildLimits(1200, 1024, 4096,
                 4L * 1024 * 1024, 2L * 1024 * 1024 * 1024, true);
-        try (DesktopDatabase database = DesktopDatabase.open(temporaryDirectory.resolve("data"))) {
+        try (DesktopPersistence database = DesktopPersistence.open(temporaryDirectory.resolve("data"))) {
             DesktopApplicationService service = new DesktopApplicationService(
                     database, temporaryDirectory.resolve("work"), unusedGateway());
 
@@ -254,7 +254,7 @@ class DesktopApplicationServiceTest {
             connections.incrementAndGet();
             throw new AssertionError("unconfirmed environment preparation must not connect");
         };
-        try (DesktopDatabase database = DesktopDatabase.open(temporaryDirectory.resolve("data"))) {
+        try (DesktopPersistence database = DesktopPersistence.open(temporaryDirectory.resolve("data"))) {
             DesktopApplicationService service = new DesktopApplicationService(
                     database, temporaryDirectory.resolve("work"), gateway);
 
@@ -281,18 +281,18 @@ class DesktopApplicationServiceTest {
         ServerProfile profile = new ServerProfile("server-one", "192.0.2.10", 22, "deployer",
                 "ssh/server-one/password", CredentialStorageMode.MASTER_PASSWORD);
 
-        try (DesktopDatabase database = DesktopDatabase.open(data)) {
+        try (DesktopPersistence database = DesktopPersistence.open(data)) {
             DesktopApplicationService firstDesktop = new DesktopApplicationService(
                     database, temporaryDirectory.resolve("first-work"), unusedGateway());
             firstDesktop.saveServerProfile(profile, CredentialStorageMode.MASTER_PASSWORD,
                     "restart-master".toCharArray(), "ssh-password".toCharArray());
-            database.recordSuccessfulDeployment(application,
+            database.managedApplications().recordSuccessfulDeployment(application,
                     new ManagedApplicationRuntimeConfiguration(persistedHealth, Optional.empty()),
                     new CurrentRelease(application.id(), "b".repeat(64), Instant.parse("2026-08-10T00:00:00Z")));
         }
 
         RecordingGateway gateway = new RecordingGateway();
-        try (DesktopDatabase reopened = DesktopDatabase.open(data)) {
+        try (DesktopPersistence reopened = DesktopPersistence.open(data)) {
             DesktopApplicationService restartedDesktop = new DesktopApplicationService(reopened,
                     temporaryDirectory.resolve("second-work"), gateway);
             LifecycleOutcome result = restartedDesktop.executePersistedLifecycleWithStoredPassword(
@@ -313,8 +313,8 @@ class DesktopApplicationServiceTest {
         ManagedApplication application = ManagedApplication.forManaged("demo", server, "a".repeat(64));
         RecordingGateway gateway = new RecordingGateway();
         char[] masterPassword = "restart-master".toCharArray();
-        try (DesktopDatabase database = DesktopDatabase.open(temporaryDirectory.resolve("legacy-data"))) {
-            database.saveManagedApplication(application);
+        try (DesktopPersistence database = DesktopPersistence.open(temporaryDirectory.resolve("legacy-data"))) {
+            database.managedApplications().save(application);
             DesktopApplicationService service = new DesktopApplicationService(
                     database, temporaryDirectory.resolve("work"), gateway);
 

@@ -1,6 +1,6 @@
 package gold.debug.windowstolinux.app.main.bootstrap;
 
-import gold.debug.windowstolinux.app.db.DesktopDatabase;
+import gold.debug.windowstolinux.app.db.DesktopPersistence;
 import gold.debug.windowstolinux.app.main.runtime.RunModeDetector;
 import gold.debug.windowstolinux.app.service.DesktopApplicationService;
 import gold.debug.windowstolinux.app.ui.appearance.DesktopAppearance;
@@ -33,11 +33,11 @@ public final class DesktopMain {
             if (!Files.isDirectory(layout.dataDirectory()) || !Files.isWritable(layout.dataDirectory())) {
                 throw new IllegalStateException("fixed data directory is not writable: " + layout.dataDirectory());
             }
-            DesktopDatabase database = DesktopDatabase.open(layout.dataDirectory());
+            DesktopPersistence database = DesktopPersistence.open(layout.dataDirectory());
             Runtime.getRuntime().addShutdownHook(new Thread(database::close, "windowstolinux-database-close"));
             DesktopAppearance appearance = DesktopAppearance.fromStoredValues(
-                    database.findDesktopPreference(DesktopDatabase.UI_LOCALE_SETTING).orElse(null),
-                    database.findDesktopPreference(DesktopDatabase.UI_THEME_SETTING).orElse(null),
+                    database.preferences().find(DesktopPersistence.UI_LOCALE_SETTING).orElse(null),
+                    database.preferences().find(DesktopPersistence.UI_THEME_SETTING).orElse(null),
                     Locale.getDefault());
             DesktopApplicationService service = new DesktopApplicationService(database,
                     layout.dataDirectory().resolve("work"), new SshdLinuxGateway());

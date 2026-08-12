@@ -6,7 +6,7 @@ import gold.debug.windowstolinux.app.service.lifecycle.*;
 import gold.debug.windowstolinux.app.service.server.*;
 import gold.debug.windowstolinux.app.service.source.*;
 
-import gold.debug.windowstolinux.app.db.DesktopDatabase;
+import gold.debug.windowstolinux.app.db.DesktopPersistence;
 import gold.debug.windowstolinux.shared.deploy.plan.DeploymentRequest;
 import gold.debug.windowstolinux.shared.deploy.result.DeploymentResult;
 import gold.debug.windowstolinux.shared.deploy.result.LifecycleActionResult;
@@ -81,7 +81,7 @@ class UbuntuManagedDisconnectAcceptanceIT {
                 URI.create("http://127.0.0.1:" + proofPort + "/disconnect-proof"), 200, 15
         );
         UserAccessUrl userAccessUrl = businessUrl(host, proofPort);
-        try (DesktopDatabase database = DesktopDatabase.open(temporaryDirectory.resolve("desktop-data"))) {
+        try (DesktopPersistence database = DesktopPersistence.open(temporaryDirectory.resolve("desktop-data"))) {
             Path workDirectory = temporaryDirectory.resolve("work");
             DesktopApplicationService service = new DesktopApplicationService(
                     database, workDirectory, new SshdLinuxGateway());
@@ -132,7 +132,7 @@ class UbuntuManagedDisconnectAcceptanceIT {
                     "managed-disconnect-master".toCharArray());
             assertTrue(refreshed.accepted(), refreshed::toString);
             assertEquals(RuntimeState.RUNNING, refreshed.observation().orElseThrow().runtimeState());
-            assertEquals(firstDigest, database.findCurrentRelease(firstRequest.application().id()).orElseThrow().artifactSha256(),
+            assertEquals(firstDigest, database.managedApplications().findRelease(firstRequest.application().id()).orElseThrow().artifactSha256(),
                     "session loss must not replace the recorded successful artifact");
         }
     }

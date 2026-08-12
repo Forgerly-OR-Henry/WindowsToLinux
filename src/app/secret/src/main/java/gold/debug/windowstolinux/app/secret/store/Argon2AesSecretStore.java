@@ -1,6 +1,6 @@
 package gold.debug.windowstolinux.app.secret.store;
 
-import gold.debug.windowstolinux.app.db.DesktopDatabase;
+import gold.debug.windowstolinux.app.db.repository.EncryptedSecretRepository;
 import gold.debug.windowstolinux.app.db.entity.OpaqueSecret;
 import gold.debug.windowstolinux.app.secret.api.SecretStore;
 import gold.debug.windowstolinux.app.secret.api.SecretStoreException;
@@ -18,7 +18,7 @@ import java.util.Optional;
  */
 public final class Argon2AesSecretStore implements SecretStore {
     private static final String ALGORITHM = "ARGON2ID-AES-256-GCM-V1";
-    private final DesktopDatabase database;
+    private final EncryptedSecretRepository secrets;
     private final Argon2AesGcmCrypto crypto;
 
     /**
@@ -30,8 +30,8 @@ public final class Argon2AesSecretStore implements SecretStore {
      * @param masterPassword the {@code masterPassword} value / {@code masterPassword} 值
      * @throws NullPointerException if a required argument is {@code null} / 必要参数为 {@code null} 时
      */
-    public Argon2AesSecretStore(DesktopDatabase database, char[] masterPassword) {
-        this.database = Objects.requireNonNull(database, "database");
+    public Argon2AesSecretStore(EncryptedSecretRepository secrets, char[] masterPassword) {
+        this.secrets = Objects.requireNonNull(secrets, "secrets");
         this.crypto = new Argon2AesGcmCrypto(masterPassword);
     }
 
@@ -43,7 +43,7 @@ public final class Argon2AesSecretStore implements SecretStore {
         }
         try {
             Argon2AesGcmCrypto.EncryptedPayload encrypted = crypto.encrypt(value);
-            database.saveOpaqueSecret(new OpaqueSecret(
+            secrets.save(new OpaqueSecret(
                     key, ALGORITHM, encrypted.salt(), encrypted.nonce(), encrypted.ciphertext()));
         } catch (Exception exception) {
             throw failure("secret.encryptFailed", "Failed to encrypt and store the credential", exception);
@@ -54,7 +54,7 @@ public final class Argon2AesSecretStore implements SecretStore {
     public Optional<char[]> read(String key) throws SecretStoreException {
         validateKey(key);
         try {
-            Optional<OpaqueSecret> stored = database.findOpaqueSecret(key);
+            Optional<OpaqueSecret> stored = secrets.find(key);
             if (stored.isEmpty()) {
                 return Optional.empty();
             }

@@ -1,6 +1,6 @@
 package gold.debug.windowstolinux.app.service.deployment;
 
-import gold.debug.windowstolinux.app.db.DesktopDatabase;
+import gold.debug.windowstolinux.app.db.repository.ManagedApplicationRepository;
 import gold.debug.windowstolinux.app.db.entity.CurrentRelease;
 import gold.debug.windowstolinux.app.secret.api.SecretStore;
 import gold.debug.windowstolinux.app.secret.api.SecretStoreException;
@@ -43,7 +43,7 @@ import java.util.function.Predicate;
  * <p>提供 {@code DeploymentUseCase} 实现。
  */
 public final class DeploymentUseCase {
-    private final DesktopDatabase database;
+    private final ManagedApplicationRepository applications;
     private final ManagedDeploymentService service;
     private final LinuxGateway gateway;
     private final ServerUseCases servers;
@@ -61,9 +61,9 @@ public final class DeploymentUseCase {
      * @param locks the {@code locks} value / {@code locks} 值
      * @throws NullPointerException if a required argument is {@code null} / 必要参数为 {@code null} 时
      */
-    public DeploymentUseCase(DesktopDatabase database, ManagedDeploymentService service,
+    public DeploymentUseCase(ManagedApplicationRepository applications, ManagedDeploymentService service,
                              LinuxGateway gateway, ServerUseCases servers, ServerOperationLocks locks) {
-        this.database = Objects.requireNonNull(database, "database");
+        this.applications = Objects.requireNonNull(applications, "applications");
         this.service = Objects.requireNonNull(service, "service");
         this.gateway = Objects.requireNonNull(gateway, "gateway");
         this.servers = Objects.requireNonNull(servers, "servers");
@@ -172,13 +172,13 @@ public final class DeploymentUseCase {
             DeploymentResult result = service.deploy(request, requestedGateway, endpoint, credential, verifier);
             result.finalObservation().ifPresent(observation -> {
                 try {
-                    database.saveLastObservation(observation);
+                    applications.saveObservation(observation);
                 } catch (SQLException ignored) {
                     // Remote truth remains authoritative when local history recording fails. / 本地历史记录失败时，远端事实仍然具有权威性。
                 }
             });
             if (result.status() == DeploymentStatus.SUCCEEDED) {
-                database.recordSuccessfulDeployment(request.application(), request.runtimeConfiguration(),
+                applications.recordSuccessfulDeployment(request.application(), request.runtimeConfiguration(),
                         new CurrentRelease(request.application().id(), result.publishedArtifactSha256().orElseThrow(),
                                 Instant.now()));
             }
@@ -190,7 +190,7 @@ public final class DeploymentUseCase {
 
     private ManagedApplication resolveApplication(String applicationId, ServerIdentity server) {
         try {
-            Optional<ManagedApplication> saved = database.findManagedApplication(applicationId);
+            Optional<ManagedApplication> saved = applications.find(applicationId);
             if (saved.isEmpty()) {
                 return ManagedApplication.forManaged(applicationId, server, randomDigest());
             }

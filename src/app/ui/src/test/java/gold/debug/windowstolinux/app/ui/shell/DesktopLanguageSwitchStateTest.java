@@ -71,7 +71,7 @@ class DesktopLanguageSwitchStateTest {
 
     private static DesktopViewState restoreAndCapture(String languageTag, DesktopViewState source) {
         AtomicReference<String> restoredPage = new AtomicReference<>("deployment");
-        DesktopPages pages = new DesktopPages(null, null, MessageCatalog.forLanguageTag(languageTag),
+        DesktopPageCoordinator pages = new DesktopPageCoordinator(null, null, MessageCatalog.forLanguageTag(languageTag),
                 new DesktopAppearance(languageTag, ThemeMode.LIGHT),
                 new DesktopComponents(ThemePalette.light()), (frame, appearance) -> { },
                 (page, titleKey, descriptionKey) -> restoredPage.set(page));

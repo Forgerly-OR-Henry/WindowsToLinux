@@ -43,7 +43,7 @@ public final class DesktopFrame extends JFrame {
     private final MessageCatalog messages;
     private final ThemePalette palette;
     private final DesktopComponents components;
-    private final DesktopPages desktopPages;
+    private final DesktopPageCoordinator pageCoordinator;
     private final CardLayout pageLayout = new CardLayout();
     private final JPanel pages = new JPanel(pageLayout);
     private final Map<String, JButton> navigationButtons = new LinkedHashMap<>();
@@ -87,7 +87,7 @@ public final class DesktopFrame extends JFrame {
         this.messages = messages;
         this.palette = palette;
         this.components = new DesktopComponents(palette);
-        this.desktopPages = new DesktopPages(
+        this.pageCoordinator = new DesktopPageCoordinator(
                 this, service, messages, appearance, components, appearanceChangeListener, this::showPage);
         setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
         setMinimumSize(new Dimension(1060, 720));
@@ -102,7 +102,7 @@ public final class DesktopFrame extends JFrame {
         if (viewState == null) {
             showPage(PAGE_DEPLOYMENT, "nav.deployment", "page.deployment.description");
         } else {
-            desktopPages.restoreViewState(viewState);
+            pageCoordinator.restoreViewState(viewState);
             viewState.close();
         }
     }
@@ -191,11 +191,11 @@ public final class DesktopFrame extends JFrame {
 
     private JComponent pageDeck() {
         pages.setBackground(palette.pageBackground());
-        pages.add(desktopPages.deploymentPanel(), PAGE_DEPLOYMENT);
-        pages.add(desktopPages.managedApplicationsPanel(), PAGE_APPLICATIONS);
-        pages.add(desktopPages.serverPanel(), PAGE_SERVERS);
-        pages.add(desktopPages.aiPanel(), PAGE_AI);
-        pages.add(desktopPages.settingsPanel(), PAGE_SETTINGS);
+        pages.add(pageCoordinator.deploymentPanel(), PAGE_DEPLOYMENT);
+        pages.add(pageCoordinator.managedApplicationsPanel(), PAGE_APPLICATIONS);
+        pages.add(pageCoordinator.serverPanel(), PAGE_SERVERS);
+        pages.add(pageCoordinator.aiPanel(), PAGE_AI);
+        pages.add(pageCoordinator.settingsPanel(), PAGE_SETTINGS);
 
         JPanel deck = new JPanel(new BorderLayout());
         deck.setBackground(palette.pageBackground());
@@ -207,7 +207,7 @@ public final class DesktopFrame extends JFrame {
     private void showPage(String page, String titleKey, String descriptionKey) {
         pageLayout.show(pages, page);
         currentPage = page;
-        desktopPages.currentPage(page);
+        pageCoordinator.currentPage(page);
         pageTitle.setText(t(titleKey));
         pageDescription.setText(t(descriptionKey));
         navigationButtons.forEach((key, button) -> {
@@ -228,7 +228,7 @@ public final class DesktopFrame extends JFrame {
      * @return the operation result / 操作结果
      */
     public DesktopViewState captureViewState() {
-        return desktopPages.captureViewState();
+        return pageCoordinator.captureViewState();
     }
 
     private JPanel transparent(LayoutManager layout) {

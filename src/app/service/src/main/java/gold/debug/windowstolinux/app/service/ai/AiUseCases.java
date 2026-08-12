@@ -1,6 +1,6 @@
 package gold.debug.windowstolinux.app.service.ai;
 
-import gold.debug.windowstolinux.app.db.DesktopDatabase;
+import gold.debug.windowstolinux.app.db.repository.AiProfileRepository;
 import gold.debug.windowstolinux.app.secret.api.SecretStore;
 import gold.debug.windowstolinux.app.secret.api.SecretStoreException;
 import gold.debug.windowstolinux.app.service.server.DesktopSecretStores;
@@ -25,7 +25,7 @@ import java.util.Optional;
  * <p>提供 {@code AiUseCases} 实现。
  */
 public final class AiUseCases {
-    private final DesktopDatabase database;
+    private final AiProfileRepository profiles;
     private final DesktopSecretStores secrets;
 
     /**
@@ -37,8 +37,8 @@ public final class AiUseCases {
      * @param secrets the {@code secrets} value / {@code secrets} 值
      * @throws NullPointerException if a required argument is {@code null} / 必要参数为 {@code null} 时
      */
-    public AiUseCases(DesktopDatabase database, DesktopSecretStores secrets) {
-        this.database = Objects.requireNonNull(database, "database");
+    public AiUseCases(AiProfileRepository profiles, DesktopSecretStores secrets) {
+        this.profiles = Objects.requireNonNull(profiles, "profiles");
         this.secrets = Objects.requireNonNull(secrets, "secrets");
     }
 
@@ -62,7 +62,7 @@ public final class AiUseCases {
         }
         try (SecretStore store = secrets.open(mode, masterPassword)) {
             store.save(profile.credentialKey(), apiKey);
-            database.saveAiProfile(profile.stored());
+            profiles.saveDefault(profile.stored());
         } finally {
             clear(masterPassword);
             clear(apiKey);
@@ -78,7 +78,7 @@ public final class AiUseCases {
      * @throws SQLException if the operation cannot be completed / 无法完成操作时
      */
     public Optional<AiProfile> find() throws SQLException {
-        return database.findAiProfile().map(AiProfile::fromStored);
+        return profiles.findDefault().map(AiProfile::fromStored);
     }
 
     /**
@@ -91,7 +91,7 @@ public final class AiUseCases {
         Objects.requireNonNull(profile, "profile");
         try (SecretStore store = secrets.open(profile.credentialMode(), masterPassword)) {
             store.save(profile.credentialKey(), apiKey);
-            database.saveAiProviderProfile(profile.stored());
+            profiles.saveNamed(profile.stored());
         } finally {
             clear(masterPassword);
             clear(apiKey);
@@ -104,7 +104,7 @@ public final class AiUseCases {
      * <p>列出命名 AI 提供者，而不读取其 API Key。
      */
     public List<AiProviderProfile> listNamed() throws SQLException {
-        return database.listAiProviderProfiles().stream().map(AiProviderProfile::fromStored).toList();
+        return profiles.listNamed().stream().map(AiProviderProfile::fromStored).toList();
     }
 
     /**
@@ -197,7 +197,7 @@ public final class AiUseCases {
     public AiAnalysisOutcome explainNamed(SourcePreparation preparation, String providerId, char[] masterPassword,
                                           String languageTag) {
         try {
-            AiProviderProfile profile = database.listAiProviderProfiles().stream()
+            AiProviderProfile profile = profiles.listNamed().stream()
                     .filter(candidate -> candidate.id().equals(providerId))
                     .map(AiProviderProfile::fromStored)
                     .findFirst()

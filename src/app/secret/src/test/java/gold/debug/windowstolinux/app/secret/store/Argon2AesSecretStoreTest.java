@@ -3,7 +3,7 @@ package gold.debug.windowstolinux.app.secret.store;
 import gold.debug.windowstolinux.app.secret.api.SecretStoreException;
 import gold.debug.windowstolinux.app.secret.windows.WindowsCredentialManagerSecretStore;
 
-import gold.debug.windowstolinux.app.db.DesktopDatabase;
+import gold.debug.windowstolinux.app.db.DesktopPersistence;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -24,13 +24,15 @@ class Argon2AesSecretStoreTest {
 
     @Test
     void encryptsWithArgon2idAndRejectsTheWrongMasterPassword() throws Exception {
-        try (DesktopDatabase database = DesktopDatabase.open(temporaryDirectory);
-             Argon2AesSecretStore store = new Argon2AesSecretStore(database, "correct master password".toCharArray())) {
+        try (DesktopPersistence database = DesktopPersistence.open(temporaryDirectory);
+             Argon2AesSecretStore store = new Argon2AesSecretStore(database.encryptedSecrets(),
+                     "correct master password".toCharArray())) {
             store.save("ssh/server-one/password", "remote-password".toCharArray());
             assertArrayEquals("remote-password".toCharArray(), store.read("ssh/server-one/password").orElseThrow());
         }
-        try (DesktopDatabase database = DesktopDatabase.open(temporaryDirectory);
-             Argon2AesSecretStore wrongStore = new Argon2AesSecretStore(database, "wrong master password".toCharArray())) {
+        try (DesktopPersistence database = DesktopPersistence.open(temporaryDirectory);
+             Argon2AesSecretStore wrongStore = new Argon2AesSecretStore(database.encryptedSecrets(),
+                     "wrong master password".toCharArray())) {
             SecretStoreException failure = assertThrows(SecretStoreException.class,
                     () -> wrongStore.read("ssh/server-one/password"));
             assertEquals("secret.decryptFailed", failure.userMessage().key());

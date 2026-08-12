@@ -6,7 +6,7 @@ import gold.debug.windowstolinux.app.service.lifecycle.*;
 import gold.debug.windowstolinux.app.service.server.*;
 import gold.debug.windowstolinux.app.service.source.*;
 
-import gold.debug.windowstolinux.app.db.DesktopDatabase;
+import gold.debug.windowstolinux.app.db.DesktopPersistence;
 import gold.debug.windowstolinux.shared.deploy.plan.DeploymentRequest;
 import gold.debug.windowstolinux.shared.deploy.result.DeploymentResult;
 import gold.debug.windowstolinux.shared.deploy.result.LifecycleActionResult;
@@ -60,7 +60,7 @@ class UbuntuManagedOwnershipSafetyIT {
 
         HealthCheck.Http health = new HealthCheck.Http(URI.create("http://127.0.0.1:19089/health"), 200, 20);
         UserAccessUrl userAccessUrl = new UserAccessUrl(URI.create("http://" + host + ":19089/"));
-        try (DesktopDatabase database = DesktopDatabase.open(temporaryDirectory.resolve("desktop-data"))) {
+        try (DesktopPersistence database = DesktopPersistence.open(temporaryDirectory.resolve("desktop-data"))) {
             DesktopApplicationService service = new DesktopApplicationService(
                     database, temporaryDirectory.resolve("work"), new SshdLinuxGateway());
             SourcePreparation preparation = service.prepareSource(source);

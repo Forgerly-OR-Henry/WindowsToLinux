@@ -6,7 +6,7 @@ import gold.debug.windowstolinux.app.service.lifecycle.*;
 import gold.debug.windowstolinux.app.service.server.*;
 import gold.debug.windowstolinux.app.service.source.*;
 
-import gold.debug.windowstolinux.app.db.DesktopDatabase;
+import gold.debug.windowstolinux.app.db.DesktopPersistence;
 import gold.debug.windowstolinux.shared.deploy.plan.DeploymentRequest;
 import gold.debug.windowstolinux.shared.deploy.result.DeploymentResult;
 import gold.debug.windowstolinux.shared.deploy.result.LifecycleActionResult;
@@ -64,7 +64,7 @@ class UbuntuManagedStartupAndTcpAcceptanceIT {
         HealthCheck.Http httpHealth = new HealthCheck.Http(URI.create("http://127.0.0.1:18085/health"), 200, 15);
         HealthCheck.Tcp tcpHealth = new HealthCheck.Tcp(18085, 15, 1);
         UserAccessUrl userAccessUrl = new UserAccessUrl(URI.create("http://" + host + ":18085/"));
-        try (DesktopDatabase database = DesktopDatabase.open(temporaryDirectory.resolve("desktop-data"))) {
+        try (DesktopPersistence database = DesktopPersistence.open(temporaryDirectory.resolve("desktop-data"))) {
             DesktopApplicationService service = new DesktopApplicationService(
                     database, temporaryDirectory.resolve("work"), new SshdLinuxGateway());
             SourcePreparation baselinePreparation = service.prepareSource(baseline);

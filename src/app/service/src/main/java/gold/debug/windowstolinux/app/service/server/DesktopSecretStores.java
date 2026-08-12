@@ -1,6 +1,6 @@
 package gold.debug.windowstolinux.app.service.server;
 
-import gold.debug.windowstolinux.app.db.DesktopDatabase;
+import gold.debug.windowstolinux.app.db.repository.EncryptedSecretRepository;
 import gold.debug.windowstolinux.app.secret.api.SecretStore;
 import gold.debug.windowstolinux.app.secret.api.SecretStoreException;
 import gold.debug.windowstolinux.app.secret.store.Argon2AesSecretStore;
@@ -18,7 +18,7 @@ import java.util.Objects;
  * <p>提供 {@code DesktopSecretStores} 实现。
  */
 public final class DesktopSecretStores {
-    private final DesktopDatabase database;
+    private final EncryptedSecretRepository encryptedSecrets;
 
     /**
      * Creates a {@code DesktopSecretStores} instance.
@@ -28,8 +28,8 @@ public final class DesktopSecretStores {
      * @param database the {@code database} value / {@code database} 值
      * @throws NullPointerException if a required argument is {@code null} / 必要参数为 {@code null} 时
      */
-    public DesktopSecretStores(DesktopDatabase database) {
-        this.database = Objects.requireNonNull(database, "database");
+    public DesktopSecretStores(EncryptedSecretRepository encryptedSecrets) {
+        this.encryptedSecrets = Objects.requireNonNull(encryptedSecrets, "encryptedSecrets");
     }
 
     /**
@@ -45,7 +45,7 @@ public final class DesktopSecretStores {
      */
     public SecretStore open(CredentialStorageMode mode, char[] masterPassword) throws SecretStoreException {
         return switch (Objects.requireNonNull(mode, "mode")) {
-            case MASTER_PASSWORD -> new Argon2AesSecretStore(database,
+            case MASTER_PASSWORD -> new Argon2AesSecretStore(encryptedSecrets,
                     Objects.requireNonNull(masterPassword, "masterPassword"));
             case WINDOWS_CREDENTIAL_MANAGER -> new WindowsCredentialManagerSecretStore();
         };

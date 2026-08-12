@@ -6,7 +6,7 @@ import gold.debug.windowstolinux.app.service.lifecycle.*;
 import gold.debug.windowstolinux.app.service.server.*;
 import gold.debug.windowstolinux.app.service.source.*;
 
-import gold.debug.windowstolinux.app.db.DesktopDatabase;
+import gold.debug.windowstolinux.app.db.DesktopPersistence;
 import gold.debug.windowstolinux.shared.linux.sshd.connection.SshdLinuxGateway;
 import gold.debug.windowstolinux.shared.model.security.CredentialStorageMode;
 import gold.debug.windowstolinux.shared.model.health.HealthCheck;
@@ -47,7 +47,7 @@ class UbuntuManagedEnvironmentPreparationAcceptanceIT {
 
         char[] sshPasswordChars = sshPassword.toCharArray();
         char[] masterPasswordChars = masterPassword.toCharArray();
-        try (DesktopDatabase database = DesktopDatabase.open(temporaryDirectory.resolve("desktop-data"))) {
+        try (DesktopPersistence database = DesktopPersistence.open(temporaryDirectory.resolve("desktop-data"))) {
             DesktopApplicationService service = new DesktopApplicationService(
                     database, temporaryDirectory.resolve("work"), new SshdLinuxGateway());
             ServerProfile profile = new ServerProfile(

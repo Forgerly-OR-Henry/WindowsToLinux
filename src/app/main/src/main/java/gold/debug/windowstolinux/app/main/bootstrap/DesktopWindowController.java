@@ -1,6 +1,6 @@
 package gold.debug.windowstolinux.app.main.bootstrap;
 
-import gold.debug.windowstolinux.app.db.DesktopDatabase;
+import gold.debug.windowstolinux.app.db.DesktopPersistence;
 import gold.debug.windowstolinux.app.service.DesktopApplicationService;
 import gold.debug.windowstolinux.app.ui.appearance.DesktopAppearance;
 import gold.debug.windowstolinux.app.ui.appearance.DesktopTheme;
@@ -24,7 +24,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
  * <p>持有一个桌面窗口，并在区域设置或主题变化时安全替换它。
  */
 final class DesktopWindowController {
-    private final DesktopDatabase database;
+    private final DesktopPersistence database;
     private final DesktopApplicationService service;
     private final Timer systemThemeTimer;
     private final AtomicBoolean checkingSystemTheme = new AtomicBoolean();
@@ -33,7 +33,7 @@ final class DesktopWindowController {
     private ThemeMode effectiveTheme;
     private DesktopFrame frame;
 
-    DesktopWindowController(DesktopDatabase database, DesktopApplicationService service, DesktopAppearance appearance) {
+    DesktopWindowController(DesktopPersistence database, DesktopApplicationService service, DesktopAppearance appearance) {
         this.database = database;
         this.service = service;
         this.appearance = appearance;
@@ -53,8 +53,8 @@ final class DesktopWindowController {
             return;
         }
         try {
-            database.saveDesktopPreference(DesktopDatabase.UI_LOCALE_SETTING, selected.localeTag());
-            database.saveDesktopPreference(DesktopDatabase.UI_THEME_SETTING, selected.themeMode().name());
+            database.preferences().save(DesktopPersistence.UI_LOCALE_SETTING, selected.localeTag());
+            database.preferences().save(DesktopPersistence.UI_THEME_SETTING, selected.themeMode().name());
         } catch (SQLException exception) {
             throw new IllegalStateException("desktop preference persistence failed", exception);
         }

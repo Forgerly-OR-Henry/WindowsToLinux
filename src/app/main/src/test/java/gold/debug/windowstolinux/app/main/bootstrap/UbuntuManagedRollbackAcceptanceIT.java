@@ -6,7 +6,7 @@ import gold.debug.windowstolinux.app.service.lifecycle.*;
 import gold.debug.windowstolinux.app.service.server.*;
 import gold.debug.windowstolinux.app.service.source.*;
 
-import gold.debug.windowstolinux.app.db.DesktopDatabase;
+import gold.debug.windowstolinux.app.db.DesktopPersistence;
 import gold.debug.windowstolinux.shared.deploy.plan.DeploymentRequest;
 import gold.debug.windowstolinux.shared.deploy.result.DeploymentResult;
 import gold.debug.windowstolinux.shared.deploy.result.LifecycleActionResult;
@@ -67,7 +67,7 @@ class UbuntuManagedRollbackAcceptanceIT {
         );
         UserAccessUrl userAccessUrl = businessUrl(host, proofPort);
         char[] masterPassword = "managed-rollback-master".toCharArray();
-        try (DesktopDatabase database = DesktopDatabase.open(temporaryDirectory.resolve("desktop-data"))) {
+        try (DesktopPersistence database = DesktopPersistence.open(temporaryDirectory.resolve("desktop-data"))) {
             DesktopApplicationService service = new DesktopApplicationService(
                     database, temporaryDirectory.resolve("work"), new SshdLinuxGateway());
             SourcePreparation firstPreparation = service.prepareSource(v1);
@@ -114,7 +114,7 @@ class UbuntuManagedRollbackAcceptanceIT {
                     "managed-rollback-master".toCharArray());
             assertTrue(refreshed.accepted(), refreshed::toString);
             assertEquals(RuntimeState.RUNNING, refreshed.observation().orElseThrow().runtimeState());
-            assertEquals(firstDigest, database.findCurrentRelease(firstRequest.application().id()).orElseThrow().artifactSha256(),
+            assertEquals(firstDigest, database.managedApplications().findRelease(firstRequest.application().id()).orElseThrow().artifactSha256(),
                     "a failed candidate must not replace the locally recorded successful artifact");
             assertNotEquals(firstPreparation.archive().orElseThrow().contentSha256(),
                     candidatePreparation.archive().orElseThrow().contentSha256(),

@@ -1,6 +1,6 @@
 package gold.debug.windowstolinux.app.service.server;
 
-import gold.debug.windowstolinux.app.db.DesktopDatabase;
+import gold.debug.windowstolinux.app.db.repository.ServerProfileRepository;
 import gold.debug.windowstolinux.app.secret.api.SecretStore;
 import gold.debug.windowstolinux.app.secret.api.SecretStoreException;
 import gold.debug.windowstolinux.shared.linux.connection.HostKeyDecision;
@@ -25,7 +25,7 @@ import java.util.function.Predicate;
  * <p>提供 {@code ServerUseCases} 实现。
  */
 public final class ServerUseCases {
-    private final DesktopDatabase database;
+    private final ServerProfileRepository profiles;
     private final DesktopSecretStores secrets;
     private final LinuxGateway gateway;
 
@@ -39,8 +39,8 @@ public final class ServerUseCases {
      * @param gateway the {@code gateway} value / {@code gateway} 值
      * @throws NullPointerException if a required argument is {@code null} / 必要参数为 {@code null} 时
      */
-    public ServerUseCases(DesktopDatabase database, DesktopSecretStores secrets, LinuxGateway gateway) {
-        this.database = Objects.requireNonNull(database, "database");
+    public ServerUseCases(ServerProfileRepository profiles, DesktopSecretStores secrets, LinuxGateway gateway) {
+        this.profiles = Objects.requireNonNull(profiles, "profiles");
         this.secrets = Objects.requireNonNull(secrets, "secrets");
         this.gateway = Objects.requireNonNull(gateway, "gateway");
     }
@@ -62,7 +62,7 @@ public final class ServerUseCases {
         Objects.requireNonNull(store, "store");
         try {
             store.save(profile.credentialKey(), password);
-            database.saveServerProfile(profile.stored());
+            profiles.saveServerProfile(profile.stored());
         } finally {
             clear(password);
         }
@@ -99,7 +99,7 @@ public final class ServerUseCases {
      * @throws SQLException if the operation cannot be completed / 无法完成操作时
      */
     public Optional<ServerProfile> find(String serverId) throws SQLException {
-        return database.findServerProfile(serverId).map(ServerProfile::fromStored);
+        return profiles.findServerProfile(serverId).map(ServerProfile::fromStored);
     }
 
     /**
@@ -112,7 +112,7 @@ public final class ServerUseCases {
      * @throws SQLException if the operation cannot be completed / 无法完成操作时
      */
     public Optional<ServerIdentity> findTrusted(String serverId) throws SQLException {
-        return database.findServer(serverId);
+        return profiles.findServer(serverId);
     }
 
     /**
@@ -130,7 +130,7 @@ public final class ServerUseCases {
         Objects.requireNonNull(firstUseConfirmation, "firstUseConfirmation");
         return (endpoint, observedFingerprint) -> {
             try {
-                Optional<ServerIdentity> known = database.findServer(profile.id());
+                Optional<ServerIdentity> known = profiles.findServer(profile.id());
                 if (known.isPresent()) {
                     ServerIdentity server = known.orElseThrow();
                     return server.host().equals(profile.host()) && server.sshPort() == profile.sshPort()
@@ -140,7 +140,7 @@ public final class ServerUseCases {
                 if (!firstUseConfirmation.test(observedFingerprint)) {
                     return HostKeyDecision.REJECT;
                 }
-                database.saveServer(new ServerIdentity(profile.id(), profile.host(), profile.sshPort(), observedFingerprint));
+                profiles.saveServer(new ServerIdentity(profile.id(), profile.host(), profile.sshPort(), observedFingerprint));
                 return HostKeyDecision.ACCEPT_FIRST_USE;
             } catch (SQLException exception) {
                 return HostKeyDecision.REJECT;

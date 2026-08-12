@@ -1,6 +1,7 @@
 package gold.debug.windowstolinux.app.service.config;
 
-import gold.debug.windowstolinux.app.db.DesktopDatabase;
+import gold.debug.windowstolinux.app.db.repository.ApplicationSecretRepository;
+import gold.debug.windowstolinux.app.db.repository.ConfigurationSnapshotRepository;
 import gold.debug.windowstolinux.app.db.entity.StoredApplicationSecretRevision;
 import gold.debug.windowstolinux.app.secret.api.SecretStore;
 import gold.debug.windowstolinux.app.secret.api.SecretStoreException;
@@ -20,7 +21,8 @@ import java.util.Objects;
  * <p>协调不可变的部署配置和平台秘密引用，且不返回秘密值。
  */
 public final class DeploymentConfigurationUseCase {
-    private final DesktopDatabase database;
+    private final ConfigurationSnapshotRepository configurations;
+    private final ApplicationSecretRepository applicationSecrets;
     private final DesktopSecretStores secretStores;
 
     /**
@@ -28,8 +30,11 @@ public final class DeploymentConfigurationUseCase {
      *
      * <p>创建 {@code DeploymentConfigurationUseCase} 实例。
      */
-    public DeploymentConfigurationUseCase(DesktopDatabase database, DesktopSecretStores secretStores) {
-        this.database = Objects.requireNonNull(database, "database");
+    public DeploymentConfigurationUseCase(ConfigurationSnapshotRepository configurations,
+                                          ApplicationSecretRepository applicationSecrets,
+                                          DesktopSecretStores secretStores) {
+        this.configurations = Objects.requireNonNull(configurations, "configurations");
+        this.applicationSecrets = Objects.requireNonNull(applicationSecrets, "applicationSecrets");
         this.secretStores = Objects.requireNonNull(secretStores, "secretStores");
     }
 
@@ -39,7 +44,7 @@ public final class DeploymentConfigurationUseCase {
      * <p>持久化类型化的非秘密快照；既有修订不可替换。
      */
     public void saveSnapshot(ConfigurationSnapshot snapshot) throws SQLException {
-        database.saveConfigurationSnapshot(snapshot);
+        configurations.save(snapshot);
     }
 
     /**
@@ -56,7 +61,7 @@ public final class DeploymentConfigurationUseCase {
                     "Application secret values must not be empty");
         }
         try {
-            var existing = database.findApplicationSecretRevision(revision.reference());
+            var existing = applicationSecrets.findRevision(revision.reference());
             if (existing.isPresent() && !existing.orElseThrow().equals(revision)) {
                 throw new SQLException("application secret revisions are immutable");
             }
@@ -68,7 +73,7 @@ public final class DeploymentConfigurationUseCase {
             } finally {
                 clear(stored);
             }
-            database.saveApplicationSecretRevision(revision);
+            applicationSecrets.saveRevision(revision);
             store.save(revision.credentialKey(), value);
         } finally {
             clear(value);
@@ -94,7 +99,7 @@ public final class DeploymentConfigurationUseCase {
             throws SQLException, SecretStoreException {
         try {
             for (SecretReference reference : List.copyOf(Objects.requireNonNull(references, "references"))) {
-                StoredApplicationSecretRevision revision = database.findApplicationSecretRevision(reference)
+                StoredApplicationSecretRevision revision = applicationSecrets.findRevision(reference)
                         .orElseThrow(() -> new SecretStoreException(LocalizedMessage.of("secret.applicationReferenceMissing"),
                                 "Application secret revision metadata is missing"));
                 try (SecretStore store = secretStores.open(revision.credentialMode(), masterPassword)) {
@@ -117,7 +122,7 @@ public final class DeploymentConfigurationUseCase {
     public void bindReleaseSecrets(String applicationId, String releaseIdentity, List<SecretReference> references,
                                    char[] masterPassword) throws SQLException, SecretStoreException {
         verifySecretReferences(references, masterPassword);
-        database.bindApplicationReleaseSecrets(applicationId, releaseIdentity, references);
+        applicationSecrets.bindRelease(applicationId, releaseIdentity, references);
     }
 
     private static void clear(char[] value) {

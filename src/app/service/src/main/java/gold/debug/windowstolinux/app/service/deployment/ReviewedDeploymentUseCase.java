@@ -1,6 +1,7 @@
 package gold.debug.windowstolinux.app.service.deployment;
 
-import gold.debug.windowstolinux.app.db.DesktopDatabase;
+import gold.debug.windowstolinux.app.db.repository.ApplicationSecretRepository;
+import gold.debug.windowstolinux.app.db.repository.ManagedApplicationRepository;
 import gold.debug.windowstolinux.app.db.entity.CurrentRelease;
 import gold.debug.windowstolinux.app.secret.api.SecretStore;
 import gold.debug.windowstolinux.app.secret.api.SecretStoreException;
@@ -42,16 +43,19 @@ import java.util.concurrent.locks.ReentrantLock;
  * <p>将成功的经审阅部署持久化到与现有部署相同的受管应用清单中。
  */
 public final class ReviewedDeploymentUseCase {
-    private final DesktopDatabase database;
+    private final ManagedApplicationRepository applications;
+    private final ApplicationSecretRepository applicationSecrets;
     private final ReviewedDeploymentService service;
     private final DeploymentLinuxGateway gateway;
     private final ServerUseCases servers;
     private final ServerOperationLocks locks;
 
     /** Creates the reviewed deployment use case. / 创建经审阅部署用例。 */
-    public ReviewedDeploymentUseCase(DesktopDatabase database, ReviewedDeploymentService service,
+    public ReviewedDeploymentUseCase(ManagedApplicationRepository applications,
+                                     ApplicationSecretRepository applicationSecrets, ReviewedDeploymentService service,
                                      DeploymentLinuxGateway gateway, ServerUseCases servers, ServerOperationLocks locks) {
-        this.database = Objects.requireNonNull(database, "database");
+        this.applications = Objects.requireNonNull(applications, "applications");
+        this.applicationSecrets = Objects.requireNonNull(applicationSecrets, "applicationSecrets");
         this.service = Objects.requireNonNull(service, "service");
         this.gateway = Objects.requireNonNull(gateway, "gateway");
         this.servers = Objects.requireNonNull(servers, "servers");
@@ -125,16 +129,16 @@ public final class ReviewedDeploymentUseCase {
             DeploymentResult result = service.deploy(request, application, gateway, endpoint, credential, verifier);
             result.finalObservation().ifPresent(observation -> {
                 try {
-                    database.saveLastObservation(observation);
+                    applications.saveObservation(observation);
                 } catch (SQLException ignored) {
                     // Remote truth remains authoritative when local history recording fails. / 本地历史记录失败时，远端事实仍然具有权威性。
                 }
             });
             if (result.status() == DeploymentStatus.SUCCEEDED) {
-                database.recordSuccessfulDeployment(application,
+                applications.recordSuccessfulDeployment(application,
                         new ManagedApplicationRuntimeConfiguration(request.runtime().healthCheck(), request.userAccessUrl()),
                         new CurrentRelease(application.id(), result.publishedArtifactSha256().orElseThrow(), Instant.now()));
-                database.bindApplicationReleaseSecrets(application.id(), result.publishedArtifactSha256().orElseThrow(),
+                applicationSecrets.bindRelease(application.id(), result.publishedArtifactSha256().orElseThrow(),
                         request.secretReferences());
             }
             return result;
@@ -144,7 +148,7 @@ public final class ReviewedDeploymentUseCase {
     }
 
     private ManagedApplication resolveApplication(String applicationId, ServerIdentity server) throws SQLException {
-        Optional<ManagedApplication> saved = database.findManagedApplication(applicationId);
+        Optional<ManagedApplication> saved = applications.find(applicationId);
         if (saved.isEmpty()) {
             return ManagedApplication.forManaged(applicationId, server, randomDigest());
         }

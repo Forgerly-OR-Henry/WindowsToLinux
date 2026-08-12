@@ -1,6 +1,6 @@
 package gold.debug.windowstolinux.app.service.lifecycle;
 
-import gold.debug.windowstolinux.app.db.DesktopDatabase;
+import gold.debug.windowstolinux.app.db.repository.ManagedApplicationRepository;
 import gold.debug.windowstolinux.app.db.entity.CurrentRelease;
 import gold.debug.windowstolinux.app.secret.api.SecretStore;
 import gold.debug.windowstolinux.app.secret.api.SecretStoreException;
@@ -31,7 +31,7 @@ import java.util.concurrent.locks.ReentrantLock;
  * <p>提供 {@code LifecycleUseCase} 实现。
  */
 public final class LifecycleUseCase {
-    private final DesktopDatabase database;
+    private final ManagedApplicationRepository applications;
     private final LinuxGateway gateway;
     private final ServerUseCases servers;
     private final ServerOperationLocks locks;
@@ -47,9 +47,9 @@ public final class LifecycleUseCase {
      * @param locks the {@code locks} value / {@code locks} 值
      * @throws NullPointerException if a required argument is {@code null} / 必要参数为 {@code null} 时
      */
-    public LifecycleUseCase(DesktopDatabase database, LinuxGateway gateway,
+    public LifecycleUseCase(ManagedApplicationRepository applications, LinuxGateway gateway,
                             ServerUseCases servers, ServerOperationLocks locks) {
-        this.database = Objects.requireNonNull(database, "database");
+        this.applications = Objects.requireNonNull(applications, "applications");
         this.gateway = Objects.requireNonNull(gateway, "gateway");
         this.servers = Objects.requireNonNull(servers, "servers");
         this.locks = Objects.requireNonNull(locks, "locks");
@@ -64,7 +64,7 @@ public final class LifecycleUseCase {
      * @throws SQLException if the operation cannot be completed / 无法完成操作时
      */
     public List<ManagedApplication> list() throws SQLException {
-        return database.listManagedApplications();
+        return applications.list();
     }
 
     /**
@@ -76,11 +76,11 @@ public final class LifecycleUseCase {
      * @throws SQLException if the operation cannot be completed / 无法完成操作时
      */
     public List<ManagedApplicationSummary> summaries() throws SQLException {
-        return database.listManagedApplications().stream().map(application -> {
+        return applications.list().stream().map(application -> {
             try {
                 return new ManagedApplicationSummary(application,
-                        database.findCurrentRelease(application.id()).map(CurrentRelease::artifactSha256),
-                        database.findManagedApplicationRuntimeConfiguration(application.id()));
+                        applications.findRelease(application.id()).map(CurrentRelease::artifactSha256),
+                        applications.findRuntime(application.id()));
             } catch (SQLException exception) {
                 throw new LocalizedOperationException(LocalizedMessage.of("applications.summaryReadFailed"),
                         "Failed to read the managed application release or runtime configuration", exception);
@@ -125,11 +125,10 @@ public final class LifecycleUseCase {
         Objects.requireNonNull(applicationId, "applicationId");
         Objects.requireNonNull(action, "action");
         try {
-            ManagedApplication application = database.findManagedApplication(applicationId).orElseThrow(
+            ManagedApplication application = applications.find(applicationId).orElseThrow(
                     () -> new LocalizedOperationException(LocalizedMessage.of("lifecycle.selectApplication"),
                             "No WindowsToLinux-managed application was selected"));
-            ManagedApplicationRuntimeConfiguration runtime = database
-                    .findManagedApplicationRuntimeConfiguration(applicationId)
+            ManagedApplicationRuntimeConfiguration runtime = applications.findRuntime(applicationId)
                     .orElseThrow(() -> new LocalizedOperationException(
                             LocalizedMessage.of("applications.legacyRuntime"),
                             "Legacy managed record has no runtime configuration; redeploy before lifecycle operations"));
@@ -207,7 +206,7 @@ public final class LifecycleUseCase {
 
     private void saveObservationQuietly(LifecycleObservation observation) {
         try {
-            database.saveLastObservation(observation);
+            applications.saveObservation(observation);
         } catch (SQLException ignored) {
             // Remote truth remains authoritative when local history recording fails. / 本地历史记录失败时，远端事实仍然具有权威性。
         }

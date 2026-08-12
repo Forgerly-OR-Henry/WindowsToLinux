@@ -6,7 +6,7 @@ import gold.debug.windowstolinux.app.service.lifecycle.*;
 import gold.debug.windowstolinux.app.service.server.*;
 import gold.debug.windowstolinux.app.service.source.*;
 
-import gold.debug.windowstolinux.app.db.DesktopDatabase;
+import gold.debug.windowstolinux.app.db.DesktopPersistence;
 import gold.debug.windowstolinux.shared.linux.sshd.connection.SshdLinuxGateway;
 import gold.debug.windowstolinux.shared.linux.connection.LinuxOperationException;
 import gold.debug.windowstolinux.shared.model.security.CredentialStorageMode;
@@ -43,7 +43,7 @@ class UbuntuManagedHostTrustAcceptanceIT {
         assertPresent(username, "managed.ssh.user");
         assertPresent(password, "WINDOWSTOLINUX_TEST_SSH_PASSWORD");
 
-        try (DesktopDatabase database = DesktopDatabase.open(temporaryDirectory.resolve("desktop-data"))) {
+        try (DesktopPersistence database = DesktopPersistence.open(temporaryDirectory.resolve("desktop-data"))) {
             DesktopApplicationService service = new DesktopApplicationService(
                     database, temporaryDirectory.resolve("work"), new SshdLinuxGateway());
             ServerProfile profile = new ServerProfile("ubuntu-managed-host-trust", host, 22, username,
@@ -73,14 +73,14 @@ class UbuntuManagedHostTrustAcceptanceIT {
             assertFalse(unexpectedPrompt.get(), "an unchanged trusted key must not ask for first-use approval again");
 
             String mismatchedFingerprint = "SHA256:" + "x".repeat(43);
-            database.saveServer(new ServerIdentity(profile.id(), host, 22, mismatchedFingerprint));
+            database.servers().saveServer(new ServerIdentity(profile.id(), host, 22, mismatchedFingerprint));
             LinuxOperationException rejection = assertThrows(LinuxOperationException.class,
                     () -> service.verifyServer(profile, CredentialStorageMode.MASTER_PASSWORD,
                             "managed-host-trust-master".toCharArray(), fingerprint -> true));
             assertEquals("linux.error.hostKeyRejected", rejection.userMessage().key(),
                     "mismatched trust must be reported as a host-key rejection");
             assertFalse(rejection.diagnostic().contains(password), "credential must not appear in rejection evidence");
-            assertEquals(mismatchedFingerprint, database.findServer(profile.id()).orElseThrow().hostKeySha256(),
+            assertEquals(mismatchedFingerprint, database.servers().findServer(profile.id()).orElseThrow().hostKeySha256(),
                     "a real observed key must never overwrite a mismatched saved trust record");
         }
     }

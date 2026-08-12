@@ -1,6 +1,6 @@
 package gold.debug.windowstolinux.app.service;
 
-import gold.debug.windowstolinux.app.db.DesktopDatabase;
+import gold.debug.windowstolinux.app.db.DesktopPersistence;
 import gold.debug.windowstolinux.app.secret.api.SecretStore;
 import gold.debug.windowstolinux.app.secret.api.SecretStoreException;
 import gold.debug.windowstolinux.app.service.ai.AiAnalysisOutcome;
@@ -90,24 +90,26 @@ public final class DesktopApplicationService {
      * @param linuxGateway the {@code linuxGateway} value / {@code linuxGateway} 值
      * @throws NullPointerException if a required argument is {@code null} / 必要参数为 {@code null} 时
      */
-    public DesktopApplicationService(DesktopDatabase database, Path workDirectory, LinuxGateway linuxGateway) {
-        Objects.requireNonNull(database, "database");
+    public DesktopApplicationService(DesktopPersistence persistence, Path workDirectory, LinuxGateway linuxGateway) {
+        Objects.requireNonNull(persistence, "persistence");
         Objects.requireNonNull(linuxGateway, "linuxGateway");
         ServerOperationLocks locks = new ServerOperationLocks();
-        DesktopSecretStores secrets = new DesktopSecretStores(database);
-        this.servers = new ServerUseCases(database, secrets, linuxGateway);
+        DesktopSecretStores secrets = new DesktopSecretStores(persistence.encryptedSecrets());
+        this.servers = new ServerUseCases(persistence.servers(), secrets, linuxGateway);
         this.source = new SourcePreparationUseCase(new ManagedSpringBootAnalysisCoordinator(), new WindowsSourceWorkspace(workDirectory));
-        this.ai = new AiUseCases(database, secrets);
+        this.ai = new AiUseCases(persistence.aiProfiles(), secrets);
         this.deploymentAgentTools = new ReadOnlyDeploymentAgentTools();
-        this.deploymentConfiguration = new DeploymentConfigurationUseCase(database, secrets);
+        this.deploymentConfiguration = new DeploymentConfigurationUseCase(
+                persistence.configurations(), persistence.applicationSecrets(), secrets);
         this.environment = new EnvironmentPreparationUseCase(
                 new EnvironmentPreparationService(), linuxGateway, servers, locks);
         this.deployment = new DeploymentUseCase(
-                database, new ManagedDeploymentService(), linuxGateway, servers, locks);
+                persistence.managedApplications(), new ManagedDeploymentService(), linuxGateway, servers, locks);
         this.reviewedDeployment = linuxGateway instanceof DeploymentLinuxGateway deploymentGateway
-                ? Optional.of(new ReviewedDeploymentUseCase(database, new ReviewedDeploymentService(), deploymentGateway, servers, locks))
+                ? Optional.of(new ReviewedDeploymentUseCase(persistence.managedApplications(),
+                persistence.applicationSecrets(), new ReviewedDeploymentService(), deploymentGateway, servers, locks))
                 : Optional.empty();
-        this.lifecycle = new LifecycleUseCase(database, linuxGateway, servers, locks);
+        this.lifecycle = new LifecycleUseCase(persistence.managedApplications(), linuxGateway, servers, locks);
     }
 
     /**
