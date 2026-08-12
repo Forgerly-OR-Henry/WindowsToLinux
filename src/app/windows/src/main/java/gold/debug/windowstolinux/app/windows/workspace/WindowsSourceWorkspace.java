@@ -17,6 +17,7 @@ import java.util.UUID;
  */
 public final class WindowsSourceWorkspace {
     private final SafeSourceArchiver archiver;
+    private final Path workDirectory;
     private final Path archiveDirectory;
 
     /**
@@ -32,8 +33,13 @@ public final class WindowsSourceWorkspace {
 
     WindowsSourceWorkspace(SafeSourceArchiver archiver, Path workDirectory) {
         this.archiver = Objects.requireNonNull(archiver, "archiver");
-        this.archiveDirectory = Objects.requireNonNull(workDirectory, "workDirectory")
-                .toAbsolutePath().normalize().resolve("archives");
+        this.workDirectory = Objects.requireNonNull(workDirectory, "workDirectory").toAbsolutePath().normalize();
+        this.archiveDirectory = this.workDirectory.resolve("archives");
+    }
+
+    /** Returns the platform-owned root shared by archive and Git snapshot operations. / 返回归档和 Git 快照操作共用的平台拥有根目录。 */
+    public Path workDirectory() {
+        return workDirectory;
     }
 
     /**

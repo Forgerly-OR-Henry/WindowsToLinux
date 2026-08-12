@@ -56,19 +56,23 @@ public final class DeploymentPage {
     public static JPanel create(DesktopComponents c, MessageCatalog m, JComboBox<?> projectType, JComboBox<?> healthMode,
                                 JTextField healthEndpoint, JTextField expectedStatus, JTextField timeout,
                                 JTextField stability, JTextField accessUrl, JCheckBox rootBuild, JTextArea output,
-                                JTextField runtimePrimary, JTextField runtimeSecondary, JTextField jvmArguments,
+                                JTextField runtimePrimary, JTextField runtimeSecondary, JTextField javaVersion, JTextField jvmArguments,
                                 JTextField applicationArguments, JComboBox<?> containerEngine, JTextField containerPorts,
-                                JTextField containerVolumes, JTextField configurationEntries,
-                                Runnable chooseSource, Runnable configureServer, Runnable deploy) {
+                                JTextField containerVolumes, JTextField configurationEntries, JTextField secretReferences,
+                                Runnable chooseSource, Runnable chooseGitSource, Runnable saveSecret,
+                                Runnable configureServer, Runnable deploy) {
         JPanel panel = c.pagePanel();
-        JPanel steps = c.transparent(new GridLayout(1, 3, 12, 0));
+        JPanel steps = c.transparent(new GridLayout(1, 4, 12, 0));
         JButton choose = c.primaryButton(m.text("button.analyzeSource"));
         choose.addActionListener(event -> chooseSource.run());
+        JButton chooseGit = c.secondaryButton(m.text("button.analyzeGitSource"));
+        chooseGit.addActionListener(event -> chooseGitSource.run());
         JButton configure = c.secondaryButton(m.text("button.goServer"));
         configure.addActionListener(event -> configureServer.run());
         JButton publish = c.primaryButton(m.text("button.reviewDeploy"));
         publish.addActionListener(event -> deploy.run());
         steps.add(c.stepCard("01", m.text("step.analyze.title"), m.text("step.analyze.description"), choose));
+        steps.add(c.stepCard("01b", m.text("step.git.title"), m.text("step.git.description"), chooseGit));
         steps.add(c.stepCard("02", m.text("step.target.title"), m.text("step.target.description"), configure));
         steps.add(c.stepCard("03", m.text("step.deploy.title"), m.text("step.deploy.description"), publish));
         panel.add(steps, BorderLayout.NORTH);
@@ -94,12 +98,17 @@ public final class DeploymentPage {
         c.addField(runtimeForm, 0, 0, m.text("field.projectType"), projectType);
         c.addField(runtimeForm, 0, 1, m.text("field.runtimePrimary"), runtimePrimary);
         c.addField(runtimeForm, 1, 0, m.text("field.runtimeSecondary"), runtimeSecondary);
-        c.addField(runtimeForm, 1, 1, m.text("field.jvmArguments"), jvmArguments);
-        c.addField(runtimeForm, 2, 0, m.text("field.applicationArguments"), applicationArguments);
-        c.addField(runtimeForm, 2, 1, m.text("field.containerEngine"), containerEngine);
-        c.addField(runtimeForm, 3, 0, m.text("field.containerPorts"), containerPorts);
-        c.addField(runtimeForm, 3, 1, m.text("field.containerVolumes"), containerVolumes);
-        c.addField(runtimeForm, 4, 0, m.text("field.configurationEntries"), configurationEntries);
+        c.addField(runtimeForm, 1, 1, m.text("field.javaVersion"), javaVersion);
+        c.addField(runtimeForm, 2, 0, m.text("field.jvmArguments"), jvmArguments);
+        c.addField(runtimeForm, 2, 1, m.text("field.applicationArguments"), applicationArguments);
+        c.addField(runtimeForm, 3, 0, m.text("field.containerEngine"), containerEngine);
+        c.addField(runtimeForm, 3, 1, m.text("field.containerPorts"), containerPorts);
+        c.addField(runtimeForm, 4, 0, m.text("field.containerVolumes"), containerVolumes);
+        c.addField(runtimeForm, 4, 1, m.text("field.configurationEntries"), configurationEntries);
+        c.addField(runtimeForm, 5, 0, m.text("field.secretReferences"), secretReferences);
+        JButton saveSecretButton = c.secondaryButton(m.text("button.saveSecretRevision"));
+        saveSecretButton.addActionListener(event -> saveSecret.run());
+        c.addField(runtimeForm, 5, 1, m.text("field.secretRevision"), saveSecretButton);
         runtime.add(runtimeForm, BorderLayout.CENTER);
         JPanel forms = c.transparent(new GridLayout(2, 1, 0, 12));
         forms.add(health);

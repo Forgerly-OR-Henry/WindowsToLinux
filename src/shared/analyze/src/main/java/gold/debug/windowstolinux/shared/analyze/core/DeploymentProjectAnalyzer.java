@@ -109,7 +109,7 @@ public final class DeploymentProjectAnalyzer {
         DeploymentProjectFacts facts = facts(root, applicationName(root, build, JSON_NAME), DeploymentProjectType.GRADLE_SPRING_BOOT,
                 DeploymentBuildTool.GRADLE_WRAPPER, List.of(evidence("analysis.deployment.evidence.gradleBuild", script.getFileName().toString(),
                         "analysis.deployment.evidence.detected")), List.of(), missing);
-        return missing.isEmpty() ? DeploymentProjectAssessment.ready(facts) : DeploymentProjectAssessment.requiresInput(facts);
+        return assessed(facts);
     }
 
     private static DeploymentProjectAssessment inspectJavaJar(Path root, List<RejectionReason> rejections) throws IOException {
@@ -128,7 +128,7 @@ public final class DeploymentProjectAnalyzer {
         DeploymentProjectFacts facts = facts(root, rootApplicationName(root), DeploymentProjectType.JAVA_JAR, DeploymentBuildTool.JAVA,
                 List.of(evidence("analysis.deployment.evidence.javaJar", jars.isEmpty() ? "source root" : jars.getFirst().getFileName().toString(),
                         jars.isEmpty() ? "analysis.deployment.evidence.notDetected" : "analysis.deployment.evidence.detected")), conflicts, missing);
-        return facts.readyForPlanning() ? DeploymentProjectAssessment.ready(facts) : DeploymentProjectAssessment.requiresInput(facts);
+        return assessed(facts);
     }
 
     private static DeploymentProjectAssessment inspectNode(Path root, List<RejectionReason> rejections) throws IOException {
@@ -158,7 +158,7 @@ public final class DeploymentProjectAnalyzer {
         DeploymentProjectFacts facts = facts(root, applicationName(root, json, JSON_NAME), DeploymentProjectType.NODE_SERVICE, tool,
                 List.of(evidence("analysis.deployment.evidence.nodePackage", "package.json", "analysis.deployment.evidence.detected")),
                 conflicts, missing);
-        return facts.readyForPlanning() ? DeploymentProjectAssessment.ready(facts) : DeploymentProjectAssessment.requiresInput(facts);
+        return assessed(facts);
     }
 
     private static DeploymentProjectAssessment inspectPython(Path root, List<RejectionReason> rejections) throws IOException {
@@ -179,7 +179,7 @@ public final class DeploymentProjectAnalyzer {
         DeploymentProjectFacts facts = facts(root, applicationName(root, toml, TOML_NAME), DeploymentProjectType.PYTHON_SERVICE,
                 DeploymentBuildTool.PYTHON_VENV, List.of(evidence("analysis.deployment.evidence.pythonProject", "pyproject.toml",
                         "analysis.deployment.evidence.detected")), conflicts, missing);
-        return facts.readyForPlanning() ? DeploymentProjectAssessment.ready(facts) : DeploymentProjectAssessment.requiresInput(facts);
+        return assessed(facts);
     }
 
     private static DeploymentProjectAssessment inspectStaticSite(Path root, List<RejectionReason> rejections) throws IOException {
@@ -204,7 +204,7 @@ public final class DeploymentProjectAnalyzer {
                 packageBased ? nodeBuildTool(lockFiles) : DeploymentBuildTool.STATIC_SITE_BUILD,
                 List.of(evidence("analysis.deployment.evidence.staticSite", packageBased ? "package.json" : "index.html",
                         "analysis.deployment.evidence.detected")), conflicts, missing);
-        return facts.readyForPlanning() ? DeploymentProjectAssessment.ready(facts) : DeploymentProjectAssessment.requiresInput(facts);
+        return assessed(facts);
     }
 
     private static DeploymentProjectAssessment inspectDockerfile(Path root, List<RejectionReason> rejections) throws IOException {
@@ -221,13 +221,19 @@ public final class DeploymentProjectAnalyzer {
         DeploymentProjectFacts facts = facts(root, rootApplicationName(root), DeploymentProjectType.DOCKERFILE_CONTAINER,
                 DeploymentBuildTool.CONTAINER_BUILD, List.of(evidence("analysis.deployment.evidence.dockerfile", "Dockerfile",
                         "analysis.deployment.evidence.detected")), List.of(), List.of());
-        return DeploymentProjectAssessment.ready(facts);
+        return assessed(facts);
     }
 
     private static DeploymentProjectFacts facts(Path root, String applicationId, DeploymentProjectType type, DeploymentBuildTool tool,
                                                List<AnalysisEvidence> evidence, List<LocalizedMessage> conflicts,
                                                List<LocalizedMessage> missing) {
         return new DeploymentProjectFacts(root, applicationId, type, tool, evidence, conflicts, missing);
+    }
+
+    private static DeploymentProjectAssessment assessed(DeploymentProjectFacts facts) throws IOException {
+        var suggestion = DeploymentRuntimeInference.infer(facts.sourceRoot(), facts);
+        return facts.readyForPlanning() ? DeploymentProjectAssessment.ready(facts, suggestion)
+                : DeploymentProjectAssessment.requiresInput(facts, suggestion);
     }
 
     private static Path normalizeRoot(Path source, List<RejectionReason> rejections) {

@@ -75,6 +75,16 @@ public final class DeploymentConfigurationUseCase {
         }
     }
 
+    /** Stores one secret revision through the selected desktop-backed secret store. / 通过选定的桌面秘密存储保存一个秘密修订。 */
+    public void saveSecretRevision(StoredApplicationSecretRevision revision, gold.debug.windowstolinux.shared.model.security.CredentialStorageMode mode,
+                                   char[] masterPassword, char[] value) throws SQLException, SecretStoreException {
+        try (SecretStore store = secretStores.open(mode, masterPassword)) {
+            saveSecretRevision(revision, store, value);
+        } finally {
+            clear(masterPassword);
+        }
+    }
+
     /**
      * Opens the selected platform stores only long enough to verify that every referenced revision remains readable.
      *

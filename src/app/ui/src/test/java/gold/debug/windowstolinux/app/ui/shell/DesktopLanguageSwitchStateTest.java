@@ -25,7 +25,7 @@ class DesktopLanguageSwitchStateTest {
         DesktopViewState initial = new DesktopViewState(
                 "ai",
                 new DeploymentPageState("PYTHON_SERVICE", "TCP", "", "200", "12", "7", "",
-                        "3.12", "app", "", "", "PODMAN", "8080:8080", "", "PORT=8080", true,
+                        "3.12", "app", "", "", "", "PODMAN", "8080:8080", "", "PORT=8080", "database-password:1", true,
                         "deployment diagnostic", null),
                 new ServerPageState("server-two", "198.51.100.24", "2222", "deploy",
                         "ssh-secret".toCharArray(), CredentialStorageMode.MASTER_PASSWORD,
@@ -46,8 +46,10 @@ class DesktopLanguageSwitchStateTest {
             assertEquals("PYTHON_SERVICE", chineseState.deployment().projectType());
             assertEquals("3.12", chineseState.deployment().runtimePrimary());
             assertEquals("app", chineseState.deployment().runtimeSecondary());
+            assertEquals("", chineseState.deployment().javaVersion());
             assertEquals("PODMAN", chineseState.deployment().containerEngine());
             assertEquals("PORT=8080", chineseState.deployment().configurationEntries());
+            assertEquals("database-password:1", chineseState.deployment().secretReferences());
             assertEquals("12", chineseState.deployment().healthTimeoutSeconds());
             assertEquals("7", chineseState.deployment().tcpStabilitySeconds());
             assertTrue(chineseState.deployment().rootBuild());

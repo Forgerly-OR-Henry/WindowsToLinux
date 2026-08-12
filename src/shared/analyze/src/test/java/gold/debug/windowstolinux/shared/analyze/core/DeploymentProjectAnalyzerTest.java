@@ -3,11 +3,16 @@ package gold.debug.windowstolinux.shared.analyze.core;
 import gold.debug.windowstolinux.shared.model.analysis.DeploymentAdmission;
 import gold.debug.windowstolinux.shared.model.project.DeploymentBuildTool;
 import gold.debug.windowstolinux.shared.model.project.DeploymentProjectType;
+import gold.debug.windowstolinux.shared.model.project.DeploymentRuntimeSuggestion;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Map;
+import java.util.jar.Attributes;
+import java.util.jar.JarOutputStream;
+import java.util.jar.Manifest;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -102,5 +107,70 @@ class DeploymentProjectAnalyzerTest {
                 analyzer.analyze(staticSite, DeploymentProjectType.STATIC_SITE).admission());
         assertEquals(DeploymentAdmission.READY_FOR_PLANNING,
                 analyzer.analyze(container, DeploymentProjectType.DOCKERFILE_CONTAINER).admission());
+    }
+
+    @Test
+    void infersOnlyExactRuntimeMetadataAndLeavesRangesForHumanReview() throws Exception {
+        Path node = Files.createDirectories(temporaryDirectory.resolve("node-exact"));
+        Files.writeString(node.resolve("package.json"), """
+                {"name":"demo-node","engines":{"node":"22"},"scripts":{"build":"unsafe","start":"unsafe"}}
+                """);
+        Files.writeString(node.resolve("package-lock.json"), "{}");
+        var exact = analyzer.analyze(node, DeploymentProjectType.NODE_SERVICE).runtimeSuggestion().orElseThrow();
+        assertEquals("22", exact.value(DeploymentRuntimeSuggestion.RuntimeInput.NODE_MAJOR_VERSION).orElseThrow());
+
+        Path ranged = Files.createDirectories(temporaryDirectory.resolve("node-range"));
+        Files.writeString(ranged.resolve("package.json"), """
+                {"name":"range-node","engines":{"node":">=20"},"scripts":{"build":"unsafe","start":"unsafe"}}
+                """);
+        Files.writeString(ranged.resolve("package-lock.json"), "{}");
+        var unresolved = analyzer.analyze(ranged, DeploymentProjectType.NODE_SERVICE).runtimeSuggestion().orElseThrow();
+        assertTrue(unresolved.value(DeploymentRuntimeSuggestion.RuntimeInput.NODE_MAJOR_VERSION).isEmpty());
+        assertTrue(unresolved.requiredUserInput().stream().anyMatch(message ->
+                message.key().equals("analysis.deployment.runtime.nodeVersion")));
+    }
+
+    @Test
+    void infersJavaPythonStaticAndContainerValuesFromSafeMetadataOnly() throws Exception {
+        Path java = Files.createDirectories(temporaryDirectory.resolve("jar-inference"));
+        Manifest manifest = new Manifest();
+        manifest.getMainAttributes().put(Attributes.Name.MANIFEST_VERSION, "1.0");
+        manifest.getMainAttributes().put(Attributes.Name.MAIN_CLASS, "example.Main");
+        manifest.getMainAttributes().putValue("Build-Jdk-Spec", "21");
+        try (JarOutputStream output = new JarOutputStream(Files.newOutputStream(java.resolve("service.jar")), manifest)) {
+            // A manifest-only JAR is sufficient because inference never invokes or loads it. / 仅含清单的 JAR 已足够，因为推导绝不调用或加载它。
+        }
+        var javaSuggestion = analyzer.analyze(java, DeploymentProjectType.JAVA_JAR).runtimeSuggestion().orElseThrow();
+        assertEquals("service.jar", javaSuggestion.value(DeploymentRuntimeSuggestion.RuntimeInput.JAVA_JAR_PATH).orElseThrow());
+        assertEquals("example.Main", javaSuggestion.value(DeploymentRuntimeSuggestion.RuntimeInput.JAVA_MAIN_CLASS).orElseThrow());
+        assertEquals("21", javaSuggestion.value(DeploymentRuntimeSuggestion.RuntimeInput.JAVA_VERSION).orElseThrow());
+
+        Path python = Files.createDirectories(temporaryDirectory.resolve("python-inference/src/demo"));
+        Files.writeString(python.getParent().getParent().resolve("pyproject.toml"), """
+                [project]
+                name = "demo"
+                requires-python = "==3.12.*"
+                """);
+        Files.writeString(python.getParent().getParent().resolve("requirements.lock"), "demo==1 --hash=sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
+        Files.writeString(python.resolve("__main__.py"), "raise SystemExit(0)");
+        var pythonSuggestion = analyzer.analyze(python.getParent().getParent(), DeploymentProjectType.PYTHON_SERVICE)
+                .runtimeSuggestion().orElseThrow();
+        assertEquals("3.12", pythonSuggestion.value(DeploymentRuntimeSuggestion.RuntimeInput.PYTHON_VERSION).orElseThrow());
+        assertEquals("demo", pythonSuggestion.value(DeploymentRuntimeSuggestion.RuntimeInput.PYTHON_ENTRYPOINT).orElseThrow());
+
+        Path staticSite = Files.createDirectories(temporaryDirectory.resolve("static-inference"));
+        Files.writeString(staticSite.resolve("package.json"), """
+                {"name":"site","scripts":{"build":"vite build"}}
+                """);
+        Files.writeString(staticSite.resolve("package-lock.json"), "{}");
+        Files.writeString(staticSite.resolve("vite.config.js"), "export default { build: { outDir: 'public-site' } }");
+        var staticSuggestion = analyzer.analyze(staticSite, DeploymentProjectType.STATIC_SITE).runtimeSuggestion().orElseThrow();
+        assertEquals("public-site", staticSuggestion.value(DeploymentRuntimeSuggestion.RuntimeInput.STATIC_OUTPUT_DIRECTORY).orElseThrow());
+
+        Path container = Files.createDirectories(temporaryDirectory.resolve("container-inference"));
+        Files.writeString(container.resolve("Dockerfile"), "FROM alpine\nEXPOSE 8080 8443/tcp\nVOLUME /var/lib/demo");
+        var containerSuggestion = analyzer.analyze(container, DeploymentProjectType.DOCKERFILE_CONTAINER).runtimeSuggestion().orElseThrow();
+        assertEquals(Map.of(8080, 8080, 8443, 8443), containerSuggestion.suggestedContainerPorts());
+        assertEquals("/var/lib/demo", containerSuggestion.suggestedManagedVolumes().getFirst().containerPath());
     }
 }

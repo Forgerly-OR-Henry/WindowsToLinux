@@ -38,12 +38,14 @@ public record DeploymentPageState(
         String userAccessUrl,
         String runtimePrimary,
         String runtimeSecondary,
+        String javaVersion,
         String jvmArguments,
         String applicationArguments,
         String containerEngine,
         String containerPorts,
         String containerVolumes,
         String configurationEntries,
+        String secretReferences,
         boolean rootBuild,
         String output,
         ReviewedSourcePreparation preparation
@@ -83,12 +85,14 @@ public record DeploymentPageState(
         Objects.requireNonNull(userAccessUrl, "userAccessUrl");
         Objects.requireNonNull(runtimePrimary, "runtimePrimary");
         Objects.requireNonNull(runtimeSecondary, "runtimeSecondary");
+        Objects.requireNonNull(javaVersion, "javaVersion");
         Objects.requireNonNull(jvmArguments, "jvmArguments");
         Objects.requireNonNull(applicationArguments, "applicationArguments");
         Objects.requireNonNull(containerEngine, "containerEngine");
         Objects.requireNonNull(containerPorts, "containerPorts");
         Objects.requireNonNull(containerVolumes, "containerVolumes");
         Objects.requireNonNull(configurationEntries, "configurationEntries");
+        Objects.requireNonNull(secretReferences, "secretReferences");
         Objects.requireNonNull(output, "output");
     }
 }

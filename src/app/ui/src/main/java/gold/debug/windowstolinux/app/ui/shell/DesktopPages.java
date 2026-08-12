@@ -20,6 +20,7 @@ import gold.debug.windowstolinux.app.service.ai.AiProfile;
 import gold.debug.windowstolinux.app.service.lifecycle.LifecycleOutcome;
 import gold.debug.windowstolinux.app.service.server.ServerProfile;
 import gold.debug.windowstolinux.app.service.source.ReviewedSourcePreparation;
+import gold.debug.windowstolinux.app.db.entity.StoredApplicationSecretRevision;
 import gold.debug.windowstolinux.shared.config.definition.ConfigurationScope;
 import gold.debug.windowstolinux.shared.config.definition.ConfigurationValue;
 import gold.debug.windowstolinux.shared.config.revision.ConfigurationEntry;
@@ -37,7 +38,12 @@ import gold.debug.windowstolinux.shared.model.lifecycle.LifecycleObservation;
 import gold.debug.windowstolinux.shared.model.message.LocalizedFailure;
 import gold.debug.windowstolinux.shared.model.project.DeploymentProjectType;
 import gold.debug.windowstolinux.shared.model.project.DeploymentRuntimeSpecification;
+import gold.debug.windowstolinux.shared.model.project.DeploymentRuntimeSuggestion;
 import gold.debug.windowstolinux.shared.model.security.CredentialStorageMode;
+import gold.debug.windowstolinux.shared.config.secretref.SecretReference;
+import gold.debug.windowstolinux.shared.git.reference.GitReference;
+import gold.debug.windowstolinux.shared.git.remote.GitRemote;
+import gold.debug.windowstolinux.shared.git.snapshot.GitSourceRequest;
 
 import javax.swing.JButton;
 import javax.swing.JCheckBox;
@@ -96,20 +102,22 @@ final class DesktopPages {
     private final JPasswordField masterPassword = new JPasswordField(20);
     private final JComboBox<DeploymentProjectType> projectType = new JComboBox<>(DeploymentProjectType.values());
     private final JComboBox<HealthMode> healthMode = new JComboBox<>(HealthMode.values());
-    private final JTextField healthEndpoint = new JTextField("http://127.0.0.1:8080/actuator/health", 30);
+    private final JTextField healthEndpoint = new JTextField(30);
     private final JTextField expectedHttpStatus = new JTextField("200", 4);
     private final JTextField healthTimeoutSeconds = new JTextField("10", 4);
     private final JTextField tcpStabilitySeconds = new JTextField("5", 4);
     private final JTextField userAccessUrl = new JTextField(30);
     private final JTextField runtimePrimary = new JTextField(20);
     private final JTextField runtimeSecondary = new JTextField(20);
+    private final JTextField javaVersion = new JTextField(6);
     private final JTextField jvmArguments = new JTextField(20);
     private final JTextField applicationArguments = new JTextField(20);
     private final JComboBox<DeploymentRuntimeSpecification.ContainerEngine> containerEngine =
             new JComboBox<>(DeploymentRuntimeSpecification.ContainerEngine.values());
-    private final JTextField containerPorts = new JTextField("8080:8080", 20);
+    private final JTextField containerPorts = new JTextField(20);
     private final JTextField containerVolumes = new JTextField(20);
-    private final JTextField configurationEntries = new JTextField("PORT=8080", 30);
+    private final JTextField configurationEntries = new JTextField(30);
+    private final JTextField secretReferences = new JTextField(20);
     private final JTextField managedApplicationId = new JTextField(20);
     private final JTextArea lifecycleOutput = outputArea();
     private final JTextArea aiOutput = outputArea();
@@ -138,14 +146,15 @@ final class DesktopPages {
         localizeEnumValues(projectType, "project.type.");
         localizeEnumValues(healthMode, "health.mode.");
         localizeEnumValues(containerEngine, "container.engine.");
-        projectType.addActionListener(event -> applyRuntimeDefaults());
+        projectType.addActionListener(event -> resetRuntimeInputs());
         credentialMode.addActionListener(event -> masterPassword.setEnabled(
                 credentialMode.getSelectedItem() == CredentialStorageMode.MASTER_PASSWORD));
         aiCredentialMode.addActionListener(event -> aiMasterPassword.setEnabled(
                 aiCredentialMode.getSelectedItem() == CredentialStorageMode.MASTER_PASSWORD));
         masterPassword.setEnabled(true);
         aiMasterPassword.setEnabled(true);
-        applyRuntimeDefaults();
+        containerEngine.setSelectedItem(null);
+        resetRuntimeInputs();
     }
 
     void currentPage(String page) {
@@ -159,9 +168,9 @@ final class DesktopPages {
     JPanel deploymentPanel() {
         return DeploymentPage.create(components, messages, projectType, healthMode, healthEndpoint, expectedHttpStatus,
                 healthTimeoutSeconds, tcpStabilitySeconds, userAccessUrl, rootBuild, deploymentOutput,
-                runtimePrimary, runtimeSecondary, jvmArguments, applicationArguments, containerEngine, containerPorts,
-                containerVolumes, configurationEntries,
-                this::chooseSource,
+                runtimePrimary, runtimeSecondary, javaVersion, jvmArguments, applicationArguments, containerEngine, containerPorts,
+                containerVolumes, configurationEntries, secretReferences,
+                this::chooseSource, this::chooseGitSource, this::saveDeploymentSecret,
                 () -> showPage(PAGE_SERVERS, "nav.servers", "page.servers.description"), this::deploy);
     }
 
@@ -263,6 +272,7 @@ final class DesktopPages {
                 try {
                     reviewedPreparation = get();
                     if (reviewedPreparation.archive().isPresent()) {
+                        applyRuntimeSuggestions(reviewedPreparation);
                         String excluded = reviewedPreparation.excludedEntries().isEmpty() ? ""
                                 : t("source.excluded", Map.of("entries", reviewedPreparation.excludedEntries().stream()
                                 .map(entry -> "- " + entry + "\n").reduce("", String::concat)));
@@ -279,6 +289,86 @@ final class DesktopPages {
                 }
             }
         }.execute();
+    }
+
+    private void chooseGitSource() {
+        String remoteText = JOptionPane.showInputDialog(owner, t("git.remote.prompt"), t("git.remote.title"),
+                JOptionPane.QUESTION_MESSAGE);
+        if (remoteText == null) {
+            return;
+        }
+        String referenceText = JOptionPane.showInputDialog(owner, t("git.reference.prompt"), t("git.reference.title"),
+                JOptionPane.QUESTION_MESSAGE);
+        if (referenceText == null) {
+            return;
+        }
+        List<String> kinds = List.of(t("git.reference.kind.branch"), t("git.reference.kind.tag"),
+                t("git.reference.kind.commit"));
+        String kind = (String) JOptionPane.showInputDialog(owner, t("git.reference.kind.prompt"),
+                t("git.reference.kind.title"), JOptionPane.QUESTION_MESSAGE, null, kinds.toArray(), kinds.getFirst());
+        if (kind == null) {
+            return;
+        }
+        try {
+            GitRemote remote = GitRemote.parse(remoteText);
+            if (remote.host().isEmpty()) {
+                throw new IllegalArgumentException(t("git.remote.networkOnly"));
+            }
+            GitSourceRequest request = new GitSourceRequest(remote, gitReference(kinds.indexOf(kind), referenceText),
+                    java.util.Set.of(remote.host().orElseThrow()), 4L * 1024 * 1024 * 1024, false);
+            DeploymentProjectType selectedType = (DeploymentProjectType) projectType.getSelectedItem();
+            deploymentOutput.setText(t("git.analyzing"));
+            new SwingWorker<ReviewedSourcePreparation, Void>() {
+                @Override
+                protected ReviewedSourcePreparation doInBackground() throws Exception {
+                    return service.prepareReviewedGitSource(request, selectedType);
+                }
+
+                @Override
+                protected void done() {
+                    try {
+                        reviewedPreparation = get();
+                        if (reviewedPreparation.archive().isPresent()) {
+                            applyRuntimeSuggestions(reviewedPreparation);
+                            String commit = reviewedPreparation.sourceRevision().orElseThrow().commit().orElseThrow();
+                            deploymentOutput.setText(t("git.reviewedSuccess", Map.of("commit", commit,
+                                    "archive", reviewedPreparation.archive().orElseThrow().contentSha256(),
+                                    "facts", analysisFactsSummary(reviewedPreparation))));
+                        } else {
+                            deploymentOutput.setText(t("source.reviewedUnavailable", Map.of("reasons",
+                                    reviewedRejectionSummary(reviewedPreparation))));
+                        }
+                    } catch (Exception exception) {
+                        deploymentOutput.setText(t("git.failed", Map.of("detail", safeMessage(exception))));
+                    }
+                }
+            }.execute();
+        } catch (Exception exception) {
+            deploymentOutput.setText(t("git.failed", Map.of("detail", safeMessage(exception))));
+        }
+    }
+
+    private void applyRuntimeSuggestions(ReviewedSourcePreparation preparation) {
+        DeploymentRuntimeSuggestion suggestion = preparation.assessment().runtimeSuggestion().orElse(null);
+        if (suggestion == null) {
+            return;
+        }
+        suggestion.value(DeploymentRuntimeSuggestion.RuntimeInput.JAVA_JAR_PATH).ifPresent(runtimePrimary::setText);
+        suggestion.value(DeploymentRuntimeSuggestion.RuntimeInput.JAVA_MAIN_CLASS).ifPresent(runtimeSecondary::setText);
+        suggestion.value(DeploymentRuntimeSuggestion.RuntimeInput.JAVA_VERSION).ifPresent(javaVersion::setText);
+        suggestion.value(DeploymentRuntimeSuggestion.RuntimeInput.NODE_MAJOR_VERSION).ifPresent(runtimePrimary::setText);
+        suggestion.value(DeploymentRuntimeSuggestion.RuntimeInput.PYTHON_VERSION).ifPresent(runtimePrimary::setText);
+        suggestion.value(DeploymentRuntimeSuggestion.RuntimeInput.PYTHON_ENTRYPOINT).ifPresent(runtimeSecondary::setText);
+        suggestion.value(DeploymentRuntimeSuggestion.RuntimeInput.STATIC_OUTPUT_DIRECTORY).ifPresent(runtimePrimary::setText);
+        if (!suggestion.suggestedContainerPorts().isEmpty()) {
+            containerPorts.setText(suggestion.suggestedContainerPorts().entrySet().stream()
+                    .map(entry -> entry.getKey() + ":" + entry.getValue()).reduce((left, right) -> left + ";" + right).orElse(""));
+        }
+        if (!suggestion.suggestedManagedVolumes().isEmpty()) {
+            containerVolumes.setText(suggestion.suggestedManagedVolumes().stream()
+                    .map(volume -> volume.name() + ":" + volume.containerPath() + (volume.readOnly() ? ":ro" : ":rw"))
+                    .reduce((left, right) -> left + ";" + right).orElse(""));
+        }
     }
 
     private String reviewedRejectionSummary(ReviewedSourcePreparation preparation) {
@@ -308,7 +398,16 @@ final class DesktopPages {
         String missing = facts.missingInformation().isEmpty() ? "" : t("source.missing", Map.of("items",
                 facts.missingInformation().stream().map(messages::text).map(item -> "- " + item + "\n")
                         .reduce("", String::concat)));
-        return evidence + conflicts + missing;
+        String runtime = preparation.assessment().runtimeSuggestion().map(suggestion -> {
+            String inferred = suggestion.evidence().isEmpty() ? "" : t("source.runtimeInferred", Map.of("items",
+                    suggestion.evidence().stream().map(item -> "- " + messages.text(item.subject()) + " (" + item.source() + ")\n")
+                            .reduce("", String::concat)));
+            String required = suggestion.requiredUserInput().isEmpty() ? "" : t("source.runtimeRequired", Map.of("items",
+                    suggestion.requiredUserInput().stream().map(messages::text).map(item -> "- " + item + "\n")
+                            .reduce("", String::concat)));
+            return inferred + required;
+        }).orElse("");
+        return evidence + conflicts + missing + runtime;
     }
 
     private void saveServer() {
@@ -517,7 +616,7 @@ final class DesktopPages {
             }
             ConfigurationSnapshot configuration = configurationSnapshot();
             ReviewedDeploymentRequest request = service.createReviewedDeploymentRequest(
-                    reviewedPreparation, server, configuration, List.of(), runtime, accessUrl,
+                    reviewedPreparation, server, configuration, secretReferences(), runtime, accessUrl,
                     useRoot ? new BuildLimits(1800, 1024, 4096, 4L * 1024 * 1024, 4L * 1024 * 1024 * 1024, true)
                             : BuildLimits.defaultNonRoot(), useRoot, dockerRiskAccepted);
             ReviewedDeploymentPlan plan = service.planDeployment(request);
@@ -583,6 +682,45 @@ final class DesktopPages {
         return ConfigurationSnapshot.create(applicationId, Instant.now().toEpochMilli(), "runtime-v1", Instant.now(), entries);
     }
 
+    private List<SecretReference> secretReferences() {
+        List<SecretReference> references = new ArrayList<>();
+        for (String item : secretReferences.getText().split(";")) {
+            String value = item.trim();
+            if (value.isEmpty()) {
+                continue;
+            }
+            int separator = value.lastIndexOf(':');
+            if (separator < 1 || separator == value.length() - 1) {
+                throw new IllegalArgumentException(t("validation.secretReference"));
+            }
+            references.add(new SecretReference(value.substring(0, separator).trim(),
+                    Long.parseLong(value.substring(separator + 1).trim())));
+        }
+        return List.copyOf(references);
+    }
+
+    private void saveDeploymentSecret() {
+        try {
+            List<SecretReference> references = secretReferences();
+            if (references.size() != 1) {
+                throw new IllegalArgumentException(t("validation.secretSingleRevision"));
+            }
+            SecretReference reference = references.getFirst();
+            JPasswordField valueField = new JPasswordField(24);
+            if (JOptionPane.showConfirmDialog(owner, valueField, t("secret.value.title"), JOptionPane.OK_CANCEL_OPTION,
+                    JOptionPane.WARNING_MESSAGE) != JOptionPane.OK_OPTION) {
+                return;
+            }
+            CredentialStorageMode mode = selectedMode();
+            StoredApplicationSecretRevision revision = new StoredApplicationSecretRevision(reference,
+                    "application-secret/" + reference.identifier() + "/" + reference.revision(), mode, Instant.now());
+            service.saveDeploymentSecretRevision(revision, mode, masterPassword.getPassword(), valueField.getPassword());
+            deploymentOutput.setText(t("secret.saved", Map.of("reference", reference.identifier() + ":" + reference.revision())));
+        } catch (Exception exception) {
+            deploymentOutput.setText(t("secret.saveFailed", Map.of("detail", safeMessage(exception))));
+        }
+    }
+
     private ConfigurationValue configurationValue(String value) {
         if (value.equalsIgnoreCase("true") || value.equalsIgnoreCase("false")) {
             return new ConfigurationValue.Flag(Boolean.parseBoolean(value));
@@ -598,7 +736,7 @@ final class DesktopPages {
         return switch (type) {
             case GRADLE_SPRING_BOOT -> new DeploymentRuntimeSpecification.GradleSpringBoot(health);
             case JAVA_JAR -> new DeploymentRuntimeSpecification.JavaJar(runtimePrimary.getText(), runtimeSecondary.getText(),
-                    "21", structuredArguments(jvmArguments.getText()), structuredArguments(applicationArguments.getText()), health);
+                    javaVersion.getText(), structuredArguments(jvmArguments.getText()), structuredArguments(applicationArguments.getText()), health);
             case NODE_SERVICE -> new DeploymentRuntimeSpecification.NodeService(
                     Integer.parseInt(runtimePrimary.getText().trim()), health);
             case PYTHON_SERVICE -> new DeploymentRuntimeSpecification.PythonService(runtimePrimary.getText(),
@@ -770,49 +908,15 @@ final class DesktopPages {
                 .orElse(t("deployment.tcpAccess"));
     }
 
-    private void applyRuntimeDefaults() {
-        DeploymentProjectType selected = (DeploymentProjectType) projectType.getSelectedItem();
-        if (selected == null) {
-            return;
-        }
-        switch (selected) {
-            case GRADLE_SPRING_BOOT -> {
-                runtimePrimary.setText("");
-                runtimeSecondary.setText("");
-                jvmArguments.setText("");
-                applicationArguments.setText("");
-            }
-            case JAVA_JAR -> {
-                runtimePrimary.setText("app.jar");
-                runtimeSecondary.setText("com.example.Main");
-                jvmArguments.setText("-Xmx512m");
-                applicationArguments.setText("");
-            }
-            case NODE_SERVICE -> {
-                runtimePrimary.setText("22");
-                runtimeSecondary.setText("");
-                jvmArguments.setText("");
-                applicationArguments.setText("");
-            }
-            case PYTHON_SERVICE -> {
-                runtimePrimary.setText("3.12");
-                runtimeSecondary.setText("app");
-                jvmArguments.setText("");
-                applicationArguments.setText("");
-            }
-            case STATIC_SITE -> {
-                runtimePrimary.setText("dist");
-                runtimeSecondary.setText("");
-                jvmArguments.setText("");
-                applicationArguments.setText("");
-            }
-            case DOCKERFILE_CONTAINER -> {
-                runtimePrimary.setText("");
-                runtimeSecondary.setText("");
-                jvmArguments.setText("");
-                applicationArguments.setText("");
-            }
-        }
+    private void resetRuntimeInputs() {
+        runtimePrimary.setText("");
+        runtimeSecondary.setText("");
+        javaVersion.setText("");
+        jvmArguments.setText("");
+        applicationArguments.setText("");
+        containerPorts.setText("");
+        containerVolumes.setText("");
+        reviewedPreparation = null;
     }
 
     /**
@@ -827,9 +931,10 @@ final class DesktopPages {
                 new DeploymentPageState(((DeploymentProjectType) projectType.getSelectedItem()).name(),
                         ((HealthMode) healthMode.getSelectedItem()).name(), healthEndpoint.getText(),
                         expectedHttpStatus.getText(), healthTimeoutSeconds.getText(), tcpStabilitySeconds.getText(),
-                        userAccessUrl.getText(), runtimePrimary.getText(), runtimeSecondary.getText(), jvmArguments.getText(),
-                        applicationArguments.getText(), ((DeploymentRuntimeSpecification.ContainerEngine) containerEngine.getSelectedItem()).name(),
-                        containerPorts.getText(), containerVolumes.getText(), configurationEntries.getText(),
+                        userAccessUrl.getText(), runtimePrimary.getText(), runtimeSecondary.getText(), javaVersion.getText(),
+                        jvmArguments.getText(), applicationArguments.getText(), containerEngine.getSelectedItem() == null ? ""
+                                : ((DeploymentRuntimeSpecification.ContainerEngine) containerEngine.getSelectedItem()).name(),
+                        containerPorts.getText(), containerVolumes.getText(), configurationEntries.getText(), secretReferences.getText(),
                         rootBuild.isSelected(), deploymentOutput.getText(), reviewedPreparation),
                 new ServerPageState(serverId.getText(), serverHost.getText(), serverPort.getText(), serverUser.getText(),
                         serverPassword.getPassword(), selectedMode(), masterPassword.getPassword(), serverOutput.getText()),
@@ -858,12 +963,15 @@ final class DesktopPages {
         userAccessUrl.setText(deploymentState.userAccessUrl());
         runtimePrimary.setText(deploymentState.runtimePrimary());
         runtimeSecondary.setText(deploymentState.runtimeSecondary());
+        javaVersion.setText(deploymentState.javaVersion());
         jvmArguments.setText(deploymentState.jvmArguments());
         applicationArguments.setText(deploymentState.applicationArguments());
-        containerEngine.setSelectedItem(DeploymentRuntimeSpecification.ContainerEngine.valueOf(deploymentState.containerEngine()));
+        containerEngine.setSelectedItem(deploymentState.containerEngine().isBlank() ? null
+                : DeploymentRuntimeSpecification.ContainerEngine.valueOf(deploymentState.containerEngine()));
         containerPorts.setText(deploymentState.containerPorts());
         containerVolumes.setText(deploymentState.containerVolumes());
         configurationEntries.setText(deploymentState.configurationEntries());
+        secretReferences.setText(deploymentState.secretReferences());
         managedApplicationId.setText(state.managed().applicationId());
         AiPageState aiState = state.ai();
         aiEndpoint.setText(aiState.endpoint());
@@ -954,6 +1062,15 @@ final class DesktopPages {
          * <p>表示 {@code TCP} 选项。
          */
         TCP
+    }
+
+    private static GitReference gitReference(int kindIndex, String value) {
+        return switch (kindIndex) {
+            case 0 -> new GitReference.Branch(value);
+            case 1 -> new GitReference.Tag(value);
+            case 2 -> new GitReference.Commit(value);
+            default -> throw new IllegalArgumentException("Unsupported Git reference kind");
+        };
     }
 
     @FunctionalInterface

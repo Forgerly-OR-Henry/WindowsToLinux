@@ -53,6 +53,8 @@ import gold.debug.windowstolinux.shared.model.managed.ManagedApplication;
 import gold.debug.windowstolinux.shared.model.security.CredentialStorageMode;
 import gold.debug.windowstolinux.shared.model.server.ServerCapabilities;
 import gold.debug.windowstolinux.shared.model.server.ServerIdentity;
+import gold.debug.windowstolinux.shared.git.snapshot.GitSnapshotException;
+import gold.debug.windowstolinux.shared.git.snapshot.GitSourceRequest;
 
 import java.io.IOException;
 import java.nio.file.Path;
@@ -133,6 +135,16 @@ public final class DesktopApplicationService {
     /** Prepares a selected typed source and safe archive without invoking project code. / 在不调用项目代码的情况下准备选定类型的源码和安全归档。 */
     public ReviewedSourcePreparation prepareReviewedSource(Path sourceDirectory, DeploymentProjectType projectType) throws IOException {
         return source.prepareReviewed(sourceDirectory, projectType);
+    }
+
+    /**
+     * Prepares one explicitly selected credential-free Git source by pinning it to a detached commit before analysis.
+     *
+     * <p>在分析前将一个显式选择且不含凭据的 Git 源固定为分离 Commit 后再准备。
+     */
+    public ReviewedSourcePreparation prepareReviewedGitSource(GitSourceRequest request, DeploymentProjectType projectType)
+            throws GitSnapshotException {
+        return source.prepareReviewedGit(request, projectType);
     }
 
     /**
@@ -292,6 +304,13 @@ public final class DesktopApplicationService {
     public void saveDeploymentSecretRevision(StoredApplicationSecretRevision revision, SecretStore store, char[] value)
             throws SQLException, SecretStoreException {
         deploymentConfiguration.saveSecretRevision(revision, store, value);
+    }
+
+    /** Stores one immutable application-secret revision through the selected desktop secret store. / 通过选定的桌面秘密存储保存一个不可变应用秘密修订。 */
+    public void saveDeploymentSecretRevision(StoredApplicationSecretRevision revision, CredentialStorageMode mode,
+                                             char[] masterPassword, char[] value)
+            throws SQLException, SecretStoreException {
+        deploymentConfiguration.saveSecretRevision(revision, mode, masterPassword, value);
     }
 
     /**

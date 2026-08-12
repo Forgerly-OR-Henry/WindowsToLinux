@@ -77,9 +77,11 @@ public final class ReviewedDeploymentUseCase {
         }
         var facts = preparation.assessment().facts().orElseThrow();
         var archive = preparation.archive().orElseThrow();
+        var sourceRevision = preparation.sourceRevision().orElseThrow(() -> new LocalizedOperationException(
+                LocalizedMessage.of("deployment.analyzeFirst"),
+                "Typed deployment requires an immutable source identity bound to the reviewed archive"));
         ManagedApplication application = resolveApplication(facts.applicationId(), server);
-        return new ReviewedDeploymentRequest(server, facts,
-                new gold.debug.windowstolinux.shared.model.project.SourceRevision(archive.contentSha256(), Optional.empty(), java.util.Map.of()),
+        return new ReviewedDeploymentRequest(server, facts, sourceRevision,
                 archive, configuration, secretReferences, runtime, userAccessUrl, limits,
                 new DeploymentApproval(application.id(), archive.contentSha256(), server.id(), rootBuildConfirmed, Instant.now()),
                 containerDaemonRiskAccepted);

@@ -4,9 +4,14 @@ import gold.debug.windowstolinux.app.windows.workspace.PreparedSourceArchive;
 import gold.debug.windowstolinux.app.windows.workspace.WindowsSourceWorkspace;
 import gold.debug.windowstolinux.shared.analyze.core.StaticProjectAnalyzer;
 import gold.debug.windowstolinux.shared.analyze.core.DeploymentProjectAnalyzer;
+import gold.debug.windowstolinux.shared.git.snapshot.GitSnapshot;
+import gold.debug.windowstolinux.shared.git.snapshot.GitSnapshotException;
+import gold.debug.windowstolinux.shared.git.snapshot.GitSnapshotService;
+import gold.debug.windowstolinux.shared.git.snapshot.GitSourceRequest;
 import gold.debug.windowstolinux.shared.model.analysis.DeploymentProjectAssessment;
 import gold.debug.windowstolinux.shared.model.analysis.DeploymentAdmission;
 import gold.debug.windowstolinux.shared.model.project.DeploymentProjectType;
+import gold.debug.windowstolinux.shared.model.project.SourceRevision;
 import gold.debug.windowstolinux.shared.model.analysis.ProjectAssessment;
 import gold.debug.windowstolinux.shared.model.analysis.SupportDecision;
 
@@ -25,6 +30,8 @@ public final class SourcePreparationUseCase {
     private final StaticProjectAnalyzer analyzer;
     private final DeploymentProjectAnalyzer deploymentAnalyzer;
     private final WindowsSourceWorkspace workspace;
+    private final GitSnapshotService gitSnapshots;
+    private final Path gitWorkspace;
 
     /**
      * Creates a {@code SourcePreparationUseCase} instance.
@@ -36,14 +43,17 @@ public final class SourcePreparationUseCase {
      * @throws NullPointerException if a required argument is {@code null} / 必要参数为 {@code null} 时
      */
     public SourcePreparationUseCase(StaticProjectAnalyzer analyzer, WindowsSourceWorkspace workspace) {
-        this(analyzer, new DeploymentProjectAnalyzer(), workspace);
+        this(analyzer, new DeploymentProjectAnalyzer(), workspace, new GitSnapshotService(),
+                Objects.requireNonNull(workspace, "workspace").workDirectory().resolve("git-snapshots"));
     }
 
     SourcePreparationUseCase(StaticProjectAnalyzer analyzer, DeploymentProjectAnalyzer deploymentAnalyzer,
-                             WindowsSourceWorkspace workspace) {
+                             WindowsSourceWorkspace workspace, GitSnapshotService gitSnapshots, Path gitWorkspace) {
         this.analyzer = Objects.requireNonNull(analyzer, "analyzer");
         this.deploymentAnalyzer = Objects.requireNonNull(deploymentAnalyzer, "deploymentAnalyzer");
         this.workspace = Objects.requireNonNull(workspace, "workspace");
+        this.gitSnapshots = Objects.requireNonNull(gitSnapshots, "gitSnapshots");
+        this.gitWorkspace = Objects.requireNonNull(gitWorkspace, "gitWorkspace").toAbsolutePath().normalize();
     }
 
     /**
@@ -78,10 +88,39 @@ public final class SourcePreparationUseCase {
     public ReviewedSourcePreparation prepareReviewed(Path sourceDirectory, DeploymentProjectType projectType) throws IOException {
         DeploymentProjectAssessment assessment = deploymentAnalyzer.analyze(sourceDirectory, projectType);
         if (assessment.admission() != DeploymentAdmission.READY_FOR_PLANNING) {
-            return new ReviewedSourcePreparation(assessment, Optional.empty(), List.of());
+            return new ReviewedSourcePreparation(assessment, Optional.empty(), Optional.empty(), List.of());
         }
         String applicationId = assessment.facts().orElseThrow().applicationId();
         PreparedSourceArchive archive = workspace.prepare(sourceDirectory, applicationId);
-        return new ReviewedSourcePreparation(assessment, Optional.of(archive.descriptor()), archive.excludedEntries());
+        return new ReviewedSourcePreparation(assessment, Optional.of(archive.descriptor()),
+                Optional.of(new SourceRevision(archive.descriptor().contentSha256(), Optional.empty(), java.util.Map.of())),
+                archive.excludedEntries());
     }
+
+    /**
+     * Resolves a user-selected Git reference to one detached commit, then analyzes that exact checkout without executing project code.
+     *
+     * <p>将用户选择的 Git 引用解析为一个分离 Commit，然后在不执行项目代码的情况下分析该精确检出。
+     *
+     * @param request the explicit credential-free Git source request / 显式且不含凭据的 Git 源码请求
+     * @param projectType the user-selected type / 用户选择的类型
+     * @return the typed analysis, pinned source identity, and safe archive / 类型化分析、固定源码身份和安全归档
+     * @throws GitSnapshotException if the controlled Git snapshot cannot be prepared / 无法准备受控 Git 快照时
+     */
+    public ReviewedSourcePreparation prepareReviewedGit(GitSourceRequest request, DeploymentProjectType projectType)
+            throws GitSnapshotException {
+        GitSnapshot snapshot = gitSnapshots.prepare(request, gitWorkspace);
+        DeploymentProjectAssessment assessment = deploymentAnalyzer.analyze(snapshot.checkoutDirectory(), projectType);
+        if (assessment.admission() != DeploymentAdmission.READY_FOR_PLANNING) {
+            return new ReviewedSourcePreparation(assessment, Optional.empty(), Optional.empty(), List.of());
+        }
+        var archive = snapshot.archive();
+        var descriptor = new gold.debug.windowstolinux.shared.model.archive.SourceArchiveDescriptor(
+                archive.archivePath(), archive.contentSha256(), archive.byteCount(), archive.uncompressedByteCount());
+        SourceRevision revision = new SourceRevision(archive.contentSha256(), Optional.of(snapshot.commit()),
+                Optional.of(snapshot.remote().location()), java.util.Map.of());
+        return new ReviewedSourcePreparation(assessment, Optional.of(descriptor), Optional.of(revision),
+                archive.excludedEntries());
+    }
+
 }
