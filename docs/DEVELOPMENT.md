@@ -24,7 +24,7 @@ WindowsToLinux 是面向个人和小型自托管场景的部署管理工具。�
 | Maven | 当前 reactor 由根工程、3 个聚合模块和 24 个叶子模块组成，共 28 个 POM；二期复用既有叶子模块，没有新增 Maven 模块 | `File.md` 的正式目标模块结构保持不变；`backup` 和 Web Java 模块仍为 POM-only |
 | Java | Java 21；一期 shared 与桌面代码已按职责分包；`shared/config`、`shared/git`、`analyze`、`deploy`、`linux`、`linux-sshd`、`app/db`、`app/service` 已含二期本地实现与测试 | 二期新类型尚未通过真实 Linux 验收，不能标记正式支持 |
 | Web 前端 | Vue 3、TypeScript、Vite、Vitest、Playwright 骨架 | 只可展示骨架页，尚无业务接口 |
-| 桌面/Web 业务 | 一期 Swing 部署与受管生命周期用例已实现；Web 业务未实现 | Ubuntu 真实部署/回滚/生命周期矩阵已由桌面程序执行；Web 不可部署或管理应用 |
+| 桌面/Web 业务 | Swing 已提供一期受管生命周期，以及二期六类项目的类型选择、静态分析、类型化计划审阅和已保存凭据提交；Web 业务未实现 | Ubuntu 一期真实部署/回滚/生命周期矩阵已由桌面程序执行；二期桌面流程仅完成本地验证，Web 不可部署或管理应用 |
 | Linux 运行验证 | Ubuntu 24.04 x86-64 的一期产品环境准备、Maven/Wrapper、复杂 Spring Boot、systemd、HTTP/TCP、失败恢复、归属、访问交付和生命周期均已实际验证；二期新增矩阵、固定环境准备、构建与发布协议完成本地代码/契约测试 | 容器和其他发行版及二期类型仍为 `RUNTIME-PENDING` |
 
 ### 2.1 正式目标架构与当前实现边界

@@ -4,7 +4,11 @@ import gold.debug.windowstolinux.shared.ai.parser.ChatCompletionsResponseParser;
 import gold.debug.windowstolinux.shared.ai.prompt.StructuralAnalysisPrompt;
 import gold.debug.windowstolinux.shared.ai.prompt.AiResponseLanguage;
 import gold.debug.windowstolinux.shared.ai.redaction.RedactedProjectFacts;
+import gold.debug.windowstolinux.shared.ai.redaction.RedactedDeploymentProjectFacts;
 import gold.debug.windowstolinux.shared.model.message.LocalizedMessage;
+import gold.debug.windowstolinux.shared.model.project.DeploymentBuildTool;
+import gold.debug.windowstolinux.shared.model.project.DeploymentProjectFacts;
+import gold.debug.windowstolinux.shared.model.project.DeploymentProjectType;
 import gold.debug.windowstolinux.shared.model.project.SourceProjectFacts;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -48,5 +52,19 @@ class OpenAiCompatibleStructuralAnalyzerTest {
 
         assertEquals("ai.error.responseContentMissing", failure.userMessage().key());
         assertEquals("AI response does not contain an explanation field", failure.diagnostic());
+    }
+
+    @Test
+    void keepsTypedDeploymentFactsRedactedToIdentityTypeAndFixedBuildTool() {
+        DeploymentProjectFacts facts = new DeploymentProjectFacts(temporaryDirectory, "demo",
+                DeploymentProjectType.NODE_SERVICE, DeploymentBuildTool.NPM, List.of(), List.of(), List.of());
+
+        String body = StructuralAnalysisPrompt.requestBody("gpt-5", RedactedDeploymentProjectFacts.from(facts),
+                AiResponseLanguage.ENGLISH);
+
+        assertTrue(body.contains("applicationId=demo"));
+        assertTrue(body.contains("projectType=NODE_SERVICE"));
+        assertTrue(body.contains("fixedBuildTool=NPM"));
+        assertFalse(body.contains(temporaryDirectory.toString()));
     }
 }

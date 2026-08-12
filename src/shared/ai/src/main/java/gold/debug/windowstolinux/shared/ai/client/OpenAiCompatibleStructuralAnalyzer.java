@@ -6,6 +6,8 @@ import gold.debug.windowstolinux.shared.ai.prompt.StructuralAnalysisPrompt;
 import gold.debug.windowstolinux.shared.ai.prompt.AiResponseLanguage;
 import gold.debug.windowstolinux.shared.ai.provider.ProviderEndpointPolicy;
 import gold.debug.windowstolinux.shared.ai.redaction.RedactedProjectFacts;
+import gold.debug.windowstolinux.shared.ai.redaction.RedactedDeploymentProjectFacts;
+import gold.debug.windowstolinux.shared.model.project.DeploymentProjectFacts;
 import gold.debug.windowstolinux.shared.model.project.SourceProjectFacts;
 import gold.debug.windowstolinux.shared.model.message.LocalizedMessage;
 
@@ -64,11 +66,26 @@ public final class OpenAiCompatibleStructuralAnalyzer {
             throws AiAnalysisException {
         endpoint = endpointPolicy.validateEndpoint(endpoint);
         model = endpointPolicy.requireModel(model);
+        return send(endpoint, apiKey, StructuralAnalysisPrompt.requestBody(model, RedactedProjectFacts.from(facts),
+                responseLanguage));
+    }
+
+    /** Analyzes selected typed deployment facts without transmitting a source path or source contents. / 在不传输源码路径或内容的情况下分析选定类型化部署事实。 */
+    public AiStructuralAnalysis analyze(URI endpoint, String model, char[] apiKey, DeploymentProjectFacts facts,
+                                        AiResponseLanguage responseLanguage)
+            throws AiAnalysisException {
+        endpoint = endpointPolicy.validateEndpoint(endpoint);
+        model = endpointPolicy.requireModel(model);
+        return send(endpoint, apiKey, StructuralAnalysisPrompt.requestBody(model,
+                RedactedDeploymentProjectFacts.from(facts), responseLanguage));
+    }
+
+    private AiStructuralAnalysis send(URI endpoint, char[] apiKey, String requestBody)
+            throws AiAnalysisException {
         Objects.requireNonNull(apiKey, "apiKey");
         if (apiKey.length == 0) {
             throw new AiAnalysisException(LocalizedMessage.of("ai.error.apiKeyMissing"), "AI API key must not be empty");
         }
-        RedactedProjectFacts redactedFacts = RedactedProjectFacts.from(facts);
         char[] keyCopy = Arrays.copyOf(apiKey, apiKey.length);
         try {
             HttpRequest request = HttpRequest.newBuilder(endpoint)
@@ -76,7 +93,7 @@ public final class OpenAiCompatibleStructuralAnalyzer {
                     .header("Authorization", "Bearer " + new String(keyCopy))
                     .header("Content-Type", "application/json")
                     .POST(HttpRequest.BodyPublishers.ofString(
-                            StructuralAnalysisPrompt.requestBody(model, redactedFacts, responseLanguage),
+                            requestBody,
                             StandardCharsets.UTF_8))
                     .build();
             HttpResponse<String> response = httpClient.send(request,

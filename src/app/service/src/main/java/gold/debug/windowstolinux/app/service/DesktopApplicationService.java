@@ -21,6 +21,7 @@ import gold.debug.windowstolinux.app.service.server.DesktopSecretStores;
 import gold.debug.windowstolinux.app.service.server.ServerProfile;
 import gold.debug.windowstolinux.app.service.server.ServerUseCases;
 import gold.debug.windowstolinux.app.service.source.SourcePreparation;
+import gold.debug.windowstolinux.app.service.source.ReviewedSourcePreparation;
 import gold.debug.windowstolinux.app.service.source.SourcePreparationUseCase;
 import gold.debug.windowstolinux.app.db.entity.StoredApplicationSecretRevision;
 import gold.debug.windowstolinux.shared.config.revision.ConfigurationSnapshot;
@@ -102,7 +103,7 @@ public final class DesktopApplicationService {
         this.deployment = new DeploymentUseCase(
                 database, new ManagedDeploymentService(), linuxGateway, servers, locks);
         this.reviewedDeployment = linuxGateway instanceof DeploymentLinuxGateway deploymentGateway
-                ? Optional.of(new ReviewedDeploymentUseCase(database, new ReviewedDeploymentService(), deploymentGateway, locks))
+                ? Optional.of(new ReviewedDeploymentUseCase(database, new ReviewedDeploymentService(), deploymentGateway, servers, locks))
                 : Optional.empty();
         this.lifecycle = new LifecycleUseCase(database, linuxGateway, servers, locks);
     }
@@ -129,6 +130,11 @@ public final class DesktopApplicationService {
         return deploymentAgentTools.analyze(sourceDirectory, projectType);
     }
 
+    /** Prepares a selected typed source and safe archive without invoking project code. / 在不调用项目代码的情况下准备选定类型的源码和安全归档。 */
+    public ReviewedSourcePreparation prepareReviewedSource(Path sourceDirectory, DeploymentProjectType projectType) throws IOException {
+        return source.prepareReviewed(sourceDirectory, projectType);
+    }
+
     /**
      * Renders a fully validated typed deployment plan without opening SSH, invoking a build, or reading a secret.
      *
@@ -148,6 +154,29 @@ public final class DesktopApplicationService {
         ReviewedDeploymentUseCase useCase = reviewedDeployment.orElseThrow(() -> new IllegalStateException(
                 "configured Linux gateway does not support reviewed deployment execution"));
         return useCase.deploy(request, endpoint, credential, verifier);
+    }
+
+    /** Creates a reviewed request bound to the desktop-managed application identity. / 创建绑定到桌面受管应用身份的经审阅请求。 */
+    public ReviewedDeploymentRequest createReviewedDeploymentRequest(
+            ReviewedSourcePreparation preparation, ServerIdentity server, ConfigurationSnapshot configuration,
+            List<SecretReference> secretReferences, gold.debug.windowstolinux.shared.model.project.DeploymentRuntimeSpecification runtime,
+            Optional<UserAccessUrl> userAccessUrl, BuildLimits limits, boolean rootBuildConfirmed,
+            boolean containerDaemonRiskAccepted
+    ) throws SQLException {
+        return reviewedDeployment.orElseThrow(() -> new IllegalStateException(
+                "configured Linux gateway does not support reviewed deployment execution"))
+                .createRequest(preparation, server, configuration, secretReferences, runtime, userAccessUrl, limits,
+                        rootBuildConfirmed, containerDaemonRiskAccepted);
+    }
+
+    /** Executes a reviewed request using the selected saved server credential. / 使用选定的已保存服务器凭据执行经审阅请求。 */
+    public DeploymentResult deployReviewedWithStoredPassword(ReviewedDeploymentRequest request, ServerProfile profile,
+                                                              CredentialStorageMode mode, char[] masterPassword,
+                                                              Predicate<String> confirmation)
+            throws SecretStoreException, SQLException {
+        return reviewedDeployment.orElseThrow(() -> new IllegalStateException(
+                "configured Linux gateway does not support reviewed deployment execution"))
+                .deployWithStoredPassword(request, profile, mode, masterPassword, confirmation);
     }
 
     /**
@@ -288,6 +317,13 @@ public final class DesktopApplicationService {
      * @return the operation result / 操作结果
      */
     public AiAnalysisOutcome requestAiExplanation(SourcePreparation preparation, AiProfile profile,
+                                                   CredentialStorageMode mode, char[] masterPassword,
+                                                   String languageTag) {
+        return ai.explain(preparation, profile, mode, masterPassword, languageTag);
+    }
+
+    /** Requests an optional AI explanation for a selected typed source inspection. / 为选定的类型化源码检查请求可选 AI 说明。 */
+    public AiAnalysisOutcome requestAiExplanation(ReviewedSourcePreparation preparation, AiProfile profile,
                                                    CredentialStorageMode mode, char[] masterPassword,
                                                    String languageTag) {
         return ai.explain(preparation, profile, mode, masterPassword, languageTag);

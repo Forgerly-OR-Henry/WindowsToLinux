@@ -2,7 +2,15 @@ package gold.debug.windowstolinux.app.service.deployment;
 
 import gold.debug.windowstolinux.app.db.DesktopDatabase;
 import gold.debug.windowstolinux.app.db.entity.CurrentRelease;
+import gold.debug.windowstolinux.app.secret.api.SecretStore;
+import gold.debug.windowstolinux.app.secret.api.SecretStoreException;
 import gold.debug.windowstolinux.app.service.concurrency.ServerOperationLocks;
+import gold.debug.windowstolinux.app.service.server.ServerProfile;
+import gold.debug.windowstolinux.app.service.server.ServerUseCases;
+import gold.debug.windowstolinux.app.service.source.ReviewedSourcePreparation;
+import gold.debug.windowstolinux.shared.config.revision.ConfigurationSnapshot;
+import gold.debug.windowstolinux.shared.config.secretref.SecretReference;
+import gold.debug.windowstolinux.shared.deploy.plan.DeploymentApproval;
 import gold.debug.windowstolinux.shared.deploy.plan.ReviewedDeploymentRequest;
 import gold.debug.windowstolinux.shared.deploy.result.DeploymentResult;
 import gold.debug.windowstolinux.shared.deploy.transaction.ReviewedDeploymentService;
@@ -23,6 +31,9 @@ import java.time.Instant;
 import java.util.HexFormat;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.List;
+import java.util.Arrays;
+import java.util.function.Predicate;
 import java.util.concurrent.locks.ReentrantLock;
 
 /**
@@ -34,15 +45,67 @@ public final class ReviewedDeploymentUseCase {
     private final DesktopDatabase database;
     private final ReviewedDeploymentService service;
     private final DeploymentLinuxGateway gateway;
+    private final ServerUseCases servers;
     private final ServerOperationLocks locks;
 
     /** Creates the reviewed deployment use case. / 创建经审阅部署用例。 */
     public ReviewedDeploymentUseCase(DesktopDatabase database, ReviewedDeploymentService service,
-                                     DeploymentLinuxGateway gateway, ServerOperationLocks locks) {
+                                     DeploymentLinuxGateway gateway, ServerUseCases servers, ServerOperationLocks locks) {
         this.database = Objects.requireNonNull(database, "database");
         this.service = Objects.requireNonNull(service, "service");
         this.gateway = Objects.requireNonNull(gateway, "gateway");
+        this.servers = Objects.requireNonNull(servers, "servers");
         this.locks = Objects.requireNonNull(locks, "locks");
+    }
+
+    /**
+     * Creates a fully bound request from a planning-ready typed source without inferring an executable command.
+     *
+     * <p>从可计划的类型化源码创建完整绑定请求，不推断可执行命令。
+     */
+    public ReviewedDeploymentRequest createRequest(ReviewedSourcePreparation preparation, ServerIdentity server,
+                                                    ConfigurationSnapshot configuration, List<SecretReference> secretReferences,
+                                                    gold.debug.windowstolinux.shared.model.project.DeploymentRuntimeSpecification runtime,
+                                                    Optional<gold.debug.windowstolinux.shared.model.health.UserAccessUrl> userAccessUrl,
+                                                    gold.debug.windowstolinux.shared.model.deployment.BuildLimits limits,
+                                                    boolean rootBuildConfirmed, boolean containerDaemonRiskAccepted) throws SQLException {
+        preparation = Objects.requireNonNull(preparation, "preparation");
+        server = Objects.requireNonNull(server, "server");
+        if (preparation.archive().isEmpty() || preparation.assessment().facts().isEmpty()) {
+            throw new LocalizedOperationException(LocalizedMessage.of("deployment.analyzeFirst"),
+                    "Typed deployment requires a source that passed the selected deterministic analysis and archive preparation");
+        }
+        var facts = preparation.assessment().facts().orElseThrow();
+        var archive = preparation.archive().orElseThrow();
+        ManagedApplication application = resolveApplication(facts.applicationId(), server);
+        return new ReviewedDeploymentRequest(server, facts,
+                new gold.debug.windowstolinux.shared.model.project.SourceRevision(archive.contentSha256(), Optional.empty(), java.util.Map.of()),
+                archive, configuration, secretReferences, runtime, userAccessUrl, limits,
+                new DeploymentApproval(application.id(), archive.contentSha256(), server.id(), rootBuildConfirmed, Instant.now()),
+                containerDaemonRiskAccepted);
+    }
+
+    /**
+     * Reads the saved server credential only for this bounded reviewed transaction.
+     *
+     * <p>仅为本次有界经审阅事务读取已保存的服务器凭据。
+     */
+    public DeploymentResult deployWithStoredPassword(ReviewedDeploymentRequest request, ServerProfile profile,
+                                                      gold.debug.windowstolinux.shared.model.security.CredentialStorageMode mode,
+                                                      char[] masterPassword, Predicate<String> confirmation)
+            throws SecretStoreException, SQLException {
+        if (profile.credentialMode() != mode) {
+            throw new LocalizedOperationException(LocalizedMessage.of("validation.storageModeMismatch"),
+                    "Credential storage mode does not match the saved server profile");
+        }
+        try (SecretStore store = servers.secrets().open(mode, masterPassword)) {
+            return deploy(request, profile.endpoint(), servers.loadPassword(profile, store),
+                    servers.hostKeyVerifier(profile, confirmation));
+        } finally {
+            if (masterPassword != null) {
+                Arrays.fill(masterPassword, '\0');
+            }
+        }
     }
 
     /**

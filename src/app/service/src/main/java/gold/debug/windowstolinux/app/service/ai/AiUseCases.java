@@ -4,6 +4,7 @@ import gold.debug.windowstolinux.app.db.DesktopDatabase;
 import gold.debug.windowstolinux.app.secret.api.SecretStore;
 import gold.debug.windowstolinux.app.secret.api.SecretStoreException;
 import gold.debug.windowstolinux.app.service.server.DesktopSecretStores;
+import gold.debug.windowstolinux.app.service.source.ReviewedSourcePreparation;
 import gold.debug.windowstolinux.app.service.source.SourcePreparation;
 import gold.debug.windowstolinux.shared.ai.client.AiAnalysisException;
 import gold.debug.windowstolinux.shared.ai.client.OpenAiCompatibleStructuralAnalyzer;
@@ -123,6 +124,21 @@ public final class AiUseCases {
         if (preparation.assessment().facts().isEmpty()) {
             return AiAnalysisOutcome.unavailable(LocalizedMessage.of("ai.status.analysisRequired"));
         }
+        return explainFacts(preparation.assessment().facts().orElseThrow(), profile, mode, masterPassword, languageTag);
+    }
+
+    /** Explains the result of a selected typed static source inspection. / 解释选定类型化静态源码检查的结果。 */
+    public AiAnalysisOutcome explain(ReviewedSourcePreparation preparation, AiProfile profile,
+                                     CredentialStorageMode mode, char[] masterPassword, String languageTag) {
+        if (preparation.assessment().facts().isEmpty()) {
+            return AiAnalysisOutcome.unavailable(LocalizedMessage.of("ai.status.analysisRequired"));
+        }
+        return explainFacts(preparation.assessment().facts().orElseThrow(), profile, mode, masterPassword, languageTag);
+    }
+
+    private AiAnalysisOutcome explainFacts(gold.debug.windowstolinux.shared.model.project.SourceProjectFacts facts,
+                                            AiProfile profile, CredentialStorageMode mode, char[] masterPassword,
+                                            String languageTag) {
         if (profile.credentialMode() != mode) {
             return AiAnalysisOutcome.unavailable(LocalizedMessage.of("ai.status.storageModeMismatch"));
         }
@@ -134,7 +150,33 @@ public final class AiUseCases {
             try {
                 String explanation = new OpenAiCompatibleStructuralAnalyzer().analyze(
                         profile.chatCompletionsEndpoint(), profile.model(), apiKey,
-                        preparation.assessment().facts().orElseThrow(),
+                        facts,
+                        AiResponseLanguage.fromLanguageTag(languageTag)).explanation();
+                return AiAnalysisOutcome.available(explanation);
+            } finally {
+                clear(apiKey);
+            }
+        } catch (AiAnalysisException | SecretStoreException exception) {
+            return AiAnalysisOutcome.unavailable(exception.userMessage(), exception.diagnostic());
+        } finally {
+            clear(masterPassword);
+        }
+    }
+
+    private AiAnalysisOutcome explainFacts(gold.debug.windowstolinux.shared.model.project.DeploymentProjectFacts facts,
+                                            AiProfile profile, CredentialStorageMode mode, char[] masterPassword,
+                                            String languageTag) {
+        if (profile.credentialMode() != mode) {
+            return AiAnalysisOutcome.unavailable(LocalizedMessage.of("ai.status.storageModeMismatch"));
+        }
+        try (SecretStore store = secrets.open(mode, masterPassword)) {
+            char[] apiKey = store.read(profile.credentialKey()).orElse(null);
+            if (apiKey == null) {
+                return AiAnalysisOutcome.unavailable(LocalizedMessage.of("ai.status.apiKeyMissing"));
+            }
+            try {
+                String explanation = new OpenAiCompatibleStructuralAnalyzer().analyze(
+                        profile.chatCompletionsEndpoint(), profile.model(), apiKey, facts,
                         AiResponseLanguage.fromLanguageTag(languageTag)).explanation();
                 return AiAnalysisOutcome.available(explanation);
             } finally {

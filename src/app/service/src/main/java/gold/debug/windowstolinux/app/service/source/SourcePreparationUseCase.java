@@ -3,6 +3,10 @@ package gold.debug.windowstolinux.app.service.source;
 import gold.debug.windowstolinux.app.windows.workspace.PreparedSourceArchive;
 import gold.debug.windowstolinux.app.windows.workspace.WindowsSourceWorkspace;
 import gold.debug.windowstolinux.shared.analyze.core.StaticProjectAnalyzer;
+import gold.debug.windowstolinux.shared.analyze.core.DeploymentProjectAnalyzer;
+import gold.debug.windowstolinux.shared.model.analysis.DeploymentProjectAssessment;
+import gold.debug.windowstolinux.shared.model.analysis.DeploymentAdmission;
+import gold.debug.windowstolinux.shared.model.project.DeploymentProjectType;
 import gold.debug.windowstolinux.shared.model.analysis.ProjectAssessment;
 import gold.debug.windowstolinux.shared.model.analysis.SupportDecision;
 
@@ -19,6 +23,7 @@ import java.util.Optional;
  */
 public final class SourcePreparationUseCase {
     private final StaticProjectAnalyzer analyzer;
+    private final DeploymentProjectAnalyzer deploymentAnalyzer;
     private final WindowsSourceWorkspace workspace;
 
     /**
@@ -31,7 +36,13 @@ public final class SourcePreparationUseCase {
      * @throws NullPointerException if a required argument is {@code null} / 必要参数为 {@code null} 时
      */
     public SourcePreparationUseCase(StaticProjectAnalyzer analyzer, WindowsSourceWorkspace workspace) {
+        this(analyzer, new DeploymentProjectAnalyzer(), workspace);
+    }
+
+    SourcePreparationUseCase(StaticProjectAnalyzer analyzer, DeploymentProjectAnalyzer deploymentAnalyzer,
+                             WindowsSourceWorkspace workspace) {
         this.analyzer = Objects.requireNonNull(analyzer, "analyzer");
+        this.deploymentAnalyzer = Objects.requireNonNull(deploymentAnalyzer, "deploymentAnalyzer");
         this.workspace = Objects.requireNonNull(workspace, "workspace");
     }
 
@@ -52,5 +63,25 @@ public final class SourcePreparationUseCase {
         String applicationId = assessment.facts().orElseThrow().applicationName();
         PreparedSourceArchive archive = workspace.prepare(sourceDirectory, applicationId);
         return new SourcePreparation(assessment, Optional.of(archive.descriptor()), archive.excludedEntries());
+    }
+
+    /**
+     * Performs the selected typed static analysis before creating an archive; it never executes project content.
+     *
+     * <p>在创建归档前执行选定的类型化静态分析；绝不执行项目内容。
+     *
+     * @param sourceDirectory the user-selected source directory / 用户选择的源码目录
+     * @param projectType the explicitly selected single-component type / 显式选择的单组件类型
+     * @return the typed analysis and safe archive result / 类型化分析和安全归档结果
+     * @throws IOException if source reading or archiving cannot complete / 无法完成源码读取或归档时
+     */
+    public ReviewedSourcePreparation prepareReviewed(Path sourceDirectory, DeploymentProjectType projectType) throws IOException {
+        DeploymentProjectAssessment assessment = deploymentAnalyzer.analyze(sourceDirectory, projectType);
+        if (assessment.admission() != DeploymentAdmission.READY_FOR_PLANNING) {
+            return new ReviewedSourcePreparation(assessment, Optional.empty(), List.of());
+        }
+        String applicationId = assessment.facts().orElseThrow().applicationId();
+        PreparedSourceArchive archive = workspace.prepare(sourceDirectory, applicationId);
+        return new ReviewedSourcePreparation(assessment, Optional.of(archive.descriptor()), archive.excludedEntries());
     }
 }

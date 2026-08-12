@@ -23,7 +23,7 @@
 
 ### 1.1 当前交付状态
 
-- 已完成本地实现与负向测试：Git 分支/Tag 固定 Commit、禁用 Hook、拒绝未经支持的 Submodule/LFS 和 URL 凭据；六种类型的有界静态识别、冲突/缺失输入与确定性计划；SQLite v4 不可变普通配置及秘密修订/发布绑定；Linux 事实采集与 Ubuntu、CentOS Stream、旧 CentOS 的保守矩阵；Ubuntu 22.04/24.04 与 CentOS Stream 9/10 的固定环境准备脚本；Docker/Podman 不可混淆的自启契约；命名 Provider 与仅含分析/计划工具的可选 Agent 表面。
+- 已完成本地实现与负向测试：Git 分支/Tag 固定 Commit、禁用 Hook、拒绝未经支持的 Submodule/LFS 和 URL 凭据；六种类型的有界静态识别、冲突/缺失输入与确定性计划；桌面端可选择六种类型、填写受限结构化运行时/非秘密配置、审阅确定性计划并以已保存凭据提交；SQLite v4 不可变普通配置及秘密修订/发布绑定；Linux 事实采集与 Ubuntu、CentOS Stream、旧 CentOS的保守矩阵；Ubuntu 22.04/24.04 与 CentOS Stream 9/10 的固定环境准备脚本；Docker/Podman 不可混淆的自启契约；命名 Provider 与仅含分析/计划工具的可选 Agent 表面。
 - 六种项目类型均已有受控目标机构建、发布、快照、回滚、健康和生命周期代码：Node 的 npm/pnpm/yarn 与锁文件保持一致，Python 仅在候选目录创建虚拟环境，静态站点仅暴露已审阅的产物目录，容器使用受管镜像标签及 Docker restart policy 或 Podman Quadlet。发布快照保存旧的运行参数与自启状态，回滚不得复用新版本配置。
 - 本次没有连接二期目标机，也没有执行 Gradle、普通 JAR、Node、Python、静态站点、Docker 或 Podman 的目标机构建、发布、回滚或生命周期。因此以上本地代码和自动化测试全部为 `RUNTIME-PENDING`，不得标记为正式支持。
 - 一期 Ubuntu 24.04 的既有真实验收结论保持不变，不能外推至二期类型、容器或其他发行版。
@@ -165,7 +165,8 @@ Git 输入包括仓库地址、凭据引用、分支/Tag/Commit、Submodule 和 
 
 ### 12.2 项目和容器适配
 
-- [~] 六个项目类型都有类型化静态分析、确定性计划、受控构建、快照、发布、健康、失败恢复和生命周期契约；六种类型的本地事务测试与脚本/参数测试已通过，目标机端到端验收仍为 `RUNTIME-PENDING`。
+- [x] 六个项目类型都有类型化静态分析、确定性计划、受控构建、快照、发布、健康、失败恢复和生命周期契约；桌面端可选择类型、提交受限运行时定义和非秘密配置，并先展示确定性计划；六种类型的本地事务、脚本/参数、UI 状态和消息映射测试已通过。
+- [~] Gradle、普通 JAR、Node、Python、静态站点、Docker 和 Podman 的目标机端到端验收仍为 `RUNTIME-PENDING`；本次没有连接二期目标机。
 - [~] Docker restart policy 与 Podman Quadlet 具有独立类型化发布、回滚和自启契约，旧容器参数与自启状态会进入快照；未在真实环境验证。
 - [x] 容器规格没有 privileged、Docker socket、host PID/IPC 或任意挂载字段，Docker 计划要求显式守护进程风险确认。
 - [x] 有界源码检查会拒绝 schema 脚本、迁移目录和 Flyway、Liquibase、Alembic、Prisma、Knex 等自动数据库变更信号；不可逆数据格式变更仍明确指向四期。
@@ -178,13 +179,14 @@ Git 输入包括仓库地址、凭据引用、分支/Tag/Commit、Submodule 和 
 
 ### 12.4 AI 与架构
 
-- [x] 命名 Provider 只按指定标识调用，缺失时不回退；API Key 不可回读；Agent 工具面只含有界分析和计划，未含 Shell/SSH/凭据读取。
+- [x] 命名 Provider 只按指定标识调用，缺失时不回退；API Key 不可回读；传统及类型化分析都只发送脱敏结构化事实；Agent 工具面只含有界分析和计划，未含 Shell/SSH/凭据读取。
 - [x] 所有新增代码位于既有 Maven 叶子模块与 `File.md` 规定的包结构内，未新增模块或循环依赖。
 
 ## 13. 版本记录
 
 | 版本 | 日期 | 说明 |
 | --- | --- | --- |
+| 2.3.0-desktop-typed-workflow | 2026-08-12 | 补齐桌面端六类项目的类型选择、静态分析、安全归档、结构化运行时/非秘密配置、计划审阅和已保存凭据提交；AI 对类型化事实只发送脱敏应用标识、项目类型和固定构建入口。目标机端到端验收仍为 `RUNTIME-PENDING`。 |
 | 2.2.0-local-execution-contracts | 2026-08-12 | 补齐六类项目的受控目标机构建、发布、快照、回滚、健康和生命周期代码；容器与非容器快照保存旧运行参数和自启状态；接入类型化主机矩阵及 Ubuntu 22.04/24.04、CentOS Stream 9/10 固定环境准备脚本。本地自动化验证完成，真实目标机验收仍为 `RUNTIME-PENDING`。 |
 | 2.1.0-phase2-local-implementation | 2026-08-12 | 实现并本地验证 Git 只读快照、六类静态分析/计划、配置与密钥修订、Linux/容器契约和受限 Provider/Agent；所有二期真实运行环境验收保持 `RUNTIME-PENDING`。 |
 | 2.0.0-phase2 | 2026-08-08 | 聚焦部署宽度，加入 Git、配置快照/共享密钥、常用类型、容器和 Ubuntu/CentOS；移除平台本机构建。 |

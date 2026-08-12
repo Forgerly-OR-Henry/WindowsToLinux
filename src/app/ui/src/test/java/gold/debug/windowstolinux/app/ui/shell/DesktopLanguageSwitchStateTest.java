@@ -24,7 +24,8 @@ class DesktopLanguageSwitchStateTest {
     void preservesTheCurrentPageFormsOutputsAndTemporaryStateAcrossALanguageSwitch() {
         DesktopViewState initial = new DesktopViewState(
                 "ai",
-                new DeploymentPageState("TCP", "", "200", "12", "7", "", true,
+                new DeploymentPageState("PYTHON_SERVICE", "TCP", "", "200", "12", "7", "",
+                        "3.12", "app", "", "", "PODMAN", "8080:8080", "", "PORT=8080", true,
                         "deployment diagnostic", null),
                 new ServerPageState("server-two", "198.51.100.24", "2222", "deploy",
                         "ssh-secret".toCharArray(), CredentialStorageMode.MASTER_PASSWORD,
@@ -42,6 +43,11 @@ class DesktopLanguageSwitchStateTest {
         try {
             assertEquals("ai", chineseState.page());
             assertEquals("TCP", chineseState.deployment().healthMode());
+            assertEquals("PYTHON_SERVICE", chineseState.deployment().projectType());
+            assertEquals("3.12", chineseState.deployment().runtimePrimary());
+            assertEquals("app", chineseState.deployment().runtimeSecondary());
+            assertEquals("PODMAN", chineseState.deployment().containerEngine());
+            assertEquals("PORT=8080", chineseState.deployment().configurationEntries());
             assertEquals("12", chineseState.deployment().healthTimeoutSeconds());
             assertEquals("7", chineseState.deployment().tcpStabilitySeconds());
             assertTrue(chineseState.deployment().rootBuild());

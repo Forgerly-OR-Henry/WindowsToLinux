@@ -1,6 +1,7 @@
 package gold.debug.windowstolinux.shared.ai.prompt;
 
 import gold.debug.windowstolinux.shared.ai.redaction.RedactedProjectFacts;
+import gold.debug.windowstolinux.shared.ai.redaction.RedactedDeploymentProjectFacts;
 
 import java.util.Objects;
 
@@ -34,6 +35,20 @@ public final class StructuralAnalysisPrompt {
                 ]}
                 """.formatted(escapeJson(model), responseLanguage.promptName(), escapeJson(facts.applicationId()),
                 facts.mavenWrapper(), facts.springBootMavenPlugin()).replaceAll("\\R", "");
+    }
+
+    /** Builds an AI request from type and fixed build-entrypoint facts only. / 仅从类型和固定构建入口事实构建 AI 请求。 */
+    public static String requestBody(String model, RedactedDeploymentProjectFacts facts,
+                                     AiResponseLanguage responseLanguage) {
+        Objects.requireNonNull(facts, "facts");
+        Objects.requireNonNull(responseLanguage, "responseLanguage");
+        return """
+                {"model":"%s","temperature":0,"messages":[
+                {"role":"system","content":"Use only the provided redacted static facts. Do not suggest executing commands, reading source code, sending secrets, or overriding deterministic checks. Respond in %s."},
+                {"role":"user","content":"managed deployment static facts: applicationId=%s; projectType=%s; fixedBuildTool=%s. Explain what these facts mean and list at most three non-secret questions that require human confirmation."}
+                ]}
+                """.formatted(escapeJson(model), responseLanguage.promptName(), escapeJson(facts.applicationId()),
+                escapeJson(facts.projectType()), escapeJson(facts.buildTool())).replaceAll("\\R", "");
     }
 
     private static String escapeJson(String value) {
