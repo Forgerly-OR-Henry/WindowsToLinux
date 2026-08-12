@@ -9,6 +9,7 @@ import gold.debug.windowstolinux.shared.model.project.DeploymentProjectFacts;
 import gold.debug.windowstolinux.shared.model.project.DeploymentRuntimeSpecification;
 
 import java.time.Duration;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 
@@ -20,11 +21,18 @@ import java.util.Objects;
 public final class DeploymentBuildExecutor {
     private final SshCommandExecutor commands;
     private final String username;
+    private final DeploymentBuildRendererRegistry renderers;
 
     /** Creates the executor for one authenticated SSH account. / 为一个已认证 SSH 账户创建执行器。 */
     public DeploymentBuildExecutor(SshCommandExecutor commands, String username) {
+        this(commands, username, List.of(new GradleBuildRenderer(), new JavaJarBuildRenderer(), new NodeBuildRenderer(),
+                new PythonBuildRenderer(), new StaticSiteBuildRenderer(), new ContainerBuildRenderer()));
+    }
+
+    DeploymentBuildExecutor(SshCommandExecutor commands, String username, List<DeploymentBuildRenderer> renderers) {
         this.commands = Objects.requireNonNull(commands, "commands");
         this.username = Objects.requireNonNull(username, "username");
+        this.renderers = new DeploymentBuildRendererRegistry(renderers);
     }
 
     /**
@@ -42,7 +50,11 @@ public final class DeploymentBuildExecutor {
             throw LinuxOperationException.localized("linux.error.rootBuildRequiresRootSession",
                     "Root build approval must match the authenticated SSH account");
         }
-        String script = DeploymentBuildSupport.render(facts, runtime, workspace, limits);
+        if (facts.projectType() != runtime.projectType()) {
+            throw new IllegalArgumentException("runtime must match the analyzed project type");
+        }
+        DeploymentBuildRenderer renderer = renderers.require(facts.projectType());
+        String script = renderer.render(facts, runtime, workspace, limits);
         String command = "env -i PATH=/usr/local/bin:/usr/bin:/bin HOME="
                 + SshCommandExecutor.quote(workspace.candidateRoot() + "/mutable/home")
                 + " /bin/bash -lc " + SshCommandExecutor.quote(script);

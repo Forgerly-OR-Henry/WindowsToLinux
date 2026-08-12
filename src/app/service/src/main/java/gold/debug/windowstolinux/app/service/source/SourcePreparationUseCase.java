@@ -6,7 +6,7 @@ import gold.debug.windowstolinux.shared.analyze.core.ManagedSpringBootAnalysisCo
 import gold.debug.windowstolinux.shared.analyze.core.DeploymentAnalysisCoordinator;
 import gold.debug.windowstolinux.shared.git.snapshot.GitSnapshot;
 import gold.debug.windowstolinux.shared.git.snapshot.GitSnapshotException;
-import gold.debug.windowstolinux.shared.git.snapshot.GitSnapshotService;
+import gold.debug.windowstolinux.shared.git.snapshot.GitSnapshotPreparer;
 import gold.debug.windowstolinux.shared.git.snapshot.GitSourceRequest;
 import gold.debug.windowstolinux.shared.model.analysis.DeploymentProjectAssessment;
 import gold.debug.windowstolinux.shared.model.analysis.DeploymentAdmission;
@@ -30,7 +30,7 @@ public final class SourcePreparationUseCase {
     private final ManagedSpringBootAnalysisCoordinator analyzer;
     private final DeploymentAnalysisCoordinator deploymentAnalyzer;
     private final WindowsSourceWorkspace workspace;
-    private final GitSnapshotService gitSnapshots;
+    private final GitSnapshotPreparer gitSnapshots;
     private final Path gitWorkspace;
 
     /**
@@ -43,12 +43,12 @@ public final class SourcePreparationUseCase {
      * @throws NullPointerException if a required argument is {@code null} / 必要参数为 {@code null} 时
      */
     public SourcePreparationUseCase(ManagedSpringBootAnalysisCoordinator analyzer, WindowsSourceWorkspace workspace) {
-        this(analyzer, new DeploymentAnalysisCoordinator(), workspace, new GitSnapshotService(),
+        this(analyzer, new DeploymentAnalysisCoordinator(), workspace, new GitSnapshotPreparer(),
                 Objects.requireNonNull(workspace, "workspace").workDirectory().resolve("git-snapshots"));
     }
 
     SourcePreparationUseCase(ManagedSpringBootAnalysisCoordinator analyzer, DeploymentAnalysisCoordinator deploymentAnalyzer,
-                             WindowsSourceWorkspace workspace, GitSnapshotService gitSnapshots, Path gitWorkspace) {
+                             WindowsSourceWorkspace workspace, GitSnapshotPreparer gitSnapshots, Path gitWorkspace) {
         this.analyzer = Objects.requireNonNull(analyzer, "analyzer");
         this.deploymentAnalyzer = Objects.requireNonNull(deploymentAnalyzer, "deploymentAnalyzer");
         this.workspace = Objects.requireNonNull(workspace, "workspace");

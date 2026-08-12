@@ -27,7 +27,7 @@ class ContainerProtocolContractTest {
 
     @Test
     void helperHasDedicatedDockerAndQuadletPathsWithoutPrivilegedEscapes() {
-        String helper = ManagedPrivilegeHelper.renderScript();
+        String helper = ManagedHelperBundle.renderScript();
 
         assertTrue(helper.contains("publish-container) publish_container"));
         assertTrue(helper.contains("snapshot-container) snapshot_container"));

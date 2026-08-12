@@ -1,6 +1,6 @@
 package gold.debug.windowstolinux.shared.linux.sshd.distro;
 
-import gold.debug.windowstolinux.shared.linux.sshd.protocol.ManagedPrivilegeHelper;
+import gold.debug.windowstolinux.shared.linux.sshd.protocol.ManagedHelperBundle;
 
 import java.time.Duration;
 import java.util.List;
@@ -59,7 +59,7 @@ public final class UbuntuEnvironmentPreparation {
             throw new IllegalArgumentException("username is not a supported Ubuntu account name");
         }
         return "# Managed by WindowsToLinux managed deployment; only the constrained helper is granted.\n"
-                + username + " ALL=(root) NOPASSWD: " + ManagedPrivilegeHelper.PATH + "\n";
+                + username + " ALL=(root) NOPASSWD: " + ManagedHelperBundle.PATH + "\n";
     }
 
     /**
@@ -87,7 +87,7 @@ public final class UbuntuEnvironmentPreparation {
         }
         String sudoers = renderSudoers(username);
         String packages = String.join(" ", PACKAGES);
-        String helper = ManagedPrivilegeHelper.renderScript();
+        String helper = ManagedHelperBundle.renderScript();
         return """
                 set -euo pipefail
                 test -r /etc/os-release
@@ -152,10 +152,10 @@ public final class UbuntuEnvironmentPreparation {
                 """.formatted(
                 quote(version), quote(username), APT_LOCK_TIMEOUT_SECONDS, APT_LOCK_TIMEOUT_SECONDS, packages,
                 APT_LOCK_TIMEOUT_SECONDS, APT_LOCK_TIMEOUT_SECONDS, packages, quote(sudoers), quote(helper),
-                quote(ManagedPrivilegeHelper.DIRECTORY), quote(ManagedPrivilegeHelper.PATH),
-                quote(SUDOERS_PATH), quote(ManagedPrivilegeHelper.DIRECTORY), quote(ManagedPrivilegeHelper.PATH),
-                quote(SUDOERS_PATH), quote(ManagedPrivilegeHelper.PATH), packages, SUDOERS_PATH,
-                ManagedPrivilegeHelper.PATH
+                quote(ManagedHelperBundle.DIRECTORY), quote(ManagedHelperBundle.PATH),
+                quote(SUDOERS_PATH), quote(ManagedHelperBundle.DIRECTORY), quote(ManagedHelperBundle.PATH),
+                quote(SUDOERS_PATH), quote(ManagedHelperBundle.PATH), packages, SUDOERS_PATH,
+                ManagedHelperBundle.PATH
         );
     }
 

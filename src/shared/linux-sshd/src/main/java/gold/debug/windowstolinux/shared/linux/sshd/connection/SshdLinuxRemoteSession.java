@@ -17,7 +17,9 @@ import gold.debug.windowstolinux.shared.linux.sshd.distro.ManagedEnvironmentExec
 import gold.debug.windowstolinux.shared.linux.sshd.protocol.ManagedReleaseProtocolExecutor;
 import gold.debug.windowstolinux.shared.linux.sshd.protocol.DeploymentReleaseProtocolExecutor;
 import gold.debug.windowstolinux.shared.linux.sshd.protocol.ContainerReleaseProtocolExecutor;
-import gold.debug.windowstolinux.shared.linux.sshd.runtime.SystemdRuntimeExecutor;
+import gold.debug.windowstolinux.shared.linux.sshd.runtime.SystemdHealthChecker;
+import gold.debug.windowstolinux.shared.linux.sshd.runtime.SystemdLifecycleExecutor;
+import gold.debug.windowstolinux.shared.linux.sshd.runtime.SystemdOwnershipObserver;
 import gold.debug.windowstolinux.shared.linux.sshd.runtime.ContainerRuntimeExecutor;
 import gold.debug.windowstolinux.shared.linux.sshd.transfer.SshdSourceTransfer;
 import gold.debug.windowstolinux.shared.linux.transfer.RemoteWorkspace;
@@ -56,7 +58,9 @@ final class SshdLinuxRemoteSession implements DeploymentRemoteSession {
     private final ManagedReleaseProtocolExecutor protocol;
     private final DeploymentReleaseProtocolExecutor deploymentProtocol;
     private final ContainerReleaseProtocolExecutor containerProtocol;
-    private final SystemdRuntimeExecutor runtime;
+    private final SystemdHealthChecker systemdHealth;
+    private final SystemdOwnershipObserver systemdObservation;
+    private final SystemdLifecycleExecutor systemdLifecycle;
     private final ContainerRuntimeExecutor containerRuntime;
 
     SshdLinuxRemoteSession(SshClient client, ClientSession session,
@@ -75,7 +79,10 @@ final class SshdLinuxRemoteSession implements DeploymentRemoteSession {
         this.transfer = new SshdSourceTransfer(session, commands, protocol);
         this.build = new MavenBuildExecutor(commands, endpoint.username());
         this.deploymentBuild = new DeploymentBuildExecutor(commands, endpoint.username());
-        this.runtime = new SystemdRuntimeExecutor(commands, protocol, endpoint.username());
+        this.systemdHealth = new SystemdHealthChecker(commands);
+        this.systemdObservation = new SystemdOwnershipObserver(commands, endpoint.username());
+        this.systemdLifecycle = new SystemdLifecycleExecutor(
+                commands, protocol, systemdObservation, systemdHealth, endpoint.username());
         this.containerRuntime = new ContainerRuntimeExecutor(commands);
     }
 
@@ -133,7 +140,7 @@ final class SshdLinuxRemoteSession implements DeploymentRemoteSession {
     @Override
     public HealthCheckResult checkHealth(ManagedApplication application, HealthCheck healthCheck)
             throws LinuxOperationException {
-        return runtime.checkHealth(application, healthCheck);
+        return systemdHealth.check(application, healthCheck);
     }
 
     @Override
@@ -150,13 +157,13 @@ final class SshdLinuxRemoteSession implements DeploymentRemoteSession {
 
     @Override
     public LifecycleObservation observe(ManagedApplication application) throws LinuxOperationException {
-        return runtime.observe(application);
+        return systemdObservation.observe(application);
     }
 
     @Override
     public LifecycleObservation executeLifecycle(ManagedApplication application, LifecycleAction action,
                                                  HealthCheck healthCheck) throws LinuxOperationException {
-        return runtime.executeLifecycle(application, action, healthCheck);
+        return systemdLifecycle.execute(application, action, healthCheck);
     }
 
     @Override
@@ -195,7 +202,7 @@ final class SshdLinuxRemoteSession implements DeploymentRemoteSession {
         if (runtime instanceof DeploymentRuntimeSpecification.Container container) {
             return containerRuntime.checkHealth(application, container, healthCheck);
         }
-        return this.runtime.checkHealth(application, healthCheck);
+        return systemdHealth.check(application, healthCheck);
     }
 
     @Override

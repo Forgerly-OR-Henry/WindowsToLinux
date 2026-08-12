@@ -105,7 +105,7 @@ public final class ContainerReleaseProtocolExecutor {
 
     private static String helperCommand(String verb, List<String> values) {
         StringBuilder command = new StringBuilder("sudo -n ")
-                .append(SshCommandExecutor.quote(ManagedPrivilegeHelper.PATH)).append(' ')
+                .append(SshCommandExecutor.quote(ManagedHelperBundle.PATH)).append(' ')
                 .append(SshCommandExecutor.quote(verb));
         for (String value : values) {
             command.append(' ').append(SshCommandExecutor.quote(Objects.requireNonNull(value, "helper argument")));

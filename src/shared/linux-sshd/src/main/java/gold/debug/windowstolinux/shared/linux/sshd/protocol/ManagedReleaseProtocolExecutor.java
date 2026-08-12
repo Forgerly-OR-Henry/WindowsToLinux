@@ -203,7 +203,7 @@ public final class ManagedReleaseProtocolExecutor {
 
     private static String helperCommand(String verb, String... arguments) {
         StringBuilder command = new StringBuilder("sudo -n ")
-                .append(SshCommandExecutor.quote(ManagedPrivilegeHelper.PATH))
+                .append(SshCommandExecutor.quote(ManagedHelperBundle.PATH))
                 .append(' ').append(SshCommandExecutor.quote(Objects.requireNonNull(verb, "verb")));
         for (String argument : arguments) {
             command.append(' ').append(SshCommandExecutor.quote(

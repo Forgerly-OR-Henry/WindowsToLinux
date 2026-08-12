@@ -1,6 +1,6 @@
 package gold.debug.windowstolinux.shared.linux.sshd.distro;
 
-import gold.debug.windowstolinux.shared.linux.sshd.protocol.ManagedPrivilegeHelper;
+import gold.debug.windowstolinux.shared.linux.sshd.protocol.ManagedHelperBundle;
 
 import java.time.Duration;
 import java.util.List;
@@ -37,7 +37,7 @@ public final class DnfEnvironmentPreparation {
         }
         String sudoers = UbuntuEnvironmentPreparation.renderSudoers(username);
         String packages = String.join(" ", PACKAGES);
-        String helper = ManagedPrivilegeHelper.renderScript();
+        String helper = ManagedHelperBundle.renderScript();
         return """
                 set -euo pipefail
                 test -r /etc/os-release
@@ -100,11 +100,11 @@ public final class DnfEnvironmentPreparation {
                 printf 'HELPER=%s\\n'
                 """.formatted(
                 quote(version), quote(username), packages, packages, quote(sudoers), quote(helper),
-                quote(ManagedPrivilegeHelper.DIRECTORY), quote(ManagedPrivilegeHelper.PATH),
-                quote(UbuntuEnvironmentPreparation.SUDOERS_PATH), quote(ManagedPrivilegeHelper.DIRECTORY),
-                quote(ManagedPrivilegeHelper.PATH), quote(UbuntuEnvironmentPreparation.SUDOERS_PATH),
-                quote(ManagedPrivilegeHelper.PATH), packages, UbuntuEnvironmentPreparation.SUDOERS_PATH,
-                ManagedPrivilegeHelper.PATH
+                quote(ManagedHelperBundle.DIRECTORY), quote(ManagedHelperBundle.PATH),
+                quote(UbuntuEnvironmentPreparation.SUDOERS_PATH), quote(ManagedHelperBundle.DIRECTORY),
+                quote(ManagedHelperBundle.PATH), quote(UbuntuEnvironmentPreparation.SUDOERS_PATH),
+                quote(ManagedHelperBundle.PATH), packages, UbuntuEnvironmentPreparation.SUDOERS_PATH,
+                ManagedHelperBundle.PATH
         );
     }
 

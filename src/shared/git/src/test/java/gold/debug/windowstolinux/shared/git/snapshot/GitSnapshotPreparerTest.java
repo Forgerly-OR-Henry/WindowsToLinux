@@ -16,7 +16,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-class GitSnapshotServiceTest {
+class GitSnapshotPreparerTest {
     @TempDir
     Path temporaryDirectory;
 
@@ -26,7 +26,7 @@ class GitSnapshotServiceTest {
         Files.writeString(repository.resolve("service.txt"), "source only", StandardCharsets.UTF_8);
         commit(repository, "add source");
 
-        GitSnapshot snapshot = new GitSnapshotService().prepare(request(repository), temporaryDirectory.resolve("workspace"));
+        GitSnapshot snapshot = new GitSnapshotPreparer().prepare(request(repository), temporaryDirectory.resolve("workspace"));
 
         assertTrue(snapshot.commit().matches("[0-9a-f]{40}"));
         assertTrue(Files.isRegularFile(snapshot.archive().archivePath()));
@@ -42,7 +42,7 @@ class GitSnapshotServiceTest {
         commit(repository, "add submodule metadata");
 
         GitSnapshotException exception = assertThrows(GitSnapshotException.class,
-                () -> new GitSnapshotService().prepare(request(repository), temporaryDirectory.resolve("workspace")));
+                () -> new GitSnapshotPreparer().prepare(request(repository), temporaryDirectory.resolve("workspace")));
 
         assertTrue(exception.getMessage().contains("without executing project code"));
     }

@@ -7,7 +7,7 @@ import gold.debug.windowstolinux.shared.linux.connection.SshEndpoint;
 import gold.debug.windowstolinux.shared.linux.sshd.build.MavenBuildSupport;
 import gold.debug.windowstolinux.shared.linux.sshd.distro.UbuntuEnvironmentPreparation;
 import gold.debug.windowstolinux.shared.linux.sshd.distro.DnfEnvironmentPreparation;
-import gold.debug.windowstolinux.shared.linux.sshd.protocol.ManagedPrivilegeHelper;
+import gold.debug.windowstolinux.shared.linux.sshd.protocol.ManagedHelperBundle;
 import gold.debug.windowstolinux.shared.linux.sshd.runtime.SystemdUnitRenderer;
 import gold.debug.windowstolinux.shared.linux.transfer.RemoteWorkspace;
 
@@ -157,7 +157,7 @@ class SshdLinuxGatewayTest {
 
     @Test
     void helperAcceptsOnlyFixedHighLevelVerbsAndDerivedControlledPaths() {
-        String helper = ManagedPrivilegeHelper.renderScript();
+        String helper = ManagedHelperBundle.renderScript();
 
         assertTrue(helper.contains("candidate-create) create_candidate \"$@\""));
         assertTrue(helper.contains("rollback-previous) rollback_previous \"$@\""));
