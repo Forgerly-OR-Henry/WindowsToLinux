@@ -44,7 +44,7 @@ class UbuntuManagedDiagnosticsIT {
                     assertEquals(true, events.contains(ClientChannelEvent.CLOSED), "read-only Ubuntu diagnostics timed out");
                     assertEquals(0, channel.getExitStatus(), () -> output.toString(StandardCharsets.UTF_8));
                 }
-                System.out.println("PHASE1_UBUNTU_DIAGNOSTICS=" + output.toString(StandardCharsets.UTF_8).trim());
+                System.out.println("MANAGED_UBUNTU_DIAGNOSTICS=" + output.toString(StandardCharsets.UTF_8).trim());
             }
         } finally {
             Arrays.fill(passwordChars, '\0');

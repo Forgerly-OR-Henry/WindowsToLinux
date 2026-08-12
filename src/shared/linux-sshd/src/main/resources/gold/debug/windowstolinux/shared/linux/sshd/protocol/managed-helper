@@ -10,7 +10,7 @@ applications_root="$base_root/apps"
 work_root="$base_root/work"
 snapshots_root="$base_root/snapshots"
 reject() {
-  printf 'PHASE1_HELPER_REJECT=%s\\n' "$1" >&2
+  printf 'MANAGED_HELPER_REJECT=%s\\n' "$1" >&2
   exit 64
 }
 require_root() {

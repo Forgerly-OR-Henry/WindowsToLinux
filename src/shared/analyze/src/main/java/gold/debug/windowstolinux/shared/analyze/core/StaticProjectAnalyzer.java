@@ -71,7 +71,7 @@ public final class StaticProjectAnalyzer {
             return ProjectAssessment.rejected(rejections);
         }
         if (!maven.applicationName().matches("[a-z0-9][a-z0-9-]{0,62}")) {
-            rejections.add(reason("APPLICATION_ID_INVALID", "analysis.rejection.applicationIdInvalid", "phase.one.input"));
+            rejections.add(reason("APPLICATION_ID_INVALID", "analysis.rejection.applicationIdInvalid", "input"));
             return ProjectAssessment.rejected(rejections);
         }
         boolean usableMavenWrapper = source.hasMavenWrapper()
@@ -116,18 +116,18 @@ public final class StaticProjectAnalyzer {
 
     private static Path normalizeExistingDirectory(Path source, List<RejectionReason> rejections) {
         if (source == null) {
-            rejections.add(reason("SOURCE_PATH_MISSING", "analysis.rejection.sourceMissing", "phase.one.input"));
+            rejections.add(reason("SOURCE_PATH_MISSING", "analysis.rejection.sourceMissing", "input"));
             return null;
         }
         Path normalized = source.toAbsolutePath().normalize();
         if (Files.isSymbolicLink(normalized) || !Files.isDirectory(normalized, LinkOption.NOFOLLOW_LINKS)) {
-            rejections.add(reason("SOURCE_PATH_INVALID", "analysis.rejection.sourceInvalid", "phase.one.input"));
+            rejections.add(reason("SOURCE_PATH_INVALID", "analysis.rejection.sourceInvalid", "input"));
             return null;
         }
         return normalized;
     }
 
-    private static RejectionReason reason(String code, String messageKey, String nextPhase) {
-        return new RejectionReason(code, LocalizedMessage.of(messageKey), nextPhase);
+    private static RejectionReason reason(String code, String messageKey, String nextAction) {
+        return new RejectionReason(code, LocalizedMessage.of(messageKey), nextAction);
     }
 }

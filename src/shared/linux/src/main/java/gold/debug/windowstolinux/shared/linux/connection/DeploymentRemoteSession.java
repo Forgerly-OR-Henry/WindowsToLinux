@@ -36,11 +36,11 @@ public interface DeploymentRemoteSession extends LinuxRemoteSession {
                                       String releaseIdentity, DeploymentRuntimeSpecification runtime)
             throws LinuxOperationException;
 
-    /** Checks a typed typed deployment runtime and process ownership. / 检查类型化部署运行时及进程归属。 */
+    /** Checks a typed deployment runtime and process ownership. / 检查类型化部署运行时及进程归属。 */
     HealthCheckResult checkDeploymentHealth(ManagedApplication application, DeploymentRuntimeSpecification runtime,
                                           HealthCheck healthCheck) throws LinuxOperationException;
 
-    /** Observes a typed typed deployment release. / 观察类型化部署版本。 */
+    /** Observes a typed deployment release. / 观察类型化部署版本。 */
     LifecycleObservation observeDeployment(ManagedApplication application, DeploymentRuntimeSpecification runtime)
             throws LinuxOperationException;
 }

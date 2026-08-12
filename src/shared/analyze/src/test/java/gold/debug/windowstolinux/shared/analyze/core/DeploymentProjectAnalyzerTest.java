@@ -57,4 +57,33 @@ class DeploymentProjectAnalyzerTest {
         assertEquals(DeploymentAdmission.REJECTED, assessment.admission());
         assertTrue(assessment.rejections().stream().anyMatch(reason -> reason.code().equals("MULTI_CONTAINER_COMPOSE_DETECTED")));
     }
+
+    @Test
+    void acceptsEverySelectedTypeWhenItsSourceFactsAreComplete() throws Exception {
+        Path javaJar = Files.createDirectories(temporaryDirectory.resolve("java-jar"));
+        Files.writeString(javaJar.resolve("application.jar"), "opaque binary content");
+        Path node = Files.createDirectories(temporaryDirectory.resolve("node"));
+        Files.writeString(node.resolve("package.json"), """
+                {"name":"demo-node","scripts":{"build":"build","start":"start"}}
+                """);
+        Files.writeString(node.resolve("package-lock.json"), "{}");
+        Path python = Files.createDirectories(temporaryDirectory.resolve("python"));
+        Files.writeString(python.resolve("pyproject.toml"), "[project]\nname = \"demo-python\"\n");
+        Files.writeString(python.resolve("requirements.lock"), "example==1.0 --hash=sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n");
+        Path staticSite = Files.createDirectories(temporaryDirectory.resolve("static"));
+        Files.writeString(staticSite.resolve("index.html"), "<!doctype html>");
+        Path container = Files.createDirectories(temporaryDirectory.resolve("container-ready"));
+        Files.writeString(container.resolve("Dockerfile"), "FROM alpine:3.20");
+
+        assertEquals(DeploymentAdmission.READY_FOR_PLANNING,
+                analyzer.analyze(javaJar, DeploymentProjectType.JAVA_JAR).admission());
+        assertEquals(DeploymentAdmission.READY_FOR_PLANNING,
+                analyzer.analyze(node, DeploymentProjectType.NODE_SERVICE).admission());
+        assertEquals(DeploymentAdmission.READY_FOR_PLANNING,
+                analyzer.analyze(python, DeploymentProjectType.PYTHON_SERVICE).admission());
+        assertEquals(DeploymentAdmission.READY_FOR_PLANNING,
+                analyzer.analyze(staticSite, DeploymentProjectType.STATIC_SITE).admission());
+        assertEquals(DeploymentAdmission.READY_FOR_PLANNING,
+                analyzer.analyze(container, DeploymentProjectType.DOCKERFILE_CONTAINER).admission());
+    }
 }

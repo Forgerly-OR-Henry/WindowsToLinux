@@ -40,7 +40,7 @@ public final class BoundedSourceInspector {
         try {
             Files.walkFileTree(root, visitor);
         } catch (IOException exception) {
-            rejections.add(reason("SOURCE_READ_FAILED", "analysis.rejection.sourceReadFailed", "phase.one.input",
+            rejections.add(reason("SOURCE_READ_FAILED", "analysis.rejection.sourceReadFailed", "input",
                     java.util.Map.of("detail", String.valueOf(exception.getMessage()))));
         }
         return visitor.result();
@@ -56,17 +56,17 @@ public final class BoundedSourceInspector {
                 || TEXT_EXTENSIONS.stream().anyMatch(text::endsWith);
     }
 
-    private static RejectionReason reason(String code, String messageKey, String nextPhase) {
-        return reason(code, messageKey, nextPhase, java.util.Map.of());
+    private static RejectionReason reason(String code, String messageKey, String nextAction) {
+        return reason(code, messageKey, nextAction, java.util.Map.of());
     }
 
     private static RejectionReason reason(
             String code,
             String messageKey,
-            String nextPhase,
+            String nextAction,
             java.util.Map<String, ?> arguments
     ) {
-        return new RejectionReason(code, LocalizedMessage.of(messageKey, arguments), nextPhase);
+        return new RejectionReason(code, LocalizedMessage.of(messageKey, arguments), nextAction);
     }
 
     private static final class TreeInspection implements FileVisitor<Path> {
@@ -88,7 +88,7 @@ public final class BoundedSourceInspector {
         public FileVisitResult preVisitDirectory(Path directory, BasicFileAttributes attributes) {
             if (!directory.equals(root) && Files.isSymbolicLink(directory)) {
                 rejections.add(reason("SYMBOLIC_LINK_DETECTED", "analysis.rejection.symbolicLinkDetected",
-                        "phase.one.input"));
+                        "input"));
                 return FileVisitResult.SKIP_SUBTREE;
             }
             return FileVisitResult.CONTINUE;
@@ -98,7 +98,7 @@ public final class BoundedSourceInspector {
         public FileVisitResult visitFile(Path file, BasicFileAttributes attributes) throws IOException {
             if (Files.isSymbolicLink(file) || !attributes.isRegularFile()) {
                 rejections.add(reason("UNSAFE_SOURCE_ENTRY", "analysis.rejection.unsafeSourceEntry",
-                        "phase.one.input"));
+                        "input"));
                 return FileVisitResult.CONTINUE;
             }
             String name = file.getFileName().toString();
@@ -115,12 +115,12 @@ public final class BoundedSourceInspector {
                 long size = Files.size(file);
                 if (size > MAX_TEXT_FILE_BYTES) {
                     rejections.add(reason("SOURCE_TEXT_ENTRY_TOO_LARGE",
-                            "analysis.rejection.sourceTextEntryTooLarge", "phase.one.input"));
+                            "analysis.rejection.sourceTextEntryTooLarge", "input"));
                     return FileVisitResult.CONTINUE;
                 }
                 if (scannedTextBytes + size > MAX_TOTAL_TEXT_BYTES) {
                     rejections.add(reason("SOURCE_TEXT_TOTAL_TOO_LARGE",
-                            "analysis.rejection.sourceTextTotalTooLarge", "phase.one.input"));
+                            "analysis.rejection.sourceTextTotalTooLarge", "input"));
                     return FileVisitResult.CONTINUE;
                 }
                 text.append('\n').append(Files.readString(file, StandardCharsets.UTF_8));
@@ -133,7 +133,7 @@ public final class BoundedSourceInspector {
         @Override
         public FileVisitResult visitFileFailed(Path file, IOException exception) {
             rejections.add(reason("SOURCE_READ_FAILED", "analysis.rejection.sourceEntryReadFailed",
-                    "phase.one.input", java.util.Map.of("entry", file.getFileName())));
+                    "input", java.util.Map.of("entry", file.getFileName())));
             return FileVisitResult.CONTINUE;
         }
 
@@ -141,7 +141,7 @@ public final class BoundedSourceInspector {
         public FileVisitResult postVisitDirectory(Path directory, IOException exception) {
             if (exception != null) {
                 rejections.add(reason("SOURCE_READ_FAILED", "analysis.rejection.sourceDirectoryReadFailed",
-                        "phase.one.input", java.util.Map.of("directory", directory.getFileName())));
+                        "input", java.util.Map.of("directory", directory.getFileName())));
             }
             return FileVisitResult.CONTINUE;
         }

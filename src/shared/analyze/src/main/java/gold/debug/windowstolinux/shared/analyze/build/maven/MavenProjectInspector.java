@@ -41,9 +41,9 @@ public final class MavenProjectInspector {
         Path pom = root.resolve("pom.xml");
         if (!Files.isRegularFile(pom, LinkOption.NOFOLLOW_LINKS)) {
             if (Files.exists(root.resolve("build.gradle")) || Files.exists(root.resolve("build.gradle.kts"))) {
-                rejections.add(reason("UNSUPPORTED_BUILD", "analysis.rejection.unsupportedBuild", "phase.two"));
+                rejections.add(reason("UNSUPPORTED_BUILD", "analysis.rejection.unsupportedBuild", "deployment"));
             } else {
-                rejections.add(reason("MAVEN_POM_MISSING", "analysis.rejection.pomMissing", "phase.two"));
+                rejections.add(reason("MAVEN_POM_MISSING", "analysis.rejection.pomMissing", "deployment"));
             }
             return Optional.empty();
         }
@@ -58,14 +58,14 @@ public final class MavenProjectInspector {
     private static String readPom(Path pom, List<RejectionReason> rejections) {
         try {
             if (Files.size(pom) > MAX_TEXT_FILE_BYTES) {
-                rejections.add(reason("POM_TOO_LARGE", "analysis.rejection.pomTooLarge", "phase.one.input"));
+                rejections.add(reason("POM_TOO_LARGE", "analysis.rejection.pomTooLarge", "input"));
                 return null;
             }
             return Files.readString(pom, StandardCharsets.UTF_8);
         } catch (IOException exception) {
             rejections.add(new RejectionReason("POM_UNREADABLE",
                     LocalizedMessage.of("analysis.rejection.pomUnreadable",
-                            java.util.Map.of("detail", String.valueOf(exception.getMessage()))), "phase.one.input"));
+                            java.util.Map.of("detail", String.valueOf(exception.getMessage()))), "input"));
             return null;
         }
     }
@@ -80,7 +80,7 @@ public final class MavenProjectInspector {
         return name == null ? "application" : name.toString();
     }
 
-    private static RejectionReason reason(String code, String messageKey, String nextPhase) {
-        return new RejectionReason(code, LocalizedMessage.of(messageKey), nextPhase);
+    private static RejectionReason reason(String code, String messageKey, String nextAction) {
+        return new RejectionReason(code, LocalizedMessage.of(messageKey), nextAction);
     }
 }

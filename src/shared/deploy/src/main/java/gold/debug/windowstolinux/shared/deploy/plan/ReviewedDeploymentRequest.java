@@ -13,9 +13,9 @@ import java.util.List;
 import java.util.Objects;
 
 /**
- * Fully reviewed typed deployment deployment input that contains identities and typed definitions, never a shell command.
+ * Fully reviewed typed deployment input that contains identities and typed definitions, never a shell command.
  *
- * <p>经过完整审阅的部署部署输入，包含身份和类型化定义，绝不包含 Shell 命令。
+ * <p>经过完整审阅的部署输入，包含身份和类型化定义，绝不包含 Shell 命令。
  *
  * @param server the trusted target server / 可信目标服务器
  * @param facts the complete static project facts / 完整静态项目事实
@@ -56,7 +56,7 @@ public record ReviewedDeploymentRequest(
         limits = Objects.requireNonNull(limits, "limits");
         approval = Objects.requireNonNull(approval, "approval");
         if (!facts.readyForPlanning()) {
-            throw new IllegalArgumentException("typed deployment deployment requests require complete deterministic project facts");
+            throw new IllegalArgumentException("typed deployment requests require complete deterministic project facts");
         }
         if (facts.projectType() != runtime.projectType()) {
             throw new IllegalArgumentException("runtime specification must match the analyzed project type");

@@ -10,6 +10,6 @@ public enum DeploymentAdmission {
     READY_FOR_PLANNING,
     /** Explicit user input is needed, but no unsafe contradiction was observed. / 需要显式用户输入，但未观察到不安全矛盾。 */
     REQUIRES_INPUT,
-    /** The selected project type is unsafe or outside the current phase. / 选定项目类型不安全或超出当前阶段。 */
+    /** The selected project type is unsafe or outside the current supported scope. / 选定项目类型不安全或超出当前阶段。 */
     REJECTED
 }

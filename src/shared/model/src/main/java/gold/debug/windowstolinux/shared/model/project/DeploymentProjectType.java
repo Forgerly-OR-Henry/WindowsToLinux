@@ -1,9 +1,9 @@
 package gold.debug.windowstolinux.shared.model.project;
 
 /**
- * The single-component project types considered by the typed deployment deployment planner.
+ * The single-component project types considered by the typed deployment planner.
  *
- * <p>部署部署计划器考虑的单组件项目类型。
+ * <p>部署计划器考虑的单组件项目类型。
  */
 public enum DeploymentProjectType {
     /** Gradle-built Spring Boot executable JAR. / Gradle 构建的 Spring Boot 可执行 JAR。 */

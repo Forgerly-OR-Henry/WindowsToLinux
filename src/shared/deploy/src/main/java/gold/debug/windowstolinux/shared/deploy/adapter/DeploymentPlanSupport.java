@@ -9,9 +9,9 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Internal shared ordering for typed typed deployment deployment adapters.
+ * Internal shared ordering for typed deployment adapters.
  *
- * <p>类型化部署部署适配器的内部共用顺序。
+ * <p>类型化部署适配器的内部共用顺序。
  */
 public final class DeploymentPlanSupport {
     private DeploymentPlanSupport() { }

@@ -4,9 +4,9 @@ import java.util.List;
 import java.util.Objects;
 
 /**
- * A fully deterministic typed deployment deployment transaction plan; it contains no transport implementation or raw command.
+ * A fully deterministic typed deployment transaction plan; it contains no transport implementation or raw command.
  *
- * <p>完全确定性的部署部署事务计划；不包含传输实现或原始命令。
+ * <p>完全确定性的部署事务计划；不包含传输实现或原始命令。
  *
  * @param request the reviewed deployment input / 经审阅的部署输入
  * @param steps the ordered fixed transaction stages / 有序固定事务阶段

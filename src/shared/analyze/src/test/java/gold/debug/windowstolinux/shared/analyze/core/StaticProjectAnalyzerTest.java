@@ -174,7 +174,7 @@ class StaticProjectAnalyzerTest {
     }
 
     @Test
-    void rejectsGradleWithAnExplicitNextPhase() throws Exception {
+    void rejectsGradleWithAnExplicitNextAction() throws Exception {
         Path project = Files.createDirectories(temporaryDirectory.resolve("gradle"));
         Files.writeString(project.resolve("build.gradle"), "plugins {}");
 
@@ -182,7 +182,7 @@ class StaticProjectAnalyzerTest {
 
         assertEquals(SupportDecision.REJECTED, assessment.decision());
         assertEquals("UNSUPPORTED_BUILD", assessment.rejections().getFirst().code());
-        assertEquals("phase.two", assessment.rejections().getFirst().nextPhase());
+        assertEquals("deployment", assessment.rejections().getFirst().nextAction());
     }
 
     @Test

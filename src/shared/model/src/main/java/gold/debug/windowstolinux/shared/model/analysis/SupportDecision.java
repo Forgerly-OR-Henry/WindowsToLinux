@@ -1,7 +1,7 @@
 package gold.debug.windowstolinux.shared.model.analysis;
 
 /**
- * Whether a source project is eligible for the current delivery phase.
+ * Whether a source project is eligible for the current delivery scope.
  *
  * <p>源码项目是否符合当前交付阶段条件。
  */

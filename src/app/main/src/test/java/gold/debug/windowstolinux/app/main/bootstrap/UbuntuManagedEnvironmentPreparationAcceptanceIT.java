@@ -60,7 +60,7 @@ class UbuntuManagedEnvironmentPreparationAcceptanceIT {
             ServerCapabilities baseline = service.verifyServer(profile, CredentialStorageMode.MASTER_PASSWORD,
                     masterPasswordChars.clone(), fingerprint -> true);
             assertUbuntu24X8664(baseline);
-            System.out.println("PHASE1_ENVIRONMENT_BASELINE " + baselineSummary(baseline));
+            System.out.println("MANAGED_ENVIRONMENT_BASELINE " + baselineSummary(baseline));
             if (expectBare) {
                 assertCleanRuntimeBaseline(baseline);
             }
@@ -72,7 +72,7 @@ class UbuntuManagedEnvironmentPreparationAcceptanceIT {
             );
             assertPreparationOnly(first, "首次准备");
             assertSupportsHttpAndTcpHealth(first.capabilities());
-            System.out.println("PHASE1_ENVIRONMENT_AFTER_FIRST_PREPARATION " + baselineSummary(first.capabilities()));
+            System.out.println("MANAGED_ENVIRONMENT_AFTER_FIRST_PREPARATION " + baselineSummary(first.capabilities()));
             assertTrue(service.listManagedApplications().isEmpty(),
                     "环境准备不得上传源码、构建或发布应用");
 
@@ -81,7 +81,7 @@ class UbuntuManagedEnvironmentPreparationAcceptanceIT {
             );
             assertPreparationOnly(second, "重复准备");
             assertSupportsHttpAndTcpHealth(second.capabilities());
-            System.out.println("PHASE1_ENVIRONMENT_AFTER_SECOND_PREPARATION " + baselineSummary(second.capabilities()));
+            System.out.println("MANAGED_ENVIRONMENT_AFTER_SECOND_PREPARATION " + baselineSummary(second.capabilities()));
             assertTrue(service.listManagedApplications().isEmpty(),
                     "重复环境准备仍不得上传源码、构建或发布应用");
         } finally {
@@ -99,7 +99,7 @@ class UbuntuManagedEnvironmentPreparationAcceptanceIT {
 
     private static void assertCleanRuntimeBaseline(ServerCapabilities capabilities) {
         assertFalse(capabilities.supportsManagedDeployment(false, new HealthCheck.Tcp(18080, 20, 1)), () ->
-                "managed.expect-bare=true，但产品基线已满足完整受管部署部署能力；"
+                "managed.expect-bare=true，但产品基线已满足完整受管部署能力；"
                         + "这不是可用于环境准备验收的干净 Ubuntu 运行时：" + baselineSummary(capabilities));
         assertFalse(capabilities.java21Available(), () ->
                 "managed.expect-bare=true，但产品基线已发现 Java 21；"

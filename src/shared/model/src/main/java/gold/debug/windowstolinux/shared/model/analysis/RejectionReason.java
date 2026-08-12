@@ -11,9 +11,9 @@ import java.util.Objects;
  *
  * @param code the {@code code} value / {@code code} 值
  * @param message the {@code message} value / {@code message} 值
- * @param nextPhase the {@code nextPhase} value / {@code nextPhase} 值
+ * @param nextAction the {@code nextAction} value / {@code nextAction} 值
  */
-public record RejectionReason(String code, LocalizedMessage message, String nextPhase) {
+public record RejectionReason(String code, LocalizedMessage message, String nextAction) {
     /**
      * Creates a {@code RejectionReason} instance.
      *
@@ -21,13 +21,13 @@ public record RejectionReason(String code, LocalizedMessage message, String next
      *
      * @param code the {@code code} value / {@code code} 值
      * @param message the {@code message} value / {@code message} 值
-     * @param nextPhase the {@code nextPhase} value / {@code nextPhase} 值
+     * @param nextAction the {@code nextAction} value / {@code nextAction} 值
      * @throws NullPointerException if a required argument is {@code null} / 必要参数为 {@code null} 时
      */
     public RejectionReason {
         code = requireText(code, "code");
         message = Objects.requireNonNull(message, "message");
-        nextPhase = requireText(nextPhase, "nextPhase");
+        nextAction = requireText(nextAction, "nextAction");
     }
 
     private static String requireText(String value, String name) {

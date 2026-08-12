@@ -45,28 +45,28 @@ public final class SpringBootProjectInspector {
             List<RejectionReason> rejections
     ) {
         if (!maven.springBootPlugin()) {
-            rejections.add(reason("SPRING_BOOT_PLUGIN_MISSING", "analysis.rejection.bootPluginMissing", "phase.two"));
+            rejections.add(reason("SPRING_BOOT_PLUGIN_MISSING", "analysis.rejection.bootPluginMissing", "deployment"));
         }
         if (maven.warPackaging()) {
-            rejections.add(reason("UNSUPPORTED_WAR", "analysis.rejection.warUnsupported", "phase.two"));
+            rejections.add(reason("UNSUPPORTED_WAR", "analysis.rejection.warUnsupported", "deployment"));
         }
         String scannedText = source.scannedText();
         if (MIGRATION.matcher(maven.pomText() + "\n" + scannedText).find()) {
-            rejections.add(reason("DATABASE_MIGRATION_DETECTED", "analysis.rejection.migrationDetected", "phase.two"));
+            rejections.add(reason("DATABASE_MIGRATION_DETECTED", "analysis.rejection.migrationDetected", "deployment"));
         }
         if (source.hasSchemaScript() || AUTOMATIC_SCHEMA_MUTATION.matcher(scannedText).find()) {
             rejections.add(reason("AUTOMATIC_SCHEMA_MUTATION_DETECTED",
-                    "analysis.rejection.schemaMutationDetected", "phase.two"));
+                    "analysis.rejection.schemaMutationDetected", "deployment"));
         }
         if (EXTERNAL_CONFIG.matcher(scannedText).find()) {
-            rejections.add(reason("EXTERNAL_CONFIGURATION_DETECTED", "analysis.rejection.externalConfig", "phase.two"));
+            rejections.add(reason("EXTERNAL_CONFIGURATION_DETECTED", "analysis.rejection.externalConfig", "deployment"));
         }
         if (APPLICATION_SECRET.matcher(scannedText).find()) {
-            rejections.add(reason("APPLICATION_SECRET_DETECTED", "analysis.rejection.applicationSecret", "phase.two"));
+            rejections.add(reason("APPLICATION_SECRET_DETECTED", "analysis.rejection.applicationSecret", "deployment"));
         }
     }
 
-    private static RejectionReason reason(String code, String messageKey, String nextPhase) {
-        return new RejectionReason(code, LocalizedMessage.of(messageKey), nextPhase);
+    private static RejectionReason reason(String code, String messageKey, String nextAction) {
+        return new RejectionReason(code, LocalizedMessage.of(messageKey), nextAction);
     }
 }

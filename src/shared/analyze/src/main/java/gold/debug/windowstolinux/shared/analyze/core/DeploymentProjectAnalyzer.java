@@ -116,12 +116,10 @@ public final class DeploymentProjectAnalyzer {
         } else if (jars.size() > 1) {
             conflicts.add(LocalizedMessage.of("analysis.deployment.conflict.multipleJavaJars"));
         }
-        missing.add(LocalizedMessage.of("analysis.deployment.missing.javaMainClass"));
-        missing.add(LocalizedMessage.of("analysis.deployment.missing.javaVersion"));
         DeploymentProjectFacts facts = facts(root, rootApplicationName(root), DeploymentProjectType.JAVA_JAR, DeploymentBuildTool.JAVA,
                 List.of(evidence("analysis.deployment.evidence.javaJar", jars.isEmpty() ? "source root" : jars.getFirst().getFileName().toString(),
                         jars.isEmpty() ? "analysis.deployment.evidence.notDetected" : "analysis.deployment.evidence.detected")), conflicts, missing);
-        return conflicts.isEmpty() ? DeploymentProjectAssessment.requiresInput(facts) : DeploymentProjectAssessment.requiresInput(facts);
+        return facts.readyForPlanning() ? DeploymentProjectAssessment.ready(facts) : DeploymentProjectAssessment.requiresInput(facts);
     }
 
     private static DeploymentProjectAssessment inspectNode(Path root, List<RejectionReason> rejections) throws IOException {
@@ -147,8 +145,7 @@ public final class DeploymentProjectAnalyzer {
         if (!start) {
             missing.add(LocalizedMessage.of("analysis.deployment.missing.nodeStartScript"));
         }
-        DeploymentBuildTool tool = lockFiles.equals(List.of("package-lock.json")) ? DeploymentBuildTool.NPM
-                : lockFiles.equals(List.of("pnpm-lock.yaml")) ? DeploymentBuildTool.PNPM : DeploymentBuildTool.YARN;
+        DeploymentBuildTool tool = nodeBuildTool(lockFiles);
         DeploymentProjectFacts facts = facts(root, applicationName(root, json, JSON_NAME), DeploymentProjectType.NODE_SERVICE, tool,
                 List.of(evidence("analysis.deployment.evidence.nodePackage", "package.json", "analysis.deployment.evidence.detected")),
                 conflicts, missing);
@@ -170,12 +167,10 @@ public final class DeploymentProjectAnalyzer {
         } else if (lockFiles.size() > 1) {
             conflicts.add(LocalizedMessage.of("analysis.deployment.conflict.multiplePythonLockfiles"));
         }
-        missing.add(LocalizedMessage.of("analysis.deployment.missing.pythonEntrypoint"));
-        missing.add(LocalizedMessage.of("analysis.deployment.missing.pythonVersion"));
         DeploymentProjectFacts facts = facts(root, applicationName(root, toml, TOML_NAME), DeploymentProjectType.PYTHON_SERVICE,
                 DeploymentBuildTool.PYTHON_VENV, List.of(evidence("analysis.deployment.evidence.pythonProject", "pyproject.toml",
                         "analysis.deployment.evidence.detected")), conflicts, missing);
-        return DeploymentProjectAssessment.requiresInput(facts);
+        return facts.readyForPlanning() ? DeploymentProjectAssessment.ready(facts) : DeploymentProjectAssessment.requiresInput(facts);
     }
 
     private static DeploymentProjectAssessment inspectStaticSite(Path root, List<RejectionReason> rejections) throws IOException {
@@ -183,16 +178,24 @@ public final class DeploymentProjectAnalyzer {
             rejections.add(rejection("STATIC_SITE_ENTRY_MISSING", "analysis.deployment.rejection.staticSiteEntryMissing"));
             return DeploymentProjectAssessment.rejected(rejections);
         }
-        List<LocalizedMessage> missing = new ArrayList<>(List.of(
-                LocalizedMessage.of("analysis.deployment.missing.staticOutputDirectory")
-        ));
-        if (regular(root.resolve("package.json")) && !hasScript(readRootText(root.resolve("package.json")), "build")) {
+        boolean packageBased = regular(root.resolve("package.json"));
+        List<LocalizedMessage> missing = new ArrayList<>();
+        List<LocalizedMessage> conflicts = new ArrayList<>();
+        List<String> lockFiles = packageBased
+                ? existingNames(root, "package-lock.json", "pnpm-lock.yaml", "yarn.lock") : List.of();
+        if (packageBased && lockFiles.isEmpty()) {
+            missing.add(LocalizedMessage.of("analysis.deployment.missing.nodeLockfile"));
+        } else if (lockFiles.size() > 1) {
+            conflicts.add(LocalizedMessage.of("analysis.deployment.conflict.multipleNodeLockfiles"));
+        }
+        if (packageBased && !hasScript(readRootText(root.resolve("package.json")), "build")) {
             missing.add(LocalizedMessage.of("analysis.deployment.missing.staticBuildScript"));
         }
         DeploymentProjectFacts facts = facts(root, rootApplicationName(root), DeploymentProjectType.STATIC_SITE,
-                DeploymentBuildTool.STATIC_SITE_BUILD, List.of(evidence("analysis.deployment.evidence.staticSite", "source root",
-                        "analysis.deployment.evidence.detected")), List.of(), missing);
-        return DeploymentProjectAssessment.requiresInput(facts);
+                packageBased ? nodeBuildTool(lockFiles) : DeploymentBuildTool.STATIC_SITE_BUILD,
+                List.of(evidence("analysis.deployment.evidence.staticSite", packageBased ? "package.json" : "index.html",
+                        "analysis.deployment.evidence.detected")), conflicts, missing);
+        return facts.readyForPlanning() ? DeploymentProjectAssessment.ready(facts) : DeploymentProjectAssessment.requiresInput(facts);
     }
 
     private static DeploymentProjectAssessment inspectDockerfile(Path root, List<RejectionReason> rejections) throws IOException {
@@ -206,15 +209,10 @@ public final class DeploymentProjectAnalyzer {
             rejections.add(rejection("MULTI_CONTAINER_COMPOSE_DETECTED", "analysis.deployment.rejection.composeUnsupported"));
             return DeploymentProjectAssessment.rejected(rejections);
         }
-        List<LocalizedMessage> missing = List.of(
-                LocalizedMessage.of("analysis.deployment.missing.containerPorts"),
-                LocalizedMessage.of("analysis.deployment.missing.containerHealth"),
-                LocalizedMessage.of("analysis.deployment.missing.containerVolumes")
-        );
         DeploymentProjectFacts facts = facts(root, rootApplicationName(root), DeploymentProjectType.DOCKERFILE_CONTAINER,
                 DeploymentBuildTool.CONTAINER_BUILD, List.of(evidence("analysis.deployment.evidence.dockerfile", "Dockerfile",
-                        "analysis.deployment.evidence.detected")), List.of(), missing);
-        return DeploymentProjectAssessment.requiresInput(facts);
+                        "analysis.deployment.evidence.detected")), List.of(), List.of());
+        return DeploymentProjectAssessment.ready(facts);
     }
 
     private static DeploymentProjectFacts facts(Path root, String applicationId, DeploymentProjectType type, DeploymentBuildTool tool,
@@ -296,11 +294,21 @@ public final class DeploymentProjectAnalyzer {
         return false;
     }
 
+    private static DeploymentBuildTool nodeBuildTool(List<String> lockFiles) {
+        if (lockFiles.equals(List.of("pnpm-lock.yaml"))) {
+            return DeploymentBuildTool.PNPM;
+        }
+        if (lockFiles.equals(List.of("yarn.lock"))) {
+            return DeploymentBuildTool.YARN;
+        }
+        return DeploymentBuildTool.NPM;
+    }
+
     private static AnalysisEvidence evidence(String subject, String source, String conclusion) {
         return new AnalysisEvidence(LocalizedMessage.of(subject), source, LocalizedMessage.of(conclusion), EvidenceConfidence.HIGH);
     }
 
     private static RejectionReason rejection(String code, String messageKey) {
-        return new RejectionReason(code, LocalizedMessage.of(messageKey), "phase.two");
+        return new RejectionReason(code, LocalizedMessage.of(messageKey), "deployment");
     }
 }
