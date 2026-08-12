@@ -2,14 +2,14 @@
 
 ## 文档信息
 
-- 文档版本：`3.2.0-phase3-product-entry`
-- 文档状态：**正式模块与职责边界保持不变；混合项目、多组件产品入口/持久生命周期、多模型角色链路、六种高级语言试验适配及独立发行版静态矩阵已进入既有职责包，真实部署状态为 `RUNTIME-PENDING`**
+- 文档版本：`3.3.0-phase3-acceptance`
+- 文档状态：**正式模块与职责边界保持不变；三期实现及 Ubuntu 24.04 x86-64 高级语言/多组件产品入口验收完成，未运行矩阵保持 `RUNTIME-PENDING`**
 - 已确认范围：`shared` 共用模块、`app` Windows 桌面应用模块、`web` Web 应用模块
 - 已确认能力边界：受管应用生命周期复用既有模块，不新增独立 Maven 模块
 - 更新日期：2026-08-13
 - 开发总纲：[DEVELOPMENT.md](DEVELOPMENT.md)
 
-> 本文是正式目标目录、模块职责、依赖方向和内部包结构的来源。当前 reactor 已包含根工程、3 个聚合模块和 24 个叶子模块，共 28 个 POM。`shared/source`、`shared/config`、`shared/git`、`shared/ai`、`shared/linux-sshd`、`analyze`、`deploy`、`app/db` 与 `app/service` 已承载对应代码；其中 `analyze/component` 和 `deploy` 已本地实现混合组件图、整应用事务与依赖安全生命周期，`shared/ai` 已实现三个固定协作角色及严格证据链，`shared/linux-sshd` 已实现十二类项目的有界协议以及六种发行版的独立探测与准备适配。`shared/backup` 和 Web Java 叶子模块仍只保留 POM。2026-08-10/12 的 Ubuntu 24.04 x86-64 产品入口验收属于迁移前协议的历史证据，继续保留但不得外推到 helper v3；所有 v3 链路均标记 `RUNTIME-PENDING`。
+> 本文是正式目标目录、模块职责、依赖方向和内部包结构的来源。当前 reactor 已包含根工程、3 个聚合模块和 24 个叶子模块，共 28 个 POM。`shared/source`、`shared/config`、`shared/git`、`shared/ai`、`shared/linux-sshd`、`analyze`、`deploy`、`app/db` 与 `app/service` 已承载对应代码；其中 `analyze/component` 和 `deploy` 已实现并实机验证两组件整应用事务与依赖安全生命周期，`shared/ai` 已实现三个固定协作角色及严格证据链，`shared/linux-sshd` 已实现十二类项目的有界协议以及六种发行版的独立探测与准备适配。`shared/backup` 和 Web Java 叶子模块仍只保留 POM。2026-08-10/12 的 Ubuntu 证据作为迁移前协议历史记录保留；2026-08-13 的 helper v3 证据覆盖六种高级语言试验适配器和两组件整应用，收敛后的 Spring Boot、其他发行版及未运行组合仍为 `RUNTIME-PENDING`。
 
 ## 1. 完整目标结构
 
@@ -131,7 +131,7 @@ WindowsToLinux/
    │  │  ├─ runtime/          systemd、Docker、Podman 和静态服务生命周期契约
    │  │  └─ transfer/         受控传输请求与结果契约
    │  ├─ linux-sshd/          Apache SSHD Linux 远程能力实现
-   │  │  ├─ build/            共用安全外壳及 Gradle、Java JAR、Node.js、Python、静态站点、容器渲染器
+   │  │  ├─ build/            共用安全外壳、十二类固定渲染器及内容校验的 Gradle 分发缓存
    │  │  ├─ capability/       通过只读远程探测采集发行版、包架构、CPU、安全、防火墙、容器和运行能力
    │  │  ├─ connection/       Apache SSHD 客户端、会话、认证和主机指纹实现
    │  │  ├─ distro/           Ubuntu/Debian/CentOS/Rocky/Alma/Oracle 独立身份规则及共享 APT/DNF 安全机械流程
@@ -625,6 +625,7 @@ linux-sshd 通过 linux 契约采集服务器已有环境
 
 | 版本 | 日期 | 说明 |
 | --- | --- | --- |
+| 3.3.0-phase3-acceptance | 2026-08-13 | 不改变 28-POM 或依赖方向；在既有 `linux-sshd/build` 中加入仅限官方域名和固定 SHA-256 的 Gradle 分发下载/受管缓存，在 `connection` 中加入 Windows NIO2 有界关闭排空。六种高级语言及两组件整应用已通过 Ubuntu 24.04 x86-64 产品入口验收，新增发行版因未重装唯一授权服务器而保持实机 `RUNTIME-PENDING`。 |
 | 3.2.0-phase3-product-entry | 2026-08-13 | 在既有 `app/ui/deployment`、`app/service/deployment`、`shared/deploy` 与 `app/db` 职责内接入多组件桌面产品入口；新增聚焦的整应用图仓库和 SQLite v7 原子拓扑，桌面重启后可从组件依赖与既有健康契约恢复生命周期，而实际运行时类型和状态仍以目标机封存标记及实时观测为准。 |
 | 3.1.0-phase3-distribution-matrix | 2026-08-13 | 在既有 `model/server`、`deploy/compatibility`、`linux-sshd/capability` 与 `linux-sshd/distro` 职责内加入软件包架构、累计 CPU、安全/防火墙事实，按发行版拆分支持策略与准备适配器；APT/DNF、受控 helper 与安全状态复核仅共享固定机械流程，不增加模块、CentOS 别名或任意 Shell 入口。 |
 | 3.0.0-phase3-multi-model-core | 2026-08-13 | 在既有 `shared/ai`、`app/db`、`app/service` 和 `app/ui/ai` 职责内加入三个固定 AI 角色、最小脱敏上下文、严格结构化输出、调用证据、冲突裁决、命名 Provider 外键绑定与桌面配置入口；SQLite 升至 v6，API Key 仍只归平台秘密存储，失败不跨 Provider 回退，模型不获得执行授权。 |
