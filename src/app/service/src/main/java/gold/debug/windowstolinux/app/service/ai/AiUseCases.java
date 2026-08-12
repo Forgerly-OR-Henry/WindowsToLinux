@@ -5,7 +5,6 @@ import gold.debug.windowstolinux.app.secret.api.SecretStore;
 import gold.debug.windowstolinux.app.secret.api.SecretStoreException;
 import gold.debug.windowstolinux.app.service.server.DesktopSecretStores;
 import gold.debug.windowstolinux.app.service.source.ReviewedSourcePreparation;
-import gold.debug.windowstolinux.app.service.source.SourcePreparation;
 import gold.debug.windowstolinux.shared.ai.client.AiAnalysisException;
 import gold.debug.windowstolinux.shared.ai.client.OpenAiCompatibleStructuralAnalyzer;
 import gold.debug.windowstolinux.shared.ai.prompt.AiResponseLanguage;
@@ -119,14 +118,6 @@ public final class AiUseCases {
      * @param languageTag the {@code languageTag} value / {@code languageTag} 值
      * @return the operation result / 操作结果
      */
-    public AiAnalysisOutcome explain(SourcePreparation preparation, AiProfile profile,
-                                     CredentialStorageMode mode, char[] masterPassword, String languageTag) {
-        if (preparation.assessment().facts().isEmpty()) {
-            return AiAnalysisOutcome.unavailable(LocalizedMessage.of("ai.status.analysisRequired"));
-        }
-        return explainFacts(preparation.assessment().facts().orElseThrow(), profile, mode, masterPassword, languageTag);
-    }
-
     /** Explains the result of a selected typed static source inspection. / 解释选定类型化静态源码检查的结果。 */
     public AiAnalysisOutcome explain(ReviewedSourcePreparation preparation, AiProfile profile,
                                      CredentialStorageMode mode, char[] masterPassword, String languageTag) {
@@ -134,33 +125,6 @@ public final class AiUseCases {
             return AiAnalysisOutcome.unavailable(LocalizedMessage.of("ai.status.analysisRequired"));
         }
         return explainFacts(preparation.assessment().facts().orElseThrow(), profile, mode, masterPassword, languageTag);
-    }
-
-    private AiAnalysisOutcome explainFacts(gold.debug.windowstolinux.shared.model.project.SourceProjectFacts facts,
-                                            AiProfile profile, CredentialStorageMode mode, char[] masterPassword,
-                                            String languageTag) {
-        if (profile.credentialMode() != mode) {
-            return AiAnalysisOutcome.unavailable(LocalizedMessage.of("ai.status.storageModeMismatch"));
-        }
-        try (SecretStore store = secrets.open(mode, masterPassword)) {
-            char[] apiKey = store.read(profile.credentialKey()).orElse(null);
-            if (apiKey == null) {
-                return AiAnalysisOutcome.unavailable(LocalizedMessage.of("ai.status.apiKeyMissing"));
-            }
-            try {
-                String explanation = new OpenAiCompatibleStructuralAnalyzer().analyze(
-                        profile.chatCompletionsEndpoint(), profile.model(), apiKey,
-                        facts,
-                        AiResponseLanguage.fromLanguageTag(languageTag)).explanation();
-                return AiAnalysisOutcome.available(explanation);
-            } finally {
-                clear(apiKey);
-            }
-        } catch (AiAnalysisException | SecretStoreException exception) {
-            return AiAnalysisOutcome.unavailable(exception.userMessage(), exception.diagnostic());
-        } finally {
-            clear(masterPassword);
-        }
     }
 
     private AiAnalysisOutcome explainFacts(gold.debug.windowstolinux.shared.model.project.DeploymentProjectFacts facts,
@@ -194,7 +158,7 @@ public final class AiUseCases {
      *
      * <p>仅调用由已存储标识选定的命名提供者；失败时不会咨询其他提供者。
      */
-    public AiAnalysisOutcome explainNamed(SourcePreparation preparation, String providerId, char[] masterPassword,
+    public AiAnalysisOutcome explainNamed(ReviewedSourcePreparation preparation, String providerId, char[] masterPassword,
                                           String languageTag) {
         try {
             AiProviderProfile profile = profiles.listNamed().stream()

@@ -50,6 +50,7 @@ public final class PlatformCapabilityProbeScript {
                   printf 'NODE_MAJORS=\\n'
                 fi
                 if command -v npm >/dev/null 2>&1; then printf 'NPM=1\\n'; else printf 'NPM=0\\n'; fi
+                if command -v mvn >/dev/null 2>&1; then printf 'MAVEN=1\\n'; else printf 'MAVEN=0\\n'; fi
                 if command -v python3 >/dev/null 2>&1; then printf 'PYTHON3=1\\n'; else printf 'PYTHON3=0\\n'; fi
                 printf 'PYTHON_VERSIONS='
                 first_python=1

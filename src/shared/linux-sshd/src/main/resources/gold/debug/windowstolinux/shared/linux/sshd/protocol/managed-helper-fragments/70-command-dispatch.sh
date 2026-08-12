@@ -6,19 +6,15 @@ shift
 case "$verb" in
   probe)
     [ "$#" -eq 0 ] || reject probe-arguments
-    printf 'HELPER=1\n'
+    printf 'HELPER=1\nPROTOCOL=%s\n' "$helper_protocol"
     ;;
   candidate-create) create_candidate "$@" ;;
   candidate-cleanup) cleanup_candidate "$@" ;;
   stage-config) stage_configuration "$@" ;;
   stage-secret) stage_secret "$@" ;;
-  snapshot) create_snapshot "$@" ;;
   snapshot-deployment) snapshot_deployment "$@" ;;
-  publish) publish_release "$@" ;;
   publish-deployment) publish_deployment "$@" ;;
   retain) retain_releases "$@" ;;
-  rollback-previous) rollback_previous "$@" ;;
-  rollback-first) rollback_first "$@" ;;
   rollback-deployment) rollback_deployment "$@" ;;
   rollback-deployment-first) rollback_deployment_first "$@" ;;
   lifecycle) lifecycle "$@" ;;

@@ -5,7 +5,7 @@ import gold.debug.windowstolinux.shared.deploy.adapter.container.ContainerAdapte
 import gold.debug.windowstolinux.shared.deploy.adapter.javajar.JavaJarAdapter;
 import gold.debug.windowstolinux.shared.deploy.adapter.node.NodeServiceAdapter;
 import gold.debug.windowstolinux.shared.deploy.adapter.python.PythonServiceAdapter;
-import gold.debug.windowstolinux.shared.deploy.adapter.springboot.GradleSpringBootAdapter;
+import gold.debug.windowstolinux.shared.deploy.adapter.springboot.SpringBootAdapter;
 import gold.debug.windowstolinux.shared.deploy.adapter.staticweb.StaticSiteAdapter;
 import gold.debug.windowstolinux.shared.model.project.DeploymentProjectType;
 
@@ -28,7 +28,7 @@ public final class ReviewedDeploymentPlanner {
      * <p>使用每个部署适配器创建计划器。
      */
     public ReviewedDeploymentPlanner() {
-        this(List.of(new GradleSpringBootAdapter(), new JavaJarAdapter(), new NodeServiceAdapter(),
+        this(List.of(new SpringBootAdapter(), new JavaJarAdapter(), new NodeServiceAdapter(),
                 new PythonServiceAdapter(), new StaticSiteAdapter(), new ContainerAdapter()));
     }
 

@@ -100,7 +100,7 @@ class UbuntuTypedDeploymentAcceptanceIT {
                         "https://github.com/mikechao/simple-spring-boot-app.git")),
                 new GitReference.Commit(commit), Set.of("github.com"), 512L * 1024 * 1024, false);
         try (LiveTypedDeploymentContext context = new LiveTypedDeploymentContext(temporaryDirectory)) {
-            ReviewedSourcePreparation source = context.prepare(request, DeploymentProjectType.GRADLE_SPRING_BOOT);
+            ReviewedSourcePreparation source = context.prepare(request, DeploymentProjectType.SPRING_BOOT);
             assertEquals(commit, source.sourceRevision().orElseThrow().commit().orElseThrow());
             assertTrue(source.assessment().facts().orElseThrow().languageFacts().ecosystems()
                     .contains(LanguageEcosystem.JAVA));
@@ -109,7 +109,7 @@ class UbuntuTypedDeploymentAcceptanceIT {
             List<ConfigurationEntry> configuration = List.of(
                     text("ACCEPTANCE_RUN_ID", RUN_ID), text("LOG_PATH", "/var/tmp/"), number("SERVER_PORT", port));
             DeploymentResult result = context.deploy(source, 1, configuration, List.of(),
-                    new DeploymentRuntimeSpecification.GradleSpringBoot(health(port)), access(port));
+                    new DeploymentRuntimeSpecification.SpringBoot(health(port)), access(port));
             assertSuccessful(result, source.assessment().facts().orElseThrow().applicationId());
             assertHttp(port, "greeting");
         }
@@ -220,7 +220,7 @@ class UbuntuTypedDeploymentAcceptanceIT {
 
     private static void assertSuccessful(DeploymentResult result, String applicationId) {
         assertEquals(DeploymentStatus.SUCCEEDED, result.status(), () -> result.events().toString());
-        assertTrue(result.publishedArtifactSha256().orElseThrow().matches("[0-9a-f]{64}"));
+        assertTrue(result.publishedReleaseSha256().orElseThrow().matches("[0-9a-f]{64}"));
         LifecycleObservation observation = result.finalObservation().orElseThrow();
         assertEquals(applicationId, observation.application().id());
         assertTrue(observation.ownershipVerified(), () -> observation.toString());

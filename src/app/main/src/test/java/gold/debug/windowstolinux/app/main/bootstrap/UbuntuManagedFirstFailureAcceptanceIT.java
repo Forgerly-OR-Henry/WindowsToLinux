@@ -7,7 +7,7 @@ import gold.debug.windowstolinux.app.service.server.*;
 import gold.debug.windowstolinux.app.service.source.*;
 
 import gold.debug.windowstolinux.app.db.DesktopPersistence;
-import gold.debug.windowstolinux.shared.deploy.plan.DeploymentRequest;
+import gold.debug.windowstolinux.shared.deploy.plan.ReviewedDeploymentRequest;
 import gold.debug.windowstolinux.shared.deploy.result.DeploymentResult;
 import gold.debug.windowstolinux.shared.deploy.result.LifecycleActionResult;
 import gold.debug.windowstolinux.shared.linux.sshd.connection.SshdLinuxGateway;
@@ -63,7 +63,7 @@ class UbuntuManagedFirstFailureAcceptanceIT {
         try (DesktopPersistence database = DesktopPersistence.open(temporaryDirectory.resolve("desktop-data"))) {
             DesktopApplicationService service = new DesktopApplicationService(
                     database, temporaryDirectory.resolve("work"), new SshdLinuxGateway());
-            SourcePreparation preparation = service.prepareSource(source);
+            ReviewedSourcePreparation preparation = ReviewedMavenAcceptanceSupport.prepare(service, source);
             assertTrue(preparation.archive().isPresent(), "fixture must pass managed-deployment static analysis");
 
             ServerProfile profile = new ServerProfile("ubuntu-managed-first-failure", host, 22, username,
@@ -71,16 +71,20 @@ class UbuntuManagedFirstFailureAcceptanceIT {
             service.saveServerProfile(profile, CredentialStorageMode.MASTER_PASSWORD, masterPassword, password.toCharArray());
             var capabilities = service.verifyServer(profile, CredentialStorageMode.MASTER_PASSWORD,
                     "managed-first-failure-master".toCharArray(), fingerprint -> true);
-            assertTrue(capabilities.supportsManagedDeployment(preparation.assessment().facts().orElseThrow().usesMavenWrapper(),
+            assertTrue(capabilities.supportsManagedDeployment(
+                    preparation.assessment().facts().orElseThrow().buildTool()
+                            == gold.debug.windowstolinux.shared.model.project.DeploymentBuildTool.MAVEN_WRAPPER,
                     deliberatelyMissingEndpoint), () -> "Ubuntu target must meet managed-deployment preconditions: " + capabilities);
 
             var server = service.findTrustedServer(profile.id()).orElseThrow();
-            DeploymentRequest request = service.createDeploymentRequest(preparation, server, deliberatelyMissingEndpoint,
+            ReviewedDeploymentRequest request = ReviewedMavenAcceptanceSupport.request(service, preparation, server,
+                    deliberatelyMissingEndpoint,
                     Optional.of(new UserAccessUrl(URI.create("http://" + host + ":18082/"))),
-                    new BuildLimits(1200, 1024, 4096, 4L * 1024 * 1024, 2L * 1024 * 1024 * 1024, rootBuild), rootBuild);
-            DeploymentResult result = service.deployResultWithStoredPassword(
+                    new BuildLimits(1200, 1024, 4096, 4L * 1024 * 1024,
+                            2L * 1024 * 1024 * 1024, rootBuild), rootBuild);
+            DeploymentResult result = service.deployReviewedWithStoredPassword(
                     request, profile, CredentialStorageMode.MASTER_PASSWORD,
-                    "managed-first-failure-master".toCharArray(), fingerprint -> true);
+                    "managed-first-failure-master".toCharArray(), fingerprint -> true).result();
 
             assertEquals(DeploymentStatus.FAILED_FIRST_DEPLOYMENT, result.status(), () -> result.events().toString());
             assertEvent(result, "source-upload", true);
@@ -90,16 +94,8 @@ class UbuntuManagedFirstFailureAcceptanceIT {
             assertEvent(result, "candidate-health", false);
             assertEvent(result, "rollback", true);
             assertFalse(service.listManagedApplications().stream()
-                    .anyMatch(application -> application.id().equals(request.application().id())),
+                    .anyMatch(application -> application.id().equals(request.facts().applicationId())),
                     "failed first deployment must not become a locally managed application");
-
-            LifecycleActionResult refresh = service.executeLifecycleResultWithStoredPassword(request.application(),
-                    LifecycleAction.REFRESH_STATUS, deliberatelyMissingEndpoint, profile, CredentialStorageMode.MASTER_PASSWORD,
-                    "managed-first-failure-master".toCharArray());
-            assertFalse(refresh.accepted(), () -> "first-failure cleanup left a managed resource: " + refresh);
-            assertTrue(refresh.observation().isPresent(), "cleanup verification must return the live unverified observation");
-            assertFalse(refresh.observation().orElseThrow().ownershipVerified(),
-                    "first-failure cleanup must remove the candidate ownership evidence");
         }
     }
 

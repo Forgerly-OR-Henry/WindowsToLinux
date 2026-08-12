@@ -19,6 +19,7 @@ import java.util.Set;
  * @param javaMajorVersions observed Java major versions / 观察到的 Java 主版本
  * @param nodeMajorVersions observed Node.js major versions / 观察到的 Node.js 主版本
  * @param npmAvailable whether npm is present / 是否存在 npm
+ * @param mavenAvailable whether Maven is present / 是否存在 Maven
  * @param pythonVersions observed Python interpreters with venv support / 观察到且支持 venv 的 Python 解释器
  * @param python3Available whether the generic Python 3 executable is available / 通用 Python 3 可执行文件是否可用
  * @param dockerOperational whether Docker is usable by the authenticated account / 已认证账户能否使用 Docker
@@ -39,6 +40,7 @@ public record LinuxCapabilities(
         Set<Integer> javaMajorVersions,
         Set<Integer> nodeMajorVersions,
         boolean npmAvailable,
+        boolean mavenAvailable,
         Set<String> pythonVersions,
         boolean python3Available,
         boolean dockerOperational,

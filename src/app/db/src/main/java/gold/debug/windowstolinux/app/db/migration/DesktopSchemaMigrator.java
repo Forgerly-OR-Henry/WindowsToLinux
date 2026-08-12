@@ -19,7 +19,7 @@ public final class DesktopSchemaMigrator {
      *
      * <p>公开 {@code CURRENT_SCHEMA_VERSION} 常量。
      */
-    public static final int CURRENT_SCHEMA_VERSION = 4;
+    public static final int CURRENT_SCHEMA_VERSION = 5;
 
     private DesktopSchemaMigrator() {
     }
@@ -55,7 +55,7 @@ public final class DesktopSchemaMigrator {
                     """);
                 statement.execute("""
                     CREATE TABLE IF NOT EXISTS managed_application_release (
-                      application_id TEXT PRIMARY KEY REFERENCES managed_application(id), artifact_sha256 TEXT NOT NULL,
+                      application_id TEXT PRIMARY KEY REFERENCES managed_application(id), release_sha256 TEXT NOT NULL,
                       published_at INTEGER NOT NULL
                     )
                     """);
@@ -182,6 +182,12 @@ public final class DesktopSchemaMigrator {
                             ) SELECT id, endpoint, model, credential_key, credential_mode FROM ai_profile
                             """);
                 }
+                if (version < 5 && hasColumn(statement, "managed_application_release", "artifact_sha256")) {
+                    statement.execute("""
+                            ALTER TABLE managed_application_release
+                            RENAME COLUMN artifact_sha256 TO release_sha256
+                            """);
+                }
                 statement.execute("PRAGMA user_version = " + CURRENT_SCHEMA_VERSION);
                 connection.commit();
             } catch (SQLException exception) {
@@ -194,6 +200,17 @@ public final class DesktopSchemaMigrator {
     private static int schemaVersion(Statement statement) throws SQLException {
         try (ResultSet result = statement.executeQuery("PRAGMA user_version")) {
             return result.next() ? result.getInt(1) : 0;
+        }
+    }
+
+    private static boolean hasColumn(Statement statement, String table, String column) throws SQLException {
+        try (ResultSet result = statement.executeQuery("PRAGMA table_info(" + table + ")")) {
+            while (result.next()) {
+                if (column.equals(result.getString("name"))) {
+                    return true;
+                }
+            }
+            return false;
         }
     }
 

@@ -17,6 +17,7 @@ import gold.debug.windowstolinux.shared.linux.connection.SshCredential;
 import gold.debug.windowstolinux.shared.linux.connection.SshEndpoint;
 import gold.debug.windowstolinux.shared.linux.protocol.ReleaseSnapshot;
 import gold.debug.windowstolinux.shared.linux.protocol.RemoteStepResult;
+import gold.debug.windowstolinux.shared.linux.protocol.ManagedHelperProtocol;
 import gold.debug.windowstolinux.shared.linux.runtime.HealthCheckResult;
 import gold.debug.windowstolinux.shared.linux.transfer.RemoteWorkspace;
 import gold.debug.windowstolinux.shared.model.deployment.DeploymentStatus;
@@ -93,14 +94,21 @@ public final class ReviewedDeploymentService {
             }
             long requiredBytes = Math.max(Math.multiplyExact(request.archive().byteCount(), MINIMUM_FREE_SPACE_MULTIPLIER),
                     request.limits().maxWorkspaceBytes());
-            long availableBytes = session.collectCapabilities().availableBytes();
+            var serverCapabilities = session.collectCapabilities();
+            if (serverCapabilities.managedHelperProtocolVersion() != ManagedHelperProtocol.VERSION) {
+                return rejected(events, "helper-protocol",
+                        "The target helper protocol is stale; run product Environment Preparation before uploading source");
+            }
+            events.add(new DeploymentEvent("helper-protocol", true,
+                    "Target helper protocol " + ManagedHelperProtocol.VERSION + " was verified before source upload"));
+            long availableBytes = serverCapabilities.availableBytes();
             if (availableBytes < requiredBytes) {
                 return rejected(events, "target-space", "Target free space is insufficient for the reviewed candidate");
             }
             events.add(new DeploymentEvent("target-capabilities", true,
                     "Target capabilities were collected before the reviewed deployment"));
             HostCompatibility.Result typedCompatibility = HostCompatibility.evaluate(
-                    session.collectDeploymentCapabilities(), request.runtime());
+                    session.collectDeploymentCapabilities(), request.facts(), request.runtime());
             events.add(new DeploymentEvent("typed-host-compatibility",
                     typedCompatibility.support() == HostSupport.READY_FOR_RUNTIME_VALIDATION,
                     String.join("; ", typedCompatibility.evidence())));
@@ -135,7 +143,7 @@ public final class ReviewedDeploymentService {
 
             snapshot = session.snapshotDeployment(application, request.runtime());
             events.add(new DeploymentEvent("snapshot", true, snapshot.evidence()));
-            RemoteStepResult publish = session.publishDeployment(application, workspace, build, releaseIdentity,
+            RemoteStepResult publish = session.publishDeployment(application, request.facts(), workspace, build, releaseIdentity,
                     request.runtime(), inputs, snapshot);
             events.add(new DeploymentEvent("publish", publish.succeeded(), publish.evidence()));
             if (!publish.succeeded()) {
@@ -189,7 +197,7 @@ public final class ReviewedDeploymentService {
         }
         LifecycleObservation restored;
         try {
-            restored = session.observeDeployment(application, request.runtime());
+            restored = session.observe(application);
         } catch (LinuxOperationException exception) {
             events.add(new DeploymentEvent("rollback-observation", false,
                     "Rollback completed but its restored runtime could not be observed: " + safeMessage(exception)));

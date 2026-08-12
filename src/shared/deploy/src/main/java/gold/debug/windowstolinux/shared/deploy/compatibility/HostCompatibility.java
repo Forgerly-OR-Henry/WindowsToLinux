@@ -3,6 +3,8 @@ package gold.debug.windowstolinux.shared.deploy.compatibility;
 import gold.debug.windowstolinux.shared.model.server.LinuxCapabilities;
 import gold.debug.windowstolinux.shared.model.server.LinuxDistro;
 import gold.debug.windowstolinux.shared.model.project.DeploymentRuntimeSpecification;
+import gold.debug.windowstolinux.shared.model.project.DeploymentProjectFacts;
+import gold.debug.windowstolinux.shared.model.project.DeploymentBuildTool;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -26,9 +28,14 @@ public final class HostCompatibility {
      * @param runtime selected typed runtime / 所选类型化运行时
      * @return conservative compatibility outcome / 保守兼容性结果
      */
-    public static Result evaluate(LinuxCapabilities capabilities, DeploymentRuntimeSpecification runtime) {
+    public static Result evaluate(LinuxCapabilities capabilities, DeploymentProjectFacts facts,
+                                  DeploymentRuntimeSpecification runtime) {
         capabilities = Objects.requireNonNull(capabilities, "capabilities");
+        facts = Objects.requireNonNull(facts, "facts");
         runtime = Objects.requireNonNull(runtime, "runtime");
+        if (facts.projectType() != runtime.projectType()) {
+            throw new IllegalArgumentException("project facts and runtime must use the same type");
+        }
         List<String> evidence = new ArrayList<>();
         if (!capabilities.x86_64()) {
             return result(HostSupport.UNSUPPORTED, "architecture must be x86_64", evidence);
@@ -40,7 +47,7 @@ public final class HostCompatibility {
         if (base != HostSupport.READY_FOR_RUNTIME_VALIDATION) {
             return new Result(base, List.copyOf(evidence));
         }
-        String missingRuntime = missingRuntime(capabilities, runtime);
+        String missingRuntime = missingRuntime(capabilities, facts, runtime);
         if (missingRuntime != null) {
             return result(HostSupport.UNSUPPORTED, missingRuntime, evidence);
         }
@@ -48,11 +55,16 @@ public final class HostCompatibility {
         return new Result(HostSupport.READY_FOR_RUNTIME_VALIDATION, List.copyOf(evidence));
     }
 
-    private static String missingRuntime(LinuxCapabilities capabilities, DeploymentRuntimeSpecification runtime) {
+    private static String missingRuntime(LinuxCapabilities capabilities, DeploymentProjectFacts facts,
+                                         DeploymentRuntimeSpecification runtime) {
         return switch (runtime) {
-            case DeploymentRuntimeSpecification.GradleSpringBoot ignored ->
-                    capabilities.javaMajorVersions().contains(21) ? null
-                            : "Java 21 is required for the Gradle wrapper build and runtime";
+            case DeploymentRuntimeSpecification.SpringBoot ignored -> {
+                if (!capabilities.javaMajorVersions().contains(21)) {
+                    yield "Java 21 is required for the Spring Boot build and runtime";
+                }
+                yield facts.buildTool() == DeploymentBuildTool.MAVEN && !capabilities.mavenAvailable()
+                        ? "Maven is required for the reviewed system Maven build" : null;
+            }
             case DeploymentRuntimeSpecification.JavaJar javaJar ->
                     capabilities.javaMajorVersions().contains(Integer.parseInt(javaJar.javaVersion())) ? null
                             : "the selected Java major is not available";

@@ -7,7 +7,7 @@ import gold.debug.windowstolinux.app.service.server.*;
 import gold.debug.windowstolinux.app.service.source.*;
 
 import gold.debug.windowstolinux.app.db.DesktopPersistence;
-import gold.debug.windowstolinux.shared.deploy.plan.DeploymentRequest;
+import gold.debug.windowstolinux.shared.deploy.plan.ReviewedDeploymentRequest;
 import gold.debug.windowstolinux.shared.deploy.result.DeploymentResult;
 import gold.debug.windowstolinux.shared.deploy.result.LifecycleActionResult;
 import gold.debug.windowstolinux.shared.linux.sshd.connection.SshdLinuxGateway;
@@ -63,7 +63,7 @@ class UbuntuManagedOwnershipSafetyIT {
         try (DesktopPersistence database = DesktopPersistence.open(temporaryDirectory.resolve("desktop-data"))) {
             DesktopApplicationService service = new DesktopApplicationService(
                     database, temporaryDirectory.resolve("work"), new SshdLinuxGateway());
-            SourcePreparation preparation = service.prepareSource(source);
+            ReviewedSourcePreparation preparation = ReviewedMavenAcceptanceSupport.prepare(service, source);
             assertTrue(preparation.archive().isPresent(), "fixture must pass static analysis");
             ServerProfile profile = new ServerProfile("ubuntu-managed-ownership", host, 22, username,
                     "ssh/ubuntu-managed-ownership/password", CredentialStorageMode.MASTER_PASSWORD);
@@ -71,17 +71,22 @@ class UbuntuManagedOwnershipSafetyIT {
                     "managed-ownership-master".toCharArray(), password.toCharArray());
             var capabilities = service.verifyServer(profile, CredentialStorageMode.MASTER_PASSWORD,
                     "managed-ownership-master".toCharArray(), fingerprint -> true);
-            assertTrue(capabilities.supportsManagedDeployment(preparation.assessment().facts().orElseThrow().usesMavenWrapper(), health),
+            assertTrue(capabilities.supportsManagedDeployment(
+                    preparation.assessment().facts().orElseThrow().buildTool()
+                            == gold.debug.windowstolinux.shared.model.project.DeploymentBuildTool.MAVEN_WRAPPER,
+                    health),
                     () -> "Ubuntu target must meet managed-deployment preconditions: " + capabilities);
             var server = service.findTrustedServer(profile.id()).orElseThrow();
-            DeploymentRequest request = service.createDeploymentRequest(preparation, server, health, Optional.of(userAccessUrl),
-                    new BuildLimits(1200, 1024, 4096, 4L * 1024 * 1024, 2L * 1024 * 1024 * 1024, rootBuild), rootBuild);
-            DeploymentResult deployment = service.deployResultWithStoredPassword(
+            ReviewedDeploymentRequest request = ReviewedMavenAcceptanceSupport.request(service, preparation, server,
+                    health, Optional.of(userAccessUrl),
+                    new BuildLimits(1200, 1024, 4096, 4L * 1024 * 1024,
+                            2L * 1024 * 1024 * 1024, rootBuild), rootBuild);
+            DeploymentResult deployment = service.deployReviewedWithStoredPassword(
                     request, profile, CredentialStorageMode.MASTER_PASSWORD,
-                    "managed-ownership-master".toCharArray(), fingerprint -> true);
+                    "managed-ownership-master".toCharArray(), fingerprint -> true).result();
             assertEquals(DeploymentStatus.SUCCEEDED, deployment.status(), () -> deployment.events().toString());
             ManagedApplication saved = service.listManagedApplications().stream()
-                    .filter(application -> application.id().equals(request.application().id()))
+                    .filter(application -> application.id().equals(request.facts().applicationId()))
                     .findFirst().orElseThrow();
 
             LifecycleActionResult savedRefresh = refresh(service, saved, health, profile);

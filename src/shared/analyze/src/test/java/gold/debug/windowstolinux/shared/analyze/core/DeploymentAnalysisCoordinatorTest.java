@@ -33,7 +33,7 @@ class DeploymentAnalysisCoordinatorTest {
         Files.writeString(project.resolve("gradle/wrapper/gradle-wrapper.properties"), "distributionUrl=https://example.test/gradle.zip");
         writeGradleWrapperJar(project.resolve("gradle/wrapper/gradle-wrapper.jar"));
 
-        var assessment = analyzer.analyze(project, DeploymentProjectType.GRADLE_SPRING_BOOT);
+        var assessment = analyzer.analyze(project, DeploymentProjectType.SPRING_BOOT);
 
         assertEquals(DeploymentAdmission.READY_FOR_PLANNING, assessment.admission());
         assertEquals(DeploymentBuildTool.GRADLE_WRAPPER, assessment.facts().orElseThrow().buildTool());
@@ -48,7 +48,7 @@ class DeploymentAnalysisCoordinatorTest {
         Files.writeString(project.resolve("gradle/wrapper/gradle-wrapper.properties"),
                 "distributionUrl=https://example.test/gradle.zip");
 
-        var assessment = analyzer.analyze(project, DeploymentProjectType.GRADLE_SPRING_BOOT);
+        var assessment = analyzer.analyze(project, DeploymentProjectType.SPRING_BOOT);
 
         assertEquals(DeploymentAdmission.REQUIRES_INPUT, assessment.admission());
         assertTrue(assessment.facts().orElseThrow().missingInformation().stream()
@@ -65,7 +65,7 @@ class DeploymentAnalysisCoordinatorTest {
                 "distributionUrl=https://example.test/gradle.zip");
         Files.write(project.resolve("gradle/wrapper/gradle-wrapper.jar"), new byte[]{0});
 
-        var assessment = analyzer.analyze(project, DeploymentProjectType.GRADLE_SPRING_BOOT);
+        var assessment = analyzer.analyze(project, DeploymentProjectType.SPRING_BOOT);
 
         assertEquals(DeploymentAdmission.REQUIRES_INPUT, assessment.admission());
         assertTrue(assessment.facts().orElseThrow().missingInformation().stream()
@@ -80,7 +80,7 @@ class DeploymentAnalysisCoordinatorTest {
                 dependencies { implementation 'org.flywaydb:flyway-core:11.0.0' }
                 """);
 
-        var assessment = analyzer.analyze(project, DeploymentProjectType.GRADLE_SPRING_BOOT);
+        var assessment = analyzer.analyze(project, DeploymentProjectType.SPRING_BOOT);
 
         assertEquals(DeploymentAdmission.REJECTED, assessment.admission());
         assertTrue(assessment.rejections().stream()

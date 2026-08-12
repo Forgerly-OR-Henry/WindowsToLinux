@@ -8,12 +8,16 @@ import java.util.Arrays;
  * <p>稳定的部署跟踪代码；界面模块将这些代码映射为本地化标签。
  */
 public enum DeploymentStep {
+    /** Verifies the managed application identity before any remote operation. / 在任何远端操作前验证受管应用身份。 */
+    MANAGED_IDENTITY("managed-identity"),
     /**
      * Represents the {@code ROOT_BUILD_SESSION} option.
      *
      * <p>表示 {@code ROOT_BUILD_SESSION} 选项。
      */
     ROOT_BUILD_SESSION("root-build-session"),
+    /** Verifies the installed helper protocol before source upload. / 在上传源码前验证已安装的 helper 协议。 */
+    HELPER_PROTOCOL("helper-protocol"),
     /**
      * Represents the {@code TARGET_CAPABILITIES} option.
      *

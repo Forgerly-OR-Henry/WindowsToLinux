@@ -12,7 +12,7 @@ import java.util.OptionalInt;
  *
  * <p>恰好一个部署单组件项目类型的类型化运行定义。
  */
-public sealed interface DeploymentRuntimeSpecification permits DeploymentRuntimeSpecification.GradleSpringBoot,
+public sealed interface DeploymentRuntimeSpecification permits DeploymentRuntimeSpecification.SpringBoot,
         DeploymentRuntimeSpecification.JavaJar, DeploymentRuntimeSpecification.NodeService,
         DeploymentRuntimeSpecification.PythonService, DeploymentRuntimeSpecification.StaticSite,
         DeploymentRuntimeSpecification.Container {
@@ -22,11 +22,11 @@ public sealed interface DeploymentRuntimeSpecification permits DeploymentRuntime
     /** Returns the required layered health check. / 返回所需的分层健康检查。 */
     HealthCheck healthCheck();
 
-    /** Gradle Spring Boot systemd runtime. / Gradle Spring Boot systemd 运行时。 */
-    record GradleSpringBoot(HealthCheck healthCheck) implements DeploymentRuntimeSpecification {
-        /** Creates a {@code GradleSpringBoot} specification. / 创建 {@code GradleSpringBoot} 规范。 */
-        public GradleSpringBoot { healthCheck = Objects.requireNonNull(healthCheck, "healthCheck"); }
-        @Override public DeploymentProjectType projectType() { return DeploymentProjectType.GRADLE_SPRING_BOOT; }
+    /** Spring Boot systemd runtime independent of its reviewed build tool. / 与经审阅构建工具无关的 Spring Boot systemd 运行时。 */
+    record SpringBoot(HealthCheck healthCheck) implements DeploymentRuntimeSpecification {
+        /** Creates a {@code SpringBoot} specification. / 创建 {@code SpringBoot} 规范。 */
+        public SpringBoot { healthCheck = Objects.requireNonNull(healthCheck, "healthCheck"); }
+        @Override public DeploymentProjectType projectType() { return DeploymentProjectType.SPRING_BOOT; }
     }
 
     /** Java JAR systemd runtime with structured JVM and application arguments. / 具有结构化 JVM 和应用参数的 Java JAR systemd 运行时。 */

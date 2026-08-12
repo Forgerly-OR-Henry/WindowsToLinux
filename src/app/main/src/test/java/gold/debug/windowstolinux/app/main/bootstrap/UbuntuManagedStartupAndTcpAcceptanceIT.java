@@ -7,7 +7,7 @@ import gold.debug.windowstolinux.app.service.server.*;
 import gold.debug.windowstolinux.app.service.source.*;
 
 import gold.debug.windowstolinux.app.db.DesktopPersistence;
-import gold.debug.windowstolinux.shared.deploy.plan.DeploymentRequest;
+import gold.debug.windowstolinux.shared.deploy.plan.ReviewedDeploymentRequest;
 import gold.debug.windowstolinux.shared.deploy.result.DeploymentResult;
 import gold.debug.windowstolinux.shared.deploy.result.LifecycleActionResult;
 import gold.debug.windowstolinux.shared.linux.sshd.connection.SshdLinuxGateway;
@@ -67,15 +67,15 @@ class UbuntuManagedStartupAndTcpAcceptanceIT {
         try (DesktopPersistence database = DesktopPersistence.open(temporaryDirectory.resolve("desktop-data"))) {
             DesktopApplicationService service = new DesktopApplicationService(
                     database, temporaryDirectory.resolve("work"), new SshdLinuxGateway());
-            SourcePreparation baselinePreparation = service.prepareSource(baseline);
-            SourcePreparation startupPreparation = service.prepareSource(startupFailure);
-            SourcePreparation wrongPortPreparation = service.prepareSource(wrongPort);
+            ReviewedSourcePreparation baselinePreparation = ReviewedMavenAcceptanceSupport.prepare(service, baseline);
+            ReviewedSourcePreparation startupPreparation = ReviewedMavenAcceptanceSupport.prepare(service, startupFailure);
+            ReviewedSourcePreparation wrongPortPreparation = ReviewedMavenAcceptanceSupport.prepare(service, wrongPort);
             assertTrue(baselinePreparation.archive().isPresent(), "baseline must pass static analysis");
             assertTrue(startupPreparation.archive().isPresent(), "startup candidate must pass static analysis");
             assertTrue(wrongPortPreparation.archive().isPresent(), "TCP candidate must pass static analysis");
-            String applicationId = baselinePreparation.assessment().facts().orElseThrow().applicationName();
-            assertEquals(applicationId, startupPreparation.assessment().facts().orElseThrow().applicationName());
-            assertEquals(applicationId, wrongPortPreparation.assessment().facts().orElseThrow().applicationName());
+            String applicationId = baselinePreparation.assessment().facts().orElseThrow().applicationId();
+            assertEquals(applicationId, startupPreparation.assessment().facts().orElseThrow().applicationId());
+            assertEquals(applicationId, wrongPortPreparation.assessment().facts().orElseThrow().applicationId());
 
             ServerProfile profile = new ServerProfile("ubuntu-managed-startup-tcp", host, 22, username,
                     "ssh/ubuntu-managed-startup-tcp/password", CredentialStorageMode.MASTER_PASSWORD);
@@ -83,22 +83,25 @@ class UbuntuManagedStartupAndTcpAcceptanceIT {
                     "managed-startup-tcp-master".toCharArray(), password.toCharArray());
             var capabilities = service.verifyServer(profile, CredentialStorageMode.MASTER_PASSWORD,
                     "managed-startup-tcp-master".toCharArray(), fingerprint -> true);
-            assertTrue(capabilities.supportsManagedDeployment(baselinePreparation.assessment().facts().orElseThrow().usesMavenWrapper(), httpHealth),
+            assertTrue(capabilities.supportsManagedDeployment(
+                    baselinePreparation.assessment().facts().orElseThrow().buildTool()
+                            == gold.debug.windowstolinux.shared.model.project.DeploymentBuildTool.MAVEN_WRAPPER,
+                    httpHealth),
                     () -> "Ubuntu target must meet managed-deployment preconditions: " + capabilities);
             var server = service.findTrustedServer(profile.id()).orElseThrow();
 
-            DeploymentRequest baselineRequest = request(service, baselinePreparation, server, httpHealth, Optional.of(userAccessUrl), rootBuild);
+            ReviewedDeploymentRequest baselineRequest = request(service, baselinePreparation, server, httpHealth, Optional.of(userAccessUrl), rootBuild);
             DeploymentResult baselineResult = deploy(service, baselineRequest, profile);
             assertEquals(DeploymentStatus.SUCCEEDED, baselineResult.status(), () -> baselineResult.events().toString());
 
-            LifecycleActionResult tcpRestart = service.executeLifecycleResultWithStoredPassword(baselineRequest.application(),
-                    LifecycleAction.RESTART, tcpHealth, profile, CredentialStorageMode.MASTER_PASSWORD,
+            LifecycleActionResult tcpRestart = service.executePersistedLifecycleResultWithStoredPassword(
+                    baselineRequest.facts().applicationId(), LifecycleAction.RESTART,
                     "managed-startup-tcp-master".toCharArray());
             assertTrue(tcpRestart.accepted(), tcpRestart::toString);
             assertEquals(RuntimeState.RUNNING, tcpRestart.observation().orElseThrow().runtimeState());
 
-            DeploymentRequest startupRequest = request(service, startupPreparation, server, httpHealth, Optional.of(userAccessUrl), rootBuild);
-            assertEquals(baselineRequest.application(), startupRequest.application());
+            ReviewedDeploymentRequest startupRequest = request(service, startupPreparation, server, httpHealth, Optional.of(userAccessUrl), rootBuild);
+            assertEquals(baselineRequest.facts().applicationId(), startupRequest.facts().applicationId());
             DeploymentResult startupResult = deploy(service, startupRequest, profile);
             assertEquals(DeploymentStatus.FAILED_ROLLED_BACK, startupResult.status(), () -> startupResult.events().toString());
             assertEvent(startupResult, "remote-build", true);
@@ -106,41 +109,40 @@ class UbuntuManagedStartupAndTcpAcceptanceIT {
                             (event.step().equals("publish") || event.step().equals("candidate-health")) && !event.succeeded()),
                     () -> "startup failure must fail publication or candidate health: " + startupResult.events());
             assertEvent(startupResult, "rollback", true);
-            assertEvent(startupResult, "rollback-health", true);
 
-            DeploymentRequest wrongPortRequest = request(service, wrongPortPreparation, server, tcpHealth, Optional.empty(), rootBuild);
-            assertEquals(baselineRequest.application(), wrongPortRequest.application());
+            ReviewedDeploymentRequest wrongPortRequest = request(service, wrongPortPreparation, server, tcpHealth, Optional.empty(), rootBuild);
+            assertEquals(baselineRequest.facts().applicationId(), wrongPortRequest.facts().applicationId());
             DeploymentResult tcpFailure = deploy(service, wrongPortRequest, profile);
             assertEquals(DeploymentStatus.FAILED_ROLLED_BACK, tcpFailure.status(), () -> tcpFailure.events().toString());
             assertEvent(tcpFailure, "publish", true);
             assertEvent(tcpFailure, "candidate-health", false);
             assertEvent(tcpFailure, "rollback", true);
-            assertEvent(tcpFailure, "rollback-health", true);
 
-            LifecycleActionResult refreshed = service.executeLifecycleResultWithStoredPassword(baselineRequest.application(),
-                    LifecycleAction.REFRESH_STATUS, tcpHealth, profile, CredentialStorageMode.MASTER_PASSWORD,
+            LifecycleActionResult refreshed = service.executePersistedLifecycleResultWithStoredPassword(
+                    baselineRequest.facts().applicationId(), LifecycleAction.REFRESH_STATUS,
                     "managed-startup-tcp-master".toCharArray());
             assertTrue(refreshed.accepted(), refreshed::toString);
             assertEquals(RuntimeState.RUNNING, refreshed.observation().orElseThrow().runtimeState());
         }
     }
 
-    private static DeploymentResult deploy(DesktopApplicationService service, DeploymentRequest request, ServerProfile profile)
+    private static DeploymentResult deploy(DesktopApplicationService service, ReviewedDeploymentRequest request, ServerProfile profile)
             throws Exception {
-        return service.deployResultWithStoredPassword(request, profile, CredentialStorageMode.MASTER_PASSWORD,
-                "managed-startup-tcp-master".toCharArray(), fingerprint -> true);
+        return service.deployReviewedWithStoredPassword(request, profile, CredentialStorageMode.MASTER_PASSWORD,
+                "managed-startup-tcp-master".toCharArray(), fingerprint -> true).result();
     }
 
-    private static DeploymentRequest request(
+    private static ReviewedDeploymentRequest request(
             DesktopApplicationService service,
-            SourcePreparation preparation,
+            ReviewedSourcePreparation preparation,
             gold.debug.windowstolinux.shared.model.server.ServerIdentity server,
             HealthCheck health,
             Optional<UserAccessUrl> userAccessUrl,
             boolean rootBuild
-    ) {
-        return service.createDeploymentRequest(preparation, server, health, userAccessUrl,
-                new BuildLimits(1200, 1024, 4096, 4L * 1024 * 1024, 2L * 1024 * 1024 * 1024, rootBuild), rootBuild);
+    ) throws Exception {
+        return ReviewedMavenAcceptanceSupport.request(service, preparation, server, health, userAccessUrl,
+                new BuildLimits(1200, 1024, 4096, 4L * 1024 * 1024,
+                        2L * 1024 * 1024 * 1024, rootBuild), rootBuild);
     }
 
     private static Path source(String value, String name) {

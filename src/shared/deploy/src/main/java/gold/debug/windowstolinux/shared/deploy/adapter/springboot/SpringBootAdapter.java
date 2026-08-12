@@ -6,13 +6,9 @@ import gold.debug.windowstolinux.shared.deploy.plan.ReviewedDeploymentPlan;
 import gold.debug.windowstolinux.shared.deploy.plan.ReviewedDeploymentRequest;
 import gold.debug.windowstolinux.shared.model.project.DeploymentProjectType;
 
-/**
- * Plans the fixed Gradle Wrapper Spring Boot executable-JAR path.
- *
- * <p>计划固定的 Gradle Wrapper Spring Boot 可执行 JAR 路径。
- */
-public final class GradleSpringBootAdapter implements DeploymentAdapter {
-    @Override public DeploymentProjectType projectType() { return DeploymentProjectType.GRADLE_SPRING_BOOT; }
+/** Plans the reviewed Spring Boot executable-JAR path independent of its fixed build tool. / 计划与固定构建工具无关的经审阅 Spring Boot 可执行 JAR 路径。 */
+public final class SpringBootAdapter implements DeploymentAdapter {
+    @Override public DeploymentProjectType projectType() { return DeploymentProjectType.SPRING_BOOT; }
     @Override public ReviewedDeploymentPlan plan(ReviewedDeploymentRequest request) {
         return DeploymentPlanSupport.plan(request, projectType(), false, false);
     }

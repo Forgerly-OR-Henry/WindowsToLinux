@@ -89,7 +89,7 @@ public final class ManagedPage {
                     .map(summary -> messages.text("applications.summary", Map.of(
                             "application", summary.application().id(), "server", summary.application().server().host(),
                             "unit", summary.application().systemdUnit(),
-                            "release", summary.currentArtifactSha256().orElse(messages.text("applications.noRelease")),
+                            "release", summary.currentReleaseSha256().orElse(messages.text("applications.noRelease")),
                             "runtime", summary.runtimeConfiguration().map(this::runtimeSummary)
                                     .orElse(messages.text("applications.legacyRuntime")))))
                     .reduce("", (left, right) -> left + right + "\n"));

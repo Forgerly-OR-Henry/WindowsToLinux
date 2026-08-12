@@ -64,7 +64,7 @@ class DesktopPersistenceTest {
             assertEquals("deployer", database.servers().findServerProfile("server-one").orElseThrow().username());
             assertEquals("gpt-5", database.aiProfiles().findDefault().orElseThrow().model());
             assertEquals(application, database.managedApplications().find("demo").orElseThrow());
-            assertEquals("b".repeat(64), database.managedApplications().findRelease("demo").orElseThrow().artifactSha256());
+            assertEquals("b".repeat(64), database.managedApplications().findRelease("demo").orElseThrow().releaseSha256());
             assertEquals(1, database.managedApplications().list().size());
         }
     }
@@ -113,7 +113,7 @@ class DesktopPersistenceTest {
                     new CurrentRelease(application.id(), "b".repeat(64), initialTime));
 
             assertEquals(http, database.managedApplications().findRuntime(application.id()).orElseThrow());
-            assertEquals("b".repeat(64), database.managedApplications().findRelease(application.id()).orElseThrow().artifactSha256());
+            assertEquals("b".repeat(64), database.managedApplications().findRelease(application.id()).orElseThrow().releaseSha256());
 
             ManagedApplicationRuntimeConfiguration tcp = new ManagedApplicationRuntimeConfiguration(
                     new HealthCheck.Tcp(19092, 15, 2), Optional.empty()
@@ -122,7 +122,45 @@ class DesktopPersistenceTest {
                     new CurrentRelease(application.id(), "c".repeat(64), initialTime.plusSeconds(1)));
 
             assertEquals(tcp, database.managedApplications().findRuntime(application.id()).orElseThrow());
-            assertEquals("c".repeat(64), database.managedApplications().findRelease(application.id()).orElseThrow().artifactSha256());
+            assertEquals("c".repeat(64), database.managedApplications().findRelease(application.id()).orElseThrow().releaseSha256());
+        }
+    }
+
+    @Test
+    void migratesVersionFourArtifactIdentityToVersionFiveReleaseIdentityWithoutDataLoss() throws Exception {
+        Path dataDirectory = Files.createDirectories(temporaryDirectory.resolve("version-four"));
+        Path databaseFile = dataDirectory.resolve("windowstolinux.db");
+        String preservedIdentity = "d".repeat(64);
+        try (Connection connection = DriverManager.getConnection("jdbc:sqlite:" + databaseFile);
+             Statement statement = connection.createStatement()) {
+            statement.execute("CREATE TABLE server (id TEXT PRIMARY KEY, host TEXT NOT NULL, ssh_port INTEGER NOT NULL, host_key_sha256 TEXT NOT NULL)");
+            statement.execute("CREATE TABLE managed_application (id TEXT PRIMARY KEY, server_id TEXT NOT NULL REFERENCES server(id), systemd_unit TEXT NOT NULL, release_root TEXT NOT NULL, ownership_manifest_sha256 TEXT NOT NULL)");
+            statement.execute("CREATE TABLE managed_application_release (application_id TEXT PRIMARY KEY REFERENCES managed_application(id), artifact_sha256 TEXT NOT NULL, published_at INTEGER NOT NULL)");
+            statement.execute("INSERT INTO server VALUES ('server-one', 'example.test', 22, 'SHA256:fixture')");
+            statement.execute("INSERT INTO managed_application VALUES ('demo', 'server-one', 'windowstolinux-demo.service', '/var/lib/windowstolinux/apps/demo', '" + "a".repeat(64) + "')");
+            statement.execute("INSERT INTO managed_application_release VALUES ('demo', '" + preservedIdentity + "', 1)");
+            statement.execute("PRAGMA user_version = 4");
+        }
+
+        try (DesktopPersistence database = DesktopPersistence.open(dataDirectory)) {
+            assertEquals(preservedIdentity,
+                    database.managedApplications().findRelease("demo").orElseThrow().releaseSha256());
+        }
+
+        try (Connection connection = DriverManager.getConnection("jdbc:sqlite:" + databaseFile);
+             Statement statement = connection.createStatement()) {
+            try (var columns = statement.executeQuery("PRAGMA table_info(managed_application_release)")) {
+                java.util.Set<String> names = new java.util.HashSet<>();
+                while (columns.next()) {
+                    names.add(columns.getString("name"));
+                }
+                assertTrue(names.contains("release_sha256"));
+                assertTrue(!names.contains("artifact_sha256"));
+            }
+            try (var version = statement.executeQuery("PRAGMA user_version")) {
+                assertTrue(version.next());
+                assertEquals(5, version.getInt(1));
+            }
         }
     }
 

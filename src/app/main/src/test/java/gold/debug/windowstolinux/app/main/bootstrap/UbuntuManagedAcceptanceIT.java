@@ -8,7 +8,7 @@ import gold.debug.windowstolinux.app.service.source.*;
 
 import gold.debug.windowstolinux.app.db.DesktopPersistence;
 import gold.debug.windowstolinux.app.service.deployment.DeploymentHandoff.HttpAccessUrl;
-import gold.debug.windowstolinux.shared.deploy.plan.DeploymentRequest;
+import gold.debug.windowstolinux.shared.deploy.plan.ReviewedDeploymentRequest;
 import gold.debug.windowstolinux.shared.deploy.result.LifecycleActionResult;
 import gold.debug.windowstolinux.shared.linux.sshd.connection.SshdLinuxGateway;
 import gold.debug.windowstolinux.shared.model.lifecycle.AutostartState;
@@ -20,6 +20,7 @@ import gold.debug.windowstolinux.shared.model.lifecycle.LifecycleAction;
 import gold.debug.windowstolinux.shared.model.lifecycle.LifecycleObservation;
 import gold.debug.windowstolinux.shared.model.lifecycle.RuntimeState;
 import gold.debug.windowstolinux.shared.model.health.UserAccessUrl;
+import gold.debug.windowstolinux.shared.model.project.DeploymentBuildTool;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIfSystemProperty;
 import org.junit.jupiter.api.io.TempDir;
@@ -72,24 +73,28 @@ class UbuntuManagedAcceptanceIT {
         try (DesktopPersistence database = DesktopPersistence.open(temporaryDirectory.resolve("desktop-data"))) {
             DesktopApplicationService service = new DesktopApplicationService(
                     database, temporaryDirectory.resolve("work"), new SshdLinuxGateway());
-            SourcePreparation preparation = service.prepareSource(source);
+            ReviewedSourcePreparation preparation = ReviewedMavenAcceptanceSupport.prepare(service, source);
             assertTrue(preparation.archive().isPresent(), "Hello World must pass the managed-deployment static analysis");
-            String applicationId = preparation.assessment().facts().orElseThrow().applicationName();
+            String applicationId = preparation.assessment().facts().orElseThrow().applicationId();
 
             ServerProfile profile = new ServerProfile("ubuntu-managed", host, 22, username,
                     "ssh/ubuntu-managed/password", CredentialStorageMode.MASTER_PASSWORD);
             service.saveServerProfile(profile, CredentialStorageMode.MASTER_PASSWORD, masterPassword, sshPassword);
             var capabilities = service.verifyServer(profile, CredentialStorageMode.MASTER_PASSWORD,
                     "managed-acceptance-master".toCharArray(), fingerprint -> true);
-            assertTrue(capabilities.supportsManagedDeployment(preparation.assessment().facts().orElseThrow().usesMavenWrapper(),
+            assertTrue(capabilities.supportsManagedDeployment(
+                    preparation.assessment().facts().orElseThrow().buildTool() == DeploymentBuildTool.MAVEN_WRAPPER,
                     health), "Ubuntu target must meet all managed-deployment preconditions: " + capabilities);
 
             var server = service.findTrustedServer(profile.id()).orElseThrow();
-            DeploymentRequest request = service.createDeploymentRequest(preparation, server, health, Optional.of(userAccessUrl),
-                    new BuildLimits(1200, 1024, 4096, 4L * 1024 * 1024, 2L * 1024 * 1024 * 1024, rootBuild), rootBuild);
-            DeploymentOutcome deployed = service.deployWithStoredPassword(request, profile, CredentialStorageMode.MASTER_PASSWORD,
+            ReviewedDeploymentRequest request = ReviewedMavenAcceptanceSupport.request(service, preparation, server,
+                    health, Optional.of(userAccessUrl),
+                    new BuildLimits(1200, 1024, 4096, 4L * 1024 * 1024,
+                            2L * 1024 * 1024 * 1024, rootBuild), rootBuild);
+            DeploymentOutcome deployed = service.deployReviewedWithStoredPassword(
+                    request, profile, CredentialStorageMode.MASTER_PASSWORD,
                     "managed-acceptance-master".toCharArray(), fingerprint -> true);
-            assertEquals(DeploymentStatus.SUCCEEDED.name(), deployed.status(), () -> deployed.events().toString());
+            assertEquals(DeploymentStatus.SUCCEEDED, deployed.status(), () -> deployed.events().toString());
             URI accessUrl = requireHttpAccessUrl(deployed, userAccessUrl.url());
             assertDesktopCanAccess(accessUrl, "managed service Quote Service");
 

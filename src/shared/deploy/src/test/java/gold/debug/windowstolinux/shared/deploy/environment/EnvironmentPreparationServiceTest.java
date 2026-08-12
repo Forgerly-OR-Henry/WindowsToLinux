@@ -1,19 +1,14 @@
 package gold.debug.windowstolinux.shared.deploy.environment;
 
-import gold.debug.windowstolinux.shared.linux.runtime.HealthCheckResult;
 import gold.debug.windowstolinux.shared.linux.connection.HostKeyDecision;
 import gold.debug.windowstolinux.shared.linux.connection.HostKeyVerifier;
-import gold.debug.windowstolinux.shared.linux.connection.LinuxOperationException;
 import gold.debug.windowstolinux.shared.linux.connection.LinuxGateway;
 import gold.debug.windowstolinux.shared.linux.connection.LinuxRemoteSession;
-import gold.debug.windowstolinux.shared.linux.protocol.ReleaseSnapshot;
-import gold.debug.windowstolinux.shared.linux.build.RemoteBuildResult;
-import gold.debug.windowstolinux.shared.linux.protocol.RemoteStepResult;
+import gold.debug.windowstolinux.shared.linux.runtime.HealthCheckResult;
 import gold.debug.windowstolinux.shared.linux.transfer.RemoteWorkspace;
 import gold.debug.windowstolinux.shared.linux.connection.SshCredential;
 import gold.debug.windowstolinux.shared.linux.connection.SshEndpoint;
 import gold.debug.windowstolinux.shared.linux.transfer.UploadReceipt;
-import gold.debug.windowstolinux.shared.model.deployment.BuildLimits;
 import gold.debug.windowstolinux.shared.model.health.HealthCheck;
 import gold.debug.windowstolinux.shared.model.lifecycle.LifecycleAction;
 import gold.debug.windowstolinux.shared.model.lifecycle.LifecycleObservation;
@@ -118,33 +113,7 @@ class EnvironmentPreparationServiceTest {
         }
 
         @Override
-        public RemoteBuildResult build(RemoteWorkspace workspace, BuildLimits limits) {
-            throw unsupported();
-        }
-
-        @Override
-        public ReleaseSnapshot snapshot(ManagedApplication application) {
-            throw unsupported();
-        }
-
-        @Override
-        public RemoteStepResult publish(ManagedApplication application, RemoteWorkspace workspace, RemoteBuildResult build,
-                                        ReleaseSnapshot snapshot) {
-            throw unsupported();
-        }
-
-        @Override
         public HealthCheckResult checkHealth(ManagedApplication application, HealthCheck healthCheck) {
-            throw unsupported();
-        }
-
-        @Override
-        public RemoteStepResult retainRecentSuccessfulReleases(ManagedApplication application) {
-            throw unsupported();
-        }
-
-        @Override
-        public RemoteStepResult rollback(ManagedApplication application, ReleaseSnapshot snapshot, RemoteBuildResult build) {
             throw unsupported();
         }
 
@@ -169,7 +138,7 @@ class EnvironmentPreparationServiceTest {
 
         private static ServerCapabilities capabilities() {
             return new ServerCapabilities("Ubuntu 24.04.1 LTS", "x86_64", true, true, true, true, true, true, true, true,
-                    10L * 1024 * 1024 * 1024, "capabilities freshly collected");
+                    2, 10L * 1024 * 1024 * 1024, "capabilities freshly collected");
         }
     }
 }

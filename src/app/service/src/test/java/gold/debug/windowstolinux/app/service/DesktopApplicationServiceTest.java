@@ -8,9 +8,13 @@ import gold.debug.windowstolinux.app.service.ai.AiAnalysisOutcome;
 import gold.debug.windowstolinux.app.service.ai.AiProviderProfile;
 import gold.debug.windowstolinux.app.service.lifecycle.LifecycleOutcome;
 import gold.debug.windowstolinux.app.service.server.ServerProfile;
-import gold.debug.windowstolinux.app.service.source.SourcePreparation;
+import gold.debug.windowstolinux.app.service.source.ReviewedSourcePreparation;
 import gold.debug.windowstolinux.app.secret.store.Argon2AesSecretStore;
-import gold.debug.windowstolinux.shared.deploy.plan.DeploymentRequest;
+import gold.debug.windowstolinux.shared.config.definition.ConfigurationScope;
+import gold.debug.windowstolinux.shared.config.definition.ConfigurationValue;
+import gold.debug.windowstolinux.shared.config.revision.ConfigurationEntry;
+import gold.debug.windowstolinux.shared.config.revision.ConfigurationSnapshot;
+import gold.debug.windowstolinux.shared.deploy.plan.ReviewedDeploymentRequest;
 import gold.debug.windowstolinux.shared.deploy.result.LifecycleActionResult;
 import gold.debug.windowstolinux.shared.model.deployment.BuildLimits;
 import gold.debug.windowstolinux.shared.model.security.CredentialStorageMode;
@@ -19,24 +23,21 @@ import gold.debug.windowstolinux.shared.model.lifecycle.LifecycleAction;
 import gold.debug.windowstolinux.shared.model.lifecycle.LifecycleObservation;
 import gold.debug.windowstolinux.shared.model.managed.ManagedApplication;
 import gold.debug.windowstolinux.shared.model.managed.ManagedApplicationRuntimeConfiguration;
-import gold.debug.windowstolinux.shared.model.message.LocalizedMessage;
 import gold.debug.windowstolinux.shared.model.message.LocalizedOperationException;
-import gold.debug.windowstolinux.shared.model.analysis.ProjectAssessment;
+import gold.debug.windowstolinux.shared.model.analysis.DeploymentProjectAssessment;
 import gold.debug.windowstolinux.shared.model.lifecycle.RuntimeState;
 import gold.debug.windowstolinux.shared.model.lifecycle.AutostartState;
 import gold.debug.windowstolinux.shared.model.server.ServerIdentity;
 import gold.debug.windowstolinux.shared.model.archive.SourceArchiveDescriptor;
 import gold.debug.windowstolinux.shared.config.secretref.SecretReference;
-import gold.debug.windowstolinux.shared.model.project.SourceProjectFacts;
+import gold.debug.windowstolinux.shared.model.project.DeploymentBuildTool;
+import gold.debug.windowstolinux.shared.model.project.DeploymentProjectFacts;
+import gold.debug.windowstolinux.shared.model.project.DeploymentProjectType;
+import gold.debug.windowstolinux.shared.model.project.DeploymentRuntimeSpecification;
+import gold.debug.windowstolinux.shared.model.project.SourceRevision;
 import gold.debug.windowstolinux.shared.linux.connection.HostKeyDecision;
-import gold.debug.windowstolinux.shared.linux.connection.LinuxGateway;
-import gold.debug.windowstolinux.shared.linux.connection.LinuxRemoteSession;
-import gold.debug.windowstolinux.shared.linux.transfer.RemoteWorkspace;
-import gold.debug.windowstolinux.shared.linux.transfer.UploadReceipt;
-import gold.debug.windowstolinux.shared.linux.build.RemoteBuildResult;
-import gold.debug.windowstolinux.shared.linux.protocol.ReleaseSnapshot;
-import gold.debug.windowstolinux.shared.linux.protocol.RemoteStepResult;
-import gold.debug.windowstolinux.shared.linux.runtime.HealthCheckResult;
+import gold.debug.windowstolinux.shared.linux.connection.DeploymentLinuxGateway;
+import gold.debug.windowstolinux.shared.linux.connection.DeploymentRemoteSession;
 import gold.debug.windowstolinux.shared.linux.connection.SshCredential;
 import gold.debug.windowstolinux.shared.linux.connection.SshEndpoint;
 import gold.debug.windowstolinux.shared.linux.connection.HostKeyVerifier;
@@ -48,6 +49,7 @@ import java.nio.file.Files;
 import java.net.URI;
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -121,9 +123,10 @@ class DesktopApplicationServiceTest {
 
             assertEquals(java.util.List.of(provider), service.listAiProviderProfiles());
             AiAnalysisOutcome unavailable = service.requestAiExplanationFromProvider(
-                    new SourcePreparation(ProjectAssessment.rejected(java.util.List.of(
+                    new ReviewedSourcePreparation(DeploymentProjectAssessment.rejected(java.util.List.of(
                             new gold.debug.windowstolinux.shared.model.analysis.RejectionReason("TEST_REJECTED",
-                                    LocalizedMessage.of("test.rejected"), "test"))), Optional.empty(), java.util.List.of()),
+                                    gold.debug.windowstolinux.shared.model.message.LocalizedMessage.of("test.rejected"), "test"))),
+                            Optional.empty(), Optional.empty(), java.util.List.of()),
                     "missing", "correct master password".toCharArray(), "en");
             assertEquals("ai.status.providerMissing", unavailable.status().key());
         }
@@ -154,7 +157,8 @@ class DesktopApplicationServiceTest {
         Files.writeString(source.resolve(".env"), "must-not-be-archived");
         Path work = temporaryDirectory.resolve("fixed-data/work");
         try (DesktopPersistence database = DesktopPersistence.open(temporaryDirectory.resolve("data"))) {
-            SourcePreparation preparation = new DesktopApplicationService(database, work, unusedGateway()).prepareSource(source);
+            ReviewedSourcePreparation preparation = new DesktopApplicationService(database, work, unusedGateway())
+                    .prepareReviewedSource(source, DeploymentProjectType.SPRING_BOOT);
             assertTrue(preparation.archive().orElseThrow().localArchive().startsWith(work.toAbsolutePath()));
             assertTrue(preparation.excludedEntries().contains(".env"));
         }
@@ -170,14 +174,11 @@ class DesktopApplicationServiceTest {
             DesktopApplicationService service = new DesktopApplicationService(
                     database, temporaryDirectory.resolve("work"), unusedGateway());
 
-            DeploymentRequest request = service.createDeploymentRequest(
-                    supportedPreparation("demo"), requestedServer, healthCheck(), BuildLimits.defaultNonRoot(), false
-            );
+            ReviewedDeploymentRequest request = createRequest(service, supportedPreparation("demo"), requestedServer,
+                    BuildLimits.defaultNonRoot(), false);
 
-            assertEquals(saved, request.application());
-            assertEquals(saved.ownershipManifestSha256(), request.application().ownershipManifestSha256());
-            assertEquals(saved.systemdUnit(), request.application().systemdUnit());
-            assertEquals(saved.releaseRoot(), request.application().releaseRoot());
+            assertEquals("demo", request.facts().applicationId());
+            assertEquals(saved, database.managedApplications().find("demo").orElseThrow());
         }
     }
 
@@ -191,9 +192,9 @@ class DesktopApplicationServiceTest {
             DesktopApplicationService service = new DesktopApplicationService(
                     database, temporaryDirectory.resolve("work"), unusedGateway());
 
-            LocalizedOperationException exception = assertThrows(LocalizedOperationException.class, () -> service.createDeploymentRequest(
-                    supportedPreparation("demo"), anotherServer, healthCheck(), BuildLimits.defaultNonRoot(), false
-            ));
+            LocalizedOperationException exception = assertThrows(LocalizedOperationException.class, () ->
+                    createRequest(service, supportedPreparation("demo"), anotherServer,
+                            BuildLimits.defaultNonRoot(), false));
 
             assertEquals("deployment.applicationServerConflict", exception.userMessage().key());
             assertEquals(saved, database.managedApplications().find("demo").orElseThrow());
@@ -211,9 +212,9 @@ class DesktopApplicationServiceTest {
             DesktopApplicationService service = new DesktopApplicationService(
                     database, temporaryDirectory.resolve("work"), unusedGateway());
 
-            LocalizedOperationException exception = assertThrows(LocalizedOperationException.class, () -> service.createDeploymentRequest(
-                    supportedPreparation("demo"), server, healthCheck(), BuildLimits.defaultNonRoot(), false
-            ));
+            LocalizedOperationException exception = assertThrows(LocalizedOperationException.class, () ->
+                    createRequest(service, supportedPreparation("demo"), server,
+                            BuildLimits.defaultNonRoot(), false));
 
             assertEquals("deployment.applicationIdentityInvalid", exception.userMessage().key());
             assertEquals(nonCanonical, database.managedApplications().find("demo").orElseThrow());
@@ -229,17 +230,15 @@ class DesktopApplicationServiceTest {
             DesktopApplicationService service = new DesktopApplicationService(
                     database, temporaryDirectory.resolve("work"), unusedGateway());
 
-            assertThrows(IllegalArgumentException.class, () -> service.createDeploymentRequest(
-                    supportedPreparation("demo"), server, healthCheck(), rootLimits, false
-            ));
+            assertThrows(IllegalArgumentException.class, () ->
+                    createRequest(service, supportedPreparation("demo"), server, rootLimits, false));
 
-            DeploymentRequest approved = service.createDeploymentRequest(
-                    supportedPreparation("demo"), server, healthCheck(), rootLimits, true
-            );
+            ReviewedDeploymentRequest approved = createRequest(service, supportedPreparation("demo"), server,
+                    rootLimits, true);
             assertTrue(approved.approval().rootBuildAccepted());
             assertEquals(approved.archive().contentSha256(), approved.approval().sourceSha256());
             assertEquals(server.id(), approved.approval().serverId());
-            assertEquals(approved.application().id(), approved.approval().applicationId());
+            assertEquals(approved.facts().applicationId(), approved.approval().applicationId());
         }
     }
 
@@ -250,7 +249,7 @@ class DesktopApplicationServiceTest {
         );
         char[] masterPassword = "correct master password".toCharArray();
         AtomicInteger connections = new AtomicInteger();
-        LinuxGateway gateway = (endpoint, credential, verifier) -> {
+        DeploymentLinuxGateway gateway = (endpoint, credential, verifier) -> {
             connections.incrementAndGet();
             throw new AssertionError("unconfirmed environment preparation must not connect");
         };
@@ -330,15 +329,26 @@ class DesktopApplicationServiceTest {
         }
     }
 
-    private SourcePreparation supportedPreparation(String applicationId) {
-        SourceProjectFacts facts = new SourceProjectFacts(
-                temporaryDirectory.resolve(applicationId), applicationId, false, true,
-                List.of(LocalizedMessage.of("analysis.observation.mavenDetected"))
-        );
+    private ReviewedSourcePreparation supportedPreparation(String applicationId) {
+        DeploymentProjectFacts facts = new DeploymentProjectFacts(
+                temporaryDirectory.resolve(applicationId), applicationId, DeploymentProjectType.SPRING_BOOT,
+                DeploymentBuildTool.MAVEN, List.of(), List.of(), List.of());
         SourceArchiveDescriptor archive = new SourceArchiveDescriptor(
                 temporaryDirectory.resolve(applicationId + ".tar.gz"), "b".repeat(64), 0, 0
         );
-        return new SourcePreparation(ProjectAssessment.supported(facts), Optional.of(archive), List.of());
+        return new ReviewedSourcePreparation(DeploymentProjectAssessment.ready(facts), Optional.of(archive),
+                Optional.of(new SourceRevision(archive.contentSha256(), Optional.empty(), Map.of())), List.of());
+    }
+
+    private ReviewedDeploymentRequest createRequest(DesktopApplicationService service,
+                                                     ReviewedSourcePreparation preparation, ServerIdentity server,
+                                                     BuildLimits limits, boolean rootBuildConfirmed) throws Exception {
+        return service.createReviewedDeploymentRequest(preparation, server,
+                ConfigurationSnapshot.create("demo", 1, "v1", Instant.now(), List.of(
+                        new ConfigurationEntry("PORT", ConfigurationScope.RUNTIME,
+                                new ConfigurationValue.Number(8080)))), List.of(),
+                new DeploymentRuntimeSpecification.SpringBoot(healthCheck()), Optional.empty(), limits,
+                rootBuildConfirmed, true);
     }
 
     private static ServerIdentity server(String id, String host, String fingerprint) {
@@ -349,89 +359,32 @@ class DesktopApplicationServiceTest {
         return new HealthCheck.Tcp(8080, 60, 1);
     }
 
-    private static LinuxGateway unusedGateway() {
+    private static DeploymentLinuxGateway unusedGateway() {
         return (endpoint, credential, verifier) -> {
             throw new AssertionError("this test must not open SSH");
         };
     }
 
-    private static final class RecordingGateway implements LinuxGateway {
+    private static final class RecordingGateway implements DeploymentLinuxGateway {
         private final AtomicInteger connections = new AtomicInteger();
         private HealthCheck healthCheck;
 
         @Override
-        public LinuxRemoteSession connect(SshEndpoint endpoint, SshCredential credential, HostKeyVerifier hostKeyVerifier) {
+        public DeploymentRemoteSession connect(SshEndpoint endpoint, SshCredential credential,
+                                               HostKeyVerifier hostKeyVerifier) {
             connections.incrementAndGet();
-            return new LinuxRemoteSession() {
-                @Override
-                public gold.debug.windowstolinux.shared.model.server.ServerCapabilities collectCapabilities() {
-                    throw new AssertionError("not used by lifecycle control");
-                }
-
-                @Override
-                public gold.debug.windowstolinux.shared.model.deployment.EnvironmentPreparationResult prepareEnvironment(
-                        gold.debug.windowstolinux.shared.model.deployment.EnvironmentPreparationApproval approval
-                ) {
-                    throw new AssertionError("not used by lifecycle control");
-                }
-
-                @Override
-                public UploadReceipt uploadSource(SourceArchiveDescriptor archive, RemoteWorkspace workspace) {
-                    throw new AssertionError("not used by lifecycle control");
-                }
-
-                @Override
-                public RemoteBuildResult build(RemoteWorkspace workspace, BuildLimits limits) {
-                    throw new AssertionError("not used by lifecycle control");
-                }
-
-                @Override
-                public ReleaseSnapshot snapshot(ManagedApplication application) {
-                    throw new AssertionError("not used by lifecycle control");
-                }
-
-                @Override
-                public RemoteStepResult publish(ManagedApplication application, RemoteWorkspace workspace,
-                                                RemoteBuildResult build, ReleaseSnapshot snapshot) {
-                    throw new AssertionError("not used by lifecycle control");
-                }
-
-                @Override
-                public HealthCheckResult checkHealth(ManagedApplication application, HealthCheck healthCheck) {
-                    throw new AssertionError("not used by lifecycle control");
-                }
-
-                @Override
-                public RemoteStepResult retainRecentSuccessfulReleases(ManagedApplication application) {
-                    throw new AssertionError("not used by lifecycle control");
-                }
-
-                @Override
-                public RemoteStepResult rollback(ManagedApplication application, ReleaseSnapshot snapshot,
-                                                 RemoteBuildResult build) {
-                    throw new AssertionError("not used by lifecycle control");
-                }
-
-                @Override
-                public LifecycleObservation observe(ManagedApplication application) {
-                    return observation(application);
-                }
-
-                @Override
-                public LifecycleObservation executeLifecycle(
-                        ManagedApplication application,
-                        LifecycleAction action,
-                        HealthCheck requestedHealthCheck
-                ) {
-                    healthCheck = requestedHealthCheck;
-                    return observation(application);
-                }
-
-                @Override
-                public void close() {
-                    // No resources are held by the recording session. / 记录会话不持有任何资源。
-                }
-            };
+            return (DeploymentRemoteSession) java.lang.reflect.Proxy.newProxyInstance(
+                    getClass().getClassLoader(), new Class<?>[]{DeploymentRemoteSession.class},
+                    (proxy, method, arguments) -> switch (method.getName()) {
+                        case "observe" -> observation((ManagedApplication) arguments[0]);
+                        case "executeLifecycle" -> {
+                            healthCheck = (HealthCheck) arguments[2];
+                            yield observation((ManagedApplication) arguments[0]);
+                        }
+                        case "close" -> null;
+                        case "toString" -> "recording lifecycle session";
+                        default -> throw new AssertionError("not used by lifecycle control: " + method.getName());
+                    });
         }
 
         private static LifecycleObservation observation(ManagedApplication application) {

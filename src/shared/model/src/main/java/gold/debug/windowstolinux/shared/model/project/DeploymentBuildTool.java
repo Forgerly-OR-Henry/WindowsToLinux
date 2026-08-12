@@ -8,6 +8,10 @@ package gold.debug.windowstolinux.shared.model.project;
 public enum DeploymentBuildTool {
     /** Gradle Wrapper. / Gradle Wrapper。 */
     GRADLE_WRAPPER,
+    /** Maven Wrapper. / Maven Wrapper。 */
+    MAVEN_WRAPPER,
+    /** Maven installed on the target host. / 目标机上安装的 Maven。 */
+    MAVEN,
     /** The Java launcher for a previously produced JAR. / 启动已生成 JAR 的 Java 启动器。 */
     JAVA,
     /** npm with a package lock. / 搭配 package lock 的 npm。 */

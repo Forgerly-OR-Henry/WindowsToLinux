@@ -1,6 +1,7 @@
 package gold.debug.windowstolinux.shared.linux.sshd.protocol;
 
 import gold.debug.windowstolinux.shared.model.project.DeploymentRuntimeSpecification;
+import gold.debug.windowstolinux.shared.model.project.DeploymentProjectFacts;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -15,10 +16,11 @@ final class DeploymentRuntimeArguments {
     private DeploymentRuntimeArguments() {
     }
 
-    static List<String> from(DeploymentRuntimeSpecification runtime) {
+    static List<String> from(DeploymentProjectFacts facts, DeploymentRuntimeSpecification runtime) {
+        facts = Objects.requireNonNull(facts, "facts");
         runtime = Objects.requireNonNull(runtime, "runtime");
         return switch (runtime) {
-            case DeploymentRuntimeSpecification.GradleSpringBoot ignored -> List.of("gradle");
+            case DeploymentRuntimeSpecification.SpringBoot ignored -> List.of("springboot", facts.buildTool().name());
             case DeploymentRuntimeSpecification.JavaJar javaJar -> javaArguments(javaJar);
             case DeploymentRuntimeSpecification.NodeService node -> List.of("node", Integer.toString(node.nodeMajorVersion()));
             case DeploymentRuntimeSpecification.PythonService python -> List.of("python", python.pythonVersion(), python.entrypoint());

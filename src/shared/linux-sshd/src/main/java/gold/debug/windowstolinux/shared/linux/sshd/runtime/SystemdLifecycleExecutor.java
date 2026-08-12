@@ -2,7 +2,7 @@ package gold.debug.windowstolinux.shared.linux.sshd.runtime;
 
 import gold.debug.windowstolinux.shared.linux.connection.LinuxOperationException;
 import gold.debug.windowstolinux.shared.linux.sshd.connection.SshCommandExecutor;
-import gold.debug.windowstolinux.shared.linux.sshd.protocol.ManagedReleaseProtocolExecutor;
+import gold.debug.windowstolinux.shared.linux.sshd.protocol.ManagedRuntimeController;
 import gold.debug.windowstolinux.shared.model.health.HealthCheck;
 import gold.debug.windowstolinux.shared.model.lifecycle.AutostartState;
 import gold.debug.windowstolinux.shared.model.lifecycle.LifecycleAction;
@@ -16,16 +16,16 @@ import java.util.Objects;
 /** Executes lifecycle changes only after ownership observation and verifies their postconditions. / 仅在归属观察后执行生命周期变更并验证其后置条件。 */
 public final class SystemdLifecycleExecutor {
     private final SshCommandExecutor commands;
-    private final ManagedReleaseProtocolExecutor protocol;
+    private final ManagedRuntimeController runtimes;
     private final SystemdOwnershipObserver observer;
     private final SystemdHealthChecker health;
     private final String username;
 
     /** Creates a lifecycle executor. / 创建生命周期执行器。 */
-    public SystemdLifecycleExecutor(SshCommandExecutor commands, ManagedReleaseProtocolExecutor protocol,
+    public SystemdLifecycleExecutor(SshCommandExecutor commands, ManagedRuntimeController runtimes,
                                     SystemdOwnershipObserver observer, SystemdHealthChecker health, String username) {
         this.commands = Objects.requireNonNull(commands, "commands");
-        this.protocol = Objects.requireNonNull(protocol, "protocol");
+        this.runtimes = Objects.requireNonNull(runtimes, "runtimes");
         this.observer = Objects.requireNonNull(observer, "observer");
         this.health = Objects.requireNonNull(health, "health");
         this.username = Objects.requireNonNull(username, "username");
@@ -54,9 +54,7 @@ public final class SystemdLifecycleExecutor {
             case DISABLE_AUTOSTART -> "disable";
             case REFRESH_STATUS -> null;
         };
-        String command = actionVerb == null ? "true" : protocol.command(
-                "lifecycle", application.id(), actionVerb, application.ownershipManifestSha256());
-        if (!commands.exec(command, Duration.ofSeconds(60), false).succeeded()) {
+        if (actionVerb != null && !runtimes.lifecycle(application, actionVerb).succeeded()) {
             throw LinuxOperationException.localized("linux.error.lifecycleActionFailed", "systemd lifecycle operation failed");
         }
         if ((action == LifecycleAction.START || action == LifecycleAction.RESTART)

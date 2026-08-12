@@ -4,7 +4,6 @@ import gold.debug.windowstolinux.shared.linux.connection.HostKeyDecision;
 import gold.debug.windowstolinux.shared.linux.connection.LinuxOperationException;
 import gold.debug.windowstolinux.shared.linux.connection.SshCredential;
 import gold.debug.windowstolinux.shared.linux.connection.SshEndpoint;
-import gold.debug.windowstolinux.shared.linux.sshd.build.MavenBuildSupport;
 import gold.debug.windowstolinux.shared.linux.sshd.distro.UbuntuEnvironmentPreparation;
 import gold.debug.windowstolinux.shared.linux.sshd.distro.DnfEnvironmentPreparation;
 import gold.debug.windowstolinux.shared.linux.sshd.protocol.ManagedHelperBundle;
@@ -33,23 +32,6 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class SshdLinuxGatewayTest {
     @Test
-    void acceptsSupportedSpringBoot2And3JarLaunchers() {
-        assertTrue(MavenBuildSupport.isSupportedSpringBootLauncher(
-                "org.springframework.boot.loader.JarLauncher"));
-        assertTrue(MavenBuildSupport.isSupportedSpringBootLauncher(
-                "org.springframework.boot.loader.launch.JarLauncher"));
-        assertTrue(MavenBuildSupport.isSupportedSpringBootLauncher(
-                "org.springframework.boot.loader.PropertiesLauncher"));
-    }
-
-    @Test
-    void rejectsNonExecutableAndWarLaunchers() {
-        assertFalse(MavenBuildSupport.isSupportedSpringBootLauncher(null));
-        assertFalse(MavenBuildSupport.isSupportedSpringBootLauncher("org.springframework.boot.loader.WarLauncher"));
-        assertFalse(MavenBuildSupport.isSupportedSpringBootLauncher("example.Main"));
-    }
-
-    @Test
     void rendersTheCanonicalUnitWithExactlyOneTrailingNewline() {
         ManagedApplication application = ManagedApplication.forManaged("managed-hello",
                 new ServerIdentity("ubuntu-managed", "192.0.2.1", 22, "SHA256:abc123456789"),
@@ -76,22 +58,6 @@ class SshdLinuxGatewayTest {
                 [Install]
                 WantedBy=multi-user.target
                 """, unit);
-    }
-
-    @Test
-    void rendersTarGzipExtractionWithDigestPathAndEntryTypeGuardsWithoutUnzip() {
-        RemoteWorkspace workspace = new RemoteWorkspace("demo", "a".repeat(64));
-
-        String script = MavenBuildSupport.renderSourceBuildScript(workspace, BuildLimits.defaultNonRoot());
-
-        assertTrue(script.contains("source.tar.gz"));
-        assertTrue(script.contains("sha256sum \"$archive\""));
-        assertTrue(script.contains("tar -tzf \"$archive\""));
-        assertTrue(script.contains("uniq -d"));
-        assertTrue(script.contains("tar -tvzf \"$archive\""));
-        assertTrue(script.contains("tar --extract --gzip"));
-        assertTrue(script.contains("test -z \"$(find \"$source\" -xdev -type l -print -quit)\""));
-        assertFalse(script.contains("unzip"));
     }
 
     @Test
@@ -164,7 +130,8 @@ class SshdLinuxGatewayTest {
         String helper = ManagedHelperBundle.renderScript();
 
         assertTrue(helper.contains("candidate-create) create_candidate \"$@\""));
-        assertTrue(helper.contains("rollback-previous) rollback_previous \"$@\""));
+        assertTrue(helper.contains("rollback-deployment) rollback_deployment \"$@\""));
+        assertFalse(helper.contains("rollback-previous)"));
         assertTrue(helper.contains("inspect-runtime) inspect_managed_runtime \"$@\""));
         assertTrue(helper.contains("case \"$action\" in\n    start|stop|restart|enable|disable)"));
         assertTrue(helper.contains("require_candidate \"$app\" \"$candidate_id\""));
@@ -215,7 +182,8 @@ class SshdLinuxGatewayTest {
         assertFalse(script.contains("command -v unzip"));
         assertTrue(script.contains("/usr/bin/install -o root -g root -m 440 \"$tmp\" '/etc/sudoers.d/windowstolinux-managed'"));
         assertTrue(script.contains("/usr/bin/install -o root -g root -m 755 \"$helper_tmp\" '/usr/local/lib/windowstolinux/managed-helper'"));
-        assertTrue(script.contains("/usr/bin/sudo -n '/usr/local/lib/windowstolinux/managed-helper' probe"));
+        assertTrue(script.contains("helper_probe=\"$(\"/usr/bin/sudo\" -n '/usr/local/lib/windowstolinux/managed-helper' probe)\""));
+        assertTrue(script.contains("grep -qx 'PROTOCOL=2'"));
         assertFalse(script.contains("sudo -S"));
         assertFalse(script.contains("/var/lib/windowstolinux/work"));
     }
@@ -237,6 +205,6 @@ class SshdLinuxGatewayTest {
 
     private static ServerCapabilities capabilities(boolean tarAvailable) {
         return new ServerCapabilities("Ubuntu 24.04.1 LTS", "x86_64", true, true, true, tarAvailable,
-                true, true, true, true, 1024L * 1024 * 1024, "test capabilities");
+                true, true, true, true, 2, 1024L * 1024 * 1024, "test capabilities");
     }
 }

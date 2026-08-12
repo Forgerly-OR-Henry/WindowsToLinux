@@ -1,7 +1,7 @@
 package gold.debug.windowstolinux.app.service.source;
 
 import gold.debug.windowstolinux.app.windows.workspace.WindowsSourceWorkspace;
-import gold.debug.windowstolinux.shared.analyze.core.ManagedSpringBootAnalysisCoordinator;
+import gold.debug.windowstolinux.shared.analyze.core.DeploymentAnalysisCoordinator;
 import gold.debug.windowstolinux.shared.git.reference.GitReference;
 import gold.debug.windowstolinux.shared.git.remote.GitRemote;
 import gold.debug.windowstolinux.shared.git.snapshot.GitSourceRequest;
@@ -39,10 +39,10 @@ class SourcePreparationUseCaseTest {
 
         GitSourceRequest request = new GitSourceRequest(new GitRemote(repository.toUri()), new GitReference.Commit(commit),
                 Set.of(), 64L * 1024 * 1024, true);
-        SourcePreparationUseCase useCase = new SourcePreparationUseCase(new ManagedSpringBootAnalysisCoordinator(),
+        SourcePreparationUseCase useCase = new SourcePreparationUseCase(new DeploymentAnalysisCoordinator(),
                 new WindowsSourceWorkspace(temporaryDirectory.resolve("workspace")));
 
-        ReviewedSourcePreparation prepared = useCase.prepareReviewedGit(request, DeploymentProjectType.NODE_SERVICE);
+        ReviewedSourcePreparation prepared = useCase.prepareGit(request, DeploymentProjectType.NODE_SERVICE);
 
         assertEquals(commit, prepared.sourceRevision().orElseThrow().commit().orElseThrow());
         assertEquals(repository.toUri(), prepared.sourceRevision().orElseThrow().remote().orElseThrow());

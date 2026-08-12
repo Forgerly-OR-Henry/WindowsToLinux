@@ -18,8 +18,8 @@ class ManagedRemoteContractTest {
                 .collect(Collectors.toSet());
 
         assertEquals(Set.of(
-                "collectCapabilities", "prepareEnvironment", "uploadSource", "build", "cleanupCandidate", "snapshot", "publish", "checkHealth",
-                "retainRecentSuccessfulReleases", "rollback", "observe", "executeLifecycle", "close"
+                "collectCapabilities", "prepareEnvironment", "uploadSource", "cleanupCandidate", "checkHealth",
+                "observe", "executeLifecycle", "close"
         ), methods);
         for (Method method : LinuxRemoteSession.class.getMethods()) {
             assertFalse(java.util.Arrays.stream(method.getParameterTypes()).anyMatch(String.class::equals),
@@ -28,5 +28,23 @@ class ManagedRemoteContractTest {
         assertTrue(java.util.Arrays.stream(LinuxGateway.class.getDeclaredMethods())
                 .allMatch(method -> method.getName().equals("connect")),
                 "gateway must not publish arbitrary SSH, SFTP or systemd entrypoints");
+
+        Set<String> deploymentMethods = java.util.Arrays.stream(DeploymentRemoteSession.class.getMethods())
+                .map(Method::getName)
+                .collect(Collectors.toSet());
+        assertEquals(Set.of(
+                "collectCapabilities", "prepareEnvironment", "uploadSource", "cleanupCandidate", "checkHealth",
+                "observe", "executeLifecycle", "close", "collectDeploymentCapabilities", "buildDeployment",
+                "stageDeploymentInputs", "snapshotDeployment", "publishDeployment", "rollbackDeployment",
+                "checkDeploymentHealth", "observeDeployment", "executeDeploymentLifecycle",
+                "retainRecentSuccessfulReleases"
+        ), deploymentMethods);
+        assertFalse(deploymentMethods.contains("build"));
+        assertFalse(deploymentMethods.contains("snapshot"));
+        assertFalse(deploymentMethods.contains("publish"));
+        assertFalse(deploymentMethods.contains("rollback"));
+        assertTrue(java.util.Arrays.stream(DeploymentLinuxGateway.class.getDeclaredMethods())
+                        .allMatch(method -> method.getName().equals("connect")),
+                "typed gateway must expose only its covariant typed connection");
     }
 }

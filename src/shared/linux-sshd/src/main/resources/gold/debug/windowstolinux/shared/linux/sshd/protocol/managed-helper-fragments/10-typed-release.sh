@@ -8,6 +8,7 @@ seal_deployment_tree() {
   [ "$#" -ge 1 ] || reject runtime-arguments
   local kind="$1"
   shift
+  [ "$kind" != gradle ] || reject legacy-gradle-write
   local candidate mutable source artifact
   candidate="$(candidate_root "$candidate_id")"
   mutable="$candidate/mutable"
@@ -24,9 +25,21 @@ seal_deployment_tree() {
   chown -R root:root -- "$release/source"
   [ -z "$(find -P "$release/source" -xdev -type l -print -quit)" ] || reject release-symlink
   case "$kind" in
-    gradle)
-      mapfile -d '' -t artifacts < <(find -P "$release/source/build/libs" -maxdepth 1 -type f -name '*.jar' ! -name 'original-*.jar' -print0 | LC_ALL=C sort -z)
+    springboot)
+      [ "$#" -eq 1 ] || reject runtime-arguments
+      local artifact_root manifest
+      case "$1" in
+        GRADLE_WRAPPER) artifact_root="$release/source/build/libs" ;;
+        MAVEN_WRAPPER|MAVEN) artifact_root="$release/source/target" ;;
+        *) reject springboot-build-tool ;;
+      esac
+      mapfile -d '' -t artifacts < <(find -P "$artifact_root" -maxdepth 1 -type f -name '*.jar' ! -name '*-plain.jar' ! -name '*-sources.jar' ! -name '*-javadoc.jar' -print0 | LC_ALL=C sort -z)
       [ "${#artifacts[@]}" -eq 1 ] || reject artifact-count
+      manifest="$(mktemp -d "$mutable/.manifest.XXXXXX")"
+      (cd "$manifest" && jar xf "${artifacts[0]}" META-INF/MANIFEST.MF)
+      grep -Eq '^Main-Class: org\.springframework\.boot\.loader\.(launch\.)?JarLauncher\r?$' "$manifest/META-INF/MANIFEST.MF" \
+        || reject springboot-launcher
+      rm -rf --one-file-system -- "$manifest"
       install -o root -g root -m 555 -- "${artifacts[0]}" "$release/app.jar"
       ;;
     java)
@@ -58,7 +71,7 @@ publish_deployment() {
   initialise_controlled_roots
   assert_application_root_or_absent "$app"
   render_deployment_unit "$app" "$@" >/dev/null
-  assert_deployment_current_or_empty "$app" "$manifest"
+  assert_deployment_or_ordinary_current_or_empty "$app" "$manifest"
   local root releases release unit tmp
   root="$(app_root "$app")"; releases="$root/releases"; release="$releases/$release_digest"; unit="$(unit_path "$app")"
   install -d -o root -g root -m 755 -- "$root" "$releases"

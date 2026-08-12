@@ -18,8 +18,9 @@ public final class ReviewedReleaseIdentity {
     public static String from(ReviewedDeploymentRequest request) {
         try {
             MessageDigest digest = MessageDigest.getInstance("SHA-256");
-            update(digest, "reviewed-release-v1");
+            update(digest, "reviewed-release-v2");
             update(digest, request.sourceRevision().sourceSha256());
+            update(digest, request.facts().buildTool().name());
             update(digest, request.configuration().sha256());
             request.secretReferences().stream()
                     .sorted(Comparator.comparing(SecretReference::identifier).thenComparingLong(SecretReference::revision))
@@ -37,7 +38,7 @@ public final class ReviewedReleaseIdentity {
     private static void runtime(MessageDigest digest, DeploymentRuntimeSpecification runtime) {
         update(digest, runtime.projectType().name());
         switch (runtime) {
-            case DeploymentRuntimeSpecification.GradleSpringBoot ignored -> { }
+            case DeploymentRuntimeSpecification.SpringBoot ignored -> { }
             case DeploymentRuntimeSpecification.JavaJar javaJar -> {
                 update(digest, javaJar.jarRelativePath());
                 update(digest, javaJar.mainClass());

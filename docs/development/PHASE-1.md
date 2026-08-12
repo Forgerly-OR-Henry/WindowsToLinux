@@ -4,9 +4,9 @@
 
 - 阶段基线版本：`2.0.6-phase1-complete`
 - 文档结构版本：`2.0.6-phase1-complete`
-- 文档状态：**一期桌面端实现、完整本地回归和 Ubuntu 24.04 裸机环境准备/部署矩阵均已真实验收完成**
-- 当前实现：Windows Swing 最小流程、固定 data 工作区内的静态分析与安全 `tar.gz` 归档、主密码/Windows Credential Manager、SQLite 历史、SSH/SFTP 受控适配、产品级环境准备、资源受限目标机构建、systemd 发布/回滚及受管生命周期均已实现并完成真实验收
-- 更新日期：2026-08-10
+- 文档状态：**一期迁移前链路的 Ubuntu 24.04 验收作为历史证据保留；统一后的 Spring Boot Reviewed/helper v2 链路为 `RUNTIME-PENDING`**
+- 当前实现：一期能力已迁移到只接受类型化事实、Reviewed 来源和 Reviewed 请求的统一链路；Maven Wrapper、系统 Maven 与 Gradle Wrapper 由构建工具字段区分，本轮未执行真实 Ubuntu 部署
+- 更新日期：2026-08-13
 - 上级文档：[开发总纲](../DEVELOPMENT.md)
 
 ## 文档导航
@@ -18,6 +18,8 @@
 - [五期](PHASE-5.md)
 
 ## 实施状态（2026-08-10）
+
+> 以下实机条目记录迁移前协议在 2026-08-10 的真实结果，不是统一 Spring Boot Reviewed/helper v2 链路的运行证明。新链路只完成本地实现与自动化验证，实机状态为 `RUNTIME-PENDING`。
 
 - 已在 JDK 21 下通过完整 Maven reactor `verify`，并通过源码分析、固定 data 工作区归档、部署编排、生命周期、SQLite、凭据和桌面服务的自动化测试。
 - 已由一期程序在新装 Ubuntu 24.04 x86-64 上记录裸机基线（Java 21、Maven、sudo 均缺失），随后通过显式确认的产品环境准备入口安装并复核 OpenJDK 21、Maven、curl、sudo、tar/gzip 与受控辅助程序；第二次准备也完成幂等复核。环境准备不上传、构建或发布用户项目。
@@ -203,6 +205,7 @@
 
 | 版本 | 日期 | 说明 |
 | --- | --- | --- |
+| 2.0.7-spring-boot-reviewed-migration | 2026-08-13 | 将一期 Maven 验收能力迁入统一 Reviewed API，并保留原实机证据的历史属性；新 helper v2 链路未连接目标机，标记 `RUNTIME-PENDING`。 |
 | 2.0.6-phase1-complete | 2026-08-10 | 在新装 Ubuntu 24.04 上由一期产品完成环境准备、复杂 Spring Boot 和 Maven Wrapper 发布；真实回滚、断连、启动/TCP、资源限制、归属、主机信任、生命周期及业务 URL 交付矩阵完成。 |
 | 2.0.5-phase1-runtime-partial | 2026-08-10 | 记录一期程序在 Ubuntu 24.04 的真实部署、失败恢复、安全与生命周期证据；复杂 Spring Boot 与标准 Maven Wrapper 成功路径因目标机 DNS 无法访问 Maven Central 而保留为 RUNTIME-PENDING。 |
 | 2.0.4-phase1-dependency-security-pending | 2026-08-08 | 记录 Vite/Vitest 开发依赖漏洞及修复下载超时；未把依赖安全或真实 Ubuntu 验收标记完成。 |

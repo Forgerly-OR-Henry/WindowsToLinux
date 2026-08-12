@@ -2,11 +2,11 @@
 
 ## 文档信息
 
-- 阶段基线版本：`2.6.0-reviewed-runtime-acceptance`
+- 阶段基线版本：`2.7.0-spring-boot-reviewed-convergence`
 - 文档结构版本：`2.0.0-roadmap-rebaseline`
-- 文档状态：**本地实现与自动化验证已完成；Ubuntu 24.04 x86-64 的六类项目实机验收已完成，其余主机矩阵待执行**
-- 当前实现：本地目录与无凭据网络 Git 来源均在固定归档摘要和来源身份后进入同一类型化分析/计划路径；Java、Node.js/JavaScript/TypeScript 与 Python 基础语言事实，以及唯一、受支持且有证据的版本、入口、产物目录、端口或卷建议均可审阅；分析、页面、持久化、Git、六类构建、systemd 和 helper 已按稳定职责拆分；Ubuntu 24.04 x86-64 已获得产品入口实机证据，Podman、Ubuntu 22.04 与 CentOS Stream 9/10 仍为 `RUNTIME-PENDING`
-- 更新日期：2026-08-12
+- 文档状态：**统一 Spring Boot Reviewed/helper v2 链路已完成本地实现；迁移前 Ubuntu 证据保留，新链路及其余主机矩阵待执行**
+- 当前实现：本地目录与无凭据网络 Git 来源均进入唯一 Reviewed 分析/计划路径；Spring Boot 由一个项目类型和三种固定构建工具入口表达，发布身份与 SQLite v5 已收敛；迁移前 Ubuntu 24.04 x86-64 证据不外推到新协议，新链路、Podman、Ubuntu 22.04 与 CentOS Stream 9/10 均为 `RUNTIME-PENDING`
+- 更新日期：2026-08-13
 - 上级文档：[开发总纲](../DEVELOPMENT.md)
 
 ## 文档导航
@@ -23,12 +23,12 @@
 
 ### 1.1 当前交付状态
 
-- 已完成本地实现与负向测试：Git 分支/Tag 固定 Commit、禁用 Hook、拒绝未经支持的 Submodule/LFS 和 URL 凭据；桌面端可选择本地目录或无凭据网络 Git 来源，Git 来源的 URI、Commit 和归档摘要会绑定进发布请求；六种类型的有界静态识别、冲突/缺失输入与确定性计划，以及唯一且受支持的 Java/Node/Python/静态/容器运行时建议；桌面端只在源码分析后回填这些建议，允许人工覆核和修改，填写受限结构化运行时/非秘密配置/秘密修订引用，审阅确定性计划并以已保存凭据提交；SQLite v4 不可变普通配置及秘密修订/发布绑定；Linux 事实采集与 Ubuntu、CentOS Stream、旧 CentOS的保守矩阵；Ubuntu 22.04/24.04 与 CentOS Stream 9/10 的固定环境准备脚本；Docker/Podman 不可混淆的自启契约；命名 Provider 与仅含分析/计划工具的可选 Agent 表面。
+- 已完成本地实现与负向测试：Git 分支/Tag 固定 Commit、禁用 Hook、拒绝未经支持的 Submodule/LFS 和 URL 凭据；桌面端可选择本地目录或无凭据网络 Git 来源，Git 来源的 URI、Commit 和归档摘要会绑定进发布请求；六种类型的有界静态识别、冲突/缺失输入与确定性计划，以及唯一且受支持的 Java/Node/Python/静态/容器运行时建议；桌面端只在源码分析后回填这些建议，允许人工覆核和修改，填写受限结构化运行时/非秘密配置/秘密修订引用，审阅确定性计划并以已保存凭据提交；SQLite v5 保存不可变普通配置、秘密修订绑定和发布身份摘要，并无损迁移 v4 旧值；Linux 事实采集与 Ubuntu、CentOS Stream、旧 CentOS 的保守矩阵；Ubuntu 22.04/24.04 与 CentOS Stream 9/10 的固定环境准备脚本；Docker/Podman 不可混淆的自启契约；命名 Provider 与仅含分析/计划工具的可选 Agent 表面。
 - 六种项目类型均已有受控目标机构建、发布、快照、回滚、健康和生命周期代码：Node 的 npm/pnpm/yarn 与锁文件保持一致，Python 仅在候选目录创建虚拟环境，静态站点仅暴露已审阅的产物目录，容器使用受管镜像标签及 Docker restart policy 或 Podman Quadlet。发布快照保存旧的运行参数与自启状态，回滚不得复用新版本配置。
-- 基础语言事实已进入 `SourceProjectFacts` 与 `DeploymentProjectFacts`：只从有界源码路径、JAR Manifest、`package.json`/`tsconfig`、`pyproject.toml` 和扩展名收集确定性证据，不读取任意二进制、不执行源码、不猜测主要语言。JavaScript 与 TypeScript 可同时显示，但不会自动拆成多组件，也不会替代用户显式项目类型选择。
+- 基础语言事实已统一进入 `DeploymentProjectFacts`：只从有界源码路径、JAR Manifest、`package.json`/`tsconfig`、`pyproject.toml` 和扩展名收集确定性证据，不读取任意二进制、不执行源码、不猜测主要语言。JavaScript 与 TypeScript 可同时显示，但不会自动拆成多组件，也不会替代用户显式项目类型选择。
 - Node 构建型静态站点不再具有隐藏默认版本：只有精确 `engines.node` 才能回填主版本，范围或缺失值必须由用户填写；纯静态站点不要求且不得携带 Node 主版本。
 - 2026-08-12 使用 JDK 21 执行 `mvn.cmd -B -ntp -o verify`，28 个 Maven 模块全部成功；本次生成的 44 份 Surefire 报告共 160 项测试，0 失败、0 错误、2 项因当前平台能力跳过。前端另行完成离线 `npm.cmd ci`、类型检查、Vitest（1 项）、生产构建和项目本地 Chromium Playwright（1 项）。`git diff --check`、生产源码期数命名与旧大类扫描、无隐藏 Node 20 默认值边界、435 个中英文消息键及非空值边界、包结构与 `File.md` 一致性、helper 固定 SHA-256 均通过。
-- 实机验收使用新装 Ubuntu 24.04 x86-64，并严格从 `DesktopApplicationService` 与 Apache SSHD 网关进入：本地普通 JAR、Node.js、Python、纯静态站点、Dockerfile 容器，以及公开 Git 仓库 `mikechao/simple-spring-boot-app` 的固定 Commit `3fb7c8681eaf894bc29759e5317e5582bd944c54`（Gradle Spring Boot）均完成分析、归档、目标机构建、发布、健康和远端观测。Node.js 与 Docker 还完成完整生命周期、桌面持久化重开和失败更新回滚；Node.js 实际验证普通配置与秘密修订绑定且证据不泄露秘密原文。
+- 迁移前实机验收使用新装 Ubuntu 24.04 x86-64，并严格从当时的 `DesktopApplicationService` 与 Apache SSHD 网关进入：本地普通 JAR、Node.js、Python、纯静态站点、Dockerfile 容器，以及公开 Git 固定 Commit 的 Gradle Spring Boot 均完成分析、归档、目标机构建、发布、健康和远端观测。该证据不证明本次统一后的 Spring Boot Reviewed/helper v2 链路；新链路实机状态为 `RUNTIME-PENDING`。
 - 未执行 Podman、Ubuntu 22.04、CentOS Stream 9/10 或私有 Git 凭据验收；这些组合继续标记 `RUNTIME-PENDING`，不能从 Ubuntu 24.04/Docker 证据外推。
 
 ## 2. 支持矩阵
@@ -37,7 +37,7 @@
 
 | 类型 | 二期最小正式支持条件 |
 | --- | --- |
-| Gradle Spring Boot | Wrapper/Gradle 版本明确，产物唯一，可执行 JAR 通过完整事务 |
+| Spring Boot | Maven 与 Gradle 不得并存；Gradle 使用完整 Wrapper，Maven 使用完整 Wrapper 或目标机系统 Maven；只接受唯一且具有 Spring Boot 2/3 Launcher 的可执行 JAR |
 | 普通 Java JAR | Java 版本、主类、启动参数和健康策略都可确定 |
 | Node.js | 锁文件、包管理器、构建/启动脚本和监听端口明确 |
 | Python | Python 版本、锁定依赖、入口、虚拟环境和健康策略明确 |
@@ -178,7 +178,7 @@ Git 输入包括仓库地址、凭据引用、分支/Tag/Commit、Submodule 和 
 - [x] 六个项目类型都有类型化静态分析、确定性计划、受控构建、快照、发布、健康、失败恢复和生命周期契约；桌面端可选择类型、提交受限运行时定义和非秘密配置，并先展示确定性计划；六种类型的本地事务、脚本/参数、UI 状态和消息映射测试已通过。
 - [x] Java、Node.js/JavaScript/TypeScript、Python 基础语言事实进入源码与部署模型，并可在中英文桌面摘要中显示；混合 JavaScript/TypeScript 不会升级为多组件分析。
 - [x] Node 构建型静态站点没有默认版本：精确版本可推导，范围或缺失版本要求人工填写，纯静态站点不要求 Node。
-- [x] Gradle Spring Boot、普通 JAR、Node、Python、静态站点和 Dockerfile 容器已在 Ubuntu 24.04 x86-64 由产品入口完成目标机端到端验收。
+- [~] 迁移前 Gradle Spring Boot、普通 JAR、Node、Python、静态站点和 Dockerfile 容器已在 Ubuntu 24.04 x86-64 由产品入口完成目标机端到端验收；统一 Spring Boot Reviewed/helper v2 链路仍为 `RUNTIME-PENDING`。
 - [~] Docker restart policy 已完成发布、回滚、自启与桌面持久化重开后的生命周期验收；Podman Quadlet 仍为 `RUNTIME-PENDING`。
 - [x] 容器规格没有 privileged、Docker socket、host PID/IPC 或任意挂载字段，Docker 计划要求显式守护进程风险确认。
 - [x] 有界源码检查会拒绝 schema 脚本、迁移目录和 Flyway、Liquibase、Alembic、Prisma、Knex 等自动数据库变更信号；不可逆数据格式变更仍明确指向四期。
@@ -191,13 +191,14 @@ Git 输入包括仓库地址、凭据引用、分支/Tag/Commit、Submodule 和 
 
 ### 12.4 AI 与架构
 
-- [x] 命名 Provider 只按指定标识调用，缺失时不回退；API Key 不可回读；传统及类型化分析都只发送脱敏结构化事实；Agent 工具面只含有界分析和计划，未含 Shell/SSH/凭据读取。
+- [x] 命名 Provider 只按指定标识调用，缺失时不回退；API Key 不可回读；AI 只接受 `DeploymentProjectFacts` 并发送脱敏结构化事实；Agent 工具面只含有界分析和计划，未含 Shell/SSH/凭据读取。
 - [x] 所有新增代码位于既有 Maven 叶子模块与 `File.md` 规定的包结构内，未新增模块或循环依赖。
 
 ## 13. 版本记录
 
 | 版本 | 日期 | 说明 |
 | --- | --- | --- |
+| 2.7.0-spring-boot-reviewed-convergence | 2026-08-13 | 将 Maven/Gradle Spring Boot 统一为一个 Reviewed 项目类型和三个固定构建入口，接入 helper v2、发布身份 v2 与 SQLite v5；迁移前实机证据保留但不外推，新链路为 `RUNTIME-PENDING`。 |
 | 2.6.0-reviewed-runtime-acceptance | 2026-08-12 | 完成从用户选定本地/Git 源码、基础语言事实、审阅计划、不可变配置/秘密输入到完整部署的职责闭环；Ubuntu 24.04 x86-64 已实机验证六类项目、公开 Git 固定 Commit、代表性生命周期和失败回滚，未验收矩阵保持 `RUNTIME-PENDING`。 |
 | 2.5.0-responsibility-boundaries | 2026-08-12 | 补齐 Java、Node.js/JavaScript/TypeScript、Python 基础语言事实和中英文摘要；取消构建型静态站点的 Node 默认版本；按职责拆分分析、桌面页面、SQLite 仓库、Git 快照、六类构建、systemd 与 helper，并增加结构门禁。真实目标机验收仍为 `RUNTIME-PENDING`。 |
 | 2.4.0-reviewed-source-inference | 2026-08-12 | 将无凭据网络 Git 来源接入桌面至发布请求的相同审阅链路，并用 `SourceRevision` 绑定固定 Commit、来源和归档摘要；补齐可审阅的源码运行时建议和桌面回填，去除 Node、Python、Java、静态站点、容器端口及配置表单中的无依据默认值；秘密修订引用不再固定为空。真实目标机验收仍为 `RUNTIME-PENDING`。 |

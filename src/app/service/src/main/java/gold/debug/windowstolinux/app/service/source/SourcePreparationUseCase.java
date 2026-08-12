@@ -2,7 +2,6 @@ package gold.debug.windowstolinux.app.service.source;
 
 import gold.debug.windowstolinux.app.windows.workspace.PreparedSourceArchive;
 import gold.debug.windowstolinux.app.windows.workspace.WindowsSourceWorkspace;
-import gold.debug.windowstolinux.shared.analyze.core.ManagedSpringBootAnalysisCoordinator;
 import gold.debug.windowstolinux.shared.analyze.core.DeploymentAnalysisCoordinator;
 import gold.debug.windowstolinux.shared.git.snapshot.GitSnapshot;
 import gold.debug.windowstolinux.shared.git.snapshot.GitSnapshotException;
@@ -12,8 +11,6 @@ import gold.debug.windowstolinux.shared.model.analysis.DeploymentProjectAssessme
 import gold.debug.windowstolinux.shared.model.analysis.DeploymentAdmission;
 import gold.debug.windowstolinux.shared.model.project.DeploymentProjectType;
 import gold.debug.windowstolinux.shared.model.project.SourceRevision;
-import gold.debug.windowstolinux.shared.model.analysis.ProjectAssessment;
-import gold.debug.windowstolinux.shared.model.analysis.SupportDecision;
 
 import java.io.IOException;
 import java.nio.file.Path;
@@ -27,8 +24,7 @@ import java.util.Optional;
  * <p>提供 {@code SourcePreparationUseCase} 实现。
  */
 public final class SourcePreparationUseCase {
-    private final ManagedSpringBootAnalysisCoordinator analyzer;
-    private final DeploymentAnalysisCoordinator deploymentAnalyzer;
+    private final DeploymentAnalysisCoordinator analyzer;
     private final WindowsSourceWorkspace workspace;
     private final GitSnapshotPreparer gitSnapshots;
     private final Path gitWorkspace;
@@ -42,15 +38,14 @@ public final class SourcePreparationUseCase {
      * @param workspace the {@code workspace} value / {@code workspace} 值
      * @throws NullPointerException if a required argument is {@code null} / 必要参数为 {@code null} 时
      */
-    public SourcePreparationUseCase(ManagedSpringBootAnalysisCoordinator analyzer, WindowsSourceWorkspace workspace) {
-        this(analyzer, new DeploymentAnalysisCoordinator(), workspace, new GitSnapshotPreparer(),
+    public SourcePreparationUseCase(DeploymentAnalysisCoordinator analyzer, WindowsSourceWorkspace workspace) {
+        this(analyzer, workspace, new GitSnapshotPreparer(),
                 Objects.requireNonNull(workspace, "workspace").workDirectory().resolve("git-snapshots"));
     }
 
-    SourcePreparationUseCase(ManagedSpringBootAnalysisCoordinator analyzer, DeploymentAnalysisCoordinator deploymentAnalyzer,
-                             WindowsSourceWorkspace workspace, GitSnapshotPreparer gitSnapshots, Path gitWorkspace) {
+    SourcePreparationUseCase(DeploymentAnalysisCoordinator analyzer, WindowsSourceWorkspace workspace,
+                             GitSnapshotPreparer gitSnapshots, Path gitWorkspace) {
         this.analyzer = Objects.requireNonNull(analyzer, "analyzer");
-        this.deploymentAnalyzer = Objects.requireNonNull(deploymentAnalyzer, "deploymentAnalyzer");
         this.workspace = Objects.requireNonNull(workspace, "workspace");
         this.gitSnapshots = Objects.requireNonNull(gitSnapshots, "gitSnapshots");
         this.gitWorkspace = Objects.requireNonNull(gitWorkspace, "gitWorkspace").toAbsolutePath().normalize();
@@ -65,16 +60,6 @@ public final class SourcePreparationUseCase {
      * @return the operation result / 操作结果
      * @throws IOException if the operation cannot be completed / 无法完成操作时
      */
-    public SourcePreparation prepare(Path sourceDirectory) throws IOException {
-        ProjectAssessment assessment = analyzer.analyze(sourceDirectory);
-        if (assessment.decision() != SupportDecision.SUPPORTED) {
-            return new SourcePreparation(assessment, Optional.empty(), List.of());
-        }
-        String applicationId = assessment.facts().orElseThrow().applicationName();
-        PreparedSourceArchive archive = workspace.prepare(sourceDirectory, applicationId);
-        return new SourcePreparation(assessment, Optional.of(archive.descriptor()), archive.excludedEntries());
-    }
-
     /**
      * Performs the selected typed static analysis before creating an archive; it never executes project content.
      *
@@ -85,8 +70,8 @@ public final class SourcePreparationUseCase {
      * @return the typed analysis and safe archive result / 类型化分析和安全归档结果
      * @throws IOException if source reading or archiving cannot complete / 无法完成源码读取或归档时
      */
-    public ReviewedSourcePreparation prepareReviewed(Path sourceDirectory, DeploymentProjectType projectType) throws IOException {
-        DeploymentProjectAssessment assessment = deploymentAnalyzer.analyze(sourceDirectory, projectType);
+    public ReviewedSourcePreparation prepare(Path sourceDirectory, DeploymentProjectType projectType) throws IOException {
+        DeploymentProjectAssessment assessment = analyzer.analyze(sourceDirectory, projectType);
         if (assessment.admission() != DeploymentAdmission.READY_FOR_PLANNING) {
             return new ReviewedSourcePreparation(assessment, Optional.empty(), Optional.empty(), List.of());
         }
@@ -107,10 +92,10 @@ public final class SourcePreparationUseCase {
      * @return the typed analysis, pinned source identity, and safe archive / 类型化分析、固定源码身份和安全归档
      * @throws GitSnapshotException if the controlled Git snapshot cannot be prepared / 无法准备受控 Git 快照时
      */
-    public ReviewedSourcePreparation prepareReviewedGit(GitSourceRequest request, DeploymentProjectType projectType)
+    public ReviewedSourcePreparation prepareGit(GitSourceRequest request, DeploymentProjectType projectType)
             throws GitSnapshotException {
         GitSnapshot snapshot = gitSnapshots.prepare(request, gitWorkspace);
-        DeploymentProjectAssessment assessment = deploymentAnalyzer.analyze(snapshot.checkoutDirectory(), projectType);
+        DeploymentProjectAssessment assessment = analyzer.analyze(snapshot.checkoutDirectory(), projectType);
         if (assessment.admission() != DeploymentAdmission.READY_FOR_PLANNING) {
             return new ReviewedSourcePreparation(assessment, Optional.empty(), Optional.empty(), List.of());
         }

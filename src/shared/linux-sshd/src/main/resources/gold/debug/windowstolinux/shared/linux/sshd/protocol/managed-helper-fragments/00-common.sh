@@ -5,6 +5,7 @@ PATH=/usr/sbin:/usr/bin:/sbin:/bin
 umask 077
 helper_path=/usr/local/lib/windowstolinux/managed-helper
 helper_directory=/usr/local/lib/windowstolinux
+helper_protocol=2
 base_root=/var/lib/windowstolinux
 applications_root="$base_root/apps"
 work_root="$base_root/work"
@@ -129,6 +130,11 @@ render_deployment_unit() {
   case "$kind" in
     gradle)
       [ "$#" -eq 0 ] || reject runtime-arguments
+      command="/usr/bin/java -jar $root/current/app.jar"
+      ;;
+    springboot)
+      [ "$#" -eq 1 ] || reject runtime-arguments
+      case "$1" in GRADLE_WRAPPER|MAVEN_WRAPPER|MAVEN) ;; *) reject springboot-build-tool ;; esac
       command="/usr/bin/java -jar $root/current/app.jar"
       ;;
     java)

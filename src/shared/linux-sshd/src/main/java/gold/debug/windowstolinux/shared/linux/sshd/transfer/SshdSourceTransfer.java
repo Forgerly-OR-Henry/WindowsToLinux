@@ -3,7 +3,7 @@ package gold.debug.windowstolinux.shared.linux.sshd.transfer;
 import gold.debug.windowstolinux.shared.linux.connection.LinuxOperationException;
 import gold.debug.windowstolinux.shared.linux.protocol.RemoteStepResult;
 import gold.debug.windowstolinux.shared.linux.sshd.connection.SshCommandExecutor;
-import gold.debug.windowstolinux.shared.linux.sshd.protocol.ManagedReleaseProtocolExecutor;
+import gold.debug.windowstolinux.shared.linux.sshd.protocol.CandidateWorkspaceController;
 import gold.debug.windowstolinux.shared.linux.transfer.RemoteWorkspace;
 import gold.debug.windowstolinux.shared.linux.transfer.UploadReceipt;
 import gold.debug.windowstolinux.shared.model.archive.SourceArchiveDescriptor;
@@ -27,7 +27,7 @@ import java.util.Objects;
 public final class SshdSourceTransfer {
     private final ClientSession session;
     private final SshCommandExecutor commands;
-    private final ManagedReleaseProtocolExecutor protocol;
+    private final CandidateWorkspaceController candidates;
 
     /**
      * Creates a {@code SshdSourceTransfer} instance.
@@ -40,10 +40,10 @@ public final class SshdSourceTransfer {
      * @throws NullPointerException if a required argument is {@code null} / 必要参数为 {@code null} 时
      */
     public SshdSourceTransfer(ClientSession session, SshCommandExecutor commands,
-                              ManagedReleaseProtocolExecutor protocol) {
+                              CandidateWorkspaceController candidates) {
         this.session = Objects.requireNonNull(session, "session");
         this.commands = Objects.requireNonNull(commands, "commands");
-        this.protocol = Objects.requireNonNull(protocol, "protocol");
+        this.candidates = Objects.requireNonNull(candidates, "candidates");
     }
 
     /**
@@ -59,7 +59,7 @@ public final class SshdSourceTransfer {
     public UploadReceipt upload(SourceArchiveDescriptor archive, RemoteWorkspace workspace)
             throws LinuxOperationException {
         LocalArchivePolicy.verify(archive);
-        RemoteStepResult prepared = protocol.createCandidate(workspace);
+        RemoteStepResult prepared = candidates.create(workspace);
         if (!prepared.succeeded()) {
             throw LinuxOperationException.localized("linux.error.candidatePreparationFailed", prepared.evidence());
         }
@@ -91,7 +91,7 @@ public final class SshdSourceTransfer {
 
     private void cleanupAfterFailure(RemoteWorkspace workspace) {
         try {
-            protocol.cleanupCandidate(workspace);
+            candidates.cleanup(workspace);
         } catch (LinuxOperationException ignored) {
             // The upload failure remains authoritative; later reconciliation reports an orphan if one exists. / 上传失败仍是权威结果；后续协调会报告存在的孤立项。
         }

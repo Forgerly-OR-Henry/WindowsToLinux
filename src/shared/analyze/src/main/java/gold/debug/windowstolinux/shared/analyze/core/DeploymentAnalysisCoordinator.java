@@ -2,7 +2,7 @@ package gold.debug.windowstolinux.shared.analyze.core;
 
 import gold.debug.windowstolinux.shared.analyze.build.node.NodeServiceDeploymentInspector;
 import gold.debug.windowstolinux.shared.analyze.build.python.PythonServiceDeploymentInspector;
-import gold.debug.windowstolinux.shared.analyze.framework.springboot.GradleSpringBootDeploymentInspector;
+import gold.debug.windowstolinux.shared.analyze.framework.springboot.SpringBootDeploymentInspector;
 import gold.debug.windowstolinux.shared.analyze.language.ProjectLanguageInspector;
 import gold.debug.windowstolinux.shared.analyze.language.java.JavaJarDeploymentInspector;
 import gold.debug.windowstolinux.shared.analyze.source.BoundedSourceInspector;
@@ -41,7 +41,7 @@ public final class DeploymentAnalysisCoordinator {
     /** Creates a coordinator with exactly one inspector for every supported type. / 为每种支持类型各配置一个检查器。 */
     public DeploymentAnalysisCoordinator() {
         this(new BoundedSourceInspector(), new ProjectLanguageInspector(), List.of(
-                new GradleSpringBootDeploymentInspector(), new JavaJarDeploymentInspector(),
+                new SpringBootDeploymentInspector(), new JavaJarDeploymentInspector(),
                 new NodeServiceDeploymentInspector(), new PythonServiceDeploymentInspector(),
                 new StaticWebDeploymentInspector(), new ContainerDeploymentInspector()));
     }

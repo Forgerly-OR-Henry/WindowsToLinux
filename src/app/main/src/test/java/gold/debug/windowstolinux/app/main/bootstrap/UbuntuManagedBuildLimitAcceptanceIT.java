@@ -7,7 +7,7 @@ import gold.debug.windowstolinux.app.service.server.*;
 import gold.debug.windowstolinux.app.service.source.*;
 
 import gold.debug.windowstolinux.app.db.DesktopPersistence;
-import gold.debug.windowstolinux.shared.deploy.plan.DeploymentRequest;
+import gold.debug.windowstolinux.shared.deploy.plan.ReviewedDeploymentRequest;
 import gold.debug.windowstolinux.shared.deploy.result.DeploymentResult;
 import gold.debug.windowstolinux.shared.deploy.result.LifecycleActionResult;
 import gold.debug.windowstolinux.shared.linux.sshd.connection.SshdLinuxGateway;
@@ -64,12 +64,12 @@ class UbuntuManagedBuildLimitAcceptanceIT {
         try (DesktopPersistence database = DesktopPersistence.open(temporaryDirectory.resolve("desktop-data"))) {
             DesktopApplicationService service = new DesktopApplicationService(
                     database, temporaryDirectory.resolve("work"), new SshdLinuxGateway());
-            SourcePreparation baselinePreparation = service.prepareSource(baseline);
-            SourcePreparation failingPreparation = service.prepareSource(failing);
+            ReviewedSourcePreparation baselinePreparation = ReviewedMavenAcceptanceSupport.prepare(service, baseline);
+            ReviewedSourcePreparation failingPreparation = ReviewedMavenAcceptanceSupport.prepare(service, failing);
             assertTrue(baselinePreparation.archive().isPresent(), "baseline must pass static analysis");
             assertTrue(failingPreparation.archive().isPresent(), "failing source must reach remote compilation");
-            assertEquals(baselinePreparation.assessment().facts().orElseThrow().applicationName(),
-                    failingPreparation.assessment().facts().orElseThrow().applicationName());
+            assertEquals(baselinePreparation.assessment().facts().orElseThrow().applicationId(),
+                    failingPreparation.assessment().facts().orElseThrow().applicationId());
 
             ServerProfile profile = new ServerProfile("ubuntu-managed-build-limits", host, 22, username,
                     "ssh/ubuntu-managed-build-limits/password", CredentialStorageMode.MASTER_PASSWORD);
@@ -77,18 +77,21 @@ class UbuntuManagedBuildLimitAcceptanceIT {
                     "managed-build-limits-master".toCharArray(), password.toCharArray());
             var capabilities = service.verifyServer(profile, CredentialStorageMode.MASTER_PASSWORD,
                     "managed-build-limits-master".toCharArray(), fingerprint -> true);
-            assertTrue(capabilities.supportsManagedDeployment(baselinePreparation.assessment().facts().orElseThrow().usesMavenWrapper(), health),
+            assertTrue(capabilities.supportsManagedDeployment(
+                    baselinePreparation.assessment().facts().orElseThrow().buildTool()
+                            == gold.debug.windowstolinux.shared.model.project.DeploymentBuildTool.MAVEN_WRAPPER,
+                    health),
                     () -> "Ubuntu target must meet managed-deployment preconditions: " + capabilities);
             var server = service.findTrustedServer(profile.id()).orElseThrow();
 
-            DeploymentRequest baselineRequest = request(service, baselinePreparation, server, health, userAccessUrl,
+            ReviewedDeploymentRequest baselineRequest = request(service, baselinePreparation, server, health, userAccessUrl,
                     normalLimits(rootBuild), rootBuild);
             DeploymentResult baselineResult = deploy(service, baselineRequest, profile);
             assertEquals(DeploymentStatus.SUCCEEDED, baselineResult.status(), () -> baselineResult.events().toString());
 
-            DeploymentRequest compilerFailureRequest = request(service, failingPreparation, server, health, userAccessUrl,
+            ReviewedDeploymentRequest compilerFailureRequest = request(service, failingPreparation, server, health, userAccessUrl,
                     normalLimits(rootBuild), rootBuild);
-            assertEquals(baselineRequest.application(), compilerFailureRequest.application());
+            assertEquals(baselineRequest.facts().applicationId(), compilerFailureRequest.facts().applicationId());
             DeploymentResult compilerFailure = deploy(service, compilerFailureRequest, profile);
             assertEquals(DeploymentStatus.FAILED_BUILD, compilerFailure.status(), () -> compilerFailure.events().toString());
             assertEvent(compilerFailure, "source-upload", true);
@@ -97,7 +100,7 @@ class UbuntuManagedBuildLimitAcceptanceIT {
             assertFalse(hasEvent(compilerFailure, "publish"), "build failure must not publish a candidate");
             assertBaselineStillRuns(service, baselineRequest, health, profile);
 
-            DeploymentRequest outputLimitRequest = request(service, failingPreparation, server, health, userAccessUrl,
+            ReviewedDeploymentRequest outputLimitRequest = request(service, failingPreparation, server, health, userAccessUrl,
                     new BuildLimits(1200, 1024, 4096, 4096, 2L * 1024 * 1024 * 1024, rootBuild), rootBuild);
             DeploymentResult outputLimitFailure = deploy(service, outputLimitRequest, profile);
             assertEquals(DeploymentStatus.FAILED_BUILD, outputLimitFailure.status(), () -> outputLimitFailure.events().toString());
@@ -114,36 +117,37 @@ class UbuntuManagedBuildLimitAcceptanceIT {
         return new BuildLimits(1200, 1024, 4096, 4L * 1024 * 1024, 2L * 1024 * 1024 * 1024, rootBuild);
     }
 
-    private static DeploymentRequest request(
+    private static ReviewedDeploymentRequest request(
             DesktopApplicationService service,
-            SourcePreparation preparation,
+            ReviewedSourcePreparation preparation,
             gold.debug.windowstolinux.shared.model.server.ServerIdentity server,
             HealthCheck health,
             UserAccessUrl userAccessUrl,
             BuildLimits limits,
             boolean rootBuild
-    ) {
-        return service.createDeploymentRequest(preparation, server, health, Optional.of(userAccessUrl), limits, rootBuild);
+    ) throws Exception {
+        return ReviewedMavenAcceptanceSupport.request(service, preparation, server, health,
+                Optional.of(userAccessUrl), limits, rootBuild);
     }
 
     private static UserAccessUrl businessUrl(String host, int port) {
         return new UserAccessUrl(URI.create("http://" + host + ":" + port + "/"));
     }
 
-    private static DeploymentResult deploy(DesktopApplicationService service, DeploymentRequest request, ServerProfile profile)
+    private static DeploymentResult deploy(DesktopApplicationService service, ReviewedDeploymentRequest request, ServerProfile profile)
             throws Exception {
-        return service.deployResultWithStoredPassword(request, profile, CredentialStorageMode.MASTER_PASSWORD,
-                "managed-build-limits-master".toCharArray(), fingerprint -> true);
+        return service.deployReviewedWithStoredPassword(request, profile, CredentialStorageMode.MASTER_PASSWORD,
+                "managed-build-limits-master".toCharArray(), fingerprint -> true).result();
     }
 
     private static void assertBaselineStillRuns(
             DesktopApplicationService service,
-            DeploymentRequest baseline,
+            ReviewedDeploymentRequest baseline,
             HealthCheck health,
             ServerProfile profile
     ) throws Exception {
-        LifecycleActionResult refresh = service.executeLifecycleResultWithStoredPassword(baseline.application(),
-                LifecycleAction.REFRESH_STATUS, health, profile, CredentialStorageMode.MASTER_PASSWORD,
+        LifecycleActionResult refresh = service.executePersistedLifecycleResultWithStoredPassword(
+                baseline.facts().applicationId(), LifecycleAction.REFRESH_STATUS,
                 "managed-build-limits-master".toCharArray());
         assertTrue(refresh.accepted(), refresh::toString);
         assertEquals(RuntimeState.RUNNING, refresh.observation().orElseThrow().runtimeState());

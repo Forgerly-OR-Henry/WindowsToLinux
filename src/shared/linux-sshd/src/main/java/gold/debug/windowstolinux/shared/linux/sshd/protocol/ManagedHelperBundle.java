@@ -8,15 +8,18 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.HexFormat;
 import java.util.List;
+import gold.debug.windowstolinux.shared.linux.protocol.ManagedHelperProtocol;
 
 /** Assembles the root-owned managed helper from fixed responsibility fragments and rejects protocol drift. / 从固定职责片段拼装 root 持有的受管 helper 并拒绝协议漂移。 */
 public final class ManagedHelperBundle {
+    /** Protocol version printed by this exact helper bundle. / 此精确 helper 包输出的协议版本。 */
+    public static final int PROTOCOL_VERSION = ManagedHelperProtocol.VERSION;
     /** Platform-owned helper installation directory. / 平台持有的 helper 安装目录。 */
     public static final String DIRECTORY = "/usr/local/lib/windowstolinux";
     /** The only sudoers-allowlisted helper path. / sudoers 唯一列入白名单的 helper 路径。 */
     public static final String PATH = DIRECTORY + "/managed-helper";
     /** Expected byte-for-byte helper bundle identity. / 预期的 helper 逐字节身份。 */
-    public static final String EXPECTED_SHA256 = "0d860e5fba4bc4349f94ddfbdd020030e008ea79dc37329eae6ba36785281f29";
+    public static final String EXPECTED_SHA256 = "a6c34b9f789881e98479c4d78daebd1657b0d9b7d9e9b96da8f05945267e934a";
     private static final String ROOT = "/gold/debug/windowstolinux/shared/linux/sshd/protocol/managed-helper-fragments/";
     private static final List<String> FRAGMENTS = List.of(
             "00-common.sh", "10-typed-release.sh", "15-deployment-input.sh", "20-candidate-workspace.sh", "30-ordinary-release.sh",

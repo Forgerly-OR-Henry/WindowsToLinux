@@ -154,7 +154,9 @@ public final class UbuntuEnvironmentPreparation {
                   /usr/bin/sudo -n /usr/bin/install -o root -g root -m 755 "$helper_tmp" %s
                   /usr/bin/sudo -n /usr/bin/install -o root -g root -m 440 "$tmp" %s
                 fi
-                /usr/bin/sudo -n %s probe | /usr/bin/grep -qx 'HELPER=1'
+                helper_probe="$("/usr/bin/sudo" -n %s probe)"
+                printf '%%s\\n' "$helper_probe" | /usr/bin/grep -qx 'HELPER=1'
+                printf '%%s\\n' "$helper_probe" | /usr/bin/grep -qx 'PROTOCOL=2'
                 printf 'PREPARED_AS=%%s\\n' "$elevation"
                 printf 'PACKAGES=%s\\n'
                 printf 'SUDOERS=%s\\n'

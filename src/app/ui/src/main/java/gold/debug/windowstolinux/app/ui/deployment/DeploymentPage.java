@@ -4,6 +4,7 @@ import gold.debug.windowstolinux.app.db.entity.StoredApplicationSecretRevision;
 import gold.debug.windowstolinux.app.service.DesktopApplicationService;
 import gold.debug.windowstolinux.app.service.server.ServerProfile;
 import gold.debug.windowstolinux.app.service.source.ReviewedSourcePreparation;
+import gold.debug.windowstolinux.app.service.deployment.DeploymentOutcome;
 import gold.debug.windowstolinux.app.ui.component.DesktopComponents;
 import gold.debug.windowstolinux.app.ui.server.ServerContext;
 import gold.debug.windowstolinux.app.ui.shell.PageMessages;
@@ -320,16 +321,16 @@ public final class DeploymentPage implements ReviewContext {
                     messages.text("deployment.review.title"), JOptionPane.YES_NO_OPTION,
                     JOptionPane.WARNING_MESSAGE) != JOptionPane.YES_OPTION) return;
             char[] master = serverContext.masterPassword(); output.setText(messages.text("deployment.reviewedRunning"));
-            new SwingWorker<DeploymentResult, Void>() {
-                @Override protected DeploymentResult doInBackground() throws Exception {
+            new SwingWorker<DeploymentOutcome, Void>() {
+                @Override protected DeploymentOutcome doInBackground() throws Exception {
                     service.saveDeploymentConfigurationSnapshot(configuration);
                     return service.deployReviewedWithStoredPassword(request, profile, serverContext.credentialMode(), master,
                             serverContext::confirmFingerprint);
                 }
                 @Override protected void done() {
                     try {
-                        DeploymentResult result = get(); output.setText(resultSummary(result));
-                        if (result.status() == DeploymentStatus.SUCCEEDED) applicationSelection.accept(request.facts().applicationId());
+                        DeploymentOutcome outcome = get(); output.setText(resultSummary(outcome.result()));
+                        if (outcome.status() == DeploymentStatus.SUCCEEDED) applicationSelection.accept(request.facts().applicationId());
                     } catch (Exception exception) {
                         output.setText(messages.text("deployment.failed", Map.of("detail", messages.safe(exception))));
                     }
@@ -387,7 +388,7 @@ public final class DeploymentPage implements ReviewContext {
 
     private DeploymentRuntimeSpecification runtimeSpecification(HealthCheck health) {
         return switch ((DeploymentProjectType) projectType.getSelectedItem()) {
-            case GRADLE_SPRING_BOOT -> new DeploymentRuntimeSpecification.GradleSpringBoot(health);
+            case SPRING_BOOT -> new DeploymentRuntimeSpecification.SpringBoot(health);
             case JAVA_JAR -> new DeploymentRuntimeSpecification.JavaJar(runtimePrimary.getText(), runtimeSecondary.getText(),
                     runtimeVersion.getText(), DeploymentRuntimeParser.arguments(jvmArguments.getText()),
                     DeploymentRuntimeParser.arguments(applicationArguments.getText()), health);

@@ -31,8 +31,8 @@ class DeploymentBuildRendererTest {
 
     @Test
     void rendersAllSixTypesThroughTheirFixedEntrypoints() {
-        assertTrue(render(new GradleBuildRenderer(), DeploymentBuildTool.GRADLE_WRAPPER,
-                new DeploymentRuntimeSpecification.GradleSpringBoot(TCP)).contains("./gradlew --no-daemon -x test bootJar"));
+        assertTrue(render(new SpringBootBuildRenderer(), DeploymentBuildTool.GRADLE_WRAPPER,
+                new DeploymentRuntimeSpecification.SpringBoot(TCP)).contains("./gradlew --no-daemon -x test bootJar"));
         assertTrue(render(new JavaJarBuildRenderer(), DeploymentBuildTool.JAVA,
                 new DeploymentRuntimeSpecification.JavaJar("server.jar", "demo.Main", "21", List.of(), List.of(), TCP))
                 .contains("test -f \"$artifact\""));
@@ -51,6 +51,26 @@ class DeploymentBuildRendererTest {
         assertTrue(render(new ContainerBuildRenderer(), DeploymentBuildTool.CONTAINER_BUILD,
                 new DeploymentRuntimeSpecification.Container(DeploymentRuntimeSpecification.ContainerEngine.PODMAN,
                         Map.of(8080, 8080), List.of(), TCP)).contains("build --pull=true"));
+    }
+
+    @Test
+    void rendersAllThreeSpringBootBuildToolsAndOneSupportedExecutableJarCheck() {
+        var runtime = new DeploymentRuntimeSpecification.SpringBoot(TCP);
+        String gradle = render(new SpringBootBuildRenderer(), DeploymentBuildTool.GRADLE_WRAPPER, runtime);
+        String wrapper = render(new SpringBootBuildRenderer(), DeploymentBuildTool.MAVEN_WRAPPER, runtime);
+        String maven = render(new SpringBootBuildRenderer(), DeploymentBuildTool.MAVEN, runtime);
+
+        assertTrue(gradle.contains("./gradlew --no-daemon -x test bootJar"));
+        assertTrue(wrapper.contains("./mvnw -B -DskipTests package"));
+        assertTrue(maven.contains("run mvn -B -DskipTests package"));
+        for (String script : List.of(gradle, wrapper, maven)) {
+            assertTrue(script.contains("test \"${#artifacts[@]}\" -eq 1"));
+            assertTrue(script.contains("! -name '*-plain.jar'"));
+            assertTrue(script.contains("loader\\.(launch\\.)?JarLauncher"));
+            assertFalse(script.contains("PropertiesLauncher"));
+            assertTrue(script.contains("source.tar.gz"));
+            assertTrue(script.contains("tar --extract --gzip"));
+        }
     }
 
     @Test
@@ -108,7 +128,7 @@ class DeploymentBuildRendererTest {
     }
 
     private static List<DeploymentBuildRenderer> renderers() {
-        return List.of(new GradleBuildRenderer(), new JavaJarBuildRenderer(), new NodeBuildRenderer(),
+        return List.of(new SpringBootBuildRenderer(), new JavaJarBuildRenderer(), new NodeBuildRenderer(),
                 new PythonBuildRenderer(), new StaticSiteBuildRenderer(), new ContainerBuildRenderer());
     }
 }

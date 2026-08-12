@@ -26,7 +26,7 @@ public final class DeploymentBuildExecutor {
 
     /** Creates the executor for one authenticated SSH account. / 为一个已认证 SSH 账户创建执行器。 */
     public DeploymentBuildExecutor(SshCommandExecutor commands, String username) {
-        this(commands, username, List.of(new GradleBuildRenderer(), new JavaJarBuildRenderer(), new NodeBuildRenderer(),
+        this(commands, username, List.of(new SpringBootBuildRenderer(), new JavaJarBuildRenderer(), new NodeBuildRenderer(),
                 new PythonBuildRenderer(), new StaticSiteBuildRenderer(), new ContainerBuildRenderer()));
     }
 

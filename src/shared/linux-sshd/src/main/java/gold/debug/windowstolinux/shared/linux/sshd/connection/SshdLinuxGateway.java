@@ -3,8 +3,6 @@ package gold.debug.windowstolinux.shared.linux.sshd.connection;
 import gold.debug.windowstolinux.shared.linux.connection.HostKeyDecision;
 import gold.debug.windowstolinux.shared.linux.connection.HostKeyVerifier;
 import gold.debug.windowstolinux.shared.linux.connection.LinuxOperationException;
-import gold.debug.windowstolinux.shared.linux.connection.LinuxGateway;
-import gold.debug.windowstolinux.shared.linux.connection.LinuxRemoteSession;
 import gold.debug.windowstolinux.shared.linux.connection.DeploymentLinuxGateway;
 import gold.debug.windowstolinux.shared.linux.connection.DeploymentRemoteSession;
 import gold.debug.windowstolinux.shared.linux.connection.SshCredential;
@@ -32,7 +30,7 @@ import java.util.concurrent.atomic.AtomicReference;
  *
  * <p>受管部署白名单远程契约的 Apache MINA SSHD 实现。它只通过提供的验证器接受主机密钥，并且绝不公开原始命令方法。
  */
-public final class SshdLinuxGateway implements LinuxGateway, DeploymentLinuxGateway {
+public final class SshdLinuxGateway implements DeploymentLinuxGateway {
     private static final Duration CONNECT_TIMEOUT = Duration.ofSeconds(30);
     private static final Duration HEARTBEAT_INTERVAL = Duration.ofSeconds(30);
     private static final int HEARTBEAT_NO_REPLY_MAX = 3;

@@ -42,7 +42,8 @@ public interface DeploymentRemoteSession extends LinuxRemoteSession {
             throws LinuxOperationException;
 
     /** Publishes one sealed typed deployment release. / 发布一个已封存的部署版本。 */
-    RemoteStepResult publishDeployment(ManagedApplication application, RemoteWorkspace workspace, DeploymentBuildResult build,
+    RemoteStepResult publishDeployment(ManagedApplication application, DeploymentProjectFacts facts,
+                                     RemoteWorkspace workspace, DeploymentBuildResult build,
                                      String releaseIdentity, DeploymentRuntimeSpecification runtime,
                                      DeploymentInputManifest inputs, ReleaseSnapshot snapshot)
             throws LinuxOperationException;
@@ -64,4 +65,7 @@ public interface DeploymentRemoteSession extends LinuxRemoteSession {
     /** Executes one verified lifecycle action for the selected runtime. / 为选定运行时执行一个已验证的生命周期动作。 */
     LifecycleObservation executeDeploymentLifecycle(ManagedApplication application, DeploymentRuntimeSpecification runtime,
                                                     LifecycleAction action) throws LinuxOperationException;
+
+    /** Retains only the bounded number of recent successful releases. / 仅保留有界数量的最近成功发布。 */
+    RemoteStepResult retainRecentSuccessfulReleases(ManagedApplication application) throws LinuxOperationException;
 }

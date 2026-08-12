@@ -61,7 +61,7 @@ public final class SshdPlatformCapabilityCollector implements LinuxPlatformCapab
                 normalized(values.getOrDefault("ARCH", "unknown")), normalized(values.getOrDefault("PACKAGE_MANAGER", "unknown")),
                 "1".equals(values.get("SYSTEMD")), "1".equals(values.get("DOCKER_CLIENT")),
                 "1".equals(values.get("PODMAN_CLIENT")), "1".equals(values.get("PODMAN_QUADLET")),
-                javaMajors, nodeMajors, "1".equals(values.get("NPM")), pythonVersions,
+                javaMajors, nodeMajors, "1".equals(values.get("NPM")), "1".equals(values.get("MAVEN")), pythonVersions,
                 "1".equals(values.get("PYTHON3")), "1".equals(values.get("DOCKER_OPERATIONAL")),
                 "1".equals(values.get("PODMAN_OPERATIONAL")), "1".equals(values.get("X86_64_V3")), flags,
                 "SSH host fingerprint verified: " + Objects.requireNonNull(hostFingerprint, "hostFingerprint"));

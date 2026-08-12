@@ -92,7 +92,7 @@ final class LiveTypedDeploymentContext implements AutoCloseable {
                 DeploymentStep.VERIFY_CONFIGURATION_SNAPSHOT, DeploymentStep.VERIFY_SECRET_REVISIONS,
                 DeploymentStep.CHECK_HEALTH,
                 DeploymentStep.ROLLBACK_ON_FAILURE)));
-        return service.deployReviewedWithStoredPassword(request, profile, MODE, master(), fingerprint -> true);
+        return service.deployReviewedWithStoredPassword(request, profile, MODE, master(), fingerprint -> true).result();
     }
 
     void saveSecret(SecretReference reference, String credentialKey, char[] value) throws Exception {

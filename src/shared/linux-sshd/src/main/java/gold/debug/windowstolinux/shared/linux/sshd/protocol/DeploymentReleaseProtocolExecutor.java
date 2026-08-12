@@ -12,6 +12,7 @@ import gold.debug.windowstolinux.shared.model.lifecycle.AutostartState;
 import gold.debug.windowstolinux.shared.model.lifecycle.LifecycleObservation;
 import gold.debug.windowstolinux.shared.model.lifecycle.RuntimeState;
 import gold.debug.windowstolinux.shared.model.project.DeploymentRuntimeSpecification;
+import gold.debug.windowstolinux.shared.model.project.DeploymentProjectFacts;
 
 import java.time.Duration;
 import java.time.Instant;
@@ -56,7 +57,8 @@ public final class DeploymentReleaseProtocolExecutor {
     }
 
     /** Publishes the sealed candidate through the helper. / 通过辅助程序发布已封存候选版本。 */
-    public RemoteStepResult publish(ManagedApplication application, RemoteWorkspace workspace, DeploymentBuildResult build,
+    public RemoteStepResult publish(ManagedApplication application, DeploymentProjectFacts facts,
+                                    RemoteWorkspace workspace, DeploymentBuildResult build,
                                     String releaseIdentity, DeploymentRuntimeSpecification runtime,
                                     DeploymentInputManifest inputs, ReleaseSnapshot snapshot)
             throws LinuxOperationException {
@@ -68,7 +70,7 @@ public final class DeploymentReleaseProtocolExecutor {
         List<String> values = new ArrayList<>(List.of(application.id(), workspace.candidateId(), releaseIdentity,
                 application.ownershipManifestSha256()));
         values.addAll(DeploymentInputArguments.from(inputs));
-        values.addAll(DeploymentRuntimeArguments.from(runtime));
+        values.addAll(DeploymentRuntimeArguments.from(facts, runtime));
         var result = commands.exec(helperCommand("publish-deployment", values), Duration.ofSeconds(120), true);
         return new RemoteStepResult(result.succeeded(), result.timedOut(), result.succeeded()
                 ? "Controlled helper sealed and started the reviewed candidate release"

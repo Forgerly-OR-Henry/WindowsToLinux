@@ -94,7 +94,7 @@ public record DeploymentRuntimeSuggestion(
 
     private static EnumSet<RuntimeInput> allowedInputs(DeploymentProjectType projectType) {
         return switch (projectType) {
-            case GRADLE_SPRING_BOOT, DOCKERFILE_CONTAINER -> EnumSet.noneOf(RuntimeInput.class);
+            case SPRING_BOOT, DOCKERFILE_CONTAINER -> EnumSet.noneOf(RuntimeInput.class);
             case JAVA_JAR -> EnumSet.of(RuntimeInput.JAVA_JAR_PATH, RuntimeInput.JAVA_MAIN_CLASS,
                     RuntimeInput.JAVA_VERSION);
             case NODE_SERVICE -> EnumSet.of(RuntimeInput.NODE_MAJOR_VERSION);

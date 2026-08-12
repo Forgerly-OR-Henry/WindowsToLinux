@@ -84,7 +84,7 @@ public final class ManagedApplicationRepository {
                 upsertApplication(connection, application);
                 upsertRuntime(connection, application.id(), runtimeConfiguration);
                 upsertRelease(connection, release);
-                ApplicationSecretRepository.bindRelease(connection, application.id(), release.artifactSha256(), references);
+                ApplicationSecretRepository.bindRelease(connection, application.id(), release.releaseSha256(), references);
             });
         }
     }
@@ -142,12 +142,12 @@ public final class ManagedApplicationRepository {
     /** Finds the current release. / 查找当前发布。 */
     public Optional<CurrentRelease> findRelease(String applicationId) throws SQLException {
         try (Connection connection = connections.open(); PreparedStatement statement = connection.prepareStatement("""
-                SELECT application_id, artifact_sha256, published_at FROM managed_application_release WHERE application_id=?
+                SELECT application_id, release_sha256, published_at FROM managed_application_release WHERE application_id=?
                 """)) {
             statement.setString(1, applicationId);
             try (ResultSet result = statement.executeQuery()) {
                 return result.next() ? Optional.of(new CurrentRelease(result.getString("application_id"),
-                        result.getString("artifact_sha256"), Instant.ofEpochMilli(result.getLong("published_at"))))
+                        result.getString("release_sha256"), Instant.ofEpochMilli(result.getLong("published_at"))))
                         : Optional.empty();
             }
         }
@@ -245,12 +245,12 @@ public final class ManagedApplicationRepository {
 
     private static void upsertRelease(Connection connection, CurrentRelease release) throws SQLException {
         try (PreparedStatement statement = connection.prepareStatement("""
-                INSERT INTO managed_application_release (application_id, artifact_sha256, published_at) VALUES (?, ?, ?)
-                ON CONFLICT(application_id) DO UPDATE SET artifact_sha256=excluded.artifact_sha256,
+                INSERT INTO managed_application_release (application_id, release_sha256, published_at) VALUES (?, ?, ?)
+                ON CONFLICT(application_id) DO UPDATE SET release_sha256=excluded.release_sha256,
                     published_at=excluded.published_at
                 """)) {
             statement.setString(1, release.applicationId());
-            statement.setString(2, release.artifactSha256());
+            statement.setString(2, release.releaseSha256());
             statement.setLong(3, release.publishedAt().toEpochMilli());
             statement.executeUpdate();
         }

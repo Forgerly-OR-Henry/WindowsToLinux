@@ -79,7 +79,7 @@ public final class LifecycleUseCase {
         return applications.list().stream().map(application -> {
             try {
                 return new ManagedApplicationSummary(application,
-                        applications.findRelease(application.id()).map(CurrentRelease::artifactSha256),
+                        applications.findRelease(application.id()).map(CurrentRelease::releaseSha256),
                         applications.findRuntime(application.id()));
             } catch (SQLException exception) {
                 throw new LocalizedOperationException(LocalizedMessage.of("applications.summaryReadFailed"),

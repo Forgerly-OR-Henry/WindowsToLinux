@@ -19,6 +19,7 @@ import java.util.Objects;
  * @param socketInspectionAvailable the {@code socketInspectionAvailable} value / {@code socketInspectionAvailable} 值
  * @param buildLimitToolsAvailable the {@code buildLimitToolsAvailable} value / {@code buildLimitToolsAvailable} 值
  * @param nonInteractiveSudoAvailable the {@code nonInteractiveSudoAvailable} value / {@code nonInteractiveSudoAvailable} 值
+ * @param managedHelperProtocolVersion observed managed-helper protocol version, or zero when unavailable / 观察到的受管 helper 协议版本，不可用时为零
  * @param availableBytes the {@code availableBytes} value / {@code availableBytes} 值
  * @param evidence the {@code evidence} value / {@code evidence} 值
  */
@@ -33,6 +34,7 @@ public record ServerCapabilities(
         boolean socketInspectionAvailable,
         boolean buildLimitToolsAvailable,
         boolean nonInteractiveSudoAvailable,
+        int managedHelperProtocolVersion,
         long availableBytes,
         String evidence
 ) {
@@ -59,6 +61,9 @@ public record ServerCapabilities(
     public ServerCapabilities {
         operatingSystem = nonBlank(operatingSystem, "operatingSystem");
         architecture = nonBlank(architecture, "architecture");
+        if (managedHelperProtocolVersion < 0 || managedHelperProtocolVersion > 999) {
+            throw new IllegalArgumentException("managedHelperProtocolVersion must be a bounded non-negative version");
+        }
         if (availableBytes < 0) {
             throw new IllegalArgumentException("availableBytes must not be negative");
         }
@@ -92,6 +97,7 @@ public record ServerCapabilities(
                 && tarAvailable
                 && buildLimitToolsAvailable
                 && nonInteractiveSudoAvailable
+                && managedHelperProtocolVersion == 2
                 && healthToolsAvailable
                 && (mavenAvailable || sourceUsesMavenWrapper);
     }

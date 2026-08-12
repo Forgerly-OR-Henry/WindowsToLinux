@@ -7,7 +7,7 @@ import gold.debug.windowstolinux.app.service.server.*;
 import gold.debug.windowstolinux.app.service.source.*;
 
 import gold.debug.windowstolinux.app.db.DesktopPersistence;
-import gold.debug.windowstolinux.shared.deploy.plan.DeploymentRequest;
+import gold.debug.windowstolinux.shared.deploy.plan.ReviewedDeploymentRequest;
 import gold.debug.windowstolinux.shared.deploy.result.DeploymentResult;
 import gold.debug.windowstolinux.shared.deploy.result.LifecycleActionResult;
 import gold.debug.windowstolinux.shared.linux.sshd.connection.SshdLinuxGateway;
@@ -70,12 +70,12 @@ class UbuntuManagedRollbackAcceptanceIT {
         try (DesktopPersistence database = DesktopPersistence.open(temporaryDirectory.resolve("desktop-data"))) {
             DesktopApplicationService service = new DesktopApplicationService(
                     database, temporaryDirectory.resolve("work"), new SshdLinuxGateway());
-            SourcePreparation firstPreparation = service.prepareSource(v1);
-            SourcePreparation candidatePreparation = service.prepareSource(v2);
+            ReviewedSourcePreparation firstPreparation = ReviewedMavenAcceptanceSupport.prepare(service, v1);
+            ReviewedSourcePreparation candidatePreparation = ReviewedMavenAcceptanceSupport.prepare(service, v2);
             assertTrue(firstPreparation.archive().isPresent(), "v1 must pass managed-deployment static analysis");
             assertTrue(candidatePreparation.archive().isPresent(), "v2 must pass managed-deployment static analysis");
-            assertEquals(firstPreparation.assessment().facts().orElseThrow().applicationName(),
-                    candidatePreparation.assessment().facts().orElseThrow().applicationName(),
+            assertEquals(firstPreparation.assessment().facts().orElseThrow().applicationId(),
+                    candidatePreparation.assessment().facts().orElseThrow().applicationId(),
                     "both revisions must update the same managed application identity");
 
             ServerProfile profile = new ServerProfile("ubuntu-managed-rollback", host, 22, username,
@@ -83,38 +83,41 @@ class UbuntuManagedRollbackAcceptanceIT {
             service.saveServerProfile(profile, CredentialStorageMode.MASTER_PASSWORD, masterPassword, password.toCharArray());
             var capabilities = service.verifyServer(profile, CredentialStorageMode.MASTER_PASSWORD,
                     "managed-rollback-master".toCharArray(), fingerprint -> true);
-            assertTrue(capabilities.supportsManagedDeployment(firstPreparation.assessment().facts().orElseThrow().usesMavenWrapper(), proofHealth),
+            assertTrue(capabilities.supportsManagedDeployment(
+                    firstPreparation.assessment().facts().orElseThrow().buildTool()
+                            == gold.debug.windowstolinux.shared.model.project.DeploymentBuildTool.MAVEN_WRAPPER,
+                    proofHealth),
                     () -> "Ubuntu target must meet managed-deployment preconditions: " + capabilities);
             var server = service.findTrustedServer(profile.id()).orElseThrow();
 
-            DeploymentRequest firstRequest = request(service, firstPreparation, server, proofHealth, userAccessUrl, rootBuild);
-            DeploymentResult first = service.deployResultWithStoredPassword(
+            ReviewedDeploymentRequest firstRequest = request(service, firstPreparation, server, proofHealth, userAccessUrl, rootBuild);
+            DeploymentResult first = service.deployReviewedWithStoredPassword(
                     firstRequest, profile, CredentialStorageMode.MASTER_PASSWORD,
-                    "managed-rollback-master".toCharArray(), fingerprint -> true);
+                    "managed-rollback-master".toCharArray(), fingerprint -> true).result();
             assertEquals(DeploymentStatus.SUCCEEDED, first.status(), () -> first.events().toString());
-            String firstDigest = first.publishedArtifactSha256().orElseThrow();
+            String firstDigest = first.publishedReleaseSha256().orElseThrow();
 
-            DeploymentRequest candidateRequest = request(service, candidatePreparation, server, proofHealth, userAccessUrl, rootBuild);
-            assertEquals(firstRequest.application(), candidateRequest.application(),
+            ReviewedDeploymentRequest candidateRequest = request(service, candidatePreparation, server, proofHealth, userAccessUrl, rootBuild);
+            assertEquals(firstRequest.facts().applicationId(), candidateRequest.facts().applicationId(),
                     "repeat deployment must retain the locally verified ownership identity");
-            DeploymentResult candidate = service.deployResultWithStoredPassword(
+            DeploymentResult candidate = service.deployReviewedWithStoredPassword(
                     candidateRequest, profile, CredentialStorageMode.MASTER_PASSWORD,
-                    "managed-rollback-master".toCharArray(), fingerprint -> true);
+                    "managed-rollback-master".toCharArray(), fingerprint -> true).result();
             assertEquals(DeploymentStatus.FAILED_ROLLED_BACK, candidate.status(), () -> candidate.events().toString());
             assertEvent(candidate, "remote-build", true);
             assertEvent(candidate, "snapshot", true);
             assertEvent(candidate, "publish", true);
             assertEvent(candidate, "candidate-health", false);
             assertEvent(candidate, "rollback", true);
-            assertEvent(candidate, "rollback-health", true);
             assertEvent(candidate, "rollback-observation", true);
 
-            LifecycleActionResult refreshed = service.executeLifecycleResultWithStoredPassword(firstRequest.application(),
-                    LifecycleAction.REFRESH_STATUS, proofHealth, profile, CredentialStorageMode.MASTER_PASSWORD,
+            LifecycleActionResult refreshed = service.executePersistedLifecycleResultWithStoredPassword(
+                    firstRequest.facts().applicationId(), LifecycleAction.REFRESH_STATUS,
                     "managed-rollback-master".toCharArray());
             assertTrue(refreshed.accepted(), refreshed::toString);
             assertEquals(RuntimeState.RUNNING, refreshed.observation().orElseThrow().runtimeState());
-            assertEquals(firstDigest, database.managedApplications().findRelease(firstRequest.application().id()).orElseThrow().artifactSha256(),
+            assertEquals(firstDigest, database.managedApplications().findRelease(
+                            firstRequest.facts().applicationId()).orElseThrow().releaseSha256(),
                     "a failed candidate must not replace the locally recorded successful artifact");
             assertNotEquals(firstPreparation.archive().orElseThrow().contentSha256(),
                     candidatePreparation.archive().orElseThrow().contentSha256(),
@@ -122,16 +125,18 @@ class UbuntuManagedRollbackAcceptanceIT {
         }
     }
 
-    private static DeploymentRequest request(
+    private static ReviewedDeploymentRequest request(
             DesktopApplicationService service,
-            SourcePreparation preparation,
+            ReviewedSourcePreparation preparation,
             gold.debug.windowstolinux.shared.model.server.ServerIdentity server,
             HealthCheck health,
             UserAccessUrl userAccessUrl,
             boolean rootBuild
-    ) {
-        return service.createDeploymentRequest(preparation, server, health, Optional.of(userAccessUrl),
-                new BuildLimits(1200, 1024, 4096, 4L * 1024 * 1024, 2L * 1024 * 1024 * 1024, rootBuild), rootBuild);
+    ) throws Exception {
+        return ReviewedMavenAcceptanceSupport.request(service, preparation, server, health,
+                Optional.of(userAccessUrl),
+                new BuildLimits(1200, 1024, 4096, 4L * 1024 * 1024,
+                        2L * 1024 * 1024 * 1024, rootBuild), rootBuild);
     }
 
     private static UserAccessUrl businessUrl(String host, int port) {

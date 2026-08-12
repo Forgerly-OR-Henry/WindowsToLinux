@@ -47,6 +47,16 @@ class ReviewedReleaseIdentityTest {
                 baseline.secretReferences(), 8081)));
     }
 
+    @Test
+    void distinguishesSpringBootBuildToolsForTheSameReviewedInputs() {
+        ReviewedDeploymentRequest gradle = springBootRequest(DeploymentBuildTool.GRADLE_WRAPPER);
+
+        assertNotEquals(ReviewedReleaseIdentity.from(gradle),
+                ReviewedReleaseIdentity.from(springBootRequest(DeploymentBuildTool.MAVEN_WRAPPER)));
+        assertNotEquals(ReviewedReleaseIdentity.from(gradle),
+                ReviewedReleaseIdentity.from(springBootRequest(DeploymentBuildTool.MAVEN)));
+    }
+
     private ReviewedDeploymentRequest request(long revision, List<SecretReference> secrets, int port) {
         ServerIdentity server = new ServerIdentity("server-one", "example.test", 22, "SHA256:fixture");
         DeploymentProjectFacts facts = new DeploymentProjectFacts(temporaryDirectory, "demo",
@@ -61,6 +71,22 @@ class ReviewedReleaseIdentityTest {
         return new ReviewedDeploymentRequest(server, facts, new SourceRevision(SOURCE, Optional.empty(), Map.of()),
                 new SourceArchiveDescriptor(temporaryDirectory.resolve("source.tar.gz"), SOURCE, 100, 100),
                 configuration, secrets, runtime, Optional.empty(), BuildLimits.defaultNonRoot(),
+                new DeploymentApproval("demo", SOURCE, "server-one", false, Instant.EPOCH), false);
+    }
+
+    private ReviewedDeploymentRequest springBootRequest(DeploymentBuildTool buildTool) {
+        ServerIdentity server = new ServerIdentity("server-one", "example.test", 22, "SHA256:fixture");
+        DeploymentProjectFacts facts = new DeploymentProjectFacts(temporaryDirectory, "demo",
+                DeploymentProjectType.SPRING_BOOT, buildTool,
+                List.of(new AnalysisEvidence(LocalizedMessage.of("test.evidence"), "fixture",
+                        LocalizedMessage.of("test.detected"), EvidenceConfidence.HIGH)), List.of(), List.of());
+        ConfigurationSnapshot configuration = ConfigurationSnapshot.create("demo", 1, "v1", Instant.EPOCH,
+                List.of(new ConfigurationEntry("PORT", ConfigurationScope.RUNTIME,
+                        new ConfigurationValue.Number(8080))));
+        return new ReviewedDeploymentRequest(server, facts, new SourceRevision(SOURCE, Optional.empty(), Map.of()),
+                new SourceArchiveDescriptor(temporaryDirectory.resolve("source.tar.gz"), SOURCE, 100, 100),
+                configuration, List.of(), new DeploymentRuntimeSpecification.SpringBoot(new HealthCheck.Tcp(8080, 5, 1)),
+                Optional.empty(), BuildLimits.defaultNonRoot(),
                 new DeploymentApproval("demo", SOURCE, "server-one", false, Instant.EPOCH), false);
     }
 }

@@ -3,13 +3,10 @@ package gold.debug.windowstolinux.shared.ai.client;
 import gold.debug.windowstolinux.shared.ai.parser.ChatCompletionsResponseParser;
 import gold.debug.windowstolinux.shared.ai.prompt.StructuralAnalysisPrompt;
 import gold.debug.windowstolinux.shared.ai.prompt.AiResponseLanguage;
-import gold.debug.windowstolinux.shared.ai.redaction.RedactedProjectFacts;
 import gold.debug.windowstolinux.shared.ai.redaction.RedactedDeploymentProjectFacts;
-import gold.debug.windowstolinux.shared.model.message.LocalizedMessage;
 import gold.debug.windowstolinux.shared.model.project.DeploymentBuildTool;
 import gold.debug.windowstolinux.shared.model.project.DeploymentProjectFacts;
 import gold.debug.windowstolinux.shared.model.project.DeploymentProjectType;
-import gold.debug.windowstolinux.shared.model.project.SourceProjectFacts;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -27,10 +24,11 @@ class OpenAiCompatibleStructuralAnalyzerTest {
 
     @Test
     void sendsOnlyRedactedStaticFactsAndParsesEscapedContent() throws Exception {
-        SourceProjectFacts facts = new SourceProjectFacts(temporaryDirectory, "demo", true, true,
-                List.of(LocalizedMessage.of("test.safe")));
+        DeploymentProjectFacts facts = new DeploymentProjectFacts(temporaryDirectory, "demo",
+                DeploymentProjectType.SPRING_BOOT, DeploymentBuildTool.MAVEN_WRAPPER,
+                List.of(), List.of(), List.of());
 
-        String body = StructuralAnalysisPrompt.requestBody("gpt-5", RedactedProjectFacts.from(facts),
+        String body = StructuralAnalysisPrompt.requestBody("gpt-5", RedactedDeploymentProjectFacts.from(facts),
                 AiResponseLanguage.SIMPLIFIED_CHINESE);
         assertTrue(body.contains("applicationId=demo"));
         assertTrue(body.contains("Respond in Simplified Chinese"));
@@ -39,7 +37,7 @@ class OpenAiCompatibleStructuralAnalyzerTest {
                 "{\"choices\":[{\"message\":{\"content\":\"line one\\nline two\"}}]}"
         ).explanation().contains("line two"));
 
-        String english = StructuralAnalysisPrompt.requestBody("gpt-5", RedactedProjectFacts.from(facts),
+        String english = StructuralAnalysisPrompt.requestBody("gpt-5", RedactedDeploymentProjectFacts.from(facts),
                 AiResponseLanguage.ENGLISH);
         assertTrue(english.contains("Respond in English"));
         assertFalse(english.matches("(?s).*\\p{IsHan}.*"));

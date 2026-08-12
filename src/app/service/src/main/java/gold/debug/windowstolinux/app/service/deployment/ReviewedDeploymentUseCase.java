@@ -97,7 +97,7 @@ public final class ReviewedDeploymentUseCase {
      *
      * <p>仅为本次有界经审阅事务读取已保存的服务器凭据。
      */
-    public DeploymentResult deployWithStoredPassword(ReviewedDeploymentRequest request, ServerProfile profile,
+    public DeploymentOutcome deployWithStoredPassword(ReviewedDeploymentRequest request, ServerProfile profile,
                                                       gold.debug.windowstolinux.shared.model.security.CredentialStorageMode mode,
                                                       char[] masterPassword, Predicate<String> confirmation)
             throws SecretStoreException, SQLException {
@@ -125,7 +125,7 @@ public final class ReviewedDeploymentUseCase {
      *
      * <p>部署经审阅请求，并在成功后记录精确选定的健康契约。
      */
-    public DeploymentResult deploy(ReviewedDeploymentRequest request, SshEndpoint endpoint,
+    public DeploymentOutcome deploy(ReviewedDeploymentRequest request, SshEndpoint endpoint,
                                    SshCredential credential, HostKeyVerifier verifier) throws SQLException {
         if (!request.secretReferences().isEmpty()) {
             throw new LocalizedOperationException(LocalizedMessage.of("secret.applicationReferenceMissing"),
@@ -134,7 +134,7 @@ public final class ReviewedDeploymentUseCase {
         return deploy(request, endpoint, credential, verifier, List.of());
     }
 
-    private DeploymentResult deploy(ReviewedDeploymentRequest request, SshEndpoint endpoint,
+    private DeploymentOutcome deploy(ReviewedDeploymentRequest request, SshEndpoint endpoint,
                                     SshCredential credential, HostKeyVerifier verifier,
                                     List<ResolvedSecretRevision> resolvedSecrets) throws SQLException {
         request = Objects.requireNonNull(request, "request");
@@ -154,10 +154,10 @@ public final class ReviewedDeploymentUseCase {
             if (result.status() == DeploymentStatus.SUCCEEDED) {
                 applications.recordSuccessfulDeployment(application,
                         new ManagedApplicationRuntimeConfiguration(request.runtime().healthCheck(), request.userAccessUrl()),
-                        new CurrentRelease(application.id(), result.publishedArtifactSha256().orElseThrow(), Instant.now()),
+                        new CurrentRelease(application.id(), result.publishedReleaseSha256().orElseThrow(), Instant.now()),
                         request.secretReferences());
             }
-            return result;
+            return DeploymentOutcome.from(result, request, application);
         } finally {
             lock.unlock();
         }

@@ -19,10 +19,14 @@ class ResponsibilityPackageBoundaryTest {
             "StaticProjectAnalyzer.java", "DeploymentProjectAnalyzer.java", "DeploymentRuntimeInference.java",
             "DesktopPages.java", "DesktopDatabase.java", "DesktopRepository.java", "GitSnapshotService.java",
             "DeploymentBuildSupport.java", "SystemdRuntimeExecutor.java", "DeploymentSystemdUnitRenderer.java",
-            "ManagedPrivilegeHelper.java");
+            "ManagedPrivilegeHelper.java", "ManagedSpringBootAnalysisCoordinator.java",
+            "GradleSpringBootDeploymentInspector.java", "SpringBootProjectInspector.java",
+            "ProjectAssessment.java", "SupportDecision.java", "SourceProjectFacts.java", "SourcePreparation.java",
+            "DeploymentRequest.java", "ManagedDeploymentService.java", "DeploymentUseCase.java",
+            "RemoteBuildResult.java", "LinuxBuildOperations.java", "LinuxReleaseOperations.java",
+            "MavenBuildExecutor.java", "MavenBuildSupport.java", "ManagedReleaseProtocolExecutor.java");
     private static final Set<String> ANALYSIS_CORE = Set.of(
-            "ManagedSpringBootAnalysisCoordinator.java", "DeploymentAnalysisCoordinator.java",
-            "DeploymentTypeInspector.java", "DeploymentTypeInspection.java");
+            "DeploymentAnalysisCoordinator.java", "DeploymentTypeInspector.java", "DeploymentTypeInspection.java");
     private static final Set<String> DESKTOP_SHELL = Set.of(
             "DesktopFrame.java", "DesktopPageCoordinator.java", "DesktopViewState.java", "PageMessages.java",
             "PageNavigator.java");
@@ -83,9 +87,10 @@ class ResponsibilityPackageBoundaryTest {
         }
 
         String structure = Files.readString(root.resolve("docs/File.md"));
-        for (String required : List.of("ManagedSpringBootAnalysisCoordinator", "DeploymentAnalysisCoordinator",
+        for (String required : List.of("DeploymentAnalysisCoordinator", "SpringBootDeploymentInspector",
                 "DesktopPageCoordinator", "DesktopPersistence", "GitSnapshotPreparer", "DeploymentBuildRenderer",
-                "SystemdHealthChecker", "SystemdOwnershipObserver", "SystemdLifecycleExecutor", "ManagedHelperBundle")) {
+                "SpringBootBuildRenderer", "SystemdHealthChecker", "SystemdOwnershipObserver",
+                "SystemdLifecycleExecutor", "ManagedHelperBundle")) {
             assertTrue(structure.contains(required), () -> "File.md is missing the current responsibility: " + required);
         }
     }

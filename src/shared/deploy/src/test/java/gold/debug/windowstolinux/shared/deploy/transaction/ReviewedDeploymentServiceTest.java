@@ -18,6 +18,7 @@ import gold.debug.windowstolinux.shared.linux.connection.SshCredential;
 import gold.debug.windowstolinux.shared.linux.connection.SshEndpoint;
 import gold.debug.windowstolinux.shared.linux.protocol.ReleaseSnapshot;
 import gold.debug.windowstolinux.shared.linux.protocol.RemoteStepResult;
+import gold.debug.windowstolinux.shared.linux.protocol.ManagedHelperProtocol;
 import gold.debug.windowstolinux.shared.linux.runtime.HealthCheckResult;
 import gold.debug.windowstolinux.shared.linux.transfer.RemoteWorkspace;
 import gold.debug.windowstolinux.shared.linux.transfer.UploadReceipt;
@@ -73,7 +74,7 @@ class ReviewedDeploymentServiceTest {
                     new SshEndpoint("server-one", "example.test", 22, "deployer"),
                     new SshCredential.Password("password".toCharArray()), (endpoint, fingerprint) -> HostKeyDecision.ACCEPT_EXISTING);
             assertEquals(DeploymentStatus.SUCCEEDED, result.status());
-            assertEquals(ReviewedReleaseIdentity.from(request), result.publishedArtifactSha256().orElseThrow());
+            assertEquals(ReviewedReleaseIdentity.from(request), result.publishedReleaseSha256().orElseThrow());
         }
         assertEquals(EnumSet.allOf(DeploymentProjectType.class), built);
     }
@@ -120,12 +121,35 @@ class ReviewedDeploymentServiceTest {
         assertTrue(result.events().stream().anyMatch(event -> event.step().equals("recovery-reconnect")));
     }
 
+    @Test
+    void rejectsAStaleHelperBeforeCreatingOrUploadingACandidate() {
+        Counters counters = new Counters();
+        DeploymentRemoteSession session = fakeSession(EnumSet.noneOf(DeploymentProjectType.class), null, counters,
+                ManagedHelperProtocol.VERSION - 1);
+        DeploymentLinuxGateway gateway = (endpoint, credential, verifier) -> session;
+
+        DeploymentResult result = new ReviewedDeploymentService().deploy(request(runtimes().getFirst()), application(), gateway,
+                new SshEndpoint("server-one", "example.test", 22, "deployer"),
+                new SshCredential.Password("password".toCharArray()),
+                (endpoint, fingerprint) -> HostKeyDecision.ACCEPT_EXISTING);
+
+        assertEquals(DeploymentStatus.PRECONDITION_REJECTED, result.status());
+        assertEquals(0, counters.uploads.get());
+        assertEquals(0, counters.cleanups.get());
+        assertTrue(result.events().stream().anyMatch(event -> event.step().equals("helper-protocol") && !event.succeeded()));
+    }
+
     private DeploymentRemoteSession fakeSession(EnumSet<DeploymentProjectType> built) {
         return fakeSession(built, null, new Counters());
     }
 
     private DeploymentRemoteSession fakeSession(EnumSet<DeploymentProjectType> built, String interruptedMethod,
                                                 Counters counters) {
+        return fakeSession(built, interruptedMethod, counters, ManagedHelperProtocol.VERSION);
+    }
+
+    private DeploymentRemoteSession fakeSession(EnumSet<DeploymentProjectType> built, String interruptedMethod,
+                                                 Counters counters, int helperProtocolVersion) {
         return (DeploymentRemoteSession) Proxy.newProxyInstance(getClass().getClassLoader(),
                 new Class<?>[]{DeploymentRemoteSession.class}, (proxy, method, arguments) -> {
                     if (method.getName().equals(interruptedMethod)) {
@@ -133,11 +157,12 @@ class ReviewedDeploymentServiceTest {
                     }
                     return switch (method.getName()) {
                     case "collectCapabilities" -> new ServerCapabilities("Ubuntu 24.04", "x86_64", true, true, true,
-                            true, true, true, true, true, 10L * 1024 * 1024 * 1024, "fixture");
+                            true, true, true, true, true, helperProtocolVersion, 10L * 1024 * 1024 * 1024, "fixture");
                     case "collectDeploymentCapabilities" -> new LinuxCapabilities(LinuxDistro.UBUNTU, "24.04", "x86_64", "apt",
-                            true, true, true, true, java.util.Set.of(21), java.util.Set.of(22), true,
+                            true, true, true, true, java.util.Set.of(21), java.util.Set.of(22), true, true,
                             java.util.Set.of("3.12"), true, true, true, true, java.util.Set.of("sse4_2"), "fixture");
                     case "uploadSource" -> {
+                        counters.uploads.incrementAndGet();
                         SourceArchiveDescriptor archive = (SourceArchiveDescriptor) arguments[0];
                         RemoteWorkspace workspace = (RemoteWorkspace) arguments[1];
                         yield new UploadReceipt(workspace.candidateRoot() + "/mutable/source.tar.gz", archive.byteCount(),
@@ -185,7 +210,7 @@ class ReviewedDeploymentServiceTest {
 
     private static DeploymentBuildTool tool(DeploymentRuntimeSpecification runtime) {
         return switch (runtime.projectType()) {
-            case GRADLE_SPRING_BOOT -> DeploymentBuildTool.GRADLE_WRAPPER;
+            case SPRING_BOOT -> DeploymentBuildTool.GRADLE_WRAPPER;
             case JAVA_JAR -> DeploymentBuildTool.JAVA;
             case NODE_SERVICE -> DeploymentBuildTool.NPM;
             case PYTHON_SERVICE -> DeploymentBuildTool.PYTHON_VENV;
@@ -196,7 +221,7 @@ class ReviewedDeploymentServiceTest {
 
     private static List<DeploymentRuntimeSpecification> runtimes() {
         return List.of(
-                new DeploymentRuntimeSpecification.GradleSpringBoot(new HealthCheck.Tcp(8080, 5, 1)),
+                new DeploymentRuntimeSpecification.SpringBoot(new HealthCheck.Tcp(8080, 5, 1)),
                 new DeploymentRuntimeSpecification.JavaJar("app.jar", "demo.Main", "21", List.of("-Xmx256m"), List.of(),
                         new HealthCheck.Tcp(8080, 5, 1)),
                 new DeploymentRuntimeSpecification.NodeService(22, new HealthCheck.Tcp(8080, 5, 1)),
@@ -216,5 +241,6 @@ class ReviewedDeploymentServiceTest {
         private final AtomicInteger connections = new AtomicInteger();
         private final AtomicInteger cleanups = new AtomicInteger();
         private final AtomicInteger rollbacks = new AtomicInteger();
+        private final AtomicInteger uploads = new AtomicInteger();
     }
 }

@@ -1,9 +1,7 @@
 package gold.debug.windowstolinux.shared.linux.connection;
 
-import gold.debug.windowstolinux.shared.linux.build.LinuxBuildOperations;
 import gold.debug.windowstolinux.shared.linux.capability.LinuxCapabilityOperations;
 import gold.debug.windowstolinux.shared.linux.distro.LinuxEnvironmentOperations;
-import gold.debug.windowstolinux.shared.linux.protocol.LinuxReleaseOperations;
 import gold.debug.windowstolinux.shared.linux.runtime.LinuxRuntimeOperations;
 import gold.debug.windowstolinux.shared.linux.transfer.LinuxTransferOperations;
 
@@ -16,8 +14,6 @@ public interface LinuxRemoteSession extends AutoCloseable,
         LinuxCapabilityOperations,
         LinuxEnvironmentOperations,
         LinuxTransferOperations,
-        LinuxBuildOperations,
-        LinuxReleaseOperations,
         LinuxRuntimeOperations {
     @Override
     void close();

@@ -59,8 +59,13 @@ public final class SshdCapabilityCollector {
                 "1".equals(values.get("SS")),
                 "1".equals(values.get("LIMIT_TOOLS")),
                 "1".equals(values.get("SUDO")),
+                protocolVersion(values.get("HELPER_PROTOCOL")),
                 SshCommandExecutor.parseLong(values.get("FREE")),
                 "SSH host fingerprint verified: " + hostFingerprint
         );
+    }
+
+    private static int protocolVersion(String value) {
+        return value != null && value.matches("[0-9]{1,3}") ? Integer.parseInt(value) : 0;
     }
 }

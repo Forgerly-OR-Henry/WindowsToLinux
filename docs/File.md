@@ -2,14 +2,14 @@
 
 ## 文档信息
 
-- 文档版本：`2.5.0-reviewed-runtime-acceptance`
-- 文档状态：**正式目标模块、职责、依赖方向和叶子模块内部目标包结构已确认；28 个 Maven reactor 工程、职责拆包、基础语言事实及 Ubuntu 24.04 类型化部署验收已落地；其余主机矩阵保持待验证**
+- 文档版本：`2.6.0-spring-boot-reviewed-convergence`
+- 文档状态：**正式目标模块、职责、依赖方向、叶子模块内部目标包结构及根目录验收夹具分类已确认；统一 Spring Boot Reviewed/helper v2 链路已完成本地实现，真实目标机状态为 `RUNTIME-PENDING`**
 - 已确认范围：`shared` 共用模块、`app` Windows 桌面应用模块、`web` Web 应用模块
 - 已确认能力边界：受管应用生命周期复用既有模块，不新增独立 Maven 模块
-- 更新日期：2026-08-12
+- 更新日期：2026-08-13
 - 开发总纲：[DEVELOPMENT.md](DEVELOPMENT.md)
 
-> 本文是正式目标目录、模块职责、依赖方向和内部包结构的来源。当前 reactor 已包含根工程、3 个聚合模块和 24 个叶子模块，共 28 个 POM。`shared/source`、`shared/config`、`shared/git`、`shared/linux-sshd`、`analyze`、`deploy`、`app/db` 与 `app/service` 已承载对应的一期或二期代码；其中 `shared/linux-sshd` 已实现六类项目的有界构建、发布/回滚/生命周期协议及受支持发行版固定环境准备。`shared/backup` 和 Web Java 叶子模块仍只保留 POM。Ubuntu 24.04 x86-64 已由产品入口完成六类项目与公开 Git 固定 Commit 的实机验收；Podman、Ubuntu 22.04 和 CentOS Stream 9/10 不从该证据外推，继续标记 `RUNTIME-PENDING`。
+> 本文是正式目标目录、模块职责、依赖方向和内部包结构的来源。当前 reactor 已包含根工程、3 个聚合模块和 24 个叶子模块，共 28 个 POM。`shared/source`、`shared/config`、`shared/git`、`shared/linux-sshd`、`analyze`、`deploy`、`app/db` 与 `app/service` 已承载对应的一期或二期代码；其中 `shared/linux-sshd` 已实现六类项目的有界构建、发布/回滚/生命周期协议及受支持发行版固定环境准备。`shared/backup` 和 Web Java 叶子模块仍只保留 POM。2026-08-10/12 的 Ubuntu 24.04 x86-64 产品入口验收属于迁移前协议的历史证据，继续保留但不得外推到本次统一后的 Spring Boot Reviewed/helper v2 链路；新链路与 Podman、Ubuntu 22.04、CentOS Stream 9/10 均标记 `RUNTIME-PENDING`。
 
 ## 1. 完整目标结构
 
@@ -216,6 +216,16 @@ WindowsToLinux/
          └─ scheduler/        调度、互斥和取消
 ```
 
+根目录 `test` 保存不参与 WindowsToLinux Maven reactor 的独立验收夹具，当前按源码语言、构建工具和框架使用以下结构：
+
+```text
+test/
+└─ java/
+   └─ maven/
+      └─ spring-boot/
+         └─ <fixture>/
+```
+
 - 项目根目录的 [pom.xml](../pom.xml) 作为 Maven 父工程和总聚合入口。
 - `src/app/pom.xml` 作为桌面应用模块聚合入口，使用 Maven `pom` 打包类型，不放业务源码。
 - `db`、`main`、`secret`、`service`、`ui` 和 `windows` 都是独立 Maven 叶子模块。
@@ -233,13 +243,13 @@ WindowsToLinux/
 
 ### 1.1 当前落地职责边界
 
-- `analyze/core` 只保留 `ManagedSpringBootAnalysisCoordinator`、`DeploymentAnalysisCoordinator` 及类型检查器契约；Gradle、Maven、Node、Python、Spring Boot、语言生态、静态站点和容器事实分别由对应包产生证据与局部结果。
+- `analyze/core` 只保留唯一 `DeploymentAnalysisCoordinator` 及类型检查器契约；`framework/springboot/SpringBootDeploymentInspector` 统一 Maven 与 Gradle Spring Boot 事实和风险检查，其他构建工具、语言生态、静态站点和容器事实分别由对应包产生证据与局部结果。
 - `app/ui/shell` 只由 `DesktopFrame`、`DesktopPageCoordinator`、`DesktopViewState`、`PageMessages` 和 `PageNavigator` 负责窗口、装配、聚合状态与本地化；五个页面控制器各自持有表单和流程，跨页面只使用 `ServerContext` 与 `ReviewContext`。
 - `DesktopPersistence` 只组合服务器、偏好、AI、普通配置、应用秘密、加密载荷和受管应用仓库；服务和秘密存储只依赖所需仓库，成功发布仍由 `ManagedApplicationRepository` 在单事务内写入。
 - `GitSnapshotPreparer` 只协调 `GitCommandRunner`、`ControlledGitWorkspaceValidator`、`GitRepositoryFeaturePolicy` 和安全归档，不执行仓库源码。
-- `DeploymentBuildRenderer` 由六个项目类型渲染器实现并共享安全脚本外壳；注册表拒绝缺失、重复和类型不匹配实现，Node 构建型静态站点必须携带显式主版本。
+- `DeploymentBuildRenderer` 由六个项目类型渲染器实现并共享安全脚本外壳；其中 `SpringBootBuildRenderer` 只接受 Gradle Wrapper、Maven Wrapper、系统 Maven 三种固定入口并验证唯一 Spring Boot 2/3 可执行 JAR，注册表拒绝缺失、重复和类型不匹配实现。
 - systemd 远程职责由 `SystemdHealthChecker`、`SystemdOwnershipObserver` 和 `SystemdLifecycleExecutor` 分别承担。
-- `ManagedHelperBundle` 按固定顺序拼装九个职责资源片段；安装路径和 sudoers 白名单仅允许 `/usr/local/lib/windowstolinux/managed-helper`，拼装字节的 SHA-256 固定为 `0d860e5fba4bc4349f94ddfbdd020030e008ea79dc37329eae6ba36785281f29`。
+- `ManagedHelperBundle` 按固定顺序拼装九个职责资源片段；安装路径和 sudoers 白名单仅允许 `/usr/local/lib/windowstolinux/managed-helper`，协议版本固定为 2，拼装字节的 SHA-256 固定为 `a6c34b9f789881e98479c4d78daebd1657b0d9b7d9e9b96da8f05945267e934a`。旧 helper 必须由用户通过产品“环境准备”显式更新，部署链路不得自动替换。
 
 ## 2. 模块职责
 
@@ -262,7 +272,7 @@ WindowsToLinux/
 
 `source` 只处理平台无关的源码快照与归档规则。`app/windows` 负责桌面本地文件入口，`web/file` 负责上传、配额和服务端工作区，`git` 负责仓库来源；三者复用 `source`，不得复制源码归档格式或安全校验规则。源码归档服务于源码传输和目标机构建，`backup` 管理的备份归档服务于应用数据恢复与迁移，两者不得混用格式、清单或生命周期语义。
 
-`linux` 已只保留连接、会话、传输、能力、构建、运行、发行版和高权限操作的公共契约。`SshdLinuxGateway`、SSHD Session、受控命令执行、SFTP、Maven 构建、Ubuntu 环境准备、systemd 运行和高权限 helper 均已迁入 `linux-sshd` 对应包。`DesktopApplicationService` 只接收 `LinuxGateway`，由 `app/main/bootstrap` 构造并注入具体 SSHD 实现。
+`linux` 已只保留连接、会话、传输、能力、构建、运行、发行版和高权限操作的公共契约。`DeploymentLinuxGateway` 扩展 `LinuxGateway` 并直接返回具有构建、快照、发布、回滚和保留能力的 `DeploymentRemoteSession`；`SshdLinuxGateway`、SSHD Session、受控命令执行、SFTP、Spring Boot 构建、Ubuntu 环境准备、systemd 运行和高权限 helper 均位于 `linux-sshd` 对应包。`DesktopApplicationService` 直接接收 `DeploymentLinuxGateway`，由 `app/main/bootstrap` 构造并注入具体 SSHD 实现。
 
 ### 2.2 `app` 桌面应用模块
 
@@ -361,7 +371,7 @@ deploy.transaction            编排上传、构建、发布、健康检查和�
 
 1. Maven 模块表达依赖、技术和安全边界；Java 包和前端目录只负责模块内部组织，必须遵守第 4 节依赖方向。
 2. 模块根包只保留稳定入口、门面或确需跨内部包使用的公共契约，具体实现进入职责明确的子包。
-3. 测试包镜像对应生产包；测试夹具按语言、构建工具、框架或功能归类。
+3. 测试包镜像对应生产包；根目录测试夹具使用 `test/<language>/<build-tool>/<framework-or-function>/<fixture>` 分类，新增语言、构建工具、框架或功能时创建对应同级目录，不创建没有夹具的空分类。
 4. 禁止创建含义宽泛的 `util`、`common`、`misc` 包，也不得把大量无关实现集中到单一 `impl` 包。
 5. `analyze` 按语言、构建工具、框架和工作负载组织识别能力；`deploy` 按部署形态组织适配器；`linux` 按连接、传输、能力、构建、运行方式、发行版和协议组织公共契约，`linux-sshd` 按实际需要组织对应实现。
 6. 禁止按语言、部署形态、发行版和 CPU 架构的笛卡尔组合创建包；具体支持范围由 `deploy.compatibility` 依据已经验收的支持矩阵判断。
@@ -598,11 +608,14 @@ linux-sshd 通过 linux 契约采集服务器已有环境
 18. 类型化部署分析必须把确定的源码元数据作为可审阅的 `DeploymentRuntimeSuggestion` 返回，而非由桌面表单写死语言版本、入口、产物目录、端口或卷。仅在值唯一、受支持、边界安全且具有 `AnalysisEvidence` 时才可回填；范围、冲突、任意脚本和文档文字只能作为未解决的用户输入，绝不转换为命令。
 19. 本地目录和 Git 来源都必须在 `app/service/source` 汇合为同一 `ReviewedSourcePreparation`，并以归档摘要绑定 `SourceRevision`。网络 Git 来源必须使用无凭据 URI、允许主机、固定 Commit 和受控工作目录；桌面 UI 不得调用 Git 进程、数据库或秘密存储实现。
 20. `analyze/core`、`app/ui/shell`、`app/db/repository`、远程构建、systemd 和 helper 资源必须维持第 1.1 节的职责拆分。禁止恢复已删除的集中类，禁止以兼容壳保留旧公开类型；新增职责应进入对应包或窄契约，并通过结构边界测试同步校验本文。
+21. 用户可见和持久化语义统一使用“发布身份摘要”（`release_sha256`）；“制品”仅描述构建过程中待验证的文件，不得再把已发布身份称为制品摘要。桌面 SQLite 当前 schema 为 v5，v4 的 `artifact_sha256` 通过列重命名无损迁移并继续表示既有发布身份。
 
 ## 11. 文档版本记录
 
 | 版本 | 日期 | 说明 |
 | --- | --- | --- |
+| 2.6.0-spring-boot-reviewed-convergence | 2026-08-13 | 将 Maven/Gradle Spring Boot 合并为 `SPRING_BOOT` 并由构建工具区分固定入口；删除旧分析、源码和部署 API，接入 helper v2、发布身份 v2 与 SQLite v5。迁移前 Ubuntu 实机证据保留为历史记录，统一后的 Reviewed 链路标记 `RUNTIME-PENDING`。 |
+| 2.5.1-test-fixture-layout | 2026-08-13 | 将根目录 23 个 Java、Maven、Spring Boot 独立验收夹具统一归入 `test/java/maven/spring-boot`，明确后续按语言、构建工具、框架或功能扩展；不修改夹具内容、生产模块或 Maven reactor。 |
 | 2.5.0-reviewed-runtime-acceptance | 2026-08-12 | 完成从本地或 Git 选定源码、语言与运行事实分析、确定性计划、不可变配置/秘密输入、目标机构建、发布、健康、观测、生命周期和失败恢复的职责闭环；Ubuntu 24.04 x86-64 已由产品入口完成六类项目实机验收，其余主机矩阵保持 `RUNTIME-PENDING`。 |
 | 2.4.0-responsibility-boundaries | 2026-08-12 | 将源码分析、桌面页面、SQLite 仓库、Git 快照、六类远程构建、systemd 和高权限 helper 按稳定职责拆分；补齐 Java、Node.js/JavaScript/TypeScript、Python 基础语言事实及 UI 映射，固定静态站点 Node 版本约束和 helper 拼装哈希；不修改 SQLite schema、远程协议、安全或凭据边界。 |
 | 2.3.4-reviewed-source-inference | 2026-08-12 | 补齐本地与 Git 源码到同一经审阅归档/来源身份的服务路径；新增有证据、可人工复核的 Java、Node、Python、静态站点和容器运行时建议，移除桌面表单中的语言、入口、产物、端口和配置硬编码；桌面可录入不可变秘密修订并在发布请求中传递显式引用。未连接真实目标机。 |

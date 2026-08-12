@@ -8,7 +8,7 @@ import gold.debug.windowstolinux.app.service.source.*;
 
 import gold.debug.windowstolinux.app.db.DesktopPersistence;
 import gold.debug.windowstolinux.app.service.deployment.DeploymentHandoff.HttpAccessUrl;
-import gold.debug.windowstolinux.shared.deploy.plan.DeploymentRequest;
+import gold.debug.windowstolinux.shared.deploy.plan.ReviewedDeploymentRequest;
 import gold.debug.windowstolinux.shared.deploy.result.LifecycleActionResult;
 import gold.debug.windowstolinux.shared.linux.sshd.connection.SshdLinuxGateway;
 import gold.debug.windowstolinux.shared.model.deployment.BuildLimits;
@@ -18,6 +18,7 @@ import gold.debug.windowstolinux.shared.model.health.HealthCheck;
 import gold.debug.windowstolinux.shared.model.lifecycle.LifecycleAction;
 import gold.debug.windowstolinux.shared.model.lifecycle.RuntimeState;
 import gold.debug.windowstolinux.shared.model.health.UserAccessUrl;
+import gold.debug.windowstolinux.shared.model.project.DeploymentBuildTool;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIfSystemProperty;
 import org.junit.jupiter.api.io.TempDir;
@@ -69,9 +70,10 @@ class UbuntuManagedMavenWrapperAcceptanceIT {
         try (DesktopPersistence database = DesktopPersistence.open(temporaryDirectory.resolve("desktop-data"))) {
             DesktopApplicationService service = new DesktopApplicationService(
                     database, temporaryDirectory.resolve("work"), new SshdLinuxGateway());
-            SourcePreparation preparation = service.prepareSource(source);
+            ReviewedSourcePreparation preparation = ReviewedMavenAcceptanceSupport.prepare(service, source);
             assertTrue(preparation.archive().isPresent(), "fixture must pass static analysis");
-            assertTrue(preparation.assessment().facts().orElseThrow().usesMavenWrapper(),
+            assertEquals(DeploymentBuildTool.MAVEN_WRAPPER,
+                    preparation.assessment().facts().orElseThrow().buildTool(),
                     "only a root mvnw plus standard wrapper properties may select the Wrapper build path");
             assertArchiveContainsWrapper(preparation);
 
@@ -85,11 +87,14 @@ class UbuntuManagedMavenWrapperAcceptanceIT {
                     () -> "Ubuntu target must meet Maven Wrapper preconditions: " + capabilities);
 
             var server = service.findTrustedServer(profile.id()).orElseThrow();
-            DeploymentRequest request = service.createDeploymentRequest(preparation, server, health, Optional.of(userAccessUrl),
-                    new BuildLimits(1200, 1024, 4096, 4L * 1024 * 1024, 2L * 1024 * 1024 * 1024, rootBuild), rootBuild);
-            DeploymentOutcome result = service.deployWithStoredPassword(request, profile, CredentialStorageMode.MASTER_PASSWORD,
+            ReviewedDeploymentRequest request = ReviewedMavenAcceptanceSupport.request(service, preparation, server,
+                    health, Optional.of(userAccessUrl),
+                    new BuildLimits(1200, 1024, 4096, 4L * 1024 * 1024,
+                            2L * 1024 * 1024 * 1024, rootBuild), rootBuild);
+            DeploymentOutcome result = service.deployReviewedWithStoredPassword(
+                    request, profile, CredentialStorageMode.MASTER_PASSWORD,
                     "managed-wrapper-master".toCharArray(), fingerprint -> true);
-            assertEquals(DeploymentStatus.SUCCEEDED.name(), result.status(), () -> result.events().toString());
+            assertEquals(DeploymentStatus.SUCCEEDED, result.status(), () -> result.events().toString());
             URI accessUrl = requireHttpAccessUrl(result, userAccessUrl.url());
             assertDesktopCanAccess(accessUrl, "managed service Wrapper Service");
             assertEvent(result, "source-upload", true);
@@ -101,7 +106,7 @@ class UbuntuManagedMavenWrapperAcceptanceIT {
             assertEvent(result, "candidate-health", true);
 
             LifecycleActionResult refresh = service.executePersistedLifecycleResultWithStoredPassword(
-                    request.application().id(), LifecycleAction.REFRESH_STATUS,
+                    request.facts().applicationId(), LifecycleAction.REFRESH_STATUS,
                     "managed-wrapper-master".toCharArray());
             assertTrue(refresh.accepted(), refresh::toString);
             assertTrue(refresh.observation().orElseThrow().ownershipVerified());
@@ -109,7 +114,7 @@ class UbuntuManagedMavenWrapperAcceptanceIT {
         }
     }
 
-    private static void assertArchiveContainsWrapper(SourcePreparation preparation) throws Exception {
+    private static void assertArchiveContainsWrapper(ReviewedSourcePreparation preparation) throws Exception {
         Set<String> expectedEntries = new LinkedHashSet<>(Set.of(
                 "mvnw", ".mvn/wrapper/maven-wrapper.properties", ".mvn/wrapper/maven-wrapper.jar"
         ));

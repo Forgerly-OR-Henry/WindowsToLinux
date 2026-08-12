@@ -36,7 +36,7 @@ class ContainerProtocolContractTest {
         assertTrue(helper.contains("load_container_parameters"));
         assertTrue(helper.contains("save_deployment_parameters"));
         assertTrue(helper.contains("load_deployment_parameters"));
-        assertTrue(helper.contains("printf 'HELPER=1\\n'"));
+        assertTrue(helper.contains("printf 'HELPER=1\\nPROTOCOL=%s\\n'"));
         assertFalse(helper.contains("\\\\n"));
         assertTrue(helper.contains("Volume=%s:%s"));
         assertTrue(helper.contains("update --restart unless-stopped"));
