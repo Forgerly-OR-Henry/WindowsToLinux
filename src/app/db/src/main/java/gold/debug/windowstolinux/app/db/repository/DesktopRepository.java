@@ -919,7 +919,7 @@ public final class DesktopRepository implements AutoCloseable {
                 statement.setInt(7, tcp.stabilitySeconds());
                 statement.setNull(8, Types.VARCHAR);
             } else {
-                throw new SQLException("unsupported phase-one health-check type");
+                throw new SQLException("unsupported managed-deployment health-check type");
             }
             statement.executeUpdate();
         }
@@ -956,17 +956,17 @@ public final class DesktopRepository implements AutoCloseable {
                                 result.getInt("tcp_stability_seconds")),
                         Optional.empty()
                 );
-                default -> throw new SQLException("saved phase-one health-check type is invalid");
+                default -> throw new SQLException("saved managed-deployment health-check type is invalid");
             };
         } catch (IllegalArgumentException exception) {
-            throw new SQLException("saved phase-one runtime configuration violates current validation rules", exception);
+            throw new SQLException("saved managed-deployment runtime configuration violates current validation rules", exception);
         }
     }
 
     private static String requiredColumn(ResultSet result, String column) throws SQLException {
         String value = result.getString(column);
         if (value == null || value.isBlank()) {
-            throw new SQLException("saved phase-one runtime configuration is missing " + column);
+            throw new SQLException("saved managed-deployment runtime configuration is missing " + column);
         }
         return value;
     }

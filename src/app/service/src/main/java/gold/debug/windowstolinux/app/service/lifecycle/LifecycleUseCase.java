@@ -9,7 +9,7 @@ import gold.debug.windowstolinux.app.service.server.ServerProfile;
 import gold.debug.windowstolinux.app.service.server.ServerUseCases;
 import gold.debug.windowstolinux.shared.deploy.lifecycle.ManagedLifecycleService;
 import gold.debug.windowstolinux.shared.deploy.result.LifecycleActionResult;
-import gold.debug.windowstolinux.shared.linux.connection.PhaseOneLinuxGateway;
+import gold.debug.windowstolinux.shared.linux.connection.LinuxGateway;
 import gold.debug.windowstolinux.shared.model.health.HealthCheck;
 import gold.debug.windowstolinux.shared.model.lifecycle.LifecycleAction;
 import gold.debug.windowstolinux.shared.model.lifecycle.LifecycleObservation;
@@ -32,7 +32,7 @@ import java.util.concurrent.locks.ReentrantLock;
  */
 public final class LifecycleUseCase {
     private final DesktopDatabase database;
-    private final PhaseOneLinuxGateway gateway;
+    private final LinuxGateway gateway;
     private final ServerUseCases servers;
     private final ServerOperationLocks locks;
 
@@ -47,7 +47,7 @@ public final class LifecycleUseCase {
      * @param locks the {@code locks} value / {@code locks} 值
      * @throws NullPointerException if a required argument is {@code null} / 必要参数为 {@code null} 时
      */
-    public LifecycleUseCase(DesktopDatabase database, PhaseOneLinuxGateway gateway,
+    public LifecycleUseCase(DesktopDatabase database, LinuxGateway gateway,
                             ServerUseCases servers, ServerOperationLocks locks) {
         this.database = Objects.requireNonNull(database, "database");
         this.gateway = Objects.requireNonNull(gateway, "gateway");

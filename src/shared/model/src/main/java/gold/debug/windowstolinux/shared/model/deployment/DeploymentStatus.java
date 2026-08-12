@@ -1,9 +1,9 @@
 package gold.debug.windowstolinux.shared.model.deployment;
 
 /**
- * Accurate terminal state of a phase-one publishing transaction.
+ * Accurate terminal state of a managed-deployment publishing transaction.
  *
- * <p>一期发布事务的准确终态。
+ * <p>受管部署发布事务的准确终态。
  */
 public enum DeploymentStatus {
     /**

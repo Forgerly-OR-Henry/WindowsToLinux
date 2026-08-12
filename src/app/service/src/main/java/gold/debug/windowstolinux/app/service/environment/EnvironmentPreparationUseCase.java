@@ -5,11 +5,11 @@ import gold.debug.windowstolinux.app.secret.api.SecretStoreException;
 import gold.debug.windowstolinux.app.service.concurrency.ServerOperationLocks;
 import gold.debug.windowstolinux.app.service.server.ServerProfile;
 import gold.debug.windowstolinux.app.service.server.ServerUseCases;
-import gold.debug.windowstolinux.shared.deploy.environment.PhaseOneEnvironmentPreparationService;
+import gold.debug.windowstolinux.shared.deploy.environment.EnvironmentPreparationService;
 import gold.debug.windowstolinux.shared.linux.connection.LinuxOperationException;
-import gold.debug.windowstolinux.shared.linux.connection.PhaseOneLinuxGateway;
-import gold.debug.windowstolinux.shared.model.deployment.PhaseOneEnvironmentPreparationApproval;
-import gold.debug.windowstolinux.shared.model.deployment.PhaseOneEnvironmentPreparationResult;
+import gold.debug.windowstolinux.shared.linux.connection.LinuxGateway;
+import gold.debug.windowstolinux.shared.model.deployment.EnvironmentPreparationApproval;
+import gold.debug.windowstolinux.shared.model.deployment.EnvironmentPreparationResult;
 import gold.debug.windowstolinux.shared.model.message.LocalizedMessage;
 import gold.debug.windowstolinux.shared.model.message.LocalizedOperationException;
 import gold.debug.windowstolinux.shared.model.security.CredentialStorageMode;
@@ -27,8 +27,8 @@ import java.util.function.Predicate;
  * <p>提供 {@code EnvironmentPreparationUseCase} 实现。
  */
 public final class EnvironmentPreparationUseCase {
-    private final PhaseOneEnvironmentPreparationService service;
-    private final PhaseOneLinuxGateway gateway;
+    private final EnvironmentPreparationService service;
+    private final LinuxGateway gateway;
     private final ServerUseCases servers;
     private final ServerOperationLocks locks;
 
@@ -43,7 +43,7 @@ public final class EnvironmentPreparationUseCase {
      * @param locks the {@code locks} value / {@code locks} 值
      * @throws NullPointerException if a required argument is {@code null} / 必要参数为 {@code null} 时
      */
-    public EnvironmentPreparationUseCase(PhaseOneEnvironmentPreparationService service, PhaseOneLinuxGateway gateway,
+    public EnvironmentPreparationUseCase(EnvironmentPreparationService service, LinuxGateway gateway,
                                          ServerUseCases servers, ServerOperationLocks locks) {
         this.service = Objects.requireNonNull(service, "service");
         this.gateway = Objects.requireNonNull(gateway, "gateway");
@@ -67,7 +67,7 @@ public final class EnvironmentPreparationUseCase {
      * @throws LinuxOperationException if the operation cannot be completed / 无法完成操作时
      * @throws NullPointerException if a required argument is {@code null} / 必要参数为 {@code null} 时
      */
-    public PhaseOneEnvironmentPreparationResult prepare(ServerProfile profile, CredentialStorageMode mode,
+    public EnvironmentPreparationResult prepare(ServerProfile profile, CredentialStorageMode mode,
                                                         char[] masterPassword, Predicate<String> confirmation,
                                                         boolean installationConfirmed)
             throws SecretStoreException, SQLException, LinuxOperationException {
@@ -77,7 +77,7 @@ public final class EnvironmentPreparationUseCase {
                 throw new LocalizedOperationException(LocalizedMessage.of("validation.storageModeMismatch"),
                         "Credential storage mode does not match the saved server profile");
             }
-            PhaseOneEnvironmentPreparationApproval approval = new PhaseOneEnvironmentPreparationApproval(
+            EnvironmentPreparationApproval approval = new EnvironmentPreparationApproval(
                     profile.id(), installationConfirmed, Instant.now());
             approval.requireAcceptedFor(profile.id());
             ReentrantLock lock = locks.forServer(profile.id());

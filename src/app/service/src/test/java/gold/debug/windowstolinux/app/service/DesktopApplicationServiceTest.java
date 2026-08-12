@@ -29,8 +29,8 @@ import gold.debug.windowstolinux.shared.model.archive.SourceArchiveDescriptor;
 import gold.debug.windowstolinux.shared.config.secretref.SecretReference;
 import gold.debug.windowstolinux.shared.model.project.SourceProjectFacts;
 import gold.debug.windowstolinux.shared.linux.connection.HostKeyDecision;
-import gold.debug.windowstolinux.shared.linux.connection.PhaseOneLinuxGateway;
-import gold.debug.windowstolinux.shared.linux.connection.PhaseOneRemoteSession;
+import gold.debug.windowstolinux.shared.linux.connection.LinuxGateway;
+import gold.debug.windowstolinux.shared.linux.connection.LinuxRemoteSession;
 import gold.debug.windowstolinux.shared.linux.transfer.RemoteWorkspace;
 import gold.debug.windowstolinux.shared.linux.transfer.UploadReceipt;
 import gold.debug.windowstolinux.shared.linux.build.RemoteBuildResult;
@@ -97,7 +97,7 @@ class DesktopApplicationServiceTest {
         try (DesktopDatabase database = DesktopDatabase.open(temporaryDirectory);
              Argon2AesSecretStore secretStore = new Argon2AesSecretStore(database, "correct master password".toCharArray())) {
             DesktopApplicationService service = new DesktopApplicationService(database, temporaryDirectory.resolve("work"), unusedGateway());
-            service.savePhaseTwoSecretRevision(revision, secretStore, "database-password".toCharArray());
+            service.saveDeploymentSecretRevision(revision, secretStore, "database-password".toCharArray());
 
             assertEquals(revision, database.findApplicationSecretRevision(reference).orElseThrow());
             char[] stored = secretStore.read(revision.credentialKey()).orElseThrow();
@@ -107,7 +107,7 @@ class DesktopApplicationServiceTest {
                 java.util.Arrays.fill(stored, '\0');
             }
             assertThrows(java.sql.SQLException.class,
-                    () -> service.savePhaseTwoSecretRevision(revision, secretStore, "replacement".toCharArray()));
+                    () -> service.saveDeploymentSecretRevision(revision, secretStore, "replacement".toCharArray()));
         }
     }
 
@@ -130,16 +130,16 @@ class DesktopApplicationServiceTest {
     }
 
     @Test
-    void exposesOnlyReadOnlyTypedToolsToTheOptionalPhaseTwoAgent() throws Exception {
-        Path source = Files.createDirectories(temporaryDirectory.resolve("phase-two-source"));
+    void exposesOnlyReadOnlyTypedToolsToTheOptionalDeploymentAgent() throws Exception {
+        Path source = Files.createDirectories(temporaryDirectory.resolve("typed-deployment-source"));
         Files.writeString(source.resolve("package.json"), """
                 {"name":"demo","scripts":{"build":"vite","start":"node server.js"}}
                 """);
         Files.writeString(source.resolve("package-lock.json"), "{}");
         try (DesktopDatabase database = DesktopDatabase.open(temporaryDirectory)) {
             DesktopApplicationService service = new DesktopApplicationService(database, temporaryDirectory.resolve("work"), unusedGateway());
-            assertEquals(gold.debug.windowstolinux.shared.model.analysis.PhaseTwoAdmission.READY_FOR_PLANNING,
-                    service.analyzePhaseTwoSource(source, gold.debug.windowstolinux.shared.model.project.PhaseTwoProjectType.NODE_SERVICE)
+            assertEquals(gold.debug.windowstolinux.shared.model.analysis.DeploymentAdmission.READY_FOR_PLANNING,
+                    service.analyzeDeploymentSource(source, gold.debug.windowstolinux.shared.model.project.DeploymentProjectType.NODE_SERVICE)
                             .admission());
         }
     }
@@ -161,10 +161,10 @@ class DesktopApplicationServiceTest {
     }
 
     @Test
-    void reusesStablePhaseOneOwnershipForTheSameApplicationAndServerIdentity() throws Exception {
+    void reusesStableManagedOwnershipForTheSameApplicationAndServerIdentity() throws Exception {
         ServerIdentity savedServer = server("server-one", "192.0.2.10", "SHA256:AAAAAAAAAAAA");
         ServerIdentity requestedServer = server("server-one", "192.0.2.10", "SHA256:AAAAAAAAAAAA");
-        ManagedApplication saved = ManagedApplication.forPhaseOne("demo", savedServer, "a".repeat(64));
+        ManagedApplication saved = ManagedApplication.forManaged("demo", savedServer, "a".repeat(64));
         try (DesktopDatabase database = DesktopDatabase.open(temporaryDirectory.resolve("data"))) {
             database.saveManagedApplication(saved);
             DesktopApplicationService service = new DesktopApplicationService(
@@ -185,7 +185,7 @@ class DesktopApplicationServiceTest {
     void rejectsReclaimOfAnApplicationAlreadyBoundToAnotherServer() throws Exception {
         ServerIdentity savedServer = server("server-one", "192.0.2.10", "SHA256:AAAAAAAAAAAA");
         ServerIdentity anotherServer = server("server-two", "192.0.2.11", "SHA256:BBBBBBBBBBBB");
-        ManagedApplication saved = ManagedApplication.forPhaseOne("demo", savedServer, "a".repeat(64));
+        ManagedApplication saved = ManagedApplication.forManaged("demo", savedServer, "a".repeat(64));
         try (DesktopDatabase database = DesktopDatabase.open(temporaryDirectory.resolve("data"))) {
             database.saveManagedApplication(saved);
             DesktopApplicationService service = new DesktopApplicationService(
@@ -201,7 +201,7 @@ class DesktopApplicationServiceTest {
     }
 
     @Test
-    void rejectsNonCanonicalPhaseOneIdentityWithoutOverwritingIt() throws Exception {
+    void rejectsNonCanonicalManagedIdentityWithoutOverwritingIt() throws Exception {
         ServerIdentity server = server("server-one", "192.0.2.10", "SHA256:AAAAAAAAAAAA");
         ManagedApplication nonCanonical = new ManagedApplication(
                 "demo", server, "windowstolinux-other.service", "/var/lib/windowstolinux/apps/demo", "a".repeat(64)
@@ -250,7 +250,7 @@ class DesktopApplicationServiceTest {
         );
         char[] masterPassword = "correct master password".toCharArray();
         AtomicInteger connections = new AtomicInteger();
-        PhaseOneLinuxGateway gateway = (endpoint, credential, verifier) -> {
+        LinuxGateway gateway = (endpoint, credential, verifier) -> {
             connections.incrementAndGet();
             throw new AssertionError("unconfirmed environment preparation must not connect");
         };
@@ -259,7 +259,7 @@ class DesktopApplicationServiceTest {
                     database, temporaryDirectory.resolve("work"), gateway);
 
             LocalizedOperationException failure = assertThrows(LocalizedOperationException.class, () ->
-                    service.preparePhaseOneEnvironmentWithStoredPassword(
+                    service.prepareEnvironmentWithStoredPassword(
                             profile, CredentialStorageMode.MASTER_PASSWORD, masterPassword, fingerprint -> true, false
                     )
             );
@@ -276,7 +276,7 @@ class DesktopApplicationServiceTest {
     void lifecycleAfterDesktopRestartUsesTheLastSuccessfulPersistedHealthCheck() throws Exception {
         Path data = temporaryDirectory.resolve("restart-data");
         ServerIdentity server = server("server-one", "192.0.2.10", "SHA256:AAAAAAAAAAAA");
-        ManagedApplication application = ManagedApplication.forPhaseOne("demo", server, "a".repeat(64));
+        ManagedApplication application = ManagedApplication.forManaged("demo", server, "a".repeat(64));
         HealthCheck persistedHealth = new HealthCheck.Tcp(19092, 15, 2);
         ServerProfile profile = new ServerProfile("server-one", "192.0.2.10", 22, "deployer",
                 "ssh/server-one/password", CredentialStorageMode.MASTER_PASSWORD);
@@ -310,7 +310,7 @@ class DesktopApplicationServiceTest {
     @Test
     void legacyApplicationWithoutPersistedRuntimeConfigurationDoesNotOpenSsh() throws Exception {
         ServerIdentity server = server("server-one", "192.0.2.10", "SHA256:AAAAAAAAAAAA");
-        ManagedApplication application = ManagedApplication.forPhaseOne("demo", server, "a".repeat(64));
+        ManagedApplication application = ManagedApplication.forManaged("demo", server, "a".repeat(64));
         RecordingGateway gateway = new RecordingGateway();
         char[] masterPassword = "restart-master".toCharArray();
         try (DesktopDatabase database = DesktopDatabase.open(temporaryDirectory.resolve("legacy-data"))) {
@@ -349,28 +349,28 @@ class DesktopApplicationServiceTest {
         return new HealthCheck.Tcp(8080, 60, 1);
     }
 
-    private static PhaseOneLinuxGateway unusedGateway() {
+    private static LinuxGateway unusedGateway() {
         return (endpoint, credential, verifier) -> {
             throw new AssertionError("this test must not open SSH");
         };
     }
 
-    private static final class RecordingGateway implements PhaseOneLinuxGateway {
+    private static final class RecordingGateway implements LinuxGateway {
         private final AtomicInteger connections = new AtomicInteger();
         private HealthCheck healthCheck;
 
         @Override
-        public PhaseOneRemoteSession connect(SshEndpoint endpoint, SshCredential credential, HostKeyVerifier hostKeyVerifier) {
+        public LinuxRemoteSession connect(SshEndpoint endpoint, SshCredential credential, HostKeyVerifier hostKeyVerifier) {
             connections.incrementAndGet();
-            return new PhaseOneRemoteSession() {
+            return new LinuxRemoteSession() {
                 @Override
                 public gold.debug.windowstolinux.shared.model.server.ServerCapabilities collectCapabilities() {
                     throw new AssertionError("not used by lifecycle control");
                 }
 
                 @Override
-                public gold.debug.windowstolinux.shared.model.deployment.PhaseOneEnvironmentPreparationResult preparePhaseOneEnvironment(
-                        gold.debug.windowstolinux.shared.model.deployment.PhaseOneEnvironmentPreparationApproval approval
+                public gold.debug.windowstolinux.shared.model.deployment.EnvironmentPreparationResult prepareEnvironment(
+                        gold.debug.windowstolinux.shared.model.deployment.EnvironmentPreparationApproval approval
                 ) {
                     throw new AssertionError("not used by lifecycle control");
                 }

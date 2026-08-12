@@ -1,9 +1,9 @@
 package gold.debug.windowstolinux.shared.model.lifecycle;
 
 /**
- * Supported phase-one actions; no delete or arbitrary service action exists.
+ * Supported managed-deployment actions; no delete or arbitrary service action exists.
  *
- * <p>受支持的一期动作；不存在删除或任意服务动作。
+ * <p>受支持的受管部署动作；不存在删除或任意服务动作。
  */
 public enum LifecycleAction {
     /**

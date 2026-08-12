@@ -46,7 +46,7 @@ public final class MavenBuildExecutor {
     public RemoteBuildResult build(RemoteWorkspace workspace, BuildLimits limits) throws LinuxOperationException {
         if (limits.runAsRoot() && !"root".equals(username)) {
             throw LinuxOperationException.localized("linux.error.rootBuildRequiresRootSession",
-                    "Phase-one root builds require a root SSH session");
+                    "managed service root builds require a root SSH session");
         }
         String candidate = workspace.candidateRoot();
         String mutable = candidate + "/mutable";

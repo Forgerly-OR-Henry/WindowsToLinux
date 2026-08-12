@@ -45,7 +45,7 @@ class DesktopDatabaseTest {
     @Test
     void storesOnlyTheLastRemoteObservationAsHistory() throws Exception {
         ServerIdentity server = new ServerIdentity("server-one", "example.test", 22, "SHA256:exampleFingerprint");
-        ManagedApplication application = ManagedApplication.forPhaseOne("demo", server, "a".repeat(64));
+        ManagedApplication application = ManagedApplication.forManaged("demo", server, "a".repeat(64));
         LifecycleObservation observation = new LifecycleObservation(
                 application, RuntimeState.RUNNING, AutostartState.ENABLED, true, Instant.now(), "remote observation"
         );
@@ -101,7 +101,7 @@ class DesktopDatabaseTest {
     @Test
     void recordsTheSuccessfulRuntimeContractAndReleaseAtomically() throws Exception {
         ServerIdentity server = new ServerIdentity("server-one", "198.51.100.24", 22, "SHA256:exampleFingerprint");
-        ManagedApplication application = ManagedApplication.forPhaseOne("demo", server, "a".repeat(64));
+        ManagedApplication application = ManagedApplication.forManaged("demo", server, "a".repeat(64));
         ManagedApplicationRuntimeConfiguration http = new ManagedApplicationRuntimeConfiguration(
                 new HealthCheck.Http(URI.create("http://127.0.0.1:18080/actuator/health"), 200, 20),
                 Optional.of(new UserAccessUrl(URI.create("http://198.51.100.24:18080/")))

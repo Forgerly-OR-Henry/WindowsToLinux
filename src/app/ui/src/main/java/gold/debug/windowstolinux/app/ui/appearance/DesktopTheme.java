@@ -7,9 +7,9 @@ import javax.swing.UIManager;
 import java.awt.Font;
 
 /**
- * Shared FlatLaf setup for the phase-one Swing desktop client.
+ * Shared FlatLaf setup for the managed-deployment Swing desktop client.
  *
- * <p>一期 Swing 桌面客户端共用的 FlatLaf 设置。
+ * <p>受管部署 Swing 桌面客户端共用的 FlatLaf 设置。
  */
 public final class DesktopTheme {
     private DesktopTheme() {

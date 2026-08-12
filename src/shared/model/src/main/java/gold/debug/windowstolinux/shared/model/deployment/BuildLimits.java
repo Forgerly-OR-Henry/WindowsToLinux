@@ -1,9 +1,9 @@
 package gold.debug.windowstolinux.shared.model.deployment;
 
 /**
- * Explicit, reviewed limits for the fixed phase-one remote Maven build entrypoint.
+ * Explicit, reviewed limits for the fixed managed-deployment remote Maven build entrypoint.
  *
- * <p>固定一期远程 Maven 构建入口经过审阅的明确限制。
+ * <p>固定受管部署远程 Maven 构建入口经过审阅的明确限制。
  *
  * @param timeoutSeconds the {@code timeoutSeconds} value / {@code timeoutSeconds} 值
  * @param maxProcesses the {@code maxProcesses} value / {@code maxProcesses} 值

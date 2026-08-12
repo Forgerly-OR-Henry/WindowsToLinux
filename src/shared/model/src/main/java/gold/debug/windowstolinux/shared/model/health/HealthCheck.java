@@ -4,9 +4,9 @@ import java.net.URI;
 import java.util.Objects;
 
 /**
- * The only two phase-one health strategies.
+ * The only two managed-deployment health strategies.
  *
- * <p>一期仅有的两种健康检查策略。
+ * <p>受管部署仅有的两种健康检查策略。
  */
 public sealed interface HealthCheck permits HealthCheck.Http, HealthCheck.Tcp {
     /**

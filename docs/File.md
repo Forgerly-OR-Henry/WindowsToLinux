@@ -2,7 +2,7 @@
 
 ## 文档信息
 
-- 文档版本：`2.3.0-phase2-local-implementation`
+- 文档版本：`2.3.1-unified-naming`
 - 文档状态：**正式目标模块、职责、依赖方向和叶子模块内部目标包结构已确认；28 个 Maven reactor 工程及一期已有代码的职责迁移已落地；二期本地实现复用既有模块和包结构，真实运行环境验收保持待执行**
 - 已确认范围：`shared` 共用模块、`app` Windows 桌面应用模块、`web` Web 应用模块
 - 已确认能力边界：受管应用生命周期复用既有模块，不新增独立 Maven 模块
@@ -252,7 +252,7 @@ WindowsToLinux/
 
 `source` 只处理平台无关的源码快照与归档规则。`app/windows` 负责桌面本地文件入口，`web/file` 负责上传、配额和服务端工作区，`git` 负责仓库来源；三者复用 `source`，不得复制源码归档格式或安全校验规则。源码归档服务于源码传输和目标机构建，`backup` 管理的备份归档服务于应用数据恢复与迁移，两者不得混用格式、清单或生命周期语义。
 
-`linux` 已只保留连接、会话、传输、能力、构建、运行、发行版和高权限操作的公共契约。`SshdPhaseOneLinuxGateway`、SSHD Session、受控命令执行、SFTP、Maven 构建、Ubuntu 环境准备、systemd 运行和高权限 helper 均已迁入 `linux-sshd` 对应包。`DesktopApplicationService` 只接收 `PhaseOneLinuxGateway`，由 `app/main/bootstrap` 构造并注入具体 SSHD 实现。
+`linux` 已只保留连接、会话、传输、能力、构建、运行、发行版和高权限操作的公共契约。`SshdLinuxGateway`、SSHD Session、受控命令执行、SFTP、Maven 构建、Ubuntu 环境准备、systemd 运行和高权限 helper 均已迁入 `linux-sshd` 对应包。`DesktopApplicationService` 只接收 `LinuxGateway`，由 `app/main/bootstrap` 构造并注入具体 SSHD 实现。
 
 ### 2.2 `app` 桌面应用模块
 
@@ -583,11 +583,13 @@ linux-sshd 通过 linux 契约采集服务器已有环境
 13. 除 `Messages_zh_CN.properties` 外，`src/**/src/main` 下的 Java 字符串、字符和文本块以及非 Java 文本资源不得包含汉字；中英双语 Java 注释、文档、测试和专门验证中文翻译的夹具不受此限制。
 14. 本地化改造不得改变 SQLite schema、部署与安全流程、凭据所有权或秘密传递边界；需要改变这些边界时必须另行评审。
 15. 项目代码注释统一采用中英双语，包含 `//`、块注释和 Javadoc；英文说明在前，简体中文说明紧随其后，并在同一注释内表达相同含义。标识符、命令、协议名和原始诊断保持原文，不为满足双语格式而翻译；注释不属于 UI 文案，不进入消息目录。新增或修改注释时必须遵守本规则。
+16. 分期是开发路线与验收文档的组织方式，不是产品运行时架构。`src/` 中的模块、包、类、方法、字段、枚举、消息键、配置键、资源名、脚本名和测试名不得以 `PhaseOne`、`PhaseTwo`、`phase1`、`phase2`、一期、二期等期数命名；必须按稳定职责命名。正式文档可保留分期标题和历史记录，但不得把期数泄漏为代码 API 或持久化契约。
 
 ## 11. 文档版本记录
 
 | 版本 | 日期 | 说明 |
 | --- | --- | --- |
+| 2.3.1-unified-naming | 2026-08-12 | 将正式源码、测试和资源从期数命名重构为职责命名；新增规则：分期仅属于开发文档，不得进入 `src/` 的 API、资源或持久化契约。 |
 | 2.3.0-phase2-local-implementation | 2026-08-12 | 同步二期已实现的 Git、配置、分析、部署计划、Linux/容器和桌面服务包；明确所有二期真实运行环境验收仍待执行。 |
 | 2.2.2-bilingual-comments | 2026-08-12 | 明确 Java 行注释、块注释和 Javadoc 采用英文在前、简体中文紧随其后的双语格式；同步将生产汉字门禁限定为 Java 非注释内容和非 Java 文本资源，注释不进入 UI 消息目录。 |
 | 2.2.1-i18n-policy | 2026-08-12 | 固定桌面端英文基准与简体中文 UI 映射，规定消息键/参数同步、结构化用户消息与英文/原始诊断分离、AI 响应语言传递及生产目录汉字门禁；不新增模块，不修改 SQLite schema、部署、安全或凭据边界。 |

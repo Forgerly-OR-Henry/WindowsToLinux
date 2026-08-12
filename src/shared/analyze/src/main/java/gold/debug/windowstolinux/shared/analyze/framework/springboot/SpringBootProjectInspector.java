@@ -9,9 +9,9 @@ import java.util.List;
 import java.util.regex.Pattern;
 
 /**
- * Applies the deterministic phase-one Spring Boot safety policy.
+ * Applies the deterministic managed-deployment Spring Boot safety policy.
  *
- * <p>应用确定性的一期 Spring Boot 安全策略。
+ * <p>应用确定性的受管部署 Spring Boot 安全策略。
  */
 public final class SpringBootProjectInspector {
     private static final Pattern MIGRATION = Pattern.compile("\\b(flyway|liquibase)\\b", Pattern.CASE_INSENSITIVE);

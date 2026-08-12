@@ -25,7 +25,7 @@ import gold.debug.windowstolinux.app.service.source.SourcePreparation;
 import gold.debug.windowstolinux.shared.model.analysis.RejectionReason;
 import gold.debug.windowstolinux.shared.model.deployment.BuildLimits;
 import gold.debug.windowstolinux.shared.model.deployment.DeploymentStatus;
-import gold.debug.windowstolinux.shared.model.deployment.PhaseOneEnvironmentPreparationResult;
+import gold.debug.windowstolinux.shared.model.deployment.EnvironmentPreparationResult;
 import gold.debug.windowstolinux.shared.model.health.HealthCheck;
 import gold.debug.windowstolinux.shared.model.health.UserAccessUrl;
 import gold.debug.windowstolinux.shared.model.lifecycle.LifecycleObservation;
@@ -141,7 +141,7 @@ final class DesktopPages {
     JPanel serverPanel() {
         return ServerPage.create(components, messages, serverId, serverHost, serverPort, serverUser,
                 serverPassword, credentialMode, masterPassword, serverOutput,
-                this::saveServer, this::verifyServer, this::preparePhaseOneEnvironment);
+                this::saveServer, this::verifyServer, this::prepareEnvironment);
     }
 
     JPanel managedApplicationsPanel() {
@@ -370,7 +370,7 @@ final class DesktopPages {
         }
     }
 
-    private void preparePhaseOneEnvironment(JButton trigger) {
+    private void prepareEnvironment(JButton trigger) {
         try {
             ServerProfile enteredProfile = profile();
             ServerProfile profile = service.findServerProfile(enteredProfile.id()).orElseThrow(
@@ -388,10 +388,10 @@ final class DesktopPages {
             char[] master = masterPassword.getPassword();
             trigger.setEnabled(false);
             serverOutput.setText(t("environment.preparing"));
-            new SwingWorker<PhaseOneEnvironmentPreparationResult, Void>() {
+            new SwingWorker<EnvironmentPreparationResult, Void>() {
                 @Override
-                protected PhaseOneEnvironmentPreparationResult doInBackground() throws Exception {
-                    return service.preparePhaseOneEnvironmentWithStoredPassword(profile, mode, master,
+                protected EnvironmentPreparationResult doInBackground() throws Exception {
+                    return service.prepareEnvironmentWithStoredPassword(profile, mode, master,
                             DesktopPages.this::confirmFirstUseFingerprint, true);
                 }
 
@@ -415,7 +415,7 @@ final class DesktopPages {
                 "port", profile.sshPort(), "username", profile.username()));
     }
 
-    private String environmentPreparationSummary(PhaseOneEnvironmentPreparationResult result) {
+    private String environmentPreparationSummary(EnvironmentPreparationResult result) {
         var capabilities = result.capabilities();
         return t("environment.completed", Map.ofEntries(
                 Map.entry("os", capabilities.operatingSystem()),

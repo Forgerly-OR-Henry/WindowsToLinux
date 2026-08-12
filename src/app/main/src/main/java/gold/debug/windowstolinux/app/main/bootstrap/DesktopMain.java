@@ -4,16 +4,16 @@ import gold.debug.windowstolinux.app.db.DesktopDatabase;
 import gold.debug.windowstolinux.app.main.runtime.RunModeDetector;
 import gold.debug.windowstolinux.app.service.DesktopApplicationService;
 import gold.debug.windowstolinux.app.ui.appearance.DesktopAppearance;
-import gold.debug.windowstolinux.shared.linux.sshd.connection.SshdPhaseOneLinuxGateway;
+import gold.debug.windowstolinux.shared.linux.sshd.connection.SshdLinuxGateway;
 
 import javax.swing.SwingUtilities;
 import java.nio.file.Files;
 import java.util.Locale;
 
 /**
- * Production desktop bootstrap with the fixed data directory required by phase one.
+ * Production desktop bootstrap with the fixed data directory required by managed deployment.
  *
- * <p>使用一期要求固定数据目录的生产桌面引导程序。
+ * <p>使用受管部署要求固定数据目录的生产桌面引导程序。
  */
 public final class DesktopMain {
     private DesktopMain() {
@@ -40,7 +40,7 @@ public final class DesktopMain {
                     database.findDesktopPreference(DesktopDatabase.UI_THEME_SETTING).orElse(null),
                     Locale.getDefault());
             DesktopApplicationService service = new DesktopApplicationService(database,
-                    layout.dataDirectory().resolve("work"), new SshdPhaseOneLinuxGateway());
+                    layout.dataDirectory().resolve("work"), new SshdLinuxGateway());
             SwingUtilities.invokeLater(() -> new DesktopWindowController(database, service, appearance).showInitialWindow());
         } catch (Exception exception) {
             throw new IllegalStateException("failed to initialize the fixed data directory or desktop application",

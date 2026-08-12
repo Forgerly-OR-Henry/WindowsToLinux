@@ -138,7 +138,7 @@ public sealed interface DeploymentHandoff permits DeploymentHandoff.HttpAccessUr
          * @return the operation result / 操作结果
          */
         public String command() {
-            return "sudo /usr/local/lib/windowstolinux/phase1-helper lifecycle "
+            return "sudo /usr/local/lib/windowstolinux/managed-helper lifecycle "
                     + applicationId + " start " + ownershipManifestSha256;
         }
     }

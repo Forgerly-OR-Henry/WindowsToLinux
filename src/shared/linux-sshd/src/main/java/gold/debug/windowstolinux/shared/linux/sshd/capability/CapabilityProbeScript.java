@@ -21,7 +21,7 @@ public final class CapabilityProbeScript {
      * @throws NullPointerException if a required argument is {@code null} / 必要参数为 {@code null} 时
      */
     public static String render(String helperPath) {
-        return "phase_one_helper=" + quote(Objects.requireNonNull(helperPath, "helperPath")) + "\n" + """
+        return "managed_helper=" + quote(Objects.requireNonNull(helperPath, "helperPath")) + "\n" + """
                 set -eu
                 . /etc/os-release
                 printf 'OS=%s %s\\n' "$NAME" "$VERSION_ID"
@@ -33,7 +33,7 @@ public final class CapabilityProbeScript {
                 if command -v curl >/dev/null 2>&1; then printf 'CURL=1\\n'; else printf 'CURL=0\\n'; fi
                 if command -v ss >/dev/null 2>&1; then printf 'SS=1\\n'; else printf 'SS=0\\n'; fi
                 if command -v setsid >/dev/null 2>&1 && command -v timeout >/dev/null 2>&1 && command -v du >/dev/null 2>&1; then printf 'LIMIT_TOOLS=1\\n'; else printf 'LIMIT_TOOLS=0\\n'; fi
-                if sudo -n "$phase_one_helper" probe 2>/dev/null | grep -qx 'HELPER=1'; then
+                if sudo -n "$managed_helper" probe 2>/dev/null | grep -qx 'HELPER=1'; then
                   printf 'SUDO=1\\n'
                 else
                   printf 'SUDO=0\\n'

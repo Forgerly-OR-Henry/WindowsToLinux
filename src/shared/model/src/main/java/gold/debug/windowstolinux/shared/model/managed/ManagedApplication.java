@@ -50,16 +50,16 @@ public record ManagedApplication(
     }
 
     /**
-     * Performs the {@code forPhaseOne} operation.
+     * Performs the {@code forManaged} operation.
      *
-     * <p>执行 {@code forPhaseOne} 操作。
+     * <p>执行 {@code forManaged} 操作。
      *
      * @param id the {@code id} value / {@code id} 值
      * @param server the {@code server} value / {@code server} 值
      * @param ownershipManifestSha256 the {@code ownershipManifestSha256} value / {@code ownershipManifestSha256} 值
      * @return the operation result / 操作结果
      */
-    public static ManagedApplication forPhaseOne(String id, ServerIdentity server, String ownershipManifestSha256) {
+    public static ManagedApplication forManaged(String id, ServerIdentity server, String ownershipManifestSha256) {
         String normalizedId = ServerIdentity.requireIdentifier(id, "id");
         return new ManagedApplication(
                 normalizedId,

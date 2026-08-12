@@ -3,7 +3,7 @@ package gold.debug.windowstolinux.shared.linux.sshd.runtime;
 import gold.debug.windowstolinux.shared.linux.connection.LinuxOperationException;
 import gold.debug.windowstolinux.shared.linux.runtime.HealthCheckResult;
 import gold.debug.windowstolinux.shared.linux.sshd.connection.SshCommandExecutor;
-import gold.debug.windowstolinux.shared.linux.sshd.protocol.PhaseOneProtocolExecutor;
+import gold.debug.windowstolinux.shared.linux.sshd.protocol.ManagedReleaseProtocolExecutor;
 import gold.debug.windowstolinux.shared.model.health.HealthCheck;
 import gold.debug.windowstolinux.shared.model.lifecycle.AutostartState;
 import gold.debug.windowstolinux.shared.model.lifecycle.LifecycleAction;
@@ -27,7 +27,7 @@ import java.util.Objects;
  */
 public final class SystemdRuntimeExecutor {
     private final SshCommandExecutor commands;
-    private final PhaseOneProtocolExecutor protocol;
+    private final ManagedReleaseProtocolExecutor protocol;
     private final String username;
 
     /**
@@ -40,7 +40,7 @@ public final class SystemdRuntimeExecutor {
      * @param username the {@code username} value / {@code username} 值
      * @throws NullPointerException if a required argument is {@code null} / 必要参数为 {@code null} 时
      */
-    public SystemdRuntimeExecutor(SshCommandExecutor commands, PhaseOneProtocolExecutor protocol, String username) {
+    public SystemdRuntimeExecutor(SshCommandExecutor commands, ManagedReleaseProtocolExecutor protocol, String username) {
         this.commands = Objects.requireNonNull(commands, "commands");
         this.protocol = Objects.requireNonNull(protocol, "protocol");
         this.username = Objects.requireNonNull(username, "username");

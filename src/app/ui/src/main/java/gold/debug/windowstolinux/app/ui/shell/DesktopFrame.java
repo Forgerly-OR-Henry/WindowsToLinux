@@ -127,7 +127,7 @@ public final class DesktopFrame extends JFrame {
         JLabel product = new JLabel("WindowsToLinux");
         product.setFont(product.getFont().deriveFont(Font.BOLD, 17f));
         brand.add(product);
-        brand.add(badge(t("app.badge.phase1")));
+        brand.add(badge(t("app.badge.managed")));
         header.add(brand, BorderLayout.WEST);
 
         JPanel heading = transparent(new BorderLayout(0, 2));

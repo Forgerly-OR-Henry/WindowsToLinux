@@ -2,7 +2,7 @@ package gold.debug.windowstolinux.shared.linux.sshd.capability;
 
 import gold.debug.windowstolinux.shared.linux.connection.LinuxOperationException;
 import gold.debug.windowstolinux.shared.linux.sshd.connection.SshCommandExecutor;
-import gold.debug.windowstolinux.shared.linux.sshd.protocol.PhaseOnePrivilegeHelper;
+import gold.debug.windowstolinux.shared.linux.sshd.protocol.ManagedPrivilegeHelper;
 import gold.debug.windowstolinux.shared.model.server.ServerCapabilities;
 
 import java.time.Duration;
@@ -41,7 +41,7 @@ public final class SshdCapabilityCollector {
      * @throws LinuxOperationException if the operation cannot be completed / 无法完成操作时
      */
     public ServerCapabilities collect() throws LinuxOperationException {
-        var result = commands.exec(CapabilityProbeScript.render(PhaseOnePrivilegeHelper.PATH),
+        var result = commands.exec(CapabilityProbeScript.render(ManagedPrivilegeHelper.PATH),
                 Duration.ofSeconds(20), true);
         if (!result.succeeded()) {
             throw LinuxOperationException.localized("linux.error.capabilityCollectionFailed",

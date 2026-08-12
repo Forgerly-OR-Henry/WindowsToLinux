@@ -66,7 +66,7 @@ class DeploymentOutcomeTest {
                 DeploymentHandoff.SystemdStartCommand.class, outcome.handoff().orElseThrow()
         );
         assertEquals("windowstolinux-demo.service", handoff.systemdUnit());
-        assertEquals("sudo /usr/local/lib/windowstolinux/phase1-helper lifecycle demo start " + "a".repeat(64),
+        assertEquals("sudo /usr/local/lib/windowstolinux/managed-helper lifecycle demo start " + "a".repeat(64),
                 handoff.command());
         assertEquals(DeploymentHandoff.Kind.SYSTEMD_START_COMMAND, handoff.kind());
     }
@@ -98,7 +98,7 @@ class DeploymentOutcomeTest {
 
     private DeploymentRequest request(HealthCheck healthCheck, Optional<UserAccessUrl> userAccessUrl) {
         ServerIdentity server = new ServerIdentity("server-one", "198.51.100.24", 22, "SHA256:AAAAAAAAAAAA");
-        ManagedApplication application = ManagedApplication.forPhaseOne("demo", server, "a".repeat(64));
+        ManagedApplication application = ManagedApplication.forManaged("demo", server, "a".repeat(64));
         SourceArchiveDescriptor archive = new SourceArchiveDescriptor(
                 temporaryDirectory.resolve("demo.tar.gz"), "b".repeat(64), 0, 0
         );

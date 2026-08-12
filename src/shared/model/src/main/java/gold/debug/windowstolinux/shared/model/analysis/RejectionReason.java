@@ -5,9 +5,9 @@ import gold.debug.windowstolinux.shared.model.message.LocalizedMessage;
 import java.util.Objects;
 
 /**
- * A deterministic reason why a project cannot enter the phase-one pipeline.
+ * A deterministic reason why a project cannot enter the managed-deployment pipeline.
  *
- * <p>项目无法进入一期流程的确定性原因。
+ * <p>项目无法进入受管部署流程的确定性原因。
  *
  * @param code the {@code code} value / {@code code} 值
  * @param message the {@code message} value / {@code message} 值

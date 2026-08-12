@@ -5,9 +5,9 @@ import gold.debug.windowstolinux.shared.model.health.HealthCheck;
 import java.util.Objects;
 
 /**
- * Facts collected from a target host before any phase-one candidate is created.
+ * Facts collected from a target host before any managed-deployment candidate is created.
  *
- * <p>创建任何一期候选项之前从目标主机采集的事实。
+ * <p>创建任何受管部署候选项之前从目标主机采集的事实。
  *
  * @param operatingSystem the {@code operatingSystem} value / {@code operatingSystem} 值
  * @param architecture the {@code architecture} value / {@code architecture} 值
@@ -66,16 +66,16 @@ public record ServerCapabilities(
     }
 
     /**
-     * Checks the condition represented by {@code supportsPhaseOne}.
+     * Checks the condition represented by {@code supportsManagedDeployment}.
      *
-     * <p>检查 {@code supportsPhaseOne} 表示的条件。
+     * <p>检查 {@code supportsManagedDeployment} 表示的条件。
      *
      * @param sourceUsesMavenWrapper the {@code sourceUsesMavenWrapper} value / {@code sourceUsesMavenWrapper} 值
      * @param healthCheck the {@code healthCheck} value / {@code healthCheck} 值
      * @return whether the operation condition is satisfied / 操作条件是否满足
      * @throws NullPointerException if a required argument is {@code null} / 必要参数为 {@code null} 时
      */
-    public boolean supportsPhaseOne(boolean sourceUsesMavenWrapper, HealthCheck healthCheck) {
+    public boolean supportsManagedDeployment(boolean sourceUsesMavenWrapper, HealthCheck healthCheck) {
         Objects.requireNonNull(healthCheck, "healthCheck");
         boolean healthToolsAvailable = switch (healthCheck) {
             case HealthCheck.Http ignored -> curlAvailable && socketInspectionAvailable;

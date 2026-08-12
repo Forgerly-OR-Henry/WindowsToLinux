@@ -30,7 +30,7 @@ public final class StructuralAnalysisPrompt {
         return """
                 {"model":"%s","temperature":0,"messages":[
                 {"role":"system","content":"Use only the provided redacted static facts. Do not suggest executing commands, reading source code, sending secrets, or overriding deterministic checks. Respond in %s."},
-                {"role":"user","content":"Phase-one static project facts: applicationId=%s; mavenWrapper=%s; springBootMavenPlugin=%s. Explain what these facts mean and list at most three non-secret questions that require human confirmation."}
+                {"role":"user","content":"managed service static project facts: applicationId=%s; mavenWrapper=%s; springBootMavenPlugin=%s. Explain what these facts mean and list at most three non-secret questions that require human confirmation."}
                 ]}
                 """.formatted(escapeJson(model), responseLanguage.promptName(), escapeJson(facts.applicationId()),
                 facts.mavenWrapper(), facts.springBootMavenPlugin()).replaceAll("\\R", "");

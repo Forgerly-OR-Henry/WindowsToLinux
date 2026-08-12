@@ -6,8 +6,8 @@ import gold.debug.windowstolinux.app.secret.api.SecretStoreException;
 import gold.debug.windowstolinux.shared.linux.connection.HostKeyDecision;
 import gold.debug.windowstolinux.shared.linux.connection.HostKeyVerifier;
 import gold.debug.windowstolinux.shared.linux.connection.LinuxOperationException;
-import gold.debug.windowstolinux.shared.linux.connection.PhaseOneLinuxGateway;
-import gold.debug.windowstolinux.shared.linux.connection.PhaseOneRemoteSession;
+import gold.debug.windowstolinux.shared.linux.connection.LinuxGateway;
+import gold.debug.windowstolinux.shared.linux.connection.LinuxRemoteSession;
 import gold.debug.windowstolinux.shared.linux.connection.SshCredential;
 import gold.debug.windowstolinux.shared.model.security.CredentialStorageMode;
 import gold.debug.windowstolinux.shared.model.server.ServerCapabilities;
@@ -27,7 +27,7 @@ import java.util.function.Predicate;
 public final class ServerUseCases {
     private final DesktopDatabase database;
     private final DesktopSecretStores secrets;
-    private final PhaseOneLinuxGateway gateway;
+    private final LinuxGateway gateway;
 
     /**
      * Creates a {@code ServerUseCases} instance.
@@ -39,7 +39,7 @@ public final class ServerUseCases {
      * @param gateway the {@code gateway} value / {@code gateway} 值
      * @throws NullPointerException if a required argument is {@code null} / 必要参数为 {@code null} 时
      */
-    public ServerUseCases(DesktopDatabase database, DesktopSecretStores secrets, PhaseOneLinuxGateway gateway) {
+    public ServerUseCases(DesktopDatabase database, DesktopSecretStores secrets, LinuxGateway gateway) {
         this.database = Objects.requireNonNull(database, "database");
         this.secrets = Objects.requireNonNull(secrets, "secrets");
         this.gateway = Objects.requireNonNull(gateway, "gateway");
@@ -180,7 +180,7 @@ public final class ServerUseCases {
                                      Predicate<String> confirmation) throws SecretStoreException, SQLException,
             LinuxOperationException {
         try (SecretStore store = secrets.open(mode, masterPassword);
-             PhaseOneRemoteSession session = gateway.connect(profile.endpoint(), secrets.loadPassword(profile, store),
+             LinuxRemoteSession session = gateway.connect(profile.endpoint(), secrets.loadPassword(profile, store),
                      hostKeyVerifier(profile, confirmation))) {
             return session.collectCapabilities();
         } finally {

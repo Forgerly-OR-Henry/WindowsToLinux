@@ -1,8 +1,8 @@
 package gold.debug.windowstolinux.shared.linux.distro;
 
 import gold.debug.windowstolinux.shared.linux.connection.LinuxOperationException;
-import gold.debug.windowstolinux.shared.model.deployment.PhaseOneEnvironmentPreparationApproval;
-import gold.debug.windowstolinux.shared.model.deployment.PhaseOneEnvironmentPreparationResult;
+import gold.debug.windowstolinux.shared.model.deployment.EnvironmentPreparationApproval;
+import gold.debug.windowstolinux.shared.model.deployment.EnvironmentPreparationResult;
 
 /**
  * Distribution-aware environment preparation contract.
@@ -11,14 +11,14 @@ import gold.debug.windowstolinux.shared.model.deployment.PhaseOneEnvironmentPrep
  */
 public interface LinuxEnvironmentOperations {
     /**
-     * Performs the {@code preparePhaseOneEnvironment} operation.
+     * Performs the {@code prepareEnvironment} operation.
      *
-     * <p>执行 {@code preparePhaseOneEnvironment} 操作。
+     * <p>执行 {@code prepareEnvironment} 操作。
      *
      * @param approval the {@code approval} value / {@code approval} 值
      * @return the operation result / 操作结果
      * @throws LinuxOperationException if the operation cannot be completed / 无法完成操作时
      */
-    PhaseOneEnvironmentPreparationResult preparePhaseOneEnvironment(PhaseOneEnvironmentPreparationApproval approval)
+    EnvironmentPreparationResult prepareEnvironment(EnvironmentPreparationApproval approval)
             throws LinuxOperationException;
 }

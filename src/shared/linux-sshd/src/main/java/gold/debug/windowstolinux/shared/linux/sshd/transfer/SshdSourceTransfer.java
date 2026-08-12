@@ -3,7 +3,7 @@ package gold.debug.windowstolinux.shared.linux.sshd.transfer;
 import gold.debug.windowstolinux.shared.linux.connection.LinuxOperationException;
 import gold.debug.windowstolinux.shared.linux.protocol.RemoteStepResult;
 import gold.debug.windowstolinux.shared.linux.sshd.connection.SshCommandExecutor;
-import gold.debug.windowstolinux.shared.linux.sshd.protocol.PhaseOneProtocolExecutor;
+import gold.debug.windowstolinux.shared.linux.sshd.protocol.ManagedReleaseProtocolExecutor;
 import gold.debug.windowstolinux.shared.linux.transfer.RemoteWorkspace;
 import gold.debug.windowstolinux.shared.linux.transfer.UploadReceipt;
 import gold.debug.windowstolinux.shared.model.archive.SourceArchiveDescriptor;
@@ -27,7 +27,7 @@ import java.util.Objects;
 public final class SshdSourceTransfer {
     private final ClientSession session;
     private final SshCommandExecutor commands;
-    private final PhaseOneProtocolExecutor protocol;
+    private final ManagedReleaseProtocolExecutor protocol;
 
     /**
      * Creates a {@code SshdSourceTransfer} instance.
@@ -40,7 +40,7 @@ public final class SshdSourceTransfer {
      * @throws NullPointerException if a required argument is {@code null} / 必要参数为 {@code null} 时
      */
     public SshdSourceTransfer(ClientSession session, SshCommandExecutor commands,
-                              PhaseOneProtocolExecutor protocol) {
+                              ManagedReleaseProtocolExecutor protocol) {
         this.session = Objects.requireNonNull(session, "session");
         this.commands = Objects.requireNonNull(commands, "commands");
         this.protocol = Objects.requireNonNull(protocol, "protocol");

@@ -7,9 +7,9 @@ import gold.debug.windowstolinux.app.service.ai.AiAnalysisOutcome;
 import gold.debug.windowstolinux.app.service.ai.AiProfile;
 import gold.debug.windowstolinux.app.service.ai.AiProviderProfile;
 import gold.debug.windowstolinux.app.service.ai.AiUseCases;
-import gold.debug.windowstolinux.app.service.ai.ReadOnlyPhaseTwoAgentTools;
+import gold.debug.windowstolinux.app.service.ai.ReadOnlyDeploymentAgentTools;
 import gold.debug.windowstolinux.app.service.concurrency.ServerOperationLocks;
-import gold.debug.windowstolinux.app.service.config.PhaseTwoConfigurationUseCase;
+import gold.debug.windowstolinux.app.service.config.DeploymentConfigurationUseCase;
 import gold.debug.windowstolinux.app.service.deployment.DeploymentOutcome;
 import gold.debug.windowstolinux.app.service.deployment.DeploymentUseCase;
 import gold.debug.windowstolinux.app.service.environment.EnvironmentPreparationUseCase;
@@ -26,21 +26,21 @@ import gold.debug.windowstolinux.shared.config.revision.ConfigurationSnapshot;
 import gold.debug.windowstolinux.shared.config.secretref.SecretReference;
 import gold.debug.windowstolinux.app.windows.workspace.WindowsSourceWorkspace;
 import gold.debug.windowstolinux.shared.analyze.core.StaticProjectAnalyzer;
-import gold.debug.windowstolinux.shared.deploy.environment.PhaseOneEnvironmentPreparationService;
+import gold.debug.windowstolinux.shared.deploy.environment.EnvironmentPreparationService;
 import gold.debug.windowstolinux.shared.deploy.plan.DeploymentRequest;
-import gold.debug.windowstolinux.shared.deploy.plan.PhaseTwoDeploymentPlan;
-import gold.debug.windowstolinux.shared.deploy.plan.PhaseTwoDeploymentRequest;
+import gold.debug.windowstolinux.shared.deploy.plan.ReviewedDeploymentPlan;
+import gold.debug.windowstolinux.shared.deploy.plan.ReviewedDeploymentRequest;
 import gold.debug.windowstolinux.shared.deploy.result.DeploymentResult;
 import gold.debug.windowstolinux.shared.deploy.result.LifecycleActionResult;
-import gold.debug.windowstolinux.shared.deploy.transaction.PhaseOneDeploymentService;
+import gold.debug.windowstolinux.shared.deploy.transaction.ManagedDeploymentService;
 import gold.debug.windowstolinux.shared.linux.connection.HostKeyVerifier;
 import gold.debug.windowstolinux.shared.linux.connection.LinuxOperationException;
-import gold.debug.windowstolinux.shared.linux.connection.PhaseOneLinuxGateway;
+import gold.debug.windowstolinux.shared.linux.connection.LinuxGateway;
 import gold.debug.windowstolinux.shared.linux.connection.SshCredential;
 import gold.debug.windowstolinux.shared.model.deployment.BuildLimits;
-import gold.debug.windowstolinux.shared.model.analysis.PhaseTwoProjectAssessment;
-import gold.debug.windowstolinux.shared.model.project.PhaseTwoProjectType;
-import gold.debug.windowstolinux.shared.model.deployment.PhaseOneEnvironmentPreparationResult;
+import gold.debug.windowstolinux.shared.model.analysis.DeploymentProjectAssessment;
+import gold.debug.windowstolinux.shared.model.project.DeploymentProjectType;
+import gold.debug.windowstolinux.shared.model.deployment.EnvironmentPreparationResult;
 import gold.debug.windowstolinux.shared.model.health.HealthCheck;
 import gold.debug.windowstolinux.shared.model.health.UserAccessUrl;
 import gold.debug.windowstolinux.shared.model.lifecycle.LifecycleAction;
@@ -66,8 +66,8 @@ public final class DesktopApplicationService {
     private final SourcePreparationUseCase source;
     private final ServerUseCases servers;
     private final AiUseCases ai;
-    private final ReadOnlyPhaseTwoAgentTools phaseTwoAgentTools;
-    private final PhaseTwoConfigurationUseCase phaseTwoConfiguration;
+    private final ReadOnlyDeploymentAgentTools deploymentAgentTools;
+    private final DeploymentConfigurationUseCase deploymentConfiguration;
     private final EnvironmentPreparationUseCase environment;
     private final DeploymentUseCase deployment;
     private final LifecycleUseCase lifecycle;
@@ -82,7 +82,7 @@ public final class DesktopApplicationService {
      * @param linuxGateway the {@code linuxGateway} value / {@code linuxGateway} 值
      * @throws NullPointerException if a required argument is {@code null} / 必要参数为 {@code null} 时
      */
-    public DesktopApplicationService(DesktopDatabase database, Path workDirectory, PhaseOneLinuxGateway linuxGateway) {
+    public DesktopApplicationService(DesktopDatabase database, Path workDirectory, LinuxGateway linuxGateway) {
         Objects.requireNonNull(database, "database");
         Objects.requireNonNull(linuxGateway, "linuxGateway");
         ServerOperationLocks locks = new ServerOperationLocks();
@@ -90,12 +90,12 @@ public final class DesktopApplicationService {
         this.servers = new ServerUseCases(database, secrets, linuxGateway);
         this.source = new SourcePreparationUseCase(new StaticProjectAnalyzer(), new WindowsSourceWorkspace(workDirectory));
         this.ai = new AiUseCases(database, secrets);
-        this.phaseTwoAgentTools = new ReadOnlyPhaseTwoAgentTools();
-        this.phaseTwoConfiguration = new PhaseTwoConfigurationUseCase(database, secrets);
+        this.deploymentAgentTools = new ReadOnlyDeploymentAgentTools();
+        this.deploymentConfiguration = new DeploymentConfigurationUseCase(database, secrets);
         this.environment = new EnvironmentPreparationUseCase(
-                new PhaseOneEnvironmentPreparationService(), linuxGateway, servers, locks);
+                new EnvironmentPreparationService(), linuxGateway, servers, locks);
         this.deployment = new DeploymentUseCase(
-                database, new PhaseOneDeploymentService(), linuxGateway, servers, locks);
+                database, new ManagedDeploymentService(), linuxGateway, servers, locks);
         this.lifecycle = new LifecycleUseCase(database, linuxGateway, servers, locks);
     }
 
@@ -113,21 +113,21 @@ public final class DesktopApplicationService {
     }
 
     /**
-     * Performs the Phase Two bounded static inspection made available to the optional read-only agent.
+     * Performs the typed deployment bounded static inspection made available to the optional read-only agent.
      *
-     * <p>执行供可选只读 Agent 使用的二期有界静态检查。
+     * <p>执行供可选只读 Agent 使用的部署有界静态检查。
      */
-    public PhaseTwoProjectAssessment analyzePhaseTwoSource(Path sourceDirectory, PhaseTwoProjectType projectType) {
-        return phaseTwoAgentTools.analyze(sourceDirectory, projectType);
+    public DeploymentProjectAssessment analyzeDeploymentSource(Path sourceDirectory, DeploymentProjectType projectType) {
+        return deploymentAgentTools.analyze(sourceDirectory, projectType);
     }
 
     /**
-     * Renders a fully validated Phase Two plan without opening SSH, invoking a build, or reading a secret.
+     * Renders a fully validated typed deployment plan without opening SSH, invoking a build, or reading a secret.
      *
-     * <p>渲染完整校验的二期计划，不打开 SSH、不调用构建，也不读取秘密。
+     * <p>渲染完整校验的部署计划，不打开 SSH、不调用构建，也不读取秘密。
      */
-    public PhaseTwoDeploymentPlan planPhaseTwoDeployment(PhaseTwoDeploymentRequest request) {
-        return phaseTwoAgentTools.plan(request);
+    public ReviewedDeploymentPlan planDeploymentDeployment(ReviewedDeploymentRequest request) {
+        return deploymentAgentTools.plan(request);
     }
 
     /**
@@ -227,12 +227,12 @@ public final class DesktopApplicationService {
     }
 
     /**
-     * Stores an immutable non-secret Phase Two configuration snapshot.
+     * Stores an immutable non-secret typed deployment configuration snapshot.
      *
-     * <p>保存一个不可变的非秘密二期配置快照。
+     * <p>保存一个不可变的非秘密部署配置快照。
      */
-    public void savePhaseTwoConfigurationSnapshot(ConfigurationSnapshot snapshot) throws SQLException {
-        phaseTwoConfiguration.saveSnapshot(snapshot);
+    public void saveDeploymentConfigurationSnapshot(ConfigurationSnapshot snapshot) throws SQLException {
+        deploymentConfiguration.saveSnapshot(snapshot);
     }
 
     /**
@@ -240,9 +240,9 @@ public final class DesktopApplicationService {
      *
      * <p>保存一个不可变应用秘密修订；此调用后不再暴露其明文。
      */
-    public void savePhaseTwoSecretRevision(StoredApplicationSecretRevision revision, SecretStore store, char[] value)
+    public void saveDeploymentSecretRevision(StoredApplicationSecretRevision revision, SecretStore store, char[] value)
             throws SQLException, SecretStoreException {
-        phaseTwoConfiguration.saveSecretRevision(revision, store, value);
+        deploymentConfiguration.saveSecretRevision(revision, store, value);
     }
 
     /**
@@ -250,9 +250,9 @@ public final class DesktopApplicationService {
      *
      * <p>在可用于部署或回滚前，验证并将不可变秘密修订绑定到发布标识。
      */
-    public void bindPhaseTwoReleaseSecrets(String applicationId, String releaseIdentity, List<SecretReference> references,
+    public void bindDeploymentReleaseSecrets(String applicationId, String releaseIdentity, List<SecretReference> references,
                                             char[] masterPassword) throws SQLException, SecretStoreException {
-        phaseTwoConfiguration.bindReleaseSecrets(applicationId, releaseIdentity, references, masterPassword);
+        deploymentConfiguration.bindReleaseSecrets(applicationId, releaseIdentity, references, masterPassword);
     }
 
     /**
@@ -304,9 +304,9 @@ public final class DesktopApplicationService {
     }
 
     /**
-     * Performs the {@code preparePhaseOneEnvironmentWithStoredPassword} operation.
+     * Performs the {@code prepareEnvironmentWithStoredPassword} operation.
      *
-     * <p>执行 {@code preparePhaseOneEnvironmentWithStoredPassword} 操作。
+     * <p>执行 {@code prepareEnvironmentWithStoredPassword} 操作。
      *
      * @param profile the {@code profile} value / {@code profile} 值
      * @param mode the {@code mode} value / {@code mode} 值
@@ -318,7 +318,7 @@ public final class DesktopApplicationService {
      * @throws SQLException if the operation cannot be completed / 无法完成操作时
      * @throws LinuxOperationException if the operation cannot be completed / 无法完成操作时
      */
-    public PhaseOneEnvironmentPreparationResult preparePhaseOneEnvironmentWithStoredPassword(
+    public EnvironmentPreparationResult prepareEnvironmentWithStoredPassword(
             ServerProfile profile, CredentialStorageMode mode, char[] masterPassword,
             Predicate<String> confirmation, boolean installationConfirmed)
             throws SecretStoreException, SQLException, LinuxOperationException {

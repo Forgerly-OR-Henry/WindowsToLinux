@@ -11,9 +11,9 @@ import gold.debug.windowstolinux.app.service.source.SourcePreparation;
 import gold.debug.windowstolinux.shared.deploy.plan.DeploymentApproval;
 import gold.debug.windowstolinux.shared.deploy.plan.DeploymentRequest;
 import gold.debug.windowstolinux.shared.deploy.result.DeploymentResult;
-import gold.debug.windowstolinux.shared.deploy.transaction.PhaseOneDeploymentService;
+import gold.debug.windowstolinux.shared.deploy.transaction.ManagedDeploymentService;
 import gold.debug.windowstolinux.shared.linux.connection.HostKeyVerifier;
-import gold.debug.windowstolinux.shared.linux.connection.PhaseOneLinuxGateway;
+import gold.debug.windowstolinux.shared.linux.connection.LinuxGateway;
 import gold.debug.windowstolinux.shared.linux.connection.SshCredential;
 import gold.debug.windowstolinux.shared.linux.connection.SshEndpoint;
 import gold.debug.windowstolinux.shared.model.deployment.BuildLimits;
@@ -44,8 +44,8 @@ import java.util.function.Predicate;
  */
 public final class DeploymentUseCase {
     private final DesktopDatabase database;
-    private final PhaseOneDeploymentService service;
-    private final PhaseOneLinuxGateway gateway;
+    private final ManagedDeploymentService service;
+    private final LinuxGateway gateway;
     private final ServerUseCases servers;
     private final ServerOperationLocks locks;
 
@@ -61,8 +61,8 @@ public final class DeploymentUseCase {
      * @param locks the {@code locks} value / {@code locks} 值
      * @throws NullPointerException if a required argument is {@code null} / 必要参数为 {@code null} 时
      */
-    public DeploymentUseCase(DesktopDatabase database, PhaseOneDeploymentService service,
-                             PhaseOneLinuxGateway gateway, ServerUseCases servers, ServerOperationLocks locks) {
+    public DeploymentUseCase(DesktopDatabase database, ManagedDeploymentService service,
+                             LinuxGateway gateway, ServerUseCases servers, ServerOperationLocks locks) {
         this.database = Objects.requireNonNull(database, "database");
         this.service = Objects.requireNonNull(service, "service");
         this.gateway = Objects.requireNonNull(gateway, "gateway");
@@ -164,7 +164,7 @@ public final class DeploymentUseCase {
      * @return the operation result / 操作结果
      * @throws SQLException if the operation cannot be completed / 无法完成操作时
      */
-    public DeploymentResult deploy(DeploymentRequest request, PhaseOneLinuxGateway requestedGateway, SshEndpoint endpoint,
+    public DeploymentResult deploy(DeploymentRequest request, LinuxGateway requestedGateway, SshEndpoint endpoint,
                                    SshCredential credential, HostKeyVerifier verifier) throws SQLException {
         ReentrantLock lock = locks.forServer(request.application().server().id());
         lock.lock();
@@ -192,7 +192,7 @@ public final class DeploymentUseCase {
         try {
             Optional<ManagedApplication> saved = database.findManagedApplication(applicationId);
             if (saved.isEmpty()) {
-                return ManagedApplication.forPhaseOne(applicationId, server, randomDigest());
+                return ManagedApplication.forManaged(applicationId, server, randomDigest());
             }
             ManagedApplication existing = saved.orElseThrow();
             if (!existing.server().equals(server)) {
@@ -201,13 +201,13 @@ public final class DeploymentUseCase {
                         "Managed application " + applicationId
                                 + " is bound to a different server identity and cannot be reclaimed");
             }
-            ManagedApplication canonical = ManagedApplication.forPhaseOne(
+            ManagedApplication canonical = ManagedApplication.forManaged(
                     applicationId, server, existing.ownershipManifestSha256());
             if (!existing.equals(canonical)) {
                 throw new LocalizedOperationException(LocalizedMessage.of("deployment.applicationIdentityInvalid",
                         "application", applicationId),
                         "Saved identity for managed application " + applicationId
-                                + " violates phase-one rules and cannot be overwritten or reclaimed");
+                                + " violates managed-deployment rules and cannot be overwritten or reclaimed");
             }
             return existing;
         } catch (SQLException exception) {

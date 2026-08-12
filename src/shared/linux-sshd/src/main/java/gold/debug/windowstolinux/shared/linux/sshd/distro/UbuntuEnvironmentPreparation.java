@@ -1,6 +1,6 @@
 package gold.debug.windowstolinux.shared.linux.sshd.distro;
 
-import gold.debug.windowstolinux.shared.linux.sshd.protocol.PhaseOnePrivilegeHelper;
+import gold.debug.windowstolinux.shared.linux.sshd.protocol.ManagedPrivilegeHelper;
 
 import java.time.Duration;
 import java.util.List;
@@ -29,7 +29,7 @@ public final class UbuntuEnvironmentPreparation {
      *
      * <p>公开 {@code SUDOERS_PATH} 常量。
      */
-    public static final String SUDOERS_PATH = "/etc/sudoers.d/windowstolinux-phase1";
+    public static final String SUDOERS_PATH = "/etc/sudoers.d/windowstolinux-managed";
     /**
      * Exposes the {@code PACKAGES} constant.
      *
@@ -58,8 +58,8 @@ public final class UbuntuEnvironmentPreparation {
         if (!username.matches("[a-z_][a-z0-9_-]{0,31}")) {
             throw new IllegalArgumentException("username is not a supported Ubuntu account name");
         }
-        return "# Managed by WindowsToLinux phase one; only the constrained helper is granted.\n"
-                + username + " ALL=(root) NOPASSWD: " + PhaseOnePrivilegeHelper.PATH + "\n";
+        return "# Managed by WindowsToLinux managed deployment; only the constrained helper is granted.\n"
+                + username + " ALL=(root) NOPASSWD: " + ManagedPrivilegeHelper.PATH + "\n";
     }
 
     /**
@@ -73,7 +73,7 @@ public final class UbuntuEnvironmentPreparation {
     public static String renderScript(String username) {
         String sudoers = renderSudoers(username);
         String packages = String.join(" ", PACKAGES);
-        String helper = PhaseOnePrivilegeHelper.renderScript();
+        String helper = ManagedPrivilegeHelper.renderScript();
         return """
                 set -euo pipefail
                 test -r /etc/os-release
@@ -112,8 +112,8 @@ public final class UbuntuEnvironmentPreparation {
                 command -v setsid >/dev/null 2>&1
                 command -v timeout >/dev/null 2>&1
                 command -v du >/dev/null 2>&1
-                tmp=$(/usr/bin/mktemp /tmp/windowstolinux-phase1-sudoers.XXXXXX)
-                helper_tmp=$(/usr/bin/mktemp /tmp/windowstolinux-phase1-helper.XXXXXX)
+                tmp=$(/usr/bin/mktemp /tmp/windowstolinux-managed-sudoers.XXXXXX)
+                helper_tmp=$(/usr/bin/mktemp /tmp/windowstolinux-managed-helper.XXXXXX)
                 trap '/usr/bin/rm -f -- "$tmp" "$helper_tmp"' EXIT
                 sudoers=%s
                 helper=%s
@@ -138,10 +138,10 @@ public final class UbuntuEnvironmentPreparation {
                 """.formatted(
                 quote(username), APT_LOCK_TIMEOUT_SECONDS, APT_LOCK_TIMEOUT_SECONDS, packages,
                 APT_LOCK_TIMEOUT_SECONDS, APT_LOCK_TIMEOUT_SECONDS, packages, quote(sudoers), quote(helper),
-                quote(PhaseOnePrivilegeHelper.DIRECTORY), quote(PhaseOnePrivilegeHelper.PATH),
-                quote(SUDOERS_PATH), quote(PhaseOnePrivilegeHelper.DIRECTORY), quote(PhaseOnePrivilegeHelper.PATH),
-                quote(SUDOERS_PATH), quote(PhaseOnePrivilegeHelper.PATH), packages, SUDOERS_PATH,
-                PhaseOnePrivilegeHelper.PATH
+                quote(ManagedPrivilegeHelper.DIRECTORY), quote(ManagedPrivilegeHelper.PATH),
+                quote(SUDOERS_PATH), quote(ManagedPrivilegeHelper.DIRECTORY), quote(ManagedPrivilegeHelper.PATH),
+                quote(SUDOERS_PATH), quote(ManagedPrivilegeHelper.PATH), packages, SUDOERS_PATH,
+                ManagedPrivilegeHelper.PATH
         );
     }
 

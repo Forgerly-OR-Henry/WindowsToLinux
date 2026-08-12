@@ -60,8 +60,8 @@ class GitSnapshotServiceTest {
     private Path createRepository() throws Exception {
         Path repository = Files.createDirectories(temporaryDirectory.resolve("repository"));
         git(repository, "init", "--initial-branch=main");
-        git(repository, "config", "user.name", "Phase Two Test");
-        git(repository, "config", "user.email", "phase2@example.test");
+        git(repository, "config", "user.name", "typed deployment Test");
+        git(repository, "config", "user.email", "deployment@example.test");
         Files.writeString(repository.resolve("README.md"), "fixture", StandardCharsets.UTF_8);
         commit(repository, "initial");
         return repository;

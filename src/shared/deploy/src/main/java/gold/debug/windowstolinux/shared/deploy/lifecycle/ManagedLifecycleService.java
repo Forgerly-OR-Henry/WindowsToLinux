@@ -4,8 +4,8 @@ import gold.debug.windowstolinux.shared.deploy.result.LifecycleActionResult;
 
 import gold.debug.windowstolinux.shared.linux.connection.HostKeyVerifier;
 import gold.debug.windowstolinux.shared.linux.connection.LinuxOperationException;
-import gold.debug.windowstolinux.shared.linux.connection.PhaseOneLinuxGateway;
-import gold.debug.windowstolinux.shared.linux.connection.PhaseOneRemoteSession;
+import gold.debug.windowstolinux.shared.linux.connection.LinuxGateway;
+import gold.debug.windowstolinux.shared.linux.connection.LinuxRemoteSession;
 import gold.debug.windowstolinux.shared.linux.connection.SshCredential;
 import gold.debug.windowstolinux.shared.linux.connection.SshEndpoint;
 import gold.debug.windowstolinux.shared.model.health.HealthCheck;
@@ -40,12 +40,12 @@ public final class ManagedLifecycleService {
             ManagedApplication application,
             LifecycleAction action,
             HealthCheck healthCheck,
-            PhaseOneLinuxGateway gateway,
+            LinuxGateway gateway,
             SshEndpoint endpoint,
             SshCredential credential,
             HostKeyVerifier hostKeyVerifier
     ) {
-        try (PhaseOneRemoteSession session = gateway.connect(endpoint, credential, hostKeyVerifier)) {
+        try (LinuxRemoteSession session = gateway.connect(endpoint, credential, hostKeyVerifier)) {
             LifecycleObservation before = session.observe(application);
             if (!before.ownershipVerified()) {
                 return new LifecycleActionResult(false, LocalizedMessage.of("lifecycle.ownershipUnverified"), Optional.of(before));
