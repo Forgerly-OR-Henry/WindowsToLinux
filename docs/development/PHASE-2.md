@@ -2,10 +2,10 @@
 
 ## 文档信息
 
-- 阶段基线版本：`2.4.0-reviewed-source-inference`
+- 阶段基线版本：`2.5.0-responsibility-boundaries`
 - 文档结构版本：`2.0.0-roadmap-rebaseline`
 - 文档状态：**本地实现与自动化验证已完成；真实 Linux、systemd、容器和各类型端到端验收待执行**
-- 当前实现：本地目录与无凭据网络 Git 来源均在固定归档摘要和来源身份后进入同一类型化分析/计划路径；分析只对唯一、受支持且有证据的语言版本、入口、产物目录、端口或卷生成可审阅建议；不可变配置/密钥修订、主机矩阵、受限 Provider/Agent、六类项目的受控目标机构建与发布/回滚/生命周期代码均已实现并经过本地测试；二期类型尚未获得正式运行环境支持结论
+- 当前实现：本地目录与无凭据网络 Git 来源均在固定归档摘要和来源身份后进入同一类型化分析/计划路径；Java、Node.js/JavaScript/TypeScript 与 Python 基础语言事实，以及唯一、受支持且有证据的版本、入口、产物目录、端口或卷建议均可审阅；分析、页面、持久化、Git、六类构建、systemd 和 helper 已按稳定职责拆分；二期类型尚未获得正式运行环境支持结论
 - 更新日期：2026-08-12
 - 上级文档：[开发总纲](../DEVELOPMENT.md)
 
@@ -25,6 +25,9 @@
 
 - 已完成本地实现与负向测试：Git 分支/Tag 固定 Commit、禁用 Hook、拒绝未经支持的 Submodule/LFS 和 URL 凭据；桌面端可选择本地目录或无凭据网络 Git 来源，Git 来源的 URI、Commit 和归档摘要会绑定进发布请求；六种类型的有界静态识别、冲突/缺失输入与确定性计划，以及唯一且受支持的 Java/Node/Python/静态/容器运行时建议；桌面端只在源码分析后回填这些建议，允许人工覆核和修改，填写受限结构化运行时/非秘密配置/秘密修订引用，审阅确定性计划并以已保存凭据提交；SQLite v4 不可变普通配置及秘密修订/发布绑定；Linux 事实采集与 Ubuntu、CentOS Stream、旧 CentOS的保守矩阵；Ubuntu 22.04/24.04 与 CentOS Stream 9/10 的固定环境准备脚本；Docker/Podman 不可混淆的自启契约；命名 Provider 与仅含分析/计划工具的可选 Agent 表面。
 - 六种项目类型均已有受控目标机构建、发布、快照、回滚、健康和生命周期代码：Node 的 npm/pnpm/yarn 与锁文件保持一致，Python 仅在候选目录创建虚拟环境，静态站点仅暴露已审阅的产物目录，容器使用受管镜像标签及 Docker restart policy 或 Podman Quadlet。发布快照保存旧的运行参数与自启状态，回滚不得复用新版本配置。
+- 基础语言事实已进入 `SourceProjectFacts` 与 `DeploymentProjectFacts`：只从有界源码路径、JAR Manifest、`package.json`/`tsconfig`、`pyproject.toml` 和扩展名收集确定性证据，不读取任意二进制、不执行源码、不猜测主要语言。JavaScript 与 TypeScript 可同时显示，但不会自动拆成多组件，也不会替代用户显式项目类型选择。
+- Node 构建型静态站点不再具有隐藏默认版本：只有精确 `engines.node` 才能回填主版本，范围或缺失值必须由用户填写；纯静态站点不要求且不得携带 Node 主版本。
+- 2026-08-12 使用 JDK 21 执行 `mvn.cmd -B -ntp -o verify`，28 个 Maven 模块全部成功；36 份测试报告共 138 项测试，0 失败、0 错误、2 项因当前平台能力跳过。`git diff --check`、生产源码期数命名与旧大类扫描、Node 20 默认值扫描、422 个中英文消息键及非空值边界、包结构与 `File.md` 一致性、helper 固定 SHA-256 均通过。
 - 本次没有连接二期目标机，也没有执行 Gradle、普通 JAR、Node、Python、静态站点、Docker 或 Podman 的目标机构建、发布、回滚或生命周期。因此以上本地代码和自动化测试全部为 `RUNTIME-PENDING`，不得标记为正式支持。
 - 一期 Ubuntu 24.04 的既有真实验收结论保持不变，不能外推至二期类型、容器或其他发行版。
 
@@ -38,7 +41,7 @@
 | 普通 Java JAR | Java 版本、主类、启动参数和健康策略都可确定 |
 | Node.js | 锁文件、包管理器、构建/启动脚本和监听端口明确 |
 | Python | Python 版本、锁定依赖、入口、虚拟环境和健康策略明确 |
-| 静态站点 | 构建产物目录确定，以受控静态服务发布 |
+| 静态站点 | 构建产物目录确定；构建型站点具有精确或人工确认的 Node 主版本，纯静态站点不要求 Node |
 | Dockerfile | 单镜像、单容器、端口/健康/持久化目录明确 |
 
 没有锁文件、入口冲突、需要用户自定义任意命令或无法确定产物的项目只能展示分析结果，不能标记正式支持。Docker Compose 和多容器项目属于三期多组件范围。
@@ -86,6 +89,13 @@ Git 输入包括仓库地址、凭据引用、分支/Tag/Commit、Submodule 和 
 
 每项结论记录来源、置信度、冲突和缺失信息。文档或源码中的提示文本均视为不可信数据，不能改变工具权限、安全规则或命令白名单。无法自动决定且会改变入口、数据、网络或权限的事项才询问用户。
 
+### 4.1 基础语言事实边界
+
+- `LanguageEcosystem` 只包含 `JAVA`、`NODE_JS`、`PYTHON`；`SourceLanguage` 只包含 `JAVA`、`JAVASCRIPT`、`TYPESCRIPT`、`PYTHON`。
+- `.java` 与 JAR Manifest 产生 Java 证据；`package.json`、JavaScript/TypeScript 扩展名与 `tsconfig` 产生 Node 生态及源码语言证据；`pyproject.toml` 与 `.py` 产生 Python 证据。
+- 语言事实是确定性集合和 `AnalysisEvidence`，不计算“主要语言”、比例或支持等级，不据此自动改变用户选择的 `DeploymentProjectType`。
+- 多语言根、语言支持等级和自动项目类型选择仍属于三期，不在本期提前实现。
+
 ## 5. 应用配置与密钥
 
 ### 5.1 普通配置快照
@@ -110,7 +120,7 @@ Git 输入包括仓库地址、凭据引用、分支/Tag/Commit、Submodule 和 
 - Java：Maven/Gradle Wrapper优先，普通 JAR 必须固定主类和 JVM 参数结构，不能接受一段任意启动命令。
 - Node.js：锁定 npm/pnpm/yarn 类型和锁文件；生产依赖安装与构建在候选目录完成。
 - Python：使用候选版本专属虚拟环境和锁定依赖；不得污染系统 Python。
-- 静态站点：只发布分析确定的产物目录，禁止把源码根目录直接暴露。
+- 静态站点：只发布分析确定的产物目录，禁止把源码根目录直接暴露；Node 构建型站点必须验证审阅的显式主版本，纯静态站点不启动 Node 构建。
 - Docker：构建单镜像，使用受管标签/摘要和显式卷、端口、健康、用户配置；自启通过受控 restart policy 实现并复核。
 - Podman：优先使用 Quadlet 描述受管容器，在 `[Install]` 配置目标；不得对生成的临时 service 错误执行普通 `systemctl enable` 并宣称自启成功。
 
@@ -166,6 +176,8 @@ Git 输入包括仓库地址、凭据引用、分支/Tag/Commit、Submodule 和 
 ### 12.2 项目和容器适配
 
 - [x] 六个项目类型都有类型化静态分析、确定性计划、受控构建、快照、发布、健康、失败恢复和生命周期契约；桌面端可选择类型、提交受限运行时定义和非秘密配置，并先展示确定性计划；六种类型的本地事务、脚本/参数、UI 状态和消息映射测试已通过。
+- [x] Java、Node.js/JavaScript/TypeScript、Python 基础语言事实进入源码与部署模型，并可在中英文桌面摘要中显示；混合 JavaScript/TypeScript 不会升级为多组件分析。
+- [x] Node 构建型静态站点没有默认版本：精确版本可推导，范围或缺失版本要求人工填写，纯静态站点不要求 Node。
 - [~] Gradle、普通 JAR、Node、Python、静态站点、Docker 和 Podman 的目标机端到端验收仍为 `RUNTIME-PENDING`；本次没有连接二期目标机。
 - [~] Docker restart policy 与 Podman Quadlet 具有独立类型化发布、回滚和自启契约，旧容器参数与自启状态会进入快照；未在真实环境验证。
 - [x] 容器规格没有 privileged、Docker socket、host PID/IPC 或任意挂载字段，Docker 计划要求显式守护进程风险确认。
@@ -186,6 +198,7 @@ Git 输入包括仓库地址、凭据引用、分支/Tag/Commit、Submodule 和 
 
 | 版本 | 日期 | 说明 |
 | --- | --- | --- |
+| 2.5.0-responsibility-boundaries | 2026-08-12 | 补齐 Java、Node.js/JavaScript/TypeScript、Python 基础语言事实和中英文摘要；取消构建型静态站点的 Node 默认版本；按职责拆分分析、桌面页面、SQLite 仓库、Git 快照、六类构建、systemd 与 helper，并增加结构门禁。真实目标机验收仍为 `RUNTIME-PENDING`。 |
 | 2.4.0-reviewed-source-inference | 2026-08-12 | 将无凭据网络 Git 来源接入桌面至发布请求的相同审阅链路，并用 `SourceRevision` 绑定固定 Commit、来源和归档摘要；补齐可审阅的源码运行时建议和桌面回填，去除 Node、Python、Java、静态站点、容器端口及配置表单中的无依据默认值；秘密修订引用不再固定为空。真实目标机验收仍为 `RUNTIME-PENDING`。 |
 | 2.3.0-desktop-typed-workflow | 2026-08-12 | 补齐桌面端六类项目的类型选择、静态分析、安全归档、结构化运行时/非秘密配置、计划审阅和已保存凭据提交；AI 对类型化事实只发送脱敏应用标识、项目类型和固定构建入口。目标机端到端验收仍为 `RUNTIME-PENDING`。 |
 | 2.2.0-local-execution-contracts | 2026-08-12 | 补齐六类项目的受控目标机构建、发布、快照、回滚、健康和生命周期代码；容器与非容器快照保存旧运行参数和自启状态；接入类型化主机矩阵及 Ubuntu 22.04/24.04、CentOS Stream 9/10 固定环境准备脚本。本地自动化验证完成，真实目标机验收仍为 `RUNTIME-PENDING`。 |

@@ -7,6 +7,8 @@ import gold.debug.windowstolinux.shared.model.deployment.DeploymentStep;
 import gold.debug.windowstolinux.shared.model.lifecycle.AutostartState;
 import gold.debug.windowstolinux.shared.model.lifecycle.LifecycleAction;
 import gold.debug.windowstolinux.shared.model.lifecycle.RuntimeState;
+import gold.debug.windowstolinux.shared.model.project.LanguageEcosystem;
+import gold.debug.windowstolinux.shared.model.project.SourceLanguage;
 import org.junit.jupiter.api.Test;
 
 import java.io.IOException;
@@ -98,6 +100,23 @@ class MessageCatalogTest {
         for (AutostartState value : AutostartState.values()) {
             assertCode("autostart.state." + value.name().toLowerCase(Locale.ROOT));
         }
+        for (LanguageEcosystem value : LanguageEcosystem.values()) {
+            assertCode("language.ecosystem." + value.name().toLowerCase(Locale.ROOT));
+        }
+        for (SourceLanguage value : SourceLanguage.values()) {
+            assertCode("language.source." + value.name().toLowerCase(Locale.ROOT));
+        }
+    }
+
+    @Test
+    void rendersMixedJavaScriptAndTypeScriptFactsWithoutChoosingAPrimaryLanguage() {
+        Map<String, Object> values = Map.of("ecosystems", english.text("language.ecosystem.node_js"),
+                "sources", english.text("language.source.javascript") + ", "
+                        + english.text("language.source.typescript"));
+        assertEquals("Language ecosystems: Node.js\nSource languages: JavaScript, TypeScript\n",
+                english.text("source.languageSummary", values));
+        assertEquals("语言生态：Node.js\n源码语言：JavaScript, TypeScript\n",
+                chinese.text("source.languageSummary", values));
     }
 
     private static Properties properties(String fileName) throws IOException {

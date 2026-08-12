@@ -2,8 +2,8 @@
 
 ## 文档信息
 
-- 文档版本：`2.3.2-local-execution-contracts`
-- 文档状态：**正式目标模块、职责、依赖方向和叶子模块内部目标包结构已确认；28 个 Maven reactor 工程及一期已有代码的职责迁移已落地；二期本地实现复用既有模块和包结构，真实运行环境验收保持待执行**
+- 文档版本：`2.4.0-responsibility-boundaries`
+- 文档状态：**正式目标模块、职责、依赖方向和叶子模块内部目标包结构已确认；28 个 Maven reactor 工程、职责拆包和基础语言事实已落地；真实运行环境验收保持待执行**
 - 已确认范围：`shared` 共用模块、`app` Windows 桌面应用模块、`web` Web 应用模块
 - 已确认能力边界：受管应用生命周期复用既有模块，不新增独立 Maven 模块
 - 更新日期：2026-08-12
@@ -29,7 +29,7 @@ WindowsToLinux/
    │  │  ├─ connection/       SQLite 连接和事务基础
    │  │  ├─ entity/           仅供桌面持久化使用的存储记录
    │  │  ├─ migration/        版本化表结构迁移
-   │  │  └─ repository/       按聚合划分的数据访问实现
+   │  │  └─ repository/       按服务器、偏好、AI、配置、秘密和受管应用职责划分的数据访问实现
    │  ├─ main/                启动入口、运行模式和模块装配
    │  │  ├─ bootstrap/        桌面应用启动与模块装配
    │  │  ├─ config/           启动配置和固定目录解析
@@ -77,7 +77,7 @@ WindowsToLinux/
    │  │  │  ├─ maven/         Maven、POM 与 Maven Wrapper 分析
    │  │  │  ├─ node/          npm、pnpm、yarn、锁文件和脚本事实分析
    │  │  │  └─ python/        Python 依赖、锁定方式和虚拟环境事实分析
-   │  │  ├─ core/             分析流程、分析器注册与结果汇总
+   │  │  ├─ core/             有界分析协调、类型检查器注册与结果汇总
    │  │  ├─ framework/
    │  │  │  └─ springboot/    Spring Boot 框架事实与风险识别
    │  │  ├─ language/
@@ -116,7 +116,7 @@ WindowsToLinux/
    │  ├─ git/                 Git 项目拉取与版本准备
    │  │  ├─ reference/        分支、Tag 和 Commit 固定
    │  │  ├─ remote/           仓库来源和远端访问
-   │  │  ├─ snapshot/         只读源码快照准备
+   │  │  ├─ snapshot/         Git 命令、受控工作区、特性策略与只读快照协调
    │  │  └─ validation/       来源、引用和工作树边界校验
    │  ├─ linux/               Linux 远程能力公共契约
    │  │  ├─ build/            各构建体系的请求、结果和执行契约
@@ -127,12 +127,12 @@ WindowsToLinux/
    │  │  ├─ runtime/          systemd、Docker、Podman 和静态服务生命周期契约
    │  │  └─ transfer/         受控传输请求与结果契约
    │  ├─ linux-sshd/          Apache SSHD Linux 远程能力实现
-   │  │  ├─ build/            Maven、Gradle、Node.js、Python 和容器远程构建实现
+   │  │  ├─ build/            共用安全外壳及 Gradle、Java JAR、Node.js、Python、静态站点、容器渲染器
    │  │  ├─ capability/       通过受控远程探测采集 Linux 能力
    │  │  ├─ connection/       Apache SSHD 客户端、会话、认证和主机指纹实现
    │  │  ├─ distro/           apt、dnf、软件源和安全机制实现
-   │  │  ├─ protocol/         高权限辅助程序生成、安装和类型化调用实现
-   │  │  ├─ runtime/          systemd、Docker、Podman 和静态服务远程实现
+   │  │  ├─ protocol/         高权限 helper 分片拼装、安装和类型化调用实现
+   │  │  ├─ runtime/          systemd 健康、归属、生命周期及容器远程实现
    │  │  └─ transfer/         Apache SSHD SFTP 与受控传输实现
    │  ├─ model/               部署数据模型与属性定义
    │  │  ├─ analysis/         项目分析结果、证据、冲突和支持判断
@@ -228,8 +228,18 @@ WindowsToLinux/
 - Maven 坐标统一使用 `gold.debug.windowstolinux`，根父工程为 `windowstolinux-parent:0.1.0-SNAPSHOT`，编译目标为 Java 21。
 - WindowsToLinux 自身构建使用开发机的系统 Maven 和系统本地仓库；项目 POM 不声明仓库位置，不创建项目专用 Maven 仓库，也不新增 Maven Wrapper 作为本项目构建入口。
 - 构建插件确需额外构建期依赖时，在根 POM 对应插件的 `<dependencies>` 中显式声明，供系统 Maven 同步；不得为了补插件缓存而把依赖加入业务叶子模块的运行时 classpath。
-- 一期正式 Java 源码已按第 1 节的实际职责分包迁移；模块根包只保留 `DesktopDatabase`、`DesktopApplicationService` 等稳定门面。`SafeSourceArchiver` 与源码归档类型已进入 `shared/source.archive`，Apache SSHD 实现已进入 `shared/linux-sshd`。
+- 正式 Java 源码已按第 1 节的实际职责分包；模块根包只保留 `DesktopPersistence`、`DesktopApplicationService` 等组合或委托门面，不得恢复同时承载多项数据访问或界面流程的集中实现。`SafeSourceArchiver` 与源码归档类型位于 `shared/source.archive`，Apache SSHD 实现位于 `shared/linux-sshd`。
 - `shared/backup` 和 Web Java 叶子模块目前只有 POM。`shared/config`、`shared/git` 已有二期 API；`web/frontend` 已包含最小页面、单元测试和浏览器测试。
+
+### 1.1 当前落地职责边界
+
+- `analyze/core` 只保留 `ManagedSpringBootAnalysisCoordinator`、`DeploymentAnalysisCoordinator` 及类型检查器契约；Gradle、Maven、Node、Python、Spring Boot、语言生态、静态站点和容器事实分别由对应包产生证据与局部结果。
+- `app/ui/shell` 只由 `DesktopFrame`、`DesktopPageCoordinator`、`DesktopViewState`、`PageMessages` 和 `PageNavigator` 负责窗口、装配、聚合状态与本地化；五个页面控制器各自持有表单和流程，跨页面只使用 `ServerContext` 与 `ReviewContext`。
+- `DesktopPersistence` 只组合服务器、偏好、AI、普通配置、应用秘密、加密载荷和受管应用仓库；服务和秘密存储只依赖所需仓库，成功发布仍由 `ManagedApplicationRepository` 在单事务内写入。
+- `GitSnapshotPreparer` 只协调 `GitCommandRunner`、`ControlledGitWorkspaceValidator`、`GitRepositoryFeaturePolicy` 和安全归档，不执行仓库源码。
+- `DeploymentBuildRenderer` 由六个项目类型渲染器实现并共享安全脚本外壳；注册表拒绝缺失、重复和类型不匹配实现，Node 构建型静态站点必须携带显式主版本。
+- systemd 远程职责由 `SystemdHealthChecker`、`SystemdOwnershipObserver` 和 `SystemdLifecycleExecutor` 分别承担。
+- `ManagedHelperBundle` 按固定顺序拼装八个职责资源片段；安装路径和 sudoers 白名单仅允许 `/usr/local/lib/windowstolinux/managed-helper`，拼装字节的 SHA-256 固定为 `399bc1f0fc0cc6d8abec2abf887fca956b18bc294670e5a1d0dc4b17faa10a9f`。
 
 ## 2. 模块职责
 
@@ -587,11 +597,13 @@ linux-sshd 通过 linux 契约采集服务器已有环境
 17. `app/ui/deployment` 只能收集并构造已声明的 `DeploymentProjectType`、`DeploymentRuntimeSpecification`、`ConfigurationSnapshot`、`SecretReference` 和计划审阅输入；不得暴露任意 Shell、启动命令、主机路径挂载或未审阅的秘密文本。项目类型、运行时字段和容器选项改变后，必须重新进行静态源码分析；桌面页面状态切换外观或语言时必须保留这些尚未提交的表单值。
 18. 类型化部署分析必须把确定的源码元数据作为可审阅的 `DeploymentRuntimeSuggestion` 返回，而非由桌面表单写死语言版本、入口、产物目录、端口或卷。仅在值唯一、受支持、边界安全且具有 `AnalysisEvidence` 时才可回填；范围、冲突、任意脚本和文档文字只能作为未解决的用户输入，绝不转换为命令。
 19. 本地目录和 Git 来源都必须在 `app/service/source` 汇合为同一 `ReviewedSourcePreparation`，并以归档摘要绑定 `SourceRevision`。网络 Git 来源必须使用无凭据 URI、允许主机、固定 Commit 和受控工作目录；桌面 UI 不得调用 Git 进程、数据库或秘密存储实现。
+20. `analyze/core`、`app/ui/shell`、`app/db/repository`、远程构建、systemd 和 helper 资源必须维持第 1.1 节的职责拆分。禁止恢复已删除的集中类，禁止以兼容壳保留旧公开类型；新增职责应进入对应包或窄契约，并通过结构边界测试同步校验本文。
 
 ## 11. 文档版本记录
 
 | 版本 | 日期 | 说明 |
 | --- | --- | --- |
+| 2.4.0-responsibility-boundaries | 2026-08-12 | 将源码分析、桌面页面、SQLite 仓库、Git 快照、六类远程构建、systemd 和高权限 helper 按稳定职责拆分；补齐 Java、Node.js/JavaScript/TypeScript、Python 基础语言事实及 UI 映射，固定静态站点 Node 版本约束和 helper 拼装哈希；不修改 SQLite schema、远程协议、安全或凭据边界。 |
 | 2.3.4-reviewed-source-inference | 2026-08-12 | 补齐本地与 Git 源码到同一经审阅归档/来源身份的服务路径；新增有证据、可人工复核的 Java、Node、Python、静态站点和容器运行时建议，移除桌面表单中的语言、入口、产物、端口和配置硬编码；桌面可录入不可变秘密修订并在发布请求中传递显式引用。未连接真实目标机。 |
 | 2.3.3-desktop-typed-workflow | 2026-08-12 | 同步桌面部署页的六类项目选择、类型化运行时和配置、计划审阅、类型化 AI 脱敏事实以及表单状态保留边界；不改变模块结构、SQLite schema、凭据归属或真实目标机验收状态。 |
 | 2.3.2-local-execution-contracts | 2026-08-12 | 同步二期六类项目的受控构建、发布、快照、回滚、健康、生命周期和发行版固定环境准备实现；维持分期只属于文档、不得泄漏到 `src/` API 或资源的命名规则，真实目标机验收仍待执行。 |
