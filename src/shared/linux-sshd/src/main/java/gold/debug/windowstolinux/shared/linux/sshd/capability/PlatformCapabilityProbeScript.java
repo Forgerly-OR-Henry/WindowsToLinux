@@ -78,7 +78,7 @@ public final class PlatformCapabilityProbeScript {
                   printf 'ADVANCED_KOTLIN=21\\n'
                 else printf 'ADVANCED_KOTLIN=\\n'; fi
                 if command -v php >/dev/null 2>&1 && command -v composer >/dev/null 2>&1; then
-                  printf 'ADVANCED_PHP='; php -r 'printf("%%d.%%d", PHP_MAJOR_VERSION, PHP_MINOR_VERSION);'; printf '\\n'
+                  printf 'ADVANCED_PHP='; php -r 'printf("%d.%d", PHP_MAJOR_VERSION, PHP_MINOR_VERSION);'; printf '\\n'
                 else printf 'ADVANCED_PHP=\\n'; fi
                 if command -v ruby >/dev/null 2>&1 && command -v bundle >/dev/null 2>&1; then
                   printf 'ADVANCED_RUBY='; ruby -e 'print RUBY_VERSION'; printf '\\n'

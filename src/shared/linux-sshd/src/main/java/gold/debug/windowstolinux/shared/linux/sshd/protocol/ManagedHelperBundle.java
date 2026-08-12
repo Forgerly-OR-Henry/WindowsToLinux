@@ -19,7 +19,7 @@ public final class ManagedHelperBundle {
     /** The only sudoers-allowlisted helper path. / sudoers 唯一列入白名单的 helper 路径。 */
     public static final String PATH = DIRECTORY + "/managed-helper";
     /** Expected byte-for-byte helper bundle identity. / 预期的 helper 逐字节身份。 */
-    public static final String EXPECTED_SHA256 = "5985f74caa8394d342147ba4a8d53a24038d32f6c61f9f4a509f1d54009174e0";
+    public static final String EXPECTED_SHA256 = "7dc33516cc8e8431304a351b08125b4997aa569acdc3b098602b2fd1ec4a5f52";
     private static final String ROOT = "/gold/debug/windowstolinux/shared/linux/sshd/protocol/managed-helper-fragments/";
     private static final List<String> FRAGMENTS = List.of(
             "00-common.sh", "10-typed-release.sh", "15-deployment-input.sh", "20-candidate-workspace.sh", "30-ordinary-release.sh",

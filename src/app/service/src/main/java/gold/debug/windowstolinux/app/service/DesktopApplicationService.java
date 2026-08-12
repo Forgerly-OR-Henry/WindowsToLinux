@@ -59,6 +59,7 @@ import gold.debug.windowstolinux.shared.model.lifecycle.LifecycleAction;
 import gold.debug.windowstolinux.shared.model.managed.ManagedApplication;
 import gold.debug.windowstolinux.shared.model.security.CredentialStorageMode;
 import gold.debug.windowstolinux.shared.model.server.ServerCapabilities;
+import gold.debug.windowstolinux.shared.model.server.LinuxCapabilities;
 import gold.debug.windowstolinux.shared.model.server.ServerIdentity;
 import gold.debug.windowstolinux.shared.git.snapshot.GitSnapshotException;
 import gold.debug.windowstolinux.shared.git.snapshot.GitSourceRequest;
@@ -431,6 +432,13 @@ public final class DesktopApplicationService {
                                            char[] masterPassword, Predicate<String> confirmation)
             throws SecretStoreException, SQLException, LinuxOperationException {
         return servers.verify(profile, mode, masterPassword, confirmation);
+    }
+
+    /** Collects exact non-secret deployment capabilities without mutating the selected server. / 在不修改所选服务器的情况下采集精确且不含秘密的部署能力。 */
+    public LinuxCapabilities inspectDeploymentCapabilitiesWithStoredPassword(
+            ServerProfile profile, CredentialStorageMode mode, char[] masterPassword,
+            Predicate<String> confirmation) throws SecretStoreException, LinuxOperationException {
+        return servers.inspectDeploymentCapabilities(profile, mode, masterPassword, confirmation);
     }
 
     /**

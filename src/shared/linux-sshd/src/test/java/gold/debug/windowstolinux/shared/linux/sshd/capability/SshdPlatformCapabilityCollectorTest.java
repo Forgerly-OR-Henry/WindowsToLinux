@@ -50,6 +50,8 @@ class SshdPlatformCapabilityCollectorTest {
         assertEquals(java.util.Set.of("3.3.5"), capabilities.advancedRuntimeVersions().get(AdvancedRuntimeKind.RUBY));
         assertTrue(PlatformCapabilityProbeScript.render().contains("PODMAN_QUADLET"));
         assertTrue(PlatformCapabilityProbeScript.render().contains("ADVANCED_DOTNET"));
+        assertTrue(PlatformCapabilityProbeScript.render().contains("printf(\"%d.%d\""));
+        assertTrue(!PlatformCapabilityProbeScript.render().contains("printf(\"%%d.%%d\""));
         assertTrue(PlatformCapabilityProbeScript.render().contains("SECURITY_MODULE"));
         assertTrue(PlatformCapabilityProbeScript.render().contains("FIREWALL_STATE"));
         assertTrue(PlatformCapabilityProbeScript.render().contains("PACKAGE_ARCH"));

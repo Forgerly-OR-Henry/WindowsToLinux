@@ -54,6 +54,7 @@ final class SafeBuildScriptEnvelope {
                     exit 43
                   fi
                   if [ "${statuses[0]}" -ne 0 ]; then
+                    head -c %d -- "$log"
                     exit "${statuses[0]}"
                   fi
                 }
@@ -66,7 +67,7 @@ final class SafeBuildScriptEnvelope {
                 printf 'BUILD_TOOL=%s\n'
                 """.formatted(shellQuote(workspace.candidateRoot()), shellQuote(mutable), shellQuote(source),
                 shellQuote(workspace.sourceSha256()), limits.maxProcesses(), limits.maxMemoryMiB() * 1024L,
-                limits.timeoutSeconds(), limits.maxOutputBytes(), limits.maxOutputBytes(), command,
+                limits.timeoutSeconds(), limits.maxOutputBytes(), limits.maxOutputBytes(), limits.maxOutputBytes(), command,
                 limits.maxWorkspaceBytes(), facts.buildTool().name());
     }
 

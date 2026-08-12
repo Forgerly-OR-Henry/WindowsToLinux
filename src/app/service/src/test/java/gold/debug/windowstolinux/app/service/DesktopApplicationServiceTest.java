@@ -28,6 +28,14 @@ import gold.debug.windowstolinux.shared.model.analysis.DeploymentProjectAssessme
 import gold.debug.windowstolinux.shared.model.lifecycle.RuntimeState;
 import gold.debug.windowstolinux.shared.model.lifecycle.AutostartState;
 import gold.debug.windowstolinux.shared.model.server.ServerIdentity;
+import gold.debug.windowstolinux.shared.model.server.CpuMicroarchitectureLevel;
+import gold.debug.windowstolinux.shared.model.server.LinuxCapabilities;
+import gold.debug.windowstolinux.shared.model.server.LinuxDistro;
+import gold.debug.windowstolinux.shared.model.server.LinuxFirewallKind;
+import gold.debug.windowstolinux.shared.model.server.LinuxFirewallState;
+import gold.debug.windowstolinux.shared.model.server.LinuxSecurityModule;
+import gold.debug.windowstolinux.shared.model.server.LinuxSecurityPosture;
+import gold.debug.windowstolinux.shared.model.server.LinuxSecurityState;
 import gold.debug.windowstolinux.shared.model.archive.SourceArchiveDescriptor;
 import gold.debug.windowstolinux.shared.config.secretref.SecretReference;
 import gold.debug.windowstolinux.shared.model.project.DeploymentBuildTool;
@@ -51,6 +59,7 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
@@ -269,6 +278,45 @@ class DesktopApplicationServiceTest {
         for (char value : masterPassword) {
             assertEquals('\0', value);
         }
+    }
+
+    @Test
+    void inspectsExactDeploymentCapabilitiesWithoutMutationAndClearsTheMasterPassword() throws Exception {
+        ServerProfile profile = new ServerProfile("server-one", "example.test", 22, "deployer",
+                "ssh/server-one/password", CredentialStorageMode.MASTER_PASSWORD);
+        LinuxCapabilities expected = new LinuxCapabilities(LinuxDistro.UBUNTU, "24.04", "x86_64", "apt",
+                "amd64", true, false, false, false, Set.of(21), Set.of(22), true, true,
+                Set.of("3.12"), true, Map.of(), false, false, CpuMicroarchitectureLevel.X86_64_V3,
+                Set.of("sse4_2"), new LinuxSecurityPosture(LinuxSecurityModule.APPARMOR,
+                LinuxSecurityState.ENABLED, LinuxFirewallKind.UFW, LinuxFirewallState.ACTIVE), "bounded fixture");
+        AtomicInteger connections = new AtomicInteger();
+        DeploymentLinuxGateway gateway = (endpoint, credential, verifier) -> {
+            connections.incrementAndGet();
+            assertEquals(HostKeyDecision.ACCEPT_FIRST_USE,
+                    verifier.verify(endpoint, "SHA256:deployment-capabilities"));
+            if (credential instanceof SshCredential.Password password) password.clear();
+            return (DeploymentRemoteSession) java.lang.reflect.Proxy.newProxyInstance(
+                    getClass().getClassLoader(), new Class<?>[]{DeploymentRemoteSession.class},
+                    (proxy, method, arguments) -> switch (method.getName()) {
+                        case "collectDeploymentCapabilities" -> expected;
+                        case "close" -> null;
+                        case "toString" -> "bounded capability session";
+                        default -> throw new AssertionError("read-only inspection used unexpected operation: "
+                                + method.getName());
+                    });
+        };
+        char[] masterPassword = "capability-master".toCharArray();
+        try (DesktopPersistence database = DesktopPersistence.open(temporaryDirectory.resolve("capability-data"))) {
+            DesktopApplicationService service = new DesktopApplicationService(
+                    database, temporaryDirectory.resolve("work"), gateway);
+            service.saveServerProfile(profile, CredentialStorageMode.MASTER_PASSWORD,
+                    "capability-master".toCharArray(), "ssh-password".toCharArray());
+
+            assertEquals(expected, service.inspectDeploymentCapabilitiesWithStoredPassword(
+                    profile, CredentialStorageMode.MASTER_PASSWORD, masterPassword, fingerprint -> true));
+            assertEquals(1, connections.get());
+        }
+        for (char value : masterPassword) assertEquals('\0', value);
     }
 
     @Test

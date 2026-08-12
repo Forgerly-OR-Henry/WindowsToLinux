@@ -255,9 +255,7 @@ final class SshdLinuxRemoteSession implements DeploymentRemoteSession {
     @Override
     public void close() {
         try {
-            session.close(true);
-        } catch (RuntimeException ignored) {
-            // Nothing useful can be done after a transport shutdown failure. / 传输关闭失败后无法再执行有意义的操作。
+            SshdLinuxGateway.closeQuietly(session);
         } finally {
             SshdLinuxGateway.closeQuietly(client);
         }

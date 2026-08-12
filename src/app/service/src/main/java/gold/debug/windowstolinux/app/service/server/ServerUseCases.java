@@ -6,10 +6,13 @@ import gold.debug.windowstolinux.app.secret.api.SecretStoreException;
 import gold.debug.windowstolinux.shared.linux.connection.HostKeyDecision;
 import gold.debug.windowstolinux.shared.linux.connection.HostKeyVerifier;
 import gold.debug.windowstolinux.shared.linux.connection.LinuxOperationException;
-import gold.debug.windowstolinux.shared.linux.connection.LinuxGateway;
-import gold.debug.windowstolinux.shared.linux.connection.LinuxRemoteSession;
+import gold.debug.windowstolinux.shared.linux.connection.DeploymentLinuxGateway;
+import gold.debug.windowstolinux.shared.linux.connection.DeploymentRemoteSession;
 import gold.debug.windowstolinux.shared.linux.connection.SshCredential;
+import gold.debug.windowstolinux.shared.model.message.LocalizedMessage;
+import gold.debug.windowstolinux.shared.model.message.LocalizedOperationException;
 import gold.debug.windowstolinux.shared.model.security.CredentialStorageMode;
+import gold.debug.windowstolinux.shared.model.server.LinuxCapabilities;
 import gold.debug.windowstolinux.shared.model.server.ServerCapabilities;
 import gold.debug.windowstolinux.shared.model.server.ServerIdentity;
 
@@ -27,7 +30,7 @@ import java.util.function.Predicate;
 public final class ServerUseCases {
     private final ServerProfileRepository profiles;
     private final DesktopSecretStores secrets;
-    private final LinuxGateway gateway;
+    private final DeploymentLinuxGateway gateway;
 
     /**
      * Creates a {@code ServerUseCases} instance.
@@ -39,7 +42,7 @@ public final class ServerUseCases {
      * @param gateway the {@code gateway} value / {@code gateway} 值
      * @throws NullPointerException if a required argument is {@code null} / 必要参数为 {@code null} 时
      */
-    public ServerUseCases(ServerProfileRepository profiles, DesktopSecretStores secrets, LinuxGateway gateway) {
+    public ServerUseCases(ServerProfileRepository profiles, DesktopSecretStores secrets, DeploymentLinuxGateway gateway) {
         this.profiles = Objects.requireNonNull(profiles, "profiles");
         this.secrets = Objects.requireNonNull(secrets, "secrets");
         this.gateway = Objects.requireNonNull(gateway, "gateway");
@@ -179,10 +182,41 @@ public final class ServerUseCases {
     public ServerCapabilities verify(ServerProfile profile, CredentialStorageMode mode, char[] masterPassword,
                                      Predicate<String> confirmation) throws SecretStoreException, SQLException,
             LinuxOperationException {
-        try (SecretStore store = secrets.open(mode, masterPassword);
-             LinuxRemoteSession session = gateway.connect(profile.endpoint(), secrets.loadPassword(profile, store),
+        try {
+            requireMatchingMode(profile, mode);
+            try (SecretStore store = secrets.open(mode, masterPassword);
+                 DeploymentRemoteSession session = gateway.connect(profile.endpoint(), secrets.loadPassword(profile, store),
                      hostKeyVerifier(profile, confirmation))) {
-            return session.collectCapabilities();
+                return session.collectCapabilities();
+            }
+        } finally {
+            clear(masterPassword);
+        }
+    }
+
+    /**
+     * Collects the exact typed deployment capabilities through the selected saved credential without mutating the host.
+     *
+     * <p>通过选定的已保存凭据采集精确的类型化部署能力，且不修改主机。
+     *
+     * @param profile the saved server profile / 已保存的服务器资料
+     * @param mode the selected credential storage mode / 选定的凭据存储模式
+     * @param masterPassword the optional secret-store master password / 可选的秘密存储主密码
+     * @param confirmation first-use host-key confirmation / 首次使用主机密钥确认
+     * @return exact non-secret deployment capabilities / 精确且不含秘密的部署能力
+     * @throws SecretStoreException if the saved credential cannot be read / 无法读取已保存凭据时
+     * @throws LinuxOperationException if the bounded remote inspection fails / 有界远端检查失败时
+     */
+    public LinuxCapabilities inspectDeploymentCapabilities(
+            ServerProfile profile, CredentialStorageMode mode, char[] masterPassword,
+            Predicate<String> confirmation) throws SecretStoreException, LinuxOperationException {
+        try {
+            requireMatchingMode(profile, mode);
+            try (SecretStore store = secrets.open(mode, masterPassword);
+                 DeploymentRemoteSession session = gateway.connect(profile.endpoint(), secrets.loadPassword(profile, store),
+                         hostKeyVerifier(profile, confirmation))) {
+                return session.collectDeploymentCapabilities();
+            }
         } finally {
             clear(masterPassword);
         }
@@ -202,6 +236,15 @@ public final class ServerUseCases {
     private static void clear(char[] value) {
         if (value != null) {
             Arrays.fill(value, '\0');
+        }
+    }
+
+    private static void requireMatchingMode(ServerProfile profile, CredentialStorageMode mode) {
+        Objects.requireNonNull(profile, "profile");
+        Objects.requireNonNull(mode, "mode");
+        if (profile.credentialMode() != mode) {
+            throw new LocalizedOperationException(LocalizedMessage.of("validation.storageModeMismatch"),
+                    "Credential storage mode does not match the saved server profile");
         }
     }
 }

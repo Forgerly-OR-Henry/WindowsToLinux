@@ -56,11 +56,14 @@ class DeploymentBuildRendererTest {
                 "main.go", OptionalInt.empty()).contains("go build -mod=readonly"));
         assertTrue(advanced(AdvancedRuntimeKind.RUST, DeploymentBuildTool.CARGO_LOCKED, "1.89.0", "demo",
                 "src/main.rs", OptionalInt.empty()).contains("cargo build --locked --release"));
-        assertTrue(advanced(AdvancedRuntimeKind.DOTNET, DeploymentBuildTool.DOTNET_LOCKED, "8.0.408", "Demo",
-                "Demo.dll", OptionalInt.empty()).contains("dotnet restore --locked-mode"));
+        String dotnet = advanced(AdvancedRuntimeKind.DOTNET, DeploymentBuildTool.DOTNET_LOCKED, "8.0.408", "Demo",
+                "Demo.dll", OptionalInt.empty());
+        assertTrue(dotnet.contains("dotnet restore --locked-mode"));
+        assertTrue(dotnet.contains("DOTNET_GCHeapHardLimit=0x40000000"));
         String kotlin = advanced(AdvancedRuntimeKind.KOTLIN, DeploymentBuildTool.GRADLE_KOTLIN_WRAPPER, "21", "demo",
                 "demo.MainKt", OptionalInt.empty());
         assertTrue(kotlin.contains("--no-daemon installDist"));
+        assertTrue(kotlin.contains("-Xmx768m"));
         assertFalse(kotlin.contains("--offline"));
         assertTrue(advanced(AdvancedRuntimeKind.PHP, DeploymentBuildTool.COMPOSER_LOCKED, "8.3", "public",
                 "public/index.php", OptionalInt.of(8080)).contains("--no-plugins --no-scripts"));

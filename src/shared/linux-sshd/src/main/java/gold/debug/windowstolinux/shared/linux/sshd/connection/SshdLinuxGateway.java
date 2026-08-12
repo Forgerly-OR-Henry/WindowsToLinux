@@ -34,6 +34,7 @@ public final class SshdLinuxGateway implements DeploymentLinuxGateway {
     private static final Duration CONNECT_TIMEOUT = Duration.ofSeconds(30);
     private static final Duration HEARTBEAT_INTERVAL = Duration.ofSeconds(30);
     private static final int HEARTBEAT_NO_REPLY_MAX = 3;
+    private static final Duration CLOSE_TIMEOUT = Duration.ofSeconds(5);
     @Override
     public DeploymentRemoteSession connect(SshEndpoint endpoint, SshCredential credential, HostKeyVerifier hostKeyVerifier)
             throws LinuxOperationException {
@@ -148,9 +149,22 @@ public final class SshdLinuxGateway implements DeploymentLinuxGateway {
 
     static void closeQuietly(SshClient client) {
         try {
-            client.close(true);
-        } catch (RuntimeException ignored) {
+            if (!client.close(false).await(CLOSE_TIMEOUT)) {
+                client.close(true).await(CLOSE_TIMEOUT);
+            }
+            client.stop();
+        } catch (IOException | RuntimeException ignored) {
             // A failed connection should not obscure its safe primary error. / 连接失败不应掩盖其安全的首要错误。
+        }
+    }
+
+    static void closeQuietly(ClientSession session) {
+        try {
+            if (!session.close(false).await(CLOSE_TIMEOUT)) {
+                session.close(true).await(CLOSE_TIMEOUT);
+            }
+        } catch (IOException | RuntimeException ignored) {
+            // Session shutdown cannot change the already completed operation result. / 会话关闭不能改变已完成操作的结果。
         }
     }
 

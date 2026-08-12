@@ -32,8 +32,8 @@ class ManagedHelperBundleTest {
         assertTrue(helper.contains("[ \"$kind\" != gradle ] || reject legacy-gradle-write"));
         assertTrue(helper.contains("go|rust)"));
         assertTrue(helper.contains("render_advanced_runtime_command \"$kind\" \"$root\" \"$@\""));
-        assertTrue(helper.contains("advanced_runtime_command_result=\"/usr/bin/php -S 127.0.0.1:"));
-        assertTrue(helper.contains("advanced_runtime_command_result=\"/usr/bin/env bundle exec rackup"));
+        assertTrue(helper.contains("advanced_runtime_command_result=\"/usr/bin/php -S 0.0.0.0:"));
+        assertTrue(helper.contains("advanced_runtime_command_result=\"/usr/bin/env bundle exec rackup --host 0.0.0.0"));
         assertTrue(helper.contains("previous_kind=ordinary"));
         assertTrue(helper.contains("[ \"$previous_kind\" = deployment ] || [ \"$previous_kind\" = ordinary ]"));
         assertTrue(helper.contains("printf '%s\\n' \"$previous_kind\" > \"$snapshot/kind\""));

@@ -74,6 +74,9 @@ public final class AdvancedServiceBuildRenderer implements DeploymentBuildRender
                             + runtime.version().replace(".", "[.]") + " "));
             case DOTNET -> """
                     artifact_name=%s
+                    export DOTNET_CLI_TELEMETRY_OPTOUT=1
+                    export DOTNET_NOLOGO=1
+                    export DOTNET_GCHeapHardLimit=0x40000000
                     command -v dotnet >/dev/null
                     dotnet --version | grep -Eq %s
                     test -f ./global.json
@@ -87,6 +90,7 @@ public final class AdvancedServiceBuildRenderer implements DeploymentBuildRender
                     """.formatted(artifact, SafeBuildScriptEnvelope.shellQuote("^"
                             + runtime.version().replace(".", "[.]") + "$"));
             case KOTLIN -> """
+                    export GRADLE_OPTS='-Dorg.gradle.jvmargs=-Xmx768m -XX:MaxMetaspaceSize=384m'
                     command -v java >/dev/null
                     java -version 2>&1 | grep -Eq 'version "21([.]|")'
                     test -f ./build.gradle.kts
