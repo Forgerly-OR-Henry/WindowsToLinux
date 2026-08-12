@@ -35,6 +35,7 @@ public final class SshdLinuxGateway implements DeploymentLinuxGateway {
     private static final Duration HEARTBEAT_INTERVAL = Duration.ofSeconds(30);
     private static final int HEARTBEAT_NO_REPLY_MAX = 3;
     private static final Duration CLOSE_TIMEOUT = Duration.ofSeconds(5);
+    private static final Duration WINDOWS_NIO2_COMPLETION_GRACE = Duration.ofMillis(500);
     @Override
     public DeploymentRemoteSession connect(SshEndpoint endpoint, SshCredential credential, HostKeyVerifier hostKeyVerifier)
             throws LinuxOperationException {
@@ -163,8 +164,23 @@ public final class SshdLinuxGateway implements DeploymentLinuxGateway {
             if (!session.close(false).await(CLOSE_TIMEOUT)) {
                 session.close(true).await(CLOSE_TIMEOUT);
             }
+            awaitWindowsNio2Completion();
         } catch (IOException | RuntimeException ignored) {
             // Session shutdown cannot change the already completed operation result. / 会话关闭不能改变已完成操作的结果。
+        }
+    }
+
+    private static void awaitWindowsNio2Completion() {
+        if (!System.getProperty("os.name", "").startsWith("Windows")) {
+            return;
+        }
+        try {
+            // Apache SSHD closes its NIO2 resume executor before the Windows asynchronous channel group. Give the
+            // completed socket close callback a bounded drain interval before closing the client factory.
+            // Apache SSHD 会先关闭 NIO2 恢复执行器，再关闭 Windows 异步通道组；在关闭客户端工厂前，为已完成的套接字关闭回调提供有界排空时间。
+            Thread.sleep(WINDOWS_NIO2_COMPLETION_GRACE.toMillis());
+        } catch (InterruptedException exception) {
+            Thread.currentThread().interrupt();
         }
     }
 
