@@ -16,6 +16,7 @@ import java.util.Objects;
  * @param applicationId the proposed managed identifier / 建议的受管标识
  * @param projectType the selected project type / 选定的项目类型
  * @param buildTool the fixed build entrypoint / 固定构建入口
+ * @param support exact support level and validation scope / 精确支持等级与验证范围
  * @param evidence the non-secret deterministic evidence / 非秘密确定性证据
  * @param conflicts the observed conflicting facts / 观察到的冲突事实
  * @param missingInformation required explicit user input / 所需的显式用户输入
@@ -25,6 +26,7 @@ public record DeploymentProjectFacts(
         String applicationId,
         DeploymentProjectType projectType,
         DeploymentBuildTool buildTool,
+        DeploymentSupportProfile support,
         ProjectLanguageFacts languageFacts,
         List<AnalysisEvidence> evidence,
         List<LocalizedMessage> conflicts,
@@ -43,6 +45,13 @@ public record DeploymentProjectFacts(
         }
         projectType = Objects.requireNonNull(projectType, "projectType");
         buildTool = Objects.requireNonNull(buildTool, "buildTool");
+        support = Objects.requireNonNull(support, "support");
+        if (projectType.deployable() != support.level().deployable()) {
+            throw new IllegalArgumentException("project type and support level must agree on deployment admission");
+        }
+        if (!projectType.deployable() && buildTool != DeploymentBuildTool.NONE_PREVIEW) {
+            throw new IllegalArgumentException("recognition preview must not expose a build tool");
+        }
         languageFacts = Objects.requireNonNull(languageFacts, "languageFacts");
         evidence = List.copyOf(Objects.requireNonNull(evidence, "evidence"));
         conflicts = List.copyOf(Objects.requireNonNull(conflicts, "conflicts"));
@@ -51,10 +60,19 @@ public record DeploymentProjectFacts(
 
     /** Creates facts for callers that have no separate language observations. / 为没有单独语言观测的调用方创建事实。 */
     public DeploymentProjectFacts(Path sourceRoot, String applicationId, DeploymentProjectType projectType,
+                                  DeploymentBuildTool buildTool, ProjectLanguageFacts languageFacts,
+                                  List<AnalysisEvidence> evidence, List<LocalizedMessage> conflicts,
+                                  List<LocalizedMessage> missingInformation) {
+        this(sourceRoot, applicationId, projectType, buildTool, DeploymentSupportCatalog.forType(projectType),
+                languageFacts, evidence, conflicts, missingInformation);
+    }
+
+    /** Creates facts with the checked-in support claim for callers that have no separate language observations. / 使用已检入支持声明为没有单独语言观测的调用方创建事实。 */
+    public DeploymentProjectFacts(Path sourceRoot, String applicationId, DeploymentProjectType projectType,
                                   DeploymentBuildTool buildTool, List<AnalysisEvidence> evidence,
                                   List<LocalizedMessage> conflicts, List<LocalizedMessage> missingInformation) {
-        this(sourceRoot, applicationId, projectType, buildTool, ProjectLanguageFacts.empty(), evidence, conflicts,
-                missingInformation);
+        this(sourceRoot, applicationId, projectType, buildTool, DeploymentSupportCatalog.forType(projectType),
+                ProjectLanguageFacts.empty(), evidence, conflicts, missingInformation);
     }
 
     /**
@@ -65,6 +83,6 @@ public record DeploymentProjectFacts(
      * @return whether the project can enter the type-specific planner / 项目是否可进入类型专属计划器
      */
     public boolean readyForPlanning() {
-        return conflicts.isEmpty() && missingInformation.isEmpty();
+        return projectType.deployable() && support.level().deployable() && conflicts.isEmpty() && missingInformation.isEmpty();
     }
 }

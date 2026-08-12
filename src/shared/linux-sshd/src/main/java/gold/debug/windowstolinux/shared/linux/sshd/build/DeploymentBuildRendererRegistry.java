@@ -19,7 +19,7 @@ final class DeploymentBuildRendererRegistry {
                 throw new IllegalArgumentException("duplicate deployment build renderer for " + renderer.projectType());
             }
         }
-        if (registered.size() != DeploymentProjectType.values().length) {
+        if (!registered.keySet().equals(DeploymentProjectType.deployableTypes())) {
             throw new IllegalArgumentException("one build renderer is required for every deployment project type");
         }
         this.renderers = Map.copyOf(registered);

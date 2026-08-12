@@ -19,6 +19,20 @@ final class DeploymentAnalysisPresenter {
     String facts(ReviewedSourcePreparation preparation) {
         var facts = preparation.assessment().facts().orElseThrow();
         var language = facts.languageFacts();
+        var support = facts.support();
+        String targets = support.validatedTargets().isEmpty() ? messages.text("support.target.none")
+                : support.validatedTargets().stream().map(target -> messages.text("support.target.item", Map.of(
+                "distro", messages.text("linux.distro." + target.distro().name().toLowerCase(Locale.ROOT)),
+                "version", target.version(), "architecture", target.architecture(), "date", target.validatedOn())))
+                .reduce((a, b) -> a + ", " + b).orElseThrow();
+        String supportSummary = messages.text("source.supportSummary", Map.of(
+                "level", messages.text("support.level." + support.level().name().toLowerCase(Locale.ROOT)),
+                "language", messages.text("language.source." + support.language().name().toLowerCase(Locale.ROOT)),
+                "framework", facts.projectType() == gold.debug.windowstolinux.shared.model.project.DeploymentProjectType.RECOGNITION_PREVIEW
+                        ? messages.text("support.framework.unclassified") : messages.text("project.type."
+                        + facts.projectType().name().toLowerCase(Locale.ROOT)), "targets", targets,
+                "limitations", support.limitations().stream().map(messages.catalog()::text)
+                        .reduce((a, b) -> a + "; " + b).orElse(messages.text("support.limitation.none"))));
         String languages = messages.text("source.languageSummary", Map.of(
                 "ecosystems", language.ecosystems().stream().map(item -> messages.text("language.ecosystem."
                         + item.name().toLowerCase(Locale.ROOT))).sorted().reduce((a, b) -> a + ", " + b).orElse("-"),
@@ -41,7 +55,7 @@ final class DeploymentAnalysisPresenter {
                 + (suggestion.requiredUserInput().isEmpty() ? "" : messages.text("source.runtimeRequired", Map.of("items",
                         suggestion.requiredUserInput().stream().map(messages.catalog()::text).map(item -> "- " + item + "\n")
                                 .reduce("", String::concat))))).orElse("");
-        return languages + evidence + conflicts + missing + runtime;
+        return supportSummary + languages + evidence + conflicts + missing + runtime;
     }
 
     String rejections(ReviewedSourcePreparation preparation) {

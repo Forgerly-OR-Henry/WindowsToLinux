@@ -17,5 +17,28 @@ public enum DeploymentProjectType {
     /** A bounded static-site build and controlled static runtime. / 有界静态站点构建和受控静态运行时。 */
     STATIC_SITE,
     /** One Dockerfile image and one managed container. / 一个 Dockerfile 镜像和一个受管容器。 */
-    DOCKERFILE_CONTAINER
+    DOCKERFILE_CONTAINER(true),
+    /** Static language and metadata recognition with no deployment path. / 不含部署路径的静态语言与元数据识别。 */
+    RECOGNITION_PREVIEW(false);
+
+    private final boolean deployable;
+
+    DeploymentProjectType() {
+        this(true);
+    }
+
+    DeploymentProjectType(boolean deployable) {
+        this.deployable = deployable;
+    }
+
+    /** Returns whether the type requires deployment adapters and renderers. / 返回此类型是否需要部署适配器与渲染器。 */
+    public boolean deployable() {
+        return deployable;
+    }
+
+    /** Returns all plan-capable types. / 返回全部可计划类型。 */
+    public static java.util.Set<DeploymentProjectType> deployableTypes() {
+        return java.util.Arrays.stream(values()).filter(DeploymentProjectType::deployable)
+                .collect(java.util.stream.Collectors.toUnmodifiableSet());
+    }
 }

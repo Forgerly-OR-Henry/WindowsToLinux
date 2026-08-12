@@ -76,7 +76,7 @@ class ReviewedDeploymentServiceTest {
             assertEquals(DeploymentStatus.SUCCEEDED, result.status());
             assertEquals(ReviewedReleaseIdentity.from(request), result.publishedReleaseSha256().orElseThrow());
         }
-        assertEquals(EnumSet.allOf(DeploymentProjectType.class), built);
+        assertEquals(EnumSet.copyOf(DeploymentProjectType.deployableTypes()), built);
     }
 
     @Test
@@ -216,6 +216,7 @@ class ReviewedDeploymentServiceTest {
             case PYTHON_SERVICE -> DeploymentBuildTool.PYTHON_VENV;
             case STATIC_SITE -> DeploymentBuildTool.STATIC_SITE_BUILD;
             case DOCKERFILE_CONTAINER -> DeploymentBuildTool.CONTAINER_BUILD;
+            case RECOGNITION_PREVIEW -> throw new AssertionError("recognition preview has no deployment runtime");
         };
     }
 

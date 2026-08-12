@@ -52,6 +52,22 @@ class SourcePreparationUseCaseTest {
                 gold.debug.windowstolinux.shared.model.project.DeploymentRuntimeSuggestion.RuntimeInput.NODE_MAJOR_VERSION).isPresent());
     }
 
+    @Test
+    void recognitionPreviewNeverCreatesAnArchiveOrSourceRevision() throws Exception {
+        Path project = Files.createDirectories(temporaryDirectory.resolve("preview"));
+        Files.writeString(project.resolve("install.sh"), "this must never execute");
+        SourcePreparationUseCase useCase = new SourcePreparationUseCase(new DeploymentAnalysisCoordinator(),
+                new WindowsSourceWorkspace(temporaryDirectory.resolve("workspace")));
+
+        ReviewedSourcePreparation prepared = useCase.prepare(project, DeploymentProjectType.RECOGNITION_PREVIEW);
+
+        assertEquals(gold.debug.windowstolinux.shared.model.analysis.DeploymentAdmission.RECOGNITION_PREVIEW,
+                prepared.assessment().admission());
+        assertTrue(prepared.archive().isEmpty());
+        assertTrue(prepared.sourceRevision().isEmpty());
+        assertTrue(Files.notExists(temporaryDirectory.resolve("workspace/archives")));
+    }
+
     private static String git(Path directory, String... arguments) throws IOException, InterruptedException {
         java.util.List<String> command = new java.util.ArrayList<>();
         command.add("git");

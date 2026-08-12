@@ -4,8 +4,8 @@
 
 - 项目名称：WindowsToLinux
 - 文档角色：产品边界、五期路线、跨期规则与完整开发流程的唯一总入口
-- 文档版本：`2.3.0-spring-boot-reviewed-convergence`
-- 文档状态：**统一 Spring Boot Reviewed/helper v2 链路已完成本地实现；迁移前 Ubuntu 实机证据保留，新链路及未验收主机矩阵保持 `RUNTIME-PENDING`**
+- 文档版本：`2.4.0-phase3-support-preview`
+- 文档状态：**三期支持等级与禁止执行的语言识别预览已完成本地实现；高级语言适配、多组件、多模型与新增发行版仍在实施，未验收组合保持 `RUNTIME-PENDING`**
 - 更新日期：2026-08-13
 - 项目结构：[File.md](File.md)
 
@@ -26,6 +26,7 @@ WindowsToLinux 是面向个人和小型自托管场景的部署管理工具。�
 | Web 前端 | Vue 3、TypeScript、Vite、Vitest、Playwright 骨架 | 只可展示骨架页，尚无业务接口 |
 | 桌面/Web 业务 | Swing 已提供受管生命周期，以及六类项目的类型选择、静态分析、类型化计划审阅和已保存凭据提交；Web 业务未实现 | 桌面入口已迁移到 Reviewed API；Web 不可部署或管理应用 |
 | Linux 运行验证 | 迁移前 Ubuntu 24.04 x86-64 已实际验证环境准备、六类构建发布及代表性生命周期 | 统一 Spring Boot/helper v2、Podman、Ubuntu 22.04 与 CentOS Stream 9/10 均为 `RUNTIME-PENDING` |
+| 三期支持分级 | 支持等级、精确目标验证范围及不可执行识别预览已接入模型、分析、服务与 Swing 展示；预览覆盖三期列出的全部候选语言 | 识别预览不会创建源码归档或进入计划；六种高级语言适配、多组件、多模型及新增发行版仍不得声称已支持 |
 
 ### 2.1 正式目标架构与当前实现边界
 
@@ -202,6 +203,7 @@ Playwright 浏览器固定保存在 `src/web/frontend/.playwright-browsers`，�
 
 | 版本 | 日期 | 阶段 | 状态 | 说明 |
 | --- | --- | --- | --- | --- |
+| 2.4.0-phase3-support-preview | 2026-08-13 | 三期 | 本地集中门禁通过；高级适配与实机待验收 | 新增支持等级、精确验证范围与不可执行语言识别预览；预览不会创建归档、构建、发布或生命周期路径。 |
 | 2.3.0-spring-boot-reviewed-convergence | 2026-08-13 | 一期至二期 | 本地实现完成；新链路实机待验收 | Maven 与 Gradle Spring Boot 收敛为一个 Reviewed/helper v2 链路；迁移前 Ubuntu 证据保留但不外推，新链路标记 `RUNTIME-PENDING`。 |
 | 2.2.0-reviewed-runtime-acceptance | 2026-08-12 | 二期 | Ubuntu 24.04 x86-64 实机验收完成；其余矩阵待验收 | 产品入口完成本地与公开 Git 固定 Commit 源码的类型化分析、构建、发布、健康、观测、代表性生命周期及失败回滚；Podman、Ubuntu 22.04 与 CentOS Stream 9/10 保持 `RUNTIME-PENDING`。 |
 | 2.1.0-local-execution-contracts | 2026-08-12 | 二期 | 本地实现与自动化验证完成；运行环境待验收 | 六类项目的受控目标机构建、发布、快照、回滚、健康和生命周期代码均已接入；类型化主机矩阵在上传前执行，Ubuntu 22.04/24.04 与 CentOS Stream 9/10 具有固定环境准备脚本。真实目标机仍未连接。 |

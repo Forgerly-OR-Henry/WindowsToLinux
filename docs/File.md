@@ -2,8 +2,8 @@
 
 ## 文档信息
 
-- 文档版本：`2.6.0-spring-boot-reviewed-convergence`
-- 文档状态：**正式目标模块、职责、依赖方向、叶子模块内部目标包结构及根目录验收夹具分类已确认；统一 Spring Boot Reviewed/helper v2 链路已完成本地实现，真实目标机状态为 `RUNTIME-PENDING`**
+- 文档版本：`2.7.0-phase3-support-preview`
+- 文档状态：**正式模块与职责边界保持不变；三期支持等级及禁止执行的语言识别预览已进入既有 model/analyze/app-ui 路径，高级适配与真实目标机状态为 `RUNTIME-PENDING`**
 - 已确认范围：`shared` 共用模块、`app` Windows 桌面应用模块、`web` Web 应用模块
 - 已确认能力边界：受管应用生命周期复用既有模块，不新增独立 Maven 模块
 - 更新日期：2026-08-13
@@ -81,8 +81,10 @@ WindowsToLinux/
    │  │  ├─ framework/
    │  │  │  └─ springboot/    Spring Boot 框架事实与风险识别
    │  │  ├─ language/
+   │  │  │  ├─ additional/    三期候选语言的有界路径/元数据识别，不生成执行入口
    │  │  │  ├─ java/          Java 语言事实识别
    │  │  │  ├─ node/          Node.js、JavaScript 和 TypeScript 生态识别
+   │  │  │  ├─ preview/       禁止归档、计划、构建和远端修改的识别预览
    │  │  │  └─ python/        Python 语言生态识别
    │  │  ├─ source/           有界源码遍历、安全文本读取和源码树事实
    │  │  └─ workload/
@@ -609,11 +611,13 @@ linux-sshd 通过 linux 契约采集服务器已有环境
 19. 本地目录和 Git 来源都必须在 `app/service/source` 汇合为同一 `ReviewedSourcePreparation`，并以归档摘要绑定 `SourceRevision`。网络 Git 来源必须使用无凭据 URI、允许主机、固定 Commit 和受控工作目录；桌面 UI 不得调用 Git 进程、数据库或秘密存储实现。
 20. `analyze/core`、`app/ui/shell`、`app/db/repository`、远程构建、systemd 和 helper 资源必须维持第 1.1 节的职责拆分。禁止恢复已删除的集中类，禁止以兼容壳保留旧公开类型；新增职责应进入对应包或窄契约，并通过结构边界测试同步校验本文。
 21. 用户可见和持久化语义统一使用“发布身份摘要”（`release_sha256`）；“制品”仅描述构建过程中待验证的文件，不得再把已发布身份称为制品摘要。桌面 SQLite 当前 schema 为 v5，v4 的 `artifact_sha256` 通过列重命名无损迁移并继续表示既有发布身份。
+22. `DeploymentSupportProfile` 是语言、框架、支持等级与真实验收目标范围的唯一共享声明；`RECOGNITION_PREVIEW` 只能由 `analyze` 读取有界路径和固定元数据，必须使用 `NONE_PREVIEW`，不得创建源码归档、部署适配器、远端构建渲染器、helper 参数或生命周期入口。Shell 文件只可作为识别证据，不能转换成命令。
 
 ## 11. 文档版本记录
 
 | 版本 | 日期 | 说明 |
 | --- | --- | --- |
+| 2.7.0-phase3-support-preview | 2026-08-13 | 在既有 `shared/model`、`shared/analyze` 和 `app/ui` 边界内加入支持等级、精确真实验收范围和不可执行语言识别预览；覆盖三期全部候选语言，明确预览没有构建工具、归档、适配器、渲染器或 helper 入口。 |
 | 2.6.0-spring-boot-reviewed-convergence | 2026-08-13 | 将 Maven/Gradle Spring Boot 合并为 `SPRING_BOOT` 并由构建工具区分固定入口；删除旧分析、源码和部署 API，接入 helper v2、发布身份 v2 与 SQLite v5。迁移前 Ubuntu 实机证据保留为历史记录，统一后的 Reviewed 链路标记 `RUNTIME-PENDING`。 |
 | 2.5.1-test-fixture-layout | 2026-08-13 | 将根目录 23 个 Java、Maven、Spring Boot 独立验收夹具统一归入 `test/java/maven/spring-boot`，明确后续按语言、构建工具、框架或功能扩展；不修改夹具内容、生产模块或 Maven reactor。 |
 | 2.5.0-reviewed-runtime-acceptance | 2026-08-12 | 完成从本地或 Git 选定源码、语言与运行事实分析、确定性计划、不可变配置/秘密输入、目标机构建、发布、健康、观测、生命周期和失败恢复的职责闭环；Ubuntu 24.04 x86-64 已由产品入口完成六类项目实机验收，其余主机矩阵保持 `RUNTIME-PENDING`。 |

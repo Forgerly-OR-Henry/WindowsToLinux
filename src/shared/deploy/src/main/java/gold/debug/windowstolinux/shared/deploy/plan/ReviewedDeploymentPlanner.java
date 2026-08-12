@@ -41,7 +41,7 @@ public final class ReviewedDeploymentPlanner {
                 throw new IllegalArgumentException("each typed deployment project type must have exactly one adapter");
             }
         }
-        if (indexed.size() != DeploymentProjectType.values().length) {
+        if (!indexed.keySet().equals(DeploymentProjectType.deployableTypes())) {
             throw new IllegalArgumentException("every typed deployment project type requires an adapter");
         }
         this.adapters = Map.copyOf(indexed);

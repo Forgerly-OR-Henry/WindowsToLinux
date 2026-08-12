@@ -6,6 +6,8 @@ package gold.debug.windowstolinux.shared.model.project;
  * <p>固定的目标机构建工具入口，绝不是任意命令行。
  */
 public enum DeploymentBuildTool {
+    /** No build entry exists for a mutation-free recognition preview. / 禁止修改目标机的识别预览没有构建入口。 */
+    NONE_PREVIEW,
     /** Gradle Wrapper. / Gradle Wrapper。 */
     GRADLE_WRAPPER,
     /** Maven Wrapper. / Maven Wrapper。 */

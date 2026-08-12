@@ -4,6 +4,8 @@ import gold.debug.windowstolinux.shared.model.analysis.DeploymentAdmission;
 import gold.debug.windowstolinux.shared.model.project.DeploymentBuildTool;
 import gold.debug.windowstolinux.shared.model.project.DeploymentProjectType;
 import gold.debug.windowstolinux.shared.model.project.DeploymentRuntimeSuggestion;
+import gold.debug.windowstolinux.shared.model.project.DeploymentSupportLevel;
+import gold.debug.windowstolinux.shared.model.project.SourceLanguage;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -223,6 +225,41 @@ class DeploymentAnalysisCoordinatorTest {
         var containerSuggestion = analyzer.analyze(container, DeploymentProjectType.DOCKERFILE_CONTAINER).runtimeSuggestion().orElseThrow();
         assertEquals(Map.of(8080, 8080, 8443, 8443), containerSuggestion.suggestedContainerPorts());
         assertEquals("/var/lib/demo", containerSuggestion.suggestedManagedVolumes().getFirst().containerPath());
+    }
+
+    @Test
+    void recognitionPreviewReportsEveryPhaseThreeCandidateWithoutCreatingADeploymentPath() throws Exception {
+        Path project = Files.createDirectories(temporaryDirectory.resolve("recognition-preview"));
+        for (String file : new String[]{"main.go", "main.rs", "Program.cs", "Main.kt", "index.php", "app.rb",
+                "native.c", "native.cpp", "Main.scala", "core.clj", "app.ex", "main.dart", "init.lua",
+                "worker.pl", "main.swift", "install.sh"}) {
+            Files.writeString(project.resolve(file), "static marker only");
+        }
+
+        var assessment = analyzer.analyze(project, DeploymentProjectType.RECOGNITION_PREVIEW);
+
+        assertEquals(DeploymentAdmission.RECOGNITION_PREVIEW, assessment.admission());
+        var facts = assessment.facts().orElseThrow();
+        assertEquals(DeploymentBuildTool.NONE_PREVIEW, facts.buildTool());
+        assertEquals(DeploymentSupportLevel.RECOGNITION_PREVIEW, facts.support().level());
+        assertTrue(!facts.readyForPlanning());
+        assertTrue(facts.languageFacts().sourceLanguages().containsAll(java.util.Set.of(
+                SourceLanguage.GO, SourceLanguage.RUST, SourceLanguage.CSHARP, SourceLanguage.KOTLIN,
+                SourceLanguage.PHP, SourceLanguage.RUBY, SourceLanguage.C, SourceLanguage.CPP,
+                SourceLanguage.SCALA, SourceLanguage.CLOJURE, SourceLanguage.ELIXIR, SourceLanguage.DART,
+                SourceLanguage.LUA, SourceLanguage.PERL, SourceLanguage.SWIFT, SourceLanguage.SHELL)));
+        assertTrue(assessment.runtimeSuggestion().isEmpty());
+    }
+
+    @Test
+    void recognitionPreviewReportsUnrecognizedWithoutInventingSupport() throws Exception {
+        Path project = Files.createDirectories(temporaryDirectory.resolve("unrecognized-preview"));
+        Files.writeString(project.resolve("opaque.bin"), "opaque");
+
+        var assessment = analyzer.analyze(project, DeploymentProjectType.RECOGNITION_PREVIEW);
+
+        assertEquals(DeploymentAdmission.RECOGNITION_PREVIEW, assessment.admission());
+        assertEquals(DeploymentSupportLevel.UNRECOGNIZED, assessment.facts().orElseThrow().support().level());
     }
 
     private static void writeGradleWrapperJar(Path path) throws Exception {

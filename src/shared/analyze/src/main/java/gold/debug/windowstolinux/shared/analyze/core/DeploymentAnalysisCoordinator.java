@@ -4,6 +4,7 @@ import gold.debug.windowstolinux.shared.analyze.build.node.NodeServiceDeployment
 import gold.debug.windowstolinux.shared.analyze.build.python.PythonServiceDeploymentInspector;
 import gold.debug.windowstolinux.shared.analyze.framework.springboot.SpringBootDeploymentInspector;
 import gold.debug.windowstolinux.shared.analyze.language.ProjectLanguageInspector;
+import gold.debug.windowstolinux.shared.analyze.language.preview.RecognitionPreviewInspector;
 import gold.debug.windowstolinux.shared.analyze.language.java.JavaJarDeploymentInspector;
 import gold.debug.windowstolinux.shared.analyze.source.BoundedSourceInspector;
 import gold.debug.windowstolinux.shared.analyze.source.SourceInspection;
@@ -43,7 +44,7 @@ public final class DeploymentAnalysisCoordinator {
         this(new BoundedSourceInspector(), new ProjectLanguageInspector(), List.of(
                 new SpringBootDeploymentInspector(), new JavaJarDeploymentInspector(),
                 new NodeServiceDeploymentInspector(), new PythonServiceDeploymentInspector(),
-                new StaticWebDeploymentInspector(), new ContainerDeploymentInspector()));
+                new StaticWebDeploymentInspector(), new ContainerDeploymentInspector(), new RecognitionPreviewInspector()));
     }
 
     DeploymentAnalysisCoordinator(BoundedSourceInspector sourceInspector, ProjectLanguageInspector languageInspector,
@@ -86,6 +87,9 @@ public final class DeploymentAnalysisCoordinator {
                     .inspect(root, source, languageFacts, rejections);
             if (inspected == null || !rejections.isEmpty()) {
                 return DeploymentProjectAssessment.rejected(rejections);
+            }
+            if (projectType == DeploymentProjectType.RECOGNITION_PREVIEW) {
+                return DeploymentProjectAssessment.recognitionPreview(inspected.facts());
             }
             return inspected.facts().readyForPlanning()
                     ? DeploymentProjectAssessment.ready(inspected.facts(), inspected.runtimeSuggestion())

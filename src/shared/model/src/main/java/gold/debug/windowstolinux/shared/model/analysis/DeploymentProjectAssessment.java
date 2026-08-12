@@ -49,6 +49,10 @@ public record DeploymentProjectAssessment(
         if (admission == DeploymentAdmission.READY_FOR_PLANNING && !facts.orElseThrow().readyForPlanning()) {
             throw new IllegalArgumentException("ready assessments must not have conflicts or missing information");
         }
+        if (admission == DeploymentAdmission.RECOGNITION_PREVIEW
+                && facts.orElseThrow().support().level().deployable()) {
+            throw new IllegalArgumentException("recognition preview must not expose a deployable support level");
+        }
     }
 
     /**
@@ -86,6 +90,12 @@ public record DeploymentProjectAssessment(
                                                             DeploymentRuntimeSuggestion runtimeSuggestion) {
         return new DeploymentProjectAssessment(DeploymentAdmission.REQUIRES_INPUT, Optional.of(facts),
                 Optional.of(runtimeSuggestion), List.of());
+    }
+
+    /** Creates a mutation-free recognition preview. / 创建禁止修改目标机的识别预览。 */
+    public static DeploymentProjectAssessment recognitionPreview(DeploymentProjectFacts facts) {
+        return new DeploymentProjectAssessment(DeploymentAdmission.RECOGNITION_PREVIEW, Optional.of(facts),
+                Optional.empty(), List.of());
     }
 
     /**

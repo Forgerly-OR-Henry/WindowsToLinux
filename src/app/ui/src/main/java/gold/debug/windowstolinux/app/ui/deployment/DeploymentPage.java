@@ -398,6 +398,7 @@ public final class DeploymentPage implements ReviewContext {
                     ? OptionalInt.empty() : OptionalInt.of(Integer.parseInt(runtimeVersion.getText().trim())), requireHttp(health));
             case DOCKERFILE_CONTAINER -> new DeploymentRuntimeSpecification.Container(
                     (DeploymentRuntimeSpecification.ContainerEngine) containerEngine.getSelectedItem(), ports(), volumes(), health);
+            case RECOGNITION_PREVIEW -> throw new IllegalArgumentException(messages.text("analysis.preview.noDeployment"));
         };
     }
 
