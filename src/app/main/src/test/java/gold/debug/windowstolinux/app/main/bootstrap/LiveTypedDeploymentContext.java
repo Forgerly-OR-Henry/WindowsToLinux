@@ -4,14 +4,21 @@ import gold.debug.windowstolinux.app.db.DesktopPersistence;
 import gold.debug.windowstolinux.app.db.entity.StoredApplicationSecretRevision;
 import gold.debug.windowstolinux.app.service.DesktopApplicationService;
 import gold.debug.windowstolinux.app.service.server.ServerProfile;
+import gold.debug.windowstolinux.app.service.deployment.MultiComponentReviewInput;
+import gold.debug.windowstolinux.app.service.deployment.ReviewedMultiComponentApplication;
+import gold.debug.windowstolinux.app.service.source.PreparedMultiComponentSource;
 import gold.debug.windowstolinux.app.service.source.ReviewedSourcePreparation;
 import gold.debug.windowstolinux.shared.config.revision.ConfigurationEntry;
 import gold.debug.windowstolinux.shared.config.revision.ConfigurationSnapshot;
 import gold.debug.windowstolinux.shared.config.secretref.SecretReference;
 import gold.debug.windowstolinux.shared.deploy.plan.ReviewedDeploymentRequest;
 import gold.debug.windowstolinux.shared.deploy.plan.ReviewedDeploymentPlan;
+import gold.debug.windowstolinux.shared.deploy.plan.ApplicationHealthGate;
 import gold.debug.windowstolinux.shared.deploy.plan.DeploymentStep;
 import gold.debug.windowstolinux.shared.deploy.result.DeploymentResult;
+import gold.debug.windowstolinux.shared.deploy.result.MultiComponentDeploymentResult;
+import gold.debug.windowstolinux.shared.deploy.result.MultiComponentLifecycleResult;
+import gold.debug.windowstolinux.shared.analyze.component.ComponentAnalysisRequest;
 import gold.debug.windowstolinux.shared.git.snapshot.GitSourceRequest;
 import gold.debug.windowstolinux.shared.linux.sshd.connection.SshdLinuxGateway;
 import gold.debug.windowstolinux.shared.model.deployment.BuildLimits;
@@ -22,12 +29,14 @@ import gold.debug.windowstolinux.shared.model.project.DeploymentProjectType;
 import gold.debug.windowstolinux.shared.model.project.DeploymentRuntimeSpecification;
 import gold.debug.windowstolinux.shared.model.security.CredentialStorageMode;
 import gold.debug.windowstolinux.shared.model.server.ServerIdentity;
+import gold.debug.windowstolinux.shared.model.server.LinuxCapabilities;
 
 import java.nio.file.Path;
 import java.time.Instant;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -74,6 +83,40 @@ final class LiveTypedDeploymentContext implements AutoCloseable {
         return preparation;
     }
 
+    PreparedMultiComponentSource prepareMulti(Path source, String applicationId,
+                                               List<ComponentAnalysisRequest> components) throws Exception {
+        PreparedMultiComponentSource preparation = service.prepareReviewedMultiComponentSource(
+                source, applicationId, components);
+        assertEquals(components.size(), preparation.components().size(),
+                () -> "component graph was not planning-ready: " + preparation.assessment());
+        return preparation;
+    }
+
+    ReviewedMultiComponentApplication reviewMulti(PreparedMultiComponentSource preparation,
+                                                   List<MultiComponentReviewInput> inputs,
+                                                   ApplicationHealthGate applicationHealth) throws Exception {
+        return service.createReviewedMultiComponentApplication(preparation, server, inputs, applicationHealth);
+    }
+
+    MultiComponentDeploymentResult deployMulti(ReviewedMultiComponentApplication review,
+                                                List<MultiComponentReviewInput> inputs) throws Exception {
+        for (MultiComponentReviewInput input : inputs) {
+            service.saveDeploymentConfigurationSnapshot(input.configuration());
+        }
+        return service.deployReviewedMultiComponentWithStoredPassword(review, profile, MODE, master(),
+                fingerprint -> true);
+    }
+
+    MultiComponentLifecycleResult lifecycleMulti(String applicationId, Set<String> componentIds,
+                                                 LifecycleAction action) throws Exception {
+        return service.executeManagedMultiComponentLifecycleWithStoredPassword(applicationId, componentIds, action,
+                profile, MODE, master());
+    }
+
+    LinuxCapabilities inspectDeploymentCapabilities() throws Exception {
+        return service.inspectDeploymentCapabilitiesWithStoredPassword(profile, MODE, master(), fingerprint -> true);
+    }
+
     DeploymentResult deploy(ReviewedSourcePreparation preparation, long configurationRevision,
                             List<ConfigurationEntry> entries, List<SecretReference> secrets,
                             DeploymentRuntimeSpecification runtime, Optional<UserAccessUrl> userAccessUrl) throws Exception {
@@ -81,11 +124,17 @@ final class LiveTypedDeploymentContext implements AutoCloseable {
         ConfigurationSnapshot configuration = ConfigurationSnapshot.create(applicationId, configurationRevision,
                 "acceptance-v1", Instant.now(), entries);
         service.saveDeploymentConfigurationSnapshot(configuration);
+        int reviewedAddressSpaceMiB = runtime instanceof DeploymentRuntimeSpecification.AdvancedService advanced
+                && (advanced.kind() == gold.debug.windowstolinux.shared.model.project.AdvancedRuntimeKind.DOTNET
+                || advanced.kind() == gold.debug.windowstolinux.shared.model.project.AdvancedRuntimeKind.KOTLIN)
+                ? 8192 : 3072;
+        int reviewedTimeoutSeconds = runtime instanceof DeploymentRuntimeSpecification.AdvancedService ? 600 : 1800;
         ReviewedDeploymentRequest request = service.createReviewedDeploymentRequest(preparation, server, configuration,
-                secrets, runtime, userAccessUrl, new BuildLimits(1800, 1024, 3072,
+                secrets, runtime, userAccessUrl, new BuildLimits(reviewedTimeoutSeconds, 1024, reviewedAddressSpaceMiB,
                         8L * 1024 * 1024, 4L * 1024 * 1024 * 1024, true), true,
                 runtime instanceof DeploymentRuntimeSpecification.Container container
-                        && container.engine() == DeploymentRuntimeSpecification.ContainerEngine.DOCKER);
+                        && container.engine() == DeploymentRuntimeSpecification.ContainerEngine.DOCKER,
+                runtime instanceof DeploymentRuntimeSpecification.AdvancedService);
         ReviewedDeploymentPlan plan = service.planDeployment(request);
         assertEquals(request, plan.request());
         assertTrue(plan.steps().containsAll(List.of(DeploymentStep.VERIFY_SOURCE_IDENTITY,

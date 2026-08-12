@@ -18,9 +18,13 @@ final class TypedAcceptanceFixtures {
     private TypedAcceptanceFixtures() { }
 
     static Path javaJar(Path parent, String applicationId) throws IOException {
+        return javaJar(parent, applicationId, "java-live-ok", true);
+    }
+
+    static Path javaJar(Path parent, String applicationId, String marker, boolean healthy) throws IOException {
         Path root = directory(parent, applicationId);
         Path source = root.resolve("src/acceptance/Probe.java");
-        write(source, """
+        String program = healthy ? """
                 package acceptance;
                 import java.io.*;
                 import java.net.*;
@@ -45,7 +49,7 @@ final class TypedAcceptanceFixtures {
                                                 default -> value == '\\n' ? 4 : 0;
                                             };
                                         }
-                                        byte[] body = "java-live-ok".getBytes(StandardCharsets.UTF_8);
+                                        byte[] body = "%s".getBytes(StandardCharsets.UTF_8);
                                         String head = "HTTP/1.1 200 OK\\r\\nContent-Length: " + body.length
                                                 + "\\r\\nConnection: close\\r\\n\\r\\n";
                                         socket.getOutputStream().write(head.getBytes(StandardCharsets.US_ASCII));
@@ -59,7 +63,15 @@ final class TypedAcceptanceFixtures {
                         }
                     }
                 }
-                """);
+                """.formatted(marker) : """
+                package acceptance;
+                public final class Probe {
+                    public static void main(String[] args) {
+                        System.exit(36);
+                    }
+                }
+                """;
+        write(source, program);
         Path classes = root.resolve("classes");
         Files.createDirectories(classes);
         int compiled = ToolProvider.getSystemJavaCompiler().run(null, null, null,
