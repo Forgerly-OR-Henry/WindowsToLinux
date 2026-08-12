@@ -1,5 +1,8 @@
 package gold.debug.windowstolinux.shared.analyze.source;
 
+import java.nio.file.Path;
+import java.util.List;
+
 /**
  * Bounded facts collected without executing any project-controlled content.
  *
@@ -16,6 +19,11 @@ public record SourceInspection(
         boolean hasMavenWrapper,
         boolean hasWindowsMavenWrapper,
         boolean hasDatabaseChangeScript,
+        List<Path> relativeFiles,
         String scannedText
 ) {
+    /** Creates immutable bounded source facts. / 创建不可变的有界源码事实。 */
+    public SourceInspection {
+        relativeFiles = List.copyOf(relativeFiles);
+    }
 }

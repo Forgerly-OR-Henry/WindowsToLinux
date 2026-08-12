@@ -1,7 +1,7 @@
 package gold.debug.windowstolinux.app.service.source;
 
 import gold.debug.windowstolinux.app.windows.workspace.WindowsSourceWorkspace;
-import gold.debug.windowstolinux.shared.analyze.core.StaticProjectAnalyzer;
+import gold.debug.windowstolinux.shared.analyze.core.ManagedSpringBootAnalysisCoordinator;
 import gold.debug.windowstolinux.shared.git.reference.GitReference;
 import gold.debug.windowstolinux.shared.git.remote.GitRemote;
 import gold.debug.windowstolinux.shared.git.snapshot.GitSourceRequest;
@@ -39,7 +39,7 @@ class SourcePreparationUseCaseTest {
 
         GitSourceRequest request = new GitSourceRequest(new GitRemote(repository.toUri()), new GitReference.Commit(commit),
                 Set.of(), 64L * 1024 * 1024, true);
-        SourcePreparationUseCase useCase = new SourcePreparationUseCase(new StaticProjectAnalyzer(),
+        SourcePreparationUseCase useCase = new SourcePreparationUseCase(new ManagedSpringBootAnalysisCoordinator(),
                 new WindowsSourceWorkspace(temporaryDirectory.resolve("workspace")));
 
         ReviewedSourcePreparation prepared = useCase.prepareReviewedGit(request, DeploymentProjectType.NODE_SERVICE);

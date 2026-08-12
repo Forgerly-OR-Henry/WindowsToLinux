@@ -27,7 +27,7 @@ import gold.debug.windowstolinux.app.db.entity.StoredApplicationSecretRevision;
 import gold.debug.windowstolinux.shared.config.revision.ConfigurationSnapshot;
 import gold.debug.windowstolinux.shared.config.secretref.SecretReference;
 import gold.debug.windowstolinux.app.windows.workspace.WindowsSourceWorkspace;
-import gold.debug.windowstolinux.shared.analyze.core.StaticProjectAnalyzer;
+import gold.debug.windowstolinux.shared.analyze.core.ManagedSpringBootAnalysisCoordinator;
 import gold.debug.windowstolinux.shared.deploy.environment.EnvironmentPreparationService;
 import gold.debug.windowstolinux.shared.deploy.plan.DeploymentRequest;
 import gold.debug.windowstolinux.shared.deploy.plan.ReviewedDeploymentPlan;
@@ -96,7 +96,7 @@ public final class DesktopApplicationService {
         ServerOperationLocks locks = new ServerOperationLocks();
         DesktopSecretStores secrets = new DesktopSecretStores(database);
         this.servers = new ServerUseCases(database, secrets, linuxGateway);
-        this.source = new SourcePreparationUseCase(new StaticProjectAnalyzer(), new WindowsSourceWorkspace(workDirectory));
+        this.source = new SourcePreparationUseCase(new ManagedSpringBootAnalysisCoordinator(), new WindowsSourceWorkspace(workDirectory));
         this.ai = new AiUseCases(database, secrets);
         this.deploymentAgentTools = new ReadOnlyDeploymentAgentTools();
         this.deploymentConfiguration = new DeploymentConfigurationUseCase(database, secrets);

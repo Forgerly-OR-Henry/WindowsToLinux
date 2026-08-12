@@ -11,6 +11,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.attribute.BasicFileAttributes;
 import java.util.List;
+import java.util.ArrayList;
 import java.util.Locale;
 import java.util.Set;
 
@@ -22,9 +23,10 @@ import java.util.Set;
 public final class BoundedSourceInspector {
     private static final int MAX_TEXT_FILE_BYTES = 2 * 1024 * 1024;
     private static final int MAX_TOTAL_TEXT_BYTES = 16 * 1024 * 1024;
+    private static final int MAX_SOURCE_ENTRIES = 100_000;
     private static final Set<String> TEXT_EXTENSIONS = Set.of(
             ".java", ".kt", ".groovy", ".xml", ".properties", ".yml", ".yaml", ".json", ".toml", ".py", ".js",
-            ".ts", ".ini", ".cfg"
+            ".ts", ".tsx", ".jsx", ".mjs", ".cjs", ".mts", ".cts", ".ini", ".cfg"
     );
 
     /**
@@ -74,6 +76,7 @@ public final class BoundedSourceInspector {
         private final Path root;
         private final List<RejectionReason> rejections;
         private final StringBuilder text = new StringBuilder();
+        private final List<Path> relativeFiles = new ArrayList<>();
         private int scannedFiles;
         private long scannedTextBytes;
         private boolean hasMavenWrapper;
@@ -103,6 +106,11 @@ public final class BoundedSourceInspector {
                 return FileVisitResult.CONTINUE;
             }
             String name = file.getFileName().toString();
+            if (relativeFiles.size() >= MAX_SOURCE_ENTRIES) {
+                rejections.add(reason("SOURCE_ENTRY_LIMIT_EXCEEDED", "analysis.rejection.sourceEntryLimitExceeded", "input"));
+                return FileVisitResult.TERMINATE;
+            }
+            relativeFiles.add(root.relativize(file));
             if (file.getParent().equals(root) && name.equals("mvnw")) {
                 hasMavenWrapper = true;
             } else if (file.getParent().equals(root) && name.equals("mvnw.cmd")) {
@@ -149,7 +157,7 @@ public final class BoundedSourceInspector {
 
         private SourceInspection result() {
             return new SourceInspection(scannedFiles, hasMavenWrapper, hasWindowsMavenWrapper, hasDatabaseChangeScript,
-                    text.toString());
+                    relativeFiles, text.toString());
         }
 
         private boolean isDatabaseChangeScript(Path file, String lowerName) {

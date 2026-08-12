@@ -1,6 +1,6 @@
 package gold.debug.windowstolinux.app.service.ai;
 
-import gold.debug.windowstolinux.shared.analyze.core.DeploymentProjectAnalyzer;
+import gold.debug.windowstolinux.shared.analyze.core.DeploymentAnalysisCoordinator;
 import gold.debug.windowstolinux.shared.deploy.plan.ReviewedDeploymentPlan;
 import gold.debug.windowstolinux.shared.deploy.plan.ReviewedDeploymentPlanner;
 import gold.debug.windowstolinux.shared.deploy.plan.ReviewedDeploymentRequest;
@@ -16,7 +16,7 @@ import java.util.Objects;
  * <p>完整的可选 Agent 工具表面：仅有有界静态分析和确定性计划渲染。
  */
 public final class ReadOnlyDeploymentAgentTools {
-    private final DeploymentProjectAnalyzer analyzer;
+    private final DeploymentAnalysisCoordinator analyzer;
     private final ReviewedDeploymentPlanner planner;
 
     /**
@@ -25,10 +25,10 @@ public final class ReadOnlyDeploymentAgentTools {
      * <p>创建 {@code ReadOnlyDeploymentAgentTools} 实例。
      */
     public ReadOnlyDeploymentAgentTools() {
-        this(new DeploymentProjectAnalyzer(), new ReviewedDeploymentPlanner());
+        this(new DeploymentAnalysisCoordinator(), new ReviewedDeploymentPlanner());
     }
 
-    ReadOnlyDeploymentAgentTools(DeploymentProjectAnalyzer analyzer, ReviewedDeploymentPlanner planner) {
+    ReadOnlyDeploymentAgentTools(DeploymentAnalysisCoordinator analyzer, ReviewedDeploymentPlanner planner) {
         this.analyzer = Objects.requireNonNull(analyzer, "analyzer");
         this.planner = Objects.requireNonNull(planner, "planner");
     }

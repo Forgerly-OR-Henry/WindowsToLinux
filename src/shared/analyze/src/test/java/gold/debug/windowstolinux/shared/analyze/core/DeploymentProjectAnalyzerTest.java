@@ -17,11 +17,11 @@ import java.util.jar.Manifest;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-class DeploymentProjectAnalyzerTest {
+class DeploymentAnalysisCoordinatorTest {
     @TempDir
     Path temporaryDirectory;
 
-    private final DeploymentProjectAnalyzer analyzer = new DeploymentProjectAnalyzer();
+    private final DeploymentAnalysisCoordinator analyzer = new DeploymentAnalysisCoordinator();
 
     @Test
     void acceptsACompleteGradleSpringBootProjectWithoutRunningItsWrapper() throws Exception {

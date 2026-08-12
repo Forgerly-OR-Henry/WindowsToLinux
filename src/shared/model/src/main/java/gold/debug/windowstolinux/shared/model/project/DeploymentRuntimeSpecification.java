@@ -5,6 +5,7 @@ import gold.debug.windowstolinux.shared.model.health.HealthCheck;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.OptionalInt;
 
 /**
  * Typed runtime definition for exactly one typed deployment single-component project type.
@@ -67,7 +68,8 @@ public sealed interface DeploymentRuntimeSpecification permits DeploymentRuntime
     }
 
     /** Static site served only from a bounded generated output directory. / 仅从有界生成输出目录提供的静态站点。 */
-    record StaticSite(String outputDirectory, HealthCheck.Http healthCheck) implements DeploymentRuntimeSpecification {
+    record StaticSite(String outputDirectory, OptionalInt nodeMajorVersion,
+                      HealthCheck.Http healthCheck) implements DeploymentRuntimeSpecification {
         /** Creates a {@code StaticSite} specification. / 创建 {@code StaticSite} 规范。 */
         public StaticSite {
             outputDirectory = relativePath(outputDirectory, "outputDirectory");
@@ -75,6 +77,15 @@ public sealed interface DeploymentRuntimeSpecification permits DeploymentRuntime
                 throw new IllegalArgumentException("outputDirectory must not expose the source root");
             }
             healthCheck = Objects.requireNonNull(healthCheck, "healthCheck");
+            nodeMajorVersion = Objects.requireNonNull(nodeMajorVersion, "nodeMajorVersion");
+            if (nodeMajorVersion.isPresent()
+                    && (nodeMajorVersion.getAsInt() < 18 || nodeMajorVersion.getAsInt() > 24)) {
+                throw new IllegalArgumentException("nodeMajorVersion must be a supported explicit major version");
+            }
+        }
+        /** Creates a pure static-site specification without a Node build. / 创建不含 Node 构建的纯静态站点规范。 */
+        public StaticSite(String outputDirectory, HealthCheck.Http healthCheck) {
+            this(outputDirectory, OptionalInt.empty(), healthCheck);
         }
         @Override public DeploymentProjectType projectType() { return DeploymentProjectType.STATIC_SITE; }
     }

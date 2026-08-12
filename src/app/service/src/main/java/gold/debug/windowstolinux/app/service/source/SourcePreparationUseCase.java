@@ -2,8 +2,8 @@ package gold.debug.windowstolinux.app.service.source;
 
 import gold.debug.windowstolinux.app.windows.workspace.PreparedSourceArchive;
 import gold.debug.windowstolinux.app.windows.workspace.WindowsSourceWorkspace;
-import gold.debug.windowstolinux.shared.analyze.core.StaticProjectAnalyzer;
-import gold.debug.windowstolinux.shared.analyze.core.DeploymentProjectAnalyzer;
+import gold.debug.windowstolinux.shared.analyze.core.ManagedSpringBootAnalysisCoordinator;
+import gold.debug.windowstolinux.shared.analyze.core.DeploymentAnalysisCoordinator;
 import gold.debug.windowstolinux.shared.git.snapshot.GitSnapshot;
 import gold.debug.windowstolinux.shared.git.snapshot.GitSnapshotException;
 import gold.debug.windowstolinux.shared.git.snapshot.GitSnapshotService;
@@ -27,8 +27,8 @@ import java.util.Optional;
  * <p>提供 {@code SourcePreparationUseCase} 实现。
  */
 public final class SourcePreparationUseCase {
-    private final StaticProjectAnalyzer analyzer;
-    private final DeploymentProjectAnalyzer deploymentAnalyzer;
+    private final ManagedSpringBootAnalysisCoordinator analyzer;
+    private final DeploymentAnalysisCoordinator deploymentAnalyzer;
     private final WindowsSourceWorkspace workspace;
     private final GitSnapshotService gitSnapshots;
     private final Path gitWorkspace;
@@ -42,12 +42,12 @@ public final class SourcePreparationUseCase {
      * @param workspace the {@code workspace} value / {@code workspace} 值
      * @throws NullPointerException if a required argument is {@code null} / 必要参数为 {@code null} 时
      */
-    public SourcePreparationUseCase(StaticProjectAnalyzer analyzer, WindowsSourceWorkspace workspace) {
-        this(analyzer, new DeploymentProjectAnalyzer(), workspace, new GitSnapshotService(),
+    public SourcePreparationUseCase(ManagedSpringBootAnalysisCoordinator analyzer, WindowsSourceWorkspace workspace) {
+        this(analyzer, new DeploymentAnalysisCoordinator(), workspace, new GitSnapshotService(),
                 Objects.requireNonNull(workspace, "workspace").workDirectory().resolve("git-snapshots"));
     }
 
-    SourcePreparationUseCase(StaticProjectAnalyzer analyzer, DeploymentProjectAnalyzer deploymentAnalyzer,
+    SourcePreparationUseCase(ManagedSpringBootAnalysisCoordinator analyzer, DeploymentAnalysisCoordinator deploymentAnalyzer,
                              WindowsSourceWorkspace workspace, GitSnapshotService gitSnapshots, Path gitWorkspace) {
         this.analyzer = Objects.requireNonNull(analyzer, "analyzer");
         this.deploymentAnalyzer = Objects.requireNonNull(deploymentAnalyzer, "deploymentAnalyzer");

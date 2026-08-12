@@ -14,11 +14,11 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-class StaticProjectAnalyzerTest {
+class ManagedSpringBootAnalysisCoordinatorTest {
     @TempDir
     Path temporaryDirectory;
 
-    private final StaticProjectAnalyzer analyzer = new StaticProjectAnalyzer();
+    private final ManagedSpringBootAnalysisCoordinator analyzer = new ManagedSpringBootAnalysisCoordinator();
 
     @Test
     void acceptsAPlainMavenSpringBootJarWithoutExternalRequirements() throws Exception {

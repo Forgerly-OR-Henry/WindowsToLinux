@@ -25,6 +25,7 @@ public record DeploymentProjectFacts(
         String applicationId,
         DeploymentProjectType projectType,
         DeploymentBuildTool buildTool,
+        ProjectLanguageFacts languageFacts,
         List<AnalysisEvidence> evidence,
         List<LocalizedMessage> conflicts,
         List<LocalizedMessage> missingInformation
@@ -42,9 +43,18 @@ public record DeploymentProjectFacts(
         }
         projectType = Objects.requireNonNull(projectType, "projectType");
         buildTool = Objects.requireNonNull(buildTool, "buildTool");
+        languageFacts = Objects.requireNonNull(languageFacts, "languageFacts");
         evidence = List.copyOf(Objects.requireNonNull(evidence, "evidence"));
         conflicts = List.copyOf(Objects.requireNonNull(conflicts, "conflicts"));
         missingInformation = List.copyOf(Objects.requireNonNull(missingInformation, "missingInformation"));
+    }
+
+    /** Creates facts for callers that have no separate language observations. / 为没有单独语言观测的调用方创建事实。 */
+    public DeploymentProjectFacts(Path sourceRoot, String applicationId, DeploymentProjectType projectType,
+                                  DeploymentBuildTool buildTool, List<AnalysisEvidence> evidence,
+                                  List<LocalizedMessage> conflicts, List<LocalizedMessage> missingInformation) {
+        this(sourceRoot, applicationId, projectType, buildTool, ProjectLanguageFacts.empty(), evidence, conflicts,
+                missingInformation);
     }
 
     /**

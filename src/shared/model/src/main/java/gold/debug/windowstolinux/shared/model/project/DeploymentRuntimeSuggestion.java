@@ -99,7 +99,7 @@ public record DeploymentRuntimeSuggestion(
                     RuntimeInput.JAVA_VERSION);
             case NODE_SERVICE -> EnumSet.of(RuntimeInput.NODE_MAJOR_VERSION);
             case PYTHON_SERVICE -> EnumSet.of(RuntimeInput.PYTHON_VERSION, RuntimeInput.PYTHON_ENTRYPOINT);
-            case STATIC_SITE -> EnumSet.of(RuntimeInput.STATIC_OUTPUT_DIRECTORY);
+            case STATIC_SITE -> EnumSet.of(RuntimeInput.STATIC_OUTPUT_DIRECTORY, RuntimeInput.NODE_MAJOR_VERSION);
         };
     }
 

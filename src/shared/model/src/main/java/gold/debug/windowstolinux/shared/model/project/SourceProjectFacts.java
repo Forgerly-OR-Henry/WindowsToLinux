@@ -26,6 +26,7 @@ public record SourceProjectFacts(
         String applicationName,
         boolean usesMavenWrapper,
         boolean hasSpringBootPlugin,
+        ProjectLanguageFacts languageFacts,
         List<LocalizedMessage> observations,
         List<AnalysisEvidence> evidence,
         List<LocalizedMessage> conflicts,
@@ -49,6 +50,7 @@ public record SourceProjectFacts(
     public SourceProjectFacts {
         sourceRoot = Objects.requireNonNull(sourceRoot, "sourceRoot").toAbsolutePath().normalize();
         applicationName = requireText(applicationName, "applicationName");
+        languageFacts = Objects.requireNonNull(languageFacts, "languageFacts");
         observations = List.copyOf(Objects.requireNonNull(observations, "observations"));
         evidence = List.copyOf(Objects.requireNonNull(evidence, "evidence"));
         conflicts = List.copyOf(Objects.requireNonNull(conflicts, "conflicts"));
@@ -68,7 +70,17 @@ public record SourceProjectFacts(
      */
     public SourceProjectFacts(Path sourceRoot, String applicationName, boolean usesMavenWrapper,
                               boolean hasSpringBootPlugin, List<LocalizedMessage> observations) {
-        this(sourceRoot, applicationName, usesMavenWrapper, hasSpringBootPlugin, observations, List.of(), List.of(), List.of());
+        this(sourceRoot, applicationName, usesMavenWrapper, hasSpringBootPlugin, ProjectLanguageFacts.empty(), observations,
+                List.of(), List.of(), List.of());
+    }
+
+    /** Creates facts with legacy call-site fields and no language observations. / 使用原调用字段且不含语言观测创建事实。 */
+    public SourceProjectFacts(Path sourceRoot, String applicationName, boolean usesMavenWrapper,
+                              boolean hasSpringBootPlugin, List<LocalizedMessage> observations,
+                              List<AnalysisEvidence> evidence, List<LocalizedMessage> conflicts,
+                              List<LocalizedMessage> missingInformation) {
+        this(sourceRoot, applicationName, usesMavenWrapper, hasSpringBootPlugin, ProjectLanguageFacts.empty(), observations,
+                evidence, conflicts, missingInformation);
     }
 
     private static String requireText(String value, String name) {
