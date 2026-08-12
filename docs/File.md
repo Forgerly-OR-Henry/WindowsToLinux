@@ -2,14 +2,14 @@
 
 ## 文档信息
 
-- 文档版本：`2.8.0-phase3-experimental-adapters`
-- 文档状态：**正式模块与职责边界保持不变；六种高级语言试验适配进入既有 model/analyze/deploy/linux-sshd/app-ui 路径，真实目标机状态为 `RUNTIME-PENDING`**
+- 文档版本：`2.9.0-phase3-multi-component-core`
+- 文档状态：**正式模块与职责边界保持不变；混合项目分析、多组件事务/生命周期及六种高级语言试验适配已进入既有职责包，真实目标机状态为 `RUNTIME-PENDING`**
 - 已确认范围：`shared` 共用模块、`app` Windows 桌面应用模块、`web` Web 应用模块
 - 已确认能力边界：受管应用生命周期复用既有模块，不新增独立 Maven 模块
 - 更新日期：2026-08-13
 - 开发总纲：[DEVELOPMENT.md](DEVELOPMENT.md)
 
-> 本文是正式目标目录、模块职责、依赖方向和内部包结构的来源。当前 reactor 已包含根工程、3 个聚合模块和 24 个叶子模块，共 28 个 POM。`shared/source`、`shared/config`、`shared/git`、`shared/linux-sshd`、`analyze`、`deploy`、`app/db` 与 `app/service` 已承载对应代码；其中 `shared/linux-sshd` 已在本地实现六类既有项目和六种高级语言试验项目的有界构建、发布/回滚/生命周期协议。`shared/backup` 和 Web Java 叶子模块仍只保留 POM。2026-08-10/12 的 Ubuntu 24.04 x86-64 产品入口验收属于迁移前协议的历史证据，继续保留但不得外推到 helper v3；所有 v3 链路均标记 `RUNTIME-PENDING`。
+> 本文是正式目标目录、模块职责、依赖方向和内部包结构的来源。当前 reactor 已包含根工程、3 个聚合模块和 24 个叶子模块，共 28 个 POM。`shared/source`、`shared/config`、`shared/git`、`shared/linux-sshd`、`analyze`、`deploy`、`app/db` 与 `app/service` 已承载对应代码；其中 `analyze/component` 和 `deploy` 已本地实现混合组件图、整应用事务与依赖安全生命周期，`shared/linux-sshd` 已实现六类既有项目和六种高级语言试验项目的有界协议。`shared/backup` 和 Web Java 叶子模块仍只保留 POM。2026-08-10/12 的 Ubuntu 24.04 x86-64 产品入口验收属于迁移前协议的历史证据，继续保留但不得外推到 helper v3；所有 v3 链路均标记 `RUNTIME-PENDING`。
 
 ## 1. 完整目标结构
 
@@ -77,6 +77,7 @@ WindowsToLinux/
    │  │  │  ├─ maven/         Maven、POM 与 Maven Wrapper 分析
    │  │  │  ├─ node/          npm、pnpm、yarn、锁文件和脚本事实分析
    │  │  │  └─ python/        Python 依赖、锁定方式和虚拟环境事实分析
+   │  │  ├─ component/        混合项目组件清单、冲突和依赖图分析
    │  │  ├─ core/             有界分析协调、类型检查器注册与结果汇总
    │  │  ├─ framework/
    │  │  │  └─ springboot/    Spring Boot 框架事实与风险识别
@@ -112,10 +113,10 @@ WindowsToLinux/
    │  │  │  └─ staticweb/     静态站点部署形态
    │  │  ├─ compatibility/    支持矩阵匹配与正式支持范围校验
    │  │  ├─ environment/      环境准备流程
-   │  │  ├─ lifecycle/        受管应用生命周期编排
-   │  │  ├─ plan/             部署计划生成与校验
-   │  │  ├─ result/           部署事件与结果转换
-   │  │  └─ transaction/      上传、构建、发布、健康和回滚事务
+   │  │  ├─ lifecycle/        单组件及依赖安全的整应用生命周期编排
+   │  │  ├─ plan/             单组件与多组件依赖计划生成及校验
+   │  │  ├─ result/           应用/组件级部署、生命周期事件与结果
+   │  │  └─ transaction/      单组件与整应用上传、构建、发布、健康和回滚事务
    │  ├─ git/                 Git 项目拉取与版本准备
    │  │  ├─ reference/        分支、Tag 和 Commit 固定
    │  │  ├─ remote/           仓库来源和远端访问
@@ -138,14 +139,14 @@ WindowsToLinux/
    │  │  ├─ runtime/          systemd 健康、归属、生命周期及容器远程实现
    │  │  └─ transfer/         Apache SSHD SFTP 与受控传输实现
    │  ├─ model/               部署数据模型与属性定义
-   │  │  ├─ analysis/         项目分析结果、证据、冲突和支持判断
+   │  │  ├─ analysis/         项目/组件分析结果、证据、冲突和支持判断
    │  │  ├─ archive/          源码包、备份包和摘要描述模型
    │  │  ├─ deployment/       部署请求、计划、状态和结果模型
    │  │  ├─ health/           健康检查与访问地址模型
-   │  │  ├─ lifecycle/        运行状态、自启状态和生命周期动作模型
+   │  │  ├─ lifecycle/        单组件及整应用运行、自启汇总和生命周期动作模型
    │  │  ├─ managed/          受管应用、受管身份和运行配置模型
    │  │  ├─ message/          本地化消息模型
-   │  │  ├─ project/          源码项目、组件、语言、构建体系和框架事实
+   │  │  ├─ project/          源码项目、语言、构建体系和框架事实及 component 子包
    │  │  ├─ security/         凭据模式、确认和安全相关纯数据模型
    │  │  └─ server/           服务器身份与能力模型
    │  └─ source/              平台无关的源码快照、归档与安全校验
@@ -247,12 +248,16 @@ test/
 ### 1.1 当前落地职责边界
 
 - `analyze/core` 只保留唯一 `DeploymentAnalysisCoordinator` 及类型检查器契约；`framework/springboot/SpringBootDeploymentInspector` 统一 Maven 与 Gradle Spring Boot 事实和风险检查，其他构建工具、语言生态、静态站点和容器事实分别由对应包产生证据与局部结果。
+- `analyze/component/MixedProjectAnalyzer` 逐个复用确定性分析协调器并生成稳定组件记录；组件根/产物重叠、端口冲突、依赖环、不安全共享数据、预览级必需组件和越权能力在任何目标机操作前形成组件级停止原因。
 - `app/ui/shell` 只由 `DesktopFrame`、`DesktopPageCoordinator`、`DesktopViewState`、`PageMessages` 和 `PageNavigator` 负责窗口、装配、聚合状态与本地化；五个页面控制器各自持有表单和流程，跨页面只使用 `ServerContext` 与 `ReviewContext`。
 - `DesktopPersistence` 只组合服务器、偏好、AI、普通配置、应用秘密、加密载荷和受管应用仓库；服务和秘密存储只依赖所需仓库，成功发布仍由 `ManagedApplicationRepository` 在单事务内写入。
 - `GitSnapshotPreparer` 只协调 `GitCommandRunner`、`ControlledGitWorkspaceValidator`、`GitRepositoryFeaturePolicy` 和安全归档，不执行仓库源码。
-- `DeploymentBuildRenderer` 由六个项目类型渲染器实现并共享安全脚本外壳；其中 `SpringBootBuildRenderer` 只接受 Gradle Wrapper、Maven Wrapper、系统 Maven 三种固定入口并验证唯一 Spring Boot 2/3 可执行 JAR，注册表拒绝缺失、重复和类型不匹配实现。
+- `DeploymentBuildRenderer` 由十二个项目类型渲染器实现并共享安全脚本外壳；其中 `SpringBootBuildRenderer` 只接受 Gradle Wrapper、Maven Wrapper、系统 Maven 三种固定入口并验证唯一 Spring Boot 2/3 可执行 JAR，注册表拒绝缺失、重复和类型不匹配实现。
+- `MultiComponentDeploymentPlanner` 保留精确依赖边并生成确定性构建波次、逆序停止、拓扑启动/健康、逆序回滚和独立候选命名；`ReviewedMultiComponentDeploymentService` 在切换前完成全部候选构建和全部旧状态快照，中间失败会恢复所有已停止或尝试发布的组件，任何恢复不确定性升级为人工处理。
+- `MultiComponentLifecycleService` 每次从目标机重新观测所有组件，拒绝会破坏运行依赖的单组件动作，应用级停止/启动使用逆序/拓扑顺序，并以“部分运行”“部分启用”保留混合状态；后续桌面产品入口接入必须复用既有 `ServerOperationLocks`，不得创建绕开同服务器部署、环境准备和生命周期互斥的入口。
 - systemd 远程职责由 `SystemdHealthChecker`、`SystemdOwnershipObserver` 和 `SystemdLifecycleExecutor` 分别承担。
 - `ManagedHelperBundle` 按固定顺序拼装十个职责资源片段；安装路径和 sudoers 白名单仅允许 `/usr/local/lib/windowstolinux/managed-helper`，协议版本固定为 3，拼装字节的 SHA-256 固定为 `5985f74caa8394d342147ba4a8d53a24038d32f6c61f9f4a509f1d54009174e0`。高级语言 systemd 命令由独立的 `35-advanced-runtime.sh` 片段封闭渲染；旧 helper 必须由用户通过产品“环境准备”显式更新，部署链路不得自动替换。
+- helper 当前协议版本由 `ManagedHelperProtocolVersion` 在模型层唯一声明，能力汇总、环境准备预检和 SSH 实现不得各自保留历史版本数字。
 
 ## 2. 模块职责
 
@@ -618,6 +623,7 @@ linux-sshd 通过 linux 契约采集服务器已有环境
 
 | 版本 | 日期 | 说明 |
 | --- | --- | --- |
+| 2.9.0-phase3-multi-component-core | 2026-08-13 | 在既有 `model/analyze/deploy` 职责内加入稳定组件记录、目标机修改前冲突拦截、精确依赖图、独立候选、多组件短停机事务/整体健康/逐组件恢复，以及依赖安全的应用生命周期和部分运行/自启汇总；同时清除能力层残留的 helper v2 判断并由单一 v3 常量约束。JDK 21 全量离线门禁 28/28 通过，桌面产品入口和真实 Linux 验收仍待完成。 |
 | 2.8.0-phase3-experimental-adapters | 2026-08-13 | 在既有职责包中接入 Go、Rust、.NET、Kotlin、PHP、Ruby 的锁文件分析、试验支持声明、适配器、固定构建渲染、helper v3 与 Ubuntu 24.04 工具链准备；逐次风险确认和实时版本探测保持安全边界，JDK 21 全量离线门禁 28/28 通过，真实目标机验收仍待完成。 |
 | 2.7.0-phase3-support-preview | 2026-08-13 | 在既有 `shared/model`、`shared/analyze` 和 `app/ui` 边界内加入支持等级、精确真实验收范围和不可执行语言识别预览；覆盖三期全部候选语言，明确预览没有构建工具、归档、适配器、渲染器或 helper 入口。 |
 | 2.6.0-spring-boot-reviewed-convergence | 2026-08-13 | 将 Maven/Gradle Spring Boot 合并为 `SPRING_BOOT` 并由构建工具区分固定入口；删除旧分析、源码和部署 API，接入 helper v2、发布身份 v2 与 SQLite v5。迁移前 Ubuntu 实机证据保留为历史记录，统一后的 Reviewed 链路标记 `RUNTIME-PENDING`。 |

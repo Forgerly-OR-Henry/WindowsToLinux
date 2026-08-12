@@ -4,6 +4,7 @@ import gold.debug.windowstolinux.shared.linux.connection.HostKeyDecision;
 import gold.debug.windowstolinux.shared.linux.connection.LinuxOperationException;
 import gold.debug.windowstolinux.shared.linux.connection.SshCredential;
 import gold.debug.windowstolinux.shared.linux.connection.SshEndpoint;
+import gold.debug.windowstolinux.shared.linux.protocol.ManagedHelperProtocol;
 import gold.debug.windowstolinux.shared.linux.sshd.distro.UbuntuEnvironmentPreparation;
 import gold.debug.windowstolinux.shared.linux.sshd.distro.DnfEnvironmentPreparation;
 import gold.debug.windowstolinux.shared.linux.sshd.protocol.ManagedHelperBundle;
@@ -208,6 +209,6 @@ class SshdLinuxGatewayTest {
 
     private static ServerCapabilities capabilities(boolean tarAvailable) {
         return new ServerCapabilities("Ubuntu 24.04.1 LTS", "x86_64", true, true, true, tarAvailable,
-                true, true, true, true, 2, 1024L * 1024 * 1024, "test capabilities");
+                true, true, true, true, ManagedHelperProtocol.VERSION, 1024L * 1024 * 1024, "test capabilities");
     }
 }

@@ -5,6 +5,7 @@ import gold.debug.windowstolinux.shared.linux.connection.HostKeyVerifier;
 import gold.debug.windowstolinux.shared.linux.connection.LinuxGateway;
 import gold.debug.windowstolinux.shared.linux.connection.LinuxRemoteSession;
 import gold.debug.windowstolinux.shared.linux.runtime.HealthCheckResult;
+import gold.debug.windowstolinux.shared.linux.protocol.ManagedHelperProtocol;
 import gold.debug.windowstolinux.shared.linux.transfer.RemoteWorkspace;
 import gold.debug.windowstolinux.shared.linux.connection.SshCredential;
 import gold.debug.windowstolinux.shared.linux.connection.SshEndpoint;
@@ -138,7 +139,7 @@ class EnvironmentPreparationServiceTest {
 
         private static ServerCapabilities capabilities() {
             return new ServerCapabilities("Ubuntu 24.04.1 LTS", "x86_64", true, true, true, true, true, true, true, true,
-                    2, 10L * 1024 * 1024 * 1024, "capabilities freshly collected");
+                    ManagedHelperProtocol.VERSION, 10L * 1024 * 1024 * 1024, "capabilities freshly collected");
         }
     }
 }

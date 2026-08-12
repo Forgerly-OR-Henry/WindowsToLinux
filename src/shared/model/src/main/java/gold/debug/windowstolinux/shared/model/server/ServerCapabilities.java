@@ -97,7 +97,7 @@ public record ServerCapabilities(
                 && tarAvailable
                 && buildLimitToolsAvailable
                 && nonInteractiveSudoAvailable
-                && managedHelperProtocolVersion == 2
+                && managedHelperProtocolVersion == ManagedHelperProtocolVersion.CURRENT
                 && healthToolsAvailable
                 && (mavenAvailable || sourceUsesMavenWrapper);
     }
