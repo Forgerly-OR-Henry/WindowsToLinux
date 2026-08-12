@@ -15,6 +15,7 @@ import java.util.Set;
  * @param version observed distribution version / 观测到的发行版版本
  * @param architecture observed machine architecture / 观测到的机器架构
  * @param packageManager observed package manager / 观测到的包管理器
+ * @param packageArchitecture observed package architecture / 观测到的软件包架构
  * @param systemdAvailable whether systemd is present / 是否存在 systemd
  * @param dockerAvailable whether the Docker client is present / 是否存在 Docker 客户端
  * @param podmanAvailable whether the Podman client is present / 是否存在 Podman 客户端
@@ -28,8 +29,9 @@ import java.util.Set;
  * @param advancedRuntimeVersions exact observed versions for experimental language toolchains / 试验语言工具链的精确观测版本
  * @param dockerOperational whether Docker is usable by the authenticated account / 已认证账户能否使用 Docker
  * @param podmanOperational whether Podman is usable by the authenticated account / 已认证账户能否使用 Podman
- * @param x86_64V3Available whether the runtime linker reports the cumulative x86-64-v3 level / 运行时链接器是否报告累积 x86-64-v3 级别
+ * @param cpuMicroarchitecture highest cumulative CPU level confirmed by the runtime linker / 运行时链接器确认的最高累积 CPU 级别
  * @param cpuFlags observed CPU instruction flags / 观测到的 CPU 指令标志
+ * @param securityPosture observed mandatory-access-control and firewall state / 观测到的强制访问控制与防火墙状态
  * @param evidence bounded collection evidence / 有界采集证据
  */
 public record LinuxCapabilities(
@@ -37,6 +39,7 @@ public record LinuxCapabilities(
         String version,
         String architecture,
         String packageManager,
+        String packageArchitecture,
         boolean systemdAvailable,
         boolean dockerAvailable,
         boolean podmanAvailable,
@@ -50,8 +53,9 @@ public record LinuxCapabilities(
         Map<AdvancedRuntimeKind, Set<String>> advancedRuntimeVersions,
         boolean dockerOperational,
         boolean podmanOperational,
-        boolean x86_64V3Available,
+        CpuMicroarchitectureLevel cpuMicroarchitecture,
         Set<String> cpuFlags,
+        LinuxSecurityPosture securityPosture,
         String evidence
 ) {
     /**
@@ -64,6 +68,7 @@ public record LinuxCapabilities(
         version = fact(version, "version");
         architecture = fact(architecture, "architecture");
         packageManager = fact(packageManager, "packageManager");
+        packageArchitecture = fact(packageArchitecture, "packageArchitecture");
         javaMajorVersions = Set.copyOf(Objects.requireNonNull(javaMajorVersions, "javaMajorVersions"));
         if (javaMajorVersions.stream().anyMatch(major -> major == null || major < 1 || major > 99)) {
             throw new IllegalArgumentException("javaMajorVersions must contain bounded positive majors");
@@ -87,42 +92,16 @@ public record LinuxCapabilities(
             normalizedAdvanced.put(kind, copied);
         });
         advancedRuntimeVersions = Map.copyOf(normalizedAdvanced);
+        cpuMicroarchitecture = Objects.requireNonNull(cpuMicroarchitecture, "cpuMicroarchitecture");
         cpuFlags = Set.copyOf(Objects.requireNonNull(cpuFlags, "cpuFlags"));
         if (cpuFlags.stream().anyMatch(flag -> flag == null || !flag.matches("[a-z0-9_.-]{1,64}"))) {
             throw new IllegalArgumentException("cpuFlags must be normalized bounded instruction names");
         }
+        securityPosture = Objects.requireNonNull(securityPosture, "securityPosture");
         evidence = Objects.requireNonNull(evidence, "evidence");
         if (evidence.length() > 4096 || evidence.indexOf('\u0000') >= 0) {
             throw new IllegalArgumentException("evidence must be bounded non-secret text");
         }
-    }
-
-    /** Creates capabilities without experimental toolchain observations. / 创建不含试验工具链观测的能力。 */
-    public LinuxCapabilities(
-            LinuxDistro distro,
-            String version,
-            String architecture,
-            String packageManager,
-            boolean systemdAvailable,
-            boolean dockerAvailable,
-            boolean podmanAvailable,
-            boolean podmanQuadletAvailable,
-            Set<Integer> javaMajorVersions,
-            Set<Integer> nodeMajorVersions,
-            boolean npmAvailable,
-            boolean mavenAvailable,
-            Set<String> pythonVersions,
-            boolean python3Available,
-            boolean dockerOperational,
-            boolean podmanOperational,
-            boolean x86_64V3Available,
-            Set<String> cpuFlags,
-            String evidence
-    ) {
-        this(distro, version, architecture, packageManager, systemdAvailable, dockerAvailable, podmanAvailable,
-                podmanQuadletAvailable, javaMajorVersions, nodeMajorVersions, npmAvailable, mavenAvailable,
-                pythonVersions, python3Available, Map.of(), dockerOperational, podmanOperational, x86_64V3Available,
-                cpuFlags, evidence);
     }
 
     /**

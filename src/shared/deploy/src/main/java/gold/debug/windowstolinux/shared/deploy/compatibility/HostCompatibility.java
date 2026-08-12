@@ -1,7 +1,6 @@
 package gold.debug.windowstolinux.shared.deploy.compatibility;
 
 import gold.debug.windowstolinux.shared.model.server.LinuxCapabilities;
-import gold.debug.windowstolinux.shared.model.server.LinuxDistro;
 import gold.debug.windowstolinux.shared.model.project.DeploymentRuntimeSpecification;
 import gold.debug.windowstolinux.shared.model.project.DeploymentProjectFacts;
 import gold.debug.windowstolinux.shared.model.project.DeploymentBuildTool;
@@ -43,7 +42,7 @@ public final class HostCompatibility {
         if (!capabilities.systemdAvailable()) {
             return result(HostSupport.UNSUPPORTED, "systemd is required for managed lifecycle", evidence);
         }
-        HostSupport base = baseSupport(capabilities, evidence);
+        HostSupport base = DistributionSupportPolicies.evaluate(capabilities, evidence);
         if (base != HostSupport.READY_FOR_RUNTIME_VALIDATION) {
             return new Result(base, List.copyOf(evidence));
         }
@@ -89,37 +88,6 @@ public final class HostCompatibility {
                     capabilities.advancedRuntimeVersions().getOrDefault(advanced.kind(), java.util.Set.of())
                             .contains(advanced.version()) ? null
                             : "the selected experimental runtime version is not available";
-        };
-    }
-
-    private static HostSupport baseSupport(LinuxCapabilities capabilities, List<String> evidence) {
-        return switch (capabilities.distro()) {
-            case UBUNTU -> {
-                if (!"apt".equals(capabilities.packageManager())
-                        || !("22.04".equals(capabilities.version()) || "24.04".equals(capabilities.version()))) {
-                    yield result(HostSupport.UNSUPPORTED, "Ubuntu must be 22.04 or 24.04 with apt", evidence).support();
-                }
-                yield HostSupport.READY_FOR_RUNTIME_VALIDATION;
-            }
-            case CENTOS_STREAM -> {
-                if (!"dnf".equals(capabilities.packageManager())
-                        || !("9".equals(capabilities.version()) || "10".equals(capabilities.version()))) {
-                    yield result(HostSupport.UNSUPPORTED, "CentOS Stream must be 9 or 10 with dnf", evidence).support();
-                }
-                if ("10".equals(capabilities.version())) {
-                    if (!capabilities.x86_64V3Available()) {
-                        evidence.add("CentOS Stream 10 requires a runtime-linker-confirmed cumulative x86-64-v3 level");
-                        yield HostSupport.REQUIRES_CPU_REVIEW;
-                    }
-                    evidence.add("CentOS Stream 10 host runtime linker reports the cumulative x86-64-v3 level as supported");
-                }
-                yield HostSupport.READY_FOR_RUNTIME_VALIDATION;
-            }
-            case LEGACY_CENTOS -> {
-                evidence.add("discontinued CentOS requires explicit maintenance and repository-risk acknowledgement");
-                yield HostSupport.LEGACY_RISK_CONFIRMATION_REQUIRED;
-            }
-            case OTHER -> result(HostSupport.UNSUPPORTED, "distribution is outside the typed deployment matrix", evidence).support();
         };
     }
 

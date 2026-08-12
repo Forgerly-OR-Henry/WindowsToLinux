@@ -8,10 +8,10 @@ import gold.debug.windowstolinux.shared.model.deployment.EnvironmentPreparationA
 import gold.debug.windowstolinux.shared.model.deployment.EnvironmentPreparationResult;
 import gold.debug.windowstolinux.shared.model.health.HealthCheck;
 import gold.debug.windowstolinux.shared.model.server.LinuxCapabilities;
-import gold.debug.windowstolinux.shared.model.server.LinuxDistro;
+import gold.debug.windowstolinux.shared.model.server.LinuxSecurityModule;
+import gold.debug.windowstolinux.shared.model.server.LinuxSecurityState;
 import gold.debug.windowstolinux.shared.model.server.ServerCapabilities;
 
-import java.time.Duration;
 import java.util.Objects;
 
 /**
@@ -41,9 +41,7 @@ public final class ManagedEnvironmentExecutor {
         Objects.requireNonNull(approval, "approval").requireAcceptedFor(serverId);
         LinuxCapabilities before = platformCapabilities.collectDeploymentCapabilities();
         String script = scriptFor(before);
-        Duration timeout = before.distro() == LinuxDistro.CENTOS_STREAM
-                ? DnfEnvironmentPreparation.TIMEOUT : UbuntuEnvironmentPreparation.TIMEOUT;
-        var prepared = commands.exec(script, timeout, true);
+        var prepared = commands.exec(script, EnvironmentPreparationShellSupport.TIMEOUT, true);
         if (!prepared.succeeded()) {
             throw LinuxOperationException.localized("linux.error.environmentPreparationFailed",
                     "managed target environment preparation failed: " + prepared.failureEvidence());
@@ -65,7 +63,24 @@ public final class ManagedEnvironmentExecutor {
         try {
             return switch (capabilities.distro()) {
                 case UBUNTU -> UbuntuEnvironmentPreparation.renderScript(username, capabilities.version());
-                case CENTOS_STREAM -> DnfEnvironmentPreparation.renderScript(username, capabilities.version());
+                case DEBIAN -> DebianEnvironmentPreparation.renderScript(username, capabilities.version());
+                case CENTOS_STREAM -> {
+                    requireEnterpriseSecurity(capabilities);
+                    yield CentosStreamEnvironmentPreparation.renderScript(username, capabilities.version());
+                }
+                case ROCKY_LINUX -> {
+                    requireEnterpriseSecurity(capabilities);
+                    yield RockyLinuxEnvironmentPreparation.renderScript(username, capabilities.version());
+                }
+                case ALMALINUX -> {
+                    requireEnterpriseSecurity(capabilities);
+                    yield AlmaLinuxEnvironmentPreparation.renderScript(
+                            username, capabilities.version(), capabilities.packageArchitecture());
+                }
+                case ORACLE_LINUX -> {
+                    requireEnterpriseSecurity(capabilities);
+                    yield OracleLinuxEnvironmentPreparation.renderScript(username, capabilities.version());
+                }
                 case LEGACY_CENTOS -> throw LinuxOperationException.localized("linux.error.environmentUnsupportedDistro",
                         "Discontinued CentOS requires a separately reviewed repository and recovery plan; automatic preparation is disabled");
                 case OTHER -> throw LinuxOperationException.localized("linux.error.environmentUnsupportedDistro",
@@ -74,6 +89,14 @@ public final class ManagedEnvironmentExecutor {
         } catch (IllegalArgumentException exception) {
             throw LinuxOperationException.localized("linux.error.environmentUnsupportedDistro",
                     "The collected distribution version is outside the managed deployment preparation matrix");
+        }
+    }
+
+    private static void requireEnterpriseSecurity(LinuxCapabilities capabilities) throws LinuxOperationException {
+        if (capabilities.securityPosture().module() != LinuxSecurityModule.SELINUX
+                || capabilities.securityPosture().state() != LinuxSecurityState.ENFORCING) {
+            throw LinuxOperationException.localized("linux.error.environmentUnsupportedDistro",
+                    "Enterprise Linux automatic preparation requires collected SELinux enforcing evidence");
         }
     }
 }

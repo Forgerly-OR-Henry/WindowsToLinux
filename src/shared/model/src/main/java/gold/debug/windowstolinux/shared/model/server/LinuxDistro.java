@@ -8,8 +8,16 @@ package gold.debug.windowstolinux.shared.model.server;
 public enum LinuxDistro {
     /** Ubuntu LTS. / Ubuntu LTS。 */
     UBUNTU,
+    /** Debian stable. / Debian 稳定版。 */
+    DEBIAN,
     /** CentOS Stream. / CentOS Stream。 */
     CENTOS_STREAM,
+    /** Rocky Linux. / Rocky Linux。 */
+    ROCKY_LINUX,
+    /** AlmaLinux. / AlmaLinux。 */
+    ALMALINUX,
+    /** Oracle Linux. / Oracle Linux。 */
+    ORACLE_LINUX,
     /** Discontinued CentOS Linux or Stream 8. / 已停止维护的 CentOS Linux 或 Stream 8。 */
     LEGACY_CENTOS,
     /** A distribution outside the typed deployment matrix. / 部署矩阵之外的发行版。 */

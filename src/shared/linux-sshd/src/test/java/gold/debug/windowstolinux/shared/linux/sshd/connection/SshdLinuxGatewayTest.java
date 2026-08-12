@@ -6,7 +6,11 @@ import gold.debug.windowstolinux.shared.linux.connection.SshCredential;
 import gold.debug.windowstolinux.shared.linux.connection.SshEndpoint;
 import gold.debug.windowstolinux.shared.linux.protocol.ManagedHelperProtocol;
 import gold.debug.windowstolinux.shared.linux.sshd.distro.UbuntuEnvironmentPreparation;
-import gold.debug.windowstolinux.shared.linux.sshd.distro.DnfEnvironmentPreparation;
+import gold.debug.windowstolinux.shared.linux.sshd.distro.AlmaLinuxEnvironmentPreparation;
+import gold.debug.windowstolinux.shared.linux.sshd.distro.CentosStreamEnvironmentPreparation;
+import gold.debug.windowstolinux.shared.linux.sshd.distro.DebianEnvironmentPreparation;
+import gold.debug.windowstolinux.shared.linux.sshd.distro.OracleLinuxEnvironmentPreparation;
+import gold.debug.windowstolinux.shared.linux.sshd.distro.RockyLinuxEnvironmentPreparation;
 import gold.debug.windowstolinux.shared.linux.sshd.protocol.ManagedHelperBundle;
 import gold.debug.windowstolinux.shared.linux.sshd.runtime.SystemdUnitRenderer;
 import gold.debug.windowstolinux.shared.linux.transfer.RemoteWorkspace;
@@ -160,8 +164,8 @@ class SshdLinuxGatewayTest {
         String script = UbuntuEnvironmentPreparation.renderScript("root");
 
         int firstAptMutation = script.indexOf("/usr/bin/apt-get -o DPkg::Lock::Timeout=" + UbuntuEnvironmentPreparation.APT_LOCK_TIMEOUT_SECONDS + " update");
-        assertTrue(firstAptMutation > script.indexOf("test \"${ID:-}\" = ubuntu"));
-        assertTrue(firstAptMutation > script.indexOf("test \"${VERSION_ID:-}\" = 24.04"));
+        assertTrue(firstAptMutation > script.indexOf("test \"${ID:-}\" = 'ubuntu'"));
+        assertTrue(firstAptMutation > script.indexOf("test \"${VERSION_ID:-}\" = '24.04'"));
         assertTrue(firstAptMutation > script.indexOf("test \"$(uname -m)\" = x86_64"));
         assertTrue(firstAptMutation > script.indexOf("command -v systemctl >/dev/null 2>&1"));
         assertTrue(firstAptMutation > script.indexOf("test -x /usr/bin/apt-get"));
@@ -177,7 +181,7 @@ class SshdLinuxGatewayTest {
         assertTrue(script.contains("/usr/bin/sudo -n /usr/bin/apt-get -o DPkg::Lock::Timeout=" + UbuntuEnvironmentPreparation.APT_LOCK_TIMEOUT_SECONDS + " install -y --no-install-recommends openjdk-21-jdk-headless maven curl sudo"));
         assertTrue(script.contains("command -v tar >/dev/null 2>&1"));
         assertTrue(script.contains("command -v gzip >/dev/null 2>&1"));
-        assertTrue(script.contains("node --version | grep -Eq '^v18\\.'"));
+        assertTrue(script.contains("node --version | grep -Eq '^v18[.]'"));
         assertTrue(script.contains("python3.12 -m venv --help"));
         assertTrue(script.contains("dotnet-sdk-8.0"));
         assertTrue(script.contains("composer --version"));
@@ -193,22 +197,69 @@ class SshdLinuxGatewayTest {
     }
 
     @Test
-    void rendersOnlySupportedUbuntuAndCentosStreamPreparationPaths() {
+    void rendersIndependentDistributionPreparationPathsBeforeAnyMutation() {
         String ubuntu = UbuntuEnvironmentPreparation.renderScript("deployer", "22.04");
-        String centos = DnfEnvironmentPreparation.renderScript("deployer", "9");
+        String debian = DebianEnvironmentPreparation.renderScript("deployer", "13");
+        String centos = CentosStreamEnvironmentPreparation.renderScript("deployer", "9");
+        String rocky = RockyLinuxEnvironmentPreparation.renderScript("deployer", "10.2");
+        String alma = AlmaLinuxEnvironmentPreparation.renderScript("deployer", "9.8", "x86_64");
+        String oracle = OracleLinuxEnvironmentPreparation.renderScript("deployer", "10.2");
 
         assertTrue(ubuntu.contains("test \"${VERSION_ID:-}\" = '22.04'"));
-        assertTrue(centos.contains("test \"${ID:-}\" = centos"));
-        assertTrue(centos.contains("test \"${VARIANT_ID:-}\" = stream"));
+        assertTrue(debian.contains("test \"${ID:-}\" = 'debian'"));
+        assertTrue(debian.contains("test \"${VERSION_ID:-}\" = '13'"));
+        assertTrue(centos.contains("test \"${ID:-}\" = 'centos'"));
+        assertTrue(centos.contains("test \"${VARIANT_ID:-}\" = 'stream'"));
         assertTrue(centos.contains("test \"${VERSION_ID:-}\" = '9'"));
+        assertTrue(centos.indexOf("test \"$(getenforce)\" = Enforcing")
+                < centos.indexOf("/usr/bin/dnf -y install"));
+        assertTrue(rocky.contains("test \"${ID:-}\" = 'rocky'"));
+        assertTrue(rocky.contains("test \"${VERSION_ID:-}\" = '10.2'"));
+        assertTrue(rocky.contains("x86-64-v3.*supported"));
+        assertTrue(alma.contains("test \"${ID:-}\" = 'almalinux'"));
+        assertTrue(oracle.contains("test \"${ID:-}\" = 'ol'"));
         assertTrue(centos.contains("/usr/bin/dnf -y install java-21-openjdk-headless maven curl sudo"));
         assertTrue(centos.contains("/usr/bin/sudo -n /usr/bin/dnf -y install java-21-openjdk-headless maven curl sudo"));
+        for (String script : List.of(ubuntu, debian, centos, rocky, alma, oracle)) {
+            int mutation = script.contains("/usr/bin/apt-get")
+                    ? script.indexOf("/usr/bin/apt-get -o DPkg::Lock::Timeout=")
+                    : script.indexOf("/usr/bin/dnf -y install");
+            assertTrue(mutation > script.indexOf("security_before=\"$(security_state)\""));
+            assertTrue(script.contains("test \"$security_after\" = \"$security_before\""));
+            assertTrue(script.contains("*:active) test \"$firewall_after\" = \"$firewall_before\""));
+            String preparationPath = script.substring(0, script.indexOf("\nhelper="));
+            assertFalse(preparationPath.contains("setenforce"));
+            assertFalse(preparationPath.contains("systemctl disable"));
+            assertFalse(preparationPath.contains("systemctl stop"));
+        }
         assertThrows(IllegalArgumentException.class, () -> UbuntuEnvironmentPreparation.renderScript("deployer", "20.04"));
-        assertThrows(IllegalArgumentException.class, () -> DnfEnvironmentPreparation.renderScript("deployer", "8"));
+        assertThrows(IllegalArgumentException.class, () -> DebianEnvironmentPreparation.renderScript("deployer", "12"));
+        assertThrows(IllegalArgumentException.class, () -> CentosStreamEnvironmentPreparation.renderScript("deployer", "8"));
+        assertThrows(IllegalArgumentException.class, () -> RockyLinuxEnvironmentPreparation.renderScript("deployer", "9.7"));
+        assertThrows(IllegalArgumentException.class,
+                () -> AlmaLinuxEnvironmentPreparation.renderScript("deployer", "10.2", "x86_64_v2"));
+        assertThrows(IllegalArgumentException.class,
+                () -> OracleLinuxEnvironmentPreparation.renderScript("deployer", "9.6"));
+    }
+
+    @Test
+    void baselineCapabilityGateRecognizesOnlyFrozenPreparedDistributionNames() {
+        HealthCheck.Tcp health = new HealthCheck.Tcp(8080, 5, 1);
+        for (String name : List.of("Debian GNU/Linux 13", "Rocky Linux 9.8", "Rocky Linux 10.2",
+                "AlmaLinux 9.8", "AlmaLinux 10.2", "Oracle Linux Server 9.7", "Oracle Linux Server 10.2")) {
+            assertTrue(capabilities(name).supportsManagedDeployment(false, health), name);
+        }
+        assertFalse(capabilities("Rocky Linux 9.7").supportsManagedDeployment(false, health));
+        assertFalse(capabilities("Oracle Linux Server 9.6").supportsManagedDeployment(false, health));
     }
 
     private static ServerCapabilities capabilities(boolean tarAvailable) {
         return new ServerCapabilities("Ubuntu 24.04.1 LTS", "x86_64", true, true, true, tarAvailable,
+                true, true, true, true, ManagedHelperProtocol.VERSION, 1024L * 1024 * 1024, "test capabilities");
+    }
+
+    private static ServerCapabilities capabilities(String operatingSystem) {
+        return new ServerCapabilities(operatingSystem, "x86_64", true, true, true, true,
                 true, true, true, true, ManagedHelperProtocol.VERSION, 1024L * 1024 * 1024, "test capabilities");
     }
 }

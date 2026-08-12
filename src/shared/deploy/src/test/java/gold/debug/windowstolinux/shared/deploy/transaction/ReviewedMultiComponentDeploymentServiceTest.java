@@ -44,7 +44,13 @@ import gold.debug.windowstolinux.shared.model.project.DeploymentProjectType;
 import gold.debug.windowstolinux.shared.model.project.DeploymentRuntimeSpecification;
 import gold.debug.windowstolinux.shared.model.project.SourceRevision;
 import gold.debug.windowstolinux.shared.model.server.LinuxCapabilities;
+import gold.debug.windowstolinux.shared.model.server.CpuMicroarchitectureLevel;
 import gold.debug.windowstolinux.shared.model.server.LinuxDistro;
+import gold.debug.windowstolinux.shared.model.server.LinuxFirewallKind;
+import gold.debug.windowstolinux.shared.model.server.LinuxFirewallState;
+import gold.debug.windowstolinux.shared.model.server.LinuxSecurityModule;
+import gold.debug.windowstolinux.shared.model.server.LinuxSecurityPosture;
+import gold.debug.windowstolinux.shared.model.server.LinuxSecurityState;
 import gold.debug.windowstolinux.shared.model.server.ServerCapabilities;
 import gold.debug.windowstolinux.shared.model.server.ServerIdentity;
 import org.junit.jupiter.api.Test;
@@ -304,9 +310,11 @@ class ReviewedMultiComponentDeploymentServiceTest {
                                     true, true, true, true, true, true, true, ManagedHelperProtocol.VERSION,
                                     32L * 1024 * 1024 * 1024, "fixture");
                             case "collectDeploymentCapabilities" -> new LinuxCapabilities(LinuxDistro.UBUNTU, "24.04",
-                                    "x86_64", "apt", true, true, true, true, java.util.Set.of(21),
+                                    "x86_64", "apt", "amd64", true, true, true, true, java.util.Set.of(21),
                                     java.util.Set.of(22), true, true, java.util.Set.of("3.12"), true, Map.of(),
-                                    true, true, true, java.util.Set.of("sse4_2"), "fixture");
+                                    true, true, CpuMicroarchitectureLevel.X86_64_V3, java.util.Set.of("sse4_2"),
+                                    new LinuxSecurityPosture(LinuxSecurityModule.APPARMOR, LinuxSecurityState.ENABLED,
+                                            LinuxFirewallKind.UFW, LinuxFirewallState.ACTIVE), "fixture");
                             case "uploadSource" -> upload((SourceArchiveDescriptor) arguments[0],
                                     (RemoteWorkspace) arguments[1]);
                             case "buildDeployment" -> build((RemoteWorkspace) arguments[2]);

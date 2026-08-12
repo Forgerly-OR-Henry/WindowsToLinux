@@ -4,7 +4,13 @@ import gold.debug.windowstolinux.shared.linux.capability.LinuxPlatformCapability
 import gold.debug.windowstolinux.shared.linux.connection.LinuxOperationException;
 import gold.debug.windowstolinux.shared.linux.sshd.connection.SshCommandExecutor;
 import gold.debug.windowstolinux.shared.model.server.LinuxCapabilities;
+import gold.debug.windowstolinux.shared.model.server.CpuMicroarchitectureLevel;
 import gold.debug.windowstolinux.shared.model.server.LinuxDistro;
+import gold.debug.windowstolinux.shared.model.server.LinuxFirewallKind;
+import gold.debug.windowstolinux.shared.model.server.LinuxFirewallState;
+import gold.debug.windowstolinux.shared.model.server.LinuxSecurityModule;
+import gold.debug.windowstolinux.shared.model.server.LinuxSecurityPosture;
+import gold.debug.windowstolinux.shared.model.server.LinuxSecurityState;
 import gold.debug.windowstolinux.shared.model.project.AdvancedRuntimeKind;
 
 import java.time.Duration;
@@ -66,14 +72,28 @@ public final class SshdPlatformCapabilityCollector implements LinuxPlatformCapab
                 advancedVersions.put(kind, Set.of(observed));
             }
         }
-        return new LinuxCapabilities(classify(id, variant, version), version,
-                normalized(values.getOrDefault("ARCH", "unknown")), normalized(values.getOrDefault("PACKAGE_MANAGER", "unknown")),
+        String architecture = normalized(values.getOrDefault("ARCH", "unknown"));
+        String packageManager = normalized(values.getOrDefault("PACKAGE_MANAGER", "unknown"));
+        String packageArchitecture = normalized(values.getOrDefault("PACKAGE_ARCH", "unknown"));
+        CpuMicroarchitectureLevel cpuLevel = cpuLevel(values.getOrDefault("CPU_LEVEL", "unknown"));
+        LinuxSecurityPosture security = security(values);
+        String evidence = "SSH host fingerprint verified: " + Objects.requireNonNull(hostFingerprint, "hostFingerprint")
+                + "; distro=" + id + "; version=" + version + "; arch=" + architecture
+                + "; package-manager=" + packageManager + "; package-arch=" + packageArchitecture
+                + "; cpu-level=" + cpuLevel.name().toLowerCase(Locale.ROOT)
+                + "; security=" + security.module().name().toLowerCase(Locale.ROOT) + "/"
+                + security.state().name().toLowerCase(Locale.ROOT)
+                + "; firewall=" + security.firewall().name().toLowerCase(Locale.ROOT) + "/"
+                + security.firewallState().name().toLowerCase(Locale.ROOT)
+                + "; docker=" + values.getOrDefault("DOCKER_OPERATIONAL", "0")
+                + "; podman=" + values.getOrDefault("PODMAN_OPERATIONAL", "0");
+        return new LinuxCapabilities(classify(id, variant, version), version, architecture, packageManager,
+                packageArchitecture,
                 "1".equals(values.get("SYSTEMD")), "1".equals(values.get("DOCKER_CLIENT")),
                 "1".equals(values.get("PODMAN_CLIENT")), "1".equals(values.get("PODMAN_QUADLET")),
                 javaMajors, nodeMajors, "1".equals(values.get("NPM")), "1".equals(values.get("MAVEN")), pythonVersions,
                 "1".equals(values.get("PYTHON3")), advancedVersions, "1".equals(values.get("DOCKER_OPERATIONAL")),
-                "1".equals(values.get("PODMAN_OPERATIONAL")), "1".equals(values.get("X86_64_V3")), flags,
-                "SSH host fingerprint verified: " + Objects.requireNonNull(hostFingerprint, "hostFingerprint"));
+                "1".equals(values.get("PODMAN_OPERATIONAL")), cpuLevel, flags, security, evidence);
     }
 
     private static Set<Integer> integerVersions(String value) {
@@ -86,13 +106,64 @@ public final class SshdPlatformCapabilityCollector implements LinuxPlatformCapab
         if ("ubuntu".equals(id)) {
             return LinuxDistro.UBUNTU;
         }
+        if ("debian".equals(id)) {
+            return LinuxDistro.DEBIAN;
+        }
         if ("centos".equals(id) && "stream".equals(variant)) {
             return "8".equals(version) ? LinuxDistro.LEGACY_CENTOS : LinuxDistro.CENTOS_STREAM;
         }
         if ("centos".equals(id) && ("7".equals(version) || "8".equals(version))) {
             return LinuxDistro.LEGACY_CENTOS;
         }
+        if ("rocky".equals(id)) {
+            return LinuxDistro.ROCKY_LINUX;
+        }
+        if ("almalinux".equals(id)) {
+            return LinuxDistro.ALMALINUX;
+        }
+        if ("ol".equals(id)) {
+            return LinuxDistro.ORACLE_LINUX;
+        }
         return LinuxDistro.OTHER;
+    }
+
+    private static CpuMicroarchitectureLevel cpuLevel(String value) {
+        return switch (normalized(value)) {
+            case "x86-64-v1" -> CpuMicroarchitectureLevel.X86_64_V1;
+            case "x86-64-v2" -> CpuMicroarchitectureLevel.X86_64_V2;
+            case "x86-64-v3" -> CpuMicroarchitectureLevel.X86_64_V3;
+            case "x86-64-v4" -> CpuMicroarchitectureLevel.X86_64_V4;
+            default -> CpuMicroarchitectureLevel.UNKNOWN;
+        };
+    }
+
+    private static LinuxSecurityPosture security(Map<String, String> values) {
+        LinuxSecurityModule module = switch (normalized(values.getOrDefault("SECURITY_MODULE", "unknown"))) {
+            case "apparmor" -> LinuxSecurityModule.APPARMOR;
+            case "selinux" -> LinuxSecurityModule.SELINUX;
+            case "none" -> LinuxSecurityModule.NONE;
+            default -> LinuxSecurityModule.UNKNOWN;
+        };
+        LinuxSecurityState state = switch (normalized(values.getOrDefault("SECURITY_STATE", "unknown"))) {
+            case "enforcing" -> LinuxSecurityState.ENFORCING;
+            case "permissive" -> LinuxSecurityState.PERMISSIVE;
+            case "enabled" -> LinuxSecurityState.ENABLED;
+            case "disabled" -> LinuxSecurityState.DISABLED;
+            default -> LinuxSecurityState.UNKNOWN;
+        };
+        LinuxFirewallKind firewall = switch (normalized(values.getOrDefault("FIREWALL", "unknown"))) {
+            case "firewalld" -> LinuxFirewallKind.FIREWALLD;
+            case "ufw" -> LinuxFirewallKind.UFW;
+            case "nftables" -> LinuxFirewallKind.NFTABLES;
+            case "none" -> LinuxFirewallKind.NONE;
+            default -> LinuxFirewallKind.UNKNOWN;
+        };
+        LinuxFirewallState firewallState = switch (normalized(values.getOrDefault("FIREWALL_STATE", "unknown"))) {
+            case "active" -> LinuxFirewallState.ACTIVE;
+            case "inactive" -> LinuxFirewallState.INACTIVE;
+            default -> LinuxFirewallState.UNKNOWN;
+        };
+        return new LinuxSecurityPosture(module, state, firewall, firewallState);
     }
 
     private static String normalized(String value) {

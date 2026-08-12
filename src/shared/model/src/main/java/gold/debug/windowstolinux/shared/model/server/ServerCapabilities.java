@@ -86,10 +86,7 @@ public record ServerCapabilities(
             case HealthCheck.Http ignored -> curlAvailable && socketInspectionAvailable;
             case HealthCheck.Tcp ignored -> socketInspectionAvailable;
         };
-        boolean supportedOperatingSystem = operatingSystem.contains("Ubuntu 22.04")
-                || operatingSystem.contains("Ubuntu 24.04")
-                || operatingSystem.contains("CentOS Stream 9")
-                || operatingSystem.contains("CentOS Stream 10");
+        boolean supportedOperatingSystem = supportedOperatingSystem();
         return supportedOperatingSystem
                 && architecture.equals("x86_64")
                 && systemdAvailable
@@ -100,6 +97,20 @@ public record ServerCapabilities(
                 && managedHelperProtocolVersion == ManagedHelperProtocolVersion.CURRENT
                 && healthToolsAvailable
                 && (mavenAvailable || sourceUsesMavenWrapper);
+    }
+
+    private boolean supportedOperatingSystem() {
+        return operatingSystem.contains("Ubuntu 22.04")
+                || operatingSystem.contains("Ubuntu 24.04")
+                || operatingSystem.contains("Debian GNU/Linux 13")
+                || operatingSystem.contains("CentOS Stream 9")
+                || operatingSystem.contains("CentOS Stream 10")
+                || operatingSystem.contains("Rocky Linux 9.8")
+                || operatingSystem.contains("Rocky Linux 10.2")
+                || operatingSystem.contains("AlmaLinux 9.8")
+                || operatingSystem.contains("AlmaLinux 10.2")
+                || operatingSystem.contains("Oracle Linux Server 9.7")
+                || operatingSystem.contains("Oracle Linux Server 10.2");
     }
 
     private static String nonBlank(String value, String name) {

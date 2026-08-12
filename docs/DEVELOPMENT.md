@@ -4,12 +4,12 @@
 
 - 项目名称：WindowsToLinux
 - 文档角色：产品边界、五期路线、跨期规则与完整开发流程的唯一总入口
-- 文档版本：`2.7.0-phase3-multi-model-core`
-- 文档状态：**三期支持等级、语言适配、混合项目/多组件核心及多模型角色链路已完成本地实现；多组件桌面产品入口、真实 Linux 验收与新增发行版仍在实施，未验收组合保持 `RUNTIME-PENDING`**
+- 文档版本：`2.8.0-phase3-distribution-matrix`
+- 文档状态：**三期支持等级、语言适配、混合项目/多组件核心、多模型角色链路及新增发行版静态矩阵已完成本地实现；多组件桌面产品入口与真实 Linux 验收仍在实施，未验收组合保持 `RUNTIME-PENDING`**
 - 更新日期：2026-08-13
 - 项目结构：[File.md](File.md)
 
-> 文档中的“支持”必须具有实现和验收证据。2026-08-10/12 已由产品入口在新装 Ubuntu 24.04 x86-64 上验证迁移前的一期 Maven/Spring Boot 以及二期 Gradle Spring Boot、普通 JAR、Node.js、Python、静态站点和 Dockerfile 容器链路，这些记录作为历史证据保留。本次将 Maven 与 Gradle 收敛为一个 `SPRING_BOOT` Reviewed 链路，并将固定 helper 升级为 v3；本轮尚未完成 v3 真实 Ubuntu 验收，因此不得把旧协议证据外推到新链路。新 Spring Boot 与六种高级语言试验链路、Podman、Ubuntu 22.04 与 CentOS Stream 9/10 均标记 `RUNTIME-PENDING`；备份、迁移与 Web 业务尚未实现。
+> 文档中的“支持”必须具有实现和验收证据。2026-08-10/12 已由产品入口在新装 Ubuntu 24.04 x86-64 上验证迁移前的一期 Maven/Spring Boot 以及二期 Gradle Spring Boot、普通 JAR、Node.js、Python、静态站点和 Dockerfile 容器链路，这些记录作为历史证据保留。本次将 Maven 与 Gradle 收敛为一个 `SPRING_BOOT` Reviewed 链路，并将固定 helper 升级为 v3；本轮尚未完成 v3 真实 Ubuntu 验收，因此不得把旧协议证据外推到新链路。新 Spring Boot、六种高级语言试验链路、Podman、Ubuntu 22.04、CentOS Stream 9/10 以及 Debian/Rocky/Alma/Oracle 新增静态矩阵均标记 `RUNTIME-PENDING`；备份、迁移与 Web 业务尚未实现。
 
 ## 1. 产品定位
 
@@ -44,7 +44,7 @@ WindowsToLinux 是面向个人和小型自托管场景的部署管理工具。�
 2. 源码快照、可重复归档和安全校验归 `shared/source`；桌面本地入口、Web 上传工作区和 Git 仓库来源分别归 `app/windows`、`web/file` 和 `shared/git`。源码归档不与 `shared/backup` 的应用数据备份语义混用。
 3. `shared/linux` 只定义公共契约，`shared/linux-sshd` 承接 Apache SSHD 具体实现；`deploy`、`app/service` 和 `web/service` 只依赖 `shared/linux`，只有 `app/main`、`web/main` 负责选择并装配 `shared/linux-sshd`。
 
-`shared/source` 已承接源码快照、归档与安全校验，`shared/linux-sshd` 已承接 Apache SSHD、十二类项目的有界构建、发布/回滚协议、容器运行与受支持发行版固定环境准备；Spring Boot 与六种高级语言试验适配器共用唯一 Reviewed/helper v3 路径，且高级语言命令由独立固定片段渲染。`shared/config` 定义类型化普通配置快照和不透明秘密引用；桌面 SQLite v6 保存配置实例、秘密修订元数据、发布身份摘要、命名 AI Provider 元数据及三个固定角色的 Provider 外键，并从 v4 的旧发布列名无损迁移，原始秘密值仍只经 `app/secret` 短时处理。
+`shared/source` 已承接源码快照、归档与安全校验，`shared/linux-sshd` 已承接 Apache SSHD、十二类项目的有界构建、发布/回滚协议、容器运行及 Ubuntu、Debian、CentOS Stream、Rocky Linux、AlmaLinux、Oracle Linux 的独立固定环境准备；Spring Boot 与六种高级语言试验适配器共用唯一 Reviewed/helper v3 路径，且高级语言命令由独立固定片段渲染。发行版探测保留包架构、累计 CPU、AppArmor/SELinux、防火墙和容器事实，自动准备不关闭既有安全机制。`shared/config` 定义类型化普通配置快照和不透明秘密引用；桌面 SQLite v6 保存配置实例、秘密修订元数据、发布身份摘要、命名 AI Provider 元数据及三个固定角色的 Provider 外键，并从 v4 的旧发布列名无损迁移，原始秘密值仍只经 `app/secret` 短时处理。
 
 开发 WindowsToLinux 本身使用开发机安装的系统 Maven 及其系统本地仓库，不由项目覆盖仓库位置，也不把 Maven Wrapper 作为本项目构建入口；同时使用 JDK 21、Node 和相应测试工具。产品处理的用户项目不得在 Windows 桌面主机或 Web 后端主机安装依赖、执行项目脚本或构建；用户项目构建只发生在目标 Linux，届时可按受控适配规则使用用户项目自带的 Wrapper。
 
@@ -195,16 +195,20 @@ Playwright 浏览器固定保存在 `src/web/frontend/.playwright-browsers`，�
 - Docker 重启策略：<https://docs.docker.com/engine/containers/start-containers-automatically/>
 - Podman Quadlet：<https://docs.podman.io/en/latest/markdown/podman-quadlet-basic-usage.7.html>
 - Ubuntu 生命周期：<https://ubuntu.com/about/release-cycle>
-- Debian 发布版本：<https://www.debian.org/releases/>
+- Debian 13 发布与生命周期：<https://www.debian.org/releases/trixie/>
 - CentOS Stream：<https://www.centos.org/centos10/>
 - x86-64 psABI 微架构级别：<https://gitlab.com/x86-psABIs/x86-64-ABI/-/blob/master/x86-64-ABI/low-level-sys-info.tex>
-- AlmaLinux 10：<https://wiki.almalinux.org/release-notes/10.0.html>
-- Oracle Linux 10：<https://docs.oracle.com/en/operating-systems/oracle-linux/10/>
+- Rocky Linux 版本指南：<https://wiki.rockylinux.org/rocky/version/>
+- AlmaLinux 发布说明：<https://wiki.almalinux.org/release-notes/>
+- AlmaLinux 10.2 x86-64-v2：<https://wiki.almalinux.org/release-notes/10.2>
+- Oracle Linux 10 更新模型：<https://docs.oracle.com/en/operating-systems/oracle-linux/10/>
+- Oracle Linux 10 系统要求：<https://docs.oracle.com/en/operating-systems/oracle-linux/10/install/install-SystemRequirements.html>
 
 ## 8. 文档版本记录
 
 | 版本 | 日期 | 阶段 | 状态 | 说明 |
 | --- | --- | --- | --- | --- |
+| 2.8.0-phase3-distribution-matrix | 2026-08-13 | 三期 | 独立静态矩阵与聚焦门禁通过；各发行版真实 Linux 待验收 | 冻结 Debian 13、Rocky 9.8/10.2、AlmaLinux 9.8/10.2、Oracle Linux 9/10；加入包架构、累计 CPU、AppArmor/SELinux、防火墙和容器证据，拆分兼容策略与准备适配器，EL 非 enforcing 和 Alma 10 v2 第三方依赖边界均安全停止。 |
 | 2.7.0-phase3-multi-model-core | 2026-08-13 | 三期 | AI/数据库/服务/UI 聚焦门禁通过；真实 Provider 运行不作为部署验收前提 | 三个固定角色可独立绑定命名 Provider/模型，最小脱敏上下文进入严格结构化输出校验并保留凭据无关证据；确定性停止优先，冲突需用户决定，失败不跨 Provider 回退；SQLite 升至 v6。 |
 | 2.6.0-phase3-multi-component-core | 2026-08-13 | 三期 | JDK 21 全量离线门禁 28/28 通过；产品入口与真实 Linux 待验收 | 加入混合组件结构化分析、组件级停止原因、确定性依赖顺序、整应用短停机事务/健康/恢复和部分生命周期汇总；修正 helper v3 能力判断，未外推为实机支持。 |
 | 2.5.0-phase3-experimental-adapters | 2026-08-13 | 三期 | JDK 21 全量离线门禁 28/28 通过；真实 Linux 待验收 | Go、Rust、.NET、Kotlin、PHP、Ruby 接入锁文件静态分析、类型化运行时、固定构建渲染、helper v3、实时工具链探测与逐次试验风险确认；结构门、双语目录和 helper 字节身份已通过，未声明正式支持。 |

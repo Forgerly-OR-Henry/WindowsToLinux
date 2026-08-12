@@ -2,10 +2,10 @@
 
 ## 文档信息
 
-- 阶段基线版本：`2.4.0-phase3-multi-model-core`
+- 阶段基线版本：`2.5.0-phase3-distribution-matrix`
 - 文档结构版本：`2.0.0-roadmap-rebaseline`
-- 文档状态：**实施中；支持等级、识别预览、六种试验适配器、混合项目/多组件核心及多模型角色链路已通过本地门禁；多组件桌面入口、真实 Linux 与新增发行版待实施**
-- 当前实现：Go、Rust、.NET、Kotlin、PHP、Ruby 已接入固定试验链路；混合项目与多组件核心提供确定性事务/生命周期；三个 AI 角色可分别绑定命名 Provider 和模型，使用最小脱敏上下文、严格输出模式、调用证据和安全冲突裁决。新增部署链路仍为 `RUNTIME-PENDING`，不得声称产品入口或正式支持已验收
+- 文档状态：**实施中；支持等级、试验适配器、混合项目/多组件核心、多模型角色链路及新增发行版静态矩阵已通过本地门禁；多组件桌面入口与真实 Linux 验收待实施**
+- 当前实现：Go、Rust、.NET、Kotlin、PHP、Ruby 已接入固定试验链路；混合项目与多组件核心提供确定性事务/生命周期；三个 AI 角色使用独立 Provider/模型和安全冲突裁决；Debian、Rocky Linux、AlmaLinux、Oracle Linux 已具有独立识别、兼容策略与环境准备脚本。新增部署链路仍为 `RUNTIME-PENDING`，不得声称产品入口或正式支持已验收
 - 更新日期：2026-08-13
 - 上级文档：[开发总纲](../DEVELOPMENT.md)
 
@@ -127,7 +127,16 @@
 
 ## 8. Linux 扩展
 
-三期加入 Debian、Rocky Linux、AlmaLinux 和 Oracle Linux 的当前受维护版本适配，仍以 x86-64 为正式范围。具体版本在适配器交付时按官方生命周期冻结并记录验证日期。
+三期加入 Debian、Rocky Linux、AlmaLinux 和 Oracle Linux 的当前受维护版本适配，仍以 x86-64 为范围。静态矩阵于 2026-08-13 依据官方资料冻结如下；这里的“可进入运行验收”不等于正式支持。
+
+| 发行版 | 静态适配版本 | 包与 CPU 前置条件 | 安全与容器证据 | 当前验证状态 |
+| --- | --- | --- | --- | --- |
+| Debian | stable 13；点版本事实参考 13.6，`VERSION_ID=13` | APT、`amd64`、x86-64-v1 | 采集 AppArmor/防火墙；固定 Docker 准备 | 静态通过，实机 `RUNTIME-PENDING` |
+| Rocky Linux | 当前受维护小版本 9.8、10.2 | DNF、`x86_64`；9 为 v1，10 为 v3 | 自动准备要求 SELinux enforcing，采集 firewalld 与 Podman | 静态通过，实机 `RUNTIME-PENDING` |
+| AlmaLinux | 当前受维护小版本 9.8、10.2 | DNF；9 默认 v1；10 默认 `x86_64` 为 v3 | `x86_64_v2` 可识别但因第三方依赖边界仅返回 CPU 审阅，不自动准备；其余 EL 安全边界同上 | 静态通过，实机 `RUNTIME-PENDING` |
+| Oracle Linux | 滚动主版本的当前更新快照 9.7、10.2 | DNF、`x86_64`；9 为 v1，10 为 v3；旧更新快照必须先重新评审 | 自动准备要求 SELinux enforcing，采集 firewalld 与 Podman | 静态通过，实机 `RUNTIME-PENDING` |
+
+版本依据：[Debian 13 发布与生命周期](https://www.debian.org/releases/trixie/)、[Rocky Linux 版本指南](https://wiki.rockylinux.org/rocky/version/)、[AlmaLinux 发布说明](https://wiki.almalinux.org/release-notes/)、[AlmaLinux 10.2 x86-64-v2 说明](https://wiki.almalinux.org/release-notes/10.2)、[Oracle Linux 10 更新模型](https://docs.oracle.com/en/operating-systems/oracle-linux/10/) 与 [Oracle Linux 10 系统要求](https://docs.oracle.com/en/operating-systems/oracle-linux/10/install/install-SystemRequirements.html)。
 
 - 不把所有 EL 系统一律当成 CentOS；软件源、模块流、SELinux、CPU 基线和容器能力按发行版/主版本采集。
 - EL10 系列可能存在 x86-64-v2/v3 差异，必须依据具体发行版官方要求和实际 CPU 检测决定。
@@ -171,12 +180,14 @@
 
 - [x] 多模型冲突不会未经确认转成执行，失败不静默跨服务；已由严格解析、单 Provider 调用和裁决器自动化证明。
 - [x] 三个角色上下文不含源码路径/内容或平台凭据，错误诊断在发送前脱敏并限长；已由负向测试证明。
-- [ ] Debian/Rocky/Alma/Oracle 按具体版本、CPU 和安全机制独立验证，不套用 CentOS 结论。
+- [x] Debian/Rocky/Alma/Oracle 已按具体版本、软件包架构、累计 CPU 级别、安全机制、防火墙和容器事实完成独立静态策略/脚本验证，不套用 CentOS 结论。
+- [ ] Debian/Rocky/Alma/Oracle 仍需分别完成产品入口真实 Linux 构建、发布、回滚和生命周期验收，验收前保持 `RUNTIME-PENDING`。
 
 ## 12. 版本记录
 
 | 版本 | 日期 | 说明 |
 | --- | --- | --- |
+| 2.5.0-phase3-distribution-matrix | 2026-08-13 | 新增 Debian 13、Rocky 9.8/10.2、AlmaLinux 9.8/10.2 与 Oracle Linux 9/10 的独立分类、版本/包架构/累计 CPU/安全/防火墙/容器事实，按发行版拆分兼容策略和准备适配器；EL 自动准备要求 SELinux enforcing，Alma 10 x86-64-v2 保持单独 CPU 审阅，所有准备均验证既有安全状态未被关闭。静态聚焦门禁通过，发行版实机仍为 `RUNTIME-PENDING`。 |
 | 2.4.0-phase3-multi-model-core | 2026-08-13 | 为项目分析、部署风险复核和错误说明建立独立命名 Provider/模型绑定、最小脱敏上下文、精确 JSON 模式、凭据无关调用证据和确定性优先的冲突裁决；SQLite 升至 v6，桌面可保存 Provider、分配角色并显示项目分析调用证据。提供者失败或输出无效时不重试其他服务，模型不能授予执行权限；共享 AI、数据库、服务和 UI 聚焦门禁通过。 |
 | 2.3.0-phase3-multi-component-core | 2026-08-13 | 新增稳定组件记录、组件级冲突/越权/共享数据/依赖环停止原因、确定性依赖波次和独立候选；整应用事务先完成所有构建与快照，再短停机切换并执行整体健康，中间失败恢复所有受影响旧组件，恢复不确定性转人工处理。生命周期使用实时归属观测、依赖影响拦截和部分运行/自启汇总；修复 helper v3 能力层历史判断。JDK 21 全量离线门禁 28/28 通过，桌面入口和实机仍待验收。 |
 | 2.2.0-phase3-experimental-adapters | 2026-08-13 | 六种优先语言接入有界锁文件分析、精确版本/产物/入口、类型化计划、固定构建脚本、helper v3 systemd 运行参数、主机工具链探测与专用测试环境逐次确认；JDK 21 全量离线门禁 28/28 通过，真实 Linux 验收前仍保持试验级和 `RUNTIME-PENDING`。 |

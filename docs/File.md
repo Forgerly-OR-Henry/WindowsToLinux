@@ -2,14 +2,14 @@
 
 ## 文档信息
 
-- 文档版本：`3.0.0-phase3-multi-model-core`
-- 文档状态：**正式模块与职责边界保持不变；混合项目、多组件事务/生命周期、多模型角色链路及六种高级语言试验适配已进入既有职责包，真实目标机状态为 `RUNTIME-PENDING`**
+- 文档版本：`3.1.0-phase3-distribution-matrix`
+- 文档状态：**正式模块与职责边界保持不变；混合项目、多组件事务/生命周期、多模型角色链路、六种高级语言试验适配及独立发行版静态矩阵已进入既有职责包，真实目标机状态为 `RUNTIME-PENDING`**
 - 已确认范围：`shared` 共用模块、`app` Windows 桌面应用模块、`web` Web 应用模块
 - 已确认能力边界：受管应用生命周期复用既有模块，不新增独立 Maven 模块
 - 更新日期：2026-08-13
 - 开发总纲：[DEVELOPMENT.md](DEVELOPMENT.md)
 
-> 本文是正式目标目录、模块职责、依赖方向和内部包结构的来源。当前 reactor 已包含根工程、3 个聚合模块和 24 个叶子模块，共 28 个 POM。`shared/source`、`shared/config`、`shared/git`、`shared/ai`、`shared/linux-sshd`、`analyze`、`deploy`、`app/db` 与 `app/service` 已承载对应代码；其中 `analyze/component` 和 `deploy` 已本地实现混合组件图、整应用事务与依赖安全生命周期，`shared/ai` 已实现三个固定协作角色及严格证据链，`shared/linux-sshd` 已实现六类既有项目和六种高级语言试验项目的有界协议。`shared/backup` 和 Web Java 叶子模块仍只保留 POM。2026-08-10/12 的 Ubuntu 24.04 x86-64 产品入口验收属于迁移前协议的历史证据，继续保留但不得外推到 helper v3；所有 v3 链路均标记 `RUNTIME-PENDING`。
+> 本文是正式目标目录、模块职责、依赖方向和内部包结构的来源。当前 reactor 已包含根工程、3 个聚合模块和 24 个叶子模块，共 28 个 POM。`shared/source`、`shared/config`、`shared/git`、`shared/ai`、`shared/linux-sshd`、`analyze`、`deploy`、`app/db` 与 `app/service` 已承载对应代码；其中 `analyze/component` 和 `deploy` 已本地实现混合组件图、整应用事务与依赖安全生命周期，`shared/ai` 已实现三个固定协作角色及严格证据链，`shared/linux-sshd` 已实现十二类项目的有界协议以及六种发行版的独立探测与准备适配。`shared/backup` 和 Web Java 叶子模块仍只保留 POM。2026-08-10/12 的 Ubuntu 24.04 x86-64 产品入口验收属于迁移前协议的历史证据，继续保留但不得外推到 helper v3；所有 v3 链路均标记 `RUNTIME-PENDING`。
 
 ## 1. 完整目标结构
 
@@ -132,9 +132,9 @@ WindowsToLinux/
    │  │  └─ transfer/         受控传输请求与结果契约
    │  ├─ linux-sshd/          Apache SSHD Linux 远程能力实现
    │  │  ├─ build/            共用安全外壳及 Gradle、Java JAR、Node.js、Python、静态站点、容器渲染器
-   │  │  ├─ capability/       通过受控远程探测采集 Linux 能力
+   │  │  ├─ capability/       通过只读远程探测采集发行版、包架构、CPU、安全、防火墙、容器和运行能力
    │  │  ├─ connection/       Apache SSHD 客户端、会话、认证和主机指纹实现
-   │  │  ├─ distro/           apt、dnf、软件源和安全机制实现
+   │  │  ├─ distro/           Ubuntu/Debian/CentOS/Rocky/Alma/Oracle 独立身份规则及共享 APT/DNF 安全机械流程
    │  │  ├─ protocol/         高权限 helper 分片拼装、安装和类型化调用实现
    │  │  ├─ runtime/          systemd 健康、归属、生命周期及容器远程实现
    │  │  └─ transfer/         Apache SSHD SFTP 与受控传输实现
@@ -259,6 +259,7 @@ test/
 - systemd 远程职责由 `SystemdHealthChecker`、`SystemdOwnershipObserver` 和 `SystemdLifecycleExecutor` 分别承担。
 - `ManagedHelperBundle` 按固定顺序拼装十个职责资源片段；安装路径和 sudoers 白名单仅允许 `/usr/local/lib/windowstolinux/managed-helper`，协议版本固定为 3，拼装字节的 SHA-256 固定为 `5985f74caa8394d342147ba4a8d53a24038d32f6c61f9f4a509f1d54009174e0`。高级语言 systemd 命令由独立的 `35-advanced-runtime.sh` 片段封闭渲染；旧 helper 必须由用户通过产品“环境准备”显式更新，部署链路不得自动替换。
 - helper 当前协议版本由 `ManagedHelperProtocolVersion` 在模型层唯一声明，能力汇总、环境准备预检和 SSH 实现不得各自保留历史版本数字。
+- `LinuxCapabilities` 以 `CpuMicroarchitectureLevel`、软件包架构及 `LinuxSecurityPosture` 保留只读主机事实；`deploy.compatibility` 为 Ubuntu、Debian、CentOS Stream、Rocky Linux、AlmaLinux、Oracle Linux 使用独立策略，`linux-sshd.distro` 的同名适配器只共享注入安全的 APT/DNF 安装、helper 安装和安全状态复核机械流程，不以 CentOS 别名代替其他 EL 系统。
 
 ## 2. 模块职责
 
@@ -281,7 +282,7 @@ test/
 
 `source` 只处理平台无关的源码快照与归档规则。`app/windows` 负责桌面本地文件入口，`web/file` 负责上传、配额和服务端工作区，`git` 负责仓库来源；三者复用 `source`，不得复制源码归档格式或安全校验规则。源码归档服务于源码传输和目标机构建，`backup` 管理的备份归档服务于应用数据恢复与迁移，两者不得混用格式、清单或生命周期语义。
 
-`linux` 已只保留连接、会话、传输、能力、构建、运行、发行版和高权限操作的公共契约。`DeploymentLinuxGateway` 扩展 `LinuxGateway` 并直接返回具有构建、快照、发布、回滚和保留能力的 `DeploymentRemoteSession`；`SshdLinuxGateway`、SSHD Session、受控命令执行、SFTP、Spring Boot 构建、Ubuntu 环境准备、systemd 运行和高权限 helper 均位于 `linux-sshd` 对应包。`DesktopApplicationService` 直接接收 `DeploymentLinuxGateway`，由 `app/main/bootstrap` 构造并注入具体 SSHD 实现。
+`linux` 已只保留连接、会话、传输、能力、构建、运行、发行版和高权限操作的公共契约。`DeploymentLinuxGateway` 扩展 `LinuxGateway` 并直接返回具有构建、快照、发布、回滚和保留能力的 `DeploymentRemoteSession`；`SshdLinuxGateway`、SSHD Session、受控命令执行、SFTP、Spring Boot 构建、六种发行版环境准备、systemd 运行和高权限 helper 均位于 `linux-sshd` 对应包。`DesktopApplicationService` 直接接收 `DeploymentLinuxGateway`，由 `app/main/bootstrap` 构造并注入具体 SSHD 实现。
 
 ### 2.2 `app` 桌面应用模块
 
@@ -617,13 +618,14 @@ linux-sshd 通过 linux 契约采集服务器已有环境
 18. 类型化部署分析必须把确定的源码元数据作为可审阅的 `DeploymentRuntimeSuggestion` 返回，而非由桌面表单写死语言版本、入口、产物目录、端口或卷。仅在值唯一、受支持、边界安全且具有 `AnalysisEvidence` 时才可回填；范围、冲突、任意脚本和文档文字只能作为未解决的用户输入，绝不转换为命令。
 19. 本地目录和 Git 来源都必须在 `app/service/source` 汇合为同一 `ReviewedSourcePreparation`，并以归档摘要绑定 `SourceRevision`。网络 Git 来源必须使用无凭据 URI、允许主机、固定 Commit 和受控工作目录；桌面 UI 不得调用 Git 进程、数据库或秘密存储实现。
 20. `analyze/core`、`app/ui/shell`、`app/db/repository`、远程构建、systemd 和 helper 资源必须维持第 1.1 节的职责拆分。禁止恢复已删除的集中类，禁止以兼容壳保留旧公开类型；新增职责应进入对应包或窄契约，并通过结构边界测试同步校验本文。
-21. 用户可见和持久化语义统一使用“发布身份摘要”（`release_sha256`）；“制品”仅描述构建过程中待验证的文件，不得再把已发布身份称为制品摘要。桌面 SQLite 当前 schema 为 v5，v4 的 `artifact_sha256` 通过列重命名无损迁移并继续表示既有发布身份。
+21. 用户可见和持久化语义统一使用“发布身份摘要”（`release_sha256`）；“制品”仅描述构建过程中待验证的文件，不得再把已发布身份称为制品摘要。桌面 SQLite 当前 schema 为 v6；v5 保留发布身份语义，v6 增加受约束的 AI 角色到命名 Provider 外键，v4 的 `artifact_sha256` 已通过列重命名无损迁移并继续表示既有发布身份。
 22. `DeploymentSupportProfile` 是语言、框架、支持等级与真实验收目标范围的唯一共享声明；`RECOGNITION_PREVIEW` 只能由 `analyze` 读取有界路径和固定元数据，必须使用 `NONE_PREVIEW`，不得创建源码归档、部署适配器、远端构建渲染器、helper 参数或生命周期入口。Shell 文件只可作为识别证据，不能转换成命令。
 
 ## 11. 文档版本记录
 
 | 版本 | 日期 | 说明 |
 | --- | --- | --- |
+| 3.1.0-phase3-distribution-matrix | 2026-08-13 | 在既有 `model/server`、`deploy/compatibility`、`linux-sshd/capability` 与 `linux-sshd/distro` 职责内加入软件包架构、累计 CPU、安全/防火墙事实，按发行版拆分支持策略与准备适配器；APT/DNF、受控 helper 与安全状态复核仅共享固定机械流程，不增加模块、CentOS 别名或任意 Shell 入口。 |
 | 3.0.0-phase3-multi-model-core | 2026-08-13 | 在既有 `shared/ai`、`app/db`、`app/service` 和 `app/ui/ai` 职责内加入三个固定 AI 角色、最小脱敏上下文、严格结构化输出、调用证据、冲突裁决、命名 Provider 外键绑定与桌面配置入口；SQLite 升至 v6，API Key 仍只归平台秘密存储，失败不跨 Provider 回退，模型不获得执行授权。 |
 | 2.9.0-phase3-multi-component-core | 2026-08-13 | 在既有 `model/analyze/deploy` 职责内加入稳定组件记录、目标机修改前冲突拦截、精确依赖图、独立候选、多组件短停机事务/整体健康/逐组件恢复，以及依赖安全的应用生命周期和部分运行/自启汇总；同时清除能力层残留的 helper v2 判断并由单一 v3 常量约束。JDK 21 全量离线门禁 28/28 通过，桌面产品入口和真实 Linux 验收仍待完成。 |
 | 2.8.0-phase3-experimental-adapters | 2026-08-13 | 在既有职责包中接入 Go、Rust、.NET、Kotlin、PHP、Ruby 的锁文件分析、试验支持声明、适配器、固定构建渲染、helper v3 与 Ubuntu 24.04 工具链准备；逐次风险确认和实时版本探测保持安全边界，JDK 21 全量离线门禁 28/28 通过，真实目标机验收仍待完成。 |
