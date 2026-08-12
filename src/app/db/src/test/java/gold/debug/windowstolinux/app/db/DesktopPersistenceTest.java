@@ -195,6 +195,26 @@ class DesktopPersistenceTest {
     }
 
     @Test
+    void rollsBackAllSuccessfulReleaseStateWhenASecretBindingCannotBeRecorded() throws Exception {
+        ServerIdentity server = new ServerIdentity("server-one", "198.51.100.24", 22, "SHA256:exampleFingerprint");
+        ManagedApplication application = ManagedApplication.forManaged("atomic-demo", server, "a".repeat(64));
+        ManagedApplicationRuntimeConfiguration runtime = new ManagedApplicationRuntimeConfiguration(
+                new HealthCheck.Tcp(19080, 15, 2), Optional.empty());
+        CurrentRelease release = new CurrentRelease(application.id(), "b".repeat(64), Instant.now());
+        SecretReference missing = new SecretReference("unregistered-secret", 1);
+
+        try (DesktopPersistence database = DesktopPersistence.open(temporaryDirectory.resolve("atomic-failure"))) {
+            assertThrows(java.sql.SQLException.class, () -> database.managedApplications()
+                    .recordSuccessfulDeployment(application, runtime, release, java.util.List.of(missing)));
+
+            assertTrue(database.managedApplications().find(application.id()).isEmpty());
+            assertTrue(database.managedApplications().findRuntime(application.id()).isEmpty());
+            assertTrue(database.managedApplications().findRelease(application.id()).isEmpty());
+            assertTrue(!database.applicationSecrets().isReferenced(missing));
+        }
+    }
+
+    @Test
     void keepsNamedAiProviderProfilesIndependentFromTheLegacyDefaultProfile() throws Exception {
         try (DesktopPersistence database = DesktopPersistence.open(temporaryDirectory)) {
             database.aiProfiles().saveDefault(new StoredAiProfile("https://default.example.test/v1", "default-model",

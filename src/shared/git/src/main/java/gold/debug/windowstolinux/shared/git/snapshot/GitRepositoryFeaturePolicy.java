@@ -6,11 +6,14 @@ import java.nio.file.Files;
 import java.nio.file.LinkOption;
 import java.nio.file.Path;
 
-/** Rejects submodule and LFS repositories until an explicit bounded materialization policy exists. / 在存在显式有界物化策略前拒绝 Submodule 与 LFS 仓库。 */
+/** Rejects submodule, LFS, and symbolic-link entries until explicit bounded materialization policies exist. / 在存在显式有界物化策略前拒绝 Submodule、LFS 与符号链接条目。 */
 final class GitRepositoryFeaturePolicy {
     private static final int MAX_GIT_ATTRIBUTES_BYTES = 256 * 1024;
 
-    void verify(Path checkout) throws IOException {
+    void verify(Path checkout, String indexEntries) throws IOException {
+        if (java.util.regex.Pattern.compile("(?m)^120000 ").matcher(indexEntries).find()) {
+            throw new IOException("Git symbolic-link entries are not accepted by the source-only snapshot policy");
+        }
         if (Files.exists(checkout.resolve(".gitmodules"), LinkOption.NOFOLLOW_LINKS)) {
             throw new IOException("Git submodules require an explicit controlled policy and are not accepted by this snapshot");
         }

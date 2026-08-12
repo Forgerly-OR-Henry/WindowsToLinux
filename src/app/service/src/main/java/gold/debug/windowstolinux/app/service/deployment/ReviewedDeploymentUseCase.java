@@ -11,6 +11,7 @@ import gold.debug.windowstolinux.app.service.server.ServerUseCases;
 import gold.debug.windowstolinux.app.service.source.ReviewedSourcePreparation;
 import gold.debug.windowstolinux.shared.config.revision.ConfigurationSnapshot;
 import gold.debug.windowstolinux.shared.config.secretref.SecretReference;
+import gold.debug.windowstolinux.shared.config.secretref.ResolvedSecretRevision;
 import gold.debug.windowstolinux.shared.deploy.plan.DeploymentApproval;
 import gold.debug.windowstolinux.shared.deploy.plan.ReviewedDeploymentRequest;
 import gold.debug.windowstolinux.shared.deploy.result.DeploymentResult;
@@ -104,10 +105,15 @@ public final class ReviewedDeploymentUseCase {
             throw new LocalizedOperationException(LocalizedMessage.of("validation.storageModeMismatch"),
                     "Credential storage mode does not match the saved server profile");
         }
-        try (SecretStore store = servers.secrets().open(mode, masterPassword)) {
+        List<ResolvedSecretRevision> resolvedSecrets = List.of();
+        try {
+            resolvedSecrets = resolveSecrets(request.secretReferences(), masterPassword);
+            try (SecretStore store = servers.secrets().open(mode, masterPassword)) {
             return deploy(request, profile.endpoint(), servers.loadPassword(profile, store),
-                    servers.hostKeyVerifier(profile, confirmation));
+                    servers.hostKeyVerifier(profile, confirmation), resolvedSecrets);
+            }
         } finally {
+            resolvedSecrets.forEach(ResolvedSecretRevision::close);
             if (masterPassword != null) {
                 Arrays.fill(masterPassword, '\0');
             }
@@ -121,12 +127,23 @@ public final class ReviewedDeploymentUseCase {
      */
     public DeploymentResult deploy(ReviewedDeploymentRequest request, SshEndpoint endpoint,
                                    SshCredential credential, HostKeyVerifier verifier) throws SQLException {
+        if (!request.secretReferences().isEmpty()) {
+            throw new LocalizedOperationException(LocalizedMessage.of("secret.applicationReferenceMissing"),
+                    "Reviewed deployments with secret references require resolved stored revisions");
+        }
+        return deploy(request, endpoint, credential, verifier, List.of());
+    }
+
+    private DeploymentResult deploy(ReviewedDeploymentRequest request, SshEndpoint endpoint,
+                                    SshCredential credential, HostKeyVerifier verifier,
+                                    List<ResolvedSecretRevision> resolvedSecrets) throws SQLException {
         request = Objects.requireNonNull(request, "request");
         ManagedApplication application = resolveApplication(request.facts().applicationId(), request.server());
         ReentrantLock lock = locks.forServer(application.server().id());
         lock.lock();
         try {
-            DeploymentResult result = service.deploy(request, application, gateway, endpoint, credential, verifier);
+            DeploymentResult result = service.deploy(request, application, gateway, endpoint, credential, verifier,
+                    resolvedSecrets);
             result.finalObservation().ifPresent(observation -> {
                 try {
                     applications.saveObservation(observation);
@@ -137,13 +154,39 @@ public final class ReviewedDeploymentUseCase {
             if (result.status() == DeploymentStatus.SUCCEEDED) {
                 applications.recordSuccessfulDeployment(application,
                         new ManagedApplicationRuntimeConfiguration(request.runtime().healthCheck(), request.userAccessUrl()),
-                        new CurrentRelease(application.id(), result.publishedArtifactSha256().orElseThrow(), Instant.now()));
-                applicationSecrets.bindRelease(application.id(), result.publishedArtifactSha256().orElseThrow(),
+                        new CurrentRelease(application.id(), result.publishedArtifactSha256().orElseThrow(), Instant.now()),
                         request.secretReferences());
             }
             return result;
         } finally {
             lock.unlock();
+        }
+    }
+
+    private List<ResolvedSecretRevision> resolveSecrets(List<SecretReference> references, char[] masterPassword)
+            throws SQLException, SecretStoreException {
+        List<ResolvedSecretRevision> resolved = new java.util.ArrayList<>();
+        try {
+            for (SecretReference reference : references) {
+                var revision = applicationSecrets.findRevision(reference)
+                        .orElseThrow(() -> new SecretStoreException(LocalizedMessage.of("secret.applicationReferenceMissing"),
+                                "Application secret revision metadata is missing"));
+                try (SecretStore store = servers.secrets().open(revision.credentialMode(), masterPassword)) {
+                    char[] value = store.read(revision.credentialKey())
+                            .orElseThrow(() -> new SecretStoreException(
+                                    LocalizedMessage.of("secret.applicationReferenceMissing"),
+                                    "Application secret revision is unavailable from its selected platform store"));
+                    try {
+                        resolved.add(new ResolvedSecretRevision(reference, value));
+                    } finally {
+                        Arrays.fill(value, '\0');
+                    }
+                }
+            }
+            return List.copyOf(resolved);
+        } catch (SQLException | SecretStoreException | RuntimeException exception) {
+            resolved.forEach(ResolvedSecretRevision::close);
+            throw exception;
         }
     }
 

@@ -20,7 +20,12 @@ public final class PythonBuildRenderer implements DeploymentBuildRenderer {
         String executable = SafeBuildScriptEnvelope.shellQuote("python" + python.pythonVersion());
         String command = """
                 command -v %s >/dev/null
-                %s -m venv ./.venv
+                %s -m venv --copies ./.venv
+                if [ -L ./.venv/lib64 ]; then
+                  test "$(readlink ./.venv/lib64)" = lib
+                  rm -- ./.venv/lib64
+                fi
+                test -z "$(find ./.venv -xdev -type l -print -quit)"
                 if [ -f ./requirements.lock ]; then
                   run ./.venv/bin/python -m pip install --disable-pip-version-check --require-hashes -r ./requirements.lock
                 elif [ -f ./poetry.lock ]; then

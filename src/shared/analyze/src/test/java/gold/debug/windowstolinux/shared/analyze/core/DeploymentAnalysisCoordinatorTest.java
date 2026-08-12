@@ -11,6 +11,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Map;
 import java.util.jar.Attributes;
+import java.util.jar.JarEntry;
 import java.util.jar.JarOutputStream;
 import java.util.jar.Manifest;
 
@@ -30,11 +31,60 @@ class DeploymentAnalysisCoordinatorTest {
         Files.writeString(project.resolve("gradlew"), "this script must not run");
         Files.createDirectories(project.resolve("gradle/wrapper"));
         Files.writeString(project.resolve("gradle/wrapper/gradle-wrapper.properties"), "distributionUrl=https://example.test/gradle.zip");
+        writeGradleWrapperJar(project.resolve("gradle/wrapper/gradle-wrapper.jar"));
 
         var assessment = analyzer.analyze(project, DeploymentProjectType.GRADLE_SPRING_BOOT);
 
         assertEquals(DeploymentAdmission.READY_FOR_PLANNING, assessment.admission());
         assertEquals(DeploymentBuildTool.GRADLE_WRAPPER, assessment.facts().orElseThrow().buildTool());
+    }
+
+    @Test
+    void requiresTheGradleWrapperJarWithoutExecutingTheWrapper() throws Exception {
+        Path project = Files.createDirectories(temporaryDirectory.resolve("incomplete-gradle-wrapper"));
+        Files.writeString(project.resolve("build.gradle"), "plugins { id 'org.springframework.boot' version '3.5.0' }");
+        Files.writeString(project.resolve("gradlew"), "this script must not run");
+        Files.createDirectories(project.resolve("gradle/wrapper"));
+        Files.writeString(project.resolve("gradle/wrapper/gradle-wrapper.properties"),
+                "distributionUrl=https://example.test/gradle.zip");
+
+        var assessment = analyzer.analyze(project, DeploymentProjectType.GRADLE_SPRING_BOOT);
+
+        assertEquals(DeploymentAdmission.REQUIRES_INPUT, assessment.admission());
+        assertTrue(assessment.facts().orElseThrow().missingInformation().stream()
+                .anyMatch(message -> message.key().equals("analysis.deployment.missing.gradleWrapper")));
+    }
+
+    @Test
+    void rejectsAnInvalidGradleWrapperJarWithoutLoadingIt() throws Exception {
+        Path project = Files.createDirectories(temporaryDirectory.resolve("invalid-gradle-wrapper"));
+        Files.writeString(project.resolve("build.gradle"), "plugins { id 'org.springframework.boot' version '3.5.0' }");
+        Files.writeString(project.resolve("gradlew"), "this script must not run");
+        Files.createDirectories(project.resolve("gradle/wrapper"));
+        Files.writeString(project.resolve("gradle/wrapper/gradle-wrapper.properties"),
+                "distributionUrl=https://example.test/gradle.zip");
+        Files.write(project.resolve("gradle/wrapper/gradle-wrapper.jar"), new byte[]{0});
+
+        var assessment = analyzer.analyze(project, DeploymentProjectType.GRADLE_SPRING_BOOT);
+
+        assertEquals(DeploymentAdmission.REQUIRES_INPUT, assessment.admission());
+        assertTrue(assessment.facts().orElseThrow().missingInformation().stream()
+                .anyMatch(message -> message.key().equals("analysis.deployment.missing.gradleWrapper")));
+    }
+
+    @Test
+    void scansGroovyGradleScriptsForAutomaticDatabaseMigrationTools() throws Exception {
+        Path project = Files.createDirectories(temporaryDirectory.resolve("gradle-migration"));
+        Files.writeString(project.resolve("build.gradle"), """
+                plugins { id 'org.springframework.boot' version '3.5.0' }
+                dependencies { implementation 'org.flywaydb:flyway-core:11.0.0' }
+                """);
+
+        var assessment = analyzer.analyze(project, DeploymentProjectType.GRADLE_SPRING_BOOT);
+
+        assertEquals(DeploymentAdmission.REJECTED, assessment.admission());
+        assertTrue(assessment.rejections().stream()
+                .anyMatch(reason -> reason.code().equals("DATABASE_MIGRATION_DETECTED")));
     }
 
     @Test
@@ -95,7 +145,7 @@ class DeploymentAnalysisCoordinatorTest {
         Path staticSite = Files.createDirectories(temporaryDirectory.resolve("static"));
         Files.writeString(staticSite.resolve("index.html"), "<!doctype html>");
         Path container = Files.createDirectories(temporaryDirectory.resolve("container-ready"));
-        Files.writeString(container.resolve("Dockerfile"), "FROM alpine:3.20");
+        Files.writeString(container.resolve("Dockerfile"), "FROM alpine@sha256:" + "a".repeat(64));
 
         assertEquals(DeploymentAdmission.READY_FOR_PLANNING,
                 analyzer.analyze(javaJar, DeploymentProjectType.JAVA_JAR).admission());
@@ -168,9 +218,18 @@ class DeploymentAnalysisCoordinatorTest {
         assertEquals("public-site", staticSuggestion.value(DeploymentRuntimeSuggestion.RuntimeInput.STATIC_OUTPUT_DIRECTORY).orElseThrow());
 
         Path container = Files.createDirectories(temporaryDirectory.resolve("container-inference"));
-        Files.writeString(container.resolve("Dockerfile"), "FROM alpine\nEXPOSE 8080 8443/tcp\nVOLUME /var/lib/demo");
+        Files.writeString(container.resolve("Dockerfile"), "FROM alpine@sha256:" + "a".repeat(64)
+                + "\nEXPOSE 8080 8443/tcp\nVOLUME /var/lib/demo");
         var containerSuggestion = analyzer.analyze(container, DeploymentProjectType.DOCKERFILE_CONTAINER).runtimeSuggestion().orElseThrow();
         assertEquals(Map.of(8080, 8080, 8443, 8443), containerSuggestion.suggestedContainerPorts());
         assertEquals("/var/lib/demo", containerSuggestion.suggestedManagedVolumes().getFirst().containerPath());
+    }
+
+    private static void writeGradleWrapperJar(Path path) throws Exception {
+        try (JarOutputStream output = new JarOutputStream(Files.newOutputStream(path))) {
+            output.putNextEntry(new JarEntry("org/gradle/wrapper/GradleWrapperMain.class"));
+            output.write(0);
+            output.closeEntry();
+        }
     }
 }

@@ -1,5 +1,6 @@
 package gold.debug.windowstolinux.shared.linux.sshd.protocol;
 
+import gold.debug.windowstolinux.shared.config.revision.DeploymentInputManifest;
 import gold.debug.windowstolinux.shared.linux.build.DeploymentBuildResult;
 import gold.debug.windowstolinux.shared.linux.connection.LinuxOperationException;
 import gold.debug.windowstolinux.shared.linux.protocol.ReleaseSnapshot;
@@ -52,7 +53,7 @@ public final class ContainerReleaseProtocolExecutor {
     /** Publishes exactly one reviewed container. / 发布恰好一个经审阅的容器。 */
     public RemoteStepResult publish(ManagedApplication application, RemoteWorkspace workspace, DeploymentBuildResult build,
                                     String releaseIdentity, DeploymentRuntimeSpecification.Container runtime,
-                                    ReleaseSnapshot snapshot) throws LinuxOperationException {
+                                    DeploymentInputManifest inputs, ReleaseSnapshot snapshot) throws LinuxOperationException {
         if (!build.succeeded()) {
             throw LinuxOperationException.localized("linux.error.unverifiedBuildPublish",
                     "An unverified container build cannot be published");
@@ -60,6 +61,7 @@ public final class ContainerReleaseProtocolExecutor {
         Objects.requireNonNull(snapshot, "snapshot");
         List<String> values = new ArrayList<>(List.of(application.id(), workspace.candidateId(), releaseIdentity,
                 application.ownershipManifestSha256()));
+        values.addAll(DeploymentInputArguments.from(inputs));
         values.addAll(ContainerRuntimeArguments.from(runtime));
         return step("publish-container", values, "Controlled helper started the reviewed managed container");
     }
@@ -67,7 +69,8 @@ public final class ContainerReleaseProtocolExecutor {
     /** Rolls back a managed container. / 回滚受管容器。 */
     public RemoteStepResult rollback(ManagedApplication application, ReleaseSnapshot snapshot,
                                      DeploymentBuildResult build, String releaseIdentity,
-                                     DeploymentRuntimeSpecification.Container runtime) throws LinuxOperationException {
+                                     DeploymentRuntimeSpecification.Container runtime, DeploymentInputManifest inputs)
+            throws LinuxOperationException {
         if (!build.succeeded()) {
             throw LinuxOperationException.localized("linux.error.unverifiedBuildRollback",
                     "An unverified container build cannot be rolled back");
@@ -76,25 +79,19 @@ public final class ContainerReleaseProtocolExecutor {
                 application.ownershipManifestSha256()));
         if (snapshot.hasPreviousRelease()) {
             values.add(snapshot.rollbackToken().orElseThrow());
-            values.addAll(ContainerRuntimeArguments.from(runtime));
             return step("rollback-container", values, "Controlled helper restored the previous managed container");
         }
-        values.addAll(ContainerRuntimeArguments.from(runtime));
         return step("rollback-container-first", values, "Controlled helper removed the failed first container release");
     }
 
     /** Executes a container lifecycle action. / 执行容器生命周期动作。 */
-    public RemoteStepResult lifecycle(ManagedApplication application, String action,
-                                      DeploymentRuntimeSpecification.Container runtime) throws LinuxOperationException {
+    public RemoteStepResult lifecycle(ManagedApplication application, String action) throws LinuxOperationException {
         List<String> values = new ArrayList<>(List.of(application.id(), action, application.ownershipManifestSha256()));
-        values.addAll(ContainerRuntimeArguments.from(runtime));
         return step("lifecycle-container", values, "Controlled helper executed the managed container lifecycle action");
     }
 
     private String command(String verb, ManagedApplication application, DeploymentRuntimeSpecification.Container runtime) {
-        List<String> values = new ArrayList<>(List.of(application.id(), application.ownershipManifestSha256()));
-        values.addAll(ContainerRuntimeArguments.from(runtime));
-        return helperCommand(verb, values);
+        return helperCommand(verb, List.of(application.id(), application.ownershipManifestSha256()));
     }
 
     private RemoteStepResult step(String verb, List<String> values, String successEvidence) throws LinuxOperationException {

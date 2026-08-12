@@ -37,7 +37,7 @@ public final class UbuntuEnvironmentPreparation {
      */
     public static final List<String> PACKAGES = List.of(
             "openjdk-21-jdk-headless", "maven", "curl", "sudo", "tar", "gzip", "iproute2", "coreutils",
-            "util-linux", "findutils", "gawk"
+            "util-linux", "findutils", "gawk", "nodejs", "npm", "python3", "python3-venv", "python3-pip", "docker.io"
     );
 
     private UbuntuEnvironmentPreparation() {
@@ -88,6 +88,11 @@ public final class UbuntuEnvironmentPreparation {
         String sudoers = renderSudoers(username);
         String packages = String.join(" ", PACKAGES);
         String helper = ManagedHelperBundle.renderScript();
+        String nodeCheck = "24.04".equals(version)
+                ? "node --version | grep -Eq '^v18\\.'" : "command -v node >/dev/null 2>&1";
+        String pythonCheck = "24.04".equals(version)
+                ? "command -v python3.12 >/dev/null 2>&1\npython3.12 -m venv --help >/dev/null 2>&1"
+                : "command -v python3.10 >/dev/null 2>&1\npython3.10 -m venv --help >/dev/null 2>&1";
         return """
                 set -euo pipefail
                 test -r /etc/os-release
@@ -126,6 +131,11 @@ public final class UbuntuEnvironmentPreparation {
                 command -v setsid >/dev/null 2>&1
                 command -v timeout >/dev/null 2>&1
                 command -v du >/dev/null 2>&1
+                %s
+                command -v npm >/dev/null 2>&1
+                %s
+                command -v docker >/dev/null 2>&1
+                docker info >/dev/null 2>&1
                 tmp=$(/usr/bin/mktemp /tmp/windowstolinux-managed-sudoers.XXXXXX)
                 helper_tmp=$(/usr/bin/mktemp /tmp/windowstolinux-managed-helper.XXXXXX)
                 trap '/usr/bin/rm -f -- "$tmp" "$helper_tmp"' EXIT
@@ -151,7 +161,8 @@ public final class UbuntuEnvironmentPreparation {
                 printf 'HELPER=%s\\n'
                 """.formatted(
                 quote(version), quote(username), APT_LOCK_TIMEOUT_SECONDS, APT_LOCK_TIMEOUT_SECONDS, packages,
-                APT_LOCK_TIMEOUT_SECONDS, APT_LOCK_TIMEOUT_SECONDS, packages, quote(sudoers), quote(helper),
+                APT_LOCK_TIMEOUT_SECONDS, APT_LOCK_TIMEOUT_SECONDS, packages, nodeCheck, pythonCheck,
+                quote(sudoers), quote(helper),
                 quote(ManagedHelperBundle.DIRECTORY), quote(ManagedHelperBundle.PATH),
                 quote(SUDOERS_PATH), quote(ManagedHelperBundle.DIRECTORY), quote(ManagedHelperBundle.PATH),
                 quote(SUDOERS_PATH), quote(ManagedHelperBundle.PATH), packages, SUDOERS_PATH,

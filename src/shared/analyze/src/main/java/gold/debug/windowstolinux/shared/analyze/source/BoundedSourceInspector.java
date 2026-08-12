@@ -26,7 +26,7 @@ public final class BoundedSourceInspector {
     private static final int MAX_SOURCE_ENTRIES = 100_000;
     private static final Set<String> TEXT_EXTENSIONS = Set.of(
             ".java", ".kt", ".groovy", ".xml", ".properties", ".yml", ".yaml", ".json", ".toml", ".py", ".js",
-            ".ts", ".tsx", ".jsx", ".mjs", ".cjs", ".mts", ".cts", ".ini", ".cfg"
+            ".ts", ".tsx", ".jsx", ".mjs", ".cjs", ".mts", ".cts", ".ini", ".cfg", ".gradle"
     );
 
     /**

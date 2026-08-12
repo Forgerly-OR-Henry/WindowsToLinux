@@ -6,6 +6,7 @@ import gold.debug.windowstolinux.shared.linux.protocol.ReleaseSnapshot;
 import gold.debug.windowstolinux.shared.linux.protocol.RemoteStepResult;
 import gold.debug.windowstolinux.shared.linux.sshd.connection.SshCommandExecutor;
 import gold.debug.windowstolinux.shared.linux.transfer.RemoteWorkspace;
+import gold.debug.windowstolinux.shared.config.revision.DeploymentInputManifest;
 import gold.debug.windowstolinux.shared.model.managed.ManagedApplication;
 import gold.debug.windowstolinux.shared.model.lifecycle.AutostartState;
 import gold.debug.windowstolinux.shared.model.lifecycle.LifecycleObservation;
@@ -35,7 +36,8 @@ public final class DeploymentReleaseProtocolExecutor {
     /** Captures the current release only after helper ownership verification. / 仅在辅助程序验证归属后捕获当前发布。 */
     public ReleaseSnapshot snapshot(ManagedApplication application, DeploymentRuntimeSpecification runtime)
             throws LinuxOperationException {
-        var result = commands.execProtocol(command("snapshot-deployment", application, runtime), Duration.ofSeconds(30), true);
+        var result = commands.execProtocol(helperCommand("snapshot-deployment",
+                List.of(application.id(), application.ownershipManifestSha256())), Duration.ofSeconds(30), true);
         if (!result.succeeded()) {
             throw LinuxOperationException.localized("linux.error.snapshotIdentityUnverified",
                     "Controlled helper could not verify the existing reviewed release: " + result.failureEvidence());
@@ -55,7 +57,8 @@ public final class DeploymentReleaseProtocolExecutor {
 
     /** Publishes the sealed candidate through the helper. / 通过辅助程序发布已封存候选版本。 */
     public RemoteStepResult publish(ManagedApplication application, RemoteWorkspace workspace, DeploymentBuildResult build,
-                                    String releaseIdentity, DeploymentRuntimeSpecification runtime, ReleaseSnapshot snapshot)
+                                    String releaseIdentity, DeploymentRuntimeSpecification runtime,
+                                    DeploymentInputManifest inputs, ReleaseSnapshot snapshot)
             throws LinuxOperationException {
         if (!build.succeeded()) {
             throw LinuxOperationException.localized("linux.error.unverifiedBuildPublish",
@@ -64,6 +67,7 @@ public final class DeploymentReleaseProtocolExecutor {
         Objects.requireNonNull(snapshot, "snapshot");
         List<String> values = new ArrayList<>(List.of(application.id(), workspace.candidateId(), releaseIdentity,
                 application.ownershipManifestSha256()));
+        values.addAll(DeploymentInputArguments.from(inputs));
         values.addAll(DeploymentRuntimeArguments.from(runtime));
         var result = commands.exec(helperCommand("publish-deployment", values), Duration.ofSeconds(120), true);
         return new RemoteStepResult(result.succeeded(), result.timedOut(), result.succeeded()
@@ -74,7 +78,8 @@ public final class DeploymentReleaseProtocolExecutor {
     /** Rolls back a reviewed candidate. / 回滚经审阅的候选版本。 */
     public RemoteStepResult rollback(ManagedApplication application, ReleaseSnapshot snapshot,
                                      DeploymentBuildResult build, String releaseIdentity,
-                                     DeploymentRuntimeSpecification runtime) throws LinuxOperationException {
+                                     DeploymentRuntimeSpecification runtime, DeploymentInputManifest inputs)
+            throws LinuxOperationException {
         if (!build.succeeded()) {
             throw LinuxOperationException.localized("linux.error.unverifiedBuildRollback",
                     "An unverified build result cannot be rolled back");
@@ -83,18 +88,15 @@ public final class DeploymentReleaseProtocolExecutor {
                 application.ownershipManifestSha256()));
         if (snapshot.hasPreviousRelease()) {
             values.add(snapshot.rollbackToken().orElseThrow());
-            values.addAll(DeploymentRuntimeArguments.from(runtime));
             return step("rollback-deployment", values, "Controlled helper restored the reviewed previous release");
         }
-        values.addAll(DeploymentRuntimeArguments.from(runtime));
         return step("rollback-deployment-first", values, "Controlled helper removed the failed first reviewed release");
     }
 
     /** Executes a non-container lifecycle action. / 执行非容器生命周期动作。 */
-    public RemoteStepResult lifecycle(ManagedApplication application, String action, DeploymentRuntimeSpecification runtime)
+    public RemoteStepResult lifecycle(ManagedApplication application, String action)
             throws LinuxOperationException {
         List<String> values = new ArrayList<>(List.of(application.id(), action, application.ownershipManifestSha256()));
-        values.addAll(DeploymentRuntimeArguments.from(runtime));
         return step("lifecycle-deployment", values, "Controlled helper executed the reviewed lifecycle action");
     }
 
@@ -122,12 +124,6 @@ public final class DeploymentReleaseProtocolExecutor {
         var result = commands.exec(helperCommand(verb, values), Duration.ofSeconds(90), true);
         return new RemoteStepResult(result.succeeded(), result.timedOut(),
                 result.succeeded() ? successEvidence : result.failureEvidence());
-    }
-
-    private String command(String verb, ManagedApplication application, DeploymentRuntimeSpecification runtime) {
-        List<String> values = new ArrayList<>(List.of(application.id(), application.ownershipManifestSha256()));
-        values.addAll(DeploymentRuntimeArguments.from(runtime));
-        return helperCommand(verb, values);
     }
 
     private static String helperCommand(String verb, List<String> values) {

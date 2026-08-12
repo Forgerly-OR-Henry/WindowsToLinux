@@ -55,7 +55,7 @@ public final class GradleSpringBootDeploymentInspector implements DeploymentType
         List<AnalysisEvidence> evidence = List.of(BoundedProjectMetadata.evidence(
                 "analysis.deployment.evidence.gradleBuild", build.script().getFileName().toString(),
                 "analysis.deployment.evidence.detected"));
-        DeploymentProjectFacts facts = new DeploymentProjectFacts(root, BoundedProjectMetadata.rootApplicationId(root),
+        DeploymentProjectFacts facts = new DeploymentProjectFacts(root, build.applicationId(),
                 projectType(), DeploymentBuildTool.GRADLE_WRAPPER, languageFacts, evidence, List.of(), missing);
         DeploymentRuntimeSuggestion suggestion = new DeploymentRuntimeSuggestion(projectType(), Map.of(), Optional.empty(),
                 Map.of(), List.of(), List.of(), List.of(BoundedProjectMetadata.required("analysis.deployment.runtime.health")));

@@ -38,18 +38,19 @@ class DeploymentBuildRendererTest {
                 .contains("test -f \"$artifact\""));
         String node = render(new NodeBuildRenderer(), DeploymentBuildTool.PNPM,
                 new DeploymentRuntimeSpecification.NodeService(22, TCP));
+        assertTrue(node.contains("uniq -d"));
         assertTrue(node.contains("pnpm install --frozen-lockfile --ignore-scripts"));
         assertTrue(node.contains("node --version | grep -Eq '^v22\\.'"));
         assertFalse(node.contains("run npm run build"));
         String python = render(new PythonBuildRenderer(), DeploymentBuildTool.PYTHON_VENV,
                 new DeploymentRuntimeSpecification.PythonService("3.12", "demo.main", TCP));
-        assertTrue(python.contains("'python3.12' -m venv ./.venv"));
+        assertTrue(python.contains("'python3.12' -m venv --copies ./.venv"));
         assertTrue(python.contains("pip install --disable-pip-version-check --require-hashes"));
         assertTrue(render(new StaticSiteBuildRenderer(), DeploymentBuildTool.STATIC_SITE_BUILD,
                 new DeploymentRuntimeSpecification.StaticSite("public", HTTP)).contains("test -d './public'"));
         assertTrue(render(new ContainerBuildRenderer(), DeploymentBuildTool.CONTAINER_BUILD,
                 new DeploymentRuntimeSpecification.Container(DeploymentRuntimeSpecification.ContainerEngine.PODMAN,
-                        Map.of(8080, 8080), List.of(), TCP)).contains("build --pull=false"));
+                        Map.of(8080, 8080), List.of(), TCP)).contains("build --pull=true"));
     }
 
     @Test

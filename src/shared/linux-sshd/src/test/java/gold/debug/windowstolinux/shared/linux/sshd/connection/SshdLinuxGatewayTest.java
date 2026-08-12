@@ -18,10 +18,12 @@ import gold.debug.windowstolinux.shared.model.server.ServerCapabilities;
 import gold.debug.windowstolinux.shared.model.health.HealthCheck;
 import org.apache.sshd.client.SshClient;
 import org.apache.sshd.common.keyprovider.KeyIdentityProvider;
+import org.apache.sshd.core.CoreModuleProperties;
 import org.junit.jupiter.api.Test;
 
 import java.util.Arrays;
 import java.util.List;
+import java.time.Duration;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -132,6 +134,8 @@ class SshdLinuxGatewayTest {
             assertEquals(List.of("password", "keyboard-interactive"),
                     client.getUserAuthFactories().stream().map(factory -> factory.getName()).toList());
             assertSame(KeyIdentityProvider.EMPTY_KEYS_PROVIDER, client.getKeyIdentityProvider());
+            assertEquals(Duration.ofSeconds(30), CoreModuleProperties.HEARTBEAT_INTERVAL.getRequired(client));
+            assertEquals(3, CoreModuleProperties.HEARTBEAT_NO_REPLY_MAX.getRequired(client));
         } finally {
             credential.clear();
             client.close(true);
@@ -142,7 +146,7 @@ class SshdLinuxGatewayTest {
     void sudoersGrantsOnlyTheConstrainedRootOwnedHelper() {
         assertEquals(List.of(
                         "openjdk-21-jdk-headless", "maven", "curl", "sudo", "tar", "gzip", "iproute2", "coreutils",
-                        "util-linux", "findutils", "gawk"
+                        "util-linux", "findutils", "gawk", "nodejs", "npm", "python3", "python3-venv", "python3-pip", "docker.io"
                 ), UbuntuEnvironmentPreparation.PACKAGES);
         assertEquals("""
                 # Managed by WindowsToLinux managed deployment; only the constrained helper is granted.
@@ -161,6 +165,7 @@ class SshdLinuxGatewayTest {
 
         assertTrue(helper.contains("candidate-create) create_candidate \"$@\""));
         assertTrue(helper.contains("rollback-previous) rollback_previous \"$@\""));
+        assertTrue(helper.contains("inspect-runtime) inspect_managed_runtime \"$@\""));
         assertTrue(helper.contains("case \"$action\" in\n    start|stop|restart|enable|disable)"));
         assertTrue(helper.contains("require_candidate \"$app\" \"$candidate_id\""));
         assertTrue(helper.contains("candidate=\"$(candidate_root \"$candidate_id\")\""));
@@ -175,6 +180,7 @@ class SshdLinuxGatewayTest {
         assertFalse(helper.contains("eval "));
         assertFalse(helper.contains("exec \"$@\""));
         assertFalse(helper.contains("/bin/bash -c \"$@\""));
+        assertFalse(helper.contains("\"$engine\" inspect"));
         assertFalse(helper.contains("Substring"));
         assertFalse(helper.contains("FullyQualifiedErrorId"));
         assertTrue(helper.stripTrailing().endsWith("esac"), "helper resource must end at the allowlisted verb switch");
@@ -203,6 +209,9 @@ class SshdLinuxGatewayTest {
         assertTrue(script.contains("/usr/bin/sudo -n /usr/bin/apt-get -o DPkg::Lock::Timeout=" + UbuntuEnvironmentPreparation.APT_LOCK_TIMEOUT_SECONDS + " install -y --no-install-recommends openjdk-21-jdk-headless maven curl sudo"));
         assertTrue(script.contains("command -v tar >/dev/null 2>&1"));
         assertTrue(script.contains("command -v gzip >/dev/null 2>&1"));
+        assertTrue(script.contains("node --version | grep -Eq '^v18\\.'"));
+        assertTrue(script.contains("python3.12 -m venv --help"));
+        assertTrue(script.contains("docker info >/dev/null 2>&1"));
         assertFalse(script.contains("command -v unzip"));
         assertTrue(script.contains("/usr/bin/install -o root -g root -m 440 \"$tmp\" '/etc/sudoers.d/windowstolinux-managed'"));
         assertTrue(script.contains("/usr/bin/install -o root -g root -m 755 \"$helper_tmp\" '/usr/local/lib/windowstolinux/managed-helper'"));

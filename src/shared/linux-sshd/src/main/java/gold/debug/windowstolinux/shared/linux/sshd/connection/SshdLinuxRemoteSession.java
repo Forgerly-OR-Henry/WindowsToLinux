@@ -17,10 +17,16 @@ import gold.debug.windowstolinux.shared.linux.sshd.distro.ManagedEnvironmentExec
 import gold.debug.windowstolinux.shared.linux.sshd.protocol.ManagedReleaseProtocolExecutor;
 import gold.debug.windowstolinux.shared.linux.sshd.protocol.DeploymentReleaseProtocolExecutor;
 import gold.debug.windowstolinux.shared.linux.sshd.protocol.ContainerReleaseProtocolExecutor;
+import gold.debug.windowstolinux.shared.linux.sshd.protocol.DeploymentInputProtocolExecutor;
+import gold.debug.windowstolinux.shared.config.revision.ConfigurationSnapshot;
+import gold.debug.windowstolinux.shared.config.revision.DeploymentInputManifest;
+import gold.debug.windowstolinux.shared.config.secretref.ResolvedSecretRevision;
 import gold.debug.windowstolinux.shared.linux.sshd.runtime.SystemdHealthChecker;
 import gold.debug.windowstolinux.shared.linux.sshd.runtime.SystemdLifecycleExecutor;
 import gold.debug.windowstolinux.shared.linux.sshd.runtime.SystemdOwnershipObserver;
 import gold.debug.windowstolinux.shared.linux.sshd.runtime.ContainerRuntimeExecutor;
+import gold.debug.windowstolinux.shared.linux.sshd.runtime.ManagedRuntimeExecutor;
+import gold.debug.windowstolinux.shared.linux.sshd.runtime.ManagedRuntimeKindProbe;
 import gold.debug.windowstolinux.shared.linux.sshd.transfer.SshdSourceTransfer;
 import gold.debug.windowstolinux.shared.linux.transfer.RemoteWorkspace;
 import gold.debug.windowstolinux.shared.linux.transfer.UploadReceipt;
@@ -40,6 +46,8 @@ import gold.debug.windowstolinux.shared.model.server.LinuxCapabilities;
 import org.apache.sshd.client.SshClient;
 import org.apache.sshd.client.session.ClientSession;
 
+import java.util.List;
+
 /**
  * Unified session facade delegating each typed capability to its implementation package.
  *
@@ -58,10 +66,12 @@ final class SshdLinuxRemoteSession implements DeploymentRemoteSession {
     private final ManagedReleaseProtocolExecutor protocol;
     private final DeploymentReleaseProtocolExecutor deploymentProtocol;
     private final ContainerReleaseProtocolExecutor containerProtocol;
+    private final DeploymentInputProtocolExecutor deploymentInputs;
     private final SystemdHealthChecker systemdHealth;
     private final SystemdOwnershipObserver systemdObservation;
     private final SystemdLifecycleExecutor systemdLifecycle;
     private final ContainerRuntimeExecutor containerRuntime;
+    private final ManagedRuntimeExecutor managedRuntime;
 
     SshdLinuxRemoteSession(SshClient client, ClientSession session,
                               SshEndpoint endpoint, String hostFingerprint) {
@@ -76,6 +86,7 @@ final class SshdLinuxRemoteSession implements DeploymentRemoteSession {
         this.protocol = new ManagedReleaseProtocolExecutor(commands);
         this.deploymentProtocol = new DeploymentReleaseProtocolExecutor(commands);
         this.containerProtocol = new ContainerReleaseProtocolExecutor(commands);
+        this.deploymentInputs = new DeploymentInputProtocolExecutor(commands);
         this.transfer = new SshdSourceTransfer(session, commands, protocol);
         this.build = new MavenBuildExecutor(commands, endpoint.username());
         this.deploymentBuild = new DeploymentBuildExecutor(commands, endpoint.username());
@@ -84,6 +95,9 @@ final class SshdLinuxRemoteSession implements DeploymentRemoteSession {
         this.systemdLifecycle = new SystemdLifecycleExecutor(
                 commands, protocol, systemdObservation, systemdHealth, endpoint.username());
         this.containerRuntime = new ContainerRuntimeExecutor(commands);
+        this.managedRuntime = new ManagedRuntimeExecutor(new ManagedRuntimeKindProbe(commands, protocol),
+                deploymentProtocol, containerProtocol, systemdObservation, systemdLifecycle, systemdHealth,
+                containerRuntime);
     }
 
     @Override
@@ -115,9 +129,18 @@ final class SshdLinuxRemoteSession implements DeploymentRemoteSession {
 
     @Override
     public DeploymentBuildResult buildDeployment(DeploymentProjectFacts facts, DeploymentRuntimeSpecification runtime,
-                                                 RemoteWorkspace workspace, BuildLimits limits)
+                                                 RemoteWorkspace workspace, BuildLimits limits,
+                                                 ConfigurationSnapshot configuration)
             throws LinuxOperationException {
-        return deploymentBuild.build(facts, runtime, workspace, limits);
+        return deploymentBuild.build(facts, runtime, workspace, limits, configuration);
+    }
+
+    @Override
+    public DeploymentInputManifest stageDeploymentInputs(ManagedApplication application,
+                                                         ConfigurationSnapshot configuration,
+                                                         List<ResolvedSecretRevision> secrets)
+            throws LinuxOperationException {
+        return deploymentInputs.stage(application, configuration, secrets);
     }
 
     @Override
@@ -157,13 +180,13 @@ final class SshdLinuxRemoteSession implements DeploymentRemoteSession {
 
     @Override
     public LifecycleObservation observe(ManagedApplication application) throws LinuxOperationException {
-        return systemdObservation.observe(application);
+        return managedRuntime.observe(application);
     }
 
     @Override
     public LifecycleObservation executeLifecycle(ManagedApplication application, LifecycleAction action,
                                                  HealthCheck healthCheck) throws LinuxOperationException {
-        return systemdLifecycle.execute(application, action, healthCheck);
+        return managedRuntime.execute(application, action, healthCheck);
     }
 
     @Override
@@ -178,22 +201,24 @@ final class SshdLinuxRemoteSession implements DeploymentRemoteSession {
     @Override
     public RemoteStepResult publishDeployment(ManagedApplication application, RemoteWorkspace workspace,
                                               DeploymentBuildResult buildResult, String releaseIdentity,
-                                              DeploymentRuntimeSpecification runtime, ReleaseSnapshot snapshot)
+                                              DeploymentRuntimeSpecification runtime, DeploymentInputManifest inputs,
+                                              ReleaseSnapshot snapshot)
             throws LinuxOperationException {
         if (runtime instanceof DeploymentRuntimeSpecification.Container container) {
-            return containerProtocol.publish(application, workspace, buildResult, releaseIdentity, container, snapshot);
+            return containerProtocol.publish(application, workspace, buildResult, releaseIdentity, container, inputs, snapshot);
         }
-        return deploymentProtocol.publish(application, workspace, buildResult, releaseIdentity, runtime, snapshot);
+        return deploymentProtocol.publish(application, workspace, buildResult, releaseIdentity, runtime, inputs, snapshot);
     }
 
     @Override
     public RemoteStepResult rollbackDeployment(ManagedApplication application, ReleaseSnapshot snapshot,
                                                DeploymentBuildResult buildResult, String releaseIdentity,
-                                               DeploymentRuntimeSpecification runtime) throws LinuxOperationException {
+                                               DeploymentRuntimeSpecification runtime, DeploymentInputManifest inputs)
+            throws LinuxOperationException {
         if (runtime instanceof DeploymentRuntimeSpecification.Container container) {
-            return containerProtocol.rollback(application, snapshot, buildResult, releaseIdentity, container);
+            return containerProtocol.rollback(application, snapshot, buildResult, releaseIdentity, container, inputs);
         }
-        return deploymentProtocol.rollback(application, snapshot, buildResult, releaseIdentity, runtime);
+        return deploymentProtocol.rollback(application, snapshot, buildResult, releaseIdentity, runtime, inputs);
     }
 
     @Override
@@ -238,8 +263,8 @@ final class SshdLinuxRemoteSession implements DeploymentRemoteSession {
             case REFRESH_STATUS -> throw new IllegalStateException("handled above");
         };
         RemoteStepResult result = runtime instanceof DeploymentRuntimeSpecification.Container container
-                ? containerProtocol.lifecycle(application, verb, container)
-                : deploymentProtocol.lifecycle(application, verb, runtime);
+                ? containerProtocol.lifecycle(application, verb)
+                : deploymentProtocol.lifecycle(application, verb);
         if (!result.succeeded()) {
             throw LinuxOperationException.localized("linux.error.lifecycleActionFailed", result.evidence());
         }

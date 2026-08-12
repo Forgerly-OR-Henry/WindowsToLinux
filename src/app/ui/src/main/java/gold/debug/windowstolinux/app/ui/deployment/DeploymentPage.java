@@ -7,18 +7,14 @@ import gold.debug.windowstolinux.app.service.source.ReviewedSourcePreparation;
 import gold.debug.windowstolinux.app.ui.component.DesktopComponents;
 import gold.debug.windowstolinux.app.ui.server.ServerContext;
 import gold.debug.windowstolinux.app.ui.shell.PageMessages;
-import gold.debug.windowstolinux.shared.config.definition.ConfigurationScope;
-import gold.debug.windowstolinux.shared.config.definition.ConfigurationValue;
 import gold.debug.windowstolinux.shared.config.revision.ConfigurationEntry;
 import gold.debug.windowstolinux.shared.config.revision.ConfigurationSnapshot;
 import gold.debug.windowstolinux.shared.config.secretref.SecretReference;
 import gold.debug.windowstolinux.shared.deploy.plan.ReviewedDeploymentPlan;
 import gold.debug.windowstolinux.shared.deploy.plan.ReviewedDeploymentRequest;
 import gold.debug.windowstolinux.shared.deploy.result.DeploymentResult;
-import gold.debug.windowstolinux.shared.git.reference.GitReference;
 import gold.debug.windowstolinux.shared.git.remote.GitRemote;
 import gold.debug.windowstolinux.shared.git.snapshot.GitSourceRequest;
-import gold.debug.windowstolinux.shared.model.analysis.RejectionReason;
 import gold.debug.windowstolinux.shared.model.deployment.BuildLimits;
 import gold.debug.windowstolinux.shared.model.deployment.DeploymentStatus;
 import gold.debug.windowstolinux.shared.model.health.HealthCheck;
@@ -47,8 +43,6 @@ import java.awt.GridLayout;
 import java.net.URI;
 import java.nio.file.Path;
 import java.time.Instant;
-import java.util.ArrayList;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -64,6 +58,7 @@ public final class DeploymentPage implements ReviewContext {
     private final PageMessages messages;
     private final Consumer<String> applicationSelection;
     private final Runnable openServers;
+    private final DeploymentAnalysisPresenter presenter;
     private final JComboBox<DeploymentProjectType> projectType = new JComboBox<>(DeploymentProjectType.values());
     private final JComboBox<HealthMode> healthMode = new JComboBox<>(HealthMode.values());
     private final JTextField healthEndpoint = new JTextField(30);
@@ -97,6 +92,7 @@ public final class DeploymentPage implements ReviewContext {
         this.messages = messages;
         this.openServers = openServers;
         this.applicationSelection = applicationSelection;
+        presenter = new DeploymentAnalysisPresenter(messages);
         rootBuild = new JCheckBox(messages.text("rootBuild"));
         messages.localize(projectType, "project.type.");
         messages.localize(healthMode, "health.mode.");
@@ -226,7 +222,8 @@ public final class DeploymentPage implements ReviewContext {
         try {
             GitRemote remote = GitRemote.parse(remoteText);
             if (remote.host().isEmpty()) throw new IllegalArgumentException(messages.text("git.remote.networkOnly"));
-            GitSourceRequest request = new GitSourceRequest(remote, gitReference(kinds.indexOf(kind), referenceText),
+            GitSourceRequest request = new GitSourceRequest(remote,
+                    DeploymentRuntimeParser.gitReference(kinds.indexOf(kind), referenceText),
                     java.util.Set.of(remote.host().orElseThrow()), 4L * 1024 * 1024 * 1024, false);
             DeploymentProjectType selected = (DeploymentProjectType) projectType.getSelectedItem();
             output.setText(messages.text("git.analyzing"));
@@ -250,20 +247,20 @@ public final class DeploymentPage implements ReviewContext {
     private void applyAnalysis(ReviewedSourcePreparation preparation, DeploymentProjectType selected, boolean git) {
         reviewedPreparation = preparation;
         if (preparation.archive().isEmpty()) {
-            output.setText(messages.text("source.reviewedUnavailable", Map.of("reasons", rejectionSummary(preparation))));
+            output.setText(messages.text("source.reviewedUnavailable", Map.of("reasons", presenter.rejections(preparation))));
             return;
         }
         applyRuntimeSuggestions(preparation);
         if (git) {
             output.setText(messages.text("git.reviewedSuccess", Map.of(
                     "commit", preparation.sourceRevision().orElseThrow().commit().orElseThrow(),
-                    "archive", preparation.archive().orElseThrow().contentSha256(), "facts", factsSummary(preparation))));
+                    "archive", preparation.archive().orElseThrow().contentSha256(), "facts", presenter.facts(preparation))));
         } else {
             String excluded = preparation.excludedEntries().isEmpty() ? "" : messages.text("source.excluded", Map.of("entries",
                     preparation.excludedEntries().stream().map(entry -> "- " + entry + "\n").reduce("", String::concat)));
             output.setText(messages.text("source.reviewedSuccess", Map.of(
                     "type", messages.text("project.type." + selected.name().toLowerCase(Locale.ROOT)),
-                    "archive", preparation.archive().orElseThrow().localArchive(), "facts", factsSummary(preparation),
+                    "archive", preparation.archive().orElseThrow().localArchive(), "facts", presenter.facts(preparation),
                     "excluded", excluded)));
         }
     }
@@ -283,39 +280,6 @@ public final class DeploymentPage implements ReviewContext {
         if (!suggestion.suggestedManagedVolumes().isEmpty()) containerVolumes.setText(suggestion.suggestedManagedVolumes().stream()
                 .map(volume -> volume.name() + ":" + volume.containerPath() + (volume.readOnly() ? ":ro" : ":rw"))
                 .reduce((a, b) -> a + ";" + b).orElse(""));
-    }
-
-    private String factsSummary(ReviewedSourcePreparation preparation) {
-        var facts = preparation.assessment().facts().orElseThrow();
-        var language = facts.languageFacts();
-        String languages = messages.text("source.languageSummary", Map.of(
-                "ecosystems", language.ecosystems().stream().map(item -> messages.text("language.ecosystem."
-                        + item.name().toLowerCase(Locale.ROOT))).sorted().reduce((a, b) -> a + ", " + b).orElse("-"),
-                "sources", language.sourceLanguages().stream().map(item -> messages.text("language.source."
-                        + item.name().toLowerCase(Locale.ROOT))).sorted().reduce((a, b) -> a + ", " + b).orElse("-")));
-        String evidence = facts.evidence().isEmpty() ? "" : messages.text("source.facts", Map.of("items", facts.evidence().stream()
-                .map(item -> messages.text("source.factItem", Map.of("subject", messages.catalog().text(item.subject()),
-                        "conclusion", messages.catalog().text(item.conclusion()), "source", item.source(), "confidence",
-                        messages.text("analysis.confidence." + item.confidence().name().toLowerCase(Locale.ROOT)))) + "\n")
-                .reduce("", String::concat)));
-        String conflicts = facts.conflicts().isEmpty() ? "" : messages.text("source.conflicts", Map.of("items",
-                facts.conflicts().stream().map(messages.catalog()::text).map(item -> "- " + item + "\n").reduce("", String::concat)));
-        String missing = facts.missingInformation().isEmpty() ? "" : messages.text("source.missing", Map.of("items",
-                facts.missingInformation().stream().map(messages.catalog()::text).map(item -> "- " + item + "\n").reduce("", String::concat)));
-        String runtime = preparation.assessment().runtimeSuggestion().map(suggestion ->
-                (suggestion.evidence().isEmpty() ? "" : messages.text("source.runtimeInferred", Map.of("items",
-                        suggestion.evidence().stream().map(item -> "- " + messages.catalog().text(item.subject()) + " ("
-                                + item.source() + ")\n").reduce("", String::concat))))
-                + (suggestion.requiredUserInput().isEmpty() ? "" : messages.text("source.runtimeRequired", Map.of("items",
-                        suggestion.requiredUserInput().stream().map(messages.catalog()::text).map(item -> "- " + item + "\n")
-                                .reduce("", String::concat))))).orElse("");
-        return languages + evidence + conflicts + missing + runtime;
-    }
-
-    private String rejectionSummary(ReviewedSourcePreparation preparation) {
-        if (!preparation.assessment().rejections().isEmpty()) return preparation.assessment().rejections().stream()
-                .map(RejectionReason::message).map(messages.catalog()::text).map(item -> "- " + item + "\n").reduce("", String::concat);
-        return preparation.assessment().facts().map(facts -> factsSummary(preparation)).orElse(messages.text("diagnostic.unknown"));
     }
 
     private void deploy() {
@@ -387,27 +351,21 @@ public final class DeploymentPage implements ReviewContext {
 
     private ConfigurationSnapshot configurationSnapshot() {
         String applicationId = reviewedPreparation.assessment().facts().orElseThrow().applicationId();
-        List<ConfigurationEntry> entries = new ArrayList<>();
-        for (String item : configurationEntries.getText().split(";")) {
-            String value = item.trim(); if (value.isBlank()) continue; int separator = value.indexOf('=');
-            if (separator < 1 || separator == value.length() - 1)
-                throw new IllegalArgumentException(messages.text("validation.configurationEntry"));
-            entries.add(new ConfigurationEntry(value.substring(0, separator).trim(), ConfigurationScope.RUNTIME,
-                    configurationValue(value.substring(separator + 1).trim())));
+        List<ConfigurationEntry> entries;
+        try {
+            entries = DeploymentConfigurationParser.parse(configurationEntries.getText());
+        } catch (IllegalArgumentException exception) {
+            throw new IllegalArgumentException(messages.text("validation.configurationEntry"), exception);
         }
         return ConfigurationSnapshot.create(applicationId, Instant.now().toEpochMilli(), "runtime-v1", Instant.now(), entries);
     }
 
     private List<SecretReference> secretReferences() {
-        List<SecretReference> references = new ArrayList<>();
-        for (String item : secretReferences.getText().split(";")) {
-            String value = item.trim(); if (value.isEmpty()) continue; int separator = value.lastIndexOf(':');
-            if (separator < 1 || separator == value.length() - 1)
-                throw new IllegalArgumentException(messages.text("validation.secretReference"));
-            references.add(new SecretReference(value.substring(0, separator).trim(),
-                    Long.parseLong(value.substring(separator + 1).trim())));
+        try {
+            return DeploymentRuntimeParser.secrets(secretReferences.getText());
+        } catch (IllegalArgumentException exception) {
+            throw new IllegalArgumentException(messages.text("validation.secretReference"), exception);
         }
-        return List.copyOf(references);
     }
 
     private void saveSecret() {
@@ -431,7 +389,8 @@ public final class DeploymentPage implements ReviewContext {
         return switch ((DeploymentProjectType) projectType.getSelectedItem()) {
             case GRADLE_SPRING_BOOT -> new DeploymentRuntimeSpecification.GradleSpringBoot(health);
             case JAVA_JAR -> new DeploymentRuntimeSpecification.JavaJar(runtimePrimary.getText(), runtimeSecondary.getText(),
-                    runtimeVersion.getText(), arguments(jvmArguments.getText()), arguments(applicationArguments.getText()), health);
+                    runtimeVersion.getText(), DeploymentRuntimeParser.arguments(jvmArguments.getText()),
+                    DeploymentRuntimeParser.arguments(applicationArguments.getText()), health);
             case NODE_SERVICE -> new DeploymentRuntimeSpecification.NodeService(Integer.parseInt(runtimeVersion.getText().trim()), health);
             case PYTHON_SERVICE -> new DeploymentRuntimeSpecification.PythonService(runtimePrimary.getText(), runtimeSecondary.getText(), health);
             case STATIC_SITE -> new DeploymentRuntimeSpecification.StaticSite(runtimePrimary.getText(), runtimeVersion.getText().isBlank()
@@ -462,27 +421,19 @@ public final class DeploymentPage implements ReviewContext {
     }
 
     private Map<Integer, Integer> ports() {
-        Map<Integer, Integer> values = new LinkedHashMap<>();
-        for (String pair : containerPorts.getText().split(";")) {
-            String[] items = pair.trim().split(":", -1);
-            if (items.length != 2) throw new IllegalArgumentException(messages.text("validation.containerPort"));
-            values.put(Integer.parseInt(items[0].trim()), Integer.parseInt(items[1].trim()));
+        try {
+            return DeploymentRuntimeParser.ports(containerPorts.getText());
+        } catch (IllegalArgumentException exception) {
+            throw new IllegalArgumentException(messages.text("validation.containerPort"), exception);
         }
-        return values;
     }
 
     private List<DeploymentRuntimeSpecification.ManagedVolume> volumes() {
-        if (containerVolumes.getText().isBlank()) return List.of();
-        List<DeploymentRuntimeSpecification.ManagedVolume> values = new ArrayList<>();
-        for (String entry : containerVolumes.getText().split(";")) {
-            String[] items = entry.trim().split(":", -1);
-            if (items.length < 2 || items.length > 3) throw new IllegalArgumentException(messages.text("validation.containerVolume"));
-            boolean readOnly = items.length == 3 && items[2].trim().equalsIgnoreCase("ro");
-            if (items.length == 3 && !readOnly && !items[2].trim().equalsIgnoreCase("rw"))
-                throw new IllegalArgumentException(messages.text("validation.containerVolume"));
-            values.add(new DeploymentRuntimeSpecification.ManagedVolume(items[0].trim(), items[1].trim(), readOnly));
+        try {
+            return DeploymentRuntimeParser.volumes(containerVolumes.getText());
+        } catch (IllegalArgumentException exception) {
+            throw new IllegalArgumentException(messages.text("validation.containerVolume"), exception);
         }
-        return List.copyOf(values);
     }
 
     private void resetRuntimeInputs() {
@@ -498,16 +449,6 @@ public final class DeploymentPage implements ReviewContext {
     private HealthCheck.Http requireHttp(HealthCheck health) {
         if (health instanceof HealthCheck.Http http) return http;
         throw new IllegalArgumentException(messages.text("validation.staticHttpRequired"));
-    }
-    private static List<String> arguments(String value) { return value.isBlank() ? List.of() : List.of(value.trim().split("\\s+")); }
-    private static ConfigurationValue configurationValue(String value) {
-        if (value.equalsIgnoreCase("true") || value.equalsIgnoreCase("false")) return new ConfigurationValue.Flag(Boolean.parseBoolean(value));
-        if (value.matches("-?[0-9]+")) return new ConfigurationValue.Number(Long.parseLong(value));
-        return new ConfigurationValue.Text(value);
-    }
-    private static GitReference gitReference(int index, String value) {
-        return switch (index) { case 0 -> new GitReference.Branch(value); case 1 -> new GitReference.Tag(value);
-            case 2 -> new GitReference.Commit(value); default -> throw new IllegalArgumentException("Unsupported Git reference kind"); };
     }
     private enum HealthMode { HTTP, TCP }
 }

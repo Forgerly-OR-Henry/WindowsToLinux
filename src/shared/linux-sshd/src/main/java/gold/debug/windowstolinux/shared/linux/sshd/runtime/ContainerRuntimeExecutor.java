@@ -31,7 +31,14 @@ public final class ContainerRuntimeExecutor {
     /** Performs a loopback health check while the named engine container remains running. / 在命名引擎容器持续运行时执行回环健康检查。 */
     public HealthCheckResult checkHealth(ManagedApplication application, DeploymentRuntimeSpecification.Container runtime,
                                          HealthCheck healthCheck) throws LinuxOperationException {
-        String engine = runtime.engine().name().toLowerCase(java.util.Locale.ROOT);
+        return checkHealth(application, runtime.engine(), healthCheck);
+    }
+
+    /** Performs a loopback health check for a remotely identified managed engine. / 为远端识别出的受管引擎执行回环健康检查。 */
+    public HealthCheckResult checkHealth(ManagedApplication application,
+                                         DeploymentRuntimeSpecification.ContainerEngine runtimeEngine,
+                                         HealthCheck healthCheck) throws LinuxOperationException {
+        String engine = runtimeEngine.name().toLowerCase(java.util.Locale.ROOT);
         String container = "windowstolinux-" + application.id();
         String probe = healthCheck instanceof HealthCheck.Http http
                 ? "curl --fail --silent --max-time 3 --output /dev/null --write-out '%{http_code}' "
@@ -61,10 +68,17 @@ public final class ContainerRuntimeExecutor {
     /** Observes release-root ownership, engine state, and engine-specific autostart. / 观察发布根归属、引擎状态和引擎专属自启。 */
     public LifecycleObservation observe(ManagedApplication application, DeploymentRuntimeSpecification.Container runtime)
             throws LinuxOperationException {
-        String engine = runtime.engine().name().toLowerCase(java.util.Locale.ROOT);
+        return observe(application, runtime.engine());
+    }
+
+    /** Observes a remotely identified managed container engine. / 观察远端识别出的受管容器引擎。 */
+    public LifecycleObservation observe(ManagedApplication application,
+                                        DeploymentRuntimeSpecification.ContainerEngine runtimeEngine)
+            throws LinuxOperationException {
+        String engine = runtimeEngine.name().toLowerCase(java.util.Locale.ROOT);
         String root = application.releaseRoot();
         String name = "windowstolinux-" + application.id();
-        String autostartCommand = runtime.engine() == DeploymentRuntimeSpecification.ContainerEngine.DOCKER
+        String autostartCommand = runtimeEngine == DeploymentRuntimeSpecification.ContainerEngine.DOCKER
                 ? SshCommandExecutor.quote(engine) + " inspect --format '{{.HostConfig.RestartPolicy.Name}}' "
                 + SshCommandExecutor.quote(name) + " 2>/dev/null || true"
                 : "systemctl is-enabled " + SshCommandExecutor.quote(name + ".service") + " 2>/dev/null || true";

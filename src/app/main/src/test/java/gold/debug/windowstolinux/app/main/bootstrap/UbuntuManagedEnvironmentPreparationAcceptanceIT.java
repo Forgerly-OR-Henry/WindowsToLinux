@@ -110,7 +110,7 @@ class UbuntuManagedEnvironmentPreparationAcceptanceIT {
     }
 
     private static void assertPreparationOnly(EnvironmentPreparationResult result, String stage) {
-        assertTrue(result.evidence().contains("固定 Ubuntu 工具集"), () ->
+        assertTrue(result.evidence().contains("fixed distribution toolset"), () ->
                 stage + " 缺少环境准备的受控工具集证据：" + result.evidence());
         String lowerEvidence = result.evidence().toLowerCase(java.util.Locale.ROOT);
         assertFalse(lowerEvidence.contains("upload") || lowerEvidence.contains("上传")

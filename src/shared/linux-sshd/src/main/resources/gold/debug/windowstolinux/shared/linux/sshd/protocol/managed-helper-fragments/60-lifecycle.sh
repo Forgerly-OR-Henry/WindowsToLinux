@@ -152,3 +152,41 @@ lifecycle() {
   systemctl "$action" "$(unit_name "$app")"
   printf 'LIFECYCLE=%s\n' "$action"
 }
+
+inspect_managed_runtime() {
+  [ "$#" -eq 2 ] || reject inspect-runtime-arguments
+  local app="$1" manifest="$2" root releases current current_digest
+  require_app "$app"
+  require_digest "$manifest"
+  root="$(app_root "$app")"
+  releases="$root/releases"
+  assert_root_owned_directory "$root"
+  assert_root_owned_directory "$releases"
+  [ -L "$root/current" ] || reject lifecycle-unmanaged
+  current="$(readlink -f -- "$root/current")"
+  current_digest="${current##*/}"
+  require_digest "$current_digest"
+  [ "$current" = "$releases/$current_digest" ] || reject current-path
+  assert_root_owned_directory "$current"
+  assert_root_owned_regular "$current/.windowstolinux-owner"
+  [ "$(cat -- "$current/.windowstolinux-owner")" = "$manifest" ] || reject current-owner
+  if [ -e "$current/.windowstolinux-deployment-parameters" ] || [ -L "$current/.windowstolinux-deployment-parameters" ]; then
+    [ ! -e "$current/.windowstolinux-container-parameters" ] && [ ! -L "$current/.windowstolinux-container-parameters" ] \
+      || reject runtime-marker-conflict
+    assert_deployment_current_or_empty "$app" "$manifest"
+    [ "$previous_present" -eq 1 ] || reject lifecycle-unmanaged
+    printf 'KIND=deployment\n'
+  elif [ -e "$current/.windowstolinux-container-parameters" ] || [ -L "$current/.windowstolinux-container-parameters" ]; then
+    [ ! -e "$current/.windowstolinux-deployment-parameters" ] && [ ! -L "$current/.windowstolinux-deployment-parameters" ] \
+      || reject runtime-marker-conflict
+    container_current_release "$app" "$manifest"
+    [ "$previous_present" -eq 1 ] || reject lifecycle-unmanaged
+    printf 'KIND=container\nENGINE=%s\n' "$container_engine"
+  else
+    [ ! -e "$current/.windowstolinux-container-engine" ] && [ ! -L "$current/.windowstolinux-container-engine" ] \
+      || reject runtime-marker-incomplete
+    assert_current_or_empty "$app" "$manifest"
+    [ "$previous_present" -eq 1 ] || reject lifecycle-unmanaged
+    printf 'KIND=ordinary\n'
+  fi
+}

@@ -9,6 +9,8 @@ base_root=/var/lib/windowstolinux
 applications_root="$base_root/apps"
 work_root="$base_root/work"
 snapshots_root="$base_root/snapshots"
+configurations_root="$base_root/configurations"
+secrets_root="$base_root/secrets"
 reject() {
   printf 'MANAGED_HELPER_REJECT=%s\n' "$1" >&2
   exit 64
@@ -37,6 +39,12 @@ require_candidate() {
 }
 require_digest() {
   [[ "$1" =~ ^[0-9a-f]{64}$ ]] || reject digest
+}
+require_secret_identifier() {
+  [[ "$1" =~ ^[a-z0-9][a-z0-9._-]{0,63}$ ]] || reject secret-identifier
+}
+require_revision() {
+  [[ "$1" =~ ^[1-9][0-9]{0,17}$ ]] || reject secret-revision
 }
 require_snapshot_token() {
   [[ "$1" =~ ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$ ]] || reject snapshot-token
@@ -110,9 +118,13 @@ require_count() {
 }
 render_deployment_unit() {
   local app="$1"
-  local kind="$2"
-  shift 2
-  local root command argument_count argument
+  shift
+  parse_deployment_inputs "$@"
+  set -- "${deployment_remaining_arguments[@]}"
+  [ "$#" -ge 1 ] || reject runtime-arguments
+  local kind="$1"
+  shift
+  local root command argument_count argument config index secret name
   root="$(app_root "$app")"
   case "$kind" in
     gradle)
@@ -170,6 +182,7 @@ render_deployment_unit() {
       ;;
     *) reject runtime-kind ;;
   esac
+  config="$(configuration_path "$app" "$deployment_configuration_digest" systemd)"
   cat <<UNIT
 [Unit]
 Description=WindowsToLinux managed $app
@@ -179,6 +192,17 @@ After=network.target
 Type=simple
 User=$deployer
 WorkingDirectory=$root/current/source
+EnvironmentFile=$config
+UNIT
+  index=0
+  while [ "$index" -lt "${#deployment_secret_identifiers[@]}" ]; do
+    name="${deployment_secret_names[$index]}"
+    secret="$(secret_revision_path "$app" "${deployment_secret_identifiers[$index]}" "${deployment_secret_revisions[$index]}")"
+    printf 'LoadCredential=%s:%s\n' "$name" "$secret"
+    printf 'Environment=%s=%%d/%s\n' "$name" "$name"
+    index=$((index + 1))
+  done
+  cat <<UNIT
 ExecStart=$command
 Restart=on-failure
 RestartSec=5

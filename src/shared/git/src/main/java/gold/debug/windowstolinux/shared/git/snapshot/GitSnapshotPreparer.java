@@ -6,7 +6,10 @@ import gold.debug.windowstolinux.shared.source.archive.SourceArchive;
 
 import java.io.IOException;
 import java.nio.file.Files;
+import java.nio.file.FileVisitResult;
 import java.nio.file.Path;
+import java.nio.file.SimpleFileVisitor;
+import java.nio.file.attribute.BasicFileAttributes;
 import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
@@ -36,17 +39,20 @@ public final class GitSnapshotPreparer {
     public GitSnapshot prepare(GitSourceRequest request, Path workspaceRoot) throws GitSnapshotException {
         Objects.requireNonNull(request, "request");
         Path root = workspaces.require(workspaceRoot);
+        Path operation = null;
         try {
-            Path operation = Files.createTempDirectory(root, "git-snapshot-");
-            Path checkout = operation.resolve("checkout");
+            operation = Files.createTempDirectory(root, "git-snapshot-");
+            Path checkout = Files.createDirectories(operation.resolve("checkout"));
             Path disabledHooks = Files.createDirectories(operation.resolve("disabled-hooks"));
-            commands.run(operation, List.of("git", "clone", "--no-checkout", "--no-recurse-submodules", "-c",
-                    "core.hooksPath=" + disabledHooks, "--", request.remote().location().toString(), checkout.toString()));
+            commands.run(checkout, List.of("git", "init", "--initial-branch=windowstolinux-snapshot"));
+            commands.run(checkout, List.of("git", "config", "core.autocrlf", "false"));
+            commands.run(checkout, List.of("git", "remote", "add", "origin",
+                    request.remote().location().toString()));
             commands.run(checkout, List.of("git", "-c", "core.hooksPath=" + disabledHooks, "fetch", "--no-tags",
                     "--depth", "1", "origin", referenceName(request)));
             commands.run(checkout, List.of("git", "-c", "core.hooksPath=" + disabledHooks,
                     "checkout", "--detach", "FETCH_HEAD"));
-            features.verify(checkout);
+            features.verify(checkout, commands.readIndex(checkout));
             String commit = commands.run(checkout, List.of("git", "rev-parse", "HEAD")).trim().toLowerCase(Locale.ROOT);
             if (!commit.matches("[0-9a-f]{40}")) {
                 throw new IOException("Git did not resolve a full commit identifier");
@@ -58,8 +64,10 @@ public final class GitSnapshotPreparer {
             return new GitSnapshot(request.remote(), commit, checkout, archive);
         } catch (InterruptedException exception) {
             Thread.currentThread().interrupt();
+            cleanupFailure(operation, exception);
             throw failure(exception);
         } catch (IOException exception) {
+            cleanupFailure(operation, exception);
             throw failure(exception);
         }
     }
@@ -74,5 +82,31 @@ public final class GitSnapshotPreparer {
 
     private static GitSnapshotException failure(Exception cause) {
         return new GitSnapshotException("Git source snapshot preparation failed without executing project code", cause);
+    }
+
+    private static void cleanupFailure(Path operation, Exception failure) {
+        if (operation == null) {
+            return;
+        }
+        try {
+            Files.walkFileTree(operation, new SimpleFileVisitor<>() {
+                @Override
+                public FileVisitResult visitFile(Path file, BasicFileAttributes attributes) throws IOException {
+                    Files.delete(file);
+                    return FileVisitResult.CONTINUE;
+                }
+
+                @Override
+                public FileVisitResult postVisitDirectory(Path directory, IOException exception) throws IOException {
+                    if (exception != null) {
+                        throw exception;
+                    }
+                    Files.delete(directory);
+                    return FileVisitResult.CONTINUE;
+                }
+            });
+        } catch (IOException cleanup) {
+            failure.addSuppressed(cleanup);
+        }
     }
 }

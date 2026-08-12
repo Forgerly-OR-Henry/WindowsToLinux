@@ -6,6 +6,7 @@ import org.apache.sshd.client.channel.ClientChannelEvent;
 import org.apache.sshd.client.session.ClientSession;
 
 import java.io.ByteArrayOutputStream;
+import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
@@ -53,7 +54,7 @@ public final class SshCommandExecutor {
      */
     public CommandResult exec(String script, Duration timeout, boolean preserveOutput)
             throws LinuxOperationException {
-        return execute(script, timeout, preserveOutput, false);
+        return execute(script, timeout, preserveOutput, false, null);
     }
 
     /**
@@ -69,15 +70,29 @@ public final class SshCommandExecutor {
      */
     public CommandResult execProtocol(String script, Duration timeout, boolean preserveOutput)
             throws LinuxOperationException {
-        return execute(script, timeout, preserveOutput, true);
+        return execute(script, timeout, preserveOutput, true, null);
+    }
+
+    /**
+     * Streams a bounded sensitive payload directly to a controlled helper without placing it in a command or file.
+     *
+     * <p>将有界敏感载荷直接流式传给受控辅助程序，不把它放入命令或文件。
+     */
+    public CommandResult execProtocolWithInput(String script, byte[] input, Duration timeout)
+            throws LinuxOperationException {
+        Objects.requireNonNull(input, "input");
+        return execute(script, timeout, true, true, input);
     }
 
     private CommandResult execute(String script, Duration timeout, boolean preserveOutput,
-                                  boolean preserveProtocolOutput) throws LinuxOperationException {
+                                  boolean preserveProtocolOutput, byte[] input) throws LinuxOperationException {
         ByteArrayOutputStream output = new ByteArrayOutputStream();
         ByteArrayOutputStream error = new ByteArrayOutputStream();
         String command = "/bin/bash -lc " + quote(script);
         try (ClientChannel channel = session.createExecChannel(command)) {
+            if (input != null) {
+                channel.setIn(new ByteArrayInputStream(input));
+            }
             channel.setOut(output);
             channel.setErr(error);
             channel.open().verify(timeout);
@@ -95,7 +110,7 @@ public final class SshCommandExecutor {
             return new CommandResult(succeeded, timedOut, text, evidenceOutput, errorText, exit);
         } catch (IOException exception) {
             throw LinuxOperationException.localized("linux.error.sshCommandFailed",
-                    "Controlled SSH command could not be executed", exception);
+                    "Controlled SSH command could not be executed (" + safeException(exception) + ")", exception);
         }
     }
 
@@ -162,6 +177,13 @@ public final class SshCommandExecutor {
                 .replaceAll("(?i)(password|secret|token|api[_-]?key)\\s*[:=]\\s*\\S+", "$1=<redacted>")
                 .replaceAll("(?i)(https?://)[^\\s/@:]+:[^\\s/@]+@", "$1<redacted>@")
                 .replaceAll("-----BEGIN [A-Z ]+-----[\\s\\S]*?-----END [A-Z ]+-----", "<redacted-key>");
+    }
+
+    private static String safeException(IOException exception) {
+        String message = exception.getMessage();
+        String detail = exception.getClass().getSimpleName()
+                + (message == null || message.isBlank() ? "" : ": " + message);
+        return sanitize(detail);
     }
 
     /**

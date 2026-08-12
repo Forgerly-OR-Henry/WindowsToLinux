@@ -16,6 +16,14 @@ import java.util.Set;
  * @param dockerAvailable whether the Docker client is present / 是否存在 Docker 客户端
  * @param podmanAvailable whether the Podman client is present / 是否存在 Podman 客户端
  * @param podmanQuadletAvailable whether Quadlet support is present / 是否存在 Quadlet 支持
+ * @param javaMajorVersions observed Java major versions / 观察到的 Java 主版本
+ * @param nodeMajorVersions observed Node.js major versions / 观察到的 Node.js 主版本
+ * @param npmAvailable whether npm is present / 是否存在 npm
+ * @param pythonVersions observed Python interpreters with venv support / 观察到且支持 venv 的 Python 解释器
+ * @param python3Available whether the generic Python 3 executable is available / 通用 Python 3 可执行文件是否可用
+ * @param dockerOperational whether Docker is usable by the authenticated account / 已认证账户能否使用 Docker
+ * @param podmanOperational whether Podman is usable by the authenticated account / 已认证账户能否使用 Podman
+ * @param x86_64V3Available whether the runtime linker reports the cumulative x86-64-v3 level / 运行时链接器是否报告累积 x86-64-v3 级别
  * @param cpuFlags observed CPU instruction flags / 观测到的 CPU 指令标志
  * @param evidence bounded collection evidence / 有界采集证据
  */
@@ -28,6 +36,14 @@ public record LinuxCapabilities(
         boolean dockerAvailable,
         boolean podmanAvailable,
         boolean podmanQuadletAvailable,
+        Set<Integer> javaMajorVersions,
+        Set<Integer> nodeMajorVersions,
+        boolean npmAvailable,
+        Set<String> pythonVersions,
+        boolean python3Available,
+        boolean dockerOperational,
+        boolean podmanOperational,
+        boolean x86_64V3Available,
         Set<String> cpuFlags,
         String evidence
 ) {
@@ -41,6 +57,18 @@ public record LinuxCapabilities(
         version = fact(version, "version");
         architecture = fact(architecture, "architecture");
         packageManager = fact(packageManager, "packageManager");
+        javaMajorVersions = Set.copyOf(Objects.requireNonNull(javaMajorVersions, "javaMajorVersions"));
+        if (javaMajorVersions.stream().anyMatch(major -> major == null || major < 1 || major > 99)) {
+            throw new IllegalArgumentException("javaMajorVersions must contain bounded positive majors");
+        }
+        nodeMajorVersions = Set.copyOf(Objects.requireNonNull(nodeMajorVersions, "nodeMajorVersions"));
+        if (nodeMajorVersions.stream().anyMatch(major -> major == null || major < 1 || major > 99)) {
+            throw new IllegalArgumentException("nodeMajorVersions must contain bounded positive majors");
+        }
+        pythonVersions = Set.copyOf(Objects.requireNonNull(pythonVersions, "pythonVersions"));
+        if (pythonVersions.stream().anyMatch(minor -> minor == null || !minor.matches("3\\.(?:10|11|12|13)"))) {
+            throw new IllegalArgumentException("pythonVersions must contain supported normalized versions");
+        }
         cpuFlags = Set.copyOf(Objects.requireNonNull(cpuFlags, "cpuFlags"));
         if (cpuFlags.stream().anyMatch(flag -> flag == null || !flag.matches("[a-z0-9_.-]{1,64}"))) {
             throw new IllegalArgumentException("cpuFlags must be normalized bounded instruction names");

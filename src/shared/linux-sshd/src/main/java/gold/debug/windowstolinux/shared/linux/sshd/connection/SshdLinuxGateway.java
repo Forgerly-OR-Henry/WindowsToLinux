@@ -14,6 +14,7 @@ import org.apache.sshd.client.auth.keyboard.UserAuthKeyboardInteractiveFactory;
 import org.apache.sshd.client.auth.password.UserAuthPasswordFactory;
 import org.apache.sshd.client.auth.pubkey.UserAuthPublicKeyFactory;
 import org.apache.sshd.client.session.ClientSession;
+import org.apache.sshd.core.CoreModuleProperties;
 import org.apache.sshd.common.keyprovider.KeyIdentityProvider;
 import java.io.IOException;
 import java.security.MessageDigest;
@@ -33,6 +34,8 @@ import java.util.concurrent.atomic.AtomicReference;
  */
 public final class SshdLinuxGateway implements LinuxGateway, DeploymentLinuxGateway {
     private static final Duration CONNECT_TIMEOUT = Duration.ofSeconds(30);
+    private static final Duration HEARTBEAT_INTERVAL = Duration.ofSeconds(30);
+    private static final int HEARTBEAT_NO_REPLY_MAX = 3;
     @Override
     public DeploymentRemoteSession connect(SshEndpoint endpoint, SshCredential credential, HostKeyVerifier hostKeyVerifier)
             throws LinuxOperationException {
@@ -120,6 +123,8 @@ public final class SshdLinuxGateway implements LinuxGateway, DeploymentLinuxGate
     static SshClient credentialScopedClient(SshCredential credential) {
         Objects.requireNonNull(credential, "credential");
         SshClient client = SshClient.setUpDefaultClient();
+        CoreModuleProperties.HEARTBEAT_INTERVAL.set(client, HEARTBEAT_INTERVAL);
+        CoreModuleProperties.HEARTBEAT_NO_REPLY_MAX.set(client, HEARTBEAT_NO_REPLY_MAX);
         client.setKeyIdentityProvider(KeyIdentityProvider.EMPTY_KEYS_PROVIDER);
         if (credential instanceof SshCredential.Password) {
             client.setUserAuthFactories(List.of(

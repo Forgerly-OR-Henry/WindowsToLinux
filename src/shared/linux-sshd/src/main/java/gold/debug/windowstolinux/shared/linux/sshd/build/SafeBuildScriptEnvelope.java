@@ -31,6 +31,9 @@ final class SafeBuildScriptEnvelope {
                 mkdir -p -- "$source" "$mutable/home"
                 tar -tzf "$archive" > "$mutable/archive-entries.txt"
                 test -s "$mutable/archive-entries.txt"
+                if LC_ALL=C sort "$mutable/archive-entries.txt" | uniq -d | grep -q .; then
+                  exit 64
+                fi
                 while IFS= read -r entry; do
                   case "$entry" in ''|/*|./*|../*|*/../*|..|*//*) exit 64 ;; esac
                 done < "$mutable/archive-entries.txt"

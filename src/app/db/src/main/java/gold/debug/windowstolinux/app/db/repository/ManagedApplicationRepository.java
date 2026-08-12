@@ -10,6 +10,7 @@ import gold.debug.windowstolinux.shared.model.lifecycle.RuntimeState;
 import gold.debug.windowstolinux.shared.model.managed.ManagedApplication;
 import gold.debug.windowstolinux.shared.model.managed.ManagedApplicationRuntimeConfiguration;
 import gold.debug.windowstolinux.shared.model.server.ServerIdentity;
+import gold.debug.windowstolinux.shared.config.secretref.SecretReference;
 
 import java.net.URI;
 import java.sql.Connection;
@@ -22,6 +23,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
 
 /** Stores managed applications, runtime contracts, releases, and lifecycle observations. / 保存受管应用、运行契约、发布和生命周期观测。 */
 public final class ManagedApplicationRepository {
@@ -58,6 +60,31 @@ public final class ManagedApplicationRepository {
                 upsertApplication(connection, application);
                 upsertRuntime(connection, application.id(), runtimeConfiguration);
                 upsertRelease(connection, release);
+            });
+        }
+    }
+
+    /** Atomically records reviewed success and its exact secret-revision binding. / 原子记录经审阅的成功状态及其精确秘密修订绑定。 */
+    public void recordSuccessfulDeployment(ManagedApplication application,
+                                           ManagedApplicationRuntimeConfiguration runtimeConfiguration,
+                                           CurrentRelease release, List<SecretReference> secretReferences) throws SQLException {
+        Objects.requireNonNull(application, "application");
+        Objects.requireNonNull(runtimeConfiguration, "runtimeConfiguration");
+        Objects.requireNonNull(release, "release");
+        Set<SecretReference> references = Set.copyOf(Objects.requireNonNull(secretReferences, "secretReferences"));
+        if (references.size() != secretReferences.size()) {
+            throw new IllegalArgumentException("successful release secret references must be unique");
+        }
+        if (!application.id().equals(release.applicationId())) {
+            throw new IllegalArgumentException("current release must belong to the managed application");
+        }
+        try (Connection connection = connections.open()) {
+            RepositoryTransactions.execute(connection, () -> {
+                RepositoryTransactions.upsertServer(connection, application.server());
+                upsertApplication(connection, application);
+                upsertRuntime(connection, application.id(), runtimeConfiguration);
+                upsertRelease(connection, release);
+                ApplicationSecretRepository.bindRelease(connection, application.id(), release.artifactSha256(), references);
             });
         }
     }

@@ -10,6 +10,8 @@ case "$verb" in
     ;;
   candidate-create) create_candidate "$@" ;;
   candidate-cleanup) cleanup_candidate "$@" ;;
+  stage-config) stage_configuration "$@" ;;
+  stage-secret) stage_secret "$@" ;;
   snapshot) create_snapshot "$@" ;;
   snapshot-deployment) snapshot_deployment "$@" ;;
   publish) publish_release "$@" ;;
@@ -20,6 +22,7 @@ case "$verb" in
   rollback-deployment) rollback_deployment "$@" ;;
   rollback-deployment-first) rollback_deployment_first "$@" ;;
   lifecycle) lifecycle "$@" ;;
+  inspect-runtime) inspect_managed_runtime "$@" ;;
   lifecycle-deployment) lifecycle_deployment "$@" ;;
   observe-deployment) observe_deployment "$@" ;;
   snapshot-container) snapshot_container "$@" ;;

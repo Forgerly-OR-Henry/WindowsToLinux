@@ -1,5 +1,8 @@
 package gold.debug.windowstolinux.shared.linux.connection;
 
+import gold.debug.windowstolinux.shared.config.revision.ConfigurationSnapshot;
+import gold.debug.windowstolinux.shared.config.revision.DeploymentInputManifest;
+import gold.debug.windowstolinux.shared.config.secretref.ResolvedSecretRevision;
 import gold.debug.windowstolinux.shared.linux.build.DeploymentBuildResult;
 import gold.debug.windowstolinux.shared.linux.protocol.ReleaseSnapshot;
 import gold.debug.windowstolinux.shared.linux.protocol.RemoteStepResult;
@@ -14,6 +17,8 @@ import gold.debug.windowstolinux.shared.model.project.DeploymentProjectFacts;
 import gold.debug.windowstolinux.shared.model.project.DeploymentRuntimeSpecification;
 import gold.debug.windowstolinux.shared.model.server.LinuxCapabilities;
 
+import java.util.List;
+
 /**
  * Bounded extension to the verified managed service session for all typed deployment single-component project types.
  *
@@ -25,7 +30,12 @@ public interface DeploymentRemoteSession extends LinuxRemoteSession {
 
     /** Builds one analyzed typed deployment candidate. / 构建一个已分析的部署候选版本。 */
     DeploymentBuildResult buildDeployment(DeploymentProjectFacts facts, DeploymentRuntimeSpecification runtime,
-                                      RemoteWorkspace workspace, BuildLimits limits) throws LinuxOperationException;
+                                      RemoteWorkspace workspace, BuildLimits limits, ConfigurationSnapshot configuration)
+            throws LinuxOperationException;
+
+    /** Seals reviewed runtime configuration and exact secret revisions outside release trees. / 在发布树之外封存经审阅的运行时配置与精确秘密修订。 */
+    DeploymentInputManifest stageDeploymentInputs(ManagedApplication application, ConfigurationSnapshot configuration,
+                                                   List<ResolvedSecretRevision> secrets) throws LinuxOperationException;
 
     /** Captures a rollback snapshot for the declared runtime. / 为声明的运行时捕获回滚快照。 */
     ReleaseSnapshot snapshotDeployment(ManagedApplication application, DeploymentRuntimeSpecification runtime)
@@ -33,12 +43,14 @@ public interface DeploymentRemoteSession extends LinuxRemoteSession {
 
     /** Publishes one sealed typed deployment release. / 发布一个已封存的部署版本。 */
     RemoteStepResult publishDeployment(ManagedApplication application, RemoteWorkspace workspace, DeploymentBuildResult build,
-                                     String releaseIdentity, DeploymentRuntimeSpecification runtime, ReleaseSnapshot snapshot)
+                                     String releaseIdentity, DeploymentRuntimeSpecification runtime,
+                                     DeploymentInputManifest inputs, ReleaseSnapshot snapshot)
             throws LinuxOperationException;
 
     /** Rolls back one typed deployment release. / 回滚一个部署版本。 */
     RemoteStepResult rollbackDeployment(ManagedApplication application, ReleaseSnapshot snapshot, DeploymentBuildResult build,
-                                      String releaseIdentity, DeploymentRuntimeSpecification runtime)
+                                      String releaseIdentity, DeploymentRuntimeSpecification runtime,
+                                      DeploymentInputManifest inputs)
             throws LinuxOperationException;
 
     /** Checks a typed deployment runtime and process ownership. / 检查类型化部署运行时及进程归属。 */

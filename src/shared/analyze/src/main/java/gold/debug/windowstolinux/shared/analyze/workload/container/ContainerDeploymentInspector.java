@@ -35,6 +35,8 @@ public final class ContainerDeploymentInspector implements DeploymentTypeInspect
     private static final Pattern EXPOSE = Pattern.compile("(?im)^\\s*EXPOSE\\s+([^\\r\\n#]+)$");
     private static final Pattern VOLUME = Pattern.compile(
             "(?im)^\\s*VOLUME\\s+(?:\\[\\s*)?['\\\"]?(/[^\\s,'\\\"\\]]+)['\\\"]?(?:\\s*\\])?\\s*$");
+    private static final Pattern FROM = Pattern.compile(
+            "(?im)^\\s*FROM\\s+(?:--platform=\\S+\\s+)?(\\S+)(?:\\s+AS\\s+(\\S+))?\\s*(?:#.*)?$");
 
     @Override
     public DeploymentProjectType projectType() {
@@ -60,6 +62,11 @@ public final class ContainerDeploymentInspector implements DeploymentTypeInspect
                 "analysis.deployment.evidence.dockerfile", "Dockerfile", "analysis.deployment.evidence.detected")),
                 List.of(), List.of());
         String text = BoundedProjectMetadata.read(dockerfile);
+        if (!baseImagesPinned(text)) {
+            rejections.add(rejection("CONTAINER_BASE_IMAGE_UNPINNED",
+                    "analysis.deployment.rejection.containerBaseImageUnpinned"));
+            return null;
+        }
         Map<Integer, Integer> ports = ports(text);
         List<DeploymentRuntimeSpecification.ManagedVolume> volumes = volumes(text, applicationId);
         List<AnalysisEvidence> evidence = new ArrayList<>();
@@ -105,6 +112,24 @@ public final class ContainerDeploymentInspector implements DeploymentTypeInspect
         Map<Integer, Integer> samePort = new LinkedHashMap<>();
         ports.forEach(port -> samePort.put(port, port));
         return Map.copyOf(samePort);
+    }
+
+    private static boolean baseImagesPinned(String dockerfile) {
+        Matcher matcher = FROM.matcher(dockerfile);
+        LinkedHashSet<String> stageAliases = new LinkedHashSet<>();
+        boolean found = false;
+        while (matcher.find()) {
+            found = true;
+            String normalized = matcher.group(1).toLowerCase(Locale.ROOT);
+            if (!"scratch".equals(normalized) && !stageAliases.contains(normalized)
+                    && !normalized.matches("[^@\\s]+@sha256:[0-9a-f]{64}")) {
+                return false;
+            }
+            if (matcher.group(2) != null && !stageAliases.add(matcher.group(2).toLowerCase(Locale.ROOT))) {
+                return false;
+            }
+        }
+        return found;
     }
 
     private static List<DeploymentRuntimeSpecification.ManagedVolume> volumes(String dockerfile, String applicationId) {

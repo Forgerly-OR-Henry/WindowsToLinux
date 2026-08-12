@@ -2,8 +2,12 @@ seal_deployment_tree() {
   local app="$1"
   local candidate_id="$2"
   local release="$3"
-  local kind="$4"
-  shift 4
+  shift 3
+  parse_deployment_inputs "$@"
+  set -- "${deployment_remaining_arguments[@]}"
+  [ "$#" -ge 1 ] || reject runtime-arguments
+  local kind="$1"
+  shift
   local candidate mutable source artifact
   candidate="$(candidate_root "$candidate_id")"
   mutable="$candidate/mutable"
@@ -47,27 +51,27 @@ seal_deployment_tree() {
   esac
 }
 publish_deployment() {
-  [ "$#" -ge 5 ] || reject publish-deployment-arguments
-  local app="$1" candidate_id="$2" release_digest="$3" manifest="$4" kind="$5"
-  shift 5
+  [ "$#" -ge 7 ] || reject publish-deployment-arguments
+  local app="$1" candidate_id="$2" release_digest="$3" manifest="$4"
+  shift 4
   require_app "$app"; require_candidate "$app" "$candidate_id"; require_digest "$release_digest"; require_digest "$manifest"
   initialise_controlled_roots
   assert_application_root_or_absent "$app"
-  render_deployment_unit "$app" "$kind" "$@" >/dev/null
+  render_deployment_unit "$app" "$@" >/dev/null
   assert_deployment_current_or_empty "$app" "$manifest"
   local root releases release unit tmp
   root="$(app_root "$app")"; releases="$root/releases"; release="$releases/$release_digest"; unit="$(unit_path "$app")"
   install -d -o root -g root -m 755 -- "$root" "$releases"
   [ ! -e "$release" ] && [ ! -L "$release" ] || reject release-exists
-  seal_deployment_tree "$app" "$candidate_id" "$release" "$kind" "$@"
+  seal_deployment_tree "$app" "$candidate_id" "$release" "$@"
   printf '%s\n' "$manifest" > "$release/.windowstolinux-owner"
   chown root:root -- "$release/.windowstolinux-owner"; chmod 444 -- "$release/.windowstolinux-owner"
-  save_deployment_parameters "$release/.windowstolinux-deployment-parameters" "$kind" "$@"
+  save_deployment_parameters "$release/.windowstolinux-deployment-parameters" "$@"
   if [ "$previous_present" -eq 1 ]; then systemctl stop "$(unit_name "$app")"; fi
   ln -sfnT -- "$release" "$root/current"
   tmp="$(mktemp /etc/systemd/system/.windowstolinux-managed.XXXXXX)"
   trap 'rm -f -- "$tmp"' EXIT
-  render_deployment_unit "$app" "$kind" "$@" > "$tmp"
+  render_deployment_unit "$app" "$@" > "$tmp"
   install -o root -g root -m 644 -- "$tmp" "$unit"
   rm -f -- "$tmp"; trap - EXIT
   systemctl daemon-reload

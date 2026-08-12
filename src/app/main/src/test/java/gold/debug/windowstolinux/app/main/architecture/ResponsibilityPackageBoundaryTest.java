@@ -26,12 +26,15 @@ class ResponsibilityPackageBoundaryTest {
     private static final Set<String> DESKTOP_SHELL = Set.of(
             "DesktopFrame.java", "DesktopPageCoordinator.java", "DesktopViewState.java", "PageMessages.java",
             "PageNavigator.java");
+    private static final Set<String> DEPLOYMENT_PAGE = Set.of(
+            "DeploymentAnalysisPresenter.java", "DeploymentConfigurationParser.java", "DeploymentPage.java",
+            "DeploymentPageState.java", "DeploymentRuntimeParser.java", "ReviewContext.java");
     private static final Set<String> REPOSITORIES = Set.of(
             "AiProfileRepository.java", "ApplicationSecretRepository.java", "ConfigurationSnapshotRepository.java",
             "DesktopPreferenceRepository.java", "EncryptedSecretRepository.java", "ManagedApplicationRepository.java",
             "RepositoryTransactions.java", "ServerProfileRepository.java");
     private static final Set<String> HELPER_FRAGMENTS = Set.of(
-            "00-common.sh", "10-typed-release.sh", "20-candidate-workspace.sh", "30-ordinary-release.sh",
+            "00-common.sh", "10-typed-release.sh", "15-deployment-input.sh", "20-candidate-workspace.sh", "30-ordinary-release.sh",
             "40-typed-runtime.sh", "50-container-release.sh", "60-lifecycle.sh", "70-command-dispatch.sh");
     private static final Pattern PERIOD_NAME = Pattern.compile("(?i)(?:phase|stage)[-_]?[0-9]+|(?:一期|二期|三期|四期|五期)");
 
@@ -52,16 +55,19 @@ class ResponsibilityPackageBoundaryTest {
         Path root = projectRoot();
         Path core = root.resolve("src/shared/analyze/src/main/java/gold/debug/windowstolinux/shared/analyze/core");
         Path shell = root.resolve("src/app/ui/src/main/java/gold/debug/windowstolinux/app/ui/shell");
+        Path deploymentPage = root.resolve("src/app/ui/src/main/java/gold/debug/windowstolinux/app/ui/deployment");
         Path repositories = root.resolve("src/app/db/src/main/java/gold/debug/windowstolinux/app/db/repository");
         Path fragments = root.resolve(
                 "src/shared/linux-sshd/src/main/resources/gold/debug/windowstolinux/shared/linux/sshd/protocol/managed-helper-fragments");
 
         assertEquals(ANALYSIS_CORE, fileNames(core));
         assertEquals(DESKTOP_SHELL, fileNames(shell));
+        assertEquals(DEPLOYMENT_PAGE, fileNames(deploymentPage));
         assertEquals(REPOSITORIES, fileNames(repositories));
         assertEquals(HELPER_FRAGMENTS, fileNames(fragments));
         assertMaximumLines(core, 400);
         assertMaximumLines(shell, 400);
+        assertMaximumLines(deploymentPage, 480);
         assertMaximumLines(repositories, 320);
         assertMaximumLines(fragments, 300);
     }

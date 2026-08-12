@@ -71,42 +71,45 @@ public final class ApplicationSecretRepository {
         String application = applicationId;
         String release = releaseIdentity;
         try (Connection connection = connections.open()) {
-            RepositoryTransactions.execute(connection, () -> {
-                for (SecretReference reference : expected) {
-                    if (findRevision(connection, reference).isEmpty()) {
-                        throw new SQLException("release secret reference has not been registered");
-                    }
-                }
-                boolean exists = bindingExists(connection, application, release);
-                Set<SecretReference> stored = findReleaseReferences(connection, application, release);
-                if (exists) {
-                    if (!stored.equals(expected)) {
-                        throw new SQLException("application release secret references are immutable");
-                    }
-                    return;
-                }
-                try (PreparedStatement statement = connection.prepareStatement("""
-                        INSERT INTO application_release_secret_binding (application_id, release_identity) VALUES (?, ?)
-                        """)) {
-                    statement.setString(1, application);
-                    statement.setString(2, release);
-                    statement.executeUpdate();
-                }
-                try (PreparedStatement statement = connection.prepareStatement("""
-                        INSERT INTO application_release_secret_reference (
-                            application_id, release_identity, secret_identifier, secret_revision
-                        ) VALUES (?, ?, ?, ?)
-                        """)) {
-                    for (SecretReference reference : expected) {
-                        statement.setString(1, application);
-                        statement.setString(2, release);
-                        statement.setString(3, reference.identifier());
-                        statement.setLong(4, reference.revision());
-                        statement.addBatch();
-                    }
-                    statement.executeBatch();
-                }
-            });
+            RepositoryTransactions.execute(connection, () -> bindRelease(connection, application, release, expected));
+        }
+    }
+
+    static void bindRelease(Connection connection, String application, String release,
+                            Set<SecretReference> expected) throws SQLException {
+        for (SecretReference reference : expected) {
+            if (findRevision(connection, reference).isEmpty()) {
+                throw new SQLException("release secret reference has not been registered");
+            }
+        }
+        boolean exists = bindingExists(connection, application, release);
+        Set<SecretReference> stored = findReleaseReferences(connection, application, release);
+        if (exists) {
+            if (!stored.equals(expected)) {
+                throw new SQLException("application release secret references are immutable");
+            }
+            return;
+        }
+        try (PreparedStatement statement = connection.prepareStatement("""
+                INSERT INTO application_release_secret_binding (application_id, release_identity) VALUES (?, ?)
+                """)) {
+            statement.setString(1, application);
+            statement.setString(2, release);
+            statement.executeUpdate();
+        }
+        try (PreparedStatement statement = connection.prepareStatement("""
+                INSERT INTO application_release_secret_reference (
+                    application_id, release_identity, secret_identifier, secret_revision
+                ) VALUES (?, ?, ?, ?)
+                """)) {
+            for (SecretReference reference : expected) {
+                statement.setString(1, application);
+                statement.setString(2, release);
+                statement.setString(3, reference.identifier());
+                statement.setLong(4, reference.revision());
+                statement.addBatch();
+            }
+            statement.executeBatch();
         }
     }
 

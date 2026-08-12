@@ -16,7 +16,7 @@ final class RepositoryTransactions {
         try {
             work.execute();
             connection.commit();
-        } catch (SQLException exception) {
+        } catch (SQLException | RuntimeException exception) {
             try {
                 connection.rollback();
             } catch (SQLException rollbackFailure) {

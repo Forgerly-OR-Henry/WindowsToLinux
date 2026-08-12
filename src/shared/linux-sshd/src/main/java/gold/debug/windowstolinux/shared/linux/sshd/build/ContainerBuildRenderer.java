@@ -24,7 +24,7 @@ public final class ContainerBuildRenderer implements DeploymentBuildRenderer {
         String command = """
                 command -v %s >/dev/null
                 test -f ./Dockerfile
-                run %s build --pull=false --tag %s --file ./Dockerfile .
+                run %s build --pull=true --tag %s --file ./Dockerfile .
                 image_id=$(%s image inspect --format '{{.Id}}' %s)
                 printf 'ARTIFACT=%%s\n' "$image_id"
                 """.formatted(engine, engine, tag, engine, tag);

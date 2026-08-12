@@ -40,17 +40,40 @@ public final class HostCompatibility {
         if (base != HostSupport.READY_FOR_RUNTIME_VALIDATION) {
             return new Result(base, List.copyOf(evidence));
         }
-        if (runtime instanceof DeploymentRuntimeSpecification.Container container) {
-            if (container.engine() == DeploymentRuntimeSpecification.ContainerEngine.DOCKER && !capabilities.dockerAvailable()) {
-                return result(HostSupport.UNSUPPORTED, "Docker client is not available", evidence);
-            }
-            if (container.engine() == DeploymentRuntimeSpecification.ContainerEngine.PODMAN
-                    && (!capabilities.podmanAvailable() || !capabilities.podmanQuadletAvailable())) {
-                return result(HostSupport.UNSUPPORTED, "Podman Quadlet is required for managed Podman autostart", evidence);
-            }
+        String missingRuntime = missingRuntime(capabilities, runtime);
+        if (missingRuntime != null) {
+            return result(HostSupport.UNSUPPORTED, missingRuntime, evidence);
         }
         evidence.add("runtime matrix matches collected host facts only");
         return new Result(HostSupport.READY_FOR_RUNTIME_VALIDATION, List.copyOf(evidence));
+    }
+
+    private static String missingRuntime(LinuxCapabilities capabilities, DeploymentRuntimeSpecification runtime) {
+        return switch (runtime) {
+            case DeploymentRuntimeSpecification.GradleSpringBoot ignored ->
+                    capabilities.javaMajorVersions().contains(21) ? null
+                            : "Java 21 is required for the Gradle wrapper build and runtime";
+            case DeploymentRuntimeSpecification.JavaJar javaJar ->
+                    capabilities.javaMajorVersions().contains(Integer.parseInt(javaJar.javaVersion())) ? null
+                            : "the selected Java major is not available";
+            case DeploymentRuntimeSpecification.NodeService node ->
+                    capabilities.npmAvailable() && capabilities.nodeMajorVersions().contains(node.nodeMajorVersion()) ? null
+                            : "the selected Node.js major and npm must both be available";
+            case DeploymentRuntimeSpecification.PythonService python ->
+                    capabilities.pythonVersions().contains(python.pythonVersion()) ? null
+                            : "the selected Python interpreter must provide venv support";
+            case DeploymentRuntimeSpecification.StaticSite site -> site.nodeMajorVersion().isPresent()
+                    ? capabilities.npmAvailable() && capabilities.nodeMajorVersions().contains(site.nodeMajorVersion().getAsInt())
+                    ? null : "the selected Node.js major and npm are required for the static build"
+                    : capabilities.python3Available() ? null : "Python 3 is required for the managed static server";
+            case DeploymentRuntimeSpecification.Container container -> switch (container.engine()) {
+                case DOCKER -> capabilities.dockerAvailable() && capabilities.dockerOperational() ? null
+                        : "the Docker client and daemon must be usable by the authenticated account";
+                case PODMAN -> capabilities.podmanAvailable() && capabilities.podmanOperational()
+                        && capabilities.podmanQuadletAvailable() ? null
+                        : "Podman and Quadlet must be usable by the authenticated account";
+            };
+        };
     }
 
     private static HostSupport baseSupport(LinuxCapabilities capabilities, List<String> evidence) {
@@ -67,13 +90,12 @@ public final class HostCompatibility {
                         || !("9".equals(capabilities.version()) || "10".equals(capabilities.version()))) {
                     yield result(HostSupport.UNSUPPORTED, "CentOS Stream must be 9 or 10 with dnf", evidence).support();
                 }
-                if ("10".equals(capabilities.version()) && capabilities.cpuFlags().isEmpty()) {
-                    evidence.add("CentOS Stream 10 CPU flags were not collected");
-                    yield HostSupport.REQUIRES_CPU_REVIEW;
-                }
                 if ("10".equals(capabilities.version())) {
-                    evidence.add("CentOS Stream 10 CPU flags are host-specific and require review before execution");
-                    yield HostSupport.REQUIRES_CPU_REVIEW;
+                    if (!capabilities.x86_64V3Available()) {
+                        evidence.add("CentOS Stream 10 requires a runtime-linker-confirmed cumulative x86-64-v3 level");
+                        yield HostSupport.REQUIRES_CPU_REVIEW;
+                    }
+                    evidence.add("CentOS Stream 10 host runtime linker reports the cumulative x86-64-v3 level as supported");
                 }
                 yield HostSupport.READY_FOR_RUNTIME_VALIDATION;
             }

@@ -1,6 +1,9 @@
 package gold.debug.windowstolinux.shared.deploy.transaction;
 
 import gold.debug.windowstolinux.shared.deploy.plan.ReviewedDeploymentRequest;
+import gold.debug.windowstolinux.shared.deploy.plan.ReviewedReleaseIdentity;
+import gold.debug.windowstolinux.shared.config.secretref.ResolvedSecretRevision;
+import gold.debug.windowstolinux.shared.config.revision.DeploymentInputManifest;
 import gold.debug.windowstolinux.shared.deploy.result.DeploymentEvent;
 import gold.debug.windowstolinux.shared.deploy.result.DeploymentResult;
 import gold.debug.windowstolinux.shared.deploy.compatibility.HostCompatibility;
@@ -49,12 +52,26 @@ public final class ReviewedDeploymentService {
     public DeploymentResult deploy(ReviewedDeploymentRequest request, ManagedApplication application,
                                    DeploymentLinuxGateway gateway, SshEndpoint endpoint, SshCredential credential,
                                    HostKeyVerifier hostKeyVerifier) {
+        if (!request.secretReferences().isEmpty()) {
+            throw new IllegalArgumentException("resolved secret revisions are required for this reviewed request");
+        }
+        return deploy(request, application, gateway, endpoint, credential, hostKeyVerifier, List.of());
+    }
+
+    /** Executes a reviewed transaction with short-lived exact secret revisions. / 使用短生命周期精确秘密修订执行经审阅事务。 */
+    public DeploymentResult deploy(ReviewedDeploymentRequest request, ManagedApplication application,
+                                   DeploymentLinuxGateway gateway, SshEndpoint endpoint, SshCredential credential,
+                                   HostKeyVerifier hostKeyVerifier, List<ResolvedSecretRevision> resolvedSecrets) {
         request = java.util.Objects.requireNonNull(request, "request");
         application = java.util.Objects.requireNonNull(application, "application");
         gateway = java.util.Objects.requireNonNull(gateway, "gateway");
         endpoint = java.util.Objects.requireNonNull(endpoint, "endpoint");
         credential = java.util.Objects.requireNonNull(credential, "credential");
         hostKeyVerifier = java.util.Objects.requireNonNull(hostKeyVerifier, "hostKeyVerifier");
+        resolvedSecrets = List.copyOf(java.util.Objects.requireNonNull(resolvedSecrets, "resolvedSecrets"));
+        if (!resolvedSecrets.stream().map(ResolvedSecretRevision::reference).toList().equals(request.secretReferences())) {
+            throw new IllegalArgumentException("resolved secret revisions must exactly match the reviewed references");
+        }
         List<DeploymentEvent> events = new ArrayList<>();
         if (!application.server().equals(request.server()) || !application.id().equals(request.facts().applicationId())) {
             return rejected(events, "managed-identity", "Reviewed request and managed application identity do not match");
@@ -64,9 +81,11 @@ public final class ReviewedDeploymentService {
                     "Root build approval and the SSH account must agree before a candidate is created");
         }
         RemoteWorkspace workspace = new RemoteWorkspace(application.id(), request.archive().contentSha256());
-        String releaseIdentity = request.sourceRevision().sourceSha256();
+        String releaseIdentity = ReviewedReleaseIdentity.from(request);
         ReleaseSnapshot snapshot = null;
         DeploymentBuildResult build = null;
+        DeploymentInputManifest inputs = null;
+        boolean candidateMayExist = false;
         try (DeploymentRemoteSession session = gateway.connect(endpoint, copyCredential(credential), hostKeyVerifier)) {
             long sourceFootprint = Math.addExact(request.archive().byteCount(), request.archive().uncompressedByteCount());
             if (sourceFootprint > request.limits().maxWorkspaceBytes()) {
@@ -89,14 +108,17 @@ public final class ReviewedDeploymentService {
                 return new DeploymentResult(DeploymentStatus.PRECONDITION_REJECTED, events, Optional.empty(), Optional.empty());
             }
 
+            candidateMayExist = true;
             var receipt = session.uploadSource(request.archive(), workspace);
             if (!receipt.contentSha256().equals(request.archive().contentSha256())
                     || receipt.byteCount() != request.archive().byteCount()) {
+                cleanup(session, workspace, events);
                 return rejected(events, "source-upload", "Target archive digest or size differs from the reviewed archive");
             }
             events.add(new DeploymentEvent("source-upload", true, receipt.evidence()));
 
-            build = session.buildDeployment(request.facts(), request.runtime(), workspace, request.limits());
+            build = session.buildDeployment(request.facts(), request.runtime(), workspace, request.limits(),
+                    request.configuration());
             events.add(new DeploymentEvent("remote-build", build.succeeded(), build.evidence()));
             if (!build.succeeded()) {
                 cleanup(session, workspace, events);
@@ -107,23 +129,27 @@ public final class ReviewedDeploymentService {
                 return rejected(events, "build-provenance", "The build result is not bound to the reviewed source archive");
             }
 
+            inputs = session.stageDeploymentInputs(application, request.configuration(), resolvedSecrets);
+            events.add(new DeploymentEvent("deployment-inputs", true,
+                    "Immutable configuration and exact secret revisions were sealed outside the release tree"));
+
             snapshot = session.snapshotDeployment(application, request.runtime());
             events.add(new DeploymentEvent("snapshot", true, snapshot.evidence()));
             RemoteStepResult publish = session.publishDeployment(application, workspace, build, releaseIdentity,
-                    request.runtime(), snapshot);
+                    request.runtime(), inputs, snapshot);
             events.add(new DeploymentEvent("publish", publish.succeeded(), publish.evidence()));
             if (!publish.succeeded()) {
-                return recover(session, request, application, workspace, snapshot, build, releaseIdentity, events);
+                return recover(session, request, application, workspace, snapshot, build, releaseIdentity, inputs, events);
             }
             HealthCheckResult health = session.checkDeploymentHealth(application, request.runtime(), request.runtime().healthCheck());
             events.add(new DeploymentEvent("candidate-health", health.healthy(), health.evidence()));
             if (!health.healthy()) {
-                return recover(session, request, application, workspace, snapshot, build, releaseIdentity, events);
+                return recover(session, request, application, workspace, snapshot, build, releaseIdentity, inputs, events);
             }
             LifecycleObservation observation = session.observeDeployment(application, request.runtime());
             events.add(new DeploymentEvent("final-observation", observation.ownershipVerified(), observation.evidence()));
             if (!observation.ownershipVerified()) {
-                return recover(session, request, application, workspace, snapshot, build, releaseIdentity, events);
+                return recover(session, request, application, workspace, snapshot, build, releaseIdentity, inputs, events);
             }
             RemoteStepResult retention = session.retainRecentSuccessfulReleases(application);
             events.add(new DeploymentEvent("release-retention", retention.succeeded(), retention.evidence()));
@@ -132,6 +158,13 @@ public final class ReviewedDeploymentService {
                     Optional.of(releaseIdentity));
         } catch (LinuxOperationException | ArithmeticException exception) {
             events.add(new DeploymentEvent("linux-operation", false, safeMessage(exception)));
+            if (snapshot != null && build != null && build.succeeded() && inputs != null) {
+                return recoverAfterInterruptedSession(request, application, gateway, endpoint, credential,
+                        hostKeyVerifier, workspace, snapshot, build, releaseIdentity, inputs, events);
+            }
+            if (candidateMayExist) {
+                return cleanupAfterInterruptedSession(gateway, endpoint, credential, hostKeyVerifier, workspace, events);
+            }
             return new DeploymentResult(DeploymentStatus.PRECONDITION_REJECTED, events, Optional.empty(), Optional.empty());
         } finally {
             clearCredential(credential);
@@ -141,9 +174,11 @@ public final class ReviewedDeploymentService {
     private static DeploymentResult recover(DeploymentRemoteSession session, ReviewedDeploymentRequest request,
                                              ManagedApplication application, RemoteWorkspace workspace,
                                              ReleaseSnapshot snapshot, DeploymentBuildResult build,
-                                             String releaseIdentity, List<DeploymentEvent> events)
+                                             String releaseIdentity, DeploymentInputManifest inputs,
+                                             List<DeploymentEvent> events)
             throws LinuxOperationException {
-        RemoteStepResult rollback = session.rollbackDeployment(application, snapshot, build, releaseIdentity, request.runtime());
+        RemoteStepResult rollback = session.rollbackDeployment(application, snapshot, build, releaseIdentity,
+                request.runtime(), inputs);
         events.add(new DeploymentEvent("rollback", rollback.succeeded(), rollback.evidence()));
         cleanup(session, workspace, events);
         if (!rollback.succeeded()) {
@@ -152,7 +187,15 @@ public final class ReviewedDeploymentService {
         if (!snapshot.hasPreviousRelease()) {
             return new DeploymentResult(DeploymentStatus.FAILED_FIRST_DEPLOYMENT, events, Optional.empty(), Optional.empty());
         }
-        LifecycleObservation restored = session.observeDeployment(application, request.runtime());
+        LifecycleObservation restored;
+        try {
+            restored = session.observeDeployment(application, request.runtime());
+        } catch (LinuxOperationException exception) {
+            events.add(new DeploymentEvent("rollback-observation", false,
+                    "Rollback completed but its restored runtime could not be observed: " + safeMessage(exception)));
+            return new DeploymentResult(DeploymentStatus.MANUAL_RECOVERY_REQUIRED, events,
+                    Optional.empty(), Optional.empty());
+        }
         events.add(new DeploymentEvent("rollback-observation", restored.ownershipVerified(), restored.evidence()));
         boolean expectedState = snapshot.previousWasRunning()
                 ? restored.runtimeState() == RuntimeState.RUNNING : restored.runtimeState() == RuntimeState.STOPPED;
@@ -162,17 +205,59 @@ public final class ReviewedDeploymentService {
         return new DeploymentResult(DeploymentStatus.FAILED_ROLLED_BACK, events, Optional.of(restored), Optional.empty());
     }
 
+    private static DeploymentResult recoverAfterInterruptedSession(
+            ReviewedDeploymentRequest request, ManagedApplication application, DeploymentLinuxGateway gateway,
+            SshEndpoint endpoint, SshCredential credential, HostKeyVerifier hostKeyVerifier, RemoteWorkspace workspace,
+            ReleaseSnapshot snapshot, DeploymentBuildResult build, String releaseIdentity, DeploymentInputManifest inputs,
+            List<DeploymentEvent> events
+    ) {
+        try (DeploymentRemoteSession recoverySession = gateway.connect(
+                endpoint, copyCredential(credential), hostKeyVerifier)) {
+            events.add(new DeploymentEvent("recovery-reconnect", true,
+                    "SSH host was reverified after the typed publication session was interrupted"));
+            return recover(recoverySession, request, application, workspace, snapshot, build, releaseIdentity, inputs,
+                    events);
+        } catch (LinuxOperationException exception) {
+            events.add(new DeploymentEvent("rollback", false,
+                    "Could not reconnect and complete typed rollback: " + safeMessage(exception)));
+            return new DeploymentResult(DeploymentStatus.MANUAL_RECOVERY_REQUIRED, events,
+                    Optional.empty(), Optional.empty());
+        }
+    }
+
+    private static DeploymentResult cleanupAfterInterruptedSession(
+            DeploymentLinuxGateway gateway, SshEndpoint endpoint, SshCredential credential,
+            HostKeyVerifier hostKeyVerifier, RemoteWorkspace workspace, List<DeploymentEvent> events
+    ) {
+        try (DeploymentRemoteSession cleanupSession = gateway.connect(
+                endpoint, copyCredential(credential), hostKeyVerifier)) {
+            events.add(new DeploymentEvent("candidate-cleanup-reconnect", true,
+                    "SSH host was reverified after the typed candidate session was interrupted"));
+            if (cleanup(cleanupSession, workspace, events)) {
+                return new DeploymentResult(DeploymentStatus.PRECONDITION_REJECTED, events,
+                        Optional.empty(), Optional.empty());
+            }
+        } catch (LinuxOperationException exception) {
+            events.add(new DeploymentEvent("candidate-cleanup-reconnect", false,
+                    "Could not reconnect and verify typed candidate cleanup: " + safeMessage(exception)));
+        }
+        return new DeploymentResult(DeploymentStatus.MANUAL_RECOVERY_REQUIRED, events,
+                Optional.empty(), Optional.empty());
+    }
+
     private static DeploymentResult rejected(List<DeploymentEvent> events, String step, String evidence) {
         events.add(new DeploymentEvent(step, false, evidence));
         return new DeploymentResult(DeploymentStatus.PRECONDITION_REJECTED, events, Optional.empty(), Optional.empty());
     }
 
-    private static void cleanup(DeploymentRemoteSession session, RemoteWorkspace workspace, List<DeploymentEvent> events) {
+    private static boolean cleanup(DeploymentRemoteSession session, RemoteWorkspace workspace, List<DeploymentEvent> events) {
         try {
             RemoteStepResult cleanup = session.cleanupCandidate(workspace);
             events.add(new DeploymentEvent("candidate-cleanup", cleanup.succeeded(), cleanup.evidence()));
+            return cleanup.succeeded();
         } catch (LinuxOperationException exception) {
             events.add(new DeploymentEvent("candidate-cleanup", false, safeMessage(exception)));
+            return false;
         }
     }
 

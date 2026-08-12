@@ -51,6 +51,12 @@ public enum DeploymentStep {
      */
     REMOTE_BUILD("remote-build"),
     /**
+     * Represents the {@code DEPLOYMENT_INPUTS} option.
+     *
+     * <p>表示 {@code DEPLOYMENT_INPUTS} 选项。
+     */
+    DEPLOYMENT_INPUTS("deployment-inputs"),
+    /**
      * Represents the {@code SNAPSHOT} option.
      *
      * <p>表示 {@code SNAPSHOT} 选项。

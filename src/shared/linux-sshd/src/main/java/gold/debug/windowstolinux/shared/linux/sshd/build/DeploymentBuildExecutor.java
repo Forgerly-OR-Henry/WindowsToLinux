@@ -1,5 +1,6 @@
 package gold.debug.windowstolinux.shared.linux.sshd.build;
 
+import gold.debug.windowstolinux.shared.config.revision.ConfigurationSnapshot;
 import gold.debug.windowstolinux.shared.linux.build.DeploymentBuildResult;
 import gold.debug.windowstolinux.shared.linux.connection.LinuxOperationException;
 import gold.debug.windowstolinux.shared.linux.sshd.connection.SshCommandExecutor;
@@ -41,11 +42,13 @@ public final class DeploymentBuildExecutor {
      * <p>使用其事实选定的固定入口构建一个经审阅的源码归档。
      */
     public DeploymentBuildResult build(DeploymentProjectFacts facts, DeploymentRuntimeSpecification runtime,
-                                       RemoteWorkspace workspace, BuildLimits limits) throws LinuxOperationException {
+                                       RemoteWorkspace workspace, BuildLimits limits, ConfigurationSnapshot configuration)
+            throws LinuxOperationException {
         facts = Objects.requireNonNull(facts, "facts");
         runtime = Objects.requireNonNull(runtime, "runtime");
         workspace = Objects.requireNonNull(workspace, "workspace");
         limits = Objects.requireNonNull(limits, "limits");
+        configuration = Objects.requireNonNull(configuration, "configuration");
         if (limits.runAsRoot() != "root".equals(username)) {
             throw LinuxOperationException.localized("linux.error.rootBuildRequiresRootSession",
                     "Root build approval must match the authenticated SSH account");
@@ -53,8 +56,12 @@ public final class DeploymentBuildExecutor {
         if (facts.projectType() != runtime.projectType()) {
             throw new IllegalArgumentException("runtime must match the analyzed project type");
         }
+        if (!facts.applicationId().equals(configuration.applicationId())) {
+            throw new IllegalArgumentException("build configuration must match the analyzed application");
+        }
         DeploymentBuildRenderer renderer = renderers.require(facts.projectType());
-        String script = renderer.render(facts, runtime, workspace, limits);
+        String script = BuildConfigurationEnvironment.render(configuration)
+                + renderer.render(facts, runtime, workspace, limits);
         String command = "env -i PATH=/usr/local/bin:/usr/bin:/bin HOME="
                 + SshCommandExecutor.quote(workspace.candidateRoot() + "/mutable/home")
                 + " /bin/bash -lc " + SshCommandExecutor.quote(script);

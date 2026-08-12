@@ -1,11 +1,9 @@
 snapshot_deployment() {
-  [ "$#" -ge 3 ] || reject snapshot-deployment-arguments
-  local app="$1" manifest="$2" kind="$3"
-  shift 3
+  [ "$#" -eq 2 ] || reject snapshot-deployment-arguments
+  local app="$1" manifest="$2"
   require_app "$app"; require_digest "$manifest"
   initialise_controlled_roots
   assert_application_root_or_absent "$app"
-  render_deployment_unit "$app" "$kind" "$@" >/dev/null
   assert_deployment_current_or_empty "$app" "$manifest"
   if [ "$previous_present" -eq 0 ]; then
     printf 'PREVIOUS=0\n'
@@ -28,14 +26,12 @@ snapshot_deployment() {
   printf 'PREVIOUS_RUNNING=%s\n' "$previous_running"
 }
 rollback_deployment() {
-  [ "$#" -ge 6 ] || reject rollback-deployment-arguments
-  local app="$1" candidate_digest="$2" manifest="$3" token="$4" kind="$5"
-  shift 5
+  [ "$#" -eq 4 ] || reject rollback-deployment-arguments
+  local app="$1" candidate_digest="$2" manifest="$3" token="$4"
   require_app "$app"; require_digest "$candidate_digest"; require_digest "$manifest"; require_snapshot_token "$token"
   local root releases candidate snapshot unit expected previous previous_digest previous_runtime
   root="$(app_root "$app")"; releases="$root/releases"; candidate="$releases/$candidate_digest"
   snapshot="$(snapshot_root "$app" "$token")"; unit="$(unit_path "$app")"
-  render_deployment_unit "$app" "$kind" "$@" >/dev/null
   assert_root_owned_directory "$root"; assert_root_owned_directory "$releases"; assert_root_owned_directory "$snapshot"
   for file in current-path unit runtime enabled deployment-parameters; do assert_root_owned_regular "$snapshot/$file"; done
   previous="$(cat -- "$snapshot/current-path")"; previous_digest="${previous##*/}"; require_digest "$previous_digest"
@@ -62,15 +58,19 @@ rollback_deployment() {
   printf 'ROLLED_BACK=1\n'
 }
 rollback_deployment_first() {
-  [ "$#" -ge 5 ] || reject rollback-deployment-first-arguments
-  local app="$1" candidate_digest="$2" manifest="$3" kind="$4"
-  shift 4
+  [ "$#" -eq 3 ] || reject rollback-deployment-first-arguments
+  local app="$1" candidate_digest="$2" manifest="$3"
   require_app "$app"; require_digest "$candidate_digest"; require_digest "$manifest"
   local root releases candidate unit expected
   root="$(app_root "$app")"; releases="$root/releases"; candidate="$releases/$candidate_digest"; unit="$(unit_path "$app")"
-  render_deployment_unit "$app" "$kind" "$@" >/dev/null
   assert_root_owned_directory "$root"; assert_root_owned_directory "$releases"
-  [ -e "$candidate" ] || [ -L "$candidate" ] || reject candidate-missing
+  if [ ! -e "$candidate" ] && [ ! -L "$candidate" ]; then
+    [ ! -e "$root/current" ] && [ ! -L "$root/current" ] || reject rollback-current
+    [ ! -e "$unit" ] && [ ! -L "$unit" ] || reject current-unit
+    rmdir -- "$releases" "$root" 2>/dev/null || true
+    printf 'ROLLED_BACK=1\n'
+    return
+  fi
   assert_root_owned_directory "$candidate"; assert_root_owned_regular "$candidate/.windowstolinux-owner"
   [ "$(cat -- "$candidate/.windowstolinux-owner")" = "$manifest" ] || reject candidate-owner
   current_application="$app"; load_deployment_parameters "$candidate/.windowstolinux-deployment-parameters"
@@ -85,12 +85,10 @@ rollback_deployment_first() {
   printf 'ROLLED_BACK=1\n'
 }
 lifecycle_deployment() {
-  [ "$#" -ge 5 ] || reject lifecycle-deployment-arguments
-  local app="$1" action="$2" manifest="$3" kind="$4"
-  shift 4
+  [ "$#" -eq 3 ] || reject lifecycle-deployment-arguments
+  local app="$1" action="$2" manifest="$3"
   require_app "$app"; require_digest "$manifest"
   case "$action" in start|stop|restart|enable|disable) ;; *) reject lifecycle-action ;; esac
-  render_deployment_unit "$app" "$kind" "$@" >/dev/null
   assert_deployment_current_or_empty "$app" "$manifest"
   [ "$previous_present" -eq 1 ] || reject lifecycle-unmanaged
   systemctl "$action" "$(unit_name "$app")"

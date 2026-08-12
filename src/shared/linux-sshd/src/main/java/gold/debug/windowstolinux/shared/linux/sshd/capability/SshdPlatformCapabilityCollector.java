@@ -52,11 +52,25 @@ public final class SshdPlatformCapabilityCollector implements LinuxPlatformCapab
                 .map(value -> value.trim().toLowerCase(Locale.ROOT))
                 .filter(value -> value.matches("[a-z0-9_.-]{1,64}"))
                 .collect(Collectors.toUnmodifiableSet());
+        Set<Integer> javaMajors = integerVersions(values.getOrDefault("JAVA_MAJORS", ""));
+        Set<Integer> nodeMajors = integerVersions(values.getOrDefault("NODE_MAJORS", ""));
+        Set<String> pythonVersions = Arrays.stream(values.getOrDefault("PYTHON_VERSIONS", "").split(","))
+                .map(String::trim).filter(value -> value.matches("3\\.(?:10|11|12|13)"))
+                .collect(Collectors.toUnmodifiableSet());
         return new LinuxCapabilities(classify(id, variant, version), version,
                 normalized(values.getOrDefault("ARCH", "unknown")), normalized(values.getOrDefault("PACKAGE_MANAGER", "unknown")),
                 "1".equals(values.get("SYSTEMD")), "1".equals(values.get("DOCKER_CLIENT")),
-                "1".equals(values.get("PODMAN_CLIENT")), "1".equals(values.get("PODMAN_QUADLET")), flags,
+                "1".equals(values.get("PODMAN_CLIENT")), "1".equals(values.get("PODMAN_QUADLET")),
+                javaMajors, nodeMajors, "1".equals(values.get("NPM")), pythonVersions,
+                "1".equals(values.get("PYTHON3")), "1".equals(values.get("DOCKER_OPERATIONAL")),
+                "1".equals(values.get("PODMAN_OPERATIONAL")), "1".equals(values.get("X86_64_V3")), flags,
                 "SSH host fingerprint verified: " + Objects.requireNonNull(hostFingerprint, "hostFingerprint"));
+    }
+
+    private static Set<Integer> integerVersions(String value) {
+        return Arrays.stream(Objects.requireNonNull(value, "value").split(","))
+                .map(String::trim).filter(item -> item.matches("[0-9]{1,2}"))
+                .map(Integer::valueOf).collect(Collectors.toUnmodifiableSet());
     }
 
     private static LinuxDistro classify(String id, String variant, String version) {

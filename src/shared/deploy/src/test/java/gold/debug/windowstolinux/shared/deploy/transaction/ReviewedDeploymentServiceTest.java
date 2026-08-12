@@ -4,13 +4,16 @@ import gold.debug.windowstolinux.shared.config.definition.ConfigurationScope;
 import gold.debug.windowstolinux.shared.config.definition.ConfigurationValue;
 import gold.debug.windowstolinux.shared.config.revision.ConfigurationEntry;
 import gold.debug.windowstolinux.shared.config.revision.ConfigurationSnapshot;
+import gold.debug.windowstolinux.shared.config.revision.DeploymentInputManifest;
 import gold.debug.windowstolinux.shared.deploy.plan.DeploymentApproval;
 import gold.debug.windowstolinux.shared.deploy.plan.ReviewedDeploymentRequest;
+import gold.debug.windowstolinux.shared.deploy.plan.ReviewedReleaseIdentity;
 import gold.debug.windowstolinux.shared.deploy.result.DeploymentResult;
 import gold.debug.windowstolinux.shared.linux.build.DeploymentBuildResult;
 import gold.debug.windowstolinux.shared.linux.connection.DeploymentLinuxGateway;
 import gold.debug.windowstolinux.shared.linux.connection.DeploymentRemoteSession;
 import gold.debug.windowstolinux.shared.linux.connection.HostKeyDecision;
+import gold.debug.windowstolinux.shared.linux.connection.LinuxOperationException;
 import gold.debug.windowstolinux.shared.linux.connection.SshCredential;
 import gold.debug.windowstolinux.shared.linux.connection.SshEndpoint;
 import gold.debug.windowstolinux.shared.linux.protocol.ReleaseSnapshot;
@@ -50,8 +53,10 @@ import java.util.EnumSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class ReviewedDeploymentServiceTest {
     private static final String SHA = "a".repeat(64);
@@ -63,22 +68,75 @@ class ReviewedDeploymentServiceTest {
         DeploymentRemoteSession session = fakeSession(built);
         DeploymentLinuxGateway gateway = (endpoint, credential, verifier) -> session;
         for (DeploymentRuntimeSpecification runtime : runtimes()) {
-            DeploymentResult result = new ReviewedDeploymentService().deploy(request(runtime), application(), gateway,
+            ReviewedDeploymentRequest request = request(runtime);
+            DeploymentResult result = new ReviewedDeploymentService().deploy(request, application(), gateway,
                     new SshEndpoint("server-one", "example.test", 22, "deployer"),
                     new SshCredential.Password("password".toCharArray()), (endpoint, fingerprint) -> HostKeyDecision.ACCEPT_EXISTING);
             assertEquals(DeploymentStatus.SUCCEEDED, result.status());
-            assertEquals(SHA, result.publishedArtifactSha256().orElseThrow());
+            assertEquals(ReviewedReleaseIdentity.from(request), result.publishedArtifactSha256().orElseThrow());
         }
         assertEquals(EnumSet.allOf(DeploymentProjectType.class), built);
     }
 
+    @Test
+    void reconnectsAndCleansTheCandidateWhenInputStagingIsInterrupted() {
+        Counters counters = new Counters();
+        DeploymentRemoteSession session = fakeSession(EnumSet.noneOf(DeploymentProjectType.class),
+                "stageDeploymentInputs", counters);
+        DeploymentLinuxGateway gateway = (endpoint, credential, verifier) -> {
+            counters.connections.incrementAndGet();
+            return session;
+        };
+
+        DeploymentResult result = new ReviewedDeploymentService().deploy(request(runtimes().get(2)), application(), gateway,
+                new SshEndpoint("server-one", "example.test", 22, "deployer"),
+                new SshCredential.Password("password".toCharArray()), (endpoint, fingerprint) -> HostKeyDecision.ACCEPT_EXISTING);
+
+        assertEquals(DeploymentStatus.PRECONDITION_REJECTED, result.status());
+        assertEquals(2, counters.connections.get());
+        assertEquals(1, counters.cleanups.get());
+        assertEquals(0, counters.rollbacks.get());
+        assertTrue(result.events().stream().anyMatch(event -> event.step().equals("candidate-cleanup-reconnect")));
+    }
+
+    @Test
+    void reconnectsAndRollsBackWhenPublicationIsInterrupted() {
+        Counters counters = new Counters();
+        DeploymentRemoteSession session = fakeSession(EnumSet.noneOf(DeploymentProjectType.class),
+                "publishDeployment", counters);
+        DeploymentLinuxGateway gateway = (endpoint, credential, verifier) -> {
+            counters.connections.incrementAndGet();
+            return session;
+        };
+
+        DeploymentResult result = new ReviewedDeploymentService().deploy(request(runtimes().getFirst()), application(), gateway,
+                new SshEndpoint("server-one", "example.test", 22, "deployer"),
+                new SshCredential.Password("password".toCharArray()), (endpoint, fingerprint) -> HostKeyDecision.ACCEPT_EXISTING);
+
+        assertEquals(DeploymentStatus.FAILED_FIRST_DEPLOYMENT, result.status());
+        assertEquals(2, counters.connections.get());
+        assertEquals(1, counters.rollbacks.get());
+        assertEquals(1, counters.cleanups.get());
+        assertTrue(result.events().stream().anyMatch(event -> event.step().equals("recovery-reconnect")));
+    }
+
     private DeploymentRemoteSession fakeSession(EnumSet<DeploymentProjectType> built) {
+        return fakeSession(built, null, new Counters());
+    }
+
+    private DeploymentRemoteSession fakeSession(EnumSet<DeploymentProjectType> built, String interruptedMethod,
+                                                Counters counters) {
         return (DeploymentRemoteSession) Proxy.newProxyInstance(getClass().getClassLoader(),
-                new Class<?>[]{DeploymentRemoteSession.class}, (proxy, method, arguments) -> switch (method.getName()) {
+                new Class<?>[]{DeploymentRemoteSession.class}, (proxy, method, arguments) -> {
+                    if (method.getName().equals(interruptedMethod)) {
+                        throw LinuxOperationException.localized("linux.error.commandFailed", "fixture interruption");
+                    }
+                    return switch (method.getName()) {
                     case "collectCapabilities" -> new ServerCapabilities("Ubuntu 24.04", "x86_64", true, true, true,
                             true, true, true, true, true, 10L * 1024 * 1024 * 1024, "fixture");
                     case "collectDeploymentCapabilities" -> new LinuxCapabilities(LinuxDistro.UBUNTU, "24.04", "x86_64", "apt",
-                            true, true, true, true, java.util.Set.of("sse4_2"), "fixture");
+                            true, true, true, true, java.util.Set.of(21), java.util.Set.of(22), true,
+                            java.util.Set.of("3.12"), true, true, true, true, java.util.Set.of("sse4_2"), "fixture");
                     case "uploadSource" -> {
                         SourceArchiveDescriptor archive = (SourceArchiveDescriptor) arguments[0];
                         RemoteWorkspace workspace = (RemoteWorkspace) arguments[1];
@@ -90,15 +148,24 @@ class ReviewedDeploymentServiceTest {
                         built.add(facts.projectType());
                         yield DeploymentBuildResult.succeeded(SHA, "fixture build");
                     }
+                    case "stageDeploymentInputs" -> new DeploymentInputManifest(SHA, List.of());
                     case "snapshotDeployment" -> ReleaseSnapshot.firstDeployment("fixture snapshot");
-                    case "publishDeployment", "cleanupCandidate", "retainRecentSuccessfulReleases", "rollbackDeployment" ->
-                            new RemoteStepResult(true, false, "fixture step");
+                    case "cleanupCandidate" -> {
+                        counters.cleanups.incrementAndGet();
+                        yield new RemoteStepResult(true, false, "fixture cleanup");
+                    }
+                    case "rollbackDeployment" -> {
+                        counters.rollbacks.incrementAndGet();
+                        yield new RemoteStepResult(true, false, "fixture rollback");
+                    }
+                    case "publishDeployment", "retainRecentSuccessfulReleases" -> new RemoteStepResult(true, false, "fixture step");
                     case "checkDeploymentHealth" -> new HealthCheckResult(true, "fixture health");
                     case "observeDeployment", "executeDeploymentLifecycle" -> new LifecycleObservation(application(), RuntimeState.RUNNING,
                             AutostartState.DISABLED, true, Instant.now(), "fixture observation");
                     case "close" -> null;
                     case "toString" -> "fixture session";
                     default -> throw new AssertionError("unexpected remote capability: " + method.getName());
+                    };
                 });
     }
 
@@ -143,5 +210,11 @@ class ReviewedDeploymentServiceTest {
     private static ManagedApplication application() {
         return ManagedApplication.forManaged("demo",
                 new ServerIdentity("server-one", "example.test", 22, "SHA256:fixture"), SHA);
+    }
+
+    private static final class Counters {
+        private final AtomicInteger connections = new AtomicInteger();
+        private final AtomicInteger cleanups = new AtomicInteger();
+        private final AtomicInteger rollbacks = new AtomicInteger();
     }
 }

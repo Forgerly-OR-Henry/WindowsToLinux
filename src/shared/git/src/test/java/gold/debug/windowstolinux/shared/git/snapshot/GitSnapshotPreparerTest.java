@@ -48,8 +48,51 @@ class GitSnapshotPreparerTest {
     }
 
     @Test
+    void rejectsGitSymbolicLinkModesEvenWhenTheHostCheckoutMaterializesARegularFile() throws Exception {
+        Path repository = createRepository();
+        String targetBlob = git(repository, "rev-parse", "HEAD:README.md").trim();
+        git(repository, "update-index", "--add", "--cacheinfo", "120000," + targetBlob + ",linked.txt");
+        git(repository, "commit", "-m", "add symbolic link entry");
+
+        GitSnapshotException exception = assertThrows(GitSnapshotException.class,
+                () -> new GitSnapshotPreparer().prepare(request(repository), temporaryDirectory.resolve("workspace")));
+
+        assertTrue(exception.getMessage().contains("without executing project code"));
+    }
+
+    @Test
     void rejectsCredentialBearingRemoteUris() {
         assertThrows(IllegalArgumentException.class, () -> GitRemote.parse("https://token@example.test/repository.git"));
+    }
+
+    @Test
+    void fetchesOnlyTheExactRequestedCommit() throws Exception {
+        Path repository = createRepository();
+        String firstCommit = git(repository, "rev-parse", "HEAD").trim();
+        Files.writeString(repository.resolve("later.txt"), "must not enter the pinned snapshot", StandardCharsets.UTF_8);
+        commit(repository, "later commit");
+        GitSourceRequest request = new GitSourceRequest(new GitRemote(repository.toUri()),
+                new GitReference.Commit(firstCommit), Set.of(), 10 * 1024 * 1024, true);
+
+        GitSnapshot snapshot = new GitSnapshotPreparer().prepare(request, temporaryDirectory.resolve("exact-workspace"));
+
+        assertEquals(firstCommit, snapshot.commit());
+        assertTrue(Files.notExists(snapshot.checkoutDirectory().resolve("later.txt")));
+        assertEquals("1", git(snapshot.checkoutDirectory(), "rev-list", "--count", "HEAD").trim());
+    }
+
+    @Test
+    void preservesRepositoryBlobLineEndingsInsteadOfApplyingTheHostGitDefault() throws Exception {
+        Path repository = createRepository();
+        byte[] wrapper = "#!/bin/sh\nprintf 'wrapper-ok\\n'\n".getBytes(StandardCharsets.UTF_8);
+        Files.write(repository.resolve("gradlew"), wrapper);
+        commit(repository, "add wrapper");
+
+        GitSnapshot snapshot = new GitSnapshotPreparer().prepare(request(repository),
+                temporaryDirectory.resolve("line-ending-workspace"));
+
+        assertEquals("false", git(snapshot.checkoutDirectory(), "config", "core.autocrlf").trim());
+        assertTrue(java.util.Arrays.equals(wrapper, Files.readAllBytes(snapshot.checkoutDirectory().resolve("gradlew"))));
     }
 
     private GitSourceRequest request(Path repository) {

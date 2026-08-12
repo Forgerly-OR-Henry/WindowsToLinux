@@ -17,7 +17,7 @@ public final class DnfEnvironmentPreparation {
     /** Fixed packages for the supported DNF targets. / 受支持 DNF 目标的固定软件包。 */
     public static final List<String> PACKAGES = List.of(
             "java-21-openjdk-headless", "maven", "curl", "sudo", "tar", "gzip", "iproute", "coreutils",
-            "util-linux", "findutils", "gawk"
+            "util-linux", "findutils", "gawk", "nodejs", "npm", "podman"
     );
 
     private DnfEnvironmentPreparation() {
@@ -36,7 +36,11 @@ public final class DnfEnvironmentPreparation {
             throw new IllegalArgumentException("DNF preparation supports only CentOS Stream 9 or 10");
         }
         String sudoers = UbuntuEnvironmentPreparation.renderSudoers(username);
-        String packages = String.join(" ", PACKAGES);
+        List<String> selectedPackages = new java.util.ArrayList<>(PACKAGES);
+        selectedPackages.add("9".equals(version) ? "python3.11" : "python3.12");
+        selectedPackages.add("9".equals(version) ? "python3.11-pip" : "python3.12-pip");
+        String packages = String.join(" ", selectedPackages);
+        String python = "9".equals(version) ? "python3.11" : "python3.12";
         String helper = ManagedHelperBundle.renderScript();
         return """
                 set -euo pipefail
@@ -75,6 +79,12 @@ public final class DnfEnvironmentPreparation {
                 command -v setsid >/dev/null 2>&1
                 command -v timeout >/dev/null 2>&1
                 command -v du >/dev/null 2>&1
+                command -v node >/dev/null 2>&1
+                command -v npm >/dev/null 2>&1
+                command -v %s >/dev/null 2>&1
+                %s -m venv --help >/dev/null 2>&1
+                command -v podman >/dev/null 2>&1
+                podman info >/dev/null 2>&1
                 tmp=$(/usr/bin/mktemp /tmp/windowstolinux-managed-sudoers.XXXXXX)
                 helper_tmp=$(/usr/bin/mktemp /tmp/windowstolinux-managed-helper.XXXXXX)
                 trap '/usr/bin/rm -f -- "$tmp" "$helper_tmp"' EXIT
@@ -99,7 +109,7 @@ public final class DnfEnvironmentPreparation {
                 printf 'SUDOERS=%s\\n'
                 printf 'HELPER=%s\\n'
                 """.formatted(
-                quote(version), quote(username), packages, packages, quote(sudoers), quote(helper),
+                quote(version), quote(username), packages, packages, python, python, quote(sudoers), quote(helper),
                 quote(ManagedHelperBundle.DIRECTORY), quote(ManagedHelperBundle.PATH),
                 quote(UbuntuEnvironmentPreparation.SUDOERS_PATH), quote(ManagedHelperBundle.DIRECTORY),
                 quote(ManagedHelperBundle.PATH), quote(UbuntuEnvironmentPreparation.SUDOERS_PATH),
