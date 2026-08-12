@@ -160,7 +160,14 @@ class ReviewedDeploymentServiceTest {
                             true, true, true, true, true, helperProtocolVersion, 10L * 1024 * 1024 * 1024, "fixture");
                     case "collectDeploymentCapabilities" -> new LinuxCapabilities(LinuxDistro.UBUNTU, "24.04", "x86_64", "apt",
                             true, true, true, true, java.util.Set.of(21), java.util.Set.of(22), true, true,
-                            java.util.Set.of("3.12"), true, true, true, true, java.util.Set.of("sse4_2"), "fixture");
+                            java.util.Set.of("3.12"), true, Map.of(
+                            gold.debug.windowstolinux.shared.model.project.AdvancedRuntimeKind.GO, java.util.Set.of("1.24"),
+                            gold.debug.windowstolinux.shared.model.project.AdvancedRuntimeKind.RUST, java.util.Set.of("1.89.0"),
+                            gold.debug.windowstolinux.shared.model.project.AdvancedRuntimeKind.DOTNET, java.util.Set.of("8.0.408"),
+                            gold.debug.windowstolinux.shared.model.project.AdvancedRuntimeKind.KOTLIN, java.util.Set.of("21"),
+                            gold.debug.windowstolinux.shared.model.project.AdvancedRuntimeKind.PHP, java.util.Set.of("8.3"),
+                            gold.debug.windowstolinux.shared.model.project.AdvancedRuntimeKind.RUBY, java.util.Set.of("3.3.5")),
+                            true, true, true, java.util.Set.of("sse4_2"), "fixture");
                     case "uploadSource" -> {
                         counters.uploads.incrementAndGet();
                         SourceArchiveDescriptor archive = (SourceArchiveDescriptor) arguments[0];
@@ -205,7 +212,8 @@ class ReviewedDeploymentServiceTest {
         return new ReviewedDeploymentRequest(application().server(), facts, new SourceRevision(SHA, Optional.empty(), Map.of()),
                 new SourceArchiveDescriptor(temporaryDirectory.resolve(runtime.projectType().name() + ".tar.gz"), SHA, 100, 100),
                 configuration, List.of(), runtime, url, BuildLimits.defaultNonRoot(),
-                new DeploymentApproval("demo", SHA, "server-one", false, Instant.now()), true);
+                new DeploymentApproval("demo", SHA, "server-one", false, Instant.now()), true,
+                facts.support().level() == gold.debug.windowstolinux.shared.model.project.DeploymentSupportLevel.EXPERIMENTAL_ADAPTER);
     }
 
     private static DeploymentBuildTool tool(DeploymentRuntimeSpecification runtime) {
@@ -216,6 +224,12 @@ class ReviewedDeploymentServiceTest {
             case PYTHON_SERVICE -> DeploymentBuildTool.PYTHON_VENV;
             case STATIC_SITE -> DeploymentBuildTool.STATIC_SITE_BUILD;
             case DOCKERFILE_CONTAINER -> DeploymentBuildTool.CONTAINER_BUILD;
+            case GO_SERVICE -> DeploymentBuildTool.GO_MODULE;
+            case RUST_SERVICE -> DeploymentBuildTool.CARGO_LOCKED;
+            case DOTNET_SERVICE -> DeploymentBuildTool.DOTNET_LOCKED;
+            case KOTLIN_SERVICE -> DeploymentBuildTool.GRADLE_KOTLIN_WRAPPER;
+            case PHP_SERVICE -> DeploymentBuildTool.COMPOSER_LOCKED;
+            case RUBY_SERVICE -> DeploymentBuildTool.BUNDLER_LOCKED;
             case RECOGNITION_PREVIEW -> throw new AssertionError("recognition preview has no deployment runtime");
         };
     }
@@ -229,7 +243,25 @@ class ReviewedDeploymentServiceTest {
                 new DeploymentRuntimeSpecification.PythonService("3.12", "demo.main", new HealthCheck.Tcp(8080, 5, 1)),
                 new DeploymentRuntimeSpecification.StaticSite("public", new HealthCheck.Http(URI.create("http://127.0.0.1:8080/"), 200, 5)),
                 new DeploymentRuntimeSpecification.Container(DeploymentRuntimeSpecification.ContainerEngine.PODMAN,
-                        Map.of(8080, 8080), List.of(), new HealthCheck.Tcp(8080, 5, 1))
+                        Map.of(8080, 8080), List.of(), new HealthCheck.Tcp(8080, 5, 1)),
+                new DeploymentRuntimeSpecification.AdvancedService(
+                        gold.debug.windowstolinux.shared.model.project.AdvancedRuntimeKind.GO, "1.24", "w2l-app",
+                        "main.go", java.util.OptionalInt.empty(), new HealthCheck.Tcp(8080, 5, 1)),
+                new DeploymentRuntimeSpecification.AdvancedService(
+                        gold.debug.windowstolinux.shared.model.project.AdvancedRuntimeKind.RUST, "1.89.0", "demo",
+                        "src/main.rs", java.util.OptionalInt.empty(), new HealthCheck.Tcp(8080, 5, 1)),
+                new DeploymentRuntimeSpecification.AdvancedService(
+                        gold.debug.windowstolinux.shared.model.project.AdvancedRuntimeKind.DOTNET, "8.0.408", "Demo",
+                        "Demo.dll", java.util.OptionalInt.empty(), new HealthCheck.Tcp(8080, 5, 1)),
+                new DeploymentRuntimeSpecification.AdvancedService(
+                        gold.debug.windowstolinux.shared.model.project.AdvancedRuntimeKind.KOTLIN, "21", "demo",
+                        "demo.MainKt", java.util.OptionalInt.empty(), new HealthCheck.Tcp(8080, 5, 1)),
+                new DeploymentRuntimeSpecification.AdvancedService(
+                        gold.debug.windowstolinux.shared.model.project.AdvancedRuntimeKind.PHP, "8.3", "public",
+                        "public/index.php", java.util.OptionalInt.of(8080), new HealthCheck.Tcp(8080, 5, 1)),
+                new DeploymentRuntimeSpecification.AdvancedService(
+                        gold.debug.windowstolinux.shared.model.project.AdvancedRuntimeKind.RUBY, "3.3.5", "bundle",
+                        "config.ru", java.util.OptionalInt.of(8080), new HealthCheck.Tcp(8080, 5, 1))
         );
     }
 

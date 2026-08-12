@@ -2,14 +2,14 @@
 
 ## 文档信息
 
-- 文档版本：`2.7.0-phase3-support-preview`
-- 文档状态：**正式模块与职责边界保持不变；三期支持等级及禁止执行的语言识别预览已进入既有 model/analyze/app-ui 路径，高级适配与真实目标机状态为 `RUNTIME-PENDING`**
+- 文档版本：`2.8.0-phase3-experimental-adapters`
+- 文档状态：**正式模块与职责边界保持不变；六种高级语言试验适配进入既有 model/analyze/deploy/linux-sshd/app-ui 路径，真实目标机状态为 `RUNTIME-PENDING`**
 - 已确认范围：`shared` 共用模块、`app` Windows 桌面应用模块、`web` Web 应用模块
 - 已确认能力边界：受管应用生命周期复用既有模块，不新增独立 Maven 模块
 - 更新日期：2026-08-13
 - 开发总纲：[DEVELOPMENT.md](DEVELOPMENT.md)
 
-> 本文是正式目标目录、模块职责、依赖方向和内部包结构的来源。当前 reactor 已包含根工程、3 个聚合模块和 24 个叶子模块，共 28 个 POM。`shared/source`、`shared/config`、`shared/git`、`shared/linux-sshd`、`analyze`、`deploy`、`app/db` 与 `app/service` 已承载对应的一期或二期代码；其中 `shared/linux-sshd` 已实现六类项目的有界构建、发布/回滚/生命周期协议及受支持发行版固定环境准备。`shared/backup` 和 Web Java 叶子模块仍只保留 POM。2026-08-10/12 的 Ubuntu 24.04 x86-64 产品入口验收属于迁移前协议的历史证据，继续保留但不得外推到本次统一后的 Spring Boot Reviewed/helper v2 链路；新链路与 Podman、Ubuntu 22.04、CentOS Stream 9/10 均标记 `RUNTIME-PENDING`。
+> 本文是正式目标目录、模块职责、依赖方向和内部包结构的来源。当前 reactor 已包含根工程、3 个聚合模块和 24 个叶子模块，共 28 个 POM。`shared/source`、`shared/config`、`shared/git`、`shared/linux-sshd`、`analyze`、`deploy`、`app/db` 与 `app/service` 已承载对应代码；其中 `shared/linux-sshd` 已在本地实现六类既有项目和六种高级语言试验项目的有界构建、发布/回滚/生命周期协议。`shared/backup` 和 Web Java 叶子模块仍只保留 POM。2026-08-10/12 的 Ubuntu 24.04 x86-64 产品入口验收属于迁移前协议的历史证据，继续保留但不得外推到 helper v3；所有 v3 链路均标记 `RUNTIME-PENDING`。
 
 ## 1. 完整目标结构
 
@@ -81,6 +81,7 @@ WindowsToLinux/
    │  │  ├─ framework/
    │  │  │  └─ springboot/    Spring Boot 框架事实与风险识别
    │  │  ├─ language/
+   │  │  │  ├─ advanced/      六种高级语言的锁文件、版本、产物与固定入口分析
    │  │  │  ├─ additional/    三期候选语言的有界路径/元数据识别，不生成执行入口
    │  │  │  ├─ java/          Java 语言事实识别
    │  │  │  ├─ node/          Node.js、JavaScript 和 TypeScript 生态识别
@@ -251,7 +252,7 @@ test/
 - `GitSnapshotPreparer` 只协调 `GitCommandRunner`、`ControlledGitWorkspaceValidator`、`GitRepositoryFeaturePolicy` 和安全归档，不执行仓库源码。
 - `DeploymentBuildRenderer` 由六个项目类型渲染器实现并共享安全脚本外壳；其中 `SpringBootBuildRenderer` 只接受 Gradle Wrapper、Maven Wrapper、系统 Maven 三种固定入口并验证唯一 Spring Boot 2/3 可执行 JAR，注册表拒绝缺失、重复和类型不匹配实现。
 - systemd 远程职责由 `SystemdHealthChecker`、`SystemdOwnershipObserver` 和 `SystemdLifecycleExecutor` 分别承担。
-- `ManagedHelperBundle` 按固定顺序拼装九个职责资源片段；安装路径和 sudoers 白名单仅允许 `/usr/local/lib/windowstolinux/managed-helper`，协议版本固定为 2，拼装字节的 SHA-256 固定为 `a6c34b9f789881e98479c4d78daebd1657b0d9b7d9e9b96da8f05945267e934a`。旧 helper 必须由用户通过产品“环境准备”显式更新，部署链路不得自动替换。
+- `ManagedHelperBundle` 按固定顺序拼装十个职责资源片段；安装路径和 sudoers 白名单仅允许 `/usr/local/lib/windowstolinux/managed-helper`，协议版本固定为 3，拼装字节的 SHA-256 固定为 `5985f74caa8394d342147ba4a8d53a24038d32f6c61f9f4a509f1d54009174e0`。高级语言 systemd 命令由独立的 `35-advanced-runtime.sh` 片段封闭渲染；旧 helper 必须由用户通过产品“环境准备”显式更新，部署链路不得自动替换。
 
 ## 2. 模块职责
 
@@ -617,6 +618,7 @@ linux-sshd 通过 linux 契约采集服务器已有环境
 
 | 版本 | 日期 | 说明 |
 | --- | --- | --- |
+| 2.8.0-phase3-experimental-adapters | 2026-08-13 | 在既有职责包中接入 Go、Rust、.NET、Kotlin、PHP、Ruby 的锁文件分析、试验支持声明、适配器、固定构建渲染、helper v3 与 Ubuntu 24.04 工具链准备；逐次风险确认和实时版本探测保持安全边界，JDK 21 全量离线门禁 28/28 通过，真实目标机验收仍待完成。 |
 | 2.7.0-phase3-support-preview | 2026-08-13 | 在既有 `shared/model`、`shared/analyze` 和 `app/ui` 边界内加入支持等级、精确真实验收范围和不可执行语言识别预览；覆盖三期全部候选语言，明确预览没有构建工具、归档、适配器、渲染器或 helper 入口。 |
 | 2.6.0-spring-boot-reviewed-convergence | 2026-08-13 | 将 Maven/Gradle Spring Boot 合并为 `SPRING_BOOT` 并由构建工具区分固定入口；删除旧分析、源码和部署 API，接入 helper v2、发布身份 v2 与 SQLite v5。迁移前 Ubuntu 实机证据保留为历史记录，统一后的 Reviewed 链路标记 `RUNTIME-PENDING`。 |
 | 2.5.1-test-fixture-layout | 2026-08-13 | 将根目录 23 个 Java、Maven、Spring Boot 独立验收夹具统一归入 `test/java/maven/spring-boot`，明确后续按语言、构建工具、框架或功能扩展；不修改夹具内容、生产模块或 Maven reactor。 |

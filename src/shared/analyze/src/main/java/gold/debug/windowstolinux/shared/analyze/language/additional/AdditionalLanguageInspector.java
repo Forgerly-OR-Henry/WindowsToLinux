@@ -16,9 +16,9 @@ import java.util.List;
 import java.util.Locale;
 
 /**
- * Recognizes Phase Three language candidates from bounded paths and fixed metadata names without evaluating content.
+ * Recognizes additional language candidates from bounded paths and fixed metadata names without evaluating content.
  *
- * <p>通过有界路径与固定元数据名称识别三期语言候选，不求值其内容。
+ * <p>通过有界路径与固定元数据名称识别附加语言候选，不求值其内容。
  */
 public final class AdditionalLanguageInspector {
     /** Returns all additional language markers without selecting a primary language or executable. / 返回全部附加语言标记，不选择主要语言或可执行文件。 */

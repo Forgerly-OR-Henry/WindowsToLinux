@@ -348,7 +348,7 @@ class DesktopApplicationServiceTest {
                         new ConfigurationEntry("PORT", ConfigurationScope.RUNTIME,
                                 new ConfigurationValue.Number(8080)))), List.of(),
                 new DeploymentRuntimeSpecification.SpringBoot(healthCheck()), Optional.empty(), limits,
-                rootBuildConfirmed, true);
+                rootBuildConfirmed, true, true);
     }
 
     private static ServerIdentity server(String id, String host, String fingerprint) {

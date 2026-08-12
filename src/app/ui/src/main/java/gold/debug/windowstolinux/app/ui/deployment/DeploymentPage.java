@@ -23,6 +23,7 @@ import gold.debug.windowstolinux.shared.model.health.UserAccessUrl;
 import gold.debug.windowstolinux.shared.model.project.DeploymentProjectType;
 import gold.debug.windowstolinux.shared.model.project.DeploymentRuntimeSpecification;
 import gold.debug.windowstolinux.shared.model.project.DeploymentRuntimeSuggestion;
+import gold.debug.windowstolinux.shared.model.project.DeploymentSupportLevel;
 import gold.debug.windowstolinux.shared.model.security.CredentialStorageMode;
 
 import javax.swing.BorderFactory;
@@ -79,6 +80,7 @@ public final class DeploymentPage implements ReviewContext {
     private final JTextField configurationEntries = new JTextField(30);
     private final JTextField secretReferences = new JTextField(20);
     private final JCheckBox rootBuild;
+    private final JCheckBox experimentalAdapterRisk;
     private final JTextArea output = DesktopComponents.outputArea();
     private final JPanel panel;
     private ReviewedSourcePreparation reviewedPreparation;
@@ -95,6 +97,7 @@ public final class DeploymentPage implements ReviewContext {
         this.applicationSelection = applicationSelection;
         presenter = new DeploymentAnalysisPresenter(messages);
         rootBuild = new JCheckBox(messages.text("rootBuild"));
+        experimentalAdapterRisk = new JCheckBox(messages.text("experimentalAdapterRisk"));
         messages.localize(projectType, "project.type.");
         messages.localize(healthMode, "health.mode.");
         messages.localize(containerEngine, "container.engine.");
@@ -115,7 +118,8 @@ public final class DeploymentPage implements ReviewContext {
                 runtimeVersion.getText(), jvmArguments.getText(), applicationArguments.getText(),
                 containerEngine.getSelectedItem() == null ? "" : ((DeploymentRuntimeSpecification.ContainerEngine)
                         containerEngine.getSelectedItem()).name(), containerPorts.getText(), containerVolumes.getText(),
-                configurationEntries.getText(), secretReferences.getText(), rootBuild.isSelected(), output.getText(), reviewedPreparation);
+                configurationEntries.getText(), secretReferences.getText(), rootBuild.isSelected(),
+                experimentalAdapterRisk.isSelected(), output.getText(), reviewedPreparation);
     }
 
     /** Restores all unsaved deployment and review state. / 恢复全部未保存部署与审阅状态。 */
@@ -131,7 +135,8 @@ public final class DeploymentPage implements ReviewContext {
                 : DeploymentRuntimeSpecification.ContainerEngine.valueOf(state.containerEngine()));
         containerPorts.setText(state.containerPorts()); containerVolumes.setText(state.containerVolumes());
         configurationEntries.setText(state.configurationEntries()); secretReferences.setText(state.secretReferences());
-        rootBuild.setSelected(state.rootBuild()); output.setText(state.output()); reviewedPreparation = state.preparation();
+        rootBuild.setSelected(state.rootBuild()); experimentalAdapterRisk.setSelected(state.experimentalAdapterRisk());
+        output.setText(state.output()); reviewedPreparation = state.preparation();
     }
 
     private JPanel createPanel(DesktopComponents c) {
@@ -159,7 +164,9 @@ public final class DeploymentPage implements ReviewContext {
         c.addField(healthForm, 2, 1, messages.text("field.userAccessUrl"), accessUrl);
         health.add(healthForm, BorderLayout.CENTER);
         JPanel risk = c.transparent(new FlowLayout(FlowLayout.LEFT, 0, 0));
-        rootBuild.setBorder(BorderFactory.createEmptyBorder(4, 0, 0, 0)); risk.add(rootBuild); health.add(risk, BorderLayout.SOUTH);
+        rootBuild.setBorder(BorderFactory.createEmptyBorder(4, 0, 0, 0)); risk.add(rootBuild);
+        experimentalAdapterRisk.setBorder(BorderFactory.createEmptyBorder(4, 16, 0, 0));
+        risk.add(experimentalAdapterRisk); health.add(risk, BorderLayout.SOUTH);
         JPanel runtime = c.card(new BorderLayout(0, 12));
         runtime.add(c.sectionHeading(messages.text("section.runtime.title"), messages.text("section.runtime.description")), BorderLayout.NORTH);
         JPanel form = c.transparent(new GridBagLayout());
@@ -276,6 +283,9 @@ public final class DeploymentPage implements ReviewContext {
         suggestion.value(DeploymentRuntimeSuggestion.RuntimeInput.PYTHON_VERSION).ifPresent(runtimePrimary::setText);
         suggestion.value(DeploymentRuntimeSuggestion.RuntimeInput.PYTHON_ENTRYPOINT).ifPresent(runtimeSecondary::setText);
         suggestion.value(DeploymentRuntimeSuggestion.RuntimeInput.STATIC_OUTPUT_DIRECTORY).ifPresent(runtimePrimary::setText);
+        suggestion.value(DeploymentRuntimeSuggestion.RuntimeInput.ADVANCED_ARTIFACT).ifPresent(runtimePrimary::setText);
+        suggestion.value(DeploymentRuntimeSuggestion.RuntimeInput.ADVANCED_ENTRYPOINT).ifPresent(runtimeSecondary::setText);
+        suggestion.value(DeploymentRuntimeSuggestion.RuntimeInput.ADVANCED_VERSION).ifPresent(runtimeVersion::setText);
         if (!suggestion.suggestedContainerPorts().isEmpty()) containerPorts.setText(suggestion.suggestedContainerPorts().entrySet()
                 .stream().map(entry -> entry.getKey() + ":" + entry.getValue()).reduce((a, b) -> a + ";" + b).orElse(""));
         if (!suggestion.suggestedManagedVolumes().isEmpty()) containerVolumes.setText(suggestion.suggestedManagedVolumes().stream()
@@ -301,6 +311,12 @@ public final class DeploymentPage implements ReviewContext {
                     messages.text("deployment.rootConfirm.title"), JOptionPane.YES_NO_OPTION,
                     JOptionPane.WARNING_MESSAGE) != JOptionPane.YES_OPTION) return;
             DeploymentRuntimeSpecification runtime = runtimeSpecification(health);
+            boolean experimentalRisk = reviewedPreparation.assessment().facts().orElseThrow().support().level()
+                    != DeploymentSupportLevel.EXPERIMENTAL_ADAPTER || experimentalAdapterRisk.isSelected();
+            if (!experimentalRisk) {
+                output.setText(messages.text("deployment.experimentalRiskRequired"));
+                return;
+            }
             boolean dockerRisk = runtime instanceof DeploymentRuntimeSpecification.Container container
                     && container.engine() == DeploymentRuntimeSpecification.ContainerEngine.DOCKER
                     && JOptionPane.showConfirmDialog(owner, messages.text("deployment.dockerRisk"),
@@ -311,7 +327,8 @@ public final class DeploymentPage implements ReviewContext {
             ConfigurationSnapshot configuration = configurationSnapshot();
             ReviewedDeploymentRequest request = service.createReviewedDeploymentRequest(reviewedPreparation, server, configuration,
                     secretReferences(), runtime, userAccess, useRoot ? new BuildLimits(1800, 1024, 4096,
-                            4L * 1024 * 1024, 4L * 1024 * 1024 * 1024, true) : BuildLimits.defaultNonRoot(), useRoot, dockerRisk);
+                            4L * 1024 * 1024, 4L * 1024 * 1024 * 1024, true) : BuildLimits.defaultNonRoot(), useRoot,
+                    dockerRisk, experimentalRisk);
             ReviewedDeploymentPlan plan = service.planDeployment(request);
             if (JOptionPane.showConfirmDialog(owner, messages.text("deployment.reviewedReview", Map.of(
                     "type", messages.text("project.type." + runtime.projectType().name().toLowerCase(Locale.ROOT)),
@@ -398,6 +415,9 @@ public final class DeploymentPage implements ReviewContext {
                     ? OptionalInt.empty() : OptionalInt.of(Integer.parseInt(runtimeVersion.getText().trim())), requireHttp(health));
             case DOCKERFILE_CONTAINER -> new DeploymentRuntimeSpecification.Container(
                     (DeploymentRuntimeSpecification.ContainerEngine) containerEngine.getSelectedItem(), ports(), volumes(), health);
+            case GO_SERVICE, RUST_SERVICE, DOTNET_SERVICE, KOTLIN_SERVICE, PHP_SERVICE, RUBY_SERVICE ->
+                    DeploymentRuntimeParser.advanced((DeploymentProjectType) projectType.getSelectedItem(),
+                            runtimeVersion.getText(), runtimePrimary.getText(), runtimeSecondary.getText(), health);
             case RECOGNITION_PREVIEW -> throw new IllegalArgumentException(messages.text("analysis.preview.noDeployment"));
         };
     }

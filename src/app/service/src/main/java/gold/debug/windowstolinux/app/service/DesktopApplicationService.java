@@ -149,10 +149,21 @@ public final class DesktopApplicationService {
             ReviewedSourcePreparation preparation, ServerIdentity server, ConfigurationSnapshot configuration,
             List<SecretReference> secretReferences, gold.debug.windowstolinux.shared.model.project.DeploymentRuntimeSpecification runtime,
             Optional<UserAccessUrl> userAccessUrl, BuildLimits limits, boolean rootBuildConfirmed,
-            boolean containerDaemonRiskAccepted
+            boolean containerDaemonRiskAccepted, boolean experimentalAdapterRiskAccepted
     ) throws SQLException {
         return reviewedDeployment.createRequest(preparation, server, configuration, secretReferences, runtime, userAccessUrl, limits,
-                        rootBuildConfirmed, containerDaemonRiskAccepted);
+                        rootBuildConfirmed, containerDaemonRiskAccepted, experimentalAdapterRiskAccepted);
+    }
+
+    /** Creates a request that cannot enter an experimental adapter. / 创建不能进入试验适配器的请求。 */
+    public ReviewedDeploymentRequest createReviewedDeploymentRequest(
+            ReviewedSourcePreparation preparation, ServerIdentity server, ConfigurationSnapshot configuration,
+            List<SecretReference> secretReferences, gold.debug.windowstolinux.shared.model.project.DeploymentRuntimeSpecification runtime,
+            Optional<UserAccessUrl> userAccessUrl, BuildLimits limits, boolean rootBuildConfirmed,
+            boolean containerDaemonRiskAccepted
+    ) throws SQLException {
+        return createReviewedDeploymentRequest(preparation, server, configuration, secretReferences, runtime, userAccessUrl,
+                limits, rootBuildConfirmed, containerDaemonRiskAccepted, false);
     }
 
     /** Executes a reviewed request using the selected saved server credential. / 使用选定的已保存服务器凭据执行经审阅请求。 */

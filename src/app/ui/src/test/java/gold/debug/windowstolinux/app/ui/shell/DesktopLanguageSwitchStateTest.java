@@ -26,7 +26,7 @@ class DesktopLanguageSwitchStateTest {
                 "ai",
                 new DeploymentPageState("PYTHON_SERVICE", "TCP", "", "200", "12", "7", "",
                         "3.12", "app", "", "", "", "PODMAN", "8080:8080", "", "PORT=8080", "database-password:1", true,
-                        "deployment diagnostic", null),
+                        true, "deployment diagnostic", null),
                 new ServerPageState("server-two", "198.51.100.24", "2222", "deploy",
                         "ssh-secret".toCharArray(), CredentialStorageMode.MASTER_PASSWORD,
                         "master-secret".toCharArray(), "server diagnostic"),
@@ -53,6 +53,7 @@ class DesktopLanguageSwitchStateTest {
             assertEquals("12", chineseState.deployment().healthTimeoutSeconds());
             assertEquals("7", chineseState.deployment().tcpStabilitySeconds());
             assertTrue(chineseState.deployment().rootBuild());
+            assertTrue(chineseState.deployment().experimentalAdapterRisk());
             assertEquals("deployment diagnostic", chineseState.deployment().output());
             assertEquals("server-two", chineseState.server().id());
             assertEquals("198.51.100.24", chineseState.server().host());

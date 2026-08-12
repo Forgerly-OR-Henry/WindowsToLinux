@@ -5,6 +5,7 @@ import gold.debug.windowstolinux.shared.linux.connection.LinuxOperationException
 import gold.debug.windowstolinux.shared.linux.sshd.connection.SshCommandExecutor;
 import gold.debug.windowstolinux.shared.model.server.LinuxCapabilities;
 import gold.debug.windowstolinux.shared.model.server.LinuxDistro;
+import gold.debug.windowstolinux.shared.model.project.AdvancedRuntimeKind;
 
 import java.time.Duration;
 import java.util.Arrays;
@@ -57,12 +58,20 @@ public final class SshdPlatformCapabilityCollector implements LinuxPlatformCapab
         Set<String> pythonVersions = Arrays.stream(values.getOrDefault("PYTHON_VERSIONS", "").split(","))
                 .map(String::trim).filter(value -> value.matches("3\\.(?:10|11|12|13)"))
                 .collect(Collectors.toUnmodifiableSet());
+        java.util.EnumMap<AdvancedRuntimeKind, Set<String>> advancedVersions =
+                new java.util.EnumMap<>(AdvancedRuntimeKind.class);
+        for (AdvancedRuntimeKind kind : AdvancedRuntimeKind.values()) {
+            String observed = values.getOrDefault("ADVANCED_" + kind.name(), "").trim();
+            if (kind.acceptsVersion(observed)) {
+                advancedVersions.put(kind, Set.of(observed));
+            }
+        }
         return new LinuxCapabilities(classify(id, variant, version), version,
                 normalized(values.getOrDefault("ARCH", "unknown")), normalized(values.getOrDefault("PACKAGE_MANAGER", "unknown")),
                 "1".equals(values.get("SYSTEMD")), "1".equals(values.get("DOCKER_CLIENT")),
                 "1".equals(values.get("PODMAN_CLIENT")), "1".equals(values.get("PODMAN_QUADLET")),
                 javaMajors, nodeMajors, "1".equals(values.get("NPM")), "1".equals(values.get("MAVEN")), pythonVersions,
-                "1".equals(values.get("PYTHON3")), "1".equals(values.get("DOCKER_OPERATIONAL")),
+                "1".equals(values.get("PYTHON3")), advancedVersions, "1".equals(values.get("DOCKER_OPERATIONAL")),
                 "1".equals(values.get("PODMAN_OPERATIONAL")), "1".equals(values.get("X86_64_V3")), flags,
                 "SSH host fingerprint verified: " + Objects.requireNonNull(hostFingerprint, "hostFingerprint"));
     }

@@ -4,6 +4,7 @@ import gold.debug.windowstolinux.shared.analyze.build.node.NodeServiceDeployment
 import gold.debug.windowstolinux.shared.analyze.build.python.PythonServiceDeploymentInspector;
 import gold.debug.windowstolinux.shared.analyze.framework.springboot.SpringBootDeploymentInspector;
 import gold.debug.windowstolinux.shared.analyze.language.ProjectLanguageInspector;
+import gold.debug.windowstolinux.shared.analyze.language.advanced.AdvancedLanguageDeploymentInspector;
 import gold.debug.windowstolinux.shared.analyze.language.preview.RecognitionPreviewInspector;
 import gold.debug.windowstolinux.shared.analyze.language.java.JavaJarDeploymentInspector;
 import gold.debug.windowstolinux.shared.analyze.source.BoundedSourceInspector;
@@ -14,6 +15,7 @@ import gold.debug.windowstolinux.shared.model.analysis.DeploymentProjectAssessme
 import gold.debug.windowstolinux.shared.model.analysis.RejectionReason;
 import gold.debug.windowstolinux.shared.model.message.LocalizedMessage;
 import gold.debug.windowstolinux.shared.model.project.DeploymentProjectType;
+import gold.debug.windowstolinux.shared.model.project.AdvancedRuntimeKind;
 import gold.debug.windowstolinux.shared.model.project.ProjectLanguageFacts;
 
 import java.io.IOException;
@@ -44,7 +46,14 @@ public final class DeploymentAnalysisCoordinator {
         this(new BoundedSourceInspector(), new ProjectLanguageInspector(), List.of(
                 new SpringBootDeploymentInspector(), new JavaJarDeploymentInspector(),
                 new NodeServiceDeploymentInspector(), new PythonServiceDeploymentInspector(),
-                new StaticWebDeploymentInspector(), new ContainerDeploymentInspector(), new RecognitionPreviewInspector()));
+                new StaticWebDeploymentInspector(), new ContainerDeploymentInspector(),
+                new AdvancedLanguageDeploymentInspector(AdvancedRuntimeKind.GO),
+                new AdvancedLanguageDeploymentInspector(AdvancedRuntimeKind.RUST),
+                new AdvancedLanguageDeploymentInspector(AdvancedRuntimeKind.DOTNET),
+                new AdvancedLanguageDeploymentInspector(AdvancedRuntimeKind.KOTLIN),
+                new AdvancedLanguageDeploymentInspector(AdvancedRuntimeKind.PHP),
+                new AdvancedLanguageDeploymentInspector(AdvancedRuntimeKind.RUBY),
+                new RecognitionPreviewInspector()));
     }
 
     DeploymentAnalysisCoordinator(BoundedSourceInspector sourceInspector, ProjectLanguageInspector languageInspector,

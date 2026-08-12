@@ -42,6 +42,6 @@ final class ReviewedMavenAcceptanceSupport {
                 CONFIGURATION_REVISION.incrementAndGet(), "maven-acceptance-v1", Instant.now(), List.of());
         service.saveDeploymentConfigurationSnapshot(configuration);
         return service.createReviewedDeploymentRequest(preparation, server, configuration, List.of(),
-                new DeploymentRuntimeSpecification.SpringBoot(health), userAccessUrl, limits, rootBuild, true);
+                new DeploymentRuntimeSpecification.SpringBoot(health), userAccessUrl, limits, rootBuild, true, true);
     }
 }

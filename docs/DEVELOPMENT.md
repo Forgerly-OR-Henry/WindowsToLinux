@@ -4,12 +4,12 @@
 
 - 项目名称：WindowsToLinux
 - 文档角色：产品边界、五期路线、跨期规则与完整开发流程的唯一总入口
-- 文档版本：`2.4.0-phase3-support-preview`
-- 文档状态：**三期支持等级与禁止执行的语言识别预览已完成本地实现；高级语言适配、多组件、多模型与新增发行版仍在实施，未验收组合保持 `RUNTIME-PENDING`**
+- 文档版本：`2.5.0-phase3-experimental-adapters`
+- 文档状态：**三期支持等级、禁止执行的语言识别预览及六种高级语言试验适配器已完成本地实现；真实 Linux 验收、多组件、多模型与新增发行版仍在实施，未验收组合保持 `RUNTIME-PENDING`**
 - 更新日期：2026-08-13
 - 项目结构：[File.md](File.md)
 
-> 文档中的“支持”必须具有实现和验收证据。2026-08-10/12 已由产品入口在新装 Ubuntu 24.04 x86-64 上验证迁移前的一期 Maven/Spring Boot 以及二期 Gradle Spring Boot、普通 JAR、Node.js、Python、静态站点和 Dockerfile 容器链路，这些记录作为历史证据保留。本次将 Maven 与 Gradle 收敛为一个 `SPRING_BOOT` Reviewed/helper v2 链路，并删除旧公开入口；本轮未连接真实 Ubuntu，因此不得把旧协议证据外推到新链路。新 Spring Boot 链路、Podman、Ubuntu 22.04 与 CentOS Stream 9/10 均标记 `RUNTIME-PENDING`；备份、迁移与 Web 业务尚未实现。
+> 文档中的“支持”必须具有实现和验收证据。2026-08-10/12 已由产品入口在新装 Ubuntu 24.04 x86-64 上验证迁移前的一期 Maven/Spring Boot 以及二期 Gradle Spring Boot、普通 JAR、Node.js、Python、静态站点和 Dockerfile 容器链路，这些记录作为历史证据保留。本次将 Maven 与 Gradle 收敛为一个 `SPRING_BOOT` Reviewed 链路，并将固定 helper 升级为 v3；本轮尚未完成 v3 真实 Ubuntu 验收，因此不得把旧协议证据外推到新链路。新 Spring Boot 与六种高级语言试验链路、Podman、Ubuntu 22.04 与 CentOS Stream 9/10 均标记 `RUNTIME-PENDING`；备份、迁移与 Web 业务尚未实现。
 
 ## 1. 产品定位
 
@@ -24,9 +24,9 @@ WindowsToLinux 是面向个人和小型自托管场景的部署管理工具。�
 | Maven | 当前 reactor 由根工程、3 个聚合模块和 24 个叶子模块组成，共 28 个 POM；二期复用既有叶子模块，没有新增 Maven 模块 | `File.md` 的正式目标模块结构保持不变；`backup` 和 Web Java 模块仍为 POM-only |
 | Java | Java 21；shared 与桌面代码已按职责分包；Spring Boot 只保留 Reviewed 类型化分析和部署链路 | 迁移前 Ubuntu 24.04 x86-64 的六类路径有历史实机证据；统一 Spring Boot 链路仍为 `RUNTIME-PENDING` |
 | Web 前端 | Vue 3、TypeScript、Vite、Vitest、Playwright 骨架 | 只可展示骨架页，尚无业务接口 |
-| 桌面/Web 业务 | Swing 已提供受管生命周期，以及六类项目的类型选择、静态分析、类型化计划审阅和已保存凭据提交；Web 业务未实现 | 桌面入口已迁移到 Reviewed API；Web 不可部署或管理应用 |
-| Linux 运行验证 | 迁移前 Ubuntu 24.04 x86-64 已实际验证环境准备、六类构建发布及代表性生命周期 | 统一 Spring Boot/helper v2、Podman、Ubuntu 22.04 与 CentOS Stream 9/10 均为 `RUNTIME-PENDING` |
-| 三期支持分级 | 支持等级、精确目标验证范围及不可执行识别预览已接入模型、分析、服务与 Swing 展示；预览覆盖三期列出的全部候选语言 | 识别预览不会创建源码归档或进入计划；六种高级语言适配、多组件、多模型及新增发行版仍不得声称已支持 |
+| 桌面/Web 业务 | Swing 已提供受管生命周期，以及六类既有项目加六种高级语言试验项目的类型选择、静态分析、类型化计划审阅和已保存凭据提交；Web 业务未实现 | 桌面入口已迁移到 Reviewed API；试验适配器每次请求都需确认专用测试环境；Web 不可部署或管理应用 |
+| Linux 运行验证 | 迁移前 Ubuntu 24.04 x86-64 已实际验证环境准备、六类构建发布及代表性生命周期 | 统一 Spring Boot/helper v3、六种高级语言、Podman、Ubuntu 22.04 与 CentOS Stream 9/10 均为 `RUNTIME-PENDING` |
+| 三期支持分级 | 支持等级、精确目标验证范围、不可执行识别预览及 Go/Rust/.NET/Kotlin/PHP/Ruby 固定试验适配器已接入；helper v3 不接受任意命令 | 六种高级语言仅可称本地实现完成；真实构建、发布、回滚和生命周期证据形成前不得升级为正式支持 |
 
 ### 2.1 正式目标架构与当前实现边界
 
@@ -42,7 +42,7 @@ WindowsToLinux 是面向个人和小型自托管场景的部署管理工具。�
 2. 源码快照、可重复归档和安全校验归 `shared/source`；桌面本地入口、Web 上传工作区和 Git 仓库来源分别归 `app/windows`、`web/file` 和 `shared/git`。源码归档不与 `shared/backup` 的应用数据备份语义混用。
 3. `shared/linux` 只定义公共契约，`shared/linux-sshd` 承接 Apache SSHD 具体实现；`deploy`、`app/service` 和 `web/service` 只依赖 `shared/linux`，只有 `app/main`、`web/main` 负责选择并装配 `shared/linux-sshd`。
 
-`shared/source` 已承接源码快照、归档与安全校验，`shared/linux-sshd` 已承接 Apache SSHD、六类项目的有界构建、发布/回滚协议、容器运行与受支持发行版固定环境准备；Spring Boot 由唯一 Reviewed 路径和 helper v2 支持 Gradle Wrapper、Maven Wrapper、系统 Maven。`shared/config` 定义类型化普通配置快照和不透明秘密引用；桌面 SQLite v5 保存配置实例、秘密修订元数据和发布身份摘要，并从 v4 的旧列名无损迁移，原始秘密值仍只经 `app/secret` 短时处理。
+`shared/source` 已承接源码快照、归档与安全校验，`shared/linux-sshd` 已承接 Apache SSHD、十二类项目的有界构建、发布/回滚协议、容器运行与受支持发行版固定环境准备；Spring Boot 与六种高级语言试验适配器共用唯一 Reviewed/helper v3 路径，且高级语言命令由独立固定片段渲染。`shared/config` 定义类型化普通配置快照和不透明秘密引用；桌面 SQLite v5 保存配置实例、秘密修订元数据和发布身份摘要，并从 v4 的旧列名无损迁移，原始秘密值仍只经 `app/secret` 短时处理。
 
 开发 WindowsToLinux 本身使用开发机安装的系统 Maven 及其系统本地仓库，不由项目覆盖仓库位置，也不把 Maven Wrapper 作为本项目构建入口；同时使用 JDK 21、Node 和相应测试工具。产品处理的用户项目不得在 Windows 桌面主机或 Web 后端主机安装依赖、执行项目脚本或构建；用户项目构建只发生在目标 Linux，届时可按受控适配规则使用用户项目自带的 Wrapper。
 
@@ -203,6 +203,7 @@ Playwright 浏览器固定保存在 `src/web/frontend/.playwright-browsers`，�
 
 | 版本 | 日期 | 阶段 | 状态 | 说明 |
 | --- | --- | --- | --- | --- |
+| 2.5.0-phase3-experimental-adapters | 2026-08-13 | 三期 | JDK 21 全量离线门禁 28/28 通过；真实 Linux 待验收 | Go、Rust、.NET、Kotlin、PHP、Ruby 接入锁文件静态分析、类型化运行时、固定构建渲染、helper v3、实时工具链探测与逐次试验风险确认；结构门、双语目录和 helper 字节身份已通过，未声明正式支持。 |
 | 2.4.0-phase3-support-preview | 2026-08-13 | 三期 | 本地集中门禁通过；高级适配与实机待验收 | 新增支持等级、精确验证范围与不可执行语言识别预览；预览不会创建归档、构建、发布或生命周期路径。 |
 | 2.3.0-spring-boot-reviewed-convergence | 2026-08-13 | 一期至二期 | 本地实现完成；新链路实机待验收 | Maven 与 Gradle Spring Boot 收敛为一个 Reviewed/helper v2 链路；迁移前 Ubuntu 证据保留但不外推，新链路标记 `RUNTIME-PENDING`。 |
 | 2.2.0-reviewed-runtime-acceptance | 2026-08-12 | 二期 | Ubuntu 24.04 x86-64 实机验收完成；其余矩阵待验收 | 产品入口完成本地与公开 Git 固定 Commit 源码的类型化分析、构建、发布、健康、观测、代表性生命周期及失败回滚；Podman、Ubuntu 22.04 与 CentOS Stream 9/10 保持 `RUNTIME-PENDING`。 |

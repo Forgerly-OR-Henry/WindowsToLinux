@@ -1,6 +1,7 @@
 package gold.debug.windowstolinux.shared.linux.sshd.capability;
 
 import gold.debug.windowstolinux.shared.model.server.LinuxDistro;
+import gold.debug.windowstolinux.shared.model.project.AdvancedRuntimeKind;
 import org.junit.jupiter.api.Test;
 
 import java.util.Map;
@@ -18,6 +19,9 @@ class SshdPlatformCapabilityCollectorTest {
                 Map.entry("PODMAN_OPERATIONAL", "1"), Map.entry("PODMAN_QUADLET", "1"),
                 Map.entry("JAVA_MAJORS", "21"), Map.entry("NODE_MAJORS", "22"), Map.entry("NPM", "1"),
                 Map.entry("PYTHON3", "1"), Map.entry("PYTHON_VERSIONS", "3.11,3.12"),
+                Map.entry("ADVANCED_GO", "1.24"), Map.entry("ADVANCED_RUST", "1.89.0"),
+                Map.entry("ADVANCED_DOTNET", "8.0.408"), Map.entry("ADVANCED_KOTLIN", "21"),
+                Map.entry("ADVANCED_PHP", "8.3"), Map.entry("ADVANCED_RUBY", "3.3.5"),
                 Map.entry("X86_64_V3", "1"), Map.entry("CPU_FLAGS", "sse4_2,popcnt")), "SHA256:host");
 
         assertEquals(LinuxDistro.CENTOS_STREAM, capabilities.distro());
@@ -29,6 +33,9 @@ class SshdPlatformCapabilityCollectorTest {
         assertTrue(capabilities.python3Available());
         assertTrue(capabilities.cpuFlags().contains("sse4_2"));
         assertTrue(capabilities.x86_64V3Available());
+        assertEquals(java.util.Set.of("1.24"), capabilities.advancedRuntimeVersions().get(AdvancedRuntimeKind.GO));
+        assertEquals(java.util.Set.of("3.3.5"), capabilities.advancedRuntimeVersions().get(AdvancedRuntimeKind.RUBY));
         assertTrue(PlatformCapabilityProbeScript.render().contains("PODMAN_QUADLET"));
+        assertTrue(PlatformCapabilityProbeScript.render().contains("ADVANCED_DOTNET"));
     }
 }

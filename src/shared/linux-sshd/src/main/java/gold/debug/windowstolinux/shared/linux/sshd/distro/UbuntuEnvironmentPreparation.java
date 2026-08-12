@@ -39,6 +39,10 @@ public final class UbuntuEnvironmentPreparation {
             "openjdk-21-jdk-headless", "maven", "curl", "sudo", "tar", "gzip", "iproute2", "coreutils",
             "util-linux", "findutils", "gawk", "nodejs", "npm", "python3", "python3-venv", "python3-pip", "docker.io"
     );
+    /** Additional toolchains installed only on Ubuntu 24.04 for advanced experimental adapters. / 仅在 Ubuntu 24.04 为高级试验适配器安装的附加工具链。 */
+    public static final List<String> EXPERIMENTAL_LANGUAGE_PACKAGES_2404 = List.of(
+            "golang-go", "rustc", "cargo", "dotnet-sdk-8.0", "php-cli", "composer", "ruby", "ruby-bundler"
+    );
 
     private UbuntuEnvironmentPreparation() {
     }
@@ -86,13 +90,27 @@ public final class UbuntuEnvironmentPreparation {
             throw new IllegalArgumentException("Ubuntu preparation supports only 22.04 or 24.04");
         }
         String sudoers = renderSudoers(username);
-        String packages = String.join(" ", PACKAGES);
+        List<String> selectedPackages = new java.util.ArrayList<>(PACKAGES);
+        if ("24.04".equals(version)) {
+            selectedPackages.addAll(EXPERIMENTAL_LANGUAGE_PACKAGES_2404);
+        }
+        String packages = String.join(" ", selectedPackages);
         String helper = ManagedHelperBundle.renderScript();
         String nodeCheck = "24.04".equals(version)
                 ? "node --version | grep -Eq '^v18\\.'" : "command -v node >/dev/null 2>&1";
         String pythonCheck = "24.04".equals(version)
                 ? "command -v python3.12 >/dev/null 2>&1\npython3.12 -m venv --help >/dev/null 2>&1"
                 : "command -v python3.10 >/dev/null 2>&1\npython3.10 -m venv --help >/dev/null 2>&1";
+        String advancedCheck = "24.04".equals(version) ? """
+                go version | grep -Eq '^go version go1[.]2[2-4]([.][0-9]+)? '
+                rustc --version | grep -Eq '^rustc 1[.](7[5-9]|8[0-9]|9[0-9])([.][0-9]+)? '
+                cargo --version >/dev/null
+                dotnet --version | grep -Eq '^(8|9)[.]0([.][0-9]+)?$'
+                php -r 'exit(PHP_MAJOR_VERSION === 8 && PHP_MINOR_VERSION >= 2 && PHP_MINOR_VERSION <= 4 ? 0 : 1);'
+                composer --version >/dev/null
+                ruby -e 'exit(RUBY_VERSION.match?(/^3[.][234]([.][0-9]+)?$/) ? 0 : 1)'
+                bundle --version >/dev/null
+                """ : ":";
         return """
                 set -euo pipefail
                 test -r /etc/os-release
@@ -134,6 +152,7 @@ public final class UbuntuEnvironmentPreparation {
                 %s
                 command -v npm >/dev/null 2>&1
                 %s
+                %s
                 command -v docker >/dev/null 2>&1
                 docker info >/dev/null 2>&1
                 tmp=$(/usr/bin/mktemp /tmp/windowstolinux-managed-sudoers.XXXXXX)
@@ -156,18 +175,19 @@ public final class UbuntuEnvironmentPreparation {
                 fi
                 helper_probe="$("/usr/bin/sudo" -n %s probe)"
                 printf '%%s\\n' "$helper_probe" | /usr/bin/grep -qx 'HELPER=1'
-                printf '%%s\\n' "$helper_probe" | /usr/bin/grep -qx 'PROTOCOL=2'
+                printf '%%s\\n' "$helper_probe" | /usr/bin/grep -qx 'PROTOCOL=%d'
                 printf 'PREPARED_AS=%%s\\n' "$elevation"
                 printf 'PACKAGES=%s\\n'
                 printf 'SUDOERS=%s\\n'
                 printf 'HELPER=%s\\n'
                 """.formatted(
                 quote(version), quote(username), APT_LOCK_TIMEOUT_SECONDS, APT_LOCK_TIMEOUT_SECONDS, packages,
-                APT_LOCK_TIMEOUT_SECONDS, APT_LOCK_TIMEOUT_SECONDS, packages, nodeCheck, pythonCheck,
+                APT_LOCK_TIMEOUT_SECONDS, APT_LOCK_TIMEOUT_SECONDS, packages, nodeCheck, pythonCheck, advancedCheck,
                 quote(sudoers), quote(helper),
                 quote(ManagedHelperBundle.DIRECTORY), quote(ManagedHelperBundle.PATH),
                 quote(SUDOERS_PATH), quote(ManagedHelperBundle.DIRECTORY), quote(ManagedHelperBundle.PATH),
-                quote(SUDOERS_PATH), quote(ManagedHelperBundle.PATH), packages, SUDOERS_PATH,
+                quote(SUDOERS_PATH), quote(ManagedHelperBundle.PATH), ManagedHelperBundle.PROTOCOL_VERSION,
+                packages, SUDOERS_PATH,
                 ManagedHelperBundle.PATH
         );
     }

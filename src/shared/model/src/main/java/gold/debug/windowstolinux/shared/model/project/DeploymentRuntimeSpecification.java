@@ -15,7 +15,7 @@ import java.util.OptionalInt;
 public sealed interface DeploymentRuntimeSpecification permits DeploymentRuntimeSpecification.SpringBoot,
         DeploymentRuntimeSpecification.JavaJar, DeploymentRuntimeSpecification.NodeService,
         DeploymentRuntimeSpecification.PythonService, DeploymentRuntimeSpecification.StaticSite,
-        DeploymentRuntimeSpecification.Container {
+        DeploymentRuntimeSpecification.Container, DeploymentRuntimeSpecification.AdvancedService {
     /** Returns the matching project type. / 返回匹配的项目类型。 */
     DeploymentProjectType projectType();
 
@@ -112,6 +112,47 @@ public sealed interface DeploymentRuntimeSpecification permits DeploymentRuntime
         @Override public DeploymentProjectType projectType() { return DeploymentProjectType.DOCKERFILE_CONTAINER; }
     }
 
+    /**
+     * Bounded runtime values shared by the six advanced experimental language adapters.
+     *
+     * <p>六个高级试验语言适配器共享的有界运行时值。
+     */
+    record AdvancedService(AdvancedRuntimeKind kind, String version, String artifactName, String entrypoint,
+                           OptionalInt servicePort, HealthCheck healthCheck) implements DeploymentRuntimeSpecification {
+        /** Validates kind-specific runtime values without accepting an arbitrary command. / 验证类型专属运行值且不接受任意命令。 */
+        public AdvancedService {
+            kind = Objects.requireNonNull(kind, "kind");
+            version = Objects.requireNonNull(version, "version").trim();
+            if (!kind.acceptsVersion(version)) {
+                throw new IllegalArgumentException("version is not allowed for the selected advanced runtime");
+            }
+            artifactName = safeName(artifactName, "artifactName");
+            entrypoint = relativePath(entrypoint, "entrypoint");
+            servicePort = Objects.requireNonNull(servicePort, "servicePort");
+            if (kind.requiresServicePort() != servicePort.isPresent()) {
+                throw new IllegalArgumentException("servicePort presence must match the selected advanced runtime");
+            }
+            servicePort.ifPresent(DeploymentRuntimeSpecification::requirePort);
+            switch (kind) {
+                case GO -> requireExact(entrypoint, "main.go", "Go entrypoint");
+                case RUST -> requireExact(entrypoint, "src/main.rs", "Rust entrypoint");
+                case DOTNET -> requireExact(entrypoint, artifactName + ".dll", ".NET entrypoint");
+                case KOTLIN -> javaName(entrypoint, "entrypoint");
+                case PHP -> {
+                    requireExact(artifactName, "public", "PHP document root");
+                    requireExact(entrypoint, "public/index.php", "PHP router");
+                }
+                case RUBY -> {
+                    requireExact(artifactName, "bundle", "Ruby artifact");
+                    requireExact(entrypoint, "config.ru", "Ruby entrypoint");
+                }
+            }
+            healthCheck = Objects.requireNonNull(healthCheck, "healthCheck");
+        }
+
+        @Override public DeploymentProjectType projectType() { return kind.projectType(); }
+    }
+
     /** Supported single-container engine model. / 受支持的单容器引擎模型。 */
     enum ContainerEngine { /** Docker daemon. / Docker 守护进程。 */ DOCKER, /** Podman Quadlet. / Podman Quadlet。 */ PODMAN }
 
@@ -146,6 +187,26 @@ public sealed interface DeploymentRuntimeSpecification permits DeploymentRuntime
             throw new IllegalArgumentException(name + " must be a Java binary class name");
         }
         return value;
+    }
+
+    private static String safeName(String value, String name) {
+        value = Objects.requireNonNull(value, name).trim();
+        if (!value.matches("[A-Za-z0-9][A-Za-z0-9._-]{0,127}")) {
+            throw new IllegalArgumentException(name + " must be a bounded safe name");
+        }
+        return value;
+    }
+
+    private static void requirePort(int port) {
+        if (port < 1 || port > 65535) {
+            throw new IllegalArgumentException("servicePort must be in the TCP/UDP port range");
+        }
+    }
+
+    private static void requireExact(String value, String expected, String name) {
+        if (!value.equals(expected)) {
+            throw new IllegalArgumentException(name + " must use the fixed reviewed value");
+        }
     }
 
     private static String requireJavaVersion(String value) {

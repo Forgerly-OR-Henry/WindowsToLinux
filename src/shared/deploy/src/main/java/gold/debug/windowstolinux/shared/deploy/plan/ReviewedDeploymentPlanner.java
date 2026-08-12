@@ -1,6 +1,7 @@
 package gold.debug.windowstolinux.shared.deploy.plan;
 
 import gold.debug.windowstolinux.shared.deploy.adapter.DeploymentAdapter;
+import gold.debug.windowstolinux.shared.deploy.adapter.advanced.AdvancedServiceAdapter;
 import gold.debug.windowstolinux.shared.deploy.adapter.container.ContainerAdapter;
 import gold.debug.windowstolinux.shared.deploy.adapter.javajar.JavaJarAdapter;
 import gold.debug.windowstolinux.shared.deploy.adapter.node.NodeServiceAdapter;
@@ -8,6 +9,7 @@ import gold.debug.windowstolinux.shared.deploy.adapter.python.PythonServiceAdapt
 import gold.debug.windowstolinux.shared.deploy.adapter.springboot.SpringBootAdapter;
 import gold.debug.windowstolinux.shared.deploy.adapter.staticweb.StaticSiteAdapter;
 import gold.debug.windowstolinux.shared.model.project.DeploymentProjectType;
+import gold.debug.windowstolinux.shared.model.project.AdvancedRuntimeKind;
 
 import java.util.EnumMap;
 import java.util.List;
@@ -29,7 +31,13 @@ public final class ReviewedDeploymentPlanner {
      */
     public ReviewedDeploymentPlanner() {
         this(List.of(new SpringBootAdapter(), new JavaJarAdapter(), new NodeServiceAdapter(),
-                new PythonServiceAdapter(), new StaticSiteAdapter(), new ContainerAdapter()));
+                new PythonServiceAdapter(), new StaticSiteAdapter(), new ContainerAdapter(),
+                new AdvancedServiceAdapter(AdvancedRuntimeKind.GO),
+                new AdvancedServiceAdapter(AdvancedRuntimeKind.RUST),
+                new AdvancedServiceAdapter(AdvancedRuntimeKind.DOTNET),
+                new AdvancedServiceAdapter(AdvancedRuntimeKind.KOTLIN),
+                new AdvancedServiceAdapter(AdvancedRuntimeKind.PHP),
+                new AdvancedServiceAdapter(AdvancedRuntimeKind.RUBY)));
     }
 
     ReviewedDeploymentPlanner(List<DeploymentAdapter> adapters) {

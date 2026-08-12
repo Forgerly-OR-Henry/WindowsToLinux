@@ -68,6 +68,14 @@ public final class ReviewedReleaseIdentity {
                         .forEach(volume -> update(digest, volume.name() + ":" + volume.containerPath()
                                 + ":" + volume.readOnly()));
             }
+            case DeploymentRuntimeSpecification.AdvancedService advanced -> {
+                update(digest, advanced.kind().name());
+                update(digest, advanced.version());
+                update(digest, advanced.artifactName());
+                update(digest, advanced.entrypoint());
+                update(digest, advanced.servicePort().isPresent()
+                        ? Integer.toString(advanced.servicePort().getAsInt()) : "no-service-port");
+            }
         }
         health(digest, runtime.healthCheck());
     }

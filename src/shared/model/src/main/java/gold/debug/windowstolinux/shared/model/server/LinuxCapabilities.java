@@ -1,5 +1,8 @@
 package gold.debug.windowstolinux.shared.model.server;
 
+import gold.debug.windowstolinux.shared.model.project.AdvancedRuntimeKind;
+
+import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 
@@ -22,6 +25,7 @@ import java.util.Set;
  * @param mavenAvailable whether Maven is present / 是否存在 Maven
  * @param pythonVersions observed Python interpreters with venv support / 观察到且支持 venv 的 Python 解释器
  * @param python3Available whether the generic Python 3 executable is available / 通用 Python 3 可执行文件是否可用
+ * @param advancedRuntimeVersions exact observed versions for experimental language toolchains / 试验语言工具链的精确观测版本
  * @param dockerOperational whether Docker is usable by the authenticated account / 已认证账户能否使用 Docker
  * @param podmanOperational whether Podman is usable by the authenticated account / 已认证账户能否使用 Podman
  * @param x86_64V3Available whether the runtime linker reports the cumulative x86-64-v3 level / 运行时链接器是否报告累积 x86-64-v3 级别
@@ -43,6 +47,7 @@ public record LinuxCapabilities(
         boolean mavenAvailable,
         Set<String> pythonVersions,
         boolean python3Available,
+        Map<AdvancedRuntimeKind, Set<String>> advancedRuntimeVersions,
         boolean dockerOperational,
         boolean podmanOperational,
         boolean x86_64V3Available,
@@ -71,6 +76,17 @@ public record LinuxCapabilities(
         if (pythonVersions.stream().anyMatch(minor -> minor == null || !minor.matches("3\\.(?:10|11|12|13)"))) {
             throw new IllegalArgumentException("pythonVersions must contain supported normalized versions");
         }
+        java.util.EnumMap<AdvancedRuntimeKind, Set<String>> normalizedAdvanced =
+                new java.util.EnumMap<>(AdvancedRuntimeKind.class);
+        Objects.requireNonNull(advancedRuntimeVersions, "advancedRuntimeVersions").forEach((kind, versions) -> {
+            Objects.requireNonNull(kind, "advanced runtime kind");
+            Set<String> copied = Set.copyOf(Objects.requireNonNull(versions, "advanced runtime versions"));
+            if (copied.stream().anyMatch(runtimeVersion -> !kind.acceptsVersion(runtimeVersion))) {
+                throw new IllegalArgumentException("advanced runtime versions must match their bounded kind");
+            }
+            normalizedAdvanced.put(kind, copied);
+        });
+        advancedRuntimeVersions = Map.copyOf(normalizedAdvanced);
         cpuFlags = Set.copyOf(Objects.requireNonNull(cpuFlags, "cpuFlags"));
         if (cpuFlags.stream().anyMatch(flag -> flag == null || !flag.matches("[a-z0-9_.-]{1,64}"))) {
             throw new IllegalArgumentException("cpuFlags must be normalized bounded instruction names");
@@ -79,6 +95,34 @@ public record LinuxCapabilities(
         if (evidence.length() > 4096 || evidence.indexOf('\u0000') >= 0) {
             throw new IllegalArgumentException("evidence must be bounded non-secret text");
         }
+    }
+
+    /** Creates capabilities without experimental toolchain observations. / 创建不含试验工具链观测的能力。 */
+    public LinuxCapabilities(
+            LinuxDistro distro,
+            String version,
+            String architecture,
+            String packageManager,
+            boolean systemdAvailable,
+            boolean dockerAvailable,
+            boolean podmanAvailable,
+            boolean podmanQuadletAvailable,
+            Set<Integer> javaMajorVersions,
+            Set<Integer> nodeMajorVersions,
+            boolean npmAvailable,
+            boolean mavenAvailable,
+            Set<String> pythonVersions,
+            boolean python3Available,
+            boolean dockerOperational,
+            boolean podmanOperational,
+            boolean x86_64V3Available,
+            Set<String> cpuFlags,
+            String evidence
+    ) {
+        this(distro, version, architecture, packageManager, systemdAvailable, dockerAvailable, podmanAvailable,
+                podmanQuadletAvailable, javaMajorVersions, nodeMajorVersions, npmAvailable, mavenAvailable,
+                pythonVersions, python3Available, Map.of(), dockerOperational, podmanOperational, x86_64V3Available,
+                cpuFlags, evidence);
     }
 
     /**

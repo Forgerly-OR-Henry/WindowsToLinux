@@ -5,7 +5,7 @@ PATH=/usr/sbin:/usr/bin:/sbin:/bin
 umask 077
 helper_path=/usr/local/lib/windowstolinux/managed-helper
 helper_directory=/usr/local/lib/windowstolinux
-helper_protocol=2
+helper_protocol=3
 base_root=/var/lib/windowstolinux
 applications_root="$base_root/apps"
 work_root="$base_root/work"
@@ -110,6 +110,12 @@ require_relative_path() {
 require_java_main() {
   [[ "$1" =~ ^[A-Za-z_$][A-Za-z0-9_$.]{0,255}$ ]] || reject java-main
 }
+require_safe_name() {
+  [[ "$1" =~ ^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$ ]] || reject safe-name
+}
+require_service_port() {
+  [[ "$1" =~ ^[0-9]{1,5}$ ]] && [ "$1" -ge 1 ] && [ "$1" -le 65535 ] || reject service-port
+}
 require_safe_argument() {
   [[ "$1" =~ ^[A-Za-z0-9@%_+=:,./-]{1,512}$ ]] || reject runtime-argument
 }
@@ -185,6 +191,10 @@ render_deployment_unit() {
       require_relative_path "$1"
       [[ "$2" =~ ^[0-9]{1,5}$ ]] && [ "$2" -ge 1 ] && [ "$2" -le 65535 ] || reject static-port
       command="/usr/bin/python3 -m http.server $2 --directory $root/current/source/$1"
+      ;;
+    go|rust|dotnet|kotlin|php|ruby)
+      render_advanced_runtime_command "$kind" "$root" "$@"
+      command="$advanced_runtime_command_result"
       ;;
     *) reject runtime-kind ;;
   esac

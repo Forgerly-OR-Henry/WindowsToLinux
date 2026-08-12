@@ -10,6 +10,7 @@ import gold.debug.windowstolinux.shared.model.project.DeploymentBuildTool;
 import gold.debug.windowstolinux.shared.model.project.DeploymentProjectFacts;
 import gold.debug.windowstolinux.shared.model.project.DeploymentProjectType;
 import gold.debug.windowstolinux.shared.model.project.DeploymentRuntimeSpecification;
+import gold.debug.windowstolinux.shared.model.project.AdvancedRuntimeKind;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -30,7 +31,7 @@ class DeploymentBuildRendererTest {
     @TempDir Path temporaryDirectory;
 
     @Test
-    void rendersAllSixTypesThroughTheirFixedEntrypoints() {
+    void rendersAllTwelveTypesThroughTheirFixedEntrypoints() {
         assertTrue(render(new SpringBootBuildRenderer(), DeploymentBuildTool.GRADLE_WRAPPER,
                 new DeploymentRuntimeSpecification.SpringBoot(TCP)).contains("./gradlew --no-daemon -x test bootJar"));
         assertTrue(render(new JavaJarBuildRenderer(), DeploymentBuildTool.JAVA,
@@ -51,6 +52,20 @@ class DeploymentBuildRendererTest {
         assertTrue(render(new ContainerBuildRenderer(), DeploymentBuildTool.CONTAINER_BUILD,
                 new DeploymentRuntimeSpecification.Container(DeploymentRuntimeSpecification.ContainerEngine.PODMAN,
                         Map.of(8080, 8080), List.of(), TCP)).contains("build --pull=true"));
+        assertTrue(advanced(AdvancedRuntimeKind.GO, DeploymentBuildTool.GO_MODULE, "1.24", "w2l-app",
+                "main.go", OptionalInt.empty()).contains("go build -mod=readonly"));
+        assertTrue(advanced(AdvancedRuntimeKind.RUST, DeploymentBuildTool.CARGO_LOCKED, "1.89.0", "demo",
+                "src/main.rs", OptionalInt.empty()).contains("cargo build --locked --release"));
+        assertTrue(advanced(AdvancedRuntimeKind.DOTNET, DeploymentBuildTool.DOTNET_LOCKED, "8.0.408", "Demo",
+                "Demo.dll", OptionalInt.empty()).contains("dotnet restore --locked-mode"));
+        String kotlin = advanced(AdvancedRuntimeKind.KOTLIN, DeploymentBuildTool.GRADLE_KOTLIN_WRAPPER, "21", "demo",
+                "demo.MainKt", OptionalInt.empty());
+        assertTrue(kotlin.contains("--no-daemon installDist"));
+        assertFalse(kotlin.contains("--offline"));
+        assertTrue(advanced(AdvancedRuntimeKind.PHP, DeploymentBuildTool.COMPOSER_LOCKED, "8.3", "public",
+                "public/index.php", OptionalInt.of(8080)).contains("--no-plugins --no-scripts"));
+        assertTrue(advanced(AdvancedRuntimeKind.RUBY, DeploymentBuildTool.BUNDLER_LOCKED, "3.3.5", "bundle",
+                "config.ru", OptionalInt.of(8080)).contains("bundle install --jobs 1 --retry 0"));
     }
 
     @Test
@@ -102,6 +117,9 @@ class DeploymentBuildRendererTest {
         assertThrows(IllegalArgumentException.class, () -> new DeploymentRuntimeSpecification.PythonService(
                 "3.12;touch-pwned", "demo.main", TCP));
         assertThrows(IllegalArgumentException.class, () -> new DeploymentRuntimeSpecification.StaticSite("dist;touch-pwned", HTTP));
+        assertThrows(IllegalArgumentException.class, () -> new DeploymentRuntimeSpecification.AdvancedService(
+                AdvancedRuntimeKind.PHP, "8.3", "public", "public/index.php;touch-pwned",
+                OptionalInt.of(8080), TCP));
         String quoted = SafeBuildScriptEnvelope.shellQuote("value'; touch /tmp/pwned; printf '");
         assertFalse(quoted.contains("value'; touch"));
         assertTrue(quoted.startsWith("'value'\"'\"'"));
@@ -112,7 +130,8 @@ class DeploymentBuildRendererTest {
         List<DeploymentBuildRenderer> complete = renderers();
         assertThrows(IllegalArgumentException.class, () -> new DeploymentBuildRendererRegistry(
                 java.util.stream.Stream.concat(complete.stream(), java.util.stream.Stream.of(new NodeBuildRenderer())).toList()));
-        assertThrows(IllegalArgumentException.class, () -> new DeploymentBuildRendererRegistry(complete.subList(0, 5)));
+        assertThrows(IllegalArgumentException.class, () -> new DeploymentBuildRendererRegistry(
+                complete.subList(0, complete.size() - 1)));
     }
 
     private String render(DeploymentBuildRenderer renderer, DeploymentBuildTool tool,
@@ -127,8 +146,20 @@ class DeploymentBuildRendererTest {
                         LocalizedMessage.of("test.detected"), EvidenceConfidence.HIGH)), List.of(), List.of());
     }
 
+    private String advanced(AdvancedRuntimeKind kind, DeploymentBuildTool tool, String version,
+                            String artifact, String entrypoint, OptionalInt port) {
+        return render(new AdvancedServiceBuildRenderer(kind), tool,
+                new DeploymentRuntimeSpecification.AdvancedService(kind, version, artifact, entrypoint, port, TCP));
+    }
+
     private static List<DeploymentBuildRenderer> renderers() {
         return List.of(new SpringBootBuildRenderer(), new JavaJarBuildRenderer(), new NodeBuildRenderer(),
-                new PythonBuildRenderer(), new StaticSiteBuildRenderer(), new ContainerBuildRenderer());
+                new PythonBuildRenderer(), new StaticSiteBuildRenderer(), new ContainerBuildRenderer(),
+                new AdvancedServiceBuildRenderer(AdvancedRuntimeKind.GO),
+                new AdvancedServiceBuildRenderer(AdvancedRuntimeKind.RUST),
+                new AdvancedServiceBuildRenderer(AdvancedRuntimeKind.DOTNET),
+                new AdvancedServiceBuildRenderer(AdvancedRuntimeKind.KOTLIN),
+                new AdvancedServiceBuildRenderer(AdvancedRuntimeKind.PHP),
+                new AdvancedServiceBuildRenderer(AdvancedRuntimeKind.RUBY));
     }
 }

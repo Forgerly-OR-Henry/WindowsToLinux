@@ -178,12 +178,15 @@ class SshdLinuxGatewayTest {
         assertTrue(script.contains("command -v gzip >/dev/null 2>&1"));
         assertTrue(script.contains("node --version | grep -Eq '^v18\\.'"));
         assertTrue(script.contains("python3.12 -m venv --help"));
+        assertTrue(script.contains("dotnet-sdk-8.0"));
+        assertTrue(script.contains("composer --version"));
+        assertTrue(script.contains("bundle --version"));
         assertTrue(script.contains("docker info >/dev/null 2>&1"));
         assertFalse(script.contains("command -v unzip"));
         assertTrue(script.contains("/usr/bin/install -o root -g root -m 440 \"$tmp\" '/etc/sudoers.d/windowstolinux-managed'"));
         assertTrue(script.contains("/usr/bin/install -o root -g root -m 755 \"$helper_tmp\" '/usr/local/lib/windowstolinux/managed-helper'"));
         assertTrue(script.contains("helper_probe=\"$(\"/usr/bin/sudo\" -n '/usr/local/lib/windowstolinux/managed-helper' probe)\""));
-        assertTrue(script.contains("grep -qx 'PROTOCOL=2'"));
+        assertTrue(script.contains("grep -qx 'PROTOCOL=3'"));
         assertFalse(script.contains("sudo -S"));
         assertFalse(script.contains("/var/lib/windowstolinux/work"));
     }

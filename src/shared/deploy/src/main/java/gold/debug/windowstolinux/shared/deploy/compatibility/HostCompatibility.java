@@ -85,6 +85,10 @@ public final class HostCompatibility {
                         && capabilities.podmanQuadletAvailable() ? null
                         : "Podman and Quadlet must be usable by the authenticated account";
             };
+            case DeploymentRuntimeSpecification.AdvancedService advanced ->
+                    capabilities.advancedRuntimeVersions().getOrDefault(advanced.kind(), java.util.Set.of())
+                            .contains(advanced.version()) ? null
+                            : "the selected experimental runtime version is not available";
         };
     }
 

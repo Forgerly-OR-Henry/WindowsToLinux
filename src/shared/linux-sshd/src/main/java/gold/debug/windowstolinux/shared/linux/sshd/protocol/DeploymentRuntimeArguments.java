@@ -28,7 +28,15 @@ final class DeploymentRuntimeArguments {
                     Integer.toString(httpPort(staticSite)));
             case DeploymentRuntimeSpecification.Container ignored -> throw new IllegalArgumentException(
                     "container runtimes require the container-specific release protocol");
+            case DeploymentRuntimeSpecification.AdvancedService advanced -> advancedArguments(advanced);
         };
+    }
+
+    private static List<String> advancedArguments(DeploymentRuntimeSpecification.AdvancedService advanced) {
+        List<String> values = new ArrayList<>(List.of(advanced.kind().name().toLowerCase(java.util.Locale.ROOT),
+                advanced.version(), advanced.artifactName(), advanced.entrypoint()));
+        advanced.servicePort().ifPresent(port -> values.add(Integer.toString(port)));
+        return List.copyOf(values);
     }
 
     private static List<String> javaArguments(DeploymentRuntimeSpecification.JavaJar javaJar) {

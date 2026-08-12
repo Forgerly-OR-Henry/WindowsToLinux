@@ -27,5 +27,17 @@ public enum DeploymentBuildTool {
     /** A deterministic static-site build. / 确定性的静态站点构建。 */
     STATIC_SITE_BUILD,
     /** Docker or Podman image construction from one Dockerfile. / 由一个 Dockerfile 构建 Docker 或 Podman 镜像。 */
-    CONTAINER_BUILD
+    CONTAINER_BUILD,
+    /** Go module build with readonly dependency metadata. / 使用只读依赖元数据构建 Go 模块。 */
+    GO_MODULE,
+    /** Cargo build with the checked-in lockfile. / 使用已检入锁文件的 Cargo 构建。 */
+    CARGO_LOCKED,
+    /** .NET restore and publish in locked mode. / 锁定模式下的 .NET 恢复与发布。 */
+    DOTNET_LOCKED,
+    /** Kotlin/JVM build through the checked-in Gradle Wrapper and dependency lock. / 通过已检入 Gradle Wrapper 与依赖锁构建 Kotlin/JVM。 */
+    GRADLE_KOTLIN_WRAPPER,
+    /** Composer install from the checked-in lock without plugins or scripts. / 从已检入锁执行不含插件与脚本的 Composer 安装。 */
+    COMPOSER_LOCKED,
+    /** Bundler install from the checked-in lock. / 从已检入锁执行 Bundler 安装。 */
+    BUNDLER_LOCKED
 }

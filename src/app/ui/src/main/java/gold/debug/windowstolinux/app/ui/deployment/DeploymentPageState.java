@@ -25,6 +25,7 @@ import java.util.Objects;
  * @param containerVolumes the {@code containerVolumes} value / {@code containerVolumes} 值
  * @param configurationEntries the {@code configurationEntries} value / {@code configurationEntries} 值
  * @param rootBuild the {@code rootBuild} value / {@code rootBuild} 值
+ * @param experimentalAdapterRisk the {@code experimentalAdapterRisk} value / {@code experimentalAdapterRisk} 值
  * @param output the {@code output} value / {@code output} 值
  * @param preparation the {@code preparation} value / {@code preparation} 值
  */
@@ -47,6 +48,7 @@ public record DeploymentPageState(
         String configurationEntries,
         String secretReferences,
         boolean rootBuild,
+        boolean experimentalAdapterRisk,
         String output,
         ReviewedSourcePreparation preparation
 ) {
@@ -71,6 +73,7 @@ public record DeploymentPageState(
      * @param containerVolumes the {@code containerVolumes} value / {@code containerVolumes} 值
      * @param configurationEntries the {@code configurationEntries} value / {@code configurationEntries} 值
      * @param rootBuild the {@code rootBuild} value / {@code rootBuild} 值
+     * @param experimentalAdapterRisk the {@code experimentalAdapterRisk} value / {@code experimentalAdapterRisk} 值
      * @param output the {@code output} value / {@code output} 值
      * @param preparation the {@code preparation} value / {@code preparation} 值
      * @throws NullPointerException if a required argument is {@code null} / 必要参数为 {@code null} 时

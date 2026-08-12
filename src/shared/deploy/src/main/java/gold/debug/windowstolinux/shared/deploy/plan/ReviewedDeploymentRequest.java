@@ -30,6 +30,7 @@ import java.util.Optional;
  * @param limits the target-host build limits / 目标机构建限制
  * @param approval the per-source, per-server approval / 按源码、服务器绑定的批准
  * @param containerDaemonRiskAccepted the explicit Docker daemon risk approval / 显式 Docker 守护进程风险批准
+ * @param experimentalAdapterRiskAccepted the fresh experimental-adapter test-environment approval / 本次试验适配器测试环境批准
  */
 public record ReviewedDeploymentRequest(
         ServerIdentity server,
@@ -42,7 +43,8 @@ public record ReviewedDeploymentRequest(
         Optional<UserAccessUrl> userAccessUrl,
         BuildLimits limits,
         DeploymentApproval approval,
-        boolean containerDaemonRiskAccepted
+        boolean containerDaemonRiskAccepted,
+        boolean experimentalAdapterRiskAccepted
 ) {
     /**
      * Creates a {@code ReviewedDeploymentRequest} instance.
@@ -84,8 +86,36 @@ public record ReviewedDeploymentRequest(
                 && container.engine() == DeploymentRuntimeSpecification.ContainerEngine.DOCKER && !containerDaemonRiskAccepted) {
             throw new IllegalArgumentException("Docker deployments require a fresh explicit daemon-risk approval");
         }
+        if (facts.support().level()
+                == gold.debug.windowstolinux.shared.model.project.DeploymentSupportLevel.EXPERIMENTAL_ADAPTER
+                && !experimentalAdapterRiskAccepted) {
+            throw new IllegalArgumentException(
+                    "experimental adapters require a fresh explicit test-environment approval");
+        }
         if (secretReferences.stream().distinct().count() != secretReferences.size()) {
             throw new IllegalArgumentException("secret references must be unique");
         }
+    }
+
+    /**
+     * Creates a request without experimental-adapter permission for existing formal-support callers.
+     *
+     * <p>为现有正式支持调用方创建不含试验适配器许可的请求。
+     */
+    public ReviewedDeploymentRequest(
+            ServerIdentity server,
+            DeploymentProjectFacts facts,
+            SourceRevision sourceRevision,
+            SourceArchiveDescriptor archive,
+            ConfigurationSnapshot configuration,
+            List<SecretReference> secretReferences,
+            DeploymentRuntimeSpecification runtime,
+            Optional<UserAccessUrl> userAccessUrl,
+            BuildLimits limits,
+            DeploymentApproval approval,
+            boolean containerDaemonRiskAccepted
+    ) {
+        this(server, facts, sourceRevision, archive, configuration, secretReferences, runtime, userAccessUrl,
+                limits, approval, containerDaemonRiskAccepted, false);
     }
 }

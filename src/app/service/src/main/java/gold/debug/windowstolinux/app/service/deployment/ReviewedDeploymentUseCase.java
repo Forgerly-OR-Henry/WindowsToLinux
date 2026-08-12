@@ -73,7 +73,8 @@ public final class ReviewedDeploymentUseCase {
                                                     gold.debug.windowstolinux.shared.model.project.DeploymentRuntimeSpecification runtime,
                                                     Optional<gold.debug.windowstolinux.shared.model.health.UserAccessUrl> userAccessUrl,
                                                     gold.debug.windowstolinux.shared.model.deployment.BuildLimits limits,
-                                                    boolean rootBuildConfirmed, boolean containerDaemonRiskAccepted) throws SQLException {
+                                                    boolean rootBuildConfirmed, boolean containerDaemonRiskAccepted,
+                                                    boolean experimentalAdapterRiskAccepted) throws SQLException {
         preparation = Objects.requireNonNull(preparation, "preparation");
         server = Objects.requireNonNull(server, "server");
         if (preparation.archive().isEmpty() || preparation.assessment().facts().isEmpty()) {
@@ -89,7 +90,18 @@ public final class ReviewedDeploymentUseCase {
         return new ReviewedDeploymentRequest(server, facts, sourceRevision,
                 archive, configuration, secretReferences, runtime, userAccessUrl, limits,
                 new DeploymentApproval(application.id(), archive.contentSha256(), server.id(), rootBuildConfirmed, Instant.now()),
-                containerDaemonRiskAccepted);
+                containerDaemonRiskAccepted, experimentalAdapterRiskAccepted);
+    }
+
+    /** Creates a request that cannot enter an experimental adapter. / 创建不能进入试验适配器的请求。 */
+    public ReviewedDeploymentRequest createRequest(ReviewedSourcePreparation preparation, ServerIdentity server,
+                                                    ConfigurationSnapshot configuration, List<SecretReference> secretReferences,
+                                                    gold.debug.windowstolinux.shared.model.project.DeploymentRuntimeSpecification runtime,
+                                                    Optional<gold.debug.windowstolinux.shared.model.health.UserAccessUrl> userAccessUrl,
+                                                    gold.debug.windowstolinux.shared.model.deployment.BuildLimits limits,
+                                                    boolean rootBuildConfirmed, boolean containerDaemonRiskAccepted) throws SQLException {
+        return createRequest(preparation, server, configuration, secretReferences, runtime, userAccessUrl, limits,
+                rootBuildConfirmed, containerDaemonRiskAccepted, false);
     }
 
     /**

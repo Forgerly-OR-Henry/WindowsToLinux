@@ -26,10 +26,14 @@ class ManagedHelperBundleTest {
     void exposesOnlyVersionedTypedOperationsAndKeepsLegacyGradleReadCompatibility() {
         String helper = ManagedHelperBundle.renderScript();
 
-        assertEquals(2, ManagedHelperBundle.PROTOCOL_VERSION);
+        assertEquals(3, ManagedHelperBundle.PROTOCOL_VERSION);
         assertTrue(helper.contains("printf 'HELPER=1\\nPROTOCOL=%s\\n' \"$helper_protocol\""));
         assertTrue(helper.contains("gradle)"));
         assertTrue(helper.contains("[ \"$kind\" != gradle ] || reject legacy-gradle-write"));
+        assertTrue(helper.contains("go|rust)"));
+        assertTrue(helper.contains("render_advanced_runtime_command \"$kind\" \"$root\" \"$@\""));
+        assertTrue(helper.contains("advanced_runtime_command_result=\"/usr/bin/php -S 127.0.0.1:"));
+        assertTrue(helper.contains("advanced_runtime_command_result=\"/usr/bin/env bundle exec rackup"));
         assertTrue(helper.contains("previous_kind=ordinary"));
         assertTrue(helper.contains("[ \"$previous_kind\" = deployment ] || [ \"$previous_kind\" = ordinary ]"));
         assertTrue(helper.contains("printf '%s\\n' \"$previous_kind\" > \"$snapshot/kind\""));

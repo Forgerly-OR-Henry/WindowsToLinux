@@ -18,6 +18,18 @@ public enum DeploymentProjectType {
     STATIC_SITE,
     /** One Dockerfile image and one managed container. / 一个 Dockerfile 镜像和一个受管容器。 */
     DOCKERFILE_CONTAINER(true),
+    /** A locked Go module compiled to one managed service binary. / 编译为一个受管服务二进制文件的锁定 Go 模块。 */
+    GO_SERVICE,
+    /** A locked Rust Cargo package compiled to one managed service binary. / 编译为一个受管服务二进制文件的锁定 Rust Cargo 包。 */
+    RUST_SERVICE,
+    /** A locked .NET service published to one managed output. / 发布为一个受管输出的锁定 .NET 服务。 */
+    DOTNET_SERVICE,
+    /** A Gradle Wrapper Kotlin/JVM application distribution. / Gradle Wrapper Kotlin/JVM 应用分发。 */
+    KOTLIN_SERVICE,
+    /** A Composer-locked PHP service with a bounded document root and router. / 具有有界文档根与路由器的 Composer 锁定 PHP 服务。 */
+    PHP_SERVICE,
+    /** A Bundler-locked Rack service with a bounded config file. / 具有有界配置文件的 Bundler 锁定 Rack 服务。 */
+    RUBY_SERVICE,
     /** Static language and metadata recognition with no deployment path. / 不含部署路径的静态语言与元数据识别。 */
     RECOGNITION_PREVIEW(false);
 

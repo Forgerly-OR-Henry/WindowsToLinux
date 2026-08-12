@@ -8,6 +8,7 @@ import gold.debug.windowstolinux.shared.linux.transfer.RemoteWorkspace;
 import gold.debug.windowstolinux.shared.model.deployment.BuildLimits;
 import gold.debug.windowstolinux.shared.model.project.DeploymentProjectFacts;
 import gold.debug.windowstolinux.shared.model.project.DeploymentRuntimeSpecification;
+import gold.debug.windowstolinux.shared.model.project.AdvancedRuntimeKind;
 
 import java.time.Duration;
 import java.util.List;
@@ -27,7 +28,13 @@ public final class DeploymentBuildExecutor {
     /** Creates the executor for one authenticated SSH account. / 为一个已认证 SSH 账户创建执行器。 */
     public DeploymentBuildExecutor(SshCommandExecutor commands, String username) {
         this(commands, username, List.of(new SpringBootBuildRenderer(), new JavaJarBuildRenderer(), new NodeBuildRenderer(),
-                new PythonBuildRenderer(), new StaticSiteBuildRenderer(), new ContainerBuildRenderer()));
+                new PythonBuildRenderer(), new StaticSiteBuildRenderer(), new ContainerBuildRenderer(),
+                new AdvancedServiceBuildRenderer(AdvancedRuntimeKind.GO),
+                new AdvancedServiceBuildRenderer(AdvancedRuntimeKind.RUST),
+                new AdvancedServiceBuildRenderer(AdvancedRuntimeKind.DOTNET),
+                new AdvancedServiceBuildRenderer(AdvancedRuntimeKind.KOTLIN),
+                new AdvancedServiceBuildRenderer(AdvancedRuntimeKind.PHP),
+                new AdvancedServiceBuildRenderer(AdvancedRuntimeKind.RUBY)));
     }
 
     DeploymentBuildExecutor(SshCommandExecutor commands, String username, List<DeploymentBuildRenderer> renderers) {

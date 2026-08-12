@@ -28,6 +28,7 @@ import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 class ReviewedReleaseIdentityTest {
     private static final String SOURCE = "a".repeat(64);
@@ -57,6 +58,12 @@ class ReviewedReleaseIdentityTest {
                 ReviewedReleaseIdentity.from(springBootRequest(DeploymentBuildTool.MAVEN)));
     }
 
+    @Test
+    void rejectsAnExperimentalAdapterWithoutFreshTestEnvironmentApproval() {
+        assertThrows(IllegalArgumentException.class,
+                () -> springBootRequest(DeploymentBuildTool.MAVEN_WRAPPER, false));
+    }
+
     private ReviewedDeploymentRequest request(long revision, List<SecretReference> secrets, int port) {
         ServerIdentity server = new ServerIdentity("server-one", "example.test", 22, "SHA256:fixture");
         DeploymentProjectFacts facts = new DeploymentProjectFacts(temporaryDirectory, "demo",
@@ -75,6 +82,10 @@ class ReviewedReleaseIdentityTest {
     }
 
     private ReviewedDeploymentRequest springBootRequest(DeploymentBuildTool buildTool) {
+        return springBootRequest(buildTool, true);
+    }
+
+    private ReviewedDeploymentRequest springBootRequest(DeploymentBuildTool buildTool, boolean experimentalRiskAccepted) {
         ServerIdentity server = new ServerIdentity("server-one", "example.test", 22, "SHA256:fixture");
         DeploymentProjectFacts facts = new DeploymentProjectFacts(temporaryDirectory, "demo",
                 DeploymentProjectType.SPRING_BOOT, buildTool,
@@ -87,6 +98,7 @@ class ReviewedReleaseIdentityTest {
                 new SourceArchiveDescriptor(temporaryDirectory.resolve("source.tar.gz"), SOURCE, 100, 100),
                 configuration, List.of(), new DeploymentRuntimeSpecification.SpringBoot(new HealthCheck.Tcp(8080, 5, 1)),
                 Optional.empty(), BuildLimits.defaultNonRoot(),
-                new DeploymentApproval("demo", SOURCE, "server-one", false, Instant.EPOCH), false);
+                new DeploymentApproval("demo", SOURCE, "server-one", false, Instant.EPOCH), false,
+                experimentalRiskAccepted);
     }
 }

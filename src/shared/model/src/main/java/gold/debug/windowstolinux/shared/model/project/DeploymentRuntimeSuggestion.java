@@ -89,7 +89,15 @@ public record DeploymentRuntimeSuggestion(
         /** Python module entrypoint. / Python 模块入口。 */
         PYTHON_ENTRYPOINT,
         /** Static-site generated output directory. / 静态站点生成输出目录。 */
-        STATIC_OUTPUT_DIRECTORY
+        STATIC_OUTPUT_DIRECTORY,
+        /** Advanced runtime language/toolchain version. / 高级运行时语言或工具链版本。 */
+        ADVANCED_VERSION,
+        /** Advanced runtime artifact or package name. / 高级运行时产物或包名。 */
+        ADVANCED_ARTIFACT,
+        /** Advanced runtime bounded entrypoint. / 高级运行时有界入口。 */
+        ADVANCED_ENTRYPOINT,
+        /** Advanced runtime fixed service port. / 高级运行时固定服务端口。 */
+        ADVANCED_PORT
     }
 
     private static EnumSet<RuntimeInput> allowedInputs(DeploymentProjectType projectType) {
@@ -100,6 +108,11 @@ public record DeploymentRuntimeSuggestion(
             case NODE_SERVICE -> EnumSet.of(RuntimeInput.NODE_MAJOR_VERSION);
             case PYTHON_SERVICE -> EnumSet.of(RuntimeInput.PYTHON_VERSION, RuntimeInput.PYTHON_ENTRYPOINT);
             case STATIC_SITE -> EnumSet.of(RuntimeInput.STATIC_OUTPUT_DIRECTORY, RuntimeInput.NODE_MAJOR_VERSION);
+            case GO_SERVICE, RUST_SERVICE, DOTNET_SERVICE, KOTLIN_SERVICE ->
+                    EnumSet.of(RuntimeInput.ADVANCED_VERSION, RuntimeInput.ADVANCED_ARTIFACT,
+                            RuntimeInput.ADVANCED_ENTRYPOINT);
+            case PHP_SERVICE, RUBY_SERVICE -> EnumSet.of(RuntimeInput.ADVANCED_VERSION,
+                    RuntimeInput.ADVANCED_ARTIFACT, RuntimeInput.ADVANCED_ENTRYPOINT, RuntimeInput.ADVANCED_PORT);
         };
     }
 

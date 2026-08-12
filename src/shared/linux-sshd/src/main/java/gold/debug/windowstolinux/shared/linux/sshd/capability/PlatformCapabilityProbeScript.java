@@ -62,6 +62,24 @@ public final class PlatformCapabilityProbeScript {
                   fi
                 done
                 printf '\\n'
+                if command -v go >/dev/null 2>&1; then
+                  printf 'ADVANCED_GO='; go version | sed -E 's/^go version go(1[.][0-9]+).*/\\1/'
+                else printf 'ADVANCED_GO=\\n'; fi
+                if command -v rustc >/dev/null 2>&1 && command -v cargo >/dev/null 2>&1; then
+                  printf 'ADVANCED_RUST='; rustc --version | awk '{print $2}'
+                else printf 'ADVANCED_RUST=\\n'; fi
+                if command -v dotnet >/dev/null 2>&1; then
+                  printf 'ADVANCED_DOTNET='; dotnet --version
+                else printf 'ADVANCED_DOTNET=\\n'; fi
+                if command -v java >/dev/null 2>&1 && java -version 2>&1 | grep -Eq 'version "21([.]|")'; then
+                  printf 'ADVANCED_KOTLIN=21\\n'
+                else printf 'ADVANCED_KOTLIN=\\n'; fi
+                if command -v php >/dev/null 2>&1 && command -v composer >/dev/null 2>&1; then
+                  printf 'ADVANCED_PHP='; php -r 'printf("%%d.%%d", PHP_MAJOR_VERSION, PHP_MINOR_VERSION);'; printf '\\n'
+                else printf 'ADVANCED_PHP=\\n'; fi
+                if command -v ruby >/dev/null 2>&1 && command -v bundle >/dev/null 2>&1; then
+                  printf 'ADVANCED_RUBY='; ruby -e 'print RUBY_VERSION'; printf '\\n'
+                else printf 'ADVANCED_RUBY=\\n'; fi
                 if [ -x /lib64/ld-linux-x86-64.so.2 ] && /lib64/ld-linux-x86-64.so.2 --help 2>/dev/null | grep -Eq 'x86-64-v3.*supported'; then
                   printf 'X86_64_V3=1\\n'
                 else

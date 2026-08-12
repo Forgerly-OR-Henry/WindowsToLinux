@@ -105,7 +105,7 @@ public final class DnfEnvironmentPreparation {
                 fi
                 helper_probe="$("/usr/bin/sudo" -n %s probe)"
                 printf '%%s\\n' "$helper_probe" | /usr/bin/grep -qx 'HELPER=1'
-                printf '%%s\\n' "$helper_probe" | /usr/bin/grep -qx 'PROTOCOL=2'
+                printf '%%s\\n' "$helper_probe" | /usr/bin/grep -qx 'PROTOCOL=%d'
                 printf 'PREPARED_AS=%%s\\n' "$elevation"
                 printf 'PACKAGES=%s\\n'
                 printf 'SUDOERS=%s\\n'
@@ -115,7 +115,8 @@ public final class DnfEnvironmentPreparation {
                 quote(ManagedHelperBundle.DIRECTORY), quote(ManagedHelperBundle.PATH),
                 quote(UbuntuEnvironmentPreparation.SUDOERS_PATH), quote(ManagedHelperBundle.DIRECTORY),
                 quote(ManagedHelperBundle.PATH), quote(UbuntuEnvironmentPreparation.SUDOERS_PATH),
-                quote(ManagedHelperBundle.PATH), packages, UbuntuEnvironmentPreparation.SUDOERS_PATH,
+                quote(ManagedHelperBundle.PATH), ManagedHelperBundle.PROTOCOL_VERSION,
+                packages, UbuntuEnvironmentPreparation.SUDOERS_PATH,
                 ManagedHelperBundle.PATH
         );
     }

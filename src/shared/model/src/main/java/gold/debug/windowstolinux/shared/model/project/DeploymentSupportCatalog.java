@@ -24,6 +24,18 @@ public final class DeploymentSupportCatalog {
             case PYTHON_SERVICE -> formal(SourceLanguage.PYTHON, "Python virtual-environment service");
             case STATIC_SITE -> formal(SourceLanguage.HTML, "Managed static site");
             case DOCKERFILE_CONTAINER -> formal(SourceLanguage.CONTAINERFILE, "Single Dockerfile container");
+            case GO_SERVICE -> experimental(SourceLanguage.GO, "Go module service",
+                    "support.limitation.runtimePending");
+            case RUST_SERVICE -> experimental(SourceLanguage.RUST, "Rust Cargo service",
+                    "support.limitation.runtimePending");
+            case DOTNET_SERVICE -> experimental(SourceLanguage.CSHARP, ".NET SDK service",
+                    "support.limitation.runtimePending");
+            case KOTLIN_SERVICE -> experimental(SourceLanguage.KOTLIN, "Kotlin/JVM Gradle application",
+                    "support.limitation.runtimePending");
+            case PHP_SERVICE -> experimental(SourceLanguage.PHP, "PHP Composer service",
+                    "support.limitation.runtimePending");
+            case RUBY_SERVICE -> experimental(SourceLanguage.RUBY, "Ruby Rack service",
+                    "support.limitation.runtimePending");
             case RECOGNITION_PREVIEW -> preview(SourceLanguage.UNKNOWN);
         };
     }

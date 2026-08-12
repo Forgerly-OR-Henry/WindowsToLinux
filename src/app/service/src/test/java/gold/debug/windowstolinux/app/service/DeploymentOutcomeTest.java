@@ -98,7 +98,7 @@ class DeploymentOutcomeTest {
                         new ConfigurationEntry("PORT", ConfigurationScope.RUNTIME,
                                 new ConfigurationValue.Number(8080)))), List.of(),
                 new DeploymentRuntimeSpecification.SpringBoot(healthCheck), userAccessUrl, BuildLimits.defaultNonRoot(),
-                new DeploymentApproval("demo", sourceSha256, server.id(), false, Instant.now()), true);
+                new DeploymentApproval("demo", sourceSha256, server.id(), false, Instant.now()), true, true);
     }
 
     private static ManagedApplication application() {

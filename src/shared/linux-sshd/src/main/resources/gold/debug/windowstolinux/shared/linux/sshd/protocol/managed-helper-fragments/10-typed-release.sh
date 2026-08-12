@@ -60,6 +60,35 @@ seal_deployment_tree() {
       require_relative_path "$1"
       [ -d "$release/source/$1" ] && [ ! -L "$release/source/$1" ] || reject static-output
       ;;
+    go|rust)
+      [ "$#" -eq 3 ] || reject runtime-arguments
+      require_safe_name "$2"
+      artifact="$release/source/.w2l/bin/$2"
+      [ -x "$artifact" ] && [ ! -L "$artifact" ] || reject advanced-binary
+      ;;
+    dotnet)
+      [ "$#" -eq 3 ] || reject runtime-arguments
+      require_safe_name "$2"
+      artifact="$release/source/.w2l/dotnet/$2.dll"
+      [ -f "$artifact" ] && [ ! -L "$artifact" ] || reject dotnet-artifact
+      ;;
+    kotlin)
+      [ "$#" -eq 3 ] || reject runtime-arguments
+      require_java_main "$3"
+      [ -d "$release/source/.w2l/kotlin/lib" ] || reject kotlin-distribution
+      [ -n "$(find "$release/source/.w2l/kotlin/lib" -maxdepth 1 -type f -name '*.jar' -print -quit)" ] \
+        || reject kotlin-distribution
+      ;;
+    php)
+      [ "$#" -eq 4 ] || reject runtime-arguments
+      [ "$2" = public ] && [ "$3" = public/index.php ] || reject php-runtime
+      [ -f "$release/source/public/index.php" ] && [ -f "$release/source/vendor/autoload.php" ] || reject php-artifact
+      ;;
+    ruby)
+      [ "$#" -eq 4 ] || reject runtime-arguments
+      [ "$2" = bundle ] && [ "$3" = config.ru ] || reject ruby-runtime
+      [ -f "$release/source/config.ru" ] && [ -d "$release/source/vendor/bundle" ] || reject ruby-artifact
+      ;;
     *) reject runtime-kind ;;
   esac
 }
