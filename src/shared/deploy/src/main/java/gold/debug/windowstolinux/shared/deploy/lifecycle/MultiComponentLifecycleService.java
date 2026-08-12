@@ -3,7 +3,6 @@ package gold.debug.windowstolinux.shared.deploy.lifecycle;
 import gold.debug.windowstolinux.shared.deploy.plan.MultiComponentDeploymentPlan;
 import gold.debug.windowstolinux.shared.deploy.result.ComponentLifecycleResult;
 import gold.debug.windowstolinux.shared.deploy.result.MultiComponentLifecycleResult;
-import gold.debug.windowstolinux.shared.deploy.transaction.ReviewedComponentDeployment;
 import gold.debug.windowstolinux.shared.linux.connection.DeploymentLinuxGateway;
 import gold.debug.windowstolinux.shared.linux.connection.DeploymentRemoteSession;
 import gold.debug.windowstolinux.shared.linux.connection.HostKeyVerifier;
@@ -32,7 +31,7 @@ public final class MultiComponentLifecycleService {
     /** Observes every component, validates dependency impact, and executes only the reviewed component set. / 观测每个组件、验证依赖影响并仅执行经审阅的组件集合。 */
     public MultiComponentLifecycleResult execute(
             MultiComponentDeploymentPlan plan,
-            List<ReviewedComponentDeployment> reviewedComponents,
+            List<ManagedComponentLifecycle> managedComponents,
             Set<String> targetComponentIds,
             LifecycleAction action,
             DeploymentLinuxGateway gateway,
@@ -46,10 +45,10 @@ public final class MultiComponentLifecycleService {
         endpoint = Objects.requireNonNull(endpoint, "endpoint");
         credential = Objects.requireNonNull(credential, "credential");
         hostKeyVerifier = Objects.requireNonNull(hostKeyVerifier, "hostKeyVerifier");
-        LinkedHashMap<String, ReviewedComponentDeployment> components;
+        LinkedHashMap<String, ManagedComponentLifecycle> components;
         Set<String> targets;
         try {
-            components = components(plan, reviewedComponents);
+            components = components(plan, managedComponents);
             targets = normalizedTargets(components.keySet(), targetComponentIds, requestedAction);
         } catch (RuntimeException failure) {
             clearCredential(credential);
@@ -81,7 +80,7 @@ public final class MultiComponentLifecycleService {
     }
 
     private static boolean executeAction(
-            MultiComponentDeploymentPlan plan, Map<String, ReviewedComponentDeployment> components, Set<String> targets,
+            MultiComponentDeploymentPlan plan, Map<String, ManagedComponentLifecycle> components, Set<String> targets,
             LifecycleAction action, DeploymentRemoteSession session, Set<String> attempted, Set<String> failed)
             throws LinuxOperationException {
         if (action == LifecycleAction.RESTART) {
@@ -96,15 +95,15 @@ public final class MultiComponentLifecycleService {
     }
 
     private static boolean executeOrdered(
-            List<String> order, Map<String, ReviewedComponentDeployment> components, Set<String> targets,
+            List<String> order, Map<String, ManagedComponentLifecycle> components, Set<String> targets,
             LifecycleAction action, DeploymentRemoteSession session, Set<String> attempted, Set<String> failed)
             throws LinuxOperationException {
         for (String id : order) {
             if (!targets.contains(id)) continue;
-            ReviewedComponentDeployment component = components.get(id);
+            ManagedComponentLifecycle component = components.get(id);
             attempted.add(id);
-            LifecycleObservation observation = session.executeDeploymentLifecycle(component.application(),
-                    component.request().runtime(), action);
+            LifecycleObservation observation = session.executeLifecycle(component.application(), action,
+                    component.healthCheck());
             if (!matches(action, observation)) {
                 failed.add(id);
                 return false;
@@ -194,13 +193,13 @@ public final class MultiComponentLifecycleService {
     }
 
     private static void observeAll(
-            MultiComponentDeploymentPlan plan, Map<String, ReviewedComponentDeployment> components,
+            MultiComponentDeploymentPlan plan, Map<String, ManagedComponentLifecycle> components,
             DeploymentRemoteSession session, Map<String, LifecycleObservation> observations)
             throws LinuxOperationException {
         observations.clear();
         for (String id : plan.startOrder()) {
-            ReviewedComponentDeployment component = components.get(id);
-            observations.put(id, session.observeDeployment(component.application(), component.request().runtime()));
+            ManagedComponentLifecycle component = components.get(id);
+            observations.put(id, session.observe(component.application()));
         }
     }
 
@@ -275,10 +274,10 @@ public final class MultiComponentLifecycleService {
         return ApplicationAutostartState.PARTIALLY_ENABLED;
     }
 
-    private static LinkedHashMap<String, ReviewedComponentDeployment> components(
-            MultiComponentDeploymentPlan plan, List<ReviewedComponentDeployment> reviewed) {
-        Map<String, ReviewedComponentDeployment> indexed = new LinkedHashMap<>();
-        for (ReviewedComponentDeployment component : Objects.requireNonNull(reviewed, "reviewedComponents")) {
+    private static LinkedHashMap<String, ManagedComponentLifecycle> components(
+            MultiComponentDeploymentPlan plan, List<ManagedComponentLifecycle> managed) {
+        Map<String, ManagedComponentLifecycle> indexed = new LinkedHashMap<>();
+        for (ManagedComponentLifecycle component : Objects.requireNonNull(managed, "managedComponents")) {
             if (indexed.putIfAbsent(component.componentId(), component) != null) {
                 throw new IllegalArgumentException("reviewed component identifiers must be unique");
             }
@@ -286,9 +285,9 @@ public final class MultiComponentLifecycleService {
         if (!indexed.keySet().equals(plan.candidateNamespaces().keySet())) {
             throw new IllegalArgumentException("reviewed lifecycle components must exactly match the plan");
         }
-        LinkedHashMap<String, ReviewedComponentDeployment> ordered = new LinkedHashMap<>();
+        LinkedHashMap<String, ManagedComponentLifecycle> ordered = new LinkedHashMap<>();
         for (String id : plan.startOrder()) {
-            ReviewedComponentDeployment component = indexed.get(id);
+            ManagedComponentLifecycle component = indexed.get(id);
             if (!component.application().id().equals(plan.candidateNamespaces().get(id))) {
                 throw new IllegalArgumentException("reviewed lifecycle identity differs from the component plan");
             }

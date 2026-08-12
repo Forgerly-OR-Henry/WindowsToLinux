@@ -2,6 +2,7 @@ package gold.debug.windowstolinux.app.db.repository;
 
 import gold.debug.windowstolinux.app.db.connection.DesktopConnectionFactory;
 import gold.debug.windowstolinux.app.db.entity.CurrentRelease;
+import gold.debug.windowstolinux.app.db.entity.SuccessfulManagedDeployment;
 import gold.debug.windowstolinux.shared.model.health.HealthCheck;
 import gold.debug.windowstolinux.shared.model.health.UserAccessUrl;
 import gold.debug.windowstolinux.shared.model.lifecycle.AutostartState;
@@ -61,6 +62,19 @@ public final class ManagedApplicationRepository {
                 upsertRuntime(connection, application.id(), runtimeConfiguration);
                 upsertRelease(connection, release);
             });
+        }
+    }
+
+    /** Atomically records every component of one successful whole-application transaction. / 原子记录一次成功整应用事务的全部组件。 */
+    public void recordSuccessfulDeployments(List<SuccessfulManagedDeployment> deployments) throws SQLException {
+        List<SuccessfulManagedDeployment> records = List.copyOf(
+                Objects.requireNonNull(deployments, "deployments"));
+        if (records.isEmpty() || records.stream().map(value -> value.application().id()).distinct().count()
+                != records.size()) {
+            throw new IllegalArgumentException("whole-application persistence requires unique non-empty components");
+        }
+        try (Connection connection = connections.open()) {
+            RepositoryTransactions.execute(connection, () -> recordSuccessfulDeployments(connection, records));
         }
     }
 
@@ -207,6 +221,18 @@ public final class ManagedApplicationRepository {
         }
     }
 
+    static void recordSuccessfulDeployments(Connection connection,
+                                            List<SuccessfulManagedDeployment> deployments) throws SQLException {
+        for (SuccessfulManagedDeployment deployment : deployments) {
+            RepositoryTransactions.upsertServer(connection, deployment.application().server());
+            upsertApplication(connection, deployment.application());
+            upsertRuntime(connection, deployment.application().id(), deployment.runtimeConfiguration());
+            upsertRelease(connection, deployment.release());
+            ApplicationSecretRepository.bindRelease(connection, deployment.application().id(),
+                    deployment.release().releaseSha256(), Set.copyOf(deployment.secretReferences()));
+        }
+    }
+
     private static void upsertRuntime(Connection connection, String applicationId,
                                       ManagedApplicationRuntimeConfiguration configuration) throws SQLException {
         try (PreparedStatement statement = connection.prepareStatement("""
@@ -256,14 +282,14 @@ public final class ManagedApplicationRepository {
         }
     }
 
-    private static ManagedApplication readApplication(ResultSet result) throws SQLException {
+    static ManagedApplication readApplication(ResultSet result) throws SQLException {
         return new ManagedApplication(result.getString("id"), new ServerIdentity(result.getString("server_id"),
                 result.getString("host"), result.getInt("ssh_port"), result.getString("host_key_sha256")),
                 result.getString("systemd_unit"), result.getString("release_root"),
                 result.getString("ownership_manifest_sha256"));
     }
 
-    private static ManagedApplicationRuntimeConfiguration readRuntime(ResultSet result) throws SQLException {
+    static ManagedApplicationRuntimeConfiguration readRuntime(ResultSet result) throws SQLException {
         try {
             String kind = result.getString("health_kind");
             int timeout = result.getInt("health_timeout_seconds");

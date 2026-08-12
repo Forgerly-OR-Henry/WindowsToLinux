@@ -6,6 +6,7 @@ import gold.debug.windowstolinux.app.ui.appearance.DesktopAppearance;
 import gold.debug.windowstolinux.app.ui.appearance.DesktopAppearanceChangeListener;
 import gold.debug.windowstolinux.app.ui.component.DesktopComponents;
 import gold.debug.windowstolinux.app.ui.deployment.DeploymentPage;
+import gold.debug.windowstolinux.app.ui.deployment.MultiComponentPage;
 import gold.debug.windowstolinux.app.ui.i18n.MessageCatalog;
 import gold.debug.windowstolinux.app.ui.managed.ManagedPage;
 import gold.debug.windowstolinux.app.ui.server.ServerPage;
@@ -21,6 +22,7 @@ import javax.swing.JPanel;
 final class DesktopPageCoordinator {
     private final PageNavigator navigator;
     private final DeploymentPage deployment;
+    private final MultiComponentPage multiComponent;
     private final ServerPage server;
     private final ManagedPage managed;
     private final AiPage ai;
@@ -36,12 +38,15 @@ final class DesktopPageCoordinator {
         managed = new ManagedPage(service, server, components, messages);
         deployment = new DeploymentPage(owner, service, server, components, messages,
                 () -> navigator.show("servers", "nav.servers", "page.servers.description"), managed::selectApplication);
+        multiComponent = new MultiComponentPage(owner, service, server, components, messages,
+                () -> navigator.show("servers", "nav.servers", "page.servers.description"), managed::selectApplication);
         ai = new AiPage(service, deployment, components, messages);
         settings = new SettingsPage(components, messages, appearance,
                 selected -> appearanceChangeListener.apply(owner, selected));
     }
 
     JPanel deploymentPanel() { return deployment.panel(); }
+    JPanel multiComponentPanel() { return multiComponent.panel(); }
     JPanel managedApplicationsPanel() { return managed.panel(); }
     JPanel serverPanel() { return server.panel(); }
     JPanel aiPanel() { return ai.panel(); }
@@ -50,12 +55,13 @@ final class DesktopPageCoordinator {
     void currentPage(String page) { currentPage = page; }
 
     DesktopViewState captureViewState() {
-        return new DesktopViewState(currentPage, deployment.captureState(), server.captureState(), managed.captureState(),
-                ai.captureState(), settings.captureState());
+        return new DesktopViewState(currentPage, deployment.captureState(), multiComponent.captureState(),
+                server.captureState(), managed.captureState(), ai.captureState(), settings.captureState());
     }
 
     void restoreViewState(DesktopViewState state) {
         deployment.restoreState(state.deployment());
+        multiComponent.restoreState(state.multiComponent());
         server.restoreState(state.server());
         managed.restoreState(state.managed());
         ai.restoreState(state.ai());

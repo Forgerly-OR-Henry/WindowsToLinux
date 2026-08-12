@@ -2,6 +2,7 @@ package gold.debug.windowstolinux.app.ui.shell;
 
 import gold.debug.windowstolinux.app.ui.ai.AiPageState;
 import gold.debug.windowstolinux.app.ui.deployment.DeploymentPageState;
+import gold.debug.windowstolinux.app.ui.deployment.MultiComponentPageState;
 import gold.debug.windowstolinux.app.ui.managed.ManagedPageState;
 import gold.debug.windowstolinux.app.ui.server.ServerPageState;
 import gold.debug.windowstolinux.app.ui.settings.SettingsPageState;
@@ -15,6 +16,7 @@ import java.util.Objects;
  *
  * @param page the {@code page} value / {@code page} 值
  * @param deployment the {@code deployment} value / {@code deployment} 值
+ * @param multiComponent the multi-component application page state / 多组件应用页面状态
  * @param server the {@code server} value / {@code server} 值
  * @param managed the {@code managed} value / {@code managed} 值
  * @param ai the {@code ai} value / {@code ai} 值
@@ -23,6 +25,7 @@ import java.util.Objects;
 public record DesktopViewState(
         String page,
         DeploymentPageState deployment,
+        MultiComponentPageState multiComponent,
         ServerPageState server,
         ManagedPageState managed,
         AiPageState ai,
@@ -35,6 +38,7 @@ public record DesktopViewState(
      *
      * @param page the {@code page} value / {@code page} 值
      * @param deployment the {@code deployment} value / {@code deployment} 值
+     * @param multiComponent the multi-component application page state / 多组件应用页面状态
      * @param server the {@code server} value / {@code server} 值
      * @param managed the {@code managed} value / {@code managed} 值
      * @param ai the {@code ai} value / {@code ai} 值
@@ -44,6 +48,7 @@ public record DesktopViewState(
     public DesktopViewState {
         Objects.requireNonNull(page, "page");
         Objects.requireNonNull(deployment, "deployment");
+        Objects.requireNonNull(multiComponent, "multiComponent");
         Objects.requireNonNull(server, "server");
         Objects.requireNonNull(managed, "managed");
         Objects.requireNonNull(ai, "ai");

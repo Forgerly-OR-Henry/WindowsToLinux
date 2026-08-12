@@ -35,6 +35,7 @@ import java.util.Map;
  */
 public final class DesktopFrame extends JFrame {
     private static final String PAGE_DEPLOYMENT = "deployment";
+    private static final String PAGE_COMPONENTS = "components";
     private static final String PAGE_APPLICATIONS = "applications";
     private static final String PAGE_SERVERS = "servers";
     private static final String PAGE_AI = "ai";
@@ -154,6 +155,8 @@ public final class DesktopFrame extends JFrame {
         sidebar.add(navigationLabel);
         sidebar.add(navigationButton(PAGE_DEPLOYMENT, "nav.deployment", "page.deployment.description"));
         sidebar.add(Box.createVerticalStrut(6));
+        sidebar.add(navigationButton(PAGE_COMPONENTS, "nav.components", "page.components.description"));
+        sidebar.add(Box.createVerticalStrut(6));
         sidebar.add(navigationButton(PAGE_APPLICATIONS, "nav.applications", "page.applications.description"));
         sidebar.add(Box.createVerticalStrut(6));
         sidebar.add(navigationButton(PAGE_SERVERS, "nav.servers", "page.servers.description"));
@@ -192,6 +195,7 @@ public final class DesktopFrame extends JFrame {
     private JComponent pageDeck() {
         pages.setBackground(palette.pageBackground());
         pages.add(pageCoordinator.deploymentPanel(), PAGE_DEPLOYMENT);
+        pages.add(pageCoordinator.multiComponentPanel(), PAGE_COMPONENTS);
         pages.add(pageCoordinator.managedApplicationsPanel(), PAGE_APPLICATIONS);
         pages.add(pageCoordinator.serverPanel(), PAGE_SERVERS);
         pages.add(pageCoordinator.aiPanel(), PAGE_AI);

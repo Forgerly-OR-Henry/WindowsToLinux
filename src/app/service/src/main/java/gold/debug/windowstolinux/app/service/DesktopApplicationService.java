@@ -13,6 +13,10 @@ import gold.debug.windowstolinux.app.service.concurrency.ServerOperationLocks;
 import gold.debug.windowstolinux.app.service.config.DeploymentConfigurationUseCase;
 import gold.debug.windowstolinux.app.service.deployment.DeploymentOutcome;
 import gold.debug.windowstolinux.app.service.deployment.ReviewedDeploymentUseCase;
+import gold.debug.windowstolinux.app.service.deployment.MultiComponentDeploymentUseCase;
+import gold.debug.windowstolinux.app.service.deployment.ManagedMultiComponentApplication;
+import gold.debug.windowstolinux.app.service.deployment.MultiComponentReviewInput;
+import gold.debug.windowstolinux.app.service.deployment.ReviewedMultiComponentApplication;
 import gold.debug.windowstolinux.app.service.environment.EnvironmentPreparationUseCase;
 import gold.debug.windowstolinux.app.service.lifecycle.LifecycleOutcome;
 import gold.debug.windowstolinux.app.service.lifecycle.LifecycleUseCase;
@@ -22,6 +26,7 @@ import gold.debug.windowstolinux.app.service.server.ServerProfile;
 import gold.debug.windowstolinux.app.service.server.ServerUseCases;
 import gold.debug.windowstolinux.app.service.source.ReviewedSourcePreparation;
 import gold.debug.windowstolinux.app.service.source.SourcePreparationUseCase;
+import gold.debug.windowstolinux.app.service.source.PreparedMultiComponentSource;
 import gold.debug.windowstolinux.app.db.entity.StoredApplicationSecretRevision;
 import gold.debug.windowstolinux.shared.config.revision.ConfigurationSnapshot;
 import gold.debug.windowstolinux.shared.config.secretref.SecretReference;
@@ -33,6 +38,11 @@ import gold.debug.windowstolinux.shared.deploy.environment.EnvironmentPreparatio
 import gold.debug.windowstolinux.shared.deploy.plan.ReviewedDeploymentPlan;
 import gold.debug.windowstolinux.shared.deploy.plan.ReviewedDeploymentRequest;
 import gold.debug.windowstolinux.shared.deploy.result.LifecycleActionResult;
+import gold.debug.windowstolinux.shared.deploy.result.MultiComponentDeploymentResult;
+import gold.debug.windowstolinux.shared.deploy.result.MultiComponentLifecycleResult;
+import gold.debug.windowstolinux.shared.deploy.lifecycle.MultiComponentLifecycleService;
+import gold.debug.windowstolinux.shared.deploy.plan.ApplicationHealthGate;
+import gold.debug.windowstolinux.shared.deploy.transaction.ReviewedMultiComponentDeploymentService;
 import gold.debug.windowstolinux.shared.deploy.transaction.ReviewedDeploymentService;
 import gold.debug.windowstolinux.shared.linux.connection.DeploymentLinuxGateway;
 import gold.debug.windowstolinux.shared.linux.connection.HostKeyVerifier;
@@ -52,6 +62,7 @@ import gold.debug.windowstolinux.shared.model.server.ServerCapabilities;
 import gold.debug.windowstolinux.shared.model.server.ServerIdentity;
 import gold.debug.windowstolinux.shared.git.snapshot.GitSnapshotException;
 import gold.debug.windowstolinux.shared.git.snapshot.GitSourceRequest;
+import gold.debug.windowstolinux.shared.analyze.component.ComponentAnalysisRequest;
 
 import java.io.IOException;
 import java.nio.file.Path;
@@ -60,6 +71,7 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.function.Predicate;
+import java.util.Set;
 
 /**
  * Stable desktop facade. Package-specific use cases own all implementation details.
@@ -74,6 +86,7 @@ public final class DesktopApplicationService {
     private final DeploymentConfigurationUseCase deploymentConfiguration;
     private final EnvironmentPreparationUseCase environment;
     private final ReviewedDeploymentUseCase reviewedDeployment;
+    private final MultiComponentDeploymentUseCase multiComponentDeployment;
     private final LifecycleUseCase lifecycle;
 
     /**
@@ -101,6 +114,10 @@ public final class DesktopApplicationService {
                 new EnvironmentPreparationService(), linuxGateway, servers, locks);
         this.reviewedDeployment = new ReviewedDeploymentUseCase(persistence.managedApplications(),
                 persistence.applicationSecrets(), new ReviewedDeploymentService(), linuxGateway, servers, locks);
+        this.multiComponentDeployment = new MultiComponentDeploymentUseCase(persistence.managedApplications(),
+                persistence.managedApplicationGraphs(),
+                persistence.applicationSecrets(), new ReviewedMultiComponentDeploymentService(),
+                new MultiComponentLifecycleService(), linuxGateway, servers, locks);
         this.lifecycle = new LifecycleUseCase(persistence.managedApplications(), linuxGateway, servers, locks);
     }
 
@@ -116,6 +133,48 @@ public final class DesktopApplicationService {
     /** Prepares a selected typed source and safe archive without invoking project code. / 在不调用项目代码的情况下准备选定类型的源码和安全归档。 */
     public ReviewedSourcePreparation prepareReviewedSource(Path sourceDirectory, DeploymentProjectType projectType) throws IOException {
         return source.prepare(sourceDirectory, projectType);
+    }
+
+    /** Prepares an explicit component graph with one independent safe archive per component. / 使用每组件独立安全归档准备显式组件图。 */
+    public PreparedMultiComponentSource prepareReviewedMultiComponentSource(
+            Path applicationRoot, String applicationId, List<ComponentAnalysisRequest> components) throws IOException {
+        return source.prepareMultiComponent(applicationRoot, applicationId, components);
+    }
+
+    /** Creates the complete secret-free review object for a whole-application transaction. / 创建整应用事务的完整无秘密审阅对象。 */
+    public ReviewedMultiComponentApplication createReviewedMultiComponentApplication(
+            PreparedMultiComponentSource prepared, ServerIdentity server, List<MultiComponentReviewInput> inputs,
+            ApplicationHealthGate applicationHealth) throws SQLException {
+        return multiComponentDeployment.createReview(prepared, server, inputs, applicationHealth);
+    }
+
+    /** Executes a reviewed whole-application transaction without stored application secrets. / 执行不含已存应用秘密的经审阅整应用事务。 */
+    public MultiComponentDeploymentResult deployReviewedMultiComponent(
+            ReviewedMultiComponentApplication review, SshEndpoint endpoint, SshCredential credential,
+            HostKeyVerifier verifier) throws SQLException {
+        return multiComponentDeployment.deploy(review, endpoint, credential, verifier);
+    }
+
+    /** Executes a reviewed whole-application transaction with the selected saved credential. / 使用选定已保存凭据执行经审阅整应用事务。 */
+    public MultiComponentDeploymentResult deployReviewedMultiComponentWithStoredPassword(
+            ReviewedMultiComponentApplication review, ServerProfile profile, CredentialStorageMode mode,
+            char[] masterPassword, Predicate<String> confirmation) throws SecretStoreException, SQLException {
+        return multiComponentDeployment.deployWithStoredPassword(review, profile, mode, masterPassword, confirmation);
+    }
+
+    /** Loads a durable secret-free whole-application graph after a desktop restart. / 在桌面应用重启后加载持久且不含秘密的整应用图。 */
+    public Optional<ManagedMultiComponentApplication> findManagedMultiComponentApplication(String applicationId)
+            throws SQLException {
+        return multiComponentDeployment.findManagedApplication(applicationId);
+    }
+
+    /** Executes a dependency-safe lifecycle action for a durably managed application graph. / 对持久受管应用图执行依赖安全生命周期动作。 */
+    public MultiComponentLifecycleResult executeManagedMultiComponentLifecycleWithStoredPassword(
+            String applicationId, Set<String> targetComponentIds, LifecycleAction action,
+            ServerProfile profile, CredentialStorageMode mode, char[] masterPassword)
+            throws SecretStoreException, SQLException {
+        return multiComponentDeployment.executeLifecycleWithStoredPassword(applicationId, targetComponentIds, action,
+                profile, mode, masterPassword);
     }
 
     /**

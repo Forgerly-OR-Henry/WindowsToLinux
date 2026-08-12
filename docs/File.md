@@ -2,8 +2,8 @@
 
 ## 文档信息
 
-- 文档版本：`3.1.0-phase3-distribution-matrix`
-- 文档状态：**正式模块与职责边界保持不变；混合项目、多组件事务/生命周期、多模型角色链路、六种高级语言试验适配及独立发行版静态矩阵已进入既有职责包，真实目标机状态为 `RUNTIME-PENDING`**
+- 文档版本：`3.2.0-phase3-product-entry`
+- 文档状态：**正式模块与职责边界保持不变；混合项目、多组件产品入口/持久生命周期、多模型角色链路、六种高级语言试验适配及独立发行版静态矩阵已进入既有职责包，真实部署状态为 `RUNTIME-PENDING`**
 - 已确认范围：`shared` 共用模块、`app` Windows 桌面应用模块、`web` Web 应用模块
 - 已确认能力边界：受管应用生命周期复用既有模块，不新增独立 Maven 模块
 - 更新日期：2026-08-13
@@ -250,12 +250,12 @@ test/
 - `analyze/core` 只保留唯一 `DeploymentAnalysisCoordinator` 及类型检查器契约；`framework/springboot/SpringBootDeploymentInspector` 统一 Maven 与 Gradle Spring Boot 事实和风险检查，其他构建工具、语言生态、静态站点和容器事实分别由对应包产生证据与局部结果。
 - `analyze/component/MixedProjectAnalyzer` 逐个复用确定性分析协调器并生成稳定组件记录；组件根/产物重叠、端口冲突、依赖环、不安全共享数据、预览级必需组件和越权能力在任何目标机操作前形成组件级停止原因。
 - `app/ui/shell` 只由 `DesktopFrame`、`DesktopPageCoordinator`、`DesktopViewState`、`PageMessages` 和 `PageNavigator` 负责窗口、装配、聚合状态与本地化；五个页面控制器各自持有表单和流程，跨页面只使用 `ServerContext` 与 `ReviewContext`。
-- `DesktopPersistence` 只组合服务器、偏好、AI、普通配置、应用秘密、加密载荷和受管应用仓库；服务和秘密存储只依赖所需仓库，成功发布仍由 `ManagedApplicationRepository` 在单事务内写入。
+- `DesktopPersistence` 只组合服务器、偏好、AI、普通配置、应用秘密、加密载荷、受管应用和整应用图仓库；`ManagedApplicationRepository` 负责单应用状态，`ManagedApplicationGraphRepository` 在同一事务内写入全部组件发布状态与不含秘密的拓扑，避免扩大任一仓库职责。
 - `GitSnapshotPreparer` 只协调 `GitCommandRunner`、`ControlledGitWorkspaceValidator`、`GitRepositoryFeaturePolicy` 和安全归档，不执行仓库源码。
 - `DeploymentBuildRenderer` 由十二个项目类型渲染器实现并共享安全脚本外壳；其中 `SpringBootBuildRenderer` 只接受 Gradle Wrapper、Maven Wrapper、系统 Maven 三种固定入口并验证唯一 Spring Boot 2/3 可执行 JAR，注册表拒绝缺失、重复和类型不匹配实现。
 - `MultiComponentDeploymentPlanner` 保留精确依赖边并生成确定性构建波次、逆序停止、拓扑启动/健康、逆序回滚和独立候选命名；`ReviewedMultiComponentDeploymentService` 在切换前完成全部候选构建和全部旧状态快照，中间失败会恢复所有已停止或尝试发布的组件，任何恢复不确定性升级为人工处理。
-- `MultiComponentLifecycleService` 每次从目标机重新观测所有组件，拒绝会破坏运行依赖的单组件动作，应用级停止/启动使用逆序/拓扑顺序，并以“部分运行”“部分启用”保留混合状态；后续桌面产品入口接入必须复用既有 `ServerOperationLocks`，不得创建绕开同服务器部署、环境准备和生命周期互斥的入口。
-- `shared/ai/collaboration` 定义项目分析、部署风险复核、错误说明三个固定角色及最小上下文、凭据无关调用证据和确定性优先裁决；客户端每次只接收一个显式 Provider 绑定，严格解析唯一 JSON 模式且不提供候补 Provider API。`app/db` SQLite v6 以受限角色值和 Provider 外键保存绑定，`app/service` 只在调用时短时读取所选 Provider 的秘密，桌面 AI 页负责命名 Provider 与角色配置并展示项目分析证据。
+- `MultiComponentLifecycleService` 每次从目标机重新观测所有组件，拒绝会破坏运行依赖的单组件动作，应用级停止/启动使用逆序/拓扑顺序，并以“部分运行”“部分启用”保留混合状态；`app/ui/deployment/MultiComponentPage` 经 `DesktopApplicationService` 复用既有 `ServerOperationLocks`，成功后由 SQLite v7 恢复组件图，运行时类型仍从目标机 root-owned 封存标记识别。
+- `shared/ai/collaboration` 定义项目分析、部署风险复核、错误说明三个固定角色及最小上下文、凭据无关调用证据和确定性优先裁决；客户端每次只接收一个显式 Provider 绑定，严格解析唯一 JSON 模式且不提供候补 Provider API。`app/db` SQLite v7 保留 v6 的受限角色值和 Provider 外键并增加成功整应用图，`app/service` 只在调用时短时读取所选 Provider 的秘密，桌面 AI 页负责命名 Provider 与角色配置并展示项目分析证据。
 - systemd 远程职责由 `SystemdHealthChecker`、`SystemdOwnershipObserver` 和 `SystemdLifecycleExecutor` 分别承担。
 - `ManagedHelperBundle` 按固定顺序拼装十个职责资源片段；安装路径和 sudoers 白名单仅允许 `/usr/local/lib/windowstolinux/managed-helper`，协议版本固定为 3，拼装字节的 SHA-256 固定为 `5985f74caa8394d342147ba4a8d53a24038d32f6c61f9f4a509f1d54009174e0`。高级语言 systemd 命令由独立的 `35-advanced-runtime.sh` 片段封闭渲染；旧 helper 必须由用户通过产品“环境准备”显式更新，部署链路不得自动替换。
 - helper 当前协议版本由 `ManagedHelperProtocolVersion` 在模型层唯一声明，能力汇总、环境准备预检和 SSH 实现不得各自保留历史版本数字。
@@ -618,13 +618,14 @@ linux-sshd 通过 linux 契约采集服务器已有环境
 18. 类型化部署分析必须把确定的源码元数据作为可审阅的 `DeploymentRuntimeSuggestion` 返回，而非由桌面表单写死语言版本、入口、产物目录、端口或卷。仅在值唯一、受支持、边界安全且具有 `AnalysisEvidence` 时才可回填；范围、冲突、任意脚本和文档文字只能作为未解决的用户输入，绝不转换为命令。
 19. 本地目录和 Git 来源都必须在 `app/service/source` 汇合为同一 `ReviewedSourcePreparation`，并以归档摘要绑定 `SourceRevision`。网络 Git 来源必须使用无凭据 URI、允许主机、固定 Commit 和受控工作目录；桌面 UI 不得调用 Git 进程、数据库或秘密存储实现。
 20. `analyze/core`、`app/ui/shell`、`app/db/repository`、远程构建、systemd 和 helper 资源必须维持第 1.1 节的职责拆分。禁止恢复已删除的集中类，禁止以兼容壳保留旧公开类型；新增职责应进入对应包或窄契约，并通过结构边界测试同步校验本文。
-21. 用户可见和持久化语义统一使用“发布身份摘要”（`release_sha256`）；“制品”仅描述构建过程中待验证的文件，不得再把已发布身份称为制品摘要。桌面 SQLite 当前 schema 为 v6；v5 保留发布身份语义，v6 增加受约束的 AI 角色到命名 Provider 外键，v4 的 `artifact_sha256` 已通过列重命名无损迁移并继续表示既有发布身份。
+21. 用户可见和持久化语义统一使用“发布身份摘要”（`release_sha256`）；“制品”仅描述构建过程中待验证的文件，不得再把已发布身份称为制品摘要。桌面 SQLite 当前 schema 为 v7；v5 保留发布身份语义，v6 增加受约束的 AI 角色到命名 Provider 外键，v7 增加成功整应用的组件/依赖图并与全部组件发布状态原子提交；v4 的 `artifact_sha256` 已通过列重命名无损迁移并继续表示既有发布身份。
 22. `DeploymentSupportProfile` 是语言、框架、支持等级与真实验收目标范围的唯一共享声明；`RECOGNITION_PREVIEW` 只能由 `analyze` 读取有界路径和固定元数据，必须使用 `NONE_PREVIEW`，不得创建源码归档、部署适配器、远端构建渲染器、helper 参数或生命周期入口。Shell 文件只可作为识别证据，不能转换成命令。
 
 ## 11. 文档版本记录
 
 | 版本 | 日期 | 说明 |
 | --- | --- | --- |
+| 3.2.0-phase3-product-entry | 2026-08-13 | 在既有 `app/ui/deployment`、`app/service/deployment`、`shared/deploy` 与 `app/db` 职责内接入多组件桌面产品入口；新增聚焦的整应用图仓库和 SQLite v7 原子拓扑，桌面重启后可从组件依赖与既有健康契约恢复生命周期，而实际运行时类型和状态仍以目标机封存标记及实时观测为准。 |
 | 3.1.0-phase3-distribution-matrix | 2026-08-13 | 在既有 `model/server`、`deploy/compatibility`、`linux-sshd/capability` 与 `linux-sshd/distro` 职责内加入软件包架构、累计 CPU、安全/防火墙事实，按发行版拆分支持策略与准备适配器；APT/DNF、受控 helper 与安全状态复核仅共享固定机械流程，不增加模块、CentOS 别名或任意 Shell 入口。 |
 | 3.0.0-phase3-multi-model-core | 2026-08-13 | 在既有 `shared/ai`、`app/db`、`app/service` 和 `app/ui/ai` 职责内加入三个固定 AI 角色、最小脱敏上下文、严格结构化输出、调用证据、冲突裁决、命名 Provider 外键绑定与桌面配置入口；SQLite 升至 v6，API Key 仍只归平台秘密存储，失败不跨 Provider 回退，模型不获得执行授权。 |
 | 2.9.0-phase3-multi-component-core | 2026-08-13 | 在既有 `model/analyze/deploy` 职责内加入稳定组件记录、目标机修改前冲突拦截、精确依赖图、独立候选、多组件短停机事务/整体健康/逐组件恢复，以及依赖安全的应用生命周期和部分运行/自启汇总；同时清除能力层残留的 helper v2 判断并由单一 v3 常量约束。JDK 21 全量离线门禁 28/28 通过，桌面产品入口和真实 Linux 验收仍待完成。 |

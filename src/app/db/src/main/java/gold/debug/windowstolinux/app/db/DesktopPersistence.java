@@ -8,6 +8,7 @@ import gold.debug.windowstolinux.app.db.repository.ConfigurationSnapshotReposito
 import gold.debug.windowstolinux.app.db.repository.DesktopPreferenceRepository;
 import gold.debug.windowstolinux.app.db.repository.EncryptedSecretRepository;
 import gold.debug.windowstolinux.app.db.repository.ManagedApplicationRepository;
+import gold.debug.windowstolinux.app.db.repository.ManagedApplicationGraphRepository;
 import gold.debug.windowstolinux.app.db.repository.ServerProfileRepository;
 
 import java.io.IOException;
@@ -16,9 +17,9 @@ import java.nio.file.Path;
 import java.sql.SQLException;
 
 /**
- * Composes focused desktop repositories over the unchanged migrated SQLite schema.
+ * Composes focused desktop repositories over the versioned migrated SQLite schema.
  *
- * <p>在未改变的已迁移 SQLite schema 上组合聚焦桌面仓库。
+ * <p>在版本化迁移的 SQLite schema 上组合聚焦桌面仓库。
  */
 public final class DesktopPersistence implements AutoCloseable {
     /** UI locale preference key. / UI 区域设置偏好键。 */
@@ -33,6 +34,7 @@ public final class DesktopPersistence implements AutoCloseable {
     private final ApplicationSecretRepository applicationSecrets;
     private final EncryptedSecretRepository encryptedSecrets;
     private final ManagedApplicationRepository managedApplications;
+    private final ManagedApplicationGraphRepository managedApplicationGraphs;
 
     private DesktopPersistence(DesktopConnectionFactory connections) {
         servers = new ServerProfileRepository(connections);
@@ -42,6 +44,7 @@ public final class DesktopPersistence implements AutoCloseable {
         applicationSecrets = new ApplicationSecretRepository(connections);
         encryptedSecrets = new EncryptedSecretRepository(connections);
         managedApplications = new ManagedApplicationRepository(connections);
+        managedApplicationGraphs = new ManagedApplicationGraphRepository(connections);
     }
 
     /** Opens and migrates desktop persistence. / 打开并迁移桌面持久化。 */
@@ -68,6 +71,8 @@ public final class DesktopPersistence implements AutoCloseable {
     public EncryptedSecretRepository encryptedSecrets() { return encryptedSecrets; }
     /** Returns the managed-application repository. / 返回受管应用仓库。 */
     public ManagedApplicationRepository managedApplications() { return managedApplications; }
+    /** Returns the durable whole-application graph repository. / 返回持久整应用图仓库。 */
+    public ManagedApplicationGraphRepository managedApplicationGraphs() { return managedApplicationGraphs; }
 
     @Override
     public void close() {

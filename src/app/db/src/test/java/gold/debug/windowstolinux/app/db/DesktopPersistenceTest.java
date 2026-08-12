@@ -1,12 +1,14 @@
 package gold.debug.windowstolinux.app.db;
 
 import gold.debug.windowstolinux.app.db.entity.CurrentRelease;
+import gold.debug.windowstolinux.app.db.entity.ManagedApplicationGraph;
 import gold.debug.windowstolinux.app.db.entity.OpaqueSecret;
 import gold.debug.windowstolinux.app.db.entity.StoredAiProviderProfile;
 import gold.debug.windowstolinux.app.db.entity.StoredAiProfile;
 import gold.debug.windowstolinux.app.db.entity.StoredAiRoleAssignment;
 import gold.debug.windowstolinux.app.db.entity.StoredApplicationSecretRevision;
 import gold.debug.windowstolinux.app.db.entity.StoredServerProfile;
+import gold.debug.windowstolinux.app.db.entity.SuccessfulManagedDeployment;
 
 import gold.debug.windowstolinux.shared.config.definition.ConfigurationScope;
 import gold.debug.windowstolinux.shared.config.definition.ConfigurationValue;
@@ -34,6 +36,7 @@ import java.sql.PreparedStatement;
 import java.sql.Statement;
 import java.time.Instant;
 import java.util.Optional;
+import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -128,6 +131,62 @@ class DesktopPersistenceTest {
     }
 
     @Test
+    void rollsBackEveryComponentWhenWholeApplicationPersistenceFails() throws Exception {
+        ServerIdentity server = new ServerIdentity("server-one", "198.51.100.24", 22,
+                "SHA256:exampleFingerprint");
+        ManagedApplication api = ManagedApplication.forManaged("shop-api", server, "a".repeat(64));
+        ManagedApplication web = ManagedApplication.forManaged("shop-web", server, "b".repeat(64));
+        var runtime = new ManagedApplicationRuntimeConfiguration(new HealthCheck.Tcp(18081, 15, 1),
+                Optional.empty());
+        Instant publishedAt = Instant.parse("2026-08-13T00:00:00Z");
+        SecretReference missing = new SecretReference("missing", 1);
+
+        try (DesktopPersistence database = DesktopPersistence.open(temporaryDirectory.resolve("atomic-components"))) {
+            ManagedApplicationGraph graph = new ManagedApplicationGraph("shop", "web", List.of(
+                    new ManagedApplicationGraph.Component("api", api, runtime, List.of()),
+                    new ManagedApplicationGraph.Component("web", web, runtime, List.of("api"))));
+            assertThrows(java.sql.SQLException.class, () -> database.managedApplicationGraphs()
+                    .recordSuccessfulApplication(graph, List.of(
+                            new SuccessfulManagedDeployment(api, runtime,
+                                    new CurrentRelease(api.id(), "c".repeat(64), publishedAt), List.of()),
+                            new SuccessfulManagedDeployment(web, runtime,
+                                    new CurrentRelease(web.id(), "d".repeat(64), publishedAt), List.of(missing)))));
+
+            assertTrue(database.managedApplications().find(api.id()).isEmpty());
+            assertTrue(database.managedApplications().find(web.id()).isEmpty());
+            assertTrue(database.managedApplications().findRelease(api.id()).isEmpty());
+            assertTrue(database.managedApplicationGraphs().find("shop").isEmpty());
+        }
+    }
+
+    @Test
+    void restoresDurableWholeApplicationGraphWithoutBuildOrSecretValues() throws Exception {
+        ServerIdentity server = new ServerIdentity("server-one", "198.51.100.24", 22,
+                "SHA256:exampleFingerprint");
+        ManagedApplication api = ManagedApplication.forManaged("shop-api", server, "a".repeat(64));
+        ManagedApplication web = ManagedApplication.forManaged("shop-web", server, "b".repeat(64));
+        var apiRuntime = new ManagedApplicationRuntimeConfiguration(new HealthCheck.Tcp(18081, 15, 1),
+                Optional.empty());
+        var webRuntime = new ManagedApplicationRuntimeConfiguration(new HealthCheck.Http(
+                URI.create("http://127.0.0.1:18082/health"), 200, 15),
+                Optional.of(new UserAccessUrl(URI.create("http://198.51.100.24:18082/"))));
+        Instant publishedAt = Instant.parse("2026-08-13T00:00:00Z");
+        ManagedApplicationGraph graph = new ManagedApplicationGraph("shop", "web", List.of(
+                new ManagedApplicationGraph.Component("api", api, apiRuntime, List.of()),
+                new ManagedApplicationGraph.Component("web", web, webRuntime, List.of("api"))));
+
+        try (DesktopPersistence database = DesktopPersistence.open(temporaryDirectory.resolve("durable-graph"))) {
+            database.managedApplicationGraphs().recordSuccessfulApplication(graph, List.of(
+                    new SuccessfulManagedDeployment(api, apiRuntime,
+                            new CurrentRelease(api.id(), "c".repeat(64), publishedAt), List.of()),
+                    new SuccessfulManagedDeployment(web, webRuntime,
+                            new CurrentRelease(web.id(), "d".repeat(64), publishedAt), List.of())));
+
+            assertEquals(graph, database.managedApplicationGraphs().find("shop").orElseThrow());
+        }
+    }
+
+    @Test
     void migratesVersionFourArtifactIdentityToVersionFiveReleaseIdentityWithoutDataLoss() throws Exception {
         Path dataDirectory = Files.createDirectories(temporaryDirectory.resolve("version-four"));
         Path databaseFile = dataDirectory.resolve("windowstolinux.db");
@@ -160,7 +219,7 @@ class DesktopPersistenceTest {
             }
             try (var version = statement.executeQuery("PRAGMA user_version")) {
                 assertTrue(version.next());
-                assertEquals(6, version.getInt(1));
+                assertEquals(7, version.getInt(1));
             }
         }
     }

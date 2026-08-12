@@ -3,6 +3,8 @@ package gold.debug.windowstolinux.app.service.source;
 import gold.debug.windowstolinux.app.windows.workspace.PreparedSourceArchive;
 import gold.debug.windowstolinux.app.windows.workspace.WindowsSourceWorkspace;
 import gold.debug.windowstolinux.shared.analyze.core.DeploymentAnalysisCoordinator;
+import gold.debug.windowstolinux.shared.analyze.component.ComponentAnalysisRequest;
+import gold.debug.windowstolinux.shared.analyze.component.MixedProjectAnalyzer;
 import gold.debug.windowstolinux.shared.git.snapshot.GitSnapshot;
 import gold.debug.windowstolinux.shared.git.snapshot.GitSnapshotException;
 import gold.debug.windowstolinux.shared.git.snapshot.GitSnapshotPreparer;
@@ -15,6 +17,7 @@ import gold.debug.windowstolinux.shared.model.project.SourceRevision;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.LinkedHashMap;
 import java.util.Objects;
 import java.util.Optional;
 
@@ -80,6 +83,33 @@ public final class SourcePreparationUseCase {
         return new ReviewedSourcePreparation(assessment, Optional.of(archive.descriptor()),
                 Optional.of(new SourceRevision(archive.descriptor().contentSha256(), Optional.empty(), java.util.Map.of())),
                 archive.excludedEntries());
+    }
+
+    /**
+     * Analyzes an explicit component graph and creates one independent safe archive per admitted component.
+     *
+     * <p>分析显式组件图，并为每个准入组件创建一个独立安全归档。
+     */
+    public PreparedMultiComponentSource prepareMultiComponent(Path applicationRoot, String applicationId,
+                                                               List<ComponentAnalysisRequest> requests)
+            throws IOException {
+        var assessment = new MixedProjectAnalyzer().analyze(applicationRoot, applicationId, requests);
+        if (assessment.admission() != DeploymentAdmission.READY_FOR_PLANNING) {
+            return new PreparedMultiComponentSource(assessment, java.util.Map.of());
+        }
+        LinkedHashMap<String, PreparedComponentSource> components = new LinkedHashMap<>();
+        for (var component : assessment.components().stream()
+                .filter(value -> value.runtime().isPresent())
+                .sorted(java.util.Comparator.comparing(
+                        gold.debug.windowstolinux.shared.model.project.component.DeploymentComponent::componentId))
+                .toList()) {
+            PreparedSourceArchive archive = workspace.prepare(component.sourceRoot(), component.facts().applicationId());
+            SourceRevision revision = new SourceRevision(archive.descriptor().contentSha256(), Optional.empty(),
+                    java.util.Map.of());
+            components.put(component.componentId(), new PreparedComponentSource(component.componentId(),
+                    component.facts(), archive.descriptor(), revision, archive.excludedEntries()));
+        }
+        return new PreparedMultiComponentSource(assessment, components);
     }
 
     /**

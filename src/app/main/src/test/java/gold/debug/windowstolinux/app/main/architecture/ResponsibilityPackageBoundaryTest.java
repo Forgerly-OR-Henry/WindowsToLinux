@@ -32,11 +32,13 @@ class ResponsibilityPackageBoundaryTest {
             "PageNavigator.java");
     private static final Set<String> DEPLOYMENT_PAGE = Set.of(
             "DeploymentAnalysisPresenter.java", "DeploymentConfigurationParser.java", "DeploymentPage.java",
-            "DeploymentPageState.java", "DeploymentRuntimeParser.java", "ReviewContext.java");
+            "DeploymentPageState.java", "DeploymentRuntimeParser.java", "ReviewContext.java",
+            "MultiComponentDraft.java", "MultiComponentFormState.java", "MultiComponentHealthMode.java",
+            "MultiComponentPage.java", "MultiComponentPageState.java", "MultiComponentResultPresenter.java");
     private static final Set<String> REPOSITORIES = Set.of(
             "AiProfileRepository.java", "ApplicationSecretRepository.java", "ConfigurationSnapshotRepository.java",
             "DesktopPreferenceRepository.java", "EncryptedSecretRepository.java", "ManagedApplicationRepository.java",
-            "RepositoryTransactions.java", "ServerProfileRepository.java");
+            "ManagedApplicationGraphRepository.java", "RepositoryTransactions.java", "ServerProfileRepository.java");
     private static final Set<String> HELPER_FRAGMENTS = Set.of(
             "00-common.sh", "10-typed-release.sh", "15-deployment-input.sh", "20-candidate-workspace.sh", "30-ordinary-release.sh",
             "35-advanced-runtime.sh", "40-typed-runtime.sh", "50-container-release.sh", "60-lifecycle.sh",

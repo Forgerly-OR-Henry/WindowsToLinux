@@ -2,10 +2,14 @@ package gold.debug.windowstolinux.app.service.source;
 
 import gold.debug.windowstolinux.app.windows.workspace.WindowsSourceWorkspace;
 import gold.debug.windowstolinux.shared.analyze.core.DeploymentAnalysisCoordinator;
+import gold.debug.windowstolinux.shared.analyze.component.ComponentAnalysisRequest;
 import gold.debug.windowstolinux.shared.git.reference.GitReference;
 import gold.debug.windowstolinux.shared.git.remote.GitRemote;
 import gold.debug.windowstolinux.shared.git.snapshot.GitSourceRequest;
 import gold.debug.windowstolinux.shared.model.project.DeploymentProjectType;
+import gold.debug.windowstolinux.shared.model.project.DeploymentRuntimeSpecification;
+import gold.debug.windowstolinux.shared.model.project.component.ComponentIsolationRequirements;
+import gold.debug.windowstolinux.shared.model.health.HealthCheck;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -14,6 +18,8 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Set;
+import java.util.List;
+import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -66,6 +72,52 @@ class SourcePreparationUseCaseTest {
         assertTrue(prepared.archive().isEmpty());
         assertTrue(prepared.sourceRevision().isEmpty());
         assertTrue(Files.notExists(temporaryDirectory.resolve("workspace/archives")));
+    }
+
+    @Test
+    void preparesIndependentArchivesOnlyAfterTheWholeComponentGraphIsAdmitted() throws Exception {
+        Path application = Files.createDirectories(temporaryDirectory.resolve("application"));
+        node(Files.createDirectories(application.resolve("api")), "api");
+        node(Files.createDirectories(application.resolve("web")), "web");
+        Path workspace = temporaryDirectory.resolve("workspace");
+        SourcePreparationUseCase useCase = new SourcePreparationUseCase(new DeploymentAnalysisCoordinator(),
+                new WindowsSourceWorkspace(workspace));
+
+        PreparedMultiComponentSource prepared = useCase.prepareMultiComponent(application, "shop", List.of(
+                component("api", "api", 18081, Set.of()),
+                component("web", "web", 18082, Set.of("api"))));
+
+        assertEquals(gold.debug.windowstolinux.shared.model.analysis.DeploymentAdmission.READY_FOR_PLANNING,
+                prepared.assessment().admission());
+        assertEquals(List.of("api", "web"), prepared.components().keySet().stream().toList());
+        assertTrue(prepared.components().values().stream().allMatch(value ->
+                value.archive().localArchive().startsWith(workspace.toAbsolutePath())
+                        && Files.isRegularFile(value.archive().localArchive())
+                        && value.archive().contentSha256().equals(value.sourceRevision().sourceSha256())));
+        assertEquals(2, prepared.components().values().stream()
+                .map(value -> value.archive().localArchive()).distinct().count());
+
+        PreparedMultiComponentSource rejected = useCase.prepareMultiComponent(application, "conflict", List.of(
+                component("api", "api", 18081, Set.of()),
+                component("web", "web", 18081, Set.of("api"))));
+        assertEquals(gold.debug.windowstolinux.shared.model.analysis.DeploymentAdmission.REJECTED,
+                rejected.assessment().admission());
+        assertTrue(rejected.components().isEmpty());
+    }
+
+    private static ComponentAnalysisRequest component(String id, String root, int port, Set<String> dependencies) {
+        return new ComponentAnalysisRequest(id, root, DeploymentProjectType.NODE_SERVICE,
+                Optional.of(new DeploymentRuntimeSpecification.NodeService(22,
+                        new HealthCheck.Tcp(port, 20, 1))),
+                List.of(root + "/dist"), Set.of(port), List.of("PORT"), List.of(), List.of(), dependencies,
+                true, ComponentIsolationRequirements.managed());
+    }
+
+    private static void node(Path directory, String name) throws IOException {
+        Files.writeString(directory.resolve("package.json"), """
+                {"name":"%s","engines":{"node":"22"},"scripts":{"build":"build","start":"start"}}
+                """.formatted(name), StandardCharsets.UTF_8);
+        Files.writeString(directory.resolve("package-lock.json"), "{}", StandardCharsets.UTF_8);
     }
 
     private static String git(Path directory, String... arguments) throws IOException, InterruptedException {

@@ -6,12 +6,15 @@ import gold.debug.windowstolinux.app.ui.appearance.ThemeMode;
 import gold.debug.windowstolinux.app.ui.appearance.ThemePalette;
 import gold.debug.windowstolinux.app.ui.component.DesktopComponents;
 import gold.debug.windowstolinux.app.ui.deployment.DeploymentPageState;
+import gold.debug.windowstolinux.app.ui.deployment.MultiComponentFormState;
+import gold.debug.windowstolinux.app.ui.deployment.MultiComponentPageState;
 import gold.debug.windowstolinux.app.ui.i18n.MessageCatalog;
 import gold.debug.windowstolinux.app.ui.managed.ManagedPageState;
 import gold.debug.windowstolinux.app.ui.server.ServerPageState;
 import gold.debug.windowstolinux.app.ui.settings.SettingsPageState;
 import gold.debug.windowstolinux.shared.model.security.CredentialStorageMode;
 import gold.debug.windowstolinux.shared.ai.collaboration.AiCollaborationRole;
+import gold.debug.windowstolinux.shared.model.lifecycle.LifecycleAction;
 import org.junit.jupiter.api.Test;
 
 import java.util.concurrent.atomic.AtomicReference;
@@ -28,6 +31,12 @@ class DesktopLanguageSwitchStateTest {
                 new DeploymentPageState("PYTHON_SERVICE", "TCP", "", "200", "12", "7", "",
                         "3.12", "app", "", "", "", "PODMAN", "8080:8080", "", "PORT=8080", "database-password:1", true,
                         true, "deployment diagnostic", null),
+                new MultiComponentPageState("C:\\sources\\shop", "shop", "web", "api,web",
+                        LifecycleAction.REFRESH_STATUS,
+                        new MultiComponentFormState("api", "api", "NODE_SERVICE", "", "", "22", "", "",
+                                "TCP", "18081", "200", "20", "1", "", "api/dist", "18081", "",
+                                "PORT=18081", "database-password:1", true, false),
+                        java.util.List.of(), "component diagnostic", null, null),
                 new ServerPageState("server-two", "198.51.100.24", "2222", "deploy",
                         "ssh-secret".toCharArray(), CredentialStorageMode.MASTER_PASSWORD,
                         "master-secret".toCharArray(), "server diagnostic"),
@@ -57,6 +66,11 @@ class DesktopLanguageSwitchStateTest {
             assertTrue(chineseState.deployment().rootBuild());
             assertTrue(chineseState.deployment().experimentalAdapterRisk());
             assertEquals("deployment diagnostic", chineseState.deployment().output());
+            assertEquals("shop", chineseState.multiComponent().applicationId());
+            assertEquals("api", chineseState.multiComponent().form().componentId());
+            assertEquals("NODE_SERVICE", chineseState.multiComponent().form().projectType());
+            assertEquals("PORT=18081", chineseState.multiComponent().form().configuration());
+            assertEquals("component diagnostic", chineseState.multiComponent().output());
             assertEquals("server-two", chineseState.server().id());
             assertEquals("198.51.100.24", chineseState.server().host());
             assertArrayEquals("ssh-secret".toCharArray(), chineseState.server().password());

@@ -27,10 +27,8 @@ import gold.debug.windowstolinux.shared.model.message.LocalizedMessage;
 import gold.debug.windowstolinux.shared.model.message.LocalizedOperationException;
 import gold.debug.windowstolinux.shared.model.server.ServerIdentity;
 
-import java.security.SecureRandom;
 import java.sql.SQLException;
 import java.time.Instant;
-import java.util.HexFormat;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.List;
@@ -86,7 +84,7 @@ public final class ReviewedDeploymentUseCase {
         var sourceRevision = preparation.sourceRevision().orElseThrow(() -> new LocalizedOperationException(
                 LocalizedMessage.of("deployment.analyzeFirst"),
                 "Typed deployment requires an immutable source identity bound to the reviewed archive"));
-        ManagedApplication application = resolveApplication(facts.applicationId(), server);
+        ManagedApplication application = ManagedApplicationIdentity.resolve(applications, facts.applicationId(), server);
         return new ReviewedDeploymentRequest(server, facts, sourceRevision,
                 archive, configuration, secretReferences, runtime, userAccessUrl, limits,
                 new DeploymentApproval(application.id(), archive.contentSha256(), server.id(), rootBuildConfirmed, Instant.now()),
@@ -150,7 +148,8 @@ public final class ReviewedDeploymentUseCase {
                                     SshCredential credential, HostKeyVerifier verifier,
                                     List<ResolvedSecretRevision> resolvedSecrets) throws SQLException {
         request = Objects.requireNonNull(request, "request");
-        ManagedApplication application = resolveApplication(request.facts().applicationId(), request.server());
+        ManagedApplication application = ManagedApplicationIdentity.resolve(
+                applications, request.facts().applicationId(), request.server());
         ReentrantLock lock = locks.forServer(application.server().id());
         lock.lock();
         try {
@@ -202,27 +201,4 @@ public final class ReviewedDeploymentUseCase {
         }
     }
 
-    private ManagedApplication resolveApplication(String applicationId, ServerIdentity server) throws SQLException {
-        Optional<ManagedApplication> saved = applications.find(applicationId);
-        if (saved.isEmpty()) {
-            return ManagedApplication.forManaged(applicationId, server, randomDigest());
-        }
-        ManagedApplication existing = saved.orElseThrow();
-        if (!existing.server().equals(server)) {
-            throw new LocalizedOperationException(LocalizedMessage.of("deployment.applicationServerConflict", "application", applicationId),
-                    "Managed application " + applicationId + " is bound to a different server identity");
-        }
-        ManagedApplication canonical = ManagedApplication.forManaged(applicationId, server, existing.ownershipManifestSha256());
-        if (!existing.equals(canonical)) {
-            throw new LocalizedOperationException(LocalizedMessage.of("deployment.applicationIdentityInvalid", "application", applicationId),
-                    "Saved managed application identity violates managed-deployment rules");
-        }
-        return existing;
-    }
-
-    private static String randomDigest() {
-        byte[] bytes = new byte[32];
-        new SecureRandom().nextBytes(bytes);
-        return HexFormat.of().formatHex(bytes);
-    }
 }

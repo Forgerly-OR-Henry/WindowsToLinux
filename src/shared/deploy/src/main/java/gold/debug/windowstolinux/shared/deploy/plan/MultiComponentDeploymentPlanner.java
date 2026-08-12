@@ -33,29 +33,48 @@ public final class MultiComponentDeploymentPlanner {
                 .sorted(Comparator.comparing(DeploymentComponent::componentId))
                 .forEach(component -> components.put(component.componentId(), component));
         if (components.isEmpty()) throw new IllegalArgumentException("component plans require deployable components");
-        List<List<String>> waves = topologicalWaves(components);
+        Map<String, String> namespaces = new LinkedHashMap<>();
+        Map<String, List<String>> dependencies = new LinkedHashMap<>();
+        components.forEach((id, component) -> {
+            namespaces.put(id, component.facts().applicationId());
+            dependencies.put(id, component.dependencies().stream().sorted().toList());
+        });
+        return restore(assessment.applicationId(), namespaces, dependencies);
+    }
+
+    /** Restores deterministic ordering from a previously validated durable managed graph. / 从先前已验证的持久受管图恢复确定性顺序。 */
+    public MultiComponentDeploymentPlan restore(String applicationId, Map<String, String> candidateNamespaces,
+                                                Map<String, List<String>> componentDependencies) {
+        applicationId = Objects.requireNonNull(applicationId, "applicationId");
+        Map<String, String> namespaces = Map.copyOf(Objects.requireNonNull(candidateNamespaces,
+                "candidateNamespaces"));
+        Map<String, List<String>> dependencies = new LinkedHashMap<>();
+        Objects.requireNonNull(componentDependencies, "componentDependencies").entrySet().stream()
+                .sorted(Map.Entry.comparingByKey())
+                .forEach(entry -> dependencies.put(entry.getKey(), List.copyOf(entry.getValue())));
+        if (namespaces.isEmpty() || !namespaces.keySet().equals(dependencies.keySet())) {
+            throw new IllegalArgumentException("durable graph namespaces and dependencies must exactly match");
+        }
+        List<List<String>> waves = topologicalWaves(dependencies);
         List<String> start = waves.stream().flatMap(List::stream).toList();
         List<String> reverse = new ArrayList<>(start);
         Collections.reverse(reverse);
-        Map<String, String> namespaces = new LinkedHashMap<>();
-        Map<String, List<String>> dependencies = new LinkedHashMap<>();
-        start.forEach(id -> namespaces.put(id, components.get(id).facts().applicationId()));
-        start.forEach(id -> dependencies.put(id, components.get(id).dependencies().stream().sorted().toList()));
-        return new MultiComponentDeploymentPlan(assessment.applicationId(), waves, reverse, start, start, reverse,
+        return new MultiComponentDeploymentPlan(applicationId, waves, reverse, start, start, reverse,
                 namespaces, dependencies);
     }
 
-    private static List<List<String>> topologicalWaves(Map<String, DeploymentComponent> components) {
+    private static List<List<String>> topologicalWaves(Map<String, List<String>> components) {
         Map<String, Integer> remainingDependencies = new HashMap<>();
         Map<String, Set<String>> dependents = new HashMap<>();
-        for (DeploymentComponent component : components.values()) {
-            Set<String> dependencies = new TreeSet<>(component.dependencies());
-            if (!components.keySet().containsAll(dependencies)) {
+        for (Map.Entry<String, List<String>> component : components.entrySet()) {
+            Set<String> dependencies = new TreeSet<>(component.getValue());
+            if (dependencies.size() != component.getValue().size()
+                    || !components.keySet().containsAll(dependencies) || dependencies.contains(component.getKey())) {
                 throw new IllegalArgumentException("deployable component graph contains a non-deployable dependency");
             }
-            remainingDependencies.put(component.componentId(), dependencies.size());
+            remainingDependencies.put(component.getKey(), dependencies.size());
             dependencies.forEach(dependency -> dependents.computeIfAbsent(dependency, ignored -> new TreeSet<>())
-                    .add(component.componentId()));
+                    .add(component.getKey()));
         }
         TreeSet<String> ready = new TreeSet<>();
         remainingDependencies.forEach((id, count) -> { if (count == 0) ready.add(id); });

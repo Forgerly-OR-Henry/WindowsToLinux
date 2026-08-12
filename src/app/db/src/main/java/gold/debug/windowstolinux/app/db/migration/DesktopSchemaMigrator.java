@@ -19,7 +19,7 @@ public final class DesktopSchemaMigrator {
      *
      * <p>公开 {@code CURRENT_SCHEMA_VERSION} 常量。
      */
-    public static final int CURRENT_SCHEMA_VERSION = 6;
+    public static final int CURRENT_SCHEMA_VERSION = 7;
 
     private DesktopSchemaMigrator() {
     }
@@ -195,6 +195,41 @@ public final class DesktopSchemaMigrator {
                                 'PROJECT_ANALYSIS', 'DEPLOYMENT_RISK_REVIEW', 'ERROR_EXPLANATION'
                               )),
                               profile_id TEXT NOT NULL REFERENCES ai_provider_profile(profile_id) ON DELETE RESTRICT
+                            )
+                            """);
+                }
+                if (version < 7) {
+                    statement.execute("""
+                            CREATE TABLE IF NOT EXISTS managed_application_graph (
+                              application_id TEXT PRIMARY KEY,
+                              server_id TEXT NOT NULL REFERENCES server(id) ON DELETE RESTRICT,
+                              health_component_id TEXT NOT NULL,
+                              updated_at INTEGER NOT NULL
+                            )
+                            """);
+                    statement.execute("""
+                            CREATE TABLE IF NOT EXISTS managed_application_graph_component (
+                              application_id TEXT NOT NULL REFERENCES managed_application_graph(application_id)
+                                ON DELETE CASCADE,
+                              component_id TEXT NOT NULL,
+                              managed_application_id TEXT NOT NULL UNIQUE
+                                REFERENCES managed_application(id) ON DELETE RESTRICT,
+                              PRIMARY KEY (application_id, component_id)
+                            )
+                            """);
+                    statement.execute("""
+                            CREATE TABLE IF NOT EXISTS managed_application_graph_dependency (
+                              application_id TEXT NOT NULL,
+                              component_id TEXT NOT NULL,
+                              dependency_component_id TEXT NOT NULL,
+                              PRIMARY KEY (application_id, component_id, dependency_component_id),
+                              FOREIGN KEY (application_id, component_id)
+                                REFERENCES managed_application_graph_component(application_id, component_id)
+                                ON DELETE CASCADE,
+                              FOREIGN KEY (application_id, dependency_component_id)
+                                REFERENCES managed_application_graph_component(application_id, component_id)
+                                ON DELETE RESTRICT,
+                              CHECK(component_id <> dependency_component_id)
                             )
                             """);
                 }

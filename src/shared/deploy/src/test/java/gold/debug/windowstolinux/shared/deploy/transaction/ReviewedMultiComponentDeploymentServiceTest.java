@@ -6,6 +6,7 @@ import gold.debug.windowstolinux.shared.config.revision.ConfigurationEntry;
 import gold.debug.windowstolinux.shared.config.revision.ConfigurationSnapshot;
 import gold.debug.windowstolinux.shared.config.revision.DeploymentInputManifest;
 import gold.debug.windowstolinux.shared.deploy.lifecycle.MultiComponentLifecycleService;
+import gold.debug.windowstolinux.shared.deploy.lifecycle.ManagedComponentLifecycle;
 import gold.debug.windowstolinux.shared.deploy.plan.ApplicationHealthGate;
 import gold.debug.windowstolinux.shared.deploy.plan.DeploymentApproval;
 import gold.debug.windowstolinux.shared.deploy.plan.MultiComponentDeploymentPlan;
@@ -171,7 +172,11 @@ class ReviewedMultiComponentDeploymentServiceTest {
     private gold.debug.windowstolinux.shared.deploy.result.MultiComponentLifecycleResult lifecycle(
             LifecycleFixture fixture, Set<String> targets, LifecycleAction action) {
         DeploymentLinuxGateway gateway = (endpoint, credential, verifier) -> fixture.session();
-        return new MultiComponentLifecycleService().execute(plan(), components(), targets, action, gateway,
+        List<ManagedComponentLifecycle> managed = components().stream()
+                .map(component -> new ManagedComponentLifecycle(component.componentId(), component.application(),
+                        component.request().runtime().healthCheck()))
+                .toList();
+        return new MultiComponentLifecycleService().execute(plan(), managed, targets, action, gateway,
                 new SshEndpoint("server-one", "example.test", 22, "deployer"),
                 new SshCredential.Password("fixture-password".toCharArray()),
                 (endpoint, fingerprint) -> HostKeyDecision.ACCEPT_EXISTING);
@@ -261,9 +266,9 @@ class ReviewedMultiComponentDeploymentServiceTest {
         private DeploymentRemoteSession session() {
             return (DeploymentRemoteSession) Proxy.newProxyInstance(getClass().getClassLoader(),
                     new Class<?>[]{DeploymentRemoteSession.class}, (proxy, method, arguments) -> switch (method.getName()) {
-                        case "observeDeployment" -> observe((ManagedApplication) arguments[0]);
-                        case "executeDeploymentLifecycle" -> execute((ManagedApplication) arguments[0],
-                                (LifecycleAction) arguments[2]);
+                        case "observe" -> observe((ManagedApplication) arguments[0]);
+                        case "executeLifecycle" -> execute((ManagedApplication) arguments[0],
+                                (LifecycleAction) arguments[1]);
                         case "close" -> null;
                         case "toString" -> "multi-component lifecycle fixture session";
                         default -> throw new AssertionError("unexpected lifecycle operation: " + method.getName());
