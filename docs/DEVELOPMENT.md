@@ -4,12 +4,12 @@
 
 - 项目名称：WindowsToLinux
 - 文档角色：产品边界、五期路线、跨期规则与完整开发流程的唯一总入口
-- 文档版本：`2.1.0-local-execution-contracts`
-- 文档状态：**一期桌面端、完整本地回归和 Ubuntu 24.04 裸机真实验收均已完成；二期本地实现与自动化验证已完成，但所有二期运行环境验收仍为 `RUNTIME-PENDING`**
+- 文档版本：`2.2.0-reviewed-runtime-acceptance`
+- 文档状态：**桌面端、本地回归及 Ubuntu 24.04 x86-64 的一期和二期实机验收已完成；Podman 与其余二期发行版矩阵保持 `RUNTIME-PENDING`**
 - 更新日期：2026-08-12
 - 项目结构：[File.md](File.md)
 
-> 文档中的“支持”必须具有实现和验收证据。当前仓库已完成一期桌面端的静态分析、安全 `tar.gz` 归档、凭据与 SQLite、SSH/SFTP 受控适配、目标机环境准备、构建/发布/回滚编排及受管生命周期的本地实现和自动化验证；并已由程序在新装 Ubuntu 24.04 上实际验证环境准备、Maven 与 Maven Wrapper 构建、复杂 Spring Boot 发布、短停机发布、HTTP/TCP 健康、失败回滚、断连恢复、资源限制、受管归属、业务 URL 交付和完整生命周期。二期已补齐 Git 只读快照、配置/密钥修订、类型化分析与计划、六类项目的受控构建/发布/回滚/生命周期、类型化 Linux/容器主机矩阵、Ubuntu 22.04/24.04 与 CentOS Stream 9/10 固定环境准备脚本，以及受限 AI 边界的本地代码与自动化测试，但没有连接二期目标机；这不能替代或伪造 Gradle、普通 JAR、Node、Python、静态站点、容器或新发行版的真实验收。备份、迁移与 Web 业务尚未实现，不能因文档完整而标记为可用。
+> 文档中的“支持”必须具有实现和验收证据。当前仓库已完成一期桌面端的静态分析、安全 `tar.gz` 归档、凭据与 SQLite、SSH/SFTP 受控适配、目标机环境准备、构建/发布/回滚编排及受管生命周期；并已由产品入口在新装 Ubuntu 24.04 x86-64 上验证一期 Maven/Spring Boot 以及二期 Gradle Spring Boot、普通 JAR、Node.js、Python、静态站点和 Dockerfile 容器链路。二期验收覆盖本地或公开 Git 固定 Commit 源码、不可变配置/秘密修订、目标机构建、发布、健康、远端观测、代表性的 systemd/容器生命周期及失败回滚。Podman、Ubuntu 22.04 与 CentOS Stream 9/10 没有实机证据，继续标记 `RUNTIME-PENDING`；备份、迁移与 Web 业务尚未实现。
 
 ## 1. 产品定位
 
@@ -22,10 +22,10 @@ WindowsToLinux 是面向个人和小型自托管场景的部署管理工具。�
 | 项目 | 当前状态 | 可以据此声称的结论 |
 | --- | --- | --- |
 | Maven | 当前 reactor 由根工程、3 个聚合模块和 24 个叶子模块组成，共 28 个 POM；二期复用既有叶子模块，没有新增 Maven 模块 | `File.md` 的正式目标模块结构保持不变；`backup` 和 Web Java 模块仍为 POM-only |
-| Java | Java 21；一期 shared 与桌面代码已按职责分包；`shared/config`、`shared/git`、`analyze`、`deploy`、`linux`、`linux-sshd`、`app/db`、`app/service` 已含二期本地实现与测试 | 二期新类型尚未通过真实 Linux 验收，不能标记正式支持 |
+| Java | Java 21；shared 与桌面代码已按职责分包；`shared/config`、`shared/git`、`analyze`、`deploy`、`linux`、`linux-sshd`、`app/db`、`app/service` 已含二期实现与测试 | Ubuntu 24.04 x86-64 的六类路径已有实机证据；不得外推至未验收主机矩阵 |
 | Web 前端 | Vue 3、TypeScript、Vite、Vitest、Playwright 骨架 | 只可展示骨架页，尚无业务接口 |
-| 桌面/Web 业务 | Swing 已提供一期受管生命周期，以及二期六类项目的类型选择、静态分析、类型化计划审阅和已保存凭据提交；Web 业务未实现 | Ubuntu 一期真实部署/回滚/生命周期矩阵已由桌面程序执行；二期桌面流程仅完成本地验证，Web 不可部署或管理应用 |
-| Linux 运行验证 | Ubuntu 24.04 x86-64 的一期产品环境准备、Maven/Wrapper、复杂 Spring Boot、systemd、HTTP/TCP、失败恢复、归属、访问交付和生命周期均已实际验证；二期新增矩阵、固定环境准备、构建与发布协议完成本地代码/契约测试 | 容器和其他发行版及二期类型仍为 `RUNTIME-PENDING` |
+| 桌面/Web 业务 | Swing 已提供受管生命周期，以及六类项目的类型选择、静态分析、类型化计划审阅和已保存凭据提交；Web 业务未实现 | Ubuntu 的本地/Git 源码到部署、回滚和生命周期由桌面产品入口执行；Web 不可部署或管理应用 |
+| Linux 运行验证 | Ubuntu 24.04 x86-64 已实际验证环境准备、Gradle/JAR/Node/Python/静态站点/Docker 构建发布、systemd/容器、HTTP/TCP、失败恢复、归属、访问交付和代表性完整生命周期 | Podman、Ubuntu 22.04 与 CentOS Stream 9/10 仍为 `RUNTIME-PENDING` |
 
 ### 2.1 正式目标架构与当前实现边界
 
@@ -194,6 +194,7 @@ Playwright 浏览器固定保存在 `src/web/frontend/.playwright-browsers`，�
 - Ubuntu 生命周期：<https://ubuntu.com/about/release-cycle>
 - Debian 发布版本：<https://www.debian.org/releases/>
 - CentOS Stream：<https://www.centos.org/centos10/>
+- x86-64 psABI 微架构级别：<https://gitlab.com/x86-psABIs/x86-64-ABI/-/blob/master/x86-64-ABI/low-level-sys-info.tex>
 - AlmaLinux 10：<https://wiki.almalinux.org/release-notes/10.0.html>
 - Oracle Linux 10：<https://docs.oracle.com/en/operating-systems/oracle-linux/10/>
 
@@ -201,6 +202,7 @@ Playwright 浏览器固定保存在 `src/web/frontend/.playwright-browsers`，�
 
 | 版本 | 日期 | 阶段 | 状态 | 说明 |
 | --- | --- | --- | --- | --- |
+| 2.2.0-reviewed-runtime-acceptance | 2026-08-12 | 二期 | Ubuntu 24.04 x86-64 实机验收完成；其余矩阵待验收 | 产品入口完成本地与公开 Git 固定 Commit 源码的类型化分析、构建、发布、健康、观测、代表性生命周期及失败回滚；Podman、Ubuntu 22.04 与 CentOS Stream 9/10 保持 `RUNTIME-PENDING`。 |
 | 2.1.0-local-execution-contracts | 2026-08-12 | 二期 | 本地实现与自动化验证完成；运行环境待验收 | 六类项目的受控目标机构建、发布、快照、回滚、健康和生命周期代码均已接入；类型化主机矩阵在上传前执行，Ubuntu 22.04/24.04 与 CentOS Stream 9/10 具有固定环境准备脚本。真实目标机仍未连接。 |
 | 2.0.9-phase2-local-implementation | 2026-08-12 | 二期 | 本地实现与自动化验证完成；运行环境待验收 | Git 快照、六类项目的静态分析/计划、配置/秘密修订、Linux/容器契约、命名 Provider 和只读 Agent 已落地；未连接二期目标机，不能作正式支持结论。 |
 | 2.0.8-structure-implementation | 2026-08-11 | 一期至五期 | 正式目标结构已落地；一期能力边界不变 | 记录 28-POM reactor、`shared/source` 与 `shared/linux-sshd` 迁移、桌面层职责分包和组合根注入；`shared/config` 仅建 POM，本次不执行真实 Ubuntu 操作。 |

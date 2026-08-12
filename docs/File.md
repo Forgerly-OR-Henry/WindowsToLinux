@@ -2,14 +2,14 @@
 
 ## 文档信息
 
-- 文档版本：`2.4.0-responsibility-boundaries`
-- 文档状态：**正式目标模块、职责、依赖方向和叶子模块内部目标包结构已确认；28 个 Maven reactor 工程、职责拆包和基础语言事实已落地；真实运行环境验收保持待执行**
+- 文档版本：`2.5.0-reviewed-runtime-acceptance`
+- 文档状态：**正式目标模块、职责、依赖方向和叶子模块内部目标包结构已确认；28 个 Maven reactor 工程、职责拆包、基础语言事实及 Ubuntu 24.04 类型化部署验收已落地；其余主机矩阵保持待验证**
 - 已确认范围：`shared` 共用模块、`app` Windows 桌面应用模块、`web` Web 应用模块
 - 已确认能力边界：受管应用生命周期复用既有模块，不新增独立 Maven 模块
 - 更新日期：2026-08-12
 - 开发总纲：[DEVELOPMENT.md](DEVELOPMENT.md)
 
-> 本文是正式目标目录、模块职责、依赖方向和内部包结构的来源。当前 reactor 已包含根工程、3 个聚合模块和 24 个叶子模块，共 28 个 POM。`shared/source`、`shared/config`、`shared/git`、`shared/linux-sshd`、`analyze`、`deploy`、`app/db` 与 `app/service` 已承载对应的一期或二期代码；其中 `shared/linux-sshd` 已实现六类项目的有界构建、发布/回滚/生命周期协议及受支持发行版固定环境准备。`shared/backup` 和 Web Java 叶子模块仍只保留 POM。二期代码仅完成本地自动化验证，不构成新类型或新发行版的正式支持结论。
+> 本文是正式目标目录、模块职责、依赖方向和内部包结构的来源。当前 reactor 已包含根工程、3 个聚合模块和 24 个叶子模块，共 28 个 POM。`shared/source`、`shared/config`、`shared/git`、`shared/linux-sshd`、`analyze`、`deploy`、`app/db` 与 `app/service` 已承载对应的一期或二期代码；其中 `shared/linux-sshd` 已实现六类项目的有界构建、发布/回滚/生命周期协议及受支持发行版固定环境准备。`shared/backup` 和 Web Java 叶子模块仍只保留 POM。Ubuntu 24.04 x86-64 已由产品入口完成六类项目与公开 Git 固定 Commit 的实机验收；Podman、Ubuntu 22.04 和 CentOS Stream 9/10 不从该证据外推，继续标记 `RUNTIME-PENDING`。
 
 ## 1. 完整目标结构
 
@@ -239,7 +239,7 @@ WindowsToLinux/
 - `GitSnapshotPreparer` 只协调 `GitCommandRunner`、`ControlledGitWorkspaceValidator`、`GitRepositoryFeaturePolicy` 和安全归档，不执行仓库源码。
 - `DeploymentBuildRenderer` 由六个项目类型渲染器实现并共享安全脚本外壳；注册表拒绝缺失、重复和类型不匹配实现，Node 构建型静态站点必须携带显式主版本。
 - systemd 远程职责由 `SystemdHealthChecker`、`SystemdOwnershipObserver` 和 `SystemdLifecycleExecutor` 分别承担。
-- `ManagedHelperBundle` 按固定顺序拼装八个职责资源片段；安装路径和 sudoers 白名单仅允许 `/usr/local/lib/windowstolinux/managed-helper`，拼装字节的 SHA-256 固定为 `399bc1f0fc0cc6d8abec2abf887fca956b18bc294670e5a1d0dc4b17faa10a9f`。
+- `ManagedHelperBundle` 按固定顺序拼装九个职责资源片段；安装路径和 sudoers 白名单仅允许 `/usr/local/lib/windowstolinux/managed-helper`，拼装字节的 SHA-256 固定为 `0d860e5fba4bc4349f94ddfbdd020030e008ea79dc37329eae6ba36785281f29`。
 
 ## 2. 模块职责
 
@@ -603,6 +603,7 @@ linux-sshd 通过 linux 契约采集服务器已有环境
 
 | 版本 | 日期 | 说明 |
 | --- | --- | --- |
+| 2.5.0-reviewed-runtime-acceptance | 2026-08-12 | 完成从本地或 Git 选定源码、语言与运行事实分析、确定性计划、不可变配置/秘密输入、目标机构建、发布、健康、观测、生命周期和失败恢复的职责闭环；Ubuntu 24.04 x86-64 已由产品入口完成六类项目实机验收，其余主机矩阵保持 `RUNTIME-PENDING`。 |
 | 2.4.0-responsibility-boundaries | 2026-08-12 | 将源码分析、桌面页面、SQLite 仓库、Git 快照、六类远程构建、systemd 和高权限 helper 按稳定职责拆分；补齐 Java、Node.js/JavaScript/TypeScript、Python 基础语言事实及 UI 映射，固定静态站点 Node 版本约束和 helper 拼装哈希；不修改 SQLite schema、远程协议、安全或凭据边界。 |
 | 2.3.4-reviewed-source-inference | 2026-08-12 | 补齐本地与 Git 源码到同一经审阅归档/来源身份的服务路径；新增有证据、可人工复核的 Java、Node、Python、静态站点和容器运行时建议，移除桌面表单中的语言、入口、产物、端口和配置硬编码；桌面可录入不可变秘密修订并在发布请求中传递显式引用。未连接真实目标机。 |
 | 2.3.3-desktop-typed-workflow | 2026-08-12 | 同步桌面部署页的六类项目选择、类型化运行时和配置、计划审阅、类型化 AI 脱敏事实以及表单状态保留边界；不改变模块结构、SQLite schema、凭据归属或真实目标机验收状态。 |

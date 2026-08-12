@@ -2,10 +2,10 @@
 
 ## 文档信息
 
-- 阶段基线版本：`2.5.0-responsibility-boundaries`
+- 阶段基线版本：`2.6.0-reviewed-runtime-acceptance`
 - 文档结构版本：`2.0.0-roadmap-rebaseline`
-- 文档状态：**本地实现与自动化验证已完成；真实 Linux、systemd、容器和各类型端到端验收待执行**
-- 当前实现：本地目录与无凭据网络 Git 来源均在固定归档摘要和来源身份后进入同一类型化分析/计划路径；Java、Node.js/JavaScript/TypeScript 与 Python 基础语言事实，以及唯一、受支持且有证据的版本、入口、产物目录、端口或卷建议均可审阅；分析、页面、持久化、Git、六类构建、systemd 和 helper 已按稳定职责拆分；二期类型尚未获得正式运行环境支持结论
+- 文档状态：**本地实现与自动化验证已完成；Ubuntu 24.04 x86-64 的六类项目实机验收已完成，其余主机矩阵待执行**
+- 当前实现：本地目录与无凭据网络 Git 来源均在固定归档摘要和来源身份后进入同一类型化分析/计划路径；Java、Node.js/JavaScript/TypeScript 与 Python 基础语言事实，以及唯一、受支持且有证据的版本、入口、产物目录、端口或卷建议均可审阅；分析、页面、持久化、Git、六类构建、systemd 和 helper 已按稳定职责拆分；Ubuntu 24.04 x86-64 已获得产品入口实机证据，Podman、Ubuntu 22.04 与 CentOS Stream 9/10 仍为 `RUNTIME-PENDING`
 - 更新日期：2026-08-12
 - 上级文档：[开发总纲](../DEVELOPMENT.md)
 
@@ -27,9 +27,9 @@
 - 六种项目类型均已有受控目标机构建、发布、快照、回滚、健康和生命周期代码：Node 的 npm/pnpm/yarn 与锁文件保持一致，Python 仅在候选目录创建虚拟环境，静态站点仅暴露已审阅的产物目录，容器使用受管镜像标签及 Docker restart policy 或 Podman Quadlet。发布快照保存旧的运行参数与自启状态，回滚不得复用新版本配置。
 - 基础语言事实已进入 `SourceProjectFacts` 与 `DeploymentProjectFacts`：只从有界源码路径、JAR Manifest、`package.json`/`tsconfig`、`pyproject.toml` 和扩展名收集确定性证据，不读取任意二进制、不执行源码、不猜测主要语言。JavaScript 与 TypeScript 可同时显示，但不会自动拆成多组件，也不会替代用户显式项目类型选择。
 - Node 构建型静态站点不再具有隐藏默认版本：只有精确 `engines.node` 才能回填主版本，范围或缺失值必须由用户填写；纯静态站点不要求且不得携带 Node 主版本。
-- 2026-08-12 使用 JDK 21 执行 `mvn.cmd -B -ntp -o verify`，28 个 Maven 模块全部成功；36 份测试报告共 138 项测试，0 失败、0 错误、2 项因当前平台能力跳过。`git diff --check`、生产源码期数命名与旧大类扫描、Node 20 默认值扫描、422 个中英文消息键及非空值边界、包结构与 `File.md` 一致性、helper 固定 SHA-256 均通过。
-- 本次没有连接二期目标机，也没有执行 Gradle、普通 JAR、Node、Python、静态站点、Docker 或 Podman 的目标机构建、发布、回滚或生命周期。因此以上本地代码和自动化测试全部为 `RUNTIME-PENDING`，不得标记为正式支持。
-- 一期 Ubuntu 24.04 的既有真实验收结论保持不变，不能外推至二期类型、容器或其他发行版。
+- 2026-08-12 使用 JDK 21 执行 `mvn.cmd -B -ntp -o verify`，28 个 Maven 模块全部成功；本次生成的 44 份 Surefire 报告共 160 项测试，0 失败、0 错误、2 项因当前平台能力跳过。前端另行完成离线 `npm.cmd ci`、类型检查、Vitest（1 项）、生产构建和项目本地 Chromium Playwright（1 项）。`git diff --check`、生产源码期数命名与旧大类扫描、无隐藏 Node 20 默认值边界、435 个中英文消息键及非空值边界、包结构与 `File.md` 一致性、helper 固定 SHA-256 均通过。
+- 实机验收使用新装 Ubuntu 24.04 x86-64，并严格从 `DesktopApplicationService` 与 Apache SSHD 网关进入：本地普通 JAR、Node.js、Python、纯静态站点、Dockerfile 容器，以及公开 Git 仓库 `mikechao/simple-spring-boot-app` 的固定 Commit `3fb7c8681eaf894bc29759e5317e5582bd944c54`（Gradle Spring Boot）均完成分析、归档、目标机构建、发布、健康和远端观测。Node.js 与 Docker 还完成完整生命周期、桌面持久化重开和失败更新回滚；Node.js 实际验证普通配置与秘密修订绑定且证据不泄露秘密原文。
+- 未执行 Podman、Ubuntu 22.04、CentOS Stream 9/10 或私有 Git 凭据验收；这些组合继续标记 `RUNTIME-PENDING`，不能从 Ubuntu 24.04/Docker 证据外推。
 
 ## 2. 支持矩阵
 
@@ -168,24 +168,24 @@ Git 输入包括仓库地址、凭据引用、分支/Tag/Commit、Submodule 和 
 
 ### 12.1 Git、配置和密钥
 
-- [~] 分支/Tag 本地固定为 Commit 并产生摘要受限的只读快照；目标机取得同一摘要尚未运行。
-- [~] 平台主机不执行 Git 项目代码，Hook、Submodule、LFS/凭据入口已受限；私有远端和目标机构建仍待运行环境测试。
+- [x] 分支/Tag 在平台侧固定为 Commit 并产生摘要受限的只读快照；公开 Git 固定 Commit 已由目标机取得同一归档并成功构建、发布和观测。
+- [~] 平台主机不执行 Git 项目代码，Hook、符号链接、Submodule、LFS 和 URL 凭据入口已受限；公开无凭据远端已实机通过，私有远端仍待运行环境测试。
 - [x] 普通配置以模式版本和摘要不可变存储；SQLite 测试覆盖重复写入与改写拒绝。
-- [x] 密钥以标识+修订保存元数据并绑定发布，重复覆盖被拒绝；平台存储验证与本地负向测试已覆盖，真实运行身份权限待验收。
+- [x] 密钥以标识+修订保存元数据并绑定发布，重复覆盖被拒绝；平台存储与本地负向测试已覆盖，Node.js 实机验收确认运行身份可读取指定修订且公开证据不含秘密原文。
 
 ### 12.2 项目和容器适配
 
 - [x] 六个项目类型都有类型化静态分析、确定性计划、受控构建、快照、发布、健康、失败恢复和生命周期契约；桌面端可选择类型、提交受限运行时定义和非秘密配置，并先展示确定性计划；六种类型的本地事务、脚本/参数、UI 状态和消息映射测试已通过。
 - [x] Java、Node.js/JavaScript/TypeScript、Python 基础语言事实进入源码与部署模型，并可在中英文桌面摘要中显示；混合 JavaScript/TypeScript 不会升级为多组件分析。
 - [x] Node 构建型静态站点没有默认版本：精确版本可推导，范围或缺失版本要求人工填写，纯静态站点不要求 Node。
-- [~] Gradle、普通 JAR、Node、Python、静态站点、Docker 和 Podman 的目标机端到端验收仍为 `RUNTIME-PENDING`；本次没有连接二期目标机。
-- [~] Docker restart policy 与 Podman Quadlet 具有独立类型化发布、回滚和自启契约，旧容器参数与自启状态会进入快照；未在真实环境验证。
+- [x] Gradle Spring Boot、普通 JAR、Node、Python、静态站点和 Dockerfile 容器已在 Ubuntu 24.04 x86-64 由产品入口完成目标机端到端验收。
+- [~] Docker restart policy 已完成发布、回滚、自启与桌面持久化重开后的生命周期验收；Podman Quadlet 仍为 `RUNTIME-PENDING`。
 - [x] 容器规格没有 privileged、Docker socket、host PID/IPC 或任意挂载字段，Docker 计划要求显式守护进程风险确认。
 - [x] 有界源码检查会拒绝 schema 脚本、迁移目录和 Flyway、Liquibase、Alembic、Prisma、Knex 等自动数据库变更信号；不可逆数据格式变更仍明确指向四期。
 
 ### 12.3 Linux 与旧系统
 
-- [~] Ubuntu 22.04/24.04、CentOS Stream 9/10 与 CPU 事实已建模；CentOS Stream 10 保持逐机 CPU 审阅，尚未真实验收。
+- [~] Ubuntu 24.04 x86-64 与 CPU/运行时事实已实机验收；Ubuntu 22.04、CentOS Stream 9/10 仍为 `RUNTIME-PENDING`，CentOS Stream 10 继续要求逐机 x86-64-v3 运行时能力审阅。
 - [~] 旧版 CentOS 进入独立风险状态；软件源变更和恢复尚未连接真实主机验证。
 - [x] 不支持的架构、包管理器、缺失容器能力或未完成 CPU 审阅会返回保守状态，不能进入运行环境验证。
 
@@ -198,6 +198,7 @@ Git 输入包括仓库地址、凭据引用、分支/Tag/Commit、Submodule 和 
 
 | 版本 | 日期 | 说明 |
 | --- | --- | --- |
+| 2.6.0-reviewed-runtime-acceptance | 2026-08-12 | 完成从用户选定本地/Git 源码、基础语言事实、审阅计划、不可变配置/秘密输入到完整部署的职责闭环；Ubuntu 24.04 x86-64 已实机验证六类项目、公开 Git 固定 Commit、代表性生命周期和失败回滚，未验收矩阵保持 `RUNTIME-PENDING`。 |
 | 2.5.0-responsibility-boundaries | 2026-08-12 | 补齐 Java、Node.js/JavaScript/TypeScript、Python 基础语言事实和中英文摘要；取消构建型静态站点的 Node 默认版本；按职责拆分分析、桌面页面、SQLite 仓库、Git 快照、六类构建、systemd 与 helper，并增加结构门禁。真实目标机验收仍为 `RUNTIME-PENDING`。 |
 | 2.4.0-reviewed-source-inference | 2026-08-12 | 将无凭据网络 Git 来源接入桌面至发布请求的相同审阅链路，并用 `SourceRevision` 绑定固定 Commit、来源和归档摘要；补齐可审阅的源码运行时建议和桌面回填，去除 Node、Python、Java、静态站点、容器端口及配置表单中的无依据默认值；秘密修订引用不再固定为空。真实目标机验收仍为 `RUNTIME-PENDING`。 |
 | 2.3.0-desktop-typed-workflow | 2026-08-12 | 补齐桌面端六类项目的类型选择、静态分析、安全归档、结构化运行时/非秘密配置、计划审阅和已保存凭据提交；AI 对类型化事实只发送脱敏应用标识、项目类型和固定构建入口。目标机端到端验收仍为 `RUNTIME-PENDING`。 |
