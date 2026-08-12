@@ -4,6 +4,7 @@ import gold.debug.windowstolinux.shared.config.revision.ConfigurationSnapshot;
 import gold.debug.windowstolinux.shared.config.secretref.SecretReference;
 import gold.debug.windowstolinux.shared.model.archive.SourceArchiveDescriptor;
 import gold.debug.windowstolinux.shared.model.deployment.BuildLimits;
+import gold.debug.windowstolinux.shared.model.health.UserAccessUrl;
 import gold.debug.windowstolinux.shared.model.project.DeploymentProjectFacts;
 import gold.debug.windowstolinux.shared.model.project.DeploymentRuntimeSpecification;
 import gold.debug.windowstolinux.shared.model.project.SourceRevision;
@@ -11,6 +12,7 @@ import gold.debug.windowstolinux.shared.model.server.ServerIdentity;
 
 import java.util.List;
 import java.util.Objects;
+import java.util.Optional;
 
 /**
  * Fully reviewed typed deployment input that contains identities and typed definitions, never a shell command.
@@ -24,6 +26,7 @@ import java.util.Objects;
  * @param configuration the immutable normal configuration / 不可变普通配置
  * @param secretReferences the opaque secret revisions / 透明秘密修订引用
  * @param runtime the type-specific runtime definition / 类型专属运行定义
+ * @param userAccessUrl the optional user-facing HTTP URL / 可选的用户访问 HTTP URL
  * @param limits the target-host build limits / 目标机构建限制
  * @param approval the per-source, per-server approval / 按源码、服务器绑定的批准
  * @param containerDaemonRiskAccepted the explicit Docker daemon risk approval / 显式 Docker 守护进程风险批准
@@ -36,6 +39,7 @@ public record ReviewedDeploymentRequest(
         ConfigurationSnapshot configuration,
         List<SecretReference> secretReferences,
         DeploymentRuntimeSpecification runtime,
+        Optional<UserAccessUrl> userAccessUrl,
         BuildLimits limits,
         DeploymentApproval approval,
         boolean containerDaemonRiskAccepted
@@ -53,6 +57,7 @@ public record ReviewedDeploymentRequest(
         configuration = Objects.requireNonNull(configuration, "configuration");
         secretReferences = List.copyOf(Objects.requireNonNull(secretReferences, "secretReferences"));
         runtime = Objects.requireNonNull(runtime, "runtime");
+        userAccessUrl = Objects.requireNonNull(userAccessUrl, "userAccessUrl");
         limits = Objects.requireNonNull(limits, "limits");
         approval = Objects.requireNonNull(approval, "approval");
         if (!facts.readyForPlanning()) {
@@ -61,6 +66,8 @@ public record ReviewedDeploymentRequest(
         if (facts.projectType() != runtime.projectType()) {
             throw new IllegalArgumentException("runtime specification must match the analyzed project type");
         }
+        new gold.debug.windowstolinux.shared.model.managed.ManagedApplicationRuntimeConfiguration(
+                runtime.healthCheck(), userAccessUrl);
         if (!facts.applicationId().equals(configuration.applicationId())
                 || !facts.applicationId().equals(approval.applicationId())
                 || !server.id().equals(approval.serverId())) {

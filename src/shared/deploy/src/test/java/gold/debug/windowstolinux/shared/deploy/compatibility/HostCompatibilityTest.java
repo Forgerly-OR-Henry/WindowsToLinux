@@ -1,6 +1,5 @@
 package gold.debug.windowstolinux.shared.deploy.compatibility;
 
-import gold.debug.windowstolinux.shared.deploy.plan.DeploymentRuntimeSpecification;
 import gold.debug.windowstolinux.shared.model.health.HealthCheck;
 import gold.debug.windowstolinux.shared.model.server.LinuxCapabilities;
 import gold.debug.windowstolinux.shared.model.project.DeploymentRuntimeSpecification;

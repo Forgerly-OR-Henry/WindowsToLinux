@@ -21,6 +21,12 @@ public enum DeploymentStep {
      */
     TARGET_CAPABILITIES("target-capabilities"),
     /**
+     * Represents the {@code TYPED_HOST_COMPATIBILITY} option.
+     *
+     * <p>表示 {@code TYPED_HOST_COMPATIBILITY} 选项。
+     */
+    TYPED_HOST_COMPATIBILITY("typed-host-compatibility"),
+    /**
      * Represents the {@code SOURCE_WORKSPACE} option.
      *
      * <p>表示 {@code SOURCE_WORKSPACE} 选项。

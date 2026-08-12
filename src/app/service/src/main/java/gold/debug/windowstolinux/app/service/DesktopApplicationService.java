@@ -12,6 +12,7 @@ import gold.debug.windowstolinux.app.service.concurrency.ServerOperationLocks;
 import gold.debug.windowstolinux.app.service.config.DeploymentConfigurationUseCase;
 import gold.debug.windowstolinux.app.service.deployment.DeploymentOutcome;
 import gold.debug.windowstolinux.app.service.deployment.DeploymentUseCase;
+import gold.debug.windowstolinux.app.service.deployment.ReviewedDeploymentUseCase;
 import gold.debug.windowstolinux.app.service.environment.EnvironmentPreparationUseCase;
 import gold.debug.windowstolinux.app.service.lifecycle.LifecycleOutcome;
 import gold.debug.windowstolinux.app.service.lifecycle.LifecycleUseCase;
@@ -33,10 +34,13 @@ import gold.debug.windowstolinux.shared.deploy.plan.ReviewedDeploymentRequest;
 import gold.debug.windowstolinux.shared.deploy.result.DeploymentResult;
 import gold.debug.windowstolinux.shared.deploy.result.LifecycleActionResult;
 import gold.debug.windowstolinux.shared.deploy.transaction.ManagedDeploymentService;
+import gold.debug.windowstolinux.shared.deploy.transaction.ReviewedDeploymentService;
+import gold.debug.windowstolinux.shared.linux.connection.DeploymentLinuxGateway;
 import gold.debug.windowstolinux.shared.linux.connection.HostKeyVerifier;
 import gold.debug.windowstolinux.shared.linux.connection.LinuxOperationException;
 import gold.debug.windowstolinux.shared.linux.connection.LinuxGateway;
 import gold.debug.windowstolinux.shared.linux.connection.SshCredential;
+import gold.debug.windowstolinux.shared.linux.connection.SshEndpoint;
 import gold.debug.windowstolinux.shared.model.deployment.BuildLimits;
 import gold.debug.windowstolinux.shared.model.analysis.DeploymentProjectAssessment;
 import gold.debug.windowstolinux.shared.model.project.DeploymentProjectType;
@@ -70,6 +74,7 @@ public final class DesktopApplicationService {
     private final DeploymentConfigurationUseCase deploymentConfiguration;
     private final EnvironmentPreparationUseCase environment;
     private final DeploymentUseCase deployment;
+    private final Optional<ReviewedDeploymentUseCase> reviewedDeployment;
     private final LifecycleUseCase lifecycle;
 
     /**
@@ -96,6 +101,9 @@ public final class DesktopApplicationService {
                 new EnvironmentPreparationService(), linuxGateway, servers, locks);
         this.deployment = new DeploymentUseCase(
                 database, new ManagedDeploymentService(), linuxGateway, servers, locks);
+        this.reviewedDeployment = linuxGateway instanceof DeploymentLinuxGateway deploymentGateway
+                ? Optional.of(new ReviewedDeploymentUseCase(database, new ReviewedDeploymentService(), deploymentGateway, locks))
+                : Optional.empty();
         this.lifecycle = new LifecycleUseCase(database, linuxGateway, servers, locks);
     }
 
@@ -126,8 +134,20 @@ public final class DesktopApplicationService {
      *
      * <p>渲染完整校验的部署计划，不打开 SSH、不调用构建，也不读取秘密。
      */
-    public ReviewedDeploymentPlan planDeploymentDeployment(ReviewedDeploymentRequest request) {
+    public ReviewedDeploymentPlan planDeployment(ReviewedDeploymentRequest request) {
         return deploymentAgentTools.plan(request);
+    }
+
+    /**
+     * Executes one previously reviewed type-specific deployment through the configured bounded gateway.
+     *
+     * <p>通过已配置的有界网关执行一个先前审阅的类型专属部署。
+     */
+    public DeploymentResult deployReviewed(ReviewedDeploymentRequest request, SshEndpoint endpoint,
+                                           SshCredential credential, HostKeyVerifier verifier) throws SQLException {
+        ReviewedDeploymentUseCase useCase = reviewedDeployment.orElseThrow(() -> new IllegalStateException(
+                "configured Linux gateway does not support reviewed deployment execution"));
+        return useCase.deploy(request, endpoint, credential, verifier);
     }
 
     /**

@@ -8,9 +8,11 @@ import gold.debug.windowstolinux.shared.linux.transfer.RemoteWorkspace;
 import gold.debug.windowstolinux.shared.model.deployment.BuildLimits;
 import gold.debug.windowstolinux.shared.model.health.HealthCheck;
 import gold.debug.windowstolinux.shared.model.lifecycle.LifecycleObservation;
+import gold.debug.windowstolinux.shared.model.lifecycle.LifecycleAction;
 import gold.debug.windowstolinux.shared.model.managed.ManagedApplication;
 import gold.debug.windowstolinux.shared.model.project.DeploymentProjectFacts;
 import gold.debug.windowstolinux.shared.model.project.DeploymentRuntimeSpecification;
+import gold.debug.windowstolinux.shared.model.server.LinuxCapabilities;
 
 /**
  * Bounded extension to the verified managed service session for all typed deployment single-component project types.
@@ -18,6 +20,9 @@ import gold.debug.windowstolinux.shared.model.project.DeploymentRuntimeSpecifica
  * <p>已验证受管部署会话的有界扩展，覆盖全部部署单组件项目类型。
  */
 public interface DeploymentRemoteSession extends LinuxRemoteSession {
+    /** Collects distribution and container facts before one typed deployment. / 在类型化部署前采集发行版和容器事实。 */
+    LinuxCapabilities collectDeploymentCapabilities() throws LinuxOperationException;
+
     /** Builds one analyzed typed deployment candidate. / 构建一个已分析的部署候选版本。 */
     DeploymentBuildResult buildDeployment(DeploymentProjectFacts facts, DeploymentRuntimeSpecification runtime,
                                       RemoteWorkspace workspace, BuildLimits limits) throws LinuxOperationException;
@@ -43,4 +48,8 @@ public interface DeploymentRemoteSession extends LinuxRemoteSession {
     /** Observes a typed deployment release. / 观察类型化部署版本。 */
     LifecycleObservation observeDeployment(ManagedApplication application, DeploymentRuntimeSpecification runtime)
             throws LinuxOperationException;
+
+    /** Executes one verified lifecycle action for the selected runtime. / 为选定运行时执行一个已验证的生命周期动作。 */
+    LifecycleObservation executeDeploymentLifecycle(ManagedApplication application, DeploymentRuntimeSpecification runtime,
+                                                    LifecycleAction action) throws LinuxOperationException;
 }

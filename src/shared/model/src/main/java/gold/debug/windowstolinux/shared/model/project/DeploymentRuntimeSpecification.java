@@ -167,7 +167,7 @@ public sealed interface DeploymentRuntimeSpecification permits DeploymentRuntime
             throw new IllegalArgumentException(name + " exceeds the bounded argument count");
         }
         for (String argument : arguments) {
-            if (argument == null || argument.isBlank() || argument.length() > 512 || argument.matches(".*[\\r\\n\\0].*")) {
+            if (argument == null || !argument.matches("[A-Za-z0-9@%_+=:,./-]{1,512}")) {
                 throw new IllegalArgumentException(name + " contains an unsafe argument");
             }
         }

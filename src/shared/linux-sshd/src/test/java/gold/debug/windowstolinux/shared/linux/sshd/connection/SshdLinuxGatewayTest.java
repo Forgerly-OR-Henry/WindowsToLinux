@@ -6,6 +6,7 @@ import gold.debug.windowstolinux.shared.linux.connection.SshCredential;
 import gold.debug.windowstolinux.shared.linux.connection.SshEndpoint;
 import gold.debug.windowstolinux.shared.linux.sshd.build.MavenBuildSupport;
 import gold.debug.windowstolinux.shared.linux.sshd.distro.UbuntuEnvironmentPreparation;
+import gold.debug.windowstolinux.shared.linux.sshd.distro.DnfEnvironmentPreparation;
 import gold.debug.windowstolinux.shared.linux.sshd.protocol.ManagedPrivilegeHelper;
 import gold.debug.windowstolinux.shared.linux.sshd.runtime.SystemdUnitRenderer;
 import gold.debug.windowstolinux.shared.linux.transfer.RemoteWorkspace;
@@ -208,6 +209,21 @@ class SshdLinuxGatewayTest {
         assertTrue(script.contains("/usr/bin/sudo -n '/usr/local/lib/windowstolinux/managed-helper' probe"));
         assertFalse(script.contains("sudo -S"));
         assertFalse(script.contains("/var/lib/windowstolinux/work"));
+    }
+
+    @Test
+    void rendersOnlySupportedUbuntuAndCentosStreamPreparationPaths() {
+        String ubuntu = UbuntuEnvironmentPreparation.renderScript("deployer", "22.04");
+        String centos = DnfEnvironmentPreparation.renderScript("deployer", "9");
+
+        assertTrue(ubuntu.contains("test \"${VERSION_ID:-}\" = '22.04'"));
+        assertTrue(centos.contains("test \"${ID:-}\" = centos"));
+        assertTrue(centos.contains("test \"${VARIANT_ID:-}\" = stream"));
+        assertTrue(centos.contains("test \"${VERSION_ID:-}\" = '9'"));
+        assertTrue(centos.contains("/usr/bin/dnf -y install java-21-openjdk-headless maven curl sudo"));
+        assertTrue(centos.contains("/usr/bin/sudo -n /usr/bin/dnf -y install java-21-openjdk-headless maven curl sudo"));
+        assertThrows(IllegalArgumentException.class, () -> UbuntuEnvironmentPreparation.renderScript("deployer", "20.04"));
+        assertThrows(IllegalArgumentException.class, () -> DnfEnvironmentPreparation.renderScript("deployer", "8"));
     }
 
     private static ServerCapabilities capabilities(boolean tarAvailable) {

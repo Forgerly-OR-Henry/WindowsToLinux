@@ -149,8 +149,20 @@ public final class SystemdRuntimeExecutor {
      * @throws LinuxOperationException if the operation cannot be completed / 无法完成操作时
      */
     public LifecycleObservation observe(ManagedApplication application) throws LinuxOperationException {
+        return observe(application, SystemdUnitRenderer.render(username, application));
+    }
+
+    /**
+     * Observes a managed systemd unit whose complete expected content was rendered by the typed runtime adapter.
+     *
+     * <p>观察其完整预期内容由类型化运行时适配器渲染的受管 systemd unit。
+     */
+    public LifecycleObservation observe(ManagedApplication application, String expectedUnitContent)
+            throws LinuxOperationException {
+        application = Objects.requireNonNull(application, "application");
+        expectedUnitContent = Objects.requireNonNull(expectedUnitContent, "expectedUnitContent");
         String unitPath = "/etc/systemd/system/" + application.systemdUnit();
-        String unitDigest = sha256(SystemdUnitRenderer.render(username, application));
+        String unitDigest = sha256(expectedUnitContent);
         String script = """
                 set -eu
                 root=%s
@@ -231,7 +243,18 @@ public final class SystemdRuntimeExecutor {
      */
     public LifecycleObservation executeLifecycle(ManagedApplication application, LifecycleAction action,
                                                  HealthCheck healthCheck) throws LinuxOperationException {
-        LifecycleObservation before = observe(application);
+        return executeLifecycle(application, action, healthCheck, SystemdUnitRenderer.render(username, application));
+    }
+
+    /**
+     * Executes lifecycle action only after the supplied typed unit content proves remote ownership.
+     *
+     * <p>只有在提供的类型化 unit 内容证明远端归属后才执行生命周期动作。
+     */
+    public LifecycleObservation executeLifecycle(ManagedApplication application, LifecycleAction action,
+                                                 HealthCheck healthCheck, String expectedUnitContent)
+            throws LinuxOperationException {
+        LifecycleObservation before = observe(application, expectedUnitContent);
         if (!before.ownershipVerified()) {
             return before;
         }
@@ -259,7 +282,8 @@ public final class SystemdRuntimeExecutor {
             throw LinuxOperationException.localized("linux.error.postStartHealthFailed",
                     "Post-start health check failed");
         }
-        LifecycleObservation after = action == LifecycleAction.STOP ? awaitStopped(application) : observe(application);
+        LifecycleObservation after = action == LifecycleAction.STOP
+                ? awaitStopped(application, expectedUnitContent) : observe(application, expectedUnitContent);
         if (action == LifecycleAction.STOP && after.runtimeState() != RuntimeState.STOPPED) {
             throw LinuxOperationException.localized("linux.error.stopUnverified",
                     "Stop operation could not be verified remotely: state=" + after.runtimeState()
@@ -287,8 +311,9 @@ public final class SystemdRuntimeExecutor {
         return after;
     }
 
-    private LifecycleObservation awaitStopped(ManagedApplication application) throws LinuxOperationException {
-        LifecycleObservation observation = observe(application);
+    private LifecycleObservation awaitStopped(ManagedApplication application, String expectedUnitContent)
+            throws LinuxOperationException {
+        LifecycleObservation observation = observe(application, expectedUnitContent);
         for (int attempt = 0; observation.runtimeState() != RuntimeState.STOPPED && attempt < 20; attempt++) {
             try {
                 Thread.sleep(250);
@@ -297,7 +322,7 @@ public final class SystemdRuntimeExecutor {
                 throw LinuxOperationException.localized("linux.error.stopWaitInterrupted",
                         "Interrupted while waiting to verify the stopped state", interrupted);
             }
-            observation = observe(application);
+            observation = observe(application, expectedUnitContent);
         }
         return observation;
     }

@@ -2,14 +2,14 @@
 
 ## 文档信息
 
-- 文档版本：`2.3.1-unified-naming`
+- 文档版本：`2.3.2-local-execution-contracts`
 - 文档状态：**正式目标模块、职责、依赖方向和叶子模块内部目标包结构已确认；28 个 Maven reactor 工程及一期已有代码的职责迁移已落地；二期本地实现复用既有模块和包结构，真实运行环境验收保持待执行**
 - 已确认范围：`shared` 共用模块、`app` Windows 桌面应用模块、`web` Web 应用模块
 - 已确认能力边界：受管应用生命周期复用既有模块，不新增独立 Maven 模块
 - 更新日期：2026-08-12
 - 开发总纲：[DEVELOPMENT.md](DEVELOPMENT.md)
 
-> 本文是正式目标目录、模块职责、依赖方向和内部包结构的来源。当前 reactor 已包含根工程、3 个聚合模块和 24 个叶子模块，共 28 个 POM。`shared/source`、`shared/config`、`shared/git`、`shared/linux-sshd`、`analyze`、`deploy`、`app/db` 与 `app/service` 已承载对应的一期或二期代码；`shared/backup` 和 Web Java 叶子模块仍只保留 POM。二期代码仅完成本地自动化验证，不构成新类型或新发行版的正式支持结论。
+> 本文是正式目标目录、模块职责、依赖方向和内部包结构的来源。当前 reactor 已包含根工程、3 个聚合模块和 24 个叶子模块，共 28 个 POM。`shared/source`、`shared/config`、`shared/git`、`shared/linux-sshd`、`analyze`、`deploy`、`app/db` 与 `app/service` 已承载对应的一期或二期代码；其中 `shared/linux-sshd` 已实现六类项目的有界构建、发布/回滚/生命周期协议及受支持发行版固定环境准备。`shared/backup` 和 Web Java 叶子模块仍只保留 POM。二期代码仅完成本地自动化验证，不构成新类型或新发行版的正式支持结论。
 
 ## 1. 完整目标结构
 
@@ -589,6 +589,7 @@ linux-sshd 通过 linux 契约采集服务器已有环境
 
 | 版本 | 日期 | 说明 |
 | --- | --- | --- |
+| 2.3.2-local-execution-contracts | 2026-08-12 | 同步二期六类项目的受控构建、发布、快照、回滚、健康、生命周期和发行版固定环境准备实现；维持分期只属于文档、不得泄漏到 `src/` API 或资源的命名规则，真实目标机验收仍待执行。 |
 | 2.3.1-unified-naming | 2026-08-12 | 将正式源码、测试和资源从期数命名重构为职责命名；新增规则：分期仅属于开发文档，不得进入 `src/` 的 API、资源或持久化契约。 |
 | 2.3.0-phase2-local-implementation | 2026-08-12 | 同步二期已实现的 Git、配置、分析、部署计划、Linux/容器和桌面服务包；明确所有二期真实运行环境验收仍待执行。 |
 | 2.2.2-bilingual-comments | 2026-08-12 | 明确 Java 行注释、块注释和 Javadoc 采用英文在前、简体中文紧随其后的双语格式；同步将生产汉字门禁限定为 Java 非注释内容和非 Java 文本资源，注释不进入 UI 消息目录。 |

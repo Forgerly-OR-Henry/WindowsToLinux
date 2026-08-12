@@ -81,7 +81,11 @@ public record ServerCapabilities(
             case HealthCheck.Http ignored -> curlAvailable && socketInspectionAvailable;
             case HealthCheck.Tcp ignored -> socketInspectionAvailable;
         };
-        return operatingSystem.contains("Ubuntu 24.04")
+        boolean supportedOperatingSystem = operatingSystem.contains("Ubuntu 22.04")
+                || operatingSystem.contains("Ubuntu 24.04")
+                || operatingSystem.contains("CentOS Stream 9")
+                || operatingSystem.contains("CentOS Stream 10");
+        return supportedOperatingSystem
                 && architecture.equals("x86_64")
                 && systemdAvailable
                 && java21Available

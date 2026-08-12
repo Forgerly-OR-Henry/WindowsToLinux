@@ -71,7 +71,7 @@ class ReviewedDeploymentPlannerTest {
         return new ReviewedDeploymentRequest(new ServerIdentity("server-one", "example.test", 22, "SHA256:abcdefghijkl"), facts,
                 new SourceRevision(sha, Optional.of("a".repeat(40)), Map.of()),
                 new SourceArchiveDescriptor(temporaryDirectory.resolve("source.tar.gz"), sha, 100, 100), configuration,
-                List.of(), runtime, BuildLimits.defaultNonRoot(),
+                List.of(), runtime, Optional.empty(), BuildLimits.defaultNonRoot(),
                 new DeploymentApproval("demo", sha, "server-one", false, Instant.parse("2026-08-12T00:00:00Z")), dockerRiskAccepted);
     }
 }

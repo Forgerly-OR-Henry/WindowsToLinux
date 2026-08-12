@@ -47,7 +47,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * Opt-in live transport failure exercise. Only the test transport wrapper disconnects; all candidate publication and recovery decisions remain in the managed-deployment deployment service.
+ * Opt-in live transport failure exercise. Only the test transport wrapper disconnects; all candidate publication and recovery decisions remain in the managed deployment service.
  *
  * <p>可选实时传输失败演练。只有测试传输包装器会断开连接；全部候选发布和恢复决策仍由受管部署服务负责。
  */

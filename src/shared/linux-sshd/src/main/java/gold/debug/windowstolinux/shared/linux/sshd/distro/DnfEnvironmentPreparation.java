@@ -7,102 +7,53 @@ import java.util.List;
 import java.util.Objects;
 
 /**
- * Provides the {@code UbuntuEnvironmentPreparation} implementation.
+ * Renders the fixed CentOS Stream environment preparation path.
  *
- * <p>提供 {@code UbuntuEnvironmentPreparation} 实现。
+ * <p>渲染固定的 CentOS Stream 环境准备路径。
  */
-public final class UbuntuEnvironmentPreparation {
-    /**
-     * Exposes the {@code TIMEOUT} constant.
-     *
-     * <p>公开 {@code TIMEOUT} 常量。
-     */
+public final class DnfEnvironmentPreparation {
+    /** Maximum allowed preparation duration. / 允许的最长环境准备时长。 */
     public static final Duration TIMEOUT = Duration.ofMinutes(15);
-    /**
-     * Exposes the {@code APT_LOCK_TIMEOUT_SECONDS} constant.
-     *
-     * <p>公开 {@code APT_LOCK_TIMEOUT_SECONDS} 常量。
-     */
-    public static final int APT_LOCK_TIMEOUT_SECONDS = 300;
-    /**
-     * Exposes the {@code SUDOERS_PATH} constant.
-     *
-     * <p>公开 {@code SUDOERS_PATH} 常量。
-     */
-    public static final String SUDOERS_PATH = "/etc/sudoers.d/windowstolinux-managed";
-    /**
-     * Exposes the {@code PACKAGES} constant.
-     *
-     * <p>公开 {@code PACKAGES} 常量。
-     */
+    /** Fixed packages for the supported DNF targets. / 受支持 DNF 目标的固定软件包。 */
     public static final List<String> PACKAGES = List.of(
-            "openjdk-21-jdk-headless", "maven", "curl", "sudo", "tar", "gzip", "iproute2", "coreutils",
+            "java-21-openjdk-headless", "maven", "curl", "sudo", "tar", "gzip", "iproute", "coreutils",
             "util-linux", "findutils", "gawk"
     );
 
-    private UbuntuEnvironmentPreparation() {
+    private DnfEnvironmentPreparation() {
     }
 
     /**
-     * Performs the {@code renderSudoers} operation.
-     *
-     * <p>执行 {@code renderSudoers} 操作。
-     *
-     * @param username the {@code username} value / {@code username} 值
-     * @return the operation result / 操作结果
-     * @throws IllegalArgumentException if an argument violates the required constraints / 参数违反必要约束时
-     * @throws NullPointerException if a required argument is {@code null} / 必要参数为 {@code null} 时
-     */
-    public static String renderSudoers(String username) {
-        username = Objects.requireNonNull(username, "username").trim();
-        if (!username.matches("[a-z_][a-z0-9_-]{0,31}")) {
-            throw new IllegalArgumentException("username is not a supported Ubuntu account name");
-        }
-        return "# Managed by WindowsToLinux managed deployment; only the constrained helper is granted.\n"
-                + username + " ALL=(root) NOPASSWD: " + ManagedPrivilegeHelper.PATH + "\n";
-    }
-
-    /**
-     * Performs the {@code renderScript} operation.
-     *
-     * <p>执行 {@code renderScript} 操作。
-     *
-     * @param username the {@code username} value / {@code username} 值
-     * @return the operation result / 操作结果
-     */
-    public static String renderScript(String username) {
-        return renderScript(username, "24.04");
-    }
-
-    /**
-     * Renders preparation for one supported Ubuntu LTS release. / 为一个受支持的 Ubuntu LTS 版本渲染环境准备。
+     * Renders one CentOS Stream 9 or 10 preparation script. / 渲染一个 CentOS Stream 9 或 10 的环境准备脚本。
      *
      * @param username the deployment account / 部署账户
-     * @param version the observed Ubuntu release / 观察到的 Ubuntu 版本
+     * @param version the observed stream version / 观察到的 Stream 版本
      * @return the bounded preparation script / 有界环境准备脚本
      */
     public static String renderScript(String username, String version) {
-        if (!("22.04".equals(version) || "24.04".equals(version))) {
-            throw new IllegalArgumentException("Ubuntu preparation supports only 22.04 or 24.04");
+        username = requireUsername(username);
+        if (!("9".equals(version) || "10".equals(version))) {
+            throw new IllegalArgumentException("DNF preparation supports only CentOS Stream 9 or 10");
         }
-        String sudoers = renderSudoers(username);
+        String sudoers = UbuntuEnvironmentPreparation.renderSudoers(username);
         String packages = String.join(" ", PACKAGES);
         String helper = ManagedPrivilegeHelper.renderScript();
         return """
                 set -euo pipefail
                 test -r /etc/os-release
                 . /etc/os-release
-                test "${ID:-}" = ubuntu
+                test "${ID:-}" = centos
+                test "${VARIANT_ID:-}" = stream
                 test "${VERSION_ID:-}" = %s
                 test "$(uname -m)" = x86_64
                 command -v systemctl >/dev/null 2>&1
-                test -x /usr/bin/apt-get
+                test -x /usr/bin/dnf
                 account="$(id -un)"
                 test "$account" = %s
                 if [ "$(id -u)" -eq 0 ]; then
                   elevation=root
                 elif [ -x /usr/bin/sudo ] && /usr/bin/sudo -n true >/dev/null 2>&1; then
-                  /usr/bin/sudo -n /usr/bin/apt-get --version >/dev/null
+                  /usr/bin/sudo -n /usr/bin/dnf --version >/dev/null
                   /usr/bin/sudo -n /usr/sbin/visudo -V >/dev/null
                   /usr/bin/sudo -n /usr/bin/install --version >/dev/null
                   elevation=sudo
@@ -111,11 +62,9 @@ public final class UbuntuEnvironmentPreparation {
                   exit 64
                 fi
                 if [ "$elevation" = root ]; then
-                  /usr/bin/apt-get -o DPkg::Lock::Timeout=%d update
-                  /usr/bin/apt-get -o DPkg::Lock::Timeout=%d install -y --no-install-recommends %s
+                  /usr/bin/dnf -y install %s
                 else
-                  /usr/bin/sudo -n /usr/bin/apt-get -o DPkg::Lock::Timeout=%d update
-                  /usr/bin/sudo -n /usr/bin/apt-get -o DPkg::Lock::Timeout=%d install -y --no-install-recommends %s
+                  /usr/bin/sudo -n /usr/bin/dnf -y install %s
                 fi
                 /usr/bin/java -version 2>&1 | /usr/bin/grep -q '"21\\.'
                 command -v mvn >/dev/null 2>&1
@@ -150,13 +99,21 @@ public final class UbuntuEnvironmentPreparation {
                 printf 'SUDOERS=%s\\n'
                 printf 'HELPER=%s\\n'
                 """.formatted(
-                quote(version), quote(username), APT_LOCK_TIMEOUT_SECONDS, APT_LOCK_TIMEOUT_SECONDS, packages,
-                APT_LOCK_TIMEOUT_SECONDS, APT_LOCK_TIMEOUT_SECONDS, packages, quote(sudoers), quote(helper),
+                quote(version), quote(username), packages, packages, quote(sudoers), quote(helper),
                 quote(ManagedPrivilegeHelper.DIRECTORY), quote(ManagedPrivilegeHelper.PATH),
-                quote(SUDOERS_PATH), quote(ManagedPrivilegeHelper.DIRECTORY), quote(ManagedPrivilegeHelper.PATH),
-                quote(SUDOERS_PATH), quote(ManagedPrivilegeHelper.PATH), packages, SUDOERS_PATH,
+                quote(UbuntuEnvironmentPreparation.SUDOERS_PATH), quote(ManagedPrivilegeHelper.DIRECTORY),
+                quote(ManagedPrivilegeHelper.PATH), quote(UbuntuEnvironmentPreparation.SUDOERS_PATH),
+                quote(ManagedPrivilegeHelper.PATH), packages, UbuntuEnvironmentPreparation.SUDOERS_PATH,
                 ManagedPrivilegeHelper.PATH
         );
+    }
+
+    private static String requireUsername(String username) {
+        username = Objects.requireNonNull(username, "username").trim();
+        if (!username.matches("[a-z_][a-z0-9_-]{0,31}")) {
+            throw new IllegalArgumentException("username is not a supported Linux account name");
+        }
+        return username;
     }
 
     private static String quote(String value) {

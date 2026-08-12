@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
-IFS=$' \\t\\n'
+IFS=$' \t\n'
 PATH=/usr/sbin:/usr/bin:/sbin:/bin
 umask 077
 helper_path=/usr/local/lib/windowstolinux/managed-helper
@@ -10,7 +10,7 @@ applications_root="$base_root/apps"
 work_root="$base_root/work"
 snapshots_root="$base_root/snapshots"
 reject() {
-  printf 'MANAGED_HELPER_REJECT=%s\\n' "$1" >&2
+  printf 'MANAGED_HELPER_REJECT=%s\n' "$1" >&2
   exit 64
 }
 require_root() {
@@ -94,6 +94,230 @@ SuccessExitStatus=143
 WantedBy=multi-user.target
 UNIT
 }
+require_relative_path() {
+  [[ "$1" =~ ^[A-Za-z0-9._/-]{1,255}$ ]] || reject relative-path
+  [[ "$1" != /* && "$1" != *..* && "$1" != *//* ]] || reject relative-path
+}
+require_java_main() {
+  [[ "$1" =~ ^[A-Za-z_$][A-Za-z0-9_$.]{0,255}$ ]] || reject java-main
+}
+require_safe_argument() {
+  [[ "$1" =~ ^[A-Za-z0-9@%_+=:,./-]{1,512}$ ]] || reject runtime-argument
+}
+require_count() {
+  [[ "$1" =~ ^[0-9]{1,2}$ ]] || reject runtime-argument-count
+  [ "$1" -le 32 ] || reject runtime-argument-count
+}
+render_deployment_unit() {
+  local app="$1"
+  local kind="$2"
+  shift 2
+  local root command argument_count argument
+  root="$(app_root "$app")"
+  case "$kind" in
+    gradle)
+      [ "$#" -eq 0 ] || reject runtime-arguments
+      command="/usr/bin/java -jar $root/current/app.jar"
+      ;;
+    java)
+      [ "$#" -ge 4 ] || reject runtime-arguments
+      local jar="$1"
+      local main="$2"
+      shift 2
+      require_relative_path "$jar"
+      require_java_main "$main"
+      require_count "$1"
+      argument_count="$1"
+      shift
+      [ "$#" -ge "$argument_count" ] || reject runtime-arguments
+      command="/usr/bin/java"
+      while [ "$argument_count" -gt 0 ]; do
+        argument="$1"
+        require_safe_argument "$argument"
+        command="$command $argument"
+        shift
+        argument_count=$((argument_count - 1))
+      done
+      require_count "$1"
+      argument_count="$1"
+      shift
+      [ "$#" -eq "$argument_count" ] || reject runtime-arguments
+      command="$command -cp $root/current/app.jar $main"
+      while [ "$argument_count" -gt 0 ]; do
+        argument="$1"
+        require_safe_argument "$argument"
+        command="$command $argument"
+        shift
+        argument_count=$((argument_count - 1))
+      done
+      ;;
+    node)
+      [ "$#" -eq 1 ] || reject runtime-arguments
+      [[ "$1" =~ ^(18|19|20|21|22|23|24)$ ]] || reject node-version
+      command="/usr/bin/npm --prefix $root/current/source start"
+      ;;
+    python)
+      [ "$#" -eq 2 ] || reject runtime-arguments
+      [[ "$1" =~ ^3\.(10|11|12|13)$ ]] || reject python-version
+      [[ "$2" =~ ^[A-Za-z_][A-Za-z0-9_.]{0,127}$ ]] || reject python-entrypoint
+      command="$root/current/source/.venv/bin/python -m $2"
+      ;;
+    static)
+      [ "$#" -eq 2 ] || reject runtime-arguments
+      require_relative_path "$1"
+      [[ "$2" =~ ^[0-9]{1,5}$ ]] && [ "$2" -ge 1 ] && [ "$2" -le 65535 ] || reject static-port
+      command="/usr/bin/python3 -m http.server $2 --directory $root/current/source/$1"
+      ;;
+    *) reject runtime-kind ;;
+  esac
+  cat <<UNIT
+[Unit]
+Description=WindowsToLinux managed $app
+After=network.target
+
+[Service]
+Type=simple
+User=$deployer
+WorkingDirectory=$root/current/source
+ExecStart=$command
+Restart=on-failure
+RestartSec=5
+SuccessExitStatus=143
+
+[Install]
+WantedBy=multi-user.target
+UNIT
+}
+expected_deployment_unit_digest() {
+  render_deployment_unit "$@" | sha256sum | awk '{print $1}'
+}
+save_deployment_parameters() {
+  local target="$1"
+  shift
+  [ "$#" -ge 1 ] || reject runtime-arguments
+  printf '%s\n' "$@" > "$target"
+  chown root:root -- "$target"
+  chmod 444 -- "$target"
+}
+load_deployment_parameters() {
+  local source="$1"
+  assert_root_owned_regular "$source"
+  mapfile -t deployment_runtime_parameters < "$source"
+  [ "${#deployment_runtime_parameters[@]}" -ge 1 ] || reject runtime-parameters
+  render_deployment_unit "$current_application" "${deployment_runtime_parameters[@]}" >/dev/null
+}
+assert_deployment_current_or_empty() {
+  local app="$1"
+  local manifest="$2"
+  local root unit releases current expected
+  current_application="$app"
+  root="$(app_root "$app")"
+  unit="$(unit_path "$app")"
+  releases="$root/releases"
+  previous_present=0
+  previous_path=
+  previous_running=0
+  if [ -e "$root/current" ] || [ -L "$root/current" ]; then
+    assert_root_owned_directory "$root"
+    [ -L "$root/current" ] || reject current-not-link
+    current="$(readlink -f -- "$root/current")"
+    case "$current" in "$releases"/[0-9a-f]*) ;; *) reject current-path ;; esac
+    local current_digest="${current##*/}"
+    require_digest "$current_digest"
+    [ "$current" = "$releases/$current_digest" ] || reject current-path
+    assert_root_owned_directory "$current"
+    assert_root_owned_regular "$current/.windowstolinux-owner"
+    [ "$(cat -- "$current/.windowstolinux-owner")" = "$manifest" ] || reject current-owner
+    load_deployment_parameters "$current/.windowstolinux-deployment-parameters"
+    expected="$(expected_deployment_unit_digest "$app" "${deployment_runtime_parameters[@]}")"
+    [ "$(systemctl show --value --property FragmentPath "$(unit_name "$app")")" = "$unit" ] || reject unit-fragment
+    [ -z "$(systemctl show --value --property DropInPaths "$(unit_name "$app")")" ] || reject unit-dropins
+    assert_root_owned_regular "$unit"
+    [ "$(sha256sum -- "$unit" | awk '{print $1}')" = "$expected" ] || reject unit-digest
+    previous_present=1
+    previous_path="$current"
+    if systemctl is-active --quiet "$(unit_name "$app")"; then previous_running=1; fi
+  else
+    [ ! -e "$unit" ] && [ ! -L "$unit" ] || reject unmanaged-unit
+    ! systemctl cat "$(unit_name "$app")" >/dev/null 2>&1 || reject unmanaged-unit
+  fi
+}
+seal_deployment_tree() {
+  local app="$1"
+  local candidate_id="$2"
+  local release="$3"
+  local kind="$4"
+  shift 4
+  local candidate mutable source artifact
+  candidate="$(candidate_root "$candidate_id")"
+  mutable="$candidate/mutable"
+  source="$mutable/source"
+  assert_candidate_for_deployer "$candidate"
+  [ -d "$mutable" ] && [ ! -L "$mutable" ] || reject mutable-workspace
+  chown root:root -- "$mutable"
+  chmod 700 -- "$mutable"
+  [ -d "$source" ] && [ ! -L "$source" ] || reject source-directory
+  [ -z "$(find -P "$source" -xdev -type l -print -quit)" ] || reject source-symlink
+  [ -z "$(find -P "$source" -xdev ! -type f ! -type d -print -quit)" ] || reject source-special-file
+  install -d -o root -g root -m 755 -- "$release"
+  cp -a --no-preserve=ownership -- "$source" "$release/source"
+  chown -R root:root -- "$release/source"
+  [ -z "$(find -P "$release/source" -xdev -type l -print -quit)" ] || reject release-symlink
+  case "$kind" in
+    gradle)
+      mapfile -d '' -t artifacts < <(find -P "$release/source/build/libs" -maxdepth 1 -type f -name '*.jar' ! -name 'original-*.jar' -print0 | LC_ALL=C sort -z)
+      [ "${#artifacts[@]}" -eq 1 ] || reject artifact-count
+      install -o root -g root -m 555 -- "${artifacts[0]}" "$release/app.jar"
+      ;;
+    java)
+      [ "$#" -ge 1 ] || reject runtime-arguments
+      require_relative_path "$1"
+      artifact="$release/source/$1"
+      [ -f "$artifact" ] && [ ! -L "$artifact" ] || reject java-artifact
+      install -o root -g root -m 555 -- "$artifact" "$release/app.jar"
+      ;;
+    node)
+      [ -f "$release/source/package.json" ] || reject node-package
+      ;;
+    python)
+      [ -x "$release/source/.venv/bin/python" ] || reject python-venv
+      ;;
+    static)
+      [ "$#" -ge 1 ] || reject runtime-arguments
+      require_relative_path "$1"
+      [ -d "$release/source/$1" ] && [ ! -L "$release/source/$1" ] || reject static-output
+      ;;
+    *) reject runtime-kind ;;
+  esac
+}
+publish_deployment() {
+  [ "$#" -ge 5 ] || reject publish-deployment-arguments
+  local app="$1" candidate_id="$2" release_digest="$3" manifest="$4" kind="$5"
+  shift 5
+  require_app "$app"; require_candidate "$app" "$candidate_id"; require_digest "$release_digest"; require_digest "$manifest"
+  initialise_controlled_roots
+  assert_application_root_or_absent "$app"
+  render_deployment_unit "$app" "$kind" "$@" >/dev/null
+  assert_deployment_current_or_empty "$app" "$manifest"
+  local root releases release unit tmp
+  root="$(app_root "$app")"; releases="$root/releases"; release="$releases/$release_digest"; unit="$(unit_path "$app")"
+  install -d -o root -g root -m 755 -- "$root" "$releases"
+  [ ! -e "$release" ] && [ ! -L "$release" ] || reject release-exists
+  seal_deployment_tree "$app" "$candidate_id" "$release" "$kind" "$@"
+  printf '%s\n' "$manifest" > "$release/.windowstolinux-owner"
+  chown root:root -- "$release/.windowstolinux-owner"; chmod 444 -- "$release/.windowstolinux-owner"
+  save_deployment_parameters "$release/.windowstolinux-deployment-parameters" "$kind" "$@"
+  if [ "$previous_present" -eq 1 ]; then systemctl stop "$(unit_name "$app")"; fi
+  ln -sfnT -- "$release" "$root/current"
+  tmp="$(mktemp /etc/systemd/system/.windowstolinux-managed.XXXXXX)"
+  trap 'rm -f -- "$tmp"' EXIT
+  render_deployment_unit "$app" "$kind" "$@" > "$tmp"
+  install -o root -g root -m 644 -- "$tmp" "$unit"
+  rm -f -- "$tmp"; trap - EXIT
+  systemctl daemon-reload
+  systemctl start "$(unit_name "$app")"
+  printf 'PUBLISHED=1\n'
+}
 expected_unit_digest() {
   render_unit "$1" | sha256sum | awk '{print $1}'
 }
@@ -168,11 +392,11 @@ create_candidate() {
   [ ! -e "$candidate" ] && [ ! -L "$candidate" ] || reject candidate-exists
   install -d -o root -g root -m 711 -- "$candidate"
   install -d -o "$deployer" -g "$deployer_group" -m 700 -- "$mutable"
-  printf '%s\\n' "$deployer" > "$candidate/.deployer"
+  printf '%s\n' "$deployer" > "$candidate/.deployer"
   chown root:root -- "$candidate/.deployer"
   chmod 444 -- "$candidate/.deployer"
   assert_candidate_for_deployer "$candidate"
-  printf 'CANDIDATE=%s\\n' "$candidate"
+  printf 'CANDIDATE=%s\n' "$candidate"
 }
 cleanup_candidate() {
   [ "$#" -eq 2 ] || reject cleanup-arguments
@@ -186,7 +410,7 @@ cleanup_candidate() {
     assert_candidate_for_deployer "$candidate"
     rm -rf --one-file-system -- "$candidate"
   fi
-  printf 'CANDIDATE_CLEANED=1\\n'
+  printf 'CANDIDATE_CLEANED=1\n'
 }
 create_snapshot() {
   [ "$#" -eq 2 ] || reject snapshot-arguments
@@ -198,7 +422,7 @@ create_snapshot() {
   assert_application_root_or_absent "$app"
   assert_current_or_empty "$app" "$manifest"
   if [ "$previous_present" -eq 0 ]; then
-    printf 'PREVIOUS=0\\n'
+    printf 'PREVIOUS=0\n'
     return
   fi
   local token snapshot unit
@@ -208,19 +432,19 @@ create_snapshot() {
   unit="$(unit_path "$app")"
   [ ! -e "$snapshot" ] && [ ! -L "$snapshot" ] || reject snapshot-exists
   install -d -o root -g root -m 700 -- "$snapshot"
-  printf '%s\\n' "$previous_path" > "$snapshot/current-path"
+  printf '%s\n' "$previous_path" > "$snapshot/current-path"
   install -o root -g root -m 600 -- "$unit" "$snapshot/unit"
   systemctl is-enabled "$(unit_name "$app")" > "$snapshot/enabled" 2>/dev/null || true
   if [ "$previous_running" -eq 1 ]; then
-    printf 'active\\n' > "$snapshot/runtime"
+    printf 'active\n' > "$snapshot/runtime"
   else
-    printf 'inactive\\n' > "$snapshot/runtime"
+    printf 'inactive\n' > "$snapshot/runtime"
   fi
   chown root:root -- "$snapshot/current-path" "$snapshot/enabled" "$snapshot/runtime"
   chmod 600 -- "$snapshot/current-path" "$snapshot/enabled" "$snapshot/runtime"
-  printf 'SNAPSHOT_TOKEN=%s\\n' "$token"
-  printf 'PREVIOUS=1\\n'
-  printf 'PREVIOUS_RUNNING=%s\\n' "$previous_running"
+  printf 'SNAPSHOT_TOKEN=%s\n' "$token"
+  printf 'PREVIOUS=1\n'
+  printf 'PREVIOUS_RUNNING=%s\n' "$previous_running"
 }
 seal_candidate_artifact() {
   local app="$1"
@@ -272,7 +496,7 @@ publish_release() {
   install -d -o root -g root -m 755 -- "$release"
   install -o root -g root -m 555 -- "$sealed_artifact" "$release/app.jar"
   [ "$(sha256sum -- "$release/app.jar" | awk '{print $1}')" = "$artifact_digest" ] || reject release-digest
-  printf '%s\\n' "$manifest" > "$release/.windowstolinux-owner"
+  printf '%s\n' "$manifest" > "$release/.windowstolinux-owner"
   chown root:root -- "$release/.windowstolinux-owner"
   chmod 444 -- "$release/.windowstolinux-owner"
   if [ "$previous_present" -eq 1 ]; then
@@ -297,7 +521,361 @@ publish_release() {
   trap - EXIT
   systemctl daemon-reload
   systemctl start "$(unit_name "$app")"
-  printf 'PUBLISHED=1\\n'
+  printf 'PUBLISHED=1\n'
+}
+snapshot_deployment() {
+  [ "$#" -ge 3 ] || reject snapshot-deployment-arguments
+  local app="$1" manifest="$2" kind="$3"
+  shift 3
+  require_app "$app"; require_digest "$manifest"
+  initialise_controlled_roots
+  assert_application_root_or_absent "$app"
+  render_deployment_unit "$app" "$kind" "$@" >/dev/null
+  assert_deployment_current_or_empty "$app" "$manifest"
+  if [ "$previous_present" -eq 0 ]; then
+    printf 'PREVIOUS=0\n'
+    return
+  fi
+  local token snapshot unit
+  token="$(cat /proc/sys/kernel/random/uuid)"; require_snapshot_token "$token"
+  snapshot="$(snapshot_root "$app" "$token")"; unit="$(unit_path "$app")"
+  [ ! -e "$snapshot" ] && [ ! -L "$snapshot" ] || reject snapshot-exists
+  install -d -o root -g root -m 700 -- "$snapshot"
+  printf '%s\n' "$previous_path" > "$snapshot/current-path"
+  install -o root -g root -m 600 -- "$unit" "$snapshot/unit"
+  install -o root -g root -m 600 -- "$previous_path/.windowstolinux-deployment-parameters" "$snapshot/deployment-parameters"
+  systemctl is-enabled "$(unit_name "$app")" > "$snapshot/enabled" 2>/dev/null || true
+  if [ "$previous_running" -eq 1 ]; then printf 'active\n' > "$snapshot/runtime"; else printf 'inactive\n' > "$snapshot/runtime"; fi
+  chown root:root -- "$snapshot/current-path" "$snapshot/enabled" "$snapshot/runtime" "$snapshot/deployment-parameters"
+  chmod 600 -- "$snapshot/current-path" "$snapshot/enabled" "$snapshot/runtime" "$snapshot/deployment-parameters"
+  printf 'SNAPSHOT_TOKEN=%s\n' "$token"
+  printf 'PREVIOUS=1\n'
+  printf 'PREVIOUS_RUNNING=%s\n' "$previous_running"
+}
+rollback_deployment() {
+  [ "$#" -ge 6 ] || reject rollback-deployment-arguments
+  local app="$1" candidate_digest="$2" manifest="$3" token="$4" kind="$5"
+  shift 5
+  require_app "$app"; require_digest "$candidate_digest"; require_digest "$manifest"; require_snapshot_token "$token"
+  local root releases candidate snapshot unit expected previous previous_digest previous_runtime
+  root="$(app_root "$app")"; releases="$root/releases"; candidate="$releases/$candidate_digest"
+  snapshot="$(snapshot_root "$app" "$token")"; unit="$(unit_path "$app")"
+  render_deployment_unit "$app" "$kind" "$@" >/dev/null
+  assert_root_owned_directory "$root"; assert_root_owned_directory "$releases"; assert_root_owned_directory "$snapshot"
+  for file in current-path unit runtime enabled deployment-parameters; do assert_root_owned_regular "$snapshot/$file"; done
+  previous="$(cat -- "$snapshot/current-path")"; previous_digest="${previous##*/}"; require_digest "$previous_digest"
+  [ "$previous" = "$releases/$previous_digest" ] || reject snapshot-current
+  previous_runtime="$(cat -- "$snapshot/runtime")"; [ "$previous_runtime" = active ] || [ "$previous_runtime" = inactive ] || reject snapshot-runtime
+  assert_root_owned_directory "$previous"; assert_root_owned_regular "$previous/.windowstolinux-owner"
+  [ "$(cat -- "$previous/.windowstolinux-owner")" = "$manifest" ] || reject previous-owner
+  current_application="$app"; load_deployment_parameters "$snapshot/deployment-parameters"
+  expected="$(expected_deployment_unit_digest "$app" "${deployment_runtime_parameters[@]}")"
+  [ "$(sha256sum -- "$snapshot/unit" | awk '{print $1}')" = "$expected" ] || reject snapshot-unit
+  if [ -e "$candidate" ] || [ -L "$candidate" ]; then
+    assert_root_owned_directory "$candidate"; assert_root_owned_regular "$candidate/.windowstolinux-owner"
+    [ "$(cat -- "$candidate/.windowstolinux-owner")" = "$manifest" ] || reject candidate-owner
+    assert_root_owned_regular "$candidate/.windowstolinux-deployment-parameters"
+  fi
+  systemctl stop "$(unit_name "$app")" || true
+  ln -sfnT -- "$previous" "$root/current"
+  install -o root -g root -m 644 -- "$snapshot/unit" "$unit"
+  systemctl daemon-reload
+  if [ "$(cat -- "$snapshot/enabled")" = enabled ]; then systemctl enable "$(unit_name "$app")"; else systemctl disable "$(unit_name "$app")"; fi
+  if [ "$previous_runtime" = active ]; then systemctl start "$(unit_name "$app")"; else systemctl stop "$(unit_name "$app")" || true; fi
+  if [ -e "$candidate" ] || [ -L "$candidate" ]; then rm -rf --one-file-system -- "$candidate"; fi
+  rm -rf --one-file-system -- "$snapshot"
+  printf 'ROLLED_BACK=1\n'
+}
+rollback_deployment_first() {
+  [ "$#" -ge 5 ] || reject rollback-deployment-first-arguments
+  local app="$1" candidate_digest="$2" manifest="$3" kind="$4"
+  shift 4
+  require_app "$app"; require_digest "$candidate_digest"; require_digest "$manifest"
+  local root releases candidate unit expected
+  root="$(app_root "$app")"; releases="$root/releases"; candidate="$releases/$candidate_digest"; unit="$(unit_path "$app")"
+  render_deployment_unit "$app" "$kind" "$@" >/dev/null
+  assert_root_owned_directory "$root"; assert_root_owned_directory "$releases"
+  [ -e "$candidate" ] || [ -L "$candidate" ] || reject candidate-missing
+  assert_root_owned_directory "$candidate"; assert_root_owned_regular "$candidate/.windowstolinux-owner"
+  [ "$(cat -- "$candidate/.windowstolinux-owner")" = "$manifest" ] || reject candidate-owner
+  current_application="$app"; load_deployment_parameters "$candidate/.windowstolinux-deployment-parameters"
+  expected="$(expected_deployment_unit_digest "$app" "${deployment_runtime_parameters[@]}")"
+  if [ -e "$unit" ] || [ -L "$unit" ]; then
+    assert_root_owned_regular "$unit"; [ "$(sha256sum -- "$unit" | awk '{print $1}')" = "$expected" ] || reject current-unit
+    systemctl stop "$(unit_name "$app")" || true; rm -f -- "$unit"
+  fi
+  if [ -e "$root/current" ] || [ -L "$root/current" ]; then rm -f -- "$root/current"; fi
+  rm -rf --one-file-system -- "$candidate"
+  systemctl daemon-reload
+  printf 'ROLLED_BACK=1\n'
+}
+lifecycle_deployment() {
+  [ "$#" -ge 5 ] || reject lifecycle-deployment-arguments
+  local app="$1" action="$2" manifest="$3" kind="$4"
+  shift 4
+  require_app "$app"; require_digest "$manifest"
+  case "$action" in start|stop|restart|enable|disable) ;; *) reject lifecycle-action ;; esac
+  render_deployment_unit "$app" "$kind" "$@" >/dev/null
+  assert_deployment_current_or_empty "$app" "$manifest"
+  [ "$previous_present" -eq 1 ] || reject lifecycle-unmanaged
+  systemctl "$action" "$(unit_name "$app")"
+  printf 'LIFECYCLE=%s\n' "$action"
+}
+observe_deployment() {
+  [ "$#" -eq 2 ] || reject observe-deployment-arguments
+  local app="$1" manifest="$2" running enabled
+  require_app "$app"; require_digest "$manifest"
+  assert_deployment_current_or_empty "$app" "$manifest"
+  [ "$previous_present" -eq 1 ] || reject lifecycle-unmanaged
+  if systemctl is-active --quiet "$(unit_name "$app")"; then running=1; else running=0; fi
+  enabled="$(systemctl is-enabled "$(unit_name "$app")" 2>/dev/null || true)"
+  printf 'OWNER=1\nRUNNING=%s\nENABLED=%s\n' "$running" "$enabled"
+}
+parse_container_parameters() {
+  [ "$#" -ge 3 ] || reject container-arguments
+  container_engine="$1"
+  shift
+  case "$container_engine" in docker|podman) ;; *) reject container-engine ;; esac
+  require_count "$1"
+  local port_count="$1"
+  shift
+  container_ports=()
+  while [ "$port_count" -gt 0 ]; do
+    [ "$#" -ge 2 ] || reject container-ports
+    [[ "$1" =~ ^[0-9]{1,5}$ ]] && [ "$1" -ge 1 ] && [ "$1" -le 65535 ] || reject container-port
+    [[ "$2" =~ ^[0-9]{1,5}$ ]] && [ "$2" -ge 1 ] && [ "$2" -le 65535 ] || reject container-port
+    container_ports+=("$1:$2")
+    shift 2
+    port_count=$((port_count - 1))
+  done
+  require_count "$1"
+  local volume_count="$1"
+  shift
+  container_volumes=()
+  while [ "$volume_count" -gt 0 ]; do
+    [ "$#" -ge 3 ] || reject container-volumes
+    [[ "$1" =~ ^windowstolinux-[a-z0-9][a-z0-9-]{0,62}$ ]] || reject container-volume
+    [[ "$2" =~ ^/[A-Za-z0-9._/-]{1,255}$ ]] && [ "$2" != / ] && [[ "$2" != *..* && "$2" != *//* ]] || reject container-volume-path
+    [ "$3" = 0 ] || [ "$3" = 1 ] || reject container-volume-mode
+    container_volumes+=("$1:$2:$3")
+    shift 3
+    volume_count=$((volume_count - 1))
+  done
+  [ "$#" -eq 0 ] || reject container-arguments
+}
+save_container_parameters() {
+  local target="$1" spec source destination mode
+  {
+    printf '%s\n' "$container_engine"
+    printf '%s\n' "${#container_ports[@]}"
+    for spec in "${container_ports[@]}"; do printf '%s\n' "${spec%%:*}" "${spec#*:}"; done
+    printf '%s\n' "${#container_volumes[@]}"
+    for spec in "${container_volumes[@]}"; do
+      source="${spec%%:*}"; destination="${spec#*:}"; destination="${destination%:*}"; mode="${spec##*:}"
+      printf '%s\n' "$source" "$destination" "$mode"
+    done
+  } > "$target"
+  chown root:root -- "$target"
+  chmod 444 -- "$target"
+}
+load_container_parameters() {
+  local source="$1"
+  local -a saved
+  assert_root_owned_regular "$source"
+  mapfile -t saved < "$source"
+  parse_container_parameters "${saved[@]}"
+}
+container_name() { printf 'windowstolinux-%s' "$1"; }
+container_image() { printf 'windowstolinux-%s:%s' "$1" "$2"; }
+container_current_release() {
+  local app="$1" manifest="$2" engine="$3"
+  local root releases current current_digest
+  root="$(app_root "$app")"; releases="$root/releases"
+  previous_present=0; previous_path=; previous_running=0
+  if [ -e "$root/current" ] || [ -L "$root/current" ]; then
+    [ -L "$root/current" ] || reject current-not-link
+    current="$(readlink -f -- "$root/current")"
+    case "$current" in "$releases"/[0-9a-f]*) ;; *) reject current-path ;; esac
+    current_digest="${current##*/}"; require_digest "$current_digest"
+    assert_root_owned_directory "$current"; assert_root_owned_regular "$current/.windowstolinux-owner"
+    [ "$(cat -- "$current/.windowstolinux-owner")" = "$manifest" ] || reject current-owner
+    assert_root_owned_regular "$current/.windowstolinux-container-engine"
+    [ "$(cat -- "$current/.windowstolinux-container-engine")" = "$engine" ] || reject container-engine-change
+    assert_root_owned_regular "$current/.windowstolinux-container-parameters"
+    previous_present=1; previous_path="$current"
+    if "$engine" inspect --format '{{.State.Running}}' "$(container_name "$app")" 2>/dev/null | grep -qx true; then previous_running=1; fi
+  fi
+}
+start_container_release() {
+  local app="$1" release_digest="$2"
+  local image name volume spec source destination mode
+  local -a args
+  image="$(container_image "$app" "$release_digest")"; name="$(container_name "$app")"
+  if [ "$container_engine" = docker ]; then
+    "$container_engine" rm -f -- "$name" >/dev/null 2>&1 || true
+    args=("$container_engine" run -d --name "$name" --restart unless-stopped)
+    for spec in "${container_ports[@]}"; do args+=(--publish "$spec"); done
+    for spec in "${container_volumes[@]}"; do
+      source="${spec%%:*}"; destination="${spec#*:}"; destination="${destination%:*}"; mode="${spec##*:}"
+      if [ "$mode" = 1 ]; then args+=(--mount "type=volume,source=$source,destination=$destination,readonly"); else args+=(--mount "type=volume,source=$source,destination=$destination"); fi
+    done
+    args+=("$image")
+    "${args[@]}" >/dev/null
+  else
+    local quadlet tmp unit
+    quadlet="/etc/containers/systemd/windowstolinux-$app.container"; unit="windowstolinux-$app.service"
+    install -d -o root -g root -m 755 -- /etc/containers/systemd
+    tmp="$(mktemp /etc/containers/systemd/.windowstolinux-managed.XXXXXX)"
+    trap 'rm -f -- "$tmp"' EXIT
+    {
+      printf '[Container]\nImage=%s\nContainerName=%s\n' "$image" "$name"
+      for spec in "${container_ports[@]}"; do printf 'PublishPort=%s\n' "$spec"; done
+      for spec in "${container_volumes[@]}"; do
+        source="${spec%%:*}"; destination="${spec#*:}"; destination="${destination%:*}"; mode="${spec##*:}"
+        if [ "$mode" = 1 ]; then printf 'Volume=%s:%s:ro\n' "$source" "$destination"; else printf 'Volume=%s:%s\n' "$source" "$destination"; fi
+      done
+      printf '\n[Install]\nWantedBy=default.target\n'
+    } > "$tmp"
+    install -o root -g root -m 644 -- "$tmp" "$quadlet"
+    rm -f -- "$tmp"; trap - EXIT
+    systemctl daemon-reload
+    systemctl enable "$unit"
+    systemctl start "$unit"
+  fi
+}
+publish_container() {
+  [ "$#" -ge 5 ] || reject publish-container-arguments
+  local app="$1" candidate_id="$2" release_digest="$3" manifest="$4"
+  shift 4
+  require_app "$app"; require_candidate "$app" "$candidate_id"; require_digest "$release_digest"; require_digest "$manifest"
+  parse_container_parameters "$@"
+  initialise_controlled_roots
+  local root releases release candidate source candidate_image image
+  root="$(app_root "$app")"; releases="$root/releases"; release="$releases/$release_digest"; candidate="$(candidate_root "$candidate_id")"
+  container_current_release "$app" "$manifest" "$container_engine"
+  [ ! -e "$release" ] && [ ! -L "$release" ] || reject release-exists
+  assert_candidate_for_deployer "$candidate"
+  source="$candidate/mutable/source"; [ -d "$source" ] && [ ! -L "$source" ] || reject source-directory
+  candidate_image="windowstolinux-candidate:$candidate_id"; image="$(container_image "$app" "$release_digest")"
+  "$container_engine" image inspect "$candidate_image" >/dev/null
+  "$container_engine" tag "$candidate_image" "$image"
+  install -d -o root -g root -m 755 -- "$root" "$releases" "$release"
+  printf '%s\n' "$manifest" > "$release/.windowstolinux-owner"
+  printf '%s\n' "$container_engine" > "$release/.windowstolinux-container-engine"
+  chown root:root -- "$release/.windowstolinux-owner" "$release/.windowstolinux-container-engine"
+  chmod 444 -- "$release/.windowstolinux-owner" "$release/.windowstolinux-container-engine"
+  save_container_parameters "$release/.windowstolinux-container-parameters"
+  ln -sfnT -- "$release" "$root/current"
+  start_container_release "$app" "$release_digest"
+  printf 'PUBLISHED=1\n'
+}
+snapshot_container() {
+  [ "$#" -ge 3 ] || reject snapshot-container-arguments
+  local app="$1" manifest="$2"
+  shift 2
+  require_app "$app"; require_digest "$manifest"; parse_container_parameters "$@"
+  initialise_controlled_roots
+  container_current_release "$app" "$manifest" "$container_engine"
+  if [ "$previous_present" -eq 0 ]; then printf 'PREVIOUS=0\n'; return; fi
+  local token snapshot autostart
+  token="$(cat /proc/sys/kernel/random/uuid)"; require_snapshot_token "$token"; snapshot="$(snapshot_root "$app" "$token")"
+  install -d -o root -g root -m 700 -- "$snapshot"
+  printf '%s\n' "$previous_path" > "$snapshot/current-path"
+  printf '%s\n' "$previous_running" > "$snapshot/runtime"
+  install -o root -g root -m 600 -- "$previous_path/.windowstolinux-container-parameters" "$snapshot/container-parameters"
+  if [ "$container_engine" = docker ]; then
+    autostart="$(docker inspect --format '{{.HostConfig.RestartPolicy.Name}}' "$(container_name "$app")" 2>/dev/null || true)"
+  else
+    autostart="$(systemctl is-enabled "windowstolinux-$app.service" 2>/dev/null || true)"
+  fi
+  printf '%s\n' "$autostart" > "$snapshot/autostart"
+  chown root:root -- "$snapshot/current-path" "$snapshot/runtime" "$snapshot/container-parameters" "$snapshot/autostart"
+  chmod 600 -- "$snapshot/current-path" "$snapshot/runtime" "$snapshot/container-parameters" "$snapshot/autostart"
+  printf 'SNAPSHOT_TOKEN=%s\nPREVIOUS=1\nPREVIOUS_RUNNING=%s\n' "$token" "$previous_running"
+}
+stop_container_runtime() {
+  local app="$1"
+  if [ "$container_engine" = podman ]; then
+    systemctl stop "windowstolinux-$app.service" || true
+  else
+    "$container_engine" stop "$(container_name "$app")" >/dev/null 2>&1 || true
+  fi
+}
+rollback_container() {
+  [ "$#" -ge 6 ] || reject rollback-container-arguments
+  local app="$1" candidate_digest="$2" manifest="$3" token="$4"
+  shift 4
+  require_app "$app"; require_digest "$candidate_digest"; require_digest "$manifest"; require_snapshot_token "$token"
+  parse_container_parameters "$@"
+  local root releases candidate snapshot previous previous_digest previous_runtime
+  root="$(app_root "$app")"; releases="$root/releases"; candidate="$releases/$candidate_digest"; snapshot="$(snapshot_root "$app" "$token")"
+  assert_root_owned_directory "$root"; assert_root_owned_directory "$releases"; assert_root_owned_directory "$snapshot"
+  assert_root_owned_regular "$snapshot/current-path"; assert_root_owned_regular "$snapshot/runtime"
+  assert_root_owned_regular "$snapshot/container-parameters"; assert_root_owned_regular "$snapshot/autostart"
+  previous="$(cat -- "$snapshot/current-path")"; previous_digest="${previous##*/}"; require_digest "$previous_digest"
+  [ "$previous" = "$releases/$previous_digest" ] || reject snapshot-current
+  assert_root_owned_directory "$previous"; assert_root_owned_regular "$previous/.windowstolinux-owner"
+  [ "$(cat -- "$previous/.windowstolinux-owner")" = "$manifest" ] || reject previous-owner
+  previous_runtime="$(cat -- "$snapshot/runtime")"; [ "$previous_runtime" = 0 ] || [ "$previous_runtime" = 1 ] || reject snapshot-runtime
+  load_container_parameters "$snapshot/container-parameters"
+  stop_container_runtime "$app"
+  ln -sfnT -- "$previous" "$root/current"
+  start_container_release "$app" "$previous_digest"
+  if [ "$(cat -- "$snapshot/autostart")" = no ]; then
+    if [ "$container_engine" = docker ]; then "$container_engine" update --restart no "$(container_name "$app")" >/dev/null; else systemctl disable "windowstolinux-$app.service"; fi
+  fi
+  if [ "$previous_runtime" = 0 ]; then stop_container_runtime "$app"; fi
+  if [ -e "$candidate" ] || [ -L "$candidate" ]; then
+    assert_root_owned_directory "$candidate"; assert_root_owned_regular "$candidate/.windowstolinux-owner"
+    [ "$(cat -- "$candidate/.windowstolinux-owner")" = "$manifest" ] || reject candidate-owner
+    rm -rf --one-file-system -- "$candidate"
+  fi
+  rm -rf --one-file-system -- "$snapshot"
+  printf 'ROLLED_BACK=1\n'
+}
+rollback_container_first() {
+  [ "$#" -ge 5 ] || reject rollback-container-first-arguments
+  local app="$1" candidate_digest="$2" manifest="$3"
+  shift 3
+  require_app "$app"; require_digest "$candidate_digest"; require_digest "$manifest"; parse_container_parameters "$@"
+  local root releases candidate
+  root="$(app_root "$app")"; releases="$root/releases"; candidate="$releases/$candidate_digest"
+  assert_root_owned_directory "$root"; assert_root_owned_directory "$releases"
+  stop_container_runtime "$app"
+  if [ "$container_engine" = docker ]; then "$container_engine" rm -f "$(container_name "$app")" >/dev/null 2>&1 || true; fi
+  if [ "$container_engine" = podman ]; then
+    rm -f -- "/etc/containers/systemd/windowstolinux-$app.container"
+    systemctl daemon-reload
+  fi
+  if [ -e "$root/current" ] || [ -L "$root/current" ]; then rm -f -- "$root/current"; fi
+  if [ -e "$candidate" ] || [ -L "$candidate" ]; then
+    assert_root_owned_directory "$candidate"; assert_root_owned_regular "$candidate/.windowstolinux-owner"
+    [ "$(cat -- "$candidate/.windowstolinux-owner")" = "$manifest" ] || reject candidate-owner
+    rm -rf --one-file-system -- "$candidate"
+  fi
+  printf 'ROLLED_BACK=1\n'
+}
+lifecycle_container() {
+  [ "$#" -ge 5 ] || reject lifecycle-container-arguments
+  local app="$1" action="$2" manifest="$3"
+  shift 3
+  require_app "$app"; require_digest "$manifest"; parse_container_parameters "$@"
+  container_current_release "$app" "$manifest" "$container_engine"
+  [ "$previous_present" -eq 1 ] || reject lifecycle-unmanaged
+  load_container_parameters "$previous_path/.windowstolinux-container-parameters"
+  case "$action" in
+    start) start_container_release "$app" "${previous_path##*/}" ;;
+    stop) stop_container_runtime "$app" ;;
+    restart) stop_container_runtime "$app"; start_container_release "$app" "${previous_path##*/}" ;;
+    enable)
+      if [ "$container_engine" = docker ]; then "$container_engine" update --restart unless-stopped "$(container_name "$app")" >/dev/null; else systemctl enable "windowstolinux-$app.service"; fi
+      ;;
+    disable)
+      if [ "$container_engine" = docker ]; then "$container_engine" update --restart no "$(container_name "$app")" >/dev/null; else systemctl disable "windowstolinux-$app.service"; fi
+      ;;
+    *) reject lifecycle-action ;;
+  esac
+  printf 'LIFECYCLE=%s\n' "$action"
 }
 retain_releases() {
   [ "$#" -eq 2 ] || reject retain-arguments
@@ -315,7 +893,7 @@ retain_releases() {
   current_digest="${current##*/}"
   require_digest "$current_digest"
   [ "$current" = "$releases/$current_digest" ] || reject current-path
-  mapfile -t releases_by_age < <(find -P "$releases" -mindepth 1 -maxdepth 1 -type d -printf '%T@ %f\\n' | LC_ALL=C sort -nr | awk '{print $2}')
+  mapfile -t releases_by_age < <(find -P "$releases" -mindepth 1 -maxdepth 1 -type d -printf '%T@ %f\n' | LC_ALL=C sort -nr | awk '{print $2}')
   retained_noncurrent=0
   for release_digest in "${releases_by_age[@]}"; do
     require_digest "$release_digest"
@@ -331,7 +909,7 @@ retain_releases() {
       rm -rf --one-file-system -- "$release"
     fi
   done
-  printf 'RETAINED=%s\\n' "$((retained_noncurrent + 1))"
+  printf 'RETAINED=%s\n' "$((retained_noncurrent + 1))"
 }
 rollback_previous() {
   [ "$#" -eq 4 ] || reject rollback-arguments
@@ -394,7 +972,7 @@ rollback_previous() {
     rm -rf --one-file-system -- "$candidate"
   fi
   rm -rf --one-file-system -- "$snapshot"
-  printf 'ROLLED_BACK=1\\n'
+  printf 'ROLLED_BACK=1\n'
 }
 rollback_first() {
   [ "$#" -eq 3 ] || reject rollback-first-arguments
@@ -435,7 +1013,7 @@ rollback_first() {
     rm -rf --one-file-system -- "$candidate"
   fi
   systemctl daemon-reload
-  printf 'ROLLED_BACK=1\\n'
+  printf 'ROLLED_BACK=1\n'
 }
 lifecycle() {
   [ "$#" -eq 3 ] || reject lifecycle-arguments
@@ -451,7 +1029,7 @@ lifecycle() {
   assert_current_or_empty "$app" "$manifest"
   [ "$previous_present" -eq 1 ] || reject lifecycle-unmanaged
   systemctl "$action" "$(unit_name "$app")"
-  printf 'LIFECYCLE=%s\\n' "$action"
+  printf 'LIFECYCLE=%s\n' "$action"
 }
 require_root
 require_deployer
@@ -461,15 +1039,26 @@ shift
 case "$verb" in
   probe)
     [ "$#" -eq 0 ] || reject probe-arguments
-    printf 'HELPER=1\\n'
+    printf 'HELPER=1\n'
     ;;
   candidate-create) create_candidate "$@" ;;
   candidate-cleanup) cleanup_candidate "$@" ;;
   snapshot) create_snapshot "$@" ;;
+  snapshot-deployment) snapshot_deployment "$@" ;;
   publish) publish_release "$@" ;;
+  publish-deployment) publish_deployment "$@" ;;
   retain) retain_releases "$@" ;;
   rollback-previous) rollback_previous "$@" ;;
   rollback-first) rollback_first "$@" ;;
+  rollback-deployment) rollback_deployment "$@" ;;
+  rollback-deployment-first) rollback_deployment_first "$@" ;;
   lifecycle) lifecycle "$@" ;;
+  lifecycle-deployment) lifecycle_deployment "$@" ;;
+  observe-deployment) observe_deployment "$@" ;;
+  snapshot-container) snapshot_container "$@" ;;
+  publish-container) publish_container "$@" ;;
+  rollback-container) rollback_container "$@" ;;
+  rollback-container-first) rollback_container_first "$@" ;;
+  lifecycle-container) lifecycle_container "$@" ;;
   *) reject verb ;;
 esac

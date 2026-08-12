@@ -1,6 +1,8 @@
 package gold.debug.windowstolinux.shared.linux.sshd.connection;
 
 import gold.debug.windowstolinux.shared.linux.build.RemoteBuildResult;
+import gold.debug.windowstolinux.shared.linux.build.DeploymentBuildResult;
+import gold.debug.windowstolinux.shared.linux.connection.DeploymentRemoteSession;
 import gold.debug.windowstolinux.shared.linux.connection.LinuxOperationException;
 import gold.debug.windowstolinux.shared.linux.connection.LinuxRemoteSession;
 import gold.debug.windowstolinux.shared.linux.connection.SshEndpoint;
@@ -8,10 +10,15 @@ import gold.debug.windowstolinux.shared.linux.protocol.ReleaseSnapshot;
 import gold.debug.windowstolinux.shared.linux.protocol.RemoteStepResult;
 import gold.debug.windowstolinux.shared.linux.runtime.HealthCheckResult;
 import gold.debug.windowstolinux.shared.linux.sshd.build.MavenBuildExecutor;
+import gold.debug.windowstolinux.shared.linux.sshd.build.DeploymentBuildExecutor;
 import gold.debug.windowstolinux.shared.linux.sshd.capability.SshdCapabilityCollector;
-import gold.debug.windowstolinux.shared.linux.sshd.distro.UbuntuEnvironmentExecutor;
+import gold.debug.windowstolinux.shared.linux.sshd.capability.SshdPlatformCapabilityCollector;
+import gold.debug.windowstolinux.shared.linux.sshd.distro.ManagedEnvironmentExecutor;
 import gold.debug.windowstolinux.shared.linux.sshd.protocol.ManagedReleaseProtocolExecutor;
+import gold.debug.windowstolinux.shared.linux.sshd.protocol.DeploymentReleaseProtocolExecutor;
+import gold.debug.windowstolinux.shared.linux.sshd.protocol.ContainerReleaseProtocolExecutor;
 import gold.debug.windowstolinux.shared.linux.sshd.runtime.SystemdRuntimeExecutor;
+import gold.debug.windowstolinux.shared.linux.sshd.runtime.ContainerRuntimeExecutor;
 import gold.debug.windowstolinux.shared.linux.sshd.transfer.SshdSourceTransfer;
 import gold.debug.windowstolinux.shared.linux.transfer.RemoteWorkspace;
 import gold.debug.windowstolinux.shared.linux.transfer.UploadReceipt;
@@ -22,8 +29,12 @@ import gold.debug.windowstolinux.shared.model.deployment.EnvironmentPreparationR
 import gold.debug.windowstolinux.shared.model.health.HealthCheck;
 import gold.debug.windowstolinux.shared.model.lifecycle.LifecycleAction;
 import gold.debug.windowstolinux.shared.model.lifecycle.LifecycleObservation;
+import gold.debug.windowstolinux.shared.model.lifecycle.RuntimeState;
 import gold.debug.windowstolinux.shared.model.managed.ManagedApplication;
+import gold.debug.windowstolinux.shared.model.project.DeploymentProjectFacts;
+import gold.debug.windowstolinux.shared.model.project.DeploymentRuntimeSpecification;
 import gold.debug.windowstolinux.shared.model.server.ServerCapabilities;
+import gold.debug.windowstolinux.shared.model.server.LinuxCapabilities;
 import org.apache.sshd.client.SshClient;
 import org.apache.sshd.client.session.ClientSession;
 
@@ -32,33 +43,50 @@ import org.apache.sshd.client.session.ClientSession;
  *
  * <p>将各项类型化能力委派给其实现包的统一会话门面。
  */
-final class SshdLinuxRemoteSession implements LinuxRemoteSession {
+final class SshdLinuxRemoteSession implements DeploymentRemoteSession {
     private final SshClient client;
     private final ClientSession session;
+    private final String username;
     private final SshdCapabilityCollector capabilities;
-    private final UbuntuEnvironmentExecutor environment;
+    private final SshdPlatformCapabilityCollector deploymentCapabilities;
+    private final ManagedEnvironmentExecutor environment;
     private final SshdSourceTransfer transfer;
     private final MavenBuildExecutor build;
+    private final DeploymentBuildExecutor deploymentBuild;
     private final ManagedReleaseProtocolExecutor protocol;
+    private final DeploymentReleaseProtocolExecutor deploymentProtocol;
+    private final ContainerReleaseProtocolExecutor containerProtocol;
     private final SystemdRuntimeExecutor runtime;
+    private final ContainerRuntimeExecutor containerRuntime;
 
     SshdLinuxRemoteSession(SshClient client, ClientSession session,
                               SshEndpoint endpoint, String hostFingerprint) {
         this.client = client;
         this.session = session;
+        this.username = endpoint.username();
         SshCommandExecutor commands = new SshCommandExecutor(session);
         this.capabilities = new SshdCapabilityCollector(commands, hostFingerprint);
-        this.environment = new UbuntuEnvironmentExecutor(
-                commands, capabilities, endpoint.serverId(), endpoint.username());
+        this.deploymentCapabilities = new SshdPlatformCapabilityCollector(commands, hostFingerprint);
+        this.environment = new ManagedEnvironmentExecutor(
+                commands, capabilities, deploymentCapabilities, endpoint.serverId(), endpoint.username());
         this.protocol = new ManagedReleaseProtocolExecutor(commands);
+        this.deploymentProtocol = new DeploymentReleaseProtocolExecutor(commands);
+        this.containerProtocol = new ContainerReleaseProtocolExecutor(commands);
         this.transfer = new SshdSourceTransfer(session, commands, protocol);
         this.build = new MavenBuildExecutor(commands, endpoint.username());
+        this.deploymentBuild = new DeploymentBuildExecutor(commands, endpoint.username());
         this.runtime = new SystemdRuntimeExecutor(commands, protocol, endpoint.username());
+        this.containerRuntime = new ContainerRuntimeExecutor(commands);
     }
 
     @Override
     public ServerCapabilities collectCapabilities() throws LinuxOperationException {
         return capabilities.collect();
+    }
+
+    @Override
+    public LinuxCapabilities collectDeploymentCapabilities() throws LinuxOperationException {
+        return deploymentCapabilities.collectDeploymentCapabilities();
     }
 
     @Override
@@ -76,6 +104,13 @@ final class SshdLinuxRemoteSession implements LinuxRemoteSession {
     @Override
     public RemoteBuildResult build(RemoteWorkspace workspace, BuildLimits limits) throws LinuxOperationException {
         return build.build(workspace, limits);
+    }
+
+    @Override
+    public DeploymentBuildResult buildDeployment(DeploymentProjectFacts facts, DeploymentRuntimeSpecification runtime,
+                                                 RemoteWorkspace workspace, BuildLimits limits)
+            throws LinuxOperationException {
+        return deploymentBuild.build(facts, runtime, workspace, limits);
     }
 
     @Override
@@ -122,6 +157,91 @@ final class SshdLinuxRemoteSession implements LinuxRemoteSession {
     public LifecycleObservation executeLifecycle(ManagedApplication application, LifecycleAction action,
                                                  HealthCheck healthCheck) throws LinuxOperationException {
         return runtime.executeLifecycle(application, action, healthCheck);
+    }
+
+    @Override
+    public ReleaseSnapshot snapshotDeployment(ManagedApplication application, DeploymentRuntimeSpecification runtime)
+            throws LinuxOperationException {
+        if (runtime instanceof DeploymentRuntimeSpecification.Container container) {
+            return containerProtocol.snapshot(application, container);
+        }
+        return deploymentProtocol.snapshot(application, runtime);
+    }
+
+    @Override
+    public RemoteStepResult publishDeployment(ManagedApplication application, RemoteWorkspace workspace,
+                                              DeploymentBuildResult buildResult, String releaseIdentity,
+                                              DeploymentRuntimeSpecification runtime, ReleaseSnapshot snapshot)
+            throws LinuxOperationException {
+        if (runtime instanceof DeploymentRuntimeSpecification.Container container) {
+            return containerProtocol.publish(application, workspace, buildResult, releaseIdentity, container, snapshot);
+        }
+        return deploymentProtocol.publish(application, workspace, buildResult, releaseIdentity, runtime, snapshot);
+    }
+
+    @Override
+    public RemoteStepResult rollbackDeployment(ManagedApplication application, ReleaseSnapshot snapshot,
+                                               DeploymentBuildResult buildResult, String releaseIdentity,
+                                               DeploymentRuntimeSpecification runtime) throws LinuxOperationException {
+        if (runtime instanceof DeploymentRuntimeSpecification.Container container) {
+            return containerProtocol.rollback(application, snapshot, buildResult, releaseIdentity, container);
+        }
+        return deploymentProtocol.rollback(application, snapshot, buildResult, releaseIdentity, runtime);
+    }
+
+    @Override
+    public HealthCheckResult checkDeploymentHealth(ManagedApplication application, DeploymentRuntimeSpecification runtime,
+                                                   HealthCheck healthCheck) throws LinuxOperationException {
+        if (runtime instanceof DeploymentRuntimeSpecification.Container container) {
+            return containerRuntime.checkHealth(application, container, healthCheck);
+        }
+        return this.runtime.checkHealth(application, healthCheck);
+    }
+
+    @Override
+    public LifecycleObservation observeDeployment(ManagedApplication application, DeploymentRuntimeSpecification runtime)
+            throws LinuxOperationException {
+        if (runtime instanceof DeploymentRuntimeSpecification.Container container) {
+            return containerRuntime.observe(application, container);
+        }
+        return deploymentProtocol.observe(application);
+    }
+
+    @Override
+    public LifecycleObservation executeDeploymentLifecycle(ManagedApplication application,
+                                                            DeploymentRuntimeSpecification runtime,
+                                                            LifecycleAction action) throws LinuxOperationException {
+        LifecycleObservation before = observeDeployment(application, runtime);
+        if (!before.ownershipVerified()) {
+            return before;
+        }
+        if (action == LifecycleAction.REFRESH_STATUS) {
+            return before;
+        }
+        if (action == LifecycleAction.START && before.runtimeState() != RuntimeState.STOPPED) {
+            throw LinuxOperationException.localized("linux.error.startRequiresStopped",
+                    "Start is allowed only for a managed runtime confirmed as stopped");
+        }
+        String verb = switch (action) {
+            case START -> "start";
+            case STOP -> "stop";
+            case RESTART -> "restart";
+            case ENABLE_AUTOSTART -> "enable";
+            case DISABLE_AUTOSTART -> "disable";
+            case REFRESH_STATUS -> throw new IllegalStateException("handled above");
+        };
+        RemoteStepResult result = runtime instanceof DeploymentRuntimeSpecification.Container container
+                ? containerProtocol.lifecycle(application, verb, container)
+                : deploymentProtocol.lifecycle(application, verb, runtime);
+        if (!result.succeeded()) {
+            throw LinuxOperationException.localized("linux.error.lifecycleActionFailed", result.evidence());
+        }
+        if ((action == LifecycleAction.START || action == LifecycleAction.RESTART)
+                && !checkDeploymentHealth(application, runtime, runtime.healthCheck()).healthy()) {
+            throw LinuxOperationException.localized("linux.error.postStartHealthFailed",
+                    "Post-start health check failed");
+        }
+        return observeDeployment(application, runtime);
     }
 
     @Override

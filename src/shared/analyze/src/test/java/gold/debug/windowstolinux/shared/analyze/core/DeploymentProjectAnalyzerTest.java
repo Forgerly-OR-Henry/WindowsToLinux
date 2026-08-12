@@ -59,6 +59,23 @@ class DeploymentProjectAnalyzerTest {
     }
 
     @Test
+    void rejectsDatabaseMutationArtifactsForEveryDeploymentType() throws Exception {
+        Path project = Files.createDirectories(temporaryDirectory.resolve("node-database-change"));
+        Files.writeString(project.resolve("package.json"), """
+                {"name":"demo-node","scripts":{"build":"build","start":"start"},"dependencies":{"prisma":"1.0"}}
+                """);
+        Files.writeString(project.resolve("package-lock.json"), "{}");
+        Files.createDirectories(project.resolve("database/migrations"));
+        Files.writeString(project.resolve("database/migrations/001.sql"), "create table demo (id bigint)");
+
+        var assessment = analyzer.analyze(project, DeploymentProjectType.NODE_SERVICE);
+
+        assertEquals(DeploymentAdmission.REJECTED, assessment.admission());
+        assertTrue(assessment.rejections().stream().anyMatch(reason -> reason.code().equals("DATABASE_MIGRATION_DETECTED")));
+        assertTrue(assessment.rejections().stream().anyMatch(reason -> reason.code().equals("AUTOMATIC_SCHEMA_MUTATION_DETECTED")));
+    }
+
+    @Test
     void acceptsEverySelectedTypeWhenItsSourceFactsAreComplete() throws Exception {
         Path javaJar = Files.createDirectories(temporaryDirectory.resolve("java-jar"));
         Files.writeString(javaJar.resolve("application.jar"), "opaque binary content");

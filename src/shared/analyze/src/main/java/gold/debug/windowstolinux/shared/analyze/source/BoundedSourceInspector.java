@@ -23,7 +23,8 @@ public final class BoundedSourceInspector {
     private static final int MAX_TEXT_FILE_BYTES = 2 * 1024 * 1024;
     private static final int MAX_TOTAL_TEXT_BYTES = 16 * 1024 * 1024;
     private static final Set<String> TEXT_EXTENSIONS = Set.of(
-            ".java", ".kt", ".groovy", ".xml", ".properties", ".yml", ".yaml", ".json"
+            ".java", ".kt", ".groovy", ".xml", ".properties", ".yml", ".yaml", ".json", ".toml", ".py", ".js",
+            ".ts", ".ini", ".cfg"
     );
 
     /**
@@ -77,7 +78,7 @@ public final class BoundedSourceInspector {
         private long scannedTextBytes;
         private boolean hasMavenWrapper;
         private boolean hasWindowsMavenWrapper;
-        private boolean hasSchemaScript;
+        private boolean hasDatabaseChangeScript;
 
         private TreeInspection(Path root, List<RejectionReason> rejections) {
             this.root = root;
@@ -108,8 +109,8 @@ public final class BoundedSourceInspector {
                 hasWindowsMavenWrapper = true;
             }
             String lowerName = name.toLowerCase(Locale.ROOT);
-            if (lowerName.equals("schema.sql") || (lowerName.startsWith("schema-") && lowerName.endsWith(".sql"))) {
-                hasSchemaScript = true;
+            if (isDatabaseChangeScript(file, lowerName)) {
+                hasDatabaseChangeScript = true;
             }
             if (shouldReadText(file)) {
                 long size = Files.size(file);
@@ -147,8 +148,25 @@ public final class BoundedSourceInspector {
         }
 
         private SourceInspection result() {
-            return new SourceInspection(scannedFiles, hasMavenWrapper, hasWindowsMavenWrapper, hasSchemaScript,
+            return new SourceInspection(scannedFiles, hasMavenWrapper, hasWindowsMavenWrapper, hasDatabaseChangeScript,
                     text.toString());
+        }
+
+        private boolean isDatabaseChangeScript(Path file, String lowerName) {
+            if (lowerName.equals("schema.sql") || (lowerName.startsWith("schema-") && lowerName.endsWith(".sql"))) {
+                return true;
+            }
+            if (!lowerName.endsWith(".sql")) {
+                return false;
+            }
+            for (Path parent = file.getParent(); parent != null && parent.startsWith(root); parent = parent.getParent()) {
+                Path name = parent.getFileName();
+                if (name != null && (name.toString().equalsIgnoreCase("migration")
+                        || name.toString().equalsIgnoreCase("migrations"))) {
+                    return true;
+                }
+            }
+            return false;
         }
     }
 }

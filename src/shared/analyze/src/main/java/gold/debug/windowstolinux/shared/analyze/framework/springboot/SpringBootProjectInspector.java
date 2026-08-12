@@ -54,7 +54,7 @@ public final class SpringBootProjectInspector {
         if (MIGRATION.matcher(maven.pomText() + "\n" + scannedText).find()) {
             rejections.add(reason("DATABASE_MIGRATION_DETECTED", "analysis.rejection.migrationDetected", "deployment"));
         }
-        if (source.hasSchemaScript() || AUTOMATIC_SCHEMA_MUTATION.matcher(scannedText).find()) {
+        if (source.hasDatabaseChangeScript() || AUTOMATIC_SCHEMA_MUTATION.matcher(scannedText).find()) {
             rejections.add(reason("AUTOMATIC_SCHEMA_MUTATION_DETECTED",
                     "analysis.rejection.schemaMutationDetected", "deployment"));
         }

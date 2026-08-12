@@ -1,6 +1,7 @@
 package gold.debug.windowstolinux.shared.analyze.core;
 
 import gold.debug.windowstolinux.shared.analyze.source.BoundedSourceInspector;
+import gold.debug.windowstolinux.shared.analyze.source.SourceInspection;
 import gold.debug.windowstolinux.shared.model.analysis.AnalysisEvidence;
 import gold.debug.windowstolinux.shared.model.analysis.EvidenceConfidence;
 import gold.debug.windowstolinux.shared.model.analysis.DeploymentProjectAssessment;
@@ -32,6 +33,8 @@ public final class DeploymentProjectAnalyzer {
     private static final Pattern JSON_NAME = Pattern.compile("\\\"name\\\"\\s*:\\s*\\\"([a-z0-9][a-z0-9._-]{0,62})\\\"");
     private static final Pattern JSON_SCRIPT = Pattern.compile("\\\"(build|start)\\\"\\s*:\\s*\\\"([^\\\"\\r\\n]+)\\\"");
     private static final Pattern TOML_NAME = Pattern.compile("(?m)^\\s*name\\s*=\\s*\\\"([a-z0-9][a-z0-9._-]{0,62})\\\"\\s*$");
+    private static final Pattern DATABASE_MIGRATION = Pattern.compile(
+            "\\b(flyway|liquibase|alembic|prisma(?:\\s+migrate)?|knex)\\b", Pattern.CASE_INSENSITIVE);
     private final BoundedSourceInspector sourceInspector;
 
     /**
@@ -62,7 +65,13 @@ public final class DeploymentProjectAnalyzer {
         if (root == null) {
             return DeploymentProjectAssessment.rejected(rejections);
         }
-        sourceInspector.inspect(root, rejections);
+        SourceInspection source = sourceInspector.inspect(root, rejections);
+        if (source.hasDatabaseChangeScript()) {
+            rejections.add(rejection("AUTOMATIC_SCHEMA_MUTATION_DETECTED", "analysis.rejection.schemaMutationDetected"));
+        }
+        if (DATABASE_MIGRATION.matcher(source.scannedText()).find()) {
+            rejections.add(rejection("DATABASE_MIGRATION_DETECTED", "analysis.rejection.migrationDetected"));
+        }
         if (!rejections.isEmpty()) {
             return DeploymentProjectAssessment.rejected(rejections);
         }
