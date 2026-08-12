@@ -1,6 +1,7 @@
 package gold.debug.windowstolinux.app.ui.ai;
 
 import gold.debug.windowstolinux.shared.model.security.CredentialStorageMode;
+import gold.debug.windowstolinux.shared.ai.collaboration.AiCollaborationRole;
 
 import java.util.Arrays;
 import java.util.Objects;
@@ -13,6 +14,8 @@ import java.util.Objects;
 public final class AiPageState implements AutoCloseable {
     private final String endpoint;
     private final String model;
+    private final String providerId;
+    private final AiCollaborationRole role;
     private final char[] apiKey;
     private final CredentialStorageMode credentialMode;
     private final char[] masterPassword;
@@ -31,10 +34,13 @@ public final class AiPageState implements AutoCloseable {
      * @param output the {@code output} value / {@code output} 值
      * @throws NullPointerException if a required argument is {@code null} / 必要参数为 {@code null} 时
      */
-    public AiPageState(String endpoint, String model, char[] apiKey, CredentialStorageMode credentialMode,
+    public AiPageState(String endpoint, String model, String providerId, AiCollaborationRole role,
+                       char[] apiKey, CredentialStorageMode credentialMode,
                        char[] masterPassword, String output) {
         this.endpoint = Objects.requireNonNull(endpoint, "endpoint");
         this.model = Objects.requireNonNull(model, "model");
+        this.providerId = Objects.requireNonNull(providerId, "providerId");
+        this.role = Objects.requireNonNull(role, "role");
         this.apiKey = apiKey.clone();
         this.credentialMode = Objects.requireNonNull(credentialMode, "credentialMode");
         this.masterPassword = masterPassword.clone();
@@ -57,6 +63,10 @@ public final class AiPageState implements AutoCloseable {
      * @return the operation result / 操作结果
      */
     public String model() { return model; }
+    /** Returns the unsaved named-provider identifier. / 返回未保存的命名提供者标识。 */
+    public String providerId() { return providerId; }
+    /** Returns the selected fixed collaboration role. / 返回所选固定协作角色。 */
+    public AiCollaborationRole role() { return role; }
     /**
      * Performs the {@code apiKey} operation.
      *

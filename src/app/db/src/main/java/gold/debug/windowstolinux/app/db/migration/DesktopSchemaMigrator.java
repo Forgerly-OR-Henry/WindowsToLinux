@@ -19,7 +19,7 @@ public final class DesktopSchemaMigrator {
      *
      * <p>公开 {@code CURRENT_SCHEMA_VERSION} 常量。
      */
-    public static final int CURRENT_SCHEMA_VERSION = 5;
+    public static final int CURRENT_SCHEMA_VERSION = 6;
 
     private DesktopSchemaMigrator() {
     }
@@ -186,6 +186,16 @@ public final class DesktopSchemaMigrator {
                     statement.execute("""
                             ALTER TABLE managed_application_release
                             RENAME COLUMN artifact_sha256 TO release_sha256
+                            """);
+                }
+                if (version < 6) {
+                    statement.execute("""
+                            CREATE TABLE IF NOT EXISTS ai_role_assignment (
+                              role TEXT PRIMARY KEY CHECK(role IN (
+                                'PROJECT_ANALYSIS', 'DEPLOYMENT_RISK_REVIEW', 'ERROR_EXPLANATION'
+                              )),
+                              profile_id TEXT NOT NULL REFERENCES ai_provider_profile(profile_id) ON DELETE RESTRICT
+                            )
                             """);
                 }
                 statement.execute("PRAGMA user_version = " + CURRENT_SCHEMA_VERSION);

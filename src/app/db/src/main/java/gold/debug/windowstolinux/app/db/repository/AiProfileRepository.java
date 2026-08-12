@@ -3,6 +3,7 @@ package gold.debug.windowstolinux.app.db.repository;
 import gold.debug.windowstolinux.app.db.connection.DesktopConnectionFactory;
 import gold.debug.windowstolinux.app.db.entity.StoredAiProfile;
 import gold.debug.windowstolinux.app.db.entity.StoredAiProviderProfile;
+import gold.debug.windowstolinux.app.db.entity.StoredAiRoleAssignment;
 
 import java.sql.Connection;
 import java.sql.PreparedStatement;
@@ -82,5 +83,64 @@ public final class AiProfileRepository {
             }
             return List.copyOf(profiles);
         }
+    }
+
+    /** Finds one exact named provider without provider fallback. / 查找一个精确命名提供者且不执行提供者回退。 */
+    public Optional<StoredAiProviderProfile> findNamed(String profileId) throws SQLException {
+        try (Connection connection = connections.open();
+             PreparedStatement statement = connection.prepareStatement("""
+                     SELECT profile_id, endpoint, model, credential_key, credential_mode
+                     FROM ai_provider_profile WHERE profile_id = ?
+                     """)) {
+            statement.setString(1, profileId);
+            try (ResultSet result = statement.executeQuery()) {
+                return result.next() ? Optional.of(provider(result)) : Optional.empty();
+            }
+        }
+    }
+
+    /** Assigns one fixed role to one existing named provider. / 将一个固定角色分配给一个已有命名提供者。 */
+    public void saveRoleAssignment(StoredAiRoleAssignment assignment) throws SQLException {
+        try (Connection connection = connections.open();
+             PreparedStatement statement = connection.prepareStatement("""
+                     INSERT INTO ai_role_assignment (role, profile_id) VALUES (?, ?)
+                     ON CONFLICT(role) DO UPDATE SET profile_id=excluded.profile_id
+                     """)) {
+            statement.setString(1, assignment.role());
+            statement.setString(2, assignment.profileId());
+            statement.executeUpdate();
+        }
+    }
+
+    /** Lists all explicit role assignments in stable role order. / 以稳定角色顺序列出全部显式角色分配。 */
+    public List<StoredAiRoleAssignment> listRoleAssignments() throws SQLException {
+        try (Connection connection = connections.open();
+             PreparedStatement statement = connection.prepareStatement(
+                     "SELECT role, profile_id FROM ai_role_assignment ORDER BY role");
+             ResultSet result = statement.executeQuery()) {
+            List<StoredAiRoleAssignment> assignments = new ArrayList<>();
+            while (result.next()) {
+                assignments.add(new StoredAiRoleAssignment(result.getString("role"), result.getString("profile_id")));
+            }
+            return List.copyOf(assignments);
+        }
+    }
+
+    /** Finds the explicit provider assignment for one exact fixed role. / 查找一个精确固定角色的显式提供者分配。 */
+    public Optional<StoredAiRoleAssignment> findRoleAssignment(String role) throws SQLException {
+        try (Connection connection = connections.open();
+             PreparedStatement statement = connection.prepareStatement(
+                     "SELECT role, profile_id FROM ai_role_assignment WHERE role = ?")) {
+            statement.setString(1, role);
+            try (ResultSet result = statement.executeQuery()) {
+                return result.next() ? Optional.of(new StoredAiRoleAssignment(
+                        result.getString("role"), result.getString("profile_id"))) : Optional.empty();
+            }
+        }
+    }
+
+    private static StoredAiProviderProfile provider(ResultSet result) throws SQLException {
+        return new StoredAiProviderProfile(result.getString("profile_id"), result.getString("endpoint"),
+                result.getString("model"), result.getString("credential_key"), result.getString("credential_mode"));
     }
 }

@@ -7,6 +7,10 @@ import gold.debug.windowstolinux.app.service.server.DesktopSecretStores;
 import gold.debug.windowstolinux.app.service.source.ReviewedSourcePreparation;
 import gold.debug.windowstolinux.shared.ai.client.AiAnalysisException;
 import gold.debug.windowstolinux.shared.ai.client.OpenAiCompatibleStructuralAnalyzer;
+import gold.debug.windowstolinux.shared.ai.client.OpenAiCompatibleRoleClient;
+import gold.debug.windowstolinux.shared.ai.collaboration.AiRoleBinding;
+import gold.debug.windowstolinux.shared.ai.collaboration.AiRoleContext;
+import gold.debug.windowstolinux.shared.ai.collaboration.AiRoleInvocationResult;
 import gold.debug.windowstolinux.shared.ai.prompt.AiResponseLanguage;
 import gold.debug.windowstolinux.shared.model.message.LocalizedMessage;
 import gold.debug.windowstolinux.shared.model.message.LocalizedOperationException;
@@ -26,6 +30,7 @@ import java.util.Optional;
 public final class AiUseCases {
     private final AiProfileRepository profiles;
     private final DesktopSecretStores secrets;
+    private final OpenAiCompatibleRoleClient roleClient;
 
     /**
      * Creates a {@code AiUseCases} instance.
@@ -37,8 +42,13 @@ public final class AiUseCases {
      * @throws NullPointerException if a required argument is {@code null} / 必要参数为 {@code null} 时
      */
     public AiUseCases(AiProfileRepository profiles, DesktopSecretStores secrets) {
+        this(profiles, secrets, new OpenAiCompatibleRoleClient());
+    }
+
+    AiUseCases(AiProfileRepository profiles, DesktopSecretStores secrets, OpenAiCompatibleRoleClient roleClient) {
         this.profiles = Objects.requireNonNull(profiles, "profiles");
         this.secrets = Objects.requireNonNull(secrets, "secrets");
+        this.roleClient = Objects.requireNonNull(roleClient, "roleClient");
     }
 
     /**
@@ -106,6 +116,43 @@ public final class AiUseCases {
         return profiles.listNamed().stream().map(AiProviderProfile::fromStored).toList();
     }
 
+    /** Assigns one fixed collaboration role to one existing named provider. / 将一个固定协作角色分配给一个已有命名提供者。 */
+    public void assignRole(AiRoleAssignment assignment) throws SQLException {
+        profiles.saveRoleAssignment(Objects.requireNonNull(assignment, "assignment").stored());
+    }
+
+    /** Lists explicit role bindings without loading any credential. / 列出显式角色绑定且不加载任何凭据。 */
+    public List<AiRoleAssignment> listRoleAssignments() throws SQLException {
+        return profiles.listRoleAssignments().stream().map(AiRoleAssignment::fromStored).toList();
+    }
+
+    /** Invokes only the provider assigned to the context role and preserves its validated evidence. / 仅调用分配给上下文角色的提供者并保留其验证证据。 */
+    public Optional<AiRoleInvocationResult> invokeRole(AiRoleContext context, char[] masterPassword)
+            throws SQLException, SecretStoreException {
+        Objects.requireNonNull(context, "context");
+        try {
+            Optional<AiRoleAssignment> assignment = profiles.findRoleAssignment(context.role().name())
+                    .map(AiRoleAssignment::fromStored);
+            if (assignment.isEmpty()) return Optional.empty();
+            Optional<AiProviderProfile> profile = profiles.findNamed(assignment.orElseThrow().providerId())
+                    .map(AiProviderProfile::fromStored);
+            if (profile.isEmpty()) return Optional.empty();
+            AiProviderProfile selected = profile.orElseThrow();
+            try (SecretStore store = secrets.open(selected.credentialMode(), masterPassword)) {
+                char[] apiKey = store.read(selected.credentialKey()).orElseGet(() -> new char[0]);
+                try {
+                    AiRoleBinding binding = new AiRoleBinding(context.role(), selected.id(),
+                            selected.chatCompletionsEndpoint(), selected.model());
+                    return Optional.of(roleClient.invoke(binding, apiKey, context));
+                } finally {
+                    clear(apiKey);
+                }
+            }
+        } finally {
+            clear(masterPassword);
+        }
+    }
+
     /**
      * Performs the {@code explain} operation.
      *
@@ -161,10 +208,7 @@ public final class AiUseCases {
     public AiAnalysisOutcome explainNamed(ReviewedSourcePreparation preparation, String providerId, char[] masterPassword,
                                           String languageTag) {
         try {
-            AiProviderProfile profile = profiles.listNamed().stream()
-                    .filter(candidate -> candidate.id().equals(providerId))
-                    .map(AiProviderProfile::fromStored)
-                    .findFirst()
+            AiProviderProfile profile = profiles.findNamed(providerId).map(AiProviderProfile::fromStored)
                     .orElse(null);
             if (profile == null) {
                 return AiAnalysisOutcome.unavailable(LocalizedMessage.of("ai.status.providerMissing"));

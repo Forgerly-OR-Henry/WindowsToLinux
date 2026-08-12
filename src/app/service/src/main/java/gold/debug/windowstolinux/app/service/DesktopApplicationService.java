@@ -6,6 +6,7 @@ import gold.debug.windowstolinux.app.secret.api.SecretStoreException;
 import gold.debug.windowstolinux.app.service.ai.AiAnalysisOutcome;
 import gold.debug.windowstolinux.app.service.ai.AiProfile;
 import gold.debug.windowstolinux.app.service.ai.AiProviderProfile;
+import gold.debug.windowstolinux.app.service.ai.AiRoleAssignment;
 import gold.debug.windowstolinux.app.service.ai.AiUseCases;
 import gold.debug.windowstolinux.app.service.ai.ReadOnlyDeploymentAgentTools;
 import gold.debug.windowstolinux.app.service.concurrency.ServerOperationLocks;
@@ -26,6 +27,8 @@ import gold.debug.windowstolinux.shared.config.revision.ConfigurationSnapshot;
 import gold.debug.windowstolinux.shared.config.secretref.SecretReference;
 import gold.debug.windowstolinux.app.windows.workspace.WindowsSourceWorkspace;
 import gold.debug.windowstolinux.shared.analyze.core.DeploymentAnalysisCoordinator;
+import gold.debug.windowstolinux.shared.ai.collaboration.AiRoleContext;
+import gold.debug.windowstolinux.shared.ai.collaboration.AiRoleInvocationResult;
 import gold.debug.windowstolinux.shared.deploy.environment.EnvironmentPreparationService;
 import gold.debug.windowstolinux.shared.deploy.plan.ReviewedDeploymentPlan;
 import gold.debug.windowstolinux.shared.deploy.plan.ReviewedDeploymentRequest;
@@ -268,6 +271,22 @@ public final class DesktopApplicationService {
      */
     public List<AiProviderProfile> listAiProviderProfiles() throws SQLException {
         return ai.listNamed();
+    }
+
+    /** Assigns one fixed AI collaboration role to one existing named provider. / 将一个固定 AI 协作角色分配给一个已有命名提供者。 */
+    public void assignAiRole(AiRoleAssignment assignment) throws SQLException {
+        ai.assignRole(assignment);
+    }
+
+    /** Lists the three independently configurable AI role bindings. / 列出三个可独立配置的 AI 角色绑定。 */
+    public List<AiRoleAssignment> listAiRoleAssignments() throws SQLException {
+        return ai.listRoleAssignments();
+    }
+
+    /** Invokes exactly the provider assigned to the supplied minimal role context. / 精确调用分配给所提供最小角色上下文的提供者。 */
+    public Optional<AiRoleInvocationResult> invokeAiRole(AiRoleContext context, char[] masterPassword)
+            throws SQLException, SecretStoreException {
+        return ai.invokeRole(context, masterPassword);
     }
 
     /**

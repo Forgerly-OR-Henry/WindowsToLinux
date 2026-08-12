@@ -2,14 +2,14 @@
 
 ## 文档信息
 
-- 文档版本：`2.9.0-phase3-multi-component-core`
-- 文档状态：**正式模块与职责边界保持不变；混合项目分析、多组件事务/生命周期及六种高级语言试验适配已进入既有职责包，真实目标机状态为 `RUNTIME-PENDING`**
+- 文档版本：`3.0.0-phase3-multi-model-core`
+- 文档状态：**正式模块与职责边界保持不变；混合项目、多组件事务/生命周期、多模型角色链路及六种高级语言试验适配已进入既有职责包，真实目标机状态为 `RUNTIME-PENDING`**
 - 已确认范围：`shared` 共用模块、`app` Windows 桌面应用模块、`web` Web 应用模块
 - 已确认能力边界：受管应用生命周期复用既有模块，不新增独立 Maven 模块
 - 更新日期：2026-08-13
 - 开发总纲：[DEVELOPMENT.md](DEVELOPMENT.md)
 
-> 本文是正式目标目录、模块职责、依赖方向和内部包结构的来源。当前 reactor 已包含根工程、3 个聚合模块和 24 个叶子模块，共 28 个 POM。`shared/source`、`shared/config`、`shared/git`、`shared/linux-sshd`、`analyze`、`deploy`、`app/db` 与 `app/service` 已承载对应代码；其中 `analyze/component` 和 `deploy` 已本地实现混合组件图、整应用事务与依赖安全生命周期，`shared/linux-sshd` 已实现六类既有项目和六种高级语言试验项目的有界协议。`shared/backup` 和 Web Java 叶子模块仍只保留 POM。2026-08-10/12 的 Ubuntu 24.04 x86-64 产品入口验收属于迁移前协议的历史证据，继续保留但不得外推到 helper v3；所有 v3 链路均标记 `RUNTIME-PENDING`。
+> 本文是正式目标目录、模块职责、依赖方向和内部包结构的来源。当前 reactor 已包含根工程、3 个聚合模块和 24 个叶子模块，共 28 个 POM。`shared/source`、`shared/config`、`shared/git`、`shared/ai`、`shared/linux-sshd`、`analyze`、`deploy`、`app/db` 与 `app/service` 已承载对应代码；其中 `analyze/component` 和 `deploy` 已本地实现混合组件图、整应用事务与依赖安全生命周期，`shared/ai` 已实现三个固定协作角色及严格证据链，`shared/linux-sshd` 已实现六类既有项目和六种高级语言试验项目的有界协议。`shared/backup` 和 Web Java 叶子模块仍只保留 POM。2026-08-10/12 的 Ubuntu 24.04 x86-64 产品入口验收属于迁移前协议的历史证据，继续保留但不得外推到 helper v3；所有 v3 链路均标记 `RUNTIME-PENDING`。
 
 ## 1. 完整目标结构
 
@@ -66,7 +66,7 @@ WindowsToLinux/
    │  ├─ pom.xml              共用模块聚合入口
    │  ├─ ai/                  AI 调用、脱敏与结果解析
    │  │  ├─ client/           HTTP 客户端和调用边界
-   │  │  ├─ collaboration/    后续多模型角色和冲突处理
+   │  │  ├─ collaboration/    固定多模型角色、调用证据和确定性优先冲突处理
    │  │  ├─ parser/           结构化结果解析与校验
    │  │  ├─ prompt/           结构化提示构建
    │  │  ├─ provider/         Provider 配置和协议适配
@@ -255,6 +255,7 @@ test/
 - `DeploymentBuildRenderer` 由十二个项目类型渲染器实现并共享安全脚本外壳；其中 `SpringBootBuildRenderer` 只接受 Gradle Wrapper、Maven Wrapper、系统 Maven 三种固定入口并验证唯一 Spring Boot 2/3 可执行 JAR，注册表拒绝缺失、重复和类型不匹配实现。
 - `MultiComponentDeploymentPlanner` 保留精确依赖边并生成确定性构建波次、逆序停止、拓扑启动/健康、逆序回滚和独立候选命名；`ReviewedMultiComponentDeploymentService` 在切换前完成全部候选构建和全部旧状态快照，中间失败会恢复所有已停止或尝试发布的组件，任何恢复不确定性升级为人工处理。
 - `MultiComponentLifecycleService` 每次从目标机重新观测所有组件，拒绝会破坏运行依赖的单组件动作，应用级停止/启动使用逆序/拓扑顺序，并以“部分运行”“部分启用”保留混合状态；后续桌面产品入口接入必须复用既有 `ServerOperationLocks`，不得创建绕开同服务器部署、环境准备和生命周期互斥的入口。
+- `shared/ai/collaboration` 定义项目分析、部署风险复核、错误说明三个固定角色及最小上下文、凭据无关调用证据和确定性优先裁决；客户端每次只接收一个显式 Provider 绑定，严格解析唯一 JSON 模式且不提供候补 Provider API。`app/db` SQLite v6 以受限角色值和 Provider 外键保存绑定，`app/service` 只在调用时短时读取所选 Provider 的秘密，桌面 AI 页负责命名 Provider 与角色配置并展示项目分析证据。
 - systemd 远程职责由 `SystemdHealthChecker`、`SystemdOwnershipObserver` 和 `SystemdLifecycleExecutor` 分别承担。
 - `ManagedHelperBundle` 按固定顺序拼装十个职责资源片段；安装路径和 sudoers 白名单仅允许 `/usr/local/lib/windowstolinux/managed-helper`，协议版本固定为 3，拼装字节的 SHA-256 固定为 `5985f74caa8394d342147ba4a8d53a24038d32f6c61f9f4a509f1d54009174e0`。高级语言 systemd 命令由独立的 `35-advanced-runtime.sh` 片段封闭渲染；旧 helper 必须由用户通过产品“环境准备”显式更新，部署链路不得自动替换。
 - helper 当前协议版本由 `ManagedHelperProtocolVersion` 在模型层唯一声明，能力汇总、环境准备预检和 SSH 实现不得各自保留历史版本数字。
@@ -623,6 +624,7 @@ linux-sshd 通过 linux 契约采集服务器已有环境
 
 | 版本 | 日期 | 说明 |
 | --- | --- | --- |
+| 3.0.0-phase3-multi-model-core | 2026-08-13 | 在既有 `shared/ai`、`app/db`、`app/service` 和 `app/ui/ai` 职责内加入三个固定 AI 角色、最小脱敏上下文、严格结构化输出、调用证据、冲突裁决、命名 Provider 外键绑定与桌面配置入口；SQLite 升至 v6，API Key 仍只归平台秘密存储，失败不跨 Provider 回退，模型不获得执行授权。 |
 | 2.9.0-phase3-multi-component-core | 2026-08-13 | 在既有 `model/analyze/deploy` 职责内加入稳定组件记录、目标机修改前冲突拦截、精确依赖图、独立候选、多组件短停机事务/整体健康/逐组件恢复，以及依赖安全的应用生命周期和部分运行/自启汇总；同时清除能力层残留的 helper v2 判断并由单一 v3 常量约束。JDK 21 全量离线门禁 28/28 通过，桌面产品入口和真实 Linux 验收仍待完成。 |
 | 2.8.0-phase3-experimental-adapters | 2026-08-13 | 在既有职责包中接入 Go、Rust、.NET、Kotlin、PHP、Ruby 的锁文件分析、试验支持声明、适配器、固定构建渲染、helper v3 与 Ubuntu 24.04 工具链准备；逐次风险确认和实时版本探测保持安全边界，JDK 21 全量离线门禁 28/28 通过，真实目标机验收仍待完成。 |
 | 2.7.0-phase3-support-preview | 2026-08-13 | 在既有 `shared/model`、`shared/analyze` 和 `app/ui` 边界内加入支持等级、精确真实验收范围和不可执行语言识别预览；覆盖三期全部候选语言，明确预览没有构建工具、归档、适配器、渲染器或 helper 入口。 |

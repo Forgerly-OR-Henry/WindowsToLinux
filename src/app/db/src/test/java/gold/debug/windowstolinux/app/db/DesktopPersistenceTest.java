@@ -4,6 +4,7 @@ import gold.debug.windowstolinux.app.db.entity.CurrentRelease;
 import gold.debug.windowstolinux.app.db.entity.OpaqueSecret;
 import gold.debug.windowstolinux.app.db.entity.StoredAiProviderProfile;
 import gold.debug.windowstolinux.app.db.entity.StoredAiProfile;
+import gold.debug.windowstolinux.app.db.entity.StoredAiRoleAssignment;
 import gold.debug.windowstolinux.app.db.entity.StoredApplicationSecretRevision;
 import gold.debug.windowstolinux.app.db.entity.StoredServerProfile;
 
@@ -159,7 +160,7 @@ class DesktopPersistenceTest {
             }
             try (var version = statement.executeQuery("PRAGMA user_version")) {
                 assertTrue(version.next());
-                assertEquals(5, version.getInt(1));
+                assertEquals(6, version.getInt(1));
             }
         }
     }
@@ -261,10 +262,17 @@ class DesktopPersistenceTest {
                     "analysis-model", "ai/analysis", "WINDOWS_CREDENTIAL_MANAGER"));
             database.aiProfiles().saveNamed(new StoredAiProviderProfile("review", "https://review.example.test/v1",
                     "review-model", "ai/review", "MASTER_PASSWORD"));
+            database.aiProfiles().saveRoleAssignment(new StoredAiRoleAssignment("PROJECT_ANALYSIS", "analysis"));
+            database.aiProfiles().saveRoleAssignment(new StoredAiRoleAssignment("DEPLOYMENT_RISK_REVIEW", "review"));
 
             assertEquals("default-model", database.aiProfiles().findDefault().orElseThrow().model());
             assertEquals(java.util.List.of("analysis", "review"), database.aiProfiles().listNamed().stream()
                     .map(StoredAiProviderProfile::id).toList());
+            assertEquals("analysis", database.aiProfiles().findNamed("analysis").orElseThrow().id());
+            assertEquals(java.util.List.of("review", "analysis"), database.aiProfiles().listRoleAssignments().stream()
+                    .map(StoredAiRoleAssignment::profileId).toList());
+            assertThrows(java.sql.SQLException.class, () -> database.aiProfiles()
+                    .saveRoleAssignment(new StoredAiRoleAssignment("ERROR_EXPLANATION", "missing")));
         }
     }
 }

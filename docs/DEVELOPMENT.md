@@ -4,8 +4,8 @@
 
 - 项目名称：WindowsToLinux
 - 文档角色：产品边界、五期路线、跨期规则与完整开发流程的唯一总入口
-- 文档版本：`2.6.0-phase3-multi-component-core`
-- 文档状态：**三期支持等级、语言适配、混合项目与多组件事务/生命周期核心已完成本地实现；桌面产品入口、真实 Linux 验收、多模型与新增发行版仍在实施，未验收组合保持 `RUNTIME-PENDING`**
+- 文档版本：`2.7.0-phase3-multi-model-core`
+- 文档状态：**三期支持等级、语言适配、混合项目/多组件核心及多模型角色链路已完成本地实现；多组件桌面产品入口、真实 Linux 验收与新增发行版仍在实施，未验收组合保持 `RUNTIME-PENDING`**
 - 更新日期：2026-08-13
 - 项目结构：[File.md](File.md)
 
@@ -28,6 +28,7 @@ WindowsToLinux 是面向个人和小型自托管场景的部署管理工具。�
 | Linux 运行验证 | 迁移前 Ubuntu 24.04 x86-64 已实际验证环境准备、六类构建发布及代表性生命周期 | 统一 Spring Boot/helper v3、六种高级语言、Podman、Ubuntu 22.04 与 CentOS Stream 9/10 均为 `RUNTIME-PENDING` |
 | 三期支持分级 | 支持等级、精确目标验证范围、不可执行识别预览及 Go/Rust/.NET/Kotlin/PHP/Ruby 固定试验适配器已接入；helper v3 不接受任意命令 | 六种高级语言仅可称本地实现完成；真实构建、发布、回滚和生命周期证据形成前不得升级为正式支持 |
 | 三期混合项目与多组件 | 稳定组件清单、冲突/依赖环拦截、确定性依赖计划、整应用构建/快照/切换/健康/恢复事务及依赖安全生命周期已通过本地故障注入和全量门禁 | 桌面入口及真实服务器尚未验收；不得声称已具备产品可用的多组件部署 |
+| 三期多模型协作 | 三个固定角色可独立绑定命名 Provider/模型；最小上下文、严格结构化输出、输入摘要证据和确定性优先冲突裁决已接入 SQLite v6、服务与桌面配置页 | AI 仅为建议；失败不跨 Provider 回退，冲突不得自动转成执行授权 |
 
 ### 2.1 正式目标架构与当前实现边界
 
@@ -43,7 +44,7 @@ WindowsToLinux 是面向个人和小型自托管场景的部署管理工具。�
 2. 源码快照、可重复归档和安全校验归 `shared/source`；桌面本地入口、Web 上传工作区和 Git 仓库来源分别归 `app/windows`、`web/file` 和 `shared/git`。源码归档不与 `shared/backup` 的应用数据备份语义混用。
 3. `shared/linux` 只定义公共契约，`shared/linux-sshd` 承接 Apache SSHD 具体实现；`deploy`、`app/service` 和 `web/service` 只依赖 `shared/linux`，只有 `app/main`、`web/main` 负责选择并装配 `shared/linux-sshd`。
 
-`shared/source` 已承接源码快照、归档与安全校验，`shared/linux-sshd` 已承接 Apache SSHD、十二类项目的有界构建、发布/回滚协议、容器运行与受支持发行版固定环境准备；Spring Boot 与六种高级语言试验适配器共用唯一 Reviewed/helper v3 路径，且高级语言命令由独立固定片段渲染。`shared/config` 定义类型化普通配置快照和不透明秘密引用；桌面 SQLite v5 保存配置实例、秘密修订元数据和发布身份摘要，并从 v4 的旧列名无损迁移，原始秘密值仍只经 `app/secret` 短时处理。
+`shared/source` 已承接源码快照、归档与安全校验，`shared/linux-sshd` 已承接 Apache SSHD、十二类项目的有界构建、发布/回滚协议、容器运行与受支持发行版固定环境准备；Spring Boot 与六种高级语言试验适配器共用唯一 Reviewed/helper v3 路径，且高级语言命令由独立固定片段渲染。`shared/config` 定义类型化普通配置快照和不透明秘密引用；桌面 SQLite v6 保存配置实例、秘密修订元数据、发布身份摘要、命名 AI Provider 元数据及三个固定角色的 Provider 外键，并从 v4 的旧发布列名无损迁移，原始秘密值仍只经 `app/secret` 短时处理。
 
 开发 WindowsToLinux 本身使用开发机安装的系统 Maven 及其系统本地仓库，不由项目覆盖仓库位置，也不把 Maven Wrapper 作为本项目构建入口；同时使用 JDK 21、Node 和相应测试工具。产品处理的用户项目不得在 Windows 桌面主机或 Web 后端主机安装依赖、执行项目脚本或构建；用户项目构建只发生在目标 Linux，届时可按受控适配规则使用用户项目自带的 Wrapper。
 
@@ -204,6 +205,7 @@ Playwright 浏览器固定保存在 `src/web/frontend/.playwright-browsers`，�
 
 | 版本 | 日期 | 阶段 | 状态 | 说明 |
 | --- | --- | --- | --- | --- |
+| 2.7.0-phase3-multi-model-core | 2026-08-13 | 三期 | AI/数据库/服务/UI 聚焦门禁通过；真实 Provider 运行不作为部署验收前提 | 三个固定角色可独立绑定命名 Provider/模型，最小脱敏上下文进入严格结构化输出校验并保留凭据无关证据；确定性停止优先，冲突需用户决定，失败不跨 Provider 回退；SQLite 升至 v6。 |
 | 2.6.0-phase3-multi-component-core | 2026-08-13 | 三期 | JDK 21 全量离线门禁 28/28 通过；产品入口与真实 Linux 待验收 | 加入混合组件结构化分析、组件级停止原因、确定性依赖顺序、整应用短停机事务/健康/恢复和部分生命周期汇总；修正 helper v3 能力判断，未外推为实机支持。 |
 | 2.5.0-phase3-experimental-adapters | 2026-08-13 | 三期 | JDK 21 全量离线门禁 28/28 通过；真实 Linux 待验收 | Go、Rust、.NET、Kotlin、PHP、Ruby 接入锁文件静态分析、类型化运行时、固定构建渲染、helper v3、实时工具链探测与逐次试验风险确认；结构门、双语目录和 helper 字节身份已通过，未声明正式支持。 |
 | 2.4.0-phase3-support-preview | 2026-08-13 | 三期 | 本地集中门禁通过；高级适配与实机待验收 | 新增支持等级、精确验证范围与不可执行语言识别预览；预览不会创建归档、构建、发布或生命周期路径。 |

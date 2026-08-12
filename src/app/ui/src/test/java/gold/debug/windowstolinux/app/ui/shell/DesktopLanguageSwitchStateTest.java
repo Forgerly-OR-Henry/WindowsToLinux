@@ -11,6 +11,7 @@ import gold.debug.windowstolinux.app.ui.managed.ManagedPageState;
 import gold.debug.windowstolinux.app.ui.server.ServerPageState;
 import gold.debug.windowstolinux.app.ui.settings.SettingsPageState;
 import gold.debug.windowstolinux.shared.model.security.CredentialStorageMode;
+import gold.debug.windowstolinux.shared.ai.collaboration.AiCollaborationRole;
 import org.junit.jupiter.api.Test;
 
 import java.util.concurrent.atomic.AtomicReference;
@@ -31,7 +32,8 @@ class DesktopLanguageSwitchStateTest {
                         "ssh-secret".toCharArray(), CredentialStorageMode.MASTER_PASSWORD,
                         "master-secret".toCharArray(), "server diagnostic"),
                 new ManagedPageState("demo", "lifecycle diagnostic"),
-                new AiPageState("https://example.test/v1/chat/completions", "model-x",
+                new AiPageState("https://example.test/v1/chat/completions", "model-x", "analysis",
+                        AiCollaborationRole.PROJECT_ANALYSIS,
                         "api-secret".toCharArray(), CredentialStorageMode.WINDOWS_CREDENTIAL_MANAGER,
                         new char[0], "AI diagnostic"),
                 new SettingsPageState());
@@ -63,6 +65,8 @@ class DesktopLanguageSwitchStateTest {
             assertEquals("demo", chineseState.managed().applicationId());
             assertEquals("lifecycle diagnostic", chineseState.managed().output());
             assertEquals("model-x", chineseState.ai().model());
+            assertEquals("analysis", chineseState.ai().providerId());
+            assertEquals(AiCollaborationRole.PROJECT_ANALYSIS, chineseState.ai().role());
             assertArrayEquals("api-secret".toCharArray(), chineseState.ai().apiKey());
             assertEquals("AI diagnostic", chineseState.ai().output());
         } finally {
