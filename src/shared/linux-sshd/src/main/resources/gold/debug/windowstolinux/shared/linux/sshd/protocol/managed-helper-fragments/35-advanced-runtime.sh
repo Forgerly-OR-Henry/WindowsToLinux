@@ -45,7 +45,7 @@ render_advanced_runtime_command() {
       [ "$2" = bundle ] || reject ruby-artifact
       [ "$3" = config.ru ] || reject ruby-entrypoint
       require_service_port "$4"
-      advanced_runtime_command_result="/usr/bin/env bundle exec rackup --host 0.0.0.0 --port $4 $root/current/source/config.ru"
+      advanced_runtime_command_result="/usr/bin/env bundle exec rackup --server webrick --host 0.0.0.0 --port $4 $root/current/source/config.ru"
       ;;
     *) reject runtime-kind ;;
   esac

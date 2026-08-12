@@ -62,13 +62,24 @@ class DeploymentBuildRendererTest {
         assertTrue(dotnet.contains("DOTNET_GCHeapHardLimit=0x40000000"));
         String kotlin = advanced(AdvancedRuntimeKind.KOTLIN, DeploymentBuildTool.GRADLE_KOTLIN_WRAPPER, "21", "demo",
                 "demo.MainKt", OptionalInt.empty());
+        assertTrue(kotlin.contains("retry_run 3 ./gradlew --no-daemon --version"));
+        assertTrue(kotlin.contains("https://services.gradle.org/distributions/*|https://downloads.gradle.org/distributions/*"));
+        assertTrue(kotlin.contains("--retry-all-errors"));
+        assertTrue(kotlin.contains("--continue-at -"));
+        assertTrue(kotlin.contains("/var/lib/windowstolinux/cache/gradle-distributions"));
+        assertTrue(kotlin.contains("flock 9"));
+        assertTrue(kotlin.contains("gradle_distribution.partial"));
+        assertTrue(kotlin.contains("sha256sum --check --status"));
+        assertTrue(kotlin.contains("distributionUrl=file\\:%s"));
         assertTrue(kotlin.contains("--no-daemon installDist"));
         assertTrue(kotlin.contains("-Xmx768m"));
         assertFalse(kotlin.contains("--offline"));
         assertTrue(advanced(AdvancedRuntimeKind.PHP, DeploymentBuildTool.COMPOSER_LOCKED, "8.3", "public",
                 "public/index.php", OptionalInt.of(8080)).contains("--no-plugins --no-scripts"));
-        assertTrue(advanced(AdvancedRuntimeKind.RUBY, DeploymentBuildTool.BUNDLER_LOCKED, "3.3.5", "bundle",
-                "config.ru", OptionalInt.of(8080)).contains("bundle install --jobs 1 --retry 0"));
+        String ruby = advanced(AdvancedRuntimeKind.RUBY, DeploymentBuildTool.BUNDLER_LOCKED, "3.3.5", "bundle",
+                "config.ru", OptionalInt.of(8080));
+        assertTrue(ruby.contains("bundle install --jobs 1 --retry 0"));
+        assertTrue(ruby.contains("require \"rack\"; require \"webrick\""));
     }
 
     @Test

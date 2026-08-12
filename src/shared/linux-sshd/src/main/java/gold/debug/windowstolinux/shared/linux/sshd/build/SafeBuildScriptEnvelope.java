@@ -58,6 +58,31 @@ final class SafeBuildScriptEnvelope {
                     exit "${statuses[0]}"
                   fi
                 }
+                retry_run() {
+                  local max_attempts="$1"
+                  local attempt=1
+                  shift
+                  while [ "$attempt" -le "$max_attempts" ]; do
+                    set +e
+                    setsid /usr/bin/timeout --signal=TERM %d "$@" 2>&1 | head -c %d > "$log"
+                    statuses=("${PIPESTATUS[@]}")
+                    set -e
+                    if [ "$(stat -c %%s "$log")" -ge %d ]; then
+                      printf 'BUILD_LIMIT=output\n'
+                      exit 43
+                    fi
+                    if [ "${statuses[0]}" -eq 0 ]; then
+                      return 0
+                    fi
+                    if [ "$attempt" -eq "$max_attempts" ]; then
+                      head -c %d -- "$log"
+                      exit "${statuses[0]}"
+                    fi
+                    printf 'BUILD_RETRY=%%d/%%d\n' "$attempt" "$max_attempts"
+                    attempt=$((attempt + 1))
+                    sleep 2
+                  done
+                }
                 %s
                 used=$(du -sb "$mutable" | awk '{print $1}')
                 if [ "$used" -gt %d ]; then
@@ -67,6 +92,7 @@ final class SafeBuildScriptEnvelope {
                 printf 'BUILD_TOOL=%s\n'
                 """.formatted(shellQuote(workspace.candidateRoot()), shellQuote(mutable), shellQuote(source),
                 shellQuote(workspace.sourceSha256()), limits.maxProcesses(), limits.maxMemoryMiB() * 1024L,
+                limits.timeoutSeconds(), limits.maxOutputBytes(), limits.maxOutputBytes(), limits.maxOutputBytes(),
                 limits.timeoutSeconds(), limits.maxOutputBytes(), limits.maxOutputBytes(), limits.maxOutputBytes(), command,
                 limits.maxWorkspaceBytes(), facts.buildTool().name());
     }

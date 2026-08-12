@@ -5,8 +5,8 @@ import gold.debug.windowstolinux.shared.model.project.AdvancedRuntimeKind;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.nio.file.LinkOption;
 import java.nio.file.Path;
-import java.nio.file.StandardCopyOption;
 
 /** Creates bounded source projects used by advanced-adapter live acceptance. / 创建高级适配器实时验收使用的有界源码项目。 */
 final class AdvancedAcceptanceFixtures {
@@ -171,7 +171,8 @@ final class AdvancedAcceptanceFixtures {
         write(root.resolve("gradle/wrapper/gradle-wrapper.properties"), """
                 distributionBase=GRADLE_USER_HOME
                 distributionPath=wrapper/dists
-                distributionUrl=https\\://services.gradle.org/distributions/gradle-8.10.2-bin.zip
+                distributionSha256Sum=31c55713e40233a8303827ceb42ca48a47267a0ad4bab9177123121e71524c26
+                distributionUrl=https\\://downloads.gradle.org/distributions/gradle-8.10.2-bin.zip
                 networkTimeout=30000
                 validateDistributionUrl=true
                 zipStoreBase=GRADLE_USER_HOME
@@ -179,7 +180,12 @@ final class AdvancedAcceptanceFixtures {
                 """);
         Path targetJar = root.resolve("gradle/wrapper/gradle-wrapper.jar");
         Files.createDirectories(targetJar.getParent());
-        Files.copy(wrapperJar, targetJar, StandardCopyOption.REPLACE_EXISTING);
+        if (Files.notExists(targetJar)) {
+            Files.copy(wrapperJar, targetJar);
+        } else if (!Files.isRegularFile(targetJar, LinkOption.NOFOLLOW_LINKS)
+                || Files.mismatch(wrapperJar, targetJar) != -1L) {
+            throw new IOException("existing Gradle wrapper JAR differs from the verified fixture input");
+        }
         write(root.resolve("src/main/kotlin/acceptance/Main.kt"), healthy ? """
                 package acceptance
 
@@ -230,23 +236,29 @@ final class AdvancedAcceptanceFixtures {
                 require dirname(__DIR__) . '/vendor/autoload.php';
                 header('Content-Type: text/plain');
                 echo '%s';
-                """.formatted(marker) : "<?php exit(36);\n");
+                """.formatted(marker) : "<?php http_response_code(503); echo 'unhealthy';\n");
     }
 
     private static void ruby(Path root, String version, String marker, boolean healthy) throws IOException {
         write(root.resolve(".ruby-version"), version + "\n");
-        write(root.resolve("Gemfile"), "source \"https://rubygems.org\"\ngem \"rack\", \"2.2.9\"\n");
+        write(root.resolve("Gemfile"), """
+                source "https://rubygems.org"
+                gem "rack", "2.2.9"
+                gem "webrick", "1.8.1"
+                """);
         write(root.resolve("Gemfile.lock"), """
                 GEM
                   remote: https://rubygems.org/
                   specs:
                     rack (2.2.9)
+                    webrick (1.8.1)
 
                 PLATFORMS
                   ruby
 
                 DEPENDENCIES
                   rack (= 2.2.9)
+                  webrick (= 1.8.1)
 
                 BUNDLED WITH
                    2.4.22
