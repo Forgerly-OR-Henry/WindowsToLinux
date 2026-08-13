@@ -154,18 +154,29 @@ class UbuntuTypedDeploymentAcceptanceIT {
 
     @Test
     void deploysDockerContainerThenRollsBackAndRestoresLifecycle() throws Exception {
-        int port = port(6);
-        String applicationId = applicationId("container");
+        exerciseContainer(DeploymentRuntimeSpecification.ContainerEngine.DOCKER, "docker", 6);
+    }
+
+    @Test
+    void deploysPodmanQuadletThenRollsBackAndRestoresLifecycle() throws Exception {
+        exerciseContainer(DeploymentRuntimeSpecification.ContainerEngine.PODMAN, "podman", 7);
+    }
+
+    private void exerciseContainer(DeploymentRuntimeSpecification.ContainerEngine engine, String kind, int portOffset)
+            throws Exception {
+        int port = port(portOffset);
+        String applicationId = applicationId(kind);
+        String marker = kind + "-live-v1";
         try (LiveTypedDeploymentContext context = new LiveTypedDeploymentContext(temporaryDirectory)) {
-            Path sourceRoot = TypedAcceptanceFixtures.container(temporaryDirectory.resolve("sources"), applicationId,
-                    true, "container-live-v1");
+            Path sourceRoot = TypedAcceptanceFixtures.container(temporaryDirectory.resolve("sources"), applicationId, true,
+                    marker);
             ReviewedSourcePreparation firstSource = context.prepare(sourceRoot,
                     DeploymentProjectType.DOCKERFILE_CONTAINER);
-            DeploymentRuntimeSpecification.Container runtime = containerRuntime(port);
+            DeploymentRuntimeSpecification.Container runtime = containerRuntime(engine, port);
             DeploymentResult first = context.deploy(firstSource, 1, runtimeConfiguration(port), List.of(), runtime,
                     access(port));
             assertSuccessful(first, applicationId);
-            assertHttp(port, "container-live-v1");
+            assertHttp(port, marker);
             verifyLifecycle(context, applicationId);
 
             TypedAcceptanceFixtures.container(temporaryDirectory.resolve("sources"), applicationId, false, "unused");
@@ -178,13 +189,14 @@ class UbuntuTypedDeploymentAcceptanceIT {
             LifecycleObservation restored = context.lifecycle(applicationId, LifecycleAction.REFRESH_STATUS);
             assertEquals(RuntimeState.RUNNING, restored.runtimeState());
             assertEquals(AutostartState.DISABLED, restored.autostartState());
-            assertHttp(port, "container-live-v1");
+            assertHttp(port, marker);
         }
-        verifyLifecycleAfterDesktopRestart(temporaryDirectory, applicationId, port, "container-live-v1");
+        verifyLifecycleAfterDesktopRestart(temporaryDirectory, applicationId, port, marker);
     }
 
-    private static DeploymentRuntimeSpecification.Container containerRuntime(int port) {
-        return new DeploymentRuntimeSpecification.Container(DeploymentRuntimeSpecification.ContainerEngine.DOCKER,
+    private static DeploymentRuntimeSpecification.Container containerRuntime(
+            DeploymentRuntimeSpecification.ContainerEngine engine, int port) {
+        return new DeploymentRuntimeSpecification.Container(engine,
                 Map.of(port, port), List.of(), health(port));
     }
 

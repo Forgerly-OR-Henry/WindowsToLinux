@@ -61,6 +61,8 @@ final class AptEnvironmentPreparationRenderer {
                 + """
                 command -v docker >/dev/null 2>&1
                 docker info >/dev/null 2>&1
+                command -v podman >/dev/null 2>&1
+                podman info >/dev/null 2>&1
                 """
                 + EnvironmentPreparationShellSupport.renderHelperInstallation(username)
                 + EnvironmentPreparationShellSupport.renderSecurityInvariant()

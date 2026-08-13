@@ -7,7 +7,7 @@ import java.util.List;
 final class PreparationPackageCatalog {
     static final List<String> APT_BASE = List.of(
             "openjdk-21-jdk-headless", "maven", "curl", "sudo", "tar", "gzip", "iproute2", "coreutils",
-            "util-linux", "findutils", "gawk", "nodejs", "npm", "python3", "python3-venv", "python3-pip", "docker.io"
+            "util-linux", "findutils", "gawk", "nodejs", "npm", "python3", "python3-venv", "python3-pip", "docker.io", "podman"
     );
     static final List<String> UBUNTU_2404_EXPERIMENTAL = List.of(
             "golang-go", "rustc", "cargo", "dotnet-sdk-8.0", "php-cli", "composer", "ruby", "ruby-bundler"

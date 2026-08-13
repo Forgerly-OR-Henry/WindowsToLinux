@@ -116,8 +116,8 @@ class SshdLinuxGatewayTest {
     @Test
     void sudoersGrantsOnlyTheConstrainedRootOwnedHelper() {
         assertEquals(List.of(
-                        "openjdk-21-jdk-headless", "maven", "curl", "sudo", "tar", "gzip", "iproute2", "coreutils",
-                        "util-linux", "findutils", "gawk", "nodejs", "npm", "python3", "python3-venv", "python3-pip", "docker.io"
+                "openjdk-21-jdk-headless", "maven", "curl", "sudo", "tar", "gzip", "iproute2", "coreutils",
+                        "util-linux", "findutils", "gawk", "nodejs", "npm", "python3", "python3-venv", "python3-pip", "docker.io", "podman"
                 ), UbuntuEnvironmentPreparation.PACKAGES);
         assertEquals("""
                 # Managed by WindowsToLinux managed deployment; only the constrained helper is granted.
@@ -187,6 +187,7 @@ class SshdLinuxGatewayTest {
         assertTrue(script.contains("composer --version"));
         assertTrue(script.contains("bundle --version"));
         assertTrue(script.contains("docker info >/dev/null 2>&1"));
+        assertTrue(script.contains("podman info >/dev/null 2>&1"));
         assertFalse(script.contains("command -v unzip"));
         assertTrue(script.contains("/usr/bin/install -o root -g root -m 440 \"$tmp\" '/etc/sudoers.d/windowstolinux-managed'"));
         assertTrue(script.contains("/usr/bin/install -o root -g root -m 755 \"$helper_tmp\" '/usr/local/lib/windowstolinux/managed-helper'"));
