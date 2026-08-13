@@ -2,6 +2,9 @@ package gold.debug.windowstolinux.app.main.bootstrap;
 
 import gold.debug.windowstolinux.app.service.DesktopApplicationService;
 import gold.debug.windowstolinux.app.service.source.ReviewedSourcePreparation;
+import gold.debug.windowstolinux.shared.config.definition.ConfigurationScope;
+import gold.debug.windowstolinux.shared.config.definition.ConfigurationValue;
+import gold.debug.windowstolinux.shared.config.revision.ConfigurationEntry;
 import gold.debug.windowstolinux.shared.config.revision.ConfigurationSnapshot;
 import gold.debug.windowstolinux.shared.deploy.plan.ReviewedDeploymentRequest;
 import gold.debug.windowstolinux.shared.model.deployment.BuildLimits;
@@ -38,8 +41,11 @@ final class ReviewedMavenAcceptanceSupport {
             boolean rootBuild
     ) throws Exception {
         String applicationId = preparation.assessment().facts().orElseThrow().applicationId();
+        long revision = CONFIGURATION_REVISION.incrementAndGet();
         ConfigurationSnapshot configuration = ConfigurationSnapshot.create(applicationId,
-                CONFIGURATION_REVISION.incrementAndGet(), "maven-acceptance-v1", Instant.now(), List.of());
+                revision, "maven-acceptance-v1", Instant.now(), List.of(new ConfigurationEntry(
+                "ACCEPTANCE_RUN_ID", ConfigurationScope.RUNTIME,
+                new ConfigurationValue.Text("maven-acceptance-" + revision))));
         service.saveDeploymentConfigurationSnapshot(configuration);
         return service.createReviewedDeploymentRequest(preparation, server, configuration, List.of(),
                 new DeploymentRuntimeSpecification.SpringBoot(health), userAccessUrl, limits, rootBuild, true, true);

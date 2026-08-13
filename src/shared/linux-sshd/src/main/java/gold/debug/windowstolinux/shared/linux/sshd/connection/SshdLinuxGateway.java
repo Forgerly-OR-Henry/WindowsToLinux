@@ -44,10 +44,12 @@ public final class SshdLinuxGateway implements DeploymentLinuxGateway {
         Objects.requireNonNull(hostKeyVerifier, "hostKeyVerifier");
         SshClient client = credentialScopedClient(credential);
         AtomicReference<String> observedFingerprint = new AtomicReference<>();
+        AtomicReference<HostKeyDecision> hostKeyDecision = new AtomicReference<>();
         client.setServerKeyVerifier((session, remote, key) -> {
             String fingerprint = fingerprint(key);
             observedFingerprint.set(fingerprint);
             HostKeyDecision decision = hostKeyVerifier.verify(endpoint, fingerprint);
+            hostKeyDecision.set(decision);
             return decision == HostKeyDecision.ACCEPT_FIRST_USE || decision == HostKeyDecision.ACCEPT_EXISTING;
         });
         try {
@@ -74,6 +76,12 @@ public final class SshdLinuxGateway implements DeploymentLinuxGateway {
             } catch (Exception exception) {
                 closeQuietly(client);
                 String fingerprint = observedFingerprint.get();
+                if (hostKeyDecision.get() == HostKeyDecision.REJECT && fingerprint != null) {
+                    throw LinuxOperationException.localized("linux.error.hostKeyRejected", Map.of(
+                            "fingerprint", fingerprint),
+                            "SSH host fingerprint was not accepted or the connection was rejected: " + fingerprint,
+                            exception);
+                }
                 String evidence = fingerprint == null ? "" : "; verified host fingerprint: " + fingerprint;
                 throw LinuxOperationException.localized("linux.error.authenticationFailed",
                         "SSH authentication failed; verify the SSH user, credential, and server authentication policy"
