@@ -2,10 +2,10 @@
 
 ## 文档信息
 
-- 阶段基线版本：`2.7.0-phase3-acceptance`
+- 阶段基线版本：`2.8.0-phase3-distribution-harness`
 - 文档结构版本：`2.0.0-roadmap-rebaseline`
 - 文档状态：**三期实现与 Ubuntu 24.04 x86-64 产品入口验收完成；六种高级语言保持试验级，新增发行版实机矩阵保持 `RUNTIME-PENDING`**
-- 当前实现：Go、Rust、.NET、Kotlin、PHP、Ruby 已接入固定试验链路，并通过目标机构建、发布、HTTP 健康、故障回滚、生命周期、秘密脱敏和桌面状态重启恢复；桌面多组件页已通过两组件整应用发布、组件故障整应用回滚、SQLite v7 图重载和依赖安全生命周期实机验收；三个 AI 角色使用独立 Provider/模型和安全冲突裁决；Debian、Rocky Linux、AlmaLinux、Oracle Linux 已具有独立识别、兼容策略与环境准备脚本，但未在不同系统实例上运行，不能据此声称实机支持
+- 当前实现：Go、Rust、.NET、Kotlin、PHP、Ruby 已接入固定试验链路，并通过目标机构建、发布、HTTP 健康、故障回滚、生命周期、秘密脱敏和桌面状态重启恢复；桌面多组件页已通过两组件整应用发布、组件故障整应用回滚、SQLite v7 图重载和依赖安全生命周期实机验收；三个 AI 角色使用独立 Provider/模型和安全冲突裁决；Debian、Rocky Linux、AlmaLinux、Oracle Linux 已具有独立识别、兼容策略、环境准备脚本及显式产品入口实机验收框架，但尚未在不同系统实例上运行，不能据此声称实机支持
 - 更新日期：2026-08-13
 - 上级文档：[开发总纲](../DEVELOPMENT.md)
 
@@ -152,6 +152,7 @@ Kotlin 夹具固定 Gradle 8.10.2 Wrapper、官方二进制分发 SHA-256 和官
 - EL10 系列可能存在 x86-64-v2/v3 差异，必须依据具体发行版官方要求和实际 CPU 检测决定。
 - 非 x86-64、停止维护版本或生命周期不明版本默认只做识别预览，除非用户另行确认适配范围。
 - AppArmor/SELinux、防火墙和包管理变化必须进入计划；禁止为求成功静默关闭安全机制。
+- `ManagedDistributionProductEntryAcceptanceIT` 仅在 `managed.runtime.distribution-acceptance=true` 时运行；每次必须给出无秘密的发行版、版本、包架构、CPU 基线与准备预期。它先采集精确身份和安全/防火墙事实，再经 `DesktopApplicationService → SshdLinuxGateway` 执行两次环境准备，复核 helper v3 与安全状态不变，最后复用两组件整应用发布、故障回滚和生命周期事务。AlmaLinux 10 的 x86-64-v2 目标只验证“自动准备被拒绝”，不进入发布成功路径。该框架不是实机证据，普通 Maven 验证不会连接服务器。
 
 ## 9. 实施顺序
 
@@ -192,12 +193,13 @@ Kotlin 夹具固定 Gradle 8.10.2 Wrapper、官方二进制分发 SHA-256 和官
 - [x] 多模型冲突不会未经确认转成执行，失败不静默跨服务；已由严格解析、单 Provider 调用和裁决器自动化证明。
 - [x] 三个角色上下文不含源码路径/内容或平台凭据，错误诊断在发送前脱敏并限长；已由负向测试证明。
 - [x] Debian/Rocky/Alma/Oracle 已按具体版本、软件包架构、累计 CPU 级别、安全机制、防火墙和容器事实完成独立静态策略/脚本验证，不套用 CentOS 结论。
-- [ ] Debian/Rocky/Alma/Oracle 仍需分别完成产品入口真实 Linux 构建、发布、回滚和生命周期验收，验收前保持 `RUNTIME-PENDING`。
+- [ ] Debian/Rocky/Alma/Oracle 已具有同一显式产品入口实机验收框架，仍需分别在真实 Linux 上完成构建、发布、回滚和生命周期验收；验收前保持 `RUNTIME-PENDING`。
 
 ## 12. 版本记录
 
 | 版本 | 日期 | 说明 |
 | --- | --- | --- |
+| 2.8.0-phase3-distribution-harness | 2026-08-13 | 抽取已验证的两组件产品入口事务为可复用夹具，新增精确非 Ubuntu 发行版验收入口：显式校验发行版/版本/包架构/CPU，准备两次并复核 helper v3、AppArmor/SELinux 与防火墙不变，然后执行发布、故障回滚和生命周期；AlmaLinux 10 x86-64-v2 固定为拒绝准备的负向用例。静态矩阵单元门禁通过，尚无新增发行版实机证据。 |
 | 2.7.0-phase3-acceptance | 2026-08-13 | 六种高级语言试验适配器在 Ubuntu 24.04 x86-64 上分别及联合通过产品入口构建、发布、HTTP、故障回滚、生命周期、秘密脱敏和客户端状态重启恢复；两组件整应用通过发布、组件故障整应用回滚、SQLite v7 图重载和生命周期。Kotlin 增加官方 SHA-256 约束与受管内容缓存，Windows SSH NIO2 关闭经过 12 次真实连接专用回归。新增发行版仍因不重装唯一授权服务器而保持实机 `RUNTIME-PENDING`。 |
 | 2.6.0-phase3-product-entry | 2026-08-13 | 接入独立桌面多组件页、产品服务边界、逐组件安全归档与审阅、整应用部署和生命周期；SQLite 升至 v7 并在成功事务中原子保存不含构建/秘密值的组件图，桌面重启后从持久图和目标机封存运行时标记恢复依赖安全生命周期。聚焦数据库、服务、UI 与结构门禁通过，真实多组件部署仍为 `RUNTIME-PENDING`。 |
 | 2.5.0-phase3-distribution-matrix | 2026-08-13 | 新增 Debian 13、Rocky 9.8/10.2、AlmaLinux 9.8/10.2 与 Oracle Linux 9/10 的独立分类、版本/包架构/累计 CPU/安全/防火墙/容器事实，按发行版拆分兼容策略和准备适配器；EL 自动准备要求 SELinux enforcing，Alma 10 x86-64-v2 保持单独 CPU 审阅，所有准备均验证既有安全状态未被关闭。静态聚焦门禁通过，发行版实机仍为 `RUNTIME-PENDING`。 |

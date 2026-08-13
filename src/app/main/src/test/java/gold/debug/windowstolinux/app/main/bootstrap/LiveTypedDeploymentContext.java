@@ -28,6 +28,7 @@ import gold.debug.windowstolinux.shared.model.lifecycle.LifecycleObservation;
 import gold.debug.windowstolinux.shared.model.project.DeploymentProjectType;
 import gold.debug.windowstolinux.shared.model.project.DeploymentRuntimeSpecification;
 import gold.debug.windowstolinux.shared.model.security.CredentialStorageMode;
+import gold.debug.windowstolinux.shared.model.deployment.EnvironmentPreparationResult;
 import gold.debug.windowstolinux.shared.model.server.ServerIdentity;
 import gold.debug.windowstolinux.shared.model.server.LinuxCapabilities;
 
@@ -63,8 +64,14 @@ final class LiveTypedDeploymentContext implements AutoCloseable {
         this.profile = new ServerProfile("typed-live", host, 22, username,
                 "ssh/typed-live/password", MODE);
         try {
-            service.saveServerProfile(profile, MODE, master(), sshPassword);
-            service.verifyServer(profile, MODE, master(), fingerprint -> true);
+            withMaster(master -> {
+                service.saveServerProfile(profile, MODE, master, sshPassword);
+                return null;
+            });
+            withMaster(master -> {
+                service.verifyServer(profile, MODE, master, fingerprint -> true);
+                return null;
+            });
             this.server = service.findTrustedServer(profile.id()).orElseThrow();
         } finally {
             Arrays.fill(sshPassword, '\0');
@@ -103,18 +110,24 @@ final class LiveTypedDeploymentContext implements AutoCloseable {
         for (MultiComponentReviewInput input : inputs) {
             service.saveDeploymentConfigurationSnapshot(input.configuration());
         }
-        return service.deployReviewedMultiComponentWithStoredPassword(review, profile, MODE, master(),
-                fingerprint -> true);
+        return withMaster(master -> service.deployReviewedMultiComponentWithStoredPassword(review, profile, MODE,
+                master, fingerprint -> true));
     }
 
     MultiComponentLifecycleResult lifecycleMulti(String applicationId, Set<String> componentIds,
                                                  LifecycleAction action) throws Exception {
-        return service.executeManagedMultiComponentLifecycleWithStoredPassword(applicationId, componentIds, action,
-                profile, MODE, master());
+        return withMaster(master -> service.executeManagedMultiComponentLifecycleWithStoredPassword(applicationId,
+                componentIds, action, profile, MODE, master));
     }
 
     LinuxCapabilities inspectDeploymentCapabilities() throws Exception {
-        return service.inspectDeploymentCapabilitiesWithStoredPassword(profile, MODE, master(), fingerprint -> true);
+        return withMaster(master -> service.inspectDeploymentCapabilitiesWithStoredPassword(profile, MODE, master,
+                fingerprint -> true));
+    }
+
+    EnvironmentPreparationResult prepareEnvironment() throws Exception {
+        return withMaster(master -> service.prepareEnvironmentWithStoredPassword(profile, MODE, master,
+                fingerprint -> true, true));
     }
 
     DeploymentResult deploy(ReviewedSourcePreparation preparation, long configurationRevision,
@@ -141,22 +154,41 @@ final class LiveTypedDeploymentContext implements AutoCloseable {
                 DeploymentStep.VERIFY_CONFIGURATION_SNAPSHOT, DeploymentStep.VERIFY_SECRET_REVISIONS,
                 DeploymentStep.CHECK_HEALTH,
                 DeploymentStep.ROLLBACK_ON_FAILURE)));
-        return service.deployReviewedWithStoredPassword(request, profile, MODE, master(), fingerprint -> true).result();
+        return withMaster(master -> service.deployReviewedWithStoredPassword(request, profile, MODE, master,
+                fingerprint -> true).result());
     }
 
     void saveSecret(SecretReference reference, String credentialKey, char[] value) throws Exception {
-        service.saveDeploymentSecretRevision(new StoredApplicationSecretRevision(reference, credentialKey, MODE,
-                Instant.now()), MODE, master(), value);
+        withMaster(master -> {
+            service.saveDeploymentSecretRevision(new StoredApplicationSecretRevision(reference, credentialKey, MODE,
+                    Instant.now()), MODE, master, value);
+            return null;
+        });
     }
 
     LifecycleObservation lifecycle(String applicationId, LifecycleAction action) throws Exception {
-        var result = service.executePersistedLifecycleResultWithStoredPassword(applicationId, action, master());
+        var result = withMaster(master -> service.executePersistedLifecycleResultWithStoredPassword(applicationId,
+                action, master));
         assertTrue(result.accepted(), () -> action + " was rejected: " + result);
         return result.observation().orElseThrow();
     }
 
     private char[] master() {
         return masterPassword.clone();
+    }
+
+    private <T> T withMaster(MasterOperation<T> operation) throws Exception {
+        char[] copiedMasterPassword = master();
+        try {
+            return operation.apply(copiedMasterPassword);
+        } finally {
+            Arrays.fill(copiedMasterPassword, '\0');
+        }
+    }
+
+    @FunctionalInterface
+    private interface MasterOperation<T> {
+        T apply(char[] copiedMasterPassword) throws Exception;
     }
 
     @Override
