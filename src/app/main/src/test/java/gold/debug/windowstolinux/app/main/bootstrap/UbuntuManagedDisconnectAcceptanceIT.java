@@ -63,7 +63,7 @@ class UbuntuManagedDisconnectAcceptanceIT {
         assertTrue(!"root".equals(username) || rootBuild,
                 "a root SSH session requires the explicit managed.root-build=true confirmation");
         assertTrue(password != null && !password.isBlank(), "WINDOWSTOLINUX_TEST_SSH_PASSWORD is required");
-        int proofPort = Integer.getInteger("managed.disconnect.port", 18085);
+        int proofPort = Integer.getInteger("managed.disconnect.port", 19096);
         Path v1 = Path.of(v1Property).toAbsolutePath().normalize();
         Path v2 = Path.of(v2Property).toAbsolutePath().normalize();
         assertTrue(Files.isDirectory(v1), "disconnect v1 source directory is required");

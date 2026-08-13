@@ -10,7 +10,7 @@
         <relativePath/>
     </parent>
     <groupId>gold.debug.windowstolinux.acceptance</groupId>
-    <artifactId>phase1-disconnect</artifactId>
+    <artifactId>phase1-disconnect-rerun</artifactId>
     <version>0.0.2-SNAPSHOT</version>
     <name>phase1-disconnect-v2</name>
     <description>Candidate used to exercise phase-one post-publish disconnect recovery.</description>

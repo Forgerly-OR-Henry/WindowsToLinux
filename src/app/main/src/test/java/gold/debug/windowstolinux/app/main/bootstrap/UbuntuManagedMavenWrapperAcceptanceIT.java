@@ -100,7 +100,7 @@ class UbuntuManagedMavenWrapperAcceptanceIT {
             assertDesktopCanAccess(accessUrl, "Phase One Wrapper Service");
             assertEvent(result, "source-upload", true);
             assertTrue(result.events().stream().anyMatch(event -> "remote-build".equals(event.step())
-                            && event.evidence().contains("Maven Wrapper")),
+                            && event.evidence().contains("MAVEN_WRAPPER")),
                     () -> "remote build must prove the fixed Wrapper route: " + result.events());
             assertEvent(result, "snapshot", true);
             assertEvent(result, "publish", true);

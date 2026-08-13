@@ -10,7 +10,7 @@
         <relativePath/>
     </parent>
     <groupId>gold.debug.phaseonefixture</groupId>
-    <artifactId>phase1-wrapper-rerun</artifactId>
+    <artifactId>phase1-wrapper-rerun2</artifactId>
     <version>0.0.1-SNAPSHOT</version>
     <properties>
         <java.version>21</java.version>
