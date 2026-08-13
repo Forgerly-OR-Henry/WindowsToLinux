@@ -1,8 +1,11 @@
 require_root
-require_deployer
 [ "$#" -ge 1 ] || reject verb
 verb="$1"
 shift
+case "$verb" in
+  podman-cni-forward|podman-cni-clear) ;;
+  *) require_deployer ;;
+esac
 case "$verb" in
   probe)
     [ "$#" -eq 0 ] || reject probe-arguments

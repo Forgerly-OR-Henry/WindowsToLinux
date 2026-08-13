@@ -46,6 +46,7 @@ class ContainerProtocolContractTest {
         assertTrue(helper.contains("ExecStartPost=/usr/local/lib/windowstolinux/managed-helper podman-cni-forward"));
         assertTrue(helper.contains("CNI-ADMIN"));
         assertTrue(helper.contains("iptables -w -I CNI-ADMIN"));
+        assertTrue(helper.contains("podman-cni-forward|podman-cni-clear) ;;"));
         assertFalse(helper.contains("systemctl enable \"windowstolinux-$app.service\""));
         assertFalse(helper.contains("systemctl disable \"windowstolinux-$app.service\""));
         assertFalse(helper.contains("--privileged"));
