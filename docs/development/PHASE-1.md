@@ -4,8 +4,8 @@
 
 - 阶段基线版本：`2.0.6-phase1-complete`
 - 文档结构版本：`2.0.6-phase1-complete`
-- 文档状态：**一期迁移前链路的 Ubuntu 24.04 验收作为历史证据保留；统一后的 Spring Boot Reviewed/helper v2 链路为 `RUNTIME-PENDING`**
-- 当前实现：一期能力已迁移到只接受类型化事实、Reviewed 来源和 Reviewed 请求的统一链路；Maven Wrapper、系统 Maven 与 Gradle Wrapper 由构建工具字段区分，本轮未执行真实 Ubuntu 部署
+- 文档状态：**一期迁移前链路的 Ubuntu 24.04 验收作为历史证据保留；统一后的 Spring Boot Reviewed/helper v3 链路已完成当前 Ubuntu 24.04 x86-64 产品入口验收**
+- 当前实现：一期能力已迁移到只接受类型化事实、Reviewed 来源和 Reviewed 请求的统一链路；Maven Wrapper、系统 Maven 与 Gradle Wrapper 由构建工具字段区分；当前 Ubuntu 验收只证明该精确目标，不外推到其他发行版
 - 更新日期：2026-08-13
 - 上级文档：[开发总纲](../DEVELOPMENT.md)
 
@@ -19,10 +19,11 @@
 
 ## 实施状态（2026-08-10）
 
-> 以下实机条目记录迁移前协议在 2026-08-10 的真实结果，不是统一 Spring Boot Reviewed/helper v2 链路的运行证明。新链路只完成本地实现与自动化验证，实机状态为 `RUNTIME-PENDING`。
+> 以下 2026-08-10 条目记录迁移前协议的真实结果，保留为历史证据。2026-08-13 已在同一精确 Ubuntu 24.04 x86-64 目标上，由当前 `DesktopApplicationService → SshdLinuxGateway → controlled helper v3` 完成统一 Reviewed 链路的独立产品入口验收；两类证据不得相互外推。
 
 - 已在 JDK 21 下通过完整 Maven reactor `verify`，并通过源码分析、固定 data 工作区归档、部署编排、生命周期、SQLite、凭据和桌面服务的自动化测试。
 - 已由一期程序在新装 Ubuntu 24.04 x86-64 上记录裸机基线（Java 21、Maven、sudo 均缺失），随后通过显式确认的产品环境准备入口安装并复核 OpenJDK 21、Maven、curl、sudo、tar/gzip 与受控辅助程序；第二次准备也完成幂等复核。环境准备不上传、构建或发布用户项目。
+- 当前统一链路已重新完成环境准备幂等性、复杂 Spring Boot 发布/HTTP 业务响应、启动/停止/重启、自启切换、首次失败恢复、已有版本回滚、断连恢复、启动与 TCP 健康、构建资源限制、归属安全、Maven Wrapper 及主机信任验收。所有远端动作均由产品入口发起；该结论只覆盖 Ubuntu 24.04 x86-64 和声明的验收夹具。
 - 已经由一期程序在 Ubuntu 24.04 实际完成能力检查、安全 `tar.gz` 上传/条目复核、Maven 与 Maven Wrapper 构建、短停机发布、HTTP 与 TCP 健康、首次失败清理、已有旧版回滚、发布后 SSH 断连恢复、启动失败、构建输出限制、受管归属漂移、主机指纹信任及完整生命周期演练。复杂 Spring Boot 与标准官方 `type=bin` Maven Wrapper 夹具均已在同一裸机目标机发布成功；所有真实部署均从桌面服务入口发起，未用人工 SSH/SFTP/systemd 操作替代。
 - 静态分析只把源码根目录中同时具备 `mvnw` 与 `.mvn/wrapper/maven-wrapper.properties` 的 Wrapper 视为 Ubuntu 构建入口；会拒绝已知 Hibernate/SQL 自动结构变更及超过读取上限的源码。归档使用可复现 `tar.gz`，并记录压缩及解压后体积；部署在创建候选目录前校验工作区上限，解包前验证条目路径、重复和类型。Linux 适配器恢复 Wrapper 可执行位、兼容 Spring Boot 2/3 启动器，并用 systemd 同一 `/usr/bin/java` 与发布前后 JAR 摘要复核。
 - 已通过现有前端 `typecheck`、Vitest 单元测试、生产构建和固定项目目录 Chromium Playwright 流程；未新增或扩展五期 Web 功能。
@@ -205,6 +206,7 @@
 
 | 版本 | 日期 | 说明 |
 | --- | --- | --- |
+| 2.0.8-reviewed-v3-ubuntu-acceptance | 2026-08-13 | 统一 Spring Boot Reviewed/helper v3 链路在 Ubuntu 24.04 x86-64 由产品入口重新完成环境准备、发布、失败恢复、回滚、生命周期、Wrapper、资源限制、归属安全和主机信任验收；其他发行版仍需独立实机证明。 |
 | 2.0.7-spring-boot-reviewed-migration | 2026-08-13 | 将一期 Maven 验收能力迁入统一 Reviewed API，并保留原实机证据的历史属性；新 helper v2 链路未连接目标机，标记 `RUNTIME-PENDING`。 |
 | 2.0.6-phase1-complete | 2026-08-10 | 在新装 Ubuntu 24.04 上由一期产品完成环境准备、复杂 Spring Boot 和 Maven Wrapper 发布；真实回滚、断连、启动/TCP、资源限制、归属、主机信任、生命周期及业务 URL 交付矩阵完成。 |
 | 2.0.5-phase1-runtime-partial | 2026-08-10 | 记录一期程序在 Ubuntu 24.04 的真实部署、失败恢复、安全与生命周期证据；复杂 Spring Boot 与标准 Maven Wrapper 成功路径因目标机 DNS 无法访问 Maven Central 而保留为 RUNTIME-PENDING。 |

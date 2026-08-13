@@ -61,6 +61,8 @@
 
 2026-08-13 在授权的全新 Ubuntu 24.04 x86-64 服务器上，六种试验适配器全部经 `DesktopApplicationService → SshdLinuxGateway → controlled helper v3` 产品入口完成健康版本发布、HTTP 响应、启停/重启、故障版本自动回滚、秘密脱敏和桌面状态库重启恢复。单项验收通过后又执行同一进程的六项联合回归，结果为 6/6、0 失败、0 错误、1184 秒。该证据只覆盖验收夹具声明的精确版本、构建工具、Ubuntu 24.04 和 x86-64，不把适配器升级为正式支持，也不外推到任意框架。
 
+同日，统一 Spring Boot Reviewed/helper v3 也在该产品入口完成环境准备幂等性、发布/HTTP 业务响应、首次失败恢复、旧版回滚、断连恢复、启动与 TCP 健康、构建资源限制、归属安全、Maven Wrapper、生命周期和主机信任验收；Podman Quadlet 完成部署、HTTP、回滚、生命周期与自启验收。它们同样仅证明该精确 Ubuntu 目标与验收夹具，不能替代 Debian、Rocky、Alma、Oracle、Ubuntu 22.04 或 CentOS Stream 的实机矩阵。
+
 Kotlin 夹具固定 Gradle 8.10.2 Wrapper、官方二进制分发 SHA-256 和官方分发域名；目标机下载受超时、重试、断点续传与内容校验约束，只有校验通过的内容寻址 ZIP 才进入加锁受管缓存。PHP 故障夹具返回 HTTP 503，Ruby 锁定 Rack/WEBrick 并显式启动公共监听，确保回滚由真实健康门触发。
 
 ## 4. 混合项目分析
@@ -201,6 +203,7 @@ Kotlin 夹具固定 Gradle 8.10.2 Wrapper、官方二进制分发 SHA-256 和官
 
 | 版本 | 日期 | 说明 |
 | --- | --- | --- |
+| 2.10.0-phase3-reviewed-ubuntu-acceptance | 2026-08-13 | 当前 helper v3 的统一 Spring Boot Reviewed 链路完成 Ubuntu 24.04 x86-64 产品入口环境准备、发布、恢复、回滚、生命周期、Wrapper、资源、归属与信任验收；Podman Quadlet 完成部署、HTTP、回滚、生命周期和自启验收。其他发行版矩阵不外推。 |
 | 2.9.0-phase3-ubuntu-fixture-regression | 2026-08-13 | 跨发行版复用夹具在原授权 Ubuntu 24.04 x86-64 上再次通过产品入口实机回归（1/1，206.2 秒）：验证两组件发布、故障候选整应用回滚、SQLite v7 图重载、生命周期与自启切换；服务保持运行且关闭自启动，服务器未重装。新增发行版仍无实机证据。 |
 | 2.8.0-phase3-distribution-harness | 2026-08-13 | 抽取已验证的两组件产品入口事务为可复用夹具，新增精确非 Ubuntu 发行版验收入口：显式校验发行版/版本/包架构/CPU，准备两次并复核 helper v3、AppArmor/SELinux 与防火墙不变，然后执行发布、故障回滚和生命周期；AlmaLinux 10 x86-64-v2 固定为拒绝准备的负向用例。静态矩阵单元门禁通过，尚无新增发行版实机证据。 |
 | 2.7.0-phase3-acceptance | 2026-08-13 | 六种高级语言试验适配器在 Ubuntu 24.04 x86-64 上分别及联合通过产品入口构建、发布、HTTP、故障回滚、生命周期、秘密脱敏和客户端状态重启恢复；两组件整应用通过发布、组件故障整应用回滚、SQLite v7 图重载和生命周期。Kotlin 增加官方 SHA-256 约束与受管内容缓存，Windows SSH NIO2 关闭经过 12 次真实连接专用回归。新增发行版仍因不重装唯一授权服务器而保持实机 `RUNTIME-PENDING`。 |

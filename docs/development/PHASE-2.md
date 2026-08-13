@@ -4,8 +4,8 @@
 
 - 阶段基线版本：`2.7.0-spring-boot-reviewed-convergence`
 - 文档结构版本：`2.0.0-roadmap-rebaseline`
-- 文档状态：**统一 Spring Boot Reviewed/helper v2 链路已完成本地实现；迁移前 Ubuntu 证据保留，新链路及其余主机矩阵待执行**
-- 当前实现：本地目录与无凭据网络 Git 来源均进入唯一 Reviewed 分析/计划路径；Spring Boot 由一个项目类型和三种固定构建工具入口表达，发布身份与 SQLite v5 已收敛；迁移前 Ubuntu 24.04 x86-64 证据不外推到新协议，新链路、Podman、Ubuntu 22.04 与 CentOS Stream 9/10 均为 `RUNTIME-PENDING`
+- 文档状态：**统一 Spring Boot Reviewed/helper v3 与 Podman Quadlet 已完成当前 Ubuntu 24.04 x86-64 产品入口验收；迁移前 Ubuntu 证据保留，其余主机矩阵待执行**
+- 当前实现：本地目录与无凭据网络 Git 来源均进入唯一 Reviewed 分析/计划路径；Spring Boot 由一个项目类型和三种固定构建工具入口表达，发布身份与 SQLite v5 已收敛；当前 Ubuntu 24.04 x86-64 证据不外推到 Ubuntu 22.04、CentOS Stream 9/10 或其他发行版，后者均为 `RUNTIME-PENDING`
 - 更新日期：2026-08-13
 - 上级文档：[开发总纲](../DEVELOPMENT.md)
 
@@ -28,8 +28,8 @@
 - 基础语言事实已统一进入 `DeploymentProjectFacts`：只从有界源码路径、JAR Manifest、`package.json`/`tsconfig`、`pyproject.toml` 和扩展名收集确定性证据，不读取任意二进制、不执行源码、不猜测主要语言。JavaScript 与 TypeScript 可同时显示，但不会自动拆成多组件，也不会替代用户显式项目类型选择。
 - Node 构建型静态站点不再具有隐藏默认版本：只有精确 `engines.node` 才能回填主版本，范围或缺失值必须由用户填写；纯静态站点不要求且不得携带 Node 主版本。
 - 2026-08-12 使用 JDK 21 执行 `mvn.cmd -B -ntp -o verify`，28 个 Maven 模块全部成功；本次生成的 44 份 Surefire 报告共 160 项测试，0 失败、0 错误、2 项因当前平台能力跳过。前端另行完成离线 `npm.cmd ci`、类型检查、Vitest（1 项）、生产构建和项目本地 Chromium Playwright（1 项）。`git diff --check`、生产源码期数命名与旧大类扫描、无隐藏 Node 20 默认值边界、435 个中英文消息键及非空值边界、包结构与 `File.md` 一致性、helper 固定 SHA-256 均通过。
-- 迁移前实机验收使用新装 Ubuntu 24.04 x86-64，并严格从当时的 `DesktopApplicationService` 与 Apache SSHD 网关进入：本地普通 JAR、Node.js、Python、纯静态站点、Dockerfile 容器，以及公开 Git 固定 Commit 的 Gradle Spring Boot 均完成分析、归档、目标机构建、发布、健康和远端观测。该证据不证明本次统一后的 Spring Boot Reviewed/helper v2 链路；新链路实机状态为 `RUNTIME-PENDING`。
-- 未执行 Podman、Ubuntu 22.04、CentOS Stream 9/10 或私有 Git 凭据验收；这些组合继续标记 `RUNTIME-PENDING`，不能从 Ubuntu 24.04/Docker 证据外推。
+- 迁移前实机验收使用新装 Ubuntu 24.04 x86-64，并严格从当时的 `DesktopApplicationService` 与 Apache SSHD 网关进入：本地普通 JAR、Node.js、Python、纯静态站点、Dockerfile 容器，以及公开 Git 固定 Commit 的 Gradle Spring Boot 均完成分析、归档、目标机构建、发布、健康和远端观测。该证据不证明后续统一链路。
+- 2026-08-13 当前产品入口在同一精确 Ubuntu 24.04 x86-64 目标完成统一 Spring Boot Reviewed/helper v3 的环境准备、发布、健康、失败恢复、回滚、生命周期、Wrapper、资源限制、归属安全和主机信任验收；Podman Quadlet 亦完成部署、HTTP、回滚、生命周期和自启验收。Ubuntu 22.04、CentOS Stream 9/10、私有 Git 凭据及其他发行版仍为 `RUNTIME-PENDING`，不能从该证据外推。
 
 ## 2. 支持矩阵
 
@@ -178,8 +178,8 @@ Git 输入包括仓库地址、凭据引用、分支/Tag/Commit、Submodule 和 
 - [x] 六个项目类型都有类型化静态分析、确定性计划、受控构建、快照、发布、健康、失败恢复和生命周期契约；桌面端可选择类型、提交受限运行时定义和非秘密配置，并先展示确定性计划；六种类型的本地事务、脚本/参数、UI 状态和消息映射测试已通过。
 - [x] Java、Node.js/JavaScript/TypeScript、Python 基础语言事实进入源码与部署模型，并可在中英文桌面摘要中显示；混合 JavaScript/TypeScript 不会升级为多组件分析。
 - [x] Node 构建型静态站点没有默认版本：精确版本可推导，范围或缺失版本要求人工填写，纯静态站点不要求 Node。
-- [~] 迁移前 Gradle Spring Boot、普通 JAR、Node、Python、静态站点和 Dockerfile 容器已在 Ubuntu 24.04 x86-64 由产品入口完成目标机端到端验收；统一 Spring Boot Reviewed/helper v2 链路仍为 `RUNTIME-PENDING`。
-- [~] Docker restart policy 已完成发布、回滚、自启与桌面持久化重开后的生命周期验收；Podman Quadlet 仍为 `RUNTIME-PENDING`。
+- [x] 迁移前 Gradle Spring Boot、普通 JAR、Node、Python、静态站点和 Dockerfile 容器已在 Ubuntu 24.04 x86-64 由产品入口完成目标机端到端验收；统一 Spring Boot Reviewed/helper v3 也已在该精确目标完成独立端到端验收。
+- [x] Docker restart policy 已完成发布、回滚、自启与桌面持久化重开后的生命周期验收；Podman Quadlet 也已在 Ubuntu 24.04 x86-64 完成部署、HTTP、回滚、生命周期与自启验收。
 - [x] 容器规格没有 privileged、Docker socket、host PID/IPC 或任意挂载字段，Docker 计划要求显式守护进程风险确认。
 - [x] 有界源码检查会拒绝 schema 脚本、迁移目录和 Flyway、Liquibase、Alembic、Prisma、Knex 等自动数据库变更信号；不可逆数据格式变更仍明确指向四期。
 
@@ -198,6 +198,7 @@ Git 输入包括仓库地址、凭据引用、分支/Tag/Commit、Submodule 和 
 
 | 版本 | 日期 | 说明 |
 | --- | --- | --- |
+| 2.7.1-reviewed-v3-podman-ubuntu-acceptance | 2026-08-13 | 统一 Spring Boot Reviewed/helper v3 与 Podman Quadlet 由产品入口在 Ubuntu 24.04 x86-64 完成独立验收；未运行的 Ubuntu、CentOS 与其他发行版矩阵仍为 `RUNTIME-PENDING`。 |
 | 2.7.0-spring-boot-reviewed-convergence | 2026-08-13 | 将 Maven/Gradle Spring Boot 统一为一个 Reviewed 项目类型和三个固定构建入口，接入 helper v2、发布身份 v2 与 SQLite v5；迁移前实机证据保留但不外推，新链路为 `RUNTIME-PENDING`。 |
 | 2.6.0-reviewed-runtime-acceptance | 2026-08-12 | 完成从用户选定本地/Git 源码、基础语言事实、审阅计划、不可变配置/秘密输入到完整部署的职责闭环；Ubuntu 24.04 x86-64 已实机验证六类项目、公开 Git 固定 Commit、代表性生命周期和失败回滚，未验收矩阵保持 `RUNTIME-PENDING`。 |
 | 2.5.0-responsibility-boundaries | 2026-08-12 | 补齐 Java、Node.js/JavaScript/TypeScript、Python 基础语言事实和中英文摘要；取消构建型静态站点的 Node 默认版本；按职责拆分分析、桌面页面、SQLite 仓库、Git 快照、六类构建、systemd 与 helper，并增加结构门禁。真实目标机验收仍为 `RUNTIME-PENDING`。 |

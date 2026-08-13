@@ -2,14 +2,14 @@
 
 ## 文档信息
 
-- 文档版本：`3.4.0-phase3-distribution-harness`
-- 文档状态：**正式模块与职责边界保持不变；三期实现及 Ubuntu 24.04 x86-64 高级语言/多组件产品入口验收完成，未运行矩阵保持 `RUNTIME-PENDING`**
+- 文档版本：`3.6.0-reviewed-ubuntu-acceptance`
+- 文档状态：**正式模块与职责边界保持不变；三期实现及当前 Ubuntu 24.04 x86-64 产品入口验收完成，未运行矩阵保持 `RUNTIME-PENDING`**
 - 已确认范围：`shared` 共用模块、`app` Windows 桌面应用模块、`web` Web 应用模块
 - 已确认能力边界：受管应用生命周期复用既有模块，不新增独立 Maven 模块
 - 更新日期：2026-08-13
 - 开发总纲：[DEVELOPMENT.md](DEVELOPMENT.md)
 
-> 本文是正式目标目录、模块职责、依赖方向和内部包结构的来源。当前 reactor 已包含根工程、3 个聚合模块和 24 个叶子模块，共 28 个 POM。`shared/source`、`shared/config`、`shared/git`、`shared/ai`、`shared/linux-sshd`、`analyze`、`deploy`、`app/db` 与 `app/service` 已承载对应代码；其中 `analyze/component` 和 `deploy` 已实现并实机验证两组件整应用事务与依赖安全生命周期，`shared/ai` 已实现三个固定协作角色及严格证据链，`shared/linux-sshd` 已实现十二类项目的有界协议以及六种发行版的独立探测与准备适配。`app/main` 的现有 `bootstrap` 测试职责内加入显式非 Ubuntu 产品入口验收夹具，不增加生产模块、远程契约或任意命令路径。`shared/backup` 和 Web Java 叶子模块仍只保留 POM。2026-08-10/12 的 Ubuntu 证据作为迁移前协议历史记录保留；2026-08-13 的 helper v3 证据覆盖六种高级语言试验适配器和两组件整应用，收敛后的 Spring Boot、其他发行版及未运行组合仍为 `RUNTIME-PENDING`。
+> 本文是正式目标目录、模块职责、依赖方向和内部包结构的来源。当前 reactor 已包含根工程、3 个聚合模块和 24 个叶子模块，共 28 个 POM。`shared/source`、`shared/config`、`shared/git`、`shared/ai`、`shared/linux-sshd`、`analyze`、`deploy`、`app/db` 与 `app/service` 已承载对应代码；其中 `analyze/component` 和 `deploy` 已实现并实机验证两组件整应用事务与依赖安全生命周期，`shared/ai` 已实现三个固定协作角色及严格证据链，`shared/linux-sshd` 已实现十二类项目的有界协议以及六种发行版的独立探测与准备适配。`app/main` 的现有 `bootstrap` 测试职责内加入显式非 Ubuntu 产品入口验收夹具，不增加生产模块、远程契约或任意命令路径。`shared/backup` 和 Web Java 叶子模块仍只保留 POM。2026-08-10/12 的 Ubuntu 证据作为迁移前协议历史记录保留；2026-08-13 的 helper v3 证据覆盖六种高级语言试验适配器、两组件整应用、统一 Spring Boot Reviewed 链路和 Podman Quadlet。该实机范围仅为 Ubuntu 24.04 x86-64 与验收夹具；其他发行版及未运行组合继续为 `RUNTIME-PENDING`。
 
 ## 1. 完整目标结构
 
@@ -625,6 +625,7 @@ linux-sshd 通过 linux 契约采集服务器已有环境
 
 | 版本 | 日期 | 说明 |
 | --- | --- | --- |
+| 3.6.0-reviewed-ubuntu-acceptance | 2026-08-13 | 同步当前 helper v3 的 Ubuntu 24.04 x86-64 产品入口证据：统一 Spring Boot Reviewed 链路与 Podman Quadlet 已完成声明的验收；不改变模块、包、协议或其他发行版 `RUNTIME-PENDING` 边界。 |
 | 3.5.0-phase3-ubuntu-fixture-regression | 2026-08-13 | 不改变模块、生产代码或依赖方向；已抽取的 `app/main` 两组件产品入口夹具在原授权 Ubuntu 24.04 x86-64 上经 `DesktopApplicationService` 与 SSHD 装配复跑通过（1/1，206.2 秒），再次覆盖发布、故障候选整应用回滚、SQLite v7 图重载、生命周期与自启切换。服务器未重装，应用保持运行且关闭自启动；新增发行版实机仍为 `RUNTIME-PENDING`。 |
 | 3.4.0-phase3-distribution-harness | 2026-08-13 | 不改变 28-POM、生产模块或依赖方向；在既有 `app/main` 测试 `bootstrap` 职责内抽取两组件整应用事务夹具并加入显式非 Ubuntu 发行版产品入口验收，复用现有 `DesktopApplicationService` 与 SSHD 装配，不新增手工 SSH、任意 Shell 或测试专用生产 API。 |
 | 3.3.0-phase3-acceptance | 2026-08-13 | 不改变 28-POM 或依赖方向；在既有 `linux-sshd/build` 中加入仅限官方域名和固定 SHA-256 的 Gradle 分发下载/受管缓存，在 `connection` 中加入 Windows NIO2 有界关闭排空。六种高级语言及两组件整应用已通过 Ubuntu 24.04 x86-64 产品入口验收，新增发行版因未重装唯一授权服务器而保持实机 `RUNTIME-PENDING`。 |
