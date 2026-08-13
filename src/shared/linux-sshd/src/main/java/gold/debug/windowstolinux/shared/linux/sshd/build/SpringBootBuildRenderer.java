@@ -43,7 +43,7 @@ public final class SpringBootBuildRenderer implements DeploymentBuildRenderer {
                 rm -rf -- "$manifest"
                 mkdir -p -- "$manifest"
                 (cd "$manifest" && jar xf "$artifact" META-INF/MANIFEST.MF)
-                grep -Eq '^Main-Class: org\\.springframework\\.boot\\.loader\\.(launch\\.)?JarLauncher\\r?$' "$manifest/META-INF/MANIFEST.MF"
+                tr -d '\\r' < "$manifest/META-INF/MANIFEST.MF" | grep -Eq '^Main-Class: org\\.springframework\\.boot\\.loader\\.(launch\\.)?JarLauncher$'
                 printf 'ARTIFACT=%%s\\n' "$artifact"
                 """.formatted(entry.outputDirectory()));
     }

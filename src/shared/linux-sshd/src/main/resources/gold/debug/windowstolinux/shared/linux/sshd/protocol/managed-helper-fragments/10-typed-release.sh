@@ -37,7 +37,7 @@ seal_deployment_tree() {
       [ "${#artifacts[@]}" -eq 1 ] || reject artifact-count
       manifest="$(mktemp -d "$mutable/.manifest.XXXXXX")"
       (cd "$manifest" && jar xf "${artifacts[0]}" META-INF/MANIFEST.MF)
-      grep -Eq '^Main-Class: org\.springframework\.boot\.loader\.(launch\.)?JarLauncher\r?$' "$manifest/META-INF/MANIFEST.MF" \
+      tr -d '\r' < "$manifest/META-INF/MANIFEST.MF" | grep -Eq '^Main-Class: org\.springframework\.boot\.loader\.(launch\.)?JarLauncher$' \
         || reject springboot-launcher
       rm -rf --one-file-system -- "$manifest"
       install -o root -g root -m 555 -- "${artifacts[0]}" "$release/app.jar"

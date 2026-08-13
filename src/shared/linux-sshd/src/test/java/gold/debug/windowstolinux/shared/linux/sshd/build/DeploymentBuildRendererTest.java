@@ -96,6 +96,7 @@ class DeploymentBuildRendererTest {
             assertTrue(script.contains("test \"${#artifacts[@]}\" -eq 1"));
             assertTrue(script.contains("! -name '*-plain.jar'"));
             assertTrue(script.contains("loader\\.(launch\\.)?JarLauncher"));
+            assertTrue(script.contains("tr -d '\\r'"));
             assertFalse(script.contains("PropertiesLauncher"));
             assertTrue(script.contains("source.tar.gz"));
             assertTrue(script.contains("tar --extract --gzip"));

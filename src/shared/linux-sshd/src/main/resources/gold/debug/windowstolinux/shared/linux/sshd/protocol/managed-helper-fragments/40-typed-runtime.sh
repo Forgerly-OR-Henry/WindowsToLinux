@@ -105,6 +105,15 @@ rollback_deployment_first() {
     printf 'ROLLED_BACK=1\n'
     return
   fi
+  if [ ! -e "$candidate/.windowstolinux-owner" ] && [ ! -L "$candidate/.windowstolinux-owner" ]; then
+    [ ! -e "$root/current" ] && [ ! -L "$root/current" ] || reject rollback-current
+    [ ! -e "$unit" ] && [ ! -L "$unit" ] || reject current-unit
+    assert_root_owned_directory "$candidate"
+    rm -rf --one-file-system -- "$candidate"
+    rmdir -- "$releases" "$root" 2>/dev/null || true
+    printf 'ROLLED_BACK=1\n'
+    return
+  fi
   assert_root_owned_directory "$candidate"; assert_root_owned_regular "$candidate/.windowstolinux-owner"
   [ "$(cat -- "$candidate/.windowstolinux-owner")" = "$manifest" ] || reject candidate-owner
   current_application="$app"; load_deployment_parameters "$candidate/.windowstolinux-deployment-parameters"
