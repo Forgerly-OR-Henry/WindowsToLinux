@@ -51,6 +51,7 @@ class UbuntuManagedAcceptanceIT {
     void deploysHelloWorldAndVerifiesTheManagedLifecycleOnUbuntu() throws Exception {
         String sourceProperty = System.getProperty("managed.hello.source");
         String accessUrlProperty = System.getProperty("managed.access.url");
+        String businessMarker = System.getProperty("managed.business.marker");
         String host = System.getProperty("managed.ssh.host");
         String username = System.getProperty("managed.ssh.user", "ubuntu");
         boolean rootBuild = Boolean.getBoolean("managed.root-build");
@@ -58,6 +59,7 @@ class UbuntuManagedAcceptanceIT {
         HealthCheck.Http health = httpHealth(System.getProperty("managed.health.url", "http://127.0.0.1:18080/actuator/health"));
         assertTrue(sourceProperty != null && !sourceProperty.isBlank(), "managed.hello.source is required");
         assertTrue(accessUrlProperty != null && !accessUrlProperty.isBlank(), "managed.access.url is required");
+        assertTrue(businessMarker != null && !businessMarker.isBlank(), "managed.business.marker is required");
         assertTrue(host != null && !host.isBlank(), "managed.ssh.host is required");
         assertTrue(username != null && !username.isBlank(), "managed.ssh.user is required");
         assertTrue(!"root".equals(username) || rootBuild,
@@ -96,7 +98,7 @@ class UbuntuManagedAcceptanceIT {
                     "managed-acceptance-master".toCharArray(), fingerprint -> true);
             assertEquals(DeploymentStatus.SUCCEEDED, deployed.status(), () -> deployed.events().toString());
             URI accessUrl = requireHttpAccessUrl(deployed, userAccessUrl.url());
-            assertDesktopCanAccess(accessUrl, "Phase One Quote Service");
+            assertDesktopCanAccess(accessUrl, businessMarker);
 
             LifecycleObservation refreshed = lifecycle(service, applicationId, LifecycleAction.REFRESH_STATUS);
             assertState(refreshed, RuntimeState.RUNNING, "初始状态查询必须确认已运行");
