@@ -84,7 +84,7 @@ container_current_release() {
   fi
 }
 start_container_release() {
-  local app="$1" release_digest="$2"
+  local app="$1" release_digest="$2" manifest="$3"
   local image name volume spec source destination mode config index secret secret_name secret_destination
   local -a args
   image="$(container_image "$app" "$release_digest")"; name="$(container_name "$app")"
@@ -128,11 +128,13 @@ start_container_release() {
         printf 'Volume=%s:%s:ro\nEnvironment=%s=%s\n' "$secret" "$secret_destination" "$secret_name" "$secret_destination"
         index=$((index + 1))
       done
+      printf '\n[Service]\nExecStartPost=/usr/local/lib/windowstolinux/managed-helper podman-cni-forward %s %s\n' "$app" "$manifest"
+      printf 'ExecStopPost=/usr/local/lib/windowstolinux/managed-helper podman-cni-clear %s %s\n' "$app" "$manifest"
     } > "$tmp"
     install -o root -g root -m 644 -- "$tmp" "$quadlet"
     rm -f -- "$tmp"; trap - EXIT
     set_podman_quadlet_autostart "$app" 1
-    systemctl start "$unit"
+    systemctl restart "$unit"
   fi
 }
 publish_container() {
@@ -159,7 +161,7 @@ publish_container() {
   chmod 444 -- "$release/.windowstolinux-owner" "$release/.windowstolinux-container-engine"
   save_container_parameters "$release/.windowstolinux-container-parameters"
   ln -sfnT -- "$release" "$root/current"
-  start_container_release "$app" "$release_digest"
+  start_container_release "$app" "$release_digest" "$manifest"
   printf 'PUBLISHED=1\n'
 }
 snapshot_container() {
@@ -210,7 +212,7 @@ rollback_container() {
   previous_runtime="$(cat -- "$snapshot/runtime")"; [ "$previous_runtime" = 0 ] || [ "$previous_runtime" = 1 ] || reject snapshot-runtime
   stop_container_runtime "$app"
   ln -sfnT -- "$previous" "$root/current"
-  start_container_release "$app" "$previous_digest"
+  start_container_release "$app" "$previous_digest" "$manifest"
   if [ "$(cat -- "$snapshot/autostart")" = no ]; then
     if [ "$container_engine" = docker ]; then "$container_engine" update --restart no "$(container_name "$app")" >/dev/null; else set_podman_quadlet_autostart "$app" 0; fi
   fi
@@ -244,6 +246,7 @@ rollback_container_first() {
   stop_container_runtime "$app"
   if [ "$container_engine" = docker ]; then "$container_engine" rm -f "$(container_name "$app")" >/dev/null 2>&1 || true; fi
   if [ "$container_engine" = podman ]; then
+    podman_cni_clear "$app" "$manifest"
     rm -f -- "$(podman_quadlet_path "$app")"
     rmdir -- "$(podman_quadlet_path "$app").d" 2>/dev/null || true
     systemctl daemon-reload

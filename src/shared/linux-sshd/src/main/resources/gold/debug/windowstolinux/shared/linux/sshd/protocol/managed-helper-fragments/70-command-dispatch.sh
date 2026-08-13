@@ -26,5 +26,7 @@ case "$verb" in
   rollback-container) rollback_container "$@" ;;
   rollback-container-first) rollback_container_first "$@" ;;
   lifecycle-container) lifecycle_container "$@" ;;
+  podman-cni-forward) podman_cni_forward "$@" ;;
+  podman-cni-clear) podman_cni_clear "$@" ;;
   *) reject verb ;;
 esac

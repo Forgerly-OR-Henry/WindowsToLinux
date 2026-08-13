@@ -42,6 +42,10 @@ class ContainerProtocolContractTest {
         assertTrue(helper.contains("update --restart unless-stopped"));
         assertTrue(helper.contains("set_podman_quadlet_autostart"));
         assertTrue(helper.contains("WantedBy=multi-user.target"));
+        assertTrue(helper.contains("podman-cni-forward) podman_cni_forward"));
+        assertTrue(helper.contains("ExecStartPost=/usr/local/lib/windowstolinux/managed-helper podman-cni-forward"));
+        assertTrue(helper.contains("CNI-ADMIN"));
+        assertTrue(helper.contains("iptables -w -I CNI-ADMIN"));
         assertFalse(helper.contains("systemctl enable \"windowstolinux-$app.service\""));
         assertFalse(helper.contains("systemctl disable \"windowstolinux-$app.service\""));
         assertFalse(helper.contains("--privileged"));
