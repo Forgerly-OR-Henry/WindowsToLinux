@@ -109,7 +109,7 @@ start_container_release() {
     "${args[@]}" >/dev/null
   else
     local quadlet tmp unit
-    quadlet="/etc/containers/systemd/windowstolinux-$app.container"; unit="windowstolinux-$app.service"
+    quadlet="$(podman_quadlet_path "$app")"; unit="windowstolinux-$app.service"
     install -d -o root -g root -m 755 -- /etc/containers/systemd
     tmp="$(mktemp /etc/containers/systemd/.windowstolinux-managed.XXXXXX)"
     trap 'rm -f -- "$tmp"' EXIT
@@ -128,12 +128,10 @@ start_container_release() {
         printf 'Volume=%s:%s:ro\nEnvironment=%s=%s\n' "$secret" "$secret_destination" "$secret_name" "$secret_destination"
         index=$((index + 1))
       done
-      printf '\n[Install]\nWantedBy=default.target\n'
     } > "$tmp"
     install -o root -g root -m 644 -- "$tmp" "$quadlet"
     rm -f -- "$tmp"; trap - EXIT
-    systemctl daemon-reload
-    systemctl enable "$unit"
+    set_podman_quadlet_autostart "$app" 1
     systemctl start "$unit"
   fi
 }
@@ -180,7 +178,7 @@ snapshot_container() {
   if [ "$container_engine" = docker ]; then
     autostart="$(docker inspect --format '{{.HostConfig.RestartPolicy.Name}}' "$(container_name "$app")" 2>/dev/null || true)"
   else
-    autostart="$(systemctl is-enabled "windowstolinux-$app.service" 2>/dev/null || true)"
+    if podman_quadlet_autostart_enabled "$app"; then autostart=enabled; else autostart=no; fi
   fi
   printf '%s\n' "$autostart" > "$snapshot/autostart"
   chown root:root -- "$snapshot/current-path" "$snapshot/runtime" "$snapshot/container-parameters" "$snapshot/autostart"
@@ -214,7 +212,7 @@ rollback_container() {
   ln -sfnT -- "$previous" "$root/current"
   start_container_release "$app" "$previous_digest"
   if [ "$(cat -- "$snapshot/autostart")" = no ]; then
-    if [ "$container_engine" = docker ]; then "$container_engine" update --restart no "$(container_name "$app")" >/dev/null; else systemctl disable "windowstolinux-$app.service"; fi
+    if [ "$container_engine" = docker ]; then "$container_engine" update --restart no "$(container_name "$app")" >/dev/null; else set_podman_quadlet_autostart "$app" 0; fi
   fi
   if [ "$previous_runtime" = 0 ]; then stop_container_runtime "$app"; fi
   if [ -e "$candidate" ] || [ -L "$candidate" ]; then
@@ -235,8 +233,8 @@ rollback_container_first() {
   if [ ! -e "$candidate" ] && [ ! -L "$candidate" ]; then
     [ ! -e "$root/current" ] && [ ! -L "$root/current" ] || reject rollback-current
     ! docker inspect "$(container_name "$app")" >/dev/null 2>&1 || reject current-container
-    [ ! -e "/etc/containers/systemd/windowstolinux-$app.container" ] \
-      && [ ! -L "/etc/containers/systemd/windowstolinux-$app.container" ] || reject current-container-unit
+    [ ! -e "$(podman_quadlet_path "$app")" ] \
+      && [ ! -L "$(podman_quadlet_path "$app")" ] || reject current-container-unit
     rmdir -- "$releases" "$root" 2>/dev/null || true
     printf 'ROLLED_BACK=1\n'
     return
@@ -246,7 +244,8 @@ rollback_container_first() {
   stop_container_runtime "$app"
   if [ "$container_engine" = docker ]; then "$container_engine" rm -f "$(container_name "$app")" >/dev/null 2>&1 || true; fi
   if [ "$container_engine" = podman ]; then
-    rm -f -- "/etc/containers/systemd/windowstolinux-$app.container"
+    rm -f -- "$(podman_quadlet_path "$app")"
+    rmdir -- "$(podman_quadlet_path "$app").d" 2>/dev/null || true
     systemctl daemon-reload
   fi
   if [ -e "$root/current" ] || [ -L "$root/current" ]; then rm -f -- "$root/current"; fi
@@ -272,10 +271,10 @@ lifecycle_container() {
       if [ "$container_engine" = docker ]; then docker restart "$(container_name "$app")" >/dev/null; else systemctl restart "windowstolinux-$app.service"; fi
       ;;
     enable)
-      if [ "$container_engine" = docker ]; then "$container_engine" update --restart unless-stopped "$(container_name "$app")" >/dev/null; else systemctl enable "windowstolinux-$app.service"; fi
+      if [ "$container_engine" = docker ]; then "$container_engine" update --restart unless-stopped "$(container_name "$app")" >/dev/null; else set_podman_quadlet_autostart "$app" 1; fi
       ;;
     disable)
-      if [ "$container_engine" = docker ]; then "$container_engine" update --restart no "$(container_name "$app")" >/dev/null; else systemctl disable "windowstolinux-$app.service"; fi
+      if [ "$container_engine" = docker ]; then "$container_engine" update --restart no "$(container_name "$app")" >/dev/null; else set_podman_quadlet_autostart "$app" 0; fi
       ;;
     *) reject lifecycle-action ;;
   esac

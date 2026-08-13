@@ -40,6 +40,10 @@ class ContainerProtocolContractTest {
         assertFalse(helper.contains("\\\\n"));
         assertTrue(helper.contains("Volume=%s:%s"));
         assertTrue(helper.contains("update --restart unless-stopped"));
+        assertTrue(helper.contains("set_podman_quadlet_autostart"));
+        assertTrue(helper.contains("WantedBy=multi-user.target"));
+        assertFalse(helper.contains("systemctl enable \"windowstolinux-$app.service\""));
+        assertFalse(helper.contains("systemctl disable \"windowstolinux-$app.service\""));
         assertFalse(helper.contains("--privileged"));
         assertFalse(helper.contains("/var/run/docker.sock"));
         assertFalse(helper.contains("--pid=host"));

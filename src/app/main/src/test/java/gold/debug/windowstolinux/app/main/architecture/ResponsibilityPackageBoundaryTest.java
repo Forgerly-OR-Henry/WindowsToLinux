@@ -41,7 +41,7 @@ class ResponsibilityPackageBoundaryTest {
             "ManagedApplicationGraphRepository.java", "RepositoryTransactions.java", "ServerProfileRepository.java");
     private static final Set<String> HELPER_FRAGMENTS = Set.of(
             "00-common.sh", "10-typed-release.sh", "15-deployment-input.sh", "20-candidate-workspace.sh", "30-ordinary-release.sh",
-            "35-advanced-runtime.sh", "40-typed-runtime.sh", "50-container-release.sh", "60-lifecycle.sh",
+            "35-advanced-runtime.sh", "40-typed-runtime.sh", "50-container-release.sh", "55-podman-quadlet.sh", "60-lifecycle.sh",
             "70-command-dispatch.sh");
     private static final Pattern PERIOD_NAME = Pattern.compile("(?i)(?:phase|stage)[-_]?[0-9]+|(?:一期|二期|三期|四期|五期)");
 

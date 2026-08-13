@@ -81,7 +81,8 @@ public final class ContainerRuntimeExecutor {
         String autostartCommand = runtimeEngine == DeploymentRuntimeSpecification.ContainerEngine.DOCKER
                 ? SshCommandExecutor.quote(engine) + " inspect --format '{{.HostConfig.RestartPolicy.Name}}' "
                 + SshCommandExecutor.quote(name) + " 2>/dev/null || true"
-                : "systemctl is-enabled " + SshCommandExecutor.quote(name + ".service") + " 2>/dev/null || true";
+                : "if test -f " + SshCommandExecutor.quote("/etc/containers/systemd/" + name
+                + ".container.d/10-windowstolinux-autostart.conf") + "; then printf enabled; else printf no; fi";
         String script = """
                 set -eu
                 owner=0
