@@ -39,6 +39,7 @@ class ManagedHelperBundleTest {
         assertTrue(helper.contains("printf '%s\\n' \"$previous_kind\" > \"$snapshot/kind\""));
         assertTrue(helper.contains("tr -d '\\r' < \"$manifest/META-INF/MANIFEST.MF\" | grep -Eq"));
         assertTrue(helper.contains("if [ ! -e \"$candidate/.windowstolinux-owner\" ] && [ ! -L \"$candidate/.windowstolinux-owner\" ]; then"));
+        assertTrue(helper.contains("[ ! -e \"$release/.windowstolinux-owner\" ] && [ ! -L \"$release/.windowstolinux-owner\" ] || reject release-exists"));
         assertTrue(helper.contains("ln -sfnT -- \"$previous\" \"$root/current\""));
         assertTrue(helper.contains("install -o root -g root -m 644 -- \"$snapshot/unit\" \"$unit\""));
         assertTrue(helper.contains("if [ \"$previous_runtime\" = active ]; then systemctl start"));

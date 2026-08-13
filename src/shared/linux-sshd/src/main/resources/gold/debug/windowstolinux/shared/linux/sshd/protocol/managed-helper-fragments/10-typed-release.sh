@@ -104,6 +104,13 @@ publish_deployment() {
   local root releases release unit tmp
   root="$(app_root "$app")"; releases="$root/releases"; release="$releases/$release_digest"; unit="$(unit_path "$app")"
   install -d -o root -g root -m 755 -- "$root" "$releases"
+  if [ -e "$release" ] || [ -L "$release" ]; then
+    [ ! -e "$root/current" ] && [ ! -L "$root/current" ] || reject release-exists
+    [ ! -e "$unit" ] && [ ! -L "$unit" ] || reject release-exists
+    assert_root_owned_directory "$release"
+    [ ! -e "$release/.windowstolinux-owner" ] && [ ! -L "$release/.windowstolinux-owner" ] || reject release-exists
+    rm -rf --one-file-system -- "$release"
+  fi
   [ ! -e "$release" ] && [ ! -L "$release" ] || reject release-exists
   seal_deployment_tree "$app" "$candidate_id" "$release" "$@"
   printf '%s\n' "$manifest" > "$release/.windowstolinux-owner"
