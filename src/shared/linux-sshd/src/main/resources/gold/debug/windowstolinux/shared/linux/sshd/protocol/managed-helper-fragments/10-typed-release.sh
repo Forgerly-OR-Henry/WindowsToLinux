@@ -103,6 +103,11 @@ publish_deployment() {
   assert_deployment_or_ordinary_current_or_empty "$app" "$manifest"
   local root releases release unit tmp
   root="$(app_root "$app")"; releases="$root/releases"; release="$releases/$release_digest"; unit="$(unit_path "$app")"
+  if [ "$previous_present" -eq 1 ] && [ "$previous_kind" = deployment ] \
+      && [ "$previous_path" = "$release" ] && [ "$previous_running" -eq 1 ]; then
+    printf 'PUBLISHED=1\n'
+    return
+  fi
   install -d -o root -g root -m 755 -- "$root" "$releases"
   if [ -e "$release" ] || [ -L "$release" ]; then
     [ ! -e "$root/current" ] && [ ! -L "$root/current" ] || reject release-exists
