@@ -96,7 +96,7 @@ class UbuntuManagedAcceptanceIT {
                     "managed-acceptance-master".toCharArray(), fingerprint -> true);
             assertEquals(DeploymentStatus.SUCCEEDED, deployed.status(), () -> deployed.events().toString());
             URI accessUrl = requireHttpAccessUrl(deployed, userAccessUrl.url());
-            assertDesktopCanAccess(accessUrl, "managed service Quote Service");
+            assertDesktopCanAccess(accessUrl, "Phase One Quote Service");
 
             LifecycleObservation refreshed = lifecycle(service, applicationId, LifecycleAction.REFRESH_STATUS);
             assertState(refreshed, RuntimeState.RUNNING, "初始状态查询必须确认已运行");
