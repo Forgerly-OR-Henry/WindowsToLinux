@@ -58,8 +58,9 @@ class UbuntuManagedOwnershipSafetyIT {
         Path source = Path.of(sourceProperty).toAbsolutePath().normalize();
         assertTrue(Files.isDirectory(source), "ownership safety source directory is required");
 
-        HealthCheck.Http health = new HealthCheck.Http(URI.create("http://127.0.0.1:19089/health"), 200, 20);
-        UserAccessUrl userAccessUrl = new UserAccessUrl(URI.create("http://" + host + ":19089/"));
+        int proofPort = Integer.getInteger("managed.ownership-safety.port", 19095);
+        HealthCheck.Http health = new HealthCheck.Http(URI.create("http://127.0.0.1:" + proofPort + "/health"), 200, 20);
+        UserAccessUrl userAccessUrl = new UserAccessUrl(URI.create("http://" + host + ":" + proofPort + "/"));
         try (DesktopPersistence database = DesktopPersistence.open(temporaryDirectory.resolve("desktop-data"))) {
             DesktopApplicationService service = new DesktopApplicationService(
                     database, temporaryDirectory.resolve("work"), new SshdLinuxGateway());
@@ -96,16 +97,14 @@ class UbuntuManagedOwnershipSafetyIT {
             ManagedApplication foreignClaim = ManagedApplication.forManaged(saved.id(), saved.server(), "f".repeat(64));
             LifecycleActionResult foreignRefresh = refresh(service, foreignClaim, health, profile);
             assertFalse(foreignRefresh.accepted(), foreignRefresh::toString);
-            assertTrue(foreignRefresh.observation().isPresent());
-            assertFalse(foreignRefresh.observation().orElseThrow().ownershipVerified());
-            assertEquals(RuntimeState.UNKNOWN, foreignRefresh.observation().orElseThrow().runtimeState());
+            assertTrue(foreignRefresh.observation().isEmpty(),
+                    "a controlled owner mismatch must not produce a live observation");
 
             ManagedApplication missing = ManagedApplication.forManaged("managed-ownership-missing", saved.server(), "e".repeat(64));
             LifecycleActionResult missingRefresh = refresh(service, missing, health, profile);
             assertFalse(missingRefresh.accepted(), missingRefresh::toString);
-            assertTrue(missingRefresh.observation().isPresent());
-            assertFalse(missingRefresh.observation().orElseThrow().ownershipVerified());
-            assertEquals(RuntimeState.UNKNOWN, missingRefresh.observation().orElseThrow().runtimeState());
+            assertTrue(missingRefresh.observation().isEmpty(),
+                    "a missing managed resource must not produce a live observation");
 
             ServerProfile unreachableProfile = new ServerProfile(profile.id(), host, 1, username,
                     profile.credentialKey(), CredentialStorageMode.MASTER_PASSWORD);

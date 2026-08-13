@@ -59,8 +59,9 @@ class UbuntuManagedBuildLimitAcceptanceIT {
         Path baseline = source(baselineProperty, "baseline source");
         Path failing = source(failingProperty, "failing source");
 
-        HealthCheck.Http health = new HealthCheck.Http(URI.create("http://127.0.0.1:19088/health"), 200, 30);
-        UserAccessUrl userAccessUrl = businessUrl(host, 19088);
+        int proofPort = Integer.getInteger("managed.build-limits.port", 19094);
+        HealthCheck.Http health = new HealthCheck.Http(URI.create("http://127.0.0.1:" + proofPort + "/health"), 200, 30);
+        UserAccessUrl userAccessUrl = businessUrl(host, proofPort);
         try (DesktopPersistence database = DesktopPersistence.open(temporaryDirectory.resolve("desktop-data"))) {
             DesktopApplicationService service = new DesktopApplicationService(
                     database, temporaryDirectory.resolve("work"), new SshdLinuxGateway());
@@ -106,7 +107,7 @@ class UbuntuManagedBuildLimitAcceptanceIT {
             assertEquals(DeploymentStatus.FAILED_BUILD, outputLimitFailure.status(), () -> outputLimitFailure.events().toString());
             assertEvent(outputLimitFailure, "remote-build", false);
             assertTrue(outputLimitFailure.events().stream().anyMatch(event -> event.step().equals("remote-build")
-                            && event.evidence().contains("输出超过")),
+                            && event.evidence().contains("Target build output exceeded the confirmed output limit")),
                     () -> "bounded output must be reported as a limit failure: " + outputLimitFailure.events());
             assertFalse(hasEvent(outputLimitFailure, "snapshot"), "output limit must stop before publication");
             assertBaselineStillRuns(service, baselineRequest, health, profile);

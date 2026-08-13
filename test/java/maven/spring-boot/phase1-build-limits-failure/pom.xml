@@ -5,7 +5,7 @@
     <modelVersion>4.0.0</modelVersion>
     <parent><groupId>org.springframework.boot</groupId><artifactId>spring-boot-starter-parent</artifactId><version>3.4.0</version><relativePath/></parent>
     <groupId>gold.debug.windowstolinux.acceptance</groupId>
-    <artifactId>phase1-build-limits-retry2</artifactId>
+    <artifactId>phase1-build-limits-retry3</artifactId>
     <version>0.0.2-SNAPSHOT</version>
     <name>phase1-build-limits-failure</name>
     <properties><java.version>21</java.version></properties>

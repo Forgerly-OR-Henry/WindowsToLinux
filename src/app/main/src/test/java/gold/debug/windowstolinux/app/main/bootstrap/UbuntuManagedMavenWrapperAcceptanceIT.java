@@ -65,7 +65,8 @@ class UbuntuManagedMavenWrapperAcceptanceIT {
         Path source = Path.of(sourceProperty).toAbsolutePath().normalize();
         assertTrue(Files.isDirectory(source), "Maven Wrapper source directory is required");
 
-        HealthCheck.Http health = new HealthCheck.Http(URI.create("http://127.0.0.1:19092/wrapper-health"), 200, 20);
+        int proofPort = Integer.getInteger("managed.wrapper.port", 19093);
+        HealthCheck.Http health = new HealthCheck.Http(URI.create("http://127.0.0.1:" + proofPort + "/wrapper-health"), 200, 20);
         UserAccessUrl userAccessUrl = new UserAccessUrl(URI.create(accessUrlProperty));
         try (DesktopPersistence database = DesktopPersistence.open(temporaryDirectory.resolve("desktop-data"))) {
             DesktopApplicationService service = new DesktopApplicationService(
@@ -96,7 +97,7 @@ class UbuntuManagedMavenWrapperAcceptanceIT {
                     "managed-wrapper-master".toCharArray(), fingerprint -> true);
             assertEquals(DeploymentStatus.SUCCEEDED, result.status(), () -> result.events().toString());
             URI accessUrl = requireHttpAccessUrl(result, userAccessUrl.url());
-            assertDesktopCanAccess(accessUrl, "managed service Wrapper Service");
+            assertDesktopCanAccess(accessUrl, "Phase One Wrapper Service");
             assertEvent(result, "source-upload", true);
             assertTrue(result.events().stream().anyMatch(event -> "remote-build".equals(event.step())
                             && event.evidence().contains("Maven Wrapper")),
