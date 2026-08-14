@@ -125,6 +125,10 @@ final class LiveTypedDeploymentContext implements AutoCloseable {
                 fingerprint -> true));
     }
 
+    ServerIdentity trustedServer() {
+        return server;
+    }
+
     EnvironmentPreparationResult prepareEnvironment() throws Exception {
         return withMaster(master -> service.prepareEnvironmentWithStoredPassword(profile, MODE, master,
                 fingerprint -> true, true));

@@ -20,5 +20,6 @@
         <dependency><groupId>gold.debug.windowstolinux</groupId><artifactId>windowstolinux-shared-backup</artifactId><version>${project.version}</version></dependency>
         <dependency><groupId>org.slf4j</groupId><artifactId>slf4j-nop</artifactId><version>${slf4j.version}</version></dependency>
         <dependency><groupId>org.junit.jupiter</groupId><artifactId>junit-jupiter</artifactId><scope>test</scope></dependency>
+        <dependency><groupId>org.apache.sshd</groupId><artifactId>sshd-core</artifactId><version>${sshd.version}</version><scope>test</scope></dependency>
     </dependencies>
 </project>
