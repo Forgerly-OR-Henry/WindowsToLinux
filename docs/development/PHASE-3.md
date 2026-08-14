@@ -2,10 +2,10 @@
 
 ## 文档信息
 
-- 阶段基线版本：`2.8.0-phase3-distribution-harness`
+- 阶段基线版本：`2.13.0-phase3-centos-stream-acceptance`
 - 文档结构版本：`2.0.0-roadmap-rebaseline`
-- 文档状态：**三期实现与 Ubuntu 24.04 x86-64 产品入口验收完成；CentOS Stream 9 已复验 SELinux Enforcing，但完整回归受目标 SSH 握手关闭阻断，其他发行版实机测试按当前范围延后**
-- 当前实现：Go、Rust、.NET、Kotlin、PHP、Ruby 已接入固定试验链路，并通过目标机构建、发布、HTTP 健康、故障回滚、生命周期、秘密脱敏和桌面状态重启恢复；桌面多组件页已通过两组件整应用发布、组件故障整应用回滚、SQLite v7 图重载和依赖安全生命周期实机验收；三个 AI 角色使用独立 Provider/模型和安全冲突裁决；CentOS Stream 9 已验证产品入口的精确识别与 SELinux Enforcing，但因目标关闭 SSH 握手尚无部署成功证据。Debian、Rocky Linux、AlmaLinux、Oracle Linux 的实机测试延后，不能据此声称实机支持
+- 文档状态：**三期实现与 Ubuntu 24.04 x86-64、CentOS Stream 9 x86-64 产品入口验收完成；其他发行版实机测试按当前范围延后**
+- 当前实现：Go、Rust、.NET、Kotlin、PHP、Ruby 已接入固定试验链路，并通过目标机构建、发布、HTTP 健康、故障回滚、生命周期、秘密脱敏和桌面状态重启恢复；桌面多组件页已通过两组件整应用发布、组件故障整应用回滚、SQLite v7 图重载和依赖安全生命周期实机验收；三个 AI 角色使用独立 Provider/模型和安全冲突裁决；CentOS Stream 9 已通过产品入口的两次环境准备、两组件发布、故障候选整应用回滚与生命周期验收，且 SELinux 与防火墙态均保持验收前观测值。Debian、Rocky Linux、AlmaLinux、Oracle Linux 的实机测试延后，不能据此声称实机支持
 - 更新日期：2026-08-14
 - 上级文档：[开发总纲](../DEVELOPMENT.md)
 
@@ -63,7 +63,7 @@
 
 同日，统一 Spring Boot Reviewed/helper v3 也在该产品入口完成环境准备幂等性、发布/HTTP 业务响应、首次失败恢复、旧版回滚、断连恢复、启动与 TCP 健康、构建资源限制、归属安全、Maven Wrapper、生命周期和主机信任验收；Podman Quadlet 完成部署、HTTP、回滚、生命周期与自启验收。它们同样仅证明该精确 Ubuntu 目标与验收夹具，不能替代 Debian、Rocky、Alma、Oracle、Ubuntu 22.04 或 CentOS Stream 的实机矩阵。
 
-2026-08-14 的新 CentOS Stream 9 目标经同一产品入口完成只读能力采集：x86-64-v3 与 DNF 均符合静态矩阵，但 SELinux 为 Disabled。采集器曾把省略 `VARIANT_ID` 的 Stream 9 镜像误判为 OTHER，现已修复并通过静态测试。精确发行版验收随后在调用环境准备前以 SELinux enforcing 前置条件安全停止；没有安装、上传、构建或发布。按当前范围，其余发行版实机测试延后，CentOS 完整部署验收需使用已启用 SELinux enforcing 的目标。
+2026-08-14 的 CentOS Stream 9 目标经同一产品入口完成只读能力采集、两次环境准备、两组件发布、故障候选整应用回滚、应用/数据库重启、启动/停止与自启切换验收。目标的 DNF、`x86_64`、x86-64-v3 与 SELinux Enforcing 均符合精确验收夹具；准备前后复核的 SELinux 和防火墙态保持不变。期间修复了省略 `VARIANT_ID` 的 Stream 9 镜像分类/准备缺口、已安装但规则集为空的 nftables 探测、包管理器默认 Java 版本不随 Java 21 安装切换，以及只读 SSH 采集的短暂传输超时。该证据仅覆盖本次精确 CentOS Stream 9 x86-64 夹具，不外推到 Stream 10 或其他发行版；其余发行版实机测试仍按当前范围延后。
 
 Kotlin 夹具固定 Gradle 8.10.2 Wrapper、官方二进制分发 SHA-256 和官方分发域名；目标机下载受超时、重试、断点续传与内容校验约束，只有校验通过的内容寻址 ZIP 才进入加锁受管缓存。PHP 故障夹具返回 HTTP 503，Ruby 锁定 Rack/WEBrick 并显式启动公共监听，确保回滚由真实健康门触发。
 
@@ -147,7 +147,7 @@ Kotlin 夹具固定 Gradle 8.10.2 Wrapper、官方二进制分发 SHA-256 和官
 
 | 发行版 | 静态适配版本 | 包与 CPU 前置条件 | 安全与容器证据 | 当前验证状态 |
 | --- | --- | --- | --- | --- |
-| CentOS Stream | 9、10 | DNF、`x86_64`；9 为 v1，10 为 v3 | 自动准备要求 SELinux enforcing，采集 firewalld 与 Podman | Stream 9 已完成只读产品入口探测；SELinux Disabled，准备前安全停止 |
+| CentOS Stream | 9、10 | DNF、`x86_64`；9 为 v1，10 为 v3 | 自动准备要求 SELinux enforcing，采集 firewalld 与 Podman | Stream 9 x86-64 已完成产品入口准备、发布、回滚、生命周期及安全态保持验收；Stream 10 仍为 `RUNTIME-PENDING` |
 | Debian | stable 13；点版本事实参考 13.6，`VERSION_ID=13` | APT、`amd64`、x86-64-v1 | 采集 AppArmor/防火墙；固定 Docker 准备 | 静态通过，实机 `RUNTIME-PENDING` |
 | Rocky Linux | 当前受维护小版本 9.8、10.2 | DNF、`x86_64`；9 为 v1，10 为 v3 | 自动准备要求 SELinux enforcing，采集 firewalld 与 Podman | 静态通过，实机 `RUNTIME-PENDING` |
 | AlmaLinux | 当前受维护小版本 9.8、10.2 | DNF；9 默认 v1；10 默认 `x86_64` 为 v3 | `x86_64_v2` 可识别但因第三方依赖边界仅返回 CPU 审阅，不自动准备；其余 EL 安全边界同上 | 静态通过，实机 `RUNTIME-PENDING` |
@@ -200,13 +200,14 @@ Kotlin 夹具固定 Gradle 8.10.2 Wrapper、官方二进制分发 SHA-256 和官
 - [x] 多模型冲突不会未经确认转成执行，失败不静默跨服务；已由严格解析、单 Provider 调用和裁决器自动化证明。
 - [x] 三个角色上下文不含源码路径/内容或平台凭据，错误诊断在发送前脱敏并限长；已由负向测试证明。
 - [x] Debian/Rocky/Alma/Oracle 已按具体版本、软件包架构、累计 CPU 级别、安全机制、防火墙和容器事实完成独立静态策略/脚本验证，不套用 CentOS 结论。
-- [~] CentOS Stream 9 已完成产品入口能力复验并正确识别省略 `VARIANT_ID` 的镜像；经授权测试环境引导后 SELinux 已 Enforcing，准备脚本的同一可选字段缺口已修复，但目标随后关闭 SSH 握手，完整验收仍待恢复远程 SSH 服务。
+- [x] CentOS Stream 9 x86-64 已通过产品入口的精确识别、两次准备、两组件发布、故障候选整应用回滚、生命周期和安全态保持验收；已修复省略 `VARIANT_ID`、空 nftables 规则集、Java 21 默认运行时与只读 SSH 短暂超时的运行路径技术债。
 - [~] Debian/Rocky/Alma/Oracle 具有同一显式产品入口实机验收框架；按当前范围延后至基础开发完成后统一测试，仍保持 `RUNTIME-PENDING`。
 
 ## 12. 版本记录
 
 | 版本 | 日期 | 说明 |
 | --- | --- | --- |
+| 2.13.0-phase3-centos-stream-acceptance | 2026-08-14 | CentOS Stream 9 x86-64 通过产品入口两次环境准备、两组件发布、故障候选整应用回滚、应用/数据库重启、生命周期与自启切换验收；SELinux 与防火墙态在准备前后保持观测值。修复空 nftables 规则集探测、包管理器 Java 21 默认运行时、可省略 `VARIANT_ID` 和只读 SSH 短暂超时；其他发行版仍不外推。 |
 | 2.12.0-phase3-centos-stream-recovery-blocked | 2026-08-14 | Stream 9 已由产品入口复验 SELinux Enforcing；修复准备脚本对可省略 `VARIANT_ID` 的遗留要求，并保留 APT/DNF 的无秘密失败阶段。目标随后在 SSH 密钥交换前关闭连接，未以手工发布替代，完整验收保持 `RUNTIME-PENDING`。 |
 | 2.11.0-phase3-centos-stream-safety-stop | 2026-08-14 | CentOS Stream 9 产品入口只读探测发现并修复省略 `VARIANT_ID` 时的分类技术债。目标 x86-64-v3 但 SELinux Disabled，精确验收在准备前安全停止，未执行安装或部署；其他发行版按当前范围延后。 |
 | 2.10.0-phase3-reviewed-ubuntu-acceptance | 2026-08-13 | 当前 helper v3 的统一 Spring Boot Reviewed 链路完成 Ubuntu 24.04 x86-64 产品入口环境准备、发布、恢复、回滚、生命周期、Wrapper、资源、归属与信任验收；Podman Quadlet 完成部署、HTTP、回滚、生命周期和自启验收。其他发行版矩阵不外推。 |

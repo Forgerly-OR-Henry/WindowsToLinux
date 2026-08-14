@@ -27,6 +27,8 @@ import java.util.stream.Collectors;
  * <p>部署主机只读能力契约的 Apache SSHD 实现。
  */
 public final class SshdPlatformCapabilityCollector implements LinuxPlatformCapabilityOperations {
+    private static final int READ_ONLY_ATTEMPTS = 3;
+    private static final Duration READ_ONLY_RETRY_DELAY = Duration.ofMillis(250);
     private final SshCommandExecutor commands;
     private final String hostFingerprint;
 
@@ -42,7 +44,7 @@ public final class SshdPlatformCapabilityCollector implements LinuxPlatformCapab
 
     @Override
     public LinuxCapabilities collectDeploymentCapabilities() throws LinuxOperationException {
-        var result = commands.exec(PlatformCapabilityProbeScript.render(), Duration.ofSeconds(20), true);
+        var result = collectReadOnly(PlatformCapabilityProbeScript.render());
         if (!result.succeeded()) {
             throw LinuxOperationException.localized("linux.error.deploymentCapabilityCollectionFailed",
                     "Failed to collect typed deployment target capabilities: " + result.failureEvidence());
@@ -94,6 +96,30 @@ public final class SshdPlatformCapabilityCollector implements LinuxPlatformCapab
                 javaMajors, nodeMajors, "1".equals(values.get("NPM")), "1".equals(values.get("MAVEN")), pythonVersions,
                 "1".equals(values.get("PYTHON3")), advancedVersions, "1".equals(values.get("DOCKER_OPERATIONAL")),
                 "1".equals(values.get("PODMAN_OPERATIONAL")), cpuLevel, flags, security, evidence);
+    }
+
+    private SshCommandExecutor.CommandResult collectReadOnly(String script) throws LinuxOperationException {
+        for (int attempt = 1; attempt <= READ_ONLY_ATTEMPTS; attempt++) {
+            try {
+                return commands.exec(script, Duration.ofSeconds(20), true);
+            } catch (LinuxOperationException failure) {
+                if (!SshCommandExecutor.isTransientTransportFailure(failure) || attempt == READ_ONLY_ATTEMPTS) {
+                    throw failure;
+                }
+                waitForRetry();
+            }
+        }
+        throw new IllegalStateException("read-only SSH retry loop completed without a result");
+    }
+
+    private static void waitForRetry() throws LinuxOperationException {
+        try {
+            Thread.sleep(READ_ONLY_RETRY_DELAY.toMillis());
+        } catch (InterruptedException exception) {
+            Thread.currentThread().interrupt();
+            throw LinuxOperationException.localized("linux.error.deploymentCapabilityCollectionFailed",
+                    "Read-only deployment capability collection retry was interrupted", exception);
+        }
     }
 
     private static Set<Integer> integerVersions(String value) {

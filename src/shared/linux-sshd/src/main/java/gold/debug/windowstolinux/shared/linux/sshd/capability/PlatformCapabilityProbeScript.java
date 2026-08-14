@@ -1,5 +1,7 @@
 package gold.debug.windowstolinux.shared.linux.sshd.capability;
 
+import gold.debug.windowstolinux.shared.linux.sshd.protocol.ManagedHelperBundle;
+
 /**
  * Fixed read-only shell program for collecting typed deployment distribution, container, and CPU facts.
  *
@@ -17,7 +19,7 @@ public final class PlatformCapabilityProbeScript {
      * @return fixed capability probe / 固定能力探测
      */
     public static String render() {
-        return """
+        return "managed_java=" + quote(ManagedHelperBundle.JAVA_RUNTIME_PATH) + "\n" + """
                 set -eu
                 export LC_ALL=C
                 . /etc/os-release
@@ -41,9 +43,9 @@ public final class PlatformCapabilityProbeScript {
                 else
                   printf 'PODMAN_QUADLET=0\\n'
                 fi
-                if command -v java >/dev/null 2>&1; then
+                if [ -x "$managed_java" ]; then
                   printf 'JAVA_MAJORS='
-                  java -XshowSettings:properties -version 2>&1 | awk -F= '/java.specification.version/ {gsub(/[[:space:]]/, "", $2); print $2; exit}'
+                  "$managed_java" -XshowSettings:properties -version 2>&1 | awk -F= '/java.specification.version/ {gsub(/[[:space:]]/, "", $2); print $2; exit}'
                 else
                   printf 'JAVA_MAJORS=\\n'
                 fi
@@ -127,11 +129,19 @@ public final class PlatformCapabilityProbeScript {
                   if systemctl is-active --quiet ufw 2>/dev/null; then printf 'FIREWALL_STATE=active\\n'; else printf 'FIREWALL_STATE=inactive\\n'; fi
                 elif command -v nft >/dev/null 2>&1; then
                   printf 'FIREWALL=nftables\\n'
-                  if systemctl is-active --quiet nftables 2>/dev/null; then printf 'FIREWALL_STATE=active\\n'; else printf 'FIREWALL_STATE=unknown\\n'; fi
+                  if nft_rules="$(nft list ruleset 2>/dev/null)"; then
+                    if [ -n "$nft_rules" ]; then printf 'FIREWALL_STATE=active\\n'; else printf 'FIREWALL_STATE=inactive\\n'; fi
+                  else
+                    printf 'FIREWALL_STATE=unknown\\n'
+                  fi
                 else
                   printf 'FIREWALL=none\\n'
                   printf 'FIREWALL_STATE=unknown\\n'
                 fi
                 """;
+    }
+
+    private static String quote(String value) {
+        return "'" + value.replace("'", "'\"'\"'") + "'";
     }
 }

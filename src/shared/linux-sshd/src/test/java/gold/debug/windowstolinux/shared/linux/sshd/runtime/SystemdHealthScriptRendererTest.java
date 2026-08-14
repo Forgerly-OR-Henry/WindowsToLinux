@@ -17,6 +17,7 @@ class SystemdHealthScriptRendererTest {
         assertTrue(script.contains("--property ControlGroup"));
         assertTrue(script.contains("/proc/$listener_pid/cgroup"));
         assertTrue(script.contains("unit_owns_port 'windowstolinux-node.service' 31234"));
+        assertTrue(script.contains("SYSTEMD_EXEC_MAIN_STATUS="));
         assertFalse(script.contains("grep -F \"pid=$pid\""));
     }
 
@@ -27,5 +28,6 @@ class SystemdHealthScriptRendererTest {
 
         assertTrue(script.contains("</dev/tcp/127.0.0.1/32123"));
         assertTrue(script.contains("unit_owns_port 'windowstolinux-python.service' 32123"));
+        assertTrue(script.contains("SYSTEMD_RESULT="));
     }
 }

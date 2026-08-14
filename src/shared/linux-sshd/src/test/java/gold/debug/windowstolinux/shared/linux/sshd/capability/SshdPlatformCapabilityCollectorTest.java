@@ -54,11 +54,25 @@ class SshdPlatformCapabilityCollectorTest {
         assertTrue(!PlatformCapabilityProbeScript.render().contains("printf(\"%%d.%%d\""));
         assertTrue(PlatformCapabilityProbeScript.render().contains("SECURITY_MODULE"));
         assertTrue(PlatformCapabilityProbeScript.render().contains("FIREWALL_STATE"));
+        assertTrue(PlatformCapabilityProbeScript.render().contains("nft list ruleset"));
+        assertTrue(PlatformCapabilityProbeScript.render().contains("managed_java='/usr/local/lib/windowstolinux/java-21'"));
+        assertTrue(PlatformCapabilityProbeScript.render().contains("\"$managed_java\" -XshowSettings:properties"));
         assertTrue(PlatformCapabilityProbeScript.render().contains("PACKAGE_ARCH"));
         assertTrue(PlatformCapabilityProbeScript.render().contains("CPU_LEVEL"));
         assertTrue(!PlatformCapabilityProbeScript.render().contains("setenforce"));
         assertTrue(!PlatformCapabilityProbeScript.render().contains("systemctl stop"));
         assertTrue(!PlatformCapabilityProbeScript.render().contains("systemctl disable"));
+    }
+
+    @Test
+    void parsesAnObservedInactiveNftablesRuleset() {
+        var capabilities = SshdPlatformCapabilityCollector.fromValues(Map.of(
+                "DISTRO_ID", "centos", "DISTRO_VARIANT", "", "VERSION", "9", "ARCH", "x86_64",
+                "PACKAGE_MANAGER", "dnf", "FIREWALL", "nftables", "FIREWALL_STATE", "inactive"),
+                "SHA256:fixture");
+
+        assertEquals(LinuxFirewallKind.NFTABLES, capabilities.securityPosture().firewall());
+        assertEquals(LinuxFirewallState.INACTIVE, capabilities.securityPosture().firewallState());
     }
 
     @Test

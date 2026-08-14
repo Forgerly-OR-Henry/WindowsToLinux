@@ -35,6 +35,8 @@ public final class SshdLinuxGateway implements DeploymentLinuxGateway {
     private static final Duration HEARTBEAT_INTERVAL = Duration.ofSeconds(30);
     private static final int HEARTBEAT_NO_REPLY_MAX = 3;
     private static final Duration CLOSE_TIMEOUT = Duration.ofSeconds(5);
+    private static final int TRANSIENT_CONNECTION_ATTEMPTS = 3;
+    private static final Duration TRANSIENT_RETRY_DELAY = Duration.ofMillis(250);
     private static final Duration WINDOWS_NIO2_COMPLETION_GRACE = Duration.ofMillis(500);
     @Override
     public DeploymentRemoteSession connect(SshEndpoint endpoint, SshCredential credential, HostKeyVerifier hostKeyVerifier)
@@ -42,6 +44,30 @@ public final class SshdLinuxGateway implements DeploymentLinuxGateway {
         Objects.requireNonNull(endpoint, "endpoint");
         Objects.requireNonNull(credential, "credential");
         Objects.requireNonNull(hostKeyVerifier, "hostKeyVerifier");
+        try {
+            for (int attempt = 1; attempt <= TRANSIENT_CONNECTION_ATTEMPTS; attempt++) {
+                try {
+                    return connectOnce(endpoint, credential, hostKeyVerifier);
+                } catch (LinuxOperationException exception) {
+                    if (!isTransientConnectionFailure(exception) || attempt == TRANSIENT_CONNECTION_ATTEMPTS
+                            || !waitForRetry()) {
+                        throw exception;
+                    }
+                }
+            }
+            throw new IllegalStateException("SSH retry loop completed without a result");
+        } finally {
+            if (credential instanceof SshCredential.Password password) {
+                password.clear();
+            }
+        }
+    }
+
+    private static DeploymentRemoteSession connectOnce(
+            SshEndpoint endpoint,
+            SshCredential credential,
+            HostKeyVerifier hostKeyVerifier
+    ) throws LinuxOperationException {
         SshClient client = credentialScopedClient(credential);
         AtomicReference<String> observedFingerprint = new AtomicReference<>();
         AtomicReference<HostKeyDecision> hostKeyDecision = new AtomicReference<>();
@@ -95,10 +121,20 @@ public final class SshdLinuxGateway implements DeploymentLinuxGateway {
             }
             throw LinuxOperationException.localized("linux.error.connectionFailed",
                     "Failed to establish the SSH connection", exception);
-        } finally {
-            if (credential instanceof SshCredential.Password password) {
-                password.clear();
-            }
+        }
+    }
+
+    static boolean isTransientConnectionFailure(LinuxOperationException failure) {
+        return SshCommandExecutor.isTransientTransportFailure(failure);
+    }
+
+    private static boolean waitForRetry() {
+        try {
+            Thread.sleep(TRANSIENT_RETRY_DELAY.toMillis());
+            return true;
+        } catch (InterruptedException exception) {
+            Thread.currentThread().interrupt();
+            return false;
         }
     }
 

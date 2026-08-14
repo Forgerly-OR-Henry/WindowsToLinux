@@ -28,6 +28,7 @@ import org.junit.jupiter.api.Test;
 import java.util.Arrays;
 import java.util.List;
 import java.time.Duration;
+import java.util.concurrent.TimeoutException;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -55,7 +56,7 @@ class SshdLinuxGatewayTest {
                 Type=simple
                 User=ubuntu
                 WorkingDirectory=/var/lib/windowstolinux/apps/managed-hello/current
-                ExecStart=/usr/bin/java -jar /var/lib/windowstolinux/apps/managed-hello/current/app.jar
+                ExecStart=/usr/local/lib/windowstolinux/java-21 -jar /var/lib/windowstolinux/apps/managed-hello/current/app.jar
                 Restart=on-failure
                 RestartSec=5
                 SuccessExitStatus=143
@@ -103,6 +104,28 @@ class SshdLinuxGatewayTest {
         } finally {
             Arrays.fill(remaining, '\0');
         }
+    }
+
+    @Test
+    void retriesOnlyTimeoutShapedConnectionFailures() {
+        LinuxOperationException timeout = LinuxOperationException.localized("linux.error.authenticationFailed",
+                "authentication timed out", new TimeoutException("timed out"));
+        LinuxOperationException rejected = LinuxOperationException.localized("linux.error.authenticationFailed",
+                "authentication rejected");
+
+        assertTrue(SshdLinuxGateway.isTransientConnectionFailure(timeout));
+        assertFalse(SshdLinuxGateway.isTransientConnectionFailure(rejected));
+    }
+
+    @Test
+    void recognizesOnlyTimeoutShapedTransportFailures() {
+        LinuxOperationException timeout = LinuxOperationException.localized("test", "fixture",
+                new java.util.concurrent.TimeoutException("fixture"));
+        LinuxOperationException other = LinuxOperationException.localized("test", "fixture",
+                new IllegalStateException("fixture"));
+
+        assertTrue(SshCommandExecutor.isTransientTransportFailure(timeout));
+        assertFalse(SshCommandExecutor.isTransientTransportFailure(other));
     }
 
     @Test
@@ -236,6 +259,13 @@ class SshdLinuxGatewayTest {
             assertTrue(mutation > script.indexOf("security_before=\"$(security_state)\""));
             assertTrue(script.contains("test \"$security_after\" = \"$security_before\""));
             assertTrue(script.contains("*:active) test \"$firewall_after\" = \"$firewall_before\""));
+            assertTrue(script.contains("nft list ruleset"));
+            assertTrue(script.contains("PREPARE_CHECK_FAILED"));
+            assertTrue(script.contains("prepare_check=java-command"));
+            assertTrue(script.contains("PREPARE_JAVA_VERSION"));
+            assertTrue(script.contains("java-21-openjdk*/bin/java"));
+            assertTrue(script.contains("/usr/local/lib/windowstolinux/java-21"));
+            assertFalse(script.contains("alternatives --set"));
             String preparationPath = script.substring(0, script.indexOf("\nhelper="));
             assertFalse(preparationPath.contains("setenforce"));
             assertFalse(preparationPath.contains("systemctl disable"));

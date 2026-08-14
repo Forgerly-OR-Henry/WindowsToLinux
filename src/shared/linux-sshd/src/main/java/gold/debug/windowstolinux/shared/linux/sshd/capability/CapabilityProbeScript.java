@@ -1,5 +1,7 @@
 package gold.debug.windowstolinux.shared.linux.sshd.capability;
 
+import gold.debug.windowstolinux.shared.linux.sshd.protocol.ManagedHelperBundle;
+
 import java.util.Objects;
 
 /**
@@ -21,13 +23,14 @@ public final class CapabilityProbeScript {
      * @throws NullPointerException if a required argument is {@code null} / 必要参数为 {@code null} 时
      */
     public static String render(String helperPath) {
-        return "managed_helper=" + quote(Objects.requireNonNull(helperPath, "helperPath")) + "\n" + """
+        return "managed_helper=" + quote(Objects.requireNonNull(helperPath, "helperPath")) + "\n"
+                + "managed_java=" + quote(ManagedHelperBundle.JAVA_RUNTIME_PATH) + "\n" + """
                 set -eu
                 . /etc/os-release
                 printf 'OS=%s %s\\n' "$NAME" "$VERSION_ID"
                 printf 'ARCH='; uname -m
                 if command -v systemctl >/dev/null 2>&1; then printf 'SYSTEMD=1\\n'; else printf 'SYSTEMD=0\\n'; fi
-                if /usr/bin/java -version 2>&1 | grep -q '"21\\.'; then printf 'JAVA21=1\\n'; else printf 'JAVA21=0\\n'; fi
+                if [ -x "$managed_java" ] && "$managed_java" -version 2>&1 | grep -Eq '(^|[^0-9])21[.]'; then printf 'JAVA21=1\\n'; else printf 'JAVA21=0\\n'; fi
                 if command -v mvn >/dev/null 2>&1; then printf 'MAVEN=1\\n'; else printf 'MAVEN=0\\n'; fi
                 if command -v tar >/dev/null 2>&1 && command -v gzip >/dev/null 2>&1; then printf 'TAR=1\\n'; else printf 'TAR=0\\n'; fi
                 if command -v curl >/dev/null 2>&1; then printf 'CURL=1\\n'; else printf 'CURL=0\\n'; fi

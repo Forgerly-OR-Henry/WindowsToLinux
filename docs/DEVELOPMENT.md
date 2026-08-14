@@ -4,12 +4,12 @@
 
 - 项目名称：WindowsToLinux
 - 文档角色：产品边界、五期路线、跨期规则与完整开发流程的唯一总入口
-- 文档版本：`2.15.0-centos-stream-recovery-blocked`
-- 文档状态：**当前 Ubuntu 24.04 x86-64 产品入口验收完成；CentOS Stream 9 已恢复 SELinux Enforcing，但目标 SSH 在准备回归中停止完成握手，完整验收受外部目标状态阻断**
+- 文档版本：`2.16.0-centos-stream-acceptance`
+- 文档状态：**当前 Ubuntu 24.04 x86-64 与 CentOS Stream 9 x86-64 产品入口验收完成；其他发行版实机测试按当前范围延后**
 - 更新日期：2026-08-14
 - 项目结构：[File.md](File.md)
 
-> 文档中的“支持”必须具有实现和验收证据。2026-08-10/12 已由产品入口在新装 Ubuntu 24.04 x86-64 上验证迁移前的一期 Maven/Spring Boot 以及二期 Gradle Spring Boot、普通 JAR、Node.js、Python、静态站点和 Dockerfile 容器链路，这些记录作为历史证据保留。2026-08-13 已由当前产品入口和 helper v3 验证六种高级语言试验适配器、两组件整应用事务、统一 Spring Boot Reviewed 链路及 Podman Quadlet；证据只覆盖验收夹具、Ubuntu 24.04 和 x86-64，不升级为未声明的框架或其他发行版支持。2026-08-14 的 CentOS Stream 9 目标经用户授权的测试环境引导后已由产品入口复验为 SELinux Enforcing；随后产品入口准备回归暴露并修复省略 `VARIANT_ID` 的准备脚本缺口，但目标开始在密钥交换阶段关闭 SSH。完整 CentOS 验收因此仍未完成，也不能作部署成功结论。按当前范围，Debian/Rocky/Alma/Oracle 实机测试延后；备份、迁移与 Web 业务尚未实现。
+> 文档中的“支持”必须具有实现和验收证据。2026-08-10/12 已由产品入口在新装 Ubuntu 24.04 x86-64 上验证迁移前的一期 Maven/Spring Boot 以及二期 Gradle Spring Boot、普通 JAR、Node.js、Python、静态站点和 Dockerfile 容器链路，这些记录作为历史证据保留。2026-08-13 已由当前产品入口和 helper v3 验证六种高级语言试验适配器、两组件整应用事务、统一 Spring Boot Reviewed 链路及 Podman Quadlet；证据只覆盖验收夹具、Ubuntu 24.04 和 x86-64，不升级为未声明的框架或其他发行版支持。2026-08-14 的 CentOS Stream 9 x86-64 目标已由当前产品入口完成两次环境准备、两组件发布、故障候选整应用回滚、应用/数据库重启、生命周期与自启切换；SELinux 和防火墙态均在准备前后复核为未改变。该证据仅覆盖精确夹具，不外推到 Stream 10 或其他发行版。按当前范围，Debian/Rocky/Alma/Oracle 实机测试延后；备份、迁移与 Web 业务尚未实现。
 
 ## 1. 产品定位
 
@@ -25,7 +25,7 @@ WindowsToLinux 是面向个人和小型自托管场景的部署管理工具。�
 | Java | Java 21；shared 与桌面代码已按职责分包；Spring Boot 只保留 Reviewed 类型化分析和部署链路 | 迁移前六类路径保留历史实机证据；统一 Spring Boot Reviewed/helper v3 已在 Ubuntu 24.04 x86-64 完成当前产品入口验收 |
 | Web 前端 | Vue 3、TypeScript、Vite、Vitest、Playwright 骨架 | 只可展示骨架页，尚无业务接口 |
 | 桌面/Web 业务 | Swing 已提供单组件与多组件独立页面，以及十二类项目的类型选择、静态分析、类型化计划审阅、已保存凭据提交、整应用结果和依赖安全生命周期；Web 业务未实现 | 桌面入口统一使用 Reviewed API；试验适配器每次请求都需确认专用测试环境；Web 不可部署或管理应用 |
-| Linux 运行验证 | 迁移前 Ubuntu 24.04 x86-64 已实际验证环境准备、六类二期构建发布及代表性生命周期；当前 helper v3 已验证六种高级语言、两组件整应用、统一 Spring Boot 与 Podman Quadlet；CentOS Stream 9 已由产品入口复验为 SELinux Enforcing | CentOS 的准备/发布/回滚/生命周期验收被目标 SSH 密钥交换关闭阻断，尚无部署成功证据；其他发行版实机测试按当前范围延后 |
+| Linux 运行验证 | 迁移前 Ubuntu 24.04 x86-64 已实际验证环境准备、六类二期构建发布及代表性生命周期；当前 helper v3 已验证六种高级语言、两组件整应用、统一 Spring Boot 与 Podman Quadlet；CentOS Stream 9 已由产品入口完成环境准备、发布、回滚和生命周期验收 | 证据仅适用于 Ubuntu 24.04 与 CentOS Stream 9 的精确 x86-64 夹具；其他发行版实机测试按当前范围延后 |
 | 三期支持分级 | 支持等级、精确目标验证范围、不可执行识别预览及 Go/Rust/.NET/Kotlin/PHP/Ruby 固定试验适配器已接入；helper v3 不接受任意命令 | 六种语言在 Ubuntu 24.04 x86-64 上分别和联合完成构建、发布、回滚、生命周期、秘密脱敏与状态重启恢复；仍只称试验适配，不外推框架/发行版支持 |
 | 三期混合项目与多组件 | 稳定组件清单、冲突/依赖环拦截、确定性依赖计划、整应用构建/快照/切换/健康/恢复事务、依赖安全生命周期及桌面产品入口已通过本地门禁和两组件实机验收；SQLite v7 原子保存成功图并支持重启后恢复 | Ubuntu 24.04 x86-64 已验证两组件发布、组件故障整应用回滚、图重载与生命周期；共享数据库迁移和跨服务器恢复不在三期范围 |
 | 三期多模型协作 | 三个固定角色可独立绑定命名 Provider/模型；最小上下文、严格结构化输出、输入摘要证据和确定性优先冲突裁决已接入 SQLite v6、服务与桌面配置页 | AI 仅为建议；失败不跨 Provider 回退，冲突不得自动转成执行授权 |
@@ -208,6 +208,7 @@ Playwright 浏览器固定保存在 `src/web/frontend/.playwright-browsers`，�
 
 | 版本 | 日期 | 阶段 | 状态 | 说明 |
 | --- | --- | --- | --- | --- |
+| 2.16.0-centos-stream-acceptance | 2026-08-14 | 二期至三期 | CentOS Stream 9 产品入口验收完成 | 精确 x86-64 夹具经两次环境准备后完成两组件发布、故障候选整应用回滚、应用/数据库重启、生命周期与自启切换；准备前后 SELinux 和防火墙态保持观测值。修复空 nftables 规则集识别、Java 21 默认运行时、可省略 `VARIANT_ID` 和只读 SSH 短暂超时；不外推到 Stream 10 或其他发行版。 |
 | 2.15.0-centos-stream-recovery-blocked | 2026-08-14 | 二期至三期 | CentOS 准备回归受目标 SSH 状态阻断 | 经用户授权的固定测试环境引导后，产品入口复验 Stream 9 为 SELinux Enforcing；同时清除省略 `VARIANT_ID` 时准备脚本仍拒绝目标的技术债，并让 APT/DNF 失败回传非秘密阶段及标准错误/输出。后续目标在密钥交换前主动关闭 SSH，未以手工部署替代，故完整验收和部署成功仍为 `RUNTIME-PENDING`。 |
 | 2.14.0-centos-stream-safety-stop | 2026-08-14 | 二期至三期 | CentOS Stream 9 只读探测完成；安全前置条件阻断部署 | 修复 CentOS Stream 9/10 镜像省略 `VARIANT_ID` 时被识别为 OTHER 的技术债；实际目标为 x86-64-v3，但 SELinux Disabled，产品入口在环境准备前安全停止，未安装、上传或发布。其他发行版实机测试按用户当前范围延后。 |
 | 2.13.0-reviewed-ubuntu-acceptance | 2026-08-13 | 一期至三期 | 当前 Ubuntu 24.04 x86-64 产品入口验收完成；其他发行版待验收 | 统一 Spring Boot Reviewed/helper v3 完成环境准备、发布、恢复、回滚、生命周期、Wrapper、资源、归属和信任验收；Podman Quadlet 完成部署、HTTP、回滚、生命周期与自启验收。 |

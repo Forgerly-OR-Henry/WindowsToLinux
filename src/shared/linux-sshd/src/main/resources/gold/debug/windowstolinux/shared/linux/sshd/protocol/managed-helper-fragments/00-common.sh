@@ -95,7 +95,7 @@ After=network.target
 Type=simple
 User=$deployer
 WorkingDirectory=$root/current
-ExecStart=/usr/bin/java -jar $root/current/app.jar
+ExecStart=/usr/local/lib/windowstolinux/java-21 -jar $root/current/app.jar
 Restart=on-failure
 RestartSec=5
 SuccessExitStatus=143
@@ -136,12 +136,12 @@ render_deployment_unit() {
   case "$kind" in
     gradle)
       [ "$#" -eq 0 ] || reject runtime-arguments
-      command="/usr/bin/java -jar $root/current/app.jar"
+      command="/usr/local/lib/windowstolinux/java-21 -jar $root/current/app.jar"
       ;;
     springboot)
       [ "$#" -eq 1 ] || reject runtime-arguments
       case "$1" in GRADLE_WRAPPER|MAVEN_WRAPPER|MAVEN) ;; *) reject springboot-build-tool ;; esac
-      command="/usr/bin/java -jar $root/current/app.jar"
+      command="/usr/local/lib/windowstolinux/java-21 -jar $root/current/app.jar"
       ;;
     java)
       [ "$#" -ge 4 ] || reject runtime-arguments
@@ -154,7 +154,7 @@ render_deployment_unit() {
       argument_count="$1"
       shift
       [ "$#" -ge "$argument_count" ] || reject runtime-arguments
-      command="/usr/bin/java"
+      command="/usr/local/lib/windowstolinux/java-21"
       while [ "$argument_count" -gt 0 ]; do
         argument="$1"
         require_safe_argument "$argument"

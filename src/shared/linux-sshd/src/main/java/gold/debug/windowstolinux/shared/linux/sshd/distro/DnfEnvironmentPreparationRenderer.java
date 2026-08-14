@@ -58,10 +58,13 @@ final class DnfEnvironmentPreparationRenderer {
                 + "prepare_stage=package-install\n"
                 + install
                 + "prepare_stage=post-install-checks\n"
+                + EnvironmentPreparationShellSupport.renderJava21RuntimeInstallation()
                 + renderCommonChecks()
                 + profile.runtimeProfile().renderChecks()
                 + """
+                prepare_check=podman-command
                 command -v podman >/dev/null 2>&1
+                prepare_check=podman-info
                 podman info >/dev/null 2>&1
                 """
                 + "prepare_stage=helper-installation\n"
@@ -79,15 +82,32 @@ final class DnfEnvironmentPreparationRenderer {
 
     private static String renderCommonChecks() {
         return """
-                /usr/bin/java -version 2>&1 | /usr/bin/grep -q '"21\\.'
+                prepare_check=java-command
+                test -x %s
+                prepare_check=java-version
+                java_version="$(%s -version 2>&1)"
+                prepare_check=java-21
+                printf 'PREPARE_JAVA_VERSION=%%s\\n' "$java_version"
+                printf '%%s\\n' "$java_version" | /usr/bin/grep -Eq '(^|[^0-9])21[.]'
+                prepare_check=maven-command
                 command -v mvn >/dev/null 2>&1
+                prepare_check=curl-command
                 command -v curl >/dev/null 2>&1
+                prepare_check=tar-command
                 command -v tar >/dev/null 2>&1
+                prepare_check=gzip-command
                 command -v gzip >/dev/null 2>&1
+                prepare_check=ss-command
                 command -v ss >/dev/null 2>&1
+                prepare_check=setsid-command
                 command -v setsid >/dev/null 2>&1
+                prepare_check=timeout-command
                 command -v timeout >/dev/null 2>&1
+                prepare_check=du-command
                 command -v du >/dev/null 2>&1
-                """;
+                """.formatted(EnvironmentPreparationShellSupport.quote(
+                gold.debug.windowstolinux.shared.linux.sshd.protocol.ManagedHelperBundle.JAVA_RUNTIME_PATH),
+                EnvironmentPreparationShellSupport.quote(
+                gold.debug.windowstolinux.shared.linux.sshd.protocol.ManagedHelperBundle.JAVA_RUNTIME_PATH));
     }
 }

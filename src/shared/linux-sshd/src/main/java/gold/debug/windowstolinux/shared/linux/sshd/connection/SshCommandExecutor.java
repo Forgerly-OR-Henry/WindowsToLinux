@@ -13,6 +13,7 @@ import java.time.Duration;
 import java.util.EnumSet;
 import java.util.Map;
 import java.util.Objects;
+import java.util.concurrent.TimeoutException;
 
 /**
  * Executes only implementation-owned, pre-rendered commands over an authenticated SSHD session.
@@ -169,6 +170,24 @@ public final class SshCommandExecutor {
      */
     public static String quote(String value) {
         return "'" + value.replace("'", "'\"'\"'") + "'";
+    }
+
+    /**
+     * Identifies a transport timeout that can be retried only by a caller whose command is known to be read-only.
+     *
+     * <p>识别仅可由已知命令为只读的调用方重试的传输超时。
+     *
+     * @param failure the controlled SSH failure / 受控 SSH 失败
+     * @return whether the causal chain contains a transport timeout / 因果链是否包含传输超时
+     */
+    public static boolean isTransientTransportFailure(LinuxOperationException failure) {
+        for (Throwable current = Objects.requireNonNull(failure, "failure"); current != null;
+             current = current.getCause()) {
+            if (current instanceof TimeoutException) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private static String sanitize(String text) {

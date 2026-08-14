@@ -1,6 +1,7 @@
 package gold.debug.windowstolinux.shared.linux.sshd.runtime;
 
 import gold.debug.windowstolinux.shared.model.managed.ManagedApplication;
+import gold.debug.windowstolinux.shared.linux.sshd.protocol.ManagedHelperBundle;
 
 import java.util.Objects;
 
@@ -10,7 +11,7 @@ import java.util.Objects;
  * <p>提供 {@code SystemdUnitRenderer} 实现。
  */
 public final class SystemdUnitRenderer {
-    private static final String JAVA_BINARY = "/usr/bin/java";
+    private static final String JAVA_BINARY = ManagedHelperBundle.JAVA_RUNTIME_PATH;
 
     private SystemdUnitRenderer() {
     }

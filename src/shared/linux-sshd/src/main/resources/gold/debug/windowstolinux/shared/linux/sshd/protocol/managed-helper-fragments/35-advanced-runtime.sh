@@ -29,7 +29,7 @@ render_advanced_runtime_command() {
       [ "$1" = 21 ] || reject kotlin-java-version
       require_safe_name "$2"
       require_java_main "$3"
-      advanced_runtime_command_result="/usr/bin/java -cp $root/current/source/.w2l/kotlin/lib/* $3"
+      advanced_runtime_command_result="/usr/local/lib/windowstolinux/java-21 -cp $root/current/source/.w2l/kotlin/lib/* $3"
       ;;
     php)
       [ "$#" -eq 4 ] || reject runtime-arguments

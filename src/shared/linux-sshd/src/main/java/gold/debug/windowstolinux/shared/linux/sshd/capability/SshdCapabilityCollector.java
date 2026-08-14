@@ -15,6 +15,8 @@ import java.util.Objects;
  * <p>提供 {@code SshdCapabilityCollector} 实现。
  */
 public final class SshdCapabilityCollector {
+    private static final int READ_ONLY_ATTEMPTS = 3;
+    private static final Duration READ_ONLY_RETRY_DELAY = Duration.ofMillis(250);
     private final SshCommandExecutor commands;
     private final String hostFingerprint;
 
@@ -41,8 +43,7 @@ public final class SshdCapabilityCollector {
      * @throws LinuxOperationException if the operation cannot be completed / 无法完成操作时
      */
     public ServerCapabilities collect() throws LinuxOperationException {
-        var result = commands.exec(CapabilityProbeScript.render(ManagedHelperBundle.PATH),
-                Duration.ofSeconds(20), true);
+        var result = collectReadOnly(CapabilityProbeScript.render(ManagedHelperBundle.PATH));
         if (!result.succeeded()) {
             throw LinuxOperationException.localized("linux.error.capabilityCollectionFailed",
                     "Failed to collect target capabilities: " + result.failureEvidence());
@@ -67,5 +68,29 @@ public final class SshdCapabilityCollector {
 
     private static int protocolVersion(String value) {
         return value != null && value.matches("[0-9]{1,3}") ? Integer.parseInt(value) : 0;
+    }
+
+    private SshCommandExecutor.CommandResult collectReadOnly(String script) throws LinuxOperationException {
+        for (int attempt = 1; attempt <= READ_ONLY_ATTEMPTS; attempt++) {
+            try {
+                return commands.exec(script, Duration.ofSeconds(20), true);
+            } catch (LinuxOperationException failure) {
+                if (!SshCommandExecutor.isTransientTransportFailure(failure) || attempt == READ_ONLY_ATTEMPTS) {
+                    throw failure;
+                }
+                waitForRetry();
+            }
+        }
+        throw new IllegalStateException("read-only SSH retry loop completed without a result");
+    }
+
+    private static void waitForRetry() throws LinuxOperationException {
+        try {
+            Thread.sleep(READ_ONLY_RETRY_DELAY.toMillis());
+        } catch (InterruptedException exception) {
+            Thread.currentThread().interrupt();
+            throw LinuxOperationException.localized("linux.error.capabilityCollectionFailed",
+                    "Read-only capability collection retry was interrupted", exception);
+        }
     }
 }

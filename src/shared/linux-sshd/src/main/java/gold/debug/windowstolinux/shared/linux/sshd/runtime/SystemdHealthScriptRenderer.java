@@ -41,11 +41,15 @@ final class SystemdHealthScriptRenderer {
                       printf 'LAST_PID=%%s\n' "$last_pid"
                       printf 'LAST_HTTP_STATUS=%%s\n' "$last_status"
                       printf 'SYSTEMD_STATE='; systemctl is-active %s 2>/dev/null || true
+                      printf 'SYSTEMD_RESULT='; systemctl show --value --property Result %s 2>/dev/null || true
+                      printf 'SYSTEMD_EXEC_MAIN_CODE='; systemctl show --value --property ExecMainCode %s 2>/dev/null || true
+                      printf 'SYSTEMD_EXEC_MAIN_STATUS='; systemctl show --value --property ExecMainStatus %s 2>/dev/null || true
                       exit 1
                     fi
                     """.formatted(http.timeoutSeconds(), quotedUnit,
                     SshCommandExecutor.quote(http.endpoint().toASCIIString()),
-                    SshCommandExecutor.quote(Integer.toString(http.expectedStatus())), quotedUnit, port, quotedUnit);
+                    SshCommandExecutor.quote(Integer.toString(http.expectedStatus())), quotedUnit, port,
+                    quotedUnit, quotedUnit, quotedUnit, quotedUnit);
         }
         if (healthCheck instanceof HealthCheck.Tcp tcp) {
             return listenerOwnershipFunction() + "\n" + """
@@ -72,10 +76,13 @@ final class SystemdHealthScriptRenderer {
                     else
                       printf 'LAST_PID=%%s\n' "$last_pid"
                       printf 'SYSTEMD_STATE='; systemctl is-active %s 2>/dev/null || true
+                      printf 'SYSTEMD_RESULT='; systemctl show --value --property Result %s 2>/dev/null || true
+                      printf 'SYSTEMD_EXEC_MAIN_CODE='; systemctl show --value --property ExecMainCode %s 2>/dev/null || true
+                      printf 'SYSTEMD_EXEC_MAIN_STATUS='; systemctl show --value --property ExecMainStatus %s 2>/dev/null || true
                       exit 1
                     fi
                     """.formatted(tcp.timeoutSeconds(), quotedUnit, tcp.port(), quotedUnit, tcp.port(),
-                    tcp.stabilitySeconds(), quotedUnit, quotedUnit);
+                    tcp.stabilitySeconds(), quotedUnit, quotedUnit, quotedUnit, quotedUnit, quotedUnit);
         }
         throw new IllegalArgumentException("Unsupported health-check type");
     }

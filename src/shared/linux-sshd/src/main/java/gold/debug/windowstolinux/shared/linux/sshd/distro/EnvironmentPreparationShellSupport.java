@@ -50,7 +50,12 @@ final class EnvironmentPreparationShellSupport {
     static String renderStageDiagnostics() {
         return """
                 prepare_stage=preflight
-                trap 'status=$?; if [ "$status" -ne 0 ]; then printf "PREPARE_STAGE_FAILED=%s\\n" "$prepare_stage"; fi' EXIT
+                prepare_check=none
+                cleanup_files=
+                cleanup() {
+                  for cleanup_file in $cleanup_files; do /usr/bin/rm -f -- "$cleanup_file"; done
+                }
+                trap 'status=$?; if [ "$status" -ne 0 ]; then printf "PREPARE_STAGE_FAILED=%s\\n" "$prepare_stage"; printf "PREPARE_CHECK_FAILED=%s\\n" "$prepare_check"; fi; cleanup; exit "$status"' EXIT
                 """;
     }
 
@@ -63,12 +68,20 @@ final class EnvironmentPreparationShellSupport {
                   else printf 'none'; fi
                 }
                 firewall_state() {
-                  for service in firewalld ufw nftables; do
+                  for service in firewalld ufw; do
                     if systemctl list-unit-files "$service.service" --no-legend 2>/dev/null | grep -q "$service.service"; then
                       printf '%s:' "$service"; systemctl is-active "$service" 2>/dev/null || :
                       return
                     fi
                   done
+                  if command -v nft >/dev/null 2>&1; then
+                    if nft_rules="$(nft list ruleset 2>/dev/null)"; then
+                      if [ -n "$nft_rules" ]; then printf 'nftables:active'; else printf 'nftables:inactive'; fi
+                    else
+                      printf 'nftables:unknown'
+                    fi
+                    return
+                  fi
                   printf 'none'
                 }
                 security_before="$(security_state)"
@@ -97,7 +110,7 @@ final class EnvironmentPreparationShellSupport {
         return """
                 tmp=$(/usr/bin/mktemp /tmp/windowstolinux-managed-sudoers.XXXXXX)
                 helper_tmp=$(/usr/bin/mktemp /tmp/windowstolinux-managed-helper.XXXXXX)
-                trap '/usr/bin/rm -f -- "$tmp" "$helper_tmp"' EXIT
+                cleanup_files="$cleanup_files $tmp $helper_tmp"
                 sudoers=%s
                 helper=%s
                 printf '%%s' "$sudoers" > "$tmp"
@@ -120,6 +133,31 @@ final class EnvironmentPreparationShellSupport {
                 quote(ManagedHelperBundle.PATH), quote(SUDOERS_PATH), quote(ManagedHelperBundle.DIRECTORY),
                 quote(ManagedHelperBundle.PATH), quote(SUDOERS_PATH), quote(ManagedHelperBundle.PATH),
                 ManagedHelperBundle.PROTOCOL_VERSION);
+    }
+
+    static String renderJava21RuntimeInstallation() {
+        return """
+                prepare_check=java-21-runtime
+                java_runtime=
+                for candidate in /usr/lib/jvm/java-21-openjdk*/bin/java /usr/lib/jvm/jre-21-openjdk*/bin/java; do
+                  if [ -x "$candidate" ] && "$candidate" -version 2>&1 | /usr/bin/grep -Eq '(^|[^0-9])21[.]'; then
+                    java_runtime="$candidate"
+                    break
+                  fi
+                done
+                test -n "$java_runtime"
+                java_runtime_tmp=$(/usr/bin/mktemp /tmp/windowstolinux-managed-java.XXXXXX)
+                cleanup_files="$cleanup_files $java_runtime_tmp"
+                printf '%%s\\n' '#!/bin/sh' "exec $java_runtime \\"\\$@\\"" > "$java_runtime_tmp"
+                if [ "$elevation" = root ]; then
+                  /usr/bin/install -d -o root -g root -m 755 %s
+                  /usr/bin/install -o root -g root -m 755 "$java_runtime_tmp" %s
+                else
+                  /usr/bin/sudo -n /usr/bin/install -d -o root -g root -m 755 %s
+                  /usr/bin/sudo -n /usr/bin/install -o root -g root -m 755 "$java_runtime_tmp" %s
+                fi
+                """.formatted(quote(ManagedHelperBundle.DIRECTORY), quote(ManagedHelperBundle.JAVA_RUNTIME_PATH),
+                quote(ManagedHelperBundle.DIRECTORY), quote(ManagedHelperBundle.JAVA_RUNTIME_PATH));
     }
 
     static String quote(String value) {

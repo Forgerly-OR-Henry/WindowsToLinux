@@ -20,6 +20,8 @@ class ManagedHelperBundleTest {
         assertTrue(ManagedHelperBundle.renderScript().startsWith("#!/usr/bin/env bash\n"));
         assertTrue(ManagedHelperBundle.renderScript().endsWith("esac\n"));
         assertEquals("/usr/local/lib/windowstolinux/managed-helper", ManagedHelperBundle.PATH);
+        assertTrue(ManagedHelperBundle.renderScript().contains("/usr/local/lib/windowstolinux/java-21"));
+        assertFalse(ManagedHelperBundle.renderScript().contains("/usr/bin/java"));
     }
 
     @Test

@@ -18,8 +18,10 @@ public final class ManagedHelperBundle {
     public static final String DIRECTORY = "/usr/local/lib/windowstolinux";
     /** The only sudoers-allowlisted helper path. / sudoers 唯一列入白名单的 helper 路径。 */
     public static final String PATH = DIRECTORY + "/managed-helper";
+    /** Platform-owned Java 21 launcher used by every managed systemd unit. / 每个受管 systemd 单元使用的平台持有 Java 21 启动器。 */
+    public static final String JAVA_RUNTIME_PATH = DIRECTORY + "/java-21";
     /** Expected byte-for-byte helper bundle identity. / 预期的 helper 逐字节身份。 */
-    public static final String EXPECTED_SHA256 = "bf4645fc7f096bdebd10233c4c597dae2cce95f2d78c8599b01072b9cdb99ac9";
+    public static final String EXPECTED_SHA256 = "279f2b1cceca4ae98b09bc9d6e8076419843697d70a691c45668ef717476f2ed";
     private static final String ROOT = "/gold/debug/windowstolinux/shared/linux/sshd/protocol/managed-helper-fragments/";
     private static final List<String> FRAGMENTS = List.of(
             "00-common.sh", "10-typed-release.sh", "15-deployment-input.sh", "20-candidate-workspace.sh", "30-ordinary-release.sh",

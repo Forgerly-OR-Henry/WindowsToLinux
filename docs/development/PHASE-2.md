@@ -2,10 +2,10 @@
 
 ## 文档信息
 
-- 阶段基线版本：`2.7.3-centos-stream-recovery-blocked`
+- 阶段基线版本：`2.7.4-centos-stream-acceptance`
 - 文档结构版本：`2.0.0-roadmap-rebaseline`
-- 文档状态：**统一 Spring Boot Reviewed/helper v3 与 Podman Quadlet 已完成当前 Ubuntu 24.04 x86-64 产品入口验收；CentOS Stream 9 已恢复 SELinux Enforcing，但完整回归受目标 SSH 握手关闭阻断**
-- 当前实现：本地目录与无凭据网络 Git 来源均进入唯一 Reviewed 分析/计划路径；Spring Boot 由一个项目类型和三种固定构建工具入口表达，发布身份与 SQLite v5 已收敛；当前 Ubuntu 24.04 x86-64 证据不外推到 Ubuntu 22.04、CentOS Stream 9/10 或其他发行版。CentOS Stream 9 已通过产品入口复验 enforcing，但尚无部署成功证据，其余发行版实机测试按当前范围延后
+- 文档状态：**统一 Spring Boot Reviewed/helper v3 与 Podman Quadlet 已完成当前 Ubuntu 24.04 x86-64 产品入口验收；CentOS Stream 9 x86-64 产品入口验收完成**
+- 当前实现：本地目录与无凭据网络 Git 来源均进入唯一 Reviewed 分析/计划路径；Spring Boot 由一个项目类型和三种固定构建工具入口表达，发布身份与 SQLite v5 已收敛；Ubuntu 24.04 与 CentOS Stream 9 x86-64 证据均只覆盖精确验收夹具，不外推到 Ubuntu 22.04、CentOS Stream 10 或其他发行版。CentOS Stream 9 已由产品入口完成准备、部署、回滚与生命周期验收，其余发行版实机测试按当前范围延后
 - 更新日期：2026-08-14
 - 上级文档：[开发总纲](../DEVELOPMENT.md)
 
@@ -186,7 +186,7 @@ Git 输入包括仓库地址、凭据引用、分支/Tag/Commit、Submodule 和 
 
 ### 12.3 Linux 与旧系统
 
-- [~] Ubuntu 24.04 x86-64 与 CPU/运行时事实已实机验收；Ubuntu 22.04、CentOS Stream 9/10 仍为 `RUNTIME-PENDING`，CentOS Stream 10 继续要求逐机 x86-64-v3 运行时能力审阅。
+- [~] Ubuntu 24.04 x86-64 与当前 Reviewed 链路、CentOS Stream 9 x86-64 的环境准备/发布/回滚/生命周期均已由产品入口实机验收；Ubuntu 22.04 与 CentOS Stream 10 仍为 `RUNTIME-PENDING`，CentOS Stream 10 继续要求逐机 x86-64-v3 运行时能力审阅。
 - [~] 旧版 CentOS 进入独立风险状态；软件源变更和恢复尚未连接真实主机验证。
 - [x] 不支持的架构、包管理器、缺失容器能力或未完成 CPU 审阅会返回保守状态，不能进入运行环境验证。
 
@@ -199,6 +199,7 @@ Git 输入包括仓库地址、凭据引用、分支/Tag/Commit、Submodule 和 
 
 | 版本 | 日期 | 说明 |
 | --- | --- | --- |
+| 2.7.4-centos-stream-acceptance | 2026-08-14 | Stream 9 x86-64 通过产品入口两次环境准备、两组件发布、故障候选整应用回滚、应用/数据库重启和生命周期验收；SELinux 与防火墙态保持验收前观测值，未外推至 Stream 10。 |
 | 2.7.3-centos-stream-recovery-blocked | 2026-08-14 | Stream 9 经授权测试环境引导后已由产品入口复验 SELinux Enforcing；修复准备脚本遗漏的可选 `VARIANT_ID` 条件，并保留失败阶段与标准错误/输出。目标随后在 SSH 密钥交换前关闭连接，完整验收仍为 `RUNTIME-PENDING`。 |
 | 2.7.2-centos-stream-safety-stop | 2026-08-14 | 修复 CentOS Stream 9/10 的可选 `VARIANT_ID` 识别技术债，并加入精确 CentOS 产品入口验收契约。当前 Stream 9 因 SELinux Disabled 在准备前安全停止，未形成部署成功证据；其他发行版测试按当前范围延后。 |
 | 2.7.1-reviewed-v3-podman-ubuntu-acceptance | 2026-08-13 | 统一 Spring Boot Reviewed/helper v3 与 Podman Quadlet 由产品入口在 Ubuntu 24.04 x86-64 完成独立验收；未运行的 Ubuntu、CentOS 与其他发行版矩阵仍为 `RUNTIME-PENDING`。 |

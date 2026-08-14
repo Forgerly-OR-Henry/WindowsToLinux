@@ -224,7 +224,10 @@ public final class ReviewedMultiComponentDeploymentService {
             var health = session.checkDeploymentHealth(context.component.application(), request.runtime(),
                     request.runtime().healthCheck());
             context.event("candidate-health", health.healthy(), health.evidence());
-            if (!health.healthy()) throw new SwitchFailure("candidate-health", "Component health failed: " + id);
+            if (!health.healthy()) {
+                throw new SwitchFailure("candidate-health", "Component health failed: " + id
+                        + "; controlled diagnostic: " + health.evidence());
+            }
         }
         Context gate = contexts.get(applicationHealth.componentId());
         var wholeHealth = session.checkDeploymentHealth(gate.component.application(), gate.component.request().runtime(),
