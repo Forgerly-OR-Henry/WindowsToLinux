@@ -27,6 +27,25 @@ class ManagedDistributionAcceptanceProfileTest {
     }
 
     @Test
+    void acceptsCentosStreamNineAndKeepsStreamTenCpuRejectionExplicit() {
+        ManagedDistributionAcceptanceProfile nine = ManagedDistributionAcceptanceProfile.from(target(
+                "centos-stream", "9", "x86-64-v1"));
+        ManagedDistributionAcceptanceProfile tenV2 = ManagedDistributionAcceptanceProfile.from(Map.of(
+                "managed.distro.expected", "centos-stream",
+                "managed.distro.expected-version", "10",
+                "managed.distro.expected-package-architecture", "x86_64",
+                "managed.distro.expected-cpu", "x86-64-v2",
+                "managed.distro.preparation-expectation", "rejects"
+        ));
+
+        assertEquals(LinuxDistro.CENTOS_STREAM, nine.distro());
+        assertEquals(ManagedDistributionAcceptanceProfile.PreparationExpectation.SUCCEEDS,
+                nine.preparationExpectation());
+        assertEquals(ManagedDistributionAcceptanceProfile.PreparationExpectation.REJECTS,
+                tenV2.preparationExpectation());
+    }
+
+    @Test
     void keepsAlmaLinux10V2AsAnExplicitNegativePreparationCase() {
         ManagedDistributionAcceptanceProfile profile = ManagedDistributionAcceptanceProfile.from(Map.of(
                 "managed.distro.expected", "almalinux",

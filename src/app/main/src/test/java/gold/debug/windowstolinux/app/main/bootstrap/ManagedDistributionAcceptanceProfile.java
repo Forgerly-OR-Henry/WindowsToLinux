@@ -60,11 +60,12 @@ record ManagedDistributionAcceptanceProfile(
         return switch (distribution) {
             case "debian" -> exact(LinuxDistro.DEBIAN, version, packageArchitecture, requiredCpu, expectation,
                     "13", "amd64", CpuMicroarchitectureLevel.X86_64_V1, PreparationExpectation.SUCCEEDS);
+            case "centos", "centos-stream" -> centosStream(version, packageArchitecture, requiredCpu, expectation);
             case "rocky", "rocky-linux" -> rocky(version, packageArchitecture, requiredCpu, expectation);
             case "almalinux", "alma-linux" -> alma(version, packageArchitecture, requiredCpu, expectation);
             case "oracle", "oracle-linux" -> oracle(version, packageArchitecture, requiredCpu, expectation);
             default -> throw new IllegalArgumentException(DISTRIBUTION
-                    + " must be debian, rocky-linux, almalinux, or oracle-linux");
+                    + " must be debian, centos-stream, rocky-linux, almalinux, or oracle-linux");
         };
     }
 
@@ -113,6 +114,25 @@ record ManagedDistributionAcceptanceProfile(
                     "10.2", "x86_64", CpuMicroarchitectureLevel.X86_64_V3, PreparationExpectation.SUCCEEDS);
             default -> throw new IllegalArgumentException("Rocky Linux target version must be 9.8 or 10.2");
         };
+    }
+
+    private static ManagedDistributionAcceptanceProfile centosStream(String version, String packageArchitecture,
+                                                                      CpuMicroarchitectureLevel requiredCpu,
+                                                                      PreparationExpectation expectation) {
+        if ("9".equals(version)) {
+            return exact(LinuxDistro.CENTOS_STREAM, version, packageArchitecture, requiredCpu, expectation,
+                    "9", "x86_64", CpuMicroarchitectureLevel.X86_64_V1, PreparationExpectation.SUCCEEDS);
+        }
+        if ("10".equals(version) && requiredCpu == CpuMicroarchitectureLevel.X86_64_V3) {
+            return exact(LinuxDistro.CENTOS_STREAM, version, packageArchitecture, requiredCpu, expectation,
+                    "10", "x86_64", CpuMicroarchitectureLevel.X86_64_V3, PreparationExpectation.SUCCEEDS);
+        }
+        if ("10".equals(version) && (requiredCpu == CpuMicroarchitectureLevel.X86_64_V1
+                || requiredCpu == CpuMicroarchitectureLevel.X86_64_V2)) {
+            return exact(LinuxDistro.CENTOS_STREAM, version, packageArchitecture, requiredCpu, expectation,
+                    "10", "x86_64", requiredCpu, PreparationExpectation.REJECTS);
+        }
+        throw new IllegalArgumentException("CentOS Stream target version must be 9 or 10 with its documented CPU baseline");
     }
 
     private static ManagedDistributionAcceptanceProfile oracle(String version, String packageArchitecture,
@@ -164,7 +184,7 @@ record ManagedDistributionAcceptanceProfile(
     }
 
     private boolean requiresEnforcingSelinux() {
-        return distro == LinuxDistro.ROCKY_LINUX || distro == LinuxDistro.ALMALINUX
+        return distro == LinuxDistro.CENTOS_STREAM || distro == LinuxDistro.ROCKY_LINUX || distro == LinuxDistro.ALMALINUX
                 || distro == LinuxDistro.ORACLE_LINUX;
     }
 
