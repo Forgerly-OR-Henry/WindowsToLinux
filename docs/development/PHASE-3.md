@@ -4,9 +4,9 @@
 
 - 阶段基线版本：`2.8.0-phase3-distribution-harness`
 - 文档结构版本：`2.0.0-roadmap-rebaseline`
-- 文档状态：**三期实现与 Ubuntu 24.04 x86-64 产品入口验收完成；六种高级语言保持试验级，新增发行版实机矩阵保持 `RUNTIME-PENDING`**
-- 当前实现：Go、Rust、.NET、Kotlin、PHP、Ruby 已接入固定试验链路，并通过目标机构建、发布、HTTP 健康、故障回滚、生命周期、秘密脱敏和桌面状态重启恢复；桌面多组件页已通过两组件整应用发布、组件故障整应用回滚、SQLite v7 图重载和依赖安全生命周期实机验收；三个 AI 角色使用独立 Provider/模型和安全冲突裁决；Debian、Rocky Linux、AlmaLinux、Oracle Linux 已具有独立识别、兼容策略、环境准备脚本及显式产品入口实机验收框架，但尚未在不同系统实例上运行，不能据此声称实机支持
-- 更新日期：2026-08-13
+- 文档状态：**三期实现与 Ubuntu 24.04 x86-64 产品入口验收完成；CentOS Stream 9 已被产品入口安全停止，其他发行版实机测试按当前范围延后**
+- 当前实现：Go、Rust、.NET、Kotlin、PHP、Ruby 已接入固定试验链路，并通过目标机构建、发布、HTTP 健康、故障回滚、生命周期、秘密脱敏和桌面状态重启恢复；桌面多组件页已通过两组件整应用发布、组件故障整应用回滚、SQLite v7 图重载和依赖安全生命周期实机验收；三个 AI 角色使用独立 Provider/模型和安全冲突裁决；CentOS Stream 9 已验证产品入口的精确识别与安全停止，尚无部署成功证据。Debian、Rocky Linux、AlmaLinux、Oracle Linux 的实机测试延后，不能据此声称实机支持
+- 更新日期：2026-08-14
 - 上级文档：[开发总纲](../DEVELOPMENT.md)
 
 ## 文档导航
@@ -62,6 +62,8 @@
 2026-08-13 在授权的全新 Ubuntu 24.04 x86-64 服务器上，六种试验适配器全部经 `DesktopApplicationService → SshdLinuxGateway → controlled helper v3` 产品入口完成健康版本发布、HTTP 响应、启停/重启、故障版本自动回滚、秘密脱敏和桌面状态库重启恢复。单项验收通过后又执行同一进程的六项联合回归，结果为 6/6、0 失败、0 错误、1184 秒。该证据只覆盖验收夹具声明的精确版本、构建工具、Ubuntu 24.04 和 x86-64，不把适配器升级为正式支持，也不外推到任意框架。
 
 同日，统一 Spring Boot Reviewed/helper v3 也在该产品入口完成环境准备幂等性、发布/HTTP 业务响应、首次失败恢复、旧版回滚、断连恢复、启动与 TCP 健康、构建资源限制、归属安全、Maven Wrapper、生命周期和主机信任验收；Podman Quadlet 完成部署、HTTP、回滚、生命周期与自启验收。它们同样仅证明该精确 Ubuntu 目标与验收夹具，不能替代 Debian、Rocky、Alma、Oracle、Ubuntu 22.04 或 CentOS Stream 的实机矩阵。
+
+2026-08-14 的新 CentOS Stream 9 目标经同一产品入口完成只读能力采集：x86-64-v3 与 DNF 均符合静态矩阵，但 SELinux 为 Disabled。采集器曾把省略 `VARIANT_ID` 的 Stream 9 镜像误判为 OTHER，现已修复并通过静态测试。精确发行版验收随后在调用环境准备前以 SELinux enforcing 前置条件安全停止；没有安装、上传、构建或发布。按当前范围，其余发行版实机测试延后，CentOS 完整部署验收需使用已启用 SELinux enforcing 的目标。
 
 Kotlin 夹具固定 Gradle 8.10.2 Wrapper、官方二进制分发 SHA-256 和官方分发域名；目标机下载受超时、重试、断点续传与内容校验约束，只有校验通过的内容寻址 ZIP 才进入加锁受管缓存。PHP 故障夹具返回 HTTP 503，Ruby 锁定 Rack/WEBrick 并显式启动公共监听，确保回滚由真实健康门触发。
 
@@ -145,6 +147,7 @@ Kotlin 夹具固定 Gradle 8.10.2 Wrapper、官方二进制分发 SHA-256 和官
 
 | 发行版 | 静态适配版本 | 包与 CPU 前置条件 | 安全与容器证据 | 当前验证状态 |
 | --- | --- | --- | --- | --- |
+| CentOS Stream | 9、10 | DNF、`x86_64`；9 为 v1，10 为 v3 | 自动准备要求 SELinux enforcing，采集 firewalld 与 Podman | Stream 9 已完成只读产品入口探测；SELinux Disabled，准备前安全停止 |
 | Debian | stable 13；点版本事实参考 13.6，`VERSION_ID=13` | APT、`amd64`、x86-64-v1 | 采集 AppArmor/防火墙；固定 Docker 准备 | 静态通过，实机 `RUNTIME-PENDING` |
 | Rocky Linux | 当前受维护小版本 9.8、10.2 | DNF、`x86_64`；9 为 v1，10 为 v3 | 自动准备要求 SELinux enforcing，采集 firewalld 与 Podman | 静态通过，实机 `RUNTIME-PENDING` |
 | AlmaLinux | 当前受维护小版本 9.8、10.2 | DNF；9 默认 v1；10 默认 `x86_64` 为 v3 | `x86_64_v2` 可识别但因第三方依赖边界仅返回 CPU 审阅，不自动准备；其余 EL 安全边界同上 | 静态通过，实机 `RUNTIME-PENDING` |
@@ -197,12 +200,14 @@ Kotlin 夹具固定 Gradle 8.10.2 Wrapper、官方二进制分发 SHA-256 和官
 - [x] 多模型冲突不会未经确认转成执行，失败不静默跨服务；已由严格解析、单 Provider 调用和裁决器自动化证明。
 - [x] 三个角色上下文不含源码路径/内容或平台凭据，错误诊断在发送前脱敏并限长；已由负向测试证明。
 - [x] Debian/Rocky/Alma/Oracle 已按具体版本、软件包架构、累计 CPU 级别、安全机制、防火墙和容器事实完成独立静态策略/脚本验证，不套用 CentOS 结论。
-- [ ] Debian/Rocky/Alma/Oracle 已具有同一显式产品入口实机验收框架，仍需分别在真实 Linux 上完成构建、发布、回滚和生命周期验收；验收前保持 `RUNTIME-PENDING`。
+- [~] CentOS Stream 9 已完成产品入口只读探测并正确识别省略 `VARIANT_ID` 的镜像；因 SELinux Disabled 在任何准备/部署前安全停止，完整验收待具备 enforcing 证据的目标。
+- [~] Debian/Rocky/Alma/Oracle 具有同一显式产品入口实机验收框架；按当前范围延后至基础开发完成后统一测试，仍保持 `RUNTIME-PENDING`。
 
 ## 12. 版本记录
 
 | 版本 | 日期 | 说明 |
 | --- | --- | --- |
+| 2.11.0-phase3-centos-stream-safety-stop | 2026-08-14 | CentOS Stream 9 产品入口只读探测发现并修复省略 `VARIANT_ID` 时的分类技术债。目标 x86-64-v3 但 SELinux Disabled，精确验收在准备前安全停止，未执行安装或部署；其他发行版按当前范围延后。 |
 | 2.10.0-phase3-reviewed-ubuntu-acceptance | 2026-08-13 | 当前 helper v3 的统一 Spring Boot Reviewed 链路完成 Ubuntu 24.04 x86-64 产品入口环境准备、发布、恢复、回滚、生命周期、Wrapper、资源、归属与信任验收；Podman Quadlet 完成部署、HTTP、回滚、生命周期和自启验收。其他发行版矩阵不外推。 |
 | 2.9.0-phase3-ubuntu-fixture-regression | 2026-08-13 | 跨发行版复用夹具在原授权 Ubuntu 24.04 x86-64 上再次通过产品入口实机回归（1/1，206.2 秒）：验证两组件发布、故障候选整应用回滚、SQLite v7 图重载、生命周期与自启切换；服务保持运行且关闭自启动，服务器未重装。新增发行版仍无实机证据。 |
 | 2.8.0-phase3-distribution-harness | 2026-08-13 | 抽取已验证的两组件产品入口事务为可复用夹具，新增精确非 Ubuntu 发行版验收入口：显式校验发行版/版本/包架构/CPU，准备两次并复核 helper v3、AppArmor/SELinux 与防火墙不变，然后执行发布、故障回滚和生命周期；AlmaLinux 10 x86-64-v2 固定为拒绝准备的负向用例。静态矩阵单元门禁通过，尚无新增发行版实机证据。 |

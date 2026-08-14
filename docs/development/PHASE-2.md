@@ -4,9 +4,9 @@
 
 - 阶段基线版本：`2.7.0-spring-boot-reviewed-convergence`
 - 文档结构版本：`2.0.0-roadmap-rebaseline`
-- 文档状态：**统一 Spring Boot Reviewed/helper v3 与 Podman Quadlet 已完成当前 Ubuntu 24.04 x86-64 产品入口验收；迁移前 Ubuntu 证据保留，其余主机矩阵待执行**
-- 当前实现：本地目录与无凭据网络 Git 来源均进入唯一 Reviewed 分析/计划路径；Spring Boot 由一个项目类型和三种固定构建工具入口表达，发布身份与 SQLite v5 已收敛；当前 Ubuntu 24.04 x86-64 证据不外推到 Ubuntu 22.04、CentOS Stream 9/10 或其他发行版，后者均为 `RUNTIME-PENDING`
-- 更新日期：2026-08-13
+- 文档状态：**统一 Spring Boot Reviewed/helper v3 与 Podman Quadlet 已完成当前 Ubuntu 24.04 x86-64 产品入口验收；CentOS Stream 9 只读探测因 SELinux Disabled 安全停止**
+- 当前实现：本地目录与无凭据网络 Git 来源均进入唯一 Reviewed 分析/计划路径；Spring Boot 由一个项目类型和三种固定构建工具入口表达，发布身份与 SQLite v5 已收敛；当前 Ubuntu 24.04 x86-64 证据不外推到 Ubuntu 22.04、CentOS Stream 9/10 或其他发行版。CentOS Stream 9 已识别但无部署成功证据，其余发行版实机测试按当前范围延后
+- 更新日期：2026-08-14
 - 上级文档：[开发总纲](../DEVELOPMENT.md)
 
 ## 文档导航
@@ -30,6 +30,7 @@
 - 2026-08-12 使用 JDK 21 执行 `mvn.cmd -B -ntp -o verify`，28 个 Maven 模块全部成功；本次生成的 44 份 Surefire 报告共 160 项测试，0 失败、0 错误、2 项因当前平台能力跳过。前端另行完成离线 `npm.cmd ci`、类型检查、Vitest（1 项）、生产构建和项目本地 Chromium Playwright（1 项）。`git diff --check`、生产源码期数命名与旧大类扫描、无隐藏 Node 20 默认值边界、435 个中英文消息键及非空值边界、包结构与 `File.md` 一致性、helper 固定 SHA-256 均通过。
 - 迁移前实机验收使用新装 Ubuntu 24.04 x86-64，并严格从当时的 `DesktopApplicationService` 与 Apache SSHD 网关进入：本地普通 JAR、Node.js、Python、纯静态站点、Dockerfile 容器，以及公开 Git 固定 Commit 的 Gradle Spring Boot 均完成分析、归档、目标机构建、发布、健康和远端观测。该证据不证明后续统一链路。
 - 2026-08-13 当前产品入口在同一精确 Ubuntu 24.04 x86-64 目标完成统一 Spring Boot Reviewed/helper v3 的环境准备、发布、健康、失败恢复、回滚、生命周期、Wrapper、资源限制、归属安全和主机信任验收；Podman Quadlet 亦完成部署、HTTP、回滚、生命周期和自启验收。Ubuntu 22.04、CentOS Stream 9/10、私有 Git 凭据及其他发行版仍为 `RUNTIME-PENDING`，不能从该证据外推。
+- 2026-08-14 当前 CentOS Stream 9 目标由产品入口只读识别为 x86-64-v3；修复缺少 `VARIANT_ID` 时被误识别为 OTHER 的收集缺陷后，因 SELinux Disabled 在环境准备前安全停止，未安装、上传或发布。该失败是预期安全边界，不是 CentOS 成功验收；其余发行版实机测试按当前范围延后。
 
 ## 2. 支持矩阵
 
@@ -198,6 +199,7 @@ Git 输入包括仓库地址、凭据引用、分支/Tag/Commit、Submodule 和 
 
 | 版本 | 日期 | 说明 |
 | --- | --- | --- |
+| 2.7.2-centos-stream-safety-stop | 2026-08-14 | 修复 CentOS Stream 9/10 的可选 `VARIANT_ID` 识别技术债，并加入精确 CentOS 产品入口验收契约。当前 Stream 9 因 SELinux Disabled 在准备前安全停止，未形成部署成功证据；其他发行版测试按当前范围延后。 |
 | 2.7.1-reviewed-v3-podman-ubuntu-acceptance | 2026-08-13 | 统一 Spring Boot Reviewed/helper v3 与 Podman Quadlet 由产品入口在 Ubuntu 24.04 x86-64 完成独立验收；未运行的 Ubuntu、CentOS 与其他发行版矩阵仍为 `RUNTIME-PENDING`。 |
 | 2.7.0-spring-boot-reviewed-convergence | 2026-08-13 | 将 Maven/Gradle Spring Boot 统一为一个 Reviewed 项目类型和三个固定构建入口，接入 helper v2、发布身份 v2 与 SQLite v5；迁移前实机证据保留但不外推，新链路为 `RUNTIME-PENDING`。 |
 | 2.6.0-reviewed-runtime-acceptance | 2026-08-12 | 完成从用户选定本地/Git 源码、基础语言事实、审阅计划、不可变配置/秘密输入到完整部署的职责闭环；Ubuntu 24.04 x86-64 已实机验证六类项目、公开 Git 固定 Commit、代表性生命周期和失败回滚，未验收矩阵保持 `RUNTIME-PENDING`。 |

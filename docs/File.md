@@ -2,14 +2,14 @@
 
 ## 文档信息
 
-- 文档版本：`3.6.0-reviewed-ubuntu-acceptance`
-- 文档状态：**正式模块与职责边界保持不变；三期实现及当前 Ubuntu 24.04 x86-64 产品入口验收完成，未运行矩阵保持 `RUNTIME-PENDING`**
+- 文档版本：`3.7.0-centos-stream-safety-stop`
+- 文档状态：**正式模块与职责边界保持不变；当前 Ubuntu 产品入口验收完成，CentOS Stream 9 处于 SELinux 前置条件安全停止，其余实机矩阵延后**
 - 已确认范围：`shared` 共用模块、`app` Windows 桌面应用模块、`web` Web 应用模块
 - 已确认能力边界：受管应用生命周期复用既有模块，不新增独立 Maven 模块
 - 更新日期：2026-08-13
 - 开发总纲：[DEVELOPMENT.md](DEVELOPMENT.md)
 
-> 本文是正式目标目录、模块职责、依赖方向和内部包结构的来源。当前 reactor 已包含根工程、3 个聚合模块和 24 个叶子模块，共 28 个 POM。`shared/source`、`shared/config`、`shared/git`、`shared/ai`、`shared/linux-sshd`、`analyze`、`deploy`、`app/db` 与 `app/service` 已承载对应代码；其中 `analyze/component` 和 `deploy` 已实现并实机验证两组件整应用事务与依赖安全生命周期，`shared/ai` 已实现三个固定协作角色及严格证据链，`shared/linux-sshd` 已实现十二类项目的有界协议以及六种发行版的独立探测与准备适配。`app/main` 的现有 `bootstrap` 测试职责内加入显式非 Ubuntu 产品入口验收夹具，不增加生产模块、远程契约或任意命令路径。`shared/backup` 和 Web Java 叶子模块仍只保留 POM。2026-08-10/12 的 Ubuntu 证据作为迁移前协议历史记录保留；2026-08-13 的 helper v3 证据覆盖六种高级语言试验适配器、两组件整应用、统一 Spring Boot Reviewed 链路和 Podman Quadlet。该实机范围仅为 Ubuntu 24.04 x86-64 与验收夹具；其他发行版及未运行组合继续为 `RUNTIME-PENDING`。
+> 本文是正式目标目录、模块职责、依赖方向和内部包结构的来源。当前 reactor 已包含根工程、3 个聚合模块和 24 个叶子模块，共 28 个 POM。`shared/source`、`shared/config`、`shared/git`、`shared/ai`、`shared/linux-sshd`、`analyze`、`deploy`、`app/db` 与 `app/service` 已承载对应代码；其中 `analyze/component` 和 `deploy` 已实现并实机验证两组件整应用事务与依赖安全生命周期，`shared/ai` 已实现三个固定协作角色及严格证据链，`shared/linux-sshd` 已实现十二类项目的有界协议以及六种发行版的独立探测与准备适配。`app/main` 的现有 `bootstrap` 测试职责内加入显式非 Ubuntu 产品入口验收夹具，不增加生产模块、远程契约或任意命令路径。`shared/backup` 和 Web Java 叶子模块仍只保留 POM。2026-08-10/12 的 Ubuntu 证据作为迁移前协议历史记录保留；2026-08-13 的 helper v3 证据覆盖六种高级语言试验适配器、两组件整应用、统一 Spring Boot Reviewed 链路和 Podman Quadlet。2026-08-14 修复 CentOS Stream 9/10 可省略 `VARIANT_ID` 的识别，并把 CentOS 纳入精确产品入口验收契约；当前 Stream 9 因 SELinux Disabled 在准备前安全停止，未产生部署证据，其他发行版实机矩阵按当前范围延后。
 
 ## 1. 完整目标结构
 
@@ -625,6 +625,7 @@ linux-sshd 通过 linux 契约采集服务器已有环境
 
 | 版本 | 日期 | 说明 |
 | --- | --- | --- |
+| 3.7.0-centos-stream-safety-stop | 2026-08-14 | `SshdPlatformCapabilityCollector` 将版本 9/10 的 CentOS 正确识别为 Stream，即使镜像省略 `VARIANT_ID`；新增精确 CentOS 产品入口契约和只读能力探测。当前 Stream 9 因 SELinux Disabled 在准备前安全停止，未改变远端；其他发行版实机矩阵延后。 |
 | 3.6.0-reviewed-ubuntu-acceptance | 2026-08-13 | 同步当前 helper v3 的 Ubuntu 24.04 x86-64 产品入口证据：统一 Spring Boot Reviewed 链路与 Podman Quadlet 已完成声明的验收；不改变模块、包、协议或其他发行版 `RUNTIME-PENDING` 边界。 |
 | 3.5.0-phase3-ubuntu-fixture-regression | 2026-08-13 | 不改变模块、生产代码或依赖方向；已抽取的 `app/main` 两组件产品入口夹具在原授权 Ubuntu 24.04 x86-64 上经 `DesktopApplicationService` 与 SSHD 装配复跑通过（1/1，206.2 秒），再次覆盖发布、故障候选整应用回滚、SQLite v7 图重载、生命周期与自启切换。服务器未重装，应用保持运行且关闭自启动；新增发行版实机仍为 `RUNTIME-PENDING`。 |
 | 3.4.0-phase3-distribution-harness | 2026-08-13 | 不改变 28-POM、生产模块或依赖方向；在既有 `app/main` 测试 `bootstrap` 职责内抽取两组件整应用事务夹具并加入显式非 Ubuntu 发行版产品入口验收，复用现有 `DesktopApplicationService` 与 SSHD 装配，不新增手工 SSH、任意 Shell 或测试专用生产 API。 |
