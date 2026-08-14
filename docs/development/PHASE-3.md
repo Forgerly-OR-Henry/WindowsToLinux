@@ -2,9 +2,9 @@
 
 ## 文档信息
 
-- 阶段基线版本：`2.13.0-phase3-centos-stream-acceptance`
+- 阶段基线版本：`2.14.0-phase3-closeout`
 - 文档结构版本：`2.0.0-roadmap-rebaseline`
-- 文档状态：**三期实现与 Ubuntu 24.04 x86-64、CentOS Stream 9 x86-64 产品入口验收完成；其他发行版实机测试按当前范围延后**
+- 文档状态：**本轮三期实现与 Ubuntu 24.04 x86-64、CentOS Stream 9 x86-64 产品入口验收完成；其他发行版实机测试由用户明确延后至后续独立任务**
 - 当前实现：Go、Rust、.NET、Kotlin、PHP、Ruby 已接入固定试验链路，并通过目标机构建、发布、HTTP 健康、故障回滚、生命周期、秘密脱敏和桌面状态重启恢复；桌面多组件页已通过两组件整应用发布、组件故障整应用回滚、SQLite v7 图重载和依赖安全生命周期实机验收；三个 AI 角色使用独立 Provider/模型和安全冲突裁决；CentOS Stream 9 已通过产品入口的两次环境准备、两组件发布、故障候选整应用回滚与生命周期验收，且 SELinux 与防火墙态均保持验收前观测值。Debian、Rocky Linux、AlmaLinux、Oracle Linux 的实机测试延后，不能据此声称实机支持
 - 更新日期：2026-08-14
 - 上级文档：[开发总纲](../DEVELOPMENT.md)
@@ -201,12 +201,13 @@ Kotlin 夹具固定 Gradle 8.10.2 Wrapper、官方二进制分发 SHA-256 和官
 - [x] 三个角色上下文不含源码路径/内容或平台凭据，错误诊断在发送前脱敏并限长；已由负向测试证明。
 - [x] Debian/Rocky/Alma/Oracle 已按具体版本、软件包架构、累计 CPU 级别、安全机制、防火墙和容器事实完成独立静态策略/脚本验证，不套用 CentOS 结论。
 - [x] CentOS Stream 9 x86-64 已通过产品入口的精确识别、两次准备、两组件发布、故障候选整应用回滚、生命周期和安全态保持验收；已修复省略 `VARIANT_ID`、空 nftables 规则集、Java 21 默认运行时与只读 SSH 短暂超时的运行路径技术债。
-- [~] Debian/Rocky/Alma/Oracle 具有同一显式产品入口实机验收框架；按当前范围延后至基础开发完成后统一测试，仍保持 `RUNTIME-PENDING`。
+- [~] Debian/Rocky/Alma/Oracle 具有同一显式产品入口实机验收框架；用户已明确将实机测试延后至后续独立任务，仍保持 `RUNTIME-PENDING`，不构成本轮三期收尾的完成声明。
 
 ## 12. 版本记录
 
 | 版本 | 日期 | 说明 |
 | --- | --- | --- |
+| 2.14.0-phase3-closeout | 2026-08-14 | 完成本轮三期代码、结构、静态验证与 Ubuntu 24.04/CentOS Stream 9 精确产品入口验收；删除一次性 CentOS 直接 root 引导测试，避免保留非产品部署旁路。用户明确将 Debian、Rocky、Alma、Oracle 实机验收延后为后续独立任务，全部维持 `RUNTIME-PENDING`。 |
 | 2.13.0-phase3-centos-stream-acceptance | 2026-08-14 | CentOS Stream 9 x86-64 通过产品入口两次环境准备、两组件发布、故障候选整应用回滚、应用/数据库重启、生命周期与自启切换验收；SELinux 与防火墙态在准备前后保持观测值。修复空 nftables 规则集探测、包管理器 Java 21 默认运行时、可省略 `VARIANT_ID` 和只读 SSH 短暂超时；其他发行版仍不外推。 |
 | 2.12.0-phase3-centos-stream-recovery-blocked | 2026-08-14 | Stream 9 已由产品入口复验 SELinux Enforcing；修复准备脚本对可省略 `VARIANT_ID` 的遗留要求，并保留 APT/DNF 的无秘密失败阶段。目标随后在 SSH 密钥交换前关闭连接，未以手工发布替代，完整验收保持 `RUNTIME-PENDING`。 |
 | 2.11.0-phase3-centos-stream-safety-stop | 2026-08-14 | CentOS Stream 9 产品入口只读探测发现并修复省略 `VARIANT_ID` 时的分类技术债。目标 x86-64-v3 但 SELinux Disabled，精确验收在准备前安全停止，未执行安装或部署；其他发行版按当前范围延后。 |

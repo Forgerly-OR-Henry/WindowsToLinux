@@ -4,8 +4,8 @@
 
 - 项目名称：WindowsToLinux
 - 文档角色：产品边界、五期路线、跨期规则与完整开发流程的唯一总入口
-- 文档版本：`2.16.0-centos-stream-acceptance`
-- 文档状态：**当前 Ubuntu 24.04 x86-64 与 CentOS Stream 9 x86-64 产品入口验收完成；其他发行版实机测试按当前范围延后**
+- 文档版本：`2.17.0-phase3-closeout`
+- 文档状态：**本轮三期代码、Ubuntu 24.04 x86-64 与 CentOS Stream 9 x86-64 产品入口验收完成；其他发行版实机测试由用户明确延后为后续独立任务**
 - 更新日期：2026-08-14
 - 项目结构：[File.md](File.md)
 
@@ -208,6 +208,7 @@ Playwright 浏览器固定保存在 `src/web/frontend/.playwright-browsers`，�
 
 | 版本 | 日期 | 阶段 | 状态 | 说明 |
 | --- | --- | --- | --- | --- |
+| 2.17.0-phase3-closeout | 2026-08-14 | 三期 | 本轮三期收尾完成 | 删除一次性 CentOS 直接 root 引导测试，保留唯一的产品入口验收路径；JDK 21 离线根验证再次通过全部 28 个模块。用户明确将 Debian/Rocky/Alma/Oracle 的实机矩阵延后为独立后续任务，未将其误报为已验证。 |
 | 2.16.0-centos-stream-acceptance | 2026-08-14 | 二期至三期 | CentOS Stream 9 产品入口验收完成 | 精确 x86-64 夹具经两次环境准备后完成两组件发布、故障候选整应用回滚、应用/数据库重启、生命周期与自启切换；准备前后 SELinux 和防火墙态保持观测值。修复空 nftables 规则集识别、Java 21 默认运行时、可省略 `VARIANT_ID` 和只读 SSH 短暂超时；不外推到 Stream 10 或其他发行版。 |
 | 2.15.0-centos-stream-recovery-blocked | 2026-08-14 | 二期至三期 | CentOS 准备回归受目标 SSH 状态阻断 | 经用户授权的固定测试环境引导后，产品入口复验 Stream 9 为 SELinux Enforcing；同时清除省略 `VARIANT_ID` 时准备脚本仍拒绝目标的技术债，并让 APT/DNF 失败回传非秘密阶段及标准错误/输出。后续目标在密钥交换前主动关闭 SSH，未以手工部署替代，故完整验收和部署成功仍为 `RUNTIME-PENDING`。 |
 | 2.14.0-centos-stream-safety-stop | 2026-08-14 | 二期至三期 | CentOS Stream 9 只读探测完成；安全前置条件阻断部署 | 修复 CentOS Stream 9/10 镜像省略 `VARIANT_ID` 时被识别为 OTHER 的技术债；实际目标为 x86-64-v3，但 SELinux Disabled，产品入口在环境准备前安全停止，未安装、上传或发布。其他发行版实机测试按用户当前范围延后。 |
