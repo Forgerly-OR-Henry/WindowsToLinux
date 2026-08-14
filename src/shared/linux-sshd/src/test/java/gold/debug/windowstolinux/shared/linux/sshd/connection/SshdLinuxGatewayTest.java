@@ -66,6 +66,14 @@ class SshdLinuxGatewayTest {
     }
 
     @Test
+    void keepsBothSanitizedOutputChannelsInAFailedCommandEvidence() {
+        SshCommandExecutor.CommandResult result = new SshCommandExecutor.CommandResult(
+                false, false, "stage output", "stage output", "diagnostic error", 1);
+
+        assertEquals("exitCode=1, error=diagnostic error, output=stage output", result.failureEvidence());
+    }
+
+    @Test
     void requiresTarForManagedCapabilities() {
         HealthCheck.Tcp health = new HealthCheck.Tcp(8080, 5, 1);
 
@@ -210,7 +218,7 @@ class SshdLinuxGatewayTest {
         assertTrue(debian.contains("test \"${ID:-}\" = 'debian'"));
         assertTrue(debian.contains("test \"${VERSION_ID:-}\" = '13'"));
         assertTrue(centos.contains("test \"${ID:-}\" = 'centos'"));
-        assertTrue(centos.contains("test \"${VARIANT_ID:-}\" = 'stream'"));
+        assertFalse(centos.contains("VARIANT_ID"));
         assertTrue(centos.contains("test \"${VERSION_ID:-}\" = '9'"));
         assertTrue(centos.indexOf("test \"$(getenforce)\" = Enforcing")
                 < centos.indexOf("/usr/bin/dnf -y install"));

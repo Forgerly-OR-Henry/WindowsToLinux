@@ -4,8 +4,8 @@
 
 - 阶段基线版本：`2.8.0-phase3-distribution-harness`
 - 文档结构版本：`2.0.0-roadmap-rebaseline`
-- 文档状态：**三期实现与 Ubuntu 24.04 x86-64 产品入口验收完成；CentOS Stream 9 已被产品入口安全停止，其他发行版实机测试按当前范围延后**
-- 当前实现：Go、Rust、.NET、Kotlin、PHP、Ruby 已接入固定试验链路，并通过目标机构建、发布、HTTP 健康、故障回滚、生命周期、秘密脱敏和桌面状态重启恢复；桌面多组件页已通过两组件整应用发布、组件故障整应用回滚、SQLite v7 图重载和依赖安全生命周期实机验收；三个 AI 角色使用独立 Provider/模型和安全冲突裁决；CentOS Stream 9 已验证产品入口的精确识别与安全停止，尚无部署成功证据。Debian、Rocky Linux、AlmaLinux、Oracle Linux 的实机测试延后，不能据此声称实机支持
+- 文档状态：**三期实现与 Ubuntu 24.04 x86-64 产品入口验收完成；CentOS Stream 9 已复验 SELinux Enforcing，但完整回归受目标 SSH 握手关闭阻断，其他发行版实机测试按当前范围延后**
+- 当前实现：Go、Rust、.NET、Kotlin、PHP、Ruby 已接入固定试验链路，并通过目标机构建、发布、HTTP 健康、故障回滚、生命周期、秘密脱敏和桌面状态重启恢复；桌面多组件页已通过两组件整应用发布、组件故障整应用回滚、SQLite v7 图重载和依赖安全生命周期实机验收；三个 AI 角色使用独立 Provider/模型和安全冲突裁决；CentOS Stream 9 已验证产品入口的精确识别与 SELinux Enforcing，但因目标关闭 SSH 握手尚无部署成功证据。Debian、Rocky Linux、AlmaLinux、Oracle Linux 的实机测试延后，不能据此声称实机支持
 - 更新日期：2026-08-14
 - 上级文档：[开发总纲](../DEVELOPMENT.md)
 
@@ -200,13 +200,14 @@ Kotlin 夹具固定 Gradle 8.10.2 Wrapper、官方二进制分发 SHA-256 和官
 - [x] 多模型冲突不会未经确认转成执行，失败不静默跨服务；已由严格解析、单 Provider 调用和裁决器自动化证明。
 - [x] 三个角色上下文不含源码路径/内容或平台凭据，错误诊断在发送前脱敏并限长；已由负向测试证明。
 - [x] Debian/Rocky/Alma/Oracle 已按具体版本、软件包架构、累计 CPU 级别、安全机制、防火墙和容器事实完成独立静态策略/脚本验证，不套用 CentOS 结论。
-- [~] CentOS Stream 9 已完成产品入口只读探测并正确识别省略 `VARIANT_ID` 的镜像；因 SELinux Disabled 在任何准备/部署前安全停止，完整验收待具备 enforcing 证据的目标。
+- [~] CentOS Stream 9 已完成产品入口能力复验并正确识别省略 `VARIANT_ID` 的镜像；经授权测试环境引导后 SELinux 已 Enforcing，准备脚本的同一可选字段缺口已修复，但目标随后关闭 SSH 握手，完整验收仍待恢复远程 SSH 服务。
 - [~] Debian/Rocky/Alma/Oracle 具有同一显式产品入口实机验收框架；按当前范围延后至基础开发完成后统一测试，仍保持 `RUNTIME-PENDING`。
 
 ## 12. 版本记录
 
 | 版本 | 日期 | 说明 |
 | --- | --- | --- |
+| 2.12.0-phase3-centos-stream-recovery-blocked | 2026-08-14 | Stream 9 已由产品入口复验 SELinux Enforcing；修复准备脚本对可省略 `VARIANT_ID` 的遗留要求，并保留 APT/DNF 的无秘密失败阶段。目标随后在 SSH 密钥交换前关闭连接，未以手工发布替代，完整验收保持 `RUNTIME-PENDING`。 |
 | 2.11.0-phase3-centos-stream-safety-stop | 2026-08-14 | CentOS Stream 9 产品入口只读探测发现并修复省略 `VARIANT_ID` 时的分类技术债。目标 x86-64-v3 但 SELinux Disabled，精确验收在准备前安全停止，未执行安装或部署；其他发行版按当前范围延后。 |
 | 2.10.0-phase3-reviewed-ubuntu-acceptance | 2026-08-13 | 当前 helper v3 的统一 Spring Boot Reviewed 链路完成 Ubuntu 24.04 x86-64 产品入口环境准备、发布、恢复、回滚、生命周期、Wrapper、资源、归属与信任验收；Podman Quadlet 完成部署、HTTP、回滚、生命周期和自启验收。其他发行版矩阵不外推。 |
 | 2.9.0-phase3-ubuntu-fixture-regression | 2026-08-13 | 跨发行版复用夹具在原授权 Ubuntu 24.04 x86-64 上再次通过产品入口实机回归（1/1，206.2 秒）：验证两组件发布、故障候选整应用回滚、SQLite v7 图重载、生命周期与自启切换；服务保持运行且关闭自启动，服务器未重装。新增发行版仍无实机证据。 |

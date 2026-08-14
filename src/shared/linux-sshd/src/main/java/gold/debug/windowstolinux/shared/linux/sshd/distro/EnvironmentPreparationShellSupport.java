@@ -44,7 +44,14 @@ final class EnvironmentPreparationShellSupport {
                 done
                 test -n "$loader"
                 "$loader" --help 2>/dev/null | grep -Eq '%s.*supported'
-                """.formatted(level);
+        """.formatted(level);
+    }
+
+    static String renderStageDiagnostics() {
+        return """
+                prepare_stage=preflight
+                trap 'status=$?; if [ "$status" -ne 0 ]; then printf "PREPARE_STAGE_FAILED=%s\\n" "$prepare_stage"; fi' EXIT
+                """;
     }
 
     static String renderSecurityObservationFunctions() {

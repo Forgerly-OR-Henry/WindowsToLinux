@@ -18,8 +18,10 @@ public final class CentosStreamEnvironmentPreparation {
             throw new IllegalArgumentException("CentOS Stream preparation supports only 9 or 10");
         }
         boolean ten = "10".equals(version);
+        // CentOS Stream 9/10 cloud images may omit VARIANT_ID even though ID and VERSION_ID identify the supported stream.
+        // CentOS Stream 9/10 云镜像可能省略 VARIANT_ID，但 ID 与 VERSION_ID 仍可识别受支持的 Stream。
         return DnfEnvironmentPreparationRenderer.render(new DistributionPreparationProfile(
-                "centos", "stream", version, "x86_64",
+                "centos", "", version, "x86_64",
                 ten ? CpuMicroarchitectureLevel.X86_64_V3 : CpuMicroarchitectureLevel.X86_64_V1,
                 PreparationPackageCatalog.enterprise(version),
                 ten ? PreparationRuntimeProfile.ENTERPRISE_10 : PreparationRuntimeProfile.ENTERPRISE_9), username);

@@ -217,7 +217,11 @@ public final class SshCommandExecutor {
             if (timedOut) {
                 return "Remote command timed out";
             }
-            String detail = !error.isBlank() ? error : evidenceOutput;
+            if (!error.isBlank() && !evidenceOutput.isBlank()) {
+                return "exitCode=" + (exitStatus == null ? "unknown" : exitStatus)
+                        + ", error=" + error + ", output=" + evidenceOutput;
+            }
+            String detail = error.isBlank() ? evidenceOutput : error;
             if (!detail.isBlank()) {
                 return "exitCode=" + (exitStatus == null ? "unknown" : exitStatus) + ", output=" + detail;
             }

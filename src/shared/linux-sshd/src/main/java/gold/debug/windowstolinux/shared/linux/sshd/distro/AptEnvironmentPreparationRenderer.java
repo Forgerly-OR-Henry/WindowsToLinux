@@ -15,6 +15,7 @@ final class AptEnvironmentPreparationRenderer {
         String preflight = """
                 set -euo pipefail
                 export LC_ALL=C
+                %s
                 test -r /etc/os-release
                 . /etc/os-release
                 test "${ID:-}" = %s
@@ -38,7 +39,8 @@ final class AptEnvironmentPreparationRenderer {
                   printf 'PREPARE_REJECT=non-root-requires-existing-noninteractive-sudo\\n'
                   exit 64
                 fi
-                """.formatted(EnvironmentPreparationShellSupport.quote(profile.id()), variantCheck,
+                """.formatted(EnvironmentPreparationShellSupport.renderStageDiagnostics(),
+                EnvironmentPreparationShellSupport.quote(profile.id()), variantCheck,
                 EnvironmentPreparationShellSupport.quote(profile.version()),
                 EnvironmentPreparationShellSupport.quote(profile.packageArchitecture()),
                 EnvironmentPreparationShellSupport.renderCpuCheck(profile.requiredCpu()),
@@ -54,8 +56,11 @@ final class AptEnvironmentPreparationRenderer {
                 """.formatted(LOCK_TIMEOUT_SECONDS, LOCK_TIMEOUT_SECONDS, packages,
                 LOCK_TIMEOUT_SECONDS, LOCK_TIMEOUT_SECONDS, packages);
         return preflight
+                + "prepare_stage=security-observation\n"
                 + EnvironmentPreparationShellSupport.renderSecurityObservationFunctions()
+                + "prepare_stage=package-install\n"
                 + install
+                + "prepare_stage=post-install-checks\n"
                 + renderCommonChecks()
                 + profile.runtimeProfile().renderChecks()
                 + """
@@ -64,7 +69,9 @@ final class AptEnvironmentPreparationRenderer {
                 command -v podman >/dev/null 2>&1
                 podman info >/dev/null 2>&1
                 """
+                + "prepare_stage=helper-installation\n"
                 + EnvironmentPreparationShellSupport.renderHelperInstallation(username)
+                + "prepare_stage=security-invariant\n"
                 + EnvironmentPreparationShellSupport.renderSecurityInvariant()
                 + """
                 printf 'PREPARED_AS=%%s\\n' "$elevation"
