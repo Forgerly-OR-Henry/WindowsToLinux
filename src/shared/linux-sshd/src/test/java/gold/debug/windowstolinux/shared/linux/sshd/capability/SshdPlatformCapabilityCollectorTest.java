@@ -64,6 +64,9 @@ class SshdPlatformCapabilityCollectorTest {
     @Test
     void classifiesEveryEnterpriseDistributionIndependently() {
         assertEquals(LinuxDistro.DEBIAN, classify("debian", "", "13"));
+        assertEquals(LinuxDistro.CENTOS_STREAM, classify("centos", "", "9"));
+        assertEquals(LinuxDistro.CENTOS_STREAM, classify("centos", "stream", "10"));
+        assertEquals(LinuxDistro.LEGACY_CENTOS, classify("centos", "", "8"));
         assertEquals(LinuxDistro.ROCKY_LINUX, classify("rocky", "", "9.8"));
         assertEquals(LinuxDistro.ALMALINUX, classify("almalinux", "", "10.2"));
         assertEquals(LinuxDistro.ORACLE_LINUX, classify("ol", "", "10.2"));

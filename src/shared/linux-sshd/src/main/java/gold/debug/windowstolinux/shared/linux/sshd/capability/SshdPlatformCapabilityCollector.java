@@ -109,11 +109,15 @@ public final class SshdPlatformCapabilityCollector implements LinuxPlatformCapab
         if ("debian".equals(id)) {
             return LinuxDistro.DEBIAN;
         }
-        if ("centos".equals(id) && "stream".equals(variant)) {
-            return "8".equals(version) ? LinuxDistro.LEGACY_CENTOS : LinuxDistro.CENTOS_STREAM;
-        }
-        if ("centos".equals(id) && ("7".equals(version) || "8".equals(version))) {
-            return LinuxDistro.LEGACY_CENTOS;
+        if ("centos".equals(id)) {
+            if ("7".equals(version) || "8".equals(version)) {
+                return LinuxDistro.LEGACY_CENTOS;
+            }
+            // CentOS Linux ended at 8; Stream 9/10 images commonly omit VARIANT_ID.
+            // CentOS Linux 在 8 结束；Stream 9/10 镜像通常省略 VARIANT_ID。
+            if ("9".equals(version) || "10".equals(version)) {
+                return LinuxDistro.CENTOS_STREAM;
+            }
         }
         if ("rocky".equals(id)) {
             return LinuxDistro.ROCKY_LINUX;
