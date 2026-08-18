@@ -1,6 +1,6 @@
 package gold.debug.windowstolinux.shared.linux.sshd.capability;
 
-import gold.debug.windowstolinux.shared.linux.sshd.capability.probe.ManagedPlatformCapabilityProbe;
+import gold.debug.windowstolinux.shared.linux.sshd.capability.ManagedPlatformCapabilityProbe;
 import gold.debug.windowstolinux.shared.model.server.LinuxDistro;
 import gold.debug.windowstolinux.shared.model.server.CpuMicroarchitectureLevel;
 import gold.debug.windowstolinux.shared.model.server.LinuxFirewallKind;

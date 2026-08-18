@@ -6,9 +6,9 @@ import gold.debug.windowstolinux.shared.analyze.registry.DeploymentTypeInspector
 import gold.debug.windowstolinux.shared.analyze.spi.DeploymentTypeInspection;
 import gold.debug.windowstolinux.shared.analyze.source.BoundedSourceInspector;
 import gold.debug.windowstolinux.shared.analyze.source.SourceInspection;
-import gold.debug.windowstolinux.shared.analyze.workload.container.ContainerDeploymentInspector;
-import gold.debug.windowstolinux.shared.analyze.workload.staticweb.StaticWebDeploymentInspector;
-import gold.debug.windowstolinux.shared.model.analysis.DeploymentProjectAssessment;
+import gold.debug.windowstolinux.shared.analyze.workload.ContainerDeploymentInspector;
+import gold.debug.windowstolinux.shared.analyze.workload.StaticWebDeploymentInspector;
+import gold.debug.windowstolinux.shared.model.assessment.DeploymentProjectAssessment;
 import gold.debug.windowstolinux.shared.model.analysis.RejectionReason;
 import gold.debug.windowstolinux.shared.model.message.LocalizedMessage;
 import gold.debug.windowstolinux.shared.model.project.DeploymentProjectType;

@@ -1,11 +1,12 @@
 package gold.debug.windowstolinux.app.ui.ai;
 
-import gold.debug.windowstolinux.app.service.DesktopApplicationService;
+import gold.debug.windowstolinux.app.service.port.AiApplicationPort;
 import gold.debug.windowstolinux.app.service.ai.AiProviderProfile;
 import gold.debug.windowstolinux.app.service.ai.AiRoleAssignment;
+import gold.debug.windowstolinux.app.ui.component.DesktopAsyncTask;
 import gold.debug.windowstolinux.app.ui.component.DesktopComponents;
 import gold.debug.windowstolinux.app.ui.deployment.ReviewContext;
-import gold.debug.windowstolinux.app.ui.shell.PageMessages;
+import gold.debug.windowstolinux.app.ui.i18n.PageMessages;
 import gold.debug.windowstolinux.shared.model.security.CredentialStorageMode;
 import gold.debug.windowstolinux.shared.ai.collaboration.AiCollaborationRole;
 import gold.debug.windowstolinux.shared.ai.collaboration.AiRoleInvocationResult;
@@ -17,7 +18,6 @@ import javax.swing.JPanel;
 import javax.swing.JPasswordField;
 import javax.swing.JTextArea;
 import javax.swing.JTextField;
-import javax.swing.SwingWorker;
 import java.awt.BorderLayout;
 import java.awt.FlowLayout;
 import java.awt.GridBagLayout;
@@ -27,7 +27,7 @@ import java.util.Optional;
 
 /** Owns the optional AI form, temporary secrets, state, and explanation workflow. / 持有可选 AI 表单、临时秘密、状态与解释流程。 */
 public final class AiPage {
-    private final DesktopApplicationService service;
+    private final AiApplicationPort service;
     private final ReviewContext reviewContext;
     private final PageMessages messages;
     private final JTextField endpoint = new JTextField("https://api.openai.com/v1/chat/completions", 34);
@@ -41,7 +41,7 @@ public final class AiPage {
     private final JPanel panel;
 
     /** Creates the stateful page controller. / 创建有状态页面控制器。 */
-    public AiPage(DesktopApplicationService service, ReviewContext reviewContext,
+    public AiPage(AiApplicationPort service, ReviewContext reviewContext,
                   DesktopComponents components, PageMessages messages) {
         this.service = service;
         this.reviewContext = reviewContext;
@@ -137,23 +137,13 @@ public final class AiPage {
         }
         char[] master = masterPassword.getPassword();
         output.setText(messages.text("ai.requesting"));
-        new SwingWorker<Optional<AiRoleInvocationResult>, Void>() {
-            /** Runs the background task. / 运行后台任务。 */
-            @Override protected Optional<AiRoleInvocationResult> doInBackground() throws Exception {
-                return service.invokeAiRole(ProjectAnalysisRoleContext.from(
-                        preparation.orElseThrow().assessment().facts().orElseThrow()), master);
-            }
-            /** Completes the background task on the UI thread. / 在 UI 线程完成后台任务。 */
-            @Override protected void done() {
-                try {
-                    Optional<AiRoleInvocationResult> result = get();
-                    output.setText(result.map(AiPage.this::evidenceText)
-                            .orElseGet(() -> messages.text("ai.roleUnassigned")));
-                } catch (Exception exception) {
-                    output.setText(messages.text("ai.failed", Map.of("detail", messages.safe(exception))));
-                }
-            }
-        }.execute();
+        DesktopAsyncTask.run(
+                () -> service.invokeAiRole(ProjectAnalysisRoleContext.from(
+                        preparation.orElseThrow().assessment().facts().orElseThrow()), master),
+                result -> output.setText(result.map(AiPage.this::evidenceText)
+                        .orElseGet(() -> messages.text("ai.roleUnassigned"))),
+                exception -> output.setText(messages.text("ai.failed",
+                        Map.of("detail", messages.safe(exception)))));
     }
 
     private String evidenceText(AiRoleInvocationResult result) {

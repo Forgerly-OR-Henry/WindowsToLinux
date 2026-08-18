@@ -1,6 +1,6 @@
 package gold.debug.windowstolinux.app.service.source;
 
-import gold.debug.windowstolinux.shared.model.analysis.DeploymentProjectAssessment;
+import gold.debug.windowstolinux.shared.model.assessment.DeploymentProjectAssessment;
 import gold.debug.windowstolinux.shared.model.analysis.DeploymentAdmission;
 import gold.debug.windowstolinux.shared.model.archive.SourceArchiveDescriptor;
 import gold.debug.windowstolinux.shared.model.project.SourceRevision;

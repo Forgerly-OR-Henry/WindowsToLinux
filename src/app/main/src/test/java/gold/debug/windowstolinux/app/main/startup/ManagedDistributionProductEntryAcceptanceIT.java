@@ -3,7 +3,7 @@ package gold.debug.windowstolinux.app.main.startup;
 import gold.debug.windowstolinux.shared.linux.error.LinuxOperationException;
 import gold.debug.windowstolinux.shared.model.deployment.EnvironmentSetupResult;
 import gold.debug.windowstolinux.shared.model.health.HealthCheck;
-import gold.debug.windowstolinux.shared.model.server.LinuxCapabilities;
+import gold.debug.windowstolinux.shared.model.capability.LinuxCapabilities;
 import gold.debug.windowstolinux.shared.model.server.ManagedHelperProtocolVersion;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIfSystemProperty;

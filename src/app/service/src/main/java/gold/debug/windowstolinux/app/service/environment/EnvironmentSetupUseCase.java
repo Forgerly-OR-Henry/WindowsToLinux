@@ -1,7 +1,7 @@
 package gold.debug.windowstolinux.app.service.environment;
 
-import gold.debug.windowstolinux.app.secret.api.SecretStore;
-import gold.debug.windowstolinux.app.secret.api.SecretStoreException;
+import gold.debug.windowstolinux.app.secret.SecretStore;
+import gold.debug.windowstolinux.app.secret.SecretStoreException;
 import gold.debug.windowstolinux.app.service.locking.ServerOperationLocks;
 import gold.debug.windowstolinux.app.service.server.ServerProfile;
 import gold.debug.windowstolinux.app.service.server.ServerUseCases;

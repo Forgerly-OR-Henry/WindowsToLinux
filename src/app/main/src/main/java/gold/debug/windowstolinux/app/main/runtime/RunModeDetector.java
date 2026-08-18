@@ -179,68 +179,27 @@ public final class RunModeDetector {
         Objects.requireNonNull(workingDirectory, "workingDirectory");
 
         Optional<RuntimeLayout> launcherLayout = processCommand
-                .map(RunModeDetector::normalize)
-                .flatMap(RunModeDetector::layoutFromJPackageExecutable);
+                .flatMap(RuntimePathResolver::layoutFromJPackageExecutable);
         if (launcherLayout.isPresent()) {
             return launcherLayout;
         }
 
         Optional<RuntimeLayout> codeLayout = codeSource
-                .map(RunModeDetector::normalize)
-                .flatMap(RunModeDetector::layoutFromCodeSource);
+                .flatMap(RuntimePathResolver::layoutFromCodeSource);
         if (codeLayout.isPresent()) {
             return codeLayout;
         }
 
         boolean classDirectory = codeSource
-                .map(RunModeDetector::normalize)
-                .filter(Files::isDirectory)
+                .filter(RuntimePathResolver::isDirectory)
                 .isPresent();
         if (!classDirectory) {
             return Optional.empty();
         }
 
         return workingDirectory
-                .map(RunModeDetector::normalize)
-                .flatMap(RunModeDetector::findValidatedDevelopmentModuleHome)
-                .map(home -> layout(RunMode.RUN_CLASS, home));
-    }
-
-    private static Optional<RuntimeLayout> layoutFromJPackageExecutable(Path executable) {
-        Path fileName = executable.getFileName();
-        Path appImageRoot = executable.getParent();
-        if (fileName == null
-                || !fileName.toString().toLowerCase(Locale.ROOT).endsWith(".exe")
-                || !isJPackageWindowsRoot(appImageRoot)) {
-            return Optional.empty();
-        }
-        return Optional.of(layout(RunMode.RUN_APP, appImageRoot));
-    }
-
-    private static Optional<RuntimeLayout> layoutFromCodeSource(Path sourcePath) {
-        if (Files.isDirectory(sourcePath)) {
-            return findMavenModuleHome(sourcePath)
-                    .map(home -> layout(RunMode.RUN_CLASS, home));
-        }
-
-        if (!isJar(sourcePath)) {
-            return Optional.empty();
-        }
-
-        Optional<Path> appImageRoot = findJPackageHomeFromJar(sourcePath);
-        if (appImageRoot.isPresent()) {
-            return Optional.of(layout(RunMode.RUN_APP, appImageRoot.get()));
-        }
-
-        Path jarDirectory = sourcePath.getParent();
-        return jarDirectory == null
-                ? Optional.empty()
-                : Optional.of(layout(RunMode.RUN_JAR, jarDirectory));
-    }
-
-    private static RuntimeLayout layout(RunMode mode, Path applicationHome) {
-        Path normalizedHome = normalize(applicationHome);
-        return new RuntimeLayout(mode, normalizedHome, normalizedHome.resolve("data"));
+                .flatMap(RuntimePathResolver::findValidatedDevelopmentModuleHome)
+                .map(home -> RuntimePathResolver.layout(RunMode.RUN_CLASS, home));
     }
 
     private static Optional<Path> codeSourcePath(Class<?> anchorClass) {
@@ -283,87 +242,4 @@ public final class RunModeDetector {
         }
     }
 
-    private static Optional<Path> findValidatedDevelopmentModuleHome(Path start) {
-        Path current = start;
-        while (current != null) {
-            Optional<Path> directModule = validatedModuleHome(current);
-            if (directModule.isPresent()) {
-                return directModule;
-            }
-
-            Optional<Path> repositoryModule = validatedModuleHome(
-                    current.resolve("src/app/main")
-            );
-            if (repositoryModule.isPresent()) {
-                return repositoryModule;
-            }
-            current = current.getParent();
-        }
-        return Optional.empty();
-    }
-
-    private static Optional<Path> validatedModuleHome(Path candidate) {
-        Path normalized = normalize(candidate);
-        Path pom = normalized.resolve("pom.xml");
-        if (!Files.isRegularFile(pom)) {
-            return Optional.empty();
-        }
-        try {
-            String pomContent = Files.readString(pom);
-            return pomContent.contains("<artifactId>windowstolinux-app-main</artifactId>")
-                    ? Optional.of(normalized)
-                    : Optional.empty();
-        } catch (Exception ignored) {
-            return Optional.empty();
-        }
-    }
-
-    private static Optional<Path> findMavenModuleHome(Path classesDirectory) {
-        Path outputName = classesDirectory.getFileName();
-        Path targetDirectory = classesDirectory.getParent();
-        if (outputName == null || targetDirectory == null) {
-            return Optional.empty();
-        }
-
-        boolean knownOutput = outputName.toString().equals("classes")
-                || outputName.toString().equals("test-classes");
-        Path targetName = targetDirectory.getFileName();
-        Path moduleHome = targetDirectory.getParent();
-        if (!knownOutput
-                || targetName == null
-                || !targetName.toString().equals("target")
-                || moduleHome == null) {
-            return Optional.empty();
-        }
-        return Optional.of(moduleHome);
-    }
-
-    private static Optional<Path> findJPackageHomeFromJar(Path jarPath) {
-        Path appDirectory = jarPath.getParent();
-        if (appDirectory == null
-                || appDirectory.getFileName() == null
-                || !appDirectory.getFileName().toString().equalsIgnoreCase("app")) {
-            return Optional.empty();
-        }
-        Path appImageRoot = appDirectory.getParent();
-        return isJPackageWindowsRoot(appImageRoot)
-                ? Optional.of(appImageRoot)
-                : Optional.empty();
-    }
-
-    private static boolean isJPackageWindowsRoot(Path root) {
-        return root != null
-                && Files.isDirectory(root.resolve("app"))
-                && Files.isDirectory(root.resolve("runtime"));
-    }
-
-    private static boolean isJar(Path path) {
-        Path fileName = path.getFileName();
-        return fileName != null
-                && fileName.toString().toLowerCase(Locale.ROOT).endsWith(".jar");
-    }
-
-    private static Path normalize(Path path) {
-        return path.toAbsolutePath().normalize();
-    }
 }

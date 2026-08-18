@@ -1,11 +1,11 @@
 package gold.debug.windowstolinux.shared.linux.sshd.capability;
 
-import gold.debug.windowstolinux.shared.linux.sshd.capability.probe.ManagedHostCapabilityProbe;
+import gold.debug.windowstolinux.shared.linux.sshd.capability.ManagedHostCapabilityProbe;
 
 import gold.debug.windowstolinux.shared.linux.error.LinuxOperationException;
 import gold.debug.windowstolinux.shared.linux.sshd.command.SshCommandExecutor;
 import gold.debug.windowstolinux.shared.linux.sshd.protocol.helper.ManagedHelperBundle;
-import gold.debug.windowstolinux.shared.model.server.ServerCapabilities;
+import gold.debug.windowstolinux.shared.model.capability.ServerCapabilities;
 
 import java.time.Duration;
 import java.util.Map;

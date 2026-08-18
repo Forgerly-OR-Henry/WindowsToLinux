@@ -1,7 +1,7 @@
 package gold.debug.windowstolinux.app.service.source;
 
 import gold.debug.windowstolinux.shared.model.analysis.DeploymentAdmission;
-import gold.debug.windowstolinux.shared.model.analysis.MultiComponentProjectAssessment;
+import gold.debug.windowstolinux.shared.model.assessment.MultiComponentProjectAssessment;
 
 import java.util.LinkedHashMap;
 import java.util.Map;

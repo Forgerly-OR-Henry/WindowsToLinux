@@ -1,7 +1,6 @@
 package gold.debug.windowstolinux.shared.linux.sshd.distro;
 
-import gold.debug.windowstolinux.shared.linux.sshd.distro.registry.DistributionSetupRegistry;
-import gold.debug.windowstolinux.shared.linux.sshd.distro.shell.SetupShellSupport;
+import gold.debug.windowstolinux.shared.linux.sshd.distro.setup.SetupShellSupport;
 
 import gold.debug.windowstolinux.shared.linux.error.LinuxOperationException;
 import gold.debug.windowstolinux.shared.linux.sshd.capability.SshdCapabilityCollector;
@@ -10,8 +9,8 @@ import gold.debug.windowstolinux.shared.linux.sshd.command.SshCommandExecutor;
 import gold.debug.windowstolinux.shared.model.deployment.EnvironmentSetupApproval;
 import gold.debug.windowstolinux.shared.model.deployment.EnvironmentSetupResult;
 import gold.debug.windowstolinux.shared.model.health.HealthCheck;
-import gold.debug.windowstolinux.shared.model.server.LinuxCapabilities;
-import gold.debug.windowstolinux.shared.model.server.ServerCapabilities;
+import gold.debug.windowstolinux.shared.model.capability.LinuxCapabilities;
+import gold.debug.windowstolinux.shared.model.capability.ServerCapabilities;
 
 import java.util.Objects;
 

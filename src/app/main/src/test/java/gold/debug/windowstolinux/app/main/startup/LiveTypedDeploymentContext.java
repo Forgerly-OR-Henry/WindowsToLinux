@@ -19,7 +19,7 @@ import gold.debug.windowstolinux.shared.deploy.result.DeploymentResult;
 import gold.debug.windowstolinux.shared.deploy.result.MultiComponentDeploymentResult;
 import gold.debug.windowstolinux.shared.deploy.result.MultiComponentLifecycleResult;
 import gold.debug.windowstolinux.shared.analyze.component.ComponentAnalysisRequest;
-import gold.debug.windowstolinux.shared.git.snapshot.GitSourceRequest;
+import gold.debug.windowstolinux.shared.git.GitSourceRequest;
 import gold.debug.windowstolinux.shared.linux.sshd.connection.SshdLinuxGateway;
 import gold.debug.windowstolinux.shared.model.deployment.BuildLimits;
 import gold.debug.windowstolinux.shared.model.health.UserAccessUrl;
@@ -30,7 +30,7 @@ import gold.debug.windowstolinux.shared.model.project.DeploymentRuntimeSpecifica
 import gold.debug.windowstolinux.shared.model.security.CredentialStorageMode;
 import gold.debug.windowstolinux.shared.model.deployment.EnvironmentSetupResult;
 import gold.debug.windowstolinux.shared.model.server.ServerIdentity;
-import gold.debug.windowstolinux.shared.model.server.LinuxCapabilities;
+import gold.debug.windowstolinux.shared.model.capability.LinuxCapabilities;
 
 import java.nio.file.Path;
 import java.time.Instant;

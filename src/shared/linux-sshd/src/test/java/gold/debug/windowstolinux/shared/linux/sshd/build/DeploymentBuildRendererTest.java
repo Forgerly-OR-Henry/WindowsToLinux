@@ -1,15 +1,14 @@
 package gold.debug.windowstolinux.shared.linux.sshd.build;
 
-import gold.debug.windowstolinux.shared.linux.sshd.build.registry.DeploymentBuildRendererRegistry;
-import gold.debug.windowstolinux.shared.linux.sshd.build.shell.SafeBuildScriptEnvelope;
+import gold.debug.windowstolinux.shared.linux.sshd.build.script.SafeBuildScriptEnvelope;
 import gold.debug.windowstolinux.shared.linux.sshd.build.spi.DeploymentBuildRenderer;
-import gold.debug.windowstolinux.shared.linux.sshd.ecosystem.jvm.build.jar.JavaJarBuildRenderer;
-import gold.debug.windowstolinux.shared.linux.sshd.ecosystem.jvm.build.springboot.SpringBootBuildRenderer;
-import gold.debug.windowstolinux.shared.linux.sshd.ecosystem.node.build.NodeBuildRenderer;
-import gold.debug.windowstolinux.shared.linux.sshd.ecosystem.python.build.PythonBuildRenderer;
-import gold.debug.windowstolinux.shared.linux.sshd.ecosystem.service.EcosystemServiceBuildSupport;
-import gold.debug.windowstolinux.shared.linux.sshd.workload.container.ContainerBuildRenderer;
-import gold.debug.windowstolinux.shared.linux.sshd.workload.staticweb.StaticSiteBuildRenderer;
+import gold.debug.windowstolinux.shared.linux.sshd.build.renderer.JavaJarBuildRenderer;
+import gold.debug.windowstolinux.shared.linux.sshd.build.renderer.SpringBootBuildRenderer;
+import gold.debug.windowstolinux.shared.linux.sshd.build.renderer.NodeBuildRenderer;
+import gold.debug.windowstolinux.shared.linux.sshd.build.renderer.PythonBuildRenderer;
+import gold.debug.windowstolinux.shared.linux.sshd.build.renderer.ServiceBuildRenderer;
+import gold.debug.windowstolinux.shared.linux.sshd.build.renderer.ContainerBuildRenderer;
+import gold.debug.windowstolinux.shared.linux.sshd.build.renderer.StaticSiteBuildRenderer;
 
 import gold.debug.windowstolinux.shared.linux.transfer.RemoteWorkspace;
 import gold.debug.windowstolinux.shared.model.analysis.AnalysisEvidence;
@@ -172,7 +171,7 @@ class DeploymentBuildRendererTest {
 
     private String service(DeploymentProjectType type, DeploymentBuildTool tool, String version,
                             String artifact, String entrypoint, OptionalInt port) {
-        return render(new EcosystemServiceBuildSupport(type), tool, runtime(type, version, artifact, entrypoint, port));
+        return render(new ServiceBuildRenderer(type), tool, runtime(type, version, artifact, entrypoint, port));
     }
 
     private DeploymentRuntimeSpecification runtime(DeploymentProjectType type, String version, String artifact,
@@ -193,11 +192,11 @@ class DeploymentBuildRendererTest {
     private static List<DeploymentBuildRenderer> renderers() {
         return List.of(new SpringBootBuildRenderer(), new JavaJarBuildRenderer(), new NodeBuildRenderer(),
                 new PythonBuildRenderer(), new StaticSiteBuildRenderer(), new ContainerBuildRenderer(),
-                new EcosystemServiceBuildSupport(DeploymentProjectType.GO_SERVICE),
-                new EcosystemServiceBuildSupport(DeploymentProjectType.RUST_SERVICE),
-                new EcosystemServiceBuildSupport(DeploymentProjectType.DOTNET_SERVICE),
-                new EcosystemServiceBuildSupport(DeploymentProjectType.KOTLIN_SERVICE),
-                new EcosystemServiceBuildSupport(DeploymentProjectType.PHP_SERVICE),
-                new EcosystemServiceBuildSupport(DeploymentProjectType.RUBY_SERVICE));
+                new ServiceBuildRenderer(DeploymentProjectType.GO_SERVICE),
+                new ServiceBuildRenderer(DeploymentProjectType.RUST_SERVICE),
+                new ServiceBuildRenderer(DeploymentProjectType.DOTNET_SERVICE),
+                new ServiceBuildRenderer(DeploymentProjectType.KOTLIN_SERVICE),
+                new ServiceBuildRenderer(DeploymentProjectType.PHP_SERVICE),
+                new ServiceBuildRenderer(DeploymentProjectType.RUBY_SERVICE));
     }
 }

@@ -1,7 +1,7 @@
-package gold.debug.windowstolinux.app.secret.store;
+package gold.debug.windowstolinux.app.secret;
 
-import gold.debug.windowstolinux.app.secret.api.SecretStoreException;
-import gold.debug.windowstolinux.app.secret.windows.WindowsCredentialManagerSecretStore;
+import gold.debug.windowstolinux.app.secret.SecretStoreException;
+import gold.debug.windowstolinux.app.secret.WindowsCredentialManagerSecretStore;
 
 import gold.debug.windowstolinux.app.db.DesktopPersistence;
 import org.junit.jupiter.api.Test;

@@ -1,7 +1,7 @@
 package gold.debug.windowstolinux.shared.deploy.support;
 
-import gold.debug.windowstolinux.shared.deploy.support.distro.registry.DistributionSupportRegistry;
-import gold.debug.windowstolinux.shared.model.server.LinuxCapabilities;
+import gold.debug.windowstolinux.shared.deploy.support.DistributionSupportRegistry;
+import gold.debug.windowstolinux.shared.model.capability.LinuxCapabilities;
 import gold.debug.windowstolinux.shared.model.project.DeploymentRuntimeSpecification;
 import gold.debug.windowstolinux.shared.model.project.DeploymentProjectFacts;
 import gold.debug.windowstolinux.shared.model.project.DeploymentBuildTool;

@@ -9,6 +9,16 @@ import java.util.Objects;
  * <p>由平台秘密模块提供的内存认证材料。
  */
 public sealed interface SshCredential permits SshCredential.Password, SshCredential.PrivateKey {
+    /** Creates an independently owned credential for a bounded connection attempt. / 为有界连接尝试创建独立持有的凭据。 */
+    default SshCredential duplicate() {
+        return this;
+    }
+
+    /** Clears mutable authentication material owned by this credential. / 清除此凭据持有的可变认证材料。 */
+    default void clear() {
+        // Immutable private-key references do not expose mutable character material. / 不可变私钥引用不暴露可变字符材料。
+    }
+
     /**
      * Provides the {@code Password} implementation.
      *
@@ -43,11 +53,18 @@ public sealed interface SshCredential permits SshCredential.Password, SshCredent
             return value.clone();
         }
 
+        /** Creates a separately clearable password credential. / 创建可单独清除的密码凭据。 */
+        @Override
+        public SshCredential duplicate() {
+            return new Password(value);
+        }
+
         /**
          * Performs the {@code clear} operation.
          *
          * <p>执行 {@code clear} 操作。
          */
+        @Override
         public void clear() {
             java.util.Arrays.fill(value, '\0');
         }

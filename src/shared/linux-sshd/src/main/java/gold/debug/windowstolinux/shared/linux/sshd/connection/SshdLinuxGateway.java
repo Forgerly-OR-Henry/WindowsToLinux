@@ -1,6 +1,7 @@
 package gold.debug.windowstolinux.shared.linux.sshd.connection;
 
 import gold.debug.windowstolinux.shared.linux.sshd.session.SshdLinuxRemoteSession;
+import gold.debug.windowstolinux.shared.linux.sshd.session.SshSessionCloser;
 import gold.debug.windowstolinux.shared.linux.sshd.command.SshCommandExecutor;
 
 import gold.debug.windowstolinux.shared.linux.connection.HostKeyDecision;
@@ -37,10 +38,8 @@ public final class SshdLinuxGateway implements DeploymentLinuxGateway {
     private static final Duration CONNECT_TIMEOUT = Duration.ofSeconds(30);
     private static final Duration HEARTBEAT_INTERVAL = Duration.ofSeconds(30);
     private static final int HEARTBEAT_NO_REPLY_MAX = 3;
-    private static final Duration CLOSE_TIMEOUT = Duration.ofSeconds(5);
     private static final int TRANSIENT_CONNECTION_ATTEMPTS = 3;
     private static final Duration TRANSIENT_RETRY_DELAY = Duration.ofMillis(250);
-    private static final Duration WINDOWS_NIO2_COMPLETION_GRACE = Duration.ofMillis(500);
     /** Performs the {@code connect} operation. / 执行 {@code connect} 操作。 */
     @Override
     public DeploymentRemoteSession connect(SshEndpoint endpoint, SshCredential credential, HostKeyVerifier hostKeyVerifier)
@@ -90,7 +89,7 @@ public final class SshdLinuxGateway implements DeploymentLinuxGateway {
                         .verify(CONNECT_TIMEOUT)
                         .getSession();
             } catch (Exception exception) {
-                closeQuietly(client);
+                SshSessionCloser.closeQuietly(client);
                 String fingerprint = observedFingerprint.get();
                 if (fingerprint != null) {
                     throw LinuxOperationException.localized("linux.error.hostKeyRejected", Map.of(
@@ -104,7 +103,7 @@ public final class SshdLinuxGateway implements DeploymentLinuxGateway {
             try {
                 authenticate(session, credential);
             } catch (Exception exception) {
-                closeQuietly(client);
+                SshSessionCloser.closeQuietly(client);
                 String fingerprint = observedFingerprint.get();
                 if (hostKeyDecision.get() == HostKeyDecision.REJECT && fingerprint != null) {
                     throw LinuxOperationException.localized("linux.error.hostKeyRejected", Map.of(
@@ -119,7 +118,7 @@ public final class SshdLinuxGateway implements DeploymentLinuxGateway {
             }
             return new SshdLinuxRemoteSession(client, session, endpoint, observedFingerprint.get());
         } catch (Exception exception) {
-            closeQuietly(client);
+            SshSessionCloser.closeQuietly(client);
             if (exception instanceof LinuxOperationException linuxOperationException) {
                 throw linuxOperationException;
             }
@@ -187,50 +186,22 @@ public final class SshdLinuxGateway implements DeploymentLinuxGateway {
         return client;
     }
 
+    /** Delegates client cleanup to the session-owned close policy. / 将客户端清理委托给会话层持有的关闭策略。 */
+    public static void closeQuietly(SshClient client) {
+        SshSessionCloser.closeQuietly(client);
+    }
+
+    /** Delegates session cleanup to the session-owned close policy. / 将会话清理委托给会话层持有的关闭策略。 */
+    public static void closeQuietly(ClientSession session) {
+        SshSessionCloser.closeQuietly(session);
+    }
+
     private static String fingerprint(PublicKey key) {
         try {
             byte[] digest = MessageDigest.getInstance("SHA-256").digest(key.getEncoded());
             return "SHA256:" + Base64.getEncoder().withoutPadding().encodeToString(digest);
         } catch (NoSuchAlgorithmException exception) {
             throw new IllegalStateException("JDK SHA-256 is unavailable", exception);
-        }
-    }
-
-    /** Performs the {@code closeQuietly} operation. / 执行 {@code closeQuietly} 操作。 */
-    public static void closeQuietly(SshClient client) {
-        try {
-            if (!client.close(false).await(CLOSE_TIMEOUT)) {
-                client.close(true).await(CLOSE_TIMEOUT);
-            }
-            client.stop();
-        } catch (IOException | RuntimeException ignored) {
-            // A failed connection should not obscure its safe primary error. / 连接失败不应掩盖其安全的首要错误。
-        }
-    }
-
-    /** Performs the {@code closeQuietly} operation. / 执行 {@code closeQuietly} 操作。 */
-    public static void closeQuietly(ClientSession session) {
-        try {
-            if (!session.close(false).await(CLOSE_TIMEOUT)) {
-                session.close(true).await(CLOSE_TIMEOUT);
-            }
-            awaitWindowsNio2Completion();
-        } catch (IOException | RuntimeException ignored) {
-            // Session shutdown cannot change the already completed operation result. / 会话关闭不能改变已完成操作的结果。
-        }
-    }
-
-    private static void awaitWindowsNio2Completion() {
-        if (!System.getProperty("os.name", "").startsWith("Windows")) {
-            return;
-        }
-        try {
-            // Apache SSHD closes its NIO2 resume executor before the Windows asynchronous channel group. Give the
-            // completed socket close callback a bounded drain interval before closing the client factory.
-            // Apache SSHD 会先关闭 NIO2 恢复执行器，再关闭 Windows 异步通道组；在关闭客户端工厂前，为已完成的套接字关闭回调提供有界排空时间。
-            Thread.sleep(WINDOWS_NIO2_COMPLETION_GRACE.toMillis());
-        } catch (InterruptedException exception) {
-            Thread.currentThread().interrupt();
         }
     }
 

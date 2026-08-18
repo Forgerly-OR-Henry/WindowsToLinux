@@ -3,7 +3,7 @@ package gold.debug.windowstolinux.shared.linux.sshd.transfer;
 import gold.debug.windowstolinux.shared.linux.error.LinuxOperationException;
 import gold.debug.windowstolinux.shared.linux.protocol.RemoteStepResult;
 import gold.debug.windowstolinux.shared.linux.sshd.command.SshCommandExecutor;
-import gold.debug.windowstolinux.shared.linux.sshd.protocol.workspace.CandidateWorkspaceController;
+import gold.debug.windowstolinux.shared.linux.sshd.protocol.CandidateWorkspaceController;
 import gold.debug.windowstolinux.shared.linux.transfer.RemoteWorkspace;
 import gold.debug.windowstolinux.shared.linux.transfer.UploadReceipt;
 import gold.debug.windowstolinux.shared.model.archive.SourceArchiveDescriptor;

@@ -1,9 +1,10 @@
 package gold.debug.windowstolinux.app.ui.managed;
 
-import gold.debug.windowstolinux.app.service.DesktopApplicationService;
+import gold.debug.windowstolinux.app.service.port.ManagedApplicationPort;
+import gold.debug.windowstolinux.app.ui.component.DesktopAsyncTask;
 import gold.debug.windowstolinux.app.ui.component.DesktopComponents;
 import gold.debug.windowstolinux.app.ui.server.ServerContext;
-import gold.debug.windowstolinux.app.ui.shell.PageMessages;
+import gold.debug.windowstolinux.app.ui.i18n.PageMessages;
 import gold.debug.windowstolinux.shared.model.health.HealthCheck;
 import gold.debug.windowstolinux.shared.model.lifecycle.LifecycleAction;
 
@@ -12,7 +13,6 @@ import javax.swing.JLabel;
 import javax.swing.JPanel;
 import javax.swing.JTextArea;
 import javax.swing.JTextField;
-import javax.swing.SwingWorker;
 import java.awt.BorderLayout;
 import java.awt.FlowLayout;
 import java.util.Locale;
@@ -20,7 +20,7 @@ import java.util.Map;
 
 /** Owns the managed-application inventory, selection, and lifecycle workflows. / 持有受管应用清单、选择与生命周期流程。 */
 public final class ManagedPage {
-    private final DesktopApplicationService service;
+    private final ManagedApplicationPort service;
     private final ServerContext serverContext;
     private final PageMessages messages;
     private final JTextField applicationId = new JTextField(20);
@@ -28,7 +28,7 @@ public final class ManagedPage {
     private final JPanel panel;
 
     /** Creates the stateful page controller. / 创建有状态页面控制器。 */
-    public ManagedPage(DesktopApplicationService service, ServerContext serverContext,
+    public ManagedPage(ManagedApplicationPort service, ServerContext serverContext,
                        DesktopComponents components, PageMessages messages) {
         this.service = service;
         this.serverContext = serverContext;
@@ -107,23 +107,14 @@ public final class ManagedPage {
             char[] master = serverContext.masterPassword();
             output.setText(messages.text("lifecycle.running", Map.of(
                     "action", messages.text("lifecycle.action." + action.name().toLowerCase(Locale.ROOT)))));
-            new SwingWorker<gold.debug.windowstolinux.app.service.lifecycle.LifecycleOutcome, Void>() {
-                /** Runs the background task. / 运行后台任务。 */
-                @Override protected gold.debug.windowstolinux.app.service.lifecycle.LifecycleOutcome doInBackground() throws Exception {
-                    return service.executePersistedLifecycleWithStoredPassword(selected, action, master);
-                }
-                /** Completes the background task on the UI thread. / 在 UI 线程完成后台任务。 */
-                @Override protected void done() {
-                    try {
-                        var result = get();
-                        output.setText(messages.text(result.accepted() ? "lifecycle.accepted" : "lifecycle.rejected",
-                                Map.of("message", messages.catalog().text(result.message()),
-                                        "observation", messages.lifecycle(result.observation().orElse(null)))));
-                    } catch (Exception exception) {
-                        output.setText(messages.text("lifecycle.failed", Map.of("detail", messages.safe(exception))));
-                    }
-                }
-            }.execute();
+            DesktopAsyncTask.run(
+                    () -> service.executePersistedLifecycleWithStoredPassword(selected, action, master),
+                    result -> output.setText(messages.text(
+                            result.accepted() ? "lifecycle.accepted" : "lifecycle.rejected",
+                            Map.of("message", messages.catalog().text(result.message()),
+                                    "observation", messages.lifecycle(result.observation().orElse(null))))),
+                    exception -> output.setText(messages.text("lifecycle.failed",
+                            Map.of("detail", messages.safe(exception)))));
         } catch (Exception exception) {
             output.setText(messages.text("lifecycle.startFailed", Map.of("detail", messages.safe(exception))));
         }

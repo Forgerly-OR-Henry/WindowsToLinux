@@ -2,7 +2,7 @@ package gold.debug.windowstolinux.app.ui.shell;
 
 import gold.debug.windowstolinux.app.service.DesktopApplicationService;
 import gold.debug.windowstolinux.app.ui.display.DesktopDisplaySettings;
-import gold.debug.windowstolinux.app.ui.display.DesktopDisplayChangeListener;
+import gold.debug.windowstolinux.app.ui.shell.DesktopDisplayChangeListener;
 import gold.debug.windowstolinux.app.ui.display.ThemePalette;
 import gold.debug.windowstolinux.app.ui.component.DesktopComponents;
 import gold.debug.windowstolinux.app.ui.i18n.MessageCatalog;

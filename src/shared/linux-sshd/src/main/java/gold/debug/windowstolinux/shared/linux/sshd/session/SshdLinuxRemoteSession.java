@@ -1,7 +1,6 @@
 package gold.debug.windowstolinux.shared.linux.sshd.session;
 
 import gold.debug.windowstolinux.shared.linux.sshd.command.SshCommandExecutor;
-import gold.debug.windowstolinux.shared.linux.sshd.connection.SshdLinuxGateway;
 
 import gold.debug.windowstolinux.shared.linux.build.DeploymentBuildResult;
 import gold.debug.windowstolinux.shared.linux.session.DeploymentRemoteSession;
@@ -14,7 +13,7 @@ import gold.debug.windowstolinux.shared.linux.sshd.build.DeploymentBuildExecutor
 import gold.debug.windowstolinux.shared.linux.sshd.capability.SshdCapabilityCollector;
 import gold.debug.windowstolinux.shared.linux.sshd.capability.SshdPlatformCapabilityCollector;
 import gold.debug.windowstolinux.shared.linux.sshd.distro.ManagedEnvironmentExecutor;
-import gold.debug.windowstolinux.shared.linux.sshd.protocol.workspace.CandidateWorkspaceController;
+import gold.debug.windowstolinux.shared.linux.sshd.protocol.CandidateWorkspaceController;
 import gold.debug.windowstolinux.shared.linux.sshd.protocol.runtime.ManagedRuntimeController;
 import gold.debug.windowstolinux.shared.linux.sshd.protocol.release.DeploymentReleaseProtocolExecutor;
 import gold.debug.windowstolinux.shared.linux.sshd.protocol.release.ContainerReleaseProtocolExecutor;
@@ -25,9 +24,9 @@ import gold.debug.windowstolinux.shared.config.secretref.ResolvedSecretRevision;
 import gold.debug.windowstolinux.shared.linux.sshd.runtime.systemd.SystemdHealthChecker;
 import gold.debug.windowstolinux.shared.linux.sshd.runtime.systemd.SystemdLifecycleExecutor;
 import gold.debug.windowstolinux.shared.linux.sshd.runtime.systemd.SystemdOwnershipObserver;
-import gold.debug.windowstolinux.shared.linux.sshd.runtime.container.ContainerRuntimeExecutor;
-import gold.debug.windowstolinux.shared.linux.sshd.runtime.dispatch.ManagedRuntimeExecutor;
-import gold.debug.windowstolinux.shared.linux.sshd.runtime.dispatch.ManagedRuntimeKindProbe;
+import gold.debug.windowstolinux.shared.linux.sshd.runtime.ContainerRuntimeExecutor;
+import gold.debug.windowstolinux.shared.linux.sshd.runtime.ManagedRuntimeExecutor;
+import gold.debug.windowstolinux.shared.linux.sshd.runtime.ManagedRuntimeKindProbe;
 import gold.debug.windowstolinux.shared.linux.sshd.transfer.SshdSourceTransfer;
 import gold.debug.windowstolinux.shared.linux.transfer.RemoteWorkspace;
 import gold.debug.windowstolinux.shared.linux.transfer.UploadReceipt;
@@ -42,8 +41,8 @@ import gold.debug.windowstolinux.shared.model.lifecycle.RuntimeState;
 import gold.debug.windowstolinux.shared.model.managed.ManagedApplication;
 import gold.debug.windowstolinux.shared.model.project.DeploymentProjectFacts;
 import gold.debug.windowstolinux.shared.model.project.DeploymentRuntimeSpecification;
-import gold.debug.windowstolinux.shared.model.server.ServerCapabilities;
-import gold.debug.windowstolinux.shared.model.server.LinuxCapabilities;
+import gold.debug.windowstolinux.shared.model.capability.ServerCapabilities;
+import gold.debug.windowstolinux.shared.model.capability.LinuxCapabilities;
 import org.apache.sshd.client.SshClient;
 import org.apache.sshd.client.session.ClientSession;
 
@@ -277,9 +276,9 @@ public final class SshdLinuxRemoteSession implements DeploymentRemoteSession {
     @Override
     public void close() {
         try {
-            SshdLinuxGateway.closeQuietly(session);
+            SshSessionCloser.closeQuietly(session);
         } finally {
-            SshdLinuxGateway.closeQuietly(client);
+            SshSessionCloser.closeQuietly(client);
         }
     }
 }

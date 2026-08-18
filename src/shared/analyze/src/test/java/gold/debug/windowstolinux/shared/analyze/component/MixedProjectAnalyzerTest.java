@@ -1,6 +1,6 @@
 package gold.debug.windowstolinux.shared.analyze.component;
 
-import gold.debug.windowstolinux.shared.model.analysis.ComponentIssue;
+import gold.debug.windowstolinux.shared.model.assessment.ComponentIssue;
 import gold.debug.windowstolinux.shared.model.analysis.DeploymentAdmission;
 import gold.debug.windowstolinux.shared.model.health.HealthCheck;
 import gold.debug.windowstolinux.shared.model.project.DeploymentProjectType;

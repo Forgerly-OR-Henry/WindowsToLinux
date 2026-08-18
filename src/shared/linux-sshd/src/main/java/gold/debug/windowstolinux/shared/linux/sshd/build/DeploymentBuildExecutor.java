@@ -1,20 +1,14 @@
 package gold.debug.windowstolinux.shared.linux.sshd.build;
 
-import gold.debug.windowstolinux.shared.linux.sshd.build.config.BuildConfigEnvironment;
-import gold.debug.windowstolinux.shared.linux.sshd.build.registry.DeploymentBuildRendererRegistry;
+import gold.debug.windowstolinux.shared.linux.sshd.build.script.BuildConfigEnvironment;
 import gold.debug.windowstolinux.shared.linux.sshd.build.spi.DeploymentBuildRenderer;
-import gold.debug.windowstolinux.shared.linux.sshd.ecosystem.jvm.build.jar.JavaJarBuildRenderer;
-import gold.debug.windowstolinux.shared.linux.sshd.ecosystem.jvm.build.springboot.SpringBootBuildRenderer;
-import gold.debug.windowstolinux.shared.linux.sshd.ecosystem.node.build.NodeBuildRenderer;
-import gold.debug.windowstolinux.shared.linux.sshd.ecosystem.python.build.PythonBuildRenderer;
-import gold.debug.windowstolinux.shared.linux.sshd.ecosystem.dotnet.build.DotNetBuildRenderer;
-import gold.debug.windowstolinux.shared.linux.sshd.ecosystem.go.build.GoBuildRenderer;
-import gold.debug.windowstolinux.shared.linux.sshd.ecosystem.jvm.build.kotlin.KotlinBuildRenderer;
-import gold.debug.windowstolinux.shared.linux.sshd.ecosystem.php.build.PhpBuildRenderer;
-import gold.debug.windowstolinux.shared.linux.sshd.ecosystem.ruby.build.RubyBuildRenderer;
-import gold.debug.windowstolinux.shared.linux.sshd.ecosystem.rust.build.RustBuildRenderer;
-import gold.debug.windowstolinux.shared.linux.sshd.workload.container.ContainerBuildRenderer;
-import gold.debug.windowstolinux.shared.linux.sshd.workload.staticweb.StaticSiteBuildRenderer;
+import gold.debug.windowstolinux.shared.linux.sshd.build.renderer.JavaJarBuildRenderer;
+import gold.debug.windowstolinux.shared.linux.sshd.build.renderer.SpringBootBuildRenderer;
+import gold.debug.windowstolinux.shared.linux.sshd.build.renderer.NodeBuildRenderer;
+import gold.debug.windowstolinux.shared.linux.sshd.build.renderer.PythonBuildRenderer;
+import gold.debug.windowstolinux.shared.linux.sshd.build.renderer.ServiceBuildRenderer;
+import gold.debug.windowstolinux.shared.linux.sshd.build.renderer.ContainerBuildRenderer;
+import gold.debug.windowstolinux.shared.linux.sshd.build.renderer.StaticSiteBuildRenderer;
 
 import gold.debug.windowstolinux.shared.config.revision.ConfigurationSnapshot;
 import gold.debug.windowstolinux.shared.linux.build.DeploymentBuildResult;
@@ -45,8 +39,12 @@ public final class DeploymentBuildExecutor {
     public DeploymentBuildExecutor(SshCommandExecutor commands, String username) {
         this(commands, username, List.of(new SpringBootBuildRenderer(), new JavaJarBuildRenderer(), new NodeBuildRenderer(),
                 new PythonBuildRenderer(), new StaticSiteBuildRenderer(), new ContainerBuildRenderer(),
-                new GoBuildRenderer(), new RustBuildRenderer(), new DotNetBuildRenderer(),
-                new KotlinBuildRenderer(), new PhpBuildRenderer(), new RubyBuildRenderer()));
+                new ServiceBuildRenderer(DeploymentProjectType.GO_SERVICE),
+                new ServiceBuildRenderer(DeploymentProjectType.RUST_SERVICE),
+                new ServiceBuildRenderer(DeploymentProjectType.DOTNET_SERVICE),
+                new ServiceBuildRenderer(DeploymentProjectType.KOTLIN_SERVICE),
+                new ServiceBuildRenderer(DeploymentProjectType.PHP_SERVICE),
+                new ServiceBuildRenderer(DeploymentProjectType.RUBY_SERVICE)));
     }
 
     DeploymentBuildExecutor(SshCommandExecutor commands, String username, List<DeploymentBuildRenderer> renderers) {

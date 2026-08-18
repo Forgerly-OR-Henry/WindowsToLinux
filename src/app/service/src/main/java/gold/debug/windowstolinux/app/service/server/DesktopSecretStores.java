@@ -1,10 +1,10 @@
 package gold.debug.windowstolinux.app.service.server;
 
 import gold.debug.windowstolinux.app.db.repository.EncryptedSecretRepository;
-import gold.debug.windowstolinux.app.secret.api.SecretStore;
-import gold.debug.windowstolinux.app.secret.api.SecretStoreException;
-import gold.debug.windowstolinux.app.secret.store.Argon2AesSecretStore;
-import gold.debug.windowstolinux.app.secret.windows.WindowsCredentialManagerSecretStore;
+import gold.debug.windowstolinux.app.secret.SecretStore;
+import gold.debug.windowstolinux.app.secret.SecretStoreException;
+import gold.debug.windowstolinux.app.secret.Argon2AesSecretStore;
+import gold.debug.windowstolinux.app.secret.WindowsCredentialManagerSecretStore;
 import gold.debug.windowstolinux.shared.linux.connection.SshCredential;
 import gold.debug.windowstolinux.shared.model.security.CredentialStorageMode;
 import gold.debug.windowstolinux.shared.model.message.LocalizedMessage;

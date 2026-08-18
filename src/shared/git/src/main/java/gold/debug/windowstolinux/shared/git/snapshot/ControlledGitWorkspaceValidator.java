@@ -1,5 +1,6 @@
 package gold.debug.windowstolinux.shared.git.snapshot;
 
+import gold.debug.windowstolinux.shared.git.GitSnapshotException;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.LinkOption;

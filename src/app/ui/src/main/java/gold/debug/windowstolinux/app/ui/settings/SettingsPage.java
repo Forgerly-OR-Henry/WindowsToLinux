@@ -4,7 +4,7 @@ import gold.debug.windowstolinux.app.ui.display.DesktopDisplaySettings;
 import gold.debug.windowstolinux.app.ui.display.ThemeMode;
 import gold.debug.windowstolinux.app.ui.component.DesktopComponents;
 import gold.debug.windowstolinux.app.ui.i18n.MessageCatalog;
-import gold.debug.windowstolinux.app.ui.shell.PageMessages;
+import gold.debug.windowstolinux.app.ui.i18n.PageMessages;
 
 import javax.swing.DefaultListCellRenderer;
 import javax.swing.JComboBox;

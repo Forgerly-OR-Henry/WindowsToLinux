@@ -4,7 +4,7 @@ import gold.debug.windowstolinux.shared.analyze.core.DeploymentAnalysisCoordinat
 import gold.debug.windowstolinux.shared.deploy.contract.ReviewedDeploymentPlan;
 import gold.debug.windowstolinux.shared.deploy.plan.ReviewedDeploymentPlanner;
 import gold.debug.windowstolinux.shared.deploy.contract.ReviewedDeploymentRequest;
-import gold.debug.windowstolinux.shared.model.analysis.DeploymentProjectAssessment;
+import gold.debug.windowstolinux.shared.model.assessment.DeploymentProjectAssessment;
 import gold.debug.windowstolinux.shared.model.project.DeploymentProjectType;
 
 import java.nio.file.Path;

@@ -1,8 +1,8 @@
 package gold.debug.windowstolinux.app.service;
 
 import gold.debug.windowstolinux.app.db.DesktopPersistence;
-import gold.debug.windowstolinux.app.secret.api.SecretStore;
-import gold.debug.windowstolinux.app.secret.api.SecretStoreException;
+import gold.debug.windowstolinux.app.secret.SecretStore;
+import gold.debug.windowstolinux.app.secret.SecretStoreException;
 import gold.debug.windowstolinux.app.service.ai.AiAnalysisOutcome;
 import gold.debug.windowstolinux.app.service.ai.AiProfile;
 import gold.debug.windowstolinux.app.service.ai.AiProviderProfile;
@@ -14,6 +14,7 @@ import gold.debug.windowstolinux.app.service.config.DeploymentConfigurationUseCa
 import gold.debug.windowstolinux.app.service.deployment.DeploymentOutcome;
 import gold.debug.windowstolinux.app.service.deployment.ReviewedDeploymentUseCase;
 import gold.debug.windowstolinux.app.service.deployment.MultiComponentDeploymentUseCase;
+import gold.debug.windowstolinux.app.service.deployment.MultiComponentLifecycleUseCase;
 import gold.debug.windowstolinux.app.service.deployment.ManagedMultiComponentApplication;
 import gold.debug.windowstolinux.app.service.deployment.MultiComponentReviewInput;
 import gold.debug.windowstolinux.app.service.deployment.ReviewedMultiComponentApplication;
@@ -21,6 +22,11 @@ import gold.debug.windowstolinux.app.service.environment.EnvironmentSetupUseCase
 import gold.debug.windowstolinux.app.service.lifecycle.LifecycleOutcome;
 import gold.debug.windowstolinux.app.service.lifecycle.LifecycleUseCase;
 import gold.debug.windowstolinux.app.service.lifecycle.ManagedApplicationSummary;
+import gold.debug.windowstolinux.app.service.port.AiApplicationPort;
+import gold.debug.windowstolinux.app.service.port.DeploymentApplicationPort;
+import gold.debug.windowstolinux.app.service.port.ManagedApplicationPort;
+import gold.debug.windowstolinux.app.service.port.MultiComponentApplicationPort;
+import gold.debug.windowstolinux.app.service.port.ServerApplicationPort;
 import gold.debug.windowstolinux.app.service.server.DesktopSecretStores;
 import gold.debug.windowstolinux.app.service.server.ServerProfile;
 import gold.debug.windowstolinux.app.service.server.ServerUseCases;
@@ -50,7 +56,7 @@ import gold.debug.windowstolinux.shared.linux.error.LinuxOperationException;
 import gold.debug.windowstolinux.shared.linux.connection.SshCredential;
 import gold.debug.windowstolinux.shared.linux.connection.SshEndpoint;
 import gold.debug.windowstolinux.shared.model.deployment.BuildLimits;
-import gold.debug.windowstolinux.shared.model.analysis.DeploymentProjectAssessment;
+import gold.debug.windowstolinux.shared.model.assessment.DeploymentProjectAssessment;
 import gold.debug.windowstolinux.shared.model.project.DeploymentProjectType;
 import gold.debug.windowstolinux.shared.model.deployment.EnvironmentSetupResult;
 import gold.debug.windowstolinux.shared.model.health.HealthCheck;
@@ -58,11 +64,11 @@ import gold.debug.windowstolinux.shared.model.health.UserAccessUrl;
 import gold.debug.windowstolinux.shared.model.lifecycle.LifecycleAction;
 import gold.debug.windowstolinux.shared.model.managed.ManagedApplication;
 import gold.debug.windowstolinux.shared.model.security.CredentialStorageMode;
-import gold.debug.windowstolinux.shared.model.server.ServerCapabilities;
-import gold.debug.windowstolinux.shared.model.server.LinuxCapabilities;
+import gold.debug.windowstolinux.shared.model.capability.ServerCapabilities;
+import gold.debug.windowstolinux.shared.model.capability.LinuxCapabilities;
 import gold.debug.windowstolinux.shared.model.server.ServerIdentity;
-import gold.debug.windowstolinux.shared.git.snapshot.GitSnapshotException;
-import gold.debug.windowstolinux.shared.git.snapshot.GitSourceRequest;
+import gold.debug.windowstolinux.shared.git.GitSnapshotException;
+import gold.debug.windowstolinux.shared.git.GitSourceRequest;
 import gold.debug.windowstolinux.shared.analyze.component.ComponentAnalysisRequest;
 
 import java.io.IOException;
@@ -79,7 +85,8 @@ import java.util.Set;
  *
  * <p>稳定的桌面门面。各包专属用例持有全部实现细节。
  */
-public final class DesktopApplicationService {
+public final class DesktopApplicationService implements AiApplicationPort, DeploymentApplicationPort,
+        MultiComponentApplicationPort, ServerApplicationPort, ManagedApplicationPort {
     private final SourcePreparationUseCase source;
     private final ServerUseCases servers;
     private final AiUseCases ai;
@@ -88,6 +95,7 @@ public final class DesktopApplicationService {
     private final EnvironmentSetupUseCase environment;
     private final ReviewedDeploymentUseCase reviewedDeployment;
     private final MultiComponentDeploymentUseCase multiComponentDeployment;
+    private final MultiComponentLifecycleUseCase multiComponentLifecycle;
     private final LifecycleUseCase lifecycle;
 
     /**
@@ -118,7 +126,9 @@ public final class DesktopApplicationService {
         this.multiComponentDeployment = new MultiComponentDeploymentUseCase(persistence.managedApplications(),
                 persistence.managedApplicationGraphs(),
                 persistence.applicationSecrets(), new ReviewedMultiComponentDeploymentService(),
-                new MultiComponentLifecycleService(), linuxGateway, servers, locks);
+                linuxGateway, servers, locks);
+        this.multiComponentLifecycle = new MultiComponentLifecycleUseCase(persistence.managedApplications(),
+                persistence.managedApplicationGraphs(), new MultiComponentLifecycleService(), linuxGateway, servers, locks);
         this.lifecycle = new LifecycleUseCase(persistence.managedApplications(), linuxGateway, servers, locks);
     }
 
@@ -166,7 +176,7 @@ public final class DesktopApplicationService {
     /** Loads a durable secret-free whole-application graph after a desktop restart. / 在桌面应用重启后加载持久且不含秘密的整应用图。 */
     public Optional<ManagedMultiComponentApplication> findManagedMultiComponentApplication(String applicationId)
             throws SQLException {
-        return multiComponentDeployment.findManagedApplication(applicationId);
+        return multiComponentLifecycle.findManagedApplication(applicationId);
     }
 
     /** Executes a dependency-safe lifecycle action for a durably managed application graph. / 对持久受管应用图执行依赖安全生命周期动作。 */
@@ -174,7 +184,7 @@ public final class DesktopApplicationService {
             String applicationId, Set<String> targetComponentIds, LifecycleAction action,
             ServerProfile profile, CredentialStorageMode mode, char[] masterPassword)
             throws SecretStoreException, SQLException {
-        return multiComponentDeployment.executeLifecycleWithStoredPassword(applicationId, targetComponentIds, action,
+        return multiComponentLifecycle.executeLifecycleWithStoredPassword(applicationId, targetComponentIds, action,
                 profile, mode, masterPassword);
     }
 

@@ -1,7 +1,7 @@
 package gold.debug.windowstolinux.shared.linux.capability;
 
 import gold.debug.windowstolinux.shared.linux.error.LinuxOperationException;
-import gold.debug.windowstolinux.shared.model.server.ServerCapabilities;
+import gold.debug.windowstolinux.shared.model.capability.ServerCapabilities;
 
 /**
  * Typed target-host capability collection.

@@ -1,6 +1,6 @@
 package gold.debug.windowstolinux.shared.ai.parser;
 
-import gold.debug.windowstolinux.shared.ai.client.AiAnalysisException;
+import gold.debug.windowstolinux.shared.ai.AiAnalysisException;
 import gold.debug.windowstolinux.shared.model.message.LocalizedMessage;
 
 /**

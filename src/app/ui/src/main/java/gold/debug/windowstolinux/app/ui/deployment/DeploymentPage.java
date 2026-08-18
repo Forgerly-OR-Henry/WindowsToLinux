@@ -1,21 +1,22 @@
 package gold.debug.windowstolinux.app.ui.deployment;
 
 import gold.debug.windowstolinux.app.db.entity.StoredApplicationSecretRevision;
-import gold.debug.windowstolinux.app.service.DesktopApplicationService;
+import gold.debug.windowstolinux.app.service.port.DeploymentApplicationPort;
 import gold.debug.windowstolinux.app.service.server.ServerProfile;
 import gold.debug.windowstolinux.app.service.source.ReviewedSourcePreparation;
 import gold.debug.windowstolinux.app.service.deployment.DeploymentOutcome;
 import gold.debug.windowstolinux.app.ui.component.DesktopComponents;
+import gold.debug.windowstolinux.app.ui.component.DesktopAsyncTask;
 import gold.debug.windowstolinux.app.ui.server.ServerContext;
-import gold.debug.windowstolinux.app.ui.shell.PageMessages;
+import gold.debug.windowstolinux.app.ui.i18n.PageMessages;
 import gold.debug.windowstolinux.shared.config.revision.ConfigurationEntry;
 import gold.debug.windowstolinux.shared.config.revision.ConfigurationSnapshot;
 import gold.debug.windowstolinux.shared.config.secretref.SecretReference;
 import gold.debug.windowstolinux.shared.deploy.contract.ReviewedDeploymentPlan;
 import gold.debug.windowstolinux.shared.deploy.contract.ReviewedDeploymentRequest;
 import gold.debug.windowstolinux.shared.deploy.result.DeploymentResult;
-import gold.debug.windowstolinux.shared.git.remote.GitRemote;
-import gold.debug.windowstolinux.shared.git.snapshot.GitSourceRequest;
+import gold.debug.windowstolinux.shared.git.GitRemote;
+import gold.debug.windowstolinux.shared.git.GitSourceRequest;
 import gold.debug.windowstolinux.shared.model.deployment.BuildLimits;
 import gold.debug.windowstolinux.shared.model.deployment.DeploymentStatus;
 import gold.debug.windowstolinux.shared.model.health.HealthCheck;
@@ -37,7 +38,6 @@ import javax.swing.JPanel;
 import javax.swing.JPasswordField;
 import javax.swing.JTextArea;
 import javax.swing.JTextField;
-import javax.swing.SwingWorker;
 import java.awt.BorderLayout;
 import java.awt.FlowLayout;
 import java.awt.GridBagLayout;
@@ -55,38 +55,19 @@ import java.util.function.Consumer;
 /** Owns source selection, review state, deployment forms, and the complete reviewed deployment workflow. / 持有源码选择、审阅状态、部署表单与完整经审阅部署流程。 */
 public final class DeploymentPage implements ReviewContext {
     private final JFrame owner;
-    private final DesktopApplicationService service;
+    private final DeploymentApplicationPort service;
     private final ServerContext serverContext;
     private final PageMessages messages;
     private final Consumer<String> applicationSelection;
     private final Runnable openServers;
     private final DeploymentAnalysisPresenter presenter;
-    private final JComboBox<DeploymentProjectType> projectType = new JComboBox<>(DeploymentProjectType.values());
-    private final JComboBox<HealthMode> healthMode = new JComboBox<>(HealthMode.values());
-    private final JTextField healthEndpoint = new JTextField(30);
-    private final JTextField expectedStatus = new JTextField("200", 4);
-    private final JTextField timeout = new JTextField("10", 4);
-    private final JTextField stability = new JTextField("5", 4);
-    private final JTextField accessUrl = new JTextField(30);
-    private final JTextField runtimePrimary = new JTextField(20);
-    private final JTextField runtimeSecondary = new JTextField(20);
-    private final JTextField runtimeVersion = new JTextField(6);
-    private final JTextField jvmArguments = new JTextField(20);
-    private final JTextField applicationArguments = new JTextField(20);
-    private final JComboBox<DeploymentRuntimeSpecification.ContainerEngine> containerEngine =
-            new JComboBox<>(DeploymentRuntimeSpecification.ContainerEngine.values());
-    private final JTextField containerPorts = new JTextField(20);
-    private final JTextField containerVolumes = new JTextField(20);
-    private final JTextField configurationEntries = new JTextField(30);
-    private final JTextField secretReferences = new JTextField(20);
-    private final JCheckBox rootBuild;
-    private final JCheckBox experimentalAdapterRisk;
+    private final DeploymentForm form;
     private final JTextArea output = DesktopComponents.outputArea();
     private final JPanel panel;
     private ReviewedSourcePreparation reviewedPreparation;
 
     /** Creates the stateful deployment controller. / 创建有状态部署控制器。 */
-    public DeploymentPage(JFrame owner, DesktopApplicationService service, ServerContext serverContext,
+    public DeploymentPage(JFrame owner, DeploymentApplicationPort service, ServerContext serverContext,
                           DesktopComponents components, PageMessages messages, Runnable openServers,
                           Consumer<String> applicationSelection) {
         this.owner = owner;
@@ -96,13 +77,7 @@ public final class DeploymentPage implements ReviewContext {
         this.openServers = openServers;
         this.applicationSelection = applicationSelection;
         presenter = new DeploymentAnalysisPresenter(messages);
-        rootBuild = new JCheckBox(messages.text("rootBuild"));
-        experimentalAdapterRisk = new JCheckBox(messages.text("experimentalAdapterRisk"));
-        messages.localize(projectType, "project.type.");
-        messages.localize(healthMode, "health.mode.");
-        messages.localize(containerEngine, "container.engine.");
-        projectType.addActionListener(event -> resetRuntimeInputs());
-        containerEngine.setSelectedItem(null);
+        form = new DeploymentForm(messages, () -> reviewedPreparation = null);
         panel = createPanel(components);
     }
 
@@ -113,30 +88,12 @@ public final class DeploymentPage implements ReviewContext {
 
     /** Captures all unsaved deployment and review state. / 捕获全部未保存部署与审阅状态。 */
     public DeploymentPageState captureState() {
-        return new DeploymentPageState(((DeploymentProjectType) projectType.getSelectedItem()).name(),
-                ((HealthMode) healthMode.getSelectedItem()).name(), healthEndpoint.getText(), expectedStatus.getText(),
-                timeout.getText(), stability.getText(), accessUrl.getText(), runtimePrimary.getText(), runtimeSecondary.getText(),
-                runtimeVersion.getText(), jvmArguments.getText(), applicationArguments.getText(),
-                containerEngine.getSelectedItem() == null ? "" : ((DeploymentRuntimeSpecification.ContainerEngine)
-                        containerEngine.getSelectedItem()).name(), containerPorts.getText(), containerVolumes.getText(),
-                configurationEntries.getText(), secretReferences.getText(), rootBuild.isSelected(),
-                experimentalAdapterRisk.isSelected(), output.getText(), reviewedPreparation);
+        return form.capture(output.getText(), reviewedPreparation);
     }
 
     /** Restores all unsaved deployment and review state. / 恢复全部未保存部署与审阅状态。 */
     public void restoreState(DeploymentPageState state) {
-        projectType.setSelectedItem(DeploymentProjectType.valueOf(state.projectType()));
-        healthMode.setSelectedItem(HealthMode.valueOf(state.healthMode()));
-        healthEndpoint.setText(state.healthEndpoint()); expectedStatus.setText(state.expectedHttpStatus());
-        timeout.setText(state.healthTimeoutSeconds()); stability.setText(state.tcpStabilitySeconds());
-        accessUrl.setText(state.userAccessUrl()); runtimePrimary.setText(state.runtimePrimary());
-        runtimeSecondary.setText(state.runtimeSecondary()); runtimeVersion.setText(state.javaVersion());
-        jvmArguments.setText(state.jvmArguments()); applicationArguments.setText(state.applicationArguments());
-        containerEngine.setSelectedItem(state.containerEngine().isBlank() ? null
-                : DeploymentRuntimeSpecification.ContainerEngine.valueOf(state.containerEngine()));
-        containerPorts.setText(state.containerPorts()); containerVolumes.setText(state.containerVolumes());
-        configurationEntries.setText(state.configurationEntries()); secretReferences.setText(state.secretReferences());
-        rootBuild.setSelected(state.rootBuild()); experimentalAdapterRisk.setSelected(state.experimentalAdapterRisk());
+        form.restore(state);
         output.setText(state.output()); reviewedPreparation = state.preparation();
     }
 
@@ -157,31 +114,31 @@ public final class DeploymentPage implements ReviewContext {
         health.add(c.sectionHeading(messages.text("section.deployHealth.title"), messages.text("section.deployHealth.description")),
                 BorderLayout.NORTH);
         JPanel healthForm = c.transparent(new GridBagLayout());
-        c.addField(healthForm, 0, 0, messages.text("field.healthMode"), healthMode);
-        c.addField(healthForm, 0, 1, messages.text("field.healthEndpoint"), healthEndpoint);
-        c.addField(healthForm, 1, 0, messages.text("field.expectedStatus"), expectedStatus);
-        c.addField(healthForm, 1, 1, messages.text("field.timeout"), timeout);
-        c.addField(healthForm, 2, 0, messages.text("field.tcpStability"), stability);
-        c.addField(healthForm, 2, 1, messages.text("field.userAccessUrl"), accessUrl);
+        c.addField(healthForm, 0, 0, messages.text("field.healthMode"), form.healthMode);
+        c.addField(healthForm, 0, 1, messages.text("field.healthEndpoint"), form.healthEndpoint);
+        c.addField(healthForm, 1, 0, messages.text("field.expectedStatus"), form.expectedStatus);
+        c.addField(healthForm, 1, 1, messages.text("field.timeout"), form.timeout);
+        c.addField(healthForm, 2, 0, messages.text("field.tcpStability"), form.stability);
+        c.addField(healthForm, 2, 1, messages.text("field.userAccessUrl"), form.accessUrl);
         health.add(healthForm, BorderLayout.CENTER);
         JPanel risk = c.transparent(new FlowLayout(FlowLayout.LEFT, 0, 0));
-        rootBuild.setBorder(BorderFactory.createEmptyBorder(4, 0, 0, 0)); risk.add(rootBuild);
-        experimentalAdapterRisk.setBorder(BorderFactory.createEmptyBorder(4, 16, 0, 0));
-        risk.add(experimentalAdapterRisk); health.add(risk, BorderLayout.SOUTH);
+        form.rootBuild.setBorder(BorderFactory.createEmptyBorder(4, 0, 0, 0)); risk.add(form.rootBuild);
+        form.experimentalAdapterRisk.setBorder(BorderFactory.createEmptyBorder(4, 16, 0, 0));
+        risk.add(form.experimentalAdapterRisk); health.add(risk, BorderLayout.SOUTH);
         JPanel runtime = c.card(new BorderLayout(0, 12));
         runtime.add(c.sectionHeading(messages.text("section.runtime.title"), messages.text("section.runtime.description")), BorderLayout.NORTH);
         JPanel form = c.transparent(new GridBagLayout());
-        c.addField(form, 0, 0, messages.text("field.projectType"), projectType);
-        c.addField(form, 0, 1, messages.text("field.runtimePrimary"), runtimePrimary);
-        c.addField(form, 1, 0, messages.text("field.runtimeSecondary"), runtimeSecondary);
-        c.addField(form, 1, 1, messages.text("field.runtimeVersion"), runtimeVersion);
-        c.addField(form, 2, 0, messages.text("field.jvmArguments"), jvmArguments);
-        c.addField(form, 2, 1, messages.text("field.applicationArguments"), applicationArguments);
-        c.addField(form, 3, 0, messages.text("field.containerEngine"), containerEngine);
-        c.addField(form, 3, 1, messages.text("field.containerPorts"), containerPorts);
-        c.addField(form, 4, 0, messages.text("field.containerVolumes"), containerVolumes);
-        c.addField(form, 4, 1, messages.text("field.configurationEntries"), configurationEntries);
-        c.addField(form, 5, 0, messages.text("field.secretReferences"), secretReferences);
+        c.addField(form, 0, 0, messages.text("field.projectType"), this.form.projectType);
+        c.addField(form, 0, 1, messages.text("field.runtimePrimary"), this.form.runtimePrimary);
+        c.addField(form, 1, 0, messages.text("field.runtimeSecondary"), this.form.runtimeSecondary);
+        c.addField(form, 1, 1, messages.text("field.runtimeVersion"), this.form.runtimeVersion);
+        c.addField(form, 2, 0, messages.text("field.jvmArguments"), this.form.jvmArguments);
+        c.addField(form, 2, 1, messages.text("field.applicationArguments"), this.form.applicationArguments);
+        c.addField(form, 3, 0, messages.text("field.containerEngine"), this.form.containerEngine);
+        c.addField(form, 3, 1, messages.text("field.containerPorts"), this.form.containerPorts);
+        c.addField(form, 4, 0, messages.text("field.containerVolumes"), this.form.containerVolumes);
+        c.addField(form, 4, 1, messages.text("field.configurationEntries"), this.form.configurationEntries);
+        c.addField(form, 5, 0, messages.text("field.secretReferences"), this.form.secretReferences);
         JButton secret = c.secondaryButton(messages.text("button.saveSecretRevision")); secret.addActionListener(event -> saveSecret());
         c.addField(form, 5, 1, messages.text("field.secretRevision"), secret);
         runtime.add(form, BorderLayout.CENTER);
@@ -200,22 +157,13 @@ public final class DeploymentPage implements ReviewContext {
     }
 
     private void analyze(Path source) {
-        DeploymentProjectType selected = (DeploymentProjectType) projectType.getSelectedItem();
+        DeploymentProjectType selected = form.projectType();
         output.setText(messages.text("source.analyzing"));
-        new SwingWorker<ReviewedSourcePreparation, Void>() {
-            /** Runs the background task. / 运行后台任务。 */
-            @Override protected ReviewedSourcePreparation doInBackground() throws Exception {
-                return service.prepareReviewedSource(source, selected);
-            }
-            /** Completes the background task on the UI thread. / 在 UI 线程完成后台任务。 */
-            @Override protected void done() {
-                try {
-                    applyAnalysis(get(), selected, false);
-                } catch (Exception exception) {
-                    output.setText(messages.text("source.failed", Map.of("detail", messages.safe(exception))));
-                }
-            }
-        }.execute();
+        DesktopAsyncTask.run(
+                () -> service.prepareReviewedSource(source, selected),
+                preparation -> applyAnalysis(preparation, selected, false),
+                exception -> output.setText(messages.text("source.failed",
+                        Map.of("detail", messages.safe(exception)))));
     }
 
     private void chooseGitSource() {
@@ -236,22 +184,13 @@ public final class DeploymentPage implements ReviewContext {
             GitSourceRequest request = new GitSourceRequest(remote,
                     DeploymentRuntimeParser.gitReference(kinds.indexOf(kind), referenceText),
                     java.util.Set.of(remote.host().orElseThrow()), 4L * 1024 * 1024 * 1024, false);
-            DeploymentProjectType selected = (DeploymentProjectType) projectType.getSelectedItem();
+            DeploymentProjectType selected = form.projectType();
             output.setText(messages.text("git.analyzing"));
-            new SwingWorker<ReviewedSourcePreparation, Void>() {
-                /** Runs the background task. / 运行后台任务。 */
-                @Override protected ReviewedSourcePreparation doInBackground() throws Exception {
-                    return service.prepareReviewedGitSource(request, selected);
-                }
-                /** Completes the background task on the UI thread. / 在 UI 线程完成后台任务。 */
-                @Override protected void done() {
-                    try {
-                        applyAnalysis(get(), selected, true);
-                    } catch (Exception exception) {
-                        output.setText(messages.text("git.failed", Map.of("detail", messages.safe(exception))));
-                    }
-                }
-            }.execute();
+            DesktopAsyncTask.run(
+                    () -> service.prepareReviewedGitSource(request, selected),
+                    preparation -> applyAnalysis(preparation, selected, true),
+                    exception -> output.setText(messages.text("git.failed",
+                            Map.of("detail", messages.safe(exception)))));
         } catch (Exception exception) {
             output.setText(messages.text("git.failed", Map.of("detail", messages.safe(exception))));
         }
@@ -263,7 +202,7 @@ public final class DeploymentPage implements ReviewContext {
             output.setText(messages.text("source.reviewedUnavailable", Map.of("reasons", presenter.rejections(preparation))));
             return;
         }
-        applyRuntimeSuggestions(preparation);
+        form.applyRuntimeSuggestions(preparation);
         if (git) {
             output.setText(messages.text("git.reviewedSuccess", Map.of(
                     "commit", preparation.sourceRevision().orElseThrow().commit().orElseThrow(),
@@ -278,46 +217,27 @@ public final class DeploymentPage implements ReviewContext {
         }
     }
 
-    private void applyRuntimeSuggestions(ReviewedSourcePreparation preparation) {
-        DeploymentRuntimeSuggestion suggestion = preparation.assessment().runtimeSuggestion().orElse(null);
-        if (suggestion == null) return;
-        suggestion.value(DeploymentRuntimeSuggestion.RuntimeInput.JAVA_JAR_PATH).ifPresent(runtimePrimary::setText);
-        suggestion.value(DeploymentRuntimeSuggestion.RuntimeInput.JAVA_MAIN_CLASS).ifPresent(runtimeSecondary::setText);
-        suggestion.value(DeploymentRuntimeSuggestion.RuntimeInput.JAVA_VERSION).ifPresent(runtimeVersion::setText);
-        suggestion.value(DeploymentRuntimeSuggestion.RuntimeInput.NODE_MAJOR_VERSION).ifPresent(runtimeVersion::setText);
-        suggestion.value(DeploymentRuntimeSuggestion.RuntimeInput.PYTHON_VERSION).ifPresent(runtimePrimary::setText);
-        suggestion.value(DeploymentRuntimeSuggestion.RuntimeInput.PYTHON_ENTRYPOINT).ifPresent(runtimeSecondary::setText);
-        suggestion.value(DeploymentRuntimeSuggestion.RuntimeInput.STATIC_OUTPUT_DIRECTORY).ifPresent(runtimePrimary::setText);
-        suggestion.value(DeploymentRuntimeSuggestion.RuntimeInput.SERVICE_ARTIFACT).ifPresent(runtimePrimary::setText);
-        suggestion.value(DeploymentRuntimeSuggestion.RuntimeInput.SERVICE_ENTRYPOINT).ifPresent(runtimeSecondary::setText);
-        suggestion.value(DeploymentRuntimeSuggestion.RuntimeInput.SERVICE_VERSION).ifPresent(runtimeVersion::setText);
-        if (!suggestion.suggestedContainerPorts().isEmpty()) containerPorts.setText(suggestion.suggestedContainerPorts().entrySet()
-                .stream().map(entry -> entry.getKey() + ":" + entry.getValue()).reduce((a, b) -> a + ";" + b).orElse(""));
-        if (!suggestion.suggestedManagedVolumes().isEmpty()) containerVolumes.setText(suggestion.suggestedManagedVolumes().stream()
-                .map(volume -> volume.name() + ":" + volume.containerPath() + (volume.readOnly() ? ":ro" : ":rw"))
-                .reduce((a, b) -> a + ";" + b).orElse(""));
-    }
-
     private void deploy() {
         if (reviewedPreparation == null || reviewedPreparation.archive().isEmpty()) {
             output.setText(messages.text("deployment.analyzeFirst")); return;
         }
         try {
-            if (reviewedPreparation.assessment().facts().orElseThrow().projectType() != projectType.getSelectedItem())
+            if (reviewedPreparation.assessment().facts().orElseThrow().projectType() != form.projectType())
                 throw new IllegalStateException(messages.text("deployment.sourceTypeChanged"));
             ServerProfile profile = serverContext.profile();
             var server = service.findTrustedServer(profile.id()).orElseThrow(
                     () -> new IllegalStateException(messages.text("deployment.serverFirst")));
-            HealthCheck health = healthCheck(); Optional<UserAccessUrl> userAccess = userAccessUrl(health);
-            boolean useRoot = rootBuild.isSelected();
+            HealthCheck health = form.healthCheck();
+            Optional<UserAccessUrl> userAccess = form.userAccessUrl(health);
+            boolean useRoot = form.rootBuild.isSelected();
             if (useRoot && JOptionPane.showConfirmDialog(owner, messages.text("deployment.reviewedRootConfirm", Map.of(
                     "application", reviewedPreparation.assessment().facts().orElseThrow().applicationId(),
                     "archive", reviewedPreparation.archive().orElseThrow().contentSha256(), "server", server.host())),
                     messages.text("deployment.rootConfirm.title"), JOptionPane.YES_NO_OPTION,
                     JOptionPane.WARNING_MESSAGE) != JOptionPane.YES_OPTION) return;
-            DeploymentRuntimeSpecification runtime = runtimeSpecification(health);
+            DeploymentRuntimeSpecification runtime = form.runtimeSpecification(health);
             boolean experimentalRisk = reviewedPreparation.assessment().facts().orElseThrow().support().level()
-                    != DeploymentSupportLevel.EXPERIMENTAL_ADAPTER || experimentalAdapterRisk.isSelected();
+                    != DeploymentSupportLevel.EXPERIMENTAL_ADAPTER || form.experimentalAdapterRisk.isSelected();
             if (!experimentalRisk) {
                 output.setText(messages.text("deployment.experimentalRiskRequired"));
                 return;
@@ -329,9 +249,10 @@ public final class DeploymentPage implements ReviewContext {
                     JOptionPane.WARNING_MESSAGE) == JOptionPane.YES_OPTION;
             if (runtime instanceof DeploymentRuntimeSpecification.Container container
                     && container.engine() == DeploymentRuntimeSpecification.ContainerEngine.DOCKER && !dockerRisk) return;
-            ConfigurationSnapshot configuration = configurationSnapshot();
+            ConfigurationSnapshot configuration = form.configurationSnapshot(
+                    reviewedPreparation.assessment().facts().orElseThrow().applicationId());
             ReviewedDeploymentRequest request = service.createReviewedDeploymentRequest(reviewedPreparation, server, configuration,
-                    secretReferences(), runtime, userAccess, useRoot ? new BuildLimits(1800, 1024, 4096,
+                    form.secretReferences(), runtime, userAccess, useRoot ? new BuildLimits(1800, 1024, 4096,
                             4L * 1024 * 1024, 4L * 1024 * 1024 * 1024, true) : BuildLimits.defaultNonRoot(), useRoot,
                     dockerRisk, experimentalRisk);
             ReviewedDeploymentPlan plan = service.planDeployment(request);
@@ -343,23 +264,17 @@ public final class DeploymentPage implements ReviewContext {
                     messages.text("deployment.review.title"), JOptionPane.YES_NO_OPTION,
                     JOptionPane.WARNING_MESSAGE) != JOptionPane.YES_OPTION) return;
             char[] master = serverContext.masterPassword(); output.setText(messages.text("deployment.reviewedRunning"));
-            new SwingWorker<DeploymentOutcome, Void>() {
-                /** Runs the background task. / 运行后台任务。 */
-                @Override protected DeploymentOutcome doInBackground() throws Exception {
+            DesktopAsyncTask.run(() -> {
                     service.saveDeploymentConfigurationSnapshot(configuration);
                     return service.deployReviewedWithStoredPassword(request, profile, serverContext.credentialMode(), master,
                             serverContext::confirmFingerprint);
-                }
-                /** Completes the background task on the UI thread. / 在 UI 线程完成后台任务。 */
-                @Override protected void done() {
-                    try {
-                        DeploymentOutcome outcome = get(); output.setText(resultSummary(outcome.result()));
-                        if (outcome.status() == DeploymentStatus.SUCCEEDED) applicationSelection.accept(request.facts().applicationId());
-                    } catch (Exception exception) {
-                        output.setText(messages.text("deployment.failed", Map.of("detail", messages.safe(exception))));
+                }, outcome -> {
+                    output.setText(resultSummary(outcome.result()));
+                    if (outcome.status() == DeploymentStatus.SUCCEEDED) {
+                        applicationSelection.accept(request.facts().applicationId());
                     }
-                }
-            }.execute();
+                }, exception -> output.setText(messages.text("deployment.failed",
+                        Map.of("detail", messages.safe(exception)))));
         } catch (Exception exception) {
             output.setText(messages.text("deployment.createFailed", Map.of("detail", messages.safe(exception))));
         }
@@ -374,28 +289,9 @@ public final class DeploymentPage implements ReviewContext {
                 "handoff", result.finalObservation().map(messages::lifecycle).orElse("")));
     }
 
-    private ConfigurationSnapshot configurationSnapshot() {
-        String applicationId = reviewedPreparation.assessment().facts().orElseThrow().applicationId();
-        List<ConfigurationEntry> entries;
-        try {
-            entries = DeploymentConfigurationParser.parse(configurationEntries.getText());
-        } catch (IllegalArgumentException exception) {
-            throw new IllegalArgumentException(messages.text("validation.configurationEntry"), exception);
-        }
-        return ConfigurationSnapshot.create(applicationId, Instant.now().toEpochMilli(), "runtime-v1", Instant.now(), entries);
-    }
-
-    private List<SecretReference> secretReferences() {
-        try {
-            return DeploymentRuntimeParser.secrets(secretReferences.getText());
-        } catch (IllegalArgumentException exception) {
-            throw new IllegalArgumentException(messages.text("validation.secretReference"), exception);
-        }
-    }
-
     private void saveSecret() {
         try {
-            List<SecretReference> references = secretReferences();
+            List<SecretReference> references = form.secretReferences();
             if (references.size() != 1) throw new IllegalArgumentException(messages.text("validation.secretSingleRevision"));
             SecretReference reference = references.getFirst(); JPasswordField field = new JPasswordField(24);
             if (JOptionPane.showConfirmDialog(owner, field, messages.text("secret.value.title"), JOptionPane.OK_CANCEL_OPTION,
@@ -410,76 +306,8 @@ public final class DeploymentPage implements ReviewContext {
         }
     }
 
-    private DeploymentRuntimeSpecification runtimeSpecification(HealthCheck health) {
-        return switch ((DeploymentProjectType) projectType.getSelectedItem()) {
-            case SPRING_BOOT -> new DeploymentRuntimeSpecification.SpringBoot(health);
-            case JAVA_JAR -> new DeploymentRuntimeSpecification.JavaJar(runtimePrimary.getText(), runtimeSecondary.getText(),
-                    runtimeVersion.getText(), DeploymentRuntimeParser.arguments(jvmArguments.getText()),
-                    DeploymentRuntimeParser.arguments(applicationArguments.getText()), health);
-            case NODE_SERVICE -> new DeploymentRuntimeSpecification.NodeService(Integer.parseInt(runtimeVersion.getText().trim()), health);
-            case PYTHON_SERVICE -> new DeploymentRuntimeSpecification.PythonService(runtimePrimary.getText(), runtimeSecondary.getText(), health);
-            case STATIC_SITE -> new DeploymentRuntimeSpecification.StaticSite(runtimePrimary.getText(), runtimeVersion.getText().isBlank()
-                    ? OptionalInt.empty() : OptionalInt.of(Integer.parseInt(runtimeVersion.getText().trim())), requireHttp(health));
-            case DOCKERFILE_CONTAINER -> new DeploymentRuntimeSpecification.Container(
-                    (DeploymentRuntimeSpecification.ContainerEngine) containerEngine.getSelectedItem(), ports(), volumes(), health);
-            case GO_SERVICE, RUST_SERVICE, DOTNET_SERVICE, KOTLIN_SERVICE, PHP_SERVICE, RUBY_SERVICE ->
-                    DeploymentRuntimeParser.service((DeploymentProjectType) projectType.getSelectedItem(),
-                            runtimeVersion.getText(), runtimePrimary.getText(), runtimeSecondary.getText(), health);
-            case RECOGNITION_PREVIEW -> throw new IllegalArgumentException(messages.text("analysis.preview.noDeployment"));
-        };
-    }
-
-    private HealthCheck healthCheck() {
-        int seconds = Integer.parseInt(timeout.getText().trim());
-        return switch ((HealthMode) healthMode.getSelectedItem()) {
-            case HTTP -> new HealthCheck.Http(URI.create(healthEndpoint.getText().trim()),
-                    Integer.parseInt(expectedStatus.getText().trim()), seconds);
-            case TCP -> new HealthCheck.Tcp(Integer.parseInt(healthEndpoint.getText().trim()), seconds,
-                    Integer.parseInt(stability.getText().trim()));
-        };
-    }
-
-    private Optional<UserAccessUrl> userAccessUrl(HealthCheck health) {
-        String value = accessUrl.getText().trim();
-        if (health instanceof HealthCheck.Http) {
-            if (value.isBlank()) throw new IllegalArgumentException(messages.text("validation.httpAccessRequired"));
-            return Optional.of(new UserAccessUrl(URI.create(value)));
-        }
-        if (!value.isBlank()) throw new IllegalArgumentException(messages.text("validation.tcpAccessForbidden"));
-        return Optional.empty();
-    }
-
-    private Map<Integer, Integer> ports() {
-        try {
-            return DeploymentRuntimeParser.ports(containerPorts.getText());
-        } catch (IllegalArgumentException exception) {
-            throw new IllegalArgumentException(messages.text("validation.containerPort"), exception);
-        }
-    }
-
-    private List<DeploymentRuntimeSpecification.ManagedVolume> volumes() {
-        try {
-            return DeploymentRuntimeParser.volumes(containerVolumes.getText());
-        } catch (IllegalArgumentException exception) {
-            throw new IllegalArgumentException(messages.text("validation.containerVolume"), exception);
-        }
-    }
-
-    private void resetRuntimeInputs() {
-        runtimePrimary.setText(""); runtimeSecondary.setText(""); runtimeVersion.setText("");
-        jvmArguments.setText(""); applicationArguments.setText(""); containerPorts.setText("");
-        containerVolumes.setText(""); reviewedPreparation = null;
-    }
-
     private String accessReview(Optional<UserAccessUrl> value) {
         return value.map(url -> messages.text("deployment.httpAccess", Map.of("url", url.url().toASCIIString())))
                 .orElse(messages.text("deployment.tcpAccess"));
     }
-    private HealthCheck.Http requireHttp(HealthCheck health) {
-        if (health instanceof HealthCheck.Http http) return http;
-        throw new IllegalArgumentException(messages.text("validation.staticHttpRequired"));
-    }
-    private enum HealthMode { /** Represents the {@code HTTP} value. / 表示 {@code HTTP} 值。 */
-    HTTP, /** Represents the {@code TCP} value. / 表示 {@code TCP} 值。 */
-    TCP }
 }

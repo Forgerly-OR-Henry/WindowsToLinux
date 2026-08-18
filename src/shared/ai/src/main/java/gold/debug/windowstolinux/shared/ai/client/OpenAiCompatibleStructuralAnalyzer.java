@@ -1,5 +1,6 @@
 package gold.debug.windowstolinux.shared.ai.client;
 
+import gold.debug.windowstolinux.shared.ai.AiAnalysisException;
 import gold.debug.windowstolinux.shared.ai.parser.AiStructuralAnalysis;
 import gold.debug.windowstolinux.shared.ai.parser.ChatCompletionsResponseParser;
 import gold.debug.windowstolinux.shared.ai.prompt.StructuralAnalysisPrompt;

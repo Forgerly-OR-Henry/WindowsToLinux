@@ -1,9 +1,9 @@
 package gold.debug.windowstolinux.shared.analyze.ecosystem;
 
-import gold.debug.windowstolinux.shared.analyze.ecosystem.jvm.language.java.JavaLanguageInspector;
+import gold.debug.windowstolinux.shared.analyze.ecosystem.jvm.JavaLanguageInspector;
 import gold.debug.windowstolinux.shared.analyze.preview.PreviewLanguageMarkerCatalog;
-import gold.debug.windowstolinux.shared.analyze.ecosystem.node.language.NodeLanguageInspector;
-import gold.debug.windowstolinux.shared.analyze.ecosystem.python.language.PythonLanguageInspector;
+import gold.debug.windowstolinux.shared.analyze.ecosystem.node.NodeLanguageInspector;
+import gold.debug.windowstolinux.shared.analyze.ecosystem.python.PythonLanguageInspector;
 import gold.debug.windowstolinux.shared.analyze.source.SourceInspection;
 import gold.debug.windowstolinux.shared.model.project.ProjectLanguageFacts;
 

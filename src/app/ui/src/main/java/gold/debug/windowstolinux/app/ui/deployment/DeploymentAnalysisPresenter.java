@@ -1,7 +1,7 @@
 package gold.debug.windowstolinux.app.ui.deployment;
 
 import gold.debug.windowstolinux.app.service.source.ReviewedSourcePreparation;
-import gold.debug.windowstolinux.app.ui.shell.PageMessages;
+import gold.debug.windowstolinux.app.ui.i18n.PageMessages;
 import gold.debug.windowstolinux.shared.model.analysis.RejectionReason;
 
 import java.util.Locale;

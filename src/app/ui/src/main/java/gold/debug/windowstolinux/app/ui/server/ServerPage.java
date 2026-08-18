@@ -1,9 +1,10 @@
 package gold.debug.windowstolinux.app.ui.server;
 
-import gold.debug.windowstolinux.app.service.DesktopApplicationService;
+import gold.debug.windowstolinux.app.service.port.ServerApplicationPort;
 import gold.debug.windowstolinux.app.service.server.ServerProfile;
+import gold.debug.windowstolinux.app.ui.component.DesktopAsyncTask;
 import gold.debug.windowstolinux.app.ui.component.DesktopComponents;
-import gold.debug.windowstolinux.app.ui.shell.PageMessages;
+import gold.debug.windowstolinux.app.ui.i18n.PageMessages;
 import gold.debug.windowstolinux.shared.model.deployment.EnvironmentSetupResult;
 import gold.debug.windowstolinux.shared.model.security.CredentialStorageMode;
 
@@ -16,7 +17,6 @@ import javax.swing.JPasswordField;
 import javax.swing.JTextArea;
 import javax.swing.JTextField;
 import javax.swing.SwingUtilities;
-import javax.swing.SwingWorker;
 import java.awt.BorderLayout;
 import java.awt.FlowLayout;
 import java.awt.GridBagLayout;
@@ -26,7 +26,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 /** Owns the server form, credentials-in-memory state, and server workflows. / 持有服务器表单、内存凭据状态与服务器流程。 */
 public final class ServerPage implements ServerContext {
     private final JFrame owner;
-    private final DesktopApplicationService service;
+    private final ServerApplicationPort service;
     private final PageMessages messages;
     private final JTextField id = new JTextField("server-one", 20);
     private final JTextField host = new JTextField(20);
@@ -39,7 +39,7 @@ public final class ServerPage implements ServerContext {
     private final JPanel panel;
 
     /** Creates the stateful page controller. / 创建有状态页面控制器。 */
-    public ServerPage(JFrame owner, DesktopApplicationService service, DesktopComponents components, PageMessages messages) {
+    public ServerPage(JFrame owner, ServerApplicationPort service, DesktopComponents components, PageMessages messages) {
         this.owner = owner;
         this.service = service;
         this.messages = messages;
@@ -143,26 +143,16 @@ public final class ServerPage implements ServerContext {
             CredentialStorageMode mode = credentialMode();
             char[] master = masterPassword();
             output.setText(messages.text("server.connecting"));
-            new SwingWorker<gold.debug.windowstolinux.shared.model.server.ServerCapabilities, Void>() {
-                /** Runs the background task. / 运行后台任务。 */
-                @Override protected gold.debug.windowstolinux.shared.model.server.ServerCapabilities doInBackground() throws Exception {
-                    return service.verifyServer(profile, mode, master, ServerPage.this::confirmFingerprint);
-                }
-                /** Completes the background task on the UI thread. / 在 UI 线程完成后台任务。 */
-                @Override protected void done() {
-                    try {
-                        var value = get();
-                        output.setText(messages.text("server.capabilities", Map.ofEntries(
-                                Map.entry("os", value.operatingSystem()), Map.entry("architecture", value.architecture()),
-                                Map.entry("java21", value.java21Available()), Map.entry("maven", value.mavenAvailable()),
-                                Map.entry("tar", value.tarAvailable()), Map.entry("curl", value.curlAvailable()),
-                                Map.entry("systemd", value.systemdAvailable()), Map.entry("sudo", value.nonInteractiveSudoAvailable()),
-                                Map.entry("limits", value.buildLimitToolsAvailable()), Map.entry("space", value.availableBytes()))));
-                    } catch (Exception exception) {
-                        output.setText(messages.text("server.verifyFailed", Map.of("detail", messages.safe(exception))));
-                    }
-                }
-            }.execute();
+            DesktopAsyncTask.run(
+                    () -> service.verifyServer(profile, mode, master, ServerPage.this::confirmFingerprint),
+                    value -> output.setText(messages.text("server.capabilities", Map.ofEntries(
+                            Map.entry("os", value.operatingSystem()), Map.entry("architecture", value.architecture()),
+                            Map.entry("java21", value.java21Available()), Map.entry("maven", value.mavenAvailable()),
+                            Map.entry("tar", value.tarAvailable()), Map.entry("curl", value.curlAvailable()),
+                            Map.entry("systemd", value.systemdAvailable()), Map.entry("sudo", value.nonInteractiveSudoAvailable()),
+                            Map.entry("limits", value.buildLimitToolsAvailable()), Map.entry("space", value.availableBytes())))),
+                    exception -> output.setText(messages.text("server.verifyFailed",
+                            Map.of("detail", messages.safe(exception)))));
         } catch (Exception exception) {
             output.setText(messages.text("server.invalid", Map.of("detail", messages.safe(exception))));
         }
@@ -185,20 +175,18 @@ public final class ServerPage implements ServerContext {
             char[] master = masterPassword();
             trigger.setEnabled(false);
             output.setText(messages.text("environment.preparing"));
-            new SwingWorker<EnvironmentSetupResult, Void>() {
-                /** Runs the background task. / 运行后台任务。 */
-                @Override protected EnvironmentSetupResult doInBackground() throws Exception {
-                    return service.prepareEnvironmentWithStoredPassword(saved, saved.credentialMode(), master,
-                            ServerPage.this::confirmFingerprint, true);
-                }
-                /** Completes the background task on the UI thread. / 在 UI 线程完成后台任务。 */
-                @Override protected void done() {
-                    trigger.setEnabled(true);
-                    try { output.setText(environmentSummary(get())); }
-                    catch (Exception exception) { output.setText(messages.text("environment.incomplete",
-                            Map.of("detail", messages.safe(exception)))); }
-                }
-            }.execute();
+            DesktopAsyncTask.run(
+                    () -> service.prepareEnvironmentWithStoredPassword(saved, saved.credentialMode(), master,
+                            ServerPage.this::confirmFingerprint, true),
+                    result -> {
+                        trigger.setEnabled(true);
+                        output.setText(environmentSummary(result));
+                    },
+                    exception -> {
+                        trigger.setEnabled(true);
+                        output.setText(messages.text("environment.incomplete",
+                                Map.of("detail", messages.safe(exception))));
+                    });
         } catch (Exception exception) {
             output.setText(messages.text("environment.failed", Map.of("detail", messages.safe(exception))));
         }

@@ -2,8 +2,8 @@ package gold.debug.windowstolinux.shared.analyze.preview;
 
 import gold.debug.windowstolinux.shared.analyze.spi.DeploymentTypeInspection;
 import gold.debug.windowstolinux.shared.analyze.spi.DeploymentTypeInspector;
-import gold.debug.windowstolinux.shared.analyze.source.metadata.BoundedMetadataReader;
-import gold.debug.windowstolinux.shared.analyze.source.metadata.ProjectIdentityResolver;
+import gold.debug.windowstolinux.shared.analyze.source.BoundedMetadataReader;
+import gold.debug.windowstolinux.shared.analyze.source.ProjectIdentityResolver;
 import gold.debug.windowstolinux.shared.analyze.source.SourceInspection;
 import gold.debug.windowstolinux.shared.model.analysis.RejectionReason;
 import gold.debug.windowstolinux.shared.model.message.LocalizedMessage;

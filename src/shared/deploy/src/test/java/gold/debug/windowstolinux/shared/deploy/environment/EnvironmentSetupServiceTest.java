@@ -17,7 +17,7 @@ import gold.debug.windowstolinux.shared.model.managed.ManagedApplication;
 import gold.debug.windowstolinux.shared.model.message.LocalizedOperationException;
 import gold.debug.windowstolinux.shared.model.deployment.EnvironmentSetupApproval;
 import gold.debug.windowstolinux.shared.model.deployment.EnvironmentSetupResult;
-import gold.debug.windowstolinux.shared.model.server.ServerCapabilities;
+import gold.debug.windowstolinux.shared.model.capability.ServerCapabilities;
 import gold.debug.windowstolinux.shared.model.archive.SourceArchiveDescriptor;
 import org.junit.jupiter.api.Test;
 

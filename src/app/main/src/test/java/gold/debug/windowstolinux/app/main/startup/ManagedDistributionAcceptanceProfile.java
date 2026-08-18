@@ -1,7 +1,7 @@
 package gold.debug.windowstolinux.app.main.startup;
 
 import gold.debug.windowstolinux.shared.model.server.CpuMicroarchitectureLevel;
-import gold.debug.windowstolinux.shared.model.server.LinuxCapabilities;
+import gold.debug.windowstolinux.shared.model.capability.LinuxCapabilities;
 import gold.debug.windowstolinux.shared.model.server.LinuxDistro;
 import gold.debug.windowstolinux.shared.model.server.LinuxFirewallKind;
 import gold.debug.windowstolinux.shared.model.server.LinuxFirewallState;

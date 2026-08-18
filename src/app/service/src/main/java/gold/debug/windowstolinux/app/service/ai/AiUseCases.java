@@ -1,11 +1,11 @@
 package gold.debug.windowstolinux.app.service.ai;
 
 import gold.debug.windowstolinux.app.db.repository.AiProfileRepository;
-import gold.debug.windowstolinux.app.secret.api.SecretStore;
-import gold.debug.windowstolinux.app.secret.api.SecretStoreException;
+import gold.debug.windowstolinux.app.secret.SecretStore;
+import gold.debug.windowstolinux.app.secret.SecretStoreException;
 import gold.debug.windowstolinux.app.service.server.DesktopSecretStores;
 import gold.debug.windowstolinux.app.service.source.ReviewedSourcePreparation;
-import gold.debug.windowstolinux.shared.ai.client.AiAnalysisException;
+import gold.debug.windowstolinux.shared.ai.AiAnalysisException;
 import gold.debug.windowstolinux.shared.ai.client.OpenAiCompatibleStructuralAnalyzer;
 import gold.debug.windowstolinux.shared.ai.client.OpenAiCompatibleRoleClient;
 import gold.debug.windowstolinux.shared.ai.collaboration.AiRoleBinding;

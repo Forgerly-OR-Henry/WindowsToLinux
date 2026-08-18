@@ -43,29 +43,12 @@ public final class EnvironmentSetupService {
             Objects.requireNonNull(approval, "approval").requireAcceptedFor(Objects.requireNonNull(endpoint, "endpoint").serverId());
             Objects.requireNonNull(gateway, "gateway");
             Objects.requireNonNull(hostKeyVerifier, "hostKeyVerifier");
-            try (LinuxRemoteSession session = gateway.connect(endpoint, connectionCredential(credential), hostKeyVerifier)) {
+            try (LinuxRemoteSession session = gateway.connect(endpoint, credential.duplicate(), hostKeyVerifier)) {
                 return session.prepareEnvironment(approval);
             }
         } finally {
-            clearCredential(credential);
+            credential.clear();
         }
     }
 
-    private static SshCredential connectionCredential(SshCredential credential) {
-        if (credential instanceof SshCredential.Password password) {
-            char[] value = password.copy();
-            try {
-                return new SshCredential.Password(value);
-            } finally {
-                java.util.Arrays.fill(value, '\0');
-            }
-        }
-        return credential;
-    }
-
-    private static void clearCredential(SshCredential credential) {
-        if (credential instanceof SshCredential.Password password) {
-            password.clear();
-        }
-    }
 }

@@ -87,7 +87,7 @@ public final class ReviewedDeploymentService {
         DeploymentBuildResult build = null;
         DeploymentInputManifest inputs = null;
         boolean candidateMayExist = false;
-        try (DeploymentRemoteSession session = gateway.connect(endpoint, copyCredential(credential), hostKeyVerifier)) {
+        try (DeploymentRemoteSession session = gateway.connect(endpoint, credential.duplicate(), hostKeyVerifier)) {
             long sourceFootprint = Math.addExact(request.archive().byteCount(), request.archive().uncompressedByteCount());
             if (sourceFootprint > request.limits().maxWorkspaceBytes()) {
                 return rejected(events, "source-workspace", "The reviewed archive exceeds the confirmed workspace limit");
@@ -175,7 +175,7 @@ public final class ReviewedDeploymentService {
             }
             return new DeploymentResult(DeploymentStatus.PRECONDITION_REJECTED, events, Optional.empty(), Optional.empty());
         } finally {
-            clearCredential(credential);
+            credential.clear();
         }
     }
 
@@ -220,7 +220,7 @@ public final class ReviewedDeploymentService {
             List<DeploymentEvent> events
     ) {
         try (DeploymentRemoteSession recoverySession = gateway.connect(
-                endpoint, copyCredential(credential), hostKeyVerifier)) {
+                endpoint, credential.duplicate(), hostKeyVerifier)) {
             events.add(new DeploymentEvent("recovery-reconnect", true,
                     "SSH host was reverified after the typed publication session was interrupted"));
             return recover(recoverySession, request, application, workspace, snapshot, build, releaseIdentity, inputs,
@@ -238,7 +238,7 @@ public final class ReviewedDeploymentService {
             HostKeyVerifier hostKeyVerifier, RemoteWorkspace workspace, List<DeploymentEvent> events
     ) {
         try (DeploymentRemoteSession cleanupSession = gateway.connect(
-                endpoint, copyCredential(credential), hostKeyVerifier)) {
+                endpoint, credential.duplicate(), hostKeyVerifier)) {
             events.add(new DeploymentEvent("candidate-cleanup-reconnect", true,
                     "SSH host was reverified after the typed candidate session was interrupted"));
             if (cleanup(cleanupSession, workspace, events)) {
@@ -266,24 +266,6 @@ public final class ReviewedDeploymentService {
         } catch (LinuxOperationException exception) {
             events.add(new DeploymentEvent("candidate-cleanup", false, safeMessage(exception)));
             return false;
-        }
-    }
-
-    private static SshCredential copyCredential(SshCredential credential) {
-        if (credential instanceof SshCredential.Password password) {
-            char[] value = password.copy();
-            try {
-                return new SshCredential.Password(value);
-            } finally {
-                java.util.Arrays.fill(value, '\0');
-            }
-        }
-        return credential;
-    }
-
-    private static void clearCredential(SshCredential credential) {
-        if (credential instanceof SshCredential.Password password) {
-            password.clear();
         }
     }
 

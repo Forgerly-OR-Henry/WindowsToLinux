@@ -1,9 +1,9 @@
 package gold.debug.windowstolinux.shared.deploy.registry;
 
-import gold.debug.windowstolinux.shared.deploy.adapter.service.ServiceDeploymentAdapter;
-import gold.debug.windowstolinux.shared.deploy.adapter.service.ServiceDeploymentProfile;
-import gold.debug.windowstolinux.shared.deploy.adapter.workload.container.ContainerAdapter;
-import gold.debug.windowstolinux.shared.deploy.adapter.workload.staticweb.StaticSiteAdapter;
+import gold.debug.windowstolinux.shared.deploy.adapter.ServiceDeploymentAdapter;
+import gold.debug.windowstolinux.shared.deploy.adapter.ServiceDeploymentProfile;
+import gold.debug.windowstolinux.shared.deploy.adapter.ContainerAdapter;
+import gold.debug.windowstolinux.shared.deploy.adapter.StaticSiteAdapter;
 import gold.debug.windowstolinux.shared.deploy.spi.DeploymentAdapter;
 import gold.debug.windowstolinux.shared.model.project.DeploymentProjectType;
 

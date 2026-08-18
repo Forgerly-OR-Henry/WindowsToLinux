@@ -1,6 +1,6 @@
 package gold.debug.windowstolinux.app.ui.deployment;
 
-import gold.debug.windowstolinux.shared.git.reference.GitReference;
+import gold.debug.windowstolinux.shared.git.GitReference;
 import gold.debug.windowstolinux.shared.model.health.HealthCheck;
 import gold.debug.windowstolinux.shared.model.project.DeploymentProjectType;
 import gold.debug.windowstolinux.shared.model.project.DeploymentRuntimeSpecification;

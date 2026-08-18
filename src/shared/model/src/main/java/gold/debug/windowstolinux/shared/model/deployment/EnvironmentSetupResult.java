@@ -1,6 +1,6 @@
 package gold.debug.windowstolinux.shared.model.deployment;
 
-import gold.debug.windowstolinux.shared.model.server.ServerCapabilities;
+import gold.debug.windowstolinux.shared.model.capability.ServerCapabilities;
 
 import java.util.Objects;
 

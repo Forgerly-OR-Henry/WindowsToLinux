@@ -1,7 +1,12 @@
 package gold.debug.windowstolinux.shared.git.snapshot;
 
-import gold.debug.windowstolinux.shared.git.reference.GitReference;
-import gold.debug.windowstolinux.shared.git.remote.GitRemote;
+import gold.debug.windowstolinux.shared.git.GitReference;
+import gold.debug.windowstolinux.shared.git.GitRemote;
+import gold.debug.windowstolinux.shared.git.GitSnapshot;
+import gold.debug.windowstolinux.shared.git.GitSnapshotException;
+import gold.debug.windowstolinux.shared.git.GitSourceRequest;
+import gold.debug.windowstolinux.shared.git.GitReference;
+import gold.debug.windowstolinux.shared.git.GitRemote;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 

@@ -1,8 +1,8 @@
 package gold.debug.windowstolinux.app.service.server;
 
 import gold.debug.windowstolinux.app.db.repository.ServerProfileRepository;
-import gold.debug.windowstolinux.app.secret.api.SecretStore;
-import gold.debug.windowstolinux.app.secret.api.SecretStoreException;
+import gold.debug.windowstolinux.app.secret.SecretStore;
+import gold.debug.windowstolinux.app.secret.SecretStoreException;
 import gold.debug.windowstolinux.shared.linux.connection.HostKeyDecision;
 import gold.debug.windowstolinux.shared.linux.connection.HostKeyVerifier;
 import gold.debug.windowstolinux.shared.linux.error.LinuxOperationException;
@@ -12,8 +12,8 @@ import gold.debug.windowstolinux.shared.linux.connection.SshCredential;
 import gold.debug.windowstolinux.shared.model.message.LocalizedMessage;
 import gold.debug.windowstolinux.shared.model.message.LocalizedOperationException;
 import gold.debug.windowstolinux.shared.model.security.CredentialStorageMode;
-import gold.debug.windowstolinux.shared.model.server.LinuxCapabilities;
-import gold.debug.windowstolinux.shared.model.server.ServerCapabilities;
+import gold.debug.windowstolinux.shared.model.capability.LinuxCapabilities;
+import gold.debug.windowstolinux.shared.model.capability.ServerCapabilities;
 import gold.debug.windowstolinux.shared.model.server.ServerIdentity;
 
 import java.sql.SQLException;

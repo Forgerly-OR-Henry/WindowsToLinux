@@ -3,7 +3,7 @@ package gold.debug.windowstolinux.shared.linux.sshd.capability;
 import gold.debug.windowstolinux.shared.linux.capability.LinuxPlatformCapabilityOperations;
 import gold.debug.windowstolinux.shared.linux.error.LinuxOperationException;
 import gold.debug.windowstolinux.shared.linux.sshd.command.SshCommandExecutor;
-import gold.debug.windowstolinux.shared.model.server.LinuxCapabilities;
+import gold.debug.windowstolinux.shared.model.capability.LinuxCapabilities;
 import gold.debug.windowstolinux.shared.model.server.CpuMicroarchitectureLevel;
 import gold.debug.windowstolinux.shared.model.server.LinuxDistro;
 import gold.debug.windowstolinux.shared.model.server.LinuxFirewallKind;
@@ -12,7 +12,7 @@ import gold.debug.windowstolinux.shared.model.server.LinuxSecurityModule;
 import gold.debug.windowstolinux.shared.model.server.LinuxSecurityPosture;
 import gold.debug.windowstolinux.shared.model.server.LinuxSecurityState;
 import gold.debug.windowstolinux.shared.model.project.DeploymentProjectType;
-import gold.debug.windowstolinux.shared.linux.sshd.capability.probe.ManagedPlatformCapabilityProbe;
+import gold.debug.windowstolinux.shared.linux.sshd.capability.ManagedPlatformCapabilityProbe;
 
 import java.time.Duration;
 import java.util.Arrays;

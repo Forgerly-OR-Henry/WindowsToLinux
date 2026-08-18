@@ -1,7 +1,7 @@
 package gold.debug.windowstolinux.shared.linux.capability;
 
 import gold.debug.windowstolinux.shared.linux.error.LinuxOperationException;
-import gold.debug.windowstolinux.shared.model.server.LinuxCapabilities;
+import gold.debug.windowstolinux.shared.model.capability.LinuxCapabilities;
 
 /**
  * Read-only capability collection for the typed deployment distribution and container matrix.

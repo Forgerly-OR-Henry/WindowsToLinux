@@ -1,19 +1,14 @@
 package gold.debug.windowstolinux.shared.analyze.registry;
 
-import gold.debug.windowstolinux.shared.analyze.ecosystem.dotnet.project.service.DotNetServiceDeploymentInspector;
-import gold.debug.windowstolinux.shared.analyze.ecosystem.go.project.service.GoServiceDeploymentInspector;
-import gold.debug.windowstolinux.shared.analyze.ecosystem.jvm.framework.springboot.SpringBootDeploymentInspector;
-import gold.debug.windowstolinux.shared.analyze.ecosystem.jvm.project.jar.JavaJarDeploymentInspector;
-import gold.debug.windowstolinux.shared.analyze.ecosystem.jvm.project.kotlin.KotlinServiceDeploymentInspector;
-import gold.debug.windowstolinux.shared.analyze.ecosystem.node.project.service.NodeServiceDeploymentInspector;
-import gold.debug.windowstolinux.shared.analyze.ecosystem.php.project.service.PhpServiceDeploymentInspector;
-import gold.debug.windowstolinux.shared.analyze.ecosystem.python.project.service.PythonServiceDeploymentInspector;
-import gold.debug.windowstolinux.shared.analyze.ecosystem.ruby.project.service.RubyServiceDeploymentInspector;
-import gold.debug.windowstolinux.shared.analyze.ecosystem.rust.project.service.RustServiceDeploymentInspector;
+import gold.debug.windowstolinux.shared.analyze.ecosystem.ServiceDeploymentInspector;
+import gold.debug.windowstolinux.shared.analyze.ecosystem.jvm.SpringBootDeploymentInspector;
+import gold.debug.windowstolinux.shared.analyze.ecosystem.jvm.JavaJarDeploymentInspector;
+import gold.debug.windowstolinux.shared.analyze.ecosystem.node.NodeServiceDeploymentInspector;
+import gold.debug.windowstolinux.shared.analyze.ecosystem.python.PythonServiceDeploymentInspector;
 import gold.debug.windowstolinux.shared.analyze.preview.PreviewInspector;
 import gold.debug.windowstolinux.shared.analyze.spi.DeploymentTypeInspector;
-import gold.debug.windowstolinux.shared.analyze.workload.container.ContainerDeploymentInspector;
-import gold.debug.windowstolinux.shared.analyze.workload.staticweb.StaticWebDeploymentInspector;
+import gold.debug.windowstolinux.shared.analyze.workload.ContainerDeploymentInspector;
+import gold.debug.windowstolinux.shared.analyze.workload.StaticWebDeploymentInspector;
 import gold.debug.windowstolinux.shared.model.project.DeploymentProjectType;
 
 import java.util.EnumMap;
@@ -35,9 +30,12 @@ public final class DeploymentTypeInspectorRegistry {
                 new SpringBootDeploymentInspector(), new JavaJarDeploymentInspector(),
                 new NodeServiceDeploymentInspector(), new PythonServiceDeploymentInspector(),
                 new StaticWebDeploymentInspector(), new ContainerDeploymentInspector(),
-                new GoServiceDeploymentInspector(), new RustServiceDeploymentInspector(),
-                new DotNetServiceDeploymentInspector(), new KotlinServiceDeploymentInspector(),
-                new PhpServiceDeploymentInspector(), new RubyServiceDeploymentInspector(),
+                new ServiceDeploymentInspector(DeploymentProjectType.GO_SERVICE),
+                new ServiceDeploymentInspector(DeploymentProjectType.RUST_SERVICE),
+                new ServiceDeploymentInspector(DeploymentProjectType.DOTNET_SERVICE),
+                new ServiceDeploymentInspector(DeploymentProjectType.KOTLIN_SERVICE),
+                new ServiceDeploymentInspector(DeploymentProjectType.PHP_SERVICE),
+                new ServiceDeploymentInspector(DeploymentProjectType.RUBY_SERVICE),
                 new PreviewInspector()));
     }
 

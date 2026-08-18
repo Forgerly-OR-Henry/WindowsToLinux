@@ -1,5 +1,6 @@
 package gold.debug.windowstolinux.shared.ai.client;
 
+import gold.debug.windowstolinux.shared.ai.AiAnalysisException;
 import gold.debug.windowstolinux.shared.ai.collaboration.AiInvocationEvidence;
 import gold.debug.windowstolinux.shared.ai.collaboration.AiInvocationStatus;
 import gold.debug.windowstolinux.shared.ai.collaboration.AiRoleBinding;
