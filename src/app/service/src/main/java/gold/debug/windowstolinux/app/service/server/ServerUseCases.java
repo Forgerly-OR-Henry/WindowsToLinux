@@ -5,9 +5,9 @@ import gold.debug.windowstolinux.app.secret.api.SecretStore;
 import gold.debug.windowstolinux.app.secret.api.SecretStoreException;
 import gold.debug.windowstolinux.shared.linux.connection.HostKeyDecision;
 import gold.debug.windowstolinux.shared.linux.connection.HostKeyVerifier;
-import gold.debug.windowstolinux.shared.linux.connection.LinuxOperationException;
+import gold.debug.windowstolinux.shared.linux.error.LinuxOperationException;
 import gold.debug.windowstolinux.shared.linux.connection.DeploymentLinuxGateway;
-import gold.debug.windowstolinux.shared.linux.connection.DeploymentRemoteSession;
+import gold.debug.windowstolinux.shared.linux.session.DeploymentRemoteSession;
 import gold.debug.windowstolinux.shared.linux.connection.SshCredential;
 import gold.debug.windowstolinux.shared.model.message.LocalizedMessage;
 import gold.debug.windowstolinux.shared.model.message.LocalizedOperationException;
@@ -37,7 +37,7 @@ public final class ServerUseCases {
      *
      * <p>创建 {@code ServerUseCases} 实例。
      *
-     * @param database the {@code database} value / {@code database} 值
+     * @param profiles the {@code profiles} value / {@code profiles} 值
      * @param secrets the {@code secrets} value / {@code secrets} 值
      * @param gateway the {@code gateway} value / {@code gateway} 值
      * @throws NullPointerException if a required argument is {@code null} / 必要参数为 {@code null} 时

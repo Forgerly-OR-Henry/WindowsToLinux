@@ -38,6 +38,7 @@ public sealed interface ConfigurationValue permits ConfigurationValue.Text, Conf
             }
         }
 
+        /** Performs the {@code canonicalValue} operation. / 执行 {@code canonicalValue} 操作。 */
         @Override
         public String canonicalValue() {
             return value;
@@ -52,6 +53,7 @@ public sealed interface ConfigurationValue permits ConfigurationValue.Text, Conf
      * @param value the value / 值
      */
     record Number(long value) implements ConfigurationValue {
+        /** Performs the {@code canonicalValue} operation. / 执行 {@code canonicalValue} 操作。 */
         @Override
         public String canonicalValue() {
             return Long.toString(value);
@@ -66,6 +68,7 @@ public sealed interface ConfigurationValue permits ConfigurationValue.Text, Conf
      * @param value the value / 值
      */
     record Flag(boolean value) implements ConfigurationValue {
+        /** Performs the {@code canonicalValue} operation. / 执行 {@code canonicalValue} 操作。 */
         @Override
         public String canonicalValue() {
             return Boolean.toString(value);

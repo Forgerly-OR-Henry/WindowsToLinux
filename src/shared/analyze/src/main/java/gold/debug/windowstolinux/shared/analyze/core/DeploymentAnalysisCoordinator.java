@@ -1,12 +1,9 @@
 package gold.debug.windowstolinux.shared.analyze.core;
 
-import gold.debug.windowstolinux.shared.analyze.build.node.NodeServiceDeploymentInspector;
-import gold.debug.windowstolinux.shared.analyze.build.python.PythonServiceDeploymentInspector;
-import gold.debug.windowstolinux.shared.analyze.framework.springboot.SpringBootDeploymentInspector;
-import gold.debug.windowstolinux.shared.analyze.language.ProjectLanguageInspector;
-import gold.debug.windowstolinux.shared.analyze.language.advanced.AdvancedLanguageDeploymentInspector;
-import gold.debug.windowstolinux.shared.analyze.language.preview.RecognitionPreviewInspector;
-import gold.debug.windowstolinux.shared.analyze.language.java.JavaJarDeploymentInspector;
+import gold.debug.windowstolinux.shared.analyze.ecosystem.ProjectLanguageInspector;
+import gold.debug.windowstolinux.shared.analyze.policy.SourceMutationPolicy;
+import gold.debug.windowstolinux.shared.analyze.registry.DeploymentTypeInspectorRegistry;
+import gold.debug.windowstolinux.shared.analyze.spi.DeploymentTypeInspection;
 import gold.debug.windowstolinux.shared.analyze.source.BoundedSourceInspector;
 import gold.debug.windowstolinux.shared.analyze.source.SourceInspection;
 import gold.debug.windowstolinux.shared.analyze.workload.container.ContainerDeploymentInspector;
@@ -15,7 +12,6 @@ import gold.debug.windowstolinux.shared.model.analysis.DeploymentProjectAssessme
 import gold.debug.windowstolinux.shared.model.analysis.RejectionReason;
 import gold.debug.windowstolinux.shared.model.message.LocalizedMessage;
 import gold.debug.windowstolinux.shared.model.project.DeploymentProjectType;
-import gold.debug.windowstolinux.shared.model.project.AdvancedRuntimeKind;
 import gold.debug.windowstolinux.shared.model.project.ProjectLanguageFacts;
 
 import java.io.IOException;
@@ -23,11 +19,8 @@ import java.nio.file.Files;
 import java.nio.file.LinkOption;
 import java.nio.file.Path;
 import java.util.ArrayList;
-import java.util.EnumMap;
 import java.util.List;
-import java.util.Map;
 import java.util.Objects;
-import java.util.regex.Pattern;
 
 /**
  * Coordinates bounded traversal, safety policy, type dispatch, and result aggregation only.
@@ -35,42 +28,23 @@ import java.util.regex.Pattern;
  * <p>仅协调有界遍历、安全策略、类型分派与结果汇总。
  */
 public final class DeploymentAnalysisCoordinator {
-    private static final Pattern DATABASE_MIGRATION = Pattern.compile(
-            "\\b(flyway|liquibase|alembic|prisma(?:\\s+migrate)?|knex)\\b", Pattern.CASE_INSENSITIVE);
     private final BoundedSourceInspector sourceInspector;
     private final ProjectLanguageInspector languageInspector;
-    private final Map<DeploymentProjectType, DeploymentTypeInspector> inspectors;
+    private final DeploymentTypeInspectorRegistry inspectors;
+    private final SourceMutationPolicy mutationPolicy;
 
     /** Creates a coordinator with exactly one inspector for every supported type. / 为每种支持类型各配置一个检查器。 */
     public DeploymentAnalysisCoordinator() {
-        this(new BoundedSourceInspector(), new ProjectLanguageInspector(), List.of(
-                new SpringBootDeploymentInspector(), new JavaJarDeploymentInspector(),
-                new NodeServiceDeploymentInspector(), new PythonServiceDeploymentInspector(),
-                new StaticWebDeploymentInspector(), new ContainerDeploymentInspector(),
-                new AdvancedLanguageDeploymentInspector(AdvancedRuntimeKind.GO),
-                new AdvancedLanguageDeploymentInspector(AdvancedRuntimeKind.RUST),
-                new AdvancedLanguageDeploymentInspector(AdvancedRuntimeKind.DOTNET),
-                new AdvancedLanguageDeploymentInspector(AdvancedRuntimeKind.KOTLIN),
-                new AdvancedLanguageDeploymentInspector(AdvancedRuntimeKind.PHP),
-                new AdvancedLanguageDeploymentInspector(AdvancedRuntimeKind.RUBY),
-                new RecognitionPreviewInspector()));
+        this(new BoundedSourceInspector(), new ProjectLanguageInspector(), DeploymentTypeInspectorRegistry.defaults(),
+                new SourceMutationPolicy());
     }
 
     DeploymentAnalysisCoordinator(BoundedSourceInspector sourceInspector, ProjectLanguageInspector languageInspector,
-                                  List<DeploymentTypeInspector> inspectors) {
+                                  DeploymentTypeInspectorRegistry inspectors, SourceMutationPolicy mutationPolicy) {
         this.sourceInspector = Objects.requireNonNull(sourceInspector, "sourceInspector");
         this.languageInspector = Objects.requireNonNull(languageInspector, "languageInspector");
-        EnumMap<DeploymentProjectType, DeploymentTypeInspector> indexed = new EnumMap<>(DeploymentProjectType.class);
-        for (DeploymentTypeInspector inspector : Objects.requireNonNull(inspectors, "inspectors")) {
-            DeploymentTypeInspector previous = indexed.put(inspector.projectType(), inspector);
-            if (previous != null) {
-                throw new IllegalArgumentException("each deployment type requires exactly one inspector");
-            }
-        }
-        if (indexed.size() != DeploymentProjectType.values().length) {
-            throw new IllegalArgumentException("every deployment type requires an inspector");
-        }
-        this.inspectors = Map.copyOf(indexed);
+        this.inspectors = Objects.requireNonNull(inspectors, "inspectors");
+        this.mutationPolicy = Objects.requireNonNull(mutationPolicy, "mutationPolicy");
     }
 
     /** Analyzes one explicitly selected type without executing source. / 在不执行源码的情况下分析一个显式选择的类型。 */
@@ -81,18 +55,13 @@ public final class DeploymentAnalysisCoordinator {
             return DeploymentProjectAssessment.rejected(rejections);
         }
         SourceInspection source = sourceInspector.inspect(root, rejections);
-        if (source.hasDatabaseChangeScript()) {
-            rejections.add(rejection("AUTOMATIC_SCHEMA_MUTATION_DETECTED", "analysis.rejection.schemaMutationDetected"));
-        }
-        if (DATABASE_MIGRATION.matcher(source.scannedText()).find()) {
-            rejections.add(rejection("DATABASE_MIGRATION_DETECTED", "analysis.rejection.migrationDetected"));
-        }
+        mutationPolicy.validate(source, rejections);
         if (!rejections.isEmpty()) {
             return DeploymentProjectAssessment.rejected(rejections);
         }
         try {
             ProjectLanguageFacts languageFacts = languageInspector.inspect(root, source);
-            DeploymentTypeInspection inspected = inspectors.get(Objects.requireNonNull(projectType, "projectType"))
+            DeploymentTypeInspection inspected = inspectors.require(Objects.requireNonNull(projectType, "projectType"))
                     .inspect(root, source, languageFacts, rejections);
             if (inspected == null || !rejections.isEmpty()) {
                 return DeploymentProjectAssessment.rejected(rejections);

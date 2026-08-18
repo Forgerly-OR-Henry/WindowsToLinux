@@ -69,6 +69,7 @@ public sealed interface DeploymentHandoff permits DeploymentHandoff.HttpAccessUr
             }
         }
 
+        /** Performs the {@code kind} operation. / 执行 {@code kind} 操作。 */
         @Override
         public Kind kind() {
             return Kind.HTTP_ACCESS_URL;
@@ -125,6 +126,7 @@ public sealed interface DeploymentHandoff permits DeploymentHandoff.HttpAccessUr
             }
         }
 
+        /** Performs the {@code kind} operation. / 执行 {@code kind} 操作。 */
         @Override
         public Kind kind() {
             return Kind.SYSTEMD_START_COMMAND;

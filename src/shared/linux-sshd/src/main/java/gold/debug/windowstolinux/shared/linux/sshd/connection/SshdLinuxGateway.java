@@ -1,10 +1,13 @@
 package gold.debug.windowstolinux.shared.linux.sshd.connection;
 
+import gold.debug.windowstolinux.shared.linux.sshd.session.SshdLinuxRemoteSession;
+import gold.debug.windowstolinux.shared.linux.sshd.command.SshCommandExecutor;
+
 import gold.debug.windowstolinux.shared.linux.connection.HostKeyDecision;
 import gold.debug.windowstolinux.shared.linux.connection.HostKeyVerifier;
-import gold.debug.windowstolinux.shared.linux.connection.LinuxOperationException;
+import gold.debug.windowstolinux.shared.linux.error.LinuxOperationException;
 import gold.debug.windowstolinux.shared.linux.connection.DeploymentLinuxGateway;
-import gold.debug.windowstolinux.shared.linux.connection.DeploymentRemoteSession;
+import gold.debug.windowstolinux.shared.linux.session.DeploymentRemoteSession;
 import gold.debug.windowstolinux.shared.linux.connection.SshCredential;
 import gold.debug.windowstolinux.shared.linux.connection.SshEndpoint;
 import org.apache.sshd.client.SshClient;
@@ -38,6 +41,7 @@ public final class SshdLinuxGateway implements DeploymentLinuxGateway {
     private static final int TRANSIENT_CONNECTION_ATTEMPTS = 3;
     private static final Duration TRANSIENT_RETRY_DELAY = Duration.ofMillis(250);
     private static final Duration WINDOWS_NIO2_COMPLETION_GRACE = Duration.ofMillis(500);
+    /** Performs the {@code connect} operation. / 执行 {@code connect} 操作。 */
     @Override
     public DeploymentRemoteSession connect(SshEndpoint endpoint, SshCredential credential, HostKeyVerifier hostKeyVerifier)
             throws LinuxOperationException {
@@ -192,7 +196,8 @@ public final class SshdLinuxGateway implements DeploymentLinuxGateway {
         }
     }
 
-    static void closeQuietly(SshClient client) {
+    /** Performs the {@code closeQuietly} operation. / 执行 {@code closeQuietly} 操作。 */
+    public static void closeQuietly(SshClient client) {
         try {
             if (!client.close(false).await(CLOSE_TIMEOUT)) {
                 client.close(true).await(CLOSE_TIMEOUT);
@@ -203,7 +208,8 @@ public final class SshdLinuxGateway implements DeploymentLinuxGateway {
         }
     }
 
-    static void closeQuietly(ClientSession session) {
+    /** Performs the {@code closeQuietly} operation. / 执行 {@code closeQuietly} 操作。 */
+    public static void closeQuietly(ClientSession session) {
         try {
             if (!session.close(false).await(CLOSE_TIMEOUT)) {
                 session.close(true).await(CLOSE_TIMEOUT);

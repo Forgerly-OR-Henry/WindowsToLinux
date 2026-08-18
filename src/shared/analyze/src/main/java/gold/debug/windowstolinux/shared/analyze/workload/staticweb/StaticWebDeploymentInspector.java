@@ -1,10 +1,11 @@
 package gold.debug.windowstolinux.shared.analyze.workload.staticweb;
 
-import gold.debug.windowstolinux.shared.analyze.build.node.NodeProjectInspection;
-import gold.debug.windowstolinux.shared.analyze.build.node.NodeProjectInspector;
-import gold.debug.windowstolinux.shared.analyze.core.DeploymentTypeInspection;
-import gold.debug.windowstolinux.shared.analyze.core.DeploymentTypeInspector;
-import gold.debug.windowstolinux.shared.analyze.source.BoundedProjectMetadata;
+import gold.debug.windowstolinux.shared.analyze.ecosystem.node.build.NodeBuildFacts;
+import gold.debug.windowstolinux.shared.analyze.ecosystem.node.build.NodeBuildInspector;
+import gold.debug.windowstolinux.shared.analyze.spi.DeploymentTypeInspection;
+import gold.debug.windowstolinux.shared.analyze.spi.DeploymentTypeInspector;
+import gold.debug.windowstolinux.shared.analyze.source.metadata.BoundedMetadataReader;
+import gold.debug.windowstolinux.shared.analyze.source.metadata.ProjectIdentityResolver;
 import gold.debug.windowstolinux.shared.analyze.source.SourceInspection;
 import gold.debug.windowstolinux.shared.model.analysis.AnalysisEvidence;
 import gold.debug.windowstolinux.shared.model.analysis.RejectionReason;
@@ -35,18 +36,20 @@ public final class StaticWebDeploymentInspector implements DeploymentTypeInspect
             "(?s)\\\"build\\\"\\s*:\\s*\\\"[^\\\"\\r\\n]*\\bvite\\b[^\\\"\\r\\n]*\\\"");
     private static final Pattern VITE_OUTPUT = Pattern.compile(
             "(?m)\\boutDir\\s*:\\s*['\\\"]([A-Za-z0-9._/-]{1,255})['\\\"]");
-    private final NodeProjectInspector node = new NodeProjectInspector();
+    private final NodeBuildInspector node = new NodeBuildInspector();
 
+    /** Returns the supported deployment project type. / 返回支持的部署项目类型。 */
     @Override
     public DeploymentProjectType projectType() {
         return DeploymentProjectType.STATIC_SITE;
     }
 
+    /** Inspects source facts for this deployment type. / 检查此部署类型的源码事实。 */
     @Override
     public DeploymentTypeInspection inspect(Path root, SourceInspection source, ProjectLanguageFacts languageFacts,
                                             List<RejectionReason> rejections) throws IOException {
-        boolean hasIndex = BoundedProjectMetadata.regular(root.resolve("index.html"));
-        Optional<NodeProjectInspection> nodeProject = node.inspect(root);
+        boolean hasIndex = BoundedMetadataReader.regular(root.resolve("index.html"));
+        Optional<NodeBuildFacts> nodeProject = node.inspect(root);
         if (!hasIndex && nodeProject.isEmpty()) {
             rejections.add(new RejectionReason("STATIC_SITE_ENTRY_MISSING",
                     LocalizedMessage.of("analysis.deployment.rejection.staticSiteEntryMissing"), "deployment"));
@@ -55,9 +58,9 @@ public final class StaticWebDeploymentInspector implements DeploymentTypeInspect
         List<LocalizedMessage> missing = new ArrayList<>();
         List<LocalizedMessage> conflicts = new ArrayList<>();
         DeploymentBuildTool tool = DeploymentBuildTool.STATIC_SITE_BUILD;
-        String applicationId = BoundedProjectMetadata.rootApplicationId(root);
+        String applicationId = ProjectIdentityResolver.rootApplicationId(root);
         if (nodeProject.isPresent()) {
-            NodeProjectInspection project = nodeProject.orElseThrow();
+            NodeBuildFacts project = nodeProject.orElseThrow();
             applicationId = project.applicationId();
             tool = project.buildTool();
             if (project.lockFiles().isEmpty()) {
@@ -70,24 +73,24 @@ public final class StaticWebDeploymentInspector implements DeploymentTypeInspect
             }
         }
         DeploymentProjectFacts facts = new DeploymentProjectFacts(root, applicationId, projectType(), tool, languageFacts,
-                List.of(BoundedProjectMetadata.evidence("analysis.deployment.evidence.staticSite",
+                List.of(evidence("analysis.deployment.evidence.staticSite",
                         nodeProject.isPresent() ? "package.json" : "index.html", "analysis.deployment.evidence.detected")),
                 conflicts, missing);
         Map<DeploymentRuntimeSuggestion.RuntimeInput, String> values = DeploymentRuntimeSuggestion.valuesFor(projectType());
         List<AnalysisEvidence> runtimeEvidence = new ArrayList<>();
-        List<LocalizedMessage> required = new ArrayList<>(List.of(BoundedProjectMetadata.required("analysis.deployment.runtime.health")));
+        List<LocalizedMessage> required = new ArrayList<>(List.of(LocalizedMessage.of("analysis.deployment.runtime.health")));
         if (nodeProject.isPresent()) {
-            String packageJson = BoundedProjectMetadata.read(root.resolve("package.json"));
+            String packageJson = BoundedMetadataReader.read(root.resolve("package.json"));
             if (VITE_BUILD.matcher(packageJson).find()) {
                 String output = viteOutput(root).orElse("dist");
                 values.put(DeploymentRuntimeSuggestion.RuntimeInput.STATIC_OUTPUT_DIRECTORY, output);
-                runtimeEvidence.add(BoundedProjectMetadata.evidence("analysis.deployment.runtime.evidence.staticOutput",
+                runtimeEvidence.add(evidence("analysis.deployment.runtime.evidence.staticOutput",
                         output.equals("dist") ? "package.json#scripts.build" : "vite.config#build.outDir",
                         "analysis.deployment.evidence.detected"));
             }
             String nodeVersion = languageFacts.values().get(LanguageFact.NODE_MAJOR_VERSION);
             if (nodeVersion == null) {
-                required.add(BoundedProjectMetadata.required("analysis.deployment.runtime.nodeVersion"));
+                required.add(LocalizedMessage.of("analysis.deployment.runtime.nodeVersion"));
             } else {
                 values.put(DeploymentRuntimeSuggestion.RuntimeInput.NODE_MAJOR_VERSION, nodeVersion);
                 languageFacts.evidence().stream().filter(item -> item.subject().key().equals(
@@ -95,7 +98,7 @@ public final class StaticWebDeploymentInspector implements DeploymentTypeInspect
             }
         }
         if (!values.containsKey(DeploymentRuntimeSuggestion.RuntimeInput.STATIC_OUTPUT_DIRECTORY)) {
-            required.add(BoundedProjectMetadata.required("analysis.deployment.runtime.staticOutput"));
+            required.add(LocalizedMessage.of("analysis.deployment.runtime.staticOutput"));
         }
         DeploymentRuntimeSuggestion suggestion = new DeploymentRuntimeSuggestion(projectType(), values, Optional.empty(), Map.of(),
                 List.of(), runtimeEvidence, required);
@@ -105,15 +108,21 @@ public final class StaticWebDeploymentInspector implements DeploymentTypeInspect
     private static Optional<String> viteOutput(Path root) throws IOException {
         for (String name : List.of("vite.config.js", "vite.config.mjs", "vite.config.cjs", "vite.config.ts", "vite.config.mts")) {
             Path config = root.resolve(name);
-            if (!BoundedProjectMetadata.regular(config)) {
+            if (!BoundedMetadataReader.regular(config)) {
                 continue;
             }
-            Matcher matcher = VITE_OUTPUT.matcher(BoundedProjectMetadata.read(config));
+            Matcher matcher = VITE_OUTPUT.matcher(BoundedMetadataReader.read(config));
             if (matcher.find() && !matcher.group(1).equals(".") && !matcher.group(1).contains("..")
                     && !matcher.group(1).startsWith("/")) {
                 return Optional.of(matcher.group(1));
             }
         }
         return Optional.empty();
+    }
+    private static gold.debug.windowstolinux.shared.model.analysis.AnalysisEvidence evidence(String subject, String source, String conclusion) {
+        return new gold.debug.windowstolinux.shared.model.analysis.AnalysisEvidence(
+                gold.debug.windowstolinux.shared.model.message.LocalizedMessage.of(subject), source,
+                gold.debug.windowstolinux.shared.model.message.LocalizedMessage.of(conclusion),
+                gold.debug.windowstolinux.shared.model.analysis.EvidenceConfidence.HIGH);
     }
 }

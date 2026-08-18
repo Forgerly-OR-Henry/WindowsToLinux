@@ -1,9 +1,9 @@
 package gold.debug.windowstolinux.app.ui.shell;
 
 import gold.debug.windowstolinux.app.service.DesktopApplicationService;
-import gold.debug.windowstolinux.app.ui.appearance.DesktopAppearance;
-import gold.debug.windowstolinux.app.ui.appearance.DesktopAppearanceChangeListener;
-import gold.debug.windowstolinux.app.ui.appearance.ThemePalette;
+import gold.debug.windowstolinux.app.ui.display.DesktopDisplaySettings;
+import gold.debug.windowstolinux.app.ui.display.DesktopDisplayChangeListener;
+import gold.debug.windowstolinux.app.ui.display.ThemePalette;
 import gold.debug.windowstolinux.app.ui.component.DesktopComponents;
 import gold.debug.windowstolinux.app.ui.i18n.MessageCatalog;
 
@@ -60,10 +60,10 @@ public final class DesktopFrame extends JFrame {
      * @param service the {@code service} value / {@code service} 值
      */
     public DesktopFrame(DesktopApplicationService service) {
-        this(service, DesktopAppearance.defaults());
+        this(service, DesktopDisplaySettings.defaults());
     }
 
-    private DesktopFrame(DesktopApplicationService service, DesktopAppearance appearance) {
+    private DesktopFrame(DesktopApplicationService service, DesktopDisplaySettings appearance) {
         this(service, MessageCatalog.forLanguageTag(appearance.localeTag()),
                 appearance, ThemePalette.light(), (source, selected) -> { }, null);
     }
@@ -81,8 +81,8 @@ public final class DesktopFrame extends JFrame {
      * @param viewState the {@code viewState} value / {@code viewState} 值
      */
     public DesktopFrame(DesktopApplicationService service, MessageCatalog messages,
-                        DesktopAppearance appearance, ThemePalette palette,
-                        DesktopAppearanceChangeListener appearanceChangeListener,
+                        DesktopDisplaySettings appearance, ThemePalette palette,
+                        DesktopDisplayChangeListener appearanceChangeListener,
                         DesktopViewState viewState) {
         super("WindowsToLinux");
         this.messages = messages;

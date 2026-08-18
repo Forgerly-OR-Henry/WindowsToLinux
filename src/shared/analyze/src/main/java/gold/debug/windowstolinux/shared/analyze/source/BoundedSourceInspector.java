@@ -82,15 +82,13 @@ public final class BoundedSourceInspector {
         private final List<Path> relativeFiles = new ArrayList<>();
         private int scannedFiles;
         private long scannedTextBytes;
-        private boolean hasMavenWrapper;
-        private boolean hasWindowsMavenWrapper;
-        private boolean hasDatabaseChangeScript;
 
         private TreeInspection(Path root, List<RejectionReason> rejections) {
             this.root = root;
             this.rejections = rejections;
         }
 
+        /** Performs the {@code preVisitDirectory} operation. / 执行 {@code preVisitDirectory} 操作。 */
         @Override
         public FileVisitResult preVisitDirectory(Path directory, BasicFileAttributes attributes) {
             if (!directory.equals(root) && Files.isSymbolicLink(directory)) {
@@ -101,6 +99,7 @@ public final class BoundedSourceInspector {
             return FileVisitResult.CONTINUE;
         }
 
+        /** Performs the {@code visitFile} operation. / 执行 {@code visitFile} 操作。 */
         @Override
         public FileVisitResult visitFile(Path file, BasicFileAttributes attributes) throws IOException {
             if (Files.isSymbolicLink(file) || !attributes.isRegularFile()) {
@@ -108,21 +107,11 @@ public final class BoundedSourceInspector {
                         "input"));
                 return FileVisitResult.CONTINUE;
             }
-            String name = file.getFileName().toString();
             if (relativeFiles.size() >= MAX_SOURCE_ENTRIES) {
                 rejections.add(reason("SOURCE_ENTRY_LIMIT_EXCEEDED", "analysis.rejection.sourceEntryLimitExceeded", "input"));
                 return FileVisitResult.TERMINATE;
             }
             relativeFiles.add(root.relativize(file));
-            if (file.getParent().equals(root) && name.equals("mvnw")) {
-                hasMavenWrapper = true;
-            } else if (file.getParent().equals(root) && name.equals("mvnw.cmd")) {
-                hasWindowsMavenWrapper = true;
-            }
-            String lowerName = name.toLowerCase(Locale.ROOT);
-            if (isDatabaseChangeScript(file, lowerName)) {
-                hasDatabaseChangeScript = true;
-            }
             if (shouldReadText(file)) {
                 long size = Files.size(file);
                 if (size > MAX_TEXT_FILE_BYTES) {
@@ -142,6 +131,7 @@ public final class BoundedSourceInspector {
             return FileVisitResult.CONTINUE;
         }
 
+        /** Performs the {@code visitFileFailed} operation. / 执行 {@code visitFileFailed} 操作。 */
         @Override
         public FileVisitResult visitFileFailed(Path file, IOException exception) {
             rejections.add(reason("SOURCE_READ_FAILED", "analysis.rejection.sourceEntryReadFailed",
@@ -149,6 +139,7 @@ public final class BoundedSourceInspector {
             return FileVisitResult.CONTINUE;
         }
 
+        /** Performs the {@code postVisitDirectory} operation. / 执行 {@code postVisitDirectory} 操作。 */
         @Override
         public FileVisitResult postVisitDirectory(Path directory, IOException exception) {
             if (exception != null) {
@@ -159,25 +150,7 @@ public final class BoundedSourceInspector {
         }
 
         private SourceInspection result() {
-            return new SourceInspection(scannedFiles, hasMavenWrapper, hasWindowsMavenWrapper, hasDatabaseChangeScript,
-                    relativeFiles, text.toString());
-        }
-
-        private boolean isDatabaseChangeScript(Path file, String lowerName) {
-            if (lowerName.equals("schema.sql") || (lowerName.startsWith("schema-") && lowerName.endsWith(".sql"))) {
-                return true;
-            }
-            if (!lowerName.endsWith(".sql")) {
-                return false;
-            }
-            for (Path parent = file.getParent(); parent != null && parent.startsWith(root); parent = parent.getParent()) {
-                Path name = parent.getFileName();
-                if (name != null && (name.toString().equalsIgnoreCase("migration")
-                        || name.toString().equalsIgnoreCase("migrations"))) {
-                    return true;
-                }
-            }
-            return false;
+            return new SourceInspection(scannedFiles, relativeFiles, text.toString());
         }
     }
 }

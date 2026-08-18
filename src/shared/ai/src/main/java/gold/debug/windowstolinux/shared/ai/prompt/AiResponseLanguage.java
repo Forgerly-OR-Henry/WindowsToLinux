@@ -21,6 +21,7 @@ public enum AiResponseLanguage {
      */
     SIMPLIFIED_CHINESE("Simplified Chinese");
 
+    /** Represents the {@code promptName} value. / 表示 {@code promptName} 值。 */
     private final String promptName;
 
     AiResponseLanguage(String promptName) {

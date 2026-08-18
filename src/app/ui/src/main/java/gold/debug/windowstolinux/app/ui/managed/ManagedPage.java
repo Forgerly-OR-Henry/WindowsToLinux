@@ -108,9 +108,11 @@ public final class ManagedPage {
             output.setText(messages.text("lifecycle.running", Map.of(
                     "action", messages.text("lifecycle.action." + action.name().toLowerCase(Locale.ROOT)))));
             new SwingWorker<gold.debug.windowstolinux.app.service.lifecycle.LifecycleOutcome, Void>() {
+                /** Runs the background task. / 运行后台任务。 */
                 @Override protected gold.debug.windowstolinux.app.service.lifecycle.LifecycleOutcome doInBackground() throws Exception {
                     return service.executePersistedLifecycleWithStoredPassword(selected, action, master);
                 }
+                /** Completes the background task on the UI thread. / 在 UI 线程完成后台任务。 */
                 @Override protected void done() {
                     try {
                         var result = get();

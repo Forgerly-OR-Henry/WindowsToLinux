@@ -1,0 +1,285 @@
+package gold.debug.windowstolinux.shared.linux.sshd.session;
+
+import gold.debug.windowstolinux.shared.linux.sshd.command.SshCommandExecutor;
+import gold.debug.windowstolinux.shared.linux.sshd.connection.SshdLinuxGateway;
+
+import gold.debug.windowstolinux.shared.linux.build.DeploymentBuildResult;
+import gold.debug.windowstolinux.shared.linux.session.DeploymentRemoteSession;
+import gold.debug.windowstolinux.shared.linux.error.LinuxOperationException;
+import gold.debug.windowstolinux.shared.linux.connection.SshEndpoint;
+import gold.debug.windowstolinux.shared.linux.protocol.ReleaseSnapshot;
+import gold.debug.windowstolinux.shared.linux.protocol.RemoteStepResult;
+import gold.debug.windowstolinux.shared.linux.runtime.HealthCheckResult;
+import gold.debug.windowstolinux.shared.linux.sshd.build.DeploymentBuildExecutor;
+import gold.debug.windowstolinux.shared.linux.sshd.capability.SshdCapabilityCollector;
+import gold.debug.windowstolinux.shared.linux.sshd.capability.SshdPlatformCapabilityCollector;
+import gold.debug.windowstolinux.shared.linux.sshd.distro.ManagedEnvironmentExecutor;
+import gold.debug.windowstolinux.shared.linux.sshd.protocol.workspace.CandidateWorkspaceController;
+import gold.debug.windowstolinux.shared.linux.sshd.protocol.runtime.ManagedRuntimeController;
+import gold.debug.windowstolinux.shared.linux.sshd.protocol.release.DeploymentReleaseProtocolExecutor;
+import gold.debug.windowstolinux.shared.linux.sshd.protocol.release.ContainerReleaseProtocolExecutor;
+import gold.debug.windowstolinux.shared.linux.sshd.protocol.input.DeploymentInputProtocolExecutor;
+import gold.debug.windowstolinux.shared.config.revision.ConfigurationSnapshot;
+import gold.debug.windowstolinux.shared.config.revision.DeploymentInputManifest;
+import gold.debug.windowstolinux.shared.config.secretref.ResolvedSecretRevision;
+import gold.debug.windowstolinux.shared.linux.sshd.runtime.systemd.SystemdHealthChecker;
+import gold.debug.windowstolinux.shared.linux.sshd.runtime.systemd.SystemdLifecycleExecutor;
+import gold.debug.windowstolinux.shared.linux.sshd.runtime.systemd.SystemdOwnershipObserver;
+import gold.debug.windowstolinux.shared.linux.sshd.runtime.container.ContainerRuntimeExecutor;
+import gold.debug.windowstolinux.shared.linux.sshd.runtime.dispatch.ManagedRuntimeExecutor;
+import gold.debug.windowstolinux.shared.linux.sshd.runtime.dispatch.ManagedRuntimeKindProbe;
+import gold.debug.windowstolinux.shared.linux.sshd.transfer.SshdSourceTransfer;
+import gold.debug.windowstolinux.shared.linux.transfer.RemoteWorkspace;
+import gold.debug.windowstolinux.shared.linux.transfer.UploadReceipt;
+import gold.debug.windowstolinux.shared.model.archive.SourceArchiveDescriptor;
+import gold.debug.windowstolinux.shared.model.deployment.BuildLimits;
+import gold.debug.windowstolinux.shared.model.deployment.EnvironmentSetupApproval;
+import gold.debug.windowstolinux.shared.model.deployment.EnvironmentSetupResult;
+import gold.debug.windowstolinux.shared.model.health.HealthCheck;
+import gold.debug.windowstolinux.shared.model.lifecycle.LifecycleAction;
+import gold.debug.windowstolinux.shared.model.lifecycle.LifecycleObservation;
+import gold.debug.windowstolinux.shared.model.lifecycle.RuntimeState;
+import gold.debug.windowstolinux.shared.model.managed.ManagedApplication;
+import gold.debug.windowstolinux.shared.model.project.DeploymentProjectFacts;
+import gold.debug.windowstolinux.shared.model.project.DeploymentRuntimeSpecification;
+import gold.debug.windowstolinux.shared.model.server.ServerCapabilities;
+import gold.debug.windowstolinux.shared.model.server.LinuxCapabilities;
+import org.apache.sshd.client.SshClient;
+import org.apache.sshd.client.session.ClientSession;
+
+import java.util.List;
+
+/**
+ * Unified session facade delegating each typed capability to its implementation package.
+ *
+ * <p>将各项类型化能力委派给其实现包的统一会话门面。
+ */
+public final class SshdLinuxRemoteSession implements DeploymentRemoteSession {
+    private final SshClient client;
+    private final ClientSession session;
+    private final String username;
+    private final SshdCapabilityCollector capabilities;
+    private final SshdPlatformCapabilityCollector deploymentCapabilities;
+    private final ManagedEnvironmentExecutor environment;
+    private final SshdSourceTransfer transfer;
+    private final DeploymentBuildExecutor deploymentBuild;
+    private final CandidateWorkspaceController candidates;
+    private final ManagedRuntimeController runtimes;
+    private final DeploymentReleaseProtocolExecutor deploymentProtocol;
+    private final ContainerReleaseProtocolExecutor containerProtocol;
+    private final DeploymentInputProtocolExecutor deploymentInputs;
+    private final SystemdHealthChecker systemdHealth;
+    private final SystemdOwnershipObserver systemdObservation;
+    private final SystemdLifecycleExecutor systemdLifecycle;
+    private final ContainerRuntimeExecutor containerRuntime;
+    private final ManagedRuntimeExecutor managedRuntime;
+
+    /** Creates an instance of this type. / 创建此类型的实例。 */
+    public SshdLinuxRemoteSession(SshClient client, ClientSession session,
+                              SshEndpoint endpoint, String hostFingerprint) {
+        this.client = client;
+        this.session = session;
+        this.username = endpoint.username();
+        SshCommandExecutor commands = new SshCommandExecutor(session);
+        this.capabilities = new SshdCapabilityCollector(commands, hostFingerprint);
+        this.deploymentCapabilities = new SshdPlatformCapabilityCollector(commands, hostFingerprint);
+        this.environment = new ManagedEnvironmentExecutor(
+                commands, capabilities, deploymentCapabilities, endpoint.serverId(), endpoint.username());
+        this.candidates = new CandidateWorkspaceController(commands);
+        this.runtimes = new ManagedRuntimeController(commands);
+        this.deploymentProtocol = new DeploymentReleaseProtocolExecutor(commands);
+        this.containerProtocol = new ContainerReleaseProtocolExecutor(commands);
+        this.deploymentInputs = new DeploymentInputProtocolExecutor(commands);
+        this.transfer = new SshdSourceTransfer(session, commands, candidates);
+        this.deploymentBuild = new DeploymentBuildExecutor(commands, endpoint.username());
+        this.systemdHealth = new SystemdHealthChecker(commands);
+        this.systemdObservation = new SystemdOwnershipObserver(commands, endpoint.username());
+        this.systemdLifecycle = new SystemdLifecycleExecutor(
+                commands, runtimes, systemdObservation, systemdHealth, endpoint.username());
+        this.containerRuntime = new ContainerRuntimeExecutor(commands);
+        this.managedRuntime = new ManagedRuntimeExecutor(new ManagedRuntimeKindProbe(runtimes),
+                deploymentProtocol, containerProtocol, systemdObservation, systemdLifecycle, systemdHealth,
+                containerRuntime);
+    }
+
+    /** Performs the {@code collectCapabilities} operation. / 执行 {@code collectCapabilities} 操作。 */
+    @Override
+    public ServerCapabilities collectCapabilities() throws LinuxOperationException {
+        return capabilities.collect();
+    }
+
+    /** Performs the {@code collectDeploymentCapabilities} operation. / 执行 {@code collectDeploymentCapabilities} 操作。 */
+    @Override
+    public LinuxCapabilities collectDeploymentCapabilities() throws LinuxOperationException {
+        return deploymentCapabilities.collectDeploymentCapabilities();
+    }
+
+    /** Performs the {@code prepareEnvironment} operation. / 执行 {@code prepareEnvironment} 操作。 */
+    @Override
+    public EnvironmentSetupResult prepareEnvironment(
+            EnvironmentSetupApproval approval) throws LinuxOperationException {
+        return environment.prepare(approval);
+    }
+
+    /** Performs the {@code uploadSource} operation. / 执行 {@code uploadSource} 操作。 */
+    @Override
+    public UploadReceipt uploadSource(SourceArchiveDescriptor archive, RemoteWorkspace workspace)
+            throws LinuxOperationException {
+        return transfer.upload(archive, workspace);
+    }
+
+    /** Performs the {@code buildDeployment} operation. / 执行 {@code buildDeployment} 操作。 */
+    @Override
+    public DeploymentBuildResult buildDeployment(DeploymentProjectFacts facts, DeploymentRuntimeSpecification runtime,
+                                                 RemoteWorkspace workspace, BuildLimits limits,
+                                                 ConfigurationSnapshot configuration)
+            throws LinuxOperationException {
+        return deploymentBuild.build(facts, runtime, workspace, limits, configuration);
+    }
+
+    /** Performs the {@code stageDeploymentInputs} operation. / 执行 {@code stageDeploymentInputs} 操作。 */
+    @Override
+    public DeploymentInputManifest stageDeploymentInputs(ManagedApplication application,
+                                                         ConfigurationSnapshot configuration,
+                                                         List<ResolvedSecretRevision> secrets)
+            throws LinuxOperationException {
+        return deploymentInputs.stage(application, configuration, secrets);
+    }
+
+    /** Performs the {@code cleanupCandidate} operation. / 执行 {@code cleanupCandidate} 操作。 */
+    @Override
+    public RemoteStepResult cleanupCandidate(RemoteWorkspace workspace) throws LinuxOperationException {
+        return candidates.cleanup(workspace);
+    }
+
+    /** Performs the {@code checkHealth} operation. / 执行 {@code checkHealth} 操作。 */
+    @Override
+    public HealthCheckResult checkHealth(ManagedApplication application, HealthCheck healthCheck)
+            throws LinuxOperationException {
+        return systemdHealth.check(application, healthCheck);
+    }
+
+    /** Performs the {@code retainRecentSuccessfulReleases} operation. / 执行 {@code retainRecentSuccessfulReleases} 操作。 */
+    @Override
+    public RemoteStepResult retainRecentSuccessfulReleases(ManagedApplication application)
+            throws LinuxOperationException {
+        return runtimes.retain(application);
+    }
+
+    /** Performs the {@code observe} operation. / 执行 {@code observe} 操作。 */
+    @Override
+    public LifecycleObservation observe(ManagedApplication application) throws LinuxOperationException {
+        return managedRuntime.observe(application);
+    }
+
+    /** Performs the {@code executeLifecycle} operation. / 执行 {@code executeLifecycle} 操作。 */
+    @Override
+    public LifecycleObservation executeLifecycle(ManagedApplication application, LifecycleAction action,
+                                                 HealthCheck healthCheck) throws LinuxOperationException {
+        return managedRuntime.execute(application, action, healthCheck);
+    }
+
+    /** Performs the {@code snapshotDeployment} operation. / 执行 {@code snapshotDeployment} 操作。 */
+    @Override
+    public ReleaseSnapshot snapshotDeployment(ManagedApplication application, DeploymentRuntimeSpecification runtime)
+            throws LinuxOperationException {
+        if (runtime instanceof DeploymentRuntimeSpecification.Container container) {
+            return containerProtocol.snapshot(application, container);
+        }
+        return deploymentProtocol.snapshot(application, runtime);
+    }
+
+    /** Performs the {@code publishDeployment} operation. / 执行 {@code publishDeployment} 操作。 */
+    @Override
+    public RemoteStepResult publishDeployment(ManagedApplication application, DeploymentProjectFacts facts,
+                                              RemoteWorkspace workspace,
+                                              DeploymentBuildResult buildResult, String releaseIdentity,
+                                              DeploymentRuntimeSpecification runtime, DeploymentInputManifest inputs,
+                                              ReleaseSnapshot snapshot)
+            throws LinuxOperationException {
+        if (runtime instanceof DeploymentRuntimeSpecification.Container container) {
+            return containerProtocol.publish(application, workspace, buildResult, releaseIdentity, container, inputs, snapshot);
+        }
+        return deploymentProtocol.publish(application, facts, workspace, buildResult, releaseIdentity, runtime, inputs, snapshot);
+    }
+
+    /** Performs the {@code rollbackDeployment} operation. / 执行 {@code rollbackDeployment} 操作。 */
+    @Override
+    public RemoteStepResult rollbackDeployment(ManagedApplication application, ReleaseSnapshot snapshot,
+                                               DeploymentBuildResult buildResult, String releaseIdentity,
+                                               DeploymentRuntimeSpecification runtime, DeploymentInputManifest inputs)
+            throws LinuxOperationException {
+        if (runtime instanceof DeploymentRuntimeSpecification.Container container) {
+            return containerProtocol.rollback(application, snapshot, buildResult, releaseIdentity, container, inputs);
+        }
+        return deploymentProtocol.rollback(application, snapshot, buildResult, releaseIdentity, runtime, inputs);
+    }
+
+    /** Performs the {@code checkDeploymentHealth} operation. / 执行 {@code checkDeploymentHealth} 操作。 */
+    @Override
+    public HealthCheckResult checkDeploymentHealth(ManagedApplication application, DeploymentRuntimeSpecification runtime,
+                                                   HealthCheck healthCheck) throws LinuxOperationException {
+        if (runtime instanceof DeploymentRuntimeSpecification.Container container) {
+            return containerRuntime.checkHealth(application, container, healthCheck);
+        }
+        return systemdHealth.check(application, healthCheck);
+    }
+
+    /** Performs the {@code observeDeployment} operation. / 执行 {@code observeDeployment} 操作。 */
+    @Override
+    public LifecycleObservation observeDeployment(ManagedApplication application, DeploymentRuntimeSpecification runtime)
+            throws LinuxOperationException {
+        if (runtime instanceof DeploymentRuntimeSpecification.Container container) {
+            return containerRuntime.observe(application, container);
+        }
+        return deploymentProtocol.observe(application);
+    }
+
+    /** Performs the {@code executeDeploymentLifecycle} operation. / 执行 {@code executeDeploymentLifecycle} 操作。 */
+    @Override
+    public LifecycleObservation executeDeploymentLifecycle(ManagedApplication application,
+                                                            DeploymentRuntimeSpecification runtime,
+                                                            LifecycleAction action) throws LinuxOperationException {
+        LifecycleObservation before = observeDeployment(application, runtime);
+        if (!before.ownershipVerified()) {
+            return before;
+        }
+        if (action == LifecycleAction.REFRESH_STATUS) {
+            return before;
+        }
+        if (action == LifecycleAction.START && before.runtimeState() != RuntimeState.STOPPED) {
+            throw LinuxOperationException.localized("linux.error.startRequiresStopped",
+                    "Start is allowed only for a managed runtime confirmed as stopped");
+        }
+        String verb = switch (action) {
+            case START -> "start";
+            case STOP -> "stop";
+            case RESTART -> "restart";
+            case ENABLE_AUTOSTART -> "enable";
+            case DISABLE_AUTOSTART -> "disable";
+            case REFRESH_STATUS -> throw new IllegalStateException("handled above");
+        };
+        RemoteStepResult result = runtime instanceof DeploymentRuntimeSpecification.Container container
+                ? containerProtocol.lifecycle(application, verb)
+                : deploymentProtocol.lifecycle(application, verb);
+        if (!result.succeeded()) {
+            throw LinuxOperationException.localized("linux.error.lifecycleActionFailed", result.evidence());
+        }
+        if ((action == LifecycleAction.START || action == LifecycleAction.RESTART)
+                && !checkDeploymentHealth(application, runtime, runtime.healthCheck()).healthy()) {
+            throw LinuxOperationException.localized("linux.error.postStartHealthFailed",
+                    "Post-start health check failed");
+        }
+        return observeDeployment(application, runtime);
+    }
+
+    /** Closes this resource. / 关闭此资源。 */
+    @Override
+    public void close() {
+        try {
+            SshdLinuxGateway.closeQuietly(session);
+        } finally {
+            SshdLinuxGateway.closeQuietly(client);
+        }
+    }
+}

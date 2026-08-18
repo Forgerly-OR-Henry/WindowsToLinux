@@ -1,5 +1,16 @@
 package gold.debug.windowstolinux.shared.linux.sshd.build;
 
+import gold.debug.windowstolinux.shared.linux.sshd.build.registry.DeploymentBuildRendererRegistry;
+import gold.debug.windowstolinux.shared.linux.sshd.build.shell.SafeBuildScriptEnvelope;
+import gold.debug.windowstolinux.shared.linux.sshd.build.spi.DeploymentBuildRenderer;
+import gold.debug.windowstolinux.shared.linux.sshd.ecosystem.jvm.build.jar.JavaJarBuildRenderer;
+import gold.debug.windowstolinux.shared.linux.sshd.ecosystem.jvm.build.springboot.SpringBootBuildRenderer;
+import gold.debug.windowstolinux.shared.linux.sshd.ecosystem.node.build.NodeBuildRenderer;
+import gold.debug.windowstolinux.shared.linux.sshd.ecosystem.python.build.PythonBuildRenderer;
+import gold.debug.windowstolinux.shared.linux.sshd.ecosystem.service.EcosystemServiceBuildSupport;
+import gold.debug.windowstolinux.shared.linux.sshd.workload.container.ContainerBuildRenderer;
+import gold.debug.windowstolinux.shared.linux.sshd.workload.staticweb.StaticSiteBuildRenderer;
+
 import gold.debug.windowstolinux.shared.linux.transfer.RemoteWorkspace;
 import gold.debug.windowstolinux.shared.model.analysis.AnalysisEvidence;
 import gold.debug.windowstolinux.shared.model.analysis.EvidenceConfidence;
@@ -10,7 +21,6 @@ import gold.debug.windowstolinux.shared.model.project.DeploymentBuildTool;
 import gold.debug.windowstolinux.shared.model.project.DeploymentProjectFacts;
 import gold.debug.windowstolinux.shared.model.project.DeploymentProjectType;
 import gold.debug.windowstolinux.shared.model.project.DeploymentRuntimeSpecification;
-import gold.debug.windowstolinux.shared.model.project.AdvancedRuntimeKind;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -52,15 +62,15 @@ class DeploymentBuildRendererTest {
         assertTrue(render(new ContainerBuildRenderer(), DeploymentBuildTool.CONTAINER_BUILD,
                 new DeploymentRuntimeSpecification.Container(DeploymentRuntimeSpecification.ContainerEngine.PODMAN,
                         Map.of(8080, 8080), List.of(), TCP)).contains("build --pull=true"));
-        assertTrue(advanced(AdvancedRuntimeKind.GO, DeploymentBuildTool.GO_MODULE, "1.24", "w2l-app",
+        assertTrue(service(DeploymentProjectType.GO_SERVICE, DeploymentBuildTool.GO_MODULE, "1.24", "w2l-app",
                 "main.go", OptionalInt.empty()).contains("go build -mod=readonly"));
-        assertTrue(advanced(AdvancedRuntimeKind.RUST, DeploymentBuildTool.CARGO_LOCKED, "1.89.0", "demo",
+        assertTrue(service(DeploymentProjectType.RUST_SERVICE, DeploymentBuildTool.CARGO_LOCKED, "1.89.0", "demo",
                 "src/main.rs", OptionalInt.empty()).contains("cargo build --locked --release"));
-        String dotnet = advanced(AdvancedRuntimeKind.DOTNET, DeploymentBuildTool.DOTNET_LOCKED, "8.0.408", "Demo",
+        String dotnet = service(DeploymentProjectType.DOTNET_SERVICE, DeploymentBuildTool.DOTNET_LOCKED, "8.0.408", "Demo",
                 "Demo.dll", OptionalInt.empty());
         assertTrue(dotnet.contains("dotnet restore --locked-mode"));
         assertTrue(dotnet.contains("DOTNET_GCHeapHardLimit=0x40000000"));
-        String kotlin = advanced(AdvancedRuntimeKind.KOTLIN, DeploymentBuildTool.GRADLE_KOTLIN_WRAPPER, "21", "demo",
+        String kotlin = service(DeploymentProjectType.KOTLIN_SERVICE, DeploymentBuildTool.GRADLE_KOTLIN_WRAPPER, "21", "demo",
                 "demo.MainKt", OptionalInt.empty());
         assertTrue(kotlin.contains("retry_run 3 ./gradlew --no-daemon --version"));
         assertTrue(kotlin.contains("https://services.gradle.org/distributions/*|https://downloads.gradle.org/distributions/*"));
@@ -74,9 +84,9 @@ class DeploymentBuildRendererTest {
         assertTrue(kotlin.contains("--no-daemon installDist"));
         assertTrue(kotlin.contains("-Xmx768m"));
         assertFalse(kotlin.contains("--offline"));
-        assertTrue(advanced(AdvancedRuntimeKind.PHP, DeploymentBuildTool.COMPOSER_LOCKED, "8.3", "public",
+        assertTrue(service(DeploymentProjectType.PHP_SERVICE, DeploymentBuildTool.COMPOSER_LOCKED, "8.3", "public",
                 "public/index.php", OptionalInt.of(8080)).contains("--no-plugins --no-scripts"));
-        String ruby = advanced(AdvancedRuntimeKind.RUBY, DeploymentBuildTool.BUNDLER_LOCKED, "3.3.5", "bundle",
+        String ruby = service(DeploymentProjectType.RUBY_SERVICE, DeploymentBuildTool.BUNDLER_LOCKED, "3.3.5", "bundle",
                 "config.ru", OptionalInt.of(8080));
         assertTrue(ruby.contains("bundle install --jobs 1 --retry 0"));
         assertTrue(ruby.contains("require \"rack\"; require \"webrick\""));
@@ -132,9 +142,8 @@ class DeploymentBuildRendererTest {
         assertThrows(IllegalArgumentException.class, () -> new DeploymentRuntimeSpecification.PythonService(
                 "3.12;touch-pwned", "demo.main", TCP));
         assertThrows(IllegalArgumentException.class, () -> new DeploymentRuntimeSpecification.StaticSite("dist;touch-pwned", HTTP));
-        assertThrows(IllegalArgumentException.class, () -> new DeploymentRuntimeSpecification.AdvancedService(
-                AdvancedRuntimeKind.PHP, "8.3", "public", "public/index.php;touch-pwned",
-                OptionalInt.of(8080), TCP));
+        assertThrows(IllegalArgumentException.class, () -> new DeploymentRuntimeSpecification.PhpService(
+                "8.3", "public", "public/index.php;touch-pwned", 8080, TCP));
         String quoted = SafeBuildScriptEnvelope.shellQuote("value'; touch /tmp/pwned; printf '");
         assertFalse(quoted.contains("value'; touch"));
         assertTrue(quoted.startsWith("'value'\"'\"'"));
@@ -161,20 +170,34 @@ class DeploymentBuildRendererTest {
                         LocalizedMessage.of("test.detected"), EvidenceConfidence.HIGH)), List.of(), List.of());
     }
 
-    private String advanced(AdvancedRuntimeKind kind, DeploymentBuildTool tool, String version,
+    private String service(DeploymentProjectType type, DeploymentBuildTool tool, String version,
                             String artifact, String entrypoint, OptionalInt port) {
-        return render(new AdvancedServiceBuildRenderer(kind), tool,
-                new DeploymentRuntimeSpecification.AdvancedService(kind, version, artifact, entrypoint, port, TCP));
+        return render(new EcosystemServiceBuildSupport(type), tool, runtime(type, version, artifact, entrypoint, port));
+    }
+
+    private DeploymentRuntimeSpecification runtime(DeploymentProjectType type, String version, String artifact,
+                                                    String entrypoint, OptionalInt port) {
+        return switch (type) {
+            case GO_SERVICE -> new DeploymentRuntimeSpecification.GoService(version, artifact, entrypoint, TCP);
+            case RUST_SERVICE -> new DeploymentRuntimeSpecification.RustService(version, artifact, entrypoint, TCP);
+            case DOTNET_SERVICE -> new DeploymentRuntimeSpecification.DotNetService(version, artifact, entrypoint, TCP);
+            case KOTLIN_SERVICE -> new DeploymentRuntimeSpecification.KotlinService(version, artifact, entrypoint, TCP);
+            case PHP_SERVICE -> new DeploymentRuntimeSpecification.PhpService(version, artifact, entrypoint,
+                    port.orElseThrow(), TCP);
+            case RUBY_SERVICE -> new DeploymentRuntimeSpecification.RubyService(version, artifact, entrypoint,
+                    port.orElseThrow(), TCP);
+            default -> throw new IllegalArgumentException("unsupported service test type");
+        };
     }
 
     private static List<DeploymentBuildRenderer> renderers() {
         return List.of(new SpringBootBuildRenderer(), new JavaJarBuildRenderer(), new NodeBuildRenderer(),
                 new PythonBuildRenderer(), new StaticSiteBuildRenderer(), new ContainerBuildRenderer(),
-                new AdvancedServiceBuildRenderer(AdvancedRuntimeKind.GO),
-                new AdvancedServiceBuildRenderer(AdvancedRuntimeKind.RUST),
-                new AdvancedServiceBuildRenderer(AdvancedRuntimeKind.DOTNET),
-                new AdvancedServiceBuildRenderer(AdvancedRuntimeKind.KOTLIN),
-                new AdvancedServiceBuildRenderer(AdvancedRuntimeKind.PHP),
-                new AdvancedServiceBuildRenderer(AdvancedRuntimeKind.RUBY));
+                new EcosystemServiceBuildSupport(DeploymentProjectType.GO_SERVICE),
+                new EcosystemServiceBuildSupport(DeploymentProjectType.RUST_SERVICE),
+                new EcosystemServiceBuildSupport(DeploymentProjectType.DOTNET_SERVICE),
+                new EcosystemServiceBuildSupport(DeploymentProjectType.KOTLIN_SERVICE),
+                new EcosystemServiceBuildSupport(DeploymentProjectType.PHP_SERVICE),
+                new EcosystemServiceBuildSupport(DeploymentProjectType.RUBY_SERVICE));
     }
 }

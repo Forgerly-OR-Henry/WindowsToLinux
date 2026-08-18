@@ -1,5 +1,6 @@
 package gold.debug.windowstolinux.app.ui.i18n;
 
+
 import gold.debug.windowstolinux.shared.model.message.LocalizedMessage;
 import gold.debug.windowstolinux.shared.model.analysis.EvidenceConfidence;
 import gold.debug.windowstolinux.shared.model.deployment.DeploymentStatus;

@@ -1,6 +1,6 @@
 package gold.debug.windowstolinux.shared.linux.runtime;
 
-import gold.debug.windowstolinux.shared.linux.connection.LinuxOperationException;
+import gold.debug.windowstolinux.shared.linux.error.LinuxOperationException;
 import gold.debug.windowstolinux.shared.model.health.HealthCheck;
 import gold.debug.windowstolinux.shared.model.lifecycle.LifecycleAction;
 import gold.debug.windowstolinux.shared.model.lifecycle.LifecycleObservation;

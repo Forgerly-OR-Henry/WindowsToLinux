@@ -4,7 +4,7 @@ import gold.debug.windowstolinux.app.service.DesktopApplicationService;
 import gold.debug.windowstolinux.app.service.server.ServerProfile;
 import gold.debug.windowstolinux.app.ui.component.DesktopComponents;
 import gold.debug.windowstolinux.app.ui.shell.PageMessages;
-import gold.debug.windowstolinux.shared.model.deployment.EnvironmentPreparationResult;
+import gold.debug.windowstolinux.shared.model.deployment.EnvironmentSetupResult;
 import gold.debug.windowstolinux.shared.model.security.CredentialStorageMode;
 
 import javax.swing.JButton;
@@ -70,16 +70,20 @@ public final class ServerPage implements ServerContext {
         output.setText(state.output());
     }
 
+    /** Performs the {@code profile} operation. / 执行 {@code profile} 操作。 */
     @Override public ServerProfile profile() {
         String serverId = id.getText().trim();
         return new ServerProfile(serverId, host.getText().trim(), Integer.parseInt(port.getText().trim()),
                 username.getText().trim(), "ssh/" + serverId + "/password", credentialMode());
     }
+    /** Performs the {@code credentialMode} operation. / 执行 {@code credentialMode} 操作。 */
     @Override public CredentialStorageMode credentialMode() {
         return (CredentialStorageMode) credentialMode.getSelectedItem();
     }
+    /** Performs the {@code masterPassword} operation. / 执行 {@code masterPassword} 操作。 */
     @Override public char[] masterPassword() { return masterPassword.getPassword(); }
 
+    /** Performs the {@code confirmFingerprint} operation. / 执行 {@code confirmFingerprint} 操作。 */
     @Override public boolean confirmFingerprint(String fingerprint) {
         AtomicBoolean accepted = new AtomicBoolean(false);
         try {
@@ -140,9 +144,11 @@ public final class ServerPage implements ServerContext {
             char[] master = masterPassword();
             output.setText(messages.text("server.connecting"));
             new SwingWorker<gold.debug.windowstolinux.shared.model.server.ServerCapabilities, Void>() {
+                /** Runs the background task. / 运行后台任务。 */
                 @Override protected gold.debug.windowstolinux.shared.model.server.ServerCapabilities doInBackground() throws Exception {
                     return service.verifyServer(profile, mode, master, ServerPage.this::confirmFingerprint);
                 }
+                /** Completes the background task on the UI thread. / 在 UI 线程完成后台任务。 */
                 @Override protected void done() {
                     try {
                         var value = get();
@@ -179,11 +185,13 @@ public final class ServerPage implements ServerContext {
             char[] master = masterPassword();
             trigger.setEnabled(false);
             output.setText(messages.text("environment.preparing"));
-            new SwingWorker<EnvironmentPreparationResult, Void>() {
-                @Override protected EnvironmentPreparationResult doInBackground() throws Exception {
+            new SwingWorker<EnvironmentSetupResult, Void>() {
+                /** Runs the background task. / 运行后台任务。 */
+                @Override protected EnvironmentSetupResult doInBackground() throws Exception {
                     return service.prepareEnvironmentWithStoredPassword(saved, saved.credentialMode(), master,
                             ServerPage.this::confirmFingerprint, true);
                 }
+                /** Completes the background task on the UI thread. / 在 UI 线程完成后台任务。 */
                 @Override protected void done() {
                     trigger.setEnabled(true);
                     try { output.setText(environmentSummary(get())); }
@@ -196,7 +204,7 @@ public final class ServerPage implements ServerContext {
         }
     }
 
-    private String environmentSummary(EnvironmentPreparationResult result) {
+    private String environmentSummary(EnvironmentSetupResult result) {
         var value = result.capabilities();
         return messages.text("environment.completed", Map.ofEntries(
                 Map.entry("os", value.operatingSystem()), Map.entry("architecture", value.architecture()),

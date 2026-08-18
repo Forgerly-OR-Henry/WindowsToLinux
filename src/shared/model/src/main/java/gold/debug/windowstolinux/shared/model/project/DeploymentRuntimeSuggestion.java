@@ -90,14 +90,14 @@ public record DeploymentRuntimeSuggestion(
         PYTHON_ENTRYPOINT,
         /** Static-site generated output directory. / 静态站点生成输出目录。 */
         STATIC_OUTPUT_DIRECTORY,
-        /** Advanced runtime language/toolchain version. / 高级运行时语言或工具链版本。 */
-        ADVANCED_VERSION,
-        /** Advanced runtime artifact or package name. / 高级运行时产物或包名。 */
-        ADVANCED_ARTIFACT,
-        /** Advanced runtime bounded entrypoint. / 高级运行时有界入口。 */
-        ADVANCED_ENTRYPOINT,
-        /** Advanced runtime fixed service port. / 高级运行时固定服务端口。 */
-        ADVANCED_PORT
+        /** Ecosystem service language/toolchain version. / 生态服务语言或工具链版本。 */
+        SERVICE_VERSION,
+        /** Ecosystem service artifact or package name. / 生态服务产物或包名。 */
+        SERVICE_ARTIFACT,
+        /** Ecosystem service bounded entrypoint. / 生态服务有界入口。 */
+        SERVICE_ENTRYPOINT,
+        /** Ecosystem service fixed port. / 生态服务固定端口。 */
+        SERVICE_PORT
     }
 
     private static EnumSet<RuntimeInput> allowedInputs(DeploymentProjectType projectType) {
@@ -109,10 +109,10 @@ public record DeploymentRuntimeSuggestion(
             case PYTHON_SERVICE -> EnumSet.of(RuntimeInput.PYTHON_VERSION, RuntimeInput.PYTHON_ENTRYPOINT);
             case STATIC_SITE -> EnumSet.of(RuntimeInput.STATIC_OUTPUT_DIRECTORY, RuntimeInput.NODE_MAJOR_VERSION);
             case GO_SERVICE, RUST_SERVICE, DOTNET_SERVICE, KOTLIN_SERVICE ->
-                    EnumSet.of(RuntimeInput.ADVANCED_VERSION, RuntimeInput.ADVANCED_ARTIFACT,
-                            RuntimeInput.ADVANCED_ENTRYPOINT);
-            case PHP_SERVICE, RUBY_SERVICE -> EnumSet.of(RuntimeInput.ADVANCED_VERSION,
-                    RuntimeInput.ADVANCED_ARTIFACT, RuntimeInput.ADVANCED_ENTRYPOINT, RuntimeInput.ADVANCED_PORT);
+                    EnumSet.of(RuntimeInput.SERVICE_VERSION, RuntimeInput.SERVICE_ARTIFACT,
+                            RuntimeInput.SERVICE_ENTRYPOINT);
+            case PHP_SERVICE, RUBY_SERVICE -> EnumSet.of(RuntimeInput.SERVICE_VERSION,
+                    RuntimeInput.SERVICE_ARTIFACT, RuntimeInput.SERVICE_ENTRYPOINT, RuntimeInput.SERVICE_PORT);
         };
     }
 

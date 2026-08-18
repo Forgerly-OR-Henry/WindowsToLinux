@@ -1,14 +1,30 @@
 package gold.debug.windowstolinux.shared.linux.sshd.build;
 
+import gold.debug.windowstolinux.shared.linux.sshd.build.config.BuildConfigEnvironment;
+import gold.debug.windowstolinux.shared.linux.sshd.build.registry.DeploymentBuildRendererRegistry;
+import gold.debug.windowstolinux.shared.linux.sshd.build.spi.DeploymentBuildRenderer;
+import gold.debug.windowstolinux.shared.linux.sshd.ecosystem.jvm.build.jar.JavaJarBuildRenderer;
+import gold.debug.windowstolinux.shared.linux.sshd.ecosystem.jvm.build.springboot.SpringBootBuildRenderer;
+import gold.debug.windowstolinux.shared.linux.sshd.ecosystem.node.build.NodeBuildRenderer;
+import gold.debug.windowstolinux.shared.linux.sshd.ecosystem.python.build.PythonBuildRenderer;
+import gold.debug.windowstolinux.shared.linux.sshd.ecosystem.dotnet.build.DotNetBuildRenderer;
+import gold.debug.windowstolinux.shared.linux.sshd.ecosystem.go.build.GoBuildRenderer;
+import gold.debug.windowstolinux.shared.linux.sshd.ecosystem.jvm.build.kotlin.KotlinBuildRenderer;
+import gold.debug.windowstolinux.shared.linux.sshd.ecosystem.php.build.PhpBuildRenderer;
+import gold.debug.windowstolinux.shared.linux.sshd.ecosystem.ruby.build.RubyBuildRenderer;
+import gold.debug.windowstolinux.shared.linux.sshd.ecosystem.rust.build.RustBuildRenderer;
+import gold.debug.windowstolinux.shared.linux.sshd.workload.container.ContainerBuildRenderer;
+import gold.debug.windowstolinux.shared.linux.sshd.workload.staticweb.StaticSiteBuildRenderer;
+
 import gold.debug.windowstolinux.shared.config.revision.ConfigurationSnapshot;
 import gold.debug.windowstolinux.shared.linux.build.DeploymentBuildResult;
-import gold.debug.windowstolinux.shared.linux.connection.LinuxOperationException;
-import gold.debug.windowstolinux.shared.linux.sshd.connection.SshCommandExecutor;
+import gold.debug.windowstolinux.shared.linux.error.LinuxOperationException;
+import gold.debug.windowstolinux.shared.linux.sshd.command.SshCommandExecutor;
 import gold.debug.windowstolinux.shared.linux.transfer.RemoteWorkspace;
 import gold.debug.windowstolinux.shared.model.deployment.BuildLimits;
 import gold.debug.windowstolinux.shared.model.project.DeploymentProjectFacts;
 import gold.debug.windowstolinux.shared.model.project.DeploymentRuntimeSpecification;
-import gold.debug.windowstolinux.shared.model.project.AdvancedRuntimeKind;
+import gold.debug.windowstolinux.shared.model.project.DeploymentProjectType;
 
 import java.time.Duration;
 import java.util.List;
@@ -29,12 +45,8 @@ public final class DeploymentBuildExecutor {
     public DeploymentBuildExecutor(SshCommandExecutor commands, String username) {
         this(commands, username, List.of(new SpringBootBuildRenderer(), new JavaJarBuildRenderer(), new NodeBuildRenderer(),
                 new PythonBuildRenderer(), new StaticSiteBuildRenderer(), new ContainerBuildRenderer(),
-                new AdvancedServiceBuildRenderer(AdvancedRuntimeKind.GO),
-                new AdvancedServiceBuildRenderer(AdvancedRuntimeKind.RUST),
-                new AdvancedServiceBuildRenderer(AdvancedRuntimeKind.DOTNET),
-                new AdvancedServiceBuildRenderer(AdvancedRuntimeKind.KOTLIN),
-                new AdvancedServiceBuildRenderer(AdvancedRuntimeKind.PHP),
-                new AdvancedServiceBuildRenderer(AdvancedRuntimeKind.RUBY)));
+                new GoBuildRenderer(), new RustBuildRenderer(), new DotNetBuildRenderer(),
+                new KotlinBuildRenderer(), new PhpBuildRenderer(), new RubyBuildRenderer()));
     }
 
     DeploymentBuildExecutor(SshCommandExecutor commands, String username, List<DeploymentBuildRenderer> renderers) {
@@ -67,7 +79,7 @@ public final class DeploymentBuildExecutor {
             throw new IllegalArgumentException("build configuration must match the analyzed application");
         }
         DeploymentBuildRenderer renderer = renderers.require(facts.projectType());
-        String script = BuildConfigurationEnvironment.render(configuration)
+        String script = BuildConfigEnvironment.render(configuration)
                 + renderer.render(facts, runtime, workspace, limits);
         String command = "env -i PATH=/usr/local/bin:/usr/bin:/bin HOME="
                 + SshCommandExecutor.quote(workspace.candidateRoot() + "/mutable/home")

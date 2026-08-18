@@ -33,6 +33,7 @@ public enum DeploymentProjectType {
     /** Static language and metadata recognition with no deployment path. / 不含部署路径的静态语言与元数据识别。 */
     RECOGNITION_PREVIEW(false);
 
+    /** Represents the {@code deployable} value. / 表示 {@code deployable} 值。 */
     private final boolean deployable;
 
     DeploymentProjectType() {

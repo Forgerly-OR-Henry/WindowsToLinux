@@ -37,7 +37,7 @@ public final class AiUseCases {
      *
      * <p>创建 {@code AiUseCases} 实例。
      *
-     * @param database the {@code database} value / {@code database} 值
+     * @param profiles the {@code profiles} value / {@code profiles} 值
      * @param secrets the {@code secrets} value / {@code secrets} 值
      * @throws NullPointerException if a required argument is {@code null} / 必要参数为 {@code null} 时
      */

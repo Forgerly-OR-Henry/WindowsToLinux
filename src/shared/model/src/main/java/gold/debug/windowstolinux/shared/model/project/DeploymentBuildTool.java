@@ -8,9 +8,9 @@ package gold.debug.windowstolinux.shared.model.project;
 public enum DeploymentBuildTool {
     /** No build entry exists for a mutation-free recognition preview. / 禁止修改目标机的识别预览没有构建入口。 */
     NONE_PREVIEW,
-    /** Gradle Wrapper. / Gradle Wrapper。 */
+    /** Gradle Wrapper. / Gradle Wrapper 构建包装器。 */
     GRADLE_WRAPPER,
-    /** Maven Wrapper. / Maven Wrapper。 */
+    /** Maven Wrapper. / Maven Wrapper 构建包装器。 */
     MAVEN_WRAPPER,
     /** Maven installed on the target host. / 目标机上安装的 Maven。 */
     MAVEN,

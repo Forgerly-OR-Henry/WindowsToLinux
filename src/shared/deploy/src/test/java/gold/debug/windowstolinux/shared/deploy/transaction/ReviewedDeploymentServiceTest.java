@@ -5,15 +5,15 @@ import gold.debug.windowstolinux.shared.config.definition.ConfigurationValue;
 import gold.debug.windowstolinux.shared.config.revision.ConfigurationEntry;
 import gold.debug.windowstolinux.shared.config.revision.ConfigurationSnapshot;
 import gold.debug.windowstolinux.shared.config.revision.DeploymentInputManifest;
-import gold.debug.windowstolinux.shared.deploy.plan.DeploymentApproval;
-import gold.debug.windowstolinux.shared.deploy.plan.ReviewedDeploymentRequest;
+import gold.debug.windowstolinux.shared.deploy.contract.DeploymentApproval;
+import gold.debug.windowstolinux.shared.deploy.contract.ReviewedDeploymentRequest;
 import gold.debug.windowstolinux.shared.deploy.plan.ReviewedReleaseIdentity;
 import gold.debug.windowstolinux.shared.deploy.result.DeploymentResult;
 import gold.debug.windowstolinux.shared.linux.build.DeploymentBuildResult;
 import gold.debug.windowstolinux.shared.linux.connection.DeploymentLinuxGateway;
-import gold.debug.windowstolinux.shared.linux.connection.DeploymentRemoteSession;
+import gold.debug.windowstolinux.shared.linux.session.DeploymentRemoteSession;
 import gold.debug.windowstolinux.shared.linux.connection.HostKeyDecision;
-import gold.debug.windowstolinux.shared.linux.connection.LinuxOperationException;
+import gold.debug.windowstolinux.shared.linux.error.LinuxOperationException;
 import gold.debug.windowstolinux.shared.linux.connection.SshCredential;
 import gold.debug.windowstolinux.shared.linux.connection.SshEndpoint;
 import gold.debug.windowstolinux.shared.linux.protocol.ReleaseSnapshot;
@@ -168,12 +168,12 @@ class ReviewedDeploymentServiceTest {
                             "x86_64", "apt", "amd64", true, true, true, true,
                             java.util.Set.of(21), java.util.Set.of(22), true, true,
                             java.util.Set.of("3.12"), true, Map.of(
-                            gold.debug.windowstolinux.shared.model.project.AdvancedRuntimeKind.GO, java.util.Set.of("1.24"),
-                            gold.debug.windowstolinux.shared.model.project.AdvancedRuntimeKind.RUST, java.util.Set.of("1.89.0"),
-                            gold.debug.windowstolinux.shared.model.project.AdvancedRuntimeKind.DOTNET, java.util.Set.of("8.0.408"),
-                            gold.debug.windowstolinux.shared.model.project.AdvancedRuntimeKind.KOTLIN, java.util.Set.of("21"),
-                            gold.debug.windowstolinux.shared.model.project.AdvancedRuntimeKind.PHP, java.util.Set.of("8.3"),
-                            gold.debug.windowstolinux.shared.model.project.AdvancedRuntimeKind.RUBY, java.util.Set.of("3.3.5")),
+                            DeploymentProjectType.GO_SERVICE, java.util.Set.of("1.24"),
+                            DeploymentProjectType.RUST_SERVICE, java.util.Set.of("1.89.0"),
+                            DeploymentProjectType.DOTNET_SERVICE, java.util.Set.of("8.0.408"),
+                            DeploymentProjectType.KOTLIN_SERVICE, java.util.Set.of("21"),
+                            DeploymentProjectType.PHP_SERVICE, java.util.Set.of("8.3"),
+                            DeploymentProjectType.RUBY_SERVICE, java.util.Set.of("3.3.5")),
                             true, true, CpuMicroarchitectureLevel.X86_64_V3, java.util.Set.of("sse4_2"),
                             new LinuxSecurityPosture(LinuxSecurityModule.APPARMOR, LinuxSecurityState.ENABLED,
                                     LinuxFirewallKind.UFW, LinuxFirewallState.ACTIVE), "fixture");
@@ -253,24 +253,12 @@ class ReviewedDeploymentServiceTest {
                 new DeploymentRuntimeSpecification.StaticSite("public", new HealthCheck.Http(URI.create("http://127.0.0.1:8080/"), 200, 5)),
                 new DeploymentRuntimeSpecification.Container(DeploymentRuntimeSpecification.ContainerEngine.PODMAN,
                         Map.of(8080, 8080), List.of(), new HealthCheck.Tcp(8080, 5, 1)),
-                new DeploymentRuntimeSpecification.AdvancedService(
-                        gold.debug.windowstolinux.shared.model.project.AdvancedRuntimeKind.GO, "1.24", "w2l-app",
-                        "main.go", java.util.OptionalInt.empty(), new HealthCheck.Tcp(8080, 5, 1)),
-                new DeploymentRuntimeSpecification.AdvancedService(
-                        gold.debug.windowstolinux.shared.model.project.AdvancedRuntimeKind.RUST, "1.89.0", "demo",
-                        "src/main.rs", java.util.OptionalInt.empty(), new HealthCheck.Tcp(8080, 5, 1)),
-                new DeploymentRuntimeSpecification.AdvancedService(
-                        gold.debug.windowstolinux.shared.model.project.AdvancedRuntimeKind.DOTNET, "8.0.408", "Demo",
-                        "Demo.dll", java.util.OptionalInt.empty(), new HealthCheck.Tcp(8080, 5, 1)),
-                new DeploymentRuntimeSpecification.AdvancedService(
-                        gold.debug.windowstolinux.shared.model.project.AdvancedRuntimeKind.KOTLIN, "21", "demo",
-                        "demo.MainKt", java.util.OptionalInt.empty(), new HealthCheck.Tcp(8080, 5, 1)),
-                new DeploymentRuntimeSpecification.AdvancedService(
-                        gold.debug.windowstolinux.shared.model.project.AdvancedRuntimeKind.PHP, "8.3", "public",
-                        "public/index.php", java.util.OptionalInt.of(8080), new HealthCheck.Tcp(8080, 5, 1)),
-                new DeploymentRuntimeSpecification.AdvancedService(
-                        gold.debug.windowstolinux.shared.model.project.AdvancedRuntimeKind.RUBY, "3.3.5", "bundle",
-                        "config.ru", java.util.OptionalInt.of(8080), new HealthCheck.Tcp(8080, 5, 1))
+                new DeploymentRuntimeSpecification.GoService("1.24", "w2l-app", "main.go", new HealthCheck.Tcp(8080, 5, 1)),
+                new DeploymentRuntimeSpecification.RustService("1.89.0", "demo", "src/main.rs", new HealthCheck.Tcp(8080, 5, 1)),
+                new DeploymentRuntimeSpecification.DotNetService("8.0.408", "Demo", "Demo.dll", new HealthCheck.Tcp(8080, 5, 1)),
+                new DeploymentRuntimeSpecification.KotlinService("21", "demo", "demo.MainKt", new HealthCheck.Tcp(8080, 5, 1)),
+                new DeploymentRuntimeSpecification.PhpService("8.3", "public", "public/index.php", 8080, new HealthCheck.Tcp(8080, 5, 1)),
+                new DeploymentRuntimeSpecification.RubyService("3.3.5", "bundle", "config.ru", 8080, new HealthCheck.Tcp(8080, 5, 1))
         );
     }
 

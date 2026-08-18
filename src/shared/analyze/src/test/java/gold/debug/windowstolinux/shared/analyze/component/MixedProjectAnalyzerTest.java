@@ -3,7 +3,6 @@ package gold.debug.windowstolinux.shared.analyze.component;
 import gold.debug.windowstolinux.shared.model.analysis.ComponentIssue;
 import gold.debug.windowstolinux.shared.model.analysis.DeploymentAdmission;
 import gold.debug.windowstolinux.shared.model.health.HealthCheck;
-import gold.debug.windowstolinux.shared.model.project.AdvancedRuntimeKind;
 import gold.debug.windowstolinux.shared.model.project.DeploymentProjectType;
 import gold.debug.windowstolinux.shared.model.project.DeploymentRuntimeSpecification;
 import gold.debug.windowstolinux.shared.model.project.component.ComponentDataPath;
@@ -98,8 +97,8 @@ class MixedProjectAnalyzerTest {
     }
 
     private static DeploymentRuntimeSpecification goRuntime(String artifact, int port) {
-        return new DeploymentRuntimeSpecification.AdvancedService(AdvancedRuntimeKind.GO, "1.24", artifact,
-                "main.go", OptionalInt.empty(), new HealthCheck.Tcp(port, 10, 2));
+        return new DeploymentRuntimeSpecification.GoService("1.24", artifact, "main.go",
+                new HealthCheck.Tcp(port, 10, 2));
     }
 
     private void goProject(String relative) throws Exception {

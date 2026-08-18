@@ -11,8 +11,8 @@ import gold.debug.windowstolinux.app.ui.shell.PageMessages;
 import gold.debug.windowstolinux.shared.config.revision.ConfigurationEntry;
 import gold.debug.windowstolinux.shared.config.revision.ConfigurationSnapshot;
 import gold.debug.windowstolinux.shared.config.secretref.SecretReference;
-import gold.debug.windowstolinux.shared.deploy.plan.ReviewedDeploymentPlan;
-import gold.debug.windowstolinux.shared.deploy.plan.ReviewedDeploymentRequest;
+import gold.debug.windowstolinux.shared.deploy.contract.ReviewedDeploymentPlan;
+import gold.debug.windowstolinux.shared.deploy.contract.ReviewedDeploymentRequest;
 import gold.debug.windowstolinux.shared.deploy.result.DeploymentResult;
 import gold.debug.windowstolinux.shared.git.remote.GitRemote;
 import gold.debug.windowstolinux.shared.git.snapshot.GitSourceRequest;
@@ -108,6 +108,7 @@ public final class DeploymentPage implements ReviewContext {
 
     /** Returns the page panel. / 返回页面面板。 */
     public JPanel panel() { return panel; }
+    /** Performs the {@code reviewedPreparation} operation. / 执行 {@code reviewedPreparation} 操作。 */
     @Override public Optional<ReviewedSourcePreparation> reviewedPreparation() { return Optional.ofNullable(reviewedPreparation); }
 
     /** Captures all unsaved deployment and review state. / 捕获全部未保存部署与审阅状态。 */
@@ -202,9 +203,11 @@ public final class DeploymentPage implements ReviewContext {
         DeploymentProjectType selected = (DeploymentProjectType) projectType.getSelectedItem();
         output.setText(messages.text("source.analyzing"));
         new SwingWorker<ReviewedSourcePreparation, Void>() {
+            /** Runs the background task. / 运行后台任务。 */
             @Override protected ReviewedSourcePreparation doInBackground() throws Exception {
                 return service.prepareReviewedSource(source, selected);
             }
+            /** Completes the background task on the UI thread. / 在 UI 线程完成后台任务。 */
             @Override protected void done() {
                 try {
                     applyAnalysis(get(), selected, false);
@@ -236,9 +239,11 @@ public final class DeploymentPage implements ReviewContext {
             DeploymentProjectType selected = (DeploymentProjectType) projectType.getSelectedItem();
             output.setText(messages.text("git.analyzing"));
             new SwingWorker<ReviewedSourcePreparation, Void>() {
+                /** Runs the background task. / 运行后台任务。 */
                 @Override protected ReviewedSourcePreparation doInBackground() throws Exception {
                     return service.prepareReviewedGitSource(request, selected);
                 }
+                /** Completes the background task on the UI thread. / 在 UI 线程完成后台任务。 */
                 @Override protected void done() {
                     try {
                         applyAnalysis(get(), selected, true);
@@ -283,9 +288,9 @@ public final class DeploymentPage implements ReviewContext {
         suggestion.value(DeploymentRuntimeSuggestion.RuntimeInput.PYTHON_VERSION).ifPresent(runtimePrimary::setText);
         suggestion.value(DeploymentRuntimeSuggestion.RuntimeInput.PYTHON_ENTRYPOINT).ifPresent(runtimeSecondary::setText);
         suggestion.value(DeploymentRuntimeSuggestion.RuntimeInput.STATIC_OUTPUT_DIRECTORY).ifPresent(runtimePrimary::setText);
-        suggestion.value(DeploymentRuntimeSuggestion.RuntimeInput.ADVANCED_ARTIFACT).ifPresent(runtimePrimary::setText);
-        suggestion.value(DeploymentRuntimeSuggestion.RuntimeInput.ADVANCED_ENTRYPOINT).ifPresent(runtimeSecondary::setText);
-        suggestion.value(DeploymentRuntimeSuggestion.RuntimeInput.ADVANCED_VERSION).ifPresent(runtimeVersion::setText);
+        suggestion.value(DeploymentRuntimeSuggestion.RuntimeInput.SERVICE_ARTIFACT).ifPresent(runtimePrimary::setText);
+        suggestion.value(DeploymentRuntimeSuggestion.RuntimeInput.SERVICE_ENTRYPOINT).ifPresent(runtimeSecondary::setText);
+        suggestion.value(DeploymentRuntimeSuggestion.RuntimeInput.SERVICE_VERSION).ifPresent(runtimeVersion::setText);
         if (!suggestion.suggestedContainerPorts().isEmpty()) containerPorts.setText(suggestion.suggestedContainerPorts().entrySet()
                 .stream().map(entry -> entry.getKey() + ":" + entry.getValue()).reduce((a, b) -> a + ";" + b).orElse(""));
         if (!suggestion.suggestedManagedVolumes().isEmpty()) containerVolumes.setText(suggestion.suggestedManagedVolumes().stream()
@@ -339,11 +344,13 @@ public final class DeploymentPage implements ReviewContext {
                     JOptionPane.WARNING_MESSAGE) != JOptionPane.YES_OPTION) return;
             char[] master = serverContext.masterPassword(); output.setText(messages.text("deployment.reviewedRunning"));
             new SwingWorker<DeploymentOutcome, Void>() {
+                /** Runs the background task. / 运行后台任务。 */
                 @Override protected DeploymentOutcome doInBackground() throws Exception {
                     service.saveDeploymentConfigurationSnapshot(configuration);
                     return service.deployReviewedWithStoredPassword(request, profile, serverContext.credentialMode(), master,
                             serverContext::confirmFingerprint);
                 }
+                /** Completes the background task on the UI thread. / 在 UI 线程完成后台任务。 */
                 @Override protected void done() {
                     try {
                         DeploymentOutcome outcome = get(); output.setText(resultSummary(outcome.result()));
@@ -416,7 +423,7 @@ public final class DeploymentPage implements ReviewContext {
             case DOCKERFILE_CONTAINER -> new DeploymentRuntimeSpecification.Container(
                     (DeploymentRuntimeSpecification.ContainerEngine) containerEngine.getSelectedItem(), ports(), volumes(), health);
             case GO_SERVICE, RUST_SERVICE, DOTNET_SERVICE, KOTLIN_SERVICE, PHP_SERVICE, RUBY_SERVICE ->
-                    DeploymentRuntimeParser.advanced((DeploymentProjectType) projectType.getSelectedItem(),
+                    DeploymentRuntimeParser.service((DeploymentProjectType) projectType.getSelectedItem(),
                             runtimeVersion.getText(), runtimePrimary.getText(), runtimeSecondary.getText(), health);
             case RECOGNITION_PREVIEW -> throw new IllegalArgumentException(messages.text("analysis.preview.noDeployment"));
         };
@@ -472,5 +479,7 @@ public final class DeploymentPage implements ReviewContext {
         if (health instanceof HealthCheck.Http http) return http;
         throw new IllegalArgumentException(messages.text("validation.staticHttpRequired"));
     }
-    private enum HealthMode { HTTP, TCP }
+    private enum HealthMode { /** Represents the {@code HTTP} value. / 表示 {@code HTTP} 值。 */
+    HTTP, /** Represents the {@code TCP} value. / 表示 {@code TCP} 值。 */
+    TCP }
 }

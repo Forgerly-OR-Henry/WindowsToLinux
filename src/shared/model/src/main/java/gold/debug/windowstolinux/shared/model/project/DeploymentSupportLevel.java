@@ -15,6 +15,7 @@ public enum DeploymentSupportLevel {
     /** End-to-end evidence exists inside the declared validation matrix. / 声明的验证矩阵内存在端到端证据。 */
     FORMALLY_SUPPORTED(true);
 
+    /** Represents the {@code deployable} value. / 表示 {@code deployable} 值。 */
     private final boolean deployable;
 
     DeploymentSupportLevel(boolean deployable) {

@@ -1,9 +1,9 @@
 package gold.debug.windowstolinux.shared.linux.sshd.transfer;
 
-import gold.debug.windowstolinux.shared.linux.connection.LinuxOperationException;
+import gold.debug.windowstolinux.shared.linux.error.LinuxOperationException;
 import gold.debug.windowstolinux.shared.linux.protocol.RemoteStepResult;
-import gold.debug.windowstolinux.shared.linux.sshd.connection.SshCommandExecutor;
-import gold.debug.windowstolinux.shared.linux.sshd.protocol.CandidateWorkspaceController;
+import gold.debug.windowstolinux.shared.linux.sshd.command.SshCommandExecutor;
+import gold.debug.windowstolinux.shared.linux.sshd.protocol.workspace.CandidateWorkspaceController;
 import gold.debug.windowstolinux.shared.linux.transfer.RemoteWorkspace;
 import gold.debug.windowstolinux.shared.linux.transfer.UploadReceipt;
 import gold.debug.windowstolinux.shared.model.archive.SourceArchiveDescriptor;
@@ -36,7 +36,7 @@ public final class SshdSourceTransfer {
      *
      * @param session the {@code session} value / {@code session} 值
      * @param commands the {@code commands} value / {@code commands} 值
-     * @param protocol the {@code protocol} value / {@code protocol} 值
+     * @param candidates the {@code candidates} value / {@code candidates} 值
      * @throws NullPointerException if a required argument is {@code null} / 必要参数为 {@code null} 时
      */
     public SshdSourceTransfer(ClientSession session, SshCommandExecutor commands,

@@ -1,18 +1,20 @@
 package gold.debug.windowstolinux.shared.linux.sshd.connection;
 
+import gold.debug.windowstolinux.shared.linux.sshd.command.SshCommandExecutor;
+
 import gold.debug.windowstolinux.shared.linux.connection.HostKeyDecision;
-import gold.debug.windowstolinux.shared.linux.connection.LinuxOperationException;
+import gold.debug.windowstolinux.shared.linux.error.LinuxOperationException;
 import gold.debug.windowstolinux.shared.linux.connection.SshCredential;
 import gold.debug.windowstolinux.shared.linux.connection.SshEndpoint;
 import gold.debug.windowstolinux.shared.linux.protocol.ManagedHelperProtocol;
-import gold.debug.windowstolinux.shared.linux.sshd.distro.UbuntuEnvironmentPreparation;
-import gold.debug.windowstolinux.shared.linux.sshd.distro.AlmaLinuxEnvironmentPreparation;
-import gold.debug.windowstolinux.shared.linux.sshd.distro.CentosStreamEnvironmentPreparation;
-import gold.debug.windowstolinux.shared.linux.sshd.distro.DebianEnvironmentPreparation;
-import gold.debug.windowstolinux.shared.linux.sshd.distro.OracleLinuxEnvironmentPreparation;
-import gold.debug.windowstolinux.shared.linux.sshd.distro.RockyLinuxEnvironmentPreparation;
-import gold.debug.windowstolinux.shared.linux.sshd.protocol.ManagedHelperBundle;
-import gold.debug.windowstolinux.shared.linux.sshd.runtime.SystemdUnitRenderer;
+import gold.debug.windowstolinux.shared.linux.sshd.distro.setup.apt.ubuntu.UbuntuSetup;
+import gold.debug.windowstolinux.shared.linux.sshd.distro.setup.dnf.almalinux.AlmaLinuxSetup;
+import gold.debug.windowstolinux.shared.linux.sshd.distro.setup.dnf.centosstream.CentosStreamSetup;
+import gold.debug.windowstolinux.shared.linux.sshd.distro.setup.apt.debian.DebianSetup;
+import gold.debug.windowstolinux.shared.linux.sshd.distro.setup.dnf.oraclelinux.OracleLinuxSetup;
+import gold.debug.windowstolinux.shared.linux.sshd.distro.setup.dnf.rocky.RockyLinuxSetup;
+import gold.debug.windowstolinux.shared.linux.sshd.protocol.helper.ManagedHelperBundle;
+import gold.debug.windowstolinux.shared.linux.sshd.runtime.systemd.SystemdUnitRenderer;
 import gold.debug.windowstolinux.shared.linux.transfer.RemoteWorkspace;
 
 import gold.debug.windowstolinux.shared.model.managed.ManagedApplication;
@@ -149,16 +151,16 @@ class SshdLinuxGatewayTest {
         assertEquals(List.of(
                 "openjdk-21-jdk-headless", "maven", "curl", "sudo", "tar", "gzip", "iproute2", "coreutils",
                         "util-linux", "findutils", "gawk", "nodejs", "npm", "python3", "python3-venv", "python3-pip", "docker.io", "podman"
-                ), UbuntuEnvironmentPreparation.PACKAGES);
+                ), UbuntuSetup.PACKAGES);
         assertEquals("""
                 # Managed by WindowsToLinux managed deployment; only the constrained helper is granted.
                 deployer ALL=(root) NOPASSWD: /usr/local/lib/windowstolinux/managed-helper
-                """, UbuntuEnvironmentPreparation.renderSudoers("deployer"));
-        String sudoers = UbuntuEnvironmentPreparation.renderSudoers("deployer");
+                """, UbuntuSetup.renderSudoers("deployer"));
+        String sudoers = UbuntuSetup.renderSudoers("deployer");
         for (String unsafeBinary : List.of("/usr/bin/install", "/usr/bin/tee", "/usr/bin/systemctl", "/usr/bin/ln", "/usr/bin/rm", "/usr/bin/cp")) {
             assertFalse(sudoers.contains(unsafeBinary));
         }
-        assertThrows(IllegalArgumentException.class, () -> UbuntuEnvironmentPreparation.renderSudoers("root;evil"));
+        assertThrows(IllegalArgumentException.class, () -> UbuntuSetup.renderSudoers("root;evil"));
     }
 
     @Test
@@ -192,9 +194,9 @@ class SshdLinuxGatewayTest {
 
     @Test
     void rootPreparationPathDoesNotRequirePreinstalledSudoAndNonRootPathDoes() {
-        String script = UbuntuEnvironmentPreparation.renderScript("root");
+        String script = UbuntuSetup.renderScript("root");
 
-        int firstAptMutation = script.indexOf("/usr/bin/apt-get -o DPkg::Lock::Timeout=" + UbuntuEnvironmentPreparation.APT_LOCK_TIMEOUT_SECONDS + " update");
+        int firstAptMutation = script.indexOf("/usr/bin/apt-get -o DPkg::Lock::Timeout=" + UbuntuSetup.APT_LOCK_TIMEOUT_SECONDS + " update");
         assertTrue(firstAptMutation > script.indexOf("test \"${ID:-}\" = 'ubuntu'"));
         assertTrue(firstAptMutation > script.indexOf("test \"${VERSION_ID:-}\" = '24.04'"));
         assertTrue(firstAptMutation > script.indexOf("test \"$(uname -m)\" = x86_64"));
@@ -206,10 +208,10 @@ class SshdLinuxGatewayTest {
         assertTrue(script.contains("/usr/bin/sudo -n /usr/sbin/visudo -V >/dev/null"));
         assertTrue(script.contains("/usr/bin/sudo -n /usr/bin/install --version >/dev/null"));
         assertTrue(script.contains("test -x /usr/bin/apt-get"));
-        assertTrue(script.contains("/usr/bin/apt-get -o DPkg::Lock::Timeout=" + UbuntuEnvironmentPreparation.APT_LOCK_TIMEOUT_SECONDS + " update"));
-        assertTrue(script.contains("/usr/bin/apt-get -o DPkg::Lock::Timeout=" + UbuntuEnvironmentPreparation.APT_LOCK_TIMEOUT_SECONDS + " install -y --no-install-recommends openjdk-21-jdk-headless maven curl sudo"));
-        assertTrue(script.contains("/usr/bin/sudo -n /usr/bin/apt-get -o DPkg::Lock::Timeout=" + UbuntuEnvironmentPreparation.APT_LOCK_TIMEOUT_SECONDS + " update"));
-        assertTrue(script.contains("/usr/bin/sudo -n /usr/bin/apt-get -o DPkg::Lock::Timeout=" + UbuntuEnvironmentPreparation.APT_LOCK_TIMEOUT_SECONDS + " install -y --no-install-recommends openjdk-21-jdk-headless maven curl sudo"));
+        assertTrue(script.contains("/usr/bin/apt-get -o DPkg::Lock::Timeout=" + UbuntuSetup.APT_LOCK_TIMEOUT_SECONDS + " update"));
+        assertTrue(script.contains("/usr/bin/apt-get -o DPkg::Lock::Timeout=" + UbuntuSetup.APT_LOCK_TIMEOUT_SECONDS + " install -y --no-install-recommends openjdk-21-jdk-headless maven curl sudo"));
+        assertTrue(script.contains("/usr/bin/sudo -n /usr/bin/apt-get -o DPkg::Lock::Timeout=" + UbuntuSetup.APT_LOCK_TIMEOUT_SECONDS + " update"));
+        assertTrue(script.contains("/usr/bin/sudo -n /usr/bin/apt-get -o DPkg::Lock::Timeout=" + UbuntuSetup.APT_LOCK_TIMEOUT_SECONDS + " install -y --no-install-recommends openjdk-21-jdk-headless maven curl sudo"));
         assertTrue(script.contains("command -v tar >/dev/null 2>&1"));
         assertTrue(script.contains("command -v gzip >/dev/null 2>&1"));
         assertTrue(script.contains("node --version | grep -Eq '^v18[.]'"));
@@ -230,12 +232,12 @@ class SshdLinuxGatewayTest {
 
     @Test
     void rendersIndependentDistributionPreparationPathsBeforeAnyMutation() {
-        String ubuntu = UbuntuEnvironmentPreparation.renderScript("deployer", "22.04");
-        String debian = DebianEnvironmentPreparation.renderScript("deployer", "13");
-        String centos = CentosStreamEnvironmentPreparation.renderScript("deployer", "9");
-        String rocky = RockyLinuxEnvironmentPreparation.renderScript("deployer", "10.2");
-        String alma = AlmaLinuxEnvironmentPreparation.renderScript("deployer", "9.8", "x86_64");
-        String oracle = OracleLinuxEnvironmentPreparation.renderScript("deployer", "10.2");
+        String ubuntu = UbuntuSetup.renderScript("deployer", "22.04");
+        String debian = DebianSetup.renderScript("deployer", "13");
+        String centos = CentosStreamSetup.renderScript("deployer", "9");
+        String rocky = RockyLinuxSetup.renderScript("deployer", "10.2");
+        String alma = AlmaLinuxSetup.renderScript("deployer", "9.8", "x86_64");
+        String oracle = OracleLinuxSetup.renderScript("deployer", "10.2");
 
         assertTrue(ubuntu.contains("test \"${VERSION_ID:-}\" = '22.04'"));
         assertTrue(debian.contains("test \"${ID:-}\" = 'debian'"));
@@ -271,14 +273,14 @@ class SshdLinuxGatewayTest {
             assertFalse(preparationPath.contains("systemctl disable"));
             assertFalse(preparationPath.contains("systemctl stop"));
         }
-        assertThrows(IllegalArgumentException.class, () -> UbuntuEnvironmentPreparation.renderScript("deployer", "20.04"));
-        assertThrows(IllegalArgumentException.class, () -> DebianEnvironmentPreparation.renderScript("deployer", "12"));
-        assertThrows(IllegalArgumentException.class, () -> CentosStreamEnvironmentPreparation.renderScript("deployer", "8"));
-        assertThrows(IllegalArgumentException.class, () -> RockyLinuxEnvironmentPreparation.renderScript("deployer", "9.7"));
+        assertThrows(IllegalArgumentException.class, () -> UbuntuSetup.renderScript("deployer", "20.04"));
+        assertThrows(IllegalArgumentException.class, () -> DebianSetup.renderScript("deployer", "12"));
+        assertThrows(IllegalArgumentException.class, () -> CentosStreamSetup.renderScript("deployer", "8"));
+        assertThrows(IllegalArgumentException.class, () -> RockyLinuxSetup.renderScript("deployer", "9.7"));
         assertThrows(IllegalArgumentException.class,
-                () -> AlmaLinuxEnvironmentPreparation.renderScript("deployer", "10.2", "x86_64_v2"));
+                () -> AlmaLinuxSetup.renderScript("deployer", "10.2", "x86_64_v2"));
         assertThrows(IllegalArgumentException.class,
-                () -> OracleLinuxEnvironmentPreparation.renderScript("deployer", "9.6"));
+                () -> OracleLinuxSetup.renderScript("deployer", "9.6"));
     }
 
     @Test

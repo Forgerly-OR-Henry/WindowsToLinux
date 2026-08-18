@@ -1,7 +1,7 @@
 package gold.debug.windowstolinux.app.service.deployment;
 
 import gold.debug.windowstolinux.shared.deploy.lifecycle.ManagedComponentLifecycle;
-import gold.debug.windowstolinux.shared.deploy.plan.MultiComponentDeploymentPlan;
+import gold.debug.windowstolinux.shared.deploy.contract.MultiComponentDeploymentPlan;
 
 import java.util.List;
 import java.util.Objects;

@@ -17,10 +17,10 @@ class DeploymentRuntimeParserTest {
         assertEquals(1, DeploymentRuntimeParser.volumes("windowstolinux-data:/var/lib/demo:rw").size());
         assertEquals(java.util.List.of("--flag", "value"), DeploymentRuntimeParser.arguments("--flag value"));
         assertEquals("main", ((GitReference.Branch) DeploymentRuntimeParser.gitReference(0, "main")).value());
-        var php = (DeploymentRuntimeSpecification.AdvancedService) DeploymentRuntimeParser.advanced(
+        var php = (DeploymentRuntimeSpecification.PhpService) DeploymentRuntimeParser.service(
                 DeploymentProjectType.PHP_SERVICE, "8.3", "public", "public/index.php",
                 new HealthCheck.Tcp(8080, 10, 5));
-        assertEquals(8080, php.servicePort().orElseThrow());
+        assertEquals(8080, php.servicePort());
         assertThrows(IllegalArgumentException.class, () -> DeploymentRuntimeParser.ports("18080:8080;18080:8081"));
         assertThrows(IllegalArgumentException.class, () -> DeploymentRuntimeParser.secrets("missing-revision"));
         assertThrows(IllegalArgumentException.class, () -> DeploymentRuntimeParser.gitReference(3, "main"));

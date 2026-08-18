@@ -138,10 +138,12 @@ public final class AiPage {
         char[] master = masterPassword.getPassword();
         output.setText(messages.text("ai.requesting"));
         new SwingWorker<Optional<AiRoleInvocationResult>, Void>() {
+            /** Runs the background task. / 运行后台任务。 */
             @Override protected Optional<AiRoleInvocationResult> doInBackground() throws Exception {
                 return service.invokeAiRole(ProjectAnalysisRoleContext.from(
                         preparation.orElseThrow().assessment().facts().orElseThrow()), master);
             }
+            /** Completes the background task on the UI thread. / 在 UI 线程完成后台任务。 */
             @Override protected void done() {
                 try {
                     Optional<AiRoleInvocationResult> result = get();

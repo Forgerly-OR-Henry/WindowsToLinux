@@ -30,6 +30,7 @@ public interface SecretStore extends AutoCloseable {
      */
     Optional<char[]> read(String key) throws SecretStoreException;
 
+    /** Closes this resource. / 关闭此资源。 */
     @Override
     void close();
 }

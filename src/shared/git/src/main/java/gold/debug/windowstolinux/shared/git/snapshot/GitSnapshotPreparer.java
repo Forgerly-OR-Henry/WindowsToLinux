@@ -90,12 +90,14 @@ public final class GitSnapshotPreparer {
         }
         try {
             Files.walkFileTree(operation, new SimpleFileVisitor<>() {
+                /** Performs the {@code visitFile} operation. / 执行 {@code visitFile} 操作。 */
                 @Override
                 public FileVisitResult visitFile(Path file, BasicFileAttributes attributes) throws IOException {
                     Files.delete(file);
                     return FileVisitResult.CONTINUE;
                 }
 
+                /** Performs the {@code postVisitDirectory} operation. / 执行 {@code postVisitDirectory} 操作。 */
                 @Override
                 public FileVisitResult postVisitDirectory(Path directory, IOException exception) throws IOException {
                     if (exception != null) {

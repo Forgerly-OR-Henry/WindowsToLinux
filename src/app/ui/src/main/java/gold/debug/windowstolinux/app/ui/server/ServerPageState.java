@@ -112,6 +112,7 @@ public final class ServerPageState implements AutoCloseable {
      */
     public String output() { return output; }
 
+    /** Closes this resource. / 关闭此资源。 */
     @Override public void close() {
         Arrays.fill(password, '\0');
         Arrays.fill(masterPassword, '\0');

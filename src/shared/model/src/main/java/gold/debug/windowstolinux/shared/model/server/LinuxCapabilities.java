@@ -1,6 +1,6 @@
 package gold.debug.windowstolinux.shared.model.server;
 
-import gold.debug.windowstolinux.shared.model.project.AdvancedRuntimeKind;
+import gold.debug.windowstolinux.shared.model.project.DeploymentProjectType;
 
 import java.util.Map;
 import java.util.Objects;
@@ -26,7 +26,7 @@ import java.util.Set;
  * @param mavenAvailable whether Maven is present / 是否存在 Maven
  * @param pythonVersions observed Python interpreters with venv support / 观察到且支持 venv 的 Python 解释器
  * @param python3Available whether the generic Python 3 executable is available / 通用 Python 3 可执行文件是否可用
- * @param advancedRuntimeVersions exact observed versions for experimental language toolchains / 试验语言工具链的精确观测版本
+ * @param serviceRuntimeVersions exact observed versions for ecosystem service toolchains / 生态服务工具链的精确观测版本
  * @param dockerOperational whether Docker is usable by the authenticated account / 已认证账户能否使用 Docker
  * @param podmanOperational whether Podman is usable by the authenticated account / 已认证账户能否使用 Podman
  * @param cpuMicroarchitecture highest cumulative CPU level confirmed by the runtime linker / 运行时链接器确认的最高累积 CPU 级别
@@ -50,7 +50,7 @@ public record LinuxCapabilities(
         boolean mavenAvailable,
         Set<String> pythonVersions,
         boolean python3Available,
-        Map<AdvancedRuntimeKind, Set<String>> advancedRuntimeVersions,
+        Map<DeploymentProjectType, Set<String>> serviceRuntimeVersions,
         boolean dockerOperational,
         boolean podmanOperational,
         CpuMicroarchitectureLevel cpuMicroarchitecture,
@@ -81,17 +81,17 @@ public record LinuxCapabilities(
         if (pythonVersions.stream().anyMatch(minor -> minor == null || !minor.matches("3\\.(?:10|11|12|13)"))) {
             throw new IllegalArgumentException("pythonVersions must contain supported normalized versions");
         }
-        java.util.EnumMap<AdvancedRuntimeKind, Set<String>> normalizedAdvanced =
-                new java.util.EnumMap<>(AdvancedRuntimeKind.class);
-        Objects.requireNonNull(advancedRuntimeVersions, "advancedRuntimeVersions").forEach((kind, versions) -> {
-            Objects.requireNonNull(kind, "advanced runtime kind");
-            Set<String> copied = Set.copyOf(Objects.requireNonNull(versions, "advanced runtime versions"));
-            if (copied.stream().anyMatch(runtimeVersion -> !kind.acceptsVersion(runtimeVersion))) {
-                throw new IllegalArgumentException("advanced runtime versions must match their bounded kind");
+        java.util.EnumMap<DeploymentProjectType, Set<String>> normalizedService =
+                new java.util.EnumMap<>(DeploymentProjectType.class);
+        Objects.requireNonNull(serviceRuntimeVersions, "serviceRuntimeVersions").forEach((projectType, versions) -> {
+            Objects.requireNonNull(projectType, "service runtime project type");
+            Set<String> copied = Set.copyOf(Objects.requireNonNull(versions, "service runtime versions"));
+            if (!serviceProjectType(projectType) || copied.stream().anyMatch(candidate -> !validServiceVersion(projectType, candidate))) {
+                throw new IllegalArgumentException("service runtime versions must match their bounded project type");
             }
-            normalizedAdvanced.put(kind, copied);
+            normalizedService.put(projectType, copied);
         });
-        advancedRuntimeVersions = Map.copyOf(normalizedAdvanced);
+        serviceRuntimeVersions = Map.copyOf(normalizedService);
         cpuMicroarchitecture = Objects.requireNonNull(cpuMicroarchitecture, "cpuMicroarchitecture");
         cpuFlags = Set.copyOf(Objects.requireNonNull(cpuFlags, "cpuFlags"));
         if (cpuFlags.stream().anyMatch(flag -> flag == null || !flag.matches("[a-z0-9_.-]{1,64}"))) {
@@ -119,5 +119,27 @@ public record LinuxCapabilities(
             throw new IllegalArgumentException(name + " must be normalized bounded host evidence");
         }
         return value;
+    }
+
+    private static boolean serviceProjectType(DeploymentProjectType projectType) {
+        return switch (projectType) {
+            case GO_SERVICE, RUST_SERVICE, DOTNET_SERVICE, KOTLIN_SERVICE, PHP_SERVICE, RUBY_SERVICE -> true;
+            default -> false;
+        };
+    }
+
+    private static boolean validServiceVersion(DeploymentProjectType projectType, String value) {
+        if (value == null) {
+            return false;
+        }
+        return switch (projectType) {
+            case GO_SERVICE -> value.matches("1\\.(?:22|23|24)");
+            case RUST_SERVICE -> value.matches("1\\.(?:7[5-9]|8[0-9]|9[0-9])(?:\\.[0-9]+)?");
+            case DOTNET_SERVICE -> value.matches("(?:8|9)\\.0(?:\\.[0-9]+)?");
+            case KOTLIN_SERVICE -> value.equals("21");
+            case PHP_SERVICE -> value.matches("8\\.(?:2|3|4)");
+            case RUBY_SERVICE -> value.matches("3\\.(?:2|3|4)(?:\\.[0-9]+)?");
+            default -> false;
+        };
     }
 }

@@ -1,5 +1,6 @@
 package gold.debug.windowstolinux.shared.deploy.result;
 
+
 import gold.debug.windowstolinux.shared.model.message.LocalizedMessage;
 import gold.debug.windowstolinux.shared.model.deployment.DeploymentStep;
 

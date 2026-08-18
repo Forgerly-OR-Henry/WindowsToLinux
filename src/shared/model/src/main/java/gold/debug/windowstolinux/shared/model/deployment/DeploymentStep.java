@@ -157,6 +157,7 @@ public enum DeploymentStep {
      */
     CANDIDATE_CLEANUP("candidate-cleanup");
 
+    /** Represents the {@code code} value. / 表示 {@code code} 值。 */
     private final String code;
 
     DeploymentStep(String code) {

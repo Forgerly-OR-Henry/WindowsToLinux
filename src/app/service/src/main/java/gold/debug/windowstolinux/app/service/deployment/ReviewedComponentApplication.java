@@ -1,6 +1,6 @@
 package gold.debug.windowstolinux.app.service.deployment;
 
-import gold.debug.windowstolinux.shared.deploy.plan.ReviewedDeploymentRequest;
+import gold.debug.windowstolinux.shared.deploy.contract.ReviewedDeploymentRequest;
 import gold.debug.windowstolinux.shared.model.managed.ManagedApplication;
 
 import java.util.Objects;

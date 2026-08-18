@@ -8,7 +8,7 @@ import gold.debug.windowstolinux.app.service.source.PreparedMultiComponentSource
 import gold.debug.windowstolinux.app.ui.component.DesktopComponents;
 import gold.debug.windowstolinux.app.ui.server.ServerContext;
 import gold.debug.windowstolinux.app.ui.shell.PageMessages;
-import gold.debug.windowstolinux.shared.deploy.plan.ApplicationHealthGate;
+import gold.debug.windowstolinux.shared.deploy.contract.ApplicationHealthGate;
 import gold.debug.windowstolinux.shared.deploy.result.MultiComponentDeploymentResult;
 import gold.debug.windowstolinux.shared.deploy.result.MultiComponentLifecycleResult;
 import gold.debug.windowstolinux.shared.model.deployment.DeploymentStatus;
@@ -262,9 +262,11 @@ public final class MultiComponentPage {
                     orderedDrafts().stream().map(MultiComponentDraft::analysisRequest).toList();
             output.setText(messages.text("component.analysis.running"));
             new SwingWorker<PreparedMultiComponentSource, Void>() {
+                /** Runs the background task. / 运行后台任务。 */
                 @Override protected PreparedMultiComponentSource doInBackground() throws Exception {
                     return service.prepareReviewedMultiComponentSource(root, id, requests);
                 }
+                /** Completes the background task on the UI thread. / 在 UI 线程完成后台任务。 */
                 @Override protected void done() {
                     try {
                         preparation = get();
@@ -321,6 +323,7 @@ public final class MultiComponentPage {
             char[] masterPassword = serverContext.masterPassword();
             output.setText(messages.text("component.deployment.running"));
             new SwingWorker<MultiComponentDeploymentResult, Void>() {
+                /** Runs the background task. / 运行后台任务。 */
                 @Override protected MultiComponentDeploymentResult doInBackground() throws Exception {
                     for (MultiComponentReviewInput input : inputs) {
                         service.saveDeploymentConfigurationSnapshot(input.configuration());
@@ -328,6 +331,7 @@ public final class MultiComponentPage {
                     return service.deployReviewedMultiComponentWithStoredPassword(candidate, profile,
                             serverContext.credentialMode(), masterPassword, serverContext::confirmFingerprint);
                 }
+                /** Completes the background task on the UI thread. / 在 UI 线程完成后台任务。 */
                 @Override protected void done() {
                     try {
                         MultiComponentDeploymentResult result = get();
@@ -359,6 +363,7 @@ public final class MultiComponentPage {
             Set<String> selectedTargets = Set.copyOf(targets);
             output.setText(messages.text("component.lifecycle.running"));
             new SwingWorker<MultiComponentLifecycleResult, Void>() {
+                /** Runs the background task. / 运行后台任务。 */
                 @Override protected MultiComponentLifecycleResult doInBackground() throws Exception {
                     var managed = service.findManagedMultiComponentApplication(managedApplicationId).orElseThrow(
                             () -> new IllegalStateException(messages.text("component.validation.deployFirst")));
@@ -367,6 +372,7 @@ public final class MultiComponentPage {
                     return service.executeManagedMultiComponentLifecycleWithStoredPassword(managedApplicationId,
                             effectiveTargets, action, profile, serverContext.credentialMode(), masterPassword);
                 }
+                /** Completes the background task on the UI thread. / 在 UI 线程完成后台任务。 */
                 @Override protected void done() {
                     try {
                         output.setText(presenter.lifecycle(get()));

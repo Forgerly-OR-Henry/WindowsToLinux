@@ -42,6 +42,7 @@ final class RepositoryTransactions {
 
     @FunctionalInterface
     interface SqlWork {
+        /** Performs the {@code execute} operation. / 执行 {@code execute} 操作。 */
         void execute() throws SQLException;
     }
 }

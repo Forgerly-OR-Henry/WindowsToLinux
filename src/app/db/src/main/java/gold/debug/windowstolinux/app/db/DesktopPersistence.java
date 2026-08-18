@@ -74,6 +74,7 @@ public final class DesktopPersistence implements AutoCloseable {
     /** Returns the durable whole-application graph repository. / 返回持久整应用图仓库。 */
     public ManagedApplicationGraphRepository managedApplicationGraphs() { return managedApplicationGraphs; }
 
+    /** Closes this resource. / 关闭此资源。 */
     @Override
     public void close() {
         // Repositories use short-lived connections and own no shared handle. / 仓库使用短连接，不持有共享句柄。

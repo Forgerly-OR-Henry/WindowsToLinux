@@ -56,11 +56,13 @@ public final class ResolvedSecretRevision implements AutoCloseable {
         return value.clone();
     }
 
+    /** Closes this resource. / 关闭此资源。 */
     @Override
     public synchronized void close() {
         Arrays.fill(value, (byte) 0);
     }
 
+    /** Performs the {@code toString} operation. / 执行 {@code toString} 操作。 */
     @Override
     public String toString() {
         return "ResolvedSecretRevision[reference=" + reference + ", value=<redacted>]";

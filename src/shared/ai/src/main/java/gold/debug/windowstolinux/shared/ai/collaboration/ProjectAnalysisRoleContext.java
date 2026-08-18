@@ -32,8 +32,10 @@ public record ProjectAnalysisRoleContext(
                 facts.support().level().name(), facts.missingInformation().stream().map(value -> value.key()).toList());
     }
 
+    /** Performs the {@code role} operation. / 执行 {@code role} 操作。 */
     @Override public AiCollaborationRole role() { return AiCollaborationRole.PROJECT_ANALYSIS; }
 
+    /** Performs the {@code redactedSummary} operation. / 执行 {@code redactedSummary} 操作。 */
     @Override public String redactedSummary() {
         return "applicationId=" + applicationId + ";projectType=" + projectType + ";buildTool=" + buildTool
                 + ";supportLevel=" + supportLevel + ";missingInputCodes=" + String.join(",", missingInputCodes);

@@ -25,7 +25,7 @@ public final class DesktopSecretStores {
      *
      * <p>创建 {@code DesktopSecretStores} 实例。
      *
-     * @param database the {@code database} value / {@code database} 值
+     * @param encryptedSecrets the {@code encryptedSecrets} value / {@code encryptedSecrets} 值
      * @throws NullPointerException if a required argument is {@code null} / 必要参数为 {@code null} 时
      */
     public DesktopSecretStores(EncryptedSecretRepository encryptedSecrets) {

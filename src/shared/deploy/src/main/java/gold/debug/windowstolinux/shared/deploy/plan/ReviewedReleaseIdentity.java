@@ -1,6 +1,7 @@
 package gold.debug.windowstolinux.shared.deploy.plan;
 
 import gold.debug.windowstolinux.shared.config.secretref.SecretReference;
+import gold.debug.windowstolinux.shared.deploy.contract.ReviewedDeploymentRequest;
 import gold.debug.windowstolinux.shared.model.health.HealthCheck;
 import gold.debug.windowstolinux.shared.model.project.DeploymentRuntimeSpecification;
 
@@ -68,16 +69,23 @@ public final class ReviewedReleaseIdentity {
                         .forEach(volume -> update(digest, volume.name() + ":" + volume.containerPath()
                                 + ":" + volume.readOnly()));
             }
-            case DeploymentRuntimeSpecification.AdvancedService advanced -> {
-                update(digest, advanced.kind().name());
-                update(digest, advanced.version());
-                update(digest, advanced.artifactName());
-                update(digest, advanced.entrypoint());
-                update(digest, advanced.servicePort().isPresent()
-                        ? Integer.toString(advanced.servicePort().getAsInt()) : "no-service-port");
-            }
+            case DeploymentRuntimeSpecification.GoService service -> service(digest, "go", service.version(), service.artifactName(), service.entrypoint(), null);
+            case DeploymentRuntimeSpecification.RustService service -> service(digest, "rust", service.version(), service.artifactName(), service.entrypoint(), null);
+            case DeploymentRuntimeSpecification.DotNetService service -> service(digest, "dotnet", service.version(), service.artifactName(), service.entrypoint(), null);
+            case DeploymentRuntimeSpecification.KotlinService service -> service(digest, "kotlin", service.version(), service.artifactName(), service.entrypoint(), null);
+            case DeploymentRuntimeSpecification.PhpService service -> service(digest, "php", service.version(), service.artifactName(), service.entrypoint(), service.servicePort());
+            case DeploymentRuntimeSpecification.RubyService service -> service(digest, "ruby", service.version(), service.artifactName(), service.entrypoint(), service.servicePort());
         }
         health(digest, runtime.healthCheck());
+    }
+
+    private static void service(MessageDigest digest, String ecosystem, String version, String artifact, String entrypoint,
+                                Integer port) {
+        update(digest, ecosystem);
+        update(digest, version);
+        update(digest, artifact);
+        update(digest, entrypoint);
+        update(digest, port == null ? "no-service-port" : Integer.toString(port));
     }
 
     private static void health(MessageDigest digest, HealthCheck healthCheck) {

@@ -1,12 +1,13 @@
 package gold.debug.windowstolinux.shared.linux.sshd.capability;
 
+import gold.debug.windowstolinux.shared.linux.sshd.capability.probe.ManagedPlatformCapabilityProbe;
 import gold.debug.windowstolinux.shared.model.server.LinuxDistro;
 import gold.debug.windowstolinux.shared.model.server.CpuMicroarchitectureLevel;
 import gold.debug.windowstolinux.shared.model.server.LinuxFirewallKind;
 import gold.debug.windowstolinux.shared.model.server.LinuxFirewallState;
 import gold.debug.windowstolinux.shared.model.server.LinuxSecurityModule;
 import gold.debug.windowstolinux.shared.model.server.LinuxSecurityState;
-import gold.debug.windowstolinux.shared.model.project.AdvancedRuntimeKind;
+import gold.debug.windowstolinux.shared.model.project.DeploymentProjectType;
 import org.junit.jupiter.api.Test;
 
 import java.util.Map;
@@ -25,9 +26,9 @@ class SshdPlatformCapabilityCollectorTest {
                 Map.entry("PODMAN_OPERATIONAL", "1"), Map.entry("PODMAN_QUADLET", "1"),
                 Map.entry("JAVA_MAJORS", "21"), Map.entry("NODE_MAJORS", "22"), Map.entry("NPM", "1"),
                 Map.entry("PYTHON3", "1"), Map.entry("PYTHON_VERSIONS", "3.11,3.12"),
-                Map.entry("ADVANCED_GO", "1.24"), Map.entry("ADVANCED_RUST", "1.89.0"),
-                Map.entry("ADVANCED_DOTNET", "8.0.408"), Map.entry("ADVANCED_KOTLIN", "21"),
-                Map.entry("ADVANCED_PHP", "8.3"), Map.entry("ADVANCED_RUBY", "3.3.5"),
+                Map.entry("SERVICE_GO", "1.24"), Map.entry("SERVICE_RUST", "1.89.0"),
+                Map.entry("SERVICE_DOTNET", "8.0.408"), Map.entry("SERVICE_KOTLIN", "21"),
+                Map.entry("SERVICE_PHP", "8.3"), Map.entry("SERVICE_RUBY", "3.3.5"),
                 Map.entry("CPU_LEVEL", "x86-64-v3"), Map.entry("CPU_FLAGS", "sse4_2,popcnt"),
                 Map.entry("SECURITY_MODULE", "selinux"), Map.entry("SECURITY_STATE", "enforcing"),
                 Map.entry("FIREWALL", "firewalld"), Map.entry("FIREWALL_STATE", "active")), "SHA256:host");
@@ -46,22 +47,22 @@ class SshdPlatformCapabilityCollectorTest {
         assertEquals(LinuxSecurityState.ENFORCING, capabilities.securityPosture().state());
         assertEquals(LinuxFirewallKind.FIREWALLD, capabilities.securityPosture().firewall());
         assertEquals(LinuxFirewallState.ACTIVE, capabilities.securityPosture().firewallState());
-        assertEquals(java.util.Set.of("1.24"), capabilities.advancedRuntimeVersions().get(AdvancedRuntimeKind.GO));
-        assertEquals(java.util.Set.of("3.3.5"), capabilities.advancedRuntimeVersions().get(AdvancedRuntimeKind.RUBY));
-        assertTrue(PlatformCapabilityProbeScript.render().contains("PODMAN_QUADLET"));
-        assertTrue(PlatformCapabilityProbeScript.render().contains("ADVANCED_DOTNET"));
-        assertTrue(PlatformCapabilityProbeScript.render().contains("printf(\"%d.%d\""));
-        assertTrue(!PlatformCapabilityProbeScript.render().contains("printf(\"%%d.%%d\""));
-        assertTrue(PlatformCapabilityProbeScript.render().contains("SECURITY_MODULE"));
-        assertTrue(PlatformCapabilityProbeScript.render().contains("FIREWALL_STATE"));
-        assertTrue(PlatformCapabilityProbeScript.render().contains("nft list ruleset"));
-        assertTrue(PlatformCapabilityProbeScript.render().contains("managed_java='/usr/local/lib/windowstolinux/java-21'"));
-        assertTrue(PlatformCapabilityProbeScript.render().contains("\"$managed_java\" -XshowSettings:properties"));
-        assertTrue(PlatformCapabilityProbeScript.render().contains("PACKAGE_ARCH"));
-        assertTrue(PlatformCapabilityProbeScript.render().contains("CPU_LEVEL"));
-        assertTrue(!PlatformCapabilityProbeScript.render().contains("setenforce"));
-        assertTrue(!PlatformCapabilityProbeScript.render().contains("systemctl stop"));
-        assertTrue(!PlatformCapabilityProbeScript.render().contains("systemctl disable"));
+        assertEquals(java.util.Set.of("1.24"), capabilities.serviceRuntimeVersions().get(DeploymentProjectType.GO_SERVICE));
+        assertEquals(java.util.Set.of("3.3.5"), capabilities.serviceRuntimeVersions().get(DeploymentProjectType.RUBY_SERVICE));
+        assertTrue(ManagedPlatformCapabilityProbe.render().contains("PODMAN_QUADLET"));
+        assertTrue(ManagedPlatformCapabilityProbe.render().contains("SERVICE_DOTNET"));
+        assertTrue(ManagedPlatformCapabilityProbe.render().contains("printf(\"%d.%d\""));
+        assertTrue(!ManagedPlatformCapabilityProbe.render().contains("printf(\"%%d.%%d\""));
+        assertTrue(ManagedPlatformCapabilityProbe.render().contains("SECURITY_MODULE"));
+        assertTrue(ManagedPlatformCapabilityProbe.render().contains("FIREWALL_STATE"));
+        assertTrue(ManagedPlatformCapabilityProbe.render().contains("nft list ruleset"));
+        assertTrue(ManagedPlatformCapabilityProbe.render().contains("managed_java='/usr/local/lib/windowstolinux/java-21'"));
+        assertTrue(ManagedPlatformCapabilityProbe.render().contains("\"$managed_java\" -XshowSettings:properties"));
+        assertTrue(ManagedPlatformCapabilityProbe.render().contains("PACKAGE_ARCH"));
+        assertTrue(ManagedPlatformCapabilityProbe.render().contains("CPU_LEVEL"));
+        assertTrue(!ManagedPlatformCapabilityProbe.render().contains("setenforce"));
+        assertTrue(!ManagedPlatformCapabilityProbe.render().contains("systemctl stop"));
+        assertTrue(!ManagedPlatformCapabilityProbe.render().contains("systemctl disable"));
     }
 
     @Test

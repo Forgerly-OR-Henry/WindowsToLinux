@@ -1,7 +1,7 @@
 package gold.debug.windowstolinux.app.ui.settings;
 
-import gold.debug.windowstolinux.app.ui.appearance.DesktopAppearance;
-import gold.debug.windowstolinux.app.ui.appearance.ThemeMode;
+import gold.debug.windowstolinux.app.ui.display.DesktopDisplaySettings;
+import gold.debug.windowstolinux.app.ui.display.ThemeMode;
 import gold.debug.windowstolinux.app.ui.component.DesktopComponents;
 import gold.debug.windowstolinux.app.ui.i18n.MessageCatalog;
 import gold.debug.windowstolinux.app.ui.shell.PageMessages;
@@ -21,8 +21,8 @@ public final class SettingsPage {
     private final JPanel panel;
 
     /** Creates the stateful settings controller. / 创建有状态设置控制器。 */
-    public SettingsPage(DesktopComponents c, PageMessages messages, DesktopAppearance appearance,
-                        Consumer<DesktopAppearance> applyAppearance) {
+    public SettingsPage(DesktopComponents c, PageMessages messages, DesktopDisplaySettings appearance,
+                        Consumer<DesktopDisplaySettings> applyAppearance) {
         panel = c.pagePanel();
         JPanel cards = c.transparent(new GridLayout(1, 2, 12, 0));
         cards.add(c.informationCard(messages.text("settings.credentials.title"), messages.text("settings.credentials.body")));
@@ -43,7 +43,7 @@ public final class SettingsPage {
         theme.setRenderer(themeRenderer(messages));
         c.addField(form, 0, 0, messages.text("field.language"), locale);
         c.addField(form, 1, 0, messages.text("field.appearance"), theme);
-        Runnable apply = () -> applyAppearance.accept(new DesktopAppearance(
+        Runnable apply = () -> applyAppearance.accept(new DesktopDisplaySettings(
                 (String) locale.getSelectedItem(), (ThemeMode) theme.getSelectedItem()));
         locale.addActionListener(event -> apply.run());
         theme.addActionListener(event -> apply.run());
@@ -61,6 +61,7 @@ public final class SettingsPage {
 
     private static DefaultListCellRenderer localeRenderer(PageMessages messages) {
         return new DefaultListCellRenderer() {
+            /** Performs the {@code getListCellRendererComponent} operation. / 执行 {@code getListCellRendererComponent} 操作。 */
             @Override public Component getListCellRendererComponent(javax.swing.JList<?> list, Object value, int index,
                                                                     boolean selected, boolean focus) {
                 return super.getListCellRendererComponent(list,
@@ -72,6 +73,7 @@ public final class SettingsPage {
 
     private static DefaultListCellRenderer themeRenderer(PageMessages messages) {
         return new DefaultListCellRenderer() {
+            /** Performs the {@code getListCellRendererComponent} operation. / 执行 {@code getListCellRendererComponent} 操作。 */
             @Override public Component getListCellRendererComponent(javax.swing.JList<?> list, Object value, int index,
                                                                     boolean selected, boolean focus) {
                 String key = value instanceof ThemeMode mode ? "theme." + mode.name().toLowerCase(Locale.ROOT) : "";

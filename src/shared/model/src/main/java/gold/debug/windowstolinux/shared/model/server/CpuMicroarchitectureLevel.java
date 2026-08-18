@@ -17,6 +17,7 @@ public enum CpuMicroarchitectureLevel {
     /** Cumulative x86-64-v4. / 累积 x86-64-v4。 */
     X86_64_V4(4);
 
+    /** Represents the {@code level} value. / 表示 {@code level} 值。 */
     private final int level;
 
     CpuMicroarchitectureLevel(int level) {

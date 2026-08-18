@@ -1,8 +1,10 @@
 package gold.debug.windowstolinux.shared.linux.sshd.capability;
 
-import gold.debug.windowstolinux.shared.linux.connection.LinuxOperationException;
-import gold.debug.windowstolinux.shared.linux.sshd.connection.SshCommandExecutor;
-import gold.debug.windowstolinux.shared.linux.sshd.protocol.ManagedHelperBundle;
+import gold.debug.windowstolinux.shared.linux.sshd.capability.probe.ManagedHostCapabilityProbe;
+
+import gold.debug.windowstolinux.shared.linux.error.LinuxOperationException;
+import gold.debug.windowstolinux.shared.linux.sshd.command.SshCommandExecutor;
+import gold.debug.windowstolinux.shared.linux.sshd.protocol.helper.ManagedHelperBundle;
 import gold.debug.windowstolinux.shared.model.server.ServerCapabilities;
 
 import java.time.Duration;
@@ -43,7 +45,7 @@ public final class SshdCapabilityCollector {
      * @throws LinuxOperationException if the operation cannot be completed / 无法完成操作时
      */
     public ServerCapabilities collect() throws LinuxOperationException {
-        var result = collectReadOnly(CapabilityProbeScript.render(ManagedHelperBundle.PATH));
+        var result = collectReadOnly(ManagedHostCapabilityProbe.render(ManagedHelperBundle.PATH));
         if (!result.succeeded()) {
             throw LinuxOperationException.localized("linux.error.capabilityCollectionFailed",
                     "Failed to collect target capabilities: " + result.failureEvidence());

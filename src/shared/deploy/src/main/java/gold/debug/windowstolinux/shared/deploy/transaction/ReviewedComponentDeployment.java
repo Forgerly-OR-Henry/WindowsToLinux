@@ -1,7 +1,7 @@
 package gold.debug.windowstolinux.shared.deploy.transaction;
 
 import gold.debug.windowstolinux.shared.config.secretref.ResolvedSecretRevision;
-import gold.debug.windowstolinux.shared.deploy.plan.ReviewedDeploymentRequest;
+import gold.debug.windowstolinux.shared.deploy.contract.ReviewedDeploymentRequest;
 import gold.debug.windowstolinux.shared.model.managed.ManagedApplication;
 
 import java.util.List;

@@ -11,6 +11,7 @@ import java.util.Objects;
 
 /** JDK HTTP transport for the exact selected OpenAI-compatible endpoint. / 精确所选 OpenAI 兼容端点的 JDK HTTP 传输。 */
 final class HttpRoleChatTransport implements RoleChatTransport {
+    /** Performs the {@code send} operation. / 执行 {@code send} 操作。 */
     @Override public RoleChatResponse send(URI endpoint, char[] apiKey, String requestBody)
             throws IOException, InterruptedException {
         Objects.requireNonNull(apiKey, "apiKey");

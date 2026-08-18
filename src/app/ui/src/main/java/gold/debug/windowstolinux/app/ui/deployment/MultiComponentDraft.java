@@ -125,7 +125,7 @@ record MultiComponentDraft(
                     DeploymentRuntimeParser.ports(runtimeSecondary),
                     DeploymentRuntimeParser.volumes(runtimeAdditional), health);
             case GO_SERVICE, RUST_SERVICE, DOTNET_SERVICE, KOTLIN_SERVICE, PHP_SERVICE, RUBY_SERVICE ->
-                    DeploymentRuntimeParser.advanced(projectType, runtimeVersion, runtimePrimary, runtimeSecondary, health);
+                    DeploymentRuntimeParser.service(projectType, runtimeVersion, runtimePrimary, runtimeSecondary, health);
             case RECOGNITION_PREVIEW -> throw new IllegalArgumentException(
                     "recognition-preview components cannot enter deployment review");
         };

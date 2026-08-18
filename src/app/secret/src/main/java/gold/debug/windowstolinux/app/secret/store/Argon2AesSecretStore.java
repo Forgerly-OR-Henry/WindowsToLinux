@@ -26,7 +26,7 @@ public final class Argon2AesSecretStore implements SecretStore {
      *
      * <p>创建 {@code Argon2AesSecretStore} 实例。
      *
-     * @param database the {@code database} value / {@code database} 值
+     * @param secrets the {@code secrets} value / {@code secrets} 值
      * @param masterPassword the {@code masterPassword} value / {@code masterPassword} 值
      * @throws NullPointerException if a required argument is {@code null} / 必要参数为 {@code null} 时
      */
@@ -35,6 +35,7 @@ public final class Argon2AesSecretStore implements SecretStore {
         this.crypto = new Argon2AesGcmCrypto(masterPassword);
     }
 
+    /** Performs the {@code save} operation. / 执行 {@code save} 操作。 */
     @Override
     public void save(String key, char[] value) throws SecretStoreException {
         validateKey(key);
@@ -50,6 +51,7 @@ public final class Argon2AesSecretStore implements SecretStore {
         }
     }
 
+    /** Performs the {@code read} operation. / 执行 {@code read} 操作。 */
     @Override
     public Optional<char[]> read(String key) throws SecretStoreException {
         validateKey(key);
@@ -73,6 +75,7 @@ public final class Argon2AesSecretStore implements SecretStore {
         }
     }
 
+    /** Closes this resource. / 关闭此资源。 */
     @Override
     public void close() {
         crypto.close();

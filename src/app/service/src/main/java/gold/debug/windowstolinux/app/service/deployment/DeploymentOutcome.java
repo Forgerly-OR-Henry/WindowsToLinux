@@ -1,6 +1,6 @@
 package gold.debug.windowstolinux.app.service.deployment;
 
-import gold.debug.windowstolinux.shared.deploy.plan.ReviewedDeploymentRequest;
+import gold.debug.windowstolinux.shared.deploy.contract.ReviewedDeploymentRequest;
 import gold.debug.windowstolinux.shared.deploy.result.DeploymentEvent;
 import gold.debug.windowstolinux.shared.deploy.result.DeploymentResult;
 import gold.debug.windowstolinux.shared.model.deployment.DeploymentStatus;
@@ -25,8 +25,7 @@ public record DeploymentOutcome(DeploymentResult result, Optional<DeploymentHand
      *
      * <p>创建 {@code DeploymentOutcome} 实例。
      *
-     * @param status the {@code status} value / {@code status} 值
-     * @param events the {@code events} value / {@code events} 值
+     * @param result the {@code result} value / {@code result} 值
      * @param handoff the {@code handoff} value / {@code handoff} 值
      * @throws IllegalArgumentException if an argument violates the required constraints / 参数违反必要约束时
      * @throws NullPointerException if a required argument is {@code null} / 必要参数为 {@code null} 时

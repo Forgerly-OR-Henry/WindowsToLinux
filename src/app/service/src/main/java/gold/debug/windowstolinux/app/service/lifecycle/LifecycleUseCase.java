@@ -4,7 +4,7 @@ import gold.debug.windowstolinux.app.db.repository.ManagedApplicationRepository;
 import gold.debug.windowstolinux.app.db.entity.CurrentRelease;
 import gold.debug.windowstolinux.app.secret.api.SecretStore;
 import gold.debug.windowstolinux.app.secret.api.SecretStoreException;
-import gold.debug.windowstolinux.app.service.concurrency.ServerOperationLocks;
+import gold.debug.windowstolinux.app.service.locking.ServerOperationLocks;
 import gold.debug.windowstolinux.app.service.server.ServerProfile;
 import gold.debug.windowstolinux.app.service.server.ServerUseCases;
 import gold.debug.windowstolinux.shared.deploy.lifecycle.ManagedLifecycleService;
@@ -41,7 +41,7 @@ public final class LifecycleUseCase {
      *
      * <p>创建 {@code LifecycleUseCase} 实例。
      *
-     * @param database the {@code database} value / {@code database} 值
+     * @param applications the {@code applications} value / {@code applications} 值
      * @param gateway the {@code gateway} value / {@code gateway} 值
      * @param servers the {@code servers} value / {@code servers} 值
      * @param locks the {@code locks} value / {@code locks} 值

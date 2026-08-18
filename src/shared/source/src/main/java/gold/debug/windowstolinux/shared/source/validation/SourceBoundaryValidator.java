@@ -97,6 +97,7 @@ public final class SourceBoundaryValidator {
         List<String> excluded = new ArrayList<>();
         long[] byteCount = {0L};
         Files.walkFileTree(root, new FileVisitor<>() {
+            /** Performs the {@code preVisitDirectory} operation. / 执行 {@code preVisitDirectory} 操作。 */
             @Override
             public FileVisitResult preVisitDirectory(Path directory, BasicFileAttributes attributes) throws IOException {
                 if (!directory.equals(root) && Files.isSymbolicLink(directory)) {
@@ -109,6 +110,7 @@ public final class SourceBoundaryValidator {
                 return FileVisitResult.CONTINUE;
             }
 
+            /** Performs the {@code visitFile} operation. / 执行 {@code visitFile} 操作。 */
             @Override
             public FileVisitResult visitFile(Path file, BasicFileAttributes attributes) throws IOException {
                 if (Files.isSymbolicLink(file) || !attributes.isRegularFile()) {
@@ -124,11 +126,13 @@ public final class SourceBoundaryValidator {
                 return FileVisitResult.CONTINUE;
             }
 
+            /** Performs the {@code visitFileFailed} operation. / 执行 {@code visitFileFailed} 操作。 */
             @Override
             public FileVisitResult visitFileFailed(Path file, IOException exception) throws IOException {
                 throw new IOException("cannot read source entry: " + file, exception);
             }
 
+            /** Performs the {@code postVisitDirectory} operation. / 执行 {@code postVisitDirectory} 操作。 */
             @Override
             public FileVisitResult postVisitDirectory(Path directory, IOException exception) throws IOException {
                 if (exception != null) {

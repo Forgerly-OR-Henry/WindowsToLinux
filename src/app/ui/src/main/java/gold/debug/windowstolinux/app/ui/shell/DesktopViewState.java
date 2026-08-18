@@ -55,6 +55,7 @@ public record DesktopViewState(
         Objects.requireNonNull(settings, "settings");
     }
 
+    /** Closes this resource. / 关闭此资源。 */
     @Override
     public void close() {
         server.close();

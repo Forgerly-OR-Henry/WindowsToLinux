@@ -1,5 +1,8 @@
 package gold.debug.windowstolinux.shared.linux.connection;
 
+import gold.debug.windowstolinux.shared.linux.error.LinuxOperationException;
+import gold.debug.windowstolinux.shared.linux.session.DeploymentRemoteSession;
+
 /**
  * Opens one verified SSH session that supports the bounded typed deployment protocol.
  *

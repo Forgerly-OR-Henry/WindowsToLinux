@@ -1,5 +1,7 @@
 package gold.debug.windowstolinux.shared.deploy.plan;
 
+import gold.debug.windowstolinux.shared.deploy.contract.MultiComponentDeploymentPlan;
+
 import gold.debug.windowstolinux.shared.model.analysis.DeploymentAdmission;
 import gold.debug.windowstolinux.shared.model.analysis.MultiComponentProjectAssessment;
 import gold.debug.windowstolinux.shared.model.health.HealthCheck;

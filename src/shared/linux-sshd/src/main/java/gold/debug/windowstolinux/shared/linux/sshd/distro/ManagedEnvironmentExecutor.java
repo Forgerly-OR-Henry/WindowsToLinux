@@ -1,15 +1,16 @@
 package gold.debug.windowstolinux.shared.linux.sshd.distro;
 
-import gold.debug.windowstolinux.shared.linux.connection.LinuxOperationException;
+import gold.debug.windowstolinux.shared.linux.sshd.distro.registry.DistributionSetupRegistry;
+import gold.debug.windowstolinux.shared.linux.sshd.distro.shell.SetupShellSupport;
+
+import gold.debug.windowstolinux.shared.linux.error.LinuxOperationException;
 import gold.debug.windowstolinux.shared.linux.sshd.capability.SshdCapabilityCollector;
 import gold.debug.windowstolinux.shared.linux.sshd.capability.SshdPlatformCapabilityCollector;
-import gold.debug.windowstolinux.shared.linux.sshd.connection.SshCommandExecutor;
-import gold.debug.windowstolinux.shared.model.deployment.EnvironmentPreparationApproval;
-import gold.debug.windowstolinux.shared.model.deployment.EnvironmentPreparationResult;
+import gold.debug.windowstolinux.shared.linux.sshd.command.SshCommandExecutor;
+import gold.debug.windowstolinux.shared.model.deployment.EnvironmentSetupApproval;
+import gold.debug.windowstolinux.shared.model.deployment.EnvironmentSetupResult;
 import gold.debug.windowstolinux.shared.model.health.HealthCheck;
 import gold.debug.windowstolinux.shared.model.server.LinuxCapabilities;
-import gold.debug.windowstolinux.shared.model.server.LinuxSecurityModule;
-import gold.debug.windowstolinux.shared.model.server.LinuxSecurityState;
 import gold.debug.windowstolinux.shared.model.server.ServerCapabilities;
 
 import java.util.Objects;
@@ -25,6 +26,7 @@ public final class ManagedEnvironmentExecutor {
     private final SshdPlatformCapabilityCollector platformCapabilities;
     private final String serverId;
     private final String username;
+    private final DistributionSetupRegistry preparations;
 
     /** Creates the managed environment executor. / 创建受管环境执行器。 */
     public ManagedEnvironmentExecutor(SshCommandExecutor commands, SshdCapabilityCollector baselineCapabilities,
@@ -34,14 +36,15 @@ public final class ManagedEnvironmentExecutor {
         this.platformCapabilities = Objects.requireNonNull(platformCapabilities, "platformCapabilities");
         this.serverId = Objects.requireNonNull(serverId, "serverId");
         this.username = Objects.requireNonNull(username, "username");
+        this.preparations = DistributionSetupRegistry.defaults();
     }
 
     /** Prepares one supported distribution after explicit confirmation. / 在明确确认后准备一个受支持的发行版。 */
-    public EnvironmentPreparationResult prepare(EnvironmentPreparationApproval approval) throws LinuxOperationException {
+    public EnvironmentSetupResult prepare(EnvironmentSetupApproval approval) throws LinuxOperationException {
         Objects.requireNonNull(approval, "approval").requireAcceptedFor(serverId);
         LinuxCapabilities before = platformCapabilities.collectDeploymentCapabilities();
         String script = scriptFor(before);
-        var prepared = commands.exec(script, EnvironmentPreparationShellSupport.TIMEOUT, true);
+        var prepared = commands.exec(script, SetupShellSupport.TIMEOUT, true);
         if (!prepared.succeeded()) {
             throw LinuxOperationException.localized("linux.error.environmentPreparationFailed",
                     "managed target environment preparation failed: " + prepared.failureEvidence());
@@ -53,50 +56,13 @@ public final class ManagedEnvironmentExecutor {
                             + collected.evidence());
         }
         String elevation = SshCommandExecutor.lines(prepared.output()).getOrDefault("PREPARED_AS", "unknown");
-        return new EnvironmentPreparationResult(collected,
+        return new EnvironmentSetupResult(collected,
                 "managed target preparation installed the fixed distribution toolset, root-owned controlled helper, and "
                         + "restricted sudo policy with " + elevation + " privileges; selected "
                         + before.distro() + " " + before.version());
     }
 
     private String scriptFor(LinuxCapabilities capabilities) throws LinuxOperationException {
-        try {
-            return switch (capabilities.distro()) {
-                case UBUNTU -> UbuntuEnvironmentPreparation.renderScript(username, capabilities.version());
-                case DEBIAN -> DebianEnvironmentPreparation.renderScript(username, capabilities.version());
-                case CENTOS_STREAM -> {
-                    requireEnterpriseSecurity(capabilities);
-                    yield CentosStreamEnvironmentPreparation.renderScript(username, capabilities.version());
-                }
-                case ROCKY_LINUX -> {
-                    requireEnterpriseSecurity(capabilities);
-                    yield RockyLinuxEnvironmentPreparation.renderScript(username, capabilities.version());
-                }
-                case ALMALINUX -> {
-                    requireEnterpriseSecurity(capabilities);
-                    yield AlmaLinuxEnvironmentPreparation.renderScript(
-                            username, capabilities.version(), capabilities.packageArchitecture());
-                }
-                case ORACLE_LINUX -> {
-                    requireEnterpriseSecurity(capabilities);
-                    yield OracleLinuxEnvironmentPreparation.renderScript(username, capabilities.version());
-                }
-                case LEGACY_CENTOS -> throw LinuxOperationException.localized("linux.error.environmentUnsupportedDistro",
-                        "Discontinued CentOS requires a separately reviewed repository and recovery plan; automatic preparation is disabled");
-                case OTHER -> throw LinuxOperationException.localized("linux.error.environmentUnsupportedDistro",
-                        "The target distribution is outside the managed deployment preparation matrix");
-            };
-        } catch (IllegalArgumentException exception) {
-            throw LinuxOperationException.localized("linux.error.environmentUnsupportedDistro",
-                    "The collected distribution version is outside the managed deployment preparation matrix");
-        }
-    }
-
-    private static void requireEnterpriseSecurity(LinuxCapabilities capabilities) throws LinuxOperationException {
-        if (capabilities.securityPosture().module() != LinuxSecurityModule.SELINUX
-                || capabilities.securityPosture().state() != LinuxSecurityState.ENFORCING) {
-            throw LinuxOperationException.localized("linux.error.environmentUnsupportedDistro",
-                    "Enterprise Linux automatic preparation requires collected SELinux enforcing evidence");
-        }
+        return preparations.render(capabilities, username);
     }
 }

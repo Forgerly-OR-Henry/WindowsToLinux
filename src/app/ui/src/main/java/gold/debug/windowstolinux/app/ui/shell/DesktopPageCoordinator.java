@@ -2,8 +2,8 @@ package gold.debug.windowstolinux.app.ui.shell;
 
 import gold.debug.windowstolinux.app.service.DesktopApplicationService;
 import gold.debug.windowstolinux.app.ui.ai.AiPage;
-import gold.debug.windowstolinux.app.ui.appearance.DesktopAppearance;
-import gold.debug.windowstolinux.app.ui.appearance.DesktopAppearanceChangeListener;
+import gold.debug.windowstolinux.app.ui.display.DesktopDisplaySettings;
+import gold.debug.windowstolinux.app.ui.display.DesktopDisplayChangeListener;
 import gold.debug.windowstolinux.app.ui.component.DesktopComponents;
 import gold.debug.windowstolinux.app.ui.deployment.DeploymentPage;
 import gold.debug.windowstolinux.app.ui.deployment.MultiComponentPage;
@@ -30,8 +30,8 @@ final class DesktopPageCoordinator {
     private String currentPage = "deployment";
 
     DesktopPageCoordinator(DesktopFrame owner, DesktopApplicationService service, MessageCatalog catalog,
-                           DesktopAppearance appearance, DesktopComponents components,
-                           DesktopAppearanceChangeListener appearanceChangeListener, PageNavigator navigator) {
+                           DesktopDisplaySettings appearance, DesktopComponents components,
+                           DesktopDisplayChangeListener appearanceChangeListener, PageNavigator navigator) {
         this.navigator = navigator;
         PageMessages messages = new PageMessages(catalog);
         server = new ServerPage(owner, service, components, messages);

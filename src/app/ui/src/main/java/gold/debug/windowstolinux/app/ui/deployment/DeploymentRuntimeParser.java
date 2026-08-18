@@ -3,7 +3,6 @@ package gold.debug.windowstolinux.app.ui.deployment;
 import gold.debug.windowstolinux.shared.config.secretref.SecretReference;
 import gold.debug.windowstolinux.shared.git.reference.GitReference;
 import gold.debug.windowstolinux.shared.model.health.HealthCheck;
-import gold.debug.windowstolinux.shared.model.project.AdvancedRuntimeKind;
 import gold.debug.windowstolinux.shared.model.project.DeploymentProjectType;
 import gold.debug.windowstolinux.shared.model.project.DeploymentRuntimeSpecification;
 
@@ -11,7 +10,6 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.OptionalInt;
 
 /** Parses bounded desktop runtime, secret-reference, and Git-reference notation. / 解析桌面端有界运行时、秘密引用与 Git 引用记法。 */
 final class DeploymentRuntimeParser {
@@ -64,11 +62,17 @@ final class DeploymentRuntimeParser {
         return input.isBlank() ? List.of() : List.of(input.trim().split("\\s+"));
     }
 
-    static DeploymentRuntimeSpecification advanced(DeploymentProjectType selected, String version,
-                                                    String artifact, String entrypoint, HealthCheck health) {
-        AdvancedRuntimeKind kind = AdvancedRuntimeKind.forProjectType(selected);
-        OptionalInt port = kind.requiresServicePort() ? OptionalInt.of(healthPort(health)) : OptionalInt.empty();
-        return new DeploymentRuntimeSpecification.AdvancedService(kind, version, artifact, entrypoint, port, health);
+    static DeploymentRuntimeSpecification service(DeploymentProjectType selected, String version,
+                                                   String artifact, String entrypoint, HealthCheck health) {
+        return switch (selected) {
+            case GO_SERVICE -> new DeploymentRuntimeSpecification.GoService(version, artifact, entrypoint, health);
+            case RUST_SERVICE -> new DeploymentRuntimeSpecification.RustService(version, artifact, entrypoint, health);
+            case DOTNET_SERVICE -> new DeploymentRuntimeSpecification.DotNetService(version, artifact, entrypoint, health);
+            case KOTLIN_SERVICE -> new DeploymentRuntimeSpecification.KotlinService(version, artifact, entrypoint, health);
+            case PHP_SERVICE -> new DeploymentRuntimeSpecification.PhpService(version, artifact, entrypoint, healthPort(health), health);
+            case RUBY_SERVICE -> new DeploymentRuntimeSpecification.RubyService(version, artifact, entrypoint, healthPort(health), health);
+            default -> throw new IllegalArgumentException("selected project type is not an ecosystem service");
+        };
     }
 
     private static int healthPort(HealthCheck health) {

@@ -1,12 +1,12 @@
 package gold.debug.windowstolinux.shared.deploy.lifecycle;
 
-import gold.debug.windowstolinux.shared.deploy.plan.MultiComponentDeploymentPlan;
+import gold.debug.windowstolinux.shared.deploy.contract.MultiComponentDeploymentPlan;
 import gold.debug.windowstolinux.shared.deploy.result.ComponentLifecycleResult;
 import gold.debug.windowstolinux.shared.deploy.result.MultiComponentLifecycleResult;
 import gold.debug.windowstolinux.shared.linux.connection.DeploymentLinuxGateway;
-import gold.debug.windowstolinux.shared.linux.connection.DeploymentRemoteSession;
+import gold.debug.windowstolinux.shared.linux.session.DeploymentRemoteSession;
 import gold.debug.windowstolinux.shared.linux.connection.HostKeyVerifier;
-import gold.debug.windowstolinux.shared.linux.connection.LinuxOperationException;
+import gold.debug.windowstolinux.shared.linux.error.LinuxOperationException;
 import gold.debug.windowstolinux.shared.linux.connection.SshCredential;
 import gold.debug.windowstolinux.shared.linux.connection.SshEndpoint;
 import gold.debug.windowstolinux.shared.model.lifecycle.ApplicationAutostartState;

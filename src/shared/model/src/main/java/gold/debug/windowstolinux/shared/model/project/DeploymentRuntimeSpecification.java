@@ -15,7 +15,10 @@ import java.util.OptionalInt;
 public sealed interface DeploymentRuntimeSpecification permits DeploymentRuntimeSpecification.SpringBoot,
         DeploymentRuntimeSpecification.JavaJar, DeploymentRuntimeSpecification.NodeService,
         DeploymentRuntimeSpecification.PythonService, DeploymentRuntimeSpecification.StaticSite,
-        DeploymentRuntimeSpecification.Container, DeploymentRuntimeSpecification.AdvancedService {
+        DeploymentRuntimeSpecification.Container, DeploymentRuntimeSpecification.GoService,
+        DeploymentRuntimeSpecification.RustService, DeploymentRuntimeSpecification.DotNetService,
+        DeploymentRuntimeSpecification.KotlinService, DeploymentRuntimeSpecification.PhpService,
+        DeploymentRuntimeSpecification.RubyService {
     /** Returns the matching project type. / 返回匹配的项目类型。 */
     DeploymentProjectType projectType();
 
@@ -26,6 +29,7 @@ public sealed interface DeploymentRuntimeSpecification permits DeploymentRuntime
     record SpringBoot(HealthCheck healthCheck) implements DeploymentRuntimeSpecification {
         /** Creates a {@code SpringBoot} specification. / 创建 {@code SpringBoot} 规范。 */
         public SpringBoot { healthCheck = Objects.requireNonNull(healthCheck, "healthCheck"); }
+        /** Returns the supported deployment project type. / 返回支持的部署项目类型。 */
         @Override public DeploymentProjectType projectType() { return DeploymentProjectType.SPRING_BOOT; }
     }
 
@@ -41,6 +45,7 @@ public sealed interface DeploymentRuntimeSpecification permits DeploymentRuntime
             applicationArguments = safeArguments(applicationArguments, "applicationArguments");
             healthCheck = Objects.requireNonNull(healthCheck, "healthCheck");
         }
+        /** Returns the supported deployment project type. / 返回支持的部署项目类型。 */
         @Override public DeploymentProjectType projectType() { return DeploymentProjectType.JAVA_JAR; }
     }
 
@@ -53,6 +58,7 @@ public sealed interface DeploymentRuntimeSpecification permits DeploymentRuntime
             }
             healthCheck = Objects.requireNonNull(healthCheck, "healthCheck");
         }
+        /** Returns the supported deployment project type. / 返回支持的部署项目类型。 */
         @Override public DeploymentProjectType projectType() { return DeploymentProjectType.NODE_SERVICE; }
     }
 
@@ -64,6 +70,7 @@ public sealed interface DeploymentRuntimeSpecification permits DeploymentRuntime
             entrypoint = pythonEntrypoint(entrypoint);
             healthCheck = Objects.requireNonNull(healthCheck, "healthCheck");
         }
+        /** Returns the supported deployment project type. / 返回支持的部署项目类型。 */
         @Override public DeploymentProjectType projectType() { return DeploymentProjectType.PYTHON_SERVICE; }
     }
 
@@ -87,6 +94,7 @@ public sealed interface DeploymentRuntimeSpecification permits DeploymentRuntime
         public StaticSite(String outputDirectory, HealthCheck.Http healthCheck) {
             this(outputDirectory, OptionalInt.empty(), healthCheck);
         }
+        /** Returns the supported deployment project type. / 返回支持的部署项目类型。 */
         @Override public DeploymentProjectType projectType() { return DeploymentProjectType.STATIC_SITE; }
     }
 
@@ -109,52 +117,91 @@ public sealed interface DeploymentRuntimeSpecification permits DeploymentRuntime
             volumes = List.copyOf(Objects.requireNonNull(volumes, "volumes"));
             healthCheck = Objects.requireNonNull(healthCheck, "healthCheck");
         }
+        /** Returns the supported deployment project type. / 返回支持的部署项目类型。 */
         @Override public DeploymentProjectType projectType() { return DeploymentProjectType.DOCKERFILE_CONTAINER; }
     }
 
-    /**
-     * Bounded runtime values shared by the six advanced experimental language adapters.
-     *
-     * <p>六个高级试验语言适配器共享的有界运行时值。
-     */
-    record AdvancedService(AdvancedRuntimeKind kind, String version, String artifactName, String entrypoint,
-                           OptionalInt servicePort, HealthCheck healthCheck) implements DeploymentRuntimeSpecification {
-        /** Validates kind-specific runtime values without accepting an arbitrary command. / 验证类型专属运行值且不接受任意命令。 */
-        public AdvancedService {
-            kind = Objects.requireNonNull(kind, "kind");
-            version = Objects.requireNonNull(version, "version").trim();
-            if (!kind.acceptsVersion(version)) {
-                throw new IllegalArgumentException("version is not allowed for the selected advanced runtime");
-            }
-            artifactName = safeName(artifactName, "artifactName");
-            entrypoint = relativePath(entrypoint, "entrypoint");
-            servicePort = Objects.requireNonNull(servicePort, "servicePort");
-            if (kind.requiresServicePort() != servicePort.isPresent()) {
-                throw new IllegalArgumentException("servicePort presence must match the selected advanced runtime");
-            }
-            servicePort.ifPresent(DeploymentRuntimeSpecification::requirePort);
-            switch (kind) {
-                case GO -> requireExact(entrypoint, "main.go", "Go entrypoint");
-                case RUST -> requireExact(entrypoint, "src/main.rs", "Rust entrypoint");
-                case DOTNET -> requireExact(entrypoint, artifactName + ".dll", ".NET entrypoint");
-                case KOTLIN -> javaName(entrypoint, "entrypoint");
-                case PHP -> {
-                    requireExact(artifactName, "public", "PHP document root");
-                    requireExact(entrypoint, "public/index.php", "PHP router");
-                }
-                case RUBY -> {
-                    requireExact(artifactName, "bundle", "Ruby artifact");
-                    requireExact(entrypoint, "config.ru", "Ruby entrypoint");
-                }
-            }
+    /** Go service compiled from one locked module. / 从一个锁定模块编译的 Go 服务。 */
+    record GoService(String version, String artifactName, String entrypoint, HealthCheck healthCheck)
+            implements DeploymentRuntimeSpecification {
+        /** Creates an instance of this type. / 创建此类型的实例。 */
+        public GoService {
+            version = validateServiceVersion(version, "1\\.(?:22|23|24)"); artifactName = safeName(artifactName, "artifactName");
+            entrypoint = relativePath(entrypoint, "entrypoint"); requireExact(entrypoint, "main.go", "Go entrypoint");
             healthCheck = Objects.requireNonNull(healthCheck, "healthCheck");
         }
+        /** Returns the supported deployment project type. / 返回支持的部署项目类型。 */
+        @Override public DeploymentProjectType projectType() { return DeploymentProjectType.GO_SERVICE; }
+    }
 
-        @Override public DeploymentProjectType projectType() { return kind.projectType(); }
+    /** Rust service compiled from one locked Cargo package. / 从一个锁定 Cargo 包编译的 Rust 服务。 */
+    record RustService(String version, String artifactName, String entrypoint, HealthCheck healthCheck)
+            implements DeploymentRuntimeSpecification {
+        /** Creates an instance of this type. / 创建此类型的实例。 */
+        public RustService {
+            version = validateServiceVersion(version, "1\\.(?:7[5-9]|8[0-9]|9[0-9])(?:\\.[0-9]+)?"); artifactName = safeName(artifactName, "artifactName");
+            entrypoint = relativePath(entrypoint, "entrypoint"); requireExact(entrypoint, "src/main.rs", "Rust entrypoint");
+            healthCheck = Objects.requireNonNull(healthCheck, "healthCheck");
+        }
+        /** Returns the supported deployment project type. / 返回支持的部署项目类型。 */
+        @Override public DeploymentProjectType projectType() { return DeploymentProjectType.RUST_SERVICE; }
+    }
+
+    /** .NET service published from one locked project. / 从一个锁定项目发布的 .NET 服务。 */
+    record DotNetService(String version, String artifactName, String entrypoint, HealthCheck healthCheck)
+            implements DeploymentRuntimeSpecification {
+        /** Creates an instance of this type. / 创建此类型的实例。 */
+        public DotNetService {
+            version = validateServiceVersion(version, "(?:8|9)\\.0(?:\\.[0-9]+)?"); artifactName = safeName(artifactName, "artifactName");
+            entrypoint = relativePath(entrypoint, "entrypoint"); requireExact(entrypoint, artifactName + ".dll", ".NET entrypoint");
+            healthCheck = Objects.requireNonNull(healthCheck, "healthCheck");
+        }
+        /** Returns the supported deployment project type. / 返回支持的部署项目类型。 */
+        @Override public DeploymentProjectType projectType() { return DeploymentProjectType.DOTNET_SERVICE; }
+    }
+
+    /** Kotlin/JVM service pinned to Java 21. / 固定到 Java 21 的 Kotlin/JVM 服务。 */
+    record KotlinService(String version, String artifactName, String entrypoint, HealthCheck healthCheck)
+            implements DeploymentRuntimeSpecification {
+        /** Creates an instance of this type. / 创建此类型的实例。 */
+        public KotlinService {
+            version = validateServiceVersion(version, "21"); artifactName = safeName(artifactName, "artifactName");
+            entrypoint = javaName(entrypoint, "entrypoint"); healthCheck = Objects.requireNonNull(healthCheck, "healthCheck");
+        }
+        /** Returns the supported deployment project type. / 返回支持的部署项目类型。 */
+        @Override public DeploymentProjectType projectType() { return DeploymentProjectType.KOTLIN_SERVICE; }
+    }
+
+    /** Composer-locked PHP HTTP service. / Composer 锁定的 PHP HTTP 服务。 */
+    record PhpService(String version, String artifactName, String entrypoint, int servicePort, HealthCheck healthCheck)
+            implements DeploymentRuntimeSpecification {
+        /** Creates an instance of this type. / 创建此类型的实例。 */
+        public PhpService {
+            version = validateServiceVersion(version, "8\\.(?:2|3|4)"); artifactName = safeName(artifactName, "artifactName");
+            entrypoint = relativePath(entrypoint, "entrypoint"); requireExact(artifactName, "public", "PHP document root");
+            requireExact(entrypoint, "public/index.php", "PHP router"); requirePort(servicePort);
+            healthCheck = Objects.requireNonNull(healthCheck, "healthCheck");
+        }
+        /** Returns the supported deployment project type. / 返回支持的部署项目类型。 */
+        @Override public DeploymentProjectType projectType() { return DeploymentProjectType.PHP_SERVICE; }
+    }
+
+    /** Bundler-locked Ruby Rack service. / Bundler 锁定的 Ruby Rack 服务。 */
+    record RubyService(String version, String artifactName, String entrypoint, int servicePort, HealthCheck healthCheck)
+            implements DeploymentRuntimeSpecification {
+        /** Creates an instance of this type. / 创建此类型的实例。 */
+        public RubyService {
+            version = validateServiceVersion(version, "3\\.(?:2|3|4)(?:\\.[0-9]+)?"); artifactName = safeName(artifactName, "artifactName");
+            entrypoint = relativePath(entrypoint, "entrypoint"); requireExact(artifactName, "bundle", "Ruby artifact");
+            requireExact(entrypoint, "config.ru", "Ruby entrypoint"); requirePort(servicePort);
+            healthCheck = Objects.requireNonNull(healthCheck, "healthCheck");
+        }
+        /** Returns the supported deployment project type. / 返回支持的部署项目类型。 */
+        @Override public DeploymentProjectType projectType() { return DeploymentProjectType.RUBY_SERVICE; }
     }
 
     /** Supported single-container engine model. / 受支持的单容器引擎模型。 */
-    enum ContainerEngine { /** Docker daemon. / Docker 守护进程。 */ DOCKER, /** Podman Quadlet. / Podman Quadlet。 */ PODMAN }
+    enum ContainerEngine { /** Docker daemon. / Docker 守护进程。 */ DOCKER, /** Podman Quadlet. / Podman Quadlet 单元定义。 */ PODMAN }
 
     /** Platform-managed volume that never targets a host root or arbitrary host path. / 绝不指向宿主根目录或任意宿主路径的平台受管卷。 */
     record ManagedVolume(String name, String containerPath, boolean readOnly) {
@@ -193,6 +240,14 @@ public sealed interface DeploymentRuntimeSpecification permits DeploymentRuntime
         value = Objects.requireNonNull(value, name).trim();
         if (!value.matches("[A-Za-z0-9][A-Za-z0-9._-]{0,127}")) {
             throw new IllegalArgumentException(name + " must be a bounded safe name");
+        }
+        return value;
+    }
+
+    private static String validateServiceVersion(String value, String pattern) {
+        value = Objects.requireNonNull(value, "version").trim();
+        if (!value.matches(pattern)) {
+            throw new IllegalArgumentException("version is not allowed for the selected service runtime");
         }
         return value;
     }

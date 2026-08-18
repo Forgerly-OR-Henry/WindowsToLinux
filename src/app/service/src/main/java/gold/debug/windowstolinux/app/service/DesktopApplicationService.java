@@ -9,7 +9,7 @@ import gold.debug.windowstolinux.app.service.ai.AiProviderProfile;
 import gold.debug.windowstolinux.app.service.ai.AiRoleAssignment;
 import gold.debug.windowstolinux.app.service.ai.AiUseCases;
 import gold.debug.windowstolinux.app.service.ai.ReadOnlyDeploymentAgentTools;
-import gold.debug.windowstolinux.app.service.concurrency.ServerOperationLocks;
+import gold.debug.windowstolinux.app.service.locking.ServerOperationLocks;
 import gold.debug.windowstolinux.app.service.config.DeploymentConfigurationUseCase;
 import gold.debug.windowstolinux.app.service.deployment.DeploymentOutcome;
 import gold.debug.windowstolinux.app.service.deployment.ReviewedDeploymentUseCase;
@@ -17,7 +17,7 @@ import gold.debug.windowstolinux.app.service.deployment.MultiComponentDeployment
 import gold.debug.windowstolinux.app.service.deployment.ManagedMultiComponentApplication;
 import gold.debug.windowstolinux.app.service.deployment.MultiComponentReviewInput;
 import gold.debug.windowstolinux.app.service.deployment.ReviewedMultiComponentApplication;
-import gold.debug.windowstolinux.app.service.environment.EnvironmentPreparationUseCase;
+import gold.debug.windowstolinux.app.service.environment.EnvironmentSetupUseCase;
 import gold.debug.windowstolinux.app.service.lifecycle.LifecycleOutcome;
 import gold.debug.windowstolinux.app.service.lifecycle.LifecycleUseCase;
 import gold.debug.windowstolinux.app.service.lifecycle.ManagedApplicationSummary;
@@ -34,25 +34,25 @@ import gold.debug.windowstolinux.app.windows.workspace.WindowsSourceWorkspace;
 import gold.debug.windowstolinux.shared.analyze.core.DeploymentAnalysisCoordinator;
 import gold.debug.windowstolinux.shared.ai.collaboration.AiRoleContext;
 import gold.debug.windowstolinux.shared.ai.collaboration.AiRoleInvocationResult;
-import gold.debug.windowstolinux.shared.deploy.environment.EnvironmentPreparationService;
-import gold.debug.windowstolinux.shared.deploy.plan.ReviewedDeploymentPlan;
-import gold.debug.windowstolinux.shared.deploy.plan.ReviewedDeploymentRequest;
+import gold.debug.windowstolinux.shared.deploy.environment.EnvironmentSetupService;
+import gold.debug.windowstolinux.shared.deploy.contract.ReviewedDeploymentPlan;
+import gold.debug.windowstolinux.shared.deploy.contract.ReviewedDeploymentRequest;
 import gold.debug.windowstolinux.shared.deploy.result.LifecycleActionResult;
 import gold.debug.windowstolinux.shared.deploy.result.MultiComponentDeploymentResult;
 import gold.debug.windowstolinux.shared.deploy.result.MultiComponentLifecycleResult;
 import gold.debug.windowstolinux.shared.deploy.lifecycle.MultiComponentLifecycleService;
-import gold.debug.windowstolinux.shared.deploy.plan.ApplicationHealthGate;
+import gold.debug.windowstolinux.shared.deploy.contract.ApplicationHealthGate;
 import gold.debug.windowstolinux.shared.deploy.transaction.ReviewedMultiComponentDeploymentService;
 import gold.debug.windowstolinux.shared.deploy.transaction.ReviewedDeploymentService;
 import gold.debug.windowstolinux.shared.linux.connection.DeploymentLinuxGateway;
 import gold.debug.windowstolinux.shared.linux.connection.HostKeyVerifier;
-import gold.debug.windowstolinux.shared.linux.connection.LinuxOperationException;
+import gold.debug.windowstolinux.shared.linux.error.LinuxOperationException;
 import gold.debug.windowstolinux.shared.linux.connection.SshCredential;
 import gold.debug.windowstolinux.shared.linux.connection.SshEndpoint;
 import gold.debug.windowstolinux.shared.model.deployment.BuildLimits;
 import gold.debug.windowstolinux.shared.model.analysis.DeploymentProjectAssessment;
 import gold.debug.windowstolinux.shared.model.project.DeploymentProjectType;
-import gold.debug.windowstolinux.shared.model.deployment.EnvironmentPreparationResult;
+import gold.debug.windowstolinux.shared.model.deployment.EnvironmentSetupResult;
 import gold.debug.windowstolinux.shared.model.health.HealthCheck;
 import gold.debug.windowstolinux.shared.model.health.UserAccessUrl;
 import gold.debug.windowstolinux.shared.model.lifecycle.LifecycleAction;
@@ -85,7 +85,7 @@ public final class DesktopApplicationService {
     private final AiUseCases ai;
     private final ReadOnlyDeploymentAgentTools deploymentAgentTools;
     private final DeploymentConfigurationUseCase deploymentConfiguration;
-    private final EnvironmentPreparationUseCase environment;
+    private final EnvironmentSetupUseCase environment;
     private final ReviewedDeploymentUseCase reviewedDeployment;
     private final MultiComponentDeploymentUseCase multiComponentDeployment;
     private final LifecycleUseCase lifecycle;
@@ -95,7 +95,7 @@ public final class DesktopApplicationService {
      *
      * <p>创建 {@code DesktopApplicationService} 实例。
      *
-     * @param database the {@code database} value / {@code database} 值
+     * @param persistence the {@code persistence} value / {@code persistence} 值
      * @param workDirectory the {@code workDirectory} value / {@code workDirectory} 值
      * @param linuxGateway the {@code linuxGateway} value / {@code linuxGateway} 值
      * @throws NullPointerException if a required argument is {@code null} / 必要参数为 {@code null} 时
@@ -111,8 +111,8 @@ public final class DesktopApplicationService {
         this.deploymentAgentTools = new ReadOnlyDeploymentAgentTools();
         this.deploymentConfiguration = new DeploymentConfigurationUseCase(
                 persistence.configurations(), persistence.applicationSecrets(), secrets);
-        this.environment = new EnvironmentPreparationUseCase(
-                new EnvironmentPreparationService(), linuxGateway, servers, locks);
+        this.environment = new EnvironmentSetupUseCase(
+                new EnvironmentSetupService(), linuxGateway, servers, locks);
         this.reviewedDeployment = new ReviewedDeploymentUseCase(persistence.managedApplications(),
                 persistence.applicationSecrets(), new ReviewedDeploymentService(), linuxGateway, servers, locks);
         this.multiComponentDeployment = new MultiComponentDeploymentUseCase(persistence.managedApplications(),
@@ -456,7 +456,7 @@ public final class DesktopApplicationService {
      * @throws SQLException if the operation cannot be completed / 无法完成操作时
      * @throws LinuxOperationException if the operation cannot be completed / 无法完成操作时
      */
-    public EnvironmentPreparationResult prepareEnvironmentWithStoredPassword(
+    public EnvironmentSetupResult prepareEnvironmentWithStoredPassword(
             ServerProfile profile, CredentialStorageMode mode, char[] masterPassword,
             Predicate<String> confirmation, boolean installationConfirmed)
             throws SecretStoreException, SQLException, LinuxOperationException {

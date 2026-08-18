@@ -18,8 +18,10 @@ public record ErrorExplanationRoleContext(String stepCode, String safeDiagnostic
         if (safeDiagnostic.isBlank()) safeDiagnostic = "Controlled operation failed without retained diagnostic text";
     }
 
+    /** Performs the {@code role} operation. / 执行 {@code role} 操作。 */
     @Override public AiCollaborationRole role() { return AiCollaborationRole.ERROR_EXPLANATION; }
 
+    /** Performs the {@code redactedSummary} operation. / 执行 {@code redactedSummary} 操作。 */
     @Override public String redactedSummary() { return "stepCode=" + stepCode + ";safeDiagnostic=" + safeDiagnostic; }
 
     private static String redact(String diagnostic) {

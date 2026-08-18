@@ -1,5 +1,8 @@
 package gold.debug.windowstolinux.shared.deploy.plan;
 
+import gold.debug.windowstolinux.shared.deploy.contract.DeploymentApproval;
+import gold.debug.windowstolinux.shared.deploy.contract.ReviewedDeploymentRequest;
+
 import gold.debug.windowstolinux.shared.config.definition.ConfigurationScope;
 import gold.debug.windowstolinux.shared.config.definition.ConfigurationValue;
 import gold.debug.windowstolinux.shared.config.revision.ConfigurationEntry;

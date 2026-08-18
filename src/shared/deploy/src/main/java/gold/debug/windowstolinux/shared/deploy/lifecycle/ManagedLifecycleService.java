@@ -3,9 +3,9 @@ package gold.debug.windowstolinux.shared.deploy.lifecycle;
 import gold.debug.windowstolinux.shared.deploy.result.LifecycleActionResult;
 
 import gold.debug.windowstolinux.shared.linux.connection.HostKeyVerifier;
-import gold.debug.windowstolinux.shared.linux.connection.LinuxOperationException;
+import gold.debug.windowstolinux.shared.linux.error.LinuxOperationException;
 import gold.debug.windowstolinux.shared.linux.connection.LinuxGateway;
-import gold.debug.windowstolinux.shared.linux.connection.LinuxRemoteSession;
+import gold.debug.windowstolinux.shared.linux.session.LinuxRemoteSession;
 import gold.debug.windowstolinux.shared.linux.connection.SshCredential;
 import gold.debug.windowstolinux.shared.linux.connection.SshEndpoint;
 import gold.debug.windowstolinux.shared.model.health.HealthCheck;

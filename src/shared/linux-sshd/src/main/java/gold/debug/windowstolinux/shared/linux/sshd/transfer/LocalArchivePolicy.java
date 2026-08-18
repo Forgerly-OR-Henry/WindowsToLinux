@@ -1,6 +1,6 @@
 package gold.debug.windowstolinux.shared.linux.sshd.transfer;
 
-import gold.debug.windowstolinux.shared.linux.connection.LinuxOperationException;
+import gold.debug.windowstolinux.shared.linux.error.LinuxOperationException;
 import gold.debug.windowstolinux.shared.model.archive.SourceArchiveDescriptor;
 
 import java.io.IOException;

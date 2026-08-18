@@ -100,6 +100,7 @@ public final class AiPageState implements AutoCloseable {
      */
     public String output() { return output; }
 
+    /** Closes this resource. / 关闭此资源。 */
     @Override public void close() {
         Arrays.fill(apiKey, '\0');
         Arrays.fill(masterPassword, '\0');

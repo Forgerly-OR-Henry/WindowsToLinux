@@ -104,6 +104,7 @@ final class GitCommandRunner {
             this.maximumBytes = maximumBytes;
         }
 
+        /** Performs the {@code run} operation. / 执行 {@code run} 操作。 */
         @Override
         public void run() {
             byte[] buffer = new byte[4096];

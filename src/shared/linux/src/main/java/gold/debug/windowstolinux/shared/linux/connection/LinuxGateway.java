@@ -1,5 +1,8 @@
 package gold.debug.windowstolinux.shared.linux.connection;
 
+import gold.debug.windowstolinux.shared.linux.error.LinuxOperationException;
+import gold.debug.windowstolinux.shared.linux.session.LinuxRemoteSession;
+
 /**
  * Opens one verified SSH session for the full deployment or lifecycle action.
  *

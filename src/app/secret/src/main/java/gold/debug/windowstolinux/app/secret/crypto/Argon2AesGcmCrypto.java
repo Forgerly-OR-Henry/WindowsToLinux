@@ -111,6 +111,7 @@ public final class Argon2AesGcmCrypto implements AutoCloseable {
         return copy;
     }
 
+    /** Closes this resource. / 关闭此资源。 */
     @Override
     public void close() {
         Arrays.fill(masterPassword, '\0');

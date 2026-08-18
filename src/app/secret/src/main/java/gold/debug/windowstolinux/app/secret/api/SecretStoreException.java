@@ -42,11 +42,13 @@ public final class SecretStoreException extends Exception implements LocalizedFa
         this(userMessage, diagnostic, null);
     }
 
+    /** Performs the {@code userMessage} operation. / 执行 {@code userMessage} 操作。 */
     @Override
     public LocalizedMessage userMessage() {
         return userMessage;
     }
 
+    /** Performs the {@code diagnostic} operation. / 执行 {@code diagnostic} 操作。 */
     @Override
     public String diagnostic() {
         return diagnostic;

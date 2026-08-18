@@ -61,6 +61,7 @@ public final class PageMessages {
     /** Installs a localized enum renderer. / 安装本地化枚举渲染器。 */
     public <T extends Enum<T>> void localize(JComboBox<T> comboBox, String prefix) {
         comboBox.setRenderer(new DefaultListCellRenderer() {
+            /** Performs the {@code getListCellRendererComponent} operation. / 执行 {@code getListCellRendererComponent} 操作。 */
             @Override
             public Component getListCellRendererComponent(javax.swing.JList<?> list, Object value, int index,
                                                            boolean selected, boolean focus) {

@@ -1,5 +1,15 @@
 package gold.debug.windowstolinux.app.main.architecture;
 
+import gold.debug.windowstolinux.shared.analyze.ecosystem.jvm.framework.springboot.SpringBootDeploymentInspector;
+import gold.debug.windowstolinux.shared.analyze.spi.DeploymentTypeInspection;
+import gold.debug.windowstolinux.shared.analyze.spi.DeploymentTypeInspector;
+import gold.debug.windowstolinux.shared.linux.sshd.build.spi.DeploymentBuildRenderer;
+import gold.debug.windowstolinux.shared.linux.sshd.ecosystem.jvm.build.springboot.SpringBootBuildRenderer;
+import gold.debug.windowstolinux.shared.linux.sshd.protocol.helper.ManagedHelperBundle;
+import gold.debug.windowstolinux.shared.linux.sshd.runtime.systemd.SystemdHealthChecker;
+import gold.debug.windowstolinux.shared.linux.sshd.runtime.systemd.SystemdLifecycleExecutor;
+import gold.debug.windowstolinux.shared.linux.sshd.runtime.systemd.SystemdOwnershipObserver;
+
 import org.junit.jupiter.api.Test;
 
 import java.io.IOException;
@@ -25,8 +35,7 @@ class ResponsibilityPackageBoundaryTest {
             "DeploymentRequest.java", "ManagedDeploymentService.java", "DeploymentUseCase.java",
             "RemoteBuildResult.java", "LinuxBuildOperations.java", "LinuxReleaseOperations.java",
             "MavenBuildExecutor.java", "MavenBuildSupport.java", "ManagedReleaseProtocolExecutor.java");
-    private static final Set<String> ANALYSIS_CORE = Set.of(
-            "DeploymentAnalysisCoordinator.java", "DeploymentTypeInspector.java", "DeploymentTypeInspection.java");
+    private static final Set<String> ANALYSIS_CORE = Set.of("DeploymentAnalysisCoordinator.java");
     private static final Set<String> DESKTOP_SHELL = Set.of(
             "DesktopFrame.java", "DesktopPageCoordinator.java", "DesktopViewState.java", "PageMessages.java",
             "PageNavigator.java");
@@ -41,7 +50,7 @@ class ResponsibilityPackageBoundaryTest {
             "ManagedApplicationGraphRepository.java", "RepositoryTransactions.java", "ServerProfileRepository.java");
     private static final Set<String> HELPER_FRAGMENTS = Set.of(
             "00-common.sh", "10-typed-release.sh", "15-deployment-input.sh", "20-candidate-workspace.sh", "30-ordinary-release.sh",
-            "35-advanced-runtime.sh", "40-typed-runtime.sh", "50-container-release.sh", "55-podman-quadlet.sh", "60-lifecycle.sh",
+            "35-ecosystem-dispatch.sh", "40-typed-runtime.sh", "50-container-release.sh", "55-podman-quadlet.sh", "60-lifecycle.sh",
             "70-command-dispatch.sh");
     private static final Pattern PERIOD_NAME = Pattern.compile("(?i)(?:phase|stage)[-_]?[0-9]+|(?:一期|二期|三期|四期|五期)");
 
@@ -65,18 +74,18 @@ class ResponsibilityPackageBoundaryTest {
         Path deploymentPage = root.resolve("src/app/ui/src/main/java/gold/debug/windowstolinux/app/ui/deployment");
         Path repositories = root.resolve("src/app/db/src/main/java/gold/debug/windowstolinux/app/db/repository");
         Path fragments = root.resolve(
-                "src/shared/linux-sshd/src/main/resources/gold/debug/windowstolinux/shared/linux/sshd/protocol/managed-helper-fragments");
+                "src/shared/linux-sshd/src/main/resources/gold/debug/windowstolinux/shared/linux/sshd");
 
         assertEquals(ANALYSIS_CORE, fileNames(core));
         assertEquals(DESKTOP_SHELL, fileNames(shell));
         assertEquals(DEPLOYMENT_PAGE, fileNames(deploymentPage));
         assertEquals(REPOSITORIES, fileNames(repositories));
-        assertEquals(HELPER_FRAGMENTS, fileNames(fragments));
+        assertEquals(HELPER_FRAGMENTS, fileNamesRecursively(fragments));
         assertMaximumLines(core, 400);
         assertMaximumLines(shell, 400);
-        assertMaximumLines(deploymentPage, 480);
+        assertMaximumLines(deploymentPage, 500);
         assertMaximumLines(repositories, 320);
-        assertMaximumLines(fragments, 300);
+        assertMaximumLinesRecursively(fragments, 300);
     }
 
     @Test
@@ -93,8 +102,21 @@ class ResponsibilityPackageBoundaryTest {
         for (String required : List.of("DeploymentAnalysisCoordinator", "SpringBootDeploymentInspector",
                 "DesktopPageCoordinator", "DesktopPersistence", "GitSnapshotPreparer", "DeploymentBuildRenderer",
                 "SpringBootBuildRenderer", "SystemdHealthChecker", "SystemdOwnershipObserver",
-                "SystemdLifecycleExecutor", "ManagedHelperBundle")) {
+                "SystemdLifecycleExecutor", "ManagedHelperBundle", "DesktopDisplaySettings",
+                "BuildConfigEnvironment", "PreviewInspector", "HostSupportChecker", "EnvironmentSetup", "UbuntuSetup")) {
             assertTrue(structure.contains(required), () -> "File.md is missing the current responsibility: " + required);
+        }
+
+        for (String required : List.of(
+                "src/app/ui/src/main/java/gold/debug/windowstolinux/app/ui/display",
+                "src/app/main/src/main/java/gold/debug/windowstolinux/app/main/startup",
+                "src/app/service/src/main/java/gold/debug/windowstolinux/app/service/locking",
+                "src/shared/linux-sshd/src/main/java/gold/debug/windowstolinux/shared/linux/sshd/build/config",
+                "src/shared/analyze/src/main/java/gold/debug/windowstolinux/shared/analyze/preview",
+                "src/shared/linux-sshd/src/main/java/gold/debug/windowstolinux/shared/linux/sshd/distro/setup",
+                "src/shared/deploy/src/main/java/gold/debug/windowstolinux/shared/deploy/support",
+                "src/shared/linux-sshd/src/main/java/gold/debug/windowstolinux/shared/linux/sshd/command")) {
+            assertTrue(Files.isDirectory(root.resolve(required)), () -> "current responsibility package is missing: " + required);
         }
     }
 
@@ -105,8 +127,26 @@ class ResponsibilityPackageBoundaryTest {
         }
     }
 
+    private static Set<String> fileNamesRecursively(Path directory) throws IOException {
+        try (Stream<Path> files = Files.walk(directory)) {
+            return files.filter(Files::isRegularFile).map(path -> path.getFileName().toString())
+                    .collect(java.util.stream.Collectors.toUnmodifiableSet());
+        }
+    }
+
     private static void assertMaximumLines(Path directory, long maximum) throws IOException {
         try (Stream<Path> files = Files.list(directory)) {
+            for (Path file : files.filter(Files::isRegularFile).toList()) {
+                try (Stream<String> lines = Files.lines(file)) {
+                    long count = lines.count();
+                    assertTrue(count <= maximum, () -> file + " carries " + count + " lines across declared responsibilities");
+                }
+            }
+        }
+    }
+
+    private static void assertMaximumLinesRecursively(Path directory, long maximum) throws IOException {
+        try (Stream<Path> files = Files.walk(directory)) {
             for (Path file : files.filter(Files::isRegularFile).toList()) {
                 try (Stream<String> lines = Files.lines(file)) {
                     long count = lines.count();

@@ -30,8 +30,10 @@ public record DeploymentRiskRoleContext(
         if (componentIds.isEmpty()) throw new IllegalArgumentException("componentIds cannot be empty");
     }
 
+    /** Performs the {@code role} operation. / 执行 {@code role} 操作。 */
     @Override public AiCollaborationRole role() { return AiCollaborationRole.DEPLOYMENT_RISK_REVIEW; }
 
+    /** Performs the {@code redactedSummary} operation. / 执行 {@code redactedSummary} 操作。 */
     @Override public String redactedSummary() {
         return "applicationId=" + applicationId + ";releaseIdentity=" + releaseIdentity + ";distribution="
                 + distribution + ";distributionVersion=" + distributionVersion + ";architecture=" + architecture

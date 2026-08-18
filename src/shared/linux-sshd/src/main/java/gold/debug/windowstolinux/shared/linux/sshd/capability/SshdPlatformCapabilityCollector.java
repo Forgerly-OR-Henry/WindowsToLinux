@@ -1,8 +1,8 @@
 package gold.debug.windowstolinux.shared.linux.sshd.capability;
 
 import gold.debug.windowstolinux.shared.linux.capability.LinuxPlatformCapabilityOperations;
-import gold.debug.windowstolinux.shared.linux.connection.LinuxOperationException;
-import gold.debug.windowstolinux.shared.linux.sshd.connection.SshCommandExecutor;
+import gold.debug.windowstolinux.shared.linux.error.LinuxOperationException;
+import gold.debug.windowstolinux.shared.linux.sshd.command.SshCommandExecutor;
 import gold.debug.windowstolinux.shared.model.server.LinuxCapabilities;
 import gold.debug.windowstolinux.shared.model.server.CpuMicroarchitectureLevel;
 import gold.debug.windowstolinux.shared.model.server.LinuxDistro;
@@ -11,7 +11,8 @@ import gold.debug.windowstolinux.shared.model.server.LinuxFirewallState;
 import gold.debug.windowstolinux.shared.model.server.LinuxSecurityModule;
 import gold.debug.windowstolinux.shared.model.server.LinuxSecurityPosture;
 import gold.debug.windowstolinux.shared.model.server.LinuxSecurityState;
-import gold.debug.windowstolinux.shared.model.project.AdvancedRuntimeKind;
+import gold.debug.windowstolinux.shared.model.project.DeploymentProjectType;
+import gold.debug.windowstolinux.shared.linux.sshd.capability.probe.ManagedPlatformCapabilityProbe;
 
 import java.time.Duration;
 import java.util.Arrays;
@@ -42,9 +43,10 @@ public final class SshdPlatformCapabilityCollector implements LinuxPlatformCapab
         this.hostFingerprint = Objects.requireNonNull(hostFingerprint, "hostFingerprint");
     }
 
+    /** Performs the {@code collectDeploymentCapabilities} operation. / 执行 {@code collectDeploymentCapabilities} 操作。 */
     @Override
     public LinuxCapabilities collectDeploymentCapabilities() throws LinuxOperationException {
-        var result = collectReadOnly(PlatformCapabilityProbeScript.render());
+        var result = collectReadOnly(ManagedPlatformCapabilityProbe.render());
         if (!result.succeeded()) {
             throw LinuxOperationException.localized("linux.error.deploymentCapabilityCollectionFailed",
                     "Failed to collect typed deployment target capabilities: " + result.failureEvidence());
@@ -66,12 +68,12 @@ public final class SshdPlatformCapabilityCollector implements LinuxPlatformCapab
         Set<String> pythonVersions = Arrays.stream(values.getOrDefault("PYTHON_VERSIONS", "").split(","))
                 .map(String::trim).filter(value -> value.matches("3\\.(?:10|11|12|13)"))
                 .collect(Collectors.toUnmodifiableSet());
-        java.util.EnumMap<AdvancedRuntimeKind, Set<String>> advancedVersions =
-                new java.util.EnumMap<>(AdvancedRuntimeKind.class);
-        for (AdvancedRuntimeKind kind : AdvancedRuntimeKind.values()) {
-            String observed = values.getOrDefault("ADVANCED_" + kind.name(), "").trim();
-            if (kind.acceptsVersion(observed)) {
-                advancedVersions.put(kind, Set.of(observed));
+        java.util.EnumMap<DeploymentProjectType, Set<String>> serviceVersions =
+                new java.util.EnumMap<>(DeploymentProjectType.class);
+        for (DeploymentProjectType projectType : serviceProjectTypes()) {
+            String observed = values.getOrDefault("SERVICE_" + projectType.name().replace("_SERVICE", ""), "").trim();
+            if (validServiceVersion(projectType, observed)) {
+                serviceVersions.put(projectType, Set.of(observed));
             }
         }
         String architecture = normalized(values.getOrDefault("ARCH", "unknown"));
@@ -94,7 +96,7 @@ public final class SshdPlatformCapabilityCollector implements LinuxPlatformCapab
                 "1".equals(values.get("SYSTEMD")), "1".equals(values.get("DOCKER_CLIENT")),
                 "1".equals(values.get("PODMAN_CLIENT")), "1".equals(values.get("PODMAN_QUADLET")),
                 javaMajors, nodeMajors, "1".equals(values.get("NPM")), "1".equals(values.get("MAVEN")), pythonVersions,
-                "1".equals(values.get("PYTHON3")), advancedVersions, "1".equals(values.get("DOCKER_OPERATIONAL")),
+                "1".equals(values.get("PYTHON3")), serviceVersions, "1".equals(values.get("DOCKER_OPERATIONAL")),
                 "1".equals(values.get("PODMAN_OPERATIONAL")), cpuLevel, flags, security, evidence);
     }
 
@@ -199,5 +201,22 @@ public final class SshdPlatformCapabilityCollector implements LinuxPlatformCapab
     private static String normalized(String value) {
         value = Objects.requireNonNull(value, "value").trim().toLowerCase(Locale.ROOT);
         return value.isBlank() ? "unknown" : value;
+    }
+    private static java.util.Set<DeploymentProjectType> serviceProjectTypes() {
+        return java.util.EnumSet.of(DeploymentProjectType.GO_SERVICE, DeploymentProjectType.RUST_SERVICE,
+                DeploymentProjectType.DOTNET_SERVICE, DeploymentProjectType.KOTLIN_SERVICE,
+                DeploymentProjectType.PHP_SERVICE, DeploymentProjectType.RUBY_SERVICE);
+    }
+
+    private static boolean validServiceVersion(DeploymentProjectType projectType, String value) {
+        return switch (projectType) {
+            case GO_SERVICE -> value.matches("1\\.(?:22|23|24)");
+            case RUST_SERVICE -> value.matches("1\\.(?:7[5-9]|8[0-9]|9[0-9])(?:\\.[0-9]+)?");
+            case DOTNET_SERVICE -> value.matches("(?:8|9)\\.0(?:\\.[0-9]+)?");
+            case KOTLIN_SERVICE -> value.equals("21");
+            case PHP_SERVICE -> value.matches("8\\.(?:2|3|4)");
+            case RUBY_SERVICE -> value.matches("3\\.(?:2|3|4)(?:\\.[0-9]+)?");
+            default -> false;
+        };
     }
 }

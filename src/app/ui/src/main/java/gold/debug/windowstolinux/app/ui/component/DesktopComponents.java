@@ -1,7 +1,7 @@
 package gold.debug.windowstolinux.app.ui.component;
 
 import com.formdev.flatlaf.FlatClientProperties;
-import gold.debug.windowstolinux.app.ui.appearance.ThemePalette;
+import gold.debug.windowstolinux.app.ui.display.ThemePalette;
 
 import javax.swing.BorderFactory;
 import javax.swing.JButton;

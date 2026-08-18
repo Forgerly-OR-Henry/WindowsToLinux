@@ -1,6 +1,6 @@
 package gold.debug.windowstolinux.shared.linux.sshd.connection;
 
-import gold.debug.windowstolinux.shared.linux.connection.DeploymentRemoteSession;
+import gold.debug.windowstolinux.shared.linux.session.DeploymentRemoteSession;
 import gold.debug.windowstolinux.shared.linux.connection.HostKeyDecision;
 import gold.debug.windowstolinux.shared.linux.connection.SshCredential;
 import gold.debug.windowstolinux.shared.linux.connection.SshEndpoint;

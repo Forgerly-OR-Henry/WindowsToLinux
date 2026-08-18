@@ -1,18 +1,18 @@
 package gold.debug.windowstolinux.shared.deploy.transaction;
 
-import gold.debug.windowstolinux.shared.deploy.plan.ReviewedDeploymentRequest;
+import gold.debug.windowstolinux.shared.deploy.contract.ReviewedDeploymentRequest;
 import gold.debug.windowstolinux.shared.deploy.plan.ReviewedReleaseIdentity;
 import gold.debug.windowstolinux.shared.config.secretref.ResolvedSecretRevision;
 import gold.debug.windowstolinux.shared.config.revision.DeploymentInputManifest;
 import gold.debug.windowstolinux.shared.deploy.result.DeploymentEvent;
 import gold.debug.windowstolinux.shared.deploy.result.DeploymentResult;
-import gold.debug.windowstolinux.shared.deploy.compatibility.HostCompatibility;
-import gold.debug.windowstolinux.shared.deploy.compatibility.HostSupport;
+import gold.debug.windowstolinux.shared.deploy.support.HostSupportChecker;
+import gold.debug.windowstolinux.shared.deploy.support.HostSupport;
 import gold.debug.windowstolinux.shared.linux.build.DeploymentBuildResult;
 import gold.debug.windowstolinux.shared.linux.connection.DeploymentLinuxGateway;
-import gold.debug.windowstolinux.shared.linux.connection.DeploymentRemoteSession;
+import gold.debug.windowstolinux.shared.linux.session.DeploymentRemoteSession;
 import gold.debug.windowstolinux.shared.linux.connection.HostKeyVerifier;
-import gold.debug.windowstolinux.shared.linux.connection.LinuxOperationException;
+import gold.debug.windowstolinux.shared.linux.error.LinuxOperationException;
 import gold.debug.windowstolinux.shared.linux.connection.SshCredential;
 import gold.debug.windowstolinux.shared.linux.connection.SshEndpoint;
 import gold.debug.windowstolinux.shared.linux.protocol.ReleaseSnapshot;
@@ -107,7 +107,7 @@ public final class ReviewedDeploymentService {
             }
             events.add(new DeploymentEvent("target-capabilities", true,
                     "Target capabilities were collected before the reviewed deployment"));
-            HostCompatibility.Result typedCompatibility = HostCompatibility.evaluate(
+            HostSupportChecker.Result typedCompatibility = HostSupportChecker.evaluate(
                     session.collectDeploymentCapabilities(), request.facts(), request.runtime());
             events.add(new DeploymentEvent("typed-host-compatibility",
                     typedCompatibility.support() == HostSupport.READY_FOR_RUNTIME_VALIDATION,

@@ -14,7 +14,7 @@ import gold.debug.windowstolinux.shared.config.definition.ConfigurationScope;
 import gold.debug.windowstolinux.shared.config.definition.ConfigurationValue;
 import gold.debug.windowstolinux.shared.config.revision.ConfigurationEntry;
 import gold.debug.windowstolinux.shared.config.revision.ConfigurationSnapshot;
-import gold.debug.windowstolinux.shared.deploy.plan.ReviewedDeploymentRequest;
+import gold.debug.windowstolinux.shared.deploy.contract.ReviewedDeploymentRequest;
 import gold.debug.windowstolinux.shared.deploy.result.LifecycleActionResult;
 import gold.debug.windowstolinux.shared.model.deployment.BuildLimits;
 import gold.debug.windowstolinux.shared.model.security.CredentialStorageMode;
@@ -45,7 +45,7 @@ import gold.debug.windowstolinux.shared.model.project.DeploymentRuntimeSpecifica
 import gold.debug.windowstolinux.shared.model.project.SourceRevision;
 import gold.debug.windowstolinux.shared.linux.connection.HostKeyDecision;
 import gold.debug.windowstolinux.shared.linux.connection.DeploymentLinuxGateway;
-import gold.debug.windowstolinux.shared.linux.connection.DeploymentRemoteSession;
+import gold.debug.windowstolinux.shared.linux.session.DeploymentRemoteSession;
 import gold.debug.windowstolinux.shared.linux.connection.SshCredential;
 import gold.debug.windowstolinux.shared.linux.connection.SshEndpoint;
 import gold.debug.windowstolinux.shared.linux.connection.HostKeyVerifier;
@@ -417,6 +417,7 @@ class DesktopApplicationServiceTest {
         private final AtomicInteger connections = new AtomicInteger();
         private HealthCheck healthCheck;
 
+        /** Performs the {@code connect} operation. / 执行 {@code connect} 操作。 */
         @Override
         public DeploymentRemoteSession connect(SshEndpoint endpoint, SshCredential credential,
                                                HostKeyVerifier hostKeyVerifier) {

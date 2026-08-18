@@ -1,9 +1,9 @@
 package gold.debug.windowstolinux.app.ui.shell;
 
 import gold.debug.windowstolinux.app.ui.ai.AiPageState;
-import gold.debug.windowstolinux.app.ui.appearance.DesktopAppearance;
-import gold.debug.windowstolinux.app.ui.appearance.ThemeMode;
-import gold.debug.windowstolinux.app.ui.appearance.ThemePalette;
+import gold.debug.windowstolinux.app.ui.display.DesktopDisplaySettings;
+import gold.debug.windowstolinux.app.ui.display.ThemeMode;
+import gold.debug.windowstolinux.app.ui.display.ThemePalette;
 import gold.debug.windowstolinux.app.ui.component.DesktopComponents;
 import gold.debug.windowstolinux.app.ui.deployment.DeploymentPageState;
 import gold.debug.windowstolinux.app.ui.deployment.MultiComponentFormState;
@@ -91,7 +91,7 @@ class DesktopLanguageSwitchStateTest {
     private static DesktopViewState restoreAndCapture(String languageTag, DesktopViewState source) {
         AtomicReference<String> restoredPage = new AtomicReference<>("deployment");
         DesktopPageCoordinator pages = new DesktopPageCoordinator(null, null, MessageCatalog.forLanguageTag(languageTag),
-                new DesktopAppearance(languageTag, ThemeMode.LIGHT),
+                new DesktopDisplaySettings(languageTag, ThemeMode.LIGHT),
                 new DesktopComponents(ThemePalette.light()), (frame, appearance) -> { },
                 (page, titleKey, descriptionKey) -> restoredPage.set(page));
         pages.restoreViewState(source);

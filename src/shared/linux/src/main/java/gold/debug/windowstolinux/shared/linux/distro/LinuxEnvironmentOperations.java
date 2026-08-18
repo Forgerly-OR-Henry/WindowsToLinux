@@ -1,8 +1,8 @@
 package gold.debug.windowstolinux.shared.linux.distro;
 
-import gold.debug.windowstolinux.shared.linux.connection.LinuxOperationException;
-import gold.debug.windowstolinux.shared.model.deployment.EnvironmentPreparationApproval;
-import gold.debug.windowstolinux.shared.model.deployment.EnvironmentPreparationResult;
+import gold.debug.windowstolinux.shared.linux.error.LinuxOperationException;
+import gold.debug.windowstolinux.shared.model.deployment.EnvironmentSetupApproval;
+import gold.debug.windowstolinux.shared.model.deployment.EnvironmentSetupResult;
 
 /**
  * Distribution-aware environment preparation contract.
@@ -19,6 +19,6 @@ public interface LinuxEnvironmentOperations {
      * @return the operation result / 操作结果
      * @throws LinuxOperationException if the operation cannot be completed / 无法完成操作时
      */
-    EnvironmentPreparationResult prepareEnvironment(EnvironmentPreparationApproval approval)
+    EnvironmentSetupResult prepareEnvironment(EnvironmentSetupApproval approval)
             throws LinuxOperationException;
 }

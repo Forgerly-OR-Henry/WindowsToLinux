@@ -1,10 +1,10 @@
 package gold.debug.windowstolinux.shared.deploy.transaction;
 
 import gold.debug.windowstolinux.shared.config.revision.DeploymentInputManifest;
-import gold.debug.windowstolinux.shared.deploy.compatibility.HostCompatibility;
-import gold.debug.windowstolinux.shared.deploy.compatibility.HostSupport;
-import gold.debug.windowstolinux.shared.deploy.plan.ApplicationHealthGate;
-import gold.debug.windowstolinux.shared.deploy.plan.MultiComponentDeploymentPlan;
+import gold.debug.windowstolinux.shared.deploy.support.HostSupportChecker;
+import gold.debug.windowstolinux.shared.deploy.support.HostSupport;
+import gold.debug.windowstolinux.shared.deploy.contract.ApplicationHealthGate;
+import gold.debug.windowstolinux.shared.deploy.contract.MultiComponentDeploymentPlan;
 import gold.debug.windowstolinux.shared.deploy.plan.ReviewedReleaseIdentity;
 import gold.debug.windowstolinux.shared.deploy.result.ComponentDeploymentResult;
 import gold.debug.windowstolinux.shared.deploy.result.ComponentTransactionState;
@@ -12,9 +12,9 @@ import gold.debug.windowstolinux.shared.deploy.result.DeploymentEvent;
 import gold.debug.windowstolinux.shared.deploy.result.MultiComponentDeploymentResult;
 import gold.debug.windowstolinux.shared.linux.build.DeploymentBuildResult;
 import gold.debug.windowstolinux.shared.linux.connection.DeploymentLinuxGateway;
-import gold.debug.windowstolinux.shared.linux.connection.DeploymentRemoteSession;
+import gold.debug.windowstolinux.shared.linux.session.DeploymentRemoteSession;
 import gold.debug.windowstolinux.shared.linux.connection.HostKeyVerifier;
-import gold.debug.windowstolinux.shared.linux.connection.LinuxOperationException;
+import gold.debug.windowstolinux.shared.linux.error.LinuxOperationException;
 import gold.debug.windowstolinux.shared.linux.connection.SshCredential;
 import gold.debug.windowstolinux.shared.linux.connection.SshEndpoint;
 import gold.debug.windowstolinux.shared.linux.protocol.ManagedHelperProtocol;
@@ -111,7 +111,7 @@ public final class ReviewedMultiComponentDeploymentService {
         long requiredBytes = 0;
         for (String id : plan.startOrder()) {
             Context context = contexts.get(id);
-            HostCompatibility.Result compatibility = HostCompatibility.evaluate(
+            HostSupportChecker.Result compatibility = HostSupportChecker.evaluate(
                     capabilities, context.component.request().facts(), context.component.request().runtime());
             context.event("typed-host-compatibility",
                     compatibility.support() == HostSupport.READY_FOR_RUNTIME_VALIDATION,

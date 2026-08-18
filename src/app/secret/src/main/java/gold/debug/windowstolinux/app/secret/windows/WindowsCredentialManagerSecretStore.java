@@ -90,6 +90,7 @@ public final class WindowsCredentialManagerSecretStore implements SecretStore {
         }
     }
 
+    /** Performs the {@code save} operation. / 执行 {@code save} 操作。 */
     @Override
     public void save(String key, char[] value) throws SecretStoreException {
         validateKey(key);
@@ -107,6 +108,7 @@ public final class WindowsCredentialManagerSecretStore implements SecretStore {
         }
     }
 
+    /** Performs the {@code read} operation. / 执行 {@code read} 操作。 */
     @Override
     public Optional<char[]> read(String key) throws SecretStoreException {
         validateKey(key);
@@ -130,6 +132,7 @@ public final class WindowsCredentialManagerSecretStore implements SecretStore {
         }
     }
 
+    /** Closes this resource. / 关闭此资源。 */
     @Override
     public void close() {
         // Credential Manager owns its OS-protected persistence lifecycle. / Credential Manager 持有其受操作系统保护的持久化生命周期。
