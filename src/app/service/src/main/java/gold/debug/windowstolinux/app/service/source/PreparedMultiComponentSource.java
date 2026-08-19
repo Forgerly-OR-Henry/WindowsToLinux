@@ -1,6 +1,6 @@
 package gold.debug.windowstolinux.app.service.source;
 
-import gold.debug.windowstolinux.shared.model.analysis.DeploymentAdmission;
+import gold.debug.windowstolinux.shared.model.analysis.DeploymentAdmissionStatus;
 import gold.debug.windowstolinux.shared.model.assessment.MultiComponentProjectAssessment;
 
 import java.util.LinkedHashMap;
@@ -21,7 +21,7 @@ public record PreparedMultiComponentSource(
         components = java.util.Collections.unmodifiableMap(normalized);
         var expected = assessment.components().stream().filter(component -> component.runtime().isPresent())
                 .map(component -> component.componentId()).sorted().toList();
-        if (assessment.admission() == DeploymentAdmission.READY_FOR_PLANNING) {
+        if (assessment.admission() == DeploymentAdmissionStatus.READY_FOR_PLANNING) {
             if (!components.keySet().equals(new java.util.LinkedHashSet<>(expected))) {
                 throw new IllegalArgumentException("prepared component archives must exactly cover the admitted graph");
             }

@@ -1,8 +1,13 @@
 package gold.debug.windowstolinux.shared.analyze.registry;
 
-import gold.debug.windowstolinux.shared.analyze.ecosystem.ServiceDeploymentInspector;
-import gold.debug.windowstolinux.shared.analyze.ecosystem.jvm.SpringBootDeploymentInspector;
-import gold.debug.windowstolinux.shared.analyze.ecosystem.jvm.JavaJarDeploymentInspector;
+import gold.debug.windowstolinux.shared.analyze.ecosystem.dotnet.DotNetSdkDeploymentInspector;
+import gold.debug.windowstolinux.shared.analyze.ecosystem.go.GoModuleDeploymentInspector;
+import gold.debug.windowstolinux.shared.analyze.ecosystem.kotlin.KotlinGradleDeploymentInspector;
+import gold.debug.windowstolinux.shared.analyze.ecosystem.php.PhpComposerDeploymentInspector;
+import gold.debug.windowstolinux.shared.analyze.ecosystem.ruby.RubyBundlerDeploymentInspector;
+import gold.debug.windowstolinux.shared.analyze.ecosystem.rust.RustCargoDeploymentInspector;
+import gold.debug.windowstolinux.shared.analyze.ecosystem.java.SpringBootDeploymentInspector;
+import gold.debug.windowstolinux.shared.analyze.ecosystem.java.jar.JavaJarDeploymentInspector;
 import gold.debug.windowstolinux.shared.analyze.ecosystem.node.NodeServiceDeploymentInspector;
 import gold.debug.windowstolinux.shared.analyze.ecosystem.python.PythonServiceDeploymentInspector;
 import gold.debug.windowstolinux.shared.analyze.preview.PreviewInspector;
@@ -30,12 +35,9 @@ public final class DeploymentTypeInspectorRegistry {
                 new SpringBootDeploymentInspector(), new JavaJarDeploymentInspector(),
                 new NodeServiceDeploymentInspector(), new PythonServiceDeploymentInspector(),
                 new StaticWebDeploymentInspector(), new ContainerDeploymentInspector(),
-                new ServiceDeploymentInspector(DeploymentProjectType.GO_SERVICE),
-                new ServiceDeploymentInspector(DeploymentProjectType.RUST_SERVICE),
-                new ServiceDeploymentInspector(DeploymentProjectType.DOTNET_SERVICE),
-                new ServiceDeploymentInspector(DeploymentProjectType.KOTLIN_SERVICE),
-                new ServiceDeploymentInspector(DeploymentProjectType.PHP_SERVICE),
-                new ServiceDeploymentInspector(DeploymentProjectType.RUBY_SERVICE),
+                new GoModuleDeploymentInspector(), new RustCargoDeploymentInspector(),
+                new DotNetSdkDeploymentInspector(), new KotlinGradleDeploymentInspector(),
+                new PhpComposerDeploymentInspector(), new RubyBundlerDeploymentInspector(),
                 new PreviewInspector()));
     }
 

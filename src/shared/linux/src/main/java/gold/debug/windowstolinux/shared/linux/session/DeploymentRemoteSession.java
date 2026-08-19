@@ -9,14 +9,14 @@ import gold.debug.windowstolinux.shared.linux.protocol.ReleaseSnapshot;
 import gold.debug.windowstolinux.shared.linux.protocol.RemoteStepResult;
 import gold.debug.windowstolinux.shared.linux.runtime.HealthCheckResult;
 import gold.debug.windowstolinux.shared.linux.transfer.RemoteWorkspace;
-import gold.debug.windowstolinux.shared.model.deployment.BuildLimits;
+import gold.debug.windowstolinux.shared.model.deployment.BuildLimitConfiguration;
 import gold.debug.windowstolinux.shared.model.health.HealthCheck;
 import gold.debug.windowstolinux.shared.model.lifecycle.LifecycleObservation;
 import gold.debug.windowstolinux.shared.model.lifecycle.LifecycleAction;
 import gold.debug.windowstolinux.shared.model.managed.ManagedApplication;
 import gold.debug.windowstolinux.shared.model.project.DeploymentProjectFacts;
 import gold.debug.windowstolinux.shared.model.project.DeploymentRuntimeSpecification;
-import gold.debug.windowstolinux.shared.model.capability.LinuxCapabilities;
+import gold.debug.windowstolinux.shared.model.capability.LinuxCapabilityFacts;
 
 import java.util.List;
 
@@ -27,11 +27,11 @@ import java.util.List;
  */
 public interface DeploymentRemoteSession extends LinuxRemoteSession {
     /** Collects distribution and container facts before one typed deployment. / 在类型化部署前采集发行版和容器事实。 */
-    LinuxCapabilities collectDeploymentCapabilities() throws LinuxOperationException;
+    LinuxCapabilityFacts collectDeploymentCapabilities() throws LinuxOperationException;
 
     /** Builds one analyzed typed deployment candidate. / 构建一个已分析的部署候选版本。 */
     DeploymentBuildResult buildDeployment(DeploymentProjectFacts facts, DeploymentRuntimeSpecification runtime,
-                                      RemoteWorkspace workspace, BuildLimits limits, ConfigurationSnapshot configuration)
+                                      RemoteWorkspace workspace, BuildLimitConfiguration limits, ConfigurationSnapshot configuration)
             throws LinuxOperationException;
 
     /** Seals reviewed runtime configuration and exact secret revisions outside release trees. / 在发布树之外封存经审阅的运行时配置与精确秘密修订。 */

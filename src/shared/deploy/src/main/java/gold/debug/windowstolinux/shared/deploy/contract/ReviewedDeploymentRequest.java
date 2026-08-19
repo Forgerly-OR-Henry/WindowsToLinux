@@ -3,7 +3,7 @@ package gold.debug.windowstolinux.shared.deploy.contract;
 import gold.debug.windowstolinux.shared.config.revision.ConfigurationSnapshot;
 import gold.debug.windowstolinux.shared.config.secretref.SecretReference;
 import gold.debug.windowstolinux.shared.model.archive.SourceArchiveDescriptor;
-import gold.debug.windowstolinux.shared.model.deployment.BuildLimits;
+import gold.debug.windowstolinux.shared.model.deployment.BuildLimitConfiguration;
 import gold.debug.windowstolinux.shared.model.health.UserAccessUrl;
 import gold.debug.windowstolinux.shared.model.project.DeploymentProjectFacts;
 import gold.debug.windowstolinux.shared.model.project.DeploymentRuntimeSpecification;
@@ -41,7 +41,7 @@ public record ReviewedDeploymentRequest(
         List<SecretReference> secretReferences,
         DeploymentRuntimeSpecification runtime,
         Optional<UserAccessUrl> userAccessUrl,
-        BuildLimits limits,
+        BuildLimitConfiguration limits,
         DeploymentApproval approval,
         boolean containerDaemonRiskAccepted,
         boolean experimentalAdapterRiskAccepted
@@ -83,7 +83,7 @@ public record ReviewedDeploymentRequest(
             throw new IllegalArgumentException("root-build approval must match the requested build mode");
         }
         if (runtime instanceof DeploymentRuntimeSpecification.Container container
-                && container.engine() == DeploymentRuntimeSpecification.ContainerEngine.DOCKER && !containerDaemonRiskAccepted) {
+                && container.engine() == DeploymentRuntimeSpecification.ContainerEngineType.DOCKER && !containerDaemonRiskAccepted) {
             throw new IllegalArgumentException("Docker deployments require a fresh explicit daemon-risk approval");
         }
         if (facts.support().level()
@@ -111,7 +111,7 @@ public record ReviewedDeploymentRequest(
             List<SecretReference> secretReferences,
             DeploymentRuntimeSpecification runtime,
             Optional<UserAccessUrl> userAccessUrl,
-            BuildLimits limits,
+            BuildLimitConfiguration limits,
             DeploymentApproval approval,
             boolean containerDaemonRiskAccepted
     ) {

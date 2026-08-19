@@ -18,7 +18,7 @@ class ContainerProtocolContractTest {
     @Test
     void rendersDeterministicEnginePortsAndNamedVolumesOnly() {
         DeploymentRuntimeSpecification.Container runtime = new DeploymentRuntimeSpecification.Container(
-                DeploymentRuntimeSpecification.ContainerEngine.PODMAN, Map.of(9000, 9001, 8080, 8081),
+                DeploymentRuntimeSpecification.ContainerEngineType.PODMAN, Map.of(9000, 9001, 8080, 8081),
                 List.of(new DeploymentRuntimeSpecification.ManagedVolume("windowstolinux-demo-cache", "/cache", true),
                         new DeploymentRuntimeSpecification.ManagedVolume("windowstolinux-demo-data", "/data", false)),
                 new HealthCheck.Tcp(8080, 5, 1));

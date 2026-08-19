@@ -2,21 +2,27 @@ package gold.debug.windowstolinux.shared.linux.sshd.build;
 
 import gold.debug.windowstolinux.shared.linux.sshd.build.script.SafeBuildScriptEnvelope;
 import gold.debug.windowstolinux.shared.linux.sshd.build.spi.DeploymentBuildRenderer;
-import gold.debug.windowstolinux.shared.linux.sshd.build.renderer.JavaJarBuildRenderer;
-import gold.debug.windowstolinux.shared.linux.sshd.build.renderer.SpringBootBuildRenderer;
-import gold.debug.windowstolinux.shared.linux.sshd.build.renderer.NodeBuildRenderer;
-import gold.debug.windowstolinux.shared.linux.sshd.build.renderer.PythonBuildRenderer;
-import gold.debug.windowstolinux.shared.linux.sshd.build.renderer.ServiceBuildRenderer;
-import gold.debug.windowstolinux.shared.linux.sshd.build.renderer.ContainerBuildRenderer;
-import gold.debug.windowstolinux.shared.linux.sshd.build.renderer.StaticSiteBuildRenderer;
+import gold.debug.windowstolinux.shared.linux.sshd.build.ecosystem.BundlerBuildRenderer;
+import gold.debug.windowstolinux.shared.linux.sshd.build.ecosystem.CargoBuildRenderer;
+import gold.debug.windowstolinux.shared.linux.sshd.build.ecosystem.ComposerBuildRenderer;
+import gold.debug.windowstolinux.shared.linux.sshd.build.ecosystem.DotNetSdkBuildRenderer;
+import gold.debug.windowstolinux.shared.linux.sshd.build.ecosystem.GoBuildRenderer;
+import gold.debug.windowstolinux.shared.linux.sshd.build.ecosystem.KotlinGradleBuildRenderer;
+import gold.debug.windowstolinux.shared.linux.sshd.build.ecosystem.java.JavaJarBuildRenderer;
+import gold.debug.windowstolinux.shared.linux.sshd.build.ecosystem.java.SpringBootBuildRenderer;
+import gold.debug.windowstolinux.shared.linux.sshd.build.ecosystem.node.NodeBuildRenderer;
+import gold.debug.windowstolinux.shared.linux.sshd.build.ecosystem.python.PythonBuildRenderer;
+import gold.debug.windowstolinux.shared.linux.sshd.build.registry.DeploymentBuildRendererRegistry;
+import gold.debug.windowstolinux.shared.linux.sshd.build.workload.ContainerBuildRenderer;
+import gold.debug.windowstolinux.shared.linux.sshd.build.workload.StaticSiteBuildRenderer;
 
 import gold.debug.windowstolinux.shared.linux.transfer.RemoteWorkspace;
 import gold.debug.windowstolinux.shared.model.analysis.AnalysisEvidence;
-import gold.debug.windowstolinux.shared.model.analysis.EvidenceConfidence;
-import gold.debug.windowstolinux.shared.model.deployment.BuildLimits;
+import gold.debug.windowstolinux.shared.model.analysis.EvidenceConfidenceLevel;
+import gold.debug.windowstolinux.shared.model.deployment.BuildLimitConfiguration;
 import gold.debug.windowstolinux.shared.model.health.HealthCheck;
 import gold.debug.windowstolinux.shared.model.message.LocalizedMessage;
-import gold.debug.windowstolinux.shared.model.project.DeploymentBuildTool;
+import gold.debug.windowstolinux.shared.model.project.DeploymentBuildToolType;
 import gold.debug.windowstolinux.shared.model.project.DeploymentProjectFacts;
 import gold.debug.windowstolinux.shared.model.project.DeploymentProjectType;
 import gold.debug.windowstolinux.shared.model.project.DeploymentRuntimeSpecification;
@@ -41,35 +47,35 @@ class DeploymentBuildRendererTest {
 
     @Test
     void rendersAllTwelveTypesThroughTheirFixedEntrypoints() {
-        assertTrue(render(new SpringBootBuildRenderer(), DeploymentBuildTool.GRADLE_WRAPPER,
+        assertTrue(render(new SpringBootBuildRenderer(), DeploymentBuildToolType.GRADLE_WRAPPER,
                 new DeploymentRuntimeSpecification.SpringBoot(TCP)).contains("./gradlew --no-daemon -x test bootJar"));
-        assertTrue(render(new JavaJarBuildRenderer(), DeploymentBuildTool.JAVA,
+        assertTrue(render(new JavaJarBuildRenderer(), DeploymentBuildToolType.JAVA,
                 new DeploymentRuntimeSpecification.JavaJar("server.jar", "demo.Main", "21", List.of(), List.of(), TCP))
                 .contains("test -f \"$artifact\""));
-        String node = render(new NodeBuildRenderer(), DeploymentBuildTool.PNPM,
+        String node = render(new NodeBuildRenderer(), DeploymentBuildToolType.PNPM,
                 new DeploymentRuntimeSpecification.NodeService(22, TCP));
         assertTrue(node.contains("uniq -d"));
         assertTrue(node.contains("pnpm install --frozen-lockfile --ignore-scripts"));
         assertTrue(node.contains("node --version | grep -Eq '^v22\\.'"));
         assertFalse(node.contains("run npm run build"));
-        String python = render(new PythonBuildRenderer(), DeploymentBuildTool.PYTHON_VENV,
+        String python = render(new PythonBuildRenderer(), DeploymentBuildToolType.PYTHON_VENV,
                 new DeploymentRuntimeSpecification.PythonService("3.12", "demo.main", TCP));
         assertTrue(python.contains("'python3.12' -m venv --copies ./.venv"));
         assertTrue(python.contains("pip install --disable-pip-version-check --require-hashes"));
-        assertTrue(render(new StaticSiteBuildRenderer(), DeploymentBuildTool.STATIC_SITE_BUILD,
+        assertTrue(render(new StaticSiteBuildRenderer(), DeploymentBuildToolType.STATIC_SITE_BUILD,
                 new DeploymentRuntimeSpecification.StaticSite("public", HTTP)).contains("test -d './public'"));
-        assertTrue(render(new ContainerBuildRenderer(), DeploymentBuildTool.CONTAINER_BUILD,
-                new DeploymentRuntimeSpecification.Container(DeploymentRuntimeSpecification.ContainerEngine.PODMAN,
+        assertTrue(render(new ContainerBuildRenderer(), DeploymentBuildToolType.CONTAINER_BUILD,
+                new DeploymentRuntimeSpecification.Container(DeploymentRuntimeSpecification.ContainerEngineType.PODMAN,
                         Map.of(8080, 8080), List.of(), TCP)).contains("build --pull=true"));
-        assertTrue(service(DeploymentProjectType.GO_SERVICE, DeploymentBuildTool.GO_MODULE, "1.24", "w2l-app",
+        assertTrue(service(DeploymentProjectType.GO_SERVICE, DeploymentBuildToolType.GO_MODULE, "1.24", "w2l-app",
                 "main.go", OptionalInt.empty()).contains("go build -mod=readonly"));
-        assertTrue(service(DeploymentProjectType.RUST_SERVICE, DeploymentBuildTool.CARGO_LOCKED, "1.89.0", "demo",
+        assertTrue(service(DeploymentProjectType.RUST_SERVICE, DeploymentBuildToolType.CARGO_LOCKED, "1.89.0", "demo",
                 "src/main.rs", OptionalInt.empty()).contains("cargo build --locked --release"));
-        String dotnet = service(DeploymentProjectType.DOTNET_SERVICE, DeploymentBuildTool.DOTNET_LOCKED, "8.0.408", "Demo",
+        String dotnet = service(DeploymentProjectType.DOTNET_SERVICE, DeploymentBuildToolType.DOTNET_LOCKED, "8.0.408", "Demo",
                 "Demo.dll", OptionalInt.empty());
         assertTrue(dotnet.contains("dotnet restore --locked-mode"));
         assertTrue(dotnet.contains("DOTNET_GCHeapHardLimit=0x40000000"));
-        String kotlin = service(DeploymentProjectType.KOTLIN_SERVICE, DeploymentBuildTool.GRADLE_KOTLIN_WRAPPER, "21", "demo",
+        String kotlin = service(DeploymentProjectType.KOTLIN_SERVICE, DeploymentBuildToolType.GRADLE_KOTLIN_WRAPPER, "21", "demo",
                 "demo.MainKt", OptionalInt.empty());
         assertTrue(kotlin.contains("retry_run 3 ./gradlew --no-daemon --version"));
         assertTrue(kotlin.contains("https://services.gradle.org/distributions/*|https://downloads.gradle.org/distributions/*"));
@@ -83,9 +89,9 @@ class DeploymentBuildRendererTest {
         assertTrue(kotlin.contains("--no-daemon installDist"));
         assertTrue(kotlin.contains("-Xmx768m"));
         assertFalse(kotlin.contains("--offline"));
-        assertTrue(service(DeploymentProjectType.PHP_SERVICE, DeploymentBuildTool.COMPOSER_LOCKED, "8.3", "public",
+        assertTrue(service(DeploymentProjectType.PHP_SERVICE, DeploymentBuildToolType.COMPOSER_LOCKED, "8.3", "public",
                 "public/index.php", OptionalInt.of(8080)).contains("--no-plugins --no-scripts"));
-        String ruby = service(DeploymentProjectType.RUBY_SERVICE, DeploymentBuildTool.BUNDLER_LOCKED, "3.3.5", "bundle",
+        String ruby = service(DeploymentProjectType.RUBY_SERVICE, DeploymentBuildToolType.BUNDLER_LOCKED, "3.3.5", "bundle",
                 "config.ru", OptionalInt.of(8080));
         assertTrue(ruby.contains("bundle install --jobs 1 --retry 0"));
         assertTrue(ruby.contains("require \"rack\"; require \"webrick\""));
@@ -94,9 +100,9 @@ class DeploymentBuildRendererTest {
     @Test
     void rendersAllThreeSpringBootBuildToolsAndOneSupportedExecutableJarCheck() {
         var runtime = new DeploymentRuntimeSpecification.SpringBoot(TCP);
-        String gradle = render(new SpringBootBuildRenderer(), DeploymentBuildTool.GRADLE_WRAPPER, runtime);
-        String wrapper = render(new SpringBootBuildRenderer(), DeploymentBuildTool.MAVEN_WRAPPER, runtime);
-        String maven = render(new SpringBootBuildRenderer(), DeploymentBuildTool.MAVEN, runtime);
+        String gradle = render(new SpringBootBuildRenderer(), DeploymentBuildToolType.GRADLE_WRAPPER, runtime);
+        String wrapper = render(new SpringBootBuildRenderer(), DeploymentBuildToolType.MAVEN_WRAPPER, runtime);
+        String maven = render(new SpringBootBuildRenderer(), DeploymentBuildToolType.MAVEN, runtime);
 
         assertTrue(gradle.contains("./gradlew --no-daemon -x test bootJar"));
         assertTrue(wrapper.contains("./mvnw -B -DskipTests package"));
@@ -114,23 +120,23 @@ class DeploymentBuildRendererTest {
 
     @Test
     void requiresAnExplicitNodeMajorOnlyForBuiltStaticSites() {
-        String built = render(new StaticSiteBuildRenderer(), DeploymentBuildTool.NPM,
+        String built = render(new StaticSiteBuildRenderer(), DeploymentBuildToolType.NPM,
                 new DeploymentRuntimeSpecification.StaticSite("dist", OptionalInt.of(20), HTTP));
         assertTrue(built.contains("node --version | grep -Eq '^v20\\.'"));
-        assertThrows(IllegalArgumentException.class, () -> render(new StaticSiteBuildRenderer(), DeploymentBuildTool.NPM,
+        assertThrows(IllegalArgumentException.class, () -> render(new StaticSiteBuildRenderer(), DeploymentBuildToolType.NPM,
                 new DeploymentRuntimeSpecification.StaticSite("dist", HTTP)));
         assertThrows(IllegalArgumentException.class, () -> render(new StaticSiteBuildRenderer(),
-                DeploymentBuildTool.STATIC_SITE_BUILD,
+                DeploymentBuildToolType.STATIC_SITE_BUILD,
                 new DeploymentRuntimeSpecification.StaticSite("public", OptionalInt.of(20), HTTP)));
     }
 
     @Test
     void rejectsRuntimeAndBuildToolMismatchesBeforeRendering() {
-        assertThrows(IllegalArgumentException.class, () -> render(new NodeBuildRenderer(), DeploymentBuildTool.NPM,
+        assertThrows(IllegalArgumentException.class, () -> render(new NodeBuildRenderer(), DeploymentBuildToolType.NPM,
                 new DeploymentRuntimeSpecification.PythonService("3.12", "demo.main", TCP)));
-        assertThrows(IllegalArgumentException.class, () -> render(new NodeBuildRenderer(), DeploymentBuildTool.PYTHON_VENV,
+        assertThrows(IllegalArgumentException.class, () -> render(new NodeBuildRenderer(), DeploymentBuildToolType.PYTHON_VENV,
                 new DeploymentRuntimeSpecification.NodeService(20, TCP)));
-        assertThrows(IllegalArgumentException.class, () -> render(new JavaJarBuildRenderer(), DeploymentBuildTool.NPM,
+        assertThrows(IllegalArgumentException.class, () -> render(new JavaJarBuildRenderer(), DeploymentBuildToolType.NPM,
                 new DeploymentRuntimeSpecification.JavaJar("server.jar", "demo.Main", "21", List.of(), List.of(), TCP)));
     }
 
@@ -157,21 +163,33 @@ class DeploymentBuildRendererTest {
                 complete.subList(0, complete.size() - 1)));
     }
 
-    private String render(DeploymentBuildRenderer renderer, DeploymentBuildTool tool,
+    private String render(DeploymentBuildRenderer renderer, DeploymentBuildToolType tool,
                           DeploymentRuntimeSpecification runtime) {
         return renderer.render(facts(renderer.projectType(), tool), runtime, new RemoteWorkspace("demo", SHA),
-                BuildLimits.defaultNonRoot());
+                BuildLimitConfiguration.defaultNonRoot());
     }
 
-    private DeploymentProjectFacts facts(DeploymentProjectType type, DeploymentBuildTool tool) {
+    private DeploymentProjectFacts facts(DeploymentProjectType type, DeploymentBuildToolType tool) {
         return new DeploymentProjectFacts(temporaryDirectory, "demo", type, tool,
                 List.of(new AnalysisEvidence(LocalizedMessage.of("test.evidence"), "fixture",
-                        LocalizedMessage.of("test.detected"), EvidenceConfidence.HIGH)), List.of(), List.of());
+                        LocalizedMessage.of("test.detected"), EvidenceConfidenceLevel.HIGH)), List.of(), List.of());
     }
 
-    private String service(DeploymentProjectType type, DeploymentBuildTool tool, String version,
+    private String service(DeploymentProjectType type, DeploymentBuildToolType tool, String version,
                             String artifact, String entrypoint, OptionalInt port) {
-        return render(new ServiceBuildRenderer(type), tool, runtime(type, version, artifact, entrypoint, port));
+        return render(serviceRenderer(type), tool, runtime(type, version, artifact, entrypoint, port));
+    }
+
+    private static DeploymentBuildRenderer serviceRenderer(DeploymentProjectType type) {
+        return switch (type) {
+            case GO_SERVICE -> new GoBuildRenderer();
+            case RUST_SERVICE -> new CargoBuildRenderer();
+            case DOTNET_SERVICE -> new DotNetSdkBuildRenderer();
+            case KOTLIN_SERVICE -> new KotlinGradleBuildRenderer();
+            case PHP_SERVICE -> new ComposerBuildRenderer();
+            case RUBY_SERVICE -> new BundlerBuildRenderer();
+            default -> throw new IllegalArgumentException("unsupported service renderer type");
+        };
     }
 
     private DeploymentRuntimeSpecification runtime(DeploymentProjectType type, String version, String artifact,
@@ -192,11 +210,7 @@ class DeploymentBuildRendererTest {
     private static List<DeploymentBuildRenderer> renderers() {
         return List.of(new SpringBootBuildRenderer(), new JavaJarBuildRenderer(), new NodeBuildRenderer(),
                 new PythonBuildRenderer(), new StaticSiteBuildRenderer(), new ContainerBuildRenderer(),
-                new ServiceBuildRenderer(DeploymentProjectType.GO_SERVICE),
-                new ServiceBuildRenderer(DeploymentProjectType.RUST_SERVICE),
-                new ServiceBuildRenderer(DeploymentProjectType.DOTNET_SERVICE),
-                new ServiceBuildRenderer(DeploymentProjectType.KOTLIN_SERVICE),
-                new ServiceBuildRenderer(DeploymentProjectType.PHP_SERVICE),
-                new ServiceBuildRenderer(DeploymentProjectType.RUBY_SERVICE));
+                new GoBuildRenderer(), new CargoBuildRenderer(), new DotNetSdkBuildRenderer(),
+                new KotlinGradleBuildRenderer(), new ComposerBuildRenderer(), new BundlerBuildRenderer());
     }
 }

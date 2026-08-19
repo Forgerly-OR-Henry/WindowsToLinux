@@ -1,8 +1,8 @@
 package gold.debug.windowstolinux.shared.analyze.ecosystem.node;
 
-import gold.debug.windowstolinux.shared.analyze.source.SourceInspection;
-import gold.debug.windowstolinux.shared.model.project.LanguageFact;
-import gold.debug.windowstolinux.shared.model.project.SourceLanguage;
+import gold.debug.windowstolinux.shared.analyze.source.SourceInspectionFacts;
+import gold.debug.windowstolinux.shared.model.language.LanguageFactKind;
+import gold.debug.windowstolinux.shared.model.language.SourceLanguageType;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -19,12 +19,12 @@ class NodeLanguageInspectorTest {
     @Test
     void preservesMixedJavaScriptAndTypeScriptAndOnlyAcceptsAnExactEngine() throws Exception {
         Files.writeString(temporaryDirectory.resolve("package.json"), "{\"engines\":{\"node\":\"22\"}}");
-        SourceInspection source = new SourceInspection(3, List.of(Path.of("package.json"), Path.of("src/a.js"), Path.of("src/b.ts")), "");
+        SourceInspectionFacts source = new SourceInspectionFacts(3, List.of(Path.of("package.json"), Path.of("src/a.js"), Path.of("src/b.ts")), "");
 
         var facts = new NodeLanguageInspector().inspect(temporaryDirectory, source);
 
-        assertEquals("22", facts.values().get(LanguageFact.NODE_MAJOR_VERSION));
-        assertTrue(facts.sourceLanguages().containsAll(List.of(SourceLanguage.JAVASCRIPT, SourceLanguage.TYPESCRIPT)));
+        assertEquals("22", facts.values().get(LanguageFactKind.NODE_MAJOR_VERSION));
+        assertTrue(facts.sourceLanguages().containsAll(List.of(SourceLanguageType.JAVASCRIPT, SourceLanguageType.TYPESCRIPT)));
 
         Files.writeString(temporaryDirectory.resolve("package.json"), "{\"engines\":{\"node\":\">=20\"}}");
         assertTrue(new NodeLanguageInspector().inspect(temporaryDirectory, source).values().isEmpty());

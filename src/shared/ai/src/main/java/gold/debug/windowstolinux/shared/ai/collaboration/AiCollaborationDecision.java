@@ -1,5 +1,7 @@
 package gold.debug.windowstolinux.shared.ai.collaboration;
 
+import gold.debug.windowstolinux.shared.ai.collaboration.invocation.AiInvocationEvidence;
+
 import java.util.List;
 import java.util.Objects;
 

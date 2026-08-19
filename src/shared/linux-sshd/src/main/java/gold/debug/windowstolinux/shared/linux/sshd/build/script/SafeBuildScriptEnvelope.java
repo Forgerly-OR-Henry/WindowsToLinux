@@ -1,7 +1,7 @@
 package gold.debug.windowstolinux.shared.linux.sshd.build.script;
 
 import gold.debug.windowstolinux.shared.linux.transfer.RemoteWorkspace;
-import gold.debug.windowstolinux.shared.model.deployment.BuildLimits;
+import gold.debug.windowstolinux.shared.model.deployment.BuildLimitConfiguration;
 import gold.debug.windowstolinux.shared.model.project.DeploymentProjectFacts;
 
 import java.util.Objects;
@@ -11,7 +11,7 @@ public final class SafeBuildScriptEnvelope {
     private SafeBuildScriptEnvelope() { }
 
     /** Performs the {@code wrap} operation. / 执行 {@code wrap} 操作。 */
-    public static String wrap(DeploymentProjectFacts facts, RemoteWorkspace workspace, BuildLimits limits, String command) {
+    public static String wrap(DeploymentProjectFacts facts, RemoteWorkspace workspace, BuildLimitConfiguration limits, String command) {
         Objects.requireNonNull(facts, "facts");
         Objects.requireNonNull(workspace, "workspace");
         Objects.requireNonNull(limits, "limits");

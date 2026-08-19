@@ -36,7 +36,7 @@ public final class ContainerRuntimeExecutor {
 
     /** Performs a loopback health check for a remotely identified managed engine. / 为远端识别出的受管引擎执行回环健康检查。 */
     public HealthCheckResult checkHealth(ManagedApplication application,
-                                         DeploymentRuntimeSpecification.ContainerEngine runtimeEngine,
+                                         DeploymentRuntimeSpecification.ContainerEngineType runtimeEngine,
                                          HealthCheck healthCheck) throws LinuxOperationException {
         String engine = runtimeEngine.name().toLowerCase(java.util.Locale.ROOT);
         String container = "windowstolinux-" + application.id();
@@ -73,12 +73,12 @@ public final class ContainerRuntimeExecutor {
 
     /** Observes a remotely identified managed container engine. / 观察远端识别出的受管容器引擎。 */
     public LifecycleObservation observe(ManagedApplication application,
-                                        DeploymentRuntimeSpecification.ContainerEngine runtimeEngine)
+                                        DeploymentRuntimeSpecification.ContainerEngineType runtimeEngine)
             throws LinuxOperationException {
         String engine = runtimeEngine.name().toLowerCase(java.util.Locale.ROOT);
         String root = application.releaseRoot();
         String name = "windowstolinux-" + application.id();
-        String autostartCommand = runtimeEngine == DeploymentRuntimeSpecification.ContainerEngine.DOCKER
+        String autostartCommand = runtimeEngine == DeploymentRuntimeSpecification.ContainerEngineType.DOCKER
                 ? SshCommandExecutor.quote(engine) + " inspect --format '{{.HostConfig.RestartPolicy.Name}}' "
                 + SshCommandExecutor.quote(name) + " 2>/dev/null || true"
                 : "if test -f " + SshCommandExecutor.quote("/etc/containers/systemd/" + name

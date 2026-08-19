@@ -2,9 +2,9 @@
 
 ## 文档信息
 
-- 版本：`1.2.0`
-- 状态：**已实施（简化命名迁移与本地结构验证完成）**
-- 日期：2026-08-18
+- 版本：`1.4.0`
+- 状态：**已实施（ecosystem 架构迁移与本地结构验证完成）**
+- 日期：2026-08-19
 - 正式目标结构：[File.md](../File.md)
 - 关联修订：[ANALYZE-PACKAGE-REVISION.md](ANALYZE-PACKAGE-REVISION.md)
 
@@ -12,19 +12,22 @@
 
 > 命名更新（2026-08-18）：部署支持矩阵、构建配置、发行版设置和受控 SSH 命令实现分别使用 `support`、`config`、`setup` 与 `command` 包；通用环境类型和六个具体发行版实现都使用 `Setup`。模块、helper 协议和真实环境支持范围不变。
 
+> 严格命名更新（2026-08-19）：当前计划动作、跟踪事件、主机支持状态和运行时输入类型分别使用 `DeploymentPlanAction`、`DeploymentTraceEvent`、`HostSupportStatus` 与 `RuntimeInputType`。`00-common.sh` 已更名为 `00-protocol-foundation.sh`，脚本内容、资源顺序、helper 协议版本 3 和固定 bundle SHA-256 保持不变；下列历史迁移表的旧名称列继续保留当时名称。
+
+> Ecosystem 更新（2026-08-19）：目标机构建已按 `build.ecosystem`、`build.workload`、`build.registry` 归位，单一原生架构使用具名 Renderer；语言与工具链探测和准备检查脚本归 `capability.ecosystem`。`35-ecosystem-dispatch.sh` 进入 helper 资源 `fragments/ecosystem` 分组，组装字节、固定 SHA-256 与协议版本 3 均保持不变。下列 1.0.x 目标树和迁移表作为历史设计记录保留，现行结构只以 `File.md` 为准。
+
 ## 1. 修订目的与边界
 
 本修订把 `gold.debug.windowstolinux.shared.deploy`、`gold.debug.windowstolinux.shared.linux`、`gold.debug.windowstolinux.shared.linux.sshd` 整理为相互正交的部署形态、公共契约、SSHD command/session、技术生态、发行版族、运行机制和协议职责。目标是消除按引入批次聚合的实现、包级循环依赖和远程组合职责混放，同时保持类型化远程边界及现有安全语义。
 
-1.0.x 设计记录当时只修改文档；实施更新后的当前代码遵循以下不变边界：
+1.0.x 设计记录当时只修改文档；实施过程始终遵守以下行为边界：
 
-- 不移动或修改生产源码、测试、Shell 资源和 POM。
 - 不改变 helper 协议版本、verb、参数顺序、参数语义、sudoers 白名单或远端路径。
 - 不改变 SQLite schema、项目支持等级、产品入口、运行行为或既有验收结论。
-- 第 3 节是最终目标结构，不是当前已落地目录；第 5 节记录当前源码到目标位置的待迁移映射。
-- 主迁移范围限于三个共享模块。第 7 节仅纳入删除 `Advanced*` 所必需的 `shared/model`、`shared/analyze` 和 `app/ui` 引用，不整理这些模块的其他包环。
+- 第 3、5、7、8、9、10 节保留历史设计、映射与验收记录，不再定义当前目标。
+- 现行目录、职责、依赖方向和分包门禁统一由 `File.md` 与 `PackageStructureArchitectureTest` 定义。
 
-## 2. 当前问题
+## 2. 迁移前问题（历史）
 
 ### 2.1 `shared.deploy`
 
@@ -46,7 +49,7 @@
 4. 六个发行版准备类虽已独立，但与 APT/DNF 渲染器、配置、包目录、运行时检查和执行选择器平铺在同一包；`ManagedEnvironmentExecutor` 直接 `switch` 全部发行版。
 5. protocol 和 runtime 中的工作区、输入、发布、容器、systemd、运行参数、helper 拼装职责仍是扁平结构。
 
-## 3. 最终目标结构
+## 3. 1.0.x 目标结构（历史，已由 `File.md` 替代）
 
 只在有实际实现时创建目录，不预建空包。技术生态、部署形态、发行版、运行机制和 CPU 架构是独立维度，禁止创建 `jvm/ubuntu/x86_64` 等组合目录。
 
@@ -149,7 +152,7 @@ shared.linux.sshd/
 
 `ecosystem` 只保存生态专属的目标机构建、工具链探测和受控启动规则。构建执行、SSH command、发行版包名、helper 调度、systemd 生命周期、容器生命周期和发布/回滚机械流程保持生态无关。
 
-## 4. 目标依赖方向
+## 4. 1.0.x 目标依赖方向（历史）
 
 箭头表示左侧可以依赖右侧，反向依赖禁止：
 
@@ -179,7 +182,7 @@ linux-sshd.connection ──→ linux-sshd.session + command
 
 默认注册表可以装配具体实现，但 SPI、不可变契约、错误和 command 不得反向依赖注册表、会话或上层编排。`HostSupportChecker` 继续负责跨运行时、发行版、CPU、安全和容器能力的最终匹配，不进入任何单一生态或发行版包。
 
-## 5. 当前源码迁移映射
+## 5. 源码迁移映射（历史）
 
 ### 5.1 `shared.deploy` 生产类
 
@@ -204,14 +207,14 @@ linux-sshd.connection ──→ linux-sshd.session + command
 | `compatibility.AlmaLinuxCompatibilityPolicy` | `support.distro.policy.almalinux.AlmaLinuxSupportPolicy` |
 | `compatibility.OracleLinuxCompatibilityPolicy` | `support.distro.policy.oraclelinux.OracleLinuxSupportPolicy` |
 | `compatibility.HostCompatibility` | 重命名为 `support.HostSupportChecker`，改为依赖发行版注册表 |
-| `compatibility.HostSupport` | `support.HostSupport` |
+| `compatibility.HostSupport` | `result.compatibility.HostSupportStatus` |
 | `environment.EnvironmentPreparationService` | `environment.EnvironmentSetupService` |
 | `lifecycle.ManagedComponentLifecycle` | 保持 `lifecycle.ManagedComponentLifecycle` |
 | `lifecycle.ManagedLifecycleService` | 保持 `lifecycle.ManagedLifecycleService` |
 | `lifecycle.MultiComponentLifecycleService` | 保持 `lifecycle.MultiComponentLifecycleService` |
 | `plan.ApplicationHealthGate` | `contract.ApplicationHealthGate` |
 | `plan.DeploymentApproval` | `contract.DeploymentApproval` |
-| `plan.DeploymentStep` | `contract.DeploymentStep` |
+| `plan.DeploymentStep` | `contract.DeploymentPlanAction` |
 | `plan.MultiComponentDeploymentPlan` | `contract.MultiComponentDeploymentPlan` |
 | `plan.ReviewedDeploymentPlan` | `contract.ReviewedDeploymentPlan` |
 | `plan.ReviewedDeploymentRequest` | `contract.ReviewedDeploymentRequest` |
@@ -365,7 +368,7 @@ linux-sshd.connection ──→ linux-sshd.session + command
 
 | 当前资源 | 最终职责 |
 | --- | --- |
-| `00-common.sh` | 保留在 `protocol/helper/fragments`，只保存身份、路径、参数和所有权公共校验；生态启动规则迁出 |
+| `00-common.sh` | 更名为 `protocol/helper/fragments/00-protocol-foundation.sh`，只保存身份、路径、参数和所有权协议基础；生态启动规则迁出 |
 | `10-typed-release.sh` | `protocol/helper/fragments/release/10-typed-release.sh`，生态制品校验委托对应生态片段 |
 | `15-deployment-input.sh` | `protocol/helper/fragments/input/15-deployment-input.sh` |
 | `20-candidate-workspace.sh` | `protocol/helper/fragments/workspace/20-candidate-workspace.sh` |
@@ -379,7 +382,7 @@ linux-sshd.connection ──→ linux-sshd.session + command
 
 资源移动和拆分不得改变 helper verb、参数数量、参数顺序、退出码语义、远端根目录、所有权校验或 sudoers 白名单。只要线协议保持不变，`ManagedHelperProtocolVersion.CURRENT` 继续为 3；bundle 字节变化必须同步更新固定 SHA-256、资源顺序测试和安装测试，并由用户通过产品“环境准备”显式替换远端 helper。
 
-## 6. 目标接口与行为约束
+## 6. 目标接口与行为约束（历史）
 
 1. `DeploymentAdapter` 的行为保持为“一个已审阅请求生成一个类型化计划”，但契约移入 `deploy.spi`，输入和结果来自 `deploy.contract`。
 2. `DeploymentAdapterRegistry`、`DeploymentBuildRendererRegistry`、`EcosystemCapabilityProbeRegistry`、`DistributionSetupRegistry` 分别持有自己的 `defaults()` 装配和完整性校验；它们必须拒绝空实现、重复类型、缺失类型及实现自报类型不匹配。Planner、Executor 和 Session 构造器不得逐项列举具体生态或发行版实现。
@@ -390,7 +393,7 @@ linux-sshd.connection ──→ linux-sshd.session + command
 7. build、capability、distro、protocol、runtime 和 transfer 只能依赖 command，不得依赖具体 Gateway 或 session。
 8. systemd、Docker、Podman、发布、回滚、保留、配置和秘密输入逻辑保持语言无关；生态包不得复制这些流程。
 
-## 7. `Advanced*` 后置原子迁移
+## 7. `Advanced*` 后置原子迁移（历史，已完成）
 
 该阶段属于最终结构的一部分，但不得与前述包移动混成不可审阅的大批次。它不需要数据库迁移，却会改变多个公共 Java 类型和 helper bundle 字节，必须在一个代码阶段内原子完成。
 
@@ -400,7 +403,7 @@ linux-sshd.connection ──→ linux-sshd.session + command
 | `DeploymentRuntimeSpecification.AdvancedService` | 替换为 `GoService`、`RustService`、`DotNetService`、`KotlinService`、`PhpService`、`RubyService` 六个类型化记录 |
 | `DeploymentRuntimeSuggestion.RuntimeInput.ADVANCED_*` | 替换为稳定的 `SERVICE_VERSION`、`SERVICE_ARTIFACT`、`SERVICE_ENTRYPOINT`、`SERVICE_PORT` |
 | `LinuxCapabilities.advancedRuntimeVersions` | 替换为以 `DeploymentProjectType` 为键的 `serviceRuntimeVersions`；Java、Node、Python、Go、Rust、.NET、Kotlin/JVM、PHP、Ruby 使用显式事实，不以“高级”集合分组 |
-| `analyze.language.advanced.AdvancedLanguageDeploymentInspector` | 按分析修订文档拆入六个生态，输出稳定 RuntimeInput |
+| `analyze.language.advanced.AdvancedLanguageDeploymentInspector` | 按分析修订文档拆入六个生态，输出稳定 `RuntimeInputType` |
 | `analyze.core.DeploymentAnalysisCoordinator` | 通过分析注册表装配六个生态检查器，不导入 `AdvancedRuntimeKind` |
 | `deploy.adapter.advanced.AdvancedServiceAdapter` | 已由数据驱动 service Adapter 取代 |
 | `deploy.support.HostSupportChecker` | 对六种类型化运行时分别读取 `RuntimeToolchainCapabilities` |
@@ -409,11 +412,11 @@ linux-sshd.connection ──→ linux-sshd.session + command
 | `linux-sshd.capability` 的 `ADVANCED_*` 探测键 | 改为稳定生态键，由对应 Probe 解析 |
 | `linux-sshd.protocol.DeploymentRuntimeArguments` | 对六种类型化运行时生成现有 `go/rust/dotnet/kotlin/php/ruby` 参数，不改变线协议 |
 | `app.ui.deployment.DeploymentRuntimeParser` | 按所选项目类型构造对应运行时记录 |
-| `app.ui.deployment.DeploymentPage` | 使用稳定 RuntimeInput，不改变现有表单字段和状态保留规则 |
+| `app.ui.deployment.DeploymentPage` | 使用稳定 `RuntimeInputType`，不改变现有表单字段和状态保留规则 |
 
 所有受影响测试和产品入口夹具必须在同一阶段更新；不得保留 `AdvancedRuntimeKind`、`AdvancedService`、`ADVANCED_*`、`AdvancedServiceBuildRenderer`、`advanced-runtime` 或旧包转发类型。此次迁移不改变 `DeploymentProjectType`、支持等级、数据库内容、helper verb 或真实环境支持范围。
 
-## 8. 后续实施阶段
+## 8. 实施阶段（历史，已完成）
 
 ### 8.1 公共契约解环
 
@@ -457,7 +460,7 @@ linux-sshd.connection ──→ linux-sshd.session + command
 2. 更新 `File.md` 当前落地说明为已实施；只有发生功能范围或运行证据变化时才修改 DEVELOPMENT 或分期文档。
 3. 删除迁移期间产生的临时桥接，重新执行包依赖无环审计和完整离线门禁。
 
-## 9. 未来代码验收门禁
+## 9. 代码验收门禁（历史，现由架构测试接管）
 
 - [ ] `deploy.plan` 不导入具体 Adapter；Adapter 不导入 `deploy.plan`。
 - [ ] `deploy.support.distro` 的 SPI、公共规则和注册表不与具体发行版平铺；六个具体策略只位于 `policy.<distro>`，依赖方向保持 `HostSupportChecker → registry`、`registry → policy/spi`、`policy → spi/rule`。
@@ -476,7 +479,7 @@ linux-sshd.connection ──→ linux-sshd.session + command
 - [ ] JDK 21 系统 Maven 执行 `mvn.cmd -B -ntp -o verify` 全量通过。
 - [ ] 构建与静态验证不替代真实 Linux 证据；helper 字节变化后的运行结论在产品入口复验前保持 `RUNTIME-PENDING`。
 
-## 10. 本次文档验收
+## 10. 1.0.x 文档验收（历史）
 
 - [x] `File.md` 版本为 `3.13.2-linux-sshd-distro-preparation-layout`，日期为 2026-08-15，状态明确为目标待审核、源码未迁移。
 - [x] `File.md` 的 deploy、linux、linux-sshd 目标树、协作边界、分包规则、依赖方向和版本记录相互一致。
@@ -490,6 +493,8 @@ linux-sshd.connection ──→ linux-sshd.session + command
 
 | 版本 | 日期 | 状态 | 说明 |
 | --- | --- | --- | --- |
+| 1.4.0 | 2026-08-19 | 已实施（本地结构验证完成） | 以 `File.md` 的 ecosystem 规则替代旧横向 Renderer 结构；构建、工作负载、注册表、能力探测与 helper 生态片段完成归位，六种参数化服务构建改为具名原生架构 Renderer。helper 字节、摘要、协议、持久化和真实 Linux 支持边界不变。 |
+| 1.3.0 | 2026-08-19 | 已实施（本地结构验证完成） | 同步严格枚举语义后缀、部署计划动作、跟踪事件、主机支持状态与 helper 基础片段名称；helper 内容、摘要、协议、持久化和真实 Linux 支持边界不变。 |
 | 1.2.0 | 2026-08-18 | 已实施（本地结构验证完成） | 简化部署支持、构建配置、发行版设置与 SSH 命令实现包名，并同步对应类型名；模块、helper 协议、持久化语义和真实 Linux 支持边界不变。 |
 | 1.1.0 | 2026-08-15 | 已实施（本地结构验证完成） | 完成 deploy、linux、linux-sshd 的职责分包、注册表装配、生态服务运行时类型替换及 helper 资源归位；JDK 21 离线 28 模块验证通过，真实 Linux 运行结论保持原范围。 |
 | 1.0.2 | 2026-08-15 | 草案，待审核 | 将 `linux-sshd.distro` 的具体实现统一下沉到 `preparation/{apt,dnf}/<distro>`，与 SPI、Profile、注册表和公共 Shell 机制分离，并同步依赖方向、迁移映射、测试要求和验收门禁；本次仍不修改代码或运行行为。 |

@@ -23,7 +23,7 @@ public final class ServerProfileRepository {
     /** Saves a trusted server identity. / 保存可信服务器身份。 */
     public void saveServer(ServerIdentity server) throws SQLException {
         try (Connection connection = connections.open()) {
-            RepositoryTransactions.upsertServer(connection, server);
+            RepositoryTransactionExecutor.upsertServer(connection, server);
         }
     }
 

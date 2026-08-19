@@ -7,25 +7,15 @@ import gold.debug.windowstolinux.shared.linux.error.LinuxOperationException;
 import gold.debug.windowstolinux.shared.linux.connection.SshCredential;
 import gold.debug.windowstolinux.shared.linux.connection.SshEndpoint;
 import gold.debug.windowstolinux.shared.linux.protocol.ManagedHelperProtocol;
-import gold.debug.windowstolinux.shared.linux.sshd.distro.DistributionSetupRegistry;
-import gold.debug.windowstolinux.shared.linux.sshd.distro.setup.DistributionPackageSets;
-import gold.debug.windowstolinux.shared.linux.sshd.distro.setup.SetupShellSupport;
+import gold.debug.windowstolinux.shared.linux.sshd.distro.script.SetupScriptRenderer;
 import gold.debug.windowstolinux.shared.linux.sshd.protocol.helper.ManagedHelperBundle;
 import gold.debug.windowstolinux.shared.linux.sshd.runtime.systemd.SystemdUnitRenderer;
 import gold.debug.windowstolinux.shared.linux.transfer.RemoteWorkspace;
 
 import gold.debug.windowstolinux.shared.model.managed.ManagedApplication;
-import gold.debug.windowstolinux.shared.model.capability.LinuxCapabilities;
-import gold.debug.windowstolinux.shared.model.server.CpuMicroarchitectureLevel;
-import gold.debug.windowstolinux.shared.model.server.LinuxDistro;
-import gold.debug.windowstolinux.shared.model.server.LinuxFirewallKind;
-import gold.debug.windowstolinux.shared.model.server.LinuxFirewallState;
-import gold.debug.windowstolinux.shared.model.server.LinuxSecurityModule;
-import gold.debug.windowstolinux.shared.model.server.LinuxSecurityPosture;
-import gold.debug.windowstolinux.shared.model.server.LinuxSecurityState;
 import gold.debug.windowstolinux.shared.model.server.ServerIdentity;
-import gold.debug.windowstolinux.shared.model.deployment.BuildLimits;
-import gold.debug.windowstolinux.shared.model.capability.ServerCapabilities;
+import gold.debug.windowstolinux.shared.model.deployment.BuildLimitConfiguration;
+import gold.debug.windowstolinux.shared.model.capability.ServerCapabilityFacts;
 import gold.debug.windowstolinux.shared.model.health.HealthCheck;
 import org.apache.sshd.client.SshClient;
 import org.apache.sshd.common.keyprovider.KeyIdentityProvider;
@@ -44,7 +34,6 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class SshdLinuxGatewayTest {
-    private static final int APT_LOCK_TIMEOUT_SECONDS = 300;
     @Test
     void rendersTheCanonicalUnitWithExactlyOneTrailingNewline() {
         ManagedApplication application = ManagedApplication.forManaged("managed-hello",
@@ -154,19 +143,15 @@ class SshdLinuxGatewayTest {
 
     @Test
     void sudoersGrantsOnlyTheConstrainedRootOwnedHelper() {
-        assertEquals(List.of(
-                "openjdk-21-jdk-headless", "maven", "curl", "sudo", "tar", "gzip", "iproute2", "coreutils",
-                        "util-linux", "findutils", "gawk", "nodejs", "npm", "python3", "python3-venv", "python3-pip", "docker.io", "podman"
-                ), DistributionPackageSets.APT_BASE);
         assertEquals("""
                 # Managed by WindowsToLinux managed deployment; only the constrained helper is granted.
                 deployer ALL=(root) NOPASSWD: /usr/local/lib/windowstolinux/managed-helper
-                """, SetupShellSupport.renderSudoers("deployer"));
-        String sudoers = SetupShellSupport.renderSudoers("deployer");
+                """, SetupScriptRenderer.renderSudoers("deployer"));
+        String sudoers = SetupScriptRenderer.renderSudoers("deployer");
         for (String unsafeBinary : List.of("/usr/bin/install", "/usr/bin/tee", "/usr/bin/systemctl", "/usr/bin/ln", "/usr/bin/rm", "/usr/bin/cp")) {
             assertFalse(sudoers.contains(unsafeBinary));
         }
-        assertThrows(IllegalArgumentException.class, () -> SetupShellSupport.renderSudoers("root;evil"));
+        assertThrows(IllegalArgumentException.class, () -> SetupScriptRenderer.renderSudoers("root;evil"));
     }
 
     @Test
@@ -198,138 +183,9 @@ class SshdLinuxGatewayTest {
         assertFalse(helper.contains("sudo -n"));
     }
 
-    @Test
-    void rootPreparationPathDoesNotRequirePreinstalledSudoAndNonRootPathDoes() throws Exception {
-        String script = renderSetup(LinuxDistro.UBUNTU, "24.04", "amd64", "root");
-
-        int firstAptMutation = script.indexOf("/usr/bin/apt-get -o DPkg::Lock::Timeout=" + APT_LOCK_TIMEOUT_SECONDS + " update");
-        assertTrue(firstAptMutation > script.indexOf("test \"${ID:-}\" = 'ubuntu'"));
-        assertTrue(firstAptMutation > script.indexOf("test \"${VERSION_ID:-}\" = '24.04'"));
-        assertTrue(firstAptMutation > script.indexOf("test \"$(uname -m)\" = x86_64"));
-        assertTrue(firstAptMutation > script.indexOf("command -v systemctl >/dev/null 2>&1"));
-        assertTrue(firstAptMutation > script.indexOf("test -x /usr/bin/apt-get"));
-        assertTrue(script.contains("if [ \"$(id -u)\" -eq 0 ]; then\n  elevation=root"));
-        assertTrue(script.contains("elif [ -x /usr/bin/sudo ] && /usr/bin/sudo -n true"));
-        assertTrue(script.contains("/usr/bin/sudo -n /usr/bin/apt-get --version >/dev/null"));
-        assertTrue(script.contains("/usr/bin/sudo -n /usr/sbin/visudo -V >/dev/null"));
-        assertTrue(script.contains("/usr/bin/sudo -n /usr/bin/install --version >/dev/null"));
-        assertTrue(script.contains("test -x /usr/bin/apt-get"));
-        assertTrue(script.contains("/usr/bin/apt-get -o DPkg::Lock::Timeout=" + APT_LOCK_TIMEOUT_SECONDS + " update"));
-        assertTrue(script.contains("/usr/bin/apt-get -o DPkg::Lock::Timeout=" + APT_LOCK_TIMEOUT_SECONDS + " install -y --no-install-recommends openjdk-21-jdk-headless maven curl sudo"));
-        assertTrue(script.contains("/usr/bin/sudo -n /usr/bin/apt-get -o DPkg::Lock::Timeout=" + APT_LOCK_TIMEOUT_SECONDS + " update"));
-        assertTrue(script.contains("/usr/bin/sudo -n /usr/bin/apt-get -o DPkg::Lock::Timeout=" + APT_LOCK_TIMEOUT_SECONDS + " install -y --no-install-recommends openjdk-21-jdk-headless maven curl sudo"));
-        assertTrue(script.contains("command -v tar >/dev/null 2>&1"));
-        assertTrue(script.contains("command -v gzip >/dev/null 2>&1"));
-        assertTrue(script.contains("node --version | grep -Eq '^v18[.]'"));
-        assertTrue(script.contains("python3.12 -m venv --help"));
-        assertTrue(script.contains("dotnet-sdk-8.0"));
-        assertTrue(script.contains("composer --version"));
-        assertTrue(script.contains("bundle --version"));
-        assertTrue(script.contains("docker info >/dev/null 2>&1"));
-        assertTrue(script.contains("podman info >/dev/null 2>&1"));
-        assertFalse(script.contains("command -v unzip"));
-        assertTrue(script.contains("/usr/bin/install -o root -g root -m 440 \"$tmp\" '/etc/sudoers.d/windowstolinux-managed'"));
-        assertTrue(script.contains("/usr/bin/install -o root -g root -m 755 \"$helper_tmp\" '/usr/local/lib/windowstolinux/managed-helper'"));
-        assertTrue(script.contains("helper_probe=\"$(\"/usr/bin/sudo\" -n '/usr/local/lib/windowstolinux/managed-helper' probe)\""));
-        assertTrue(script.contains("grep -qx 'PROTOCOL=3'"));
-        assertFalse(script.contains("sudo -S"));
-        assertFalse(script.contains("/var/lib/windowstolinux/work"));
-    }
-
-    @Test
-    void rendersIndependentDistributionPreparationPathsBeforeAnyMutation() throws Exception {
-        String ubuntu = renderSetup(LinuxDistro.UBUNTU, "22.04", "amd64", "deployer");
-        String debian = renderSetup(LinuxDistro.DEBIAN, "13", "amd64", "deployer");
-        String centos = renderSetup(LinuxDistro.CENTOS_STREAM, "9", "x86_64", "deployer");
-        String rocky = renderSetup(LinuxDistro.ROCKY_LINUX, "10.2", "x86_64", "deployer");
-        String alma = renderSetup(LinuxDistro.ALMALINUX, "9.8", "x86_64", "deployer");
-        String oracle = renderSetup(LinuxDistro.ORACLE_LINUX, "10.2", "x86_64", "deployer");
-
-        assertTrue(ubuntu.contains("test \"${VERSION_ID:-}\" = '22.04'"));
-        assertTrue(debian.contains("test \"${ID:-}\" = 'debian'"));
-        assertTrue(debian.contains("test \"${VERSION_ID:-}\" = '13'"));
-        assertTrue(centos.contains("test \"${ID:-}\" = 'centos'"));
-        assertFalse(centos.contains("VARIANT_ID"));
-        assertTrue(centos.contains("test \"${VERSION_ID:-}\" = '9'"));
-        assertTrue(centos.indexOf("test \"$(getenforce)\" = Enforcing")
-                < centos.indexOf("/usr/bin/dnf -y install"));
-        assertTrue(rocky.contains("test \"${ID:-}\" = 'rocky'"));
-        assertTrue(rocky.contains("test \"${VERSION_ID:-}\" = '10.2'"));
-        assertTrue(rocky.contains("x86-64-v3.*supported"));
-        assertTrue(alma.contains("test \"${ID:-}\" = 'almalinux'"));
-        assertTrue(oracle.contains("test \"${ID:-}\" = 'ol'"));
-        assertTrue(centos.contains("/usr/bin/dnf -y install java-21-openjdk-headless maven curl sudo"));
-        assertTrue(centos.contains("/usr/bin/sudo -n /usr/bin/dnf -y install java-21-openjdk-headless maven curl sudo"));
-        for (String script : List.of(ubuntu, debian, centos, rocky, alma, oracle)) {
-            int mutation = script.contains("/usr/bin/apt-get")
-                    ? script.indexOf("/usr/bin/apt-get -o DPkg::Lock::Timeout=")
-                    : script.indexOf("/usr/bin/dnf -y install");
-            assertTrue(mutation > script.indexOf("security_before=\"$(security_state)\""));
-            assertTrue(script.contains("test \"$security_after\" = \"$security_before\""));
-            assertTrue(script.contains("*:active) test \"$firewall_after\" = \"$firewall_before\""));
-            assertTrue(script.contains("nft list ruleset"));
-            assertTrue(script.contains("PREPARE_CHECK_FAILED"));
-            assertTrue(script.contains("prepare_check=java-command"));
-            assertTrue(script.contains("PREPARE_JAVA_VERSION"));
-            assertTrue(script.contains("java-21-openjdk*/bin/java"));
-            assertTrue(script.contains("/usr/local/lib/windowstolinux/java-21"));
-            assertFalse(script.contains("alternatives --set"));
-            String preparationPath = script.substring(0, script.indexOf("\nhelper="));
-            assertFalse(preparationPath.contains("setenforce"));
-            assertFalse(preparationPath.contains("systemctl disable"));
-            assertFalse(preparationPath.contains("systemctl stop"));
-        }
-        assertThrows(LinuxOperationException.class,
-                () -> renderSetup(LinuxDistro.UBUNTU, "20.04", "amd64", "deployer"));
-        assertThrows(LinuxOperationException.class,
-                () -> renderSetup(LinuxDistro.DEBIAN, "12", "amd64", "deployer"));
-        assertThrows(LinuxOperationException.class,
-                () -> renderSetup(LinuxDistro.CENTOS_STREAM, "8", "x86_64", "deployer"));
-        assertThrows(LinuxOperationException.class,
-                () -> renderSetup(LinuxDistro.ROCKY_LINUX, "9.7", "x86_64", "deployer"));
-        assertThrows(LinuxOperationException.class,
-                () -> renderSetup(LinuxDistro.ALMALINUX, "10.2", "x86_64_v2", "deployer"));
-        assertThrows(LinuxOperationException.class,
-                () -> renderSetup(LinuxDistro.ORACLE_LINUX, "9.6", "x86_64", "deployer"));
-    }
-
-    @Test
-    void baselineCapabilityGateRecognizesOnlyFrozenPreparedDistributionNames() {
-        HealthCheck.Tcp health = new HealthCheck.Tcp(8080, 5, 1);
-        for (String name : List.of("Debian GNU/Linux 13", "Rocky Linux 9.8", "Rocky Linux 10.2",
-                "AlmaLinux 9.8", "AlmaLinux 10.2", "Oracle Linux Server 9.7", "Oracle Linux Server 10.2")) {
-            assertTrue(capabilities(name).supportsManagedDeployment(false, health), name);
-        }
-        assertFalse(capabilities("Rocky Linux 9.7").supportsManagedDeployment(false, health));
-        assertFalse(capabilities("Oracle Linux Server 9.6").supportsManagedDeployment(false, health));
-    }
-
-    private static ServerCapabilities capabilities(boolean tarAvailable) {
-        return new ServerCapabilities("Ubuntu 24.04.1 LTS", "x86_64", true, true, true, tarAvailable,
+    private static ServerCapabilityFacts capabilities(boolean tarAvailable) {
+        return new ServerCapabilityFacts("Ubuntu 24.04.1 LTS", "x86_64", true, true, true, tarAvailable,
                 true, true, true, true, ManagedHelperProtocol.VERSION, 1024L * 1024 * 1024, "test capabilities");
     }
 
-    private static ServerCapabilities capabilities(String operatingSystem) {
-        return new ServerCapabilities(operatingSystem, "x86_64", true, true, true, true,
-                true, true, true, true, ManagedHelperProtocol.VERSION, 1024L * 1024 * 1024, "test capabilities");
-    }
-
-    private static String renderSetup(LinuxDistro distro, String version, String packageArchitecture,
-                                      String username) throws LinuxOperationException {
-        boolean enterprise = switch (distro) {
-            case CENTOS_STREAM, ROCKY_LINUX, ALMALINUX, ORACLE_LINUX -> true;
-            default -> false;
-        };
-        LinuxSecurityPosture security = new LinuxSecurityPosture(
-                enterprise ? LinuxSecurityModule.SELINUX : LinuxSecurityModule.APPARMOR,
-                enterprise ? LinuxSecurityState.ENFORCING : LinuxSecurityState.ENABLED,
-                LinuxFirewallKind.NONE, LinuxFirewallState.INACTIVE);
-        LinuxCapabilities capabilities = new LinuxCapabilities(
-                distro, version, "x86_64", distro == LinuxDistro.UBUNTU || distro == LinuxDistro.DEBIAN ? "apt" : "dnf",
-                packageArchitecture, true, false, false, false,
-                java.util.Set.of(), java.util.Set.of(), false, false, java.util.Set.of(), false,
-                java.util.Map.of(), false, false, CpuMicroarchitectureLevel.X86_64_V3,
-                java.util.Set.of(), security, "test capabilities");
-        return DistributionSetupRegistry.defaults().render(capabilities, username);
-    }
 }

@@ -1,20 +1,20 @@
 package gold.debug.windowstolinux.shared.analyze.preview;
 
-import gold.debug.windowstolinux.shared.analyze.spi.DeploymentTypeInspection;
+import gold.debug.windowstolinux.shared.analyze.spi.DeploymentTypeAssessment;
 import gold.debug.windowstolinux.shared.analyze.spi.DeploymentTypeInspector;
-import gold.debug.windowstolinux.shared.analyze.source.BoundedMetadataReader;
+import gold.debug.windowstolinux.shared.analyze.source.BoundedMetadataInspector;
 import gold.debug.windowstolinux.shared.analyze.source.ProjectIdentityResolver;
-import gold.debug.windowstolinux.shared.analyze.source.SourceInspection;
+import gold.debug.windowstolinux.shared.analyze.source.SourceInspectionFacts;
 import gold.debug.windowstolinux.shared.model.analysis.RejectionReason;
 import gold.debug.windowstolinux.shared.model.message.LocalizedMessage;
-import gold.debug.windowstolinux.shared.model.project.DeploymentBuildTool;
+import gold.debug.windowstolinux.shared.model.project.DeploymentBuildToolType;
 import gold.debug.windowstolinux.shared.model.project.DeploymentProjectFacts;
 import gold.debug.windowstolinux.shared.model.project.DeploymentProjectType;
-import gold.debug.windowstolinux.shared.model.project.DeploymentRuntimeSuggestion;
+import gold.debug.windowstolinux.shared.model.project.DeploymentRuntimeAssessment;
 import gold.debug.windowstolinux.shared.model.project.DeploymentSupportCatalog;
 import gold.debug.windowstolinux.shared.model.project.DeploymentSupportProfile;
-import gold.debug.windowstolinux.shared.model.project.ProjectLanguageFacts;
-import gold.debug.windowstolinux.shared.model.project.SourceLanguage;
+import gold.debug.windowstolinux.shared.model.language.ProjectLanguageFacts;
+import gold.debug.windowstolinux.shared.model.language.SourceLanguageType;
 
 import java.nio.file.Path;
 import java.util.List;
@@ -31,16 +31,16 @@ public final class PreviewInspector implements DeploymentTypeInspector {
 
     /** Inspects source facts for this deployment type. / 检查此部署类型的源码事实。 */
     @Override
-    public DeploymentTypeInspection inspect(Path root, SourceInspection source, ProjectLanguageFacts languageFacts,
+    public DeploymentTypeAssessment inspect(Path root, SourceInspectionFacts source, ProjectLanguageFacts languageFacts,
                                             List<RejectionReason> rejections) {
-        SourceLanguage language = languageFacts.sourceLanguages().size() == 1
-                ? languageFacts.sourceLanguages().iterator().next() : SourceLanguage.UNKNOWN;
+        SourceLanguageType language = languageFacts.sourceLanguages().size() == 1
+                ? languageFacts.sourceLanguages().iterator().next() : SourceLanguageType.UNKNOWN;
         DeploymentSupportProfile support = languageFacts.sourceLanguages().isEmpty()
                 ? DeploymentSupportCatalog.unrecognized() : DeploymentSupportCatalog.preview(language);
         DeploymentProjectFacts facts = new DeploymentProjectFacts(root, ProjectIdentityResolver.rootApplicationId(root),
-                projectType(), DeploymentBuildTool.NONE_PREVIEW, support, languageFacts, languageFacts.evidence(), List.of(),
+                projectType(), DeploymentBuildToolType.NONE_PREVIEW, support, languageFacts, languageFacts.evidence(), List.of(),
                 List.of(LocalizedMessage.of("analysis.preview.noDeployment")));
-        return new DeploymentTypeInspection(facts, new DeploymentRuntimeSuggestion(projectType(), Map.of(), Optional.empty(),
+        return new DeploymentTypeAssessment(facts, new DeploymentRuntimeAssessment(projectType(), Map.of(), Optional.empty(),
                 Map.of(), List.of(), List.of(), List.of()));
     }
 }

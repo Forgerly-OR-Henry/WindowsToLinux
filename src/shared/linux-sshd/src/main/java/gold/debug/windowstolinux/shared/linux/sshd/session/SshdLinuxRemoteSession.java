@@ -13,25 +13,26 @@ import gold.debug.windowstolinux.shared.linux.sshd.build.DeploymentBuildExecutor
 import gold.debug.windowstolinux.shared.linux.sshd.capability.SshdCapabilityCollector;
 import gold.debug.windowstolinux.shared.linux.sshd.capability.SshdPlatformCapabilityCollector;
 import gold.debug.windowstolinux.shared.linux.sshd.distro.ManagedEnvironmentExecutor;
-import gold.debug.windowstolinux.shared.linux.sshd.protocol.CandidateWorkspaceController;
-import gold.debug.windowstolinux.shared.linux.sshd.protocol.runtime.ManagedRuntimeController;
+import gold.debug.windowstolinux.shared.linux.sshd.distro.registry.DistributionSetupRegistry;
+import gold.debug.windowstolinux.shared.linux.sshd.protocol.CandidateWorkspaceExecutor;
+import gold.debug.windowstolinux.shared.linux.sshd.protocol.runtime.ManagedRuntimeProtocolExecutor;
 import gold.debug.windowstolinux.shared.linux.sshd.protocol.release.DeploymentReleaseProtocolExecutor;
 import gold.debug.windowstolinux.shared.linux.sshd.protocol.release.ContainerReleaseProtocolExecutor;
 import gold.debug.windowstolinux.shared.linux.sshd.protocol.input.DeploymentInputProtocolExecutor;
 import gold.debug.windowstolinux.shared.config.revision.ConfigurationSnapshot;
 import gold.debug.windowstolinux.shared.config.revision.DeploymentInputManifest;
 import gold.debug.windowstolinux.shared.config.secretref.ResolvedSecretRevision;
-import gold.debug.windowstolinux.shared.linux.sshd.runtime.systemd.SystemdHealthChecker;
+import gold.debug.windowstolinux.shared.linux.sshd.runtime.systemd.SystemdHealthProbe;
 import gold.debug.windowstolinux.shared.linux.sshd.runtime.systemd.SystemdLifecycleExecutor;
 import gold.debug.windowstolinux.shared.linux.sshd.runtime.systemd.SystemdOwnershipObserver;
 import gold.debug.windowstolinux.shared.linux.sshd.runtime.ContainerRuntimeExecutor;
 import gold.debug.windowstolinux.shared.linux.sshd.runtime.ManagedRuntimeExecutor;
 import gold.debug.windowstolinux.shared.linux.sshd.runtime.ManagedRuntimeKindProbe;
-import gold.debug.windowstolinux.shared.linux.sshd.transfer.SshdSourceTransfer;
+import gold.debug.windowstolinux.shared.linux.sshd.transfer.SshdSourceTransport;
 import gold.debug.windowstolinux.shared.linux.transfer.RemoteWorkspace;
-import gold.debug.windowstolinux.shared.linux.transfer.UploadReceipt;
+import gold.debug.windowstolinux.shared.linux.transfer.SourceUploadResult;
 import gold.debug.windowstolinux.shared.model.archive.SourceArchiveDescriptor;
-import gold.debug.windowstolinux.shared.model.deployment.BuildLimits;
+import gold.debug.windowstolinux.shared.model.deployment.BuildLimitConfiguration;
 import gold.debug.windowstolinux.shared.model.deployment.EnvironmentSetupApproval;
 import gold.debug.windowstolinux.shared.model.deployment.EnvironmentSetupResult;
 import gold.debug.windowstolinux.shared.model.health.HealthCheck;
@@ -41,8 +42,8 @@ import gold.debug.windowstolinux.shared.model.lifecycle.RuntimeState;
 import gold.debug.windowstolinux.shared.model.managed.ManagedApplication;
 import gold.debug.windowstolinux.shared.model.project.DeploymentProjectFacts;
 import gold.debug.windowstolinux.shared.model.project.DeploymentRuntimeSpecification;
-import gold.debug.windowstolinux.shared.model.capability.ServerCapabilities;
-import gold.debug.windowstolinux.shared.model.capability.LinuxCapabilities;
+import gold.debug.windowstolinux.shared.model.capability.ServerCapabilityFacts;
+import gold.debug.windowstolinux.shared.model.capability.LinuxCapabilityFacts;
 import org.apache.sshd.client.SshClient;
 import org.apache.sshd.client.session.ClientSession;
 
@@ -60,14 +61,14 @@ public final class SshdLinuxRemoteSession implements DeploymentRemoteSession {
     private final SshdCapabilityCollector capabilities;
     private final SshdPlatformCapabilityCollector deploymentCapabilities;
     private final ManagedEnvironmentExecutor environment;
-    private final SshdSourceTransfer transfer;
+    private final SshdSourceTransport transfer;
     private final DeploymentBuildExecutor deploymentBuild;
-    private final CandidateWorkspaceController candidates;
-    private final ManagedRuntimeController runtimes;
+    private final CandidateWorkspaceExecutor candidates;
+    private final ManagedRuntimeProtocolExecutor runtimes;
     private final DeploymentReleaseProtocolExecutor deploymentProtocol;
     private final ContainerReleaseProtocolExecutor containerProtocol;
     private final DeploymentInputProtocolExecutor deploymentInputs;
-    private final SystemdHealthChecker systemdHealth;
+    private final SystemdHealthProbe systemdHealth;
     private final SystemdOwnershipObserver systemdObservation;
     private final SystemdLifecycleExecutor systemdLifecycle;
     private final ContainerRuntimeExecutor containerRuntime;
@@ -83,15 +84,16 @@ public final class SshdLinuxRemoteSession implements DeploymentRemoteSession {
         this.capabilities = new SshdCapabilityCollector(commands, hostFingerprint);
         this.deploymentCapabilities = new SshdPlatformCapabilityCollector(commands, hostFingerprint);
         this.environment = new ManagedEnvironmentExecutor(
-                commands, capabilities, deploymentCapabilities, endpoint.serverId(), endpoint.username());
-        this.candidates = new CandidateWorkspaceController(commands);
-        this.runtimes = new ManagedRuntimeController(commands);
+                commands, capabilities, deploymentCapabilities, endpoint.serverId(), endpoint.username(),
+                DistributionSetupRegistry.defaults());
+        this.candidates = new CandidateWorkspaceExecutor(commands);
+        this.runtimes = new ManagedRuntimeProtocolExecutor(commands);
         this.deploymentProtocol = new DeploymentReleaseProtocolExecutor(commands);
         this.containerProtocol = new ContainerReleaseProtocolExecutor(commands);
         this.deploymentInputs = new DeploymentInputProtocolExecutor(commands);
-        this.transfer = new SshdSourceTransfer(session, commands, candidates);
+        this.transfer = new SshdSourceTransport(session, commands, candidates);
         this.deploymentBuild = new DeploymentBuildExecutor(commands, endpoint.username());
-        this.systemdHealth = new SystemdHealthChecker(commands);
+        this.systemdHealth = new SystemdHealthProbe(commands);
         this.systemdObservation = new SystemdOwnershipObserver(commands, endpoint.username());
         this.systemdLifecycle = new SystemdLifecycleExecutor(
                 commands, runtimes, systemdObservation, systemdHealth, endpoint.username());
@@ -103,13 +105,13 @@ public final class SshdLinuxRemoteSession implements DeploymentRemoteSession {
 
     /** Performs the {@code collectCapabilities} operation. / 执行 {@code collectCapabilities} 操作。 */
     @Override
-    public ServerCapabilities collectCapabilities() throws LinuxOperationException {
+    public ServerCapabilityFacts collectCapabilities() throws LinuxOperationException {
         return capabilities.collect();
     }
 
     /** Performs the {@code collectDeploymentCapabilities} operation. / 执行 {@code collectDeploymentCapabilities} 操作。 */
     @Override
-    public LinuxCapabilities collectDeploymentCapabilities() throws LinuxOperationException {
+    public LinuxCapabilityFacts collectDeploymentCapabilities() throws LinuxOperationException {
         return deploymentCapabilities.collectDeploymentCapabilities();
     }
 
@@ -122,7 +124,7 @@ public final class SshdLinuxRemoteSession implements DeploymentRemoteSession {
 
     /** Performs the {@code uploadSource} operation. / 执行 {@code uploadSource} 操作。 */
     @Override
-    public UploadReceipt uploadSource(SourceArchiveDescriptor archive, RemoteWorkspace workspace)
+    public SourceUploadResult uploadSource(SourceArchiveDescriptor archive, RemoteWorkspace workspace)
             throws LinuxOperationException {
         return transfer.upload(archive, workspace);
     }
@@ -130,7 +132,7 @@ public final class SshdLinuxRemoteSession implements DeploymentRemoteSession {
     /** Performs the {@code buildDeployment} operation. / 执行 {@code buildDeployment} 操作。 */
     @Override
     public DeploymentBuildResult buildDeployment(DeploymentProjectFacts facts, DeploymentRuntimeSpecification runtime,
-                                                 RemoteWorkspace workspace, BuildLimits limits,
+                                                 RemoteWorkspace workspace, BuildLimitConfiguration limits,
                                                  ConfigurationSnapshot configuration)
             throws LinuxOperationException {
         return deploymentBuild.build(facts, runtime, workspace, limits, configuration);
@@ -276,9 +278,9 @@ public final class SshdLinuxRemoteSession implements DeploymentRemoteSession {
     @Override
     public void close() {
         try {
-            SshSessionCloser.closeQuietly(session);
+            SshSessionLifecycleExecutor.closeQuietly(session);
         } finally {
-            SshSessionCloser.closeQuietly(client);
+            SshSessionLifecycleExecutor.closeQuietly(client);
         }
     }
 }

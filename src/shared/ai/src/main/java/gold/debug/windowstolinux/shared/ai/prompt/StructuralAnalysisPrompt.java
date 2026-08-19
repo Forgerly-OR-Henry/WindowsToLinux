@@ -26,7 +26,7 @@ public final class StructuralAnalysisPrompt {
      */
     /** Builds an AI request from type and fixed build-entrypoint facts only. / 仅从类型和固定构建入口事实构建 AI 请求。 */
     public static String requestBody(String model, RedactedDeploymentProjectFacts facts,
-                                     AiResponseLanguage responseLanguage) {
+                                     AiResponseLanguageType responseLanguage) {
         Objects.requireNonNull(facts, "facts");
         Objects.requireNonNull(responseLanguage, "responseLanguage");
         return """

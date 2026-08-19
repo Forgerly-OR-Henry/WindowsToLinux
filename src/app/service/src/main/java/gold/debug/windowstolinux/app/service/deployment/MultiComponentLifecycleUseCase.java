@@ -5,14 +5,15 @@ import gold.debug.windowstolinux.app.db.repository.ManagedApplicationGraphReposi
 import gold.debug.windowstolinux.app.db.repository.ManagedApplicationRepository;
 import gold.debug.windowstolinux.app.secret.SecretStore;
 import gold.debug.windowstolinux.app.secret.SecretStoreException;
-import gold.debug.windowstolinux.app.service.locking.ServerOperationLocks;
+import gold.debug.windowstolinux.app.service.deployment.multi.ManagedMultiComponentApplication;
+import gold.debug.windowstolinux.app.service.lock.ServerOperationLockRegistry;
 import gold.debug.windowstolinux.app.service.server.ServerProfile;
-import gold.debug.windowstolinux.app.service.server.ServerUseCases;
+import gold.debug.windowstolinux.app.service.server.ServerUseCaseFacade;
 import gold.debug.windowstolinux.shared.deploy.contract.MultiComponentDeploymentPlan;
 import gold.debug.windowstolinux.shared.deploy.lifecycle.ManagedComponentLifecycle;
 import gold.debug.windowstolinux.shared.deploy.lifecycle.MultiComponentLifecycleService;
 import gold.debug.windowstolinux.shared.deploy.plan.MultiComponentDeploymentPlanner;
-import gold.debug.windowstolinux.shared.deploy.result.MultiComponentLifecycleResult;
+import gold.debug.windowstolinux.shared.deploy.result.lifecycle.MultiComponentLifecycleResult;
 import gold.debug.windowstolinux.shared.linux.connection.DeploymentLinuxGateway;
 import gold.debug.windowstolinux.shared.model.lifecycle.LifecycleAction;
 import gold.debug.windowstolinux.shared.model.lifecycle.LifecycleObservation;
@@ -37,16 +38,16 @@ public final class MultiComponentLifecycleUseCase {
     private final ManagedApplicationGraphRepository graphs;
     private final MultiComponentLifecycleService lifecycleService;
     private final DeploymentLinuxGateway gateway;
-    private final ServerUseCases servers;
-    private final ServerOperationLocks locks;
+    private final ServerUseCaseFacade servers;
+    private final ServerOperationLockRegistry locks;
 
     /** Creates the bounded lifecycle use case. / 创建有界生命周期用例。 */
     public MultiComponentLifecycleUseCase(ManagedApplicationRepository applications,
                                           ManagedApplicationGraphRepository graphs,
                                           MultiComponentLifecycleService lifecycleService,
                                           DeploymentLinuxGateway gateway,
-                                          ServerUseCases servers,
-                                          ServerOperationLocks locks) {
+                                          ServerUseCaseFacade servers,
+                                          ServerOperationLockRegistry locks) {
         this.applications = Objects.requireNonNull(applications, "applications");
         this.graphs = Objects.requireNonNull(graphs, "graphs");
         this.lifecycleService = Objects.requireNonNull(lifecycleService, "lifecycleService");

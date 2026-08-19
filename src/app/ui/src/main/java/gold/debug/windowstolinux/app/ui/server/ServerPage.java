@@ -1,10 +1,10 @@
 package gold.debug.windowstolinux.app.ui.server;
 
-import gold.debug.windowstolinux.app.service.port.ServerApplicationPort;
+import gold.debug.windowstolinux.app.service.contract.ServerApplicationFacade;
 import gold.debug.windowstolinux.app.service.server.ServerProfile;
-import gold.debug.windowstolinux.app.ui.component.DesktopAsyncTask;
-import gold.debug.windowstolinux.app.ui.component.DesktopComponents;
-import gold.debug.windowstolinux.app.ui.i18n.PageMessages;
+import gold.debug.windowstolinux.app.ui.component.DesktopTaskExecutor;
+import gold.debug.windowstolinux.app.ui.component.DesktopComponentFactory;
+import gold.debug.windowstolinux.app.ui.i18n.PageMessagePresenter;
 import gold.debug.windowstolinux.shared.model.deployment.EnvironmentSetupResult;
 import gold.debug.windowstolinux.shared.model.security.CredentialStorageMode;
 
@@ -26,8 +26,8 @@ import java.util.concurrent.atomic.AtomicBoolean;
 /** Owns the server form, credentials-in-memory state, and server workflows. / 持有服务器表单、内存凭据状态与服务器流程。 */
 public final class ServerPage implements ServerContext {
     private final JFrame owner;
-    private final ServerApplicationPort service;
-    private final PageMessages messages;
+    private final ServerApplicationFacade service;
+    private final PageMessagePresenter messages;
     private final JTextField id = new JTextField("server-one", 20);
     private final JTextField host = new JTextField(20);
     private final JTextField port = new JTextField("22", 6);
@@ -35,11 +35,11 @@ public final class ServerPage implements ServerContext {
     private final JPasswordField password = new JPasswordField(20);
     private final JComboBox<CredentialStorageMode> credentialMode = new JComboBox<>(CredentialStorageMode.values());
     private final JPasswordField masterPassword = new JPasswordField(20);
-    private final JTextArea output = DesktopComponents.outputArea();
+    private final JTextArea output = DesktopComponentFactory.outputArea();
     private final JPanel panel;
 
     /** Creates the stateful page controller. / 创建有状态页面控制器。 */
-    public ServerPage(JFrame owner, ServerApplicationPort service, DesktopComponents components, PageMessages messages) {
+    public ServerPage(JFrame owner, ServerApplicationFacade service, DesktopComponentFactory components, PageMessagePresenter messages) {
         this.owner = owner;
         this.service = service;
         this.messages = messages;
@@ -97,7 +97,7 @@ public final class ServerPage implements ServerContext {
         return accepted.get();
     }
 
-    private JPanel createPanel(DesktopComponents c) {
+    private JPanel createPanel(DesktopComponentFactory c) {
         JPanel page = c.pagePanel();
         JPanel card = c.card(new BorderLayout(0, 12));
         card.add(c.sectionHeading(messages.text("section.connection.title"), messages.text("section.connection.description")),
@@ -143,7 +143,7 @@ public final class ServerPage implements ServerContext {
             CredentialStorageMode mode = credentialMode();
             char[] master = masterPassword();
             output.setText(messages.text("server.connecting"));
-            DesktopAsyncTask.run(
+            DesktopTaskExecutor.run(
                     () -> service.verifyServer(profile, mode, master, ServerPage.this::confirmFingerprint),
                     value -> output.setText(messages.text("server.capabilities", Map.ofEntries(
                             Map.entry("os", value.operatingSystem()), Map.entry("architecture", value.architecture()),
@@ -175,7 +175,7 @@ public final class ServerPage implements ServerContext {
             char[] master = masterPassword();
             trigger.setEnabled(false);
             output.setText(messages.text("environment.preparing"));
-            DesktopAsyncTask.run(
+            DesktopTaskExecutor.run(
                     () -> service.prepareEnvironmentWithStoredPassword(saved, saved.credentialMode(), master,
                             ServerPage.this::confirmFingerprint, true),
                     result -> {

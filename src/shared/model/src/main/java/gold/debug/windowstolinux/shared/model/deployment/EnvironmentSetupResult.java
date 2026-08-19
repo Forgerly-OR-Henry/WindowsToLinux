@@ -1,6 +1,6 @@
 package gold.debug.windowstolinux.shared.model.deployment;
 
-import gold.debug.windowstolinux.shared.model.capability.ServerCapabilities;
+import gold.debug.windowstolinux.shared.model.capability.ServerCapabilityFacts;
 
 import java.util.Objects;
 
@@ -13,7 +13,7 @@ import java.util.Objects;
  * @param evidence the {@code evidence} value / {@code evidence} 值
  */
 public record EnvironmentSetupResult(
-        ServerCapabilities capabilities,
+        ServerCapabilityFacts capabilities,
         String evidence
 ) {
     /**

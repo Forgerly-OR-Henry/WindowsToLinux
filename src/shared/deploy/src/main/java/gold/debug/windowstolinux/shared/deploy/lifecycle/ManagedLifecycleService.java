@@ -1,8 +1,8 @@
 package gold.debug.windowstolinux.shared.deploy.lifecycle;
 
-import gold.debug.windowstolinux.shared.deploy.result.LifecycleActionResult;
+import gold.debug.windowstolinux.shared.deploy.result.lifecycle.LifecycleActionResult;
 
-import gold.debug.windowstolinux.shared.linux.connection.HostKeyVerifier;
+import gold.debug.windowstolinux.shared.linux.connection.HostKeyEvaluator;
 import gold.debug.windowstolinux.shared.linux.error.LinuxOperationException;
 import gold.debug.windowstolinux.shared.linux.connection.LinuxGateway;
 import gold.debug.windowstolinux.shared.linux.session.LinuxRemoteSession;
@@ -43,7 +43,7 @@ public final class ManagedLifecycleService {
             LinuxGateway gateway,
             SshEndpoint endpoint,
             SshCredential credential,
-            HostKeyVerifier hostKeyVerifier
+            HostKeyEvaluator hostKeyVerifier
     ) {
         try (LinuxRemoteSession session = gateway.connect(endpoint, credential, hostKeyVerifier)) {
             LifecycleObservation before = session.observe(application);

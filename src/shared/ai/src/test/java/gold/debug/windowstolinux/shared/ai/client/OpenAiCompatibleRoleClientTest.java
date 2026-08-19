@@ -1,9 +1,11 @@
 package gold.debug.windowstolinux.shared.ai.client;
 
-import gold.debug.windowstolinux.shared.ai.collaboration.AiInvocationStatus;
-import gold.debug.windowstolinux.shared.ai.collaboration.AiRoleBinding;
-import gold.debug.windowstolinux.shared.ai.collaboration.AiCollaborationRole;
-import gold.debug.windowstolinux.shared.ai.collaboration.ProjectAnalysisRoleContext;
+import gold.debug.windowstolinux.shared.ai.transport.RoleChatResult;
+import gold.debug.windowstolinux.shared.ai.transport.RoleChatTransport;
+import gold.debug.windowstolinux.shared.ai.collaboration.invocation.AiInvocationStatus;
+import gold.debug.windowstolinux.shared.ai.collaboration.role.AiRoleBinding;
+import gold.debug.windowstolinux.shared.ai.collaboration.role.AiCollaborationRoleKind;
+import gold.debug.windowstolinux.shared.ai.collaboration.role.ProjectAnalysisRoleContext;
 import org.junit.jupiter.api.Test;
 
 import java.net.URI;
@@ -19,7 +21,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class OpenAiCompatibleRoleClientTest {
-    private static final AiRoleBinding BINDING = new AiRoleBinding(AiCollaborationRole.PROJECT_ANALYSIS,
+    private static final AiRoleBinding BINDING = new AiRoleBinding(AiCollaborationRoleKind.PROJECT_ANALYSIS,
             "analysis", URI.create("http://127.0.0.1/v1/chat/completions"), "model-a");
     private static final ProjectAnalysisRoleContext CONTEXT = new ProjectAnalysisRoleContext("sample-app",
             "JAVA_MAVEN_SPRING_BOOT", "MAVEN_WRAPPER", "FORMALLY_SUPPORTED", List.of());
@@ -53,7 +55,7 @@ class OpenAiCompatibleRoleClientTest {
         AtomicInteger invalidCalls = new AtomicInteger();
         RoleChatTransport invalid = (endpoint, key, body) -> {
             invalidCalls.incrementAndGet();
-            return new RoleChatResponse(200, "{\"content\":\"{\\\"decision\\\":\\\"CLEAR\\\","
+            return new RoleChatResult(200, "{\"content\":\"{\\\"decision\\\":\\\"CLEAR\\\","
                     + "\\\"summary\\\":\\\"leaked-response-marker\\\",\\\"findings\\\":[],\\\"extra\\\":true}\"}");
         };
         var invalidResult = new OpenAiCompatibleRoleClient(invalid, CLOCK)
@@ -74,9 +76,9 @@ class OpenAiCompatibleRoleClientTest {
         assertEquals(AiInvocationStatus.UNAVAILABLE, failedResult.evidence().status());
     }
 
-    private static RoleChatResponse validResponse(String decision) {
+    private static RoleChatResult validResponse(String decision) {
         String content = "{\\\"decision\\\":\\\"" + decision + "\\\",\\\"summary\\\":"
                 + "\\\"Reviewed deterministic facts\\\",\\\"findings\\\":[\\\"No additional finding\\\"]}";
-        return new RoleChatResponse(200, "{\"choices\":[{\"message\":{\"content\":\"" + content + "\"}}]}");
+        return new RoleChatResult(200, "{\"choices\":[{\"message\":{\"content\":\"" + content + "\"}}]}");
     }
 }

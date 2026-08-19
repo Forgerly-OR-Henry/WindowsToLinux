@@ -1,11 +1,11 @@
 package gold.debug.windowstolinux.shared.analyze.core;
 
-import gold.debug.windowstolinux.shared.model.analysis.DeploymentAdmission;
-import gold.debug.windowstolinux.shared.model.project.DeploymentBuildTool;
+import gold.debug.windowstolinux.shared.model.analysis.DeploymentAdmissionStatus;
+import gold.debug.windowstolinux.shared.model.project.DeploymentBuildToolType;
 import gold.debug.windowstolinux.shared.model.project.DeploymentProjectType;
-import gold.debug.windowstolinux.shared.model.project.DeploymentRuntimeSuggestion;
+import gold.debug.windowstolinux.shared.model.project.DeploymentRuntimeAssessment;
 import gold.debug.windowstolinux.shared.model.project.DeploymentSupportLevel;
-import gold.debug.windowstolinux.shared.model.project.SourceLanguage;
+import gold.debug.windowstolinux.shared.model.language.SourceLanguageType;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -37,8 +37,8 @@ class DeploymentAnalysisCoordinatorTest {
 
         var assessment = analyzer.analyze(project, DeploymentProjectType.SPRING_BOOT);
 
-        assertEquals(DeploymentAdmission.READY_FOR_PLANNING, assessment.admission());
-        assertEquals(DeploymentBuildTool.GRADLE_WRAPPER, assessment.facts().orElseThrow().buildTool());
+        assertEquals(DeploymentAdmissionStatus.READY_FOR_PLANNING, assessment.admission());
+        assertEquals(DeploymentBuildToolType.GRADLE_WRAPPER, assessment.facts().orElseThrow().buildTool());
     }
 
     @Test
@@ -52,7 +52,7 @@ class DeploymentAnalysisCoordinatorTest {
 
         var assessment = analyzer.analyze(project, DeploymentProjectType.SPRING_BOOT);
 
-        assertEquals(DeploymentAdmission.REQUIRES_INPUT, assessment.admission());
+        assertEquals(DeploymentAdmissionStatus.REQUIRES_INPUT, assessment.admission());
         assertTrue(assessment.facts().orElseThrow().missingInformation().stream()
                 .anyMatch(message -> message.key().equals("analysis.deployment.missing.gradleWrapper")));
     }
@@ -69,7 +69,7 @@ class DeploymentAnalysisCoordinatorTest {
 
         var assessment = analyzer.analyze(project, DeploymentProjectType.SPRING_BOOT);
 
-        assertEquals(DeploymentAdmission.REQUIRES_INPUT, assessment.admission());
+        assertEquals(DeploymentAdmissionStatus.REQUIRES_INPUT, assessment.admission());
         assertTrue(assessment.facts().orElseThrow().missingInformation().stream()
                 .anyMatch(message -> message.key().equals("analysis.deployment.missing.gradleWrapper")));
     }
@@ -84,7 +84,7 @@ class DeploymentAnalysisCoordinatorTest {
 
         var assessment = analyzer.analyze(project, DeploymentProjectType.SPRING_BOOT);
 
-        assertEquals(DeploymentAdmission.REJECTED, assessment.admission());
+        assertEquals(DeploymentAdmissionStatus.REJECTED, assessment.admission());
         assertTrue(assessment.rejections().stream()
                 .anyMatch(reason -> reason.code().equals("DATABASE_MIGRATION_DETECTED")));
     }
@@ -98,7 +98,7 @@ class DeploymentAnalysisCoordinatorTest {
 
         var assessment = analyzer.analyze(project, DeploymentProjectType.NODE_SERVICE);
 
-        assertEquals(DeploymentAdmission.REQUIRES_INPUT, assessment.admission());
+        assertEquals(DeploymentAdmissionStatus.REQUIRES_INPUT, assessment.admission());
         assertTrue(assessment.facts().orElseThrow().missingInformation().stream()
                 .anyMatch(message -> message.key().equals("analysis.deployment.missing.nodeLockfile")));
     }
@@ -111,7 +111,7 @@ class DeploymentAnalysisCoordinatorTest {
 
         var assessment = analyzer.analyze(project, DeploymentProjectType.DOCKERFILE_CONTAINER);
 
-        assertEquals(DeploymentAdmission.REJECTED, assessment.admission());
+        assertEquals(DeploymentAdmissionStatus.REJECTED, assessment.admission());
         assertTrue(assessment.rejections().stream().anyMatch(reason -> reason.code().equals("MULTI_CONTAINER_COMPOSE_DETECTED")));
     }
 
@@ -127,7 +127,7 @@ class DeploymentAnalysisCoordinatorTest {
 
         var assessment = analyzer.analyze(project, DeploymentProjectType.NODE_SERVICE);
 
-        assertEquals(DeploymentAdmission.REJECTED, assessment.admission());
+        assertEquals(DeploymentAdmissionStatus.REJECTED, assessment.admission());
         assertTrue(assessment.rejections().stream().anyMatch(reason -> reason.code().equals("DATABASE_MIGRATION_DETECTED")));
         assertTrue(assessment.rejections().stream().anyMatch(reason -> reason.code().equals("AUTOMATIC_SCHEMA_MUTATION_DETECTED")));
     }
@@ -149,15 +149,15 @@ class DeploymentAnalysisCoordinatorTest {
         Path container = Files.createDirectories(temporaryDirectory.resolve("container-ready"));
         Files.writeString(container.resolve("Dockerfile"), "FROM alpine@sha256:" + "a".repeat(64));
 
-        assertEquals(DeploymentAdmission.READY_FOR_PLANNING,
+        assertEquals(DeploymentAdmissionStatus.READY_FOR_PLANNING,
                 analyzer.analyze(javaJar, DeploymentProjectType.JAVA_JAR).admission());
-        assertEquals(DeploymentAdmission.READY_FOR_PLANNING,
+        assertEquals(DeploymentAdmissionStatus.READY_FOR_PLANNING,
                 analyzer.analyze(node, DeploymentProjectType.NODE_SERVICE).admission());
-        assertEquals(DeploymentAdmission.READY_FOR_PLANNING,
+        assertEquals(DeploymentAdmissionStatus.READY_FOR_PLANNING,
                 analyzer.analyze(python, DeploymentProjectType.PYTHON_SERVICE).admission());
-        assertEquals(DeploymentAdmission.READY_FOR_PLANNING,
+        assertEquals(DeploymentAdmissionStatus.READY_FOR_PLANNING,
                 analyzer.analyze(staticSite, DeploymentProjectType.STATIC_SITE).admission());
-        assertEquals(DeploymentAdmission.READY_FOR_PLANNING,
+        assertEquals(DeploymentAdmissionStatus.READY_FOR_PLANNING,
                 analyzer.analyze(container, DeploymentProjectType.DOCKERFILE_CONTAINER).admission());
     }
 
@@ -169,7 +169,7 @@ class DeploymentAnalysisCoordinatorTest {
                 """);
         Files.writeString(node.resolve("package-lock.json"), "{}");
         var exact = analyzer.analyze(node, DeploymentProjectType.NODE_SERVICE).runtimeSuggestion().orElseThrow();
-        assertEquals("22", exact.value(DeploymentRuntimeSuggestion.RuntimeInput.NODE_MAJOR_VERSION).orElseThrow());
+        assertEquals("22", exact.value(DeploymentRuntimeAssessment.RuntimeInputType.NODE_MAJOR_VERSION).orElseThrow());
 
         Path ranged = Files.createDirectories(temporaryDirectory.resolve("node-range"));
         Files.writeString(ranged.resolve("package.json"), """
@@ -177,7 +177,7 @@ class DeploymentAnalysisCoordinatorTest {
                 """);
         Files.writeString(ranged.resolve("package-lock.json"), "{}");
         var unresolved = analyzer.analyze(ranged, DeploymentProjectType.NODE_SERVICE).runtimeSuggestion().orElseThrow();
-        assertTrue(unresolved.value(DeploymentRuntimeSuggestion.RuntimeInput.NODE_MAJOR_VERSION).isEmpty());
+        assertTrue(unresolved.value(DeploymentRuntimeAssessment.RuntimeInputType.NODE_MAJOR_VERSION).isEmpty());
         assertTrue(unresolved.requiredUserInput().stream().anyMatch(message ->
                 message.key().equals("analysis.deployment.runtime.nodeVersion")));
     }
@@ -193,9 +193,9 @@ class DeploymentAnalysisCoordinatorTest {
             // A manifest-only JAR is sufficient because inference never invokes or loads it. / 仅含清单的 JAR 已足够，因为推导绝不调用或加载它。
         }
         var javaSuggestion = analyzer.analyze(java, DeploymentProjectType.JAVA_JAR).runtimeSuggestion().orElseThrow();
-        assertEquals("service.jar", javaSuggestion.value(DeploymentRuntimeSuggestion.RuntimeInput.JAVA_JAR_PATH).orElseThrow());
-        assertEquals("example.Main", javaSuggestion.value(DeploymentRuntimeSuggestion.RuntimeInput.JAVA_MAIN_CLASS).orElseThrow());
-        assertEquals("21", javaSuggestion.value(DeploymentRuntimeSuggestion.RuntimeInput.JAVA_VERSION).orElseThrow());
+        assertEquals("service.jar", javaSuggestion.value(DeploymentRuntimeAssessment.RuntimeInputType.JAVA_JAR_PATH).orElseThrow());
+        assertEquals("example.Main", javaSuggestion.value(DeploymentRuntimeAssessment.RuntimeInputType.JAVA_MAIN_CLASS).orElseThrow());
+        assertEquals("21", javaSuggestion.value(DeploymentRuntimeAssessment.RuntimeInputType.JAVA_VERSION).orElseThrow());
 
         Path python = Files.createDirectories(temporaryDirectory.resolve("python-inference/src/demo"));
         Files.writeString(python.getParent().getParent().resolve("pyproject.toml"), """
@@ -207,8 +207,8 @@ class DeploymentAnalysisCoordinatorTest {
         Files.writeString(python.resolve("__main__.py"), "raise SystemExit(0)");
         var pythonSuggestion = analyzer.analyze(python.getParent().getParent(), DeploymentProjectType.PYTHON_SERVICE)
                 .runtimeSuggestion().orElseThrow();
-        assertEquals("3.12", pythonSuggestion.value(DeploymentRuntimeSuggestion.RuntimeInput.PYTHON_VERSION).orElseThrow());
-        assertEquals("demo", pythonSuggestion.value(DeploymentRuntimeSuggestion.RuntimeInput.PYTHON_ENTRYPOINT).orElseThrow());
+        assertEquals("3.12", pythonSuggestion.value(DeploymentRuntimeAssessment.RuntimeInputType.PYTHON_VERSION).orElseThrow());
+        assertEquals("demo", pythonSuggestion.value(DeploymentRuntimeAssessment.RuntimeInputType.PYTHON_ENTRYPOINT).orElseThrow());
 
         Path staticSite = Files.createDirectories(temporaryDirectory.resolve("static-inference"));
         Files.writeString(staticSite.resolve("package.json"), """
@@ -217,7 +217,7 @@ class DeploymentAnalysisCoordinatorTest {
         Files.writeString(staticSite.resolve("package-lock.json"), "{}");
         Files.writeString(staticSite.resolve("vite.config.js"), "export default { build: { outDir: 'public-site' } }");
         var staticSuggestion = analyzer.analyze(staticSite, DeploymentProjectType.STATIC_SITE).runtimeSuggestion().orElseThrow();
-        assertEquals("public-site", staticSuggestion.value(DeploymentRuntimeSuggestion.RuntimeInput.STATIC_OUTPUT_DIRECTORY).orElseThrow());
+        assertEquals("public-site", staticSuggestion.value(DeploymentRuntimeAssessment.RuntimeInputType.STATIC_OUTPUT_DIRECTORY).orElseThrow());
 
         Path container = Files.createDirectories(temporaryDirectory.resolve("container-inference"));
         Files.writeString(container.resolve("Dockerfile"), "FROM alpine@sha256:" + "a".repeat(64)
@@ -238,16 +238,16 @@ class DeploymentAnalysisCoordinatorTest {
 
         var assessment = analyzer.analyze(project, DeploymentProjectType.RECOGNITION_PREVIEW);
 
-        assertEquals(DeploymentAdmission.RECOGNITION_PREVIEW, assessment.admission());
+        assertEquals(DeploymentAdmissionStatus.RECOGNITION_PREVIEW, assessment.admission());
         var facts = assessment.facts().orElseThrow();
-        assertEquals(DeploymentBuildTool.NONE_PREVIEW, facts.buildTool());
+        assertEquals(DeploymentBuildToolType.NONE_PREVIEW, facts.buildTool());
         assertEquals(DeploymentSupportLevel.RECOGNITION_PREVIEW, facts.support().level());
         assertTrue(!facts.readyForPlanning());
         assertTrue(facts.languageFacts().sourceLanguages().containsAll(java.util.Set.of(
-                SourceLanguage.GO, SourceLanguage.RUST, SourceLanguage.CSHARP, SourceLanguage.KOTLIN,
-                SourceLanguage.PHP, SourceLanguage.RUBY, SourceLanguage.C, SourceLanguage.CPP,
-                SourceLanguage.SCALA, SourceLanguage.CLOJURE, SourceLanguage.ELIXIR, SourceLanguage.DART,
-                SourceLanguage.LUA, SourceLanguage.PERL, SourceLanguage.SWIFT, SourceLanguage.SHELL)));
+                SourceLanguageType.GO, SourceLanguageType.RUST, SourceLanguageType.CSHARP, SourceLanguageType.KOTLIN,
+                SourceLanguageType.PHP, SourceLanguageType.RUBY, SourceLanguageType.C, SourceLanguageType.CPP,
+                SourceLanguageType.SCALA, SourceLanguageType.CLOJURE, SourceLanguageType.ELIXIR, SourceLanguageType.DART,
+                SourceLanguageType.LUA, SourceLanguageType.PERL, SourceLanguageType.SWIFT, SourceLanguageType.SHELL)));
         assertTrue(assessment.runtimeSuggestion().isEmpty());
     }
 
@@ -258,7 +258,7 @@ class DeploymentAnalysisCoordinatorTest {
 
         var assessment = analyzer.analyze(project, DeploymentProjectType.RECOGNITION_PREVIEW);
 
-        assertEquals(DeploymentAdmission.RECOGNITION_PREVIEW, assessment.admission());
+        assertEquals(DeploymentAdmissionStatus.RECOGNITION_PREVIEW, assessment.admission());
         assertEquals(DeploymentSupportLevel.UNRECOGNIZED, assessment.facts().orElseThrow().support().level());
     }
 

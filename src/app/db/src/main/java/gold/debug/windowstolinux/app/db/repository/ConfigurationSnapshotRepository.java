@@ -29,7 +29,7 @@ public final class ConfigurationSnapshotRepository {
     public void save(ConfigurationSnapshot snapshot) throws SQLException {
         Objects.requireNonNull(snapshot, "snapshot");
         try (Connection connection = connections.open()) {
-            RepositoryTransactions.execute(connection, () -> {
+            RepositoryTransactionExecutor.execute(connection, () -> {
                 Optional<ConfigurationSnapshot> existing = find(connection, snapshot.applicationId(), snapshot.revision());
                 if (existing.isPresent()) {
                     ConfigurationSnapshot stored = existing.orElseThrow();

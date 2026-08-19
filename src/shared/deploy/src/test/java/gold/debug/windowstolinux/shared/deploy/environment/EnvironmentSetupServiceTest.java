@@ -1,7 +1,7 @@
 package gold.debug.windowstolinux.shared.deploy.environment;
 
 import gold.debug.windowstolinux.shared.linux.connection.HostKeyDecision;
-import gold.debug.windowstolinux.shared.linux.connection.HostKeyVerifier;
+import gold.debug.windowstolinux.shared.linux.connection.HostKeyEvaluator;
 import gold.debug.windowstolinux.shared.linux.connection.LinuxGateway;
 import gold.debug.windowstolinux.shared.linux.session.LinuxRemoteSession;
 import gold.debug.windowstolinux.shared.linux.runtime.HealthCheckResult;
@@ -9,7 +9,7 @@ import gold.debug.windowstolinux.shared.linux.protocol.ManagedHelperProtocol;
 import gold.debug.windowstolinux.shared.linux.transfer.RemoteWorkspace;
 import gold.debug.windowstolinux.shared.linux.connection.SshCredential;
 import gold.debug.windowstolinux.shared.linux.connection.SshEndpoint;
-import gold.debug.windowstolinux.shared.linux.transfer.UploadReceipt;
+import gold.debug.windowstolinux.shared.linux.transfer.SourceUploadResult;
 import gold.debug.windowstolinux.shared.model.health.HealthCheck;
 import gold.debug.windowstolinux.shared.model.lifecycle.LifecycleAction;
 import gold.debug.windowstolinux.shared.model.lifecycle.LifecycleObservation;
@@ -17,7 +17,7 @@ import gold.debug.windowstolinux.shared.model.managed.ManagedApplication;
 import gold.debug.windowstolinux.shared.model.message.LocalizedOperationException;
 import gold.debug.windowstolinux.shared.model.deployment.EnvironmentSetupApproval;
 import gold.debug.windowstolinux.shared.model.deployment.EnvironmentSetupResult;
-import gold.debug.windowstolinux.shared.model.capability.ServerCapabilities;
+import gold.debug.windowstolinux.shared.model.capability.ServerCapabilityFacts;
 import gold.debug.windowstolinux.shared.model.archive.SourceArchiveDescriptor;
 import org.junit.jupiter.api.Test;
 
@@ -78,7 +78,7 @@ class EnvironmentSetupServiceTest {
         return new SshEndpoint("server-one", "example.test", 22, "deployer");
     }
 
-    private static HostKeyVerifier acceptingHostKey() {
+    private static HostKeyEvaluator acceptingHostKey() {
         return (endpoint, fingerprint) -> HostKeyDecision.ACCEPT_EXISTING;
     }
 
@@ -98,7 +98,7 @@ class EnvironmentSetupServiceTest {
 
         /** Performs the {@code collectCapabilities} operation. / 执行 {@code collectCapabilities} 操作。 */
         @Override
-        public ServerCapabilities collectCapabilities() {
+        public ServerCapabilityFacts collectCapabilities() {
             return capabilities();
         }
 
@@ -112,7 +112,7 @@ class EnvironmentSetupServiceTest {
 
         /** Performs the {@code uploadSource} operation. / 执行 {@code uploadSource} 操作。 */
         @Override
-        public UploadReceipt uploadSource(SourceArchiveDescriptor archive, RemoteWorkspace workspace) {
+        public SourceUploadResult uploadSource(SourceArchiveDescriptor archive, RemoteWorkspace workspace) {
             throw unsupported();
         }
 
@@ -144,8 +144,8 @@ class EnvironmentSetupServiceTest {
             return new UnsupportedOperationException("not part of environment preparation");
         }
 
-        private static ServerCapabilities capabilities() {
-            return new ServerCapabilities("Ubuntu 24.04.1 LTS", "x86_64", true, true, true, true, true, true, true, true,
+        private static ServerCapabilityFacts capabilities() {
+            return new ServerCapabilityFacts("Ubuntu 24.04.1 LTS", "x86_64", true, true, true, true, true, true, true, true,
                     ManagedHelperProtocol.VERSION, 10L * 1024 * 1024 * 1024, "capabilities freshly collected");
         }
     }

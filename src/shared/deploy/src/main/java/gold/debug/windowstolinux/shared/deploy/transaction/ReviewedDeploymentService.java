@@ -1,17 +1,18 @@
 package gold.debug.windowstolinux.shared.deploy.transaction;
 
 import gold.debug.windowstolinux.shared.deploy.contract.ReviewedDeploymentRequest;
-import gold.debug.windowstolinux.shared.deploy.plan.ReviewedReleaseIdentity;
+import gold.debug.windowstolinux.shared.deploy.plan.ReviewedReleaseIdentityResolver;
 import gold.debug.windowstolinux.shared.config.secretref.ResolvedSecretRevision;
 import gold.debug.windowstolinux.shared.config.revision.DeploymentInputManifest;
-import gold.debug.windowstolinux.shared.deploy.result.DeploymentEvent;
-import gold.debug.windowstolinux.shared.deploy.result.DeploymentResult;
-import gold.debug.windowstolinux.shared.deploy.support.HostSupportChecker;
-import gold.debug.windowstolinux.shared.deploy.support.HostSupport;
+import gold.debug.windowstolinux.shared.deploy.result.deployment.DeploymentEvent;
+import gold.debug.windowstolinux.shared.deploy.result.deployment.DeploymentResult;
+import gold.debug.windowstolinux.shared.deploy.result.compatibility.HostSupportStatus;
+import gold.debug.windowstolinux.shared.deploy.result.compatibility.HostSupportDecision;
+import gold.debug.windowstolinux.shared.deploy.support.HostSupportEvaluator;
 import gold.debug.windowstolinux.shared.linux.build.DeploymentBuildResult;
 import gold.debug.windowstolinux.shared.linux.connection.DeploymentLinuxGateway;
 import gold.debug.windowstolinux.shared.linux.session.DeploymentRemoteSession;
-import gold.debug.windowstolinux.shared.linux.connection.HostKeyVerifier;
+import gold.debug.windowstolinux.shared.linux.connection.HostKeyEvaluator;
 import gold.debug.windowstolinux.shared.linux.error.LinuxOperationException;
 import gold.debug.windowstolinux.shared.linux.connection.SshCredential;
 import gold.debug.windowstolinux.shared.linux.connection.SshEndpoint;
@@ -52,7 +53,7 @@ public final class ReviewedDeploymentService {
      */
     public DeploymentResult deploy(ReviewedDeploymentRequest request, ManagedApplication application,
                                    DeploymentLinuxGateway gateway, SshEndpoint endpoint, SshCredential credential,
-                                   HostKeyVerifier hostKeyVerifier) {
+                                   HostKeyEvaluator hostKeyVerifier) {
         if (!request.secretReferences().isEmpty()) {
             throw new IllegalArgumentException("resolved secret revisions are required for this reviewed request");
         }
@@ -62,7 +63,7 @@ public final class ReviewedDeploymentService {
     /** Executes a reviewed transaction with short-lived exact secret revisions. / 使用短生命周期精确秘密修订执行经审阅事务。 */
     public DeploymentResult deploy(ReviewedDeploymentRequest request, ManagedApplication application,
                                    DeploymentLinuxGateway gateway, SshEndpoint endpoint, SshCredential credential,
-                                   HostKeyVerifier hostKeyVerifier, List<ResolvedSecretRevision> resolvedSecrets) {
+                                   HostKeyEvaluator hostKeyVerifier, List<ResolvedSecretRevision> resolvedSecrets) {
         request = java.util.Objects.requireNonNull(request, "request");
         application = java.util.Objects.requireNonNull(application, "application");
         gateway = java.util.Objects.requireNonNull(gateway, "gateway");
@@ -82,7 +83,7 @@ public final class ReviewedDeploymentService {
                     "Root build approval and the SSH account must agree before a candidate is created");
         }
         RemoteWorkspace workspace = new RemoteWorkspace(application.id(), request.archive().contentSha256());
-        String releaseIdentity = ReviewedReleaseIdentity.from(request);
+        String releaseIdentity = ReviewedReleaseIdentityResolver.from(request);
         ReleaseSnapshot snapshot = null;
         DeploymentBuildResult build = null;
         DeploymentInputManifest inputs = null;
@@ -107,12 +108,12 @@ public final class ReviewedDeploymentService {
             }
             events.add(new DeploymentEvent("target-capabilities", true,
                     "Target capabilities were collected before the reviewed deployment"));
-            HostSupportChecker.Result typedCompatibility = HostSupportChecker.evaluate(
+            HostSupportDecision typedCompatibility = HostSupportEvaluator.evaluate(
                     session.collectDeploymentCapabilities(), request.facts(), request.runtime());
             events.add(new DeploymentEvent("typed-host-compatibility",
-                    typedCompatibility.support() == HostSupport.READY_FOR_RUNTIME_VALIDATION,
+                    typedCompatibility.support() == HostSupportStatus.READY_FOR_RUNTIME_VALIDATION,
                     String.join("; ", typedCompatibility.evidence())));
-            if (typedCompatibility.support() != HostSupport.READY_FOR_RUNTIME_VALIDATION) {
+            if (typedCompatibility.support() != HostSupportStatus.READY_FOR_RUNTIME_VALIDATION) {
                 return new DeploymentResult(DeploymentStatus.PRECONDITION_REJECTED, events, Optional.empty(), Optional.empty());
             }
 
@@ -215,7 +216,7 @@ public final class ReviewedDeploymentService {
 
     private static DeploymentResult recoverAfterInterruptedSession(
             ReviewedDeploymentRequest request, ManagedApplication application, DeploymentLinuxGateway gateway,
-            SshEndpoint endpoint, SshCredential credential, HostKeyVerifier hostKeyVerifier, RemoteWorkspace workspace,
+            SshEndpoint endpoint, SshCredential credential, HostKeyEvaluator hostKeyVerifier, RemoteWorkspace workspace,
             ReleaseSnapshot snapshot, DeploymentBuildResult build, String releaseIdentity, DeploymentInputManifest inputs,
             List<DeploymentEvent> events
     ) {
@@ -235,7 +236,7 @@ public final class ReviewedDeploymentService {
 
     private static DeploymentResult cleanupAfterInterruptedSession(
             DeploymentLinuxGateway gateway, SshEndpoint endpoint, SshCredential credential,
-            HostKeyVerifier hostKeyVerifier, RemoteWorkspace workspace, List<DeploymentEvent> events
+            HostKeyEvaluator hostKeyVerifier, RemoteWorkspace workspace, List<DeploymentEvent> events
     ) {
         try (DeploymentRemoteSession cleanupSession = gateway.connect(
                 endpoint, credential.duplicate(), hostKeyVerifier)) {

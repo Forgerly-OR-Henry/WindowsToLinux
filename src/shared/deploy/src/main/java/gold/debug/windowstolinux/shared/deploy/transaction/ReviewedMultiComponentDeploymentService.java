@@ -1,16 +1,17 @@
 package gold.debug.windowstolinux.shared.deploy.transaction;
 
-import gold.debug.windowstolinux.shared.deploy.support.HostSupportChecker;
-import gold.debug.windowstolinux.shared.deploy.support.HostSupport;
+import gold.debug.windowstolinux.shared.deploy.result.compatibility.HostSupportStatus;
+import gold.debug.windowstolinux.shared.deploy.result.compatibility.HostSupportDecision;
+import gold.debug.windowstolinux.shared.deploy.support.HostSupportEvaluator;
 import gold.debug.windowstolinux.shared.deploy.contract.ApplicationHealthGate;
 import gold.debug.windowstolinux.shared.deploy.contract.MultiComponentDeploymentPlan;
-import gold.debug.windowstolinux.shared.deploy.plan.ReviewedReleaseIdentity;
-import gold.debug.windowstolinux.shared.deploy.result.ComponentTransactionState;
-import gold.debug.windowstolinux.shared.deploy.result.DeploymentEvent;
-import gold.debug.windowstolinux.shared.deploy.result.MultiComponentDeploymentResult;
+import gold.debug.windowstolinux.shared.deploy.plan.ReviewedReleaseIdentityResolver;
+import gold.debug.windowstolinux.shared.deploy.result.deployment.ComponentTransactionState;
+import gold.debug.windowstolinux.shared.deploy.result.deployment.DeploymentEvent;
+import gold.debug.windowstolinux.shared.deploy.result.deployment.MultiComponentDeploymentResult;
 import gold.debug.windowstolinux.shared.linux.connection.DeploymentLinuxGateway;
 import gold.debug.windowstolinux.shared.linux.session.DeploymentRemoteSession;
-import gold.debug.windowstolinux.shared.linux.connection.HostKeyVerifier;
+import gold.debug.windowstolinux.shared.linux.connection.HostKeyEvaluator;
 import gold.debug.windowstolinux.shared.linux.error.LinuxOperationException;
 import gold.debug.windowstolinux.shared.linux.connection.SshCredential;
 import gold.debug.windowstolinux.shared.linux.connection.SshEndpoint;
@@ -20,7 +21,7 @@ import gold.debug.windowstolinux.shared.model.deployment.DeploymentStatus;
 import gold.debug.windowstolinux.shared.model.lifecycle.LifecycleAction;
 import gold.debug.windowstolinux.shared.model.lifecycle.LifecycleObservation;
 import gold.debug.windowstolinux.shared.model.lifecycle.RuntimeState;
-import gold.debug.windowstolinux.shared.model.capability.LinuxCapabilities;
+import gold.debug.windowstolinux.shared.model.capability.LinuxCapabilityFacts;
 
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
@@ -52,7 +53,7 @@ public final class ReviewedMultiComponentDeploymentService {
             DeploymentLinuxGateway gateway,
             SshEndpoint endpoint,
             SshCredential credential,
-            HostKeyVerifier hostKeyVerifier
+            HostKeyEvaluator hostKeyVerifier
     ) {
         plan = Objects.requireNonNull(plan, "plan");
         applicationHealth = Objects.requireNonNull(applicationHealth, "applicationHealth");
@@ -105,16 +106,16 @@ public final class ReviewedMultiComponentDeploymentService {
             return Optional.of(rejected(contexts, applicationEvents, "helper-protocol",
                     "Target helper protocol is stale; run product Environment Preparation first"));
         }
-        LinuxCapabilities capabilities = session.collectDeploymentCapabilities();
+        LinuxCapabilityFacts capabilities = session.collectDeploymentCapabilities();
         long requiredBytes = 0;
         for (String id : plan.startOrder()) {
             MultiComponentTransactionContext context = contexts.get(id);
-            HostSupportChecker.Result compatibility = HostSupportChecker.evaluate(
+            HostSupportDecision compatibility = HostSupportEvaluator.evaluate(
                     capabilities, context.component.request().facts(), context.component.request().runtime());
             context.event("typed-host-compatibility",
-                    compatibility.support() == HostSupport.READY_FOR_RUNTIME_VALIDATION,
+                    compatibility.support() == HostSupportStatus.READY_FOR_RUNTIME_VALIDATION,
                     String.join("; ", compatibility.evidence()));
-            if (compatibility.support() != HostSupport.READY_FOR_RUNTIME_VALIDATION) {
+            if (compatibility.support() != HostSupportStatus.READY_FOR_RUNTIME_VALIDATION) {
                 return Optional.of(rejected(contexts, applicationEvents, "typed-host-compatibility",
                         "At least one component is outside the collected host runtime matrix"));
             }
@@ -170,7 +171,7 @@ public final class ReviewedMultiComponentDeploymentService {
                 }
                 context.inputs = session.stageDeploymentInputs(context.component.application(), request.configuration(),
                         context.component.resolvedSecrets());
-                context.releaseIdentity = ReviewedReleaseIdentity.from(request);
+                context.releaseIdentity = ReviewedReleaseIdentityResolver.from(request);
                 context.event("candidate-ready", true, "Candidate build and immutable deployment inputs are ready");
             }
         }

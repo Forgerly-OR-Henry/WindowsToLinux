@@ -1,8 +1,8 @@
 package gold.debug.windowstolinux.shared.analyze.ecosystem.node;
 
-import gold.debug.windowstolinux.shared.analyze.source.BoundedMetadataReader;
+import gold.debug.windowstolinux.shared.analyze.source.BoundedMetadataInspector;
 import gold.debug.windowstolinux.shared.analyze.source.ProjectIdentityResolver;
-import gold.debug.windowstolinux.shared.model.project.DeploymentBuildTool;
+import gold.debug.windowstolinux.shared.model.project.DeploymentBuildToolType;
 
 import java.io.IOException;
 import java.nio.file.Path;
@@ -23,11 +23,11 @@ public final class NodeBuildInspector {
     /** Returns package facts when package.json exists. / 在 package.json 存在时返回包事实。 */
     public Optional<NodeBuildFacts> inspect(Path root) throws IOException {
         Path packageJson = root.resolve("package.json");
-        if (!BoundedMetadataReader.regular(packageJson)) {
+        if (!BoundedMetadataInspector.regular(packageJson)) {
             return Optional.empty();
         }
-        String json = BoundedMetadataReader.read(packageJson);
-        List<String> lockFiles = BoundedMetadataReader.existingNames(root,
+        String json = BoundedMetadataInspector.read(packageJson);
+        List<String> lockFiles = BoundedMetadataInspector.existingNames(root,
                 "package-lock.json", "pnpm-lock.yaml", "yarn.lock");
         return Optional.of(new NodeBuildFacts(ProjectIdentityResolver.applicationId(root, json, NAME),
                 buildTool(lockFiles), lockFiles, hasScript(json, "build"), hasScript(json, "start")));
@@ -43,13 +43,13 @@ public final class NodeBuildInspector {
         return false;
     }
 
-    private static DeploymentBuildTool buildTool(List<String> lockFiles) {
+    private static DeploymentBuildToolType buildTool(List<String> lockFiles) {
         if (lockFiles.equals(List.of("pnpm-lock.yaml"))) {
-            return DeploymentBuildTool.PNPM;
+            return DeploymentBuildToolType.PNPM;
         }
         if (lockFiles.equals(List.of("yarn.lock"))) {
-            return DeploymentBuildTool.YARN;
+            return DeploymentBuildToolType.YARN;
         }
-        return DeploymentBuildTool.NPM;
+        return DeploymentBuildToolType.NPM;
     }
 }

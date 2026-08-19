@@ -1,6 +1,6 @@
 package gold.debug.windowstolinux.shared.model.project;
 
-import gold.debug.windowstolinux.shared.model.server.LinuxDistro;
+import gold.debug.windowstolinux.shared.model.server.LinuxDistroType;
 
 import java.time.LocalDate;
 import java.util.Objects;
@@ -16,7 +16,7 @@ import java.util.Objects;
  * @param validatedOn date of the real acceptance / 真实验收日期
  */
 public record ValidatedDeploymentTarget(
-        LinuxDistro distro,
+        LinuxDistroType distro,
         String version,
         String architecture,
         LocalDate validatedOn

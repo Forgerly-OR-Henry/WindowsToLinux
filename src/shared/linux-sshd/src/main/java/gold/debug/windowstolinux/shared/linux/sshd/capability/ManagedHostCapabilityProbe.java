@@ -1,6 +1,6 @@
 package gold.debug.windowstolinux.shared.linux.sshd.capability;
 
-import gold.debug.windowstolinux.shared.linux.sshd.protocol.helper.ManagedHelperBundle;
+import gold.debug.windowstolinux.shared.linux.sshd.capability.ecosystem.ManagedEcosystemCapabilityProbe;
 
 import java.util.Objects;
 
@@ -24,14 +24,13 @@ public final class ManagedHostCapabilityProbe {
      */
     public static String render(String helperPath) {
         return "managed_helper=" + quote(Objects.requireNonNull(helperPath, "helperPath")) + "\n"
-                + "managed_java=" + quote(ManagedHelperBundle.JAVA_RUNTIME_PATH) + "\n" + """
+                + ManagedEcosystemCapabilityProbe.managedJavaEnvironment() + """
                 set -eu
                 . /etc/os-release
                 printf 'OS=%s %s\\n' "$NAME" "$VERSION_ID"
                 printf 'ARCH='; uname -m
                 if command -v systemctl >/dev/null 2>&1; then printf 'SYSTEMD=1\\n'; else printf 'SYSTEMD=0\\n'; fi
-                if [ -x "$managed_java" ] && "$managed_java" -version 2>&1 | grep -Eq '(^|[^0-9])21[.]'; then printf 'JAVA21=1\\n'; else printf 'JAVA21=0\\n'; fi
-                if command -v mvn >/dev/null 2>&1; then printf 'MAVEN=1\\n'; else printf 'MAVEN=0\\n'; fi
+                """ + ManagedEcosystemCapabilityProbe.hostToolChecks() + """
                 if command -v tar >/dev/null 2>&1 && command -v gzip >/dev/null 2>&1; then printf 'TAR=1\\n'; else printf 'TAR=0\\n'; fi
                 if command -v curl >/dev/null 2>&1; then printf 'CURL=1\\n'; else printf 'CURL=0\\n'; fi
                 if command -v ss >/dev/null 2>&1; then printf 'SS=1\\n'; else printf 'SS=0\\n'; fi

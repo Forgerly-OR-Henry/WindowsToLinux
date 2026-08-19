@@ -1,7 +1,7 @@
 package gold.debug.windowstolinux.shared.linux.sshd.build.spi;
 
 import gold.debug.windowstolinux.shared.linux.transfer.RemoteWorkspace;
-import gold.debug.windowstolinux.shared.model.deployment.BuildLimits;
+import gold.debug.windowstolinux.shared.model.deployment.BuildLimitConfiguration;
 import gold.debug.windowstolinux.shared.model.project.DeploymentProjectFacts;
 import gold.debug.windowstolinux.shared.model.project.DeploymentProjectType;
 import gold.debug.windowstolinux.shared.model.project.DeploymentRuntimeSpecification;
@@ -13,5 +13,5 @@ public interface DeploymentBuildRenderer {
 
     /** Renders the complete safe build script. / 渲染完整安全构建脚本。 */
     String render(DeploymentProjectFacts facts, DeploymentRuntimeSpecification runtime,
-                  RemoteWorkspace workspace, BuildLimits limits);
+                  RemoteWorkspace workspace, BuildLimitConfiguration limits);
 }

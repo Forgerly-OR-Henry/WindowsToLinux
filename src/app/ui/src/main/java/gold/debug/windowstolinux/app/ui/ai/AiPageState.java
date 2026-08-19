@@ -1,7 +1,7 @@
 package gold.debug.windowstolinux.app.ui.ai;
 
 import gold.debug.windowstolinux.shared.model.security.CredentialStorageMode;
-import gold.debug.windowstolinux.shared.ai.collaboration.AiCollaborationRole;
+import gold.debug.windowstolinux.shared.ai.collaboration.role.AiCollaborationRoleKind;
 
 import java.util.Arrays;
 import java.util.Objects;
@@ -15,7 +15,7 @@ public final class AiPageState implements AutoCloseable {
     private final String endpoint;
     private final String model;
     private final String providerId;
-    private final AiCollaborationRole role;
+    private final AiCollaborationRoleKind role;
     private final char[] apiKey;
     private final CredentialStorageMode credentialMode;
     private final char[] masterPassword;
@@ -34,7 +34,7 @@ public final class AiPageState implements AutoCloseable {
      * @param output the {@code output} value / {@code output} 值
      * @throws NullPointerException if a required argument is {@code null} / 必要参数为 {@code null} 时
      */
-    public AiPageState(String endpoint, String model, String providerId, AiCollaborationRole role,
+    public AiPageState(String endpoint, String model, String providerId, AiCollaborationRoleKind role,
                        char[] apiKey, CredentialStorageMode credentialMode,
                        char[] masterPassword, String output) {
         this.endpoint = Objects.requireNonNull(endpoint, "endpoint");
@@ -66,7 +66,7 @@ public final class AiPageState implements AutoCloseable {
     /** Returns the unsaved named-provider identifier. / 返回未保存的命名提供者标识。 */
     public String providerId() { return providerId; }
     /** Returns the selected fixed collaboration role. / 返回所选固定协作角色。 */
-    public AiCollaborationRole role() { return role; }
+    public AiCollaborationRoleKind role() { return role; }
     /**
      * Performs the {@code apiKey} operation.
      *

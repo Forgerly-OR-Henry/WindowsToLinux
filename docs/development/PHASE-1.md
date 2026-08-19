@@ -145,7 +145,7 @@
 
 ## 6. 桌面运行布局
 
-`app/main` 使用 `RunModeDetector` 解析固定位置，不提供系统属性、命令行、注册表或指针文件覆盖：
+`app/main` 使用 `RunModeResolver` 解析固定位置，不提供系统属性、命令行、注册表或指针文件覆盖：
 
 | 模式 | applicationHome | data |
 | --- | --- | --- |

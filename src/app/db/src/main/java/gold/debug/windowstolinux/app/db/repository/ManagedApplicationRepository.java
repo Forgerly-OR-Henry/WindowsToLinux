@@ -38,8 +38,8 @@ public final class ManagedApplicationRepository {
     /** Saves a managed application identity. / 保存受管应用身份。 */
     public void save(ManagedApplication application) throws SQLException {
         try (Connection connection = connections.open()) {
-            RepositoryTransactions.execute(connection, () -> {
-                RepositoryTransactions.upsertServer(connection, application.server());
+            RepositoryTransactionExecutor.execute(connection, () -> {
+                RepositoryTransactionExecutor.upsertServer(connection, application.server());
                 upsertApplication(connection, application);
             });
         }
@@ -56,8 +56,8 @@ public final class ManagedApplicationRepository {
             throw new IllegalArgumentException("current release must belong to the managed application");
         }
         try (Connection connection = connections.open()) {
-            RepositoryTransactions.execute(connection, () -> {
-                RepositoryTransactions.upsertServer(connection, application.server());
+            RepositoryTransactionExecutor.execute(connection, () -> {
+                RepositoryTransactionExecutor.upsertServer(connection, application.server());
                 upsertApplication(connection, application);
                 upsertRuntime(connection, application.id(), runtimeConfiguration);
                 upsertRelease(connection, release);
@@ -74,7 +74,7 @@ public final class ManagedApplicationRepository {
             throw new IllegalArgumentException("whole-application persistence requires unique non-empty components");
         }
         try (Connection connection = connections.open()) {
-            RepositoryTransactions.execute(connection, () -> recordSuccessfulDeployments(connection, records));
+            RepositoryTransactionExecutor.execute(connection, () -> recordSuccessfulDeployments(connection, records));
         }
     }
 
@@ -93,8 +93,8 @@ public final class ManagedApplicationRepository {
             throw new IllegalArgumentException("current release must belong to the managed application");
         }
         try (Connection connection = connections.open()) {
-            RepositoryTransactions.execute(connection, () -> {
-                RepositoryTransactions.upsertServer(connection, application.server());
+            RepositoryTransactionExecutor.execute(connection, () -> {
+                RepositoryTransactionExecutor.upsertServer(connection, application.server());
                 upsertApplication(connection, application);
                 upsertRuntime(connection, application.id(), runtimeConfiguration);
                 upsertRelease(connection, release);
@@ -224,7 +224,7 @@ public final class ManagedApplicationRepository {
     static void recordSuccessfulDeployments(Connection connection,
                                             List<SuccessfulManagedDeployment> deployments) throws SQLException {
         for (SuccessfulManagedDeployment deployment : deployments) {
-            RepositoryTransactions.upsertServer(connection, deployment.application().server());
+            RepositoryTransactionExecutor.upsertServer(connection, deployment.application().server());
             upsertApplication(connection, deployment.application());
             upsertRuntime(connection, deployment.application().id(), deployment.runtimeConfiguration());
             upsertRelease(connection, deployment.release());

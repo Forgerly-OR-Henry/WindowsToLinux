@@ -41,7 +41,7 @@ public record DeploymentComponent(
         List<ComponentDataPath> dataPaths,
         Set<String> dependencies,
         boolean required,
-        ComponentIsolationRequirements isolation
+        ComponentIsolationSpecification isolation
 ) {
     /** Validates a complete bounded component record. / 验证完整有界组件记录。 */
     public DeploymentComponent {

@@ -1,11 +1,11 @@
 package gold.debug.windowstolinux.shared.deploy.transaction;
 
 import gold.debug.windowstolinux.shared.deploy.contract.MultiComponentDeploymentPlan;
-import gold.debug.windowstolinux.shared.deploy.result.ComponentTransactionState;
-import gold.debug.windowstolinux.shared.deploy.result.DeploymentEvent;
-import gold.debug.windowstolinux.shared.deploy.result.MultiComponentDeploymentResult;
+import gold.debug.windowstolinux.shared.deploy.result.deployment.ComponentTransactionState;
+import gold.debug.windowstolinux.shared.deploy.result.deployment.DeploymentEvent;
+import gold.debug.windowstolinux.shared.deploy.result.deployment.MultiComponentDeploymentResult;
 import gold.debug.windowstolinux.shared.linux.connection.DeploymentLinuxGateway;
-import gold.debug.windowstolinux.shared.linux.connection.HostKeyVerifier;
+import gold.debug.windowstolinux.shared.linux.connection.HostKeyEvaluator;
 import gold.debug.windowstolinux.shared.linux.connection.SshCredential;
 import gold.debug.windowstolinux.shared.linux.connection.SshEndpoint;
 import gold.debug.windowstolinux.shared.linux.error.LinuxOperationException;
@@ -29,7 +29,7 @@ final class MultiComponentRecoveryCoordinator {
             DeploymentLinuxGateway gateway,
             SshEndpoint endpoint,
             SshCredential credential,
-            HostKeyVerifier verifier,
+            HostKeyEvaluator verifier,
             List<DeploymentEvent> applicationEvents) {
         if (contexts.values().stream().noneMatch(context -> context.snapshot != null)) {
             try (DeploymentRemoteSession session = gateway.connect(endpoint, credential.duplicate(), verifier)) {

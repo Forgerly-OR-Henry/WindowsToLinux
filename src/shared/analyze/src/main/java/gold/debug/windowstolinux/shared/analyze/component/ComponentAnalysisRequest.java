@@ -3,7 +3,7 @@ package gold.debug.windowstolinux.shared.analyze.component;
 import gold.debug.windowstolinux.shared.model.project.DeploymentProjectType;
 import gold.debug.windowstolinux.shared.model.project.DeploymentRuntimeSpecification;
 import gold.debug.windowstolinux.shared.model.project.component.ComponentDataPath;
-import gold.debug.windowstolinux.shared.model.project.component.ComponentIsolationRequirements;
+import gold.debug.windowstolinux.shared.model.project.component.ComponentIsolationSpecification;
 
 import java.util.List;
 import java.util.Objects;
@@ -27,7 +27,7 @@ public record ComponentAnalysisRequest(
         List<ComponentDataPath> dataPaths,
         Set<String> dependencies,
         boolean required,
-        ComponentIsolationRequirements isolation
+        ComponentIsolationSpecification isolation
 ) {
     /** Validates a bounded explicit component selection without accessing source. / 在不访问源码的情况下验证有界显式组件选择。 */
     public ComponentAnalysisRequest {

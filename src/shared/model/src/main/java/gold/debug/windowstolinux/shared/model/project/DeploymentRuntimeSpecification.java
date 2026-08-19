@@ -99,7 +99,7 @@ public sealed interface DeploymentRuntimeSpecification permits DeploymentRuntime
     }
 
     /** One image and one container without privileged or host-namespace escape options. / 不含特权或宿主命名空间逃逸选项的单镜像单容器。 */
-    record Container(ContainerEngine engine, Map<Integer, Integer> publishedPorts, List<ManagedVolume> volumes,
+    record Container(ContainerEngineType engine, Map<Integer, Integer> publishedPorts, List<ManagedVolume> volumes,
                      HealthCheck healthCheck) implements DeploymentRuntimeSpecification {
         /** Creates a {@code Container} specification. / 创建 {@code Container} 规范。 */
         public Container {
@@ -201,7 +201,7 @@ public sealed interface DeploymentRuntimeSpecification permits DeploymentRuntime
     }
 
     /** Supported single-container engine model. / 受支持的单容器引擎模型。 */
-    enum ContainerEngine { /** Docker daemon. / Docker 守护进程。 */ DOCKER, /** Podman Quadlet. / Podman Quadlet 单元定义。 */ PODMAN }
+    enum ContainerEngineType { /** Docker daemon. / Docker 守护进程。 */ DOCKER, /** Podman Quadlet. / Podman Quadlet 单元定义。 */ PODMAN }
 
     /** Platform-managed volume that never targets a host root or arbitrary host path. / 绝不指向宿主根目录或任意宿主路径的平台受管卷。 */
     record ManagedVolume(String name, String containerPath, boolean readOnly) {

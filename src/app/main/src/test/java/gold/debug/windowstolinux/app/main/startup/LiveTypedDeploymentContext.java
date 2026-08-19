@@ -2,10 +2,10 @@ package gold.debug.windowstolinux.app.main.startup;
 
 import gold.debug.windowstolinux.app.db.DesktopPersistence;
 import gold.debug.windowstolinux.app.db.entity.StoredApplicationSecretRevision;
-import gold.debug.windowstolinux.app.service.DesktopApplicationService;
+import gold.debug.windowstolinux.app.service.DesktopApplicationFacade;
 import gold.debug.windowstolinux.app.service.server.ServerProfile;
-import gold.debug.windowstolinux.app.service.deployment.MultiComponentReviewInput;
-import gold.debug.windowstolinux.app.service.deployment.ReviewedMultiComponentApplication;
+import gold.debug.windowstolinux.app.service.deployment.multi.MultiComponentReviewInput;
+import gold.debug.windowstolinux.app.service.deployment.multi.ReviewedMultiComponentApplication;
 import gold.debug.windowstolinux.app.service.source.PreparedMultiComponentSource;
 import gold.debug.windowstolinux.app.service.source.ReviewedSourcePreparation;
 import gold.debug.windowstolinux.shared.config.revision.ConfigurationEntry;
@@ -14,14 +14,14 @@ import gold.debug.windowstolinux.shared.config.secretref.SecretReference;
 import gold.debug.windowstolinux.shared.deploy.contract.ReviewedDeploymentRequest;
 import gold.debug.windowstolinux.shared.deploy.contract.ReviewedDeploymentPlan;
 import gold.debug.windowstolinux.shared.deploy.contract.ApplicationHealthGate;
-import gold.debug.windowstolinux.shared.deploy.contract.DeploymentStep;
-import gold.debug.windowstolinux.shared.deploy.result.DeploymentResult;
-import gold.debug.windowstolinux.shared.deploy.result.MultiComponentDeploymentResult;
-import gold.debug.windowstolinux.shared.deploy.result.MultiComponentLifecycleResult;
+import gold.debug.windowstolinux.shared.deploy.contract.DeploymentPlanAction;
+import gold.debug.windowstolinux.shared.deploy.result.deployment.DeploymentResult;
+import gold.debug.windowstolinux.shared.deploy.result.deployment.MultiComponentDeploymentResult;
+import gold.debug.windowstolinux.shared.deploy.result.lifecycle.MultiComponentLifecycleResult;
 import gold.debug.windowstolinux.shared.analyze.component.ComponentAnalysisRequest;
 import gold.debug.windowstolinux.shared.git.GitSourceRequest;
 import gold.debug.windowstolinux.shared.linux.sshd.connection.SshdLinuxGateway;
-import gold.debug.windowstolinux.shared.model.deployment.BuildLimits;
+import gold.debug.windowstolinux.shared.model.deployment.BuildLimitConfiguration;
 import gold.debug.windowstolinux.shared.model.health.UserAccessUrl;
 import gold.debug.windowstolinux.shared.model.lifecycle.LifecycleAction;
 import gold.debug.windowstolinux.shared.model.lifecycle.LifecycleObservation;
@@ -30,7 +30,7 @@ import gold.debug.windowstolinux.shared.model.project.DeploymentRuntimeSpecifica
 import gold.debug.windowstolinux.shared.model.security.CredentialStorageMode;
 import gold.debug.windowstolinux.shared.model.deployment.EnvironmentSetupResult;
 import gold.debug.windowstolinux.shared.model.server.ServerIdentity;
-import gold.debug.windowstolinux.shared.model.capability.LinuxCapabilities;
+import gold.debug.windowstolinux.shared.model.capability.LinuxCapabilityFacts;
 
 import java.nio.file.Path;
 import java.time.Instant;
@@ -49,7 +49,7 @@ final class LiveTypedDeploymentContext implements AutoCloseable {
     private final char[] masterPassword;
     private final ServerProfile profile;
     private final ServerIdentity server;
-    final DesktopApplicationService service;
+    final DesktopApplicationFacade service;
 
     LiveTypedDeploymentContext(Path root) throws Exception {
         String host = requiredProperty("managed.ssh.host");
@@ -60,7 +60,7 @@ final class LiveTypedDeploymentContext implements AutoCloseable {
         this.masterPassword = System.getenv().getOrDefault(
                 "WINDOWSTOLINUX_TEST_MASTER_PASSWORD", "typed-live-acceptance-master").toCharArray();
         this.persistence = DesktopPersistence.open(root.resolve("desktop-data"));
-        this.service = new DesktopApplicationService(persistence, root.resolve("work"), new SshdLinuxGateway());
+        this.service = new DesktopApplicationFacade(persistence, root.resolve("work"), new SshdLinuxGateway());
         this.profile = new ServerProfile("typed-live", host, 22, username,
                 "ssh/typed-live/password", MODE);
         try {
@@ -120,7 +120,7 @@ final class LiveTypedDeploymentContext implements AutoCloseable {
                 componentIds, action, profile, MODE, master));
     }
 
-    LinuxCapabilities inspectDeploymentCapabilities() throws Exception {
+    LinuxCapabilityFacts inspectDeploymentCapabilities() throws Exception {
         return withMaster(master -> service.inspectDeploymentCapabilitiesWithStoredPassword(profile, MODE, master,
                 fingerprint -> true));
     }
@@ -152,17 +152,17 @@ final class LiveTypedDeploymentContext implements AutoCloseable {
                 ? 8192 : 3072;
         int reviewedTimeoutSeconds = ecosystemService ? 600 : 1800;
         ReviewedDeploymentRequest request = service.createReviewedDeploymentRequest(preparation, server, configuration,
-                secrets, runtime, userAccessUrl, new BuildLimits(reviewedTimeoutSeconds, 1024, reviewedAddressSpaceMiB,
+                secrets, runtime, userAccessUrl, new BuildLimitConfiguration(reviewedTimeoutSeconds, 1024, reviewedAddressSpaceMiB,
                         8L * 1024 * 1024, 4L * 1024 * 1024 * 1024, true), true,
                 runtime instanceof DeploymentRuntimeSpecification.Container container
-                        && container.engine() == DeploymentRuntimeSpecification.ContainerEngine.DOCKER,
+                        && container.engine() == DeploymentRuntimeSpecification.ContainerEngineType.DOCKER,
                 ecosystemService);
         ReviewedDeploymentPlan plan = service.planDeployment(request);
         assertEquals(request, plan.request());
-        assertTrue(plan.steps().containsAll(List.of(DeploymentStep.VERIFY_SOURCE_IDENTITY,
-                DeploymentStep.VERIFY_CONFIGURATION_SNAPSHOT, DeploymentStep.VERIFY_SECRET_REVISIONS,
-                DeploymentStep.CHECK_HEALTH,
-                DeploymentStep.ROLLBACK_ON_FAILURE)));
+        assertTrue(plan.steps().containsAll(List.of(DeploymentPlanAction.VERIFY_SOURCE_IDENTITY,
+                DeploymentPlanAction.VERIFY_CONFIGURATION_SNAPSHOT, DeploymentPlanAction.VERIFY_SECRET_REVISIONS,
+                DeploymentPlanAction.CHECK_HEALTH,
+                DeploymentPlanAction.ROLLBACK_ON_FAILURE)));
         return withMaster(master -> service.deployReviewedWithStoredPassword(request, profile, MODE, master,
                 fingerprint -> true).result());
     }

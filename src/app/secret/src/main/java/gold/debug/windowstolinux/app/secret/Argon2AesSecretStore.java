@@ -4,7 +4,7 @@ import gold.debug.windowstolinux.app.db.repository.EncryptedSecretRepository;
 import gold.debug.windowstolinux.app.db.entity.OpaqueSecret;
 import gold.debug.windowstolinux.app.secret.SecretStore;
 import gold.debug.windowstolinux.app.secret.SecretStoreException;
-import gold.debug.windowstolinux.app.secret.crypto.Argon2AesGcmCrypto;
+import gold.debug.windowstolinux.app.secret.crypto.Argon2AesGcmCryptoService;
 import gold.debug.windowstolinux.shared.model.message.LocalizedMessage;
 
 import java.sql.SQLException;
@@ -19,7 +19,7 @@ import java.util.Optional;
 public final class Argon2AesSecretStore implements SecretStore {
     private static final String ALGORITHM = "ARGON2ID-AES-256-GCM-V1";
     private final EncryptedSecretRepository secrets;
-    private final Argon2AesGcmCrypto crypto;
+    private final Argon2AesGcmCryptoService crypto;
 
     /**
      * Creates a {@code Argon2AesSecretStore} instance.
@@ -32,7 +32,7 @@ public final class Argon2AesSecretStore implements SecretStore {
      */
     public Argon2AesSecretStore(EncryptedSecretRepository secrets, char[] masterPassword) {
         this.secrets = Objects.requireNonNull(secrets, "secrets");
-        this.crypto = new Argon2AesGcmCrypto(masterPassword);
+        this.crypto = new Argon2AesGcmCryptoService(masterPassword);
     }
 
     /** Performs the {@code save} operation. / 执行 {@code save} 操作。 */
@@ -43,7 +43,7 @@ public final class Argon2AesSecretStore implements SecretStore {
             throw new IllegalArgumentException("secret value must not be empty");
         }
         try {
-            Argon2AesGcmCrypto.EncryptedPayload encrypted = crypto.encrypt(value);
+            Argon2AesGcmCryptoService.EncryptedPayload encrypted = crypto.encrypt(value);
             secrets.save(new OpaqueSecret(
                     key, ALGORITHM, encrypted.salt(), encrypted.nonce(), encrypted.ciphertext()));
         } catch (Exception exception) {

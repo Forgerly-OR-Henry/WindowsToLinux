@@ -1,9 +1,9 @@
 package gold.debug.windowstolinux.app.main.startup;
 
 import gold.debug.windowstolinux.app.db.DesktopPersistence;
-import gold.debug.windowstolinux.app.main.runtime.RunModeDetector;
-import gold.debug.windowstolinux.app.service.DesktopApplicationService;
-import gold.debug.windowstolinux.app.ui.display.DesktopDisplaySettings;
+import gold.debug.windowstolinux.app.main.runtime.RunModeResolver;
+import gold.debug.windowstolinux.app.service.DesktopApplicationFacade;
+import gold.debug.windowstolinux.app.ui.display.DesktopDisplayConfiguration;
 import gold.debug.windowstolinux.shared.linux.sshd.connection.SshdLinuxGateway;
 
 import javax.swing.SwingUtilities;
@@ -28,18 +28,18 @@ public final class DesktopMain {
      */
     public static void launch(String[] arguments) {
         try {
-            var layout = RunModeDetector.resolve(DesktopMain.class);
+            var layout = RunModeResolver.resolve(DesktopMain.class);
             Files.createDirectories(layout.dataDirectory());
             if (!Files.isDirectory(layout.dataDirectory()) || !Files.isWritable(layout.dataDirectory())) {
                 throw new IllegalStateException("fixed data directory is not writable: " + layout.dataDirectory());
             }
             DesktopPersistence database = DesktopPersistence.open(layout.dataDirectory());
             Runtime.getRuntime().addShutdownHook(new Thread(database::close, "windowstolinux-database-close"));
-            DesktopDisplaySettings appearance = DesktopDisplaySettings.fromStoredValues(
+            DesktopDisplayConfiguration appearance = DesktopDisplayConfiguration.fromStoredValues(
                     database.preferences().find(DesktopPersistence.UI_LOCALE_SETTING).orElse(null),
                     database.preferences().find(DesktopPersistence.UI_THEME_SETTING).orElse(null),
                     Locale.getDefault());
-            DesktopApplicationService service = new DesktopApplicationService(database,
+            DesktopApplicationFacade service = new DesktopApplicationFacade(database,
                     layout.dataDirectory().resolve("work"), new SshdLinuxGateway());
             SwingUtilities.invokeLater(() -> new DesktopWindowController(database, service, appearance).showInitialWindow());
         } catch (Exception exception) {

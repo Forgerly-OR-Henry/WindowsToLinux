@@ -2,7 +2,7 @@ package gold.debug.windowstolinux.shared.analyze.workload;
 
 import gold.debug.windowstolinux.shared.analyze.core.DeploymentAnalysisCoordinator;
 import gold.debug.windowstolinux.shared.model.project.DeploymentProjectType;
-import gold.debug.windowstolinux.shared.model.project.DeploymentRuntimeSuggestion;
+import gold.debug.windowstolinux.shared.model.project.DeploymentRuntimeAssessment;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -22,7 +22,7 @@ class StaticWebDeploymentInspectorTest {
                 "{\"engines\":{\"node\":\">=20\"},\"scripts\":{\"build\":\"vite build\"}}");
         var ranged = new DeploymentAnalysisCoordinator().analyze(temporaryDirectory, DeploymentProjectType.STATIC_SITE)
                 .runtimeSuggestion().orElseThrow();
-        assertTrue(ranged.value(DeploymentRuntimeSuggestion.RuntimeInput.NODE_MAJOR_VERSION).isEmpty());
+        assertTrue(ranged.value(DeploymentRuntimeAssessment.RuntimeInputType.NODE_MAJOR_VERSION).isEmpty());
         assertTrue(ranged.requiredUserInput().stream().anyMatch(message ->
                 message.key().equals("analysis.deployment.runtime.nodeVersion")));
 
@@ -30,7 +30,7 @@ class StaticWebDeploymentInspectorTest {
                 "{\"engines\":{\"node\":\"22\"},\"scripts\":{\"build\":\"vite build\"}}");
         var exact = new DeploymentAnalysisCoordinator().analyze(temporaryDirectory, DeploymentProjectType.STATIC_SITE)
                 .runtimeSuggestion().orElseThrow();
-        assertEquals("22", exact.value(DeploymentRuntimeSuggestion.RuntimeInput.NODE_MAJOR_VERSION).orElseThrow());
+        assertEquals("22", exact.value(DeploymentRuntimeAssessment.RuntimeInputType.NODE_MAJOR_VERSION).orElseThrow());
     }
 
     @Test

@@ -1,10 +1,10 @@
 package gold.debug.windowstolinux.app.ui.managed;
 
-import gold.debug.windowstolinux.app.service.port.ManagedApplicationPort;
-import gold.debug.windowstolinux.app.ui.component.DesktopAsyncTask;
-import gold.debug.windowstolinux.app.ui.component.DesktopComponents;
+import gold.debug.windowstolinux.app.service.contract.ManagedApplicationFacade;
+import gold.debug.windowstolinux.app.ui.component.DesktopTaskExecutor;
+import gold.debug.windowstolinux.app.ui.component.DesktopComponentFactory;
 import gold.debug.windowstolinux.app.ui.server.ServerContext;
-import gold.debug.windowstolinux.app.ui.i18n.PageMessages;
+import gold.debug.windowstolinux.app.ui.i18n.PageMessagePresenter;
 import gold.debug.windowstolinux.shared.model.health.HealthCheck;
 import gold.debug.windowstolinux.shared.model.lifecycle.LifecycleAction;
 
@@ -20,16 +20,16 @@ import java.util.Map;
 
 /** Owns the managed-application inventory, selection, and lifecycle workflows. / 持有受管应用清单、选择与生命周期流程。 */
 public final class ManagedPage {
-    private final ManagedApplicationPort service;
+    private final ManagedApplicationFacade service;
     private final ServerContext serverContext;
-    private final PageMessages messages;
+    private final PageMessagePresenter messages;
     private final JTextField applicationId = new JTextField(20);
-    private final JTextArea output = DesktopComponents.outputArea();
+    private final JTextArea output = DesktopComponentFactory.outputArea();
     private final JPanel panel;
 
     /** Creates the stateful page controller. / 创建有状态页面控制器。 */
-    public ManagedPage(ManagedApplicationPort service, ServerContext serverContext,
-                       DesktopComponents components, PageMessages messages) {
+    public ManagedPage(ManagedApplicationFacade service, ServerContext serverContext,
+                       DesktopComponentFactory components, PageMessagePresenter messages) {
         this.service = service;
         this.serverContext = serverContext;
         this.messages = messages;
@@ -52,7 +52,7 @@ public final class ManagedPage {
         output.setText(messages.text("deployment.selected", Map.of("application", selectedId)));
     }
 
-    private JPanel createPanel(DesktopComponents c) {
+    private JPanel createPanel(DesktopComponentFactory c) {
         JPanel page = c.pagePanel();
         JPanel controls = c.card(new BorderLayout(0, 10));
         controls.add(c.sectionHeading(messages.text("section.lifecycle.title"),
@@ -107,7 +107,7 @@ public final class ManagedPage {
             char[] master = serverContext.masterPassword();
             output.setText(messages.text("lifecycle.running", Map.of(
                     "action", messages.text("lifecycle.action." + action.name().toLowerCase(Locale.ROOT)))));
-            DesktopAsyncTask.run(
+            DesktopTaskExecutor.run(
                     () -> service.executePersistedLifecycleWithStoredPassword(selected, action, master),
                     result -> output.setText(messages.text(
                             result.accepted() ? "lifecycle.accepted" : "lifecycle.rejected",

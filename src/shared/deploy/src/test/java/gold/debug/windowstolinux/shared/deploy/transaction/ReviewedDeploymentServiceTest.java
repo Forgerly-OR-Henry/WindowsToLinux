@@ -7,8 +7,8 @@ import gold.debug.windowstolinux.shared.config.revision.ConfigurationSnapshot;
 import gold.debug.windowstolinux.shared.config.revision.DeploymentInputManifest;
 import gold.debug.windowstolinux.shared.deploy.contract.DeploymentApproval;
 import gold.debug.windowstolinux.shared.deploy.contract.ReviewedDeploymentRequest;
-import gold.debug.windowstolinux.shared.deploy.plan.ReviewedReleaseIdentity;
-import gold.debug.windowstolinux.shared.deploy.result.DeploymentResult;
+import gold.debug.windowstolinux.shared.deploy.plan.ReviewedReleaseIdentityResolver;
+import gold.debug.windowstolinux.shared.deploy.result.deployment.DeploymentResult;
 import gold.debug.windowstolinux.shared.linux.build.DeploymentBuildResult;
 import gold.debug.windowstolinux.shared.linux.connection.DeploymentLinuxGateway;
 import gold.debug.windowstolinux.shared.linux.session.DeploymentRemoteSession;
@@ -21,10 +21,10 @@ import gold.debug.windowstolinux.shared.linux.protocol.RemoteStepResult;
 import gold.debug.windowstolinux.shared.linux.protocol.ManagedHelperProtocol;
 import gold.debug.windowstolinux.shared.linux.runtime.HealthCheckResult;
 import gold.debug.windowstolinux.shared.linux.transfer.RemoteWorkspace;
-import gold.debug.windowstolinux.shared.linux.transfer.UploadReceipt;
+import gold.debug.windowstolinux.shared.linux.transfer.SourceUploadResult;
 import gold.debug.windowstolinux.shared.model.analysis.AnalysisEvidence;
-import gold.debug.windowstolinux.shared.model.analysis.EvidenceConfidence;
-import gold.debug.windowstolinux.shared.model.deployment.BuildLimits;
+import gold.debug.windowstolinux.shared.model.analysis.EvidenceConfidenceLevel;
+import gold.debug.windowstolinux.shared.model.deployment.BuildLimitConfiguration;
 import gold.debug.windowstolinux.shared.model.deployment.DeploymentStatus;
 import gold.debug.windowstolinux.shared.model.health.HealthCheck;
 import gold.debug.windowstolinux.shared.model.health.UserAccessUrl;
@@ -33,21 +33,21 @@ import gold.debug.windowstolinux.shared.model.lifecycle.LifecycleObservation;
 import gold.debug.windowstolinux.shared.model.lifecycle.RuntimeState;
 import gold.debug.windowstolinux.shared.model.managed.ManagedApplication;
 import gold.debug.windowstolinux.shared.model.message.LocalizedMessage;
-import gold.debug.windowstolinux.shared.model.project.DeploymentBuildTool;
+import gold.debug.windowstolinux.shared.model.project.DeploymentBuildToolType;
 import gold.debug.windowstolinux.shared.model.project.DeploymentProjectFacts;
 import gold.debug.windowstolinux.shared.model.project.DeploymentProjectType;
 import gold.debug.windowstolinux.shared.model.project.DeploymentRuntimeSpecification;
 import gold.debug.windowstolinux.shared.model.project.SourceRevision;
-import gold.debug.windowstolinux.shared.model.capability.ServerCapabilities;
+import gold.debug.windowstolinux.shared.model.capability.ServerCapabilityFacts;
 import gold.debug.windowstolinux.shared.model.server.ServerIdentity;
-import gold.debug.windowstolinux.shared.model.capability.LinuxCapabilities;
+import gold.debug.windowstolinux.shared.model.capability.LinuxCapabilityFacts;
 import gold.debug.windowstolinux.shared.model.server.CpuMicroarchitectureLevel;
-import gold.debug.windowstolinux.shared.model.server.LinuxDistro;
-import gold.debug.windowstolinux.shared.model.server.LinuxFirewallKind;
-import gold.debug.windowstolinux.shared.model.server.LinuxFirewallState;
-import gold.debug.windowstolinux.shared.model.server.LinuxSecurityModule;
-import gold.debug.windowstolinux.shared.model.server.LinuxSecurityPosture;
-import gold.debug.windowstolinux.shared.model.server.LinuxSecurityState;
+import gold.debug.windowstolinux.shared.model.server.LinuxDistroType;
+import gold.debug.windowstolinux.shared.model.server.security.LinuxFirewallKind;
+import gold.debug.windowstolinux.shared.model.server.security.LinuxFirewallState;
+import gold.debug.windowstolinux.shared.model.server.security.LinuxSecurityModuleType;
+import gold.debug.windowstolinux.shared.model.server.security.LinuxSecurityPosture;
+import gold.debug.windowstolinux.shared.model.server.security.LinuxSecurityState;
 import gold.debug.windowstolinux.shared.model.archive.SourceArchiveDescriptor;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -80,7 +80,7 @@ class ReviewedDeploymentServiceTest {
                     new SshEndpoint("server-one", "example.test", 22, "deployer"),
                     new SshCredential.Password("password".toCharArray()), (endpoint, fingerprint) -> HostKeyDecision.ACCEPT_EXISTING);
             assertEquals(DeploymentStatus.SUCCEEDED, result.status());
-            assertEquals(ReviewedReleaseIdentity.from(request), result.publishedReleaseSha256().orElseThrow());
+            assertEquals(ReviewedReleaseIdentityResolver.from(request), result.publishedReleaseSha256().orElseThrow());
         }
         assertEquals(EnumSet.copyOf(DeploymentProjectType.deployableTypes()), built);
     }
@@ -162,9 +162,9 @@ class ReviewedDeploymentServiceTest {
                         throw LinuxOperationException.localized("linux.error.commandFailed", "fixture interruption");
                     }
                     return switch (method.getName()) {
-                    case "collectCapabilities" -> new ServerCapabilities("Ubuntu 24.04", "x86_64", true, true, true,
+                    case "collectCapabilities" -> new ServerCapabilityFacts("Ubuntu 24.04", "x86_64", true, true, true,
                             true, true, true, true, true, helperProtocolVersion, 10L * 1024 * 1024 * 1024, "fixture");
-                    case "collectDeploymentCapabilities" -> new LinuxCapabilities(LinuxDistro.UBUNTU, "24.04",
+                    case "collectDeploymentCapabilities" -> new LinuxCapabilityFacts(LinuxDistroType.UBUNTU, "24.04",
                             "x86_64", "apt", "amd64", true, true, true, true,
                             java.util.Set.of(21), java.util.Set.of(22), true, true,
                             java.util.Set.of("3.12"), true, Map.of(
@@ -175,13 +175,13 @@ class ReviewedDeploymentServiceTest {
                             DeploymentProjectType.PHP_SERVICE, java.util.Set.of("8.3"),
                             DeploymentProjectType.RUBY_SERVICE, java.util.Set.of("3.3.5")),
                             true, true, CpuMicroarchitectureLevel.X86_64_V3, java.util.Set.of("sse4_2"),
-                            new LinuxSecurityPosture(LinuxSecurityModule.APPARMOR, LinuxSecurityState.ENABLED,
+                            new LinuxSecurityPosture(LinuxSecurityModuleType.APPARMOR, LinuxSecurityState.ENABLED,
                                     LinuxFirewallKind.UFW, LinuxFirewallState.ACTIVE), "fixture");
                     case "uploadSource" -> {
                         counters.uploads.incrementAndGet();
                         SourceArchiveDescriptor archive = (SourceArchiveDescriptor) arguments[0];
                         RemoteWorkspace workspace = (RemoteWorkspace) arguments[1];
-                        yield new UploadReceipt(workspace.candidateRoot() + "/mutable/source.tar.gz", archive.byteCount(),
+                        yield new SourceUploadResult(workspace.candidateRoot() + "/mutable/source.tar.gz", archive.byteCount(),
                                 archive.contentSha256(), "fixture upload");
                     }
                     case "buildDeployment" -> {
@@ -213,32 +213,32 @@ class ReviewedDeploymentServiceTest {
     private ReviewedDeploymentRequest request(DeploymentRuntimeSpecification runtime) {
         DeploymentProjectFacts facts = new DeploymentProjectFacts(temporaryDirectory, "demo", runtime.projectType(), tool(runtime),
                 List.of(new AnalysisEvidence(LocalizedMessage.of("test.evidence"), "fixture",
-                        LocalizedMessage.of("test.detected"), EvidenceConfidence.HIGH)), List.of(), List.of());
+                        LocalizedMessage.of("test.detected"), EvidenceConfidenceLevel.HIGH)), List.of(), List.of());
         ConfigurationSnapshot configuration = ConfigurationSnapshot.create("demo", 1, "v1", Instant.parse("2026-08-12T00:00:00Z"),
                 List.of(new ConfigurationEntry("PORT", ConfigurationScope.RUNTIME, new ConfigurationValue.Number(8080))));
         Optional<UserAccessUrl> url = runtime.healthCheck() instanceof HealthCheck.Http
                 ? Optional.of(new UserAccessUrl(URI.create("https://example.test/"))) : Optional.empty();
         return new ReviewedDeploymentRequest(application().server(), facts, new SourceRevision(SHA, Optional.empty(), Map.of()),
                 new SourceArchiveDescriptor(temporaryDirectory.resolve(runtime.projectType().name() + ".tar.gz"), SHA, 100, 100),
-                configuration, List.of(), runtime, url, BuildLimits.defaultNonRoot(),
+                configuration, List.of(), runtime, url, BuildLimitConfiguration.defaultNonRoot(),
                 new DeploymentApproval("demo", SHA, "server-one", false, Instant.now()), true,
                 facts.support().level() == gold.debug.windowstolinux.shared.model.project.DeploymentSupportLevel.EXPERIMENTAL_ADAPTER);
     }
 
-    private static DeploymentBuildTool tool(DeploymentRuntimeSpecification runtime) {
+    private static DeploymentBuildToolType tool(DeploymentRuntimeSpecification runtime) {
         return switch (runtime.projectType()) {
-            case SPRING_BOOT -> DeploymentBuildTool.GRADLE_WRAPPER;
-            case JAVA_JAR -> DeploymentBuildTool.JAVA;
-            case NODE_SERVICE -> DeploymentBuildTool.NPM;
-            case PYTHON_SERVICE -> DeploymentBuildTool.PYTHON_VENV;
-            case STATIC_SITE -> DeploymentBuildTool.STATIC_SITE_BUILD;
-            case DOCKERFILE_CONTAINER -> DeploymentBuildTool.CONTAINER_BUILD;
-            case GO_SERVICE -> DeploymentBuildTool.GO_MODULE;
-            case RUST_SERVICE -> DeploymentBuildTool.CARGO_LOCKED;
-            case DOTNET_SERVICE -> DeploymentBuildTool.DOTNET_LOCKED;
-            case KOTLIN_SERVICE -> DeploymentBuildTool.GRADLE_KOTLIN_WRAPPER;
-            case PHP_SERVICE -> DeploymentBuildTool.COMPOSER_LOCKED;
-            case RUBY_SERVICE -> DeploymentBuildTool.BUNDLER_LOCKED;
+            case SPRING_BOOT -> DeploymentBuildToolType.GRADLE_WRAPPER;
+            case JAVA_JAR -> DeploymentBuildToolType.JAVA;
+            case NODE_SERVICE -> DeploymentBuildToolType.NPM;
+            case PYTHON_SERVICE -> DeploymentBuildToolType.PYTHON_VENV;
+            case STATIC_SITE -> DeploymentBuildToolType.STATIC_SITE_BUILD;
+            case DOCKERFILE_CONTAINER -> DeploymentBuildToolType.CONTAINER_BUILD;
+            case GO_SERVICE -> DeploymentBuildToolType.GO_MODULE;
+            case RUST_SERVICE -> DeploymentBuildToolType.CARGO_LOCKED;
+            case DOTNET_SERVICE -> DeploymentBuildToolType.DOTNET_LOCKED;
+            case KOTLIN_SERVICE -> DeploymentBuildToolType.GRADLE_KOTLIN_WRAPPER;
+            case PHP_SERVICE -> DeploymentBuildToolType.COMPOSER_LOCKED;
+            case RUBY_SERVICE -> DeploymentBuildToolType.BUNDLER_LOCKED;
             case RECOGNITION_PREVIEW -> throw new AssertionError("recognition preview has no deployment runtime");
         };
     }
@@ -251,7 +251,7 @@ class ReviewedDeploymentServiceTest {
                 new DeploymentRuntimeSpecification.NodeService(22, new HealthCheck.Tcp(8080, 5, 1)),
                 new DeploymentRuntimeSpecification.PythonService("3.12", "demo.main", new HealthCheck.Tcp(8080, 5, 1)),
                 new DeploymentRuntimeSpecification.StaticSite("public", new HealthCheck.Http(URI.create("http://127.0.0.1:8080/"), 200, 5)),
-                new DeploymentRuntimeSpecification.Container(DeploymentRuntimeSpecification.ContainerEngine.PODMAN,
+                new DeploymentRuntimeSpecification.Container(DeploymentRuntimeSpecification.ContainerEngineType.PODMAN,
                         Map.of(8080, 8080), List.of(), new HealthCheck.Tcp(8080, 5, 1)),
                 new DeploymentRuntimeSpecification.GoService("1.24", "w2l-app", "main.go", new HealthCheck.Tcp(8080, 5, 1)),
                 new DeploymentRuntimeSpecification.RustService("1.89.0", "demo", "src/main.rs", new HealthCheck.Tcp(8080, 5, 1)),

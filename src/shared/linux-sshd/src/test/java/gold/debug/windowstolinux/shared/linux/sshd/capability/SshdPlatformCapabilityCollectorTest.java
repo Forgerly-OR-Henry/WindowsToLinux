@@ -1,12 +1,12 @@
 package gold.debug.windowstolinux.shared.linux.sshd.capability;
 
 import gold.debug.windowstolinux.shared.linux.sshd.capability.ManagedPlatformCapabilityProbe;
-import gold.debug.windowstolinux.shared.model.server.LinuxDistro;
+import gold.debug.windowstolinux.shared.model.server.LinuxDistroType;
 import gold.debug.windowstolinux.shared.model.server.CpuMicroarchitectureLevel;
-import gold.debug.windowstolinux.shared.model.server.LinuxFirewallKind;
-import gold.debug.windowstolinux.shared.model.server.LinuxFirewallState;
-import gold.debug.windowstolinux.shared.model.server.LinuxSecurityModule;
-import gold.debug.windowstolinux.shared.model.server.LinuxSecurityState;
+import gold.debug.windowstolinux.shared.model.server.security.LinuxFirewallKind;
+import gold.debug.windowstolinux.shared.model.server.security.LinuxFirewallState;
+import gold.debug.windowstolinux.shared.model.server.security.LinuxSecurityModuleType;
+import gold.debug.windowstolinux.shared.model.server.security.LinuxSecurityState;
 import gold.debug.windowstolinux.shared.model.project.DeploymentProjectType;
 import org.junit.jupiter.api.Test;
 
@@ -33,7 +33,7 @@ class SshdPlatformCapabilityCollectorTest {
                 Map.entry("SECURITY_MODULE", "selinux"), Map.entry("SECURITY_STATE", "enforcing"),
                 Map.entry("FIREWALL", "firewalld"), Map.entry("FIREWALL_STATE", "active")), "SHA256:host");
 
-        assertEquals(LinuxDistro.CENTOS_STREAM, capabilities.distro());
+        assertEquals(LinuxDistroType.CENTOS_STREAM, capabilities.distro());
         assertTrue(capabilities.podmanQuadletAvailable());
         assertTrue(capabilities.podmanOperational());
         assertEquals(java.util.Set.of(21), capabilities.javaMajorVersions());
@@ -43,7 +43,7 @@ class SshdPlatformCapabilityCollectorTest {
         assertTrue(capabilities.cpuFlags().contains("sse4_2"));
         assertEquals("x86_64", capabilities.packageArchitecture());
         assertEquals(CpuMicroarchitectureLevel.X86_64_V3, capabilities.cpuMicroarchitecture());
-        assertEquals(LinuxSecurityModule.SELINUX, capabilities.securityPosture().module());
+        assertEquals(LinuxSecurityModuleType.SELINUX, capabilities.securityPosture().module());
         assertEquals(LinuxSecurityState.ENFORCING, capabilities.securityPosture().state());
         assertEquals(LinuxFirewallKind.FIREWALLD, capabilities.securityPosture().firewall());
         assertEquals(LinuxFirewallState.ACTIVE, capabilities.securityPosture().firewallState());
@@ -78,16 +78,16 @@ class SshdPlatformCapabilityCollectorTest {
 
     @Test
     void classifiesEveryEnterpriseDistributionIndependently() {
-        assertEquals(LinuxDistro.DEBIAN, classify("debian", "", "13"));
-        assertEquals(LinuxDistro.CENTOS_STREAM, classify("centos", "", "9"));
-        assertEquals(LinuxDistro.CENTOS_STREAM, classify("centos", "stream", "10"));
-        assertEquals(LinuxDistro.LEGACY_CENTOS, classify("centos", "", "8"));
-        assertEquals(LinuxDistro.ROCKY_LINUX, classify("rocky", "", "9.8"));
-        assertEquals(LinuxDistro.ALMALINUX, classify("almalinux", "", "10.2"));
-        assertEquals(LinuxDistro.ORACLE_LINUX, classify("ol", "", "10.2"));
+        assertEquals(LinuxDistroType.DEBIAN, classify("debian", "", "13"));
+        assertEquals(LinuxDistroType.CENTOS_STREAM, classify("centos", "", "9"));
+        assertEquals(LinuxDistroType.CENTOS_STREAM, classify("centos", "stream", "10"));
+        assertEquals(LinuxDistroType.LEGACY_CENTOS, classify("centos", "", "8"));
+        assertEquals(LinuxDistroType.ROCKY_LINUX, classify("rocky", "", "9.8"));
+        assertEquals(LinuxDistroType.ALMALINUX, classify("almalinux", "", "10.2"));
+        assertEquals(LinuxDistroType.ORACLE_LINUX, classify("ol", "", "10.2"));
     }
 
-    private static LinuxDistro classify(String id, String variant, String version) {
+    private static LinuxDistroType classify(String id, String variant, String version) {
         return SshdPlatformCapabilityCollector.fromValues(Map.of(
                 "DISTRO_ID", id, "DISTRO_VARIANT", variant, "VERSION", version,
                 "ARCH", "x86_64", "PACKAGE_MANAGER", "dnf"), "SHA256:fixture").distro();

@@ -1,5 +1,6 @@
 package gold.debug.windowstolinux.shared.model.project;
 
+import gold.debug.windowstolinux.shared.model.language.SourceLanguageType;
 import gold.debug.windowstolinux.shared.model.message.LocalizedMessage;
 
 import java.util.List;
@@ -18,7 +19,7 @@ import java.util.Objects;
  */
 public record DeploymentSupportProfile(
         DeploymentSupportLevel level,
-        SourceLanguage language,
+        SourceLanguageType language,
         String framework,
         List<ValidatedDeploymentTarget> validatedTargets,
         List<LocalizedMessage> limitations

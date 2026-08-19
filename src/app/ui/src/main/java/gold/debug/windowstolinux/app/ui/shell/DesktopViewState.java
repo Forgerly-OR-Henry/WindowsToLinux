@@ -1,11 +1,11 @@
 package gold.debug.windowstolinux.app.ui.shell;
 
 import gold.debug.windowstolinux.app.ui.ai.AiPageState;
-import gold.debug.windowstolinux.app.ui.deployment.DeploymentPageState;
-import gold.debug.windowstolinux.app.ui.deployment.MultiComponentPageState;
+import gold.debug.windowstolinux.app.ui.deployment.single.DeploymentPageState;
+import gold.debug.windowstolinux.app.ui.deployment.multi.MultiComponentPageState;
 import gold.debug.windowstolinux.app.ui.managed.ManagedPageState;
 import gold.debug.windowstolinux.app.ui.server.ServerPageState;
-import gold.debug.windowstolinux.app.ui.settings.SettingsPageState;
+import gold.debug.windowstolinux.app.ui.setting.SettingPageState;
 
 import java.util.Objects;
 
@@ -29,7 +29,7 @@ public record DesktopViewState(
         ServerPageState server,
         ManagedPageState managed,
         AiPageState ai,
-        SettingsPageState settings
+        SettingPageState settings
 ) implements AutoCloseable {
     /**
      * Creates a {@code DesktopViewState} instance.

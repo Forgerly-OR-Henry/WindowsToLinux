@@ -1,6 +1,6 @@
 package gold.debug.windowstolinux.shared.analyze.ecosystem.node;
 
-import gold.debug.windowstolinux.shared.model.project.DeploymentBuildTool;
+import gold.debug.windowstolinux.shared.model.project.DeploymentBuildToolType;
 
 import java.util.List;
 
@@ -15,7 +15,7 @@ import java.util.List;
  * @param hasBuildScript whether a fixed build script exists / 是否存在固定构建脚本
  * @param hasStartScript whether a fixed start script exists / 是否存在固定启动脚本
  */
-public record NodeBuildFacts(String applicationId, DeploymentBuildTool buildTool, List<String> lockFiles,
+public record NodeBuildFacts(String applicationId, DeploymentBuildToolType buildTool, List<String> lockFiles,
                                     boolean hasBuildScript, boolean hasStartScript) {
     /** Makes lockfile evidence immutable. / 使锁文件证据不可变。 */
     public NodeBuildFacts {

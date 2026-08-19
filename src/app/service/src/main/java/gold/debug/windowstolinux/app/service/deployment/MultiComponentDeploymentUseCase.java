@@ -8,9 +8,12 @@ import gold.debug.windowstolinux.app.db.repository.ManagedApplicationRepository;
 import gold.debug.windowstolinux.app.db.repository.ManagedApplicationGraphRepository;
 import gold.debug.windowstolinux.app.secret.SecretStore;
 import gold.debug.windowstolinux.app.secret.SecretStoreException;
-import gold.debug.windowstolinux.app.service.locking.ServerOperationLocks;
+import gold.debug.windowstolinux.app.service.deployment.multi.MultiComponentReviewInput;
+import gold.debug.windowstolinux.app.service.deployment.multi.ReviewedComponentApplication;
+import gold.debug.windowstolinux.app.service.deployment.multi.ReviewedMultiComponentApplication;
+import gold.debug.windowstolinux.app.service.lock.ServerOperationLockRegistry;
 import gold.debug.windowstolinux.app.service.server.ServerProfile;
-import gold.debug.windowstolinux.app.service.server.ServerUseCases;
+import gold.debug.windowstolinux.app.service.server.ServerUseCaseFacade;
 import gold.debug.windowstolinux.app.service.source.PreparedMultiComponentSource;
 import gold.debug.windowstolinux.shared.config.secretref.ResolvedSecretRevision;
 import gold.debug.windowstolinux.shared.deploy.contract.ApplicationHealthGate;
@@ -18,12 +21,12 @@ import gold.debug.windowstolinux.shared.deploy.contract.DeploymentApproval;
 import gold.debug.windowstolinux.shared.deploy.contract.MultiComponentDeploymentPlan;
 import gold.debug.windowstolinux.shared.deploy.plan.MultiComponentDeploymentPlanner;
 import gold.debug.windowstolinux.shared.deploy.contract.ReviewedDeploymentRequest;
-import gold.debug.windowstolinux.shared.deploy.plan.ReviewedReleaseIdentity;
-import gold.debug.windowstolinux.shared.deploy.result.MultiComponentDeploymentResult;
+import gold.debug.windowstolinux.shared.deploy.plan.ReviewedReleaseIdentityResolver;
+import gold.debug.windowstolinux.shared.deploy.result.deployment.MultiComponentDeploymentResult;
 import gold.debug.windowstolinux.shared.deploy.transaction.ReviewedComponentDeployment;
 import gold.debug.windowstolinux.shared.deploy.transaction.ReviewedMultiComponentDeploymentService;
 import gold.debug.windowstolinux.shared.linux.connection.DeploymentLinuxGateway;
-import gold.debug.windowstolinux.shared.linux.connection.HostKeyVerifier;
+import gold.debug.windowstolinux.shared.linux.connection.HostKeyEvaluator;
 import gold.debug.windowstolinux.shared.linux.connection.SshCredential;
 import gold.debug.windowstolinux.shared.linux.connection.SshEndpoint;
 import gold.debug.windowstolinux.shared.model.deployment.DeploymentStatus;
@@ -56,8 +59,8 @@ public final class MultiComponentDeploymentUseCase {
     private final ApplicationSecretRepository applicationSecrets;
     private final ReviewedMultiComponentDeploymentService deploymentService;
     private final DeploymentLinuxGateway gateway;
-    private final ServerUseCases servers;
-    private final ServerOperationLocks locks;
+    private final ServerUseCaseFacade servers;
+    private final ServerOperationLockRegistry locks;
 
     /** Creates the bounded whole-application use case. / 创建有界整应用用例。 */
     public MultiComponentDeploymentUseCase(
@@ -66,8 +69,8 @@ public final class MultiComponentDeploymentUseCase {
             ApplicationSecretRepository applicationSecrets,
             ReviewedMultiComponentDeploymentService deploymentService,
             DeploymentLinuxGateway gateway,
-            ServerUseCases servers,
-            ServerOperationLocks locks
+            ServerUseCaseFacade servers,
+            ServerOperationLockRegistry locks
     ) {
         this.applications = Objects.requireNonNull(applications, "applications");
         this.graphs = Objects.requireNonNull(graphs, "graphs");
@@ -103,7 +106,7 @@ public final class MultiComponentDeploymentUseCase {
             if (!source.facts().equals(component.facts())) {
                 throw new IllegalArgumentException("prepared component facts differ from the admitted graph");
             }
-            var application = ManagedApplicationIdentity.resolve(applications, source.facts().applicationId(), server);
+            var application = ManagedApplicationIdentityResolver.resolve(applications, source.facts().applicationId(), server);
             ReviewedDeploymentRequest request = new ReviewedDeploymentRequest(server, source.facts(),
                     source.sourceRevision(), source.archive(), input.configuration(), input.secretReferences(),
                     component.runtime().orElseThrow(), input.userAccessUrl(), input.limits(),
@@ -120,7 +123,7 @@ public final class MultiComponentDeploymentUseCase {
             ReviewedMultiComponentApplication review,
             SshEndpoint endpoint,
             SshCredential credential,
-            HostKeyVerifier verifier
+            HostKeyEvaluator verifier
     ) throws SQLException {
         review = Objects.requireNonNull(review, "review");
         if (review.components().stream().anyMatch(component -> !component.request().secretReferences().isEmpty())) {
@@ -170,7 +173,7 @@ public final class MultiComponentDeploymentUseCase {
             List<ReviewedComponentDeployment> bound,
             SshEndpoint endpoint,
             SshCredential credential,
-            HostKeyVerifier verifier
+            HostKeyEvaluator verifier
     ) throws SQLException {
         String serverId = review.components().getFirst().request().server().id();
         ReentrantLock lock = locks.forServer(serverId);
@@ -194,7 +197,7 @@ public final class MultiComponentDeploymentUseCase {
                         new ManagedApplicationRuntimeConfiguration(component.request().runtime().healthCheck(),
                                 component.request().userAccessUrl()),
                         new CurrentRelease(component.application().id(),
-                                ReviewedReleaseIdentity.from(component.request()), publishedAt),
+                                ReviewedReleaseIdentityResolver.from(component.request()), publishedAt),
                         component.request().secretReferences())).toList();
         Map<String, SuccessfulManagedDeployment> byApplication = new LinkedHashMap<>();
         deployments.forEach(deployment -> byApplication.put(deployment.application().id(), deployment));

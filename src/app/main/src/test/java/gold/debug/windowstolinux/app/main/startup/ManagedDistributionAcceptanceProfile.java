@@ -1,13 +1,13 @@
 package gold.debug.windowstolinux.app.main.startup;
 
 import gold.debug.windowstolinux.shared.model.server.CpuMicroarchitectureLevel;
-import gold.debug.windowstolinux.shared.model.capability.LinuxCapabilities;
-import gold.debug.windowstolinux.shared.model.server.LinuxDistro;
-import gold.debug.windowstolinux.shared.model.server.LinuxFirewallKind;
-import gold.debug.windowstolinux.shared.model.server.LinuxFirewallState;
-import gold.debug.windowstolinux.shared.model.server.LinuxSecurityModule;
-import gold.debug.windowstolinux.shared.model.server.LinuxSecurityPosture;
-import gold.debug.windowstolinux.shared.model.server.LinuxSecurityState;
+import gold.debug.windowstolinux.shared.model.capability.LinuxCapabilityFacts;
+import gold.debug.windowstolinux.shared.model.server.LinuxDistroType;
+import gold.debug.windowstolinux.shared.model.server.security.LinuxFirewallKind;
+import gold.debug.windowstolinux.shared.model.server.security.LinuxFirewallState;
+import gold.debug.windowstolinux.shared.model.server.security.LinuxSecurityModuleType;
+import gold.debug.windowstolinux.shared.model.server.security.LinuxSecurityPosture;
+import gold.debug.windowstolinux.shared.model.server.security.LinuxSecurityState;
 
 import java.util.HashMap;
 import java.util.Locale;
@@ -24,11 +24,11 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * <p>一次可选发行版验收执行所使用的不可变、无秘密目标契约。
  */
 record ManagedDistributionAcceptanceProfile(
-        LinuxDistro distro,
+        LinuxDistroType distro,
         String version,
         String packageArchitecture,
         CpuMicroarchitectureLevel requiredCpu,
-        SetupExpectation preparationExpectation
+        SetupExpectationKind preparationExpectation
 ) {
     private static final String DISTRIBUTION = "managed.distro.expected";
     private static final String VERSION = "managed.distro.expected-version";
@@ -36,7 +36,7 @@ record ManagedDistributionAcceptanceProfile(
     private static final String REQUIRED_CPU = "managed.distro.expected-cpu";
     private static final String PREPARATION = "managed.distro.preparation-expectation";
 
-    enum SetupExpectation {
+    enum SetupExpectationKind {
         /** Represents the {@code SUCCEEDS} value. / 表示 {@code SUCCEEDS} 值。 */
         SUCCEEDS,
         /** Represents the {@code REJECTS} value. / 表示 {@code REJECTS} 值。 */
@@ -58,10 +58,10 @@ record ManagedDistributionAcceptanceProfile(
         String version = required(values, VERSION);
         String packageArchitecture = required(values, PACKAGE_ARCHITECTURE);
         CpuMicroarchitectureLevel requiredCpu = cpu(required(values, REQUIRED_CPU));
-        SetupExpectation expectation = preparation(required(values, PREPARATION));
+        SetupExpectationKind expectation = preparation(required(values, PREPARATION));
         return switch (distribution) {
-            case "debian" -> exact(LinuxDistro.DEBIAN, version, packageArchitecture, requiredCpu, expectation,
-                    "13", "amd64", CpuMicroarchitectureLevel.X86_64_V1, SetupExpectation.SUCCEEDS);
+            case "debian" -> exact(LinuxDistroType.DEBIAN, version, packageArchitecture, requiredCpu, expectation,
+                    "13", "amd64", CpuMicroarchitectureLevel.X86_64_V1, SetupExpectationKind.SUCCEEDS);
             case "centos", "centos-stream" -> centosStream(version, packageArchitecture, requiredCpu, expectation);
             case "rocky", "rocky-linux" -> rocky(version, packageArchitecture, requiredCpu, expectation);
             case "almalinux", "alma-linux" -> alma(version, packageArchitecture, requiredCpu, expectation);
@@ -72,7 +72,7 @@ record ManagedDistributionAcceptanceProfile(
     }
 
     /** Verifies exact target identity plus the documented minimum CPU level before any mutation. / 在任何修改前验证精确目标身份及文档化的最低 CPU 级别。 */
-    void assertExactBaseline(LinuxCapabilities capabilities) {
+    void assertExactBaseline(LinuxCapabilityFacts capabilities) {
         assertEquals(distro, capabilities.distro(), () -> "unexpected distribution: " + capabilities.evidence());
         assertEquals(version, capabilities.version(), () -> "unexpected distribution version: " + capabilities.evidence());
         assertEquals("x86_64", capabilities.architecture(), () -> "expected x86_64: " + capabilities.evidence());
@@ -84,7 +84,7 @@ record ManagedDistributionAcceptanceProfile(
                 + requiredCpu + ", observed " + capabilities.cpuMicroarchitecture() + ": " + capabilities.evidence());
         assertSecurityWasObserved(capabilities.securityPosture(), capabilities.evidence());
         if (requiresEnforcingSelinux()) {
-            assertEquals(LinuxSecurityModule.SELINUX, capabilities.securityPosture().module(),
+            assertEquals(LinuxSecurityModuleType.SELINUX, capabilities.securityPosture().module(),
                     () -> "enterprise preparation requires SELinux: " + capabilities.evidence());
             assertEquals(LinuxSecurityState.ENFORCING, capabilities.securityPosture().state(),
                     () -> "enterprise preparation requires enforcing SELinux: " + capabilities.evidence());
@@ -92,14 +92,14 @@ record ManagedDistributionAcceptanceProfile(
     }
 
     /** Verifies that preparation did not change observed mandatory-access-control or firewall facts. / 验证环境准备未改变观测到的强制访问控制或防火墙事实。 */
-    void assertSecurityAndFirewallPreserved(LinuxCapabilities before, LinuxCapabilities after) {
+    void assertSecurityAndFirewallPreserved(LinuxCapabilityFacts before, LinuxCapabilityFacts after) {
         assertSecurityWasObserved(after.securityPosture(), after.evidence());
         assertEquals(before.securityPosture(), after.securityPosture(), () -> "security or firewall changed from "
                 + before.securityPosture() + " to " + after.securityPosture());
     }
 
     boolean expectsPreparationSuccess() {
-        return preparationExpectation == SetupExpectation.SUCCEEDS;
+        return preparationExpectation == SetupExpectationKind.SUCCEEDS;
     }
 
     String applicationPrefix() {
@@ -108,70 +108,70 @@ record ManagedDistributionAcceptanceProfile(
 
     private static ManagedDistributionAcceptanceProfile rocky(String version, String packageArchitecture,
                                                                CpuMicroarchitectureLevel requiredCpu,
-                                                               SetupExpectation expectation) {
+                                                               SetupExpectationKind expectation) {
         return switch (version) {
-            case "9.8" -> exact(LinuxDistro.ROCKY_LINUX, version, packageArchitecture, requiredCpu, expectation,
-                    "9.8", "x86_64", CpuMicroarchitectureLevel.X86_64_V1, SetupExpectation.SUCCEEDS);
-            case "10.2" -> exact(LinuxDistro.ROCKY_LINUX, version, packageArchitecture, requiredCpu, expectation,
-                    "10.2", "x86_64", CpuMicroarchitectureLevel.X86_64_V3, SetupExpectation.SUCCEEDS);
+            case "9.8" -> exact(LinuxDistroType.ROCKY_LINUX, version, packageArchitecture, requiredCpu, expectation,
+                    "9.8", "x86_64", CpuMicroarchitectureLevel.X86_64_V1, SetupExpectationKind.SUCCEEDS);
+            case "10.2" -> exact(LinuxDistroType.ROCKY_LINUX, version, packageArchitecture, requiredCpu, expectation,
+                    "10.2", "x86_64", CpuMicroarchitectureLevel.X86_64_V3, SetupExpectationKind.SUCCEEDS);
             default -> throw new IllegalArgumentException("Rocky Linux target version must be 9.8 or 10.2");
         };
     }
 
     private static ManagedDistributionAcceptanceProfile centosStream(String version, String packageArchitecture,
                                                                       CpuMicroarchitectureLevel requiredCpu,
-                                                                      SetupExpectation expectation) {
+                                                                      SetupExpectationKind expectation) {
         if ("9".equals(version)) {
-            return exact(LinuxDistro.CENTOS_STREAM, version, packageArchitecture, requiredCpu, expectation,
-                    "9", "x86_64", CpuMicroarchitectureLevel.X86_64_V1, SetupExpectation.SUCCEEDS);
+            return exact(LinuxDistroType.CENTOS_STREAM, version, packageArchitecture, requiredCpu, expectation,
+                    "9", "x86_64", CpuMicroarchitectureLevel.X86_64_V1, SetupExpectationKind.SUCCEEDS);
         }
         if ("10".equals(version) && requiredCpu == CpuMicroarchitectureLevel.X86_64_V3) {
-            return exact(LinuxDistro.CENTOS_STREAM, version, packageArchitecture, requiredCpu, expectation,
-                    "10", "x86_64", CpuMicroarchitectureLevel.X86_64_V3, SetupExpectation.SUCCEEDS);
+            return exact(LinuxDistroType.CENTOS_STREAM, version, packageArchitecture, requiredCpu, expectation,
+                    "10", "x86_64", CpuMicroarchitectureLevel.X86_64_V3, SetupExpectationKind.SUCCEEDS);
         }
         if ("10".equals(version) && (requiredCpu == CpuMicroarchitectureLevel.X86_64_V1
                 || requiredCpu == CpuMicroarchitectureLevel.X86_64_V2)) {
-            return exact(LinuxDistro.CENTOS_STREAM, version, packageArchitecture, requiredCpu, expectation,
-                    "10", "x86_64", requiredCpu, SetupExpectation.REJECTS);
+            return exact(LinuxDistroType.CENTOS_STREAM, version, packageArchitecture, requiredCpu, expectation,
+                    "10", "x86_64", requiredCpu, SetupExpectationKind.REJECTS);
         }
         throw new IllegalArgumentException("CentOS Stream target version must be 9 or 10 with its documented CPU baseline");
     }
 
     private static ManagedDistributionAcceptanceProfile oracle(String version, String packageArchitecture,
                                                                 CpuMicroarchitectureLevel requiredCpu,
-                                                                SetupExpectation expectation) {
+                                                                SetupExpectationKind expectation) {
         return switch (version) {
-            case "9.7" -> exact(LinuxDistro.ORACLE_LINUX, version, packageArchitecture, requiredCpu, expectation,
-                    "9.7", "x86_64", CpuMicroarchitectureLevel.X86_64_V1, SetupExpectation.SUCCEEDS);
-            case "10.2" -> exact(LinuxDistro.ORACLE_LINUX, version, packageArchitecture, requiredCpu, expectation,
-                    "10.2", "x86_64", CpuMicroarchitectureLevel.X86_64_V3, SetupExpectation.SUCCEEDS);
+            case "9.7" -> exact(LinuxDistroType.ORACLE_LINUX, version, packageArchitecture, requiredCpu, expectation,
+                    "9.7", "x86_64", CpuMicroarchitectureLevel.X86_64_V1, SetupExpectationKind.SUCCEEDS);
+            case "10.2" -> exact(LinuxDistroType.ORACLE_LINUX, version, packageArchitecture, requiredCpu, expectation,
+                    "10.2", "x86_64", CpuMicroarchitectureLevel.X86_64_V3, SetupExpectationKind.SUCCEEDS);
             default -> throw new IllegalArgumentException("Oracle Linux target version must be 9.7 or 10.2");
         };
     }
 
     private static ManagedDistributionAcceptanceProfile alma(String version, String packageArchitecture,
                                                               CpuMicroarchitectureLevel requiredCpu,
-                                                              SetupExpectation expectation) {
+                                                              SetupExpectationKind expectation) {
         if ("9.8".equals(version)) {
-            return exact(LinuxDistro.ALMALINUX, version, packageArchitecture, requiredCpu, expectation,
-                    "9.8", "x86_64", CpuMicroarchitectureLevel.X86_64_V1, SetupExpectation.SUCCEEDS);
+            return exact(LinuxDistroType.ALMALINUX, version, packageArchitecture, requiredCpu, expectation,
+                    "9.8", "x86_64", CpuMicroarchitectureLevel.X86_64_V1, SetupExpectationKind.SUCCEEDS);
         }
         if ("10.2".equals(version) && requiredCpu == CpuMicroarchitectureLevel.X86_64_V2) {
-            return exact(LinuxDistro.ALMALINUX, version, packageArchitecture, requiredCpu, expectation,
-                    "10.2", "x86_64", CpuMicroarchitectureLevel.X86_64_V2, SetupExpectation.REJECTS);
+            return exact(LinuxDistroType.ALMALINUX, version, packageArchitecture, requiredCpu, expectation,
+                    "10.2", "x86_64", CpuMicroarchitectureLevel.X86_64_V2, SetupExpectationKind.REJECTS);
         }
-        return exact(LinuxDistro.ALMALINUX, version, packageArchitecture, requiredCpu, expectation,
-                "10.2", "x86_64", CpuMicroarchitectureLevel.X86_64_V3, SetupExpectation.SUCCEEDS);
+        return exact(LinuxDistroType.ALMALINUX, version, packageArchitecture, requiredCpu, expectation,
+                "10.2", "x86_64", CpuMicroarchitectureLevel.X86_64_V3, SetupExpectationKind.SUCCEEDS);
     }
 
-    private static ManagedDistributionAcceptanceProfile exact(LinuxDistro distro, String version,
+    private static ManagedDistributionAcceptanceProfile exact(LinuxDistroType distro, String version,
                                                                String packageArchitecture,
                                                                CpuMicroarchitectureLevel requiredCpu,
-                                                               SetupExpectation expectation,
+                                                               SetupExpectationKind expectation,
                                                                String expectedVersion,
                                                                String expectedPackageArchitecture,
                                                                CpuMicroarchitectureLevel expectedCpu,
-                                                               SetupExpectation expectedExpectation) {
+                                                               SetupExpectationKind expectedExpectation) {
         if (!expectedVersion.equals(version) || !expectedPackageArchitecture.equals(packageArchitecture)
                 || requiredCpu != expectedCpu || expectation != expectedExpectation) {
             throw new IllegalArgumentException("explicit distribution matrix selectors do not match " + distro
@@ -182,16 +182,16 @@ record ManagedDistributionAcceptanceProfile(
     }
 
     private String expectedPackageManager() {
-        return distro == LinuxDistro.DEBIAN ? "apt" : "dnf";
+        return distro == LinuxDistroType.DEBIAN ? "apt" : "dnf";
     }
 
     private boolean requiresEnforcingSelinux() {
-        return distro == LinuxDistro.CENTOS_STREAM || distro == LinuxDistro.ROCKY_LINUX || distro == LinuxDistro.ALMALINUX
-                || distro == LinuxDistro.ORACLE_LINUX;
+        return distro == LinuxDistroType.CENTOS_STREAM || distro == LinuxDistroType.ROCKY_LINUX || distro == LinuxDistroType.ALMALINUX
+                || distro == LinuxDistroType.ORACLE_LINUX;
     }
 
     private static void assertSecurityWasObserved(LinuxSecurityPosture posture, String evidence) {
-        assertNotEquals(LinuxSecurityModule.UNKNOWN, posture.module(), () -> "security module was not observed: " + evidence);
+        assertNotEquals(LinuxSecurityModuleType.UNKNOWN, posture.module(), () -> "security module was not observed: " + evidence);
         assertNotEquals(LinuxSecurityState.UNKNOWN, posture.state(), () -> "security state was not observed: " + evidence);
         assertNotEquals(LinuxFirewallKind.UNKNOWN, posture.firewall(), () -> "firewall manager was not observed: " + evidence);
         if (posture.firewall() != LinuxFirewallKind.NONE) {
@@ -210,10 +210,10 @@ record ManagedDistributionAcceptanceProfile(
         };
     }
 
-    private static SetupExpectation preparation(String value) {
+    private static SetupExpectationKind preparation(String value) {
         return switch (value.toLowerCase(Locale.ROOT)) {
-            case "succeeds" -> SetupExpectation.SUCCEEDS;
-            case "rejects" -> SetupExpectation.REJECTS;
+            case "succeeds" -> SetupExpectationKind.SUCCEEDS;
+            case "rejects" -> SetupExpectationKind.REJECTS;
             default -> throw new IllegalArgumentException(PREPARATION + " must be succeeds or rejects");
         };
     }

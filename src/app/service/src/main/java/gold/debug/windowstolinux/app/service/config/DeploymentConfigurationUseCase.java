@@ -5,7 +5,7 @@ import gold.debug.windowstolinux.app.db.repository.ConfigurationSnapshotReposito
 import gold.debug.windowstolinux.app.db.entity.StoredApplicationSecretRevision;
 import gold.debug.windowstolinux.app.secret.SecretStore;
 import gold.debug.windowstolinux.app.secret.SecretStoreException;
-import gold.debug.windowstolinux.app.service.server.DesktopSecretStores;
+import gold.debug.windowstolinux.app.service.server.DesktopSecretStoreService;
 import gold.debug.windowstolinux.shared.config.revision.ConfigurationSnapshot;
 import gold.debug.windowstolinux.shared.config.secretref.SecretReference;
 import gold.debug.windowstolinux.shared.model.message.LocalizedMessage;
@@ -23,7 +23,7 @@ import java.util.Objects;
 public final class DeploymentConfigurationUseCase {
     private final ConfigurationSnapshotRepository configurations;
     private final ApplicationSecretRepository applicationSecrets;
-    private final DesktopSecretStores secretStores;
+    private final DesktopSecretStoreService secretStores;
 
     /**
      * Creates a {@code DeploymentConfigurationUseCase} instance.
@@ -32,7 +32,7 @@ public final class DeploymentConfigurationUseCase {
      */
     public DeploymentConfigurationUseCase(ConfigurationSnapshotRepository configurations,
                                           ApplicationSecretRepository applicationSecrets,
-                                          DesktopSecretStores secretStores) {
+                                          DesktopSecretStoreService secretStores) {
         this.configurations = Objects.requireNonNull(configurations, "configurations");
         this.applicationSecrets = Objects.requireNonNull(applicationSecrets, "applicationSecrets");
         this.secretStores = Objects.requireNonNull(secretStores, "secretStores");

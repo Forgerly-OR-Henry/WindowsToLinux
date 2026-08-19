@@ -159,7 +159,7 @@ Kotlin 夹具固定 Gradle 8.10.2 Wrapper、官方二进制分发 SHA-256 和官
 - EL10 系列可能存在 x86-64-v2/v3 差异，必须依据具体发行版官方要求和实际 CPU 检测决定。
 - 非 x86-64、停止维护版本或生命周期不明版本默认只做识别预览，除非用户另行确认适配范围。
 - AppArmor/SELinux、防火墙和包管理变化必须进入计划；禁止为求成功静默关闭安全机制。
-- `ManagedDistributionProductEntryAcceptanceIT` 仅在 `managed.runtime.distribution-acceptance=true` 时运行；每次必须给出无秘密的发行版、版本、包架构、CPU 基线与准备预期。它先采集精确身份和安全/防火墙事实，再经 `DesktopApplicationService → SshdLinuxGateway` 执行两次环境准备，复核 helper v3 与安全状态不变，最后复用两组件整应用发布、故障回滚和生命周期事务。AlmaLinux 10 的 x86-64-v2 目标只验证“自动准备被拒绝”，不进入发布成功路径。该框架不是实机证据，普通 Maven 验证不会连接服务器。
+- `ManagedDistributionProductEntryAcceptanceTest` 仅在 `managed.runtime.distribution-acceptance=true` 时运行；每次必须给出无秘密的发行版、版本、包架构、CPU 基线与准备预期。它先采集精确身份和安全/防火墙事实，再经 `DesktopApplicationFacade → SshdLinuxGateway` 执行两次环境准备，复核 helper v3 与安全状态不变，最后复用两组件整应用发布、故障回滚和生命周期事务。AlmaLinux 10 的 x86-64-v2 目标只验证“自动准备被拒绝”，不进入发布成功路径。该框架不是实机证据，普通 Maven 验证不会连接服务器。
 
 ## 9. 实施顺序
 

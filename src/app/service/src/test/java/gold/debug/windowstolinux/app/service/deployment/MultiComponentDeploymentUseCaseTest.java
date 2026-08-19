@@ -4,7 +4,9 @@ import gold.debug.windowstolinux.app.db.DesktopPersistence;
 import gold.debug.windowstolinux.app.db.entity.CurrentRelease;
 import gold.debug.windowstolinux.app.db.entity.ManagedApplicationGraph;
 import gold.debug.windowstolinux.app.db.entity.SuccessfulManagedDeployment;
-import gold.debug.windowstolinux.app.service.DesktopApplicationService;
+import gold.debug.windowstolinux.app.service.DesktopApplicationFacade;
+import gold.debug.windowstolinux.app.service.deployment.multi.MultiComponentReviewInput;
+import gold.debug.windowstolinux.app.service.deployment.multi.ReviewedComponentApplication;
 import gold.debug.windowstolinux.app.service.server.ServerProfile;
 import gold.debug.windowstolinux.shared.analyze.component.ComponentAnalysisRequest;
 import gold.debug.windowstolinux.shared.config.definition.ConfigurationScope;
@@ -14,11 +16,11 @@ import gold.debug.windowstolinux.shared.config.revision.ConfigurationSnapshot;
 import gold.debug.windowstolinux.shared.config.secretref.SecretReference;
 import gold.debug.windowstolinux.shared.deploy.contract.ApplicationHealthGate;
 import gold.debug.windowstolinux.shared.linux.connection.DeploymentLinuxGateway;
-import gold.debug.windowstolinux.shared.model.deployment.BuildLimits;
+import gold.debug.windowstolinux.shared.model.deployment.BuildLimitConfiguration;
 import gold.debug.windowstolinux.shared.model.health.HealthCheck;
 import gold.debug.windowstolinux.shared.model.project.DeploymentProjectType;
 import gold.debug.windowstolinux.shared.model.project.DeploymentRuntimeSpecification;
-import gold.debug.windowstolinux.shared.model.project.component.ComponentIsolationRequirements;
+import gold.debug.windowstolinux.shared.model.project.component.ComponentIsolationSpecification;
 import gold.debug.windowstolinux.shared.model.managed.ManagedApplicationRuntimeConfiguration;
 import gold.debug.windowstolinux.shared.model.server.ServerIdentity;
 import gold.debug.windowstolinux.shared.model.security.CredentialStorageMode;
@@ -53,7 +55,7 @@ class MultiComponentDeploymentUseCaseTest {
             throw new AssertionError("review validation must not open SSH");
         };
         try (DesktopPersistence persistence = DesktopPersistence.open(temporaryDirectory.resolve("data"))) {
-            DesktopApplicationService service = new DesktopApplicationService(
+            DesktopApplicationFacade service = new DesktopApplicationFacade(
                     persistence, temporaryDirectory.resolve("work"), gateway);
             var prepared = service.prepareReviewedMultiComponentSource(root, "shop", List.of(
                     component("api", "api", 18081, Set.of()),
@@ -117,7 +119,7 @@ class MultiComponentDeploymentUseCaseTest {
                 Optional.of(new DeploymentRuntimeSpecification.NodeService(22,
                         new HealthCheck.Tcp(port, 20, 1))),
                 List.of(root + "/dist"), Set.of(port), List.of("PORT"), List.of(), List.of(), dependencies,
-                true, ComponentIsolationRequirements.managed());
+                true, ComponentIsolationSpecification.managed());
     }
 
     private static MultiComponentReviewInput input(String componentId, String applicationId, int port,
@@ -126,7 +128,7 @@ class MultiComponentDeploymentUseCaseTest {
                 ConfigurationSnapshot.create(applicationId, 1, "v1", Instant.parse("2026-08-13T00:00:00Z"),
                         List.of(new ConfigurationEntry("PORT", ConfigurationScope.RUNTIME,
                                 new ConfigurationValue.Number(port)))),
-                secrets, Optional.empty(), BuildLimits.defaultNonRoot(), false, false);
+                secrets, Optional.empty(), BuildLimitConfiguration.defaultNonRoot(), false, false);
     }
 
     private static void node(Path directory, String name) throws Exception {

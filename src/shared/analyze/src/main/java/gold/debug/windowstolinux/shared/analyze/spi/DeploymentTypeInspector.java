@@ -1,9 +1,9 @@
 package gold.debug.windowstolinux.shared.analyze.spi;
 
-import gold.debug.windowstolinux.shared.analyze.source.SourceInspection;
+import gold.debug.windowstolinux.shared.analyze.source.SourceInspectionFacts;
 import gold.debug.windowstolinux.shared.model.analysis.RejectionReason;
 import gold.debug.windowstolinux.shared.model.project.DeploymentProjectType;
-import gold.debug.windowstolinux.shared.model.project.ProjectLanguageFacts;
+import gold.debug.windowstolinux.shared.model.language.ProjectLanguageFacts;
 
 import java.io.IOException;
 import java.nio.file.Path;
@@ -19,6 +19,6 @@ public interface DeploymentTypeInspector {
     DeploymentProjectType projectType();
 
     /** Inspects type-local facts and suggestions. / 检查类型局部事实与建议。 */
-    DeploymentTypeInspection inspect(Path root, SourceInspection source, ProjectLanguageFacts languageFacts,
+    DeploymentTypeAssessment inspect(Path root, SourceInspectionFacts source, ProjectLanguageFacts languageFacts,
                                      List<RejectionReason> rejections) throws IOException;
 }

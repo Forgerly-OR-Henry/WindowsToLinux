@@ -1,6 +1,6 @@
 package gold.debug.windowstolinux.app.service.source;
 
-import gold.debug.windowstolinux.app.windows.workspace.WindowsSourceWorkspace;
+import gold.debug.windowstolinux.app.windows.workspace.WindowsSourcePreparer;
 import gold.debug.windowstolinux.shared.analyze.core.DeploymentAnalysisCoordinator;
 import gold.debug.windowstolinux.shared.analyze.component.ComponentAnalysisRequest;
 import gold.debug.windowstolinux.shared.git.GitReference;
@@ -8,7 +8,7 @@ import gold.debug.windowstolinux.shared.git.GitRemote;
 import gold.debug.windowstolinux.shared.git.GitSourceRequest;
 import gold.debug.windowstolinux.shared.model.project.DeploymentProjectType;
 import gold.debug.windowstolinux.shared.model.project.DeploymentRuntimeSpecification;
-import gold.debug.windowstolinux.shared.model.project.component.ComponentIsolationRequirements;
+import gold.debug.windowstolinux.shared.model.project.component.ComponentIsolationSpecification;
 import gold.debug.windowstolinux.shared.model.health.HealthCheck;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -46,7 +46,7 @@ class SourcePreparationUseCaseTest {
         GitSourceRequest request = new GitSourceRequest(new GitRemote(repository.toUri()), new GitReference.Commit(commit),
                 Set.of(), 64L * 1024 * 1024, true);
         SourcePreparationUseCase useCase = new SourcePreparationUseCase(new DeploymentAnalysisCoordinator(),
-                new WindowsSourceWorkspace(temporaryDirectory.resolve("workspace")));
+                new WindowsSourcePreparer(temporaryDirectory.resolve("workspace")));
 
         ReviewedSourcePreparation prepared = useCase.prepareGit(request, DeploymentProjectType.NODE_SERVICE);
 
@@ -55,7 +55,7 @@ class SourcePreparationUseCaseTest {
         assertEquals(prepared.archive().orElseThrow().contentSha256(),
                 prepared.sourceRevision().orElseThrow().sourceSha256());
         assertTrue(prepared.assessment().runtimeSuggestion().orElseThrow().value(
-                gold.debug.windowstolinux.shared.model.project.DeploymentRuntimeSuggestion.RuntimeInput.NODE_MAJOR_VERSION).isPresent());
+                gold.debug.windowstolinux.shared.model.project.DeploymentRuntimeAssessment.RuntimeInputType.NODE_MAJOR_VERSION).isPresent());
     }
 
     @Test
@@ -63,11 +63,11 @@ class SourcePreparationUseCaseTest {
         Path project = Files.createDirectories(temporaryDirectory.resolve("preview"));
         Files.writeString(project.resolve("install.sh"), "this must never execute");
         SourcePreparationUseCase useCase = new SourcePreparationUseCase(new DeploymentAnalysisCoordinator(),
-                new WindowsSourceWorkspace(temporaryDirectory.resolve("workspace")));
+                new WindowsSourcePreparer(temporaryDirectory.resolve("workspace")));
 
         ReviewedSourcePreparation prepared = useCase.prepare(project, DeploymentProjectType.RECOGNITION_PREVIEW);
 
-        assertEquals(gold.debug.windowstolinux.shared.model.analysis.DeploymentAdmission.RECOGNITION_PREVIEW,
+        assertEquals(gold.debug.windowstolinux.shared.model.analysis.DeploymentAdmissionStatus.RECOGNITION_PREVIEW,
                 prepared.assessment().admission());
         assertTrue(prepared.archive().isEmpty());
         assertTrue(prepared.sourceRevision().isEmpty());
@@ -81,13 +81,13 @@ class SourcePreparationUseCaseTest {
         node(Files.createDirectories(application.resolve("web")), "web");
         Path workspace = temporaryDirectory.resolve("workspace");
         SourcePreparationUseCase useCase = new SourcePreparationUseCase(new DeploymentAnalysisCoordinator(),
-                new WindowsSourceWorkspace(workspace));
+                new WindowsSourcePreparer(workspace));
 
         PreparedMultiComponentSource prepared = useCase.prepareMultiComponent(application, "shop", List.of(
                 component("api", "api", 18081, Set.of()),
                 component("web", "web", 18082, Set.of("api"))));
 
-        assertEquals(gold.debug.windowstolinux.shared.model.analysis.DeploymentAdmission.READY_FOR_PLANNING,
+        assertEquals(gold.debug.windowstolinux.shared.model.analysis.DeploymentAdmissionStatus.READY_FOR_PLANNING,
                 prepared.assessment().admission());
         assertEquals(List.of("api", "web"), prepared.components().keySet().stream().toList());
         assertTrue(prepared.components().values().stream().allMatch(value ->
@@ -100,7 +100,7 @@ class SourcePreparationUseCaseTest {
         PreparedMultiComponentSource rejected = useCase.prepareMultiComponent(application, "conflict", List.of(
                 component("api", "api", 18081, Set.of()),
                 component("web", "web", 18081, Set.of("api"))));
-        assertEquals(gold.debug.windowstolinux.shared.model.analysis.DeploymentAdmission.REJECTED,
+        assertEquals(gold.debug.windowstolinux.shared.model.analysis.DeploymentAdmissionStatus.REJECTED,
                 rejected.assessment().admission());
         assertTrue(rejected.components().isEmpty());
     }
@@ -110,7 +110,7 @@ class SourcePreparationUseCaseTest {
                 Optional.of(new DeploymentRuntimeSpecification.NodeService(22,
                         new HealthCheck.Tcp(port, 20, 1))),
                 List.of(root + "/dist"), Set.of(port), List.of("PORT"), List.of(), List.of(), dependencies,
-                true, ComponentIsolationRequirements.managed());
+                true, ComponentIsolationSpecification.managed());
     }
 
     private static void node(Path directory, String name) throws IOException {

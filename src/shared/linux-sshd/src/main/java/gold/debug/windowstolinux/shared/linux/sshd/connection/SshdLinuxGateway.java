@@ -1,11 +1,11 @@
 package gold.debug.windowstolinux.shared.linux.sshd.connection;
 
 import gold.debug.windowstolinux.shared.linux.sshd.session.SshdLinuxRemoteSession;
-import gold.debug.windowstolinux.shared.linux.sshd.session.SshSessionCloser;
+import gold.debug.windowstolinux.shared.linux.sshd.session.SshSessionLifecycleExecutor;
 import gold.debug.windowstolinux.shared.linux.sshd.command.SshCommandExecutor;
 
 import gold.debug.windowstolinux.shared.linux.connection.HostKeyDecision;
-import gold.debug.windowstolinux.shared.linux.connection.HostKeyVerifier;
+import gold.debug.windowstolinux.shared.linux.connection.HostKeyEvaluator;
 import gold.debug.windowstolinux.shared.linux.error.LinuxOperationException;
 import gold.debug.windowstolinux.shared.linux.connection.DeploymentLinuxGateway;
 import gold.debug.windowstolinux.shared.linux.session.DeploymentRemoteSession;
@@ -42,7 +42,7 @@ public final class SshdLinuxGateway implements DeploymentLinuxGateway {
     private static final Duration TRANSIENT_RETRY_DELAY = Duration.ofMillis(250);
     /** Performs the {@code connect} operation. / 执行 {@code connect} 操作。 */
     @Override
-    public DeploymentRemoteSession connect(SshEndpoint endpoint, SshCredential credential, HostKeyVerifier hostKeyVerifier)
+    public DeploymentRemoteSession connect(SshEndpoint endpoint, SshCredential credential, HostKeyEvaluator hostKeyVerifier)
             throws LinuxOperationException {
         Objects.requireNonNull(endpoint, "endpoint");
         Objects.requireNonNull(credential, "credential");
@@ -69,7 +69,7 @@ public final class SshdLinuxGateway implements DeploymentLinuxGateway {
     private static DeploymentRemoteSession connectOnce(
             SshEndpoint endpoint,
             SshCredential credential,
-            HostKeyVerifier hostKeyVerifier
+            HostKeyEvaluator hostKeyVerifier
     ) throws LinuxOperationException {
         SshClient client = credentialScopedClient(credential);
         AtomicReference<String> observedFingerprint = new AtomicReference<>();
@@ -89,7 +89,7 @@ public final class SshdLinuxGateway implements DeploymentLinuxGateway {
                         .verify(CONNECT_TIMEOUT)
                         .getSession();
             } catch (Exception exception) {
-                SshSessionCloser.closeQuietly(client);
+                SshSessionLifecycleExecutor.closeQuietly(client);
                 String fingerprint = observedFingerprint.get();
                 if (fingerprint != null) {
                     throw LinuxOperationException.localized("linux.error.hostKeyRejected", Map.of(
@@ -103,7 +103,7 @@ public final class SshdLinuxGateway implements DeploymentLinuxGateway {
             try {
                 authenticate(session, credential);
             } catch (Exception exception) {
-                SshSessionCloser.closeQuietly(client);
+                SshSessionLifecycleExecutor.closeQuietly(client);
                 String fingerprint = observedFingerprint.get();
                 if (hostKeyDecision.get() == HostKeyDecision.REJECT && fingerprint != null) {
                     throw LinuxOperationException.localized("linux.error.hostKeyRejected", Map.of(
@@ -118,7 +118,7 @@ public final class SshdLinuxGateway implements DeploymentLinuxGateway {
             }
             return new SshdLinuxRemoteSession(client, session, endpoint, observedFingerprint.get());
         } catch (Exception exception) {
-            SshSessionCloser.closeQuietly(client);
+            SshSessionLifecycleExecutor.closeQuietly(client);
             if (exception instanceof LinuxOperationException linuxOperationException) {
                 throw linuxOperationException;
             }
@@ -188,12 +188,12 @@ public final class SshdLinuxGateway implements DeploymentLinuxGateway {
 
     /** Delegates client cleanup to the session-owned close policy. / 将客户端清理委托给会话层持有的关闭策略。 */
     public static void closeQuietly(SshClient client) {
-        SshSessionCloser.closeQuietly(client);
+        SshSessionLifecycleExecutor.closeQuietly(client);
     }
 
     /** Delegates session cleanup to the session-owned close policy. / 将会话清理委托给会话层持有的关闭策略。 */
     public static void closeQuietly(ClientSession session) {
-        SshSessionCloser.closeQuietly(session);
+        SshSessionLifecycleExecutor.closeQuietly(session);
     }
 
     private static String fingerprint(PublicKey key) {

@@ -1,6 +1,6 @@
 package gold.debug.windowstolinux.shared.analyze.ecosystem.python;
 
-import gold.debug.windowstolinux.shared.analyze.source.BoundedMetadataReader;
+import gold.debug.windowstolinux.shared.analyze.source.BoundedMetadataInspector;
 import gold.debug.windowstolinux.shared.analyze.source.ProjectIdentityResolver;
 
 import java.io.IOException;
@@ -20,11 +20,11 @@ public final class PythonBuildInspector {
     /** Returns Python project facts when pyproject.toml exists. / 在 pyproject.toml 存在时返回 Python 项目事实。 */
     public Optional<PythonBuildFacts> inspect(Path root) throws IOException {
         Path pyproject = root.resolve("pyproject.toml");
-        if (!BoundedMetadataReader.regular(pyproject)) {
+        if (!BoundedMetadataInspector.regular(pyproject)) {
             return Optional.empty();
         }
-        String toml = BoundedMetadataReader.read(pyproject);
+        String toml = BoundedMetadataInspector.read(pyproject);
         return Optional.of(new PythonBuildFacts(ProjectIdentityResolver.applicationId(root, toml, NAME),
-                BoundedMetadataReader.existingNames(root, "requirements.lock", "poetry.lock", "uv.lock", "Pipfile.lock")));
+                BoundedMetadataInspector.existingNames(root, "requirements.lock", "poetry.lock", "uv.lock", "Pipfile.lock")));
     }
 }

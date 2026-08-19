@@ -5,7 +5,7 @@ import gold.debug.windowstolinux.shared.linux.sshd.capability.ManagedHostCapabil
 import gold.debug.windowstolinux.shared.linux.error.LinuxOperationException;
 import gold.debug.windowstolinux.shared.linux.sshd.command.SshCommandExecutor;
 import gold.debug.windowstolinux.shared.linux.sshd.protocol.helper.ManagedHelperBundle;
-import gold.debug.windowstolinux.shared.model.capability.ServerCapabilities;
+import gold.debug.windowstolinux.shared.model.capability.ServerCapabilityFacts;
 
 import java.time.Duration;
 import java.util.Map;
@@ -44,14 +44,14 @@ public final class SshdCapabilityCollector {
      * @return the operation result / 操作结果
      * @throws LinuxOperationException if the operation cannot be completed / 无法完成操作时
      */
-    public ServerCapabilities collect() throws LinuxOperationException {
+    public ServerCapabilityFacts collect() throws LinuxOperationException {
         var result = collectReadOnly(ManagedHostCapabilityProbe.render(ManagedHelperBundle.PATH));
         if (!result.succeeded()) {
             throw LinuxOperationException.localized("linux.error.capabilityCollectionFailed",
                     "Failed to collect target capabilities: " + result.failureEvidence());
         }
         Map<String, String> values = SshCommandExecutor.lines(result.output());
-        return new ServerCapabilities(
+        return new ServerCapabilityFacts(
                 values.getOrDefault("OS", "unknown"),
                 values.getOrDefault("ARCH", "unknown"),
                 "1".equals(values.get("SYSTEMD")),

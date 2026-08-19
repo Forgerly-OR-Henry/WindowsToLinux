@@ -1,7 +1,7 @@
 package gold.debug.windowstolinux.shared.deploy.plan;
 
 import gold.debug.windowstolinux.shared.deploy.contract.MultiComponentDeploymentPlan;
-import gold.debug.windowstolinux.shared.model.analysis.DeploymentAdmission;
+import gold.debug.windowstolinux.shared.model.analysis.DeploymentAdmissionStatus;
 import gold.debug.windowstolinux.shared.model.assessment.MultiComponentProjectAssessment;
 import gold.debug.windowstolinux.shared.model.project.component.DeploymentComponent;
 
@@ -26,7 +26,7 @@ public final class MultiComponentDeploymentPlanner {
     /** Plans independent candidates and dependency-ordered runtime actions. / 计划独立候选与依赖有序运行时动作。 */
     public MultiComponentDeploymentPlan plan(MultiComponentProjectAssessment assessment) {
         assessment = Objects.requireNonNull(assessment, "assessment");
-        if (assessment.admission() != DeploymentAdmission.READY_FOR_PLANNING || !assessment.issues().isEmpty()) {
+        if (assessment.admission() != DeploymentAdmissionStatus.READY_FOR_PLANNING || !assessment.issues().isEmpty()) {
             throw new IllegalArgumentException("only a fully admitted mixed project can enter component planning");
         }
         Map<String, DeploymentComponent> components = new LinkedHashMap<>();

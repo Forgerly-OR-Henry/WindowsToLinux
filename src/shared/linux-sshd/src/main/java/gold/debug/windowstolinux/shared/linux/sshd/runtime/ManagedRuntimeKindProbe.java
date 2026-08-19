@@ -1,7 +1,7 @@
 package gold.debug.windowstolinux.shared.linux.sshd.runtime;
 
 import gold.debug.windowstolinux.shared.linux.error.LinuxOperationException;
-import gold.debug.windowstolinux.shared.linux.sshd.protocol.runtime.ManagedRuntimeController;
+import gold.debug.windowstolinux.shared.linux.sshd.protocol.runtime.ManagedRuntimeProtocolExecutor;
 import gold.debug.windowstolinux.shared.model.managed.ManagedApplication;
 import gold.debug.windowstolinux.shared.model.project.DeploymentRuntimeSpecification;
 
@@ -12,10 +12,10 @@ import java.util.Optional;
 
 /** Reads the root-owned current-release markers through the fixed helper protocol. / 通过固定 helper 协议读取 root 所有的当前发布标记。 */
 public final class ManagedRuntimeKindProbe {
-    private final ManagedRuntimeController runtimes;
+    private final ManagedRuntimeProtocolExecutor runtimes;
 
     /** Creates a managed runtime kind probe. / 创建受管运行时类型探测器。 */
-    public ManagedRuntimeKindProbe(ManagedRuntimeController runtimes) {
+    public ManagedRuntimeKindProbe(ManagedRuntimeProtocolExecutor runtimes) {
         this.runtimes = Objects.requireNonNull(runtimes, "runtimes");
     }
 
@@ -32,10 +32,10 @@ public final class ManagedRuntimeKindProbe {
         };
     }
 
-    private static DeploymentRuntimeSpecification.ContainerEngine parseEngine(String value)
+    private static DeploymentRuntimeSpecification.ContainerEngineType parseEngine(String value)
             throws LinuxOperationException {
         try {
-            return DeploymentRuntimeSpecification.ContainerEngine.valueOf(
+            return DeploymentRuntimeSpecification.ContainerEngineType.valueOf(
                     Objects.requireNonNull(value, "container engine").toUpperCase(Locale.ROOT));
         } catch (IllegalArgumentException | NullPointerException exception) {
             throw LinuxOperationException.localized("linux.error.runtimeObservationFailed",

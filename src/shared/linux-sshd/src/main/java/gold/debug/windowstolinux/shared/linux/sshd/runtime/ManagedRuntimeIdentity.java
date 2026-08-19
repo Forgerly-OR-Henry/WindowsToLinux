@@ -6,7 +6,7 @@ import java.util.Objects;
 import java.util.Optional;
 
 /** Identifies the sealed runtime kind without persisting a duplicate runtime specification. / 在不持久化重复运行时规格的情况下识别已封存运行时类型。 */
-public record ManagedRuntimeIdentity(Kind kind, Optional<DeploymentRuntimeSpecification.ContainerEngine> containerEngine) {
+public record ManagedRuntimeIdentity(Kind kind, Optional<DeploymentRuntimeSpecification.ContainerEngineType> containerEngine) {
     /** Creates an instance of this type. / 创建此类型的实例。 */
     public ManagedRuntimeIdentity {
         kind = Objects.requireNonNull(kind, "kind");

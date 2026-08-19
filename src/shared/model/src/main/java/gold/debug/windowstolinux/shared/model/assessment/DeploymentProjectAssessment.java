@@ -1,9 +1,9 @@
 package gold.debug.windowstolinux.shared.model.assessment;
 
-import gold.debug.windowstolinux.shared.model.analysis.DeploymentAdmission;
+import gold.debug.windowstolinux.shared.model.analysis.DeploymentAdmissionStatus;
 import gold.debug.windowstolinux.shared.model.analysis.RejectionReason;
 import gold.debug.windowstolinux.shared.model.project.DeploymentProjectFacts;
-import gold.debug.windowstolinux.shared.model.project.DeploymentRuntimeSuggestion;
+import gold.debug.windowstolinux.shared.model.project.DeploymentRuntimeAssessment;
 
 import java.util.List;
 import java.util.Objects;
@@ -20,9 +20,9 @@ import java.util.Optional;
  * @param rejections the hard rejection reasons / 硬性拒绝原因
  */
 public record DeploymentProjectAssessment(
-        DeploymentAdmission admission,
+        DeploymentAdmissionStatus admission,
         Optional<DeploymentProjectFacts> facts,
-        Optional<DeploymentRuntimeSuggestion> runtimeSuggestion,
+        Optional<DeploymentRuntimeAssessment> runtimeSuggestion,
         List<RejectionReason> rejections
 ) {
     /**
@@ -35,23 +35,23 @@ public record DeploymentProjectAssessment(
         facts = Objects.requireNonNull(facts, "facts");
         runtimeSuggestion = Objects.requireNonNull(runtimeSuggestion, "runtimeSuggestion");
         rejections = List.copyOf(Objects.requireNonNull(rejections, "rejections"));
-        if (admission == DeploymentAdmission.REJECTED && rejections.isEmpty()) {
+        if (admission == DeploymentAdmissionStatus.REJECTED && rejections.isEmpty()) {
             throw new IllegalArgumentException("rejected assessments require at least one rejection reason");
         }
-        if (admission != DeploymentAdmission.REJECTED && (facts.isEmpty() || !rejections.isEmpty())) {
+        if (admission != DeploymentAdmissionStatus.REJECTED && (facts.isEmpty() || !rejections.isEmpty())) {
             throw new IllegalArgumentException("non-rejected assessments require facts and no rejection reasons");
         }
-        if (admission == DeploymentAdmission.REJECTED && runtimeSuggestion.isPresent()) {
+        if (admission == DeploymentAdmissionStatus.REJECTED && runtimeSuggestion.isPresent()) {
             throw new IllegalArgumentException("rejected assessments must not expose runtime suggestions");
         }
         if (runtimeSuggestion.isPresent() && facts.isPresent()
                 && runtimeSuggestion.orElseThrow().projectType() != facts.orElseThrow().projectType()) {
             throw new IllegalArgumentException("runtime suggestion must match the analyzed project type");
         }
-        if (admission == DeploymentAdmission.READY_FOR_PLANNING && !facts.orElseThrow().readyForPlanning()) {
+        if (admission == DeploymentAdmissionStatus.READY_FOR_PLANNING && !facts.orElseThrow().readyForPlanning()) {
             throw new IllegalArgumentException("ready assessments must not have conflicts or missing information");
         }
-        if (admission == DeploymentAdmission.RECOGNITION_PREVIEW
+        if (admission == DeploymentAdmissionStatus.RECOGNITION_PREVIEW
                 && facts.orElseThrow().support().level().deployable()) {
             throw new IllegalArgumentException("recognition preview must not expose a deployable support level");
         }
@@ -66,12 +66,12 @@ public record DeploymentProjectAssessment(
      * @return the ready assessment / 可计划评估
      */
     public static DeploymentProjectAssessment ready(DeploymentProjectFacts facts) {
-        return new DeploymentProjectAssessment(DeploymentAdmission.READY_FOR_PLANNING, Optional.of(facts), Optional.empty(), List.of());
+        return new DeploymentProjectAssessment(DeploymentAdmissionStatus.READY_FOR_PLANNING, Optional.of(facts), Optional.empty(), List.of());
     }
 
     /** Creates a ready assessment with source-backed runtime suggestions. / 创建带有源码依据运行时建议的可计划评估。 */
-    public static DeploymentProjectAssessment ready(DeploymentProjectFacts facts, DeploymentRuntimeSuggestion runtimeSuggestion) {
-        return new DeploymentProjectAssessment(DeploymentAdmission.READY_FOR_PLANNING, Optional.of(facts),
+    public static DeploymentProjectAssessment ready(DeploymentProjectFacts facts, DeploymentRuntimeAssessment runtimeSuggestion) {
+        return new DeploymentProjectAssessment(DeploymentAdmissionStatus.READY_FOR_PLANNING, Optional.of(facts),
                 Optional.of(runtimeSuggestion), List.of());
     }
 
@@ -84,19 +84,19 @@ public record DeploymentProjectAssessment(
      * @return the input-required assessment / 需要输入的评估
      */
     public static DeploymentProjectAssessment requiresInput(DeploymentProjectFacts facts) {
-        return new DeploymentProjectAssessment(DeploymentAdmission.REQUIRES_INPUT, Optional.of(facts), Optional.empty(), List.of());
+        return new DeploymentProjectAssessment(DeploymentAdmissionStatus.REQUIRES_INPUT, Optional.of(facts), Optional.empty(), List.of());
     }
 
     /** Creates an input-required assessment with source-backed runtime suggestions. / 创建带有源码依据运行时建议的需要输入评估。 */
     public static DeploymentProjectAssessment requiresInput(DeploymentProjectFacts facts,
-                                                            DeploymentRuntimeSuggestion runtimeSuggestion) {
-        return new DeploymentProjectAssessment(DeploymentAdmission.REQUIRES_INPUT, Optional.of(facts),
+                                                            DeploymentRuntimeAssessment runtimeSuggestion) {
+        return new DeploymentProjectAssessment(DeploymentAdmissionStatus.REQUIRES_INPUT, Optional.of(facts),
                 Optional.of(runtimeSuggestion), List.of());
     }
 
     /** Creates a mutation-free recognition preview. / 创建禁止修改目标机的识别预览。 */
     public static DeploymentProjectAssessment recognitionPreview(DeploymentProjectFacts facts) {
-        return new DeploymentProjectAssessment(DeploymentAdmission.RECOGNITION_PREVIEW, Optional.of(facts),
+        return new DeploymentProjectAssessment(DeploymentAdmissionStatus.RECOGNITION_PREVIEW, Optional.of(facts),
                 Optional.empty(), List.of());
     }
 
@@ -109,6 +109,6 @@ public record DeploymentProjectAssessment(
      * @return the rejected assessment / 被拒绝的评估
      */
     public static DeploymentProjectAssessment rejected(List<RejectionReason> rejections) {
-        return new DeploymentProjectAssessment(DeploymentAdmission.REJECTED, Optional.empty(), Optional.empty(), rejections);
+        return new DeploymentProjectAssessment(DeploymentAdmissionStatus.REJECTED, Optional.empty(), Optional.empty(), rejections);
     }
 }

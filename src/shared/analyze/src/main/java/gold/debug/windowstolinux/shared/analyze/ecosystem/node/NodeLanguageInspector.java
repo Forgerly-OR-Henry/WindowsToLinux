@@ -1,13 +1,13 @@
 package gold.debug.windowstolinux.shared.analyze.ecosystem.node;
 
-import gold.debug.windowstolinux.shared.analyze.source.SourceInspection;
+import gold.debug.windowstolinux.shared.analyze.source.SourceInspectionFacts;
 import gold.debug.windowstolinux.shared.model.analysis.AnalysisEvidence;
-import gold.debug.windowstolinux.shared.model.analysis.EvidenceConfidence;
+import gold.debug.windowstolinux.shared.model.analysis.EvidenceConfidenceLevel;
 import gold.debug.windowstolinux.shared.model.message.LocalizedMessage;
-import gold.debug.windowstolinux.shared.model.project.LanguageEcosystem;
-import gold.debug.windowstolinux.shared.model.project.LanguageFact;
-import gold.debug.windowstolinux.shared.model.project.ProjectLanguageFacts;
-import gold.debug.windowstolinux.shared.model.project.SourceLanguage;
+import gold.debug.windowstolinux.shared.model.language.LanguageEcosystemType;
+import gold.debug.windowstolinux.shared.model.language.LanguageFactKind;
+import gold.debug.windowstolinux.shared.model.language.ProjectLanguageFacts;
+import gold.debug.windowstolinux.shared.model.language.SourceLanguageType;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -32,32 +32,32 @@ public final class NodeLanguageInspector {
     private static final Pattern EXACT_NODE = Pattern.compile("^\\s*v?(18|19|20|21|22|23|24)(?:\\.0\\.0)?\\s*$");
 
     /** Returns deterministic Node.js ecosystem and source facts. / 返回确定性的 Node.js 生态与源码事实。 */
-    public ProjectLanguageFacts inspect(Path root, SourceInspection source) throws IOException {
-        EnumSet<LanguageEcosystem> ecosystems = EnumSet.noneOf(LanguageEcosystem.class);
-        EnumSet<SourceLanguage> languages = EnumSet.noneOf(SourceLanguage.class);
-        EnumMap<LanguageFact, String> values = new EnumMap<>(LanguageFact.class);
+    public ProjectLanguageFacts inspect(Path root, SourceInspectionFacts source) throws IOException {
+        EnumSet<LanguageEcosystemType> ecosystems = EnumSet.noneOf(LanguageEcosystemType.class);
+        EnumSet<SourceLanguageType> languages = EnumSet.noneOf(SourceLanguageType.class);
+        EnumMap<LanguageFactKind, String> values = new EnumMap<>(LanguageFactKind.class);
         List<AnalysisEvidence> evidence = new ArrayList<>();
         source.relativeFiles().forEach(path -> {
             String name = path.getFileName().toString().toLowerCase(Locale.ROOT);
             if (isJavaScript(name)) {
-                ecosystems.add(LanguageEcosystem.NODE_JS);
-                languages.add(SourceLanguage.JAVASCRIPT);
+                ecosystems.add(LanguageEcosystemType.NODE_JS);
+                languages.add(SourceLanguageType.JAVASCRIPT);
             }
             if (isTypeScript(name)) {
-                ecosystems.add(LanguageEcosystem.NODE_JS);
-                languages.add(SourceLanguage.TYPESCRIPT);
+                ecosystems.add(LanguageEcosystemType.NODE_JS);
+                languages.add(SourceLanguageType.TYPESCRIPT);
             }
         });
         Path packageJson = root.resolve("package.json");
         if (Files.isRegularFile(packageJson)) {
-            ecosystems.add(LanguageEcosystem.NODE_JS);
+            ecosystems.add(LanguageEcosystemType.NODE_JS);
             evidence.add(evidence("analysis.language.nodeMetadata", "package.json"));
             String json = readBounded(packageJson);
             Matcher engine = NODE_ENGINE.matcher(json);
             if (engine.find()) {
                 Matcher exact = EXACT_NODE.matcher(engine.group(1));
                 if (exact.matches()) {
-                    values.put(LanguageFact.NODE_MAJOR_VERSION, exact.group(1));
+                    values.put(LanguageFactKind.NODE_MAJOR_VERSION, exact.group(1));
                     evidence.add(evidence("analysis.deployment.runtime.evidence.nodeVersion", "package.json#engines.node"));
                 }
             }
@@ -89,6 +89,6 @@ public final class NodeLanguageInspector {
 
     private static AnalysisEvidence evidence(String key, String source) {
         return new AnalysisEvidence(LocalizedMessage.of(key), source,
-                LocalizedMessage.of("analysis.deployment.evidence.detected"), EvidenceConfidence.HIGH);
+                LocalizedMessage.of("analysis.deployment.evidence.detected"), EvidenceConfidenceLevel.HIGH);
     }
 }

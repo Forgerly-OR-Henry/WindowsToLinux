@@ -11,7 +11,7 @@ import gold.debug.windowstolinux.shared.deploy.contract.ApplicationHealthGate;
 import gold.debug.windowstolinux.shared.deploy.contract.DeploymentApproval;
 import gold.debug.windowstolinux.shared.deploy.contract.MultiComponentDeploymentPlan;
 import gold.debug.windowstolinux.shared.deploy.contract.ReviewedDeploymentRequest;
-import gold.debug.windowstolinux.shared.deploy.result.ComponentTransactionState;
+import gold.debug.windowstolinux.shared.deploy.result.deployment.ComponentTransactionState;
 import gold.debug.windowstolinux.shared.linux.build.DeploymentBuildResult;
 import gold.debug.windowstolinux.shared.linux.connection.DeploymentLinuxGateway;
 import gold.debug.windowstolinux.shared.linux.session.DeploymentRemoteSession;
@@ -23,11 +23,11 @@ import gold.debug.windowstolinux.shared.linux.protocol.ReleaseSnapshot;
 import gold.debug.windowstolinux.shared.linux.protocol.RemoteStepResult;
 import gold.debug.windowstolinux.shared.linux.runtime.HealthCheckResult;
 import gold.debug.windowstolinux.shared.linux.transfer.RemoteWorkspace;
-import gold.debug.windowstolinux.shared.linux.transfer.UploadReceipt;
+import gold.debug.windowstolinux.shared.linux.transfer.SourceUploadResult;
 import gold.debug.windowstolinux.shared.model.analysis.AnalysisEvidence;
-import gold.debug.windowstolinux.shared.model.analysis.EvidenceConfidence;
+import gold.debug.windowstolinux.shared.model.analysis.EvidenceConfidenceLevel;
 import gold.debug.windowstolinux.shared.model.archive.SourceArchiveDescriptor;
-import gold.debug.windowstolinux.shared.model.deployment.BuildLimits;
+import gold.debug.windowstolinux.shared.model.deployment.BuildLimitConfiguration;
 import gold.debug.windowstolinux.shared.model.deployment.DeploymentStatus;
 import gold.debug.windowstolinux.shared.model.health.HealthCheck;
 import gold.debug.windowstolinux.shared.model.health.UserAccessUrl;
@@ -39,20 +39,20 @@ import gold.debug.windowstolinux.shared.model.lifecycle.LifecycleObservation;
 import gold.debug.windowstolinux.shared.model.lifecycle.RuntimeState;
 import gold.debug.windowstolinux.shared.model.managed.ManagedApplication;
 import gold.debug.windowstolinux.shared.model.message.LocalizedMessage;
-import gold.debug.windowstolinux.shared.model.project.DeploymentBuildTool;
+import gold.debug.windowstolinux.shared.model.project.DeploymentBuildToolType;
 import gold.debug.windowstolinux.shared.model.project.DeploymentProjectFacts;
 import gold.debug.windowstolinux.shared.model.project.DeploymentProjectType;
 import gold.debug.windowstolinux.shared.model.project.DeploymentRuntimeSpecification;
 import gold.debug.windowstolinux.shared.model.project.SourceRevision;
-import gold.debug.windowstolinux.shared.model.capability.LinuxCapabilities;
+import gold.debug.windowstolinux.shared.model.capability.LinuxCapabilityFacts;
 import gold.debug.windowstolinux.shared.model.server.CpuMicroarchitectureLevel;
-import gold.debug.windowstolinux.shared.model.server.LinuxDistro;
-import gold.debug.windowstolinux.shared.model.server.LinuxFirewallKind;
-import gold.debug.windowstolinux.shared.model.server.LinuxFirewallState;
-import gold.debug.windowstolinux.shared.model.server.LinuxSecurityModule;
-import gold.debug.windowstolinux.shared.model.server.LinuxSecurityPosture;
-import gold.debug.windowstolinux.shared.model.server.LinuxSecurityState;
-import gold.debug.windowstolinux.shared.model.capability.ServerCapabilities;
+import gold.debug.windowstolinux.shared.model.server.LinuxDistroType;
+import gold.debug.windowstolinux.shared.model.server.security.LinuxFirewallKind;
+import gold.debug.windowstolinux.shared.model.server.security.LinuxFirewallState;
+import gold.debug.windowstolinux.shared.model.server.security.LinuxSecurityModuleType;
+import gold.debug.windowstolinux.shared.model.server.security.LinuxSecurityPosture;
+import gold.debug.windowstolinux.shared.model.server.security.LinuxSecurityState;
+import gold.debug.windowstolinux.shared.model.capability.ServerCapabilityFacts;
 import gold.debug.windowstolinux.shared.model.server.ServerIdentity;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -169,7 +169,7 @@ class ReviewedMultiComponentDeploymentServiceTest {
         assertTrue(fixture.log.stream().noneMatch(value -> value.equals("execute:START:shop-web")));
     }
 
-    private gold.debug.windowstolinux.shared.deploy.result.MultiComponentLifecycleResult lifecycle(
+    private gold.debug.windowstolinux.shared.deploy.result.lifecycle.MultiComponentLifecycleResult lifecycle(
             LifecycleFixture fixture, Set<String> targets, LifecycleAction action) {
         DeploymentLinuxGateway gateway = (endpoint, credential, verifier) -> fixture.session();
         List<ManagedComponentLifecycle> managed = components().stream()
@@ -182,7 +182,7 @@ class ReviewedMultiComponentDeploymentServiceTest {
                 (endpoint, fingerprint) -> HostKeyDecision.ACCEPT_EXISTING);
     }
 
-    private gold.debug.windowstolinux.shared.deploy.result.MultiComponentDeploymentResult deploy(Fixture fixture) {
+    private gold.debug.windowstolinux.shared.deploy.result.deployment.MultiComponentDeploymentResult deploy(Fixture fixture) {
         DeploymentLinuxGateway gateway = (endpoint, credential, verifier) -> fixture.session();
         return new ReviewedMultiComponentDeploymentService().deploy(plan(), components(),
                 new ApplicationHealthGate("web", new HealthCheck.Http(
@@ -202,9 +202,9 @@ class ReviewedMultiComponentDeploymentServiceTest {
             DeploymentRuntimeSpecification runtime = new DeploymentRuntimeSpecification.StaticSite(
                     "public", new HealthCheck.Http(URI.create("http://127.0.0.1:" + port + "/health"), 200, 5));
             DeploymentProjectFacts facts = new DeploymentProjectFacts(temporaryDirectory.resolve(id), managedId,
-                    DeploymentProjectType.STATIC_SITE, DeploymentBuildTool.STATIC_SITE_BUILD,
+                    DeploymentProjectType.STATIC_SITE, DeploymentBuildToolType.STATIC_SITE_BUILD,
                     List.of(new AnalysisEvidence(LocalizedMessage.of("test.evidence"), "fixture",
-                            LocalizedMessage.of("test.detected"), EvidenceConfidence.HIGH)), List.of(), List.of());
+                            LocalizedMessage.of("test.detected"), EvidenceConfidenceLevel.HIGH)), List.of(), List.of());
             ReviewedDeploymentRequest request = new ReviewedDeploymentRequest(SERVER, facts,
                     new SourceRevision(sha, Optional.empty(), Map.of()),
                     new SourceArchiveDescriptor(temporaryDirectory.resolve(id + ".tar.gz"), sha, 100, 100),
@@ -212,7 +212,7 @@ class ReviewedMultiComponentDeploymentServiceTest {
                             List.of(new ConfigurationEntry("PORT", ConfigurationScope.RUNTIME,
                                     new ConfigurationValue.Number(port)))),
                     List.of(), runtime, Optional.of(new UserAccessUrl(
-                            URI.create("https://" + managedId + ".example.test/"))), BuildLimits.defaultNonRoot(),
+                            URI.create("https://" + managedId + ".example.test/"))), BuildLimitConfiguration.defaultNonRoot(),
                     new DeploymentApproval(managedId, sha, SERVER.id(), false, Instant.parse("2026-08-13T00:00:00Z")),
                     false);
             components.add(new ReviewedComponentDeployment(id, request,
@@ -311,14 +311,14 @@ class ReviewedMultiComponentDeploymentServiceTest {
                     new Class<?>[]{DeploymentRemoteSession.class}, (proxy, method, arguments) -> {
                         String name = method.getName();
                         return switch (name) {
-                            case "collectCapabilities" -> new ServerCapabilities("Ubuntu 24.04", "x86_64", true,
+                            case "collectCapabilities" -> new ServerCapabilityFacts("Ubuntu 24.04", "x86_64", true,
                                     true, true, true, true, true, true, true, ManagedHelperProtocol.VERSION,
                                     32L * 1024 * 1024 * 1024, "fixture");
-                            case "collectDeploymentCapabilities" -> new LinuxCapabilities(LinuxDistro.UBUNTU, "24.04",
+                            case "collectDeploymentCapabilities" -> new LinuxCapabilityFacts(LinuxDistroType.UBUNTU, "24.04",
                                     "x86_64", "apt", "amd64", true, true, true, true, java.util.Set.of(21),
                                     java.util.Set.of(22), true, true, java.util.Set.of("3.12"), true, Map.of(),
                                     true, true, CpuMicroarchitectureLevel.X86_64_V3, java.util.Set.of("sse4_2"),
-                                    new LinuxSecurityPosture(LinuxSecurityModule.APPARMOR, LinuxSecurityState.ENABLED,
+                                    new LinuxSecurityPosture(LinuxSecurityModuleType.APPARMOR, LinuxSecurityState.ENABLED,
                                             LinuxFirewallKind.UFW, LinuxFirewallState.ACTIVE), "fixture");
                             case "uploadSource" -> upload((SourceArchiveDescriptor) arguments[0],
                                     (RemoteWorkspace) arguments[1]);
@@ -343,9 +343,9 @@ class ReviewedMultiComponentDeploymentServiceTest {
                     });
         }
 
-        private UploadReceipt upload(SourceArchiveDescriptor archive, RemoteWorkspace workspace) {
+        private SourceUploadResult upload(SourceArchiveDescriptor archive, RemoteWorkspace workspace) {
             log.add("upload:" + workspace.applicationId());
-            return new UploadReceipt(workspace.candidateRoot() + "/source.tar.gz", archive.byteCount(),
+            return new SourceUploadResult(workspace.candidateRoot() + "/source.tar.gz", archive.byteCount(),
                     archive.contentSha256(), "fixture upload");
         }
 

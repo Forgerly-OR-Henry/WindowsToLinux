@@ -29,7 +29,7 @@ public final class ApplicationSecretRepository {
     public void saveRevision(StoredApplicationSecretRevision revision) throws SQLException {
         Objects.requireNonNull(revision, "revision");
         try (Connection connection = connections.open()) {
-            RepositoryTransactions.execute(connection, () -> {
+            RepositoryTransactionExecutor.execute(connection, () -> {
                 Optional<StoredApplicationSecretRevision> existing = findRevision(connection, revision.reference());
                 if (existing.isPresent()) {
                     if (!existing.orElseThrow().equals(revision)) {
@@ -71,7 +71,7 @@ public final class ApplicationSecretRepository {
         String application = applicationId;
         String release = releaseIdentity;
         try (Connection connection = connections.open()) {
-            RepositoryTransactions.execute(connection, () -> bindRelease(connection, application, release, expected));
+            RepositoryTransactionExecutor.execute(connection, () -> bindRelease(connection, application, release, expected));
         }
     }
 

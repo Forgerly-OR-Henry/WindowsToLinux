@@ -24,7 +24,7 @@ final class ComponentGraphValidator {
         components.forEach(component -> indexed.put(component.componentId(), component));
         for (DeploymentComponent component : components) {
             if (component.required() && component.runtime().isEmpty()) {
-                issues.add(issue(ComponentIssue.Severity.SAFETY_REJECTION, "REQUIRED_COMPONENT_PREVIEW_ONLY",
+                issues.add(issue(ComponentIssue.SeverityLevel.SAFETY_REJECTION, "REQUIRED_COMPONENT_PREVIEW_ONLY",
                         List.of(component.componentId()), "analysis.component.requiredPreview"));
             }
             if (component.isolation().arbitraryShell()) unsafe(component, issues, "ARBITRARY_SHELL_REQUIRED",
@@ -37,13 +37,13 @@ final class ComponentGraphValidator {
                     "analysis.component.uncontrolledNetwork");
             for (String dependency : component.dependencies()) {
                 if (dependency.equals(component.componentId())) {
-                    issues.add(issue(ComponentIssue.Severity.SAFETY_REJECTION, "SELF_DEPENDENCY",
+                    issues.add(issue(ComponentIssue.SeverityLevel.SAFETY_REJECTION, "SELF_DEPENDENCY",
                             List.of(component.componentId()), "analysis.component.selfDependency"));
                 } else if (!indexed.containsKey(dependency)) {
-                    issues.add(issue(ComponentIssue.Severity.REQUIRES_INPUT, "UNKNOWN_DEPENDENCY",
+                    issues.add(issue(ComponentIssue.SeverityLevel.REQUIRES_INPUT, "UNKNOWN_DEPENDENCY",
                             List.of(component.componentId()), "analysis.component.unknownDependency"));
                 } else if (component.runtime().isPresent() && indexed.get(dependency).runtime().isEmpty()) {
-                    issues.add(issue(ComponentIssue.Severity.SAFETY_REJECTION, "DEPENDS_ON_PREVIEW_COMPONENT",
+                    issues.add(issue(ComponentIssue.SeverityLevel.SAFETY_REJECTION, "DEPENDS_ON_PREVIEW_COMPONENT",
                             List.of(component.componentId(), dependency), "analysis.component.previewDependency"));
                 }
             }
@@ -52,7 +52,7 @@ final class ComponentGraphValidator {
         validateData(components, issues);
         Set<String> cycle = cycleMembers(indexed);
         if (!cycle.isEmpty()) {
-            issues.add(issue(ComponentIssue.Severity.SAFETY_REJECTION, "COMPONENT_DEPENDENCY_CYCLE",
+            issues.add(issue(ComponentIssue.SeverityLevel.SAFETY_REJECTION, "COMPONENT_DEPENDENCY_CYCLE",
                     List.copyOf(cycle), "analysis.component.dependencyCycle"));
         }
     }
@@ -64,17 +64,17 @@ final class ComponentGraphValidator {
                 DeploymentComponent second = components.get(right);
                 List<String> ids = List.of(first.componentId(), second.componentId());
                 if (overlap(first.sourceRoot(), second.sourceRoot())) {
-                    issues.add(issue(ComponentIssue.Severity.SAFETY_REJECTION, "COMPONENT_ROOT_OVERLAP", ids,
+                    issues.add(issue(ComponentIssue.SeverityLevel.SAFETY_REJECTION, "COMPONENT_ROOT_OVERLAP", ids,
                             "analysis.component.rootOverlap"));
                 }
                 if (pathsOverlap(first.artifactPaths(), second.artifactPaths())) {
-                    issues.add(issue(ComponentIssue.Severity.SAFETY_REJECTION, "COMPONENT_ARTIFACT_OVERLAP", ids,
+                    issues.add(issue(ComponentIssue.SeverityLevel.SAFETY_REJECTION, "COMPONENT_ARTIFACT_OVERLAP", ids,
                             "analysis.component.artifactOverlap"));
                 }
                 Set<Integer> ports = new TreeSet<>(first.ports());
                 ports.retainAll(second.ports());
                 if (!ports.isEmpty()) {
-                    issues.add(issue(ComponentIssue.Severity.SAFETY_REJECTION, "COMPONENT_PORT_CONFLICT", ids,
+                    issues.add(issue(ComponentIssue.SeverityLevel.SAFETY_REJECTION, "COMPONENT_PORT_CONFLICT", ids,
                             "analysis.component.portConflict"));
                 }
             }
@@ -92,17 +92,17 @@ final class ComponentGraphValidator {
         byPath.values().stream().filter(values -> values.size() > 1).forEach(values -> {
             List<String> ids = values.stream().map(Map.Entry::getKey).distinct().sorted().toList();
             if (values.stream().map(entry -> entry.getValue().schemaId()).distinct().count() > 1) {
-                issues.add(issue(ComponentIssue.Severity.SAFETY_REJECTION, "SHARED_DATA_SCHEMA_CONFLICT", ids,
+                issues.add(issue(ComponentIssue.SeverityLevel.SAFETY_REJECTION, "SHARED_DATA_SCHEMA_CONFLICT", ids,
                         "analysis.component.dataSchemaConflict"));
             }
             List<ComponentDataPath> writers = values.stream().map(Map.Entry::getValue)
-                    .filter(value -> value.access() == ComponentDataPath.Access.READ_WRITE).toList();
+                    .filter(value -> value.access() == ComponentDataPath.AccessMode.READ_WRITE).toList();
             if (writers.size() > 1) {
-                issues.add(issue(ComponentIssue.Severity.SAFETY_REJECTION, "SHARED_DATA_MULTIPLE_WRITERS", ids,
+                issues.add(issue(ComponentIssue.SeverityLevel.SAFETY_REJECTION, "SHARED_DATA_MULTIPLE_WRITERS", ids,
                         "analysis.component.dataWriters"));
             }
             if (writers.stream().anyMatch(value -> !value.reversible())) {
-                issues.add(issue(ComponentIssue.Severity.SAFETY_REJECTION, "SHARED_DATA_IRREVERSIBLE_WRITE", ids,
+                issues.add(issue(ComponentIssue.SeverityLevel.SAFETY_REJECTION, "SHARED_DATA_IRREVERSIBLE_WRITE", ids,
                         "analysis.component.dataIrreversible"));
             }
         });
@@ -147,10 +147,10 @@ final class ComponentGraphValidator {
     }
 
     private static void unsafe(DeploymentComponent component, List<ComponentIssue> issues, String code, String key) {
-        issues.add(issue(ComponentIssue.Severity.SAFETY_REJECTION, code, List.of(component.componentId()), key));
+        issues.add(issue(ComponentIssue.SeverityLevel.SAFETY_REJECTION, code, List.of(component.componentId()), key));
     }
 
-    private static ComponentIssue issue(ComponentIssue.Severity severity, String code, List<String> components,
+    private static ComponentIssue issue(ComponentIssue.SeverityLevel severity, String code, List<String> components,
                                         String key) {
         return new ComponentIssue(severity, code, components, LocalizedMessage.of(key,
                 "components", String.join(", ", components.stream().sorted().toList())));

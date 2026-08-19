@@ -10,7 +10,7 @@ final class RuntimePathResolver {
     private RuntimePathResolver() {
     }
 
-    static Optional<RunModeDetector.RuntimeLayout> layoutFromJPackageExecutable(Path executable) {
+    static Optional<RunModeResolver.RuntimeLayout> layoutFromJPackageExecutable(Path executable) {
         executable = normalize(executable);
         Path fileName = executable.getFileName();
         Path appImageRoot = executable.getParent();
@@ -19,21 +19,21 @@ final class RuntimePathResolver {
                 || !isJPackageWindowsRoot(appImageRoot)) {
             return Optional.empty();
         }
-        return Optional.of(layout(RunModeDetector.RunMode.RUN_APP, appImageRoot));
+        return Optional.of(layout(RunModeResolver.RunMode.RUN_APP, appImageRoot));
     }
 
-    static Optional<RunModeDetector.RuntimeLayout> layoutFromCodeSource(Path sourcePath) {
+    static Optional<RunModeResolver.RuntimeLayout> layoutFromCodeSource(Path sourcePath) {
         sourcePath = normalize(sourcePath);
         if (Files.isDirectory(sourcePath)) {
             return findMavenModuleHome(sourcePath)
-                    .map(home -> layout(RunModeDetector.RunMode.RUN_CLASS, home));
+                    .map(home -> layout(RunModeResolver.RunMode.RUN_CLASS, home));
         }
         if (!isJar(sourcePath)) return Optional.empty();
         Optional<Path> appImageRoot = findJPackageHomeFromJar(sourcePath);
-        if (appImageRoot.isPresent()) return Optional.of(layout(RunModeDetector.RunMode.RUN_APP, appImageRoot.get()));
+        if (appImageRoot.isPresent()) return Optional.of(layout(RunModeResolver.RunMode.RUN_APP, appImageRoot.get()));
         Path jarDirectory = sourcePath.getParent();
         return jarDirectory == null ? Optional.empty()
-                : Optional.of(layout(RunModeDetector.RunMode.RUN_JAR, jarDirectory));
+                : Optional.of(layout(RunModeResolver.RunMode.RUN_JAR, jarDirectory));
     }
 
     static Optional<Path> findValidatedDevelopmentModuleHome(Path start) {
@@ -52,9 +52,9 @@ final class RuntimePathResolver {
         return Files.isDirectory(normalize(path));
     }
 
-    static RunModeDetector.RuntimeLayout layout(RunModeDetector.RunMode mode, Path applicationHome) {
+    static RunModeResolver.RuntimeLayout layout(RunModeResolver.RunMode mode, Path applicationHome) {
         Path normalizedHome = normalize(applicationHome);
-        return new RunModeDetector.RuntimeLayout(mode, normalizedHome, normalizedHome.resolve("data"));
+        return new RunModeResolver.RuntimeLayout(mode, normalizedHome, normalizedHome.resolve("data"));
     }
 
     static Path normalize(Path path) {

@@ -1,6 +1,6 @@
 package gold.debug.windowstolinux.shared.ai.parser;
 
-import gold.debug.windowstolinux.shared.ai.collaboration.AiAdviceDecision;
+import gold.debug.windowstolinux.shared.ai.collaboration.advice.AiAdviceDecision;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;

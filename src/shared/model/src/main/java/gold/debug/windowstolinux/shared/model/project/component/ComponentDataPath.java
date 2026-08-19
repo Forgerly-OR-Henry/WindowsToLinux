@@ -12,19 +12,19 @@ import java.util.Objects;
  * @param schemaId stable compatibility schema identifier / 稳定兼容模式标识符
  * @param reversible whether writes can be reversed by this deployment transaction / 写入能否由本次部署事务回退
  */
-public record ComponentDataPath(String path, Access access, String schemaId, boolean reversible) {
+public record ComponentDataPath(String path, AccessMode access, String schemaId, boolean reversible) {
     /** Validates a bounded logical data contract. / 验证有界逻辑数据契约。 */
     public ComponentDataPath {
         path = requireRelative(path);
         access = Objects.requireNonNull(access, "access");
         schemaId = requireIdentifier(schemaId, "schemaId");
-        if (access == Access.READ_ONLY && !reversible) {
+        if (access == AccessMode.READ_ONLY && !reversible) {
             throw new IllegalArgumentException("read-only data access cannot introduce irreversible writes");
         }
     }
 
     /** Component data access mode. / 组件数据访问模式。 */
-    public enum Access {
+    public enum AccessMode {
         /** Reads only. / 只读。 */
         READ_ONLY,
         /** Reads and writes. / 读写。 */

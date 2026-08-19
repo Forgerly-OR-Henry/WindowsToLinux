@@ -12,10 +12,10 @@ import java.util.List;
 import java.util.Map;
 
 /** Parses bounded desktop runtime, secret-reference, and Git-reference notation. / 解析桌面端有界运行时、秘密引用与 Git 引用记法。 */
-final class DeploymentRuntimeParser {
+public final class DeploymentRuntimeParser {
     private DeploymentRuntimeParser() { }
 
-    static List<SecretReference> secrets(String input) {
+    public static List<SecretReference> secrets(String input) {
         List<SecretReference> references = new ArrayList<>();
         for (String item : input.split(";")) {
             String value = item.trim();
@@ -30,7 +30,7 @@ final class DeploymentRuntimeParser {
         return List.copyOf(references);
     }
 
-    static Map<Integer, Integer> ports(String input) {
+    public static Map<Integer, Integer> ports(String input) {
         Map<Integer, Integer> values = new LinkedHashMap<>();
         for (String pair : input.split(";")) {
             String value = pair.trim();
@@ -43,7 +43,7 @@ final class DeploymentRuntimeParser {
         return Map.copyOf(values);
     }
 
-    static List<DeploymentRuntimeSpecification.ManagedVolume> volumes(String input) {
+    public static List<DeploymentRuntimeSpecification.ManagedVolume> volumes(String input) {
         if (input.isBlank()) return List.of();
         List<DeploymentRuntimeSpecification.ManagedVolume> values = new ArrayList<>();
         for (String entry : input.split(";")) {
@@ -58,11 +58,11 @@ final class DeploymentRuntimeParser {
         return List.copyOf(values);
     }
 
-    static List<String> arguments(String input) {
+    public static List<String> arguments(String input) {
         return input.isBlank() ? List.of() : List.of(input.trim().split("\\s+"));
     }
 
-    static DeploymentRuntimeSpecification service(DeploymentProjectType selected, String version,
+    public static DeploymentRuntimeSpecification service(DeploymentProjectType selected, String version,
                                                    String artifact, String entrypoint, HealthCheck health) {
         return switch (selected) {
             case GO_SERVICE -> new DeploymentRuntimeSpecification.GoService(version, artifact, entrypoint, health);
@@ -83,7 +83,7 @@ final class DeploymentRuntimeParser {
         return "https".equalsIgnoreCase(http.endpoint().getScheme()) ? 443 : 80;
     }
 
-    static GitReference gitReference(int index, String value) {
+    public static GitReference gitReference(int index, String value) {
         return switch (index) {
             case 0 -> new GitReference.Branch(value);
             case 1 -> new GitReference.Tag(value);

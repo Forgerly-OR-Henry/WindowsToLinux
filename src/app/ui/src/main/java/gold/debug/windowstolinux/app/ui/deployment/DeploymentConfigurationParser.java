@@ -9,11 +9,11 @@ import java.util.List;
 import java.util.Locale;
 
 /** Parses the bounded desktop build/runtime configuration notation. / 解析桌面端有界构建/运行配置记法。 */
-final class DeploymentConfigurationParser {
+public final class DeploymentConfigurationParser {
     private DeploymentConfigurationParser() { }
 
     /** Parses semicolon-separated entries, defaulting unprefixed keys to runtime scope. / 解析分号分隔项，并将无前缀键默认为运行范围。 */
-    static List<ConfigurationEntry> parse(String input) {
+    public static List<ConfigurationEntry> parse(String input) {
         List<ConfigurationEntry> entries = new ArrayList<>();
         for (String item : input.split(";")) {
             String value = item.trim();

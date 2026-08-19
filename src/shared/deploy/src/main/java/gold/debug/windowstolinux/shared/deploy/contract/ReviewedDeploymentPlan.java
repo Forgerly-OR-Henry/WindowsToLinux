@@ -11,7 +11,7 @@ import java.util.Objects;
  * @param request the reviewed deployment input / 经审阅的部署输入
  * @param steps the ordered fixed transaction stages / 有序固定事务阶段
  */
-public record ReviewedDeploymentPlan(ReviewedDeploymentRequest request, List<DeploymentStep> steps) {
+public record ReviewedDeploymentPlan(ReviewedDeploymentRequest request, List<DeploymentPlanAction> steps) {
     /**
      * Creates a {@code ReviewedDeploymentPlan} instance.
      *
@@ -20,9 +20,9 @@ public record ReviewedDeploymentPlan(ReviewedDeploymentRequest request, List<Dep
     public ReviewedDeploymentPlan {
         request = Objects.requireNonNull(request, "request");
         steps = List.copyOf(Objects.requireNonNull(steps, "steps"));
-        if (steps.isEmpty() || steps.getFirst() != DeploymentStep.VERIFY_SOURCE_IDENTITY
-                || !steps.contains(DeploymentStep.ROLLBACK_ON_FAILURE)
-                || !steps.contains(DeploymentStep.CHECK_HEALTH)) {
+        if (steps.isEmpty() || steps.getFirst() != DeploymentPlanAction.VERIFY_SOURCE_IDENTITY
+                || !steps.contains(DeploymentPlanAction.ROLLBACK_ON_FAILURE)
+                || !steps.contains(DeploymentPlanAction.CHECK_HEALTH)) {
             throw new IllegalArgumentException("deployment plans must bind source, check health, and retain rollback");
         }
         if (steps.stream().distinct().count() != steps.size()) {

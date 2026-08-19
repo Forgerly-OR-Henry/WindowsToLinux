@@ -2,14 +2,14 @@ package gold.debug.windowstolinux.shared.deploy.plan;
 
 import gold.debug.windowstolinux.shared.deploy.contract.MultiComponentDeploymentPlan;
 
-import gold.debug.windowstolinux.shared.model.analysis.DeploymentAdmission;
+import gold.debug.windowstolinux.shared.model.analysis.DeploymentAdmissionStatus;
 import gold.debug.windowstolinux.shared.model.assessment.MultiComponentProjectAssessment;
 import gold.debug.windowstolinux.shared.model.health.HealthCheck;
-import gold.debug.windowstolinux.shared.model.project.DeploymentBuildTool;
+import gold.debug.windowstolinux.shared.model.project.DeploymentBuildToolType;
 import gold.debug.windowstolinux.shared.model.project.DeploymentProjectFacts;
 import gold.debug.windowstolinux.shared.model.project.DeploymentProjectType;
 import gold.debug.windowstolinux.shared.model.project.DeploymentRuntimeSpecification;
-import gold.debug.windowstolinux.shared.model.project.component.ComponentIsolationRequirements;
+import gold.debug.windowstolinux.shared.model.project.component.ComponentIsolationSpecification;
 import gold.debug.windowstolinux.shared.model.project.component.DeploymentComponent;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -33,7 +33,7 @@ class MultiComponentDeploymentPlannerTest {
         DeploymentComponent api = component("api", 8080, Set.of("cache", "database"));
         DeploymentComponent web = component("web", 8081, Set.of("api"));
         MultiComponentProjectAssessment assessment = new MultiComponentProjectAssessment(
-                DeploymentAdmission.READY_FOR_PLANNING, "shop", temporaryDirectory,
+                DeploymentAdmissionStatus.READY_FOR_PLANNING, "shop", temporaryDirectory,
                 List.of(web, api, database, cache), List.of());
 
         MultiComponentDeploymentPlan plan = new MultiComponentDeploymentPlanner().plan(assessment);
@@ -48,12 +48,12 @@ class MultiComponentDeploymentPlannerTest {
     private DeploymentComponent component(String id, int port, Set<String> dependencies) throws Exception {
         Path root = Files.createDirectory(temporaryDirectory.resolve(id));
         DeploymentProjectFacts facts = new DeploymentProjectFacts(root, "shop-" + id,
-                DeploymentProjectType.STATIC_SITE, DeploymentBuildTool.STATIC_SITE_BUILD,
+                DeploymentProjectType.STATIC_SITE, DeploymentBuildToolType.STATIC_SITE_BUILD,
                 List.of(), List.of(), List.of());
         var runtime = new DeploymentRuntimeSpecification.StaticSite("public",
                 new HealthCheck.Http(URI.create("http://127.0.0.1:" + port + "/"), 200, 10));
         return new DeploymentComponent(id, root, facts, Optional.of(runtime), List.of(id + "/public"), Set.of(port),
                 List.of("PORT"), List.of(), List.of(), dependencies, true,
-                ComponentIsolationRequirements.managed());
+                ComponentIsolationSpecification.managed());
     }
 }

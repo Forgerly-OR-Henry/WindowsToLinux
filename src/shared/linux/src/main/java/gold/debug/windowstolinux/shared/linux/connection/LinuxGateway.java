@@ -20,6 +20,6 @@ public interface LinuxGateway {
      * @return the operation result / 操作结果
      * @throws LinuxOperationException if the operation cannot be completed / 无法完成操作时
      */
-    LinuxRemoteSession connect(SshEndpoint endpoint, SshCredential credential, HostKeyVerifier hostKeyVerifier)
+    LinuxRemoteSession connect(SshEndpoint endpoint, SshCredential credential, HostKeyEvaluator hostKeyVerifier)
             throws LinuxOperationException;
 }

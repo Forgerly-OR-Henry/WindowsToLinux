@@ -1,16 +1,19 @@
 package gold.debug.windowstolinux.shared.ai.client;
 
 import gold.debug.windowstolinux.shared.ai.AiAnalysisException;
-import gold.debug.windowstolinux.shared.ai.collaboration.AiInvocationEvidence;
-import gold.debug.windowstolinux.shared.ai.collaboration.AiInvocationStatus;
-import gold.debug.windowstolinux.shared.ai.collaboration.AiRoleBinding;
-import gold.debug.windowstolinux.shared.ai.collaboration.AiRoleContext;
-import gold.debug.windowstolinux.shared.ai.collaboration.AiRoleInvocationResult;
-import gold.debug.windowstolinux.shared.ai.collaboration.RoleAdvice;
-import gold.debug.windowstolinux.shared.ai.parser.ChatCompletionsResponseParser;
+import gold.debug.windowstolinux.shared.ai.collaboration.invocation.AiInvocationEvidence;
+import gold.debug.windowstolinux.shared.ai.collaboration.invocation.AiInvocationStatus;
+import gold.debug.windowstolinux.shared.ai.collaboration.role.AiRoleBinding;
+import gold.debug.windowstolinux.shared.ai.collaboration.role.AiRoleContext;
+import gold.debug.windowstolinux.shared.ai.collaboration.invocation.AiRoleInvocationResult;
+import gold.debug.windowstolinux.shared.ai.collaboration.advice.RoleAdviceAssessment;
+import gold.debug.windowstolinux.shared.ai.parser.ChatCompletionResponseParser;
 import gold.debug.windowstolinux.shared.ai.parser.RoleAdviceParser;
 import gold.debug.windowstolinux.shared.ai.prompt.RolePrompt;
 import gold.debug.windowstolinux.shared.ai.provider.ProviderEndpointPolicy;
+import gold.debug.windowstolinux.shared.ai.transport.HttpRoleChatTransport;
+import gold.debug.windowstolinux.shared.ai.transport.RoleChatResult;
+import gold.debug.windowstolinux.shared.ai.transport.RoleChatTransport;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -27,7 +30,7 @@ public final class OpenAiCompatibleRoleClient {
     private final RoleChatTransport transport;
     private final Clock clock;
     private final ProviderEndpointPolicy endpointPolicy = new ProviderEndpointPolicy();
-    private final ChatCompletionsResponseParser envelopeParser = new ChatCompletionsResponseParser();
+    private final ChatCompletionResponseParser envelopeParser = new ChatCompletionResponseParser();
     private final RoleAdviceParser adviceParser = new RoleAdviceParser();
 
     /** Creates the production HTTP client. / 创建生产 HTTP 客户端。 */
@@ -54,11 +57,11 @@ public final class OpenAiCompatibleRoleClient {
         try {
             var endpoint = endpointPolicy.validateEndpoint(binding.endpoint());
             endpointPolicy.requireModel(binding.model());
-            RoleChatResponse response = transport.send(endpoint, keyCopy, RolePrompt.requestBody(binding, context));
+            RoleChatResult response = transport.send(endpoint, keyCopy, RolePrompt.requestBody(binding, context));
             if (response.statusCode() < 200 || response.statusCode() >= 300) {
                 return result(binding, summary, AiInvocationStatus.UNAVAILABLE, Optional.empty(), "selected-provider-http-rejected");
             }
-            RoleAdvice advice = adviceParser.parse(envelopeParser.parse(response.body()).explanation());
+            RoleAdviceAssessment advice = adviceParser.parse(envelopeParser.parse(response.body()).explanation());
             return result(binding, summary, AiInvocationStatus.VALIDATED, Optional.of(advice), "fixed-schema-validated");
         } catch (AiAnalysisException | IllegalArgumentException exception) {
             return result(binding, summary, AiInvocationStatus.INVALID_OUTPUT, Optional.empty(), "selected-provider-output-invalid");
@@ -73,7 +76,7 @@ public final class OpenAiCompatibleRoleClient {
     }
 
     private AiRoleInvocationResult result(AiRoleBinding binding, String summary, AiInvocationStatus status,
-                                          Optional<RoleAdvice> output, String detail) {
+                                          Optional<RoleAdviceAssessment> output, String detail) {
         return new AiRoleInvocationResult(new AiInvocationEvidence(binding.role(), binding.providerId(), binding.model(),
                 summary, sha256(summary), status, output, detail, clock.instant()));
     }

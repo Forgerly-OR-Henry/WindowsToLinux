@@ -1,16 +1,16 @@
 package gold.debug.windowstolinux.shared.linux.sshd.capability;
 
-import gold.debug.windowstolinux.shared.linux.capability.LinuxPlatformCapabilityOperations;
+import gold.debug.windowstolinux.shared.linux.capability.LinuxPlatformCapabilityCollector;
 import gold.debug.windowstolinux.shared.linux.error.LinuxOperationException;
 import gold.debug.windowstolinux.shared.linux.sshd.command.SshCommandExecutor;
-import gold.debug.windowstolinux.shared.model.capability.LinuxCapabilities;
+import gold.debug.windowstolinux.shared.model.capability.LinuxCapabilityFacts;
 import gold.debug.windowstolinux.shared.model.server.CpuMicroarchitectureLevel;
-import gold.debug.windowstolinux.shared.model.server.LinuxDistro;
-import gold.debug.windowstolinux.shared.model.server.LinuxFirewallKind;
-import gold.debug.windowstolinux.shared.model.server.LinuxFirewallState;
-import gold.debug.windowstolinux.shared.model.server.LinuxSecurityModule;
-import gold.debug.windowstolinux.shared.model.server.LinuxSecurityPosture;
-import gold.debug.windowstolinux.shared.model.server.LinuxSecurityState;
+import gold.debug.windowstolinux.shared.model.server.LinuxDistroType;
+import gold.debug.windowstolinux.shared.model.server.security.LinuxFirewallKind;
+import gold.debug.windowstolinux.shared.model.server.security.LinuxFirewallState;
+import gold.debug.windowstolinux.shared.model.server.security.LinuxSecurityModuleType;
+import gold.debug.windowstolinux.shared.model.server.security.LinuxSecurityPosture;
+import gold.debug.windowstolinux.shared.model.server.security.LinuxSecurityState;
 import gold.debug.windowstolinux.shared.model.project.DeploymentProjectType;
 import gold.debug.windowstolinux.shared.linux.sshd.capability.ManagedPlatformCapabilityProbe;
 
@@ -27,7 +27,7 @@ import java.util.stream.Collectors;
  *
  * <p>部署主机只读能力契约的 Apache SSHD 实现。
  */
-public final class SshdPlatformCapabilityCollector implements LinuxPlatformCapabilityOperations {
+public final class SshdPlatformCapabilityCollector implements LinuxPlatformCapabilityCollector {
     private static final int READ_ONLY_ATTEMPTS = 3;
     private static final Duration READ_ONLY_RETRY_DELAY = Duration.ofMillis(250);
     private final SshCommandExecutor commands;
@@ -45,7 +45,7 @@ public final class SshdPlatformCapabilityCollector implements LinuxPlatformCapab
 
     /** Performs the {@code collectDeploymentCapabilities} operation. / 执行 {@code collectDeploymentCapabilities} 操作。 */
     @Override
-    public LinuxCapabilities collectDeploymentCapabilities() throws LinuxOperationException {
+    public LinuxCapabilityFacts collectDeploymentCapabilities() throws LinuxOperationException {
         var result = collectReadOnly(ManagedPlatformCapabilityProbe.render());
         if (!result.succeeded()) {
             throw LinuxOperationException.localized("linux.error.deploymentCapabilityCollectionFailed",
@@ -54,7 +54,7 @@ public final class SshdPlatformCapabilityCollector implements LinuxPlatformCapab
         return fromValues(SshCommandExecutor.lines(result.output()), hostFingerprint);
     }
 
-    static LinuxCapabilities fromValues(Map<String, String> values, String hostFingerprint) {
+    static LinuxCapabilityFacts fromValues(Map<String, String> values, String hostFingerprint) {
         Objects.requireNonNull(values, "values");
         String id = normalized(values.getOrDefault("DISTRO_ID", "unknown"));
         String variant = normalized(values.getOrDefault("DISTRO_VARIANT", ""));
@@ -91,7 +91,7 @@ public final class SshdPlatformCapabilityCollector implements LinuxPlatformCapab
                 + security.firewallState().name().toLowerCase(Locale.ROOT)
                 + "; docker=" + values.getOrDefault("DOCKER_OPERATIONAL", "0")
                 + "; podman=" + values.getOrDefault("PODMAN_OPERATIONAL", "0");
-        return new LinuxCapabilities(classify(id, variant, version), version, architecture, packageManager,
+        return new LinuxCapabilityFacts(classify(id, variant, version), version, architecture, packageManager,
                 packageArchitecture,
                 "1".equals(values.get("SYSTEMD")), "1".equals(values.get("DOCKER_CLIENT")),
                 "1".equals(values.get("PODMAN_CLIENT")), "1".equals(values.get("PODMAN_QUADLET")),
@@ -130,33 +130,33 @@ public final class SshdPlatformCapabilityCollector implements LinuxPlatformCapab
                 .map(Integer::valueOf).collect(Collectors.toUnmodifiableSet());
     }
 
-    private static LinuxDistro classify(String id, String variant, String version) {
+    private static LinuxDistroType classify(String id, String variant, String version) {
         if ("ubuntu".equals(id)) {
-            return LinuxDistro.UBUNTU;
+            return LinuxDistroType.UBUNTU;
         }
         if ("debian".equals(id)) {
-            return LinuxDistro.DEBIAN;
+            return LinuxDistroType.DEBIAN;
         }
         if ("centos".equals(id)) {
             if ("7".equals(version) || "8".equals(version)) {
-                return LinuxDistro.LEGACY_CENTOS;
+                return LinuxDistroType.LEGACY_CENTOS;
             }
             // CentOS Linux ended at 8; Stream 9/10 images commonly omit VARIANT_ID.
             // CentOS Linux 在 8 结束；Stream 9/10 镜像通常省略 VARIANT_ID。
             if ("9".equals(version) || "10".equals(version)) {
-                return LinuxDistro.CENTOS_STREAM;
+                return LinuxDistroType.CENTOS_STREAM;
             }
         }
         if ("rocky".equals(id)) {
-            return LinuxDistro.ROCKY_LINUX;
+            return LinuxDistroType.ROCKY_LINUX;
         }
         if ("almalinux".equals(id)) {
-            return LinuxDistro.ALMALINUX;
+            return LinuxDistroType.ALMALINUX;
         }
         if ("ol".equals(id)) {
-            return LinuxDistro.ORACLE_LINUX;
+            return LinuxDistroType.ORACLE_LINUX;
         }
-        return LinuxDistro.OTHER;
+        return LinuxDistroType.OTHER;
     }
 
     private static CpuMicroarchitectureLevel cpuLevel(String value) {
@@ -170,11 +170,11 @@ public final class SshdPlatformCapabilityCollector implements LinuxPlatformCapab
     }
 
     private static LinuxSecurityPosture security(Map<String, String> values) {
-        LinuxSecurityModule module = switch (normalized(values.getOrDefault("SECURITY_MODULE", "unknown"))) {
-            case "apparmor" -> LinuxSecurityModule.APPARMOR;
-            case "selinux" -> LinuxSecurityModule.SELINUX;
-            case "none" -> LinuxSecurityModule.NONE;
-            default -> LinuxSecurityModule.UNKNOWN;
+        LinuxSecurityModuleType module = switch (normalized(values.getOrDefault("SECURITY_MODULE", "unknown"))) {
+            case "apparmor" -> LinuxSecurityModuleType.APPARMOR;
+            case "selinux" -> LinuxSecurityModuleType.SELINUX;
+            case "none" -> LinuxSecurityModuleType.NONE;
+            default -> LinuxSecurityModuleType.UNKNOWN;
         };
         LinuxSecurityState state = switch (normalized(values.getOrDefault("SECURITY_STATE", "unknown"))) {
             case "enforcing" -> LinuxSecurityState.ENFORCING;

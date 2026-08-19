@@ -2,9 +2,9 @@ package gold.debug.windowstolinux.app.service.environment;
 
 import gold.debug.windowstolinux.app.secret.SecretStore;
 import gold.debug.windowstolinux.app.secret.SecretStoreException;
-import gold.debug.windowstolinux.app.service.locking.ServerOperationLocks;
+import gold.debug.windowstolinux.app.service.lock.ServerOperationLockRegistry;
 import gold.debug.windowstolinux.app.service.server.ServerProfile;
-import gold.debug.windowstolinux.app.service.server.ServerUseCases;
+import gold.debug.windowstolinux.app.service.server.ServerUseCaseFacade;
 import gold.debug.windowstolinux.shared.deploy.environment.EnvironmentSetupService;
 import gold.debug.windowstolinux.shared.linux.error.LinuxOperationException;
 import gold.debug.windowstolinux.shared.linux.connection.LinuxGateway;
@@ -29,8 +29,8 @@ import java.util.function.Predicate;
 public final class EnvironmentSetupUseCase {
     private final EnvironmentSetupService service;
     private final LinuxGateway gateway;
-    private final ServerUseCases servers;
-    private final ServerOperationLocks locks;
+    private final ServerUseCaseFacade servers;
+    private final ServerOperationLockRegistry locks;
 
     /**
      * Creates a {@code EnvironmentSetupUseCase} instance.
@@ -44,7 +44,7 @@ public final class EnvironmentSetupUseCase {
      * @throws NullPointerException if a required argument is {@code null} / 必要参数为 {@code null} 时
      */
     public EnvironmentSetupUseCase(EnvironmentSetupService service, LinuxGateway gateway,
-                                         ServerUseCases servers, ServerOperationLocks locks) {
+                                         ServerUseCaseFacade servers, ServerOperationLockRegistry locks) {
         this.service = Objects.requireNonNull(service, "service");
         this.gateway = Objects.requireNonNull(gateway, "gateway");
         this.servers = Objects.requireNonNull(servers, "servers");

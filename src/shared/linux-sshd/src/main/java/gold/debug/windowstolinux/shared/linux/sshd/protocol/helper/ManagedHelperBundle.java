@@ -24,9 +24,9 @@ public final class ManagedHelperBundle {
     public static final String EXPECTED_SHA256 = "74930667941d5cd75e3da9d86ccf63e5dcfb03e0bad8f232b1bb5cea13fc28f1";
     private static final String ROOT = "/gold/debug/windowstolinux/shared/linux/sshd/";
     private static final List<String> FRAGMENTS = List.of(
-            "protocol/helper/fragments/00-common.sh", "protocol/helper/fragments/release/10-typed-release.sh",
+            "protocol/helper/fragments/00-protocol-foundation.sh", "protocol/helper/fragments/release/10-typed-release.sh",
             "protocol/helper/fragments/input/15-deployment-input.sh", "protocol/helper/fragments/workspace/20-candidate-workspace.sh",
-            "protocol/helper/fragments/release/30-ordinary-release.sh", "protocol/helper/fragments/runtime/35-ecosystem-dispatch.sh",
+            "protocol/helper/fragments/release/30-ordinary-release.sh", "protocol/helper/fragments/ecosystem/35-ecosystem-dispatch.sh",
             "protocol/helper/fragments/runtime/40-typed-runtime.sh", "protocol/helper/fragments/release/50-container-release.sh",
             "runtime/container/helper/55-podman-quadlet.sh", "runtime/systemd/helper/60-lifecycle.sh",
             "protocol/helper/fragments/70-command-dispatch.sh");

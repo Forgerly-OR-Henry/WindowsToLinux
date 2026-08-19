@@ -1,16 +1,16 @@
 package gold.debug.windowstolinux.app.service.source;
 
 import gold.debug.windowstolinux.app.windows.workspace.PreparedSourceArchive;
-import gold.debug.windowstolinux.app.windows.workspace.WindowsSourceWorkspace;
+import gold.debug.windowstolinux.app.windows.workspace.WindowsSourcePreparer;
 import gold.debug.windowstolinux.shared.analyze.core.DeploymentAnalysisCoordinator;
 import gold.debug.windowstolinux.shared.analyze.component.ComponentAnalysisRequest;
-import gold.debug.windowstolinux.shared.analyze.component.MixedProjectAnalyzer;
+import gold.debug.windowstolinux.shared.analyze.component.MixedProjectInspector;
 import gold.debug.windowstolinux.shared.git.GitSnapshot;
 import gold.debug.windowstolinux.shared.git.GitSnapshotException;
 import gold.debug.windowstolinux.shared.git.snapshot.GitSnapshotPreparer;
 import gold.debug.windowstolinux.shared.git.GitSourceRequest;
 import gold.debug.windowstolinux.shared.model.assessment.DeploymentProjectAssessment;
-import gold.debug.windowstolinux.shared.model.analysis.DeploymentAdmission;
+import gold.debug.windowstolinux.shared.model.analysis.DeploymentAdmissionStatus;
 import gold.debug.windowstolinux.shared.model.project.DeploymentProjectType;
 import gold.debug.windowstolinux.shared.model.project.SourceRevision;
 
@@ -28,7 +28,7 @@ import java.util.Optional;
  */
 public final class SourcePreparationUseCase {
     private final DeploymentAnalysisCoordinator analyzer;
-    private final WindowsSourceWorkspace workspace;
+    private final WindowsSourcePreparer workspace;
     private final GitSnapshotPreparer gitSnapshots;
     private final Path gitWorkspace;
 
@@ -41,12 +41,12 @@ public final class SourcePreparationUseCase {
      * @param workspace the {@code workspace} value / {@code workspace} 值
      * @throws NullPointerException if a required argument is {@code null} / 必要参数为 {@code null} 时
      */
-    public SourcePreparationUseCase(DeploymentAnalysisCoordinator analyzer, WindowsSourceWorkspace workspace) {
+    public SourcePreparationUseCase(DeploymentAnalysisCoordinator analyzer, WindowsSourcePreparer workspace) {
         this(analyzer, workspace, new GitSnapshotPreparer(),
                 Objects.requireNonNull(workspace, "workspace").workDirectory().resolve("git-snapshots"));
     }
 
-    SourcePreparationUseCase(DeploymentAnalysisCoordinator analyzer, WindowsSourceWorkspace workspace,
+    SourcePreparationUseCase(DeploymentAnalysisCoordinator analyzer, WindowsSourcePreparer workspace,
                              GitSnapshotPreparer gitSnapshots, Path gitWorkspace) {
         this.analyzer = Objects.requireNonNull(analyzer, "analyzer");
         this.workspace = Objects.requireNonNull(workspace, "workspace");
@@ -75,7 +75,7 @@ public final class SourcePreparationUseCase {
      */
     public ReviewedSourcePreparation prepare(Path sourceDirectory, DeploymentProjectType projectType) throws IOException {
         DeploymentProjectAssessment assessment = analyzer.analyze(sourceDirectory, projectType);
-        if (assessment.admission() != DeploymentAdmission.READY_FOR_PLANNING) {
+        if (assessment.admission() != DeploymentAdmissionStatus.READY_FOR_PLANNING) {
             return new ReviewedSourcePreparation(assessment, Optional.empty(), Optional.empty(), List.of());
         }
         String applicationId = assessment.facts().orElseThrow().applicationId();
@@ -93,8 +93,8 @@ public final class SourcePreparationUseCase {
     public PreparedMultiComponentSource prepareMultiComponent(Path applicationRoot, String applicationId,
                                                                List<ComponentAnalysisRequest> requests)
             throws IOException {
-        var assessment = new MixedProjectAnalyzer().analyze(applicationRoot, applicationId, requests);
-        if (assessment.admission() != DeploymentAdmission.READY_FOR_PLANNING) {
+        var assessment = new MixedProjectInspector().analyze(applicationRoot, applicationId, requests);
+        if (assessment.admission() != DeploymentAdmissionStatus.READY_FOR_PLANNING) {
             return new PreparedMultiComponentSource(assessment, java.util.Map.of());
         }
         LinkedHashMap<String, PreparedComponentSource> components = new LinkedHashMap<>();
@@ -126,7 +126,7 @@ public final class SourcePreparationUseCase {
             throws GitSnapshotException {
         GitSnapshot snapshot = gitSnapshots.prepare(request, gitWorkspace);
         DeploymentProjectAssessment assessment = analyzer.analyze(snapshot.checkoutDirectory(), projectType);
-        if (assessment.admission() != DeploymentAdmission.READY_FOR_PLANNING) {
+        if (assessment.admission() != DeploymentAdmissionStatus.READY_FOR_PLANNING) {
             return new ReviewedSourcePreparation(assessment, Optional.empty(), Optional.empty(), List.of());
         }
         var archive = snapshot.archive();

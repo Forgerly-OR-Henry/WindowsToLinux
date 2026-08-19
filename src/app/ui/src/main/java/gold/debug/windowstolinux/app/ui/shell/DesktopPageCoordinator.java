@@ -1,17 +1,17 @@
 package gold.debug.windowstolinux.app.ui.shell;
 
-import gold.debug.windowstolinux.app.service.DesktopApplicationService;
+import gold.debug.windowstolinux.app.service.DesktopApplicationFacade;
 import gold.debug.windowstolinux.app.ui.ai.AiPage;
-import gold.debug.windowstolinux.app.ui.display.DesktopDisplaySettings;
-import gold.debug.windowstolinux.app.ui.shell.DesktopDisplayChangeListener;
-import gold.debug.windowstolinux.app.ui.component.DesktopComponents;
-import gold.debug.windowstolinux.app.ui.deployment.DeploymentPage;
-import gold.debug.windowstolinux.app.ui.deployment.MultiComponentPage;
+import gold.debug.windowstolinux.app.ui.display.DesktopDisplayConfiguration;
+import gold.debug.windowstolinux.app.ui.shell.DesktopDisplayChangeHandler;
+import gold.debug.windowstolinux.app.ui.component.DesktopComponentFactory;
+import gold.debug.windowstolinux.app.ui.deployment.single.DeploymentPage;
+import gold.debug.windowstolinux.app.ui.deployment.multi.MultiComponentPage;
 import gold.debug.windowstolinux.app.ui.i18n.MessageCatalog;
-import gold.debug.windowstolinux.app.ui.i18n.PageMessages;
+import gold.debug.windowstolinux.app.ui.i18n.PageMessagePresenter;
 import gold.debug.windowstolinux.app.ui.managed.ManagedPage;
 import gold.debug.windowstolinux.app.ui.server.ServerPage;
-import gold.debug.windowstolinux.app.ui.settings.SettingsPage;
+import gold.debug.windowstolinux.app.ui.setting.SettingPage;
 
 import javax.swing.JPanel;
 
@@ -21,20 +21,20 @@ import javax.swing.JPanel;
  * <p>装配页面控制器、窄页面上下文、导航及整个窗口状态。
  */
 final class DesktopPageCoordinator {
-    private final PageNavigator navigator;
+    private final PageNavigationController navigator;
     private final DeploymentPage deployment;
     private final MultiComponentPage multiComponent;
     private final ServerPage server;
     private final ManagedPage managed;
     private final AiPage ai;
-    private final SettingsPage settings;
+    private final SettingPage settings;
     private String currentPage = "deployment";
 
-    DesktopPageCoordinator(DesktopFrame owner, DesktopApplicationService service, MessageCatalog catalog,
-                           DesktopDisplaySettings appearance, DesktopComponents components,
-                           DesktopDisplayChangeListener appearanceChangeListener, PageNavigator navigator) {
+    DesktopPageCoordinator(DesktopFrame owner, DesktopApplicationFacade service, MessageCatalog catalog,
+                           DesktopDisplayConfiguration appearance, DesktopComponentFactory components,
+                           DesktopDisplayChangeHandler appearanceChangeListener, PageNavigationController navigator) {
         this.navigator = navigator;
-        PageMessages messages = new PageMessages(catalog);
+        PageMessagePresenter messages = new PageMessagePresenter(catalog);
         server = new ServerPage(owner, service, components, messages);
         managed = new ManagedPage(service, server, components, messages);
         deployment = new DeploymentPage(owner, service, server, components, messages,
@@ -42,7 +42,7 @@ final class DesktopPageCoordinator {
         multiComponent = new MultiComponentPage(owner, service, server, components, messages,
                 () -> navigator.show("servers", "nav.servers", "page.servers.description"), managed::selectApplication);
         ai = new AiPage(service, deployment, components, messages);
-        settings = new SettingsPage(components, messages, appearance,
+        settings = new SettingPage(components, messages, appearance,
                 selected -> appearanceChangeListener.apply(owner, selected));
     }
 

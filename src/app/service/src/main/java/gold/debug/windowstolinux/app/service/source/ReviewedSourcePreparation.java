@@ -1,7 +1,7 @@
 package gold.debug.windowstolinux.app.service.source;
 
 import gold.debug.windowstolinux.shared.model.assessment.DeploymentProjectAssessment;
-import gold.debug.windowstolinux.shared.model.analysis.DeploymentAdmission;
+import gold.debug.windowstolinux.shared.model.analysis.DeploymentAdmissionStatus;
 import gold.debug.windowstolinux.shared.model.archive.SourceArchiveDescriptor;
 import gold.debug.windowstolinux.shared.model.project.SourceRevision;
 
@@ -31,7 +31,7 @@ public record ReviewedSourcePreparation(
         archive = Objects.requireNonNull(archive, "archive");
         sourceRevision = Objects.requireNonNull(sourceRevision, "sourceRevision");
         excludedEntries = List.copyOf(Objects.requireNonNull(excludedEntries, "excludedEntries"));
-        if ((assessment.admission() == DeploymentAdmission.READY_FOR_PLANNING) != archive.isPresent()) {
+        if ((assessment.admission() == DeploymentAdmissionStatus.READY_FOR_PLANNING) != archive.isPresent()) {
             throw new IllegalArgumentException("only a planning-ready typed source may have an archive");
         }
         if (archive.isPresent() != sourceRevision.isPresent()) {

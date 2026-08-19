@@ -1,8 +1,8 @@
 package gold.debug.windowstolinux.shared.deploy.lifecycle;
 
 import gold.debug.windowstolinux.shared.deploy.contract.MultiComponentDeploymentPlan;
-import gold.debug.windowstolinux.shared.deploy.result.ComponentLifecycleResult;
-import gold.debug.windowstolinux.shared.deploy.result.MultiComponentLifecycleResult;
+import gold.debug.windowstolinux.shared.deploy.result.lifecycle.ComponentLifecycleResult;
+import gold.debug.windowstolinux.shared.deploy.result.lifecycle.MultiComponentLifecycleResult;
 import gold.debug.windowstolinux.shared.model.lifecycle.ApplicationAutostartState;
 import gold.debug.windowstolinux.shared.model.lifecycle.ApplicationRuntimeState;
 import gold.debug.windowstolinux.shared.model.lifecycle.AutostartState;

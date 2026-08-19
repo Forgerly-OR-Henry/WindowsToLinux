@@ -1,7 +1,7 @@
 package gold.debug.windowstolinux.shared.ai.parser;
 
-import gold.debug.windowstolinux.shared.ai.collaboration.AiAdviceDecision;
-import gold.debug.windowstolinux.shared.ai.collaboration.RoleAdvice;
+import gold.debug.windowstolinux.shared.ai.collaboration.advice.AiAdviceDecision;
+import gold.debug.windowstolinux.shared.ai.collaboration.advice.RoleAdviceAssessment;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -9,7 +9,7 @@ import java.util.List;
 /** Strictly parses the exact fixed advisory JSON object and rejects extra fields. / 严格解析固定建议 JSON 对象并拒绝额外字段。 */
 public final class RoleAdviceParser {
     /** Parses an exact decision, summary, and findings object. / 解析精确的决策、摘要与发现对象。 */
-    public RoleAdvice parse(String json) {
+    public RoleAdviceAssessment parse(String json) {
         if (json == null || json.length() > 8_192) throw invalid();
         Cursor cursor = new Cursor(json);
         cursor.symbol('{');
@@ -29,7 +29,7 @@ public final class RoleAdviceParser {
         cursor.symbol('}');
         cursor.end();
         try {
-            return new RoleAdvice(decision, summary, findings);
+            return new RoleAdviceAssessment(decision, summary, findings);
         } catch (IllegalArgumentException exception) {
             throw invalid();
         }

@@ -2,29 +2,31 @@
 
 ## 文档信息
 
-- 文档版本：`1.2.0`
-- 文档状态：**已实施（简化命名迁移与本地结构验证完成）**
-- 更新日期：2026-08-18
+- 文档版本：`1.3.0`
+- 文档状态：**已实施（ecosystem 架构迁移与本地结构验证完成）**
+- 更新日期：2026-08-19
 - 正式目标结构：[File.md](../File.md)
-- 当前实现状态：生产和测试源码已迁入本文的责任包；SPI、注册表、元数据、策略与组件职责已拆分。Linux 部署链随后的原子迁移已将旧 `Advanced*` 公共模型替换为六种明确的生态服务运行时类型。本次不产生新的 Linux 或产品入口运行证据。
+- 当前实现状态：跨语言协调保留在公共职责包，语言实现完整聚合于 `ecosystem.<language>`；Java 的 Maven、Gradle 与 JAR 分别位于同名构建架构包。Linux 部署链的构建执行与能力探测按 [File.md](../File.md) 独立归入各自 `ecosystem`，本次不产生新的 Linux 或产品入口运行证据。
 
 > 实施更新（2026-08-15）：本文件的 1.0.0 设计记录保留原始分阶段边界；实际实施已与 Linux 部署链修订同步完成公共模型的原子替换，因此不再保留 `AdvancedRuntimeKind`、`AdvancedService` 或 `ADVANCED_*` 兼容路径。
 
 > 命名更新（2026-08-18）：分析预览职责包由 `recognition` 简化为 `preview`，`RecognitionPreviewInspector` 同步简化为 `PreviewInspector`；分析行为、支持等级和部署边界不变。
 
+> Ecosystem 更新（2026-08-19）：`JavaJarDeploymentInspector` 已迁入 `ecosystem.java.jar`，与 `java.maven`、`java.gradle` 平行；跨架构选择器和语言识别器继续留在语言包。下列 1.0.0 目标树与迁移表作为历史设计记录保留，现行结构只以 `File.md` 为准。
+
 ## 1. 目标与边界
 
-`gold.debug.windowstolinux.shared.analyze` 改为“公共流程按稳定职责分包，语言专属能力按技术生态聚合，生态内部再按 `language`、`build`、`framework`、`project` 细分”。该结构用于消除当前类型检查器位置不一致、包级循环依赖、三期语言集中实现和公共辅助类职责过宽的问题。
+`gold.debug.windowstolinux.shared.analyze` 采用“公共流程按稳定职责分包、语言专属能力按技术生态聚合、同一语言的独立构建架构按工具名分包”的结构。语言、工作负载、运行机制、发行版和 CPU 架构保持正交。
 
 本次后续代码迁移必须保留以下对外入口的行为与签名：
 
 - `DeploymentAnalysisCoordinator`
-- `MixedProjectAnalyzer`
+- `MixedProjectInspector`
 - `ComponentAnalysisRequest`
 
-分析层只读取有界源码并生成静态事实；实际 Maven、Gradle、Cargo、Composer、Bundler、Go、.NET 等构建执行继续归 `shared/linux-sshd.build`。本次不改变数据库结构、支持等级或真实环境验收结论。
+分析层只读取有界源码并生成静态事实；实际 Maven、Gradle、Cargo、Composer、Bundler、Go、.NET 等构建执行归 `shared/linux-sshd.build.ecosystem`。本次不改变数据库结构、支持等级或真实环境验收结论。
 
-## 2. 当前待清理问题
+## 2. 迁移前待清理问题（历史）
 
 1. `core` 直接装配分布在 `build`、`framework`、`language`、`workload` 中的具体类型检查器，而这些实现反向依赖 `core` 中的检查器契约，形成包级循环依赖。
 2. 完整项目类型检查器分散在不同维度包：Java JAR 位于 `language`，Node/Python 位于 `build`，Spring Boot 位于 `framework`，静态站点/容器位于 `workload`，预览与六种三期语言再次位于 `language`。
@@ -35,7 +37,7 @@
 7. `MixedProjectAnalyzer` 同时承担组件编排、根路径校验、资源冲突、数据安全、依赖环和受管身份生成。
 8. `build`、`source`、`preview` 等能力缺少与生产包一一对应的直接测试，现有结构边界测试只校验部分文件集合和行数，没有约束包依赖方向。
 
-## 3. 正式目标结构
+## 3. 1.0.0 目标结构（历史，已由 `File.md` 替代）
 
 ```text
 gold.debug.windowstolinux.shared.analyze
@@ -110,7 +112,7 @@ gold.debug.windowstolinux.shared.analyze
 
 只在存在实际实现时创建目标目录，不预建空包。预览级长尾语言继续由声明式 `PreviewLanguageMarkerCatalog` 管理；某种语言出现独立解析、构建或项目类型规则时，才迁入对应生态。
 
-## 4. 目标依赖方向
+## 4. 1.0.0 目标依赖方向（历史）
 
 ```text
 component ──→ core
@@ -129,7 +131,7 @@ policy ─────→ source
 - 生态内允许共享构建和框架事实，但不得复制跨生态机械逻辑，也不得引入发行版、CPU、SSH、SFTP、systemd、容器执行或任意 Shell 能力。
 - `workload.staticweb` 可以复用 `ecosystem.node.build` 的 Node 静态构建事实，但 Node 生态不得反向依赖工作负载包。
 
-## 5. 生产代码迁移映射
+## 5. 生产代码迁移映射（历史）
 
 下表路径均相对于 `gold.debug.windowstolinux.shared.analyze`。没有列为新类的目标不得创建兼容壳；原类型完成迁移后直接删除旧路径。
 
@@ -176,7 +178,7 @@ policy ─────→ source
 
 低层 `LanguageInspector` 和 `*BuildInspector` 只返回不可变事实或抛出有界读取异常，不接收、保存或修改调用方的 `List<RejectionReason>`。缺失、冲突和安全停止原因由项目类型检查器或 `policy` 转换。
 
-## 6. 测试迁移映射
+## 6. 测试迁移映射（历史）
 
 测试包必须镜像生产包，不保留旧包测试或只为兼容旧类型而存在的测试壳。
 
@@ -194,7 +196,7 @@ policy ─────→ source
 
 必须新增构建事实、六种新语言事实、`SourceMutationPolicy`、`PreviewLanguageMarkerCatalog`、`DeploymentTypeInspectorRegistry`、`BoundedMetadataReader`、`ProjectIdentityResolver`、`ComponentConflictValidator` 和 `ComponentDependencyValidator` 的直接测试。结构边界测试必须从固定文件名检查扩展到目标包位置、禁用包名和单向导入规则。
 
-## 7. 实施阶段
+## 7. 实施阶段（历史，已完成）
 
 ### 7.1 SPI 与装配解耦
 
@@ -252,6 +254,7 @@ policy ─────→ source
 
 | 版本 | 日期 | 状态 | 说明 |
 | --- | --- | --- | --- |
+| 1.3.0 | 2026-08-19 | 已实施（本地结构验证完成） | 以 `File.md` 的 ecosystem 规则替代旧 JVM 横向层次；Java JAR 进入 `ecosystem.java.jar`，并明确历史目标树与迁移表不再定义当前结构。未改变分析结果、协议、持久化或运行证据。 |
 | 1.2.0 | 2026-08-18 | 已实施（本地结构验证完成） | 将分析预览包和检查器简化为 `preview.PreviewInspector`；不改变分析行为、公共方法、支持等级或运行证据。 |
 | 1.1.0 | 2026-08-15 | 已实施（本地结构验证完成） | 完成生产与测试包迁移、SPI/注册表/元数据/策略职责拆分，并与 Linux 部署链一起原子移除旧 `Advanced*` 公共模型；JDK 21 离线 28 模块验证通过，真实 Linux 结论不变。 |
 | 1.0.0 | 2026-08-15 | 已批准，待实施 | 确认 `shared.analyze` 的生态化目标结构、单向依赖、完整生产/测试迁移映射、实施阶段和验收条件；未修改源码、测试、POM、公共模型或运行行为。 |

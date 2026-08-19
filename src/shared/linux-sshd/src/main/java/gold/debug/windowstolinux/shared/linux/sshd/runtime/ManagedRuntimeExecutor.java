@@ -1,7 +1,7 @@
 package gold.debug.windowstolinux.shared.linux.sshd.runtime;
 
 import gold.debug.windowstolinux.shared.linux.sshd.runtime.ContainerRuntimeExecutor;
-import gold.debug.windowstolinux.shared.linux.sshd.runtime.systemd.SystemdHealthChecker;
+import gold.debug.windowstolinux.shared.linux.sshd.runtime.systemd.SystemdHealthProbe;
 import gold.debug.windowstolinux.shared.linux.sshd.runtime.systemd.SystemdLifecycleExecutor;
 import gold.debug.windowstolinux.shared.linux.sshd.runtime.systemd.SystemdOwnershipObserver;
 
@@ -25,7 +25,7 @@ public final class ManagedRuntimeExecutor {
     private final ContainerReleaseProtocolExecutor containerProtocol;
     private final SystemdOwnershipObserver systemdObservation;
     private final SystemdLifecycleExecutor systemdLifecycle;
-    private final SystemdHealthChecker systemdHealth;
+    private final SystemdHealthProbe systemdHealth;
     private final ContainerRuntimeExecutor containerRuntime;
 
     /** Creates the persisted lifecycle runtime dispatcher. / 创建持久化生命周期运行时分派器。 */
@@ -34,7 +34,7 @@ public final class ManagedRuntimeExecutor {
                                   ContainerReleaseProtocolExecutor containerProtocol,
                                   SystemdOwnershipObserver systemdObservation,
                                   SystemdLifecycleExecutor systemdLifecycle,
-                                  SystemdHealthChecker systemdHealth,
+                                  SystemdHealthProbe systemdHealth,
                                   ContainerRuntimeExecutor containerRuntime) {
         this.runtimeKinds = Objects.requireNonNull(runtimeKinds, "runtimeKinds");
         this.deploymentProtocol = Objects.requireNonNull(deploymentProtocol, "deploymentProtocol");

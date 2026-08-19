@@ -1,6 +1,6 @@
 package gold.debug.windowstolinux.shared.model.assessment;
 
-import gold.debug.windowstolinux.shared.model.analysis.DeploymentAdmission;
+import gold.debug.windowstolinux.shared.model.analysis.DeploymentAdmissionStatus;
 import gold.debug.windowstolinux.shared.model.project.component.DeploymentComponent;
 
 import java.nio.file.Path;
@@ -13,7 +13,7 @@ import java.util.Objects;
  * <p>具有组件范围原因的确定性混合项目分析。
  */
 public record MultiComponentProjectAssessment(
-        DeploymentAdmission admission,
+        DeploymentAdmissionStatus admission,
         String applicationId,
         Path applicationRoot,
         List<DeploymentComponent> components,
@@ -30,15 +30,15 @@ public record MultiComponentProjectAssessment(
         components = List.copyOf(Objects.requireNonNull(components, "components").stream()
                 .sorted(java.util.Comparator.comparing(DeploymentComponent::componentId)).toList());
         issues = List.copyOf(Objects.requireNonNull(issues, "issues"));
-        boolean rejected = issues.stream().anyMatch(issue -> issue.severity() == ComponentIssue.Severity.SAFETY_REJECTION);
-        boolean needsInput = issues.stream().anyMatch(issue -> issue.severity() == ComponentIssue.Severity.REQUIRES_INPUT);
-        if (admission == DeploymentAdmission.REJECTED != rejected) {
+        boolean rejected = issues.stream().anyMatch(issue -> issue.severity() == ComponentIssue.SeverityLevel.SAFETY_REJECTION);
+        boolean needsInput = issues.stream().anyMatch(issue -> issue.severity() == ComponentIssue.SeverityLevel.REQUIRES_INPUT);
+        if (admission == DeploymentAdmissionStatus.REJECTED != rejected) {
             throw new IllegalArgumentException("rejected mixed assessments must match hard component issues");
         }
-        if (!rejected && (admission == DeploymentAdmission.REQUIRES_INPUT) != needsInput) {
+        if (!rejected && (admission == DeploymentAdmissionStatus.REQUIRES_INPUT) != needsInput) {
             throw new IllegalArgumentException("input-required mixed assessments must match component issues");
         }
-        if (admission == DeploymentAdmission.READY_FOR_PLANNING
+        if (admission == DeploymentAdmissionStatus.READY_FOR_PLANNING
                 && (components.isEmpty() || components.stream().noneMatch(component -> component.runtime().isPresent()))) {
             throw new IllegalArgumentException("ready mixed assessments require deployable components");
         }

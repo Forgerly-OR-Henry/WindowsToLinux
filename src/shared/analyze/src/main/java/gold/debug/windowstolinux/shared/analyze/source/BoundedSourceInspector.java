@@ -41,7 +41,7 @@ public final class BoundedSourceInspector {
      * @param rejections the {@code rejections} value / {@code rejections} 值
      * @return the operation result / 操作结果
      */
-    public SourceInspection inspect(Path root, List<RejectionReason> rejections) {
+    public SourceInspectionFacts inspect(Path root, List<RejectionReason> rejections) {
         TreeInspection visitor = new TreeInspection(root, rejections);
         try {
             Files.walkFileTree(root, visitor);
@@ -149,8 +149,8 @@ public final class BoundedSourceInspector {
             return FileVisitResult.CONTINUE;
         }
 
-        private SourceInspection result() {
-            return new SourceInspection(scannedFiles, relativeFiles, text.toString());
+        private SourceInspectionFacts result() {
+            return new SourceInspectionFacts(scannedFiles, relativeFiles, text.toString());
         }
     }
 }

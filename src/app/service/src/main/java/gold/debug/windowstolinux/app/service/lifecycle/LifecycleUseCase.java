@@ -4,11 +4,11 @@ import gold.debug.windowstolinux.app.db.repository.ManagedApplicationRepository;
 import gold.debug.windowstolinux.app.db.entity.CurrentRelease;
 import gold.debug.windowstolinux.app.secret.SecretStore;
 import gold.debug.windowstolinux.app.secret.SecretStoreException;
-import gold.debug.windowstolinux.app.service.locking.ServerOperationLocks;
+import gold.debug.windowstolinux.app.service.lock.ServerOperationLockRegistry;
 import gold.debug.windowstolinux.app.service.server.ServerProfile;
-import gold.debug.windowstolinux.app.service.server.ServerUseCases;
+import gold.debug.windowstolinux.app.service.server.ServerUseCaseFacade;
 import gold.debug.windowstolinux.shared.deploy.lifecycle.ManagedLifecycleService;
-import gold.debug.windowstolinux.shared.deploy.result.LifecycleActionResult;
+import gold.debug.windowstolinux.shared.deploy.result.lifecycle.LifecycleActionResult;
 import gold.debug.windowstolinux.shared.linux.connection.LinuxGateway;
 import gold.debug.windowstolinux.shared.model.health.HealthCheck;
 import gold.debug.windowstolinux.shared.model.lifecycle.LifecycleAction;
@@ -33,8 +33,8 @@ import java.util.concurrent.locks.ReentrantLock;
 public final class LifecycleUseCase {
     private final ManagedApplicationRepository applications;
     private final LinuxGateway gateway;
-    private final ServerUseCases servers;
-    private final ServerOperationLocks locks;
+    private final ServerUseCaseFacade servers;
+    private final ServerOperationLockRegistry locks;
 
     /**
      * Creates a {@code LifecycleUseCase} instance.
@@ -48,7 +48,7 @@ public final class LifecycleUseCase {
      * @throws NullPointerException if a required argument is {@code null} / 必要参数为 {@code null} 时
      */
     public LifecycleUseCase(ManagedApplicationRepository applications, LinuxGateway gateway,
-                            ServerUseCases servers, ServerOperationLocks locks) {
+                            ServerUseCaseFacade servers, ServerOperationLockRegistry locks) {
         this.applications = Objects.requireNonNull(applications, "applications");
         this.gateway = Objects.requireNonNull(gateway, "gateway");
         this.servers = Objects.requireNonNull(servers, "servers");
@@ -75,10 +75,10 @@ public final class LifecycleUseCase {
      * @return the operation result collection / 操作结果集合
      * @throws SQLException if the operation cannot be completed / 无法完成操作时
      */
-    public List<ManagedApplicationSummary> summaries() throws SQLException {
+    public List<ManagedApplicationSnapshot> summaries() throws SQLException {
         return applications.list().stream().map(application -> {
             try {
-                return new ManagedApplicationSummary(application,
+                return new ManagedApplicationSnapshot(application,
                         applications.findRelease(application.id()).map(CurrentRelease::releaseSha256),
                         applications.findRuntime(application.id()));
             } catch (SQLException exception) {

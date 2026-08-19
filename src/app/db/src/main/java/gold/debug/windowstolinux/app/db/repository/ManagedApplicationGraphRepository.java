@@ -42,7 +42,7 @@ public final class ManagedApplicationGraphRepository {
         }
         try (Connection connection = connections.open()) {
             ManagedApplicationGraph stableGraph = graph;
-            RepositoryTransactions.execute(connection, () -> {
+            RepositoryTransactionExecutor.execute(connection, () -> {
                 ManagedApplicationRepository.recordSuccessfulDeployments(connection, records);
                 replaceGraph(connection, stableGraph);
             });

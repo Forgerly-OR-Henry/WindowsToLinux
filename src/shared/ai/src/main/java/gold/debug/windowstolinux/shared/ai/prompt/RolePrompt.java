@@ -1,7 +1,7 @@
 package gold.debug.windowstolinux.shared.ai.prompt;
 
-import gold.debug.windowstolinux.shared.ai.collaboration.AiRoleBinding;
-import gold.debug.windowstolinux.shared.ai.collaboration.AiRoleContext;
+import gold.debug.windowstolinux.shared.ai.collaboration.role.AiRoleBinding;
+import gold.debug.windowstolinux.shared.ai.collaboration.role.AiRoleContext;
 
 import java.util.Objects;
 

@@ -1,18 +1,17 @@
 package gold.debug.windowstolinux.shared.analyze.core;
 
-import gold.debug.windowstolinux.shared.analyze.ecosystem.ProjectLanguageInspector;
 import gold.debug.windowstolinux.shared.analyze.policy.SourceMutationPolicy;
 import gold.debug.windowstolinux.shared.analyze.registry.DeploymentTypeInspectorRegistry;
-import gold.debug.windowstolinux.shared.analyze.spi.DeploymentTypeInspection;
+import gold.debug.windowstolinux.shared.analyze.spi.DeploymentTypeAssessment;
 import gold.debug.windowstolinux.shared.analyze.source.BoundedSourceInspector;
-import gold.debug.windowstolinux.shared.analyze.source.SourceInspection;
+import gold.debug.windowstolinux.shared.analyze.source.SourceInspectionFacts;
 import gold.debug.windowstolinux.shared.analyze.workload.ContainerDeploymentInspector;
 import gold.debug.windowstolinux.shared.analyze.workload.StaticWebDeploymentInspector;
 import gold.debug.windowstolinux.shared.model.assessment.DeploymentProjectAssessment;
 import gold.debug.windowstolinux.shared.model.analysis.RejectionReason;
 import gold.debug.windowstolinux.shared.model.message.LocalizedMessage;
 import gold.debug.windowstolinux.shared.model.project.DeploymentProjectType;
-import gold.debug.windowstolinux.shared.model.project.ProjectLanguageFacts;
+import gold.debug.windowstolinux.shared.model.language.ProjectLanguageFacts;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -54,14 +53,14 @@ public final class DeploymentAnalysisCoordinator {
         if (root == null) {
             return DeploymentProjectAssessment.rejected(rejections);
         }
-        SourceInspection source = sourceInspector.inspect(root, rejections);
+        SourceInspectionFacts source = sourceInspector.inspect(root, rejections);
         mutationPolicy.validate(source, rejections);
         if (!rejections.isEmpty()) {
             return DeploymentProjectAssessment.rejected(rejections);
         }
         try {
             ProjectLanguageFacts languageFacts = languageInspector.inspect(root, source);
-            DeploymentTypeInspection inspected = inspectors.require(Objects.requireNonNull(projectType, "projectType"))
+            DeploymentTypeAssessment inspected = inspectors.require(Objects.requireNonNull(projectType, "projectType"))
                     .inspect(root, source, languageFacts, rejections);
             if (inspected == null || !rejections.isEmpty()) {
                 return DeploymentProjectAssessment.rejected(rejections);

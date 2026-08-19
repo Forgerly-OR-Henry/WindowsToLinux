@@ -1,24 +1,29 @@
 package gold.debug.windowstolinux.shared.linux.sshd.build;
 
-import gold.debug.windowstolinux.shared.linux.sshd.build.script.BuildConfigEnvironment;
+import gold.debug.windowstolinux.shared.linux.sshd.build.script.BuildConfigurationEnvironmentRenderer;
 import gold.debug.windowstolinux.shared.linux.sshd.build.spi.DeploymentBuildRenderer;
-import gold.debug.windowstolinux.shared.linux.sshd.build.renderer.JavaJarBuildRenderer;
-import gold.debug.windowstolinux.shared.linux.sshd.build.renderer.SpringBootBuildRenderer;
-import gold.debug.windowstolinux.shared.linux.sshd.build.renderer.NodeBuildRenderer;
-import gold.debug.windowstolinux.shared.linux.sshd.build.renderer.PythonBuildRenderer;
-import gold.debug.windowstolinux.shared.linux.sshd.build.renderer.ServiceBuildRenderer;
-import gold.debug.windowstolinux.shared.linux.sshd.build.renderer.ContainerBuildRenderer;
-import gold.debug.windowstolinux.shared.linux.sshd.build.renderer.StaticSiteBuildRenderer;
+import gold.debug.windowstolinux.shared.linux.sshd.build.ecosystem.BundlerBuildRenderer;
+import gold.debug.windowstolinux.shared.linux.sshd.build.ecosystem.CargoBuildRenderer;
+import gold.debug.windowstolinux.shared.linux.sshd.build.ecosystem.ComposerBuildRenderer;
+import gold.debug.windowstolinux.shared.linux.sshd.build.ecosystem.DotNetSdkBuildRenderer;
+import gold.debug.windowstolinux.shared.linux.sshd.build.ecosystem.GoBuildRenderer;
+import gold.debug.windowstolinux.shared.linux.sshd.build.ecosystem.KotlinGradleBuildRenderer;
+import gold.debug.windowstolinux.shared.linux.sshd.build.ecosystem.java.JavaJarBuildRenderer;
+import gold.debug.windowstolinux.shared.linux.sshd.build.ecosystem.java.SpringBootBuildRenderer;
+import gold.debug.windowstolinux.shared.linux.sshd.build.ecosystem.node.NodeBuildRenderer;
+import gold.debug.windowstolinux.shared.linux.sshd.build.ecosystem.python.PythonBuildRenderer;
+import gold.debug.windowstolinux.shared.linux.sshd.build.registry.DeploymentBuildRendererRegistry;
+import gold.debug.windowstolinux.shared.linux.sshd.build.workload.ContainerBuildRenderer;
+import gold.debug.windowstolinux.shared.linux.sshd.build.workload.StaticSiteBuildRenderer;
 
 import gold.debug.windowstolinux.shared.config.revision.ConfigurationSnapshot;
 import gold.debug.windowstolinux.shared.linux.build.DeploymentBuildResult;
 import gold.debug.windowstolinux.shared.linux.error.LinuxOperationException;
 import gold.debug.windowstolinux.shared.linux.sshd.command.SshCommandExecutor;
 import gold.debug.windowstolinux.shared.linux.transfer.RemoteWorkspace;
-import gold.debug.windowstolinux.shared.model.deployment.BuildLimits;
+import gold.debug.windowstolinux.shared.model.deployment.BuildLimitConfiguration;
 import gold.debug.windowstolinux.shared.model.project.DeploymentProjectFacts;
 import gold.debug.windowstolinux.shared.model.project.DeploymentRuntimeSpecification;
-import gold.debug.windowstolinux.shared.model.project.DeploymentProjectType;
 
 import java.time.Duration;
 import java.util.List;
@@ -39,12 +44,8 @@ public final class DeploymentBuildExecutor {
     public DeploymentBuildExecutor(SshCommandExecutor commands, String username) {
         this(commands, username, List.of(new SpringBootBuildRenderer(), new JavaJarBuildRenderer(), new NodeBuildRenderer(),
                 new PythonBuildRenderer(), new StaticSiteBuildRenderer(), new ContainerBuildRenderer(),
-                new ServiceBuildRenderer(DeploymentProjectType.GO_SERVICE),
-                new ServiceBuildRenderer(DeploymentProjectType.RUST_SERVICE),
-                new ServiceBuildRenderer(DeploymentProjectType.DOTNET_SERVICE),
-                new ServiceBuildRenderer(DeploymentProjectType.KOTLIN_SERVICE),
-                new ServiceBuildRenderer(DeploymentProjectType.PHP_SERVICE),
-                new ServiceBuildRenderer(DeploymentProjectType.RUBY_SERVICE)));
+                new GoBuildRenderer(), new CargoBuildRenderer(), new DotNetSdkBuildRenderer(),
+                new KotlinGradleBuildRenderer(), new ComposerBuildRenderer(), new BundlerBuildRenderer()));
     }
 
     DeploymentBuildExecutor(SshCommandExecutor commands, String username, List<DeploymentBuildRenderer> renderers) {
@@ -59,7 +60,7 @@ public final class DeploymentBuildExecutor {
      * <p>使用其事实选定的固定入口构建一个经审阅的源码归档。
      */
     public DeploymentBuildResult build(DeploymentProjectFacts facts, DeploymentRuntimeSpecification runtime,
-                                       RemoteWorkspace workspace, BuildLimits limits, ConfigurationSnapshot configuration)
+                                       RemoteWorkspace workspace, BuildLimitConfiguration limits, ConfigurationSnapshot configuration)
             throws LinuxOperationException {
         facts = Objects.requireNonNull(facts, "facts");
         runtime = Objects.requireNonNull(runtime, "runtime");
@@ -77,7 +78,7 @@ public final class DeploymentBuildExecutor {
             throw new IllegalArgumentException("build configuration must match the analyzed application");
         }
         DeploymentBuildRenderer renderer = renderers.require(facts.projectType());
-        String script = BuildConfigEnvironment.render(configuration)
+        String script = BuildConfigurationEnvironmentRenderer.render(configuration)
                 + renderer.render(facts, runtime, workspace, limits);
         String command = "env -i PATH=/usr/local/bin:/usr/bin:/bin HOME="
                 + SshCommandExecutor.quote(workspace.candidateRoot() + "/mutable/home")

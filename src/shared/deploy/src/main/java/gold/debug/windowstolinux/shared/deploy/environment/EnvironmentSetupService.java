@@ -1,6 +1,6 @@
 package gold.debug.windowstolinux.shared.deploy.environment;
 
-import gold.debug.windowstolinux.shared.linux.connection.HostKeyVerifier;
+import gold.debug.windowstolinux.shared.linux.connection.HostKeyEvaluator;
 import gold.debug.windowstolinux.shared.linux.error.LinuxOperationException;
 import gold.debug.windowstolinux.shared.linux.connection.LinuxGateway;
 import gold.debug.windowstolinux.shared.linux.session.LinuxRemoteSession;
@@ -12,9 +12,9 @@ import gold.debug.windowstolinux.shared.model.deployment.EnvironmentSetupResult;
 import java.util.Objects;
 
 /**
- * Runs the one fixed Ubuntu 24.04 environment-preparation operation. This is intentionally separate from deployment so installation cannot happen as an implicit side effect of uploading a project.
+ * Runs one explicitly approved environment-preparation operation. This is intentionally separate from deployment so installation cannot happen as an implicit side effect of uploading a project.
  *
- * <p>运行唯一固定的 Ubuntu 24.04 环境准备操作。它被有意与部署分离，以防安装作为上传项目的隐式副作用发生。
+ * <p>运行一个经过显式批准的环境准备操作。它被有意与部署分离，以防安装作为上传项目的隐式副作用发生。
  */
 public final class EnvironmentSetupService {
     /**
@@ -36,7 +36,7 @@ public final class EnvironmentSetupService {
             LinuxGateway gateway,
             SshEndpoint endpoint,
             SshCredential credential,
-            HostKeyVerifier hostKeyVerifier
+            HostKeyEvaluator hostKeyVerifier
     ) throws LinuxOperationException {
         Objects.requireNonNull(credential, "credential");
         try {

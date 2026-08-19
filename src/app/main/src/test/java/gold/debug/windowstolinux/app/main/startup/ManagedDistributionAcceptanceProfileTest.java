@@ -1,7 +1,7 @@
 package gold.debug.windowstolinux.app.main.startup;
 
 import gold.debug.windowstolinux.shared.model.server.CpuMicroarchitectureLevel;
-import gold.debug.windowstolinux.shared.model.server.LinuxDistro;
+import gold.debug.windowstolinux.shared.model.server.LinuxDistroType;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
@@ -22,7 +22,7 @@ class ManagedDistributionAcceptanceProfileTest {
                 "managed.distro.preparation-expectation", "succeeds"
         ));
 
-        assertEquals(LinuxDistro.DEBIAN, profile.distro());
+        assertEquals(LinuxDistroType.DEBIAN, profile.distro());
         assertEquals(CpuMicroarchitectureLevel.X86_64_V1, profile.requiredCpu());
     }
 
@@ -38,10 +38,10 @@ class ManagedDistributionAcceptanceProfileTest {
                 "managed.distro.preparation-expectation", "rejects"
         ));
 
-        assertEquals(LinuxDistro.CENTOS_STREAM, nine.distro());
-        assertEquals(ManagedDistributionAcceptanceProfile.SetupExpectation.SUCCEEDS,
+        assertEquals(LinuxDistroType.CENTOS_STREAM, nine.distro());
+        assertEquals(ManagedDistributionAcceptanceProfile.SetupExpectationKind.SUCCEEDS,
                 nine.preparationExpectation());
-        assertEquals(ManagedDistributionAcceptanceProfile.SetupExpectation.REJECTS,
+        assertEquals(ManagedDistributionAcceptanceProfile.SetupExpectationKind.REJECTS,
                 tenV2.preparationExpectation());
     }
 
@@ -55,7 +55,7 @@ class ManagedDistributionAcceptanceProfileTest {
                 "managed.distro.preparation-expectation", "rejects"
         ));
 
-        assertEquals(ManagedDistributionAcceptanceProfile.SetupExpectation.REJECTS,
+        assertEquals(ManagedDistributionAcceptanceProfile.SetupExpectationKind.REJECTS,
                 profile.preparationExpectation());
     }
 
@@ -71,7 +71,7 @@ class ManagedDistributionAcceptanceProfileTest {
         );
 
         for (Map<String, String> target : targets) {
-            assertEquals(ManagedDistributionAcceptanceProfile.SetupExpectation.SUCCEEDS,
+            assertEquals(ManagedDistributionAcceptanceProfile.SetupExpectationKind.SUCCEEDS,
                     ManagedDistributionAcceptanceProfile.from(target).preparationExpectation(), target::toString);
         }
     }

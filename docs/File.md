@@ -2,8 +2,8 @@
 
 ## 文档信息
 
-- 文档版本：`3.14.0-package-structure-consolidation`
-- 文档状态：**模块内包结构与类职责已完成收紧，28-POM 模块、安全边界和既有运行能力不变**
+- 文档版本：`3.21.0-ecosystem-architecture`
+- 文档状态：**28-POM 模块边界保持不变；ecosystem 职责、命名、受控深度和源码迁移已完成，三期扩展文档必须以本版为结构基线；不得据此扩大运行支持声明**
 - 已确认范围：`shared` 共用模块、`app` Windows 桌面应用模块、`web` Web 应用模块
 - 已确认能力边界：受管应用生命周期复用既有模块，不新增独立 Maven 模块
 - 更新日期：2026-08-19
@@ -11,13 +11,13 @@
 - 分析包修订：[ANALYZE-PACKAGE-REVISION.md](development/ANALYZE-PACKAGE-REVISION.md)
 - Linux 部署链分包修订：[LINUX-DEPLOY-PACKAGE-REVISION.md](development/LINUX-DEPLOY-PACKAGE-REVISION.md)
 
-> 本文是正式目标目录、模块职责、依赖方向和内部包结构的来源。当前 reactor 已包含根工程、3 个聚合模块和 24 个叶子模块，共 28 个 POM。`shared/source`、`shared/config`、`shared/git`、`shared/ai`、`shared/linux-sshd`、`analyze`、`deploy`、`app/db` 与 `app/service` 已承载对应代码；其中 `analyze/component` 和 `deploy` 已实现并实机验证两组件整应用事务与依赖安全生命周期，`shared/ai` 已实现三个固定协作角色及严格证据链，`shared/linux-sshd` 已实现十二类项目的有界协议以及六种发行版的独立探测与准备适配。`shared.analyze`、`shared.deploy`、`shared.linux` 和 `shared.linux-sshd` 已迁入本文声明的责任包；其本地 JDK 21 离线验证通过，当前实现与迁移依据以两份专项修订文档为准。`app/main` 的 `startup` 测试职责内只保留非 Ubuntu 产品入口验收夹具；不再保留曾用于固定 CentOS 测试环境的直接远程引导器。所有测试均不进入生产远程契约，也不接受任意命令。`shared/backup` 和 Web Java 叶子模块仍只保留 POM。2026-08-10/12 的 Ubuntu 证据作为迁移前协议历史记录保留；2026-08-13 的 helper v3 证据覆盖六种生态服务适配器、两组件整应用、统一 Spring Boot Reviewed 链路和 Podman Quadlet。2026-08-14 的 CentOS Stream 9 x86-64 验收通过同一产品入口完成两次准备、两组件发布、故障候选整应用回滚与生命周期；修复可省略 `VARIANT_ID`、空 nftables 规则集、Java 21 默认运行时和只读 SSH 短暂超时后，准备前后 SELinux 与防火墙态保持观测值。该证据仅覆盖精确夹具，其他发行版实机矩阵按当前范围延后。
+> 本文是正式目标目录、模块职责、依赖方向、包结构和命名规则的唯一来源。开发总纲、分期扩展文档和源码迁移必须先符合本文；运行能力与实机证据仍以相应分期文档为准，不得由目标目录反推支持结论。
 
-> 结构更新（2026-08-19）：生产代码现有 108 个包。相同行为的服务检查器、构建渲染器和发行版 Setup 包装类已改为参数化实现；`DistributionSetupProfiles` 保留六种发行版各自的版本、CPU、软件包和安全规则。多组件部署、恢复、事务、生命周期策略、桌面表单及运行路径解析已按职责拆分。此次迁移不改变模块、协议、持久化、远端路径、helper 资源或运行支持边界。
+> 本版先固定 `ecosystem` 的稳定边界：语言识别、构建架构、框架分析、目标机构建和工具链探测按职责归位；共享模型、部署编排、发行版、工作负载及运行机制保持正交。该结构不改变模块、协议、持久化、远端路径或既有实机证据。
 
 ## 1. 完整目标结构
 
-当前已确认的完整目标结构如下。叶子模块下直接展示的是对应 Java 根包的目标子包，省略重复的 Maven `src/main/java` 路径；物理目录模板见第 3.1 节。`pom.xml` 作为聚合入口固定置顶，其余模块和内部包按英文名称排序。
+当前已确认的完整目标结构如下。叶子模块下直接展示的是对应 Java 根包的目标子包，省略重复的 Maven `src/main/java` 路径；物理目录模板见第 4.1 节。`pom.xml` 作为聚合入口固定置顶，其余模块和内部包按英文名称排序。
 
 ```text
 WindowsToLinux/
@@ -36,50 +36,68 @@ WindowsToLinux/
    │  │  └─ repository/       按服务器、偏好、AI、配置、秘密和受管应用职责划分的数据访问实现
    │  ├─ main/                唯一 AppMain 入口、运行模式和模块装配
    │  │  ├─ startup/          桌面应用启动与模块装配
-   │  │  └─ runtime/          RunModeDetector 与 RuntimePathResolver
+   │  │  └─ runtime/          RunModeResolver 与 RuntimePathResolver
    │  ├─ secret/              存储契约、异常及数据库/Windows 存储实现
    │  │  └─ crypto/           Argon2id、AES-GCM 和密钥处理
    │  ├─ service/             桌面业务流程整合
    │  │  ├─ ai/               AI 配置与分析用例
-   │  │  ├─ config/           二期配置快照与秘密修订用例
-   │  │  ├─ locking/      同服务器互斥、后台执行和取消
-   │  │  ├─ port/             UI 按功能依赖的五个窄应用端口
-   │  │  ├─ deployment/       部署用例
+   │  │  ├─ config/           配置快照与秘密修订用例
+   │  │  ├─ contract/         UI 按功能依赖的五个窄应用门面
+   │  │  ├─ deployment/       部署用例入口与共享受管身份解析
+   │  │  │  ├─ multi/         多组件审阅、拓扑和受管应用数据契约
+   │  │  │  └─ single/        单组件部署结果与安全交接数据契约
    │  │  ├─ environment/      环境准备用例
    │  │  ├─ lifecycle/        受管应用和生命周期用例
+   │  │  ├─ lock/             同服务器操作互斥注册表
    │  │  ├─ server/           服务器资料、信任和能力用例
    │  │  └─ source/           源码准备用例
    │  ├─ ui/                  桌面界面与用户交互
    │  │  ├─ ai/               AI 配置和解释结果界面
    │  │  ├─ display/       主题、外观和系统偏好
    │  │  ├─ component/        可复用的桌面界面组件
-   │  │  ├─ deployment/       源码选择、分析、确认和部署交互
+   │  │  ├─ deployment/       共享审阅上下文与类型化输入解析
+   │  │  │  ├─ multi/         多组件编辑、状态、页面和结果呈现
+   │  │  │  └─ single/        单组件表单、状态、页面和分析呈现
    │  │  ├─ i18n/             消息目录和本地化边界
    │  │  ├─ managed/          受管应用列表与生命周期交互
    │  │  ├─ server/           服务器配置和能力验证界面
-   │  │  ├─ settings/         桌面设置界面
+   │  │  ├─ setting/          桌面设置界面
    │  │  └─ shell/            主窗口、导航和页面装配
    │  └─ windows/             Windows 平台边界
    │     └─ workspace/        工作目录与本地文件边界
    ├─ shared/
    │  ├─ pom.xml              共用模块聚合入口
    │  ├─ ai/                  AI 调用、脱敏与结果解析
-   │  │  ├─ client/           HTTP 客户端和调用边界
-   │  │  ├─ collaboration/    固定多模型角色、调用证据和确定性优先冲突处理
+   │  │  ├─ client/           OpenAI 兼容分析与角色客户端
+   │  │  ├─ collaboration/    确定性优先的 AI 协调入口与最终处置
+   │  │  │  ├─ advice/        经验证的有界建议决策和输出
+   │  │  │  ├─ invocation/    调用状态、凭据无关证据和单次调用结果
+   │  │  │  └─ role/          固定角色、绑定及最小脱敏上下文
    │  │  ├─ parser/           结构化结果解析与校验
    │  │  ├─ prompt/           结构化提示构建
    │  │  ├─ provider/         Provider 配置和协议适配
-   │  │  └─ redaction/        最小上下文与脱敏
+   │  │  ├─ redaction/        最小上下文与脱敏
+   │  │  └─ transport/        角色聊天 HTTP 传输契约、实现和结果
    │  ├─ analyze/             项目生态、构建、框架、工作负载与部署条件的静态分析
    │  │  ├─ component/        混合项目组件分析、资源冲突和依赖图校验
-   │  │  ├─ core/             唯一分析协调器、阶段顺序与结果汇总
-   │  │  ├─ ecosystem/        参数化 ServiceDeploymentInspector 与跨生态薄检查器
-   │  │  │  ├─ jvm/           JVM 语言、Maven/Gradle、Spring Boot 与 JAR 分析
+   │  │  ├─ core/             分析协调器、跨语言事实汇总、阶段顺序与结果聚合
+   │  │  ├─ ecosystem/        只保存按语言维护的识别、构建架构和框架分析
+   │  │  │  ├─ dotnet/        .NET SDK 事实与服务部署检查
+   │  │  │  ├─ go/            Go Module 事实与服务部署检查
+   │  │  │  ├─ java/          Java 语言与 Spring Boot 框架分析
+   │  │  │  │  ├─ gradle/     Gradle 构建事实与静态检查
+   │  │  │  │  ├─ jar/        JAR 原生交付架构静态检查
+   │  │  │  │  └─ maven/      Maven 构建事实与静态检查
+   │  │  │  ├─ kotlin/        Kotlin/Gradle 应用事实与服务部署检查
    │  │  │  ├─ node/          Node.js 语言、包管理器与服务项目分析
-   │  │  │  └─ python/        Python 语言、依赖与服务项目分析
+   │  │  │  ├─ php/           Composer 事实与 PHP 服务部署检查
+   │  │  │  ├─ python/        Python 语言、依赖与服务项目分析
+   │  │  │  ├─ ruby/          Bundler 事实与 Ruby 服务部署检查
+   │  │  │  └─ rust/          Cargo 事实与 Rust 服务部署检查
    │  │  ├─ policy/           跨生态源码变更与部署停止策略
    │  │  ├─ preview/      不可执行语言标记目录与识别预览结果
    │  │  ├─ registry/         默认类型检查器的唯一装配与完整性校验
+   │  │  ├─ service/          跨语言服务事实、元数据读取和结果组装
    │  │  ├─ source/           有界源码遍历、元数据、归档检查与项目身份推导
    │  │  ├─ spi/              类型检查器及其局部结果窄契约
    │  │  └─ workload/         容器与静态站点工作负载识别
@@ -96,13 +114,18 @@ WindowsToLinux/
    │  │  └─ validation/       完整性、兼容性和约束校验
    │  ├─ deploy/              环境准备与部署流程编排
    │  │  ├─ adapter/          systemd、容器与静态站点部署形态实现
-   │  │  ├─ support/          六种独立发行版策略、注册、规则与窄契约
+   │  │  ├─ support/          主机支持判断编排
+   │  │  │  ├─ distro/       六种独立发行版策略、规则及选择器
+   │  │  │  └─ runtime/      语言和运行时工具版本能力判断
    │  │  ├─ contract/         请求、审批、步骤和不可变部署计划
    │  │  ├─ environment/      环境准备流程
    │  │  ├─ lifecycle/        单组件及依赖安全的整应用生命周期编排
    │  │  ├─ plan/             单组件与多组件计划生成、发布身份及校验
    │  │  ├─ registry/         部署适配器的唯一默认装配
-   │  │  ├─ result/           应用/组件级部署、生命周期事件与结果
+   │  │  ├─ result/           公开结果职责分组入口（不直接放置类型）
+   │  │  │  ├─ compatibility/ 主机支持状态与有序证据
+   │  │  │  ├─ deployment/    部署事件、事务状态及单/多组件部署结果
+   │  │  │  └─ lifecycle/     单资源、组件和整应用生命周期结果
    │  │  ├─ spi/              部署适配器窄契约
    │  │  └─ transaction/      单组件与整应用上传、构建、发布、健康和回滚事务
    │  ├─ git/                 Git 来源、引用值对象及校验
@@ -118,17 +141,27 @@ WindowsToLinux/
    │  │  ├─ session/          组合各项类型化能力的远程会话契约
    │  │  └─ transfer/         受控传输请求与结果契约
    │  ├─ linux-sshd/          Apache SSHD Linux 远程能力实现
-   │  │  ├─ build/            构建注册、执行与参数化 ServiceBuildRenderer
-   │  │  │  ├─ renderer/      具有实际差异的项目构建渲染器
+   │  │  ├─ build/            受控目标机构建入口
+   │  │  │  ├─ ecosystem/     按语言聚合的构建架构实现；单架构实现直接位于本包
+   │  │  │  │  ├─ java/       Java 的 JAR、Maven 与 Gradle 构建差异
+   │  │  │  │  ├─ node/       Node.js 的 npm、pnpm 与 Yarn 构建差异
+   │  │  │  │  └─ python/     Python 的 pip、Pipenv、Poetry 与 uv 构建差异
+   │  │  │  ├─ registry/      构建实现的唯一装配与完整性检查
    │  │  │  ├─ script/        配置环境、超时、资源限制和安全脚本外壳
-   │  │  │  └─ spi/           单项目类型构建渲染窄契约
-   │  │  ├─ capability/       平台、生态、发行版、CPU、安全和 helper 能力采集
+   │  │  │  ├─ spi/           单项目类型构建渲染窄契约
+   │  │  │  └─ workload/      容器与静态站点构建形态
+   │  │  ├─ capability/       平台、发行版、CPU、安全和 helper 能力采集
+   │  │  │  └─ ecosystem/     语言与构建工具链探测、版本解析和检查脚本生成
    │  │  ├─ command/          仅供实现层使用的受控 SSH 命令执行
    │  │  ├─ connection/       Apache SSHD 客户端、认证和主机指纹实现
-   │  │  ├─ distro/           DistributionSetupProfiles、注册与六种独立规则
-   │  │  │  └─ setup/         APT/DNF 共用脚本、安全复核和固定包集合
+   │  │  ├─ distro/           发行版环境准备职责入口
+   │  │  │  ├─ apt/           APT 渲染、固定包集合与 Debian 家族配置目录
+   │  │  │  ├─ dnf/           DNF 渲染、固定包集合与企业 Linux 配置目录
+   │  │  │  ├─ profile/       不可变发行版准备与生态能力配置
+   │  │  │  ├─ registry/      完整发行版配置装配与唯一注册表
+   │  │  │  └─ script/        通用发行版准备脚本生成
    │  │  ├─ protocol/         候选工作区及类型化远程协议实现
-   │  │  │  ├─ helper/        固定 helper 资源拼装与摘要校验边界
+   │  │  │  ├─ helper/        固定 helper 资源拼装与摘要校验；生态片段按 ecosystem 分组
    │  │  │  ├─ input/         配置和秘密修订输入协议
    │  │  │  ├─ release/       普通与容器发布、快照和回滚协议
    │  │  │  └─ runtime/       类型化运行参数和保留协议
@@ -144,11 +177,13 @@ WindowsToLinux/
    │  │  ├─ deployment/       部署请求、计划、状态和结果模型
    │  │  ├─ health/           健康检查与访问地址模型
    │  │  ├─ lifecycle/        单组件及整应用运行、自启汇总和生命周期动作模型
+   │  │  ├─ language/         语言生态、源码语言及确定性语言事实
    │  │  ├─ managed/          受管应用、受管身份和运行配置模型
    │  │  ├─ message/          本地化消息模型
-   │  │  ├─ project/          源码项目、语言、构建体系和框架事实及 component 子包
+   │  │  ├─ project/          部署项目、运行时、支持声明、源码修订及 component 子包
    │  │  ├─ security/         凭据模式、确认和安全相关纯数据模型
-   │  │  └─ server/           服务器身份与平台事实模型
+   │  │  └─ server/           发行版、CPU、协议版本和服务器身份
+   │  │     └─ security/      强制访问控制与防火墙安全态势
    │  └─ source/              平台无关的源码快照、归档与安全校验
    │     ├─ archive/          源码归档创建与读取
    │     ├─ manifest/         清单、摘要和排除项
@@ -242,32 +277,396 @@ test/
 - Maven 坐标统一使用 `gold.debug.windowstolinux`，根父工程为 `windowstolinux-parent:0.1.0-SNAPSHOT`，编译目标为 Java 21。
 - WindowsToLinux 自身构建使用开发机的系统 Maven 和系统本地仓库；项目 POM 不声明仓库位置，不创建项目专用 Maven 仓库，也不新增 Maven Wrapper 作为本项目构建入口。
 - 构建插件确需额外构建期依赖时，在根 POM 对应插件的 `<dependencies>` 中显式声明，供系统 Maven 同步；不得为了补插件缓存而把依赖加入业务叶子模块的运行时 classpath。
-- 第 1 节所列 `shared.analyze`、`shared.deploy`、`shared.linux`、`shared.linux-sshd`、小型模块和桌面端职责包均已迁移。旧包前缀与薄包装类不保留兼容壳；模块根包只保留 `DesktopPersistence`、`DesktopApplicationService` 等组合或委托门面。
+- 第 1 节是正式目标结构。结构迁移必须原子更新包声明、物理路径、导入、测试和门禁；旧包前缀与薄包装类不保留兼容壳。
 - `shared/backup` 和 Web Java 叶子模块目前只有 POM。`shared/config`、`shared/git` 已有二期 API；`web/frontend` 已包含最小页面、单元测试和浏览器测试。
 
-### 1.1 当前落地职责边界
+### 1.1 稳定职责边界
 
-- `analyze/core` 只保留唯一 `DeploymentAnalysisCoordinator`；检查器窄契约归 `spi`，默认装配归 `registry`，跨生态停止规则归 `policy`。JVM、Node 和 Python 的语言、构建、框架与项目检查器分别收拢到对应生态包；Go、Rust、.NET、Kotlin、PHP、Ruby 的等价服务检查由参数化 `ServiceDeploymentInspector` 表达。
-- `SpringBootDeploymentInspector` 保留 Spring Boot 的框架和项目差异；`PreviewInspector` 只负责不可执行预览识别。`DeploymentBuildRenderer` 仍是构建窄契约，运行配置由 `BuildConfigEnvironment` 转成受控环境变量。
-- `analyze/component/MixedProjectAnalyzer` 负责源码组件分析，包内 `ComponentGraphValidator` 独立负责组件根/产物重叠、端口冲突、依赖环、不安全共享数据、预览级必需组件和越权能力校验。
-- `shared.deploy` 的注册表只依赖 SPI，部署适配器不反向依赖注册表；六种发行版策略保留独立规则但与注册、SPI 和公共判断收拢到 `support`。多组件主服务通过 `MultiComponentTransactionContext`、`MultiComponentRecoveryCoordinator` 和纯逻辑 `MultiComponentLifecyclePolicy` 分离事务、恢复与生命周期判断。
-- `shared.linux` 已将异常、Gateway、会话及各能力契约单向分包，Apache SSHD 类型不进入公共契约。`shared.linux-sshd` 已分开 command、connection、session、build、distro、protocol、runtime 与 transfer，会话关闭归 `session`，包依赖图无环。
-- `app/ui/shell` 只负责窗口、装配、聚合状态和显示变化监听；`PageMessages` 归 `i18n`。六个业务页面仅依赖所需应用端口，`DesktopAsyncTask` 统一无业务含义的异步模板，`DeploymentForm` 和 `MultiComponentEditor` 负责控件状态及领域输入映射。
-- `DesktopPageCoordinator` 负责页面装配，`DesktopDisplaySettings` 负责显示偏好，二者都不承载业务用例。发行版支持判断由 `HostSupportChecker` 完成，受控环境准备继续使用 `EnvironmentSetup` 契约。
-- `DesktopPersistence` 只组合服务器、偏好、AI、普通配置、应用秘密、加密载荷、受管应用和整应用图仓库；`ManagedApplicationRepository` 负责单应用状态，`ManagedApplicationGraphRepository` 在同一事务内写入全部组件发布状态与不含秘密的拓扑，避免扩大任一仓库职责。
-- `GitSnapshotPreparer` 只协调 `GitCommandRunner`、`ControlledGitWorkspaceValidator`、`GitRepositoryFeaturePolicy` 和安全归档，不执行仓库源码。
-- `DeploymentBuildRenderer` 由十二个项目类型渲染器实现并共享安全脚本外壳；其中 `SpringBootBuildRenderer` 只接受 Gradle Wrapper、Maven Wrapper、系统 Maven 三种固定入口并验证唯一 Spring Boot 2/3 可执行 JAR，注册表拒绝缺失、重复和类型不匹配实现。
-- `MultiComponentDeploymentPlanner` 保留精确依赖边并生成确定性构建波次、逆序停止、拓扑启动/健康、逆序回滚和独立候选命名；`ReviewedMultiComponentDeploymentService` 在切换前完成全部候选构建和全部旧状态快照，中间失败会恢复所有已停止或尝试发布的组件，任何恢复不确定性升级为人工处理。
-- `MultiComponentLifecycleService` 每次从目标机重新观测所有组件，调用纯逻辑 `MultiComponentLifecyclePolicy` 判断依赖影响、执行顺序和最终状态，并以“部分运行”“部分启用”保留混合状态；`MultiComponentPage` 通过 `MultiComponentApplicationPort` 复用既有 `ServerOperationLocks`，成功后由 SQLite v7 恢复组件图，运行时类型仍从目标机 root-owned 封存标记识别。
-- `shared/ai/collaboration` 定义项目分析、部署风险复核、错误说明三个固定角色及最小上下文、凭据无关调用证据和确定性优先裁决；客户端每次只接收一个显式 Provider 绑定，严格解析唯一 JSON 模式且不提供候补 Provider API。`app/db` SQLite v7 保留 v6 的受限角色值和 Provider 外键并增加成功整应用图，`app/service` 只在调用时短时读取所选 Provider 的秘密，桌面 AI 页负责命名 Provider 与角色配置并展示项目分析证据。
-- systemd 远程职责由 `SystemdHealthChecker`、`SystemdOwnershipObserver` 和 `SystemdLifecycleExecutor` 分别承担。
-- `ManagedHelperBundle` 按固定顺序拼装十一个职责资源片段；安装路径和 sudoers 白名单仅允许 `/usr/local/lib/windowstolinux/managed-helper`，协议版本固定为 3，拼装字节的 SHA-256 固定为 `74930667941d5cd75e3da9d86ccf63e5dcfb03e0bad8f232b1bb5cea13fc28f1`。本次结构迁移未修改资源字节、verb、参数顺序、退出码或摘要；旧 helper 仍只能由用户通过产品“环境准备”显式更新，部署链路不得自动替换。
-- helper 当前协议版本由 `ManagedHelperProtocolVersion` 在模型层唯一声明，能力汇总、环境准备预检和 SSH 实现不得各自保留历史版本数字。
-- `LinuxCapabilities` 以 `CpuMicroarchitectureLevel`、软件包架构及 `LinuxSecurityPosture` 保留只读主机事实；`deploy.support` 为 Ubuntu、Debian、CentOS Stream、Rocky Linux、AlmaLinux、Oracle Linux 使用独立策略。`DistributionSetupProfiles` 数据化保存六种发行版差异，APT/DNF 仅共享注入安全的安装与安全状态复核机械流程，不以 CentOS 别名代替其他 EL 系统。
+- `shared.analyze` 只读取有界源码并生成确定性事实；跨语言协调归 `core`，语言和构建架构实现归 `ecosystem`，工作负载识别归 `workload`。
+- `shared.linux` 只定义平台无关的类型化 Linux 契约；Apache SSHD、Shell 渲染和目标机实现只位于 `shared.linux-sshd`。
+- `shared.linux-sshd.build` 保留构建执行入口、SPI、安全脚本和注册表；生态构建归 `build.ecosystem`，容器与静态站点构建归 `build.workload`。
+- `shared.linux-sshd.capability` 保留平台能力采集；语言、构建工具链及其版本解析归 `capability.ecosystem`，APT/DNF 包名不得进入该包。
+- `shared.linux-sshd.distro` 只负责发行版识别、软件包选择和环境准备；APT 与 DNF 分别形成完整扩展单元，不实现语言构建命令。
+- `shared.deploy` 按部署形态组织 Adapter，按发行版与运行时组织支持判断，并通过类型化 Linux 契约编排事务；不得镜像语言生态目录。
+- `model` 保存跨模块共享的纯事实和值对象；语言枚举、项目事实、部署计划和 UI 模型不得因生态实现而迁入 `ecosystem`。
+- helper 的协议基础、输入、发布、运行和生命周期片段保持职责分组；只把语言或工具链专属片段归入资源 `ecosystem` 分组。资源移动不得改变组装字节、顺序、协议版本或固定摘要。
+- UI、数据库、秘密、Git、备份及应用用例继续按自身职责分包，不按被部署项目的语言复制结构。
+- 运行能力与实机证据不由包结构决定；新增生态或构建架构必须在对应分期文档中单独定义实现、测试和验收范围。
 
-## 2. 模块职责
+## 2. 统一命名规范
 
-### 2.1 `shared` 共用模块
+命名清单按功能分组；同一功能组内的英文标准名称按不区分大小写的字母顺序排列。阶段流、规则执行顺序和带编号规范保留语义顺序。
+
+### 2.1 总体与模块命名
+
+| 编号 | 规范 |
+| --- | --- |
+| N-01 | 模块表达依赖、技术、运行或安全边界。 |
+| N-02 | 包表达模块内部的功能和职责。 |
+| N-03 | 类名表达领域对象及其行为角色。 |
+| N-04 | 命名必须使用准确、稳定、唯一的英文含义。 |
+| N-05 | 同一个单词在不同模块中必须保持相同语义。 |
+| N-06 | 正式生产名称使用英文；简体中文仅用于 UI 映射和双语注释。 |
+| N-07 | 不得使用期数、临时状态或开发阶段作为生产名称。 |
+| N-08 | 不得为了目录整齐而复制逻辑或建立空分类。 |
+
+| 编号 | 模块命名规范 | 正确示例 | 禁止示例 |
+| --- | --- | --- | --- |
+| M-01 | 模块名使用小写英文。 | `deploy` | `Deploy` |
+| M-02 | 模块名使用单数名词。 | `source` | `sources` |
+| M-03 | 模块名表达稳定能力边界。 | `config`、`secret` | `tools`、`functions` |
+| M-04 | 模块名不得包含实现阶段。 | `deploy` | `phase3-deploy` |
+| M-05 | 模块名不得包含临时状态。 | `analyze` | `new-analyze` |
+| M-06 | 模块名不得表达普通内部分类。 | `linux` | `linux-renderers` |
+| M-07 | 模块不得因命名整理而拆分、合并或新增。 | `shared/deploy` 保持完整模块 | 将 `policy` 拆成独立模块 |
+| M-08 | 平台实现模块使用明确技术限定词。 | `linux-sshd` | `linux-impl` |
+
+### 2.2 包结构与标准职责包
+
+包结构统一为：
+
+```text
+<模块根包>.<功能>[.<子功能>]
+```
+
+| 编号 | 包命名规范 | 正确示例 | 禁止示例 |
+| --- | --- | --- | --- |
+| P-01 | 包首先按功能划分。 | `deploy.lifecycle` | `deploy.classes` |
+| P-02 | 子包按功能内部的独立职责划分。 | `build.ecosystem` | `build.objects` |
+| P-03 | 包名使用小写英文。 | `validation` | `Validation` |
+| P-04 | 包名使用单数名词。 | `policy` | `policies` |
+| P-05 | 模块根包只放稳定入口、门面或公共契约。 | `DesktopPersistence` | 大量具体实现 |
+| P-06 | 包名不得使用期数或版本。 | `protocol` | `protocol-v3` |
+| P-07 | 包名不得使用语言、工作负载、运行机制、发行版和架构的笛卡尔组合。 | `ecosystem.java` | `java.service.systemd.ubuntu.x86_64` |
+| P-08 | Java 包声明必须与物理目录完全一致。 | `build.ecosystem.java` | 路径与声明不一致 |
+| P-09 | 包名不得使用宽泛容器词。 | `policy`、`validation` | `util`、`common`、`misc`、`impl` |
+| P-10 | 包名不得重复模块名已经表达的含义。 | `deploy.plan` | `deploy.deployment.plan` |
+
+| 功能组 | 包名 | 唯一职责 | 允许内容 | 禁止内容 |
+| --- | --- | --- | --- | --- |
+| 规则与契约 | `capability` | 能力事实 | 平台、工具、运行能力 | 支持策略 |
+| 规则与契约 | `contract` | 类型化公共契约 | 请求、审批、计划、接口 | 具体实现 |
+| 规则与契约 | `definition` | 静态定义 | 范围、默认值、允许值 | 运行时执行 |
+| 规则与契约 | `policy` | 业务决策规则 | 允许、禁止、支持判断 | I/O、持久化 |
+| 规则与契约 | `profile` | 配置组合 | 命名配置和差异数据 | 执行逻辑 |
+| 规则与契约 | `spi` | 可替换实现接口 | 窄扩展契约 | 注册和默认实现 |
+| 规则与契约 | `validation` | 合法性校验 | 输入和不变量检查 | 业务计划生成 |
+| 内容生成 | `prompt` | AI 提示 | 提示定义、提示构建 | Provider 调用 |
+| 内容生成 | `renderer` | 内容生成 | 配置、脚本、单元文件渲染 | 执行生成内容 |
+| 内容生成 | `script` | 脚本组成 | Shell 片段、安全外壳 | 业务决策 |
+| 内容生成 | `template` | 原始模板 | 固定文本、占位符 | 渲染和执行 |
+| 适配与注册 | `adapter` | 技术或形态适配 | SPI 实现、模型转换 | 总流程编排 |
+| 适配与注册 | `registry` | 实现注册 | 查找、选择、去重、完整性检查 | 具体业务执行 |
+| 执行与流程 | `environment` | 环境准备 | 环境检查和准备流程 | 应用发布 |
+| 执行与流程 | `lifecycle` | 生命周期 | 启停、重启、自启、观察 | 构建分析 |
+| 执行与流程 | `migration` | 版本迁移 | 数据结构迁移 | 普通查询 |
+| 执行与流程 | `protocol` | 类型化协议 | 固定请求、参数和结果 | 任意命令 |
+| 执行与流程 | `runtime` | 运行机制 | 生命周期和运行时操作 | 静态分析 |
+| 执行与流程 | `transaction` | 原子业务事务 | 发布、恢复、回滚协调 | UI 展示 |
+| 执行与流程 | `transfer` | 受控传输 | 上传、下载、传输结果 | 部署决策 |
+| 存储与结果 | `connection` | 连接基础 | 连接创建、事务基础 | 领域仓库 |
+| 存储与结果 | `repository` | 持久化访问 | 聚合查询和事务写入 | 业务编排 |
+| 存储与结果 | `result` | 公开结果 | 类型化结果和状态 | 执行器 |
+
+### 2.3 正交功能维度
+
+| 标准包名 | 唯一维度 | 包含内容 | 不包含内容 |
+| --- | --- | --- | --- |
+| `distro` | Linux 发行版 | Ubuntu、Debian、CentOS Stream、Rocky Linux、AlmaLinux、Oracle Linux 等身份、版本与准备差异 | 编程语言、部署形态、CPU 架构 |
+| `ecosystem` | 技术生态 | C/C++、Java、Node、Python、Go、Rust、DotNet、Kotlin、PHP、Ruby 等语言的识别、构建架构、框架与工具链实现 | 共享模型、部署编排、工作负载、运行机制、发行版、CPU 架构 |
+| `runtime` | 实际运行机制 | systemd、Docker、Podman 等运行与生命周期机制 | 源码语言分析、发行版身份、支持等级 |
+| `workload` | 工作负载形态 | 容器、静态站点、普通服务等项目形态 | 编程语言、包管理器、Linux 发行版 |
+
+| 技术生态 | 统一包名 |
+| --- | --- |
+| .NET | `dotnet` |
+| C、C++ | `c` |
+| Go | `go` |
+| Java | `java` |
+| Kotlin | `kotlin` |
+| Node.js、JavaScript、TypeScript | `node` |
+| PHP | `php` |
+| Python | `python` |
+| Ruby | `ruby` |
+| Rust | `rust` |
+
+| 编号 | 正交维度规范 | 正确示例 | 禁止示例 |
+| --- | --- | --- | --- |
+| O-01 | `ecosystem` 只保存行为会因语言、构建架构、框架或工具链而变化的具体实现。 | `analyze.ecosystem.java` | 把共享协调器迁入 `ecosystem` |
+| O-02 | 共享枚举、模型、项目事实、部署计划、事务、UI、发行版和运行机制保持在原职责包。 | `model.language` | `ecosystem.model` |
+| O-03 | 分析层先按语言完整聚合；同一语言存在多个独立构建架构时，各架构进入以工具名命名的子包。 | `ecosystem.java.maven`、`ecosystem.java.jar` | 横向 `build.maven` |
+| O-04 | 构建架构包使用工具或架构的规范英文名全小写。 | `maven`、`npm`、`cmake`、`cargo` | `mavenbuild`、`rust-build` |
+| O-05 | 分析层的语言识别器和跨架构选择器留在语言包；框架实现留在所属语言包，除非框架自身形成多个独立扩展职责。 | Spring Boot 位于 `ecosystem.java` | `ecosystem.springboot` |
+| O-06 | 目标机构建统一归 `linux-sshd.build.ecosystem`；仅有一个独立构建架构的语言直接放置具名 Renderer，存在两个及以上架构时建立一个语言子包，各架构 Renderer 直接位于该语言包。 | `build.ecosystem.CargoBuildRenderer`、`build.ecosystem.java.*Renderer` | `build.ecosystem.rust.cargo.renderer` |
+| O-07 | 语言与构建工具链探测、版本解析和检查脚本生成统一归 `linux-sshd.capability.ecosystem`。 | `capability.ecosystem` | 在 `distro` 中执行 `go version` |
+| O-08 | 发行版只选择包集合和能力要求；APT/DNF 包名不得进入生态实现，语言命令不得进入发行版实现。 | `distro.apt` + `capability.ecosystem` | `distro.ubuntu.java` |
+| O-09 | helper 中仅语言或工具链专属的资源片段进入 `ecosystem` 分组；协议基础、输入、发布、运行和生命周期片段保持原职责分组。 | `fragments/ecosystem` | 将 `00-protocol-foundation.sh` 移入生态目录 |
+| O-10 | 是否建立语言分组由独立构建架构数量决定，不按枚举值、文件数或目录对称决定；不得为满足数量门禁制造陪衬类型。 | Java 多架构建立语言包 | 为单个类创建空 Facts |
+| O-11 | C 与 C++ 统一属于 `c` 生态，C++ 作为独立能力扩展，不以 Java 继承关系代替构建架构；CMake 架构包名为 `cmake`。 | `ecosystem.c.cmake` | `ecosystem.cpp` 或 `Cpp extends C` |
+| O-12 | 工作负载只表达容器、静态站点和普通服务等项目形态。 | `analyze.workload`、`build.workload` | `ecosystem.container` |
+| O-13 | `runtime` 只表达 systemd、Docker、Podman 等实际运行机制；`distro` 只表达发行版；CPU 架构归 `capability`。 | `runtime.systemd`、`distro.apt` | `ecosystem.systemd`、`distro.x86_64` |
+| O-14 | `ecosystem`、`workload`、`runtime`、`distro` 相互正交，不得建立跨维度笛卡尔组合包。 | `ecosystem.java` + `runtime.systemd` | `java.service.systemd.ubuntu.x86_64` |
+
+### 2.4 约束与模板命名
+
+| 功能组 | 约束类型 | 包名 | 类名后缀 | 唯一含义 |
+| --- | --- | --- | --- | --- |
+| 规则定义 | 默认值 | `definition` | `Defaults`、`Definition` | 声明默认配置 |
+| 规则定义 | 静态范围 | `definition` | `Definition`、`Scope` | 声明可用范围 |
+| 规则定义 | 执行前置条件 | `contract` 或所属功能包 | `Gate` | 表达必须通过的条件 |
+| 规则定义 | 允许或禁止规则 | `policy` | `Policy` | 产生规则决定 |
+| 规则定义 | 不可变规则数据 | 所属功能包 | `Rules` | 只保存规则数据 |
+| 规则定义 | 输入合法性 | `validation` | `Validator` | 拒绝非法输入 |
+| 能力判断 | 支持能力计算 | 所属功能包 | `Evaluator` | 根据事实产生决定 |
+| 扩展契约 | 扩展实现约束 | `spi` | 实际角色名称 | 约束可替换实现 |
+
+| 功能组 | 内容类型 | 包名 | 类名后缀 | 唯一含义 |
+| --- | --- | --- | --- | --- |
+| 内容生成 | AI 提示 | `prompt` | `Prompt` | 构建模型提示 |
+| 内容生成 | 模板选择 | `registry` | `Registry` | 按类型选择模板或渲染器 |
+| 内容生成 | 类型化内容生成 | `renderer` | `Renderer` | 输入对象生成最终文本 |
+| 内容生成 | Shell 脚本片段 | `script` | `Script` | 表达脚本组成 |
+| 内容生成 | 安全脚本外壳 | `script` | `ScriptEnvelope` | 包装环境和安全边界 |
+| 内容生成 | 原始固定模板 | `template` | `Template` | 保存文本和占位符 |
+| 内容执行 | 生成内容执行 | 所属执行包 | `Executor` | 执行已经生成的内容 |
+
+### 2.5 行为类命名
+
+行为类名称统一为：
+
+```text
+[范围或技术限定词] + [领域对象] + [角色后缀]
+```
+
+| 功能组 | 后缀 | 唯一含义 | 返回或产生 |
+| --- | --- | --- | --- |
+| 边界与交互 | `Client` | 调用具体网络协议或 API | 协议响应 |
+| 边界与交互 | `Controller` | 接收 UI 或 API 输入并调用应用入口 | 界面或接口响应 |
+| 边界与交互 | `Facade` | 聚合多个用例或端口 | 统一应用入口 |
+| 边界与交互 | `Gateway` | 定义外部系统领域边界 | 类型化远端能力 |
+| 边界与交互 | `Transport` | 执行底层数据传输 | 原始传输响应 |
+| 分析与转换 | `Assembler` | 组合多个类型对象 | 聚合对象 |
+| 分析与转换 | `Collector` | 聚合多个事实来源 | 能力或状态快照 |
+| 分析与转换 | `Inspector` | 静态检查源码或配置 | `Facts` |
+| 分析与转换 | `Mapper` | 将一种类型转换为另一种类型 | 目标类型 |
+| 分析与转换 | `Observer` | 只读观察权威状态 | 当前状态 |
+| 分析与转换 | `Parser` | 将外部文本转换为类型对象 | 类型化对象 |
+| 分析与转换 | `Probe` | 主动读取一次实时事实 | 探测结果 |
+| 分析与转换 | `Renderer` | 将类型对象转换为文本 | 配置、脚本、单元文件 |
+| 分析与转换 | `Resolver` | 将输入解析为唯一规范目标 | 路径、身份或类型 |
+| 分析与转换 | `Validator` | 校验输入和不变量 | 成功或异常 |
+| 决策与选择 | `Adapter` | 实现 SPI 或外部形态适配 | 领域契约结果 |
+| 决策与选择 | `Coordinator` | 安排多个参与者的调用顺序 | 协作结果 |
+| 决策与选择 | `Evaluator` | 根据事实计算结论 | `Decision`、`Level` |
+| 决策与选择 | `Policy` | 执行允许、禁止或支持判断 | `Decision` |
+| 决策与选择 | `Registry` | 注册并选择实现 | 唯一实现 |
+| 创建与准备 | `Factory` | 创建具有构造规则的对象 | 新对象 |
+| 创建与准备 | `Planner` | 生成确定性执行计划 | `Plan` |
+| 创建与准备 | `Preparer` | 将原始输入准备成受控对象 | 已准备对象 |
+| 执行与业务 | `Executor` | 执行命令、协议或计划 | 执行结果 |
+| 执行与业务 | `Migrator` | 执行版本化结构迁移 | 迁移结果 |
+| 执行与业务 | `Service` | 执行可复用业务流程 | 领域结果 |
+| 执行与业务 | `UseCase` | 完成一个用户目标 | 应用操作结果 |
+| 持久化与展示 | `Presenter` | 将结果转换为展示内容 | 展示模型或文本 |
+| 持久化与展示 | `Repository` | 持久化领域聚合 | 聚合或事务结果 |
+| 持久化与展示 | `Store` | 保存秘密、载荷或简单值 | 存取结果 |
+
+### 2.6 数据类命名与阶段
+
+| 功能组 | 后缀 | 唯一含义 |
+| --- | --- | --- |
+| 事实与判断 | `Assessment` | 基于事实形成的分析结论 |
+| 事实与判断 | `Decision` | `Policy` 或 `Evaluator` 产生的决定 |
+| 事实与判断 | `Evidence` | 可审计的来源、证明或调用证据 |
+| 事实与判断 | `Facts` | 已观察到的确定性事实，不包含判断 |
+| 输入与授权 | `Approval` | 用户对明确内容的批准 |
+| 输入与授权 | `Arguments` | 固定协议或命令的类型化参数 |
+| 输入与授权 | `Context` | 一次协作所需的最小输入 |
+| 输入与授权 | `Request` | 一次操作的完整类型化输入 |
+| 计划与执行 | `Action` | 可执行的封闭动作 |
+| 计划与执行 | `Gate` | 执行前必须满足的条件 |
+| 计划与执行 | `Outcome` | 面向应用或 UI 的最终操作摘要 |
+| 计划与执行 | `Plan` | 执行前生成的确定性有序计划 |
+| 计划与执行 | `Result` | 底层或可复用操作结果 |
+| 状态与事件 | `Event` | 已经发生的事实 |
+| 状态与事件 | `Snapshot` | 某个时间点的不可变状态 |
+| 状态与事件 | `State` | 对象当前的组合状态 |
+| 状态与事件 | `Status` | 单一有限状态值 |
+| 配置与定义 | `Catalog` | 有限且权威的支持项集合 |
+| 配置与定义 | `Configuration` | 已选择并可以实际应用的配置 |
+| 配置与定义 | `Definition` | 类型、范围和默认规则定义 |
+| 配置与定义 | `Profile` | 可选择、可复用的命名配置组合 |
+| 配置与定义 | `Rules` | 不执行行为的不可变规则数据 |
+| 配置与定义 | `Scope` | 定义配置或操作的适用范围 |
+| 配置与定义 | `Specification` | 希望达到的目标规格 |
+| 标识与分类 | `Identity` | 稳定且规范化的对象身份 |
+| 标识与分类 | `Kind` | 领域对象的封闭类别 |
+| 标识与分类 | `Level` | 有序等级 |
+| 标识与分类 | `Mode` | 用户或系统选择的工作模式 |
+| 标识与分类 | `Type` | 协议或模型定义的类型分类 |
+| 描述与引用 | `Descriptor` | 对资源属性的不可变描述 |
+| 描述与引用 | `Entry` | `Manifest`、`Snapshot` 或存储结构中的单个条目 |
+| 描述与引用 | `Manifest` | 可序列化的条目清单 |
+| 描述与引用 | `Reference` | 指向外部或不透明对象的稳定引用 |
+
+数据阶段名称统一按以下顺序使用：
+
+```text
+Facts → Evidence → Assessment → Decision → Plan → Result/Outcome
+```
+
+| 顺序 | 类型 | 唯一职责 |
+| --- | --- | --- |
+| 1 | `Facts` | 保存确定性事实 |
+| 2 | `Evidence` | 保存事实依据 |
+| 3 | `Assessment` | 形成分析结论 |
+| 4 | `Decision` | 形成规则决定 |
+| 5 | `Plan` | 形成执行计划 |
+| 6 | `Result` | 保存底层执行结果 |
+| 7 | `Outcome` | 形成应用最终摘要 |
+
+### 2.7 限定词、接口与实现
+
+| 功能组 | 限定词 | 唯一含义 | 使用边界 |
+| --- | --- | --- | --- |
+| 审阅与状态 | `Current` | 当前成功或当前生效状态 | 不得代替实时远端状态 |
+| 审阅与状态 | `Reviewed` | 已经用户明确审阅和批准 | 未审阅对象不得使用 |
+| 审阅与状态 | `Successful` | 已完成并通过最终验证 | 中间状态不得使用 |
+| 所有权与位置 | `Local` | 属于本地 Windows 或源码侧 | 远端对象不得使用 |
+| 所有权与位置 | `Managed` | 由产品创建、验证并接管 | 外部非受管资源不得使用 |
+| 所有权与位置 | `Remote` | 来自目标 Linux 主机 | 本地对象不得使用 |
+| 所有权与位置 | `Stored` | 持久化层存储记录 | 不得用于公共领域模型 |
+| 约束与保证 | `Bounded` | 输入范围封闭且具有拒绝条件 | 不得作为普通强调词 |
+| 约束与保证 | `Controlled` | 操作范围由固定协议限制 | 不得接受任意命令 |
+| 约束与保证 | `Immutable` | 创建后不可变 | 必须由类型结构保证 |
+| 约束与保证 | `Safe` | 实现明确安全不变量和拒绝路径 | 必须有对应验证 |
+| 实现与协议 | `Default` | 注册表明确选择的默认实现 | 不得表示当前唯一实现 |
+| 实现与协议 | `OpenAiCompatible` | 使用 OpenAI 兼容协议 | 不表示由 OpenAI 官方提供 |
+
+| 编号 | 接口与实现命名规范 | 正确示例 | 禁止示例 |
+| --- | --- | --- | --- |
+| I-01 | 接口不得添加 `I` 前缀。 | `LinuxGateway` | `ILinuxGateway` |
+| I-02 | 实现类不得添加 `Impl` 后缀。 | `SshdLinuxGateway` | `LinuxGatewayImpl` |
+| I-03 | 实现类使用技术或行为限定词。 | `ContainerAdapter` | `DefaultAdapterImpl` |
+| I-04 | SPI 接口使用真实行为角色命名。 | `DeploymentAdapter` | `DeploymentPluginInterface` |
+| I-05 | 实现类名称必须体现实现差异。 | `SshdLinuxGateway` | `ConcreteLinuxGateway` |
+| I-06 | 不得使用宽泛抽象基类名称。 | 使用接口和组合 | `BaseService` |
+| I-07 | 抽象能力优先使用接口和组合。 | `DeploymentAdapter` | `AbstractGenericAdapterBase` |
+
+### 2.8 单复数、缩写及禁限用名称
+
+| 编号 | 类型单复数规范 | 正确示例 | 禁止示例 |
+| --- | --- | --- | --- |
+| C-01 | 普通类名使用单数。 | `DeploymentUseCase` | `DeploymentUseCases` |
+| C-02 | 单个领域对象使用单数。 | `ServerProfile` | `ServerProfiles` |
+| C-03 | 有限权威集合使用 `Catalog`。 | `DeploymentSupportCatalog` | `DeploymentSupports` |
+| C-04 | 实现映射使用 `Registry`。 | `DeploymentAdapterRegistry` | `DeploymentAdapters` |
+| C-05 | 序列化清单使用 `Manifest`。 | `SourceManifest` | `SourceFiles` |
+| C-06 | 固定集合数据使用 `Sets`。 | `AptPackageSets` | `PackageData` |
+| C-07 | 静态操作集合不得通过复数类名表达。 | `ServerUseCaseFacade` | `ServerUseCases` |
+
+| 概念 | 统一形式 | 禁止形式 |
+| --- | --- | --- |
+| Artificial Intelligence | `Ai` | `AI` |
+| API | `Api` | `API` |
+| CentOS | `Centos` | `CentOS`、`CentOs` |
+| CPU | `Cpu` | `CPU` |
+| .NET | `DotNet` | `Dotnet` |
+| HTTP | `Http` | `HTTP` |
+| ID | `Id` | `ID` |
+| JAR | `Jar` | `JAR` |
+| JSON | `Json` | `JSON` |
+| JVM | `Jvm` | `JVM` |
+| OpenAI | `OpenAi` | `OpenAI`、`Openai` |
+| SFTP | `Sftp` | `SFTP` |
+| SHA-256 | `Sha256` | `SHA256` |
+| SQLite | `Sqlite` | `SQLite` |
+| SSH | `Ssh` | `SSH` |
+| SSHD | `Sshd` | `SSHD` |
+| TCP | `Tcp` | `TCP` |
+| TLS | `Tls` | `TLS` |
+| URL | `Url` | `URL` |
+
+| 名称 | 使用规则 | 例外 |
+| --- | --- | --- |
+| `Base` | 禁止作为宽泛父类名称 | 明确稳定继承协议 |
+| `Bean`、`Object` | 禁止 | 无 |
+| `Checker` | 禁止 | 使用 `Validator`、`Evaluator` 或 `Probe` |
+| `Common`、`Misc` | 禁止用于类型、包和受维护资源文件名 | 无 |
+| `Concrete` | 禁止表示具体实现 | 使用技术或功能限定词 |
+| `Controller` | 限制为 UI 或 API 输入边界 | 非 UI 或 API 操作使用 `Executor` |
+| `Data`、`Info` | 禁止表示普通数据对象 | `DataPath` 等真实领域术语 |
+| `Generic` | 禁止表示不明确通用实现 | 无 |
+| `Handler` | 限制为事件或框架入口 | UI、HTTP、事件处理入口 |
+| `Helper` | 禁止表示普通辅助类 | Managed Helper 正式协议 |
+| `Impl`、`Implementation` | 禁止 | 无 |
+| `Manager` | 禁止表示普通协调器 | Credential Manager 等正式名称 |
+| `Legacy`、`New`、`Old` | 禁止 | 无 |
+| `Processor` | 禁止表示不明确行为 | 明确消息处理协议 |
+| `Support` | 禁止表示工具集合 | 支持矩阵领域概念 |
+| `Temp`、`Temporary` | 禁止作为正式类型名 | 明确临时文件领域对象 |
+| `Util`、`Utils` | 禁止 | 无 |
+| `V1`、`V2`、`Phase1` | 禁止进入生产类型和包名 | 外部版本化 API 契约 |
+
+| 编号 | 资源文件命名规范 | 正确示例 | 禁止示例 |
+| --- | --- | --- | --- |
+| R-01 | 受维护资源文件名必须表达稳定功能。 | `00-protocol-foundation.sh` | `00-common.sh` |
+| R-02 | 禁限用名称同样适用于生产和测试资源文件名。 | `deployment-input.properties` | `deployment-utils.properties` |
+| R-03 | 资源文件名不得包含开发阶段或内部版本。 | `managed-helper.sh` | `phase2-helper.sh`、`helper-v3.sh` |
+| R-04 | `Helper` 仅允许表达 Managed Helper 正式协议资源。 | `protocol/helper` | 普通辅助资源使用 `helper` |
+
+### 2.9 异常、枚举和测试类命名
+
+| 编号 | 异常命名规范 | 正确示例 | 禁止示例 |
+| --- | --- | --- | --- |
+| E-01 | 异常使用 `Exception` 后缀。 | `LinuxOperationException` | `LinuxOperationError` |
+| E-02 | 名称必须说明失败边界。 | `SecretStoreException` | `OperationException` |
+| E-03 | 公共异常不得直接以底层实现细节命名。 | `LinuxOperationException` | `SshChannelException` |
+| E-04 | 安全异常名称不得包含秘密内容。 | `SecretStoreException` | `InvalidPasswordValueException` |
+| E-05 | 本地化失败与原始诊断分离。 | `LocalizedOperationException` | 中文异常类名 |
+
+| 枚举性质 | 统一后缀 | 示例 |
+| --- | --- | --- |
+| 可执行动作 | `Action` | `LifecycleAction` |
+| 规则决定 | `Decision` | `HostKeyDecision` |
+| 处置结果 | `Disposition` | `CollaborationDisposition` |
+| 已发生事件 | `Event` | `DeploymentTraceEvent` |
+| 封闭类别 | `Kind` | `RuntimeKind` |
+| 有序等级 | `Level` | `DeploymentSupportLevel` |
+| 工作模式 | `Mode` | `RunMode` |
+| 命名配置 | `Profile` | `EcosystemCapabilityProfile` |
+| 适用范围 | `Scope` | `ConfigurationScope` |
+| 选择来源 | `Source` | `CredentialSource` |
+| 当前状态 | `State` | `RuntimeState` |
+| 操作状态 | `Status` | `DeploymentStatus` |
+| 领域类型 | `Type` | `DeploymentProjectType` |
+
+| 编号 | 枚举命名规范 | 正确示例 | 禁止示例 |
+| --- | --- | --- | --- |
+| G-01 | 枚举必须使用“领域对象＋语义后缀”。 | `LinuxDistroType` | `LinuxDistro` |
+| G-02 | 统一后缀表是穷举白名单，不允许清晰领域名例外。 | `SourceLanguageType` | `SourceLanguage` |
+| G-03 | 生产、测试、顶级和嵌套枚举使用同一规则。 | `ComponentIssue.SeverityLevel` | `ComponentIssue.Severity` |
+| G-04 | 顶级类型简单名称在仓库内必须唯一。 | `DeploymentPlanAction`、`DeploymentTraceEvent` | 两个 `DeploymentStep` |
+| G-05 | 嵌套类型以外部类型形成唯一作用域，但仍必须使用语义后缀。 | `ComponentDataPath.AccessMode` | `ComponentDataPath.Access` |
+
+枚举常量统一使用：
+
+```text
+UPPER_SNAKE_CASE
+```
+
+| 测试类型 | 统一格式 | 示例 |
+| --- | --- | --- |
+| 验收测试 | `<Capability>AcceptanceTest` | `ReviewedDeploymentAcceptanceTest` |
+| 架构测试 | `<Rule>ArchitectureTest` | `PackageNamingArchitectureTest` |
+| 契约测试 | `<Contract>ContractTest` | `ManagedRemoteContractTest` |
+| 集成测试 | `<Subject>IntegrationTest` | `DesktopPersistenceIntegrationTest` |
+| 回归测试 | `<Subject>RegressionTest` | `DeploymentRollbackRegressionTest` |
+| 单元测试 | `<Subject>Test` | `SourceBoundaryValidatorTest` |
+
+## 3. 模块职责
+
+### 3.1 `shared` 共用模块
 
 | 模块 | 职责 | 明确不负责 |
 | --- | --- | --- |
@@ -286,9 +685,9 @@ test/
 
 `source` 只处理平台无关的源码快照与归档规则。`app/windows` 负责桌面本地文件入口，`web/file` 负责上传、配额和服务端工作区，`git` 负责仓库来源；三者复用 `source`，不得复制源码归档格式或安全校验规则。源码归档服务于源码传输和目标机构建，`backup` 管理的备份归档服务于应用数据恢复与迁移，两者不得混用格式、清单或生命周期语义。
 
-在模块边界上，`linux` 只保留连接、会话、传输、能力、构建、运行、发行版和高权限操作的公共契约。`DeploymentLinuxGateway` 扩展 `LinuxGateway` 并直接返回具有构建、快照、发布、回滚和保留能力的 `DeploymentRemoteSession`；`SshdLinuxGateway`、SSHD Session、受控命令执行、SFTP、构建、六种发行版环境准备、systemd 运行和高权限 helper 均位于已收紧的 `linux-sshd` 内部包。`DesktopApplicationService` 直接接收 `DeploymentLinuxGateway`，由 `app/main/startup` 构造并注入具体 SSHD 实现。
+在模块边界上，`linux` 只保留连接、会话、传输、能力、构建、运行、发行版和高权限操作的公共契约。`DeploymentLinuxGateway` 扩展 `LinuxGateway` 并直接返回具有构建、快照、发布、回滚和保留能力的 `DeploymentRemoteSession`；`SshdLinuxGateway`、SSHD Session、受控命令执行、SFTP、构建、六种发行版环境准备、systemd 运行和高权限 helper 均位于已收紧的 `linux-sshd` 内部包。`DesktopApplicationFacade` 直接接收 `DeploymentLinuxGateway`，由 `app/main/startup` 构造并注入具体 SSHD 实现。
 
-### 2.2 `app` 桌面应用模块
+### 3.2 `app` 桌面应用模块
 
 | 模块 | 职责 | 明确不负责 |
 | --- | --- | --- |
@@ -301,9 +700,9 @@ test/
 
 桌面端所有加密、解密、密钥派生、密钥包装、敏感信息存取和 Windows Credential Manager 调用都必须位于 `secret`。`windows` 只处理非敏感的 Windows 本地能力；不得为了平台调用方便把任何安全实现放入 `windows`。
 
-桌面调用方向固定为 `UI → app/service/port → 窄用例 → shared 领域/契约`。`AiApplicationPort`、`DeploymentApplicationPort`、`MultiComponentApplicationPort`、`ServerApplicationPort` 和 `ManagedApplicationPort` 隔离页面所需能力；`DesktopApplicationService` 作为稳定门面和组合根实现这些端口，只转发到窄用例，不承载业务算法。
+桌面调用方向固定为 `UI → app/service/contract → 窄用例 → shared 领域/契约`。`AiApplicationFacade`、`DeploymentApplicationFacade`、`MultiComponentApplicationFacade`、`ServerApplicationFacade` 和 `ManagedApplicationFacade` 隔离页面所需能力；`DesktopApplicationFacade` 作为稳定门面和组合根实现这些门面，只转发到窄用例，不承载业务算法。
 
-### 2.3 `web` Web 应用模块
+### 3.3 `web` Web 应用模块
 
 | 模块 | 职责 | 明确不负责 |
 | --- | --- | --- |
@@ -319,7 +718,7 @@ test/
 
 Web 端所有密码哈希、加密、解密、主密钥和服务端凭据操作都必须位于 `secret`。`auth` 只决定身份认证与会话策略，通过 `secret` 使用密码学能力；其他 Web 模块不得直接接触明文密钥或实现加密算法。
 
-### 2.4 配置规则、存储与秘密边界
+### 3.4 配置规则、存储与秘密边界
 
 1. `shared/config` 只提供平台无关的配置类型与规则，不读写文件或数据库，也不定义 Repository、数据库表或具体持久化技术。
 2. 桌面端配置实例及历史版本由 `app/db` 统一保存；Web 配置实例、项目、环境关联及历史版本由 `web/db` 统一保存，不为每名用户创建独立配置文件。Web 后续支持多用户或租户时，所有权关联同样由 `web/db` 保存。
@@ -327,7 +726,7 @@ Web 端所有密码哈希、加密、解密、主密钥和服务端凭据操作�
 4. 敏感值由 `app/secret` 或 `web/secret` 处理；普通配置只保存秘密 ID、版本等不透明引用，不保存明文秘密。
 5. `app/main/config` 和 `web/main/config` 继续处理各自应用的启动配置，不属于 `shared/config`。
 
-### 2.5 桌面端本地化与诊断边界
+### 3.5 桌面端本地化与诊断边界
 
 1. 英文是桌面端生产代码、内部校验、程序生成诊断和默认消息资源的基准语言；`app/ui/i18n/messages/Messages.properties` 是消息目录的规范来源，简体中文只保存在 `Messages_zh_CN.properties`。
 2. 生产模块不得提前拼接英文或中文界面句子。固定用户文案必须使用稳定消息键和命名参数表达；跨模块失败通过 `LocalizedFailure` 分离 `userMessage()` 与不含秘密的 `diagnostic()`，UI 是唯一负责将消息键解析为显示语言的边界。
@@ -336,9 +735,9 @@ Web 端所有密码哈希、加密、解密、主密钥和服务端凭据操作�
 5. AI 提示模板使用英文编写，只发送经过既有边界脱敏的结构化事实；调用时显式传入受限响应语言，当前桌面语言为 `zh-CN` 时请求 Simplified Chinese，为 `en` 时请求 English。
 6. 桌面端目前只支持 `en` 与 `zh-CN`。没有已保存偏好时，中文系统语言使用 `zh-CN`，其他系统语言使用 `en`；用户明确选择后，以持久化偏好为准，运行期间不跟随系统语言自动变化。
 
-## 3. 叶子模块约定
+## 4. 叶子模块约定
 
-### 3.1 Maven 通用目录结构
+### 4.1 Maven 通用目录结构
 
 每个 Java 叶子模块使用 Maven 标准目录：
 
@@ -354,11 +753,11 @@ src/<group>/<module>/
       └─ resources/     # 有测试资源时创建
 ```
 
-`shared`、`app` 和 `web` 的 Java 叶子模块没有实现内容时不提前创建空目录。`web/frontend` 使用前端工程自己的 `package.json`、源码和测试结构，不适用上述 Maven 目录。Java 包前缀固定为 `gold.debug.windowstolinux`；第 1 节对已有生产源码展示实际包结构，未实现模块只列模块本身，不为未来用途预建空包。
+`shared`、`app` 和 `web` 的 Java 叶子模块没有实现内容时不提前创建空目录。`web/frontend` 使用前端工程自己的 `package.json`、源码和测试结构，不适用上述 Maven 目录。Java 包前缀固定为 `gold.debug.windowstolinux`；第 1 节展示正式目标包结构，未实现职责不创建空包。
 
-### 3.2 适配协作边界
+### 4.2 适配协作边界
 
-语言、构建工具、框架、部署形态、运行方式、发行版和 CPU 架构仍是相互独立的适配维度。`analyze` 在稳定技术生态内共同组织静态事实；`linux-sshd.build` 通过注册表和参数化渲染器组织目标机构建，能力探测和受控运行分别归 `capability` 与 `runtime`。各模块不得复制跨生态机械流程，也不得通过 `jvm/ubuntu/x86_64` 一类组合包复制整套流程。
+语言生态、构建架构、工作负载、运行机制、发行版和 CPU 架构是相互独立的适配维度。分析、目标机构建和能力探测可以分别拥有 `ecosystem`，但必须共享模型、部署契约和机械执行流程。
 
 ```text
 analyze                        识别语言、构建工具、框架和工作负载事实
@@ -369,47 +768,52 @@ linux.build                   定义受控目标机构建契约
 linux.runtime                 定义运行方式生命周期契约
 linux.distro                  定义发行版事实与环境准备契约
 linux-sshd.command            实现不向上层暴露的受控 SSH 命令机械流程
-linux-sshd.build              实现项目构建注册、渲染与执行
-linux-sshd.capability         实现平台与生态能力采集
-linux-sshd.distro             保存发行版独立规则和注册
-linux-sshd.distro.setup       实现 APT/DNF 共用准备机械流程
+linux-sshd.build.ecosystem    实现语言与构建架构差异
+linux-sshd.build.workload     实现容器与静态站点构建形态
+linux-sshd.capability         实现平台能力采集
+linux-sshd.capability.ecosystem 实现工具链探测、版本解析和检查脚本生成
+linux-sshd.distro             定义准备渲染契约并执行受管环境准备
+linux-sshd.distro.apt         完整保存 APT 机械流程、包集合与 Debian 家族差异
+linux-sshd.distro.dnf         完整保存 DNF 机械流程、包集合与企业 Linux 差异
+linux-sshd.distro.profile     保存不可变发行版与生态能力配置
+linux-sshd.distro.registry    完成发行版配置装配与唯一注册
+linux-sshd.distro.script      生成发行版通用准备脚本
 linux-sshd.runtime            实现语言无关生命周期
-deploy.support          匹配已经声明并完成验收的支持组合
+deploy.support                编排架构、systemd、发行版和运行时支持判断
+deploy.support.distro         独立评估六种发行版的版本、CPU 和安全规则
+deploy.support.runtime        匹配语言、容器和静态站点所需工具与版本
 deploy.adapter                按部署形态生成类型化计划，不镜像语言生态
 deploy.transaction            编排上传、构建、发布、健康检查和回滚
 ```
 
-1. `analyze.ecosystem.jvm` 可共同组织 Java、Kotlin、Maven、Gradle、Spring Boot 与普通 JAR 的静态事实；Spring Boot 部署适配器仍复用发布、健康检查和回滚语义，Maven 与 Gradle 的执行差异由 `linux.build` 定义类型化契约，并由 `linux-sshd.build` 承接具体远程执行。
-2. `linux-sshd.build` 通过 `DeploymentBuildRenderer` SPI 和注册表组织构建；行为完全一致的 Go、Rust、.NET、Kotlin、PHP、Ruby 使用参数化 `ServiceBuildRenderer`，有实质差异的渲染器留在 `build.renderer`。构建执行器、SSH command、systemd 生命周期和 helper 调度不得复制到各项目类型。
-3. `deploy.adapter` 只按部署形态组织：普通 systemd 服务使用数据驱动的受控适配器，静态站点和单容器保留独立实现；不得仅为语言目录整齐而创建行为相同的薄适配器。
-4. systemd、Docker、Podman 和静态站点服务按运行方式定义 `linux.runtime` 契约，由 `linux-sshd.runtime` 实现远程操作，不为每种项目语言复制生命周期实现。
-5. `linux.distro` 只定义发行版事实和环境准备契约；Ubuntu、Debian、CentOS Stream、Rocky Linux、AlmaLinux 和 Oracle Linux 的身份、版本、软件包和安全机制由 `linux-sshd.distro` 的 `DistributionSetupProfiles` 数据化表达。APT 与 DNF 在 `distro.setup` 只共享各自的安装和安全复核机械流程，具体发行版不得互相充当别名。
-6. 发行版配置选择需要安装的软件包和需验证的技术生态；能力采集负责版本与工具事实。两者通过窄契约组合，不在发行版包内复制 Go、Rust、.NET、JVM 等检查器，也不在能力包内保存 APT/DNF 包名。
-7. CPU 架构、指令集和平台能力通过 `linux.capability` 契约采集，具体远程实现归 `linux-sshd.capability`，并作为 `deploy.support` 的支持矩阵维度；没有独立执行逻辑时不创建 `x86_64`、`arm64` 等执行包。
-8. 没有匹配到正式支持组合时，只返回识别预览或不支持结果，不得进入环境安装、构建、发布或生命周期接管。
-9. `model` 保存通用、类型化的项目和目标机事实；最终结构不得保留 `AdvancedRuntimeKind`、`AdvancedService` 或 `ADVANCED_*` 这类按引入批次聚合的公共模型。Go、Rust、.NET、Kotlin、PHP、Ruby 使用各自类型化运行时记录，目标机工具链事实由 `RuntimeToolchainCapabilities` 表达。
-10. `backup` 继续按格式、清单、校验、恢复和迁移分包；语言运行时、发行版和目标架构兼容性由 `validation` 处理，不为每种语言复制备份流程。
-11. `linux` 公共契约不得引用 Apache SSHD 类型，也不得向上层暴露任意 Shell、原始 SFTP 或不受控 systemd、Docker、Podman 操作；具体远程实现只能位于 `linux-sshd`。
+1. `analyze.ecosystem` 先按语言聚合识别、构建事实和框架分析；同一语言的独立构建架构按第 2.3 节使用工具名子包。Java 的 Maven、Gradle 与 JAR 必须形成平行架构，不得把 JAR 留作语言包中的特例。
+2. `linux-sshd.build` 通过 `DeploymentBuildRenderer` SPI、注册表和安全脚本外壳组织构建。生态差异进入 `build.ecosystem`，容器与静态站点进入 `build.workload`；构建执行器、SSH command、systemd 生命周期和 helper 调度不得复制到各生态。
+3. `linux-sshd.capability.ecosystem` 实现语言与工具链命令、版本解析和能力检查脚本；`distro` 只提供软件包集合与所需能力配置，两者通过窄契约组合。
+4. `linux-sshd.distro.apt` 完整保存 Ubuntu/Debian 的准备差异，`distro.dnf` 完整保存 CentOS Stream、Rocky Linux、AlmaLinux 与 Oracle Linux 的准备差异；具体发行版不得互相充当别名。
+5. `deploy.adapter` 只按部署形态组织，`linux-sshd.runtime` 只按实际运行机制实现生命周期；两者都不得镜像语言生态。
+6. CPU 架构、指令集和平台能力通过 `linux.capability` 契约采集；没有独立策略与实现时，不创建 `x86_64`、`arm64` 等执行包。
+7. 没有匹配到正式支持组合时，只返回识别预览或不支持结果，不得进入环境安装、构建、发布或生命周期接管。
+8. `linux` 公共契约不得引用 Apache SSHD 类型，也不得向上层暴露任意 Shell、原始 SFTP 或不受控 systemd、Docker、Podman 操作；具体远程实现只能位于 `linux-sshd`。
 
-### 3.3 分包规则
+### 4.3 分包规则
 
-1. Maven 模块表达依赖、技术和安全边界；Java 包和前端目录只负责模块内部组织，必须遵守第 4 节依赖方向。
+1. Maven 模块表达依赖、技术和安全边界；Java 包和前端目录只负责模块内部组织，必须遵守第 5 节依赖方向。
 2. 模块根包只保留稳定入口、门面或确需跨内部包使用的公共契约，具体实现进入职责明确的子包。
 3. 测试包镜像对应生产包；根目录测试夹具使用 `test/<language>/<build-tool>/<framework-or-function>/<fixture>` 分类，新增语言、构建工具、框架或功能时创建对应同级目录，不创建没有夹具的空分类。
-4. 禁止创建含义宽泛的 `util`、`common`、`misc` 包，也不得把大量无关实现集中到单一 `impl` 包。
-5. `analyze` 的公共流程按 `core`、`spi`、`registry`、`source`、`policy`、`component`、`workload` 与 `preview` 分包；只有 JVM、Node 和 Python 拥有需要独立维护的生态包，其余相同行为由参数化检查器表达。
-6. `deploy` 将不可变输入/计划、SPI、注册表、部署形态、支持矩阵和事务编排分离；适配器统一进入 `adapter`，发行版策略、规则、窄契约和注册统一进入 `support`，`plan` 不得直接构造具体实现。
-7. `linux` 按连接、会话、错误、传输、能力、构建、运行方式、发行版和协议组织公共契约；`linux-sshd` 固定使用 `build/{renderer,script,spi}`、`capability`、`command`、`connection`、`distro/setup`、`protocol/{helper,input,release,runtime}`、`runtime/systemd`、`session` 和 `transfer`，不恢复已删除的生态或工作负载深层包。
-8. 同一生态可以复用构建和框架事实，但不得在多个语言子包复制 Maven、Gradle、npm、Cargo、Composer、Bundler 等逻辑；禁止按语言、部署形态、发行版和 CPU 架构的笛卡尔组合创建包，具体支持范围由 `deploy.support` 依据已经验收的支持矩阵判断。
+4. 模块、包、类、接口、枚举、异常和测试类名称统一遵守第 2 节，不得另立同义词、临时名称或兼容名称。
+5. `analyze` 的跨语言公共流程按 `core`、`spi`、`registry`、`source`、`service`、`policy`、`component`、`workload` 与 `preview` 分包；`ecosystem` 内按语言聚合，并按第 2.3 节为真实独立构建架构建立工具名子包。
+6. `deploy` 将不可变输入/计划、SPI、注册表、部署形态、支持矩阵和事务编排分离；适配器统一进入 `adapter`，`support` 只保留支持判断门面，发行版策略和规则进入 `support.distro`，运行时工具与版本判断进入 `support.runtime`，公开结果分别进入 `result.compatibility`、`result.deployment`、`result.lifecycle`，`plan` 不得直接构造具体实现。
+7. `linux` 按连接、会话、错误、传输、能力、构建、运行机制、发行版和协议组织公共契约；`linux-sshd` 的生态实现只可进入 `build.ecosystem`、`capability.ecosystem` 和 helper 资源 `ecosystem` 分组，工作负载构建只可进入 `build.workload`。
+8. 建立构建架构包和执行层语言分组时以独立架构数量为依据，不以类数量为依据；不得为满足目录对称或门禁数量新增空分类、空接口、委托壳或无独立语义的数据类型。
 9. 界面、数据库、认证、秘密和普通业务用例不得按被部署项目的语言复制结构。
 10. 包结构不用于绕开模块职责。跨模块能力仍通过既有依赖和类型化契约协作，不复制模型，不向上层开放任意 Shell、原始 SFTP 或不受控 systemd、Docker、Podman 操作。
 11. `linux` 的接口、请求、结果和异常不得导入或暴露 Apache SSHD 类型；`linux-sshd` 可以依赖 Apache SSHD，但不得把具体客户端、会话、通道或 SFTP 类型传递给上层模块。
 12. 生产包依赖不得成环；组合门面只能依赖下游窄契约和实现，低层 command、SPI、不可变契约与错误类型不得反向依赖注册表、默认实现、会话或业务编排。
-13. 模块 Java 根包以下最多两层子包，单包最多 15 个生产顶级类型；深度二的单类型包只允许 `linux-sshd.build.spi` 与 `linux-sshd.protocol.helper`。
-14. 普通类最多 25 个实例字段、30 个直接声明方法，单方法最多 80 个 JDK AST 语句；稳定门面 `DesktopApplicationService` 只豁免直接声明方法数。
+13. 模块 Java 根包以下默认最多两层子包。第三层只允许 `analyze.ecosystem.<language>.<architecture>`、`linux-sshd.build.ecosystem.<language>` 和 `linux-sshd.capability.ecosystem.<language>`：分析层以独立架构为边界，构建与能力层仅在同一语言存在两个及以上独立架构时建立语言分组。其他第三层包必须先修改本文并单独评审；总包数、单包类型数量和目录对称不作为硬门禁。
+14. 普通类最多 25 个实例字段、30 个直接声明方法，单方法最多 80 个 JDK AST 语句；稳定门面 `DesktopApplicationFacade` 只豁免直接声明方法数。
 15. 合并依据是行为完全一致且差异可由受校验数据表达，拆分依据是存在可独立测试和命名的职责；领域记录、枚举、状态类型和 SPI 不因文件短小而合并，类也不因行数较长而机械拆分。
 
-### 3.4 Linux 部署链内部依赖方向
+### 4.4 Linux 部署链内部依赖方向
 
 以下箭头表示左侧包可以依赖右侧包；反向依赖均禁止：
 
@@ -417,21 +821,42 @@ deploy.transaction            编排上传、构建、发布、健康检查和�
 deploy.adapter        ──→ deploy.spi ──→ deploy.contract ──→ model
 deploy.registry       ──→ deploy.spi + deploy.adapter
 deploy.plan           ──→ deploy.contract + deploy.registry
-deploy.transaction    ──→ deploy.plan + deploy.result + linux
-deploy.support        ──→ linux.capability + model
+deploy.transaction    ──→ deploy.plan + deploy.result.deployment + linux
+deploy.lifecycle      ──→ deploy.result.lifecycle + linux
+deploy.support        ──→ deploy.support.{distro,runtime} + deploy.result.compatibility + model
+deploy.support.distro ──→ deploy.result.compatibility + model
+deploy.support.runtime ──→ model
 
 linux.connection      ──→ linux.session ──→ linux.{build,capability,distro,protocol,runtime,transfer}
 linux.* operations    ──→ linux.error ──→ model.message
 
 linux-sshd.command          ──→ linux.error + Apache SSHD
-linux-sshd.build            ──→ linux-sshd.{build.spi,build.renderer,build.script,command}
-linux-sshd.distro           ──→ linux-sshd.{distro.setup,capability,command}
+linux-sshd.build            ──→ linux-sshd.{build.ecosystem,build.registry,build.script,build.spi,build.workload,command}
+linux-sshd.build.ecosystem  ──→ linux-sshd.{build.script,build.spi}
+linux-sshd.build.workload   ──→ linux-sshd.{build.script,build.spi}
+linux-sshd.capability       ──→ linux-sshd.capability.ecosystem
+linux-sshd.distro           ──→ linux-sshd.{distro.script,capability.ecosystem,command}
+linux-sshd.distro.{apt,dnf} ──→ linux-sshd.{distro,distro.profile,distro.script}
+linux-sshd.distro.registry  ──→ linux-sshd.{distro,distro.apt,distro.dnf}
+linux-sshd.distro.script    ──→ linux-sshd.{distro.profile,protocol.helper}
 linux-sshd.{protocol,runtime,transfer} ──→ linux-sshd.command
 linux-sshd.session          ──→ linux-sshd.{build,capability,distro,protocol,runtime,transfer}
 linux-sshd.connection       ──→ linux-sshd.session + linux-sshd.command
 ```
 
-## 4. 依赖方向
+本次平衡分包的内部方向固定如下；父包保存共享入口时可依赖职责子包，纯数据子包不得反向依赖协调入口：
+
+```text
+ai.collaboration            ──→ ai.collaboration.{invocation,advice}
+ai.collaboration.invocation ──→ ai.collaboration.{advice,role}
+app.ui.deployment.{single,multi} ──→ app.ui.deployment
+app.service.deployment      ──→ app.service.deployment.{single,multi}
+deploy.{support,transaction,lifecycle} ──→ deploy.result.{compatibility,deployment,lifecycle}
+model.project               ──→ model.language
+model.capability            ──→ model.server.security
+```
+
+## 5. 依赖方向
 
 共用模块依赖固定为：
 
@@ -543,9 +968,9 @@ main    ──→ shared/{model,git,analyze,ai,config,linux,linux-sshd,deploy,ba
 13. `deploy`、`backup`、`app/service` 和 `web/service` 只通过 `linux` 公共契约使用远程能力，不得直接依赖或构造 `linux-sshd`。
 14. 只有 `app/main` 和 `web/main` 作为组合根选择并注入 `linux-sshd`；具体 SSHD 实现不得进入业务服务、数据库、界面或 API 模块。
 15. `app/db` 和 `web/db` 可以依赖 `shared/config` 保存配置实例和版本；`shared/config` 不得反向依赖平台数据库、秘密、认证或服务模块。
-16. 桌面页面只能依赖对应的 `app/service/port` 窄接口；端口依赖用例和 shared 契约，具体用例、注册表或 SSHD 实现不得反向依赖 UI。
+16. 桌面页面只能依赖对应的 `app/service/contract` 窄门面；门面依赖用例和 shared 契约，具体用例、注册表或 SSHD 实现不得反向依赖 UI。
 
-## 5. 桌面端数据目录
+## 6. 桌面端数据目录
 
 桌面应用不允许自定义 `data` 位置，也不使用注册表、命令行参数或路径指针文件覆盖默认位置。`main` 根据运行模式解析唯一数据目录：
 
@@ -561,7 +986,7 @@ main    ──→ shared/{model,git,analyze,ai,config,linux,linux-sshd,deploy,ba
 - 不得静默回退到用户目录、临时目录或其他位置，避免同一安装出现多个不一致的数据副本。
 - APP 模式下数据始终跟随 EXE 安装目录；升级和卸载时按四期文档定义的规则处理。
 
-## 6. Git 项目准备边界
+## 7. Git 项目准备边界
 
 Git 项目进入分析和部署流程前，由 `git` 模块统一准备：
 
@@ -579,7 +1004,7 @@ deploy 提交 Git 来源和目标版本
 - `analyze` 只读取准备好的项目快照，不自行连接 Git 仓库。
 - `deploy` 负责编排 Git 准备、项目分析和后续部署步骤。
 
-## 7. 环境部署边界
+## 8. 环境部署边界
 
 环境准备由分析、部署决策、Linux 公共契约和 SSHD 实现四类职责协作完成：
 
@@ -598,7 +1023,7 @@ linux-sshd 通过 linux 契约采集服务器已有环境
 
 因此，环境部署的业务流程归 `deploy`，公共远程能力边界归 `linux`，具体 Linux 安装、配置和检查动作归 `linux-sshd`。
 
-## 8. 受管应用生命周期边界
+## 9. 受管应用生命周期边界
 
 部署成功后，启动、停止、重启、状态刷新和开机自启管理继续复用既有模块：
 
@@ -621,7 +1046,7 @@ linux-sshd 通过 linux 契约采集服务器已有环境
 - 资源丢失、标识不匹配、检测到外部修改或无法连接时必须返回明确的未知或异常结果，不得猜测执行、自动重建或标记成功。
 - 生命周期能力只管理由 WindowsToLinux 部署、恢复或迁移且能够验证归属的应用，不扩展为任意 systemd 服务、任意容器或通用服务器管理入口。
 
-## 9. 备份、恢复与迁移边界
+## 10. 备份、恢复与迁移边界
 
 备份、恢复和跨服务器迁移由 `backup` 统一编排：
 
@@ -639,7 +1064,7 @@ linux-sshd 通过 linux 契约采集服务器已有环境
 - `app/secret` 或 `web/secret` 在平台边界内完成秘密加解密；`backup` 只接收和返回不透明的加密秘密成员，不接触主密钥或明文秘密。
 - `linux` 定义远程采集、传输和受控 Linux 操作契约，`linux-sshd` 负责具体实现，`deploy` 负责候选版本的启动、健康检查和切换；三者不重复实现备份包格式。
 
-## 10. 维护规则
+## 11. 维护规则
 
 1. 开发必须沿用本文已经确认的 `shared`、`app`、`web` 和叶子模块结构，不为实现方便随意增加模块。
 2. 普通 Maven 叶子模块的目录名使用一个英文单词；只有把具体实现从公共契约模块独立隔离时，才使用 `<contract>-<implementation>`，例如 `linux-sshd`。
@@ -658,17 +1083,28 @@ linux-sshd 通过 linux 契约采集服务器已有环境
 15. 项目代码注释统一采用中英双语，包含 `//`、块注释和 Javadoc；英文说明在前，简体中文说明紧随其后，并在同一注释内表达相同含义。标识符、命令、协议名和原始诊断保持原文，不为满足双语格式而翻译；注释不属于 UI 文案，不进入消息目录。新增或修改注释时必须遵守本规则。
 16. 分期是开发路线与验收文档的组织方式，不是产品运行时架构。`src/` 中的模块、包、类、方法、字段、枚举、消息键、配置键、资源名、脚本名和测试名不得以 `PhaseOne`、`PhaseTwo`、`phase1`、`phase2`、一期、二期等期数命名；必须按稳定职责命名。正式文档可保留分期标题和历史记录，但不得把期数泄漏为代码 API 或持久化契约。
 17. `app/ui/deployment` 只能收集并构造已声明的 `DeploymentProjectType`、`DeploymentRuntimeSpecification`、`ConfigurationSnapshot`、`SecretReference` 和计划审阅输入；不得暴露任意 Shell、启动命令、主机路径挂载或未审阅的秘密文本。项目类型、运行时字段和容器选项改变后，必须重新进行静态源码分析；桌面页面状态切换外观或语言时必须保留这些尚未提交的表单值。
-18. 类型化部署分析必须把确定的源码元数据作为可审阅的 `DeploymentRuntimeSuggestion` 返回，而非由桌面表单写死语言版本、入口、产物目录、端口或卷。仅在值唯一、受支持、边界安全且具有 `AnalysisEvidence` 时才可回填；范围、冲突、任意脚本和文档文字只能作为未解决的用户输入，绝不转换为命令。
+18. 类型化部署分析必须把确定的源码元数据作为可审阅的 `DeploymentRuntimeAssessment` 返回，而非由桌面表单写死语言版本、入口、产物目录、端口或卷。仅在值唯一、受支持、边界安全且具有 `AnalysisEvidence` 时才可回填；范围、冲突、任意脚本和文档文字只能作为未解决的用户输入，绝不转换为命令。
 19. 本地目录和 Git 来源都必须在 `app/service/source` 汇合为同一 `ReviewedSourcePreparation`，并以归档摘要绑定 `SourceRevision`。网络 Git 来源必须使用无凭据 URI、允许主机、固定 Commit 和受控工作目录；桌面 UI 不得调用 Git 进程、数据库或秘密存储实现。
-20. `analyze.core` 不得导入具体项目类型实现，低层语言与构建 Inspector 不得修改调用方提供的拒绝集合，生产包与测试包必须镜像，包依赖不得成环，且不得恢复按阶段或宽泛类别聚合实现的包。`deploy.plan` 不得构造具体适配器，`linux.connection` 不得保存异常或组合会话，`linux-sshd.connection` 不得保存 command 或总会话；禁止以兼容壳保留旧类型。
+20. `DeploymentAnalysisCoordinator` 不得导入具体项目类型实现；`ProjectLanguageInspector` 只负责组合确定性的语言事实检查器。低层语言与构建 Inspector 不得修改调用方提供的拒绝集合，生产包与测试包必须镜像，包依赖不得成环，且不得恢复按阶段或宽泛类别聚合实现的包。`deploy.plan` 不得构造具体适配器，`linux.connection` 不得保存异常或组合会话，`linux-sshd.connection` 不得保存 command 或总会话；禁止以兼容壳保留旧类型。
 21. 用户可见和持久化语义统一使用“发布身份摘要”（`release_sha256`）；“制品”仅描述构建过程中待验证的文件，不得再把已发布身份称为制品摘要。桌面 SQLite 当前 schema 为 v7；v5 保留发布身份语义，v6 增加受约束的 AI 角色到命名 Provider 外键，v7 增加成功整应用的组件/依赖图并与全部组件发布状态原子提交；v4 的 `artifact_sha256` 已通过列重命名无损迁移并继续表示既有发布身份。
 22. `DeploymentSupportProfile` 是语言、框架、支持等级与真实验收目标范围的唯一共享声明；`RECOGNITION_PREVIEW` 只能由 `analyze` 读取有界路径和固定元数据，必须使用 `NONE_PREVIEW`，不得创建源码归档、部署适配器、远端构建渲染器、helper 参数或生命周期入口。Shell 文件只可作为识别证据，不能转换成命令。
-23. `PackageStructureBoundaryTest` 使用 JDK 编译器 AST 与生产导入图自动检查 105–115 个生产包、深度、包大小、深层单类包白名单、禁用包名、全部包依赖环、测试包镜像、字段/方法/语句阈值、旧包与已删除包装类，以及唯一 `AppMain.main`；不得通过文本豁免隐藏结构回归。
+23. `PackageStructureArchitectureTest` 使用 JDK 编译器 AST、物理路径和生产导入图自动检查文件与顶级类型同名、仓库级顶级类型唯一性、顶级及嵌套枚举语义后缀、禁限用词及封闭例外、资源文件名、复数后缀、缩写、测试后缀、默认两层与第 4.3 节受控第三层、语言/构建架构/发行版分类轴、禁用包名、全部包依赖环、测试包镜像、职责映射、反向依赖、旧 FQCN、旧包、已删除包装类以及唯一 `AppMain.main`；不设置总包数或单包类型数量硬上限，不得通过文本豁免隐藏结构回归。
 
-## 11. 文档版本记录
+## 12. 文档版本记录
 
 | 版本 | 日期 | 说明 |
 | --- | --- | --- |
+| 3.21.0-ecosystem-architecture | 2026-08-19 | 在三期扩展开发文档之前确立并迁移 ecosystem 正式基线：Java JAR 与 Maven/Gradle 平行，目标机构建与能力探测分别使用 `build.ecosystem`、`capability.ecosystem`，helper 仅将语言专属片段归入资源 ecosystem 分组；六种参数化服务构建改为具名原生架构 Renderer，C/C++ 统一归 `c`。同步删除旧参数化 Renderer、固定 Java 白名单、现状计数和运行证据长段等过时或重复规则；不改变 helper 字节、协议、持久化或运行支持范围。 |
+| 3.20.0-strict-naming-compliance | 2026-08-19 | 将生产、测试、顶级与嵌套枚举统一为穷举语义后缀，消除两个不同职责的 `DeploymentStep` 及其余无后缀枚举，并将 `00-common.sh` 更名为 `00-protocol-foundation.sh`；架构门禁新增枚举后缀、顶级类型唯一性、受维护资源名和禁限用词封闭例外检查。模块、包结构、枚举常量、helper 内容与摘要、协议、持久化和运行支持范围不变。 |
+| 3.19.1-naming-rule-order | 2026-08-19 | 将统一命名规范中的职责包、约束与模板、行为后缀、数据后缀、限定词、缩写、禁限用名称、枚举及测试格式按功能归组，并在各功能组内按英文标准名称排序；阶段流和带编号规则保持原有语义顺序，不改变任何命名规则、源码、模块、API、协议或运行能力。 |
+| 3.19.0-naming-migration | 2026-08-19 | 完成统一类型/文件命名、应用门面与桌面设置分包、AI 传输职责分离、语言生态完整聚合及 APT/DNF 发行版扩展单元迁移；17 个可选真实主机测试统一使用 `AcceptanceTest` 后缀并保留系统属性门禁，架构测试同步覆盖命名、路径、深度、分类轴、反向依赖与包循环。本次不改变 Maven 模块、协议、持久化、helper 资源、安全边界或运行支持声明。 |
+| 3.18.0-naming-standard | 2026-08-19 | 将模块、包、职责包、技术生态、工作负载、运行机制、发行版、约束、模板、行为类、数据类、限定词、接口、实现、缩写、异常、枚举和测试类命名统一为正式目标规范，并顺延后续章节编号；本次仅修改文档，不改变 Maven 模块、源码、测试、API、协议、安全边界或运行能力，现有源码命名迁移留待后续独立任务。 |
+| 3.17.0-balanced-package-depth | 2026-08-19 | 将 AI 协作、部署 UI、应用部署契约、部署结果、语言模型和服务器安全模型按共同职责收进浅层子包；父包保留稳定入口与共享契约，新增类型职责映射、旧 FQCN/路径及反向依赖门禁，移除总包数和单包类型数量硬门禁。业务行为、协议、持久化、helper、安全与运行支持边界不变。 |
+| 3.16.0-deploy-support-layout | 2026-08-19 | 将 `shared.deploy.support` 从发行版、语言运行时和公开结果混合包拆为编排门面、`support.distro`、`support.runtime` 与 `result`；保留六种独立发行版策略，以单一参数化检查器匹配语言工具版本，不改变支持状态、证据顺序、异常、安全与远端行为。 |
+| 3.15.0-language-ecosystem-layout | 2026-08-19 | 将 `shared.analyze` 调整为 ecosystem 外保存跨语言公共职责、ecosystem 内按九种语言组织；Java 的 Maven/Gradle 建立受门禁约束的第三层真实扩展点，六种服务语言由各自事实类型和检查器承担解析，删除参数化大类并保持分析结果与部署边界不变。 |
+| 3.14.3-profile-package-sets | 2026-08-19 | 将只承载发行版软件包数据的 `DistributionPackageSets` 从 `distro.script` 迁入 `distro.profile` 并收紧为包内可见；脚本包只保留 APT/DNF Renderer 与共享 Shell 生成逻辑，软件包集合和生成脚本不变。 |
+| 3.14.2-debian-family-profile-name | 2026-08-19 | 将内部 `AptDistributionProfiles` 更名为 `DebianFamilyProfiles`，使 Profile 按发行版谱系命名、Renderer 按 APT/DNF 命令机制命名；不改变发行版规则、脚本或支持边界。 |
+| 3.14.1-distro-extension-layout | 2026-08-19 | 将 `linux-sshd` 发行版准备按 contract、profile、script、execution 分包；APT 族与企业 Linux 族以数据化 Profile 表达差异，APT/DNF Renderer 只保留共用命令机械流程，不创建按单个发行版划分的深层包。脚本、版本矩阵、helper、协议、安全和运行支持边界保持不变。 |
 | 3.14.0-package-structure-consolidation | 2026-08-19 | 将生产包收紧为 108 个，合并等价检查器/渲染器/发行版包装类，拆分多组件事务、恢复、生命周期、UI 表单与运行路径职责，加入五个 UI 窄端口及 JDK AST/依赖环门禁；28 个 Maven 模块、helper v3、持久化、协议、安全和既有实机证据边界不变。 |
 | 3.13.4-simple-package-names | 2026-08-18 | 将首批职责包简化为 `display`、`startup`、`locking`、`config`、`preview`、`setup`、`support` 与 `command`，并同步对应类型名；Maven 模块、运行协议、持久化语义和真实环境支持结论保持不变。 |
 | 3.13.3-package-structure-implementation | 2026-08-15 | 实施 `shared.analyze` 与 Linux 部署链的目标责任分包，完成 SPI/注册表、生态服务运行时和 helper 资源迁移；JDK 21 离线 28 模块验证通过。未新增真实 Linux 或产品入口验收结论。 |

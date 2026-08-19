@@ -1,13 +1,13 @@
 package gold.debug.windowstolinux.shared.analyze.ecosystem.python;
 
-import gold.debug.windowstolinux.shared.analyze.source.SourceInspection;
+import gold.debug.windowstolinux.shared.analyze.source.SourceInspectionFacts;
 import gold.debug.windowstolinux.shared.model.analysis.AnalysisEvidence;
-import gold.debug.windowstolinux.shared.model.analysis.EvidenceConfidence;
+import gold.debug.windowstolinux.shared.model.analysis.EvidenceConfidenceLevel;
 import gold.debug.windowstolinux.shared.model.message.LocalizedMessage;
-import gold.debug.windowstolinux.shared.model.project.LanguageEcosystem;
-import gold.debug.windowstolinux.shared.model.project.LanguageFact;
-import gold.debug.windowstolinux.shared.model.project.ProjectLanguageFacts;
-import gold.debug.windowstolinux.shared.model.project.SourceLanguage;
+import gold.debug.windowstolinux.shared.model.language.LanguageEcosystemType;
+import gold.debug.windowstolinux.shared.model.language.LanguageFactKind;
+import gold.debug.windowstolinux.shared.model.language.ProjectLanguageFacts;
+import gold.debug.windowstolinux.shared.model.language.SourceLanguageType;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -32,21 +32,21 @@ public final class PythonLanguageInspector {
     private static final Pattern EXACT_PYTHON = Pattern.compile("^\\s*==?3\\.(10|11|12|13)(?:\\.\\*)?\\s*$");
 
     /** Returns deterministic Python ecosystem and source facts. / 返回确定性的 Python 生态与源码事实。 */
-    public ProjectLanguageFacts inspect(Path root, SourceInspection source) throws IOException {
-        EnumSet<LanguageEcosystem> ecosystems = EnumSet.noneOf(LanguageEcosystem.class);
-        EnumSet<SourceLanguage> languages = EnumSet.noneOf(SourceLanguage.class);
-        EnumMap<LanguageFact, String> values = new EnumMap<>(LanguageFact.class);
+    public ProjectLanguageFacts inspect(Path root, SourceInspectionFacts source) throws IOException {
+        EnumSet<LanguageEcosystemType> ecosystems = EnumSet.noneOf(LanguageEcosystemType.class);
+        EnumSet<SourceLanguageType> languages = EnumSet.noneOf(SourceLanguageType.class);
+        EnumMap<LanguageFactKind, String> values = new EnumMap<>(LanguageFactKind.class);
         List<AnalysisEvidence> evidence = new ArrayList<>();
         Optional<Path> pythonSource = source.relativeFiles().stream()
                 .filter(path -> path.getFileName().toString().endsWith(".py")).findFirst();
         if (pythonSource.isPresent()) {
-            ecosystems.add(LanguageEcosystem.PYTHON);
-            languages.add(SourceLanguage.PYTHON);
+            ecosystems.add(LanguageEcosystemType.PYTHON);
+            languages.add(SourceLanguageType.PYTHON);
             evidence.add(evidence("analysis.language.pythonSource", pythonSource.orElseThrow().toString()));
         }
         Path pyproject = root.resolve("pyproject.toml");
         if (Files.isRegularFile(pyproject)) {
-            ecosystems.add(LanguageEcosystem.PYTHON);
+            ecosystems.add(LanguageEcosystemType.PYTHON);
             evidence.add(evidence("analysis.language.pythonMetadata", "pyproject.toml"));
             if (Files.size(pyproject) > MAX_METADATA_BYTES) {
                 throw new IOException("Python metadata exceeds the static inspection bound");
@@ -55,7 +55,7 @@ public final class PythonLanguageInspector {
             if (version.find()) {
                 Matcher exact = EXACT_PYTHON.matcher(version.group(1));
                 if (exact.matches()) {
-                    values.put(LanguageFact.PYTHON_VERSION, "3." + exact.group(1));
+                    values.put(LanguageFactKind.PYTHON_VERSION, "3." + exact.group(1));
                     evidence.add(evidence("analysis.deployment.runtime.evidence.pythonVersion", "pyproject.toml#requires-python"));
                 }
             }
@@ -64,7 +64,7 @@ public final class PythonLanguageInspector {
                 .filter(path -> path.getFileName().toString().equals("__main__.py"))
                 .map(PythonLanguageInspector::moduleName).flatMap(Optional::stream).distinct().toList();
         if (modules.size() == 1) {
-            values.put(LanguageFact.PYTHON_ENTRYPOINT, modules.getFirst());
+            values.put(LanguageFactKind.PYTHON_ENTRYPOINT, modules.getFirst());
             evidence.add(evidence("analysis.deployment.runtime.evidence.pythonEntrypoint", modules.getFirst() + ".__main__"));
         }
         return new ProjectLanguageFacts(ecosystems, languages, values, evidence);
@@ -87,6 +87,6 @@ public final class PythonLanguageInspector {
 
     private static AnalysisEvidence evidence(String key, String source) {
         return new AnalysisEvidence(LocalizedMessage.of(key), source,
-                LocalizedMessage.of("analysis.deployment.evidence.detected"), EvidenceConfidence.HIGH);
+                LocalizedMessage.of("analysis.deployment.evidence.detected"), EvidenceConfidenceLevel.HIGH);
     }
 }

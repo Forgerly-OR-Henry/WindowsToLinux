@@ -6,7 +6,7 @@ import gold.debug.windowstolinux.shared.git.GitSnapshot;
 import gold.debug.windowstolinux.shared.git.GitSnapshotException;
 import gold.debug.windowstolinux.shared.git.GitSourceRequest;
 import gold.debug.windowstolinux.shared.git.GitReference;
-import gold.debug.windowstolinux.shared.source.archive.SafeSourceArchiver;
+import gold.debug.windowstolinux.shared.source.archive.SafeSourceArchivePreparer;
 import gold.debug.windowstolinux.shared.source.archive.SourceArchive;
 
 import java.io.IOException;
@@ -21,18 +21,18 @@ import java.util.Objects;
 
 /** Coordinates clone, pinned checkout, repository policy validation, and safe source archiving. / 协调克隆、固定检出、仓库策略校验和安全源码归档。 */
 public final class GitSnapshotPreparer {
-    private final SafeSourceArchiver archiver;
-    private final GitCommandRunner commands;
+    private final SafeSourceArchivePreparer archiver;
+    private final GitCommandExecutor commands;
     private final ControlledGitWorkspaceValidator workspaces;
     private final GitRepositoryFeaturePolicy features;
 
     /** Creates the production Git snapshot preparer. / 创建生产 Git 快照准备器。 */
     public GitSnapshotPreparer() {
-        this(new SafeSourceArchiver(), new GitCommandRunner(), new ControlledGitWorkspaceValidator(),
+        this(new SafeSourceArchivePreparer(), new GitCommandExecutor(), new ControlledGitWorkspaceValidator(),
                 new GitRepositoryFeaturePolicy());
     }
 
-    GitSnapshotPreparer(SafeSourceArchiver archiver, GitCommandRunner commands,
+    GitSnapshotPreparer(SafeSourceArchivePreparer archiver, GitCommandExecutor commands,
                         ControlledGitWorkspaceValidator workspaces, GitRepositoryFeaturePolicy features) {
         this.archiver = Objects.requireNonNull(archiver, "archiver");
         this.commands = Objects.requireNonNull(commands, "commands");

@@ -1,10 +1,10 @@
 package gold.debug.windowstolinux.app.main.startup;
 
 import gold.debug.windowstolinux.app.db.DesktopPersistence;
-import gold.debug.windowstolinux.app.service.DesktopApplicationService;
-import gold.debug.windowstolinux.app.ui.display.DesktopDisplaySettings;
-import gold.debug.windowstolinux.app.ui.display.DesktopTheme;
-import gold.debug.windowstolinux.app.ui.display.SystemThemePreference;
+import gold.debug.windowstolinux.app.service.DesktopApplicationFacade;
+import gold.debug.windowstolinux.app.ui.display.DesktopDisplayConfiguration;
+import gold.debug.windowstolinux.app.ui.display.DesktopThemeService;
+import gold.debug.windowstolinux.app.ui.display.SystemThemeResolver;
 import gold.debug.windowstolinux.app.ui.display.ThemeMode;
 import gold.debug.windowstolinux.app.ui.display.ThemePalette;
 import gold.debug.windowstolinux.app.ui.i18n.MessageCatalog;
@@ -25,30 +25,30 @@ import java.util.concurrent.atomic.AtomicBoolean;
  */
 final class DesktopWindowController {
     private final DesktopPersistence database;
-    private final DesktopApplicationService service;
+    private final DesktopApplicationFacade service;
     private final Timer systemThemeTimer;
     private final AtomicBoolean checkingSystemTheme = new AtomicBoolean();
 
-    private DesktopDisplaySettings appearance;
+    private DesktopDisplayConfiguration appearance;
     private ThemeMode effectiveTheme;
     private DesktopFrame frame;
 
-    DesktopWindowController(DesktopPersistence database, DesktopApplicationService service, DesktopDisplaySettings appearance) {
+    DesktopWindowController(DesktopPersistence database, DesktopApplicationFacade service, DesktopDisplayConfiguration appearance) {
         this.database = database;
         this.service = service;
         this.appearance = appearance;
-        this.effectiveTheme = SystemThemePreference.effectiveTheme(appearance.themeMode());
+        this.effectiveTheme = SystemThemeResolver.effectiveTheme(appearance.themeMode());
         this.systemThemeTimer = new Timer(5_000, event -> refreshSystemThemeIfChanged());
         this.systemThemeTimer.setRepeats(true);
     }
 
     void showInitialWindow() {
-        DesktopTheme.install(effectiveTheme);
+        DesktopThemeService.install(effectiveTheme);
         showWindow(null, null);
         systemThemeTimer.start();
     }
 
-    private void applyAppearance(DesktopFrame source, DesktopDisplaySettings selected) {
+    private void applyAppearance(DesktopFrame source, DesktopDisplayConfiguration selected) {
         if (source != frame || selected.equals(appearance)) {
             return;
         }
@@ -58,13 +58,13 @@ final class DesktopWindowController {
         } catch (SQLException exception) {
             throw new IllegalStateException("desktop preference persistence failed", exception);
         }
-        ThemeMode newEffectiveTheme = SystemThemePreference.effectiveTheme(selected.themeMode());
+        ThemeMode newEffectiveTheme = SystemThemeResolver.effectiveTheme(selected.themeMode());
         DesktopViewState viewState = source.captureViewState();
         Rectangle bounds = source.getBounds();
         source.dispose();
         appearance = selected;
         effectiveTheme = newEffectiveTheme;
-        DesktopTheme.apply(effectiveTheme);
+        DesktopThemeService.apply(effectiveTheme);
         showWindow(bounds, viewState);
     }
 
@@ -82,7 +82,7 @@ final class DesktopWindowController {
         if (appearance.themeMode() != ThemeMode.SYSTEM || !checkingSystemTheme.compareAndSet(false, true)) {
             return;
         }
-        CompletableFuture.supplyAsync(() -> SystemThemePreference.effectiveTheme(ThemeMode.SYSTEM))
+        CompletableFuture.supplyAsync(() -> SystemThemeResolver.effectiveTheme(ThemeMode.SYSTEM))
                 .thenAccept(theme -> SwingUtilities.invokeLater(() -> {
                     checkingSystemTheme.set(false);
                     if (frame != null && theme != effectiveTheme) {
@@ -90,7 +90,7 @@ final class DesktopWindowController {
                         Rectangle bounds = frame.getBounds();
                         frame.dispose();
                         effectiveTheme = theme;
-                        DesktopTheme.apply(theme);
+                        DesktopThemeService.apply(theme);
                         showWindow(bounds, viewState);
                     }
                 }));

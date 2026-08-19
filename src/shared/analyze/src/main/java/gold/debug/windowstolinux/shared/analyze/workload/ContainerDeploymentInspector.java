@@ -1,19 +1,19 @@
 package gold.debug.windowstolinux.shared.analyze.workload;
 
-import gold.debug.windowstolinux.shared.analyze.spi.DeploymentTypeInspection;
+import gold.debug.windowstolinux.shared.analyze.spi.DeploymentTypeAssessment;
 import gold.debug.windowstolinux.shared.analyze.spi.DeploymentTypeInspector;
-import gold.debug.windowstolinux.shared.analyze.source.BoundedMetadataReader;
+import gold.debug.windowstolinux.shared.analyze.source.BoundedMetadataInspector;
 import gold.debug.windowstolinux.shared.analyze.source.ProjectIdentityResolver;
-import gold.debug.windowstolinux.shared.analyze.source.SourceInspection;
+import gold.debug.windowstolinux.shared.analyze.source.SourceInspectionFacts;
 import gold.debug.windowstolinux.shared.model.analysis.AnalysisEvidence;
 import gold.debug.windowstolinux.shared.model.analysis.RejectionReason;
 import gold.debug.windowstolinux.shared.model.message.LocalizedMessage;
-import gold.debug.windowstolinux.shared.model.project.DeploymentBuildTool;
+import gold.debug.windowstolinux.shared.model.project.DeploymentBuildToolType;
 import gold.debug.windowstolinux.shared.model.project.DeploymentProjectFacts;
 import gold.debug.windowstolinux.shared.model.project.DeploymentProjectType;
 import gold.debug.windowstolinux.shared.model.project.DeploymentRuntimeSpecification;
-import gold.debug.windowstolinux.shared.model.project.DeploymentRuntimeSuggestion;
-import gold.debug.windowstolinux.shared.model.project.ProjectLanguageFacts;
+import gold.debug.windowstolinux.shared.model.project.DeploymentRuntimeAssessment;
+import gold.debug.windowstolinux.shared.model.language.ProjectLanguageFacts;
 
 import java.io.IOException;
 import java.nio.file.Path;
@@ -47,24 +47,24 @@ public final class ContainerDeploymentInspector implements DeploymentTypeInspect
 
     /** Inspects source facts for this deployment type. / 检查此部署类型的源码事实。 */
     @Override
-    public DeploymentTypeInspection inspect(Path root, SourceInspection source, ProjectLanguageFacts languageFacts,
+    public DeploymentTypeAssessment inspect(Path root, SourceInspectionFacts source, ProjectLanguageFacts languageFacts,
                                             List<RejectionReason> rejections) throws IOException {
         Path dockerfile = root.resolve("Dockerfile");
-        if (!BoundedMetadataReader.regular(dockerfile)) {
+        if (!BoundedMetadataInspector.regular(dockerfile)) {
             rejections.add(rejection("DOCKERFILE_MISSING", "analysis.deployment.rejection.dockerfileMissing"));
             return null;
         }
-        if (!BoundedMetadataReader.existingNames(root, "docker-compose.yml", "docker-compose.yaml", "compose.yml", "compose.yaml")
+        if (!BoundedMetadataInspector.existingNames(root, "docker-compose.yml", "docker-compose.yaml", "compose.yml", "compose.yaml")
                 .isEmpty()) {
             rejections.add(rejection("MULTI_CONTAINER_COMPOSE_DETECTED", "analysis.deployment.rejection.composeUnsupported"));
             return null;
         }
         String applicationId = ProjectIdentityResolver.rootApplicationId(root);
         DeploymentProjectFacts facts = new DeploymentProjectFacts(root, applicationId, projectType(),
-                DeploymentBuildTool.CONTAINER_BUILD, languageFacts, List.of(evidence(
+                DeploymentBuildToolType.CONTAINER_BUILD, languageFacts, List.of(evidence(
                 "analysis.deployment.evidence.dockerfile", "Dockerfile", "analysis.deployment.evidence.detected")),
                 List.of(), List.of());
-        String text = BoundedMetadataReader.read(dockerfile);
+        String text = BoundedMetadataInspector.read(dockerfile);
         if (!baseImagesPinned(text)) {
             rejections.add(rejection("CONTAINER_BASE_IMAGE_UNPINNED",
                     "analysis.deployment.rejection.containerBaseImageUnpinned"));
@@ -87,9 +87,9 @@ public final class ContainerDeploymentInspector implements DeploymentTypeInspect
         if (ports.isEmpty()) {
             required.add(LocalizedMessage.of("analysis.deployment.runtime.containerPorts"));
         }
-        DeploymentRuntimeSuggestion suggestion = new DeploymentRuntimeSuggestion(projectType(), Map.of(), Optional.empty(), ports,
+        DeploymentRuntimeAssessment suggestion = new DeploymentRuntimeAssessment(projectType(), Map.of(), Optional.empty(), ports,
                 volumes, evidence, required);
-        return new DeploymentTypeInspection(facts, suggestion);
+        return new DeploymentTypeAssessment(facts, suggestion);
     }
 
     private static Map<Integer, Integer> ports(String dockerfile) {
@@ -173,6 +173,6 @@ public final class ContainerDeploymentInspector implements DeploymentTypeInspect
         return new gold.debug.windowstolinux.shared.model.analysis.AnalysisEvidence(
                 gold.debug.windowstolinux.shared.model.message.LocalizedMessage.of(subject), source,
                 gold.debug.windowstolinux.shared.model.message.LocalizedMessage.of(conclusion),
-                gold.debug.windowstolinux.shared.model.analysis.EvidenceConfidence.HIGH);
+                gold.debug.windowstolinux.shared.model.analysis.EvidenceConfidenceLevel.HIGH);
     }
 }

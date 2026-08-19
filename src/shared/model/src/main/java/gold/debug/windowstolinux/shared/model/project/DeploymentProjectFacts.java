@@ -1,6 +1,7 @@
 package gold.debug.windowstolinux.shared.model.project;
 
 import gold.debug.windowstolinux.shared.model.analysis.AnalysisEvidence;
+import gold.debug.windowstolinux.shared.model.language.ProjectLanguageFacts;
 import gold.debug.windowstolinux.shared.model.message.LocalizedMessage;
 
 import java.nio.file.Path;
@@ -25,7 +26,7 @@ public record DeploymentProjectFacts(
         Path sourceRoot,
         String applicationId,
         DeploymentProjectType projectType,
-        DeploymentBuildTool buildTool,
+        DeploymentBuildToolType buildTool,
         DeploymentSupportProfile support,
         ProjectLanguageFacts languageFacts,
         List<AnalysisEvidence> evidence,
@@ -49,7 +50,7 @@ public record DeploymentProjectFacts(
         if (projectType.deployable() != support.level().deployable()) {
             throw new IllegalArgumentException("project type and support level must agree on deployment admission");
         }
-        if (!projectType.deployable() && buildTool != DeploymentBuildTool.NONE_PREVIEW) {
+        if (!projectType.deployable() && buildTool != DeploymentBuildToolType.NONE_PREVIEW) {
             throw new IllegalArgumentException("recognition preview must not expose a build tool");
         }
         languageFacts = Objects.requireNonNull(languageFacts, "languageFacts");
@@ -60,7 +61,7 @@ public record DeploymentProjectFacts(
 
     /** Creates facts for callers that have no separate language observations. / 为没有单独语言观测的调用方创建事实。 */
     public DeploymentProjectFacts(Path sourceRoot, String applicationId, DeploymentProjectType projectType,
-                                  DeploymentBuildTool buildTool, ProjectLanguageFacts languageFacts,
+                                  DeploymentBuildToolType buildTool, ProjectLanguageFacts languageFacts,
                                   List<AnalysisEvidence> evidence, List<LocalizedMessage> conflicts,
                                   List<LocalizedMessage> missingInformation) {
         this(sourceRoot, applicationId, projectType, buildTool, DeploymentSupportCatalog.forType(projectType),
@@ -69,7 +70,7 @@ public record DeploymentProjectFacts(
 
     /** Creates facts with the checked-in support claim for callers that have no separate language observations. / 使用已检入支持声明为没有单独语言观测的调用方创建事实。 */
     public DeploymentProjectFacts(Path sourceRoot, String applicationId, DeploymentProjectType projectType,
-                                  DeploymentBuildTool buildTool, List<AnalysisEvidence> evidence,
+                                  DeploymentBuildToolType buildTool, List<AnalysisEvidence> evidence,
                                   List<LocalizedMessage> conflicts, List<LocalizedMessage> missingInformation) {
         this(sourceRoot, applicationId, projectType, buildTool, DeploymentSupportCatalog.forType(projectType),
                 ProjectLanguageFacts.empty(), evidence, conflicts, missingInformation);

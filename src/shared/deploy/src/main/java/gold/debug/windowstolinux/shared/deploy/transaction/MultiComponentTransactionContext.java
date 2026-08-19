@@ -1,10 +1,10 @@
 package gold.debug.windowstolinux.shared.deploy.transaction;
 
 import gold.debug.windowstolinux.shared.config.revision.DeploymentInputManifest;
-import gold.debug.windowstolinux.shared.deploy.result.ComponentDeploymentResult;
-import gold.debug.windowstolinux.shared.deploy.result.ComponentTransactionState;
-import gold.debug.windowstolinux.shared.deploy.result.DeploymentEvent;
-import gold.debug.windowstolinux.shared.deploy.result.MultiComponentDeploymentResult;
+import gold.debug.windowstolinux.shared.deploy.result.deployment.ComponentDeploymentResult;
+import gold.debug.windowstolinux.shared.deploy.result.deployment.ComponentTransactionState;
+import gold.debug.windowstolinux.shared.deploy.result.deployment.DeploymentEvent;
+import gold.debug.windowstolinux.shared.deploy.result.deployment.MultiComponentDeploymentResult;
 import gold.debug.windowstolinux.shared.linux.build.DeploymentBuildResult;
 import gold.debug.windowstolinux.shared.linux.protocol.ReleaseSnapshot;
 import gold.debug.windowstolinux.shared.linux.transfer.RemoteWorkspace;

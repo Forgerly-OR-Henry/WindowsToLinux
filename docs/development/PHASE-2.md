@@ -92,7 +92,7 @@ Git 输入包括仓库地址、凭据引用、分支/Tag/Commit、Submodule 和 
 
 ### 4.1 基础语言事实边界
 
-- `LanguageEcosystem` 只包含 `JAVA`、`NODE_JS`、`PYTHON`；`SourceLanguage` 只包含 `JAVA`、`JAVASCRIPT`、`TYPESCRIPT`、`PYTHON`。
+- `LanguageEcosystemType` 只包含 `JAVA`、`NODE_JS`、`PYTHON`；`SourceLanguageType` 只包含 `JAVA`、`JAVASCRIPT`、`TYPESCRIPT`、`PYTHON`。
 - `.java` 与 JAR Manifest 产生 Java 证据；`package.json`、JavaScript/TypeScript 扩展名与 `tsconfig` 产生 Node 生态及源码语言证据；`pyproject.toml` 与 `.py` 产生 Python 证据。
 - 语言事实是确定性集合和 `AnalysisEvidence`，不计算“主要语言”、比例或支持等级，不据此自动改变用户选择的 `DeploymentProjectType`。
 - 多语言根、语言支持等级和自动项目类型选择仍属于三期，不在本期提前实现。

@@ -2,19 +2,19 @@ package gold.debug.windowstolinux.shared.analyze.ecosystem.python;
 
 import gold.debug.windowstolinux.shared.analyze.ecosystem.python.PythonBuildFacts;
 import gold.debug.windowstolinux.shared.analyze.ecosystem.python.PythonBuildInspector;
-import gold.debug.windowstolinux.shared.analyze.spi.DeploymentTypeInspection;
+import gold.debug.windowstolinux.shared.analyze.spi.DeploymentTypeAssessment;
 import gold.debug.windowstolinux.shared.analyze.spi.DeploymentTypeInspector;
-import gold.debug.windowstolinux.shared.analyze.source.BoundedMetadataReader;
+import gold.debug.windowstolinux.shared.analyze.source.BoundedMetadataInspector;
 import gold.debug.windowstolinux.shared.analyze.source.ProjectIdentityResolver;
-import gold.debug.windowstolinux.shared.analyze.source.SourceInspection;
+import gold.debug.windowstolinux.shared.analyze.source.SourceInspectionFacts;
 import gold.debug.windowstolinux.shared.model.analysis.RejectionReason;
 import gold.debug.windowstolinux.shared.model.message.LocalizedMessage;
-import gold.debug.windowstolinux.shared.model.project.DeploymentBuildTool;
+import gold.debug.windowstolinux.shared.model.project.DeploymentBuildToolType;
 import gold.debug.windowstolinux.shared.model.project.DeploymentProjectFacts;
 import gold.debug.windowstolinux.shared.model.project.DeploymentProjectType;
-import gold.debug.windowstolinux.shared.model.project.DeploymentRuntimeSuggestion;
-import gold.debug.windowstolinux.shared.model.project.LanguageFact;
-import gold.debug.windowstolinux.shared.model.project.ProjectLanguageFacts;
+import gold.debug.windowstolinux.shared.model.project.DeploymentRuntimeAssessment;
+import gold.debug.windowstolinux.shared.model.language.LanguageFactKind;
+import gold.debug.windowstolinux.shared.model.language.ProjectLanguageFacts;
 
 import java.io.IOException;
 import java.nio.file.Path;
@@ -40,7 +40,7 @@ public final class PythonServiceDeploymentInspector implements DeploymentTypeIns
 
     /** Inspects source facts for this deployment type. / 检查此部署类型的源码事实。 */
     @Override
-    public DeploymentTypeInspection inspect(Path root, SourceInspection source, ProjectLanguageFacts languageFacts,
+    public DeploymentTypeAssessment inspect(Path root, SourceInspectionFacts source, ProjectLanguageFacts languageFacts,
                                             List<RejectionReason> rejections) throws IOException {
         Optional<PythonBuildFacts> inspected = python.inspect(root);
         if (inspected.isEmpty()) {
@@ -57,17 +57,17 @@ public final class PythonServiceDeploymentInspector implements DeploymentTypeIns
             conflicts.add(LocalizedMessage.of("analysis.deployment.conflict.multiplePythonLockfiles"));
         }
         DeploymentProjectFacts facts = new DeploymentProjectFacts(root, project.applicationId(), projectType(),
-                DeploymentBuildTool.PYTHON_VENV, languageFacts, List.of(evidence(
+                DeploymentBuildToolType.PYTHON_VENV, languageFacts, List.of(evidence(
                 "analysis.deployment.evidence.pythonProject", "pyproject.toml", "analysis.deployment.evidence.detected")),
                 conflicts, missing);
-        Map<DeploymentRuntimeSuggestion.RuntimeInput, String> values = DeploymentRuntimeSuggestion.valuesFor(projectType());
-        String version = languageFacts.values().get(LanguageFact.PYTHON_VERSION);
-        String entrypoint = languageFacts.values().get(LanguageFact.PYTHON_ENTRYPOINT);
+        Map<DeploymentRuntimeAssessment.RuntimeInputType, String> values = DeploymentRuntimeAssessment.valuesFor(projectType());
+        String version = languageFacts.values().get(LanguageFactKind.PYTHON_VERSION);
+        String entrypoint = languageFacts.values().get(LanguageFactKind.PYTHON_ENTRYPOINT);
         if (version != null) {
-            values.put(DeploymentRuntimeSuggestion.RuntimeInput.PYTHON_VERSION, version);
+            values.put(DeploymentRuntimeAssessment.RuntimeInputType.PYTHON_VERSION, version);
         }
         if (entrypoint != null) {
-            values.put(DeploymentRuntimeSuggestion.RuntimeInput.PYTHON_ENTRYPOINT, entrypoint);
+            values.put(DeploymentRuntimeAssessment.RuntimeInputType.PYTHON_ENTRYPOINT, entrypoint);
         }
         List<LocalizedMessage> required = new ArrayList<>(List.of(LocalizedMessage.of("analysis.deployment.runtime.health")));
         if (version == null) {
@@ -78,14 +78,14 @@ public final class PythonServiceDeploymentInspector implements DeploymentTypeIns
         }
         Set<String> runtimeKeys = Set.of("analysis.deployment.runtime.evidence.pythonVersion",
                 "analysis.deployment.runtime.evidence.pythonEntrypoint");
-        DeploymentRuntimeSuggestion suggestion = new DeploymentRuntimeSuggestion(projectType(), values, Optional.empty(), Map.of(),
+        DeploymentRuntimeAssessment suggestion = new DeploymentRuntimeAssessment(projectType(), values, Optional.empty(), Map.of(),
                 List.of(), languageFacts.evidence().stream().filter(item -> runtimeKeys.contains(item.subject().key())).toList(), required);
-        return new DeploymentTypeInspection(facts, suggestion);
+        return new DeploymentTypeAssessment(facts, suggestion);
     }
     private static gold.debug.windowstolinux.shared.model.analysis.AnalysisEvidence evidence(String subject, String source, String conclusion) {
         return new gold.debug.windowstolinux.shared.model.analysis.AnalysisEvidence(
                 gold.debug.windowstolinux.shared.model.message.LocalizedMessage.of(subject), source,
                 gold.debug.windowstolinux.shared.model.message.LocalizedMessage.of(conclusion),
-                gold.debug.windowstolinux.shared.model.analysis.EvidenceConfidence.HIGH);
+                gold.debug.windowstolinux.shared.model.analysis.EvidenceConfidenceLevel.HIGH);
     }
 }

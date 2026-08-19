@@ -1,6 +1,6 @@
 package gold.debug.windowstolinux.shared.analyze.policy;
 
-import gold.debug.windowstolinux.shared.analyze.source.SourceInspection;
+import gold.debug.windowstolinux.shared.analyze.source.SourceInspectionFacts;
 import gold.debug.windowstolinux.shared.model.analysis.RejectionReason;
 import gold.debug.windowstolinux.shared.model.message.LocalizedMessage;
 
@@ -18,7 +18,7 @@ public final class SourceMutationPolicy {
             "\\b(flyway|liquibase|alembic|prisma(?:\\s+migrate)?|knex)\\b", Pattern.CASE_INSENSITIVE);
 
     /** Adds deterministic policy rejections without mutating the inspected source. / 添加确定性策略拒绝，不修改被检查源码。 */
-    public void validate(SourceInspection source, List<RejectionReason> rejections) {
+    public void validate(SourceInspectionFacts source, List<RejectionReason> rejections) {
         if (source.relativeFiles().stream().anyMatch(SourceMutationPolicy::databaseChangePath)) {
             rejections.add(rejection("AUTOMATIC_SCHEMA_MUTATION_DETECTED", "analysis.rejection.schemaMutationDetected"));
         }

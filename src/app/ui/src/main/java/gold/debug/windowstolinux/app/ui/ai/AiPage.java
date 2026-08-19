@@ -1,16 +1,16 @@
 package gold.debug.windowstolinux.app.ui.ai;
 
-import gold.debug.windowstolinux.app.service.port.AiApplicationPort;
+import gold.debug.windowstolinux.app.service.contract.AiApplicationFacade;
 import gold.debug.windowstolinux.app.service.ai.AiProviderProfile;
 import gold.debug.windowstolinux.app.service.ai.AiRoleAssignment;
-import gold.debug.windowstolinux.app.ui.component.DesktopAsyncTask;
-import gold.debug.windowstolinux.app.ui.component.DesktopComponents;
+import gold.debug.windowstolinux.app.ui.component.DesktopTaskExecutor;
+import gold.debug.windowstolinux.app.ui.component.DesktopComponentFactory;
 import gold.debug.windowstolinux.app.ui.deployment.ReviewContext;
-import gold.debug.windowstolinux.app.ui.i18n.PageMessages;
+import gold.debug.windowstolinux.app.ui.i18n.PageMessagePresenter;
 import gold.debug.windowstolinux.shared.model.security.CredentialStorageMode;
-import gold.debug.windowstolinux.shared.ai.collaboration.AiCollaborationRole;
-import gold.debug.windowstolinux.shared.ai.collaboration.AiRoleInvocationResult;
-import gold.debug.windowstolinux.shared.ai.collaboration.ProjectAnalysisRoleContext;
+import gold.debug.windowstolinux.shared.ai.collaboration.role.AiCollaborationRoleKind;
+import gold.debug.windowstolinux.shared.ai.collaboration.invocation.AiRoleInvocationResult;
+import gold.debug.windowstolinux.shared.ai.collaboration.role.ProjectAnalysisRoleContext;
 
 import javax.swing.JButton;
 import javax.swing.JComboBox;
@@ -27,22 +27,22 @@ import java.util.Optional;
 
 /** Owns the optional AI form, temporary secrets, state, and explanation workflow. / 持有可选 AI 表单、临时秘密、状态与解释流程。 */
 public final class AiPage {
-    private final AiApplicationPort service;
+    private final AiApplicationFacade service;
     private final ReviewContext reviewContext;
-    private final PageMessages messages;
+    private final PageMessagePresenter messages;
     private final JTextField endpoint = new JTextField("https://api.openai.com/v1/chat/completions", 34);
     private final JTextField model = new JTextField("gpt-5", 20);
     private final JTextField providerId = new JTextField("project-analysis", 20);
-    private final JComboBox<AiCollaborationRole> role = new JComboBox<>(AiCollaborationRole.values());
+    private final JComboBox<AiCollaborationRoleKind> role = new JComboBox<>(AiCollaborationRoleKind.values());
     private final JPasswordField apiKey = new JPasswordField(24);
     private final JComboBox<CredentialStorageMode> credentialMode = new JComboBox<>(CredentialStorageMode.values());
     private final JPasswordField masterPassword = new JPasswordField(20);
-    private final JTextArea output = DesktopComponents.outputArea();
+    private final JTextArea output = DesktopComponentFactory.outputArea();
     private final JPanel panel;
 
     /** Creates the stateful page controller. / 创建有状态页面控制器。 */
-    public AiPage(AiApplicationPort service, ReviewContext reviewContext,
-                  DesktopComponents components, PageMessages messages) {
+    public AiPage(AiApplicationFacade service, ReviewContext reviewContext,
+                  DesktopComponentFactory components, PageMessagePresenter messages) {
         this.service = service;
         this.reviewContext = reviewContext;
         this.messages = messages;
@@ -75,7 +75,7 @@ public final class AiPage {
         output.setText(state.output());
     }
 
-    private JPanel createPanel(DesktopComponents c) {
+    private JPanel createPanel(DesktopComponentFactory c) {
         JPanel page = c.pagePanel();
         JPanel card = c.card(new BorderLayout(0, 12));
         card.add(c.sectionHeading(messages.text("section.ai.title"), messages.text("section.ai.description")), BorderLayout.NORTH);
@@ -137,7 +137,7 @@ public final class AiPage {
         }
         char[] master = masterPassword.getPassword();
         output.setText(messages.text("ai.requesting"));
-        DesktopAsyncTask.run(
+        DesktopTaskExecutor.run(
                 () -> service.invokeAiRole(ProjectAnalysisRoleContext.from(
                         preparation.orElseThrow().assessment().facts().orElseThrow()), master),
                 result -> output.setText(result.map(AiPage.this::evidenceText)
@@ -159,7 +159,7 @@ public final class AiPage {
         return (CredentialStorageMode) credentialMode.getSelectedItem();
     }
 
-    private AiCollaborationRole selectedRole() {
-        return (AiCollaborationRole) role.getSelectedItem();
+    private AiCollaborationRoleKind selectedRole() {
+        return (AiCollaborationRoleKind) role.getSelectedItem();
     }
 }

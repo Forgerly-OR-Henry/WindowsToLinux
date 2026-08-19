@@ -1,19 +1,19 @@
 package gold.debug.windowstolinux.app.ui.shell;
 
 import gold.debug.windowstolinux.app.ui.ai.AiPageState;
-import gold.debug.windowstolinux.app.ui.display.DesktopDisplaySettings;
+import gold.debug.windowstolinux.app.ui.display.DesktopDisplayConfiguration;
 import gold.debug.windowstolinux.app.ui.display.ThemeMode;
 import gold.debug.windowstolinux.app.ui.display.ThemePalette;
-import gold.debug.windowstolinux.app.ui.component.DesktopComponents;
-import gold.debug.windowstolinux.app.ui.deployment.DeploymentPageState;
-import gold.debug.windowstolinux.app.ui.deployment.MultiComponentFormState;
-import gold.debug.windowstolinux.app.ui.deployment.MultiComponentPageState;
+import gold.debug.windowstolinux.app.ui.component.DesktopComponentFactory;
+import gold.debug.windowstolinux.app.ui.deployment.single.DeploymentPageState;
+import gold.debug.windowstolinux.app.ui.deployment.multi.MultiComponentFormState;
+import gold.debug.windowstolinux.app.ui.deployment.multi.MultiComponentPageState;
 import gold.debug.windowstolinux.app.ui.i18n.MessageCatalog;
 import gold.debug.windowstolinux.app.ui.managed.ManagedPageState;
 import gold.debug.windowstolinux.app.ui.server.ServerPageState;
-import gold.debug.windowstolinux.app.ui.settings.SettingsPageState;
+import gold.debug.windowstolinux.app.ui.setting.SettingPageState;
 import gold.debug.windowstolinux.shared.model.security.CredentialStorageMode;
-import gold.debug.windowstolinux.shared.ai.collaboration.AiCollaborationRole;
+import gold.debug.windowstolinux.shared.ai.collaboration.role.AiCollaborationRoleKind;
 import gold.debug.windowstolinux.shared.model.lifecycle.LifecycleAction;
 import org.junit.jupiter.api.Test;
 
@@ -42,10 +42,10 @@ class DesktopLanguageSwitchStateTest {
                         "master-secret".toCharArray(), "server diagnostic"),
                 new ManagedPageState("demo", "lifecycle diagnostic"),
                 new AiPageState("https://example.test/v1/chat/completions", "model-x", "analysis",
-                        AiCollaborationRole.PROJECT_ANALYSIS,
+                        AiCollaborationRoleKind.PROJECT_ANALYSIS,
                         "api-secret".toCharArray(), CredentialStorageMode.WINDOWS_CREDENTIAL_MANAGER,
                         new char[0], "AI diagnostic"),
-                new SettingsPageState());
+                new SettingPageState());
 
         DesktopViewState englishState = restoreAndCapture(MessageCatalog.ENGLISH_TAG, initial);
         initial.close();
@@ -80,7 +80,7 @@ class DesktopLanguageSwitchStateTest {
             assertEquals("lifecycle diagnostic", chineseState.managed().output());
             assertEquals("model-x", chineseState.ai().model());
             assertEquals("analysis", chineseState.ai().providerId());
-            assertEquals(AiCollaborationRole.PROJECT_ANALYSIS, chineseState.ai().role());
+            assertEquals(AiCollaborationRoleKind.PROJECT_ANALYSIS, chineseState.ai().role());
             assertArrayEquals("api-secret".toCharArray(), chineseState.ai().apiKey());
             assertEquals("AI diagnostic", chineseState.ai().output());
         } finally {
@@ -91,8 +91,8 @@ class DesktopLanguageSwitchStateTest {
     private static DesktopViewState restoreAndCapture(String languageTag, DesktopViewState source) {
         AtomicReference<String> restoredPage = new AtomicReference<>("deployment");
         DesktopPageCoordinator pages = new DesktopPageCoordinator(null, null, MessageCatalog.forLanguageTag(languageTag),
-                new DesktopDisplaySettings(languageTag, ThemeMode.LIGHT),
-                new DesktopComponents(ThemePalette.light()), (frame, appearance) -> { },
+                new DesktopDisplayConfiguration(languageTag, ThemeMode.LIGHT),
+                new DesktopComponentFactory(ThemePalette.light()), (frame, appearance) -> { },
                 (page, titleKey, descriptionKey) -> restoredPage.set(page));
         pages.restoreViewState(source);
         pages.currentPage(restoredPage.get());

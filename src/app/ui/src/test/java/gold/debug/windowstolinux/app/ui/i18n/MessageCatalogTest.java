@@ -2,14 +2,14 @@ package gold.debug.windowstolinux.app.ui.i18n;
 
 
 import gold.debug.windowstolinux.shared.model.message.LocalizedMessage;
-import gold.debug.windowstolinux.shared.model.analysis.EvidenceConfidence;
+import gold.debug.windowstolinux.shared.model.analysis.EvidenceConfidenceLevel;
 import gold.debug.windowstolinux.shared.model.deployment.DeploymentStatus;
-import gold.debug.windowstolinux.shared.model.deployment.DeploymentStep;
+import gold.debug.windowstolinux.shared.model.deployment.DeploymentTraceEvent;
 import gold.debug.windowstolinux.shared.model.lifecycle.AutostartState;
 import gold.debug.windowstolinux.shared.model.lifecycle.LifecycleAction;
 import gold.debug.windowstolinux.shared.model.lifecycle.RuntimeState;
-import gold.debug.windowstolinux.shared.model.project.LanguageEcosystem;
-import gold.debug.windowstolinux.shared.model.project.SourceLanguage;
+import gold.debug.windowstolinux.shared.model.language.LanguageEcosystemType;
+import gold.debug.windowstolinux.shared.model.language.SourceLanguageType;
 import org.junit.jupiter.api.Test;
 
 import java.io.IOException;
@@ -83,13 +83,13 @@ class MessageCatalogTest {
 
     @Test
     void mapsEveryStructuredUiCodeInBothLanguages() {
-        for (EvidenceConfidence value : EvidenceConfidence.values()) {
+        for (EvidenceConfidenceLevel value : EvidenceConfidenceLevel.values()) {
             assertCode("analysis.confidence." + value.name().toLowerCase(Locale.ROOT));
         }
         for (DeploymentStatus value : DeploymentStatus.values()) {
             assertCode("deployment.status." + value.name().toLowerCase(Locale.ROOT));
         }
-        for (DeploymentStep value : DeploymentStep.values()) {
+        for (DeploymentTraceEvent value : DeploymentTraceEvent.values()) {
             assertCode("deployment.step." + value.code());
         }
         for (LifecycleAction value : LifecycleAction.values()) {
@@ -101,10 +101,10 @@ class MessageCatalogTest {
         for (AutostartState value : AutostartState.values()) {
             assertCode("autostart.state." + value.name().toLowerCase(Locale.ROOT));
         }
-        for (LanguageEcosystem value : LanguageEcosystem.values()) {
+        for (LanguageEcosystemType value : LanguageEcosystemType.values()) {
             assertCode("language.ecosystem." + value.name().toLowerCase(Locale.ROOT));
         }
-        for (SourceLanguage value : SourceLanguage.values()) {
+        for (SourceLanguageType value : SourceLanguageType.values()) {
             assertCode("language.source." + value.name().toLowerCase(Locale.ROOT));
         }
     }

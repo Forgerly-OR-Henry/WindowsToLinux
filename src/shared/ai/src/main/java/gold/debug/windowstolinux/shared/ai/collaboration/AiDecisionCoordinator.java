@@ -1,5 +1,10 @@
 package gold.debug.windowstolinux.shared.ai.collaboration;
 
+import gold.debug.windowstolinux.shared.ai.collaboration.advice.AiAdviceDecision;
+import gold.debug.windowstolinux.shared.ai.collaboration.invocation.AiInvocationEvidence;
+import gold.debug.windowstolinux.shared.ai.collaboration.invocation.AiInvocationStatus;
+import gold.debug.windowstolinux.shared.ai.collaboration.invocation.AiRoleInvocationResult;
+
 import java.util.List;
 import java.util.Objects;
 

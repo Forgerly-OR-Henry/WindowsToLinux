@@ -5,19 +5,20 @@ import gold.debug.windowstolinux.app.db.repository.ManagedApplicationRepository;
 import gold.debug.windowstolinux.app.db.entity.CurrentRelease;
 import gold.debug.windowstolinux.app.secret.SecretStore;
 import gold.debug.windowstolinux.app.secret.SecretStoreException;
-import gold.debug.windowstolinux.app.service.locking.ServerOperationLocks;
+import gold.debug.windowstolinux.app.service.deployment.single.DeploymentOutcome;
+import gold.debug.windowstolinux.app.service.lock.ServerOperationLockRegistry;
 import gold.debug.windowstolinux.app.service.server.ServerProfile;
-import gold.debug.windowstolinux.app.service.server.ServerUseCases;
+import gold.debug.windowstolinux.app.service.server.ServerUseCaseFacade;
 import gold.debug.windowstolinux.app.service.source.ReviewedSourcePreparation;
 import gold.debug.windowstolinux.shared.config.revision.ConfigurationSnapshot;
 import gold.debug.windowstolinux.shared.config.secretref.SecretReference;
 import gold.debug.windowstolinux.shared.config.secretref.ResolvedSecretRevision;
 import gold.debug.windowstolinux.shared.deploy.contract.DeploymentApproval;
 import gold.debug.windowstolinux.shared.deploy.contract.ReviewedDeploymentRequest;
-import gold.debug.windowstolinux.shared.deploy.result.DeploymentResult;
+import gold.debug.windowstolinux.shared.deploy.result.deployment.DeploymentResult;
 import gold.debug.windowstolinux.shared.deploy.transaction.ReviewedDeploymentService;
 import gold.debug.windowstolinux.shared.linux.connection.DeploymentLinuxGateway;
-import gold.debug.windowstolinux.shared.linux.connection.HostKeyVerifier;
+import gold.debug.windowstolinux.shared.linux.connection.HostKeyEvaluator;
 import gold.debug.windowstolinux.shared.linux.connection.SshCredential;
 import gold.debug.windowstolinux.shared.linux.connection.SshEndpoint;
 import gold.debug.windowstolinux.shared.model.deployment.DeploymentStatus;
@@ -46,13 +47,13 @@ public final class ReviewedDeploymentUseCase {
     private final ApplicationSecretRepository applicationSecrets;
     private final ReviewedDeploymentService service;
     private final DeploymentLinuxGateway gateway;
-    private final ServerUseCases servers;
-    private final ServerOperationLocks locks;
+    private final ServerUseCaseFacade servers;
+    private final ServerOperationLockRegistry locks;
 
     /** Creates the reviewed deployment use case. / 创建经审阅部署用例。 */
     public ReviewedDeploymentUseCase(ManagedApplicationRepository applications,
                                      ApplicationSecretRepository applicationSecrets, ReviewedDeploymentService service,
-                                     DeploymentLinuxGateway gateway, ServerUseCases servers, ServerOperationLocks locks) {
+                                     DeploymentLinuxGateway gateway, ServerUseCaseFacade servers, ServerOperationLockRegistry locks) {
         this.applications = Objects.requireNonNull(applications, "applications");
         this.applicationSecrets = Objects.requireNonNull(applicationSecrets, "applicationSecrets");
         this.service = Objects.requireNonNull(service, "service");
@@ -70,7 +71,7 @@ public final class ReviewedDeploymentUseCase {
                                                     ConfigurationSnapshot configuration, List<SecretReference> secretReferences,
                                                     gold.debug.windowstolinux.shared.model.project.DeploymentRuntimeSpecification runtime,
                                                     Optional<gold.debug.windowstolinux.shared.model.health.UserAccessUrl> userAccessUrl,
-                                                    gold.debug.windowstolinux.shared.model.deployment.BuildLimits limits,
+                                                    gold.debug.windowstolinux.shared.model.deployment.BuildLimitConfiguration limits,
                                                     boolean rootBuildConfirmed, boolean containerDaemonRiskAccepted,
                                                     boolean experimentalAdapterRiskAccepted) throws SQLException {
         preparation = Objects.requireNonNull(preparation, "preparation");
@@ -84,7 +85,7 @@ public final class ReviewedDeploymentUseCase {
         var sourceRevision = preparation.sourceRevision().orElseThrow(() -> new LocalizedOperationException(
                 LocalizedMessage.of("deployment.analyzeFirst"),
                 "Typed deployment requires an immutable source identity bound to the reviewed archive"));
-        ManagedApplication application = ManagedApplicationIdentity.resolve(applications, facts.applicationId(), server);
+        ManagedApplication application = ManagedApplicationIdentityResolver.resolve(applications, facts.applicationId(), server);
         return new ReviewedDeploymentRequest(server, facts, sourceRevision,
                 archive, configuration, secretReferences, runtime, userAccessUrl, limits,
                 new DeploymentApproval(application.id(), archive.contentSha256(), server.id(), rootBuildConfirmed, Instant.now()),
@@ -96,7 +97,7 @@ public final class ReviewedDeploymentUseCase {
                                                     ConfigurationSnapshot configuration, List<SecretReference> secretReferences,
                                                     gold.debug.windowstolinux.shared.model.project.DeploymentRuntimeSpecification runtime,
                                                     Optional<gold.debug.windowstolinux.shared.model.health.UserAccessUrl> userAccessUrl,
-                                                    gold.debug.windowstolinux.shared.model.deployment.BuildLimits limits,
+                                                    gold.debug.windowstolinux.shared.model.deployment.BuildLimitConfiguration limits,
                                                     boolean rootBuildConfirmed, boolean containerDaemonRiskAccepted) throws SQLException {
         return createRequest(preparation, server, configuration, secretReferences, runtime, userAccessUrl, limits,
                 rootBuildConfirmed, containerDaemonRiskAccepted, false);
@@ -136,7 +137,7 @@ public final class ReviewedDeploymentUseCase {
      * <p>部署经审阅请求，并在成功后记录精确选定的健康契约。
      */
     public DeploymentOutcome deploy(ReviewedDeploymentRequest request, SshEndpoint endpoint,
-                                   SshCredential credential, HostKeyVerifier verifier) throws SQLException {
+                                   SshCredential credential, HostKeyEvaluator verifier) throws SQLException {
         if (!request.secretReferences().isEmpty()) {
             throw new LocalizedOperationException(LocalizedMessage.of("secret.applicationReferenceMissing"),
                     "Reviewed deployments with secret references require resolved stored revisions");
@@ -145,10 +146,10 @@ public final class ReviewedDeploymentUseCase {
     }
 
     private DeploymentOutcome deploy(ReviewedDeploymentRequest request, SshEndpoint endpoint,
-                                    SshCredential credential, HostKeyVerifier verifier,
+                                    SshCredential credential, HostKeyEvaluator verifier,
                                     List<ResolvedSecretRevision> resolvedSecrets) throws SQLException {
         request = Objects.requireNonNull(request, "request");
-        ManagedApplication application = ManagedApplicationIdentity.resolve(
+        ManagedApplication application = ManagedApplicationIdentityResolver.resolve(
                 applications, request.facts().applicationId(), request.server());
         ReentrantLock lock = locks.forServer(application.server().id());
         lock.lock();

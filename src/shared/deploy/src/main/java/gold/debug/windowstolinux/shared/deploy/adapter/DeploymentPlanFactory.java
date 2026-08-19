@@ -2,7 +2,7 @@ package gold.debug.windowstolinux.shared.deploy.adapter;
 
 import gold.debug.windowstolinux.shared.deploy.contract.ReviewedDeploymentPlan;
 import gold.debug.windowstolinux.shared.deploy.contract.ReviewedDeploymentRequest;
-import gold.debug.windowstolinux.shared.deploy.contract.DeploymentStep;
+import gold.debug.windowstolinux.shared.deploy.contract.DeploymentPlanAction;
 import gold.debug.windowstolinux.shared.model.project.DeploymentProjectType;
 
 import java.util.ArrayList;
@@ -32,26 +32,26 @@ public final class DeploymentPlanFactory {
         if (request.facts().projectType() != expectedType) {
             throw new IllegalArgumentException("adapter cannot plan a different project type");
         }
-        List<DeploymentStep> steps = new ArrayList<>(List.of(
-                DeploymentStep.VERIFY_SOURCE_IDENTITY,
-                DeploymentStep.VERIFY_CONFIGURATION_SNAPSHOT,
-                DeploymentStep.VERIFY_SECRET_REVISIONS,
-                DeploymentStep.PREPARE_CANDIDATE,
-                DeploymentStep.BUILD,
-                DeploymentStep.VERIFY_ARTIFACT
+        List<DeploymentPlanAction> steps = new ArrayList<>(List.of(
+                DeploymentPlanAction.VERIFY_SOURCE_IDENTITY,
+                DeploymentPlanAction.VERIFY_CONFIGURATION_SNAPSHOT,
+                DeploymentPlanAction.VERIFY_SECRET_REVISIONS,
+                DeploymentPlanAction.PREPARE_CANDIDATE,
+                DeploymentPlanAction.BUILD,
+                DeploymentPlanAction.VERIFY_ARTIFACT
         ));
         if (staticOutput) {
-            steps.add(DeploymentStep.VERIFY_STATIC_OUTPUT);
+            steps.add(DeploymentPlanAction.VERIFY_STATIC_OUTPUT);
         }
         if (containerPolicy) {
-            steps.add(DeploymentStep.VERIFY_CONTAINER_POLICY);
+            steps.add(DeploymentPlanAction.VERIFY_CONTAINER_POLICY);
         }
         steps.addAll(List.of(
-                DeploymentStep.STOP_PREVIOUS,
-                DeploymentStep.ACTIVATE_CANDIDATE,
-                DeploymentStep.CHECK_HEALTH,
-                DeploymentStep.COMMIT_RELEASE,
-                DeploymentStep.ROLLBACK_ON_FAILURE
+                DeploymentPlanAction.STOP_PREVIOUS,
+                DeploymentPlanAction.ACTIVATE_CANDIDATE,
+                DeploymentPlanAction.CHECK_HEALTH,
+                DeploymentPlanAction.COMMIT_RELEASE,
+                DeploymentPlanAction.ROLLBACK_ON_FAILURE
         ));
         return new ReviewedDeploymentPlan(request, steps);
     }

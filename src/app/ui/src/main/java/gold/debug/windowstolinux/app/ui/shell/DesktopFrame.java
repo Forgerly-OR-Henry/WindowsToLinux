@@ -1,10 +1,10 @@
 package gold.debug.windowstolinux.app.ui.shell;
 
-import gold.debug.windowstolinux.app.service.DesktopApplicationService;
-import gold.debug.windowstolinux.app.ui.display.DesktopDisplaySettings;
-import gold.debug.windowstolinux.app.ui.shell.DesktopDisplayChangeListener;
+import gold.debug.windowstolinux.app.service.DesktopApplicationFacade;
+import gold.debug.windowstolinux.app.ui.display.DesktopDisplayConfiguration;
+import gold.debug.windowstolinux.app.ui.shell.DesktopDisplayChangeHandler;
 import gold.debug.windowstolinux.app.ui.display.ThemePalette;
-import gold.debug.windowstolinux.app.ui.component.DesktopComponents;
+import gold.debug.windowstolinux.app.ui.component.DesktopComponentFactory;
 import gold.debug.windowstolinux.app.ui.i18n.MessageCatalog;
 
 import com.formdev.flatlaf.FlatClientProperties;
@@ -43,7 +43,7 @@ public final class DesktopFrame extends JFrame {
 
     private final MessageCatalog messages;
     private final ThemePalette palette;
-    private final DesktopComponents components;
+    private final DesktopComponentFactory components;
     private final DesktopPageCoordinator pageCoordinator;
     private final CardLayout pageLayout = new CardLayout();
     private final JPanel pages = new JPanel(pageLayout);
@@ -59,11 +59,11 @@ public final class DesktopFrame extends JFrame {
      *
      * @param service the {@code service} value / {@code service} 值
      */
-    public DesktopFrame(DesktopApplicationService service) {
-        this(service, DesktopDisplaySettings.defaults());
+    public DesktopFrame(DesktopApplicationFacade service) {
+        this(service, DesktopDisplayConfiguration.defaults());
     }
 
-    private DesktopFrame(DesktopApplicationService service, DesktopDisplaySettings appearance) {
+    private DesktopFrame(DesktopApplicationFacade service, DesktopDisplayConfiguration appearance) {
         this(service, MessageCatalog.forLanguageTag(appearance.localeTag()),
                 appearance, ThemePalette.light(), (source, selected) -> { }, null);
     }
@@ -80,14 +80,14 @@ public final class DesktopFrame extends JFrame {
      * @param appearanceChangeListener the {@code appearanceChangeListener} value / {@code appearanceChangeListener} 值
      * @param viewState the {@code viewState} value / {@code viewState} 值
      */
-    public DesktopFrame(DesktopApplicationService service, MessageCatalog messages,
-                        DesktopDisplaySettings appearance, ThemePalette palette,
-                        DesktopDisplayChangeListener appearanceChangeListener,
+    public DesktopFrame(DesktopApplicationFacade service, MessageCatalog messages,
+                        DesktopDisplayConfiguration appearance, ThemePalette palette,
+                        DesktopDisplayChangeHandler appearanceChangeListener,
                         DesktopViewState viewState) {
         super("WindowsToLinux");
         this.messages = messages;
         this.palette = palette;
-        this.components = new DesktopComponents(palette);
+        this.components = new DesktopComponentFactory(palette);
         this.pageCoordinator = new DesktopPageCoordinator(
                 this, service, messages, appearance, components, appearanceChangeListener, this::showPage);
         setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);

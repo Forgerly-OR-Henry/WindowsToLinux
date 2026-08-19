@@ -15,7 +15,7 @@ import java.util.Objects;
  * @param componentIds affected component identifiers / 受影响的组件标识符
  * @param message localized explanation / 本地化说明
  */
-public record ComponentIssue(Severity severity, String code, List<String> componentIds, LocalizedMessage message) {
+public record ComponentIssue(SeverityLevel severity, String code, List<String> componentIds, LocalizedMessage message) {
     /** Validates one component-scoped issue. / 验证一个组件范围问题。 */
     public ComponentIssue {
         severity = Objects.requireNonNull(severity, "severity");
@@ -29,7 +29,7 @@ public record ComponentIssue(Severity severity, String code, List<String> compon
     }
 
     /** Component issue severity. / 组件问题严重性。 */
-    public enum Severity {
+    public enum SeverityLevel {
         /** Missing deterministic user input. / 缺少确定性用户输入。 */
         REQUIRES_INPUT,
         /** Unsafe contradiction that stops target mutation. / 阻止目标修改的不安全矛盾。 */

@@ -18,7 +18,7 @@ public record AnalysisEvidence(
         LocalizedMessage subject,
         String source,
         LocalizedMessage conclusion,
-        EvidenceConfidence confidence
+        EvidenceConfidenceLevel confidence
 ) {
     /**
      * Creates a {@code AnalysisEvidence} instance.
