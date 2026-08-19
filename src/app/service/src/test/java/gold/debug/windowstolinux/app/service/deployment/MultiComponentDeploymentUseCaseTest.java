@@ -135,6 +135,9 @@ class MultiComponentDeploymentUseCaseTest {
         Files.writeString(directory.resolve("package.json"), """
                 {"name":"%s","engines":{"node":"22"},"scripts":{"build":"build","start":"start"}}
                 """.formatted(name));
-        Files.writeString(directory.resolve("package-lock.json"), "{}");
+        Files.writeString(directory.resolve("package-lock.json"), """
+                {"name":"%s","version":"1.0.0","lockfileVersion":3,"requires":true,
+                 "packages":{"":{"name":"%s","version":"1.0.0"}}}
+                """.formatted(name, name));
     }
 }

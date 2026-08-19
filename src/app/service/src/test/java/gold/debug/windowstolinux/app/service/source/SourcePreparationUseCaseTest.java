@@ -38,7 +38,7 @@ class SourcePreparationUseCaseTest {
         Files.writeString(repository.resolve("package.json"), """
                 {"name":"git-demo","engines":{"node":"22"},"scripts":{"build":"build","start":"start"}}
                 """, StandardCharsets.UTF_8);
-        Files.writeString(repository.resolve("package-lock.json"), "{}", StandardCharsets.UTF_8);
+        Files.writeString(repository.resolve("package-lock.json"), npmLock("git-demo"), StandardCharsets.UTF_8);
         git(repository, "add", ".");
         git(repository, "commit", "-m", "fixture");
         String commit = git(repository, "rev-parse", "HEAD").trim();
@@ -117,7 +117,14 @@ class SourcePreparationUseCaseTest {
         Files.writeString(directory.resolve("package.json"), """
                 {"name":"%s","engines":{"node":"22"},"scripts":{"build":"build","start":"start"}}
                 """.formatted(name), StandardCharsets.UTF_8);
-        Files.writeString(directory.resolve("package-lock.json"), "{}", StandardCharsets.UTF_8);
+        Files.writeString(directory.resolve("package-lock.json"), npmLock(name), StandardCharsets.UTF_8);
+    }
+
+    private static String npmLock(String name) {
+        return """
+                {"name":"%s","version":"1.0.0","lockfileVersion":3,"requires":true,
+                 "packages":{"":{"name":"%s","version":"1.0.0"}}}
+                """.formatted(name, name);
     }
 
     private static String git(Path directory, String... arguments) throws IOException, InterruptedException {

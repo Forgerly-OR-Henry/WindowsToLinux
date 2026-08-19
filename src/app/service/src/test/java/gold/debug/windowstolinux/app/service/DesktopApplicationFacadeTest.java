@@ -147,7 +147,10 @@ class DesktopApplicationFacadeTest {
         Files.writeString(source.resolve("package.json"), """
                 {"name":"demo","scripts":{"build":"vite","start":"node server.js"}}
                 """);
-        Files.writeString(source.resolve("package-lock.json"), "{}");
+        Files.writeString(source.resolve("package-lock.json"), """
+                {"name":"demo","version":"1.0.0","lockfileVersion":3,"requires":true,
+                 "packages":{"":{"name":"demo","version":"1.0.0"}}}
+                """);
         try (DesktopPersistence database = DesktopPersistence.open(temporaryDirectory)) {
             DesktopApplicationFacade service = new DesktopApplicationFacade(database, temporaryDirectory.resolve("work"), unusedGateway());
             assertEquals(gold.debug.windowstolinux.shared.model.analysis.DeploymentAdmissionStatus.READY_FOR_PLANNING,
