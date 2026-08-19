@@ -1,4 +1,4 @@
-package gold.debug.windowstolinux.shared.analyze.ecosystem.php;
+package gold.debug.windowstolinux.shared.analyze.ecosystem.php.composer;
 
 import java.util.List;
 

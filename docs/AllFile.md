@@ -212,12 +212,14 @@ src/  # 项目源码与模块根目录
 │  │  │  ├─ DeploymentAnalysisCoordinator.java  # 仅协调有界遍历、安全策略、类型分派与结果汇总
 │  │  │  └─ ProjectLanguageInspector.java  # 合并独立语言检查器，不进行排序或选择项目类型
 │  │  ├─ ecosystem/  # 按技术生态组织的分析包
-│  │  │  ├─ dotnet/  # .NET SDK 服务分析包
-│  │  │  │  ├─ DotNetSdkDeploymentInspector.java  # 在不执行 dotnet 的情况下检查一个锁定的 .NET Web SDK 服务
-│  │  │  │  └─ DotNetSdkFacts.java  # 服务分析使用的固定 .NET SDK 项目元数据
-│  │  │  ├─ go/  # Go Module 服务分析包
-│  │  │  │  ├─ GoModuleDeploymentInspector.java  # 在不执行 Go 的情况下检查一个锁定的 Go Module 服务
-│  │  │  │  └─ GoModuleFacts.java  # 服务分析使用的固定 Go Module 元数据
+│  │  │  ├─ dotnet/  # .NET 语言生态分析包
+│  │  │  │  └─ dotnetsdk/  # .NET SDK 架构分析包
+│  │  │  │     ├─ DotNetSdkDeploymentInspector.java  # 在不执行 dotnet 的情况下检查一个锁定的 .NET Web SDK 服务
+│  │  │  │     └─ DotNetSdkFacts.java  # 服务分析使用的固定 .NET SDK 项目元数据
+│  │  │  ├─ go/  # Go 语言生态分析包
+│  │  │  │  └─ gomodule/  # Go Module 架构分析包
+│  │  │  │     ├─ GoModuleDeploymentInspector.java  # 在不执行 Go 的情况下检查一个锁定的 Go Module 服务
+│  │  │  │     └─ GoModuleFacts.java  # 服务分析使用的固定 Go Module 元数据
 │  │  │  ├─ java/  # Java 语言与部署类型分析包
 │  │  │  │  ├─ gradle/  # Gradle 构建事实分析包
 │  │  │  │  │  ├─ GradleBuildFacts.java  # 固定的 Gradle 构建脚本与 Wrapper 事实
@@ -229,28 +231,47 @@ src/  # 项目源码与模块根目录
 │  │  │  │  │  ├─ MavenBuildFacts.java  # 框架及部署支持检查所需的根 Maven 事实
 │  │  │  │  │  └─ MavenBuildInspector.java  # 读取根 POM 和 Maven 入口，但不调用 Maven 或其 Wrapper
 │  │  │  │  └─ SpringBootDeploymentInspector.java  # 在不调用构建的前提下检查一个 Maven 或 Gradle Spring Boot 可执行 JAR 项目
-│  │  │  ├─ kotlin/  # Kotlin Gradle 服务分析包
-│  │  │  │  ├─ KotlinGradleDeploymentInspector.java  # 在不执行 Gradle 的情况下检查一个锁定的 Kotlin Gradle 应用
-│  │  │  │  └─ KotlinGradleFacts.java  # 服务分析使用的固定 Kotlin Gradle 应用元数据
+│  │  │  ├─ kotlin/  # Kotlin 语言生态分析包
+│  │  │  │  └─ gradle/  # Kotlin Gradle 架构分析包
+│  │  │  │     ├─ KotlinGradleDeploymentInspector.java  # 在不执行 Gradle 的情况下检查一个锁定的 Kotlin Gradle 应用
+│  │  │  │     └─ KotlinGradleFacts.java  # 服务分析使用的固定 Kotlin Gradle 应用元数据
 │  │  │  ├─ node/  # Node.js 服务分析包
+│  │  │  │  ├─ NodeBuildArchitectureFacts.java  # 选中的 Node 包管理器架构及其锁文件
 │  │  │  │  ├─ NodeBuildFacts.java  # 来自 package.json 的固定包管理器、锁文件和脚本事实
 │  │  │  │  ├─ NodeBuildInspector.java  # 读取 package.json、受支持锁文件和固定脚本名称，但不调用包管理器
 │  │  │  │  ├─ NodeLanguageInspector.java  # 从路径与包元数据检测 Node.js、JavaScript 和 TypeScript 事实
-│  │  │  │  └─ NodeServiceDeploymentInspector.java  # 生成 Node 服务构建事实与精确版本运行时建议
-│  │  │  ├─ php/  # PHP Composer 服务分析包
-│  │  │  │  ├─ PhpComposerDeploymentInspector.java  # 在不执行 PHP 的情况下检查一个 Composer 锁定的 PHP 服务
-│  │  │  │  └─ PhpComposerFacts.java  # PHP 服务分析使用的固定 Composer 元数据
+│  │  │  │  ├─ NodeServiceDeploymentInspector.java  # 生成 Node 服务构建事实与精确版本运行时建议
+│  │  │  │  ├─ npm/  # npm 架构分析包
+│  │  │  │  │  └─ NpmBuildInspector.java  # 检查 npm package-lock 架构
+│  │  │  │  ├─ pnpm/  # pnpm 架构分析包
+│  │  │  │  │  └─ PnpmBuildInspector.java  # 检查 pnpm 锁文件架构
+│  │  │  │  └─ yarn/  # Yarn 架构分析包
+│  │  │  │     └─ YarnBuildInspector.java  # 检查 Yarn 锁文件架构
+│  │  │  ├─ php/  # PHP 语言生态分析包
+│  │  │  │  └─ composer/  # Composer 架构分析包
+│  │  │  │     ├─ PhpComposerDeploymentInspector.java  # 在不执行 PHP 的情况下检查一个 Composer 锁定的 PHP 服务
+│  │  │  │     └─ PhpComposerFacts.java  # PHP 服务分析使用的固定 Composer 元数据
 │  │  │  ├─ python/  # Python 服务分析包
+│  │  │  │  ├─ pip/  # pip 架构分析包
+│  │  │  │  │  └─ PipBuildInspector.java  # 检查使用哈希锁定的 pip 架构
+│  │  │  │  ├─ pipenv/  # Pipenv 架构分析包
+│  │  │  │  │  └─ PipenvBuildInspector.java  # 检查 Pipenv 锁文件架构
+│  │  │  │  ├─ poetry/  # Poetry 架构分析包
+│  │  │  │  │  └─ PoetryBuildInspector.java  # 检查 Poetry 锁文件架构
 │  │  │  │  ├─ PythonBuildFacts.java  # 固定的 Python 项目与锁文件事实
 │  │  │  │  ├─ PythonBuildInspector.java  # 读取 pyproject.toml 与固定锁文件名称，但不调用 Python
 │  │  │  │  ├─ PythonLanguageInspector.java  # 检测 Python 源码、精确版本元数据和唯一模块入口
-│  │  │  │  └─ PythonServiceDeploymentInspector.java  # 生成 Python 构建事实与精确版本/模块运行时建议
-│  │  │  ├─ ruby/  # Ruby Bundler 服务分析包
-│  │  │  │  ├─ RubyBundlerDeploymentInspector.java  # 在不执行 Ruby 的情况下检查一个 Bundler 锁定的 Rack 服务
-│  │  │  │  └─ RubyBundlerFacts.java  # Ruby 服务分析使用的固定 Bundler 元数据
-│  │  │  └─ rust/  # Rust Cargo 服务分析包
-│  │  │     ├─ RustCargoDeploymentInspector.java  # 在不执行 Rust 工具的情况下检查一个锁定的 Cargo 服务
-│  │  │     └─ RustCargoFacts.java  # Rust 服务分析使用的固定 Cargo 元数据
+│  │  │  │  ├─ PythonServiceDeploymentInspector.java  # 生成 Python 构建事实与精确版本/模块运行时建议
+│  │  │  │  └─ uv/  # uv 架构分析包
+│  │  │  │     └─ UvBuildInspector.java  # 检查 uv 锁文件架构
+│  │  │  ├─ ruby/  # Ruby 语言生态分析包
+│  │  │  │  └─ bundler/  # Bundler 架构分析包
+│  │  │  │     ├─ RubyBundlerDeploymentInspector.java  # 在不执行 Ruby 的情况下检查一个 Bundler 锁定的 Rack 服务
+│  │  │  │     └─ RubyBundlerFacts.java  # Ruby 服务分析使用的固定 Bundler 元数据
+│  │  │  └─ rust/  # Rust 语言生态分析包
+│  │  │     └─ cargo/  # Cargo 架构分析包
+│  │  │        ├─ RustCargoDeploymentInspector.java  # 在不执行 Rust 工具的情况下检查一个锁定的 Cargo 服务
+│  │  │        └─ RustCargoFacts.java  # Rust 服务分析使用的固定 Cargo 元数据
 │  │  ├─ policy/  # 静态分析边界与拒绝规则包
 │  │  │  └─ SourceMutationPolicy.java  # 拒绝可能自动修改受管数据库的源码声明
 │  │  ├─ pom.xml  # 配置源码生态、构建和部署条件分析模块的依赖与构建

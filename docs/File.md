@@ -2,18 +2,18 @@
 
 ## 文档信息
 
-- 文档版本：`3.21.0-ecosystem-architecture`
-- 文档状态：**28-POM 模块边界保持不变；ecosystem 职责、命名、受控深度和源码迁移已完成，三期扩展文档必须以本版为结构基线；不得据此扩大运行支持声明**
+- 文档版本：`3.22.0-ecosystem-architecture-packages`
+- 文档状态：**28-POM 模块边界保持不变；ecosystem 职责、架构名子包、受控深度和源码迁移已完成，三期扩展文档必须以本版为结构基线；不得据此扩大运行支持声明**
 - 已确认范围：`shared` 共用模块、`app` Windows 桌面应用模块、`web` Web 应用模块
 - 已确认能力边界：受管应用生命周期复用既有模块，不新增独立 Maven 模块
-- 更新日期：2026-08-19
+- 更新日期：2026-08-20
 - 开发总纲：[DEVELOPMENT.md](DEVELOPMENT.md)
 - 分析包修订：[ANALYZE-PACKAGE-REVISION.md](development/ANALYZE-PACKAGE-REVISION.md)
 - Linux 部署链分包修订：[LINUX-DEPLOY-PACKAGE-REVISION.md](development/LINUX-DEPLOY-PACKAGE-REVISION.md)
 
 > 本文是正式目标目录、模块职责、依赖方向、包结构和命名规则的唯一来源。开发总纲、分期扩展文档和源码迁移必须先符合本文；运行能力与实机证据仍以相应分期文档为准，不得由目标目录反推支持结论。
 
-> 本版先固定 `ecosystem` 的稳定边界：语言识别、构建架构、框架分析、目标机构建和工具链探测按职责归位；共享模型、部署编排、发行版、工作负载及运行机制保持正交。该结构不改变模块、协议、持久化、远端路径或既有实机证据。
+> 本版固定 `ecosystem` 的稳定边界：语言识别、构建架构、框架分析、目标机构建和工具链探测按职责归位；每个分析构建架构使用自身规范名子包；共享模型、部署编排、发行版、工作负载及运行机制保持正交。该结构不改变模块、协议、持久化、远端路径或既有实机证据。
 
 ## 1. 完整目标结构
 
@@ -82,18 +82,31 @@ WindowsToLinux/
    │  │  ├─ component/        混合项目组件分析、资源冲突和依赖图校验
    │  │  ├─ core/             分析协调器、跨语言事实汇总、阶段顺序与结果聚合
    │  │  ├─ ecosystem/        只保存按语言维护的识别、构建架构和框架分析
-   │  │  │  ├─ dotnet/        .NET SDK 事实与服务部署检查
-   │  │  │  ├─ go/            Go Module 事实与服务部署检查
+   │  │  │  ├─ dotnet/        .NET 语言生态
+   │  │  │  │  └─ dotnetsdk/  .NET SDK 事实与服务部署检查
+   │  │  │  ├─ go/            Go 语言生态
+   │  │  │  │  └─ gomodule/   Go Module 事实与服务部署检查
    │  │  │  ├─ java/          Java 语言与 Spring Boot 框架分析
    │  │  │  │  ├─ gradle/     Gradle 构建事实与静态检查
    │  │  │  │  ├─ jar/        JAR 原生交付架构静态检查
    │  │  │  │  └─ maven/      Maven 构建事实与静态检查
-   │  │  │  ├─ kotlin/        Kotlin/Gradle 应用事实与服务部署检查
-   │  │  │  ├─ node/          Node.js 语言、包管理器与服务项目分析
-   │  │  │  ├─ php/           Composer 事实与 PHP 服务部署检查
-   │  │  │  ├─ python/        Python 语言、依赖与服务项目分析
-   │  │  │  ├─ ruby/          Bundler 事实与 Ruby 服务部署检查
-   │  │  │  └─ rust/          Cargo 事实与 Rust 服务部署检查
+   │  │  │  ├─ kotlin/        Kotlin 语言生态
+   │  │  │  │  └─ gradle/     Kotlin/Gradle 应用事实与服务部署检查
+   │  │  │  ├─ node/          Node.js 语言、跨架构选择与服务分析
+   │  │  │  │  ├─ npm/        npm 架构检查
+   │  │  │  │  ├─ pnpm/       pnpm 架构检查
+   │  │  │  │  └─ yarn/       Yarn 架构检查
+   │  │  │  ├─ php/           PHP 语言生态
+   │  │  │  │  └─ composer/   Composer 事实与服务部署检查
+   │  │  │  ├─ python/        Python 语言、跨架构选择与服务分析
+   │  │  │  │  ├─ pip/        pip 架构检查
+   │  │  │  │  ├─ pipenv/     Pipenv 架构检查
+   │  │  │  │  ├─ poetry/     Poetry 架构检查
+   │  │  │  │  └─ uv/         uv 架构检查
+   │  │  │  ├─ ruby/          Ruby 语言生态
+   │  │  │  │  └─ bundler/    Bundler 事实与服务部署检查
+   │  │  │  └─ rust/          Rust 语言生态
+   │  │  │     └─ cargo/      Cargo 事实与服务部署检查
    │  │  ├─ policy/           跨生态源码变更与部署停止策略
    │  │  ├─ preview/      不可执行语言标记目录与识别预览结果
    │  │  ├─ registry/         默认类型检查器的唯一装配与完整性校验
@@ -394,14 +407,14 @@ test/
 | --- | --- | --- | --- |
 | O-01 | `ecosystem` 只保存行为会因语言、构建架构、框架或工具链而变化的具体实现。 | `analyze.ecosystem.java` | 把共享协调器迁入 `ecosystem` |
 | O-02 | 共享枚举、模型、项目事实、部署计划、事务、UI、发行版和运行机制保持在原职责包。 | `model.language` | `ecosystem.model` |
-| O-03 | 分析层先按语言完整聚合；同一语言存在多个独立构建架构时，各架构进入以工具名命名的子包。 | `ecosystem.java.maven`、`ecosystem.java.jar` | 横向 `build.maven` |
+| O-03 | 分析层先按语言完整聚合；每个独立构建架构必须进入以工具或架构规范名命名的子包，不因当前只有一种架构而省略该层。 | `ecosystem.java.jar`、`ecosystem.java.maven`、`ecosystem.rust.cargo` | `ecosystem.rust` 直接放置 Cargo 检查器 |
 | O-04 | 构建架构包使用工具或架构的规范英文名全小写。 | `maven`、`npm`、`cmake`、`cargo` | `mavenbuild`、`rust-build` |
 | O-05 | 分析层的语言识别器和跨架构选择器留在语言包；框架实现留在所属语言包，除非框架自身形成多个独立扩展职责。 | Spring Boot 位于 `ecosystem.java` | `ecosystem.springboot` |
 | O-06 | 目标机构建统一归 `linux-sshd.build.ecosystem`；仅有一个独立构建架构的语言直接放置具名 Renderer，存在两个及以上架构时建立一个语言子包，各架构 Renderer 直接位于该语言包。 | `build.ecosystem.CargoBuildRenderer`、`build.ecosystem.java.*Renderer` | `build.ecosystem.rust.cargo.renderer` |
 | O-07 | 语言与构建工具链探测、版本解析和检查脚本生成统一归 `linux-sshd.capability.ecosystem`。 | `capability.ecosystem` | 在 `distro` 中执行 `go version` |
 | O-08 | 发行版只选择包集合和能力要求；APT/DNF 包名不得进入生态实现，语言命令不得进入发行版实现。 | `distro.apt` + `capability.ecosystem` | `distro.ubuntu.java` |
 | O-09 | helper 中仅语言或工具链专属的资源片段进入 `ecosystem` 分组；协议基础、输入、发布、运行和生命周期片段保持原职责分组。 | `fragments/ecosystem` | 将 `00-protocol-foundation.sh` 移入生态目录 |
-| O-10 | 是否建立语言分组由独立构建架构数量决定，不按枚举值、文件数或目录对称决定；不得为满足数量门禁制造陪衬类型。 | Java 多架构建立语言包 | 为单个类创建空 Facts |
+| O-10 | 分析层固定使用“语言＋架构”边界；执行层和能力层是否建立语言分组由独立架构数量决定，不按枚举值、文件数或目录对称决定；不得为满足数量门禁制造陪衬类型。 | `analyze.ecosystem.go.gomodule`、`build.ecosystem.GoBuildRenderer` | 为单个类创建空 Facts |
 | O-11 | C 与 C++ 统一属于 `c` 生态，C++ 作为独立能力扩展，不以 Java 继承关系代替构建架构；CMake 架构包名为 `cmake`。 | `ecosystem.c.cmake` | `ecosystem.cpp` 或 `Cpp extends C` |
 | O-12 | 工作负载只表达容器、静态站点和普通服务等项目形态。 | `analyze.workload`、`build.workload` | `ecosystem.container` |
 | O-13 | `runtime` 只表达 systemd、Docker、Podman 等实际运行机制；`distro` 只表达发行版；CPU 架构归 `capability`。 | `runtime.systemd`、`distro.apt` | `ecosystem.systemd`、`distro.x86_64` |
@@ -786,7 +799,7 @@ deploy.adapter                按部署形态生成类型化计划，不镜像�
 deploy.transaction            编排上传、构建、发布、健康检查和回滚
 ```
 
-1. `analyze.ecosystem` 先按语言聚合识别、构建事实和框架分析；同一语言的独立构建架构按第 2.3 节使用工具名子包。Java 的 Maven、Gradle 与 JAR 必须形成平行架构，不得把 JAR 留作语言包中的特例。
+1. `analyze.ecosystem` 先按语言聚合识别、构建事实和框架分析；每个独立构建架构都按第 2.3 节使用工具或架构规范名子包。Java 的 Maven、Gradle 与 JAR 必须形成平行架构，Node 的 npm、pnpm 与 Yarn、Python 的 pip、Pipenv、Poetry 与 uv 也不得混为一个无名实现。
 2. `linux-sshd.build` 通过 `DeploymentBuildRenderer` SPI、注册表和安全脚本外壳组织构建。生态差异进入 `build.ecosystem`，容器与静态站点进入 `build.workload`；构建执行器、SSH command、systemd 生命周期和 helper 调度不得复制到各生态。
 3. `linux-sshd.capability.ecosystem` 实现语言与工具链命令、版本解析和能力检查脚本；`distro` 只提供软件包集合与所需能力配置，两者通过窄契约组合。
 4. `linux-sshd.distro.apt` 完整保存 Ubuntu/Debian 的准备差异，`distro.dnf` 完整保存 CentOS Stream、Rocky Linux、AlmaLinux 与 Oracle Linux 的准备差异；具体发行版不得互相充当别名。
@@ -801,15 +814,15 @@ deploy.transaction            编排上传、构建、发布、健康检查和�
 2. 模块根包只保留稳定入口、门面或确需跨内部包使用的公共契约，具体实现进入职责明确的子包。
 3. 测试包镜像对应生产包；根目录测试夹具使用 `test/<language>/<build-tool>/<framework-or-function>/<fixture>` 分类，新增语言、构建工具、框架或功能时创建对应同级目录，不创建没有夹具的空分类。
 4. 模块、包、类、接口、枚举、异常和测试类名称统一遵守第 2 节，不得另立同义词、临时名称或兼容名称。
-5. `analyze` 的跨语言公共流程按 `core`、`spi`、`registry`、`source`、`service`、`policy`、`component`、`workload` 与 `preview` 分包；`ecosystem` 内按语言聚合，并按第 2.3 节为真实独立构建架构建立工具名子包。
+5. `analyze` 的跨语言公共流程按 `core`、`spi`、`registry`、`source`、`service`、`policy`、`component`、`workload` 与 `preview` 分包；`ecosystem` 内按语言聚合，每个真实独立构建架构均按第 2.3 节建立架构名子包，语言识别器、跨架构选择器和框架协调器留在语言包。
 6. `deploy` 将不可变输入/计划、SPI、注册表、部署形态、支持矩阵和事务编排分离；适配器统一进入 `adapter`，`support` 只保留支持判断门面，发行版策略和规则进入 `support.distro`，运行时工具与版本判断进入 `support.runtime`，公开结果分别进入 `result.compatibility`、`result.deployment`、`result.lifecycle`，`plan` 不得直接构造具体实现。
 7. `linux` 按连接、会话、错误、传输、能力、构建、运行机制、发行版和协议组织公共契约；`linux-sshd` 的生态实现只可进入 `build.ecosystem`、`capability.ecosystem` 和 helper 资源 `ecosystem` 分组，工作负载构建只可进入 `build.workload`。
-8. 建立构建架构包和执行层语言分组时以独立架构数量为依据，不以类数量为依据；不得为满足目录对称或门禁数量新增空分类、空接口、委托壳或无独立语义的数据类型。
+8. 分析层发现真实独立构建架构时必须建立架构名子包；执行层和能力层建立语言分组时以独立架构数量为依据，不以类数量为依据。不得为满足目录对称或门禁数量新增空分类、空接口、委托壳或无独立语义的数据类型。
 9. 界面、数据库、认证、秘密和普通业务用例不得按被部署项目的语言复制结构。
 10. 包结构不用于绕开模块职责。跨模块能力仍通过既有依赖和类型化契约协作，不复制模型，不向上层开放任意 Shell、原始 SFTP 或不受控 systemd、Docker、Podman 操作。
 11. `linux` 的接口、请求、结果和异常不得导入或暴露 Apache SSHD 类型；`linux-sshd` 可以依赖 Apache SSHD，但不得把具体客户端、会话、通道或 SFTP 类型传递给上层模块。
 12. 生产包依赖不得成环；组合门面只能依赖下游窄契约和实现，低层 command、SPI、不可变契约与错误类型不得反向依赖注册表、默认实现、会话或业务编排。
-13. 模块 Java 根包以下默认最多两层子包。第三层只允许 `analyze.ecosystem.<language>.<architecture>`、`linux-sshd.build.ecosystem.<language>` 和 `linux-sshd.capability.ecosystem.<language>`：分析层以独立架构为边界，构建与能力层仅在同一语言存在两个及以上独立架构时建立语言分组。其他第三层包必须先修改本文并单独评审；总包数、单包类型数量和目录对称不作为硬门禁。
+13. 模块 Java 根包以下默认最多两层子包。第三层只允许 `analyze.ecosystem.<language>.<architecture>`、`linux-sshd.build.ecosystem.<language>` 和 `linux-sshd.capability.ecosystem.<language>`：分析层的每个独立构建架构固定使用第三层架构名包，构建与能力层仅在同一语言存在两个及以上独立架构时建立语言分组。其他第三层包必须先修改本文并单独评审；总包数、单包类型数量和目录对称不作为硬门禁。
 14. 普通类最多 25 个实例字段、30 个直接声明方法，单方法最多 80 个 JDK AST 语句；稳定门面 `DesktopApplicationFacade` 只豁免直接声明方法数。
 15. 合并依据是行为完全一致且差异可由受校验数据表达，拆分依据是存在可独立测试和命名的职责；领域记录、枚举、状态类型和 SPI 不因文件短小而合并，类也不因行数较长而机械拆分。
 
@@ -1094,6 +1107,7 @@ linux-sshd 通过 linux 契约采集服务器已有环境
 
 | 版本 | 日期 | 说明 |
 | --- | --- | --- |
+| 3.22.0-ecosystem-architecture-packages | 2026-08-20 | 明确分析层每个独立构建架构都必须使用自身规范名子包，不因只有一种架构而省略；将现有 .NET SDK、Go Module、Kotlin Gradle、Composer、Bundler、Cargo 及 Node/Python 多架构检查归入 `dotnetsdk`、`gomodule`、`gradle`、`composer`、`bundler`、`cargo`、`npm/pnpm/yarn`、`pip/pipenv/poetry/uv`。执行层仍按多架构数量决定语言分组，以控制深度；不改变模块、协议、持久化、helper 字节或运行支持范围。 |
 | 3.21.0-ecosystem-architecture | 2026-08-19 | 在三期扩展开发文档之前确立并迁移 ecosystem 正式基线：Java JAR 与 Maven/Gradle 平行，目标机构建与能力探测分别使用 `build.ecosystem`、`capability.ecosystem`，helper 仅将语言专属片段归入资源 ecosystem 分组；六种参数化服务构建改为具名原生架构 Renderer，C/C++ 统一归 `c`。同步删除旧参数化 Renderer、固定 Java 白名单、现状计数和运行证据长段等过时或重复规则；不改变 helper 字节、协议、持久化或运行支持范围。 |
 | 3.20.0-strict-naming-compliance | 2026-08-19 | 将生产、测试、顶级与嵌套枚举统一为穷举语义后缀，消除两个不同职责的 `DeploymentStep` 及其余无后缀枚举，并将 `00-common.sh` 更名为 `00-protocol-foundation.sh`；架构门禁新增枚举后缀、顶级类型唯一性、受维护资源名和禁限用词封闭例外检查。模块、包结构、枚举常量、helper 内容与摘要、协议、持久化和运行支持范围不变。 |
 | 3.19.1-naming-rule-order | 2026-08-19 | 将统一命名规范中的职责包、约束与模板、行为后缀、数据后缀、限定词、缩写、禁限用名称、枚举及测试格式按功能归组，并在各功能组内按英文标准名称排序；阶段流和带编号规则保持原有语义顺序，不改变任何命名规则、源码、模块、API、协议或运行能力。 |

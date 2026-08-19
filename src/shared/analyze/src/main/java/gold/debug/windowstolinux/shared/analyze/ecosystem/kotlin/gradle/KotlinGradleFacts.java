@@ -1,4 +1,4 @@
-package gold.debug.windowstolinux.shared.analyze.ecosystem.kotlin;
+package gold.debug.windowstolinux.shared.analyze.ecosystem.kotlin.gradle;
 
 import java.util.List;
 

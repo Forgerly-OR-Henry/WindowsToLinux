@@ -1,4 +1,4 @@
-package gold.debug.windowstolinux.shared.analyze.ecosystem.php;
+package gold.debug.windowstolinux.shared.analyze.ecosystem.php.composer;
 
 import gold.debug.windowstolinux.shared.analyze.service.ServiceInspectionAssembler;
 import gold.debug.windowstolinux.shared.analyze.service.ServiceMetadataInspector;

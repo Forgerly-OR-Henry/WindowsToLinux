@@ -2,6 +2,10 @@ package gold.debug.windowstolinux.shared.analyze.ecosystem.python;
 
 import gold.debug.windowstolinux.shared.analyze.source.BoundedMetadataInspector;
 import gold.debug.windowstolinux.shared.analyze.source.ProjectIdentityResolver;
+import gold.debug.windowstolinux.shared.analyze.ecosystem.python.pip.PipBuildInspector;
+import gold.debug.windowstolinux.shared.analyze.ecosystem.python.pipenv.PipenvBuildInspector;
+import gold.debug.windowstolinux.shared.analyze.ecosystem.python.poetry.PoetryBuildInspector;
+import gold.debug.windowstolinux.shared.analyze.ecosystem.python.uv.UvBuildInspector;
 
 import java.io.IOException;
 import java.nio.file.Path;
@@ -16,6 +20,10 @@ import java.util.regex.Pattern;
  */
 public final class PythonBuildInspector {
     private static final Pattern NAME = Pattern.compile("(?m)^\\s*name\\s*=\\s*\\\"([a-z0-9][a-z0-9._-]{0,62})\\\"\\s*$");
+    private final PipBuildInspector pip = new PipBuildInspector();
+    private final PipenvBuildInspector pipenv = new PipenvBuildInspector();
+    private final PoetryBuildInspector poetry = new PoetryBuildInspector();
+    private final UvBuildInspector uv = new UvBuildInspector();
 
     /** Returns Python project facts when pyproject.toml exists. / 在 pyproject.toml 存在时返回 Python 项目事实。 */
     public Optional<PythonBuildFacts> inspect(Path root) throws IOException {
@@ -24,7 +32,12 @@ public final class PythonBuildInspector {
             return Optional.empty();
         }
         String toml = BoundedMetadataInspector.read(pyproject);
+        List<String> lockFiles = List.of(
+                        pip.inspect(root), poetry.inspect(root), uv.inspect(root), pipenv.inspect(root))
+                .stream()
+                .flatMap(Optional::stream)
+                .toList();
         return Optional.of(new PythonBuildFacts(ProjectIdentityResolver.applicationId(root, toml, NAME),
-                BoundedMetadataInspector.existingNames(root, "requirements.lock", "poetry.lock", "uv.lock", "Pipfile.lock")));
+                lockFiles));
     }
 }

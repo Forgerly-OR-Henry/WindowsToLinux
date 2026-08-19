@@ -1,11 +1,11 @@
 package gold.debug.windowstolinux.shared.analyze.registry;
 
-import gold.debug.windowstolinux.shared.analyze.ecosystem.dotnet.DotNetSdkDeploymentInspector;
-import gold.debug.windowstolinux.shared.analyze.ecosystem.go.GoModuleDeploymentInspector;
-import gold.debug.windowstolinux.shared.analyze.ecosystem.kotlin.KotlinGradleDeploymentInspector;
-import gold.debug.windowstolinux.shared.analyze.ecosystem.php.PhpComposerDeploymentInspector;
-import gold.debug.windowstolinux.shared.analyze.ecosystem.ruby.RubyBundlerDeploymentInspector;
-import gold.debug.windowstolinux.shared.analyze.ecosystem.rust.RustCargoDeploymentInspector;
+import gold.debug.windowstolinux.shared.analyze.ecosystem.dotnet.dotnetsdk.DotNetSdkDeploymentInspector;
+import gold.debug.windowstolinux.shared.analyze.ecosystem.go.gomodule.GoModuleDeploymentInspector;
+import gold.debug.windowstolinux.shared.analyze.ecosystem.kotlin.gradle.KotlinGradleDeploymentInspector;
+import gold.debug.windowstolinux.shared.analyze.ecosystem.php.composer.PhpComposerDeploymentInspector;
+import gold.debug.windowstolinux.shared.analyze.ecosystem.ruby.bundler.RubyBundlerDeploymentInspector;
+import gold.debug.windowstolinux.shared.analyze.ecosystem.rust.cargo.RustCargoDeploymentInspector;
 import gold.debug.windowstolinux.shared.analyze.ecosystem.java.SpringBootDeploymentInspector;
 import gold.debug.windowstolinux.shared.analyze.ecosystem.java.jar.JavaJarDeploymentInspector;
 import gold.debug.windowstolinux.shared.analyze.ecosystem.node.NodeServiceDeploymentInspector;

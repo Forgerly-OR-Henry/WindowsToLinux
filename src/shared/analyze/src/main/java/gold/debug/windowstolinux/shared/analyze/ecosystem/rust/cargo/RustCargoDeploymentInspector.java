@@ -1,4 +1,4 @@
-package gold.debug.windowstolinux.shared.analyze.ecosystem.rust;
+package gold.debug.windowstolinux.shared.analyze.ecosystem.rust.cargo;
 
 import gold.debug.windowstolinux.shared.analyze.service.ServiceInspectionAssembler;
 import gold.debug.windowstolinux.shared.analyze.service.ServiceMetadataInspector;

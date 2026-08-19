@@ -1,4 +1,4 @@
-package gold.debug.windowstolinux.shared.analyze.ecosystem.go;
+package gold.debug.windowstolinux.shared.analyze.ecosystem.ruby.bundler;
 
 import gold.debug.windowstolinux.shared.analyze.service.ServiceInspectionAssembler;
 import gold.debug.windowstolinux.shared.analyze.service.ServiceMetadataInspector;
@@ -14,26 +14,26 @@ import gold.debug.windowstolinux.shared.model.language.ProjectLanguageFacts;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.util.List;
-import java.util.regex.Pattern;
 
-/** Inspects one locked Go module service without executing Go. / 在不执行 Go 的情况下检查一个锁定的 Go Module 服务。 */
-public final class GoModuleDeploymentInspector implements DeploymentTypeInspector {
-    private static final Pattern GO_VERSION = Pattern.compile("(?m)^go\\s+(1\\.[0-9]+)(?:\\.[0-9]+)?\\s*$");
-
+/** Inspects one Bundler-locked Rack service without executing Ruby. / 在不执行 Ruby 的情况下检查一个 Bundler 锁定的 Rack 服务。 */
+public final class RubyBundlerDeploymentInspector implements DeploymentTypeInspector {
     @Override
     public DeploymentProjectType projectType() {
-        return DeploymentProjectType.GO_SERVICE;
+        return DeploymentProjectType.RUBY_SERVICE;
     }
 
     @Override
     public DeploymentTypeAssessment inspect(Path root, SourceInspectionFacts source, ProjectLanguageFacts languageFacts,
                                             List<RejectionReason> rejections) throws IOException {
-        GoModuleFacts facts = new GoModuleFacts(ServiceMetadataInspector.match(
-                ServiceMetadataInspector.readIfPresent(root.resolve("go.mod")), GO_VERSION),
-                ServiceMetadataInspector.missing(root, "go.mod", "go.sum", "main.go"));
-        ServiceProjectFacts shape = new ServiceProjectFacts("go.mod", facts.version(), "w2l-app",
-                ServiceMetadataInspector.present(root, "main.go") ? "main.go" : null, facts.missingFiles());
-        return ServiceInspectionAssembler.assemble(root, projectType(), DeploymentBuildToolType.GO_MODULE,
-                languageFacts, shape, false);
+        String version = ServiceMetadataInspector.readIfPresent(root.resolve(".ruby-version")).trim();
+        if (!version.matches("3\\.(?:2|3|4)(?:\\.[0-9]+)?")) {
+            version = null;
+        }
+        RubyBundlerFacts facts = new RubyBundlerFacts(version,
+                ServiceMetadataInspector.missing(root, "Gemfile", "Gemfile.lock", ".ruby-version", "config.ru"));
+        ServiceProjectFacts shape = new ServiceProjectFacts(".ruby-version", facts.version(), "bundle",
+                ServiceMetadataInspector.present(root, "config.ru") ? "config.ru" : null, facts.missingFiles());
+        return ServiceInspectionAssembler.assemble(root, projectType(), DeploymentBuildToolType.BUNDLER_LOCKED,
+                languageFacts, shape, true);
     }
 }

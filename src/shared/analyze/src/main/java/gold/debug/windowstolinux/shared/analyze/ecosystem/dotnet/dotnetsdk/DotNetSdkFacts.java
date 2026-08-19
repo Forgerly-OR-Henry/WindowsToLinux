@@ -1,4 +1,4 @@
-package gold.debug.windowstolinux.shared.analyze.ecosystem.dotnet;
+package gold.debug.windowstolinux.shared.analyze.ecosystem.dotnet.dotnetsdk;
 
 import java.util.List;
 

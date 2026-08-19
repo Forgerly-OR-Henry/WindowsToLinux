@@ -1,4 +1,4 @@
-package gold.debug.windowstolinux.shared.analyze.ecosystem.go;
+package gold.debug.windowstolinux.shared.analyze.ecosystem.go.gomodule;
 
 import java.util.List;
 

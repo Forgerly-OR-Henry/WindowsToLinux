@@ -1,4 +1,4 @@
-package gold.debug.windowstolinux.shared.analyze.ecosystem.dotnet;
+package gold.debug.windowstolinux.shared.analyze.ecosystem.dotnet.dotnetsdk;
 
 import gold.debug.windowstolinux.shared.analyze.service.ServiceInspectionAssembler;
 import gold.debug.windowstolinux.shared.analyze.service.ServiceMetadataInspector;

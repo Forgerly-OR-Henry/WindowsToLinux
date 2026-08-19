@@ -1,4 +1,4 @@
-package gold.debug.windowstolinux.shared.analyze.ecosystem.ruby;
+package gold.debug.windowstolinux.shared.analyze.ecosystem.ruby.bundler;
 
 import java.util.List;
 
