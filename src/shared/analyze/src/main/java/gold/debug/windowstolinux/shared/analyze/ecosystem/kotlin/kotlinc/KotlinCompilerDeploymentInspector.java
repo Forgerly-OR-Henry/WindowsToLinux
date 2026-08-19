@@ -26,6 +26,8 @@ public final class KotlinCompilerDeploymentInspector {
     private static final Pattern PROPERTY = Pattern.compile("(?m)^([A-Za-z][A-Za-z0-9]*)=([^\\r\\n]+)$");
     private static final Pattern MAIN = Pattern.compile("(?m)^\\s*fun\\s+main\\s*\\(");
     private static final Pattern IMPORT = Pattern.compile("(?m)^\\s*import\\s+([A-Za-z_$][A-Za-z0-9_$.]*)");
+    private static final Pattern PACKAGE = Pattern.compile(
+            "(?m)^\\s*package\\s+([A-Za-z_$][A-Za-z0-9_$]*(?:\\.[A-Za-z_$][A-Za-z0-9_$]*)*)\\s*$");
 
     /** Inspects one native Kotlin compiler architecture. / 检查一个原生 Kotlin 编译器架构。 */
     public DeploymentTypeAssessment inspect(
@@ -59,9 +61,14 @@ public final class KotlinCompilerDeploymentInspector {
             conflicts.add("kotlin-external-build");
         }
         int mainCount = 0;
+        String detectedMainClass = null;
         for (String relative : sources) {
             String kotlin = BoundedMetadataInspector.read(root.resolve(relative));
-            if (MAIN.matcher(kotlin).find()) mainCount++;
+            if (MAIN.matcher(kotlin).find()) {
+                mainCount++;
+                detectedMainClass = generatedMainClass(relative, kotlin);
+                if (detectedMainClass == null) conflicts.add("kotlin-main-source-name:" + relative);
+            }
             Matcher imports = IMPORT.matcher(kotlin);
             while (imports.find()) {
                 String imported = imports.group(1);
@@ -71,6 +78,9 @@ public final class KotlinCompilerDeploymentInspector {
             }
         }
         if (mainCount != 1) conflicts.add("kotlin-main-count:" + mainCount);
+        if (mainCount == 1 && mainClass != null && !mainClass.equals(detectedMainClass)) {
+            conflicts.add("kotlin-main-class:" + detectedMainClass);
+        }
         KotlinCompilerFacts architecture = new KotlinCompilerFacts(compilerVersion, sourceRoot, mainClass,
                 sources, missing, conflicts);
         List<String> shapeMissing = new ArrayList<>(architecture.missingItems());
@@ -106,5 +116,13 @@ public final class KotlinCompilerDeploymentInspector {
 
     private static String javaName(String value) {
         return value != null && value.matches("[A-Za-z_$][A-Za-z0-9_$]*(?:\\.[A-Za-z_$][A-Za-z0-9_$]*)*") ? value : null;
+    }
+
+    private static String generatedMainClass(String relative, String source) {
+        String file = Path.of(relative).getFileName().toString();
+        String stem = file.substring(0, file.length() - ".kt".length());
+        if (!stem.matches("[A-Za-z_$][A-Za-z0-9_$]*")) return null;
+        Matcher packageName = PACKAGE.matcher(source);
+        return packageName.find() ? packageName.group(1) + "." + stem + "Kt" : stem + "Kt";
     }
 }

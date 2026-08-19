@@ -80,12 +80,14 @@ public final class CmakeDeploymentInspector implements DeploymentTypeInspector {
         if (languages.contains(SourceLanguageType.CPP) && !cmake.contains("cxx_std_20")) missing.add("cxx_std_20");
         String target = targets.size() == 1 ? targets.getFirst() : null;
         CmakeFacts architecture = new CmakeFacts(PRESET, target, languages, targetSources, missing, conflicts);
+        ProjectLanguageFacts targetLanguageFacts = new ProjectLanguageFacts(languageFacts.ecosystems(), languages,
+                languageFacts.values(), languageFacts.evidence());
         List<LocalizedMessage> localizedMissing = architecture.missingItems().stream()
                 .map(item -> LocalizedMessage.of("analysis.service.missingFile", "file", item)).toList();
         List<LocalizedMessage> localizedConflicts = architecture.conflicts().stream()
                 .map(item -> LocalizedMessage.of("analysis.cmake.conflict", "detail", item)).toList();
         DeploymentProjectFacts facts = new DeploymentProjectFacts(root, ProjectIdentityResolver.rootApplicationId(root),
-                projectType(), DeploymentBuildToolType.CMAKE, languageFacts,
+                projectType(), DeploymentBuildToolType.CMAKE, targetLanguageFacts,
                 List.of(evidence("CMakeLists.txt"), evidence("CMakePresets.json")), localizedConflicts, localizedMissing);
         Map<DeploymentRuntimeAssessment.RuntimeInputType, String> values =
                 new EnumMap<>(DeploymentRuntimeAssessment.RuntimeInputType.class);

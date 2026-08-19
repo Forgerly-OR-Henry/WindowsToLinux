@@ -17,6 +17,7 @@ public final class PoetryBuildRenderer implements DeploymentBuildRenderer {
     @Override public String render(DeploymentProjectFacts facts, DeploymentRuntimeSpecification runtime,
                                    RemoteWorkspace workspace, BuildLimitConfiguration limits) {
         return PythonArchitectureBuildRenderer.render(DeploymentBuildToolType.POETRY_LOCKED, facts, runtime, workspace,
-                limits, "poetry", "test -f ./poetry.lock\nPOETRY_VIRTUALENVS_CREATE=false run poetry install --only main --sync --no-root --no-interaction");
+                limits, "poetry", "test -f ./poetry.lock\nrun poetry check --lock\n"
+                        + "run poetry sync --only main --no-root --no-interaction");
     }
 }

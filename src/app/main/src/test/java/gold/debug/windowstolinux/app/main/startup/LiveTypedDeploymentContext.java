@@ -27,6 +27,7 @@ import gold.debug.windowstolinux.shared.model.lifecycle.LifecycleAction;
 import gold.debug.windowstolinux.shared.model.lifecycle.LifecycleObservation;
 import gold.debug.windowstolinux.shared.model.project.DeploymentProjectType;
 import gold.debug.windowstolinux.shared.model.project.DeploymentRuntimeSpecification;
+import gold.debug.windowstolinux.shared.model.project.DeploymentSupportLevel;
 import gold.debug.windowstolinux.shared.model.security.CredentialStorageMode;
 import gold.debug.windowstolinux.shared.model.deployment.EnvironmentSetupResult;
 import gold.debug.windowstolinux.shared.model.server.ServerIdentity;
@@ -156,7 +157,8 @@ final class LiveTypedDeploymentContext implements AutoCloseable {
                         8L * 1024 * 1024, 4L * 1024 * 1024 * 1024, true), true,
                 runtime instanceof DeploymentRuntimeSpecification.Container container
                         && container.engine() == DeploymentRuntimeSpecification.ContainerEngineType.DOCKER,
-                ecosystemService);
+                preparation.assessment().facts().orElseThrow().support().level()
+                        == DeploymentSupportLevel.EXPERIMENTAL_ADAPTER);
         ReviewedDeploymentPlan plan = service.planDeployment(request);
         assertEquals(request, plan.request());
         assertTrue(plan.steps().containsAll(List.of(DeploymentPlanAction.VERIFY_SOURCE_IDENTITY,

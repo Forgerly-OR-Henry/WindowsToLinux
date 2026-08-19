@@ -85,6 +85,28 @@ class RuntimeCapabilityEvaluatorTest {
         assertEquals("the selected ecosystem service runtime version is not available", decision.detail().orElseThrow());
     }
 
+    @Test
+    void rejectsPackageManagerVersionsThatCannotRunTheFixedCommands() {
+        LinuxCapabilityFacts base = capabilities();
+        Map<EcosystemToolType, Set<String>> tools = new java.util.EnumMap<>(base.ecosystemToolVersions());
+        tools.put(EcosystemToolType.PNPM, Set.of("8.15.9"));
+        tools.put(EcosystemToolType.YARN, Set.of("1.22.22"));
+        tools.put(EcosystemToolType.POETRY, Set.of("1.1.15"));
+        tools.put(EcosystemToolType.UV, Set.of("0.3.5"));
+        LinuxCapabilityFacts incompatible = withTools(base, tools);
+
+        for (RuntimeFixture fixture : List.of(
+                new RuntimeFixture(new DeploymentRuntimeSpecification.NodeService(22, HEALTH), DeploymentBuildToolType.PNPM),
+                new RuntimeFixture(new DeploymentRuntimeSpecification.NodeService(22, HEALTH), DeploymentBuildToolType.YARN),
+                new RuntimeFixture(new DeploymentRuntimeSpecification.PythonService("3.12", "demo.main", HEALTH),
+                        DeploymentBuildToolType.POETRY_LOCKED),
+                new RuntimeFixture(new DeploymentRuntimeSpecification.PythonService("3.12", "demo.main", HEALTH),
+                        DeploymentBuildToolType.UV_LOCKED))) {
+            assertEquals(false, RuntimeCapabilityEvaluator.evaluate(incompatible,
+                    facts(fixture.runtime().projectType(), fixture.buildTool()), fixture.runtime()).supported());
+        }
+    }
+
     private static DeploymentProjectFacts facts(DeploymentProjectType type, DeploymentBuildToolType tool) {
         if (type == DeploymentProjectType.CMAKE_SERVICE) {
             return new DeploymentProjectFacts(Path.of("."), "demo", type, tool,
@@ -123,6 +145,18 @@ class RuntimeCapabilityEvaluatorTest {
                 ), true, true, CpuMicroarchitectureLevel.X86_64_V1, Set.of("sse4_2", "popcnt"),
                 new LinuxSecurityPosture(LinuxSecurityModuleType.APPARMOR, LinuxSecurityState.ENABLED,
                         LinuxFirewallKind.UFW, LinuxFirewallState.ACTIVE), "test evidence");
+    }
+
+    private static LinuxCapabilityFacts withTools(
+            LinuxCapabilityFacts base,
+            Map<EcosystemToolType, Set<String>> tools
+    ) {
+        return new LinuxCapabilityFacts(base.distro(), base.version(), base.architecture(), base.packageManager(),
+                base.packageArchitecture(), base.systemdAvailable(), base.dockerAvailable(), base.podmanAvailable(),
+                base.podmanQuadletAvailable(), base.javaMajorVersions(), base.nodeMajorVersions(), base.npmAvailable(),
+                base.mavenAvailable(), base.pythonVersions(), base.python3Available(), base.serviceRuntimeVersions(), tools,
+                base.dockerOperational(), base.podmanOperational(), base.cpuMicroarchitecture(), base.cpuFlags(),
+                base.securityPosture(), base.evidence());
     }
 
     private record RuntimeFixture(DeploymentRuntimeSpecification runtime, DeploymentBuildToolType buildTool) {

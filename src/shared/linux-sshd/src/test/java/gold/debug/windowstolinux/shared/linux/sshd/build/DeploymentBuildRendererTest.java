@@ -86,9 +86,11 @@ class DeploymentBuildRendererTest {
         assertTrue(render(new PipBuildRenderer(), DeploymentBuildToolType.PIP_LOCKED, python)
                 .contains("pip install --disable-pip-version-check --require-hashes"));
         assertTrue(render(new PipenvBuildRenderer(), DeploymentBuildToolType.PIPENV_LOCKED, python)
-                .contains("pipenv sync --system --deploy"));
-        assertTrue(render(new PoetryBuildRenderer(), DeploymentBuildToolType.POETRY_LOCKED, python)
-                .contains("poetry install --only main --sync --no-root"));
+                .contains("run pipenv verify\nexport PIPENV_IGNORE_VIRTUALENVS=0\nrun pipenv sync"));
+        String poetry = render(new PoetryBuildRenderer(), DeploymentBuildToolType.POETRY_LOCKED, python);
+        assertTrue(poetry.contains("run poetry check --lock"));
+        assertTrue(poetry.contains("poetry sync --only main --no-root --no-interaction"));
+        assertFalse(poetry.contains("poetry install"));
         assertTrue(render(new UvBuildRenderer(), DeploymentBuildToolType.UV_LOCKED, python)
                 .contains("uv sync --active --frozen --no-dev"));
 

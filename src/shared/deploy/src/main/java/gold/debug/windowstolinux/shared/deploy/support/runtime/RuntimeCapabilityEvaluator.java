@@ -56,7 +56,8 @@ public final class RuntimeCapabilityEvaluator {
                     case YARN -> EcosystemToolType.YARN;
                     default -> throw new IllegalArgumentException("Node service facts require one package manager");
                 };
-                yield capabilities.nodeMajorVersions().contains(node.nodeMajorVersion()) && hasTool(capabilities, packageManager)
+                yield capabilities.nodeMajorVersions().contains(node.nodeMajorVersion())
+                        && compatibleNodePackageManager(capabilities, packageManager)
                         ? null : "the selected Node.js major and package manager must both be available";
             }
             case DeploymentRuntimeSpecification.PythonService python -> {
@@ -67,7 +68,8 @@ public final class RuntimeCapabilityEvaluator {
                     case UV_LOCKED -> EcosystemToolType.UV;
                     default -> throw new IllegalArgumentException("Python service facts require one dependency architecture");
                 };
-                yield capabilities.pythonVersions().contains(python.pythonVersion()) && hasTool(capabilities, dependencyTool)
+                yield capabilities.pythonVersions().contains(python.pythonVersion())
+                        && compatiblePythonTool(capabilities, dependencyTool)
                         ? null : "the selected Python interpreter and dependency tool must both be available";
             }
             case DeploymentRuntimeSpecification.StaticSite site -> site.nodeMajorVersion().isPresent()
@@ -136,5 +138,47 @@ public final class RuntimeCapabilityEvaluator {
     private static boolean hasMajor(LinuxCapabilityFacts capabilities, EcosystemToolType tool, String major) {
         return capabilities.ecosystemToolVersions().getOrDefault(tool, java.util.Set.of()).stream()
                 .anyMatch(version -> version.equals(major) || version.startsWith(major + "."));
+    }
+
+    private static boolean compatibleNodePackageManager(
+            LinuxCapabilityFacts capabilities,
+            EcosystemToolType tool
+    ) {
+        return switch (tool) {
+            case NPM -> hasTool(capabilities, tool);
+            case PNPM -> anyVersion(capabilities, tool, segments -> segments[0] >= 9);
+            case YARN -> anyVersion(capabilities, tool, segments -> segments[0] >= 2 && segments[0] <= 4);
+            default -> false;
+        };
+    }
+
+    private static boolean compatiblePythonTool(
+            LinuxCapabilityFacts capabilities,
+            EcosystemToolType tool
+    ) {
+        return switch (tool) {
+            case PIP, PIPENV -> hasTool(capabilities, tool);
+            case POETRY -> anyVersion(capabilities, tool, segments -> segments[0] == 2);
+            case UV -> anyVersion(capabilities, tool,
+                    segments -> segments[0] > 0 || segments[1] >= 4);
+            default -> false;
+        };
+    }
+
+    private static boolean anyVersion(
+            LinuxCapabilityFacts capabilities,
+            EcosystemToolType tool,
+            java.util.function.Predicate<int[]> accepted
+    ) {
+        return capabilities.ecosystemToolVersions().getOrDefault(tool, java.util.Set.of()).stream()
+                .map(RuntimeCapabilityEvaluator::numericVersion)
+                .filter(Objects::nonNull)
+                .anyMatch(accepted);
+    }
+
+    private static int[] numericVersion(String version) {
+        java.util.regex.Matcher matcher = java.util.regex.Pattern.compile("^(\\d+)(?:[.](\\d+))?").matcher(version);
+        if (!matcher.find()) return null;
+        return new int[]{Integer.parseInt(matcher.group(1)), matcher.group(2) == null ? 0 : Integer.parseInt(matcher.group(2))};
     }
 }

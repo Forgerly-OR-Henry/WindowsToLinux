@@ -121,7 +121,7 @@ class DeploymentAnalysisCoordinatorTest {
         Files.writeString(project.resolve("package.json"), """
                 {"name":"demo-node","scripts":{"build":"build","start":"start"},"dependencies":{"prisma":"1.0"}}
                 """);
-        Files.writeString(project.resolve("package-lock.json"), "{}");
+        Files.writeString(project.resolve("package-lock.json"), npmLock("demo-node"));
         Files.createDirectories(project.resolve("database/migrations"));
         Files.writeString(project.resolve("database/migrations/001.sql"), "create table demo (id bigint)");
 
@@ -140,7 +140,7 @@ class DeploymentAnalysisCoordinatorTest {
         Files.writeString(node.resolve("package.json"), """
                 {"name":"demo-node","scripts":{"build":"build","start":"start"}}
                 """);
-        Files.writeString(node.resolve("package-lock.json"), "{}");
+        Files.writeString(node.resolve("package-lock.json"), npmLock("demo-node"));
         Path python = Files.createDirectories(temporaryDirectory.resolve("python"));
         Files.writeString(python.resolve("pyproject.toml"), "[project]\nname = \"demo-python\"\n");
         Files.writeString(python.resolve("requirements.lock"), "example==1.0 --hash=sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n");
@@ -167,7 +167,7 @@ class DeploymentAnalysisCoordinatorTest {
         Files.writeString(node.resolve("package.json"), """
                 {"name":"demo-node","engines":{"node":"22"},"scripts":{"build":"unsafe","start":"unsafe"}}
                 """);
-        Files.writeString(node.resolve("package-lock.json"), "{}");
+        Files.writeString(node.resolve("package-lock.json"), npmLock("node-exact"));
         var exact = analyzer.analyze(node, DeploymentProjectType.NODE_SERVICE).runtimeSuggestion().orElseThrow();
         assertEquals("22", exact.value(DeploymentRuntimeAssessment.RuntimeInputType.NODE_MAJOR_VERSION).orElseThrow());
 
@@ -175,7 +175,7 @@ class DeploymentAnalysisCoordinatorTest {
         Files.writeString(ranged.resolve("package.json"), """
                 {"name":"range-node","engines":{"node":">=20"},"scripts":{"build":"unsafe","start":"unsafe"}}
                 """);
-        Files.writeString(ranged.resolve("package-lock.json"), "{}");
+        Files.writeString(ranged.resolve("package-lock.json"), npmLock("range-node"));
         var unresolved = analyzer.analyze(ranged, DeploymentProjectType.NODE_SERVICE).runtimeSuggestion().orElseThrow();
         assertTrue(unresolved.value(DeploymentRuntimeAssessment.RuntimeInputType.NODE_MAJOR_VERSION).isEmpty());
         assertTrue(unresolved.requiredUserInput().stream().anyMatch(message ->
@@ -260,6 +260,11 @@ class DeploymentAnalysisCoordinatorTest {
 
         assertEquals(DeploymentAdmissionStatus.RECOGNITION_PREVIEW, assessment.admission());
         assertEquals(DeploymentSupportLevel.UNRECOGNIZED, assessment.facts().orElseThrow().support().level());
+    }
+
+    private static String npmLock(String name) {
+        return "{\"name\":\"" + name + "\",\"lockfileVersion\":3,\"requires\":true,"
+                + "\"packages\":{\"\":{\"name\":\"" + name + "\"}}}";
     }
 
     private static void writeGradleWrapperJar(Path path) throws Exception {

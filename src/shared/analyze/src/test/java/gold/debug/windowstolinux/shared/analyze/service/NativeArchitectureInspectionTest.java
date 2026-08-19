@@ -39,6 +39,8 @@ class NativeArchitectureInspectionTest {
         Fixture java = javaSource();
         write(java.root(), "pom.xml", "<project/>\n");
         Fixture kotlin = kotlin();
+        Files.writeString(kotlin.root().resolve("windowstolinux-kotlin.properties"),
+                "compilerVersion=2.0.21\nsourceRoot=src\nmainClass=demo.WrongKt\njvmTarget=21\n");
         write(kotlin.root(), "build.gradle.kts", "plugins { kotlin(\"jvm\") version \"2.0.21\" }\n");
         Fixture php = php();
         write(php.root(), "composer.json", "{}\n");
@@ -54,6 +56,32 @@ class NativeArchitectureInspectionTest {
             assertFalse(assessment.admission() == DeploymentAdmissionStatus.READY_FOR_PLANNING,
                     fixture.type().name());
         }
+    }
+
+    @Test
+    void reportsOnlyLanguagesCompiledIntoTheReviewedCmakeTarget() throws Exception {
+        Fixture cmake = cmake();
+        write(cmake.root(), "src/not-built.cpp", "int not_built() { return 0; }\n");
+        String lists = Files.readString(cmake.root().resolve("CMakeLists.txt"))
+                .replace(" src/helper.cpp", "")
+                .replace(" CXX", "")
+                .replace(" cxx_std_20", "");
+        Files.writeString(cmake.root().resolve("CMakeLists.txt"), lists);
+
+        DeploymentProjectAssessment assessment = analyze(cmake);
+
+        assertEquals(DeploymentAdmissionStatus.READY_FOR_PLANNING, assessment.admission());
+        assertEquals(java.util.Set.of(SourceLanguageType.C),
+                assessment.facts().orElseThrow().languageFacts().sourceLanguages());
+    }
+
+    @Test
+    void stopsNativeKotlinWhenTheDeclaredGeneratedMainClassDoesNotExist() throws Exception {
+        Fixture kotlin = kotlin();
+        Files.writeString(kotlin.root().resolve("windowstolinux-kotlin.properties"),
+                "compilerVersion=2.0.21\nsourceRoot=src\nmainClass=demo.WrongKt\njvmTarget=21\n");
+
+        assertFalse(analyze(kotlin).admission() == DeploymentAdmissionStatus.READY_FOR_PLANNING);
     }
 
     private DeploymentProjectAssessment analyze(Fixture fixture) throws Exception {
