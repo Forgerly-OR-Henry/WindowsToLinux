@@ -55,6 +55,7 @@ WindowsToLinux 是面向个人和小型自托管场景的部署管理工具。�
 | 一期 | [PHASE-1.md](development/PHASE-1.md) | Swing 最小闭环；本地源码、Ubuntu 24.04、Maven Spring Boot 可执行 JAR、systemd、目标机构建、短停机发布、基础 AI、单组件生命周期 | Git、应用配置/密钥、数据库迁移、容器、多组件、备份、Web |
 | 二期 | [PHASE-2.md](development/PHASE-2.md) | Git、配置快照与共享密钥、Gradle/普通 JAR、Node/Python/静态站点/Dockerfile、Docker/Podman、更多 Ubuntu/CentOS、多 API 与可选 Agent | 高级语言、多组件、多模型、数据库、备份迁移、Web |
 | 三期 | [PHASE-3.md](development/PHASE-3.md) | 高级语言分级适配、多语言多组件编排、多模型协作、Debian/Rocky/Alma/Oracle | 数据库一致性、备份迁移、桌面升级、Web |
+| 三期生态补全 | [PHASE-3-ECOSYSTEM-EXTENSION.md](development/PHASE-3-ECOSYSTEM-EXTENSION.md) | 当前语言原生构建基线、架构名分包、Node/Python 架构身份规范化与 C/CMake 后置试验适配 | 新增正式运行支持、任意构建脚本、跨编译、数据库与 Web |
 | 四期 | [PHASE-4.md](development/PHASE-4.md) | 数据库、版本化备份、恢复、离线一致迁移、桌面签名升级和卸载 | Web 访问与 Web 运维 |
 | 五期 | [PHASE-5.md](development/PHASE-5.md) | 单实例单管理员 Web 版、REST/SSE、持久化任务、上传/认证安全、人工升级 | SaaS、多租户、集群、开放平台 |
 

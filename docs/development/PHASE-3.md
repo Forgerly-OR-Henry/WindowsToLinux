@@ -14,6 +14,7 @@
 - [项目结构](../File.md)
 - [一期](PHASE-1.md)
 - [二期](PHASE-2.md)
+- [三期生态构建补全](PHASE-3-ECOSYSTEM-EXTENSION.md)
 - [四期](PHASE-4.md)
 - [五期](PHASE-5.md)
 
