@@ -21,7 +21,7 @@ public final class ManagedHelperBundle {
     /** Platform-owned Java 21 launcher used by every managed systemd unit. / 每个受管 systemd 单元使用的平台持有 Java 21 启动器。 */
     public static final String JAVA_RUNTIME_PATH = DIRECTORY + "/java-21";
     /** Expected byte-for-byte helper bundle identity. / 预期的 helper 逐字节身份。 */
-    public static final String EXPECTED_SHA256 = "74930667941d5cd75e3da9d86ccf63e5dcfb03e0bad8f232b1bb5cea13fc28f1";
+    public static final String EXPECTED_SHA256 = "e3f270591ef4a028a140fd6f49c5a7dc5f6a4cae707ade7a2cf23d09ca0eb74e";
     private static final String ROOT = "/gold/debug/windowstolinux/shared/linux/sshd/";
     private static final List<String> FRAGMENTS = List.of(
             "protocol/helper/fragments/00-protocol-foundation.sh", "protocol/helper/fragments/release/10-typed-release.sh",

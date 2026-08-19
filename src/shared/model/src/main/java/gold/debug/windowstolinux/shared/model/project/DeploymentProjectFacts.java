@@ -2,6 +2,7 @@ package gold.debug.windowstolinux.shared.model.project;
 
 import gold.debug.windowstolinux.shared.model.analysis.AnalysisEvidence;
 import gold.debug.windowstolinux.shared.model.language.ProjectLanguageFacts;
+import gold.debug.windowstolinux.shared.model.language.SourceLanguageType;
 import gold.debug.windowstolinux.shared.model.message.LocalizedMessage;
 
 import java.nio.file.Path;
@@ -54,6 +55,12 @@ public record DeploymentProjectFacts(
             throw new IllegalArgumentException("recognition preview must not expose a build tool");
         }
         languageFacts = Objects.requireNonNull(languageFacts, "languageFacts");
+        if (projectType == DeploymentProjectType.CMAKE_SERVICE
+                && (languageFacts.sourceLanguages().isEmpty()
+                || languageFacts.sourceLanguages().stream()
+                .anyMatch(language -> language != SourceLanguageType.C && language != SourceLanguageType.CPP))) {
+            throw new IllegalArgumentException("CMake facts require a non-empty exact C/C++ source language set");
+        }
         evidence = List.copyOf(Objects.requireNonNull(evidence, "evidence"));
         conflicts = List.copyOf(Objects.requireNonNull(conflicts, "conflicts"));
         missingInformation = List.copyOf(Objects.requireNonNull(missingInformation, "missingInformation"));
@@ -64,7 +71,7 @@ public record DeploymentProjectFacts(
                                   DeploymentBuildToolType buildTool, ProjectLanguageFacts languageFacts,
                                   List<AnalysisEvidence> evidence, List<LocalizedMessage> conflicts,
                                   List<LocalizedMessage> missingInformation) {
-        this(sourceRoot, applicationId, projectType, buildTool, DeploymentSupportCatalog.forType(projectType),
+        this(sourceRoot, applicationId, projectType, buildTool, DeploymentSupportCatalog.forArchitecture(projectType, buildTool),
                 languageFacts, evidence, conflicts, missingInformation);
     }
 
@@ -72,7 +79,7 @@ public record DeploymentProjectFacts(
     public DeploymentProjectFacts(Path sourceRoot, String applicationId, DeploymentProjectType projectType,
                                   DeploymentBuildToolType buildTool, List<AnalysisEvidence> evidence,
                                   List<LocalizedMessage> conflicts, List<LocalizedMessage> missingInformation) {
-        this(sourceRoot, applicationId, projectType, buildTool, DeploymentSupportCatalog.forType(projectType),
+        this(sourceRoot, applicationId, projectType, buildTool, DeploymentSupportCatalog.forArchitecture(projectType, buildTool),
                 ProjectLanguageFacts.empty(), evidence, conflicts, missingInformation);
     }
 

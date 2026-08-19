@@ -15,6 +15,10 @@ import gold.debug.windowstolinux.shared.model.project.DeploymentRuntimeSpecifica
 public final class StaticSiteBuildRenderer implements DeploymentBuildRenderer {
     /** Returns the supported deployment project type. / 返回支持的部署项目类型。 */
     @Override public DeploymentProjectType projectType() { return DeploymentProjectType.STATIC_SITE; }
+    @Override public java.util.Set<DeploymentBuildToolType> buildTools() {
+        return java.util.Set.of(DeploymentBuildToolType.STATIC_SITE_BUILD, DeploymentBuildToolType.NPM,
+                DeploymentBuildToolType.PNPM, DeploymentBuildToolType.YARN);
+    }
 
     /** Renders the controlled output. / 渲染受控输出。 */
     @Override public String render(DeploymentProjectFacts facts, DeploymentRuntimeSpecification runtime,

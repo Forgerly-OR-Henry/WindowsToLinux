@@ -116,6 +116,9 @@ record MultiComponentDraft(
             case JAVA_JAR -> new DeploymentRuntimeSpecification.JavaJar(runtimePrimary, runtimeSecondary,
                     runtimeVersion, DeploymentRuntimeParser.arguments(runtimeArguments),
                     DeploymentRuntimeParser.arguments(runtimeAdditional), health);
+            case JAVA_SOURCE -> new DeploymentRuntimeSpecification.JavaSource(runtimePrimary, runtimeSecondary,
+                    runtimeVersion, DeploymentRuntimeParser.arguments(runtimeArguments),
+                    DeploymentRuntimeParser.arguments(runtimeAdditional), health);
             case NODE_SERVICE -> new DeploymentRuntimeSpecification.NodeService(
                     Integer.parseInt(runtimeVersion.trim()), health);
             case PYTHON_SERVICE -> new DeploymentRuntimeSpecification.PythonService(
@@ -129,6 +132,8 @@ record MultiComponentDraft(
                     DeploymentRuntimeParser.volumes(runtimeAdditional), health);
             case GO_SERVICE, RUST_SERVICE, DOTNET_SERVICE, KOTLIN_SERVICE, PHP_SERVICE, RUBY_SERVICE ->
                     DeploymentRuntimeParser.service(projectType, runtimeVersion, runtimePrimary, runtimeSecondary, health);
+            case CMAKE_SERVICE -> new DeploymentRuntimeSpecification.CmakeService(runtimeVersion, runtimeSecondary,
+                    runtimePrimary, health);
             case RECOGNITION_PREVIEW -> throw new IllegalArgumentException(
                     "recognition-preview components cannot enter deployment review");
         };

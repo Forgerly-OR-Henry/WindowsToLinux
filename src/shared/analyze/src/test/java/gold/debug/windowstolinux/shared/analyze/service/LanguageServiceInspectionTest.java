@@ -93,7 +93,7 @@ class LanguageServiceInspectionTest {
     private Project kotlin() throws Exception {
         Path root = root("kotlin");
         write(root, "build.gradle.kts", """
-                plugins { application }
+                plugins { kotlin("jvm") version "2.0.21"; application }
                 java { toolchain { languageVersion = JavaLanguageVersion.of(21) } }
                 dependencyLocking { lockAllConfigurations() }
                 application { mainClass.set("demo.MainKt") }
@@ -105,7 +105,7 @@ class LanguageServiceInspectionTest {
         write(root, "gradle/wrapper/gradle-wrapper.properties", "distributionUrl=https://example.test/gradle.zip\n");
         write(root, "src/main/kotlin/demo/Main.kt", "package demo\nfun main() {}\n");
         return project(root, DeploymentProjectType.KOTLIN_SERVICE, DeploymentBuildToolType.GRADLE_KOTLIN_WRAPPER,
-                "21", "kotlin", "demo.MainKt", false);
+                "2.0.21", "kotlin", "demo.MainKt", false);
     }
 
     private Project php() throws Exception {

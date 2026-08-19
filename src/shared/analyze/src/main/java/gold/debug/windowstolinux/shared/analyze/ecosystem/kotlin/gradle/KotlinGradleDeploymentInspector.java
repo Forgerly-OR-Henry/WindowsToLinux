@@ -21,6 +21,8 @@ import java.util.regex.Pattern;
 public final class KotlinGradleDeploymentInspector implements DeploymentTypeInspector {
     private static final Pattern KOTLIN_MAIN = Pattern.compile(
             "mainClass(?:\\.set)?\\s*\\(?[\"']([A-Za-z_$][A-Za-z0-9_$.]{0,255})[\"']\\)?");
+    private static final Pattern KOTLIN_PLUGIN_VERSION = Pattern.compile(
+            "kotlin\\s*\\(\\s*[\"']jvm[\"']\\s*\\)\\s*version\\s*[\"']((?:1\\.9|2\\.[0-9]+)\\.[0-9]+)[\"']");
     private static final Pattern KOTLIN_APPLICATION_PLUGIN = Pattern.compile(
             "(?s)plugins\\s*\\{[^}]*\\bapplication\\b");
     private static final Pattern KOTLIN_DEPENDENCY_LOCKING = Pattern.compile(
@@ -49,9 +51,13 @@ public final class KotlinGradleDeploymentInspector implements DeploymentTypeInsp
         if (!KOTLIN_JAVA_21.matcher(build).find()) {
             missing = ServiceMetadataInspector.append(missing, "JVM-toolchain-21");
         }
-        KotlinGradleFacts facts = new KotlinGradleFacts(
+        String compilerVersion = ServiceMetadataInspector.match(build, KOTLIN_PLUGIN_VERSION);
+        if (compilerVersion == null) {
+            missing = ServiceMetadataInspector.append(missing, "exact-kotlin-jvm-plugin-version");
+        }
+        KotlinGradleFacts facts = new KotlinGradleFacts(compilerVersion,
                 ServiceMetadataInspector.match(build, KOTLIN_MAIN), missing);
-        ServiceProjectFacts shape = new ServiceProjectFacts("build.gradle.kts", "21",
+        ServiceProjectFacts shape = new ServiceProjectFacts("build.gradle.kts", facts.compilerVersion(),
                 ProjectIdentityResolver.rootApplicationId(root), facts.mainClass(), facts.missingFiles());
         return ServiceInspectionAssembler.assemble(root, projectType(), DeploymentBuildToolType.GRADLE_KOTLIN_WRAPPER,
                 languageFacts, shape, false);

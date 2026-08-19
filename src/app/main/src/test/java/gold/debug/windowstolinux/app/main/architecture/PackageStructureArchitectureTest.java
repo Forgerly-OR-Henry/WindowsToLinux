@@ -87,8 +87,9 @@ class PackageStructureArchitectureTest {
             "UseCases", "Locks", "Components", "Stores", "Transactions", "Profiles", "Checks",
             "Operations", "Settings", "Fixtures", "Impl");
     private static final Set<String> BUILD_ARCHITECTURE_PACKAGE_NAMES = Set.of(
-            "bundler", "cargo", "cmake", "composer", "dotnetsdk", "gradle", "gomodule", "jar", "kotlinc",
-            "maven", "npm", "pip", "pipenv", "pnpm", "poetry", "uv", "yarn");
+            "bundler", "cargo", "cmake", "composer", "dotnetsdk", "gradle", "gomodule", "jar", "jdk",
+            "kotlinc", "maven", "npm", "phpcli", "pip", "pipenv", "pnpm", "poetry", "rubycli", "uv",
+            "yarn");
     private static final Set<String> FORBIDDEN_PACKAGE_SEGMENTS = Set.of("util", "common", "misc", "impl");
     private static final Set<String> ENUM_SUFFIXES = Set.of(
             "Action", "Decision", "Disposition", "Event", "Kind", "Level", "Mode", "Profile", "Scope",
@@ -119,10 +120,10 @@ class PackageStructureArchitectureTest {
             "c", "java", "node", "python", "go", "rust", "dotnet", "kotlin", "php", "ruby");
     private static final Set<String> DELETED_WRAPPERS = Set.of(
             "GoServiceDeploymentInspector", "RustServiceDeploymentInspector", "DotNetServiceDeploymentInspector",
-            "KotlinServiceDeploymentInspector", "PhpServiceDeploymentInspector", "RubyServiceDeploymentInspector",
             "RustBuildRenderer", "DotNetBuildRenderer", "KotlinBuildRenderer",
             "PhpBuildRenderer", "RubyBuildRenderer", "UbuntuSetup", "DebianSetup", "CentosStreamSetup",
-            "RockyLinuxSetup", "AlmaLinuxSetup", "OracleLinuxSetup", "ServiceBuildRenderer");
+            "RockyLinuxSetup", "AlmaLinuxSetup", "OracleLinuxSetup", "ServiceBuildRenderer",
+            "SpringBootBuildRenderer", "NodeBuildRenderer", "PythonBuildRenderer", "EcosystemBuildScript");
     private static final List<String> OLD_PACKAGE_PREFIXES = List.of(
             "gold.debug.windowstolinux.app.secret.api", "gold.debug.windowstolinux.app.secret.store",
             "gold.debug.windowstolinux.app.secret.windows", "gold.debug.windowstolinux.shared.git.reference",
@@ -304,29 +305,37 @@ class PackageStructureArchitectureTest {
                 "src/shared/linux-sshd/src/main/java/gold/debug/windowstolinux/shared/linux/sshd/build/script",
                 "src/shared/linux-sshd/src/main/java/gold/debug/windowstolinux/shared/linux/sshd/build/ecosystem",
                 "src/shared/linux-sshd/src/main/java/gold/debug/windowstolinux/shared/linux/sshd/build/ecosystem/java",
+                "src/shared/linux-sshd/src/main/java/gold/debug/windowstolinux/shared/linux/sshd/build/ecosystem/kotlin",
                 "src/shared/linux-sshd/src/main/java/gold/debug/windowstolinux/shared/linux/sshd/build/ecosystem/node",
+                "src/shared/linux-sshd/src/main/java/gold/debug/windowstolinux/shared/linux/sshd/build/ecosystem/php",
                 "src/shared/linux-sshd/src/main/java/gold/debug/windowstolinux/shared/linux/sshd/build/ecosystem/python",
+                "src/shared/linux-sshd/src/main/java/gold/debug/windowstolinux/shared/linux/sshd/build/ecosystem/ruby",
                 "src/shared/linux-sshd/src/main/java/gold/debug/windowstolinux/shared/linux/sshd/build/registry",
                 "src/shared/linux-sshd/src/main/java/gold/debug/windowstolinux/shared/linux/sshd/build/workload",
                 "src/shared/linux-sshd/src/main/java/gold/debug/windowstolinux/shared/linux/sshd/capability/ecosystem",
                 "src/shared/analyze/src/main/java/gold/debug/windowstolinux/shared/analyze/preview",
                 "src/shared/analyze/src/main/java/gold/debug/windowstolinux/shared/analyze/service",
+                "src/shared/analyze/src/main/java/gold/debug/windowstolinux/shared/analyze/ecosystem/c/cmake",
                 "src/shared/analyze/src/main/java/gold/debug/windowstolinux/shared/analyze/ecosystem/java",
                 "src/shared/analyze/src/main/java/gold/debug/windowstolinux/shared/analyze/ecosystem/java/maven",
                 "src/shared/analyze/src/main/java/gold/debug/windowstolinux/shared/analyze/ecosystem/java/gradle",
                 "src/shared/analyze/src/main/java/gold/debug/windowstolinux/shared/analyze/ecosystem/java/jar",
+                "src/shared/analyze/src/main/java/gold/debug/windowstolinux/shared/analyze/ecosystem/java/jdk",
                 "src/shared/analyze/src/main/java/gold/debug/windowstolinux/shared/analyze/ecosystem/dotnet/dotnetsdk",
                 "src/shared/analyze/src/main/java/gold/debug/windowstolinux/shared/analyze/ecosystem/go/gomodule",
                 "src/shared/analyze/src/main/java/gold/debug/windowstolinux/shared/analyze/ecosystem/kotlin/gradle",
+                "src/shared/analyze/src/main/java/gold/debug/windowstolinux/shared/analyze/ecosystem/kotlin/kotlinc",
                 "src/shared/analyze/src/main/java/gold/debug/windowstolinux/shared/analyze/ecosystem/node/npm",
                 "src/shared/analyze/src/main/java/gold/debug/windowstolinux/shared/analyze/ecosystem/node/pnpm",
                 "src/shared/analyze/src/main/java/gold/debug/windowstolinux/shared/analyze/ecosystem/node/yarn",
                 "src/shared/analyze/src/main/java/gold/debug/windowstolinux/shared/analyze/ecosystem/php/composer",
+                "src/shared/analyze/src/main/java/gold/debug/windowstolinux/shared/analyze/ecosystem/php/phpcli",
                 "src/shared/analyze/src/main/java/gold/debug/windowstolinux/shared/analyze/ecosystem/python/pip",
                 "src/shared/analyze/src/main/java/gold/debug/windowstolinux/shared/analyze/ecosystem/python/pipenv",
                 "src/shared/analyze/src/main/java/gold/debug/windowstolinux/shared/analyze/ecosystem/python/poetry",
                 "src/shared/analyze/src/main/java/gold/debug/windowstolinux/shared/analyze/ecosystem/python/uv",
                 "src/shared/analyze/src/main/java/gold/debug/windowstolinux/shared/analyze/ecosystem/ruby/bundler",
+                "src/shared/analyze/src/main/java/gold/debug/windowstolinux/shared/analyze/ecosystem/ruby/rubycli",
                 "src/shared/analyze/src/main/java/gold/debug/windowstolinux/shared/analyze/ecosystem/rust/cargo",
                 "src/shared/ai/src/main/java/gold/debug/windowstolinux/shared/ai/transport",
                 "src/shared/linux-sshd/src/main/java/gold/debug/windowstolinux/shared/linux/sshd/distro/apt",
@@ -390,7 +399,7 @@ class PackageStructureArchitectureTest {
         register(packages, "gold.debug.windowstolinux.shared.model.language",
                 "LanguageEcosystemType", "LanguageFactKind", "ProjectLanguageFacts", "SourceLanguageType");
         register(packages, "gold.debug.windowstolinux.shared.model.project",
-                "DeploymentBuildToolType", "DeploymentProjectFacts", "DeploymentProjectType",
+                "DeploymentArchitectureType", "DeploymentBuildToolType", "DeploymentProjectFacts", "DeploymentProjectType",
                 "DeploymentRuntimeSpecification", "DeploymentRuntimeAssessment", "DeploymentSupportCatalog",
                 "DeploymentSupportLevel", "DeploymentSupportProfile", "SourceRevision", "ValidatedDeploymentTarget");
         register(packages, "gold.debug.windowstolinux.shared.model.project.component",

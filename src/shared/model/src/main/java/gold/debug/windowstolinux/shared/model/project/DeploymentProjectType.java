@@ -10,6 +10,8 @@ public enum DeploymentProjectType {
     SPRING_BOOT,
     /** A Java JAR with an explicit main class. / 具有显式主类的 Java JAR。 */
     JAVA_JAR,
+    /** Dependency-free Java source compiled by the target JDK. / 由目标机 JDK 编译的无依赖 Java 源码。 */
+    JAVA_SOURCE,
     /** A lockfile-backed Node.js service. / 由锁文件支持的 Node.js 服务。 */
     NODE_SERVICE,
     /** A lockfile-backed Python service. / 由锁文件支持的 Python 服务。 */
@@ -30,6 +32,8 @@ public enum DeploymentProjectType {
     PHP_SERVICE,
     /** A Bundler-locked Rack service with a bounded config file. / 具有有界配置文件的 Bundler 锁定 Rack 服务。 */
     RUBY_SERVICE,
+    /** One reviewed CMake preset and one C or C++ service executable. / 一个经审阅的 CMake preset 与单一 C 或 C++ 服务可执行文件。 */
+    CMAKE_SERVICE,
     /** Static language and metadata recognition with no deployment path. / 不含部署路径的静态语言与元数据识别。 */
     RECOGNITION_PREVIEW(false);
 

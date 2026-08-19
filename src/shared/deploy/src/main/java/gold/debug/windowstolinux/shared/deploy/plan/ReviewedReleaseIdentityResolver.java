@@ -48,6 +48,14 @@ public final class ReviewedReleaseIdentityResolver {
                 update(digest, "application-arguments");
                 javaJar.applicationArguments().forEach(value -> update(digest, value));
             }
+            case DeploymentRuntimeSpecification.JavaSource javaSource -> {
+                update(digest, javaSource.sourceRoot());
+                update(digest, javaSource.mainClass());
+                update(digest, javaSource.javaVersion());
+                javaSource.jvmArguments().forEach(value -> update(digest, value));
+                update(digest, "application-arguments");
+                javaSource.applicationArguments().forEach(value -> update(digest, value));
+            }
             case DeploymentRuntimeSpecification.NodeService node ->
                     update(digest, Integer.toString(node.nodeMajorVersion()));
             case DeploymentRuntimeSpecification.PythonService python -> {
@@ -75,6 +83,8 @@ public final class ReviewedReleaseIdentityResolver {
             case DeploymentRuntimeSpecification.KotlinService service -> service(digest, "kotlin", service.version(), service.artifactName(), service.entrypoint(), null);
             case DeploymentRuntimeSpecification.PhpService service -> service(digest, "php", service.version(), service.artifactName(), service.entrypoint(), service.servicePort());
             case DeploymentRuntimeSpecification.RubyService service -> service(digest, "ruby", service.version(), service.artifactName(), service.entrypoint(), service.servicePort());
+            case DeploymentRuntimeSpecification.CmakeService service ->
+                    service(digest, "cmake", service.preset(), service.target(), service.artifactName(), null);
         }
         health(digest, runtime.healthCheck());
     }

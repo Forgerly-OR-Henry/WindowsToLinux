@@ -1,13 +1,15 @@
 package gold.debug.windowstolinux.shared.analyze.registry;
 
+import gold.debug.windowstolinux.shared.analyze.ecosystem.c.cmake.CmakeDeploymentInspector;
 import gold.debug.windowstolinux.shared.analyze.ecosystem.dotnet.dotnetsdk.DotNetSdkDeploymentInspector;
 import gold.debug.windowstolinux.shared.analyze.ecosystem.go.gomodule.GoModuleDeploymentInspector;
-import gold.debug.windowstolinux.shared.analyze.ecosystem.kotlin.gradle.KotlinGradleDeploymentInspector;
-import gold.debug.windowstolinux.shared.analyze.ecosystem.php.composer.PhpComposerDeploymentInspector;
-import gold.debug.windowstolinux.shared.analyze.ecosystem.ruby.bundler.RubyBundlerDeploymentInspector;
+import gold.debug.windowstolinux.shared.analyze.ecosystem.kotlin.KotlinServiceDeploymentInspector;
+import gold.debug.windowstolinux.shared.analyze.ecosystem.php.PhpServiceDeploymentInspector;
+import gold.debug.windowstolinux.shared.analyze.ecosystem.ruby.RubyServiceDeploymentInspector;
 import gold.debug.windowstolinux.shared.analyze.ecosystem.rust.cargo.RustCargoDeploymentInspector;
 import gold.debug.windowstolinux.shared.analyze.ecosystem.java.SpringBootDeploymentInspector;
 import gold.debug.windowstolinux.shared.analyze.ecosystem.java.jar.JavaJarDeploymentInspector;
+import gold.debug.windowstolinux.shared.analyze.ecosystem.java.jdk.JavaJdkDeploymentInspector;
 import gold.debug.windowstolinux.shared.analyze.ecosystem.node.NodeServiceDeploymentInspector;
 import gold.debug.windowstolinux.shared.analyze.ecosystem.python.PythonServiceDeploymentInspector;
 import gold.debug.windowstolinux.shared.analyze.preview.PreviewInspector;
@@ -32,12 +34,12 @@ public final class DeploymentTypeInspectorRegistry {
     /** Creates the default complete inspector assembly. / 创建默认的完整检查器装配。 */
     public static DeploymentTypeInspectorRegistry defaults() {
         return new DeploymentTypeInspectorRegistry(List.of(
-                new SpringBootDeploymentInspector(), new JavaJarDeploymentInspector(),
+                new SpringBootDeploymentInspector(), new JavaJarDeploymentInspector(), new JavaJdkDeploymentInspector(),
                 new NodeServiceDeploymentInspector(), new PythonServiceDeploymentInspector(),
                 new StaticWebDeploymentInspector(), new ContainerDeploymentInspector(),
                 new GoModuleDeploymentInspector(), new RustCargoDeploymentInspector(),
-                new DotNetSdkDeploymentInspector(), new KotlinGradleDeploymentInspector(),
-                new PhpComposerDeploymentInspector(), new RubyBundlerDeploymentInspector(),
+                new DotNetSdkDeploymentInspector(), new KotlinServiceDeploymentInspector(),
+                new PhpServiceDeploymentInspector(), new RubyServiceDeploymentInspector(), new CmakeDeploymentInspector(),
                 new PreviewInspector()));
     }
 

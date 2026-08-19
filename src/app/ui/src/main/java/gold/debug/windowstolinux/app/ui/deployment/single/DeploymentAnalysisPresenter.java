@@ -28,9 +28,12 @@ final class DeploymentAnalysisPresenter {
         String supportSummary = messages.text("source.supportSummary", Map.of(
                 "level", messages.text("support.level." + support.level().name().toLowerCase(Locale.ROOT)),
                 "language", messages.text("language.source." + support.language().name().toLowerCase(Locale.ROOT)),
+                "architecture", support.architecture(),
                 "framework", facts.projectType() == gold.debug.windowstolinux.shared.model.project.DeploymentProjectType.RECOGNITION_PREVIEW
                         ? messages.text("support.framework.unclassified") : messages.text("project.type."
                         + facts.projectType().name().toLowerCase(Locale.ROOT)), "targets", targets,
+                "evidence", support.evidenceReferences().isEmpty() ? messages.text("support.evidence.none")
+                        : String.join(", ", support.evidenceReferences()),
                 "limitations", support.limitations().stream().map(messages.catalog()::text)
                         .reduce((a, b) -> a + "; " + b).orElse(messages.text("support.limitation.none"))));
         String languages = messages.text("source.languageSummary", Map.of(

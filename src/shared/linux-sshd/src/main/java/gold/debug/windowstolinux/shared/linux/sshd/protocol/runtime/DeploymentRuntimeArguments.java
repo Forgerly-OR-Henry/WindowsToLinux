@@ -23,18 +23,28 @@ public final class DeploymentRuntimeArguments {
         return switch (runtime) {
             case DeploymentRuntimeSpecification.SpringBoot ignored -> List.of("springboot", facts.buildTool().name());
             case DeploymentRuntimeSpecification.JavaJar javaJar -> javaArguments(javaJar);
-            case DeploymentRuntimeSpecification.NodeService node -> List.of("node", Integer.toString(node.nodeMajorVersion()));
-            case DeploymentRuntimeSpecification.PythonService python -> List.of("python", python.pythonVersion(), python.entrypoint());
+            case DeploymentRuntimeSpecification.JavaSource javaSource -> javaSourceArguments(javaSource);
+            case DeploymentRuntimeSpecification.NodeService node ->
+                    List.of("node", Integer.toString(node.nodeMajorVersion()), facts.buildTool().name());
+            case DeploymentRuntimeSpecification.PythonService python ->
+                    List.of("python", python.pythonVersion(), python.entrypoint(), facts.buildTool().name());
             case DeploymentRuntimeSpecification.StaticSite staticSite -> List.of("static", staticSite.outputDirectory(),
-                    Integer.toString(httpPort(staticSite)));
+                    Integer.toString(httpPort(staticSite)), facts.buildTool().name());
             case DeploymentRuntimeSpecification.Container ignored -> throw new IllegalArgumentException(
                     "container runtimes require the container-specific release protocol");
             case DeploymentRuntimeSpecification.GoService service -> serviceArguments("go", service.version(), service.artifactName(), service.entrypoint(), null);
             case DeploymentRuntimeSpecification.RustService service -> serviceArguments("rust", service.version(), service.artifactName(), service.entrypoint(), null);
             case DeploymentRuntimeSpecification.DotNetService service -> serviceArguments("dotnet", service.version(), service.artifactName(), service.entrypoint(), null);
-            case DeploymentRuntimeSpecification.KotlinService service -> serviceArguments("kotlin", service.version(), service.artifactName(), service.entrypoint(), null);
-            case DeploymentRuntimeSpecification.PhpService service -> serviceArguments("php", service.version(), service.artifactName(), service.entrypoint(), service.servicePort());
-            case DeploymentRuntimeSpecification.RubyService service -> serviceArguments("ruby", service.version(), service.artifactName(), service.entrypoint(), service.servicePort());
+            case DeploymentRuntimeSpecification.KotlinService service -> List.of("kotlin", "21", service.artifactName(),
+                    service.entrypoint(), facts.buildTool().name());
+            case DeploymentRuntimeSpecification.PhpService service -> serviceArguments(
+                    facts.buildTool() == gold.debug.windowstolinux.shared.model.project.DeploymentBuildToolType.PHP_CLI
+                            ? "phpcli" : "php", service.version(), service.artifactName(), service.entrypoint(), service.servicePort());
+            case DeploymentRuntimeSpecification.RubyService service -> serviceArguments(
+                    facts.buildTool() == gold.debug.windowstolinux.shared.model.project.DeploymentBuildToolType.RUBY_CLI
+                            ? "rubycli" : "ruby", service.version(), service.artifactName(), service.entrypoint(), service.servicePort());
+            case DeploymentRuntimeSpecification.CmakeService service ->
+                    List.of("cmake", service.preset(), service.target(), service.artifactName());
         };
     }
 
@@ -54,6 +64,18 @@ public final class DeploymentRuntimeArguments {
         values.addAll(javaJar.jvmArguments());
         values.add(Integer.toString(javaJar.applicationArguments().size()));
         values.addAll(javaJar.applicationArguments());
+        return List.copyOf(values);
+    }
+
+    private static List<String> javaSourceArguments(DeploymentRuntimeSpecification.JavaSource javaSource) {
+        List<String> values = new ArrayList<>();
+        values.add("javasource");
+        values.add(".w2l/java/app.jar");
+        values.add(javaSource.mainClass());
+        values.add(Integer.toString(javaSource.jvmArguments().size()));
+        values.addAll(javaSource.jvmArguments());
+        values.add(Integer.toString(javaSource.applicationArguments().size()));
+        values.addAll(javaSource.applicationArguments());
         return List.copyOf(values);
     }
 

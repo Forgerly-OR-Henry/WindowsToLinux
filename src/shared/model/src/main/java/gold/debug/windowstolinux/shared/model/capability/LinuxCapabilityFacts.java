@@ -30,6 +30,7 @@ import java.util.Set;
  * @param pythonVersions observed Python interpreters with venv support / 观察到且支持 venv 的 Python 解释器
  * @param python3Available whether the generic Python 3 executable is available / 通用 Python 3 可执行文件是否可用
  * @param serviceRuntimeVersions exact observed versions for ecosystem service toolchains / 生态服务工具链的精确观测版本
+ * @param ecosystemToolVersions exact observed versions for language and build tools / 语言与构建工具的精确观测版本
  * @param dockerOperational whether Docker is usable by the authenticated account / 已认证账户能否使用 Docker
  * @param podmanOperational whether Podman is usable by the authenticated account / 已认证账户能否使用 Podman
  * @param cpuMicroarchitecture highest cumulative CPU level confirmed by the runtime linker / 运行时链接器确认的最高累积 CPU 级别
@@ -54,6 +55,7 @@ public record LinuxCapabilityFacts(
         Set<String> pythonVersions,
         boolean python3Available,
         Map<DeploymentProjectType, Set<String>> serviceRuntimeVersions,
+        Map<EcosystemToolType, Set<String>> ecosystemToolVersions,
         boolean dockerOperational,
         boolean podmanOperational,
         CpuMicroarchitectureLevel cpuMicroarchitecture,
@@ -95,6 +97,18 @@ public record LinuxCapabilityFacts(
             normalizedService.put(projectType, copied);
         });
         serviceRuntimeVersions = Map.copyOf(normalizedService);
+        java.util.EnumMap<EcosystemToolType, Set<String>> normalizedTools =
+                new java.util.EnumMap<>(EcosystemToolType.class);
+        Objects.requireNonNull(ecosystemToolVersions, "ecosystemToolVersions").forEach((tool, versions) -> {
+            Objects.requireNonNull(tool, "ecosystem tool");
+            Set<String> copied = Set.copyOf(Objects.requireNonNull(versions, "ecosystem tool versions"));
+            if (copied.stream().anyMatch(candidate -> candidate == null
+                    || !candidate.matches("[0-9A-Za-z][0-9A-Za-z.+_-]{0,63}"))) {
+                throw new IllegalArgumentException("ecosystem tool versions must be bounded normalized values");
+            }
+            normalizedTools.put(tool, copied);
+        });
+        ecosystemToolVersions = Map.copyOf(normalizedTools);
         cpuMicroarchitecture = Objects.requireNonNull(cpuMicroarchitecture, "cpuMicroarchitecture");
         cpuFlags = Set.copyOf(Objects.requireNonNull(cpuFlags, "cpuFlags"));
         if (cpuFlags.stream().anyMatch(flag -> flag == null || !flag.matches("[a-z0-9_.-]{1,64}"))) {

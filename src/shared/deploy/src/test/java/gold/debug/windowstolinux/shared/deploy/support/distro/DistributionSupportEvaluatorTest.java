@@ -43,7 +43,7 @@ class DistributionSupportEvaluatorTest {
     private static LinuxCapabilityFacts capabilities(LinuxDistroType distro) {
         return new LinuxCapabilityFacts(distro, "24.04", "x86_64", "apt", "amd64",
                 true, true, true, true, Set.of(21), Set.of(22), true, true, Set.of("3.12"), true,
-                Map.of(), true, true, CpuMicroarchitectureLevel.X86_64_V1, Set.of("sse4_2", "popcnt"),
+                Map.of(), Map.of(), true, true, CpuMicroarchitectureLevel.X86_64_V1, Set.of("sse4_2", "popcnt"),
                 new LinuxSecurityPosture(LinuxSecurityModuleType.APPARMOR, LinuxSecurityState.ENABLED,
                         LinuxFirewallKind.UFW, LinuxFirewallState.ACTIVE), "test evidence");
     }

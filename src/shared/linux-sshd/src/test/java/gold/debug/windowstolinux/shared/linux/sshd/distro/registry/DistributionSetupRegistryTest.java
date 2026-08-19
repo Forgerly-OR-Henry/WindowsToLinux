@@ -90,8 +90,8 @@ class DistributionSetupRegistryTest {
         assertTrue(rocky.contains("x86-64-v3.*supported"));
         assertTrue(alma.contains("test \"${ID:-}\" = 'almalinux'"));
         assertTrue(oracle.contains("test \"${ID:-}\" = 'ol'"));
-        assertTrue(centos.contains("/usr/bin/dnf -y install java-21-openjdk-headless maven curl sudo"));
-        assertTrue(centos.contains("/usr/bin/sudo -n /usr/bin/dnf -y install java-21-openjdk-headless maven curl sudo"));
+        assertTrue(centos.contains("/usr/bin/dnf -y install java-21-openjdk-devel maven curl sudo"));
+        assertTrue(centos.contains("/usr/bin/sudo -n /usr/bin/dnf -y install java-21-openjdk-devel maven curl sudo"));
         for (String script : List.of(ubuntu, debian, centos, rocky, alma, oracle)) {
             int mutation = script.contains("/usr/bin/apt-get")
                     ? script.indexOf("/usr/bin/apt-get -o DPkg::Lock::Timeout=")
@@ -103,6 +103,9 @@ class DistributionSetupRegistryTest {
             assertTrue(script.contains("PREPARE_CHECK_FAILED"));
             assertTrue(script.contains("prepare_check=java-command"));
             assertTrue(script.contains("PREPARE_JAVA_VERSION"));
+            assertTrue(script.contains("command -v javac >/dev/null 2>&1"));
+            assertTrue(script.contains("command -v cmake >/dev/null 2>&1"));
+            assertTrue(script.contains("command -v ninja >/dev/null 2>&1"));
             assertTrue(script.contains("java-21-openjdk*/bin/java"));
             assertTrue(script.contains("/usr/local/lib/windowstolinux/java-21"));
             assertFalse(script.contains("alternatives --set"));
@@ -116,17 +119,17 @@ class DistributionSetupRegistryTest {
     @Test
     void preservesEverySupportedScriptAndUnsupportedRejectionSnapshot() throws Exception {
         for (ScriptSnapshot snapshot : List.of(
-                new ScriptSnapshot(LinuxDistroType.UBUNTU, "22.04", "amd64", "2f16e5265259e5fc2e4a478bd9af87f0602c42f146274bbcbac1444ba8540382"),
-                new ScriptSnapshot(LinuxDistroType.UBUNTU, "24.04", "amd64", "f242bee62df9354f580f500b2c268f78f97e7980c010a5cb9633993a7df869c0"),
-                new ScriptSnapshot(LinuxDistroType.DEBIAN, "13", "amd64", "5fd30978f2af2218559716ea26b11a69567450e5472cc0a46efef54bbccf1e20"),
-                new ScriptSnapshot(LinuxDistroType.CENTOS_STREAM, "9", "x86_64", "d5225893189e20843474b3b43296646c9cf78661766aa29a0487bd4cd49702cb"),
-                new ScriptSnapshot(LinuxDistroType.CENTOS_STREAM, "10", "x86_64", "4e4082631d75a25ff5ae897317660f658090fec9a76bf03b256ae4daaace7ec0"),
-                new ScriptSnapshot(LinuxDistroType.ROCKY_LINUX, "9.8", "x86_64", "32fd6360a7bc32e3fb07732f20057bb170f8cc7ffb11b95e798d425f20b7e3f6"),
-                new ScriptSnapshot(LinuxDistroType.ROCKY_LINUX, "10.2", "x86_64", "16db1d46e26127936fbbf54522e1ff2099d685c5876b7314170e197d7f4bd556"),
-                new ScriptSnapshot(LinuxDistroType.ALMALINUX, "9.8", "x86_64", "4606ed8fc74f5c008a7d1ecf8bf259fc25fdc3bf44a7044120177f1c105e72e3"),
-                new ScriptSnapshot(LinuxDistroType.ALMALINUX, "10.2", "x86_64", "99d378ade86a2d1869dad3fba7918a2b627c555a7f4521717aeef4a5f4d82f87"),
-                new ScriptSnapshot(LinuxDistroType.ORACLE_LINUX, "9.7", "x86_64", "a2d66a93de648db00f7ee30fa0411ecb09b3d398c7fde50642e1c2b0bdb208de"),
-                new ScriptSnapshot(LinuxDistroType.ORACLE_LINUX, "10.2", "x86_64", "432630c6d5f522bc3c9980f6c7f1a68d90c75f41c233bafbe9168964da655371"))) {
+                new ScriptSnapshot(LinuxDistroType.UBUNTU, "22.04", "amd64", "e038b3f69bff8a56c2b21a7aa9da34e527b8e7430feab2266865dce8a04a87e2"),
+                new ScriptSnapshot(LinuxDistroType.UBUNTU, "24.04", "amd64", "7cf76083dd96a725b7c1a986a53eca8b35938d7085a5b3126091e42396b2d881"),
+                new ScriptSnapshot(LinuxDistroType.DEBIAN, "13", "amd64", "4de1f8e23333b0338690e5da7ed0297c80896db52be0669007ea0b7cad9c3802"),
+                new ScriptSnapshot(LinuxDistroType.CENTOS_STREAM, "9", "x86_64", "4c331cacc9df8b11a7260fdbe7273ae0057755b84fb5b8116486b84017027eee"),
+                new ScriptSnapshot(LinuxDistroType.CENTOS_STREAM, "10", "x86_64", "93f896d48d86369bbbfba614c9f708021062d34aa8214f98858a5f70461d0de9"),
+                new ScriptSnapshot(LinuxDistroType.ROCKY_LINUX, "9.8", "x86_64", "5c8c411021a723dde38aadcfc7c4a87c0f9dc0ec5415a716eaf0fbfee8aee576"),
+                new ScriptSnapshot(LinuxDistroType.ROCKY_LINUX, "10.2", "x86_64", "9d357372fdd51423cb08f4ee32033e720ac165b8cbe4ad1ed7c7879981f76b66"),
+                new ScriptSnapshot(LinuxDistroType.ALMALINUX, "9.8", "x86_64", "f7b3912903783d9bb50666be3d45c4e8cccf4cd5865f6585ef612cbe0e9aafd3"),
+                new ScriptSnapshot(LinuxDistroType.ALMALINUX, "10.2", "x86_64", "4eecb5fb45bc8bfb473ac0cccc8ac21677b72d6baf6b917b3f42175594f34c11"),
+                new ScriptSnapshot(LinuxDistroType.ORACLE_LINUX, "9.7", "x86_64", "a0b1f97195cfdeb60793fda6229bc0e3f3868d7305e2badad273a8fff606e207"),
+                new ScriptSnapshot(LinuxDistroType.ORACLE_LINUX, "10.2", "x86_64", "25afcfac80ec7e9bc49c86c2bd7a79b0199eda6d73daefa596b12c160c1bac9d"))) {
             assertEquals(snapshot.sha256(), sha256(renderSetup(
                     snapshot.distro(), snapshot.version(), snapshot.packageArchitecture(), "deployer")));
         }
@@ -175,7 +178,7 @@ class DistributionSetupRegistryTest {
         LinuxCapabilityFacts capabilities = new LinuxCapabilityFacts(
                 distro, version, "x86_64", distro == LinuxDistroType.UBUNTU || distro == LinuxDistroType.DEBIAN ? "apt" : "dnf",
                 packageArchitecture, true, false, false, false,
-                Set.of(), Set.of(), false, false, Set.of(), false, Map.of(), false, false,
+                Set.of(), Set.of(), false, false, Set.of(), false, Map.of(), Map.of(), false, false,
                 CpuMicroarchitectureLevel.X86_64_V3, Set.of(), security, "test capabilities");
         return DistributionSetupRegistry.defaults().render(capabilities, username);
     }

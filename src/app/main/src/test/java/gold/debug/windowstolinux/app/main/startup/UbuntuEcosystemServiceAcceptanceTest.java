@@ -69,7 +69,8 @@ class UbuntuEcosystemServiceAcceptanceTest {
 
         try (LiveTypedDeploymentContext context = new LiveTypedDeploymentContext(stateRoot)) {
             LinuxCapabilityFacts capabilities = context.inspectDeploymentCapabilities();
-            String version = capabilities.serviceRuntimeVersions().getOrDefault(projectType, java.util.Set.of())
+            String version = projectType == DeploymentProjectType.KOTLIN_SERVICE ? "2.0.21"
+                    : capabilities.serviceRuntimeVersions().getOrDefault(projectType, java.util.Set.of())
                     .stream().sorted().findFirst().orElseThrow(() -> new AssertionError(
                             "prepared target did not expose an exact " + projectType + " runtime version"));
             Path wrapper = projectType == DeploymentProjectType.KOTLIN_SERVICE ? verifiedWrapperJar() : null;

@@ -42,23 +42,49 @@ seal_deployment_tree() {
       rm -rf --one-file-system -- "$manifest"
       install -o root -g root -m 555 -- "${artifacts[0]}" "$release/app.jar"
       ;;
-    java)
+    java|javasource)
       [ "$#" -ge 1 ] || reject runtime-arguments
       require_relative_path "$1"
+      if [ "$kind" = javasource ]; then
+        [ "$1" = .w2l/java/app.jar ] || reject java-source-artifact
+        [ -f "$release/source/windowstolinux-java.properties" ] || reject java-source-metadata
+      fi
       artifact="$release/source/$1"
       [ -f "$artifact" ] && [ ! -L "$artifact" ] || reject java-artifact
       install -o root -g root -m 555 -- "$artifact" "$release/app.jar"
       ;;
     node)
+      [ "$#" -eq 2 ] || reject runtime-arguments
       [ -f "$release/source/package.json" ] || reject node-package
+      case "$2" in
+        NPM) [ -f "$release/source/package-lock.json" ] || reject node-lock ;;
+        PNPM) [ -f "$release/source/pnpm-lock.yaml" ] || reject node-lock ;;
+        YARN) [ -f "$release/source/yarn.lock" ] || reject node-lock ;;
+        *) reject node-package-manager ;;
+      esac
       ;;
     python)
+      [ "$#" -eq 3 ] || reject runtime-arguments
       [ -x "$release/source/.venv/bin/python" ] || reject python-venv
+      case "$3" in
+        PIP_LOCKED) [ -f "$release/source/requirements.lock" ] || reject python-lock ;;
+        PIPENV_LOCKED) [ -f "$release/source/Pipfile.lock" ] || reject python-lock ;;
+        POETRY_LOCKED) [ -f "$release/source/poetry.lock" ] || reject python-lock ;;
+        UV_LOCKED) [ -f "$release/source/uv.lock" ] || reject python-lock ;;
+        *) reject python-build-tool ;;
+      esac
       ;;
     static)
-      [ "$#" -ge 1 ] || reject runtime-arguments
+      [ "$#" -eq 3 ] || reject runtime-arguments
       require_relative_path "$1"
       [ -d "$release/source/$1" ] && [ ! -L "$release/source/$1" ] || reject static-output
+      case "$3" in
+        STATIC_SITE_BUILD) ;;
+        NPM) [ -f "$release/source/package-lock.json" ] || reject static-lock ;;
+        PNPM) [ -f "$release/source/pnpm-lock.yaml" ] || reject static-lock ;;
+        YARN) [ -f "$release/source/yarn.lock" ] || reject static-lock ;;
+        *) reject static-build-tool ;;
+      esac
       ;;
     go|rust)
       [ "$#" -eq 3 ] || reject runtime-arguments
@@ -73,8 +99,13 @@ seal_deployment_tree() {
       [ -f "$artifact" ] && [ ! -L "$artifact" ] || reject dotnet-artifact
       ;;
     kotlin)
-      [ "$#" -eq 3 ] || reject runtime-arguments
+      [ "$#" -eq 4 ] || reject runtime-arguments
       require_java_main "$3"
+      case "$4" in
+        GRADLE_KOTLIN_WRAPPER) [ -f "$release/source/build.gradle.kts" ] || reject kotlin-gradle-metadata ;;
+        KOTLINC) [ -f "$release/source/windowstolinux-kotlin.properties" ] || reject kotlin-compiler-metadata ;;
+        *) reject kotlin-build-tool ;;
+      esac
       [ -d "$release/source/.w2l/kotlin/lib" ] || reject kotlin-distribution
       [ -n "$(find "$release/source/.w2l/kotlin/lib" -maxdepth 1 -type f -name '*.jar' -print -quit)" ] \
         || reject kotlin-distribution
@@ -84,10 +115,34 @@ seal_deployment_tree() {
       [ "$2" = public ] && [ "$3" = public/index.php ] || reject php-runtime
       [ -f "$release/source/public/index.php" ] && [ -f "$release/source/vendor/autoload.php" ] || reject php-artifact
       ;;
+    phpcli)
+      [ "$#" -eq 4 ] || reject runtime-arguments
+      [ "$2" = public ] && [ "$3" = public/index.php ] || reject php-runtime
+      [ -f "$release/source/public/index.php" ] || reject php-artifact
+      [ ! -e "$release/source/composer.json" ] && [ ! -e "$release/source/composer.lock" ] || reject php-cli-dependency
+      ;;
     ruby)
       [ "$#" -eq 4 ] || reject runtime-arguments
       [ "$2" = bundle ] && [ "$3" = config.ru ] || reject ruby-runtime
       [ -f "$release/source/config.ru" ] && [ -d "$release/source/vendor/bundle" ] || reject ruby-artifact
+      ;;
+    rubycli)
+      [ "$#" -eq 4 ] || reject runtime-arguments
+      [ "$2" = source ] || reject ruby-artifact
+      require_relative_path "$3"
+      [[ "$3" = *.rb ]] || reject ruby-entrypoint
+      [ -f "$release/source/$3" ] || reject ruby-artifact
+      [ ! -e "$release/source/Gemfile" ] && [ ! -e "$release/source/Gemfile.lock" ] || reject ruby-cli-dependency
+      ;;
+    cmake)
+      [ "$#" -eq 3 ] || reject runtime-arguments
+      [ "$1" = w2l-release ] || reject cmake-preset
+      require_safe_name "$2"
+      [ "$3" = "$2" ] || reject cmake-artifact
+      artifact="$release/source/.w2l/bin/$2"
+      [ -x "$artifact" ] && [ ! -L "$artifact" ] || reject cmake-artifact
+      [ -f "$artifact.ldd" ] && [ ! -L "$artifact.ldd" ] || reject cmake-dependencies
+      ! grep -F 'not found' "$artifact.ldd" || reject cmake-dependencies
       ;;
     *) reject runtime-kind ;;
   esac

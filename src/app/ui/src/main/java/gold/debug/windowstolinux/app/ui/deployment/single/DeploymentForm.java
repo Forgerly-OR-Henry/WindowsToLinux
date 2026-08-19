@@ -144,6 +144,10 @@ final class DeploymentForm {
             case JAVA_JAR -> new DeploymentRuntimeSpecification.JavaJar(runtimePrimary.getText(), runtimeSecondary.getText(),
                     runtimeVersion.getText(), DeploymentRuntimeParser.arguments(jvmArguments.getText()),
                     DeploymentRuntimeParser.arguments(applicationArguments.getText()), health);
+            case JAVA_SOURCE -> new DeploymentRuntimeSpecification.JavaSource(runtimePrimary.getText(),
+                    runtimeSecondary.getText(), runtimeVersion.getText(),
+                    DeploymentRuntimeParser.arguments(jvmArguments.getText()),
+                    DeploymentRuntimeParser.arguments(applicationArguments.getText()), health);
             case NODE_SERVICE -> new DeploymentRuntimeSpecification.NodeService(
                     Integer.parseInt(runtimeVersion.getText().trim()), health);
             case PYTHON_SERVICE -> new DeploymentRuntimeSpecification.PythonService(
@@ -157,6 +161,8 @@ final class DeploymentForm {
             case GO_SERVICE, RUST_SERVICE, DOTNET_SERVICE, KOTLIN_SERVICE, PHP_SERVICE, RUBY_SERVICE ->
                     DeploymentRuntimeParser.service(projectType(), runtimeVersion.getText(), runtimePrimary.getText(),
                             runtimeSecondary.getText(), health);
+            case CMAKE_SERVICE -> new DeploymentRuntimeSpecification.CmakeService(runtimeVersion.getText(),
+                    runtimeSecondary.getText(), runtimePrimary.getText(), health);
             case RECOGNITION_PREVIEW -> throw new IllegalArgumentException(messages.text("analysis.preview.noDeployment"));
         };
     }
@@ -165,6 +171,7 @@ final class DeploymentForm {
         DeploymentRuntimeAssessment suggestion = preparation.assessment().runtimeSuggestion().orElse(null);
         if (suggestion == null) return;
         suggestion.value(DeploymentRuntimeAssessment.RuntimeInputType.JAVA_JAR_PATH).ifPresent(runtimePrimary::setText);
+        suggestion.value(DeploymentRuntimeAssessment.RuntimeInputType.JAVA_SOURCE_ROOT).ifPresent(runtimePrimary::setText);
         suggestion.value(DeploymentRuntimeAssessment.RuntimeInputType.JAVA_MAIN_CLASS).ifPresent(runtimeSecondary::setText);
         suggestion.value(DeploymentRuntimeAssessment.RuntimeInputType.JAVA_VERSION).ifPresent(runtimeVersion::setText);
         suggestion.value(DeploymentRuntimeAssessment.RuntimeInputType.NODE_MAJOR_VERSION).ifPresent(runtimeVersion::setText);
@@ -174,6 +181,9 @@ final class DeploymentForm {
         suggestion.value(DeploymentRuntimeAssessment.RuntimeInputType.SERVICE_ARTIFACT).ifPresent(runtimePrimary::setText);
         suggestion.value(DeploymentRuntimeAssessment.RuntimeInputType.SERVICE_ENTRYPOINT).ifPresent(runtimeSecondary::setText);
         suggestion.value(DeploymentRuntimeAssessment.RuntimeInputType.SERVICE_VERSION).ifPresent(runtimeVersion::setText);
+        suggestion.value(DeploymentRuntimeAssessment.RuntimeInputType.CMAKE_PRESET).ifPresent(runtimeVersion::setText);
+        suggestion.value(DeploymentRuntimeAssessment.RuntimeInputType.CMAKE_TARGET).ifPresent(runtimeSecondary::setText);
+        suggestion.value(DeploymentRuntimeAssessment.RuntimeInputType.CMAKE_ARTIFACT).ifPresent(runtimePrimary::setText);
         if (!suggestion.suggestedContainerPorts().isEmpty()) {
             containerPorts.setText(suggestion.suggestedContainerPorts().entrySet().stream()
                     .map(entry -> entry.getKey() + ":" + entry.getValue()).reduce((a, b) -> a + ";" + b).orElse(""));

@@ -1,6 +1,7 @@
 package gold.debug.windowstolinux.shared.linux.sshd.capability;
 
 import gold.debug.windowstolinux.shared.linux.sshd.capability.ManagedPlatformCapabilityProbe;
+import gold.debug.windowstolinux.shared.model.capability.EcosystemToolType;
 import gold.debug.windowstolinux.shared.model.server.LinuxDistroType;
 import gold.debug.windowstolinux.shared.model.server.CpuMicroarchitectureLevel;
 import gold.debug.windowstolinux.shared.model.server.security.LinuxFirewallKind;
@@ -29,6 +30,10 @@ class SshdPlatformCapabilityCollectorTest {
                 Map.entry("SERVICE_GO", "1.24"), Map.entry("SERVICE_RUST", "1.89.0"),
                 Map.entry("SERVICE_DOTNET", "8.0.408"), Map.entry("SERVICE_KOTLIN", "21"),
                 Map.entry("SERVICE_PHP", "8.3"), Map.entry("SERVICE_RUBY", "3.3.5"),
+                Map.entry("TOOL_JAVAC", "21.0.8"), Map.entry("TOOL_JAR", "21.0.8"),
+                Map.entry("TOOL_PNPM", "10.15.1"), Map.entry("TOOL_UV", "0.8.12"),
+                Map.entry("TOOL_KOTLINC", "2.0.21"), Map.entry("TOOL_CMAKE", "3.31.6"),
+                Map.entry("TOOL_C_COMPILER", "14.2.1"), Map.entry("TOOL_CPP_COMPILER", "14.2.1"),
                 Map.entry("CPU_LEVEL", "x86-64-v3"), Map.entry("CPU_FLAGS", "sse4_2,popcnt"),
                 Map.entry("SECURITY_MODULE", "selinux"), Map.entry("SECURITY_STATE", "enforcing"),
                 Map.entry("FIREWALL", "firewalld"), Map.entry("FIREWALL_STATE", "active")), "SHA256:host");
@@ -49,8 +54,14 @@ class SshdPlatformCapabilityCollectorTest {
         assertEquals(LinuxFirewallState.ACTIVE, capabilities.securityPosture().firewallState());
         assertEquals(java.util.Set.of("1.24"), capabilities.serviceRuntimeVersions().get(DeploymentProjectType.GO_SERVICE));
         assertEquals(java.util.Set.of("3.3.5"), capabilities.serviceRuntimeVersions().get(DeploymentProjectType.RUBY_SERVICE));
+        assertEquals(java.util.Set.of("21.0.8"), capabilities.ecosystemToolVersions().get(EcosystemToolType.JAVAC));
+        assertEquals(java.util.Set.of("10.15.1"), capabilities.ecosystemToolVersions().get(EcosystemToolType.PNPM));
+        assertEquals(java.util.Set.of("2.0.21"), capabilities.ecosystemToolVersions().get(EcosystemToolType.KOTLINC));
+        assertEquals(java.util.Set.of("14.2.1"), capabilities.ecosystemToolVersions().get(EcosystemToolType.CPP_COMPILER));
         assertTrue(ManagedPlatformCapabilityProbe.render().contains("PODMAN_QUADLET"));
         assertTrue(ManagedPlatformCapabilityProbe.render().contains("SERVICE_DOTNET"));
+        assertTrue(ManagedPlatformCapabilityProbe.render().contains("TOOL_KOTLINC"));
+        assertTrue(ManagedPlatformCapabilityProbe.render().contains("TOOL_CMAKE"));
         assertTrue(ManagedPlatformCapabilityProbe.render().contains("printf(\"%d.%d\""));
         assertTrue(!ManagedPlatformCapabilityProbe.render().contains("printf(\"%%d.%%d\""));
         assertTrue(ManagedPlatformCapabilityProbe.render().contains("SECURITY_MODULE"));

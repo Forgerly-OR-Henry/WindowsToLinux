@@ -143,13 +143,14 @@ render_deployment_unit() {
       case "$1" in GRADLE_WRAPPER|MAVEN_WRAPPER|MAVEN) ;; *) reject springboot-build-tool ;; esac
       command="/usr/local/lib/windowstolinux/java-21 -jar $root/current/app.jar"
       ;;
-    java)
+    java|javasource)
       [ "$#" -ge 4 ] || reject runtime-arguments
       local jar="$1"
       local main="$2"
       shift 2
       require_relative_path "$jar"
       require_java_main "$main"
+      if [ "$kind" = javasource ]; then [ "$jar" = .w2l/java/app.jar ] || reject java-source-artifact; fi
       require_count "$1"
       argument_count="$1"
       shift
@@ -176,23 +177,30 @@ render_deployment_unit() {
       done
       ;;
     node)
-      [ "$#" -eq 1 ] || reject runtime-arguments
+      [ "$#" -eq 2 ] || reject runtime-arguments
       [[ "$1" =~ ^(18|19|20|21|22|23|24)$ ]] || reject node-version
-      command="/usr/bin/npm --prefix $root/current/source start"
+      case "$2" in
+        NPM) command="/usr/bin/npm --prefix $root/current/source start" ;;
+        PNPM) command="/usr/bin/pnpm --dir $root/current/source start" ;;
+        YARN) command="/usr/bin/yarn --cwd $root/current/source start" ;;
+        *) reject node-package-manager ;;
+      esac
       ;;
     python)
-      [ "$#" -eq 2 ] || reject runtime-arguments
+      [ "$#" -eq 3 ] || reject runtime-arguments
       [[ "$1" =~ ^3\.(10|11|12|13)$ ]] || reject python-version
       [[ "$2" =~ ^[A-Za-z_][A-Za-z0-9_.]{0,127}$ ]] || reject python-entrypoint
+      case "$3" in PIP_LOCKED|PIPENV_LOCKED|POETRY_LOCKED|UV_LOCKED) ;; *) reject python-build-tool ;; esac
       command="$root/current/source/.venv/bin/python -m $2"
       ;;
     static)
-      [ "$#" -eq 2 ] || reject runtime-arguments
+      [ "$#" -eq 3 ] || reject runtime-arguments
       require_relative_path "$1"
       [[ "$2" =~ ^[0-9]{1,5}$ ]] && [ "$2" -ge 1 ] && [ "$2" -le 65535 ] || reject static-port
+      case "$3" in STATIC_SITE_BUILD|NPM|PNPM|YARN) ;; *) reject static-build-tool ;; esac
       command="/usr/bin/python3 -m http.server $2 --directory $root/current/source/$1"
       ;;
-    go|rust|dotnet|kotlin|php|ruby)
+    go|rust|dotnet|kotlin|php|phpcli|ruby|rubycli|cmake)
       render_ecosystem_runtime_command "$kind" "$root" "$@"
       command="$ecosystem_runtime_command_result"
       ;;

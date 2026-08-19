@@ -286,7 +286,7 @@ class DesktopApplicationFacadeTest {
                 "ssh/server-one/password", CredentialStorageMode.MASTER_PASSWORD);
         LinuxCapabilityFacts expected = new LinuxCapabilityFacts(LinuxDistroType.UBUNTU, "24.04", "x86_64", "apt",
                 "amd64", true, false, false, false, Set.of(21), Set.of(22), true, true,
-                Set.of("3.12"), true, Map.of(), false, false, CpuMicroarchitectureLevel.X86_64_V3,
+                Set.of("3.12"), true, Map.of(), Map.of(), false, false, CpuMicroarchitectureLevel.X86_64_V3,
                 Set.of("sse4_2"), new LinuxSecurityPosture(LinuxSecurityModuleType.APPARMOR,
                 LinuxSecurityState.ENABLED, LinuxFirewallKind.UFW, LinuxFirewallState.ACTIVE), "bounded fixture");
         AtomicInteger connections = new AtomicInteger();

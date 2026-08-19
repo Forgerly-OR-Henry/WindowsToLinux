@@ -11,8 +11,8 @@ class DnfPackageSetsTest {
     @Test
     void keepsEnterpriseLinuxPackageSetsExact() {
         List<String> base = List.of(
-                "java-21-openjdk-headless", "maven", "curl", "sudo", "tar", "gzip", "iproute", "coreutils",
-                "util-linux", "findutils", "gawk", "nodejs", "npm", "podman"
+                "java-21-openjdk-devel", "maven", "curl", "sudo", "tar", "gzip", "iproute", "coreutils",
+                "util-linux", "findutils", "gawk", "nodejs", "npm", "cmake", "ninja-build", "gcc", "gcc-c++", "podman"
         );
         assertEquals(append(base, "python3.11", "python3.11-pip"), DnfPackageSets.enterprise("9"));
         assertEquals(append(base, "python3.12", "python3.12-pip"), DnfPackageSets.enterprise("10"));

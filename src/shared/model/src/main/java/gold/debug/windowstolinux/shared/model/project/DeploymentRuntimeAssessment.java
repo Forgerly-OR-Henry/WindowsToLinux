@@ -78,6 +78,8 @@ public record DeploymentRuntimeAssessment(
     public enum RuntimeInputType {
         /** Java JAR relative path. / Java JAR 相对路径。 */
         JAVA_JAR_PATH,
+        /** Java source root relative path. / Java 源码根相对路径。 */
+        JAVA_SOURCE_ROOT,
         /** Java binary main class. / Java 二进制主类。 */
         JAVA_MAIN_CLASS,
         /** Java major version. / Java 主版本。 */
@@ -97,13 +99,21 @@ public record DeploymentRuntimeAssessment(
         /** Ecosystem service bounded entrypoint. / 生态服务有界入口。 */
         SERVICE_ENTRYPOINT,
         /** Ecosystem service fixed port. / 生态服务固定端口。 */
-        SERVICE_PORT
+        SERVICE_PORT,
+        /** CMake configure preset. / CMake 配置 preset。 */
+        CMAKE_PRESET,
+        /** CMake executable target. / CMake 可执行目标。 */
+        CMAKE_TARGET,
+        /** CMake artifact name. / CMake 制品名称。 */
+        CMAKE_ARTIFACT
     }
 
     private static EnumSet<RuntimeInputType> allowedInputs(DeploymentProjectType projectType) {
         return switch (projectType) {
             case SPRING_BOOT, DOCKERFILE_CONTAINER, RECOGNITION_PREVIEW -> EnumSet.noneOf(RuntimeInputType.class);
             case JAVA_JAR -> EnumSet.of(RuntimeInputType.JAVA_JAR_PATH, RuntimeInputType.JAVA_MAIN_CLASS,
+                    RuntimeInputType.JAVA_VERSION);
+            case JAVA_SOURCE -> EnumSet.of(RuntimeInputType.JAVA_SOURCE_ROOT, RuntimeInputType.JAVA_MAIN_CLASS,
                     RuntimeInputType.JAVA_VERSION);
             case NODE_SERVICE -> EnumSet.of(RuntimeInputType.NODE_MAJOR_VERSION);
             case PYTHON_SERVICE -> EnumSet.of(RuntimeInputType.PYTHON_VERSION, RuntimeInputType.PYTHON_ENTRYPOINT);
@@ -113,6 +123,8 @@ public record DeploymentRuntimeAssessment(
                             RuntimeInputType.SERVICE_ENTRYPOINT);
             case PHP_SERVICE, RUBY_SERVICE -> EnumSet.of(RuntimeInputType.SERVICE_VERSION,
                     RuntimeInputType.SERVICE_ARTIFACT, RuntimeInputType.SERVICE_ENTRYPOINT, RuntimeInputType.SERVICE_PORT);
+            case CMAKE_SERVICE -> EnumSet.of(RuntimeInputType.CMAKE_PRESET, RuntimeInputType.CMAKE_TARGET,
+                    RuntimeInputType.CMAKE_ARTIFACT);
         };
     }
 

@@ -14,6 +14,10 @@ public final class EcosystemCapabilityScriptRenderer {
         profile = Objects.requireNonNull(profile, "profile");
         String python = profile.pythonCommand();
         String common = """
+                prepare_check=javac-command
+                command -v javac >/dev/null 2>&1
+                prepare_check=jar-command
+                command -v jar >/dev/null 2>&1
                 prepare_check=node-command
                 command -v node >/dev/null 2>&1
                 prepare_check=npm-command
@@ -22,6 +26,14 @@ public final class EcosystemCapabilityScriptRenderer {
                 command -v %s >/dev/null 2>&1
                 prepare_check=%s-venv
                 %s -m venv --help >/dev/null 2>&1
+                prepare_check=cmake-command
+                command -v cmake >/dev/null 2>&1
+                prepare_check=ninja-command
+                command -v ninja >/dev/null 2>&1
+                prepare_check=c-compiler-command
+                command -v cc >/dev/null 2>&1
+                prepare_check=cpp-compiler-command
+                command -v c++ >/dev/null 2>&1
                 """.formatted(python, python, python, python);
         if (profile != EcosystemCapabilityProfile.UBUNTU_2404) {
             return common;
@@ -37,6 +49,8 @@ public final class EcosystemCapabilityScriptRenderer {
                 cargo --version >/dev/null
                 prepare_check=dotnet-version
                 dotnet --version | grep -Eq '^(8|9)[.]0([.][0-9]+)?$'
+                prepare_check=kotlinc-version
+                kotlinc -version 2>&1 | grep -Eq 'kotlinc-jvm (1[.]9|2[.][0-9]+)[.][0-9]+'
                 prepare_check=php-version
                 php -r 'exit(PHP_MAJOR_VERSION === 8 && PHP_MINOR_VERSION >= 2 && PHP_MINOR_VERSION <= 4 ? 0 : 1);'
                 prepare_check=composer-version

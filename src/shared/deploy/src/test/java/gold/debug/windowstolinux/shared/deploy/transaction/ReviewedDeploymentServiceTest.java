@@ -33,6 +33,8 @@ import gold.debug.windowstolinux.shared.model.lifecycle.LifecycleObservation;
 import gold.debug.windowstolinux.shared.model.lifecycle.RuntimeState;
 import gold.debug.windowstolinux.shared.model.managed.ManagedApplication;
 import gold.debug.windowstolinux.shared.model.message.LocalizedMessage;
+import gold.debug.windowstolinux.shared.model.language.ProjectLanguageFacts;
+import gold.debug.windowstolinux.shared.model.language.SourceLanguageType;
 import gold.debug.windowstolinux.shared.model.project.DeploymentBuildToolType;
 import gold.debug.windowstolinux.shared.model.project.DeploymentProjectFacts;
 import gold.debug.windowstolinux.shared.model.project.DeploymentProjectType;
@@ -41,6 +43,7 @@ import gold.debug.windowstolinux.shared.model.project.SourceRevision;
 import gold.debug.windowstolinux.shared.model.capability.ServerCapabilityFacts;
 import gold.debug.windowstolinux.shared.model.server.ServerIdentity;
 import gold.debug.windowstolinux.shared.model.capability.LinuxCapabilityFacts;
+import gold.debug.windowstolinux.shared.model.capability.EcosystemToolType;
 import gold.debug.windowstolinux.shared.model.server.CpuMicroarchitectureLevel;
 import gold.debug.windowstolinux.shared.model.server.LinuxDistroType;
 import gold.debug.windowstolinux.shared.model.server.security.LinuxFirewallKind;
@@ -174,6 +177,14 @@ class ReviewedDeploymentServiceTest {
                             DeploymentProjectType.KOTLIN_SERVICE, java.util.Set.of("21"),
                             DeploymentProjectType.PHP_SERVICE, java.util.Set.of("8.3"),
                             DeploymentProjectType.RUBY_SERVICE, java.util.Set.of("3.3.5")),
+                            Map.of(EcosystemToolType.JAVAC, java.util.Set.of("21.0.8"),
+                                    EcosystemToolType.JAR, java.util.Set.of("21.0.8"),
+                                    EcosystemToolType.NPM, java.util.Set.of("10.9.2"),
+                                    EcosystemToolType.PIP, java.util.Set.of("24.0"),
+                                    EcosystemToolType.COMPOSER, java.util.Set.of("2.8.10"),
+                                    EcosystemToolType.BUNDLER, java.util.Set.of("2.6.9"),
+                                    EcosystemToolType.CMAKE, java.util.Set.of("3.28.3"),
+                                    EcosystemToolType.C_COMPILER, java.util.Set.of("13.3.0")),
                             true, true, CpuMicroarchitectureLevel.X86_64_V3, java.util.Set.of("sse4_2"),
                             new LinuxSecurityPosture(LinuxSecurityModuleType.APPARMOR, LinuxSecurityState.ENABLED,
                                     LinuxFirewallKind.UFW, LinuxFirewallState.ACTIVE), "fixture");
@@ -211,9 +222,14 @@ class ReviewedDeploymentServiceTest {
     }
 
     private ReviewedDeploymentRequest request(DeploymentRuntimeSpecification runtime) {
-        DeploymentProjectFacts facts = new DeploymentProjectFacts(temporaryDirectory, "demo", runtime.projectType(), tool(runtime),
-                List.of(new AnalysisEvidence(LocalizedMessage.of("test.evidence"), "fixture",
-                        LocalizedMessage.of("test.detected"), EvidenceConfidenceLevel.HIGH)), List.of(), List.of());
+        List<AnalysisEvidence> evidence = List.of(new AnalysisEvidence(LocalizedMessage.of("test.evidence"), "fixture",
+                LocalizedMessage.of("test.detected"), EvidenceConfidenceLevel.HIGH));
+        DeploymentProjectFacts facts = runtime.projectType() == DeploymentProjectType.CMAKE_SERVICE
+                ? new DeploymentProjectFacts(temporaryDirectory, "demo", runtime.projectType(), tool(runtime),
+                new ProjectLanguageFacts(java.util.Set.of(), java.util.Set.of(SourceLanguageType.C), Map.of(), List.of()),
+                evidence, List.of(), List.of())
+                : new DeploymentProjectFacts(temporaryDirectory, "demo", runtime.projectType(), tool(runtime),
+                evidence, List.of(), List.of());
         ConfigurationSnapshot configuration = ConfigurationSnapshot.create("demo", 1, "v1", Instant.parse("2026-08-12T00:00:00Z"),
                 List.of(new ConfigurationEntry("PORT", ConfigurationScope.RUNTIME, new ConfigurationValue.Number(8080))));
         Optional<UserAccessUrl> url = runtime.healthCheck() instanceof HealthCheck.Http
@@ -229,8 +245,9 @@ class ReviewedDeploymentServiceTest {
         return switch (runtime.projectType()) {
             case SPRING_BOOT -> DeploymentBuildToolType.GRADLE_WRAPPER;
             case JAVA_JAR -> DeploymentBuildToolType.JAVA;
+            case JAVA_SOURCE -> DeploymentBuildToolType.JDK;
             case NODE_SERVICE -> DeploymentBuildToolType.NPM;
-            case PYTHON_SERVICE -> DeploymentBuildToolType.PYTHON_VENV;
+            case PYTHON_SERVICE -> DeploymentBuildToolType.PIP_LOCKED;
             case STATIC_SITE -> DeploymentBuildToolType.STATIC_SITE_BUILD;
             case DOCKERFILE_CONTAINER -> DeploymentBuildToolType.CONTAINER_BUILD;
             case GO_SERVICE -> DeploymentBuildToolType.GO_MODULE;
@@ -239,6 +256,7 @@ class ReviewedDeploymentServiceTest {
             case KOTLIN_SERVICE -> DeploymentBuildToolType.GRADLE_KOTLIN_WRAPPER;
             case PHP_SERVICE -> DeploymentBuildToolType.COMPOSER_LOCKED;
             case RUBY_SERVICE -> DeploymentBuildToolType.BUNDLER_LOCKED;
+            case CMAKE_SERVICE -> DeploymentBuildToolType.CMAKE;
             case RECOGNITION_PREVIEW -> throw new AssertionError("recognition preview has no deployment runtime");
         };
     }
@@ -248,6 +266,8 @@ class ReviewedDeploymentServiceTest {
                 new DeploymentRuntimeSpecification.SpringBoot(new HealthCheck.Tcp(8080, 5, 1)),
                 new DeploymentRuntimeSpecification.JavaJar("app.jar", "demo.Main", "21", List.of("-Xmx256m"), List.of(),
                         new HealthCheck.Tcp(8080, 5, 1)),
+                new DeploymentRuntimeSpecification.JavaSource("src", "demo.Main", "21", List.of("-Xmx256m"), List.of(),
+                        new HealthCheck.Tcp(8080, 5, 1)),
                 new DeploymentRuntimeSpecification.NodeService(22, new HealthCheck.Tcp(8080, 5, 1)),
                 new DeploymentRuntimeSpecification.PythonService("3.12", "demo.main", new HealthCheck.Tcp(8080, 5, 1)),
                 new DeploymentRuntimeSpecification.StaticSite("public", new HealthCheck.Http(URI.create("http://127.0.0.1:8080/"), 200, 5)),
@@ -256,9 +276,11 @@ class ReviewedDeploymentServiceTest {
                 new DeploymentRuntimeSpecification.GoService("1.24", "w2l-app", "main.go", new HealthCheck.Tcp(8080, 5, 1)),
                 new DeploymentRuntimeSpecification.RustService("1.89.0", "demo", "src/main.rs", new HealthCheck.Tcp(8080, 5, 1)),
                 new DeploymentRuntimeSpecification.DotNetService("8.0.408", "Demo", "Demo.dll", new HealthCheck.Tcp(8080, 5, 1)),
-                new DeploymentRuntimeSpecification.KotlinService("21", "demo", "demo.MainKt", new HealthCheck.Tcp(8080, 5, 1)),
+                new DeploymentRuntimeSpecification.KotlinService("2.0.21", "demo", "demo.MainKt", new HealthCheck.Tcp(8080, 5, 1)),
                 new DeploymentRuntimeSpecification.PhpService("8.3", "public", "public/index.php", 8080, new HealthCheck.Tcp(8080, 5, 1)),
-                new DeploymentRuntimeSpecification.RubyService("3.3.5", "bundle", "config.ru", 8080, new HealthCheck.Tcp(8080, 5, 1))
+                new DeploymentRuntimeSpecification.RubyService("3.3.5", "bundle", "config.ru", 8080, new HealthCheck.Tcp(8080, 5, 1)),
+                new DeploymentRuntimeSpecification.CmakeService("w2l-release", "demo", "demo",
+                        new HealthCheck.Tcp(8080, 5, 1))
         );
     }
 

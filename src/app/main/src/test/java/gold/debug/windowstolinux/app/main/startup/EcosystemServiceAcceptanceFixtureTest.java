@@ -29,9 +29,9 @@ class EcosystemServiceAcceptanceFixtureTest {
         Path wrapperJar = temporaryDirectory.resolve("wrapper.jar");
         Files.writeString(wrapperJar, "fixture");
         Path root = EcosystemServiceAcceptanceFixture.create(temporaryDirectory, DeploymentProjectType.KOTLIN_SERVICE,
-                "kotlin-fixture", "21", "healthy", true, wrapperJar);
+                "kotlin-fixture", "2.0.21", "healthy", true, wrapperJar);
         EcosystemServiceAcceptanceFixture.create(temporaryDirectory, DeploymentProjectType.KOTLIN_SERVICE,
-                "kotlin-fixture", "21", "unhealthy", false, wrapperJar);
+                "kotlin-fixture", "2.0.21", "unhealthy", false, wrapperJar);
 
         String properties = Files.readString(root.resolve("gradle/wrapper/gradle-wrapper.properties"));
         assertTrue(properties.contains("distributionSha256Sum=31c55713e40233a8303827ceb42ca48a47267a0ad4bab9177123121e71524c26"));

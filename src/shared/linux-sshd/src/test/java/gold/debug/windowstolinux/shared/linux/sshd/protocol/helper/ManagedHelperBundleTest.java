@@ -33,7 +33,13 @@ class ManagedHelperBundleTest {
         assertTrue(helper.contains("gradle)"));
         assertTrue(helper.contains("[ \"$kind\" != gradle ] || reject legacy-gradle-write"));
         assertTrue(helper.contains("go|rust)"));
+        assertTrue(helper.contains("java|javasource)"));
+        assertTrue(helper.contains("PIP_LOCKED|PIPENV_LOCKED|POETRY_LOCKED|UV_LOCKED"));
+        assertTrue(helper.contains("GRADLE_KOTLIN_WRAPPER|KOTLINC"));
         assertTrue(helper.contains("render_ecosystem_runtime_command \"$kind\" \"$root\" \"$@\""));
+        assertTrue(helper.contains("phpcli)"));
+        assertTrue(helper.contains("rubycli)"));
+        assertTrue(helper.contains("cmake)"));
         assertTrue(helper.contains("ecosystem_runtime_command_result=\"/usr/bin/php -S 0.0.0.0:"));
         assertTrue(helper.contains("ecosystem_runtime_command_result=\"/usr/bin/env bundle exec rackup --server webrick --host 0.0.0.0"));
         assertTrue(helper.contains("previous_kind=ordinary"));

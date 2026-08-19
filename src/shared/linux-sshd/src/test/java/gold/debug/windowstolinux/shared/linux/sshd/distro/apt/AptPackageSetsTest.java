@@ -12,10 +12,11 @@ class AptPackageSetsTest {
         assertEquals(List.of(
                 "openjdk-21-jdk-headless", "maven", "curl", "sudo", "tar", "gzip", "iproute2", "coreutils",
                 "util-linux", "findutils", "gawk", "nodejs", "npm", "python3", "python3-venv", "python3-pip",
+                "cmake", "ninja-build", "gcc", "g++",
                 "docker.io", "podman"
         ), AptPackageSets.BASE);
         assertEquals(List.of(
-                "golang-go", "rustc", "cargo", "dotnet-sdk-8.0", "php-cli", "composer", "ruby", "ruby-bundler"
+                "golang-go", "rustc", "cargo", "dotnet-sdk-8.0", "kotlin", "php-cli", "composer", "ruby", "ruby-bundler"
         ), AptPackageSets.UBUNTU_2404_EXPERIMENTAL);
     }
 }

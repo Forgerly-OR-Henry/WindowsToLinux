@@ -1,6 +1,8 @@
 package gold.debug.windowstolinux.shared.deploy.support.runtime;
 
 import gold.debug.windowstolinux.shared.model.capability.LinuxCapabilityFacts;
+import gold.debug.windowstolinux.shared.model.capability.EcosystemToolType;
+import gold.debug.windowstolinux.shared.model.language.SourceLanguageType;
 import gold.debug.windowstolinux.shared.model.project.DeploymentBuildToolType;
 import gold.debug.windowstolinux.shared.model.project.DeploymentProjectFacts;
 import gold.debug.windowstolinux.shared.model.project.DeploymentProjectType;
@@ -43,12 +45,31 @@ public final class RuntimeCapabilityEvaluator {
             case DeploymentRuntimeSpecification.JavaJar javaJar ->
                     capabilities.javaMajorVersions().contains(Integer.parseInt(javaJar.javaVersion())) ? null
                             : "the selected Java major is not available";
-            case DeploymentRuntimeSpecification.NodeService node ->
-                    capabilities.npmAvailable() && capabilities.nodeMajorVersions().contains(node.nodeMajorVersion()) ? null
-                            : "the selected Node.js major and npm must both be available";
-            case DeploymentRuntimeSpecification.PythonService python ->
-                    capabilities.pythonVersions().contains(python.pythonVersion()) ? null
-                            : "the selected Python interpreter must provide venv support";
+            case DeploymentRuntimeSpecification.JavaSource ignored ->
+                    capabilities.javaMajorVersions().contains(21) && hasMajor(capabilities, EcosystemToolType.JAVAC, "21")
+                            && hasTool(capabilities, EcosystemToolType.JAR) ? null
+                            : "Java source requires Java 21, javac 21, and the JDK jar tool";
+            case DeploymentRuntimeSpecification.NodeService node -> {
+                EcosystemToolType packageManager = switch (facts.buildTool()) {
+                    case NPM -> EcosystemToolType.NPM;
+                    case PNPM -> EcosystemToolType.PNPM;
+                    case YARN -> EcosystemToolType.YARN;
+                    default -> throw new IllegalArgumentException("Node service facts require one package manager");
+                };
+                yield capabilities.nodeMajorVersions().contains(node.nodeMajorVersion()) && hasTool(capabilities, packageManager)
+                        ? null : "the selected Node.js major and package manager must both be available";
+            }
+            case DeploymentRuntimeSpecification.PythonService python -> {
+                EcosystemToolType dependencyTool = switch (facts.buildTool()) {
+                    case PIP_LOCKED -> EcosystemToolType.PIP;
+                    case PIPENV_LOCKED -> EcosystemToolType.PIPENV;
+                    case POETRY_LOCKED -> EcosystemToolType.POETRY;
+                    case UV_LOCKED -> EcosystemToolType.UV;
+                    default -> throw new IllegalArgumentException("Python service facts require one dependency architecture");
+                };
+                yield capabilities.pythonVersions().contains(python.pythonVersion()) && hasTool(capabilities, dependencyTool)
+                        ? null : "the selected Python interpreter and dependency tool must both be available";
+            }
             case DeploymentRuntimeSpecification.StaticSite site -> site.nodeMajorVersion().isPresent()
                     ? capabilities.npmAvailable()
                     && capabilities.nodeMajorVersions().contains(site.nodeMajorVersion().getAsInt())
@@ -67,12 +88,31 @@ public final class RuntimeCapabilityEvaluator {
                     serviceVersion(capabilities, service.projectType(), service.version());
             case DeploymentRuntimeSpecification.DotNetService service ->
                     serviceVersion(capabilities, service.projectType(), service.version());
-            case DeploymentRuntimeSpecification.KotlinService service ->
-                    serviceVersion(capabilities, service.projectType(), service.version());
+            case DeploymentRuntimeSpecification.KotlinService service -> {
+                boolean java21 = capabilities.javaMajorVersions().contains(21);
+                boolean compiler = facts.buildTool() != DeploymentBuildToolType.KOTLINC
+                        || hasVersion(capabilities, EcosystemToolType.KOTLINC, service.version());
+                yield java21 && compiler ? null
+                        : "the selected Kotlin architecture requires its exact compiler and Java 21";
+            }
             case DeploymentRuntimeSpecification.PhpService service ->
-                    serviceVersion(capabilities, service.projectType(), service.version());
+                    serviceVersion(capabilities, service.projectType(), service.version()) == null
+                            && (facts.buildTool() == DeploymentBuildToolType.PHP_CLI
+                            || hasTool(capabilities, EcosystemToolType.COMPOSER)) ? null
+                            : "the selected PHP runtime and dependency tool are not available";
             case DeploymentRuntimeSpecification.RubyService service ->
-                    serviceVersion(capabilities, service.projectType(), service.version());
+                    serviceVersion(capabilities, service.projectType(), service.version()) == null
+                            && (facts.buildTool() == DeploymentBuildToolType.RUBY_CLI
+                            || hasTool(capabilities, EcosystemToolType.BUNDLER)) ? null
+                            : "the selected Ruby runtime and dependency tool are not available";
+            case DeploymentRuntimeSpecification.CmakeService ignored ->
+                    !facts.languageFacts().sourceLanguages().isEmpty()
+                            && hasTool(capabilities, EcosystemToolType.CMAKE)
+                            && (!facts.languageFacts().sourceLanguages().contains(SourceLanguageType.C)
+                            || hasTool(capabilities, EcosystemToolType.C_COMPILER))
+                            && (!facts.languageFacts().sourceLanguages().contains(SourceLanguageType.CPP)
+                            || hasTool(capabilities, EcosystemToolType.CPP_COMPILER)) ? null
+                            : "CMake and every compiler required by the reviewed source language set must be available";
         };
     }
 
@@ -83,5 +123,18 @@ public final class RuntimeCapabilityEvaluator {
     ) {
         return capabilities.serviceRuntimeVersions().getOrDefault(projectType, java.util.Set.of()).contains(version)
                 ? null : "the selected ecosystem service runtime version is not available";
+    }
+
+    private static boolean hasTool(LinuxCapabilityFacts capabilities, EcosystemToolType tool) {
+        return !capabilities.ecosystemToolVersions().getOrDefault(tool, java.util.Set.of()).isEmpty();
+    }
+
+    private static boolean hasVersion(LinuxCapabilityFacts capabilities, EcosystemToolType tool, String version) {
+        return capabilities.ecosystemToolVersions().getOrDefault(tool, java.util.Set.of()).contains(version);
+    }
+
+    private static boolean hasMajor(LinuxCapabilityFacts capabilities, EcosystemToolType tool, String major) {
+        return capabilities.ecosystemToolVersions().getOrDefault(tool, java.util.Set.of()).stream()
+                .anyMatch(version -> version.equals(major) || version.startsWith(major + "."));
     }
 }

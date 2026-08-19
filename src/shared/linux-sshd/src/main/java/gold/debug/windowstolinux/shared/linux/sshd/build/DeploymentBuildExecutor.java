@@ -2,16 +2,27 @@ package gold.debug.windowstolinux.shared.linux.sshd.build;
 
 import gold.debug.windowstolinux.shared.linux.sshd.build.script.BuildConfigurationEnvironmentRenderer;
 import gold.debug.windowstolinux.shared.linux.sshd.build.spi.DeploymentBuildRenderer;
-import gold.debug.windowstolinux.shared.linux.sshd.build.ecosystem.BundlerBuildRenderer;
 import gold.debug.windowstolinux.shared.linux.sshd.build.ecosystem.CargoBuildRenderer;
-import gold.debug.windowstolinux.shared.linux.sshd.build.ecosystem.ComposerBuildRenderer;
+import gold.debug.windowstolinux.shared.linux.sshd.build.ecosystem.CmakeBuildRenderer;
 import gold.debug.windowstolinux.shared.linux.sshd.build.ecosystem.DotNetSdkBuildRenderer;
 import gold.debug.windowstolinux.shared.linux.sshd.build.ecosystem.GoBuildRenderer;
-import gold.debug.windowstolinux.shared.linux.sshd.build.ecosystem.KotlinGradleBuildRenderer;
+import gold.debug.windowstolinux.shared.linux.sshd.build.ecosystem.kotlin.KotlinCompilerBuildRenderer;
+import gold.debug.windowstolinux.shared.linux.sshd.build.ecosystem.kotlin.KotlinGradleBuildRenderer;
+import gold.debug.windowstolinux.shared.linux.sshd.build.ecosystem.php.ComposerBuildRenderer;
+import gold.debug.windowstolinux.shared.linux.sshd.build.ecosystem.php.PhpCliBuildRenderer;
+import gold.debug.windowstolinux.shared.linux.sshd.build.ecosystem.ruby.BundlerBuildRenderer;
+import gold.debug.windowstolinux.shared.linux.sshd.build.ecosystem.ruby.RubyCliBuildRenderer;
+import gold.debug.windowstolinux.shared.linux.sshd.build.ecosystem.java.GradleBuildRenderer;
 import gold.debug.windowstolinux.shared.linux.sshd.build.ecosystem.java.JavaJarBuildRenderer;
-import gold.debug.windowstolinux.shared.linux.sshd.build.ecosystem.java.SpringBootBuildRenderer;
-import gold.debug.windowstolinux.shared.linux.sshd.build.ecosystem.node.NodeBuildRenderer;
-import gold.debug.windowstolinux.shared.linux.sshd.build.ecosystem.python.PythonBuildRenderer;
+import gold.debug.windowstolinux.shared.linux.sshd.build.ecosystem.java.JdkBuildRenderer;
+import gold.debug.windowstolinux.shared.linux.sshd.build.ecosystem.java.MavenBuildRenderer;
+import gold.debug.windowstolinux.shared.linux.sshd.build.ecosystem.node.NpmBuildRenderer;
+import gold.debug.windowstolinux.shared.linux.sshd.build.ecosystem.node.PnpmBuildRenderer;
+import gold.debug.windowstolinux.shared.linux.sshd.build.ecosystem.node.YarnBuildRenderer;
+import gold.debug.windowstolinux.shared.linux.sshd.build.ecosystem.python.PipBuildRenderer;
+import gold.debug.windowstolinux.shared.linux.sshd.build.ecosystem.python.PipenvBuildRenderer;
+import gold.debug.windowstolinux.shared.linux.sshd.build.ecosystem.python.PoetryBuildRenderer;
+import gold.debug.windowstolinux.shared.linux.sshd.build.ecosystem.python.UvBuildRenderer;
 import gold.debug.windowstolinux.shared.linux.sshd.build.registry.DeploymentBuildRendererRegistry;
 import gold.debug.windowstolinux.shared.linux.sshd.build.workload.ContainerBuildRenderer;
 import gold.debug.windowstolinux.shared.linux.sshd.build.workload.StaticSiteBuildRenderer;
@@ -42,10 +53,14 @@ public final class DeploymentBuildExecutor {
 
     /** Creates the executor for one authenticated SSH account. / 为一个已认证 SSH 账户创建执行器。 */
     public DeploymentBuildExecutor(SshCommandExecutor commands, String username) {
-        this(commands, username, List.of(new SpringBootBuildRenderer(), new JavaJarBuildRenderer(), new NodeBuildRenderer(),
-                new PythonBuildRenderer(), new StaticSiteBuildRenderer(), new ContainerBuildRenderer(),
+        this(commands, username, List.of(new GradleBuildRenderer(), new MavenBuildRenderer(),
+                new JavaJarBuildRenderer(), new JdkBuildRenderer(), new NpmBuildRenderer(), new PnpmBuildRenderer(),
+                new YarnBuildRenderer(), new PipBuildRenderer(), new PipenvBuildRenderer(), new PoetryBuildRenderer(),
+                new UvBuildRenderer(), new StaticSiteBuildRenderer(), new ContainerBuildRenderer(),
                 new GoBuildRenderer(), new CargoBuildRenderer(), new DotNetSdkBuildRenderer(),
-                new KotlinGradleBuildRenderer(), new ComposerBuildRenderer(), new BundlerBuildRenderer()));
+                new KotlinGradleBuildRenderer(), new KotlinCompilerBuildRenderer(), new ComposerBuildRenderer(),
+                new PhpCliBuildRenderer(), new BundlerBuildRenderer(), new RubyCliBuildRenderer(),
+                new CmakeBuildRenderer()));
     }
 
     DeploymentBuildExecutor(SshCommandExecutor commands, String username, List<DeploymentBuildRenderer> renderers) {
@@ -77,7 +92,7 @@ public final class DeploymentBuildExecutor {
         if (!facts.applicationId().equals(configuration.applicationId())) {
             throw new IllegalArgumentException("build configuration must match the analyzed application");
         }
-        DeploymentBuildRenderer renderer = renderers.require(facts.projectType());
+        DeploymentBuildRenderer renderer = renderers.require(facts.projectType(), facts.buildTool());
         String script = BuildConfigurationEnvironmentRenderer.render(configuration)
                 + renderer.render(facts, runtime, workspace, limits);
         String command = "env -i PATH=/usr/local/bin:/usr/bin:/bin HOME="

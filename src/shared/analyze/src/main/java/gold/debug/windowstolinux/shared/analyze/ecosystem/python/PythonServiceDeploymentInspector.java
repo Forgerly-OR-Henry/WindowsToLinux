@@ -9,7 +9,6 @@ import gold.debug.windowstolinux.shared.analyze.source.ProjectIdentityResolver;
 import gold.debug.windowstolinux.shared.analyze.source.SourceInspectionFacts;
 import gold.debug.windowstolinux.shared.model.analysis.RejectionReason;
 import gold.debug.windowstolinux.shared.model.message.LocalizedMessage;
-import gold.debug.windowstolinux.shared.model.project.DeploymentBuildToolType;
 import gold.debug.windowstolinux.shared.model.project.DeploymentProjectFacts;
 import gold.debug.windowstolinux.shared.model.project.DeploymentProjectType;
 import gold.debug.windowstolinux.shared.model.project.DeploymentRuntimeAssessment;
@@ -57,7 +56,7 @@ public final class PythonServiceDeploymentInspector implements DeploymentTypeIns
             conflicts.add(LocalizedMessage.of("analysis.deployment.conflict.multiplePythonLockfiles"));
         }
         DeploymentProjectFacts facts = new DeploymentProjectFacts(root, project.applicationId(), projectType(),
-                DeploymentBuildToolType.PYTHON_VENV, languageFacts, List.of(evidence(
+                project.buildTool(), languageFacts, List.of(evidence(
                 "analysis.deployment.evidence.pythonProject", "pyproject.toml", "analysis.deployment.evidence.detected")),
                 conflicts, missing);
         Map<DeploymentRuntimeAssessment.RuntimeInputType, String> values = DeploymentRuntimeAssessment.valuesFor(projectType());

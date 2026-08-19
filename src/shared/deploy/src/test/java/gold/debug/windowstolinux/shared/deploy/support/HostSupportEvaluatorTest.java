@@ -6,6 +6,7 @@ import gold.debug.windowstolinux.shared.model.project.DeploymentBuildToolType;
 import gold.debug.windowstolinux.shared.model.project.DeploymentProjectFacts;
 import gold.debug.windowstolinux.shared.model.project.DeploymentProjectType;
 import gold.debug.windowstolinux.shared.model.capability.LinuxCapabilityFacts;
+import gold.debug.windowstolinux.shared.model.capability.EcosystemToolType;
 import gold.debug.windowstolinux.shared.model.server.CpuMicroarchitectureLevel;
 import gold.debug.windowstolinux.shared.model.project.DeploymentRuntimeSpecification;
 import gold.debug.windowstolinux.shared.model.server.LinuxDistroType;
@@ -38,7 +39,7 @@ class HostSupportEvaluatorTest {
         LinuxCapabilityFacts host = capabilities(LinuxDistroType.UBUNTU, "24.04", "apt", true, true);
         assertUnsupported(host, facts(DeploymentProjectType.NODE_SERVICE, DeploymentBuildToolType.NPM),
                 new DeploymentRuntimeSpecification.NodeService(20, new HealthCheck.Tcp(18080, 10, 1)));
-        assertUnsupported(host, facts(DeploymentProjectType.PYTHON_SERVICE, DeploymentBuildToolType.PYTHON_VENV),
+        assertUnsupported(host, facts(DeploymentProjectType.PYTHON_SERVICE, DeploymentBuildToolType.PIP_LOCKED),
                 new DeploymentRuntimeSpecification.PythonService("3.11", "demo", new HealthCheck.Tcp(18081, 10, 1)));
         assertUnsupported(host, facts(DeploymentProjectType.JAVA_JAR, DeploymentBuildToolType.JAVA),
                 new DeploymentRuntimeSpecification.JavaJar("app.jar", "example.Main", "17", java.util.List.of(),
@@ -164,7 +165,8 @@ class HostSupportEvaluatorTest {
                                                    boolean maven, Set<String> cpuFlags) {
         return new LinuxCapabilityFacts(distro, version, "x86_64", manager, packageArchitecture,
                 true, docker, podman, podman, Set.of(21), Set.of(22), true, maven, Set.of("3.12"), true,
-                Map.of(), docker, podman, cpu, cpuFlags, security, "test evidence");
+                Map.of(), Map.of(EcosystemToolType.NPM, Set.of("10.9.2")),
+                docker, podman, cpu, cpuFlags, security, "test evidence");
     }
 
     private static DeploymentProjectFacts facts(DeploymentProjectType type, DeploymentBuildToolType tool) {

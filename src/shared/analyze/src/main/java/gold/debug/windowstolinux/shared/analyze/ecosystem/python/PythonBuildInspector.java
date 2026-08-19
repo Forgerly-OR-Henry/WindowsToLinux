@@ -6,6 +6,7 @@ import gold.debug.windowstolinux.shared.analyze.ecosystem.python.pip.PipBuildIns
 import gold.debug.windowstolinux.shared.analyze.ecosystem.python.pipenv.PipenvBuildInspector;
 import gold.debug.windowstolinux.shared.analyze.ecosystem.python.poetry.PoetryBuildInspector;
 import gold.debug.windowstolinux.shared.analyze.ecosystem.python.uv.UvBuildInspector;
+import gold.debug.windowstolinux.shared.model.project.DeploymentBuildToolType;
 
 import java.io.IOException;
 import java.nio.file.Path;
@@ -32,12 +33,18 @@ public final class PythonBuildInspector {
             return Optional.empty();
         }
         String toml = BoundedMetadataInspector.read(pyproject);
-        List<String> lockFiles = List.of(
-                        pip.inspect(root), poetry.inspect(root), uv.inspect(root), pipenv.inspect(root))
+        List<PythonBuildArchitectureFacts> selected = List.of(
+                        pip.inspect(root).map(lock -> new PythonBuildArchitectureFacts(DeploymentBuildToolType.PIP_LOCKED, lock)),
+                        pipenv.inspect(root).map(lock -> new PythonBuildArchitectureFacts(DeploymentBuildToolType.PIPENV_LOCKED, lock)),
+                        poetry.inspect(root).map(lock -> new PythonBuildArchitectureFacts(DeploymentBuildToolType.POETRY_LOCKED, lock)),
+                        uv.inspect(root).map(lock -> new PythonBuildArchitectureFacts(DeploymentBuildToolType.UV_LOCKED, lock)))
                 .stream()
                 .flatMap(Optional::stream)
                 .toList();
+        List<String> lockFiles = selected.stream().map(PythonBuildArchitectureFacts::lockFile).toList();
+        DeploymentBuildToolType buildTool = selected.size() == 1
+                ? selected.getFirst().buildTool() : DeploymentBuildToolType.PIP_LOCKED;
         return Optional.of(new PythonBuildFacts(ProjectIdentityResolver.applicationId(root, toml, NAME),
-                lockFiles));
+                buildTool, lockFiles));
     }
 }

@@ -13,12 +13,13 @@ import java.util.OptionalInt;
  * <p>恰好一个部署单组件项目类型的类型化运行定义。
  */
 public sealed interface DeploymentRuntimeSpecification permits DeploymentRuntimeSpecification.SpringBoot,
-        DeploymentRuntimeSpecification.JavaJar, DeploymentRuntimeSpecification.NodeService,
+        DeploymentRuntimeSpecification.JavaJar, DeploymentRuntimeSpecification.JavaSource,
+        DeploymentRuntimeSpecification.NodeService,
         DeploymentRuntimeSpecification.PythonService, DeploymentRuntimeSpecification.StaticSite,
         DeploymentRuntimeSpecification.Container, DeploymentRuntimeSpecification.GoService,
         DeploymentRuntimeSpecification.RustService, DeploymentRuntimeSpecification.DotNetService,
         DeploymentRuntimeSpecification.KotlinService, DeploymentRuntimeSpecification.PhpService,
-        DeploymentRuntimeSpecification.RubyService {
+        DeploymentRuntimeSpecification.RubyService, DeploymentRuntimeSpecification.CmakeService {
     /** Returns the matching project type. / 返回匹配的项目类型。 */
     DeploymentProjectType projectType();
 
@@ -47,6 +48,25 @@ public sealed interface DeploymentRuntimeSpecification permits DeploymentRuntime
         }
         /** Returns the supported deployment project type. / 返回支持的部署项目类型。 */
         @Override public DeploymentProjectType projectType() { return DeploymentProjectType.JAVA_JAR; }
+    }
+
+    /** Dependency-free Java source compiled into one executable JAR on the target. / 在目标机编译为单一可执行 JAR 的无依赖 Java 源码。 */
+    record JavaSource(String sourceRoot, String mainClass, String javaVersion, List<String> jvmArguments,
+                      List<String> applicationArguments, HealthCheck healthCheck) implements DeploymentRuntimeSpecification {
+        /** Creates a reviewed Java source specification. / 创建经审阅的 Java 源码规范。 */
+        public JavaSource {
+            sourceRoot = relativePath(sourceRoot, "sourceRoot");
+            mainClass = javaName(mainClass, "mainClass");
+            javaVersion = requireJavaVersion(javaVersion);
+            if (!"21".equals(javaVersion)) {
+                throw new IllegalArgumentException("Java source compilation requires the fixed Java 21 baseline");
+            }
+            jvmArguments = safeArguments(jvmArguments, "jvmArguments");
+            applicationArguments = safeArguments(applicationArguments, "applicationArguments");
+            healthCheck = Objects.requireNonNull(healthCheck, "healthCheck");
+        }
+        /** Returns the supported deployment project type. / 返回支持的部署项目类型。 */
+        @Override public DeploymentProjectType projectType() { return DeploymentProjectType.JAVA_SOURCE; }
     }
 
     /** Lockfile-backed Node service runtime. / 由锁文件支持的 Node 服务运行时。 */
@@ -160,12 +180,12 @@ public sealed interface DeploymentRuntimeSpecification permits DeploymentRuntime
         @Override public DeploymentProjectType projectType() { return DeploymentProjectType.DOTNET_SERVICE; }
     }
 
-    /** Kotlin/JVM service pinned to Java 21. / 固定到 Java 21 的 Kotlin/JVM 服务。 */
+    /** Kotlin/JVM service with an exact compiler or plugin version and fixed Java 21 target. / 具有精确编译器或插件版本并固定到 Java 21 的 Kotlin/JVM 服务。 */
     record KotlinService(String version, String artifactName, String entrypoint, HealthCheck healthCheck)
             implements DeploymentRuntimeSpecification {
         /** Creates an instance of this type. / 创建此类型的实例。 */
         public KotlinService {
-            version = validateServiceVersion(version, "21"); artifactName = safeName(artifactName, "artifactName");
+            version = validateServiceVersion(version, "(?:1\\.9|2\\.[0-9]+)\\.[0-9]+"); artifactName = safeName(artifactName, "artifactName");
             entrypoint = javaName(entrypoint, "entrypoint"); healthCheck = Objects.requireNonNull(healthCheck, "healthCheck");
         }
         /** Returns the supported deployment project type. / 返回支持的部署项目类型。 */
@@ -186,18 +206,38 @@ public sealed interface DeploymentRuntimeSpecification permits DeploymentRuntime
         @Override public DeploymentProjectType projectType() { return DeploymentProjectType.PHP_SERVICE; }
     }
 
-    /** Bundler-locked Ruby Rack service. / Bundler 锁定的 Ruby Rack 服务。 */
+    /** Bundler-backed or dependency-free Ruby service. / Bundler 支持或无依赖 Ruby 服务。 */
     record RubyService(String version, String artifactName, String entrypoint, int servicePort, HealthCheck healthCheck)
             implements DeploymentRuntimeSpecification {
         /** Creates an instance of this type. / 创建此类型的实例。 */
         public RubyService {
             version = validateServiceVersion(version, "3\\.(?:2|3|4)(?:\\.[0-9]+)?"); artifactName = safeName(artifactName, "artifactName");
-            entrypoint = relativePath(entrypoint, "entrypoint"); requireExact(artifactName, "bundle", "Ruby artifact");
-            requireExact(entrypoint, "config.ru", "Ruby entrypoint"); requirePort(servicePort);
+            entrypoint = relativePath(entrypoint, "entrypoint");
+            boolean bundler = artifactName.equals("bundle") && entrypoint.equals("config.ru");
+            boolean cli = artifactName.equals("source") && entrypoint.endsWith(".rb");
+            if (!bundler && !cli) {
+                throw new IllegalArgumentException("Ruby runtime must be one reviewed Bundler or CLI shape");
+            }
+            requirePort(servicePort);
             healthCheck = Objects.requireNonNull(healthCheck, "healthCheck");
         }
         /** Returns the supported deployment project type. / 返回支持的部署项目类型。 */
         @Override public DeploymentProjectType projectType() { return DeploymentProjectType.RUBY_SERVICE; }
+    }
+
+    /** One fixed CMake preset and one C or C++ service executable. / 一个固定 CMake preset 与单一 C 或 C++ 服务可执行文件。 */
+    record CmakeService(String preset, String target, String artifactName, HealthCheck healthCheck)
+            implements DeploymentRuntimeSpecification {
+        /** Creates a reviewed CMake service specification. / 创建经审阅的 CMake 服务规范。 */
+        public CmakeService {
+            preset = safeName(preset, "preset");
+            target = safeName(target, "target");
+            artifactName = safeName(artifactName, "artifactName");
+            requireExact(artifactName, target, "CMake artifact");
+            healthCheck = Objects.requireNonNull(healthCheck, "healthCheck");
+        }
+        /** Returns the supported deployment project type. / 返回支持的部署项目类型。 */
+        @Override public DeploymentProjectType projectType() { return DeploymentProjectType.CMAKE_SERVICE; }
     }
 
     /** Supported single-container engine model. / 受支持的单容器引擎模型。 */

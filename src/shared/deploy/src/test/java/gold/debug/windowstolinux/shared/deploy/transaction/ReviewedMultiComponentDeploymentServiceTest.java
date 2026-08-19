@@ -316,7 +316,7 @@ class ReviewedMultiComponentDeploymentServiceTest {
                                     32L * 1024 * 1024 * 1024, "fixture");
                             case "collectDeploymentCapabilities" -> new LinuxCapabilityFacts(LinuxDistroType.UBUNTU, "24.04",
                                     "x86_64", "apt", "amd64", true, true, true, true, java.util.Set.of(21),
-                                    java.util.Set.of(22), true, true, java.util.Set.of("3.12"), true, Map.of(),
+                                    java.util.Set.of(22), true, true, java.util.Set.of("3.12"), true, Map.of(), Map.of(),
                                     true, true, CpuMicroarchitectureLevel.X86_64_V3, java.util.Set.of("sse4_2"),
                                     new LinuxSecurityPosture(LinuxSecurityModuleType.APPARMOR, LinuxSecurityState.ENABLED,
                                             LinuxFirewallKind.UFW, LinuxFirewallState.ACTIVE), "fixture");

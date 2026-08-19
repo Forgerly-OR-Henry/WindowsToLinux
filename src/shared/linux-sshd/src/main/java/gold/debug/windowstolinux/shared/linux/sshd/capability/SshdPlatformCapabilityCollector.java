@@ -12,6 +12,7 @@ import gold.debug.windowstolinux.shared.model.server.security.LinuxSecurityModul
 import gold.debug.windowstolinux.shared.model.server.security.LinuxSecurityPosture;
 import gold.debug.windowstolinux.shared.model.server.security.LinuxSecurityState;
 import gold.debug.windowstolinux.shared.model.project.DeploymentProjectType;
+import gold.debug.windowstolinux.shared.model.capability.EcosystemToolType;
 import gold.debug.windowstolinux.shared.linux.sshd.capability.ManagedPlatformCapabilityProbe;
 
 import java.time.Duration;
@@ -76,6 +77,14 @@ public final class SshdPlatformCapabilityCollector implements LinuxPlatformCapab
                 serviceVersions.put(projectType, Set.of(observed));
             }
         }
+        java.util.EnumMap<EcosystemToolType, Set<String>> ecosystemTools =
+                new java.util.EnumMap<>(EcosystemToolType.class);
+        for (EcosystemToolType tool : EcosystemToolType.values()) {
+            Set<String> observed = Arrays.stream(values.getOrDefault("TOOL_" + tool.name(), "").split(","))
+                    .map(String::trim).filter(candidate -> candidate.matches("[0-9A-Za-z][0-9A-Za-z.+_-]{0,63}"))
+                    .collect(Collectors.toUnmodifiableSet());
+            if (!observed.isEmpty()) ecosystemTools.put(tool, observed);
+        }
         String architecture = normalized(values.getOrDefault("ARCH", "unknown"));
         String packageManager = normalized(values.getOrDefault("PACKAGE_MANAGER", "unknown"));
         String packageArchitecture = normalized(values.getOrDefault("PACKAGE_ARCH", "unknown"));
@@ -96,7 +105,8 @@ public final class SshdPlatformCapabilityCollector implements LinuxPlatformCapab
                 "1".equals(values.get("SYSTEMD")), "1".equals(values.get("DOCKER_CLIENT")),
                 "1".equals(values.get("PODMAN_CLIENT")), "1".equals(values.get("PODMAN_QUADLET")),
                 javaMajors, nodeMajors, "1".equals(values.get("NPM")), "1".equals(values.get("MAVEN")), pythonVersions,
-                "1".equals(values.get("PYTHON3")), serviceVersions, "1".equals(values.get("DOCKER_OPERATIONAL")),
+                "1".equals(values.get("PYTHON3")), serviceVersions, ecosystemTools,
+                "1".equals(values.get("DOCKER_OPERATIONAL")),
                 "1".equals(values.get("PODMAN_OPERATIONAL")), cpuLevel, flags, security, evidence);
     }
 
