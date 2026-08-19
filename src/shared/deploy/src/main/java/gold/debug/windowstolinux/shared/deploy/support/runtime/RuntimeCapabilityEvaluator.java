@@ -146,8 +146,8 @@ public final class RuntimeCapabilityEvaluator {
     ) {
         return switch (tool) {
             case NPM -> hasTool(capabilities, tool);
-            case PNPM -> anyVersion(capabilities, tool, segments -> segments[0] >= 9);
-            case YARN -> anyVersion(capabilities, tool, segments -> segments[0] >= 2 && segments[0] <= 4);
+            case PNPM -> anyVersion(capabilities, tool, segments -> segments[0] >= 9 && segments[0] <= 11);
+            case YARN -> anyVersion(capabilities, tool, segments -> segments[0] == 4);
             default -> false;
         };
     }

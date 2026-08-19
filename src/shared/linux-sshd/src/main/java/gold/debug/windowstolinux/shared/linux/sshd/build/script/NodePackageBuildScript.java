@@ -13,7 +13,8 @@ public final class NodePackageBuildScript {
         String installAndBuild = switch (tool) {
             case NPM -> "test -f ./package-lock.json\nrun npm ci --ignore-scripts\nrun npm run build";
             case PNPM -> "test -f ./pnpm-lock.yaml\nrun pnpm install --frozen-lockfile --ignore-scripts\nrun pnpm run build";
-            case YARN -> "test -f ./yarn.lock\nrun yarn install --immutable --ignore-scripts\nrun yarn run build";
+            case YARN -> "test -f ./yarn.lock\nexport YARN_ENABLE_SCRIPTS=false\n"
+                    + "run yarn install --immutable\nrun yarn run build";
             default -> throw new IllegalArgumentException("Node source requires one fixed package manager");
         };
         String artifact = staticSite

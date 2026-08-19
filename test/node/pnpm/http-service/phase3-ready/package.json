@@ -1,0 +1,8 @@
+{
+  "name": "phase3-node-pnpm",
+  "version": "1.0.0",
+  "private": true,
+  "packageManager": "pnpm@10.15.1",
+  "engines": { "node": "18" },
+  "scripts": { "build": "node build.js", "start": "node server.js" }
+}

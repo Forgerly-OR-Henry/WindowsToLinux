@@ -10,7 +10,7 @@ import java.util.regex.Pattern;
 /** Inspects the pnpm lockfile architecture. / 检查 pnpm 锁文件架构。 */
 public final class PnpmBuildInspector {
     private static final Pattern MANAGER = Pattern.compile(
-            "\\\"packageManager\\\"\\s*:\\s*\\\"pnpm@(9|10)\\.[0-9]+\\.[0-9]+(?:[-+][0-9A-Za-z._-]+)?\\\"");
+            "\\\"packageManager\\\"\\s*:\\s*\\\"pnpm@(9|10|11)\\.[0-9]+\\.[0-9]+(?:[-+][0-9A-Za-z._-]+)?\\\"");
 
     /** Returns pnpm facts when pnpm-lock.yaml exists. / 在 pnpm-lock.yaml 存在时返回 pnpm 事实。 */
     public Optional<String> inspect(Path root) throws IOException {

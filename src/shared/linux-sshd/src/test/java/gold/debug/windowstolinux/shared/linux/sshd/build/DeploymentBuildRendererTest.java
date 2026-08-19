@@ -80,7 +80,7 @@ class DeploymentBuildRendererTest {
         assertTrue(render(new PnpmBuildRenderer(), DeploymentBuildToolType.PNPM, node)
                 .contains("pnpm install --frozen-lockfile --ignore-scripts"));
         assertTrue(render(new YarnBuildRenderer(), DeploymentBuildToolType.YARN, node)
-                .contains("yarn install --immutable --ignore-scripts"));
+                .contains("export YARN_ENABLE_SCRIPTS=false\nrun yarn install --immutable"));
 
         var python = new DeploymentRuntimeSpecification.PythonService("3.12", "demo.main", TCP);
         assertTrue(render(new PipBuildRenderer(), DeploymentBuildToolType.PIP_LOCKED, python)

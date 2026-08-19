@@ -1,0 +1,8 @@
+[project]
+name = "Phase3Fixture"
+version = "1.0.0"
+requires-python = "==3.11.*"
+dependencies = []
+
+[tool.poetry]
+package-mode = false

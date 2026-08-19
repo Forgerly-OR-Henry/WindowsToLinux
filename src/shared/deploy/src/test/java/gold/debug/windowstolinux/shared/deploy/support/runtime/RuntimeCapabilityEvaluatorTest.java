@@ -89,7 +89,7 @@ class RuntimeCapabilityEvaluatorTest {
     void rejectsPackageManagerVersionsThatCannotRunTheFixedCommands() {
         LinuxCapabilityFacts base = capabilities();
         Map<EcosystemToolType, Set<String>> tools = new java.util.EnumMap<>(base.ecosystemToolVersions());
-        tools.put(EcosystemToolType.PNPM, Set.of("8.15.9"));
+        tools.put(EcosystemToolType.PNPM, Set.of("8.15.9", "12.0.0"));
         tools.put(EcosystemToolType.YARN, Set.of("1.22.22"));
         tools.put(EcosystemToolType.POETRY, Set.of("1.1.15"));
         tools.put(EcosystemToolType.UV, Set.of("0.3.5"));
