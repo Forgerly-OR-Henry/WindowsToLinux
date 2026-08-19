@@ -2,8 +2,8 @@
 
 ## 文档信息
 
-- 文档版本：`3.22.0-ecosystem-architecture-packages`
-- 文档状态：**28-POM 模块边界保持不变；ecosystem 职责、架构名子包、受控深度和源码迁移已完成，三期扩展文档必须以本版为结构基线；不得据此扩大运行支持声明**
+- 文档版本：`3.23.0-ecosystem-extension-implementation`
+- 文档状态：**28-POM 模块边界保持不变；27 个精确项目类型×构建工具架构及其分析/执行结构已经落地；新增架构仍等待逐目标产品入口实机证据，不得由静态完成状态扩大运行支持声明**
 - 已确认范围：`shared` 共用模块、`app` Windows 桌面应用模块、`web` Web 应用模块
 - 已确认能力边界：受管应用生命周期复用既有模块，不新增独立 Maven 模块
 - 更新日期：2026-08-20
@@ -13,7 +13,7 @@
 
 > 本文是正式目标目录、模块职责、依赖方向、包结构和命名规则的唯一来源。开发总纲、分期扩展文档和源码迁移必须先符合本文；运行能力与实机证据仍以相应分期文档为准，不得由目标目录反推支持结论。
 
-> 本版固定 `ecosystem` 的稳定边界：语言识别、构建架构、框架分析、目标机构建和工具链探测按职责归位；每个分析构建架构使用自身规范名子包；共享模型、部署编排、发行版、工作负载及运行机制保持正交。该结构不改变模块、协议、持久化、远端路径或既有实机证据。
+> 本版落地三期生态补全结构：分析层保持每个架构一个规范名包，执行层按多架构语言聚合；精确架构身份、主机工具版本与受控 Renderer 贯通，但共享模型、部署事务、发行版、工作负载及运行机制仍保持正交。该结构不改变模块、协议、持久化或既有实机证据。
 
 ## 1. 完整目标结构
 
@@ -82,6 +82,8 @@ WindowsToLinux/
    │  │  ├─ component/        混合项目组件分析、资源冲突和依赖图校验
    │  │  ├─ core/             分析协调器、跨语言事实汇总、阶段顺序与结果聚合
    │  │  ├─ ecosystem/        只保存按语言维护的识别、构建架构和框架分析
+   │  │  │  ├─ c/             C 与 C++ 语言生态
+   │  │  │  │  └─ cmake/      单目标 CMake 事实与服务部署检查
    │  │  │  ├─ dotnet/        .NET 语言生态
    │  │  │  │  └─ dotnetsdk/  .NET SDK 事实与服务部署检查
    │  │  │  ├─ go/            Go 语言生态
@@ -89,22 +91,26 @@ WindowsToLinux/
    │  │  │  ├─ java/          Java 语言与 Spring Boot 框架分析
    │  │  │  │  ├─ gradle/     Gradle 构建事实与静态检查
    │  │  │  │  ├─ jar/        JAR 原生交付架构静态检查
+   │  │  │  │  ├─ jdk/        无外部依赖的 JDK 纯源码构建检查
    │  │  │  │  └─ maven/      Maven 构建事实与静态检查
    │  │  │  ├─ kotlin/        Kotlin 语言生态
-   │  │  │  │  └─ gradle/     Kotlin/Gradle 应用事实与服务部署检查
+   │  │  │  │  ├─ gradle/     Kotlin/Gradle 应用事实与服务部署检查
+   │  │  │  │  └─ kotlinc/    零依赖 Kotlin 编译器架构检查
    │  │  │  ├─ node/          Node.js 语言、跨架构选择与服务分析
    │  │  │  │  ├─ npm/        npm 架构检查
    │  │  │  │  ├─ pnpm/       pnpm 架构检查
    │  │  │  │  └─ yarn/       Yarn 架构检查
    │  │  │  ├─ php/           PHP 语言生态
-   │  │  │  │  └─ composer/   Composer 事实与服务部署检查
+   │  │  │  │  ├─ composer/   Composer 事实与服务部署检查
+   │  │  │  │  └─ phpcli/     零依赖 PHP CLI 架构检查
    │  │  │  ├─ python/        Python 语言、跨架构选择与服务分析
    │  │  │  │  ├─ pip/        pip 架构检查
    │  │  │  │  ├─ pipenv/     Pipenv 架构检查
    │  │  │  │  ├─ poetry/     Poetry 架构检查
    │  │  │  │  └─ uv/         uv 架构检查
    │  │  │  ├─ ruby/          Ruby 语言生态
-   │  │  │  │  └─ bundler/    Bundler 事实与服务部署检查
+   │  │  │  │  ├─ bundler/    Bundler 事实与服务部署检查
+   │  │  │  │  └─ rubycli/    零依赖 Ruby CLI 架构检查
    │  │  │  └─ rust/          Rust 语言生态
    │  │  │     └─ cargo/      Cargo 事实与服务部署检查
    │  │  ├─ policy/           跨生态源码变更与部署停止策略
@@ -156,9 +162,12 @@ WindowsToLinux/
    │  ├─ linux-sshd/          Apache SSHD Linux 远程能力实现
    │  │  ├─ build/            受控目标机构建入口
    │  │  │  ├─ ecosystem/     按语言聚合的构建架构实现；单架构实现直接位于本包
-   │  │  │  │  ├─ java/       Java 的 JAR、Maven 与 Gradle 构建差异
+   │  │  │  │  ├─ java/       Java 的 Gradle、JAR、JDK 与 Maven 构建差异
+   │  │  │  │  ├─ kotlin/     Kotlin 的 Gradle 与 kotlinc 构建差异
    │  │  │  │  ├─ node/       Node.js 的 npm、pnpm 与 Yarn 构建差异
-   │  │  │  │  └─ python/     Python 的 pip、Pipenv、Poetry 与 uv 构建差异
+   │  │  │  │  ├─ php/        PHP 的 Composer 与 CLI 构建差异
+   │  │  │  │  ├─ python/     Python 的 pip、Pipenv、Poetry 与 uv 构建差异
+   │  │  │  │  └─ ruby/       Ruby 的 Bundler 与 CLI 构建差异
    │  │  │  ├─ registry/      构建实现的唯一装配与完整性检查
    │  │  │  ├─ script/        配置环境、超时、资源限制和安全脚本外壳
    │  │  │  ├─ spi/           单项目类型构建渲染窄契约
@@ -1102,11 +1111,13 @@ linux-sshd 通过 linux 契约采集服务器已有环境
 21. 用户可见和持久化语义统一使用“发布身份摘要”（`release_sha256`）；“制品”仅描述构建过程中待验证的文件，不得再把已发布身份称为制品摘要。桌面 SQLite 当前 schema 为 v7；v5 保留发布身份语义，v6 增加受约束的 AI 角色到命名 Provider 外键，v7 增加成功整应用的组件/依赖图并与全部组件发布状态原子提交；v4 的 `artifact_sha256` 已通过列重命名无损迁移并继续表示既有发布身份。
 22. `DeploymentSupportProfile` 是语言、框架、支持等级与真实验收目标范围的唯一共享声明；`RECOGNITION_PREVIEW` 只能由 `analyze` 读取有界路径和固定元数据，必须使用 `NONE_PREVIEW`，不得创建源码归档、部署适配器、远端构建渲染器、helper 参数或生命周期入口。Shell 文件只可作为识别证据，不能转换成命令。
 23. `PackageStructureArchitectureTest` 使用 JDK 编译器 AST、物理路径和生产导入图自动检查文件与顶级类型同名、仓库级顶级类型唯一性、顶级及嵌套枚举语义后缀、禁限用词及封闭例外、资源文件名、复数后缀、缩写、测试后缀、默认两层与第 4.3 节受控第三层、语言/构建架构/发行版分类轴、禁用包名、全部包依赖环、测试包镜像、职责映射、反向依赖、旧 FQCN、旧包、已删除包装类以及唯一 `AppMain.main`；不设置总包数或单包类型数量硬上限，不得通过文本豁免隐藏结构回归。
+24. 每个可进入计划的源码路径必须产生一个精确 `DeploymentArchitectureType`，由 `DeploymentProjectType × DeploymentBuildToolType` 唯一标识；分析注册表、构建 Renderer 注册表、主机生态工具版本和运行时能力判断必须对该身份闭合，禁止恢复宽泛构建工具身份或以参数化 Renderer 隐藏架构差异。新增身份在逐目标产品入口证据完成前保持试验适配或 `RUNTIME-PENDING`。
 
 ## 12. 文档版本记录
 
 | 版本 | 日期 | 说明 |
 | --- | --- | --- |
+| 3.23.0-ecosystem-extension-implementation | 2026-08-20 | 落地 27 个精确项目类型×构建工具架构；新增 JDK 纯源码、kotlinc、PHP CLI、Ruby CLI 与单目标 CMake，拆分 Node/Python 具名 Renderer，并以 `DeploymentArchitectureType`、生态工具版本事实和结构门禁闭合分析到执行的静态边界。28-POM、协议 v3、SQLite schema 与既有实机证据边界不变；新增路径继续等待逐目标产品入口验收。 |
 | 3.22.0-ecosystem-architecture-packages | 2026-08-20 | 明确分析层每个独立构建架构都必须使用自身规范名子包，不因只有一种架构而省略；将现有 .NET SDK、Go Module、Kotlin Gradle、Composer、Bundler、Cargo 及 Node/Python 多架构检查归入 `dotnetsdk`、`gomodule`、`gradle`、`composer`、`bundler`、`cargo`、`npm/pnpm/yarn`、`pip/pipenv/poetry/uv`。执行层仍按多架构数量决定语言分组，以控制深度；不改变模块、协议、持久化、helper 字节或运行支持范围。 |
 | 3.21.0-ecosystem-architecture | 2026-08-19 | 在三期扩展开发文档之前确立并迁移 ecosystem 正式基线：Java JAR 与 Maven/Gradle 平行，目标机构建与能力探测分别使用 `build.ecosystem`、`capability.ecosystem`，helper 仅将语言专属片段归入资源 ecosystem 分组；六种参数化服务构建改为具名原生架构 Renderer，C/C++ 统一归 `c`。同步删除旧参数化 Renderer、固定 Java 白名单、现状计数和运行证据长段等过时或重复规则；不改变 helper 字节、协议、持久化或运行支持范围。 |
 | 3.20.0-strict-naming-compliance | 2026-08-19 | 将生产、测试、顶级与嵌套枚举统一为穷举语义后缀，消除两个不同职责的 `DeploymentStep` 及其余无后缀枚举，并将 `00-common.sh` 更名为 `00-protocol-foundation.sh`；架构门禁新增枚举后缀、顶级类型唯一性、受维护资源名和禁限用词封闭例外检查。模块、包结构、枚举常量、helper 内容与摘要、协议、持久化和运行支持范围不变。 |

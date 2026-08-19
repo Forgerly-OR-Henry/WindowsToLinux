@@ -20,7 +20,8 @@ public final class Main {
                 try (Socket socket = server.accept()) {
                     BufferedReader input = new BufferedReader(new InputStreamReader(
                             socket.getInputStream(), StandardCharsets.US_ASCII));
-                    while (!input.readLine().isEmpty()) { }
+                    String line;
+                    while ((line = input.readLine()) != null && !line.isEmpty()) { }
                     byte[] body = MARKER.getBytes(StandardCharsets.UTF_8);
                     String reason = STATUS_CODE == 200 ? "OK" : "Service Unavailable";
                     byte[] headers = ("HTTP/1.1 " + STATUS_CODE + " " + reason + "\r\nContent-Length: "

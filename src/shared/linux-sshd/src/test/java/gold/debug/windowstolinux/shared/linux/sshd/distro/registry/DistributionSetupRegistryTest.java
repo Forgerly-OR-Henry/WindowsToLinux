@@ -17,6 +17,7 @@ import org.junit.jupiter.api.Test;
 
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
+import java.util.ArrayList;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.Map;
@@ -118,21 +119,27 @@ class DistributionSetupRegistryTest {
 
     @Test
     void preservesEverySupportedScriptAndUnsupportedRejectionSnapshot() throws Exception {
-        for (ScriptSnapshot snapshot : List.of(
-                new ScriptSnapshot(LinuxDistroType.UBUNTU, "22.04", "amd64", "e038b3f69bff8a56c2b21a7aa9da34e527b8e7430feab2266865dce8a04a87e2"),
-                new ScriptSnapshot(LinuxDistroType.UBUNTU, "24.04", "amd64", "7cf76083dd96a725b7c1a986a53eca8b35938d7085a5b3126091e42396b2d881"),
-                new ScriptSnapshot(LinuxDistroType.DEBIAN, "13", "amd64", "4de1f8e23333b0338690e5da7ed0297c80896db52be0669007ea0b7cad9c3802"),
-                new ScriptSnapshot(LinuxDistroType.CENTOS_STREAM, "9", "x86_64", "4c331cacc9df8b11a7260fdbe7273ae0057755b84fb5b8116486b84017027eee"),
-                new ScriptSnapshot(LinuxDistroType.CENTOS_STREAM, "10", "x86_64", "93f896d48d86369bbbfba614c9f708021062d34aa8214f98858a5f70461d0de9"),
-                new ScriptSnapshot(LinuxDistroType.ROCKY_LINUX, "9.8", "x86_64", "5c8c411021a723dde38aadcfc7c4a87c0f9dc0ec5415a716eaf0fbfee8aee576"),
-                new ScriptSnapshot(LinuxDistroType.ROCKY_LINUX, "10.2", "x86_64", "9d357372fdd51423cb08f4ee32033e720ac165b8cbe4ad1ed7c7879981f76b66"),
-                new ScriptSnapshot(LinuxDistroType.ALMALINUX, "9.8", "x86_64", "f7b3912903783d9bb50666be3d45c4e8cccf4cd5865f6585ef612cbe0e9aafd3"),
-                new ScriptSnapshot(LinuxDistroType.ALMALINUX, "10.2", "x86_64", "4eecb5fb45bc8bfb473ac0cccc8ac21677b72d6baf6b917b3f42175594f34c11"),
-                new ScriptSnapshot(LinuxDistroType.ORACLE_LINUX, "9.7", "x86_64", "a0b1f97195cfdeb60793fda6229bc0e3f3868d7305e2badad273a8fff606e207"),
-                new ScriptSnapshot(LinuxDistroType.ORACLE_LINUX, "10.2", "x86_64", "25afcfac80ec7e9bc49c86c2bd7a79b0199eda6d73daefa596b12c160c1bac9d"))) {
-            assertEquals(snapshot.sha256(), sha256(renderSetup(
-                    snapshot.distro(), snapshot.version(), snapshot.packageArchitecture(), "deployer")));
+        List<ScriptSnapshot> scripts = List.of(
+                new ScriptSnapshot(LinuxDistroType.UBUNTU, "22.04", "amd64", "e4747ca6e912f9e8c819eba6d35d1f10e4b5ef0d3beee847992e6773879badb8"),
+                new ScriptSnapshot(LinuxDistroType.UBUNTU, "24.04", "amd64", "7ef14cdfebb6b3d2ce477eece0917ceb469ef4af4f12414508acbb729e3b2a62"),
+                new ScriptSnapshot(LinuxDistroType.DEBIAN, "13", "amd64", "9687745e197db30fb294a115795b72a08956b225d5677534f7ce6387be2be7b0"),
+                new ScriptSnapshot(LinuxDistroType.CENTOS_STREAM, "9", "x86_64", "6e03f04efba3146b7478bb5b0fb00fc521bd3bf957c29208a8c30cf06dcda9e7"),
+                new ScriptSnapshot(LinuxDistroType.CENTOS_STREAM, "10", "x86_64", "ec2c22a4ec0107633fa970a8794cec43859e41828be0605d88e8ce1e329770f7"),
+                new ScriptSnapshot(LinuxDistroType.ROCKY_LINUX, "9.8", "x86_64", "94431740d5a997fc64b549b39ccf2370237ff39063872f1ae3e240d84b67c680"),
+                new ScriptSnapshot(LinuxDistroType.ROCKY_LINUX, "10.2", "x86_64", "e82f674da0d1227d2678f9cbfe84ee3ee61494067ed33cf44e64f5fc98cbf6a2"),
+                new ScriptSnapshot(LinuxDistroType.ALMALINUX, "9.8", "x86_64", "7cea8dd76b68931de203c774eb0681fe1774550c80c914a7e417c4adef90c295"),
+                new ScriptSnapshot(LinuxDistroType.ALMALINUX, "10.2", "x86_64", "aa0467f5e31b523c7fb52302ebabfcca0012ff4c21490cff965c1b41b1d5d28b"),
+                new ScriptSnapshot(LinuxDistroType.ORACLE_LINUX, "9.7", "x86_64", "e454609410ea850953a0fab2ef7c7e11e0d98f3031a536b9ddeb10b009523931"),
+                new ScriptSnapshot(LinuxDistroType.ORACLE_LINUX, "10.2", "x86_64", "60a66e18b1e960a2b99478b46b95f79cfd452b514a65015f4021ed6424dccae5"));
+        List<String> changed = new ArrayList<>();
+        for (ScriptSnapshot snapshot : scripts) {
+            String actual = sha256(renderSetup(
+                    snapshot.distro(), snapshot.version(), snapshot.packageArchitecture(), "deployer"));
+            if (!snapshot.sha256().equals(actual)) {
+                changed.add(snapshot.distro() + " " + snapshot.version() + "=" + actual);
+            }
         }
+        assertTrue(changed.isEmpty(), () -> "setup snapshots changed:\n" + String.join("\n", changed));
 
         for (RejectedSnapshot snapshot : List.of(
                 new RejectedSnapshot(LinuxDistroType.UBUNTU, "20.04", "amd64"),

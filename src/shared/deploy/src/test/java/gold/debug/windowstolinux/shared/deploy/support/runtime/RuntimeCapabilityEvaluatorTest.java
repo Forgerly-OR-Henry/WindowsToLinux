@@ -107,6 +107,27 @@ class RuntimeCapabilityEvaluatorTest {
         }
     }
 
+    @Test
+    void rejectsCmakeWhenTheFixedToolchainIsUnavailable() {
+        LinuxCapabilityFacts base = capabilities();
+        Map<EcosystemToolType, Set<String>> tools = new java.util.EnumMap<>(base.ecosystemToolVersions());
+        tools.remove(EcosystemToolType.NINJA);
+        var runtime = new DeploymentRuntimeSpecification.CmakeService("w2l-release", "demo", "demo", HEALTH);
+
+        RuntimeCapabilityDecision decision = RuntimeCapabilityEvaluator.evaluate(withTools(base, tools),
+                facts(DeploymentProjectType.CMAKE_SERVICE, DeploymentBuildToolType.CMAKE), runtime);
+
+        assertEquals(false, decision.supported());
+        assertTrue(decision.detail().orElseThrow().contains("Ninja"));
+
+        tools.put(EcosystemToolType.NINJA, Set.of("1.12.1"));
+        tools.put(EcosystemToolType.CMAKE, Set.of("3.24.4"));
+        RuntimeCapabilityDecision obsoleteCmake = RuntimeCapabilityEvaluator.evaluate(withTools(base, tools),
+                facts(DeploymentProjectType.CMAKE_SERVICE, DeploymentBuildToolType.CMAKE), runtime);
+        assertEquals(false, obsoleteCmake.supported());
+        assertTrue(obsoleteCmake.detail().orElseThrow().contains("CMake"));
+    }
+
     private static DeploymentProjectFacts facts(DeploymentProjectType type, DeploymentBuildToolType tool) {
         if (type == DeploymentProjectType.CMAKE_SERVICE) {
             return new DeploymentProjectFacts(Path.of("."), "demo", type, tool,
@@ -140,6 +161,7 @@ class RuntimeCapabilityEvaluatorTest {
                         Map.entry(EcosystemToolType.COMPOSER, Set.of("2.8.10")),
                         Map.entry(EcosystemToolType.BUNDLER, Set.of("2.6.9")),
                         Map.entry(EcosystemToolType.CMAKE, Set.of("3.31.6")),
+                        Map.entry(EcosystemToolType.NINJA, Set.of("1.12.1")),
                         Map.entry(EcosystemToolType.C_COMPILER, Set.of("14.2.1")),
                         Map.entry(EcosystemToolType.CPP_COMPILER, Set.of("14.2.1"))
                 ), true, true, CpuMicroarchitectureLevel.X86_64_V1, Set.of("sse4_2", "popcnt"),

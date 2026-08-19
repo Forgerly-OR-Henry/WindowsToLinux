@@ -1,6 +1,6 @@
 package gold.debug.windowstolinux.app.main.startup;
 
-import gold.debug.windowstolinux.app.main.startup.EcosystemExtensionAcceptanceFixture.Architecture;
+import gold.debug.windowstolinux.app.main.startup.EcosystemExtensionAcceptanceFixture.ArchitectureType;
 import gold.debug.windowstolinux.app.service.source.ReviewedSourcePreparation;
 import gold.debug.windowstolinux.shared.config.definition.ConfigurationScope;
 import gold.debug.windowstolinux.shared.config.definition.ConfigurationValue;
@@ -62,7 +62,7 @@ class EcosystemExtensionProductEntryAcceptanceTest {
     @TestFactory
     Stream<DynamicTest> deploysRollsBackAndRestoresEveryChangedArchitecture() {
         String selected = System.getProperty("managed.runtime.extension.type", "all").trim();
-        List<Architecture> architectures = Arrays.stream(Architecture.values())
+        List<ArchitectureType> architectures = Arrays.stream(ArchitectureType.values())
                 .filter(architecture -> selected.equalsIgnoreCase("all")
                         || architecture.key().equalsIgnoreCase(selected)
                         || architecture.name().equalsIgnoreCase(selected))
@@ -72,7 +72,7 @@ class EcosystemExtensionProductEntryAcceptanceTest {
                 architecture.key(), () -> exercise(architecture)));
     }
 
-    private void exercise(Architecture architecture) throws Exception {
+    private void exercise(ArchitectureType architecture) throws Exception {
         int port = PORT_BASE + architecture.ordinal() + 1;
         String applicationId = "wtl-ext-" + architecture.key() + "-" + RUN_ID;
         Path stateRoot = temporaryDirectory.resolve("state-" + architecture.key());
@@ -140,7 +140,7 @@ class EcosystemExtensionProductEntryAcceptanceTest {
         return context.inspectDeploymentCapabilities();
     }
 
-    private static VersionSelection versions(Architecture architecture, LinuxCapabilityFacts capabilities) {
+    private static VersionSelection versions(ArchitectureType architecture, LinuxCapabilityFacts capabilities) {
         return switch (architecture) {
             case JAVA_JDK -> {
                 requireTool(capabilities, EcosystemToolType.JAR, ignored -> true, "JDK jar tool");
@@ -190,13 +190,15 @@ class EcosystemExtensionProductEntryAcceptanceTest {
             }
             case CMAKE -> {
                 requireTool(capabilities, EcosystemToolType.C_COMPILER, ignored -> true, "C compiler");
+                requireTool(capabilities, EcosystemToolType.NINJA, ignored -> true, "Ninja generator");
                 yield new VersionSelection("", requireTool(capabilities, EcosystemToolType.CMAKE,
-                        ignored -> true, "CMake"));
+                        version -> major(version) > 3 || major(version) == 3 && minor(version) >= 25,
+                        "CMake 3.25 or newer"));
             }
         };
     }
 
-    private static String serviceRuntime(LinuxCapabilityFacts capabilities, Architecture architecture) {
+    private static String serviceRuntime(LinuxCapabilityFacts capabilities, ArchitectureType architecture) {
         return capabilities.serviceRuntimeVersions().getOrDefault(architecture.projectType(), Set.of()).stream()
                 .sorted().findFirst().orElseThrow(() -> new AssertionError(
                         "target does not expose an exact " + architecture.projectType() + " runtime"));
@@ -230,7 +232,7 @@ class EcosystemExtensionProductEntryAcceptanceTest {
     }
 
     private static DeploymentRuntimeSpecification runtime(
-            Architecture architecture, String version, String applicationId, int port) {
+            ArchitectureType architecture, String version, String applicationId, int port) {
         return switch (architecture) {
             case JAVA_JDK -> new DeploymentRuntimeSpecification.JavaSource(
                     "src", "acceptance.Main", "21", List.of(), List.of(), health(port));

@@ -109,12 +109,14 @@ public final class RuntimeCapabilityEvaluator {
                             : "the selected Ruby runtime and dependency tool are not available";
             case DeploymentRuntimeSpecification.CmakeService ignored ->
                     !facts.languageFacts().sourceLanguages().isEmpty()
-                            && hasTool(capabilities, EcosystemToolType.CMAKE)
+                            && anyVersion(capabilities, EcosystemToolType.CMAKE,
+                                    segments -> segments[0] > 3 || segments[0] == 3 && segments[1] >= 25)
+                            && hasTool(capabilities, EcosystemToolType.NINJA)
                             && (!facts.languageFacts().sourceLanguages().contains(SourceLanguageType.C)
                             || hasTool(capabilities, EcosystemToolType.C_COMPILER))
                             && (!facts.languageFacts().sourceLanguages().contains(SourceLanguageType.CPP)
                             || hasTool(capabilities, EcosystemToolType.CPP_COMPILER)) ? null
-                            : "CMake and every compiler required by the reviewed source language set must be available";
+                            : "CMake, Ninja, and every compiler required by the reviewed source language set must be available";
         };
     }
 

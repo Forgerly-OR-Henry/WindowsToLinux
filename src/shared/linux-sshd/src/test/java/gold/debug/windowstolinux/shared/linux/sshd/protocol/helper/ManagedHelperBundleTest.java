@@ -40,8 +40,13 @@ class ManagedHelperBundleTest {
         assertTrue(helper.contains("phpcli)"));
         assertTrue(helper.contains("rubycli)"));
         assertTrue(helper.contains("cmake)"));
-        assertTrue(helper.contains("ecosystem_runtime_command_result=\"/usr/bin/php -S 0.0.0.0:"));
-        assertTrue(helper.contains("ecosystem_runtime_command_result=\"/usr/bin/env bundle exec rackup --server webrick --host 0.0.0.0"));
+        assertTrue(helper.contains("NPM) command=\"/usr/bin/env PATH=/usr/local/bin:/usr/bin:/bin npm"));
+        assertTrue(helper.contains("PNPM) command=\"/usr/bin/env PATH=/usr/local/bin:/usr/bin:/bin pnpm"));
+        assertTrue(helper.contains("YARN) command=\"/usr/bin/env PATH=/usr/local/bin:/usr/bin:/bin yarn"));
+        assertTrue(helper.contains("ecosystem_runtime_command_result=\"/usr/bin/env PATH=/usr/local/bin:/usr/bin:/bin php -S"));
+        assertTrue(helper.contains("ecosystem_runtime_command_result=\"/usr/bin/env PATH=/usr/local/bin:/usr/bin:/bin php -n -S"));
+        assertTrue(helper.contains("ecosystem_runtime_command_result=\"/usr/bin/env PATH=/usr/local/bin:/usr/bin:/bin bundle exec rackup"));
+        assertTrue(helper.contains("ecosystem_runtime_command_result=\"/usr/bin/env PATH=/usr/local/bin:/usr/bin:/bin PORT=$4 ruby"));
         assertTrue(helper.contains("previous_kind=ordinary"));
         assertTrue(helper.contains("[ \"$previous_kind\" = deployment ] || [ \"$previous_kind\" = ordinary ]"));
         assertTrue(helper.contains("printf '%s\\n' \"$previous_kind\" > \"$snapshot/kind\""));

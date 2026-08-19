@@ -2,10 +2,11 @@
 
 ## 文档信息
 
-- 文档版本：`1.0.0-native-architecture-baseline`
-- 结构基线：`File.md 3.22.0-ecosystem-architecture-packages`
+- 文档版本：`1.1.0-static-implementation`
+- 结构基线：`File.md 3.23.0-ecosystem-extension-implementation`
 - 代码基线：`7f04b6c`
-- 文档状态：**待实施；本文件定义三期生态补全顺序，不声明新增语言、构建架构、发行版或运行能力已经可用**
+- 实现检查点：`85af8d5`（精确架构与受控执行）、`4f9f698`（输入和版本门禁）、`b49c938`（独立夹具与产品入口验收编排）
+- 文档状态：**实现与静态夹具已完成；新增架构尚未执行真实服务器验收，继续保持试验适配或 `RUNTIME-PENDING`**
 - 更新日期：2026-08-20
 - 上级文档：[三期工程细化文档](PHASE-3.md)
 - 正式结构规范：[项目文件结构](../File.md)
@@ -36,7 +37,7 @@
 8. APT/DNF 包名只进入 `distro`，语言命令和版本判断只进入 `capability.ecosystem`，不得建立语言与发行版组合包。
 9. 新架构默认从识别预览或试验适配开始；本地测试和静态门禁不得升级真实运行支持声明。
 
-## 3. 当前实现审计
+## 3. 实施前审计与本次结果
 
 | 生态 | 当前分析架构 | 当前执行情况 | 原生基线判定 | 必须补全 |
 | --- | --- | --- | --- | --- |
@@ -51,7 +52,9 @@
 | Ruby | `bundler` | 仅有 Bundler 锁定 Rack 路径 | **不完整**：零依赖 Ruby 源码仍被 Bundler 前置条件阻止 | 新增 `rubycli`，Bundler 保留为扩展架构 |
 | C/C++ | 仅识别预览 | 无类型化构建、发布或运行入口 | **尚未进入部署支持** | 在现有语言完成原生基线后实现 `c.cmake` 试验路径 |
 
-结论：当前纯 Java 源码确实不能通过 `JAVA_JAR` 路径迁移；该路径要求输入已经是可执行 JAR。三期补全必须新增 `jdk`，不能把 JAR 文件交付误写成源码编译支持。
+基线结论：提交 `7f04b6c` 的纯 Java 源码不能通过 `JAVA_JAR` 路径迁移；该路径要求输入已经是可执行 JAR。因此本次新增独立 `JAVA_SOURCE × JDK`，并继续把 `JAVA_JAR × JAVA` 限定为预构建制品交付。
+
+本次结果：27 个受支持目录条目现在都具有精确 `DeploymentArchitectureType`；新增或拆分的 12 种架构均已贯通静态分析、构建工具身份、具名 Renderer、目标能力门、helper v3 制品/运行分派、失败恢复与产品入口验收编排。该结果只证明代码与静态入口完备，不替代真实 Linux 运行证据。
 
 ## 4. 目标结构
 
@@ -234,16 +237,49 @@ CMake 在首个架构阶段使用 `CmakeBuildRenderer` 直接位于 `build.ecosy
 - 当前 Ubuntu 24.04 x86-64 与 CentOS Stream 9 x86-64 的既有证据只覆盖原验收夹具，不自动覆盖新增架构。
 - 新架构在完成精确产品入口证据前必须保持 `RUNTIME-PENDING` 或试验适配，不得写入正式支持目标列表。
 
+### 8.4 服务器连接后的直接验收入口
+
+真实验收已固化为 `EcosystemExtensionProductEntryAcceptanceTest`，默认一次执行全部 12 种架构，也可用 `managed.runtime.extension.type` 选择架构键（如 `node-yarn`、`python-poetry`、`cmake`）。测试只调用桌面产品门面和 `SshdLinuxGateway`，不包含手工 SSH、systemd 或任意远端命令旁路。
+
+```powershell
+$env:JAVA_HOME='E:\Program\Java\JDK21'
+$env:WINDOWSTOLINUX_TEST_SSH_PASSWORD='<由用户在本机设置>'
+$env:WINDOWSTOLINUX_TEST_MASTER_PASSWORD='<由用户在本机设置>'
+mvn.cmd -B -ntp -o -pl :windowstolinux-app-main -am `
+  '-Dtest=EcosystemExtensionProductEntryAcceptanceTest' `
+  '-Dsurefire.failIfNoSpecifiedTests=false' `
+  '-Dmanaged.runtime.extension=true' `
+  '-Dmanaged.runtime.extension.type=all' `
+  '-Dmanaged.runtime.extension.prepare-environment=true' `
+  '-Dmanaged.ssh.host=<服务器地址>' `
+  '-Dmanaged.ssh.user=<登录用户>' test
+```
+
+若以 root 登录，还必须显式增加 `-Dmanaged.root-build=true`。环境准备仅安装发行版配置持有的固定软件包；pnpm、Yarn、Pipenv、Poetry、uv 等不属于发行版固定包集的工具必须由目标环境预先提供。验收会在上传源码前采集精确版本并一次性失败关闭，避免到远端构建或发布阶段才发现工具不兼容。
+
+| 架构 | 验收前置版本门 |
+| --- | --- |
+| Java JDK | Java/Javac 21 与 JDK `jar` |
+| Node npm | Node 18–24 与可探测 npm |
+| Node pnpm | Node 18–24 与 pnpm 9–11 |
+| Node Yarn | Node 18–24 与 Yarn 4 |
+| Python pip/Pipenv | Python 3.12 或 3.11（含 venv）与对应工具 |
+| Python Poetry | Python 3.12 或 3.11（含 venv）与 Poetry 2 |
+| Python uv | Python 3.12 或 3.11（含 venv）与 uv 0.4 或更高版本 |
+| Kotlin kotlinc | Java 21 与精确 Kotlin 1.9.x/2.x 编译器 |
+| PHP/Ruby CLI | 受支持的精确 PHP 8.2–8.4 或 Ruby 3.2–3.4 版本 |
+| CMake | CMake 3.25 或更高版本、Ninja 与 C 编译器；C++ 项目还需 C++ 编译器 |
+
 ## 9. 完成标准
 
-- [ ] Java 纯源码可以通过 `jdk` 架构生成并部署受控可执行 JAR；`jar` 继续只表示预构建制品交付。
-- [ ] Node 的 npm、pnpm、Yarn 分别具有架构事实、构建工具身份和具名 Renderer，且 npm 为原生基线。
-- [ ] Python 的 pip、Pipenv、Poetry、uv 分别具有架构事实、构建工具身份和具名 Renderer，且 pip 为原生基线。
-- [ ] Go、Rust、DotNet 的现有原生路径通过完整回归，不被为目录对称而再次拆深。
-- [ ] Kotlin、PHP、Ruby 分别补齐 `kotlinc`、`phpcli`、`rubycli`，现有 Gradle、Composer、Bundler 保持扩展架构。
-- [ ] C/C++ 只在当前语言原生基线全部完成后进入 `c.cmake` 试验适配。
-- [ ] 所有架构遵守 File 3.22.0 的语言聚合、架构名包、受控深度和正交维度规则。
-- [ ] 自动化、本地完整验证和逐架构产品入口证据彼此分开记录，支持目录不存在无证据升级。
+- [x] Java 纯源码可以通过 `jdk` 架构生成受控可执行 JAR；`jar` 继续只表示预构建制品交付。真实目标部署待验收。
+- [x] Node 的 npm、pnpm、Yarn 分别具有架构事实、构建工具身份和具名 Renderer，且 npm 为原生基线。
+- [x] Python 的 pip、Pipenv、Poetry、uv 分别具有架构事实、构建工具身份和具名 Renderer，且 pip 为原生基线。
+- [x] Go、Rust、DotNet 的现有原生路径通过回归，不被为目录对称而再次拆深。
+- [x] Kotlin、PHP、Ruby 分别补齐 `kotlinc`、`phpcli`、`rubycli`，现有 Gradle、Composer、Bundler 保持扩展架构。
+- [x] C/C++ 在当前语言原生基线完成后进入 `c.cmake` 试验适配。
+- [x] 所有架构遵守 File 3.23.0 的语言聚合、架构名包、受控深度和正交维度规则。
+- [x] 自动化、本地验证和逐架构产品入口证据分开记录，支持目录不存在无证据升级。
 
 ## 10. 非目标
 
@@ -257,4 +293,5 @@ CMake 在首个架构阶段使用 `CmakeBuildRenderer` 直接位于 `build.ecosy
 
 | 版本 | 日期 | 说明 |
 | --- | --- | --- |
+| 1.1.0-static-implementation | 2026-08-20 | 完成 27 个精确架构身份与新增/拆分 12 种架构的静态闭环；加入独立源码夹具、Python 3.11 变体及仅通过产品入口执行的部署/生命周期/失败回滚/重连验收编排。新增架构继续保持试验适配或 `RUNTIME-PENDING`，等待用户提供服务器后执行真实验收。 |
 | 1.0.0-native-architecture-baseline | 2026-08-20 | 以 File 3.22.0 和提交 `7f04b6c` 为基线，冻结原生架构优先顺序；明确 JAR 交付不等于纯 Java 源码构建，规划 JDK、kotlinc、PHP CLI、Ruby CLI 原生补全，Node/Python 显式架构身份与 Renderer 规范化，以及后置的 C/CMake 试验适配。 |

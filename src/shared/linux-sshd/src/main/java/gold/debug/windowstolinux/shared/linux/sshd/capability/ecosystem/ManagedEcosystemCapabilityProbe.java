@@ -98,6 +98,7 @@ public final class ManagedEcosystemCapabilityProbe {
                 if command -v ruby >/dev/null 2>&1; then printf 'TOOL_RUBY='; ruby -e 'print RUBY_VERSION'; printf '\\n'; else printf 'TOOL_RUBY=\\n'; fi
                 if command -v bundle >/dev/null 2>&1; then printf 'TOOL_BUNDLER='; bundle --version | awk '{print $NF}'; else printf 'TOOL_BUNDLER=\\n'; fi
                 if command -v cmake >/dev/null 2>&1; then printf 'TOOL_CMAKE='; cmake --version | awk 'NR==1 {print $3}'; else printf 'TOOL_CMAKE=\\n'; fi
+                if command -v ninja >/dev/null 2>&1; then printf 'TOOL_NINJA='; ninja --version; else printf 'TOOL_NINJA=\\n'; fi
                 if command -v cc >/dev/null 2>&1; then printf 'TOOL_C_COMPILER='; cc -dumpfullversion -dumpversion | head -n 1; else printf 'TOOL_C_COMPILER=\\n'; fi
                 if command -v c++ >/dev/null 2>&1; then printf 'TOOL_CPP_COMPILER='; c++ -dumpfullversion -dumpversion | head -n 1; else printf 'TOOL_CPP_COMPILER=\\n'; fi
                 """;

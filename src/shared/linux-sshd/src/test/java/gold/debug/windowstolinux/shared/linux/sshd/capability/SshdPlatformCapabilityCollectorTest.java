@@ -33,6 +33,7 @@ class SshdPlatformCapabilityCollectorTest {
                 Map.entry("TOOL_JAVAC", "21.0.8"), Map.entry("TOOL_JAR", "21.0.8"),
                 Map.entry("TOOL_PNPM", "10.15.1"), Map.entry("TOOL_UV", "0.8.12"),
                 Map.entry("TOOL_KOTLINC", "2.0.21"), Map.entry("TOOL_CMAKE", "3.31.6"),
+                Map.entry("TOOL_NINJA", "1.12.1"),
                 Map.entry("TOOL_C_COMPILER", "14.2.1"), Map.entry("TOOL_CPP_COMPILER", "14.2.1"),
                 Map.entry("CPU_LEVEL", "x86-64-v3"), Map.entry("CPU_FLAGS", "sse4_2,popcnt"),
                 Map.entry("SECURITY_MODULE", "selinux"), Map.entry("SECURITY_STATE", "enforcing"),
@@ -57,11 +58,13 @@ class SshdPlatformCapabilityCollectorTest {
         assertEquals(java.util.Set.of("21.0.8"), capabilities.ecosystemToolVersions().get(EcosystemToolType.JAVAC));
         assertEquals(java.util.Set.of("10.15.1"), capabilities.ecosystemToolVersions().get(EcosystemToolType.PNPM));
         assertEquals(java.util.Set.of("2.0.21"), capabilities.ecosystemToolVersions().get(EcosystemToolType.KOTLINC));
+        assertEquals(java.util.Set.of("1.12.1"), capabilities.ecosystemToolVersions().get(EcosystemToolType.NINJA));
         assertEquals(java.util.Set.of("14.2.1"), capabilities.ecosystemToolVersions().get(EcosystemToolType.CPP_COMPILER));
         assertTrue(ManagedPlatformCapabilityProbe.render().contains("PODMAN_QUADLET"));
         assertTrue(ManagedPlatformCapabilityProbe.render().contains("SERVICE_DOTNET"));
         assertTrue(ManagedPlatformCapabilityProbe.render().contains("TOOL_KOTLINC"));
         assertTrue(ManagedPlatformCapabilityProbe.render().contains("TOOL_CMAKE"));
+        assertTrue(ManagedPlatformCapabilityProbe.render().contains("TOOL_NINJA"));
         assertTrue(ManagedPlatformCapabilityProbe.render().contains("printf(\"%d.%d\""));
         assertTrue(!ManagedPlatformCapabilityProbe.render().contains("printf(\"%%d.%%d\""));
         assertTrue(ManagedPlatformCapabilityProbe.render().contains("SECURITY_MODULE"));

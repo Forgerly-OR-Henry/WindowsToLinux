@@ -84,6 +84,20 @@ class NativeArchitectureInspectionTest {
         assertFalse(analyze(kotlin).admission() == DeploymentAdmissionStatus.READY_FOR_PLANNING);
     }
 
+    @Test
+    void stopsCmakeBeforeExecutionWhenItsToolchainContractIsNotExact() throws Exception {
+        Fixture version = cmake();
+        Files.writeString(version.root().resolve("CMakeLists.txt"),
+                Files.readString(version.root().resolve("CMakeLists.txt")).replace("VERSION 3.25", "VERSION 3.26"));
+        Fixture preset = cmake();
+        Files.writeString(preset.root().resolve("CMakePresets.json"),
+                Files.readString(preset.root().resolve("CMakePresets.json")).replace(
+                        "\"cacheVariables\"", "\"environment\": {\"CMAKE_PROJECT_INCLUDE\": \"hook.cmake\"}, \"cacheVariables\""));
+
+        assertFalse(analyze(version).admission() == DeploymentAdmissionStatus.READY_FOR_PLANNING);
+        assertFalse(analyze(preset).admission() == DeploymentAdmissionStatus.READY_FOR_PLANNING);
+    }
+
     private DeploymentProjectAssessment analyze(Fixture fixture) throws Exception {
         return new DeploymentAnalysisCoordinator().analyze(fixture.root(), fixture.type());
     }
@@ -128,7 +142,7 @@ class NativeArchitectureInspectionTest {
                 """);
         write(root, "CMakePresets.json", """
                 {
-                  "version": 6,
+                  "version": 3,
                   "configurePresets": [{
                     "name": "w2l-release",
                     "generator": "Ninja",

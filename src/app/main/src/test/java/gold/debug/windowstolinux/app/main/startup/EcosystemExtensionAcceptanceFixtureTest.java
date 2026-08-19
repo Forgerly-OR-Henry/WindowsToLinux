@@ -1,7 +1,7 @@
 package gold.debug.windowstolinux.app.main.startup;
 
 import gold.debug.windowstolinux.shared.analyze.core.DeploymentAnalysisCoordinator;
-import gold.debug.windowstolinux.app.main.startup.EcosystemExtensionAcceptanceFixture.Architecture;
+import gold.debug.windowstolinux.app.main.startup.EcosystemExtensionAcceptanceFixture.ArchitectureType;
 import gold.debug.windowstolinux.shared.model.analysis.DeploymentAdmissionStatus;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -20,7 +20,7 @@ class EcosystemExtensionAcceptanceFixtureTest {
     @Test
     void materializesHealthyAndRejectedHealthSourcesForEveryArchitecture() throws Exception {
         DeploymentAnalysisCoordinator analyzer = new DeploymentAnalysisCoordinator();
-        for (Architecture architecture : Architecture.values()) {
+        for (ArchitectureType architecture : ArchitectureType.values()) {
             String runtime = runtimeVersion(architecture, "3.12");
             Path root = EcosystemExtensionAcceptanceFixture.create(temporaryDirectory, architecture,
                     "fixture-" + architecture.key(), runtime, toolVersion(architecture), "fixture-marker", false);
@@ -40,8 +40,8 @@ class EcosystemExtensionAcceptanceFixtureTest {
     @Test
     void materializesEveryPythonArchitectureForTheEnterpriseNineRuntime() throws Exception {
         DeploymentAnalysisCoordinator analyzer = new DeploymentAnalysisCoordinator();
-        for (Architecture architecture : new Architecture[]{Architecture.PYTHON_PIP, Architecture.PYTHON_PIPENV,
-                Architecture.PYTHON_POETRY, Architecture.PYTHON_UV}) {
+        for (ArchitectureType architecture : new ArchitectureType[]{ArchitectureType.PYTHON_PIP,
+                ArchitectureType.PYTHON_PIPENV, ArchitectureType.PYTHON_POETRY, ArchitectureType.PYTHON_UV}) {
             Path root = EcosystemExtensionAcceptanceFixture.create(temporaryDirectory, architecture,
                     "fixture-311-" + architecture.key(), "3.11", toolVersion(architecture), "python-311", true);
             var assessment = analyzer.analyze(root, architecture.projectType());
@@ -50,7 +50,7 @@ class EcosystemExtensionAcceptanceFixtureTest {
         }
     }
 
-    private static String runtimeVersion(Architecture architecture, String python) {
+    private static String runtimeVersion(ArchitectureType architecture, String python) {
         return switch (architecture) {
             case JAVA_JDK -> "21";
             case NODE_NPM, NODE_PNPM, NODE_YARN -> "18";
@@ -62,7 +62,7 @@ class EcosystemExtensionAcceptanceFixtureTest {
         };
     }
 
-    private static String toolVersion(Architecture architecture) {
+    private static String toolVersion(ArchitectureType architecture) {
         return switch (architecture) {
             case NODE_PNPM -> "10.15.1";
             case NODE_YARN -> "4.9.2";

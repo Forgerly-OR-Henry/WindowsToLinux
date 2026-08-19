@@ -180,9 +180,9 @@ render_deployment_unit() {
       [ "$#" -eq 2 ] || reject runtime-arguments
       [[ "$1" =~ ^(18|19|20|21|22|23|24)$ ]] || reject node-version
       case "$2" in
-        NPM) command="/usr/bin/npm --prefix $root/current/source start" ;;
-        PNPM) command="/usr/bin/pnpm --dir $root/current/source start" ;;
-        YARN) command="/usr/bin/yarn --cwd $root/current/source start" ;;
+        NPM) command="/usr/bin/env PATH=/usr/local/bin:/usr/bin:/bin npm --prefix $root/current/source start" ;;
+        PNPM) command="/usr/bin/env PATH=/usr/local/bin:/usr/bin:/bin pnpm --dir $root/current/source start" ;;
+        YARN) command="/usr/bin/env PATH=/usr/local/bin:/usr/bin:/bin yarn --cwd $root/current/source start" ;;
         *) reject node-package-manager ;;
       esac
       ;;

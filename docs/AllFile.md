@@ -212,6 +212,10 @@ src/  # 项目源码与模块根目录
 │  │  │  ├─ DeploymentAnalysisCoordinator.java  # 仅协调有界遍历、安全策略、类型分派与结果汇总
 │  │  │  └─ ProjectLanguageInspector.java  # 合并独立语言检查器，不进行排序或选择项目类型
 │  │  ├─ ecosystem/  # 按技术生态组织的分析包
+│  │  │  ├─ c/  # C 与 C++ 语言生态分析包
+│  │  │  │  └─ cmake/  # CMake 架构分析包
+│  │  │  │     ├─ CmakeDeploymentInspector.java  # 静态检查单目标且禁止下载依赖与自定义安装的 CMake 服务
+│  │  │  │     └─ CmakeFacts.java  # 保存固定 preset、唯一目标与精确 C/C++ 语言集合
 │  │  │  ├─ dotnet/  # .NET 语言生态分析包
 │  │  │  │  └─ dotnetsdk/  # .NET SDK 架构分析包
 │  │  │  │     ├─ DotNetSdkDeploymentInspector.java  # 在不执行 dotnet 的情况下检查一个锁定的 .NET Web SDK 服务
@@ -227,14 +231,21 @@ src/  # 项目源码与模块根目录
 │  │  │  │  ├─ jar/  # Java JAR 原生交付架构分析包
 │  │  │  │  │  └─ JavaJarDeploymentInspector.java  # 在不加载归档的情况下生成 Java JAR 事实与清单依据运行时建议
 │  │  │  │  ├─ JavaLanguageInspector.java  # 在不加载类的情况下检测 Java 源码与有界 JAR 清单事实
+│  │  │  │  ├─ jdk/  # JDK 纯 Java 源码构建架构分析包
+│  │  │  │  │  ├─ JavaJdkDeploymentInspector.java  # 检查无依赖 Java 21 源码根与唯一主类
+│  │  │  │  │  └─ JavaJdkFacts.java  # 保存纯 Java 构建的源码根、主类与固定版本事实
 │  │  │  │  ├─ maven/  # Maven 构建事实分析包
 │  │  │  │  │  ├─ MavenBuildFacts.java  # 框架及部署支持检查所需的根 Maven 事实
 │  │  │  │  │  └─ MavenBuildInspector.java  # 读取根 POM 和 Maven 入口，但不调用 Maven 或其 Wrapper
 │  │  │  │  └─ SpringBootDeploymentInspector.java  # 在不调用构建的前提下检查一个 Maven 或 Gradle Spring Boot 可执行 JAR 项目
 │  │  │  ├─ kotlin/  # Kotlin 语言生态分析包
-│  │  │  │  └─ gradle/  # Kotlin Gradle 架构分析包
-│  │  │  │     ├─ KotlinGradleDeploymentInspector.java  # 在不执行 Gradle 的情况下检查一个锁定的 Kotlin Gradle 应用
-│  │  │  │     └─ KotlinGradleFacts.java  # 服务分析使用的固定 Kotlin Gradle 应用元数据
+│  │  │  │  ├─ gradle/  # Kotlin Gradle 架构分析包
+│  │  │  │  │  ├─ KotlinGradleDeploymentInspector.java  # 在不执行 Gradle 的情况下检查一个锁定的 Kotlin Gradle 应用
+│  │  │  │  │  └─ KotlinGradleFacts.java  # 服务分析使用的固定 Kotlin Gradle 应用元数据
+│  │  │  │  ├─ kotlinc/  # Kotlin 编译器原生架构分析包
+│  │  │  │  │  ├─ KotlinCompilerDeploymentInspector.java  # 检查无依赖 Kotlin 源码与唯一主入口
+│  │  │  │  │  └─ KotlinCompilerFacts.java  # 保存精确编译器版本、源码根、主类与制品名
+│  │  │  │  └─ KotlinServiceDeploymentInspector.java  # 在 Gradle 与原生编译器架构之间进行显式选择
 │  │  │  ├─ node/  # Node.js 服务分析包
 │  │  │  │  ├─ NodeBuildArchitectureFacts.java  # 选中的 Node 包管理器架构及其锁文件
 │  │  │  │  ├─ NodeBuildFacts.java  # 来自 package.json 的固定包管理器、锁文件和脚本事实
@@ -248,9 +259,13 @@ src/  # 项目源码与模块根目录
 │  │  │  │  └─ yarn/  # Yarn 架构分析包
 │  │  │  │     └─ YarnBuildInspector.java  # 检查 Yarn 锁文件架构
 │  │  │  ├─ php/  # PHP 语言生态分析包
-│  │  │  │  └─ composer/  # Composer 架构分析包
-│  │  │  │     ├─ PhpComposerDeploymentInspector.java  # 在不执行 PHP 的情况下检查一个 Composer 锁定的 PHP 服务
-│  │  │  │     └─ PhpComposerFacts.java  # PHP 服务分析使用的固定 Composer 元数据
+│  │  │  │  ├─ composer/  # Composer 架构分析包
+│  │  │  │  │  ├─ PhpComposerDeploymentInspector.java  # 在不执行 PHP 的情况下检查一个 Composer 锁定的 PHP 服务
+│  │  │  │  │  └─ PhpComposerFacts.java  # PHP 服务分析使用的固定 Composer 元数据
+│  │  │  │  ├─ phpcli/  # PHP CLI 原生架构分析包
+│  │  │  │  │  ├─ PhpCliDeploymentInspector.java  # 检查零依赖 PHP 文档根、入口与精确版本
+│  │  │  │  │  └─ PhpCliFacts.java  # 保存 PHP CLI 文档根、路由入口与版本事实
+│  │  │  │  └─ PhpServiceDeploymentInspector.java  # 在 Composer 与 PHP CLI 架构之间进行显式选择
 │  │  │  ├─ python/  # Python 服务分析包
 │  │  │  │  ├─ pip/  # pip 架构分析包
 │  │  │  │  │  └─ PipBuildInspector.java  # 检查使用哈希锁定的 pip 架构
@@ -258,16 +273,21 @@ src/  # 项目源码与模块根目录
 │  │  │  │  │  └─ PipenvBuildInspector.java  # 检查 Pipenv 锁文件架构
 │  │  │  │  ├─ poetry/  # Poetry 架构分析包
 │  │  │  │  │  └─ PoetryBuildInspector.java  # 检查 Poetry 锁文件架构
-│  │  │  │  ├─ PythonBuildFacts.java  # 固定的 Python 项目与锁文件事实
+│  │  │  │  ├─ PythonBuildArchitectureFacts.java  # 保存选中的 Python 依赖架构及其唯一锁文件
+│  │  │  │  ├─ PythonBuildFacts.java  # 固定的 Python 项目、精确依赖架构与锁文件事实
 │  │  │  │  ├─ PythonBuildInspector.java  # 读取 pyproject.toml 与固定锁文件名称，但不调用 Python
 │  │  │  │  ├─ PythonLanguageInspector.java  # 检测 Python 源码、精确版本元数据和唯一模块入口
 │  │  │  │  ├─ PythonServiceDeploymentInspector.java  # 生成 Python 构建事实与精确版本/模块运行时建议
 │  │  │  │  └─ uv/  # uv 架构分析包
 │  │  │  │     └─ UvBuildInspector.java  # 检查 uv 锁文件架构
 │  │  │  ├─ ruby/  # Ruby 语言生态分析包
-│  │  │  │  └─ bundler/  # Bundler 架构分析包
-│  │  │  │     ├─ RubyBundlerDeploymentInspector.java  # 在不执行 Ruby 的情况下检查一个 Bundler 锁定的 Rack 服务
-│  │  │  │     └─ RubyBundlerFacts.java  # Ruby 服务分析使用的固定 Bundler 元数据
+│  │  │  │  ├─ bundler/  # Bundler 架构分析包
+│  │  │  │  │  ├─ RubyBundlerDeploymentInspector.java  # 在不执行 Ruby 的情况下检查一个 Bundler 锁定的 Rack 服务
+│  │  │  │  │  └─ RubyBundlerFacts.java  # Ruby 服务分析使用的固定 Bundler 元数据
+│  │  │  │  ├─ rubycli/  # Ruby CLI 原生架构分析包
+│  │  │  │     ├─ RubyCliDeploymentInspector.java  # 检查零依赖 Ruby 服务入口与精确版本
+│  │  │  │     └─ RubyCliFacts.java  # 保存 Ruby CLI 服务入口与版本事实
+│  │  │  │  └─ RubyServiceDeploymentInspector.java  # 在 Bundler 与 Ruby CLI 架构之间进行显式选择
 │  │  │  └─ rust/  # Rust 语言生态分析包
 │  │  │     └─ cargo/  # Cargo 架构分析包
 │  │  │        ├─ RustCargoDeploymentInspector.java  # 在不执行 Rust 工具的情况下检查一个锁定的 Cargo 服务
@@ -423,20 +443,36 @@ src/  # 项目源码与模块根目录
 │  │  ├─ build/  # 目标主机构建协调包
 │  │  │  ├─ DeploymentBuildExecutor.java  # 执行由实现渲染并受资源限制的目标机构建
 │  │  │  ├─ ecosystem/  # 语言与构建架构的目标机构建实现包
-│  │  │  │  ├─ BundlerBuildRenderer.java  # 渲染固定 Bundler 构建架构
 │  │  │  │  ├─ CargoBuildRenderer.java  # 渲染固定 Cargo 构建架构
-│  │  │  │  ├─ ComposerBuildRenderer.java  # 渲染固定 Composer 构建架构
+│  │  │  │  ├─ CmakeBuildRenderer.java  # 渲染固定单目标 CMake configure、build 与制品验证
 │  │  │  │  ├─ DotNetSdkBuildRenderer.java  # 渲染固定 .NET SDK 构建架构
-│  │  │  │  ├─ EcosystemBuildScript.java  # 共享单一架构生态渲染器使用的安全脚本机制
 │  │  │  │  ├─ GoBuildRenderer.java  # 渲染固定 Go Module 构建架构
 │  │  │  │  ├─ java/  # Java 多构建架构渲染包
+│  │  │  │  │  ├─ GradleBuildRenderer.java  # 渲染固定 Gradle Wrapper Spring Boot 构建入口
 │  │  │  │  │  ├─ JavaJarBuildRenderer.java  # 渲染经审阅的预构建 Java JAR 边界
-│  │  │  │  │  └─ SpringBootBuildRenderer.java  # 渲染三个固定 Spring Boot 构建入口之一，并验证唯一受支持的可执行 JAR
-│  │  │  │  ├─ KotlinGradleBuildRenderer.java  # 渲染固定 Kotlin Gradle 构建架构
+│  │  │  │  │  ├─ JdkBuildRenderer.java  # 使用受控 javac 21 与 jar 构建纯 Java 可执行 JAR
+│  │  │  │  │  ├─ MavenBuildRenderer.java  # 渲染固定系统 Maven Spring Boot 构建入口
+│  │  │  │  │  └─ SpringBootArtifactBuildScript.java  # 为 Maven 与 Gradle 复用唯一 Spring Boot 制品校验脚本
+│  │  │  │  ├─ kotlin/  # Kotlin 多构建架构渲染包
+│  │  │  │  │  ├─ KotlinCompilerBuildRenderer.java  # 使用精确 kotlinc 与 Java 21 构建 Kotlin 可执行 JAR
+│  │  │  │  │  └─ KotlinGradleBuildRenderer.java  # 渲染固定 Kotlin Gradle Wrapper 构建架构
 │  │  │  │  ├─ node/  # Node.js 多包管理器构建渲染包
-│  │  │  │  │  └─ NodeBuildRenderer.java  # 渲染固定锁文件的 Node 服务构建
-│  │  │  │  └─ python/  # Python 多依赖架构构建渲染包
-│  │  │  │     └─ PythonBuildRenderer.java  # 渲染固定锁文件的 Python 虚拟环境构建
+│  │  │  │  │  ├─ NodeArchitectureBuildRenderer.java  # 为三个具名 Node Renderer 复用受控服务构建外壳
+│  │  │  │  │  ├─ NpmBuildRenderer.java  # 渲染 npm immutable 安装与固定 build 脚本
+│  │  │  │  │  ├─ PnpmBuildRenderer.java  # 渲染 pnpm frozen-lockfile 安装与固定 build 脚本
+│  │  │  │  │  └─ YarnBuildRenderer.java  # 渲染 Yarn 4 immutable 安装与固定 build 脚本
+│  │  │  │  ├─ php/  # PHP 多构建架构渲染包
+│  │  │  │  │  ├─ ComposerBuildRenderer.java  # 渲染固定 Composer 锁定安装与源码校验
+│  │  │  │  │  └─ PhpCliBuildRenderer.java  # 渲染零依赖 PHP CLI 源码校验与制品准备
+│  │  │  │  ├─ python/  # Python 多依赖架构构建渲染包
+│  │  │  │  │  ├─ PipBuildRenderer.java  # 渲染哈希锁定的 pip 虚拟环境构建
+│  │  │  │  │  ├─ PipenvBuildRenderer.java  # 渲染 Pipenv lock 校验与同步
+│  │  │  │  │  ├─ PoetryBuildRenderer.java  # 渲染 Poetry lock 校验与主依赖同步
+│  │  │  │  │  ├─ PythonArchitectureBuildRenderer.java  # 为四个具名 Python Renderer 复用隔离虚拟环境构建外壳
+│  │  │  │  │  └─ UvBuildRenderer.java  # 渲染 uv frozen 项目虚拟环境同步
+│  │  │  │  └─ ruby/  # Ruby 多构建架构渲染包
+│  │  │  │     ├─ BundlerBuildRenderer.java  # 渲染固定 Bundler 锁定安装与 Rack 制品
+│  │  │  │     └─ RubyCliBuildRenderer.java  # 渲染零依赖 Ruby CLI 源码校验与制品准备
 │  │  │  ├─ registry/  # 构建渲染器装配与完整性检查包
 │  │  │  │  └─ DeploymentBuildRendererRegistry.java  # 为每种支持的项目类型恰好注册一个构建渲染器
 │  │  │  ├─ script/  # 安全构建脚本公共片段包
@@ -550,7 +586,8 @@ src/  # 项目源码与模块根目录
 │  │  │  ├─ DeploymentProjectAssessment.java  # 将缺失用户决定与硬性安全拒绝分开的部署静态分析结果
 │  │  │  └─ MultiComponentProjectAssessment.java  # 具有组件范围原因的确定性混合项目分析
 │  │  ├─ capability/  # Linux 主机能力模型包
-│  │  │  ├─ LinuxCapabilityFacts.java  # 仅用于决定能否提供部署计划的实时、非秘密主机事实
+│  │  │  ├─ EcosystemToolType.java  # 具有精确观测版本的固定语言与构建工具能力类型
+│  │  │  ├─ LinuxCapabilityFacts.java  # 用于部署计划的实时主机、运行时与生态工具版本事实
 │  │  │  └─ ServerCapabilityFacts.java  # 创建任何受管部署候选项之前从目标主机采集的事实
 │  │  ├─ deployment/  # 部署请求、状态与计划模型包
 │  │  │  ├─ BuildLimitConfiguration.java  # 固定受管部署远程 Maven 构建入口经过审阅的明确限制
@@ -586,8 +623,9 @@ src/  # 项目源码与模块根目录
 │  │  │  │  ├─ ComponentDataPath.java  # 一个具有显式模式和访问契约的逻辑持久化数据路径
 │  │  │  │  ├─ ComponentIsolationSpecification.java  # 一个组件显式请求的不安全执行能力
 │  │  │  │  └─ DeploymentComponent.java  # 混合项目中一个组件的完整静态记录
+│  │  │  ├─ DeploymentArchitectureType.java  # 一个精确项目类型与构建工具组合的稳定架构身份
 │  │  │  ├─ DeploymentBuildToolType.java  # 固定的目标机构建工具类型，绝不是任意命令行
-│  │  │  ├─ DeploymentProjectFacts.java  # 一个用户选定的部署项目类型的不可变确定性事实；未执行任何项目代码
+│  │  │  ├─ DeploymentProjectFacts.java  # 一个用户选定项目的精确架构与不可变确定性事实；未执行任何项目代码
 │  │  │  ├─ DeploymentProjectType.java  # 部署计划器考虑的单组件项目类型
 │  │  │  ├─ DeploymentRuntimeAssessment.java  # 在不运行项目内容的情况下推导出的、可审阅的源码依据运行时值
 │  │  │  ├─ DeploymentRuntimeSpecification.java  # 恰好一个部署单组件项目类型的类型化运行定义

@@ -184,6 +184,7 @@ class ReviewedDeploymentServiceTest {
                                     EcosystemToolType.COMPOSER, java.util.Set.of("2.8.10"),
                                     EcosystemToolType.BUNDLER, java.util.Set.of("2.6.9"),
                                     EcosystemToolType.CMAKE, java.util.Set.of("3.28.3"),
+                                    EcosystemToolType.NINJA, java.util.Set.of("1.11.1"),
                                     EcosystemToolType.C_COMPILER, java.util.Set.of("13.3.0")),
                             true, true, CpuMicroarchitectureLevel.X86_64_V3, java.util.Set.of("sse4_2"),
                             new LinuxSecurityPosture(LinuxSecurityModuleType.APPARMOR, LinuxSecurityState.ENABLED,

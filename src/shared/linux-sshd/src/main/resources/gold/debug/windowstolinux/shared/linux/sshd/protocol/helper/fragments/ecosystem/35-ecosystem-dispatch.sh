@@ -38,7 +38,7 @@ render_ecosystem_runtime_command() {
       [ "$2" = public ] || reject php-document-root
       [ "$3" = public/index.php ] || reject php-router
       require_service_port "$4"
-      ecosystem_runtime_command_result="/usr/bin/php -S 0.0.0.0:$4 -t $root/current/source/public $root/current/source/public/index.php"
+      ecosystem_runtime_command_result="/usr/bin/env PATH=/usr/local/bin:/usr/bin:/bin php -S 0.0.0.0:$4 -t $root/current/source/public $root/current/source/public/index.php"
       ;;
     phpcli)
       [ "$#" -eq 4 ] || reject runtime-arguments
@@ -46,7 +46,7 @@ render_ecosystem_runtime_command() {
       [ "$2" = public ] || reject php-document-root
       [ "$3" = public/index.php ] || reject php-router
       require_service_port "$4"
-      ecosystem_runtime_command_result="/usr/bin/php -n -S 0.0.0.0:$4 -t $root/current/source/public $root/current/source/public/index.php"
+      ecosystem_runtime_command_result="/usr/bin/env PATH=/usr/local/bin:/usr/bin:/bin php -n -S 0.0.0.0:$4 -t $root/current/source/public $root/current/source/public/index.php"
       ;;
     ruby)
       [ "$#" -eq 4 ] || reject runtime-arguments
@@ -54,7 +54,7 @@ render_ecosystem_runtime_command() {
       [ "$2" = bundle ] || reject ruby-artifact
       [ "$3" = config.ru ] || reject ruby-entrypoint
       require_service_port "$4"
-      ecosystem_runtime_command_result="/usr/bin/env bundle exec rackup --server webrick --host 0.0.0.0 --port $4 $root/current/source/config.ru"
+      ecosystem_runtime_command_result="/usr/bin/env PATH=/usr/local/bin:/usr/bin:/bin bundle exec rackup --server webrick --host 0.0.0.0 --port $4 $root/current/source/config.ru"
       ;;
     rubycli)
       [ "$#" -eq 4 ] || reject runtime-arguments
@@ -63,7 +63,7 @@ render_ecosystem_runtime_command() {
       require_relative_path "$3"
       [[ "$3" = *.rb ]] || reject ruby-entrypoint
       require_service_port "$4"
-      ecosystem_runtime_command_result="/usr/bin/env PORT=$4 /usr/bin/ruby $root/current/source/$3"
+      ecosystem_runtime_command_result="/usr/bin/env PATH=/usr/local/bin:/usr/bin:/bin PORT=$4 ruby $root/current/source/$3"
       ;;
     cmake)
       [ "$#" -eq 3 ] || reject runtime-arguments

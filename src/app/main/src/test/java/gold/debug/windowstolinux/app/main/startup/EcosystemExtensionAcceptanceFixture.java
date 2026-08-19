@@ -15,7 +15,7 @@ final class EcosystemExtensionAcceptanceFixture {
     private EcosystemExtensionAcceptanceFixture() { }
 
     /** Creates a healthy or health-rejected source tree for one exact architecture. / 为一个精确架构创建健康或健康拒绝源码树。 */
-    static Path create(Path parent, Architecture architecture, String applicationId, String runtimeVersion,
+    static Path create(Path parent, ArchitectureType architecture, String applicationId, String runtimeVersion,
                        String toolVersion, String marker, boolean healthy) throws IOException {
         Path root = parent.resolve(applicationId);
         reset(root);
@@ -42,13 +42,13 @@ final class EcosystemExtensionAcceptanceFixture {
                     } else if (architecture.toolType() == EcosystemToolType.YARN) {
                         updated = updated.replace("yarn@4.9.2", "yarn@" + toolVersion);
                     }
-                } else if (architecture == Architecture.PYTHON_PIP && runtimeVersion.equals("3.11")) {
+                } else if (architecture == ArchitectureType.PYTHON_PIP && runtimeVersion.equals("3.11")) {
                     updated = updated.replace("==3.12.*", "==3.11.*");
-                } else if (architecture == Architecture.KOTLIN_KOTLINC) {
+                } else if (architecture == ArchitectureType.KOTLIN_KOTLINC) {
                     updated = updated.replace("compilerVersion=2.0.21", "compilerVersion=" + runtimeVersion);
-                } else if (architecture == Architecture.PHP_CLI) {
+                } else if (architecture == ArchitectureType.PHP_CLI) {
                     updated = updated.replace("phpVersion=8.3", "phpVersion=" + runtimeVersion);
-                } else if (architecture == Architecture.RUBY_CLI) {
+                } else if (architecture == ArchitectureType.RUBY_CLI) {
                     updated = updated.replace("rubyVersion=3.3", "rubyVersion=" + runtimeVersion);
                 }
                 if (!updated.equals(content)) Files.writeString(file, updated);
@@ -88,7 +88,7 @@ final class EcosystemExtensionAcceptanceFixture {
     }
 
     /** Identifies every changed build architecture independently. / 独立标识每个发生变更的构建架构。 */
-    enum Architecture {
+    enum ArchitectureType {
         JAVA_JDK("java-jdk", "java/jdk", DeploymentProjectType.JAVA_SOURCE, DeploymentBuildToolType.JDK,
                 EcosystemToolType.JAVAC, ""),
         NODE_NPM("node-npm", "node/npm", DeploymentProjectType.NODE_SERVICE, DeploymentBuildToolType.NPM,
@@ -121,7 +121,7 @@ final class EcosystemExtensionAcceptanceFixture {
         private final EcosystemToolType toolType;
         private final String templateApplicationId;
 
-        Architecture(String key, String fixturePath, DeploymentProjectType projectType,
+        ArchitectureType(String key, String fixturePath, DeploymentProjectType projectType,
                      DeploymentBuildToolType buildTool, EcosystemToolType toolType, String templateApplicationId) {
             this.key = key;
             this.fixturePath = fixturePath;

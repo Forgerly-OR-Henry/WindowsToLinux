@@ -17,6 +17,7 @@ public enum EcosystemToolType {
     /** Maven. / Maven。 */ MAVEN,
     /** Node.js. / Node.js。 */ NODE,
     /** npm. / npm。 */ NPM,
+    /** Ninja build system. / Ninja 构建系统。 */ NINJA,
     /** PHP CLI. / PHP CLI。 */ PHP,
     /** pip. / pip。 */ PIP,
     /** Pipenv. / Pipenv。 */ PIPENV,
