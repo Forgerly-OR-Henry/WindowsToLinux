@@ -2,11 +2,11 @@
 
 ## 文档信息
 
-- 文档版本：`1.1.0-static-implementation`
+- 文档版本：`1.2.0-static-readiness`
 - 结构基线：`File.md 3.23.0-ecosystem-extension-implementation`
 - 代码基线：`7f04b6c`
-- 实现检查点：`85af8d5`（精确架构与受控执行）、`4f9f698`（输入和版本门禁）、`b49c938`（独立夹具与产品入口验收编排）
-- 文档状态：**实现与静态夹具已完成；新增架构尚未执行真实服务器验收，继续保持试验适配或 `RUNTIME-PENDING`**
+- 实现检查点：`85af8d5`（精确架构与受控执行）、`4f9f698`（输入和版本门禁）、`b49c938`（独立夹具与产品入口验收编排）、`859a3fb`（部署前能力与运行路径收口）、`84807bd`（锁文件真实性回归夹具）
+- 文档状态：**实现、部署前审计与全仓静态验收已完成；新增架构尚未执行真实服务器验收，继续保持试验适配或 `RUNTIME-PENDING`**
 - 更新日期：2026-08-20
 - 上级文档：[三期工程细化文档](PHASE-3.md)
 - 正式结构规范：[项目文件结构](../File.md)
@@ -229,6 +229,16 @@ CMake 在首个架构阶段使用 `CmakeBuildRenderer` 直接位于 `build.ecosy
 5. `docs/AllFile.md` 非测试 `src/` 完整性与不区分大小写排序检查。
 6. `git diff --check`，并确认 POM、数据库迁移、helper 内容和协议版本无非预期变化。
 
+2026-08-20 静态验收结果：
+
+- JDK 21 离线 `mvn.cmd -B -ntp -o verify` 完成全部 28 个模块：243 项测试、0 失败、0 错误、25 项条件跳过。跳过项均为真实服务器、真实操作系统或相关运行条件用例；其中 `EcosystemExtensionProductEntryAcceptanceTest` 在未提供服务器参数时按设计跳过。
+- `PackageStructureArchitectureTest` 12/12 通过；12 种变更架构的独立夹具矩阵和健康/503 变体实例化 3/3 通过。
+- 使用真实工具核验 npm `ci`、pnpm 10.15.1 frozen install、Yarn 4.9.2 immutable install，以及 Pipenv 2025.0.4、Poetry 2.1.3、uv 0.8.12 对 Python 3.12/3.11 锁文件的原生命令校验；JDK 21 对 Java 夹具完成真实编译与可执行 JAR 装配。Node 脚本与全部 14 个 Python 源文件完成语法检查。
+- `docs/AllFile.md` 与 480 个非测试维护文件逐文件计数一致，428 个生产 Java 文件和 13 个生产资源文件均无遗漏，206 个同级分组的不区分大小写顺序无异常。
+- 生产源码中的旧构建 Renderer、`PYTHON_VENV`、旧路径和空生产目录均为 0；相对代码基线的 POM 与数据库迁移变更均为 0。
+- helper 继续使用协议 v3，逐字节摘要为 `339153b9ddd5073fb1c046f5d271dfd23e9e6ece62dfced18cc9a068022b41d8`；11 组发行版准备脚本快照已同步并通过。构建与 systemd 运行统一使用固定 `/usr/local/bin:/usr/bin:/bin` 工具查找边界。
+- `git diff --check` 通过。以上均为本地静态或工具级证据，不构成 Linux/systemd/SSH 真实运行支持证据。
+
 ### 8.3 真实运行验收
 
 - 只能通过 `DesktopApplicationFacade → SshdLinuxGateway → controlled helper v3` 产品入口执行。
@@ -293,5 +303,6 @@ mvn.cmd -B -ntp -o -pl :windowstolinux-app-main -am `
 
 | 版本 | 日期 | 说明 |
 | --- | --- | --- |
+| 1.2.0-static-readiness | 2026-08-20 | 完成部署前反向审计与 28 模块离线静态验收；补齐 CMake 3.25/Ninja/编译器能力门、固定 preset 和语言标准合同，统一构建与 systemd 运行工具 PATH，并记录精确测试、文件索引、helper 和零边界漂移证据。真实服务器验收仍保持后置。 |
 | 1.1.0-static-implementation | 2026-08-20 | 完成 27 个精确架构身份与新增/拆分 12 种架构的静态闭环；加入独立源码夹具、Python 3.11 变体及仅通过产品入口执行的部署/生命周期/失败回滚/重连验收编排。新增架构继续保持试验适配或 `RUNTIME-PENDING`，等待用户提供服务器后执行真实验收。 |
 | 1.0.0-native-architecture-baseline | 2026-08-20 | 以 File 3.22.0 和提交 `7f04b6c` 为基线，冻结原生架构优先顺序；明确 JAR 交付不等于纯 Java 源码构建，规划 JDK、kotlinc、PHP CLI、Ruby CLI 原生补全，Node/Python 显式架构身份与 Renderer 规范化，以及后置的 C/CMake 试验适配。 |
