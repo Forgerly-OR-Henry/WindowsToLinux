@@ -1,6 +1,6 @@
 package gold.debug.windowstolinux.shared.linux.sshd.build.ecosystem.python;
 
-import gold.debug.windowstolinux.shared.linux.sshd.build.spi.DeploymentBuildRenderer;
+import gold.debug.windowstolinux.shared.linux.sshd.build.contract.spi.DeploymentBuildRenderer;
 import gold.debug.windowstolinux.shared.linux.transfer.RemoteWorkspace;
 import gold.debug.windowstolinux.shared.model.deployment.BuildLimitConfiguration;
 import gold.debug.windowstolinux.shared.model.project.DeploymentBuildToolType;

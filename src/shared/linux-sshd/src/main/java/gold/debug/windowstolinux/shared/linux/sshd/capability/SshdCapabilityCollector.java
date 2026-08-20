@@ -4,7 +4,7 @@ import gold.debug.windowstolinux.shared.linux.sshd.capability.ManagedHostCapabil
 
 import gold.debug.windowstolinux.shared.linux.error.LinuxOperationException;
 import gold.debug.windowstolinux.shared.linux.sshd.command.SshCommandExecutor;
-import gold.debug.windowstolinux.shared.linux.sshd.protocol.helper.ManagedHelperBundle;
+import gold.debug.windowstolinux.shared.linux.sshd.execution.protocol.helper.ManagedHelperBundle;
 import gold.debug.windowstolinux.shared.model.capability.ServerCapabilityFacts;
 
 import java.time.Duration;

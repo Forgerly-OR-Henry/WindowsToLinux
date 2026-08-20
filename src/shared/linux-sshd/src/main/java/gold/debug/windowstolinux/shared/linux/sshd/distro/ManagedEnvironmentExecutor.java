@@ -1,6 +1,6 @@
 package gold.debug.windowstolinux.shared.linux.sshd.distro;
 
-import gold.debug.windowstolinux.shared.linux.sshd.distro.script.SetupScriptRenderer;
+import gold.debug.windowstolinux.shared.linux.sshd.distro.generation.script.SetupScriptRenderer;
 
 import gold.debug.windowstolinux.shared.linux.error.LinuxOperationException;
 import gold.debug.windowstolinux.shared.linux.sshd.capability.SshdCapabilityCollector;

@@ -7,8 +7,8 @@ import gold.debug.windowstolinux.shared.linux.sshd.runtime.systemd.SystemdOwners
 
 import gold.debug.windowstolinux.shared.linux.error.LinuxOperationException;
 import gold.debug.windowstolinux.shared.linux.protocol.RemoteStepResult;
-import gold.debug.windowstolinux.shared.linux.sshd.protocol.release.ContainerReleaseProtocolExecutor;
-import gold.debug.windowstolinux.shared.linux.sshd.protocol.release.DeploymentReleaseProtocolExecutor;
+import gold.debug.windowstolinux.shared.linux.sshd.execution.protocol.release.ContainerReleaseProtocolExecutor;
+import gold.debug.windowstolinux.shared.linux.sshd.execution.protocol.release.DeploymentReleaseProtocolExecutor;
 import gold.debug.windowstolinux.shared.model.health.HealthCheck;
 import gold.debug.windowstolinux.shared.model.lifecycle.AutostartState;
 import gold.debug.windowstolinux.shared.model.lifecycle.LifecycleAction;

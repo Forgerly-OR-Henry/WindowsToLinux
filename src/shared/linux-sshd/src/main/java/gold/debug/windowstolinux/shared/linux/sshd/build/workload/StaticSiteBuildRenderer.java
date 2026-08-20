@@ -1,8 +1,8 @@
 package gold.debug.windowstolinux.shared.linux.sshd.build.workload;
 
-import gold.debug.windowstolinux.shared.linux.sshd.build.script.SafeBuildScriptEnvelope;
-import gold.debug.windowstolinux.shared.linux.sshd.build.spi.DeploymentBuildRenderer;
-import gold.debug.windowstolinux.shared.linux.sshd.build.script.NodePackageBuildScript;
+import gold.debug.windowstolinux.shared.linux.sshd.build.generation.script.SafeBuildScriptEnvelope;
+import gold.debug.windowstolinux.shared.linux.sshd.build.contract.spi.DeploymentBuildRenderer;
+import gold.debug.windowstolinux.shared.linux.sshd.build.generation.script.NodePackageBuildScript;
 
 import gold.debug.windowstolinux.shared.linux.transfer.RemoteWorkspace;
 import gold.debug.windowstolinux.shared.model.deployment.BuildLimitConfiguration;

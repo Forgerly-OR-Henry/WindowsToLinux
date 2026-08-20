@@ -13,12 +13,12 @@ import gold.debug.windowstolinux.shared.linux.sshd.build.DeploymentBuildExecutor
 import gold.debug.windowstolinux.shared.linux.sshd.capability.SshdCapabilityCollector;
 import gold.debug.windowstolinux.shared.linux.sshd.capability.SshdPlatformCapabilityCollector;
 import gold.debug.windowstolinux.shared.linux.sshd.distro.ManagedEnvironmentExecutor;
-import gold.debug.windowstolinux.shared.linux.sshd.distro.registry.DistributionSetupRegistry;
-import gold.debug.windowstolinux.shared.linux.sshd.protocol.CandidateWorkspaceExecutor;
-import gold.debug.windowstolinux.shared.linux.sshd.protocol.runtime.ManagedRuntimeProtocolExecutor;
-import gold.debug.windowstolinux.shared.linux.sshd.protocol.release.DeploymentReleaseProtocolExecutor;
-import gold.debug.windowstolinux.shared.linux.sshd.protocol.release.ContainerReleaseProtocolExecutor;
-import gold.debug.windowstolinux.shared.linux.sshd.protocol.input.DeploymentInputProtocolExecutor;
+import gold.debug.windowstolinux.shared.linux.sshd.distro.extension.registry.DistributionSetupRegistry;
+import gold.debug.windowstolinux.shared.linux.sshd.execution.protocol.CandidateWorkspaceExecutor;
+import gold.debug.windowstolinux.shared.linux.sshd.execution.protocol.runtime.ManagedRuntimeProtocolExecutor;
+import gold.debug.windowstolinux.shared.linux.sshd.execution.protocol.release.DeploymentReleaseProtocolExecutor;
+import gold.debug.windowstolinux.shared.linux.sshd.execution.protocol.release.ContainerReleaseProtocolExecutor;
+import gold.debug.windowstolinux.shared.linux.sshd.execution.protocol.input.DeploymentInputProtocolExecutor;
 import gold.debug.windowstolinux.shared.config.revision.ConfigurationSnapshot;
 import gold.debug.windowstolinux.shared.config.revision.DeploymentInputManifest;
 import gold.debug.windowstolinux.shared.config.secretref.ResolvedSecretRevision;
@@ -28,7 +28,7 @@ import gold.debug.windowstolinux.shared.linux.sshd.runtime.systemd.SystemdOwners
 import gold.debug.windowstolinux.shared.linux.sshd.runtime.ContainerRuntimeExecutor;
 import gold.debug.windowstolinux.shared.linux.sshd.runtime.ManagedRuntimeExecutor;
 import gold.debug.windowstolinux.shared.linux.sshd.runtime.ManagedRuntimeKindProbe;
-import gold.debug.windowstolinux.shared.linux.sshd.transfer.SshdSourceTransport;
+import gold.debug.windowstolinux.shared.linux.sshd.execution.transfer.SshdSourceTransport;
 import gold.debug.windowstolinux.shared.linux.transfer.RemoteWorkspace;
 import gold.debug.windowstolinux.shared.linux.transfer.SourceUploadResult;
 import gold.debug.windowstolinux.shared.model.archive.SourceArchiveDescriptor;

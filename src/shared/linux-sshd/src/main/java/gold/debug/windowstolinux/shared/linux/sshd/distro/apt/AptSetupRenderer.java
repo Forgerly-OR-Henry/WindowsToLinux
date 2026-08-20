@@ -1,9 +1,9 @@
 package gold.debug.windowstolinux.shared.linux.sshd.distro.apt;
 
-import gold.debug.windowstolinux.shared.linux.sshd.distro.profile.DistributionSetupProfile;
+import gold.debug.windowstolinux.shared.linux.sshd.distro.contract.profile.DistributionSetupProfile;
 import gold.debug.windowstolinux.shared.linux.sshd.capability.ecosystem.EcosystemCapabilityScriptRenderer;
-import gold.debug.windowstolinux.shared.linux.sshd.distro.script.SetupScriptRenderer;
-import gold.debug.windowstolinux.shared.linux.sshd.protocol.helper.ManagedHelperBundle;
+import gold.debug.windowstolinux.shared.linux.sshd.distro.generation.script.SetupScriptRenderer;
+import gold.debug.windowstolinux.shared.linux.sshd.execution.protocol.helper.ManagedHelperBundle;
 
 /** Fixed APT preparation mechanics used by independent Ubuntu and Debian adapters. / 独立 Ubuntu 与 Debian 适配器使用的固定 APT 准备机械流程。 */
 public final class AptSetupRenderer {
@@ -91,7 +91,7 @@ public final class AptSetupRenderer {
                 printf 'SUDOERS=%s\\n'
                 printf 'HELPER=%s\\n'
                 """.formatted(packages, SetupScriptRenderer.SUDOERS_PATH,
-                gold.debug.windowstolinux.shared.linux.sshd.protocol.helper.ManagedHelperBundle.PATH);
+                gold.debug.windowstolinux.shared.linux.sshd.execution.protocol.helper.ManagedHelperBundle.PATH);
     }
 
     private static String renderCommonChecks() {
@@ -120,8 +120,8 @@ public final class AptSetupRenderer {
                 prepare_check=du-command
                 command -v du >/dev/null 2>&1
                 """.formatted(SetupScriptRenderer.quote(
-                gold.debug.windowstolinux.shared.linux.sshd.protocol.helper.ManagedHelperBundle.JAVA_RUNTIME_PATH),
+                gold.debug.windowstolinux.shared.linux.sshd.execution.protocol.helper.ManagedHelperBundle.JAVA_RUNTIME_PATH),
                 SetupScriptRenderer.quote(
-                gold.debug.windowstolinux.shared.linux.sshd.protocol.helper.ManagedHelperBundle.JAVA_RUNTIME_PATH));
+                gold.debug.windowstolinux.shared.linux.sshd.execution.protocol.helper.ManagedHelperBundle.JAVA_RUNTIME_PATH));
     }
 }

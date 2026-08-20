@@ -1,7 +1,7 @@
 package gold.debug.windowstolinux.shared.linux.sshd.build;
 
-import gold.debug.windowstolinux.shared.linux.sshd.build.script.BuildConfigurationEnvironmentRenderer;
-import gold.debug.windowstolinux.shared.linux.sshd.build.spi.DeploymentBuildRenderer;
+import gold.debug.windowstolinux.shared.linux.sshd.build.generation.script.BuildConfigurationEnvironmentRenderer;
+import gold.debug.windowstolinux.shared.linux.sshd.build.contract.spi.DeploymentBuildRenderer;
 import gold.debug.windowstolinux.shared.linux.sshd.build.ecosystem.CargoBuildRenderer;
 import gold.debug.windowstolinux.shared.linux.sshd.build.ecosystem.CmakeBuildRenderer;
 import gold.debug.windowstolinux.shared.linux.sshd.build.ecosystem.DotNetSdkBuildRenderer;
@@ -23,7 +23,7 @@ import gold.debug.windowstolinux.shared.linux.sshd.build.ecosystem.python.PipBui
 import gold.debug.windowstolinux.shared.linux.sshd.build.ecosystem.python.PipenvBuildRenderer;
 import gold.debug.windowstolinux.shared.linux.sshd.build.ecosystem.python.PoetryBuildRenderer;
 import gold.debug.windowstolinux.shared.linux.sshd.build.ecosystem.python.UvBuildRenderer;
-import gold.debug.windowstolinux.shared.linux.sshd.build.registry.DeploymentBuildRendererRegistry;
+import gold.debug.windowstolinux.shared.linux.sshd.build.extension.registry.DeploymentBuildRendererRegistry;
 import gold.debug.windowstolinux.shared.linux.sshd.build.workload.ContainerBuildRenderer;
 import gold.debug.windowstolinux.shared.linux.sshd.build.workload.StaticSiteBuildRenderer;
 

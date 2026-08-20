@@ -1,7 +1,7 @@
 package gold.debug.windowstolinux.shared.linux.sshd.runtime;
 
 import gold.debug.windowstolinux.shared.linux.error.LinuxOperationException;
-import gold.debug.windowstolinux.shared.linux.sshd.protocol.runtime.ManagedRuntimeProtocolExecutor;
+import gold.debug.windowstolinux.shared.linux.sshd.execution.protocol.runtime.ManagedRuntimeProtocolExecutor;
 import gold.debug.windowstolinux.shared.model.managed.ManagedApplication;
 import gold.debug.windowstolinux.shared.model.project.DeploymentRuntimeSpecification;
 

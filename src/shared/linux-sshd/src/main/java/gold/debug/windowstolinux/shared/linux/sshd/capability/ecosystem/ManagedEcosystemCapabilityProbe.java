@@ -1,6 +1,6 @@
 package gold.debug.windowstolinux.shared.linux.sshd.capability.ecosystem;
 
-import gold.debug.windowstolinux.shared.linux.sshd.protocol.helper.ManagedHelperBundle;
+import gold.debug.windowstolinux.shared.linux.sshd.execution.protocol.helper.ManagedHelperBundle;
 
 /** Renders read-only language and build-tool capability probes. / 渲染只读语言与构建工具能力探测。 */
 public final class ManagedEcosystemCapabilityProbe {

@@ -1,7 +1,7 @@
 package gold.debug.windowstolinux.shared.linux.sshd.runtime.systemd;
 
 import gold.debug.windowstolinux.shared.model.managed.ManagedApplication;
-import gold.debug.windowstolinux.shared.linux.sshd.protocol.helper.ManagedHelperBundle;
+import gold.debug.windowstolinux.shared.linux.sshd.execution.protocol.helper.ManagedHelperBundle;
 
 import java.util.Objects;
 

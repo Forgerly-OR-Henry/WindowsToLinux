@@ -1,8 +1,8 @@
 package gold.debug.windowstolinux.shared.linux.sshd.distro.apt;
 
 import gold.debug.windowstolinux.shared.linux.sshd.distro.DistributionSetupRenderer;
-import gold.debug.windowstolinux.shared.linux.sshd.distro.profile.DistributionSetupProfile;
-import gold.debug.windowstolinux.shared.linux.sshd.distro.profile.EcosystemCapabilityProfile;
+import gold.debug.windowstolinux.shared.linux.sshd.distro.contract.profile.DistributionSetupProfile;
+import gold.debug.windowstolinux.shared.linux.sshd.distro.contract.profile.EcosystemCapabilityProfile;
 import gold.debug.windowstolinux.shared.model.capability.LinuxCapabilityFacts;
 import gold.debug.windowstolinux.shared.model.server.CpuMicroarchitectureLevel;
 import gold.debug.windowstolinux.shared.model.server.LinuxDistroType;

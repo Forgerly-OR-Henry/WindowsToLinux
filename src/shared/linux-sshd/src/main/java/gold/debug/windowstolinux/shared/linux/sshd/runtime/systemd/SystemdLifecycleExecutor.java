@@ -2,7 +2,7 @@ package gold.debug.windowstolinux.shared.linux.sshd.runtime.systemd;
 
 import gold.debug.windowstolinux.shared.linux.error.LinuxOperationException;
 import gold.debug.windowstolinux.shared.linux.sshd.command.SshCommandExecutor;
-import gold.debug.windowstolinux.shared.linux.sshd.protocol.runtime.ManagedRuntimeProtocolExecutor;
+import gold.debug.windowstolinux.shared.linux.sshd.execution.protocol.runtime.ManagedRuntimeProtocolExecutor;
 import gold.debug.windowstolinux.shared.model.health.HealthCheck;
 import gold.debug.windowstolinux.shared.model.lifecycle.AutostartState;
 import gold.debug.windowstolinux.shared.model.lifecycle.LifecycleAction;

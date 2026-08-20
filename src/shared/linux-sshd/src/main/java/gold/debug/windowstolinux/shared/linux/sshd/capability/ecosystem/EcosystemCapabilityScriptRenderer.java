@@ -1,6 +1,6 @@
 package gold.debug.windowstolinux.shared.linux.sshd.capability.ecosystem;
 
-import gold.debug.windowstolinux.shared.linux.sshd.distro.profile.EcosystemCapabilityProfile;
+import gold.debug.windowstolinux.shared.linux.sshd.distro.contract.profile.EcosystemCapabilityProfile;
 
 import java.util.Objects;
 

@@ -21,9 +21,9 @@ import gold.debug.windowstolinux.shared.linux.sshd.build.ecosystem.python.Poetry
 import gold.debug.windowstolinux.shared.linux.sshd.build.ecosystem.python.UvBuildRenderer;
 import gold.debug.windowstolinux.shared.linux.sshd.build.ecosystem.ruby.BundlerBuildRenderer;
 import gold.debug.windowstolinux.shared.linux.sshd.build.ecosystem.ruby.RubyCliBuildRenderer;
-import gold.debug.windowstolinux.shared.linux.sshd.build.registry.DeploymentBuildRendererRegistry;
-import gold.debug.windowstolinux.shared.linux.sshd.build.script.SafeBuildScriptEnvelope;
-import gold.debug.windowstolinux.shared.linux.sshd.build.spi.DeploymentBuildRenderer;
+import gold.debug.windowstolinux.shared.linux.sshd.build.extension.registry.DeploymentBuildRendererRegistry;
+import gold.debug.windowstolinux.shared.linux.sshd.build.generation.script.SafeBuildScriptEnvelope;
+import gold.debug.windowstolinux.shared.linux.sshd.build.contract.spi.DeploymentBuildRenderer;
 import gold.debug.windowstolinux.shared.linux.sshd.build.workload.ContainerBuildRenderer;
 import gold.debug.windowstolinux.shared.linux.sshd.build.workload.StaticSiteBuildRenderer;
 import gold.debug.windowstolinux.shared.linux.transfer.RemoteWorkspace;
