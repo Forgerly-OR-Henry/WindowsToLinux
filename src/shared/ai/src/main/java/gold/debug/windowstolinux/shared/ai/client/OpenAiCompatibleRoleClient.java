@@ -9,7 +9,7 @@ import gold.debug.windowstolinux.shared.ai.collaboration.invocation.AiRoleInvoca
 import gold.debug.windowstolinux.shared.ai.collaboration.advice.RoleAdviceAssessment;
 import gold.debug.windowstolinux.shared.ai.parser.ChatCompletionResponseParser;
 import gold.debug.windowstolinux.shared.ai.parser.RoleAdviceParser;
-import gold.debug.windowstolinux.shared.ai.prompt.RolePrompt;
+import gold.debug.windowstolinux.shared.ai.generation.prompt.RolePrompt;
 import gold.debug.windowstolinux.shared.ai.provider.ProviderEndpointPolicy;
 import gold.debug.windowstolinux.shared.ai.transport.HttpRoleChatTransport;
 import gold.debug.windowstolinux.shared.ai.transport.RoleChatResult;

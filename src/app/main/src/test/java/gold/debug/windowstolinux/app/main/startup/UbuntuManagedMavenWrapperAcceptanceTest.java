@@ -2,7 +2,7 @@ package gold.debug.windowstolinux.app.main.startup;
 
 import gold.debug.windowstolinux.app.service.DesktopApplicationFacade;
 import gold.debug.windowstolinux.app.service.deployment.*;
-import gold.debug.windowstolinux.app.service.lifecycle.*;
+import gold.debug.windowstolinux.app.service.execution.lifecycle.*;
 import gold.debug.windowstolinux.app.service.server.*;
 import gold.debug.windowstolinux.app.service.source.*;
 
@@ -11,7 +11,7 @@ import gold.debug.windowstolinux.app.service.deployment.single.DeploymentHandoff
 import gold.debug.windowstolinux.app.service.deployment.single.DeploymentOutcome;
 import gold.debug.windowstolinux.app.service.deployment.single.DeploymentHandoff.HttpAccessUrl;
 import gold.debug.windowstolinux.shared.deploy.contract.ReviewedDeploymentRequest;
-import gold.debug.windowstolinux.shared.deploy.result.lifecycle.LifecycleActionResult;
+import gold.debug.windowstolinux.shared.deploy.contract.result.lifecycle.LifecycleActionResult;
 import gold.debug.windowstolinux.shared.linux.sshd.connection.SshdLinuxGateway;
 import gold.debug.windowstolinux.shared.model.deployment.BuildLimitConfiguration;
 import gold.debug.windowstolinux.shared.model.security.CredentialStorageMode;

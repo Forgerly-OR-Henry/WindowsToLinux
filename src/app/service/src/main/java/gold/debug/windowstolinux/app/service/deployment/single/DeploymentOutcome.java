@@ -1,8 +1,8 @@
 package gold.debug.windowstolinux.app.service.deployment.single;
 
 import gold.debug.windowstolinux.shared.deploy.contract.ReviewedDeploymentRequest;
-import gold.debug.windowstolinux.shared.deploy.result.deployment.DeploymentEvent;
-import gold.debug.windowstolinux.shared.deploy.result.deployment.DeploymentResult;
+import gold.debug.windowstolinux.shared.deploy.contract.result.deployment.DeploymentEvent;
+import gold.debug.windowstolinux.shared.deploy.contract.result.deployment.DeploymentResult;
 import gold.debug.windowstolinux.shared.model.deployment.DeploymentStatus;
 import gold.debug.windowstolinux.shared.model.health.HealthCheck;
 import gold.debug.windowstolinux.shared.model.managed.ManagedApplication;

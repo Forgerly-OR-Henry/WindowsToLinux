@@ -1,6 +1,6 @@
 package gold.debug.windowstolinux.app.service.server;
 
-import gold.debug.windowstolinux.app.db.repository.EncryptedSecretRepository;
+import gold.debug.windowstolinux.app.db.persistence.repository.EncryptedSecretRepository;
 import gold.debug.windowstolinux.app.secret.SecretStore;
 import gold.debug.windowstolinux.app.secret.SecretStoreException;
 import gold.debug.windowstolinux.app.secret.Argon2AesSecretStore;

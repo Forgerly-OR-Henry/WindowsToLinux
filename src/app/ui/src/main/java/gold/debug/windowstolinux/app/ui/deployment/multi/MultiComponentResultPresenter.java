@@ -3,8 +3,8 @@ package gold.debug.windowstolinux.app.ui.deployment.multi;
 import gold.debug.windowstolinux.app.service.deployment.multi.ReviewedMultiComponentApplication;
 import gold.debug.windowstolinux.app.service.source.PreparedMultiComponentSource;
 import gold.debug.windowstolinux.app.ui.i18n.PageMessagePresenter;
-import gold.debug.windowstolinux.shared.deploy.result.deployment.MultiComponentDeploymentResult;
-import gold.debug.windowstolinux.shared.deploy.result.lifecycle.MultiComponentLifecycleResult;
+import gold.debug.windowstolinux.shared.deploy.contract.result.deployment.MultiComponentDeploymentResult;
+import gold.debug.windowstolinux.shared.deploy.contract.result.lifecycle.MultiComponentLifecycleResult;
 
 import java.util.Locale;
 import java.util.Map;

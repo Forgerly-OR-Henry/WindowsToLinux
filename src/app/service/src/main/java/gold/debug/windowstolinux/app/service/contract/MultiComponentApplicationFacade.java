@@ -9,8 +9,8 @@ import gold.debug.windowstolinux.app.service.source.PreparedMultiComponentSource
 import gold.debug.windowstolinux.shared.analyze.component.ComponentAnalysisRequest;
 import gold.debug.windowstolinux.shared.config.revision.ConfigurationSnapshot;
 import gold.debug.windowstolinux.shared.deploy.contract.ApplicationHealthGate;
-import gold.debug.windowstolinux.shared.deploy.result.deployment.MultiComponentDeploymentResult;
-import gold.debug.windowstolinux.shared.deploy.result.lifecycle.MultiComponentLifecycleResult;
+import gold.debug.windowstolinux.shared.deploy.contract.result.deployment.MultiComponentDeploymentResult;
+import gold.debug.windowstolinux.shared.deploy.contract.result.lifecycle.MultiComponentLifecycleResult;
 import gold.debug.windowstolinux.shared.model.lifecycle.LifecycleAction;
 import gold.debug.windowstolinux.shared.model.security.CredentialStorageMode;
 import gold.debug.windowstolinux.shared.model.server.ServerIdentity;

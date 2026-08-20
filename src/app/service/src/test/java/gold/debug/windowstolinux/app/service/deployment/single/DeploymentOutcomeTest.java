@@ -2,14 +2,14 @@ package gold.debug.windowstolinux.app.service.deployment.single;
 
 import gold.debug.windowstolinux.app.service.deployment.single.DeploymentHandoff;
 import gold.debug.windowstolinux.app.service.deployment.single.DeploymentOutcome;
-import gold.debug.windowstolinux.shared.config.definition.ConfigurationScope;
-import gold.debug.windowstolinux.shared.config.definition.ConfigurationValue;
+import gold.debug.windowstolinux.shared.config.contract.definition.ConfigurationScope;
+import gold.debug.windowstolinux.shared.config.contract.definition.ConfigurationValue;
 import gold.debug.windowstolinux.shared.config.revision.ConfigurationEntry;
 import gold.debug.windowstolinux.shared.config.revision.ConfigurationSnapshot;
 import gold.debug.windowstolinux.shared.deploy.contract.DeploymentApproval;
 import gold.debug.windowstolinux.shared.deploy.contract.ReviewedDeploymentRequest;
-import gold.debug.windowstolinux.shared.deploy.result.deployment.DeploymentEvent;
-import gold.debug.windowstolinux.shared.deploy.result.deployment.DeploymentResult;
+import gold.debug.windowstolinux.shared.deploy.contract.result.deployment.DeploymentEvent;
+import gold.debug.windowstolinux.shared.deploy.contract.result.deployment.DeploymentResult;
 import gold.debug.windowstolinux.shared.model.archive.SourceArchiveDescriptor;
 import gold.debug.windowstolinux.shared.model.deployment.BuildLimitConfiguration;
 import gold.debug.windowstolinux.shared.model.deployment.DeploymentStatus;

@@ -1,6 +1,6 @@
 package gold.debug.windowstolinux.app.service.deployment;
 
-import gold.debug.windowstolinux.app.db.repository.ManagedApplicationRepository;
+import gold.debug.windowstolinux.app.db.persistence.repository.ManagedApplicationRepository;
 import gold.debug.windowstolinux.shared.model.managed.ManagedApplication;
 import gold.debug.windowstolinux.shared.model.message.LocalizedMessage;
 import gold.debug.windowstolinux.shared.model.message.LocalizedOperationException;

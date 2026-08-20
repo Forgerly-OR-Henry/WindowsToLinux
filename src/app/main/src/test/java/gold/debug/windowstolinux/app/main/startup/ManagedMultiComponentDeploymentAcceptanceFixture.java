@@ -2,12 +2,12 @@ package gold.debug.windowstolinux.app.main.startup;
 
 import gold.debug.windowstolinux.app.service.deployment.multi.MultiComponentReviewInput;
 import gold.debug.windowstolinux.shared.analyze.component.ComponentAnalysisRequest;
-import gold.debug.windowstolinux.shared.config.definition.ConfigurationScope;
-import gold.debug.windowstolinux.shared.config.definition.ConfigurationValue;
+import gold.debug.windowstolinux.shared.config.contract.definition.ConfigurationScope;
+import gold.debug.windowstolinux.shared.config.contract.definition.ConfigurationValue;
 import gold.debug.windowstolinux.shared.config.revision.ConfigurationEntry;
 import gold.debug.windowstolinux.shared.config.revision.ConfigurationSnapshot;
 import gold.debug.windowstolinux.shared.deploy.contract.ApplicationHealthGate;
-import gold.debug.windowstolinux.shared.deploy.result.deployment.ComponentTransactionState;
+import gold.debug.windowstolinux.shared.deploy.contract.result.deployment.ComponentTransactionState;
 import gold.debug.windowstolinux.shared.model.deployment.BuildLimitConfiguration;
 import gold.debug.windowstolinux.shared.model.deployment.DeploymentStatus;
 import gold.debug.windowstolinux.shared.model.health.HealthCheck;

@@ -1,15 +1,15 @@
 package gold.debug.windowstolinux.app.db;
 
-import gold.debug.windowstolinux.app.db.connection.DesktopConnectionFactory;
-import gold.debug.windowstolinux.app.db.migration.DesktopSchemaMigrator;
-import gold.debug.windowstolinux.app.db.repository.AiProfileRepository;
-import gold.debug.windowstolinux.app.db.repository.ApplicationSecretRepository;
-import gold.debug.windowstolinux.app.db.repository.ConfigurationSnapshotRepository;
-import gold.debug.windowstolinux.app.db.repository.DesktopPreferenceRepository;
-import gold.debug.windowstolinux.app.db.repository.EncryptedSecretRepository;
-import gold.debug.windowstolinux.app.db.repository.ManagedApplicationRepository;
-import gold.debug.windowstolinux.app.db.repository.ManagedApplicationGraphRepository;
-import gold.debug.windowstolinux.app.db.repository.ServerProfileRepository;
+import gold.debug.windowstolinux.app.db.persistence.connection.DesktopConnectionFactory;
+import gold.debug.windowstolinux.app.db.execution.migration.DesktopSchemaMigrator;
+import gold.debug.windowstolinux.app.db.persistence.repository.AiProfileRepository;
+import gold.debug.windowstolinux.app.db.persistence.repository.ApplicationSecretRepository;
+import gold.debug.windowstolinux.app.db.persistence.repository.ConfigurationSnapshotRepository;
+import gold.debug.windowstolinux.app.db.persistence.repository.DesktopPreferenceRepository;
+import gold.debug.windowstolinux.app.db.persistence.repository.EncryptedSecretRepository;
+import gold.debug.windowstolinux.app.db.persistence.repository.ManagedApplicationRepository;
+import gold.debug.windowstolinux.app.db.persistence.repository.ManagedApplicationGraphRepository;
+import gold.debug.windowstolinux.app.db.persistence.repository.ServerProfileRepository;
 
 import java.io.IOException;
 import java.nio.file.Files;

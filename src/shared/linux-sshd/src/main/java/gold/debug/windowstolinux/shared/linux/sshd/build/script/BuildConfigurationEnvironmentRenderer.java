@@ -2,7 +2,7 @@ package gold.debug.windowstolinux.shared.linux.sshd.build.script;
 
 import gold.debug.windowstolinux.shared.linux.sshd.build.script.SafeBuildScriptEnvelope;
 
-import gold.debug.windowstolinux.shared.config.definition.ConfigurationScope;
+import gold.debug.windowstolinux.shared.config.contract.definition.ConfigurationScope;
 import gold.debug.windowstolinux.shared.config.revision.ConfigurationSnapshot;
 
 import java.util.Comparator;

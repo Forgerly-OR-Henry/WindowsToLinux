@@ -1,7 +1,7 @@
 package gold.debug.windowstolinux.shared.config.revision;
 
-import gold.debug.windowstolinux.shared.config.definition.ConfigurationScope;
-import gold.debug.windowstolinux.shared.config.definition.ConfigurationValue;
+import gold.debug.windowstolinux.shared.config.contract.definition.ConfigurationScope;
+import gold.debug.windowstolinux.shared.config.contract.definition.ConfigurationValue;
 import gold.debug.windowstolinux.shared.config.secretref.SecretReference;
 import org.junit.jupiter.api.Test;
 

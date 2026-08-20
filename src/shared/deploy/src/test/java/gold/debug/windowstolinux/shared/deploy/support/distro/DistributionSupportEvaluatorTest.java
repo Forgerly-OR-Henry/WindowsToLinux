@@ -1,6 +1,6 @@
 package gold.debug.windowstolinux.shared.deploy.support.distro;
 
-import gold.debug.windowstolinux.shared.deploy.result.compatibility.HostSupportStatus;
+import gold.debug.windowstolinux.shared.deploy.contract.result.compatibility.HostSupportStatus;
 import gold.debug.windowstolinux.shared.model.capability.LinuxCapabilityFacts;
 import gold.debug.windowstolinux.shared.model.server.CpuMicroarchitectureLevel;
 import gold.debug.windowstolinux.shared.model.server.LinuxDistroType;

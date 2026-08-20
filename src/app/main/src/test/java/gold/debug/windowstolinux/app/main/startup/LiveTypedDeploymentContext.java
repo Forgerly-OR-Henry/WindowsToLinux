@@ -15,9 +15,9 @@ import gold.debug.windowstolinux.shared.deploy.contract.ReviewedDeploymentReques
 import gold.debug.windowstolinux.shared.deploy.contract.ReviewedDeploymentPlan;
 import gold.debug.windowstolinux.shared.deploy.contract.ApplicationHealthGate;
 import gold.debug.windowstolinux.shared.deploy.contract.DeploymentPlanAction;
-import gold.debug.windowstolinux.shared.deploy.result.deployment.DeploymentResult;
-import gold.debug.windowstolinux.shared.deploy.result.deployment.MultiComponentDeploymentResult;
-import gold.debug.windowstolinux.shared.deploy.result.lifecycle.MultiComponentLifecycleResult;
+import gold.debug.windowstolinux.shared.deploy.contract.result.deployment.DeploymentResult;
+import gold.debug.windowstolinux.shared.deploy.contract.result.deployment.MultiComponentDeploymentResult;
+import gold.debug.windowstolinux.shared.deploy.contract.result.lifecycle.MultiComponentLifecycleResult;
 import gold.debug.windowstolinux.shared.analyze.component.ComponentAnalysisRequest;
 import gold.debug.windowstolinux.shared.git.GitSourceRequest;
 import gold.debug.windowstolinux.shared.linux.sshd.connection.SshdLinuxGateway;

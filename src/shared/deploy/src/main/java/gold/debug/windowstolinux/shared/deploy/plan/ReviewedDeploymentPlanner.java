@@ -2,7 +2,7 @@ package gold.debug.windowstolinux.shared.deploy.plan;
 
 import gold.debug.windowstolinux.shared.deploy.contract.ReviewedDeploymentPlan;
 import gold.debug.windowstolinux.shared.deploy.contract.ReviewedDeploymentRequest;
-import gold.debug.windowstolinux.shared.deploy.registry.DeploymentAdapterRegistry;
+import gold.debug.windowstolinux.shared.deploy.extension.registry.DeploymentAdapterRegistry;
 import java.util.Objects;
 
 /**

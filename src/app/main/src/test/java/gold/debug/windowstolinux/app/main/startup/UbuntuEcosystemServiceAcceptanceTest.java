@@ -1,11 +1,11 @@
 package gold.debug.windowstolinux.app.main.startup;
 
 import gold.debug.windowstolinux.app.service.source.ReviewedSourcePreparation;
-import gold.debug.windowstolinux.shared.config.definition.ConfigurationScope;
-import gold.debug.windowstolinux.shared.config.definition.ConfigurationValue;
+import gold.debug.windowstolinux.shared.config.contract.definition.ConfigurationScope;
+import gold.debug.windowstolinux.shared.config.contract.definition.ConfigurationValue;
 import gold.debug.windowstolinux.shared.config.revision.ConfigurationEntry;
 import gold.debug.windowstolinux.shared.config.secretref.SecretReference;
-import gold.debug.windowstolinux.shared.deploy.result.deployment.DeploymentResult;
+import gold.debug.windowstolinux.shared.deploy.contract.result.deployment.DeploymentResult;
 import gold.debug.windowstolinux.shared.model.deployment.DeploymentStatus;
 import gold.debug.windowstolinux.shared.model.health.HealthCheck;
 import gold.debug.windowstolinux.shared.model.health.UserAccessUrl;

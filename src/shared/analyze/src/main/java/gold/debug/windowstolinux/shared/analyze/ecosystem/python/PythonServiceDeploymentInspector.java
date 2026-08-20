@@ -2,8 +2,8 @@ package gold.debug.windowstolinux.shared.analyze.ecosystem.python;
 
 import gold.debug.windowstolinux.shared.analyze.ecosystem.python.PythonBuildFacts;
 import gold.debug.windowstolinux.shared.analyze.ecosystem.python.PythonBuildInspector;
-import gold.debug.windowstolinux.shared.analyze.spi.DeploymentTypeAssessment;
-import gold.debug.windowstolinux.shared.analyze.spi.DeploymentTypeInspector;
+import gold.debug.windowstolinux.shared.analyze.contract.spi.DeploymentTypeAssessment;
+import gold.debug.windowstolinux.shared.analyze.contract.spi.DeploymentTypeInspector;
 import gold.debug.windowstolinux.shared.analyze.source.BoundedMetadataInspector;
 import gold.debug.windowstolinux.shared.analyze.source.ProjectIdentityResolver;
 import gold.debug.windowstolinux.shared.analyze.source.SourceInspectionFacts;

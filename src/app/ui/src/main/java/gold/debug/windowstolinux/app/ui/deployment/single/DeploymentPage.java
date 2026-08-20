@@ -17,7 +17,7 @@ import gold.debug.windowstolinux.shared.config.revision.ConfigurationSnapshot;
 import gold.debug.windowstolinux.shared.config.secretref.SecretReference;
 import gold.debug.windowstolinux.shared.deploy.contract.ReviewedDeploymentPlan;
 import gold.debug.windowstolinux.shared.deploy.contract.ReviewedDeploymentRequest;
-import gold.debug.windowstolinux.shared.deploy.result.deployment.DeploymentResult;
+import gold.debug.windowstolinux.shared.deploy.contract.result.deployment.DeploymentResult;
 import gold.debug.windowstolinux.shared.git.GitRemote;
 import gold.debug.windowstolinux.shared.git.GitSourceRequest;
 import gold.debug.windowstolinux.shared.model.deployment.BuildLimitConfiguration;

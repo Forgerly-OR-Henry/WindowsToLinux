@@ -2,14 +2,14 @@ package gold.debug.windowstolinux.app.main.startup;
 
 import gold.debug.windowstolinux.app.service.DesktopApplicationFacade;
 import gold.debug.windowstolinux.app.service.deployment.*;
-import gold.debug.windowstolinux.app.service.lifecycle.*;
+import gold.debug.windowstolinux.app.service.execution.lifecycle.*;
 import gold.debug.windowstolinux.app.service.server.*;
 import gold.debug.windowstolinux.app.service.source.*;
 
 import gold.debug.windowstolinux.app.db.DesktopPersistence;
 import gold.debug.windowstolinux.shared.deploy.contract.ReviewedDeploymentRequest;
-import gold.debug.windowstolinux.shared.deploy.result.deployment.DeploymentResult;
-import gold.debug.windowstolinux.shared.deploy.result.lifecycle.LifecycleActionResult;
+import gold.debug.windowstolinux.shared.deploy.contract.result.deployment.DeploymentResult;
+import gold.debug.windowstolinux.shared.deploy.contract.result.lifecycle.LifecycleActionResult;
 import gold.debug.windowstolinux.shared.linux.connection.HostKeyEvaluator;
 import gold.debug.windowstolinux.shared.linux.error.LinuxOperationException;
 import gold.debug.windowstolinux.shared.linux.connection.DeploymentLinuxGateway;

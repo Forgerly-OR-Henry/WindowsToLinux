@@ -1,8 +1,8 @@
 package gold.debug.windowstolinux.app.service.deployment;
 
 import gold.debug.windowstolinux.app.db.entity.ManagedApplicationGraph;
-import gold.debug.windowstolinux.app.db.repository.ManagedApplicationGraphRepository;
-import gold.debug.windowstolinux.app.db.repository.ManagedApplicationRepository;
+import gold.debug.windowstolinux.app.db.persistence.repository.ManagedApplicationGraphRepository;
+import gold.debug.windowstolinux.app.db.persistence.repository.ManagedApplicationRepository;
 import gold.debug.windowstolinux.app.secret.SecretStore;
 import gold.debug.windowstolinux.app.secret.SecretStoreException;
 import gold.debug.windowstolinux.app.service.deployment.multi.ManagedMultiComponentApplication;
@@ -10,10 +10,10 @@ import gold.debug.windowstolinux.app.service.lock.ServerOperationLockRegistry;
 import gold.debug.windowstolinux.app.service.server.ServerProfile;
 import gold.debug.windowstolinux.app.service.server.ServerUseCaseFacade;
 import gold.debug.windowstolinux.shared.deploy.contract.MultiComponentDeploymentPlan;
-import gold.debug.windowstolinux.shared.deploy.lifecycle.ManagedComponentLifecycle;
-import gold.debug.windowstolinux.shared.deploy.lifecycle.MultiComponentLifecycleService;
+import gold.debug.windowstolinux.shared.deploy.execution.lifecycle.ManagedComponentLifecycle;
+import gold.debug.windowstolinux.shared.deploy.execution.lifecycle.MultiComponentLifecycleService;
 import gold.debug.windowstolinux.shared.deploy.plan.MultiComponentDeploymentPlanner;
-import gold.debug.windowstolinux.shared.deploy.result.lifecycle.MultiComponentLifecycleResult;
+import gold.debug.windowstolinux.shared.deploy.contract.result.lifecycle.MultiComponentLifecycleResult;
 import gold.debug.windowstolinux.shared.linux.connection.DeploymentLinuxGateway;
 import gold.debug.windowstolinux.shared.model.lifecycle.LifecycleAction;
 import gold.debug.windowstolinux.shared.model.lifecycle.LifecycleObservation;

@@ -4,7 +4,7 @@ import gold.debug.windowstolinux.shared.analyze.service.ServiceInspectionAssembl
 import gold.debug.windowstolinux.shared.analyze.service.ServiceMetadataInspector;
 import gold.debug.windowstolinux.shared.analyze.service.ServiceProjectFacts;
 import gold.debug.windowstolinux.shared.analyze.source.SourceInspectionFacts;
-import gold.debug.windowstolinux.shared.analyze.spi.DeploymentTypeAssessment;
+import gold.debug.windowstolinux.shared.analyze.contract.spi.DeploymentTypeAssessment;
 import gold.debug.windowstolinux.shared.model.analysis.RejectionReason;
 import gold.debug.windowstolinux.shared.model.language.ProjectLanguageFacts;
 import gold.debug.windowstolinux.shared.model.project.DeploymentBuildToolType;

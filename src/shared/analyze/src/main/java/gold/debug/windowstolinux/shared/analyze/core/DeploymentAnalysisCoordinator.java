@@ -1,8 +1,8 @@
 package gold.debug.windowstolinux.shared.analyze.core;
 
-import gold.debug.windowstolinux.shared.analyze.policy.SourceMutationPolicy;
-import gold.debug.windowstolinux.shared.analyze.registry.DeploymentTypeInspectorRegistry;
-import gold.debug.windowstolinux.shared.analyze.spi.DeploymentTypeAssessment;
+import gold.debug.windowstolinux.shared.analyze.contract.policy.SourceMutationPolicy;
+import gold.debug.windowstolinux.shared.analyze.extension.registry.DeploymentTypeInspectorRegistry;
+import gold.debug.windowstolinux.shared.analyze.contract.spi.DeploymentTypeAssessment;
 import gold.debug.windowstolinux.shared.analyze.source.BoundedSourceInspector;
 import gold.debug.windowstolinux.shared.analyze.source.SourceInspectionFacts;
 import gold.debug.windowstolinux.shared.analyze.workload.ContainerDeploymentInspector;

@@ -2,7 +2,7 @@ package gold.debug.windowstolinux.app.main.startup;
 
 import gold.debug.windowstolinux.app.service.DesktopApplicationFacade;
 import gold.debug.windowstolinux.app.service.deployment.*;
-import gold.debug.windowstolinux.app.service.lifecycle.*;
+import gold.debug.windowstolinux.app.service.execution.lifecycle.*;
 import gold.debug.windowstolinux.app.service.server.*;
 import gold.debug.windowstolinux.app.service.source.*;
 

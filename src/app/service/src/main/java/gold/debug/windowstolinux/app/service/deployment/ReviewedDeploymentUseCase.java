@@ -1,7 +1,7 @@
 package gold.debug.windowstolinux.app.service.deployment;
 
-import gold.debug.windowstolinux.app.db.repository.ApplicationSecretRepository;
-import gold.debug.windowstolinux.app.db.repository.ManagedApplicationRepository;
+import gold.debug.windowstolinux.app.db.persistence.repository.ApplicationSecretRepository;
+import gold.debug.windowstolinux.app.db.persistence.repository.ManagedApplicationRepository;
 import gold.debug.windowstolinux.app.db.entity.CurrentRelease;
 import gold.debug.windowstolinux.app.secret.SecretStore;
 import gold.debug.windowstolinux.app.secret.SecretStoreException;
@@ -15,8 +15,8 @@ import gold.debug.windowstolinux.shared.config.secretref.SecretReference;
 import gold.debug.windowstolinux.shared.config.secretref.ResolvedSecretRevision;
 import gold.debug.windowstolinux.shared.deploy.contract.DeploymentApproval;
 import gold.debug.windowstolinux.shared.deploy.contract.ReviewedDeploymentRequest;
-import gold.debug.windowstolinux.shared.deploy.result.deployment.DeploymentResult;
-import gold.debug.windowstolinux.shared.deploy.transaction.ReviewedDeploymentService;
+import gold.debug.windowstolinux.shared.deploy.contract.result.deployment.DeploymentResult;
+import gold.debug.windowstolinux.shared.deploy.execution.transaction.ReviewedDeploymentService;
 import gold.debug.windowstolinux.shared.linux.connection.DeploymentLinuxGateway;
 import gold.debug.windowstolinux.shared.linux.connection.HostKeyEvaluator;
 import gold.debug.windowstolinux.shared.linux.connection.SshCredential;

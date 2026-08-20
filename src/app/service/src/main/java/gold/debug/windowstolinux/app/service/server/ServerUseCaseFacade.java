@@ -1,6 +1,6 @@
 package gold.debug.windowstolinux.app.service.server;
 
-import gold.debug.windowstolinux.app.db.repository.ServerProfileRepository;
+import gold.debug.windowstolinux.app.db.persistence.repository.ServerProfileRepository;
 import gold.debug.windowstolinux.app.secret.SecretStore;
 import gold.debug.windowstolinux.app.secret.SecretStoreException;
 import gold.debug.windowstolinux.shared.linux.connection.HostKeyDecision;

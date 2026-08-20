@@ -2,7 +2,7 @@ package gold.debug.windowstolinux.shared.source.archive;
 
 import gold.debug.windowstolinux.shared.source.manifest.SourceManifest;
 import gold.debug.windowstolinux.shared.source.snapshot.SourceSnapshotAssembler;
-import gold.debug.windowstolinux.shared.source.validation.SourceBoundaryValidator;
+import gold.debug.windowstolinux.shared.source.contract.validation.SourceBoundaryValidator;
 
 import java.io.BufferedInputStream;
 import java.io.IOException;

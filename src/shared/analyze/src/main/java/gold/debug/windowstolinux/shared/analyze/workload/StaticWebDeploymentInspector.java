@@ -2,8 +2,8 @@ package gold.debug.windowstolinux.shared.analyze.workload;
 
 import gold.debug.windowstolinux.shared.analyze.ecosystem.node.NodeBuildFacts;
 import gold.debug.windowstolinux.shared.analyze.ecosystem.node.NodeBuildInspector;
-import gold.debug.windowstolinux.shared.analyze.spi.DeploymentTypeAssessment;
-import gold.debug.windowstolinux.shared.analyze.spi.DeploymentTypeInspector;
+import gold.debug.windowstolinux.shared.analyze.contract.spi.DeploymentTypeAssessment;
+import gold.debug.windowstolinux.shared.analyze.contract.spi.DeploymentTypeInspector;
 import gold.debug.windowstolinux.shared.analyze.source.BoundedMetadataInspector;
 import gold.debug.windowstolinux.shared.analyze.source.ProjectIdentityResolver;
 import gold.debug.windowstolinux.shared.analyze.source.SourceInspectionFacts;

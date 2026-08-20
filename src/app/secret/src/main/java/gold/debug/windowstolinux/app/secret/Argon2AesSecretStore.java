@@ -1,6 +1,6 @@
 package gold.debug.windowstolinux.app.secret;
 
-import gold.debug.windowstolinux.app.db.repository.EncryptedSecretRepository;
+import gold.debug.windowstolinux.app.db.persistence.repository.EncryptedSecretRepository;
 import gold.debug.windowstolinux.app.db.entity.OpaqueSecret;
 import gold.debug.windowstolinux.app.secret.SecretStore;
 import gold.debug.windowstolinux.app.secret.SecretStoreException;

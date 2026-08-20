@@ -1,7 +1,7 @@
 package gold.debug.windowstolinux.shared.config.revision;
 
-import gold.debug.windowstolinux.shared.config.definition.ConfigurationScope;
-import gold.debug.windowstolinux.shared.config.definition.ConfigurationValue;
+import gold.debug.windowstolinux.shared.config.contract.definition.ConfigurationScope;
+import gold.debug.windowstolinux.shared.config.contract.definition.ConfigurationValue;
 
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;

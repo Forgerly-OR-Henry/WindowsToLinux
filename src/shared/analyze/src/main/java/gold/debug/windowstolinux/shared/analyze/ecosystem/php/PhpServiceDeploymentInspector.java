@@ -4,8 +4,8 @@ import gold.debug.windowstolinux.shared.analyze.ecosystem.php.composer.PhpCompos
 import gold.debug.windowstolinux.shared.analyze.ecosystem.php.phpcli.PhpCliDeploymentInspector;
 import gold.debug.windowstolinux.shared.analyze.service.ServiceMetadataInspector;
 import gold.debug.windowstolinux.shared.analyze.source.SourceInspectionFacts;
-import gold.debug.windowstolinux.shared.analyze.spi.DeploymentTypeAssessment;
-import gold.debug.windowstolinux.shared.analyze.spi.DeploymentTypeInspector;
+import gold.debug.windowstolinux.shared.analyze.contract.spi.DeploymentTypeAssessment;
+import gold.debug.windowstolinux.shared.analyze.contract.spi.DeploymentTypeInspector;
 import gold.debug.windowstolinux.shared.model.analysis.RejectionReason;
 import gold.debug.windowstolinux.shared.model.language.ProjectLanguageFacts;
 import gold.debug.windowstolinux.shared.model.message.LocalizedMessage;

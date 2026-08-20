@@ -1,6 +1,6 @@
 package gold.debug.windowstolinux.app.service.ai;
 
-import gold.debug.windowstolinux.app.db.repository.AiProfileRepository;
+import gold.debug.windowstolinux.app.db.persistence.repository.AiProfileRepository;
 import gold.debug.windowstolinux.app.secret.SecretStore;
 import gold.debug.windowstolinux.app.secret.SecretStoreException;
 import gold.debug.windowstolinux.app.service.server.DesktopSecretStoreService;
@@ -11,7 +11,7 @@ import gold.debug.windowstolinux.shared.ai.client.OpenAiCompatibleRoleClient;
 import gold.debug.windowstolinux.shared.ai.collaboration.role.AiRoleBinding;
 import gold.debug.windowstolinux.shared.ai.collaboration.role.AiRoleContext;
 import gold.debug.windowstolinux.shared.ai.collaboration.invocation.AiRoleInvocationResult;
-import gold.debug.windowstolinux.shared.ai.prompt.AiResponseLanguageType;
+import gold.debug.windowstolinux.shared.ai.generation.prompt.AiResponseLanguageType;
 import gold.debug.windowstolinux.shared.model.message.LocalizedMessage;
 import gold.debug.windowstolinux.shared.model.message.LocalizedOperationException;
 import gold.debug.windowstolinux.shared.model.security.CredentialStorageMode;

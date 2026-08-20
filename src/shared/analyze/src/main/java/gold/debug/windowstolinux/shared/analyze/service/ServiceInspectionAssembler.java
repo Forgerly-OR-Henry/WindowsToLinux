@@ -1,6 +1,6 @@
 package gold.debug.windowstolinux.shared.analyze.service;
 
-import gold.debug.windowstolinux.shared.analyze.spi.DeploymentTypeAssessment;
+import gold.debug.windowstolinux.shared.analyze.contract.spi.DeploymentTypeAssessment;
 import gold.debug.windowstolinux.shared.analyze.source.ProjectIdentityResolver;
 import gold.debug.windowstolinux.shared.model.analysis.AnalysisEvidence;
 import gold.debug.windowstolinux.shared.model.analysis.EvidenceConfidenceLevel;

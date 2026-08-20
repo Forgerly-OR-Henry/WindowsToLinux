@@ -1,7 +1,7 @@
 package gold.debug.windowstolinux.app.service.config;
 
-import gold.debug.windowstolinux.app.db.repository.ApplicationSecretRepository;
-import gold.debug.windowstolinux.app.db.repository.ConfigurationSnapshotRepository;
+import gold.debug.windowstolinux.app.db.persistence.repository.ApplicationSecretRepository;
+import gold.debug.windowstolinux.app.db.persistence.repository.ConfigurationSnapshotRepository;
 import gold.debug.windowstolinux.app.db.entity.StoredApplicationSecretRevision;
 import gold.debug.windowstolinux.app.secret.SecretStore;
 import gold.debug.windowstolinux.app.secret.SecretStoreException;

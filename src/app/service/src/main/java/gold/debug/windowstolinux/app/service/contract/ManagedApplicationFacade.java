@@ -1,8 +1,8 @@
 package gold.debug.windowstolinux.app.service.contract;
 
 import gold.debug.windowstolinux.app.secret.SecretStoreException;
-import gold.debug.windowstolinux.app.service.lifecycle.LifecycleOutcome;
-import gold.debug.windowstolinux.app.service.lifecycle.ManagedApplicationSnapshot;
+import gold.debug.windowstolinux.app.service.execution.lifecycle.LifecycleOutcome;
+import gold.debug.windowstolinux.app.service.execution.lifecycle.ManagedApplicationSnapshot;
 import gold.debug.windowstolinux.shared.model.lifecycle.LifecycleAction;
 
 import java.sql.SQLException;

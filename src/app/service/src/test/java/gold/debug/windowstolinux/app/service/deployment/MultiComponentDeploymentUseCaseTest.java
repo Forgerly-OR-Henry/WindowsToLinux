@@ -9,8 +9,8 @@ import gold.debug.windowstolinux.app.service.deployment.multi.MultiComponentRevi
 import gold.debug.windowstolinux.app.service.deployment.multi.ReviewedComponentApplication;
 import gold.debug.windowstolinux.app.service.server.ServerProfile;
 import gold.debug.windowstolinux.shared.analyze.component.ComponentAnalysisRequest;
-import gold.debug.windowstolinux.shared.config.definition.ConfigurationScope;
-import gold.debug.windowstolinux.shared.config.definition.ConfigurationValue;
+import gold.debug.windowstolinux.shared.config.contract.definition.ConfigurationScope;
+import gold.debug.windowstolinux.shared.config.contract.definition.ConfigurationValue;
 import gold.debug.windowstolinux.shared.config.revision.ConfigurationEntry;
 import gold.debug.windowstolinux.shared.config.revision.ConfigurationSnapshot;
 import gold.debug.windowstolinux.shared.config.secretref.SecretReference;

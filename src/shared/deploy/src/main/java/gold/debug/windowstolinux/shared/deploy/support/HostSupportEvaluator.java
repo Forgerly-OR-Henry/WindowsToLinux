@@ -1,7 +1,7 @@
 package gold.debug.windowstolinux.shared.deploy.support;
 
-import gold.debug.windowstolinux.shared.deploy.result.compatibility.HostSupportStatus;
-import gold.debug.windowstolinux.shared.deploy.result.compatibility.HostSupportDecision;
+import gold.debug.windowstolinux.shared.deploy.contract.result.compatibility.HostSupportStatus;
+import gold.debug.windowstolinux.shared.deploy.contract.result.compatibility.HostSupportDecision;
 import gold.debug.windowstolinux.shared.deploy.support.distro.DistributionSupportEvaluator;
 import gold.debug.windowstolinux.shared.deploy.support.runtime.RuntimeCapabilityEvaluator;
 import gold.debug.windowstolinux.shared.deploy.support.runtime.RuntimeCapabilityDecision;
