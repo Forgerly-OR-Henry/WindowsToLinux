@@ -2,11 +2,11 @@
 
 ## 文档信息
 
-- 文档版本：`1.4.0`
-- 文档状态：**已实施（ecosystem 架构迁移与本地结构验证完成）**
+- 文档版本：`1.5.0`
+- 文档状态：**已实施（ecosystem 架构与三层功能组包迁移完成）**
 - 更新日期：2026-08-20
 - 正式目标结构：[File.md](../File.md)
-- 当前实现状态：跨语言协调保留在公共职责包，语言实现完整聚合于 `ecosystem.<language>`；每个独立构建架构均位于自身规范名子包。Linux 部署链的构建执行与能力探测按 [File.md](../File.md) 独立归入各自 `ecosystem`，本次不产生新的 Linux 或产品入口运行证据。
+- 当前实现状态：跨语言协调保留在公共职责包，策略与 SPI 位于 `contract.{policy,spi}`，默认装配位于 `extension.registry`，语言实现完整聚合于 `ecosystem.<language>`；每个独立构建架构均位于自身规范名子包。Linux 部署链的构建执行与能力探测按 [File.md](../File.md) 独立归入各自 `ecosystem`，本次不产生新的 Linux 或产品入口运行证据。
 
 > 实施更新（2026-08-15）：本文件的 1.0.0 设计记录保留原始分阶段边界；实际实施已与 Linux 部署链修订同步完成公共模型的原子替换，因此不再保留 `AdvancedRuntimeKind`、`AdvancedService` 或 `ADVANCED_*` 兼容路径。
 
@@ -15,6 +15,8 @@
 > Ecosystem 更新（2026-08-19）：`JavaJarDeploymentInspector` 已迁入 `ecosystem.java.jar`，与 `java.maven`、`java.gradle` 平行；跨架构选择器和语言识别器继续留在语言包。下列 1.0.0 目标树与迁移表作为历史设计记录保留，现行结构只以 `File.md` 为准。
 
 > 架构名分包更新（2026-08-20）：现有 .NET SDK、Go Module、Kotlin Gradle、Composer、Bundler 与 Cargo 检查分别迁入 `dotnetsdk`、`gomodule`、`gradle`、`composer`、`bundler`、`cargo`；Node 的 npm/pnpm/Yarn 与 Python 的 pip/Pipenv/Poetry/uv 也使用独立架构包。语言识别、跨架构选择和服务结果组装仍留在语言包。
+
+> 功能组更新（2026-08-20）：现行 `policy`、`spi`、`registry` 已分别迁入 `contract.policy`、`contract.spi`、`extension.registry`；下列 1.0.0 目标树与迁移表继续保留当时路径，当前结构、FQCN 和门禁只以 `File.md` 为准。
 
 ## 1. 目标与边界
 

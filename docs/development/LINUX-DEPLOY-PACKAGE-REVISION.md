@@ -2,9 +2,9 @@
 
 ## 文档信息
 
-- 版本：`1.4.0`
-- 状态：**已实施（ecosystem 架构迁移与本地结构验证完成）**
-- 日期：2026-08-19
+- 版本：`1.5.0`
+- 状态：**已实施（ecosystem 架构与三层功能组包迁移完成）**
+- 日期：2026-08-20
 - 正式目标结构：[File.md](../File.md)
 - 关联修订：[ANALYZE-PACKAGE-REVISION.md](ANALYZE-PACKAGE-REVISION.md)
 
@@ -15,6 +15,8 @@
 > 严格命名更新（2026-08-19）：当前计划动作、跟踪事件、主机支持状态和运行时输入类型分别使用 `DeploymentPlanAction`、`DeploymentTraceEvent`、`HostSupportStatus` 与 `RuntimeInputType`。`00-common.sh` 已更名为 `00-protocol-foundation.sh`，脚本内容、资源顺序、helper 协议版本 3 和固定 bundle SHA-256 保持不变；下列历史迁移表的旧名称列继续保留当时名称。
 
 > Ecosystem 更新（2026-08-19）：目标机构建已按 `build.ecosystem`、`build.workload`、`build.registry` 归位，单一原生架构使用具名 Renderer；语言与工具链探测和准备检查脚本归 `capability.ecosystem`。`35-ecosystem-dispatch.sh` 进入 helper 资源 `fragments/ecosystem` 分组，组装字节、固定 SHA-256 与协议版本 3 均保持不变。下列 1.0.x 目标树和迁移表作为历史设计记录保留，现行结构只以 `File.md` 为准。
+
+> 功能组更新（2026-08-20）：现行构建 SPI、注册与脚本分别位于 `build.contract.spi`、`build.extension.registry`、`build.generation.script`，发行版配置、注册与脚本分别位于 `distro.contract.profile`、`distro.extension.registry`、`distro.generation.script`；协议与传输实现位于 `execution.{protocol,transfer}`，helper fragments 随协议迁入 `execution/protocol/helper`。11 项资源字节、组装顺序、协议版本 3 与固定 SHA-256 均未改变；下列历史目标树和迁移表仍保留当时路径，现行结构只以 `File.md` 为准。
 
 ## 1. 修订目的与边界
 

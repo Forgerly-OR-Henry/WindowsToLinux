@@ -115,9 +115,32 @@ class PackageStructureArchitectureTest {
             "bean", "checker", "common", "concrete", "generic", "impl", "implementation", "legacy", "misc",
             "new", "object", "old", "processor", "temp", "temporary", "util", "utils");
     private static final Set<String> DISTRO_CLASSIFICATION_PACKAGES = Set.of(
-            "apt", "dnf", "profile", "registry", "script");
+            "apt", "contract", "dnf", "extension", "generation");
     private static final Set<String> ECOSYSTEM_CLASSIFICATION_PACKAGES = Set.of(
             "c", "java", "node", "python", "go", "rust", "dotnet", "kotlin", "php", "ruby");
+    private static final Map<String, Set<String>> FUNCTIONAL_GROUP_RESPONSIBILITIES = Map.of(
+            "contract", Set.of("capability", "definition", "policy", "profile", "result", "spi", "validation"),
+            "generation", Set.of("prompt", "renderer", "script", "template"),
+            "extension", Set.of("adapter", "registry"),
+            "execution", Set.of("environment", "lifecycle", "migration", "protocol", "transaction", "transfer"),
+            "persistence", Set.of("connection", "repository"));
+    private static final Map<String, String> RESPONSIBILITY_FUNCTIONAL_GROUPS = Map.ofEntries(
+            Map.entry("capability", "contract"), Map.entry("definition", "contract"),
+            Map.entry("policy", "contract"), Map.entry("profile", "contract"),
+            Map.entry("result", "contract"), Map.entry("spi", "contract"),
+            Map.entry("validation", "contract"), Map.entry("prompt", "generation"),
+            Map.entry("renderer", "generation"), Map.entry("script", "generation"),
+            Map.entry("template", "generation"), Map.entry("adapter", "extension"),
+            Map.entry("registry", "extension"), Map.entry("environment", "execution"),
+            Map.entry("lifecycle", "execution"), Map.entry("migration", "execution"),
+            Map.entry("protocol", "execution"), Map.entry("transaction", "execution"),
+            Map.entry("transfer", "execution"), Map.entry("connection", "persistence"),
+            Map.entry("repository", "persistence"));
+    private static final Set<String> UNGROUPED_RESPONSIBILITY_EXCEPTIONS = Set.of(
+            "gold.debug.windowstolinux.shared.linux.sshd.capability",
+            "gold.debug.windowstolinux.shared.linux.sshd.connection",
+            "gold.debug.windowstolinux.shared.model.capability",
+            "gold.debug.windowstolinux.shared.model.lifecycle");
     private static final Set<String> DELETED_WRAPPERS = Set.of(
             "GoServiceDeploymentInspector", "RustServiceDeploymentInspector", "DotNetServiceDeploymentInspector",
             "RustBuildRenderer", "DotNetBuildRenderer", "KotlinBuildRenderer",
@@ -125,6 +148,32 @@ class PackageStructureArchitectureTest {
             "RockyLinuxSetup", "AlmaLinuxSetup", "OracleLinuxSetup", "ServiceBuildRenderer",
             "SpringBootBuildRenderer", "NodeBuildRenderer", "PythonBuildRenderer", "EcosystemBuildScript");
     private static final List<String> OLD_PACKAGE_PREFIXES = List.of(
+            "gold.debug.windowstolinux.app.db.connection",
+            "gold.debug.windowstolinux.app.db.migration",
+            "gold.debug.windowstolinux.app.db.repository",
+            "gold.debug.windowstolinux.app.service.environment",
+            "gold.debug.windowstolinux.app.service.lifecycle",
+            "gold.debug.windowstolinux.shared.ai.prompt",
+            "gold.debug.windowstolinux.shared.analyze.policy",
+            "gold.debug.windowstolinux.shared.analyze.registry",
+            "gold.debug.windowstolinux.shared.analyze.spi",
+            "gold.debug.windowstolinux.shared.config.definition",
+            "gold.debug.windowstolinux.shared.deploy.adapter",
+            "gold.debug.windowstolinux.shared.deploy.environment",
+            "gold.debug.windowstolinux.shared.deploy.lifecycle",
+            "gold.debug.windowstolinux.shared.deploy.registry",
+            "gold.debug.windowstolinux.shared.deploy.result",
+            "gold.debug.windowstolinux.shared.deploy.spi",
+            "gold.debug.windowstolinux.shared.deploy.transaction",
+            "gold.debug.windowstolinux.shared.source.validation",
+            "gold.debug.windowstolinux.shared.linux.sshd.build.registry",
+            "gold.debug.windowstolinux.shared.linux.sshd.build.script",
+            "gold.debug.windowstolinux.shared.linux.sshd.build.spi",
+            "gold.debug.windowstolinux.shared.linux.sshd.distro.profile",
+            "gold.debug.windowstolinux.shared.linux.sshd.distro.registry",
+            "gold.debug.windowstolinux.shared.linux.sshd.distro.script",
+            "gold.debug.windowstolinux.shared.linux.sshd.protocol",
+            "gold.debug.windowstolinux.shared.linux.sshd.transfer",
             "gold.debug.windowstolinux.app.secret.api", "gold.debug.windowstolinux.app.secret.store",
             "gold.debug.windowstolinux.app.secret.windows", "gold.debug.windowstolinux.shared.git.reference",
             "gold.debug.windowstolinux.shared.git.remote", "gold.debug.windowstolinux.shared.analyze.source.metadata",
@@ -176,13 +225,39 @@ class PackageStructureArchitectureTest {
             "gold.debug.windowstolinux.shared.ai.client.HttpRoleChatTransport",
             "gold.debug.windowstolinux.shared.ai.client.RoleChatResult",
             "gold.debug.windowstolinux.shared.ai.parser.AiStructuralAssessment",
-            "gold.debug.windowstolinux.shared.linux.sshd.distro.contract",
             "gold.debug.windowstolinux.shared.linux.sshd.distro.execution");
+    private static final Set<String> MIGRATED_PACKAGE_PREFIXES = Set.of(
+            "gold.debug.windowstolinux.app.db.connection",
+            "gold.debug.windowstolinux.app.db.migration",
+            "gold.debug.windowstolinux.app.db.repository",
+            "gold.debug.windowstolinux.app.service.environment",
+            "gold.debug.windowstolinux.app.service.lifecycle",
+            "gold.debug.windowstolinux.shared.ai.prompt",
+            "gold.debug.windowstolinux.shared.analyze.policy",
+            "gold.debug.windowstolinux.shared.analyze.registry",
+            "gold.debug.windowstolinux.shared.analyze.spi",
+            "gold.debug.windowstolinux.shared.config.definition",
+            "gold.debug.windowstolinux.shared.deploy.adapter",
+            "gold.debug.windowstolinux.shared.deploy.environment",
+            "gold.debug.windowstolinux.shared.deploy.lifecycle",
+            "gold.debug.windowstolinux.shared.deploy.registry",
+            "gold.debug.windowstolinux.shared.deploy.result",
+            "gold.debug.windowstolinux.shared.deploy.spi",
+            "gold.debug.windowstolinux.shared.deploy.transaction",
+            "gold.debug.windowstolinux.shared.source.validation",
+            "gold.debug.windowstolinux.shared.linux.sshd.build.registry",
+            "gold.debug.windowstolinux.shared.linux.sshd.build.script",
+            "gold.debug.windowstolinux.shared.linux.sshd.build.spi",
+            "gold.debug.windowstolinux.shared.linux.sshd.distro.profile",
+            "gold.debug.windowstolinux.shared.linux.sshd.distro.registry",
+            "gold.debug.windowstolinux.shared.linux.sshd.distro.script",
+            "gold.debug.windowstolinux.shared.linux.sshd.protocol",
+            "gold.debug.windowstolinux.shared.linux.sshd.transfer");
     private static final Map<String, String> RESPONSIBILITY_PACKAGES = responsibilityPackages();
     private static final Map<String, String> PREVIOUS_RESPONSIBILITY_PACKAGES = previousResponsibilityPackages();
     private static final Set<String> RESPONSIBILITY_ROOTS = Set.of(
             "gold.debug.windowstolinux.shared.ai.collaboration",
-            "gold.debug.windowstolinux.shared.deploy.result",
+            "gold.debug.windowstolinux.shared.deploy.contract.result",
             "gold.debug.windowstolinux.shared.model.project",
             "gold.debug.windowstolinux.shared.model.language",
             "gold.debug.windowstolinux.shared.model.server",
@@ -212,15 +287,15 @@ class PackageStructureArchitectureTest {
             new PackageDependencyRule("gold.debug.windowstolinux.app.service.deployment.multi",
                     Set.of("gold.debug.windowstolinux.app.service.deployment",
                             "gold.debug.windowstolinux.app.service.deployment.single")),
-            new PackageDependencyRule("gold.debug.windowstolinux.shared.deploy.result.compatibility",
-                    Set.of("gold.debug.windowstolinux.shared.deploy.result.deployment",
-                            "gold.debug.windowstolinux.shared.deploy.result.lifecycle")),
-            new PackageDependencyRule("gold.debug.windowstolinux.shared.deploy.result.deployment",
-                    Set.of("gold.debug.windowstolinux.shared.deploy.result.compatibility",
-                            "gold.debug.windowstolinux.shared.deploy.result.lifecycle")),
-            new PackageDependencyRule("gold.debug.windowstolinux.shared.deploy.result.lifecycle",
-                    Set.of("gold.debug.windowstolinux.shared.deploy.result.compatibility",
-                            "gold.debug.windowstolinux.shared.deploy.result.deployment")),
+            new PackageDependencyRule("gold.debug.windowstolinux.shared.deploy.contract.result.compatibility",
+                    Set.of("gold.debug.windowstolinux.shared.deploy.contract.result.deployment",
+                            "gold.debug.windowstolinux.shared.deploy.contract.result.lifecycle")),
+            new PackageDependencyRule("gold.debug.windowstolinux.shared.deploy.contract.result.deployment",
+                    Set.of("gold.debug.windowstolinux.shared.deploy.contract.result.compatibility",
+                            "gold.debug.windowstolinux.shared.deploy.contract.result.lifecycle")),
+            new PackageDependencyRule("gold.debug.windowstolinux.shared.deploy.contract.result.lifecycle",
+                    Set.of("gold.debug.windowstolinux.shared.deploy.contract.result.compatibility",
+                            "gold.debug.windowstolinux.shared.deploy.contract.result.deployment")),
             new PackageDependencyRule("gold.debug.windowstolinux.shared.model.language",
                     Set.of("gold.debug.windowstolinux.shared.model.project",
                             "gold.debug.windowstolinux.shared.model.project.component")),
@@ -238,6 +313,8 @@ class PackageStructureArchitectureTest {
         }
         assertFalse(Files.exists(root.resolve(
                 "src/shared/linux-sshd/src/main/resources/gold/debug/windowstolinux/shared/linux/sshd/protocol/managed-helper")));
+        assertFalse(Files.exists(root.resolve(
+                "src/shared/linux-sshd/src/main/resources/gold/debug/windowstolinux/shared/linux/sshd/protocol/helper")));
     }
 
     @Test
@@ -248,7 +325,8 @@ class PackageStructureArchitectureTest {
         Path deploymentShared = root.resolve("src/app/ui/src/main/java/gold/debug/windowstolinux/app/ui/deployment");
         Path deploymentSingle = deploymentShared.resolve("single");
         Path deploymentMulti = deploymentShared.resolve("multi");
-        Path repositories = root.resolve("src/app/db/src/main/java/gold/debug/windowstolinux/app/db/repository");
+        Path repositories = root.resolve(
+                "src/app/db/src/main/java/gold/debug/windowstolinux/app/db/persistence/repository");
         Path fragments = root.resolve(
                 "src/shared/linux-sshd/src/main/resources/gold/debug/windowstolinux/shared/linux/sshd");
 
@@ -280,7 +358,8 @@ class PackageStructureArchitectureTest {
 
         String structure = Files.readString(root.resolve("docs/File.md"));
         for (String required : List.of("ecosystem.java.jar", "build.ecosystem", "build.workload",
-                "capability.ecosystem", "distro.apt", "distro.dnf", "fragments/ecosystem")) {
+                "capability.ecosystem", "contract.result", "distro.apt", "distro.dnf",
+                "execution.protocol", "fragments/ecosystem", "generation.script", "persistence.repository")) {
             assertTrue(structure.contains(required), () -> "File.md is missing the current structure: " + required);
         }
 
@@ -288,6 +367,11 @@ class PackageStructureArchitectureTest {
                 "src/app/ui/src/main/java/gold/debug/windowstolinux/app/ui/display",
                 "src/app/main/src/main/java/gold/debug/windowstolinux/app/main/startup",
                 "src/app/service/src/main/java/gold/debug/windowstolinux/app/service/contract",
+                "src/app/db/src/main/java/gold/debug/windowstolinux/app/db/execution/migration",
+                "src/app/db/src/main/java/gold/debug/windowstolinux/app/db/persistence/connection",
+                "src/app/db/src/main/java/gold/debug/windowstolinux/app/db/persistence/repository",
+                "src/app/service/src/main/java/gold/debug/windowstolinux/app/service/execution/environment",
+                "src/app/service/src/main/java/gold/debug/windowstolinux/app/service/execution/lifecycle",
                 "src/app/service/src/main/java/gold/debug/windowstolinux/app/service/lock",
                 "src/app/ui/src/main/java/gold/debug/windowstolinux/app/ui/setting",
                 "src/app/service/src/main/java/gold/debug/windowstolinux/app/service/deployment/single",
@@ -297,12 +381,25 @@ class PackageStructureArchitectureTest {
                 "src/shared/ai/src/main/java/gold/debug/windowstolinux/shared/ai/collaboration/advice",
                 "src/shared/ai/src/main/java/gold/debug/windowstolinux/shared/ai/collaboration/invocation",
                 "src/shared/ai/src/main/java/gold/debug/windowstolinux/shared/ai/collaboration/role",
+                "src/shared/ai/src/main/java/gold/debug/windowstolinux/shared/ai/generation/prompt",
+                "src/shared/analyze/src/main/java/gold/debug/windowstolinux/shared/analyze/contract/policy",
+                "src/shared/analyze/src/main/java/gold/debug/windowstolinux/shared/analyze/contract/spi",
+                "src/shared/analyze/src/main/java/gold/debug/windowstolinux/shared/analyze/extension/registry",
+                "src/shared/config/src/main/java/gold/debug/windowstolinux/shared/config/contract/definition",
                 "src/shared/model/src/main/java/gold/debug/windowstolinux/shared/model/language",
                 "src/shared/model/src/main/java/gold/debug/windowstolinux/shared/model/server/security",
-                "src/shared/deploy/src/main/java/gold/debug/windowstolinux/shared/deploy/result/compatibility",
-                "src/shared/deploy/src/main/java/gold/debug/windowstolinux/shared/deploy/result/deployment",
-                "src/shared/deploy/src/main/java/gold/debug/windowstolinux/shared/deploy/result/lifecycle",
-                "src/shared/linux-sshd/src/main/java/gold/debug/windowstolinux/shared/linux/sshd/build/script",
+                "src/shared/deploy/src/main/java/gold/debug/windowstolinux/shared/deploy/contract/result/compatibility",
+                "src/shared/deploy/src/main/java/gold/debug/windowstolinux/shared/deploy/contract/result/deployment",
+                "src/shared/deploy/src/main/java/gold/debug/windowstolinux/shared/deploy/contract/result/lifecycle",
+                "src/shared/deploy/src/main/java/gold/debug/windowstolinux/shared/deploy/contract/spi",
+                "src/shared/deploy/src/main/java/gold/debug/windowstolinux/shared/deploy/execution/environment",
+                "src/shared/deploy/src/main/java/gold/debug/windowstolinux/shared/deploy/execution/lifecycle",
+                "src/shared/deploy/src/main/java/gold/debug/windowstolinux/shared/deploy/execution/transaction",
+                "src/shared/deploy/src/main/java/gold/debug/windowstolinux/shared/deploy/extension/adapter",
+                "src/shared/deploy/src/main/java/gold/debug/windowstolinux/shared/deploy/extension/registry",
+                "src/shared/source/src/main/java/gold/debug/windowstolinux/shared/source/contract/validation",
+                "src/shared/linux-sshd/src/main/java/gold/debug/windowstolinux/shared/linux/sshd/build/contract/spi",
+                "src/shared/linux-sshd/src/main/java/gold/debug/windowstolinux/shared/linux/sshd/build/generation/script",
                 "src/shared/linux-sshd/src/main/java/gold/debug/windowstolinux/shared/linux/sshd/build/ecosystem",
                 "src/shared/linux-sshd/src/main/java/gold/debug/windowstolinux/shared/linux/sshd/build/ecosystem/java",
                 "src/shared/linux-sshd/src/main/java/gold/debug/windowstolinux/shared/linux/sshd/build/ecosystem/kotlin",
@@ -310,7 +407,7 @@ class PackageStructureArchitectureTest {
                 "src/shared/linux-sshd/src/main/java/gold/debug/windowstolinux/shared/linux/sshd/build/ecosystem/php",
                 "src/shared/linux-sshd/src/main/java/gold/debug/windowstolinux/shared/linux/sshd/build/ecosystem/python",
                 "src/shared/linux-sshd/src/main/java/gold/debug/windowstolinux/shared/linux/sshd/build/ecosystem/ruby",
-                "src/shared/linux-sshd/src/main/java/gold/debug/windowstolinux/shared/linux/sshd/build/registry",
+                "src/shared/linux-sshd/src/main/java/gold/debug/windowstolinux/shared/linux/sshd/build/extension/registry",
                 "src/shared/linux-sshd/src/main/java/gold/debug/windowstolinux/shared/linux/sshd/build/workload",
                 "src/shared/linux-sshd/src/main/java/gold/debug/windowstolinux/shared/linux/sshd/capability/ecosystem",
                 "src/shared/analyze/src/main/java/gold/debug/windowstolinux/shared/analyze/preview",
@@ -340,9 +437,11 @@ class PackageStructureArchitectureTest {
                 "src/shared/ai/src/main/java/gold/debug/windowstolinux/shared/ai/transport",
                 "src/shared/linux-sshd/src/main/java/gold/debug/windowstolinux/shared/linux/sshd/distro/apt",
                 "src/shared/linux-sshd/src/main/java/gold/debug/windowstolinux/shared/linux/sshd/distro/dnf",
-                "src/shared/linux-sshd/src/main/java/gold/debug/windowstolinux/shared/linux/sshd/distro/profile",
-                "src/shared/linux-sshd/src/main/java/gold/debug/windowstolinux/shared/linux/sshd/distro/registry",
-                "src/shared/linux-sshd/src/main/java/gold/debug/windowstolinux/shared/linux/sshd/distro/script",
+                "src/shared/linux-sshd/src/main/java/gold/debug/windowstolinux/shared/linux/sshd/distro/contract/profile",
+                "src/shared/linux-sshd/src/main/java/gold/debug/windowstolinux/shared/linux/sshd/distro/extension/registry",
+                "src/shared/linux-sshd/src/main/java/gold/debug/windowstolinux/shared/linux/sshd/distro/generation/script",
+                "src/shared/linux-sshd/src/main/java/gold/debug/windowstolinux/shared/linux/sshd/execution/protocol",
+                "src/shared/linux-sshd/src/main/java/gold/debug/windowstolinux/shared/linux/sshd/execution/transfer",
                 "src/shared/deploy/src/main/java/gold/debug/windowstolinux/shared/deploy/support",
                 "src/shared/deploy/src/main/java/gold/debug/windowstolinux/shared/deploy/support/distro",
                 "src/shared/deploy/src/main/java/gold/debug/windowstolinux/shared/deploy/support/runtime",
@@ -350,10 +449,10 @@ class PackageStructureArchitectureTest {
             assertTrue(Files.isDirectory(root.resolve(required)), () -> "current responsibility package is missing: " + required);
         }
         assertTrue(Files.isDirectory(root.resolve(
-                "src/shared/linux-sshd/src/main/resources/gold/debug/windowstolinux/shared/linux/sshd/protocol/helper/fragments/ecosystem")),
+                "src/shared/linux-sshd/src/main/resources/gold/debug/windowstolinux/shared/linux/sshd/execution/protocol/helper/fragments/ecosystem")),
                 "helper ecosystem resource group is missing");
         assertFalse(Files.exists(root.resolve(
-                "src/shared/linux-sshd/src/main/resources/gold/debug/windowstolinux/shared/linux/sshd/protocol/helper/fragments/runtime/35-ecosystem-dispatch.sh")),
+                "src/shared/linux-sshd/src/main/resources/gold/debug/windowstolinux/shared/linux/sshd/execution/protocol/helper/fragments/runtime/35-ecosystem-dispatch.sh")),
                 "old helper ecosystem resource path returned");
     }
 
@@ -388,12 +487,12 @@ class PackageStructureArchitectureTest {
                 "ManagedMultiComponentApplication", "MultiComponentReviewInput", "ReviewedComponentApplication",
                 "ReviewedMultiComponentApplication");
 
-        register(packages, "gold.debug.windowstolinux.shared.deploy.result.compatibility",
+        register(packages, "gold.debug.windowstolinux.shared.deploy.contract.result.compatibility",
                 "HostSupportStatus", "HostSupportDecision");
-        register(packages, "gold.debug.windowstolinux.shared.deploy.result.deployment",
+        register(packages, "gold.debug.windowstolinux.shared.deploy.contract.result.deployment",
                 "ComponentDeploymentResult", "ComponentTransactionState", "DeploymentEvent", "DeploymentResult",
                 "MultiComponentDeploymentResult");
-        register(packages, "gold.debug.windowstolinux.shared.deploy.result.lifecycle",
+        register(packages, "gold.debug.windowstolinux.shared.deploy.contract.result.lifecycle",
                 "ComponentLifecycleResult", "LifecycleActionResult", "MultiComponentLifecycleResult");
 
         register(packages, "gold.debug.windowstolinux.shared.model.language",
@@ -694,9 +793,7 @@ class PackageStructureArchitectureTest {
         List<String> problems = new ArrayList<>();
         model.packages.values().forEach(info -> {
             if (info.depth > 3) problems.add(info.name + " is deeper than three package levels");
-            if (info.depth == 3 && !isApprovedDepthThreePackage(info.name)) {
-                problems.add(info.name + " is an unapproved depth-three package");
-            }
+            verifyFunctionalGroupPackage(info.name, problems);
             Set<String> segments = Set.of(info.name.split("\\."));
             Set<String> forbidden = new HashSet<>(segments);
             forbidden.retainAll(FORBIDDEN_PACKAGE_SEGMENTS);
@@ -724,6 +821,20 @@ class PackageStructureArchitectureTest {
                 }
             }
         });
+        Path projectRootPath = projectRoot();
+        try (Stream<Path> directories = Files.walk(projectRootPath.resolve("src"))) {
+            for (Path directory : directories.filter(Files::isDirectory).toList()) {
+                String normalized = projectRootPath.relativize(directory).toString()
+                        .replace(java.io.File.separatorChar, '/');
+                if (!normalized.contains("/src/main/java/") && !normalized.contains("/src/test/java/")) continue;
+                for (String prefix : MIGRATED_PACKAGE_PREFIXES) {
+                    String oldPath = "/" + prefix.replace('.', '/');
+                    if (normalized.endsWith(oldPath) || normalized.contains(oldPath + "/")) {
+                        problems.add(directory + " retains migrated package path " + prefix);
+                    }
+                }
+            }
+        }
         for (SourceUnit unit : model.units) {
             String fileName = unit.path.getFileName().toString();
             Path physicalPath = sourceRoot(unit.path, "main")
@@ -763,18 +874,43 @@ class PackageStructureArchitectureTest {
         assertTrue(problems.isEmpty(), () -> "package structure violations: " + problems);
     }
 
-    private static boolean isApprovedDepthThreePackage(String packageName) {
-        String analyzeRoot = "gold.debug.windowstolinux.shared.analyze.ecosystem.";
-        if (packageName.startsWith(analyzeRoot)) {
-            String[] classification = packageName.substring(analyzeRoot.length()).split("\\.");
-            return classification.length == 2
-                    && ECOSYSTEM_CLASSIFICATION_PACKAGES.contains(classification[0])
-                    && BUILD_ARCHITECTURE_PACKAGE_NAMES.contains(classification[1]);
+    private static void verifyFunctionalGroupPackage(String packageName, List<String> problems) {
+        String[] segments = packageName.split("\\.");
+        for (int index = 0; index < segments.length; index++) {
+            Set<String> allowedResponsibilities = FUNCTIONAL_GROUP_RESPONSIBILITIES.get(segments[index]);
+            if (allowedResponsibilities != null && index + 1 < segments.length
+                    && !allowedResponsibilities.contains(segments[index + 1])) {
+                problems.add(packageName + " places " + segments[index + 1]
+                        + " directly below functional group " + segments[index]);
+            }
+            String expectedGroup = RESPONSIBILITY_FUNCTIONAL_GROUPS.get(segments[index]);
+            boolean hasFunctionalGroupAncestor = false;
+            for (int ancestor = 0; ancestor < index; ancestor++) {
+                if (FUNCTIONAL_GROUP_RESPONSIBILITIES.containsKey(segments[ancestor])) {
+                    hasFunctionalGroupAncestor = true;
+                    break;
+                }
+            }
+            if (expectedGroup != null && (index == 0 || !expectedGroup.equals(segments[index - 1]))
+                    && !hasFunctionalGroupAncestor
+                    && !isUngroupedResponsibilityException(packageName)) {
+                problems.add(packageName + " leaves responsibility " + segments[index]
+                        + " outside functional group " + expectedGroup);
+            }
         }
-        return isSingleLanguageGroup(packageName,
-                "gold.debug.windowstolinux.shared.linux.sshd.build.ecosystem.")
-                || isSingleLanguageGroup(packageName,
-                "gold.debug.windowstolinux.shared.linux.sshd.capability.ecosystem.");
+    }
+
+    private static boolean isUngroupedResponsibilityException(String packageName) {
+        String remoteContractRoot = "gold.debug.windowstolinux.shared.linux";
+        String sshdImplementationRoot = remoteContractRoot + ".sshd";
+        if (packageName.equals(remoteContractRoot)
+                || packageName.startsWith(remoteContractRoot + ".")
+                && !packageName.equals(sshdImplementationRoot)
+                && !packageName.startsWith(sshdImplementationRoot + ".")) {
+            return true;
+        }
+        return UNGROUPED_RESPONSIBILITY_EXCEPTIONS.stream()
+                .anyMatch(prefix -> packageName.equals(prefix) || packageName.startsWith(prefix + "."));
     }
 
     private static void verifyExecutionEcosystemAxis(String packageName, String root, List<String> problems) {
@@ -783,12 +919,6 @@ class PackageStructureArchitectureTest {
         if (classification.contains(".") || !ECOSYSTEM_CLASSIFICATION_PACKAGES.contains(classification)) {
             problems.add(packageName + " creates an unapproved ecosystem execution axis");
         }
-    }
-
-    private static boolean isSingleLanguageGroup(String packageName, String root) {
-        if (!packageName.startsWith(root)) return false;
-        String classification = packageName.substring(root.length());
-        return !classification.contains(".") && ECOSYSTEM_CLASSIFICATION_PACKAGES.contains(classification);
     }
 
     @Test
