@@ -38,6 +38,7 @@ public final class DesktopFrame extends JFrame {
     private static final String PAGE_DEPLOYMENT = "deployment";
     private static final String PAGE_COMPONENTS = "components";
     private static final String PAGE_APPLICATIONS = "applications";
+    private static final String PAGE_BACKUP = "backup";
     private static final String PAGE_SERVERS = "servers";
     private static final String PAGE_AI = "ai";
     private static final String PAGE_SETTINGS = "settings";
@@ -170,6 +171,8 @@ public final class DesktopFrame extends JFrame {
         sidebar.add(Box.createVerticalStrut(6));
         sidebar.add(navigationButton(PAGE_APPLICATIONS, "nav.applications", "page.applications.description"));
         sidebar.add(Box.createVerticalStrut(6));
+        sidebar.add(navigationButton(PAGE_BACKUP, "nav.backup", "page.backup.description"));
+        sidebar.add(Box.createVerticalStrut(6));
         sidebar.add(navigationButton(PAGE_SERVERS, "nav.servers", "page.servers.description"));
         sidebar.add(Box.createVerticalStrut(6));
         sidebar.add(navigationButton(PAGE_AI, "nav.ai", "page.ai.description"));
@@ -208,6 +211,7 @@ public final class DesktopFrame extends JFrame {
         pages.add(pageCoordinator.deploymentPanel(), PAGE_DEPLOYMENT);
         pages.add(pageCoordinator.multiComponentPanel(), PAGE_COMPONENTS);
         pages.add(pageCoordinator.managedApplicationsPanel(), PAGE_APPLICATIONS);
+        pages.add(pageCoordinator.backupPanel(), PAGE_BACKUP);
         pages.add(pageCoordinator.serverPanel(), PAGE_SERVERS);
         pages.add(pageCoordinator.aiPanel(), PAGE_AI);
         pages.add(pageCoordinator.settingsPanel(), PAGE_SETTINGS);

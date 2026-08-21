@@ -1,6 +1,7 @@
 package gold.debug.windowstolinux.app.ui.shell;
 
 import gold.debug.windowstolinux.app.ui.ai.AiPageState;
+import gold.debug.windowstolinux.app.ui.backup.BackupPageState;
 import gold.debug.windowstolinux.app.ui.display.DesktopDisplayConfiguration;
 import gold.debug.windowstolinux.app.ui.display.ThemeMode;
 import gold.debug.windowstolinux.app.ui.display.ThemePalette;
@@ -41,6 +42,7 @@ class DesktopLanguageSwitchStateTest {
                         "ssh-secret".toCharArray(), CredentialStorageMode.MASTER_PASSWORD,
                         "master-secret".toCharArray(), "server diagnostic"),
                 new ManagedPageState("demo", "lifecycle diagnostic"),
+                new BackupPageState("C:\\backups\\demo.zip", "backup diagnostic"),
                 new AiPageState("https://example.test/v1/chat/completions", "model-x", "analysis",
                         AiCollaborationRoleKind.PROJECT_ANALYSIS,
                         "api-secret".toCharArray(), CredentialStorageMode.WINDOWS_CREDENTIAL_MANAGER,
@@ -78,6 +80,8 @@ class DesktopLanguageSwitchStateTest {
             assertEquals("server diagnostic", chineseState.server().output());
             assertEquals("demo", chineseState.managed().applicationId());
             assertEquals("lifecycle diagnostic", chineseState.managed().output());
+            assertEquals("C:\\backups\\demo.zip", chineseState.backup().archivePath());
+            assertEquals("backup diagnostic", chineseState.backup().output());
             assertEquals("model-x", chineseState.ai().model());
             assertEquals("analysis", chineseState.ai().providerId());
             assertEquals(AiCollaborationRoleKind.PROJECT_ANALYSIS, chineseState.ai().role());

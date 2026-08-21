@@ -2,8 +2,8 @@
 
 ## 文档信息
 
-- 文档版本：`3.33.0-typed-restore-staging`
-- 文档状态：**28-POM 模块边界保持不变；备份 schema v3 已封闭保存类型化组件运行时、依赖和两级健康门，Linux/SSHD 已接通摘要候选下的精确成员 SFTP 暂存与独立回读；候选端口隔离、解密秘密交接、deploy 激活/切换、桌面维护平台接线及产品入口实机证据仍在开发并标记 `RUNTIME-PENDING`**
+- 文档版本：`3.34.0-desktop-backup-entry`
+- 文档状态：**28-POM 模块边界保持不变；桌面已按六个窄门面接入版本化备份完整校验和隔离本地候选准备，且不会连接服务器或激活候选；候选端口隔离、解密秘密交接、deploy 激活/切换、桌面维护平台接线及产品入口实机证据仍在开发并标记 `RUNTIME-PENDING`**
 - 已确认范围：`shared` 共用模块、`app` Windows 桌面应用模块、`web` Web 应用模块
 - 已确认能力边界：受管应用生命周期复用既有模块，不新增独立 Maven 模块
 - 更新日期：2026-08-22
@@ -47,8 +47,9 @@ WindowsToLinux/
    │  │  └─ crypto/           Argon2id、AES-GCM 和密钥处理
    │  ├─ service/             桌面业务流程整合
    │  │  ├─ ai/               AI 配置与分析用例
+   │  │  ├─ backup/           本地备份校验与隔离恢复候选准备用例
    │  │  ├─ config/           配置快照与秘密修订用例
-   │  │  ├─ contract/         UI 按功能依赖的五个窄应用门面
+   │  │  ├─ contract/         UI 按功能依赖的六个窄应用门面
    │  │  ├─ deployment/       部署用例入口与共享受管身份解析
    │  │  │  ├─ multi/         多组件审阅、拓扑和受管应用数据契约
    │  │  │  └─ single/        单组件部署结果与安全交接数据契约
@@ -61,7 +62,8 @@ WindowsToLinux/
    │  │  └─ source/           源码准备用例
    │  ├─ ui/                  桌面界面与用户交互
    │  │  ├─ ai/               AI 配置和解释结果界面
-   │  │  ├─ display/       主题、外观和系统偏好
+   │  │  ├─ backup/           备份校验和本地候选准备入口
+   │  │  ├─ display/          主题、外观和系统偏好
    │  │  ├─ component/        可复用的桌面界面组件
    │  │  ├─ deployment/       共享审阅上下文与类型化输入解析
    │  │  │  ├─ multi/         多组件编辑、状态、页面和结果呈现
@@ -810,7 +812,7 @@ UPPER_SNAKE_CASE
 
 桌面端所有加密、解密、密钥派生、密钥包装、敏感信息存取和 Windows Credential Manager 调用都必须位于 `secret`。`windows` 只处理非敏感的 Windows 本地能力；不得为了平台调用方便把任何安全实现放入 `windows`。
 
-桌面调用方向固定为 `UI → app/service/contract → 窄用例 → shared 领域/契约`。`AiApplicationFacade`、`DeploymentApplicationFacade`、`MultiComponentApplicationFacade`、`ServerApplicationFacade` 和 `ManagedApplicationFacade` 隔离页面所需能力；`DesktopApplicationFacade` 作为稳定门面和组合根实现这些门面，只转发到窄用例，不承载业务算法。
+桌面调用方向固定为 `UI → app/service/contract → 窄用例 → shared 领域/契约`。`AiApplicationFacade`、`BackupApplicationFacade`、`DeploymentApplicationFacade`、`MultiComponentApplicationFacade`、`ServerApplicationFacade` 和 `ManagedApplicationFacade` 隔离页面所需能力；`DesktopApplicationFacade` 作为稳定门面和组合根实现这些门面，只转发到窄用例，不承载业务算法。
 
 ### 3.3 `web` Web 应用模块
 
@@ -1235,6 +1237,7 @@ linux-sshd 通过 linux 契约采集服务器已有环境
 
 | 版本 | 日期 | 说明 |
 | --- | --- | --- |
+| 3.34.0-desktop-backup-entry | 2026-08-22 | 在最新版结构权威内新增 `app/service.backup`、第六个 UI 窄门面、`app/ui.backup` 和 Windows 恢复工作区边界；桌面可完整校验版本化归档，或重新校验后提取到摘要绑定且从未激活的本地候选。该入口不连接服务器、不修改当前发布，候选激活和真实环境证据仍为 `RUNTIME-PENDING`。 |
 | 3.33.0-typed-restore-staging | 2026-08-22 | 将备份清单升级为 schema v3，以封闭类型保存全部 14 种已审阅运行时、组件依赖、归档定义引用、组件健康和整应用健康门，并要求引用与精确归档成员一致；新增 `backup → deploy → linux → linux-sshd` 单向候选暂存链，SSHD 在摘要派生隔离目录上传后通过 SFTP 独立回读每个成员，失败独立尝试 deploy 恢复和候选清理。当前只完成文件暂存与接缝，候选无冲突端口、解密秘密交接、实际激活/切换及真实主机证据继续为 `RUNTIME-PENDING`。 |
 | 3.32.0-desktop-update-uninstall-core | 2026-08-22 | 在 `app/windows.update` 实现严格版本、架构、有效期、撤销及 Ed25519 固定信任策略验证，并以独立更新器交接、程序/SQLite 成对备份、迁移、健康和成对回滚状态机封闭更新；在 `app/windows.uninstall` 实现无默认选择、jpackage/标记/凭据命名空间预检、保留或删除数据分支和精确残留结果。当前为平台安全核心，未嵌入任何测试公钥；生产发布公钥、独立 jpackage 更新器、Credential Manager 和桌面入口仍待接线。 |
 | 3.31.0-offline-migration-core | 2026-08-22 | 新增离线迁移窄请求、平台证据端口和故障关闭状态机：目标预检与两副本空间先于写入，初始同步后必须获得明确停写窗口批准并验证无活跃写入，再执行摘要绑定的最终同步及目标候选两级健康。成功只返回“等待人工外部流量切换”，不调用切流且始终保留源端；失败区分纯前置拒绝、已清理目标修改、已恢复源端和人工恢复。当前只证明平台无关编排，具体双端远程端口与产品入口仍为 `RUNTIME-PENDING`。 |

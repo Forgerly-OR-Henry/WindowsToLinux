@@ -2,6 +2,7 @@ package gold.debug.windowstolinux.app.ui.shell;
 
 import gold.debug.windowstolinux.app.service.DesktopApplicationFacade;
 import gold.debug.windowstolinux.app.ui.ai.AiPage;
+import gold.debug.windowstolinux.app.ui.backup.BackupPage;
 import gold.debug.windowstolinux.app.ui.display.DesktopDisplayConfiguration;
 import gold.debug.windowstolinux.app.ui.shell.DesktopDisplayChangeHandler;
 import gold.debug.windowstolinux.app.ui.component.DesktopComponentFactory;
@@ -27,6 +28,7 @@ final class DesktopPageCoordinator {
     private final MultiComponentPage multiComponent;
     private final ServerPage server;
     private final ManagedPage managed;
+    private final BackupPage backup;
     private final AiPage ai;
     private final SettingPage settings;
     private String currentPage = "deployment";
@@ -46,6 +48,7 @@ final class DesktopPageCoordinator {
         PageMessagePresenter messages = new PageMessagePresenter(catalog, reports);
         server = new ServerPage(owner, service, components, messages);
         managed = new ManagedPage(service, server, components, messages);
+        backup = new BackupPage(owner, service, components, messages);
         deployment = new DeploymentPage(owner, service, server, components, messages,
                 () -> navigator.show("servers", "nav.servers", "page.servers.description"), managed::selectApplication);
         multiComponent = new MultiComponentPage(owner, service, server, components, messages,
@@ -58,6 +61,7 @@ final class DesktopPageCoordinator {
     JPanel deploymentPanel() { return deployment.panel(); }
     JPanel multiComponentPanel() { return multiComponent.panel(); }
     JPanel managedApplicationsPanel() { return managed.panel(); }
+    JPanel backupPanel() { return backup.panel(); }
     JPanel serverPanel() { return server.panel(); }
     JPanel aiPanel() { return ai.panel(); }
     JPanel settingsPanel() { return settings.panel(); }
@@ -66,7 +70,8 @@ final class DesktopPageCoordinator {
 
     DesktopViewState captureViewState() {
         return new DesktopViewState(currentPage, deployment.captureState(), multiComponent.captureState(),
-                server.captureState(), managed.captureState(), ai.captureState(), settings.captureState());
+                server.captureState(), managed.captureState(), backup.captureState(), ai.captureState(),
+                settings.captureState());
     }
 
     void restoreViewState(DesktopViewState state) {
@@ -74,6 +79,7 @@ final class DesktopPageCoordinator {
         multiComponent.restoreState(state.multiComponent());
         server.restoreState(state.server());
         managed.restoreState(state.managed());
+        backup.restoreState(state.backup());
         ai.restoreState(state.ai());
         settings.restoreState(state.settings());
         navigator.show(state.page(), "nav." + state.page(), "page." + state.page() + ".description");

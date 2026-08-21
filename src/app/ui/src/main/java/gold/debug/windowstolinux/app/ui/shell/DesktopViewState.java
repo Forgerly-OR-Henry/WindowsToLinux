@@ -1,6 +1,7 @@
 package gold.debug.windowstolinux.app.ui.shell;
 
 import gold.debug.windowstolinux.app.ui.ai.AiPageState;
+import gold.debug.windowstolinux.app.ui.backup.BackupPageState;
 import gold.debug.windowstolinux.app.ui.deployment.single.DeploymentPageState;
 import gold.debug.windowstolinux.app.ui.deployment.multi.MultiComponentPageState;
 import gold.debug.windowstolinux.app.ui.managed.ManagedPageState;
@@ -19,6 +20,7 @@ import java.util.Objects;
  * @param multiComponent the multi-component application page state / 多组件应用页面状态
  * @param server the {@code server} value / {@code server} 值
  * @param managed the {@code managed} value / {@code managed} 值
+ * @param backup the local backup page state / 本地备份页面状态
  * @param ai the {@code ai} value / {@code ai} 值
  * @param settings the {@code settings} value / {@code settings} 值
  */
@@ -28,6 +30,7 @@ public record DesktopViewState(
         MultiComponentPageState multiComponent,
         ServerPageState server,
         ManagedPageState managed,
+        BackupPageState backup,
         AiPageState ai,
         SettingPageState settings
 ) implements AutoCloseable {
@@ -41,6 +44,7 @@ public record DesktopViewState(
      * @param multiComponent the multi-component application page state / 多组件应用页面状态
      * @param server the {@code server} value / {@code server} 值
      * @param managed the {@code managed} value / {@code managed} 值
+     * @param backup the local backup page state / 本地备份页面状态
      * @param ai the {@code ai} value / {@code ai} 值
      * @param settings the {@code settings} value / {@code settings} 值
      * @throws NullPointerException if a required argument is {@code null} / 必要参数为 {@code null} 时
@@ -51,6 +55,7 @@ public record DesktopViewState(
         Objects.requireNonNull(multiComponent, "multiComponent");
         Objects.requireNonNull(server, "server");
         Objects.requireNonNull(managed, "managed");
+        Objects.requireNonNull(backup, "backup");
         Objects.requireNonNull(ai, "ai");
         Objects.requireNonNull(settings, "settings");
     }

@@ -75,10 +75,15 @@ src/  # 项目源码与模块根目录
 │  │  │  ├─ AiRoleAssignment.java  # 从一个固定 AI 角色到一个命名提供者的类型化非秘密映射
 │  │  │  ├─ AiUseCaseFacade.java  # 编排 AI Provider、角色绑定、结构化分析与解释用例
 │  │  │  └─ ReadOnlyDeploymentAgentFacade.java  # 完整的可选 Agent 工具表面：仅有有界静态分析和确定性计划渲染
+│  │  ├─ backup/  # 本地备份校验与隔离候选准备用例包
+│  │  │  ├─ BackupArchiveInspection.java  # 完整校验后可供界面展示的安全备份摘要
+│  │  │  ├─ BackupUseCase.java  # 重新校验并在平台工作区创建从未激活的本地候选
+│  │  │  └─ PreparedBackupCandidate.java  # 将候选目录及提取字节绑定到已校验归档身份
 │  │  ├─ config/  # 部署配置与秘密修订用例包
 │  │  │  └─ DeploymentConfigurationUseCase.java  # 协调不可变的部署配置和平台秘密引用，且不返回秘密值
-│  │  ├─ contract/  # 桌面页面依赖的五个窄应用门面包
+│  │  ├─ contract/  # 桌面页面依赖的六个窄应用门面包
 │  │  │  ├─ AiApplicationFacade.java  # AI 页面所需的窄应用操作
+│  │  │  ├─ BackupApplicationFacade.java  # 备份页面所需的本地校验与候选准备操作
 │  │  │  ├─ DeploymentApplicationFacade.java  # 单组件部署所需的窄应用操作
 │  │  │  ├─ ManagedApplicationFacade.java  # 受管应用页面所需的窄应用操作
 │  │  │  ├─ MultiComponentApplicationFacade.java  # 整应用部署与生命周期所需的窄应用操作
@@ -96,7 +101,7 @@ src/  # 项目源码与模块根目录
 │  │  │  └─ single/  # 单组件部署结果与交接契约包
 │  │  │     ├─ DeploymentHandoff.java  # 仅在部署成功后可用的无秘密结构化后续步骤
 │  │  │     └─ DeploymentOutcome.java  # 由桌面界面呈现的无秘密部署摘要
-│  │  ├─ DesktopApplicationFacade.java  # 统一暴露桌面端服务器、源码、部署、生命周期和 AI 用例门面
+│  │  ├─ DesktopApplicationFacade.java  # 统一暴露桌面端服务器、源码、部署、生命周期、备份和 AI 用例门面
 │  │  ├─ execution/  # 桌面执行流程功能组
 │  │  │  ├─ environment/  # 目标主机环境准备用例包
 │  │  │  │  └─ EnvironmentSetupUseCase.java  # 编排目标主机环境检查、审阅与受管准备流程
@@ -123,6 +128,9 @@ src/  # 项目源码与模块根目录
 │  │  ├─ ai/  # AI 配置与解释结果页面包
 │  │  │  ├─ AiPage.java  # 持有可选 AI 表单、临时秘密、状态与解释流程
 │  │  │  └─ AiPageState.java  # 保存桌面外观重建期间尚未提交的 AI 页面状态
+│  │  ├─ backup/  # 备份校验与本地候选准备页面包
+│  │  │  ├─ BackupPage.java  # 选择归档、后台完整校验并准备从未激活的隔离本地候选
+│  │  │  └─ BackupPageState.java  # 保存外观重建期间的归档路径和结果文本
 │  │  ├─ component/  # 可复用桌面组件包
 │  │  │  ├─ DesktopComponentFactory.java  # 创建桌面页面复用的按钮、表单和布局组件
 │  │  │  └─ DesktopTaskExecutor.java  # 运行后台操作并将完成结果返回 Swing 事件线程
@@ -208,6 +216,8 @@ src/  # 项目源码与模块根目录
 │     │  └─ DesktopUpdateVerifier.java  # 流式摘要及固定发布信任验证器
 │     ├─ workspace/  # 本地源码工作区与归档边界包
 │     │  ├─ PreparedSourceArchive.java  # 保存已准备源码归档的描述信息与排除条目清单
+│     │  ├─ WindowsRestoreAttempt.java  # 将一次恢复尝试父目录、摘要候选根和候选标识绑定
+│     │  ├─ WindowsRestoreWorkspace.java  # 只创建或清理平台工作区下的摘要绑定恢复尝试
 │     │  ├─ WindowsSourcePreparer.java  # 准备平台无关源码归档的 Windows 桌面入口
 │     │  ├─ WindowsWorkspaceException.java  # Windows 工作区预检失败的结构化异常
 │     │  └─ WindowsWorkspaceFailureType.java  # Windows 路径、权限、容量与链接失败目录

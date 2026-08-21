@@ -23,6 +23,7 @@ import gold.debug.windowstolinux.app.service.execution.lifecycle.LifecycleOutcom
 import gold.debug.windowstolinux.app.service.execution.lifecycle.LifecycleUseCase;
 import gold.debug.windowstolinux.app.service.execution.lifecycle.ManagedApplicationSnapshot;
 import gold.debug.windowstolinux.app.service.contract.AiApplicationFacade;
+import gold.debug.windowstolinux.app.service.contract.BackupApplicationFacade;
 import gold.debug.windowstolinux.app.service.contract.DeploymentApplicationFacade;
 import gold.debug.windowstolinux.app.service.contract.ManagedApplicationFacade;
 import gold.debug.windowstolinux.app.service.contract.MultiComponentApplicationFacade;
@@ -33,6 +34,9 @@ import gold.debug.windowstolinux.app.service.server.ServerUseCaseFacade;
 import gold.debug.windowstolinux.app.service.source.ReviewedSourcePreparation;
 import gold.debug.windowstolinux.app.service.source.SourcePreparationUseCase;
 import gold.debug.windowstolinux.app.service.source.PreparedMultiComponentSource;
+import gold.debug.windowstolinux.app.service.backup.BackupArchiveInspection;
+import gold.debug.windowstolinux.app.service.backup.BackupUseCase;
+import gold.debug.windowstolinux.app.service.backup.PreparedBackupCandidate;
 import gold.debug.windowstolinux.app.db.entity.StoredApplicationSecretRevision;
 import gold.debug.windowstolinux.shared.config.revision.ConfigurationSnapshot;
 import gold.debug.windowstolinux.shared.config.secretref.SecretReference;
@@ -86,7 +90,7 @@ import java.util.Set;
  * <p>稳定的桌面门面。各包专属用例持有全部实现细节。
  */
 public final class DesktopApplicationFacade implements AiApplicationFacade, DeploymentApplicationFacade,
-        MultiComponentApplicationFacade, ServerApplicationFacade, ManagedApplicationFacade {
+        MultiComponentApplicationFacade, ServerApplicationFacade, ManagedApplicationFacade, BackupApplicationFacade {
     private final SourcePreparationUseCase source;
     private final ServerUseCaseFacade servers;
     private final AiUseCaseFacade ai;
@@ -97,6 +101,7 @@ public final class DesktopApplicationFacade implements AiApplicationFacade, Depl
     private final MultiComponentDeploymentUseCase multiComponentDeployment;
     private final MultiComponentLifecycleUseCase multiComponentLifecycle;
     private final LifecycleUseCase lifecycle;
+    private final BackupUseCase backup;
 
     /**
      * Creates a {@code DesktopApplicationFacade} instance.
@@ -130,6 +135,19 @@ public final class DesktopApplicationFacade implements AiApplicationFacade, Depl
         this.multiComponentLifecycle = new MultiComponentLifecycleUseCase(persistence.managedApplications(),
                 persistence.managedApplicationGraphs(), new MultiComponentLifecycleService(), linuxGateway, servers, locks);
         this.lifecycle = new LifecycleUseCase(persistence.managedApplications(), linuxGateway, servers, locks);
+        this.backup = new BackupUseCase(workDirectory);
+    }
+
+    /** Validates one selected backup locally without extraction or remote access. / 在本地校验一个已选备份且不提取、不访问远端。 */
+    @Override
+    public BackupArchiveInspection inspectBackup(Path archive) throws IOException {
+        return backup.inspect(archive);
+    }
+
+    /** Extracts one new local restore candidate without activating it. / 提取一个新的本地恢复候选且不激活。 */
+    @Override
+    public PreparedBackupCandidate prepareBackupCandidate(Path archive) throws IOException {
+        return backup.prepare(archive);
     }
 
     /**

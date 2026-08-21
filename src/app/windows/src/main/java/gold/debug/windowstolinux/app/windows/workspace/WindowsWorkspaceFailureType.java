@@ -10,7 +10,8 @@ public enum WindowsWorkspaceFailureType implements FailureDefinition {
     DIRECTORY_NOT_WRITABLE("windows.workspace.not-writable", "workspace", "windows.error.workspaceNotWritable", FailureRecoveryAction.REQUEST_USER_CORRECTION),
     CAPACITY_INSUFFICIENT("windows.workspace.capacity-insufficient", "workspace", "windows.error.workspaceCapacityInsufficient", FailureRecoveryAction.REQUEST_USER_CORRECTION),
     APPLICATION_ID_INVALID("windows.workspace.application-id-invalid", "validation", "windows.error.applicationIdInvalid", FailureRecoveryAction.REQUEST_USER_CORRECTION),
-    ARCHIVE_FAILED("windows.workspace.archive-failed", "archive", "windows.error.archiveFailed", FailureRecoveryAction.CLEANUP);
+    ARCHIVE_FAILED("windows.workspace.archive-failed", "archive", "windows.error.archiveFailed", FailureRecoveryAction.CLEANUP),
+    RESTORE_WORKSPACE_FAILED("windows.workspace.restore-failed", "restore", "windows.error.restoreWorkspaceFailed", FailureRecoveryAction.CLEANUP);
 
     private final String code;
     private final String phase;
