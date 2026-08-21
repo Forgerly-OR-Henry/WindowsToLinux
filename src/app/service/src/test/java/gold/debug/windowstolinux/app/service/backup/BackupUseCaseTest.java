@@ -99,13 +99,16 @@ class BackupUseCaseTest {
         Path archive = archive(content, envelope, List.of("database-password"), "with-secret");
         char[] restorePassword = "independent backup password".toCharArray();
 
+        ResolvedSecretRevision restored;
         try (PreparedBackupSecrets prepared = new BackupUseCase(temporary.resolve("secret-work"))
                 .prepareWithSecrets(archive, restorePassword)) {
             assertEquals(List.of(new SecretReference("database-password", 4)),
                     prepared.secrets().revisions().stream().map(ResolvedSecretRevision::reference).toList());
             assertTrue(Files.isRegularFile(prepared.candidate().candidateRoot().resolve("secrets.enc")));
+            restored = prepared.secrets().revisions().getFirst();
         }
         assertTrue(allCleared(restorePassword));
+        assertTrue(allCleared(restored.copyValue()));
     }
 
     @Test
@@ -184,6 +187,11 @@ class BackupUseCaseTest {
 
     private static boolean allCleared(char[] value) {
         for (char character : value) if (character != '\0') return false;
+        return true;
+    }
+
+    private static boolean allCleared(byte[] value) {
+        for (byte current : value) if (current != 0) return false;
         return true;
     }
 }

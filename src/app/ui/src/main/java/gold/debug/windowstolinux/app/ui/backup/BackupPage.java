@@ -3,6 +3,7 @@ package gold.debug.windowstolinux.app.ui.backup;
 import gold.debug.windowstolinux.app.service.backup.BackupArchiveInspection;
 import gold.debug.windowstolinux.app.service.backup.ManagedBackupInputAssessment;
 import gold.debug.windowstolinux.app.service.backup.PreparedBackupCandidate;
+import gold.debug.windowstolinux.app.service.backup.PreparedBackupSecrets;
 import gold.debug.windowstolinux.app.service.contract.BackupApplicationFacade;
 import gold.debug.windowstolinux.app.ui.component.DesktopComponentFactory;
 import gold.debug.windowstolinux.app.ui.component.DesktopTaskExecutor;
@@ -12,6 +13,7 @@ import javax.swing.JButton;
 import javax.swing.JFileChooser;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
+import javax.swing.JPasswordField;
 import javax.swing.JTextArea;
 import javax.swing.JTextField;
 import java.awt.BorderLayout;
@@ -20,6 +22,7 @@ import java.awt.FlowLayout;
 import java.awt.GridLayout;
 import java.nio.file.InvalidPathException;
 import java.nio.file.Path;
+import java.util.Arrays;
 import java.util.Locale;
 import java.util.Map;
 
@@ -30,12 +33,14 @@ public final class BackupPage {
     private final PageMessagePresenter messages;
     private final JTextField applicationId = new JTextField();
     private final JTextField archivePath = new JTextField();
+    private final JPasswordField backupPassword = new JPasswordField();
     private final JTextArea output = DesktopComponentFactory.outputArea();
     private final JPanel panel;
     private JButton inspectButton;
     private JButton prepareButton;
     private JButton discardButton;
     private JButton assessButton;
+    private JButton prepareSecretsButton;
     private PreparedBackupCandidate preparedCandidate;
 
     /** Creates the functional local backup page. / 创建本地备份功能页面。 */
@@ -73,7 +78,7 @@ public final class BackupPage {
         controls.add(components.sectionHeading(messages.text("backup.section.title"),
                 messages.text("backup.section.description")), BorderLayout.NORTH);
 
-        JPanel inputRows = components.transparent(new GridLayout(2, 1, 0, 8));
+        JPanel inputRows = components.transparent(new GridLayout(3, 1, 0, 8));
         JPanel managedInput = components.transparent(new BorderLayout(8, 0));
         managedInput.add(new JLabel(messages.text("backup.field.applicationId")), BorderLayout.WEST);
         managedInput.add(applicationId, BorderLayout.CENTER);
@@ -88,6 +93,11 @@ public final class BackupPage {
         selectButton.addActionListener(event -> selectArchive());
         selection.add(selectButton, BorderLayout.EAST);
         inputRows.add(selection);
+
+        JPanel secretInput = components.transparent(new BorderLayout(8, 0));
+        secretInput.add(new JLabel(messages.text("backup.field.password")), BorderLayout.WEST);
+        secretInput.add(backupPassword, BorderLayout.CENTER);
+        inputRows.add(secretInput);
         controls.add(inputRows, BorderLayout.CENTER);
 
         JPanel actions = components.transparent(new FlowLayout(FlowLayout.LEFT, 8, 0));
@@ -95,10 +105,13 @@ public final class BackupPage {
         inspectButton.addActionListener(event -> inspectSelectedArchive());
         prepareButton = components.primaryButton(messages.text("backup.button.prepare"));
         prepareButton.addActionListener(event -> prepareSelectedArchive());
+        prepareSecretsButton = components.secondaryButton(messages.text("backup.button.prepareSecrets"));
+        prepareSecretsButton.addActionListener(event -> prepareSelectedArchiveWithSecrets());
         discardButton = components.secondaryButton(messages.text("backup.button.discard"));
         discardButton.addActionListener(event -> discardPreparedCandidate());
         actions.add(inspectButton);
         actions.add(prepareButton);
+        actions.add(prepareSecretsButton);
         actions.add(discardButton);
         controls.add(actions, BorderLayout.SOUTH);
         page.add(controls, BorderLayout.NORTH);
@@ -161,6 +174,34 @@ public final class BackupPage {
         DesktopTaskExecutor.run(() -> service.prepareBackupCandidate(selected), candidate -> {
             preparedCandidate = candidate;
             output.setText(formatCandidate(candidate));
+            output.setCaretPosition(0);
+            setBusy(false);
+        }, this::showFailure);
+    }
+
+    private void prepareSelectedArchiveWithSecrets() {
+        Path selected = selectedArchive();
+        if (selected == null) return;
+        char[] password = backupPassword.getPassword();
+        backupPassword.setText("");
+        if (password.length == 0) {
+            Arrays.fill(password, '\0');
+            output.setText(messages.text("backup.secretPasswordRequired"));
+            return;
+        }
+        setBusy(true);
+        output.setText(messages.text("backup.preparingSecrets"));
+        DesktopTaskExecutor.run(() -> {
+            try (PreparedBackupSecrets prepared = service.prepareBackupCandidateWithSecrets(selected, password)) {
+                return new AuthenticatedCandidate(
+                        prepared.candidate(), prepared.secrets().revisions().size());
+            } finally {
+                Arrays.fill(password, '\0');
+            }
+        }, authenticated -> {
+            preparedCandidate = authenticated.candidate();
+            output.setText(formatAuthenticatedCandidate(
+                    authenticated.candidate(), authenticated.secretRevisionCount()));
             output.setCaretPosition(0);
             setBusy(false);
         }, this::showFailure);
@@ -245,6 +286,17 @@ public final class BackupPage {
                 "missing", blockers));
     }
 
+    String formatAuthenticatedCandidate(PreparedBackupCandidate candidate, int secretRevisionCount) {
+        if (secretRevisionCount < 1) {
+            throw new IllegalArgumentException("authenticated secret revision count must be positive");
+        }
+        return messages.text("backup.preparedSecrets", Map.of(
+                "application", candidate.inspection().applicationId(),
+                "path", candidate.candidateRoot(),
+                "count", secretRevisionCount,
+                "sha256", candidate.inspection().archiveSha256()));
+    }
+
     private String missingInput(ManagedBackupInputAssessment.MissingInputType reason) {
         return messages.text("backup.inputs.missing." + reason.name().toLowerCase(Locale.ROOT));
     }
@@ -259,6 +311,14 @@ public final class BackupPage {
         assessButton.setEnabled(!busy);
         inspectButton.setEnabled(!busy);
         prepareButton.setEnabled(!busy && preparedCandidate == null);
+        prepareSecretsButton.setEnabled(!busy && preparedCandidate == null);
+        backupPassword.setEnabled(!busy && preparedCandidate == null);
         discardButton.setEnabled(!busy && preparedCandidate != null);
+    }
+
+    private record AuthenticatedCandidate(
+            PreparedBackupCandidate candidate,
+            int secretRevisionCount
+    ) {
     }
 }
