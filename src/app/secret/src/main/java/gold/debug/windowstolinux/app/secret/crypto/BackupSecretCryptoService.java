@@ -2,6 +2,7 @@ package gold.debug.windowstolinux.app.secret.crypto;
 
 import gold.debug.windowstolinux.shared.backup.format.BackupSecretEnvelope;
 import gold.debug.windowstolinux.shared.backup.format.BackupSecretEnvelopeCodec;
+import gold.debug.windowstolinux.shared.config.secretref.ResolvedSecretRevision;
 import org.bouncycastle.crypto.generators.Argon2BytesGenerator;
 import org.bouncycastle.crypto.params.Argon2Parameters;
 
@@ -13,10 +14,13 @@ import java.nio.charset.StandardCharsets;
 import java.security.GeneralSecurityException;
 import java.security.SecureRandom;
 import java.util.Arrays;
+import java.util.List;
 import java.util.Objects;
 
 /** Stateless backup-password encryption that never retains passwords or derived keys. / 不保留密码或派生密钥的无状态备份密码加密。 */
 public final class BackupSecretCryptoService {
+    /** Maximum accepted encoded {@code secrets.enc} bytes. / 允许的 {@code secrets.enc} 编码字节上限。 */
+    public static final long MAXIMUM_ENVELOPE_BYTES = 64L * 1024 * 1024;
     private static final int MEMORY_KIB = 64 * 1024;
     private static final int ITERATIONS = 3;
     private static final int PARALLELISM = 1;
@@ -26,15 +30,56 @@ public final class BackupSecretCryptoService {
     private static final byte[] ASSOCIATED_CONTENT = "windowstolinux/secrets.enc/1".getBytes(StandardCharsets.UTF_8);
     private final SecureRandom random;
     private final BackupSecretEnvelopeCodec codec;
+    private final BackupSecretDocumentCodec documentCodec;
 
     /** Creates a service backed by the platform secure random source. / 创建由平台安全随机源支持的服务。 */
     public BackupSecretCryptoService() {
-        this(new SecureRandom(), new BackupSecretEnvelopeCodec());
+        this(new SecureRandom(), new BackupSecretEnvelopeCodec(), new BackupSecretDocumentCodec());
     }
 
     BackupSecretCryptoService(SecureRandom random, BackupSecretEnvelopeCodec codec) {
+        this(random, codec, new BackupSecretDocumentCodec());
+    }
+
+    BackupSecretCryptoService(SecureRandom random, BackupSecretEnvelopeCodec codec,
+                              BackupSecretDocumentCodec documentCodec) {
         this.random = Objects.requireNonNull(random, "random");
         this.codec = Objects.requireNonNull(codec, "codec");
+        this.documentCodec = Objects.requireNonNull(documentCodec, "documentCodec");
+    }
+
+    /** Encrypts an exact revision set without materializing secret strings. / 加密精确修订集且不产生秘密字符串。 */
+    public byte[] encryptRevisions(
+            char[] backupPassword,
+            List<ResolvedSecretRevision> revisions
+    ) throws BackupSecretException {
+        byte[] document = null;
+        try {
+            document = documentCodec.write(revisions);
+            return encrypt(backupPassword, document);
+        } catch (BackupSecretException exception) {
+            throw exception;
+        } catch (IOException | RuntimeException exception) {
+            throw BackupSecretException.create(BackupSecretFailureType.ENCRYPT_FAILED,
+                    "backup secret revision encoding failed without persisting plaintext", exception);
+        } finally {
+            clear(document);
+        }
+    }
+
+    /** Authenticates and decodes every revision before returning one clearable document. / 认证并解码全部修订后返回一个可清零文档。 */
+    public BackupSecretDocument decryptRevisions(char[] backupPassword, byte[] envelopeDocument)
+            throws BackupSecretException {
+        byte[] document = decrypt(backupPassword, envelopeDocument);
+        try {
+            return documentCodec.read(document);
+        } catch (IOException | RuntimeException exception) {
+            throw BackupSecretException.create(BackupSecretFailureType.PAYLOAD_INVALID,
+                    "authenticated backup secret revision document is invalid; no partial revisions were returned",
+                    exception);
+        } finally {
+            clear(document);
+        }
     }
 
     /** Encrypts one complete secret document using an independent backup password. / 使用独立备份密码加密一个完整秘密文档。 */

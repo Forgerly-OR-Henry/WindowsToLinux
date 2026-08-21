@@ -8,7 +8,8 @@ import gold.debug.windowstolinux.shared.model.failure.FailureSeverityLevel;
 public enum BackupSecretFailureType implements FailureDefinition {
     PASSWORD_INVALID("secret.backup.password-invalid", "backup", "secret.error.backupPasswordInvalid", FailureRecoveryAction.REQUEST_USER_CORRECTION),
     ENCRYPT_FAILED("secret.backup.encrypt-failed", "backup", "secret.error.backupEncryptFailed", FailureRecoveryAction.RETRY),
-    DECRYPT_FAILED("secret.backup.decrypt-failed", "backup", "secret.error.backupDecryptFailed", FailureRecoveryAction.REQUEST_USER_CORRECTION);
+    DECRYPT_FAILED("secret.backup.decrypt-failed", "backup", "secret.error.backupDecryptFailed", FailureRecoveryAction.REQUEST_USER_CORRECTION),
+    PAYLOAD_INVALID("secret.backup.payload-invalid", "backup", "secret.error.backupPayloadInvalid", FailureRecoveryAction.REQUEST_USER_CORRECTION);
 
     private final String code;
     private final String phase;

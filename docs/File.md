@@ -2,8 +2,8 @@
 
 ## 文档信息
 
-- 文档版本：`3.34.0-desktop-backup-entry`
-- 文档状态：**28-POM 模块边界保持不变；桌面已按六个窄门面接入版本化备份完整校验和隔离本地候选准备，且不会连接服务器或激活候选；候选端口隔离、解密秘密交接、deploy 激活/切换、桌面维护平台接线及产品入口实机证据仍在开发并标记 `RUNTIME-PENDING`**
+- 文档版本：`3.35.0-secret-revision-handoff`
+- 文档状态：**28-POM 模块边界保持不变；`app/secret.crypto` 已严格编码、认证并整体解码 manifest 绑定的秘密修订，service 失败时清零密码、关闭部分修订并清理本次候选；候选端口隔离、deploy 激活/切换、桌面维护平台接线及产品入口实机证据仍在开发并标记 `RUNTIME-PENDING`**
 - 已确认范围：`shared` 共用模块、`app` Windows 桌面应用模块、`web` Web 应用模块
 - 已确认能力边界：受管应用生命周期复用既有模块，不新增独立 Maven 模块
 - 更新日期：2026-08-22
@@ -345,7 +345,7 @@ test/
 - WindowsToLinux 自身构建使用开发机的系统 Maven 和系统本地仓库；项目 POM 不声明仓库位置，不创建项目专用 Maven 仓库，也不新增 Maven Wrapper 作为本项目构建入口。
 - 构建插件确需额外构建期依赖时，在根 POM 对应插件的 `<dependencies>` 中显式声明，供系统 Maven 同步；不得为了补插件缓存而把依赖加入业务叶子模块的运行时 classpath。
 - 第 1 节是正式目标结构。结构迁移必须原子更新包声明、物理路径、导入、测试和门禁；旧包前缀与薄包装类不保留兼容壳。
-- `shared/backup` 已实现平台无关归档核心与不透明 `secrets.enc` 信封格式；`app/secret.crypto` 已使用独立调用级备份密码实现 Argon2id 64 MiB/3 次/1 路派生和 AES-256-GCM 认证加密，服务对象不持有密码或派生密钥。数据库远程适配、迁移、更新与卸载仍在后续批次。Web Java 叶子模块仍只有 POM；`web/frontend` 已包含最小页面、单元测试和浏览器测试。
+- `shared/backup` 已实现平台无关归档、数据库适配、候选恢复和离线迁移核心；`app/secret.crypto` 已使用独立调用级备份密码实现 Argon2id 64 MiB/3 次/1 路派生、AES-256-GCM 认证加密及严格秘密修订载荷，服务对象不持有密码或派生密钥。Windows 更新/卸载安全核心已存在但生产独立执行器仍待接线。Web Java 叶子模块仍只有 POM；`web/frontend` 已包含最小页面、单元测试和浏览器测试。
 
 ### 1.1 稳定职责边界
 
@@ -862,7 +862,7 @@ Web 端所有密码哈希、加密、解密、主密钥和服务端凭据操作�
 11. `VirtualMachineError`、`LinkageError` 等致命 JVM 错误只做尽力记录后退出，不承诺继续运行。AI 失败只生成 `ai.*` 描述并保留确定性分析结果，不参与错误分类授权、部署重试、回滚决策或执行授权。
 12. `FailureContractArchitectureTest` 必须检查错误码格式和唯一性、模块归属、类型命名、中英文消息键一致、自定义异常实现 `FailureCarrier`、用户边界不使用原始异常消息，以及未说明的静默捕获；测试在 `target/failure-catalog.md` 生成不跟踪的失败目录。
 13. 故障注入至少覆盖数据库锁定/损坏/回滚失败、目录不可写、归档中断/清理失败、Git 工具缺失/超时、SSH 瞬时断线/认证失败、健康失败回滚、回滚不可验证、AI 不可用、报告截断/轮转/脱敏、启动失败和未知 UI 异常。局部测试只证明本地错误语义；真实 Linux 修改路径仍必须通过现有产品入口验收。
-14. `shared/backup` 已使用模块本地 `BackupFailureType` 和最小共用失败契约实现归档核心、数据库一致性适配契约、候选恢复及离线迁移状态机；schema v3 除源发行版及版本外，还封闭保存 14 种已审阅组件运行时、依赖顺序、定义成员路径、组件健康及整应用健康门，不把说明文字、路径或未知字段转换为命令。Jackson 只负责严格、确定性的 `manifest.json` 编解码，Commons Compress 只负责可检查 Unix 类型和 ZIP 扩展字段的归档边界。数据库适配器只决定一致性策略并通过模块内 `contract.spi.DatabaseOperationPort` 获取证据；跨模块远程数据库能力只通过 `linux.protocol.database.RemoteDatabasePort` 暴露，固定远程命令、流式制品传输和 helper v4 实现归 `linux-sshd.backup`，`linux-sshd` 不得反向依赖 `backup`。候选文件由 `backup.extension.adapter.LinuxRestoreCandidateAdapter` 单向映射到 `deploy.contract.spi.RestoreDeploymentPort` 与 `linux.protocol.restore.RemoteRestoreFilePort`；SSHD 只在摘要派生候选下 SFTP 上传并独立回读精确成员，不寻址当前发布。候选端口隔离、解密秘密交接和激活/切换仍须由 deploy 的具体实现明确解决，不得用当前服务端口或加密秘密文件强行启动。离线迁移成功终态只能是等待人工外部流量切换，必须保留源端；失败则分别证明目标候选清理和源端恢复，任一无法验证即进入人工恢复。两项归档依赖不得进入密码处理、远程执行或平台目录选择职责。Web Java 模块仍无生产实现，不创建空异常、空包或转发壳。
+14. `shared/backup` 已使用模块本地 `BackupFailureType` 和最小共用失败契约实现归档核心、数据库一致性适配契约、候选恢复及离线迁移状态机；schema v3 除源发行版及版本外，还封闭保存 14 种已审阅组件运行时、依赖顺序、定义成员路径、组件健康及整应用健康门，不把说明文字、路径或未知字段转换为命令。Jackson 只负责严格、确定性的 `manifest.json` 编解码，Commons Compress 只负责可检查 Unix 类型和 ZIP 扩展字段的归档边界。数据库适配器只决定一致性策略并通过模块内 `contract.spi.DatabaseOperationPort` 获取证据；跨模块远程数据库能力只通过 `linux.protocol.database.RemoteDatabasePort` 暴露，固定远程命令、流式制品传输和 helper v4 实现归 `linux-sshd.backup`，`linux-sshd` 不得反向依赖 `backup`。候选文件由 `backup.extension.adapter.LinuxRestoreCandidateAdapter` 单向映射到 `deploy.contract.spi.RestoreDeploymentPort` 与 `linux.protocol.restore.RemoteRestoreFilePort`；SSHD 只在摘要派生候选下 SFTP 上传并独立回读精确成员，不寻址当前发布。`app/secret.crypto` 仅在 `secrets.enc` 整体认证和严格载荷解析完成后交接精确可清零秘密修订，service 还要求其标识集合与 manifest 完全一致。候选端口隔离和实际激活/切换仍须由 deploy 的具体实现明确解决，不得用当前服务端口或加密秘密文件强行启动。离线迁移成功终态只能是等待人工外部流量切换，必须保留源端；失败则分别证明目标候选清理和源端恢复，任一无法验证即进入人工恢复。两项归档依赖不得进入远程执行或平台目录选择职责。Web Java 模块仍无生产实现，不创建空异常、空包或转发壳。
 15. `app/windows.update` 只在软件包大小/SHA-256、Ed25519 固定信任根、签名有效期、撤销状态、版本策略和架构全部通过后返回验证证据；等版本和未批准降级必须拒绝，紧急回退同时需要签名清单标记与用户批准。更新事务必须先停收任务并成对备份程序/SQLite，主进程退出且独立更新器身份验证后才替换，任何替换、迁移或启动失败都同时恢复旧程序和迁移前数据库。`app/windows.uninstall` 不设置数据决定默认值；只有 jpackage、安装/数据标记和专用凭据命名空间均按所选删除范围验证后才执行，并报告精确残留。源码、独立备份和远端应用不进入卸载端口能力。
 
 ## 4. 叶子模块约定
@@ -1036,7 +1036,7 @@ windows ──→ shared/source
 db      ──→ shared/model
 db      ──→ shared/config
 secret  ──→ db
-secret  ──→ shared/model
+secret  ──→ shared/{model,config,backup}
 
 service ──→ windows
 service ──→ db
@@ -1237,6 +1237,7 @@ linux-sshd 通过 linux 契约采集服务器已有环境
 
 | 版本 | 日期 | 说明 |
 | --- | --- | --- |
+| 3.35.0-secret-revision-handoff | 2026-08-22 | 在 `app/secret.crypto` 定义不产生秘密字符串的严格规范二进制载荷，将独立密码认证后的 `secrets.enc` 整体转换为可清零的精确 `ResolvedSecretRevision`；service 要求载荷标识集合与 manifest 完全一致，任何失败都关闭部分修订、清零调用方密码并清理本次本地候选。该交接仍不代表候选已启动或恢复已提交。 |
 | 3.34.0-desktop-backup-entry | 2026-08-22 | 在最新版结构权威内新增 `app/service.backup`、第六个 UI 窄门面、`app/ui.backup` 和 Windows 恢复工作区边界；桌面可完整校验版本化归档，或重新校验后提取到摘要绑定且从未激活的本地候选。该入口不连接服务器、不修改当前发布，候选激活和真实环境证据仍为 `RUNTIME-PENDING`。 |
 | 3.33.0-typed-restore-staging | 2026-08-22 | 将备份清单升级为 schema v3，以封闭类型保存全部 14 种已审阅运行时、组件依赖、归档定义引用、组件健康和整应用健康门，并要求引用与精确归档成员一致；新增 `backup → deploy → linux → linux-sshd` 单向候选暂存链，SSHD 在摘要派生隔离目录上传后通过 SFTP 独立回读每个成员，失败独立尝试 deploy 恢复和候选清理。当前只完成文件暂存与接缝，候选无冲突端口、解密秘密交接、实际激活/切换及真实主机证据继续为 `RUNTIME-PENDING`。 |
 | 3.32.0-desktop-update-uninstall-core | 2026-08-22 | 在 `app/windows.update` 实现严格版本、架构、有效期、撤销及 Ed25519 固定信任策略验证，并以独立更新器交接、程序/SQLite 成对备份、迁移、健康和成对回滚状态机封闭更新；在 `app/windows.uninstall` 实现无默认选择、jpackage/标记/凭据命名空间预检、保留或删除数据分支和精确残留结果。当前为平台安全核心，未嵌入任何测试公钥；生产发布公钥、独立 jpackage 更新器、Credential Manager 和桌面入口仍待接线。 |

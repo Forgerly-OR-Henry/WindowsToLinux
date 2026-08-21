@@ -2,6 +2,8 @@ package gold.debug.windowstolinux.app.service.contract;
 
 import gold.debug.windowstolinux.app.service.backup.BackupArchiveInspection;
 import gold.debug.windowstolinux.app.service.backup.PreparedBackupCandidate;
+import gold.debug.windowstolinux.app.service.backup.PreparedBackupSecrets;
+import gold.debug.windowstolinux.app.secret.crypto.BackupSecretException;
 
 import java.io.IOException;
 import java.nio.file.Path;
@@ -13,4 +15,8 @@ public interface BackupApplicationFacade {
 
     /** Creates a new isolated local candidate without activation. / 创建一个新的隔离本地候选且不激活。 */
     PreparedBackupCandidate prepareBackupCandidate(Path archive) throws IOException;
+
+    /** Prepares a local candidate and authenticates its exact encrypted revisions. / 准备本地候选并认证其精确加密修订。 */
+    PreparedBackupSecrets prepareBackupCandidateWithSecrets(Path archive, char[] backupPassword)
+            throws IOException, BackupSecretException;
 }

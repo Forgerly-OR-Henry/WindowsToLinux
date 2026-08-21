@@ -37,6 +37,7 @@ import gold.debug.windowstolinux.app.service.source.PreparedMultiComponentSource
 import gold.debug.windowstolinux.app.service.backup.BackupArchiveInspection;
 import gold.debug.windowstolinux.app.service.backup.BackupUseCase;
 import gold.debug.windowstolinux.app.service.backup.PreparedBackupCandidate;
+import gold.debug.windowstolinux.app.service.backup.PreparedBackupSecrets;
 import gold.debug.windowstolinux.app.db.entity.StoredApplicationSecretRevision;
 import gold.debug.windowstolinux.shared.config.revision.ConfigurationSnapshot;
 import gold.debug.windowstolinux.shared.config.secretref.SecretReference;
@@ -148,6 +149,13 @@ public final class DesktopApplicationFacade implements AiApplicationFacade, Depl
     @Override
     public PreparedBackupCandidate prepareBackupCandidate(Path archive) throws IOException {
         return backup.prepare(archive);
+    }
+
+    /** Prepares a candidate and authenticates its manifest-bound encrypted revisions. / 准备候选并认证其清单绑定加密修订。 */
+    @Override
+    public PreparedBackupSecrets prepareBackupCandidateWithSecrets(Path archive, char[] backupPassword)
+            throws IOException, gold.debug.windowstolinux.app.secret.crypto.BackupSecretException {
+        return backup.prepareWithSecrets(archive, backupPassword);
     }
 
     /**

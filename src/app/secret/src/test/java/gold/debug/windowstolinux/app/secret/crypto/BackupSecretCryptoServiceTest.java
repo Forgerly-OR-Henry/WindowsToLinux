@@ -2,6 +2,8 @@ package gold.debug.windowstolinux.app.secret.crypto;
 
 import gold.debug.windowstolinux.shared.backup.format.BackupSecretEnvelope;
 import gold.debug.windowstolinux.shared.backup.format.BackupSecretEnvelopeCodec;
+import gold.debug.windowstolinux.shared.config.secretref.ResolvedSecretRevision;
+import gold.debug.windowstolinux.shared.config.secretref.SecretReference;
 import org.junit.jupiter.api.Test;
 
 import java.lang.reflect.Modifier;
@@ -13,6 +15,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class BackupSecretCryptoServiceTest {
     private static final char[] PASSWORD = "independent backup password".toCharArray();
@@ -80,5 +83,55 @@ class BackupSecretCryptoServiceTest {
                 () -> service.encrypt("short".toCharArray(), new byte[]{1}));
 
         assertEquals(BackupSecretFailureType.PASSWORD_INVALID.code(), failure.failure().code());
+    }
+
+    @Test
+    void encryptsAndDecodesAnExactCanonicalRevisionSet() throws Exception {
+        BackupSecretCryptoService service = new BackupSecretCryptoService();
+        try (ResolvedSecretRevision second = new ResolvedSecretRevision(
+                new SecretReference("database-password", 2), "数据库-secret".toCharArray());
+             ResolvedSecretRevision first = new ResolvedSecretRevision(
+                     new SecretReference("api-token", 1), "token-value".toCharArray())) {
+            byte[] encrypted = service.encryptRevisions(PASSWORD, java.util.List.of(second, first));
+            try (BackupSecretDocument restored = service.decryptRevisions(PASSWORD, encrypted)) {
+                assertEquals(java.util.List.of(first.reference(), second.reference()),
+                        restored.revisions().stream().map(ResolvedSecretRevision::reference).toList());
+                assertEquals(first.digest(), restored.revisions().get(0).digest());
+                assertEquals(second.digest(), restored.revisions().get(1).digest());
+                byte[] restoredValue = restored.revisions().get(1).copyValue();
+                try {
+                    assertArrayEquals("数据库-secret".getBytes(StandardCharsets.UTF_8), restoredValue);
+                } finally {
+                    Arrays.fill(restoredValue, (byte) 0);
+                }
+            }
+        }
+    }
+
+    @Test
+    void authenticatedMalformedPayloadReturnsNoRevisionDocument() throws Exception {
+        BackupSecretCryptoService service = new BackupSecretCryptoService();
+        String secretMarker = "authenticated-but-malformed-secret";
+        byte[] envelope = service.encrypt(PASSWORD, secretMarker.getBytes(StandardCharsets.UTF_8));
+
+        BackupSecretException failure = assertThrows(BackupSecretException.class,
+                () -> service.decryptRevisions(PASSWORD, envelope));
+
+        assertEquals(BackupSecretFailureType.PAYLOAD_INVALID.code(), failure.failure().code());
+        assertFalse(failure.failure().diagnostic().contains(secretMarker));
+    }
+
+    @Test
+    void duplicateRevisionIsRejectedBeforeEncryption() {
+        BackupSecretCryptoService service = new BackupSecretCryptoService();
+        SecretReference reference = new SecretReference("duplicate", 1);
+        try (ResolvedSecretRevision first = new ResolvedSecretRevision(reference, "first-value".toCharArray());
+             ResolvedSecretRevision second = new ResolvedSecretRevision(reference, "second-value".toCharArray())) {
+            BackupSecretException failure = assertThrows(BackupSecretException.class,
+                    () -> service.encryptRevisions(PASSWORD, java.util.List.of(first, second)));
+
+            assertEquals(BackupSecretFailureType.ENCRYPT_FAILED.code(), failure.failure().code());
+            assertTrue(failure.failure().diagnostic().contains("encoding failed"));
+        }
     }
 }

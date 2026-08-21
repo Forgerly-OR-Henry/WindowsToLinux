@@ -59,9 +59,11 @@ src/  # 项目源码与模块根目录
 │  │  ├─ Argon2AesSecretStore.java  # 使用加密包实现 Argon2id 与 AES-GCM 的数据库秘密存储
 │  │  ├─ crypto/  # 密钥派生与认证加密包
 │  │  │  ├─ Argon2AesGcmCryptoService.java  # 使用平台主密码保护桌面秘密存储
+│  │  │  ├─ BackupSecretDocument.java  # 持有完整已解码秘密修订并支持整体清零
+│  │  │  ├─ BackupSecretDocumentCodec.java  # 不产生秘密字符串的严格规范二进制载荷编解码器
 │  │  │  ├─ BackupSecretCryptoService.java  # 使用调用级独立备份密码生成或认证 secrets.enc
 │  │  │  ├─ BackupSecretException.java  # 不携带密码或明文的备份秘密结构化失败
-│  │  │  └─ BackupSecretFailureType.java  # 备份密码、加密和统一认证失败定义
+│  │  │  └─ BackupSecretFailureType.java  # 备份密码、加密、统一认证及认证后载荷失败定义
 │  │  ├─ pom.xml  # 配置桌面秘密存储与加密模块的依赖和构建
 │  │  ├─ SecretStore.java  # 定义秘密写入、读取、删除与调用方清零责任的平台凭据边界
 │  │  ├─ SecretStoreException.java  # 敏感存储失败被刻意设计为不附加明文输入
@@ -78,7 +80,8 @@ src/  # 项目源码与模块根目录
 │  │  ├─ backup/  # 本地备份校验与隔离候选准备用例包
 │  │  │  ├─ BackupArchiveInspection.java  # 完整校验后可供界面展示的安全备份摘要
 │  │  │  ├─ BackupUseCase.java  # 重新校验并在平台工作区创建从未激活的本地候选
-│  │  │  └─ PreparedBackupCandidate.java  # 将候选目录及提取字节绑定到已校验归档身份
+│  │  │  ├─ PreparedBackupCandidate.java  # 将候选目录及提取字节绑定到已校验归档身份
+│  │  │  └─ PreparedBackupSecrets.java  # 将本地候选与完整已认证短生命周期秘密修订绑定
 │  │  ├─ config/  # 部署配置与秘密修订用例包
 │  │  │  └─ DeploymentConfigurationUseCase.java  # 协调不可变的部署配置和平台秘密引用，且不返回秘密值
 │  │  ├─ contract/  # 桌面页面依赖的六个窄应用门面包
