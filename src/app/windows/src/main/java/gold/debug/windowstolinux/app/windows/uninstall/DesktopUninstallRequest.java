@@ -11,6 +11,8 @@ public record DesktopUninstallRequest(
         Path dataRoot,
         String credentialNamespace
 ) {
+    private static final int MAXIMUM_PATH_CHARACTERS = 4096;
+
     /** Validates fixed application-owned local paths without choosing a default decision. / 校验固定应用本地路径且不选择默认决定。 */
     public DesktopUninstallRequest {
         decision = Objects.requireNonNull(decision, "decision");
@@ -27,7 +29,11 @@ public record DesktopUninstallRequest(
 
     private static Path normalized(Path value, String field) {
         Path path = Objects.requireNonNull(value, field).toAbsolutePath().normalize();
-        if (path.getParent() == null) throw new IllegalArgumentException(field + " must not be a filesystem root");
+        String pathText = path.toString();
+        if (path.getParent() == null || pathText.length() > MAXIMUM_PATH_CHARACTERS
+                || pathText.chars().anyMatch(Character::isISOControl)) {
+            throw new IllegalArgumentException(field + " is outside the supported boundary");
+        }
         return path;
     }
 }

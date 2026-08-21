@@ -201,6 +201,7 @@ src/  # 项目源码与模块根目录
 │     │  ├─ DesktopUninstallException.java  # 卸载边界结构化受检失败
 │     │  ├─ DesktopUninstallFailureType.java  # 决定、边界、任务和残留失败目录
 │     │  ├─ DesktopUninstallHandoff.java  # 交给外部执行器的显式决定和主进程停收证据
+│     │  ├─ DesktopUninstallHandoffCodec.java  # 认证并重建跨进程卸载交接的严格版本化载荷
 │     │  ├─ DesktopUninstallPort.java  # 分离主进程停收与外部执行器删除能力的窄端口
 │     │  ├─ DesktopUninstallPreparationResult.java  # 外部交接就绪、缺少决定或前置拒绝结果
 │     │  ├─ DesktopUninstallPreparationStatus.java  # 主进程卸载准备阶段的精确终态
@@ -216,6 +217,7 @@ src/  # 项目源码与模块根目录
 │     │  ├─ DesktopUpdateException.java  # 更新验证与事务结构化受检失败
 │     │  ├─ DesktopUpdateFailureType.java  # 清单、签名、版本、架构、软件包、事务和回滚失败目录
 │     │  ├─ DesktopUpdateHandoff.java  # 交给独立更新器的停收、成对备份和已验证更新证据
+│     │  ├─ DesktopUpdateHandoffCodec.java  # 认证并重建跨进程更新交接的严格版本化载荷
 │     │  ├─ DesktopUpdateManifest.java  # Ed25519 签名载荷、摘要、有效期、架构及紧急回退标记
 │     │  ├─ DesktopUpdatePort.java  # 分离主进程准备与独立更新器替换的成对更新窄端口
 │     │  ├─ DesktopUpdatePreparationResult.java  # 主进程交接就绪或结构化前置拒绝结果
@@ -227,16 +229,20 @@ src/  # 项目源码与模块根目录
 │     │  ├─ DesktopUpdateVerification.java  # 完整签名、版本、架构和包身份验证证据
 │     │  └─ DesktopUpdateVerifier.java  # 流式摘要及固定发布信任验证器
 │     ├─ workspace/  # 本地源码工作区与归档边界包
+│     │  ├─ DesktopHandoffEnvelopeCodec.java  # 以用途隔离和 HMAC-SHA256 认证维护交接二进制信封
 │     │  ├─ PreparedSourceArchive.java  # 保存已准备源码归档的描述信息与排除条目清单
 │     │  ├─ WindowsRestoreAttempt.java  # 将一次恢复尝试父目录、摘要候选根和候选标识绑定
 │     │  ├─ WindowsRestoreWorkspace.java  # 只创建或清理平台工作区下的摘要绑定恢复尝试
 │     │  ├─ WindowsSourcePreparer.java  # 准备平台无关源码归档的 Windows 桌面入口
 │     │  ├─ WindowsWorkspaceException.java  # Windows 工作区预检失败的结构化异常
 │     │  └─ WindowsWorkspaceFailureType.java  # Windows 路径、权限、容量与链接失败目录
-│     └─ test/  # Windows 更新与卸载负向静态测试
+│     └─ test/  # Windows 工作区、更新与卸载负向静态测试
 │        ├─ uninstall/DesktopUninstallCoordinatorTest.java  # 无默认选择、独立执行器门、受管边界及精确残留测试
+│        ├─ uninstall/DesktopUninstallHandoffCodecTest.java  # 卸载交接精确往返、错误密钥及认证后畸形载荷拒绝测试
 │        ├─ update/DesktopUpdateCoordinatorTest.java  # 两阶段独立交接、迁移失败成对回滚和人工恢复测试
-│        └─ update/DesktopUpdateVerifierTest.java  # 签名、篡改、撤销、降级批准及架构拒绝测试
+│        ├─ update/DesktopUpdateHandoffCodecTest.java  # 更新交接精确往返、边界、错误密钥及畸形载荷拒绝测试
+│        ├─ update/DesktopUpdateVerifierTest.java  # 签名、篡改、撤销、降级批准及架构拒绝测试
+│        └─ workspace/DesktopHandoffEnvelopeCodecTest.java  # 用途隔离、篡改、错误或弱密钥和截断拒绝测试
 ├─ shared/  # 平台无关共享模块分组
 │  ├─ ai/  # AI 调用、协作与脱敏模块
 │  │  ├─ AiAnalysisException.java  # 可选 AI 解释路径产生的安全、非秘密失败
