@@ -49,4 +49,14 @@ public final class EncryptedSecretRepository {
             }
         }
     }
+
+    /** Deletes one exact encrypted payload and reports whether a row existed. / 删除一个精确加密载荷并报告是否存在记录。 */
+    public boolean delete(String key) throws SQLException {
+        try (Connection connection = connections.open();
+             PreparedStatement statement = connection.prepareStatement(
+                     "DELETE FROM encrypted_secret WHERE secret_key=?")) {
+            statement.setString(1, Objects.requireNonNull(key, "key"));
+            return statement.executeUpdate() == 1;
+        }
+    }
 }

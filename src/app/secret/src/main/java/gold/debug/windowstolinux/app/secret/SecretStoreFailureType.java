@@ -7,11 +7,13 @@ import gold.debug.windowstolinux.shared.model.failure.FailureSeverityLevel;
 /** Failures owned by secret persistence adapters. / 秘密持久化适配器持有的失败类型。 */
 public enum SecretStoreFailureType implements FailureDefinition {
     ENCRYPT_FAILED("secret.persistence.encrypt-failed", "persistence", "secret.error.encryptFailed", FailureRecoveryAction.RETRY),
+    DELETE_FAILED("secret.persistence.delete-failed", "persistence", "secret.error.deleteFailed", FailureRecoveryAction.RETRY),
     VERSION_UNSUPPORTED("secret.persistence.version-unsupported", "persistence", "secret.error.versionUnsupported", FailureRecoveryAction.REQUIRE_MANUAL_RECOVERY),
     READ_FAILED("secret.persistence.read-failed", "persistence", "secret.error.readFailed", FailureRecoveryAction.RETRY),
     DECRYPT_FAILED("secret.persistence.decrypt-failed", "persistence", "secret.error.decryptFailed", FailureRecoveryAction.REQUIRE_MANUAL_RECOVERY),
     WINDOWS_ONLY("secret.adapter.windows-only", "adapter", "secret.error.windowsOnly", FailureRecoveryAction.REQUEST_USER_CORRECTION),
     WINDOWS_WRITE_FAILED("secret.adapter.windows-write-failed", "adapter", "secret.error.windowsWriteFailed", FailureRecoveryAction.RETRY),
+    WINDOWS_DELETE_FAILED("secret.adapter.windows-delete-failed", "adapter", "secret.error.windowsDeleteFailed", FailureRecoveryAction.RETRY),
     WINDOWS_EMPTY_RESPONSE("secret.adapter.windows-empty-response", "adapter", "secret.error.windowsEmptyResponse", FailureRecoveryAction.RETRY),
     WINDOWS_INVALID_RESPONSE("secret.adapter.windows-invalid-response", "adapter", "secret.error.windowsInvalidResponse", FailureRecoveryAction.REQUIRE_MANUAL_RECOVERY),
     WINDOWS_TIMEOUT("secret.adapter.windows-timeout", "adapter", "secret.error.windowsTimeout", FailureRecoveryAction.RETRY),

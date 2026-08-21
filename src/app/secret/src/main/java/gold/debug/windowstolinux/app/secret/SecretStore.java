@@ -30,6 +30,9 @@ public interface SecretStore extends AutoCloseable {
      */
     Optional<char[]> read(String key) throws SecretStoreException;
 
+    /** Deletes one exact application credential and reports whether it existed. / 删除一个精确应用凭据并报告其是否存在。 */
+    boolean delete(String key) throws SecretStoreException;
+
     /** Closes this resource. / 关闭此资源。 */
     @Override
     void close();

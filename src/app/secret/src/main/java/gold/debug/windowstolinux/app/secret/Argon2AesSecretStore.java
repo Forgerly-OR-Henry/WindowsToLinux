@@ -74,6 +74,18 @@ public final class Argon2AesSecretStore implements SecretStore {
         }
     }
 
+    /** Deletes one exact encrypted database credential. / 删除一个精确的数据库加密凭据。 */
+    @Override
+    public boolean delete(String key) throws SecretStoreException {
+        validateKey(key);
+        try {
+            return secrets.delete(key);
+        } catch (SQLException exception) {
+            throw failure(SecretStoreFailureType.DELETE_FAILED,
+                    "Failed to delete the encrypted credential", exception);
+        }
+    }
+
     /** Closes this resource. / 关闭此资源。 */
     @Override
     public void close() {

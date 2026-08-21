@@ -20,7 +20,7 @@ public record DesktopUninstallRequest(
             throw new IllegalArgumentException("desktop data root must be the fixed data child of the install root");
         }
         credentialNamespace = Objects.requireNonNull(credentialNamespace, "credentialNamespace").trim();
-        if (!credentialNamespace.matches("WindowsToLinux/[A-Za-z0-9._-]{1,128}")) {
+        if (!credentialNamespace.equals("WindowsToLinux/*")) {
             throw new IllegalArgumentException("credential namespace is outside the WindowsToLinux boundary");
         }
     }

@@ -2,8 +2,8 @@
 
 ## 文档信息
 
-- 文档版本：`3.37.0-reviewed-runtime-persistence`
-- 文档状态：**28-POM 模块边界保持不变；SQLite v8 从新成功部署开始原子保存完整非秘密已审阅运行时，v7 旧图保持明确缺失且不得猜测；候选端口隔离、deploy 激活/切换、生产维护执行器及产品入口实机证据仍在开发并标记 `RUNTIME-PENDING`**
+- 文档版本：`3.38.0-credential-namespace-deletion`
+- 文档状态：**28-POM 模块边界保持不变；SQLite v8 运行时持久化及固定 `WindowsToLinux/*` 凭据删除能力已通过本地门禁；完整备份数据范围、候选端口隔离、生产维护执行器及产品入口实机证据仍在开发并标记 `RUNTIME-PENDING`**
 - 已确认范围：`shared` 共用模块、`app` Windows 桌面应用模块、`web` Web 应用模块
 - 已确认能力边界：受管应用生命周期复用既有模块，不新增独立 Maven 模块
 - 更新日期：2026-08-22
@@ -865,7 +865,7 @@ Web 端所有密码哈希、加密、解密、主密钥和服务端凭据操作�
 12. `FailureContractArchitectureTest` 必须检查错误码格式和唯一性、模块归属、类型命名、中英文消息键一致、自定义异常实现 `FailureCarrier`、用户边界不使用原始异常消息，以及未说明的静默捕获；测试在 `target/failure-catalog.md` 生成不跟踪的失败目录。
 13. 故障注入至少覆盖数据库锁定/损坏/回滚失败、目录不可写、归档中断/清理失败、Git 工具缺失/超时、SSH 瞬时断线/认证失败、健康失败回滚、回滚不可验证、AI 不可用、报告截断/轮转/脱敏、启动失败和未知 UI 异常。局部测试只证明本地错误语义；真实 Linux 修改路径仍必须通过现有产品入口验收。
 14. `shared/backup` 已使用模块本地 `BackupFailureType` 和最小共用失败契约实现归档核心、数据库一致性适配契约、候选恢复及离线迁移状态机；schema v3 除源发行版及版本外，还封闭保存 14 种已审阅组件运行时、依赖顺序、定义成员路径、组件健康及整应用健康门，不把说明文字、路径或未知字段转换为命令。Jackson 只负责严格、确定性的 `manifest.json` 编解码，Commons Compress 只负责可检查 Unix 类型和 ZIP 扩展字段的归档边界。数据库适配器只决定一致性策略并通过模块内 `contract.spi.DatabaseOperationPort` 获取证据；跨模块远程数据库能力只通过 `linux.protocol.database.RemoteDatabasePort` 暴露，固定远程命令、流式制品传输和 helper v4 实现归 `linux-sshd.backup`，`linux-sshd` 不得反向依赖 `backup`。候选文件由 `backup.extension.adapter.LinuxRestoreCandidateAdapter` 单向映射到 `deploy.contract.spi.RestoreDeploymentPort` 与 `linux.protocol.restore.RemoteRestoreFilePort`；SSHD 只在摘要派生候选下 SFTP 上传并独立回读精确成员，不寻址当前发布。`app/secret.crypto` 仅在 `secrets.enc` 整体认证和严格载荷解析完成后交接精确可清零秘密修订，service 还要求其标识集合与 manifest 完全一致。候选端口隔离和实际激活/切换仍须由 deploy 的具体实现明确解决，不得用当前服务端口或加密秘密文件强行启动。离线迁移成功终态只能是等待人工外部流量切换，必须保留源端；失败则分别证明目标候选清理和源端恢复，任一无法验证即进入人工恢复。两项归档依赖不得进入远程执行或平台目录选择职责。Web Java 模块仍无生产实现，不创建空异常、空包或转发壳。
-15. `app/windows.update` 只在软件包大小/SHA-256、Ed25519 固定信任根、签名有效期、撤销状态、版本策略和架构全部通过后返回验证证据；等版本和未批准降级必须拒绝，紧急回退同时需要签名清单标记与用户批准。主进程只允许停收任务、成对备份程序/SQLite 并形成不可变交接；替换、迁移、健康和成对回滚只允许在独立更新器验证自身身份、主进程退出和交接真实性后执行。`app/windows.uninstall` 不设置数据决定默认值；主进程只校验决定并停收自有任务，外部执行器验证自身身份、主进程退出和交接真实性后还必须重新验证 jpackage、安装/数据标记及专用凭据命名空间，再按所选范围删除并报告精确残留。源码、独立备份和远端应用不进入卸载端口能力。
+15. `app/windows.update` 只在软件包大小/SHA-256、Ed25519 固定信任根、签名有效期、撤销状态、版本策略和架构全部通过后返回验证证据；等版本和未批准降级必须拒绝，紧急回退同时需要签名清单标记与用户批准。主进程只允许停收任务、成对备份程序/SQLite 并形成不可变交接；替换、迁移、健康和成对回滚只允许在独立更新器验证自身身份、主进程退出和交接真实性后执行。`app/windows.uninstall` 不设置数据决定默认值；凭据范围固定为唯一 `WindowsToLinux/*`，不得由调用方缩窄、扩大或改名。外部执行器验证自身身份、主进程退出和交接真实性后还必须重新验证 jpackage、安装/数据标记及该固定命名空间，再按所选范围删除并报告精确残留。`app/secret` 的 Credential Manager 适配只删除符合应用生成键规则的目标，命名空间内其他目标报告为残留；源码、独立备份和远端应用不进入卸载端口能力。
 
 ## 4. 叶子模块约定
 
@@ -1239,6 +1239,7 @@ linux-sshd 通过 linux 契约采集服务器已有环境
 
 | 版本 | 日期 | 说明 |
 | --- | --- | --- |
+| 3.38.0-credential-namespace-deletion | 2026-08-22 | `SecretStore` 增加精确删除契约，数据库加密存储按键删除；Windows Credential Manager 以固定 P/Invoke 增加 `CredDelete` 和 `WindowsToLinux/*` 枚举删除，合法应用键才删除，其他命名空间目标返回准确残留。卸载请求不再接受任意子命名空间；JDK 21 完整 28-POM 离线门禁通过 338 项测试、0 失败、0 错误、25 项真实环境条件跳过，生产独立执行器仍待接线，未据此宣称卸载可用。 |
 | 3.37.0-reviewed-runtime-persistence | 2026-08-22 | SQLite 升至 v8，在成功整应用图事务中保存每个组件完整、非秘密且已审阅的类型化运行时；严格版本化二进制编解码覆盖 14 种运行时并拒绝未知、截断和尾随载荷。v7 旧图迁移后保持定义缺失，生命周期不受影响，后续备份创建必须明确拒绝缺失而不得从远端压缩参数反推。 |
 | 3.36.0-desktop-maintenance-handoff | 2026-08-22 | 将桌面更新与卸载安全核心拆分为主进程 `prepare` 和外部执行器 `apply`：主进程只能停收任务并形成成对备份或显式卸载决定，外部阶段必须验证执行器身份、主进程退出和交接真实性后才可替换或删除，并在删除前重新验证受管边界。helper v4 发行版脚本测试镜像同步更新，JDK 21 完整 28-POM 离线门禁通过；生产公钥、独立执行器、Credential Manager 及真实环境证据仍待完成。 |
 | 3.35.0-secret-revision-handoff | 2026-08-22 | 在 `app/secret.crypto` 定义不产生秘密字符串的严格规范二进制载荷，将独立密码认证后的 `secrets.enc` 整体转换为可清零的精确 `ResolvedSecretRevision`；service 要求载荷标识集合与 manifest 完全一致，任何失败都关闭部分修订、清零调用方密码并清理本次本地候选。该交接仍不代表候选已启动或恢复已提交。 |

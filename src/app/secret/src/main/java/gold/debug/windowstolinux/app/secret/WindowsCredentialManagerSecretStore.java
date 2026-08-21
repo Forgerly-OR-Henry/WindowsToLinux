@@ -1,17 +1,18 @@
 package gold.debug.windowstolinux.app.secret;
 
-import gold.debug.windowstolinux.app.secret.SecretStore;
-import gold.debug.windowstolinux.app.secret.SecretStoreException;
-
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.ByteBuffer;
 import java.nio.CharBuffer;
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Base64;
+import java.util.HashSet;
+import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
+import java.util.Set;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -21,6 +22,7 @@ import java.util.concurrent.TimeUnit;
  */
 public final class WindowsCredentialManagerSecretStore implements SecretStore {
     private static final String TARGET_PREFIX = "WindowsToLinux/";
+    private static final String TARGET_FILTER = "WindowsToLinux/*";
     private static final Duration PROCESS_TIMEOUT = Duration.ofSeconds(30);
     private static final String CREDENTIAL_INTEROP = """
             using System;
@@ -37,6 +39,10 @@ public final class WindowsCredentialManagerSecretStore implements SecretStore {
               public static extern bool CredWrite(ref CREDENTIAL credential, int flags);
               [DllImport("Advapi32.dll", CharSet=CharSet.Unicode, SetLastError=true)]
               public static extern bool CredRead(string target, int type, int flags, out IntPtr credential);
+              [DllImport("Advapi32.dll", CharSet=CharSet.Unicode, SetLastError=true)]
+              public static extern bool CredDelete(string target, int type, int flags);
+              [DllImport("Advapi32.dll", CharSet=CharSet.Unicode, SetLastError=true)]
+              public static extern bool CredEnumerate(string filter, int flags, out int count, out IntPtr credentials);
               [DllImport("Advapi32.dll", SetLastError=true)]
               public static extern void CredFree(IntPtr credential);
             }
@@ -61,7 +67,7 @@ public final class WindowsCredentialManagerSecretStore implements SecretStore {
                 if (-not [WtlCredential]::CredWrite([ref]$cred,0)) { exit 23 }
                 Write-Output 'OK'
               } finally { [Array]::Clear($bytes,0,$bytes.Length); [Runtime.InteropServices.Marshal]::FreeHGlobal($memory) }
-            } else {
+            } elseif ($mode -eq 'read') {
               $pointer=[IntPtr]::Zero
               if (-not [WtlCredential]::CredRead($target,1,0,[ref]$pointer)) {
                 if ([Runtime.InteropServices.Marshal]::GetLastWin32Error() -eq 1168) { Write-Output 'NOT_FOUND'; exit 0 }
@@ -73,7 +79,35 @@ public final class WindowsCredentialManagerSecretStore implements SecretStore {
                 try { [Runtime.InteropServices.Marshal]::Copy($cred.CredentialBlob,$bytes,0,$bytes.Length); Write-Output ([Convert]::ToBase64String($bytes)) }
                 finally { [Array]::Clear($bytes,0,$bytes.Length) }
               } finally { [WtlCredential]::CredFree($pointer) }
-            }
+            } elseif ($mode -eq 'delete') {
+              if ([WtlCredential]::CredDelete($target,1,0)) { Write-Output 'OK'; exit 0 }
+              if ([Runtime.InteropServices.Marshal]::GetLastWin32Error() -eq 1168) { Write-Output 'NOT_FOUND'; exit 0 }
+              exit 25
+            } elseif ($mode -eq 'delete-namespace') {
+              $count=0; $pointer=[IntPtr]::Zero
+              if (-not [WtlCredential]::CredEnumerate('WindowsToLinux/*',0,[ref]$count,[ref]$pointer)) {
+                if ([Runtime.InteropServices.Marshal]::GetLastWin32Error() -eq 1168) { Write-Output 'EMPTY'; exit 0 }
+                exit 26
+              }
+              $targets=New-Object System.Collections.Generic.List[string]
+              try {
+                for ($index=0; $index -lt $count; $index++) {
+                  $item=[Runtime.InteropServices.Marshal]::ReadIntPtr($pointer,$index * [IntPtr]::Size)
+                  $credential=[Runtime.InteropServices.Marshal]::PtrToStructure($item,[type][WtlCredential+CREDENTIAL])
+                  $targets.Add($credential.TargetName)
+                }
+              } finally { [WtlCredential]::CredFree($pointer) }
+              foreach ($item in $targets) {
+                $encodedTarget=[Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($item))
+                if ($item -cnotmatch '^WindowsToLinux/[a-z0-9][a-z0-9/_-]{0,127}$') {
+                  Write-Output ('RESIDUAL:' + $encodedTarget); continue
+                }
+                if ([WtlCredential]::CredDelete($item,1,0)) { Write-Output ('DELETED:' + $encodedTarget) }
+                elseif ([Runtime.InteropServices.Marshal]::GetLastWin32Error() -eq 1168) {
+                  Write-Output ('DELETED:' + $encodedTarget)
+                } else { Write-Output ('RESIDUAL:' + $encodedTarget) }
+              }
+            } else { exit 27 }
             """.formatted(CREDENTIAL_INTEROP);
 
     /**
@@ -131,6 +165,22 @@ public final class WindowsCredentialManagerSecretStore implements SecretStore {
         }
     }
 
+    /** Deletes one exact application-owned Credential Manager target. / 删除一个精确的应用持有凭据管理器目标。 */
+    @Override
+    public boolean delete(String key) throws SecretStoreException {
+        validateKey(key);
+        String response = responseLine(invoke("delete", target(key), ""));
+        if ("OK".equals(response)) return true;
+        if ("NOT_FOUND".equals(response)) return false;
+        throw failure(SecretStoreFailureType.WINDOWS_DELETE_FAILED,
+                "Windows Credential Manager rejected the delete operation");
+    }
+
+    /** Deletes valid targets in the fixed application namespace and reports exact residuals. / 删除固定应用命名空间内的合法目标并报告精确残留。 */
+    public CredentialNamespaceDeletionResult deleteApplicationNamespace() throws SecretStoreException {
+        return parseNamespaceDeletion(invoke("delete-namespace", TARGET_FILTER, ""));
+    }
+
     /** Closes this resource. / 关闭此资源。 */
     @Override
     public void close() {
@@ -180,6 +230,71 @@ public final class WindowsCredentialManagerSecretStore implements SecretStore {
                 .findFirst()
                 .orElseThrow(() -> failure(SecretStoreFailureType.WINDOWS_UNCONTROLLED_RESPONSE,
                         "Windows Credential Manager did not return a controlled response"));
+    }
+
+    static CredentialNamespaceDeletionResult parseNamespaceDeletion(String output) throws SecretStoreException {
+        List<String> deleted = new ArrayList<>();
+        List<String> residual = new ArrayList<>();
+        boolean empty = false;
+        for (String raw : output.lines().toList()) {
+            String line = raw.trim();
+            if (line.equals("EMPTY")) {
+                empty = true;
+            } else if (line.startsWith("DELETED:")) {
+                deleted.add(decodedTarget(line.substring("DELETED:".length()), true));
+            } else if (line.startsWith("RESIDUAL:")) {
+                residual.add(decodedTarget(line.substring("RESIDUAL:".length()), false));
+            }
+        }
+        if ((!empty && deleted.isEmpty() && residual.isEmpty())
+                || empty && (!deleted.isEmpty() || !residual.isEmpty())) {
+            throw failure(SecretStoreFailureType.WINDOWS_UNCONTROLLED_RESPONSE,
+                    "Windows Credential Manager namespace deletion returned no controlled result");
+        }
+        try {
+            return new CredentialNamespaceDeletionResult(deleted, residual);
+        } catch (IllegalArgumentException exception) {
+            throw failure(SecretStoreFailureType.WINDOWS_UNCONTROLLED_RESPONSE,
+                    "Windows Credential Manager namespace deletion returned inconsistent targets", exception);
+        }
+    }
+
+    private static String decodedTarget(String encoded, boolean generatedTarget) throws SecretStoreException {
+        try {
+            byte[] bytes = Base64.getDecoder().decode(encoded);
+            String target = new String(bytes, StandardCharsets.UTF_8);
+            if (!Arrays.equals(bytes, target.getBytes(StandardCharsets.UTF_8))
+                    || target.length() > 256 || target.chars().anyMatch(Character::isISOControl)
+                    || !target.startsWith(TARGET_PREFIX)
+                    || generatedTarget && !target.substring(TARGET_PREFIX.length())
+                    .matches("[a-z0-9][a-z0-9/_-]{0,127}")) {
+                throw new IllegalArgumentException("credential target is invalid");
+            }
+            return target;
+        } catch (IllegalArgumentException exception) {
+            throw failure(SecretStoreFailureType.WINDOWS_UNCONTROLLED_RESPONSE,
+                    "Windows Credential Manager returned an invalid namespace target", exception);
+        }
+    }
+
+    /** Exact result of deleting the fixed application credential namespace. / 删除固定应用凭据命名空间的精确结果。 */
+    public record CredentialNamespaceDeletionResult(List<String> deletedTargets, List<String> residualTargets) {
+        /** Freezes sorted, unique and non-overlapping target sets. / 冻结排序、唯一且互不重叠的目标集合。 */
+        public CredentialNamespaceDeletionResult {
+            deletedTargets = sortedTargets(deletedTargets, "deletedTargets");
+            residualTargets = sortedTargets(residualTargets, "residualTargets");
+            Set<String> overlap = new HashSet<>(deletedTargets);
+            overlap.retainAll(residualTargets);
+            if (!overlap.isEmpty()) throw new IllegalArgumentException("credential deletion result overlaps");
+        }
+
+        private static List<String> sortedTargets(List<String> values, String field) {
+            List<String> result = List.copyOf(values).stream().sorted().toList();
+            if (result.stream().distinct().count() != result.size()) {
+                throw new IllegalArgumentException(field + " contains duplicates");
+            }
+            return result;
+        }
     }
 
     private static byte[] toUtf8(char[] value) {

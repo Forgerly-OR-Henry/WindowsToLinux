@@ -9,6 +9,7 @@ import java.util.List;
 import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class DesktopUninstallCoordinatorTest {
@@ -101,10 +102,19 @@ class DesktopUninstallCoordinatorTest {
         assertEquals("windows.uninstall.removal-incomplete", result.failure().orElseThrow().code());
     }
 
+    @Test
+    void credentialBoundaryAcceptsOnlyTheFixedApplicationNamespace() {
+        Path install = temporary.resolve("WindowsToLinux");
+        assertThrows(IllegalArgumentException.class, () -> new DesktopUninstallRequest(Optional.empty(),
+                install, install.resolve("data"), "WindowsToLinux/desktop"));
+        assertEquals("WindowsToLinux/*", new DesktopUninstallRequest(Optional.empty(),
+                install, install.resolve("data"), "WindowsToLinux/*").credentialNamespace());
+    }
+
     private DesktopUninstallRequest request(Optional<DesktopUninstallDecisionType> decision) {
         Path install = temporary.resolve("WindowsToLinux");
         return new DesktopUninstallRequest(decision, install, install.resolve("data"),
-                "WindowsToLinux/desktop");
+                "WindowsToLinux/*");
     }
 
     private static final class RecordingUninstallPort implements DesktopUninstallPort {
