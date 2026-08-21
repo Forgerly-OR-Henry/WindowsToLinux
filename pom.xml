@@ -40,6 +40,8 @@
         <sqlite.version>3.46.0.0</sqlite.version>
         <bouncycastle.version>1.78.1</bouncycastle.version>
         <flatlaf.version>3.7.1</flatlaf.version>
+        <jackson.version>2.18.1</jackson.version>
+        <commons.compress.version>1.26.1</commons.compress.version>
     </properties>
 
     <dependencyManagement>

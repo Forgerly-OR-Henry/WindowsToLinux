@@ -340,8 +340,44 @@ src/  # 项目源码与模块根目录
 │  │  └─ workload/  # 容器与静态站点工作负载分析包
 │  │     ├─ ContainerDeploymentInspector.java  # 检测单一 Dockerfile 工作负载、声明端口与受管卷候选项
 │  │     └─ StaticWebDeploymentInspector.java  # 区分纯静态内容与由锁文件支持的 Node 静态构建
-│  ├─ backup/  # 共享备份职责预留模块
-│  │  └─ pom.xml  # 保留共享备份职责边界的 POM-only 模块
+│  ├─ backup/  # 平台无关的版本化备份、恢复与迁移契约模块
+│  │  ├─ pom.xml  # 配置备份模块依赖、严格 JSON 编解码和可检查 ZIP 边界
+│  │  └─ src/
+│  │     ├─ main/java/gold/debug/windowstolinux/shared/backup/
+│  │     │  ├─ contract/validation/  # 归档资源、安全、完整性与来源校验
+│  │     │  │  ├─ ArchivePathRules.java  # 拒绝绝对路径、穿越、空段和 Windows 不安全尾部
+│  │     │  │  ├─ BackupArchivePolicy.java  # 成员数、大小、路径、清单和压缩率显式边界
+│  │     │  │  ├─ BackupArchiveValidation.java  # 完整校验后生成的归档指纹与证据
+│  │     │  │  ├─ BackupArchiveValidator.java  # 不提取地校验 ZIP 结构、摘要和可选签名
+│  │     │  │  ├─ BackupException.java  # 备份模块结构化受检失败
+│  │     │  │  ├─ BackupFailureType.java  # 备份、恢复与清理稳定失败定义
+│  │     │  │  ├─ BackupManifestValidator.java  # 对解码清单应用资源策略
+│  │     │  │  ├─ BackupProvenanceStatus.java  # 未签名、未验证与已验证来源状态
+│  │     │  │  └─ BackupSignatureTrust.java  # 显式受信备份签名公钥解析契约
+│  │     │  ├─ format/  # 版本化归档流式写入
+│  │     │  │  ├─ BackupArchiveContent.java  # 清单成员与全新输入流的绑定
+│  │     │  │  ├─ BackupArchiveStream.java  # 可受检打开的成员输入流窄契约
+│  │     │  │  └─ BackupArchiveWriter.java  # 写入时核验每个成员大小与 SHA-256
+│  │     │  ├─ manifest/  # 环境、数据库、运行时和归档成员清单
+│  │     │  │  ├─ BackupConsistencyMode.java  # 数据库一致性证据方式
+│  │     │  │  ├─ BackupDatabase.java  # 数据库类型、版本、工具和一致性限制
+│  │     │  │  ├─ BackupDatabaseType.java  # SQLite、PostgreSQL、MySQL/MariaDB 等数据库族
+│  │     │  │  ├─ BackupIdentity.java  # 受管应用、服务器、根目录和发布身份
+│  │     │  │  ├─ BackupInventory.java  # 恢复所需的完整结构化数据清单
+│  │     │  │  ├─ BackupManifest.java  # 当前版本根清单与成员唯一性约束
+│  │     │  │  ├─ BackupManifestCodec.java  # 严格确定性的 manifest.json 编解码
+│  │     │  │  ├─ BackupManifestRules.java  # 清单内部有界文本和路径规则
+│  │     │  │  ├─ BackupManifestSigner.java  # 对规范未签名载荷添加 Ed25519 来源签名
+│  │     │  │  ├─ BackupMember.java  # 精确路径、大小、摘要和类别
+│  │     │  │  ├─ BackupMemberKind.java  # 发布、配置、数据、数据库、运行时和加密秘密类别
+│  │     │  │  ├─ BackupProvenance.java  # 与完整性分离的可选来源签名元数据
+│  │     │  │  └─ BackupRuntime.java  # 运行时版本、架构和能力证据
+│  │     │  └─ restore/  # 隔离候选提取
+│  │     │     ├─ BackupArchiveExtractor.java  # 指纹重绑定、精确提取和失败清理
+│  │     │     └─ BackupRestoreCandidate.java  # 尚未激活的完整候选证据
+│  │     └─ test/java/gold/debug/windowstolinux/shared/backup/
+│  │        ├─ contract/validation/BackupArchiveSecurityTest.java  # 恶意归档、签名与候选提取负向测试
+│  │        └─ manifest/BackupManifestCodecTest.java  # 严格 schema、确定性往返和一致性证据测试
 │  ├─ config/  # 类型化配置定义与校验模块
 │  │  ├─ ConfigurationException.java  # 配置定义与输入拒绝的结构化异常
 │  │  ├─ ConfigurationFailureType.java  # 配置失败码、阶段与用户纠正动作

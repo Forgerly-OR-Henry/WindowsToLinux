@@ -13,5 +13,8 @@
         <dependency><groupId>gold.debug.windowstolinux</groupId><artifactId>windowstolinux-shared-config</artifactId><version>${project.version}</version></dependency>
         <dependency><groupId>gold.debug.windowstolinux</groupId><artifactId>windowstolinux-shared-linux</artifactId><version>${project.version}</version></dependency>
         <dependency><groupId>gold.debug.windowstolinux</groupId><artifactId>windowstolinux-shared-deploy</artifactId><version>${project.version}</version></dependency>
+        <dependency><groupId>com.fasterxml.jackson.core</groupId><artifactId>jackson-databind</artifactId><version>${jackson.version}</version></dependency>
+        <dependency><groupId>org.apache.commons</groupId><artifactId>commons-compress</artifactId><version>${commons.compress.version}</version></dependency>
+        <dependency><groupId>org.junit.jupiter</groupId><artifactId>junit-jupiter</artifactId><scope>test</scope></dependency>
     </dependencies>
 </project>

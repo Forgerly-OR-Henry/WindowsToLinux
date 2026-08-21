@@ -1,0 +1,41 @@
+package gold.debug.windowstolinux.shared.backup.contract.validation;
+
+import gold.debug.windowstolinux.shared.backup.manifest.BackupManifest;
+import gold.debug.windowstolinux.shared.backup.manifest.BackupMember;
+
+import java.util.Objects;
+
+/** Applies resource policy to a decoded manifest before any extraction. / 在任何提取前把资源策略应用到已解码清单。 */
+public final class BackupManifestValidator {
+    private final BackupArchivePolicy policy;
+
+    /** Creates a validator using explicit resource bounds. / 使用显式资源边界创建校验器。 */
+    public BackupManifestValidator(BackupArchivePolicy policy) {
+        this.policy = Objects.requireNonNull(policy, "policy");
+    }
+
+    /** Rejects member count, path and declared-size violations. / 拒绝成员数量、路径和声明大小违规。 */
+    public void validate(BackupManifest manifest) throws BackupException {
+        Objects.requireNonNull(manifest, "manifest");
+        if (manifest.members().size() > policy.maximumMembers()) {
+            throw BackupException.create(BackupFailureType.LIMIT_EXCEEDED, "manifest member count exceeds policy");
+        }
+        long total = 0;
+        for (BackupMember member : manifest.members()) {
+            if (member.path().length() > policy.maximumPathLength()) {
+                throw BackupException.create(BackupFailureType.LIMIT_EXCEEDED, "manifest member path exceeds policy");
+            }
+            if (member.size() > policy.maximumMemberBytes()) {
+                throw BackupException.create(BackupFailureType.LIMIT_EXCEEDED, "manifest member size exceeds policy");
+            }
+            try {
+                total = Math.addExact(total, member.size());
+            } catch (ArithmeticException exception) {
+                throw BackupException.create(BackupFailureType.LIMIT_EXCEEDED, "manifest total size overflow", exception);
+            }
+            if (total > policy.maximumTotalBytes()) {
+                throw BackupException.create(BackupFailureType.LIMIT_EXCEEDED, "manifest total size exceeds policy");
+            }
+        }
+    }
+}

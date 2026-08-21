@@ -1,0 +1,27 @@
+package gold.debug.windowstolinux.shared.backup.manifest;
+
+import java.util.Locale;
+import java.util.Objects;
+
+/** Expected immutable member with exact size and digest. / 带精确大小与摘要的预期不可变成员。 */
+public record BackupMember(String path, long size, String sha256, BackupMemberKind kind) {
+    /** Validates the canonical member identity. / 校验规范成员身份。 */
+    public BackupMember {
+        path = BackupManifestRules.archivePath(path);
+        if (size < 0) throw new IllegalArgumentException("member size must not be negative");
+        sha256 = Objects.requireNonNull(sha256, "sha256").toLowerCase(Locale.ROOT);
+        if (!sha256.matches("[0-9a-f]{64}")) throw new IllegalArgumentException("member hash must be canonical SHA-256");
+        kind = Objects.requireNonNull(kind, "kind");
+        String requiredPrefix = switch (kind) {
+            case RELEASE -> "releases/";
+            case CONFIGURATION -> "config/";
+            case PERSISTENT_CONTENT -> "data/";
+            case DATABASE -> "database/";
+            case RUNTIME -> "runtime/";
+            case ENCRYPTED_SECRETS -> "secrets.enc";
+        };
+        if (kind == BackupMemberKind.ENCRYPTED_SECRETS ? !path.equals(requiredPrefix) : !path.startsWith(requiredPrefix)) {
+            throw new IllegalArgumentException("member path does not match its declared kind");
+        }
+    }
+}

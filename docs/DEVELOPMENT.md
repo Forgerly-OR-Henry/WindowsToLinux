@@ -9,7 +9,7 @@
 - 更新日期：2026-08-14
 - 项目结构：[File.md](File.md)
 
-> 文档中的“支持”必须具有实现和验收证据。2026-08-10/12 已由产品入口在新装 Ubuntu 24.04 x86-64 上验证迁移前的一期 Maven/Spring Boot 以及二期 Gradle Spring Boot、普通 JAR、Node.js、Python、静态站点和 Dockerfile 容器链路，这些记录作为历史证据保留。2026-08-13 已由当前产品入口和 helper v3 验证六种高级语言试验适配器、两组件整应用事务、统一 Spring Boot Reviewed 链路及 Podman Quadlet；证据只覆盖验收夹具、Ubuntu 24.04 和 x86-64，不升级为未声明的框架或其他发行版支持。2026-08-14 的 CentOS Stream 9 x86-64 目标已由当前产品入口完成两次环境准备、两组件发布、故障候选整应用回滚、应用/数据库重启、生命周期与自启切换；SELinux 和防火墙态均在准备前后复核为未改变。该证据仅覆盖精确夹具，不外推到 Stream 10 或其他发行版。按当前范围，Debian/Rocky/Alma/Oracle 实机测试延后；备份、迁移与 Web 业务尚未实现。
+> 文档中的“支持”必须具有实现和验收证据。2026-08-10/12 已由产品入口在新装 Ubuntu 24.04 x86-64 上验证迁移前的一期 Maven/Spring Boot 以及二期 Gradle Spring Boot、普通 JAR、Node.js、Python、静态站点和 Dockerfile 容器链路，这些记录作为历史证据保留。2026-08-13 已由当前产品入口和 helper v3 验证六种高级语言试验适配器、两组件整应用事务、统一 Spring Boot Reviewed 链路及 Podman Quadlet；证据只覆盖验收夹具、Ubuntu 24.04 和 x86-64，不升级为未声明的框架或其他发行版支持。2026-08-14 的 CentOS Stream 9 x86-64 目标已由当前产品入口完成两次环境准备、两组件发布、故障候选整应用回滚、应用/数据库重启、生命周期与自启切换；SELinux 和防火墙态均在准备前后复核为未改变。该证据仅覆盖精确夹具，不外推到 Stream 10 或其他发行版。2026-08-21 已完成四期平台无关归档核心的本地静态测试；数据库、迁移、桌面升级和全部真实产品入口证据仍待完成，不能由归档单元测试外推。
 
 ## 1. 产品定位
 
@@ -21,7 +21,7 @@ WindowsToLinux 是面向个人和小型自托管场景的部署管理工具。�
 
 | 项目 | 当前状态 | 可以据此声称的结论 |
 | --- | --- | --- |
-| Maven | 当前 reactor 由根工程、3 个聚合模块和 24 个叶子模块组成，共 28 个 POM；二期复用既有叶子模块，没有新增 Maven 模块 | `File.md` 的正式目标模块结构保持不变；`backup` 和 Web Java 模块仍为 POM-only |
+| Maven | 当前 reactor 由根工程、3 个聚合模块和 24 个叶子模块组成，共 28 个 POM；四期复用既有 `shared/backup`，没有新增 Maven 模块 | `File.md` 的正式目标模块结构保持不变；Web Java 模块仍为 POM-only |
 | Java | Java 21；shared 与桌面代码已按职责分包；Spring Boot 只保留 Reviewed 类型化分析和部署链路 | 迁移前六类路径保留历史实机证据；统一 Spring Boot Reviewed/helper v3 已在 Ubuntu 24.04 x86-64 完成当前产品入口验收 |
 | Web 前端 | Vue 3、TypeScript、Vite、Vitest、Playwright 骨架 | 只可展示骨架页，尚无业务接口 |
 | 桌面/Web 业务 | Swing 已提供单组件与多组件独立页面，以及十二类项目的类型选择、静态分析、类型化计划审阅、已保存凭据提交、整应用结果和依赖安全生命周期；Web 业务未实现 | 桌面入口统一使用 Reviewed API；试验适配器每次请求都需确认专用测试环境；Web 不可部署或管理应用 |
