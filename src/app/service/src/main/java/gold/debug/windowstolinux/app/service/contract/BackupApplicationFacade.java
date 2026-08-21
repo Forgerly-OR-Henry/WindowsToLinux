@@ -21,6 +21,9 @@ public interface BackupApplicationFacade {
     /** Creates a new isolated local candidate without activation. / 创建一个新的隔离本地候选且不激活。 */
     PreparedBackupCandidate prepareBackupCandidate(Path archive) throws IOException;
 
+    /** Deletes only the exact local candidate supplied by this facade. / 仅删除此门面所提供的精确本地候选。 */
+    void discardBackupCandidate(PreparedBackupCandidate candidate) throws IOException;
+
     /** Prepares a local candidate and authenticates its exact encrypted revisions. / 准备本地候选并认证其精确加密修订。 */
     PreparedBackupSecrets prepareBackupCandidateWithSecrets(Path archive, char[] backupPassword)
             throws IOException, BackupSecretException;

@@ -7,6 +7,7 @@ import gold.debug.windowstolinux.app.secret.crypto.BackupSecretFailureType;
 import gold.debug.windowstolinux.app.windows.workspace.WindowsRestoreAttempt;
 import gold.debug.windowstolinux.app.windows.workspace.WindowsRestoreWorkspace;
 import gold.debug.windowstolinux.app.windows.workspace.WindowsWorkspaceException;
+import gold.debug.windowstolinux.app.windows.workspace.WindowsWorkspaceFailureType;
 import gold.debug.windowstolinux.shared.backup.contract.validation.BackupArchivePolicy;
 import gold.debug.windowstolinux.shared.backup.contract.validation.BackupArchiveValidation;
 import gold.debug.windowstolinux.shared.backup.contract.validation.BackupArchiveValidator;
@@ -58,6 +59,18 @@ public final class BackupUseCase {
     /** Revalidates and extracts one new local candidate without activating it. / 重新校验并提取一个新的本地候选且不激活。 */
     public PreparedBackupCandidate prepare(Path archive) throws IOException {
         return candidate(prepareValidated(archive));
+    }
+
+    /** Deletes only the exact platform-owned attempt containing this prepared candidate. / 仅删除包含此已准备候选的精确平台持有尝试。 */
+    public void discard(PreparedBackupCandidate candidate) throws WindowsWorkspaceException {
+        Objects.requireNonNull(candidate, "candidate");
+        WindowsRestoreAttempt attempt = candidate.attempt();
+        if (attempt == null) {
+            throw WindowsWorkspaceException.create(
+                    WindowsWorkspaceFailureType.RESTORE_WORKSPACE_FAILED,
+                    "The local restore candidate does not carry platform-issued cleanup authority", null);
+        }
+        workspace.discardAttempt(attempt);
     }
 
     /** Prepares a candidate and returns only a complete manifest-bound decoded secret set. / 准备候选且只返回完整并绑定清单的已解码秘密集。 */
@@ -114,7 +127,7 @@ public final class BackupUseCase {
 
     private static PreparedBackupCandidate candidate(PreparedMaterial prepared) {
         return new PreparedBackupCandidate(BackupArchiveInspection.from(prepared.validation()),
-                prepared.candidate().root(), prepared.candidate().extractedBytes());
+                prepared.candidate().root(), prepared.candidate().extractedBytes(), prepared.attempt());
     }
 
     private static void requireManifestReferences(

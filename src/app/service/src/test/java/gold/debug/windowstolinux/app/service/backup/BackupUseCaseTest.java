@@ -62,6 +62,29 @@ class BackupUseCaseTest {
         assertTrue(prepared.candidateRoot().startsWith(temporary.resolve("work").toAbsolutePath()));
         assertArrayEquals(content, Files.readAllBytes(prepared.candidateRoot().resolve("config/sample.json")));
         assertFalse(Files.exists(prepared.candidateRoot().resolve("current")));
+
+        Path attemptParent = prepared.candidateRoot().getParent();
+        useCase.discard(prepared);
+        useCase.discard(prepared);
+
+        assertFalse(Files.exists(attemptParent));
+    }
+
+    @Test
+    void refusesAReconstructedCandidateWithoutPlatformCleanupAuthority() throws Exception {
+        byte[] content = "validated backup content".getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        BackupUseCase useCase = new BackupUseCase(temporary.resolve("work"));
+        PreparedBackupCandidate prepared = useCase.prepare(archive(content));
+        Path retained = prepared.candidateRoot().resolve("config/sample.json");
+        PreparedBackupCandidate reconstructed = new PreparedBackupCandidate(
+                prepared.inspection(), prepared.candidateRoot(), prepared.extractedBytes());
+
+        assertThrows(gold.debug.windowstolinux.app.windows.workspace.WindowsWorkspaceException.class,
+                () -> useCase.discard(reconstructed));
+
+        assertTrue(Files.isRegularFile(retained));
+        useCase.discard(prepared);
+        assertFalse(Files.exists(prepared.candidateRoot().getParent()));
     }
 
     @Test

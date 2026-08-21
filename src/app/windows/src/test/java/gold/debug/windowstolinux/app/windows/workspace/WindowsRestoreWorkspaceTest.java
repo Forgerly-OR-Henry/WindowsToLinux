@@ -6,6 +6,7 @@ import org.junit.jupiter.api.io.TempDir;
 import java.nio.file.Files;
 import java.nio.file.Path;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -35,5 +36,18 @@ class WindowsRestoreWorkspaceTest {
                 foreignParent, foreignParent.resolve("sample-aaaaaaaaaaaaaaaa"), "sample-aaaaaaaaaaaaaaaa");
         assertThrows(WindowsWorkspaceException.class, () -> workspace.discardAttempt(foreign));
         assertTrue(Files.exists(foreignParent));
+    }
+
+    @Test
+    void preservesAnAttemptParentThatWasExternallyReplaced() throws Exception {
+        WindowsRestoreWorkspace workspace = new WindowsRestoreWorkspace(temporary.resolve("work"));
+        WindowsRestoreAttempt attempt = workspace.createAttempt("sample", "b".repeat(64));
+        Files.delete(attempt.parent());
+        Files.writeString(attempt.parent(), "external replacement");
+
+        assertThrows(WindowsWorkspaceException.class, () -> workspace.discardAttempt(attempt));
+
+        assertTrue(Files.isRegularFile(attempt.parent()));
+        assertEquals("external replacement", Files.readString(attempt.parent()));
     }
 }

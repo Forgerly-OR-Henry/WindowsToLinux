@@ -83,17 +83,17 @@ src/  # 项目源码与模块根目录
 │  │  ├─ backup/  # 受管输入准入、本地归档发布、备份校验与隔离候选准备用例包
 │  │  │  ├─ BackupArchiveCreationUseCase.java  # 编排临时写入、双重完整校验与无覆盖原子发布
 │  │  │  ├─ BackupArchiveInspection.java  # 完整校验后可供界面展示的安全备份摘要
-│  │  │  ├─ BackupUseCase.java  # 重新校验并在平台工作区创建从未激活的本地候选
+│  │  │  ├─ BackupUseCase.java  # 重新校验、准备并按工作区签发身份精确删除本地未激活候选
 │  │  │  ├─ CreatedBackupArchive.java  # 绑定最终路径与发布后独立复验结果
 │  │  │  ├─ ManagedBackupInputAssessment.java  # 精确报告持久化备份输入完整性及结构化缺失原因
 │  │  │  ├─ ManagedBackupInputUseCase.java  # 在不访问远端时核对整应用图、发布、运行时、路径、配置和秘密绑定
-│  │  │  ├─ PreparedBackupCandidate.java  # 将候选目录及提取字节绑定到已校验归档身份
+│  │  │  ├─ PreparedBackupCandidate.java  # 将候选证据绑定到已校验归档，并只为工作区签发实例保留删除授权
 │  │  │  └─ PreparedBackupSecrets.java  # 将本地候选与完整已认证短生命周期秘密修订绑定
 │  │  ├─ config/  # 部署配置与秘密修订用例包
 │  │  │  └─ DeploymentConfigurationUseCase.java  # 协调不可变的部署配置和平台秘密引用，且不返回秘密值
 │  │  ├─ contract/  # 桌面页面依赖的六个窄应用门面包
 │  │  │  ├─ AiApplicationFacade.java  # AI 页面所需的窄应用操作
-│  │  │  ├─ BackupApplicationFacade.java  # 备份页面所需的本地校验与候选准备操作
+│  │  │  ├─ BackupApplicationFacade.java  # 备份页面所需的本地校验、候选准备与精确删除操作
 │  │  │  ├─ DeploymentApplicationFacade.java  # 单组件部署所需的窄应用操作
 │  │  │  ├─ ManagedApplicationFacade.java  # 受管应用页面所需的窄应用操作
 │  │  │  ├─ MultiComponentApplicationFacade.java  # 整应用部署与生命周期所需的窄应用操作
@@ -138,9 +138,9 @@ src/  # 项目源码与模块根目录
 │  │  ├─ ai/  # AI 配置与解释结果页面包
 │  │  │  ├─ AiPage.java  # 持有可选 AI 表单、临时秘密、状态与解释流程
 │  │  │  └─ AiPageState.java  # 保存桌面外观重建期间尚未提交的 AI 页面状态
-│  │  ├─ backup/  # 备份校验与本地候选准备页面包
-│  │  │  ├─ BackupPage.java  # 选择归档、后台完整校验并准备从未激活的隔离本地候选
-│  │  │  └─ BackupPageState.java  # 保存外观重建期间的归档路径和结果文本
+│  │  ├─ backup/  # 备份校验及单个本地候选准备与删除页面包
+│  │  │  ├─ BackupPage.java  # 选择归档、后台完整校验，并管理一个未激活隔离本地候选的准备与删除
+│  │  │  └─ BackupPageState.java  # 保存外观重建期间的归档路径、结果文本和当前候选删除授权
 │  │  ├─ component/  # 可复用桌面组件包
 │  │  │  ├─ DesktopComponentFactory.java  # 创建桌面页面复用的按钮、表单和布局组件
 │  │  │  └─ DesktopTaskExecutor.java  # 运行后台操作并将完成结果返回 Swing 事件线程
@@ -237,8 +237,8 @@ src/  # 项目源码与模块根目录
 │     │  ├─ PreparedSourceArchive.java  # 保存已准备源码归档的描述信息与排除条目清单
 │     │  ├─ WindowsBackupArchiveAttempt.java  # 绑定同目录临时归档、最终目标和不可伪造文件身份
 │     │  ├─ WindowsBackupArchiveWorkspace.java  # 无覆盖原子发布并只清理本次精确持有的归档文件
-│     │  ├─ WindowsRestoreAttempt.java  # 将一次恢复尝试父目录、摘要候选根和候选标识绑定
-│     │  ├─ WindowsRestoreWorkspace.java  # 只创建或清理平台工作区下的摘要绑定恢复尝试
+│     │  ├─ WindowsRestoreAttempt.java  # 不可伪造地绑定恢复尝试父目录身份、摘要候选根和候选标识
+│     │  ├─ WindowsRestoreWorkspace.java  # 只创建或按创建时目录身份精确清理平台工作区下的恢复尝试
 │     │  ├─ WindowsSourcePreparer.java  # 准备平台无关源码归档的 Windows 桌面入口
 │     │  ├─ WindowsWorkspaceException.java  # Windows 工作区预检失败的结构化异常
 │     │  └─ WindowsWorkspaceFailureType.java  # Windows 路径、权限、容量与链接失败目录

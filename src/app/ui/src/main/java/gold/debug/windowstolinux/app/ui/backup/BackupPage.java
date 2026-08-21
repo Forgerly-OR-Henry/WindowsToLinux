@@ -30,6 +30,8 @@ public final class BackupPage {
     private final JPanel panel;
     private JButton inspectButton;
     private JButton prepareButton;
+    private JButton discardButton;
+    private PreparedBackupCandidate preparedCandidate;
 
     /** Creates the functional local backup page. / 创建本地备份功能页面。 */
     public BackupPage(Component owner, BackupApplicationFacade service,
@@ -48,13 +50,15 @@ public final class BackupPage {
 
     /** Captures page-owned values. / 捕获页面持有的值。 */
     public BackupPageState captureState() {
-        return new BackupPageState(archivePath.getText(), output.getText());
+        return new BackupPageState(archivePath.getText(), output.getText(), preparedCandidate);
     }
 
     /** Restores page-owned values. / 恢复页面持有的值。 */
     public void restoreState(BackupPageState state) {
         archivePath.setText(state.archivePath());
         output.setText(state.output());
+        preparedCandidate = state.preparedCandidate();
+        setBusy(false);
     }
 
     private JPanel createPanel(DesktopComponentFactory components) {
@@ -75,12 +79,16 @@ public final class BackupPage {
         inspectButton.addActionListener(event -> inspectSelectedArchive());
         prepareButton = components.primaryButton(messages.text("backup.button.prepare"));
         prepareButton.addActionListener(event -> prepareSelectedArchive());
+        discardButton = components.secondaryButton(messages.text("backup.button.discard"));
+        discardButton.addActionListener(event -> discardPreparedCandidate());
         actions.add(inspectButton);
         actions.add(prepareButton);
+        actions.add(discardButton);
         controls.add(actions, BorderLayout.SOUTH);
         page.add(controls, BorderLayout.NORTH);
         page.add(components.outputCard(messages.text("backup.output.title"),
                 messages.text("backup.output.description"), output), BorderLayout.CENTER);
+        setBusy(false);
         return page;
     }
 
@@ -120,7 +128,24 @@ public final class BackupPage {
         setBusy(true);
         output.setText(messages.text("backup.preparing"));
         DesktopTaskExecutor.run(() -> service.prepareBackupCandidate(selected), candidate -> {
+            preparedCandidate = candidate;
             output.setText(formatCandidate(candidate));
+            output.setCaretPosition(0);
+            setBusy(false);
+        }, this::showFailure);
+    }
+
+    private void discardPreparedCandidate() {
+        PreparedBackupCandidate candidate = preparedCandidate;
+        if (candidate == null) return;
+        setBusy(true);
+        output.setText(messages.text("backup.discarding", Map.of("path", candidate.candidateRoot())));
+        DesktopTaskExecutor.run(() -> {
+            service.discardBackupCandidate(candidate);
+            return candidate;
+        }, discarded -> {
+            preparedCandidate = null;
+            output.setText(messages.text("backup.discarded", Map.of("path", discarded.candidateRoot())));
             output.setCaretPosition(0);
             setBusy(false);
         }, this::showFailure);
@@ -170,6 +195,7 @@ public final class BackupPage {
 
     private void setBusy(boolean busy) {
         inspectButton.setEnabled(!busy);
-        prepareButton.setEnabled(!busy);
+        prepareButton.setEnabled(!busy && preparedCandidate == null);
+        discardButton.setEnabled(!busy && preparedCandidate != null);
     }
 }

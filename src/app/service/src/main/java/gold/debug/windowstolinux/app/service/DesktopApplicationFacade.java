@@ -163,6 +163,12 @@ public final class DesktopApplicationFacade implements AiApplicationFacade, Depl
         return backup.prepare(archive);
     }
 
+    /** Deletes only one exact platform-owned local restore candidate. / 仅删除一个精确的平台持有本地恢复候选。 */
+    @Override
+    public void discardBackupCandidate(PreparedBackupCandidate candidate) throws IOException {
+        backup.discard(candidate);
+    }
+
     /** Prepares a candidate and authenticates its manifest-bound encrypted revisions. / 准备候选并认证其清单绑定加密修订。 */
     @Override
     public PreparedBackupSecrets prepareBackupCandidateWithSecrets(Path archive, char[] backupPassword)

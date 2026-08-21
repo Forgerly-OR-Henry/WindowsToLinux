@@ -4,6 +4,7 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.LinkOption;
 import java.nio.file.Path;
+import java.nio.file.attribute.BasicFileAttributes;
 import java.util.Comparator;
 import java.util.Locale;
 import java.util.Objects;
@@ -33,7 +34,9 @@ public final class WindowsRestoreWorkspace {
             prepareRoot();
             Path parent = Files.createTempDirectory(restoreDirectory, "attempt-").toAbsolutePath().normalize();
             String candidateId = applicationId + "-" + archiveSha256.substring(0, 16);
-            return new WindowsRestoreAttempt(parent, parent.resolve(candidateId), candidateId);
+            Object parentFileKey = Files.readAttributes(
+                    parent, BasicFileAttributes.class, LinkOption.NOFOLLOW_LINKS).fileKey();
+            return new WindowsRestoreAttempt(parent, parent.resolve(candidateId), candidateId, parentFileKey);
         } catch (WindowsWorkspaceException exception) {
             throw exception;
         } catch (IOException exception) {
@@ -51,6 +54,21 @@ public final class WindowsRestoreWorkspace {
                     "The restore attempt is outside the platform workspace", null);
         }
         if (!Files.exists(parent, LinkOption.NOFOLLOW_LINKS)) return;
+        try {
+            BasicFileAttributes attributes = Files.readAttributes(
+                    parent, BasicFileAttributes.class, LinkOption.NOFOLLOW_LINKS);
+            if (!attributes.isDirectory() || Files.isSymbolicLink(parent)
+                    || attempt.parentFileKey() != null
+                    && !attempt.parentFileKey().equals(attributes.fileKey())) {
+                throw WindowsWorkspaceException.create(WindowsWorkspaceFailureType.RESTORE_WORKSPACE_FAILED,
+                        "The restore attempt parent changed externally and was preserved", null);
+            }
+        } catch (WindowsWorkspaceException exception) {
+            throw exception;
+        } catch (IOException exception) {
+            throw WindowsWorkspaceException.create(WindowsWorkspaceFailureType.RESTORE_WORKSPACE_FAILED,
+                    "The restore attempt parent identity could not be verified", exception);
+        }
         try (var paths = Files.walk(parent)) {
             for (Path path : paths.sorted(Comparator.reverseOrder()).toList()) {
                 if (!path.startsWith(parent)) throw new IOException("restore cleanup escaped its attempt parent");

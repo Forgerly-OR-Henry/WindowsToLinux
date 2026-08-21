@@ -1,5 +1,7 @@
 package gold.debug.windowstolinux.app.ui.shell;
 
+import gold.debug.windowstolinux.app.service.backup.BackupArchiveInspection;
+import gold.debug.windowstolinux.app.service.backup.PreparedBackupCandidate;
 import gold.debug.windowstolinux.app.ui.ai.AiPageState;
 import gold.debug.windowstolinux.app.ui.backup.BackupPageState;
 import gold.debug.windowstolinux.app.ui.display.DesktopDisplayConfiguration;
@@ -16,8 +18,10 @@ import gold.debug.windowstolinux.app.ui.setting.SettingPageState;
 import gold.debug.windowstolinux.shared.model.security.CredentialStorageMode;
 import gold.debug.windowstolinux.shared.ai.collaboration.role.AiCollaborationRoleKind;
 import gold.debug.windowstolinux.shared.model.lifecycle.LifecycleAction;
+import gold.debug.windowstolinux.shared.backup.contract.validation.BackupProvenanceStatus;
 import org.junit.jupiter.api.Test;
 
+import java.nio.file.Path;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
@@ -27,6 +31,11 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class DesktopLanguageSwitchStateTest {
     @Test
     void preservesTheCurrentPageFormsOutputsAndTemporaryStateAcrossALanguageSwitch() {
+        BackupArchiveInspection backupInspection = new BackupArchiveInspection(
+                "demo", "3", "2026-08-22T00:00:00Z", 1, 3, 21,
+                "a".repeat(64), BackupProvenanceStatus.NOT_PRESENT);
+        PreparedBackupCandidate backupCandidate = new PreparedBackupCandidate(backupInspection,
+                Path.of("build", "restore-candidates", "attempt-1", "demo-" + "a".repeat(16)), 21);
         DesktopViewState initial = new DesktopViewState(
                 "ai",
                 new DeploymentPageState("PYTHON_SERVICE", "TCP", "", "200", "12", "7", "",
@@ -42,7 +51,7 @@ class DesktopLanguageSwitchStateTest {
                         "ssh-secret".toCharArray(), CredentialStorageMode.MASTER_PASSWORD,
                         "master-secret".toCharArray(), "server diagnostic"),
                 new ManagedPageState("demo", "lifecycle diagnostic"),
-                new BackupPageState("C:\\backups\\demo.zip", "backup diagnostic"),
+                new BackupPageState("C:\\backups\\demo.zip", "backup diagnostic", backupCandidate),
                 new AiPageState("https://example.test/v1/chat/completions", "model-x", "analysis",
                         AiCollaborationRoleKind.PROJECT_ANALYSIS,
                         "api-secret".toCharArray(), CredentialStorageMode.WINDOWS_CREDENTIAL_MANAGER,
@@ -82,6 +91,7 @@ class DesktopLanguageSwitchStateTest {
             assertEquals("lifecycle diagnostic", chineseState.managed().output());
             assertEquals("C:\\backups\\demo.zip", chineseState.backup().archivePath());
             assertEquals("backup diagnostic", chineseState.backup().output());
+            assertEquals(backupCandidate, chineseState.backup().preparedCandidate());
             assertEquals("model-x", chineseState.ai().model());
             assertEquals("analysis", chineseState.ai().providerId());
             assertEquals(AiCollaborationRoleKind.PROJECT_ANALYSIS, chineseState.ai().role());
