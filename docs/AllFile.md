@@ -180,11 +180,41 @@ src/  # 项目源码与模块根目录
 │  │           └─ Messages_zh_CN.properties  # 提供与英文消息键一致的简体中文界面映射
 │  └─ windows/  # Windows 平台边界模块
 │     ├─ pom.xml  # 配置 Windows 平台文件与工作区边界模块的依赖和构建
-│     └─ workspace/  # 本地源码工作区与归档边界包
-│        ├─ PreparedSourceArchive.java  # 保存已准备源码归档的描述信息与排除条目清单
-│        ├─ WindowsSourcePreparer.java  # 准备平台无关源码归档的 Windows 桌面入口
-│        ├─ WindowsWorkspaceException.java  # Windows 工作区预检失败的结构化异常
-│        └─ WindowsWorkspaceFailureType.java  # Windows 路径、权限、容量与链接失败目录
+│     ├─ uninstall/  # 无默认选择的本地受管卸载安全边界
+│     │  ├─ DesktopUninstallCoordinator.java  # 显式保留/删除分支、受管预检和精确残留编排
+│     │  ├─ DesktopUninstallDecisionType.java  # 保留或删除本地数据及凭据的显式决定
+│     │  ├─ DesktopUninstallEvent.java  # 单个有界卸载证据事件
+│     │  ├─ DesktopUninstallException.java  # 卸载边界结构化受检失败
+│     │  ├─ DesktopUninstallFailureType.java  # 决定、边界、任务和残留失败目录
+│     │  ├─ DesktopUninstallPort.java  # 仅允许停止本应用任务及处理程序/data/凭据命名空间的窄端口
+│     │  ├─ DesktopUninstallRequest.java  # 固定 jpackage、data 子目录和专用凭据命名空间请求
+│     │  ├─ DesktopUninstallResult.java  # 区分失败残留与用户有意保留项目的卸载终态
+│     │  ├─ DesktopUninstallState.java  # 决定、停任务、边界和各删除步骤状态
+│     │  └─ DesktopUninstallStatus.java  # 需选择、前置拒绝、两类成功及带残留终态
+│     ├─ update/  # 桌面签名更新及程序/SQLite 成对回滚边界
+│     │  ├─ DesktopArchitectureType.java  # x86-64 与 ARM64 签名包架构
+│     │  ├─ DesktopReleaseVersion.java  # 严格三段式桌面版本及比较
+│     │  ├─ DesktopUpdateCoordinator.java  # 停任务、成对备份、独立交接、迁移、健康和回滚事务
+│     │  ├─ DesktopUpdateEvent.java  # 单个有界更新证据事件
+│     │  ├─ DesktopUpdateException.java  # 更新验证与事务结构化受检失败
+│     │  ├─ DesktopUpdateFailureType.java  # 清单、签名、版本、架构、软件包、事务和回滚失败目录
+│     │  ├─ DesktopUpdateManifest.java  # Ed25519 签名载荷、摘要、有效期、架构及紧急回退标记
+│     │  ├─ DesktopUpdatePort.java  # 独立更新器程序/SQLite 成对更新窄端口
+│     │  ├─ DesktopUpdateResult.java  # 更新成功、前置拒绝、安全回滚和人工恢复终态
+│     │  ├─ DesktopUpdateState.java  # 停任务、备份、交接、替换、迁移、健康及回滚状态
+│     │  ├─ DesktopUpdateStatus.java  # 更新精确终态
+│     │  ├─ DesktopUpdateTrustPolicy.java  # 固定 Ed25519 公钥、撤销集合及版本批准策略
+│     │  ├─ DesktopUpdateVerification.java  # 完整签名、版本、架构和包身份验证证据
+│     │  └─ DesktopUpdateVerifier.java  # 流式摘要及固定发布信任验证器
+│     ├─ workspace/  # 本地源码工作区与归档边界包
+│     │  ├─ PreparedSourceArchive.java  # 保存已准备源码归档的描述信息与排除条目清单
+│     │  ├─ WindowsSourcePreparer.java  # 准备平台无关源码归档的 Windows 桌面入口
+│     │  ├─ WindowsWorkspaceException.java  # Windows 工作区预检失败的结构化异常
+│     │  └─ WindowsWorkspaceFailureType.java  # Windows 路径、权限、容量与链接失败目录
+│     └─ test/  # Windows 更新与卸载负向静态测试
+│        ├─ uninstall/DesktopUninstallCoordinatorTest.java  # 无默认选择、受管边界、保留/删除与精确残留测试
+│        ├─ update/DesktopUpdateCoordinatorTest.java  # 独立交接、迁移失败成对回滚和人工恢复测试
+│        └─ update/DesktopUpdateVerifierTest.java  # 签名、篡改、撤销、降级批准及架构拒绝测试
 ├─ shared/  # 平台无关共享模块分组
 │  ├─ ai/  # AI 调用、协作与脱敏模块
 │  │  ├─ AiAnalysisException.java  # 可选 AI 解释路径产生的安全、非秘密失败
