@@ -813,7 +813,8 @@ src/  # 项目源码与模块根目录
 │  │  │  ├─ DeploymentStatus.java  # 受管部署发布事务的准确终态
 │  │  │  ├─ DeploymentTraceEvent.java  # 稳定的部署跟踪事件代码；界面模块将这些代码映射为本地化标签
 │  │  │  ├─ EnvironmentSetupApproval.java  # 在一个可信目标上安装固定受管部署 Ubuntu 工具集的单次明确确认
-│  │  │  └─ EnvironmentSetupResult.java  # 固定工具集准备成功及其后重新采集的目标能力证据
+│  │  │  ├─ EnvironmentSetupResult.java  # 固定工具集准备成功及其后重新采集的目标能力证据
+│  │  │  └─ ReleaseSetDigest.java  # 对依赖有序组件发布身份计算固定域与长度分隔的集合摘要
 │  │  ├─ health/  # HTTP 与 TCP 健康检查模型包
 │  │  │  ├─ HealthCheck.java  # 受管部署仅有的两种健康检查策略
 │  │  │  └─ UserAccessUrl.java  # 用户声明的已部署应用 HTTP(S) 访问 URL

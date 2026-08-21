@@ -1,5 +1,9 @@
 package gold.debug.windowstolinux.app.service.backup;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ArrayNode;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import gold.debug.windowstolinux.app.secret.crypto.BackupSecretCryptoService;
 import gold.debug.windowstolinux.app.secret.crypto.BackupSecretException;
 import gold.debug.windowstolinux.app.secret.crypto.BackupSecretFailureType;
@@ -14,6 +18,7 @@ import gold.debug.windowstolinux.shared.backup.manifest.BackupHealthCheck;
 import gold.debug.windowstolinux.shared.backup.manifest.BackupIdentity;
 import gold.debug.windowstolinux.shared.backup.manifest.BackupInventory;
 import gold.debug.windowstolinux.shared.backup.manifest.BackupManifest;
+import gold.debug.windowstolinux.shared.backup.manifest.BackupManifestCodec;
 import gold.debug.windowstolinux.shared.backup.manifest.BackupMember;
 import gold.debug.windowstolinux.shared.backup.manifest.BackupMemberKind;
 import gold.debug.windowstolinux.shared.backup.manifest.BackupRuntime;
@@ -52,7 +57,7 @@ class BackupUseCaseTest {
         PreparedBackupCandidate prepared = useCase.prepare(archive);
 
         assertEquals("sample", inspection.applicationId());
-        assertEquals("3", inspection.schemaVersion());
+        assertEquals("4", inspection.schemaVersion());
         assertEquals(1, inspection.componentCount());
         assertEquals(3, inspection.memberCount());
         assertEquals(content.length * 3L, inspection.verifiedBytes());
@@ -96,7 +101,8 @@ class BackupUseCaseTest {
                 new SecretReference("database-password", 4), "private-database-value".toCharArray())) {
             envelope = new BackupSecretCryptoService().encryptRevisions(encryptionPassword, List.of(revision));
         }
-        Path archive = archive(content, envelope, List.of("database-password"), "with-secret");
+        Path archive = archive(content, envelope,
+                List.of(new SecretReference("database-password", 4)), "with-secret");
         char[] restorePassword = "independent backup password".toCharArray();
 
         ResolvedSecretRevision restored;
@@ -120,7 +126,8 @@ class BackupUseCaseTest {
                 new SecretReference("other-password", 1), "private-value".toCharArray())) {
             envelope = new BackupSecretCryptoService().encryptRevisions(encryptionPassword, List.of(revision));
         }
-        Path archive = archive(content, envelope, List.of("database-password"), "mismatched-secret");
+        Path archive = archive(content, envelope,
+                List.of(new SecretReference("database-password", 4)), "mismatched-secret");
         Path work = temporary.resolve("mismatch-work");
         char[] restorePassword = "independent backup password".toCharArray();
 
@@ -134,12 +141,49 @@ class BackupUseCaseTest {
         }
     }
 
+    @Test
+    void legacySchemaV3RemainsInspectablePrepariableAndPasswordAuthenticatable() throws Exception {
+        byte[] content = "legacy validated backup content".getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        SecretReference reference = new SecretReference("database-password", 4);
+        byte[] envelope;
+        try (ResolvedSecretRevision revision = new ResolvedSecretRevision(
+                reference, "legacy-private-value".toCharArray())) {
+            envelope = new BackupSecretCryptoService().encryptRevisions(
+                    "independent backup password".toCharArray(), List.of(revision));
+        }
+        Path archive = archive(content, envelope, List.of(reference), "legacy-v3", true);
+        BackupUseCase useCase = new BackupUseCase(temporary.resolve("legacy-work"));
+        char[] password = "independent backup password".toCharArray();
+
+        assertEquals("3", useCase.inspect(archive).schemaVersion());
+        PreparedBackupCandidate candidate;
+        try (PreparedBackupSecrets prepared = useCase.prepareWithSecrets(archive, password)) {
+            candidate = prepared.candidate();
+            assertEquals("3", candidate.inspection().schemaVersion());
+            assertEquals(List.of(reference), prepared.secrets().revisions().stream()
+                    .map(ResolvedSecretRevision::reference).toList());
+        }
+        assertTrue(allCleared(password));
+        useCase.discard(candidate);
+        assertFalse(Files.exists(candidate.candidateRoot().getParent()));
+    }
+
     private Path archive(byte[] content) throws Exception {
         return archive(content, null, List.of(), "sample");
     }
 
-    private Path archive(byte[] content, byte[] envelope, List<String> secretReferences, String fileName)
+    private Path archive(byte[] content, byte[] envelope, List<SecretReference> secretReferences, String fileName)
             throws Exception {
+        return archive(content, envelope, secretReferences, fileName, false);
+    }
+
+    private Path archive(
+            byte[] content,
+            byte[] envelope,
+            List<SecretReference> secretReferences,
+            String fileName,
+            boolean legacy
+    ) throws Exception {
         Map<String, byte[]> values = new LinkedHashMap<>();
         values.put("releases/sample.json", content);
         values.put("config/sample.json", content);
@@ -150,16 +194,18 @@ class BackupUseCaseTest {
         BackupHealthCheck health = BackupHealthCheck.tcp(8080, 30, 5);
         BackupComponent component = new BackupComponent("sample", "sample", "a".repeat(64),
                 "releases/sample.json", "config/sample.json", "runtime/sample.service", List.of(),
-                new BackupComponentRuntime.NodeService(22, health));
+                new BackupComponentRuntime.NodeService(22, health), "b".repeat(64), secretReferences);
         BackupInventory inventory = new BackupInventory(
                 List.of("releases/sample.json"), List.of("config/sample.json"), secretReferences, List.of(), List.of(),
                 BackupDatabase.none(),
-                new BackupIdentity("sample", "server-1", "/var/lib/windowstolinux/apps/sample", "release-1"),
+                new BackupIdentity("sample", "server-1", "/var/lib/windowstolinux/apps/sample",
+                        BackupInventory.computeReleaseSetSha256(List.of(component))),
                 List.of("runtime/sample.service"), List.of(component), "sample", health,
                 new BackupRuntime("ubuntu", "24.04", "systemd", "255", "x86_64", List.of("systemd")),
                 List.of());
         BackupManifest manifest = BackupManifest.create(
                 Instant.parse("2026-08-22T00:00:00Z"), "sample", inventory, members);
+        if (legacy) manifest = legacy(manifest);
         List<BackupArchiveContent> streams = members.stream()
                 .map(member -> new BackupArchiveContent(member,
                         () -> new ByteArrayInputStream(values.get(member.path())))).toList();
@@ -168,6 +214,28 @@ class BackupUseCaseTest {
             new BackupArchiveWriter(BackupArchivePolicy.defaults()).write(manifest, streams, output);
         }
         return archive;
+    }
+
+    private static BackupManifest legacy(BackupManifest current) throws Exception {
+        BackupManifestCodec codec = new BackupManifestCodec();
+        ObjectMapper mapper = new ObjectMapper();
+        ObjectNode root = (ObjectNode) mapper.readTree(codec.write(current));
+        root.put("schemaVersion", BackupManifest.LEGACY_SCHEMA_VERSION);
+        ObjectNode inventory = (ObjectNode) root.get("inventory");
+        ObjectNode identity = (ObjectNode) inventory.get("identity");
+        identity.remove("releaseSetSha256");
+        identity.put("releaseIdentity", "release-1");
+        ArrayNode legacySecrets = mapper.createArrayNode();
+        for (JsonNode reference : inventory.withArray("secretReferences")) {
+            legacySecrets.add(reference.get("identifier").asText());
+        }
+        inventory.set("secretReferences", legacySecrets);
+        for (JsonNode value : inventory.withArray("components")) {
+            ObjectNode component = (ObjectNode) value;
+            component.remove("releaseSha256");
+            component.remove("secretReferences");
+        }
+        return codec.read(mapper.writeValueAsBytes(root));
     }
 
     private static String digest(byte[] content) {

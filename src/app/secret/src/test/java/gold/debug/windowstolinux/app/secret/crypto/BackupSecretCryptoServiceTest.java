@@ -134,4 +134,20 @@ class BackupSecretCryptoServiceTest {
             assertTrue(failure.failure().diagnostic().contains("encoding failed"));
         }
     }
+
+    @Test
+    void preservesDifferentRevisionsOfTheSameIdentifier() throws Exception {
+        BackupSecretCryptoService service = new BackupSecretCryptoService();
+        try (ResolvedSecretRevision first = new ResolvedSecretRevision(
+                new SecretReference("rotated-token", 1), "old-value".toCharArray());
+             ResolvedSecretRevision second = new ResolvedSecretRevision(
+                     new SecretReference("rotated-token", 2), "new-value".toCharArray())) {
+            byte[] encrypted = service.encryptRevisions(PASSWORD, java.util.List.of(second, first));
+
+            try (BackupSecretDocument restored = service.decryptRevisions(PASSWORD, encrypted)) {
+                assertEquals(java.util.List.of(first.reference(), second.reference()),
+                        restored.revisions().stream().map(ResolvedSecretRevision::reference).toList());
+            }
+        }
+    }
 }

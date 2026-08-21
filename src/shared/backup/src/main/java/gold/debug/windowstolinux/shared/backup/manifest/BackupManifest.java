@@ -2,11 +2,11 @@ package gold.debug.windowstolinux.shared.backup.manifest;
 
 import java.time.Instant;
 import java.time.format.DateTimeParseException;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
-import java.util.HashMap;
 import java.util.Objects;
 import java.util.Set;
 
@@ -23,7 +23,9 @@ public record BackupManifest(
     /** Current stable archive format identifier. / 当前稳定归档格式标识。 */
     public static final String CURRENT_FORMAT = "windowstolinux-backup";
     /** Current manifest schema version. / 当前清单模式版本。 */
-    public static final String CURRENT_SCHEMA_VERSION = "3";
+    public static final String CURRENT_SCHEMA_VERSION = "4";
+    /** Legacy schema retained for local inspection and preparation only. / 仅为本地检查及准备保留的旧版 schema。 */
+    public static final String LEGACY_SCHEMA_VERSION = "3";
 
     /** Validates schema compatibility and complete member uniqueness. / 校验模式兼容性与完整成员唯一性。 */
     public BackupManifest {
@@ -34,7 +36,9 @@ public record BackupManifest(
         inventory = Objects.requireNonNull(inventory, "inventory");
         members = List.copyOf(Objects.requireNonNull(members, "members"));
         provenance = Objects.requireNonNull(provenance, "provenance");
-        if (!CURRENT_FORMAT.equals(format) || !CURRENT_SCHEMA_VERSION.equals(schemaVersion)) {
+        if (!CURRENT_FORMAT.equals(format)
+                || (!CURRENT_SCHEMA_VERSION.equals(schemaVersion)
+                && !LEGACY_SCHEMA_VERSION.equals(schemaVersion))) {
             throw new IllegalArgumentException("unsupported backup format or schema version");
         }
         try {
@@ -45,6 +49,10 @@ public record BackupManifest(
         }
         if (!applicationId.equals(inventory.identity().applicationId())) {
             throw new IllegalArgumentException("manifest and inventory application identities differ");
+        }
+        boolean exactActivation = inventory.identity().releaseSetSha256().isPresent();
+        if (CURRENT_SCHEMA_VERSION.equals(schemaVersion) != exactActivation) {
+            throw new IllegalArgumentException("manifest schema version differs from its release and secret bindings");
         }
         if (members.isEmpty()) throw new IllegalArgumentException("backup manifest must contain members");
         Set<String> paths = new HashSet<>();
@@ -69,12 +77,35 @@ public record BackupManifest(
         return new BackupManifest(format, schemaVersion, createdAtUtc, applicationId, inventory, members, newProvenance);
     }
 
+    /** Returns whether this manifest contains all identities required for automatic activation. / 返回清单是否包含自动激活所需的全部身份。 */
+    public boolean supportsAutomaticActivation() {
+        return CURRENT_SCHEMA_VERSION.equals(schemaVersion)
+                && (inventory.secretReferences().isEmpty() || includesEncryptedSecrets());
+    }
+
+    /** Returns whether the archive declares its one fixed encrypted-secret member. / 返回归档是否声明唯一固定加密秘密成员。 */
+    public boolean includesEncryptedSecrets() {
+        return members.stream().anyMatch(member -> member.kind() == BackupMemberKind.ENCRYPTED_SECRETS);
+    }
+
     private static void validateInventoryMembers(BackupInventory inventory, List<BackupMember> members) {
         Map<String, BackupMemberKind> indexed = new HashMap<>();
         members.forEach(member -> indexed.put(member.path(), member.kind()));
         requireMembers(indexed, inventory.releaseManifests(), BackupMemberKind.RELEASE);
         requireMembers(indexed, inventory.configurationSnapshots(), BackupMemberKind.CONFIGURATION);
         requireMembers(indexed, inventory.serviceDefinitions(), BackupMemberKind.RUNTIME);
+        List<BackupMember> encryptedSecrets = members.stream()
+                .filter(member -> member.kind() == BackupMemberKind.ENCRYPTED_SECRETS).toList();
+        if (encryptedSecrets.size() > 1
+                || !encryptedSecrets.isEmpty() && !"secrets.enc".equals(encryptedSecrets.getFirst().path())) {
+            throw new IllegalArgumentException("encrypted secret content must use the single fixed secrets.enc member");
+        }
+        boolean declaresSecrets = inventory.identity().releaseSetSha256().isPresent()
+                ? !inventory.secretReferences().isEmpty()
+                : !inventory.legacySecretReferences().isEmpty();
+        if (!declaresSecrets && !encryptedSecrets.isEmpty()) {
+            throw new IllegalArgumentException("encrypted secret content has no declared manifest references");
+        }
     }
 
     private static void requireMembers(

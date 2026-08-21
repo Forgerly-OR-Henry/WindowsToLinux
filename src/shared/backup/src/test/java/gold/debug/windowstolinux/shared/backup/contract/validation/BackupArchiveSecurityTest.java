@@ -18,6 +18,7 @@ import gold.debug.windowstolinux.shared.backup.manifest.BackupProvenance;
 import gold.debug.windowstolinux.shared.backup.manifest.BackupRuntime;
 import gold.debug.windowstolinux.shared.backup.restore.BackupArchiveExtractor;
 import gold.debug.windowstolinux.shared.backup.restore.BackupRestoreCandidate;
+import gold.debug.windowstolinux.shared.config.secretref.SecretReference;
 import org.apache.commons.compress.archivers.zip.UnixStat;
 import org.apache.commons.compress.archivers.zip.ZipArchiveEntry;
 import org.apache.commons.compress.archivers.zip.ZipArchiveOutputStream;
@@ -166,13 +167,15 @@ class BackupArchiveSecurityTest {
         BackupDatabase database = new BackupDatabase(BackupDatabaseType.SQLITE, "application.db", "3.46",
                 "sqlite3 3.46", BackupConsistencyMode.SQLITE_ONLINE_BACKUP, List.of());
         BackupHealthCheck health = BackupHealthCheck.tcp(8080, 30, 5);
+        SecretReference secret = new SecretReference("db.password", 1);
         BackupComponent component = new BackupComponent("sample", "sample", "a".repeat(64),
                 "releases/release-1.json", "config/application.json", "runtime/sample.service", List.of(),
-                new BackupComponentRuntime.SpringBoot(health));
+                new BackupComponentRuntime.SpringBoot(health), "b".repeat(64), List.of(secret));
         BackupInventory inventory = new BackupInventory(
-                List.of("releases/release-1.json"), List.of("config/application.json"), List.of("db.password"),
+                List.of("releases/release-1.json"), List.of("config/application.json"), List.of(secret),
                 List.of("/srv/sample/content"), List.of("sample-content"), database,
-                new BackupIdentity("sample", "server-1", "/opt/windowstolinux/apps/sample", "release-1"),
+                new BackupIdentity("sample", "server-1", "/opt/windowstolinux/apps/sample",
+                        BackupInventory.computeReleaseSetSha256(List.of(component))),
                 List.of("runtime/sample.service"), List.of(component), "sample", health,
                 new BackupRuntime("ubuntu", "24.04", "systemd", "255", "x86_64", List.of("systemd")),
                 List.of("restore requires SQLite 3.46 or a compatible reader"));

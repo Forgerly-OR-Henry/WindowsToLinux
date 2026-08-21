@@ -12,10 +12,8 @@ import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Comparator;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Objects;
-import java.util.Set;
 
 /** Strict canonical binary codec whose secret buffers remain clearable. / 秘密缓冲区始终可清零的严格规范二进制编解码器。 */
 final class BackupSecretDocumentCodec {
@@ -79,8 +77,7 @@ final class BackupSecretDocumentCodec {
                 String identifier = identifier(readBytes(input, 1, 64, "identifier"));
                 requireRemaining(input, Long.BYTES + Integer.BYTES);
                 SecretReference reference = new SecretReference(identifier, input.getLong());
-                if (previous != null && (compare(previous, reference) >= 0
-                        || previous.identifier().equals(reference.identifier()))) {
+                if (previous != null && compare(previous, reference) >= 0) {
                     throw new IOException("backup secret revisions are not canonical and unique");
                 }
                 previous = reference;
@@ -114,9 +111,8 @@ final class BackupSecretDocumentCodec {
         }
         List<ResolvedSecretRevision> revisions = source.stream().map(revision ->
                 Objects.requireNonNull(revision, "revision")).sorted(ORDER).toList();
-        Set<String> identifiers = new HashSet<>();
-        if (revisions.stream().anyMatch(revision -> !identifiers.add(revision.reference().identifier()))) {
-            throw new IllegalArgumentException("backup secret revisions must be unique");
+        if (revisions.stream().map(ResolvedSecretRevision::reference).distinct().count() != revisions.size()) {
+            throw new IllegalArgumentException("backup secret revisions must be unique by exact reference");
         }
         return revisions;
     }

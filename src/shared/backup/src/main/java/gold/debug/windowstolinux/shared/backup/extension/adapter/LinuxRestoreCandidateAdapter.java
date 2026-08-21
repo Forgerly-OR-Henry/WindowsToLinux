@@ -34,6 +34,7 @@ public final class LinuxRestoreCandidateAdapter implements RestoreCandidatePort 
     /** Stages every validated archive member without addressing the active release. / 暂存每个已验证归档成员且不寻址活跃发布。 */
     @Override
     public FileEvidence stageFiles(RestoreCandidateRequest request) throws BackupException {
+        requireAutomaticActivation(request);
         try {
             RemoteRestoreStagingEvidence staged = files.stageRestoreFiles(stagingRequest(request));
             return new FileEvidence(staged.candidateId(), staged.candidateToken(), staged.stagedBytes(),
@@ -49,6 +50,7 @@ public final class LinuxRestoreCandidateAdapter implements RestoreCandidatePort 
     public HealthEvidence verifyComponents(
             RestoreCandidateRequest request, FileEvidence staged, Optional<String> databaseToken)
             throws BackupException {
+        requireAutomaticActivation(request);
         try {
             RestoreDeploymentPort.HealthEvidence health = deployments.verifyComponents(
                     deploymentRequest(request, staged.candidateToken()), checked(databaseToken));
@@ -64,6 +66,7 @@ public final class LinuxRestoreCandidateAdapter implements RestoreCandidatePort 
     public HealthEvidence verifyApplication(
             RestoreCandidateRequest request, FileEvidence staged, Optional<String> databaseToken)
             throws BackupException {
+        requireAutomaticActivation(request);
         try {
             RestoreDeploymentPort.HealthEvidence health = deployments.verifyApplication(
                     deploymentRequest(request, staged.candidateToken()), checked(databaseToken));
@@ -79,6 +82,7 @@ public final class LinuxRestoreCandidateAdapter implements RestoreCandidatePort 
     public CommitEvidence commit(
             RestoreCandidateRequest request, FileEvidence staged, Optional<String> databaseToken)
             throws BackupException {
+        requireAutomaticActivation(request);
         try {
             RestoreDeploymentPort.CommitEvidence committed = deployments.commit(
                     deploymentRequest(request, staged.candidateToken()), checked(databaseToken));
@@ -94,6 +98,7 @@ public final class LinuxRestoreCandidateAdapter implements RestoreCandidatePort 
     @Override
     public RecoveryEvidence recoverExisting(
             RestoreCandidateRequest request, Optional<FileEvidence> staged) throws BackupException {
+        requireAutomaticActivation(request);
         List<String> evidence = new ArrayList<>();
         boolean existingVerified = false;
         boolean candidateRemoved = false;
@@ -136,16 +141,26 @@ public final class LinuxRestoreCandidateAdapter implements RestoreCandidatePort 
                 .map(LinuxRestoreCandidateAdapter::component).toList();
         String remoteRoot = "/var/lib/windowstolinux/work/" + request.candidateId() + "/mutable/restore";
         return new RestoreDeploymentRequest(request.manifest().applicationId(), request.targetServerId(),
-                request.candidateId(), request.archiveSha256(), remoteRoot, candidateToken, components,
+                request.candidateId(), request.archiveSha256(),
+                request.manifest().inventory().identity().releaseSetSha256().orElseThrow(),
+                request.manifest().inventory().secretReferences(), remoteRoot, candidateToken, components,
                 request.manifest().inventory().applicationHealthComponentId(),
                 request.manifest().inventory().applicationHealthCheck().toHealthCheck());
     }
 
     private static RestoreDeploymentComponent component(BackupComponent component) {
         return new RestoreDeploymentComponent(component.componentId(), component.managedApplicationId(),
-                component.ownershipManifestSha256(), component.releaseManifestPath(),
+                component.ownershipManifestSha256(), component.releaseSha256().orElseThrow(),
+                component.secretReferences().orElseThrow(), component.releaseManifestPath(),
                 component.configurationSnapshotPath(), component.serviceDefinitionPath(), component.dependsOn(),
                 component.runtime().toSpecification());
+    }
+
+    private static void requireAutomaticActivation(RestoreCandidateRequest request) throws BackupException {
+        if (!Objects.requireNonNull(request, "request").manifest().supportsAutomaticActivation()) {
+            throw BackupException.create(BackupFailureType.RESTORE_PREFLIGHT_FAILED,
+                    "restore manifest lacks schema-v4 activation bindings or required encrypted secrets");
+        }
     }
 
     private static Optional<String> checked(Optional<String> token) {

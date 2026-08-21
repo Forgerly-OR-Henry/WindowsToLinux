@@ -1,7 +1,10 @@
 package gold.debug.windowstolinux.shared.deploy.contract.spi;
 
+import gold.debug.windowstolinux.shared.config.secretref.SecretReference;
+import gold.debug.windowstolinux.shared.model.deployment.ReleaseSetDigest;
 import gold.debug.windowstolinux.shared.model.health.HealthCheck;
 
+import java.util.Comparator;
 import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -15,12 +18,17 @@ public record RestoreDeploymentRequest(
         String targetServerId,
         String candidateId,
         String archiveSha256,
+        String releaseSetSha256,
+        List<SecretReference> secretReferences,
         String remoteCandidateRoot,
         String candidateToken,
         List<RestoreDeploymentComponent> components,
         String applicationHealthComponentId,
         HealthCheck applicationHealthCheck
 ) {
+    private static final Comparator<SecretReference> SECRET_ORDER = Comparator
+            .comparing(SecretReference::identifier).thenComparingLong(SecretReference::revision);
+
     /** Validates digest binding, dependency order and whole-application health ownership. / 校验摘要绑定、依赖顺序和整应用健康归属。 */
     public RestoreDeploymentRequest {
         applicationId = managedId(applicationId, "applicationId");
@@ -28,6 +36,17 @@ public record RestoreDeploymentRequest(
         archiveSha256 = Objects.requireNonNull(archiveSha256, "archiveSha256").trim().toLowerCase(Locale.ROOT);
         if (!archiveSha256.matches("[0-9a-f]{64}")) {
             throw new IllegalArgumentException("archiveSha256 must be canonical SHA-256");
+        }
+        releaseSetSha256 = Objects.requireNonNull(releaseSetSha256, "releaseSetSha256")
+                .trim().toLowerCase(Locale.ROOT);
+        if (!releaseSetSha256.matches("[0-9a-f]{64}")) {
+            throw new IllegalArgumentException("releaseSetSha256 must be canonical SHA-256");
+        }
+        secretReferences = List.copyOf(Objects.requireNonNull(secretReferences, "secretReferences"));
+        if (secretReferences.size() > 64 || secretReferences.stream().anyMatch(Objects::isNull)
+                || !secretReferences.equals(secretReferences.stream().sorted(SECRET_ORDER).toList())
+                || secretReferences.stream().distinct().count() != secretReferences.size()) {
+            throw new IllegalArgumentException("secretReferences must be canonical and unique by exact revision");
         }
         candidateId = Objects.requireNonNull(candidateId, "candidateId").trim();
         if (!candidateId.equals(applicationId + "-" + archiveSha256.substring(0, 16))) {
@@ -51,6 +70,16 @@ public record RestoreDeploymentRequest(
                     || !seen.add(component.componentId())) {
                 throw new IllegalArgumentException("restore components are duplicated or not dependency-first");
             }
+        }
+        String expectedReleaseSet = ReleaseSetDigest.sha256(components.stream().map(component ->
+                new ReleaseSetDigest.ComponentRelease(component.componentId(), component.releaseSha256())).toList());
+        if (!releaseSetSha256.equals(expectedReleaseSet)) {
+            throw new IllegalArgumentException("releaseSetSha256 differs from the dependency-ordered components");
+        }
+        Set<SecretReference> componentSecrets = new LinkedHashSet<>();
+        components.forEach(component -> componentSecrets.addAll(component.secretReferences()));
+        if (!componentSecrets.equals(new LinkedHashSet<>(secretReferences))) {
+            throw new IllegalArgumentException("application secretReferences must equal the component reference union");
         }
         applicationHealthComponentId = managedId(applicationHealthComponentId, "applicationHealthComponentId");
         if (!seen.contains(applicationHealthComponentId)) {

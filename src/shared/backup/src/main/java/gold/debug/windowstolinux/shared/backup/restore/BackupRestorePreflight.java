@@ -16,6 +16,9 @@ public final class BackupRestorePreflight {
     /** Returns explicit compatibility evidence or stops before mutation. / 返回显式兼容性证据，否则在修改前停止。 */
     public List<String> verify(BackupRestorePlan plan) throws BackupException {
         List<String> evidence = new ArrayList<>();
+        if (!plan.validation().manifest().supportsAutomaticActivation()) {
+            throw failed("restore manifest lacks schema-v4 activation bindings or required encrypted secrets");
+        }
         if (!Files.isDirectory(plan.candidate().root(), LinkOption.NOFOLLOW_LINKS)
                 || Files.isSymbolicLink(plan.candidate().root())) {
             throw failed("local restore candidate is not an existing non-link directory");

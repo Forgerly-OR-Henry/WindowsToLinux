@@ -15,6 +15,7 @@ import gold.debug.windowstolinux.shared.backup.manifest.BackupMemberKind;
 import gold.debug.windowstolinux.shared.backup.manifest.BackupRuntime;
 import gold.debug.windowstolinux.shared.deploy.contract.spi.RestoreDeploymentPort;
 import gold.debug.windowstolinux.shared.deploy.contract.spi.RestoreDeploymentRequest;
+import gold.debug.windowstolinux.shared.config.secretref.SecretReference;
 import gold.debug.windowstolinux.shared.linux.protocol.RemoteStepResult;
 import gold.debug.windowstolinux.shared.linux.protocol.restore.RemoteRestoreFilePort;
 import gold.debug.windowstolinux.shared.linux.protocol.restore.RemoteRestoreStagingEvidence;
@@ -30,6 +31,7 @@ import java.util.List;
 import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -51,7 +53,7 @@ class LinuxRestoreCandidateAdapterTest {
         RestoreCandidatePort.CommitEvidence committed = adapter.commit(
                 request, staged, Optional.of("database-token"));
 
-        assertEquals(3, files.staging.members().size());
+        assertEquals(4, files.staging.members().size());
         assertEquals(request.verifiedBytes(), staged.stagedBytes());
         assertTrue(components.healthy());
         assertTrue(application.healthy());
@@ -61,6 +63,10 @@ class LinuxRestoreCandidateAdapterTest {
                 deployments.request.components().getFirst().runtime());
         assertEquals("sample", deployments.request.applicationHealthComponentId());
         assertEquals("target-server", deployments.request.targetServerId());
+        assertEquals(request.manifest().inventory().identity().releaseSetSha256().orElseThrow(),
+                deployments.request.releaseSetSha256());
+        assertEquals(request.manifest().inventory().secretReferences(), deployments.request.secretReferences());
+        assertEquals("d".repeat(64), deployments.request.components().getFirst().releaseSha256());
     }
 
     @Test
@@ -78,21 +84,47 @@ class LinuxRestoreCandidateAdapterTest {
         assertTrue(files.discardCalled);
     }
 
+    @Test
+    void rejectsNonActivatableManifestBeforeRemoteStaging() throws Exception {
+        RecordingFiles files = new RecordingFiles();
+        LinuxRestoreCandidateAdapter adapter = new LinuxRestoreCandidateAdapter(
+                files, new RecordingDeployments(false));
+        RestoreCandidateRequest exact = request();
+        BackupManifest withoutSecrets = new BackupManifest(
+                exact.manifest().format(), exact.manifest().schemaVersion(), exact.manifest().createdAtUtc(),
+                exact.manifest().applicationId(), exact.manifest().inventory(),
+                exact.manifest().members().stream()
+                        .filter(member -> member.kind() != BackupMemberKind.ENCRYPTED_SECRETS).toList(),
+                exact.manifest().provenance());
+        RestoreCandidateRequest request = new RestoreCandidateRequest(
+                withoutSecrets, exact.localCandidateRoot(), exact.archiveSha256(), exact.verifiedBytes(),
+                exact.candidateId(), exact.targetServerId(), exact.rebuildFromSource());
+
+        BackupException failure = assertThrows(BackupException.class, () -> adapter.stageFiles(request));
+
+        assertEquals("backup.restore.preflight-failed", failure.failure().code());
+        assertNull(files.staging);
+    }
+
     private RestoreCandidateRequest request() throws Exception {
         String digest = "b".repeat(64);
         Path root = Files.createDirectory(temporary.resolve("sample-" + digest.substring(0, 16)));
         BackupHealthCheck health = BackupHealthCheck.tcp(8080, 30, 5);
+        List<SecretReference> secrets = List.of(
+                new SecretReference("rotated-token", 1), new SecretReference("rotated-token", 2));
         BackupComponent component = new BackupComponent("sample", "sample", "c".repeat(64),
                 "releases/sample.json", "config/sample.json", "runtime/sample.service", List.of(),
-                new BackupComponentRuntime.NodeService(22, health));
+                new BackupComponentRuntime.NodeService(22, health), "d".repeat(64), secrets);
         List<BackupMember> members = List.of(
                 new BackupMember("releases/sample.json", 0, "a".repeat(64), BackupMemberKind.RELEASE),
                 new BackupMember("config/sample.json", 0, "a".repeat(64), BackupMemberKind.CONFIGURATION),
-                new BackupMember("runtime/sample.service", 0, "a".repeat(64), BackupMemberKind.RUNTIME));
+                new BackupMember("runtime/sample.service", 0, "a".repeat(64), BackupMemberKind.RUNTIME),
+                new BackupMember("secrets.enc", 0, "a".repeat(64), BackupMemberKind.ENCRYPTED_SECRETS));
         BackupInventory inventory = new BackupInventory(
-                List.of("releases/sample.json"), List.of("config/sample.json"), List.of(), List.of(), List.of(),
+                List.of("releases/sample.json"), List.of("config/sample.json"), secrets, List.of(), List.of(),
                 BackupDatabase.none(),
-                new BackupIdentity("sample", "source-server", "/var/lib/windowstolinux/apps/sample", "release-1"),
+                new BackupIdentity("sample", "source-server", "/var/lib/windowstolinux/apps/sample",
+                        BackupInventory.computeReleaseSetSha256(List.of(component))),
                 List.of("runtime/sample.service"), List.of(component), "sample", health,
                 new BackupRuntime("ubuntu", "24.04", "systemd", "255", "x86_64", List.of("systemd")),
                 List.of());

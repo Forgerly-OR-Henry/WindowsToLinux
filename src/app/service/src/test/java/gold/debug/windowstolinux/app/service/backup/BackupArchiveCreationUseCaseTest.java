@@ -88,11 +88,12 @@ class BackupArchiveCreationUseCaseTest {
         BackupHealthCheck health = BackupHealthCheck.tcp(8080, 30, 5);
         BackupComponent component = new BackupComponent("sample", "sample", "a".repeat(64),
                 "releases/sample.json", "config/sample.json", "runtime/sample.service", List.of(),
-                new BackupComponentRuntime.NodeService(22, health));
+                new BackupComponentRuntime.NodeService(22, health), "b".repeat(64), List.of());
         BackupInventory inventory = new BackupInventory(
                 List.of("releases/sample.json"), List.of("config/sample.json"), List.of(), List.of(), List.of(),
                 BackupDatabase.none(),
-                new BackupIdentity("sample", "server-1", "/var/lib/windowstolinux/apps/sample", "release-1"),
+                new BackupIdentity("sample", "server-1", "/var/lib/windowstolinux/apps/sample",
+                        BackupInventory.computeReleaseSetSha256(List.of(component))),
                 List.of("runtime/sample.service"), List.of(component), "sample", health,
                 new BackupRuntime("ubuntu", "24.04", "systemd", "255", "x86_64", List.of("systemd")),
                 List.of());

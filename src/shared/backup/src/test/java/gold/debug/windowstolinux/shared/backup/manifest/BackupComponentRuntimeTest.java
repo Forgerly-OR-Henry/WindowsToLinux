@@ -88,7 +88,8 @@ class BackupComponentRuntimeTest {
     private static BackupManifest manifest(BackupComponentRuntime runtime) {
         BackupHealthCheck health = BackupHealthCheck.from(runtime.healthCheck().toHealthCheck());
         BackupComponent component = new BackupComponent("sample", "sample", "b".repeat(64),
-                "releases/sample.json", "config/sample.json", "runtime/sample.service", List.of(), runtime);
+                "releases/sample.json", "config/sample.json", "runtime/sample.service", List.of(), runtime,
+                "c".repeat(64), List.of());
         BackupInventory inventory = inventory(List.of(component), "sample", health);
         return BackupManifest.create(Instant.parse("2026-08-22T00:00:00Z"), "sample", inventory,
                 members("sample"));
@@ -101,7 +102,8 @@ class BackupComponentRuntimeTest {
                 ids.stream().map(id -> "releases/" + id + ".json").toList(),
                 ids.stream().map(id -> "config/" + id + ".json").toList(), List.of(), List.of(), List.of(),
                 BackupDatabase.none(),
-                new BackupIdentity("sample", "server-1", "/var/lib/windowstolinux/apps/sample", "release-1"),
+                new BackupIdentity("sample", "server-1", "/var/lib/windowstolinux/apps/sample",
+                        BackupInventory.computeReleaseSetSha256(components)),
                 ids.stream().map(id -> "runtime/" + id + ".service").toList(),
                 components, healthComponentId, health,
                 new BackupRuntime("ubuntu", "24.04", "systemd", "255", "x86_64", List.of("systemd")),
@@ -111,7 +113,7 @@ class BackupComponentRuntimeTest {
     private static BackupComponent component(String id, List<String> dependencies, BackupHealthCheck health) {
         return new BackupComponent(id, id, "b".repeat(64), "releases/" + id + ".json",
                 "config/" + id + ".json", "runtime/" + id + ".service", dependencies,
-                new BackupComponentRuntime.SpringBoot(health));
+                new BackupComponentRuntime.SpringBoot(health), "c".repeat(64), List.of());
     }
 
     private static List<BackupMember> members(String id) {

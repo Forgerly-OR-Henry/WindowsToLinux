@@ -16,6 +16,7 @@ import gold.debug.windowstolinux.shared.backup.restore.BackupArchiveExtractor;
 import gold.debug.windowstolinux.shared.backup.restore.BackupRestoreCandidate;
 import gold.debug.windowstolinux.shared.backup.manifest.BackupMember;
 import gold.debug.windowstolinux.shared.backup.manifest.BackupMemberKind;
+import gold.debug.windowstolinux.shared.config.secretref.SecretReference;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -134,10 +135,21 @@ public final class BackupUseCase {
             BackupArchiveValidation validation,
             BackupSecretDocument document
     ) throws BackupSecretException {
-        Set<String> expected = new LinkedHashSet<>(validation.manifest().inventory().secretReferences());
-        Set<String> actual = document.revisions().stream().map(revision -> revision.reference().identifier())
-                .collect(java.util.stream.Collectors.toCollection(LinkedHashSet::new));
-        if (expected.isEmpty() || !actual.equals(expected)) {
+        boolean matches;
+        if (validation.manifest().supportsAutomaticActivation()) {
+            Set<SecretReference> expected = new LinkedHashSet<>(
+                    validation.manifest().inventory().secretReferences());
+            Set<SecretReference> actual = document.revisions().stream().map(revision -> revision.reference())
+                    .collect(java.util.stream.Collectors.toCollection(LinkedHashSet::new));
+            matches = !expected.isEmpty() && actual.equals(expected);
+        } else {
+            Set<String> expected = new LinkedHashSet<>(
+                    validation.manifest().inventory().legacySecretReferences());
+            Set<String> actual = document.revisions().stream().map(revision -> revision.reference().identifier())
+                    .collect(java.util.stream.Collectors.toCollection(LinkedHashSet::new));
+            matches = !expected.isEmpty() && actual.equals(expected);
+        }
+        if (!matches) {
             throw BackupSecretException.create(BackupSecretFailureType.PAYLOAD_INVALID,
                     "authenticated secret revisions do not exactly match the manifest references");
         }

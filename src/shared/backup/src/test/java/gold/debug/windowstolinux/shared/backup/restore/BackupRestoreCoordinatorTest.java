@@ -1,5 +1,9 @@
 package gold.debug.windowstolinux.shared.backup.restore;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ArrayNode;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import gold.debug.windowstolinux.shared.backup.contract.spi.DatabaseBackupAdapter;
 import gold.debug.windowstolinux.shared.backup.contract.spi.DatabaseBackupArtifact;
 import gold.debug.windowstolinux.shared.backup.contract.spi.DatabaseBackupRequest;
@@ -22,6 +26,7 @@ import gold.debug.windowstolinux.shared.backup.manifest.BackupHealthCheck;
 import gold.debug.windowstolinux.shared.backup.manifest.BackupIdentity;
 import gold.debug.windowstolinux.shared.backup.manifest.BackupInventory;
 import gold.debug.windowstolinux.shared.backup.manifest.BackupManifest;
+import gold.debug.windowstolinux.shared.backup.manifest.BackupManifestCodec;
 import gold.debug.windowstolinux.shared.backup.manifest.BackupMember;
 import gold.debug.windowstolinux.shared.backup.manifest.BackupMemberKind;
 import gold.debug.windowstolinux.shared.backup.manifest.BackupRuntime;
@@ -78,6 +83,27 @@ class BackupRestoreCoordinatorTest {
         BackupRestoreResult result = coordinator(port).restore(plan("arm64"));
 
         assertEquals(BackupRestoreStatus.FAILED_EXISTING_PRESERVED, result.status());
+        assertEquals(0, port.stageCalls);
+        assertFalse(port.recoveryCalled);
+    }
+
+    @Test
+    void schemaV3StopsBeforeAnyAutomaticRestoreMutation() throws Exception {
+        RecordingCandidatePort port = new RecordingCandidatePort(false, false);
+        BackupRestorePlan current = plan("x86_64");
+        BackupManifest legacy = legacy(current.validation().manifest());
+        BackupArchiveValidation validation = new BackupArchiveValidation(
+                current.validation().archiveSha256(), legacy, current.validation().verifiedBytes(),
+                current.validation().provenanceStatus());
+        BackupRestorePlan legacyPlan = new BackupRestorePlan(validation,
+                new BackupRestoreCandidate(current.candidate().root(), legacy, current.candidate().extractedBytes()),
+                current.localCandidateParent(), current.candidateId(), current.materialKind(), current.target(),
+                current.databaseRestore());
+
+        BackupRestoreResult result = coordinator(port).restore(legacyPlan);
+
+        assertEquals(BackupRestoreStatus.FAILED_EXISTING_PRESERVED, result.status());
+        assertEquals("backup.restore.preflight-failed", result.failure().orElseThrow().code());
         assertEquals(0, port.stageCalls);
         assertFalse(port.recoveryCalled);
     }
@@ -173,7 +199,8 @@ class BackupRestoreCoordinatorTest {
         BackupInventory inventory = new BackupInventory(
                 List.of("releases/release.json"), List.of("config/application.json"), List.of(),
                 List.of("data/content"), List.of(), BackupDatabase.none(),
-                new BackupIdentity("sample", "source-server", "/opt/windowstolinux/apps/sample", "release-source"),
+                new BackupIdentity("sample", "source-server", "/opt/windowstolinux/apps/sample",
+                        BackupInventory.computeReleaseSetSha256(List.of(component))),
                 List.of("runtime/sample.service"), List.of(component), "sample", health,
                 new BackupRuntime("ubuntu", "24.04", "systemd", "255", "x86_64", List.of("systemd")),
                 List.of());
@@ -200,7 +227,8 @@ class BackupRestoreCoordinatorTest {
         BackupInventory inventory = new BackupInventory(
                 List.of("releases/release.json"), List.of("config/application.json"), List.of(),
                 List.of("data/content"), List.of(), database,
-                new BackupIdentity("sample", "source-server", "/opt/windowstolinux/apps/sample", "release-source"),
+                new BackupIdentity("sample", "source-server", "/opt/windowstolinux/apps/sample",
+                        BackupInventory.computeReleaseSetSha256(List.of(component))),
                 List.of("runtime/sample.service"), List.of(component), "sample", health,
                 new BackupRuntime("ubuntu", "24.04", "systemd", "255", "x86_64", List.of("systemd")),
                 List.of());
@@ -234,7 +262,29 @@ class BackupRestoreCoordinatorTest {
     private static BackupComponent component(BackupHealthCheck health) {
         return new BackupComponent("sample", "sample", "d".repeat(64),
                 "releases/release.json", "config/application.json", "runtime/sample.service", List.of(),
-                new BackupComponentRuntime.SpringBoot(health));
+                new BackupComponentRuntime.SpringBoot(health), "e".repeat(64), List.of());
+    }
+
+    private static BackupManifest legacy(BackupManifest current) throws Exception {
+        BackupManifestCodec codec = new BackupManifestCodec();
+        ObjectMapper mapper = new ObjectMapper();
+        ObjectNode root = (ObjectNode) mapper.readTree(codec.write(current));
+        root.put("schemaVersion", BackupManifest.LEGACY_SCHEMA_VERSION);
+        ObjectNode inventory = (ObjectNode) root.get("inventory");
+        ObjectNode identity = (ObjectNode) inventory.get("identity");
+        identity.remove("releaseSetSha256");
+        identity.put("releaseIdentity", "release-source");
+        ArrayNode legacySecrets = mapper.createArrayNode();
+        for (JsonNode reference : inventory.withArray("secretReferences")) {
+            legacySecrets.add(reference.get("identifier").asText());
+        }
+        inventory.set("secretReferences", legacySecrets);
+        for (JsonNode value : inventory.withArray("components")) {
+            ObjectNode component = (ObjectNode) value;
+            component.remove("releaseSha256");
+            component.remove("secretReferences");
+        }
+        return codec.read(mapper.writeValueAsBytes(root));
     }
 
     private RestoreTargetProfile target(
