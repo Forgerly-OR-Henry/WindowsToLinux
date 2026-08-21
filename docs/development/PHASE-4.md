@@ -2,7 +2,7 @@
 
 ## 文档信息
 
-- 阶段基线版本：`2.10.0-phase4-desktop-maintenance-handoff`
+- 阶段基线版本：`2.11.0-phase4-runtime-readiness`
 - 文档结构版本：`2.0.0-roadmap-rebaseline`
 - 文档状态：**实施中**
 - 当前实现：schema v3 类型化组件恢复清单、平台无关恢复/迁移状态机、Linux/SSHD 摘要候选文件暂存、桌面本地归档校验/候选准备及 `secrets.enc` 精确修订交接已完成静态实现；Windows 更新/卸载安全核心已分离主进程准备与已认证外部执行。JDK 21 完整 28-POM 离线门禁通过 330 项测试、0 失败、0 错误、25 项真实环境条件跳过；候选端口隔离、deploy 激活/切换、生产维护平台接线和 helper v4 实机验收继续开发
@@ -12,6 +12,7 @@
 ## 文档导航
 
 - [项目结构](../File.md)
+- [真实环境验收准备](PHASE-4-RUNTIME-ACCEPTANCE.md)
 - [一期](PHASE-1.md)
 - [二期](PHASE-2.md)
 - [三期](PHASE-3.md)
@@ -208,6 +209,7 @@ secrets.enc            # 用户选择包含秘密时的独立认证加密成员
 
 | 版本 | 日期 | 说明 |
 | --- | --- | --- |
+| 2.11.0-phase4-runtime-readiness | 2026-08-22 | 新增真实环境验收准备文档，冻结 JDK 21 静态门禁、helper v4 现有产品入口的环境变量/系统属性/命令和证据模板；逐项标明数据库、恢复、迁移与桌面维护仍缺少的产品接线，明确当前尚不能仅凭测试服务器完成四期端到端验收。 |
 | 2.10.0-phase4-desktop-maintenance-handoff | 2026-08-22 | 将更新/卸载主进程准备与外部执行拆为不同 API，任何替换或删除前都要求执行器身份、主进程退出和交接真实性证据，卸载还在外部进程重新验证受管边界。同步 helper v4 发行版脚本测试镜像并通过 JDK 21 完整 28-POM 离线门禁；生产公钥、独立 jpackage 执行器、Credential Manager 和真实环境证据仍为 `RUNTIME-PENDING`。 |
 | 2.9.0-phase4-secret-revision-handoff | 2026-08-22 | 定义不产生秘密字符串的严格规范二进制秘密修订载荷；`app/secret.crypto` 在 Argon2id/AES-GCM 整体认证后形成可清零 `ResolvedSecretRevision`，service 再要求秘密标识集合与 manifest 完全一致。任何失败均关闭部分结果、清零调用方密码并清理本次候选；该交接不外推为候选已激活。 |
 | 2.8.0-phase4-desktop-backup-entry | 2026-08-22 | 接通 service/main/Swing 的最小备份功能入口：只读完整校验，或重新校验并提取到 Windows 平台工作区的摘要绑定隔离候选；失败局限于本次尝试，语言/主题切换保留页面状态。入口不连接服务器、不激活候选，远端恢复仍受候选端口与解密秘密交接阻塞。 |

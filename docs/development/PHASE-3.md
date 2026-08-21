@@ -2,11 +2,11 @@
 
 ## 文档信息
 
-- 阶段基线版本：`2.14.0-phase3-closeout`
+- 阶段基线版本：`2.15.0-helper-v4-acceptance-readiness`
 - 文档结构版本：`2.0.0-roadmap-rebaseline`
 - 文档状态：**本轮三期实现与 Ubuntu 24.04 x86-64、CentOS Stream 9 x86-64 产品入口验收完成；其他发行版实机测试由用户明确延后至后续独立任务**
-- 当前实现：Go、Rust、.NET、Kotlin、PHP、Ruby 已接入固定试验链路，并通过目标机构建、发布、HTTP 健康、故障回滚、生命周期、秘密脱敏和桌面状态重启恢复；桌面多组件页已通过两组件整应用发布、组件故障整应用回滚、SQLite v7 图重载和依赖安全生命周期实机验收；三个 AI 角色使用独立 Provider/模型和安全冲突裁决；CentOS Stream 9 已通过产品入口的两次环境准备、两组件发布、故障候选整应用回滚与生命周期验收，且 SELinux 与防火墙态均保持验收前观测值。Debian、Rocky Linux、AlmaLinux、Oracle Linux 的实机测试延后，不能据此声称实机支持
-- 更新日期：2026-08-14
+- 当前实现：Go、Rust、.NET、Kotlin、PHP、Ruby 已接入固定试验链路，并通过目标机构建、发布、HTTP 健康、故障回滚、生命周期、秘密脱敏和桌面状态重启恢复；桌面多组件页已通过两组件整应用发布、组件故障整应用回滚、SQLite v7 图重载和依赖安全生命周期实机验收；三个 AI 角色使用独立 Provider/模型和安全冲突裁决；CentOS Stream 9 已通过产品入口的两次环境准备、两组件发布、故障候选整应用回滚与生命周期验收，且 SELinux 与防火墙态均保持验收前观测值。以上实机证据均属于当时 helper v3；当前验收入口已绑定 `ManagedHelperProtocolVersion.CURRENT`（现为 v4），Debian、Rocky Linux、AlmaLinux、Oracle Linux 和 helper v4 的实机复验仍延后，不能据此声称实机支持
+- 更新日期：2026-08-22
 - 上级文档：[开发总纲](../DEVELOPMENT.md)
 
 ## 文档导航
@@ -160,7 +160,7 @@ Kotlin 夹具固定 Gradle 8.10.2 Wrapper、官方二进制分发 SHA-256 和官
 - EL10 系列可能存在 x86-64-v2/v3 差异，必须依据具体发行版官方要求和实际 CPU 检测决定。
 - 非 x86-64、停止维护版本或生命周期不明版本默认只做识别预览，除非用户另行确认适配范围。
 - AppArmor/SELinux、防火墙和包管理变化必须进入计划；禁止为求成功静默关闭安全机制。
-- `ManagedDistributionProductEntryAcceptanceTest` 仅在 `managed.runtime.distribution-acceptance=true` 时运行；每次必须给出无秘密的发行版、版本、包架构、CPU 基线与准备预期。它先采集精确身份和安全/防火墙事实，再经 `DesktopApplicationFacade → SshdLinuxGateway` 执行两次环境准备，复核 helper v3 与安全状态不变，最后复用两组件整应用发布、故障回滚和生命周期事务。AlmaLinux 10 的 x86-64-v2 目标只验证“自动准备被拒绝”，不进入发布成功路径。该框架不是实机证据，普通 Maven 验证不会连接服务器。
+- `ManagedDistributionProductEntryAcceptanceTest` 仅在 `managed.runtime.distribution-acceptance=true` 时运行；每次必须给出无秘密的发行版、版本、包架构、CPU 基线与准备预期。它先采集精确身份和安全/防火墙事实，再经 `DesktopApplicationFacade → SshdLinuxGateway` 执行两次环境准备，复核当前 `ManagedHelperProtocolVersion.CURRENT`（现为 helper v4）与安全状态不变，最后复用两组件整应用发布、故障回滚和生命周期事务。AlmaLinux 10 的 x86-64-v2 目标只验证“自动准备被拒绝”，不进入发布成功路径。该框架不是实机证据，普通 Maven 验证不会连接服务器；历史实机结论仍只覆盖当时 helper v3。
 
 ## 9. 实施顺序
 
@@ -208,6 +208,7 @@ Kotlin 夹具固定 Gradle 8.10.2 Wrapper、官方二进制分发 SHA-256 和官
 
 | 版本 | 日期 | 说明 |
 | --- | --- | --- |
+| 2.15.0-helper-v4-acceptance-readiness | 2026-08-22 | 将非 Ubuntu 产品入口验收说明从固定 helper v3 改为绑定 `ManagedHelperProtocolVersion.CURRENT`，明确当前源码为 v4、历史实机结果仍只覆盖 v3；命令与证据格式统一收录至四期真实环境验收准备文档，不新增实机结论。 |
 | 2.14.0-phase3-closeout | 2026-08-14 | 完成本轮三期代码、结构、静态验证与 Ubuntu 24.04/CentOS Stream 9 精确产品入口验收；删除一次性 CentOS 直接 root 引导测试，避免保留非产品部署旁路。用户明确将 Debian、Rocky、Alma、Oracle 实机验收延后为后续独立任务，全部维持 `RUNTIME-PENDING`。 |
 | 2.13.0-phase3-centos-stream-acceptance | 2026-08-14 | CentOS Stream 9 x86-64 通过产品入口两次环境准备、两组件发布、故障候选整应用回滚、应用/数据库重启、生命周期与自启切换验收；SELinux 与防火墙态在准备前后保持观测值。修复空 nftables 规则集探测、包管理器 Java 21 默认运行时、可省略 `VARIANT_ID` 和只读 SSH 短暂超时；其他发行版仍不外推。 |
 | 2.12.0-phase3-centos-stream-recovery-blocked | 2026-08-14 | Stream 9 已由产品入口复验 SELinux Enforcing；修复准备脚本对可省略 `VARIANT_ID` 的遗留要求，并保留 APT/DNF 的无秘密失败阶段。目标随后在 SSH 密钥交换前关闭连接，未以手工发布替代，完整验收保持 `RUNTIME-PENDING`。 |
