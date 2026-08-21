@@ -1,9 +1,9 @@
 package gold.debug.windowstolinux.app.service.deployment;
 
 import gold.debug.windowstolinux.app.db.persistence.repository.ManagedApplicationRepository;
+import gold.debug.windowstolinux.app.service.failure.ApplicationServiceException;
+import gold.debug.windowstolinux.app.service.failure.ApplicationServiceFailureType;
 import gold.debug.windowstolinux.shared.model.managed.ManagedApplication;
-import gold.debug.windowstolinux.shared.model.message.LocalizedMessage;
-import gold.debug.windowstolinux.shared.model.message.LocalizedOperationException;
 import gold.debug.windowstolinux.shared.model.server.ServerIdentity;
 
 import java.security.SecureRandom;
@@ -21,15 +21,15 @@ final class ManagedApplicationIdentityResolver {
         if (saved.isEmpty()) return ManagedApplication.forManaged(applicationId, server, randomDigest());
         ManagedApplication existing = saved.orElseThrow();
         if (!existing.server().equals(server)) {
-            throw new LocalizedOperationException(LocalizedMessage.of(
-                    "deployment.applicationServerConflict", "application", applicationId),
+            throw ApplicationServiceException.create(ApplicationServiceFailureType.APPLICATION_SERVER_CONFLICT,
+                    java.util.Map.of("application", applicationId),
                     "Managed application " + applicationId + " is bound to a different server identity");
         }
         ManagedApplication canonical = ManagedApplication.forManaged(
                 applicationId, server, existing.ownershipManifestSha256());
         if (!existing.equals(canonical)) {
-            throw new LocalizedOperationException(LocalizedMessage.of(
-                    "deployment.applicationIdentityInvalid", "application", applicationId),
+            throw ApplicationServiceException.create(ApplicationServiceFailureType.APPLICATION_IDENTITY_INVALID,
+                    java.util.Map.of("application", applicationId),
                     "Saved managed application identity violates managed-deployment rules");
         }
         return existing;

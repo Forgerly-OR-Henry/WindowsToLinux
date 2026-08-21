@@ -1,52 +1,48 @@
 package gold.debug.windowstolinux.shared.deploy.contract.result.deployment;
 
-
-import gold.debug.windowstolinux.shared.model.message.LocalizedMessage;
 import gold.debug.windowstolinux.shared.model.deployment.DeploymentTraceEvent;
+import gold.debug.windowstolinux.shared.model.failure.FailureDescriptor;
+import gold.debug.windowstolinux.shared.model.message.LocalizedMessage;
 
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 
-/**
- * A short, secret-free trace entry suitable for UI and persisted history.
- *
- * <p>适用于界面和持久化历史的简短、无秘密跟踪条目。
- *
- * @param step the {@code step} value / {@code step} 值
- * @param succeeded the {@code succeeded} value / {@code succeeded} 值
- * @param message the {@code message} value / {@code message} 值
- * @param evidence the {@code evidence} value / {@code evidence} 值
- */
-public record DeploymentEvent(String step, boolean succeeded, LocalizedMessage message, String evidence) {
-    /**
-     * Creates a {@code DeploymentEvent} instance.
-     *
-     * <p>创建 {@code DeploymentEvent} 实例。
-     *
-     * @param step the {@code step} value / {@code step} 值
-     * @param succeeded the {@code succeeded} value / {@code succeeded} 值
-     * @param message the {@code message} value / {@code message} 值
-     * @param evidence the {@code evidence} value / {@code evidence} 值
-     * @throws NullPointerException if a required argument is {@code null} / 必要参数为 {@code null} 时
-     */
+/** A typed, secret-free deployment trace entry with an optional structured failure. / 可携带结构化失败的类型化无秘密部署跟踪条目。 */
+public record DeploymentEvent(
+        DeploymentTraceEvent step,
+        boolean succeeded,
+        LocalizedMessage message,
+        String evidence,
+        Optional<FailureDescriptor> failure
+) {
+    /** Validates one immutable trace event. / 校验一项不可变跟踪事件。 */
     public DeploymentEvent {
         step = Objects.requireNonNull(step, "step");
         message = Objects.requireNonNull(message, "message");
         evidence = Objects.requireNonNull(evidence, "evidence");
-        step = DeploymentTraceEvent.fromCode(step).code();
+        failure = Objects.requireNonNull(failure, "failure");
+        if (succeeded && failure.isPresent()) {
+            throw new IllegalArgumentException("a successful deployment event cannot carry a failure");
+        }
     }
 
-    /**
-     * Compatibility constructor for diagnostic-only integrations.
-     *
-     * <p>用于仅提供诊断信息的集成兼容构造器。
-     *
-     * @param step the {@code step} value / {@code step} 值
-     * @param succeeded the {@code succeeded} value / {@code succeeded} 值
-     * @param evidence the {@code evidence} value / {@code evidence} 值
-     */
-    public DeploymentEvent(String step, boolean succeeded, String evidence) {
-        this(step, succeeded, LocalizedMessage.of(succeeded ? "deployment.event.succeeded" : "deployment.event.failed",
-                Map.of("step", step)), evidence);
+    /** Creates a typed controlled step result. / 创建类型化受控步骤结果。 */
+    public static DeploymentEvent result(DeploymentTraceEvent step, boolean succeeded, String evidence) {
+        return new DeploymentEvent(step, succeeded,
+                LocalizedMessage.of(succeeded ? "deployment.event.succeeded" : "deployment.event.failed",
+                        Map.of("step", step.code())), evidence, Optional.empty());
+    }
+
+    /** Creates a typed failed step carrying its shared failure descriptor. / 创建携带共用失败描述的类型化失败步骤。 */
+    public static DeploymentEvent failed(DeploymentTraceEvent step, FailureDescriptor failure) {
+        Objects.requireNonNull(failure, "failure");
+        return new DeploymentEvent(step, false, failure.userMessage(), failure.diagnostic(), Optional.of(failure));
+    }
+
+    /** Returns this event with a carried failure rebound to the enclosing operation. / 返回将携带失败绑定到外层操作的事件。 */
+    public DeploymentEvent withOperationIdentity(gold.debug.windowstolinux.shared.model.failure.OperationIdentity identity) {
+        Objects.requireNonNull(identity, "identity");
+        return failure.map(value -> failed(step, value.withOperationIdentity(identity))).orElse(this);
     }
 }

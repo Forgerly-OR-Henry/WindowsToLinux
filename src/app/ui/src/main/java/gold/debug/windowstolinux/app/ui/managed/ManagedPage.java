@@ -112,7 +112,17 @@ public final class ManagedPage {
                     result -> output.setText(messages.text(
                             result.accepted() ? "lifecycle.accepted" : "lifecycle.rejected",
                             Map.of("message", messages.catalog().text(result.message()),
-                                    "observation", messages.lifecycle(result.observation().orElse(null))))),
+                                    "observation", messages.lifecycle(result.observation().orElse(null))))
+                            + "\n" + messages.text("failure.operation.summary",
+                            Map.of("operationId", result.operationIdentity().toString()))
+                            + result.failure().map(failure -> "\n" + failure.code()).orElse("")
+                            + result.nonFatalFailures().stream().map(failure -> "\n" + messages.text(
+                                    "failure.warning.summary", Map.of("code", failure.code(),
+                                            "message", messages.catalog().text(failure.userMessage()),
+                                            "recovery", messages.text("failure.recovery."
+                                                    + failure.recoveryDisposition().name()
+                                                    .toLowerCase(Locale.ROOT)))))
+                            .reduce("", String::concat)),
                     exception -> output.setText(messages.text("lifecycle.failed",
                             Map.of("detail", messages.safe(exception)))));
         } catch (Exception exception) {

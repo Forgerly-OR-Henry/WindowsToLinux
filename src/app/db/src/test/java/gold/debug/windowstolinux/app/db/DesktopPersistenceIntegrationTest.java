@@ -1,5 +1,7 @@
 package gold.debug.windowstolinux.app.db;
 
+import gold.debug.windowstolinux.app.db.failure.DesktopPersistenceException;
+import gold.debug.windowstolinux.app.db.failure.DesktopPersistenceFailureType;
 import gold.debug.windowstolinux.app.db.entity.CurrentRelease;
 import gold.debug.windowstolinux.app.db.entity.ManagedApplicationGraph;
 import gold.debug.windowstolinux.app.db.entity.OpaqueSecret;
@@ -85,6 +87,38 @@ class DesktopPersistenceIntegrationTest {
             assertEquals("zh-CN", database.preferences().find(DesktopPersistence.UI_LOCALE_SETTING).orElseThrow());
             assertEquals("SYSTEM", database.preferences().find(DesktopPersistence.UI_THEME_SETTING).orElseThrow());
         }
+    }
+
+    @Test
+    void classifiesUnavailableDirectoryCorruptionLockAndRollbackFailure() throws Exception {
+        Path fileInsteadOfDirectory = Files.writeString(temporaryDirectory.resolve("not-a-directory"), "fixture");
+        assertEquals(DesktopPersistenceFailureType.DATA_DIRECTORY_UNAVAILABLE,
+                assertThrows(DesktopPersistenceException.class,
+                        () -> DesktopPersistence.open(fileInsteadOfDirectory)).failure().definition());
+
+        Path corruptDirectory = Files.createDirectories(temporaryDirectory.resolve("corrupt"));
+        Files.writeString(corruptDirectory.resolve("windowstolinux.db"), "not a sqlite database");
+        assertEquals(DesktopPersistenceFailureType.DATABASE_CORRUPTED,
+                assertThrows(DesktopPersistenceException.class,
+                        () -> DesktopPersistence.open(corruptDirectory)).failure().definition());
+
+        Path lockedDirectory = Files.createDirectories(temporaryDirectory.resolve("locked"));
+        Path lockedDatabase = lockedDirectory.resolve("windowstolinux.db");
+        try (Connection lock = DriverManager.getConnection("jdbc:sqlite:" + lockedDatabase);
+             Statement statement = lock.createStatement()) {
+            statement.execute("PRAGMA locking_mode = EXCLUSIVE");
+            statement.execute("BEGIN EXCLUSIVE");
+            statement.execute("CREATE TABLE lock_probe (value INTEGER)");
+            assertEquals(DesktopPersistenceFailureType.DATABASE_LOCKED,
+                    assertThrows(DesktopPersistenceException.class,
+                            () -> DesktopPersistence.open(lockedDirectory)).failure().definition());
+            statement.execute("ROLLBACK");
+        }
+
+        java.sql.SQLException primary = new java.sql.SQLException("fixture transaction failure");
+        primary.addSuppressed(new java.sql.SQLException("fixture rollback failure"));
+        assertEquals(DesktopPersistenceFailureType.ROLLBACK_FAILED,
+                DesktopPersistence.map(primary).failure().definition());
     }
 
     @Test

@@ -9,6 +9,7 @@ import gold.debug.windowstolinux.shared.config.revision.ConfigurationSnapshot;
 import gold.debug.windowstolinux.shared.deploy.contract.DeploymentApproval;
 import gold.debug.windowstolinux.shared.deploy.contract.ReviewedDeploymentRequest;
 import gold.debug.windowstolinux.shared.deploy.contract.result.deployment.DeploymentEvent;
+import gold.debug.windowstolinux.shared.model.deployment.DeploymentTraceEvent;
 import gold.debug.windowstolinux.shared.deploy.contract.result.deployment.DeploymentResult;
 import gold.debug.windowstolinux.shared.model.archive.SourceArchiveDescriptor;
 import gold.debug.windowstolinux.shared.model.deployment.BuildLimitConfiguration;
@@ -108,7 +109,7 @@ class DeploymentOutcomeTest {
 
     private static DeploymentResult result(DeploymentStatus status) {
         Optional<String> release = status == DeploymentStatus.SUCCEEDED ? Optional.of("c".repeat(64)) : Optional.empty();
-        return new DeploymentResult(status, List.of(new DeploymentEvent("remote-build",
+        return new DeploymentResult(status, List.of(DeploymentEvent.result(DeploymentTraceEvent.REMOTE_BUILD,
                 status == DeploymentStatus.SUCCEEDED, "evidence")), Optional.empty(), release);
     }
 }

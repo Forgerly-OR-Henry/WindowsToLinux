@@ -7,6 +7,7 @@ import gold.debug.windowstolinux.shared.config.revision.DeploymentInputManifest;
 import gold.debug.windowstolinux.shared.config.secretref.ResolvedSecretRevision;
 import gold.debug.windowstolinux.shared.config.secretref.SecretRevisionDigest;
 import gold.debug.windowstolinux.shared.linux.error.LinuxOperationException;
+import gold.debug.windowstolinux.shared.linux.error.LinuxOperationFailureType;
 import gold.debug.windowstolinux.shared.linux.sshd.command.SshCommandExecutor;
 import gold.debug.windowstolinux.shared.model.managed.ManagedApplication;
 
@@ -80,7 +81,7 @@ public final class DeploymentInputProtocolExecutor {
         arguments.forEach(value -> command.append(' ').append(SshCommandExecutor.quote(value)));
         var result = commands.execProtocolWithInput(command.toString(), payload, Duration.ofSeconds(30));
         if (!result.succeeded()) {
-            throw LinuxOperationException.localized("linux.error.deploymentInputStagingFailed",
+            throw LinuxOperationException.create(LinuxOperationFailureType.DEPLOYMENT_INPUT_STAGING_FAILED,
                     "Controlled helper could not seal reviewed deployment inputs: " + result.failureEvidence());
         }
     }

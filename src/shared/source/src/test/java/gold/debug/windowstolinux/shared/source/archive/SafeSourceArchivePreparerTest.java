@@ -63,8 +63,10 @@ class SafeSourceArchivePreparerTest {
         Path source = Files.createDirectories(temporaryDirectory.resolve("source"));
         Files.writeString(source.resolve("pom.xml"), "<project/>");
 
-        assertThrows(IllegalArgumentException.class, () -> archiver.archive(source, source.resolve("source.tar.gz")));
-        assertThrows(IllegalArgumentException.class, () -> archiver.archive(source, temporaryDirectory.resolve("source.zip")));
+        assertEquals(SourceArchiveFailureType.BOUNDARY_ESCAPE, assertThrows(SourceArchiveException.class,
+                () -> archiver.archive(source, source.resolve("source.tar.gz"))).failure().definition());
+        assertEquals(SourceArchiveFailureType.DESTINATION_INVALID, assertThrows(SourceArchiveException.class,
+                () -> archiver.archive(source, temporaryDirectory.resolve("source.zip"))).failure().definition());
         assertThrows(IllegalArgumentException.class, () -> new SourceArchiveDescriptor(
                 temporaryDirectory.resolve("source.zip"), "a".repeat(64), 1, 1
         ));
@@ -82,12 +84,37 @@ class SafeSourceArchivePreparerTest {
             Assumptions.abort("symbolic links are unavailable in this test environment");
         }
 
-        assertThrows(IOException.class, () -> archiver.archive(source, temporaryDirectory.resolve("out/source.tar.gz")));
+        assertEquals(SourceArchiveFailureType.SYMBOLIC_LINK_REJECTED, assertThrows(SourceArchiveException.class,
+                () -> archiver.archive(source, temporaryDirectory.resolve("out/source.tar.gz")))
+                .failure().definition());
 
         Path linkedOutputParent = temporaryDirectory.resolve("linked-output");
         Files.createSymbolicLink(linkedOutputParent, source);
-        assertThrows(IllegalArgumentException.class,
-                () -> archiver.archive(source, linkedOutputParent.resolve("source.tar.gz")));
+        assertEquals(SourceArchiveFailureType.DESTINATION_INVALID, assertThrows(SourceArchiveException.class,
+                () -> archiver.archive(source, linkedOutputParent.resolve("source.tar.gz")))
+                .failure().definition());
+    }
+
+    @Test
+    void preservesInterruptionAndClassifiesCleanupFailure() throws Exception {
+        Path source = Files.createDirectories(temporaryDirectory.resolve("interrupted-source"));
+        Files.writeString(source.resolve("pom.xml"), "<project/>");
+        Thread.currentThread().interrupt();
+        try {
+            SourceArchiveException interrupted = assertThrows(SourceArchiveException.class,
+                    () -> archiver.archive(source, temporaryDirectory.resolve("out/interrupted.tar.gz")));
+            assertEquals(SourceArchiveFailureType.INTERRUPTED, interrupted.failure().definition());
+            assertTrue(Thread.currentThread().isInterrupted());
+        } finally {
+            Thread.interrupted();
+        }
+
+        Path nonEmptyDirectory = Files.createDirectories(temporaryDirectory.resolve("cleanup-failure"));
+        Files.writeString(nonEmptyDirectory.resolve("owned.txt"), "fixture");
+        SourceArchiveException original = SourceArchiveException.create(SourceArchiveFailureType.WRITE_FAILED,
+                "fixture archive write failure", new IOException("fixture"));
+        SourceArchiveException cleanup = SafeSourceArchivePreparer.cleanupThen(nonEmptyDirectory, original);
+        assertEquals(SourceArchiveFailureType.CLEANUP_FAILED, cleanup.failure().definition());
     }
 
     private static List<TarEntry> readTarEntries(Path archive) throws IOException {

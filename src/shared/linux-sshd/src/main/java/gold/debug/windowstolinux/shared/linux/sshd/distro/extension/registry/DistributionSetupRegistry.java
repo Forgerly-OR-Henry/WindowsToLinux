@@ -1,6 +1,7 @@
 package gold.debug.windowstolinux.shared.linux.sshd.distro.extension.registry;
 
 import gold.debug.windowstolinux.shared.linux.error.LinuxOperationException;
+import gold.debug.windowstolinux.shared.linux.error.LinuxOperationFailureType;
 import gold.debug.windowstolinux.shared.linux.sshd.distro.DistributionSetupRenderer;
 import gold.debug.windowstolinux.shared.linux.sshd.distro.ManagedEnvironmentExecutor;
 import gold.debug.windowstolinux.shared.linux.sshd.distro.extension.registry.DistributionSetupCatalog;
@@ -42,13 +43,13 @@ public final class DistributionSetupRegistry implements ManagedEnvironmentExecut
         capabilities = Objects.requireNonNull(capabilities, "capabilities");
         DistributionSetupRenderer preparation = preparations.get(capabilities.distro());
         if (preparation == null) {
-            throw LinuxOperationException.localized("linux.error.environmentUnsupportedDistro",
+            throw LinuxOperationException.create(LinuxOperationFailureType.ENVIRONMENT_UNSUPPORTED_DISTRO,
                     "The target distribution is outside the managed deployment preparation matrix");
         }
         try {
             return preparation.render(capabilities, Objects.requireNonNull(username, "username"));
         } catch (IllegalArgumentException exception) {
-            throw LinuxOperationException.localized("linux.error.environmentUnsupportedDistro",
+            throw LinuxOperationException.create(LinuxOperationFailureType.ENVIRONMENT_UNSUPPORTED_DISTRO,
                     "The collected distribution version is outside the managed deployment preparation matrix");
         }
     }

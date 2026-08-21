@@ -6,6 +6,7 @@ import gold.debug.windowstolinux.app.ui.shell.DesktopDisplayChangeHandler;
 import gold.debug.windowstolinux.app.ui.display.ThemePalette;
 import gold.debug.windowstolinux.app.ui.component.DesktopComponentFactory;
 import gold.debug.windowstolinux.app.ui.i18n.MessageCatalog;
+import gold.debug.windowstolinux.app.ui.diagnostic.FailureReportStore;
 
 import com.formdev.flatlaf.FlatClientProperties;
 
@@ -60,12 +61,13 @@ public final class DesktopFrame extends JFrame {
      * @param service the {@code service} value / {@code service} 值
      */
     public DesktopFrame(DesktopApplicationFacade service) {
-        this(service, DesktopDisplayConfiguration.defaults());
+        this(service, DesktopDisplayConfiguration.defaults(), FailureReportStore.disabled());
     }
 
-    private DesktopFrame(DesktopApplicationFacade service, DesktopDisplayConfiguration appearance) {
+    private DesktopFrame(DesktopApplicationFacade service, DesktopDisplayConfiguration appearance,
+                         FailureReportStore reports) {
         this(service, MessageCatalog.forLanguageTag(appearance.localeTag()),
-                appearance, ThemePalette.light(), (source, selected) -> { }, null);
+                appearance, ThemePalette.light(), (source, selected) -> { }, null, reports);
     }
 
     /**
@@ -84,12 +86,21 @@ public final class DesktopFrame extends JFrame {
                         DesktopDisplayConfiguration appearance, ThemePalette palette,
                         DesktopDisplayChangeHandler appearanceChangeListener,
                         DesktopViewState viewState) {
+        this(service, messages, appearance, palette, appearanceChangeListener, viewState,
+                FailureReportStore.disabled());
+    }
+
+    /** Creates a desktop frame with safe diagnostic reporting. / 创建带安全诊断报告的桌面窗口。 */
+    public DesktopFrame(DesktopApplicationFacade service, MessageCatalog messages,
+                        DesktopDisplayConfiguration appearance, ThemePalette palette,
+                        DesktopDisplayChangeHandler appearanceChangeListener,
+                        DesktopViewState viewState, FailureReportStore reports) {
         super("WindowsToLinux");
         this.messages = messages;
         this.palette = palette;
         this.components = new DesktopComponentFactory(palette);
         this.pageCoordinator = new DesktopPageCoordinator(
-                this, service, messages, appearance, components, appearanceChangeListener, this::showPage);
+                this, service, messages, appearance, components, appearanceChangeListener, this::showPage, reports);
         setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
         setMinimumSize(new Dimension(1060, 720));
         setSize(1180, 780);

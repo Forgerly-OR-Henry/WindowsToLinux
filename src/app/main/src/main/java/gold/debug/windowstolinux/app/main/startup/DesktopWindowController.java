@@ -10,6 +10,7 @@ import gold.debug.windowstolinux.app.ui.display.ThemePalette;
 import gold.debug.windowstolinux.app.ui.i18n.MessageCatalog;
 import gold.debug.windowstolinux.app.ui.shell.DesktopFrame;
 import gold.debug.windowstolinux.app.ui.shell.DesktopViewState;
+import gold.debug.windowstolinux.app.ui.diagnostic.FailureReportStore;
 
 import javax.swing.SwingUtilities;
 import javax.swing.Timer;
@@ -28,15 +29,18 @@ final class DesktopWindowController {
     private final DesktopApplicationFacade service;
     private final Timer systemThemeTimer;
     private final AtomicBoolean checkingSystemTheme = new AtomicBoolean();
+    private final FailureReportStore reports;
 
     private DesktopDisplayConfiguration appearance;
     private ThemeMode effectiveTheme;
     private DesktopFrame frame;
 
-    DesktopWindowController(DesktopPersistence database, DesktopApplicationFacade service, DesktopDisplayConfiguration appearance) {
+    DesktopWindowController(DesktopPersistence database, DesktopApplicationFacade service,
+                            DesktopDisplayConfiguration appearance, FailureReportStore reports) {
         this.database = database;
         this.service = service;
         this.appearance = appearance;
+        this.reports = reports;
         this.effectiveTheme = SystemThemeResolver.effectiveTheme(appearance.themeMode());
         this.systemThemeTimer = new Timer(5_000, event -> refreshSystemThemeIfChanged());
         this.systemThemeTimer.setRepeats(true);
@@ -71,7 +75,7 @@ final class DesktopWindowController {
     private void showWindow(Rectangle bounds, DesktopViewState viewState) {
         MessageCatalog catalog = MessageCatalog.forLanguageTag(appearance.localeTag());
         ThemePalette palette = effectiveTheme == ThemeMode.DARK ? ThemePalette.dark() : ThemePalette.light();
-        frame = new DesktopFrame(service, catalog, appearance, palette, this::applyAppearance, viewState);
+        frame = new DesktopFrame(service, catalog, appearance, palette, this::applyAppearance, viewState, reports);
         if (bounds != null) {
             frame.setBounds(bounds);
         }

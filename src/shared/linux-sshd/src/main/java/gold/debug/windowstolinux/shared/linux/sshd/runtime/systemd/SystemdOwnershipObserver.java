@@ -1,6 +1,7 @@
 package gold.debug.windowstolinux.shared.linux.sshd.runtime.systemd;
 
 import gold.debug.windowstolinux.shared.linux.error.LinuxOperationException;
+import gold.debug.windowstolinux.shared.linux.error.LinuxOperationFailureType;
 import gold.debug.windowstolinux.shared.linux.sshd.command.SshCommandExecutor;
 import gold.debug.windowstolinux.shared.model.lifecycle.AutostartState;
 import gold.debug.windowstolinux.shared.model.lifecycle.LifecycleObservation;
@@ -82,7 +83,7 @@ public final class SystemdOwnershipObserver {
                 SshCommandExecutor.quote(application.systemdUnit()));
         var result = commands.exec("/bin/bash -lc " + SshCommandExecutor.quote(script), Duration.ofSeconds(20), true);
         if (!result.succeeded()) {
-            throw LinuxOperationException.localized("linux.error.runtimeObservationFailed",
+            throw LinuxOperationException.create(LinuxOperationFailureType.RUNTIME_OBSERVATION_FAILED,
                     "Failed to observe the actual managed application state");
         }
         Map<String, String> values = SshCommandExecutor.lines(result.output());

@@ -52,11 +52,20 @@ final class MultiComponentResultPresenter {
     String deployment(MultiComponentDeploymentResult result) {
         String components = result.componentResults().stream().map(component -> "- " + component.componentId()
                         + " = " + component.state().name() + "\n" + component.events().stream()
-                        .map(event -> "  " + event.step() + "=" + event.succeeded())
+                        .map(event -> "  " + event.step().code() + "=" + event.succeeded()
+                                + event.failure().map(failure -> " [" + failure.code() + "]").orElse(""))
                         .reduce((left, right) -> left + "\n" + right).orElse(""))
                 .reduce((left, right) -> left + "\n" + right).orElse("");
+        String warnings = result.nonFatalFailures().stream().map(failure -> messages.text("failure.warning.summary",
+                        Map.of("code", failure.code(), "message", messages.catalog().text(failure.userMessage()),
+                                "recovery", messages.text("failure.recovery."
+                                        + failure.recoveryDisposition().name().toLowerCase(Locale.ROOT)))))
+                .reduce((left, right) -> left + "\n" + right).orElse("");
         return messages.text("component.deployment.result", Map.of("status", result.status().name(),
-                "identity", result.applicationReleaseIdentity().orElse("-"), "components", components));
+                "identity", result.applicationReleaseIdentity().orElse("-"), "components", components))
+                + "\n\n" + messages.text("failure.operation.summary",
+                Map.of("operationId", result.operationIdentity().toString()))
+                + (warnings.isBlank() ? "" : "\n" + warnings);
     }
 
     /** Formats aggregate and per-component authoritative lifecycle states. / 格式化汇总及逐组件权威生命周期状态。 */
@@ -64,8 +73,17 @@ final class MultiComponentResultPresenter {
         String components = result.componentResults().stream().map(component -> "- " + component.componentId()
                         + " = " + component.observation().map(messages::lifecycle).orElse("unobserved"))
                 .reduce((left, right) -> left + "\n" + right).orElse("");
+        String warnings = result.nonFatalFailures().stream().map(failure -> messages.text("failure.warning.summary",
+                        Map.of("code", failure.code(), "message", messages.catalog().text(failure.userMessage()),
+                                "recovery", messages.text("failure.recovery."
+                                        + failure.recoveryDisposition().name().toLowerCase(Locale.ROOT)))))
+                .reduce((left, right) -> left + "\n" + right).orElse("");
         return messages.text("component.lifecycle.result", Map.of("accepted", Boolean.toString(result.accepted()),
                 "runtime", result.runtimeState().name(), "autostart", result.autostartState().name(),
-                "components", components));
+                "components", components)) + "\n\n" + messages.text("failure.operation.summary",
+                Map.of("operationId", result.operationIdentity().toString()))
+                + result.failure().map(failure -> "\n" + failure.code() + ": "
+                + messages.catalog().text(failure.userMessage())).orElse("")
+                + (warnings.isBlank() ? "" : "\n" + warnings);
     }
 }

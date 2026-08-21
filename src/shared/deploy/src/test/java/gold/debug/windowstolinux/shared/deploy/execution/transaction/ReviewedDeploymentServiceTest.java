@@ -14,6 +14,7 @@ import gold.debug.windowstolinux.shared.linux.connection.DeploymentLinuxGateway;
 import gold.debug.windowstolinux.shared.linux.session.DeploymentRemoteSession;
 import gold.debug.windowstolinux.shared.linux.connection.HostKeyDecision;
 import gold.debug.windowstolinux.shared.linux.error.LinuxOperationException;
+import gold.debug.windowstolinux.shared.linux.error.LinuxOperationFailureType;
 import gold.debug.windowstolinux.shared.linux.connection.SshCredential;
 import gold.debug.windowstolinux.shared.linux.connection.SshEndpoint;
 import gold.debug.windowstolinux.shared.linux.protocol.ReleaseSnapshot;
@@ -106,7 +107,8 @@ class ReviewedDeploymentServiceTest {
         assertEquals(2, counters.connections.get());
         assertEquals(1, counters.cleanups.get());
         assertEquals(0, counters.rollbacks.get());
-        assertTrue(result.events().stream().anyMatch(event -> event.step().equals("candidate-cleanup-reconnect")));
+        assertTrue(result.events().stream().anyMatch(event -> event.step()
+                == gold.debug.windowstolinux.shared.model.deployment.DeploymentTraceEvent.CANDIDATE_CLEANUP_RECONNECT));
     }
 
     @Test
@@ -127,7 +129,8 @@ class ReviewedDeploymentServiceTest {
         assertEquals(2, counters.connections.get());
         assertEquals(1, counters.rollbacks.get());
         assertEquals(1, counters.cleanups.get());
-        assertTrue(result.events().stream().anyMatch(event -> event.step().equals("recovery-reconnect")));
+        assertTrue(result.events().stream().anyMatch(event -> event.step()
+                == gold.debug.windowstolinux.shared.model.deployment.DeploymentTraceEvent.RECOVERY_RECONNECT));
     }
 
     @Test
@@ -145,7 +148,9 @@ class ReviewedDeploymentServiceTest {
         assertEquals(DeploymentStatus.PRECONDITION_REJECTED, result.status());
         assertEquals(0, counters.uploads.get());
         assertEquals(0, counters.cleanups.get());
-        assertTrue(result.events().stream().anyMatch(event -> event.step().equals("helper-protocol") && !event.succeeded()));
+        assertTrue(result.events().stream().anyMatch(event -> event.step()
+                == gold.debug.windowstolinux.shared.model.deployment.DeploymentTraceEvent.HELPER_PROTOCOL
+                && !event.succeeded()));
     }
 
     private DeploymentRemoteSession fakeSession(EnumSet<DeploymentProjectType> built) {
@@ -162,7 +167,7 @@ class ReviewedDeploymentServiceTest {
         return (DeploymentRemoteSession) Proxy.newProxyInstance(getClass().getClassLoader(),
                 new Class<?>[]{DeploymentRemoteSession.class}, (proxy, method, arguments) -> {
                     if (method.getName().equals(interruptedMethod)) {
-                        throw LinuxOperationException.localized("linux.error.commandFailed", "fixture interruption");
+                        throw LinuxOperationException.create(LinuxOperationFailureType.COMMAND_FAILED, "fixture interruption");
                     }
                     return switch (method.getName()) {
                     case "collectCapabilities" -> new ServerCapabilityFacts("Ubuntu 24.04", "x86_64", true, true, true,

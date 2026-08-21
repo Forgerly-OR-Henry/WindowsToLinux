@@ -1,8 +1,8 @@
 package gold.debug.windowstolinux.shared.ai.parser;
 
 import gold.debug.windowstolinux.shared.ai.AiAnalysisException;
+import gold.debug.windowstolinux.shared.ai.AiAnalysisFailureType;
 import gold.debug.windowstolinux.shared.ai.AiStructuralAssessment;
-import gold.debug.windowstolinux.shared.model.message.LocalizedMessage;
 
 /**
  * Parses one bounded Chat Completions response without accepting arbitrary JSON structures.
@@ -23,22 +23,22 @@ public final class ChatCompletionResponseParser {
      */
     public AiStructuralAssessment parse(String responseBody) throws AiAnalysisException {
         if (responseBody == null || responseBody.length() > 512 * 1024) {
-            throw failure("ai.error.responseInvalid", "AI response is null or exceeds the accepted size limit");
+            throw failure(AiAnalysisFailureType.RESPONSE_INVALID, "AI response is null or exceeds the accepted size limit");
         }
         int field = responseBody.indexOf("\"content\"");
         if (field < 0) {
-            throw failure("ai.error.responseContentMissing", "AI response does not contain an explanation field");
+            throw failure(AiAnalysisFailureType.RESPONSE_CONTENT_MISSING, "AI response does not contain an explanation field");
         }
         int colon = responseBody.indexOf(':', field + 9);
         if (colon < 0) {
-            throw failure("ai.error.responseFormatInvalid", "AI response has an invalid content field format");
+            throw failure(AiAnalysisFailureType.RESPONSE_FORMAT_INVALID, "AI response has an invalid content field format");
         }
         int quote = colon + 1;
         while (quote < responseBody.length() && Character.isWhitespace(responseBody.charAt(quote))) {
             quote++;
         }
         if (quote >= responseBody.length() || responseBody.charAt(quote) != '"') {
-            throw failure("ai.error.responseNotString", "AI response explanation is not a string");
+            throw failure(AiAnalysisFailureType.RESPONSE_NOT_STRING, "AI response explanation is not a string");
         }
         StringBuilder value = new StringBuilder();
         for (int index = quote + 1; index < responseBody.length(); index++) {
@@ -46,7 +46,7 @@ public final class ChatCompletionResponseParser {
             if (current == '"') {
                 String text = value.toString().trim();
                 if (text.isBlank()) {
-                    throw failure("ai.error.responseEmpty", "AI response contains an empty explanation");
+                    throw failure(AiAnalysisFailureType.RESPONSE_EMPTY, "AI response contains an empty explanation");
                 }
                 return new AiStructuralAssessment(text.length() <= MAX_RESPONSE_CHARS
                         ? text : text.substring(0, MAX_RESPONSE_CHARS) + "…");
@@ -68,29 +68,29 @@ public final class ChatCompletionResponseParser {
                 case 't' -> value.append('\t');
                 case 'u' -> {
                     if (index + 4 >= responseBody.length()) {
-                        throw failure("ai.error.unicodeEscapeInvalid",
+                        throw failure(AiAnalysisFailureType.UNICODE_ESCAPE_INVALID,
                                 "AI response contains an invalid Unicode escape");
                     }
                     try {
                         value.append((char) Integer.parseInt(responseBody.substring(index + 1, index + 5), 16));
                     } catch (NumberFormatException exception) {
-                        throw failure("ai.error.unicodeEscapeInvalid",
+                        throw failure(AiAnalysisFailureType.UNICODE_ESCAPE_INVALID,
                                 "AI response contains an invalid Unicode escape", exception);
                     }
                     index += 4;
                 }
-                default -> throw failure("ai.error.stringEscapeInvalid",
+                default -> throw failure(AiAnalysisFailureType.STRING_ESCAPE_INVALID,
                         "AI response contains an invalid string escape");
             }
         }
-        throw failure("ai.error.unterminatedString", "AI response contains an unterminated string");
+        throw failure(AiAnalysisFailureType.UNTERMINATED_STRING, "AI response contains an unterminated string");
     }
 
-    private static AiAnalysisException failure(String key, String diagnostic) {
-        return new AiAnalysisException(LocalizedMessage.of(key), diagnostic);
+    private static AiAnalysisException failure(AiAnalysisFailureType type, String diagnostic) {
+        return AiAnalysisException.create(type, diagnostic);
     }
 
-    private static AiAnalysisException failure(String key, String diagnostic, Throwable cause) {
-        return new AiAnalysisException(LocalizedMessage.of(key), diagnostic, cause);
+    private static AiAnalysisException failure(AiAnalysisFailureType type, String diagnostic, Throwable cause) {
+        return AiAnalysisException.create(type, diagnostic, cause);
     }
 }

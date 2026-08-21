@@ -1,6 +1,7 @@
 package gold.debug.windowstolinux.shared.linux.sshd.command;
 
 import gold.debug.windowstolinux.shared.linux.error.LinuxOperationException;
+import gold.debug.windowstolinux.shared.linux.error.LinuxOperationFailureType;
 import org.apache.sshd.client.channel.ClientChannel;
 import org.apache.sshd.client.channel.ClientChannelEvent;
 import org.apache.sshd.client.session.ClientSession;
@@ -110,7 +111,7 @@ public final class SshCommandExecutor {
             String errorText = preserveOutput ? sanitize(error.toString(StandardCharsets.UTF_8)) : "";
             return new CommandResult(succeeded, timedOut, text, evidenceOutput, errorText, exit);
         } catch (IOException exception) {
-            throw LinuxOperationException.localized("linux.error.sshCommandFailed",
+            throw LinuxOperationException.create(LinuxOperationFailureType.SSH_COMMAND_FAILED,
                     "Controlled SSH command could not be executed (" + safeException(exception) + ")", exception);
         }
     }
@@ -156,6 +157,7 @@ public final class SshCommandExecutor {
         try {
             return Long.parseLong(value);
         } catch (Exception ignored) {
+            // Invalid bounded numeric evidence is treated as unavailable, not propagated to users. / 无效的有界数字证据视为不可用，不向用户传播。
             return 0;
         }
     }
@@ -199,10 +201,7 @@ public final class SshCommandExecutor {
     }
 
     private static String safeException(IOException exception) {
-        String message = exception.getMessage();
-        String detail = exception.getClass().getSimpleName()
-                + (message == null || message.isBlank() ? "" : ": " + message);
-        return sanitize(detail);
+        return exception.getClass().getSimpleName();
     }
 
     /**

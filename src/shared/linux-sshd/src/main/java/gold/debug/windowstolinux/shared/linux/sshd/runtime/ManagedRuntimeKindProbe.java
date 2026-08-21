@@ -1,6 +1,7 @@
 package gold.debug.windowstolinux.shared.linux.sshd.runtime;
 
 import gold.debug.windowstolinux.shared.linux.error.LinuxOperationException;
+import gold.debug.windowstolinux.shared.linux.error.LinuxOperationFailureType;
 import gold.debug.windowstolinux.shared.linux.sshd.execution.protocol.runtime.ManagedRuntimeProtocolExecutor;
 import gold.debug.windowstolinux.shared.model.managed.ManagedApplication;
 import gold.debug.windowstolinux.shared.model.project.DeploymentRuntimeSpecification;
@@ -27,7 +28,7 @@ public final class ManagedRuntimeKindProbe {
             case "deployment" -> new ManagedRuntimeIdentity(ManagedRuntimeIdentity.Kind.DEPLOYMENT, Optional.empty());
             case "container" -> new ManagedRuntimeIdentity(ManagedRuntimeIdentity.Kind.CONTAINER,
                     Optional.of(parseEngine(values.get("ENGINE"))));
-            default -> throw LinuxOperationException.localized("linux.error.runtimeObservationFailed",
+            default -> throw LinuxOperationException.create(LinuxOperationFailureType.RUNTIME_OBSERVATION_FAILED,
                     "Controlled helper returned an unsupported managed runtime kind");
         };
     }
@@ -38,7 +39,7 @@ public final class ManagedRuntimeKindProbe {
             return DeploymentRuntimeSpecification.ContainerEngineType.valueOf(
                     Objects.requireNonNull(value, "container engine").toUpperCase(Locale.ROOT));
         } catch (IllegalArgumentException | NullPointerException exception) {
-            throw LinuxOperationException.localized("linux.error.runtimeObservationFailed",
+            throw LinuxOperationException.create(LinuxOperationFailureType.RUNTIME_OBSERVATION_FAILED,
                     "Controlled helper returned an unsupported managed container engine", exception);
         }
     }

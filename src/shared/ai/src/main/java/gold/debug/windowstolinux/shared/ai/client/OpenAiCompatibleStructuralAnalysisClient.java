@@ -1,6 +1,7 @@
 package gold.debug.windowstolinux.shared.ai.client;
 
 import gold.debug.windowstolinux.shared.ai.AiAnalysisException;
+import gold.debug.windowstolinux.shared.ai.AiAnalysisFailureType;
 import gold.debug.windowstolinux.shared.ai.AiStructuralAssessment;
 import gold.debug.windowstolinux.shared.ai.parser.ChatCompletionResponseParser;
 import gold.debug.windowstolinux.shared.ai.generation.prompt.StructuralAnalysisPrompt;
@@ -8,7 +9,6 @@ import gold.debug.windowstolinux.shared.ai.generation.prompt.AiResponseLanguageT
 import gold.debug.windowstolinux.shared.ai.provider.ProviderEndpointPolicy;
 import gold.debug.windowstolinux.shared.ai.redaction.RedactedDeploymentProjectFacts;
 import gold.debug.windowstolinux.shared.model.project.DeploymentProjectFacts;
-import gold.debug.windowstolinux.shared.model.message.LocalizedMessage;
 
 import java.io.IOException;
 import java.net.URI;
@@ -74,7 +74,7 @@ public final class OpenAiCompatibleStructuralAnalysisClient {
             throws AiAnalysisException {
         Objects.requireNonNull(apiKey, "apiKey");
         if (apiKey.length == 0) {
-            throw new AiAnalysisException(LocalizedMessage.of("ai.error.apiKeyMissing"), "AI API key must not be empty");
+            throw AiAnalysisException.create(AiAnalysisFailureType.API_KEY_MISSING, "AI API key must not be empty");
         }
         char[] keyCopy = Arrays.copyOf(apiKey, apiKey.length);
         try {
@@ -89,17 +89,17 @@ public final class OpenAiCompatibleStructuralAnalysisClient {
             HttpResponse<String> response = httpClient.send(request,
                     HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
             if (response.statusCode() < 200 || response.statusCode() >= 300) {
-                throw new AiAnalysisException(LocalizedMessage.of("ai.error.httpRejected",
-                        "status", response.statusCode()),
-                        "AI service rejected the request with HTTP status " + response.statusCode());
+                throw AiAnalysisException.create(AiAnalysisFailureType.HTTP_REJECTED,
+                        java.util.Map.of("status", response.statusCode()),
+                        "AI service rejected the request with a non-success HTTP status", null);
             }
             return responseParser.parse(response.body());
         } catch (IOException exception) {
-            throw new AiAnalysisException(LocalizedMessage.of("ai.error.unavailable"),
+            throw AiAnalysisException.create(AiAnalysisFailureType.SERVICE_UNAVAILABLE,
                     "AI service is unavailable; deterministic analysis results were preserved", exception);
         } catch (InterruptedException exception) {
             Thread.currentThread().interrupt();
-            throw new AiAnalysisException(LocalizedMessage.of("ai.error.interrupted"),
+            throw AiAnalysisException.create(AiAnalysisFailureType.REQUEST_INTERRUPTED,
                     "AI explanation request was interrupted; deterministic analysis results were preserved",
                     exception);
         } finally {

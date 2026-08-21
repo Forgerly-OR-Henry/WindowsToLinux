@@ -64,8 +64,7 @@ public final class MavenBuildInspector {
             return Files.readString(pom, StandardCharsets.UTF_8);
         } catch (IOException exception) {
             rejections.add(new RejectionReason("POM_UNREADABLE",
-                    LocalizedMessage.of("analysis.rejection.pomUnreadable",
-                            java.util.Map.of("detail", String.valueOf(exception.getMessage()))), "input"));
+                    LocalizedMessage.of("analysis.rejection.pomUnreadable"), "input"));
             return null;
         }
     }

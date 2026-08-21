@@ -3,6 +3,8 @@ package gold.debug.windowstolinux.app.service.server;
 import gold.debug.windowstolinux.app.db.persistence.repository.ServerProfileRepository;
 import gold.debug.windowstolinux.app.secret.SecretStore;
 import gold.debug.windowstolinux.app.secret.SecretStoreException;
+import gold.debug.windowstolinux.app.service.failure.ApplicationServiceException;
+import gold.debug.windowstolinux.app.service.failure.ApplicationServiceFailureType;
 import gold.debug.windowstolinux.shared.linux.connection.HostKeyDecision;
 import gold.debug.windowstolinux.shared.linux.connection.HostKeyEvaluator;
 import gold.debug.windowstolinux.shared.linux.error.LinuxOperationException;
@@ -10,7 +12,6 @@ import gold.debug.windowstolinux.shared.linux.connection.DeploymentLinuxGateway;
 import gold.debug.windowstolinux.shared.linux.session.DeploymentRemoteSession;
 import gold.debug.windowstolinux.shared.linux.connection.SshCredential;
 import gold.debug.windowstolinux.shared.model.message.LocalizedMessage;
-import gold.debug.windowstolinux.shared.model.message.LocalizedOperationException;
 import gold.debug.windowstolinux.shared.model.security.CredentialStorageMode;
 import gold.debug.windowstolinux.shared.model.capability.LinuxCapabilityFacts;
 import gold.debug.windowstolinux.shared.model.capability.ServerCapabilityFacts;
@@ -243,7 +244,7 @@ public final class ServerUseCaseFacade {
         Objects.requireNonNull(profile, "profile");
         Objects.requireNonNull(mode, "mode");
         if (profile.credentialMode() != mode) {
-            throw new LocalizedOperationException(LocalizedMessage.of("validation.storageModeMismatch"),
+            throw ApplicationServiceException.create(ApplicationServiceFailureType.STORAGE_MODE_MISMATCH,
                     "Credential storage mode does not match the saved server profile");
         }
     }

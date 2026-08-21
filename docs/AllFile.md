@@ -23,6 +23,9 @@ src/  # 项目源码与模块根目录
 │  │  ├─ execution/  # 数据库执行流程功能组
 │  │  │  └─ migration/  # 数据库版本迁移包
 │  │  │     └─ DesktopSchemaMigrator.java  # 按版本顺序迁移并校验桌面 SQLite 数据库结构
+│  │  ├─ failure/  # 桌面 SQLite 失败分类包
+│  │  │  ├─ DesktopPersistenceException.java  # 数据目录、完整性、锁定、磁盘及事务回滚的结构化停止失败
+│  │  │  └─ DesktopPersistenceFailureType.java  # 桌面 SQLite 失败码、阶段与恢复边界
 │  │  ├─ persistence/  # SQLite 持久化功能组
 │  │  │  ├─ connection/  # SQLite 连接与事务基础包
 │  │  │  │  └─ DesktopConnectionFactory.java  # 创建启用外键约束与有界忙等待的 SQLite 连接
@@ -39,6 +42,11 @@ src/  # 项目源码与模块根目录
 │  │  ├─ pom.xml  # 配置 SQLite 数据访问模块的依赖和构建
 │  ├─ main/  # 桌面应用入口与模块装配模块
 │  │  ├─ AppMain.java  # WindowsToLinux 桌面应用入口
+│  │  ├─ diagnostic/  # 系统级失败、未捕获异常边界与本地诊断报告包
+│  │  │  ├─ DesktopFailureReportStore.java  # 原子写入、截断、脱敏并轮转固定 data/diagnostics 报告
+│  │  │  ├─ DesktopStartupException.java  # 启动布局、数据库及 UI 装配失败的结构化异常
+│  │  │  ├─ DesktopSystemFailureType.java  # 桌面系统级启动、运行、资源和关闭失败目录
+│  │  │  └─ DesktopUncaughtFailureBoundary.java  # 捕获线程边界失败并对 JVM 致命错误尽力记录后退出
 │  │  ├─ pom.xml  # 配置桌面应用唯一入口与模块装配模块的依赖和构建
 │  │  ├─ runtime/  # 本地运行布局与路径解析包
 │  │  │  ├─ RunModeResolver.java  # 为受支持的开发、JAR 和 jpackage 布局解析应用主目录及其固定 data 目录
@@ -54,6 +62,7 @@ src/  # 项目源码与模块根目录
 │  │  ├─ pom.xml  # 配置桌面秘密存储与加密模块的依赖和构建
 │  │  ├─ SecretStore.java  # 定义秘密写入、读取、删除与调用方清零责任的平台凭据边界
 │  │  ├─ SecretStoreException.java  # 敏感存储失败被刻意设计为不附加明文输入
+│  │  ├─ SecretStoreFailureType.java  # 秘密存储失败码、阶段与人工恢复边界
 │  │  └─ WindowsCredentialManagerSecretStore.java  # 通过固定 P/Invoke 调用实现的 Windows Credential Manager 适配器
 │  ├─ service/  # 桌面应用用例编排模块
 │  │  ├─ ai/  # AI 配置、角色与分析用例包
@@ -92,6 +101,9 @@ src/  # 项目源码与模块根目录
 │  │  │     ├─ LifecycleOutcome.java  # 单次桌面生命周期用例的无秘密结果
 │  │  │     ├─ LifecycleUseCase.java  # 编排受管应用的实时观测、生命周期和自启操作
 │  │  │     └─ ManagedApplicationSnapshot.java  # 已持久化的资源归属、成功部署契约和发布身份；并非远端运行时状态声明
+│  │  ├─ failure/  # 桌面用例编排失败包
+│  │  │  ├─ ApplicationServiceException.java  # 受控桌面用例失败的结构化异常
+│  │  │  └─ ApplicationServiceFailureType.java  # 用例拒绝与本地观测警告的失败目录
 │  │  ├─ lock/  # 同服务器操作互斥注册包
 │  │  │  └─ ServerOperationLockRegistry.java  # 按服务器串行化互斥操作并支持后台任务取消
 │  │  ├─ pom.xml  # 配置桌面业务流程编排模块的依赖和构建
@@ -134,6 +146,10 @@ src/  # 项目源码与模块根目录
 │  │  │  ├─ SystemThemeResolver.java  # 读取 Windows 应用外观偏好，但不写入系统注册表
 │  │  │  ├─ ThemeMode.java  # 用户可选择的桌面外观偏好
 │  │  │  └─ ThemePalette.java  # 单个生效浅色或深色外观使用的不可变应用颜色
+│  │  ├─ diagnostic/  # 结构化失败安全展示包
+│  │  │  ├─ DesktopFailurePresenter.java  # 展示错误码、操作标识、安全摘要、恢复结果和报告位置
+│  │  │  ├─ FailureReportRecord.java  # 可呈现的本地诊断报告引用
+│  │  │  └─ FailureReportStore.java  # UI 与 main 诊断写入实现之间的窄契约
 │  │  ├─ i18n/  # 界面消息目录访问与格式化包
 │  │  │  ├─ MessageCatalog.java  # 从区域设置资源包解析应用消息键和非递归命名占位符
 │  │  │  └─ PageMessagePresenter.java  # 独立页面控制器共享的本地化与诊断格式化
@@ -163,10 +179,13 @@ src/  # 项目源码与模块根目录
 │     ├─ pom.xml  # 配置 Windows 平台文件与工作区边界模块的依赖和构建
 │     └─ workspace/  # 本地源码工作区与归档边界包
 │        ├─ PreparedSourceArchive.java  # 保存已准备源码归档的描述信息与排除条目清单
-│        └─ WindowsSourcePreparer.java  # 准备平台无关源码归档的 Windows 桌面入口
+│        ├─ WindowsSourcePreparer.java  # 准备平台无关源码归档的 Windows 桌面入口
+│        ├─ WindowsWorkspaceException.java  # Windows 工作区预检失败的结构化异常
+│        └─ WindowsWorkspaceFailureType.java  # Windows 路径、权限、容量与链接失败目录
 ├─ shared/  # 平台无关共享模块分组
 │  ├─ ai/  # AI 调用、协作与脱敏模块
 │  │  ├─ AiAnalysisException.java  # 可选 AI 解释路径产生的安全、非秘密失败
+│  │  ├─ AiAnalysisFailureType.java  # 可选 AI 失败码；不参与授权、回滚或确定性分类
 │  │  ├─ AiStructuralAssessment.java  # 可选解释文本；它绝不改变确定性的项目支持判断或部署决策
 │  │  ├─ client/  # Provider HTTP 客户端与传输契约包
 │  │  │  ├─ OpenAiCompatibleRoleClient.java  # 仅调用一个已配置提供者并只保留已验证的不含凭据证据
@@ -324,6 +343,8 @@ src/  # 项目源码与模块根目录
 │  ├─ backup/  # 共享备份职责预留模块
 │  │  └─ pom.xml  # 保留共享备份职责边界的 POM-only 模块
 │  ├─ config/  # 类型化配置定义与校验模块
+│  │  ├─ ConfigurationException.java  # 配置定义与输入拒绝的结构化异常
+│  │  ├─ ConfigurationFailureType.java  # 配置失败码、阶段与用户纠正动作
 │  │  ├─ contract/  # 配置规则与契约功能组
 │  │  │  └─ definition/  # 配置项定义、类型与校验规则包
 │  │  │     ├─ ConfigurationScope.java  # 非秘密配置值被使用的受限时点
@@ -361,6 +382,9 @@ src/  # 项目源码与模块根目录
 │  │  │  ├─ ReviewedDeploymentRequest.java  # 经过完整审阅的部署输入，包含身份和类型化定义，绝不包含 Shell 命令
 │  │  │  └─ spi/  # 部署适配器扩展契约包
 │  │  │     └─ DeploymentAdapter.java  # 为一个受支持的部署单组件项目类型生成一个确定性计划
+│  │  ├─ error/  # 部署切换、回滚和人工恢复失败包
+│  │  │  ├─ DeploymentExecutionFailureType.java  # 部署执行失败码、阶段与恢复动作
+│  │  │  └─ DeploymentSwitchException.java  # 发布切换失败的结构化异常
 │  │  ├─ execution/  # 部署执行流程功能组
 │  │  │  ├─ environment/  # 目标环境准备服务包
 │  │  │  │  └─ EnvironmentSetupService.java  # 运行一个经过显式批准的环境准备操作
@@ -409,6 +433,7 @@ src/  # 项目源码与模块根目录
 │  │  ├─ GitRemote.java  # 解析后的 Git 远端；其位置绝不嵌入凭据
 │  │  ├─ GitSnapshot.java  # 固定到一个 Commit 并配有确定性源码归档的检出结果
 │  │  ├─ GitSnapshotException.java  # 安全的 Git 快照失败；其消息刻意不含远端或凭据材料
+│  │  ├─ GitSnapshotFailureType.java  # Git 工具、引用、网络、超时与清理失败目录
 │  │  ├─ GitSourceRequest.java  # 只读 Git 分析快照的有界输入；凭据始终位于此值之外
 │  │  ├─ pom.xml  # 配置受约束 Git 来源检查与快照模块的依赖和构建
 │  │  └─ snapshot/  # 固定提交检出与安全归档包
@@ -432,7 +457,8 @@ src/  # 项目源码与模块根目录
 │  │  ├─ distro/  # 发行版环境准备契约包
 │  │  │  └─ LinuxEnvironmentPreparer.java  # 感知发行版的环境准备契约
 │  │  ├─ error/  # 远端失败分类与诊断契约包
-│  │  │  └─ LinuxOperationException.java  # 连接、指纹、协议或受控操作失败
+│  │  │  ├─ LinuxOperationException.java  # 连接、指纹、协议或受控操作失败
+│  │  │  └─ LinuxOperationFailureType.java  # SSH、协议、远端状态及中断失败目录
 │  │  ├─ pom.xml  # 配置 Linux 连接、命令和远程会话公共契约模块的依赖与构建
 │  │  ├─ protocol/  # 受管 helper 协议契约包
 │  │  │  ├─ ManagedHelperProtocol.java  # 由预检与 SSH 实现共享的稳定受管 helper 协议身份
@@ -608,6 +634,8 @@ src/  # 项目源码与模块根目录
 │  │  │  └─ ServerCapabilityFacts.java  # 创建任何受管部署候选项之前从目标主机采集的事实
 │  │  ├─ deployment/  # 部署请求、状态与计划模型包
 │  │  │  ├─ BuildLimitConfiguration.java  # 固定受管部署远程 Maven 构建入口经过审阅的明确限制
+│  │  │  ├─ DeploymentApprovalException.java  # 环境批准与部署审批边界的结构化异常
+│  │  │  ├─ DeploymentApprovalFailureType.java  # 审批缺失、失效或不匹配的失败目录
 │  │  │  ├─ DeploymentStatus.java  # 受管部署发布事务的准确终态
 │  │  │  ├─ DeploymentTraceEvent.java  # 稳定的部署跟踪事件代码；界面模块将这些代码映射为本地化标签
 │  │  │  ├─ EnvironmentSetupApproval.java  # 在一个可信目标上安装固定受管部署 Ubuntu 工具集的单次明确确认
@@ -630,10 +658,16 @@ src/  # 项目源码与模块根目录
 │  │  ├─ managed/  # 受管应用与组件拓扑模型包
 │  │  │  ├─ ManagedApplication.java  # 由 WindowsToLinux 拥有的应用不可变身份
 │  │  │  └─ ManagedApplicationRuntimeConfiguration.java  # 某个受管应用最后一次成功部署的运行时契约
-│  │  ├─ message/  # 结构化用户消息与诊断模型包
-│  │  │  ├─ LocalizedFailure.java  # 用户可见摘要以及无秘密技术诊断
-│  │  │  ├─ LocalizedMessage.java  # 不将领域代码与显示语言耦合的用户可见消息
-│  │  │  └─ LocalizedOperationException.java  # 带有可本地化摘要的应用边界非受检失败
+│  │  ├─ failure/  # 跨模块最小结构化失败契约
+│  │  │  ├─ FailureCarrier.java  # 仅暴露一个结构化失败描述
+│  │  │  ├─ FailureDefinition.java  # 稳定错误码、阶段、消息、严重性与默认恢复动作
+│  │  │  ├─ FailureDescriptor.java  # 单次失败、操作标识、安全诊断及实际恢复结果
+│  │  │  ├─ FailureRecoveryAction.java  # 保守恢复动作
+│  │  │  ├─ FailureRecoveryDisposition.java  # 实际恢复处置结果
+│  │  │  ├─ FailureSeverityLevel.java  # 警告、错误与致命级别
+│  │  │  └─ OperationIdentity.java  # UUID 形式的无敏感操作标识
+│  │  ├─ message/  # 结构化用户消息模型包
+│  │  │  └─ LocalizedMessage.java  # 不将领域代码与显示语言耦合的用户可见消息
 │  │  ├─ pom.xml  # 配置跨模块领域模型和公共数据契约模块的构建
 │  │  ├─ project/  # 项目类型、运行规格与支持声明包
 │  │  │  ├─ component/  # 多组件依赖、端口与数据路径模型包
@@ -668,7 +702,9 @@ src/  # 项目源码与模块根目录
 │  └─ source/  # 源码清单、归档与安全校验模块
 │     ├─ archive/  # 安全源码归档生成包
 │     │  ├─ SafeSourceArchivePreparer.java  # 创建确定且经过边界检查的纯源码 tar.gz
-│     │  └─ SourceArchive.java  # 可复现且经过边界检查的源码归档元数据
+│     │  ├─ SourceArchive.java  # 可复现且经过边界检查的源码归档元数据
+│     │  ├─ SourceArchiveException.java  # 源码遍历、归档和清理失败的结构化异常
+│     │  └─ SourceArchiveFailureType.java  # 源码边界、权限、容量、中断与清理失败目录
 │     ├─ contract/  # 源码规则与契约功能组
 │     │  └─ validation/  # 本地源码边界校验包
 │     │     └─ SourceBoundaryValidator.java  # 验证本地源码边界并创建确定性安全文件清单

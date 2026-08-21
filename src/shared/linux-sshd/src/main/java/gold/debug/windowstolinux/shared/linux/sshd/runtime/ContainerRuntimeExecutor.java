@@ -1,6 +1,7 @@
 package gold.debug.windowstolinux.shared.linux.sshd.runtime;
 
 import gold.debug.windowstolinux.shared.linux.error.LinuxOperationException;
+import gold.debug.windowstolinux.shared.linux.error.LinuxOperationFailureType;
 import gold.debug.windowstolinux.shared.linux.runtime.HealthCheckResult;
 import gold.debug.windowstolinux.shared.linux.sshd.command.SshCommandExecutor;
 import gold.debug.windowstolinux.shared.model.health.HealthCheck;
@@ -103,7 +104,7 @@ public final class ContainerRuntimeExecutor {
                 SshCommandExecutor.quote(engine), SshCommandExecutor.quote(engine), SshCommandExecutor.quote(name), autostartCommand);
         var result = commands.exec("/bin/bash -lc " + SshCommandExecutor.quote(script), Duration.ofSeconds(20), true);
         if (!result.succeeded()) {
-            throw LinuxOperationException.localized("linux.error.runtimeObservationFailed",
+            throw LinuxOperationException.create(LinuxOperationFailureType.RUNTIME_OBSERVATION_FAILED,
                     "Failed to observe the actual managed container state");
         }
         Map<String, String> values = SshCommandExecutor.lines(result.output());

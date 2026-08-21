@@ -106,7 +106,7 @@ class UbuntuManagedBuildLimitAcceptanceTest {
             DeploymentResult outputLimitFailure = deploy(service, outputLimitRequest, profile);
             assertEquals(DeploymentStatus.FAILED_BUILD, outputLimitFailure.status(), () -> outputLimitFailure.events().toString());
             assertEvent(outputLimitFailure, "remote-build", false);
-            assertTrue(outputLimitFailure.events().stream().anyMatch(event -> event.step().equals("remote-build")
+            assertTrue(outputLimitFailure.events().stream().anyMatch(event -> event.step().code().equals("remote-build")
                             && event.evidence().contains("Target build output exceeded the confirmed output limit")),
                     () -> "bounded output must be reported as a limit failure: " + outputLimitFailure.events());
             assertFalse(hasEvent(outputLimitFailure, "snapshot"), "output limit must stop before publication");

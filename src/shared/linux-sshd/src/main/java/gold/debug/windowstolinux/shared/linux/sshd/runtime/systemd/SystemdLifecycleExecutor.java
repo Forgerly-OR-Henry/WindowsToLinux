@@ -1,6 +1,7 @@
 package gold.debug.windowstolinux.shared.linux.sshd.runtime.systemd;
 
 import gold.debug.windowstolinux.shared.linux.error.LinuxOperationException;
+import gold.debug.windowstolinux.shared.linux.error.LinuxOperationFailureType;
 import gold.debug.windowstolinux.shared.linux.sshd.command.SshCommandExecutor;
 import gold.debug.windowstolinux.shared.linux.sshd.execution.protocol.runtime.ManagedRuntimeProtocolExecutor;
 import gold.debug.windowstolinux.shared.model.health.HealthCheck;
@@ -43,7 +44,7 @@ public final class SystemdLifecycleExecutor {
         LifecycleObservation before = observer.observe(application, expectedUnitContent);
         if (!before.ownershipVerified()) return before;
         if (action == LifecycleAction.START && before.runtimeState() != RuntimeState.STOPPED) {
-            throw LinuxOperationException.localized("linux.error.startRequiresStopped",
+            throw LinuxOperationException.create(LinuxOperationFailureType.START_REQUIRES_STOPPED,
                     "Start is allowed only for a managed application confirmed as stopped");
         }
         String actionVerb = switch (action) {
@@ -55,11 +56,11 @@ public final class SystemdLifecycleExecutor {
             case REFRESH_STATUS -> null;
         };
         if (actionVerb != null && !runtimes.lifecycle(application, actionVerb).succeeded()) {
-            throw LinuxOperationException.localized("linux.error.lifecycleActionFailed", "systemd lifecycle operation failed");
+            throw LinuxOperationException.create(LinuxOperationFailureType.LIFECYCLE_ACTION_FAILED, "systemd lifecycle operation failed");
         }
         if ((action == LifecycleAction.START || action == LifecycleAction.RESTART)
                 && !health.check(application, healthCheck).healthy()) {
-            throw LinuxOperationException.localized("linux.error.postStartHealthFailed", "Post-start health check failed");
+            throw LinuxOperationException.create(LinuxOperationFailureType.POST_START_HEALTH_FAILED, "Post-start health check failed");
         }
         LifecycleObservation after = action == LifecycleAction.STOP
                 ? awaitStopped(application, expectedUnitContent) : observer.observe(application, expectedUnitContent);
@@ -75,7 +76,7 @@ public final class SystemdLifecycleExecutor {
                 Thread.sleep(250);
             } catch (InterruptedException interrupted) {
                 Thread.currentThread().interrupt();
-                throw LinuxOperationException.localized("linux.error.stopWaitInterrupted",
+                throw LinuxOperationException.create(LinuxOperationFailureType.STOP_WAIT_INTERRUPTED,
                         "Interrupted while waiting to verify the stopped state", interrupted);
             }
             observation = observer.observe(application, expectedUnitContent);
@@ -86,21 +87,21 @@ public final class SystemdLifecycleExecutor {
     private void verifyPostconditions(ManagedApplication application, LifecycleAction action, LifecycleObservation after)
             throws LinuxOperationException {
         if (action == LifecycleAction.STOP && after.runtimeState() != RuntimeState.STOPPED) {
-            throw LinuxOperationException.localized("linux.error.stopUnverified",
+            throw LinuxOperationException.create(LinuxOperationFailureType.STOP_UNVERIFIED,
                     "Stop operation could not be verified remotely: state=" + after.runtimeState()
                             + ", evidence=" + after.evidence());
         }
         if (action == LifecycleAction.STOP && !commands.exec("test \"$(systemctl show --value --property MainPID "
                 + SshCommandExecutor.quote(application.systemdUnit()) + ")\" = 0", Duration.ofSeconds(10), false).succeeded()) {
-            throw LinuxOperationException.localized("linux.error.mainProcessStillRunning",
+            throw LinuxOperationException.create(LinuxOperationFailureType.MAIN_PROCESS_STILL_RUNNING,
                     "A systemd main process is still present after stop");
         }
         if (action == LifecycleAction.ENABLE_AUTOSTART && after.autostartState() != AutostartState.ENABLED) {
-            throw LinuxOperationException.localized("linux.error.enableAutostartUnverified",
+            throw LinuxOperationException.create(LinuxOperationFailureType.ENABLE_AUTOSTART_UNVERIFIED,
                     "Autostart enablement could not be verified remotely");
         }
         if (action == LifecycleAction.DISABLE_AUTOSTART && after.autostartState() != AutostartState.DISABLED) {
-            throw LinuxOperationException.localized("linux.error.disableAutostartUnverified",
+            throw LinuxOperationException.create(LinuxOperationFailureType.DISABLE_AUTOSTART_UNVERIFIED,
                     "Autostart disablement could not be verified remotely");
         }
     }

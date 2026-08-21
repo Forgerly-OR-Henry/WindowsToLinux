@@ -1,7 +1,7 @@
 package gold.debug.windowstolinux.shared.ai.provider;
 
 import gold.debug.windowstolinux.shared.ai.AiAnalysisException;
-import gold.debug.windowstolinux.shared.model.message.LocalizedMessage;
+import gold.debug.windowstolinux.shared.ai.AiAnalysisFailureType;
 
 import java.net.URI;
 import java.util.Locale;
@@ -26,11 +26,11 @@ public final class ProviderEndpointPolicy {
         if (endpoint == null || endpoint.getHost() == null || endpoint.getUserInfo() != null
                 || endpoint.getQuery() != null || endpoint.getFragment() != null
                 || !("https".equalsIgnoreCase(endpoint.getScheme()) || "http".equalsIgnoreCase(endpoint.getScheme()))) {
-            throw new AiAnalysisException(LocalizedMessage.of("ai.error.endpointInvalid"),
+            throw AiAnalysisException.create(AiAnalysisFailureType.ENDPOINT_INVALID,
                     "AI endpoint must be an HTTP(S) Chat Completions URL without user info, query, or fragment");
         }
         if ("http".equalsIgnoreCase(endpoint.getScheme()) && !isLoopback(endpoint.getHost())) {
-            throw new AiAnalysisException(LocalizedMessage.of("ai.error.httpsRequired"),
+            throw AiAnalysisException.create(AiAnalysisFailureType.HTTPS_REQUIRED,
                     "Remote AI endpoints must use HTTPS; HTTP is allowed only for loopback addresses");
         }
         return endpoint;

@@ -35,8 +35,8 @@ class Argon2AesSecretStoreTest {
                      "wrong master password".toCharArray())) {
             SecretStoreException failure = assertThrows(SecretStoreException.class,
                     () -> wrongStore.read("ssh/server-one/password"));
-            assertEquals("secret.decryptFailed", failure.userMessage().key());
-            assertFalse(failure.diagnostic().contains("remote-password"));
+            assertEquals("secret.error.decryptFailed", failure.failure().userMessage().key());
+            assertFalse(failure.failure().diagnostic().contains("remote-password"));
         }
     }
 

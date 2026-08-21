@@ -2,11 +2,11 @@
 
 ## 文档信息
 
-- 文档版本：`3.25.0-functional-group-package-migration`
-- 文档状态：**28-POM 模块边界保持不变；三层功能组目标树、生产包、测试镜像、helper classpath 资源和结构门禁已经同步迁移；27 个精确项目类型×构建工具架构仍等待逐目标产品入口实机证据，不得由包结构迁移或静态完成状态扩大运行支持声明**
+- 文档版本：`3.26.0-structured-failure-handling`
+- 文档状态：**28-POM 模块边界保持不变；15 个已有生产代码的 app/shared 模块采用模块内识别与恢复、最小共用失败契约、部署/服务编排、UI 安全展示和本地诊断报告；backup 与 Web 仅登记未来约束；真实 Linux 修改路径没有新增产品入口证据时继续标记 `RUNTIME-PENDING`**
 - 已确认范围：`shared` 共用模块、`app` Windows 桌面应用模块、`web` Web 应用模块
 - 已确认能力边界：受管应用生命周期复用既有模块，不新增独立 Maven 模块
-- 更新日期：2026-08-20
+- 更新日期：2026-08-21
 - 开发总纲：[DEVELOPMENT.md](DEVELOPMENT.md)
 - 分析包修订：[ANALYZE-PACKAGE-REVISION.md](development/ANALYZE-PACKAGE-REVISION.md)
 - Linux 部署链分包修订：[LINUX-DEPLOY-PACKAGE-REVISION.md](development/LINUX-DEPLOY-PACKAGE-REVISION.md)
@@ -33,12 +33,14 @@ WindowsToLinux/
    │  ├─ pom.xml              桌面应用模块聚合入口
    │  ├─ db/                  SQLite 数据访问与迁移
    │  │  ├─ entity/           仅供桌面持久化使用的存储记录
+   │  │  ├─ failure/          数据目录、完整性、锁定、磁盘与事务失败
    │  │  ├─ execution/        数据库执行流程
    │  │  │  └─ migration/     版本化表结构迁移
    │  │  └─ persistence/      SQLite 持久化实现
    │  │     ├─ connection/    SQLite 连接和事务基础
    │  │     └─ repository/    按服务器、偏好、AI、配置、秘密和受管应用职责划分的数据访问实现
    │  ├─ main/                唯一 AppMain 入口、运行模式和模块装配
+   │  │  ├─ diagnostic/       系统级失败、未捕获异常边界及有界本地诊断报告
    │  │  ├─ startup/          桌面应用启动与模块装配
    │  │  └─ runtime/          RunModeResolver 与 RuntimePathResolver
    │  ├─ secret/              存储契约、异常及数据库/Windows 存储实现
@@ -53,6 +55,7 @@ WindowsToLinux/
    │  │  ├─ execution/        桌面执行流程
    │  │  │  ├─ environment/   环境准备用例
    │  │  │  └─ lifecycle/     受管应用和生命周期用例
+   │  │  ├─ failure/          桌面用例失败类型与结构化异常
    │  │  ├─ lock/             同服务器操作互斥注册表
    │  │  ├─ server/           服务器资料、信任和能力用例
    │  │  └─ source/           源码准备用例
@@ -63,6 +66,7 @@ WindowsToLinux/
    │  │  ├─ deployment/       共享审阅上下文与类型化输入解析
    │  │  │  ├─ multi/         多组件编辑、状态、页面和结果呈现
    │  │  │  └─ single/        单组件表单、状态、页面和分析呈现
+   │  │  ├─ diagnostic/       结构化失败安全展示、报告引用与诊断目录入口
    │  │  ├─ i18n/             消息目录和本地化边界
    │  │  ├─ managed/          受管应用列表与生命周期交互
    │  │  ├─ server/           服务器配置和能力验证界面
@@ -217,6 +221,7 @@ WindowsToLinux/
    │  │  ├─ assessment/       分析评估、冲突和支持判断结果
    │  │  ├─ capability/       Linux 与服务器能力快照
    │  │  ├─ deployment/       部署请求、计划、状态和结果模型
+   │  │  ├─ failure/          跨模块最小失败定义、描述、操作标识与恢复结果契约
    │  │  ├─ health/           健康检查与访问地址模型
    │  │  ├─ lifecycle/        单组件及整应用运行、自启汇总和生命周期动作模型
    │  │  ├─ language/         语言生态、源码语言及确定性语言事实
@@ -710,7 +715,12 @@ Facts → Evidence → Assessment → Decision → Plan → Result/Outcome
 | E-02 | 名称必须说明失败边界。 | `SecretStoreException` | `OperationException` |
 | E-03 | 公共异常不得直接以底层实现细节命名。 | `LinuxOperationException` | `SshChannelException` |
 | E-04 | 安全异常名称不得包含秘密内容。 | `SecretStoreException` | `InvalidPasswordValueException` |
-| E-05 | 本地化失败与原始诊断分离。 | `LocalizedOperationException` | 中文异常类名 |
+| E-05 | 受控失败必须以 `FailureCarrier` 暴露结构化描述，本地化消息与安全诊断分离。 | `ApplicationServiceException` | 中文异常类名、原始 `exception.getMessage()` 用户回退 |
+| E-06 | 异常使用 `[FailureBoundary]Exception`，名称说明模块内失败边界。 | `SourceArchiveException` | `SourceError`、`OperationException` |
+| E-07 | 模块错误枚举使用 `[Boundary]FailureType`。 | `LinuxOperationFailureType` | `LinuxError`、`FailureKind` |
+| E-08 | 只有重复的确定性转换逻辑才建立 `[BoundaryOrTechnology]FailureMapper`。 | `SqliteFailureMapper` | 单次使用的通用 `ErrorManager` |
+| E-09 | 恢复判断使用 `[Operation]FailureRecoveryPolicy` 与 `[Operation]FailureRecoveryDecision`。 | `DeploymentFailureRecoveryPolicy` | `RecoveryProcessor` |
+| E-10 | 业务类型不得使用 `Error`、`Manager`、`Processor` 等泛化错误治理名称。 | `DesktopFailurePresenter` | `ErrorManager`、`FailureProcessor` |
 
 | 枚举性质 | 统一后缀 | 示例 |
 | --- | --- | --- |
@@ -816,11 +826,28 @@ Web 端所有密码哈希、加密、解密、主密钥和服务端凭据操作�
 ### 3.5 桌面端本地化与诊断边界
 
 1. 英文是桌面端生产代码、内部校验、程序生成诊断和默认消息资源的基准语言；`app/ui/i18n/messages/Messages.properties` 是消息目录的规范来源，简体中文只保存在 `Messages_zh_CN.properties`。
-2. 生产模块不得提前拼接英文或中文界面句子。固定用户文案必须使用稳定消息键和命名参数表达；跨模块失败通过 `LocalizedFailure` 分离 `userMessage()` 与不含秘密的 `diagnostic()`，UI 是唯一负责将消息键解析为显示语言的边界。
-3. SSH、systemd、HTTP、第三方 Provider 和远端命令返回的原始技术内容属于诊断证据，不翻译、不改写、不作为消息键。UI 以本地化摘要加原始技术详情展示，并在两个部分继续执行密码、私钥、凭据和 API Key 脱敏。
+2. 生产模块不得提前拼接英文或中文界面句子。固定用户文案必须使用稳定消息键和命名参数表达；跨模块失败通过 `FailureCarrier.failure()` 暴露 `FailureDescriptor`，UI 是唯一负责将消息键解析为显示语言的边界。
+3. SSH、systemd、HTTP、第三方 Provider 和远端命令返回的原始技术内容不得直接成为用户消息或部署事件。已知低层文本只可用于模块内分类；跨边界后仅保留受控安全诊断，未知异常的原始消息不得写入 UI 或诊断报告。
 4. 部署步骤、部署状态、置信度、运行状态、自启状态和生命周期动作必须以稳定代码、`record` 或 `enum` 跨模块传递，不得依赖 `Object.toString()` 或显示字符串表达业务状态。
 5. AI 提示模板使用英文编写，只发送经过既有边界脱敏的结构化事实；调用时显式传入受限响应语言，当前桌面语言为 `zh-CN` 时请求 Simplified Chinese，为 `en` 时请求 English。
 6. 桌面端目前只支持 `en` 与 `zh-CN`。没有已保存偏好时，中文系统语言使用 `zh-CN`，其他系统语言使用 `en`；用户明确选择后，以持久化偏好为准，运行期间不跟随系统语言自动变化。
+
+### 3.6 结构化错误治理与恢复边界
+
+1. 错误识别、低层异常转换和安全恢复属于产生错误的模块，不新增中央 `error` Maven 模块，也不通过复制真实包结构集中保存模块私有异常。`shared.model.failure` 只提供 `OperationIdentity`、`FailureDefinition`、`FailureDescriptor`、`FailureCarrier`、`FailureSeverityLevel`、`FailureRecoveryAction` 和 `FailureRecoveryDisposition` 七个稳定最小契约。
+2. 错误码固定为 `<domain>.<operation>.<reason>`：全部小写，`reason` 使用 kebab-case，例如 `linux.connection.authentication-failed`。消息键固定为 `<domain>.error.<lowerCamelReason>`。已发布错误码不得复用、改义或静默删除；同一错误码在仓库内必须唯一。
+3. 系统级错误只由 `app/main/diagnostic/DesktopSystemFailureType` 管理，覆盖启动布局、数据目录、数据库初始化、UI 初始化、未知运行时异常、诊断报告写入、资源耗尽和关闭失败。运行时错误继续由 `ai`、`config`、`db`、`deploy`、`git`、`linux`、`secret`、`service`、`source`、`windows` 等产生错误的模块自己的 `FailureType` 管理。
+4. 调用链固定为“模块内识别与恢复 → 共用失败契约 → `deploy`/`service` 编排 → `app/ui/diagnostic` 安全展示 → `app/main/diagnostic` 本地报告”。`DeploymentEvent` 只接受 `DeploymentTraceEvent`，可以携带 `FailureDescriptor`；部署与生命周期结果必须携带一个 `OperationIdentity` 和非致命警告列表，所含失败统一绑定到该操作标识。
+5. 自动恢复仅适用于幂等、可验证、可回滚行为，包括有界重试、候选清理、事务回滚、部署回滚、重连和状态复核。认证失败、权限不足、主机指纹拒绝、协议不兼容、完整性失败、数据库损坏、较新 schema、未知远端状态、回滚/清理不可验证和 JVM 致命错误不得冒险自动修复。
+6. 恢复结果必须记录为 `NOT_REQUIRED`、`NOT_ATTEMPTED`、`SUCCEEDED`、`FAILED` 或 `UNVERIFIED`。回滚或清理无法验证时部署终态固定为 `MANUAL_RECOVERY_REQUIRED`；不得以异常被捕获、命令已发出或重连成功冒充业务恢复成功。
+7. SSH 连接与只读能力采集最多重试 3 次、固定间隔 250 ms；认证、主机指纹拒绝、协议不兼容和线程中断不重试，中断必须恢复线程标记。Git 瞬时网络失败最多重新创建临时工作区重试 2 次、固定间隔 500 ms；每次失败都先完成可验证清理，工具缺失、引用无效、完整性失败和中断不重试。
+8. SQLite 连接必须设置 5 秒 `busy_timeout`，启动执行 `quick_check`，事务保证提交或回滚。锁定允许有界等待；损坏、较新 schema、磁盘不可用或回滚失败必须明确停止并请求处理，不自动修复数据库，也不修改现有 schema 作为错误治理手段。
+9. 固定数据目录下的 `data/diagnostics/` 保存 UTF-8 文本报告：单份最多 256 KiB，最多保留 50 份，启动和写入后清理最旧文件；临时文件完整写入后使用原子移动发布。报告写入失败不得递归生成新报告。
+10. 报告只包含结构化字段、安全诊断、异常类名和栈帧；不得包含未知异常原始消息、密码、私钥、API Key、秘密配置、源码正文或未脱敏第三方响应。UI 展示本地化消息、错误码、operationId、安全摘要、恢复结果和报告位置；平台支持时可打开诊断目录，否则保留可复制路径。
+11. `VirtualMachineError`、`LinkageError` 等致命 JVM 错误只做尽力记录后退出，不承诺继续运行。AI 失败只生成 `ai.*` 描述并保留确定性分析结果，不参与错误分类授权、部署重试、回滚决策或执行授权。
+12. `FailureContractArchitectureTest` 必须检查错误码格式和唯一性、模块归属、类型命名、中英文消息键一致、自定义异常实现 `FailureCarrier`、用户边界不使用原始异常消息，以及未说明的静默捕获；测试在 `target/failure-catalog.md` 生成不跟踪的失败目录。
+13. 故障注入至少覆盖数据库锁定/损坏/回滚失败、目录不可写、归档中断/清理失败、Git 工具缺失/超时、SSH 瞬时断线/认证失败、健康失败回滚、回滚不可验证、AI 不可用、报告截断/轮转/脱敏、启动失败和未知 UI 异常。局部测试只证明本地错误语义；真实 Linux 修改路径仍必须通过现有产品入口验收。
+14. `shared/backup` 与 Web Java 模块尚无生产实现，本版只约束其未来代码沿用模块本地 `FailureType` 和最小共用契约，不创建空异常、空包或转发壳，不新增数据库表或第三方依赖。
 
 ## 4. 叶子模块约定
 
@@ -1190,6 +1217,7 @@ linux-sshd 通过 linux 契约采集服务器已有环境
 
 | 版本 | 日期 | 说明 |
 | --- | --- | --- |
+| 3.26.0-structured-failure-handling | 2026-08-21 | 在保持 28-POM、既有依赖和 SQLite schema v7 的前提下，引入模块本地失败定义与最小 `shared.model.failure` 契约，原子移除旧本地化异常壳；补齐桌面系统边界、安全 UI 展示、有界本地诊断、SQLite 健壮性、源码/Windows/Git/SSH/部署保守恢复、同一 operationId 结果与非致命警告。backup 与 Web 只登记未来约束；没有新增真实 Linux 产品入口证据，相关路径继续为 `RUNTIME-PENDING`。 |
 | 3.25.0-functional-group-package-migration | 2026-08-20 | 按 `contract`、`generation`、`extension`、`execution`、`persistence` 全量迁移 32 个适用生产包及测试镜像，`linux-sshd` helper 片段随协议实现迁入 `execution/protocol/helper`，并同步目标树、依赖方向、旧路径门禁与当前源码索引。28-POM、POM 内容、类型内容与方法签名、helper 11 项字节和组装顺序、协议 v3、固定 SHA-256、SQLite schema、安全边界、运行行为与 `RUNTIME-PENDING` 结论不变；Java FQCN 与 helper classpath 路径按批准规范发生不兼容迁移。 |
 | 3.24.0-functional-group-packages | 2026-08-20 | 确立模块根包以下最多三层的功能组包命名，将标准职责包按 `contract`、`generation`、`extension`、`execution` 和 `persistence` 分表组织，并保持 `ecosystem`、`workload`、`runtime`、`distro` 正交；本次仅修改命名规则，第 1 节目标树、源码包、测试、FQCN 和结构门禁实现留待后续迁移。28-POM、API、协议、持久化、安全边界、运行行为及 `RUNTIME-PENDING` 结论不变。 |
 | 3.23.0-ecosystem-extension-implementation | 2026-08-20 | 落地 27 个精确项目类型×构建工具架构；新增 JDK 纯源码、kotlinc、PHP CLI、Ruby CLI 与单目标 CMake，拆分 Node/Python 具名 Renderer，并以 `DeploymentArchitectureType`、生态工具版本事实和结构门禁闭合分析到执行的静态边界。28-POM、协议 v3、SQLite schema 与既有实机证据边界不变；新增路径继续等待逐目标产品入口验收。 |

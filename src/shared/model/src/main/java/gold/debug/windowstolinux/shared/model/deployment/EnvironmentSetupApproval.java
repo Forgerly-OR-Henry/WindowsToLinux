@@ -1,8 +1,5 @@
 package gold.debug.windowstolinux.shared.model.deployment;
 
-import gold.debug.windowstolinux.shared.model.message.LocalizedMessage;
-import gold.debug.windowstolinux.shared.model.message.LocalizedOperationException;
-
 import java.time.Instant;
 import java.util.Objects;
 
@@ -44,11 +41,11 @@ public record EnvironmentSetupApproval(
      */
     public void requireAcceptedFor(String expectedServerId) {
         if (!installationAccepted) {
-            throw new LocalizedOperationException(LocalizedMessage.of("environment.confirmationRequired"),
+            throw new DeploymentApprovalException(DeploymentApprovalFailureType.CONFIRMATION_REQUIRED,
                     "Explicit confirmation is required before installing the managed-deployment target environment");
         }
         if (!serverId.equals(identifier(expectedServerId, "expectedServerId"))) {
-            throw new LocalizedOperationException(LocalizedMessage.of("environment.serverMismatch"),
+            throw new DeploymentApprovalException(DeploymentApprovalFailureType.SERVER_MISMATCH,
                     "Environment preparation approval does not belong to the current target server");
         }
     }

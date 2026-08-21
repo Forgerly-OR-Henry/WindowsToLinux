@@ -70,6 +70,7 @@ final class RuntimePathResolver {
             return pomContent.contains("<artifactId>windowstolinux-app-main</artifactId>")
                     ? Optional.of(normalized) : Optional.empty();
         } catch (Exception ignored) {
+            // An unreadable candidate is rejected and other bounded layout candidates remain available. / 不可读候选会被拒绝，其他有界布局候选仍可继续检查。
             return Optional.empty();
         }
     }

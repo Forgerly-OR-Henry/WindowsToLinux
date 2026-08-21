@@ -4,6 +4,7 @@ import gold.debug.windowstolinux.shared.config.revision.DeploymentInputManifest;
 import gold.debug.windowstolinux.shared.deploy.contract.result.deployment.ComponentDeploymentResult;
 import gold.debug.windowstolinux.shared.deploy.contract.result.deployment.ComponentTransactionState;
 import gold.debug.windowstolinux.shared.deploy.contract.result.deployment.DeploymentEvent;
+import gold.debug.windowstolinux.shared.model.deployment.DeploymentTraceEvent;
 import gold.debug.windowstolinux.shared.deploy.contract.result.deployment.MultiComponentDeploymentResult;
 import gold.debug.windowstolinux.shared.linux.build.DeploymentBuildResult;
 import gold.debug.windowstolinux.shared.linux.protocol.ReleaseSnapshot;
@@ -36,8 +37,12 @@ final class MultiComponentTransactionContext {
         this.component = component;
     }
 
-    void event(String step, boolean succeeded, String evidence) {
-        events.add(new DeploymentEvent(step, succeeded, evidence));
+    void event(DeploymentTraceEvent step, boolean succeeded, String evidence) {
+        events.add(DeploymentEvent.result(step, succeeded, evidence));
+    }
+
+    void failure(DeploymentTraceEvent step, gold.debug.windowstolinux.shared.model.failure.FailureDescriptor failure) {
+        events.add(DeploymentEvent.failed(step, failure));
     }
 
     ComponentDeploymentResult componentResult() {

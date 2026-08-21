@@ -77,9 +77,9 @@ class UbuntuManagedHostTrustAcceptanceTest {
             LinuxOperationException rejection = assertThrows(LinuxOperationException.class,
                     () -> service.verifyServer(profile, CredentialStorageMode.MASTER_PASSWORD,
                             "managed-host-trust-master".toCharArray(), fingerprint -> true));
-            assertEquals("linux.error.hostKeyRejected", rejection.userMessage().key(),
+            assertEquals("linux.error.hostKeyRejected", rejection.failure().userMessage().key(),
                     "mismatched trust must be reported as a host-key rejection");
-            assertFalse(rejection.diagnostic().contains(password), "credential must not appear in rejection evidence");
+            assertFalse(rejection.failure().diagnostic().contains(password), "credential must not appear in rejection evidence");
             assertEquals(mismatchedFingerprint, database.servers().findServer(profile.id()).orElseThrow().hostKeySha256(),
                     "a real observed key must never overwrite a mismatched saved trust record");
         }

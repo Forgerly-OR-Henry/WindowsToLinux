@@ -94,7 +94,7 @@ class MultiComponentDeploymentUseCaseTest {
             assertEquals(List.of("shop-api", "shop-web"), restored.components().stream()
                     .map(value -> value.application().id()).toList());
 
-            assertThrows(gold.debug.windowstolinux.shared.model.message.LocalizedOperationException.class,
+            assertThrows(gold.debug.windowstolinux.app.service.failure.ApplicationServiceException.class,
                     () -> service.deployReviewedMultiComponent(review,
                             new gold.debug.windowstolinux.shared.linux.connection.SshEndpoint(
                                     "server-one", "192.0.2.10", 22, "root"),
@@ -106,7 +106,7 @@ class MultiComponentDeploymentUseCaseTest {
             char[] masterPassword = "must-clear".toCharArray();
             ServerProfile wrongProfile = new ServerProfile("server-two", "192.0.2.11", 22, "root",
                     "ssh/server-two/password", CredentialStorageMode.MASTER_PASSWORD);
-            assertThrows(gold.debug.windowstolinux.shared.model.message.LocalizedOperationException.class,
+            assertThrows(gold.debug.windowstolinux.app.service.failure.ApplicationServiceException.class,
                     () -> service.deployReviewedMultiComponentWithStoredPassword(review, wrongProfile,
                             CredentialStorageMode.MASTER_PASSWORD, masterPassword, ignored -> false));
             for (char value : masterPassword) assertEquals('\0', value);

@@ -1,5 +1,8 @@
 package gold.debug.windowstolinux.shared.config.revision;
 
+import gold.debug.windowstolinux.shared.config.ConfigurationException;
+import gold.debug.windowstolinux.shared.config.ConfigurationFailureType;
+
 import gold.debug.windowstolinux.shared.config.secretref.SecretRevisionDigest;
 
 import java.util.HashSet;
@@ -21,16 +24,16 @@ public record DeploymentInputManifest(String configurationSha256, List<SecretRev
     public DeploymentInputManifest {
         configurationSha256 = Objects.requireNonNull(configurationSha256, "configurationSha256");
         if (!configurationSha256.matches("[0-9a-f]{64}")) {
-            throw new IllegalArgumentException("configurationSha256 must be lowercase SHA-256");
+            throw ConfigurationException.create(ConfigurationFailureType.HASH_INVALID, "A configuration manifest hash must use canonical lowercase SHA-256");
         }
         secrets = List.copyOf(Objects.requireNonNull(secrets, "secrets"));
         if (secrets.size() > 32 || secrets.stream().map(SecretRevisionDigest::reference).distinct().count() != secrets.size()) {
-            throw new IllegalArgumentException("secret revisions must be unique and bounded");
+            throw ConfigurationException.create(ConfigurationFailureType.SIZE_LIMIT_EXCEEDED, "Secret revisions must be unique and within the configured bound");
         }
         Set<String> environmentNames = new HashSet<>();
         for (SecretRevisionDigest secret : secrets) {
             if (!environmentNames.add(environmentName(secret.reference().identifier()))) {
-                throw new IllegalArgumentException("secret identifiers collide after environment-name normalization");
+                throw ConfigurationException.create(ConfigurationFailureType.SECRET_COLLISION, "Secret identifiers collide after environment-name normalization");
             }
         }
     }

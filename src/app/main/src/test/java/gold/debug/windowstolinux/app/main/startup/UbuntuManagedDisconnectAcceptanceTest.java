@@ -12,6 +12,7 @@ import gold.debug.windowstolinux.shared.deploy.contract.result.deployment.Deploy
 import gold.debug.windowstolinux.shared.deploy.contract.result.lifecycle.LifecycleActionResult;
 import gold.debug.windowstolinux.shared.linux.connection.HostKeyEvaluator;
 import gold.debug.windowstolinux.shared.linux.error.LinuxOperationException;
+import gold.debug.windowstolinux.shared.linux.error.LinuxOperationFailureType;
 import gold.debug.windowstolinux.shared.linux.connection.DeploymentLinuxGateway;
 import gold.debug.windowstolinux.shared.linux.session.DeploymentRemoteSession;
 import gold.debug.windowstolinux.shared.linux.protocol.RemoteStepResult;
@@ -179,8 +180,9 @@ class UbuntuManagedDisconnectAcceptanceTest {
                     getClass().getClassLoader(), new Class<?>[]{DeploymentRemoteSession.class},
                     (proxy, method, arguments) -> {
                         if (method.getName().equals("checkDeploymentHealth") && published.get()) {
-                            throw LinuxOperationException.localized(
-                                    "linux.error.connection", "test-only post-publish SSH transport loss");
+                            throw LinuxOperationException.create(
+                                    LinuxOperationFailureType.CONNECTION_FAILED,
+                                    "test-only post-publish SSH transport loss");
                         }
                         try {
                             Object result = method.invoke(session, arguments);

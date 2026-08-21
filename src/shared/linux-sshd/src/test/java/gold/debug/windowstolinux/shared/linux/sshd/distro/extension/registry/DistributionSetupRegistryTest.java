@@ -150,9 +150,9 @@ class DistributionSetupRegistryTest {
                 new RejectedSnapshot(LinuxDistroType.ORACLE_LINUX, "9.6", "x86_64"))) {
             LinuxOperationException failure = assertThrows(LinuxOperationException.class, () -> renderSetup(
                     snapshot.distro(), snapshot.version(), snapshot.packageArchitecture(), "deployer"));
-            assertEquals("linux.error.environmentUnsupportedDistro", failure.userMessage().key());
+            assertEquals("linux.error.environmentUnsupportedDistro", failure.failure().userMessage().key());
             assertEquals("The collected distribution version is outside the managed deployment preparation matrix",
-                    failure.diagnostic());
+                    failure.failure().diagnostic());
         }
     }
 

@@ -63,12 +63,7 @@ public final class ManagedLifecycleService {
             LifecycleObservation after = session.executeLifecycle(application, action, healthCheck);
             return new LifecycleActionResult(after.ownershipVerified(), LocalizedMessage.of("lifecycle.remoteResultVerified"), Optional.of(after));
         } catch (LinuxOperationException exception) {
-            return new LifecycleActionResult(false, LocalizedMessage.of("lifecycle.connectionFailed",
-                    java.util.Map.of("detail", safeMessage(exception))), Optional.empty());
+            return LifecycleActionResult.failed(exception.failure());
         }
-    }
-
-    private static String safeMessage(LinuxOperationException exception) {
-        return exception.getMessage() == null ? "Controlled operation failed" : exception.getMessage();
     }
 }

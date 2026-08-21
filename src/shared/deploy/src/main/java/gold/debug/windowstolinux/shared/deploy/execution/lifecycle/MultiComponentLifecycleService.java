@@ -71,7 +71,7 @@ public final class MultiComponentLifecycleService {
                     plan, observations, attempted, failed);
         } catch (LinuxOperationException failure) {
             return MultiComponentLifecyclePolicy.failure(
-                    plan, observations, attempted, failed, safeMessage(failure));
+                    plan, observations, attempted, failed, failure.failure());
         } finally {
             credential.clear();
         }
@@ -121,8 +121,4 @@ public final class MultiComponentLifecycleService {
         }
     }
 
-    private static String safeMessage(LinuxOperationException failure) {
-        return failure.getMessage() == null || failure.getMessage().isBlank()
-                ? "Controlled application lifecycle operation failed" : failure.getMessage();
-    }
 }

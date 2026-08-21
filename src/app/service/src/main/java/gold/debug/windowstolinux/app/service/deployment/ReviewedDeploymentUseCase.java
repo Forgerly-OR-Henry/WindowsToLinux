@@ -5,6 +5,9 @@ import gold.debug.windowstolinux.app.db.persistence.repository.ManagedApplicatio
 import gold.debug.windowstolinux.app.db.entity.CurrentRelease;
 import gold.debug.windowstolinux.app.secret.SecretStore;
 import gold.debug.windowstolinux.app.secret.SecretStoreException;
+import gold.debug.windowstolinux.app.secret.SecretStoreFailureType;
+import gold.debug.windowstolinux.app.service.failure.ApplicationServiceException;
+import gold.debug.windowstolinux.app.service.failure.ApplicationServiceFailureType;
 import gold.debug.windowstolinux.app.service.deployment.single.DeploymentOutcome;
 import gold.debug.windowstolinux.app.service.lock.ServerOperationLockRegistry;
 import gold.debug.windowstolinux.app.service.server.ServerProfile;
@@ -25,7 +28,7 @@ import gold.debug.windowstolinux.shared.model.deployment.DeploymentStatus;
 import gold.debug.windowstolinux.shared.model.managed.ManagedApplication;
 import gold.debug.windowstolinux.shared.model.managed.ManagedApplicationRuntimeConfiguration;
 import gold.debug.windowstolinux.shared.model.message.LocalizedMessage;
-import gold.debug.windowstolinux.shared.model.message.LocalizedOperationException;
+import gold.debug.windowstolinux.shared.model.failure.FailureDescriptor;
 import gold.debug.windowstolinux.shared.model.server.ServerIdentity;
 
 import java.sql.SQLException;
@@ -77,13 +80,13 @@ public final class ReviewedDeploymentUseCase {
         preparation = Objects.requireNonNull(preparation, "preparation");
         server = Objects.requireNonNull(server, "server");
         if (preparation.archive().isEmpty() || preparation.assessment().facts().isEmpty()) {
-            throw new LocalizedOperationException(LocalizedMessage.of("deployment.analyzeFirst"),
+            throw ApplicationServiceException.create(ApplicationServiceFailureType.DEPLOYMENT_ANALYSIS_REQUIRED,
                     "Typed deployment requires a source that passed the selected deterministic analysis and archive preparation");
         }
         var facts = preparation.assessment().facts().orElseThrow();
         var archive = preparation.archive().orElseThrow();
-        var sourceRevision = preparation.sourceRevision().orElseThrow(() -> new LocalizedOperationException(
-                LocalizedMessage.of("deployment.analyzeFirst"),
+        var sourceRevision = preparation.sourceRevision().orElseThrow(() -> ApplicationServiceException.create(
+                ApplicationServiceFailureType.DEPLOYMENT_ANALYSIS_REQUIRED,
                 "Typed deployment requires an immutable source identity bound to the reviewed archive"));
         ManagedApplication application = ManagedApplicationIdentityResolver.resolve(applications, facts.applicationId(), server);
         return new ReviewedDeploymentRequest(server, facts, sourceRevision,
@@ -113,7 +116,7 @@ public final class ReviewedDeploymentUseCase {
                                                       char[] masterPassword, Predicate<String> confirmation)
             throws SecretStoreException, SQLException {
         if (profile.credentialMode() != mode) {
-            throw new LocalizedOperationException(LocalizedMessage.of("validation.storageModeMismatch"),
+            throw ApplicationServiceException.create(ApplicationServiceFailureType.STORAGE_MODE_MISMATCH,
                     "Credential storage mode does not match the saved server profile");
         }
         List<ResolvedSecretRevision> resolvedSecrets = List.of();
@@ -139,7 +142,7 @@ public final class ReviewedDeploymentUseCase {
     public DeploymentOutcome deploy(ReviewedDeploymentRequest request, SshEndpoint endpoint,
                                    SshCredential credential, HostKeyEvaluator verifier) throws SQLException {
         if (!request.secretReferences().isEmpty()) {
-            throw new LocalizedOperationException(LocalizedMessage.of("secret.applicationReferenceMissing"),
+            throw ApplicationServiceException.create(ApplicationServiceFailureType.APPLICATION_SECRET_REFERENCE_MISSING,
                     "Reviewed deployments with secret references require resolved stored revisions");
         }
         return deploy(request, endpoint, credential, verifier, List.of());
@@ -156,18 +159,26 @@ public final class ReviewedDeploymentUseCase {
         try {
             DeploymentResult result = service.deploy(request, application, gateway, endpoint, credential, verifier,
                     resolvedSecrets);
-            result.finalObservation().ifPresent(observation -> {
+            if (result.finalObservation().isPresent()) {
                 try {
-                    applications.saveObservation(observation);
-                } catch (SQLException ignored) {
-                    // Remote truth remains authoritative when local history recording fails. / 本地历史记录失败时，远端事实仍然具有权威性。
+                    applications.saveObservation(result.finalObservation().orElseThrow());
+                } catch (SQLException failure) {
+                    result = result.withNonFatalFailure(FailureDescriptor.create(
+                            ApplicationServiceFailureType.LOCAL_OBSERVATION_SAVE_FAILED,
+                            result.operationIdentity(), "Remote observation was verified but local history storage failed"));
                 }
-            });
+            }
             if (result.status() == DeploymentStatus.SUCCEEDED) {
-                applications.recordSuccessfulDeployment(application,
-                        new ManagedApplicationRuntimeConfiguration(request.runtime().healthCheck(), request.userAccessUrl()),
-                        new CurrentRelease(application.id(), result.publishedReleaseSha256().orElseThrow(), Instant.now()),
-                        request.secretReferences());
+                try {
+                    applications.recordSuccessfulDeployment(application,
+                            new ManagedApplicationRuntimeConfiguration(request.runtime().healthCheck(), request.userAccessUrl()),
+                            new CurrentRelease(application.id(), result.publishedReleaseSha256().orElseThrow(), Instant.now()),
+                            request.secretReferences());
+                } catch (SQLException failure) {
+                    result = result.withNonFatalFailure(FailureDescriptor.create(
+                            ApplicationServiceFailureType.DEPLOYMENT_RECORD_SAVE_FAILED,
+                            result.operationIdentity(), "Remote deployment succeeded but local managed inventory storage failed"));
+                }
             }
             return DeploymentOutcome.from(result, request, application);
         } finally {
@@ -181,12 +192,12 @@ public final class ReviewedDeploymentUseCase {
         try {
             for (SecretReference reference : references) {
                 var revision = applicationSecrets.findRevision(reference)
-                        .orElseThrow(() -> new SecretStoreException(LocalizedMessage.of("secret.applicationReferenceMissing"),
+                        .orElseThrow(() -> SecretStoreException.create(SecretStoreFailureType.APPLICATION_REFERENCE_MISSING,
                                 "Application secret revision metadata is missing"));
                 try (SecretStore store = servers.secrets().open(revision.credentialMode(), masterPassword)) {
                     char[] value = store.read(revision.credentialKey())
-                            .orElseThrow(() -> new SecretStoreException(
-                                    LocalizedMessage.of("secret.applicationReferenceMissing"),
+                            .orElseThrow(() -> SecretStoreException.create(
+                                    SecretStoreFailureType.APPLICATION_REFERENCE_MISSING,
                                     "Application secret revision is unavailable from its selected platform store"));
                     try {
                         resolved.add(new ResolvedSecretRevision(reference, value));

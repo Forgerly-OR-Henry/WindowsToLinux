@@ -1,5 +1,8 @@
 package gold.debug.windowstolinux.shared.git.snapshot;
 
+import gold.debug.windowstolinux.shared.git.GitSnapshotException;
+import gold.debug.windowstolinux.shared.git.GitSnapshotFailureType;
+
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
@@ -16,43 +19,92 @@ final class GitCommandExecutor {
     private static final Duration COMMAND_TIMEOUT = Duration.ofMinutes(2);
     private static final int MAX_OUTPUT_BYTES = 16 * 1024;
     private static final int MAX_INDEX_OUTPUT_BYTES = 32 * 1024 * 1024;
+    private final Duration commandTimeout;
 
-    String run(Path directory, List<String> command) throws IOException, InterruptedException {
+    GitCommandExecutor() {
+        this(COMMAND_TIMEOUT);
+    }
+
+    GitCommandExecutor(Duration commandTimeout) {
+        this.commandTimeout = java.util.Objects.requireNonNull(commandTimeout, "commandTimeout");
+        if (commandTimeout.isZero() || commandTimeout.isNegative()) {
+            throw new IllegalArgumentException("commandTimeout must be positive");
+        }
+    }
+
+    String run(Path directory, List<String> command) throws GitSnapshotException, InterruptedException {
         return run(directory, command, MAX_OUTPUT_BYTES);
     }
 
-    String readIndex(Path directory) throws IOException, InterruptedException {
+    String readIndex(Path directory) throws GitSnapshotException, InterruptedException {
         return run(directory, List.of("git", "ls-files", "--stage"), MAX_INDEX_OUTPUT_BYTES);
     }
 
     private String run(Path directory, List<String> command, int maximumOutputBytes)
-            throws IOException, InterruptedException {
+            throws GitSnapshotException, InterruptedException {
         ProcessBuilder builder = new ProcessBuilder(commandForPlatform(command, System.getProperty("os.name", "")));
         builder.directory(directory.toFile());
         builder.redirectErrorStream(true);
         Map<String, String> environment = builder.environment();
         environment.put("GIT_TERMINAL_PROMPT", "0");
         environment.put("GIT_LFS_SKIP_SMUDGE", "1");
-        Process process = builder.start();
+        Process process;
+        try {
+            process = builder.start();
+        } catch (IOException exception) {
+            throw GitSnapshotException.create(GitSnapshotFailureType.TOOL_UNAVAILABLE,
+                    "Git could not be started for controlled snapshot preparation", exception);
+        }
         BoundedOutput output = new BoundedOutput(process.getInputStream(), maximumOutputBytes);
         Thread reader = Thread.ofVirtual().name("windowstolinux-git-output").start(output);
-        if (!process.waitFor(COMMAND_TIMEOUT.toMillis(), TimeUnit.MILLISECONDS)) {
+        if (!process.waitFor(commandTimeout.toMillis(), TimeUnit.MILLISECONDS)) {
             terminateTree(process);
-            finishReader(process, reader);
-            throw new IOException("Git command timed out");
+            try {
+                finishReader(process, reader);
+            } catch (IOException exception) {
+                throw GitSnapshotException.create(GitSnapshotFailureType.COMMAND_FAILED,
+                        "Git output could not be closed after a timeout", exception);
+            }
+            throw GitSnapshotException.create(GitSnapshotFailureType.TIMEOUT,
+                    "Git command exceeded the two-minute execution limit");
         }
-        finishReader(process, reader);
+        try {
+            finishReader(process, reader);
+        } catch (IOException exception) {
+            throw GitSnapshotException.create(GitSnapshotFailureType.COMMAND_FAILED,
+                    "Git command output reader did not terminate safely", exception);
+        }
         IOException outputFailure = output.failure().orElse(null);
         if (outputFailure != null) {
-            throw outputFailure;
+            throw GitSnapshotException.create(GitSnapshotFailureType.COMMAND_FAILED,
+                    "Git command output could not be read safely", outputFailure);
         }
         if (output.exceeded()) {
-            throw new IOException("Git command output exceeds the safe diagnostic bound");
+            throw GitSnapshotException.create(GitSnapshotFailureType.COMMAND_FAILED,
+                    "Git command output exceeded the safe diagnostic bound");
         }
         if (process.exitValue() != 0) {
-            throw new IOException("Git command returned a non-zero exit status");
+            GitSnapshotFailureType type = transientNetworkFailure(output.bytes())
+                    ? GitSnapshotFailureType.TRANSIENT_NETWORK_FAILURE
+                    : command.contains("fetch")
+                    ? GitSnapshotFailureType.REFERENCE_UNAVAILABLE
+                    : GitSnapshotFailureType.COMMAND_FAILED;
+            throw GitSnapshotException.create(type,
+                    "Git command returned a controlled non-success result without exposing remote output");
         }
         return new String(output.bytes(), StandardCharsets.UTF_8);
+    }
+
+    private static boolean transientNetworkFailure(byte[] output) {
+        String text = new String(output, StandardCharsets.UTF_8).toLowerCase(java.util.Locale.ROOT);
+        return text.contains("could not resolve host")
+                || text.contains("failed to connect")
+                || text.contains("connection reset")
+                || text.contains("network is unreachable")
+                || text.contains("remote end hung up")
+                || text.contains("connection timed out")
+                || text.contains("operation timed out")
+                || text.contains("temporary failure in name resolution");
     }
 
     static List<String> commandForPlatform(List<String> command, String operatingSystem) {

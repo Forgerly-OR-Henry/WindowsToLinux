@@ -1,6 +1,7 @@
 package gold.debug.windowstolinux.shared.git.snapshot;
 
 import gold.debug.windowstolinux.shared.git.GitSnapshotException;
+import gold.debug.windowstolinux.shared.git.GitSnapshotFailureType;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.LinkOption;
@@ -10,7 +11,8 @@ import java.nio.file.Path;
 final class ControlledGitWorkspaceValidator {
     Path require(Path workspaceRoot) throws GitSnapshotException {
         if (workspaceRoot == null) {
-            throw new GitSnapshotException("Git source snapshot workspace is required", null);
+            throw GitSnapshotException.create(GitSnapshotFailureType.WORKSPACE_REQUIRED,
+                    "Git source snapshot workspace is required");
         }
         try {
             Path root = workspaceRoot.toAbsolutePath().normalize();
@@ -20,7 +22,8 @@ final class ControlledGitWorkspaceValidator {
             }
             return root;
         } catch (IOException exception) {
-            throw new GitSnapshotException("Git source snapshot workspace is unavailable", exception);
+            throw GitSnapshotException.create(GitSnapshotFailureType.WORKSPACE_UNAVAILABLE,
+                    "Git source snapshot workspace is unavailable", exception);
         }
     }
 }

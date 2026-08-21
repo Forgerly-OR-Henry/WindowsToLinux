@@ -222,6 +222,7 @@ public final class RunModeResolver {
             }
             return Optional.of(Paths.get(uri));
         } catch (Exception ignored) {
+            // Unavailable code-source metadata is not authoritative; other bounded signals remain. / 不可用的代码源元数据不具权威性，仍可检查其他有界信号。
             return Optional.empty();
         }
     }
@@ -230,6 +231,7 @@ public final class RunModeResolver {
         try {
             return ProcessHandle.current().info().command().map(Paths::get);
         } catch (Exception ignored) {
+            // Process command metadata is optional and has a deterministic empty fallback. / 进程命令元数据可选，并具有确定性的空回退。
             return Optional.empty();
         }
     }
@@ -238,6 +240,7 @@ public final class RunModeResolver {
         try {
             return Optional.of(Path.of(""));
         } catch (Exception ignored) {
+            // An inaccessible working directory is represented as absent, never guessed. / 无法访问的工作目录表示为缺失，绝不猜测。
             return Optional.empty();
         }
     }

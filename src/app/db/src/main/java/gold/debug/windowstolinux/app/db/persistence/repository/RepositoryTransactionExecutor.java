@@ -1,5 +1,7 @@
 package gold.debug.windowstolinux.app.db.persistence.repository;
 
+import gold.debug.windowstolinux.app.db.failure.DesktopPersistenceException;
+import gold.debug.windowstolinux.app.db.failure.DesktopPersistenceFailureType;
 import gold.debug.windowstolinux.shared.model.server.ServerIdentity;
 
 import java.sql.Connection;
@@ -20,7 +22,11 @@ final class RepositoryTransactionExecutor {
             try {
                 connection.rollback();
             } catch (SQLException rollbackFailure) {
-                exception.addSuppressed(rollbackFailure);
+                rollbackFailure.addSuppressed(exception);
+                throw DesktopPersistenceException.create(
+                        DesktopPersistenceFailureType.ROLLBACK_FAILED,
+                        "A database transaction failed and its rollback could not be verified",
+                        rollbackFailure);
             }
             throw exception;
         }

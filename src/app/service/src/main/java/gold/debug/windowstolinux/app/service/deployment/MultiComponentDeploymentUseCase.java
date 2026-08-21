@@ -8,6 +8,9 @@ import gold.debug.windowstolinux.app.db.persistence.repository.ManagedApplicatio
 import gold.debug.windowstolinux.app.db.persistence.repository.ManagedApplicationGraphRepository;
 import gold.debug.windowstolinux.app.secret.SecretStore;
 import gold.debug.windowstolinux.app.secret.SecretStoreException;
+import gold.debug.windowstolinux.app.secret.SecretStoreFailureType;
+import gold.debug.windowstolinux.app.service.failure.ApplicationServiceException;
+import gold.debug.windowstolinux.app.service.failure.ApplicationServiceFailureType;
 import gold.debug.windowstolinux.app.service.deployment.multi.MultiComponentReviewInput;
 import gold.debug.windowstolinux.app.service.deployment.multi.ReviewedComponentApplication;
 import gold.debug.windowstolinux.app.service.deployment.multi.ReviewedMultiComponentApplication;
@@ -31,9 +34,9 @@ import gold.debug.windowstolinux.shared.linux.connection.SshCredential;
 import gold.debug.windowstolinux.shared.linux.connection.SshEndpoint;
 import gold.debug.windowstolinux.shared.model.deployment.DeploymentStatus;
 import gold.debug.windowstolinux.shared.model.lifecycle.LifecycleObservation;
+import gold.debug.windowstolinux.shared.model.failure.FailureDescriptor;
 import gold.debug.windowstolinux.shared.model.managed.ManagedApplicationRuntimeConfiguration;
 import gold.debug.windowstolinux.shared.model.message.LocalizedMessage;
-import gold.debug.windowstolinux.shared.model.message.LocalizedOperationException;
 import gold.debug.windowstolinux.shared.model.security.CredentialStorageMode;
 import gold.debug.windowstolinux.shared.model.server.ServerIdentity;
 
@@ -128,7 +131,7 @@ public final class MultiComponentDeploymentUseCase {
         review = Objects.requireNonNull(review, "review");
         if (review.components().stream().anyMatch(component -> !component.request().secretReferences().isEmpty())) {
             credential.clear();
-            throw new LocalizedOperationException(LocalizedMessage.of("secret.applicationReferenceMissing"),
+            throw ApplicationServiceException.create(ApplicationServiceFailureType.APPLICATION_SECRET_REFERENCE_MISSING,
                     "Multi-component deployments with secret references require resolved stored revisions");
         }
         List<ReviewedComponentDeployment> bound = review.components().stream()
@@ -181,9 +184,29 @@ public final class MultiComponentDeploymentUseCase {
         try {
             MultiComponentDeploymentResult result = deploymentService.deploy(review.plan(), bound,
                     review.applicationHealth(), gateway, endpoint, credential, verifier);
-            result.componentResults().stream().flatMap(value -> value.observation().stream())
-                    .forEach(this::saveObservationQuietly);
-            if (result.status() == DeploymentStatus.SUCCEEDED) persistSuccessful(review);
+            boolean observationSaveFailed = false;
+            for (var observation : result.componentResults().stream()
+                    .flatMap(value -> value.observation().stream()).toList()) {
+                try {
+                    applications.saveObservation(observation);
+                } catch (SQLException failure) {
+                    observationSaveFailed = true;
+                }
+            }
+            if (observationSaveFailed) {
+                result = result.withNonFatalFailure(FailureDescriptor.create(
+                        ApplicationServiceFailureType.LOCAL_OBSERVATION_SAVE_FAILED,
+                        result.operationIdentity(), "At least one remote component observation could not be stored locally"));
+            }
+            if (result.status() == DeploymentStatus.SUCCEEDED) {
+                try {
+                    persistSuccessful(review);
+                } catch (SQLException failure) {
+                    result = result.withNonFatalFailure(FailureDescriptor.create(
+                            ApplicationServiceFailureType.DEPLOYMENT_RECORD_SAVE_FAILED,
+                            result.operationIdentity(), "Remote multi-component deployment succeeded but local topology storage failed"));
+                }
+            }
             return result;
         } finally {
             lock.unlock();
@@ -216,12 +239,12 @@ public final class MultiComponentDeploymentUseCase {
         try {
             for (var reference : references) {
                 var revision = applicationSecrets.findRevision(reference)
-                        .orElseThrow(() -> new SecretStoreException(
-                                LocalizedMessage.of("secret.applicationReferenceMissing"),
+                        .orElseThrow(() -> SecretStoreException.create(
+                                SecretStoreFailureType.APPLICATION_REFERENCE_MISSING,
                                 "Application secret revision metadata is missing"));
                 try (SecretStore store = servers.secrets().open(revision.credentialMode(), masterPassword)) {
-                    char[] value = store.read(revision.credentialKey()).orElseThrow(() -> new SecretStoreException(
-                            LocalizedMessage.of("secret.applicationReferenceMissing"),
+                    char[] value = store.read(revision.credentialKey()).orElseThrow(() -> SecretStoreException.create(
+                            SecretStoreFailureType.APPLICATION_REFERENCE_MISSING,
                             "Application secret revision is unavailable from its selected platform store"));
                     try {
                         resolved.add(new ResolvedSecretRevision(reference, value));
@@ -257,16 +280,8 @@ public final class MultiComponentDeploymentUseCase {
                 !component.request().server().id().equals(selectedProfile.id())
                         || !component.request().server().host().equals(selectedProfile.endpoint().host())
                         || component.request().server().sshPort() != selectedProfile.endpoint().port())) {
-            throw new LocalizedOperationException(LocalizedMessage.of("validation.lifecycleContextMismatch"),
+            throw ApplicationServiceException.create(ApplicationServiceFailureType.LIFECYCLE_CONTEXT_MISMATCH,
                     "Reviewed application, server endpoint, and credential storage mode must match");
-        }
-    }
-
-    private void saveObservationQuietly(LifecycleObservation observation) {
-        try {
-            applications.saveObservation(observation);
-        } catch (SQLException ignored) {
-            // Remote truth remains authoritative when local history recording fails. / 本地历史记录失败时，远端事实仍然具有权威性。
         }
     }
 

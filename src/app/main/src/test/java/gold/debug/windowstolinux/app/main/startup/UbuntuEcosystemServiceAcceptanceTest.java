@@ -96,7 +96,7 @@ class UbuntuEcosystemServiceAcceptanceTest {
                     runtime, access(port));
 
             assertEquals(DeploymentStatus.FAILED_ROLLED_BACK, failed.status(), () -> failed.events().toString());
-            assertTrue(failed.events().stream().anyMatch(event -> event.step().equals("rollback") && event.succeeded()),
+            assertTrue(failed.events().stream().anyMatch(event -> event.step().code().equals("rollback") && event.succeeded()),
                     () -> failed.events().toString());
             assertSecretFree(failed, firstSecretValue);
             assertSecretFree(failed, secondSecretValue);

@@ -1,5 +1,8 @@
 package gold.debug.windowstolinux.shared.config.secretref;
 
+import gold.debug.windowstolinux.shared.config.ConfigurationException;
+import gold.debug.windowstolinux.shared.config.ConfigurationFailureType;
+
 import java.util.Objects;
 
 /**
@@ -17,10 +20,10 @@ public record SecretRevisionDigest(SecretReference reference, String sha256, int
         reference = Objects.requireNonNull(reference, "reference");
         sha256 = Objects.requireNonNull(sha256, "sha256");
         if (!sha256.matches("[0-9a-f]{64}")) {
-            throw new IllegalArgumentException("sha256 must be lowercase SHA-256");
+            throw ConfigurationException.create(ConfigurationFailureType.HASH_INVALID, "A SHA-256 value must use the canonical lowercase form");
         }
         if (byteCount < 1 || byteCount > ResolvedSecretRevision.MAX_VALUE_BYTES) {
-            throw new IllegalArgumentException("secret byte count exceeds the bounded transfer size");
+            throw ConfigurationException.create(ConfigurationFailureType.SIZE_LIMIT_EXCEEDED, "A secret revision exceeds the bounded transfer size");
         }
     }
 }

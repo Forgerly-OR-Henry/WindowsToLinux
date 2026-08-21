@@ -2,7 +2,6 @@ package gold.debug.windowstolinux.app.secret;
 
 import gold.debug.windowstolinux.app.secret.SecretStore;
 import gold.debug.windowstolinux.app.secret.SecretStoreException;
-import gold.debug.windowstolinux.shared.model.message.LocalizedMessage;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -86,7 +85,7 @@ public final class WindowsCredentialManagerSecretStore implements SecretStore {
      */
     public WindowsCredentialManagerSecretStore() throws SecretStoreException {
         if (!System.getProperty("os.name", "").toLowerCase(Locale.ROOT).contains("windows")) {
-            throw failure("secret.windows.only", "Windows Credential Manager is available only on Windows");
+            throw failure(SecretStoreFailureType.WINDOWS_ONLY, "Windows Credential Manager is available only on Windows");
         }
     }
 
@@ -101,7 +100,7 @@ public final class WindowsCredentialManagerSecretStore implements SecretStore {
         try {
             String response = responseLine(invoke("write", target(key), Base64.getEncoder().encodeToString(valueBytes)));
             if (!"OK".equals(response)) {
-                throw failure("secret.windows.writeFailed", "Windows Credential Manager rejected the write operation");
+                throw failure(SecretStoreFailureType.WINDOWS_WRITE_FAILED, "Windows Credential Manager rejected the write operation");
             }
         } finally {
             Arrays.fill(valueBytes, (byte) 0);
@@ -117,7 +116,7 @@ public final class WindowsCredentialManagerSecretStore implements SecretStore {
             return Optional.empty();
         }
         if (output.isBlank()) {
-            throw failure("secret.windows.emptyResponse", "Windows Credential Manager returned an empty response");
+            throw failure(SecretStoreFailureType.WINDOWS_EMPTY_RESPONSE, "Windows Credential Manager returned an empty response");
         }
         try {
             byte[] value = Base64.getDecoder().decode(output);
@@ -127,7 +126,7 @@ public final class WindowsCredentialManagerSecretStore implements SecretStore {
                 Arrays.fill(value, (byte) 0);
             }
         } catch (IllegalArgumentException exception) {
-            throw failure("secret.windows.invalidResponse", "Windows Credential Manager returned invalid data",
+            throw failure(SecretStoreFailureType.WINDOWS_INVALID_RESPONSE, "Windows Credential Manager returned invalid data",
                     exception);
         }
     }
@@ -150,21 +149,21 @@ public final class WindowsCredentialManagerSecretStore implements SecretStore {
             process = builder.start();
             if (!process.waitFor(PROCESS_TIMEOUT.toMillis(), TimeUnit.MILLISECONDS)) {
                 process.destroyForcibly();
-                throw failure("secret.windows.timeout", "Windows Credential Manager operation timed out");
+                throw failure(SecretStoreFailureType.WINDOWS_TIMEOUT, "Windows Credential Manager operation timed out");
             }
             String output = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8).trim();
             if (process.exitValue() != 0) {
-                throw new SecretStoreException(LocalizedMessage.of("secret.windows.operationFailed",
-                        "exitCode", process.exitValue()),
-                        "Windows Credential Manager operation failed with exit code " + process.exitValue());
+                throw SecretStoreException.create(SecretStoreFailureType.WINDOWS_OPERATION_FAILED,
+                        java.util.Map.of("exitCode", process.exitValue()),
+                        "Windows Credential Manager operation failed with a non-zero exit code", null);
             }
             return output;
         } catch (IOException exception) {
-            throw failure("secret.windows.startFailed", "Failed to start the Windows Credential Manager adapter",
+            throw failure(SecretStoreFailureType.WINDOWS_START_FAILED, "Failed to start the Windows Credential Manager adapter",
                     exception);
         } catch (InterruptedException exception) {
             Thread.currentThread().interrupt();
-            throw failure("secret.windows.interrupted", "Windows Credential Manager operation was interrupted",
+            throw failure(SecretStoreFailureType.WINDOWS_INTERRUPTED, "Windows Credential Manager operation was interrupted",
                     exception);
         }
     }
@@ -179,7 +178,7 @@ public final class WindowsCredentialManagerSecretStore implements SecretStore {
                 .filter(line -> line.equals("OK") || line.equals("NOT_FOUND")
                         || (line.length() >= 4 && line.length() % 4 == 0 && line.matches("[A-Za-z0-9+/]+={0,2}")))
                 .findFirst()
-                .orElseThrow(() -> failure("secret.windows.uncontrolledResponse",
+                .orElseThrow(() -> failure(SecretStoreFailureType.WINDOWS_UNCONTROLLED_RESPONSE,
                         "Windows Credential Manager did not return a controlled response"));
     }
 
@@ -196,11 +195,11 @@ public final class WindowsCredentialManagerSecretStore implements SecretStore {
         }
     }
 
-    private static SecretStoreException failure(String key, String diagnostic) {
-        return new SecretStoreException(LocalizedMessage.of(key), diagnostic);
+    private static SecretStoreException failure(SecretStoreFailureType type, String diagnostic) {
+        return SecretStoreException.create(type, diagnostic);
     }
 
-    private static SecretStoreException failure(String key, String diagnostic, Throwable cause) {
-        return new SecretStoreException(LocalizedMessage.of(key), diagnostic, cause);
+    private static SecretStoreException failure(SecretStoreFailureType type, String diagnostic, Throwable cause) {
+        return SecretStoreException.create(type, diagnostic, cause);
     }
 }

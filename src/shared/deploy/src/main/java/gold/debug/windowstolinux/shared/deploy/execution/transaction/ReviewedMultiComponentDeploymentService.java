@@ -3,11 +3,14 @@ package gold.debug.windowstolinux.shared.deploy.execution.transaction;
 import gold.debug.windowstolinux.shared.deploy.contract.result.compatibility.HostSupportStatus;
 import gold.debug.windowstolinux.shared.deploy.contract.result.compatibility.HostSupportDecision;
 import gold.debug.windowstolinux.shared.deploy.support.HostSupportEvaluator;
+import gold.debug.windowstolinux.shared.deploy.error.DeploymentExecutionFailureType;
+import gold.debug.windowstolinux.shared.deploy.error.DeploymentSwitchException;
 import gold.debug.windowstolinux.shared.deploy.contract.ApplicationHealthGate;
 import gold.debug.windowstolinux.shared.deploy.contract.MultiComponentDeploymentPlan;
 import gold.debug.windowstolinux.shared.deploy.plan.ReviewedReleaseIdentityResolver;
 import gold.debug.windowstolinux.shared.deploy.contract.result.deployment.ComponentTransactionState;
 import gold.debug.windowstolinux.shared.deploy.contract.result.deployment.DeploymentEvent;
+import gold.debug.windowstolinux.shared.model.deployment.DeploymentTraceEvent;
 import gold.debug.windowstolinux.shared.deploy.contract.result.deployment.MultiComponentDeploymentResult;
 import gold.debug.windowstolinux.shared.linux.connection.DeploymentLinuxGateway;
 import gold.debug.windowstolinux.shared.linux.session.DeploymentRemoteSession;
@@ -22,6 +25,8 @@ import gold.debug.windowstolinux.shared.model.lifecycle.LifecycleAction;
 import gold.debug.windowstolinux.shared.model.lifecycle.LifecycleObservation;
 import gold.debug.windowstolinux.shared.model.lifecycle.RuntimeState;
 import gold.debug.windowstolinux.shared.model.capability.LinuxCapabilityFacts;
+import gold.debug.windowstolinux.shared.model.failure.FailureDescriptor;
+import gold.debug.windowstolinux.shared.model.failure.OperationIdentity;
 
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
@@ -80,17 +85,24 @@ public final class ReviewedMultiComponentDeploymentService {
             observeAndRetain(plan, contexts, session, applicationEvents);
             MultiComponentRecoveryCoordinator.cleanupAll(contexts, session);
             String identity = applicationIdentity(plan, contexts);
-            applicationEvents.add(new DeploymentEvent("application-commit", true,
+            applicationEvents.add(DeploymentEvent.result(DeploymentTraceEvent.APPLICATION_COMMIT, true,
                     "All reviewed components and the whole-application health gate were verified"));
             contexts.values().forEach(context -> context.state = ComponentTransactionState.SUCCEEDED);
             return MultiComponentTransactionContext.result(
                     DeploymentStatus.SUCCEEDED, applicationEvents, contexts, Optional.of(identity));
-        } catch (SwitchFailure failure) {
-            applicationEvents.add(new DeploymentEvent(failure.step, false, failure.getMessage()));
+        } catch (DeploymentSwitchException failure) {
+            applicationEvents.add(DeploymentEvent.failed(failure.step(), failure.failure()));
             return MultiComponentRecoveryCoordinator.recover(
                     plan, contexts, gateway, endpoint, credential, hostKeyVerifier, applicationEvents);
-        } catch (LinuxOperationException | ArithmeticException failure) {
-            applicationEvents.add(new DeploymentEvent("multi-component-linux-operation", false, safeMessage(failure)));
+        } catch (LinuxOperationException failure) {
+            applicationEvents.add(DeploymentEvent.failed(
+                    DeploymentTraceEvent.MULTI_COMPONENT_LINUX_OPERATION, failure.failure()));
+            return MultiComponentRecoveryCoordinator.recover(
+                    plan, contexts, gateway, endpoint, credential, hostKeyVerifier, applicationEvents);
+        } catch (ArithmeticException failure) {
+            applicationEvents.add(DeploymentEvent.failed(DeploymentTraceEvent.APPLICATION_PREFLIGHT,
+                    FailureDescriptor.create(DeploymentExecutionFailureType.ARITHMETIC_OVERFLOW,
+                            OperationIdentity.create(), "Deployment size arithmetic exceeded its bounded range")));
             return MultiComponentRecoveryCoordinator.recover(
                     plan, contexts, gateway, endpoint, credential, hostKeyVerifier, applicationEvents);
         } finally {
@@ -103,7 +115,7 @@ public final class ReviewedMultiComponentDeploymentService {
             List<DeploymentEvent> applicationEvents) throws LinuxOperationException {
         var server = session.collectCapabilities();
         if (server.managedHelperProtocolVersion() != ManagedHelperProtocol.VERSION) {
-            return Optional.of(rejected(contexts, applicationEvents, "helper-protocol",
+            return Optional.of(rejected(contexts, applicationEvents, DeploymentTraceEvent.HELPER_PROTOCOL,
                     "Target helper protocol is stale; run product Environment Preparation first"));
         }
         LinuxCapabilityFacts capabilities = session.collectDeploymentCapabilities();
@@ -112,26 +124,26 @@ public final class ReviewedMultiComponentDeploymentService {
             MultiComponentTransactionContext context = contexts.get(id);
             HostSupportDecision compatibility = HostSupportEvaluator.evaluate(
                     capabilities, context.component.request().facts(), context.component.request().runtime());
-            context.event("typed-host-compatibility",
+            context.event(DeploymentTraceEvent.TYPED_HOST_COMPATIBILITY,
                     compatibility.support() == HostSupportStatus.READY_FOR_RUNTIME_VALIDATION,
                     String.join("; ", compatibility.evidence()));
             if (compatibility.support() != HostSupportStatus.READY_FOR_RUNTIME_VALIDATION) {
-                return Optional.of(rejected(contexts, applicationEvents, "typed-host-compatibility",
+                return Optional.of(rejected(contexts, applicationEvents, DeploymentTraceEvent.TYPED_HOST_COMPATIBILITY,
                         "At least one component is outside the collected host runtime matrix"));
             }
             var request = context.component.request();
             long footprint = Math.addExact(request.archive().byteCount(), request.archive().uncompressedByteCount());
             if (footprint > request.limits().maxWorkspaceBytes()) {
-                return Optional.of(rejected(contexts, applicationEvents, "source-workspace",
+                return Optional.of(rejected(contexts, applicationEvents, DeploymentTraceEvent.SOURCE_WORKSPACE,
                         "A component archive exceeds its confirmed workspace limit"));
             }
             requiredBytes = Math.addExact(requiredBytes, request.limits().maxWorkspaceBytes());
         }
         if (server.availableBytes() < requiredBytes) {
-            return Optional.of(rejected(contexts, applicationEvents, "target-space",
+            return Optional.of(rejected(contexts, applicationEvents, DeploymentTraceEvent.TARGET_SPACE,
                     "Target free space is insufficient for independent component candidates"));
         }
-        applicationEvents.add(new DeploymentEvent("application-preflight", true,
+        applicationEvents.add(DeploymentEvent.result(DeploymentTraceEvent.APPLICATION_PREFLIGHT, true,
                 "Helper, target space, and every typed component runtime were verified before source upload"));
         return Optional.empty();
     }
@@ -140,7 +152,7 @@ public final class ReviewedMultiComponentDeploymentService {
             MultiComponentDeploymentPlan plan, Map<String, MultiComponentTransactionContext> contexts, DeploymentRemoteSession session,
             List<DeploymentEvent> applicationEvents) throws LinuxOperationException {
         for (List<String> wave : plan.buildWaves()) {
-            applicationEvents.add(new DeploymentEvent("component-build-wave", true, String.join(",", wave)));
+            applicationEvents.add(DeploymentEvent.result(DeploymentTraceEvent.COMPONENT_BUILD_WAVE, true, String.join(",", wave)));
             for (String id : wave) {
                 MultiComponentTransactionContext context = contexts.get(id);
                 var request = context.component.request();
@@ -148,7 +160,7 @@ public final class ReviewedMultiComponentDeploymentService {
                 var receipt = session.uploadSource(request.archive(), context.workspace);
                 if (!receipt.contentSha256().equals(request.archive().contentSha256())
                         || receipt.byteCount() != request.archive().byteCount()) {
-                    context.event("source-upload", false, "Target upload identity differs from the reviewed archive");
+                    context.event(DeploymentTraceEvent.SOURCE_UPLOAD, false, "Target upload identity differs from the reviewed archive");
                     context.state = ComponentTransactionState.BUILD_FAILED;
                     boolean cleaned = MultiComponentRecoveryCoordinator.cleanupAll(contexts, session);
                     MultiComponentRecoveryCoordinator.markDiscarded(contexts, id);
@@ -156,10 +168,10 @@ public final class ReviewedMultiComponentDeploymentService {
                     return MultiComponentTransactionContext.result(cleaned ? DeploymentStatus.FAILED_BUILD : DeploymentStatus.MANUAL_RECOVERY_REQUIRED,
                             applicationEvents, contexts, Optional.empty());
                 }
-                context.event("source-upload", true, receipt.evidence());
+                context.event(DeploymentTraceEvent.SOURCE_UPLOAD, true, receipt.evidence());
                 context.build = session.buildDeployment(request.facts(), request.runtime(), context.workspace,
                         request.limits(), request.configuration());
-                context.event("remote-build", context.build.succeeded(), context.build.evidence());
+                context.event(DeploymentTraceEvent.REMOTE_BUILD, context.build.succeeded(), context.build.evidence());
                 if (!context.build.succeeded()
                         || !context.build.sourceSha256().equals(request.archive().contentSha256())) {
                     context.state = ComponentTransactionState.BUILD_FAILED;
@@ -172,7 +184,7 @@ public final class ReviewedMultiComponentDeploymentService {
                 context.inputs = session.stageDeploymentInputs(context.component.application(), request.configuration(),
                         context.component.resolvedSecrets());
                 context.releaseIdentity = ReviewedReleaseIdentityResolver.from(request);
-                context.event("candidate-ready", true, "Candidate build and immutable deployment inputs are ready");
+                context.event(DeploymentTraceEvent.CANDIDATE_READY, true, "Candidate build and immutable deployment inputs are ready");
             }
         }
         return null;
@@ -184,9 +196,9 @@ public final class ReviewedMultiComponentDeploymentService {
         for (String id : plan.stopOrder()) {
             MultiComponentTransactionContext context = contexts.get(id);
             context.snapshot = session.snapshotDeployment(context.component.application(), context.component.request().runtime());
-            context.event("snapshot", true, context.snapshot.evidence());
+            context.event(DeploymentTraceEvent.SNAPSHOT, true, context.snapshot.evidence());
         }
-        applicationEvents.add(new DeploymentEvent("application-snapshot", true,
+        applicationEvents.add(DeploymentEvent.result(DeploymentTraceEvent.APPLICATION_SNAPSHOT, true,
                 "Every affected release, runtime, autostart, configuration, and secret revision was captured"));
     }
 
@@ -200,11 +212,13 @@ public final class ReviewedMultiComponentDeploymentService {
             LifecycleObservation stopped = session.executeDeploymentLifecycle(context.component.application(),
                     context.component.request().runtime(), LifecycleAction.STOP);
             boolean verified = stopped.ownershipVerified() && stopped.runtimeState() == RuntimeState.STOPPED;
-            context.event("stop-old", verified, stopped.evidence());
-            if (!verified) throw new SwitchFailure("stop-old", "Old component could not be stopped safely: " + id);
+            context.event(DeploymentTraceEvent.STOP_OLD, verified, stopped.evidence());
+            if (!verified) throw DeploymentSwitchException.create(DeploymentTraceEvent.STOP_OLD,
+                    DeploymentExecutionFailureType.SWITCH_UNVERIFIED,
+                    "An old component could not be stopped and verified safely");
             context.stopped = true;
         }
-        applicationEvents.add(new DeploymentEvent("application-stop", true,
+        applicationEvents.add(DeploymentEvent.result(DeploymentTraceEvent.APPLICATION_STOP, true,
                 "Previously running affected components were stopped in reverse dependency order"));
     }
 
@@ -217,22 +231,26 @@ public final class ReviewedMultiComponentDeploymentService {
             context.publishAttempted = true;
             var publish = session.publishDeployment(context.component.application(), request.facts(), context.workspace,
                     context.build, context.releaseIdentity, request.runtime(), context.inputs, context.snapshot);
-            context.event("publish", publish.succeeded(), publish.evidence());
-            if (!publish.succeeded()) throw new SwitchFailure("publish", "Component publication failed: " + id);
+            context.event(DeploymentTraceEvent.PUBLISH, publish.succeeded(), publish.evidence());
+            if (!publish.succeeded()) throw DeploymentSwitchException.create(DeploymentTraceEvent.PUBLISH,
+                    DeploymentExecutionFailureType.PUBLISH_FAILED, "A component publication step failed");
             context.published = true;
             var health = session.checkDeploymentHealth(context.component.application(), request.runtime(),
                     request.runtime().healthCheck());
-            context.event("candidate-health", health.healthy(), health.evidence());
+            context.event(DeploymentTraceEvent.CANDIDATE_HEALTH, health.healthy(), health.evidence());
             if (!health.healthy()) {
-                throw new SwitchFailure("candidate-health", "Component health failed: " + id
-                        + "; controlled diagnostic: " + health.evidence());
+                throw DeploymentSwitchException.create(DeploymentTraceEvent.CANDIDATE_HEALTH,
+                        DeploymentExecutionFailureType.HEALTH_FAILED,
+                        "A published component did not pass its reviewed health check");
             }
         }
         MultiComponentTransactionContext gate = contexts.get(applicationHealth.componentId());
         var wholeHealth = session.checkDeploymentHealth(gate.component.application(), gate.component.request().runtime(),
                 applicationHealth.healthCheck());
-        applicationEvents.add(new DeploymentEvent("application-health", wholeHealth.healthy(), wholeHealth.evidence()));
-        if (!wholeHealth.healthy()) throw new SwitchFailure("application-health", "Whole-application health failed");
+        applicationEvents.add(DeploymentEvent.result(DeploymentTraceEvent.APPLICATION_HEALTH, wholeHealth.healthy(), wholeHealth.evidence()));
+        if (!wholeHealth.healthy()) throw DeploymentSwitchException.create(DeploymentTraceEvent.APPLICATION_HEALTH,
+                DeploymentExecutionFailureType.HEALTH_FAILED,
+                "The whole-application health gate did not pass");
     }
 
     private static void observeAndRetain(MultiComponentDeploymentPlan plan, Map<String, MultiComponentTransactionContext> contexts,
@@ -242,14 +260,16 @@ public final class ReviewedMultiComponentDeploymentService {
             MultiComponentTransactionContext context = contexts.get(id);
             context.observation = session.observeDeployment(context.component.application(),
                     context.component.request().runtime());
-            context.event("final-observation", context.observation.ownershipVerified(), context.observation.evidence());
+            context.event(DeploymentTraceEvent.FINAL_OBSERVATION, context.observation.ownershipVerified(), context.observation.evidence());
             if (!context.observation.ownershipVerified() || context.observation.runtimeState() != RuntimeState.RUNNING) {
-                throw new SwitchFailure("final-observation", "Final component runtime is not verified: " + id);
+                throw DeploymentSwitchException.create(DeploymentTraceEvent.FINAL_OBSERVATION,
+                        DeploymentExecutionFailureType.OBSERVATION_UNVERIFIED,
+                        "A final component runtime observation could not be verified");
             }
             var retention = session.retainRecentSuccessfulReleases(context.component.application());
-            context.event("release-retention", retention.succeeded(), retention.evidence());
+            context.event(DeploymentTraceEvent.RELEASE_RETENTION, retention.succeeded(), retention.evidence());
         }
-        applicationEvents.add(new DeploymentEvent("application-observation", true,
+        applicationEvents.add(DeploymentEvent.result(DeploymentTraceEvent.APPLICATION_OBSERVATION, true,
                 "Every component ownership and running state was observed from the target"));
     }
 
@@ -282,8 +302,10 @@ public final class ReviewedMultiComponentDeploymentService {
 
     private static MultiComponentDeploymentResult rejected(Map<String, MultiComponentTransactionContext> contexts,
                                                            List<DeploymentEvent> applicationEvents,
-                                                           String step, String evidence) {
-        applicationEvents.add(new DeploymentEvent(step, false, evidence));
+                                                           DeploymentTraceEvent step, String evidence) {
+        applicationEvents.add(DeploymentEvent.failed(step,
+                FailureDescriptor.create(DeploymentExecutionFailureType.PRECONDITION_REJECTED,
+                        OperationIdentity.create(), evidence)));
         return MultiComponentTransactionContext.result(
                 DeploymentStatus.PRECONDITION_REJECTED, applicationEvents, contexts, Optional.empty());
     }
@@ -308,17 +330,4 @@ public final class ReviewedMultiComponentDeploymentService {
         digest.update((byte) 0);
     }
 
-    private static String safeMessage(Exception failure) {
-        return failure.getMessage() == null || failure.getMessage().isBlank()
-                ? "Controlled multi-component operation failed" : failure.getMessage();
-    }
-
-    private static final class SwitchFailure extends RuntimeException {
-        private final String step;
-
-        private SwitchFailure(String step, String message) {
-            super(message);
-            this.step = step;
-        }
-    }
 }

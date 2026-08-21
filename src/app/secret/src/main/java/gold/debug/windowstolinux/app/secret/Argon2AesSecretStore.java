@@ -5,7 +5,6 @@ import gold.debug.windowstolinux.app.db.entity.OpaqueSecret;
 import gold.debug.windowstolinux.app.secret.SecretStore;
 import gold.debug.windowstolinux.app.secret.SecretStoreException;
 import gold.debug.windowstolinux.app.secret.crypto.Argon2AesGcmCryptoService;
-import gold.debug.windowstolinux.shared.model.message.LocalizedMessage;
 
 import java.sql.SQLException;
 import java.util.Objects;
@@ -47,7 +46,7 @@ public final class Argon2AesSecretStore implements SecretStore {
             secrets.save(new OpaqueSecret(
                     key, ALGORITHM, encrypted.salt(), encrypted.nonce(), encrypted.ciphertext()));
         } catch (Exception exception) {
-            throw failure("secret.encryptFailed", "Failed to encrypt and store the credential", exception);
+            throw failure(SecretStoreFailureType.ENCRYPT_FAILED, "Failed to encrypt and store the credential", exception);
         }
     }
 
@@ -62,15 +61,15 @@ public final class Argon2AesSecretStore implements SecretStore {
             }
             OpaqueSecret secret = stored.orElseThrow();
             if (!ALGORITHM.equals(secret.algorithm())) {
-                throw failure("secret.versionUnsupported", "The stored credential encryption version is unsupported");
+                throw failure(SecretStoreFailureType.VERSION_UNSUPPORTED, "The stored credential encryption version is unsupported");
             }
             return Optional.of(crypto.decrypt(secret));
         } catch (SQLException exception) {
-            throw failure("secret.readFailed", "Failed to read the encrypted credential", exception);
+            throw failure(SecretStoreFailureType.READ_FAILED, "Failed to read the encrypted credential", exception);
         } catch (SecretStoreException exception) {
             throw exception;
         } catch (Exception exception) {
-            throw failure("secret.decryptFailed", "The master password is incorrect or the credential is corrupted",
+            throw failure(SecretStoreFailureType.DECRYPT_FAILED, "The master password is incorrect or the credential is corrupted",
                     exception);
         }
     }
@@ -87,11 +86,11 @@ public final class Argon2AesSecretStore implements SecretStore {
         }
     }
 
-    private static SecretStoreException failure(String key, String diagnostic) {
-        return new SecretStoreException(LocalizedMessage.of(key), diagnostic);
+    private static SecretStoreException failure(SecretStoreFailureType type, String diagnostic) {
+        return SecretStoreException.create(type, diagnostic);
     }
 
-    private static SecretStoreException failure(String key, String diagnostic, Throwable cause) {
-        return new SecretStoreException(LocalizedMessage.of(key), diagnostic, cause);
+    private static SecretStoreException failure(SecretStoreFailureType type, String diagnostic, Throwable cause) {
+        return SecretStoreException.create(type, diagnostic, cause);
     }
 }

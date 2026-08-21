@@ -3,6 +3,7 @@ package gold.debug.windowstolinux.shared.linux.sshd.capability;
 import gold.debug.windowstolinux.shared.linux.sshd.capability.ManagedHostCapabilityProbe;
 
 import gold.debug.windowstolinux.shared.linux.error.LinuxOperationException;
+import gold.debug.windowstolinux.shared.linux.error.LinuxOperationFailureType;
 import gold.debug.windowstolinux.shared.linux.sshd.command.SshCommandExecutor;
 import gold.debug.windowstolinux.shared.linux.sshd.execution.protocol.helper.ManagedHelperBundle;
 import gold.debug.windowstolinux.shared.model.capability.ServerCapabilityFacts;
@@ -47,7 +48,7 @@ public final class SshdCapabilityCollector {
     public ServerCapabilityFacts collect() throws LinuxOperationException {
         var result = collectReadOnly(ManagedHostCapabilityProbe.render(ManagedHelperBundle.PATH));
         if (!result.succeeded()) {
-            throw LinuxOperationException.localized("linux.error.capabilityCollectionFailed",
+            throw LinuxOperationException.create(LinuxOperationFailureType.CAPABILITY_COLLECTION_FAILED,
                     "Failed to collect target capabilities: " + result.failureEvidence());
         }
         Map<String, String> values = SshCommandExecutor.lines(result.output());
@@ -91,7 +92,7 @@ public final class SshdCapabilityCollector {
             Thread.sleep(READ_ONLY_RETRY_DELAY.toMillis());
         } catch (InterruptedException exception) {
             Thread.currentThread().interrupt();
-            throw LinuxOperationException.localized("linux.error.capabilityCollectionFailed",
+            throw LinuxOperationException.create(LinuxOperationFailureType.CAPABILITY_COLLECTION_FAILED,
                     "Read-only capability collection retry was interrupted", exception);
         }
     }

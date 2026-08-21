@@ -14,7 +14,7 @@ import gold.debug.windowstolinux.shared.model.health.HealthCheck;
 import gold.debug.windowstolinux.shared.model.lifecycle.LifecycleAction;
 import gold.debug.windowstolinux.shared.model.lifecycle.LifecycleObservation;
 import gold.debug.windowstolinux.shared.model.managed.ManagedApplication;
-import gold.debug.windowstolinux.shared.model.message.LocalizedOperationException;
+import gold.debug.windowstolinux.shared.model.deployment.DeploymentApprovalException;
 import gold.debug.windowstolinux.shared.model.deployment.EnvironmentSetupApproval;
 import gold.debug.windowstolinux.shared.model.deployment.EnvironmentSetupResult;
 import gold.debug.windowstolinux.shared.model.capability.ServerCapabilityFacts;
@@ -39,14 +39,14 @@ class EnvironmentSetupServiceTest {
             throw new AssertionError("unconfirmed preparation must not connect");
         };
 
-        LocalizedOperationException failure = assertThrows(LocalizedOperationException.class, () ->
+        DeploymentApprovalException failure = assertThrows(DeploymentApprovalException.class, () ->
                 new EnvironmentSetupService().prepare(
                         new EnvironmentSetupApproval("server-one", false, Instant.now()), gateway, endpoint(), password,
                         acceptingHostKey()
                 )
         );
 
-        assertEquals("environment.confirmationRequired", failure.userMessage().key());
+        assertEquals("deployment.error.confirmationRequired", failure.failure().userMessage().key());
         assertEquals(0, connections.get());
         assertCleared(password);
     }

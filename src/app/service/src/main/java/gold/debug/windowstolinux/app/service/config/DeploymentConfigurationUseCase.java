@@ -5,10 +5,10 @@ import gold.debug.windowstolinux.app.db.persistence.repository.ConfigurationSnap
 import gold.debug.windowstolinux.app.db.entity.StoredApplicationSecretRevision;
 import gold.debug.windowstolinux.app.secret.SecretStore;
 import gold.debug.windowstolinux.app.secret.SecretStoreException;
+import gold.debug.windowstolinux.app.secret.SecretStoreFailureType;
 import gold.debug.windowstolinux.app.service.server.DesktopSecretStoreService;
 import gold.debug.windowstolinux.shared.config.revision.ConfigurationSnapshot;
 import gold.debug.windowstolinux.shared.config.secretref.SecretReference;
-import gold.debug.windowstolinux.shared.model.message.LocalizedMessage;
 
 import java.sql.SQLException;
 import java.util.Arrays;
@@ -57,7 +57,7 @@ public final class DeploymentConfigurationUseCase {
         Objects.requireNonNull(revision, "revision");
         Objects.requireNonNull(store, "store");
         if (value == null || value.length == 0) {
-            throw new SecretStoreException(LocalizedMessage.of("secret.applicationValueMissing"),
+            throw SecretStoreException.create(SecretStoreFailureType.APPLICATION_VALUE_MISSING,
                     "Application secret values must not be empty");
         }
         try {
@@ -100,11 +100,11 @@ public final class DeploymentConfigurationUseCase {
         try {
             for (SecretReference reference : List.copyOf(Objects.requireNonNull(references, "references"))) {
                 StoredApplicationSecretRevision revision = applicationSecrets.findRevision(reference)
-                        .orElseThrow(() -> new SecretStoreException(LocalizedMessage.of("secret.applicationReferenceMissing"),
+                        .orElseThrow(() -> SecretStoreException.create(SecretStoreFailureType.APPLICATION_REFERENCE_MISSING,
                                 "Application secret revision metadata is missing"));
                 try (SecretStore store = secretStores.open(revision.credentialMode(), masterPassword)) {
                     char[] stored = store.read(revision.credentialKey())
-                            .orElseThrow(() -> new SecretStoreException(LocalizedMessage.of("secret.applicationReferenceMissing"),
+                            .orElseThrow(() -> SecretStoreException.create(SecretStoreFailureType.APPLICATION_REFERENCE_MISSING,
                                     "Application secret revision is not available from the selected platform store"));
                     clear(stored);
                 }

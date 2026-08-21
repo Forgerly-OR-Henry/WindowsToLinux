@@ -1,5 +1,7 @@
 package gold.debug.windowstolinux.app.db;
 
+import gold.debug.windowstolinux.app.db.failure.DesktopPersistenceException;
+import gold.debug.windowstolinux.app.db.failure.DesktopPersistenceFailureType;
 import gold.debug.windowstolinux.app.db.persistence.connection.DesktopConnectionFactory;
 import gold.debug.windowstolinux.app.db.execution.migration.DesktopSchemaMigrator;
 import gold.debug.windowstolinux.app.db.persistence.repository.AiProfileRepository;
@@ -11,10 +13,13 @@ import gold.debug.windowstolinux.app.db.persistence.repository.ManagedApplicatio
 import gold.debug.windowstolinux.app.db.persistence.repository.ManagedApplicationGraphRepository;
 import gold.debug.windowstolinux.app.db.persistence.repository.ServerProfileRepository;
 
-import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.sql.Connection;
+import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.sql.Statement;
+import java.util.Locale;
 
 /**
  * Composes focused desktop repositories over the versioned migrated SQLite schema.
@@ -48,13 +53,25 @@ public final class DesktopPersistence implements AutoCloseable {
     }
 
     /** Opens and migrates desktop persistence. / 打开并迁移桌面持久化。 */
-    public static DesktopPersistence open(Path dataDirectory) throws IOException, SQLException {
-        Path normalized = dataDirectory.toAbsolutePath().normalize();
-        Files.createDirectories(normalized);
+    public static DesktopPersistence open(Path dataDirectory) throws DesktopPersistenceException {
+        Path normalized;
+        try {
+            normalized = dataDirectory.toAbsolutePath().normalize();
+            Files.createDirectories(normalized);
+        } catch (Exception exception) {
+            throw DesktopPersistenceException.create(DesktopPersistenceFailureType.DATA_DIRECTORY_UNAVAILABLE,
+                    "The desktop persistence directory could not be created safely", exception);
+        }
         DesktopConnectionFactory connections = new DesktopConnectionFactory(
                 "jdbc:sqlite:" + normalized.resolve("windowstolinux.db"));
-        DesktopSchemaMigrator.migrate(connections);
-        return new DesktopPersistence(connections);
+        try {
+            verifyIntegrity(connections);
+            DesktopSchemaMigrator.migrate(connections);
+            verifyIntegrity(connections);
+            return new DesktopPersistence(connections);
+        } catch (SQLException exception) {
+            throw map(exception);
+        }
     }
 
     /** Returns the server/profile repository. / 返回服务器/资料仓库。 */
@@ -78,5 +95,49 @@ public final class DesktopPersistence implements AutoCloseable {
     @Override
     public void close() {
         // Repositories use short-lived connections and own no shared handle. / 仓库使用短连接，不持有共享句柄。
+    }
+
+    private static void verifyIntegrity(DesktopConnectionFactory connections) throws SQLException {
+        try (Connection connection = connections.open();
+             Statement statement = connection.createStatement();
+             ResultSet results = statement.executeQuery("PRAGMA quick_check")) {
+            boolean checked = false;
+            while (results.next()) {
+                checked = true;
+                if (!"ok".equalsIgnoreCase(results.getString(1))) {
+                    throw new SQLException("database quick_check reported corruption");
+                }
+            }
+            if (!checked) {
+                throw new SQLException("database quick_check returned no result");
+            }
+        }
+    }
+
+    static DesktopPersistenceException map(SQLException exception) {
+        String message = String.valueOf(exception.getMessage()).toLowerCase(Locale.ROOT);
+        DesktopPersistenceFailureType type;
+        String diagnostic;
+        if (message.contains("quick_check") || message.contains("malformed") || message.contains("corrupt")
+                || message.contains("not a database")) {
+            type = DesktopPersistenceFailureType.DATABASE_CORRUPTED;
+            diagnostic = "SQLite integrity verification failed; automatic repair is disabled";
+        } else if (message.contains("newer than")) {
+            type = DesktopPersistenceFailureType.SCHEMA_NEWER;
+            diagnostic = "The database schema is newer than this desktop client";
+        } else if (message.contains("locked") || message.contains("busy")) {
+            type = DesktopPersistenceFailureType.DATABASE_LOCKED;
+            diagnostic = "SQLite remained locked after the configured five-second busy timeout";
+        } else if (message.contains("disk") || message.contains("full") || message.contains("ioerr")) {
+            type = DesktopPersistenceFailureType.DISK_UNAVAILABLE;
+            diagnostic = "SQLite storage is unavailable or has insufficient capacity";
+        } else if (exception.getSuppressed().length > 0) {
+            type = DesktopPersistenceFailureType.ROLLBACK_FAILED;
+            diagnostic = "A database transaction failed and its rollback could not be verified";
+        } else {
+            type = DesktopPersistenceFailureType.DATABASE_OPEN_FAILED;
+            diagnostic = "Desktop SQLite initialization failed without automatic repair";
+        }
+        return DesktopPersistenceException.create(type, diagnostic, exception);
     }
 }

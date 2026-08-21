@@ -114,7 +114,7 @@ class EcosystemExtensionProductEntryAcceptanceTest {
             DeploymentResult rejected = context.deploy(rejectedSource, 2, configuration(port), List.of(secondSecret),
                     runtime, access(port));
             assertEquals(DeploymentStatus.FAILED_ROLLED_BACK, rejected.status(), () -> rejected.events().toString());
-            assertTrue(rejected.events().stream().anyMatch(event -> event.step().equals("rollback")
+            assertTrue(rejected.events().stream().anyMatch(event -> event.step().code().equals("rollback")
                             && event.succeeded()), () -> rejected.events().toString());
             assertSecretFree(rejected, firstSecretValue);
             assertSecretFree(rejected, secondSecretValue);

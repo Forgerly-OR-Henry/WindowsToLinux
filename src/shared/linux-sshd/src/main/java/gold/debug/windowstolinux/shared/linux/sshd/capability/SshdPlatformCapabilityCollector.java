@@ -2,6 +2,7 @@ package gold.debug.windowstolinux.shared.linux.sshd.capability;
 
 import gold.debug.windowstolinux.shared.linux.capability.LinuxPlatformCapabilityCollector;
 import gold.debug.windowstolinux.shared.linux.error.LinuxOperationException;
+import gold.debug.windowstolinux.shared.linux.error.LinuxOperationFailureType;
 import gold.debug.windowstolinux.shared.linux.sshd.command.SshCommandExecutor;
 import gold.debug.windowstolinux.shared.model.capability.LinuxCapabilityFacts;
 import gold.debug.windowstolinux.shared.model.server.CpuMicroarchitectureLevel;
@@ -49,7 +50,7 @@ public final class SshdPlatformCapabilityCollector implements LinuxPlatformCapab
     public LinuxCapabilityFacts collectDeploymentCapabilities() throws LinuxOperationException {
         var result = collectReadOnly(ManagedPlatformCapabilityProbe.render());
         if (!result.succeeded()) {
-            throw LinuxOperationException.localized("linux.error.deploymentCapabilityCollectionFailed",
+            throw LinuxOperationException.create(LinuxOperationFailureType.DEPLOYMENT_CAPABILITY_COLLECTION_FAILED,
                     "Failed to collect typed deployment target capabilities: " + result.failureEvidence());
         }
         return fromValues(SshCommandExecutor.lines(result.output()), hostFingerprint);
@@ -129,7 +130,7 @@ public final class SshdPlatformCapabilityCollector implements LinuxPlatformCapab
             Thread.sleep(READ_ONLY_RETRY_DELAY.toMillis());
         } catch (InterruptedException exception) {
             Thread.currentThread().interrupt();
-            throw LinuxOperationException.localized("linux.error.deploymentCapabilityCollectionFailed",
+            throw LinuxOperationException.create(LinuxOperationFailureType.DEPLOYMENT_CAPABILITY_COLLECTION_FAILED,
                     "Read-only deployment capability collection retry was interrupted", exception);
         }
     }

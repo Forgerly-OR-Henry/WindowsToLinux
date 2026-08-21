@@ -3,6 +3,7 @@ package gold.debug.windowstolinux.shared.linux.sshd.execution.protocol.runtime;
 import gold.debug.windowstolinux.shared.linux.sshd.execution.protocol.helper.ManagedHelperBundle;
 
 import gold.debug.windowstolinux.shared.linux.error.LinuxOperationException;
+import gold.debug.windowstolinux.shared.linux.error.LinuxOperationFailureType;
 import gold.debug.windowstolinux.shared.linux.protocol.RemoteStepResult;
 import gold.debug.windowstolinux.shared.linux.sshd.command.SshCommandExecutor;
 import gold.debug.windowstolinux.shared.model.managed.ManagedApplication;
@@ -24,7 +25,7 @@ public final class ManagedRuntimeProtocolExecutor {
     public Map<String, String> inspect(ManagedApplication application) throws LinuxOperationException {
         var result = commands.execProtocol(command("inspect-runtime", application), Duration.ofSeconds(20), true);
         if (!result.succeeded()) {
-            throw LinuxOperationException.localized("linux.error.runtimeObservationFailed",
+            throw LinuxOperationException.create(LinuxOperationFailureType.RUNTIME_OBSERVATION_FAILED,
                     "Controlled helper could not identify the managed runtime: " + result.failureEvidence());
         }
         return SshCommandExecutor.lines(result.output());

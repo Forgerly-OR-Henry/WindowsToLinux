@@ -38,6 +38,7 @@ public final class DesktopConnectionFactory {
         Connection connection = DriverManager.getConnection(jdbcUrl);
         try (Statement statement = connection.createStatement()) {
             statement.execute("PRAGMA foreign_keys = ON");
+            statement.execute("PRAGMA busy_timeout = 5000");
         }
         return connection;
     }

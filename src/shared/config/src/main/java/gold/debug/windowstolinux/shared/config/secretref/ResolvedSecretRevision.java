@@ -1,4 +1,8 @@
+
 package gold.debug.windowstolinux.shared.config.secretref;
+
+import gold.debug.windowstolinux.shared.config.ConfigurationException;
+import gold.debug.windowstolinux.shared.config.ConfigurationFailureType;
 
 import java.nio.ByteBuffer;
 import java.nio.CharBuffer;
@@ -35,7 +39,7 @@ public final class ResolvedSecretRevision implements AutoCloseable {
         encoded.get(bytes);
         if (bytes.length == 0 || bytes.length > MAX_VALUE_BYTES) {
             Arrays.fill(bytes, (byte) 0);
-            throw new IllegalArgumentException("secret values must be non-empty and bounded");
+            throw ConfigurationException.create(ConfigurationFailureType.SECRET_VALUE_INVALID, "A secret value must be non-empty and bounded");
         }
         this.value = bytes;
         this.digest = new SecretRevisionDigest(reference, sha256(bytes), bytes.length);
@@ -72,7 +76,7 @@ public final class ResolvedSecretRevision implements AutoCloseable {
         try {
             return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(value));
         } catch (NoSuchAlgorithmException exception) {
-            throw new IllegalStateException("SHA-256 is required by the Java platform", exception);
+            throw ConfigurationException.create(ConfigurationFailureType.HASH_ALGORITHM_UNAVAILABLE, "The required SHA-256 implementation is unavailable", exception);
         }
     }
 }

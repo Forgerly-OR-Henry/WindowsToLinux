@@ -1,5 +1,8 @@
 package gold.debug.windowstolinux.shared.config.revision;
 
+import gold.debug.windowstolinux.shared.config.ConfigurationException;
+import gold.debug.windowstolinux.shared.config.ConfigurationFailureType;
+
 import gold.debug.windowstolinux.shared.config.contract.definition.ConfigurationScope;
 import gold.debug.windowstolinux.shared.config.contract.definition.ConfigurationValue;
 
@@ -23,16 +26,16 @@ public record ConfigurationEntry(String key, ConfigurationScope scope, Configura
     public ConfigurationEntry {
         key = Objects.requireNonNull(key, "key").trim();
         if (!key.matches("[A-Z][A-Z0-9_]{0,63}")) {
-            throw new IllegalArgumentException("configuration keys must be uppercase environment-style identifiers");
+            throw ConfigurationException.create(ConfigurationFailureType.CONFIGURATION_KEY_INVALID, "Configuration keys must use uppercase environment-style identifiers");
         }
         scope = Objects.requireNonNull(scope, "scope");
         value = Objects.requireNonNull(value, "value");
         if (key.endsWith("_PASSWORD") || key.endsWith("_SECRET") || key.endsWith("_TOKEN") || key.endsWith("_KEY")) {
-            throw new IllegalArgumentException("secret-like keys must use SecretReference instead of normal configuration");
+            throw ConfigurationException.create(ConfigurationFailureType.SECRET_LIKE_KEY, "Secret-like keys must use a SecretReference");
         }
         if ("PORT".equals(key) && (!(value instanceof ConfigurationValue.Number number)
                 || number.value() < 1 || number.value() > 65535)) {
-            throw new IllegalArgumentException("PORT must be an integer between 1 and 65535");
+            throw ConfigurationException.create(ConfigurationFailureType.PORT_INVALID, "PORT must be an integer between 1 and 65535");
         }
     }
 }

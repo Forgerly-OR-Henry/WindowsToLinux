@@ -4,6 +4,8 @@ import gold.debug.windowstolinux.app.db.persistence.repository.ManagedApplicatio
 import gold.debug.windowstolinux.app.db.entity.CurrentRelease;
 import gold.debug.windowstolinux.app.secret.SecretStore;
 import gold.debug.windowstolinux.app.secret.SecretStoreException;
+import gold.debug.windowstolinux.app.service.failure.ApplicationServiceException;
+import gold.debug.windowstolinux.app.service.failure.ApplicationServiceFailureType;
 import gold.debug.windowstolinux.app.service.lock.ServerOperationLockRegistry;
 import gold.debug.windowstolinux.app.service.server.ServerProfile;
 import gold.debug.windowstolinux.app.service.server.ServerUseCaseFacade;
@@ -13,10 +15,10 @@ import gold.debug.windowstolinux.shared.linux.connection.LinuxGateway;
 import gold.debug.windowstolinux.shared.model.health.HealthCheck;
 import gold.debug.windowstolinux.shared.model.lifecycle.LifecycleAction;
 import gold.debug.windowstolinux.shared.model.lifecycle.LifecycleObservation;
+import gold.debug.windowstolinux.shared.model.failure.FailureDescriptor;
 import gold.debug.windowstolinux.shared.model.managed.ManagedApplication;
 import gold.debug.windowstolinux.shared.model.managed.ManagedApplicationRuntimeConfiguration;
 import gold.debug.windowstolinux.shared.model.message.LocalizedMessage;
-import gold.debug.windowstolinux.shared.model.message.LocalizedOperationException;
 import gold.debug.windowstolinux.shared.model.security.CredentialStorageMode;
 
 import java.sql.SQLException;
@@ -82,7 +84,7 @@ public final class LifecycleUseCase {
                         applications.findRelease(application.id()).map(CurrentRelease::releaseSha256),
                         applications.findRuntime(application.id()));
             } catch (SQLException exception) {
-                throw new LocalizedOperationException(LocalizedMessage.of("applications.summaryReadFailed"),
+                throw ApplicationServiceException.create(ApplicationServiceFailureType.MANAGED_SUMMARY_READ_FAILED,
                         "Failed to read the managed application release or runtime configuration", exception);
             }
         }).toList();
@@ -126,14 +128,14 @@ public final class LifecycleUseCase {
         Objects.requireNonNull(action, "action");
         try {
             ManagedApplication application = applications.find(applicationId).orElseThrow(
-                    () -> new LocalizedOperationException(LocalizedMessage.of("lifecycle.selectApplication"),
+                    () -> ApplicationServiceException.create(ApplicationServiceFailureType.APPLICATION_NOT_SELECTED,
                             "No WindowsToLinux-managed application was selected"));
             ManagedApplicationRuntimeConfiguration runtime = applications.findRuntime(applicationId)
-                    .orElseThrow(() -> new LocalizedOperationException(
-                            LocalizedMessage.of("applications.legacyRuntime"),
+                    .orElseThrow(() -> ApplicationServiceException.create(
+                            ApplicationServiceFailureType.LEGACY_RUNTIME_MISSING,
                             "Legacy managed record has no runtime configuration; redeploy before lifecycle operations"));
             ServerProfile profile = servers.find(application.server().id()).orElseThrow(
-                    () -> new LocalizedOperationException(LocalizedMessage.of("lifecycle.serverProfileMissing"),
+                    () -> ApplicationServiceException.create(ApplicationServiceFailureType.SERVER_PROFILE_MISSING,
                             "Server connection profile for the managed application was not found"));
             return executeResult(application, action, runtime.healthCheck(), profile,
                     profile.credentialMode(), masterPassword);
@@ -183,7 +185,7 @@ public final class LifecycleUseCase {
                                                CredentialStorageMode mode, char[] masterPassword)
             throws SecretStoreException, SQLException {
         if (!application.server().id().equals(profile.id()) || profile.credentialMode() != mode) {
-            throw new LocalizedOperationException(LocalizedMessage.of("validation.lifecycleContextMismatch"),
+            throw ApplicationServiceException.create(ApplicationServiceFailureType.LIFECYCLE_CONTEXT_MISMATCH,
                     "Lifecycle application, server, and credential storage mode must match");
         }
         ReentrantLock lock = locks.forServer(application.server().id());
@@ -192,7 +194,15 @@ public final class LifecycleUseCase {
             LifecycleActionResult result = new ManagedLifecycleService().execute(
                     application, action, healthCheck, gateway, profile.endpoint(),
                     servers.loadPassword(profile, store), servers.hostKeyVerifier(profile, ignored -> false));
-            result.observation().ifPresent(this::saveObservationQuietly);
+            if (result.observation().isPresent()) {
+                try {
+                    applications.saveObservation(result.observation().orElseThrow());
+                } catch (SQLException failure) {
+                    result = result.withNonFatalFailure(FailureDescriptor.create(
+                            ApplicationServiceFailureType.LOCAL_OBSERVATION_SAVE_FAILED,
+                            result.operationIdentity(), "Remote lifecycle observation was verified but local history storage failed"));
+                }
+            }
             return result;
         } finally {
             lock.unlock();
@@ -201,15 +211,8 @@ public final class LifecycleUseCase {
     }
 
     private static LifecycleOutcome outcome(LifecycleActionResult result) {
-        return new LifecycleOutcome(result.accepted(), result.message(), result.observation());
-    }
-
-    private void saveObservationQuietly(LifecycleObservation observation) {
-        try {
-            applications.saveObservation(observation);
-        } catch (SQLException ignored) {
-            // Remote truth remains authoritative when local history recording fails. / 本地历史记录失败时，远端事实仍然具有权威性。
-        }
+        return new LifecycleOutcome(result.accepted(), result.message(), result.observation(),
+                result.operationIdentity(), result.failure(), result.nonFatalFailures());
     }
 
     private static void clear(char[] value) {

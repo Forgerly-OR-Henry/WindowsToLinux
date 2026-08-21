@@ -3,11 +3,11 @@ package gold.debug.windowstolinux.app.service.server;
 import gold.debug.windowstolinux.app.db.persistence.repository.EncryptedSecretRepository;
 import gold.debug.windowstolinux.app.secret.SecretStore;
 import gold.debug.windowstolinux.app.secret.SecretStoreException;
+import gold.debug.windowstolinux.app.secret.SecretStoreFailureType;
 import gold.debug.windowstolinux.app.secret.Argon2AesSecretStore;
 import gold.debug.windowstolinux.app.secret.WindowsCredentialManagerSecretStore;
 import gold.debug.windowstolinux.shared.linux.connection.SshCredential;
 import gold.debug.windowstolinux.shared.model.security.CredentialStorageMode;
-import gold.debug.windowstolinux.shared.model.message.LocalizedMessage;
 
 import java.util.Arrays;
 import java.util.Objects;
@@ -63,7 +63,7 @@ public final class DesktopSecretStoreService {
      */
     public SshCredential.Password loadPassword(ServerProfile profile, SecretStore store) throws SecretStoreException {
         char[] password = store.read(profile.credentialKey())
-                .orElseThrow(() -> new SecretStoreException(LocalizedMessage.of("secret.sshCredentialMissing"),
+                .orElseThrow(() -> SecretStoreException.create(SecretStoreFailureType.SSH_CREDENTIAL_MISSING,
                         "The target server SSH credential was not found"));
         try {
             return new SshCredential.Password(password);

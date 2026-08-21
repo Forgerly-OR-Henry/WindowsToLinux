@@ -49,8 +49,8 @@ class OpenAiCompatibleStructuralAnalysisClientTest {
         AiAnalysisException failure = assertThrows(AiAnalysisException.class,
                 () -> new ChatCompletionResponseParser().parse("{}"));
 
-        assertEquals("ai.error.responseContentMissing", failure.userMessage().key());
-        assertEquals("AI response does not contain an explanation field", failure.diagnostic());
+        assertEquals("ai.error.responseContentMissing", failure.failure().userMessage().key());
+        assertEquals("AI response does not contain an explanation field", failure.failure().diagnostic());
     }
 
     @Test

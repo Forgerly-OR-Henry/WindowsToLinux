@@ -5,6 +5,8 @@ import gold.debug.windowstolinux.app.db.persistence.repository.ManagedApplicatio
 import gold.debug.windowstolinux.app.db.persistence.repository.ManagedApplicationRepository;
 import gold.debug.windowstolinux.app.secret.SecretStore;
 import gold.debug.windowstolinux.app.secret.SecretStoreException;
+import gold.debug.windowstolinux.app.service.failure.ApplicationServiceException;
+import gold.debug.windowstolinux.app.service.failure.ApplicationServiceFailureType;
 import gold.debug.windowstolinux.app.service.deployment.multi.ManagedMultiComponentApplication;
 import gold.debug.windowstolinux.app.service.lock.ServerOperationLockRegistry;
 import gold.debug.windowstolinux.app.service.server.ServerProfile;
@@ -17,8 +19,7 @@ import gold.debug.windowstolinux.shared.deploy.contract.result.lifecycle.MultiCo
 import gold.debug.windowstolinux.shared.linux.connection.DeploymentLinuxGateway;
 import gold.debug.windowstolinux.shared.model.lifecycle.LifecycleAction;
 import gold.debug.windowstolinux.shared.model.lifecycle.LifecycleObservation;
-import gold.debug.windowstolinux.shared.model.message.LocalizedMessage;
-import gold.debug.windowstolinux.shared.model.message.LocalizedOperationException;
+import gold.debug.windowstolinux.shared.model.failure.FailureDescriptor;
 import gold.debug.windowstolinux.shared.model.security.CredentialStorageMode;
 
 import java.sql.SQLException;
@@ -85,8 +86,8 @@ public final class MultiComponentLifecycleUseCase {
     ) throws SecretStoreException, SQLException {
         try {
             ManagedMultiComponentApplication managed = findManagedApplication(applicationId)
-                    .orElseThrow(() -> new LocalizedOperationException(
-                            LocalizedMessage.of("lifecycle.applicationNotManaged"),
+                    .orElseThrow(() -> ApplicationServiceException.create(
+                            ApplicationServiceFailureType.APPLICATION_NOT_MANAGED,
                             "The selected whole-application graph has no verified successful deployment"));
             validateProfile(managed, profile, mode);
             ReentrantLock lock = locks.forServer(profile.id());
@@ -95,8 +96,20 @@ public final class MultiComponentLifecycleUseCase {
                 MultiComponentLifecycleResult result = lifecycleService.execute(managed.plan(), managed.components(),
                         targetComponentIds, action, gateway, profile.endpoint(), servers.loadPassword(profile, store),
                         servers.hostKeyVerifier(profile, ignored -> false));
-                result.componentResults().stream().flatMap(value -> value.observation().stream())
-                        .forEach(this::saveObservationQuietly);
+                boolean observationSaveFailed = false;
+                for (var observation : result.componentResults().stream()
+                        .flatMap(value -> value.observation().stream()).toList()) {
+                    try {
+                        applications.saveObservation(observation);
+                    } catch (SQLException failure) {
+                        observationSaveFailed = true;
+                    }
+                }
+                if (observationSaveFailed) {
+                    result = result.withNonFatalFailure(FailureDescriptor.create(
+                            ApplicationServiceFailureType.LOCAL_OBSERVATION_SAVE_FAILED,
+                            result.operationIdentity(), "At least one remote component observation could not be stored locally"));
+                }
                 return result;
             } finally {
                 lock.unlock();
@@ -114,16 +127,8 @@ public final class MultiComponentLifecycleUseCase {
                 !component.application().server().id().equals(selectedProfile.id())
                         || !component.application().server().host().equals(selectedProfile.endpoint().host())
                         || component.application().server().sshPort() != selectedProfile.endpoint().port())) {
-            throw new LocalizedOperationException(LocalizedMessage.of("validation.lifecycleContextMismatch"),
+            throw ApplicationServiceException.create(ApplicationServiceFailureType.LIFECYCLE_CONTEXT_MISMATCH,
                     "Managed application, server endpoint, and credential storage mode must match");
-        }
-    }
-
-    private void saveObservationQuietly(LifecycleObservation observation) {
-        try {
-            applications.saveObservation(observation);
-        } catch (SQLException ignored) {
-            // Remote truth remains authoritative when local history recording fails. / 本地历史记录失败时，远端事实仍然具有权威性。
         }
     }
 

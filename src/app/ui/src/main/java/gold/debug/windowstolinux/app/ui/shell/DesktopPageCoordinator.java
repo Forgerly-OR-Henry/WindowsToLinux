@@ -9,6 +9,7 @@ import gold.debug.windowstolinux.app.ui.deployment.single.DeploymentPage;
 import gold.debug.windowstolinux.app.ui.deployment.multi.MultiComponentPage;
 import gold.debug.windowstolinux.app.ui.i18n.MessageCatalog;
 import gold.debug.windowstolinux.app.ui.i18n.PageMessagePresenter;
+import gold.debug.windowstolinux.app.ui.diagnostic.FailureReportStore;
 import gold.debug.windowstolinux.app.ui.managed.ManagedPage;
 import gold.debug.windowstolinux.app.ui.server.ServerPage;
 import gold.debug.windowstolinux.app.ui.setting.SettingPage;
@@ -33,8 +34,16 @@ final class DesktopPageCoordinator {
     DesktopPageCoordinator(DesktopFrame owner, DesktopApplicationFacade service, MessageCatalog catalog,
                            DesktopDisplayConfiguration appearance, DesktopComponentFactory components,
                            DesktopDisplayChangeHandler appearanceChangeListener, PageNavigationController navigator) {
+        this(owner, service, catalog, appearance, components, appearanceChangeListener, navigator,
+                FailureReportStore.disabled());
+    }
+
+    DesktopPageCoordinator(DesktopFrame owner, DesktopApplicationFacade service, MessageCatalog catalog,
+                           DesktopDisplayConfiguration appearance, DesktopComponentFactory components,
+                           DesktopDisplayChangeHandler appearanceChangeListener, PageNavigationController navigator,
+                           FailureReportStore reports) {
         this.navigator = navigator;
-        PageMessagePresenter messages = new PageMessagePresenter(catalog);
+        PageMessagePresenter messages = new PageMessagePresenter(catalog, reports);
         server = new ServerPage(owner, service, components, messages);
         managed = new ManagedPage(service, server, components, messages);
         deployment = new DeploymentPage(owner, service, server, components, messages,

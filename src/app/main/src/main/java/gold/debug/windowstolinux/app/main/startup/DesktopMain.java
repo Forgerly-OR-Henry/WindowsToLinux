@@ -1,50 +1,117 @@
 package gold.debug.windowstolinux.app.main.startup;
 
 import gold.debug.windowstolinux.app.db.DesktopPersistence;
+import gold.debug.windowstolinux.app.main.diagnostic.DesktopFailureReportStore;
+import gold.debug.windowstolinux.app.main.diagnostic.DesktopStartupException;
+import gold.debug.windowstolinux.app.main.diagnostic.DesktopSystemFailureType;
+import gold.debug.windowstolinux.app.main.diagnostic.DesktopUncaughtFailureBoundary;
 import gold.debug.windowstolinux.app.main.runtime.RunModeResolver;
 import gold.debug.windowstolinux.app.service.DesktopApplicationFacade;
+import gold.debug.windowstolinux.app.ui.diagnostic.DesktopFailurePresenter;
+import gold.debug.windowstolinux.app.ui.diagnostic.FailureReportStore;
 import gold.debug.windowstolinux.app.ui.display.DesktopDisplayConfiguration;
+import gold.debug.windowstolinux.app.ui.i18n.MessageCatalog;
 import gold.debug.windowstolinux.shared.linux.sshd.connection.SshdLinuxGateway;
 
+import javax.swing.JOptionPane;
 import javax.swing.SwingUtilities;
+import java.awt.GraphicsEnvironment;
 import java.nio.file.Files;
+import java.nio.file.LinkOption;
+import java.nio.file.Path;
 import java.util.Locale;
 
-/**
- * Production desktop bootstrap with the fixed data directory required by managed deployment.
- *
- * <p>使用受管部署要求固定数据目录的生产桌面引导程序。
- */
+/** Production desktop bootstrap with fixed paths and structured startup boundaries. / 具备固定路径和结构化启动边界的生产桌面引导程序。 */
 public final class DesktopMain {
+    private static final long MINIMUM_FREE_BYTES = 1024L * 1024L;
+
     private DesktopMain() {
     }
 
-    /**
-     * Performs the {@code launch} operation.
-     *
-     * <p>执行 {@code launch} 操作。
-     *
-     * @param arguments the {@code arguments} value / {@code arguments} 值
-     */
+    /** Starts the desktop and stops safely when a mandatory startup stage fails. / 启动桌面；必要启动阶段失败时安全停止。 */
     public static void launch(String[] arguments) {
+        MessageCatalog initialMessages = MessageCatalog.forLanguageTag(Locale.getDefault().toLanguageTag());
+        RunModeResolver.RuntimeLayout layout;
         try {
-            var layout = RunModeResolver.resolve(DesktopMain.class);
-            Files.createDirectories(layout.dataDirectory());
-            if (!Files.isDirectory(layout.dataDirectory()) || !Files.isWritable(layout.dataDirectory())) {
-                throw new IllegalStateException("fixed data directory is not writable: " + layout.dataDirectory());
+            layout = RunModeResolver.resolve(DesktopMain.class);
+        } catch (RuntimeException failure) {
+            showStartupFailure(FailureReportStore.disabled(), initialMessages,
+                    DesktopStartupException.create(DesktopSystemFailureType.STARTUP_LAYOUT_INVALID,
+                            "The application runtime layout could not be resolved safely", failure));
+            return;
+        }
+
+        DesktopFailureReportStore reports = new DesktopFailureReportStore(layout.dataDirectory());
+        try {
+            verifyDataDirectory(layout.dataDirectory());
+        } catch (Exception failure) {
+            showStartupFailure(reports, initialMessages,
+                    DesktopStartupException.create(DesktopSystemFailureType.DATA_DIRECTORY_UNAVAILABLE,
+                            "The fixed application data directory is unavailable or lacks safe capacity", failure));
+            return;
+        }
+
+        DesktopPersistence database;
+        try {
+            database = DesktopPersistence.open(layout.dataDirectory());
+        } catch (Exception failure) {
+            showStartupFailure(reports, initialMessages,
+                    DesktopStartupException.create(DesktopSystemFailureType.DATABASE_INITIALIZATION_FAILED,
+                            "Desktop persistence failed its migration or integrity startup checks", failure));
+            return;
+        }
+
+        Runtime.getRuntime().addShutdownHook(new Thread(() -> {
+            try {
+                database.close();
+            } catch (RuntimeException failure) {
+                reports.record(DesktopStartupException.create(DesktopSystemFailureType.SHUTDOWN_FAILED,
+                        "Desktop persistence did not close cleanly", failure));
             }
-            DesktopPersistence database = DesktopPersistence.open(layout.dataDirectory());
-            Runtime.getRuntime().addShutdownHook(new Thread(database::close, "windowstolinux-database-close"));
+        }, "windowstolinux-database-close"));
+
+        try {
             DesktopDisplayConfiguration appearance = DesktopDisplayConfiguration.fromStoredValues(
                     database.preferences().find(DesktopPersistence.UI_LOCALE_SETTING).orElse(null),
                     database.preferences().find(DesktopPersistence.UI_THEME_SETTING).orElse(null),
                     Locale.getDefault());
+            MessageCatalog messages = MessageCatalog.forLanguageTag(appearance.localeTag());
+            new DesktopUncaughtFailureBoundary(reports, messages).install();
             DesktopApplicationFacade service = new DesktopApplicationFacade(database,
                     layout.dataDirectory().resolve("work"), new SshdLinuxGateway());
-            SwingUtilities.invokeLater(() -> new DesktopWindowController(database, service, appearance).showInitialWindow());
-        } catch (Exception exception) {
-            throw new IllegalStateException("failed to initialize the fixed data directory or desktop application",
-                    exception);
+            SwingUtilities.invokeLater(() -> {
+                try {
+                    new DesktopWindowController(database, service, appearance, reports).showInitialWindow();
+                } catch (RuntimeException failure) {
+                    throw DesktopStartupException.create(DesktopSystemFailureType.UI_INITIALIZATION_FAILED,
+                            "The desktop user interface could not be initialized", failure);
+                }
+            });
+        } catch (Exception failure) {
+            showStartupFailure(reports, initialMessages,
+                    DesktopStartupException.create(DesktopSystemFailureType.UI_INITIALIZATION_FAILED,
+                            "Desktop services or user interface initialization failed", failure));
+        }
+    }
+
+    private static void verifyDataDirectory(Path dataDirectory) throws java.io.IOException {
+        Path normalized = dataDirectory.toAbsolutePath().normalize();
+        Files.createDirectories(normalized);
+        if (Files.isSymbolicLink(normalized)
+                || !Files.isDirectory(normalized, LinkOption.NOFOLLOW_LINKS)
+                || !Files.isWritable(normalized)
+                || Files.getFileStore(normalized).getUsableSpace() < MINIMUM_FREE_BYTES) {
+            throw new java.io.IOException("fixed data directory did not pass writable-directory checks");
+        }
+    }
+
+    private static void showStartupFailure(
+            FailureReportStore reports, MessageCatalog messages, DesktopStartupException failure) {
+        String text = new DesktopFailurePresenter(messages::text, reports).present(failure);
+        if (!GraphicsEnvironment.isHeadless()) {
+            JOptionPane.showMessageDialog(null, text, "WindowsToLinux", JOptionPane.ERROR_MESSAGE);
+        } else {
+            System.err.println(text);
         }
     }
 }

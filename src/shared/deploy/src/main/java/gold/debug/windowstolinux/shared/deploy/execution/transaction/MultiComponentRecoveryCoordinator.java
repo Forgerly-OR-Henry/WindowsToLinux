@@ -3,6 +3,7 @@ package gold.debug.windowstolinux.shared.deploy.execution.transaction;
 import gold.debug.windowstolinux.shared.deploy.contract.MultiComponentDeploymentPlan;
 import gold.debug.windowstolinux.shared.deploy.contract.result.deployment.ComponentTransactionState;
 import gold.debug.windowstolinux.shared.deploy.contract.result.deployment.DeploymentEvent;
+import gold.debug.windowstolinux.shared.model.deployment.DeploymentTraceEvent;
 import gold.debug.windowstolinux.shared.deploy.contract.result.deployment.MultiComponentDeploymentResult;
 import gold.debug.windowstolinux.shared.linux.connection.DeploymentLinuxGateway;
 import gold.debug.windowstolinux.shared.linux.connection.HostKeyEvaluator;
@@ -38,7 +39,8 @@ final class MultiComponentRecoveryCoordinator {
                     return result(DeploymentStatus.MANUAL_RECOVERY_REQUIRED, applicationEvents, contexts);
                 }
             } catch (LinuxOperationException failure) {
-                applicationEvents.add(new DeploymentEvent("candidate-cleanup-reconnect", false, safeMessage(failure)));
+                applicationEvents.add(DeploymentEvent.failed(
+                        DeploymentTraceEvent.CANDIDATE_CLEANUP_RECONNECT, failure.failure()));
                 requireManualCleanup(contexts);
                 return result(DeploymentStatus.MANUAL_RECOVERY_REQUIRED, applicationEvents, contexts);
             }
@@ -56,13 +58,14 @@ final class MultiComponentRecoveryCoordinator {
                 markDiscarded(contexts, null);
                 return result(DeploymentStatus.PRECONDITION_REJECTED, applicationEvents, contexts);
             } catch (LinuxOperationException failure) {
-                applicationEvents.add(new DeploymentEvent("candidate-cleanup-reconnect", false, safeMessage(failure)));
+                applicationEvents.add(DeploymentEvent.failed(
+                        DeploymentTraceEvent.CANDIDATE_CLEANUP_RECONNECT, failure.failure()));
                 requireManualCleanup(contexts);
                 return result(DeploymentStatus.MANUAL_RECOVERY_REQUIRED, applicationEvents, contexts);
             }
         }
         try (DeploymentRemoteSession recovery = gateway.connect(endpoint, credential.duplicate(), verifier)) {
-            applicationEvents.add(new DeploymentEvent("application-recovery-reconnect", true,
+            applicationEvents.add(DeploymentEvent.result(DeploymentTraceEvent.APPLICATION_RECOVERY_RECONNECT, true,
                     "SSH host was reverified before whole-application recovery"));
             boolean manual = false;
             boolean hadPrevious = false;
@@ -72,7 +75,7 @@ final class MultiComponentRecoveryCoordinator {
                 hadPrevious |= context.snapshot.hasPreviousRelease();
                 var rollback = recovery.rollbackDeployment(context.component.application(), context.snapshot, context.build,
                         context.releaseIdentity, context.component.request().runtime(), context.inputs);
-                context.event("rollback", rollback.succeeded(), rollback.evidence());
+                context.event(DeploymentTraceEvent.ROLLBACK, rollback.succeeded(), rollback.evidence());
                 if (!rollback.succeeded()) {
                     context.state = ComponentTransactionState.MANUAL_RECOVERY_REQUIRED;
                     manual = true;
@@ -84,7 +87,7 @@ final class MultiComponentRecoveryCoordinator {
                     boolean expected = restored.ownershipVerified() && (context.snapshot.previousWasRunning()
                             ? restored.runtimeState() == RuntimeState.RUNNING : restored.runtimeState() == RuntimeState.STOPPED);
                     context.observation = restored;
-                    context.event("rollback-observation", expected, restored.evidence());
+                    context.event(DeploymentTraceEvent.ROLLBACK_OBSERVATION, expected, restored.evidence());
                     context.state = expected ? ComponentTransactionState.RESTORED
                             : ComponentTransactionState.MANUAL_RECOVERY_REQUIRED;
                     manual |= !expected;
@@ -99,7 +102,7 @@ final class MultiComponentRecoveryCoordinator {
             return result(hadPrevious ? DeploymentStatus.FAILED_ROLLED_BACK : DeploymentStatus.FAILED_FIRST_DEPLOYMENT,
                     applicationEvents, contexts);
         } catch (LinuxOperationException failure) {
-            applicationEvents.add(new DeploymentEvent("application-rollback", false, safeMessage(failure)));
+            applicationEvents.add(DeploymentEvent.failed(DeploymentTraceEvent.APPLICATION_ROLLBACK, failure.failure()));
             contexts.values().stream().filter(context -> context.snapshot != null
                     && (context.publishAttempted || context.stopAttempted))
                     .forEach(context -> context.state = ComponentTransactionState.MANUAL_RECOVERY_REQUIRED);
@@ -114,10 +117,10 @@ final class MultiComponentRecoveryCoordinator {
             if (context.workspace == null) continue;
             try {
                 var cleanup = session.cleanupCandidate(context.workspace);
-                context.event("candidate-cleanup", cleanup.succeeded(), cleanup.evidence());
+                context.event(DeploymentTraceEvent.CANDIDATE_CLEANUP, cleanup.succeeded(), cleanup.evidence());
                 succeeded &= cleanup.succeeded();
             } catch (LinuxOperationException failure) {
-                context.event("candidate-cleanup", false, safeMessage(failure));
+                context.failure(DeploymentTraceEvent.CANDIDATE_CLEANUP, failure.failure());
                 succeeded = false;
             }
         }
@@ -136,7 +139,7 @@ final class MultiComponentRecoveryCoordinator {
     static void markCleanupFailure(Map<String, MultiComponentTransactionContext> contexts) {
         contexts.values().stream()
                 .filter(context -> context.workspace != null
-                        && context.events.stream().anyMatch(event -> event.step().equals("candidate-cleanup")
+                        && context.events.stream().anyMatch(event -> event.step() == DeploymentTraceEvent.CANDIDATE_CLEANUP
                         && !event.succeeded()))
                 .forEach(context -> context.state = ComponentTransactionState.MANUAL_RECOVERY_REQUIRED);
     }
@@ -152,8 +155,4 @@ final class MultiComponentRecoveryCoordinator {
         return MultiComponentTransactionContext.result(status, applicationEvents, contexts, Optional.empty());
     }
 
-    private static String safeMessage(Exception failure) {
-        return failure.getMessage() == null || failure.getMessage().isBlank()
-                ? "Controlled multi-component operation failed" : failure.getMessage();
-    }
 }

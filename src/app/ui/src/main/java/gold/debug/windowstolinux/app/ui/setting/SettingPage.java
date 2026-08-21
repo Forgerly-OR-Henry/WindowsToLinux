@@ -8,6 +8,8 @@ import gold.debug.windowstolinux.app.ui.i18n.PageMessagePresenter;
 
 import javax.swing.DefaultListCellRenderer;
 import javax.swing.JComboBox;
+import javax.swing.JButton;
+import javax.swing.JLabel;
 import javax.swing.JPanel;
 import java.awt.BorderLayout;
 import java.awt.Component;
@@ -48,6 +50,18 @@ public final class SettingPage {
         locale.addActionListener(event -> apply.run());
         theme.addActionListener(event -> apply.run());
         appearanceCard.add(form, BorderLayout.CENTER);
+        JPanel diagnostics = c.transparent(new BorderLayout(0, 6));
+        JLabel diagnosticPath = new JLabel(messages.diagnosticsPath());
+        diagnosticPath.setToolTipText(messages.diagnosticsPath());
+        JButton openDiagnostics = c.secondaryButton(messages.text("settings.diagnostics.open"));
+        openDiagnostics.addActionListener(event -> {
+            if (!messages.openDiagnosticsDirectory()) {
+                diagnosticPath.setText(messages.diagnosticsPath());
+            }
+        });
+        diagnostics.add(diagnosticPath, BorderLayout.CENTER);
+        diagnostics.add(openDiagnostics, BorderLayout.EAST);
+        appearanceCard.add(diagnostics, BorderLayout.SOUTH);
         center.add(appearanceCard);
         panel.add(center, BorderLayout.CENTER);
     }

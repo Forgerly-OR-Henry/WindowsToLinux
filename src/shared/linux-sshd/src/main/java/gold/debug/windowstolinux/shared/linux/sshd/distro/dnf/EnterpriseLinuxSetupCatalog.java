@@ -1,6 +1,7 @@
 package gold.debug.windowstolinux.shared.linux.sshd.distro.dnf;
 
 import gold.debug.windowstolinux.shared.linux.error.LinuxOperationException;
+import gold.debug.windowstolinux.shared.linux.error.LinuxOperationFailureType;
 import gold.debug.windowstolinux.shared.linux.sshd.distro.DistributionSetupRenderer;
 import gold.debug.windowstolinux.shared.linux.sshd.distro.contract.profile.DistributionSetupProfile;
 import gold.debug.windowstolinux.shared.linux.sshd.distro.contract.profile.EcosystemCapabilityProfile;
@@ -86,7 +87,7 @@ public final class EnterpriseLinuxSetupCatalog {
     private static void requireEnterpriseSecurity(LinuxCapabilityFacts capabilities) throws LinuxOperationException {
         if (capabilities.securityPosture().module() != LinuxSecurityModuleType.SELINUX
                 || capabilities.securityPosture().state() != LinuxSecurityState.ENFORCING) {
-            throw LinuxOperationException.localized("linux.error.environmentUnsupportedDistro",
+            throw LinuxOperationException.create(LinuxOperationFailureType.ENVIRONMENT_UNSUPPORTED_DISTRO,
                     "Enterprise Linux automatic preparation requires collected SELinux enforcing evidence");
         }
     }

@@ -141,7 +141,7 @@ class UbuntuTypedDeploymentAcceptanceTest {
             DeploymentResult failed = context.deploy(failedSource, 2, nodeConfiguration(port, secondSecret),
                     List.of(secondReference), new DeploymentRuntimeSpecification.NodeService(18, health(port)), access(port));
             assertEquals(DeploymentStatus.FAILED_ROLLED_BACK, failed.status(), () -> failed.events().toString());
-            assertTrue(failed.events().stream().anyMatch(event -> event.step().equals("rollback") && event.succeeded()));
+            assertTrue(failed.events().stream().anyMatch(event -> event.step().code().equals("rollback") && event.succeeded()));
             assertSecretFree(failed, firstSecret);
             assertSecretFree(failed, secondSecret);
             LifecycleObservation restored = context.lifecycle(applicationId, LifecycleAction.REFRESH_STATUS);
@@ -185,7 +185,7 @@ class UbuntuTypedDeploymentAcceptanceTest {
             DeploymentResult failed = context.deploy(failedSource, 2, runtimeConfiguration(port), List.of(), runtime,
                     access(port));
             assertEquals(DeploymentStatus.FAILED_ROLLED_BACK, failed.status(), () -> failed.events().toString());
-            assertTrue(failed.events().stream().anyMatch(event -> event.step().equals("rollback") && event.succeeded()));
+            assertTrue(failed.events().stream().anyMatch(event -> event.step().code().equals("rollback") && event.succeeded()));
             LifecycleObservation restored = context.lifecycle(applicationId, LifecycleAction.REFRESH_STATUS);
             assertEquals(RuntimeState.RUNNING, restored.runtimeState());
             assertEquals(AutostartState.DISABLED, restored.autostartState());

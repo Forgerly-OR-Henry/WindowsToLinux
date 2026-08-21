@@ -106,7 +106,7 @@ class UbuntuManagedStartupAndTcpAcceptanceTest {
             assertEquals(DeploymentStatus.FAILED_ROLLED_BACK, startupResult.status(), () -> startupResult.events().toString());
             assertEvent(startupResult, "remote-build", true);
             assertTrue(startupResult.events().stream().anyMatch(event ->
-                            (event.step().equals("publish") || event.step().equals("candidate-health")) && !event.succeeded()),
+                            (event.step().code().equals("publish") || event.step().code().equals("candidate-health")) && !event.succeeded()),
                     () -> "startup failure must fail publication or candidate health: " + startupResult.events());
             assertEvent(startupResult, "rollback", true);
 

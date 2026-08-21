@@ -7,6 +7,7 @@ import gold.debug.windowstolinux.shared.linux.sshd.execution.protocol.runtime.Co
 import gold.debug.windowstolinux.shared.config.revision.DeploymentInputManifest;
 import gold.debug.windowstolinux.shared.linux.build.DeploymentBuildResult;
 import gold.debug.windowstolinux.shared.linux.error.LinuxOperationException;
+import gold.debug.windowstolinux.shared.linux.error.LinuxOperationFailureType;
 import gold.debug.windowstolinux.shared.linux.protocol.ReleaseSnapshot;
 import gold.debug.windowstolinux.shared.linux.protocol.RemoteStepResult;
 import gold.debug.windowstolinux.shared.linux.sshd.command.SshCommandExecutor;
@@ -38,7 +39,7 @@ public final class ContainerReleaseProtocolExecutor {
             throws LinuxOperationException {
         var result = commands.execProtocol(command("snapshot-container", application, runtime), Duration.ofSeconds(30), true);
         if (!result.succeeded()) {
-            throw LinuxOperationException.localized("linux.error.snapshotIdentityUnverified",
+            throw LinuxOperationException.create(LinuxOperationFailureType.SNAPSHOT_IDENTITY_UNVERIFIED,
                     "Controlled helper could not verify the existing managed container: " + result.failureEvidence());
         }
         Map<String, String> values = SshCommandExecutor.lines(result.output());
@@ -47,7 +48,7 @@ public final class ContainerReleaseProtocolExecutor {
         }
         String token = values.get("SNAPSHOT_TOKEN");
         if (token == null || !token.matches("[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")) {
-            throw LinuxOperationException.localized("linux.error.snapshotTokenMissing",
+            throw LinuxOperationException.create(LinuxOperationFailureType.SNAPSHOT_TOKEN_MISSING,
                     "Controlled helper did not return a verifiable container rollback token");
         }
         return ReleaseSnapshot.withPreviousRelease(token, "1".equals(values.get("PREVIOUS_RUNNING")),
@@ -59,7 +60,7 @@ public final class ContainerReleaseProtocolExecutor {
                                     String releaseIdentity, DeploymentRuntimeSpecification.Container runtime,
                                     DeploymentInputManifest inputs, ReleaseSnapshot snapshot) throws LinuxOperationException {
         if (!build.succeeded()) {
-            throw LinuxOperationException.localized("linux.error.unverifiedBuildPublish",
+            throw LinuxOperationException.create(LinuxOperationFailureType.UNVERIFIED_BUILD_PUBLISH,
                     "An unverified container build cannot be published");
         }
         Objects.requireNonNull(snapshot, "snapshot");
@@ -76,7 +77,7 @@ public final class ContainerReleaseProtocolExecutor {
                                      DeploymentRuntimeSpecification.Container runtime, DeploymentInputManifest inputs)
             throws LinuxOperationException {
         if (!build.succeeded()) {
-            throw LinuxOperationException.localized("linux.error.unverifiedBuildRollback",
+            throw LinuxOperationException.create(LinuxOperationFailureType.UNVERIFIED_BUILD_ROLLBACK,
                     "An unverified container build cannot be rolled back");
         }
         List<String> values = new ArrayList<>(List.of(application.id(), releaseIdentity,

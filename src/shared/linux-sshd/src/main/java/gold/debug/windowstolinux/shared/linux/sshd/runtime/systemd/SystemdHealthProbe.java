@@ -1,6 +1,7 @@
 package gold.debug.windowstolinux.shared.linux.sshd.runtime.systemd;
 
 import gold.debug.windowstolinux.shared.linux.error.LinuxOperationException;
+import gold.debug.windowstolinux.shared.linux.error.LinuxOperationFailureType;
 import gold.debug.windowstolinux.shared.linux.runtime.HealthCheckResult;
 import gold.debug.windowstolinux.shared.linux.sshd.command.SshCommandExecutor;
 import gold.debug.windowstolinux.shared.model.health.HealthCheck;
@@ -26,7 +27,7 @@ public final class SystemdHealthProbe {
         try {
             script = SystemdHealthScriptRenderer.render(application.systemdUnit(), healthCheck);
         } catch (IllegalArgumentException unsupported) {
-            throw LinuxOperationException.localized("linux.error.healthCheckUnsupported", "Unsupported health-check type");
+            throw LinuxOperationException.create(LinuxOperationFailureType.HEALTH_CHECK_UNSUPPORTED, "Unsupported health-check type");
         }
         var result = commands.exec(script, Duration.ofSeconds(healthCheck.timeoutSeconds() + 15L), true);
         return new HealthCheckResult(result.succeeded()

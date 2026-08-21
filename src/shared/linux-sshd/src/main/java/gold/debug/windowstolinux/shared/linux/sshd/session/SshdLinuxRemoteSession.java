@@ -5,6 +5,7 @@ import gold.debug.windowstolinux.shared.linux.sshd.command.SshCommandExecutor;
 import gold.debug.windowstolinux.shared.linux.build.DeploymentBuildResult;
 import gold.debug.windowstolinux.shared.linux.session.DeploymentRemoteSession;
 import gold.debug.windowstolinux.shared.linux.error.LinuxOperationException;
+import gold.debug.windowstolinux.shared.linux.error.LinuxOperationFailureType;
 import gold.debug.windowstolinux.shared.linux.connection.SshEndpoint;
 import gold.debug.windowstolinux.shared.linux.protocol.ReleaseSnapshot;
 import gold.debug.windowstolinux.shared.linux.protocol.RemoteStepResult;
@@ -249,7 +250,7 @@ public final class SshdLinuxRemoteSession implements DeploymentRemoteSession {
             return before;
         }
         if (action == LifecycleAction.START && before.runtimeState() != RuntimeState.STOPPED) {
-            throw LinuxOperationException.localized("linux.error.startRequiresStopped",
+            throw LinuxOperationException.create(LinuxOperationFailureType.START_REQUIRES_STOPPED,
                     "Start is allowed only for a managed runtime confirmed as stopped");
         }
         String verb = switch (action) {
@@ -264,11 +265,11 @@ public final class SshdLinuxRemoteSession implements DeploymentRemoteSession {
                 ? containerProtocol.lifecycle(application, verb)
                 : deploymentProtocol.lifecycle(application, verb);
         if (!result.succeeded()) {
-            throw LinuxOperationException.localized("linux.error.lifecycleActionFailed", result.evidence());
+            throw LinuxOperationException.create(LinuxOperationFailureType.LIFECYCLE_ACTION_FAILED, result.evidence());
         }
         if ((action == LifecycleAction.START || action == LifecycleAction.RESTART)
                 && !checkDeploymentHealth(application, runtime, runtime.healthCheck()).healthy()) {
-            throw LinuxOperationException.localized("linux.error.postStartHealthFailed",
+            throw LinuxOperationException.create(LinuxOperationFailureType.POST_START_HEALTH_FAILED,
                     "Post-start health check failed");
         }
         return observeDeployment(application, runtime);

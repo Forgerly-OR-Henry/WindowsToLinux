@@ -46,8 +46,7 @@ public final class BoundedSourceInspector {
         try {
             Files.walkFileTree(root, visitor);
         } catch (IOException exception) {
-            rejections.add(reason("SOURCE_READ_FAILED", "analysis.rejection.sourceReadFailed", "input",
-                    java.util.Map.of("detail", String.valueOf(exception.getMessage()))));
+            rejections.add(reason("SOURCE_READ_FAILED", "analysis.rejection.sourceReadFailed", "input"));
         }
         return visitor.result();
     }

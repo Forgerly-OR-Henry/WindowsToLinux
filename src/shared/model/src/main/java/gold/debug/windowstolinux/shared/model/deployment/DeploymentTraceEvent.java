@@ -58,6 +58,8 @@ public enum DeploymentTraceEvent {
      * <p>表示 {@code REMOTE_BUILD} 选项。
      */
     REMOTE_BUILD("remote-build"),
+    /** Verifies that the build result is bound to the reviewed source identity. / 验证构建结果绑定到经审阅源码身份。 */
+    BUILD_PROVENANCE("build-provenance"),
     /** Records one completely built and sealed component candidate. / 记录一个已完整构建并封存的组件候选。 */
     CANDIDATE_READY("candidate-ready"),
     /**

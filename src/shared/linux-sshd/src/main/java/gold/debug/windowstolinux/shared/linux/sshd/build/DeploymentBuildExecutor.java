@@ -30,6 +30,7 @@ import gold.debug.windowstolinux.shared.linux.sshd.build.workload.StaticSiteBuil
 import gold.debug.windowstolinux.shared.config.revision.ConfigurationSnapshot;
 import gold.debug.windowstolinux.shared.linux.build.DeploymentBuildResult;
 import gold.debug.windowstolinux.shared.linux.error.LinuxOperationException;
+import gold.debug.windowstolinux.shared.linux.error.LinuxOperationFailureType;
 import gold.debug.windowstolinux.shared.linux.sshd.command.SshCommandExecutor;
 import gold.debug.windowstolinux.shared.linux.transfer.RemoteWorkspace;
 import gold.debug.windowstolinux.shared.model.deployment.BuildLimitConfiguration;
@@ -83,7 +84,7 @@ public final class DeploymentBuildExecutor {
         limits = Objects.requireNonNull(limits, "limits");
         configuration = Objects.requireNonNull(configuration, "configuration");
         if (limits.runAsRoot() != "root".equals(username)) {
-            throw LinuxOperationException.localized("linux.error.rootBuildRequiresRootSession",
+            throw LinuxOperationException.create(LinuxOperationFailureType.ROOT_BUILD_REQUIRES_ROOT_SESSION,
                     "Root build approval must match the authenticated SSH account");
         }
         if (facts.projectType() != runtime.projectType()) {

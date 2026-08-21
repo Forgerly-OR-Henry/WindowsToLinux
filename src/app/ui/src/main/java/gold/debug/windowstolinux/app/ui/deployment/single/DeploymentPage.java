@@ -286,10 +286,20 @@ public final class DeploymentPage implements ReviewContext {
     private String resultSummary(DeploymentResult result) {
         String events = result.events().stream().map(event -> "- " + messages.text(event.succeeded()
                 ? "deployment.event.succeeded" : "deployment.event.failed", Map.of("step", messages.text(
-                "deployment.step." + event.step()))) + "\n" + event.evidence()).reduce("", (a, b) -> a + b + "\n");
+                "deployment.step." + event.step().code()))) + event.failure().map(failure -> " ["
+                + failure.code() + " / " + failure.operationIdentity() + "]").orElse("")
+                + "\n" + event.evidence()).reduce("", (a, b) -> a + b + "\n");
+        String warnings = result.nonFatalFailures().stream().map(failure -> messages.text("failure.warning.summary",
+                        Map.of("code", failure.code(), "message", messages.catalog().text(failure.userMessage()),
+                                "recovery", messages.text("failure.recovery."
+                                        + failure.recoveryDisposition().name().toLowerCase(Locale.ROOT)))))
+                .reduce((left, right) -> left + "\n" + right).orElse("");
         return messages.text("deployment.result", Map.of("status", messages.text("deployment.status."
                 + result.status().name().toLowerCase(Locale.ROOT)), "events", events,
-                "handoff", result.finalObservation().map(messages::lifecycle).orElse("")));
+                "handoff", result.finalObservation().map(messages::lifecycle).orElse("")))
+                + "\n\n" + messages.text("failure.operation.summary",
+                Map.of("operationId", result.operationIdentity().toString()))
+                + (warnings.isBlank() ? "" : "\n" + warnings);
     }
 
     private void saveSecret() {

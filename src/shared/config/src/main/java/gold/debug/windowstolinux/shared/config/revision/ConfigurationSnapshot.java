@@ -1,5 +1,8 @@
 package gold.debug.windowstolinux.shared.config.revision;
 
+import gold.debug.windowstolinux.shared.config.ConfigurationException;
+import gold.debug.windowstolinux.shared.config.ConfigurationFailureType;
+
 import gold.debug.windowstolinux.shared.config.contract.definition.ConfigurationScope;
 import gold.debug.windowstolinux.shared.config.contract.definition.ConfigurationValue;
 
@@ -39,20 +42,20 @@ public record ConfigurationSnapshot(
     public ConfigurationSnapshot {
         applicationId = requireIdentifier(applicationId, "applicationId");
         if (revision < 1) {
-            throw new IllegalArgumentException("revision must be positive");
+            throw ConfigurationException.create(ConfigurationFailureType.REVISION_INVALID, "A configuration revision must be positive");
         }
         schemaVersion = requireIdentifier(schemaVersion, "schemaVersion");
         createdAt = Objects.requireNonNull(createdAt, "createdAt");
         entries = List.copyOf(Objects.requireNonNull(entries, "entries"));
         if (entries.isEmpty()) {
-            throw new IllegalArgumentException("configuration snapshots must contain at least one entry");
+            throw ConfigurationException.create(ConfigurationFailureType.SNAPSHOT_EMPTY, "A configuration snapshot must contain at least one entry");
         }
         if (entries.stream().map(ConfigurationEntry::key).distinct().count() != entries.size()) {
-            throw new IllegalArgumentException("configuration snapshot keys must be unique");
+            throw ConfigurationException.create(ConfigurationFailureType.DUPLICATE_KEY, "Configuration snapshot keys must be unique");
         }
         sha256 = requireSha256(sha256);
         if (!sha256.equals(computeSha256(applicationId, revision, schemaVersion, entries))) {
-            throw new IllegalArgumentException("sha256 must match the canonical snapshot content");
+            throw ConfigurationException.create(ConfigurationFailureType.SNAPSHOT_INTEGRITY_FAILED, "The supplied hash does not match canonical configuration content");
         }
     }
 
@@ -117,7 +120,7 @@ public record ConfigurationSnapshot(
             }
             return java.util.HexFormat.of().formatHex(digest.digest());
         } catch (NoSuchAlgorithmException exception) {
-            throw new IllegalStateException("SHA-256 is required by the Java platform", exception);
+            throw ConfigurationException.create(ConfigurationFailureType.HASH_ALGORITHM_UNAVAILABLE, "The required SHA-256 implementation is unavailable", exception);
         }
     }
 
@@ -129,7 +132,8 @@ public record ConfigurationSnapshot(
     private static String requireIdentifier(String value, String name) {
         value = Objects.requireNonNull(value, name).trim();
         if (!value.matches("[a-z0-9][a-z0-9._-]{0,63}")) {
-            throw new IllegalArgumentException(name + " must be a bounded lowercase identifier");
+            throw ConfigurationException.create(ConfigurationFailureType.IDENTIFIER_INVALID,
+                    "A configuration snapshot identifier must be bounded and lowercase");
         }
         return value;
     }
@@ -137,7 +141,7 @@ public record ConfigurationSnapshot(
     private static String requireSha256(String value) {
         value = Objects.requireNonNull(value, "sha256");
         if (!value.matches("[0-9a-f]{64}")) {
-            throw new IllegalArgumentException("sha256 must be lowercase SHA-256");
+            throw ConfigurationException.create(ConfigurationFailureType.HASH_INVALID, "A SHA-256 value must use the canonical lowercase form");
         }
         return value;
     }

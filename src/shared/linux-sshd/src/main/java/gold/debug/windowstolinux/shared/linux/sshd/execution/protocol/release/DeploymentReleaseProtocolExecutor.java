@@ -6,6 +6,7 @@ import gold.debug.windowstolinux.shared.linux.sshd.execution.protocol.runtime.De
 
 import gold.debug.windowstolinux.shared.linux.build.DeploymentBuildResult;
 import gold.debug.windowstolinux.shared.linux.error.LinuxOperationException;
+import gold.debug.windowstolinux.shared.linux.error.LinuxOperationFailureType;
 import gold.debug.windowstolinux.shared.linux.protocol.ReleaseSnapshot;
 import gold.debug.windowstolinux.shared.linux.protocol.RemoteStepResult;
 import gold.debug.windowstolinux.shared.linux.sshd.command.SshCommandExecutor;
@@ -44,7 +45,7 @@ public final class DeploymentReleaseProtocolExecutor {
         var result = commands.execProtocol(helperCommand("snapshot-deployment",
                 List.of(application.id(), application.ownershipManifestSha256())), Duration.ofSeconds(30), true);
         if (!result.succeeded()) {
-            throw LinuxOperationException.localized("linux.error.snapshotIdentityUnverified",
+            throw LinuxOperationException.create(LinuxOperationFailureType.SNAPSHOT_IDENTITY_UNVERIFIED,
                     "Controlled helper could not verify the existing reviewed release: " + result.failureEvidence());
         }
         Map<String, String> values = SshCommandExecutor.lines(result.output());
@@ -53,7 +54,7 @@ public final class DeploymentReleaseProtocolExecutor {
         }
         String token = values.get("SNAPSHOT_TOKEN");
         if (token == null || !token.matches("[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")) {
-            throw LinuxOperationException.localized("linux.error.snapshotTokenMissing",
+            throw LinuxOperationException.create(LinuxOperationFailureType.SNAPSHOT_TOKEN_MISSING,
                     "Controlled helper did not return a verifiable rollback snapshot token");
         }
         return ReleaseSnapshot.withPreviousRelease(token, "1".equals(values.get("PREVIOUS_RUNNING")),
@@ -67,7 +68,7 @@ public final class DeploymentReleaseProtocolExecutor {
                                     DeploymentInputManifest inputs, ReleaseSnapshot snapshot)
             throws LinuxOperationException {
         if (!build.succeeded()) {
-            throw LinuxOperationException.localized("linux.error.unverifiedBuildPublish",
+            throw LinuxOperationException.create(LinuxOperationFailureType.UNVERIFIED_BUILD_PUBLISH,
                     "An unverified build result cannot be published");
         }
         Objects.requireNonNull(snapshot, "snapshot");
@@ -87,7 +88,7 @@ public final class DeploymentReleaseProtocolExecutor {
                                      DeploymentRuntimeSpecification runtime, DeploymentInputManifest inputs)
             throws LinuxOperationException {
         if (!build.succeeded()) {
-            throw LinuxOperationException.localized("linux.error.unverifiedBuildRollback",
+            throw LinuxOperationException.create(LinuxOperationFailureType.UNVERIFIED_BUILD_ROLLBACK,
                     "An unverified build result cannot be rolled back");
         }
         List<String> values = new ArrayList<>(List.of(application.id(), releaseIdentity,
@@ -111,7 +112,7 @@ public final class DeploymentReleaseProtocolExecutor {
         List<String> values = List.of(application.id(), application.ownershipManifestSha256());
         var result = commands.execProtocol(helperCommand("observe-deployment", values), Duration.ofSeconds(20), true);
         if (!result.succeeded()) {
-            throw LinuxOperationException.localized("linux.error.runtimeObservationFailed",
+            throw LinuxOperationException.create(LinuxOperationFailureType.RUNTIME_OBSERVATION_FAILED,
                     "Controlled helper could not verify the managed deployment runtime: " + result.failureEvidence());
         }
         Map<String, String> valuesByName = SshCommandExecutor.lines(result.output());

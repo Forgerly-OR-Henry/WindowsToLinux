@@ -10,6 +10,7 @@ import gold.debug.windowstolinux.shared.model.lifecycle.LifecycleAction;
 import gold.debug.windowstolinux.shared.model.lifecycle.LifecycleObservation;
 import gold.debug.windowstolinux.shared.model.lifecycle.RuntimeState;
 import gold.debug.windowstolinux.shared.model.message.LocalizedMessage;
+import gold.debug.windowstolinux.shared.model.failure.FailureDescriptor;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -59,12 +60,16 @@ final class MultiComponentLifecyclePolicy {
 
     static MultiComponentLifecycleResult failure(MultiComponentDeploymentPlan plan,
                                                  Map<String, LifecycleObservation> observations,
-                                                 Set<String> attempted, Set<String> failed, String detail) {
+                                                 Set<String> attempted, Set<String> failed,
+                                                 FailureDescriptor failure) {
         Set<String> unresolved = new LinkedHashSet<>(failed);
         unresolved.addAll(attempted);
         unresolved.addAll(plan.startOrder().stream().filter(id -> !observations.containsKey(id)).toList());
-        return result(false, LocalizedMessage.of("lifecycle.applicationConnectionFailed", Map.of("detail", detail)),
+        MultiComponentLifecycleResult result = result(false, failure.userMessage(),
                 plan, observations, attempted, unresolved);
+        return new MultiComponentLifecycleResult(false, failure.userMessage(), result.runtimeState(),
+                result.autostartState(), result.componentResults(), failure.operationIdentity(),
+                java.util.Optional.of(failure), List.of());
     }
 
     static MultiComponentLifecycleResult result(boolean accepted, LocalizedMessage message,

@@ -1,8 +1,8 @@
 package gold.debug.windowstolinux.app.ui.i18n;
 
-import gold.debug.windowstolinux.app.ui.i18n.MessageCatalog;
+import gold.debug.windowstolinux.app.ui.diagnostic.DesktopFailurePresenter;
+import gold.debug.windowstolinux.app.ui.diagnostic.FailureReportStore;
 import gold.debug.windowstolinux.shared.model.lifecycle.LifecycleObservation;
-import gold.debug.windowstolinux.shared.model.message.LocalizedFailure;
 
 import javax.swing.DefaultListCellRenderer;
 import javax.swing.JComboBox;
@@ -14,10 +14,17 @@ import java.util.Objects;
 /** Shared localization and diagnostic formatting for independent page controllers. / 独立页面控制器共享的本地化与诊断格式化。 */
 public final class PageMessagePresenter {
     private final MessageCatalog messages;
+    private final DesktopFailurePresenter failures;
 
     /** Creates page message support. / 创建页面消息支持。 */
     public PageMessagePresenter(MessageCatalog messages) {
+        this(messages, FailureReportStore.disabled());
+    }
+
+    /** Creates page message support backed by safe local diagnostics. / 创建由安全本地诊断支持的页面消息支持。 */
+    public PageMessagePresenter(MessageCatalog messages, FailureReportStore reports) {
         this.messages = Objects.requireNonNull(messages, "messages");
+        this.failures = new DesktopFailurePresenter(messages::text, reports);
     }
 
     /** Resolves one message key. / 解析一项消息键。 */
@@ -27,17 +34,9 @@ public final class PageMessagePresenter {
     /** Returns the selected catalog. / 返回已选消息目录。 */
     public MessageCatalog catalog() { return messages; }
 
-    /** Formats a safe user-facing exception while preserving raw diagnostics. / 格式化安全的用户异常并保留原始诊断。 */
+    /** Formats a safe user-facing exception and records bounded diagnostics. / 格式化安全用户异常并记录有界诊断。 */
     public String safe(Exception exception) {
-        Throwable current = exception;
-        while (current != null) {
-            if (current instanceof LocalizedFailure failure) {
-                return localized(failure.userMessage(), failure.diagnostic());
-            }
-            current = current.getCause();
-        }
-        String message = exception.getMessage();
-        return message == null || message.isBlank() ? text("diagnostic.unknown") : message;
+        return failures.present(exception);
     }
 
     /** Formats a localized message with optional raw diagnostic text. / 格式化本地化消息与可选原始诊断文本。 */
@@ -45,6 +44,12 @@ public final class PageMessagePresenter {
         String headline = messages.text(message);
         return diagnostic == null || diagnostic.isBlank() ? headline : headline + "\n" + diagnostic;
     }
+
+    /** Opens the diagnostic directory when supported. / 平台支持时打开诊断目录。 */
+    public boolean openDiagnosticsDirectory() { return failures.openDiagnosticsDirectory(); }
+
+    /** Returns the copyable diagnostic directory path. / 返回可复制的诊断目录路径。 */
+    public String diagnosticsPath() { return failures.diagnosticsPath(); }
 
     /** Formats a lifecycle observation. / 格式化生命周期观测。 */
     public String lifecycle(LifecycleObservation observation) {

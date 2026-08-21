@@ -7,6 +7,7 @@ import gold.debug.windowstolinux.app.service.ai.AiProfile;
 import gold.debug.windowstolinux.app.service.ai.AiAnalysisOutcome;
 import gold.debug.windowstolinux.app.service.ai.AiProviderProfile;
 import gold.debug.windowstolinux.app.service.execution.lifecycle.LifecycleOutcome;
+import gold.debug.windowstolinux.app.service.failure.ApplicationServiceException;
 import gold.debug.windowstolinux.app.service.server.ServerProfile;
 import gold.debug.windowstolinux.app.service.source.ReviewedSourcePreparation;
 import gold.debug.windowstolinux.app.secret.Argon2AesSecretStore;
@@ -23,7 +24,7 @@ import gold.debug.windowstolinux.shared.model.lifecycle.LifecycleAction;
 import gold.debug.windowstolinux.shared.model.lifecycle.LifecycleObservation;
 import gold.debug.windowstolinux.shared.model.managed.ManagedApplication;
 import gold.debug.windowstolinux.shared.model.managed.ManagedApplicationRuntimeConfiguration;
-import gold.debug.windowstolinux.shared.model.message.LocalizedOperationException;
+import gold.debug.windowstolinux.shared.model.deployment.DeploymentApprovalException;
 import gold.debug.windowstolinux.shared.model.assessment.DeploymentProjectAssessment;
 import gold.debug.windowstolinux.shared.model.lifecycle.RuntimeState;
 import gold.debug.windowstolinux.shared.model.lifecycle.AutostartState;
@@ -204,11 +205,11 @@ class DesktopApplicationFacadeTest {
             DesktopApplicationFacade service = new DesktopApplicationFacade(
                     database, temporaryDirectory.resolve("work"), unusedGateway());
 
-            LocalizedOperationException exception = assertThrows(LocalizedOperationException.class, () ->
+            ApplicationServiceException exception = assertThrows(ApplicationServiceException.class, () ->
                     createRequest(service, supportedPreparation("demo"), anotherServer,
                             BuildLimitConfiguration.defaultNonRoot(), false));
 
-            assertEquals("deployment.applicationServerConflict", exception.userMessage().key());
+            assertEquals("service.error.applicationServerConflict", exception.failure().userMessage().key());
             assertEquals(saved, database.managedApplications().find("demo").orElseThrow());
         }
     }
@@ -224,11 +225,11 @@ class DesktopApplicationFacadeTest {
             DesktopApplicationFacade service = new DesktopApplicationFacade(
                     database, temporaryDirectory.resolve("work"), unusedGateway());
 
-            LocalizedOperationException exception = assertThrows(LocalizedOperationException.class, () ->
+            ApplicationServiceException exception = assertThrows(ApplicationServiceException.class, () ->
                     createRequest(service, supportedPreparation("demo"), server,
                             BuildLimitConfiguration.defaultNonRoot(), false));
 
-            assertEquals("deployment.applicationIdentityInvalid", exception.userMessage().key());
+            assertEquals("service.error.applicationIdentityInvalid", exception.failure().userMessage().key());
             assertEquals(nonCanonical, database.managedApplications().find("demo").orElseThrow());
         }
     }
@@ -269,13 +270,13 @@ class DesktopApplicationFacadeTest {
             DesktopApplicationFacade service = new DesktopApplicationFacade(
                     database, temporaryDirectory.resolve("work"), gateway);
 
-            LocalizedOperationException failure = assertThrows(LocalizedOperationException.class, () ->
+            DeploymentApprovalException failure = assertThrows(DeploymentApprovalException.class, () ->
                     service.prepareEnvironmentWithStoredPassword(
                             profile, CredentialStorageMode.MASTER_PASSWORD, masterPassword, fingerprint -> true, false
                     )
             );
 
-            assertEquals("environment.confirmationRequired", failure.userMessage().key());
+            assertEquals("deployment.error.confirmationRequired", failure.failure().userMessage().key());
             assertEquals(0, connections.get());
         }
         for (char value : masterPassword) {
@@ -368,11 +369,11 @@ class DesktopApplicationFacadeTest {
             DesktopApplicationFacade service = new DesktopApplicationFacade(
                     database, temporaryDirectory.resolve("work"), gateway);
 
-            LocalizedOperationException failure = assertThrows(LocalizedOperationException.class,
+            ApplicationServiceException failure = assertThrows(ApplicationServiceException.class,
                     () -> service.executePersistedLifecycleWithStoredPassword(
                             application.id(), LifecycleAction.RESTART, masterPassword));
 
-            assertEquals("applications.legacyRuntime", failure.userMessage().key());
+            assertEquals("service.error.runtimeMissing", failure.failure().userMessage().key());
             assertEquals(0, gateway.connections.get());
         }
         for (char value : masterPassword) {

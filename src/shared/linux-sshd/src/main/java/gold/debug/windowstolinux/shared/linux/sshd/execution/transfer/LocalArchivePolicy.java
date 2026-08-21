@@ -1,6 +1,7 @@
 package gold.debug.windowstolinux.shared.linux.sshd.execution.transfer;
 
 import gold.debug.windowstolinux.shared.linux.error.LinuxOperationException;
+import gold.debug.windowstolinux.shared.linux.error.LinuxOperationFailureType;
 import gold.debug.windowstolinux.shared.model.archive.SourceArchiveDescriptor;
 
 import java.io.IOException;
@@ -28,16 +29,16 @@ public final class LocalArchivePolicy {
     public static void verify(SourceArchiveDescriptor archive) throws LinuxOperationException {
         Objects.requireNonNull(archive, "archive");
         if (!Files.isRegularFile(archive.localArchive())) {
-            throw LinuxOperationException.localized("linux.error.localArchiveMissing",
+            throw LinuxOperationException.create(LinuxOperationFailureType.LOCAL_ARCHIVE_MISSING,
                     "Local source archive does not exist");
         }
         try {
             if (Files.size(archive.localArchive()) != archive.byteCount()) {
-                throw LinuxOperationException.localized("linux.error.localArchiveSizeMismatch",
+                throw LinuxOperationException.create(LinuxOperationFailureType.LOCAL_ARCHIVE_SIZE_MISMATCH,
                         "Local archive size does not match the static archive descriptor");
             }
         } catch (IOException exception) {
-            throw LinuxOperationException.localized("linux.error.localArchiveReadFailed",
+            throw LinuxOperationException.create(LinuxOperationFailureType.LOCAL_ARCHIVE_READ_FAILED,
                     "Failed to read the local source archive size", exception);
         }
     }

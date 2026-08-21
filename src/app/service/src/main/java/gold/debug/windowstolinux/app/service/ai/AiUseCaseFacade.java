@@ -3,6 +3,8 @@ package gold.debug.windowstolinux.app.service.ai;
 import gold.debug.windowstolinux.app.db.persistence.repository.AiProfileRepository;
 import gold.debug.windowstolinux.app.secret.SecretStore;
 import gold.debug.windowstolinux.app.secret.SecretStoreException;
+import gold.debug.windowstolinux.app.service.failure.ApplicationServiceException;
+import gold.debug.windowstolinux.app.service.failure.ApplicationServiceFailureType;
 import gold.debug.windowstolinux.app.service.server.DesktopSecretStoreService;
 import gold.debug.windowstolinux.app.service.source.ReviewedSourcePreparation;
 import gold.debug.windowstolinux.shared.ai.AiAnalysisException;
@@ -13,7 +15,6 @@ import gold.debug.windowstolinux.shared.ai.collaboration.role.AiRoleContext;
 import gold.debug.windowstolinux.shared.ai.collaboration.invocation.AiRoleInvocationResult;
 import gold.debug.windowstolinux.shared.ai.generation.prompt.AiResponseLanguageType;
 import gold.debug.windowstolinux.shared.model.message.LocalizedMessage;
-import gold.debug.windowstolinux.shared.model.message.LocalizedOperationException;
 import gold.debug.windowstolinux.shared.model.security.CredentialStorageMode;
 
 import java.sql.SQLException;
@@ -66,7 +67,7 @@ public final class AiUseCaseFacade {
     public void save(AiProfile profile, CredentialStorageMode mode, char[] masterPassword, char[] apiKey)
             throws SQLException, SecretStoreException {
         if (profile.credentialMode() != mode) {
-            throw new LocalizedOperationException(LocalizedMessage.of("validation.storageModeMismatch"),
+            throw ApplicationServiceException.create(ApplicationServiceFailureType.STORAGE_MODE_MISMATCH,
                     "AI credential storage mode does not match the selected save mode");
         }
         try (SecretStore store = secrets.open(mode, masterPassword)) {
@@ -194,7 +195,7 @@ public final class AiUseCaseFacade {
                 clear(apiKey);
             }
         } catch (AiAnalysisException | SecretStoreException exception) {
-            return AiAnalysisOutcome.unavailable(exception.userMessage(), exception.diagnostic());
+            return AiAnalysisOutcome.unavailable(exception.failure().userMessage(), exception.failure().diagnostic());
         } finally {
             clear(masterPassword);
         }

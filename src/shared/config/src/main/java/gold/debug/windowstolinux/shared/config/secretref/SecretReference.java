@@ -1,5 +1,8 @@
 package gold.debug.windowstolinux.shared.config.secretref;
 
+import gold.debug.windowstolinux.shared.config.ConfigurationException;
+import gold.debug.windowstolinux.shared.config.ConfigurationFailureType;
+
 import java.util.Objects;
 
 /**
@@ -19,10 +22,10 @@ public record SecretReference(String identifier, long revision) {
     public SecretReference {
         identifier = Objects.requireNonNull(identifier, "identifier").trim();
         if (!identifier.matches("[a-z0-9][a-z0-9._-]{0,63}")) {
-            throw new IllegalArgumentException("identifier must be a bounded lowercase identifier");
+            throw ConfigurationException.create(ConfigurationFailureType.IDENTIFIER_INVALID, "A configuration identifier must be bounded and lowercase");
         }
         if (revision < 1) {
-            throw new IllegalArgumentException("revision must be positive");
+            throw ConfigurationException.create(ConfigurationFailureType.REVISION_INVALID, "A configuration revision must be positive");
         }
     }
 }

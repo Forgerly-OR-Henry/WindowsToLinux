@@ -2,6 +2,8 @@ package gold.debug.windowstolinux.app.service.execution.environment;
 
 import gold.debug.windowstolinux.app.secret.SecretStore;
 import gold.debug.windowstolinux.app.secret.SecretStoreException;
+import gold.debug.windowstolinux.app.service.failure.ApplicationServiceException;
+import gold.debug.windowstolinux.app.service.failure.ApplicationServiceFailureType;
 import gold.debug.windowstolinux.app.service.lock.ServerOperationLockRegistry;
 import gold.debug.windowstolinux.app.service.server.ServerProfile;
 import gold.debug.windowstolinux.app.service.server.ServerUseCaseFacade;
@@ -11,7 +13,6 @@ import gold.debug.windowstolinux.shared.linux.connection.LinuxGateway;
 import gold.debug.windowstolinux.shared.model.deployment.EnvironmentSetupApproval;
 import gold.debug.windowstolinux.shared.model.deployment.EnvironmentSetupResult;
 import gold.debug.windowstolinux.shared.model.message.LocalizedMessage;
-import gold.debug.windowstolinux.shared.model.message.LocalizedOperationException;
 import gold.debug.windowstolinux.shared.model.security.CredentialStorageMode;
 
 import java.sql.SQLException;
@@ -74,7 +75,7 @@ public final class EnvironmentSetupUseCase {
         try {
             Objects.requireNonNull(profile, "profile");
             if (profile.credentialMode() != mode) {
-                throw new LocalizedOperationException(LocalizedMessage.of("validation.storageModeMismatch"),
+                throw ApplicationServiceException.create(ApplicationServiceFailureType.STORAGE_MODE_MISMATCH,
                         "Credential storage mode does not match the saved server profile");
             }
             EnvironmentSetupApproval approval = new EnvironmentSetupApproval(

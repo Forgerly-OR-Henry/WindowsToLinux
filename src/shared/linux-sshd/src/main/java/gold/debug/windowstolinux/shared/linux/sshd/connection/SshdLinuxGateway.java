@@ -7,6 +7,7 @@ import gold.debug.windowstolinux.shared.linux.sshd.command.SshCommandExecutor;
 import gold.debug.windowstolinux.shared.linux.connection.HostKeyDecision;
 import gold.debug.windowstolinux.shared.linux.connection.HostKeyEvaluator;
 import gold.debug.windowstolinux.shared.linux.error.LinuxOperationException;
+import gold.debug.windowstolinux.shared.linux.error.LinuxOperationFailureType;
 import gold.debug.windowstolinux.shared.linux.connection.DeploymentLinuxGateway;
 import gold.debug.windowstolinux.shared.linux.session.DeploymentRemoteSession;
 import gold.debug.windowstolinux.shared.linux.connection.SshCredential;
@@ -92,12 +93,12 @@ public final class SshdLinuxGateway implements DeploymentLinuxGateway {
                 SshSessionLifecycleExecutor.closeQuietly(client);
                 String fingerprint = observedFingerprint.get();
                 if (fingerprint != null) {
-                    throw LinuxOperationException.localized("linux.error.hostKeyRejected", Map.of(
+                    throw LinuxOperationException.create(LinuxOperationFailureType.HOST_KEY_REJECTED, Map.of(
                             "fingerprint", fingerprint),
                             "SSH host fingerprint was not accepted or the connection was rejected: " + fingerprint,
                             exception);
                 }
-                throw LinuxOperationException.localized("linux.error.connectionFailed",
+                throw LinuxOperationException.create(LinuxOperationFailureType.CONNECTION_FAILED,
                         "Failed to establish the SSH connection", exception);
             }
             try {
@@ -106,13 +107,13 @@ public final class SshdLinuxGateway implements DeploymentLinuxGateway {
                 SshSessionLifecycleExecutor.closeQuietly(client);
                 String fingerprint = observedFingerprint.get();
                 if (hostKeyDecision.get() == HostKeyDecision.REJECT && fingerprint != null) {
-                    throw LinuxOperationException.localized("linux.error.hostKeyRejected", Map.of(
+                    throw LinuxOperationException.create(LinuxOperationFailureType.HOST_KEY_REJECTED, Map.of(
                             "fingerprint", fingerprint),
                             "SSH host fingerprint was not accepted or the connection was rejected: " + fingerprint,
                             exception);
                 }
                 String evidence = fingerprint == null ? "" : "; verified host fingerprint: " + fingerprint;
-                throw LinuxOperationException.localized("linux.error.authenticationFailed",
+                throw LinuxOperationException.create(LinuxOperationFailureType.AUTHENTICATION_FAILED,
                         "SSH authentication failed; verify the SSH user, credential, and server authentication policy"
                                 + evidence, exception);
             }
@@ -122,7 +123,7 @@ public final class SshdLinuxGateway implements DeploymentLinuxGateway {
             if (exception instanceof LinuxOperationException linuxOperationException) {
                 throw linuxOperationException;
             }
-            throw LinuxOperationException.localized("linux.error.connectionFailed",
+            throw LinuxOperationException.create(LinuxOperationFailureType.CONNECTION_FAILED,
                     "Failed to establish the SSH connection", exception);
         }
     }

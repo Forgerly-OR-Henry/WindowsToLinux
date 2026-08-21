@@ -1,6 +1,7 @@
 package gold.debug.windowstolinux.app.ui.i18n;
 
 
+import gold.debug.windowstolinux.shared.ai.collaboration.role.AiCollaborationRoleKind;
 import gold.debug.windowstolinux.shared.model.message.LocalizedMessage;
 import gold.debug.windowstolinux.shared.model.analysis.EvidenceConfidenceLevel;
 import gold.debug.windowstolinux.shared.model.deployment.DeploymentStatus;
@@ -83,6 +84,9 @@ class MessageCatalogTest {
 
     @Test
     void mapsEveryStructuredUiCodeInBothLanguages() {
+        for (AiCollaborationRoleKind value : AiCollaborationRoleKind.values()) {
+            assertCode("ai.role." + value.name().toLowerCase(Locale.ROOT));
+        }
         for (EvidenceConfidenceLevel value : EvidenceConfidenceLevel.values()) {
             assertCode("analysis.confidence." + value.name().toLowerCase(Locale.ROOT));
         }

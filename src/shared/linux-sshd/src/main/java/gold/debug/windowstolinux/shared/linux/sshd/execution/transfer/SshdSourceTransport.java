@@ -1,6 +1,7 @@
 package gold.debug.windowstolinux.shared.linux.sshd.execution.transfer;
 
 import gold.debug.windowstolinux.shared.linux.error.LinuxOperationException;
+import gold.debug.windowstolinux.shared.linux.error.LinuxOperationFailureType;
 import gold.debug.windowstolinux.shared.linux.protocol.RemoteStepResult;
 import gold.debug.windowstolinux.shared.linux.sshd.command.SshCommandExecutor;
 import gold.debug.windowstolinux.shared.linux.sshd.execution.protocol.CandidateWorkspaceExecutor;
@@ -61,7 +62,7 @@ public final class SshdSourceTransport {
         LocalArchivePolicy.verify(archive);
         RemoteStepResult prepared = candidates.create(workspace);
         if (!prepared.succeeded()) {
-            throw LinuxOperationException.localized("linux.error.candidatePreparationFailed", prepared.evidence());
+            throw LinuxOperationException.create(LinuxOperationFailureType.CANDIDATE_PREPARATION_FAILED, prepared.evidence());
         }
         String remoteArchive = workspace.candidateRoot() + "/mutable/source.tar.gz";
         try (SftpFileSystem fileSystem = SftpClientFactory.instance().createSftpFileSystem(session)) {
@@ -69,7 +70,7 @@ public final class SshdSourceTransport {
             Files.copy(archive.localArchive(), destination, StandardCopyOption.REPLACE_EXISTING);
         } catch (IOException exception) {
             cleanupAfterFailure(workspace);
-            throw LinuxOperationException.localized("linux.error.sourceUploadFailed",
+            throw LinuxOperationException.create(LinuxOperationFailureType.SOURCE_UPLOAD_FAILED,
                     "SFTP source archive upload failed", exception);
         }
         String verificationScript = """
@@ -82,7 +83,7 @@ public final class SshdSourceTransport {
         if (!verified.succeeded() || !archive.contentSha256().equals(uploaded.get("DIGEST"))
                 || archive.byteCount() != SshCommandExecutor.parseLong(uploaded.get("BYTES"))) {
             cleanupAfterFailure(workspace);
-            throw LinuxOperationException.localized("linux.error.uploadVerificationFailed",
+            throw LinuxOperationException.create(LinuxOperationFailureType.UPLOAD_VERIFICATION_FAILED,
                     "Remote archive digest or size verification failed");
         }
         return new SourceUploadResult(remoteArchive, archive.byteCount(), archive.contentSha256(),

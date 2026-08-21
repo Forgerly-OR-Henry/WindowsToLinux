@@ -4,6 +4,7 @@ import gold.debug.windowstolinux.shared.linux.sshd.command.SshCommandExecutor;
 
 import gold.debug.windowstolinux.shared.linux.connection.HostKeyDecision;
 import gold.debug.windowstolinux.shared.linux.error.LinuxOperationException;
+import gold.debug.windowstolinux.shared.linux.error.LinuxOperationFailureType;
 import gold.debug.windowstolinux.shared.linux.connection.SshCredential;
 import gold.debug.windowstolinux.shared.linux.connection.SshEndpoint;
 import gold.debug.windowstolinux.shared.linux.protocol.ManagedHelperProtocol;
@@ -91,8 +92,8 @@ class SshdLinuxGatewayTest {
                 )
         );
 
-        assertEquals("linux.error.connectionFailed", failure.userMessage().key());
-        assertFalse(failure.diagnostic().contains(secret));
+        assertEquals("linux.error.connectionFailed", failure.failure().userMessage().key());
+        assertFalse(failure.failure().diagnostic().contains(secret));
         char[] remaining = credential.copy();
         try {
             for (char value : remaining) {
@@ -105,9 +106,9 @@ class SshdLinuxGatewayTest {
 
     @Test
     void retriesOnlyTimeoutShapedConnectionFailures() {
-        LinuxOperationException timeout = LinuxOperationException.localized("linux.error.authenticationFailed",
+        LinuxOperationException timeout = LinuxOperationException.create(LinuxOperationFailureType.AUTHENTICATION_FAILED,
                 "authentication timed out", new TimeoutException("timed out"));
-        LinuxOperationException rejected = LinuxOperationException.localized("linux.error.authenticationFailed",
+        LinuxOperationException rejected = LinuxOperationException.create(LinuxOperationFailureType.AUTHENTICATION_FAILED,
                 "authentication rejected");
 
         assertTrue(SshdLinuxGateway.isTransientConnectionFailure(timeout));
@@ -116,9 +117,9 @@ class SshdLinuxGatewayTest {
 
     @Test
     void recognizesOnlyTimeoutShapedTransportFailures() {
-        LinuxOperationException timeout = LinuxOperationException.localized("test", "fixture",
+        LinuxOperationException timeout = LinuxOperationException.create(LinuxOperationFailureType.SSH_COMMAND_FAILED, "fixture",
                 new java.util.concurrent.TimeoutException("fixture"));
-        LinuxOperationException other = LinuxOperationException.localized("test", "fixture",
+        LinuxOperationException other = LinuxOperationException.create(LinuxOperationFailureType.SSH_COMMAND_FAILED, "fixture",
                 new IllegalStateException("fixture"));
 
         assertTrue(SshCommandExecutor.isTransientTransportFailure(timeout));

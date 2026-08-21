@@ -3,6 +3,7 @@ package gold.debug.windowstolinux.shared.linux.sshd.distro;
 import gold.debug.windowstolinux.shared.linux.sshd.distro.generation.script.SetupScriptRenderer;
 
 import gold.debug.windowstolinux.shared.linux.error.LinuxOperationException;
+import gold.debug.windowstolinux.shared.linux.error.LinuxOperationFailureType;
 import gold.debug.windowstolinux.shared.linux.sshd.capability.SshdCapabilityCollector;
 import gold.debug.windowstolinux.shared.linux.sshd.capability.SshdPlatformCapabilityCollector;
 import gold.debug.windowstolinux.shared.linux.sshd.command.SshCommandExecutor;
@@ -46,12 +47,12 @@ public final class ManagedEnvironmentExecutor {
         String script = scriptFor(before);
         var prepared = commands.exec(script, SetupScriptRenderer.TIMEOUT, true);
         if (!prepared.succeeded()) {
-            throw LinuxOperationException.localized("linux.error.environmentPreparationFailed",
+            throw LinuxOperationException.create(LinuxOperationFailureType.ENVIRONMENT_PREPARATION_FAILED,
                     "managed target environment preparation failed: " + prepared.failureEvidence());
         }
         ServerCapabilityFacts collected = baselineCapabilities.collect();
         if (!collected.supportsManagedDeployment(false, new HealthCheck.Tcp(1, 1, 1))) {
-            throw LinuxOperationException.localized("linux.error.environmentRequirementsUnmet",
+            throw LinuxOperationException.create(LinuxOperationFailureType.ENVIRONMENT_REQUIREMENTS_UNMET,
                     "Environment preparation completed, but the target is still missing the fixed managed deployment baseline: "
                             + collected.evidence());
         }

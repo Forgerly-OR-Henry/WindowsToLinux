@@ -1,7 +1,5 @@
 package gold.debug.windowstolinux.shared.git.snapshot;
 
-import gold.debug.windowstolinux.shared.git.GitReference;
-import gold.debug.windowstolinux.shared.git.GitRemote;
 import gold.debug.windowstolinux.shared.git.GitSnapshot;
 import gold.debug.windowstolinux.shared.git.GitSnapshotException;
 import gold.debug.windowstolinux.shared.git.GitSourceRequest;
@@ -14,6 +12,7 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.List;
 import java.util.Set;
 
@@ -49,7 +48,8 @@ class GitSnapshotPreparerTest {
         GitSnapshotException exception = assertThrows(GitSnapshotException.class,
                 () -> new GitSnapshotPreparer().prepare(request(repository), temporaryDirectory.resolve("workspace")));
 
-        assertTrue(exception.getMessage().contains("without executing project code"));
+        assertEquals(gold.debug.windowstolinux.shared.git.GitSnapshotFailureType.PREPARATION_FAILED,
+                exception.failure().definition());
     }
 
     @Test
@@ -62,12 +62,31 @@ class GitSnapshotPreparerTest {
         GitSnapshotException exception = assertThrows(GitSnapshotException.class,
                 () -> new GitSnapshotPreparer().prepare(request(repository), temporaryDirectory.resolve("workspace")));
 
-        assertTrue(exception.getMessage().contains("without executing project code"));
+        assertEquals(gold.debug.windowstolinux.shared.git.GitSnapshotFailureType.PREPARATION_FAILED,
+                exception.failure().definition());
     }
 
     @Test
     void rejectsCredentialBearingRemoteUris() {
         assertThrows(IllegalArgumentException.class, () -> GitRemote.parse("https://token@example.test/repository.git"));
+    }
+
+    @Test
+    void classifiesMissingGitAndBoundedCommandTimeout() throws Exception {
+        GitCommandExecutor missing = new GitCommandExecutor(Duration.ofSeconds(1));
+        GitSnapshotException unavailable = assertThrows(GitSnapshotException.class,
+                () -> missing.run(temporaryDirectory, List.of("windowstolinux-missing-git-fixture")));
+        assertEquals(gold.debug.windowstolinux.shared.git.GitSnapshotFailureType.TOOL_UNAVAILABLE,
+                unavailable.failure().definition());
+
+        GitCommandExecutor bounded = new GitCommandExecutor(Duration.ofMillis(25));
+        List<String> slow = System.getProperty("os.name", "").startsWith("Windows")
+                ? List.of("cmd", "/c", "ping -n 6 127.0.0.1 >nul")
+                : List.of("sh", "-c", "sleep 5");
+        GitSnapshotException timeout = assertThrows(GitSnapshotException.class,
+                () -> bounded.run(temporaryDirectory, slow));
+        assertEquals(gold.debug.windowstolinux.shared.git.GitSnapshotFailureType.TIMEOUT,
+                timeout.failure().definition());
     }
 
     @Test

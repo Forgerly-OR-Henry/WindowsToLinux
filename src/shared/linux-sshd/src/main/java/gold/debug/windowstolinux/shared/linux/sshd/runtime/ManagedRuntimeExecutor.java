@@ -6,6 +6,7 @@ import gold.debug.windowstolinux.shared.linux.sshd.runtime.systemd.SystemdLifecy
 import gold.debug.windowstolinux.shared.linux.sshd.runtime.systemd.SystemdOwnershipObserver;
 
 import gold.debug.windowstolinux.shared.linux.error.LinuxOperationException;
+import gold.debug.windowstolinux.shared.linux.error.LinuxOperationFailureType;
 import gold.debug.windowstolinux.shared.linux.protocol.RemoteStepResult;
 import gold.debug.windowstolinux.shared.linux.sshd.execution.protocol.release.ContainerReleaseProtocolExecutor;
 import gold.debug.windowstolinux.shared.linux.sshd.execution.protocol.release.DeploymentReleaseProtocolExecutor;
@@ -59,7 +60,7 @@ public final class ManagedRuntimeExecutor {
             return before;
         }
         if (action == LifecycleAction.START && before.runtimeState() != RuntimeState.STOPPED) {
-            throw LinuxOperationException.localized("linux.error.startRequiresStopped",
+            throw LinuxOperationException.create(LinuxOperationFailureType.START_REQUIRES_STOPPED,
                     "Start is allowed only for a managed runtime confirmed as stopped");
         }
         if (identity.kind() == ManagedRuntimeIdentity.Kind.ORDINARY) {
@@ -70,14 +71,14 @@ public final class ManagedRuntimeExecutor {
                 ? containerProtocol.lifecycle(application, verb)
                 : deploymentProtocol.lifecycle(application, verb);
         if (!result.succeeded()) {
-            throw LinuxOperationException.localized("linux.error.lifecycleActionFailed", result.evidence());
+            throw LinuxOperationException.create(LinuxOperationFailureType.LIFECYCLE_ACTION_FAILED, result.evidence());
         }
         if (action == LifecycleAction.START || action == LifecycleAction.RESTART) {
             boolean healthy = identity.kind() == ManagedRuntimeIdentity.Kind.CONTAINER
                     ? containerRuntime.checkHealth(application, identity.containerEngine().orElseThrow(), healthCheck).healthy()
                     : systemdHealth.check(application, healthCheck).healthy();
             if (!healthy) {
-                throw LinuxOperationException.localized("linux.error.postStartHealthFailed",
+                throw LinuxOperationException.create(LinuxOperationFailureType.POST_START_HEALTH_FAILED,
                         "Post-start health check failed");
             }
         }
@@ -116,7 +117,7 @@ public final class ManagedRuntimeExecutor {
             case REFRESH_STATUS -> true;
         };
         if (!verified) {
-            throw LinuxOperationException.localized("linux.error.lifecycleActionFailed",
+            throw LinuxOperationException.create(LinuxOperationFailureType.LIFECYCLE_ACTION_FAILED,
                     "Managed runtime lifecycle postcondition was not verified: " + observation.evidence());
         }
     }

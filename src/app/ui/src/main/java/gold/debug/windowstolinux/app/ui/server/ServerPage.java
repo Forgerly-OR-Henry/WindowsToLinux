@@ -92,6 +92,7 @@ public final class ServerPage implements ServerContext {
                     messages.text("fingerprint.confirm.title"), JOptionPane.YES_NO_OPTION,
                     JOptionPane.WARNING_MESSAGE) == JOptionPane.YES_OPTION));
         } catch (Exception ignored) {
+            // A failed or interrupted confirmation must reject host trust. / 确认失败或中断时必须拒绝主机信任。
             return false;
         }
         return accepted.get();
