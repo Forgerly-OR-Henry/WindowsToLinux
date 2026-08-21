@@ -51,7 +51,7 @@ class DesktopLanguageSwitchStateTest {
                         "ssh-secret".toCharArray(), CredentialStorageMode.MASTER_PASSWORD,
                         "master-secret".toCharArray(), "server diagnostic"),
                 new ManagedPageState("demo", "lifecycle diagnostic"),
-                new BackupPageState("C:\\backups\\demo.zip", "backup diagnostic", backupCandidate),
+                new BackupPageState("demo", "C:\\backups\\demo.zip", "backup diagnostic", backupCandidate),
                 new AiPageState("https://example.test/v1/chat/completions", "model-x", "analysis",
                         AiCollaborationRoleKind.PROJECT_ANALYSIS,
                         "api-secret".toCharArray(), CredentialStorageMode.WINDOWS_CREDENTIAL_MANAGER,
@@ -89,6 +89,7 @@ class DesktopLanguageSwitchStateTest {
             assertEquals("server diagnostic", chineseState.server().output());
             assertEquals("demo", chineseState.managed().applicationId());
             assertEquals("lifecycle diagnostic", chineseState.managed().output());
+            assertEquals("demo", chineseState.backup().applicationId());
             assertEquals("C:\\backups\\demo.zip", chineseState.backup().archivePath());
             assertEquals("backup diagnostic", chineseState.backup().output());
             assertEquals(backupCandidate, chineseState.backup().preparedCandidate());

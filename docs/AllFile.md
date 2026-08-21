@@ -138,9 +138,9 @@ src/  # 项目源码与模块根目录
 │  │  ├─ ai/  # AI 配置与解释结果页面包
 │  │  │  ├─ AiPage.java  # 持有可选 AI 表单、临时秘密、状态与解释流程
 │  │  │  └─ AiPageState.java  # 保存桌面外观重建期间尚未提交的 AI 页面状态
-│  │  ├─ backup/  # 备份校验及单个本地候选准备与删除页面包
-│  │  │  ├─ BackupPage.java  # 选择归档、后台完整校验，并管理一个未激活隔离本地候选的准备与删除
-│  │  │  └─ BackupPageState.java  # 保存外观重建期间的归档路径、结果文本和当前候选删除授权
+│  │  ├─ backup/  # 受管备份输入检查、归档校验及单个本地候选准备与删除页面包
+│  │  │  ├─ BackupPage.java  # 显示受管输入缺失项、校验归档，并管理一个未激活隔离本地候选
+│  │  │  └─ BackupPageState.java  # 保存外观重建期间的应用标识、归档路径、结果和候选删除授权
 │  │  ├─ component/  # 可复用桌面组件包
 │  │  │  ├─ DesktopComponentFactory.java  # 创建桌面页面复用的按钮、表单和布局组件
 │  │  │  └─ DesktopTaskExecutor.java  # 运行后台操作并将完成结果返回 Swing 事件线程
