@@ -3,6 +3,7 @@ package gold.debug.windowstolinux.app.db.persistence.repository;
 import gold.debug.windowstolinux.app.db.persistence.connection.DesktopConnectionFactory;
 import gold.debug.windowstolinux.app.db.entity.ManagedApplicationGraph;
 import gold.debug.windowstolinux.app.db.entity.SuccessfulManagedDeployment;
+import gold.debug.windowstolinux.app.db.persistence.serialization.ComponentPathPersistenceCodec;
 import gold.debug.windowstolinux.app.db.persistence.serialization.DeploymentRuntimePersistenceCodec;
 
 import java.sql.Connection;
@@ -21,6 +22,7 @@ import java.util.Set;
 /** Stores durable whole-application topology atomically with successful component releases. / 将持久整应用拓扑与成功组件版本原子保存。 */
 public final class ManagedApplicationGraphRepository {
     private static final DeploymentRuntimePersistenceCodec RUNTIME_CODEC = new DeploymentRuntimePersistenceCodec();
+    private static final ComponentPathPersistenceCodec DATA_PATH_CODEC = new ComponentPathPersistenceCodec();
     private final DesktopConnectionFactory connections;
 
     /** Creates the focused graph repository. / 创建聚焦的图仓库。 */
@@ -40,7 +42,8 @@ public final class ManagedApplicationGraphRepository {
         if (byApplication.size() != records.size() || !byApplication.keySet().equals(graphApplications)
                 || graph.components().stream().anyMatch(component -> !component.runtimeConfiguration().equals(
                         byApplication.get(component.application().id()).runtimeConfiguration()))
-                || graph.components().stream().anyMatch(component -> component.reviewedRuntime().isEmpty())) {
+                || graph.components().stream().anyMatch(component -> component.reviewedRuntime().isEmpty()
+                        || component.reviewedDataPaths().isEmpty())) {
             throw new IllegalArgumentException("successful deployments must exactly match the managed application graph");
         }
         try (Connection connection = connections.open()) {
@@ -72,7 +75,7 @@ public final class ManagedApplicationGraphRepository {
                            s.id AS server_id, s.host, s.ssh_port, s.host_key_sha256,
                            r.health_kind, r.http_endpoint, r.http_expected_status, r.tcp_port,
                            r.health_timeout_seconds, r.tcp_stability_seconds, r.user_access_url,
-                           gc.reviewed_runtime
+                           gc.reviewed_runtime, gc.reviewed_data_paths
                     FROM managed_application_graph_component gc
                     JOIN managed_application a ON a.id=gc.managed_application_id
                     JOIN server s ON s.id=a.server_id
@@ -95,9 +98,20 @@ public final class ManagedApplicationGraphRepository {
                                 throw new SQLException("stored reviewed runtime definition is invalid", exception);
                             }
                         }
+                        byte[] storedDataPaths = result.getBytes("reviewed_data_paths");
+                        Optional<List<gold.debug.windowstolinux.shared.model.project.component.ComponentDataPath>>
+                                reviewedDataPaths = Optional.empty();
+                        if (storedDataPaths != null) {
+                            try {
+                                reviewedDataPaths = Optional.of(DATA_PATH_CODEC.read(storedDataPaths));
+                            } catch (java.io.IOException exception) {
+                                throw new SQLException("stored reviewed data-path definition is invalid", exception);
+                            }
+                        }
                         components.add(new ManagedApplicationGraph.Component(componentId,
                                 ManagedApplicationRepository.readApplication(result),
-                                runtimeConfiguration, dependencies.getOrDefault(componentId, List.of()), reviewedRuntime));
+                                runtimeConfiguration, dependencies.getOrDefault(componentId, List.of()),
+                                reviewedRuntime, reviewedDataPaths));
                     }
                 }
             }
@@ -134,8 +148,8 @@ public final class ManagedApplicationGraphRepository {
     private static void insertComponents(Connection connection, ManagedApplicationGraph graph) throws SQLException {
         try (PreparedStatement statement = connection.prepareStatement("""
                 INSERT INTO managed_application_graph_component (
-                    application_id, component_id, managed_application_id, reviewed_runtime
-                ) VALUES (?, ?, ?, ?)
+                    application_id, component_id, managed_application_id, reviewed_runtime, reviewed_data_paths
+                ) VALUES (?, ?, ?, ?, ?)
                 """)) {
             for (ManagedApplicationGraph.Component component : graph.components()) {
                 statement.setString(1, graph.applicationId());
@@ -143,8 +157,9 @@ public final class ManagedApplicationGraphRepository {
                 statement.setString(3, component.application().id());
                 try {
                     statement.setBytes(4, RUNTIME_CODEC.write(component.reviewedRuntime().orElseThrow()));
+                    statement.setBytes(5, DATA_PATH_CODEC.write(component.reviewedDataPaths().orElseThrow()));
                 } catch (java.io.IOException exception) {
-                    throw new SQLException("reviewed runtime definition cannot be persisted", exception);
+                    throw new SQLException("reviewed runtime or data-path definition cannot be persisted", exception);
                 }
                 statement.addBatch();
             }

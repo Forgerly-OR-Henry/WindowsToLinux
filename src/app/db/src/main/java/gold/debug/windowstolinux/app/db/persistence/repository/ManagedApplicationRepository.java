@@ -12,6 +12,7 @@ import gold.debug.windowstolinux.shared.model.managed.ManagedApplication;
 import gold.debug.windowstolinux.shared.model.managed.ManagedApplicationRuntimeConfiguration;
 import gold.debug.windowstolinux.shared.model.server.ServerIdentity;
 import gold.debug.windowstolinux.shared.config.secretref.SecretReference;
+import gold.debug.windowstolinux.shared.config.revision.ConfigurationSnapshot;
 
 import java.net.URI;
 import java.sql.Connection;
@@ -67,8 +68,7 @@ public final class ManagedApplicationRepository {
 
     /** Atomically records every component of one successful whole-application transaction. / 原子记录一次成功整应用事务的全部组件。 */
     public void recordSuccessfulDeployments(List<SuccessfulManagedDeployment> deployments) throws SQLException {
-        List<SuccessfulManagedDeployment> records = List.copyOf(
-                Objects.requireNonNull(deployments, "deployments"));
+        List<SuccessfulManagedDeployment> records = List.copyOf(Objects.requireNonNull(deployments, "deployments"));
         if (records.isEmpty() || records.stream().map(value -> value.application().id()).distinct().count()
                 != records.size()) {
             throw new IllegalArgumentException("whole-application persistence requires unique non-empty components");
@@ -78,19 +78,20 @@ public final class ManagedApplicationRepository {
         }
     }
 
-    /** Atomically records reviewed success and its exact secret-revision binding. / 原子记录经审阅的成功状态及其精确秘密修订绑定。 */
+    /** Atomically records reviewed success with exact configuration and secret-revision bindings. / 原子记录经审阅的成功状态及精确配置、秘密修订绑定。 */
     public void recordSuccessfulDeployment(ManagedApplication application,
-                                           ManagedApplicationRuntimeConfiguration runtimeConfiguration,
-                                           CurrentRelease release, List<SecretReference> secretReferences) throws SQLException {
+                                           ManagedApplicationRuntimeConfiguration runtimeConfiguration, CurrentRelease release,
+                                           ConfigurationSnapshot configuration, List<SecretReference> secretReferences) throws SQLException {
         Objects.requireNonNull(application, "application");
         Objects.requireNonNull(runtimeConfiguration, "runtimeConfiguration");
         Objects.requireNonNull(release, "release");
+        Objects.requireNonNull(configuration, "configuration");
         Set<SecretReference> references = Set.copyOf(Objects.requireNonNull(secretReferences, "secretReferences"));
         if (references.size() != secretReferences.size()) {
             throw new IllegalArgumentException("successful release secret references must be unique");
         }
-        if (!application.id().equals(release.applicationId())) {
-            throw new IllegalArgumentException("current release must belong to the managed application");
+        if (!application.id().equals(release.applicationId()) || !application.id().equals(configuration.applicationId())) {
+            throw new IllegalArgumentException("current release and configuration must belong to the managed application");
         }
         try (Connection connection = connections.open()) {
             RepositoryTransactionExecutor.execute(connection, () -> {
@@ -98,6 +99,7 @@ public final class ManagedApplicationRepository {
                 upsertApplication(connection, application);
                 upsertRuntime(connection, application.id(), runtimeConfiguration);
                 upsertRelease(connection, release);
+                ConfigurationSnapshotRepository.saveAndBindRelease(connection, configuration, release.releaseSha256());
                 ApplicationSecretRepository.bindRelease(connection, application.id(), release.releaseSha256(), references);
             });
         }
@@ -228,6 +230,8 @@ public final class ManagedApplicationRepository {
             upsertApplication(connection, deployment.application());
             upsertRuntime(connection, deployment.application().id(), deployment.runtimeConfiguration());
             upsertRelease(connection, deployment.release());
+            ConfigurationSnapshotRepository.saveAndBindRelease(connection, deployment.configuration(),
+                    deployment.release().releaseSha256());
             ApplicationSecretRepository.bindRelease(connection, deployment.application().id(),
                     deployment.release().releaseSha256(), Set.copyOf(deployment.secretReferences()));
         }

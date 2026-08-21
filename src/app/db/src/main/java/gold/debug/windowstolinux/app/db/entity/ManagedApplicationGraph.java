@@ -3,6 +3,7 @@ package gold.debug.windowstolinux.app.db.entity;
 import gold.debug.windowstolinux.shared.model.managed.ManagedApplication;
 import gold.debug.windowstolinux.shared.model.managed.ManagedApplicationRuntimeConfiguration;
 import gold.debug.windowstolinux.shared.model.project.DeploymentRuntimeSpecification;
+import gold.debug.windowstolinux.shared.model.project.component.ComponentDataPath;
 
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -47,7 +48,8 @@ public record ManagedApplicationGraph(
             ManagedApplication application,
             ManagedApplicationRuntimeConfiguration runtimeConfiguration,
             List<String> dependencies,
-            Optional<DeploymentRuntimeSpecification> reviewedRuntime
+            Optional<DeploymentRuntimeSpecification> reviewedRuntime,
+            Optional<List<ComponentDataPath>> reviewedDataPaths
     ) {
         /** Validates the component without accepting build or secret values. / 验证组件且不接受构建值或秘密值。 */
         public Component {
@@ -56,6 +58,10 @@ public record ManagedApplicationGraph(
             runtimeConfiguration = Objects.requireNonNull(runtimeConfiguration, "runtimeConfiguration");
             dependencies = List.copyOf(Objects.requireNonNull(dependencies, "dependencies").stream().sorted().toList());
             reviewedRuntime = Objects.requireNonNull(reviewedRuntime, "reviewedRuntime");
+            reviewedDataPaths = Objects.requireNonNull(reviewedDataPaths, "reviewedDataPaths")
+                    .map(values -> List.copyOf(values.stream()
+                            .map(value -> Objects.requireNonNull(value, "reviewed data path"))
+                            .sorted(java.util.Comparator.comparing(ComponentDataPath::path)).toList()));
             if (dependencies.stream().distinct().count() != dependencies.size()
                     || dependencies.contains(componentId)) {
                 throw new IllegalArgumentException("managed component dependencies must be unique and non-self");
@@ -64,12 +70,23 @@ public record ManagedApplicationGraph(
                     && !reviewedRuntime.orElseThrow().healthCheck().equals(runtimeConfiguration.healthCheck())) {
                 throw new IllegalArgumentException("reviewed runtime health must match the persisted runtime contract");
             }
+            if (reviewedDataPaths.isPresent() && reviewedDataPaths.orElseThrow().stream()
+                    .map(ComponentDataPath::path).distinct().count() != reviewedDataPaths.orElseThrow().size()) {
+                throw new IllegalArgumentException("reviewed component data paths must be unique");
+            }
         }
 
-        /** Creates a legacy component whose exact reviewed runtime was never persisted. / 创建未曾持久化精确审阅运行时的旧组件。 */
+        /** Creates a schema-v8 component whose reviewed data paths were never persisted. / 创建未曾持久化审阅数据路径的 schema-v8 组件。 */
+        public Component(String componentId, ManagedApplication application,
+                         ManagedApplicationRuntimeConfiguration runtimeConfiguration, List<String> dependencies,
+                         Optional<DeploymentRuntimeSpecification> reviewedRuntime) {
+            this(componentId, application, runtimeConfiguration, dependencies, reviewedRuntime, Optional.empty());
+        }
+
+        /** Creates a legacy component whose exact reviewed runtime and data paths were never persisted. / 创建未曾持久化精确审阅运行时和数据路径的旧组件。 */
         public Component(String componentId, ManagedApplication application,
                          ManagedApplicationRuntimeConfiguration runtimeConfiguration, List<String> dependencies) {
-            this(componentId, application, runtimeConfiguration, dependencies, Optional.empty());
+            this(componentId, application, runtimeConfiguration, dependencies, Optional.empty(), Optional.empty());
         }
     }
 

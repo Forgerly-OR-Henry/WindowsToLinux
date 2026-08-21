@@ -5,7 +5,7 @@
 - 阶段基线版本：`2.16.0-sqlite-v8-runtime-persistence`
 - 文档结构版本：`2.0.0-roadmap-rebaseline`
 - 文档状态：**本轮三期实现与 Ubuntu 24.04 x86-64、CentOS Stream 9 x86-64 产品入口验收完成；其他发行版实机测试由用户明确延后至后续独立任务**
-- 当前实现：Go、Rust、.NET、Kotlin、PHP、Ruby 已接入固定试验链路，并通过目标机构建、发布、HTTP 健康、故障回滚、生命周期、秘密脱敏和桌面状态重启恢复；桌面多组件页的实机验收覆盖当时 SQLite v7 图重载和依赖安全生命周期，当前 SQLite v8 保留该图语义并仅为新成功组件增加完整非秘密已审阅运行时；三个 AI 角色使用独立 Provider/模型和安全冲突裁决。以上实机证据均属于当时 helper v3/SQLite v7；当前 helper v4 与 SQLite v8 的新增路径只有本地静态证据，不能据此声称实机支持
+- 当前实现：Go、Rust、.NET、Kotlin、PHP、Ruby 已接入固定试验链路，并通过目标机构建、发布、HTTP 健康、故障回滚、生命周期、秘密脱敏和桌面状态重启恢复；桌面多组件页的实机验收覆盖当时 SQLite v7 图重载和依赖安全生命周期，当前 SQLite v9 保留该图语义，并为新成功组件增加完整非秘密已审阅运行时、数据路径和发布配置精确绑定；三个 AI 角色使用独立 Provider/模型和安全冲突裁决。以上实机证据均属于当时 helper v3/SQLite v7；当前 helper v4 与 SQLite v8/v9 的新增路径只有本地静态证据，不能据此声称实机支持
 - 更新日期：2026-08-22
 - 上级文档：[开发总纲](../DEVELOPMENT.md)
 

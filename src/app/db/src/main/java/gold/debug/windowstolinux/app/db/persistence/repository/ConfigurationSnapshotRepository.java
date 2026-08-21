@@ -16,7 +16,7 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 
-/** Stores immutable ordinary-configuration snapshots and entries. / 保存不可变的普通配置快照与条目。 */
+/** Stores immutable ordinary-configuration snapshots, entries, and exact release bindings. / 保存不可变的普通配置快照、条目及精确发布绑定。 */
 public final class ConfigurationSnapshotRepository {
     private final DesktopConnectionFactory connections;
 
@@ -29,45 +29,32 @@ public final class ConfigurationSnapshotRepository {
     public void save(ConfigurationSnapshot snapshot) throws SQLException {
         Objects.requireNonNull(snapshot, "snapshot");
         try (Connection connection = connections.open()) {
-            RepositoryTransactionExecutor.execute(connection, () -> {
-                Optional<ConfigurationSnapshot> existing = find(connection, snapshot.applicationId(), snapshot.revision());
-                if (existing.isPresent()) {
-                    ConfigurationSnapshot stored = existing.orElseThrow();
-                    if (!stored.schemaVersion().equals(snapshot.schemaVersion())
-                            || !stored.createdAt().equals(snapshot.createdAt()) || !stored.sha256().equals(snapshot.sha256())) {
-                        throw new SQLException("application configuration revisions are immutable");
-                    }
-                    return;
+            RepositoryTransactionExecutor.execute(connection, () -> save(connection, snapshot));
+        }
+    }
+
+    /** Finds the exact immutable configuration used by one release identity. / 查找一个发布身份实际使用的精确不可变配置。 */
+    public Optional<ConfigurationSnapshot> findRelease(String applicationId, String releaseIdentity)
+            throws SQLException {
+        applicationId = boundedIdentity(applicationId, "applicationId");
+        releaseIdentity = boundedIdentity(releaseIdentity, "releaseIdentity");
+        try (Connection connection = connections.open(); PreparedStatement statement = connection.prepareStatement("""
+                SELECT configuration_revision, configuration_sha256
+                FROM application_release_configuration_binding
+                WHERE application_id=? AND release_identity=?
+                """)) {
+            statement.setString(1, applicationId);
+            statement.setString(2, releaseIdentity);
+            try (ResultSet result = statement.executeQuery()) {
+                if (!result.next()) return Optional.empty();
+                ConfigurationSnapshot snapshot = find(connection, applicationId,
+                        result.getLong("configuration_revision")).orElseThrow(() ->
+                        new SQLException("release configuration binding references a missing snapshot"));
+                if (!snapshot.sha256().equals(result.getString("configuration_sha256"))) {
+                    throw new SQLException("release configuration binding digest is inconsistent");
                 }
-                try (PreparedStatement statement = connection.prepareStatement("""
-                        INSERT INTO application_configuration_snapshot (
-                            application_id, revision, schema_version, created_at, sha256
-                        ) VALUES (?, ?, ?, ?, ?)
-                        """)) {
-                    statement.setString(1, snapshot.applicationId());
-                    statement.setLong(2, snapshot.revision());
-                    statement.setString(3, snapshot.schemaVersion());
-                    statement.setLong(4, snapshot.createdAt().toEpochMilli());
-                    statement.setString(5, snapshot.sha256());
-                    statement.executeUpdate();
-                }
-                try (PreparedStatement statement = connection.prepareStatement("""
-                        INSERT INTO application_configuration_entry (
-                            application_id, revision, config_key, value_type, config_scope, value_text
-                        ) VALUES (?, ?, ?, ?, ?, ?)
-                        """)) {
-                    for (ConfigurationEntry entry : snapshot.entries()) {
-                        statement.setString(1, snapshot.applicationId());
-                        statement.setLong(2, snapshot.revision());
-                        statement.setString(3, entry.key());
-                        statement.setString(4, valueType(entry.value()));
-                        statement.setString(5, entry.scope().name());
-                        statement.setString(6, entry.value().canonicalValue());
-                        statement.addBatch();
-                    }
-                    statement.executeBatch();
-                }
-            });
+                return Optional.of(snapshot);
+            }
         }
     }
 
@@ -116,6 +103,89 @@ public final class ConfigurationSnapshotRepository {
                 }
             }
         }
+    }
+
+    static void saveAndBindRelease(Connection connection, ConfigurationSnapshot snapshot, String releaseIdentity)
+            throws SQLException {
+        Objects.requireNonNull(connection, "connection");
+        Objects.requireNonNull(snapshot, "snapshot");
+        String application = boundedIdentity(snapshot.applicationId(), "applicationId");
+        String release = boundedIdentity(releaseIdentity, "releaseIdentity");
+        save(connection, snapshot);
+        try (PreparedStatement statement = connection.prepareStatement("""
+                SELECT configuration_revision, configuration_sha256
+                FROM application_release_configuration_binding
+                WHERE application_id=? AND release_identity=?
+                """)) {
+            statement.setString(1, application);
+            statement.setString(2, release);
+            try (ResultSet result = statement.executeQuery()) {
+                if (result.next()) {
+                    if (result.getLong("configuration_revision") != snapshot.revision()
+                            || !result.getString("configuration_sha256").equals(snapshot.sha256())) {
+                        throw new SQLException("release configuration bindings are immutable");
+                    }
+                    return;
+                }
+            }
+        }
+        try (PreparedStatement statement = connection.prepareStatement("""
+                INSERT INTO application_release_configuration_binding (
+                    application_id, release_identity, configuration_revision, configuration_sha256
+                ) VALUES (?, ?, ?, ?)
+                """)) {
+            statement.setString(1, application);
+            statement.setString(2, release);
+            statement.setLong(3, snapshot.revision());
+            statement.setString(4, snapshot.sha256());
+            statement.executeUpdate();
+        }
+    }
+
+    private static void save(Connection connection, ConfigurationSnapshot snapshot) throws SQLException {
+        Optional<ConfigurationSnapshot> existing = find(connection, snapshot.applicationId(), snapshot.revision());
+        if (existing.isPresent()) {
+            if (!existing.orElseThrow().equals(snapshot)) {
+                throw new SQLException("application configuration revisions are immutable");
+            }
+            return;
+        }
+        try (PreparedStatement statement = connection.prepareStatement("""
+                INSERT INTO application_configuration_snapshot (
+                    application_id, revision, schema_version, created_at, sha256
+                ) VALUES (?, ?, ?, ?, ?)
+                """)) {
+            statement.setString(1, snapshot.applicationId());
+            statement.setLong(2, snapshot.revision());
+            statement.setString(3, snapshot.schemaVersion());
+            statement.setLong(4, snapshot.createdAt().toEpochMilli());
+            statement.setString(5, snapshot.sha256());
+            statement.executeUpdate();
+        }
+        try (PreparedStatement statement = connection.prepareStatement("""
+                INSERT INTO application_configuration_entry (
+                    application_id, revision, config_key, value_type, config_scope, value_text
+                ) VALUES (?, ?, ?, ?, ?, ?)
+                """)) {
+            for (ConfigurationEntry entry : snapshot.entries()) {
+                statement.setString(1, snapshot.applicationId());
+                statement.setLong(2, snapshot.revision());
+                statement.setString(3, entry.key());
+                statement.setString(4, valueType(entry.value()));
+                statement.setString(5, entry.scope().name());
+                statement.setString(6, entry.value().canonicalValue());
+                statement.addBatch();
+            }
+            statement.executeBatch();
+        }
+    }
+
+    private static String boundedIdentity(String value, String field) {
+        value = Objects.requireNonNull(value, field).trim();
+        if (!value.matches("[A-Za-z0-9][A-Za-z0-9._:-]{0,127}")) {
+            throw new IllegalArgumentException(field + " must be a bounded release identity");
+        }
+        return value;
     }
 
     private static String valueType(ConfigurationValue value) {

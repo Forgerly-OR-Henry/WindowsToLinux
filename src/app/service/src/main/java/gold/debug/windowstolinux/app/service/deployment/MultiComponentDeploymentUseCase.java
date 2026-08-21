@@ -117,7 +117,7 @@ public final class MultiComponentDeploymentUseCase {
                     new DeploymentApproval(application.id(), source.archive().contentSha256(), server.id(),
                             input.limits().runAsRoot(), Instant.now()),
                     input.containerDaemonRiskAccepted(), input.experimentalAdapterRiskAccepted());
-            reviewed.add(new ReviewedComponentApplication(componentId, request, application));
+            reviewed.add(new ReviewedComponentApplication(componentId, request, application, component.dataPaths()));
         }
         return new ReviewedMultiComponentApplication(plan, reviewed, applicationHealth);
     }
@@ -222,14 +222,15 @@ public final class MultiComponentDeploymentUseCase {
                                 component.request().userAccessUrl()),
                         new CurrentRelease(component.application().id(),
                                 ReviewedReleaseIdentityResolver.from(component.request()), publishedAt),
-                        component.request().secretReferences())).toList();
+                        component.request().configuration(), component.request().secretReferences())).toList();
         Map<String, SuccessfulManagedDeployment> byApplication = new LinkedHashMap<>();
         deployments.forEach(deployment -> byApplication.put(deployment.application().id(), deployment));
         List<ManagedApplicationGraph.Component> components = review.components().stream().map(component ->
                 new ManagedApplicationGraph.Component(component.componentId(), component.application(),
                         byApplication.get(component.application().id()).runtimeConfiguration(),
                         review.plan().dependencies().get(component.componentId()),
-                        Optional.of(component.request().runtime()))).toList();
+                        Optional.of(component.request().runtime()),
+                        Optional.of(component.dataPaths()))).toList();
         graphs.recordSuccessfulApplication(new ManagedApplicationGraph(review.plan().applicationId(),
                 review.applicationHealth().componentId(), components), deployments);
     }

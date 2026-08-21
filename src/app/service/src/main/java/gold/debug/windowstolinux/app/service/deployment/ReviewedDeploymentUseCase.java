@@ -173,7 +173,7 @@ public final class ReviewedDeploymentUseCase {
                     applications.recordSuccessfulDeployment(application,
                             new ManagedApplicationRuntimeConfiguration(request.runtime().healthCheck(), request.userAccessUrl()),
                             new CurrentRelease(application.id(), result.publishedReleaseSha256().orElseThrow(), Instant.now()),
-                            request.secretReferences());
+                            request.configuration(), request.secretReferences());
                 } catch (SQLException failure) {
                     result = result.withNonFatalFailure(FailureDescriptor.create(
                             ApplicationServiceFailureType.DEPLOYMENT_RECORD_SAVE_FAILED,

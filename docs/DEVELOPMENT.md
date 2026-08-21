@@ -4,12 +4,12 @@
 
 - 项目名称：WindowsToLinux
 - 文档角色：产品边界、五期路线、跨期规则与完整开发流程的唯一总入口
-- 文档版本：`2.28.0-credential-namespace-deletion`
-- 文档状态：**SQLite v8 运行时持久化和固定 `WindowsToLinux/*` Credential Manager 删除能力已通过本地门禁；数据库归档创建、恢复/迁移、生产维护执行器及其产品入口仍标记 `RUNTIME-PENDING`**
+- 文档版本：`2.29.0-reviewed-backup-input-persistence`
+- 文档状态：**SQLite v9 已原子保存新成功部署的已审阅运行时、数据路径清单及发布使用的精确配置快照绑定，固定 `WindowsToLinux/*` Credential Manager 删除能力保持完成；数据库归档创建、恢复/迁移、生产维护执行器及其产品入口仍标记 `RUNTIME-PENDING`**
 - 更新日期：2026-08-22
 - 项目结构：[File.md](File.md)
 
-> 文档中的“支持”必须具有实现和验收证据。2026-08-10/12 已由产品入口在新装 Ubuntu 24.04 x86-64 上验证迁移前的一期 Maven/Spring Boot 以及二期 Gradle Spring Boot、普通 JAR、Node.js、Python、静态站点和 Dockerfile 容器链路，这些记录作为历史证据保留。2026-08-13 已由产品入口和当时的 helper v3 验证六种高级语言试验适配器、两组件整应用事务、统一 Spring Boot Reviewed 链路及 Podman Quadlet；证据只覆盖验收夹具、Ubuntu 24.04 和 x86-64，不升级为未声明的框架或其他发行版支持。2026-08-14 的 CentOS Stream 9 x86-64 目标已由当时的产品入口完成两次环境准备、两组件发布、故障候选整应用回滚、应用/数据库重启、生命周期与自启切换；SELinux 和防火墙态均在准备前后复核为未改变。该证据仅覆盖精确夹具，不外推到 Stream 10 或其他发行版。2026-08-21/22 已完成四期平台无关归档、秘密加密、数据库一致性、候选恢复、离线迁移、Windows 更新/卸载安全核心、SQLite v8 运行时持久化、Credential Manager 固定命名空间删除和桌面本地备份入口的静态实现；具体 deploy/Linux 双端操作、生产公钥与独立执行器、其余桌面平台接线和 helper v4 的全部真实产品入口证据仍待完成，不能由静态测试外推。
+> 文档中的“支持”必须具有实现和验收证据。2026-08-10/12 已由产品入口在新装 Ubuntu 24.04 x86-64 上验证迁移前的一期 Maven/Spring Boot 以及二期 Gradle Spring Boot、普通 JAR、Node.js、Python、静态站点和 Dockerfile 容器链路，这些记录作为历史证据保留。2026-08-13 已由产品入口和当时的 helper v3 验证六种高级语言试验适配器、两组件整应用事务、统一 Spring Boot Reviewed 链路及 Podman Quadlet；证据只覆盖验收夹具、Ubuntu 24.04 和 x86-64，不升级为未声明的框架或其他发行版支持。2026-08-14 的 CentOS Stream 9 x86-64 目标已由当时的产品入口完成两次环境准备、两组件发布、故障候选整应用回滚、应用/数据库重启、生命周期与自启切换；SELinux 和防火墙态均在准备前后复核为未改变。该证据仅覆盖精确夹具，不外推到 Stream 10 或其他发行版。2026-08-21/22 已完成四期平台无关归档、秘密加密、数据库一致性、候选恢复、离线迁移、Windows 更新/卸载安全核心、SQLite v9 审阅运行时/数据路径及发布配置绑定持久化、Credential Manager 固定命名空间删除和桌面本地备份入口的静态实现；具体 deploy/Linux 双端操作、生产公钥与独立执行器、其余桌面平台接线和 helper v4 的全部真实产品入口证据仍待完成，不能由静态测试外推。
 
 ## 1. 产品定位
 
@@ -27,9 +27,9 @@ WindowsToLinux 是面向个人和小型自托管场景的部署管理工具。�
 | 桌面/Web 业务 | Swing 已提供单组件与多组件独立页面，以及十二类项目的类型选择、静态分析、类型化计划审阅、已保存凭据提交、整应用结果、依赖安全生命周期和本地备份校验/候选准备；Web 业务未实现 | 桌面入口统一使用 Reviewed API；备份候选只在本地隔离提取且从未激活；试验适配器每次请求都需确认专用测试环境；Web 不可部署或管理应用 |
 | Linux 运行验证 | 迁移前 Ubuntu 24.04 x86-64 已实际验证环境准备、六类二期构建发布及代表性生命周期；helper v3 已验证六种高级语言、两组件整应用、统一 Spring Boot 与 Podman Quadlet；CentOS Stream 9 已由产品入口完成环境准备、发布、回滚和生命周期验收；当前源码使用 helper v4 | 历史证据仅适用于当时 helper v3、Ubuntu 24.04 与 CentOS Stream 9 的精确 x86-64 夹具；helper v4 和其他发行版实机测试为 `RUNTIME-PENDING` |
 | 三期支持分级 | 支持等级、精确目标验证范围、不可执行识别预览及 Go/Rust/.NET/Kotlin/PHP/Ruby 固定试验适配器已接入；历史 helper v3 不接受任意命令 | 六种语言的历史 v3 证据仍只称试验适配，不外推框架/发行版支持；helper v4 需重新通过产品入口验收 |
-| 三期混合项目与多组件 | 稳定组件清单、冲突/依赖环拦截、确定性依赖计划、整应用构建/快照/切换/健康/恢复事务、依赖安全生命周期及桌面产品入口已通过本地门禁和两组件实机验收；当前 SQLite v8 保留原 v7 成功图语义，并为新成功组件原子增加完整非秘密运行时 | Ubuntu 24.04 x86-64 历史验收覆盖当时的 SQLite v7 图重载与生命周期；v8 运行时定义持久化只有本地静态证据，共享数据库迁移和跨服务器恢复不在三期范围 |
+| 三期混合项目与多组件 | 稳定组件清单、冲突/依赖环拦截、确定性依赖计划、整应用构建/快照/切换/健康/恢复事务、依赖安全生命周期及桌面产品入口已通过本地门禁和两组件实机验收；当前 SQLite v9 保留原 v7 成功图语义，并为新成功组件原子增加完整非秘密运行时、已审阅数据路径及发布配置精确绑定 | Ubuntu 24.04 x86-64 历史验收覆盖当时的 SQLite v7 图重载与生命周期；v8/v9 新增持久化只有本地静态证据，共享数据库迁移和跨服务器恢复不在三期范围 |
 | 三期多模型协作 | 三个固定角色可独立绑定命名 Provider/模型；最小上下文、严格结构化输出、输入摘要证据和确定性优先冲突裁决已接入 SQLite v6、服务与桌面配置页 | AI 仅为建议；失败不跨 Provider 回退，冲突不得自动转成执行授权 |
-| 四期备份、恢复与迁移 | `shared/backup` 已实现版本化安全归档、独立秘密信封、数据库一致性策略、schema v3 类型化组件/依赖/两级健康、候选恢复和显式停写的离线迁移状态机；SQLite v8 为未来归档创建提供准确的已审阅运行时来源；Linux/SSHD 可暂存并回读精确成员；桌面可校验归档、准备隔离本地候选并交接认证秘密；[真实环境验收准备](development/PHASE-4-RUNTIME-ACCEPTANCE.md) 已列出可执行入口和配置 | 只证明本地静态契约和接缝；完整归档创建入口尚未接通，v7 旧图缺少运行时定义时必须明确拒绝；候选端口隔离、deploy 激活/切换、双端同步及 helper v4 实机证据仍为 `RUNTIME-PENDING` |
+| 四期备份、恢复与迁移 | `shared/backup` 已实现版本化安全归档、独立秘密信封、数据库一致性策略、schema v3 类型化组件/依赖/两级健康、候选恢复和显式停写的离线迁移状态机；SQLite v9 为未来归档创建提供准确的已审阅运行时、逻辑数据归属及发布配置来源；Linux/SSHD 可暂存并回读精确成员；桌面可校验归档、准备隔离本地候选并交接认证秘密；[真实环境验收准备](development/PHASE-4-RUNTIME-ACCEPTANCE.md) 已列出可执行入口和配置 | 只证明本地静态契约和接缝；完整归档创建入口尚未接通，旧图缺少运行时、数据路径或精确发布配置绑定时必须明确拒绝；远端物理数据映射、候选端口隔离、deploy 激活/切换、双端同步及 helper v4 实机证据仍为 `RUNTIME-PENDING` |
 | 四期桌面更新与卸载 | `app/windows` 已实现签名元数据、固定 Ed25519 信任策略、版本/架构/撤销验证、程序与 SQLite 成对回滚，以及无默认选择的受管卸载和精确残留模型；`app/secret` 已实现固定 `WindowsToLinux/*` 的合法键删除及残留报告；主进程准备与外部执行阶段由不同 API 封闭 | 未内置测试密钥；生产发布公钥、独立 jpackage 更新/卸载执行器、真实文件替换及 service/main/UI 接线仍未完成，现有删除原语尚未由外部 worker 调用，不可声称产品更新或卸载已可用 |
 
 ### 2.1 正式目标架构与当前实现边界
@@ -46,7 +46,7 @@ WindowsToLinux 是面向个人和小型自托管场景的部署管理工具。�
 2. 源码快照、可重复归档和安全校验归 `shared/source`；桌面本地入口、Web 上传工作区和 Git 仓库来源分别归 `app/windows`、`web/file` 和 `shared/git`。源码归档不与 `shared/backup` 的应用数据备份语义混用。
 3. `shared/linux` 只定义公共契约，`shared/linux-sshd` 承接 Apache SSHD 具体实现；`deploy`、`app/service` 和 `web/service` 只依赖 `shared/linux`，只有 `app/main`、`web/main` 负责选择并装配 `shared/linux-sshd`。
 
-`shared/source` 已承接源码快照、归档与安全校验，`shared/linux-sshd` 已承接 Apache SSHD、十二类项目的有界构建、发布/回滚协议、容器运行及 Ubuntu、Debian、CentOS Stream、Rocky Linux、AlmaLinux、Oracle Linux 的独立固定环境准备；Spring Boot 与六种高级语言试验适配器的既有产品证据来自唯一 Reviewed/helper v3 路径，当前 helper v4 在同一路径上新增固定数据库协议但尚未获得实机证据。发行版探测保留包架构、累计 CPU、AppArmor/SELinux、防火墙和容器事实，自动准备不关闭既有安全机制。`shared/config` 定义类型化普通配置快照和不透明秘密引用；桌面 SQLite v8 保存配置实例、秘密修订元数据、发布身份摘要、命名 AI Provider/角色外键、成功整应用图及新成功组件的完整非秘密已审阅运行时；v7 旧图迁移后运行时定义保持缺失，不从目标机压缩参数反推。原始秘密值仍只经 `app/secret` 短时处理。
+`shared/source` 已承接源码快照、归档与安全校验，`shared/linux-sshd` 已承接 Apache SSHD、十二类项目的有界构建、发布/回滚协议、容器运行及 Ubuntu、Debian、CentOS Stream、Rocky Linux、AlmaLinux、Oracle Linux 的独立固定环境准备；Spring Boot 与六种高级语言试验适配器的既有产品证据来自唯一 Reviewed/helper v3 路径，当前 helper v4 在同一路径上新增固定数据库协议但尚未获得实机证据。发行版探测保留包架构、累计 CPU、AppArmor/SELinux、防火墙和容器事实，自动准备不关闭既有安全机制。`shared/config` 定义类型化普通配置快照和不透明秘密引用；桌面 SQLite v9 保存配置实例、秘密修订元数据、发布身份摘要、命名 AI Provider/角色外键、成功整应用图、新成功组件的完整非秘密已审阅运行时和数据路径，并把经审阅成功发布绑定到实际使用的配置修订；旧图迁移后缺失定义和历史发布配置绑定保持缺失，不从目标机压缩参数、路径或“最新配置”反推。原始秘密值仍只经 `app/secret` 短时处理。
 
 开发 WindowsToLinux 本身使用开发机安装的系统 Maven 及其系统本地仓库，不由项目覆盖仓库位置，也不把 Maven Wrapper 作为本项目构建入口；同时使用 JDK 21、Node 和相应测试工具。产品处理的用户项目不得在 Windows 桌面主机或 Web 后端主机安装依赖、执行项目脚本或构建；用户项目构建只发生在目标 Linux，届时可按受控适配规则使用用户项目自带的 Wrapper。
 
@@ -211,6 +211,7 @@ Playwright 浏览器固定保存在 `src/web/frontend/.playwright-browsers`，�
 
 | 版本 | 日期 | 阶段 | 状态 | 说明 |
 | --- | --- | --- | --- | --- |
+| 2.29.0-reviewed-backup-input-persistence | 2026-08-22 | 三期至四期 | SQLite v9 备份输入持久化及 347 项全仓门禁通过；远端物理映射待完成 | 新成功整应用把分析阶段已有的 `ComponentDataPath` 与运行时原子保存，所有经审阅成功发布同时不可变绑定实际使用的配置快照。数据路径载荷有界并拒绝未知、截断、尾随、非法模式、非规范顺序和重复路径；显式空清单与 v8 缺失值不同，v7/v8 旧发布不伪造配置绑定。完整 28-POM JDK 21 离线门禁为 0 失败、0 错误、25 项真实环境条件跳过；不据此猜测远端物理路径或宣称完整归档已创建。 |
 | 2.28.0-credential-namespace-deletion | 2026-08-22 | 四期 | Credential Manager 固定命名空间删除及 338 项全仓门禁通过；独立执行器待接线 | `SecretStore` 支持精确删除；Credential Manager 只枚举 `WindowsToLinux/*`，删除合法应用键并返回精确残留，卸载请求拒绝任意子命名空间。测试只删除随机不存在目标，未清空真实命名空间；完整 28-POM 离线门禁为 0 失败、0 错误、25 项真实环境条件跳过。 |
 | 2.27.0-reviewed-runtime-persistence | 2026-08-22 | 三期至四期 | SQLite v8 运行时定义持久化聚焦门禁通过；归档创建入口待完成 | 新成功整应用原子保存 14 种类型化运行时的完整非秘密定义；严格二进制列拒绝未知、截断和尾随数据。v7 旧图保持缺失，生命周期继续使用既有拓扑，后续备份创建不得猜测缺失定义。 |
 | 2.26.0-phase4-runtime-readiness | 2026-08-22 | 四期 | helper v4 已有产品入口的执行配置和证据模板冻结；四期端到端仍待产品接线 | 新增真实环境验收准备文档，列出秘密环境变量、显式系统属性、可直接执行命令和逐次证据字段；数据库一致性归档、候选激活、双端迁移及桌面维护仍因缺少产品入口或生产材料保持 `RUNTIME-PENDING`。 |

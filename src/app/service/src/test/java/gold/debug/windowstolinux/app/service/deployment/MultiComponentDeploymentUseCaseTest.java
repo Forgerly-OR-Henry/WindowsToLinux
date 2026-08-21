@@ -21,6 +21,7 @@ import gold.debug.windowstolinux.shared.model.health.HealthCheck;
 import gold.debug.windowstolinux.shared.model.project.DeploymentProjectType;
 import gold.debug.windowstolinux.shared.model.project.DeploymentRuntimeSpecification;
 import gold.debug.windowstolinux.shared.model.project.component.ComponentIsolationSpecification;
+import gold.debug.windowstolinux.shared.model.project.component.ComponentDataPath;
 import gold.debug.windowstolinux.shared.model.managed.ManagedApplicationRuntimeConfiguration;
 import gold.debug.windowstolinux.shared.model.server.ServerIdentity;
 import gold.debug.windowstolinux.shared.model.security.CredentialStorageMode;
@@ -82,18 +83,24 @@ class MultiComponentDeploymentUseCaseTest {
                         componentReview.request().runtime().healthCheck(), Optional.empty());
                 successful.add(new SuccessfulManagedDeployment(componentReview.application(), runtime,
                         new CurrentRelease(componentReview.application().id(),
-                                Character.toString((char) ('e' + index)).repeat(64), Instant.now()), List.of()));
+                                Character.toString((char) ('e' + index)).repeat(64), Instant.now()),
+                        componentReview.request().configuration(), List.of()));
                 durableComponents.add(new ManagedApplicationGraph.Component(componentReview.componentId(),
                         componentReview.application(), runtime,
                         review.plan().dependencies().get(componentReview.componentId()),
-                        Optional.of(componentReview.request().runtime())));
+                        Optional.of(componentReview.request().runtime()),
+                        Optional.of(componentReview.dataPaths())));
             }
             persistence.managedApplicationGraphs().recordSuccessfulApplication(
                     new ManagedApplicationGraph("shop", "web", durableComponents), successful);
+            var storedGraph = persistence.managedApplicationGraphs().find("shop").orElseThrow();
             var restored = service.findManagedMultiComponentApplication("shop").orElseThrow();
             assertEquals(List.of("api", "web"), restored.plan().startOrder());
             assertEquals(List.of("shop-api", "shop-web"), restored.components().stream()
                     .map(value -> value.application().id()).toList());
+            assertEquals(List.of("api-data", "web-data"), storedGraph.components().stream()
+                    .flatMap(value -> value.reviewedDataPaths().orElseThrow().stream())
+                    .map(ComponentDataPath::path).toList());
 
             assertThrows(gold.debug.windowstolinux.app.service.failure.ApplicationServiceException.class,
                     () -> service.deployReviewedMultiComponent(review,
@@ -119,7 +126,9 @@ class MultiComponentDeploymentUseCaseTest {
         return new ComponentAnalysisRequest(id, root, DeploymentProjectType.NODE_SERVICE,
                 Optional.of(new DeploymentRuntimeSpecification.NodeService(22,
                         new HealthCheck.Tcp(port, 20, 1))),
-                List.of(root + "/dist"), Set.of(port), List.of("PORT"), List.of(), List.of(), dependencies,
+                List.of(root + "/dist"), Set.of(port), List.of("PORT"), List.of(),
+                List.of(new ComponentDataPath(root + "-data", ComponentDataPath.AccessMode.READ_WRITE,
+                        root + "-v1", true)), dependencies,
                 true, ComponentIsolationSpecification.managed());
     }
 

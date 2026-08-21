@@ -12,7 +12,7 @@ src/  # 项目源码与模块根目录
 │  │  ├─ DesktopPersistence.java  # 在版本化迁移的 SQLite schema 上组合聚焦桌面仓库
 │  │  ├─ entity/  # 桌面持久化记录包
 │  │  │  ├─ CurrentRelease.java  # 某个受管应用最后成功发布的发布身份
-│  │  │  ├─ ManagedApplicationGraph.java  # 一个已成功部署应用的持久且不含秘密的拓扑
+│  │  │  ├─ ManagedApplicationGraph.java  # 一个已成功部署应用的持久拓扑、运行时及已审阅数据路径
 │  │  │  ├─ OpaqueSecret.java  # 仅供数据库保存的加密材料；本模块绝不解密它
 │  │  │  ├─ StoredAiProfile.java  # 非秘密 OpenAI 兼容端点元数据；API 密钥保留在 app/secret 中
 │  │  │  ├─ StoredAiProviderProfile.java  # 命名的非秘密 AI 提供者元数据；仅持久化其不透明的凭据存储键
@@ -32,7 +32,7 @@ src/  # 项目源码与模块根目录
 │  │  │  ├─ repository/  # 按领域职责拆分的仓库实现包
 │  │  │  │  ├─ AiProfileRepository.java  # 保存不含凭据的 AI 提供者资料
 │  │  │  │  ├─ ApplicationSecretRepository.java  # 保存不可变应用秘密元数据与发布绑定，绝不保存秘密值
-│  │  │  │  ├─ ConfigurationSnapshotRepository.java  # 保存不可变的普通配置快照与条目
+│  │  │  │  ├─ ConfigurationSnapshotRepository.java  # 保存不可变的普通配置快照、条目及精确发布绑定
 │  │  │  │  ├─ DesktopPreferenceRepository.java  # 保存小型非秘密桌面偏好
 │  │  │  │  ├─ EncryptedSecretRepository.java  # 仅保存加密的不透明秘密载荷
 │  │  │  │  ├─ ManagedApplicationGraphRepository.java  # 将持久整应用拓扑与成功组件版本原子保存
@@ -40,6 +40,7 @@ src/  # 项目源码与模块根目录
 │  │  │  │  ├─ RepositoryTransactionExecutor.java  # 由聚焦仓库使用的共享事务原语
 │  │  │  │  └─ ServerProfileRepository.java  # 保存服务器信任身份与不含凭据的连接资料
 │  │  │  └─ serialization/  # SQLite 中复杂类型的严格版本化序列化
+│  │  │     ├─ ComponentPathPersistenceCodec.java  # 编解码成功部署时已审阅且不含秘密的数据路径清单
 │  │  │     └─ DeploymentRuntimePersistenceCodec.java  # 编解码成功部署时已审阅且不含秘密的运行时定义
 │  │  ├─ pom.xml  # 配置 SQLite 数据访问模块的依赖和构建
 │  ├─ main/  # 桌面应用入口与模块装配模块
