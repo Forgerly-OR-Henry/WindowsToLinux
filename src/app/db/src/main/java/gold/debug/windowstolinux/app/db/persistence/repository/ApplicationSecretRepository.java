@@ -10,7 +10,7 @@ import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.time.Instant;
-import java.util.LinkedHashSet;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
@@ -60,6 +60,19 @@ public final class ApplicationSecretRepository {
         }
     }
 
+    /** Finds the exact secret-revision set used by one release, including an explicit empty set. / 查找一个发布实际使用的精确秘密修订集合，包括显式空集合。 */
+    public Optional<List<SecretReference>> findRelease(String applicationId, String releaseIdentity)
+            throws SQLException {
+        applicationId = identity(applicationId, "applicationId");
+        releaseIdentity = identity(releaseIdentity, "releaseIdentity");
+        try (Connection connection = connections.open()) {
+            if (!bindingExists(connection, applicationId, releaseIdentity)) {
+                return Optional.empty();
+            }
+            return Optional.of(findReleaseReferences(connection, applicationId, releaseIdentity));
+        }
+    }
+
     /** Binds one exact secret-revision set to a release. / 将一个精确秘密修订集合绑定到发布。 */
     public void bindRelease(String applicationId, String releaseIdentity, List<SecretReference> references) throws SQLException {
         applicationId = identity(applicationId, "applicationId");
@@ -83,7 +96,7 @@ public final class ApplicationSecretRepository {
             }
         }
         boolean exists = bindingExists(connection, application, release);
-        Set<SecretReference> stored = findReleaseReferences(connection, application, release);
+        Set<SecretReference> stored = Set.copyOf(findReleaseReferences(connection, application, release));
         if (exists) {
             if (!stored.equals(expected)) {
                 throw new SQLException("application release secret references are immutable");
@@ -152,7 +165,7 @@ public final class ApplicationSecretRepository {
         }
     }
 
-    private static Set<SecretReference> findReleaseReferences(Connection connection, String application, String release)
+    private static List<SecretReference> findReleaseReferences(Connection connection, String application, String release)
             throws SQLException {
         try (PreparedStatement statement = connection.prepareStatement("""
                 SELECT secret_identifier, secret_revision FROM application_release_secret_reference
@@ -161,12 +174,12 @@ public final class ApplicationSecretRepository {
             statement.setString(1, application);
             statement.setString(2, release);
             try (ResultSet result = statement.executeQuery()) {
-                Set<SecretReference> references = new LinkedHashSet<>();
+                List<SecretReference> references = new ArrayList<>();
                 while (result.next()) {
                     references.add(new SecretReference(result.getString("secret_identifier"),
                             result.getLong("secret_revision")));
                 }
-                return Set.copyOf(references);
+                return List.copyOf(references);
             }
         }
     }

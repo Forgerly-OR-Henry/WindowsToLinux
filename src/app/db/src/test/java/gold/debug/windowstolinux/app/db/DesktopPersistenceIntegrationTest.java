@@ -458,12 +458,20 @@ class DesktopPersistenceIntegrationTest {
             database.applicationSecrets().saveRevision(new StoredApplicationSecretRevision(rotatedPassword,
                     "application-secret/database-password/2", CredentialStorageMode.MASTER_PASSWORD,
                     Instant.parse("2026-08-12T00:00:01Z")));
+            assertTrue(database.applicationSecrets().findRelease("demo", "release-a").isEmpty());
             database.applicationSecrets().bindRelease("demo", "release-a", java.util.List.of(databasePassword));
+            database.applicationSecrets().bindRelease("demo", "release-empty", List.of());
 
             assertEquals(firstSecret, database.applicationSecrets().findRevision(databasePassword).orElseThrow());
+            assertEquals(List.of(databasePassword), database.applicationSecrets()
+                    .findRelease("demo", "release-a").orElseThrow());
+            assertEquals(List.of(), database.applicationSecrets()
+                    .findRelease("demo", "release-empty").orElseThrow());
             assertTrue(database.applicationSecrets().isReferenced(databasePassword));
             assertThrows(java.sql.SQLException.class, () -> database.applicationSecrets().bindRelease(
                     "demo", "release-a", java.util.List.of(rotatedPassword)));
+            assertEquals(List.of(databasePassword), database.applicationSecrets()
+                    .findRelease("demo", "release-a").orElseThrow());
         }
     }
 
@@ -486,6 +494,8 @@ class DesktopPersistenceIntegrationTest {
             assertTrue(database.managedApplications().findRelease(application.id()).isEmpty());
             assertTrue(database.configurations().find(application.id(), 1).isEmpty());
             assertTrue(database.configurations().findRelease(application.id(), release.releaseSha256()).isEmpty());
+            assertTrue(database.applicationSecrets()
+                    .findRelease(application.id(), release.releaseSha256()).isEmpty());
             assertTrue(!database.applicationSecrets().isReferenced(missing));
         }
     }

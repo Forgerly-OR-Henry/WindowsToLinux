@@ -31,7 +31,7 @@ src/  # 项目源码与模块根目录
 │  │  │  │  └─ DesktopConnectionFactory.java  # 创建启用外键约束与有界忙等待的 SQLite 连接
 │  │  │  ├─ repository/  # 按领域职责拆分的仓库实现包
 │  │  │  │  ├─ AiProfileRepository.java  # 保存不含凭据的 AI 提供者资料
-│  │  │  │  ├─ ApplicationSecretRepository.java  # 保存不可变应用秘密元数据与发布绑定，绝不保存秘密值
+│  │  │  │  ├─ ApplicationSecretRepository.java  # 保存并按发布读取不可变秘密元数据绑定，绝不保存秘密值
 │  │  │  │  ├─ ConfigurationSnapshotRepository.java  # 保存不可变的普通配置快照、条目及精确发布绑定
 │  │  │  │  ├─ DesktopPreferenceRepository.java  # 保存小型非秘密桌面偏好
 │  │  │  │  ├─ EncryptedSecretRepository.java  # 仅保存加密的不透明秘密载荷

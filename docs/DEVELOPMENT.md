@@ -46,7 +46,7 @@ WindowsToLinux 是面向个人和小型自托管场景的部署管理工具。�
 2. 源码快照、可重复归档和安全校验归 `shared/source`；桌面本地入口、Web 上传工作区和 Git 仓库来源分别归 `app/windows`、`web/file` 和 `shared/git`。源码归档不与 `shared/backup` 的应用数据备份语义混用。
 3. `shared/linux` 只定义公共契约，`shared/linux-sshd` 承接 Apache SSHD 具体实现；`deploy`、`app/service` 和 `web/service` 只依赖 `shared/linux`，只有 `app/main`、`web/main` 负责选择并装配 `shared/linux-sshd`。
 
-`shared/source` 已承接源码快照、归档与安全校验，`shared/linux-sshd` 已承接 Apache SSHD、十二类项目的有界构建、发布/回滚协议、容器运行及 Ubuntu、Debian、CentOS Stream、Rocky Linux、AlmaLinux、Oracle Linux 的独立固定环境准备；Spring Boot 与六种高级语言试验适配器的既有产品证据来自唯一 Reviewed/helper v3 路径，当前 helper v4 在同一路径上新增固定数据库协议但尚未获得实机证据。发行版探测保留包架构、累计 CPU、AppArmor/SELinux、防火墙和容器事实，自动准备不关闭既有安全机制。`shared/config` 定义类型化普通配置快照和不透明秘密引用；桌面 SQLite v9 保存配置实例、秘密修订元数据、发布身份摘要、命名 AI Provider/角色外键、成功整应用图、新成功组件的完整非秘密已审阅运行时和数据路径，并把经审阅成功发布绑定到实际使用的配置修订；旧图迁移后缺失定义和历史发布配置绑定保持缺失，不从目标机压缩参数、路径或“最新配置”反推。原始秘密值仍只经 `app/secret` 短时处理。
+`shared/source` 已承接源码快照、归档与安全校验，`shared/linux-sshd` 已承接 Apache SSHD、十二类项目的有界构建、发布/回滚协议、容器运行及 Ubuntu、Debian、CentOS Stream、Rocky Linux、AlmaLinux、Oracle Linux 的独立固定环境准备；Spring Boot 与六种高级语言试验适配器的既有产品证据来自唯一 Reviewed/helper v3 路径，当前 helper v4 在同一路径上新增固定数据库协议但尚未获得实机证据。发行版探测保留包架构、累计 CPU、AppArmor/SELinux、防火墙和容器事实，自动准备不关闭既有安全机制。`shared/config` 定义类型化普通配置快照和不透明秘密引用；桌面 SQLite v9 保存配置实例、秘密修订元数据、发布身份摘要、命名 AI Provider/角色外键、成功整应用图、新成功组件的完整非秘密已审阅运行时和数据路径，并把经审阅成功发布绑定到实际使用的配置修订；秘密绑定可按发布读取并区分显式空集合与历史缺失。旧图迁移后缺失定义和历史发布配置绑定保持缺失，不从目标机压缩参数、路径或“最新配置”反推。原始秘密值仍只经 `app/secret` 短时处理。
 
 开发 WindowsToLinux 本身使用开发机安装的系统 Maven 及其系统本地仓库，不由项目覆盖仓库位置，也不把 Maven Wrapper 作为本项目构建入口；同时使用 JDK 21、Node 和相应测试工具。产品处理的用户项目不得在 Windows 桌面主机或 Web 后端主机安装依赖、执行项目脚本或构建；用户项目构建只发生在目标 Linux，届时可按受控适配规则使用用户项目自带的 Wrapper。
 
@@ -211,7 +211,7 @@ Playwright 浏览器固定保存在 `src/web/frontend/.playwright-browsers`，�
 
 | 版本 | 日期 | 阶段 | 状态 | 说明 |
 | --- | --- | --- | --- | --- |
-| 2.29.0-reviewed-backup-input-persistence | 2026-08-22 | 三期至四期 | SQLite v9 备份输入持久化及 347 项全仓门禁通过；远端物理映射待完成 | 新成功整应用把分析阶段已有的 `ComponentDataPath` 与运行时原子保存，所有经审阅成功发布同时不可变绑定实际使用的配置快照。数据路径载荷有界并拒绝未知、截断、尾随、非法模式、非规范顺序和重复路径；显式空清单与 v8 缺失值不同，v7/v8 旧发布不伪造配置绑定。完整 28-POM JDK 21 离线门禁为 0 失败、0 错误、25 项真实环境条件跳过；不据此猜测远端物理路径或宣称完整归档已创建。 |
+| 2.29.0-reviewed-backup-input-persistence | 2026-08-22 | 三期至四期 | SQLite v9 备份输入持久化及 347 项全仓门禁通过；远端物理映射待完成 | 新成功整应用把分析阶段已有的 `ComponentDataPath` 与运行时原子保存，所有经审阅成功发布同时不可变绑定实际使用的配置快照；秘密绑定可按发布精确读取，并区分显式无秘密与历史未绑定。数据路径载荷有界并拒绝未知、截断、尾随、非法模式、非规范顺序和重复路径；显式空清单与 v8 缺失值不同，v7/v8 旧发布不伪造配置绑定。完整 28-POM JDK 21 离线门禁为 0 失败、0 错误、25 项真实环境条件跳过；不据此猜测远端物理路径或宣称完整归档已创建。 |
 | 2.28.0-credential-namespace-deletion | 2026-08-22 | 四期 | Credential Manager 固定命名空间删除及 338 项全仓门禁通过；独立执行器待接线 | `SecretStore` 支持精确删除；Credential Manager 只枚举 `WindowsToLinux/*`，删除合法应用键并返回精确残留，卸载请求拒绝任意子命名空间。测试只删除随机不存在目标，未清空真实命名空间；完整 28-POM 离线门禁为 0 失败、0 错误、25 项真实环境条件跳过。 |
 | 2.27.0-reviewed-runtime-persistence | 2026-08-22 | 三期至四期 | SQLite v8 运行时定义持久化聚焦门禁通过；归档创建入口待完成 | 新成功整应用原子保存 14 种类型化运行时的完整非秘密定义；严格二进制列拒绝未知、截断和尾随数据。v7 旧图保持缺失，生命周期继续使用既有拓扑，后续备份创建不得猜测缺失定义。 |
 | 2.26.0-phase4-runtime-readiness | 2026-08-22 | 四期 | helper v4 已有产品入口的执行配置和证据模板冻结；四期端到端仍待产品接线 | 新增真实环境验收准备文档，列出秘密环境变量、显式系统属性、可直接执行命令和逐次证据字段；数据库一致性归档、候选激活、双端迁移及桌面维护仍因缺少产品入口或生产材料保持 `RUNTIME-PENDING`。 |
