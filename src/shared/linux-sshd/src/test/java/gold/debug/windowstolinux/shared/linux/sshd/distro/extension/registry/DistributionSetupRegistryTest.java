@@ -64,7 +64,7 @@ class DistributionSetupRegistryTest {
         assertTrue(script.contains("/usr/bin/install -o root -g root -m 440 \"$tmp\" '/etc/sudoers.d/windowstolinux-managed'"));
         assertTrue(script.contains("/usr/bin/install -o root -g root -m 755 \"$helper_tmp\" '/usr/local/lib/windowstolinux/managed-helper'"));
         assertTrue(script.contains("helper_probe=\"$(\"/usr/bin/sudo\" -n '/usr/local/lib/windowstolinux/managed-helper' probe)\""));
-        assertTrue(script.contains("grep -qx 'PROTOCOL=3'"));
+        assertTrue(script.contains("grep -qx 'PROTOCOL=" + ManagedHelperProtocol.VERSION + "'"));
         assertFalse(script.contains("sudo -S"));
         assertFalse(script.contains("/var/lib/windowstolinux/work"));
     }
@@ -120,17 +120,17 @@ class DistributionSetupRegistryTest {
     @Test
     void preservesEverySupportedScriptAndUnsupportedRejectionSnapshot() throws Exception {
         List<ScriptSnapshot> scripts = List.of(
-                new ScriptSnapshot(LinuxDistroType.UBUNTU, "22.04", "amd64", "e4747ca6e912f9e8c819eba6d35d1f10e4b5ef0d3beee847992e6773879badb8"),
-                new ScriptSnapshot(LinuxDistroType.UBUNTU, "24.04", "amd64", "7ef14cdfebb6b3d2ce477eece0917ceb469ef4af4f12414508acbb729e3b2a62"),
-                new ScriptSnapshot(LinuxDistroType.DEBIAN, "13", "amd64", "9687745e197db30fb294a115795b72a08956b225d5677534f7ce6387be2be7b0"),
-                new ScriptSnapshot(LinuxDistroType.CENTOS_STREAM, "9", "x86_64", "6e03f04efba3146b7478bb5b0fb00fc521bd3bf957c29208a8c30cf06dcda9e7"),
-                new ScriptSnapshot(LinuxDistroType.CENTOS_STREAM, "10", "x86_64", "ec2c22a4ec0107633fa970a8794cec43859e41828be0605d88e8ce1e329770f7"),
-                new ScriptSnapshot(LinuxDistroType.ROCKY_LINUX, "9.8", "x86_64", "94431740d5a997fc64b549b39ccf2370237ff39063872f1ae3e240d84b67c680"),
-                new ScriptSnapshot(LinuxDistroType.ROCKY_LINUX, "10.2", "x86_64", "e82f674da0d1227d2678f9cbfe84ee3ee61494067ed33cf44e64f5fc98cbf6a2"),
-                new ScriptSnapshot(LinuxDistroType.ALMALINUX, "9.8", "x86_64", "7cea8dd76b68931de203c774eb0681fe1774550c80c914a7e417c4adef90c295"),
-                new ScriptSnapshot(LinuxDistroType.ALMALINUX, "10.2", "x86_64", "aa0467f5e31b523c7fb52302ebabfcca0012ff4c21490cff965c1b41b1d5d28b"),
-                new ScriptSnapshot(LinuxDistroType.ORACLE_LINUX, "9.7", "x86_64", "e454609410ea850953a0fab2ef7c7e11e0d98f3031a536b9ddeb10b009523931"),
-                new ScriptSnapshot(LinuxDistroType.ORACLE_LINUX, "10.2", "x86_64", "60a66e18b1e960a2b99478b46b95f79cfd452b514a65015f4021ed6424dccae5"));
+                new ScriptSnapshot(LinuxDistroType.UBUNTU, "22.04", "amd64", "a10bc5e66ec83cbf6ebcd9a728084ca1358bae660ee89d5bacadaa8bca7f415f"),
+                new ScriptSnapshot(LinuxDistroType.UBUNTU, "24.04", "amd64", "0ac2fbc796427edbe5215dadb71e937dec6522c073c8586605aff4d156df37ff"),
+                new ScriptSnapshot(LinuxDistroType.DEBIAN, "13", "amd64", "c80e495c4e7701a5110c6c07caae3be21d54ac5272affd1c9f7b93628489537c"),
+                new ScriptSnapshot(LinuxDistroType.CENTOS_STREAM, "9", "x86_64", "292e0f935af318d4684bf9e78c53a9a2764e3d60144c0c3a25069a81503b4fa5"),
+                new ScriptSnapshot(LinuxDistroType.CENTOS_STREAM, "10", "x86_64", "1203a38debabd23533fe360797009313887a517c10fdfa131f3f0fdeaf3cdee9"),
+                new ScriptSnapshot(LinuxDistroType.ROCKY_LINUX, "9.8", "x86_64", "087499acb5708f309417a8629c262943f5bb99c937a26a1d0ae311539ea32c26"),
+                new ScriptSnapshot(LinuxDistroType.ROCKY_LINUX, "10.2", "x86_64", "53d2570bda7ca2d5a8b422227654fc6c11c7373b1df5be4c724fa9c09672c7dc"),
+                new ScriptSnapshot(LinuxDistroType.ALMALINUX, "9.8", "x86_64", "3b05af8d401ae8a7c72c1f35dfecfaa0d86edee31f587062d4c545caa2d19820"),
+                new ScriptSnapshot(LinuxDistroType.ALMALINUX, "10.2", "x86_64", "bb6365b25297b9ed5bae02f75442a9e923c191c16e81cf30dc4c5ca8360a5664"),
+                new ScriptSnapshot(LinuxDistroType.ORACLE_LINUX, "9.7", "x86_64", "31eebfcd09bd69c1a62793e57e2531588559e73584329581be6234bf73d92296"),
+                new ScriptSnapshot(LinuxDistroType.ORACLE_LINUX, "10.2", "x86_64", "e7b4dc8a970753b66dbecf596a7016e4df2e652889e0852b714636bc6cf35906"));
         List<String> changed = new ArrayList<>();
         for (ScriptSnapshot snapshot : scripts) {
             String actual = sha256(renderSetup(
