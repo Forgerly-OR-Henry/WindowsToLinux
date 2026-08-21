@@ -2,8 +2,8 @@
 
 ## 文档信息
 
-- 文档版本：`3.32.0-desktop-update-uninstall-core`
-- 文档状态：**28-POM 模块边界保持不变；四期平台无关备份/恢复/迁移核心及 Windows 签名更新与卸载安全核心已落地；具体 deploy/Linux 端口、生产发布公钥、独立 jpackage 更新器、Credential Manager 删除及桌面用例仍在开发，helper v4 尚无新增产品入口实机证据，相关路径继续标记 `RUNTIME-PENDING`**
+- 文档版本：`3.33.0-typed-restore-staging`
+- 文档状态：**28-POM 模块边界保持不变；备份 schema v3 已封闭保存类型化组件运行时、依赖和两级健康门，Linux/SSHD 已接通摘要候选下的精确成员 SFTP 暂存与独立回读；候选端口隔离、解密秘密交接、deploy 激活/切换、桌面维护平台接线及产品入口实机证据仍在开发并标记 `RUNTIME-PENDING`**
 - 已确认范围：`shared` 共用模块、`app` Windows 桌面应用模块、`web` Web 应用模块
 - 已确认能力边界：受管应用生命周期复用既有模块，不新增独立 Maven 模块
 - 更新日期：2026-08-22
@@ -179,7 +179,8 @@ WindowsToLinux/
    │  │  ├─ distro/           发行版事实与环境准备契约
    │  │  ├─ error/            全部受控 Linux 操作的公共失败类型
    │  │  ├─ protocol/         类型化高权限操作及结果契约
-   │  │  │  └─ database/      数据库固定远程操作、制品流与证据契约
+   │  │  │  ├─ database/      数据库固定远程操作、制品流与证据契约
+   │  │  │  └─ restore/       候选恢复成员暂存、完整性回读与隔离证据契约
    │  │  ├─ runtime/          systemd、Docker、Podman 和静态服务生命周期契约
    │  │  ├─ session/          组合各项类型化能力的远程会话契约
    │  │  └─ transfer/         受控传输请求与结果契约
@@ -859,7 +860,7 @@ Web 端所有密码哈希、加密、解密、主密钥和服务端凭据操作�
 11. `VirtualMachineError`、`LinkageError` 等致命 JVM 错误只做尽力记录后退出，不承诺继续运行。AI 失败只生成 `ai.*` 描述并保留确定性分析结果，不参与错误分类授权、部署重试、回滚决策或执行授权。
 12. `FailureContractArchitectureTest` 必须检查错误码格式和唯一性、模块归属、类型命名、中英文消息键一致、自定义异常实现 `FailureCarrier`、用户边界不使用原始异常消息，以及未说明的静默捕获；测试在 `target/failure-catalog.md` 生成不跟踪的失败目录。
 13. 故障注入至少覆盖数据库锁定/损坏/回滚失败、目录不可写、归档中断/清理失败、Git 工具缺失/超时、SSH 瞬时断线/认证失败、健康失败回滚、回滚不可验证、AI 不可用、报告截断/轮转/脱敏、启动失败和未知 UI 异常。局部测试只证明本地错误语义；真实 Linux 修改路径仍必须通过现有产品入口验收。
-14. `shared/backup` 已使用模块本地 `BackupFailureType` 和最小共用失败契约实现归档核心、数据库一致性适配契约、候选恢复及离线迁移状态机；schema v2 显式保存源发行版及版本，不把架构和运行时相同误判为二进制平台完全兼容。Jackson 只负责严格、确定性的 `manifest.json` 编解码，Commons Compress 只负责可检查 Unix 类型和 ZIP 扩展字段的归档边界。数据库适配器只决定一致性策略并通过模块内 `contract.spi.DatabaseOperationPort` 获取证据；跨模块远程数据库能力只通过 `linux.protocol.database.RemoteDatabasePort` 暴露，固定远程命令、流式制品传输和 helper v4 实现归 `linux-sshd.backup`，`linux-sshd` 不得反向依赖 `backup`。候选恢复及迁移平台端口只接收 `contract.spi` 自持窄请求，不得从契约层反向依赖执行或恢复编排包；具体文件暂存、停写、健康和提交继续由 `deploy`/Linux 实现。离线迁移成功终态只能是等待人工外部流量切换，必须保留源端；失败则分别证明目标候选清理和源端恢复，任一无法验证即进入人工恢复。两项归档依赖不得进入密码处理、远程执行或平台目录选择职责。Web Java 模块仍无生产实现，不创建空异常、空包或转发壳。
+14. `shared/backup` 已使用模块本地 `BackupFailureType` 和最小共用失败契约实现归档核心、数据库一致性适配契约、候选恢复及离线迁移状态机；schema v3 除源发行版及版本外，还封闭保存 14 种已审阅组件运行时、依赖顺序、定义成员路径、组件健康及整应用健康门，不把说明文字、路径或未知字段转换为命令。Jackson 只负责严格、确定性的 `manifest.json` 编解码，Commons Compress 只负责可检查 Unix 类型和 ZIP 扩展字段的归档边界。数据库适配器只决定一致性策略并通过模块内 `contract.spi.DatabaseOperationPort` 获取证据；跨模块远程数据库能力只通过 `linux.protocol.database.RemoteDatabasePort` 暴露，固定远程命令、流式制品传输和 helper v4 实现归 `linux-sshd.backup`，`linux-sshd` 不得反向依赖 `backup`。候选文件由 `backup.extension.adapter.LinuxRestoreCandidateAdapter` 单向映射到 `deploy.contract.spi.RestoreDeploymentPort` 与 `linux.protocol.restore.RemoteRestoreFilePort`；SSHD 只在摘要派生候选下 SFTP 上传并独立回读精确成员，不寻址当前发布。候选端口隔离、解密秘密交接和激活/切换仍须由 deploy 的具体实现明确解决，不得用当前服务端口或加密秘密文件强行启动。离线迁移成功终态只能是等待人工外部流量切换，必须保留源端；失败则分别证明目标候选清理和源端恢复，任一无法验证即进入人工恢复。两项归档依赖不得进入密码处理、远程执行或平台目录选择职责。Web Java 模块仍无生产实现，不创建空异常、空包或转发壳。
 15. `app/windows.update` 只在软件包大小/SHA-256、Ed25519 固定信任根、签名有效期、撤销状态、版本策略和架构全部通过后返回验证证据；等版本和未批准降级必须拒绝，紧急回退同时需要签名清单标记与用户批准。更新事务必须先停收任务并成对备份程序/SQLite，主进程退出且独立更新器身份验证后才替换，任何替换、迁移或启动失败都同时恢复旧程序和迁移前数据库。`app/windows.uninstall` 不设置数据决定默认值；只有 jpackage、安装/数据标记和专用凭据命名空间均按所选删除范围验证后才执行，并报告精确残留。源码、独立备份和远端应用不进入卸载端口能力。
 
 ## 4. 叶子模块约定
@@ -1234,6 +1235,7 @@ linux-sshd 通过 linux 契约采集服务器已有环境
 
 | 版本 | 日期 | 说明 |
 | --- | --- | --- |
+| 3.33.0-typed-restore-staging | 2026-08-22 | 将备份清单升级为 schema v3，以封闭类型保存全部 14 种已审阅运行时、组件依赖、归档定义引用、组件健康和整应用健康门，并要求引用与精确归档成员一致；新增 `backup → deploy → linux → linux-sshd` 单向候选暂存链，SSHD 在摘要派生隔离目录上传后通过 SFTP 独立回读每个成员，失败独立尝试 deploy 恢复和候选清理。当前只完成文件暂存与接缝，候选无冲突端口、解密秘密交接、实际激活/切换及真实主机证据继续为 `RUNTIME-PENDING`。 |
 | 3.32.0-desktop-update-uninstall-core | 2026-08-22 | 在 `app/windows.update` 实现严格版本、架构、有效期、撤销及 Ed25519 固定信任策略验证，并以独立更新器交接、程序/SQLite 成对备份、迁移、健康和成对回滚状态机封闭更新；在 `app/windows.uninstall` 实现无默认选择、jpackage/标记/凭据命名空间预检、保留或删除数据分支和精确残留结果。当前为平台安全核心，未嵌入任何测试公钥；生产发布公钥、独立 jpackage 更新器、Credential Manager 和桌面入口仍待接线。 |
 | 3.31.0-offline-migration-core | 2026-08-22 | 新增离线迁移窄请求、平台证据端口和故障关闭状态机：目标预检与两副本空间先于写入，初始同步后必须获得明确停写窗口批准并验证无活跃写入，再执行摘要绑定的最终同步及目标候选两级健康。成功只返回“等待人工外部流量切换”，不调用切流且始终保留源端；失败区分纯前置拒绝、已清理目标修改、已恢复源端和人工恢复。当前只证明平台无关编排，具体双端远程端口与产品入口仍为 `RUNTIME-PENDING`。 |
 | 3.30.0-candidate-restore-core | 2026-08-22 | 将备份清单升级为 schema v2 并显式记录源发行版/版本；新增受控候选请求、目标事实、源码重建与二进制兼容策略、前置检查、隔离文件/数据库恢复、组件与整应用健康、提交和失败恢复终态。数据库候选即使在恢复调用中途失败也执行幂等清理，清理或现有版本复核不完整时固定进入 `MANUAL_RECOVERY_REQUIRED`。平台端口使用 `contract.spi` 自持窄请求以保持包依赖无环；当前只完成平台无关核心和 helper 候选数据库清理，具体 deploy/Linux 文件切换、桌面接线及真实恢复仍为 `RUNTIME-PENDING`。 |

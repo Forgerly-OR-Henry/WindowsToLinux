@@ -37,6 +37,9 @@ import gold.debug.windowstolinux.shared.linux.sshd.runtime.ContainerRuntimeExecu
 import gold.debug.windowstolinux.shared.linux.sshd.runtime.ManagedRuntimeExecutor;
 import gold.debug.windowstolinux.shared.linux.sshd.runtime.ManagedRuntimeKindProbe;
 import gold.debug.windowstolinux.shared.linux.sshd.execution.transfer.SshdSourceTransport;
+import gold.debug.windowstolinux.shared.linux.sshd.execution.transfer.SshdRestoreTransport;
+import gold.debug.windowstolinux.shared.linux.protocol.restore.RemoteRestoreStagingEvidence;
+import gold.debug.windowstolinux.shared.linux.protocol.restore.RemoteRestoreStagingRequest;
 import gold.debug.windowstolinux.shared.linux.transfer.RemoteWorkspace;
 import gold.debug.windowstolinux.shared.linux.transfer.SourceUploadResult;
 import gold.debug.windowstolinux.shared.model.archive.SourceArchiveDescriptor;
@@ -72,6 +75,7 @@ public final class SshdLinuxRemoteSession implements DeploymentRemoteSession {
     private final SshdPlatformCapabilityCollector deploymentCapabilities;
     private final ManagedEnvironmentExecutor environment;
     private final SshdSourceTransport transfer;
+    private final SshdRestoreTransport restoreTransfer;
     private final DeploymentBuildExecutor deploymentBuild;
     private final CandidateWorkspaceExecutor candidates;
     private final ManagedRuntimeProtocolExecutor runtimes;
@@ -104,6 +108,7 @@ public final class SshdLinuxRemoteSession implements DeploymentRemoteSession {
         this.containerProtocol = new ContainerReleaseProtocolExecutor(commands);
         this.deploymentInputs = new DeploymentInputProtocolExecutor(commands);
         this.transfer = new SshdSourceTransport(session, commands, candidates);
+        this.restoreTransfer = new SshdRestoreTransport(session, candidates);
         this.deploymentBuild = new DeploymentBuildExecutor(commands, endpoint.username());
         this.systemdHealth = new SystemdHealthProbe(commands);
         this.systemdObservation = new SystemdOwnershipObserver(commands, endpoint.username());
@@ -163,6 +168,19 @@ public final class SshdLinuxRemoteSession implements DeploymentRemoteSession {
     @Override
     public RemoteStepResult cleanupCandidate(RemoteWorkspace workspace) throws LinuxOperationException {
         return candidates.cleanup(workspace);
+    }
+
+    /** Performs the {@code stageRestoreFiles} operation. / 执行 {@code stageRestoreFiles} 操作。 */
+    @Override
+    public RemoteRestoreStagingEvidence stageRestoreFiles(RemoteRestoreStagingRequest request)
+            throws LinuxOperationException {
+        return restoreTransfer.stageRestoreFiles(request);
+    }
+
+    /** Performs the {@code discardRestoreFiles} operation. / 执行 {@code discardRestoreFiles} 操作。 */
+    @Override
+    public RemoteStepResult discardRestoreFiles(RemoteRestoreStagingRequest request) throws LinuxOperationException {
+        return restoreTransfer.discardRestoreFiles(request);
     }
 
     /** Performs the {@code checkHealth} operation. / 执行 {@code checkHealth} 操作。 */

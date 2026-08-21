@@ -5,6 +5,8 @@ import java.time.format.DateTimeParseException;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
+import java.util.HashMap;
 import java.util.Objects;
 import java.util.Set;
 
@@ -21,7 +23,7 @@ public record BackupManifest(
     /** Current stable archive format identifier. / 当前稳定归档格式标识。 */
     public static final String CURRENT_FORMAT = "windowstolinux-backup";
     /** Current manifest schema version. / 当前清单模式版本。 */
-    public static final String CURRENT_SCHEMA_VERSION = "2";
+    public static final String CURRENT_SCHEMA_VERSION = "3";
 
     /** Validates schema compatibility and complete member uniqueness. / 校验模式兼容性与完整成员唯一性。 */
     public BackupManifest {
@@ -51,6 +53,7 @@ public record BackupManifest(
                 throw new IllegalArgumentException("backup member paths must be case-insensitively unique");
             }
         }
+        validateInventoryMembers(inventory, members);
     }
 
     /** Creates an unsigned current-format manifest. / 创建当前格式的未签名清单。 */
@@ -64,5 +67,22 @@ public record BackupManifest(
     /** Returns an equivalent manifest with new provenance. / 返回带新来源信息的等价清单。 */
     public BackupManifest withProvenance(BackupProvenance newProvenance) {
         return new BackupManifest(format, schemaVersion, createdAtUtc, applicationId, inventory, members, newProvenance);
+    }
+
+    private static void validateInventoryMembers(BackupInventory inventory, List<BackupMember> members) {
+        Map<String, BackupMemberKind> indexed = new HashMap<>();
+        members.forEach(member -> indexed.put(member.path(), member.kind()));
+        requireMembers(indexed, inventory.releaseManifests(), BackupMemberKind.RELEASE);
+        requireMembers(indexed, inventory.configurationSnapshots(), BackupMemberKind.CONFIGURATION);
+        requireMembers(indexed, inventory.serviceDefinitions(), BackupMemberKind.RUNTIME);
+    }
+
+    private static void requireMembers(
+            Map<String, BackupMemberKind> indexed, List<String> requiredPaths, BackupMemberKind requiredKind) {
+        for (String path : requiredPaths) {
+            if (indexed.get(path) != requiredKind) {
+                throw new IllegalArgumentException("inventory definition is missing or has the wrong member kind: " + path);
+            }
+        }
     }
 }

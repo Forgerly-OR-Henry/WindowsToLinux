@@ -3,9 +3,12 @@ package gold.debug.windowstolinux.shared.backup.contract.validation;
 import gold.debug.windowstolinux.shared.backup.format.BackupArchiveContent;
 import gold.debug.windowstolinux.shared.backup.format.BackupArchiveWriter;
 import gold.debug.windowstolinux.shared.backup.manifest.BackupConsistencyMode;
+import gold.debug.windowstolinux.shared.backup.manifest.BackupComponent;
+import gold.debug.windowstolinux.shared.backup.manifest.BackupComponentRuntime;
 import gold.debug.windowstolinux.shared.backup.manifest.BackupDatabase;
 import gold.debug.windowstolinux.shared.backup.manifest.BackupDatabaseType;
 import gold.debug.windowstolinux.shared.backup.manifest.BackupIdentity;
+import gold.debug.windowstolinux.shared.backup.manifest.BackupHealthCheck;
 import gold.debug.windowstolinux.shared.backup.manifest.BackupInventory;
 import gold.debug.windowstolinux.shared.backup.manifest.BackupManifest;
 import gold.debug.windowstolinux.shared.backup.manifest.BackupManifestSigner;
@@ -29,6 +32,7 @@ import java.security.KeyPair;
 import java.security.KeyPairGenerator;
 import java.time.Instant;
 import java.util.Base64;
+import java.util.ArrayList;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
@@ -49,7 +53,7 @@ class BackupArchiveSecurityTest {
                 archive, temporaryDirectory.resolve("candidate"), validation);
 
         assertEquals(BackupProvenanceStatus.NOT_PRESENT, validation.provenanceStatus());
-        assertEquals(content.length, candidate.extractedBytes());
+        assertEquals(content.length * 3L, candidate.extractedBytes());
         assertArrayEquals(content, Files.readAllBytes(candidate.root().resolve("config/application.json")));
     }
 
@@ -72,12 +76,15 @@ class BackupArchiveSecurityTest {
     void rejectsStreamThatDiffersFromManifestBeforeClaimingSuccess() throws Exception {
         byte[] expected = "expected".getBytes();
         BackupManifest manifest = sampleManifest(expected);
-        BackupArchiveContent wrong = new BackupArchiveContent(manifest.members().getFirst(),
-                () -> new ByteArrayInputStream("tampered".getBytes()));
+        List<BackupArchiveContent> contents = new ArrayList<>();
+        contents.add(new BackupArchiveContent(manifest.members().getFirst(),
+                () -> new ByteArrayInputStream("tampered".getBytes())));
+        manifest.members().stream().skip(1).forEach(member -> contents.add(
+                new BackupArchiveContent(member, () -> new ByteArrayInputStream(expected))));
 
         BackupException failure = assertThrows(BackupException.class, () -> {
             try (OutputStream output = Files.newOutputStream(temporaryDirectory.resolve("wrong.zip"))) {
-                new BackupArchiveWriter(BackupArchivePolicy.defaults()).write(manifest, List.of(wrong), output);
+                new BackupArchiveWriter(BackupArchivePolicy.defaults()).write(manifest, contents, output);
             }
         });
 
@@ -128,10 +135,11 @@ class BackupArchiveSecurityTest {
     private Path writeArchive(String fileName, BackupManifest manifest, byte[] content, BackupArchivePolicy policy)
             throws Exception {
         Path archive = temporaryDirectory.resolve(fileName);
-        BackupArchiveContent source = new BackupArchiveContent(manifest.members().getFirst(),
-                () -> new ByteArrayInputStream(content));
+        List<BackupArchiveContent> sources = manifest.members().stream()
+                .map(member -> new BackupArchiveContent(member, () -> new ByteArrayInputStream(content)))
+                .toList();
         try (OutputStream output = Files.newOutputStream(archive)) {
-            new BackupArchiveWriter(policy).write(manifest, List.of(source), output);
+            new BackupArchiveWriter(policy).write(manifest, sources, output);
         }
         return archive;
     }
@@ -151,17 +159,23 @@ class BackupArchiveSecurityTest {
     private static BackupManifest sampleManifest(byte[] content) throws Exception {
         String hash = java.util.HexFormat.of().formatHex(
                 java.security.MessageDigest.getInstance("SHA-256").digest(content));
-        BackupMember member = new BackupMember(
-                "config/application.json", content.length, hash, BackupMemberKind.CONFIGURATION);
+        List<BackupMember> members = List.of(
+                new BackupMember("releases/release-1.json", content.length, hash, BackupMemberKind.RELEASE),
+                new BackupMember("config/application.json", content.length, hash, BackupMemberKind.CONFIGURATION),
+                new BackupMember("runtime/sample.service", content.length, hash, BackupMemberKind.RUNTIME));
         BackupDatabase database = new BackupDatabase(BackupDatabaseType.SQLITE, "application.db", "3.46",
                 "sqlite3 3.46", BackupConsistencyMode.SQLITE_ONLINE_BACKUP, List.of());
+        BackupHealthCheck health = BackupHealthCheck.tcp(8080, 30, 5);
+        BackupComponent component = new BackupComponent("sample", "sample", "a".repeat(64),
+                "releases/release-1.json", "config/application.json", "runtime/sample.service", List.of(),
+                new BackupComponentRuntime.SpringBoot(health));
         BackupInventory inventory = new BackupInventory(
                 List.of("releases/release-1.json"), List.of("config/application.json"), List.of("db.password"),
                 List.of("/srv/sample/content"), List.of("sample-content"), database,
                 new BackupIdentity("sample", "server-1", "/opt/windowstolinux/apps/sample", "release-1"),
-                List.of("runtime/sample.service"),
+                List.of("runtime/sample.service"), List.of(component), "sample", health,
                 new BackupRuntime("ubuntu", "24.04", "systemd", "255", "x86_64", List.of("systemd")),
                 List.of("restore requires SQLite 3.46 or a compatible reader"));
-        return BackupManifest.create(Instant.parse("2026-08-21T00:00:00Z"), "sample", inventory, List.of(member));
+        return BackupManifest.create(Instant.parse("2026-08-21T00:00:00Z"), "sample", inventory, members);
     }
 }

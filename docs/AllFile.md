@@ -406,6 +406,7 @@ src/  # 项目源码与模块根目录
 │  │     │  │  ├─ adapter/  # SQLite、PostgreSQL 与 MySQL/MariaDB 独立策略
 │  │     │  │  │  ├─ DatabaseAdapterEvidence.java  # 适配器共用的严格证据一致性检查
 │  │     │  │  │  ├─ LinuxDatabaseOperationPort.java  # 将 Linux 公共远程数据库契约适配为备份模块策略类型
+│  │     │  │  │  ├─ LinuxRestoreCandidateAdapter.java  # 将备份候选单向映射到 deploy 激活与 Linux 文件暂存窄端口
 │  │     │  │  │  ├─ MysqlDatabaseAdapter.java  # 按全事务表或停写排他条件选择一致性导出
 │  │     │  │  │  ├─ PostgresqlDatabaseAdapter.java  # 仅允许服务与工具兼容的逻辑导出
 │  │     │  │  │  └─ SqliteDatabaseAdapter.java  # 优先在线备份并拒绝活跃写入直接复制
@@ -424,11 +425,16 @@ src/  # 项目源码与模块根目录
 │  │     │  │  ├─ BackupSecretEnvelope.java  # Argon2id 参数、随机盐/nonce 与 AES-GCM 密文信封
 │  │     │  │  └─ BackupSecretEnvelopeCodec.java  # secrets.enc 严格确定性编解码
 │  │     │  ├─ manifest/  # 环境、数据库、运行时和归档成员清单
+│  │     │  │  ├─ BackupComponent.java  # 组件身份、依赖、定义成员引用和类型化运行时
+│  │     │  │  ├─ BackupComponentRuntime.java  # 全部十四种已审阅运行时的封闭可移植 schema
 │  │     │  │  ├─ BackupConsistencyMode.java  # 数据库一致性证据方式
 │  │     │  │  ├─ BackupDatabase.java  # 数据库类型、版本、工具和一致性限制
 │  │     │  │  ├─ BackupDatabaseType.java  # SQLite、PostgreSQL、MySQL/MariaDB 等数据库族
+│  │     │  │  ├─ BackupHealthCheck.java  # 不混用字段的 HTTP 或 TCP 健康探针可移植值
+│  │     │  │  ├─ BackupHealthCheckType.java  # HTTP 与 TCP 健康策略判别类型
 │  │     │  │  ├─ BackupIdentity.java  # 受管应用、服务器、根目录和发布身份
 │  │     │  │  ├─ BackupInventory.java  # 恢复所需的完整结构化数据清单
+│  │     │  │  ├─ BackupManagedVolume.java  # 受管容器卷的可移植副本
 │  │     │  │  ├─ BackupManifest.java  # 当前版本根清单与成员唯一性约束
 │  │     │  │  ├─ BackupManifestCodec.java  # 严格确定性的 manifest.json 编解码
 │  │     │  │  ├─ BackupManifestRules.java  # 清单内部有界文本和路径规则
@@ -453,8 +459,10 @@ src/  # 项目源码与模块根目录
 │  │        ├─ contract/validation/BackupArchiveSecurityTest.java  # 恶意归档、签名与候选提取负向测试
 │  │        ├─ extension/adapter/DatabaseBackupAdapterTest.java  # 三类数据库一致性成功、拒绝和候选恢复策略测试
 │  │        ├─ extension/adapter/LinuxDatabaseOperationPortTest.java  # Linux 公共契约映射与模块失败归属测试
+│  │        ├─ extension/adapter/LinuxRestoreCandidateAdapterTest.java  # 精确成员、类型化运行参数及独立恢复清理映射测试
 │  │        ├─ execution/migration/OfflineMigrationCoordinatorTest.java  # 人工切流、停写、清理、源端恢复和摘要绑定测试
 │  │        ├─ format/BackupSecretEnvelopeCodecTest.java  # 信封 schema 与 KDF 参数边界测试
+│  │        ├─ manifest/BackupComponentRuntimeTest.java  # 十四种运行时往返、未知字段和依赖/成员负向测试
 │  │        ├─ manifest/BackupManifestCodecTest.java  # 严格 schema、确定性往返和一致性证据测试
 │  │        └─ restore/BackupRestoreCoordinatorTest.java  # 候选成功、空间/平台拒绝、源码重建、数据库失败清理和恢复不可验证测试
 │  ├─ config/  # 类型化配置定义与校验模块
@@ -495,8 +503,11 @@ src/  # 项目源码与模块根目录
 │  │  │  │     └─ MultiComponentLifecycleResult.java  # 保留每个组件的权威应用生命周期结果
 │  │  │  ├─ ReviewedDeploymentPlan.java  # 完全确定性的部署事务计划；不包含传输实现或原始命令
 │  │  │  ├─ ReviewedDeploymentRequest.java  # 经过完整审阅的部署输入，包含身份和类型化定义，绝不包含 Shell 命令
-│  │  │  └─ spi/  # 部署适配器扩展契约包
-│  │  │     └─ DeploymentAdapter.java  # 为一个受支持的部署单组件项目类型生成一个确定性计划
+│  │  │  └─ spi/  # 部署适配器与恢复激活扩展契约包
+│  │  │     ├─ DeploymentAdapter.java  # 为一个受支持的部署单组件项目类型生成一个确定性计划
+│  │  │     ├─ RestoreDeploymentComponent.java  # 准备受管激活的依赖有序类型化恢复组件
+│  │  │     ├─ RestoreDeploymentPort.java  # 候选激活、两级健康、提交及回滚的 deploy 所有窄端口
+│  │  │     └─ RestoreDeploymentRequest.java  # 绑定摘要候选、组件图和整应用健康门的恢复激活请求
 │  │  ├─ error/  # 部署切换、回滚和人工恢复失败包
 │  │  │  ├─ DeploymentExecutionFailureType.java  # 部署执行失败码、阶段与恢复动作
 │  │  │  └─ DeploymentSwitchException.java  # 发布切换失败的结构化异常
@@ -578,6 +589,11 @@ src/  # 项目源码与模块根目录
 │  │  ├─ protocol/  # 受管 helper 协议契约包
 │  │  │  ├─ database/  # 数据库固定远程操作与证据契约包
 │  │  │  │  └─ RemoteDatabasePort.java  # 不引用备份格式或 SSHD 类型的数据库检查、导出、流转和候选恢复端口
+│  │  │  ├─ restore/  # 候选恢复精确成员暂存与证据契约包
+│  │  │  │  ├─ RemoteRestoreFilePort.java  # 暂存或丢弃摘要派生隔离文件候选的窄端口
+│  │  │  │  ├─ RemoteRestoreMember.java  # 精确常规成员路径、大小和 SHA-256
+│  │  │  │  ├─ RemoteRestoreStagingEvidence.java  # 隔离、完整性及未触碰当前发布的暂存证据
+│  │  │  │  └─ RemoteRestoreStagingRequest.java  # 绑定本地候选、摘要、字节及精确成员清单的请求
 │  │  │  ├─ ManagedHelperProtocol.java  # 由预检与 SSH 实现共享的稳定受管 helper 协议身份
 │  │  │  ├─ ReleaseSnapshot.java  # 部署改变状态之前捕获的不透明远端回滚引用
 │  │  │  └─ RemoteStepResult.java  # 具名固定 Linux 操作产生的已净化结果
@@ -693,8 +709,9 @@ src/  # 项目源码与模块根目录
 │  │  │  │     ├─ ContainerRuntimeArguments.java  # 将受约束的容器运行模型转换为确定性的辅助程序参数
 │  │  │  │     ├─ DeploymentRuntimeArguments.java  # 将一个已验证的非容器运行定义转换为辅助程序验证的标量参数
 │  │  │  │     └─ ManagedRuntimeProtocolExecutor.java  # 仅通过固定 helper 动词控制受管运行时观察、生命周期与有界保留
-│  │  │  └─ transfer/  # SFTP 源码归档传输包
+│  │  │  └─ transfer/  # SFTP 源码归档与恢复候选传输包
 │  │  │     ├─ LocalArchivePolicy.java  # 在传输前校验本地源码归档的路径、大小和普通文件属性
+│  │  │     ├─ SshdRestoreTransport.java  # 上传精确恢复成员并经 SFTP 独立回读完整性
 │  │  │     └─ SshdSourceTransport.java  # 通过 SFTP 将已校验源码归档传入受管候选工作区
 │  │  ├─ pom.xml  # 配置 Apache SSHD、受管 helper 和 Linux 运行适配模块的依赖与构建
 │  │  ├─ runtime/  # 目标应用运行机制分组包

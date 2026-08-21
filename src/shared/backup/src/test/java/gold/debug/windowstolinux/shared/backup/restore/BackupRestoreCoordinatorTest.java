@@ -15,7 +15,10 @@ import gold.debug.windowstolinux.shared.backup.contract.validation.BackupProvena
 import gold.debug.windowstolinux.shared.backup.extension.registry.DatabaseAdapterRegistry;
 import gold.debug.windowstolinux.shared.backup.manifest.BackupDatabase;
 import gold.debug.windowstolinux.shared.backup.manifest.BackupDatabaseType;
+import gold.debug.windowstolinux.shared.backup.manifest.BackupComponent;
+import gold.debug.windowstolinux.shared.backup.manifest.BackupComponentRuntime;
 import gold.debug.windowstolinux.shared.backup.manifest.BackupConsistencyMode;
+import gold.debug.windowstolinux.shared.backup.manifest.BackupHealthCheck;
 import gold.debug.windowstolinux.shared.backup.manifest.BackupIdentity;
 import gold.debug.windowstolinux.shared.backup.manifest.BackupInventory;
 import gold.debug.windowstolinux.shared.backup.manifest.BackupManifest;
@@ -164,17 +167,18 @@ class BackupRestoreCoordinatorTest {
     private BackupRestorePlan plan(String targetArchitecture) throws Exception {
         Path parent = Files.createDirectory(temporary.resolve("candidates-" + targetArchitecture));
         Path root = Files.createDirectory(parent.resolve("sample-bbbbbbbbbbbbbbbb"));
-        BackupMember member = new BackupMember("config/application.json", 8, "a".repeat(64),
-                BackupMemberKind.CONFIGURATION);
+        List<BackupMember> members = members();
+        BackupHealthCheck health = BackupHealthCheck.tcp(8080, 30, 5);
+        BackupComponent component = component(health);
         BackupInventory inventory = new BackupInventory(
                 List.of("releases/release.json"), List.of("config/application.json"), List.of(),
                 List.of("data/content"), List.of(), BackupDatabase.none(),
                 new BackupIdentity("sample", "source-server", "/opt/windowstolinux/apps/sample", "release-source"),
-                List.of("runtime/sample.service"),
+                List.of("runtime/sample.service"), List.of(component), "sample", health,
                 new BackupRuntime("ubuntu", "24.04", "systemd", "255", "x86_64", List.of("systemd")),
                 List.of());
         BackupManifest manifest = BackupManifest.create(Instant.parse("2026-08-21T00:00:00Z"),
-                "sample", inventory, List.of(member));
+                "sample", inventory, members);
         BackupArchiveValidation validation = new BackupArchiveValidation("b".repeat(64), manifest, 8,
                 BackupProvenanceStatus.NOT_PRESENT);
         BackupRestoreCandidate candidate = new BackupRestoreCandidate(root, manifest, 8);
@@ -188,19 +192,20 @@ class BackupRestoreCoordinatorTest {
         Path parent = Files.createDirectory(temporary.resolve("candidates-database"));
         String candidateId = "sample-bbbbbbbbbbbbbbbb";
         Path root = Files.createDirectory(parent.resolve(candidateId));
-        BackupMember member = new BackupMember("config/application.json", 8, "a".repeat(64),
-                BackupMemberKind.CONFIGURATION);
+        List<BackupMember> members = members();
         BackupDatabase database = new BackupDatabase(BackupDatabaseType.SQLITE, "data/application.db", "3.46",
                 "3.46", BackupConsistencyMode.SQLITE_ONLINE_BACKUP, List.of());
+        BackupHealthCheck health = BackupHealthCheck.tcp(8080, 30, 5);
+        BackupComponent component = component(health);
         BackupInventory inventory = new BackupInventory(
                 List.of("releases/release.json"), List.of("config/application.json"), List.of(),
                 List.of("data/content"), List.of(), database,
                 new BackupIdentity("sample", "source-server", "/opt/windowstolinux/apps/sample", "release-source"),
-                List.of("runtime/sample.service"),
+                List.of("runtime/sample.service"), List.of(component), "sample", health,
                 new BackupRuntime("ubuntu", "24.04", "systemd", "255", "x86_64", List.of("systemd")),
                 List.of());
         BackupManifest manifest = BackupManifest.create(Instant.parse("2026-08-21T00:00:00Z"),
-                "sample", inventory, List.of(member));
+                "sample", inventory, members);
         BackupArchiveValidation validation = new BackupArchiveValidation("b".repeat(64), manifest, 8,
                 BackupProvenanceStatus.NOT_PRESENT);
         DatabaseBackupArtifact artifact = new DatabaseBackupArtifact("artifact-1", 128, "c".repeat(64),
@@ -217,6 +222,19 @@ class BackupRestoreCoordinatorTest {
             BackupRestorePlan plan, RestoreTargetProfile target, RestoreMaterialKind materialKind) {
         return new BackupRestorePlan(plan.validation(), plan.candidate(), plan.localCandidateParent(),
                 plan.candidateId(), materialKind, target, plan.databaseRestore());
+    }
+
+    private static List<BackupMember> members() {
+        return List.of(
+                new BackupMember("releases/release.json", 0, "a".repeat(64), BackupMemberKind.RELEASE),
+                new BackupMember("config/application.json", 8, "a".repeat(64), BackupMemberKind.CONFIGURATION),
+                new BackupMember("runtime/sample.service", 0, "a".repeat(64), BackupMemberKind.RUNTIME));
+    }
+
+    private static BackupComponent component(BackupHealthCheck health) {
+        return new BackupComponent("sample", "sample", "d".repeat(64),
+                "releases/release.json", "config/application.json", "runtime/sample.service", List.of(),
+                new BackupComponentRuntime.SpringBoot(health));
     }
 
     private RestoreTargetProfile target(
