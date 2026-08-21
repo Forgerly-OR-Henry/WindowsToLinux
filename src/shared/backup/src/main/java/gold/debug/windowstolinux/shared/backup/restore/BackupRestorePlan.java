@@ -8,7 +8,6 @@ import gold.debug.windowstolinux.shared.backup.manifest.BackupDatabaseType;
 import java.nio.file.Path;
 import java.util.Objects;
 import java.util.Optional;
-import java.util.regex.Pattern;
 
 /** Immutable restore plan binding validated local content to one isolated target candidate. / 将已验证本地内容绑定到单个隔离目标候选的不可变恢复计划。 */
 public record BackupRestorePlan(
@@ -35,8 +34,9 @@ public record BackupRestorePlan(
         }
         String applicationId = validation.manifest().applicationId();
         candidateId = Objects.requireNonNull(candidateId, "candidateId").trim();
-        if (!candidateId.matches(Pattern.quote(applicationId) + "-[0-9a-f]{16}")) {
-            throw new IllegalArgumentException("candidateId is not bound to the backup application");
+        String expectedCandidateId = applicationId + "-" + validation.archiveSha256().substring(0, 16);
+        if (!candidateId.equals(expectedCandidateId)) {
+            throw new IllegalArgumentException("candidateId is not bound to the backup digest");
         }
         if (!candidate.root().getFileName().toString().equals(candidateId)) {
             throw new IllegalArgumentException("candidate root differs from candidateId");

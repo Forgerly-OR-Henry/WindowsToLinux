@@ -163,7 +163,7 @@ class BackupRestoreCoordinatorTest {
 
     private BackupRestorePlan plan(String targetArchitecture) throws Exception {
         Path parent = Files.createDirectory(temporary.resolve("candidates-" + targetArchitecture));
-        Path root = Files.createDirectory(parent.resolve("sample-0123456789abcdef"));
+        Path root = Files.createDirectory(parent.resolve("sample-bbbbbbbbbbbbbbbb"));
         BackupMember member = new BackupMember("config/application.json", 8, "a".repeat(64),
                 BackupMemberKind.CONFIGURATION);
         BackupInventory inventory = new BackupInventory(
@@ -180,13 +180,13 @@ class BackupRestoreCoordinatorTest {
         BackupRestoreCandidate candidate = new BackupRestoreCandidate(root, manifest, 8);
         RestoreTargetProfile target = target(
                 "ubuntu", "24.04", targetArchitecture, BackupDatabaseType.NONE, "none", 1024, true, false);
-        return new BackupRestorePlan(validation, candidate, parent, "sample-0123456789abcdef",
+        return new BackupRestorePlan(validation, candidate, parent, "sample-bbbbbbbbbbbbbbbb",
                 RestoreMaterialKind.BINARY_RELEASE, target, Optional.empty());
     }
 
     private BackupRestorePlan databasePlan() throws Exception {
         Path parent = Files.createDirectory(temporary.resolve("candidates-database"));
-        String candidateId = "sample-0123456789abcdef";
+        String candidateId = "sample-bbbbbbbbbbbbbbbb";
         Path root = Files.createDirectory(parent.resolve(candidateId));
         BackupMember member = new BackupMember("config/application.json", 8, "a".repeat(64),
                 BackupMemberKind.CONFIGURATION);

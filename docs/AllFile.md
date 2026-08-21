@@ -358,6 +358,8 @@ src/  # 项目源码与模块根目录
 │  │     │  │  │  ├─ DatabaseOperationPort.java  # 检查、导出、流式制品和候选恢复的模块内策略端口
 │  │     │  │  │  ├─ DatabaseRestoreEvidence.java  # 候选数据库恢复及只读验证结果
 │  │     │  │  │  ├─ DatabaseRestoreRequest.java  # 绑定备份制品与受管候选标识的恢复请求
+│  │     │  │  │  ├─ OfflineMigrationPort.java  # 目标预检、双阶段同步、停写、目标验证和双端恢复窄端口
+│  │     │  │  │  ├─ OfflineMigrationRequest.java  # 绑定源/目标、备份摘要、候选和停写批准的迁移请求
 │  │     │  │  │  ├─ RestoreCandidatePort.java  # 文件暂存、两级健康、提交和失败恢复的平台窄端口
 │  │     │  │  │  └─ RestoreCandidateRequest.java  # 不反向依赖恢复编排包的已验证候选平台请求
 │  │     │  │  └─ validation/  # 归档资源、安全、完整性与来源校验
@@ -379,6 +381,12 @@ src/  # 项目源码与模块根目录
 │  │     │  │  │  └─ SqliteDatabaseAdapter.java  # 优先在线备份并拒绝活跃写入直接复制
 │  │     │  │  └─ registry/  # 数据库类型唯一装配包
 │  │     │  │     └─ DatabaseAdapterRegistry.java  # 对支持类型闭合并拒绝未知数据库
+│  │     │  ├─ execution/migration/  # 显式停写且只允许人工外部切流的离线迁移编排
+│  │     │  │  ├─ OfflineMigrationCoordinator.java  # 目标预检、初始/最终同步、停写、验证和失败恢复状态机
+│  │     │  │  ├─ OfflineMigrationEvent.java  # 单个有界无秘密迁移证据事件
+│  │     │  │  ├─ OfflineMigrationResult.java  # 保留源端且禁止声称自动切流的迁移终态
+│  │     │  │  ├─ OfflineMigrationState.java  # 迁移准备及双端恢复的有序证据状态
+│  │     │  │  └─ OfflineMigrationStatus.java  # 等待人工切流、前置拒绝、安全恢复和人工恢复终态
 │  │     │  ├─ format/  # 版本化归档流式写入
 │  │     │  │  ├─ BackupArchiveContent.java  # 清单成员与全新输入流的绑定
 │  │     │  │  ├─ BackupArchiveStream.java  # 可受检打开的成员输入流窄契约
@@ -415,6 +423,7 @@ src/  # 项目源码与模块根目录
 │  │        ├─ contract/validation/BackupArchiveSecurityTest.java  # 恶意归档、签名与候选提取负向测试
 │  │        ├─ extension/adapter/DatabaseBackupAdapterTest.java  # 三类数据库一致性成功、拒绝和候选恢复策略测试
 │  │        ├─ extension/adapter/LinuxDatabaseOperationPortTest.java  # Linux 公共契约映射与模块失败归属测试
+│  │        ├─ execution/migration/OfflineMigrationCoordinatorTest.java  # 人工切流、停写、清理、源端恢复和摘要绑定测试
 │  │        ├─ format/BackupSecretEnvelopeCodecTest.java  # 信封 schema 与 KDF 参数边界测试
 │  │        ├─ manifest/BackupManifestCodecTest.java  # 严格 schema、确定性往返和一致性证据测试
 │  │        └─ restore/BackupRestoreCoordinatorTest.java  # 候选成功、空间/平台拒绝、源码重建、数据库失败清理和恢复不可验证测试

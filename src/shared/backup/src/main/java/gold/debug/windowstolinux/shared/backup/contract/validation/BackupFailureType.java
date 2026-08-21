@@ -24,7 +24,12 @@ public enum BackupFailureType implements FailureDefinition {
     DATABASE_PREFLIGHT_FAILED("backup.database.preflight-failed", "preflight", "backup.error.databasePreflightFailed", FailureRecoveryAction.REQUEST_USER_CORRECTION),
     DATABASE_BACKUP_FAILED("backup.database.export-failed", "database", "backup.error.databaseBackupFailed", FailureRecoveryAction.CLEANUP),
     DATABASE_RESTORE_FAILED("backup.database.restore-failed", "database", "backup.error.databaseRestoreFailed", FailureRecoveryAction.CLEANUP),
-    DATABASE_EVIDENCE_INVALID("backup.database.evidence-invalid", "verification", "backup.error.databaseEvidenceInvalid", FailureRecoveryAction.REQUIRE_MANUAL_RECOVERY);
+    DATABASE_EVIDENCE_INVALID("backup.database.evidence-invalid", "verification", "backup.error.databaseEvidenceInvalid", FailureRecoveryAction.REQUIRE_MANUAL_RECOVERY),
+    MIGRATION_PREFLIGHT_FAILED("backup.migration.preflight-failed", "preflight", "backup.error.migrationPreflightFailed", FailureRecoveryAction.REQUEST_USER_CORRECTION),
+    MIGRATION_SYNC_FAILED("backup.migration.sync-failed", "synchronization", "backup.error.migrationSyncFailed", FailureRecoveryAction.CLEANUP),
+    MIGRATION_QUIESCE_FAILED("backup.migration.quiesce-failed", "quiesce", "backup.error.migrationQuiesceFailed", FailureRecoveryAction.ROLLBACK),
+    MIGRATION_TARGET_FAILED("backup.migration.target-failed", "target", "backup.error.migrationTargetFailed", FailureRecoveryAction.ROLLBACK),
+    MIGRATION_RECOVERY_FAILED("backup.migration.recovery-failed", "rollback", "backup.error.migrationRecoveryFailed", FailureRecoveryAction.REQUIRE_MANUAL_RECOVERY);
 
     private final String code;
     private final String phase;

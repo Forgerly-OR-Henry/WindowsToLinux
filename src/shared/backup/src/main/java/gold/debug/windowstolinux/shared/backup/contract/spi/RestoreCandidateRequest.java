@@ -4,7 +4,6 @@ import gold.debug.windowstolinux.shared.backup.manifest.BackupManifest;
 
 import java.nio.file.Path;
 import java.util.Objects;
-import java.util.regex.Pattern;
 
 /** Narrow platform request for one already validated restore candidate. / 单个已验证恢复候选的平台窄请求。 */
 public record RestoreCandidateRequest(
@@ -27,8 +26,9 @@ public record RestoreCandidateRequest(
         }
         if (verifiedBytes < 0) throw new IllegalArgumentException("verifiedBytes must not be negative");
         candidateId = Objects.requireNonNull(candidateId, "candidateId").trim();
-        if (!candidateId.matches(Pattern.quote(manifest.applicationId()) + "-[0-9a-f]{16}")) {
-            throw new IllegalArgumentException("candidateId is not bound to the backup application");
+        String expectedCandidateId = manifest.applicationId() + "-" + archiveSha256.substring(0, 16);
+        if (!candidateId.equals(expectedCandidateId)) {
+            throw new IllegalArgumentException("candidateId is not bound to the backup digest");
         }
         if (!localCandidateRoot.getFileName().toString().equals(candidateId)) {
             throw new IllegalArgumentException("local candidate root differs from candidateId");
