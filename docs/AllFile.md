@@ -80,9 +80,11 @@ src/  # 项目源码与模块根目录
 │  │  │  ├─ AiRoleAssignment.java  # 从一个固定 AI 角色到一个命名提供者的类型化非秘密映射
 │  │  │  ├─ AiUseCaseFacade.java  # 编排 AI Provider、角色绑定、结构化分析与解释用例
 │  │  │  └─ ReadOnlyDeploymentAgentFacade.java  # 完整的可选 Agent 工具表面：仅有有界静态分析和确定性计划渲染
-│  │  ├─ backup/  # 受管输入准入、本地备份校验与隔离候选准备用例包
+│  │  ├─ backup/  # 受管输入准入、本地归档发布、备份校验与隔离候选准备用例包
+│  │  │  ├─ BackupArchiveCreationUseCase.java  # 编排临时写入、双重完整校验与无覆盖原子发布
 │  │  │  ├─ BackupArchiveInspection.java  # 完整校验后可供界面展示的安全备份摘要
 │  │  │  ├─ BackupUseCase.java  # 重新校验并在平台工作区创建从未激活的本地候选
+│  │  │  ├─ CreatedBackupArchive.java  # 绑定最终路径与发布后独立复验结果
 │  │  │  ├─ ManagedBackupInputAssessment.java  # 精确报告持久化备份输入完整性及结构化缺失原因
 │  │  │  ├─ ManagedBackupInputUseCase.java  # 在不访问远端时核对整应用图、发布、运行时、路径、配置和秘密绑定
 │  │  │  ├─ PreparedBackupCandidate.java  # 将候选目录及提取字节绑定到已校验归档身份
@@ -233,6 +235,8 @@ src/  # 项目源码与模块根目录
 │     ├─ workspace/  # 本地源码工作区与归档边界包
 │     │  ├─ DesktopHandoffEnvelopeCodec.java  # 以用途隔离和 HMAC-SHA256 认证维护交接二进制信封
 │     │  ├─ PreparedSourceArchive.java  # 保存已准备源码归档的描述信息与排除条目清单
+│     │  ├─ WindowsBackupArchiveAttempt.java  # 绑定同目录临时归档、最终目标和不可伪造文件身份
+│     │  ├─ WindowsBackupArchiveWorkspace.java  # 无覆盖原子发布并只清理本次精确持有的归档文件
 │     │  ├─ WindowsRestoreAttempt.java  # 将一次恢复尝试父目录、摘要候选根和候选标识绑定
 │     │  ├─ WindowsRestoreWorkspace.java  # 只创建或清理平台工作区下的摘要绑定恢复尝试
 │     │  ├─ WindowsSourcePreparer.java  # 准备平台无关源码归档的 Windows 桌面入口
