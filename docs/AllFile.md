@@ -58,7 +58,10 @@ src/  # 项目源码与模块根目录
 │  ├─ secret/  # 桌面秘密存储模块
 │  │  ├─ Argon2AesSecretStore.java  # 使用加密包实现 Argon2id 与 AES-GCM 的数据库秘密存储
 │  │  ├─ crypto/  # 密钥派生与认证加密包
-│  │  │  └─ Argon2AesGcmCryptoService.java  # 使用 Argon2id 派生密钥并以 AES-GCM 加解密秘密载荷
+│  │  │  ├─ Argon2AesGcmCryptoService.java  # 使用平台主密码保护桌面秘密存储
+│  │  │  ├─ BackupSecretCryptoService.java  # 使用调用级独立备份密码生成或认证 secrets.enc
+│  │  │  ├─ BackupSecretException.java  # 不携带密码或明文的备份秘密结构化失败
+│  │  │  └─ BackupSecretFailureType.java  # 备份密码、加密和统一认证失败定义
 │  │  ├─ pom.xml  # 配置桌面秘密存储与加密模块的依赖和构建
 │  │  ├─ SecretStore.java  # 定义秘密写入、读取、删除与调用方清零责任的平台凭据边界
 │  │  ├─ SecretStoreException.java  # 敏感存储失败被刻意设计为不附加明文输入
@@ -357,7 +360,9 @@ src/  # 项目源码与模块根目录
 │  │     │  ├─ format/  # 版本化归档流式写入
 │  │     │  │  ├─ BackupArchiveContent.java  # 清单成员与全新输入流的绑定
 │  │     │  │  ├─ BackupArchiveStream.java  # 可受检打开的成员输入流窄契约
-│  │     │  │  └─ BackupArchiveWriter.java  # 写入时核验每个成员大小与 SHA-256
+│  │     │  │  ├─ BackupArchiveWriter.java  # 写入时核验每个成员大小与 SHA-256
+│  │     │  │  ├─ BackupSecretEnvelope.java  # Argon2id 参数、随机盐/nonce 与 AES-GCM 密文信封
+│  │     │  │  └─ BackupSecretEnvelopeCodec.java  # secrets.enc 严格确定性编解码
 │  │     │  ├─ manifest/  # 环境、数据库、运行时和归档成员清单
 │  │     │  │  ├─ BackupConsistencyMode.java  # 数据库一致性证据方式
 │  │     │  │  ├─ BackupDatabase.java  # 数据库类型、版本、工具和一致性限制
@@ -377,6 +382,7 @@ src/  # 项目源码与模块根目录
 │  │     │     └─ BackupRestoreCandidate.java  # 尚未激活的完整候选证据
 │  │     └─ test/java/gold/debug/windowstolinux/shared/backup/
 │  │        ├─ contract/validation/BackupArchiveSecurityTest.java  # 恶意归档、签名与候选提取负向测试
+│  │        ├─ format/BackupSecretEnvelopeCodecTest.java  # 信封 schema 与 KDF 参数边界测试
 │  │        └─ manifest/BackupManifestCodecTest.java  # 严格 schema、确定性往返和一致性证据测试
 │  ├─ config/  # 类型化配置定义与校验模块
 │  │  ├─ ConfigurationException.java  # 配置定义与输入拒绝的结构化异常

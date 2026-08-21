@@ -2,7 +2,7 @@
 
 ## 文档信息
 
-- 文档版本：`3.27.0-backup-archive-core`
+- 文档版本：`3.28.0-backup-secret-encryption`
 - 文档状态：**28-POM 模块边界保持不变；15 个已有生产代码的 app/shared 模块采用模块内识别与恢复、最小共用失败契约、部署/服务编排、UI 安全展示和本地诊断报告；backup 与 Web 仅登记未来约束；真实 Linux 修改路径没有新增产品入口证据时继续标记 `RUNTIME-PENDING`**
 - 已确认范围：`shared` 共用模块、`app` Windows 桌面应用模块、`web` Web 应用模块
 - 已确认能力边界：受管应用生命周期复用既有模块，不新增独立 Maven 模块
@@ -330,7 +330,7 @@ test/
 - WindowsToLinux 自身构建使用开发机的系统 Maven 和系统本地仓库；项目 POM 不声明仓库位置，不创建项目专用 Maven 仓库，也不新增 Maven Wrapper 作为本项目构建入口。
 - 构建插件确需额外构建期依赖时，在根 POM 对应插件的 `<dependencies>` 中显式声明，供系统 Maven 同步；不得为了补插件缓存而把依赖加入业务叶子模块的运行时 classpath。
 - 第 1 节是正式目标结构。结构迁移必须原子更新包声明、物理路径、导入、测试和门禁；旧包前缀与薄包装类不保留兼容壳。
-- `shared/backup` 已实现四期第一批平台无关归档核心：结构化清单、严格 JSON schema、成员摘要、可选 Ed25519 来源签名、ZIP 安全策略、不落地预校验和隔离候选提取；数据库远程适配、秘密加密、迁移、更新与卸载仍在后续批次。Web Java 叶子模块仍只有 POM；`web/frontend` 已包含最小页面、单元测试和浏览器测试。
+- `shared/backup` 已实现平台无关归档核心与不透明 `secrets.enc` 信封格式；`app/secret.crypto` 已使用独立调用级备份密码实现 Argon2id 64 MiB/3 次/1 路派生和 AES-256-GCM 认证加密，服务对象不持有密码或派生密钥。数据库远程适配、迁移、更新与卸载仍在后续批次。Web Java 叶子模块仍只有 POM；`web/frontend` 已包含最小页面、单元测试和浏览器测试。
 
 ### 1.1 稳定职责边界
 
@@ -1217,6 +1217,7 @@ linux-sshd 通过 linux 契约采集服务器已有环境
 
 | 版本 | 日期 | 说明 |
 | --- | --- | --- |
+| 3.28.0-backup-secret-encryption | 2026-08-21 | 在 `shared/backup.format` 固定只含公开 KDF 参数、随机盐/nonce 与密文的严格 `secrets.enc` 信封，在 `app/secret.crypto` 以调用级独立密码完成 Argon2id 与 AES-256-GCM；错误密码和篡改统一为认证失败，`doFinal` 成功前不返回明文，局部密码、明文、密文副本和派生密钥均在 finally 清零，服务无敏感数组字段。加密与架构聚焦测试通过；尚未接通桌面备份用例和真实恢复证据。 |
 | 3.27.0-backup-archive-core | 2026-08-21 | 按最新结构边界启用 `shared/backup` 首批生产实现：冻结版本化环境清单和数据库一致性证据，写入时逐成员核验大小与 SHA-256，读取时在提取前拒绝路径穿越、链接/特殊类型、未知扩展字段、重复路径、资源越界与压缩炸弹，并把完整性与可选 Ed25519 来源状态分开；候选提取重新绑定归档指纹并在失败时清理部分输出。聚焦归档测试与包结构/失败契约门禁通过；数据库远程适配、秘密加密、迁移、桌面更新与卸载尚未完成，不新增运行环境证据。 |
 | 3.26.0-structured-failure-handling | 2026-08-21 | 在保持 28-POM、既有依赖和 SQLite schema v7 的前提下，引入模块本地失败定义与最小 `shared.model.failure` 契约，原子移除旧本地化异常壳；补齐桌面系统边界、安全 UI 展示、有界本地诊断、SQLite 健壮性、源码/Windows/Git/SSH/部署保守恢复、同一 operationId 结果与非致命警告。backup 与 Web 只登记未来约束；没有新增真实 Linux 产品入口证据，相关路径继续为 `RUNTIME-PENDING`。 |
 | 3.25.0-functional-group-package-migration | 2026-08-20 | 按 `contract`、`generation`、`extension`、`execution`、`persistence` 全量迁移 32 个适用生产包及测试镜像，`linux-sshd` helper 片段随协议实现迁入 `execution/protocol/helper`，并同步目标树、依赖方向、旧路径门禁与当前源码索引。28-POM、POM 内容、类型内容与方法签名、helper 11 项字节和组装顺序、协议 v3、固定 SHA-256、SQLite schema、安全边界、运行行为与 `RUNTIME-PENDING` 结论不变；Java FQCN 与 helper classpath 路径按批准规范发生不兼容迁移。 |
