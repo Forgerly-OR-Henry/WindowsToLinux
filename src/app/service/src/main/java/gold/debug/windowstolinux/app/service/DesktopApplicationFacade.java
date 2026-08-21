@@ -36,6 +36,8 @@ import gold.debug.windowstolinux.app.service.source.SourcePreparationUseCase;
 import gold.debug.windowstolinux.app.service.source.PreparedMultiComponentSource;
 import gold.debug.windowstolinux.app.service.backup.BackupArchiveInspection;
 import gold.debug.windowstolinux.app.service.backup.BackupUseCase;
+import gold.debug.windowstolinux.app.service.backup.ManagedBackupInputAssessment;
+import gold.debug.windowstolinux.app.service.backup.ManagedBackupInputUseCase;
 import gold.debug.windowstolinux.app.service.backup.PreparedBackupCandidate;
 import gold.debug.windowstolinux.app.service.backup.PreparedBackupSecrets;
 import gold.debug.windowstolinux.app.db.entity.StoredApplicationSecretRevision;
@@ -103,6 +105,7 @@ public final class DesktopApplicationFacade implements AiApplicationFacade, Depl
     private final MultiComponentLifecycleUseCase multiComponentLifecycle;
     private final LifecycleUseCase lifecycle;
     private final BackupUseCase backup;
+    private final ManagedBackupInputUseCase backupInputs;
 
     /**
      * Creates a {@code DesktopApplicationFacade} instance.
@@ -138,6 +141,14 @@ public final class DesktopApplicationFacade implements AiApplicationFacade, Depl
                 persistence.managedApplicationGraphs(), new MultiComponentLifecycleService(), linuxGateway, servers, locks);
         this.lifecycle = new LifecycleUseCase(persistence.managedApplications(), linuxGateway, servers, locks);
         this.backup = new BackupUseCase(workDirectory);
+        this.backupInputs = new ManagedBackupInputUseCase(persistence.managedApplicationGraphs(),
+                persistence.managedApplications(), persistence.configurations(), persistence.applicationSecrets());
+    }
+
+    /** Assesses exact persisted backup inputs without remote access. / 在不访问远端的情况下评估精确持久化备份输入。 */
+    @Override
+    public ManagedBackupInputAssessment assessManagedBackupInputs(String applicationId) throws SQLException {
+        return backupInputs.assess(applicationId);
     }
 
     /** Validates one selected backup locally without extraction or remote access. / 在本地校验一个已选备份且不提取、不访问远端。 */

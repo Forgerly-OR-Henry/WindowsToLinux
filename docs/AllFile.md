@@ -80,9 +80,11 @@ src/  # 项目源码与模块根目录
 │  │  │  ├─ AiRoleAssignment.java  # 从一个固定 AI 角色到一个命名提供者的类型化非秘密映射
 │  │  │  ├─ AiUseCaseFacade.java  # 编排 AI Provider、角色绑定、结构化分析与解释用例
 │  │  │  └─ ReadOnlyDeploymentAgentFacade.java  # 完整的可选 Agent 工具表面：仅有有界静态分析和确定性计划渲染
-│  │  ├─ backup/  # 本地备份校验与隔离候选准备用例包
+│  │  ├─ backup/  # 受管输入准入、本地备份校验与隔离候选准备用例包
 │  │  │  ├─ BackupArchiveInspection.java  # 完整校验后可供界面展示的安全备份摘要
 │  │  │  ├─ BackupUseCase.java  # 重新校验并在平台工作区创建从未激活的本地候选
+│  │  │  ├─ ManagedBackupInputAssessment.java  # 精确报告持久化备份输入完整性及结构化缺失原因
+│  │  │  ├─ ManagedBackupInputUseCase.java  # 在不访问远端时核对整应用图、发布、运行时、路径、配置和秘密绑定
 │  │  │  ├─ PreparedBackupCandidate.java  # 将候选目录及提取字节绑定到已校验归档身份
 │  │  │  └─ PreparedBackupSecrets.java  # 将本地候选与完整已认证短生命周期秘密修订绑定
 │  │  ├─ config/  # 部署配置与秘密修订用例包
