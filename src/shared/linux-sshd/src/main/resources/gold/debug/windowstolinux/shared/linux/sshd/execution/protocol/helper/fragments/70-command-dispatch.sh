@@ -15,6 +15,12 @@ case "$verb" in
   candidate-cleanup) cleanup_candidate "$@" ;;
   stage-config) stage_configuration "$@" ;;
   stage-secret) stage_secret "$@" ;;
+  database-inspect) database_inspect "$@" ;;
+  database-export) database_export "$@" ;;
+  database-stage-artifact) database_stage_artifact "$@" ;;
+  database-read-artifact) database_read_artifact "$@" ;;
+  database-discard-artifact) database_discard_artifact "$@" ;;
+  database-restore-candidate) database_restore_candidate "$@" ;;
   snapshot-deployment) snapshot_deployment "$@" ;;
   publish-deployment) publish_deployment "$@" ;;
   retain) retain_releases "$@" ;;

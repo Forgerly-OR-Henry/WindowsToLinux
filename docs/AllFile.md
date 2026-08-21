@@ -347,7 +347,18 @@ src/  # 项目源码与模块根目录
 │  │  ├─ pom.xml  # 配置备份模块依赖、严格 JSON 编解码和可检查 ZIP 边界
 │  │  └─ src/
 │  │     ├─ main/java/gold/debug/windowstolinux/shared/backup/
-│  │     │  ├─ contract/validation/  # 归档资源、安全、完整性与来源校验
+│  │     │  ├─ contract/  # 备份规则与平台窄契约
+│  │     │  │  ├─ spi/  # 数据库一致性操作、制品和候选恢复契约
+│  │     │  │  │  ├─ DatabaseBackupAdapter.java  # 按数据库类型执行预检、导出和候选恢复策略
+│  │     │  │  │  ├─ DatabaseBackupArtifact.java  # 已导出数据库制品的大小、摘要和一致性证据
+│  │     │  │  │  ├─ DatabaseBackupRequest.java  # 数据库备份身份、连接、运行状态和写入排他声明
+│  │     │  │  │  ├─ DatabaseCompatibilityEvidence.java  # 服务端、工具和表引擎兼容性证据
+│  │     │  │  │  ├─ DatabaseConnectionProfile.java  # SQLite 路径或服务器数据库的不透明连接资料
+│  │     │  │  │  ├─ DatabaseContractRules.java  # 数据库标识、版本和安全文本公共约束
+│  │     │  │  │  ├─ DatabaseOperationPort.java  # 检查、导出、流式制品和候选恢复的模块内策略端口
+│  │     │  │  │  ├─ DatabaseRestoreEvidence.java  # 候选数据库恢复及只读验证结果
+│  │     │  │  │  └─ DatabaseRestoreRequest.java  # 绑定备份制品与受管候选标识的恢复请求
+│  │     │  │  └─ validation/  # 归档资源、安全、完整性与来源校验
 │  │     │  │  ├─ ArchivePathRules.java  # 拒绝绝对路径、穿越、空段和 Windows 不安全尾部
 │  │     │  │  ├─ BackupArchivePolicy.java  # 成员数、大小、路径、清单和压缩率显式边界
 │  │     │  │  ├─ BackupArchiveValidation.java  # 完整校验后生成的归档指纹与证据
@@ -357,6 +368,15 @@ src/  # 项目源码与模块根目录
 │  │     │  │  ├─ BackupManifestValidator.java  # 对解码清单应用资源策略
 │  │     │  │  ├─ BackupProvenanceStatus.java  # 未签名、未验证与已验证来源状态
 │  │     │  │  └─ BackupSignatureTrust.java  # 显式受信备份签名公钥解析契约
+│  │     │  ├─ extension/  # 数据库一致性适配实现与闭合装配
+│  │     │  │  ├─ adapter/  # SQLite、PostgreSQL 与 MySQL/MariaDB 独立策略
+│  │     │  │  │  ├─ DatabaseAdapterEvidence.java  # 适配器共用的严格证据一致性检查
+│  │     │  │  │  ├─ LinuxDatabaseOperationPort.java  # 将 Linux 公共远程数据库契约适配为备份模块策略类型
+│  │     │  │  │  ├─ MysqlDatabaseAdapter.java  # 按全事务表或停写排他条件选择一致性导出
+│  │     │  │  │  ├─ PostgresqlDatabaseAdapter.java  # 仅允许服务与工具兼容的逻辑导出
+│  │     │  │  │  └─ SqliteDatabaseAdapter.java  # 优先在线备份并拒绝活跃写入直接复制
+│  │     │  │  └─ registry/  # 数据库类型唯一装配包
+│  │     │  │     └─ DatabaseAdapterRegistry.java  # 对支持类型闭合并拒绝未知数据库
 │  │     │  ├─ format/  # 版本化归档流式写入
 │  │     │  │  ├─ BackupArchiveContent.java  # 清单成员与全新输入流的绑定
 │  │     │  │  ├─ BackupArchiveStream.java  # 可受检打开的成员输入流窄契约
@@ -382,6 +402,8 @@ src/  # 项目源码与模块根目录
 │  │     │     └─ BackupRestoreCandidate.java  # 尚未激活的完整候选证据
 │  │     └─ test/java/gold/debug/windowstolinux/shared/backup/
 │  │        ├─ contract/validation/BackupArchiveSecurityTest.java  # 恶意归档、签名与候选提取负向测试
+│  │        ├─ extension/adapter/DatabaseBackupAdapterTest.java  # 三类数据库一致性成功、拒绝和候选恢复策略测试
+│  │        ├─ extension/adapter/LinuxDatabaseOperationPortTest.java  # Linux 公共契约映射与模块失败归属测试
 │  │        ├─ format/BackupSecretEnvelopeCodecTest.java  # 信封 schema 与 KDF 参数边界测试
 │  │        └─ manifest/BackupManifestCodecTest.java  # 严格 schema、确定性往返和一致性证据测试
 │  ├─ config/  # 类型化配置定义与校验模块
@@ -500,9 +522,11 @@ src/  # 项目源码与模块根目录
 │  │  │  └─ LinuxEnvironmentPreparer.java  # 感知发行版的环境准备契约
 │  │  ├─ error/  # 远端失败分类与诊断契约包
 │  │  │  ├─ LinuxOperationException.java  # 连接、指纹、协议或受控操作失败
-│  │  │  └─ LinuxOperationFailureType.java  # SSH、协议、远端状态及中断失败目录
+│  │  │  └─ LinuxOperationFailureType.java  # SSH、数据库协议、远端状态及中断失败目录
 │  │  ├─ pom.xml  # 配置 Linux 连接、命令和远程会话公共契约模块的依赖与构建
 │  │  ├─ protocol/  # 受管 helper 协议契约包
+│  │  │  ├─ database/  # 数据库固定远程操作与证据契约包
+│  │  │  │  └─ RemoteDatabasePort.java  # 不引用备份格式或 SSHD 类型的数据库检查、导出、流转和候选恢复端口
 │  │  │  ├─ ManagedHelperProtocol.java  # 由预检与 SSH 实现共享的稳定受管 helper 协议身份
 │  │  │  ├─ ReleaseSnapshot.java  # 部署改变状态之前捕获的不透明远端回滚引用
 │  │  │  └─ RemoteStepResult.java  # 具名固定 Linux 操作产生的已净化结果
@@ -510,13 +534,17 @@ src/  # 项目源码与模块根目录
 │  │  │  ├─ HealthCheckResult.java  # 完整受管部署健康检查策略的结果，而不只是进程检查
 │  │  │  └─ LinuxRuntimeExecutor.java  # 受管运行时观测、健康检查和生命周期契约
 │  │  ├─ session/  # 有界远端会话契约包
-│  │  │  ├─ DeploymentRemoteSession.java  # 已验证受管部署会话的有界扩展，覆盖全部部署单组件项目类型
+│  │  │  ├─ DeploymentRemoteSession.java  # 组合类型化部署与远程数据库能力的已验证受管会话
 │  │  │  └─ LinuxRemoteSession.java  # 仅由有界、类型化 Linux 能力组成的单个已验证远程会话
 │  │  └─ transfer/  # 源码与配置传输契约包
 │  │     ├─ LinuxSourceTransport.java  # 受限源码传输与候选项清理契约
 │  │     ├─ RemoteWorkspace.java  # 仅根据已验证应用 ID 和源码摘要推导的固定服务端路径
 │  │     └─ SourceUploadResult.java  # 源码归档已到达固定候选工作区的确认结果
 │  ├─ linux-sshd/  # Apache SSHD 与 Linux 运行适配模块
+│  │  ├─ backup/  # 数据库固定远程协议实现包
+│  │  │  ├─ execution/protocol/DatabaseProtocolParser.java  # 严格解析有界兼容性、制品和恢复证据
+│  │  │  ├─ generation/script/DatabaseCommandRenderer.java  # 只渲染固定 helper 数据库动词和校验参数
+│  │  │  └─ SshdDatabaseOperationPort.java  # 通过 SSHD 流式传输并校验数据库制品的具体端口
 │  │  ├─ build/  # 目标主机构建协调包
 │  │  │  ├─ contract/  # 目标机构建规则与扩展契约功能组
 │  │  │  │  └─ spi/  # 构建渲染器扩展契约包
@@ -573,7 +601,7 @@ src/  # 项目源码与模块根目录
 │  │  │  ├─ SshdCapabilityCollector.java  # 使用 SSHD 会话只读收集发行版、CPU、安全和防火墙事实
 │  │  │  └─ SshdPlatformCapabilityCollector.java  # 部署主机只读能力契约的 Apache SSHD 实现
 │  │  ├─ command/  # 固定远端命令执行包
-│  │  │  └─ SshCommandExecutor.java  # 仅通过已认证的 SSHD 会话执行由实现持有且预先渲染的命令
+│  │  │  └─ SshCommandExecutor.java  # 执行预先渲染的固定命令，并为受控大制品提供不进入诊断缓冲区的流式通道
 │  │  ├─ connection/  # Apache SSHD 网关与会话创建包
 │  │  │  └─ SshdLinuxGateway.java  # 受管部署白名单远程契约的 Apache MINA SSHD 实现
 │  │  ├─ distro/  # 发行版准备实现分组包
@@ -639,6 +667,8 @@ src/  # 项目源码与模块根目录
 │  │     │        └─ fragments/  # 按职责拆分的 helper 脚本片段目录
 │  │     │           ├─ 00-protocol-foundation.sh  # 定义受管 helper 协议的安全基线、路径和输入校验函数
 │  │     │           ├─ 70-command-dispatch.sh  # 将 helper 协议命令分派到固定的受管操作
+│  │     │           ├─ database/  # 数据库一致性操作片段目录
+│  │     │           │  └─ 65-database-backup.sh  # 实现数据库预检、导出、制品流转、清理和候选恢复
 │  │     │           ├─ ecosystem/  # 语言生态构建与运行分派脚本片段目录
 │  │     │           │  └─ 35-ecosystem-dispatch.sh  # 按受支持项目生态分派固定构建与运行准备流程
 │  │     │           ├─ input/  # 部署输入脚本片段目录

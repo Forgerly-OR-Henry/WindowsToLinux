@@ -7,6 +7,7 @@ import gold.debug.windowstolinux.shared.linux.build.DeploymentBuildResult;
 import gold.debug.windowstolinux.shared.linux.error.LinuxOperationException;
 import gold.debug.windowstolinux.shared.linux.protocol.ReleaseSnapshot;
 import gold.debug.windowstolinux.shared.linux.protocol.RemoteStepResult;
+import gold.debug.windowstolinux.shared.linux.protocol.database.RemoteDatabasePort;
 import gold.debug.windowstolinux.shared.linux.runtime.HealthCheckResult;
 import gold.debug.windowstolinux.shared.linux.transfer.RemoteWorkspace;
 import gold.debug.windowstolinux.shared.model.deployment.BuildLimitConfiguration;
@@ -25,7 +26,7 @@ import java.util.List;
  *
  * <p>已验证受管部署会话的有界扩展，覆盖全部部署单组件项目类型。
  */
-public interface DeploymentRemoteSession extends LinuxRemoteSession {
+public interface DeploymentRemoteSession extends LinuxRemoteSession, RemoteDatabasePort {
     /** Collects distribution and container facts before one typed deployment. / 在类型化部署前采集发行版和容器事实。 */
     LinuxCapabilityFacts collectDeploymentCapabilities() throws LinuxOperationException;
 

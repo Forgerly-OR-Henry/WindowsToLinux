@@ -15,7 +15,11 @@ public enum BackupFailureType implements FailureDefinition {
     WRITE_FAILED("backup.archive.write-failed", "archive", "backup.error.writeFailed", FailureRecoveryAction.CLEANUP),
     EXTRACTION_FAILED("backup.restore.extraction-failed", "restore", "backup.error.extractionFailed", FailureRecoveryAction.CLEANUP),
     ARCHIVE_CHANGED("backup.restore.archive-changed", "restore", "backup.error.archiveChanged", FailureRecoveryAction.RETRY),
-    CLEANUP_FAILED("backup.restore.cleanup-failed", "cleanup", "backup.error.cleanupFailed", FailureRecoveryAction.REQUIRE_MANUAL_RECOVERY);
+    CLEANUP_FAILED("backup.restore.cleanup-failed", "cleanup", "backup.error.cleanupFailed", FailureRecoveryAction.REQUIRE_MANUAL_RECOVERY),
+    DATABASE_PREFLIGHT_FAILED("backup.database.preflight-failed", "preflight", "backup.error.databasePreflightFailed", FailureRecoveryAction.REQUEST_USER_CORRECTION),
+    DATABASE_BACKUP_FAILED("backup.database.export-failed", "database", "backup.error.databaseBackupFailed", FailureRecoveryAction.CLEANUP),
+    DATABASE_RESTORE_FAILED("backup.database.restore-failed", "database", "backup.error.databaseRestoreFailed", FailureRecoveryAction.CLEANUP),
+    DATABASE_EVIDENCE_INVALID("backup.database.evidence-invalid", "verification", "backup.error.databaseEvidenceInvalid", FailureRecoveryAction.REQUIRE_MANUAL_RECOVERY);
 
     private final String code;
     private final String phase;

@@ -1,6 +1,13 @@
 package gold.debug.windowstolinux.shared.linux.sshd.session;
 
 import gold.debug.windowstolinux.shared.linux.sshd.command.SshCommandExecutor;
+import gold.debug.windowstolinux.shared.linux.sshd.backup.SshdDatabaseOperationPort;
+import gold.debug.windowstolinux.shared.linux.protocol.database.RemoteDatabasePort.BackupArtifact;
+import gold.debug.windowstolinux.shared.linux.protocol.database.RemoteDatabasePort.BackupRequest;
+import gold.debug.windowstolinux.shared.linux.protocol.database.RemoteDatabasePort.CompatibilityEvidence;
+import gold.debug.windowstolinux.shared.linux.protocol.database.RemoteDatabasePort.DatabaseConsistencyMode;
+import gold.debug.windowstolinux.shared.linux.protocol.database.RemoteDatabasePort.RestoreEvidence;
+import gold.debug.windowstolinux.shared.linux.protocol.database.RemoteDatabasePort.RestoreRequest;
 
 import gold.debug.windowstolinux.shared.linux.build.DeploymentBuildResult;
 import gold.debug.windowstolinux.shared.linux.session.DeploymentRemoteSession;
@@ -49,6 +56,8 @@ import org.apache.sshd.client.SshClient;
 import org.apache.sshd.client.session.ClientSession;
 
 import java.util.List;
+import java.io.InputStream;
+import java.io.OutputStream;
 
 /**
  * Unified session facade delegating each typed capability to its implementation package.
@@ -74,6 +83,7 @@ public final class SshdLinuxRemoteSession implements DeploymentRemoteSession {
     private final SystemdLifecycleExecutor systemdLifecycle;
     private final ContainerRuntimeExecutor containerRuntime;
     private final ManagedRuntimeExecutor managedRuntime;
+    private final SshdDatabaseOperationPort databases;
 
     /** Creates an instance of this type. / 创建此类型的实例。 */
     public SshdLinuxRemoteSession(SshClient client, ClientSession session,
@@ -82,6 +92,7 @@ public final class SshdLinuxRemoteSession implements DeploymentRemoteSession {
         this.session = session;
         this.username = endpoint.username();
         SshCommandExecutor commands = new SshCommandExecutor(session);
+        this.databases = new SshdDatabaseOperationPort(commands);
         this.capabilities = new SshdCapabilityCollector(commands, hostFingerprint);
         this.deploymentCapabilities = new SshdPlatformCapabilityCollector(commands, hostFingerprint);
         this.environment = new ManagedEnvironmentExecutor(
@@ -273,6 +284,37 @@ public final class SshdLinuxRemoteSession implements DeploymentRemoteSession {
                     "Post-start health check failed");
         }
         return observeDeployment(application, runtime);
+    }
+
+    @Override
+    public CompatibilityEvidence inspect(BackupRequest request) throws LinuxOperationException {
+        return databases.inspect(request);
+    }
+
+    @Override
+    public BackupArtifact export(BackupRequest request, DatabaseConsistencyMode consistencyMode)
+            throws LinuxOperationException {
+        return databases.export(request, consistencyMode);
+    }
+
+    @Override
+    public RestoreEvidence restoreCandidate(RestoreRequest request) throws LinuxOperationException {
+        return databases.restoreCandidate(request);
+    }
+
+    @Override
+    public void copyArtifact(BackupArtifact artifact, OutputStream destination) throws LinuxOperationException {
+        databases.copyArtifact(artifact, destination);
+    }
+
+    @Override
+    public void stageArtifact(BackupArtifact artifact, InputStream source) throws LinuxOperationException {
+        databases.stageArtifact(artifact, source);
+    }
+
+    @Override
+    public void discardArtifact(BackupArtifact artifact) throws LinuxOperationException {
+        databases.discardArtifact(artifact);
     }
 
     /** Closes this resource. / 关闭此资源。 */

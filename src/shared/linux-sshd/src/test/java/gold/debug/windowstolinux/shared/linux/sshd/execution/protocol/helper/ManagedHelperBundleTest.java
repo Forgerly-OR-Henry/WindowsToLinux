@@ -28,7 +28,7 @@ class ManagedHelperBundleTest {
     void exposesOnlyVersionedTypedOperationsAndKeepsLegacyGradleReadCompatibility() {
         String helper = ManagedHelperBundle.renderScript();
 
-        assertEquals(3, ManagedHelperBundle.PROTOCOL_VERSION);
+        assertEquals(4, ManagedHelperBundle.PROTOCOL_VERSION);
         assertTrue(helper.contains("printf 'HELPER=1\\nPROTOCOL=%s\\n' \"$helper_protocol\""));
         assertTrue(helper.contains("gradle)"));
         assertTrue(helper.contains("[ \"$kind\" != gradle ] || reject legacy-gradle-write"));
@@ -40,6 +40,12 @@ class ManagedHelperBundleTest {
         assertTrue(helper.contains("phpcli)"));
         assertTrue(helper.contains("rubycli)"));
         assertTrue(helper.contains("cmake)"));
+        assertTrue(helper.contains("database-inspect) database_inspect \"$@\""));
+        assertTrue(helper.contains("database-export) database_export \"$@\""));
+        assertTrue(helper.contains("database-stage-artifact) database_stage_artifact \"$@\""));
+        assertTrue(helper.contains("database-restore-candidate) database_restore_candidate \"$@\""));
+        assertTrue(helper.contains("rm -f -- \"$pgpass\"; reject database-restore-failed"));
+        assertTrue(helper.contains("DROP DATABASE IF EXISTS"));
         assertTrue(helper.contains("NPM) command=\"/usr/bin/env PATH=/usr/local/bin:/usr/bin:/bin npm"));
         assertTrue(helper.contains("PNPM) command=\"/usr/bin/env PATH=/usr/local/bin:/usr/bin:/bin pnpm"));
         assertTrue(helper.contains("YARN) command=\"/usr/bin/env PATH=/usr/local/bin:/usr/bin:/bin yarn"));

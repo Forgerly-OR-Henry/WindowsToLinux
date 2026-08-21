@@ -9,6 +9,8 @@ import org.apache.sshd.client.session.ClientSession;
 import java.io.ByteArrayOutputStream;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.EnumSet;
@@ -202,6 +204,31 @@ public final class SshCommandExecutor {
 
     private static String safeException(IOException exception) {
         return exception.getClass().getSimpleName();
+    }
+
+    /** Streams large controlled protocol input and output without buffering it as diagnostic evidence. / 在不把大型受控协议输入输出缓冲为诊断证据的情况下进行流式传输。 */
+    public CommandResult execProtocolStreaming(
+            String script, InputStream input, OutputStream output, Duration timeout) throws LinuxOperationException {
+        Objects.requireNonNull(input, "input");
+        Objects.requireNonNull(output, "output");
+        Objects.requireNonNull(timeout, "timeout");
+        ByteArrayOutputStream error = new ByteArrayOutputStream();
+        String command = "/bin/bash -lc " + quote(script);
+        try (ClientChannel channel = session.createExecChannel(command)) {
+            channel.setIn(input);
+            channel.setOut(output);
+            channel.setErr(error);
+            channel.open().verify(timeout);
+            var events = channel.waitFor(EnumSet.of(ClientChannelEvent.CLOSED), timeout);
+            boolean timedOut = !events.contains(ClientChannelEvent.CLOSED);
+            if (timedOut) channel.close(true);
+            Integer exit = channel.getExitStatus();
+            boolean succeeded = !timedOut && exit != null && exit == 0;
+            return new CommandResult(succeeded, timedOut, "", "", sanitize(error.toString(StandardCharsets.UTF_8)), exit);
+        } catch (IOException exception) {
+            throw LinuxOperationException.create(LinuxOperationFailureType.SSH_COMMAND_FAILED,
+                    "Controlled SSH stream could not be executed (" + safeException(exception) + ")", exception);
+        }
     }
 
     /**

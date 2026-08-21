@@ -2,8 +2,8 @@
 
 ## 文档信息
 
-- 文档版本：`3.28.0-backup-secret-encryption`
-- 文档状态：**28-POM 模块边界保持不变；15 个已有生产代码的 app/shared 模块采用模块内识别与恢复、最小共用失败契约、部署/服务编排、UI 安全展示和本地诊断报告；backup 与 Web 仅登记未来约束；真实 Linux 修改路径没有新增产品入口证据时继续标记 `RUNTIME-PENDING`**
+- 文档版本：`3.29.0-database-consistency-adapters`
+- 文档状态：**28-POM 模块边界保持不变；`shared/backup` 已落地归档、独立备份秘密信封和 SQLite/PostgreSQL/MySQL/MariaDB 一致性适配契约，`linux-sshd` 已实现 helper v4 固定数据库协议；桌面用例、候选恢复、迁移、升级与卸载仍在开发，helper v4 尚无新增产品入口实机证据，相关路径继续标记 `RUNTIME-PENDING`**
 - 已确认范围：`shared` 共用模块、`app` Windows 桌面应用模块、`web` Web 应用模块
 - 已确认能力边界：受管应用生命周期复用既有模块，不新增独立 Maven 模块
 - 更新日期：2026-08-21
@@ -134,9 +134,13 @@ WindowsToLinux/
    │  │  └─ workload/         容器与静态站点工作负载识别
    │  ├─ backup/              备份、恢复与跨服务器迁移
    │  │  ├─ contract/         备份规则与契约
+   │  │  │  ├─ spi/           数据库一致性策略、导出制品和候选恢复的模块内窄契约
    │  │  │  └─ validation/    完整性、安全性和兼容性校验
    │  │  ├─ execution/        备份执行流程
    │  │  │  └─ migration/     跨服务器迁移编排
+   │  │  ├─ extension/        数据库备份扩展装配
+   │  │  │  ├─ adapter/       SQLite、PostgreSQL 与 MySQL/MariaDB 一致性策略
+   │  │  │  └─ registry/      按数据库类型闭合选择的唯一注册表
    │  │  ├─ format/           版本化备份格式与归档成员
    │  │  ├─ manifest/         环境、数据和恢复清单
    │  │  └─ restore/          恢复计划与候选恢复编排
@@ -173,10 +177,16 @@ WindowsToLinux/
    │  │  ├─ distro/           发行版事实与环境准备契约
    │  │  ├─ error/            全部受控 Linux 操作的公共失败类型
    │  │  ├─ protocol/         类型化高权限操作及结果契约
+   │  │  │  └─ database/      数据库固定远程操作、制品流与证据契约
    │  │  ├─ runtime/          systemd、Docker、Podman 和静态服务生命周期契约
    │  │  ├─ session/          组合各项类型化能力的远程会话契约
    │  │  └─ transfer/         受控传输请求与结果契约
    │  ├─ linux-sshd/          Apache SSHD Linux 远程能力实现
+   │  │  ├─ backup/           数据库固定协议、证据解析和流式制品传输
+   │  │  │  ├─ execution/     数据库协议执行流程
+   │  │  │  │  └─ protocol/  helper 数据库证据解析
+   │  │  │  └─ generation/    数据库 helper 内容生成
+   │  │  │     └─ script/     固定数据库动词与参数渲染
    │  │  ├─ build/            受控目标机构建入口
    │  │  │  ├─ contract/      构建规则与扩展契约
    │  │  │  │  └─ spi/       单项目类型构建渲染窄契约
@@ -847,7 +857,7 @@ Web 端所有密码哈希、加密、解密、主密钥和服务端凭据操作�
 11. `VirtualMachineError`、`LinkageError` 等致命 JVM 错误只做尽力记录后退出，不承诺继续运行。AI 失败只生成 `ai.*` 描述并保留确定性分析结果，不参与错误分类授权、部署重试、回滚决策或执行授权。
 12. `FailureContractArchitectureTest` 必须检查错误码格式和唯一性、模块归属、类型命名、中英文消息键一致、自定义异常实现 `FailureCarrier`、用户边界不使用原始异常消息，以及未说明的静默捕获；测试在 `target/failure-catalog.md` 生成不跟踪的失败目录。
 13. 故障注入至少覆盖数据库锁定/损坏/回滚失败、目录不可写、归档中断/清理失败、Git 工具缺失/超时、SSH 瞬时断线/认证失败、健康失败回滚、回滚不可验证、AI 不可用、报告截断/轮转/脱敏、启动失败和未知 UI 异常。局部测试只证明本地错误语义；真实 Linux 修改路径仍必须通过现有产品入口验收。
-14. `shared/backup` 已使用模块本地 `BackupFailureType` 和最小共用失败契约实现归档核心；Jackson 只负责严格、确定性的 `manifest.json` 编解码，Commons Compress 只负责可检查 Unix 类型和 ZIP 扩展字段的归档边界。两项依赖不得进入密码处理、远程执行或平台目录选择职责。Web Java 模块仍无生产实现，不创建空异常、空包或转发壳。
+14. `shared/backup` 已使用模块本地 `BackupFailureType` 和最小共用失败契约实现归档核心及数据库一致性适配契约；Jackson 只负责严格、确定性的 `manifest.json` 编解码，Commons Compress 只负责可检查 Unix 类型和 ZIP 扩展字段的归档边界。数据库适配器只决定一致性策略并通过模块内 `contract.spi.DatabaseOperationPort` 获取证据；跨模块远程数据库能力只通过 `linux.protocol.database.RemoteDatabasePort` 暴露，固定远程命令、流式制品传输和 helper v4 实现归 `linux-sshd.backup`，`linux-sshd` 不得反向依赖 `backup`。两项归档依赖不得进入密码处理、远程执行或平台目录选择职责。Web Java 模块仍无生产实现，不创建空异常、空包或转发壳。
 
 ## 4. 叶子模块约定
 
@@ -881,7 +891,9 @@ linux.capability              定义发行版、版本、CPU 和运行能力采�
 linux.build                   定义受控目标机构建契约
 linux.runtime                 定义运行方式生命周期契约
 linux.distro                  定义发行版事实与环境准备契约
+linux.protocol.database       定义数据库固定远程操作、制品流和证据契约
 linux-sshd.command            实现不向上层暴露的受控 SSH 命令机械流程
+linux-sshd.backup             实现数据库固定协议、证据解析和流式制品传输
 linux-sshd.build.contract     定义目标机构建 SPI
 linux-sshd.build.ecosystem    实现语言与构建架构差异
 linux-sshd.build.extension    装配并校验构建实现
@@ -948,9 +960,11 @@ deploy.support.distro      ──→ deploy.contract.result.compatibility + mode
 deploy.support.runtime ──→ model
 
 linux.connection      ──→ linux.session ──→ linux.{build,capability,distro,protocol,runtime,transfer}
+linux.protocol.database ──→ linux.error
 linux.* operations    ──→ linux.error ──→ model.message
 
 linux-sshd.command          ──→ linux.error + Apache SSHD
+linux-sshd.backup           ──→ linux.protocol.database + linux-sshd.command
 linux-sshd.build            ──→ linux-sshd.{build.contract.spi,build.ecosystem,build.extension.registry,build.generation.script,build.workload,command}
 linux-sshd.build.ecosystem  ──→ linux-sshd.{build.contract.spi,build.generation.script}
 linux-sshd.build.workload   ──→ linux-sshd.{build.contract.spi,build.generation.script}
@@ -960,7 +974,7 @@ linux-sshd.distro.{apt,dnf} ──→ linux-sshd.{distro,distro.contract.profile
 linux-sshd.distro.extension.registry ──→ linux-sshd.{distro,distro.apt,distro.dnf}
 linux-sshd.distro.generation.script  ──→ linux-sshd.{distro.contract.profile,execution.protocol.helper}
 linux-sshd.{execution.protocol,execution.transfer,runtime} ──→ linux-sshd.command
-linux-sshd.session          ──→ linux-sshd.{build,capability,distro,execution.protocol,execution.transfer,runtime}
+linux-sshd.session          ──→ linux-sshd.{backup,build,capability,distro,execution.protocol,execution.transfer,runtime}
 linux-sshd.connection       ──→ linux-sshd.session + linux-sshd.command
 ```
 
@@ -1217,6 +1231,7 @@ linux-sshd 通过 linux 契约采集服务器已有环境
 
 | 版本 | 日期 | 说明 |
 | --- | --- | --- |
+| 3.29.0-database-consistency-adapters | 2026-08-21 | 在 `shared/backup.contract.spi` 冻结数据库连接、兼容性、导出制品和候选恢复证据窄契约，在 `extension.adapter` 分别实现 SQLite 在线备份优先、PostgreSQL 兼容逻辑导出及 MySQL/MariaDB 事务表一致性策略；跨模块能力由 `linux.protocol.database.RemoteDatabasePort` 单向提供，`linux-sshd.backup` 与 helper v4 仅暴露固定动词、流式校验制品和受管候选数据库，不反向依赖 `backup`。聚焦适配、协议、helper 哈希及架构门禁通过；helper v3 历史实机证据不外推到 v4，桌面产品用例和真实恢复仍为 `RUNTIME-PENDING`。 |
 | 3.28.0-backup-secret-encryption | 2026-08-21 | 在 `shared/backup.format` 固定只含公开 KDF 参数、随机盐/nonce 与密文的严格 `secrets.enc` 信封，在 `app/secret.crypto` 以调用级独立密码完成 Argon2id 与 AES-256-GCM；错误密码和篡改统一为认证失败，`doFinal` 成功前不返回明文，局部密码、明文、密文副本和派生密钥均在 finally 清零，服务无敏感数组字段。加密与架构聚焦测试通过；尚未接通桌面备份用例和真实恢复证据。 |
 | 3.27.0-backup-archive-core | 2026-08-21 | 按最新结构边界启用 `shared/backup` 首批生产实现：冻结版本化环境清单和数据库一致性证据，写入时逐成员核验大小与 SHA-256，读取时在提取前拒绝路径穿越、链接/特殊类型、未知扩展字段、重复路径、资源越界与压缩炸弹，并把完整性与可选 Ed25519 来源状态分开；候选提取重新绑定归档指纹并在失败时清理部分输出。聚焦归档测试与包结构/失败契约门禁通过；数据库远程适配、秘密加密、迁移、桌面更新与卸载尚未完成，不新增运行环境证据。 |
 | 3.26.0-structured-failure-handling | 2026-08-21 | 在保持 28-POM、既有依赖和 SQLite schema v7 的前提下，引入模块本地失败定义与最小 `shared.model.failure` 契约，原子移除旧本地化异常壳；补齐桌面系统边界、安全 UI 展示、有界本地诊断、SQLite 健壮性、源码/Windows/Git/SSH/部署保守恢复、同一 operationId 结果与非致命警告。backup 与 Web 只登记未来约束；没有新增真实 Linux 产品入口证据，相关路径继续为 `RUNTIME-PENDING`。 |

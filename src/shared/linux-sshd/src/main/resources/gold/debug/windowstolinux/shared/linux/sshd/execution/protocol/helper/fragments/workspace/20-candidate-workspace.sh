@@ -2,13 +2,14 @@ expected_unit_digest() {
   render_unit "$1" | sha256sum | awk '{print $1}'
 }
 initialise_controlled_roots() {
-  install -d -o root -g root -m 755 -- "$base_root" "$applications_root" "$work_root" "$snapshots_root" "$configurations_root" "$secrets_root"
+  install -d -o root -g root -m 755 -- "$base_root" "$applications_root" "$work_root" "$snapshots_root" "$configurations_root" "$secrets_root" "$backups_root"
   assert_root_owned_directory "$base_root"
   assert_root_owned_directory "$applications_root"
   assert_root_owned_directory "$work_root"
   assert_root_owned_directory "$snapshots_root"
   assert_root_owned_directory "$configurations_root"
   assert_root_owned_directory "$secrets_root"
+  assert_root_owned_directory "$backups_root"
 }
 assert_application_root_or_absent() {
   local app="$1"

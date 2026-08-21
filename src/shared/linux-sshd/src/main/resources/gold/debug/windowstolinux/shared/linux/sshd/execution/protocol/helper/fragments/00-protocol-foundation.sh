@@ -5,13 +5,14 @@ PATH=/usr/sbin:/usr/bin:/sbin:/bin
 umask 077
 helper_path=/usr/local/lib/windowstolinux/managed-helper
 helper_directory=/usr/local/lib/windowstolinux
-helper_protocol=3
+helper_protocol=4
 base_root=/var/lib/windowstolinux
 applications_root="$base_root/apps"
 work_root="$base_root/work"
 snapshots_root="$base_root/snapshots"
 configurations_root="$base_root/configurations"
 secrets_root="$base_root/secrets"
+backups_root="$base_root/backups"
 reject() {
   printf 'MANAGED_HELPER_REJECT=%s\n' "$1" >&2
   exit 64

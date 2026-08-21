@@ -4,12 +4,12 @@
 
 - 项目名称：WindowsToLinux
 - 文档角色：产品边界、五期路线、跨期规则与完整开发流程的唯一总入口
-- 文档版本：`2.17.0-phase3-closeout`
-- 文档状态：**本轮三期代码、Ubuntu 24.04 x86-64 与 CentOS Stream 9 x86-64 产品入口验收完成；其他发行版实机测试由用户明确延后为后续独立任务**
-- 更新日期：2026-08-14
+- 文档版本：`2.18.0-phase4-database-adapters`
+- 文档状态：**三期产品入口证据作为 helper v3 历史结果保留；四期 helper v4 数据库协议仅完成本地静态实现与测试，真实产品入口验收继续标记 `RUNTIME-PENDING`**
+- 更新日期：2026-08-21
 - 项目结构：[File.md](File.md)
 
-> 文档中的“支持”必须具有实现和验收证据。2026-08-10/12 已由产品入口在新装 Ubuntu 24.04 x86-64 上验证迁移前的一期 Maven/Spring Boot 以及二期 Gradle Spring Boot、普通 JAR、Node.js、Python、静态站点和 Dockerfile 容器链路，这些记录作为历史证据保留。2026-08-13 已由当前产品入口和 helper v3 验证六种高级语言试验适配器、两组件整应用事务、统一 Spring Boot Reviewed 链路及 Podman Quadlet；证据只覆盖验收夹具、Ubuntu 24.04 和 x86-64，不升级为未声明的框架或其他发行版支持。2026-08-14 的 CentOS Stream 9 x86-64 目标已由当前产品入口完成两次环境准备、两组件发布、故障候选整应用回滚、应用/数据库重启、生命周期与自启切换；SELinux 和防火墙态均在准备前后复核为未改变。该证据仅覆盖精确夹具，不外推到 Stream 10 或其他发行版。2026-08-21 已完成四期平台无关归档核心及独立备份密码加密的本地静态测试；数据库、迁移、桌面升级、产品用例接线和全部真实产品入口证据仍待完成，不能由局部单元测试外推。
+> 文档中的“支持”必须具有实现和验收证据。2026-08-10/12 已由产品入口在新装 Ubuntu 24.04 x86-64 上验证迁移前的一期 Maven/Spring Boot 以及二期 Gradle Spring Boot、普通 JAR、Node.js、Python、静态站点和 Dockerfile 容器链路，这些记录作为历史证据保留。2026-08-13 已由产品入口和当时的 helper v3 验证六种高级语言试验适配器、两组件整应用事务、统一 Spring Boot Reviewed 链路及 Podman Quadlet；证据只覆盖验收夹具、Ubuntu 24.04 和 x86-64，不升级为未声明的框架或其他发行版支持。2026-08-14 的 CentOS Stream 9 x86-64 目标已由当时的产品入口完成两次环境准备、两组件发布、故障候选整应用回滚、应用/数据库重启、生命周期与自启切换；SELinux 和防火墙态均在准备前后复核为未改变。该证据仅覆盖精确夹具，不外推到 Stream 10 或其他发行版。2026-08-21 已完成四期平台无关归档核心、独立备份密码加密、数据库一致性适配器和 helper v4 固定数据库协议的本地静态测试；候选恢复编排、迁移、桌面升级、产品用例接线和 helper v4 的全部真实产品入口证据仍待完成，不能由局部单元测试外推。
 
 ## 1. 产品定位
 
@@ -22,13 +22,14 @@ WindowsToLinux 是面向个人和小型自托管场景的部署管理工具。�
 | 项目 | 当前状态 | 可以据此声称的结论 |
 | --- | --- | --- |
 | Maven | 当前 reactor 由根工程、3 个聚合模块和 24 个叶子模块组成，共 28 个 POM；四期复用既有 `shared/backup`，没有新增 Maven 模块 | `File.md` 的正式目标模块结构保持不变；Web Java 模块仍为 POM-only |
-| Java | Java 21；shared 与桌面代码已按职责分包；Spring Boot 只保留 Reviewed 类型化分析和部署链路 | 迁移前六类路径保留历史实机证据；统一 Spring Boot Reviewed/helper v3 已在 Ubuntu 24.04 x86-64 完成当前产品入口验收 |
+| Java | Java 21；shared 与桌面代码已按职责分包；Spring Boot 只保留 Reviewed 类型化分析和部署链路 | 迁移前六类路径及 helper v3 保留历史实机证据；当前 helper v4 尚未执行产品入口验收 |
 | Web 前端 | Vue 3、TypeScript、Vite、Vitest、Playwright 骨架 | 只可展示骨架页，尚无业务接口 |
 | 桌面/Web 业务 | Swing 已提供单组件与多组件独立页面，以及十二类项目的类型选择、静态分析、类型化计划审阅、已保存凭据提交、整应用结果和依赖安全生命周期；Web 业务未实现 | 桌面入口统一使用 Reviewed API；试验适配器每次请求都需确认专用测试环境；Web 不可部署或管理应用 |
-| Linux 运行验证 | 迁移前 Ubuntu 24.04 x86-64 已实际验证环境准备、六类二期构建发布及代表性生命周期；当前 helper v3 已验证六种高级语言、两组件整应用、统一 Spring Boot 与 Podman Quadlet；CentOS Stream 9 已由产品入口完成环境准备、发布、回滚和生命周期验收 | 证据仅适用于 Ubuntu 24.04 与 CentOS Stream 9 的精确 x86-64 夹具；其他发行版实机测试按当前范围延后 |
-| 三期支持分级 | 支持等级、精确目标验证范围、不可执行识别预览及 Go/Rust/.NET/Kotlin/PHP/Ruby 固定试验适配器已接入；helper v3 不接受任意命令 | 六种语言在 Ubuntu 24.04 x86-64 上分别和联合完成构建、发布、回滚、生命周期、秘密脱敏与状态重启恢复；仍只称试验适配，不外推框架/发行版支持 |
+| Linux 运行验证 | 迁移前 Ubuntu 24.04 x86-64 已实际验证环境准备、六类二期构建发布及代表性生命周期；helper v3 已验证六种高级语言、两组件整应用、统一 Spring Boot 与 Podman Quadlet；CentOS Stream 9 已由产品入口完成环境准备、发布、回滚和生命周期验收；当前源码使用 helper v4 | 历史证据仅适用于当时 helper v3、Ubuntu 24.04 与 CentOS Stream 9 的精确 x86-64 夹具；helper v4 和其他发行版实机测试为 `RUNTIME-PENDING` |
+| 三期支持分级 | 支持等级、精确目标验证范围、不可执行识别预览及 Go/Rust/.NET/Kotlin/PHP/Ruby 固定试验适配器已接入；历史 helper v3 不接受任意命令 | 六种语言的历史 v3 证据仍只称试验适配，不外推框架/发行版支持；helper v4 需重新通过产品入口验收 |
 | 三期混合项目与多组件 | 稳定组件清单、冲突/依赖环拦截、确定性依赖计划、整应用构建/快照/切换/健康/恢复事务、依赖安全生命周期及桌面产品入口已通过本地门禁和两组件实机验收；SQLite v7 原子保存成功图并支持重启后恢复 | Ubuntu 24.04 x86-64 已验证两组件发布、组件故障整应用回滚、图重载与生命周期；共享数据库迁移和跨服务器恢复不在三期范围 |
 | 三期多模型协作 | 三个固定角色可独立绑定命名 Provider/模型；最小上下文、严格结构化输出、输入摘要证据和确定性优先冲突裁决已接入 SQLite v6、服务与桌面配置页 | AI 仅为建议；失败不跨 Provider 回退，冲突不得自动转成执行授权 |
+| 四期备份与数据库 | `shared/backup` 已实现版本化安全归档、独立秘密信封及 SQLite/PostgreSQL/MySQL/MariaDB 一致性策略；远程能力经 `linux.protocol.database` 单向契约由 `linux-sshd` 的 helper v4 固定数据库协议和流式制品校验实现 | 只证明本地静态契约、协议拼装、模块依赖方向和负向边界；桌面用例、候选恢复、迁移及 helper v4 实机证据仍为 `RUNTIME-PENDING` |
 
 ### 2.1 正式目标架构与当前实现边界
 
@@ -44,7 +45,7 @@ WindowsToLinux 是面向个人和小型自托管场景的部署管理工具。�
 2. 源码快照、可重复归档和安全校验归 `shared/source`；桌面本地入口、Web 上传工作区和 Git 仓库来源分别归 `app/windows`、`web/file` 和 `shared/git`。源码归档不与 `shared/backup` 的应用数据备份语义混用。
 3. `shared/linux` 只定义公共契约，`shared/linux-sshd` 承接 Apache SSHD 具体实现；`deploy`、`app/service` 和 `web/service` 只依赖 `shared/linux`，只有 `app/main`、`web/main` 负责选择并装配 `shared/linux-sshd`。
 
-`shared/source` 已承接源码快照、归档与安全校验，`shared/linux-sshd` 已承接 Apache SSHD、十二类项目的有界构建、发布/回滚协议、容器运行及 Ubuntu、Debian、CentOS Stream、Rocky Linux、AlmaLinux、Oracle Linux 的独立固定环境准备；Spring Boot 与六种高级语言试验适配器共用唯一 Reviewed/helper v3 路径，且高级语言命令由独立固定片段渲染。发行版探测保留包架构、累计 CPU、AppArmor/SELinux、防火墙和容器事实，自动准备不关闭既有安全机制。`shared/config` 定义类型化普通配置快照和不透明秘密引用；桌面 SQLite v7 保存配置实例、秘密修订元数据、发布身份摘要、命名 AI Provider/角色外键及成功整应用的不含秘密组件图，并从 v4 的旧发布列名无损迁移，原始秘密值仍只经 `app/secret` 短时处理。
+`shared/source` 已承接源码快照、归档与安全校验，`shared/linux-sshd` 已承接 Apache SSHD、十二类项目的有界构建、发布/回滚协议、容器运行及 Ubuntu、Debian、CentOS Stream、Rocky Linux、AlmaLinux、Oracle Linux 的独立固定环境准备；Spring Boot 与六种高级语言试验适配器的既有产品证据来自唯一 Reviewed/helper v3 路径，当前 helper v4 在同一路径上新增固定数据库协议但尚未获得实机证据。发行版探测保留包架构、累计 CPU、AppArmor/SELinux、防火墙和容器事实，自动准备不关闭既有安全机制。`shared/config` 定义类型化普通配置快照和不透明秘密引用；桌面 SQLite v7 保存配置实例、秘密修订元数据、发布身份摘要、命名 AI Provider/角色外键及成功整应用的不含秘密组件图，并从 v4 的旧发布列名无损迁移，原始秘密值仍只经 `app/secret` 短时处理。
 
 开发 WindowsToLinux 本身使用开发机安装的系统 Maven 及其系统本地仓库，不由项目覆盖仓库位置，也不把 Maven Wrapper 作为本项目构建入口；同时使用 JDK 21、Node 和相应测试工具。产品处理的用户项目不得在 Windows 桌面主机或 Web 后端主机安装依赖、执行项目脚本或构建；用户项目构建只发生在目标 Linux，届时可按受控适配规则使用用户项目自带的 Wrapper。
 
