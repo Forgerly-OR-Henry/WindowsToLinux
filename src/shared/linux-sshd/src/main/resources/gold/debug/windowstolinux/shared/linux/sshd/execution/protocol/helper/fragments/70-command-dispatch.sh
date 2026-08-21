@@ -21,6 +21,7 @@ case "$verb" in
   database-read-artifact) database_read_artifact "$@" ;;
   database-discard-artifact) database_discard_artifact "$@" ;;
   database-restore-candidate) database_restore_candidate "$@" ;;
+  database-discard-candidate) database_discard_candidate "$@" ;;
   snapshot-deployment) snapshot_deployment "$@" ;;
   publish-deployment) publish_deployment "$@" ;;
   retain) retain_releases "$@" ;;

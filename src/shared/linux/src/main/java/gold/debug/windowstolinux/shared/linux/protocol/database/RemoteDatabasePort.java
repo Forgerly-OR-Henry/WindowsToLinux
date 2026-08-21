@@ -27,6 +27,9 @@ public interface RemoteDatabasePort {
     /** Restores and reads an isolated candidate without activation. / 恢复并读取隔离候选且不激活。 */
     RestoreEvidence restoreCandidate(RestoreRequest request) throws LinuxOperationException;
 
+    /** Removes one isolated database candidate that was never committed. / 移除一个从未提交的隔离数据库候选。 */
+    void discardCandidate(RestoreRequest request) throws LinuxOperationException;
+
     /** Streams an exact remote artifact to a caller-owned destination. / 将精确远程制品流式传到调用方目标。 */
     void copyArtifact(BackupArtifact artifact, OutputStream destination) throws LinuxOperationException;
 

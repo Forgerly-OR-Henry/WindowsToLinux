@@ -53,7 +53,7 @@ class BackupManifestCodecTest {
                 List.of("/srv/sample/content"), List.of("sample-content"), BackupDatabase.none(),
                 new BackupIdentity("sample", "server-1", "/opt/windowstolinux/apps/sample", "release-1"),
                 List.of("runtime/sample.service"),
-                new BackupRuntime("systemd", "255", "x86_64", List.of("systemd")),
+                new BackupRuntime("ubuntu", "24.04", "systemd", "255", "x86_64", List.of("systemd")),
                 List.of("restore requires the managed root to be empty"));
         return BackupManifest.create(Instant.parse("2026-08-21T00:00:00Z"), "sample", inventory, List.of(member));
     }

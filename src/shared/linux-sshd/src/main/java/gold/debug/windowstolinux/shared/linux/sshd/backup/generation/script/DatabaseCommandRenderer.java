@@ -42,6 +42,16 @@ public final class DatabaseCommandRenderer {
         return command("database-restore-candidate", arguments);
     }
 
+    /** Renders cleanup for an isolated database candidate. / 渲染隔离数据库候选清理。 */
+    public String discardCandidate(RemoteDatabasePort.RestoreRequest request) {
+        Objects.requireNonNull(request, "request");
+        List<String> arguments = new ArrayList<>();
+        arguments.add(request.applicationId());
+        arguments.add(request.candidateId());
+        appendConnection(arguments, request.target());
+        return command("database-discard-candidate", arguments);
+    }
+
     /** Renders exact artifact streaming from the controlled remote store. / 渲染从受控远程存储精确流出导出物。 */
     public String readArtifact(RemoteDatabasePort.BackupArtifact artifact) {
         return command("database-read-artifact", List.of(artifact.artifactId(),

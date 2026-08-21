@@ -13,4 +13,7 @@ public interface DatabaseBackupAdapter {
 
     /** Restores one verified artifact into an isolated candidate. / 将一个已验证导出物恢复到隔离候选。 */
     DatabaseRestoreEvidence restore(DatabaseRestoreRequest request) throws BackupException;
+
+    /** Removes one uncommitted isolated restore candidate. / 移除一个未提交的隔离恢复候选。 */
+    void discardCandidate(DatabaseRestoreRequest request) throws BackupException;
 }

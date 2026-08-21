@@ -2,6 +2,7 @@ package gold.debug.windowstolinux.shared.backup.extension.adapter;
 
 import gold.debug.windowstolinux.shared.backup.contract.spi.DatabaseBackupArtifact;
 import gold.debug.windowstolinux.shared.backup.contract.spi.DatabaseCompatibilityEvidence;
+import gold.debug.windowstolinux.shared.backup.contract.spi.DatabaseRestoreRequest;
 import gold.debug.windowstolinux.shared.backup.contract.validation.BackupException;
 import gold.debug.windowstolinux.shared.backup.contract.validation.BackupFailureType;
 import gold.debug.windowstolinux.shared.backup.manifest.BackupConsistencyMode;
@@ -28,5 +29,26 @@ final class DatabaseAdapterEvidence {
                     "database export evidence differs from its completed preflight");
         }
         return artifact;
+    }
+
+    static void requireRestoreCompatible(
+            DatabaseRestoreRequest request, DatabaseCompatibilityEvidence evidence, BackupDatabaseType type)
+            throws BackupException {
+        requireReady(evidence, type);
+        String sourceFamily = versionFamily(request.artifact().database().engineVersion());
+        String targetFamily = versionFamily(evidence.engineVersion());
+        if (!sourceFamily.equals(targetFamily)) {
+            throw BackupException.create(BackupFailureType.DATABASE_PREFLIGHT_FAILED,
+                    "database restore requires a matching engine major version family");
+        }
+    }
+
+    private static String versionFamily(String version) throws BackupException {
+        var matcher = java.util.regex.Pattern.compile("(?:^|[^0-9])([0-9]+)(?:[^0-9]|$)").matcher(version);
+        if (!matcher.find()) {
+            throw BackupException.create(BackupFailureType.DATABASE_EVIDENCE_INVALID,
+                    "database engine evidence has no version family");
+        }
+        return matcher.group(1);
     }
 }

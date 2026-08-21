@@ -40,5 +40,6 @@ class DatabaseCommandRendererTest {
         assertTrue(renderer.readArtifact(artifact).contains("'128' '" + "a".repeat(64) + "'"));
         assertTrue(renderer.stageArtifact(artifact).contains("'database-stage-artifact'"));
         assertTrue(renderer.restore(restore).contains("'sample-0123456789abcdef' 'db-0123456789abcdef0123456789abcdef'"));
+        assertTrue(renderer.discardCandidate(restore).contains("'database-discard-candidate'"));
     }
 }

@@ -303,6 +303,11 @@ public final class SshdLinuxRemoteSession implements DeploymentRemoteSession {
     }
 
     @Override
+    public void discardCandidate(RestoreRequest request) throws LinuxOperationException {
+        databases.discardCandidate(request);
+    }
+
+    @Override
     public void copyArtifact(BackupArtifact artifact, OutputStream destination) throws LinuxOperationException {
         databases.copyArtifact(artifact, destination);
     }

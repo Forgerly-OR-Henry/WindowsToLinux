@@ -66,6 +66,17 @@ public final class LinuxDatabaseOperationPort implements DatabaseOperationPort {
     }
 
     @Override
+    public void discardCandidate(DatabaseRestoreRequest request) throws BackupException {
+        try {
+            remote.discardCandidate(new RemoteDatabasePort.RestoreRequest(request.applicationId(),
+                    request.candidateId(), connection(request.target()), artifact(request.artifact())));
+        } catch (LinuxOperationException exception) {
+            throw BackupException.create(BackupFailureType.CLEANUP_FAILED,
+                    "remote database candidate cleanup failed", exception);
+        }
+    }
+
+    @Override
     public void copyArtifact(DatabaseBackupArtifact artifact, OutputStream destination) throws BackupException {
         try {
             remote.copyArtifact(artifact(artifact), destination);

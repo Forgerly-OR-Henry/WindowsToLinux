@@ -50,7 +50,16 @@ public final class MysqlDatabaseAdapter implements DatabaseBackupAdapter {
     @Override
     public DatabaseRestoreEvidence restore(DatabaseRestoreRequest request) throws BackupException {
         if (request.target().type() != type()) throw new IllegalArgumentException("matching MySQL-compatible target is required");
+        DatabaseCompatibilityEvidence evidence = operations.inspect(new DatabaseBackupRequest(
+                request.applicationId(), request.target(), true, true));
+        DatabaseAdapterEvidence.requireRestoreCompatible(request, evidence, type());
         return operations.restoreCandidate(request);
+    }
+
+    @Override
+    public void discardCandidate(DatabaseRestoreRequest request) throws BackupException {
+        if (request.target().type() != type()) throw new IllegalArgumentException("matching MySQL-compatible target is required");
+        operations.discardCandidate(request);
     }
 
     private void requireType(DatabaseBackupRequest request) {

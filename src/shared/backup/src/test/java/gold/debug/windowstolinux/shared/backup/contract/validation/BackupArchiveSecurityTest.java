@@ -160,7 +160,7 @@ class BackupArchiveSecurityTest {
                 List.of("/srv/sample/content"), List.of("sample-content"), database,
                 new BackupIdentity("sample", "server-1", "/opt/windowstolinux/apps/sample", "release-1"),
                 List.of("runtime/sample.service"),
-                new BackupRuntime("systemd", "255", "x86_64", List.of("systemd")),
+                new BackupRuntime("ubuntu", "24.04", "systemd", "255", "x86_64", List.of("systemd")),
                 List.of("restore requires SQLite 3.46 or a compatible reader"));
         return BackupManifest.create(Instant.parse("2026-08-21T00:00:00Z"), "sample", inventory, List.of(member));
     }

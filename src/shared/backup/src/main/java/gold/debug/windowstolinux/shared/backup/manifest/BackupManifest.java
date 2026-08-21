@@ -21,7 +21,7 @@ public record BackupManifest(
     /** Current stable archive format identifier. / 当前稳定归档格式标识。 */
     public static final String CURRENT_FORMAT = "windowstolinux-backup";
     /** Current manifest schema version. / 当前清单模式版本。 */
-    public static final String CURRENT_SCHEMA_VERSION = "1";
+    public static final String CURRENT_SCHEMA_VERSION = "2";
 
     /** Validates schema compatibility and complete member uniqueness. / 校验模式兼容性与完整成员唯一性。 */
     public BackupManifest {

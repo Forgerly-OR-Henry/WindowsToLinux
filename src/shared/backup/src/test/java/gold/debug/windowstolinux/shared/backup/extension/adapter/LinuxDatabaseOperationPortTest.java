@@ -79,6 +79,8 @@ class LinuxDatabaseOperationPortTest {
                     List.of("candidate schema readable"));
         }
 
+        @Override public void discardCandidate(RestoreRequest request) { }
+
         @Override public void copyArtifact(BackupArtifact artifact, OutputStream destination) { }
         @Override public void stageArtifact(BackupArtifact artifact, InputStream source) { }
         @Override public void discardArtifact(BackupArtifact artifact) { }

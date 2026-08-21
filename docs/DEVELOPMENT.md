@@ -4,12 +4,12 @@
 
 - 项目名称：WindowsToLinux
 - 文档角色：产品边界、五期路线、跨期规则与完整开发流程的唯一总入口
-- 文档版本：`2.18.0-phase4-database-adapters`
-- 文档状态：**三期产品入口证据作为 helper v3 历史结果保留；四期 helper v4 数据库协议仅完成本地静态实现与测试，真实产品入口验收继续标记 `RUNTIME-PENDING`**
-- 更新日期：2026-08-21
+- 文档版本：`2.19.0-phase4-candidate-restore-core`
+- 文档状态：**三期产品入口证据作为 helper v3 历史结果保留；四期候选恢复核心及 helper v4 数据库协议仅完成本地静态实现与测试，具体平台切换和真实产品入口验收继续标记 `RUNTIME-PENDING`**
+- 更新日期：2026-08-22
 - 项目结构：[File.md](File.md)
 
-> 文档中的“支持”必须具有实现和验收证据。2026-08-10/12 已由产品入口在新装 Ubuntu 24.04 x86-64 上验证迁移前的一期 Maven/Spring Boot 以及二期 Gradle Spring Boot、普通 JAR、Node.js、Python、静态站点和 Dockerfile 容器链路，这些记录作为历史证据保留。2026-08-13 已由产品入口和当时的 helper v3 验证六种高级语言试验适配器、两组件整应用事务、统一 Spring Boot Reviewed 链路及 Podman Quadlet；证据只覆盖验收夹具、Ubuntu 24.04 和 x86-64，不升级为未声明的框架或其他发行版支持。2026-08-14 的 CentOS Stream 9 x86-64 目标已由当时的产品入口完成两次环境准备、两组件发布、故障候选整应用回滚、应用/数据库重启、生命周期与自启切换；SELinux 和防火墙态均在准备前后复核为未改变。该证据仅覆盖精确夹具，不外推到 Stream 10 或其他发行版。2026-08-21 已完成四期平台无关归档核心、独立备份密码加密、数据库一致性适配器和 helper v4 固定数据库协议的本地静态测试；候选恢复编排、迁移、桌面升级、产品用例接线和 helper v4 的全部真实产品入口证据仍待完成，不能由局部单元测试外推。
+> 文档中的“支持”必须具有实现和验收证据。2026-08-10/12 已由产品入口在新装 Ubuntu 24.04 x86-64 上验证迁移前的一期 Maven/Spring Boot 以及二期 Gradle Spring Boot、普通 JAR、Node.js、Python、静态站点和 Dockerfile 容器链路，这些记录作为历史证据保留。2026-08-13 已由产品入口和当时的 helper v3 验证六种高级语言试验适配器、两组件整应用事务、统一 Spring Boot Reviewed 链路及 Podman Quadlet；证据只覆盖验收夹具、Ubuntu 24.04 和 x86-64，不升级为未声明的框架或其他发行版支持。2026-08-14 的 CentOS Stream 9 x86-64 目标已由当时的产品入口完成两次环境准备、两组件发布、故障候选整应用回滚、应用/数据库重启、生命周期与自启切换；SELinux 和防火墙态均在准备前后复核为未改变。该证据仅覆盖精确夹具，不外推到 Stream 10 或其他发行版。2026-08-21/22 已完成四期平台无关归档核心、独立备份密码加密、数据库一致性适配器、schema v2 平台事实和候选恢复状态机的本地静态测试；具体 deploy/Linux 候选切换、迁移、桌面升级、产品用例接线和 helper v4 的全部真实产品入口证据仍待完成，不能由局部单元测试外推。
 
 ## 1. 产品定位
 
@@ -29,7 +29,7 @@ WindowsToLinux 是面向个人和小型自托管场景的部署管理工具。�
 | 三期支持分级 | 支持等级、精确目标验证范围、不可执行识别预览及 Go/Rust/.NET/Kotlin/PHP/Ruby 固定试验适配器已接入；历史 helper v3 不接受任意命令 | 六种语言的历史 v3 证据仍只称试验适配，不外推框架/发行版支持；helper v4 需重新通过产品入口验收 |
 | 三期混合项目与多组件 | 稳定组件清单、冲突/依赖环拦截、确定性依赖计划、整应用构建/快照/切换/健康/恢复事务、依赖安全生命周期及桌面产品入口已通过本地门禁和两组件实机验收；SQLite v7 原子保存成功图并支持重启后恢复 | Ubuntu 24.04 x86-64 已验证两组件发布、组件故障整应用回滚、图重载与生命周期；共享数据库迁移和跨服务器恢复不在三期范围 |
 | 三期多模型协作 | 三个固定角色可独立绑定命名 Provider/模型；最小上下文、严格结构化输出、输入摘要证据和确定性优先冲突裁决已接入 SQLite v6、服务与桌面配置页 | AI 仅为建议；失败不跨 Provider 回退，冲突不得自动转成执行授权 |
-| 四期备份与数据库 | `shared/backup` 已实现版本化安全归档、独立秘密信封及 SQLite/PostgreSQL/MySQL/MariaDB 一致性策略；远程能力经 `linux.protocol.database` 单向契约由 `linux-sshd` 的 helper v4 固定数据库协议和流式制品校验实现 | 只证明本地静态契约、协议拼装、模块依赖方向和负向边界；桌面用例、候选恢复、迁移及 helper v4 实机证据仍为 `RUNTIME-PENDING` |
+| 四期备份、数据库与恢复 | `shared/backup` 已实现版本化安全归档、独立秘密信封、SQLite/PostgreSQL/MySQL/MariaDB 一致性策略、schema v2 平台事实和候选恢复状态机；远程数据库能力经 `linux.protocol.database` 单向契约由 `linux-sshd` helper v4 实现 | 只证明本地静态契约、状态编排、协议拼装、模块依赖方向和负向边界；具体 deploy/Linux 文件候选切换、桌面用例、迁移及 helper v4 实机证据仍为 `RUNTIME-PENDING` |
 
 ### 2.1 正式目标架构与当前实现边界
 
@@ -210,6 +210,8 @@ Playwright 浏览器固定保存在 `src/web/frontend/.playwright-browsers`，�
 
 | 版本 | 日期 | 阶段 | 状态 | 说明 |
 | --- | --- | --- | --- | --- |
+| 2.19.0-phase4-candidate-restore-core | 2026-08-22 | 四期 | 平台无关候选恢复核心静态门禁通过；具体平台实现待接入 | schema v2 增加源发行版事实；恢复在任何修改前校验路径、空间、归属、端口、运行时、架构、发行版和数据库大版本，之后依次暂存文件、恢复候选数据库、验证组件和整应用、保留旧发布并提交；失败清理不可验证时进入人工恢复。当前不宣称真实 Linux 恢复可用。 |
+| 2.18.0-phase4-database-adapters | 2026-08-21 | 四期 | 数据库一致性适配器静态门禁通过；真实数据库待验收 | SQLite、PostgreSQL、MySQL/MariaDB 策略通过 `linux.protocol.database` 和 helper v4 固定协议完成检查、导出、制品流转及候选恢复，未将 helper v3 历史证据外推。 |
 | 2.17.0-phase3-closeout | 2026-08-14 | 三期 | 本轮三期收尾完成 | 删除一次性 CentOS 直接 root 引导测试，保留唯一的产品入口验收路径；JDK 21 离线根验证再次通过全部 28 个模块。用户明确将 Debian/Rocky/Alma/Oracle 的实机矩阵延后为独立后续任务，未将其误报为已验证。 |
 | 2.16.0-centos-stream-acceptance | 2026-08-14 | 二期至三期 | CentOS Stream 9 产品入口验收完成 | 精确 x86-64 夹具经两次环境准备后完成两组件发布、故障候选整应用回滚、应用/数据库重启、生命周期与自启切换；准备前后 SELinux 和防火墙态保持观测值。修复空 nftables 规则集识别、Java 21 默认运行时、可省略 `VARIANT_ID` 和只读 SSH 短暂超时；不外推到 Stream 10 或其他发行版。 |
 | 2.15.0-centos-stream-recovery-blocked | 2026-08-14 | 二期至三期 | CentOS 准备回归受目标 SSH 状态阻断 | 经用户授权的固定测试环境引导后，产品入口复验 Stream 9 为 SELinux Enforcing；同时清除省略 `VARIANT_ID` 时准备脚本仍拒绝目标的技术债，并让 APT/DNF 失败回传非秘密阶段及标准错误/输出。后续目标在密钥交换前主动关闭 SSH，未以手工部署替代，故完整验收和部署成功仍为 `RUNTIME-PENDING`。 |

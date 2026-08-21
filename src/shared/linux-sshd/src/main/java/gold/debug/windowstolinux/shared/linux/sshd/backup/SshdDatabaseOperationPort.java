@@ -75,6 +75,18 @@ public final class SshdDatabaseOperationPort implements RemoteDatabasePort {
     }
 
     @Override
+    public void discardCandidate(RestoreRequest request) throws LinuxOperationException {
+        try {
+            var result = commands.execProtocol(renderer.discardCandidate(request), DATABASE_TIMEOUT, false);
+            requireSuccess(result, LinuxOperationFailureType.DATABASE_RESTORE_FAILED,
+                    "database candidate cleanup failed");
+        } catch (LinuxOperationException exception) {
+            throw LinuxOperationException.create(LinuxOperationFailureType.DATABASE_RESTORE_FAILED,
+                    "database candidate cleanup transport failed", exception);
+        }
+    }
+
+    @Override
     public void copyArtifact(BackupArtifact artifact, OutputStream destination) throws LinuxOperationException {
         Objects.requireNonNull(destination, "destination");
         VerifyingOutput output = new VerifyingOutput(destination, artifact);

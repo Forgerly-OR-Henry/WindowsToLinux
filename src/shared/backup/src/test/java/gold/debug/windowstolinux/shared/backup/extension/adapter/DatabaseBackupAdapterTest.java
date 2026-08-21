@@ -100,6 +100,24 @@ class DatabaseBackupAdapterTest {
     }
 
     @Test
+    void restoreRejectsDifferentDatabaseMajorVersionBeforeMutation() {
+        RecordingPort port = new RecordingPort(new DatabaseCompatibilityEvidence(
+                BackupDatabaseType.POSTGRESQL, "17.1", "17.1", true,
+                true, false, true, List.of("target version collected")));
+        BackupDatabase source = new BackupDatabase(BackupDatabaseType.POSTGRESQL, "managed-database",
+                "16.4", "16.4", BackupConsistencyMode.POSTGRESQL_LOGICAL_DUMP, List.of());
+        DatabaseBackupArtifact artifact = new DatabaseBackupArtifact("artifact-1", 128,
+                "1".repeat(64), source, List.of("logical export digest verified"));
+        DatabaseRestoreRequest request = new DatabaseRestoreRequest(
+                "sample", "sample-0123456789abcdef", server(BackupDatabaseType.POSTGRESQL), artifact);
+
+        BackupException failure = assertThrows(BackupException.class,
+                () -> new PostgresqlDatabaseAdapter(port).restore(request));
+
+        assertEquals(BackupFailureType.DATABASE_PREFLIGHT_FAILED.code(), failure.failure().code());
+    }
+
+    @Test
     void registryIsClosedOverSupportedDatabaseFamilies() {
         DatabaseAdapterRegistry registry = DatabaseAdapterRegistry.defaults(new RecordingPort(evidence(
                 BackupDatabaseType.SQLITE, true, true, true)));
@@ -157,6 +175,10 @@ class DatabaseBackupAdapterTest {
         public DatabaseRestoreEvidence restoreCandidate(DatabaseRestoreRequest request) {
             return new DatabaseRestoreEvidence(request.candidateId(), "candidate-token",
                     true, true, List.of("candidate database schema is readable"));
+        }
+
+        @Override
+        public void discardCandidate(DatabaseRestoreRequest request) {
         }
 
         @Override

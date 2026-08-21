@@ -357,7 +357,9 @@ src/  # 项目源码与模块根目录
 │  │     │  │  │  ├─ DatabaseContractRules.java  # 数据库标识、版本和安全文本公共约束
 │  │     │  │  │  ├─ DatabaseOperationPort.java  # 检查、导出、流式制品和候选恢复的模块内策略端口
 │  │     │  │  │  ├─ DatabaseRestoreEvidence.java  # 候选数据库恢复及只读验证结果
-│  │     │  │  │  └─ DatabaseRestoreRequest.java  # 绑定备份制品与受管候选标识的恢复请求
+│  │     │  │  │  ├─ DatabaseRestoreRequest.java  # 绑定备份制品与受管候选标识的恢复请求
+│  │     │  │  │  ├─ RestoreCandidatePort.java  # 文件暂存、两级健康、提交和失败恢复的平台窄端口
+│  │     │  │  │  └─ RestoreCandidateRequest.java  # 不反向依赖恢复编排包的已验证候选平台请求
 │  │     │  │  └─ validation/  # 归档资源、安全、完整性与来源校验
 │  │     │  │  ├─ ArchivePathRules.java  # 拒绝绝对路径、穿越、空段和 Windows 不安全尾部
 │  │     │  │  ├─ BackupArchivePolicy.java  # 成员数、大小、路径、清单和压缩率显式边界
@@ -396,16 +398,26 @@ src/  # 项目源码与模块根目录
 │  │     │  │  ├─ BackupMember.java  # 精确路径、大小、摘要和类别
 │  │     │  │  ├─ BackupMemberKind.java  # 发布、配置、数据、数据库、运行时和加密秘密类别
 │  │     │  │  ├─ BackupProvenance.java  # 与完整性分离的可选来源签名元数据
-│  │     │  │  └─ BackupRuntime.java  # 运行时版本、架构和能力证据
-│  │     │  └─ restore/  # 隔离候选提取
+│  │     │  │  └─ BackupRuntime.java  # 源发行版、运行时版本、架构和能力证据
+│  │     │  └─ restore/  # 隔离候选提取、兼容预检与故障关闭恢复编排
 │  │     │     ├─ BackupArchiveExtractor.java  # 指纹重绑定、精确提取和失败清理
-│  │     │     └─ BackupRestoreCandidate.java  # 尚未激活的完整候选证据
+│  │     │     ├─ BackupRestoreCandidate.java  # 尚未激活的完整候选证据
+│  │     │     ├─ BackupRestoreCoordinator.java  # 文件、数据库、两级健康、提交及失败恢复状态机
+│  │     │     ├─ BackupRestorePlan.java  # 绑定归档、候选、目标和数据库制品的不可变计划
+│  │     │     ├─ BackupRestorePreflight.java  # 在修改前拒绝路径、空间、平台、运行时和数据库不兼容
+│  │     │     ├─ BackupRestoreResult.java  # 绑定操作标识、终态、事件、数据库和失败证据
+│  │     │     ├─ BackupRestoreStatus.java  # 成功、保留现有版本失败和人工恢复终态
+│  │     │     ├─ RestoreCandidateEvent.java  # 单个有界候选恢复状态证据
+│  │     │     ├─ RestoreCandidateState.java  # 前置、文件、数据库、健康、提交和恢复状态
+│  │     │     ├─ RestoreMaterialKind.java  # 源码重建与二进制发布兼容策略
+│  │     │     └─ RestoreTargetProfile.java  # 修改前已验证的目标平台、资源和数据库事实
 │  │     └─ test/java/gold/debug/windowstolinux/shared/backup/
 │  │        ├─ contract/validation/BackupArchiveSecurityTest.java  # 恶意归档、签名与候选提取负向测试
 │  │        ├─ extension/adapter/DatabaseBackupAdapterTest.java  # 三类数据库一致性成功、拒绝和候选恢复策略测试
 │  │        ├─ extension/adapter/LinuxDatabaseOperationPortTest.java  # Linux 公共契约映射与模块失败归属测试
 │  │        ├─ format/BackupSecretEnvelopeCodecTest.java  # 信封 schema 与 KDF 参数边界测试
-│  │        └─ manifest/BackupManifestCodecTest.java  # 严格 schema、确定性往返和一致性证据测试
+│  │        ├─ manifest/BackupManifestCodecTest.java  # 严格 schema、确定性往返和一致性证据测试
+│  │        └─ restore/BackupRestoreCoordinatorTest.java  # 候选成功、空间/平台拒绝、源码重建、数据库失败清理和恢复不可验证测试
 │  ├─ config/  # 类型化配置定义与校验模块
 │  │  ├─ ConfigurationException.java  # 配置定义与输入拒绝的结构化异常
 │  │  ├─ ConfigurationFailureType.java  # 配置失败码、阶段与用户纠正动作

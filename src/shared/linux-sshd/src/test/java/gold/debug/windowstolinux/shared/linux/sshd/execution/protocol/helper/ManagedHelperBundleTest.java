@@ -44,8 +44,11 @@ class ManagedHelperBundleTest {
         assertTrue(helper.contains("database-export) database_export \"$@\""));
         assertTrue(helper.contains("database-stage-artifact) database_stage_artifact \"$@\""));
         assertTrue(helper.contains("database-restore-candidate) database_restore_candidate \"$@\""));
+        assertTrue(helper.contains("database-discard-candidate) database_discard_candidate \"$@\""));
         assertTrue(helper.contains("rm -f -- \"$pgpass\"; reject database-restore-failed"));
         assertTrue(helper.contains("DROP DATABASE IF EXISTS"));
+        assertTrue(helper.contains("dropdb --if-exists --force --no-password"));
+        assertTrue(helper.contains("rm -f -- \"$credentials\""));
         assertTrue(helper.contains("NPM) command=\"/usr/bin/env PATH=/usr/local/bin:/usr/bin:/bin npm"));
         assertTrue(helper.contains("PNPM) command=\"/usr/bin/env PATH=/usr/local/bin:/usr/bin:/bin pnpm"));
         assertTrue(helper.contains("YARN) command=\"/usr/bin/env PATH=/usr/local/bin:/usr/bin:/bin yarn"));

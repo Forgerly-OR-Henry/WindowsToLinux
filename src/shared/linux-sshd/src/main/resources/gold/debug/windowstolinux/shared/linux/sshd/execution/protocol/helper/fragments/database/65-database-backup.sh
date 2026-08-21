@@ -269,3 +269,27 @@ database_restore_candidate() {
   fi
   printf 'CANDIDATE_ID=%s\nCONNECTION_TOKEN=%s\nINTEGRITY_VERIFIED=1\nSCHEMA_READABLE=1\n' "$candidate" "$token"
 }
+database_discard_candidate() {
+  [ "$#" -ge 4 ] || reject database-candidate-discard-arguments
+  local app="$1" candidate="$2" type="$3" candidate_root_path
+  shift 3; require_app "$app"; require_candidate "$app" "$candidate"; require_database_type "$type"
+  candidate_root_path="$(candidate_root "$candidate")"; assert_candidate_for_deployer "$candidate_root_path"
+  if [ "$type" = sqlite ]; then
+    [ "$#" -eq 1 ] || reject database-sqlite-arguments; require_relative_path "$1"
+    local target="$candidate_root_path/database/application.db"
+    if [ -e "$target" ] || [ -L "$target" ]; then assert_root_owned_regular "$target"; rm -f -- "$target"; fi
+  else
+    database_server_arguments "$type" "$@"
+    local suffix="${candidate##*-}" candidate_database="w2l_${suffix}" credentials client
+    if [ "$type" = postgresql ]; then
+      credentials="$(database_pgpass "$app" "$database_host" "$database_port" '*' "$database_username" "$database_secret_identifier" "$database_secret_revision")"
+      if ! PGPASSFILE="$credentials" dropdb --if-exists --force --no-password --host="$database_host" --port="$database_port" --username="$database_username" "$candidate_database"; then rm -f -- "$credentials"; reject database-candidate-discard-failed; fi
+    else
+      if [ "$type" = mariadb ]; then client="$(command -v mariadb)"; else client="$(command -v mysql)"; fi
+      credentials="$(database_mysql_defaults "$app" "$type" "$database_secret_identifier" "$database_secret_revision" "$database_tls")"
+      if ! "$client" --defaults-extra-file="$credentials" --host="$database_host" --port="$database_port" --user="$database_username" -e "DROP DATABASE IF EXISTS \`$candidate_database\`"; then rm -f -- "$credentials"; reject database-candidate-discard-failed; fi
+    fi
+    rm -f -- "$credentials"
+  fi
+  printf 'DISCARDED=1\n'
+}

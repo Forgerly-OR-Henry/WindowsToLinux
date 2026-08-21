@@ -18,6 +18,9 @@ public interface DatabaseOperationPort {
     /** Restores into a new isolated candidate and verifies it without activation. / 恢复到新的隔离候选并在不激活的情况下校验。 */
     DatabaseRestoreEvidence restoreCandidate(DatabaseRestoreRequest request) throws BackupException;
 
+    /** Removes one isolated database candidate after an uncommitted restore fails. / 在未提交恢复失败后移除隔离数据库候选。 */
+    void discardCandidate(DatabaseRestoreRequest request) throws BackupException;
+
     /** Streams one verified remote artifact to a caller-owned destination. / 将一个已验证远程导出物流式传输到调用方持有的目标。 */
     void copyArtifact(DatabaseBackupArtifact artifact, OutputStream destination) throws BackupException;
 
