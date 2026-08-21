@@ -19,7 +19,12 @@ class DesktopUpdateCoordinatorTest {
     void commitsOnlyAfterIndependentHandoffDatabaseMigrationAndHealth() throws Exception {
         RecordingUpdatePort port = new RecordingUpdatePort(UpdateFailureType.NONE);
 
-        DesktopUpdateResult result = new DesktopUpdateCoordinator(port).update(verification());
+        DesktopUpdateCoordinator coordinator = new DesktopUpdateCoordinator(port);
+        DesktopUpdatePreparationResult preparation = coordinator.prepare(verification());
+
+        assertEquals(DesktopUpdatePreparationStatus.READY_FOR_HANDOFF, preparation.status());
+        assertEquals(List.of("quiesce", "backup"), port.calls);
+        DesktopUpdateResult result = coordinator.apply(preparation.handoff().orElseThrow());
 
         assertEquals(DesktopUpdateStatus.SUCCEEDED, result.status());
         assertEquals(List.of("quiesce", "backup", "handoff", "replace", "migrate", "health"), port.calls);
@@ -30,7 +35,9 @@ class DesktopUpdateCoordinatorTest {
     void migrationFailureRestoresProgramAndPreMigrationDatabaseTogether() throws Exception {
         RecordingUpdatePort port = new RecordingUpdatePort(UpdateFailureType.MIGRATION);
 
-        DesktopUpdateResult result = new DesktopUpdateCoordinator(port).update(verification());
+        DesktopUpdateCoordinator coordinator = new DesktopUpdateCoordinator(port);
+        DesktopUpdateResult result = coordinator.apply(
+                coordinator.prepare(verification()).handoff().orElseThrow());
 
         assertEquals(DesktopUpdateStatus.FAILED_ROLLED_BACK, result.status());
         assertEquals(List.of("quiesce", "backup", "handoff", "replace", "migrate", "rollback"), port.calls);
@@ -42,7 +49,9 @@ class DesktopUpdateCoordinatorTest {
     void incompletePairedRollbackRequiresManualRecovery() throws Exception {
         RecordingUpdatePort port = new RecordingUpdatePort(UpdateFailureType.ROLLBACK);
 
-        DesktopUpdateResult result = new DesktopUpdateCoordinator(port).update(verification());
+        DesktopUpdateCoordinator coordinator = new DesktopUpdateCoordinator(port);
+        DesktopUpdateResult result = coordinator.apply(
+                coordinator.prepare(verification()).handoff().orElseThrow());
 
         assertEquals(DesktopUpdateStatus.MANUAL_RECOVERY_REQUIRED, result.status());
         assertEquals("windows.update.rollback-failed", result.failure().orElseThrow().code());
@@ -52,7 +61,9 @@ class DesktopUpdateCoordinatorTest {
     void unverifiedIndependentUpdaterNeverReplacesProgram() throws Exception {
         RecordingUpdatePort port = new RecordingUpdatePort(UpdateFailureType.HANDOFF);
 
-        DesktopUpdateResult result = new DesktopUpdateCoordinator(port).update(verification());
+        DesktopUpdateCoordinator coordinator = new DesktopUpdateCoordinator(port);
+        DesktopUpdateResult result = coordinator.apply(
+                coordinator.prepare(verification()).handoff().orElseThrow());
 
         assertEquals(DesktopUpdateStatus.PRECONDITION_REJECTED, result.status());
         assertEquals(List.of("quiesce", "backup", "handoff"), port.calls);
@@ -91,7 +102,8 @@ class DesktopUpdateCoordinatorTest {
                 DesktopUpdateVerification update, BackupEvidence backup) {
             calls.add("handoff");
             boolean verified = failure != UpdateFailureType.HANDOFF;
-            return new HandoffEvidence(verified, verified, List.of("independent updater and process state checked"));
+            return new HandoffEvidence(verified, verified, verified,
+                    List.of("independent updater, process state and handoff checked"));
         }
 
         @Override

@@ -17,59 +17,84 @@ class DesktopUninstallCoordinatorTest {
 
     @Test
     void missingDecisionDoesNotChooseOrDeleteAnything() {
-        RecordingUninstallPort port = new RecordingUninstallPort(false, false);
+        RecordingUninstallPort port = new RecordingUninstallPort(false, false, false);
 
-        DesktopUninstallResult result = new DesktopUninstallCoordinator(port).uninstall(request(Optional.empty()));
+        DesktopUninstallPreparationResult result = new DesktopUninstallCoordinator(port)
+                .prepare(request(Optional.empty()));
 
-        assertEquals(DesktopUninstallStatus.DECISION_REQUIRED, result.status());
+        assertEquals(DesktopUninstallPreparationStatus.DECISION_REQUIRED, result.status());
         assertEquals("windows.uninstall.decision-required", result.failure().orElseThrow().code());
         assertTrue(port.calls.isEmpty());
     }
 
     @Test
     void explicitKeepChoiceRemovesProgramButRetainsDataAndCredentials() {
-        RecordingUninstallPort port = new RecordingUninstallPort(false, false);
+        RecordingUninstallPort port = new RecordingUninstallPort(false, false, false);
         DesktopUninstallRequest request = request(Optional.of(
                 DesktopUninstallDecisionType.KEEP_DATA_AND_CREDENTIALS));
 
-        DesktopUninstallResult result = new DesktopUninstallCoordinator(port).uninstall(request);
+        DesktopUninstallCoordinator coordinator = new DesktopUninstallCoordinator(port);
+        DesktopUninstallPreparationResult preparation = coordinator.prepare(request);
+
+        assertEquals(DesktopUninstallPreparationStatus.READY_FOR_HANDOFF, preparation.status());
+        assertEquals(List.of("stop"), port.calls);
+        DesktopUninstallResult result = coordinator.apply(preparation.handoff().orElseThrow());
 
         assertEquals(DesktopUninstallStatus.SUCCEEDED_DATA_RETAINED, result.status());
-        assertEquals(List.of("stop", "verify", "program"), port.calls);
+        assertEquals(List.of("stop", "handoff", "verify", "program"), port.calls);
         assertEquals(List.of(request.dataRoot().toString(), request.credentialNamespace()),
                 result.intentionallyRetainedItems());
     }
 
     @Test
     void explicitDeleteChoiceStaysInsideAllVerifiedManagedBoundaries() {
-        RecordingUninstallPort port = new RecordingUninstallPort(false, false);
+        RecordingUninstallPort port = new RecordingUninstallPort(false, false, false);
 
-        DesktopUninstallResult result = new DesktopUninstallCoordinator(port).uninstall(request(Optional.of(
+        DesktopUninstallCoordinator coordinator = new DesktopUninstallCoordinator(port);
+        DesktopUninstallPreparationResult preparation = coordinator.prepare(request(Optional.of(
                 DesktopUninstallDecisionType.DELETE_DATA_AND_CREDENTIALS)));
+        DesktopUninstallResult result = coordinator.apply(preparation.handoff().orElseThrow());
 
         assertEquals(DesktopUninstallStatus.SUCCEEDED_DATA_DELETED, result.status());
-        assertEquals(List.of("stop", "verify", "program", "data", "credentials"), port.calls);
+        assertEquals(List.of("stop", "handoff", "verify", "program", "data", "credentials"), port.calls);
         assertTrue(result.residualItems().isEmpty());
     }
 
     @Test
     void unverifiedMarkerStopsBeforeAnyRemoval() {
-        RecordingUninstallPort port = new RecordingUninstallPort(true, false);
+        RecordingUninstallPort port = new RecordingUninstallPort(false, true, false);
 
-        DesktopUninstallResult result = new DesktopUninstallCoordinator(port).uninstall(request(Optional.of(
+        DesktopUninstallCoordinator coordinator = new DesktopUninstallCoordinator(port);
+        DesktopUninstallPreparationResult preparation = coordinator.prepare(request(Optional.of(
                 DesktopUninstallDecisionType.DELETE_DATA_AND_CREDENTIALS)));
+        DesktopUninstallResult result = coordinator.apply(preparation.handoff().orElseThrow());
 
         assertEquals(DesktopUninstallStatus.PRECONDITION_REJECTED, result.status());
-        assertEquals(List.of("stop", "verify"), port.calls);
+        assertEquals(List.of("stop", "handoff", "verify"), port.calls);
+    }
+
+    @Test
+    void unverifiedExternalWorkerNeverInspectsOrDeletesManagedTargets() {
+        RecordingUninstallPort port = new RecordingUninstallPort(true, false, false);
+        DesktopUninstallCoordinator coordinator = new DesktopUninstallCoordinator(port);
+        DesktopUninstallPreparationResult preparation = coordinator.prepare(request(Optional.of(
+                DesktopUninstallDecisionType.DELETE_DATA_AND_CREDENTIALS)));
+
+        DesktopUninstallResult result = coordinator.apply(preparation.handoff().orElseThrow());
+
+        assertEquals(DesktopUninstallStatus.PRECONDITION_REJECTED, result.status());
+        assertEquals(List.of("stop", "handoff"), port.calls);
     }
 
     @Test
     void incompleteDeletionReportsExactResidualItems() {
-        RecordingUninstallPort port = new RecordingUninstallPort(false, true);
+        RecordingUninstallPort port = new RecordingUninstallPort(false, false, true);
         DesktopUninstallRequest request = request(Optional.of(
                 DesktopUninstallDecisionType.DELETE_DATA_AND_CREDENTIALS));
 
-        DesktopUninstallResult result = new DesktopUninstallCoordinator(port).uninstall(request);
+        DesktopUninstallCoordinator coordinator = new DesktopUninstallCoordinator(port);
+        DesktopUninstallResult result = coordinator.apply(
+                coordinator.prepare(request).handoff().orElseThrow());
 
         assertEquals(DesktopUninstallStatus.COMPLETED_WITH_RESIDUALS, result.status());
         assertEquals(List.of(request.dataRoot().resolve("locked.db").toString()), result.residualItems());
@@ -83,11 +108,13 @@ class DesktopUninstallCoordinatorTest {
     }
 
     private static final class RecordingUninstallPort implements DesktopUninstallPort {
+        private final boolean invalidWorker;
         private final boolean invalidBoundary;
         private final boolean dataResidual;
         private final List<String> calls = new ArrayList<>();
 
-        private RecordingUninstallPort(boolean invalidBoundary, boolean dataResidual) {
+        private RecordingUninstallPort(boolean invalidWorker, boolean invalidBoundary, boolean dataResidual) {
+            this.invalidWorker = invalidWorker;
             this.invalidBoundary = invalidBoundary;
             this.dataResidual = dataResidual;
         }
@@ -96,6 +123,14 @@ class DesktopUninstallCoordinatorTest {
         public StepEvidence stopOwnedTasks(DesktopUninstallRequest request) {
             calls.add("stop");
             return new StepEvidence(true, true, List.of("application-owned tasks stopped"));
+        }
+
+        @Override
+        public HandoffEvidence verifyIndependentWorker(DesktopUninstallHandoff handoff) {
+            calls.add("handoff");
+            boolean verified = !invalidWorker;
+            return new HandoffEvidence(verified, verified, verified,
+                    List.of("external worker, process exit and handoff checked"));
         }
 
         @Override

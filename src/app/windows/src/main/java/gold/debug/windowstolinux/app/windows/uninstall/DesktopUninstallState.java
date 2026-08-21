@@ -4,6 +4,7 @@ package gold.debug.windowstolinux.app.windows.uninstall;
 public enum DesktopUninstallState {
     DECISION_VALIDATED,
     TASKS_STOPPED,
+    INDEPENDENT_WORKER_VERIFIED,
     BOUNDARIES_VERIFIED,
     PROGRAM_REMOVED,
     DATA_REMOVED,

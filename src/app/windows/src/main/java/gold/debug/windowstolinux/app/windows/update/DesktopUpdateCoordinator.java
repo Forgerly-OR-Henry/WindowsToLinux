@@ -19,14 +19,12 @@ public final class DesktopUpdateCoordinator {
         this.port = Objects.requireNonNull(port, "port");
     }
 
-    /** Updates program and database as one recoverable pair. / 将程序及数据库作为一个可恢复整体更新。 */
-    public DesktopUpdateResult update(DesktopUpdateVerification update) {
+    /** Quiesces the main process and creates a paired backup without replacing any running file. / 停收主进程并创建成对备份，不替换任何运行中文件。 */
+    public DesktopUpdatePreparationResult prepare(DesktopUpdateVerification update) {
         Objects.requireNonNull(update, "update");
         OperationIdentity operation = OperationIdentity.create();
         List<DesktopUpdateEvent> events = new ArrayList<>();
         DesktopUpdateState state = DesktopUpdateState.TASKS_QUIESCED;
-        Optional<DesktopUpdatePort.BackupEvidence> backup = Optional.empty();
-        boolean replacementAttempted = false;
         try {
             requireStep(port.quiesceTasks(), DesktopUpdateFailureType.TRANSACTION_FAILED,
                     "desktop tasks did not reach a safe terminal or recoverable state");
@@ -34,56 +32,81 @@ public final class DesktopUpdateCoordinator {
 
             state = DesktopUpdateState.BACKUP_CREATED;
             DesktopUpdatePort.BackupEvidence created = port.backupCurrent(update);
-            backup = Optional.of(created);
             if (!created.programBackedUp() || !created.databaseBackedUp()
                     || !created.dataLocationPreserved() || !created.credentialModePreserved()) {
                 throw DesktopUpdateException.create(DesktopUpdateFailureType.TRANSACTION_FAILED,
                         "program, SQLite, data location and credential mode were not backed up as one update point");
             }
             events.add(success(state, created.evidence()));
-
-            state = DesktopUpdateState.INDEPENDENT_UPDATER_VERIFIED;
-            DesktopUpdatePort.HandoffEvidence handoff = port.verifyIndependentUpdater(update, created);
-            if (!handoff.independentUpdaterVerified() || !handoff.mainProcessExited()) {
-                throw DesktopUpdateException.create(DesktopUpdateFailureType.TRANSACTION_FAILED,
-                        "independent updater identity or main process exit could not be verified");
+            DesktopUpdateHandoff handoff = new DesktopUpdateHandoff(operation, update, created, events);
+            return new DesktopUpdatePreparationResult(operation, DesktopUpdatePreparationStatus.READY_FOR_HANDOFF,
+                    update.version(), events, Optional.of(handoff), Optional.empty());
+        } catch (Exception exception) {
+            FailureDescriptor failure = failure(exception).withOperationIdentity(operation).withRecovery(
+                    FailureRecoveryAction.NONE, FailureRecoveryDisposition.NOT_REQUIRED);
+            if (events.isEmpty() || events.get(events.size() - 1).state() != state
+                    || events.get(events.size() - 1).succeeded()) {
+                events.add(new DesktopUpdateEvent(state, false, failure.diagnostic()));
             }
-            events.add(success(state, handoff.evidence()));
+            return new DesktopUpdatePreparationResult(operation,
+                    DesktopUpdatePreparationStatus.PRECONDITION_REJECTED, update.version(), events,
+                    Optional.empty(), Optional.of(failure));
+        }
+    }
+
+    /** Runs only after an external updater receives the handoff and observes the main process exit. / 仅在外部更新器收到交接并确认主进程退出后执行。 */
+    public DesktopUpdateResult apply(DesktopUpdateHandoff handoff) {
+        Objects.requireNonNull(handoff, "handoff");
+        OperationIdentity operation = handoff.operationIdentity();
+        DesktopUpdateVerification update = handoff.update();
+        DesktopUpdatePort.BackupEvidence backup = handoff.backup();
+        List<DesktopUpdateEvent> events = new ArrayList<>(handoff.preparationEvents());
+        DesktopUpdateState state = DesktopUpdateState.INDEPENDENT_UPDATER_VERIFIED;
+        boolean replacementAttempted = false;
+        try {
+
+            DesktopUpdatePort.HandoffEvidence worker = port.verifyIndependentUpdater(update, backup);
+            if (!worker.independentUpdaterVerified() || !worker.mainProcessExited()
+                    || !worker.handoffAuthenticated()) {
+                throw DesktopUpdateException.create(DesktopUpdateFailureType.TRANSACTION_FAILED,
+                        "independent updater identity, main process exit or handoff authenticity could not be verified");
+            }
+            events.add(success(state, worker.evidence()));
 
             state = DesktopUpdateState.PROGRAM_REPLACED;
             replacementAttempted = true;
-            DesktopUpdatePort.StepEvidence replaced = port.replaceProgram(update, created);
+            DesktopUpdatePort.StepEvidence replaced = port.replaceProgram(update, backup);
             requireStep(replaced, DesktopUpdateFailureType.TRANSACTION_FAILED,
                     "signed program files could not be replaced and verified");
             events.add(success(state, replaced.evidence()));
 
             state = DesktopUpdateState.DATABASE_MIGRATED;
-            DesktopUpdatePort.StepEvidence migrated = port.migrateDatabase(update, created);
+            DesktopUpdatePort.StepEvidence migrated = port.migrateDatabase(update, backup);
             requireStep(migrated, DesktopUpdateFailureType.TRANSACTION_FAILED,
                     "SQLite migration did not commit and verify successfully");
             events.add(success(state, migrated.evidence()));
 
             state = DesktopUpdateState.NEW_VERSION_HEALTHY;
-            DesktopUpdatePort.StepEvidence healthy = port.startAndVerify(update, created);
+            DesktopUpdatePort.StepEvidence healthy = port.startAndVerify(update, backup);
             requireStep(healthy, DesktopUpdateFailureType.TRANSACTION_FAILED,
                     "new desktop version did not pass startup health verification");
             events.add(success(state, healthy.evidence()));
             return new DesktopUpdateResult(operation, DesktopUpdateStatus.SUCCEEDED, update.version(), events,
-                    Optional.of(created.backupToken()), Optional.empty());
+                    Optional.of(backup.backupToken()), Optional.empty());
         } catch (Exception exception) {
             FailureDescriptor original = failure(exception).withOperationIdentity(operation);
             if (events.isEmpty() || events.get(events.size() - 1).state() != state
                     || events.get(events.size() - 1).succeeded()) {
                 events.add(new DesktopUpdateEvent(state, false, original.diagnostic()));
             }
-            if (!replacementAttempted || backup.isEmpty()) {
+            if (!replacementAttempted) {
                 FailureDescriptor safe = original.withRecovery(
                         FailureRecoveryAction.NONE, FailureRecoveryDisposition.NOT_REQUIRED);
                 return new DesktopUpdateResult(operation, DesktopUpdateStatus.PRECONDITION_REJECTED,
-                        update.version(), events, backup.map(DesktopUpdatePort.BackupEvidence::backupToken),
+                        update.version(), events, Optional.of(backup.backupToken()),
                         Optional.of(safe));
             }
-            return rollback(update, operation, events, backup.orElseThrow(), original);
+            return rollback(update, operation, events, backup, original);
         }
     }
 

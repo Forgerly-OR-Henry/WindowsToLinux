@@ -197,7 +197,10 @@ src/  # 项目源码与模块根目录
 │     │  ├─ DesktopUninstallEvent.java  # 单个有界卸载证据事件
 │     │  ├─ DesktopUninstallException.java  # 卸载边界结构化受检失败
 │     │  ├─ DesktopUninstallFailureType.java  # 决定、边界、任务和残留失败目录
-│     │  ├─ DesktopUninstallPort.java  # 仅允许停止本应用任务及处理程序/data/凭据命名空间的窄端口
+│     │  ├─ DesktopUninstallHandoff.java  # 交给外部执行器的显式决定和主进程停收证据
+│     │  ├─ DesktopUninstallPort.java  # 分离主进程停收与外部执行器删除能力的窄端口
+│     │  ├─ DesktopUninstallPreparationResult.java  # 外部交接就绪、缺少决定或前置拒绝结果
+│     │  ├─ DesktopUninstallPreparationStatus.java  # 主进程卸载准备阶段的精确终态
 │     │  ├─ DesktopUninstallRequest.java  # 固定 jpackage、data 子目录和专用凭据命名空间请求
 │     │  ├─ DesktopUninstallResult.java  # 区分失败残留与用户有意保留项目的卸载终态
 │     │  ├─ DesktopUninstallState.java  # 决定、停任务、边界和各删除步骤状态
@@ -209,8 +212,11 @@ src/  # 项目源码与模块根目录
 │     │  ├─ DesktopUpdateEvent.java  # 单个有界更新证据事件
 │     │  ├─ DesktopUpdateException.java  # 更新验证与事务结构化受检失败
 │     │  ├─ DesktopUpdateFailureType.java  # 清单、签名、版本、架构、软件包、事务和回滚失败目录
+│     │  ├─ DesktopUpdateHandoff.java  # 交给独立更新器的停收、成对备份和已验证更新证据
 │     │  ├─ DesktopUpdateManifest.java  # Ed25519 签名载荷、摘要、有效期、架构及紧急回退标记
-│     │  ├─ DesktopUpdatePort.java  # 独立更新器程序/SQLite 成对更新窄端口
+│     │  ├─ DesktopUpdatePort.java  # 分离主进程准备与独立更新器替换的成对更新窄端口
+│     │  ├─ DesktopUpdatePreparationResult.java  # 主进程交接就绪或结构化前置拒绝结果
+│     │  ├─ DesktopUpdatePreparationStatus.java  # 独立更新器启动前的主进程准备终态
 │     │  ├─ DesktopUpdateResult.java  # 更新成功、前置拒绝、安全回滚和人工恢复终态
 │     │  ├─ DesktopUpdateState.java  # 停任务、备份、交接、替换、迁移、健康及回滚状态
 │     │  ├─ DesktopUpdateStatus.java  # 更新精确终态
@@ -225,8 +231,8 @@ src/  # 项目源码与模块根目录
 │     │  ├─ WindowsWorkspaceException.java  # Windows 工作区预检失败的结构化异常
 │     │  └─ WindowsWorkspaceFailureType.java  # Windows 路径、权限、容量与链接失败目录
 │     └─ test/  # Windows 更新与卸载负向静态测试
-│        ├─ uninstall/DesktopUninstallCoordinatorTest.java  # 无默认选择、受管边界、保留/删除与精确残留测试
-│        ├─ update/DesktopUpdateCoordinatorTest.java  # 独立交接、迁移失败成对回滚和人工恢复测试
+│        ├─ uninstall/DesktopUninstallCoordinatorTest.java  # 无默认选择、独立执行器门、受管边界及精确残留测试
+│        ├─ update/DesktopUpdateCoordinatorTest.java  # 两阶段独立交接、迁移失败成对回滚和人工恢复测试
 │        └─ update/DesktopUpdateVerifierTest.java  # 签名、篡改、撤销、降级批准及架构拒绝测试
 ├─ shared/  # 平台无关共享模块分组
 │  ├─ ai/  # AI 调用、协作与脱敏模块

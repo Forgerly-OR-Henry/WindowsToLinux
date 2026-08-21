@@ -3,7 +3,7 @@ package gold.debug.windowstolinux.app.windows.update;
 import java.util.List;
 import java.util.Objects;
 
-/** Independent updater seam for task quiesce, paired backup, replacement, migration and rollback. / 任务停收、成对备份、替换、迁移及回滚的独立更新器接缝。 */
+/** Split main-process and independent-worker seam for one desktop update. / 单次桌面更新的主进程与独立执行器分阶段接缝。 */
 public interface DesktopUpdatePort {
     /** Stops accepting work and waits for every task to become safe or recoverable. / 停止接收工作并等待全部任务进入安全或可恢复状态。 */
     StepEvidence quiesceTasks() throws DesktopUpdateException;
@@ -11,7 +11,7 @@ public interface DesktopUpdatePort {
     /** Backs up the current program, SQLite file, data location and credential mode. / 备份当前程序、SQLite 文件、数据位置及凭据模式。 */
     BackupEvidence backupCurrent(DesktopUpdateVerification update) throws DesktopUpdateException;
 
-    /** Verifies independent-updater identity after the main process has exited. / 在主进程退出后验证独立更新器身份。 */
+    /** Called by the worker to verify its independent identity and the main-process exit. / 由执行器验证其独立身份及主进程退出。 */
     HandoffEvidence verifyIndependentUpdater(DesktopUpdateVerification update, BackupEvidence backup)
             throws DesktopUpdateException;
 
@@ -56,6 +56,7 @@ public interface DesktopUpdatePort {
     record HandoffEvidence(
             boolean independentUpdaterVerified,
             boolean mainProcessExited,
+            boolean handoffAuthenticated,
             List<String> evidence
     ) {
         /** Validates handoff evidence. / 校验交接证据。 */

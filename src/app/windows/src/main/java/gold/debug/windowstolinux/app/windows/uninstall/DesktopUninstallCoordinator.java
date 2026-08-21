@@ -19,8 +19,8 @@ public final class DesktopUninstallCoordinator {
         this.port = Objects.requireNonNull(port, "port");
     }
 
-    /** Removes only managed local program/data/credentials and reports exact residuals. / 仅移除受管本地程序、数据及凭据并报告精确残留。 */
-    public DesktopUninstallResult uninstall(DesktopUninstallRequest request) {
+    /** Validates the decision and stops owned tasks without deleting any file or credential. / 校验决定并停止自有任务，不删除任何文件或凭据。 */
+    public DesktopUninstallPreparationResult prepare(DesktopUninstallRequest request) {
         Objects.requireNonNull(request, "request");
         OperationIdentity operation = OperationIdentity.create();
         List<DesktopUninstallEvent> events = new ArrayList<>();
@@ -29,7 +29,8 @@ public final class DesktopUninstallCoordinator {
                     operation, "uninstall requires an explicit data and credential decision");
             events.add(new DesktopUninstallEvent(DesktopUninstallState.DECISION_VALIDATED, false,
                     required.diagnostic()));
-            return result(operation, DesktopUninstallStatus.DECISION_REQUIRED, events, List.of(), List.of(),
+            return new DesktopUninstallPreparationResult(operation,
+                    DesktopUninstallPreparationStatus.DECISION_REQUIRED, events, Optional.empty(),
                     Optional.of(required));
         }
         DesktopUninstallDecisionType decision = request.decision().orElseThrow();
@@ -37,12 +38,40 @@ public final class DesktopUninstallCoordinator {
                 decision == DesktopUninstallDecisionType.KEEP_DATA_AND_CREDENTIALS
                         ? "user explicitly chose to retain local data and credentials"
                         : "user explicitly chose to delete managed local data and credentials"));
-        DesktopUninstallState state = DesktopUninstallState.TASKS_STOPPED;
         try {
             DesktopUninstallPort.StepEvidence stopped = port.stopOwnedTasks(request);
             require(stopped.completed() && stopped.verified(), DesktopUninstallFailureType.TASKS_ACTIVE,
                     "application-owned tasks could not be stopped and verified");
             events.add(success(DesktopUninstallState.TASKS_STOPPED, stopped.evidence()));
+            DesktopUninstallHandoff handoff = new DesktopUninstallHandoff(operation, request, events);
+            return new DesktopUninstallPreparationResult(operation,
+                    DesktopUninstallPreparationStatus.READY_FOR_HANDOFF, events, Optional.of(handoff),
+                    Optional.empty());
+        } catch (Exception exception) {
+            FailureDescriptor failure = failure(exception).withOperationIdentity(operation).withRecovery(
+                    FailureRecoveryAction.NONE, FailureRecoveryDisposition.NOT_ATTEMPTED);
+            events.add(new DesktopUninstallEvent(DesktopUninstallState.TASKS_STOPPED, false,
+                    failure.diagnostic()));
+            return new DesktopUninstallPreparationResult(operation,
+                    DesktopUninstallPreparationStatus.PRECONDITION_REJECTED, events, Optional.empty(),
+                    Optional.of(failure));
+        }
+    }
+
+    /** Removes managed local program/data/credentials only from the external worker process. / 仅由外部执行器进程删除受管程序、数据及凭据。 */
+    public DesktopUninstallResult apply(DesktopUninstallHandoff handoff) {
+        Objects.requireNonNull(handoff, "handoff");
+        OperationIdentity operation = handoff.operationIdentity();
+        DesktopUninstallRequest request = handoff.request();
+        DesktopUninstallDecisionType decision = request.decision().orElseThrow();
+        List<DesktopUninstallEvent> events = new ArrayList<>(handoff.preparationEvents());
+        DesktopUninstallState state = DesktopUninstallState.INDEPENDENT_WORKER_VERIFIED;
+        try {
+            DesktopUninstallPort.HandoffEvidence worker = port.verifyIndependentWorker(handoff);
+            require(worker.independentWorkerVerified() && worker.mainProcessExited()
+                            && worker.handoffAuthenticated(), DesktopUninstallFailureType.BOUNDARY_INVALID,
+                    "independent uninstall worker, main process exit or handoff authenticity is unverified");
+            events.add(success(DesktopUninstallState.INDEPENDENT_WORKER_VERIFIED, worker.evidence()));
 
             state = DesktopUninstallState.BOUNDARIES_VERIFIED;
             DesktopUninstallPort.BoundaryEvidence boundaries = port.verifyManagedBoundaries(request);

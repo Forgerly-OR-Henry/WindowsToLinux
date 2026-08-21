@@ -3,12 +3,15 @@ package gold.debug.windowstolinux.app.windows.uninstall;
 import java.util.List;
 import java.util.Objects;
 
-/** Narrow uninstall seam with no source-project, backup or remote-server operation. / 不含源码项目、备份或远端服务器操作的卸载窄接缝。 */
+/** Split main-process and external-worker uninstall seam with no source, backup or remote operation. / 不含源码、备份或远端操作的主进程与外部执行器分阶段卸载接缝。 */
 public interface DesktopUninstallPort {
     /** Stops only application-owned desktop tasks. / 仅停止本应用持有的桌面任务。 */
     StepEvidence stopOwnedTasks(DesktopUninstallRequest request) throws DesktopUninstallException;
 
-    /** Verifies jpackage, install/data markers and credential namespace ownership. / 验证 jpackage、安装/数据标记及凭据命名空间归属。 */
+    /** Verifies external-worker identity, main-process exit and authenticated handoff. / 验证外部执行器身份、主进程退出及已认证交接。 */
+    HandoffEvidence verifyIndependentWorker(DesktopUninstallHandoff handoff) throws DesktopUninstallException;
+
+    /** Re-verifies jpackage, install/data markers and credential ownership in the external worker. / 在外部执行器中重新验证 jpackage、安装/数据标记及凭据归属。 */
     BoundaryEvidence verifyManagedBoundaries(DesktopUninstallRequest request) throws DesktopUninstallException;
 
     /** Removes program content while preserving the fixed data child. / 在保留固定 data 子目录时移除程序内容。 */
@@ -24,6 +27,17 @@ public interface DesktopUninstallPort {
     record StepEvidence(boolean completed, boolean verified, List<String> evidence) {
         /** Validates evidence. / 校验证据。 */
         public StepEvidence { evidence = validatedEvidence(evidence); }
+    }
+
+    /** External worker and handoff evidence. / 外部执行器及交接证据。 */
+    record HandoffEvidence(
+            boolean independentWorkerVerified,
+            boolean mainProcessExited,
+            boolean handoffAuthenticated,
+            List<String> evidence
+    ) {
+        /** Validates evidence. / 校验证据。 */
+        public HandoffEvidence { evidence = validatedEvidence(evidence); }
     }
 
     /** Managed root and namespace evidence. / 受管根目录及命名空间证据。 */
