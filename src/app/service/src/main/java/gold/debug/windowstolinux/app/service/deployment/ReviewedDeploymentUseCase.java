@@ -1,8 +1,11 @@
 package gold.debug.windowstolinux.app.service.deployment;
 
 import gold.debug.windowstolinux.app.db.persistence.repository.ApplicationSecretRepository;
+import gold.debug.windowstolinux.app.db.persistence.repository.ManagedApplicationGraphRepository;
 import gold.debug.windowstolinux.app.db.persistence.repository.ManagedApplicationRepository;
 import gold.debug.windowstolinux.app.db.entity.CurrentRelease;
+import gold.debug.windowstolinux.app.db.entity.ManagedApplicationGraph;
+import gold.debug.windowstolinux.app.db.entity.SuccessfulManagedDeployment;
 import gold.debug.windowstolinux.app.secret.SecretStore;
 import gold.debug.windowstolinux.app.secret.SecretStoreException;
 import gold.debug.windowstolinux.app.secret.SecretStoreFailureType;
@@ -47,6 +50,7 @@ import java.util.concurrent.locks.ReentrantLock;
  */
 public final class ReviewedDeploymentUseCase {
     private final ManagedApplicationRepository applications;
+    private final ManagedApplicationGraphRepository graphs;
     private final ApplicationSecretRepository applicationSecrets;
     private final ReviewedDeploymentService service;
     private final DeploymentLinuxGateway gateway;
@@ -55,9 +59,11 @@ public final class ReviewedDeploymentUseCase {
 
     /** Creates the reviewed deployment use case. / 创建经审阅部署用例。 */
     public ReviewedDeploymentUseCase(ManagedApplicationRepository applications,
+                                     ManagedApplicationGraphRepository graphs,
                                      ApplicationSecretRepository applicationSecrets, ReviewedDeploymentService service,
                                      DeploymentLinuxGateway gateway, ServerUseCaseFacade servers, ServerOperationLockRegistry locks) {
         this.applications = Objects.requireNonNull(applications, "applications");
+        this.graphs = Objects.requireNonNull(graphs, "graphs");
         this.applicationSecrets = Objects.requireNonNull(applicationSecrets, "applicationSecrets");
         this.service = Objects.requireNonNull(service, "service");
         this.gateway = Objects.requireNonNull(gateway, "gateway");
@@ -170,10 +176,10 @@ public final class ReviewedDeploymentUseCase {
             }
             if (result.status() == DeploymentStatus.SUCCEEDED) {
                 try {
-                    applications.recordSuccessfulDeployment(application,
+                    recordSuccessful(graphs, application,
                             new ManagedApplicationRuntimeConfiguration(request.runtime().healthCheck(), request.userAccessUrl()),
                             new CurrentRelease(application.id(), result.publishedReleaseSha256().orElseThrow(), Instant.now()),
-                            request.configuration(), request.secretReferences());
+                            request.runtime(), request.configuration(), request.secretReferences());
                 } catch (SQLException failure) {
                     result = result.withNonFatalFailure(FailureDescriptor.create(
                             ApplicationServiceFailureType.DEPLOYMENT_RECORD_SAVE_FAILED,
@@ -184,6 +190,26 @@ public final class ReviewedDeploymentUseCase {
         } finally {
             lock.unlock();
         }
+    }
+
+    /** Atomically saves every exact non-secret input needed by a later single-component backup. / 原子保存后续单组件备份所需的全部精确非秘密输入。 */
+    static void recordSuccessful(ManagedApplicationGraphRepository graphs,
+                                 ManagedApplication application,
+                                 ManagedApplicationRuntimeConfiguration runtimeConfiguration,
+                                 CurrentRelease release,
+                                 gold.debug.windowstolinux.shared.model.project.DeploymentRuntimeSpecification reviewedRuntime,
+                                 ConfigurationSnapshot configuration,
+                                 List<SecretReference> secretReferences) throws SQLException {
+        Objects.requireNonNull(graphs, "graphs");
+        application = Objects.requireNonNull(application, "application");
+        runtimeConfiguration = Objects.requireNonNull(runtimeConfiguration, "runtimeConfiguration");
+        reviewedRuntime = Objects.requireNonNull(reviewedRuntime, "reviewedRuntime");
+        SuccessfulManagedDeployment deployment = new SuccessfulManagedDeployment(application, runtimeConfiguration,
+                release, configuration, secretReferences);
+        ManagedApplicationGraph.Component component = new ManagedApplicationGraph.Component(application.id(),
+                application, runtimeConfiguration, List.of(), Optional.of(reviewedRuntime), Optional.of(List.of()));
+        graphs.recordSuccessfulApplication(new ManagedApplicationGraph(application.id(), application.id(),
+                List.of(component)), List.of(deployment));
     }
 
     private List<ResolvedSecretRevision> resolveSecrets(List<SecretReference> references, char[] masterPassword)

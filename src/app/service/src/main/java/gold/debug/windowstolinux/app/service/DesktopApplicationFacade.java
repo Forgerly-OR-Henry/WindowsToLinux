@@ -128,6 +128,7 @@ public final class DesktopApplicationFacade implements AiApplicationFacade, Depl
         this.environment = new EnvironmentSetupUseCase(
                 new EnvironmentSetupService(), linuxGateway, servers, locks);
         this.reviewedDeployment = new ReviewedDeploymentUseCase(persistence.managedApplications(),
+                persistence.managedApplicationGraphs(),
                 persistence.applicationSecrets(), new ReviewedDeploymentService(), linuxGateway, servers, locks);
         this.multiComponentDeployment = new MultiComponentDeploymentUseCase(persistence.managedApplications(),
                 persistence.managedApplicationGraphs(),
