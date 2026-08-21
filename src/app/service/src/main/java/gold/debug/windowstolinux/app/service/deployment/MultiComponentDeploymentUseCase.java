@@ -48,6 +48,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.function.Predicate;
 import java.util.concurrent.locks.ReentrantLock;
 
@@ -227,7 +228,8 @@ public final class MultiComponentDeploymentUseCase {
         List<ManagedApplicationGraph.Component> components = review.components().stream().map(component ->
                 new ManagedApplicationGraph.Component(component.componentId(), component.application(),
                         byApplication.get(component.application().id()).runtimeConfiguration(),
-                        review.plan().dependencies().get(component.componentId()))).toList();
+                        review.plan().dependencies().get(component.componentId()),
+                        Optional.of(component.request().runtime()))).toList();
         graphs.recordSuccessfulApplication(new ManagedApplicationGraph(review.plan().applicationId(),
                 review.applicationHealth().componentId(), components), deployments);
     }

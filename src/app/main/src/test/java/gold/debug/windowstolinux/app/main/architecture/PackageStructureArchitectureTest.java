@@ -123,7 +123,7 @@ class PackageStructureArchitectureTest {
             "generation", Set.of("prompt", "renderer", "script", "template"),
             "extension", Set.of("adapter", "registry"),
             "execution", Set.of("environment", "lifecycle", "migration", "protocol", "transaction", "transfer"),
-            "persistence", Set.of("connection", "repository"));
+            "persistence", Set.of("connection", "repository", "serialization"));
     private static final Map<String, String> RESPONSIBILITY_FUNCTIONAL_GROUPS = Map.ofEntries(
             Map.entry("capability", "contract"), Map.entry("definition", "contract"),
             Map.entry("policy", "contract"), Map.entry("profile", "contract"),
@@ -135,7 +135,7 @@ class PackageStructureArchitectureTest {
             Map.entry("lifecycle", "execution"), Map.entry("migration", "execution"),
             Map.entry("protocol", "execution"), Map.entry("transaction", "execution"),
             Map.entry("transfer", "execution"), Map.entry("connection", "persistence"),
-            Map.entry("repository", "persistence"));
+            Map.entry("repository", "persistence"), Map.entry("serialization", "persistence"));
     private static final Set<String> UNGROUPED_RESPONSIBILITY_EXCEPTIONS = Set.of(
             "gold.debug.windowstolinux.shared.linux.sshd.capability",
             "gold.debug.windowstolinux.shared.linux.sshd.connection",
@@ -359,7 +359,8 @@ class PackageStructureArchitectureTest {
         String structure = Files.readString(root.resolve("docs/File.md"));
         for (String required : List.of("ecosystem.java.jar", "build.ecosystem", "build.workload",
                 "capability.ecosystem", "contract.result", "distro.apt", "distro.dnf",
-                "execution.protocol", "fragments/ecosystem", "generation.script", "persistence.repository")) {
+                "execution.protocol", "fragments/ecosystem", "generation.script", "persistence.repository",
+                "persistence.serialization")) {
             assertTrue(structure.contains(required), () -> "File.md is missing the current structure: " + required);
         }
 
@@ -370,6 +371,7 @@ class PackageStructureArchitectureTest {
                 "src/app/db/src/main/java/gold/debug/windowstolinux/app/db/execution/migration",
                 "src/app/db/src/main/java/gold/debug/windowstolinux/app/db/persistence/connection",
                 "src/app/db/src/main/java/gold/debug/windowstolinux/app/db/persistence/repository",
+                "src/app/db/src/main/java/gold/debug/windowstolinux/app/db/persistence/serialization",
                 "src/app/service/src/main/java/gold/debug/windowstolinux/app/service/execution/environment",
                 "src/app/service/src/main/java/gold/debug/windowstolinux/app/service/execution/lifecycle",
                 "src/app/service/src/main/java/gold/debug/windowstolinux/app/service/lock",

@@ -22,6 +22,7 @@ import gold.debug.windowstolinux.shared.model.lifecycle.LifecycleObservation;
 import gold.debug.windowstolinux.shared.model.managed.ManagedApplication;
 import gold.debug.windowstolinux.shared.model.managed.ManagedApplicationRuntimeConfiguration;
 import gold.debug.windowstolinux.shared.model.lifecycle.RuntimeState;
+import gold.debug.windowstolinux.shared.model.project.DeploymentRuntimeSpecification;
 import gold.debug.windowstolinux.shared.model.server.ServerIdentity;
 import gold.debug.windowstolinux.shared.model.security.CredentialStorageMode;
 import gold.debug.windowstolinux.shared.model.health.HealthCheck;
@@ -177,8 +178,10 @@ class DesktopPersistenceIntegrationTest {
 
         try (DesktopPersistence database = DesktopPersistence.open(temporaryDirectory.resolve("atomic-components"))) {
             ManagedApplicationGraph graph = new ManagedApplicationGraph("shop", "web", List.of(
-                    new ManagedApplicationGraph.Component("api", api, runtime, List.of()),
-                    new ManagedApplicationGraph.Component("web", web, runtime, List.of("api"))));
+                    new ManagedApplicationGraph.Component("api", api, runtime, List.of(),
+                            Optional.of(new DeploymentRuntimeSpecification.NodeService(22, runtime.healthCheck()))),
+                    new ManagedApplicationGraph.Component("web", web, runtime, List.of("api"),
+                            Optional.of(new DeploymentRuntimeSpecification.NodeService(22, runtime.healthCheck())))));
             assertThrows(java.sql.SQLException.class, () -> database.managedApplicationGraphs()
                     .recordSuccessfulApplication(graph, List.of(
                             new SuccessfulManagedDeployment(api, runtime,
@@ -206,8 +209,11 @@ class DesktopPersistenceIntegrationTest {
                 Optional.of(new UserAccessUrl(URI.create("http://198.51.100.24:18082/"))));
         Instant publishedAt = Instant.parse("2026-08-13T00:00:00Z");
         ManagedApplicationGraph graph = new ManagedApplicationGraph("shop", "web", List.of(
-                new ManagedApplicationGraph.Component("api", api, apiRuntime, List.of()),
-                new ManagedApplicationGraph.Component("web", web, webRuntime, List.of("api"))));
+                new ManagedApplicationGraph.Component("api", api, apiRuntime, List.of(),
+                        Optional.of(new DeploymentRuntimeSpecification.NodeService(22, apiRuntime.healthCheck()))),
+                new ManagedApplicationGraph.Component("web", web, webRuntime, List.of("api"),
+                        Optional.of(new DeploymentRuntimeSpecification.StaticSite("dist",
+                                (HealthCheck.Http) webRuntime.healthCheck())))));
 
         try (DesktopPersistence database = DesktopPersistence.open(temporaryDirectory.resolve("durable-graph"))) {
             database.managedApplicationGraphs().recordSuccessfulApplication(graph, List.of(
@@ -217,6 +223,60 @@ class DesktopPersistenceIntegrationTest {
                             new CurrentRelease(web.id(), "d".repeat(64), publishedAt), List.of())));
 
             assertEquals(graph, database.managedApplicationGraphs().find("shop").orElseThrow());
+        }
+    }
+
+    @Test
+    void migratesVersionSevenGraphsWithoutInventingReviewedRuntimeDefinitions() throws Exception {
+        Path dataDirectory = temporaryDirectory.resolve("version-seven-graph");
+        Path databaseFile = dataDirectory.resolve("windowstolinux.db");
+        ServerIdentity server = new ServerIdentity("server-one", "198.51.100.24", 22,
+                "SHA256:exampleFingerprint");
+        ManagedApplication application = ManagedApplication.forManaged("legacy-app", server, "a".repeat(64));
+        var runtime = new ManagedApplicationRuntimeConfiguration(new HealthCheck.Tcp(18081, 15, 1),
+                Optional.empty());
+        var graph = new ManagedApplicationGraph("legacy", "app", List.of(
+                new ManagedApplicationGraph.Component("app", application, runtime, List.of(),
+                        Optional.of(new DeploymentRuntimeSpecification.NodeService(22, runtime.healthCheck())))));
+        try (DesktopPersistence database = DesktopPersistence.open(dataDirectory)) {
+            database.managedApplicationGraphs().recordSuccessfulApplication(graph, List.of(
+                    new SuccessfulManagedDeployment(application, runtime,
+                            new CurrentRelease(application.id(), "b".repeat(64), Instant.now()), List.of())));
+        }
+        try (Connection connection = DriverManager.getConnection("jdbc:sqlite:" + databaseFile);
+             Statement statement = connection.createStatement()) {
+            statement.execute("UPDATE managed_application_graph_component SET reviewed_runtime=NULL");
+            statement.execute("PRAGMA user_version = 7");
+        }
+
+        try (DesktopPersistence database = DesktopPersistence.open(dataDirectory)) {
+            assertTrue(database.managedApplicationGraphs().find("legacy").orElseThrow()
+                    .components().getFirst().reviewedRuntime().isEmpty(),
+                    "v7 rows must remain explicitly unavailable instead of being reconstructed");
+        }
+        try (Connection connection = DriverManager.getConnection("jdbc:sqlite:" + databaseFile);
+             Statement statement = connection.createStatement();
+             var version = statement.executeQuery("PRAGMA user_version")) {
+            assertTrue(version.next());
+            assertEquals(8, version.getInt(1));
+        }
+    }
+
+    @Test
+    void rejectsNewSuccessfulGraphsWithoutReviewedRuntimeDefinitions() throws Exception {
+        ServerIdentity server = new ServerIdentity("server-one", "198.51.100.24", 22,
+                "SHA256:exampleFingerprint");
+        ManagedApplication application = ManagedApplication.forManaged("missing-runtime", server, "a".repeat(64));
+        var runtime = new ManagedApplicationRuntimeConfiguration(new HealthCheck.Tcp(18081, 15, 1),
+                Optional.empty());
+        var graph = new ManagedApplicationGraph("missing", "app", List.of(
+                new ManagedApplicationGraph.Component("app", application, runtime, List.of())));
+        var deployment = new SuccessfulManagedDeployment(application, runtime,
+                new CurrentRelease(application.id(), "b".repeat(64), Instant.now()), List.of());
+        try (DesktopPersistence database = DesktopPersistence.open(temporaryDirectory.resolve("missing-runtime"))) {
+            assertThrows(IllegalArgumentException.class, () -> database.managedApplicationGraphs()
+                    .recordSuccessfulApplication(graph, List.of(deployment)));
+            assertTrue(database.managedApplications().find(application.id()).isEmpty());
         }
     }
 
@@ -253,7 +313,7 @@ class DesktopPersistenceIntegrationTest {
             }
             try (var version = statement.executeQuery("PRAGMA user_version")) {
                 assertTrue(version.next());
-                assertEquals(7, version.getInt(1));
+                assertEquals(8, version.getInt(1));
             }
         }
     }

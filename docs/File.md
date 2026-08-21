@@ -2,8 +2,8 @@
 
 ## 文档信息
 
-- 文档版本：`3.36.0-desktop-maintenance-handoff`
-- 文档状态：**28-POM 模块边界保持不变；桌面更新与卸载已从类型层分离主进程准备和已认证外部执行，完整 JDK 21 离线门禁通过；候选端口隔离、deploy 激活/切换、生产维护执行器及产品入口实机证据仍在开发并标记 `RUNTIME-PENDING`**
+- 文档版本：`3.37.0-reviewed-runtime-persistence`
+- 文档状态：**28-POM 模块边界保持不变；SQLite v8 从新成功部署开始原子保存完整非秘密已审阅运行时，v7 旧图保持明确缺失且不得猜测；候选端口隔离、deploy 激活/切换、生产维护执行器及产品入口实机证据仍在开发并标记 `RUNTIME-PENDING`**
 - 已确认范围：`shared` 共用模块、`app` Windows 桌面应用模块、`web` Web 应用模块
 - 已确认能力边界：受管应用生命周期复用既有模块，不新增独立 Maven 模块
 - 更新日期：2026-08-22
@@ -38,7 +38,8 @@ WindowsToLinux/
    │  │  │  └─ migration/     版本化表结构迁移
    │  │  └─ persistence/      SQLite 持久化实现
    │  │     ├─ connection/    SQLite 连接和事务基础
-   │  │     └─ repository/    按服务器、偏好、AI、配置、秘密和受管应用职责划分的数据访问实现
+   │  │     ├─ repository/    按服务器、偏好、AI、配置、秘密和受管应用职责划分的数据访问实现
+   │  │     └─ serialization/ 复杂持久化类型的严格版本化编解码
    │  ├─ main/                唯一 AppMain 入口、运行模式和模块装配
    │  │  ├─ diagnostic/       系统级失败、未捕获异常边界及有界本地诊断报告
    │  │  ├─ startup/          桌面应用启动与模块装配
@@ -468,10 +469,11 @@ test/
 | --- | --- | --- | --- |
 | `connection` | 持久化连接基础 | 数据库连接创建、事务基础 | 远程主机连接、领域仓库 |
 | `repository` | 持久化访问 | 聚合查询和事务写入 | 业务编排 |
+| `serialization` | 持久化序列化 | 有界、版本化的复杂列编解码 | 网络协议、任意对象反序列化 |
 
 `persistence.connection` 只表示数据库或事务连接。`linux.connection` 等远程连接契约继续按所属功能命名，不迁入持久化功能组；公开结果统一归 `contract.result`。
 
-当前桌面持久化实现使用 `app.db.persistence.connection` 与 `app.db.persistence.repository`；Web 目标树采用同一功能组命名，但本次不创建尚未实现的源码目录。
+当前桌面持久化实现使用 `app.db.persistence.connection`、`app.db.persistence.repository` 与 `app.db.persistence.serialization`；Web 目标树采用同一功能组命名，但本次不创建尚未实现的源码目录。
 
 ### 2.3 正交功能维度
 
@@ -1228,7 +1230,7 @@ linux-sshd 通过 linux 契约采集服务器已有环境
 18. 类型化部署分析必须把确定的源码元数据作为可审阅的 `DeploymentRuntimeAssessment` 返回，而非由桌面表单写死语言版本、入口、产物目录、端口或卷。仅在值唯一、受支持、边界安全且具有 `AnalysisEvidence` 时才可回填；范围、冲突、任意脚本和文档文字只能作为未解决的用户输入，绝不转换为命令。
 19. 本地目录和 Git 来源都必须在 `app/service/source` 汇合为同一 `ReviewedSourcePreparation`，并以归档摘要绑定 `SourceRevision`。网络 Git 来源必须使用无凭据 URI、允许主机、固定 Commit 和受控工作目录；桌面 UI 不得调用 Git 进程、数据库或秘密存储实现。
 20. `DeploymentAnalysisCoordinator` 不得导入具体项目类型实现；`ProjectLanguageInspector` 只负责组合确定性的语言事实检查器。低层语言与构建 Inspector 不得修改调用方提供的拒绝集合，生产包与测试包必须镜像，包依赖不得成环，且不得恢复按阶段或宽泛类别聚合实现的包。`deploy.plan` 不得构造具体适配器，`linux.connection` 不得保存异常或组合会话，`linux-sshd.connection` 不得保存 command 或总会话；禁止以兼容壳保留旧类型。
-21. 用户可见和持久化语义统一使用“发布身份摘要”（`release_sha256`）；“制品”仅描述构建过程中待验证的文件，不得再把已发布身份称为制品摘要。桌面 SQLite 当前 schema 为 v7；v5 保留发布身份语义，v6 增加受约束的 AI 角色到命名 Provider 外键，v7 增加成功整应用的组件/依赖图并与全部组件发布状态原子提交；v4 的 `artifact_sha256` 已通过列重命名无损迁移并继续表示既有发布身份。
+21. 用户可见和持久化语义统一使用“发布身份摘要”（`release_sha256`）；“制品”仅描述构建过程中待验证的文件，不得再把已发布身份称为制品摘要。桌面 SQLite 当前 schema 为 v8；v5 保留发布身份语义，v6 增加受约束的 AI 角色到命名 Provider 外键，v7 增加成功整应用的组件/依赖图并与全部组件发布状态原子提交，v8 为每个新成功组件原子保存有界版本化的完整非秘密已审阅运行时。v7 旧图迁移后该定义保持空值，生命周期可继续使用既有图，但备份创建不得根据目标机封存参数、观测或默认值猜测缺失定义；v4 的 `artifact_sha256` 已通过列重命名无损迁移并继续表示既有发布身份。
 22. `DeploymentSupportProfile` 是语言、框架、支持等级与真实验收目标范围的唯一共享声明；`RECOGNITION_PREVIEW` 只能由 `analyze` 读取有界路径和固定元数据，必须使用 `NONE_PREVIEW`，不得创建源码归档、部署适配器、远端构建渲染器、helper 参数或生命周期入口。Shell 文件只可作为识别证据，不能转换成命令。
 23. `PackageStructureArchitectureTest` 使用 JDK 编译器 AST、物理路径和生产导入图自动检查文件与顶级类型同名、仓库级顶级类型唯一性、顶级及嵌套枚举语义后缀、禁限用词及封闭例外、资源文件名、复数后缀、缩写、测试后缀、模块根包以下最多三层、五个功能组及合法职责、远程契约和领域模型例外、语言/构建架构/发行版分类轴、禁用包名、全部包依赖环、测试包镜像、职责映射、反向依赖、旧 FQCN、旧物理包、旧 helper 资源路径、已删除包装类以及唯一 `AppMain.main`。门禁不设置总包数或单包类型数量硬上限，不得通过文本豁免隐藏结构回归；通过结果只证明当前本地静态结构，不构成新的 Linux 运行证据。
 24. 每个可进入计划的源码路径必须产生一个精确 `DeploymentArchitectureType`，由 `DeploymentProjectType × DeploymentBuildToolType` 唯一标识；分析注册表、构建 Renderer 注册表、主机生态工具版本和运行时能力判断必须对该身份闭合，禁止恢复宽泛构建工具身份或以参数化 Renderer 隐藏架构差异。新增身份在逐目标产品入口证据完成前保持试验适配或 `RUNTIME-PENDING`。
@@ -1237,6 +1239,7 @@ linux-sshd 通过 linux 契约采集服务器已有环境
 
 | 版本 | 日期 | 说明 |
 | --- | --- | --- |
+| 3.37.0-reviewed-runtime-persistence | 2026-08-22 | SQLite 升至 v8，在成功整应用图事务中保存每个组件完整、非秘密且已审阅的类型化运行时；严格版本化二进制编解码覆盖 14 种运行时并拒绝未知、截断和尾随载荷。v7 旧图迁移后保持定义缺失，生命周期不受影响，后续备份创建必须明确拒绝缺失而不得从远端压缩参数反推。 |
 | 3.36.0-desktop-maintenance-handoff | 2026-08-22 | 将桌面更新与卸载安全核心拆分为主进程 `prepare` 和外部执行器 `apply`：主进程只能停收任务并形成成对备份或显式卸载决定，外部阶段必须验证执行器身份、主进程退出和交接真实性后才可替换或删除，并在删除前重新验证受管边界。helper v4 发行版脚本测试镜像同步更新，JDK 21 完整 28-POM 离线门禁通过；生产公钥、独立执行器、Credential Manager 及真实环境证据仍待完成。 |
 | 3.35.0-secret-revision-handoff | 2026-08-22 | 在 `app/secret.crypto` 定义不产生秘密字符串的严格规范二进制载荷，将独立密码认证后的 `secrets.enc` 整体转换为可清零的精确 `ResolvedSecretRevision`；service 要求载荷标识集合与 manifest 完全一致，任何失败都关闭部分修订、清零调用方密码并清理本次本地候选。该交接仍不代表候选已启动或恢复已提交。 |
 | 3.34.0-desktop-backup-entry | 2026-08-22 | 在最新版结构权威内新增 `app/service.backup`、第六个 UI 窄门面、`app/ui.backup` 和 Windows 恢复工作区边界；桌面可完整校验版本化归档，或重新校验后提取到摘要绑定且从未激活的本地候选。该入口不连接服务器、不修改当前发布，候选激活和真实环境证据仍为 `RUNTIME-PENDING`。 |

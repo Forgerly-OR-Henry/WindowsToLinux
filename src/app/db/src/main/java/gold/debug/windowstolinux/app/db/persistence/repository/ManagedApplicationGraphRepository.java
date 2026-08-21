@@ -3,6 +3,7 @@ package gold.debug.windowstolinux.app.db.persistence.repository;
 import gold.debug.windowstolinux.app.db.persistence.connection.DesktopConnectionFactory;
 import gold.debug.windowstolinux.app.db.entity.ManagedApplicationGraph;
 import gold.debug.windowstolinux.app.db.entity.SuccessfulManagedDeployment;
+import gold.debug.windowstolinux.app.db.persistence.serialization.DeploymentRuntimePersistenceCodec;
 
 import java.sql.Connection;
 import java.sql.PreparedStatement;
@@ -19,6 +20,7 @@ import java.util.Set;
 
 /** Stores durable whole-application topology atomically with successful component releases. / 将持久整应用拓扑与成功组件版本原子保存。 */
 public final class ManagedApplicationGraphRepository {
+    private static final DeploymentRuntimePersistenceCodec RUNTIME_CODEC = new DeploymentRuntimePersistenceCodec();
     private final DesktopConnectionFactory connections;
 
     /** Creates the focused graph repository. / 创建聚焦的图仓库。 */
@@ -37,7 +39,8 @@ public final class ManagedApplicationGraphRepository {
                 .map(component -> component.application().id()).collect(java.util.stream.Collectors.toSet());
         if (byApplication.size() != records.size() || !byApplication.keySet().equals(graphApplications)
                 || graph.components().stream().anyMatch(component -> !component.runtimeConfiguration().equals(
-                        byApplication.get(component.application().id()).runtimeConfiguration()))) {
+                        byApplication.get(component.application().id()).runtimeConfiguration()))
+                || graph.components().stream().anyMatch(component -> component.reviewedRuntime().isEmpty())) {
             throw new IllegalArgumentException("successful deployments must exactly match the managed application graph");
         }
         try (Connection connection = connections.open()) {
@@ -68,7 +71,8 @@ public final class ManagedApplicationGraphRepository {
                            a.id, a.systemd_unit, a.release_root, a.ownership_manifest_sha256,
                            s.id AS server_id, s.host, s.ssh_port, s.host_key_sha256,
                            r.health_kind, r.http_endpoint, r.http_expected_status, r.tcp_port,
-                           r.health_timeout_seconds, r.tcp_stability_seconds, r.user_access_url
+                           r.health_timeout_seconds, r.tcp_stability_seconds, r.user_access_url,
+                           gc.reviewed_runtime
                     FROM managed_application_graph_component gc
                     JOIN managed_application a ON a.id=gc.managed_application_id
                     JOIN server s ON s.id=a.server_id
@@ -79,10 +83,21 @@ public final class ManagedApplicationGraphRepository {
                 try (ResultSet result = statement.executeQuery()) {
                     while (result.next()) {
                         String componentId = result.getString("component_id");
+                        var runtimeConfiguration = ManagedApplicationRepository.readRuntime(result);
+                        byte[] storedRuntime = result.getBytes("reviewed_runtime");
+                        Optional<gold.debug.windowstolinux.shared.model.project.DeploymentRuntimeSpecification>
+                                reviewedRuntime = Optional.empty();
+                        if (storedRuntime != null) {
+                            try {
+                                reviewedRuntime = Optional.of(RUNTIME_CODEC.read(
+                                        storedRuntime, runtimeConfiguration.healthCheck()));
+                            } catch (java.io.IOException exception) {
+                                throw new SQLException("stored reviewed runtime definition is invalid", exception);
+                            }
+                        }
                         components.add(new ManagedApplicationGraph.Component(componentId,
                                 ManagedApplicationRepository.readApplication(result),
-                                ManagedApplicationRepository.readRuntime(result),
-                                dependencies.getOrDefault(componentId, List.of())));
+                                runtimeConfiguration, dependencies.getOrDefault(componentId, List.of()), reviewedRuntime));
                     }
                 }
             }
@@ -119,13 +134,18 @@ public final class ManagedApplicationGraphRepository {
     private static void insertComponents(Connection connection, ManagedApplicationGraph graph) throws SQLException {
         try (PreparedStatement statement = connection.prepareStatement("""
                 INSERT INTO managed_application_graph_component (
-                    application_id, component_id, managed_application_id
-                ) VALUES (?, ?, ?)
+                    application_id, component_id, managed_application_id, reviewed_runtime
+                ) VALUES (?, ?, ?, ?)
                 """)) {
             for (ManagedApplicationGraph.Component component : graph.components()) {
                 statement.setString(1, graph.applicationId());
                 statement.setString(2, component.componentId());
                 statement.setString(3, component.application().id());
+                try {
+                    statement.setBytes(4, RUNTIME_CODEC.write(component.reviewedRuntime().orElseThrow()));
+                } catch (java.io.IOException exception) {
+                    throw new SQLException("reviewed runtime definition cannot be persisted", exception);
+                }
                 statement.addBatch();
             }
             statement.executeBatch();

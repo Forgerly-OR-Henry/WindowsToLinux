@@ -14,7 +14,7 @@
 
 | 验收路径 | 环境到位后是否可直接执行 | 当前边界 |
 | --- | --- | --- |
-| JDK 21 全仓静态门禁 | 是 | `mvn -q -B -ntp -o verify` 已通过 330 项测试，25 项真实环境条件测试默认跳过 |
+| JDK 21 全仓静态门禁 | 是 | `mvn -q -B -ntp -o verify` 已通过 335 项测试，25 项真实环境条件测试默认跳过 |
 | 桌面本地归档完整校验与隔离候选准备 | 是 | 只验证所选归档并准备从未激活的本地候选，不连接服务器 |
 | helper v4 安装、精确协议、发行版身份及安全状态复核 | 是 | 复用现有 `DesktopApplicationFacade → SshdLinuxGateway` 产品入口；不证明四期数据库、恢复或迁移成功 |
 | SQLite、PostgreSQL、MySQL/MariaDB 真实一致性导出与候选恢复 | 否 | helper v4 与数据库适配契约已存在，但尚无桌面/service 备份创建产品入口 |

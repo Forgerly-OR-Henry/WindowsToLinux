@@ -85,7 +85,8 @@ class MultiComponentDeploymentUseCaseTest {
                                 Character.toString((char) ('e' + index)).repeat(64), Instant.now()), List.of()));
                 durableComponents.add(new ManagedApplicationGraph.Component(componentReview.componentId(),
                         componentReview.application(), runtime,
-                        review.plan().dependencies().get(componentReview.componentId())));
+                        review.plan().dependencies().get(componentReview.componentId()),
+                        Optional.of(componentReview.request().runtime())));
             }
             persistence.managedApplicationGraphs().recordSuccessfulApplication(
                     new ManagedApplicationGraph("shop", "web", durableComponents), successful);

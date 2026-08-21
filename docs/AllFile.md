@@ -29,16 +29,18 @@ src/  # 项目源码与模块根目录
 │  │  ├─ persistence/  # SQLite 持久化功能组
 │  │  │  ├─ connection/  # SQLite 连接与事务基础包
 │  │  │  │  └─ DesktopConnectionFactory.java  # 创建启用外键约束与有界忙等待的 SQLite 连接
-│  │  │  └─ repository/  # 按领域职责拆分的仓库实现包
-│  │  │     ├─ AiProfileRepository.java  # 保存不含凭据的 AI 提供者资料
-│  │  │     ├─ ApplicationSecretRepository.java  # 保存不可变应用秘密元数据与发布绑定，绝不保存秘密值
-│  │  │     ├─ ConfigurationSnapshotRepository.java  # 保存不可变的普通配置快照与条目
-│  │  │     ├─ DesktopPreferenceRepository.java  # 保存小型非秘密桌面偏好
-│  │  │     ├─ EncryptedSecretRepository.java  # 仅保存加密的不透明秘密载荷
-│  │  │     ├─ ManagedApplicationGraphRepository.java  # 将持久整应用拓扑与成功组件版本原子保存
-│  │  │     ├─ ManagedApplicationRepository.java  # 保存受管应用、运行契约、发布和生命周期观测
-│  │  │     ├─ RepositoryTransactionExecutor.java  # 由聚焦仓库使用的共享事务原语
-│  │  │     └─ ServerProfileRepository.java  # 保存服务器信任身份与不含凭据的连接资料
+│  │  │  ├─ repository/  # 按领域职责拆分的仓库实现包
+│  │  │  │  ├─ AiProfileRepository.java  # 保存不含凭据的 AI 提供者资料
+│  │  │  │  ├─ ApplicationSecretRepository.java  # 保存不可变应用秘密元数据与发布绑定，绝不保存秘密值
+│  │  │  │  ├─ ConfigurationSnapshotRepository.java  # 保存不可变的普通配置快照与条目
+│  │  │  │  ├─ DesktopPreferenceRepository.java  # 保存小型非秘密桌面偏好
+│  │  │  │  ├─ EncryptedSecretRepository.java  # 仅保存加密的不透明秘密载荷
+│  │  │  │  ├─ ManagedApplicationGraphRepository.java  # 将持久整应用拓扑与成功组件版本原子保存
+│  │  │  │  ├─ ManagedApplicationRepository.java  # 保存受管应用、运行契约、发布和生命周期观测
+│  │  │  │  ├─ RepositoryTransactionExecutor.java  # 由聚焦仓库使用的共享事务原语
+│  │  │  │  └─ ServerProfileRepository.java  # 保存服务器信任身份与不含凭据的连接资料
+│  │  │  └─ serialization/  # SQLite 中复杂类型的严格版本化序列化
+│  │  │     └─ DeploymentRuntimePersistenceCodec.java  # 编解码成功部署时已审阅且不含秘密的运行时定义
 │  │  ├─ pom.xml  # 配置 SQLite 数据访问模块的依赖和构建
 │  ├─ main/  # 桌面应用入口与模块装配模块
 │  │  ├─ AppMain.java  # WindowsToLinux 桌面应用入口

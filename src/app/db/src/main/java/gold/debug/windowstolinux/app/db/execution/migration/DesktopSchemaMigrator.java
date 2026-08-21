@@ -19,7 +19,7 @@ public final class DesktopSchemaMigrator {
      *
      * <p>公开 {@code CURRENT_SCHEMA_VERSION} 常量。
      */
-    public static final int CURRENT_SCHEMA_VERSION = 7;
+    public static final int CURRENT_SCHEMA_VERSION = 8;
 
     private DesktopSchemaMigrator() {
     }
@@ -231,6 +231,13 @@ public final class DesktopSchemaMigrator {
                                 ON DELETE RESTRICT,
                               CHECK(component_id <> dependency_component_id)
                             )
+                            """);
+                }
+                if (version < 8 && !hasColumn(statement,
+                        "managed_application_graph_component", "reviewed_runtime")) {
+                    statement.execute("""
+                            ALTER TABLE managed_application_graph_component
+                            ADD COLUMN reviewed_runtime BLOB
                             """);
                 }
                 statement.execute("PRAGMA user_version = " + CURRENT_SCHEMA_VERSION);
