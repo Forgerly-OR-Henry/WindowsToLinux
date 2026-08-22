@@ -1,7 +1,7 @@
 database_activation_arguments() {
-  [ "$#" -ge 5 ] || reject database-activation-arguments
-  database_activation_app="$1"; database_activation_candidate="$2"; database_activation_artifact_id="$3"; database_activation_type="$4"
-  shift 4; require_app "$database_activation_app"; require_candidate "$database_activation_app" "$database_activation_candidate"
+  [ "$#" -ge 6 ] || reject database-activation-arguments
+  database_activation_app="$1"; database_activation_credential_app="$2"; database_activation_candidate="$3"; database_activation_artifact_id="$4"; database_activation_type="$5"
+  shift 5; require_app "$database_activation_app"; require_app "$database_activation_credential_app"; require_candidate "$database_activation_app" "$database_activation_candidate"
   require_artifact_id "$database_activation_artifact_id"; require_database_type "$database_activation_type"
   database_activation_root="$(candidate_root "$database_activation_candidate")"; assert_candidate_for_deployer "$database_activation_root"
   database_activation_artifact="$(database_artifact_path "$database_activation_artifact_id")"; assert_root_owned_regular "$database_activation_artifact"
@@ -27,7 +27,7 @@ database_mysql_exists() {
 }
 database_commit_postgresql() {
   local credentials previous=0 sql
-  credentials="$(database_pgpass "$database_activation_app" "$database_host" "$database_port" '*' "$database_username" "$database_secret_identifier" "$database_secret_revision")"
+  credentials="$(database_pgpass "$database_activation_credential_app" "$database_host" "$database_port" '*' "$database_username" "$database_secret_identifier" "$database_secret_revision")"
   database_postgresql_exists "$credentials" "$database_activation_database" || { rm -f -- "$credentials"; reject database-candidate-missing; }
   ! database_postgresql_exists "$credentials" "$database_activation_rollback" || { rm -f -- "$credentials"; reject database-rollback-exists; }
   if database_postgresql_exists "$credentials" "$database_name"; then previous=1; fi
@@ -43,7 +43,7 @@ database_commit_postgresql() {
 database_commit_mysql() {
   local client dump credentials previous=0 rollback_dump="$backups_root/database-rollback-$database_activation_suffix.sql"
   if [ "$database_activation_type" = mariadb ]; then client="$(command -v mariadb)"; dump="$(command -v mariadb-dump)"; else client="$(command -v mysql)"; dump="$(command -v mysqldump)"; fi
-  credentials="$(database_mysql_defaults "$database_activation_app" "$database_activation_type" "$database_secret_identifier" "$database_secret_revision" "$database_tls")"
+  credentials="$(database_mysql_defaults "$database_activation_credential_app" "$database_activation_type" "$database_secret_identifier" "$database_secret_revision" "$database_tls")"
   database_mysql_exists "$client" "$credentials" "$database_activation_database" || { rm -f -- "$credentials"; reject database-candidate-missing; }
   [ ! -e "$rollback_dump" ] && [ ! -L "$rollback_dump" ] || { rm -f -- "$credentials"; reject database-rollback-exists; }
   if database_mysql_exists "$client" "$credentials" "$database_name"; then
@@ -65,7 +65,7 @@ database_commit_candidate() {
 }
 database_recover_postgresql() {
   local previous="$1" credentials sql
-  credentials="$(database_pgpass "$database_activation_app" "$database_host" "$database_port" '*' "$database_username" "$database_secret_identifier" "$database_secret_revision")"
+  credentials="$(database_pgpass "$database_activation_credential_app" "$database_host" "$database_port" '*' "$database_username" "$database_secret_identifier" "$database_secret_revision")"
   sql="SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname IN ('$database_name','$database_activation_database','$database_activation_rollback') AND pid <> pg_backend_pid();"
   PGPASSFILE="$credentials" psql --no-password --host="$database_host" --port="$database_port" --username="$database_username" --dbname=postgres -v ON_ERROR_STOP=1 -c "$sql" >/dev/null || { rm -f -- "$credentials"; reject database-recover-terminate; }
   if [ "$previous" = 1 ] && ! database_postgresql_exists "$credentials" "$database_activation_rollback"; then
@@ -82,7 +82,7 @@ database_recover_postgresql() {
 database_recover_mysql() {
   local previous="$1" client credentials rollback_dump="$backups_root/database-rollback-$database_activation_suffix.sql"
   if [ "$database_activation_type" = mariadb ]; then client="$(command -v mariadb)"; else client="$(command -v mysql)"; fi
-  credentials="$(database_mysql_defaults "$database_activation_app" "$database_activation_type" "$database_secret_identifier" "$database_secret_revision" "$database_tls")"
+  credentials="$(database_mysql_defaults "$database_activation_credential_app" "$database_activation_type" "$database_secret_identifier" "$database_secret_revision" "$database_tls")"
   "$client" --defaults-extra-file="$credentials" --host="$database_host" --port="$database_port" --user="$database_username" -e "DROP DATABASE IF EXISTS \`$database_name\`" || { rm -f -- "$credentials"; reject database-recover-drop; }
   if [ "$previous" = 1 ]; then assert_root_owned_regular "$rollback_dump"
     "$client" --defaults-extra-file="$credentials" --host="$database_host" --port="$database_port" --user="$database_username" -e "CREATE DATABASE \`$database_name\`" || { rm -f -- "$credentials"; reject database-recover-create; }
@@ -95,7 +95,7 @@ database_recover_mysql() {
 database_recover_candidate() {
   local -a original=("$@"); database_activation_arguments "$@"
   if [ ! -e "$database_activation_state" ] && [ ! -L "$database_activation_state" ]; then
-    database_discard_candidate "${database_activation_app}" "${database_activation_candidate}" "${database_activation_type}" "${original[@]:4}" >/dev/null
+    database_discard_candidate "${database_activation_app}" "${database_activation_credential_app}" "${database_activation_candidate}" "${database_activation_type}" "${original[@]:5}" >/dev/null
   else
     assert_root_owned_regular "$database_activation_state"; mapfile -t activation < "$database_activation_state"
     [ "${activation[0]}" = "$database_activation_type" ] || reject database-recovery-type; [ "${activation[1]}" = 0 ] || [ "${activation[1]}" = 1 ] || reject database-recovery-state

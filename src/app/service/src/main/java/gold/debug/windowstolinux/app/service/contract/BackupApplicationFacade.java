@@ -5,6 +5,8 @@ import gold.debug.windowstolinux.app.service.backup.ManagedBackupInputAssessment
 import gold.debug.windowstolinux.app.service.backup.PreparedBackupCandidate;
 import gold.debug.windowstolinux.app.service.backup.PreparedBackupSecrets;
 import gold.debug.windowstolinux.app.service.backup.CreatedBackupArchive;
+import gold.debug.windowstolinux.app.service.backup.ManagedRestoreOutcome;
+import gold.debug.windowstolinux.app.service.backup.ManagedOfflineMigrationOutcome;
 import gold.debug.windowstolinux.app.secret.crypto.BackupSecretException;
 import gold.debug.windowstolinux.app.secret.SecretStoreException;
 import gold.debug.windowstolinux.shared.linux.error.LinuxOperationException;
@@ -23,6 +25,18 @@ public interface BackupApplicationFacade {
     CreatedBackupArchive createManagedBackup(
             String applicationId, Path destination, char[] backupPassword, char[] masterPassword,
             Predicate<String> firstUseConfirmation
+    ) throws SQLException, SecretStoreException, LinuxOperationException, IOException, BackupSecretException;
+
+    /** Restores one complete archive to a selected saved server profile. / 将一个完整归档恢复到选定的已保存服务器资料。 */
+    ManagedRestoreOutcome restoreManagedBackup(
+            Path archive, String targetServerId, char[] backupPassword, char[] masterPassword,
+            Predicate<String> firstUseConfirmation
+    ) throws SQLException, SecretStoreException, LinuxOperationException, IOException, BackupSecretException;
+
+    /** Prepares an offline two-server migration and stops before manual external traffic switching. / 准备离线双服务器迁移并在人工外部切流前停止。 */
+    ManagedOfflineMigrationOutcome prepareManagedOfflineMigration(
+            String applicationId, String targetServerId, char[] backupPassword, char[] masterPassword,
+            boolean stopWindowApproved, Predicate<String> firstUseConfirmation
     ) throws SQLException, SecretStoreException, LinuxOperationException, IOException, BackupSecretException;
 
     /** Validates one archive without extraction or remote access. / 校验一个归档且不提取、不访问远端。 */

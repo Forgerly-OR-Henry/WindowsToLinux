@@ -5,6 +5,7 @@ import java.util.Objects;
 /** Isolated database restore request bound to one verified artifact. / 绑定到一个已验证导出物的隔离数据库恢复请求。 */
 public record DatabaseRestoreRequest(
         String applicationId,
+        String credentialApplicationId,
         String candidateId,
         DatabaseConnectionProfile target,
         DatabaseBackupArtifact artifact
@@ -12,11 +13,23 @@ public record DatabaseRestoreRequest(
     /** Validates candidate and database type identity. / 校验候选与数据库类型身份。 */
     public DatabaseRestoreRequest {
         applicationId = DatabaseContractRules.identifier(applicationId, "applicationId");
+        credentialApplicationId = DatabaseContractRules.identifier(
+                credentialApplicationId, "credentialApplicationId");
         candidateId = DatabaseContractRules.candidate(applicationId, candidateId);
         target = Objects.requireNonNull(target, "target");
         artifact = Objects.requireNonNull(artifact, "artifact");
         if (target.type() != artifact.database().type()) {
             throw new IllegalArgumentException("restore target database type differs from the artifact");
         }
+    }
+
+    /** Creates a single-component request whose candidate and credential namespace are identical. / 创建候选与凭据命名空间相同的单组件请求。 */
+    public DatabaseRestoreRequest(
+            String applicationId,
+            String candidateId,
+            DatabaseConnectionProfile target,
+            DatabaseBackupArtifact artifact
+    ) {
+        this(applicationId, applicationId, candidateId, target, artifact);
     }
 }

@@ -89,15 +89,13 @@ class OfflineMigrationCoordinatorTest {
     }
 
     @Test
-    void candidateIdentityMustBeBoundToTheFinalBackupDigest() {
+    void endpointsMustDifferBeforeTheFinalBackupDigestExists() {
         assertThrows(IllegalArgumentException.class, () -> new OfflineMigrationRequest(
-                "migration-1", "sample", "source", "target", "a".repeat(64),
-                "sample-" + "b".repeat(16), 100, true));
+                "migration-1", "sample", "same", "same", 100, true));
     }
 
     private OfflineMigrationRequest request(boolean approved) {
-        return new OfflineMigrationRequest("migration-1", "sample", "source", "target", "a".repeat(64),
-                "sample-" + "a".repeat(16), 100, approved);
+        return new OfflineMigrationRequest("migration-1", "sample", "source", "target", 100, approved);
     }
 
     private enum MigrationFailureType { NONE, INITIAL_SYNC, FINAL_SYNC, STOP_THROWS, SOURCE_RECOVERY }
@@ -148,7 +146,7 @@ class OfflineMigrationCoordinatorTest {
                 throw BackupException.create(BackupFailureType.MIGRATION_SYNC_FAILED,
                         "final synchronization failed");
             }
-            return new SyncEvidence(100, request.backupSha256(), true, true,
+            return new SyncEvidence(100, "a".repeat(64), true, true,
                     List.of("stopped-write final snapshot synchronized and verified"));
         }
 
@@ -156,7 +154,8 @@ class OfflineMigrationCoordinatorTest {
         public TargetCandidateEvidence restoreAndVerifyTarget(
                 OfflineMigrationRequest request, SyncEvidence finalSync) {
             calls.add("target");
-            return new TargetCandidateEvidence(request.targetCandidateId(), true, true, true,
+            return new TargetCandidateEvidence(request.applicationId() + "-" + finalSync.contentSha256().substring(0, 16),
+                    true, true, true,
                     List.of("target components and application are healthy without external traffic changes"));
         }
 

@@ -34,12 +34,13 @@ class DatabaseCommandRendererTest {
                 RemoteDatabasePort.DatabaseType.SQLITE, "data/application.db", "3.46", "3.46",
                 RemoteDatabasePort.DatabaseConsistencyMode.SQLITE_ONLINE_BACKUP, List.of(), List.of("verified"));
         RemoteDatabasePort.RestoreRequest restore = new RemoteDatabasePort.RestoreRequest(
-                "sample", "sample-0123456789abcdef",
+                "suite", "sample", "suite-0123456789abcdef",
                 new RemoteDatabasePort.ConnectionProfile.Sqlite("data/application.db"), artifact);
 
         assertTrue(renderer.readArtifact(artifact).contains("'128' '" + "a".repeat(64) + "'"));
         assertTrue(renderer.stageArtifact(artifact).contains("'database-stage-artifact'"));
-        assertTrue(renderer.restore(restore).contains("'sample-0123456789abcdef' 'db-0123456789abcdef0123456789abcdef'"));
+        assertTrue(renderer.restore(restore).contains(
+                "'suite' 'sample' 'suite-0123456789abcdef' 'db-0123456789abcdef0123456789abcdef'"));
         assertTrue(renderer.discardCandidate(restore).contains("'database-discard-candidate'"));
     }
 }

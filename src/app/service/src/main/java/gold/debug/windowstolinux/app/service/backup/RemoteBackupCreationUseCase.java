@@ -33,6 +33,7 @@ import gold.debug.windowstolinux.shared.backup.extension.adapter.LinuxDatabaseOp
 import gold.debug.windowstolinux.shared.backup.extension.registry.DatabaseAdapterRegistry;
 import gold.debug.windowstolinux.shared.backup.format.BackupArchiveContent;
 import gold.debug.windowstolinux.shared.backup.format.BackupConfigurationCodec;
+import gold.debug.windowstolinux.shared.backup.format.BackupConfigurationDocument;
 import gold.debug.windowstolinux.shared.backup.manifest.BackupComponent;
 import gold.debug.windowstolinux.shared.backup.manifest.BackupComponentRuntime;
 import gold.debug.windowstolinux.shared.backup.manifest.BackupDatabase;
@@ -419,7 +420,9 @@ public final class RemoteBackupCreationUseCase {
         for (String componentId : context.plan().startOrder()) {
             ComponentContext component = context.components().get(componentId);
             target.add(write(attempt, "config/" + componentId + ".bin", BackupMemberKind.CONFIGURATION,
-                    configurationCodec.write(component.configuration())));
+                    configurationCodec.writeActivation(new BackupConfigurationDocument(component.configuration(),
+                            component.graph().reviewedResourceBindings().orElseThrow(),
+                            component.graph().runtimeConfiguration()))));
             target.add(write(attempt, "runtime/" + componentId + ".bin", BackupMemberKind.RUNTIME,
                     runtimeCodec.write(component.runtime())));
         }

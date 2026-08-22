@@ -42,6 +42,10 @@ import gold.debug.windowstolinux.app.service.backup.PreparedBackupCandidate;
 import gold.debug.windowstolinux.app.service.backup.PreparedBackupSecrets;
 import gold.debug.windowstolinux.app.service.backup.CreatedBackupArchive;
 import gold.debug.windowstolinux.app.service.backup.RemoteBackupCreationUseCase;
+import gold.debug.windowstolinux.app.service.backup.ManagedRestoreOutcome;
+import gold.debug.windowstolinux.app.service.backup.ManagedRestoreUseCase;
+import gold.debug.windowstolinux.app.service.backup.ManagedOfflineMigrationOutcome;
+import gold.debug.windowstolinux.app.service.backup.ManagedOfflineMigrationUseCase;
 import gold.debug.windowstolinux.app.db.entity.StoredApplicationSecretRevision;
 import gold.debug.windowstolinux.shared.config.revision.ConfigurationSnapshot;
 import gold.debug.windowstolinux.shared.config.resource.ManagedDatabaseBinding;
@@ -110,6 +114,8 @@ public final class DesktopApplicationFacade implements AiApplicationFacade, Depl
     private final BackupUseCase backup;
     private final ManagedBackupInputUseCase backupInputs;
     private final RemoteBackupCreationUseCase remoteBackup;
+    private final ManagedRestoreUseCase managedRestore;
+    private final ManagedOfflineMigrationUseCase managedMigration;
 
     /**
      * Creates a {@code DesktopApplicationFacade} instance.
@@ -122,6 +128,13 @@ public final class DesktopApplicationFacade implements AiApplicationFacade, Depl
      * @throws NullPointerException if a required argument is {@code null} / 必要参数为 {@code null} 时
      */
     public DesktopApplicationFacade(DesktopPersistence persistence, Path workDirectory, DeploymentLinuxGateway linuxGateway) {
+        this(persistence, workDirectory, workDirectory.toAbsolutePath().normalize().resolveSibling("backups"),
+                linuxGateway);
+    }
+
+    /** Creates the desktop facade with the sole run-mode-derived work and backup directories. / 使用唯一由运行模式派生的工作及备份目录创建桌面门面。 */
+    public DesktopApplicationFacade(DesktopPersistence persistence, Path workDirectory, Path backupsDirectory,
+                                    DeploymentLinuxGateway linuxGateway) {
         Objects.requireNonNull(persistence, "persistence");
         Objects.requireNonNull(linuxGateway, "linuxGateway");
         ServerOperationLockRegistry locks = new ServerOperationLockRegistry();
@@ -150,6 +163,10 @@ public final class DesktopApplicationFacade implements AiApplicationFacade, Depl
         this.remoteBackup = new RemoteBackupCreationUseCase(persistence.managedApplicationGraphs(),
                 persistence.managedApplications(), persistence.configurations(), persistence.applicationSecrets(),
                 backupInputs, linuxGateway, servers, locks, workDirectory);
+        this.managedRestore = new ManagedRestoreUseCase(backup, linuxGateway, servers, locks,
+                persistence.managedApplicationGraphs(), persistence.applicationSecrets());
+        this.managedMigration = new ManagedOfflineMigrationUseCase(remoteBackup, managedRestore,
+                multiComponentLifecycle, servers, workDirectory, backupsDirectory);
     }
 
     /** Assesses exact persisted backup inputs without remote access. / 在不访问远端的情况下评估精确持久化备份输入。 */
@@ -167,6 +184,28 @@ public final class DesktopApplicationFacade implements AiApplicationFacade, Depl
             gold.debug.windowstolinux.app.secret.crypto.BackupSecretException {
         return remoteBackup.createUsingSavedProfile(applicationId, destination, backupPassword, masterPassword,
                 firstUseConfirmation);
+    }
+
+    /** Restores a complete archive through the candidate, formal activation and recovery transaction. / 通过候选、正式激活及恢复事务恢复完整归档。 */
+    @Override
+    public ManagedRestoreOutcome restoreManagedBackup(
+            Path archive, String targetServerId, char[] backupPassword, char[] masterPassword,
+            Predicate<String> firstUseConfirmation
+    ) throws SQLException, SecretStoreException, LinuxOperationException, IOException,
+            gold.debug.windowstolinux.app.secret.crypto.BackupSecretException {
+        return managedRestore.restoreUsingSavedProfile(archive, targetServerId, backupPassword, masterPassword,
+                firstUseConfirmation);
+    }
+
+    /** Prepares a verified target while retaining the stopped source and leaving external traffic unchanged. / 准备已验证目标，同时保留停写源端且不改变外部流量。 */
+    @Override
+    public ManagedOfflineMigrationOutcome prepareManagedOfflineMigration(
+            String applicationId, String targetServerId, char[] backupPassword, char[] masterPassword,
+            boolean stopWindowApproved, Predicate<String> firstUseConfirmation
+    ) throws SQLException, SecretStoreException, LinuxOperationException, IOException,
+            gold.debug.windowstolinux.app.secret.crypto.BackupSecretException {
+        return managedMigration.prepare(applicationId, targetServerId, backupPassword, masterPassword,
+                stopWindowApproved, firstUseConfirmation);
     }
 
     /** Validates one selected backup locally without extraction or remote access. / 在本地校验一个已选备份且不提取、不访问远端。 */

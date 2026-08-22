@@ -51,6 +51,7 @@ public final class DatabaseCommandRenderer {
         Objects.requireNonNull(request, "request");
         List<String> arguments = new ArrayList<>();
         arguments.add(request.applicationId());
+        arguments.add(request.credentialApplicationId());
         arguments.add(request.candidateId());
         appendConnection(arguments, request.target());
         return command("database-discard-candidate", arguments);
@@ -93,6 +94,7 @@ public final class DatabaseCommandRenderer {
         Objects.requireNonNull(request, "request");
         List<String> arguments = new ArrayList<>();
         arguments.add(request.applicationId());
+        arguments.add(request.credentialApplicationId());
         arguments.add(request.candidateId());
         arguments.add(request.artifact().artifactId());
         appendConnection(arguments, request.target());

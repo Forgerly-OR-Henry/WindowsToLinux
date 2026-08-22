@@ -60,6 +60,22 @@ public final class ResolvedSecretRevision implements AutoCloseable {
         return value.clone();
     }
 
+    /** Returns a caller-owned character copy for a text-only platform secret store. / 为仅文本的平台秘密存储返回调用方持有的字符副本。 */
+    public synchronized char[] copyCharacters() {
+        try {
+            CharBuffer decoded = StandardCharsets.UTF_8.newDecoder()
+                    .onMalformedInput(java.nio.charset.CodingErrorAction.REPORT)
+                    .onUnmappableCharacter(java.nio.charset.CodingErrorAction.REPORT)
+                    .decode(ByteBuffer.wrap(value));
+            char[] result = new char[decoded.remaining()];
+            decoded.get(result);
+            return result;
+        } catch (java.nio.charset.CharacterCodingException exception) {
+            throw ConfigurationException.create(ConfigurationFailureType.SECRET_VALUE_INVALID,
+                    "A secret revision is not valid UTF-8 text", exception);
+        }
+    }
+
     /** Closes this resource. / 关闭此资源。 */
     @Override
     public synchronized void close() {

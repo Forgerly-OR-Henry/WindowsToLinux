@@ -217,9 +217,9 @@ database_discard_artifact() {
   printf 'DISCARDED=1\n'
 }
 database_restore_candidate() {
-  [ "$#" -ge 5 ] || reject database-restore-arguments
-  local app="$1" candidate="$2" artifact_id="$3" type="$4" artifact candidate_root_path token
-  shift 4; require_app "$app"; require_candidate "$app" "$candidate"; require_artifact_id "$artifact_id"; require_database_type "$type"
+  [ "$#" -ge 6 ] || reject database-restore-arguments
+  local app="$1" credential_app="$2" candidate="$3" artifact_id="$4" type="$5" artifact candidate_root_path token
+  shift 5; require_app "$app"; require_app "$credential_app"; require_candidate "$app" "$candidate"; require_artifact_id "$artifact_id"; require_database_type "$type"
   artifact="$(database_artifact_path "$artifact_id")"; assert_root_owned_regular "$artifact"
   candidate_root_path="$(candidate_root "$candidate")"; assert_candidate_for_deployer "$candidate_root_path"
   install -d -o root -g root -m 700 -- "$candidate_root_path/database"
@@ -236,7 +236,7 @@ database_restore_candidate() {
     database_server_arguments "$type" "$@"
     local suffix="${candidate##*-}" candidate_database="w2l_${suffix}" defaults client pgpass
     if [ "$type" = postgresql ]; then
-      pgpass="$(database_pgpass "$app" "$database_host" "$database_port" '*' "$database_username" "$database_secret_identifier" "$database_secret_revision")"
+      pgpass="$(database_pgpass "$credential_app" "$database_host" "$database_port" '*' "$database_username" "$database_secret_identifier" "$database_secret_revision")"
       if ! PGPASSFILE="$pgpass" createdb --no-password --host="$database_host" --port="$database_port" --username="$database_username" --owner="$database_username" "$candidate_database"; then
         rm -f -- "$pgpass"; reject database-candidate-create-failed
       fi
@@ -251,7 +251,7 @@ database_restore_candidate() {
       rm -f -- "$pgpass"
     else
       if [ "$type" = mariadb ]; then client="$(command -v mariadb)"; else client="$(command -v mysql)"; fi
-      defaults="$(database_mysql_defaults "$app" "$type" "$database_secret_identifier" "$database_secret_revision" "$database_tls")"
+      defaults="$(database_mysql_defaults "$credential_app" "$type" "$database_secret_identifier" "$database_secret_revision" "$database_tls")"
       if ! "$client" --defaults-extra-file="$defaults" --host="$database_host" --port="$database_port" --user="$database_username" -e "CREATE DATABASE \`$candidate_database\`"; then
         rm -f -- "$defaults"; reject database-candidate-create-failed
       fi
@@ -270,9 +270,9 @@ database_restore_candidate() {
   printf 'CANDIDATE_ID=%s\nCONNECTION_TOKEN=%s\nINTEGRITY_VERIFIED=1\nSCHEMA_READABLE=1\n' "$candidate" "$token"
 }
 database_discard_candidate() {
-  [ "$#" -ge 4 ] || reject database-candidate-discard-arguments
-  local app="$1" candidate="$2" type="$3" candidate_root_path
-  shift 3; require_app "$app"; require_candidate "$app" "$candidate"; require_database_type "$type"
+  [ "$#" -ge 5 ] || reject database-candidate-discard-arguments
+  local app="$1" credential_app="$2" candidate="$3" type="$4" candidate_root_path
+  shift 4; require_app "$app"; require_app "$credential_app"; require_candidate "$app" "$candidate"; require_database_type "$type"
   candidate_root_path="$(candidate_root "$candidate")"; assert_candidate_for_deployer "$candidate_root_path"
   if [ "$type" = sqlite ]; then
     [ "$#" -eq 1 ] || reject database-sqlite-arguments; require_relative_path "$1"
@@ -282,11 +282,11 @@ database_discard_candidate() {
     database_server_arguments "$type" "$@"
     local suffix="${candidate##*-}" candidate_database="w2l_${suffix}" credentials client
     if [ "$type" = postgresql ]; then
-      credentials="$(database_pgpass "$app" "$database_host" "$database_port" '*' "$database_username" "$database_secret_identifier" "$database_secret_revision")"
+      credentials="$(database_pgpass "$credential_app" "$database_host" "$database_port" '*' "$database_username" "$database_secret_identifier" "$database_secret_revision")"
       if ! PGPASSFILE="$credentials" dropdb --if-exists --force --no-password --host="$database_host" --port="$database_port" --username="$database_username" "$candidate_database"; then rm -f -- "$credentials"; reject database-candidate-discard-failed; fi
     else
       if [ "$type" = mariadb ]; then client="$(command -v mariadb)"; else client="$(command -v mysql)"; fi
-      credentials="$(database_mysql_defaults "$app" "$type" "$database_secret_identifier" "$database_secret_revision" "$database_tls")"
+      credentials="$(database_mysql_defaults "$credential_app" "$type" "$database_secret_identifier" "$database_secret_revision" "$database_tls")"
       if ! "$client" --defaults-extra-file="$credentials" --host="$database_host" --port="$database_port" --user="$database_username" -e "DROP DATABASE IF EXISTS \`$candidate_database\`"; then rm -f -- "$credentials"; reject database-candidate-discard-failed; fi
     fi
     rm -f -- "$credentials"

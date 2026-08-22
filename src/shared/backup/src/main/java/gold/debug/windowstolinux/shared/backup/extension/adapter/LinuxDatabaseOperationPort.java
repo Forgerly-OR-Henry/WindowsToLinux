@@ -58,7 +58,8 @@ public final class LinuxDatabaseOperationPort implements DatabaseOperationPort {
     public DatabaseRestoreEvidence restoreCandidate(DatabaseRestoreRequest request) throws BackupException {
         try {
             RemoteDatabasePort.RestoreEvidence evidence = remote.restoreCandidate(new RemoteDatabasePort.RestoreRequest(
-                    request.applicationId(), request.candidateId(), connection(request.target()), artifact(request.artifact())));
+                    request.applicationId(), request.credentialApplicationId(), request.candidateId(),
+                    connection(request.target()), artifact(request.artifact())));
             return new DatabaseRestoreEvidence(evidence.candidateId(), evidence.connectionToken(),
                     evidence.integrityVerified(), evidence.schemaReadable(), evidence.evidence());
         } catch (LinuxOperationException exception) {
@@ -137,7 +138,8 @@ public final class LinuxDatabaseOperationPort implements DatabaseOperationPort {
     }
 
     private static RemoteDatabasePort.RestoreRequest restore(DatabaseRestoreRequest request) {
-        return new RemoteDatabasePort.RestoreRequest(request.applicationId(), request.candidateId(),
+        return new RemoteDatabasePort.RestoreRequest(request.applicationId(), request.credentialApplicationId(),
+                request.candidateId(),
                 connection(request.target()), artifact(request.artifact()));
     }
 

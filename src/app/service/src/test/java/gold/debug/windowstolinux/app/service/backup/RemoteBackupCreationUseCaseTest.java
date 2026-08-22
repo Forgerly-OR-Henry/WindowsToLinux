@@ -100,6 +100,18 @@ class RemoteBackupCreationUseCaseTest {
                     "discard"), log);
             assertEquals(4, created.inspection().memberCount());
             assertEquals(RuntimeState.RUNNING, state[0]);
+            BackupUseCase localBackups = new BackupUseCase(work);
+            PreparedBackupActivation activation = localBackups.prepareForActivation(destination,
+                    "independent backup password".toCharArray());
+            try {
+                RestoreArchiveModel model = RestoreArchiveModel.load(activation);
+                assertEquals(resources(), model.configurations().get("demo").resourceBindings());
+                assertEquals(runtimeConfiguration(), model.configurations().get("demo").runtimeConfiguration());
+                assertTrue(model.database().isEmpty());
+            } finally {
+                activation.close();
+                localBackups.discard(activation.localCandidate());
+            }
             assertTrue(allCleared(master));
             assertTrue(allCleared(backupPassword));
         }
@@ -138,17 +150,46 @@ class RemoteBackupCreationUseCaseTest {
         }
     }
 
+    @Test
+    void missingMigrationStopApprovalPerformsNoRemoteOperation() throws Exception {
+        Path data = temporary.resolve("migration-rejected-data");
+        Path work = temporary.resolve("migration-rejected-work");
+        char[] master = "correct master password".toCharArray();
+        char[] backupPassword = "independent backup password".toCharArray();
+        ServerProfile source = new ServerProfile("server-one", "example.test", 22, "deployer",
+                "ssh/server-one/password", CredentialStorageMode.MASTER_PASSWORD);
+        ServerProfile target = new ServerProfile("server-two", "target.example.test", 22, "deployer",
+                "ssh/server-two/password", CredentialStorageMode.MASTER_PASSWORD);
+        try (DesktopPersistence persistence = DesktopPersistence.open(data);
+             Argon2AesSecretStore store = new Argon2AesSecretStore(
+                     persistence.encryptedSecrets(), "correct master password".toCharArray())) {
+            DesktopApplicationFacade facade = new DesktopApplicationFacade(persistence, work,
+                    work.resolveSibling("backups"), (endpoint, credential, verifier) -> {
+                throw new AssertionError("unapproved migration must not open SSH");
+            });
+            facade.saveServerProfile(source, store, "source-password".toCharArray());
+            facade.saveServerProfile(target, store, "target-password".toCharArray());
+            persistApplication(persistence);
+
+            ManagedOfflineMigrationOutcome outcome = facade.prepareManagedOfflineMigration("demo", "server-two",
+                    backupPassword, master, false, ignored -> false);
+
+            assertEquals(gold.debug.windowstolinux.shared.backup.execution.migration.OfflineMigrationStatus.PRECONDITION_REJECTED,
+                    outcome.migration().status());
+            assertTrue(outcome.retainedFinalArchive().isEmpty());
+            assertTrue(allCleared(master));
+            assertTrue(allCleared(backupPassword));
+        }
+    }
+
     private static void persistApplication(DesktopPersistence persistence) throws Exception {
         ServerIdentity server = new ServerIdentity("server-one", "example.test", 22, "SHA256:fixture");
         ManagedApplication application = ManagedApplication.forManaged("demo", server, "a".repeat(64));
         HealthCheck.Tcp health = new HealthCheck.Tcp(18080, 10, 1);
         DeploymentRuntimeSpecification runtime = new DeploymentRuntimeSpecification.NodeService(22, health);
-        ManagedApplicationRuntimeConfiguration runtimeConfiguration =
-                new ManagedApplicationRuntimeConfiguration(health, Optional.empty());
-        ComponentDataPath data = new ComponentDataPath("uploads", ComponentDataPath.AccessMode.READ_WRITE,
-                "uploads-v1", false);
-        ManagedComponentResourceBindings resources = new ManagedComponentResourceBindings(
-                List.of(new ManagedFileBinding("data", data)), Optional.of(List.of()));
+        ManagedApplicationRuntimeConfiguration runtimeConfiguration = runtimeConfiguration();
+        ComponentDataPath data = dataPath();
+        ManagedComponentResourceBindings resources = resources();
         ManagedApplicationGraph.Component component = new ManagedApplicationGraph.Component("demo", application,
                 runtimeConfiguration, List.of(), Optional.of(runtime), Optional.of(List.of(data)), Optional.of(resources));
         CurrentRelease release = new CurrentRelease("demo", "b".repeat(64),
@@ -160,6 +201,19 @@ class RemoteBackupCreationUseCaseTest {
                 new ManagedApplicationGraph("demo", "demo", Optional.of(health), List.of(component)),
                 List.of(new SuccessfulManagedDeployment(application, runtimeConfiguration, release,
                         configuration, List.of())));
+    }
+
+    private static ManagedApplicationRuntimeConfiguration runtimeConfiguration() {
+        return new ManagedApplicationRuntimeConfiguration(new HealthCheck.Tcp(18080, 10, 1), Optional.empty());
+    }
+
+    private static ComponentDataPath dataPath() {
+        return new ComponentDataPath("uploads", ComponentDataPath.AccessMode.READ_WRITE, "uploads-v1", false);
+    }
+
+    private static ManagedComponentResourceBindings resources() {
+        return new ManagedComponentResourceBindings(List.of(new ManagedFileBinding("data", dataPath())),
+                Optional.of(List.of()));
     }
 
     private static DeploymentRemoteSession session(

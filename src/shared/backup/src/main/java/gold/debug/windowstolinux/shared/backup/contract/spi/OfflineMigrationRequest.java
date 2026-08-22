@@ -9,12 +9,10 @@ public record OfflineMigrationRequest(
         String applicationId,
         String sourceServerId,
         String targetServerId,
-        String backupSha256,
-        String targetCandidateId,
         long estimatedBytes,
         boolean stopWindowApproved
 ) {
-    /** Validates distinct endpoints and archive-bound candidate identity. / 校验不同端点及归档绑定的候选身份。 */
+    /** Validates distinct endpoints before the stopped-write final archive exists. / 在停写最终归档产生前校验不同端点。 */
     public OfflineMigrationRequest {
         migrationId = identifier(migrationId, "migrationId");
         applicationId = identifier(applicationId, "applicationId");
@@ -22,15 +20,6 @@ public record OfflineMigrationRequest(
         targetServerId = identifier(targetServerId, "targetServerId");
         if (sourceServerId.equals(targetServerId)) {
             throw new IllegalArgumentException("offline migration requires different source and target servers");
-        }
-        backupSha256 = Objects.requireNonNull(backupSha256, "backupSha256").trim();
-        if (!backupSha256.matches("[0-9a-f]{64}")) {
-            throw new IllegalArgumentException("backupSha256 is invalid");
-        }
-        targetCandidateId = Objects.requireNonNull(targetCandidateId, "targetCandidateId").trim();
-        String expectedCandidate = applicationId + "-" + backupSha256.substring(0, 16);
-        if (!targetCandidateId.equals(expectedCandidate)) {
-            throw new IllegalArgumentException("targetCandidateId is not bound to the backup digest");
         }
         if (estimatedBytes < 1) throw new IllegalArgumentException("estimatedBytes must be positive");
     }

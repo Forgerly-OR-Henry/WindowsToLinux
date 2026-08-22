@@ -81,7 +81,7 @@ public final class DesktopMain {
             MessageCatalog messages = MessageCatalog.forLanguageTag(appearance.localeTag());
             new DesktopUncaughtFailureBoundary(reports, messages).install();
             DesktopApplicationFacade service = new DesktopApplicationFacade(database,
-                    dataLayout.workDirectory(), new SshdLinuxGateway());
+                    dataLayout.workDirectory(), dataLayout.backupsDirectory(), new SshdLinuxGateway());
             SwingUtilities.invokeLater(() -> {
                 try {
                     new DesktopWindowController(database, service, appearance, reports).showInitialWindow();

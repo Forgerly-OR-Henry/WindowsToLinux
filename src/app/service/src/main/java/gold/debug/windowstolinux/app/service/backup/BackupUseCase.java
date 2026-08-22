@@ -79,9 +79,48 @@ public final class BackupUseCase {
             throws IOException, BackupSecretException {
         PreparedMaterial prepared = null;
         BackupSecretDocument document = null;
-        byte[] envelope = null;
         try {
             prepared = prepareValidated(archive);
+            document = authenticate(prepared, backupPassword);
+            return new PreparedBackupSecrets(candidate(prepared), document);
+        } catch (IOException | BackupSecretException | RuntimeException exception) {
+            if (document != null) document.close();
+            if (prepared != null) cleanup(prepared.attempt(), exception);
+            throw exception;
+        } finally {
+            if (backupPassword != null) Arrays.fill(backupPassword, '\0');
+        }
+    }
+
+    /** Prepares complete schema-v4 material for one immediate product activation. / 为一次即时产品激活准备完整 schema-v4 材料。 */
+    PreparedBackupActivation prepareForActivation(Path archive, char[] backupPassword)
+            throws IOException, BackupSecretException {
+        PreparedMaterial prepared = null;
+        BackupSecretDocument document = null;
+        try {
+            prepared = prepareValidated(archive);
+            if (!prepared.validation().manifest().supportsAutomaticActivation()) {
+                throw BackupSecretException.create(BackupSecretFailureType.PAYLOAD_INVALID,
+                        "the selected backup lacks schema-v4 automatic activation identities");
+            }
+            if (!prepared.validation().manifest().inventory().secretReferences().isEmpty()) {
+                document = authenticate(prepared, backupPassword);
+            }
+            return new PreparedBackupActivation(prepared.validation(), prepared.candidate(), candidate(prepared),
+                    java.util.Optional.ofNullable(document));
+        } catch (IOException | BackupSecretException | RuntimeException exception) {
+            if (document != null) document.close();
+            if (prepared != null) cleanup(prepared.attempt(), exception);
+            throw exception;
+        } finally {
+            if (backupPassword != null) Arrays.fill(backupPassword, '\0');
+        }
+    }
+
+    private BackupSecretDocument authenticate(PreparedMaterial prepared, char[] backupPassword)
+            throws IOException, BackupSecretException {
+        byte[] envelope = null;
+        try {
             BackupMember secretMember = prepared.validation().manifest().members().stream()
                     .filter(member -> member.kind() == BackupMemberKind.ENCRYPTED_SECRETS)
                     .findFirst().orElseThrow(() -> BackupSecretException.create(
@@ -100,15 +139,15 @@ public final class BackupUseCase {
                 throw BackupSecretException.create(BackupSecretFailureType.PAYLOAD_INVALID,
                         "the encrypted secret member changed after candidate extraction");
             }
-            document = secrets.decryptRevisions(backupPassword, envelope);
-            requireManifestReferences(prepared.validation(), document);
-            return new PreparedBackupSecrets(candidate(prepared), document);
-        } catch (IOException | BackupSecretException | RuntimeException exception) {
-            if (document != null) document.close();
-            if (prepared != null) cleanup(prepared.attempt(), exception);
-            throw exception;
+            BackupSecretDocument document = secrets.decryptRevisions(backupPassword, envelope);
+            try {
+                requireManifestReferences(prepared.validation(), document);
+                return document;
+            } catch (BackupSecretException | RuntimeException exception) {
+                document.close();
+                throw exception;
+            }
         } finally {
-            if (backupPassword != null) Arrays.fill(backupPassword, '\0');
             if (envelope != null) Arrays.fill(envelope, (byte) 0);
         }
     }

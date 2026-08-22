@@ -70,7 +70,8 @@ public final class OfflineMigrationCoordinator {
 
             state = OfflineMigrationState.TARGET_CANDIDATE_VERIFIED;
             OfflineMigrationPort.TargetCandidateEvidence candidate = port.restoreAndVerifyTarget(request, finalSync);
-            if (!candidate.candidateId().equals(request.targetCandidateId()) || !candidate.componentsHealthy()
+            String expectedCandidate = request.applicationId() + "-" + finalSync.contentSha256().substring(0, 16);
+            if (!candidate.candidateId().equals(expectedCandidate) || !candidate.componentsHealthy()
                     || !candidate.applicationHealthy() || !candidate.externalTrafficUnchanged()) {
                 throw BackupException.create(BackupFailureType.MIGRATION_TARGET_FAILED,
                         "target candidate identity, health or unchanged external traffic evidence is incomplete");
@@ -178,9 +179,7 @@ public final class OfflineMigrationCoordinator {
             boolean writesStopped,
             String diagnostic
     ) throws BackupException {
-        if (!sync.digestVerified() || sync.byteCount() < request.estimatedBytes()
-                || sync.sourceWritesStopped() != writesStopped
-                || writesStopped && !sync.contentSha256().equals(request.backupSha256())) {
+        if (!sync.digestVerified() || sync.sourceWritesStopped() != writesStopped) {
             throw BackupException.create(BackupFailureType.MIGRATION_SYNC_FAILED, diagnostic);
         }
     }

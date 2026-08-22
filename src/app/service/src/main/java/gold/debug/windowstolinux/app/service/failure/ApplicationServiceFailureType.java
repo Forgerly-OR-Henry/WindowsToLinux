@@ -35,7 +35,10 @@ public enum ApplicationServiceFailureType implements FailureDefinition {
     BACKUP_INPUT_INCOMPLETE("service.backup.input-incomplete", "backup",
             "service.error.backupInputIncomplete", FailureSeverityLevel.ERROR, FailureRecoveryAction.REQUEST_USER_CORRECTION),
     BACKUP_RECOVERY_FAILED("service.backup.recovery-failed", "backup",
-            "service.error.backupRecoveryFailed", FailureSeverityLevel.ERROR, FailureRecoveryAction.REQUIRE_MANUAL_RECOVERY);
+            "service.error.backupRecoveryFailed", FailureSeverityLevel.ERROR, FailureRecoveryAction.REQUIRE_MANUAL_RECOVERY),
+    RESTORE_RECORD_SAVE_FAILED("service.restore.record-save-failed", "restore",
+            "service.error.restoreRecordSaveFailed", FailureSeverityLevel.ERROR,
+            FailureRecoveryAction.REQUIRE_MANUAL_RECOVERY);
 
     private final String code;
     private final String phase;

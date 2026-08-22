@@ -171,6 +171,7 @@ public interface RemoteDatabasePort {
     /** Isolated restore request bound to one verified artifact. / 绑定已验证制品的隔离恢复请求。 */
     record RestoreRequest(
             String applicationId,
+            String credentialApplicationId,
             String candidateId,
             ConnectionProfile target,
             BackupArtifact artifact
@@ -178,10 +179,17 @@ public interface RemoteDatabasePort {
         /** Validates managed candidate identity and database type. / 校验受管候选身份与数据库类型。 */
         public RestoreRequest {
             applicationId = identifier(applicationId, "applicationId");
+            credentialApplicationId = identifier(credentialApplicationId, "credentialApplicationId");
             candidateId = candidate(applicationId, candidateId);
             target = Objects.requireNonNull(target, "target");
             artifact = Objects.requireNonNull(artifact, "artifact");
             if (target.type() != artifact.type()) throw new IllegalArgumentException("restore database type differs");
+        }
+
+        /** Creates a single-component request with one shared application namespace. / 创建使用单一应用命名空间的单组件请求。 */
+        public RestoreRequest(String applicationId, String candidateId,
+                              ConnectionProfile target, BackupArtifact artifact) {
+            this(applicationId, applicationId, candidateId, target, artifact);
         }
     }
 
