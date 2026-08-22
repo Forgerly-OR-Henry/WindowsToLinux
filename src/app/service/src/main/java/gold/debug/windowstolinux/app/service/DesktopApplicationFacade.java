@@ -40,6 +40,8 @@ import gold.debug.windowstolinux.app.service.backup.ManagedBackupInputAssessment
 import gold.debug.windowstolinux.app.service.backup.ManagedBackupInputUseCase;
 import gold.debug.windowstolinux.app.service.backup.PreparedBackupCandidate;
 import gold.debug.windowstolinux.app.service.backup.PreparedBackupSecrets;
+import gold.debug.windowstolinux.app.service.backup.CreatedBackupArchive;
+import gold.debug.windowstolinux.app.service.backup.RemoteBackupCreationUseCase;
 import gold.debug.windowstolinux.app.db.entity.StoredApplicationSecretRevision;
 import gold.debug.windowstolinux.shared.config.revision.ConfigurationSnapshot;
 import gold.debug.windowstolinux.shared.config.resource.ManagedDatabaseBinding;
@@ -107,6 +109,7 @@ public final class DesktopApplicationFacade implements AiApplicationFacade, Depl
     private final LifecycleUseCase lifecycle;
     private final BackupUseCase backup;
     private final ManagedBackupInputUseCase backupInputs;
+    private final RemoteBackupCreationUseCase remoteBackup;
 
     /**
      * Creates a {@code DesktopApplicationFacade} instance.
@@ -144,12 +147,26 @@ public final class DesktopApplicationFacade implements AiApplicationFacade, Depl
         this.backup = new BackupUseCase(workDirectory);
         this.backupInputs = new ManagedBackupInputUseCase(persistence.managedApplicationGraphs(),
                 persistence.managedApplications(), persistence.configurations(), persistence.applicationSecrets());
+        this.remoteBackup = new RemoteBackupCreationUseCase(persistence.managedApplicationGraphs(),
+                persistence.managedApplications(), persistence.configurations(), persistence.applicationSecrets(),
+                backupInputs, linuxGateway, servers, locks, workDirectory);
     }
 
     /** Assesses exact persisted backup inputs without remote access. / 在不访问远端的情况下评估精确持久化备份输入。 */
     @Override
     public ManagedBackupInputAssessment assessManagedBackupInputs(String applicationId) throws SQLException {
         return backupInputs.assess(applicationId);
+    }
+
+    /** Creates a complete remote backup and publishes it only after independent final-path validation. / 创建完整远端备份，并仅在最终路径独立复验后发布。 */
+    @Override
+    public CreatedBackupArchive createManagedBackup(
+            String applicationId, Path destination, char[] backupPassword, char[] masterPassword,
+            Predicate<String> firstUseConfirmation
+    ) throws SQLException, SecretStoreException, LinuxOperationException, IOException,
+            gold.debug.windowstolinux.app.secret.crypto.BackupSecretException {
+        return remoteBackup.createUsingSavedProfile(applicationId, destination, backupPassword, masterPassword,
+                firstUseConfirmation);
     }
 
     /** Validates one selected backup locally without extraction or remote access. / 在本地校验一个已选备份且不提取、不访问远端。 */

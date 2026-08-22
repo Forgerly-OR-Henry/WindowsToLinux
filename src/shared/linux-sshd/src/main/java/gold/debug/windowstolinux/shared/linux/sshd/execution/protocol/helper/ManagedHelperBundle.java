@@ -21,19 +21,22 @@ public final class ManagedHelperBundle {
     /** Platform-owned Java 21 launcher used by every managed systemd unit. / 每个受管 systemd 单元使用的平台持有 Java 21 启动器。 */
     public static final String JAVA_RUNTIME_PATH = DIRECTORY + "/java-21";
     /** Expected byte-for-byte helper bundle identity. / 预期的 helper 逐字节身份。 */
-    public static final String EXPECTED_SHA256 = "d14c8c655ce298bcacbf30d90b414eee28a826e6e37d5f7b2f51e38edae2bc87";
+    public static final String EXPECTED_SHA256 = "db20a90fe7177f39f2f9bf790e43e1c9beec05e0be23b48137f9b1bc2212c6a6";
     private static final String ROOT = "/gold/debug/windowstolinux/shared/linux/sshd/";
     private static final List<String> FRAGMENTS = List.of(
             "execution/protocol/helper/fragments/00-protocol-foundation.sh",
             "execution/protocol/helper/fragments/release/10-typed-release.sh",
             "execution/protocol/helper/fragments/input/15-deployment-input.sh",
+            "execution/protocol/helper/fragments/input/17-managed-content.sh",
             "execution/protocol/helper/fragments/workspace/20-candidate-workspace.sh",
             "execution/protocol/helper/fragments/release/30-ordinary-release.sh",
             "execution/protocol/helper/fragments/ecosystem/35-ecosystem-dispatch.sh",
             "execution/protocol/helper/fragments/runtime/40-typed-runtime.sh",
             "execution/protocol/helper/fragments/release/50-container-release.sh",
+            "execution/protocol/helper/fragments/release/52-container-recovery.sh",
             "runtime/container/helper/55-podman-quadlet.sh", "runtime/systemd/helper/60-lifecycle.sh",
             "execution/protocol/helper/fragments/database/65-database-backup.sh",
+            "execution/protocol/helper/fragments/backup/67-managed-backup.sh",
             "execution/protocol/helper/fragments/70-command-dispatch.sh");
 
     private ManagedHelperBundle() { }

@@ -11,6 +11,7 @@ public enum WindowsWorkspaceFailureType implements FailureDefinition {
     CAPACITY_INSUFFICIENT("windows.workspace.capacity-insufficient", "workspace", "windows.error.workspaceCapacityInsufficient", FailureRecoveryAction.REQUEST_USER_CORRECTION),
     APPLICATION_ID_INVALID("windows.workspace.application-id-invalid", "validation", "windows.error.applicationIdInvalid", FailureRecoveryAction.REQUEST_USER_CORRECTION),
     ARCHIVE_FAILED("windows.workspace.archive-failed", "archive", "windows.error.archiveFailed", FailureRecoveryAction.CLEANUP),
+    BACKUP_MATERIAL_WORKSPACE_FAILED("windows.workspace.backup-material-failed", "backup", "windows.error.backupMaterialWorkspaceFailed", FailureRecoveryAction.CLEANUP),
     RESTORE_WORKSPACE_FAILED("windows.workspace.restore-failed", "restore", "windows.error.restoreWorkspaceFailed", FailureRecoveryAction.CLEANUP),
     HANDOFF_INVALID("windows.workspace.handoff-invalid", "handoff", "windows.error.workspaceHandoffInvalid", FailureRecoveryAction.REQUEST_USER_CORRECTION);
 

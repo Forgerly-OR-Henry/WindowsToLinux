@@ -5,7 +5,7 @@ PATH=/usr/sbin:/usr/bin:/sbin:/bin
 umask 077
 helper_path=/usr/local/lib/windowstolinux/managed-helper
 helper_directory=/usr/local/lib/windowstolinux
-helper_protocol=4
+helper_protocol=5
 base_root=/var/lib/windowstolinux
 applications_root="$base_root/apps"
 work_root="$base_root/work"
@@ -13,6 +13,7 @@ snapshots_root="$base_root/snapshots"
 configurations_root="$base_root/configurations"
 secrets_root="$base_root/secrets"
 backups_root="$base_root/backups"
+data_root="$base_root/data"
 reject() {
   printf 'MANAGED_HELPER_REJECT=%s\n' "$1" >&2
   exit 64
@@ -128,7 +129,8 @@ render_deployment_unit() {
   local app="$1"
   shift
   parse_deployment_inputs "$@"
-  set -- "${deployment_remaining_arguments[@]}"
+  parse_managed_data_bindings "${deployment_remaining_arguments[@]}"
+  set -- "${managed_data_remaining_arguments[@]}"
   [ "$#" -ge 1 ] || reject runtime-arguments
   local kind="$1"
   shift
@@ -278,6 +280,7 @@ assert_deployment_current_or_empty() {
     assert_root_owned_regular "$current/.windowstolinux-owner"
     [ "$(cat -- "$current/.windowstolinux-owner")" = "$manifest" ] || reject current-owner
     load_deployment_parameters "$current/.windowstolinux-deployment-parameters"
+    assert_managed_data_links "$current/source"
     expected="$(expected_deployment_unit_digest "$app" "${deployment_runtime_parameters[@]}")"
     [ "$(systemctl show --value --property FragmentPath "$(unit_name "$app")")" = "$unit" ] || reject unit-fragment
     [ -z "$(systemctl show --value --property DropInPaths "$(unit_name "$app")")" ] || reject unit-dropins

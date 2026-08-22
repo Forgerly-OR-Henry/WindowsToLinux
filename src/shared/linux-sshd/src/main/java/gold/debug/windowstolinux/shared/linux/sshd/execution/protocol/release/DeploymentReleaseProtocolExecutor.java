@@ -2,6 +2,7 @@ package gold.debug.windowstolinux.shared.linux.sshd.execution.protocol.release;
 
 import gold.debug.windowstolinux.shared.linux.sshd.execution.protocol.helper.ManagedHelperBundle;
 import gold.debug.windowstolinux.shared.linux.sshd.execution.protocol.input.DeploymentInputArguments;
+import gold.debug.windowstolinux.shared.linux.sshd.execution.protocol.input.ManagedContentArguments;
 import gold.debug.windowstolinux.shared.linux.sshd.execution.protocol.runtime.DeploymentRuntimeArguments;
 
 import gold.debug.windowstolinux.shared.linux.build.DeploymentBuildResult;
@@ -11,6 +12,7 @@ import gold.debug.windowstolinux.shared.linux.protocol.ReleaseSnapshot;
 import gold.debug.windowstolinux.shared.linux.protocol.RemoteStepResult;
 import gold.debug.windowstolinux.shared.linux.sshd.command.SshCommandExecutor;
 import gold.debug.windowstolinux.shared.linux.transfer.RemoteWorkspace;
+import gold.debug.windowstolinux.shared.linux.protocol.backup.ManagedContentPublication;
 import gold.debug.windowstolinux.shared.config.revision.DeploymentInputManifest;
 import gold.debug.windowstolinux.shared.model.managed.ManagedApplication;
 import gold.debug.windowstolinux.shared.model.lifecycle.AutostartState;
@@ -65,7 +67,8 @@ public final class DeploymentReleaseProtocolExecutor {
     public RemoteStepResult publish(ManagedApplication application, DeploymentProjectFacts facts,
                                     RemoteWorkspace workspace, DeploymentBuildResult build,
                                     String releaseIdentity, DeploymentRuntimeSpecification runtime,
-                                    DeploymentInputManifest inputs, ReleaseSnapshot snapshot)
+                                    DeploymentInputManifest inputs, ManagedContentPublication contentPublication,
+                                    ReleaseSnapshot snapshot)
             throws LinuxOperationException {
         if (!build.succeeded()) {
             throw LinuxOperationException.create(LinuxOperationFailureType.UNVERIFIED_BUILD_PUBLISH,
@@ -75,6 +78,7 @@ public final class DeploymentReleaseProtocolExecutor {
         List<String> values = new ArrayList<>(List.of(application.id(), workspace.candidateId(), releaseIdentity,
                 application.ownershipManifestSha256()));
         values.addAll(DeploymentInputArguments.from(inputs));
+        values.addAll(ManagedContentArguments.from(contentPublication));
         values.addAll(DeploymentRuntimeArguments.from(facts, runtime));
         var result = commands.exec(helperCommand("publish-deployment", values), Duration.ofSeconds(120), true);
         return new RemoteStepResult(result.succeeded(), result.timedOut(), result.succeeded()

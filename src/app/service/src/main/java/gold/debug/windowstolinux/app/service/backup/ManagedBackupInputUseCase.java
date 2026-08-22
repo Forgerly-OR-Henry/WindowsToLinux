@@ -73,10 +73,15 @@ public final class ManagedBackupInputUseCase {
             }
             if (!componentMissing.isEmpty()) missing.put(component.componentId(), List.copyOf(componentMissing));
         }
-        List<MissingInputType> applicationMissing = stable(graph, releases)
-                ? List.of() : List.of(MissingInputType.LOCAL_STATE_CHANGED_DURING_ASSESSMENT);
+        List<MissingInputType> applicationMissing = new ArrayList<>();
+        if (graph.applicationHealthCheck().isEmpty()) {
+            applicationMissing.add(MissingInputType.APPLICATION_HEALTH_CHECK);
+        }
+        if (!stable(graph, releases)) {
+            applicationMissing.add(MissingInputType.LOCAL_STATE_CHANGED_DURING_ASSESSMENT);
+        }
         return new ManagedBackupInputAssessment(applicationId, componentIds, releaseIdentities,
-                applicationMissing, missing);
+                List.copyOf(applicationMissing), missing);
     }
 
     private boolean stable(ManagedApplicationGraph initial, Map<String, CurrentRelease> initialReleases)

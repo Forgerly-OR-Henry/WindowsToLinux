@@ -2,6 +2,7 @@ package gold.debug.windowstolinux.shared.linux.sshd.session;
 
 import gold.debug.windowstolinux.shared.linux.sshd.command.SshCommandExecutor;
 import gold.debug.windowstolinux.shared.linux.sshd.backup.SshdDatabaseOperationPort;
+import gold.debug.windowstolinux.shared.linux.sshd.backup.SshdBackupArtifactPort;
 import gold.debug.windowstolinux.shared.linux.protocol.database.RemoteDatabasePort.BackupArtifact;
 import gold.debug.windowstolinux.shared.linux.protocol.database.RemoteDatabasePort.BackupRequest;
 import gold.debug.windowstolinux.shared.linux.protocol.database.RemoteDatabasePort.CompatibilityEvidence;
@@ -40,6 +41,9 @@ import gold.debug.windowstolinux.shared.linux.sshd.execution.transfer.SshdSource
 import gold.debug.windowstolinux.shared.linux.sshd.execution.transfer.SshdRestoreTransport;
 import gold.debug.windowstolinux.shared.linux.protocol.restore.RemoteRestoreStagingEvidence;
 import gold.debug.windowstolinux.shared.linux.protocol.restore.RemoteRestoreStagingRequest;
+import gold.debug.windowstolinux.shared.linux.protocol.backup.ManagedContentPublication;
+import gold.debug.windowstolinux.shared.linux.protocol.backup.RemoteBackupArtifact;
+import gold.debug.windowstolinux.shared.linux.protocol.backup.RemoteBackupArtifactRequest;
 import gold.debug.windowstolinux.shared.linux.transfer.RemoteWorkspace;
 import gold.debug.windowstolinux.shared.linux.transfer.SourceUploadResult;
 import gold.debug.windowstolinux.shared.model.archive.SourceArchiveDescriptor;
@@ -88,6 +92,7 @@ public final class SshdLinuxRemoteSession implements DeploymentRemoteSession {
     private final ContainerRuntimeExecutor containerRuntime;
     private final ManagedRuntimeExecutor managedRuntime;
     private final SshdDatabaseOperationPort databases;
+    private final SshdBackupArtifactPort backupArtifacts;
 
     /** Creates an instance of this type. / 创建此类型的实例。 */
     public SshdLinuxRemoteSession(SshClient client, ClientSession session,
@@ -97,6 +102,7 @@ public final class SshdLinuxRemoteSession implements DeploymentRemoteSession {
         this.username = endpoint.username();
         SshCommandExecutor commands = new SshCommandExecutor(session);
         this.databases = new SshdDatabaseOperationPort(commands);
+        this.backupArtifacts = new SshdBackupArtifactPort(commands);
         this.capabilities = new SshdCapabilityCollector(commands, hostFingerprint);
         this.deploymentCapabilities = new SshdPlatformCapabilityCollector(commands, hostFingerprint);
         this.environment = new ManagedEnvironmentExecutor(
@@ -226,12 +232,14 @@ public final class SshdLinuxRemoteSession implements DeploymentRemoteSession {
                                               RemoteWorkspace workspace,
                                               DeploymentBuildResult buildResult, String releaseIdentity,
                                               DeploymentRuntimeSpecification runtime, DeploymentInputManifest inputs,
-                                              ReleaseSnapshot snapshot)
+                                              ManagedContentPublication contentPublication, ReleaseSnapshot snapshot)
             throws LinuxOperationException {
         if (runtime instanceof DeploymentRuntimeSpecification.Container container) {
-            return containerProtocol.publish(application, workspace, buildResult, releaseIdentity, container, inputs, snapshot);
+            return containerProtocol.publish(application, workspace, buildResult, releaseIdentity, container, inputs,
+                    contentPublication, snapshot);
         }
-        return deploymentProtocol.publish(application, facts, workspace, buildResult, releaseIdentity, runtime, inputs, snapshot);
+        return deploymentProtocol.publish(application, facts, workspace, buildResult, releaseIdentity, runtime, inputs,
+                contentPublication, snapshot);
     }
 
     /** Performs the {@code rollbackDeployment} operation. / 执行 {@code rollbackDeployment} 操作。 */
@@ -338,6 +346,23 @@ public final class SshdLinuxRemoteSession implements DeploymentRemoteSession {
     @Override
     public void discardArtifact(BackupArtifact artifact) throws LinuxOperationException {
         databases.discardArtifact(artifact);
+    }
+
+    @Override
+    public RemoteBackupArtifact createBackupArtifact(RemoteBackupArtifactRequest request)
+            throws LinuxOperationException {
+        return backupArtifacts.createBackupArtifact(request);
+    }
+
+    @Override
+    public void copyBackupArtifact(RemoteBackupArtifact artifact, OutputStream destination)
+            throws LinuxOperationException {
+        backupArtifacts.copyBackupArtifact(artifact, destination);
+    }
+
+    @Override
+    public RemoteStepResult discardBackupOperation(String operationId) throws LinuxOperationException {
+        return backupArtifacts.discardBackupOperation(operationId);
     }
 
     /** Closes this resource. / 关闭此资源。 */

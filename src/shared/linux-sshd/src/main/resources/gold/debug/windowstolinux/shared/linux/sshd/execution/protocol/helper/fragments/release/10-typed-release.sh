@@ -4,7 +4,8 @@ seal_deployment_tree() {
   local release="$3"
   shift 3
   parse_deployment_inputs "$@"
-  set -- "${deployment_remaining_arguments[@]}"
+  parse_managed_data_bindings "${deployment_remaining_arguments[@]}"
+  set -- "${managed_data_remaining_arguments[@]}"
   [ "$#" -ge 1 ] || reject runtime-arguments
   local kind="$1"
   shift
@@ -146,6 +147,7 @@ seal_deployment_tree() {
       ;;
     *) reject runtime-kind ;;
   esac
+  prepare_managed_data_bindings "$release/source"
 }
 publish_deployment() {
   [ "$#" -ge 7 ] || reject publish-deployment-arguments

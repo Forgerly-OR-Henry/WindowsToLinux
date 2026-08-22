@@ -4,6 +4,7 @@ import gold.debug.windowstolinux.app.service.backup.BackupArchiveInspection;
 import gold.debug.windowstolinux.app.service.backup.ManagedBackupInputAssessment;
 import gold.debug.windowstolinux.app.service.backup.PreparedBackupCandidate;
 import gold.debug.windowstolinux.app.service.backup.PreparedBackupSecrets;
+import gold.debug.windowstolinux.app.service.backup.CreatedBackupArchive;
 import gold.debug.windowstolinux.app.service.contract.BackupApplicationFacade;
 import gold.debug.windowstolinux.app.ui.component.DesktopComponentFactory;
 import gold.debug.windowstolinux.app.ui.component.DesktopTaskExecutor;
@@ -14,6 +15,8 @@ import javax.swing.JFileChooser;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
 import javax.swing.JPasswordField;
+import javax.swing.JOptionPane;
+import javax.swing.SwingUtilities;
 import javax.swing.JTextArea;
 import javax.swing.JTextField;
 import java.awt.BorderLayout;
@@ -25,6 +28,7 @@ import java.nio.file.Path;
 import java.util.Arrays;
 import java.util.Locale;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /** Owns local backup validation and isolated candidate preparation. / 持有本地备份校验与隔离候选准备。 */
 public final class BackupPage {
@@ -33,7 +37,9 @@ public final class BackupPage {
     private final PageMessagePresenter messages;
     private final JTextField applicationId = new JTextField();
     private final JTextField archivePath = new JTextField();
+    private final JTextField destinationPath = new JTextField();
     private final JPasswordField backupPassword = new JPasswordField();
+    private final JPasswordField masterPassword = new JPasswordField();
     private final JTextArea output = DesktopComponentFactory.outputArea();
     private final JPanel panel;
     private JButton inspectButton;
@@ -41,6 +47,7 @@ public final class BackupPage {
     private JButton discardButton;
     private JButton assessButton;
     private JButton prepareSecretsButton;
+    private JButton createButton;
     private PreparedBackupCandidate preparedCandidate;
 
     /** Creates the functional local backup page. / 创建本地备份功能页面。 */
@@ -50,6 +57,7 @@ public final class BackupPage {
         this.service = service;
         this.messages = messages;
         archivePath.setEditable(false);
+        destinationPath.setEditable(false);
         panel = createPanel(components);
     }
 
@@ -60,13 +68,15 @@ public final class BackupPage {
 
     /** Captures page-owned values. / 捕获页面持有的值。 */
     public BackupPageState captureState() {
-        return new BackupPageState(applicationId.getText(), archivePath.getText(), output.getText(), preparedCandidate);
+        return new BackupPageState(applicationId.getText(), archivePath.getText(), destinationPath.getText(),
+                output.getText(), preparedCandidate);
     }
 
     /** Restores page-owned values. / 恢复页面持有的值。 */
     public void restoreState(BackupPageState state) {
         applicationId.setText(state.applicationId());
         archivePath.setText(state.archivePath());
+        destinationPath.setText(state.destinationPath());
         output.setText(state.output());
         preparedCandidate = state.preparedCandidate();
         setBusy(false);
@@ -78,7 +88,7 @@ public final class BackupPage {
         controls.add(components.sectionHeading(messages.text("backup.section.title"),
                 messages.text("backup.section.description")), BorderLayout.NORTH);
 
-        JPanel inputRows = components.transparent(new GridLayout(3, 1, 0, 8));
+        JPanel inputRows = components.transparent(new GridLayout(5, 1, 0, 8));
         JPanel managedInput = components.transparent(new BorderLayout(8, 0));
         managedInput.add(new JLabel(messages.text("backup.field.applicationId")), BorderLayout.WEST);
         managedInput.add(applicationId, BorderLayout.CENTER);
@@ -94,10 +104,23 @@ public final class BackupPage {
         selection.add(selectButton, BorderLayout.EAST);
         inputRows.add(selection);
 
+        JPanel destination = components.transparent(new BorderLayout(8, 0));
+        destination.add(new JLabel(messages.text("backup.field.destination")), BorderLayout.WEST);
+        destination.add(destinationPath, BorderLayout.CENTER);
+        JButton destinationButton = components.secondaryButton(messages.text("backup.button.destination"));
+        destinationButton.addActionListener(event -> selectDestination());
+        destination.add(destinationButton, BorderLayout.EAST);
+        inputRows.add(destination);
+
         JPanel secretInput = components.transparent(new BorderLayout(8, 0));
         secretInput.add(new JLabel(messages.text("backup.field.password")), BorderLayout.WEST);
         secretInput.add(backupPassword, BorderLayout.CENTER);
         inputRows.add(secretInput);
+
+        JPanel masterInput = components.transparent(new BorderLayout(8, 0));
+        masterInput.add(new JLabel(messages.text("backup.field.masterPassword")), BorderLayout.WEST);
+        masterInput.add(masterPassword, BorderLayout.CENTER);
+        inputRows.add(masterInput);
         controls.add(inputRows, BorderLayout.CENTER);
 
         JPanel actions = components.transparent(new FlowLayout(FlowLayout.LEFT, 8, 0));
@@ -109,6 +132,9 @@ public final class BackupPage {
         prepareSecretsButton.addActionListener(event -> prepareSelectedArchiveWithSecrets());
         discardButton = components.secondaryButton(messages.text("backup.button.discard"));
         discardButton.addActionListener(event -> discardPreparedCandidate());
+        createButton = components.primaryButton(messages.text("backup.button.create"));
+        createButton.addActionListener(event -> createManagedBackup());
+        actions.add(createButton);
         actions.add(inspectButton);
         actions.add(prepareButton);
         actions.add(prepareSecretsButton);
@@ -119,6 +145,73 @@ public final class BackupPage {
                 messages.text("backup.output.description"), output), BorderLayout.CENTER);
         setBusy(false);
         return page;
+    }
+
+    private void selectDestination() {
+        JFileChooser chooser = new JFileChooser();
+        chooser.setFileSelectionMode(JFileChooser.FILES_ONLY);
+        if (chooser.showSaveDialog(owner) == JFileChooser.APPROVE_OPTION) {
+            Path selected = chooser.getSelectedFile().toPath().toAbsolutePath().normalize();
+            destinationPath.setText(selected.toString());
+            output.setText(messages.text("backup.destinationSelected", Map.of("path", selected)));
+        }
+    }
+
+    private void createManagedBackup() {
+        String application = applicationId.getText().trim();
+        Path destination;
+        if (application.isBlank()) {
+            output.setText(messages.text("backup.inputs.applicationRequired"));
+            return;
+        }
+        try {
+            destination = destinationPath.getText().isBlank() ? null
+                    : Path.of(destinationPath.getText()).toAbsolutePath().normalize();
+        } catch (InvalidPathException exception) {
+            destination = null;
+        }
+        if (destination == null) {
+            output.setText(messages.text("backup.destinationRequired"));
+            return;
+        }
+        char[] independent = backupPassword.getPassword();
+        char[] master = masterPassword.getPassword();
+        backupPassword.setText("");
+        masterPassword.setText("");
+        if (independent.length == 0) {
+            Arrays.fill(independent, '\0'); Arrays.fill(master, '\0');
+            output.setText(messages.text("backup.secretPasswordRequired"));
+            return;
+        }
+        setBusy(true);
+        output.setText(messages.text("backup.creating"));
+        Path selectedDestination = destination;
+        DesktopTaskExecutor.run(() -> {
+            try {
+                return service.createManagedBackup(application, selectedDestination, independent, master,
+                        this::confirmFingerprint);
+            } finally {
+                Arrays.fill(independent, '\0'); Arrays.fill(master, '\0');
+            }
+        }, created -> {
+            output.setText(formatCreated(created));
+            output.setCaretPosition(0);
+            setBusy(false);
+        }, this::showFailure);
+    }
+
+    private boolean confirmFingerprint(String fingerprint) {
+        AtomicBoolean accepted = new AtomicBoolean(false);
+        try {
+            SwingUtilities.invokeAndWait(() -> accepted.set(JOptionPane.showConfirmDialog(owner,
+                    messages.text("fingerprint.confirm", Map.of("fingerprint", fingerprint)),
+                    messages.text("fingerprint.confirm.title"), JOptionPane.YES_NO_OPTION,
+                    JOptionPane.WARNING_MESSAGE) == JOptionPane.YES_OPTION));
+        } catch (Exception ignored) {
+            // A failed or interrupted confirmation must reject host trust. / 确认失败或中断时必须拒绝主机信任。
+            return false;
+        }
+        return accepted.get();
     }
 
     private void assessManagedInputs() {
@@ -259,6 +352,14 @@ public final class BackupPage {
                 "sha256", inspection.archiveSha256()));
     }
 
+    private String formatCreated(CreatedBackupArchive created) {
+        BackupArchiveInspection inspection = created.inspection();
+        return messages.text("backup.created", Map.of(
+                "application", inspection.applicationId(), "path", created.archive(),
+                "components", inspection.componentCount(), "members", inspection.memberCount(),
+                "bytes", inspection.verifiedBytes(), "sha256", inspection.archiveSha256()));
+    }
+
     String formatAssessment(ManagedBackupInputAssessment assessment) {
         String components = assessment.componentIds().isEmpty()
                 ? messages.text("backup.inputs.none") : String.join(", ", assessment.componentIds());
@@ -309,10 +410,12 @@ public final class BackupPage {
 
     private void setBusy(boolean busy) {
         assessButton.setEnabled(!busy);
+        createButton.setEnabled(!busy);
         inspectButton.setEnabled(!busy);
         prepareButton.setEnabled(!busy && preparedCandidate == null);
         prepareSecretsButton.setEnabled(!busy && preparedCandidate == null);
         backupPassword.setEnabled(!busy && preparedCandidate == null);
+        masterPassword.setEnabled(!busy);
         discardButton.setEnabled(!busy && preparedCandidate != null);
     }
 

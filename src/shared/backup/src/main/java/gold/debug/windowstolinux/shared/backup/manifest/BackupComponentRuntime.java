@@ -287,7 +287,7 @@ public sealed interface BackupComponentRuntime permits BackupComponentRuntime.Sp
     }
 
     /** Copies one canonical runtime into the portable schema. / 将一个规范运行时复制到可移植 schema。 */
-    static BackupComponentRuntime from(DeploymentRuntimeSpecification runtime) {
+    public static BackupComponentRuntime from(DeploymentRuntimeSpecification runtime) {
         return switch (Objects.requireNonNull(runtime, "runtime")) {
             case DeploymentRuntimeSpecification.SpringBoot value -> new SpringBoot(BackupHealthCheck.from(value.healthCheck()));
             case DeploymentRuntimeSpecification.JavaJar value -> new JavaJar(value.jarRelativePath(), value.mainClass(),

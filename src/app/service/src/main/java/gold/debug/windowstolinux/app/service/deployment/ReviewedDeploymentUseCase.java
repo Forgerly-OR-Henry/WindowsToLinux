@@ -228,7 +228,7 @@ public final class ReviewedDeploymentUseCase {
                 application, runtimeConfiguration, List.of(), Optional.of(reviewedRuntime), Optional.of(List.of()),
                 Optional.of(new ManagedComponentResourceBindings(List.of(), databaseBindings)));
         graphs.recordSuccessfulApplication(new ManagedApplicationGraph(application.id(), application.id(),
-                List.of(component)), List.of(deployment));
+                Optional.of(reviewedRuntime.healthCheck()), List.of(component)), List.of(deployment));
     }
 
     private List<ResolvedSecretRevision> resolveSecrets(List<SecretReference> references, char[] masterPassword)

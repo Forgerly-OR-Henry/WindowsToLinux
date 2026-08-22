@@ -2,8 +2,8 @@
 
 ## 文档信息
 
-- 文档版本：`3.48.0-managed-resource-bindings`
-- 文档状态：**28-POM 模块边界保持不变；桌面数据根严格沿用运行模式规则，SQLite v10 已原子保存经审阅文件/数据库绑定并区分数据库范围未知与显式为空；备份 schema v4、Windows 归档发布、本地候选生命周期及桌面维护认证交接保持完成，远端物理数据采集、候选端口、完整归档产品入口、生产维护执行器及实机证据仍标记 `RUNTIME-PENDING`**
+- 文档版本：`3.50.0-application-health-evidence`
+- 文档状态：**28-POM 模块边界保持不变；远端普通数据路径随发布绑定到固定 Linux 受管根，容器卷与镜像使用可验证发布归属，类型化 PAX TAR/OCI Archive 取材和完整归档产品入口进入实现；候选端口、真实恢复迁移、生产维护执行器及新增协议实机证据仍标记 `RUNTIME-PENDING`**
 - 已确认范围：`shared` 共用模块、`app` Windows 桌面应用模块、`web` Web 应用模块
 - 已确认能力边界：受管应用生命周期复用既有模块，不新增独立 Maven 模块
 - 更新日期：2026-08-22
@@ -48,7 +48,7 @@ WindowsToLinux/
    │  │  └─ crypto/           Argon2id、AES-GCM 和密钥处理
    │  ├─ service/             桌面业务流程整合
    │  │  ├─ ai/               AI 配置与分析用例
-   │  │  ├─ backup/           受管输入准入、本地备份校验及隔离恢复候选准备与精确删除用例
+   │  │  ├─ backup/           受管输入准入、远端一致性取材、完整归档发布、本地校验及隔离候选生命周期用例
    │  │  ├─ config/           配置快照与秘密修订用例
    │  │  ├─ contract/         UI 按功能依赖的六个窄应用门面
    │  │  ├─ deployment/       部署用例入口与共享受管身份解析
@@ -142,6 +142,7 @@ WindowsToLinux/
    │  │  │  ├─ spi/           数据库一致性策略、导出制品和候选恢复的模块内窄契约
    │  │  │  └─ validation/    完整性、安全性和兼容性校验
    │  │  ├─ execution/        备份执行流程
+   │  │  │  ├─ collection/    受管文件、卷、镜像与数据库制品的结构化取材计划及结果
    │  │  │  └─ migration/     跨服务器迁移编排
    │  │  ├─ extension/        数据库备份扩展装配
    │  │  │  ├─ adapter/       SQLite、PostgreSQL 与 MySQL/MariaDB 一致性策略
@@ -183,13 +184,14 @@ WindowsToLinux/
    │  │  ├─ distro/           发行版事实与环境准备契约
    │  │  ├─ error/            全部受控 Linux 操作的公共失败类型
    │  │  ├─ protocol/         类型化高权限操作及结果契约
+   │  │  │  ├─ backup/        受管文件树、命名卷、发布树和 OCI 镜像取材、流式回读及精确清理契约
    │  │  │  ├─ database/      数据库固定远程操作、制品流与证据契约
    │  │  │  └─ restore/       候选恢复成员暂存、完整性回读与隔离证据契约
    │  │  ├─ runtime/          systemd、Docker、Podman 和静态服务生命周期契约
    │  │  ├─ session/          组合各项类型化能力的远程会话契约
    │  │  └─ transfer/         受控传输请求与结果契约
    │  ├─ linux-sshd/          Apache SSHD Linux 远程能力实现
-   │  │  ├─ backup/           数据库固定协议、证据解析和流式制品传输
+   │  │  ├─ backup/           受管文件/卷/发布/OCI 及数据库固定协议、证据解析和流式制品传输
    │  │  │  ├─ execution/     数据库协议执行流程
    │  │  │  │  └─ protocol/  helper 数据库证据解析
    │  │  │  └─ generation/    数据库 helper 内容生成
@@ -352,7 +354,7 @@ test/
 ### 1.1 稳定职责边界
 
 - `shared.analyze` 只读取有界源码并生成确定性事实；跨语言协调归 `core`，规则和 SPI 归 `contract`，注册归 `extension`，语言和构建架构实现归 `ecosystem`，工作负载识别归 `workload`。
-- `shared.linux` 只定义平台无关的类型化 Linux 契约；Apache SSHD、Shell 渲染和目标机实现只位于 `shared.linux-sshd`。
+- `shared.linux` 只定义平台无关的类型化 Linux 契约；受管备份制品只以固定种类、受管身份、摘要、长度和流式传输契约表达，Apache SSHD、Shell 渲染、目标机目录选择及 PAX/OCI 命令实现只位于 `shared.linux-sshd`。
 - `shared.linux-sshd.build` 保留构建执行入口；SPI、注册表和安全脚本分别归 `build.contract`、`build.extension`、`build.generation`，生态构建归 `build.ecosystem`，容器与静态站点构建归 `build.workload`。
 - `shared.linux-sshd.capability` 保留平台能力采集；语言、构建工具链及其版本解析归 `capability.ecosystem`，APT/DNF 包名不得进入该包。
 - `shared.linux-sshd.distro` 只负责发行版识别、软件包选择和环境准备；APT 与 DNF 分别形成完整扩展单元，不实现语言构建命令。
@@ -865,7 +867,7 @@ Web 端所有密码哈希、加密、解密、主密钥和服务端凭据操作�
 11. `VirtualMachineError`、`LinkageError` 等致命 JVM 错误只做尽力记录后退出，不承诺继续运行。AI 失败只生成 `ai.*` 描述并保留确定性分析结果，不参与错误分类授权、部署重试、回滚决策或执行授权。
 12. `FailureContractArchitectureTest` 必须检查错误码格式和唯一性、模块归属、类型命名、中英文消息键一致、自定义异常实现 `FailureCarrier`、用户边界不使用原始异常消息，以及未说明的静默捕获；测试在 `target/failure-catalog.md` 生成不跟踪的失败目录。
 13. 故障注入至少覆盖数据库锁定/损坏/回滚失败、目录不可写、归档中断/清理失败、Git 工具缺失/超时、SSH 瞬时断线/认证失败、健康失败回滚、回滚不可验证、AI 不可用、报告截断/轮转/脱敏、启动失败和未知 UI 异常。局部测试只证明本地错误语义；真实 Linux 修改路径仍必须通过现有产品入口验收。
-14. `shared/backup` 已使用模块本地 `BackupFailureType` 和最小共用失败契约实现归档核心、数据库一致性适配契约、候选恢复及离线迁移状态机。当前写入 schema v4：每个依赖有序组件必须携带其发布 SHA-256 与按“标识 + 正修订号”精确且规范排序的秘密引用；应用级 `releaseSetSha256` 由 `shared.model.deployment.ReleaseSetDigest` 对固定域、组件数量及逐组件“标识 + 发布 SHA-256”执行长度分隔摘要，应用级精确秘密集合必须等于组件引用并集。相同秘密标识的不同修订可以共存，重复的精确引用、错误顺序、摘要或并集不一致均拒绝。schema v3 继续严格解码并可做本地检查、候选准备及密码认证，但不伪造缺失绑定且在任何远端暂存或激活前停止；schema v4 若声明秘密引用却未包含固定唯一 `secrets.enc`，同样不能自动激活。Jackson 只负责版本分流后的严格、确定性 `manifest.json` 编解码，Commons Compress 只负责可检查 Unix 类型和 ZIP 扩展字段的归档边界。数据库适配器只决定一致性策略并通过模块内 `contract.spi.DatabaseOperationPort` 获取证据；跨模块远程数据库能力只通过 `linux.protocol.database.RemoteDatabasePort` 暴露，固定远程命令、流式制品传输和 helper v4 实现归 `linux-sshd.backup`，`linux-sshd` 不得反向依赖 `backup`。候选文件由 `backup.extension.adapter.LinuxRestoreCandidateAdapter` 单向映射到 `deploy.contract.spi.RestoreDeploymentPort` 与 `linux.protocol.restore.RemoteRestoreFilePort`；SSHD 只在摘要派生候选下 SFTP 上传并独立回读精确成员，不寻址当前发布。`app/secret.crypto` 仅在 `secrets.enc` 整体认证和严格载荷解析完成后交接精确可清零秘密修订；service 对 v4 要求精确引用集合与 manifest 完全一致，对 v3 仅做旧标识集合认证且不据此授权激活。Windows 本地归档发布由 `app/windows.workspace` 创建用户目标同目录临时文件并绑定文件身份，service 在写入后先完整校验临时归档，再执行不覆盖既有目标的原子移动，并在最终路径独立回读相同证据；失败只删除本次仍精确持有的临时文件或摘要和文件身份均未改变的已发布文件。候选端口隔离和实际激活/切换仍须由 deploy 的具体实现明确解决，不得用当前服务端口或加密秘密文件强行启动。离线迁移成功终态只能是等待人工外部流量切换，必须保留源端；失败则分别证明目标候选清理和源端恢复，任一无法验证即进入人工恢复。两项归档依赖不得进入远程执行或平台目录选择职责。Web Java 模块仍无生产实现，不创建空异常、空包或转发壳。
+14. `shared/backup` 已使用模块本地 `BackupFailureType` 和最小共用失败契约实现归档核心、数据库一致性适配契约、候选恢复及离线迁移状态机。当前写入 schema v4：每个依赖有序组件必须携带其发布 SHA-256 与按“标识 + 正修订号”精确且规范排序的秘密引用；应用级 `releaseSetSha256` 由 `shared.model.deployment.ReleaseSetDigest` 对固定域、组件数量及逐组件“标识 + 发布 SHA-256”执行长度分隔摘要，应用级精确秘密集合必须等于组件引用并集。相同秘密标识的不同修订可以共存，重复的精确引用、错误顺序、摘要或并集不一致均拒绝。schema v3 继续严格解码并可做本地检查、候选准备及密码认证，但不伪造缺失绑定且在任何远端暂存或激活前停止；schema v4 若声明秘密引用却未包含固定唯一 `secrets.enc`，同样不能自动激活。Jackson 只负责版本分流后的严格、确定性 `manifest.json` 编解码，Commons Compress 负责 ZIP、PAX TAR 和 OCI 布局的本地严格复验，不选择远端路径或执行命令。数据库适配器只决定一致性策略并通过模块内 `contract.spi.DatabaseOperationPort` 获取证据；跨模块远程数据库与受管取材能力分别只通过 `linux.protocol.database.RemoteDatabasePort` 和 `linux.protocol.backup.RemoteBackupArtifactPort` 暴露，固定远程命令、流式制品传输和 helper v5 实现归 `linux-sshd.backup`，`linux-sshd` 不得反向依赖 `backup`。候选文件由 `backup.extension.adapter.LinuxRestoreCandidateAdapter` 单向映射到 `deploy.contract.spi.RestoreDeploymentPort` 与 `linux.protocol.restore.RemoteRestoreFilePort`；SSHD 只在摘要派生候选下 SFTP 上传并独立回读精确成员，不寻址当前发布。`app/secret.crypto` 仅在 `secrets.enc` 整体认证和严格载荷解析完成后交接精确可清零秘密修订；service 对 v4 要求精确引用集合与 manifest 完全一致，对 v3 仅做旧标识集合认证且不据此授权激活。Windows 本地归档发布由 `app/windows.workspace` 创建用户目标同目录临时文件并绑定文件身份，service 在写入后先完整校验临时归档，再执行不覆盖既有目标的原子移动，并在最终路径独立回读相同证据；失败只删除本次仍精确持有的临时文件或摘要和文件身份均未改变的已发布文件。候选端口隔离和实际激活/切换仍须由 deploy 的具体实现明确解决，不得用当前服务端口或加密秘密文件强行启动。离线迁移成功终态只能是等待人工外部流量切换，必须保留源端；失败则分别证明目标候选清理和源端恢复，任一无法验证即进入人工恢复。两项归档依赖不得进入远程执行或平台目录选择职责。Web Java 模块仍无生产实现，不创建空异常、空包或转发壳。
 15. `app/windows.update` 只在软件包大小/SHA-256、Ed25519 固定信任根、签名有效期、撤销状态、版本策略和架构全部通过后返回验证证据；等版本和未批准降级必须拒绝，紧急回退同时需要签名清单标记与用户批准。主进程只允许停收任务、成对备份程序/SQLite 并形成不可变交接；更新和卸载交接必须使用严格版本化、有界、用途隔离且经 HMAC-SHA256 认证的跨进程文档，认证通过前不得重建路径、决定或更新证据，错误密钥、篡改、截断、跨用途重放和认证后畸形载荷均失败关闭。编解码器不持有调用方密钥；密钥安全交付、交接文件位置/ACL 和一次性消费由生产独立执行器规格负责，不得把测试密钥或当前 JVM 内存传递冒充生产接线。替换、迁移、健康和成对回滚只允许在独立更新器验证自身身份、主进程退出和交接真实性后执行。`app/windows.uninstall` 不设置数据决定默认值；凭据范围固定为唯一 `WindowsToLinux/*`，不得由调用方缩窄、扩大或改名。外部执行器验证自身身份、主进程退出和交接真实性后还必须重新验证 jpackage、安装/数据标记及该固定命名空间，再按所选范围删除并报告精确残留。`app/secret` 的 Credential Manager 适配只删除符合应用生成键规则的目标，命名空间内其他目标报告为残留；源码、独立备份和远端应用不进入卸载端口能力。
 
 ## 4. 叶子模块约定
@@ -1150,6 +1152,30 @@ main    ──→ shared/{model,git,analyze,ai,config,linux,linux-sshd,deploy,ba
 - SQLite 文件只允许位于 `databases/<database-id>/` 下并使用已校验的普通文件名。PostgreSQL、MySQL 和 MariaDB 只保存非秘密端点、库名、用户名、TLS 要求及精确 `SecretReference`，不保存密码值。
 - 该目录是 Windows 桌面控制面的本地持久化和工作结构，不是目标 Linux 的远端资源目录。远端文件、卷、数据库导出和恢复路径仍必须由后续产品流程显式收集、验证和映射。
 
+### 6.1 Linux 受管数据与取材目录
+
+目标 Linux 不沿用桌面 `data` 根规则，也不允许用户输入任意宿主路径。成功发布的普通服务必须把每个已审阅 `ManagedFileBinding` 实际绑定到以下唯一物理目录：
+
+```text
+/var/lib/windowstolinux/data/
+└─ <application-id>/
+   └─ <component-id>/
+      └─ files/
+         └─ <binding-id>/
+```
+
+- 发布协议必须同时接收整应用标识、组件标识、稳定绑定标识、逻辑 `ComponentDataPath` 和访问模式；helper 只在验证全部标识、当前发布归属和目标路径无链接后创建受管目录，并将候选发布树中的逻辑路径绑定到该目录。逻辑路径不得直接拼接到远端数据根。
+- 首次进入新协议时，若受管目录尚不存在，helper 只允许从已验证旧当前发布的对应逻辑目录迁入初始数据；没有旧数据时才使用候选源码中的初始目录或建立空目录。受管目录一旦存在不得由后续发布覆盖。
+- 同一组件的数据路径不得重复、互为祖先或互为后代；发布树中的绑定必须是指向精确受管目录的链接，当前发布检查必须复核该映射。归档本身不接受链接，取材只读取链接目标的普通目录树。
+- 容器持久化只接受 `windowstolinux-*` 命名卷。发布前必须创建或验证应用生成的归属标签；已存在但无精确发布归属的卷一律停止，不接管、不扫描、不删除。宿主 bind mount、根目录、任意绝对宿主路径和外部卷不进入自动备份、恢复或删除。
+- 当前容器镜像必须保存并复核引擎返回的不可变镜像身份及应用生成标签；完整备份只允许将通过该复核的镜像导出为 OCI Archive。不能生成可验证 OCI Archive 时，只能在恢复时使用已审阅源码重建，缺少两者则明确停止。
+- 普通发布树、普通数据目录和容器卷取材使用确定性 PAX TAR：源树必须先拒绝符号链接、硬链接、设备、FIFO、Socket、跨文件系统项和所有特殊文件；归档成员必须是安全相对路径并受成员数、单项大小和总大小限制。OCI Archive 必须具有标准 OCI 布局、规范摘要引用且所有 blob 摘要和长度可复验。
+- helper 只在 `/var/lib/windowstolinux/backups/<operation-id>/` 创建本次操作拥有的临时制品；`linux.protocol.backup` 仅以固定类型请求创建、流式回读和精确清理，禁止任意 Shell、任意源路径和任意目标路径。无论成功或失败都必须尝试清理精确操作目录，清理不可验证时返回人工恢复语义。
+- 完整取材默认使用整应用短暂停写窗口：按依赖逆序停止原先正在运行的组件并验证无写入者，收集发布树、文件树、命名卷、OCI 镜像及固定数据库一致性导出，再按依赖顺序恢复原运行状态并执行组件和整应用健康检查。任一恢复状态不可验证时不得发布备份成功结果。
+- 数据库仍只通过 SQLite/PostgreSQL/MySQL/MariaDB 固定适配器与 helper 协议操作；直接复制活跃数据库文件、猜测连接、在线打包普通数据并宣称整体一致，均不构成完整备份。
+- 下载到 Windows 的每个制品必须在受管工作区独立复验类型、长度和 SHA-256；随后复用同目录私有临时文件、完整归档校验、无覆盖原子发布和最终位置复验。远端“已生成”、SFTP“已传输”或本地输入“完整”都不能单独冒充归档创建成功。
+- 本节新增 helper 动词和发布参数属于协议不兼容变更，`ManagedHelperProtocol` 必须升级；旧 helper 必须先通过产品环境准备替换，禁止协议内静默兼容或回退。
+
 ## 7. Git 项目准备边界
 
 Git 项目进入分析和部署流程前，由 `git` 模块统一准备：
@@ -1250,7 +1276,7 @@ linux-sshd 通过 linux 契约采集服务器已有环境
 18. 类型化部署分析必须把确定的源码元数据作为可审阅的 `DeploymentRuntimeAssessment` 返回，而非由桌面表单写死语言版本、入口、产物目录、端口或卷。仅在值唯一、受支持、边界安全且具有 `AnalysisEvidence` 时才可回填；范围、冲突、任意脚本和文档文字只能作为未解决的用户输入，绝不转换为命令。
 19. 本地目录和 Git 来源都必须在 `app/service/source` 汇合为同一 `ReviewedSourcePreparation`，并以归档摘要绑定 `SourceRevision`。网络 Git 来源必须使用无凭据 URI、允许主机、固定 Commit 和受控工作目录；桌面 UI 不得调用 Git 进程、数据库或秘密存储实现。
 20. `DeploymentAnalysisCoordinator` 不得导入具体项目类型实现；`ProjectLanguageInspector` 只负责组合确定性的语言事实检查器。低层语言与构建 Inspector 不得修改调用方提供的拒绝集合，生产包与测试包必须镜像，包依赖不得成环，且不得恢复按阶段或宽泛类别聚合实现的包。`deploy.plan` 不得构造具体适配器，`linux.connection` 不得保存异常或组合会话，`linux-sshd.connection` 不得保存 command 或总会话；禁止以兼容壳保留旧类型。
-21. 用户可见和持久化语义统一使用“发布身份摘要”（`release_sha256`）；“制品”仅描述构建过程中待验证的文件，不得再把已发布身份称为制品摘要。桌面 SQLite 当前 schema 为 v10；v5 保留发布身份语义，v6 增加受约束的 AI 角色到命名 Provider 外键，v7 增加成功整应用的组件/依赖图并与全部组件发布状态原子提交，v8 原子保存完整非秘密已审阅运行时，v9 保存有界版本化的 `ComponentDataPath` 清单并精确绑定发布配置，v10 再把稳定文件绑定和 SQLite/PostgreSQL/MySQL/MariaDB 数据库绑定作为严格版本化非秘密载荷原子保存。数据库状态必须区分“尚未审阅”和“已审阅且显式为空”；服务器数据库密码只允许以本次部署已审阅的精确 `SecretReference` 出现。文件逻辑路径不得充当桌面物理目录，数据库绑定变化必须进入发布身份摘要。新部署的显式空状态与旧 schema 的缺失值可区分；v7-v9 历史发布不得由迁移逻辑补猜资源绑定或绑定到任意“最新配置”。生命周期可继续使用缺失绑定的旧图，但备份创建必须报告缺失，不得根据目标机路径、观测、默认值或较新配置猜测运行时、数据归属、数据库范围或历史发布配置；v4 的 `artifact_sha256` 已通过列重命名无损迁移并继续表示既有发布身份。
+21. 用户可见和持久化语义统一使用“发布身份摘要”（`release_sha256`）；“制品”仅描述构建过程中待验证的文件，不得再把已发布身份称为制品摘要。桌面 SQLite 当前 schema 为 v11；v5 保留发布身份语义，v6 增加受约束的 AI 角色到命名 Provider 外键，v7 增加成功整应用的组件/依赖图并与全部组件发布状态原子提交，v8 原子保存完整非秘密已审阅运行时，v9 保存有界版本化的 `ComponentDataPath` 清单并精确绑定发布配置，v10 再把稳定文件绑定和 SQLite/PostgreSQL/MySQL/MariaDB 数据库绑定作为严格版本化非秘密载荷原子保存，v11 原子保存独立审阅的整应用健康探针。数据库状态必须区分“尚未审阅”和“已审阅且显式为空”；服务器数据库密码只允许以本次部署已审阅的精确 `SecretReference` 出现。文件逻辑路径不得充当桌面物理目录，数据库绑定变化必须进入发布身份摘要。整应用健康探针不得从健康归属组件的探针反推；新部署的显式值与旧 schema 的缺失值可区分。v7-v10 历史发布不得由迁移逻辑补猜资源绑定、整应用健康探针或绑定到任意“最新配置”。生命周期可继续使用缺失绑定的旧图，但备份创建必须报告缺失，不得根据目标机路径、观测、默认值或较新配置猜测运行时、数据归属、数据库范围、整应用健康探针或历史发布配置；v4 的 `artifact_sha256` 已通过列重命名无损迁移并继续表示既有发布身份。
 22. `DeploymentSupportProfile` 是语言、框架、支持等级与真实验收目标范围的唯一共享声明；`RECOGNITION_PREVIEW` 只能由 `analyze` 读取有界路径和固定元数据，必须使用 `NONE_PREVIEW`，不得创建源码归档、部署适配器、远端构建渲染器、helper 参数或生命周期入口。Shell 文件只可作为识别证据，不能转换成命令。
 23. `PackageStructureArchitectureTest` 使用 JDK 编译器 AST、物理路径和生产导入图自动检查文件与顶级类型同名、仓库级顶级类型唯一性、顶级及嵌套枚举语义后缀、禁限用词及封闭例外、资源文件名、复数后缀、缩写、测试后缀、模块根包以下最多三层、五个功能组及合法职责、远程契约和领域模型例外、语言/构建架构/发行版分类轴、禁用包名、全部包依赖环、测试包镜像、职责映射、反向依赖、旧 FQCN、旧物理包、旧 helper 资源路径、已删除包装类以及唯一 `AppMain.main`。门禁不设置总包数或单包类型数量硬上限，不得通过文本豁免隐藏结构回归；通过结果只证明当前本地静态结构，不构成新的 Linux 运行证据。
 24. 每个可进入计划的源码路径必须产生一个精确 `DeploymentArchitectureType`，由 `DeploymentProjectType × DeploymentBuildToolType` 唯一标识；分析注册表、构建 Renderer 注册表、主机生态工具版本和运行时能力判断必须对该身份闭合，禁止恢复宽泛构建工具身份或以参数化 Renderer 隐藏架构差异。新增身份在逐目标产品入口证据完成前保持试验适配或 `RUNTIME-PENDING`。
@@ -1259,6 +1285,8 @@ linux-sshd 通过 linux 契约采集服务器已有环境
 
 | 版本 | 日期 | 说明 |
 | --- | --- | --- |
+| 3.50.0-application-health-evidence | 2026-08-22 | SQLite 升至 v11，新成功部署把独立审阅的整应用健康探针作为有界版本化非秘密载荷与整应用图原子保存；v10 及更旧记录保持显式缺失，备份创建不得从健康归属组件或当前界面值反推。 |
+| 3.49.0-managed-remote-backup | 2026-08-22 | 冻结完整远端取材方案：普通服务发布时把经审阅文件绑定实际迁入 `/var/lib/windowstolinux/data/<application>/<component>/files/<binding>` 并复核发布树映射；容器只接受具有精确归属标签的应用命名卷，并保存不可变镜像身份。新增类型化受管文件/卷/发布 PAX TAR、OCI Archive 创建、流式回读和精确清理边界；默认整应用短暂停写后依次取材并恢复原运行状态，数据库继续使用四种固定适配协议。helper 协议升级为 v5，旧 helper 不静默兼容；Windows 最终归档继续复用同目录私有临时、完整校验、无覆盖原子发布及最终复验。候选端口与真实恢复迁移继续后置到下一检查点，新增协议实机证据保持 `RUNTIME-PENDING`。 |
 | 3.48.0-managed-resource-bindings | 2026-08-22 | 桌面本地存储统一从 `RunModeResolver` 的唯一 `data` 根派生 `windowstolinux.db`、`managed-applications`、`work`、`backups` 和 `diagnostics`，不写死平台路径或增加回退。SQLite 升至 v10，新成功部署原子保存稳定文件绑定及 SQLite/PostgreSQL/MySQL/MariaDB 非秘密数据库绑定；数据库范围区分未知与显式为空，服务器密码只保存本次部署已审阅的精确秘密引用，v9 旧图保持资源绑定缺失。数据库绑定进入发布身份摘要，备份准入新增资源/数据库审阅缺失结果；远端物理采集、候选端口与完整归档产品入口仍为 `RUNTIME-PENDING`。完整 28-POM JDK 21 离线门禁通过 393 项测试、0 失败、0 错误、25 项真实环境条件跳过，124 份 Surefire 报告。 |
 | 3.47.0-schema-v4-activation-bindings | 2026-08-22 | 将备份写入格式升级为 schema v4：每组件保存发布 SHA-256 和精确秘密修订，应用发布集合使用依赖顺序、固定域与长度分隔的 SHA-256，应用秘密集合必须等于组件并集；同一标识不同修订可共存。deploy 激活请求携带并独立复核相同身份。schema v3 保留确定性读取、本地检查、候选准备和密码认证，但在远端暂存前失败关闭；v4 排除 `secrets.enc` 时保留元数据但同样不得自动激活。聚焦测试覆盖摘要/并集篡改、规范顺序、v3 往返及适配器直调零远端修改；完整 28-POM JDK 21 离线门禁通过 380 项测试、0 失败、0 错误、25 项真实环境条件跳过，121 份 Surefire 报告。 |
 | 3.46.0-secret-authentication-ui | 2026-08-22 | 将已有 `secrets.enc` 完整认证接入桌面备份页面：独立备份密码只作为短生命周期字符数组进入现有 Argon2id/AES-GCM 用例，输入框立即清空，用例成功或失败均清零调用数组。认证成功后页面只保留不含秘密的本地候选和修订数量，已解码秘密文档在后台任务返回前关闭并清零；备份密码及明文秘密不进入页面状态、输出或日志。JDK 21 完整 28-POM 离线门禁通过 369 项测试、0 失败、0 错误、25 项真实环境条件跳过；该入口只证明本地密码与加密成员匹配，不代表远端恢复。 |

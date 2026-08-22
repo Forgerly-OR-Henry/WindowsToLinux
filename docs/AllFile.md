@@ -42,6 +42,7 @@ src/  # 项目源码与模块根目录
 │  │  │  └─ serialization/  # SQLite 中复杂类型的严格版本化序列化
 │  │  │     ├─ ComponentPathPersistenceCodec.java  # 编解码成功部署时已审阅且不含秘密的数据路径清单
 │  │  │     ├─ DeploymentRuntimePersistenceCodec.java  # 编解码成功部署时已审阅且不含秘密的运行时定义
+│  │  │     ├─ HealthCheckPersistenceCodec.java  # 编解码独立审阅并与整应用图原子保存的应用级健康探针
 │  │  │     └─ ManagedResourcePersistenceCodec.java  # 编解码稳定文件绑定及未知或显式审阅的非秘密数据库绑定
 │  │  ├─ pom.xml  # 配置 SQLite 数据访问模块的依赖和构建
 │  ├─ main/  # 桌面应用入口与模块装配模块
@@ -90,7 +91,8 @@ src/  # 项目源码与模块根目录
 │  │  │  ├─ ManagedBackupInputAssessment.java  # 精确报告持久化备份输入完整性及结构化缺失原因
 │  │  │  ├─ ManagedBackupInputUseCase.java  # 在不访问远端时核对整应用图、发布、运行时、路径、配置和秘密绑定
 │  │  │  ├─ PreparedBackupCandidate.java  # 将候选证据绑定到已校验归档，并只为工作区签发实例保留删除授权
-│  │  │  └─ PreparedBackupSecrets.java  # 将本地候选与完整已认证短生命周期秘密修订绑定
+│  │  │  ├─ PreparedBackupSecrets.java  # 将本地候选与完整已认证短生命周期秘密修订绑定
+│  │  │  └─ RemoteBackupCreationUseCase.java  # 编排受管短停写取材、运行状态恢复、秘密加密和完整归档原子发布
 │  │  ├─ config/  # 部署配置与秘密修订用例包
 │  │  │  └─ DeploymentConfigurationUseCase.java  # 协调不可变的部署配置和平台秘密引用，且不返回秘密值
 │  │  ├─ contract/  # 桌面页面依赖的六个窄应用门面包
@@ -239,6 +241,8 @@ src/  # 项目源码与模块根目录
 │     │  ├─ PreparedSourceArchive.java  # 保存已准备源码归档的描述信息与排除条目清单
 │     │  ├─ WindowsBackupArchiveAttempt.java  # 绑定同目录临时归档、最终目标和不可伪造文件身份
 │     │  ├─ WindowsBackupArchiveWorkspace.java  # 无覆盖原子发布并只清理本次精确持有的归档文件
+│     │  ├─ WindowsBackupMaterialAttempt.java  # 绑定本次完整备份取材工作区身份和精确成员根
+│     │  ├─ WindowsBackupMaterialWorkspace.java  # 在固定工作根创建成员并只精确清理本次完整备份取材目录
 │     │  ├─ WindowsRestoreAttempt.java  # 不可伪造地绑定恢复尝试父目录身份、摘要候选根和候选标识
 │     │  ├─ WindowsRestoreWorkspace.java  # 只创建或按创建时目录身份精确清理平台工作区下的恢复尝试
 │     │  ├─ WindowsSourcePreparer.java  # 准备平台无关源码归档的 Windows 桌面入口
@@ -436,6 +440,7 @@ src/  # 项目源码与模块根目录
 │  │     │  │  ├─ BackupException.java  # 备份模块结构化受检失败
 │  │     │  │  ├─ BackupFailureType.java  # 备份、恢复与清理稳定失败定义
 │  │     │  │  ├─ BackupManifestValidator.java  # 对解码清单应用资源策略
+│  │     │  │  ├─ ManagedArtifactValidator.java  # 不提取地严格验证受管 PAX TAR 与 OCI Archive 取材制品
 │  │     │  │  ├─ BackupProvenanceStatus.java  # 未签名、未验证与已验证来源状态
 │  │     │  │  └─ BackupSignatureTrust.java  # 显式受信备份签名公钥解析契约
 │  │     │  ├─ extension/  # 数据库一致性适配实现与闭合装配
@@ -448,16 +453,21 @@ src/  # 项目源码与模块根目录
 │  │     │  │  │  └─ SqliteDatabaseAdapter.java  # 优先在线备份并拒绝活跃写入直接复制
 │  │     │  │  └─ registry/  # 数据库类型唯一装配包
 │  │     │  │     └─ DatabaseAdapterRegistry.java  # 对支持类型闭合并拒绝未知数据库
-│  │     │  ├─ execution/migration/  # 显式停写且只允许人工外部切流的离线迁移编排
-│  │     │  │  ├─ OfflineMigrationCoordinator.java  # 目标预检、初始/最终同步、停写、验证和失败恢复状态机
-│  │     │  │  ├─ OfflineMigrationEvent.java  # 单个有界无秘密迁移证据事件
-│  │     │  │  ├─ OfflineMigrationResult.java  # 保留源端且禁止声称自动切流的迁移终态
-│  │     │  │  ├─ OfflineMigrationState.java  # 迁移准备及双端恢复的有序证据状态
-│  │     │  │  └─ OfflineMigrationStatus.java  # 等待人工切流、前置拒绝、安全恢复和人工恢复终态
+│  │     │  ├─ execution/  # 备份、恢复和迁移执行流程
+│  │     │  │  ├─ collection/  # 受管远端取材格式与独立验证证据
+│  │     │  │  │  ├─ ManagedArtifactEvidence.java  # 受管制品格式、大小、摘要和成员数量验证证据
+│  │     │  │  │  └─ ManagedArtifactFormatType.java  # PAX TAR 与 OCI Archive 的封闭取材格式
+│  │     │  │  └─ migration/  # 显式停写且只允许人工外部切流的离线迁移编排
+│  │     │  │     ├─ OfflineMigrationCoordinator.java  # 目标预检、初始/最终同步、停写、验证和失败恢复状态机
+│  │     │  │     ├─ OfflineMigrationEvent.java  # 单个有界无秘密迁移证据事件
+│  │     │  │     ├─ OfflineMigrationResult.java  # 保留源端且禁止声称自动切流的迁移终态
+│  │     │  │     ├─ OfflineMigrationState.java  # 迁移准备及双端恢复的有序证据状态
+│  │     │  │     └─ OfflineMigrationStatus.java  # 等待人工切流、前置拒绝、安全恢复和人工恢复终态
 │  │     │  ├─ format/  # 版本化归档流式写入
 │  │     │  │  ├─ BackupArchiveContent.java  # 清单成员与全新输入流的绑定
 │  │     │  │  ├─ BackupArchiveStream.java  # 可受检打开的成员输入流窄契约
 │  │     │  │  ├─ BackupArchiveWriter.java  # 写入时核验每个成员大小与 SHA-256
+│  │     │  │  ├─ BackupConfigurationCodec.java  # 严格编码和解码完整备份中的非秘密配置与运行时定义
 │  │     │  │  ├─ BackupSecretEnvelope.java  # Argon2id 参数、随机盐/nonce 与 AES-GCM 密文信封
 │  │     │  │  └─ BackupSecretEnvelopeCodec.java  # secrets.enc 严格确定性编解码
 │  │     │  ├─ manifest/  # 环境、数据库、运行时和归档成员清单
@@ -629,6 +639,12 @@ src/  # 项目源码与模块根目录
 │  │  │  └─ LinuxOperationFailureType.java  # SSH、数据库协议、远端状态及中断失败目录
 │  │  ├─ pom.xml  # 配置 Linux 连接、命令和远程会话公共契约模块的依赖与构建
 │  │  ├─ protocol/  # 受管 helper 协议契约包
+│  │  │  ├─ backup/  # 受管普通文件、卷和镜像取材契约包
+│  │  │  │  ├─ ManagedContentPublication.java  # 随发布绑定的普通文件受管根及容器命名卷归属清单
+│  │  │  │  ├─ RemoteBackupArtifact.java  # helper 创建且绑定操作身份的远端制品证据
+│  │  │  │  ├─ RemoteBackupArtifactKind.java  # 发布树、文件树、命名卷和 OCI 镜像封闭类型
+│  │  │  │  ├─ RemoteBackupArtifactPort.java  # 固定创建、流式复制和精确丢弃受管制品的窄端口
+│  │  │  │  └─ RemoteBackupArtifactRequest.java  # 绑定应用、组件、发布、资源及操作身份的取材请求
 │  │  │  ├─ database/  # 数据库固定远程操作与证据契约包
 │  │  │  │  └─ RemoteDatabasePort.java  # 不引用备份格式或 SSHD 类型的数据库检查、导出、流转和候选恢复端口
 │  │  │  ├─ restore/  # 候选恢复精确成员暂存与证据契约包
@@ -650,9 +666,14 @@ src/  # 项目源码与模块根目录
 │  │     ├─ RemoteWorkspace.java  # 仅根据已验证应用 ID 和源码摘要推导的固定服务端路径
 │  │     └─ SourceUploadResult.java  # 源码归档已到达固定候选工作区的确认结果
 │  ├─ linux-sshd/  # Apache SSHD 与 Linux 运行适配模块
-│  │  ├─ backup/  # 数据库固定远程协议实现包
-│  │  │  ├─ execution/protocol/DatabaseProtocolParser.java  # 严格解析有界兼容性、制品和恢复证据
-│  │  │  ├─ generation/script/DatabaseCommandRenderer.java  # 只渲染固定 helper 数据库动词和校验参数
+│  │  ├─ backup/  # 数据库与受管数据固定远程协议实现包
+│  │  │  ├─ execution/protocol/  # 严格协议证据解析
+│  │  │  │  ├─ DatabaseProtocolParser.java  # 严格解析有界兼容性、数据库制品和恢复证据
+│  │  │  │  └─ ManagedBackupProtocolParser.java  # 严格解析受管文件、卷和镜像制品证据
+│  │  │  ├─ generation/script/  # 固定 helper 命令渲染
+│  │  │  │  ├─ DatabaseCommandRenderer.java  # 只渲染固定 helper 数据库动词和校验参数
+│  │  │  │  └─ ManagedBackupCommandRenderer.java  # 只渲染固定受管取材、读取和清理动词
+│  │  │  ├─ SshdBackupArtifactPort.java  # 经 SSHD 流式复制并校验普通文件、卷和 OCI 制品的具体端口
 │  │  │  └─ SshdDatabaseOperationPort.java  # 通过 SSHD 流式传输并校验数据库制品的具体端口
 │  │  ├─ build/  # 目标主机构建协调包
 │  │  │  ├─ contract/  # 目标机构建规则与扩展契约功能组
@@ -743,7 +764,8 @@ src/  # 项目源码与模块根目录
 │  │  │  │  ├─ input/  # 配置与秘密输入封存包
 │  │  │  │  │  ├─ DeploymentConfigurationRenderer.java  # 为 systemd 与容器使用方渲染不可变运行时配置
 │  │  │  │  │  ├─ DeploymentInputArguments.java  # 将非秘密输入清单转换为确定性辅助程序参数
-│  │  │  │  │  └─ DeploymentInputProtocolExecutor.java  # 在发布前通过 root 所有的辅助程序流式传输并封存运行时输入
+│  │  │  │  │  ├─ DeploymentInputProtocolExecutor.java  # 在发布前通过 root 所有的辅助程序流式传输并封存运行时输入
+│  │  │  │  │  └─ ManagedContentArguments.java  # 将已审阅普通文件绑定渲染到固定远端受管数据根
 │  │  │  │  ├─ release/  # 候选发布、切换与回滚包
 │  │  │  │  │  ├─ ContainerReleaseProtocolExecutor.java  # 应用彼此独立的 Docker 重启策略与 Podman Quadlet 发布协议
 │  │  │  │  │  └─ DeploymentReleaseProtocolExecutor.java  # 使用 root 所有的辅助程序处理经审阅非容器发布的快照、发布和回滚
@@ -777,16 +799,20 @@ src/  # 项目源码与模块根目录
 │  │     │        └─ fragments/  # 按职责拆分的 helper 脚本片段目录
 │  │     │           ├─ 00-protocol-foundation.sh  # 定义受管 helper 协议的安全基线、路径和输入校验函数
 │  │     │           ├─ 70-command-dispatch.sh  # 将 helper 协议命令分派到固定的受管操作
+│  │     │           ├─ backup/  # 受管文件、卷和镜像取材片段目录
+│  │     │           │  └─ 67-managed-backup.sh  # 实现固定 PAX TAR/OCI 取材、制品读取和精确操作清理
 │  │     │           ├─ database/  # 数据库一致性操作片段目录
 │  │     │           │  └─ 65-database-backup.sh  # 实现数据库预检、导出、制品流转、清理和候选恢复
 │  │     │           ├─ ecosystem/  # 语言生态构建与运行分派脚本片段目录
 │  │     │           │  └─ 35-ecosystem-dispatch.sh  # 按受支持项目生态分派固定构建与运行准备流程
 │  │     │           ├─ input/  # 部署输入脚本片段目录
-│  │     │           │  └─ 15-deployment-input.sh  # 解析并校验类型化部署输入、配置和秘密引用
+│  │     │           │  ├─ 15-deployment-input.sh  # 解析并校验类型化部署输入、配置和秘密引用
+│  │     │           │  └─ 17-managed-content.sh  # 解析、准备并验证普通文件的固定远端受管目录绑定
 │  │     │           ├─ release/  # 发布与回滚脚本片段目录
 │  │     │           │  ├─ 10-typed-release.sh  # 实现受约束的类型化候选发布与发布身份处理
 │  │     │           │  ├─ 30-ordinary-release.sh  # 实现普通 systemd 应用的候选切换、快照和回滚流程
-│  │     │           │  └─ 50-container-release.sh  # 实现容器应用的候选发布、Quadlet 配置和回滚流程
+│  │     │           │  ├─ 50-container-release.sh  # 实现容器应用的发布、镜像与命名卷归属流程
+│  │     │           │  └─ 52-container-recovery.sh  # 实现容器快照、回滚和生命周期恢复流程
 │  │     │           ├─ runtime/  # 类型化运行时脚本片段目录
 │  │     │           │  └─ 40-typed-runtime.sh  # 实现类型化运行时环境、构建参数和产物校验
 │  │     │           └─ workspace/  # 候选工作区脚本片段目录

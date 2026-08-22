@@ -2,6 +2,7 @@ package gold.debug.windowstolinux.shared.deploy.execution.transaction;
 
 import gold.debug.windowstolinux.shared.config.secretref.ResolvedSecretRevision;
 import gold.debug.windowstolinux.shared.deploy.contract.ReviewedDeploymentRequest;
+import gold.debug.windowstolinux.shared.config.resource.ManagedComponentResourceBindings;
 import gold.debug.windowstolinux.shared.model.managed.ManagedApplication;
 
 import java.util.List;
@@ -16,7 +17,8 @@ public record ReviewedComponentDeployment(
         String componentId,
         ReviewedDeploymentRequest request,
         ManagedApplication application,
-        List<ResolvedSecretRevision> resolvedSecrets
+        List<ResolvedSecretRevision> resolvedSecrets,
+        ManagedComponentResourceBindings resourceBindings
 ) {
     /** Validates exact identity and secret-revision binding. / 验证精确身份与秘密修订绑定。 */
     public ReviewedComponentDeployment {
@@ -27,11 +29,19 @@ public record ReviewedComponentDeployment(
         request = Objects.requireNonNull(request, "request");
         application = Objects.requireNonNull(application, "application");
         resolvedSecrets = List.copyOf(Objects.requireNonNull(resolvedSecrets, "resolvedSecrets"));
+        resourceBindings = Objects.requireNonNull(resourceBindings, "resourceBindings");
         if (!application.id().equals(request.facts().applicationId()) || !application.server().equals(request.server())) {
             throw new IllegalArgumentException("component request and managed identity must match");
         }
         if (!resolvedSecrets.stream().map(ResolvedSecretRevision::reference).toList().equals(request.secretReferences())) {
             throw new IllegalArgumentException("resolved component secrets must exactly match reviewed references");
         }
+    }
+
+    /** Compatibility constructor for tests and callers with explicitly empty reviewed resources. / 为显式空审阅资源的测试及调用方提供兼容构造。 */
+    public ReviewedComponentDeployment(String componentId, ReviewedDeploymentRequest request,
+                                       ManagedApplication application, List<ResolvedSecretRevision> resolvedSecrets) {
+        this(componentId, request, application, resolvedSecrets,
+                new ManagedComponentResourceBindings(List.of(), request.databaseBindings()));
     }
 }

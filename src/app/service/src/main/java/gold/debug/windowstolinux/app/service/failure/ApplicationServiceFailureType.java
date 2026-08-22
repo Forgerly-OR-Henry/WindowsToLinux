@@ -31,7 +31,11 @@ public enum ApplicationServiceFailureType implements FailureDefinition {
     LOCAL_OBSERVATION_SAVE_FAILED("service.persistence.observation-save-failed", "persistence",
             "service.error.localObservationSaveFailed", FailureSeverityLevel.WARNING, FailureRecoveryAction.RETRY),
     DEPLOYMENT_RECORD_SAVE_FAILED("service.persistence.deployment-record-save-failed", "persistence",
-            "service.error.deploymentRecordSaveFailed", FailureSeverityLevel.WARNING, FailureRecoveryAction.REQUIRE_MANUAL_RECOVERY);
+            "service.error.deploymentRecordSaveFailed", FailureSeverityLevel.WARNING, FailureRecoveryAction.REQUIRE_MANUAL_RECOVERY),
+    BACKUP_INPUT_INCOMPLETE("service.backup.input-incomplete", "backup",
+            "service.error.backupInputIncomplete", FailureSeverityLevel.ERROR, FailureRecoveryAction.REQUEST_USER_CORRECTION),
+    BACKUP_RECOVERY_FAILED("service.backup.recovery-failed", "backup",
+            "service.error.backupRecoveryFailed", FailureSeverityLevel.ERROR, FailureRecoveryAction.REQUIRE_MANUAL_RECOVERY);
 
     private final String code;
     private final String phase;

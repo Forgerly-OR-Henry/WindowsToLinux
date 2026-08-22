@@ -2,6 +2,7 @@ package gold.debug.windowstolinux.shared.linux.sshd.execution.protocol.release;
 
 import gold.debug.windowstolinux.shared.linux.sshd.execution.protocol.helper.ManagedHelperBundle;
 import gold.debug.windowstolinux.shared.linux.sshd.execution.protocol.input.DeploymentInputArguments;
+import gold.debug.windowstolinux.shared.linux.sshd.execution.protocol.input.ManagedContentArguments;
 import gold.debug.windowstolinux.shared.linux.sshd.execution.protocol.runtime.ContainerRuntimeArguments;
 
 import gold.debug.windowstolinux.shared.config.revision.DeploymentInputManifest;
@@ -12,6 +13,7 @@ import gold.debug.windowstolinux.shared.linux.protocol.ReleaseSnapshot;
 import gold.debug.windowstolinux.shared.linux.protocol.RemoteStepResult;
 import gold.debug.windowstolinux.shared.linux.sshd.command.SshCommandExecutor;
 import gold.debug.windowstolinux.shared.linux.transfer.RemoteWorkspace;
+import gold.debug.windowstolinux.shared.linux.protocol.backup.ManagedContentPublication;
 import gold.debug.windowstolinux.shared.model.managed.ManagedApplication;
 import gold.debug.windowstolinux.shared.model.project.DeploymentRuntimeSpecification;
 
@@ -58,15 +60,21 @@ public final class ContainerReleaseProtocolExecutor {
     /** Publishes exactly one reviewed container. / 发布恰好一个经审阅的容器。 */
     public RemoteStepResult publish(ManagedApplication application, RemoteWorkspace workspace, DeploymentBuildResult build,
                                     String releaseIdentity, DeploymentRuntimeSpecification.Container runtime,
-                                    DeploymentInputManifest inputs, ReleaseSnapshot snapshot) throws LinuxOperationException {
+                                    DeploymentInputManifest inputs, ManagedContentPublication contentPublication,
+                                    ReleaseSnapshot snapshot) throws LinuxOperationException {
         if (!build.succeeded()) {
             throw LinuxOperationException.create(LinuxOperationFailureType.UNVERIFIED_BUILD_PUBLISH,
                     "An unverified container build cannot be published");
         }
         Objects.requireNonNull(snapshot, "snapshot");
+        if (!contentPublication.fileBindings().isEmpty()) {
+            throw LinuxOperationException.create(LinuxOperationFailureType.UNVERIFIED_BUILD_PUBLISH,
+                    "Container persistent data must use reviewed owned named volumes");
+        }
         List<String> values = new ArrayList<>(List.of(application.id(), workspace.candidateId(), releaseIdentity,
                 application.ownershipManifestSha256()));
         values.addAll(DeploymentInputArguments.from(inputs));
+        values.addAll(ManagedContentArguments.from(contentPublication));
         values.addAll(ContainerRuntimeArguments.from(runtime));
         return step("publish-container", values, "Controlled helper started the reviewed managed container");
     }

@@ -41,6 +41,7 @@ class ManagedRemoteContractTest {
                 "checkDeploymentHealth", "observeDeployment", "executeDeploymentLifecycle",
                 "retainRecentSuccessfulReleases", "inspect", "export", "restoreCandidate", "discardCandidate",
                 "copyArtifact", "stageArtifact", "discardArtifact", "stageRestoreFiles", "discardRestoreFiles"
+                , "createBackupArtifact", "copyBackupArtifact", "discardBackupOperation"
         ), deploymentMethods);
         assertFalse(deploymentMethods.contains("build"));
         assertFalse(deploymentMethods.contains("snapshot"));

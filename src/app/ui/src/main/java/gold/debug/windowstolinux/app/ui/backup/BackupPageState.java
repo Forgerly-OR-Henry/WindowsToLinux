@@ -8,6 +8,7 @@ import java.util.Objects;
 public record BackupPageState(
         String applicationId,
         String archivePath,
+        String destinationPath,
         String output,
         PreparedBackupCandidate preparedCandidate
 ) {
@@ -15,6 +16,13 @@ public record BackupPageState(
     public BackupPageState {
         applicationId = Objects.requireNonNull(applicationId, "applicationId");
         archivePath = Objects.requireNonNull(archivePath, "archivePath");
+        destinationPath = Objects.requireNonNull(destinationPath, "destinationPath");
         output = Objects.requireNonNull(output, "output");
+    }
+
+    /** Restores state captured before remote backup creation was exposed. / 恢复远端备份创建入口出现前捕获的状态。 */
+    public BackupPageState(String applicationId, String archivePath, String output,
+                           PreparedBackupCandidate preparedCandidate) {
+        this(applicationId, archivePath, "", output, preparedCandidate);
     }
 }

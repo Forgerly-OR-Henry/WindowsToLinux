@@ -27,13 +27,15 @@ public final class ContainerBuildRenderer implements DeploymentBuildRenderer {
         }
         String engine = SafeBuildScriptEnvelope.shellQuote(container.engine().name().toLowerCase(Locale.ROOT));
         String tag = SafeBuildScriptEnvelope.shellQuote("windowstolinux-candidate:" + workspace.candidateId());
+        String application = SafeBuildScriptEnvelope.shellQuote(facts.applicationId());
+        String candidate = SafeBuildScriptEnvelope.shellQuote(workspace.candidateId());
         String command = """
                 command -v %s >/dev/null
                 test -f ./Dockerfile
-                run %s build --pull=true --tag %s --file ./Dockerfile .
+                run %s build --pull=true --label io.windowstolinux.application=%s --label io.windowstolinux.candidate=%s --tag %s --file ./Dockerfile .
                 image_id=$(%s image inspect --format '{{.Id}}' %s)
                 printf 'ARTIFACT=%%s\n' "$image_id"
-                """.formatted(engine, engine, tag, engine, tag);
+                """.formatted(engine, engine, application, candidate, tag, engine, tag);
         return SafeBuildScriptEnvelope.wrap(facts, workspace, limits, command);
     }
 }

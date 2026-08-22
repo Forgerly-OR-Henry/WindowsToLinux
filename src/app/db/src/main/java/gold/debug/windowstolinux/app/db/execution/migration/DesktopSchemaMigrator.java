@@ -19,7 +19,7 @@ public final class DesktopSchemaMigrator {
      *
      * <p>公开 {@code CURRENT_SCHEMA_VERSION} 常量。
      */
-    public static final int CURRENT_SCHEMA_VERSION = 10;
+    public static final int CURRENT_SCHEMA_VERSION = 11;
 
     private DesktopSchemaMigrator() {
     }
@@ -266,6 +266,13 @@ public final class DesktopSchemaMigrator {
                     statement.execute("""
                             ALTER TABLE managed_application_graph_component
                             ADD COLUMN reviewed_resource_bindings BLOB
+                            """);
+                }
+                if (version < 11 && !hasColumn(statement,
+                        "managed_application_graph", "application_health_check")) {
+                    statement.execute("""
+                            ALTER TABLE managed_application_graph
+                            ADD COLUMN application_health_check BLOB
                             """);
                 }
                 statement.execute("PRAGMA user_version = " + CURRENT_SCHEMA_VERSION);

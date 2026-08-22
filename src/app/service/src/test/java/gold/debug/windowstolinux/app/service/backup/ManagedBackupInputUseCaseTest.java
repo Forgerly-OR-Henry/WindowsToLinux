@@ -140,7 +140,7 @@ class ManagedBackupInputUseCaseTest {
                 Optional.of(reviewedRuntime), Optional.of(List.of()),
                 Optional.of(new ManagedComponentResourceBindings(List.of(), databaseBindings)));
         persistence.managedApplicationGraphs().recordSuccessfulApplication(
-                new ManagedApplicationGraph(applicationId, applicationId, List.of(component)),
+                new ManagedApplicationGraph(applicationId, applicationId, Optional.of(health), List.of(component)),
                 List.of(new SuccessfulManagedDeployment(application, runtime, release, configuration,
                         List.of(secret))));
         return new PersistedInput(release);

@@ -76,9 +76,9 @@ class PackageStructureArchitectureTest {
             "DesktopPreferenceRepository.java", "EncryptedSecretRepository.java", "ManagedApplicationRepository.java",
             "ManagedApplicationGraphRepository.java", "RepositoryTransactionExecutor.java", "ServerProfileRepository.java");
     private static final Set<String> HELPER_FRAGMENTS = Set.of(
-            "00-protocol-foundation.sh", "10-typed-release.sh", "15-deployment-input.sh", "20-candidate-workspace.sh", "30-ordinary-release.sh",
-            "35-ecosystem-dispatch.sh", "40-typed-runtime.sh", "50-container-release.sh", "55-podman-quadlet.sh", "60-lifecycle.sh",
-            "65-database-backup.sh", "70-command-dispatch.sh");
+            "00-protocol-foundation.sh", "10-typed-release.sh", "15-deployment-input.sh", "17-managed-content.sh", "20-candidate-workspace.sh", "30-ordinary-release.sh",
+            "35-ecosystem-dispatch.sh", "40-typed-runtime.sh", "50-container-release.sh", "52-container-recovery.sh", "55-podman-quadlet.sh", "60-lifecycle.sh",
+            "65-database-backup.sh", "67-managed-backup.sh", "70-command-dispatch.sh");
     private static final Pattern PERIOD_NAME = Pattern.compile("(?i)(?:phase|stage)[-_]?[0-9]+|(?:一期|二期|三期|四期|五期)");
     private static final Pattern TOP_LEVEL_TYPE = Pattern.compile(
             "(?m)^(?:public\\s+)?(?:(?:final|abstract|sealed|non-sealed)\\s+)?(?:class|record|interface|enum)\\s+([A-Za-z_$][A-Za-z0-9_$]*)");
@@ -122,7 +122,7 @@ class PackageStructureArchitectureTest {
             "contract", Set.of("capability", "definition", "policy", "profile", "result", "spi", "validation"),
             "generation", Set.of("prompt", "renderer", "script", "template"),
             "extension", Set.of("adapter", "registry"),
-            "execution", Set.of("environment", "lifecycle", "migration", "protocol", "transaction", "transfer"),
+            "execution", Set.of("collection", "environment", "lifecycle", "migration", "protocol", "transaction", "transfer"),
             "persistence", Set.of("connection", "repository", "serialization"));
     private static final Map<String, String> RESPONSIBILITY_FUNCTIONAL_GROUPS = Map.ofEntries(
             Map.entry("capability", "contract"), Map.entry("definition", "contract"),

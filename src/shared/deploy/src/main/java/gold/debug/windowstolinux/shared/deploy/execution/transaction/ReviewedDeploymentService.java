@@ -20,6 +20,7 @@ import gold.debug.windowstolinux.shared.linux.connection.SshCredential;
 import gold.debug.windowstolinux.shared.linux.connection.SshEndpoint;
 import gold.debug.windowstolinux.shared.linux.protocol.ReleaseSnapshot;
 import gold.debug.windowstolinux.shared.linux.protocol.RemoteStepResult;
+import gold.debug.windowstolinux.shared.linux.protocol.backup.ManagedContentPublication;
 import gold.debug.windowstolinux.shared.linux.protocol.ManagedHelperProtocol;
 import gold.debug.windowstolinux.shared.linux.runtime.HealthCheckResult;
 import gold.debug.windowstolinux.shared.linux.transfer.RemoteWorkspace;
@@ -121,7 +122,8 @@ public final class ReviewedDeploymentService {
             snapshot = session.snapshotDeployment(application, request.runtime());
             events.add(DeploymentEvent.result(DeploymentTraceEvent.SNAPSHOT, true, snapshot.evidence()));
             RemoteStepResult publish = session.publishDeployment(application, request.facts(), workspace, build, releaseIdentity,
-                    request.runtime(), inputs, snapshot);
+                    request.runtime(), inputs,
+                    new ManagedContentPublication(application.id(), application.id(), java.util.List.of()), snapshot);
             events.add(DeploymentEvent.result(DeploymentTraceEvent.PUBLISH, publish.succeeded(), publish.evidence()));
             if (!publish.succeeded()) {
                 return recover(session, request, application, workspace, snapshot, build, releaseIdentity, inputs, events);

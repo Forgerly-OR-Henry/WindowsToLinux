@@ -6,6 +6,7 @@ import gold.debug.windowstolinux.app.db.entity.SuccessfulManagedDeployment;
 import gold.debug.windowstolinux.app.db.persistence.serialization.ComponentPathPersistenceCodec;
 import gold.debug.windowstolinux.app.db.persistence.serialization.DeploymentRuntimePersistenceCodec;
 import gold.debug.windowstolinux.app.db.persistence.serialization.ManagedResourcePersistenceCodec;
+import gold.debug.windowstolinux.app.db.persistence.serialization.HealthCheckPersistenceCodec;
 
 import java.sql.Connection;
 import java.sql.PreparedStatement;
@@ -25,6 +26,7 @@ public final class ManagedApplicationGraphRepository {
     private static final DeploymentRuntimePersistenceCodec RUNTIME_CODEC = new DeploymentRuntimePersistenceCodec();
     private static final ComponentPathPersistenceCodec DATA_PATH_CODEC = new ComponentPathPersistenceCodec();
     private static final ManagedResourcePersistenceCodec RESOURCE_CODEC = new ManagedResourcePersistenceCodec();
+    private static final HealthCheckPersistenceCodec HEALTH_CODEC = new HealthCheckPersistenceCodec();
     private final DesktopConnectionFactory connections;
 
     /** Creates the focused graph repository. / 创建聚焦的图仓库。 */
@@ -46,7 +48,8 @@ public final class ManagedApplicationGraphRepository {
                         byApplication.get(component.application().id()).runtimeConfiguration()))
                 || graph.components().stream().anyMatch(component -> component.reviewedRuntime().isEmpty()
                         || component.reviewedDataPaths().isEmpty()
-                        || component.reviewedResourceBindings().isEmpty())) {
+                        || component.reviewedResourceBindings().isEmpty())
+                || graph.applicationHealthCheck().isEmpty()) {
             throw new IllegalArgumentException("successful deployments must exactly match the managed application graph");
         }
         try (Connection connection = connections.open()) {
@@ -62,13 +65,22 @@ public final class ManagedApplicationGraphRepository {
     public Optional<ManagedApplicationGraph> find(String applicationId) throws SQLException {
         applicationId = Objects.requireNonNull(applicationId, "applicationId").trim();
         try (Connection connection = connections.open(); PreparedStatement graphStatement = connection.prepareStatement("""
-                SELECT health_component_id FROM managed_application_graph WHERE application_id=?
+                SELECT health_component_id, application_health_check
+                FROM managed_application_graph WHERE application_id=?
                 """)) {
             graphStatement.setString(1, applicationId);
             String healthComponentId;
+            Optional<gold.debug.windowstolinux.shared.model.health.HealthCheck> applicationHealthCheck;
             try (ResultSet result = graphStatement.executeQuery()) {
                 if (!result.next()) return Optional.empty();
                 healthComponentId = result.getString("health_component_id");
+                byte[] storedHealthCheck = result.getBytes("application_health_check");
+                try {
+                    applicationHealthCheck = storedHealthCheck == null
+                            ? Optional.empty() : Optional.of(HEALTH_CODEC.read(storedHealthCheck));
+                } catch (java.io.IOException exception) {
+                    throw new SQLException("stored application health definition is invalid", exception);
+                }
             }
             Map<String, List<String>> dependencies = readDependencies(connection, applicationId);
             List<ManagedApplicationGraph.Component> components = new ArrayList<>();
@@ -128,7 +140,8 @@ public final class ManagedApplicationGraphRepository {
                     }
                 }
             }
-            return Optional.of(new ManagedApplicationGraph(applicationId, healthComponentId, components));
+            return Optional.of(new ManagedApplicationGraph(applicationId, healthComponentId,
+                    applicationHealthCheck, components));
         }
     }
 
@@ -143,15 +156,22 @@ public final class ManagedApplicationGraphRepository {
             components.executeUpdate();
         }
         try (PreparedStatement statement = connection.prepareStatement("""
-                INSERT INTO managed_application_graph (application_id, server_id, health_component_id, updated_at)
-                VALUES (?, ?, ?, ?)
+                INSERT INTO managed_application_graph (
+                    application_id, server_id, health_component_id, application_health_check, updated_at
+                ) VALUES (?, ?, ?, ?, ?)
                 ON CONFLICT(application_id) DO UPDATE SET server_id=excluded.server_id,
-                    health_component_id=excluded.health_component_id, updated_at=excluded.updated_at
+                    health_component_id=excluded.health_component_id,
+                    application_health_check=excluded.application_health_check, updated_at=excluded.updated_at
                 """)) {
             statement.setString(1, graph.applicationId());
             statement.setString(2, graph.components().getFirst().application().server().id());
             statement.setString(3, graph.healthComponentId());
-            statement.setLong(4, Instant.now().toEpochMilli());
+            try {
+                statement.setBytes(4, HEALTH_CODEC.write(graph.applicationHealthCheck().orElseThrow()));
+            } catch (java.io.IOException exception) {
+                throw new SQLException("application health definition cannot be persisted", exception);
+            }
+            statement.setLong(5, Instant.now().toEpochMilli());
             statement.executeUpdate();
         }
         insertComponents(connection, graph);

@@ -40,6 +40,7 @@ save_container_parameters() {
       printf '%s\n' "${deployment_secret_identifiers[$index]}" "${deployment_secret_revisions[$index]}" "${deployment_secret_digests[$index]}"
       index=$((index + 1))
     done
+    printf '%s\n' "$managed_data_application" "$managed_data_component" "${#managed_data_bindings[@]}"
     printf '%s\n' "$container_engine"
     printf '%s\n' "${#container_ports[@]}"
     for spec in "${container_ports[@]}"; do printf '%s\n' "${spec%%:*}" "${spec#*:}"; done
@@ -58,7 +59,9 @@ load_container_parameters() {
   assert_root_owned_regular "$source"
   mapfile -t saved < "$source"
   parse_deployment_inputs "${saved[@]}"
-  parse_container_parameters "${deployment_remaining_arguments[@]}"
+  parse_managed_data_bindings "${deployment_remaining_arguments[@]}"
+  [ "${#managed_data_bindings[@]}" -eq 0 ] || reject container-managed-file-binding
+  parse_container_parameters "${managed_data_remaining_arguments[@]}"
 }
 container_name() { printf 'windowstolinux-%s' "$1"; }
 container_image() { printf 'windowstolinux-%s:%s' "$1" "$2"; }
@@ -76,9 +79,12 @@ container_current_release() {
     [ "$(cat -- "$current/.windowstolinux-owner")" = "$manifest" ] || reject current-owner
     assert_root_owned_regular "$current/.windowstolinux-container-engine"
     assert_root_owned_regular "$current/.windowstolinux-container-parameters"
+    assert_root_owned_regular "$current/.windowstolinux-container-image-id"
     load_container_parameters "$current/.windowstolinux-container-parameters"
     assert_deployment_inputs "$app" container
     [ "$(cat -- "$current/.windowstolinux-container-engine")" = "$container_engine" ] || reject container-engine-change
+    [ "$("$container_engine" image inspect --format '{{.Id}}' "$(container_image "$app" "$current_digest")")" \
+      = "$(cat -- "$current/.windowstolinux-container-image-id")" ] || reject container-image-identity
     previous_present=1; previous_path="$current"
     if "$container_engine" inspect --format '{{.State.Running}}' "$(container_name "$app")" 2>/dev/null | grep -qx true; then previous_running=1; fi
   fi
@@ -89,6 +95,20 @@ start_container_release() {
   local -a args
   image="$(container_image "$app" "$release_digest")"; name="$(container_name "$app")"
   assert_deployment_inputs "$app" container
+  [ "${#managed_data_bindings[@]}" -eq 0 ] || reject container-managed-file-binding
+  for spec in "${container_volumes[@]}"; do
+    source="${spec%%:*}"
+    if "$container_engine" volume inspect "$source" >/dev/null 2>&1; then
+      [ "$("$container_engine" volume inspect --format '{{ index .Labels \"io.windowstolinux.owner\" }}' "$source")" = "$manifest" ] \
+        && [ "$("$container_engine" volume inspect --format '{{ index .Labels \"io.windowstolinux.application\" }}' "$source")" = "$managed_data_application" ] \
+        && [ "$("$container_engine" volume inspect --format '{{ index .Labels \"io.windowstolinux.component\" }}' "$source")" = "$managed_data_component" ] \
+        || reject container-volume-owner
+    else
+      "$container_engine" volume create --label "io.windowstolinux.owner=$manifest" \
+        --label "io.windowstolinux.application=$managed_data_application" \
+        --label "io.windowstolinux.component=$managed_data_component" "$source" >/dev/null
+    fi
+  done
   config="$(configuration_path "$app" "$deployment_configuration_digest" container)"
   if [ "$container_engine" = docker ]; then
     "$container_engine" rm -f -- "$name" >/dev/null 2>&1 || true
@@ -147,139 +167,33 @@ publish_container() {
   root="$(app_root "$app")"; releases="$root/releases"; release="$releases/$release_digest"; candidate="$(candidate_root "$candidate_id")"
   container_current_release "$app" "$manifest"
   parse_deployment_inputs "$@"
-  parse_container_parameters "${deployment_remaining_arguments[@]}"
+  parse_managed_data_bindings "${deployment_remaining_arguments[@]}"
+  [ "${#managed_data_bindings[@]}" -eq 0 ] || reject container-managed-file-binding
+  parse_container_parameters "${managed_data_remaining_arguments[@]}"
   [ ! -e "$release" ] && [ ! -L "$release" ] || reject release-exists
   assert_candidate_for_deployer "$candidate"
   source="$candidate/mutable/source"; [ -d "$source" ] && [ ! -L "$source" ] || reject source-directory
+  [ -z "$(find -P "$source" -xdev -type l -print -quit)" ] || reject source-symlink
+  [ -z "$(find -P "$source" -xdev ! -type f ! -type d -print -quit)" ] || reject source-special-file
+  [ -z "$(find -P "$source" -xdev -type f -links +1 -print -quit)" ] || reject source-hardlink
   candidate_image="windowstolinux-candidate:$candidate_id"; image="$(container_image "$app" "$release_digest")"
   "$container_engine" image inspect "$candidate_image" >/dev/null
+  [ "$("$container_engine" image inspect --format '{{ index .Config.Labels \"io.windowstolinux.application\" }}' "$candidate_image")" = "$app" ] \
+    && [ "$("$container_engine" image inspect --format '{{ index .Config.Labels \"io.windowstolinux.candidate\" }}' "$candidate_image")" = "$candidate_id" ] \
+    || reject container-image-owner
   "$container_engine" tag "$candidate_image" "$image"
   install -d -o root -g root -m 755 -- "$root" "$releases" "$release"
+  cp -a --no-preserve=ownership -- "$source" "$release/source"
+  chown -R root:root -- "$release/source"
   printf '%s\n' "$manifest" > "$release/.windowstolinux-owner"
   printf '%s\n' "$container_engine" > "$release/.windowstolinux-container-engine"
-  chown root:root -- "$release/.windowstolinux-owner" "$release/.windowstolinux-container-engine"
-  chmod 444 -- "$release/.windowstolinux-owner" "$release/.windowstolinux-container-engine"
+  "$container_engine" image inspect --format '{{.Id}}' "$image" > "$release/.windowstolinux-container-image-id"
+  chown root:root -- "$release/.windowstolinux-owner" "$release/.windowstolinux-container-engine" \
+    "$release/.windowstolinux-container-image-id"
+  chmod 444 -- "$release/.windowstolinux-owner" "$release/.windowstolinux-container-engine" \
+    "$release/.windowstolinux-container-image-id"
   save_container_parameters "$release/.windowstolinux-container-parameters"
   ln -sfnT -- "$release" "$root/current"
   start_container_release "$app" "$release_digest" "$manifest"
   printf 'PUBLISHED=1\n'
-}
-snapshot_container() {
-  [ "$#" -eq 2 ] || reject snapshot-container-arguments
-  local app="$1" manifest="$2"
-  require_app "$app"; require_digest "$manifest"
-  initialise_controlled_roots
-  container_current_release "$app" "$manifest"
-  if [ "$previous_present" -eq 0 ]; then printf 'PREVIOUS=0\n'; return; fi
-  local token snapshot autostart
-  token="$(cat /proc/sys/kernel/random/uuid)"; require_snapshot_token "$token"; snapshot="$(snapshot_root "$app" "$token")"
-  install -d -o root -g root -m 700 -- "$snapshot"
-  printf '%s\n' "$previous_path" > "$snapshot/current-path"
-  printf '%s\n' "$previous_running" > "$snapshot/runtime"
-  install -o root -g root -m 600 -- "$previous_path/.windowstolinux-container-parameters" "$snapshot/container-parameters"
-  if [ "$container_engine" = docker ]; then
-    autostart="$(docker inspect --format '{{.HostConfig.RestartPolicy.Name}}' "$(container_name "$app")" 2>/dev/null || true)"
-  else
-    if podman_quadlet_autostart_enabled "$app"; then autostart=enabled; else autostart=no; fi
-  fi
-  printf '%s\n' "$autostart" > "$snapshot/autostart"
-  chown root:root -- "$snapshot/current-path" "$snapshot/runtime" "$snapshot/container-parameters" "$snapshot/autostart"
-  chmod 600 -- "$snapshot/current-path" "$snapshot/runtime" "$snapshot/container-parameters" "$snapshot/autostart"
-  printf 'SNAPSHOT_TOKEN=%s\nPREVIOUS=1\nPREVIOUS_RUNNING=%s\n' "$token" "$previous_running"
-}
-stop_container_runtime() {
-  local app="$1"
-  if [ "$container_engine" = podman ]; then
-    systemctl stop "windowstolinux-$app.service" || true
-  else
-    "$container_engine" stop "$(container_name "$app")" >/dev/null 2>&1 || true
-  fi
-}
-rollback_container() {
-  [ "$#" -eq 4 ] || reject rollback-container-arguments
-  local app="$1" candidate_digest="$2" manifest="$3" token="$4"
-  require_app "$app"; require_digest "$candidate_digest"; require_digest "$manifest"; require_snapshot_token "$token"
-  local root releases candidate snapshot previous previous_digest previous_runtime
-  root="$(app_root "$app")"; releases="$root/releases"; candidate="$releases/$candidate_digest"; snapshot="$(snapshot_root "$app" "$token")"
-  assert_root_owned_directory "$root"; assert_root_owned_directory "$releases"; assert_root_owned_directory "$snapshot"
-  assert_root_owned_regular "$snapshot/current-path"; assert_root_owned_regular "$snapshot/runtime"
-  assert_root_owned_regular "$snapshot/container-parameters"; assert_root_owned_regular "$snapshot/autostart"
-  load_container_parameters "$snapshot/container-parameters"
-  previous="$(cat -- "$snapshot/current-path")"; previous_digest="${previous##*/}"; require_digest "$previous_digest"
-  [ "$previous" = "$releases/$previous_digest" ] || reject snapshot-current
-  assert_root_owned_directory "$previous"; assert_root_owned_regular "$previous/.windowstolinux-owner"
-  [ "$(cat -- "$previous/.windowstolinux-owner")" = "$manifest" ] || reject previous-owner
-  previous_runtime="$(cat -- "$snapshot/runtime")"; [ "$previous_runtime" = 0 ] || [ "$previous_runtime" = 1 ] || reject snapshot-runtime
-  stop_container_runtime "$app"
-  ln -sfnT -- "$previous" "$root/current"
-  start_container_release "$app" "$previous_digest" "$manifest"
-  if [ "$(cat -- "$snapshot/autostart")" = no ]; then
-    if [ "$container_engine" = docker ]; then "$container_engine" update --restart no "$(container_name "$app")" >/dev/null; else set_podman_quadlet_autostart "$app" 0; fi
-  fi
-  if [ "$previous_runtime" = 0 ]; then stop_container_runtime "$app"; fi
-  if [ -e "$candidate" ] || [ -L "$candidate" ]; then
-    assert_root_owned_directory "$candidate"; assert_root_owned_regular "$candidate/.windowstolinux-owner"
-    [ "$(cat -- "$candidate/.windowstolinux-owner")" = "$manifest" ] || reject candidate-owner
-    rm -rf --one-file-system -- "$candidate"
-  fi
-  rm -rf --one-file-system -- "$snapshot"
-  printf 'ROLLED_BACK=1\n'
-}
-rollback_container_first() {
-  [ "$#" -eq 3 ] || reject rollback-container-first-arguments
-  local app="$1" candidate_digest="$2" manifest="$3"
-  require_app "$app"; require_digest "$candidate_digest"; require_digest "$manifest"
-  local root releases candidate
-  root="$(app_root "$app")"; releases="$root/releases"; candidate="$releases/$candidate_digest"
-  assert_root_owned_directory "$root"; assert_root_owned_directory "$releases"
-  if [ ! -e "$candidate" ] && [ ! -L "$candidate" ]; then
-    [ ! -e "$root/current" ] && [ ! -L "$root/current" ] || reject rollback-current
-    ! docker inspect "$(container_name "$app")" >/dev/null 2>&1 || reject current-container
-    [ ! -e "$(podman_quadlet_path "$app")" ] \
-      && [ ! -L "$(podman_quadlet_path "$app")" ] || reject current-container-unit
-    rmdir -- "$releases" "$root" 2>/dev/null || true
-    printf 'ROLLED_BACK=1\n'
-    return
-  fi
-  assert_root_owned_directory "$candidate"; assert_root_owned_regular "$candidate/.windowstolinux-container-parameters"
-  load_container_parameters "$candidate/.windowstolinux-container-parameters"
-  stop_container_runtime "$app"
-  if [ "$container_engine" = docker ]; then "$container_engine" rm -f "$(container_name "$app")" >/dev/null 2>&1 || true; fi
-  if [ "$container_engine" = podman ]; then
-    podman_cni_clear "$app" "$manifest"
-    rm -f -- "$(podman_quadlet_path "$app")"
-    rmdir -- "$(podman_quadlet_path "$app").d" 2>/dev/null || true
-    systemctl daemon-reload
-  fi
-  if [ -e "$root/current" ] || [ -L "$root/current" ]; then rm -f -- "$root/current"; fi
-  if [ -e "$candidate" ] || [ -L "$candidate" ]; then
-    assert_root_owned_directory "$candidate"; assert_root_owned_regular "$candidate/.windowstolinux-owner"
-    [ "$(cat -- "$candidate/.windowstolinux-owner")" = "$manifest" ] || reject candidate-owner
-    rm -rf --one-file-system -- "$candidate"
-  fi
-  printf 'ROLLED_BACK=1\n'
-}
-lifecycle_container() {
-  [ "$#" -eq 3 ] || reject lifecycle-container-arguments
-  local app="$1" action="$2" manifest="$3"
-  require_app "$app"; require_digest "$manifest"
-  container_current_release "$app" "$manifest"
-  [ "$previous_present" -eq 1 ] || reject lifecycle-unmanaged
-  case "$action" in
-    start)
-      if [ "$container_engine" = docker ]; then docker start "$(container_name "$app")" >/dev/null; else systemctl start "windowstolinux-$app.service"; fi
-      ;;
-    stop) stop_container_runtime "$app" ;;
-    restart)
-      if [ "$container_engine" = docker ]; then docker restart "$(container_name "$app")" >/dev/null; else systemctl restart "windowstolinux-$app.service"; fi
-      ;;
-    enable)
-      if [ "$container_engine" = docker ]; then "$container_engine" update --restart unless-stopped "$(container_name "$app")" >/dev/null; else set_podman_quadlet_autostart "$app" 1; fi
-      ;;
-    disable)
-      if [ "$container_engine" = docker ]; then "$container_engine" update --restart no "$(container_name "$app")" >/dev/null; else set_podman_quadlet_autostart "$app" 0; fi
-      ;;
-    *) reject lifecycle-action ;;
-  esac
-  printf 'LIFECYCLE=%s\n' "$action"
 }

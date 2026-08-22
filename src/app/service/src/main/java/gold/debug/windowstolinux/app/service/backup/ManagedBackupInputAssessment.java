@@ -19,6 +19,7 @@ public record ManagedBackupInputAssessment(
     /** Exact reasons that prevent a complete persisted-input result. / 阻止持久化输入完整结果的精确原因。 */
     public enum MissingInputType {
         MANAGED_APPLICATION_GRAPH,
+        APPLICATION_HEALTH_CHECK,
         CURRENT_RELEASE,
         REVIEWED_RUNTIME,
         REVIEWED_DATA_PATHS,
@@ -44,6 +45,7 @@ public record ManagedBackupInputAssessment(
             throw new IllegalArgumentException("missing graph evidence must match the component list");
         }
         if (applicationMissingInputs.stream().anyMatch(value -> value != MissingInputType.MANAGED_APPLICATION_GRAPH
+                && value != MissingInputType.APPLICATION_HEALTH_CHECK
                 && value != MissingInputType.LOCAL_STATE_CHANGED_DURING_ASSESSMENT)) {
             throw new IllegalArgumentException("application missing inputs contain a component-scoped reason");
         }

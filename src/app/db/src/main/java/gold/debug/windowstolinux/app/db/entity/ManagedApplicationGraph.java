@@ -5,6 +5,7 @@ import gold.debug.windowstolinux.shared.model.managed.ManagedApplicationRuntimeC
 import gold.debug.windowstolinux.shared.model.project.DeploymentRuntimeSpecification;
 import gold.debug.windowstolinux.shared.model.project.component.ComponentDataPath;
 import gold.debug.windowstolinux.shared.config.resource.ManagedComponentResourceBindings;
+import gold.debug.windowstolinux.shared.model.health.HealthCheck;
 
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -16,12 +17,14 @@ import java.util.Set;
 public record ManagedApplicationGraph(
         String applicationId,
         String healthComponentId,
+        Optional<HealthCheck> applicationHealthCheck,
         List<Component> components
 ) {
     /** Validates the exact bounded graph. / 验证精确且有界的图。 */
     public ManagedApplicationGraph {
         applicationId = identifier(applicationId, "applicationId");
         healthComponentId = identifier(healthComponentId, "healthComponentId");
+        applicationHealthCheck = Objects.requireNonNull(applicationHealthCheck, "applicationHealthCheck");
         components = List.copyOf(Objects.requireNonNull(components, "components"));
         if (components.isEmpty() || components.size() > 64) {
             throw new IllegalArgumentException("managed application graph requires 1..64 components");
@@ -108,6 +111,11 @@ public record ManagedApplicationGraph(
                          ManagedApplicationRuntimeConfiguration runtimeConfiguration, List<String> dependencies) {
             this(componentId, application, runtimeConfiguration, dependencies, Optional.empty(), Optional.empty());
         }
+    }
+
+    /** Creates a legacy graph whose independently reviewed application health check was never persisted. / 创建未曾持久化独立审阅整应用健康检查的旧图。 */
+    public ManagedApplicationGraph(String applicationId, String healthComponentId, List<Component> components) {
+        this(applicationId, healthComponentId, Optional.empty(), components);
     }
 
     private static String identifier(String value, String name) {

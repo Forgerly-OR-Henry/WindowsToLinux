@@ -140,7 +140,7 @@ public final class MultiComponentDeploymentUseCase {
         }
         List<ReviewedComponentDeployment> bound = review.components().stream()
                 .map(component -> new ReviewedComponentDeployment(component.componentId(), component.request(),
-                        component.application(), List.of()))
+                        component.application(), List.of(), component.resourceBindings()))
                 .toList();
         return executeDeployment(review, bound, endpoint, credential, verifier);
     }
@@ -162,7 +162,7 @@ public final class MultiComponentDeploymentUseCase {
                         component.request().secretReferences(), masterPassword);
                 resolved.addAll(componentSecrets);
                 bound.add(new ReviewedComponentDeployment(component.componentId(), component.request(),
-                        component.application(), componentSecrets));
+                        component.application(), componentSecrets, component.resourceBindings()));
             }
             try (SecretStore store = servers.secrets().open(mode, masterPassword)) {
                 return executeDeployment(review, bound, profile.endpoint(), servers.loadPassword(profile, store),
@@ -237,7 +237,8 @@ public final class MultiComponentDeploymentUseCase {
                                 .map(binding -> binding.dataPath()).toList()),
                         Optional.of(component.resourceBindings()))).toList();
         graphs.recordSuccessfulApplication(new ManagedApplicationGraph(review.plan().applicationId(),
-                review.applicationHealth().componentId(), components), deployments);
+                review.applicationHealth().componentId(), Optional.of(review.applicationHealth().healthCheck()),
+                components), deployments);
     }
 
     private List<ResolvedSecretRevision> resolveSecrets(List<gold.debug.windowstolinux.shared.config.secretref.SecretReference> references,

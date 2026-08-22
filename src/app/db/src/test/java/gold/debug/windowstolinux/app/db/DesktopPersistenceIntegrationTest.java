@@ -182,7 +182,8 @@ class DesktopPersistenceIntegrationTest {
         SecretReference missing = new SecretReference("missing", 1);
 
         try (DesktopPersistence database = DesktopPersistence.open(temporaryDirectory.resolve("atomic-components"))) {
-            ManagedApplicationGraph graph = new ManagedApplicationGraph("shop", "web", List.of(
+            ManagedApplicationGraph graph = new ManagedApplicationGraph("shop", "web",
+                    Optional.of(runtime.healthCheck()), List.of(
                     new ManagedApplicationGraph.Component("api", api, runtime, List.of(),
                             Optional.of(new DeploymentRuntimeSpecification.NodeService(22, runtime.healthCheck())),
                             Optional.of(List.of()), Optional.of(resources(List.of()))),
@@ -222,7 +223,8 @@ class DesktopPersistenceIntegrationTest {
         ManagedComponentResourceBindings apiResources = new ManagedComponentResourceBindings(
                 List.of(new ManagedFileBinding("file-uploads", apiDataPaths.getFirst())), Optional.of(List.of(
                 new ManagedDatabaseBinding("cache", new ManagedDatabaseConnection.Sqlite("application.db")))));
-        ManagedApplicationGraph graph = new ManagedApplicationGraph("shop", "web", List.of(
+        ManagedApplicationGraph graph = new ManagedApplicationGraph("shop", "web",
+                Optional.of(new HealthCheck.Tcp(19090, 20, 2)), List.of(
                 new ManagedApplicationGraph.Component("api", api, apiRuntime, List.of(),
                         Optional.of(new DeploymentRuntimeSpecification.NodeService(22, apiRuntime.healthCheck())),
                         Optional.of(apiDataPaths), Optional.of(apiResources)),
@@ -259,7 +261,8 @@ class DesktopPersistenceIntegrationTest {
                 Optional.empty());
         List<ComponentDataPath> dataPaths = List.of(new ComponentDataPath("data",
                 ComponentDataPath.AccessMode.READ_WRITE, "data-v1", true));
-        var graph = new ManagedApplicationGraph("legacy", "app", List.of(
+        var graph = new ManagedApplicationGraph("legacy", "app",
+                Optional.of(runtime.healthCheck()), List.of(
                 new ManagedApplicationGraph.Component("app", application, runtime, List.of(),
                         Optional.of(new DeploymentRuntimeSpecification.NodeService(22, runtime.healthCheck())),
                         Optional.of(dataPaths), Optional.of(resources(dataPaths)))));
@@ -274,6 +277,7 @@ class DesktopPersistenceIntegrationTest {
             statement.execute("UPDATE managed_application_graph_component SET reviewed_runtime=NULL");
             statement.execute("UPDATE managed_application_graph_component SET reviewed_data_paths=NULL");
             statement.execute("UPDATE managed_application_graph_component SET reviewed_resource_bindings=NULL");
+            statement.execute("UPDATE managed_application_graph SET application_health_check=NULL");
             statement.execute("DELETE FROM application_release_configuration_binding");
             statement.execute("PRAGMA user_version = 7");
         }
@@ -288,6 +292,9 @@ class DesktopPersistenceIntegrationTest {
             assertTrue(database.managedApplicationGraphs().find("legacy").orElseThrow()
                     .components().getFirst().reviewedResourceBindings().isEmpty(),
                     "v7 rows must not invent reviewed resource bindings");
+            assertTrue(database.managedApplicationGraphs().find("legacy").orElseThrow()
+                    .applicationHealthCheck().isEmpty(),
+                    "v7 rows must not invent an independently reviewed application health check");
             assertTrue(database.configurations().findRelease(application.id(), "b".repeat(64)).isEmpty(),
                     "v7 rows must not invent an exact release configuration binding");
         }
@@ -295,7 +302,7 @@ class DesktopPersistenceIntegrationTest {
              Statement statement = connection.createStatement();
              var version = statement.executeQuery("PRAGMA user_version")) {
             assertTrue(version.next());
-            assertEquals(10, version.getInt(1));
+            assertEquals(11, version.getInt(1));
         }
     }
 
@@ -309,7 +316,8 @@ class DesktopPersistenceIntegrationTest {
         var runtime = new ManagedApplicationRuntimeConfiguration(new HealthCheck.Tcp(18081, 15, 1),
                 Optional.empty());
         var reviewedRuntime = new DeploymentRuntimeSpecification.NodeService(22, runtime.healthCheck());
-        var graph = new ManagedApplicationGraph("legacy", "app", List.of(
+        var graph = new ManagedApplicationGraph("legacy", "app",
+                Optional.of(runtime.healthCheck()), List.of(
                 new ManagedApplicationGraph.Component("app", application, runtime, List.of(),
                         Optional.of(reviewedRuntime), Optional.of(List.of()), Optional.of(resources(List.of())))));
         try (DesktopPersistence database = DesktopPersistence.open(dataDirectory)) {
@@ -322,6 +330,7 @@ class DesktopPersistenceIntegrationTest {
              Statement statement = connection.createStatement()) {
             statement.execute("UPDATE managed_application_graph_component SET reviewed_data_paths=NULL");
             statement.execute("UPDATE managed_application_graph_component SET reviewed_resource_bindings=NULL");
+            statement.execute("UPDATE managed_application_graph SET application_health_check=NULL");
             statement.execute("DELETE FROM application_release_configuration_binding");
             statement.execute("PRAGMA user_version = 8");
         }
@@ -334,6 +343,9 @@ class DesktopPersistenceIntegrationTest {
                     "v8 rows must remain explicitly unavailable instead of inventing reviewed data paths");
             assertTrue(restored.reviewedResourceBindings().isEmpty(),
                     "v8 rows must not invent reviewed resource bindings");
+            assertTrue(database.managedApplicationGraphs().find("legacy").orElseThrow()
+                    .applicationHealthCheck().isEmpty(),
+                    "v8 rows must not invent an independently reviewed application health check");
             assertTrue(database.configurations().findRelease(application.id(), "b".repeat(64)).isEmpty(),
                     "v8 rows must not invent an exact release configuration binding");
         }
@@ -349,7 +361,8 @@ class DesktopPersistenceIntegrationTest {
         var runtime = new ManagedApplicationRuntimeConfiguration(new HealthCheck.Tcp(18081, 15, 1),
                 Optional.empty());
         var reviewedRuntime = new DeploymentRuntimeSpecification.NodeService(22, runtime.healthCheck());
-        var graph = new ManagedApplicationGraph("legacy", "app", List.of(
+        var graph = new ManagedApplicationGraph("legacy", "app",
+                Optional.of(runtime.healthCheck()), List.of(
                 new ManagedApplicationGraph.Component("app", application, runtime, List.of(),
                         Optional.of(reviewedRuntime), Optional.of(List.of()), Optional.of(resources(List.of())))));
         try (DesktopPersistence database = DesktopPersistence.open(dataDirectory)) {
@@ -361,6 +374,7 @@ class DesktopPersistenceIntegrationTest {
         try (Connection connection = DriverManager.getConnection("jdbc:sqlite:" + databaseFile);
              Statement statement = connection.createStatement()) {
             statement.execute("UPDATE managed_application_graph_component SET reviewed_resource_bindings=NULL");
+            statement.execute("UPDATE managed_application_graph SET application_health_check=NULL");
             statement.execute("PRAGMA user_version = 9");
         }
 
@@ -371,12 +385,15 @@ class DesktopPersistenceIntegrationTest {
             assertEquals(Optional.of(List.of()), restored.reviewedDataPaths());
             assertTrue(restored.reviewedResourceBindings().isEmpty(),
                     "v9 rows must remain explicitly unavailable instead of inventing managed bindings");
+            assertTrue(database.managedApplicationGraphs().find("legacy").orElseThrow()
+                    .applicationHealthCheck().isEmpty(),
+                    "v9 rows must not invent an independently reviewed application health check");
         }
         try (Connection connection = DriverManager.getConnection("jdbc:sqlite:" + databaseFile);
              Statement statement = connection.createStatement();
              var version = statement.executeQuery("PRAGMA user_version")) {
             assertTrue(version.next());
-            assertEquals(10, version.getInt(1));
+            assertEquals(11, version.getInt(1));
         }
     }
 
@@ -452,7 +469,7 @@ class DesktopPersistenceIntegrationTest {
             }
             try (var version = statement.executeQuery("PRAGMA user_version")) {
                 assertTrue(version.next());
-                assertEquals(10, version.getInt(1));
+                assertEquals(11, version.getInt(1));
             }
         }
     }

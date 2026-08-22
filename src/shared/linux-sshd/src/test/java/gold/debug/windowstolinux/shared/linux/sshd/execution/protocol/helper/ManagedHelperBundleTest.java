@@ -28,7 +28,7 @@ class ManagedHelperBundleTest {
     void exposesOnlyVersionedTypedOperationsAndKeepsLegacyGradleReadCompatibility() {
         String helper = ManagedHelperBundle.renderScript();
 
-        assertEquals(4, ManagedHelperBundle.PROTOCOL_VERSION);
+        assertEquals(5, ManagedHelperBundle.PROTOCOL_VERSION);
         assertTrue(helper.contains("printf 'HELPER=1\\nPROTOCOL=%s\\n' \"$helper_protocol\""));
         assertTrue(helper.contains("gradle)"));
         assertTrue(helper.contains("[ \"$kind\" != gradle ] || reject legacy-gradle-write"));
@@ -45,6 +45,10 @@ class ManagedHelperBundleTest {
         assertTrue(helper.contains("database-stage-artifact) database_stage_artifact \"$@\""));
         assertTrue(helper.contains("database-restore-candidate) database_restore_candidate \"$@\""));
         assertTrue(helper.contains("database-discard-candidate) database_discard_candidate \"$@\""));
+        assertTrue(helper.contains("backup-create) backup_create_artifact \"$@\""));
+        assertTrue(helper.contains("backup-read) backup_read_artifact \"$@\""));
+        assertTrue(helper.contains("backup-discard) backup_discard_operation \"$@\""));
+        assertTrue(helper.contains("data_root=\"$base_root/data\""));
         assertTrue(helper.contains("rm -f -- \"$pgpass\"; reject database-restore-failed"));
         assertTrue(helper.contains("DROP DATABASE IF EXISTS"));
         assertTrue(helper.contains("dropdb --if-exists --force --no-password"));

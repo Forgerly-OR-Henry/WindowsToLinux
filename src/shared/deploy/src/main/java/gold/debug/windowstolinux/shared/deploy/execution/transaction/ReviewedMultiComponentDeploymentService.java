@@ -19,6 +19,7 @@ import gold.debug.windowstolinux.shared.linux.error.LinuxOperationException;
 import gold.debug.windowstolinux.shared.linux.connection.SshCredential;
 import gold.debug.windowstolinux.shared.linux.connection.SshEndpoint;
 import gold.debug.windowstolinux.shared.linux.protocol.ManagedHelperProtocol;
+import gold.debug.windowstolinux.shared.linux.protocol.backup.ManagedContentPublication;
 import gold.debug.windowstolinux.shared.linux.transfer.RemoteWorkspace;
 import gold.debug.windowstolinux.shared.model.deployment.DeploymentStatus;
 import gold.debug.windowstolinux.shared.model.lifecycle.LifecycleAction;
@@ -230,7 +231,9 @@ public final class ReviewedMultiComponentDeploymentService {
             var request = context.component.request();
             context.publishAttempted = true;
             var publish = session.publishDeployment(context.component.application(), request.facts(), context.workspace,
-                    context.build, context.releaseIdentity, request.runtime(), context.inputs, context.snapshot);
+                    context.build, context.releaseIdentity, request.runtime(), context.inputs,
+                    new ManagedContentPublication(plan.applicationId(), context.component.componentId(),
+                            context.component.resourceBindings().fileBindings()), context.snapshot);
             context.event(DeploymentTraceEvent.PUBLISH, publish.succeeded(), publish.evidence());
             if (!publish.succeeded()) throw DeploymentSwitchException.create(DeploymentTraceEvent.PUBLISH,
                     DeploymentExecutionFailureType.PUBLISH_FAILED, "A component publication step failed");

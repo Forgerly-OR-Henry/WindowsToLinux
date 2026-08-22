@@ -94,7 +94,8 @@ class MultiComponentDeploymentUseCaseTest {
                         Optional.of(componentReview.resourceBindings())));
             }
             persistence.managedApplicationGraphs().recordSuccessfulApplication(
-                    new ManagedApplicationGraph("shop", "web", durableComponents), successful);
+                    new ManagedApplicationGraph("shop", "web",
+                            Optional.of(review.applicationHealth().healthCheck()), durableComponents), successful);
             var storedGraph = persistence.managedApplicationGraphs().find("shop").orElseThrow();
             var restored = service.findManagedMultiComponentApplication("shop").orElseThrow();
             assertEquals(List.of("api", "web"), restored.plan().startOrder());
