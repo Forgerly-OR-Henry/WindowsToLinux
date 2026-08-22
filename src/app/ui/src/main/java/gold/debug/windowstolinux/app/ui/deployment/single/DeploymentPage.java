@@ -14,6 +14,8 @@ import gold.debug.windowstolinux.app.ui.server.ServerContext;
 import gold.debug.windowstolinux.app.ui.i18n.PageMessagePresenter;
 import gold.debug.windowstolinux.shared.config.revision.ConfigurationEntry;
 import gold.debug.windowstolinux.shared.config.revision.ConfigurationSnapshot;
+import gold.debug.windowstolinux.shared.config.resource.ManagedDatabaseBinding;
+import gold.debug.windowstolinux.shared.config.resource.ManagedDatabaseConnection;
 import gold.debug.windowstolinux.shared.config.secretref.SecretReference;
 import gold.debug.windowstolinux.shared.deploy.contract.ReviewedDeploymentPlan;
 import gold.debug.windowstolinux.shared.deploy.contract.ReviewedDeploymentRequest;
@@ -141,9 +143,11 @@ public final class DeploymentPage implements ReviewContext {
         c.addField(form, 3, 1, messages.text("field.containerPorts"), this.form.containerPorts);
         c.addField(form, 4, 0, messages.text("field.containerVolumes"), this.form.containerVolumes);
         c.addField(form, 4, 1, messages.text("field.configurationEntries"), this.form.configurationEntries);
-        c.addField(form, 5, 0, messages.text("field.secretReferences"), this.form.secretReferences);
+        c.addField(form, 5, 0, messages.text("field.databaseReviewMode"), this.form.databaseMode);
+        c.addField(form, 5, 1, messages.text("field.databaseDetails"), this.form.databaseDetails);
+        c.addField(form, 6, 0, messages.text("field.secretReferences"), this.form.secretReferences);
         JButton secret = c.secondaryButton(messages.text("button.saveSecretRevision")); secret.addActionListener(event -> saveSecret());
-        c.addField(form, 5, 1, messages.text("field.secretRevision"), secret);
+        c.addField(form, 6, 1, messages.text("field.secretRevision"), secret);
         runtime.add(form, BorderLayout.CENTER);
         JPanel forms = c.transparent(new GridLayout(2, 1, 0, 12)); forms.add(health); forms.add(runtime);
         body.add(forms, BorderLayout.NORTH);
@@ -254,16 +258,20 @@ public final class DeploymentPage implements ReviewContext {
                     && container.engine() == DeploymentRuntimeSpecification.ContainerEngineType.DOCKER && !dockerRisk) return;
             ConfigurationSnapshot configuration = form.configurationSnapshot(
                     reviewedPreparation.assessment().facts().orElseThrow().applicationId());
+            List<SecretReference> secretReferences = form.secretReferences();
+            Optional<List<ManagedDatabaseBinding>> databaseBindings = form.databaseBindings();
             ReviewedDeploymentRequest request = service.createReviewedDeploymentRequest(reviewedPreparation, server, configuration,
-                    form.secretReferences(), runtime, userAccess, useRoot ? new BuildLimitConfiguration(1800, 1024, 4096,
-                            4L * 1024 * 1024, 4L * 1024 * 1024 * 1024, true) : BuildLimitConfiguration.defaultNonRoot(), useRoot,
+                    secretReferences, databaseBindings, runtime, userAccess,
+                    useRoot ? new BuildLimitConfiguration(1800, 1024, 4096,
+                             4L * 1024 * 1024, 4L * 1024 * 1024 * 1024, true) : BuildLimitConfiguration.defaultNonRoot(), useRoot,
                     dockerRisk, experimentalRisk);
             ReviewedDeploymentPlan plan = service.planDeployment(request);
             if (JOptionPane.showConfirmDialog(owner, messages.text("deployment.reviewedReview", Map.of(
-                    "type", messages.text("project.type." + runtime.projectType().name().toLowerCase(Locale.ROOT)),
-                    "server", server.host(), "archive", request.archive().contentSha256(), "configuration", configuration.sha256(),
-                    "access", accessReview(userAccess), "plan", plan.steps().stream().map(step -> "- " + messages.text(
-                            "deployment.plan." + step.name().toLowerCase(Locale.ROOT)) + "\n").reduce("", String::concat))),
+                     "type", messages.text("project.type." + runtime.projectType().name().toLowerCase(Locale.ROOT)),
+                     "server", server.host(), "archive", request.archive().contentSha256(), "configuration", configuration.sha256(),
+                     "database", databaseReview(databaseBindings), "access", accessReview(userAccess),
+                     "plan", plan.steps().stream().map(step -> "- " + messages.text(
+                             "deployment.plan." + step.name().toLowerCase(Locale.ROOT)) + "\n").reduce("", String::concat))),
                     messages.text("deployment.review.title"), JOptionPane.YES_NO_OPTION,
                     JOptionPane.WARNING_MESSAGE) != JOptionPane.YES_OPTION) return;
             char[] master = serverContext.masterPassword(); output.setText(messages.text("deployment.reviewedRunning"));
@@ -300,6 +308,24 @@ public final class DeploymentPage implements ReviewContext {
                 + "\n\n" + messages.text("failure.operation.summary",
                 Map.of("operationId", result.operationIdentity().toString()))
                 + (warnings.isBlank() ? "" : "\n" + warnings);
+    }
+
+    private String databaseReview(Optional<List<ManagedDatabaseBinding>> bindings) {
+        List<ManagedDatabaseBinding> reviewed = bindings.orElseThrow();
+        if (reviewed.isEmpty()) return messages.text("database.review.none");
+        return reviewed.stream().map(this::databaseBindingReview)
+                .reduce((left, right) -> left + ", " + right).orElseThrow();
+    }
+
+    private String databaseBindingReview(ManagedDatabaseBinding binding) {
+        if (binding.connection() instanceof ManagedDatabaseConnection.Sqlite sqlite) {
+            return messages.text("database.review.sqlite", Map.of("id", binding.databaseId(),
+                    "file", sqlite.fileName()));
+        }
+        ManagedDatabaseConnection.Server connection = (ManagedDatabaseConnection.Server) binding.connection();
+        return messages.text("database.review.server", Map.of("engine", connection.engine().name(),
+                "id", binding.databaseId(), "host", connection.host(), "port", connection.port(),
+                "database", connection.database()));
     }
 
     private void saveSecret() {

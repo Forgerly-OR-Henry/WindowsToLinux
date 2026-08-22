@@ -22,6 +22,8 @@ public record MultiComponentFormState(
         String ports,
         String dependencies,
         String configuration,
+        String databaseMode,
+        String databaseDetails,
         String secrets,
         boolean required,
         boolean rootBuild
@@ -46,6 +48,8 @@ public record MultiComponentFormState(
         Objects.requireNonNull(ports, "ports");
         Objects.requireNonNull(dependencies, "dependencies");
         Objects.requireNonNull(configuration, "configuration");
+        Objects.requireNonNull(databaseMode, "databaseMode");
+        Objects.requireNonNull(databaseDetails, "databaseDetails");
         Objects.requireNonNull(secrets, "secrets");
     }
 }

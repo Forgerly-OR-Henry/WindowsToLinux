@@ -48,6 +48,8 @@ record MultiComponentDraft(
         String declaredPorts,
         String dependencies,
         String configurationEntries,
+        DeploymentRuntimeParser.DatabaseReviewMode databaseMode,
+        String databaseDetails,
         String secretReferences,
         boolean required,
         boolean rootBuild
@@ -72,6 +74,8 @@ record MultiComponentDraft(
         declaredPorts = text(declaredPorts);
         dependencies = text(dependencies);
         configurationEntries = text(configurationEntries);
+        databaseMode = Objects.requireNonNull(databaseMode, "databaseMode");
+        databaseDetails = text(databaseDetails);
         secretReferences = text(secretReferences);
     }
 
@@ -81,6 +85,16 @@ record MultiComponentDraft(
         var runtime = runtime(health);
         var configuration = DeploymentConfigurationParser.parse(configurationEntries);
         var secrets = DeploymentRuntimeParser.secrets(secretReferences);
+        var databases = DeploymentRuntimeParser.databaseBindings(databaseMode, databaseDetails);
+        databases.orElseThrow().stream()
+                .map(binding -> binding.connection())
+                .filter(gold.debug.windowstolinux.shared.config.resource.ManagedDatabaseConnection.Server.class::isInstance)
+                .map(gold.debug.windowstolinux.shared.config.resource.ManagedDatabaseConnection.Server.class::cast)
+                .map(connection -> connection.passwordReference())
+                .filter(reference -> !secrets.contains(reference))
+                .findFirst().ifPresent(reference -> {
+                    throw new IllegalArgumentException("database password reference must be included in component secrets");
+                });
         return new ComponentAnalysisRequest(componentId, relativeSourceRoot, projectType, Optional.of(runtime),
                 tokens(artifactPaths), ports(declaredPorts), configuration.stream().map(value -> value.key()).toList(),
                 secrets.stream().map(value -> value.identifier()).distinct().toList(), List.of(),
@@ -91,9 +105,11 @@ record MultiComponentDraft(
     MultiComponentReviewInput reviewInput(String managedApplicationId, boolean containerRiskAccepted,
                                           boolean experimentalRiskAccepted) {
         var entries = DeploymentConfigurationParser.parse(configurationEntries);
+        var secrets = DeploymentRuntimeParser.secrets(secretReferences);
+        var databases = DeploymentRuntimeParser.databaseBindings(databaseMode, databaseDetails);
         return new MultiComponentReviewInput(componentId,
                 ConfigurationSnapshot.create(managedApplicationId, Instant.now().toEpochMilli(), "runtime-v1",
-                        Instant.now(), entries), DeploymentRuntimeParser.secrets(secretReferences), userAccess(),
+                        Instant.now(), entries), secrets, databases, userAccess(),
                 rootBuild ? new BuildLimitConfiguration(1800, 1024, 4096, 4L * 1024 * 1024,
                         4L * 1024 * 1024 * 1024, true) : BuildLimitConfiguration.defaultNonRoot(),
                 containerRiskAccepted, experimentalRiskAccepted);

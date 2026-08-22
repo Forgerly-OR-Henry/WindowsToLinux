@@ -7,6 +7,7 @@ import gold.debug.windowstolinux.app.service.source.ReviewedSourcePreparation;
 import gold.debug.windowstolinux.app.ui.i18n.PageMessagePresenter;
 import gold.debug.windowstolinux.shared.config.revision.ConfigurationEntry;
 import gold.debug.windowstolinux.shared.config.revision.ConfigurationSnapshot;
+import gold.debug.windowstolinux.shared.config.resource.ManagedDatabaseBinding;
 import gold.debug.windowstolinux.shared.config.secretref.SecretReference;
 import gold.debug.windowstolinux.shared.model.health.HealthCheck;
 import gold.debug.windowstolinux.shared.model.health.UserAccessUrl;
@@ -42,6 +43,9 @@ final class DeploymentForm {
     final JTextField containerPorts = new JTextField(20);
     final JTextField containerVolumes = new JTextField(20);
     final JTextField configurationEntries = new JTextField(30);
+    final JComboBox<DeploymentRuntimeParser.DatabaseReviewMode> databaseMode =
+            new JComboBox<>(DeploymentRuntimeParser.DatabaseReviewMode.values());
+    final JTextField databaseDetails = new JTextField(30);
     final JTextField secretReferences = new JTextField(20);
     final JCheckBox rootBuild;
     final JCheckBox experimentalAdapterRisk;
@@ -54,11 +58,17 @@ final class DeploymentForm {
         messages.localize(projectType, "project.type.");
         messages.localize(healthMode, "health.mode.");
         messages.localize(containerEngine, "container.engine.");
+        messages.localize(databaseMode, "database.review.mode.");
         projectType.addActionListener(event -> {
             resetRuntimeInputs();
             reviewInvalidation.run();
         });
+        databaseMode.addActionListener(event -> databaseDetails.setEnabled(
+                databaseMode.getSelectedItem() != DeploymentRuntimeParser.DatabaseReviewMode.UNREVIEWED
+                        && databaseMode.getSelectedItem() != DeploymentRuntimeParser.DatabaseReviewMode.NONE));
         containerEngine.setSelectedItem(null);
+        databaseMode.setSelectedItem(DeploymentRuntimeParser.DatabaseReviewMode.UNREVIEWED);
+        databaseDetails.setEnabled(false);
     }
 
     DeploymentPageState capture(String output, ReviewedSourcePreparation preparation) {
@@ -67,9 +77,10 @@ final class DeploymentForm {
                 timeout.getText(), stability.getText(), accessUrl.getText(), runtimePrimary.getText(), runtimeSecondary.getText(),
                 runtimeVersion.getText(), jvmArguments.getText(), applicationArguments.getText(),
                 containerEngine.getSelectedItem() == null ? ""
-                        : ((DeploymentRuntimeSpecification.ContainerEngineType) containerEngine.getSelectedItem()).name(),
+                : ((DeploymentRuntimeSpecification.ContainerEngineType) containerEngine.getSelectedItem()).name(),
                 containerPorts.getText(), containerVolumes.getText(), configurationEntries.getText(),
-                secretReferences.getText(), rootBuild.isSelected(), experimentalAdapterRisk.isSelected(),
+                ((DeploymentRuntimeParser.DatabaseReviewMode) databaseMode.getSelectedItem()).name(),
+                databaseDetails.getText(), secretReferences.getText(), rootBuild.isSelected(), experimentalAdapterRisk.isSelected(),
                 output, preparation);
     }
 
@@ -91,6 +102,8 @@ final class DeploymentForm {
         containerPorts.setText(state.containerPorts());
         containerVolumes.setText(state.containerVolumes());
         configurationEntries.setText(state.configurationEntries());
+        databaseMode.setSelectedItem(DeploymentRuntimeParser.DatabaseReviewMode.valueOf(state.databaseMode()));
+        databaseDetails.setText(state.databaseDetails());
         secretReferences.setText(state.secretReferences());
         rootBuild.setSelected(state.rootBuild());
         experimentalAdapterRisk.setSelected(state.experimentalAdapterRisk());
@@ -115,6 +128,16 @@ final class DeploymentForm {
             return DeploymentRuntimeParser.secrets(secretReferences.getText());
         } catch (IllegalArgumentException exception) {
             throw new IllegalArgumentException(messages.text("validation.secretReference"), exception);
+        }
+    }
+
+    Optional<List<ManagedDatabaseBinding>> databaseBindings() {
+        try {
+            return DeploymentRuntimeParser.databaseBindings(
+                    (DeploymentRuntimeParser.DatabaseReviewMode) databaseMode.getSelectedItem(),
+                    databaseDetails.getText());
+        } catch (IllegalArgumentException exception) {
+            throw new IllegalArgumentException(messages.text("validation.databaseBinding"), exception);
         }
     }
 

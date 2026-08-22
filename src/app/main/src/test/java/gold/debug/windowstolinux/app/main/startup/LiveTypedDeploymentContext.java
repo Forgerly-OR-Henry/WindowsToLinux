@@ -3,6 +3,9 @@ package gold.debug.windowstolinux.app.main.startup;
 import gold.debug.windowstolinux.app.db.DesktopPersistence;
 import gold.debug.windowstolinux.app.db.entity.StoredApplicationSecretRevision;
 import gold.debug.windowstolinux.app.service.DesktopApplicationFacade;
+import gold.debug.windowstolinux.app.service.backup.CreatedBackupArchive;
+import gold.debug.windowstolinux.app.service.backup.ManagedOfflineMigrationOutcome;
+import gold.debug.windowstolinux.app.service.backup.ManagedRestoreOutcome;
 import gold.debug.windowstolinux.app.service.server.ServerProfile;
 import gold.debug.windowstolinux.app.service.deployment.multi.MultiComponentReviewInput;
 import gold.debug.windowstolinux.app.service.deployment.multi.ReviewedMultiComponentApplication;
@@ -62,7 +65,8 @@ final class LiveTypedDeploymentContext implements AutoCloseable {
                 "WINDOWSTOLINUX_TEST_MASTER_PASSWORD", "typed-live-acceptance-master").toCharArray();
         this.persistence = DesktopPersistence.open(root.resolve("desktop-data"));
         this.service = new DesktopApplicationFacade(persistence, root.resolve("work"), new SshdLinuxGateway());
-        this.profile = new ServerProfile("typed-live", host, 22, username,
+        int port = Integer.getInteger("managed.ssh.port", 22);
+        this.profile = new ServerProfile("typed-live", host, port, username,
                 "ssh/typed-live/password", MODE);
         try {
             withMaster(master -> {
@@ -135,6 +139,65 @@ final class LiveTypedDeploymentContext implements AutoCloseable {
                 fingerprint -> true, true));
     }
 
+    ServerProfile registerTargetServer() throws Exception {
+        String host = requiredProperty("managed.target.ssh.host");
+        String username = System.getProperty("managed.target.ssh.user", "root");
+        assertTrue(!"root".equals(username) || Boolean.getBoolean("managed.target.root-build"),
+                "target root SSH requires managed.target.root-build=true");
+        int port = Integer.getInteger("managed.target.ssh.port", 22);
+        char[] sshPassword = requiredEnvironment("WINDOWSTOLINUX_TEST_TARGET_SSH_PASSWORD").toCharArray();
+        ServerProfile target = new ServerProfile("typed-live-target", host, port, username,
+                "ssh/typed-live-target/password", MODE);
+        try {
+            withMaster(master -> {
+                service.saveServerProfile(target, MODE, master, sshPassword);
+                return null;
+            });
+            withMaster(master -> {
+                service.verifyServer(target, MODE, master, fingerprint -> true);
+                return null;
+            });
+            assertTrue(service.findTrustedServer(target.id()).isPresent(),
+                    "target server trust must be persisted before managed backup acceptance");
+            return target;
+        } finally {
+            Arrays.fill(sshPassword, '\0');
+        }
+    }
+
+    CreatedBackupArchive createManagedBackup(String applicationId, Path destination, char[] backupPassword)
+            throws Exception {
+        char[] copiedBackupPassword = backupPassword.clone();
+        try {
+            return withMaster(master -> service.createManagedBackup(applicationId, destination,
+                    copiedBackupPassword, master, fingerprint -> true));
+        } finally {
+            Arrays.fill(copiedBackupPassword, '\0');
+        }
+    }
+
+    ManagedRestoreOutcome restoreManagedBackup(
+            Path archive, ServerProfile target, char[] backupPassword) throws Exception {
+        char[] copiedBackupPassword = backupPassword.clone();
+        try {
+            return withMaster(master -> service.restoreManagedBackup(archive, target.id(),
+                    copiedBackupPassword, master, fingerprint -> true));
+        } finally {
+            Arrays.fill(copiedBackupPassword, '\0');
+        }
+    }
+
+    ManagedOfflineMigrationOutcome prepareManagedOfflineMigration(
+            String applicationId, ServerProfile target, char[] backupPassword) throws Exception {
+        char[] copiedBackupPassword = backupPassword.clone();
+        try {
+            return withMaster(master -> service.prepareManagedOfflineMigration(applicationId, target.id(),
+                    copiedBackupPassword, master, true, fingerprint -> true));
+        } finally {
+            Arrays.fill(copiedBackupPassword, '\0');
+        }
+    }
+
     DeploymentResult deploy(ReviewedSourcePreparation preparation, long configurationRevision,
                             List<ConfigurationEntry> entries, List<SecretReference> secrets,
                             DeploymentRuntimeSpecification runtime, Optional<UserAccessUrl> userAccessUrl) throws Exception {
@@ -153,7 +216,8 @@ final class LiveTypedDeploymentContext implements AutoCloseable {
                 ? 8192 : 3072;
         int reviewedTimeoutSeconds = ecosystemService ? 600 : 1800;
         ReviewedDeploymentRequest request = service.createReviewedDeploymentRequest(preparation, server, configuration,
-                secrets, runtime, userAccessUrl, new BuildLimitConfiguration(reviewedTimeoutSeconds, 1024, reviewedAddressSpaceMiB,
+                secrets, Optional.of(List.of()), runtime, userAccessUrl,
+                new BuildLimitConfiguration(reviewedTimeoutSeconds, 1024, reviewedAddressSpaceMiB,
                         8L * 1024 * 1024, 4L * 1024 * 1024 * 1024, true), true,
                 runtime instanceof DeploymentRuntimeSpecification.Container container
                         && container.engine() == DeploymentRuntimeSpecification.ContainerEngineType.DOCKER,

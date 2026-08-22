@@ -2,6 +2,7 @@ package gold.debug.windowstolinux.app.ui.deployment.multi;
 
 import gold.debug.windowstolinux.app.service.deployment.multi.ReviewedMultiComponentApplication;
 import gold.debug.windowstolinux.app.service.source.PreparedMultiComponentSource;
+import gold.debug.windowstolinux.app.ui.deployment.DeploymentRuntimeParser;
 import gold.debug.windowstolinux.app.ui.i18n.PageMessagePresenter;
 import gold.debug.windowstolinux.shared.model.lifecycle.LifecycleAction;
 import gold.debug.windowstolinux.shared.model.project.DeploymentProjectType;
@@ -41,8 +42,7 @@ final class MultiComponentDraftController {
     final JTextField artifacts = new JTextField(20);
     final JTextField ports = new JTextField(20);
     final JTextField dependencies = new JTextField(20);
-    final JTextField configuration = new JTextField(22);
-    final JTextField secrets = new JTextField(20);
+    final ResourceControls resources = new ResourceControls();
     final JCheckBox required;
     final JCheckBox rootBuild;
     final LifecycleControls lifecycle = new LifecycleControls();
@@ -55,7 +55,13 @@ final class MultiComponentDraftController {
         rootBuild = new JCheckBox(messages.text("rootBuild"));
         messages.localize(projectType, "project.type.");
         messages.localize(healthMode, "health.mode.");
+        messages.localize(resources.databaseMode, "database.review.mode.");
         messages.localize(lifecycle.action, "lifecycle.action.");
+        resources.databaseMode.addActionListener(event -> resources.databaseDetails.setEnabled(
+                resources.databaseMode.getSelectedItem() != DeploymentRuntimeParser.DatabaseReviewMode.UNREVIEWED
+                        && resources.databaseMode.getSelectedItem() != DeploymentRuntimeParser.DatabaseReviewMode.NONE));
+        resources.databaseMode.setSelectedItem(DeploymentRuntimeParser.DatabaseReviewMode.UNREVIEWED);
+        resources.databaseDetails.setEnabled(false);
         draftControls.list.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
         draftControls.list.addListSelectionListener(event -> {
             if (!event.getValueIsAdjusting()) selectedDraft().ifPresent(this::applyDraft);
@@ -143,7 +149,9 @@ final class MultiComponentDraftController {
                 runtimeAdditional.getText(), (MultiComponentHealthMode) healthMode.getSelectedItem(),
                 healthEndpoint.getText(), expectedStatus.getText(), timeoutSeconds.getText(), stabilitySeconds.getText(),
                 accessUrl.getText(), artifacts.getText(), ports.getText(), dependencies.getText(),
-                configuration.getText(), secrets.getText(), required.isSelected(), rootBuild.isSelected());
+                resources.configuration.getText(),
+                (DeploymentRuntimeParser.DatabaseReviewMode) resources.databaseMode.getSelectedItem(),
+                resources.databaseDetails.getText(), resources.secrets.getText(), required.isSelected(), rootBuild.isSelected());
     }
 
     private MultiComponentFormState formState() {
@@ -152,8 +160,10 @@ final class MultiComponentDraftController {
                 runtimeSecondary.getText(), runtimeVersion.getText(), runtimeArguments.getText(),
                 runtimeAdditional.getText(), ((MultiComponentHealthMode) healthMode.getSelectedItem()).name(),
                 healthEndpoint.getText(), expectedStatus.getText(), timeoutSeconds.getText(), stabilitySeconds.getText(),
-                accessUrl.getText(), artifacts.getText(), ports.getText(), dependencies.getText(), configuration.getText(),
-                secrets.getText(), required.isSelected(), rootBuild.isSelected());
+                accessUrl.getText(), artifacts.getText(), ports.getText(), dependencies.getText(),
+                resources.configuration.getText(),
+                ((DeploymentRuntimeParser.DatabaseReviewMode) resources.databaseMode.getSelectedItem()).name(),
+                resources.databaseDetails.getText(), resources.secrets.getText(), required.isSelected(), rootBuild.isSelected());
     }
 
     private void applyFormState(MultiComponentFormState state) {
@@ -174,8 +184,10 @@ final class MultiComponentDraftController {
         artifacts.setText(state.artifacts());
         ports.setText(state.ports());
         dependencies.setText(state.dependencies());
-        configuration.setText(state.configuration());
-        secrets.setText(state.secrets());
+        resources.configuration.setText(state.configuration());
+        resources.databaseMode.setSelectedItem(DeploymentRuntimeParser.DatabaseReviewMode.valueOf(state.databaseMode()));
+        resources.databaseDetails.setText(state.databaseDetails());
+        resources.secrets.setText(state.secrets());
         required.setSelected(state.required());
         rootBuild.setSelected(state.rootBuild());
     }
@@ -186,7 +198,8 @@ final class MultiComponentDraftController {
                 draft.runtimeArguments(), draft.runtimeAdditional(), draft.healthMode().name(), draft.healthEndpoint(),
                 draft.expectedStatus(), draft.timeoutSeconds(), draft.stabilitySeconds(), draft.userAccessUrl(),
                 draft.artifactPaths(), draft.declaredPorts(), draft.dependencies(), draft.configurationEntries(),
-                draft.secretReferences(), draft.required(), draft.rootBuild()));
+                draft.databaseMode().name(), draft.databaseDetails(), draft.secretReferences(), draft.required(),
+                draft.rootBuild()));
     }
 
     private Optional<MultiComponentDraft> selectedDraft() {
@@ -224,6 +237,15 @@ final class MultiComponentDraftController {
     static final class LifecycleControls {
         final JTextField targets = new JTextField(22);
         final JComboBox<LifecycleAction> action = new JComboBox<>(LifecycleAction.values());
+    }
+
+    /** Groups the non-secret resource review controls for one component. / 组合一个组件不含秘密值的资源审阅控件。 */
+    static final class ResourceControls {
+        final JTextField configuration = new JTextField(22);
+        final JComboBox<DeploymentRuntimeParser.DatabaseReviewMode> databaseMode =
+                new JComboBox<>(DeploymentRuntimeParser.DatabaseReviewMode.values());
+        final JTextField databaseDetails = new JTextField(22);
+        final JTextField secrets = new JTextField(20);
     }
 
     static final class DraftControls {

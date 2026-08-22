@@ -1,6 +1,9 @@
 package gold.debug.windowstolinux.app.ui.deployment;
 
 import gold.debug.windowstolinux.shared.config.secretref.SecretReference;
+import gold.debug.windowstolinux.shared.config.resource.ManagedDatabaseBinding;
+import gold.debug.windowstolinux.shared.config.resource.ManagedDatabaseConnection;
+import gold.debug.windowstolinux.shared.config.resource.ManagedDatabaseEngineType;
 import gold.debug.windowstolinux.shared.git.GitReference;
 import gold.debug.windowstolinux.shared.model.health.HealthCheck;
 import gold.debug.windowstolinux.shared.model.project.DeploymentProjectType;
@@ -10,10 +13,58 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
+import java.util.Optional;
 
-/** Parses bounded desktop runtime, secret-reference, and Git-reference notation. / 解析桌面端有界运行时、秘密引用与 Git 引用记法。 */
+/** Parses bounded desktop runtime, database, secret-reference, and Git-reference notation. / 解析桌面端有界运行时、数据库、秘密引用与 Git 引用记法。 */
 public final class DeploymentRuntimeParser {
     private DeploymentRuntimeParser() { }
+
+    /** Database scopes the user can explicitly review in the current deployment form. / 用户可在当前部署表单中显式审阅的数据库范围。 */
+    public enum DatabaseReviewMode {
+        UNREVIEWED,
+        NONE,
+        POSTGRESQL,
+        MYSQL,
+        MARIADB
+    }
+
+    /**
+     * Parses zero or one explicitly reviewed server database binding.
+     *
+     * <p>解析零个或一个显式审阅的服务器数据库绑定。
+     */
+    public static Optional<List<ManagedDatabaseBinding>> databaseBindings(DatabaseReviewMode mode, String input) {
+        mode = Objects.requireNonNull(mode, "mode");
+        input = Objects.requireNonNull(input, "input").trim();
+        if (input.length() > 2048 || input.chars().anyMatch(Character::isISOControl)) {
+            throw new IllegalArgumentException("database binding input is invalid");
+        }
+        if (mode == DatabaseReviewMode.UNREVIEWED) {
+            throw new IllegalArgumentException("database scope must be explicitly reviewed");
+        }
+        if (mode == DatabaseReviewMode.NONE) {
+            return Optional.of(List.of());
+        }
+        String[] values = input.split("\\|", -1);
+        if (values.length != 7) {
+            throw new IllegalArgumentException("server database binding must contain seven fields");
+        }
+        List<SecretReference> passwordReferences = secrets(values[5]);
+        if (passwordReferences.size() != 1) {
+            throw new IllegalArgumentException("server database binding requires one password reference");
+        }
+        boolean tlsRequired = switch (values[6].trim().toLowerCase(java.util.Locale.ROOT)) {
+            case "required" -> true;
+            case "optional" -> false;
+            default -> throw new IllegalArgumentException("database TLS mode must be required or optional");
+        };
+        ManagedDatabaseEngineType engine = ManagedDatabaseEngineType.valueOf(mode.name());
+        ManagedDatabaseConnection connection = new ManagedDatabaseConnection.Server(engine, values[1].trim(),
+                Integer.parseInt(values[2].trim()), values[3].trim(), values[4].trim(),
+                passwordReferences.getFirst(), tlsRequired);
+        return Optional.of(List.of(new ManagedDatabaseBinding(values[0].trim(), connection)));
+    }
 
     public static List<SecretReference> secrets(String input) {
         List<SecretReference> references = new ArrayList<>();

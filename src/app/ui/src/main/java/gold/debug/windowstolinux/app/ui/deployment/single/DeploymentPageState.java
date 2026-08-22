@@ -24,6 +24,9 @@ import java.util.Objects;
  * @param containerPorts the {@code containerPorts} value / {@code containerPorts} 值
  * @param containerVolumes the {@code containerVolumes} value / {@code containerVolumes} 值
  * @param configurationEntries the {@code configurationEntries} value / {@code configurationEntries} 值
+ * @param databaseMode the explicit database review mode / 显式数据库审阅模式
+ * @param databaseDetails the non-secret server database details / 不含秘密的服务器数据库详情
+ * @param secretReferences the exact reviewed secret references / 精确的已审阅秘密引用
  * @param rootBuild the {@code rootBuild} value / {@code rootBuild} 值
  * @param experimentalAdapterRisk the {@code experimentalAdapterRisk} value / {@code experimentalAdapterRisk} 值
  * @param output the {@code output} value / {@code output} 值
@@ -46,6 +49,8 @@ public record DeploymentPageState(
         String containerPorts,
         String containerVolumes,
         String configurationEntries,
+        String databaseMode,
+        String databaseDetails,
         String secretReferences,
         boolean rootBuild,
         boolean experimentalAdapterRisk,
@@ -72,6 +77,9 @@ public record DeploymentPageState(
      * @param containerPorts the {@code containerPorts} value / {@code containerPorts} 值
      * @param containerVolumes the {@code containerVolumes} value / {@code containerVolumes} 值
      * @param configurationEntries the {@code configurationEntries} value / {@code configurationEntries} 值
+     * @param databaseMode the explicit database review mode / 显式数据库审阅模式
+     * @param databaseDetails the non-secret server database details / 不含秘密的服务器数据库详情
+     * @param secretReferences the exact reviewed secret references / 精确的已审阅秘密引用
      * @param rootBuild the {@code rootBuild} value / {@code rootBuild} 值
      * @param experimentalAdapterRisk the {@code experimentalAdapterRisk} value / {@code experimentalAdapterRisk} 值
      * @param output the {@code output} value / {@code output} 值
@@ -95,6 +103,8 @@ public record DeploymentPageState(
         Objects.requireNonNull(containerPorts, "containerPorts");
         Objects.requireNonNull(containerVolumes, "containerVolumes");
         Objects.requireNonNull(configurationEntries, "configurationEntries");
+        Objects.requireNonNull(databaseMode, "databaseMode");
+        Objects.requireNonNull(databaseDetails, "databaseDetails");
         Objects.requireNonNull(secretReferences, "secretReferences");
         Objects.requireNonNull(output, "output");
     }

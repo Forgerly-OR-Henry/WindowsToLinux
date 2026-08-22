@@ -147,8 +147,10 @@ public final class MultiComponentPage {
         components.addField(form, row++, 1, messages.text("component.field.artifacts"), editor.artifacts);
         components.addField(form, row, 0, messages.text("component.field.ports"), editor.ports);
         components.addField(form, row++, 1, messages.text("component.field.dependencies"), editor.dependencies);
-        components.addField(form, row, 0, messages.text("field.configurationEntries"), editor.configuration);
-        components.addField(form, row++, 1, messages.text("field.secretReferences"), editor.secrets);
+        components.addField(form, row, 0, messages.text("field.configurationEntries"), editor.resources.configuration);
+        components.addField(form, row++, 1, messages.text("field.secretReferences"), editor.resources.secrets);
+        components.addField(form, row, 0, messages.text("field.databaseReviewMode"), editor.resources.databaseMode);
+        components.addField(form, row++, 1, messages.text("field.databaseDetails"), editor.resources.databaseDetails);
         JPanel flags = components.transparent(new FlowLayout(FlowLayout.LEFT, 8, 0));
         editor.required.setBorder(BorderFactory.createEmptyBorder());
         editor.rootBuild.setBorder(BorderFactory.createEmptyBorder());

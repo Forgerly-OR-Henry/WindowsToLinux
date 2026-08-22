@@ -39,13 +39,15 @@ class DesktopLanguageSwitchStateTest {
         DesktopViewState initial = new DesktopViewState(
                 "ai",
                 new DeploymentPageState("PYTHON_SERVICE", "TCP", "", "200", "12", "7", "",
-                        "3.12", "app", "", "", "", "PODMAN", "8080:8080", "", "PORT=8080", "database-password:1", true,
+                        "3.12", "app", "", "", "", "PODMAN", "8080:8080", "", "PORT=8080",
+                        "POSTGRESQL", "primary|db.example.test|5432|shop|shop|database-password:1|required",
+                        "database-password:1", true,
                         true, "deployment diagnostic", null),
                 new MultiComponentPageState("C:\\sources\\shop", "shop", "web", "api,web",
                         LifecycleAction.REFRESH_STATUS,
                         new MultiComponentFormState("api", "api", "NODE_SERVICE", "", "", "22", "", "",
                                 "TCP", "18081", "200", "20", "1", "", "api/dist", "18081", "",
-                                "PORT=18081", "database-password:1", true, false),
+                                "PORT=18081", "NONE", "", "database-password:1", true, false),
                         java.util.List.of(), "component diagnostic", null, null),
                 new ServerPageState("server-two", "198.51.100.24", "2222", "deploy",
                         "ssh-secret".toCharArray(), CredentialStorageMode.MASTER_PASSWORD,
@@ -71,6 +73,9 @@ class DesktopLanguageSwitchStateTest {
             assertEquals("", chineseState.deployment().javaVersion());
             assertEquals("PODMAN", chineseState.deployment().containerEngine());
             assertEquals("PORT=8080", chineseState.deployment().configurationEntries());
+            assertEquals("POSTGRESQL", chineseState.deployment().databaseMode());
+            assertEquals("primary|db.example.test|5432|shop|shop|database-password:1|required",
+                    chineseState.deployment().databaseDetails());
             assertEquals("database-password:1", chineseState.deployment().secretReferences());
             assertEquals("12", chineseState.deployment().healthTimeoutSeconds());
             assertEquals("7", chineseState.deployment().tcpStabilitySeconds());
@@ -81,6 +86,7 @@ class DesktopLanguageSwitchStateTest {
             assertEquals("api", chineseState.multiComponent().form().componentId());
             assertEquals("NODE_SERVICE", chineseState.multiComponent().form().projectType());
             assertEquals("PORT=18081", chineseState.multiComponent().form().configuration());
+            assertEquals("NONE", chineseState.multiComponent().form().databaseMode());
             assertEquals("component diagnostic", chineseState.multiComponent().output());
             assertEquals("server-two", chineseState.server().id());
             assertEquals("198.51.100.24", chineseState.server().host());

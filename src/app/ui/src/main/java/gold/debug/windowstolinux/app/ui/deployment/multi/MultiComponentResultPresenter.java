@@ -3,12 +3,15 @@ package gold.debug.windowstolinux.app.ui.deployment.multi;
 import gold.debug.windowstolinux.app.service.deployment.multi.ReviewedMultiComponentApplication;
 import gold.debug.windowstolinux.app.service.source.PreparedMultiComponentSource;
 import gold.debug.windowstolinux.app.ui.i18n.PageMessagePresenter;
+import gold.debug.windowstolinux.shared.config.resource.ManagedDatabaseBinding;
+import gold.debug.windowstolinux.shared.config.resource.ManagedDatabaseConnection;
 import gold.debug.windowstolinux.shared.deploy.contract.result.deployment.MultiComponentDeploymentResult;
 import gold.debug.windowstolinux.shared.deploy.contract.result.lifecycle.MultiComponentLifecycleResult;
 
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 
 /** Formats bounded multi-component review and result evidence for the desktop output area. / 为桌面输出区格式化有界多组件审阅与结果证据。 */
 final class MultiComponentResultPresenter {
@@ -27,9 +30,31 @@ final class MultiComponentResultPresenter {
                         + messages.text("support.level." + component.request().facts().support().level().name()
                         .toLowerCase(Locale.ROOT)))
                 .reduce((left, right) -> left + "\n" + right).orElse("");
+        String databases = candidate.components().stream().map(component -> component.componentId() + " = "
+                        + databaseReview(component.request().databaseBindings()))
+                .reduce((left, right) -> left + "\n" + right).orElse("");
         return messages.text("component.review.body", Map.of("application", candidate.plan().applicationId(),
                 "waves", waves, "stop", String.join(" -> ", candidate.plan().stopOrder()),
-                "start", String.join(" -> ", candidate.plan().startOrder()), "supports", supports));
+                "start", String.join(" -> ", candidate.plan().startOrder()), "supports", supports,
+                "databases", databases));
+    }
+
+    private String databaseReview(Optional<java.util.List<ManagedDatabaseBinding>> bindings) {
+        if (bindings.isEmpty()) return messages.text("database.review.unreviewed");
+        if (bindings.orElseThrow().isEmpty()) return messages.text("database.review.none");
+        return bindings.orElseThrow().stream().map(this::databaseBindingReview)
+                .reduce((left, right) -> left + ", " + right).orElseThrow();
+    }
+
+    private String databaseBindingReview(ManagedDatabaseBinding binding) {
+        if (binding.connection() instanceof ManagedDatabaseConnection.Sqlite sqlite) {
+            return messages.text("database.review.sqlite", Map.of("id", binding.databaseId(),
+                    "file", sqlite.fileName()));
+        }
+        ManagedDatabaseConnection.Server connection = (ManagedDatabaseConnection.Server) binding.connection();
+        return messages.text("database.review.server", Map.of("engine", connection.engine().name(),
+                "id", binding.databaseId(), "host", connection.host(), "port", connection.port(),
+                "database", connection.database()));
     }
 
     /** Formats static support scopes and component issues. / 格式化静态支持范围与组件问题。 */

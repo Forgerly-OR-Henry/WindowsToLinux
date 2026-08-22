@@ -1,5 +1,6 @@
 package gold.debug.windowstolinux.app.ui.deployment.multi;
 
+import gold.debug.windowstolinux.app.ui.deployment.DeploymentRuntimeParser;
 import gold.debug.windowstolinux.shared.model.project.DeploymentProjectType;
 import gold.debug.windowstolinux.shared.model.project.DeploymentRuntimeSpecification;
 import org.junit.jupiter.api.Test;
@@ -28,6 +29,7 @@ class MultiComponentDraftTest {
         assertInstanceOf(DeploymentRuntimeSpecification.NodeService.class, analysis.runtime().orElseThrow());
         assertEquals("shop-api", review.configuration().applicationId());
         assertEquals(1, review.secretReferences().size());
+        assertEquals(java.util.List.of(), review.databaseBindings().orElseThrow());
         assertFalse(review.limits().runAsRoot());
     }
 
@@ -44,6 +46,7 @@ class MultiComponentDraftTest {
                 healthMode == MultiComponentHealthMode.TCP ? "18081" : "http://127.0.0.1:18081/health",
                 "200", "20", "1", healthMode == MultiComponentHealthMode.HTTP
                 ? "http://example.test:18081/" : "", "api/dist", "18081", "database",
-                "PORT=18081", "database-password:1", true, false);
+                "PORT=18081", DeploymentRuntimeParser.DatabaseReviewMode.NONE, "",
+                "database-password:1", true, false);
     }
 }
