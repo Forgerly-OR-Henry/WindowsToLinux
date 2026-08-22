@@ -52,6 +52,11 @@ public final class ManagedBackupInputUseCase {
             List<MissingInputType> componentMissing = new ArrayList<>();
             if (component.reviewedRuntime().isEmpty()) componentMissing.add(MissingInputType.REVIEWED_RUNTIME);
             if (component.reviewedDataPaths().isEmpty()) componentMissing.add(MissingInputType.REVIEWED_DATA_PATHS);
+            if (component.reviewedResourceBindings().isEmpty()) {
+                componentMissing.add(MissingInputType.REVIEWED_RESOURCE_BINDINGS);
+            } else if (component.reviewedResourceBindings().orElseThrow().databaseBindings().isEmpty()) {
+                componentMissing.add(MissingInputType.REVIEWED_DATABASE_BINDINGS);
+            }
             Optional<CurrentRelease> release = applications.findRelease(component.application().id());
             if (release.isEmpty()) {
                 componentMissing.add(MissingInputType.CURRENT_RELEASE);

@@ -17,6 +17,8 @@ import gold.debug.windowstolinux.app.service.server.ServerProfile;
 import gold.debug.windowstolinux.app.service.server.ServerUseCaseFacade;
 import gold.debug.windowstolinux.app.service.source.ReviewedSourcePreparation;
 import gold.debug.windowstolinux.shared.config.revision.ConfigurationSnapshot;
+import gold.debug.windowstolinux.shared.config.resource.ManagedComponentResourceBindings;
+import gold.debug.windowstolinux.shared.config.resource.ManagedDatabaseBinding;
 import gold.debug.windowstolinux.shared.config.secretref.SecretReference;
 import gold.debug.windowstolinux.shared.config.secretref.ResolvedSecretRevision;
 import gold.debug.windowstolinux.shared.deploy.contract.DeploymentApproval;
@@ -78,6 +80,7 @@ public final class ReviewedDeploymentUseCase {
      */
     public ReviewedDeploymentRequest createRequest(ReviewedSourcePreparation preparation, ServerIdentity server,
                                                     ConfigurationSnapshot configuration, List<SecretReference> secretReferences,
+                                                    Optional<List<ManagedDatabaseBinding>> databaseBindings,
                                                     gold.debug.windowstolinux.shared.model.project.DeploymentRuntimeSpecification runtime,
                                                     Optional<gold.debug.windowstolinux.shared.model.health.UserAccessUrl> userAccessUrl,
                                                     gold.debug.windowstolinux.shared.model.deployment.BuildLimitConfiguration limits,
@@ -96,9 +99,22 @@ public final class ReviewedDeploymentUseCase {
                 "Typed deployment requires an immutable source identity bound to the reviewed archive"));
         ManagedApplication application = ManagedApplicationIdentityResolver.resolve(applications, facts.applicationId(), server);
         return new ReviewedDeploymentRequest(server, facts, sourceRevision,
-                archive, configuration, secretReferences, runtime, userAccessUrl, limits,
+                archive, configuration, secretReferences, databaseBindings, runtime, userAccessUrl, limits,
                 new DeploymentApproval(application.id(), archive.contentSha256(), server.id(), rootBuildConfirmed, Instant.now()),
                 containerDaemonRiskAccepted, experimentalAdapterRiskAccepted);
+    }
+
+    /** Creates a request whose database scope has not yet been reviewed. / 创建数据库范围尚未审阅的请求。 */
+    public ReviewedDeploymentRequest createRequest(ReviewedSourcePreparation preparation, ServerIdentity server,
+                                                    ConfigurationSnapshot configuration, List<SecretReference> secretReferences,
+                                                    gold.debug.windowstolinux.shared.model.project.DeploymentRuntimeSpecification runtime,
+                                                    Optional<gold.debug.windowstolinux.shared.model.health.UserAccessUrl> userAccessUrl,
+                                                    gold.debug.windowstolinux.shared.model.deployment.BuildLimitConfiguration limits,
+                                                    boolean rootBuildConfirmed, boolean containerDaemonRiskAccepted,
+                                                    boolean experimentalAdapterRiskAccepted) throws SQLException {
+        return createRequest(preparation, server, configuration, secretReferences, Optional.empty(), runtime,
+                userAccessUrl, limits, rootBuildConfirmed, containerDaemonRiskAccepted,
+                experimentalAdapterRiskAccepted);
     }
 
     /** Creates a request that cannot enter an experimental adapter. / 创建不能进入试验适配器的请求。 */
@@ -179,7 +195,8 @@ public final class ReviewedDeploymentUseCase {
                     recordSuccessful(graphs, application,
                             new ManagedApplicationRuntimeConfiguration(request.runtime().healthCheck(), request.userAccessUrl()),
                             new CurrentRelease(application.id(), result.publishedReleaseSha256().orElseThrow(), Instant.now()),
-                            request.runtime(), request.configuration(), request.secretReferences());
+                            request.runtime(), request.configuration(), request.secretReferences(),
+                            request.databaseBindings());
                 } catch (SQLException failure) {
                     result = result.withNonFatalFailure(FailureDescriptor.create(
                             ApplicationServiceFailureType.DEPLOYMENT_RECORD_SAVE_FAILED,
@@ -199,7 +216,8 @@ public final class ReviewedDeploymentUseCase {
                                  CurrentRelease release,
                                  gold.debug.windowstolinux.shared.model.project.DeploymentRuntimeSpecification reviewedRuntime,
                                  ConfigurationSnapshot configuration,
-                                 List<SecretReference> secretReferences) throws SQLException {
+                                 List<SecretReference> secretReferences,
+                                 Optional<List<ManagedDatabaseBinding>> databaseBindings) throws SQLException {
         Objects.requireNonNull(graphs, "graphs");
         application = Objects.requireNonNull(application, "application");
         runtimeConfiguration = Objects.requireNonNull(runtimeConfiguration, "runtimeConfiguration");
@@ -207,7 +225,8 @@ public final class ReviewedDeploymentUseCase {
         SuccessfulManagedDeployment deployment = new SuccessfulManagedDeployment(application, runtimeConfiguration,
                 release, configuration, secretReferences);
         ManagedApplicationGraph.Component component = new ManagedApplicationGraph.Component(application.id(),
-                application, runtimeConfiguration, List.of(), Optional.of(reviewedRuntime), Optional.of(List.of()));
+                application, runtimeConfiguration, List.of(), Optional.of(reviewedRuntime), Optional.of(List.of()),
+                Optional.of(new ManagedComponentResourceBindings(List.of(), databaseBindings)));
         graphs.recordSuccessfulApplication(new ManagedApplicationGraph(application.id(), application.id(),
                 List.of(component)), List.of(deployment));
     }

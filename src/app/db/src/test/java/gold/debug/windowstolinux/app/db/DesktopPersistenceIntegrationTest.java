@@ -16,6 +16,10 @@ import gold.debug.windowstolinux.shared.config.contract.definition.Configuration
 import gold.debug.windowstolinux.shared.config.contract.definition.ConfigurationValue;
 import gold.debug.windowstolinux.shared.config.revision.ConfigurationEntry;
 import gold.debug.windowstolinux.shared.config.revision.ConfigurationSnapshot;
+import gold.debug.windowstolinux.shared.config.resource.ManagedComponentResourceBindings;
+import gold.debug.windowstolinux.shared.config.resource.ManagedDatabaseBinding;
+import gold.debug.windowstolinux.shared.config.resource.ManagedDatabaseConnection;
+import gold.debug.windowstolinux.shared.config.resource.ManagedFileBinding;
 import gold.debug.windowstolinux.shared.config.secretref.SecretReference;
 import gold.debug.windowstolinux.shared.model.lifecycle.AutostartState;
 import gold.debug.windowstolinux.shared.model.lifecycle.LifecycleObservation;
@@ -181,10 +185,10 @@ class DesktopPersistenceIntegrationTest {
             ManagedApplicationGraph graph = new ManagedApplicationGraph("shop", "web", List.of(
                     new ManagedApplicationGraph.Component("api", api, runtime, List.of(),
                             Optional.of(new DeploymentRuntimeSpecification.NodeService(22, runtime.healthCheck())),
-                            Optional.of(List.of())),
+                            Optional.of(List.of()), Optional.of(resources(List.of()))),
                     new ManagedApplicationGraph.Component("web", web, runtime, List.of("api"),
                             Optional.of(new DeploymentRuntimeSpecification.NodeService(22, runtime.healthCheck())),
-                            Optional.of(List.of()))));
+                            Optional.of(List.of()), Optional.of(resources(List.of())))));
             assertThrows(java.sql.SQLException.class, () -> database.managedApplicationGraphs()
                     .recordSuccessfulApplication(graph, List.of(
                             new SuccessfulManagedDeployment(api, runtime,
@@ -213,14 +217,19 @@ class DesktopPersistenceIntegrationTest {
                 URI.create("http://127.0.0.1:18082/health"), 200, 15),
                 Optional.of(new UserAccessUrl(URI.create("http://198.51.100.24:18082/"))));
         Instant publishedAt = Instant.parse("2026-08-13T00:00:00Z");
+        List<ComponentDataPath> apiDataPaths = List.of(new ComponentDataPath("uploads",
+                ComponentDataPath.AccessMode.READ_WRITE, "uploads-v1", false));
+        ManagedComponentResourceBindings apiResources = new ManagedComponentResourceBindings(
+                List.of(new ManagedFileBinding("file-uploads", apiDataPaths.getFirst())), Optional.of(List.of(
+                new ManagedDatabaseBinding("cache", new ManagedDatabaseConnection.Sqlite("application.db")))));
         ManagedApplicationGraph graph = new ManagedApplicationGraph("shop", "web", List.of(
                 new ManagedApplicationGraph.Component("api", api, apiRuntime, List.of(),
                         Optional.of(new DeploymentRuntimeSpecification.NodeService(22, apiRuntime.healthCheck())),
-                        Optional.of(List.of(new ComponentDataPath("uploads", ComponentDataPath.AccessMode.READ_WRITE,
-                                "uploads-v1", false)))),
+                        Optional.of(apiDataPaths), Optional.of(apiResources)),
                 new ManagedApplicationGraph.Component("web", web, webRuntime, List.of("api"),
                         Optional.of(new DeploymentRuntimeSpecification.StaticSite("dist",
-                                (HealthCheck.Http) webRuntime.healthCheck())), Optional.of(List.of()))));
+                                (HealthCheck.Http) webRuntime.healthCheck())), Optional.of(List.of()),
+                        Optional.of(resources(List.of())))));
 
         try (DesktopPersistence database = DesktopPersistence.open(temporaryDirectory.resolve("durable-graph"))) {
             database.managedApplicationGraphs().recordSuccessfulApplication(graph, List.of(
@@ -248,11 +257,12 @@ class DesktopPersistenceIntegrationTest {
         ManagedApplication application = ManagedApplication.forManaged("legacy-app", server, "a".repeat(64));
         var runtime = new ManagedApplicationRuntimeConfiguration(new HealthCheck.Tcp(18081, 15, 1),
                 Optional.empty());
+        List<ComponentDataPath> dataPaths = List.of(new ComponentDataPath("data",
+                ComponentDataPath.AccessMode.READ_WRITE, "data-v1", true));
         var graph = new ManagedApplicationGraph("legacy", "app", List.of(
                 new ManagedApplicationGraph.Component("app", application, runtime, List.of(),
                         Optional.of(new DeploymentRuntimeSpecification.NodeService(22, runtime.healthCheck())),
-                        Optional.of(List.of(new ComponentDataPath("data", ComponentDataPath.AccessMode.READ_WRITE,
-                                "data-v1", true))))));
+                        Optional.of(dataPaths), Optional.of(resources(dataPaths)))));
         try (DesktopPersistence database = DesktopPersistence.open(dataDirectory)) {
             database.managedApplicationGraphs().recordSuccessfulApplication(graph, List.of(
                     new SuccessfulManagedDeployment(application, runtime,
@@ -263,6 +273,7 @@ class DesktopPersistenceIntegrationTest {
              Statement statement = connection.createStatement()) {
             statement.execute("UPDATE managed_application_graph_component SET reviewed_runtime=NULL");
             statement.execute("UPDATE managed_application_graph_component SET reviewed_data_paths=NULL");
+            statement.execute("UPDATE managed_application_graph_component SET reviewed_resource_bindings=NULL");
             statement.execute("DELETE FROM application_release_configuration_binding");
             statement.execute("PRAGMA user_version = 7");
         }
@@ -274,6 +285,9 @@ class DesktopPersistenceIntegrationTest {
             assertTrue(database.managedApplicationGraphs().find("legacy").orElseThrow()
                     .components().getFirst().reviewedDataPaths().isEmpty(),
                     "v7 rows must not invent reviewed data paths");
+            assertTrue(database.managedApplicationGraphs().find("legacy").orElseThrow()
+                    .components().getFirst().reviewedResourceBindings().isEmpty(),
+                    "v7 rows must not invent reviewed resource bindings");
             assertTrue(database.configurations().findRelease(application.id(), "b".repeat(64)).isEmpty(),
                     "v7 rows must not invent an exact release configuration binding");
         }
@@ -281,7 +295,7 @@ class DesktopPersistenceIntegrationTest {
              Statement statement = connection.createStatement();
              var version = statement.executeQuery("PRAGMA user_version")) {
             assertTrue(version.next());
-            assertEquals(9, version.getInt(1));
+            assertEquals(10, version.getInt(1));
         }
     }
 
@@ -297,7 +311,7 @@ class DesktopPersistenceIntegrationTest {
         var reviewedRuntime = new DeploymentRuntimeSpecification.NodeService(22, runtime.healthCheck());
         var graph = new ManagedApplicationGraph("legacy", "app", List.of(
                 new ManagedApplicationGraph.Component("app", application, runtime, List.of(),
-                        Optional.of(reviewedRuntime), Optional.of(List.of()))));
+                        Optional.of(reviewedRuntime), Optional.of(List.of()), Optional.of(resources(List.of())))));
         try (DesktopPersistence database = DesktopPersistence.open(dataDirectory)) {
             database.managedApplicationGraphs().recordSuccessfulApplication(graph, List.of(
                     new SuccessfulManagedDeployment(application, runtime,
@@ -307,6 +321,7 @@ class DesktopPersistenceIntegrationTest {
         try (Connection connection = DriverManager.getConnection("jdbc:sqlite:" + databaseFile);
              Statement statement = connection.createStatement()) {
             statement.execute("UPDATE managed_application_graph_component SET reviewed_data_paths=NULL");
+            statement.execute("UPDATE managed_application_graph_component SET reviewed_resource_bindings=NULL");
             statement.execute("DELETE FROM application_release_configuration_binding");
             statement.execute("PRAGMA user_version = 8");
         }
@@ -317,8 +332,51 @@ class DesktopPersistenceIntegrationTest {
             assertEquals(Optional.of(reviewedRuntime), restored.reviewedRuntime());
             assertTrue(restored.reviewedDataPaths().isEmpty(),
                     "v8 rows must remain explicitly unavailable instead of inventing reviewed data paths");
+            assertTrue(restored.reviewedResourceBindings().isEmpty(),
+                    "v8 rows must not invent reviewed resource bindings");
             assertTrue(database.configurations().findRelease(application.id(), "b".repeat(64)).isEmpty(),
                     "v8 rows must not invent an exact release configuration binding");
+        }
+    }
+
+    @Test
+    void migratesVersionNineGraphsWithoutInventingReviewedResourceBindings() throws Exception {
+        Path dataDirectory = temporaryDirectory.resolve("version-nine-graph");
+        Path databaseFile = dataDirectory.resolve("windowstolinux.db");
+        ServerIdentity server = new ServerIdentity("server-one", "198.51.100.24", 22,
+                "SHA256:exampleFingerprint");
+        ManagedApplication application = ManagedApplication.forManaged("legacy-app", server, "a".repeat(64));
+        var runtime = new ManagedApplicationRuntimeConfiguration(new HealthCheck.Tcp(18081, 15, 1),
+                Optional.empty());
+        var reviewedRuntime = new DeploymentRuntimeSpecification.NodeService(22, runtime.healthCheck());
+        var graph = new ManagedApplicationGraph("legacy", "app", List.of(
+                new ManagedApplicationGraph.Component("app", application, runtime, List.of(),
+                        Optional.of(reviewedRuntime), Optional.of(List.of()), Optional.of(resources(List.of())))));
+        try (DesktopPersistence database = DesktopPersistence.open(dataDirectory)) {
+            database.managedApplicationGraphs().recordSuccessfulApplication(graph, List.of(
+                    new SuccessfulManagedDeployment(application, runtime,
+                            new CurrentRelease(application.id(), "b".repeat(64), Instant.now()),
+                            configuration(application.id()), List.of())));
+        }
+        try (Connection connection = DriverManager.getConnection("jdbc:sqlite:" + databaseFile);
+             Statement statement = connection.createStatement()) {
+            statement.execute("UPDATE managed_application_graph_component SET reviewed_resource_bindings=NULL");
+            statement.execute("PRAGMA user_version = 9");
+        }
+
+        try (DesktopPersistence database = DesktopPersistence.open(dataDirectory)) {
+            var restored = database.managedApplicationGraphs().find("legacy").orElseThrow()
+                    .components().getFirst();
+            assertEquals(Optional.of(reviewedRuntime), restored.reviewedRuntime());
+            assertEquals(Optional.of(List.of()), restored.reviewedDataPaths());
+            assertTrue(restored.reviewedResourceBindings().isEmpty(),
+                    "v9 rows must remain explicitly unavailable instead of inventing managed bindings");
+        }
+        try (Connection connection = DriverManager.getConnection("jdbc:sqlite:" + databaseFile);
+             Statement statement = connection.createStatement();
+             var version = statement.executeQuery("PRAGMA user_version")) {
+            assertTrue(version.next());
+            assertEquals(10, version.getInt(1));
         }
     }
 
@@ -394,7 +452,7 @@ class DesktopPersistenceIntegrationTest {
             }
             try (var version = statement.executeQuery("PRAGMA user_version")) {
                 assertTrue(version.next());
-                assertEquals(9, version.getInt(1));
+                assertEquals(10, version.getInt(1));
             }
         }
     }
@@ -556,5 +614,11 @@ class DesktopPersistenceIntegrationTest {
                 Instant.parse("2026-08-22T00:00:00Z"), List.of(
                         new ConfigurationEntry("PORT", ConfigurationScope.RUNTIME,
                                 new ConfigurationValue.Number(18080))));
+    }
+
+    private static ManagedComponentResourceBindings resources(List<ComponentDataPath> paths) {
+        List<ManagedFileBinding> files = java.util.stream.IntStream.range(0, paths.size())
+                .mapToObj(index -> new ManagedFileBinding("file-" + (index + 1), paths.get(index))).toList();
+        return new ManagedComponentResourceBindings(files, Optional.of(List.of()));
     }
 }

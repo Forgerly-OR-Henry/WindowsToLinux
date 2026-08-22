@@ -7,6 +7,8 @@ import gold.debug.windowstolinux.shared.config.contract.definition.Configuration
 import gold.debug.windowstolinux.shared.config.contract.definition.ConfigurationValue;
 import gold.debug.windowstolinux.shared.config.revision.ConfigurationEntry;
 import gold.debug.windowstolinux.shared.config.revision.ConfigurationSnapshot;
+import gold.debug.windowstolinux.shared.config.resource.ManagedDatabaseBinding;
+import gold.debug.windowstolinux.shared.config.resource.ManagedDatabaseConnection;
 import gold.debug.windowstolinux.shared.config.secretref.SecretReference;
 import gold.debug.windowstolinux.shared.model.health.HealthCheck;
 import gold.debug.windowstolinux.shared.model.managed.ManagedApplication;
@@ -33,7 +35,7 @@ class SingleComponentDeploymentPersistenceTest {
     Path temporaryDirectory;
 
     @Test
-    void atomicallyPersistsExactReviewedRuntimeEmptyDataPathsConfigurationAndSecrets() throws Exception {
+    void atomicallyPersistsExactReviewedRuntimeResourcesConfigurationAndSecrets() throws Exception {
         ManagedApplication application = application();
         HealthCheck.Tcp health = new HealthCheck.Tcp(18080, 20, 1);
         DeploymentRuntimeSpecification reviewedRuntime = new DeploymentRuntimeSpecification.NodeService(22, health);
@@ -43,13 +45,15 @@ class SingleComponentDeploymentPersistenceTest {
                 Instant.parse("2026-08-22T00:00:00Z"));
         ConfigurationSnapshot configuration = configuration(application.id());
         SecretReference secret = new SecretReference("database-password", 1);
+        ManagedDatabaseBinding databaseBinding = new ManagedDatabaseBinding("application",
+                new ManagedDatabaseConnection.Sqlite("application.db"));
 
         try (DesktopPersistence persistence = DesktopPersistence.open(temporaryDirectory.resolve("complete"))) {
             persistence.applicationSecrets().saveRevision(new StoredApplicationSecretRevision(secret,
                     "application-secret/database-password/1", CredentialStorageMode.MASTER_PASSWORD,
                     Instant.parse("2026-08-22T00:00:00Z")));
             ReviewedDeploymentUseCase.recordSuccessful(persistence.managedApplicationGraphs(), application, runtime,
-                    release, reviewedRuntime, configuration, List.of(secret));
+                    release, reviewedRuntime, configuration, List.of(secret), Optional.of(List.of(databaseBinding)));
 
             var graph = persistence.managedApplicationGraphs().find(application.id()).orElseThrow();
             assertEquals(application.id(), graph.applicationId());
@@ -60,6 +64,8 @@ class SingleComponentDeploymentPersistenceTest {
             assertEquals(List.of(), component.dependencies());
             assertEquals(Optional.of(reviewedRuntime), component.reviewedRuntime());
             assertEquals(Optional.of(List.of()), component.reviewedDataPaths());
+            assertEquals(Optional.of(List.of(databaseBinding)), component.reviewedResourceBindings()
+                    .orElseThrow().databaseBindings());
             assertEquals(runtime, persistence.managedApplications().findRuntime(application.id()).orElseThrow());
             assertEquals(release, persistence.managedApplications().findRelease(application.id()).orElseThrow());
             assertEquals(configuration, persistence.configurations()
@@ -82,7 +88,8 @@ class SingleComponentDeploymentPersistenceTest {
         try (DesktopPersistence persistence = DesktopPersistence.open(temporaryDirectory.resolve("rollback"))) {
             assertThrows(SQLException.class, () -> ReviewedDeploymentUseCase.recordSuccessful(
                     persistence.managedApplicationGraphs(), application, runtime, release, reviewedRuntime,
-                    configuration(application.id()), List.of(new SecretReference("missing", 1))));
+                    configuration(application.id()), List.of(new SecretReference("missing", 1)),
+                    Optional.of(List.of())));
 
             assertTrue(persistence.managedApplications().find(application.id()).isEmpty());
             assertTrue(persistence.managedApplications().findRelease(application.id()).isEmpty());

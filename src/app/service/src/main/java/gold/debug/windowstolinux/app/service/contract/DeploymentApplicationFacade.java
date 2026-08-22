@@ -6,6 +6,7 @@ import gold.debug.windowstolinux.app.service.deployment.single.DeploymentOutcome
 import gold.debug.windowstolinux.app.service.server.ServerProfile;
 import gold.debug.windowstolinux.app.service.source.ReviewedSourcePreparation;
 import gold.debug.windowstolinux.shared.config.revision.ConfigurationSnapshot;
+import gold.debug.windowstolinux.shared.config.resource.ManagedDatabaseBinding;
 import gold.debug.windowstolinux.shared.config.secretref.SecretReference;
 import gold.debug.windowstolinux.shared.deploy.contract.ReviewedDeploymentPlan;
 import gold.debug.windowstolinux.shared.deploy.contract.ReviewedDeploymentRequest;
@@ -37,9 +38,21 @@ public interface DeploymentApplicationFacade {
 
     ReviewedDeploymentRequest createReviewedDeploymentRequest(
             ReviewedSourcePreparation preparation, ServerIdentity server, ConfigurationSnapshot configuration,
-            List<SecretReference> secretReferences, DeploymentRuntimeSpecification runtime,
+            List<SecretReference> secretReferences, Optional<List<ManagedDatabaseBinding>> databaseBindings,
+            DeploymentRuntimeSpecification runtime,
             Optional<UserAccessUrl> userAccessUrl, BuildLimitConfiguration limits, boolean rootBuildConfirmed,
             boolean containerDaemonRiskAccepted, boolean experimentalAdapterRiskAccepted) throws SQLException;
+
+    /** Creates a request whose database scope has not yet been reviewed. / 创建数据库范围尚未审阅的请求。 */
+    default ReviewedDeploymentRequest createReviewedDeploymentRequest(
+            ReviewedSourcePreparation preparation, ServerIdentity server, ConfigurationSnapshot configuration,
+            List<SecretReference> secretReferences, DeploymentRuntimeSpecification runtime,
+            Optional<UserAccessUrl> userAccessUrl, BuildLimitConfiguration limits, boolean rootBuildConfirmed,
+            boolean containerDaemonRiskAccepted, boolean experimentalAdapterRiskAccepted) throws SQLException {
+        return createReviewedDeploymentRequest(preparation, server, configuration, secretReferences, Optional.empty(),
+                runtime, userAccessUrl, limits, rootBuildConfirmed, containerDaemonRiskAccepted,
+                experimentalAdapterRiskAccepted);
+    }
 
     ReviewedDeploymentPlan planDeployment(ReviewedDeploymentRequest request);
 

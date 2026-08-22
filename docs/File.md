@@ -2,8 +2,8 @@
 
 ## 文档信息
 
-- 文档版本：`3.47.0-schema-v4-activation-bindings`
-- 文档状态：**28-POM 模块边界保持不变；备份 schema v4 已冻结组件发布与精确秘密修订归属，schema v3 仅保留本地检查、候选准备和密码认证；SQLite v9 输入准入、Windows 归档发布、本地候选生命周期及桌面维护认证交接保持完成，远端物理数据映射、候选端口、完整归档采集、生产维护执行器及产品入口实机证据仍标记 `RUNTIME-PENDING`**
+- 文档版本：`3.48.0-managed-resource-bindings`
+- 文档状态：**28-POM 模块边界保持不变；桌面数据根严格沿用运行模式规则，SQLite v10 已原子保存经审阅文件/数据库绑定并区分数据库范围未知与显式为空；备份 schema v4、Windows 归档发布、本地候选生命周期及桌面维护认证交接保持完成，远端物理数据采集、候选端口、完整归档产品入口、生产维护执行器及实机证据仍标记 `RUNTIME-PENDING`**
 - 已确认范围：`shared` 共用模块、`app` Windows 桌面应用模块、`web` Web 应用模块
 - 已确认能力边界：受管应用生命周期复用既有模块，不新增独立 Maven 模块
 - 更新日期：2026-08-22
@@ -43,7 +43,7 @@ WindowsToLinux/
    │  ├─ main/                唯一 AppMain 入口、运行模式和模块装配
    │  │  ├─ diagnostic/       系统级失败、未捕获异常边界及有界本地诊断报告
    │  │  ├─ startup/          桌面应用启动与模块装配
-   │  │  └─ runtime/          RunModeResolver 与 RuntimePathResolver
+   │  │  └─ runtime/          运行模式、应用/data 根解析及其固定本地存储布局
    │  ├─ secret/              存储契约、异常及数据库/Windows 存储实现
    │  │  └─ crypto/           Argon2id、AES-GCM 和密钥处理
    │  ├─ service/             桌面业务流程整合
@@ -153,6 +153,7 @@ WindowsToLinux/
    │  │  ├─ contract/         共用配置规则与契约
    │  │  │  ├─ definition/    类型化配置定义、适用范围和默认规则
    │  │  │  └─ validation/    完整性、兼容性和约束校验
+   │  │  ├─ resource/         经审阅的非秘密文件与数据库绑定
    │  │  ├─ revision/         不可变快照、版本、摘要和差异规则
    │  │  └─ secretref/        不透明秘密引用类型，不读取秘密内容
    │  ├─ deploy/              环境准备与部署流程编排
@@ -1130,6 +1131,25 @@ main    ──→ shared/{model,git,analyze,ai,config,linux,linux-sshd,deploy,ba
 - 不得静默回退到用户目录、临时目录或其他位置，避免同一安装出现多个不一致的数据副本。
 - APP 模式下数据始终跟随 EXE 安装目录；升级和卸载时按四期文档定义的规则处理。
 
+解析完成后的本地持久化结构固定如下；该结构不改变上述三种运行模式的根目录规则：
+
+```text
+<resolved-data>/
+├─ windowstolinux.db
+├─ managed-applications/
+│  └─ <application-id>/
+│     ├─ files/<binding-id>/
+│     └─ databases/<database-id>/
+├─ work/
+├─ backups/
+└─ diagnostics/
+```
+
+- `main` 只能从 `RunModeResolver` 已解析的唯一 `data` 根派生这些固定子项；不得写死 `/var/lib`、Windows 盘符、用户目录或临时目录，也不得新增覆盖入口或静默回退。
+- `files/<binding-id>` 使用稳定受管标识寻址；分析得到的逻辑 `ComponentDataPath` 作为经审阅元数据保存，不得直接拼成桌面物理路径。
+- SQLite 文件只允许位于 `databases/<database-id>/` 下并使用已校验的普通文件名。PostgreSQL、MySQL 和 MariaDB 只保存非秘密端点、库名、用户名、TLS 要求及精确 `SecretReference`，不保存密码值。
+- 该目录是 Windows 桌面控制面的本地持久化和工作结构，不是目标 Linux 的远端资源目录。远端文件、卷、数据库导出和恢复路径仍必须由后续产品流程显式收集、验证和映射。
+
 ## 7. Git 项目准备边界
 
 Git 项目进入分析和部署流程前，由 `git` 模块统一准备：
@@ -1230,7 +1250,7 @@ linux-sshd 通过 linux 契约采集服务器已有环境
 18. 类型化部署分析必须把确定的源码元数据作为可审阅的 `DeploymentRuntimeAssessment` 返回，而非由桌面表单写死语言版本、入口、产物目录、端口或卷。仅在值唯一、受支持、边界安全且具有 `AnalysisEvidence` 时才可回填；范围、冲突、任意脚本和文档文字只能作为未解决的用户输入，绝不转换为命令。
 19. 本地目录和 Git 来源都必须在 `app/service/source` 汇合为同一 `ReviewedSourcePreparation`，并以归档摘要绑定 `SourceRevision`。网络 Git 来源必须使用无凭据 URI、允许主机、固定 Commit 和受控工作目录；桌面 UI 不得调用 Git 进程、数据库或秘密存储实现。
 20. `DeploymentAnalysisCoordinator` 不得导入具体项目类型实现；`ProjectLanguageInspector` 只负责组合确定性的语言事实检查器。低层语言与构建 Inspector 不得修改调用方提供的拒绝集合，生产包与测试包必须镜像，包依赖不得成环，且不得恢复按阶段或宽泛类别聚合实现的包。`deploy.plan` 不得构造具体适配器，`linux.connection` 不得保存异常或组合会话，`linux-sshd.connection` 不得保存 command 或总会话；禁止以兼容壳保留旧类型。
-21. 用户可见和持久化语义统一使用“发布身份摘要”（`release_sha256`）；“制品”仅描述构建过程中待验证的文件，不得再把已发布身份称为制品摘要。桌面 SQLite 当前 schema 为 v9；v5 保留发布身份语义，v6 增加受约束的 AI 角色到命名 Provider 外键，v7 增加成功整应用的组件/依赖图并与全部组件发布状态原子提交，v8 为每个新成功组件原子保存有界版本化的完整非秘密已审阅运行时，v9 继续在同一成功事务中保存有界版本化的 `ComponentDataPath` 清单，并把实际使用的不可变配置修订与发布身份精确绑定。新部署的显式空路径清单与 v8 旧图的缺失值必须可区分；v7/v8 历史发布不得被迁移逻辑绑定到任意“最新配置”。生命周期可继续使用缺失清单的旧图，但备份创建不得根据目标机路径、观测、默认值或较新配置猜测运行时、数据归属或历史发布配置；v4 的 `artifact_sha256` 已通过列重命名无损迁移并继续表示既有发布身份。
+21. 用户可见和持久化语义统一使用“发布身份摘要”（`release_sha256`）；“制品”仅描述构建过程中待验证的文件，不得再把已发布身份称为制品摘要。桌面 SQLite 当前 schema 为 v10；v5 保留发布身份语义，v6 增加受约束的 AI 角色到命名 Provider 外键，v7 增加成功整应用的组件/依赖图并与全部组件发布状态原子提交，v8 原子保存完整非秘密已审阅运行时，v9 保存有界版本化的 `ComponentDataPath` 清单并精确绑定发布配置，v10 再把稳定文件绑定和 SQLite/PostgreSQL/MySQL/MariaDB 数据库绑定作为严格版本化非秘密载荷原子保存。数据库状态必须区分“尚未审阅”和“已审阅且显式为空”；服务器数据库密码只允许以本次部署已审阅的精确 `SecretReference` 出现。文件逻辑路径不得充当桌面物理目录，数据库绑定变化必须进入发布身份摘要。新部署的显式空状态与旧 schema 的缺失值可区分；v7-v9 历史发布不得由迁移逻辑补猜资源绑定或绑定到任意“最新配置”。生命周期可继续使用缺失绑定的旧图，但备份创建必须报告缺失，不得根据目标机路径、观测、默认值或较新配置猜测运行时、数据归属、数据库范围或历史发布配置；v4 的 `artifact_sha256` 已通过列重命名无损迁移并继续表示既有发布身份。
 22. `DeploymentSupportProfile` 是语言、框架、支持等级与真实验收目标范围的唯一共享声明；`RECOGNITION_PREVIEW` 只能由 `analyze` 读取有界路径和固定元数据，必须使用 `NONE_PREVIEW`，不得创建源码归档、部署适配器、远端构建渲染器、helper 参数或生命周期入口。Shell 文件只可作为识别证据，不能转换成命令。
 23. `PackageStructureArchitectureTest` 使用 JDK 编译器 AST、物理路径和生产导入图自动检查文件与顶级类型同名、仓库级顶级类型唯一性、顶级及嵌套枚举语义后缀、禁限用词及封闭例外、资源文件名、复数后缀、缩写、测试后缀、模块根包以下最多三层、五个功能组及合法职责、远程契约和领域模型例外、语言/构建架构/发行版分类轴、禁用包名、全部包依赖环、测试包镜像、职责映射、反向依赖、旧 FQCN、旧物理包、旧 helper 资源路径、已删除包装类以及唯一 `AppMain.main`。门禁不设置总包数或单包类型数量硬上限，不得通过文本豁免隐藏结构回归；通过结果只证明当前本地静态结构，不构成新的 Linux 运行证据。
 24. 每个可进入计划的源码路径必须产生一个精确 `DeploymentArchitectureType`，由 `DeploymentProjectType × DeploymentBuildToolType` 唯一标识；分析注册表、构建 Renderer 注册表、主机生态工具版本和运行时能力判断必须对该身份闭合，禁止恢复宽泛构建工具身份或以参数化 Renderer 隐藏架构差异。新增身份在逐目标产品入口证据完成前保持试验适配或 `RUNTIME-PENDING`。
@@ -1239,6 +1259,7 @@ linux-sshd 通过 linux 契约采集服务器已有环境
 
 | 版本 | 日期 | 说明 |
 | --- | --- | --- |
+| 3.48.0-managed-resource-bindings | 2026-08-22 | 桌面本地存储统一从 `RunModeResolver` 的唯一 `data` 根派生 `windowstolinux.db`、`managed-applications`、`work`、`backups` 和 `diagnostics`，不写死平台路径或增加回退。SQLite 升至 v10，新成功部署原子保存稳定文件绑定及 SQLite/PostgreSQL/MySQL/MariaDB 非秘密数据库绑定；数据库范围区分未知与显式为空，服务器密码只保存本次部署已审阅的精确秘密引用，v9 旧图保持资源绑定缺失。数据库绑定进入发布身份摘要，备份准入新增资源/数据库审阅缺失结果；远端物理采集、候选端口与完整归档产品入口仍为 `RUNTIME-PENDING`。完整 28-POM JDK 21 离线门禁通过 393 项测试、0 失败、0 错误、25 项真实环境条件跳过，124 份 Surefire 报告。 |
 | 3.47.0-schema-v4-activation-bindings | 2026-08-22 | 将备份写入格式升级为 schema v4：每组件保存发布 SHA-256 和精确秘密修订，应用发布集合使用依赖顺序、固定域与长度分隔的 SHA-256，应用秘密集合必须等于组件并集；同一标识不同修订可共存。deploy 激活请求携带并独立复核相同身份。schema v3 保留确定性读取、本地检查、候选准备和密码认证，但在远端暂存前失败关闭；v4 排除 `secrets.enc` 时保留元数据但同样不得自动激活。聚焦测试覆盖摘要/并集篡改、规范顺序、v3 往返及适配器直调零远端修改；完整 28-POM JDK 21 离线门禁通过 380 项测试、0 失败、0 错误、25 项真实环境条件跳过，121 份 Surefire 报告。 |
 | 3.46.0-secret-authentication-ui | 2026-08-22 | 将已有 `secrets.enc` 完整认证接入桌面备份页面：独立备份密码只作为短生命周期字符数组进入现有 Argon2id/AES-GCM 用例，输入框立即清空，用例成功或失败均清零调用数组。认证成功后页面只保留不含秘密的本地候选和修订数量，已解码秘密文档在后台任务返回前关闭并清零；备份密码及明文秘密不进入页面状态、输出或日志。JDK 21 完整 28-POM 离线门禁通过 369 项测试、0 失败、0 错误、25 项真实环境条件跳过；该入口只证明本地密码与加密成员匹配，不代表远端恢复。 |
 | 3.45.0-managed-input-ui | 2026-08-22 | 将已有受管备份持久化输入准入接入桌面备份页面：用户输入受管应用标识后，在不连接服务器的情况下逐应用/组件显示整应用图、当前发布、已审阅运行时、数据路径状态、精确发布配置和秘密引用绑定缺失项。完整结果仍明确声明只代表桌面 SQLite 元数据完整，不代表远端文件、卷、数据库或服务定义可归档；应用标识、输出和当前候选在语言/主题重建时共同保留。JDK 21 完整 28-POM 离线门禁通过 368 项测试、0 失败、0 错误、25 项真实环境条件跳过。 |

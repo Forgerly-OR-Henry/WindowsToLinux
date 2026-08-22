@@ -7,6 +7,9 @@ import gold.debug.windowstolinux.shared.config.contract.definition.Configuration
 import gold.debug.windowstolinux.shared.config.contract.definition.ConfigurationValue;
 import gold.debug.windowstolinux.shared.config.revision.ConfigurationEntry;
 import gold.debug.windowstolinux.shared.config.revision.ConfigurationSnapshot;
+import gold.debug.windowstolinux.shared.config.resource.ManagedDatabaseBinding;
+import gold.debug.windowstolinux.shared.config.resource.ManagedDatabaseConnection;
+import gold.debug.windowstolinux.shared.config.resource.ManagedDatabaseEngineType;
 import gold.debug.windowstolinux.shared.config.secretref.SecretReference;
 import gold.debug.windowstolinux.shared.model.analysis.AnalysisEvidence;
 import gold.debug.windowstolinux.shared.model.analysis.EvidenceConfidenceLevel;
@@ -67,6 +70,26 @@ class ReviewedReleaseIdentityResolverTest {
                 () -> springBootRequest(DeploymentBuildToolType.MAVEN_WRAPPER, false));
     }
 
+    @Test
+    void coversReviewedDatabaseBindingsAndRequiresTheirPasswordReference() {
+        SecretReference password = new SecretReference("database-password", 3);
+        ReviewedDeploymentRequest baseline = request(1, List.of(password), 8080);
+        ManagedDatabaseBinding postgres = new ManagedDatabaseBinding("orders",
+                new ManagedDatabaseConnection.Server(ManagedDatabaseEngineType.POSTGRESQL, "db.internal", 5432,
+                        "orders", "application", password, true));
+        ReviewedDeploymentRequest reviewed = withDatabases(baseline, Optional.of(List.of(postgres)));
+
+        assertNotEquals(ReviewedReleaseIdentityResolver.from(baseline),
+                ReviewedReleaseIdentityResolver.from(reviewed));
+        assertNotEquals(ReviewedReleaseIdentityResolver.from(reviewed),
+                ReviewedReleaseIdentityResolver.from(withDatabases(baseline, Optional.of(List.of(
+                        new ManagedDatabaseBinding("orders", new ManagedDatabaseConnection.Server(
+                                ManagedDatabaseEngineType.POSTGRESQL, "db.internal", 5433, "orders", "application",
+                                password, true)))))));
+        assertThrows(IllegalArgumentException.class,
+                () -> withDatabases(request(1, List.of(), 8080), Optional.of(List.of(postgres))));
+    }
+
     private ReviewedDeploymentRequest request(long revision, List<SecretReference> secrets, int port) {
         ServerIdentity server = new ServerIdentity("server-one", "example.test", 22, "SHA256:fixture");
         DeploymentProjectFacts facts = new DeploymentProjectFacts(temporaryDirectory, "demo",
@@ -82,6 +105,14 @@ class ReviewedReleaseIdentityResolverTest {
                 new SourceArchiveDescriptor(temporaryDirectory.resolve("source.tar.gz"), SOURCE, 100, 100),
                 configuration, secrets, runtime, Optional.empty(), BuildLimitConfiguration.defaultNonRoot(),
                 new DeploymentApproval("demo", SOURCE, "server-one", false, Instant.EPOCH), false);
+    }
+
+    private static ReviewedDeploymentRequest withDatabases(ReviewedDeploymentRequest request,
+                                                            Optional<List<ManagedDatabaseBinding>> databases) {
+        return new ReviewedDeploymentRequest(request.server(), request.facts(), request.sourceRevision(),
+                request.archive(), request.configuration(), request.secretReferences(), databases, request.runtime(),
+                request.userAccessUrl(), request.limits(), request.approval(), request.containerDaemonRiskAccepted(),
+                request.experimentalAdapterRiskAccepted());
     }
 
     private ReviewedDeploymentRequest springBootRequest(DeploymentBuildToolType buildTool) {

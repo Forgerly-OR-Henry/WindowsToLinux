@@ -113,11 +113,14 @@ public final class MultiComponentDeploymentUseCase {
             var application = ManagedApplicationIdentityResolver.resolve(applications, source.facts().applicationId(), server);
             ReviewedDeploymentRequest request = new ReviewedDeploymentRequest(server, source.facts(),
                     source.sourceRevision(), source.archive(), input.configuration(), input.secretReferences(),
+                    input.databaseBindings(),
                     component.runtime().orElseThrow(), input.userAccessUrl(), input.limits(),
                     new DeploymentApproval(application.id(), source.archive().contentSha256(), server.id(),
                             input.limits().runAsRoot(), Instant.now()),
                     input.containerDaemonRiskAccepted(), input.experimentalAdapterRiskAccepted());
-            reviewed.add(new ReviewedComponentApplication(componentId, request, application, component.dataPaths()));
+            reviewed.add(new ReviewedComponentApplication(componentId, request, application,
+                    ReviewedComponentApplication.resourceBindings(componentId, component.dataPaths(),
+                            input.databaseBindings())));
         }
         return new ReviewedMultiComponentApplication(plan, reviewed, applicationHealth);
     }
@@ -230,7 +233,9 @@ public final class MultiComponentDeploymentUseCase {
                         byApplication.get(component.application().id()).runtimeConfiguration(),
                         review.plan().dependencies().get(component.componentId()),
                         Optional.of(component.request().runtime()),
-                        Optional.of(component.dataPaths()))).toList();
+                        Optional.of(component.resourceBindings().fileBindings().stream()
+                                .map(binding -> binding.dataPath()).toList()),
+                        Optional.of(component.resourceBindings()))).toList();
         graphs.recordSuccessfulApplication(new ManagedApplicationGraph(review.plan().applicationId(),
                 review.applicationHealth().componentId(), components), deployments);
     }

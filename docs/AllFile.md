@@ -41,7 +41,8 @@ src/  # 项目源码与模块根目录
 │  │  │  │  └─ ServerProfileRepository.java  # 保存服务器信任身份与不含凭据的连接资料
 │  │  │  └─ serialization/  # SQLite 中复杂类型的严格版本化序列化
 │  │  │     ├─ ComponentPathPersistenceCodec.java  # 编解码成功部署时已审阅且不含秘密的数据路径清单
-│  │  │     └─ DeploymentRuntimePersistenceCodec.java  # 编解码成功部署时已审阅且不含秘密的运行时定义
+│  │  │     ├─ DeploymentRuntimePersistenceCodec.java  # 编解码成功部署时已审阅且不含秘密的运行时定义
+│  │  │     └─ ManagedResourcePersistenceCodec.java  # 编解码稳定文件绑定及未知或显式审阅的非秘密数据库绑定
 │  │  ├─ pom.xml  # 配置 SQLite 数据访问模块的依赖和构建
 │  ├─ main/  # 桌面应用入口与模块装配模块
 │  │  ├─ AppMain.java  # WindowsToLinux 桌面应用入口
@@ -52,6 +53,7 @@ src/  # 项目源码与模块根目录
 │  │  │  └─ DesktopUncaughtFailureBoundary.java  # 捕获线程边界失败并对 JVM 致命错误尽力记录后退出
 │  │  ├─ pom.xml  # 配置桌面应用唯一入口与模块装配模块的依赖和构建
 │  │  ├─ runtime/  # 本地运行布局与路径解析包
+│  │  │  ├─ DesktopStorageLayout.java  # 从唯一运行模式 data 根派生数据库、受管应用、工作、备份和诊断路径
 │  │  │  ├─ RunModeResolver.java  # 为受支持的开发、JAR 和 jpackage 布局解析应用主目录及其固定 data 目录
 │  │  │  └─ RuntimePathResolver.java  # 定位并验证受支持的开发、JAR 与 jpackage 文件系统布局
 │  │  └─ startup/  # 桌面启动与窗口装配包
@@ -507,6 +509,12 @@ src/  # 项目源码与模块根目录
 │  │  │     ├─ ConfigurationScope.java  # 非秘密配置值被使用的受限时点
 │  │  │     └─ ConfigurationValue.java  # 类型化的非秘密配置值，不能携带 Shell 片段
 │  │  ├─ pom.xml  # 配置类型化配置定义与校验模块的依赖和构建
+│  │  ├─ resource/  # 经审阅的非秘密受管资源绑定包
+│  │  │  ├─ ManagedComponentResourceBindings.java  # 组合稳定文件绑定及未知或显式审阅的数据库范围
+│  │  │  ├─ ManagedDatabaseBinding.java  # 将稳定数据库标识绑定到一个非秘密连接
+│  │  │  ├─ ManagedDatabaseConnection.java  # SQLite 文件或服务器数据库端点及精确密码秘密引用
+│  │  │  ├─ ManagedDatabaseEngineType.java  # SQLite、PostgreSQL、MySQL 与 MariaDB 数据库类型
+│  │  │  └─ ManagedFileBinding.java  # 将稳定本地受管标识绑定到已审阅逻辑数据路径
 │  │  ├─ revision/  # 不可变配置快照与修订包
 │  │  │  ├─ ConfigurationEntry.java  # 不可变配置快照中的一个经过类型检查的非秘密值
 │  │  │  ├─ ConfigurationSnapshot.java  # 一个已发布应用版本的不可变、以摘要寻址的普通配置

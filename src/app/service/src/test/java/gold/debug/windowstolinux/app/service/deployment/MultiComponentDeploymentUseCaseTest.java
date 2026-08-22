@@ -89,7 +89,9 @@ class MultiComponentDeploymentUseCaseTest {
                         componentReview.application(), runtime,
                         review.plan().dependencies().get(componentReview.componentId()),
                         Optional.of(componentReview.request().runtime()),
-                        Optional.of(componentReview.dataPaths())));
+                        Optional.of(componentReview.resourceBindings().fileBindings().stream()
+                                .map(binding -> binding.dataPath()).toList()),
+                        Optional.of(componentReview.resourceBindings())));
             }
             persistence.managedApplicationGraphs().recordSuccessfulApplication(
                     new ManagedApplicationGraph("shop", "web", durableComponents), successful);

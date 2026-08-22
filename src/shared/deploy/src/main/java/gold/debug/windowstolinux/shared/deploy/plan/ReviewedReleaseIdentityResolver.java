@@ -1,6 +1,7 @@
 package gold.debug.windowstolinux.shared.deploy.plan;
 
 import gold.debug.windowstolinux.shared.config.secretref.SecretReference;
+import gold.debug.windowstolinux.shared.config.resource.ManagedDatabaseConnection;
 import gold.debug.windowstolinux.shared.deploy.contract.ReviewedDeploymentRequest;
 import gold.debug.windowstolinux.shared.model.health.HealthCheck;
 import gold.debug.windowstolinux.shared.model.project.DeploymentRuntimeSpecification;
@@ -15,11 +16,11 @@ import java.util.HexFormat;
 public final class ReviewedReleaseIdentityResolver {
     private ReviewedReleaseIdentityResolver() { }
 
-    /** Returns a deterministic release SHA-256 covering source, configuration, secrets, and runtime. / 返回覆盖源码、配置、秘密与运行时的确定性发布 SHA-256。 */
+    /** Returns a deterministic release SHA-256 covering source, configuration, database bindings, secrets, and runtime. / 返回覆盖源码、配置、数据库绑定、秘密与运行时的确定性发布 SHA-256。 */
     public static String from(ReviewedDeploymentRequest request) {
         try {
             MessageDigest digest = MessageDigest.getInstance("SHA-256");
-            update(digest, "reviewed-release-v2");
+            update(digest, "reviewed-release-v3");
             update(digest, request.sourceRevision().sourceSha256());
             update(digest, request.facts().buildTool().name());
             update(digest, request.configuration().sha256());
@@ -29,6 +30,7 @@ public final class ReviewedReleaseIdentityResolver {
                         update(digest, reference.identifier());
                         update(digest, Long.toString(reference.revision()));
                     });
+            databaseBindings(digest, request);
             runtime(digest, request.runtime());
             return HexFormat.of().formatHex(digest.digest());
         } catch (NoSuchAlgorithmException exception) {
@@ -87,6 +89,30 @@ public final class ReviewedReleaseIdentityResolver {
                     service(digest, "cmake", service.preset(), service.target(), service.artifactName(), null);
         }
         health(digest, runtime.healthCheck());
+    }
+
+    private static void databaseBindings(MessageDigest digest, ReviewedDeploymentRequest request) {
+        if (request.databaseBindings().isEmpty()) {
+            update(digest, "database-bindings-unreviewed");
+            return;
+        }
+        update(digest, "database-bindings-reviewed");
+        request.databaseBindings().orElseThrow().forEach(binding -> {
+            update(digest, binding.databaseId());
+            update(digest, binding.connection().engine().name());
+            if (binding.connection() instanceof ManagedDatabaseConnection.Sqlite sqlite) {
+                update(digest, sqlite.fileName());
+                return;
+            }
+            ManagedDatabaseConnection.Server server = (ManagedDatabaseConnection.Server) binding.connection();
+            update(digest, server.host());
+            update(digest, Integer.toString(server.port()));
+            update(digest, server.database());
+            update(digest, server.username());
+            update(digest, server.passwordReference().identifier());
+            update(digest, Long.toString(server.passwordReference().revision()));
+            update(digest, Boolean.toString(server.tlsRequired()));
+        });
     }
 
     private static void service(MessageDigest digest, String ecosystem, String version, String artifact, String entrypoint,

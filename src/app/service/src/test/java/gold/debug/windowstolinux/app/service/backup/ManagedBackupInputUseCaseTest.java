@@ -10,6 +10,7 @@ import gold.debug.windowstolinux.shared.config.contract.definition.Configuration
 import gold.debug.windowstolinux.shared.config.contract.definition.ConfigurationValue;
 import gold.debug.windowstolinux.shared.config.revision.ConfigurationEntry;
 import gold.debug.windowstolinux.shared.config.revision.ConfigurationSnapshot;
+import gold.debug.windowstolinux.shared.config.resource.ManagedComponentResourceBindings;
 import gold.debug.windowstolinux.shared.config.secretref.SecretReference;
 import gold.debug.windowstolinux.shared.model.health.HealthCheck;
 import gold.debug.windowstolinux.shared.model.managed.ManagedApplication;
@@ -74,9 +75,25 @@ class ManagedBackupInputUseCaseTest {
             assertFalse(assessment.persistedInputsComplete());
             assertEquals(List.of(), assessment.applicationMissingInputs());
             assertEquals(List.of(MissingInputType.REVIEWED_RUNTIME, MissingInputType.REVIEWED_DATA_PATHS,
+                            MissingInputType.REVIEWED_RESOURCE_BINDINGS,
                             MissingInputType.RELEASE_CONFIGURATION, MissingInputType.RELEASE_SECRET_REFERENCES),
                     assessment.componentMissingInputs().get("demo"));
             assertEquals(input.release().releaseSha256(), assessment.currentReleaseIdentities().get("demo"));
+        }
+    }
+
+    @Test
+    void distinguishesUnreviewedDatabaseScopeFromAnExplicitlyDatabaseFreeRelease() throws Exception {
+        try (DesktopPersistence persistence = DesktopPersistence.open(temporaryDirectory.resolve("database-unknown"))) {
+            persist(persistence, "demo", "e".repeat(64), Optional.empty());
+
+            ManagedBackupInputAssessment assessment = new ManagedBackupInputUseCase(
+                    persistence.managedApplicationGraphs(), persistence.managedApplications(),
+                    persistence.configurations(), persistence.applicationSecrets()).assess("demo");
+
+            assertFalse(assessment.persistedInputsComplete());
+            assertEquals(List.of(MissingInputType.REVIEWED_DATABASE_BINDINGS),
+                    assessment.componentMissingInputs().get("demo"));
         }
     }
 
@@ -96,6 +113,13 @@ class ManagedBackupInputUseCaseTest {
 
     private static PersistedInput persistComplete(DesktopPersistence persistence, String applicationId,
                                                    String releaseIdentity) throws Exception {
+        return persist(persistence, applicationId, releaseIdentity, Optional.of(List.of()));
+    }
+
+    private static PersistedInput persist(DesktopPersistence persistence, String applicationId,
+                                          String releaseIdentity,
+                                          Optional<List<gold.debug.windowstolinux.shared.config.resource.ManagedDatabaseBinding>>
+                                                  databaseBindings) throws Exception {
         ServerIdentity server = new ServerIdentity("server-one", "192.0.2.10", 22,
                 "SHA256:AAAAAAAAAAAA");
         ManagedApplication application = ManagedApplication.forManaged(applicationId, server, "a".repeat(64));
@@ -113,7 +137,8 @@ class ManagedBackupInputUseCaseTest {
                 "application-secret/database-password/1", CredentialStorageMode.MASTER_PASSWORD,
                 Instant.parse("2026-08-22T00:00:00Z")));
         var component = new ManagedApplicationGraph.Component(applicationId, application, runtime, List.of(),
-                Optional.of(reviewedRuntime), Optional.of(List.of()));
+                Optional.of(reviewedRuntime), Optional.of(List.of()),
+                Optional.of(new ManagedComponentResourceBindings(List.of(), databaseBindings)));
         persistence.managedApplicationGraphs().recordSuccessfulApplication(
                 new ManagedApplicationGraph(applicationId, applicationId, List.of(component)),
                 List.of(new SuccessfulManagedDeployment(application, runtime, release, configuration,
@@ -125,7 +150,8 @@ class ManagedBackupInputUseCaseTest {
         try (var connection = DriverManager.getConnection("jdbc:sqlite:" + database.toAbsolutePath());
              var statement = connection.createStatement()) {
             statement.executeUpdate("UPDATE managed_application_graph_component "
-                    + "SET reviewed_runtime=NULL, reviewed_data_paths=NULL WHERE application_id='demo'");
+                    + "SET reviewed_runtime=NULL, reviewed_data_paths=NULL, reviewed_resource_bindings=NULL "
+                    + "WHERE application_id='demo'");
             statement.executeUpdate("DELETE FROM application_release_configuration_binding "
                     + "WHERE application_id='demo' AND release_identity='" + input.release().releaseSha256() + "'");
             statement.executeUpdate("DELETE FROM application_release_secret_reference "

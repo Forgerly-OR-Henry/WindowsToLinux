@@ -5,6 +5,7 @@ import gold.debug.windowstolinux.app.db.entity.ManagedApplicationGraph;
 import gold.debug.windowstolinux.app.db.entity.SuccessfulManagedDeployment;
 import gold.debug.windowstolinux.app.db.persistence.serialization.ComponentPathPersistenceCodec;
 import gold.debug.windowstolinux.app.db.persistence.serialization.DeploymentRuntimePersistenceCodec;
+import gold.debug.windowstolinux.app.db.persistence.serialization.ManagedResourcePersistenceCodec;
 
 import java.sql.Connection;
 import java.sql.PreparedStatement;
@@ -23,6 +24,7 @@ import java.util.Set;
 public final class ManagedApplicationGraphRepository {
     private static final DeploymentRuntimePersistenceCodec RUNTIME_CODEC = new DeploymentRuntimePersistenceCodec();
     private static final ComponentPathPersistenceCodec DATA_PATH_CODEC = new ComponentPathPersistenceCodec();
+    private static final ManagedResourcePersistenceCodec RESOURCE_CODEC = new ManagedResourcePersistenceCodec();
     private final DesktopConnectionFactory connections;
 
     /** Creates the focused graph repository. / 创建聚焦的图仓库。 */
@@ -43,7 +45,8 @@ public final class ManagedApplicationGraphRepository {
                 || graph.components().stream().anyMatch(component -> !component.runtimeConfiguration().equals(
                         byApplication.get(component.application().id()).runtimeConfiguration()))
                 || graph.components().stream().anyMatch(component -> component.reviewedRuntime().isEmpty()
-                        || component.reviewedDataPaths().isEmpty())) {
+                        || component.reviewedDataPaths().isEmpty()
+                        || component.reviewedResourceBindings().isEmpty())) {
             throw new IllegalArgumentException("successful deployments must exactly match the managed application graph");
         }
         try (Connection connection = connections.open()) {
@@ -75,7 +78,7 @@ public final class ManagedApplicationGraphRepository {
                            s.id AS server_id, s.host, s.ssh_port, s.host_key_sha256,
                            r.health_kind, r.http_endpoint, r.http_expected_status, r.tcp_port,
                            r.health_timeout_seconds, r.tcp_stability_seconds, r.user_access_url,
-                           gc.reviewed_runtime, gc.reviewed_data_paths
+                           gc.reviewed_runtime, gc.reviewed_data_paths, gc.reviewed_resource_bindings
                     FROM managed_application_graph_component gc
                     JOIN managed_application a ON a.id=gc.managed_application_id
                     JOIN server s ON s.id=a.server_id
@@ -108,10 +111,20 @@ public final class ManagedApplicationGraphRepository {
                                 throw new SQLException("stored reviewed data-path definition is invalid", exception);
                             }
                         }
+                        byte[] storedResourceBindings = result.getBytes("reviewed_resource_bindings");
+                        Optional<gold.debug.windowstolinux.shared.config.resource.ManagedComponentResourceBindings>
+                                reviewedResourceBindings = Optional.empty();
+                        if (storedResourceBindings != null) {
+                            try {
+                                reviewedResourceBindings = Optional.of(RESOURCE_CODEC.read(storedResourceBindings));
+                            } catch (java.io.IOException exception) {
+                                throw new SQLException("stored reviewed resource-binding definition is invalid", exception);
+                            }
+                        }
                         components.add(new ManagedApplicationGraph.Component(componentId,
                                 ManagedApplicationRepository.readApplication(result),
                                 runtimeConfiguration, dependencies.getOrDefault(componentId, List.of()),
-                                reviewedRuntime, reviewedDataPaths));
+                                reviewedRuntime, reviewedDataPaths, reviewedResourceBindings));
                     }
                 }
             }
@@ -148,8 +161,9 @@ public final class ManagedApplicationGraphRepository {
     private static void insertComponents(Connection connection, ManagedApplicationGraph graph) throws SQLException {
         try (PreparedStatement statement = connection.prepareStatement("""
                 INSERT INTO managed_application_graph_component (
-                    application_id, component_id, managed_application_id, reviewed_runtime, reviewed_data_paths
-                ) VALUES (?, ?, ?, ?, ?)
+                    application_id, component_id, managed_application_id, reviewed_runtime, reviewed_data_paths,
+                    reviewed_resource_bindings
+                ) VALUES (?, ?, ?, ?, ?, ?)
                 """)) {
             for (ManagedApplicationGraph.Component component : graph.components()) {
                 statement.setString(1, graph.applicationId());
@@ -158,8 +172,9 @@ public final class ManagedApplicationGraphRepository {
                 try {
                     statement.setBytes(4, RUNTIME_CODEC.write(component.reviewedRuntime().orElseThrow()));
                     statement.setBytes(5, DATA_PATH_CODEC.write(component.reviewedDataPaths().orElseThrow()));
+                    statement.setBytes(6, RESOURCE_CODEC.write(component.reviewedResourceBindings().orElseThrow()));
                 } catch (java.io.IOException exception) {
-                    throw new SQLException("reviewed runtime or data-path definition cannot be persisted", exception);
+                    throw new SQLException("reviewed runtime, data-path or resource-binding definition cannot be persisted", exception);
                 }
                 statement.addBatch();
             }

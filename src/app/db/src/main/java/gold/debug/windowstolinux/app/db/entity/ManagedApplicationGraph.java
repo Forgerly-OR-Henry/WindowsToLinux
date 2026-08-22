@@ -4,6 +4,7 @@ import gold.debug.windowstolinux.shared.model.managed.ManagedApplication;
 import gold.debug.windowstolinux.shared.model.managed.ManagedApplicationRuntimeConfiguration;
 import gold.debug.windowstolinux.shared.model.project.DeploymentRuntimeSpecification;
 import gold.debug.windowstolinux.shared.model.project.component.ComponentDataPath;
+import gold.debug.windowstolinux.shared.config.resource.ManagedComponentResourceBindings;
 
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -49,7 +50,8 @@ public record ManagedApplicationGraph(
             ManagedApplicationRuntimeConfiguration runtimeConfiguration,
             List<String> dependencies,
             Optional<DeploymentRuntimeSpecification> reviewedRuntime,
-            Optional<List<ComponentDataPath>> reviewedDataPaths
+            Optional<List<ComponentDataPath>> reviewedDataPaths,
+            Optional<ManagedComponentResourceBindings> reviewedResourceBindings
     ) {
         /** Validates the component without accepting build or secret values. / 验证组件且不接受构建值或秘密值。 */
         public Component {
@@ -62,6 +64,7 @@ public record ManagedApplicationGraph(
                     .map(values -> List.copyOf(values.stream()
                             .map(value -> Objects.requireNonNull(value, "reviewed data path"))
                             .sorted(java.util.Comparator.comparing(ComponentDataPath::path)).toList()));
+            reviewedResourceBindings = Objects.requireNonNull(reviewedResourceBindings, "reviewedResourceBindings");
             if (dependencies.stream().distinct().count() != dependencies.size()
                     || dependencies.contains(componentId)) {
                 throw new IllegalArgumentException("managed component dependencies must be unique and non-self");
@@ -74,6 +77,23 @@ public record ManagedApplicationGraph(
                     .map(ComponentDataPath::path).distinct().count() != reviewedDataPaths.orElseThrow().size()) {
                 throw new IllegalArgumentException("reviewed component data paths must be unique");
             }
+            if (reviewedResourceBindings.isPresent()) {
+                List<ComponentDataPath> boundPaths = reviewedResourceBindings.orElseThrow().fileBindings().stream()
+                        .map(binding -> binding.dataPath())
+                        .sorted(java.util.Comparator.comparing(ComponentDataPath::path)).toList();
+                if (reviewedDataPaths.isEmpty() || !boundPaths.equals(reviewedDataPaths.orElseThrow())) {
+                    throw new IllegalArgumentException("managed file bindings must exactly cover reviewed data paths");
+                }
+            }
+        }
+
+        /** Creates a schema-v9 component whose reviewed resource bindings were never persisted. / 创建未曾持久化审阅资源绑定的 schema-v9 组件。 */
+        public Component(String componentId, ManagedApplication application,
+                         ManagedApplicationRuntimeConfiguration runtimeConfiguration, List<String> dependencies,
+                         Optional<DeploymentRuntimeSpecification> reviewedRuntime,
+                         Optional<List<ComponentDataPath>> reviewedDataPaths) {
+            this(componentId, application, runtimeConfiguration, dependencies, reviewedRuntime, reviewedDataPaths,
+                    Optional.empty());
         }
 
         /** Creates a schema-v8 component whose reviewed data paths were never persisted. / 创建未曾持久化审阅数据路径的 schema-v8 组件。 */

@@ -42,6 +42,7 @@ import gold.debug.windowstolinux.app.service.backup.PreparedBackupCandidate;
 import gold.debug.windowstolinux.app.service.backup.PreparedBackupSecrets;
 import gold.debug.windowstolinux.app.db.entity.StoredApplicationSecretRevision;
 import gold.debug.windowstolinux.shared.config.revision.ConfigurationSnapshot;
+import gold.debug.windowstolinux.shared.config.resource.ManagedDatabaseBinding;
 import gold.debug.windowstolinux.shared.config.secretref.SecretReference;
 import gold.debug.windowstolinux.app.windows.workspace.WindowsSourcePreparer;
 import gold.debug.windowstolinux.shared.analyze.core.DeploymentAnalysisCoordinator;
@@ -264,12 +265,28 @@ public final class DesktopApplicationFacade implements AiApplicationFacade, Depl
     /** Creates a reviewed request bound to the desktop-managed application identity. / 创建绑定到桌面受管应用身份的经审阅请求。 */
     public ReviewedDeploymentRequest createReviewedDeploymentRequest(
             ReviewedSourcePreparation preparation, ServerIdentity server, ConfigurationSnapshot configuration,
-            List<SecretReference> secretReferences, gold.debug.windowstolinux.shared.model.project.DeploymentRuntimeSpecification runtime,
+            List<SecretReference> secretReferences, Optional<List<ManagedDatabaseBinding>> databaseBindings,
+            gold.debug.windowstolinux.shared.model.project.DeploymentRuntimeSpecification runtime,
             Optional<UserAccessUrl> userAccessUrl, BuildLimitConfiguration limits, boolean rootBuildConfirmed,
             boolean containerDaemonRiskAccepted, boolean experimentalAdapterRiskAccepted
     ) throws SQLException {
-        return reviewedDeployment.createRequest(preparation, server, configuration, secretReferences, runtime, userAccessUrl, limits,
+        return reviewedDeployment.createRequest(preparation, server, configuration, secretReferences, databaseBindings,
+                        runtime, userAccessUrl, limits,
                         rootBuildConfirmed, containerDaemonRiskAccepted, experimentalAdapterRiskAccepted);
+    }
+
+    /** Creates a request whose database scope has not yet been reviewed. / 创建数据库范围尚未审阅的请求。 */
+    @Override
+    public ReviewedDeploymentRequest createReviewedDeploymentRequest(
+            ReviewedSourcePreparation preparation, ServerIdentity server, ConfigurationSnapshot configuration,
+            List<SecretReference> secretReferences,
+            gold.debug.windowstolinux.shared.model.project.DeploymentRuntimeSpecification runtime,
+            Optional<UserAccessUrl> userAccessUrl, BuildLimitConfiguration limits, boolean rootBuildConfirmed,
+            boolean containerDaemonRiskAccepted, boolean experimentalAdapterRiskAccepted
+    ) throws SQLException {
+        return DeploymentApplicationFacade.super.createReviewedDeploymentRequest(preparation, server, configuration,
+                secretReferences, runtime, userAccessUrl, limits, rootBuildConfirmed,
+                containerDaemonRiskAccepted, experimentalAdapterRiskAccepted);
     }
 
     /** Creates a request that cannot enter an experimental adapter. / 创建不能进入试验适配器的请求。 */

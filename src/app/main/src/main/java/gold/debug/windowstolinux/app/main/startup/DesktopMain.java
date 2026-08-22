@@ -6,6 +6,7 @@ import gold.debug.windowstolinux.app.main.diagnostic.DesktopStartupException;
 import gold.debug.windowstolinux.app.main.diagnostic.DesktopSystemFailureType;
 import gold.debug.windowstolinux.app.main.diagnostic.DesktopUncaughtFailureBoundary;
 import gold.debug.windowstolinux.app.main.runtime.RunModeResolver;
+import gold.debug.windowstolinux.app.main.runtime.DesktopStorageLayout;
 import gold.debug.windowstolinux.app.service.DesktopApplicationFacade;
 import gold.debug.windowstolinux.app.ui.diagnostic.DesktopFailurePresenter;
 import gold.debug.windowstolinux.app.ui.diagnostic.FailureReportStore;
@@ -32,8 +33,10 @@ public final class DesktopMain {
     public static void launch(String[] arguments) {
         MessageCatalog initialMessages = MessageCatalog.forLanguageTag(Locale.getDefault().toLanguageTag());
         RunModeResolver.RuntimeLayout layout;
+        DesktopStorageLayout dataLayout;
         try {
             layout = RunModeResolver.resolve(DesktopMain.class);
+            dataLayout = DesktopStorageLayout.from(layout.dataDirectory());
         } catch (RuntimeException failure) {
             showStartupFailure(FailureReportStore.disabled(), initialMessages,
                     DesktopStartupException.create(DesktopSystemFailureType.STARTUP_LAYOUT_INVALID,
@@ -41,9 +44,9 @@ public final class DesktopMain {
             return;
         }
 
-        DesktopFailureReportStore reports = new DesktopFailureReportStore(layout.dataDirectory());
+        DesktopFailureReportStore reports = new DesktopFailureReportStore(dataLayout.root());
         try {
-            verifyDataDirectory(layout.dataDirectory());
+            verifyDataDirectory(dataLayout);
         } catch (Exception failure) {
             showStartupFailure(reports, initialMessages,
                     DesktopStartupException.create(DesktopSystemFailureType.DATA_DIRECTORY_UNAVAILABLE,
@@ -53,7 +56,7 @@ public final class DesktopMain {
 
         DesktopPersistence database;
         try {
-            database = DesktopPersistence.open(layout.dataDirectory());
+            database = DesktopPersistence.open(dataLayout.root());
         } catch (Exception failure) {
             showStartupFailure(reports, initialMessages,
                     DesktopStartupException.create(DesktopSystemFailureType.DATABASE_INITIALIZATION_FAILED,
@@ -78,7 +81,7 @@ public final class DesktopMain {
             MessageCatalog messages = MessageCatalog.forLanguageTag(appearance.localeTag());
             new DesktopUncaughtFailureBoundary(reports, messages).install();
             DesktopApplicationFacade service = new DesktopApplicationFacade(database,
-                    layout.dataDirectory().resolve("work"), new SshdLinuxGateway());
+                    dataLayout.workDirectory(), new SshdLinuxGateway());
             SwingUtilities.invokeLater(() -> {
                 try {
                     new DesktopWindowController(database, service, appearance, reports).showInitialWindow();
@@ -94,9 +97,9 @@ public final class DesktopMain {
         }
     }
 
-    private static void verifyDataDirectory(Path dataDirectory) throws java.io.IOException {
-        Path normalized = dataDirectory.toAbsolutePath().normalize();
-        Files.createDirectories(normalized);
+    private static void verifyDataDirectory(DesktopStorageLayout layout) throws java.io.IOException {
+        layout.initializeDirectories();
+        Path normalized = layout.root();
         if (Files.isSymbolicLink(normalized)
                 || !Files.isDirectory(normalized, LinkOption.NOFOLLOW_LINKS)
                 || !Files.isWritable(normalized)

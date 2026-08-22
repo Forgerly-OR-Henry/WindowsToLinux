@@ -1,6 +1,7 @@
 package gold.debug.windowstolinux.shared.deploy.contract;
 
 import gold.debug.windowstolinux.shared.config.revision.ConfigurationSnapshot;
+import gold.debug.windowstolinux.shared.config.resource.ManagedDatabaseBinding;
 import gold.debug.windowstolinux.shared.config.secretref.SecretReference;
 import gold.debug.windowstolinux.shared.model.archive.SourceArchiveDescriptor;
 import gold.debug.windowstolinux.shared.model.deployment.BuildLimitConfiguration;
@@ -25,6 +26,7 @@ import java.util.Optional;
  * @param archive the deterministic source archive / 确定性源码归档
  * @param configuration the immutable normal configuration / 不可变普通配置
  * @param secretReferences the opaque secret revisions / 透明秘密修订引用
+ * @param databaseBindings the reviewed database scope, or empty when it was not reviewed / 经审阅数据库范围；未审阅时为空
  * @param runtime the type-specific runtime definition / 类型专属运行定义
  * @param userAccessUrl the optional user-facing HTTP URL / 可选的用户访问 HTTP URL
  * @param limits the target-host build limits / 目标机构建限制
@@ -39,6 +41,7 @@ public record ReviewedDeploymentRequest(
         SourceArchiveDescriptor archive,
         ConfigurationSnapshot configuration,
         List<SecretReference> secretReferences,
+        Optional<List<ManagedDatabaseBinding>> databaseBindings,
         DeploymentRuntimeSpecification runtime,
         Optional<UserAccessUrl> userAccessUrl,
         BuildLimitConfiguration limits,
@@ -58,6 +61,10 @@ public record ReviewedDeploymentRequest(
         archive = Objects.requireNonNull(archive, "archive");
         configuration = Objects.requireNonNull(configuration, "configuration");
         secretReferences = List.copyOf(Objects.requireNonNull(secretReferences, "secretReferences"));
+        databaseBindings = Objects.requireNonNull(databaseBindings, "databaseBindings")
+                .map(values -> List.copyOf(values.stream()
+                        .map(value -> Objects.requireNonNull(value, "database binding"))
+                        .sorted(java.util.Comparator.comparing(ManagedDatabaseBinding::databaseId)).toList()));
         runtime = Objects.requireNonNull(runtime, "runtime");
         userAccessUrl = Objects.requireNonNull(userAccessUrl, "userAccessUrl");
         limits = Objects.requireNonNull(limits, "limits");
@@ -95,12 +102,47 @@ public record ReviewedDeploymentRequest(
         if (secretReferences.stream().distinct().count() != secretReferences.size()) {
             throw new IllegalArgumentException("secret references must be unique");
         }
+        if (databaseBindings.isPresent() && databaseBindings.orElseThrow().stream()
+                .map(ManagedDatabaseBinding::databaseId).distinct().count() != databaseBindings.orElseThrow().size()) {
+            throw new IllegalArgumentException("database binding identities must be unique");
+        }
+        List<SecretReference> reviewedSecretReferences = secretReferences;
+        if (databaseBindings.isPresent() && databaseBindings.orElseThrow().stream()
+                .map(ManagedDatabaseBinding::connection)
+                .filter(gold.debug.windowstolinux.shared.config.resource.ManagedDatabaseConnection.Server.class::isInstance)
+                .map(gold.debug.windowstolinux.shared.config.resource.ManagedDatabaseConnection.Server.class::cast)
+                .anyMatch(connection -> !reviewedSecretReferences.contains(connection.passwordReference()))) {
+            throw new IllegalArgumentException("server database password references must belong to the reviewed deployment");
+        }
     }
 
     /**
-     * Creates a request without experimental-adapter permission for existing formal-support callers.
+     * Creates a request without reviewed database scope for existing callers.
      *
-     * <p>为现有正式支持调用方创建不含试验适配器许可的请求。
+     * <p>为现有调用方创建尚未审阅数据库范围的请求。
+     */
+    public ReviewedDeploymentRequest(
+            ServerIdentity server,
+            DeploymentProjectFacts facts,
+            SourceRevision sourceRevision,
+            SourceArchiveDescriptor archive,
+            ConfigurationSnapshot configuration,
+            List<SecretReference> secretReferences,
+            DeploymentRuntimeSpecification runtime,
+            Optional<UserAccessUrl> userAccessUrl,
+            BuildLimitConfiguration limits,
+            DeploymentApproval approval,
+            boolean containerDaemonRiskAccepted,
+            boolean experimentalAdapterRiskAccepted
+    ) {
+        this(server, facts, sourceRevision, archive, configuration, secretReferences, Optional.empty(), runtime,
+                userAccessUrl, limits, approval, containerDaemonRiskAccepted, experimentalAdapterRiskAccepted);
+    }
+
+    /**
+     * Creates a request without reviewed database scope or experimental-adapter permission.
+     *
+     * <p>创建不含数据库范围审阅或试验适配器许可的请求。
      */
     public ReviewedDeploymentRequest(
             ServerIdentity server,
@@ -115,7 +157,7 @@ public record ReviewedDeploymentRequest(
             DeploymentApproval approval,
             boolean containerDaemonRiskAccepted
     ) {
-        this(server, facts, sourceRevision, archive, configuration, secretReferences, runtime, userAccessUrl,
-                limits, approval, containerDaemonRiskAccepted, false);
+        this(server, facts, sourceRevision, archive, configuration, secretReferences, Optional.empty(), runtime,
+                userAccessUrl, limits, approval, containerDaemonRiskAccepted, false);
     }
 }
