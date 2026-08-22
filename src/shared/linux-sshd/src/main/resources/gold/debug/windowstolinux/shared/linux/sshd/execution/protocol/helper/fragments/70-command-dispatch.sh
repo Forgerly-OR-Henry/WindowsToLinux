@@ -25,6 +25,13 @@ case "$verb" in
   backup-create) backup_create_artifact "$@" ;;
   backup-read) backup_read_artifact "$@" ;;
   backup-discard) backup_discard_operation "$@" ;;
+  restore-preflight) restore_preflight "$@" ;;
+  restore-prepare) restore_prepare_component "$@" ;;
+  restore-start-candidate) restore_start_candidate "$@" ;;
+  restore-stop-candidate) restore_stop_candidate "$@" ;;
+  restore-snapshot) restore_snapshot_current "$@" ;;
+  restore-start-formal) restore_start_formal "$@" ;;
+  restore-recover) restore_recover_component "$@" ;;
   snapshot-deployment) snapshot_deployment "$@" ;;
   publish-deployment) publish_deployment "$@" ;;
   retain) retain_releases "$@" ;;

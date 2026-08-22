@@ -21,7 +21,7 @@ public final class ManagedHelperBundle {
     /** Platform-owned Java 21 launcher used by every managed systemd unit. / 每个受管 systemd 单元使用的平台持有 Java 21 启动器。 */
     public static final String JAVA_RUNTIME_PATH = DIRECTORY + "/java-21";
     /** Expected byte-for-byte helper bundle identity. / 预期的 helper 逐字节身份。 */
-    public static final String EXPECTED_SHA256 = "db20a90fe7177f39f2f9bf790e43e1c9beec05e0be23b48137f9b1bc2212c6a6";
+    public static final String EXPECTED_SHA256 = "14993b781c729a760f8f2cc094f02446246301f3fbb326f8180d3b98f6ec75f7";
     private static final String ROOT = "/gold/debug/windowstolinux/shared/linux/sshd/";
     private static final List<String> FRAGMENTS = List.of(
             "execution/protocol/helper/fragments/00-protocol-foundation.sh",
@@ -34,6 +34,8 @@ public final class ManagedHelperBundle {
             "execution/protocol/helper/fragments/runtime/40-typed-runtime.sh",
             "execution/protocol/helper/fragments/release/50-container-release.sh",
             "execution/protocol/helper/fragments/release/52-container-recovery.sh",
+            "execution/protocol/helper/fragments/restore/54-restore-candidate.sh",
+            "execution/protocol/helper/fragments/restore/56-restore-commit.sh",
             "runtime/container/helper/55-podman-quadlet.sh", "runtime/systemd/helper/60-lifecycle.sh",
             "execution/protocol/helper/fragments/database/65-database-backup.sh",
             "execution/protocol/helper/fragments/backup/67-managed-backup.sh",

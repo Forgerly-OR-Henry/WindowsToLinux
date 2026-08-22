@@ -6,8 +6,7 @@ umask 077
 helper_path=/usr/local/lib/windowstolinux/managed-helper
 helper_directory=/usr/local/lib/windowstolinux
 helper_protocol=5
-base_root=/var/lib/windowstolinux
-applications_root="$base_root/apps"
+base_root=/var/lib/windowstolinux; applications_root="$base_root/apps"
 work_root="$base_root/work"
 snapshots_root="$base_root/snapshots"
 configurations_root="$base_root/configurations"
@@ -135,7 +134,7 @@ render_deployment_unit() {
   local kind="$1"
   shift
   local root command argument_count argument config index secret name
-  root="$(app_root "$app")"
+  root="${deployment_root_override:-$(app_root "$app")}"
   case "$kind" in
     gradle)
       [ "$#" -eq 0 ] || reject runtime-arguments
@@ -201,7 +200,12 @@ render_deployment_unit() {
       require_relative_path "$1"
       [[ "$2" =~ ^[0-9]{1,5}$ ]] && [ "$2" -ge 1 ] && [ "$2" -le 65535 ] || reject static-port
       case "$3" in STATIC_SITE_BUILD|NPM|PNPM|YARN) ;; *) reject static-build-tool ;; esac
-      command="/usr/bin/python3 -m http.server $2 --directory $root/current/source/$1"
+      local static_port="${deployment_service_port_override:-$2}"
+      require_service_port "$static_port"
+      if [ -n "${deployment_bind_address_override:-}" ]; then
+        [ "$deployment_bind_address_override" = 127.0.0.1 ] || reject runtime-bind-address
+        command="/usr/bin/python3 -m http.server $static_port --bind 127.0.0.1 --directory $root/current/source/$1"
+      else command="/usr/bin/python3 -m http.server $static_port --directory $root/current/source/$1"; fi
       ;;
     go|rust|dotnet|kotlin|php|phpcli|ruby|rubycli|cmake)
       render_ecosystem_runtime_command "$kind" "$root" "$@"

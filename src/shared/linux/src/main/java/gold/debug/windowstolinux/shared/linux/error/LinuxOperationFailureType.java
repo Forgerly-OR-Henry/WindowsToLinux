@@ -28,6 +28,8 @@ public enum LinuxOperationFailureType implements FailureDefinition {
     RESTORE_SOURCE_INVALID("linux.restore.source-invalid", "restore", "linux.error.restoreSourceInvalid", FailureRecoveryAction.REQUEST_USER_CORRECTION),
     RESTORE_UPLOAD_FAILED("linux.restore.upload-failed", "restore", "linux.error.restoreUploadFailed", FailureRecoveryAction.CLEANUP),
     RESTORE_UPLOAD_VERIFICATION_FAILED("linux.restore.upload-verification-failed", "restore", "linux.error.restoreUploadVerificationFailed", FailureRecoveryAction.CLEANUP),
+    RESTORE_ACTIVATION_FAILED("linux.restore.activation-failed", "restore", "linux.error.restoreActivationFailed", FailureRecoveryAction.ROLLBACK),
+    RESTORE_RECOVERY_FAILED("linux.restore.recovery-failed", "restore", "linux.error.restoreRecoveryFailed", FailureRecoveryAction.REQUIRE_MANUAL_RECOVERY),
     LOCAL_ARCHIVE_MISSING("linux.transfer.local-archive-missing", "transfer", "linux.error.localArchiveMissing", FailureRecoveryAction.REQUEST_USER_CORRECTION),
     LOCAL_ARCHIVE_READ_FAILED("linux.transfer.local-archive-read-failed", "transfer", "linux.error.localArchiveReadFailed", FailureRecoveryAction.REQUEST_USER_CORRECTION),
     LOCAL_ARCHIVE_SIZE_MISMATCH("linux.transfer.local-archive-size-mismatch", "transfer", "linux.error.localArchiveSizeMismatch", FailureRecoveryAction.REQUEST_USER_CORRECTION),

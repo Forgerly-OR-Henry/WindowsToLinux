@@ -59,7 +59,11 @@ class ManagedHelperBundleTest {
         assertTrue(helper.contains("ecosystem_runtime_command_result=\"/usr/bin/env PATH=/usr/local/bin:/usr/bin:/bin php -S"));
         assertTrue(helper.contains("ecosystem_runtime_command_result=\"/usr/bin/env PATH=/usr/local/bin:/usr/bin:/bin php -n -S"));
         assertTrue(helper.contains("ecosystem_runtime_command_result=\"/usr/bin/env PATH=/usr/local/bin:/usr/bin:/bin bundle exec rackup"));
-        assertTrue(helper.contains("ecosystem_runtime_command_result=\"/usr/bin/env PATH=/usr/local/bin:/usr/bin:/bin PORT=$4 ruby"));
+        assertTrue(helper.contains("ecosystem_runtime_command_result=\"/usr/bin/env PATH=/usr/local/bin:/usr/bin:/bin PORT=$rubycli_port ruby"));
+        assertTrue(helper.contains("restore-preflight) restore_preflight \"$@\""));
+        assertTrue(helper.contains("restore-start-candidate) restore_start_candidate \"$@\""));
+        assertTrue(helper.contains("restore-start-formal) restore_start_formal \"$@\""));
+        assertTrue(helper.contains("restore-recover) restore_recover_component \"$@\""));
         assertTrue(helper.contains("previous_kind=ordinary"));
         assertTrue(helper.contains("[ \"$previous_kind\" = deployment ] || [ \"$previous_kind\" = ordinary ]"));
         assertTrue(helper.contains("printf '%s\\n' \"$previous_kind\" > \"$snapshot/kind\""));

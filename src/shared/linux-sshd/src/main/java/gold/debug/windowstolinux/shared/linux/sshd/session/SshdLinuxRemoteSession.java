@@ -28,6 +28,7 @@ import gold.debug.windowstolinux.shared.linux.sshd.execution.protocol.runtime.Ma
 import gold.debug.windowstolinux.shared.linux.sshd.execution.protocol.release.DeploymentReleaseProtocolExecutor;
 import gold.debug.windowstolinux.shared.linux.sshd.execution.protocol.release.ContainerReleaseProtocolExecutor;
 import gold.debug.windowstolinux.shared.linux.sshd.execution.protocol.input.DeploymentInputProtocolExecutor;
+import gold.debug.windowstolinux.shared.linux.sshd.execution.protocol.restore.SshdRestoreActivationPort;
 import gold.debug.windowstolinux.shared.config.revision.ConfigurationSnapshot;
 import gold.debug.windowstolinux.shared.config.revision.DeploymentInputManifest;
 import gold.debug.windowstolinux.shared.config.secretref.ResolvedSecretRevision;
@@ -41,6 +42,8 @@ import gold.debug.windowstolinux.shared.linux.sshd.execution.transfer.SshdSource
 import gold.debug.windowstolinux.shared.linux.sshd.execution.transfer.SshdRestoreTransport;
 import gold.debug.windowstolinux.shared.linux.protocol.restore.RemoteRestoreStagingEvidence;
 import gold.debug.windowstolinux.shared.linux.protocol.restore.RemoteRestoreStagingRequest;
+import gold.debug.windowstolinux.shared.linux.protocol.restore.RemoteRestoreActivationPort;
+import gold.debug.windowstolinux.shared.linux.protocol.restore.RemoteRestoreActivationRequest;
 import gold.debug.windowstolinux.shared.linux.protocol.backup.ManagedContentPublication;
 import gold.debug.windowstolinux.shared.linux.protocol.backup.RemoteBackupArtifact;
 import gold.debug.windowstolinux.shared.linux.protocol.backup.RemoteBackupArtifactRequest;
@@ -93,6 +96,7 @@ public final class SshdLinuxRemoteSession implements DeploymentRemoteSession {
     private final ManagedRuntimeExecutor managedRuntime;
     private final SshdDatabaseOperationPort databases;
     private final SshdBackupArtifactPort backupArtifacts;
+    private final SshdRestoreActivationPort restoreActivation;
 
     /** Creates an instance of this type. / 创建此类型的实例。 */
     public SshdLinuxRemoteSession(SshClient client, ClientSession session,
@@ -103,6 +107,7 @@ public final class SshdLinuxRemoteSession implements DeploymentRemoteSession {
         SshCommandExecutor commands = new SshCommandExecutor(session);
         this.databases = new SshdDatabaseOperationPort(commands);
         this.backupArtifacts = new SshdBackupArtifactPort(commands);
+        this.restoreActivation = new SshdRestoreActivationPort(commands);
         this.capabilities = new SshdCapabilityCollector(commands, hostFingerprint);
         this.deploymentCapabilities = new SshdPlatformCapabilityCollector(commands, hostFingerprint);
         this.environment = new ManagedEnvironmentExecutor(
@@ -363,6 +368,42 @@ public final class SshdLinuxRemoteSession implements DeploymentRemoteSession {
     @Override
     public RemoteStepResult discardBackupOperation(String operationId) throws LinuxOperationException {
         return backupArtifacts.discardBackupOperation(operationId);
+    }
+
+    @Override
+    public RemoteRestoreActivationPort.PreflightEvidence inspectRestoreActivation(
+            String applicationId, long requiredBytes) throws LinuxOperationException {
+        return restoreActivation.inspectRestoreActivation(applicationId, requiredBytes);
+    }
+
+    @Override
+    public RemoteRestoreActivationPort.StepEvidence startRestoreActivation(
+            RemoteRestoreActivationRequest request) throws LinuxOperationException {
+        return restoreActivation.startRestoreActivation(request);
+    }
+
+    @Override
+    public RemoteRestoreActivationPort.StepEvidence verifyRestoreComponents(
+            RemoteRestoreActivationRequest request) throws LinuxOperationException {
+        return restoreActivation.verifyRestoreComponents(request);
+    }
+
+    @Override
+    public RemoteRestoreActivationPort.StepEvidence verifyRestoreApplication(
+            RemoteRestoreActivationRequest request) throws LinuxOperationException {
+        return restoreActivation.verifyRestoreApplication(request);
+    }
+
+    @Override
+    public RemoteRestoreActivationPort.CommitEvidence commitRestoreActivation(
+            RemoteRestoreActivationRequest request) throws LinuxOperationException {
+        return restoreActivation.commitRestoreActivation(request);
+    }
+
+    @Override
+    public RemoteRestoreActivationPort.RecoveryEvidence recoverRestoreActivation(
+            RemoteRestoreActivationRequest request) throws LinuxOperationException {
+        return restoreActivation.recoverRestoreActivation(request);
     }
 
     /** Closes this resource. / 关闭此资源。 */

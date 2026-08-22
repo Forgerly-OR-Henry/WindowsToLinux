@@ -8,6 +8,7 @@ import gold.debug.windowstolinux.shared.backup.manifest.BackupComponent;
 import gold.debug.windowstolinux.shared.deploy.contract.spi.RestoreDeploymentComponent;
 import gold.debug.windowstolinux.shared.deploy.contract.spi.RestoreDeploymentPort;
 import gold.debug.windowstolinux.shared.deploy.contract.spi.RestoreDeploymentRequest;
+import gold.debug.windowstolinux.shared.config.revision.DeploymentInputManifest;
 import gold.debug.windowstolinux.shared.linux.error.LinuxOperationException;
 import gold.debug.windowstolinux.shared.linux.protocol.RemoteStepResult;
 import gold.debug.windowstolinux.shared.linux.protocol.restore.RemoteRestoreFilePort;
@@ -19,16 +20,28 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Map;
 
 /** Maps portable restore evidence onto deploy-owned activation and Linux-owned file staging. / 将可移植恢复证据映射到 deploy 持有的激活及 Linux 持有的文件暂存。 */
 public final class LinuxRestoreCandidateAdapter implements RestoreCandidatePort {
     private final RemoteRestoreFilePort files;
     private final RestoreDeploymentPort deployments;
+    private final Map<String, DeploymentInputManifest> activationInputs;
 
     /** Creates the one-way backup-to-deploy-to-Linux adapter. / 创建 backup 到 deploy 再到 Linux 的单向适配器。 */
     public LinuxRestoreCandidateAdapter(RemoteRestoreFilePort files, RestoreDeploymentPort deployments) {
+        this(files, deployments, Map.of());
+    }
+
+    /** Creates an adapter with exact short-lived inputs already staged on the target. / 使用已暂存到目标端的精确短生命周期输入创建适配器。 */
+    public LinuxRestoreCandidateAdapter(
+            RemoteRestoreFilePort files,
+            RestoreDeploymentPort deployments,
+            Map<String, DeploymentInputManifest> activationInputs
+    ) {
         this.files = Objects.requireNonNull(files, "files");
         this.deployments = Objects.requireNonNull(deployments, "deployments");
+        this.activationInputs = Map.copyOf(Objects.requireNonNull(activationInputs, "activationInputs"));
     }
 
     /** Stages every validated archive member without addressing the active release. / 暂存每个已验证归档成员且不寻址活跃发布。 */
@@ -136,9 +149,9 @@ public final class LinuxRestoreCandidateAdapter implements RestoreCandidatePort 
                 request.localCandidateRoot(), request.verifiedBytes(), members);
     }
 
-    private static RestoreDeploymentRequest deploymentRequest(RestoreCandidateRequest request, String candidateToken) {
+    private RestoreDeploymentRequest deploymentRequest(RestoreCandidateRequest request, String candidateToken) {
         List<RestoreDeploymentComponent> components = request.manifest().inventory().components().stream()
-                .map(LinuxRestoreCandidateAdapter::component).toList();
+                .map(component -> component(component, request)).toList();
         String remoteRoot = "/var/lib/windowstolinux/work/" + request.candidateId() + "/mutable/restore";
         return new RestoreDeploymentRequest(request.manifest().applicationId(), request.targetServerId(),
                 request.candidateId(), request.archiveSha256(),
@@ -148,12 +161,18 @@ public final class LinuxRestoreCandidateAdapter implements RestoreCandidatePort 
                 request.manifest().inventory().applicationHealthCheck().toHealthCheck());
     }
 
-    private static RestoreDeploymentComponent component(BackupComponent component) {
+    private RestoreDeploymentComponent component(BackupComponent component, RestoreCandidateRequest request) {
+        String prefix = "data/" + component.componentId() + "/";
+        List<String> persistent = request.manifest().members().stream()
+                .map(member -> member.path()).filter(path -> path.startsWith(prefix)).sorted().toList();
+        Optional<String> oci = request.manifest().members().stream().map(member -> member.path())
+                .filter(path -> path.equals("runtime/" + component.componentId() + ".oci")).findFirst();
         return new RestoreDeploymentComponent(component.componentId(), component.managedApplicationId(),
                 component.ownershipManifestSha256(), component.releaseSha256().orElseThrow(),
                 component.secretReferences().orElseThrow(), component.releaseManifestPath(),
                 component.configurationSnapshotPath(), component.serviceDefinitionPath(), component.dependsOn(),
-                component.runtime().toSpecification());
+                component.runtime().toSpecification(), Optional.ofNullable(activationInputs.get(component.componentId())),
+                persistent, oci);
     }
 
     private static void requireAutomaticActivation(RestoreCandidateRequest request) throws BackupException {

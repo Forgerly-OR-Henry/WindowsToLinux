@@ -11,6 +11,7 @@ import gold.debug.windowstolinux.shared.linux.protocol.database.RemoteDatabasePo
 import gold.debug.windowstolinux.shared.linux.protocol.backup.ManagedContentPublication;
 import gold.debug.windowstolinux.shared.linux.protocol.backup.RemoteBackupArtifactPort;
 import gold.debug.windowstolinux.shared.linux.protocol.restore.RemoteRestoreFilePort;
+import gold.debug.windowstolinux.shared.linux.protocol.restore.RemoteRestoreActivationPort;
 import gold.debug.windowstolinux.shared.linux.runtime.HealthCheckResult;
 import gold.debug.windowstolinux.shared.linux.transfer.RemoteWorkspace;
 import gold.debug.windowstolinux.shared.model.deployment.BuildLimitConfiguration;
@@ -29,7 +30,8 @@ import java.util.List;
  *
  * <p>已验证受管部署会话的有界扩展，覆盖全部部署单组件项目类型。
  */
-public interface DeploymentRemoteSession extends LinuxRemoteSession, RemoteDatabasePort, RemoteBackupArtifactPort, RemoteRestoreFilePort {
+public interface DeploymentRemoteSession extends LinuxRemoteSession, RemoteDatabasePort, RemoteBackupArtifactPort,
+        RemoteRestoreFilePort, RemoteRestoreActivationPort {
     /** Collects distribution and container facts before one typed deployment. / 在类型化部署前采集发行版和容器事实。 */
     LinuxCapabilityFacts collectDeploymentCapabilities() throws LinuxOperationException;
 

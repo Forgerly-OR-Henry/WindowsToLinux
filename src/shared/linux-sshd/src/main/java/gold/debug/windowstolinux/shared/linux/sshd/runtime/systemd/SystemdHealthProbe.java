@@ -22,10 +22,20 @@ public final class SystemdHealthProbe {
     /** Checks service health and response ownership. / 检查服务健康与响应归属。 */
     public HealthCheckResult check(ManagedApplication application, HealthCheck healthCheck) throws LinuxOperationException {
         Objects.requireNonNull(application, "application");
+        return checkUnit(application.systemdUnit(), healthCheck);
+    }
+
+    /** Checks one deterministic restore-candidate unit with the same listener ownership proof. / 使用相同监听归属证明检查一个确定性恢复候选单元。 */
+    public HealthCheckResult checkUnit(String systemdUnit, HealthCheck healthCheck) throws LinuxOperationException {
+        systemdUnit = Objects.requireNonNull(systemdUnit, "systemdUnit");
+        if (!systemdUnit.matches("windowstolinux-(?:restore-[0-9a-f]{32}-)?[a-z0-9][a-z0-9-]{0,62}\\.service")) {
+            throw LinuxOperationException.create(LinuxOperationFailureType.HEALTH_CHECK_UNSUPPORTED,
+                    "restore health unit identity is invalid");
+        }
         Objects.requireNonNull(healthCheck, "healthCheck");
         String script;
         try {
-            script = SystemdHealthScriptRenderer.render(application.systemdUnit(), healthCheck);
+            script = SystemdHealthScriptRenderer.render(systemdUnit, healthCheck);
         } catch (IllegalArgumentException unsupported) {
             throw LinuxOperationException.create(LinuxOperationFailureType.HEALTH_CHECK_UNSUPPORTED, "Unsupported health-check type");
         }
