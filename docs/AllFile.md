@@ -83,21 +83,33 @@ src/  # 项目源码与模块根目录
 │  │  │  ├─ AiRoleAssignment.java  # 从一个固定 AI 角色到一个命名提供者的类型化非秘密映射
 │  │  │  ├─ AiUseCaseFacade.java  # 编排 AI Provider、角色绑定、结构化分析与解释用例
 │  │  │  └─ ReadOnlyDeploymentAgentFacade.java  # 完整的可选 Agent 工具表面：仅有有界静态分析和确定性计划渲染
-│  │  ├─ backup/  # 受管输入准入、本地归档发布、备份校验与隔离候选准备用例包
+│  │  ├─ backup/  # 受管备份、目标恢复、双服务器离线迁移及本地候选用例包
 │  │  │  ├─ BackupArchiveCreationUseCase.java  # 编排临时写入、双重完整校验与无覆盖原子发布
 │  │  │  ├─ BackupArchiveInspection.java  # 完整校验后可供界面展示的安全备份摘要
-│  │  │  ├─ BackupUseCase.java  # 重新校验、准备并按工作区签发身份精确删除本地未激活候选
+│  │  │  ├─ BackupUseCase.java  # 重新校验并准备本地候选、精确激活输入或按签发身份删除候选
 │  │  │  ├─ CreatedBackupArchive.java  # 绑定最终路径与发布后独立复验结果
 │  │  │  ├─ ManagedBackupInputAssessment.java  # 精确报告持久化备份输入完整性及结构化缺失原因
 │  │  │  ├─ ManagedBackupInputUseCase.java  # 在不访问远端时核对整应用图、发布、运行时、路径、配置和秘密绑定
+│  │  │  ├─ ManagedOfflineMigrationOutcome.java  # 保留初始/最终归档、源端状态、目标恢复及人工切流边界的迁移结果
+│  │  │  ├─ ManagedOfflineMigrationPort.java  # 将双服务器迁移状态机映射到受管备份、源端停止和目标恢复操作
+│  │  │  ├─ ManagedOfflineMigrationUseCase.java  # 编排初始备份、明确停写、最终同步、目标恢复和源端失败恢复
+│  │  │  ├─ ManagedRestoreControlState.java  # 远端提交后本地秘密与整应用图接管的可审计状态
+│  │  │  ├─ ManagedRestoreOutcome.java  # 组合目标预检、远端恢复终态和本地接管结果
+│  │  │  ├─ ManagedRestorePreflightOutcome.java  # 任何目标写入前形成的只读兼容性、空间、端口与冲突结论
+│  │  │  ├─ ManagedRestoreUseCase.java  # 编排归档激活准备、目标预检、暂存、候选健康、提交、恢复和本地接管
+│  │  │  ├─ PreparedBackupActivation.java  # 绑定严格归档模型、候选和短生命周期秘密修订的激活输入
 │  │  │  ├─ PreparedBackupCandidate.java  # 将候选证据绑定到已校验归档，并只为工作区签发实例保留删除授权
 │  │  │  ├─ PreparedBackupSecrets.java  # 将本地候选与完整已认证短生命周期秘密修订绑定
-│  │  │  └─ RemoteBackupCreationUseCase.java  # 编排受管短停写取材、运行状态恢复、秘密加密和完整归档原子发布
+│  │  │  ├─ RemoteBackupCreationUseCase.java  # 编排受管短停写取材、运行状态恢复、秘密加密和完整归档原子发布
+│  │  │  ├─ RestoredApplicationRecorder.java  # 仅在远端正式健康后记录目标整应用图并报告接管失败
+│  │  │  ├─ RestoredSecretRegistrar.java  # 仅在远端正式健康后登记精确秘密修订并保持秘密清零边界
+│  │  │  ├─ RestoreArchiveModel.java  # 严格关联 schema v4 清单、配置文档和每个成员身份及摘要
+│  │  │  └─ RestoreTargetEvaluator.java  # 以实时目标事实保守判定架构、运行时、数据库和候选端口策略
 │  │  ├─ config/  # 部署配置与秘密修订用例包
 │  │  │  └─ DeploymentConfigurationUseCase.java  # 协调不可变的部署配置和平台秘密引用，且不返回秘密值
 │  │  ├─ contract/  # 桌面页面依赖的六个窄应用门面包
 │  │  │  ├─ AiApplicationFacade.java  # AI 页面所需的窄应用操作
-│  │  │  ├─ BackupApplicationFacade.java  # 备份页面所需的本地校验、候选准备与精确删除操作
+│  │  │  ├─ BackupApplicationFacade.java  # 备份页面所需的备份、校验、恢复、离线迁移和候选管理窄操作
 │  │  │  ├─ DeploymentApplicationFacade.java  # 单组件部署所需的窄应用操作
 │  │  │  ├─ ManagedApplicationFacade.java  # 受管应用页面所需的窄应用操作
 │  │  │  ├─ MultiComponentApplicationFacade.java  # 整应用部署与生命周期所需的窄应用操作
@@ -142,9 +154,9 @@ src/  # 项目源码与模块根目录
 │  │  ├─ ai/  # AI 配置与解释结果页面包
 │  │  │  ├─ AiPage.java  # 持有可选 AI 表单、临时秘密、状态与解释流程
 │  │  │  └─ AiPageState.java  # 保存桌面外观重建期间尚未提交的 AI 页面状态
-│  │  ├─ backup/  # 受管备份输入检查、归档校验及单个本地候选准备与删除页面包
-│  │  │  ├─ BackupPage.java  # 显示受管输入缺失项、校验归档、认证独立备份密码并管理一个本地候选
-│  │  │  └─ BackupPageState.java  # 保存外观重建期间的应用标识、归档路径、结果和候选删除授权
+│  │  ├─ backup/  # 受管备份、目标恢复、双服务器离线迁移和单个本地候选页面包
+│  │  │  ├─ BackupPage.java  # 创建或校验归档、认证备份密码，并在明确目标及停写批准后执行恢复或迁移
+│  │  │  └─ BackupPageState.java  # 保存外观重建期间的应用/服务器标识、归档路径、非秘密结果和候选删除授权
 │  │  ├─ component/  # 可复用桌面组件包
 │  │  │  ├─ DesktopComponentFactory.java  # 创建桌面页面复用的按钮、表单和布局组件
 │  │  │  └─ DesktopTaskExecutor.java  # 运行后台操作并将完成结果返回 Swing 事件线程
@@ -429,7 +441,7 @@ src/  # 项目源码与模块根目录
 │  │     │  │  │  ├─ DatabaseRestoreEvidence.java  # 候选数据库恢复及只读验证结果
 │  │     │  │  │  ├─ DatabaseRestoreRequest.java  # 绑定备份制品与受管候选标识的恢复请求
 │  │     │  │  │  ├─ OfflineMigrationPort.java  # 目标预检、双阶段同步、停写、目标验证和双端恢复窄端口
-│  │     │  │  │  ├─ OfflineMigrationRequest.java  # 绑定源/目标、备份摘要、候选和停写批准的迁移请求
+│  │     │  │  │  ├─ OfflineMigrationRequest.java  # 在最终归档尚未产生前绑定源/目标、预计大小和明确停写批准的迁移请求
 │  │     │  │  │  ├─ RestoreCandidatePort.java  # 文件暂存、两级健康、提交和失败恢复的平台窄端口
 │  │     │  │  │  └─ RestoreCandidateRequest.java  # 不反向依赖恢复编排包的已验证候选平台请求
 │  │     │  │  └─ validation/  # 归档资源、安全、完整性与来源校验
@@ -467,7 +479,8 @@ src/  # 项目源码与模块根目录
 │  │     │  │  ├─ BackupArchiveContent.java  # 清单成员与全新输入流的绑定
 │  │     │  │  ├─ BackupArchiveStream.java  # 可受检打开的成员输入流窄契约
 │  │     │  │  ├─ BackupArchiveWriter.java  # 写入时核验每个成员大小与 SHA-256
-│  │     │  │  ├─ BackupConfigurationCodec.java  # 严格编码和解码完整备份中的非秘密配置与运行时定义
+│  │     │  │  ├─ BackupConfigurationCodec.java  # 严格编解码历史配置或完整非秘密激活文档并拒绝截断、尾随及非规范载荷
+│  │     │  │  ├─ BackupConfigurationDocument.java  # 恢复所需的配置、资源绑定、运行时、健康门和用户 URL 完整非秘密文档
 │  │     │  │  ├─ BackupSecretEnvelope.java  # Argon2id 参数、随机盐/nonce 与 AES-GCM 密文信封
 │  │     │  │  └─ BackupSecretEnvelopeCodec.java  # secrets.enc 严格确定性编解码
 │  │     │  ├─ manifest/  # 环境、数据库、运行时和归档成员清单
