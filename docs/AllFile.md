@@ -162,7 +162,7 @@ src/  # 项目源码与模块根目录
 │  │  │  └─ DesktopTaskExecutor.java  # 运行后台操作并将完成结果返回 Swing 事件线程
 │  │  ├─ deployment/  # 部署审阅上下文与输入解析包
 │  │  │  ├─ DeploymentConfigurationParser.java  # 解析桌面端有界构建/运行配置记法
-│  │  │  ├─ DeploymentRuntimeParser.java  # 解析桌面端有界运行时、秘密引用与 Git 引用记法
+│  │  │  ├─ DeploymentRuntimeParser.java  # 解析桌面端有界运行时、数据库绑定、秘密引用与 Git 引用记法
 │  │  │  ├─ multi/  # 多组件编辑、页面与结果呈现包
 │  │  │  │  ├─ MultiComponentDraft.java  # 一个显式审阅组件不含秘密值的类型化表单状态
 │  │  │  │  ├─ MultiComponentDraftController.java  # 持有多组件控件、草稿状态、选择与领域输入映射

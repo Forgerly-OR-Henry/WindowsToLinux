@@ -2,11 +2,11 @@
 
 ## 文档信息
 
-- 文档版本：`3.52.0-managed-restore-migration`
-- 文档状态：**28-POM 模块边界保持不变；完整远端备份、受管恢复及双服务器离线迁移产品组合已完成静态实现；生产维护执行器及新增 helper v5、真实 Linux/数据库恢复迁移证据仍标记 `RUNTIME-PENDING`**
+- 文档版本：`3.53.0-reviewed-database-entry`
+- 文档状态：**28-POM 模块边界保持不变；新单/多组件桌面部署已强制显式审阅数据库范围，备份/恢复/迁移具备 opt-in 产品组合验收入口；生产维护执行器及 helper v5、真实 Linux/数据库恢复迁移证据仍标记 `RUNTIME-PENDING`**
 - 已确认范围：`shared` 共用模块、`app` Windows 桌面应用模块、`web` Web 应用模块
 - 已确认能力边界：受管应用生命周期复用既有模块，不新增独立 Maven 模块
-- 更新日期：2026-08-22
+- 更新日期：2026-08-23
 - 开发总纲：[DEVELOPMENT.md](DEVELOPMENT.md)
 - 分析包修订：[ANALYZE-PACKAGE-REVISION.md](development/ANALYZE-PACKAGE-REVISION.md)
 - Linux 部署链分包修订：[LINUX-DEPLOY-PACKAGE-REVISION.md](development/LINUX-DEPLOY-PACKAGE-REVISION.md)
@@ -1274,7 +1274,7 @@ linux-sshd 通过 linux 契约采集服务器已有环境
 14. 本地化改造不得改变 SQLite schema、部署与安全流程、凭据所有权或秘密传递边界；需要改变这些边界时必须另行评审。
 15. 项目代码注释统一采用中英双语，包含 `//`、块注释和 Javadoc；英文说明在前，简体中文说明紧随其后，并在同一注释内表达相同含义。标识符、命令、协议名和原始诊断保持原文，不为满足双语格式而翻译；注释不属于 UI 文案，不进入消息目录。新增或修改注释时必须遵守本规则。
 16. 分期是开发路线与验收文档的组织方式，不是产品运行时架构。`src/` 中的模块、包、类、方法、字段、枚举、消息键、配置键、资源名、脚本名和测试名不得以 `PhaseOne`、`PhaseTwo`、`phase1`、`phase2`、一期、二期等期数命名；必须按稳定职责命名。正式文档可保留分期标题和历史记录，但不得把期数泄漏为代码 API 或持久化契约。
-17. `app/ui/deployment` 只能收集并构造已声明的 `DeploymentProjectType`、`DeploymentRuntimeSpecification`、`ConfigurationSnapshot`、`SecretReference` 和计划审阅输入；不得暴露任意 Shell、启动命令、主机路径挂载或未审阅的秘密文本。项目类型、运行时字段和容器选项改变后，必须重新进行静态源码分析；桌面页面状态切换外观或语言时必须保留这些尚未提交的表单值。
+17. `app/ui/deployment` 只能收集并构造已声明的 `DeploymentProjectType`、`DeploymentRuntimeSpecification`、`ConfigurationSnapshot`、`SecretReference`、`ManagedDatabaseBinding` 和计划审阅输入；不得暴露任意 Shell、启动命令、主机路径挂载、数据库密码明文或未审阅的秘密文本。新单/多组件部署必须明确区分数据库范围“尚未审阅”“已审阅且为空”和一个受支持的服务器数据库绑定；尚未审阅时不得进入部署。项目类型、运行时字段和容器选项改变后，必须重新进行静态源码分析；桌面页面状态切换外观或语言时必须保留这些尚未提交的表单值。
 18. 类型化部署分析必须把确定的源码元数据作为可审阅的 `DeploymentRuntimeAssessment` 返回，而非由桌面表单写死语言版本、入口、产物目录、端口或卷。仅在值唯一、受支持、边界安全且具有 `AnalysisEvidence` 时才可回填；范围、冲突、任意脚本和文档文字只能作为未解决的用户输入，绝不转换为命令。
 19. 本地目录和 Git 来源都必须在 `app/service/source` 汇合为同一 `ReviewedSourcePreparation`，并以归档摘要绑定 `SourceRevision`。网络 Git 来源必须使用无凭据 URI、允许主机、固定 Commit 和受控工作目录；桌面 UI 不得调用 Git 进程、数据库或秘密存储实现。
 20. `DeploymentAnalysisCoordinator` 不得导入具体项目类型实现；`ProjectLanguageInspector` 只负责组合确定性的语言事实检查器。低层语言与构建 Inspector 不得修改调用方提供的拒绝集合，生产包与测试包必须镜像，包依赖不得成环，且不得恢复按阶段或宽泛类别聚合实现的包。`deploy.plan` 不得构造具体适配器，`linux.connection` 不得保存异常或组合会话，`linux-sshd.connection` 不得保存 command 或总会话；禁止以兼容壳保留旧类型。
@@ -1287,6 +1287,7 @@ linux-sshd 通过 linux 契约采集服务器已有环境
 
 | 版本 | 日期 | 说明 |
 | --- | --- | --- |
+| 3.53.0-reviewed-database-entry | 2026-08-23 | 不改变 28-POM、SQLite schema 或远端协议；单/多组件桌面部署必须明确选择“无数据库”或 PostgreSQL/MySQL/MariaDB，并把一个不含秘密值的数据库绑定及精确密码 `SecretReference` 交给现有部署事务，未审阅时不得部署。新增默认跳过的双服务器产品组合验收，从 `DesktopApplicationFacade` 部署文件型应用并覆盖完整备份、目标恢复、源端停写迁移及等待人工切流，不使用手工 SSH/helper 旁路。功能检查点为 `030bee5`；完整 28-POM JDK 21 离线门禁通过 430 项测试、0 失败、0 错误、27 项真实环境条件跳过，133 份 Surefire 报告。真实环境证据仍为 `RUNTIME-PENDING`。 |
 | 3.52.0-managed-restore-migration | 2026-08-22 | 在既有混合候选端口策略上接通桌面受管恢复和双服务器离线迁移：归档以配置文档 v2 携带精确非秘密激活事实，目标先做只读能力/空间/端口预检，再暂存配置、秘密和制品，执行候选、数据库、两级健康、正式提交及失败恢复。离线迁移执行初始备份、明确停写批准、最终停写归档和目标恢复，成功保持源端停止且不自动切流或删除源端；源端归属保留时目标本地接管显式延后。完整 28-POM JDK 21 离线门禁通过 424 项测试、0 失败、0 错误、25 项真实环境条件跳过，131 份 Surefire 报告。真实 helper v5、Linux 和数据库证据仍为 `RUNTIME-PENDING`，Windows 独立维护执行器继续待讨论。 |
 | 3.51.0-candidate-restore-ports | 2026-08-22 | 冻结恢复候选混合端口策略：容器全部宿主端口及静态站点、PHP、Ruby 的类型化监听端口可在应用锁内从 `49152-65535` 分配回环候选端口；没有明确监听覆盖契约的其余运行时必须短停机，不得从健康端口或配置猜测。模式按整应用选择，任一组件需要短停机时不得用新旧组件混合图冒充候选健康。候选健康仅作预检，提交后必须恢复正式端口并重新完成组件与整应用健康；任一失败须验证旧发布恢复，否则进入人工恢复。离线迁移复用同一链，成功仍等待人工外部流量切换并保留源端。该文档变更不构成真实 Linux 运行证据。 |
 | 3.50.0-application-health-evidence | 2026-08-22 | SQLite 升至 v11，新成功部署把独立审阅的整应用健康探针作为有界版本化非秘密载荷与整应用图原子保存；v10 及更旧记录保持显式缺失，备份创建不得从健康归属组件或当前界面值反推。 |
