@@ -19,8 +19,16 @@ public interface RestoreCandidatePort {
     HealthEvidence verifyApplication(RestoreCandidateRequest request, FileEvidence files, Optional<String> databaseToken)
             throws BackupException;
 
+    /** Establishes the stopped-write boundary before a database candidate is activated. / 在数据库候选激活前建立停写边界。 */
+    HealthEvidence prepareCommit(RestoreCandidateRequest request, FileEvidence files, Optional<String> databaseToken)
+            throws BackupException;
+
     /** Atomically commits the fully verified candidate and retains the previous release. / 原子提交完整已验证候选并保留旧发布。 */
     CommitEvidence commit(RestoreCandidateRequest request, FileEvidence files, Optional<String> databaseToken)
+            throws BackupException;
+
+    /** Stops candidate and newly restored processes before database rollback. / 在数据库回滚前停止候选及新恢复进程。 */
+    HealthEvidence quiesceForRecovery(RestoreCandidateRequest request, Optional<FileEvidence> files)
             throws BackupException;
 
     /** Removes an uncommitted file candidate and verifies the existing release. / 移除未提交文件候选并验证现有发布。 */

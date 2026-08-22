@@ -33,13 +33,17 @@ public final class DatabaseCommandRenderer {
 
     /** Renders isolated candidate restore. / 渲染隔离候选恢复。 */
     public String restore(RemoteDatabasePort.RestoreRequest request) {
-        Objects.requireNonNull(request, "request");
-        List<String> arguments = new ArrayList<>();
-        arguments.add(request.applicationId());
-        arguments.add(request.candidateId());
-        arguments.add(request.artifact().artifactId());
-        appendConnection(arguments, request.target());
-        return command("database-restore-candidate", arguments);
+        return command("database-restore-candidate", restoreArguments(request));
+    }
+
+    /** Renders stopped-write candidate activation. / 渲染停写候选激活。 */
+    public String commitCandidate(RemoteDatabasePort.RestoreRequest request) {
+        return command("database-commit-candidate", restoreArguments(request));
+    }
+
+    /** Renders exact previous-database recovery. / 渲染精确旧数据库恢复。 */
+    public String recoverCandidate(RemoteDatabasePort.RestoreRequest request) {
+        return command("database-recover-candidate", restoreArguments(request));
     }
 
     /** Renders cleanup for an isolated database candidate. / 渲染隔离数据库候选清理。 */
@@ -83,6 +87,16 @@ public final class DatabaseCommandRenderer {
         arguments.add(server.passwordReference());
         arguments.add(Long.toString(server.passwordRevision()));
         arguments.add(server.tlsRequired() ? "1" : "0");
+    }
+
+    private List<String> restoreArguments(RemoteDatabasePort.RestoreRequest request) {
+        Objects.requireNonNull(request, "request");
+        List<String> arguments = new ArrayList<>();
+        arguments.add(request.applicationId());
+        arguments.add(request.candidateId());
+        arguments.add(request.artifact().artifactId());
+        appendConnection(arguments, request.target());
+        return arguments;
     }
 
     private String command(String verb, List<String> arguments) {

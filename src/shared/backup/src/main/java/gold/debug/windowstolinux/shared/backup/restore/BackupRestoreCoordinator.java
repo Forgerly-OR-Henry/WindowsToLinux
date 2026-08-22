@@ -46,6 +46,7 @@ public final class BackupRestoreCoordinator {
         RestoreCandidateState current = RestoreCandidateState.PREFLIGHT_VERIFIED;
         boolean mutationAttempted = false;
         boolean databaseMutationAttempted = false;
+        boolean databaseCommitAttempted = false;
         try {
             events.add(success(current, preflight.verify(plan)));
             current = RestoreCandidateState.FILES_STAGED;
@@ -63,6 +64,14 @@ public final class BackupRestoreCoordinator {
                 DatabaseRestoreEvidence restored = adapter.restore(plan.databaseRestore().orElseThrow());
                 database = Optional.of(restored);
                 events.add(success(current, restored.evidence()));
+
+                current = RestoreCandidateState.DATABASE_COMMITTED;
+                RestoreCandidatePort.HealthEvidence prepared = candidates.prepareCommit(
+                        candidateRequest, staged, Optional.of(restored.connectionToken()));
+                requireHealth(prepared, "stopped-write database activation boundary failed");
+                databaseCommitAttempted = true;
+                var committedDatabase = adapter.commitCandidate(plan.databaseRestore().orElseThrow());
+                events.add(success(current, committedDatabase.evidence()));
             }
 
             Optional<String> databaseToken = database.map(DatabaseRestoreEvidence::connectionToken);
@@ -95,7 +104,7 @@ public final class BackupRestoreCoordinator {
                 events.add(new RestoreCandidateEvent(current, false, original.diagnostic()));
             }
             return recover(plan, operation, events, files, database, mutationAttempted,
-                    databaseMutationAttempted, original);
+                    databaseMutationAttempted, databaseCommitAttempted, original);
         }
     }
 
@@ -107,6 +116,7 @@ public final class BackupRestoreCoordinator {
             Optional<DatabaseRestoreEvidence> database,
             boolean mutationAttempted,
             boolean databaseMutationAttempted,
+            boolean databaseCommitAttempted,
             FailureDescriptor original
     ) {
         if (!mutationAttempted) {
@@ -116,13 +126,25 @@ public final class BackupRestoreCoordinator {
                     events, database, Optional.empty(), Optional.of(safe));
         }
         List<Throwable> recoveryFailures = new ArrayList<>();
-        if (databaseMutationAttempted && plan.databaseRestore().isPresent()) {
+        if (databaseCommitAttempted) {
             try {
-                databases.require(plan.validation().manifest().inventory().database().type())
-                        .discardCandidate(plan.databaseRestore().orElseThrow());
+                RestoreCandidatePort.HealthEvidence stopped = candidates.quiesceForRecovery(
+                        plan.candidateRequest(), files);
+                if (!stopped.healthy()) throw new IllegalStateException("database recovery quiesce is unverified");
             } catch (Exception exception) {
                 recoveryFailures.add(exception);
             }
+            try {
+                databases.require(plan.validation().manifest().inventory().database().type())
+                        .recoverCandidate(plan.databaseRestore().orElseThrow());
+            } catch (Exception exception) {
+                recoveryFailures.add(exception);
+            }
+        } else if (databaseMutationAttempted && plan.databaseRestore().isPresent()) {
+            try {
+                databases.require(plan.validation().manifest().inventory().database().type())
+                        .discardCandidate(plan.databaseRestore().orElseThrow());
+            } catch (Exception exception) { recoveryFailures.add(exception); }
         }
         RestoreCandidatePort.RecoveryEvidence recovered = null;
         try {

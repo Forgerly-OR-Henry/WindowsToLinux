@@ -40,7 +40,8 @@ class ManagedRestoreDeploymentPortTest {
 
         assertTrue(committed.committed());
         assertTrue(committed.previousReleaseRetained());
-        assertEquals(List.of("inspect", "start", "components", "application", "commit"), remote.calls);
+        assertEquals(List.of("inspect", "start", "components", "application", "prepare-commit",
+                "start-formal", "commit"), remote.calls);
         assertEquals(49153, remote.activation.components().getFirst().ports().getFirst().candidatePort());
     }
 
@@ -72,6 +73,21 @@ class ManagedRestoreDeploymentPortTest {
         assertEquals(gold.debug.windowstolinux.shared.linux.protocol.restore.RemoteRestoreActivationMode.SHORT_STOP,
                 remote.activation.mode());
         assertTrue(remote.activation.components().getFirst().ports().isEmpty());
+    }
+
+    @Test
+    void databaseActivationForcesStoppedWritePreparationBeforeFormalHealth() {
+        RecordingRemote remote = new RecordingRemote(false);
+        ManagedRestoreDeploymentPort port = new ManagedRestoreDeploymentPort(remote);
+        RestoreDeploymentRequest request = request(true);
+        Optional<String> databaseToken = Optional.of("database-candidate");
+
+        assertTrue(port.prepareCommit(request, databaseToken).healthy());
+        assertTrue(port.verifyComponents(request, databaseToken).healthy());
+
+        assertEquals(gold.debug.windowstolinux.shared.linux.protocol.restore.RemoteRestoreActivationMode.SHORT_STOP,
+                remote.activation.mode());
+        assertEquals(List.of("inspect", "start", "prepare-commit", "start-formal", "components"), remote.calls);
     }
 
     private static RestoreDeploymentRequest request(boolean inputs) {
@@ -114,6 +130,14 @@ class ManagedRestoreDeploymentPortTest {
             calls.add("start"); activation = request; return new StepEvidence(true, List.of("started"));
         }
 
+        @Override public StepEvidence prepareRestoreCommit(RemoteRestoreActivationRequest request) {
+            calls.add("prepare-commit"); return new StepEvidence(true, List.of("quiesced"));
+        }
+
+        @Override public StepEvidence startRestoreFormal(RemoteRestoreActivationRequest request) {
+            calls.add("start-formal"); return new StepEvidence(true, List.of("formal started"));
+        }
+
         @Override public StepEvidence verifyRestoreComponents(RemoteRestoreActivationRequest request) {
             calls.add("components"); return new StepEvidence(true, List.of("components healthy"));
         }
@@ -126,6 +150,10 @@ class ManagedRestoreDeploymentPortTest {
             calls.add("commit");
             return new CommitEvidence(!formalFailure, true, !formalFailure, !formalFailure,
                     "demo-" + ARCHIVE.substring(0, 16), List.of("formal health"));
+        }
+
+        @Override public StepEvidence quiesceRestoreRecovery(RemoteRestoreActivationRequest request) {
+            calls.add("quiesce-recovery"); return new StepEvidence(true, List.of("recovery quiesced"));
         }
 
         @Override public RecoveryEvidence recoverRestoreActivation(RemoteRestoreActivationRequest request) {

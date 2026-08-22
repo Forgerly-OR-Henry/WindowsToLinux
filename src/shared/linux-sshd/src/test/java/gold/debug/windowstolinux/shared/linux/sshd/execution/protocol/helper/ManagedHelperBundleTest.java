@@ -44,7 +44,14 @@ class ManagedHelperBundleTest {
         assertTrue(helper.contains("database-export) database_export \"$@\""));
         assertTrue(helper.contains("database-stage-artifact) database_stage_artifact \"$@\""));
         assertTrue(helper.contains("database-restore-candidate) database_restore_candidate \"$@\""));
+        assertTrue(helper.contains("database-commit-candidate) database_commit_candidate \"$@\""));
+        assertTrue(helper.contains("database-recover-candidate) database_recover_candidate \"$@\""));
         assertTrue(helper.contains("database-discard-candidate) database_discard_candidate \"$@\""));
+        assertTrue(helper.contains("assert_root_owned_regular \"$(restore_activation_root \"$database_activation_candidate\")/.application-quiesced\""));
+        assertTrue(helper.contains("[ \"$database_activation_type\" != sqlite ] || reject database-sqlite-activation-unsupported"));
+        assertTrue(helper.contains("--lock-all-tables --routines --events --triggers"));
+        assertTrue(helper.contains("[ \"${#database_name}\" -le 63 ] || reject database-postgresql-name-too-long"));
+        assertTrue(helper.contains("PREVIOUS_VERIFIED=1\\nCANDIDATE_REMOVED=1"));
         assertTrue(helper.contains("backup-create) backup_create_artifact \"$@\""));
         assertTrue(helper.contains("backup-read) backup_read_artifact \"$@\""));
         assertTrue(helper.contains("backup-discard) backup_discard_operation \"$@\""));
@@ -63,6 +70,8 @@ class ManagedHelperBundleTest {
         assertTrue(helper.contains("restore-preflight) restore_preflight \"$@\""));
         assertTrue(helper.contains("restore-start-candidate) restore_start_candidate \"$@\""));
         assertTrue(helper.contains("restore-start-formal) restore_start_formal \"$@\""));
+        assertTrue(helper.contains("restore-mark-quiesced) restore_mark_quiesced \"$@\""));
+        assertTrue(helper.contains("restore-quiesce-recovery) restore_quiesce_recovery \"$@\""));
         assertTrue(helper.contains("restore-recover) restore_recover_component \"$@\""));
         assertTrue(helper.contains("previous_kind=ordinary"));
         assertTrue(helper.contains("[ \"$previous_kind\" = deployment ] || [ \"$previous_kind\" = ordinary ]"));

@@ -22,12 +22,19 @@ public final class RestoreCandidatePortPlanner {
 
     /** Plans without treating a health endpoint as an application binding override. / 制定计划且不把健康端点当作应用监听覆盖。 */
     public CandidatePortPlan plan(RestoreDeploymentRequest request, Set<Integer> unavailablePorts) {
+        return plan(request, unavailablePorts, false);
+    }
+
+    /** Forces stopped-write mode when a database must be activated before process health. / 数据库需先激活再检查进程健康时强制停写模式。 */
+    public CandidatePortPlan plan(
+            RestoreDeploymentRequest request, Set<Integer> unavailablePorts, boolean databaseActivationRequired) {
         Objects.requireNonNull(request, "request");
         Set<Integer> unavailable = new HashSet<>(Objects.requireNonNull(unavailablePorts, "unavailablePorts"));
         if (unavailable.stream().anyMatch(port -> port == null || port < 1 || port > 65535)) {
             throw new IllegalArgumentException("unavailablePorts contains an invalid port");
         }
-        boolean parallel = request.components().stream().allMatch(this::supportsTypedOverride);
+        boolean parallel = !databaseActivationRequired
+                && request.components().stream().allMatch(this::supportsTypedOverride);
         LinkedHashMap<String, List<CandidatePortBinding>> bindings = new LinkedHashMap<>();
         if (!parallel) {
             request.components().forEach(component -> bindings.put(component.componentId(), List.of()));

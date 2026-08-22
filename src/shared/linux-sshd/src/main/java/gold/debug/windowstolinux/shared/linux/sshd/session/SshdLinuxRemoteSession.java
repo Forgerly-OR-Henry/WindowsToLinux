@@ -334,6 +334,18 @@ public final class SshdLinuxRemoteSession implements DeploymentRemoteSession {
     }
 
     @Override
+    public gold.debug.windowstolinux.shared.linux.protocol.database.RemoteDatabasePort.CommitEvidence
+    commitCandidate(RestoreRequest request) throws LinuxOperationException {
+        return databases.commitCandidate(request);
+    }
+
+    @Override
+    public gold.debug.windowstolinux.shared.linux.protocol.database.RemoteDatabasePort.RecoveryEvidence
+    recoverCandidate(RestoreRequest request) throws LinuxOperationException {
+        return databases.recoverCandidate(request);
+    }
+
+    @Override
     public void discardCandidate(RestoreRequest request) throws LinuxOperationException {
         databases.discardCandidate(request);
     }
@@ -383,6 +395,18 @@ public final class SshdLinuxRemoteSession implements DeploymentRemoteSession {
     }
 
     @Override
+    public RemoteRestoreActivationPort.StepEvidence prepareRestoreCommit(
+            RemoteRestoreActivationRequest request) throws LinuxOperationException {
+        return restoreActivation.prepareRestoreCommit(request);
+    }
+
+    @Override
+    public RemoteRestoreActivationPort.StepEvidence startRestoreFormal(
+            RemoteRestoreActivationRequest request) throws LinuxOperationException {
+        return restoreActivation.startRestoreFormal(request);
+    }
+
+    @Override
     public RemoteRestoreActivationPort.StepEvidence verifyRestoreComponents(
             RemoteRestoreActivationRequest request) throws LinuxOperationException {
         return restoreActivation.verifyRestoreComponents(request);
@@ -398,6 +422,12 @@ public final class SshdLinuxRemoteSession implements DeploymentRemoteSession {
     public RemoteRestoreActivationPort.CommitEvidence commitRestoreActivation(
             RemoteRestoreActivationRequest request) throws LinuxOperationException {
         return restoreActivation.commitRestoreActivation(request);
+    }
+
+    @Override
+    public RemoteRestoreActivationPort.StepEvidence quiesceRestoreRecovery(
+            RemoteRestoreActivationRequest request) throws LinuxOperationException {
+        return restoreActivation.quiesceRestoreRecovery(request);
     }
 
     @Override

@@ -20,6 +20,24 @@ restore_data_snapshot_root() {
   if [ "${previous[0]}" = 1 ]; then printf '%s/restore-data' "$(snapshot_root "$app" "${previous[1]}")"
   else printf '%s/new-data' "$root/rollback"; fi
 }
+restore_mark_quiesced() {
+  [ "$#" -ge 4 ] || reject restore-quiesced-arguments
+  local candidate="$1" token="$2" count="$3" component root kind app previous marker
+  shift 3; require_restore_token "$token"; require_count "$count"; [ "$#" -eq "$count" ] || reject restore-quiesced-count
+  for component in "$@"; do
+    require_app "$component"; root="$(restore_component_root "$candidate" "$component")"
+    assert_root_owned_regular "$root/previous"; kind="$(cat -- "$root/kind")"; mapfile -t identity < "$root/identity"; app="${identity[0]}"
+    previous="$(head -n 1 -- "$root/previous")"; [ "$previous" = 0 ] || [ "$previous" = 1 ] || reject restore-previous
+    if [ "$previous" = 1 ]; then
+      if [ "$kind" = deployment ]; then ! systemctl is-active --quiet "$(unit_name "$app")" || reject restore-writes-active
+      else current_application="$app"; load_container_parameters "$root/release/.windowstolinux-container-parameters"
+        ! "$container_engine" inspect --format '{{.State.Running}}' "$(container_name "$app")" 2>/dev/null | grep -qx true || reject restore-writes-active; fi
+    fi
+  done
+  marker="$(restore_activation_root "$candidate")/.application-quiesced"
+  printf '%s\n' "$token" > "$marker"; chown root:root -- "$marker"; chmod 400 -- "$marker"
+  printf 'QUIESCED=1\n'
+}
 restore_install_managed_files() {
   local root="$1" app="$2" spec binding logical mode target source rollback status
   parse_deployment_inputs "${deployment_runtime_parameters[@]}"; parse_managed_data_bindings "${deployment_remaining_arguments[@]}"
@@ -70,6 +88,8 @@ restore_start_formal() {
   [ "$#" -eq 3 ] || reject restore-formal-arguments
   local candidate="$1" token="$2" component="$3" root kind app owner release oci unit tmp image
   root="$(restore_component_root "$candidate" "$component")"; kind="$(cat -- "$root/kind")"; mapfile -t identity < "$root/identity"
+  assert_root_owned_regular "$(restore_activation_root "$candidate")/.application-quiesced"
+  [ "$(cat -- "$(restore_activation_root "$candidate")/.application-quiesced")" = "$token" ] || reject restore-quiesced-token
   app="${identity[0]}"; owner="${identity[1]}"; release="${identity[2]}"; oci="${identity[3]}"; [ -f "$root/previous" ] || reject restore-snapshot-missing
   if [ "$kind" = deployment ]; then
     current_application="$app"; load_deployment_parameters "$root/release/.windowstolinux-deployment-parameters"
@@ -90,6 +110,19 @@ restore_start_formal() {
   fi
   printf 'FORMAL_STARTED=1\nAPP=%s\n' "$app"
 }
+restore_quiesce_recovery() {
+  [ "$#" -eq 3 ] || reject restore-recovery-quiesce-arguments
+  local candidate="$1" token="$2" component="$3" root kind app owner
+  restore_stop_candidate "$candidate" "$token" "$component" >/dev/null || true
+  root="$(restore_component_root "$candidate" "$component")"; [ -e "$root" ] || { printf 'QUIESCED=1\n'; return; }
+  kind="$(cat -- "$root/kind")"; mapfile -t identity < "$root/identity"; app="${identity[0]}"; owner="${identity[1]}"
+  if [ -f "$root/previous" ]; then
+    if [ "$kind" = deployment ]; then systemctl stop "$(unit_name "$app")" 2>/dev/null || true
+    else current_application="$app"; load_container_parameters "$root/release/.windowstolinux-container-parameters"
+      if [ -L "$(app_root "$app")/current" ]; then container_current_release "$app" "$owner"; stop_container_runtime "$app"; fi; fi
+  fi
+  printf 'QUIESCED=1\n'
+}
 restore_restore_managed_data() {
   local root="$1" app="$2" kind="$3" rollback spec binding target status source
   rollback="$(restore_data_snapshot_root "$root" "$app")"; [ -d "$rollback" ] || return 0
@@ -108,7 +141,7 @@ restore_restore_managed_data() {
 restore_recover_component() {
   [ "$#" -eq 3 ] || reject restore-recover-arguments
   local candidate="$1" token="$2" component="$3" root kind app owner release previous snapshot_token
-  root="$(restore_component_root "$candidate" "$component")"; [ -e "$root" ] || { printf 'RECOVERED=1\n'; return; }
+  root="$(restore_component_root "$candidate" "$component")"; [ -e "$root" ] || { printf 'RECOVERED=1\nPREVIOUS=0\n'; return; }
   kind="$(cat -- "$root/kind")"; mapfile -t identity < "$root/identity"; app="${identity[0]}"; owner="${identity[1]}"; release="${identity[2]}"
   restore_stop_candidate "$candidate" "$token" "$component" >/dev/null || true
   if [ -f "$root/previous" ]; then mapfile -t saved < "$root/previous"; previous="${saved[0]}"; snapshot_token="${saved[1]}"
@@ -117,5 +150,5 @@ restore_recover_component() {
       if [ "$previous" = 1 ]; then rollback_deployment "$app" "$release" "$owner" "$snapshot_token"; else rollback_deployment_first "$app" "$release" "$owner"; fi
     else if [ "$previous" = 1 ]; then rollback_container "$app" "$release" "$owner" "$snapshot_token"; else rollback_container_first "$app" "$release" "$owner"; fi; fi
   fi
-  printf 'RECOVERED=1\nAPP=%s\n' "$app"
+  printf 'RECOVERED=1\nPREVIOUS=%s\nAPP=%s\n' "${previous:-0}" "$app"
 }

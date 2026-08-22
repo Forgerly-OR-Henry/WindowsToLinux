@@ -79,6 +79,14 @@ class LinuxDatabaseOperationPortTest {
                     List.of("candidate schema readable"));
         }
 
+        @Override public CommitEvidence commitCandidate(RestoreRequest request) {
+            return new CommitEvidence(request.candidateId(), true, true, List.of("database committed"));
+        }
+
+        @Override public RecoveryEvidence recoverCandidate(RestoreRequest request) {
+            return new RecoveryEvidence(request.candidateId(), true, true, true, List.of("database recovered"));
+        }
+
         @Override public void discardCandidate(RestoreRequest request) { }
 
         @Override public void copyArtifact(BackupArtifact artifact, OutputStream destination) { }

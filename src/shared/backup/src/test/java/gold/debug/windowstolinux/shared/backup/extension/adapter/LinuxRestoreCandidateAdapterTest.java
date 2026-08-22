@@ -175,9 +175,19 @@ class LinuxRestoreCandidateAdapterTest {
         }
 
         @Override
+        public HealthEvidence prepareCommit(RestoreDeploymentRequest request, Optional<String> databaseToken) {
+            this.request = request; return new HealthEvidence(true, List.of("commit boundary prepared"));
+        }
+
+        @Override
         public CommitEvidence commit(RestoreDeploymentRequest request, Optional<String> databaseToken) {
             this.request = request;
             return new CommitEvidence(true, true, "release-active", List.of("committed with rollback point"));
+        }
+
+        @Override
+        public HealthEvidence quiesceForRecovery(RestoreDeploymentRequest request) {
+            return new HealthEvidence(true, List.of("recovery quiesced"));
         }
 
         @Override

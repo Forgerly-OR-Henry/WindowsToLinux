@@ -12,8 +12,14 @@ public interface RestoreDeploymentPort {
     /** Verifies the declared whole-application health gate. / 验证已声明的整应用健康门。 */
     HealthEvidence verifyApplication(RestoreDeploymentRequest request, Optional<String> databaseToken);
 
+    /** Stops the old graph and proves the database activation write boundary. / 停止旧图并证明数据库激活停写边界。 */
+    HealthEvidence prepareCommit(RestoreDeploymentRequest request, Optional<String> databaseToken);
+
     /** Commits the healthy candidate while retaining a rollback point. / 提交健康候选并保留回滚点。 */
     CommitEvidence commit(RestoreDeploymentRequest request, Optional<String> databaseToken);
+
+    /** Stops candidate and newly restored processes before database rollback. / 在数据库回滚前停止候选及新恢复进程。 */
+    HealthEvidence quiesceForRecovery(RestoreDeploymentRequest request);
 
     /** Rolls back any attempted activation and verifies the existing release. / 回滚任何已尝试激活并验证现有发布。 */
     RecoveryEvidence recoverExisting(RestoreDeploymentRequest request);

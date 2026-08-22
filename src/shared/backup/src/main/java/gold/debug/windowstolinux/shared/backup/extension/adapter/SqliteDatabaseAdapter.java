@@ -4,7 +4,9 @@ import gold.debug.windowstolinux.shared.backup.contract.spi.DatabaseBackupAdapte
 import gold.debug.windowstolinux.shared.backup.contract.spi.DatabaseBackupArtifact;
 import gold.debug.windowstolinux.shared.backup.contract.spi.DatabaseBackupRequest;
 import gold.debug.windowstolinux.shared.backup.contract.spi.DatabaseCompatibilityEvidence;
+import gold.debug.windowstolinux.shared.backup.contract.spi.DatabaseCommitEvidence;
 import gold.debug.windowstolinux.shared.backup.contract.spi.DatabaseOperationPort;
+import gold.debug.windowstolinux.shared.backup.contract.spi.DatabaseRecoveryEvidence;
 import gold.debug.windowstolinux.shared.backup.contract.spi.DatabaseRestoreEvidence;
 import gold.debug.windowstolinux.shared.backup.contract.spi.DatabaseRestoreRequest;
 import gold.debug.windowstolinux.shared.backup.contract.validation.BackupException;
@@ -51,10 +53,22 @@ public final class SqliteDatabaseAdapter implements DatabaseBackupAdapter {
         return operations.restoreCandidate(request);
     }
 
+    @Override public DatabaseCommitEvidence commitCandidate(DatabaseRestoreRequest request) throws BackupException {
+        requireRestoreType(request); return operations.commitCandidate(request);
+    }
+
+    @Override public DatabaseRecoveryEvidence recoverCandidate(DatabaseRestoreRequest request) throws BackupException {
+        requireRestoreType(request); return operations.recoverCandidate(request);
+    }
+
     @Override
     public void discardCandidate(DatabaseRestoreRequest request) throws BackupException {
-        if (request.target().type() != type()) throw new IllegalArgumentException("SQLite restore target is required");
+        requireRestoreType(request);
         operations.discardCandidate(request);
+    }
+
+    private void requireRestoreType(DatabaseRestoreRequest request) {
+        if (request.target().type() != type()) throw new IllegalArgumentException("SQLite restore target is required");
     }
 
     private void requireType(DatabaseBackupRequest request) {

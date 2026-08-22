@@ -90,6 +90,21 @@ public final class LinuxRestoreCandidateAdapter implements RestoreCandidatePort 
         }
     }
 
+    @Override
+    public HealthEvidence prepareCommit(
+            RestoreCandidateRequest request, FileEvidence staged, Optional<String> databaseToken)
+            throws BackupException {
+        requireAutomaticActivation(request);
+        try {
+            RestoreDeploymentPort.HealthEvidence prepared = deployments.prepareCommit(
+                    deploymentRequest(request, staged.candidateToken()), checked(databaseToken));
+            return new HealthEvidence(prepared.healthy(), prepared.evidence());
+        } catch (RuntimeException exception) {
+            throw BackupException.create(BackupFailureType.RESTORE_COMMIT_FAILED,
+                    "typed restore stopped-write boundary failed", exception);
+        }
+    }
+
     /** Commits only through deploy and retains its rollback token. / 仅通过 deploy 提交并保留其回滚令牌。 */
     @Override
     public CommitEvidence commit(
@@ -107,6 +122,22 @@ public final class LinuxRestoreCandidateAdapter implements RestoreCandidatePort 
         }
     }
 
+    @Override
+    public HealthEvidence quiesceForRecovery(
+            RestoreCandidateRequest request, Optional<FileEvidence> staged) throws BackupException {
+        requireAutomaticActivation(request);
+        String token = staged.map(FileEvidence::candidateToken)
+                .orElseGet(() -> request.archiveSha256().substring(0, 32));
+        try {
+            RestoreDeploymentPort.HealthEvidence stopped = deployments.quiesceForRecovery(
+                    deploymentRequest(request, token));
+            return new HealthEvidence(stopped.healthy(), stopped.evidence());
+        } catch (RuntimeException exception) {
+            throw BackupException.create(BackupFailureType.RESTORE_RECOVERY_FAILED,
+                    "typed restore recovery quiesce failed", exception);
+        }
+    }
+
     /** Attempts deploy rollback and candidate cleanup independently. / 独立尝试 deploy 回滚和候选清理。 */
     @Override
     public RecoveryEvidence recoverExisting(
@@ -118,6 +149,14 @@ public final class LinuxRestoreCandidateAdapter implements RestoreCandidatePort 
         List<Throwable> failures = new ArrayList<>();
         String token = staged.map(FileEvidence::candidateToken)
                 .orElseGet(() -> request.archiveSha256().substring(0, 32));
+        try {
+            RestoreDeploymentPort.HealthEvidence stopped = deployments.quiesceForRecovery(
+                    deploymentRequest(request, token));
+            if (!stopped.healthy()) throw new IllegalStateException("restore recovery quiesce was not verified");
+            evidence.addAll(stopped.evidence());
+        } catch (RuntimeException exception) {
+            failures.add(exception);
+        }
         try {
             RestoreDeploymentPort.RecoveryEvidence recovered = deployments.recoverExisting(
                     deploymentRequest(request, token));

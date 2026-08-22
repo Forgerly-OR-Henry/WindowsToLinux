@@ -74,19 +74,40 @@ public final class SshdRestoreActivationPort implements RemoteRestoreActivationP
                 componentStep("restore-start-candidate", request, component,
                         LinuxOperationFailureType.RESTORE_ACTIVATION_FAILED);
             }
-        } else {
-            for (RemoteRestoreActivationComponent component : request.components().reversed()) {
-                componentStep("restore-snapshot", request, component,
-                        LinuxOperationFailureType.RESTORE_ACTIVATION_FAILED);
-            }
-            for (RemoteRestoreActivationComponent component : request.components()) {
-                componentStep("restore-start-formal", request, component,
-                        LinuxOperationFailureType.RESTORE_ACTIVATION_FAILED);
-            }
         }
         return new StepEvidence(true, List.of(request.mode() == RemoteRestoreActivationMode.PARALLEL_LOOPBACK
                 ? "Every component started with loopback-only candidate ports"
-                : "The previous graph was snapshotted and the tentative graph started on formal ports"));
+                : "Every component was prepared without changing the running graph"));
+    }
+
+    @Override
+    public StepEvidence prepareRestoreCommit(RemoteRestoreActivationRequest request)
+            throws LinuxOperationException {
+        if (request.mode() == RemoteRestoreActivationMode.PARALLEL_LOOPBACK) {
+            for (RemoteRestoreActivationComponent component : request.components().reversed()) {
+                componentStep("restore-stop-candidate", request, component,
+                        LinuxOperationFailureType.RESTORE_ACTIVATION_FAILED);
+            }
+        }
+        for (RemoteRestoreActivationComponent component : request.components().reversed()) {
+            componentStep("restore-snapshot", request, component,
+                    LinuxOperationFailureType.RESTORE_ACTIVATION_FAILED);
+        }
+        List<String> arguments = new ArrayList<>(List.of(request.candidateId(), request.candidateToken(),
+                Integer.toString(request.components().size())));
+        request.components().forEach(component -> arguments.add(component.componentId()));
+        step("restore-mark-quiesced", arguments, true, LinuxOperationFailureType.RESTORE_ACTIVATION_FAILED);
+        return new StepEvidence(true, List.of("Old and candidate processes stopped",
+                "Application-wide stopped-write marker recorded by managed helper"));
+    }
+
+    @Override
+    public StepEvidence startRestoreFormal(RemoteRestoreActivationRequest request) throws LinuxOperationException {
+        for (RemoteRestoreActivationComponent component : request.components()) {
+            componentStep("restore-start-formal", request, component,
+                    LinuxOperationFailureType.RESTORE_ACTIVATION_FAILED);
+        }
+        return new StepEvidence(true, List.of("Restored graph started on formal ports in dependency order"));
     }
 
     @Override
@@ -113,20 +134,6 @@ public final class SshdRestoreActivationPort implements RemoteRestoreActivationP
     @Override
     public CommitEvidence commitRestoreActivation(RemoteRestoreActivationRequest request)
             throws LinuxOperationException {
-        if (request.mode() == RemoteRestoreActivationMode.PARALLEL_LOOPBACK) {
-            for (RemoteRestoreActivationComponent component : request.components().reversed()) {
-                componentStep("restore-stop-candidate", request, component,
-                        LinuxOperationFailureType.RESTORE_ACTIVATION_FAILED);
-            }
-            for (RemoteRestoreActivationComponent component : request.components().reversed()) {
-                componentStep("restore-snapshot", request, component,
-                        LinuxOperationFailureType.RESTORE_ACTIVATION_FAILED);
-            }
-            for (RemoteRestoreActivationComponent component : request.components()) {
-                componentStep("restore-start-formal", request, component,
-                        LinuxOperationFailureType.RESTORE_ACTIVATION_FAILED);
-            }
-        }
         boolean componentsHealthy = formalComponentsHealthy(request);
         boolean applicationHealthy = componentsHealthy && formalApplicationHealthy(request);
         return new CommitEvidence(componentsHealthy && applicationHealthy, true,
@@ -137,6 +144,16 @@ public final class SshdRestoreActivationPort implements RemoteRestoreActivationP
     }
 
     @Override
+    public StepEvidence quiesceRestoreRecovery(RemoteRestoreActivationRequest request)
+            throws LinuxOperationException {
+        for (RemoteRestoreActivationComponent component : request.components().reversed()) {
+            componentStep("restore-quiesce-recovery", request, component,
+                    LinuxOperationFailureType.RESTORE_RECOVERY_FAILED);
+        }
+        return new StepEvidence(true, List.of("Candidate and restored formal processes stopped before rollback"));
+    }
+
+    @Override
     public RecoveryEvidence recoverRestoreActivation(RemoteRestoreActivationRequest request)
             throws LinuxOperationException {
         boolean previousVerified = true;
@@ -144,9 +161,13 @@ public final class SshdRestoreActivationPort implements RemoteRestoreActivationP
         for (RemoteRestoreActivationComponent component : request.components().reversed()) {
             var result = componentStep("restore-recover", request, component,
                     LinuxOperationFailureType.RESTORE_RECOVERY_FAILED);
-            boolean recovered = "1".equals(SshCommandExecutor.lines(result.output()).get("RECOVERED"));
-            previousVerified &= recovered;
-            evidence.add(component.componentId() + " recovery=" + recovered);
+            Map<String, String> values = SshCommandExecutor.lines(result.output());
+            boolean recovered = "1".equals(values.get("RECOVERED"));
+            boolean previous = "1".equals(values.get("PREVIOUS"));
+            boolean runtimeVerified = !previous || formalHealth(component, component.runtime().healthCheck()).healthy();
+            previousVerified &= recovered && runtimeVerified;
+            evidence.add(component.componentId() + " recovery=" + recovered
+                    + ", previous-runtime-health=" + runtimeVerified);
         }
         return new RecoveryEvidence(true, previousVerified, evidence.isEmpty()
                 ? List.of("No candidate component mutation was present") : evidence);

@@ -18,6 +18,12 @@ public interface DatabaseOperationPort {
     /** Restores into a new isolated candidate and verifies it without activation. / 恢复到新的隔离候选并在不激活的情况下校验。 */
     DatabaseRestoreEvidence restoreCandidate(DatabaseRestoreRequest request) throws BackupException;
 
+    /** Activates one isolated candidate while application writes are stopped. / 在应用写入停止时激活隔离候选。 */
+    DatabaseCommitEvidence commitCandidate(DatabaseRestoreRequest request) throws BackupException;
+
+    /** Restores the previous database or proves no previous database was present. / 恢复旧数据库或证明此前不存在数据库。 */
+    DatabaseRecoveryEvidence recoverCandidate(DatabaseRestoreRequest request) throws BackupException;
+
     /** Removes one isolated database candidate after an uncommitted restore fails. / 在未提交恢复失败后移除隔离数据库候选。 */
     void discardCandidate(DatabaseRestoreRequest request) throws BackupException;
 

@@ -21,6 +21,8 @@ case "$verb" in
   database-read-artifact) database_read_artifact "$@" ;;
   database-discard-artifact) database_discard_artifact "$@" ;;
   database-restore-candidate) database_restore_candidate "$@" ;;
+  database-commit-candidate) database_commit_candidate "$@" ;;
+  database-recover-candidate) database_recover_candidate "$@" ;;
   database-discard-candidate) database_discard_candidate "$@" ;;
   backup-create) backup_create_artifact "$@" ;;
   backup-read) backup_read_artifact "$@" ;;
@@ -29,6 +31,8 @@ case "$verb" in
   restore-prepare) restore_prepare_component "$@" ;;
   restore-start-candidate) restore_start_candidate "$@" ;;
   restore-stop-candidate) restore_stop_candidate "$@" ;;
+  restore-mark-quiesced) restore_mark_quiesced "$@" ;;
+  restore-quiesce-recovery) restore_quiesce_recovery "$@" ;;
   restore-snapshot) restore_snapshot_current "$@" ;;
   restore-start-formal) restore_start_formal "$@" ;;
   restore-recover) restore_recover_component "$@" ;;

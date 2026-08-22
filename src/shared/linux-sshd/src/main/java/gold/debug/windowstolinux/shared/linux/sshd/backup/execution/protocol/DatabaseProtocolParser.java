@@ -21,6 +21,10 @@ public final class DatabaseProtocolParser {
             "SHA256", "LIMITED_NON_TRANSACTIONAL");
     private static final Set<String> RESTORE_KEYS = Set.of(
             "CANDIDATE_ID", "CONNECTION_TOKEN", "INTEGRITY_VERIFIED", "SCHEMA_READABLE");
+    private static final Set<String> COMMIT_KEYS = Set.of(
+            "CANDIDATE_ID", "COMMITTED", "PREVIOUS_RETAINED");
+    private static final Set<String> RECOVERY_KEYS = Set.of(
+            "CANDIDATE_ID", "RECOVERED", "PREVIOUS_VERIFIED", "CANDIDATE_REMOVED");
 
     /** Parses compatibility evidence. / 解析兼容性证据。 */
     public RemoteDatabasePort.CompatibilityEvidence compatibility(String output) throws LinuxOperationException {
@@ -63,6 +67,24 @@ public final class DatabaseProtocolParser {
                 bool(values, "SCHEMA_READABLE"),
                 List.of("database artifact integrity rechecked before restore",
                         "isolated candidate database schema opened successfully"));
+    }
+
+    /** Parses stopped-write activation evidence. / 解析停写激活证据。 */
+    public RemoteDatabasePort.CommitEvidence commit(String output) throws LinuxOperationException {
+        Map<String, String> values = protocol(output, COMMIT_KEYS);
+        return new RemoteDatabasePort.CommitEvidence(required(values, "CANDIDATE_ID"),
+                bool(values, "COMMITTED"), bool(values, "PREVIOUS_RETAINED"),
+                List.of("database candidate activated after application writes stopped",
+                        "previous database retained as a rollback point"));
+    }
+
+    /** Parses verified database rollback evidence. / 解析已验证数据库回滚证据。 */
+    public RemoteDatabasePort.RecoveryEvidence recovery(String output) throws LinuxOperationException {
+        Map<String, String> values = protocol(output, RECOVERY_KEYS);
+        return new RemoteDatabasePort.RecoveryEvidence(required(values, "CANDIDATE_ID"),
+                bool(values, "RECOVERED"), bool(values, "PREVIOUS_VERIFIED"),
+                bool(values, "CANDIDATE_REMOVED"),
+                List.of("database activation rollback completed", "previous database state verified"));
     }
 
     private static String required(Map<String, String> values, String key) throws LinuxOperationException {

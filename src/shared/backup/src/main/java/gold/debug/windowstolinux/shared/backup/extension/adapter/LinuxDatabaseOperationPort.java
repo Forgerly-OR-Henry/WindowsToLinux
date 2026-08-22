@@ -3,8 +3,10 @@ package gold.debug.windowstolinux.shared.backup.extension.adapter;
 import gold.debug.windowstolinux.shared.backup.contract.spi.DatabaseBackupArtifact;
 import gold.debug.windowstolinux.shared.backup.contract.spi.DatabaseBackupRequest;
 import gold.debug.windowstolinux.shared.backup.contract.spi.DatabaseCompatibilityEvidence;
+import gold.debug.windowstolinux.shared.backup.contract.spi.DatabaseCommitEvidence;
 import gold.debug.windowstolinux.shared.backup.contract.spi.DatabaseConnectionProfile;
 import gold.debug.windowstolinux.shared.backup.contract.spi.DatabaseOperationPort;
+import gold.debug.windowstolinux.shared.backup.contract.spi.DatabaseRecoveryEvidence;
 import gold.debug.windowstolinux.shared.backup.contract.spi.DatabaseRestoreEvidence;
 import gold.debug.windowstolinux.shared.backup.contract.spi.DatabaseRestoreRequest;
 import gold.debug.windowstolinux.shared.backup.contract.validation.BackupException;
@@ -66,10 +68,33 @@ public final class LinuxDatabaseOperationPort implements DatabaseOperationPort {
     }
 
     @Override
+    public DatabaseCommitEvidence commitCandidate(DatabaseRestoreRequest request) throws BackupException {
+        try {
+            RemoteDatabasePort.CommitEvidence evidence = remote.commitCandidate(restore(request));
+            return new DatabaseCommitEvidence(evidence.candidateId(), evidence.committed(),
+                    evidence.previousDatabaseRetained(), evidence.evidence());
+        } catch (LinuxOperationException exception) {
+            throw BackupException.create(BackupFailureType.RESTORE_COMMIT_FAILED,
+                    "remote database candidate commit failed", exception);
+        }
+    }
+
+    @Override
+    public DatabaseRecoveryEvidence recoverCandidate(DatabaseRestoreRequest request) throws BackupException {
+        try {
+            RemoteDatabasePort.RecoveryEvidence evidence = remote.recoverCandidate(restore(request));
+            return new DatabaseRecoveryEvidence(evidence.candidateId(), evidence.recovered(),
+                    evidence.previousDatabaseVerified(), evidence.candidateRemoved(), evidence.evidence());
+        } catch (LinuxOperationException exception) {
+            throw BackupException.create(BackupFailureType.RESTORE_RECOVERY_FAILED,
+                    "remote database candidate recovery failed", exception);
+        }
+    }
+
+    @Override
     public void discardCandidate(DatabaseRestoreRequest request) throws BackupException {
         try {
-            remote.discardCandidate(new RemoteDatabasePort.RestoreRequest(request.applicationId(),
-                    request.candidateId(), connection(request.target()), artifact(request.artifact())));
+            remote.discardCandidate(restore(request));
         } catch (LinuxOperationException exception) {
             throw BackupException.create(BackupFailureType.CLEANUP_FAILED,
                     "remote database candidate cleanup failed", exception);
@@ -109,6 +134,11 @@ public final class LinuxDatabaseOperationPort implements DatabaseOperationPort {
     private static RemoteDatabasePort.BackupRequest toRemote(DatabaseBackupRequest request) {
         return new RemoteDatabasePort.BackupRequest(request.applicationId(), connection(request.connection()),
                 request.applicationWritesStopped(), request.exclusiveWriterConfirmed());
+    }
+
+    private static RemoteDatabasePort.RestoreRequest restore(DatabaseRestoreRequest request) {
+        return new RemoteDatabasePort.RestoreRequest(request.applicationId(), request.candidateId(),
+                connection(request.target()), artifact(request.artifact()));
     }
 
     private static RemoteDatabasePort.ConnectionProfile connection(DatabaseConnectionProfile profile) {

@@ -75,6 +75,32 @@ public final class SshdDatabaseOperationPort implements RemoteDatabasePort {
     }
 
     @Override
+    public CommitEvidence commitCandidate(RestoreRequest request) throws LinuxOperationException {
+        try {
+            var result = commands.execProtocol(renderer.commitCandidate(request), DATABASE_TIMEOUT, true);
+            requireSuccess(result, LinuxOperationFailureType.DATABASE_RESTORE_FAILED,
+                    "controlled database candidate activation failed");
+            return parser.commit(result.output());
+        } catch (LinuxOperationException exception) {
+            throw LinuxOperationException.create(LinuxOperationFailureType.DATABASE_RESTORE_FAILED,
+                    "database candidate activation transport failed", exception);
+        }
+    }
+
+    @Override
+    public RecoveryEvidence recoverCandidate(RestoreRequest request) throws LinuxOperationException {
+        try {
+            var result = commands.execProtocol(renderer.recoverCandidate(request), DATABASE_TIMEOUT, true);
+            requireSuccess(result, LinuxOperationFailureType.DATABASE_RESTORE_FAILED,
+                    "controlled database recovery failed");
+            return parser.recovery(result.output());
+        } catch (LinuxOperationException exception) {
+            throw LinuxOperationException.create(LinuxOperationFailureType.DATABASE_RESTORE_FAILED,
+                    "database recovery transport failed", exception);
+        }
+    }
+
+    @Override
     public void discardCandidate(RestoreRequest request) throws LinuxOperationException {
         try {
             var result = commands.execProtocol(renderer.discardCandidate(request), DATABASE_TIMEOUT, false);

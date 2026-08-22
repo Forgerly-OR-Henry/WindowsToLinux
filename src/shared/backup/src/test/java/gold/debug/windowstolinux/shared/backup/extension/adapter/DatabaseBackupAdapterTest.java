@@ -178,6 +178,20 @@ class DatabaseBackupAdapterTest {
         }
 
         @Override
+        public gold.debug.windowstolinux.shared.backup.contract.spi.DatabaseCommitEvidence commitCandidate(
+                DatabaseRestoreRequest request) {
+            return new gold.debug.windowstolinux.shared.backup.contract.spi.DatabaseCommitEvidence(
+                    request.candidateId(), true, true, List.of("database committed"));
+        }
+
+        @Override
+        public gold.debug.windowstolinux.shared.backup.contract.spi.DatabaseRecoveryEvidence recoverCandidate(
+                DatabaseRestoreRequest request) {
+            return new gold.debug.windowstolinux.shared.backup.contract.spi.DatabaseRecoveryEvidence(
+                    request.candidateId(), true, true, true, List.of("database recovered"));
+        }
+
+        @Override
         public void discardCandidate(DatabaseRestoreRequest request) {
         }
 

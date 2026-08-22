@@ -27,6 +27,12 @@ public interface RemoteDatabasePort {
     /** Restores and reads an isolated candidate without activation. / 恢复并读取隔离候选且不激活。 */
     RestoreEvidence restoreCandidate(RestoreRequest request) throws LinuxOperationException;
 
+    /** Activates one verified candidate and retains the exact previous database. / 激活已验证候选并保留精确旧数据库。 */
+    CommitEvidence commitCandidate(RestoreRequest request) throws LinuxOperationException;
+
+    /** Recovers a committed or partially committed candidate and verifies the previous state. / 恢复已提交或部分提交候选并验证旧状态。 */
+    RecoveryEvidence recoverCandidate(RestoreRequest request) throws LinuxOperationException;
+
     /** Removes one isolated database candidate that was never committed. / 移除一个从未提交的隔离数据库候选。 */
     void discardCandidate(RestoreRequest request) throws LinuxOperationException;
 
@@ -193,6 +199,32 @@ public interface RemoteDatabasePort {
             connectionToken = identifier(connectionToken, "connectionToken");
             if (!integrityVerified || !schemaReadable) {
                 throw new IllegalArgumentException("unverified database candidate cannot be returned");
+            }
+            evidence = validatedEvidence(evidence);
+        }
+    }
+
+    /** Successful database activation evidence. / 数据库成功激活证据。 */
+    record CommitEvidence(String candidateId, boolean committed, boolean previousDatabaseRetained,
+                          List<String> evidence) {
+        /** Requires complete activation evidence. / 要求完整激活证据。 */
+        public CommitEvidence {
+            candidateId = identifier(candidateId, "candidateId");
+            if (!committed || !previousDatabaseRetained) {
+                throw new IllegalArgumentException("database commit evidence is incomplete");
+            }
+            evidence = validatedEvidence(evidence);
+        }
+    }
+
+    /** Verified rollback or uncommitted cleanup evidence. / 已验证回滚或未提交清理证据。 */
+    record RecoveryEvidence(String candidateId, boolean recovered, boolean previousDatabaseVerified,
+                            boolean candidateRemoved, List<String> evidence) {
+        /** Requires a complete safe recovery result. / 要求完整安全恢复结果。 */
+        public RecoveryEvidence {
+            candidateId = identifier(candidateId, "candidateId");
+            if (!recovered || !previousDatabaseVerified || !candidateRemoved) {
+                throw new IllegalArgumentException("database recovery evidence is incomplete");
             }
             evidence = validatedEvidence(evidence);
         }

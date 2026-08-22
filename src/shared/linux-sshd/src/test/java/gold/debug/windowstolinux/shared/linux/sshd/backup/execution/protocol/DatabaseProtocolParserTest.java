@@ -42,6 +42,45 @@ class DatabaseProtocolParserTest {
     }
 
     @Test
+    void parsesCompleteCommitAndRecoveryEvidence() throws Exception {
+        var committed = parser.commit("""
+                CANDIDATE_ID=sample-0123456789abcdef
+                COMMITTED=1
+                PREVIOUS_RETAINED=1
+                """);
+        var recovered = parser.recovery("""
+                CANDIDATE_ID=sample-0123456789abcdef
+                RECOVERED=1
+                PREVIOUS_VERIFIED=1
+                CANDIDATE_REMOVED=1
+                """);
+
+        assertTrue(committed.committed());
+        assertTrue(committed.previousDatabaseRetained());
+        assertTrue(recovered.recovered());
+        assertTrue(recovered.previousDatabaseVerified());
+        assertTrue(recovered.candidateRemoved());
+    }
+
+    @Test
+    void rejectsIncompleteOrUnknownCommitAndRecoveryEvidence() {
+        LinuxOperationException incomplete = assertThrows(LinuxOperationException.class, () -> parser.commit("""
+                CANDIDATE_ID=sample-0123456789abcdef
+                COMMITTED=1
+                """));
+        LinuxOperationException unknown = assertThrows(LinuxOperationException.class, () -> parser.recovery("""
+                CANDIDATE_ID=sample-0123456789abcdef
+                RECOVERED=1
+                PREVIOUS_VERIFIED=1
+                CANDIDATE_REMOVED=1
+                EXTRA=unexpected
+                """));
+
+        assertEquals(LinuxOperationFailureType.DATABASE_EVIDENCE_INVALID.code(), incomplete.failure().code());
+        assertEquals(LinuxOperationFailureType.DATABASE_EVIDENCE_INVALID.code(), unknown.failure().code());
+    }
+
+    @Test
     void rejectsMissingOrNonBooleanProtocolEvidence() {
         LinuxOperationException missing = assertThrows(LinuxOperationException.class,
                 () -> parser.compatibility("TYPE=sqlite\n"));

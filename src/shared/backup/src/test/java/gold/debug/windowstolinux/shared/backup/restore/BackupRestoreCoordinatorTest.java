@@ -7,7 +7,9 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import gold.debug.windowstolinux.shared.backup.contract.spi.DatabaseBackupAdapter;
 import gold.debug.windowstolinux.shared.backup.contract.spi.DatabaseBackupArtifact;
 import gold.debug.windowstolinux.shared.backup.contract.spi.DatabaseBackupRequest;
+import gold.debug.windowstolinux.shared.backup.contract.spi.DatabaseCommitEvidence;
 import gold.debug.windowstolinux.shared.backup.contract.spi.DatabaseConnectionProfile;
+import gold.debug.windowstolinux.shared.backup.contract.spi.DatabaseRecoveryEvidence;
 import gold.debug.windowstolinux.shared.backup.contract.spi.DatabaseRestoreEvidence;
 import gold.debug.windowstolinux.shared.backup.contract.spi.DatabaseRestoreRequest;
 import gold.debug.windowstolinux.shared.backup.contract.spi.RestoreCandidatePort;
@@ -38,6 +40,7 @@ import java.nio.file.Path;
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
+import java.util.ArrayList;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -185,6 +188,34 @@ class BackupRestoreCoordinatorTest {
         assertTrue(port.recoveryCalled);
     }
 
+    @Test
+    void databaseCommitOccursInsideStoppedWriteBoundaryBeforeFormalHealth() throws Exception {
+        List<String> calls = new ArrayList<>();
+        RecordingCandidatePort port = new RecordingCandidatePort(false, false, calls);
+        SuccessfulDatabaseAdapter database = new SuccessfulDatabaseAdapter(calls);
+
+        BackupRestoreResult result = new BackupRestoreCoordinator(new BackupRestorePreflight(), port,
+                new DatabaseAdapterRegistry(List.of(database))).restore(databasePlan());
+
+        assertEquals(BackupRestoreStatus.SUCCEEDED, result.status());
+        assertEquals(List.of("stage", "database-restore", "prepare-commit", "database-commit",
+                "components", "application", "commit"), calls);
+    }
+
+    @Test
+    void failureAfterDatabaseCommitQuiescesProcessesThenRecoversDatabaseAndRelease() throws Exception {
+        List<String> calls = new ArrayList<>();
+        RecordingCandidatePort port = new RecordingCandidatePort(true, false, calls);
+        SuccessfulDatabaseAdapter database = new SuccessfulDatabaseAdapter(calls);
+
+        BackupRestoreResult result = new BackupRestoreCoordinator(new BackupRestorePreflight(), port,
+                new DatabaseAdapterRegistry(List.of(database))).restore(databasePlan());
+
+        assertEquals(BackupRestoreStatus.FAILED_EXISTING_PRESERVED, result.status());
+        assertEquals(List.of("stage", "database-restore", "prepare-commit", "database-commit",
+                "components", "quiesce", "database-recover", "recover"), calls);
+    }
+
     private BackupRestoreCoordinator coordinator(RestoreCandidatePort port) {
         return new BackupRestoreCoordinator(new BackupRestorePreflight(), port,
                 new DatabaseAdapterRegistry(List.of()));
@@ -308,14 +339,21 @@ class BackupRestoreCoordinatorTest {
         private final boolean recoveryFailure;
         private int stageCalls;
         private boolean recoveryCalled;
+        private final List<String> calls;
 
         private RecordingCandidatePort(boolean componentFailure, boolean recoveryFailure) {
+            this(componentFailure, recoveryFailure, new ArrayList<>());
+        }
+
+        private RecordingCandidatePort(boolean componentFailure, boolean recoveryFailure, List<String> calls) {
             this.componentFailure = componentFailure;
             this.recoveryFailure = recoveryFailure;
+            this.calls = calls;
         }
 
         @Override
         public FileEvidence stageFiles(RestoreCandidateRequest request) {
+            calls.add("stage");
             stageCalls++;
             return new FileEvidence(request.candidateId(), "candidate-token", request.verifiedBytes(),
                     true, true, true, List.of("isolated files staged and verified"));
@@ -324,28 +362,78 @@ class BackupRestoreCoordinatorTest {
         @Override
         public HealthEvidence verifyComponents(
                 RestoreCandidateRequest request, FileEvidence files, Optional<String> databaseToken) {
+            calls.add("components");
             return new HealthEvidence(!componentFailure, List.of("component health checked"));
         }
 
         @Override
         public HealthEvidence verifyApplication(
                 RestoreCandidateRequest request, FileEvidence files, Optional<String> databaseToken) {
+            calls.add("application");
             return new HealthEvidence(true, List.of("whole application health checked"));
+        }
+
+        @Override
+        public HealthEvidence prepareCommit(
+                RestoreCandidateRequest request, FileEvidence files, Optional<String> databaseToken) {
+            calls.add("prepare-commit");
+            return new HealthEvidence(true, List.of("stopped-write boundary verified"));
         }
 
         @Override
         public CommitEvidence commit(
                 RestoreCandidateRequest request, FileEvidence files, Optional<String> databaseToken) {
+            calls.add("commit");
             return new CommitEvidence(true, true, "release-active", List.of("candidate committed atomically"));
+        }
+
+        @Override
+        public HealthEvidence quiesceForRecovery(
+                RestoreCandidateRequest request, Optional<FileEvidence> files) {
+            calls.add("quiesce");
+            return new HealthEvidence(true, List.of("recovery quiesced"));
         }
 
         @Override
         public RecoveryEvidence recoverExisting(RestoreCandidateRequest request, Optional<FileEvidence> files)
                 throws BackupException {
+            calls.add("recover");
             recoveryCalled = true;
             return new RecoveryEvidence(!recoveryFailure, !recoveryFailure,
                     List.of("failed candidate removed and existing release verified"));
         }
+    }
+
+    private static final class SuccessfulDatabaseAdapter implements DatabaseBackupAdapter {
+        private final List<String> calls;
+
+        private SuccessfulDatabaseAdapter(List<String> calls) { this.calls = calls; }
+
+        @Override public BackupDatabaseType type() { return BackupDatabaseType.SQLITE; }
+
+        @Override public DatabaseBackupArtifact backup(DatabaseBackupRequest request) {
+            throw new UnsupportedOperationException("backup is not used by this test");
+        }
+
+        @Override public DatabaseRestoreEvidence restore(DatabaseRestoreRequest request) {
+            calls.add("database-restore");
+            return new DatabaseRestoreEvidence(request.candidateId(), "database-candidate", true, true,
+                    List.of("isolated database restored"));
+        }
+
+        @Override public DatabaseCommitEvidence commitCandidate(DatabaseRestoreRequest request) {
+            calls.add("database-commit");
+            return new DatabaseCommitEvidence(request.candidateId(), true, true,
+                    List.of("database activated with rollback point"));
+        }
+
+        @Override public DatabaseRecoveryEvidence recoverCandidate(DatabaseRestoreRequest request) {
+            calls.add("database-recover");
+            return new DatabaseRecoveryEvidence(request.candidateId(), true, true, true,
+                    List.of("previous database restored"));
+        }
+
+        @Override public void discardCandidate(DatabaseRestoreRequest request) { calls.add("database-discard"); }
     }
 
     private static final class FailingDatabaseAdapter implements DatabaseBackupAdapter {
@@ -364,6 +452,18 @@ class BackupRestoreCoordinatorTest {
             restoreCalled = true;
             throw BackupException.create(BackupFailureType.DATABASE_RESTORE_FAILED,
                     "database candidate creation failed after mutation began");
+        }
+
+        @Override
+        public gold.debug.windowstolinux.shared.backup.contract.spi.DatabaseCommitEvidence commitCandidate(
+                DatabaseRestoreRequest request) {
+            throw new UnsupportedOperationException("restore fails before commit");
+        }
+
+        @Override
+        public gold.debug.windowstolinux.shared.backup.contract.spi.DatabaseRecoveryEvidence recoverCandidate(
+                DatabaseRestoreRequest request) {
+            throw new UnsupportedOperationException("restore fails before commit");
         }
 
         @Override

@@ -14,6 +14,12 @@ public interface RemoteRestoreActivationPort {
     /** Extracts and starts either isolated candidates or one tentative short-stop graph. / 提取并启动隔离候选或一个暂定短停机图。 */
     StepEvidence startRestoreActivation(RemoteRestoreActivationRequest request) throws LinuxOperationException;
 
+    /** Stops candidates and the old graph, then records a verified stopped-write boundary. / 停止候选与旧图并记录已验证停写边界。 */
+    StepEvidence prepareRestoreCommit(RemoteRestoreActivationRequest request) throws LinuxOperationException;
+
+    /** Installs and starts the restored graph on its formal ports after database activation. / 数据库激活后在正式端口安装并启动恢复图。 */
+    StepEvidence startRestoreFormal(RemoteRestoreActivationRequest request) throws LinuxOperationException;
+
     /** Verifies every candidate component in dependency order. / 按依赖顺序验证每个候选组件。 */
     StepEvidence verifyRestoreComponents(RemoteRestoreActivationRequest request) throws LinuxOperationException;
 
@@ -22,6 +28,9 @@ public interface RemoteRestoreActivationPort {
 
     /** Commits formal ports and re-verifies component and application health. / 提交正式端口并重新验证组件及整应用健康。 */
     CommitEvidence commitRestoreActivation(RemoteRestoreActivationRequest request) throws LinuxOperationException;
+
+    /** Stops every candidate/new process before database and release rollback. / 在数据库及发布回滚前停止全部候选和新进程。 */
+    StepEvidence quiesceRestoreRecovery(RemoteRestoreActivationRequest request) throws LinuxOperationException;
 
     /** Removes candidate effects and verifies the exact previous graph. / 移除候选影响并验证精确旧图。 */
     RecoveryEvidence recoverRestoreActivation(RemoteRestoreActivationRequest request) throws LinuxOperationException;
