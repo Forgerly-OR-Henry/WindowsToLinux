@@ -3,7 +3,7 @@
 ## 文档信息
 
 - 产品：WindowsToLinux
-- 说明书版本：`1.1.1-current-test-evidence`
+- 说明书版本：`1.2.0-six-phase-roadmap`
 - 对应功能检查点：`030bee5`
 - 更新日期：2026-08-23
 - 适用对象：首次使用者、有 Linux 基础的高级用户、部署维护人员和项目开发者
@@ -391,8 +391,9 @@ AI 只用于对脱敏静态事实生成解释或建议，不参与确定性准�
 | 完整远端备份 | 已实现并有桌面入口及默认跳过的文件型产品门面验收 | 真实 Linux、容器和数据库执行为 `RUNTIME-PENDING` |
 | schema v4 受管恢复 | 已实现并有桌面入口及默认跳过的双服务器产品门面验收 | 真实候选端口、正式提交和数据库恢复为 `RUNTIME-PENDING` |
 | 双服务器离线迁移 | 已实现并有桌面入口及默认跳过的停写迁移产品门面验收 | 双端真实执行和人工切流前终态为 `RUNTIME-PENDING` |
-| Web 控制面 | 未实现 | 无 |
-| Windows 自动更新/卸载产品入口 | 未实现 | 无 |
+| 五期 Web 功能服务台 | 未实现；规划为只在回环内部测试、无登录认证的功能版本 | 无 |
+| 六期官网与上线安全 | 仅有方向文档；主页、登录认证、公开部署和正式下载均未实现 | 无 |
+| 六期 Windows 生产更新/卸载产品入口 | 四期安全核心已实现，生产入口未实现 | 无 |
 
 本地自动化测试可以证明确定性逻辑、协议形状、安全拒绝和恢复顺序，但不能证明真实 SSH、systemd、容器、端口、数据库或文件系统行为已经成功。
 
@@ -404,11 +405,12 @@ AI 只用于对脱敏静态事实生成解释或建议，不参与确定性准�
 - 人工外部切流后的目标持久化接管流程；
 - SQLite 自动完整备份和物理恢复映射；
 - 一个应用多个数据库制品；
-- Web 登录、Web 部署和 Web 运维；
+- 五期回环内部测试 Web 功能服务台；
+- 六期公开官网主页、上线登录认证、公开部署和正式发布下载；
 - 自动 DNS、代理或负载均衡切换；
-- Windows 独立更新/卸载执行器、生产 Ed25519 公钥、执行器身份、认证密钥安全交付、交接文件 ACL/一次性消费和实际文件替换/删除。
+- 六期 Windows 独立更新/卸载执行器、生产信任材料及实际文件替换/删除；具体方案在六期实施前另行确认。
 
-Windows 更新与卸载已有签名验证、HMAC-SHA256 交接、程序/SQLite 成对回滚、无默认删除决定和固定 Credential Manager 命名空间等安全核心，但没有独立产品执行器，因此不能作为当前可用功能操作。
+Windows 更新与卸载已有签名验证、HMAC-SHA256 交接、程序/SQLite 成对回滚、无默认删除决定和固定 Credential Manager 命名空间等安全核心，但没有独立产品执行器，因此不能作为当前可用功能操作。生产接线已经移入六期，当前不提前确定详细上线方案。
 
 ## 20. 建议的首次使用顺序
 
@@ -428,6 +430,8 @@ Windows 更新与卸载已有签名验证、HMAC-SHA256 交接、程序/SQLite �
 
 - [File.md](File.md)：正式模块、包、依赖、数据目录和安全边界；
 - [AllFile.md](AllFile.md)：当前非测试源码文件索引；
-- [DEVELOPMENT.md](DEVELOPMENT.md)：产品边界、五期路线和开发完成定义；
-- [PHASE-4.md](development/PHASE-4.md)：数据库、备份、恢复、迁移和桌面维护需求；
-- [PHASE-4-RUNTIME-ACCEPTANCE.md](development/PHASE-4-RUNTIME-ACCEPTANCE.md)：真实环境配置和证据模板。
+- [DEVELOPMENT.md](DEVELOPMENT.md)：产品边界、六期路线和开发完成定义；
+- [PHASE-4.md](development/PHASE-4.md)：数据库、备份、恢复、迁移和桌面维护安全核心；
+- [PHASE-4-RUNTIME-ACCEPTANCE.md](development/PHASE-4-RUNTIME-ACCEPTANCE.md)：真实环境配置和证据模板；
+- [PHASE-5.md](development/PHASE-5.md)：回环内部测试 Web 功能服务台范围；
+- [PHASE-6.md](development/PHASE-6.md)：官网、上线认证、正式发布下载和生产维护的大致方向。

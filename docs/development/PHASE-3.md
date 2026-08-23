@@ -17,6 +17,7 @@
 - [三期生态构建补全](PHASE-3-ECOSYSTEM-EXTENSION.md)
 - [四期](PHASE-4.md)
 - [五期](PHASE-5.md)
+- [六期](PHASE-6.md)
 
 ## 1. 三期目标
 

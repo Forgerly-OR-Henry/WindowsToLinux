@@ -16,6 +16,7 @@
 - [三期](PHASE-3.md)
 - [四期](PHASE-4.md)
 - [五期](PHASE-5.md)
+- [六期](PHASE-6.md)
 
 ## 1. 二期目标
 
