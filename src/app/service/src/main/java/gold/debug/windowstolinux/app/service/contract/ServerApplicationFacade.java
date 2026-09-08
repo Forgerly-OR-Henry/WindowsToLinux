@@ -13,6 +13,7 @@ import java.util.function.Predicate;
 
 /** Narrow application operations required by server management. / 服务器管理所需的窄应用操作。 */
 public interface ServerApplicationFacade {
+    java.util.List<ServerProfile> listServerProfiles() throws SQLException;
     void saveServerProfile(ServerProfile profile, CredentialStorageMode mode,
                            char[] masterPassword, char[] password) throws SQLException, SecretStoreException;
 

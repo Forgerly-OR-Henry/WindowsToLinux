@@ -181,6 +181,9 @@ final class TypedAcceptanceFixture {
         String server = healthy ? """
                 import http.server
                 import os
+                import signal
+                import sys
+                signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))
                 class Handler(http.server.BaseHTTPRequestHandler):
                     def do_GET(self):
                         body = b"%s"

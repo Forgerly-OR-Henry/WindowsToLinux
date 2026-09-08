@@ -37,15 +37,19 @@ public final class ServerPage implements ServerContext {
     private final JPasswordField masterPassword = new JPasswordField(20);
     private final JTextArea output = DesktopComponentFactory.outputArea();
     private final JPanel panel;
+    private boolean busy;
+    private ServerSelectionPane selection;
 
     /** Creates the stateful page controller. / 创建有状态页面控制器。 */
     public ServerPage(JFrame owner, ServerApplicationFacade service, DesktopComponentFactory components, PageMessagePresenter messages) {
         this.owner = owner;
         this.service = service;
         this.messages = messages;
+        credentialMode.setSelectedItem(CredentialStorageMode.WINDOWS_CREDENTIAL_MANAGER);
         messages.localize(credentialMode, "credential.mode.");
         credentialMode.addActionListener(event -> masterPassword.setEnabled(
                 credentialMode.getSelectedItem() == CredentialStorageMode.MASTER_PASSWORD));
+        masterPassword.setEnabled(false);
         panel = createPanel(components);
     }
 
@@ -68,6 +72,7 @@ public final class ServerPage implements ServerContext {
         credentialMode.setSelectedItem(state.credentialMode());
         masterPassword.setText(new String(state.masterPassword()));
         output.setText(state.output());
+        selection.select(state.id());
     }
 
     /** Performs the {@code profile} operation. / 执行 {@code profile} 操作。 */
@@ -75,6 +80,11 @@ public final class ServerPage implements ServerContext {
         String serverId = id.getText().trim();
         return new ServerProfile(serverId, host.getText().trim(), Integer.parseInt(port.getText().trim()),
                 username.getText().trim(), "ssh/" + serverId + "/password", credentialMode());
+    }
+    /** Synchronizes saved selection with manual server and component operations. */
+    @Override public void selectProfile(ServerProfile profile) {
+        id.setText(profile.id()); host.setText(profile.host()); port.setText(Integer.toString(profile.sshPort()));
+        username.setText(profile.username()); credentialMode.setSelectedItem(profile.credentialMode()); password.setText("");
     }
     /** Performs the {@code credentialMode} operation. / 执行 {@code credentialMode} 操作。 */
     @Override public CredentialStorageMode credentialMode() {
@@ -100,66 +110,79 @@ public final class ServerPage implements ServerContext {
 
     private JPanel createPanel(DesktopComponentFactory c) {
         JPanel page = c.pagePanel();
+        var advanced = new gold.debug.windowstolinux.app.ui.component.AdvancedOptionsPane(page, c, messages);
         JPanel card = c.card(new BorderLayout(0, 12));
         card.add(c.sectionHeading(messages.text("section.connection.title"), messages.text("section.connection.description")),
                 BorderLayout.NORTH);
         JPanel form = c.transparent(new GridBagLayout());
-        c.addField(form, 0, 0, messages.text("field.serverId"), id);
-        c.addField(form, 0, 1, messages.text("field.host"), host);
-        c.addField(form, 1, 0, messages.text("field.sshPort"), port);
-        c.addField(form, 1, 1, messages.text("field.sshUser"), username);
+        advanced.field("field.serverId", id);
+        c.addField(form, 0, 0, messages.text("field.host"), host);
+        advanced.field("field.sshPort", port);
+        c.addField(form, 1, 0, messages.text("field.sshUser"), username);
         c.addField(form, 2, 0, messages.text("field.sshPassword"), password);
-        c.addField(form, 2, 1, messages.text("field.credentialStorage"), credentialMode);
-        c.addField(form, 3, 0, messages.text("field.masterPassword"), masterPassword);
+        advanced.field("field.credentialStorage", credentialMode);
+        advanced.field("field.masterPassword", masterPassword);
         card.add(form, BorderLayout.CENTER);
         JPanel actions = c.transparent(new FlowLayout(FlowLayout.LEFT, 8, 0));
         JButton save = c.secondaryButton(messages.text("button.saveServer"));
-        save.addActionListener(event -> save());
+        save.addActionListener(event -> verify(true));
         JButton verify = c.primaryButton(messages.text("button.verifyServer"));
-        verify.addActionListener(event -> verify());
+        verify.addActionListener(event -> verify(false));
         JButton prepare = c.secondaryButton(messages.text("button.prepareEnvironment"));
         prepare.addActionListener(event -> prepare(prepare));
-        actions.add(save); actions.add(verify); actions.add(prepare);
+        actions.add(save); advanced.addOption(verify); advanced.addOption(prepare);
         card.add(actions, BorderLayout.SOUTH);
-        page.add(card, BorderLayout.NORTH);
+        JPanel top = c.transparent(new BorderLayout(0, 12));
+        selection = new ServerSelectionPane(service, c, messages, this::selectProfile);
+        top.add(selection, BorderLayout.NORTH);
+        top.add(card, BorderLayout.CENTER);
+        page.add(top, BorderLayout.NORTH);
         page.add(c.outputCard(messages.text("section.verification.title"),
                 messages.text("section.verification.description"), output), BorderLayout.CENTER);
-        return page;
+        return advanced;
     }
 
-    private void save() {
-        try {
-            service.saveServerProfile(profile(), credentialMode(), masterPassword(), password.getPassword());
-            output.setText(messages.text("server.saved"));
-            password.setText("");
-            masterPassword.setText("");
-        } catch (Exception exception) {
-            output.setText(messages.text("server.saveFailed", Map.of("detail", messages.safe(exception))));
-        }
-    }
-
-    private void verify() {
+    private void verify(boolean save) {
+        if (busy) return;
         try {
             ServerProfile profile = profile();
             CredentialStorageMode mode = credentialMode();
             char[] master = masterPassword();
+            char[] secret = save ? password.getPassword() : new char[0];
             output.setText(messages.text("server.connecting"));
+            setBusy(true);
             DesktopTaskExecutor.run(
-                    () -> service.verifyServer(profile, mode, master, ServerPage.this::confirmFingerprint),
-                    value -> output.setText(messages.text("server.capabilities", Map.ofEntries(
+                    () -> {
+                        try {
+                            if (save && (secret.length > 0 || !service.findServerProfile(profile.id()).filter(profile::equals).isPresent()))
+                                service.saveServerProfile(profile, mode, master.clone(), secret);
+                            return service.verifyServer(profile, mode, master.clone(), ServerPage.this::confirmFingerprint);
+                        } finally { java.util.Arrays.fill(master, '\0'); java.util.Arrays.fill(secret, '\0'); }
+                    },
+                    value -> {
+                        setBusy(false); if (save) { password.setText(""); selection.select(profile.id()); }
+                        output.setText(messages.text("server.capabilities", Map.ofEntries(
                             Map.entry("os", value.operatingSystem()), Map.entry("architecture", value.architecture()),
-                            Map.entry("java21", value.java21Available()), Map.entry("maven", value.mavenAvailable()),
-                            Map.entry("tar", value.tarAvailable()), Map.entry("curl", value.curlAvailable()),
-                            Map.entry("systemd", value.systemdAvailable()), Map.entry("sudo", value.nonInteractiveSudoAvailable()),
-                            Map.entry("limits", value.buildLimitToolsAvailable()), Map.entry("space", value.availableBytes())))),
-                    exception -> output.setText(messages.text("server.verifyFailed",
-                            Map.of("detail", messages.safe(exception)))));
+                            Map.entry("java21", availability(value.java21Available())), Map.entry("maven", availability(value.mavenAvailable())),
+                            Map.entry("tar", availability(value.tarAvailable())), Map.entry("curl", availability(value.curlAvailable())),
+                            Map.entry("systemd", availability(value.systemdAvailable())), Map.entry("sudo", availability(value.nonInteractiveSudoAvailable())),
+                            Map.entry("limits", availability(value.buildLimitToolsAvailable())), Map.entry("space", value.availableBytes()))));
+                    },
+                    exception -> { setBusy(false); output.setText(messages.text("server.verifyFailed",
+                            Map.of("detail", messages.safe(exception)))); });
         } catch (Exception exception) {
+            setBusy(false);
             output.setText(messages.text("server.invalid", Map.of("detail", messages.safe(exception))));
         }
     }
 
+    private void setBusy(boolean value) {
+        busy = value;
+        ((gold.debug.windowstolinux.app.ui.component.AdvancedOptionsPane) panel).setBusy(value);
+    }
+
     private void prepare(JButton trigger) {
+        if (busy) return;
         try {
             ServerProfile entered = profile();
             ServerProfile saved = service.findServerProfile(entered.id()).orElseThrow(
@@ -174,17 +197,17 @@ public final class ServerPage implements ServerContext {
                 return;
             }
             char[] master = masterPassword();
-            trigger.setEnabled(false);
+            setBusy(true);
             output.setText(messages.text("environment.preparing"));
             DesktopTaskExecutor.run(
                     () -> service.prepareEnvironmentWithStoredPassword(saved, saved.credentialMode(), master,
                             ServerPage.this::confirmFingerprint, true),
                     result -> {
-                        trigger.setEnabled(true);
+                        setBusy(false);
                         output.setText(environmentSummary(result));
                     },
                     exception -> {
-                        trigger.setEnabled(true);
+                        setBusy(false);
                         output.setText(messages.text("environment.incomplete",
                                 Map.of("detail", messages.safe(exception))));
                     });

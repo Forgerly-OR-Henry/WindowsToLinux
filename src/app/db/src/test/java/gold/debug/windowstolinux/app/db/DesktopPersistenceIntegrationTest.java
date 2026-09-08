@@ -509,6 +509,25 @@ class DesktopPersistenceIntegrationTest {
     }
 
     @Test
+    void repeatedSecretMetadataUsesPersistedTimePrecisionAndStillRejectsChanges() throws Exception {
+        var reference = new SecretReference("precision-test", 1);
+        var revision = new StoredApplicationSecretRevision(reference, "application-secret/precision-test/1",
+                CredentialStorageMode.MASTER_PASSWORD, Instant.parse("2026-09-08T07:00:00.123456789Z"));
+        try (DesktopPersistence database = DesktopPersistence.open(temporaryDirectory.resolve("secret-precision"))) {
+            database.applicationSecrets().saveRevision(revision);
+            database.applicationSecrets().saveRevision(revision);
+            assertEquals(Instant.parse("2026-09-08T07:00:00.123Z"),
+                    database.applicationSecrets().findRevision(reference).orElseThrow().createdAt());
+            assertThrows(java.sql.SQLException.class, () -> database.applicationSecrets().saveRevision(
+                    new StoredApplicationSecretRevision(reference, "application-secret/different/1",
+                            revision.credentialMode(), revision.createdAt())));
+            assertThrows(java.sql.SQLException.class, () -> database.applicationSecrets().saveRevision(
+                    new StoredApplicationSecretRevision(reference, revision.credentialKey(), revision.credentialMode(),
+                            revision.createdAt().plusMillis(1))));
+        }
+    }
+
+    @Test
     void persistsImmutableConfigurationAndSecretRevisionBindingsWithoutSecretValues() throws Exception {
         ConfigurationSnapshot first = ConfigurationSnapshot.create("demo", 1, "v1", Instant.parse("2026-08-12T00:00:00Z"),
                 java.util.List.of(new ConfigurationEntry("PORT", ConfigurationScope.RUNTIME, new ConfigurationValue.Number(18080))));

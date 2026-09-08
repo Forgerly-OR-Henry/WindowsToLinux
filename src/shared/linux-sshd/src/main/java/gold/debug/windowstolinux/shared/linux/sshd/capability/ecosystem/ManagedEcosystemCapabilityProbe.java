@@ -22,7 +22,7 @@ public final class ManagedEcosystemCapabilityProbe {
 
     /** Renders the complete language and toolchain portion of the platform probe. / 渲染平台探测中的完整语言与工具链部分。 */
     public static String platformToolChecks() {
-        return """
+        return gold.debug.windowstolinux.shared.linux.sshd.capability.ecosystem.KotlinCompilerToolchain.selectionScript() + """
                 if [ -x "$managed_java" ]; then
                   printf 'JAVA_MAJORS='
                   "$managed_java" -XshowSettings:properties -version 2>&1 | awk -F= '/java.specification.version/ {gsub(/[[:space:]]/, "", $2); print $2; exit}'
@@ -92,7 +92,7 @@ public final class ManagedEcosystemCapabilityProbe {
                 if command -v rustc >/dev/null 2>&1; then printf 'TOOL_RUSTC='; rustc --version | awk '{print $2}'; else printf 'TOOL_RUSTC=\\n'; fi
                 if command -v cargo >/dev/null 2>&1; then printf 'TOOL_CARGO='; cargo --version | awk '{print $2}'; else printf 'TOOL_CARGO=\\n'; fi
                 if command -v dotnet >/dev/null 2>&1; then printf 'TOOL_DOTNET='; dotnet --version; else printf 'TOOL_DOTNET=\\n'; fi
-                if command -v kotlinc >/dev/null 2>&1; then printf 'TOOL_KOTLINC='; kotlinc -version 2>&1 | sed -nE 's/.*kotlinc-jvm ([0-9][0-9A-Za-z.+_-]*).*/\\1/p'; else printf 'TOOL_KOTLINC=\\n'; fi
+                if [ -x "$kotlin_compiler" ]; then printf 'TOOL_KOTLINC='; "$kotlin_compiler" -version 2>&1 | sed -nE 's/.*kotlinc-jvm ([0-9][0-9A-Za-z.+_-]*).*/\\1/p'; else printf 'TOOL_KOTLINC=\\n'; fi
                 if command -v php >/dev/null 2>&1; then printf 'TOOL_PHP='; php -r 'printf("%d.%d", PHP_MAJOR_VERSION, PHP_MINOR_VERSION);'; printf '\\n'; else printf 'TOOL_PHP=\\n'; fi
                 if command -v composer >/dev/null 2>&1; then printf 'TOOL_COMPOSER='; composer --version 2>/dev/null | awk '{for(i=1;i<=NF;i++) if ($i ~ /^[0-9]+[.][0-9]+/) {print $i; exit}}'; else printf 'TOOL_COMPOSER=\\n'; fi
                 if command -v ruby >/dev/null 2>&1; then printf 'TOOL_RUBY='; ruby -e 'print RUBY_VERSION'; printf '\\n'; else printf 'TOOL_RUBY=\\n'; fi

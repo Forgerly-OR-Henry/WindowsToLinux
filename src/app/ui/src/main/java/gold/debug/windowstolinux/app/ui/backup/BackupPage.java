@@ -37,8 +37,7 @@ public final class BackupPage {
     private final Component owner;
     private final BackupApplicationFacade service;
     private final PageMessagePresenter messages;
-    private final JTextField applicationId = new JTextField();
-    private final JTextField targetServerId = new JTextField();
+    private final BackupSelectionPane selections;
     private final JTextField archivePath = new JTextField();
     private final JTextField destinationPath = new JTextField();
     private final JPasswordField backupPassword = new JPasswordField();
@@ -54,6 +53,8 @@ public final class BackupPage {
     private JButton restoreButton;
     private JButton migrateButton;
     private PreparedBackupCandidate preparedCandidate;
+    private final javax.swing.JComboBox<String> task = new javax.swing.JComboBox<>();
+    private JPanel archiveRow, destinationRow;
 
     /** Creates the functional local backup page. / 创建本地备份功能页面。 */
     public BackupPage(Component owner, BackupApplicationFacade service,
@@ -61,6 +62,7 @@ public final class BackupPage {
         this.owner = owner;
         this.service = service;
         this.messages = messages;
+        selections = new BackupSelectionPane(service, messages, this::showFailure);
         archivePath.setEditable(false);
         destinationPath.setEditable(false);
         panel = createPanel(components);
@@ -73,47 +75,44 @@ public final class BackupPage {
 
     /** Captures page-owned values. / 捕获页面持有的值。 */
     public BackupPageState captureState() {
-        return new BackupPageState(applicationId.getText(), targetServerId.getText(), archivePath.getText(), destinationPath.getText(),
-                output.getText(), preparedCandidate);
+        return new BackupPageState(selections.applicationId(), selections.targetServerId(), archivePath.getText(), destinationPath.getText(),
+                output.getText(), preparedCandidate, task.getSelectedIndex(), backupPassword.getPassword(), masterPassword.getPassword());
     }
 
     /** Restores page-owned values. / 恢复页面持有的值。 */
     public void restoreState(BackupPageState state) {
-        applicationId.setText(state.applicationId());
-        targetServerId.setText(state.targetServerId());
+        selections.restore(state.applicationId(),state.targetServerId());
         archivePath.setText(state.archivePath());
         destinationPath.setText(state.destinationPath());
         output.setText(state.output());
         preparedCandidate = state.preparedCandidate();
+        backupPassword.setText(new String(state.backupPassword()));
+        masterPassword.setText(new String(state.masterPassword()));
+        task.setSelectedIndex(state.task());
+        updateTask();
         setBusy(false);
     }
 
     private JPanel createPanel(DesktopComponentFactory components) {
         JPanel page = components.pagePanel();
+        var advanced = new gold.debug.windowstolinux.app.ui.component.AdvancedOptionsPane(page, components, messages);
         JPanel controls = components.card(new BorderLayout(0, 12));
         controls.add(components.sectionHeading(messages.text("backup.section.title"),
                 messages.text("backup.section.description")), BorderLayout.NORTH);
 
-        JPanel inputRows = components.transparent(new GridLayout(6, 1, 0, 8));
-        JPanel managedInput = components.transparent(new BorderLayout(8, 0));
-        managedInput.add(new JLabel(messages.text("backup.field.applicationId")), BorderLayout.WEST);
-        managedInput.add(applicationId, BorderLayout.CENTER);
+        JPanel inputRows = components.transparent(new java.awt.GridBagLayout());
+        task.addItem(messages.text("backup.task.create")); task.addItem(messages.text("backup.task.restore")); task.addItem(messages.text("backup.task.migrate"));
+        inputRows.add(task);
+        inputRows.add(selections); selections.advanced(advanced);
         assessButton = components.secondaryButton(messages.text("backup.button.assessInputs"));
-        assessButton.addActionListener(event -> assessManagedInputs());
-        managedInput.add(assessButton, BorderLayout.EAST);
-        inputRows.add(managedInput);
-
-        JPanel targetInput = components.transparent(new BorderLayout(8, 0));
-        targetInput.add(new JLabel(messages.text("backup.field.targetServerId")), BorderLayout.WEST);
-        targetInput.add(targetServerId, BorderLayout.CENTER);
-        inputRows.add(targetInput);
+        assessButton.addActionListener(event -> assessManagedInputs()); advanced.addOption(assessButton);
 
         JPanel selection = components.transparent(new BorderLayout(8, 0));
         selection.add(archivePath, BorderLayout.CENTER);
         JButton selectButton = components.secondaryButton(messages.text("backup.button.select"));
         selectButton.addActionListener(event -> selectArchive());
         selection.add(selectButton, BorderLayout.EAST);
-        inputRows.add(selection);
+        inputRows.add(selection); archiveRow = selection;
 
         JPanel destination = components.transparent(new BorderLayout(8, 0));
         destination.add(new JLabel(messages.text("backup.field.destination")), BorderLayout.WEST);
@@ -121,19 +120,35 @@ public final class BackupPage {
         JButton destinationButton = components.secondaryButton(messages.text("backup.button.destination"));
         destinationButton.addActionListener(event -> selectDestination());
         destination.add(destinationButton, BorderLayout.EAST);
-        inputRows.add(destination);
+        inputRows.add(destination); destinationRow = destination;
 
         JPanel secretInput = components.transparent(new BorderLayout(8, 0));
         secretInput.add(new JLabel(messages.text("backup.field.password")), BorderLayout.WEST);
         secretInput.add(backupPassword, BorderLayout.CENTER);
         inputRows.add(secretInput);
+        var rowConstraints = new java.awt.GridBagConstraints();
+        rowConstraints.gridwidth = java.awt.GridBagConstraints.REMAINDER; rowConstraints.weightx = 1;
+        rowConstraints.fill = java.awt.GridBagConstraints.HORIZONTAL; rowConstraints.insets = new java.awt.Insets(0,0,8,0);
+        for (Component row : inputRows.getComponents()) ((java.awt.GridBagLayout)inputRows.getLayout()).setConstraints(row,rowConstraints);
 
         JPanel masterInput = components.transparent(new BorderLayout(8, 0));
         masterInput.add(new JLabel(messages.text("backup.field.masterPassword")), BorderLayout.WEST);
         masterInput.add(masterPassword, BorderLayout.CENTER);
-        inputRows.add(masterInput);
+        advanced.field("backup.field.masterPassword", masterPassword);
         controls.add(inputRows, BorderLayout.CENTER);
 
+        JPanel actions = actionButtons(components, advanced);
+        controls.add(actions, BorderLayout.SOUTH);
+        page.add(controls, BorderLayout.NORTH);
+        page.add(components.outputCard(messages.text("backup.output.title"),
+                messages.text("backup.output.description"), output), BorderLayout.CENTER);
+        task.addActionListener(event -> updateTask());
+        updateTask();
+        setBusy(false);
+        return advanced;
+    }
+
+    private JPanel actionButtons(DesktopComponentFactory components, gold.debug.windowstolinux.app.ui.component.AdvancedOptionsPane advanced) {
         JPanel actions = components.transparent(new FlowLayout(FlowLayout.LEFT, 8, 0));
         inspectButton = components.secondaryButton(messages.text("backup.button.inspect"));
         inspectButton.addActionListener(event -> inspectSelectedArchive());
@@ -152,26 +167,32 @@ public final class BackupPage {
         actions.add(createButton);
         actions.add(restoreButton);
         actions.add(migrateButton);
-        actions.add(inspectButton);
-        actions.add(prepareButton);
-        actions.add(prepareSecretsButton);
-        actions.add(discardButton);
-        controls.add(actions, BorderLayout.SOUTH);
-        page.add(controls, BorderLayout.NORTH);
-        page.add(components.outputCard(messages.text("backup.output.title"),
-                messages.text("backup.output.description"), output), BorderLayout.CENTER);
-        setBusy(false);
-        return page;
+        advanced.addOption(inspectButton);
+        advanced.addOption(prepareButton);
+        advanced.addOption(prepareSecretsButton);
+        advanced.addOption(discardButton);
+        JButton refresh = components.secondaryButton(messages.text("backup.refreshChoices"));
+        refresh.addActionListener(event -> selections.refresh()); actions.add(refresh);
+        return actions;
+    }
+
+    private void updateTask() {
+        int selected = task.getSelectedIndex();
+        selections.task(selected);
+        archiveRow.setVisible(selected == 1); destinationRow.setVisible(selected == 0);
+        createButton.setVisible(selected == 0); restoreButton.setVisible(selected == 1); migrateButton.setVisible(selected == 2);
+        if (panel != null) panel.revalidate();
     }
 
     private void restoreManagedBackup() {
         Path selected = selectedArchive();
         if (selected == null) return;
-        String target = targetServerId.getText().trim();
+        String target = selections.targetServerId().trim();
         if (target.isBlank()) {
             output.setText(messages.text("backup.targetRequired"));
             return;
         }
+        if (!confirmOperation("backup.restore.confirm", Map.of("target", target, "archive", selected))) return;
         char[] independent = backupPassword.getPassword();
         char[] master = masterPassword.getPassword();
         backupPassword.setText(""); masterPassword.setText("");
@@ -193,8 +214,8 @@ public final class BackupPage {
     }
 
     private void prepareOfflineMigration() {
-        String application = applicationId.getText().trim();
-        String target = targetServerId.getText().trim();
+        String application = selections.applicationId().trim();
+        String target = selections.targetServerId().trim();
         if (application.isBlank()) {
             output.setText(messages.text("backup.inputs.applicationRequired")); return;
         }
@@ -237,7 +258,7 @@ public final class BackupPage {
     }
 
     private void createManagedBackup() {
-        String application = applicationId.getText().trim();
+        String application = selections.applicationId().trim();
         Path destination;
         if (application.isBlank()) {
             output.setText(messages.text("backup.inputs.applicationRequired"));
@@ -253,6 +274,7 @@ public final class BackupPage {
             output.setText(messages.text("backup.destinationRequired"));
             return;
         }
+        if (!confirmOperation("backup.create.confirm", Map.of("application", application))) return;
         char[] independent = backupPassword.getPassword();
         char[] master = masterPassword.getPassword();
         backupPassword.setText("");
@@ -293,8 +315,16 @@ public final class BackupPage {
         return accepted.get();
     }
 
+    private boolean confirmOperation(String key, Map<String, ?> details) {
+        boolean accepted = JOptionPane.showConfirmDialog(owner, messages.text(key, details),
+                messages.text("backup.operation.confirm.title"), JOptionPane.YES_NO_OPTION,
+                JOptionPane.WARNING_MESSAGE) == JOptionPane.YES_OPTION;
+        if (!accepted) output.setText(messages.text("auto.cancelled"));
+        return accepted;
+    }
+
     private void assessManagedInputs() {
-        String selected = applicationId.getText().trim();
+        String selected = selections.applicationId().trim();
         if (selected.isBlank()) {
             output.setText(messages.text("backup.inputs.applicationRequired"));
             return;
@@ -441,21 +471,21 @@ public final class BackupPage {
 
     private String formatRestored(ManagedRestoreOutcome restored) {
         String warnings = restored.warnings().isEmpty() ? messages.text("backup.inputs.none")
-                : String.join("\n", restored.warnings());
+                : restored.warnings().stream().map(messages::text).collect(java.util.stream.Collectors.joining("\n"));
         return messages.text("backup.restored", Map.of(
-                "target", restored.targetServerId(), "status", restored.restore().status(),
-                "control", restored.controlState(), "warnings", warnings));
+                "target", restored.targetServerId(), "status", messages.text("backup.restore.status." + restored.restore().status().name().toLowerCase(Locale.ROOT)),
+                "control", messages.text("backup.restore.control." + restored.controlState().name().toLowerCase(Locale.ROOT)), "warnings", warnings));
     }
 
     private String formatMigrated(ManagedOfflineMigrationOutcome migrated) {
         String archive = migrated.retainedFinalArchive().map(Path::toString)
                 .orElse(messages.text("backup.inputs.none"));
         String warnings = migrated.warnings().isEmpty() ? messages.text("backup.inputs.none")
-                : String.join("\n", migrated.warnings());
+                : migrated.warnings().stream().map(messages::text).collect(java.util.stream.Collectors.joining("\n"));
         return messages.text("backup.migrated", Map.of(
-                "status", migrated.migration().status(),
-                "sourceStopped", migrated.migration().sourceWritesStopped(),
-                "targetReady", migrated.migration().targetCandidateReady(),
+                "status", messages.text("backup.migration.status." + migrated.migration().status().name().toLowerCase(Locale.ROOT)),
+                "sourceStopped", messages.text(migrated.migration().sourceWritesStopped() ? "value.yes" : "value.no"),
+                "targetReady", messages.text(migrated.migration().targetCandidateReady() ? "value.yes" : "value.no"),
                 "archive", archive, "warnings", warnings));
     }
 
@@ -508,11 +538,12 @@ public final class BackupPage {
     }
 
     private void setBusy(boolean busy) {
+        if (panel instanceof gold.debug.windowstolinux.app.ui.component.AdvancedOptionsPane advanced) advanced.setBusy(busy);
+        task.setEnabled(!busy); selections.busy(busy);
         assessButton.setEnabled(!busy);
         createButton.setEnabled(!busy);
         restoreButton.setEnabled(!busy);
         migrateButton.setEnabled(!busy);
-        targetServerId.setEnabled(!busy);
         inspectButton.setEnabled(!busy);
         prepareButton.setEnabled(!busy && preparedCandidate == null);
         prepareSecretsButton.setEnabled(!busy && preparedCandidate == null);

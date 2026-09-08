@@ -21,7 +21,7 @@ public final class ManagedHelperBundle {
     /** Platform-owned Java 21 launcher used by every managed systemd unit. / 每个受管 systemd 单元使用的平台持有 Java 21 启动器。 */
     public static final String JAVA_RUNTIME_PATH = DIRECTORY + "/java-21";
     /** Expected byte-for-byte helper bundle identity. / 预期的 helper 逐字节身份。 */
-    public static final String EXPECTED_SHA256 = "429cdd9700c51cfd95fe928eec1ac6a09cab281c71cfca1d5d68cfeae74eedbf";
+    public static final String EXPECTED_SHA256 = "d7fd7ae66b0ddc17f08d78e7450cb08bc92418bccccc6a1abb58b18206764ce7";
     private static final String ROOT = "/gold/debug/windowstolinux/shared/linux/sshd/";
     private static final List<String> FRAGMENTS = List.of(
             "execution/protocol/helper/fragments/00-protocol-foundation.sh",
@@ -40,6 +40,7 @@ public final class ManagedHelperBundle {
             "execution/protocol/helper/fragments/database/65-database-backup.sh",
             "execution/protocol/helper/fragments/database/66-database-activation.sh",
             "execution/protocol/helper/fragments/backup/67-managed-backup.sh",
+            "ecosystem/db/10-native-instances.sh", "ecosystem/db/20-native-targets.sh",
             "execution/protocol/helper/fragments/70-command-dispatch.sh");
 
     private ManagedHelperBundle() { }
@@ -51,7 +52,7 @@ public final class ManagedHelperBundle {
         if (!EXPECTED_SHA256.equals(actual)) {
             throw new IllegalStateException("managed-deployment privilege helper bundle identity changed: " + actual);
         }
-        return new String(bytes, StandardCharsets.UTF_8).replace("\\\\", "\\");
+        return new String(bytes, StandardCharsets.UTF_8);
     }
 
     static byte[] assemble() {
@@ -61,7 +62,9 @@ public final class ManagedHelperBundle {
                 if (stream == null) {
                     throw new IllegalStateException("managed-deployment privilege helper fragment is unavailable: " + fragment);
                 }
-                stream.transferTo(output);
+                String content = new String(stream.readAllBytes(), StandardCharsets.UTF_8).replace("\r\n", "\n");
+                // The embedded Python resource is literal; legacy shell resources retain their established normalization.
+                output.write((fragment.startsWith("ecosystem/db/") ? content : content.replace("\\\\", "\\")).getBytes(StandardCharsets.UTF_8));
             } catch (IOException exception) {
                 throw new IllegalStateException("managed-deployment privilege helper fragment cannot be read: " + fragment,
                         exception);

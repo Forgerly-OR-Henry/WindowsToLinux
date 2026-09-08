@@ -1,5 +1,7 @@
 package gold.debug.windowstolinux.app.ui.deployment;
 
+import gold.debug.windowstolinux.app.service.config.DeploymentConfigurationParser;
+
 import gold.debug.windowstolinux.shared.config.contract.definition.ConfigurationScope;
 import org.junit.jupiter.api.Test;
 

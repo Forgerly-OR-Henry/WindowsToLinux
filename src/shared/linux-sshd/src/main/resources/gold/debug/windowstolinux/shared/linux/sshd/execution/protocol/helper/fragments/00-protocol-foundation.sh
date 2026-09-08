@@ -214,11 +214,11 @@ render_deployment_unit() {
     *) reject runtime-kind ;;
   esac
   config="$(configuration_path "$app" "$deployment_configuration_digest" systemd)"
+  wrap_database_runtime
   cat <<UNIT
 [Unit]
 Description=WindowsToLinux managed $app
 After=network.target
-
 [Service]
 Type=simple
 User=$deployer

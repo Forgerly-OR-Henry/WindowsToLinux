@@ -19,7 +19,7 @@ final class CentosStreamSupportPolicy implements DistributionSupportPolicy {
                     "CentOS Stream must be 9 or 10 with dnf and x86_64 packages", evidence);
         }
         CpuMicroarchitectureLevel required = "10".equals(capabilities.version())
-                ? CpuMicroarchitectureLevel.X86_64_V3 : CpuMicroarchitectureLevel.X86_64_V1;
+                ? CpuMicroarchitectureLevel.X86_64_V3 : CpuMicroarchitectureLevel.X86_64_V2;
         HostSupportStatus cpu = DistributionSupportRules.requireCpu(capabilities, required, "CentOS Stream", evidence);
         return cpu == HostSupportStatus.READY_FOR_RUNTIME_VALIDATION
                 ? DistributionSupportRules.requireEnforcingSelinux(capabilities, "CentOS Stream", evidence) : cpu;

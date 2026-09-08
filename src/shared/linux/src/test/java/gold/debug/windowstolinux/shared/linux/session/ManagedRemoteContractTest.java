@@ -45,7 +45,7 @@ class ManagedRemoteContractTest {
                 "inspectRestoreActivation", "startRestoreActivation", "verifyRestoreComponents",
                 "verifyRestoreApplication", "prepareRestoreCommit", "startRestoreFormal",
                 "commitRestoreActivation", "recoverRestoreActivation", "quiesceRestoreRecovery",
-                "commitCandidate", "recoverCandidate"
+                "commitCandidate", "recoverCandidate", "nativeDatabases"
         ), deploymentMethods);
         assertFalse(deploymentMethods.contains("build"));
         assertFalse(deploymentMethods.contains("snapshot"));

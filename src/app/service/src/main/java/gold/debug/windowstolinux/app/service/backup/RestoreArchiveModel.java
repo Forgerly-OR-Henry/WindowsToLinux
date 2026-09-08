@@ -1,5 +1,7 @@
 package gold.debug.windowstolinux.app.service.backup;
 
+import gold.debug.windowstolinux.app.service.failure.ApplicationServiceException;
+import gold.debug.windowstolinux.app.service.failure.ApplicationServiceFailureType;
 import gold.debug.windowstolinux.shared.backup.contract.spi.DatabaseBackupArtifact;
 import gold.debug.windowstolinux.shared.backup.contract.spi.DatabaseConnectionProfile;
 import gold.debug.windowstolinux.shared.backup.contract.spi.DatabaseRestoreRequest;
@@ -141,6 +143,7 @@ record RestoreArchiveModel(
             case POSTGRESQL -> BackupDatabaseType.POSTGRESQL;
             case MYSQL -> BackupDatabaseType.MYSQL;
             case MARIADB -> BackupDatabaseType.MARIADB;
+            case REDIS -> throw ApplicationServiceException.create(ApplicationServiceFailureType.BACKUP_INPUT_INCOMPLETE, "complete Redis backup is unsupported");
         };
     }
 

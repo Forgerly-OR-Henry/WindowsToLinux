@@ -94,7 +94,10 @@ public final class SshdLinuxRemoteSession implements DeploymentRemoteSession {
     private final SystemdLifecycleExecutor systemdLifecycle;
     private final ContainerRuntimeExecutor containerRuntime;
     private final ManagedRuntimeExecutor managedRuntime;
+    /** Returns native DB operations for this already authenticated and trusted connection. */
+    @Override public gold.debug.windowstolinux.shared.linux.ecosystem.db.NativeDatabasePort nativeDatabases() { return nativeDatabases; }
     private final SshdDatabaseOperationPort databases;
+    private final gold.debug.windowstolinux.shared.linux.ecosystem.db.NativeDatabasePort nativeDatabases;
     private final SshdBackupArtifactPort backupArtifacts;
     private final SshdRestoreActivationPort restoreActivation;
 
@@ -106,6 +109,7 @@ public final class SshdLinuxRemoteSession implements DeploymentRemoteSession {
         this.username = endpoint.username();
         SshCommandExecutor commands = new SshCommandExecutor(session);
         this.databases = new SshdDatabaseOperationPort(commands);
+        this.nativeDatabases = new gold.debug.windowstolinux.shared.linux.sshd.ecosystem.db.SshdNativeDatabasePort(commands);
         this.backupArtifacts = new SshdBackupArtifactPort(commands);
         this.restoreActivation = new SshdRestoreActivationPort(commands);
         this.capabilities = new SshdCapabilityCollector(commands, hostFingerprint);

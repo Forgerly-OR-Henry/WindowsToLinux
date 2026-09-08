@@ -155,11 +155,11 @@ class UbuntuManagedBuildLimitAcceptanceTest {
     }
 
     private static boolean hasEvent(DeploymentResult result, String step) {
-        return result.events().stream().anyMatch(event -> event.step().equals(step));
+        return result.events().stream().anyMatch(event -> event.step().code().equals(step));
     }
 
     private static void assertEvent(DeploymentResult result, String step, boolean expected) {
-        assertTrue(result.events().stream().anyMatch(event -> event.step().equals(step) && event.succeeded() == expected),
+        assertTrue(result.events().stream().anyMatch(event -> event.step().code().equals(step) && event.succeeded() == expected),
                 () -> "missing event " + step + "=" + expected + ": " + result.events());
     }
 

@@ -30,10 +30,15 @@ class ManagedDeploymentCapabilityInspectionAcceptanceTest {
             assertTrue(!capabilities.packageArchitecture().isBlank());
             assertNotNull(capabilities.cpuMicroarchitecture());
             assertNotNull(capabilities.securityPosture());
-            System.out.printf("MANAGED_CAPABILITIES distro=%s version=%s architecture=%s packageArchitecture=%s cpu=%s security=%s firewall=%s%n",
+            if (System.getProperty("managed.expect.firewall-state") != null) {
+                org.junit.jupiter.api.Assertions.assertEquals(System.getProperty("managed.expect.firewall-state"),
+                        capabilities.securityPosture().firewallState().name());
+            }
+            System.out.printf("MANAGED_CAPABILITIES distro=%s version=%s architecture=%s packageArchitecture=%s cpu=%s security=%s firewall=%s firewallState=%s%n",
                     capabilities.distro(), capabilities.version(), capabilities.architecture(),
                     capabilities.packageArchitecture(), capabilities.cpuMicroarchitecture(),
-                    capabilities.securityPosture().state(), capabilities.securityPosture().firewall());
+                    capabilities.securityPosture().state(), capabilities.securityPosture().firewall(),
+                    capabilities.securityPosture().firewallState());
         }
     }
 }

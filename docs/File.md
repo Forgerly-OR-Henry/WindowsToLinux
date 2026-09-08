@@ -1,15 +1,21 @@
 # WindowsToLinux 项目文件结构
 
+> 新手界面与 DB 实施结构见 [四期补充](development/PHASE-4-SUPPLEMENT-AUTOMATIC-DEPLOYMENT.md)。新增共享 DB 功能统一归各模块的 `ecosystem.db`，在 `ecosystem` 内与语言分组并列，内部按实际职责采用 `sql/document/other`；不创建空适配器，不新增 Maven 模块。
+
+本轮保持 28-POM 及既有依赖方向。`app/service/contract/definition` 承载自动部署请求、结果及交互契约；`deployment/automatic` 负责统一编排和 DB 准备；运行时与配置解析从 UI 移入服务层。`shared/model`、`shared/analyze`、`shared/linux` 和 `shared/linux-sshd` 的 Java 根包下均使用 `ecosystem.db`，分别承载模型、声明检查、窄端口及固定原生协议。服务器 DB 管理不进入桌面 SQLite 模块；仅资源绑定序列化增加 Redis 类型。
+
+公共 `ui/component/AdvancedOptionsPane` 和消息映射表负责侧栏、问号及翻译显示。`DesktopTextArchitectureTest` 检查控件硬编码文案和 DB 消息覆盖；`MessageCatalogTest` 检查两种语言的键与参数一致。原始协议值不直接充当用户可见说明，动态用户内容不翻译。
+
 ## 文档信息
 
-- 文档版本：`3.54.0-six-phase-boundary`
-- 文档状态：**28-POM 模块边界保持不变；四期静态产品链已闭合，五期只实现回环内部测试 Web 功能，六期大致承接官网、上线认证、发布下载和生产维护；helper v5、真实 Linux/数据库恢复迁移证据仍标记 `RUNTIME-PENDING`**
+- 文档版本：`3.55.4-language-inspection-boundary`
+- 文档状态：**28-POM 模块边界保持不变；四期静态产品链已闭合，五期只实现回环内部测试 Web 功能，六期大致承接官网、上线认证、发布下载和生产维护；真实 Linux/数据库备份恢复迁移证据仍标记 `RUNTIME-PENDING`；当前 helper v5 全语言部署见 [实机记录](development/UBUNTU-24-LIVE-DEPLOYMENT-2026-09-08.md)**
 - 已确认范围：`shared` 共用模块、`app` Windows 桌面应用模块、`web` Web 应用模块
 - 已确认能力边界：受管应用生命周期复用既有模块，不新增独立 Maven 模块
-- 更新日期：2026-08-23
-- 开发总纲：[DEVELOPMENT.md](DEVELOPMENT.md)
-- 分析包修订：[ANALYZE-PACKAGE-REVISION.md](development/ANALYZE-PACKAGE-REVISION.md)
-- Linux 部署链分包修订：[LINUX-DEPLOY-PACKAGE-REVISION.md](development/LINUX-DEPLOY-PACKAGE-REVISION.md)
+- 更新日期：2026-09-08
+- 开发总纲：[DEVELOPMENT.md](development/DEVELOPMENT.md)
+- 三期补充：[分析层生态化分包](development/PHASE-3-SUPPLEMENT-ANALYZE-PACKAGE.md)
+- 三期补充：[Linux 部署链生态化分包](development/PHASE-3-SUPPLEMENT-LINUX-DEPLOY-PACKAGE.md)
 
 > 本文是正式目标目录、模块职责、依赖方向、包结构和命名规则的唯一来源。开发总纲、分期扩展文档和源码迁移必须先符合本文；运行能力与实机证据仍以相应分期文档为准，不得由目标目录反推支持结论。
 
@@ -26,9 +32,21 @@ WindowsToLinux/
 ├─ pom.xml
 ├─ docs/
 │  ├─ development/
-│  ├─ DEVELOPMENT.md
-│  ├─ PRODUCT-MANUAL.md
-│  └─ File.md
+│  │  ├─ DEVELOPMENT.md                         开发总纲与文档导航
+│  │  ├─ PHASE-1.md                             一期主文档
+│  │  ├─ PHASE-2.md                             二期主文档
+│  │  ├─ PHASE-3.md                             三期主文档
+│  │  ├─ PHASE-3-SUPPLEMENT-ANALYZE-PACKAGE.md    三期补充：分析层分包
+│  │  ├─ PHASE-3-SUPPLEMENT-ECOSYSTEM.md          三期补充：生态构建补全
+│  │  ├─ PHASE-3-SUPPLEMENT-LINUX-DEPLOY-PACKAGE.md 三期补充：Linux 部署链分包
+│  │  ├─ PHASE-4.md                             四期主文档
+│  │  ├─ PHASE-4-RUNTIME-ACCEPTANCE.md            四期真实环境验收
+│  │  ├─ PHASE-4-SUPPLEMENT-AUTOMATIC-DEPLOYMENT.md 四期补充：一体化自动部署
+│  │  ├─ PHASE-5.md                             五期主文档
+│  │  └─ PHASE-6.md                             六期主文档
+│  ├─ AllFile.md                               全文件架构索引
+│  ├─ File.md                                  项目文件结构
+│  └─ PRODUCT-MANUAL.md                        产品说明书
 └─ src/
    ├─ app/
    │  ├─ pom.xml              桌面应用模块聚合入口
@@ -51,8 +69,10 @@ WindowsToLinux/
    │  │  ├─ ai/               AI 配置与分析用例
    │  │  ├─ backup/           受管备份、恢复、离线迁移及本地候选生命周期用例
    │  │  ├─ config/           配置快照与秘密修订用例
-   │  │  ├─ contract/         UI 按功能依赖的六个窄应用门面
+   │  │  ├─ contract/         UI 按功能依赖的窄应用门面
+   │  │  │  └─ definition/    自动部署请求、结果、交互契约及 DB 准备结果
    │  │  ├─ deployment/       部署用例入口与共享受管身份解析
+   │  │  │  ├─ automatic/     自动部署编排、运行时补全与原生 DB 准备
    │  │  │  ├─ multi/         多组件审阅、拓扑和受管应用数据契约
    │  │  │  └─ single/        单组件部署结果与安全交接数据契约
    │  │  ├─ execution/        桌面执行流程
@@ -67,7 +87,7 @@ WindowsToLinux/
    │  │  ├─ backup/           受管备份、目标恢复、双服务器离线迁移及本地候选管理入口
    │  │  ├─ display/          主题、外观和系统偏好
    │  │  ├─ component/        可复用的桌面界面组件
-   │  │  ├─ deployment/       共享审阅上下文与类型化输入解析
+   │  │  ├─ deployment/       共享审阅上下文与部署交互
    │  │  │  ├─ multi/         多组件编辑、状态、页面和结果呈现
    │  │  │  └─ single/        单组件表单、状态、页面和分析呈现
    │  │  ├─ diagnostic/       结构化失败安全展示、报告引用与诊断目录入口
@@ -100,9 +120,10 @@ WindowsToLinux/
    │  │  │  ├─ policy/        跨生态源码变更与部署停止策略
    │  │  │  └─ spi/           类型检查器及其局部结果窄契约
    │  │  ├─ core/             分析协调器、跨语言事实汇总、阶段顺序与结果聚合
-   │  │  ├─ ecosystem/        只保存按语言维护的识别、构建架构和框架分析
+   │  │  ├─ ecosystem/        语言识别、构建架构、框架分析与 DB 声明检查
    │  │  │  ├─ c/             C 与 C++ 语言生态
    │  │  │  │  └─ cmake/      单目标 CMake 事实与服务部署检查
+   │  │  │  ├─ db/            数据库清单、JDBC、Redis 与初始化声明检查
    │  │  │  ├─ dotnet/        .NET 语言生态
    │  │  │  │  └─ dotnetsdk/  .NET SDK 事实与服务部署检查
    │  │  │  ├─ go/            Go 语言生态
@@ -183,6 +204,8 @@ WindowsToLinux/
    │  │  ├─ capability/       发行版、CPU、工具和运行能力采集契约
    │  │  ├─ connection/       Gateway、端点、凭据和主机信任契约
    │  │  ├─ distro/           发行版事实与环境准备契约
+   │  │  ├─ ecosystem/        技术生态远程契约
+   │  │  │  └─ db/            原生数据库检查、安装、复用与初始化窄端口
    │  │  ├─ error/            全部受控 Linux 操作的公共失败类型
    │  │  ├─ protocol/         类型化高权限操作及结果契约
    │  │  │  ├─ backup/        受管文件树、命名卷、发布树和 OCI 镜像取材、流式回读及精确清理契约
@@ -225,6 +248,8 @@ WindowsToLinux/
    │  │  │  │  └─ registry/  完整发行版配置装配与唯一注册表
    │  │  │  └─ generation/    发行版内容生成
    │  │  │     └─ script/     通用发行版准备脚本生成
+   │  │  ├─ ecosystem/        技术生态实现；同路径资源随实现组织
+   │  │  │  └─ db/            原生数据库固定协议及两个 native helper 片段
    │  │  ├─ execution/        SSHD 执行流程
    │  │  │  ├─ protocol/      候选工作区及类型化远程协议实现
    │  │  │  │  ├─ helper/     固定 helper 资源拼装与摘要校验；生态片段按 ecosystem 分组
@@ -241,6 +266,10 @@ WindowsToLinux/
    │  │  ├─ assessment/       分析评估、冲突和支持判断结果
    │  │  ├─ capability/       Linux 与服务器能力快照
    │  │  ├─ deployment/       部署请求、计划、状态和结果模型
+   │  │  ├─ ecosystem/        技术生态专属模型；公共模型仍保持原职责
+   │  │  │  └─ db/            数据库引擎、需求与初始化审阅模型
+   │  │  │     ├─ other/      Redis 应用键前缀规则
+   │  │  │     └─ sql/        SQL 数据库版本约束
    │  │  ├─ failure/          跨模块最小失败定义、描述、操作标识与恢复结果契约
    │  │  ├─ health/           健康检查与访问地址模型
    │  │  ├─ lifecycle/        单组件及整应用运行、自启汇总和生命周期动作模型
@@ -354,15 +383,15 @@ test/
 
 ### 1.1 稳定职责边界
 
-- `shared.analyze` 只读取有界源码并生成确定性事实；跨语言协调归 `core`，规则和 SPI 归 `contract`，注册归 `extension`，语言和构建架构实现归 `ecosystem`，工作负载识别归 `workload`。
+- `shared.analyze` 只读取有界源码并生成确定性事实；跨语言协调归 `core`，规则和 SPI 归 `contract`，注册归 `extension`，语言和构建架构实现归 `ecosystem`，数据库声明检查归 `ecosystem.db`，工作负载识别归 `workload`。
 - `shared.linux` 只定义平台无关的类型化 Linux 契约；受管备份制品只以固定种类、受管身份、摘要、长度和流式传输契约表达，Apache SSHD、Shell 渲染、目标机目录选择及 PAX/OCI 命令实现只位于 `shared.linux-sshd`。
 - `shared.linux-sshd.build` 保留构建执行入口；SPI、注册表和安全脚本分别归 `build.contract`、`build.extension`、`build.generation`，生态构建归 `build.ecosystem`，容器与静态站点构建归 `build.workload`。
 - `shared.linux-sshd.capability` 保留平台能力采集；语言、构建工具链及其版本解析归 `capability.ecosystem`，APT/DNF 包名不得进入该包。
 - `shared.linux-sshd.distro` 只负责发行版识别、软件包选择和环境准备；APT 与 DNF 分别形成完整扩展单元，不实现语言构建命令。
 - `shared.deploy` 将公共请求、结果与 SPI 归 `contract`，部署形态 Adapter 与注册表归 `extension`，环境、生命周期与事务归 `execution`；支持判断仍按发行版与运行时组织，不得镜像语言生态目录。
-- `model` 保存跨模块共享的纯事实和值对象；语言枚举、项目事实、部署计划和 UI 模型不得因生态实现而迁入 `ecosystem`。
-- helper 的协议基础、输入、发布、运行和生命周期片段保持职责分组；协议资源随 Java 协议实现位于 `execution/protocol/helper`，只把语言或工具链专属片段归入资源 `ecosystem` 分组。classpath 路径迁移不得改变组装字节、顺序、协议版本或固定摘要。
-- UI、数据库、秘密、Git、备份及应用用例继续按自身职责分包，不按被部署项目的语言复制结构。
+- `model` 保存跨模块共享的纯事实和值对象；DB 专属类型与规则统一归 `model.ecosystem.db`，语言枚举、项目事实、部署计划和 UI 模型保持既有职责包。
+- helper 的协议基础、输入、发布、运行和生命周期片段保持职责分组；语言或工具链片段位于 `execution/protocol/helper/fragments/ecosystem`，原生 DB 片段随 Java 实现位于资源根包的 `ecosystem/db`。classpath 路径迁移不得改变组装字节、顺序、协议版本或固定摘要。
+- 服务器原生 DB 的模型、分析、远程契约和实现统一使用各模块的 `ecosystem.db`；UI、本地持久化、秘密、Git、备份及应用用例继续按自身职责分包，不按被部署项目的语言复制结构。
 - 运行能力与实机证据不由包结构决定；新增生态或构建架构必须在对应分期文档中单独定义实现、测试和验收范围。
 
 ## 2. 统一命名规范
@@ -486,7 +515,7 @@ test/
 | 标准包名 | 唯一维度 | 包含内容 | 不包含内容 |
 | --- | --- | --- | --- |
 | `distro` | Linux 发行版 | Ubuntu、Debian、CentOS Stream、Rocky Linux、AlmaLinux、Oracle Linux 等身份、版本与准备差异 | 编程语言、部署形态、CPU 架构 |
-| `ecosystem` | 技术生态 | C/C++、Java、Node、Python、Go、Rust、DotNet、Kotlin、PHP、Ruby 等语言的识别、构建架构、框架与工具链实现 | 共享模型、部署编排、工作负载、运行机制、发行版、CPU 架构 |
+| `ecosystem` | 技术生态 | 语言的识别、构建架构、框架与工具链实现，以及 `db` 数据库生态的专属模型、分析、远程契约和实现 | 跨生态公共模型、部署编排、工作负载、运行机制、发行版、CPU 架构 |
 | `runtime` | 实际运行机制 | systemd、Docker、Podman 等运行与生命周期机制 | 源码语言分析、发行版身份、支持等级 |
 | `workload` | 工作负载形态 | 容器、静态站点、普通服务等项目形态 | 编程语言、包管理器、Linux 发行版 |
 
@@ -494,6 +523,7 @@ test/
 | --- | --- |
 | .NET | `dotnet` |
 | C、C++ | `c` |
+| 数据库 | `db` |
 | Go | `go` |
 | Java | `java` |
 | Kotlin | `kotlin` |
@@ -505,20 +535,21 @@ test/
 
 | 编号 | 正交维度规范 | 正确示例 | 禁止示例 |
 | --- | --- | --- | --- |
-| O-01 | `ecosystem` 只保存行为会因语言、构建架构、框架或工具链而变化的具体实现。 | `analyze.ecosystem.java` | 把共享协调器迁入 `ecosystem` |
-| O-02 | 共享枚举、模型、项目事实、部署计划、事务、UI、发行版和运行机制保持在原职责包。 | `model.language` | `ecosystem.model` |
-| O-03 | 分析层先按语言完整聚合；每个独立构建架构必须进入以工具或架构规范名命名的子包，不因当前只有一种架构而省略该层。 | `ecosystem.java.jar`、`ecosystem.java.maven`、`ecosystem.rust.cargo` | `ecosystem.rust` 直接放置 Cargo 检查器 |
+| O-01 | `ecosystem` 保存语言、构建架构、框架和工具链实现，以及数据库生态的专属模型、分析、远程契约和实现。 | `analyze.ecosystem.java`、`analyze.ecosystem.db` | 把共享协调器迁入 `ecosystem` |
+| O-02 | DB 专属类型归 `model.ecosystem.db`；跨生态共享枚举、模型、项目事实、部署计划、事务、UI、发行版和运行机制保持原职责包。 | `model.language`、`model.ecosystem.db` | `ecosystem.model` |
+| O-03 | 分析层的语言部分先按语言完整聚合；每个独立构建架构必须进入以工具或架构规范名命名的子包，不因当前只有一种架构而省略该层。DB 按 O-15 归类。 | `ecosystem.java.jar`、`ecosystem.java.maven`、`ecosystem.rust.cargo` | `ecosystem.rust` 直接放置 Cargo 检查器 |
 | O-04 | 构建架构包使用工具或架构的规范英文名全小写。 | `maven`、`npm`、`cmake`、`cargo` | `mavenbuild`、`rust-build` |
-| O-05 | 分析层的语言识别器和跨架构选择器留在语言包；框架实现留在所属语言包，除非框架自身形成多个独立扩展职责。 | Spring Boot 位于 `ecosystem.java` | `ecosystem.springboot` |
+| O-05 | 分析层每个已有语言生态均在 `ecosystem.<language>` 根包保存独立语言识别器；纯语言规则不得留在 `preview` 或构建架构包。跨架构公共事实、选择器和框架协调器也留在语言根包；工具专属解析进入架构子包。 | `ecosystem.c.CLanguageInspector`、`ecosystem.java.jar.JavaJarManifestInspector` | `c.cmake.CLanguageInspector`、在 Java 语言识别器中读取 JAR 清单 |
 | O-06 | 目标机构建统一归 `linux-sshd.build.ecosystem`；仅有一个独立构建架构的语言直接放置具名 Renderer，存在两个及以上架构时建立一个语言子包，各架构 Renderer 直接位于该语言包。 | `build.ecosystem.CargoBuildRenderer`、`build.ecosystem.java.*Renderer` | `build.ecosystem.rust.cargo.renderer` |
 | O-07 | 语言与构建工具链探测、版本解析和检查脚本生成统一归 `linux-sshd.capability.ecosystem`。 | `capability.ecosystem` | 在 `distro` 中执行 `go version` |
-| O-08 | 发行版只选择包集合和能力要求；APT/DNF 包名不得进入生态实现，语言命令不得进入发行版实现。 | `distro.apt` + `capability.ecosystem` | `distro.ubuntu.java` |
-| O-09 | helper 中仅语言或工具链专属的资源片段进入 `ecosystem` 分组；协议基础、输入、发布、运行和生命周期片段保持原职责分组。 | `fragments/ecosystem` | 将 `00-protocol-foundation.sh` 移入生态目录 |
-| O-10 | 分析层固定使用“语言＋架构”边界；执行层和能力层是否建立语言分组由独立架构数量决定，不按枚举值、文件数或目录对称决定；不得为满足数量门禁制造陪衬类型。 | `analyze.ecosystem.go.gomodule`、`build.ecosystem.GoBuildRenderer` | 为单个类创建空 Facts |
+| O-08 | 语言工具链的发行版适配只选择包集合和能力要求；APT/DNF 包名不得进入语言生态实现，语言命令不得进入发行版实现。原生 DB 的固定安装协议按 O-15 归属。 | `distro.apt` + `capability.ecosystem` | `distro.ubuntu.java` |
+| O-09 | helper 的语言与工具链片段位于 `fragments/ecosystem`，原生 DB 片段位于资源根包的 `ecosystem/db`；协议基础、输入、发布、运行和生命周期片段保持原职责分组。 | `fragments/ecosystem`、`ecosystem/db` | 将 `00-protocol-foundation.sh` 移入生态目录 |
+| O-10 | 分析层的语言部分固定使用“语言＋架构”边界；执行层和能力层是否建立语言分组由独立架构数量决定，不按枚举值、文件数或目录对称决定；不得为满足数量门禁制造陪衬类型。 | `analyze.ecosystem.go.gomodule`、`build.ecosystem.GoBuildRenderer` | 为单个类创建空 Facts |
 | O-11 | C 与 C++ 统一属于 `c` 生态，C++ 作为独立能力扩展，不以 Java 继承关系代替构建架构；CMake 架构包名为 `cmake`。 | `ecosystem.c.cmake` | `ecosystem.cpp` 或 `Cpp extends C` |
 | O-12 | 工作负载只表达容器、静态站点和普通服务等项目形态。 | `analyze.workload`、`build.workload` | `ecosystem.container` |
 | O-13 | `runtime` 只表达 systemd、Docker、Podman 等实际运行机制；`distro` 只表达发行版；CPU 架构归 `capability`。 | `runtime.systemd`、`distro.apt` | `ecosystem.systemd`、`distro.x86_64` |
 | O-14 | `ecosystem`、`workload`、`runtime`、`distro` 相互正交，不得建立跨维度笛卡尔组合包。 | `ecosystem.java` + `runtime.systemd` | `java.service.systemd.ubuntu.x86_64` |
+| O-15 | 服务器原生 DB 在 `model`、`analyze`、`linux`、`linux-sshd` 的根包下统一归 `ecosystem.db`，不在模块根包单列 `db`；各层仍各守职责。分类使用 `sql/document/other`，只按已实现职责建包；桌面和 Web 本地持久化模块仍为 `app/db`、`web/db`。 | `model.ecosystem.db.sql`、`linux.sshd.ecosystem.db` | `shared.analyze.db`、`shared.linux.sshd.db` |
 
 ### 2.4 约束与模板命名
 
@@ -699,6 +730,8 @@ Facts → Evidence → Assessment → Decision → Plan → Result/Outcome
 | TCP | `Tcp` | `TCP` |
 | TLS | `Tls` | `TLS` |
 | URL | `Url` | `URL` |
+
+缩写检查按 PascalCase 单词边界判断。`CLanguageInspector` 中的 `C` 是语言名称，后续 `Language` 是独立单词；不得将相邻的 `C` 与 `L` 误判为缩写 `CL`。真正的 `SSHSession`、`JavaJARInspector` 等全大写缩写仍违反规范。
 
 | 名称 | 使用规则 | 例外 |
 | --- | --- | --- |
@@ -931,7 +964,7 @@ deploy.extension.adapter      按部署形态生成类型化计划，不镜像�
 deploy.execution.transaction  编排上传、构建、发布、健康检查和回滚
 ```
 
-1. `analyze.ecosystem` 先按语言聚合识别、构建事实和框架分析；每个独立构建架构都按第 2.3 节使用工具或架构规范名子包。Java 的 Maven、Gradle 与 JAR 必须形成平行架构，Node 的 npm、pnpm 与 Yarn、Python 的 pip、Pipenv、Poetry 与 uv 也不得混为一个无名实现。
+1. `analyze.ecosystem` 在语言分组内聚合识别、构建事实和框架分析，数据库声明分析集中于同级 `db`。每个独立语言构建架构都按第 2.3 节使用工具或架构规范名子包。Java 的 Maven、Gradle 与 JAR 必须形成平行架构，Node 的 npm、pnpm 与 Yarn、Python 的 pip、Pipenv、Poetry 与 uv 也不得混为一个无名实现。
 2. `linux-sshd.build` 通过 `build.contract.spi`、`build.extension.registry` 和 `build.generation.script` 组织构建。生态差异进入 `build.ecosystem`，容器与静态站点进入 `build.workload`；构建执行器、SSH command、systemd 生命周期和 helper 调度不得复制到各生态。
 3. `linux-sshd.capability.ecosystem` 实现语言与工具链命令、版本解析和能力检查脚本；`distro` 只提供软件包集合与所需能力配置，两者通过窄契约组合。
 4. `linux-sshd.distro.apt` 完整保存 Ubuntu/Debian 的准备差异，`distro.dnf` 完整保存 CentOS Stream、Rocky Linux、AlmaLinux 与 Oracle Linux 的准备差异；具体发行版不得互相充当别名。
@@ -946,9 +979,9 @@ deploy.execution.transaction  编排上传、构建、发布、健康检查和�
 2. 模块根包只保留稳定入口、门面或确需跨内部包使用的公共契约，具体实现进入职责明确的子包。
 3. 测试包镜像对应生产包；根目录测试夹具使用 `test/<language>/<build-tool>/<framework-or-function>/<fixture>` 分类，新增语言、构建工具、框架或功能时创建对应同级目录，不创建没有夹具的空分类。
 4. 模块、包、类、接口、枚举、异常和测试类名称统一遵守第 2 节，不得另立同义词、临时名称或兼容名称。
-5. `analyze` 的跨语言公共流程按 `core`、`source`、`service`、`component`、`workload` 与 `preview` 分包；规则和 SPI 进入 `contract.policy`、`contract.spi`，默认装配进入 `extension.registry`。`ecosystem` 内按语言聚合，每个真实独立构建架构均按第 2.3 节建立架构名子包，语言识别器、跨架构选择器和框架协调器留在语言包。
+5. `analyze` 的跨语言公共流程按 `core`、`source`、`service`、`component`、`workload` 与 `preview` 分包；规则和 SPI 进入 `contract.policy`、`contract.spi`，默认装配进入 `extension.registry`。`ecosystem` 内按语言及 `db` 分类；每个真实独立语言构建架构均按第 2.3 节建立架构名子包，语言识别器、跨架构公共事实、选择器和框架协调器留在语言根包，DB 声明检查归 `ecosystem.db`。`ProjectLanguageInspector` 固定汇总全部 10 个语言生态的检查器；`PreviewLanguageMarkerCatalog` 只识别尚无独立生态的长尾语言。`source.SourceLanguageEvidence` 只收集路径证据，具体语言规则由语言检查器提供。
 6. `deploy` 将不可变输入/计划、SPI、注册表、部署形态、支持矩阵和事务编排分离；请求及公共计划直接位于 `contract`，公开结果进入 `contract.result.{compatibility,deployment,lifecycle}`，SPI 进入 `contract.spi`，适配器与注册表进入 `extension.{adapter,registry}`，环境、生命周期与事务进入 `execution.{environment,lifecycle,transaction}`。`support` 只保留支持判断门面，发行版策略和规则进入 `support.distro`，运行时工具与版本判断进入 `support.runtime`，`plan` 不得直接构造具体实现。
-7. `linux` 按连接、会话、错误、传输、能力、构建、运行机制、发行版和协议组织公共远程契约，不因其中出现 `connection`、`protocol` 或 `transfer` 而迁入普通功能组；`linux-sshd` 的协议与传输实现进入 `execution.{protocol,transfer}`，生态实现只可进入 `build.ecosystem`、`capability.ecosystem` 和 `execution.protocol.helper` 资源 `ecosystem` 分组，工作负载构建只可进入 `build.workload`。
+7. `linux` 按连接、会话、错误、传输、能力、构建、运行机制、发行版和协议组织公共远程契约，原生 DB 契约归 `ecosystem.db`，不因其中出现 `connection`、`protocol` 或 `transfer` 而迁入普通功能组；`linux-sshd` 的协议与传输实现进入 `execution.{protocol,transfer}`，语言生态实现进入 `build.ecosystem`、`capability.ecosystem` 和 `execution.protocol.helper` 资源 `ecosystem` 分组，原生 DB 实现与资源归根包下的 `ecosystem.db`，工作负载构建只可进入 `build.workload`。
 8. 分析层发现真实独立构建架构时必须建立架构名子包；执行层和能力层建立语言分组时以独立架构数量为依据，不以类数量为依据。不得为满足目录对称或门禁数量新增空分类、空接口、委托壳或无独立语义的数据类型。
 9. 界面、数据库、认证、秘密和普通业务用例不得按被部署项目的语言复制结构。
 10. 包结构不用于绕开模块职责。跨模块能力仍通过既有依赖和类型化契约协作，不复制模型，不向上层开放任意 Shell、原始 SFTP 或不受控 systemd、Docker、Podman 操作。
@@ -1175,7 +1208,7 @@ main    ──→ shared/{model,git,analyze,ai,config,linux,linux-sshd,deploy,ba
 - 普通发布树、普通数据目录和容器卷取材使用确定性 PAX TAR：源树必须先拒绝符号链接、硬链接、设备、FIFO、Socket、跨文件系统项和所有特殊文件；归档成员必须是安全相对路径并受成员数、单项大小和总大小限制。OCI Archive 必须具有标准 OCI 布局、规范摘要引用且所有 blob 摘要和长度可复验。
 - helper 只在 `/var/lib/windowstolinux/backups/<operation-id>/` 创建本次操作拥有的临时制品；`linux.protocol.backup` 仅以固定类型请求创建、流式回读和精确清理，禁止任意 Shell、任意源路径和任意目标路径。无论成功或失败都必须尝试清理精确操作目录，清理不可验证时返回人工恢复语义。
 - 完整取材默认使用整应用短暂停写窗口：按依赖逆序停止原先正在运行的组件并验证无写入者，收集发布树、文件树、命名卷、OCI 镜像及固定数据库一致性导出，再按依赖顺序恢复原运行状态并执行组件和整应用健康检查。任一恢复状态不可验证时不得发布备份成功结果。
-- 数据库仍只通过 SQLite/PostgreSQL/MySQL/MariaDB 固定适配器与 helper 协议操作；直接复制活跃数据库文件、猜测连接、在线打包普通数据并宣称整体一致，均不构成完整备份。
+- 完整备份数据库仍只通过 SQLite/PostgreSQL/MySQL/MariaDB 固定适配器与 helper 协议操作；Redis 及多库绑定超出完整备份能力时显式拒绝；直接复制活跃数据库文件、猜测连接、在线打包普通数据并宣称整体一致，均不构成完整备份。
 - 下载到 Windows 的每个制品必须在受管工作区独立复验类型、长度和 SHA-256；随后复用同目录私有临时文件、完整归档校验、无覆盖原子发布和最终位置复验。远端“已生成”、SFTP“已传输”或本地输入“完整”都不能单独冒充归档创建成功。
 - 本节新增 helper 动词和发布参数属于协议不兼容变更，`ManagedHelperProtocol` 必须升级；旧 helper 必须先通过产品环境准备替换，禁止协议内静默兼容或回退。
 
@@ -1275,7 +1308,7 @@ linux-sshd 通过 linux 契约采集服务器已有环境
 14. 本地化改造不得改变 SQLite schema、部署与安全流程、凭据所有权或秘密传递边界；需要改变这些边界时必须另行评审。
 15. 项目代码注释统一采用中英双语，包含 `//`、块注释和 Javadoc；英文说明在前，简体中文说明紧随其后，并在同一注释内表达相同含义。标识符、命令、协议名和原始诊断保持原文，不为满足双语格式而翻译；注释不属于 UI 文案，不进入消息目录。新增或修改注释时必须遵守本规则。
 16. 分期是开发路线与验收文档的组织方式，不是产品运行时架构。`src/` 中的模块、包、类、方法、字段、枚举、消息键、配置键、资源名、脚本名和测试名不得以 `PhaseOne`、`PhaseTwo`、`phase1`、`phase2`、一期、二期等期数命名；必须按稳定职责命名。正式文档可保留分期标题和历史记录，但不得把期数泄漏为代码 API 或持久化契约。
-17. `app/ui/deployment` 只能收集并构造已声明的 `DeploymentProjectType`、`DeploymentRuntimeSpecification`、`ConfigurationSnapshot`、`SecretReference`、`ManagedDatabaseBinding` 和计划审阅输入；不得暴露任意 Shell、启动命令、主机路径挂载、数据库密码明文或未审阅的秘密文本。新单/多组件部署必须明确区分数据库范围“尚未审阅”“已审阅且为空”和一个受支持的服务器数据库绑定；尚未审阅时不得进入部署。项目类型、运行时字段和容器选项改变后，必须重新进行静态源码分析；桌面页面状态切换外观或语言时必须保留这些尚未提交的表单值。
+17. `app/ui/deployment` 只能收集并构造已声明的 `DeploymentProjectType`、`DeploymentRuntimeSpecification`、`ConfigurationSnapshot`、`SecretReference`、`ManagedDatabaseBinding` 和计划审阅输入；不得暴露任意 Shell、启动命令、主机路径挂载、数据库密码明文或未审阅的秘密文本。新单/多组件部署必须明确区分数据库范围“尚未审阅”“已审阅且为空”和一个或多个已审阅的服务器 DB 绑定；尚未审阅时不得进入部署。项目类型、运行时字段和容器选项改变后，必须重新进行静态源码分析；桌面页面状态切换外观或语言时必须保留这些尚未提交的表单值。
 18. 类型化部署分析必须把确定的源码元数据作为可审阅的 `DeploymentRuntimeAssessment` 返回，而非由桌面表单写死语言版本、入口、产物目录、端口或卷。仅在值唯一、受支持、边界安全且具有 `AnalysisEvidence` 时才可回填；范围、冲突、任意脚本和文档文字只能作为未解决的用户输入，绝不转换为命令。
 19. 本地目录和 Git 来源都必须在 `app/service/source` 汇合为同一 `ReviewedSourcePreparation`，并以归档摘要绑定 `SourceRevision`。网络 Git 来源必须使用无凭据 URI、允许主机、固定 Commit 和受控工作目录；桌面 UI 不得调用 Git 进程、数据库或秘密存储实现。
 20. `DeploymentAnalysisCoordinator` 不得导入具体项目类型实现；`ProjectLanguageInspector` 只负责组合确定性的语言事实检查器。低层语言与构建 Inspector 不得修改调用方提供的拒绝集合，生产包与测试包必须镜像，包依赖不得成环，且不得恢复按阶段或宽泛类别聚合实现的包。`deploy.plan` 不得构造具体适配器，`linux.connection` 不得保存异常或组合会话，`linux-sshd.connection` 不得保存 command 或总会话；禁止以兼容壳保留旧类型。
@@ -1288,6 +1321,10 @@ linux-sshd 通过 linux 契约采集服务器已有环境
 
 | 版本 | 日期 | 说明 |
 | --- | --- | --- |
+| 3.55.4-language-inspection-boundary | 2026-09-08 | 统一 10 个语言生态的根包识别器，将已有生态标记从通用预览目录迁出；JAR 清单解析归 jar 架构，CMake 复用语言分类并保留目标约束，同步结构门禁和文件索引。支持等级与真实运行证据不变。 |
+| 3.55.3-doc-naming | 2026-09-08 | 同步三期、四期补充文档的统一命名与归属，补齐开发文档目录；模块、包结构、实现状态和运行证据不变。 |
+| 3.55.1-db-ecosystem-layout | 2026-09-07 | 将四个共享模块的原生 DB 包统一迁入各自的 `ecosystem.db`，同步测试、原生 helper 资源、加载路径、源码索引和结构门禁；明确 DB 技术生态规则及本地持久化边界。28-POM、业务行为、helper 内容及实机证据边界不变。 |
+| 3.55.0-phase4-automatic-desktop | 2026-09-07 | 保持 28-POM，增加共享 DB 分组、自动部署窄门面及服务编排；UI 公共高级侧栏和备份选择控件使用中英文映射。源码索引按当前生产路径同步；本地门禁 417 项通过、27 项条件跳过，真实 SSH/DB 为 RUNTIME-PENDING。 |
 | 3.54.0-six-phase-boundary | 2026-08-23 | 不改变 28-POM 或当前源码结构；四期保留已完成的更新/卸载安全核心，五期只开发回环内部测试 Web 功能且不实现登录认证，六期大致承接公开官网、上线认证、正式发布下载和 Windows 生产维护。六期详细架构、接口与部署在实施前另行修订和批准。 |
 | 3.53.1-current-test-evidence | 2026-08-23 | 更正当前门禁统计口径：本次 28-POM JDK 21 离线 `verify` 实际生成 128 份 Surefire 报告、414 项测试，0 失败、0 错误、27 项真实环境条件跳过；`target` 中 5 份已移动或已删除测试类留下的旧 XML（共 16 项）不计入当前证据。本次只修正文档证据，不改变源码、功能、协议、SQLite schema 或 `RUNTIME-PENDING` 边界。 |
 | 3.53.0-reviewed-database-entry | 2026-08-23 | 不改变 28-POM、SQLite schema 或远端协议；单/多组件桌面部署必须明确选择“无数据库”或 PostgreSQL/MySQL/MariaDB，并把一个不含秘密值的数据库绑定及精确密码 `SecretReference` 交给现有部署事务，未审阅时不得部署。新增默认跳过的双服务器产品组合验收，从 `DesktopApplicationFacade` 部署文件型应用并覆盖完整备份、目标恢复、源端停写迁移及等待人工切流，不使用手工 SSH/helper 旁路。功能检查点为 `030bee5`；当前门禁的更正统计见 3.53.1。真实环境证据仍为 `RUNTIME-PENDING`。 |

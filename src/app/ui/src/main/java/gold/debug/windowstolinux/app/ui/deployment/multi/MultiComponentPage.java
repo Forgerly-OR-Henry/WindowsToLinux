@@ -66,6 +66,7 @@ public final class MultiComponentPage {
     private final JPanel panel;
     private PreparedMultiComponentSource preparation;
     private ReviewedMultiComponentApplication review;
+    private gold.debug.windowstolinux.app.ui.component.AdvancedOptionsPane advanced;
 
     /** Creates the stateful multi-component controller. / 创建有状态多组件控制器。 */
     public MultiComponentPage(JFrame owner, MultiComponentApplicationFacade service, ServerContext serverContext,
@@ -100,7 +101,8 @@ public final class MultiComponentPage {
 
     private JPanel createPanel(DesktopComponentFactory components) {
         JPanel page = components.pagePanel();
-        JPanel actions = components.transparent(new FlowLayout(FlowLayout.LEFT, 8, 0));
+        advanced = new gold.debug.windowstolinux.app.ui.component.AdvancedOptionsPane(page, components, messages);
+        JPanel actions = components.transparent(new java.awt.GridLayout(2, 2, 8, 8));
         JButton root = components.secondaryButton(messages.text("component.button.selectRoot"));
         root.addActionListener(event -> chooseRoot());
         JButton add = components.secondaryButton(messages.text("component.button.add"));
@@ -113,52 +115,52 @@ public final class MultiComponentPage {
         servers.addActionListener(event -> openServers.run());
         JButton deploy = components.primaryButton(messages.text("component.button.deploy"));
         deploy.addActionListener(event -> deploy());
-        actions.add(root); actions.add(add); actions.add(remove); actions.add(analyze); actions.add(servers); actions.add(deploy);
+        actions.add(root); actions.add(add); actions.add(remove); actions.add(deploy);
+        advanced.addOption(analyze); advanced.addOption(servers);
         page.add(actions, BorderLayout.NORTH);
 
-        JTabbedPane tabs = new JTabbedPane();
-        tabs.addTab(messages.text("component.tab.graph"), graphPanel(components));
-        tabs.addTab(messages.text("component.tab.result"), resultPanel(components));
-        page.add(tabs, BorderLayout.CENTER);
-        return page;
+        JPanel contents = components.transparent(new BorderLayout(0, 12));
+        contents.add(graphPanel(components), BorderLayout.NORTH);
+        contents.add(resultPanel(components), BorderLayout.CENTER);
+        page.add(contents, BorderLayout.CENTER);
+        return advanced;
     }
 
     private JPanel graphPanel(DesktopComponentFactory components) {
         JPanel graph = components.transparent(new BorderLayout(12, 12));
         JPanel form = components.card(new GridBagLayout());
         int row = 0;
-        components.addField(form, row, 0, messages.text("component.field.applicationRoot"), editor.application.root);
-        components.addField(form, row++, 1, messages.text("component.field.applicationId"), editor.application.id);
-        components.addField(form, row, 0, messages.text("component.field.id"), editor.componentId);
-        components.addField(form, row++, 1, messages.text("component.field.relativeRoot"), editor.relativeRoot);
-        components.addField(form, row, 0, messages.text("field.projectType"), editor.projectType);
-        components.addField(form, row++, 1, messages.text("component.field.healthOwner"), editor.application.healthComponentId);
-        components.addField(form, row, 0, messages.text("field.runtimePrimary"), editor.runtimePrimary);
-        components.addField(form, row++, 1, messages.text("field.runtimeSecondary"), editor.runtimeSecondary);
-        components.addField(form, row, 0, messages.text("field.runtimeVersion"), editor.runtimeVersion);
-        components.addField(form, row++, 1, messages.text("field.jvmArguments"), editor.runtimeArguments);
-        components.addField(form, row, 0, messages.text("component.field.runtimeAdditional"), editor.runtimeAdditional);
-        components.addField(form, row++, 1, messages.text("field.healthMode"), editor.healthMode);
-        components.addField(form, row, 0, messages.text("field.healthEndpoint"), editor.healthEndpoint);
-        components.addField(form, row++, 1, messages.text("field.expectedStatus"), editor.expectedStatus);
-        components.addField(form, row, 0, messages.text("field.timeout"), editor.timeoutSeconds);
-        components.addField(form, row++, 1, messages.text("field.tcpStability"), editor.stabilitySeconds);
-        components.addField(form, row, 0, messages.text("field.userAccessUrl"), editor.accessUrl);
-        components.addField(form, row++, 1, messages.text("component.field.artifacts"), editor.artifacts);
-        components.addField(form, row, 0, messages.text("component.field.ports"), editor.ports);
-        components.addField(form, row++, 1, messages.text("component.field.dependencies"), editor.dependencies);
-        components.addField(form, row, 0, messages.text("field.configurationEntries"), editor.resources.configuration);
-        components.addField(form, row++, 1, messages.text("field.secretReferences"), editor.resources.secrets);
-        components.addField(form, row, 0, messages.text("field.databaseReviewMode"), editor.resources.databaseMode);
-        components.addField(form, row++, 1, messages.text("field.databaseDetails"), editor.resources.databaseDetails);
-        JPanel flags = components.transparent(new FlowLayout(FlowLayout.LEFT, 8, 0));
+        advanced.field("component.field.applicationRoot", editor.application.root);
+        advanced.field("component.field.applicationId", editor.application.id);
+        advanced.field("component.field.id", editor.componentId);
+        advanced.field("component.field.relativeRoot", editor.relativeRoot);
+        advanced.field("field.projectType", editor.projectType);
+        advanced.field("component.field.healthOwner", editor.application.healthComponentId);
+        advanced.field("field.runtimePrimary", editor.runtimePrimary);
+        advanced.field("field.runtimeSecondary", editor.runtimeSecondary);
+        advanced.field("field.runtimeVersion", editor.runtimeVersion);
+        advanced.field("field.jvmArguments", editor.runtimeArguments);
+        advanced.field("component.field.runtimeAdditional", editor.runtimeAdditional);
+        advanced.field("field.healthMode", editor.healthMode);
+        advanced.field("field.healthEndpoint", editor.healthEndpoint);
+        advanced.field("field.expectedStatus", editor.expectedStatus);
+        advanced.field("field.timeout", editor.timeoutSeconds);
+        advanced.field("field.tcpStability", editor.stabilitySeconds);
+        advanced.field("field.userAccessUrl", editor.accessUrl);
+        advanced.field("component.field.artifacts", editor.artifacts);
+        advanced.field("component.field.ports", editor.ports);
+        advanced.field("component.field.dependencies", editor.dependencies);
+        advanced.field("field.configurationEntries", editor.resources.configuration);
+        advanced.field("field.secretReferences", editor.resources.secrets);
+        advanced.field("field.databaseReviewMode", editor.resources.databaseMode);
+        advanced.field("field.databaseDetails", editor.resources.databaseDetails);
         editor.required.setBorder(BorderFactory.createEmptyBorder());
         editor.rootBuild.setBorder(BorderFactory.createEmptyBorder());
-        flags.add(editor.required); flags.add(editor.rootBuild);
-        components.addField(form, row, 0, messages.text("component.field.flags"), flags);
-        graph.add(new JScrollPane(form), BorderLayout.CENTER);
-        editor.draftControls.list.setPreferredSize(new Dimension(290, 0));
-        graph.add(new JScrollPane(editor.draftControls.list), BorderLayout.EAST);
+        advanced.field("component.required", editor.required);
+        advanced.field("rootBuild", editor.rootBuild);
+
+        editor.draftControls.list.setVisibleRowCount(4);
+        graph.add(new JScrollPane(editor.draftControls.list), BorderLayout.CENTER);
         return graph;
     }
 
@@ -166,12 +168,14 @@ public final class MultiComponentPage {
         JPanel result = components.transparent(new BorderLayout(0, 12));
         result.add(components.outputCard(messages.text("component.result.title"),
                 messages.text("component.result.description"), output), BorderLayout.CENTER);
-        JPanel lifecycle = components.card(new FlowLayout(FlowLayout.LEFT, 8, 0));
-        lifecycle.add(editor.lifecycle.action);
-        lifecycle.add(editor.lifecycle.targets);
+        JPanel lifecycle = components.card(new BorderLayout(8, 8));
+        JPanel selection = components.transparent(new BorderLayout(8, 0));
+        selection.add(editor.lifecycle.action, BorderLayout.WEST);
+        selection.add(editor.lifecycle.targets, BorderLayout.CENTER);
+        lifecycle.add(selection, BorderLayout.NORTH);
         JButton execute = components.primaryButton(messages.text("component.button.lifecycle"));
         execute.addActionListener(event -> lifecycle());
-        lifecycle.add(execute);
+        lifecycle.add(execute, BorderLayout.SOUTH);
         result.add(lifecycle, BorderLayout.SOUTH);
         return result;
     }
@@ -202,6 +206,7 @@ public final class MultiComponentPage {
     }
 
     private void analyze() {
+        if (busy) return;
         try {
             if (editor.isEmpty()) throw new IllegalArgumentException(messages.text("component.validation.empty"));
             Path root = Path.of(editor.applicationRoot());
@@ -209,21 +214,24 @@ public final class MultiComponentPage {
             List<gold.debug.windowstolinux.shared.analyze.component.ComponentAnalysisRequest> requests =
                     editor.orderedDrafts().stream().map(MultiComponentDraft::analysisRequest).toList();
             output.setText(messages.text("component.analysis.running"));
+            setBusy(true);
             DesktopTaskExecutor.run(
                     () -> service.prepareReviewedMultiComponentSource(root, id, requests),
                     result -> {
+                        setBusy(false);
                         preparation = result;
                         review = null;
                         output.setText(presenter.analysis(preparation));
                     },
-                    exception -> output.setText(messages.text("component.analysis.failed",
-                            Map.of("detail", messages.safe(exception)))));
+                    exception -> { setBusy(false); output.setText(messages.text("component.analysis.failed",
+                            Map.of("detail", messages.safe(exception)))); });
         } catch (Exception exception) {
             output.setText(messages.text("component.analysis.failed", Map.of("detail", messages.safe(exception))));
         }
     }
 
     private void deploy() {
+        if (busy) return;
         if (preparation == null || preparation.components().isEmpty()) {
             output.setText(messages.text("component.validation.analyzeFirst"));
             return;
@@ -261,27 +269,31 @@ public final class MultiComponentPage {
             if (JOptionPane.showConfirmDialog(owner, presenter.review(candidate), messages.text("component.review.title"),
                     JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE) != JOptionPane.YES_OPTION) return;
             char[] masterPassword = serverContext.masterPassword();
+            var credentialMode = serverContext.credentialMode();
             output.setText(messages.text("component.deployment.running"));
+            setBusy(true);
             DesktopTaskExecutor.run(() -> {
                     for (MultiComponentReviewInput input : inputs) {
                         service.saveDeploymentConfigurationSnapshot(input.configuration());
                     }
                     return service.deployReviewedMultiComponentWithStoredPassword(candidate, profile,
-                            serverContext.credentialMode(), masterPassword, serverContext::confirmFingerprint);
+                            credentialMode, masterPassword, serverContext::confirmFingerprint);
                 }, result -> {
+                    setBusy(false);
                     output.setText(presenter.deployment(result));
                     if (result.status() == DeploymentStatus.SUCCEEDED) {
                         review = candidate;
                         applicationSelection.accept(candidate.components().getFirst().application().id());
                     }
-                }, exception -> output.setText(messages.text("component.deployment.failed",
-                        Map.of("detail", messages.safe(exception)))));
+                }, exception -> { setBusy(false); output.setText(messages.text("component.deployment.failed",
+                        Map.of("detail", messages.safe(exception)))); });
         } catch (Exception exception) {
             output.setText(messages.text("component.deployment.failed", Map.of("detail", messages.safe(exception))));
         }
     }
 
     private void lifecycle() {
+        if (busy) return;
         try {
             String managedApplicationId = editor.applicationId();
             if (managedApplicationId.isEmpty()) throw new IllegalArgumentException(
@@ -290,18 +302,20 @@ public final class MultiComponentPage {
             Set<String> targets = editor.lifecycleTargets();
             ServerProfile profile = serverContext.profile();
             char[] masterPassword = serverContext.masterPassword();
+            var credentialMode = serverContext.credentialMode();
             Set<String> selectedTargets = Set.copyOf(targets);
             output.setText(messages.text("component.lifecycle.running"));
+            setBusy(true);
             DesktopTaskExecutor.run(() -> {
                     var managed = service.findManagedMultiComponentApplication(managedApplicationId).orElseThrow(
                             () -> new IllegalStateException(messages.text("component.validation.deployFirst")));
                     Set<String> effectiveTargets = selectedTargets.isEmpty() && action != LifecycleAction.REFRESH_STATUS
                             ? Set.copyOf(managed.plan().startOrder()) : selectedTargets;
                     return service.executeManagedMultiComponentLifecycleWithStoredPassword(managedApplicationId,
-                            effectiveTargets, action, profile, serverContext.credentialMode(), masterPassword);
-                }, result -> output.setText(presenter.lifecycle(result)),
-                    exception -> output.setText(messages.text("component.lifecycle.failed",
-                            Map.of("detail", messages.safe(exception)))));
+                            effectiveTargets, action, profile, credentialMode, masterPassword);
+                }, result -> { setBusy(false); output.setText(presenter.lifecycle(result)); },
+                    exception -> { setBusy(false); output.setText(messages.text("component.lifecycle.failed",
+                            Map.of("detail", messages.safe(exception)))); });
         } catch (Exception exception) {
             output.setText(messages.text("component.lifecycle.failed", Map.of("detail", messages.safe(exception))));
         }
@@ -312,6 +326,9 @@ public final class MultiComponentPage {
                 messages.text(messageKey, Map.of("components", String.join(", ", componentIds))),
                 messages.text(titleKey), JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE) == JOptionPane.YES_OPTION;
     }
+
+    private boolean busy;
+    private void setBusy(boolean value) { busy = value; advanced.setBusy(value); }
 
     private void ensureDraftCoverage() {
         Set<String> preparedIds = preparation.components().keySet();

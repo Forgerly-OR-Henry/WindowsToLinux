@@ -36,7 +36,25 @@ public final class PageMessagePresenter {
 
     /** Formats a safe user-facing exception and records bounded diagnostics. / 格式化安全用户异常并记录有界诊断。 */
     public String safe(Exception exception) {
-        return failures.present(exception);
+        String diagnostic = failures.present(exception);
+        Throwable root = exception;
+        while (root.getCause() != null) root = root.getCause();
+        if (root instanceof gold.debug.windowstolinux.shared.linux.ecosystem.db.NativeDatabasePort.DatabaseFailure failure)
+            return text("db.failure." + failure.reason().name().toLowerCase(Locale.ROOT));
+        return diagnostic;
+    }
+
+    /** Localizes display choices while preserving the submitted protocol value. */
+    public String inputChoice(gold.debug.windowstolinux.shared.model.deployment.DeploymentInputField field, String value) {
+        if (value.isBlank()) return field.labelKey().equals("db.field.initialize") ? text("db.initialize.none") : value;
+        return switch (field.labelKey()) {
+            case "auto.field.type" -> text("project.type."+value.toLowerCase(Locale.ROOT));
+            case "db.field.engine" -> text("db.engine."+value.toLowerCase(Locale.ROOT));
+            case "field.healthMode" -> text("health.mode." + value.toLowerCase(Locale.ROOT));
+            case "field.containerEngine" -> text("container.engine." + value.toLowerCase(Locale.ROOT));
+            case "field.databaseReviewMode" -> text("database.review.mode." + value.toLowerCase(Locale.ROOT));
+            default -> value;
+        };
     }
 
     /** Formats a localized message with optional raw diagnostic text. / 格式化本地化消息与可选原始诊断文本。 */

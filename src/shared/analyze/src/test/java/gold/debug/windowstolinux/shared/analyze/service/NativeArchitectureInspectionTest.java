@@ -35,6 +35,21 @@ class NativeArchitectureInspectionTest {
     }
 
     @Test
+    void cmakeUsesOnlyTargetSourcesToSelectItsLanguages() throws Exception {
+        Fixture fixture = cmake();
+        Files.writeString(fixture.root().resolve("CMakeLists.txt"), """
+                cmake_minimum_required(VERSION 3.25)
+                project(demo LANGUAGES C)
+                add_executable(demo src/main.c)
+                target_compile_features(demo PRIVATE c_std_17)
+                """);
+        var assessment = analyze(fixture);
+        assertEquals(DeploymentAdmissionStatus.READY_FOR_PLANNING, assessment.admission());
+        assertEquals(java.util.Set.of(SourceLanguageType.C),
+                assessment.facts().orElseThrow().languageFacts().sourceLanguages());
+    }
+
+    @Test
     void stopsEachNativeArchitectureOnExternalOrAmbiguousBuildInputs() throws Exception {
         Fixture java = javaSource();
         write(java.root(), "pom.xml", "<project/>\n");

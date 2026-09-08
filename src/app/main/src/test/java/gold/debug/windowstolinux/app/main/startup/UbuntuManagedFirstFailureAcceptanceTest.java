@@ -100,7 +100,7 @@ class UbuntuManagedFirstFailureAcceptanceTest {
     }
 
     private static void assertEvent(DeploymentResult result, String step, boolean expected) {
-        assertTrue(result.events().stream().anyMatch(event -> event.step().equals(step) && event.succeeded() == expected),
+        assertTrue(result.events().stream().anyMatch(event -> event.step().code().equals(step) && event.succeeded() == expected),
                 () -> "missing event " + step + "=" + expected + ": " + result.events());
     }
 }

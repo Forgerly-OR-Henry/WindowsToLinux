@@ -32,7 +32,10 @@ public final class ApplicationSecretRepository {
             RepositoryTransactionExecutor.execute(connection, () -> {
                 Optional<StoredApplicationSecretRevision> existing = findRevision(connection, revision.reference());
                 if (existing.isPresent()) {
-                    if (!existing.orElseThrow().equals(revision)) {
+                    StoredApplicationSecretRevision stored = existing.orElseThrow();
+                    if (!stored.credentialKey().equals(revision.credentialKey())
+                            || stored.credentialMode() != revision.credentialMode()
+                            || stored.createdAt().toEpochMilli() != revision.createdAt().toEpochMilli()) {
                         throw new SQLException("application secret revisions are immutable");
                     }
                     return;

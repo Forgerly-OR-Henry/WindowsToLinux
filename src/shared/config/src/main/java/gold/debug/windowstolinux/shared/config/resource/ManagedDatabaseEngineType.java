@@ -5,5 +5,6 @@ public enum ManagedDatabaseEngineType {
     SQLITE,
     POSTGRESQL,
     MYSQL,
-    MARIADB
+    MARIADB,
+    REDIS
 }

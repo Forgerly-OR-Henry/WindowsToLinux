@@ -123,7 +123,7 @@ record ManagedDistributionAcceptanceProfile(
                                                                       SetupExpectationKind expectation) {
         if ("9".equals(version)) {
             return exact(LinuxDistroType.CENTOS_STREAM, version, packageArchitecture, requiredCpu, expectation,
-                    "9", "x86_64", CpuMicroarchitectureLevel.X86_64_V1, SetupExpectationKind.SUCCEEDS);
+                    "9", "x86_64", CpuMicroarchitectureLevel.X86_64_V2, SetupExpectationKind.SUCCEEDS);
         }
         if ("10".equals(version) && requiredCpu == CpuMicroarchitectureLevel.X86_64_V3) {
             return exact(LinuxDistroType.CENTOS_STREAM, version, packageArchitecture, requiredCpu, expectation,

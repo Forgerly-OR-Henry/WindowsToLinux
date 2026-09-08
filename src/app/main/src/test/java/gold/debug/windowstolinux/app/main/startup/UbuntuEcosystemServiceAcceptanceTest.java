@@ -48,10 +48,14 @@ class UbuntuEcosystemServiceAcceptanceTest {
     @TestFactory
     Stream<DynamicTest> deploysBuildsRollsBackAndRestoresEveryEcosystemServiceAdapter() {
         String selected = System.getProperty("managed.runtime.service.type", "all").trim();
-        return Stream.of(DeploymentProjectType.GO_SERVICE, DeploymentProjectType.RUST_SERVICE,
+        List<DeploymentProjectType> supported = List.of(DeploymentProjectType.GO_SERVICE, DeploymentProjectType.RUST_SERVICE,
                         DeploymentProjectType.DOTNET_SERVICE, DeploymentProjectType.KOTLIN_SERVICE,
-                        DeploymentProjectType.PHP_SERVICE, DeploymentProjectType.RUBY_SERVICE)
-                .filter(type -> selected.equalsIgnoreCase("all") || type.name().equalsIgnoreCase(selected))
+                        DeploymentProjectType.PHP_SERVICE, DeploymentProjectType.RUBY_SERVICE);
+        List<DeploymentProjectType> requested = selected.equalsIgnoreCase("all") ? supported
+                : java.util.Arrays.stream(selected.split(",", -1)).map(value -> DeploymentProjectType.valueOf(
+                        value.trim().toUpperCase(java.util.Locale.ROOT))).toList();
+        assertTrue(supported.containsAll(requested), "service selection contains an unsupported project type");
+        return requested.stream().distinct()
                 .map(type -> DynamicTest.dynamicTest(
                 type.name().toLowerCase(java.util.Locale.ROOT), () -> exercise(type)));
     }
@@ -173,7 +177,7 @@ class UbuntuEcosystemServiceAcceptanceTest {
         for (String required : List.of("target-capabilities", "typed-host-compatibility", "source-upload",
                 "remote-build", "deployment-inputs", "snapshot", "publish", "candidate-health",
                 "final-observation", "release-retention", "candidate-cleanup")) {
-            assertTrue(result.events().stream().anyMatch(event -> event.step().equals(required) && event.succeeded()),
+            assertTrue(result.events().stream().anyMatch(event -> event.step().code().equals(required) && event.succeeded()),
                     () -> "missing successful " + required + ": " + result.events());
         }
     }

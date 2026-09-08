@@ -69,6 +69,14 @@ public final class ReviewedDeploymentService {
     public DeploymentResult deploy(ReviewedDeploymentRequest request, ManagedApplication application,
                                    DeploymentLinuxGateway gateway, SshEndpoint endpoint, SshCredential credential,
                                    HostKeyEvaluator hostKeyVerifier, List<ResolvedSecretRevision> resolvedSecrets) {
+        return deploy(request, application, gateway, endpoint, credential, hostKeyVerifier, resolvedSecrets, ignored -> { });
+    }
+
+    /** Executes with a per-operation observer of real transaction events. */
+    public DeploymentResult deploy(ReviewedDeploymentRequest request, ManagedApplication application,
+            DeploymentLinuxGateway gateway, SshEndpoint endpoint, SshCredential credential,
+            HostKeyEvaluator hostKeyVerifier, List<ResolvedSecretRevision> resolvedSecrets,
+            java.util.function.Consumer<gold.debug.windowstolinux.shared.deploy.contract.result.deployment.DeploymentEvent> progress) {
         request = java.util.Objects.requireNonNull(request, "request");
         application = java.util.Objects.requireNonNull(application, "application");
         gateway = java.util.Objects.requireNonNull(gateway, "gateway");
@@ -79,7 +87,7 @@ public final class ReviewedDeploymentService {
         if (!resolvedSecrets.stream().map(ResolvedSecretRevision::reference).toList().equals(request.secretReferences())) {
             throw new IllegalArgumentException("resolved secret revisions must exactly match the reviewed references");
         }
-        List<DeploymentEvent> events = new ArrayList<>();
+        List<DeploymentEvent> events = new DeploymentEventJournal(progress);
         DeploymentResult initialRejection = validateRequestBinding(request, application, endpoint, events);
         if (initialRejection != null) return initialRejection;
         RemoteWorkspace workspace = new RemoteWorkspace(application.id(), request.archive().contentSha256());

@@ -7,7 +7,7 @@
 - 文档状态：**一期迁移前链路的 Ubuntu 24.04 验收作为历史证据保留；统一后的 Spring Boot Reviewed/helper v3 链路已完成当前 Ubuntu 24.04 x86-64 产品入口验收**
 - 当前实现：一期能力已迁移到只接受类型化事实、Reviewed 来源和 Reviewed 请求的统一链路；Maven Wrapper、系统 Maven 与 Gradle Wrapper 由构建工具字段区分；当前 Ubuntu 验收只证明该精确目标，不外推到其他发行版
 - 更新日期：2026-08-13
-- 上级文档：[开发总纲](../DEVELOPMENT.md)
+- 上级文档：[开发总纲](DEVELOPMENT.md)
 
 ## 文档导航
 

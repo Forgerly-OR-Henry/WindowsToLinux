@@ -38,6 +38,23 @@ public final class MixedProjectInspector {
     /** Analyzes all declared components without executing source content. / 在不执行源码内容的情况下分析全部声明组件。 */
     public MultiComponentProjectAssessment analyze(Path selectedApplicationRoot, String applicationId,
                                                    List<ComponentAnalysisRequest> requests) {
+        return analyze(selectedApplicationRoot, applicationId, requests, Map.of(), false);
+    }
+
+    /** Checks graph conflicts while retaining the pending database review as an input requirement. */
+    public MultiComponentProjectAssessment analyzeAutomatic(Path root, String applicationId, List<ComponentAnalysisRequest> requests) {
+        return analyze(root, applicationId, requests, Map.of(), true);
+    }
+
+    /** Rechecks every component using source-bound database evidence. */
+    public MultiComponentProjectAssessment analyze(Path root, String applicationId, List<ComponentAnalysisRequest> requests,
+            Map<String, gold.debug.windowstolinux.shared.model.ecosystem.db.DatabaseSchemaReview> reviews) {
+        return analyze(root, applicationId, requests, reviews, false);
+    }
+
+    private MultiComponentProjectAssessment analyze(Path selectedApplicationRoot, String applicationId,
+            List<ComponentAnalysisRequest> requests, Map<String, gold.debug.windowstolinux.shared.model.ecosystem.db.DatabaseSchemaReview> reviews,
+            boolean deferDatabase) {
         Path root = requireApplicationRoot(selectedApplicationRoot);
         applicationId = requireIdentifier(applicationId, "applicationId");
         requests = List.copyOf(Objects.requireNonNull(requests, "requests"));
@@ -62,7 +79,9 @@ public final class MixedProjectInspector {
                         List.of(request.componentId()), "analysis.component.sourceInvalid"));
                 continue;
             }
-            var assessment = coordinator.analyze(componentRoot, request.projectType());
+            var assessment = deferDatabase ? coordinator.analyzeForDatabaseReview(componentRoot, request.projectType())
+                    : reviews.containsKey(request.componentId()) ? coordinator.analyze(componentRoot, request.projectType(), reviews.get(request.componentId()))
+                    : coordinator.analyze(componentRoot, request.projectType());
             if (assessment.admission() == DeploymentAdmissionStatus.REJECTED) {
                 issues.add(issue(ComponentIssue.SeverityLevel.SAFETY_REJECTION, "COMPONENT_ANALYSIS_REJECTED",
                         List.of(request.componentId()), "analysis.component.analysisRejected"));

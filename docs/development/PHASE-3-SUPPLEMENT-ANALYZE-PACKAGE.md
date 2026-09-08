@@ -1,10 +1,12 @@
-# `shared.analyze` 生态化分包修订
+# WindowsToLinux 三期补充开发文档：分析层生态化分包
 
 ## 文档信息
 
-- 文档版本：`1.5.0`
+- 文档版本：`1.6.1-language-inspection-boundary`
+- 文档角色：三期补充开发文档，记录 `shared.analyze` 生态化分包修订
 - 文档状态：**已实施（ecosystem 架构与三层功能组包迁移完成）**
-- 更新日期：2026-08-20
+- 更新日期：2026-09-08
+- 上级文档：[三期工程细化文档](PHASE-3.md)
 - 正式目标结构：[File.md](../File.md)
 - 当前实现状态：跨语言协调保留在公共职责包，策略与 SPI 位于 `contract.{policy,spi}`，默认装配位于 `extension.registry`，语言实现完整聚合于 `ecosystem.<language>`；每个独立构建架构均位于自身规范名子包。Linux 部署链的构建执行与能力探测按 [File.md](../File.md) 独立归入各自 `ecosystem`，本次不产生新的 Linux 或产品入口运行证据。
 
@@ -14,7 +16,7 @@
 
 > Ecosystem 更新（2026-08-19）：`JavaJarDeploymentInspector` 已迁入 `ecosystem.java.jar`，与 `java.maven`、`java.gradle` 平行；跨架构选择器和语言识别器继续留在语言包。下列 1.0.0 目标树与迁移表作为历史设计记录保留，现行结构只以 `File.md` 为准。
 
-> 架构名分包更新（2026-08-20）：现有 .NET SDK、Go Module、Kotlin Gradle、Composer、Bundler 与 Cargo 检查分别迁入 `dotnetsdk`、`gomodule`、`gradle`、`composer`、`bundler`、`cargo`；Node 的 npm/pnpm/Yarn 与 Python 的 pip/Pipenv/Poetry/uv 也使用独立架构包。语言识别、跨架构选择和服务结果组装仍留在语言包。
+> 现行语言与架构边界（2026-09-08）：10 个已有语言生态的 `*LanguageInspector` 全部位于 `ecosystem.<language>` 根包，跨架构公共事实、选择器和框架协调器也保留在根包。已有生态的语言标记已从 `PreviewLanguageMarkerCatalog` 移出；JAR 清单解析归 `java.jar.JavaJarManifestInspector`，CMake 目标与编译标准校验归 `c.cmake`。各工具专属检查使用 `dotnetsdk`、`gomodule`、`gradle`、`composer`、`bundler`、`cargo` 等规范名架构子包。
 
 > 功能组更新（2026-08-20）：现行 `policy`、`spi`、`registry` 已分别迁入 `contract.policy`、`contract.spi`、`extension.registry`；下列 1.0.0 目标树与迁移表继续保留当时路径，当前结构、FQCN 和门禁只以 `File.md` 为准。
 
@@ -114,7 +116,7 @@ gold.debug.windowstolinux.shared.analyze
       └─ StaticWebDeploymentInspector
 ```
 
-只在存在实际实现时创建目标目录，不预建空包。预览级长尾语言继续由声明式 `PreviewLanguageMarkerCatalog` 管理；某种语言出现独立解析、构建或项目类型规则时，才迁入对应生态。
+只在存在实际实现时创建目标目录，不预建空包。尚无独立生态的长尾语言由声明式 `PreviewLanguageMarkerCatalog` 管理；某种语言建立独立生态后，其通用识别规则必须同步迁入该语言根包，不因支持等级仍为试验适配而留在预览目录。
 
 ## 4. 1.0.0 目标依赖方向（历史）
 
@@ -258,6 +260,8 @@ policy ─────→ source
 
 | 版本 | 日期 | 状态 | 说明 |
 | --- | --- | --- | --- |
+| 1.6.1-language-inspection-boundary | 2026-09-08 | 已实施 | 统一 10 个语言根包的纯语言识别，将既有生态标记迁出 preview，并把 JAR 清单解析归入 jar 架构；同步调用入口、回归与结构门禁。 |
+| 1.6.0-doc-naming | 2026-09-08 | 文档整理完成 | 归入三期补充文档，统一文件名、标题和上级导航；保留原有设计、迁移映射与历史验收记录。 |
 | 1.3.0 | 2026-08-19 | 已实施（本地结构验证完成） | 以 `File.md` 的 ecosystem 规则替代旧 JVM 横向层次；Java JAR 进入 `ecosystem.java.jar`，并明确历史目标树与迁移表不再定义当前结构。未改变分析结果、协议、持久化或运行证据。 |
 | 1.2.0 | 2026-08-18 | 已实施（本地结构验证完成） | 将分析预览包和检查器简化为 `preview.PreviewInspector`；不改变分析行为、公共方法、支持等级或运行证据。 |
 | 1.1.0 | 2026-08-15 | 已实施（本地结构验证完成） | 完成生产与测试包迁移、SPI/注册表/元数据/策略职责拆分，并与 Linux 部署链一起原子移除旧 `Advanced*` 公共模型；JDK 21 离线 28 模块验证通过，真实 Linux 结论不变。 |

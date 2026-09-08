@@ -48,6 +48,8 @@ public final class ManagedBackupInputUseCase {
         LinkedHashMap<String, CurrentRelease> releases = new LinkedHashMap<>();
         LinkedHashMap<String, String> releaseIdentities = new LinkedHashMap<>();
         LinkedHashMap<String, List<MissingInputType>> missing = new LinkedHashMap<>();
+        long databaseCount = graph.components().stream().flatMap(component -> component.reviewedResourceBindings().stream())
+                .flatMap(resources -> resources.databaseBindings().stream()).mapToLong(List::size).sum();
         for (ManagedApplicationGraph.Component component : graph.components()) {
             List<MissingInputType> componentMissing = new ArrayList<>();
             if (component.reviewedRuntime().isEmpty()) componentMissing.add(MissingInputType.REVIEWED_RUNTIME);
@@ -57,6 +59,11 @@ public final class ManagedBackupInputUseCase {
             } else if (component.reviewedResourceBindings().orElseThrow().databaseBindings().isEmpty()) {
                 componentMissing.add(MissingInputType.REVIEWED_DATABASE_BINDINGS);
             }
+            component.reviewedResourceBindings().flatMap(resources -> resources.databaseBindings()).ifPresent(databases -> {
+                if (!databases.isEmpty() && (databaseCount > 1 || databases.stream().anyMatch(binding -> binding.connection().engine()
+                        == gold.debug.windowstolinux.shared.config.resource.ManagedDatabaseEngineType.REDIS)))
+                    componentMissing.add(MissingInputType.UNSUPPORTED_DATABASE_BACKUP);
+            });
             Optional<CurrentRelease> release = applications.findRelease(component.application().id());
             if (release.isEmpty()) {
                 componentMissing.add(MissingInputType.CURRENT_RELEASE);

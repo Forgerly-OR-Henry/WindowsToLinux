@@ -1,13 +1,14 @@
-# WindowsToLinux 三期生态构建补全开发文档
+# WindowsToLinux 三期补充开发文档：生态构建补全
 
 ## 文档信息
 
-- 文档版本：`1.2.0-static-readiness`
+- 文档版本：`1.3.1-language-inspection-boundary`
+- 文档角色：三期补充开发文档，记录语言生态与构建架构补全
 - 结构基线：`File.md 3.23.0-ecosystem-extension-implementation`
 - 代码基线：`7f04b6c`
 - 实现检查点：`85af8d5`（精确架构与受控执行）、`4f9f698`（输入和版本门禁）、`b49c938`（独立夹具与产品入口验收编排）、`859a3fb`（部署前能力与运行路径收口）、`84807bd`（锁文件真实性回归夹具）
-- 文档状态：**实现、部署前审计与全仓静态验收已完成；新增架构尚未执行真实服务器验收，继续保持试验适配或 `RUNTIME-PENDING`**
-- 更新日期：2026-08-20
+- 文档状态：**实现、部署前审计与全仓静态验收已完成；已验证的精确语言路径见 [Ubuntu 24 实机记录](UBUNTU-24-LIVE-DEPLOYMENT-2026-09-08.md)，未覆盖的构建架构继续保持试验适配或 `RUNTIME-PENDING`**
+- 更新日期：2026-09-08
 - 上级文档：[三期工程细化文档](PHASE-3.md)
 - 正式结构规范：[项目文件结构](../File.md)
 
@@ -28,7 +29,7 @@
 | 架构包 | `analyze.ecosystem.<language>.<architecture>` 中以工具或架构规范名命名的包。 |
 
 1. 每个分析构建架构必须使用自身规范名包，不得把多个工具隐藏在无名 `build` 包或一个参数化大类中。
-2. 语言识别器、跨架构选择器和框架协调器留在语言包；架构专属事实与检查进入架构包。
+2. 每个已有语言生态的纯语言识别统一放在语言根包；跨架构公共事实、选择器和框架协调器也留在语言根包，架构专属事实与检查进入架构包。语言识别器不得依赖构建架构解析。
 3. 同一语言尚未完成原生架构时，不新增该语言的其他扩展架构。
 4. `jar` 是 Java 的原生制品交付架构，但不是纯 Java 源码构建架构；纯源码必须由 `jdk` 架构使用受控 `javac` 与 `jar` 完成。
 5. 架构名称固定使用全小写规范名：`bundler`、`cargo`、`cmake`、`composer`、`dotnetsdk`、`gradle`、`gomodule`、`jar`、`jdk`、`kotlinc`、`maven`、`npm`、`phpcli`、`pip`、`pipenv`、`pnpm`、`poetry`、`rubycli`、`uv`、`yarn`。
@@ -95,9 +96,12 @@ shared.analyze.ecosystem
    └─ cargo
 ```
 
-- 语言包只保存语言识别、跨架构选择和框架协调。
+- 语言根包保存语言识别、跨架构公共事实、跨架构选择和框架协调。现有 C/C++、.NET、Go、Java、Kotlin、Node、PHP、Python、Ruby、Rust 全部具有独立 `*LanguageInspector`。
 - 架构包保存该工具独有的元数据、锁文件、入口、制品和拒绝规则。
-- CMake 的 C 与 C++ 事实共同位于 `c.cmake`，但输出必须保留精确源码语言集合。
+- C/C++ 通用源码与头文件标记归 `c.CLanguageInspector`；`c.cmake` 只根据实际目标源码选择编译语言，并校验 preset、`LANGUAGES`、编译标准和目标边界。目录中的其他源码或头文件不得扩大目标语言集合。
+- JAR 文件名可作为 Java 生态标记；清单入口与 JDK 版本解析归 `java.jar.JavaJarManifestInspector`，由 JAR 部署检查器调用，纯语言识别和识别预览不打开 JAR。
+- Node 的 `engines.node` 和 Python 的 `requires-python`、模块入口是跨工具公共语言事实，仍归各语言根包；npm/pnpm/Yarn、pip/Pipenv/Poetry/uv 的锁文件与专属构建规则分别归架构子包。
+- 已有语言生态的标记不再放在 `PreviewLanguageMarkerCatalog`；该目录只保留尚无独立生态的长尾标记。预览入口通过公共语言汇总器仍可识别全部已有语言，支持等级和可执行边界不变。
 
 ### 4.2 构建执行层
 
@@ -202,7 +206,7 @@ CMake 在首个架构阶段使用 `CmakeBuildRenderer` 直接位于 `build.ecosy
 
 ### 7.4 批次 D：C/CMake 试验适配
 
-1. 将 C/C++ 从通用预览标记升级为 `c.cmake` 的独立静态检查器。
+1. C/C++ 语言标记由 `c.CLanguageInspector` 独立提供，CMake 构建与目标约束由 `c.cmake` 的独立静态检查器处理。
 2. 首版只允许无构建期下载、无自定义安装脚本、唯一可执行目标和显式健康契约。
 3. 接入 CMake/编译器能力探测、APT/DNF 固定包集合、受控构建、制品检查、systemd 发布和回滚。
 4. 支持等级保持试验适配，直至精确发行版与 CPU 矩阵完成产品入口验收。
@@ -303,6 +307,8 @@ mvn.cmd -B -ntp -o -pl :windowstolinux-app-main -am `
 
 | 版本 | 日期 | 说明 |
 | --- | --- | --- |
+| 1.3.1-language-inspection-boundary | 2026-09-08 | 统一全部已有生态的根包语言识别与架构子包解析边界，区分 C/C++ 通用标记和 CMake 目标语言，将 JAR 清单解析迁入 jar 架构。 |
+| 1.3.0-doc-naming | 2026-09-08 | 统一三期补充文档命名、标题和导航；实现状态、支持边界与历史验收证据不变。 |
 | 1.2.0-static-readiness | 2026-08-20 | 完成部署前反向审计与 28 模块离线静态验收；补齐 CMake 3.25/Ninja/编译器能力门、固定 preset 和语言标准合同，统一构建与 systemd 运行工具 PATH，并记录精确测试、文件索引、helper 和零边界漂移证据。真实服务器验收仍保持后置。 |
 | 1.1.0-static-implementation | 2026-08-20 | 完成 27 个精确架构身份与新增/拆分 12 种架构的静态闭环；加入独立源码夹具、Python 3.11 变体及仅通过产品入口执行的部署/生命周期/失败回滚/重连验收编排。新增架构继续保持试验适配或 `RUNTIME-PENDING`，等待用户提供服务器后执行真实验收。 |
 | 1.0.0-native-architecture-baseline | 2026-08-20 | 以 File 3.22.0 和提交 `7f04b6c` 为基线，冻结原生架构优先顺序；明确 JAR 交付不等于纯 Java 源码构建，规划 JDK、kotlinc、PHP CLI、Ruby CLI 原生补全，Node/Python 显式架构身份与 Renderer 规范化，以及后置的 C/CMake 试验适配。 |

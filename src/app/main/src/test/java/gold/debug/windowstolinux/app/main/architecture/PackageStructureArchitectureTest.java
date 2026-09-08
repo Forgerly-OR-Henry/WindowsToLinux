@@ -63,10 +63,10 @@ class PackageStructureArchitectureTest {
             "DesktopDisplayChangeHandler.java", "DesktopFrame.java", "DesktopPageCoordinator.java",
             "DesktopViewState.java", "PageNavigationController.java");
     private static final Set<String> DEPLOYMENT_SHARED = Set.of(
-            "DeploymentConfigurationParser.java", "DeploymentRuntimeParser.java", "ReviewContext.java");
+            "ReviewContext.java");
     private static final Set<String> DEPLOYMENT_SINGLE = Set.of(
             "DeploymentAnalysisPresenter.java", "DeploymentForm.java", "DeploymentPage.java",
-            "DeploymentPageState.java");
+            "DeploymentPageState.java", "DeploymentInputDialog.java");
     private static final Set<String> DEPLOYMENT_MULTI = Set.of(
             "MultiComponentDraft.java", "MultiComponentDraftController.java", "MultiComponentFormState.java",
             "MultiComponentHealthMode.java", "MultiComponentPage.java", "MultiComponentPageState.java",
@@ -79,11 +79,11 @@ class PackageStructureArchitectureTest {
             "00-protocol-foundation.sh", "10-typed-release.sh", "15-deployment-input.sh", "17-managed-content.sh", "20-candidate-workspace.sh", "30-ordinary-release.sh",
             "35-ecosystem-dispatch.sh", "40-typed-runtime.sh", "50-container-release.sh", "52-container-recovery.sh", "55-podman-quadlet.sh", "60-lifecycle.sh",
             "54-restore-candidate.sh", "56-restore-commit.sh", "65-database-backup.sh", "66-database-activation.sh",
-            "67-managed-backup.sh", "70-command-dispatch.sh");
+            "67-managed-backup.sh", "70-command-dispatch.sh", "10-native-instances.sh", "20-native-targets.sh");
     private static final Pattern PERIOD_NAME = Pattern.compile("(?i)(?:phase|stage)[-_]?[0-9]+|(?:一期|二期|三期|四期|五期)");
     private static final Pattern TOP_LEVEL_TYPE = Pattern.compile(
             "(?m)^(?:public\\s+)?(?:(?:final|abstract|sealed|non-sealed)\\s+)?(?:class|record|interface|enum)\\s+([A-Za-z_$][A-Za-z0-9_$]*)");
-    private static final Pattern UNNORMALIZED_ACRONYM = Pattern.compile("[A-Z]{2,}");
+    private static final Pattern UNNORMALIZED_ACRONYM = Pattern.compile("[A-Z]{2,}(?![a-z])");
     private static final Set<String> FORBIDDEN_TYPE_SUFFIXES = Set.of(
             "UseCases", "Locks", "Components", "Stores", "Transactions", "Profiles", "Checks",
             "Operations", "Settings", "Fixtures", "Impl");
@@ -149,6 +149,10 @@ class PackageStructureArchitectureTest {
             "RockyLinuxSetup", "AlmaLinuxSetup", "OracleLinuxSetup", "ServiceBuildRenderer",
             "SpringBootBuildRenderer", "NodeBuildRenderer", "PythonBuildRenderer", "EcosystemBuildScript");
     private static final List<String> OLD_PACKAGE_PREFIXES = List.of(
+            "gold.debug.windowstolinux.shared.model.db",
+            "gold.debug.windowstolinux.shared.analyze.db",
+            "gold.debug.windowstolinux.shared.linux.db",
+            "gold.debug.windowstolinux.shared.linux.sshd.db",
             "gold.debug.windowstolinux.app.db.connection",
             "gold.debug.windowstolinux.app.db.migration",
             "gold.debug.windowstolinux.app.db.repository",
@@ -195,7 +199,6 @@ class PackageStructureArchitectureTest {
             "gold.debug.windowstolinux.shared.deploy.support.RockyLinuxSupportPolicy;",
             "gold.debug.windowstolinux.shared.deploy.support.AlmaLinuxSupportPolicy;",
             "gold.debug.windowstolinux.shared.deploy.support.OracleLinuxSupportPolicy;",
-            "gold.debug.windowstolinux.shared.linux.sshd.ecosystem",
             "gold.debug.windowstolinux.shared.linux.sshd.workload",
             "gold.debug.windowstolinux.shared.linux.sshd.build.config",
             "gold.debug.windowstolinux.shared.linux.sshd.build.shell",
@@ -228,6 +231,10 @@ class PackageStructureArchitectureTest {
             "gold.debug.windowstolinux.shared.ai.parser.AiStructuralAssessment",
             "gold.debug.windowstolinux.shared.linux.sshd.distro.execution");
     private static final Set<String> MIGRATED_PACKAGE_PREFIXES = Set.of(
+            "gold.debug.windowstolinux.shared.model.db",
+            "gold.debug.windowstolinux.shared.analyze.db",
+            "gold.debug.windowstolinux.shared.linux.db",
+            "gold.debug.windowstolinux.shared.linux.sshd.db",
             "gold.debug.windowstolinux.app.db.connection",
             "gold.debug.windowstolinux.app.db.migration",
             "gold.debug.windowstolinux.app.db.repository",
@@ -338,6 +345,9 @@ class PackageStructureArchitectureTest {
         assertEquals(DEPLOYMENT_MULTI, fileNames(deploymentMulti));
         assertEquals(REPOSITORIES, fileNames(repositories));
         assertEquals(HELPER_FRAGMENTS, fileNamesRecursively(fragments));
+        assertEquals(Set.of("10-native-instances.sh", "20-native-targets.sh"),
+                fileNames(fragments.resolve("ecosystem/db")));
+        assertFalse(Files.exists(fragments.resolve("db")), "native DB resources belong under ecosystem/db");
         assertMaximumLines(core, 400);
         assertMaximumLines(shell, 400);
         assertMaximumLines(deploymentShared, 500);
@@ -361,11 +371,17 @@ class PackageStructureArchitectureTest {
         for (String required : List.of("ecosystem.java.jar", "build.ecosystem", "build.workload",
                 "capability.ecosystem", "contract.result", "distro.apt", "distro.dnf",
                 "execution.protocol", "fragments/ecosystem", "generation.script", "persistence.repository",
-                "persistence.serialization")) {
+                "persistence.serialization", "ecosystem.db")) {
             assertTrue(structure.contains(required), () -> "File.md is missing the current structure: " + required);
         }
 
         for (String required : List.of(
+                "src/shared/model/src/main/java/gold/debug/windowstolinux/shared/model/ecosystem/db",
+                "src/shared/model/src/main/java/gold/debug/windowstolinux/shared/model/ecosystem/db/sql",
+                "src/shared/model/src/main/java/gold/debug/windowstolinux/shared/model/ecosystem/db/other",
+                "src/shared/analyze/src/main/java/gold/debug/windowstolinux/shared/analyze/ecosystem/db",
+                "src/shared/linux/src/main/java/gold/debug/windowstolinux/shared/linux/ecosystem/db",
+                "src/shared/linux-sshd/src/main/java/gold/debug/windowstolinux/shared/linux/sshd/ecosystem/db",
                 "src/app/ui/src/main/java/gold/debug/windowstolinux/app/ui/display",
                 "src/app/main/src/main/java/gold/debug/windowstolinux/app/main/startup",
                 "src/app/service/src/main/java/gold/debug/windowstolinux/app/service/contract",
@@ -473,7 +489,7 @@ class PackageStructureArchitectureTest {
                 "DeploymentRiskRoleContext", "ErrorExplanationRoleContext");
 
         register(packages, "gold.debug.windowstolinux.app.ui.deployment",
-                "ReviewContext", "DeploymentConfigurationParser", "DeploymentRuntimeParser");
+                "ReviewContext");
         register(packages, "gold.debug.windowstolinux.app.ui.deployment.single",
                 "DeploymentAnalysisPresenter", "DeploymentForm", "DeploymentPage", "DeploymentPageState");
         register(packages, "gold.debug.windowstolinux.app.ui.deployment.multi",
@@ -481,6 +497,12 @@ class PackageStructureArchitectureTest {
                 "MultiComponentHealthMode", "MultiComponentPage", "MultiComponentPageState",
                 "MultiComponentResultPresenter");
 
+        register(packages, "gold.debug.windowstolinux.app.service.deployment.automatic",
+                "AutomaticDatabaseUseCase", "AutomaticDeploymentUseCase", "AutomaticInputCompletion", "AutomaticRuntimeResolver",
+                "DatabaseInstanceResolver", "DeploymentRuntimeParser");
+        register(packages, "gold.debug.windowstolinux.app.service.config", "DeploymentConfigurationParser");
+        register(packages, "gold.debug.windowstolinux.app.ui.deployment.single", "DeploymentInputDialog");
+        register(packages, "gold.debug.windowstolinux.shared.ai.collaboration.role", "DeploymentInputRoleContext");
         register(packages, "gold.debug.windowstolinux.app.service.deployment",
                 "ManagedApplicationIdentityResolver", "ReviewedDeploymentUseCase", "MultiComponentDeploymentUseCase",
                 "MultiComponentLifecycleUseCase");
@@ -663,6 +685,18 @@ class PackageStructureArchitectureTest {
     }
 
     @Test
+    void acronymChecksRespectPascalCaseWordBoundaries() {
+        for (String name : List.of("CLanguageInspector", "CLanguageInspectorTest", "AiPage",
+                "SshSession", "JavaJarManifestInspector")) {
+            assertFalse(UNNORMALIZED_ACRONYM.matcher(name).find(), name);
+        }
+        for (String name : List.of("AILanguageInspector", "SSHSession", "JavaJARInspector",
+                "UIPage", "CMAKEInspector", "ProjectHTTP")) {
+            assertTrue(UNNORMALIZED_ACRONYM.matcher(name).find(), name);
+        }
+    }
+
+    @Test
     void sourceAndTestNamesFollowTheUnifiedNamingStandard() throws Exception {
         Path root = projectRoot();
         List<String> problems = new ArrayList<>();
@@ -791,6 +825,36 @@ class PackageStructureArchitectureTest {
     }
 
     @Test
+    void languageInspectorsStayAtEcosystemRootsAndDoNotDependOnBuildArchitectures() throws Exception {
+        String root = "gold.debug.windowstolinux.shared.analyze.ecosystem.";
+        Map<String, String> inspectors = Map.of(
+                "c", "CLanguageInspector", "dotnet", "DotNetLanguageInspector", "go", "GoLanguageInspector",
+                "java", "JavaLanguageInspector", "kotlin", "KotlinLanguageInspector", "node", "NodeLanguageInspector",
+                "php", "PhpLanguageInspector", "python", "PythonLanguageInspector",
+                "ruby", "RubyLanguageInspector", "rust", "RustLanguageInspector");
+        Set<String> found = new HashSet<>();
+        List<String> problems = new ArrayList<>();
+        for (SourceUnit unit : sourceModel().units) {
+            String file = unit.path.getFileName().toString();
+            if (!unit.packageName.startsWith(root) || !file.endsWith("LanguageInspector.java")) continue;
+            String ecosystem = unit.packageName.substring(root.length());
+            if (!file.equals(inspectors.get(ecosystem) + ".java")) {
+                problems.add(unit.path + " must be the language inspector at its ecosystem root");
+            }
+            found.add(ecosystem);
+            for (String dependency : unit.imports) {
+                if ((dependency.startsWith(root)
+                        && dependency.substring(root.length()).split("\\.").length > 2)
+                        || dependency.startsWith("java.util.jar.")) {
+                    problems.add(unit.path + " depends on build or archive parsing: " + dependency);
+                }
+            }
+        }
+        assertEquals(ECOSYSTEM_CLASSIFICATION_PACKAGES, found, "every language ecosystem needs its own inspector");
+        assertTrue(problems.isEmpty(), () -> "language/build boundary violations: " + problems);
+    }
+
+    @Test
     void packageTreeIsFlatBoundedAndFreeOfObsoletePaths() throws Exception {
         SourceModel model = sourceModel();
         List<String> problems = new ArrayList<>();
@@ -805,12 +869,26 @@ class PackageStructureArchitectureTest {
             if (info.name.startsWith(ecosystemRoot)) {
                 String[] classification = info.name.substring(ecosystemRoot.length()).split("\\.");
                 String axis = classification[0];
-                if (!ECOSYSTEM_CLASSIFICATION_PACKAGES.contains(axis)) {
-                    problems.add(info.name + " creates a horizontal language classification axis");
+                if (!axis.equals("db") && !ECOSYSTEM_CLASSIFICATION_PACKAGES.contains(axis)) {
+                    problems.add(info.name + " creates an unapproved analysis ecosystem axis");
                 }
-                if (classification.length == 2 && !BUILD_ARCHITECTURE_PACKAGE_NAMES.contains(classification[1])) {
+                if (!axis.equals("db") && classification.length == 2
+                        && !BUILD_ARCHITECTURE_PACKAGE_NAMES.contains(classification[1])) {
                     problems.add(info.name + " does not use a reviewed build architecture package name");
                 }
+            }
+            for (String module : List.of("model", "linux", "linux.sshd")) {
+                String root = "gold.debug.windowstolinux.shared." + module + ".ecosystem";
+                if ((info.name.equals(root) || info.name.startsWith(root + "."))
+                        && !info.name.equals(root + ".db") && !info.name.startsWith(root + ".db.")) {
+                    problems.add(info.name + " creates an unapproved module ecosystem axis; only db is reviewed");
+                }
+            }
+            int databaseCategory = info.name.indexOf(".ecosystem.db.");
+            if (databaseCategory >= 0
+                    && !Set.of("sql", "document", "other").contains(
+                            info.name.substring(databaseCategory + ".ecosystem.db.".length()))) {
+                problems.add(info.name + " does not use a reviewed database category");
             }
             verifyExecutionEcosystemAxis(info.name,
                     "gold.debug.windowstolinux.shared.linux.sshd.build.ecosystem.", problems);

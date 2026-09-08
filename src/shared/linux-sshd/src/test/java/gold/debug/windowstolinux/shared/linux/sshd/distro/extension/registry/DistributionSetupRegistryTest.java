@@ -14,6 +14,8 @@ import gold.debug.windowstolinux.shared.model.server.security.LinuxSecurityModul
 import gold.debug.windowstolinux.shared.model.server.security.LinuxSecurityPosture;
 import gold.debug.windowstolinux.shared.model.server.security.LinuxSecurityState;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
@@ -48,8 +50,8 @@ class DistributionSetupRegistryTest {
         assertTrue(script.contains("/usr/bin/apt-get -o DPkg::Lock::Timeout=" + timeout + " update"));
         assertTrue(script.contains("/usr/bin/apt-get -o DPkg::Lock::Timeout=" + timeout
                 + " install -y --no-install-recommends openjdk-21-jdk-headless maven curl sudo"));
-        assertTrue(script.contains("/usr/bin/sudo -n /usr/bin/apt-get -o DPkg::Lock::Timeout=" + timeout + " update"));
-        assertTrue(script.contains("/usr/bin/sudo -n /usr/bin/apt-get -o DPkg::Lock::Timeout=" + timeout
+        assertTrue(script.contains("/usr/bin/sudo -n DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=l /usr/bin/apt-get -o DPkg::Lock::Timeout=" + timeout + " update"));
+        assertTrue(script.contains("/usr/bin/sudo -n DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=l /usr/bin/apt-get -o DPkg::Lock::Timeout=" + timeout
                 + " install -y --no-install-recommends openjdk-21-jdk-headless maven curl sudo"));
         assertTrue(script.contains("command -v tar >/dev/null 2>&1"));
         assertTrue(script.contains("command -v gzip >/dev/null 2>&1"));
@@ -117,20 +119,32 @@ class DistributionSetupRegistryTest {
         }
     }
 
+    @ParameterizedTest
+    @CsvSource({"9, x86-64-v2", "10, x86-64-v3"})
+    void checksCentosStreamCpuBaselineBeforePackageInstallation(String version, String requiredCpu) throws Exception {
+        String script = renderSetup(LinuxDistroType.CENTOS_STREAM, version, "x86_64", "deployer");
+        String cpuCheck = "\"$loader\" --help 2>/dev/null | grep -Eq '" + requiredCpu + ".*supported'";
+        int cpuCheckPosition = script.indexOf(cpuCheck);
+
+        assertTrue(cpuCheckPosition >= 0, "preparation must check the distribution CPU baseline");
+        assertTrue(cpuCheckPosition < script.indexOf("/usr/bin/dnf -y install"),
+                "CPU validation must precede package installation");
+    }
+
     @Test
     void preservesEverySupportedScriptAndUnsupportedRejectionSnapshot() throws Exception {
         List<ScriptSnapshot> scripts = List.of(
-                new ScriptSnapshot(LinuxDistroType.UBUNTU, "22.04", "amd64", "117c30aca347234667c2cf27c044f44c7dc37223cac9607e048d088cee395f73"),
-                new ScriptSnapshot(LinuxDistroType.UBUNTU, "24.04", "amd64", "468dc0dff2581bd5e818ad94e6d4d36ec74352ef013a12c47bb7f005fa8caab1"),
-                new ScriptSnapshot(LinuxDistroType.DEBIAN, "13", "amd64", "7d4fdc6c81155f42c392d4b090335487e9f808a389e0309ce6ffebea184d15f2"),
-                new ScriptSnapshot(LinuxDistroType.CENTOS_STREAM, "9", "x86_64", "420024758e41adcb88796555cea5c19146c50e1572d22456bc43cc5462626e4a"),
-                new ScriptSnapshot(LinuxDistroType.CENTOS_STREAM, "10", "x86_64", "4ce669d6a7f8b3fb97d7c5f61cc40b3ec6e69decd412d16eb4091d2700302020"),
-                new ScriptSnapshot(LinuxDistroType.ROCKY_LINUX, "9.8", "x86_64", "2a48c76dfadcef67ed6afec7018b7f4e6fc3ea98df40d70934f0cf5925f942cb"),
-                new ScriptSnapshot(LinuxDistroType.ROCKY_LINUX, "10.2", "x86_64", "a35be69518a18e93061d805e9517984085fdfd5c9cd760941f4f950bcb7cd1d5"),
-                new ScriptSnapshot(LinuxDistroType.ALMALINUX, "9.8", "x86_64", "4a7addc1a07a607b8a33718efe61c4790052210c6a8bca7780482e263b5928ee"),
-                new ScriptSnapshot(LinuxDistroType.ALMALINUX, "10.2", "x86_64", "147188aade2580e65d7d8d2cdb716e3a4d10a82267347eba0de5b58572fa9f12"),
-                new ScriptSnapshot(LinuxDistroType.ORACLE_LINUX, "9.7", "x86_64", "3dd1bd3b20d758fafe5cb7ba788c049b87381ac879b3756efe4035ef241a9568"),
-                new ScriptSnapshot(LinuxDistroType.ORACLE_LINUX, "10.2", "x86_64", "7ef54b2979c4facb591f2764672444a1a2da099695d45fc199b37d3d3c1cac13"));
+                new ScriptSnapshot(LinuxDistroType.UBUNTU, "22.04", "amd64", "e726ab4118f4eea4efd6979a3ae807cd7777c9d716b7e17585d65d36ac476fda"),
+                new ScriptSnapshot(LinuxDistroType.UBUNTU, "24.04", "amd64", "9d5e2a639f4558cc74662f2b5795f622cc12c7c89d6f1573ccd03738db78b1c4"),
+                new ScriptSnapshot(LinuxDistroType.DEBIAN, "13", "amd64", "232967df09eba24ed9b99566c9cea9daf1e559c06915fb7dcd21a7856acf7a76"),
+                new ScriptSnapshot(LinuxDistroType.CENTOS_STREAM, "9", "x86_64", "9d6622a7be770de622232010c6491bfbe79bf84d482d1f5c405d1dc45fdf1115"),
+                new ScriptSnapshot(LinuxDistroType.CENTOS_STREAM, "10", "x86_64", "1571b29315ce085f8df7046040e1952fa1f56fa69b5e6630e51a8af6ea8c3e6f"),
+                new ScriptSnapshot(LinuxDistroType.ROCKY_LINUX, "9.8", "x86_64", "6ca5a3d0e372951dc5a34fef18804c7496efa3a9fdb1f0894429b541ab54d66d"),
+                new ScriptSnapshot(LinuxDistroType.ROCKY_LINUX, "10.2", "x86_64", "50161e3eac32b90202bf04d7eff56610e5531340ba70a2792d090e1e955f8355"),
+                new ScriptSnapshot(LinuxDistroType.ALMALINUX, "9.8", "x86_64", "5aa1edb7157776dbbcadf12fec5b46730477bc034ce1b6ae9838afd73ebcf7eb"),
+                new ScriptSnapshot(LinuxDistroType.ALMALINUX, "10.2", "x86_64", "73580439c75e3753c2abf903918646e3815b76a59b7866a852ab13dc123d839b"),
+                new ScriptSnapshot(LinuxDistroType.ORACLE_LINUX, "9.7", "x86_64", "ac5ed3ed276357a77fb760897df81ff1b3c8120aa85aa392b2e9ac1601d558de"),
+                new ScriptSnapshot(LinuxDistroType.ORACLE_LINUX, "10.2", "x86_64", "bb4610139d4ee51eaaa7343acddc9186944426c157b012b336119268a886e8cd"));
         List<String> changed = new ArrayList<>();
         for (ScriptSnapshot snapshot : scripts) {
             String actual = sha256(renderSetup(

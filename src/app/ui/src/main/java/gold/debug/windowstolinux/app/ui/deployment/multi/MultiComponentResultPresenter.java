@@ -52,7 +52,7 @@ final class MultiComponentResultPresenter {
                     "file", sqlite.fileName()));
         }
         ManagedDatabaseConnection.Server connection = (ManagedDatabaseConnection.Server) binding.connection();
-        return messages.text("database.review.server", Map.of("engine", connection.engine().name(),
+        return messages.text("database.review.server", Map.of("engine", messages.text("db.engine." + connection.engine().name().toLowerCase(Locale.ROOT)),
                 "id", binding.databaseId(), "host", connection.host(), "port", connection.port(),
                 "database", connection.database()));
     }
@@ -60,7 +60,7 @@ final class MultiComponentResultPresenter {
     /** Formats static support scopes and component issues. / 格式化静态支持范围与组件问题。 */
     String analysis(PreparedMultiComponentSource prepared) {
         String components = prepared.assessment().components().stream().map(component -> "- "
-                + component.componentId() + " | " + component.facts().projectType().name() + " | "
+                + component.componentId() + " | " + messages.text("project.type." + component.facts().projectType().name().toLowerCase(Locale.ROOT)) + " | "
                 + messages.text("support.level." + component.facts().support().level().name().toLowerCase(Locale.ROOT))
                 + " | " + component.facts().support().validatedTargets().stream()
                 .map(target -> target.distro() + " " + target.version() + " " + target.architecture())
@@ -69,15 +69,15 @@ final class MultiComponentResultPresenter {
         String issues = prepared.assessment().issues().stream().map(issue -> "- " + issue.code() + " ["
                         + String.join(",", issue.componentIds()) + "]")
                 .reduce((left, right) -> left + "\n" + right).orElse(messages.text("component.analysis.noIssues"));
-        return messages.text("component.analysis.result", Map.of("admission", prepared.assessment().admission().name(),
+        return messages.text("component.analysis.result", Map.of("admission", messages.text("analysis.admission." + prepared.assessment().admission().name().toLowerCase(Locale.ROOT)),
                 "components", components, "issues", issues));
     }
 
     /** Formats every component deployment result without collapsing failures. / 格式化每个组件部署结果且不折叠失败。 */
     String deployment(MultiComponentDeploymentResult result) {
         String components = result.componentResults().stream().map(component -> "- " + component.componentId()
-                        + " = " + component.state().name() + "\n" + component.events().stream()
-                        .map(event -> "  " + event.step().code() + "=" + event.succeeded()
+                        + " = " + messages.text("component.state." + component.state().name().toLowerCase(Locale.ROOT)) + "\n" + component.events().stream()
+                        .map(event -> "  " + messages.catalog().text(event.message()) + " = " + messages.text(event.succeeded() ? "value.success" : "value.failed")
                                 + event.failure().map(failure -> " [" + failure.code() + "]").orElse(""))
                         .reduce((left, right) -> left + "\n" + right).orElse(""))
                 .reduce((left, right) -> left + "\n" + right).orElse("");
@@ -86,7 +86,7 @@ final class MultiComponentResultPresenter {
                                 "recovery", messages.text("failure.recovery."
                                         + failure.recoveryDisposition().name().toLowerCase(Locale.ROOT)))))
                 .reduce((left, right) -> left + "\n" + right).orElse("");
-        return messages.text("component.deployment.result", Map.of("status", result.status().name(),
+        return messages.text("component.deployment.result", Map.of("status", messages.text("deployment.status." + result.status().name().toLowerCase(Locale.ROOT)),
                 "identity", result.applicationReleaseIdentity().orElse("-"), "components", components))
                 + "\n\n" + messages.text("failure.operation.summary",
                 Map.of("operationId", result.operationIdentity().toString()))
@@ -96,15 +96,15 @@ final class MultiComponentResultPresenter {
     /** Formats aggregate and per-component authoritative lifecycle states. / 格式化汇总及逐组件权威生命周期状态。 */
     String lifecycle(MultiComponentLifecycleResult result) {
         String components = result.componentResults().stream().map(component -> "- " + component.componentId()
-                        + " = " + component.observation().map(messages::lifecycle).orElse("unobserved"))
+                        + " = " + component.observation().map(messages::lifecycle).orElse(messages.text("lifecycle.noObservation")))
                 .reduce((left, right) -> left + "\n" + right).orElse("");
         String warnings = result.nonFatalFailures().stream().map(failure -> messages.text("failure.warning.summary",
                         Map.of("code", failure.code(), "message", messages.catalog().text(failure.userMessage()),
                                 "recovery", messages.text("failure.recovery."
                                         + failure.recoveryDisposition().name().toLowerCase(Locale.ROOT)))))
                 .reduce((left, right) -> left + "\n" + right).orElse("");
-        return messages.text("component.lifecycle.result", Map.of("accepted", Boolean.toString(result.accepted()),
-                "runtime", result.runtimeState().name(), "autostart", result.autostartState().name(),
+        return messages.text("component.lifecycle.result", Map.of("accepted", messages.text(result.accepted() ? "value.yes" : "value.no"),
+                "runtime", messages.text("runtime.state." + result.runtimeState().name().toLowerCase(Locale.ROOT)), "autostart", messages.text("autostart.state." + result.autostartState().name().toLowerCase(Locale.ROOT)),
                 "components", components)) + "\n\n" + messages.text("failure.operation.summary",
                 Map.of("operationId", result.operationIdentity().toString()))
                 + result.failure().map(failure -> "\n" + failure.code() + ": "

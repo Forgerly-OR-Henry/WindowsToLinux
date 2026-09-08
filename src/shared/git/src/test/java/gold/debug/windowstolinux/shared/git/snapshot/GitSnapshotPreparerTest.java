@@ -40,6 +40,18 @@ class GitSnapshotPreparerTest {
     }
 
     @Test
+    void usesRemoteDefaultBranchAndKeepsTheResolvedCommitWhenBranchMoves() throws Exception {
+        Path repository = createRepository();
+        git(repository, "branch", "-M", "production");
+        String expected = git(repository, "rev-parse", "HEAD").trim();
+        GitSnapshot snapshot = new GitSnapshotPreparer().prepare(new GitSourceRequest(new GitRemote(repository.toUri()),
+                new GitReference.DefaultBranch(), Set.of(), 64L * 1024 * 1024, true), temporaryDirectory.resolve("workspace"));
+        Files.writeString(repository.resolve("after.txt"), "new branch content"); commit(repository, "move branch");
+        assertEquals(expected, snapshot.commit());
+        assertTrue(Files.notExists(snapshot.checkoutDirectory().resolve("after.txt")));
+    }
+
+    @Test
     void rejectsSubmoduleMetadataBeforeReturningASnapshot() throws Exception {
         Path repository = createRepository();
         Files.writeString(repository.resolve(".gitmodules"), "[submodule \"unsafe\"]\npath = unsafe\nurl = https://example.test/unsafe.git\n");

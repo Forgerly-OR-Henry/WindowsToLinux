@@ -25,6 +25,46 @@ public final class NodePackageBuildScript {
                 node --version | grep -Eq %s
                 %s
                 %s
-                """.formatted(SafeBuildScriptEnvelope.shellQuote("^v" + nodeMajorVersion + "\\."), installAndBuild, artifact);
+                %s
+                """.formatted(SafeBuildScriptEnvelope.shellQuote("^v" + nodeMajorVersion + "\\."), installAndBuild,
+                normalizeBinaryLinks(), artifact);
+    }
+
+    // npm creates executable links even with lifecycle scripts disabled; releases remain free of symlinks.
+    // npm 在禁用生命周期脚本时仍创建命令链接；转换后发布目录仍不允许符号链接。
+    static String normalizeBinaryLinks() {
+        return """
+                run python3 - <<'WTL_NODE_BIN_LINKS'
+                import os, pathlib, shlex, tempfile
+                root = pathlib.Path('node_modules').absolute()
+                if root.is_symlink():
+                    raise SystemExit('BUILD_REJECT=node-modules-symlink')
+                for directory, directories, files in os.walk(root, followlinks=False):
+                    for name in directories + files:
+                        link = pathlib.Path(directory) / name
+                        if not link.is_symlink():
+                            continue
+                        if link.parent.name != '.bin':
+                            continue
+                        try:
+                            target = link.resolve(strict=True)
+                        except (OSError, RuntimeError):
+                            raise SystemExit('BUILD_REJECT=node-bin-link-invalid')
+                        if not target.is_relative_to(root) or not target.is_file() or not os.access(target, os.X_OK):
+                            raise SystemExit('BUILD_REJECT=node-bin-link-outside-or-nonexecutable')
+                        relative = os.path.relpath(target, link.parent)
+                        wrapper = '#!/bin/sh\\nexec "$(dirname -- "$0")"/' + shlex.quote(relative) + ' "$@"\\n'
+                        temporary = None
+                        try:
+                            with tempfile.NamedTemporaryFile(mode='w', encoding='utf-8', dir=link.parent, delete=False) as output:
+                                temporary = output.name
+                                output.write(wrapper)
+                            os.chmod(temporary, 0o755)
+                            os.replace(temporary, link)
+                        finally:
+                            if temporary and os.path.exists(temporary):
+                                os.unlink(temporary)
+                WTL_NODE_BIN_LINKS
+                """;
     }
 }

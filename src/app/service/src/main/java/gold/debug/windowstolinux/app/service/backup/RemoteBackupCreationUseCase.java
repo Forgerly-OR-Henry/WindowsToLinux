@@ -600,6 +600,7 @@ public final class RemoteBackupCreationUseCase {
             case POSTGRESQL -> BackupDatabaseType.POSTGRESQL;
             case MYSQL -> BackupDatabaseType.MYSQL;
             case MARIADB -> BackupDatabaseType.MARIADB;
+            case REDIS -> throw ApplicationServiceException.create(ApplicationServiceFailureType.BACKUP_INPUT_INCOMPLETE, "complete Redis backup is unsupported");
         };
     }
 

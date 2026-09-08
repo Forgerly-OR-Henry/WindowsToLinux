@@ -27,6 +27,24 @@ import java.util.Optional;
  * <p>提供 {@code SourcePreparationUseCase} 实现。
  */
 public final class SourcePreparationUseCase {
+    /** Freezes local input before automatic discovery or any remote change. */
+    public gold.debug.windowstolinux.shared.source.snapshot.SourceDirectorySnapshot snapshot(Path directory) throws IOException {
+        return gold.debug.windowstolinux.shared.source.snapshot.SourceDirectorySnapshot.create(directory,
+                workspace.workDirectory().resolve("source-snapshots"));
+    }
+
+    /** Preserves the repository name for analyzers that derive the application identity from its directory. */
+    public gold.debug.windowstolinux.shared.source.snapshot.SourceDirectorySnapshot snapshot(GitSnapshot git) throws IOException {
+        String path = git.remote().location().getPath().replaceFirst("/+$", "");
+        String name = path.substring(path.lastIndexOf('/') + 1).replaceFirst("\\.git$", "");
+        return gold.debug.windowstolinux.shared.source.snapshot.SourceDirectorySnapshot.create(git.checkoutDirectory(),
+                workspace.workDirectory().resolve("source-snapshots"), name);
+    }
+
+    /** Resolves the whole Git source once so every component uses the same commit. */
+    public GitSnapshot snapshotGit(GitSourceRequest request) throws GitSnapshotException {
+        return gitSnapshots.prepare(request, gitWorkspace);
+    }
     private final DeploymentAnalysisCoordinator analyzer;
     private final WindowsSourcePreparer workspace;
     private final GitSnapshotPreparer gitSnapshots;
@@ -75,6 +93,21 @@ public final class SourcePreparationUseCase {
      */
     public ReviewedSourcePreparation prepare(Path sourceDirectory, DeploymentProjectType projectType) throws IOException {
         DeploymentProjectAssessment assessment = analyzer.analyze(sourceDirectory, projectType);
+        return archive(sourceDirectory, assessment);
+    }
+
+    /** Preserves database review as a missing field while discovering runtime inputs. */
+    public ReviewedSourcePreparation prepareAutomatic(Path sourceDirectory, DeploymentProjectType projectType) throws IOException {
+        return archive(sourceDirectory, analyzer.analyzeForDatabaseReview(sourceDirectory, projectType));
+    }
+
+    /** Creates the final archive only after database evidence admits the same frozen source. */
+    public ReviewedSourcePreparation prepareWithDatabaseReview(Path sourceDirectory, DeploymentProjectType projectType,
+            gold.debug.windowstolinux.shared.model.ecosystem.db.DatabaseSchemaReview review) throws IOException {
+        return archive(sourceDirectory, analyzer.analyze(sourceDirectory, projectType, review));
+    }
+
+    private ReviewedSourcePreparation archive(Path sourceDirectory, DeploymentProjectAssessment assessment) throws IOException {
         if (assessment.admission() != DeploymentAdmissionStatus.READY_FOR_PLANNING) {
             return new ReviewedSourcePreparation(assessment, Optional.empty(), Optional.empty(), List.of());
         }
@@ -93,7 +126,14 @@ public final class SourcePreparationUseCase {
     public PreparedMultiComponentSource prepareMultiComponent(Path applicationRoot, String applicationId,
                                                                List<ComponentAnalysisRequest> requests)
             throws IOException {
-        var assessment = new MixedProjectInspector().analyze(applicationRoot, applicationId, requests);
+        return prepareMultiComponent(applicationRoot, applicationId, requests, java.util.Map.of());
+    }
+
+    /** Archives a validated graph after each schema-bearing component has been reviewed. */
+    public PreparedMultiComponentSource prepareMultiComponent(Path applicationRoot, String applicationId,
+            List<ComponentAnalysisRequest> requests, java.util.Map<String, gold.debug.windowstolinux.shared.model.ecosystem.db.DatabaseSchemaReview> reviews)
+            throws IOException {
+        var assessment = new MixedProjectInspector().analyze(applicationRoot, applicationId, requests, reviews);
         if (assessment.admission() != DeploymentAdmissionStatus.READY_FOR_PLANNING) {
             return new PreparedMultiComponentSource(assessment, java.util.Map.of());
         }

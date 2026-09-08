@@ -18,6 +18,46 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class SshdPlatformCapabilityCollectorTest {
     @Test
+    void readsUfwRulesInsteadOfTheOneshotServiceState() throws Exception {
+        String bash = System.getProperty("managed.test.bash", "/bin/bash");
+        org.junit.jupiter.api.Assumptions.assumeTrue(java.nio.file.Files.isExecutable(java.nio.file.Path.of(bash)));
+        for (String scenario : java.util.List.of("active", "inactive", "denied", "unexpected", "sudo")) {
+            String script = """
+                    set -eu
+                    export LC_ALL=C
+                    command() { [ "$1" = -v ] && [ "$2" = ufw ]; }
+                    systemctl() { return 0; }
+                    ufw() {
+                      case "$scenario" in
+                        denied|sudo) return 1 ;;
+                        unexpected) printf 'unrecognized output\\n' ;;
+                        *) printf 'Status: %s\\n' "$scenario" ;;
+                      esac
+                    }
+                    sudo() { [ "$scenario" = sudo ] && printf 'Status: inactive\\n'; }
+                    """ + "scenario='" + scenario + "'\n" + ManagedPlatformCapabilityProbe.firewallProbe();
+            Process process = new ProcessBuilder(bash, "-s").redirectErrorStream(true).start();
+            try {
+                try (var input = process.getOutputStream()) {
+                    input.write(script.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+                }
+                assertTrue(process.waitFor(10, java.util.concurrent.TimeUnit.SECONDS));
+                String output = new String(process.getInputStream().readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
+                assertEquals(0, process.exitValue(), output);
+                String expected = switch (scenario) {
+                    case "active" -> "active";
+                    case "inactive", "sudo" -> "inactive";
+                    default -> "unknown";
+                };
+                assertTrue(output.contains("FIREWALL=ufw\n"), output);
+                assertTrue(output.contains("FIREWALL_STATE=" + expected + "\n"), output);
+            } finally {
+                if (process.isAlive()) process.destroyForcibly().waitFor();
+            }
+        }
+    }
+
+    @Test
     void parsesOnlyFixedNonSecretProbeFacts() {
         var capabilities = SshdPlatformCapabilityCollector.fromValues(Map.ofEntries(
                 Map.entry("DISTRO_ID", "centos"), Map.entry("DISTRO_VARIANT", "stream"), Map.entry("VERSION", "10"),

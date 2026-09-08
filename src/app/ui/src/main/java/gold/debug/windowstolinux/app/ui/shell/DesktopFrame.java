@@ -96,7 +96,7 @@ public final class DesktopFrame extends JFrame {
                         DesktopDisplayConfiguration appearance, ThemePalette palette,
                         DesktopDisplayChangeHandler appearanceChangeListener,
                         DesktopViewState viewState, FailureReportStore reports) {
-        super("WindowsToLinux");
+        super(messages.text("app.name"));
         this.messages = messages;
         this.palette = palette;
         this.components = new DesktopComponentFactory(palette);
@@ -129,7 +129,7 @@ public final class DesktopFrame extends JFrame {
         ));
 
         JPanel brand = transparent(new FlowLayout(FlowLayout.LEFT, 10, 0));
-        JLabel mark = new JLabel("W");
+        JLabel mark = new JLabel(messages.text("app.mark"));
         mark.setOpaque(true);
         mark.setHorizontalAlignment(JLabel.CENTER);
         mark.setPreferredSize(new Dimension(30, 30));
@@ -137,7 +137,7 @@ public final class DesktopFrame extends JFrame {
         mark.setForeground(Color.WHITE);
         mark.setFont(mark.getFont().deriveFont(Font.BOLD, 15f));
         brand.add(mark);
-        JLabel product = new JLabel("WindowsToLinux");
+        JLabel product = new JLabel(messages.text("app.name"));
         product.setFont(product.getFont().deriveFont(Font.BOLD, 17f));
         brand.add(product);
         brand.add(badge(t("app.badge.managed")));
@@ -157,7 +157,7 @@ public final class DesktopFrame extends JFrame {
         sidebar.setBackground(palette.sidebarBackground());
         sidebar.setBorder(BorderFactory.createEmptyBorder(20, 14, 18, 14));
         sidebar.setLayout(new BoxLayout(sidebar, BoxLayout.Y_AXIS));
-        sidebar.setPreferredSize(new Dimension(220, 0));
+        sidebar.setPreferredSize(new Dimension(168, 0));
 
         JLabel navigationLabel = new JLabel(t("nav.workspace"));
         navigationLabel.setForeground(palette.sidebarForeground());
@@ -166,8 +166,6 @@ public final class DesktopFrame extends JFrame {
         navigationLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
         sidebar.add(navigationLabel);
         sidebar.add(navigationButton(PAGE_DEPLOYMENT, "nav.deployment", "page.deployment.description"));
-        sidebar.add(Box.createVerticalStrut(6));
-        sidebar.add(navigationButton(PAGE_COMPONENTS, "nav.components", "page.components.description"));
         sidebar.add(Box.createVerticalStrut(6));
         sidebar.add(navigationButton(PAGE_APPLICATIONS, "nav.applications", "page.applications.description"));
         sidebar.add(Box.createVerticalStrut(6));
@@ -194,7 +192,7 @@ public final class DesktopFrame extends JFrame {
         button.setHorizontalAlignment(JButton.LEFT);
         button.setAlignmentX(Component.LEFT_ALIGNMENT);
         button.setMaximumSize(new Dimension(Integer.MAX_VALUE, 42));
-        button.setPreferredSize(new Dimension(192, 42));
+        button.setPreferredSize(new Dimension(140, 42));
         button.setBorder(BorderFactory.createEmptyBorder(0, 12, 0, 12));
         button.setFocusPainted(false);
         button.setForeground(palette.sidebarForeground());

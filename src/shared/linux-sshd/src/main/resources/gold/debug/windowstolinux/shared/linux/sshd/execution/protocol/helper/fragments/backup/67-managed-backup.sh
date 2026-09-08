@@ -97,7 +97,7 @@ backup_create_artifact() {
       found=0
       for spec in "${container_volumes[@]}"; do binding="${spec%%:*}"; [ "$binding" = "$resource" ] && found=1; done
       [ "$found" -eq 1 ] || reject backup-volume
-      [ "$("$engine" volume inspect --format '{{ index .Labels \"io.windowstolinux.owner\" }}' "$resource")" = "$manifest" ] || reject backup-volume-owner
+      [ "$("$engine" volume inspect --format '{{ index .Labels "io.windowstolinux.owner" }}' "$resource")" = "$manifest" ] || reject backup-volume-owner
       source="$("$engine" volume inspect --format '{{.Mountpoint}}' "$resource")"
       case "$source" in /var/lib/docker/volumes/*/_data|/var/lib/containers/storage/volumes/*/_data) ;; *) reject backup-volume-path ;; esac
       create_pax_artifact "$operation" "$artifact" "$source" "$maximum"

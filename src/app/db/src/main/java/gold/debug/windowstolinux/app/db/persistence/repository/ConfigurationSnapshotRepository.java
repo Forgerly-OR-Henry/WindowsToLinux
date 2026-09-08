@@ -145,7 +145,11 @@ public final class ConfigurationSnapshotRepository {
     private static void save(Connection connection, ConfigurationSnapshot snapshot) throws SQLException {
         Optional<ConfigurationSnapshot> existing = find(connection, snapshot.applicationId(), snapshot.revision());
         if (existing.isPresent()) {
-            if (!existing.orElseThrow().equals(snapshot)) {
+            ConfigurationSnapshot stored = existing.orElseThrow();
+            // SQLite stores milliseconds and reads entries in key order; the digest binds their canonical content.
+            // SQLite 保存毫秒并按键读取条目，摘要绑定规范内容，避免精度与排序差异被误判为修改。
+            if (!stored.sha256().equals(snapshot.sha256())
+                    || stored.createdAt().toEpochMilli() != snapshot.createdAt().toEpochMilli()) {
                 throw new SQLException("application configuration revisions are immutable");
             }
             return;

@@ -98,6 +98,7 @@ public final class GitSnapshotPreparer {
 
     private static String referenceName(GitSourceRequest request) {
         return switch (request.reference()) {
+            case GitReference.DefaultBranch ignored -> "HEAD";
             case GitReference.Branch branch -> "refs/heads/" + branch.value();
             case GitReference.Tag tag -> "refs/tags/" + tag.value();
             case GitReference.Commit commit -> commit.value();

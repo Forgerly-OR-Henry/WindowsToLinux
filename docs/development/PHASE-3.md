@@ -3,18 +3,20 @@
 ## 文档信息
 
 - 阶段基线版本：`2.16.0-sqlite-v8-runtime-persistence`
-- 文档结构版本：`2.0.0-roadmap-rebaseline`
+- 文档结构版本：`2.1.0-doc-naming`
 - 文档状态：**本轮三期实现与 Ubuntu 24.04 x86-64、CentOS Stream 9 x86-64 产品入口验收完成；其他发行版实机测试由用户明确延后至后续独立任务**
 - 当前实现：Go、Rust、.NET、Kotlin、PHP、Ruby 已接入固定试验链路，并通过目标机构建、发布、HTTP 健康、故障回滚、生命周期、秘密脱敏和桌面状态重启恢复；桌面多组件页的实机验收覆盖当时 SQLite v7 图重载和依赖安全生命周期，当前 SQLite v9 保留该图语义，并为新成功组件增加完整非秘密已审阅运行时、数据路径和发布配置精确绑定；三个 AI 角色使用独立 Provider/模型和安全冲突裁决。以上实机证据均属于当时 helper v3/SQLite v7；当前 helper v4 与 SQLite v8/v9 的新增路径只有本地静态证据，不能据此声称实机支持
-- 更新日期：2026-08-22
-- 上级文档：[开发总纲](../DEVELOPMENT.md)
+- 更新日期：2026-09-08
+- 上级文档：[开发总纲](DEVELOPMENT.md)
 
 ## 文档导航
 
 - [项目结构](../File.md)
 - [一期](PHASE-1.md)
 - [二期](PHASE-2.md)
-- [三期生态构建补全](PHASE-3-ECOSYSTEM-EXTENSION.md)
+- [三期补充：生态构建补全](PHASE-3-SUPPLEMENT-ECOSYSTEM.md)
+- [三期补充：分析层生态化分包](PHASE-3-SUPPLEMENT-ANALYZE-PACKAGE.md)
+- [三期补充：Linux 部署链生态化分包](PHASE-3-SUPPLEMENT-LINUX-DEPLOY-PACKAGE.md)
 - [四期](PHASE-4.md)
 - [五期](PHASE-5.md)
 - [六期](PHASE-6.md)
@@ -149,7 +151,7 @@ Kotlin 夹具固定 Gradle 8.10.2 Wrapper、官方二进制分发 SHA-256 和官
 
 | 发行版 | 静态适配版本 | 包与 CPU 前置条件 | 安全与容器证据 | 当前验证状态 |
 | --- | --- | --- | --- | --- |
-| CentOS Stream | 9、10 | DNF、`x86_64`；9 为 v1，10 为 v3 | 自动准备要求 SELinux enforcing，采集 firewalld 与 Podman | Stream 9 x86-64 已完成产品入口准备、发布、回滚、生命周期及安全态保持验收；Stream 10 仍为 `RUNTIME-PENDING` |
+| CentOS Stream | 9、10 | DNF、`x86_64`；9 为 v2，10 为 v3 | 自动准备要求 SELinux enforcing，采集 firewalld 与 Podman | Stream 9 x86-64 已完成产品入口准备、发布、回滚、生命周期及安全态保持验收；Stream 10 仍为 `RUNTIME-PENDING` |
 | Debian | stable 13；点版本事实参考 13.6，`VERSION_ID=13` | APT、`amd64`、x86-64-v1 | 采集 AppArmor/防火墙；固定 Docker 准备 | 静态通过，实机 `RUNTIME-PENDING` |
 | Rocky Linux | 当前受维护小版本 9.8、10.2 | DNF、`x86_64`；9 为 v1，10 为 v3 | 自动准备要求 SELinux enforcing，采集 firewalld 与 Podman | 静态通过，实机 `RUNTIME-PENDING` |
 | AlmaLinux | 当前受维护小版本 9.8、10.2 | DNF；9 默认 v1；10 默认 `x86_64` 为 v3 | `x86_64_v2` 可识别但因第三方依赖边界仅返回 CPU 审阅，不自动准备；其余 EL 安全边界同上 | 静态通过，实机 `RUNTIME-PENDING` |
@@ -209,6 +211,7 @@ Kotlin 夹具固定 Gradle 8.10.2 Wrapper、官方二进制分发 SHA-256 和官
 
 | 版本 | 日期 | 说明 |
 | --- | --- | --- |
+| 2.1.0-doc-naming（文档结构） | 2026-09-08 | 统一三期补充文档命名并补齐生态构建、分析层分包与 Linux 部署链分包导航；阶段基线、实现和验收记录不变。 |
 | 2.16.0-sqlite-v8-runtime-persistence | 2026-08-22 | 当前 SQLite 升至 v8，在不改变既有 v7 拓扑和生命周期语义的前提下，为新成功组件保存完整非秘密已审阅运行时；旧图保持缺失且不得猜测。本次新增路径只有本地静态证据，不改写 helper v3/SQLite v7 历史实机结果。 |
 | 2.15.0-helper-v4-acceptance-readiness | 2026-08-22 | 将非 Ubuntu 产品入口验收说明从固定 helper v3 改为绑定 `ManagedHelperProtocolVersion.CURRENT`，明确当前源码为 v4、历史实机结果仍只覆盖 v3；命令与证据格式统一收录至四期真实环境验收准备文档，不新增实机结论。 |
 | 2.14.0-phase3-closeout | 2026-08-14 | 完成本轮三期代码、结构、静态验证与 Ubuntu 24.04/CentOS Stream 9 精确产品入口验收；删除一次性 CentOS 直接 root 引导测试，避免保留非产品部署旁路。用户明确将 Debian、Rocky、Alma、Oracle 实机验收延后为后续独立任务，全部维持 `RUNTIME-PENDING`。 |

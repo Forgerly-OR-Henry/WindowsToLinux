@@ -4,13 +4,15 @@
 
 - 项目名称：WindowsToLinux
 - 文档角色：产品边界、六期路线、跨期规则与完整开发流程的唯一总入口
-- 文档版本：`2.42.0-phase6-release-boundary`
-- 文档状态：**四期受管备份、恢复和迁移静态产品链已完成；五期只做回环内部测试的 Web 功能服务台，六期方向为公开官网、上线认证、正式发布下载和 Windows 生产维护；helper v5 及真实 Linux/数据库恢复迁移证据仍标记 `RUNTIME-PENDING`**
-- 更新日期：2026-08-23
-- 项目结构：[File.md](File.md)
-- 产品说明书：[PRODUCT-MANUAL.md](PRODUCT-MANUAL.md)
+- 文档版本：`2.43.1-doc-naming`
+- 文档状态：**四期受管备份、恢复和迁移静态产品链已完成；五期只做回环内部测试的 Web 功能服务台，六期方向为公开官网、上线认证、正式发布下载和 Windows 生产维护；真实 Linux/数据库备份恢复迁移证据仍标记 `RUNTIME-PENDING`；helper v5 全语言部署见 [实机记录](UBUNTU-24-LIVE-DEPLOYMENT-2026-09-08.md)**
+- 更新日期：2026-09-08
+- 项目结构：[File.md](../File.md)
+- 产品说明书：[PRODUCT-MANUAL.md](../PRODUCT-MANUAL.md)
 
-> 文档中的“支持”必须具有实现和验收证据。2026-08-10/12 已由产品入口在新装 Ubuntu 24.04 x86-64 上验证迁移前的一期 Maven/Spring Boot 以及二期 Gradle Spring Boot、普通 JAR、Node.js、Python、静态站点和 Dockerfile 容器链路，这些记录作为历史证据保留。2026-08-13 已由产品入口和当时的 helper v3 验证六种高级语言试验适配器、两组件整应用事务、统一 Spring Boot Reviewed 链路及 Podman Quadlet；证据只覆盖验收夹具、Ubuntu 24.04 和 x86-64，不升级为未声明的框架或其他发行版支持。2026-08-14 的 CentOS Stream 9 x86-64 目标已由当时的产品入口完成两次环境准备、两组件发布、故障候选整应用回滚、应用/数据库重启、生命周期与自启切换；SELinux 和防火墙态均在准备前后复核为未改变。该证据仅覆盖精确夹具，不外推到 Stream 10 或其他发行版。2026-08-21/23 已完成四期平台无关归档、秘密加密、数据库一致性、候选恢复、离线迁移、Windows 更新/卸载安全核心及认证跨进程交接，并完成 SQLite v11 精确备份输入、固定 Linux 受管普通文件目录、容器命名卷/镜像归属、helper v5 类型化远端取材、桌面完整归档创建、受管目标恢复、双服务器离线迁移和部署数据库范围显式审阅的静态产品链。本次完整 28-POM JDK 21 离线门禁实际生成 128 份 Surefire 报告、414 项测试，0 失败、0 错误、27 项真实环境条件跳过；5 份旧 XML 共 16 项不计入当前证据。真实 Linux、容器和数据库执行尚未发生，不能由静态测试外推。生产 Windows 更新/卸载执行器、官网和发布下载链已由用户明确移入六期，不再作为四期完成条件。
+> 文档中的“支持”必须具有实现和验收证据。2026-08-10/12 已由产品入口在新装 Ubuntu 24.04 x86-64 上验证迁移前的一期 Maven/Spring Boot 以及二期 Gradle Spring Boot、普通 JAR、Node.js、Python、静态站点和 Dockerfile 容器链路，这些记录作为历史证据保留。2026-08-13 已由产品入口和当时的 helper v3 验证六种高级语言试验适配器、两组件整应用事务、统一 Spring Boot Reviewed 链路及 Podman Quadlet；证据只覆盖验收夹具、Ubuntu 24.04 和 x86-64，不升级为未声明的框架或其他发行版支持。2026-08-14 的 CentOS Stream 9 x86-64 目标已由当时的产品入口完成两次环境准备、两组件发布、故障候选整应用回滚、应用/数据库重启、生命周期与自启切换；SELinux 和防火墙态均在准备前后复核为未改变。该证据仅覆盖精确夹具，不外推到 Stream 10 或其他发行版。2026-08-21/23 已完成四期平台无关归档、秘密加密、数据库一致性、候选恢复、离线迁移、Windows 更新/卸载安全核心及认证跨进程交接，并完成 SQLite v11 精确备份输入、固定 Linux 受管普通文件目录、容器命名卷/镜像归属、helper v5 类型化远端取材、桌面完整归档创建、受管目标恢复、双服务器离线迁移和部署数据库范围显式审阅的静态产品链。2026-08-23 的 28-POM JDK 21 离线门禁实际生成 128 份 Surefire 报告、414 项测试，0 失败、0 错误、27 项真实环境条件跳过；5 份旧 XML 共 16 项不计入当前证据。上述 2026-08-23 静态门禁未执行真实 Linux、容器和数据库验证，不能由其外推实机结果。生产 Windows 更新/卸载执行器、官网和发布下载链已由用户明确移入六期，不再作为四期完成条件。
+
+> [四期补充：面向新手的一体化自动部署](PHASE-4-SUPPLEMENT-AUTOMATIC-DEPLOYMENT.md) 已先完成文档，再接入 Swing 首页和高级帮助、统一单/多组件编排、AI 补全及 DB 管理。最新本地验证见该文档第 5 节；当前各语言的真实 SSH 部署见 [Ubuntu 24 实机记录](UBUNTU-24-LIVE-DEPLOYMENT-2026-09-08.md)，自动 UI、真实 AI 与 DB 的组合验收仍为 `RUNTIME-PENDING`。所有静态 UI 文案必须经中英文映射表，保留消息键、参数一致性和硬编码门禁。
 
 ## 1. 产品定位
 
@@ -23,10 +25,10 @@ WindowsToLinux 是面向个人和小型自托管场景的部署管理工具。�
 | 项目 | 当前状态 | 可以据此声称的结论 |
 | --- | --- | --- |
 | Maven | 当前 reactor 由根工程、3 个聚合模块和 24 个叶子模块组成，共 28 个 POM；四期复用既有 `shared/backup`，没有新增 Maven 模块 | `File.md` 的正式目标模块结构保持不变；Web Java 模块仍为 POM-only |
-| Java | Java 21；shared 与桌面代码已按职责分包；Spring Boot 只保留 Reviewed 类型化分析和部署链路 | 迁移前六类路径及 helper v3 保留历史实机证据；当前 helper v5 尚未执行产品入口验收 |
+| Java | Java 21；shared 与桌面代码已按职责分包；Spring Boot 只保留 Reviewed 类型化分析和部署链路 | 当前 helper v5 在 Ubuntu 24.04 x86-64 的精确语言路径已执行产品入口验收，具体矩阵见本次实机记录 |
 | Web 前端 | Vue 3、TypeScript、Vite、Vitest、Playwright 骨架 | 只可展示骨架页，尚无业务接口 |
-| 桌面/Web 业务 | Swing 已提供单组件与多组件独立页面，以及十二类项目的类型选择、静态分析、数据库范围显式审阅、类型化计划审阅、已保存凭据提交、整应用结果、依赖安全生命周期、完整受管备份创建、本地归档检查、秘密密码认证、单候选管理、受管目标恢复和双服务器离线迁移；Web 业务未实现 | 新部署不会再保存“数据库范围未审阅”的受管图；SQLite 自动恢复仍因物理映射不足而不开放。备份、恢复和迁移均使用受控产品入口且不自动切流或删源；真实 helper v5、Linux/数据库执行仍待验收，Web 不可部署或管理应用 |
-| Linux 运行验证 | 迁移前 Ubuntu 24.04 x86-64 已实际验证环境准备、六类二期构建发布及代表性生命周期；helper v3 已验证六种高级语言、两组件整应用、统一 Spring Boot 与 Podman Quadlet；CentOS Stream 9 已由产品入口完成环境准备、发布、回滚和生命周期验收；当前源码使用 helper v5 | 历史证据仅适用于当时 helper v3、Ubuntu 24.04 与 CentOS Stream 9 的精确 x86-64 夹具；helper v5 和其他发行版实机测试为 `RUNTIME-PENDING` |
+| 桌面/Web 业务 | Swing 首页从本地/Git 一次启动单/多组件自动部署，使用持续日志、成功入口、AI 缺项表单和原生 DB 管理；各页右侧高级侧栏保留技术能力，中英文消息映射及状态保留有门禁。完整受管备份、恢复和离线迁移继续复用原用例；Web 业务未实现 | 本地门禁与离屏视觉证明界面和确定性组合；真实 SSH、DB 安装/替换和发布仍待验收。Redis/多库完整备份及 SQLite 物理映射未开放；迁移不自动切流或删源 |
+| Linux 运行验证 | 迁移前 Ubuntu 24.04 x86-64 已实际验证环境准备、六类二期构建发布及代表性生命周期；helper v3 已验证六种高级语言、两组件整应用、统一 Spring Boot 与 Podman Quadlet；CentOS Stream 9 已由产品入口完成环境准备、发布、回滚和生命周期验收；当前源码使用 helper v5 | 当前 helper v5 的 Ubuntu 24 全语言部署见本次实机记录；历史 CentOS 证据不外推到当前 helper 或其他发行版 |
 | 三期支持分级 | 支持等级、精确目标验证范围、不可执行识别预览及 Go/Rust/.NET/Kotlin/PHP/Ruby 固定试验适配器已接入；历史 helper v3 不接受任意命令 | 六种语言的历史 v3 证据仍只称试验适配，不外推框架/发行版支持；helper v5 需重新通过产品入口验收 |
 | 三期混合项目与多组件 | 稳定组件清单、冲突/依赖环拦截、确定性依赖计划、整应用构建/快照/切换/健康/恢复事务、依赖安全生命周期及桌面产品入口已通过本地门禁和两组件实机验收；当前 SQLite v11 保留原 v7 成功图语义，并为新成功组件原子增加完整非秘密运行时、资源绑定、发布配置及整应用健康探针 | Ubuntu 24.04 x86-64 历史验收覆盖当时的 SQLite v7 图重载与生命周期；v8-v11 新增持久化只有本地静态证据，共享数据库迁移和跨服务器恢复不在三期范围 |
 | 三期多模型协作 | 三个固定角色可独立绑定命名 Provider/模型；最小上下文、严格结构化输出、输入摘要证据和确定性优先冲突裁决已接入 SQLite v6、服务与桌面配置页 | AI 仅为建议；失败不跨 Provider 回退，冲突不得自动转成执行授权 |
@@ -35,7 +37,7 @@ WindowsToLinux 是面向个人和小型自托管场景的部署管理工具。�
 
 ### 2.1 正式目标架构与当前实现边界
 
-[File.md](File.md) 是完整目标目录、模块职责、依赖方向、内部包结构和模块命名的唯一来源；本节只保留供开发流程使用的同步摘要，不复制完整目录树。
+[File.md](../File.md) 是完整目标目录、模块职责、依赖方向、内部包结构和模块命名的唯一来源；本节只保留供开发流程使用的同步摘要，不复制完整目录树。
 
 - `shared` 正式目标模块：`ai`、`analyze`、`backup`、`config`、`deploy`、`git`、`linux`、`linux-sshd`、`model`、`source`。
 - `app` 正式目标模块：`db`、`main`、`secret`、`service`、`ui`、`windows`。
@@ -47,21 +49,22 @@ WindowsToLinux 是面向个人和小型自托管场景的部署管理工具。�
 2. 源码快照、可重复归档和安全校验归 `shared/source`；桌面本地入口、Web 上传工作区和 Git 仓库来源分别归 `app/windows`、`web/file` 和 `shared/git`。源码归档不与 `shared/backup` 的应用数据备份语义混用。
 3. `shared/linux` 只定义公共契约，`shared/linux-sshd` 承接 Apache SSHD 具体实现；`deploy`、`app/service` 和 `web/service` 只依赖 `shared/linux`，只有 `app/main`、`web/main` 负责选择并装配 `shared/linux-sshd`。
 
-`shared/source` 已承接源码快照、归档与安全校验，`shared/linux-sshd` 已承接 Apache SSHD、十二类项目的有界构建、发布/回滚协议、容器运行及六个发行版的固定环境准备；Spring Boot 与六种高级语言试验适配器的既有产品证据来自唯一 Reviewed/helper v3 路径，当前 helper v5 新增受管普通文件、命名卷、镜像和数据库固定备份协议但尚未获得实机证据。发行版探测保留包架构、累计 CPU、AppArmor/SELinux、防火墙和容器事实，自动准备不关闭既有安全机制。`shared/config` 定义类型化普通配置快照、不透明秘密引用及经审阅的非秘密文件/数据库绑定；桌面 SQLite v11 保存配置实例、秘密修订元数据、发布身份摘要、命名 AI Provider/角色外键、成功整应用图及独立审阅的整应用健康探针。原始秘密值仍只经 `app/secret` 短时处理。
+`shared/source` 已承接源码快照、归档与安全校验，`shared/linux-sshd` 已承接 Apache SSHD、14 类可部署项目的有界构建、发布/回滚协议、容器运行及六个发行版的固定环境准备；Spring Boot 与六种高级语言试验适配器的既有产品证据来自唯一 Reviewed/helper v3 路径，当前 helper v5 的全语言部署已获得 Ubuntu 24 精确夹具证据；新增受管普通文件、命名卷、镜像和数据库固定备份协议仍未获得对应备份实机证据。发行版探测保留包架构、累计 CPU、AppArmor/SELinux、防火墙和容器事实，自动准备不关闭既有安全机制。`shared/config` 定义类型化普通配置快照、不透明秘密引用及经审阅的非秘密文件/数据库绑定；桌面 SQLite v11 保存配置实例、秘密修订元数据、发布身份摘要、命名 AI Provider/角色外键、成功整应用图及独立审阅的整应用健康探针。原始秘密值仍只经 `app/secret` 短时处理。
 
 开发 WindowsToLinux 本身使用开发机安装的系统 Maven 及其系统本地仓库，不由项目覆盖仓库位置，也不把 Maven Wrapper 作为本项目构建入口；同时使用 JDK 21、Node 和相应测试工具。产品处理的用户项目不得在 Windows 桌面主机或 Web 后端主机安装依赖、执行项目脚本或构建；用户项目构建只发生在目标 Linux，届时可按受控适配规则使用用户项目自带的 Wrapper。
 
 ## 3. 六期路线
 
+### 3.1 分期主文档
+
 | 阶段 | 细化文档 | 核心交付 | 明确后移 |
 | --- | --- | --- | --- |
-| 一期 | [PHASE-1.md](development/PHASE-1.md) | Swing 最小闭环；本地源码、Ubuntu 24.04、Maven Spring Boot 可执行 JAR、systemd、目标机构建、短停机发布、基础 AI、单组件生命周期 | Git、应用配置/密钥、数据库迁移、容器、多组件、备份、Web |
-| 二期 | [PHASE-2.md](development/PHASE-2.md) | Git、配置快照与共享密钥、Gradle/普通 JAR、Node/Python/静态站点/Dockerfile、Docker/Podman、更多 Ubuntu/CentOS、多 API 与可选 Agent | 高级语言、多组件、多模型、数据库、备份迁移、Web |
-| 三期 | [PHASE-3.md](development/PHASE-3.md) | 高级语言分级适配、多语言多组件编排、多模型协作、Debian/Rocky/Alma/Oracle | 数据库一致性、备份迁移、桌面维护、Web、官网与发布 |
-| 三期生态补全 | [PHASE-3-ECOSYSTEM-EXTENSION.md](development/PHASE-3-ECOSYSTEM-EXTENSION.md) | 当前语言原生构建基线、架构名分包、Node/Python 架构身份规范化与 C/CMake 后置试验适配 | 新增正式运行支持、任意构建脚本、跨编译、数据库与 Web |
-| 四期 | [PHASE-4.md](development/PHASE-4.md) | 数据库、版本化备份、恢复、离线一致迁移，以及桌面更新/卸载安全核心 | Web 服务台、公开官网、官方发布下载和生产维护执行器 |
-| 五期 | [PHASE-5.md](development/PHASE-5.md) | 与桌面 App 主要业务能力对等的回环内部测试 Web 功能服务台、REST/SSE、持久化任务、上传和业务链复用 | 登录认证、公开部署、官网、正式下载/发布和 Windows 生产维护 |
-| 六期 | [PHASE-6.md](development/PHASE-6.md) | 大致方向为公开官网、上线认证与安全、正式发布下载、Windows 生产更新/卸载和上线验收 | 所有详细方案在六期实施前另行确认，不在当前路线中提前冻结 |
+| 一期 | [PHASE-1.md](PHASE-1.md) | Swing 最小闭环；本地源码、Ubuntu 24.04、Maven Spring Boot 可执行 JAR、systemd、目标机构建、短停机发布、基础 AI、单组件生命周期 | Git、应用配置/密钥、数据库迁移、容器、多组件、备份、Web |
+| 二期 | [PHASE-2.md](PHASE-2.md) | Git、配置快照与共享密钥、Gradle/普通 JAR、Node/Python/静态站点/Dockerfile、Docker/Podman、更多 Ubuntu/CentOS、多 API 与可选 Agent | 高级语言、多组件、多模型、数据库、备份迁移、Web |
+| 三期 | [PHASE-3.md](PHASE-3.md) | 高级语言分级适配、多语言多组件编排、多模型协作、Debian/Rocky/Alma/Oracle | 数据库一致性、备份迁移、桌面维护、Web、官网与发布 |
+| 四期 | [PHASE-4.md](PHASE-4.md) | 数据库、版本化备份、恢复、离线一致迁移，以及桌面更新/卸载安全核心 | Web 服务台、公开官网、官方发布下载和生产维护执行器 |
+| 五期 | [PHASE-5.md](PHASE-5.md) | 与桌面 App 主要业务能力对等的回环内部测试 Web 功能服务台、REST/SSE、持久化任务、上传和业务链复用 | 登录认证、公开部署、官网、正式下载/发布和 Windows 生产维护 |
+| 六期 | [PHASE-6.md](PHASE-6.md) | 大致方向为公开官网、上线认证与安全、正式发布下载、Windows 生产更新/卸载和上线验收 | 所有详细方案在六期实施前另行确认，不在当前路线中提前冻结 |
 
 阶段继承规则：
 
@@ -69,6 +72,18 @@ WindowsToLinux 是面向个人和小型自托管场景的部署管理工具。�
 2. 新项目类型只有通过“分析、目标机构建、启动、健康检查、切换、失败恢复、生命周期”端到端验收后，才能列为正式支持。
 3. 阶段新增范围不得反向扩大早期阶段；例如二期配置能力不能被写成一期能力。
 4. 所有界面共享同一套 `shared` 规则，桌面与 Web 不得形成互相矛盾的部署语义。
+
+### 3.2 补充与验收文档
+
+补充文档按所属期次归档，用于细化特定主题；其中的历史设计与验收记录保留原有证据边界，现行包结构以 [File.md](../File.md) 为准。
+
+| 阶段 | 类型 | 文档 | 内容与边界 |
+| --- | --- | --- | --- |
+| 三期 | 补充开发 | [生态构建补全](PHASE-3-SUPPLEMENT-ECOSYSTEM.md) | 当前语言原生构建基线、架构名分包、Node/Python 架构身份规范化与 C/CMake 后置试验适配；不新增正式运行支持，不包含任意构建脚本、跨编译、数据库与 Web。 |
+| 三期 | 补充开发 | [分析层生态化分包](PHASE-3-SUPPLEMENT-ANALYZE-PACKAGE.md) | `shared.analyze` 的职责边界、生态化分包及历史迁移记录。 |
+| 三期 | 补充开发 | [Linux 部署链生态化分包](PHASE-3-SUPPLEMENT-LINUX-DEPLOY-PACKAGE.md) | `shared.deploy`、`shared.linux`、`shared.linux-sshd` 的分包修订及历史迁移记录。 |
+| 四期 | 补充开发 | [面向新手的一体化自动部署](PHASE-4-SUPPLEMENT-AUTOMATIC-DEPLOYMENT.md) | 新手界面、自动部署编排、AI 补全与 DB 管理；本地验证和真实环境验收分别记录。 |
+| 四期 | 运行验收 | [真实环境验收准备](PHASE-4-RUNTIME-ACCEPTANCE.md) | 产品入口、环境配置、验收步骤与证据格式；尚未采集的运行证据保持 `RUNTIME-PENDING`。 |
 
 ## 4. 跨期行为基线
 
@@ -136,7 +151,7 @@ WindowsToLinux 是面向个人和小型自托管场景的部署管理工具。�
 
 ### 5.1 开始条件
 
-每个纵向功能开始前必须确认：所属阶段、输入与输出、支持矩阵、模块责任、权限影响、失败状态、回滚策略和验收环境。若需要新增模块，先按 [File.md](File.md) 的治理流程与用户讨论，不得先创建再补文档。
+每个纵向功能开始前必须确认：所属阶段、输入与输出、支持矩阵、模块责任、权限影响、失败状态、回滚策略和验收环境。若需要新增模块，先按 [File.md](../File.md) 的治理流程与用户讨论，不得先创建再补文档。
 
 ### 5.2 实施顺序
 
@@ -187,10 +202,12 @@ Playwright 浏览器固定保存在 `src/web/frontend/.playwright-browsers`，�
 ## 6. 文档与结构维护
 
 1. 总纲负责跨期规则；分期文档负责该期输入、流程、失败、非目标和验收。
-2. [File.md](File.md) 是完整目标目录、模块职责、依赖方向、内部包结构和模块命名的唯一来源；本总纲只保存跨期规则、架构摘要和当前 reactor 状态，不复制完整结构树。未经用户讨论确认，不得新增模块或改变依赖方向。
+2. [File.md](../File.md) 是完整目标目录、模块职责、依赖方向、内部包结构和模块命名的唯一来源；本总纲只保存跨期规则、架构摘要和当前 reactor 状态，不复制完整结构树。未经用户讨论确认，不得新增模块或改变依赖方向。
 3. 创建、移动、删除正式目录或改变 reactor 状态时同步更新 `File.md` 与本总纲；跨期能力变化同步更新所有受影响分期。正式目标与当前实现必须分别表述，不得因目标目录已确认而宣称模块、迁移或功能已经落地。
 4. 修订必须更新版本、日期、状态和变更记录。历史记录只追加，不伪造完成状态。
 5. `.ai-workspace`、`.idea`、`target`、`node_modules`、缓存、日志和构建产物不是正式架构。
+6. 开发文档统一放在 `docs/development/`：总纲使用 `DEVELOPMENT.md`，分期主文档使用 `PHASE-N.md`，补充开发文档使用 `PHASE-N-SUPPLEMENT-TOPIC.md`，真实环境验收文档使用 `PHASE-N-RUNTIME-ACCEPTANCE.md`。`N` 为所属期次；`TOPIC` 使用简洁的英文主题，文件名统一大写并以连字符分词。
+7. 补充文档标题统一为“WindowsToLinux 某期补充开发文档：主题”，文档信息中写明角色并链接所属期次主文档。新增或重命名时同步本节上方的文档导航、所属期次导航、项目结构及全仓路径引用。
 
 ## 7. 参考资料
 
@@ -213,6 +230,8 @@ Playwright 浏览器固定保存在 `src/web/frontend/.playwright-browsers`，�
 
 | 版本 | 日期 | 阶段 | 状态 | 说明 |
 | --- | --- | --- | --- | --- |
+| 2.43.1-doc-naming | 2026-09-08 | 三期、四期 | 文档整理完成 | 统一补充文档命名和标题，将分析层与 Linux 部署链分包修订归入三期，补齐分期、补充与验收导航及命名规则；实现状态与验收结论不变。 |
+| 2.43.0-phase4-automatic-desktop | 2026-09-07 | 先落档四期补充，再完成 Swing 新手首页和高级帮助、自动单/多组件编排、AI 缺项与原生 DB 管理。本地 Maven 417 项通过、27 项条件跳过，Python 离线 11 项通过；真实 SSH/DB 与发布验收待配置测试环境。 |
 | 2.42.0-phase6-release-boundary | 2026-08-23 | 四期至六期 | 正式上线范围重排 | 四期保留已完成的 Windows 更新/卸载安全核心，但生产执行器不再阻塞四期；五期只实现回环内部测试的 Web 功能服务台，不做登录认证；六期大致承接公开官网、上线认证、正式发布下载、生产更新/卸载和真实上线验收，所有细节到六期实施前另行确认。 |
 | 2.41.1-current-test-evidence | 2026-08-23 | 四期 | 当前静态门禁统计更正 | 本次 28-POM JDK 21 离线 `verify` 实际生成 128 份 Surefire 报告、414 项测试，0 失败、0 错误、27 项真实环境条件跳过；排除 `target` 中 5 份已移动或已删除测试类留下的旧 XML（共 16 项）。仅修正文档证据，不改变功能或运行结论。 |
 | 2.41.0-reviewed-database-entry | 2026-08-23 | 三期至四期 | 新部署数据库范围审阅闭环及 opt-in 双服务器产品验收入口完成 | 单/多组件页面默认“尚未审阅”并阻止部署，用户必须明确选择“无数据库”或一个 PostgreSQL/MySQL/MariaDB 绑定；密码只使用同一部署精确秘密引用，非秘密状态随语言/主题切换保留。`ManagedBackupRestoreMigrationAcceptanceTest` 默认跳过，启用后从生产桌面门面部署文件型应用并执行完整备份、目标恢复和停写迁移，缺少环境即失败，不使用手工 SSH/helper 旁路。功能检查点 `030bee5`；当前门禁的更正统计见 2.41.1。 |

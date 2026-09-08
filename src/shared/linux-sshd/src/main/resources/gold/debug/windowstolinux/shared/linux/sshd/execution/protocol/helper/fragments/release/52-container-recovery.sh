@@ -65,10 +65,12 @@ rollback_container_first() {
   require_app "$app"; require_digest "$candidate_digest"; require_digest "$manifest"
   local root releases candidate
   root="$(app_root "$app")"; releases="$root/releases"; candidate="$releases/$candidate_digest"
-  assert_root_owned_directory "$root"; assert_root_owned_directory "$releases"
+  if [ -e "$root" ] || [ -L "$root" ]; then assert_root_owned_directory "$root"; fi
+  if [ -e "$releases" ] || [ -L "$releases" ]; then assert_root_owned_directory "$releases"; fi
   if [ ! -e "$candidate" ] && [ ! -L "$candidate" ]; then
     [ ! -e "$root/current" ] && [ ! -L "$root/current" ] || reject rollback-current
     ! docker inspect "$(container_name "$app")" >/dev/null 2>&1 || reject current-container
+    ! podman inspect "$(container_name "$app")" >/dev/null 2>&1 || reject current-container
     [ ! -e "$(podman_quadlet_path "$app")" ] \
       && [ ! -L "$(podman_quadlet_path "$app")" ] || reject current-container-unit
     rmdir -- "$releases" "$root" 2>/dev/null || true
