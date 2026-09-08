@@ -15,6 +15,43 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class ContainerProtocolContractTest {
+    @org.junit.jupiter.api.io.TempDir java.nio.file.Path temporaryDirectory;
+
+    @Test
+    void firstRollbackHandlesRejectionBeforeDirectoriesExistAndRejectsConflictingContainers() throws Exception {
+        String bash = System.getProperty("managed.test.bash", "/bin/bash");
+        org.junit.jupiter.api.Assumptions.assumeTrue(java.nio.file.Files.isExecutable(java.nio.file.Path.of(bash)));
+        String helper = ManagedHelperBundle.renderScript();
+        String rollback = helper.substring(helper.indexOf("rollback_container_first() {"), helper.indexOf("lifecycle_container() {"));
+        for (String conflict : List.of("none", "docker", "podman")) {
+            String root = temporaryDirectory.resolve(conflict).toString().replace('\\', '/');
+            String script = """
+                    set -eu
+                    require_app() { :; }; require_digest() { :; }
+                    container_name() { printf 'windowstolinux-demo'; }
+                    reject() { printf 'REJECT=%s\\n' "$1"; exit 64; }
+                    assert_root_owned_directory() { [ -d "$1" ] && [ ! -L "$1" ] || reject directory; }
+                    app_root() { printf '%s' "$test_root"; }
+                    podman_quadlet_path() { printf '%s/quadlet' "$test_root"; }
+                    docker() { [ "$conflict" = docker ]; }
+                    podman() { [ "$conflict" = podman ]; }
+                    """ + "test_root=" + gold.debug.windowstolinux.shared.linux.sshd.command.SshCommandExecutor.quote(root)
+                    + "\nconflict=" + conflict + "\n" + rollback + "\nrollback_container_first demo digest owner\n";
+            Process process = new ProcessBuilder(bash, "-s").redirectErrorStream(true).start();
+            try {
+                try (var input = process.getOutputStream()) {
+                    input.write(script.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+                }
+                assertTrue(process.waitFor(10, java.util.concurrent.TimeUnit.SECONDS));
+                String output = new String(process.getInputStream().readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
+                assertEquals(conflict.equals("none") ? 0 : 64, process.exitValue(), output);
+                assertTrue(output.contains(conflict.equals("none") ? "ROLLED_BACK=1" : "REJECT=current-container"), output);
+            } finally {
+                if (process.isAlive()) process.destroyForcibly().waitFor();
+            }
+        }
+    }
+
     @Test
     void rendersDeterministicEnginePortsAndNamedVolumesOnly() {
         DeploymentRuntimeSpecification.Container runtime = new DeploymentRuntimeSpecification.Container(
@@ -40,7 +77,11 @@ class ContainerProtocolContractTest {
         assertTrue(helper.contains("save_deployment_parameters"));
         assertTrue(helper.contains("load_deployment_parameters"));
         assertTrue(helper.contains("printf 'HELPER=1\\nPROTOCOL=%s\\n'"));
-        assertFalse(helper.contains("\\\\n"));
+        String shell = helper.substring(0,helper.indexOf("native_database()"))
+                + helper.substring(helper.indexOf("\nWTL_NATIVE_DB_PY\n}")+"\nWTL_NATIVE_DB_PY\n}".length());
+        assertFalse(shell.contains("\\\\n"));
+        java.util.regex.Matcher templates = java.util.regex.Pattern.compile("'\\{\\{[^\\r\\n]*?}}'").matcher(shell);
+        while (templates.find()) assertFalse(templates.group().contains("\\\""), templates.group());
         assertTrue(helper.contains("Volume=%s:%s"));
         assertTrue(helper.contains("update --restart unless-stopped"));
         assertTrue(helper.contains("set_podman_quadlet_autostart"));

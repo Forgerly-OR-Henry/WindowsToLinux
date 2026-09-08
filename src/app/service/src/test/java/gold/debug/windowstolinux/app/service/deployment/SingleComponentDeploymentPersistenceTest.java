@@ -76,6 +76,28 @@ class SingleComponentDeploymentPersistenceTest {
     }
 
     @Test
+    void bindsAPresavedConfigurationWithSubmillisecondTimeAndUnsortedEntries() throws Exception {
+        ManagedApplication application = application();
+        HealthCheck.Tcp health = new HealthCheck.Tcp(18080, 20, 1);
+        var configuration = ConfigurationSnapshot.create(application.id(), 1, "v1",
+                Instant.parse("2026-09-08T07:00:00.123456789Z"), List.of(
+                        new ConfigurationEntry("Z_LAST", ConfigurationScope.RUNTIME, new ConfigurationValue.Text("last")),
+                        new ConfigurationEntry("A_FIRST", ConfigurationScope.RUNTIME, new ConfigurationValue.Text("first"))));
+        try (DesktopPersistence persistence = DesktopPersistence.open(temporaryDirectory.resolve("presaved"))) {
+            persistence.configurations().save(configuration);
+            ReviewedDeploymentUseCase.recordSuccessful(persistence.managedApplicationGraphs(), application,
+                    new ManagedApplicationRuntimeConfiguration(health, Optional.empty()),
+                    new CurrentRelease(application.id(), "e".repeat(64), Instant.now()),
+                    new DeploymentRuntimeSpecification.NodeService(18, health), configuration, List.of(), Optional.of(List.of()));
+            assertTrue(persistence.managedApplications().find(application.id()).isPresent());
+            assertTrue(persistence.managedApplicationGraphs().find(application.id()).isPresent());
+            var stored = persistence.configurations().findRelease(application.id(), "e".repeat(64)).orElseThrow();
+            assertEquals(configuration.sha256(), stored.sha256());
+            assertEquals(Instant.parse("2026-09-08T07:00:00.123Z"), stored.createdAt());
+        }
+    }
+
+    @Test
     void leavesNoPartialApplicationGraphOrReleaseWhenASecretReferenceIsMissing() throws Exception {
         ManagedApplication application = application();
         HealthCheck.Tcp health = new HealthCheck.Tcp(18080, 20, 1);

@@ -2,7 +2,7 @@ package gold.debug.windowstolinux.app.ui.deployment.multi;
 
 import gold.debug.windowstolinux.app.service.deployment.multi.ReviewedMultiComponentApplication;
 import gold.debug.windowstolinux.app.service.source.PreparedMultiComponentSource;
-import gold.debug.windowstolinux.app.ui.deployment.DeploymentRuntimeParser;
+import gold.debug.windowstolinux.app.service.deployment.automatic.DeploymentRuntimeParser;
 import gold.debug.windowstolinux.app.ui.i18n.PageMessagePresenter;
 import gold.debug.windowstolinux.shared.model.lifecycle.LifecycleAction;
 import gold.debug.windowstolinux.shared.model.project.DeploymentProjectType;

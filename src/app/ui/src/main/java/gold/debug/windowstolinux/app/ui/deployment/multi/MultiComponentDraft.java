@@ -1,7 +1,7 @@
 package gold.debug.windowstolinux.app.ui.deployment.multi;
 
-import gold.debug.windowstolinux.app.ui.deployment.DeploymentConfigurationParser;
-import gold.debug.windowstolinux.app.ui.deployment.DeploymentRuntimeParser;
+import gold.debug.windowstolinux.app.service.config.DeploymentConfigurationParser;
+import gold.debug.windowstolinux.app.service.deployment.automatic.DeploymentRuntimeParser;
 
 import gold.debug.windowstolinux.app.service.deployment.multi.MultiComponentReviewInput;
 import gold.debug.windowstolinux.shared.analyze.component.ComponentAnalysisRequest;

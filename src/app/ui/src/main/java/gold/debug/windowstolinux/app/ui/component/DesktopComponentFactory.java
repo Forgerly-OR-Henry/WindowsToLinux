@@ -247,7 +247,9 @@ public final class DesktopComponentFactory {
         JPanel card = card(new BorderLayout(0, 10));
         JLabel heading = new JLabel(title);
         heading.setFont(heading.getFont().deriveFont(Font.BOLD, 15f));
-        JLabel detail = new JLabel("<html><body style='width: 320px'>" + message + "</body></html>");
+        JTextArea detail = new JTextArea(message.replaceAll("(?i)<br\\s*/?>", "\n").replaceAll("<[^>]+>", ""));
+        detail.setEditable(false); detail.setLineWrap(true); detail.setWrapStyleWord(true); detail.setOpaque(false);
+        detail.setRows(5); detail.setColumns(16);
         detail.setForeground(palette.subduedText());
         detail.setFont(detail.getFont().deriveFont(13f));
         card.add(heading, BorderLayout.NORTH);

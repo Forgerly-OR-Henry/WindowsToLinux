@@ -80,12 +80,25 @@ public final class ManagedPlatformCapabilityProbe {
                   printf 'SECURITY_MODULE=none\\n'
                   printf 'SECURITY_STATE=disabled\\n'
                 fi
+                """ + firewallProbe();
+    }
+
+    static String firewallProbe() {
+        return """
                 if command -v firewall-cmd >/dev/null 2>&1; then
                   printf 'FIREWALL=firewalld\\n'
                   if systemctl is-active --quiet firewalld 2>/dev/null; then printf 'FIREWALL_STATE=active\\n'; else printf 'FIREWALL_STATE=inactive\\n'; fi
                 elif command -v ufw >/dev/null 2>&1; then
                   printf 'FIREWALL=ufw\\n'
-                  if systemctl is-active --quiet ufw 2>/dev/null; then printf 'FIREWALL_STATE=active\\n'; else printf 'FIREWALL_STATE=inactive\\n'; fi
+                  if ufw_status="$(ufw status 2>/dev/null)" || ufw_status="$(sudo -n ufw status 2>/dev/null)"; then
+                    case "$ufw_status" in
+                      'Status: active'*) printf 'FIREWALL_STATE=active\\n' ;;
+                      'Status: inactive'*) printf 'FIREWALL_STATE=inactive\\n' ;;
+                      *) printf 'FIREWALL_STATE=unknown\\n' ;;
+                    esac
+                  else
+                    printf 'FIREWALL_STATE=unknown\\n'
+                  fi
                 elif command -v nft >/dev/null 2>&1; then
                   printf 'FIREWALL=nftables\\n'
                   if nft_rules="$(nft list ruleset 2>/dev/null)"; then

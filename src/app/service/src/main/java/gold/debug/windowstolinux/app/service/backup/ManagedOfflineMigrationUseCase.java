@@ -99,7 +99,7 @@ public final class ManagedOfflineMigrationUseCase {
             port.close(); port = null;
             try { workspace.discard(attempt); }
             catch (WindowsWorkspaceException exception) {
-                warnings.add("initial migration archive cleanup requires retry");
+                warnings.add("backup.warning.initialArchiveCleanup");
             }
             attempt = null;
             return new ManagedOfflineMigrationOutcome(result, retainedFinalArchive, warnings);

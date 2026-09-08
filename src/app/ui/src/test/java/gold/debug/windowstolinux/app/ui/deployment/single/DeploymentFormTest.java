@@ -1,6 +1,6 @@
 package gold.debug.windowstolinux.app.ui.deployment.single;
 
-import gold.debug.windowstolinux.app.ui.deployment.DeploymentRuntimeParser;
+import gold.debug.windowstolinux.app.service.deployment.automatic.DeploymentRuntimeParser;
 import gold.debug.windowstolinux.app.ui.i18n.MessageCatalog;
 import gold.debug.windowstolinux.app.ui.i18n.PageMessagePresenter;
 import gold.debug.windowstolinux.shared.config.resource.ManagedDatabaseConnection;
@@ -13,6 +13,24 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /** Tests explicit database review and non-secret single-deployment form state. / 测试显式数据库审阅及单组件部署表单的非秘密状态。 */
 class DeploymentFormTest {
+    @Test void automaticHealthModePreservesAnExplicitChoiceWithoutAnEndpoint() {
+        DeploymentForm form = form();
+        var inputs = new java.util.LinkedHashMap<String, String>();
+        form.automaticHealthInputs(inputs);
+        assertTrue(inputs.isEmpty());
+        form.healthMode.setSelectedIndex(2);
+        form.automaticHealthInputs(inputs);
+        assertEquals("TCP", inputs.get("healthMode"));
+        assertFalse(inputs.containsKey("port"));
+        form.healthMode.setSelectedIndex(0);
+        form.healthEndpoint.setText("http://127.0.0.1:18080/health");
+        form.automaticHealthInputs(inputs);
+        assertEquals("HTTP", inputs.get("healthMode")); assertEquals("18080", inputs.get("port"));
+        DeploymentForm restored = form(); restored.restore(form.capture("", null));
+        var restoredInputs = new java.util.LinkedHashMap<String, String>(); restored.automaticHealthInputs(restoredInputs);
+        assertEquals(inputs, restoredInputs);
+    }
+
     @Test
     void requiresDatabaseReviewAndPreservesAReviewedServerBinding() {
         DeploymentForm form = form();

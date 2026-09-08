@@ -1,12 +1,14 @@
-# Linux 部署链生态化分包修订
+# WindowsToLinux 三期补充开发文档：Linux 部署链生态化分包
 
 ## 文档信息
 
-- 版本：`1.5.0`
-- 状态：**已实施（ecosystem 架构与三层功能组包迁移完成）**
-- 日期：2026-08-20
+- 文档版本：`1.6.0-doc-naming`
+- 文档角色：三期补充开发文档，记录 Linux 部署链生态化分包修订
+- 文档状态：**已实施（ecosystem 架构与三层功能组包迁移完成）**
+- 更新日期：2026-09-08
+- 上级文档：[三期工程细化文档](PHASE-3.md)
 - 正式目标结构：[File.md](../File.md)
-- 关联修订：[ANALYZE-PACKAGE-REVISION.md](ANALYZE-PACKAGE-REVISION.md)
+- 关联补充：[三期补充：分析层生态化分包](PHASE-3-SUPPLEMENT-ANALYZE-PACKAGE.md)
 
 > 实施更新（2026-08-15）：本文原始 1.0.x 记录的是待迁移设计。当前源码、测试和 helper 资源已按其责任边界迁移，旧 `Advanced*` 公共模型和命名已原子清除，helper 协议版本仍为 3。JDK 21 的 28 模块离线验证通过；本地验证不构成新的 Linux 或产品入口运行证据。
 
@@ -487,7 +489,7 @@ linux-sshd.connection ──→ linux-sshd.session + command
 - [x] `File.md` 的 deploy、linux、linux-sshd 目标树、协作边界、分包规则、依赖方向和版本记录相互一致。
 - [x] 本文覆盖三个模块全部现有生产类、测试和 helper 资源，并记录必要的跨模块 `Advanced*` 引用。
 - [x] 两份文档使用相对链接且目标存在，Markdown 表格和代码块完整。
-- [x] 现有 `ANALYZE-PACKAGE-REVISION.md` SHA-256 仍为 `0F90AB913E65F643FED0D6D4E0549573E9698DB9B8C215408264602D56AFB8D2`。
+- [x] 当时分析层分包修订文档的 SHA-256 为 `0F90AB913E65F643FED0D6D4E0549573E9698DB9B8C215408264602D56AFB8D2`（历史快照摘要，不用于校验当前文档）。
 - [x] `git diff --check` 通过。
 - [x] `git status --short` 和文件清单确认没有源码、测试、POM、资源或其他文档变化。
 
@@ -495,6 +497,7 @@ linux-sshd.connection ──→ linux-sshd.session + command
 
 | 版本 | 日期 | 状态 | 说明 |
 | --- | --- | --- | --- |
+| 1.6.0-doc-naming | 2026-09-08 | 文档整理完成 | 归入三期补充文档，统一文件名、标题和上级导航；保留原有设计、迁移映射与历史验收记录，明确历史文档摘要的适用范围。 |
 | 1.4.0 | 2026-08-19 | 已实施（本地结构验证完成） | 以 `File.md` 的 ecosystem 规则替代旧横向 Renderer 结构；构建、工作负载、注册表、能力探测与 helper 生态片段完成归位，六种参数化服务构建改为具名原生架构 Renderer。helper 字节、摘要、协议、持久化和真实 Linux 支持边界不变。 |
 | 1.3.0 | 2026-08-19 | 已实施（本地结构验证完成） | 同步严格枚举语义后缀、部署计划动作、跟踪事件、主机支持状态与 helper 基础片段名称；helper 内容、摘要、协议、持久化和真实 Linux 支持边界不变。 |
 | 1.2.0 | 2026-08-18 | 已实施（本地结构验证完成） | 简化部署支持、构建配置、发行版设置与 SSH 命令实现包名，并同步对应类型名；模块、helper 协议、持久化语义和真实 Linux 支持边界不变。 |

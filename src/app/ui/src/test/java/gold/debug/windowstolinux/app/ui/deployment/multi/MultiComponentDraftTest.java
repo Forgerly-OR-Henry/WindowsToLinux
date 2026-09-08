@@ -1,6 +1,6 @@
 package gold.debug.windowstolinux.app.ui.deployment.multi;
 
-import gold.debug.windowstolinux.app.ui.deployment.DeploymentRuntimeParser;
+import gold.debug.windowstolinux.app.service.deployment.automatic.DeploymentRuntimeParser;
 import gold.debug.windowstolinux.shared.model.project.DeploymentProjectType;
 import gold.debug.windowstolinux.shared.model.project.DeploymentRuntimeSpecification;
 import org.junit.jupiter.api.Test;

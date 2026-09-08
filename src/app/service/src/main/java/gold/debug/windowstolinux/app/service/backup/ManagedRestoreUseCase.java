@@ -101,7 +101,7 @@ public final class ManagedRestoreUseCase {
             }
             activation.close();
             try { backups.discard(activation.localCandidate()); }
-            catch (IOException exception) { warnings.add("local restore candidate cleanup requires retry"); }
+            catch (IOException exception) { warnings.add("backup.warning.localCandidateCleanup"); }
             return new ManagedRestoreOutcome(profile.id(), completion.restore(), completion.controlState(),
                     completion.localFailure(), warnings);
         } catch (IOException | BackupSecretException | SQLException | SecretStoreException
@@ -202,7 +202,7 @@ public final class ManagedRestoreUseCase {
                 } finally {
                     if (artifactStaged) {
                         try { databaseOperations.discardArtifact(model.database().orElseThrow().artifact()); }
-                        catch (IOException exception) { warnings.add("remote staged database artifact cleanup requires retry"); }
+                        catch (IOException exception) { warnings.add("backup.warning.remoteDatabaseCleanup"); }
                     }
                 }
                 return adopt(model, profile, targetIdentity, masterPassword, result);

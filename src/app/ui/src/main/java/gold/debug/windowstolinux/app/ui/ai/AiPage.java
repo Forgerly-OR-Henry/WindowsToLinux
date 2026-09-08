@@ -39,6 +39,7 @@ public final class AiPage {
     private final JPasswordField masterPassword = new JPasswordField(20);
     private final JTextArea output = DesktopComponentFactory.outputArea();
     private final JPanel panel;
+    private boolean busy;
 
     /** Creates the stateful page controller. / 创建有状态页面控制器。 */
     public AiPage(AiApplicationFacade service, ReviewContext reviewContext,
@@ -46,10 +47,12 @@ public final class AiPage {
         this.service = service;
         this.reviewContext = reviewContext;
         this.messages = messages;
+        credentialMode.setSelectedItem(CredentialStorageMode.WINDOWS_CREDENTIAL_MANAGER);
         messages.localize(credentialMode, "credential.mode.");
         messages.localize(role, "ai.role.");
         credentialMode.addActionListener(event -> masterPassword.setEnabled(
                 credentialMode.getSelectedItem() == CredentialStorageMode.MASTER_PASSWORD));
+        masterPassword.setEnabled(false);
         panel = createPanel(components);
     }
 
@@ -77,16 +80,17 @@ public final class AiPage {
 
     private JPanel createPanel(DesktopComponentFactory c) {
         JPanel page = c.pagePanel();
+        var advanced = new gold.debug.windowstolinux.app.ui.component.AdvancedOptionsPane(page, c, messages);
         JPanel card = c.card(new BorderLayout(0, 12));
         card.add(c.sectionHeading(messages.text("section.ai.title"), messages.text("section.ai.description")), BorderLayout.NORTH);
         JPanel form = c.transparent(new GridBagLayout());
         c.addField(form, 0, 0, messages.text("field.aiEndpoint"), endpoint);
-        c.addField(form, 0, 1, messages.text("field.model"), model);
-        c.addField(form, 1, 0, messages.text("field.aiProviderId"), providerId);
-        c.addField(form, 1, 1, messages.text("field.aiRole"), role);
+        c.addField(form, 1, 0, messages.text("field.model"), model);
+        advanced.field("field.aiProviderId", providerId);
+        advanced.field("field.aiRole", role);
         c.addField(form, 2, 0, messages.text("field.apiKey"), apiKey);
-        c.addField(form, 2, 1, messages.text("field.credentialStorage"), credentialMode);
-        c.addField(form, 3, 0, messages.text("field.masterPassword"), masterPassword);
+        advanced.field("field.credentialStorage", credentialMode);
+        advanced.field("field.masterPassword", masterPassword);
         card.add(form, BorderLayout.CENTER);
         JPanel actions = c.transparent(new FlowLayout(FlowLayout.LEFT, 8, 0));
         JButton save = c.secondaryButton(messages.text("button.saveAiProvider"));
@@ -95,30 +99,42 @@ public final class AiPage {
         assign.addActionListener(event -> assignRole());
         JButton explain = c.primaryButton(messages.text("button.requestAi"));
         explain.addActionListener(event -> explain());
-        actions.add(save); actions.add(assign); actions.add(explain);
+        actions.add(save); advanced.addOption(assign); advanced.addOption(explain);
         card.add(actions, BorderLayout.SOUTH);
         page.add(card, BorderLayout.NORTH);
         page.add(c.outputCard(messages.text("section.aiOutput.title"), messages.text("section.aiOutput.description"), output),
                 BorderLayout.CENTER);
-        return page;
+        return advanced;
     }
 
     private void saveNamed() {
+        if (busy) return;
         try {
             CredentialStorageMode mode = selectedMode();
             String id = providerId.getText().trim();
             AiProviderProfile profile = new AiProviderProfile(id, URI.create(endpoint.getText().trim()),
                     model.getText().trim(), "ai/provider/" + id + "/api-key", mode);
-            service.saveAiProviderProfile(profile, masterPassword.getPassword(), apiKey.getPassword());
-            apiKey.setText("");
-            masterPassword.setText("");
-            output.setText(messages.text("ai.providerSaved", Map.of("provider", id)));
+            AiRoleAssignment assignment = new AiRoleAssignment(selectedRole(), id);
+            char[] master = masterPassword.getPassword(), key = apiKey.getPassword();
+            setBusy(true);
+            DesktopTaskExecutor.run(() -> {
+                try {
+                    service.saveAiProviderProfile(profile, master, key);
+                    service.assignAiRole(assignment); return id;
+                } finally { java.util.Arrays.fill(master, '\0'); java.util.Arrays.fill(key, '\0'); }
+            }, saved -> {
+                setBusy(false); apiKey.setText(""); masterPassword.setText("");
+                output.setText(messages.text("ai.providerSaved", Map.of("provider", saved)));
+            }, failure -> {
+                setBusy(false); output.setText(messages.text("ai.saveFailed", Map.of("detail", messages.safe(failure))));
+            });
         } catch (Exception exception) {
             output.setText(messages.text("ai.saveFailed", Map.of("detail", messages.safe(exception))));
         }
     }
 
     private void assignRole() {
+        if (busy) return;
         try {
             service.assignAiRole(new AiRoleAssignment(selectedRole(), providerId.getText().trim()));
             output.setText(messages.text("ai.roleAssigned", Map.of(
@@ -130,6 +146,7 @@ public final class AiPage {
     }
 
     private void explain() {
+        if (busy) return;
         var preparation = reviewContext.reviewedPreparation();
         if (preparation.isEmpty()) {
             output.setText(messages.text("ai.analyzeFirst"));
@@ -137,21 +154,27 @@ public final class AiPage {
         }
         char[] master = masterPassword.getPassword();
         output.setText(messages.text("ai.requesting"));
+        setBusy(true);
         DesktopTaskExecutor.run(
                 () -> service.invokeAiRole(ProjectAnalysisRoleContext.from(
                         preparation.orElseThrow().assessment().facts().orElseThrow()), master),
-                result -> output.setText(result.map(AiPage.this::evidenceText)
-                        .orElseGet(() -> messages.text("ai.roleUnassigned"))),
-                exception -> output.setText(messages.text("ai.failed",
-                        Map.of("detail", messages.safe(exception)))));
+                result -> { setBusy(false); output.setText(result.map(AiPage.this::evidenceText)
+                        .orElseGet(() -> messages.text("ai.roleUnassigned"))); },
+                exception -> { setBusy(false); output.setText(messages.text("ai.failed",
+                        Map.of("detail", messages.safe(exception)))); });
+    }
+
+    private void setBusy(boolean value) {
+        busy = value;
+        ((gold.debug.windowstolinux.app.ui.component.AdvancedOptionsPane) panel).setBusy(value);
     }
 
     private String evidenceText(AiRoleInvocationResult result) {
         var evidence = result.evidence();
-        String decision = evidence.output().map(value -> value.decision().name()).orElse("-");
+        String decision = evidence.output().map(value -> messages.text("ai.decision." + value.decision().name().toLowerCase(java.util.Locale.ROOT))).orElse("-");
         String summary = evidence.output().map(value -> value.summary()).orElse("-");
         return messages.text("ai.roleEvidence", Map.of("provider", evidence.providerId(), "model", evidence.model(),
-                "status", evidence.status().name(), "digest", evidence.inputSha256(),
+                "status", messages.text("ai.invocation." + evidence.status().name().toLowerCase(java.util.Locale.ROOT)), "digest", evidence.inputSha256(),
                 "validation", evidence.validationDetail(), "decision", decision, "summary", summary));
     }
 

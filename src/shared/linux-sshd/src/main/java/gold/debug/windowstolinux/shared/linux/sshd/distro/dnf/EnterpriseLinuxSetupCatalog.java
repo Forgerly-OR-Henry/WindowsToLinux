@@ -35,7 +35,7 @@ public final class EnterpriseLinuxSetupCatalog {
         boolean ten = "10".equals(version);
         return DnfSetupRenderer.render(new DistributionSetupProfile(
                 "centos", "", version, "x86_64",
-                ten ? CpuMicroarchitectureLevel.X86_64_V3 : CpuMicroarchitectureLevel.X86_64_V1,
+                ten ? CpuMicroarchitectureLevel.X86_64_V3 : CpuMicroarchitectureLevel.X86_64_V2,
                 DnfPackageSets.enterprise(version),
                 ten ? EcosystemCapabilityProfile.ENTERPRISE_10 : EcosystemCapabilityProfile.ENTERPRISE_9), username);
     }

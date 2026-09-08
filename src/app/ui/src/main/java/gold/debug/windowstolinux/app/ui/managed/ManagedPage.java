@@ -25,7 +25,13 @@ public final class ManagedPage {
     private final PageMessagePresenter messages;
     private final JTextField applicationId = new JTextField(20);
     private final JTextArea output = DesktopComponentFactory.outputArea();
+    private final JTextArea details = DesktopComponentFactory.outputArea();
     private final JPanel panel;
+    private final javax.swing.JComboBox<gold.debug.windowstolinux.app.service.execution.lifecycle.ManagedApplicationSnapshot> inventory = new javax.swing.JComboBox<>();
+    private final JButton access = new JButton();
+    private boolean loading;
+    private boolean busy;
+
 
     /** Creates the stateful page controller. / 创建有状态页面控制器。 */
     public ManagedPage(ManagedApplicationFacade service, ServerContext serverContext,
@@ -34,6 +40,7 @@ public final class ManagedPage {
         this.serverContext = serverContext;
         this.messages = messages;
         panel = createPanel(components);
+        panel.addHierarchyListener(event -> { if (panel.isShowing() && inventory.getItemCount() == 0) refresh(); });
     }
 
     /** Returns the page panel. / 返回页面面板。 */
@@ -50,10 +57,12 @@ public final class ManagedPage {
     public void selectApplication(String selectedId) {
         applicationId.setText(selectedId);
         output.setText(messages.text("deployment.selected", Map.of("application", selectedId)));
+        if (service != null) refresh();
     }
 
     private JPanel createPanel(DesktopComponentFactory c) {
         JPanel page = c.pagePanel();
+        var advanced = new gold.debug.windowstolinux.app.ui.component.AdvancedOptionsPane(page, c, messages);
         JPanel controls = c.card(new BorderLayout(0, 10));
         controls.add(c.sectionHeading(messages.text("section.lifecycle.title"),
                 messages.text("section.lifecycle.description")), BorderLayout.NORTH);
@@ -61,8 +70,9 @@ public final class ManagedPage {
         JButton refresh = c.secondaryButton(messages.text("button.refreshApplications"));
         refresh.addActionListener(event -> refresh());
         actions.add(refresh);
-        actions.add(new JLabel(messages.text("field.applicationId")));
-        actions.add(applicationId);
+
+        advanced.field("field.applicationId", applicationId);
+        details.setRows(12); advanced.field("managed.details", new javax.swing.JScrollPane(details));
         for (LifecycleAction action : LifecycleAction.values()) {
             JButton button = c.secondaryButton(messages.text("button." + switch (action) {
                 case REFRESH_STATUS -> "refreshStatus";
@@ -73,32 +83,60 @@ public final class ManagedPage {
                 case DISABLE_AUTOSTART -> "disableAutostart";
             }));
             button.addActionListener(event -> execute(action));
-            actions.add(button);
+            if (action == LifecycleAction.ENABLE_AUTOSTART || action == LifecycleAction.DISABLE_AUTOSTART)
+                advanced.addOption(button);
+            else actions.add(button);
         }
-        controls.add(actions, BorderLayout.CENTER);
+        inventory.setRenderer(new javax.swing.DefaultListCellRenderer() {
+            @Override public java.awt.Component getListCellRendererComponent(javax.swing.JList<?> list, Object value, int index, boolean selected, boolean focus) {
+                return super.getListCellRendererComponent(list,
+                    value instanceof gold.debug.windowstolinux.app.service.execution.lifecycle.ManagedApplicationSnapshot snapshot
+                        ? snapshot.application().id() + "  ·  " + snapshot.application().server().host() : "", index, selected, focus);
+            }
+        });
+        inventory.addActionListener(event -> {
+            if (loading) return;
+            if (inventory.getSelectedItem() instanceof gold.debug.windowstolinux.app.service.execution.lifecycle.ManagedApplicationSnapshot snapshot) {
+                applicationId.setText(snapshot.application().id());
+                showDetails(snapshot);
+            }
+        });
+        access.addActionListener(event -> {
+            if (inventory.getSelectedItem() instanceof gold.debug.windowstolinux.app.service.execution.lifecycle.ManagedApplicationSnapshot snapshot)
+                snapshot.runtimeConfiguration().flatMap(config -> config.userAccessUrl()).ifPresent(url -> {
+                    try { java.awt.Desktop.getDesktop().browse(url.url()); }
+                    catch (Exception failure) { output.setText(messages.safe(failure)); }
+                });
+        });
+        access.setEnabled(false);
+        JPanel selection = c.transparent(new BorderLayout(0, 8));
+        selection.add(inventory, BorderLayout.NORTH); selection.add(access, BorderLayout.CENTER); selection.add(actions, BorderLayout.SOUTH);
+        controls.add(selection, BorderLayout.CENTER);
         page.add(controls, BorderLayout.NORTH);
         page.add(c.outputCard(messages.text("section.applicationOutput.title"),
                 messages.text("section.applicationOutput.description"), output), BorderLayout.CENTER);
-        return page;
+        return advanced;
     }
 
     private void refresh() {
-        try {
-            var applications = service.listManagedApplicationSummaries();
-            output.setText(applications.isEmpty() ? messages.text("applications.none") : applications.stream()
-                    .map(summary -> messages.text("applications.summary", Map.of(
-                            "application", summary.application().id(), "server", summary.application().server().host(),
-                            "unit", summary.application().systemdUnit(),
-                            "release", summary.currentReleaseSha256().orElse(messages.text("applications.noRelease")),
-                            "runtime", summary.runtimeConfiguration().map(this::runtimeSummary)
-                                    .orElse(messages.text("applications.legacyRuntime")))))
-                    .reduce("", (left, right) -> left + right + "\n"));
-        } catch (Exception exception) {
-            output.setText(messages.text("applications.failed", Map.of("detail", messages.safe(exception))));
-        }
+        if (loading || busy || service == null) return;
+        loading = true;
+        DesktopTaskExecutor.run(service::listManagedApplicationSummaries, applications -> {
+            String selected = applicationId.getText();
+            inventory.removeAllItems(); applications.forEach(inventory::addItem);
+            if (!selected.isBlank()) inventory.setSelectedIndex(-1);
+            applications.stream().filter(item -> item.application().id().equals(selected)).findFirst().ifPresent(inventory::setSelectedItem);
+            loading = false;
+            if (inventory.getSelectedItem() instanceof gold.debug.windowstolinux.app.service.execution.lifecycle.ManagedApplicationSnapshot snapshot) {
+                if (selected.isBlank()) applicationId.setText(snapshot.application().id());
+                showDetails(snapshot);
+            } else { details.setText(""); access.setEnabled(false); access.setText(messages.text("managed.noWebEntry")); }
+            if (output.getText().isBlank()) output.setText(messages.text(applications.isEmpty() ? "applications.none" : "managed.statusUnknown"));
+        }, failure -> { loading = false; output.setText(messages.safe(failure)); });
     }
 
     private void execute(LifecycleAction action) {
+        if (busy || loading) return;
         try {
             String selected = applicationId.getText().trim();
             if (selected.isBlank()) {
@@ -107,9 +145,10 @@ public final class ManagedPage {
             char[] master = serverContext.masterPassword();
             output.setText(messages.text("lifecycle.running", Map.of(
                     "action", messages.text("lifecycle.action." + action.name().toLowerCase(Locale.ROOT)))));
+            setBusy(true);
             DesktopTaskExecutor.run(
                     () -> service.executePersistedLifecycleWithStoredPassword(selected, action, master),
-                    result -> output.setText(messages.text(
+                    result -> { setBusy(false); output.setText(messages.text(
                             result.accepted() ? "lifecycle.accepted" : "lifecycle.rejected",
                             Map.of("message", messages.catalog().text(result.message()),
                                     "observation", messages.lifecycle(result.observation().orElse(null))))
@@ -122,12 +161,28 @@ public final class ManagedPage {
                                             "recovery", messages.text("failure.recovery."
                                                     + failure.recoveryDisposition().name()
                                                     .toLowerCase(Locale.ROOT)))))
-                            .reduce("", String::concat)),
-                    exception -> output.setText(messages.text("lifecycle.failed",
-                            Map.of("detail", messages.safe(exception)))));
+                            .reduce("", String::concat)); },
+                    exception -> { setBusy(false); output.setText(messages.text("lifecycle.failed",
+                            Map.of("detail", messages.safe(exception)))); });
         } catch (Exception exception) {
             output.setText(messages.text("lifecycle.startFailed", Map.of("detail", messages.safe(exception))));
         }
+    }
+
+    private void setBusy(boolean value) {
+        busy = value;
+        ((gold.debug.windowstolinux.app.ui.component.AdvancedOptionsPane) panel).setBusy(value);
+    }
+
+    private void showDetails(gold.debug.windowstolinux.app.service.execution.lifecycle.ManagedApplicationSnapshot snapshot) {
+        var url = snapshot.runtimeConfiguration().flatMap(config -> config.userAccessUrl());
+        access.setEnabled(url.isPresent());
+        access.setText(url.map(value -> value.url().toString()).orElse(messages.text("managed.noWebEntry")));
+        details.setText(messages.text("managed.details.summary", Map.of("application", snapshot.application().id(),
+                "server", snapshot.application().server().host(), "unit", snapshot.application().systemdUnit(),
+                "release", snapshot.currentReleaseSha256().orElse("-"),
+                "runtime", snapshot.runtimeConfiguration().map(this::runtimeSummary).orElse("-"))));
+        details.setCaretPosition(0);
     }
 
     private String runtimeSummary(gold.debug.windowstolinux.shared.model.managed.ManagedApplicationRuntimeConfiguration configuration) {

@@ -31,7 +31,11 @@ class EcosystemExtensionFixtureMatrixTest {
                 fixture("kotlin/kotlinc", DeploymentProjectType.KOTLIN_SERVICE, DeploymentBuildToolType.KOTLINC),
                 fixture("php/phpcli", DeploymentProjectType.PHP_SERVICE, DeploymentBuildToolType.PHP_CLI),
                 fixture("ruby/rubycli", DeploymentProjectType.RUBY_SERVICE, DeploymentBuildToolType.RUBY_CLI),
-                fixture("c/cmake", DeploymentProjectType.CMAKE_SERVICE, DeploymentBuildToolType.CMAKE));
+                fixture("c/cmake", DeploymentProjectType.CMAKE_SERVICE, DeploymentBuildToolType.CMAKE),
+                new Fixture(Path.of("test/c/cmake/cpp-service/phase3-ready"), DeploymentProjectType.CMAKE_SERVICE,
+                        DeploymentBuildToolType.CMAKE),
+                new Fixture(Path.of("test/node/npm/typescript-service/phase3-ready"), DeploymentProjectType.NODE_SERVICE,
+                        DeploymentBuildToolType.NPM));
 
         assertEquals(fixtures.size(), fixtures.stream().map(Fixture::relativePath).distinct().count());
         for (Fixture fixture : fixtures) {
@@ -43,6 +47,14 @@ class EcosystemExtensionFixtureMatrixTest {
             assertEquals(fixture.buildTool(), assessment.facts().orElseThrow().buildTool(),
                     fixture.relativePath().toString());
             assertTrue(assessment.runtimeSuggestion().isPresent(), fixture.relativePath().toString());
+            if (fixture.relativePath().toString().contains("cpp-service")) {
+                assertTrue(assessment.facts().orElseThrow().languageFacts().sourceLanguages()
+                        .contains(gold.debug.windowstolinux.shared.model.language.SourceLanguageType.CPP));
+            }
+            if (fixture.relativePath().toString().contains("typescript-service")) {
+                assertTrue(assessment.facts().orElseThrow().languageFacts().sourceLanguages()
+                        .contains(gold.debug.windowstolinux.shared.model.language.SourceLanguageType.TYPESCRIPT));
+            }
         }
     }
 
@@ -55,7 +67,7 @@ class EcosystemExtensionFixtureMatrixTest {
         Path current = Path.of("").toAbsolutePath().normalize();
         while (current != null) {
             if (Files.isRegularFile(current.resolve("pom.xml"))
-                    && Files.isRegularFile(current.resolve("docs/development/PHASE-3-ECOSYSTEM-EXTENSION.md"))) {
+                    && Files.isRegularFile(current.resolve("docs/development/PHASE-3-SUPPLEMENT-ECOSYSTEM.md"))) {
                 return current;
             }
             current = current.getParent();

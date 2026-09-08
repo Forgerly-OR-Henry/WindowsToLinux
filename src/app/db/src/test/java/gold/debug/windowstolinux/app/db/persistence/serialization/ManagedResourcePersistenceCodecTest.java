@@ -21,6 +21,12 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 /** Tests strict resource-binding persistence without secret values. / 测试不含秘密值的严格资源绑定持久化。 */
 class ManagedResourcePersistenceCodecTest {
     private final ManagedResourcePersistenceCodec codec = new ManagedResourcePersistenceCodec();
+    @Test void redisBindingIsPersistedAlongsideSqlWithoutOmittingItsSecretReference() throws Exception {
+        var connection = new ManagedDatabaseConnection.Server(ManagedDatabaseEngineType.REDIS,"127.0.0.1",6379,"cache","cache_user",
+                new SecretReference("cache-password",1),false);
+        var bindings = new ManagedComponentResourceBindings(List.of(),Optional.of(List.of(new ManagedDatabaseBinding("cache",connection))));
+        assertEquals(bindings,codec.read(codec.write(bindings)));
+    }
 
     @Test
     void roundTripsCanonicalFileAndDatabaseBindings() throws Exception {

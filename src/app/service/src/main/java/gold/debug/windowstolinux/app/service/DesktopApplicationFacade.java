@@ -1,5 +1,7 @@
 package gold.debug.windowstolinux.app.service;
 
+import gold.debug.windowstolinux.app.service.contract.definition.*;
+
 import gold.debug.windowstolinux.app.db.DesktopPersistence;
 import gold.debug.windowstolinux.app.secret.SecretStore;
 import gold.debug.windowstolinux.app.secret.SecretStoreException;
@@ -25,6 +27,7 @@ import gold.debug.windowstolinux.app.service.execution.lifecycle.ManagedApplicat
 import gold.debug.windowstolinux.app.service.contract.AiApplicationFacade;
 import gold.debug.windowstolinux.app.service.contract.BackupApplicationFacade;
 import gold.debug.windowstolinux.app.service.contract.DeploymentApplicationFacade;
+import gold.debug.windowstolinux.app.service.contract.AutomaticDeploymentApplicationFacade;
 import gold.debug.windowstolinux.app.service.contract.ManagedApplicationFacade;
 import gold.debug.windowstolinux.app.service.contract.MultiComponentApplicationFacade;
 import gold.debug.windowstolinux.app.service.contract.ServerApplicationFacade;
@@ -100,12 +103,39 @@ import java.util.Set;
  * <p>稳定的桌面门面。各包专属用例持有全部实现细节。
  */
 public final class DesktopApplicationFacade implements AiApplicationFacade, DeploymentApplicationFacade,
-        MultiComponentApplicationFacade, ServerApplicationFacade, ManagedApplicationFacade, BackupApplicationFacade {
+        MultiComponentApplicationFacade, ServerApplicationFacade, ManagedApplicationFacade, BackupApplicationFacade,
+        gold.debug.windowstolinux.app.service.contract.AutomaticDeploymentApplicationFacade {
+    private final gold.debug.windowstolinux.app.service.deployment.automatic.AutomaticDeploymentUseCase automatic;
+
+    /** Executes one automatic desktop operation through the reviewed service contracts. */
+    @Override public gold.debug.windowstolinux.app.service.contract.definition.AutomaticDeploymentOutcome deployAutomatically(
+            gold.debug.windowstolinux.app.service.contract.definition.AutomaticDeploymentRequest request, char[] master,
+            gold.debug.windowstolinux.app.service.contract.definition.AutomaticDeploymentInteraction interaction,
+            Predicate<String> fingerprint, java.util.function.Consumer<gold.debug.windowstolinux.shared.model.message.LocalizedMessage> progress) throws Exception {
+        return automatic.deploy(request, master, interaction, fingerprint, progress);
+    }
+    /** Lists non-secret profiles for all desktop server selectors. */
+    @Override public List<ServerProfile> listServerProfiles() throws SQLException { return servers.list(); }
     private final SourcePreparationUseCase source;
     private final ServerUseCaseFacade servers;
     private final AiUseCaseFacade ai;
     private final ReadOnlyDeploymentAgentFacade deploymentAgentTools;
     private final DeploymentConfigurationUseCase deploymentConfiguration;
+    private final gold.debug.windowstolinux.app.service.deployment.automatic.AutomaticDatabaseUseCase automaticDatabases;
+
+    @Override public gold.debug.windowstolinux.shared.analyze.ecosystem.db.DatabaseProjectInspector.Assessment completeAutomaticDatabaseInputs(
+            Path root, String applicationId, gold.debug.windowstolinux.shared.analyze.ecosystem.db.DatabaseProjectInspector.Assessment assessment,
+            char[] master, gold.debug.windowstolinux.app.service.contract.definition.AutomaticDeploymentInteraction interaction) throws Exception {
+        return automaticDatabases.completeInputs(root, applicationId, assessment, master, interaction);
+    }
+
+    @Override public gold.debug.windowstolinux.app.service.contract.definition.AutomaticDatabasePreparation prepareAutomaticDatabases(
+            Path root, String applicationId, ServerProfile server,
+            gold.debug.windowstolinux.shared.analyze.ecosystem.db.DatabaseProjectInspector.Assessment assessment, char[] master,
+            gold.debug.windowstolinux.app.service.contract.definition.AutomaticDeploymentInteraction interaction,
+            java.util.function.Predicate<String> fingerprint, java.util.function.Consumer<gold.debug.windowstolinux.shared.model.message.LocalizedMessage> progress) throws Exception {
+        return automaticDatabases.prepare(root, applicationId, server, assessment, master, interaction, fingerprint, progress);
+    }
     private final EnvironmentSetupUseCase environment;
     private final ReviewedDeploymentUseCase reviewedDeployment;
     private final MultiComponentDeploymentUseCase multiComponentDeployment;
@@ -141,10 +171,13 @@ public final class DesktopApplicationFacade implements AiApplicationFacade, Depl
         DesktopSecretStoreService secrets = new DesktopSecretStoreService(persistence.encryptedSecrets());
         this.servers = new ServerUseCaseFacade(persistence.servers(), secrets, linuxGateway);
         this.source = new SourcePreparationUseCase(new DeploymentAnalysisCoordinator(), new WindowsSourcePreparer(workDirectory));
+        this.automatic = new gold.debug.windowstolinux.app.service.deployment.automatic.AutomaticDeploymentUseCase(this, source, locks);
         this.ai = new AiUseCaseFacade(persistence.aiProfiles(), secrets);
         this.deploymentAgentTools = new ReadOnlyDeploymentAgentFacade();
         this.deploymentConfiguration = new DeploymentConfigurationUseCase(
                 persistence.configurations(), persistence.applicationSecrets(), secrets);
+        this.automaticDatabases = new gold.debug.windowstolinux.app.service.deployment.automatic.AutomaticDatabaseUseCase(
+                servers, linuxGateway, persistence.applicationSecrets(), secrets, deploymentConfiguration, this);
         this.environment = new EnvironmentSetupUseCase(
                 new EnvironmentSetupService(), linuxGateway, servers, locks);
         this.reviewedDeployment = new ReviewedDeploymentUseCase(persistence.managedApplications(),
@@ -340,7 +373,7 @@ public final class DesktopApplicationFacade implements AiApplicationFacade, Depl
             Optional<UserAccessUrl> userAccessUrl, BuildLimitConfiguration limits, boolean rootBuildConfirmed,
             boolean containerDaemonRiskAccepted, boolean experimentalAdapterRiskAccepted
     ) throws SQLException {
-        return DeploymentApplicationFacade.super.createReviewedDeploymentRequest(preparation, server, configuration,
+        return AutomaticDeploymentApplicationFacade.super.createReviewedDeploymentRequest(preparation, server, configuration,
                 secretReferences, runtime, userAccessUrl, limits, rootBuildConfirmed,
                 containerDaemonRiskAccepted, experimentalAdapterRiskAccepted);
     }
@@ -714,5 +747,21 @@ public final class DesktopApplicationFacade implements AiApplicationFacade, Depl
     SshCredential.Password loadPasswordCredential(ServerProfile profile, SecretStore store)
             throws SecretStoreException {
         return servers.loadPassword(profile, store);
+    }
+
+    /** Executes the same single transaction with streaming progress. */
+    @Override public DeploymentOutcome deployAutomaticallyReviewed(ReviewedDeploymentRequest request,
+            ServerProfile profile, char[] master, Predicate<String> fingerprint,
+            java.util.function.Consumer<gold.debug.windowstolinux.shared.model.message.LocalizedMessage> progress) throws Exception {
+        return reviewedDeployment.deployWithStoredPassword(request, profile, profile.credentialMode(), master, fingerprint,
+                event -> progress.accept(event.message()));
+    }
+
+    /** Executes the same whole-application transaction with streaming progress. */
+    @Override public MultiComponentDeploymentResult deployAutomaticallyReviewed(ReviewedMultiComponentApplication request,
+            ServerProfile profile, char[] master, Predicate<String> fingerprint,
+            java.util.function.Consumer<gold.debug.windowstolinux.shared.model.message.LocalizedMessage> progress) throws Exception {
+        return multiComponentDeployment.deployWithStoredPassword(request, profile, profile.credentialMode(), master, fingerprint,
+                event -> progress.accept(event.message()));
     }
 }

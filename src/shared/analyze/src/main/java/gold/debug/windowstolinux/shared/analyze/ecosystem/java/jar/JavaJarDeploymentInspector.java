@@ -2,7 +2,6 @@ package gold.debug.windowstolinux.shared.analyze.ecosystem.java.jar;
 
 import gold.debug.windowstolinux.shared.analyze.contract.spi.DeploymentTypeAssessment;
 import gold.debug.windowstolinux.shared.analyze.contract.spi.DeploymentTypeInspector;
-import gold.debug.windowstolinux.shared.analyze.source.BoundedMetadataInspector;
 import gold.debug.windowstolinux.shared.analyze.source.ProjectIdentityResolver;
 import gold.debug.windowstolinux.shared.analyze.source.SourceInspectionFacts;
 import gold.debug.windowstolinux.shared.model.analysis.AnalysisEvidence;
@@ -29,6 +28,8 @@ import java.util.Set;
  * <p>在不加载归档的情况下生成 Java JAR 事实与清单依据运行时建议。
  */
 public final class JavaJarDeploymentInspector implements DeploymentTypeInspector {
+    private final JavaJarManifestInspector manifestInspector = new JavaJarManifestInspector();
+
     /** Returns the supported deployment project type. / 返回支持的部署项目类型。 */
     @Override
     public DeploymentProjectType projectType() {
@@ -47,6 +48,9 @@ public final class JavaJarDeploymentInspector implements DeploymentTypeInspector
             missing.add(LocalizedMessage.of("analysis.deployment.missing.javaJar"));
         } else if (jars.size() > 1) {
             conflicts.add(LocalizedMessage.of("analysis.deployment.conflict.multipleJavaJars"));
+        }
+        if (jars.size() == 1) {
+            languageFacts = ProjectLanguageFacts.merge(languageFacts, manifestInspector.inspect(root, jars.getFirst()));
         }
         String evidenceSource = jars.isEmpty() ? "source root" : jars.getFirst().toString();
         DeploymentProjectFacts facts = new DeploymentProjectFacts(root, ProjectIdentityResolver.rootApplicationId(root),

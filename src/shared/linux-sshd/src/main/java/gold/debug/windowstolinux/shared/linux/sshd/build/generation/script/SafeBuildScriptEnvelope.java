@@ -18,7 +18,7 @@ public final class SafeBuildScriptEnvelope {
         Objects.requireNonNull(command, "command");
         String source = workspace.candidateRoot() + "/mutable/source";
         String mutable = workspace.candidateRoot() + "/mutable";
-        return """
+        return jvmEnvironment(facts, limits) + """
                 set -euo pipefail
                 candidate=%s
                 mutable=%s
@@ -96,6 +96,19 @@ public final class SafeBuildScriptEnvelope {
                 limits.timeoutSeconds(), limits.maxOutputBytes(), limits.maxOutputBytes(), limits.maxOutputBytes(),
                 limits.timeoutSeconds(), limits.maxOutputBytes(), limits.maxOutputBytes(), limits.maxOutputBytes(), command,
                 limits.maxWorkspaceBytes(), facts.buildTool().name());
+    }
+
+    private static String jvmEnvironment(DeploymentProjectFacts facts, BuildLimitConfiguration limits) {
+        boolean jvm = switch (facts.buildTool()) {
+            case JDK, JAVA, MAVEN, MAVEN_WRAPPER, GRADLE_WRAPPER, KOTLINC, GRADLE_KOTLIN_WRAPPER -> true;
+            default -> false;
+        };
+        if (!jvm) return "";
+        int memory = limits.maxMemoryMiB();
+        return "export JAVA_TOOL_OPTIONS='-Xms16m -Xmx" + Math.min(768, memory / 4)
+                + "m -XX:MaxMetaspaceSize=" + Math.min(384, memory / 8)
+                + "m -XX:CompressedClassSpaceSize=" + Math.min(64, memory / 16)
+                + "m -XX:ReservedCodeCacheSize=" + Math.min(128, memory / 16) + "m'\n";
     }
 
     /** Performs the {@code shellQuote} operation. / 执行 {@code shellQuote} 操作。 */

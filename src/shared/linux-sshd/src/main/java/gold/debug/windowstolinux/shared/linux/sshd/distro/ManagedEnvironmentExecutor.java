@@ -45,7 +45,7 @@ public final class ManagedEnvironmentExecutor {
         Objects.requireNonNull(approval, "approval").requireAcceptedFor(serverId);
         LinuxCapabilityFacts before = platformCapabilities.collectDeploymentCapabilities();
         String script = scriptFor(before);
-        var prepared = commands.exec(script, SetupScriptRenderer.TIMEOUT, true);
+        var prepared = commands.execScript(script, SetupScriptRenderer.TIMEOUT, true);
         if (!prepared.succeeded()) {
             throw LinuxOperationException.create(LinuxOperationFailureType.ENVIRONMENT_PREPARATION_FAILED,
                     "managed target environment preparation failed: " + prepared.failureEvidence());

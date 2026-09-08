@@ -142,7 +142,7 @@ public final class MultiComponentDeploymentUseCase {
                 .map(component -> new ReviewedComponentDeployment(component.componentId(), component.request(),
                         component.application(), List.of(), component.resourceBindings()))
                 .toList();
-        return executeDeployment(review, bound, endpoint, credential, verifier);
+        return executeDeployment(review, bound, endpoint, credential, verifier, ignored -> { });
     }
 
     /** Executes a reviewed application with the selected saved server credential. / 使用选定的已保存服务器凭据执行经审阅应用。 */
@@ -153,6 +153,13 @@ public final class MultiComponentDeploymentUseCase {
             char[] masterPassword,
             Predicate<String> confirmation
     ) throws SecretStoreException, SQLException {
+        return deployWithStoredPassword(review, profile, mode, masterPassword, confirmation, ignored -> { });
+    }
+
+    /** Publishes application and component events while the transaction runs. */
+    public MultiComponentDeploymentResult deployWithStoredPassword(ReviewedMultiComponentApplication review,
+            ServerProfile profile, CredentialStorageMode mode, char[] masterPassword, Predicate<String> confirmation,
+            java.util.function.Consumer<gold.debug.windowstolinux.shared.deploy.contract.result.deployment.DeploymentEvent> progress) throws SecretStoreException, SQLException {
         List<ResolvedSecretRevision> resolved = new ArrayList<>();
         try {
             validateProfile(review, profile, mode);
@@ -166,7 +173,7 @@ public final class MultiComponentDeploymentUseCase {
             }
             try (SecretStore store = servers.secrets().open(mode, masterPassword)) {
                 return executeDeployment(review, bound, profile.endpoint(), servers.loadPassword(profile, store),
-                        servers.hostKeyVerifier(profile, confirmation));
+                        servers.hostKeyVerifier(profile, confirmation), progress);
             }
         } finally {
             resolved.forEach(ResolvedSecretRevision::close);
@@ -180,14 +187,14 @@ public final class MultiComponentDeploymentUseCase {
             List<ReviewedComponentDeployment> bound,
             SshEndpoint endpoint,
             SshCredential credential,
-            HostKeyEvaluator verifier
+            HostKeyEvaluator verifier, java.util.function.Consumer<gold.debug.windowstolinux.shared.deploy.contract.result.deployment.DeploymentEvent> progress
     ) throws SQLException {
         String serverId = review.components().getFirst().request().server().id();
         ReentrantLock lock = locks.forServer(serverId);
         lock.lock();
         try {
             MultiComponentDeploymentResult result = deploymentService.deploy(review.plan(), bound,
-                    review.applicationHealth(), gateway, endpoint, credential, verifier);
+                    review.applicationHealth(), gateway, endpoint, credential, verifier, progress);
             boolean observationSaveFailed = false;
             for (var observation : result.componentResults().stream()
                     .flatMap(value -> value.observation().stream()).toList()) {

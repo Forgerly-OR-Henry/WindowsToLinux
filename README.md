@@ -1,12 +1,13 @@
 # WindowsToLinux
 
-WindowsToLinux 是面向个人和小型自托管场景的 Windows 桌面部署管理工具。它从本地目录或固定 Git 提交准备源码，在用户明确审阅后连接目标 Linux，完成环境检查、受控构建、发布、健康检查、失败恢复和受管应用生命周期操作。
+WindowsToLinux 是面向个人和小型自托管场景的 Windows 桌面部署管理工具。首页选择本地源码或 Git 地址及目标服务器后，可一键完成识别、补全、环境准备、构建、发布与健康检查。技术参数放入默认收起的右侧高级选项，每项提供问号帮助。
 
 > [!IMPORTANT]
-> 项目仍在开发中，尚未提供正式安装包。当前 helper v5 的真实 Linux、容器和数据库执行仍为 `RUNTIME-PENDING`；请只在可清理的测试环境中评估，不要把本地自动化测试等同于生产验收。
+> 项目仍在开发中，尚未提供正式安装包。当前 helper v5 的 Ubuntu 24 全语言实机结果见[部署验收记录](docs/development/UBUNTU-24-LIVE-DEPLOYMENT-2026-09-08.md)；数据库、备份恢复和迁移仍为 `RUNTIME-PENDING`。证据仅覆盖记录中的精确夹具与环境。
 
 ## 核心能力
 
+- 首页统一自动识别单应用和多组件，持续输出日志，成功后提供可打开/复制的网址或服务器启动命令；
 - 对本地目录和 Git 来源创建固定提交、摘要绑定的源码快照；
 - 静态识别 Java、Node.js、Python、静态站点、容器及多种试验运行时；
 - 通过 Apache SSHD 检查目标 Linux、固定主机指纹，并执行类型化的环境准备和部署协议；
@@ -14,19 +15,21 @@ WindowsToLinux 是面向个人和小型自托管场景的 Windows 桌面部署�
 - 管理受管应用的状态刷新、启动、停止、重启及开机自启；
 - 保存不可变普通配置，并通过 Windows Credential Manager 或加密存储处理秘密；
 - 编排多组件应用，以及版本化备份、恢复和双服务器离线迁移；
-- 允许接入可选 AI Provider 提供结构化建议，但 AI 不构成部署授权。
+- 允许接入可选 AI Provider 补全有源码依据的参数；无 AI 或建议无效时合并弹窗询问；
+- 检查、复用或安装系统 DB（PostgreSQL/MySQL/MariaDB/Redis），旧版替换必须另行确认，已有数据不得误初始化；
+- 所有静态 UI 文案通过中英文消息表映射，语言和主题切换保留输入。
 
 ## 当前状态
 
 | 范围 | 状态 |
 | --- | --- |
-| Swing 桌面端 | 已具备部署、生命周期、备份、恢复和迁移入口 |
+| Swing 桌面端 | 一键部署与高级侧栏已接入生命周期、备份、恢复和迁移入口 |
 | 本地验证 | JDK 21 多模块 Maven 门禁和前端测试链已建立 |
-| Linux 实机证据 | 历史 helper v3 在部分 Ubuntu 24.04、CentOS Stream 9 精确夹具上通过；不可外推到当前 helper v5 |
+| Linux 实机证据 | 当前 helper v5 已在同一台 Ubuntu 24.04 x86-64 上验证各支持语言，具体部署路径与结果见验收记录；其他发行版不外推 |
 | Web 前端 | Vue 3 / TypeScript / Vite 测试骨架，尚无业务后端 |
 | 正式发布 | 官网、下载链和 Windows 生产更新/卸载执行器尚未完成 |
 
-完整的能力边界、历史证据和待办事项以 [产品说明书](docs/PRODUCT-MANUAL.md) 与 [开发总纲](docs/DEVELOPMENT.md) 为准。
+完整的能力边界、历史证据和待办事项以 [产品说明书](docs/PRODUCT-MANUAL.md) 与 [开发总纲](docs/development/DEVELOPMENT.md) 为准。
 
 ## 技术栈
 
@@ -93,6 +96,17 @@ npm.cmd run test:e2e
 4. 模块选择 `windowstolinux-app-main`；
 5. 启动后，CLASS 模式的数据会写入 `src/app/main/data/`。
 
+为避免日常启动触发全项目测试和打包，可把 `APP` 配置为“先增量编译，再直接启动”：
+
+1. 在 **Settings → Build, Execution, Deployment → Build Tools → Maven → Runner** 中关闭 **Delegate IDE build/run actions to Maven**，**JRE** 使用 **Project JDK（21）**。
+2. 在 **Run → Edit Configurations → APP → Before Launch** 中禁用默认 **Build**，添加 **Run Maven Goal**。
+3. 选择根目录 `pom.xml`，目标填写 `-pl src/app/main -am compile`；保留主类、模块及其他运行设置。
+4. 通过 `APP` 的运行按钮启动。Maven 先检查桌面端及其依赖，复用未变化的编译结果；编译成功后，IDEA 直接从模块的 `target/classes` 启动，编译失败则停止启动。
+
+这项启动前任务只到 `compile`，不会执行测试、打包 JAR 或安装到本地仓库；需要完整测试和制品时仍执行 `mvn.cmd verify`。`compile` 生成 `.class`，`package` 阶段才生成 JAR；JAR 插件默认也会复用输入未变化的现有 JAR。配置与机制见 [JetBrains Before Launch 文档](https://www.jetbrains.com/help/idea/run-debug-configuration-java-application.html)、[Maven 生命周期](https://maven.apache.org/guides/introduction/introduction-to-the-lifecycle.html)及 [JAR 增量打包说明](https://maven.apache.org/plugins/maven-jar-plugin/jar-mojo.html#forceCreation)。
+
+此设置只让 `APP` 启动绕过 IDEA 内置 JPS 构建，并不代表修复了 IDE 本身的“Finished, saving caches”等待问题；手动全项目构建与测试使用 Maven 工具窗口或上述命令。恢复原启动方式时，移除这项 Maven 前置任务并重新启用 **Build** 即可。
+
 `data/` 可能包含服务器资料、操作历史和秘密引用，不要提交、公开或随意复制该目录。原始秘密不会作为普通字段写入 SQLite。
 
 ## 安全边界
@@ -107,9 +121,11 @@ npm.cmd run test:e2e
 ## 文档
 
 - [产品说明书](docs/PRODUCT-MANUAL.md)：功能、使用流程、安全边界和限制；
-- [开发总纲](docs/DEVELOPMENT.md)：工程状态、路线、质量门禁和完成定义；
+- [开发总纲与文档导航](docs/development/DEVELOPMENT.md)：六期主文档、各期补充文档、验收文档及统一命名规则；
 - [项目文件结构](docs/File.md)：模块、包、依赖方向和维护规则；
+- [四期补充：面向新手的一体化自动部署](docs/development/PHASE-4-SUPPLEMENT-AUTOMATIC-DEPLOYMENT.md)：新手界面、一体化自动部署、AI 补全与 DB 管理的已确认实施目标；
 - [四期实机验收模板](docs/development/PHASE-4-RUNTIME-ACCEPTANCE.md)：真实环境证据要求。
+- [Ubuntu 24 全语言实机记录](docs/development/UBUNTU-24-LIVE-DEPLOYMENT-2026-09-08.md)：同机部署矩阵、实际修复和验证边界。
 
 ## 参与贡献
 

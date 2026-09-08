@@ -25,12 +25,14 @@ public final class SettingPage {
     /** Creates the stateful settings controller. / 创建有状态设置控制器。 */
     public SettingPage(DesktopComponentFactory c, PageMessagePresenter messages, DesktopDisplayConfiguration appearance,
                         Consumer<DesktopDisplayConfiguration> applyAppearance) {
-        panel = c.pagePanel();
-        JPanel cards = c.transparent(new GridLayout(1, 2, 12, 0));
+        JPanel page = c.pagePanel();
+        var advanced = new gold.debug.windowstolinux.app.ui.component.AdvancedOptionsPane(page, c, messages);
+        panel = advanced;
+        JPanel cards = c.transparent(new GridLayout(0, 1, 0, 12));
         cards.add(c.informationCard(messages.text("settings.credentials.title"), messages.text("settings.credentials.body")));
         cards.add(c.informationCard(messages.text("settings.boundary.title"), messages.text("settings.boundary.body")));
-        panel.add(cards, BorderLayout.NORTH);
-        JPanel center = c.transparent(new GridLayout(1, 2, 12, 0));
+        advanced.addOption(cards);
+        JPanel center = c.transparent(new GridLayout(2, 1, 0, 12));
         center.add(c.informationCard(messages.text("settings.usage.title"), messages.text("settings.usage.body")));
         JPanel appearanceCard = c.card(new BorderLayout(0, 12));
         appearanceCard.add(c.sectionHeading(messages.text("settings.appearance.title"),
@@ -45,12 +47,25 @@ public final class SettingPage {
         theme.setRenderer(themeRenderer(messages));
         c.addField(form, 0, 0, messages.text("field.language"), locale);
         c.addField(form, 1, 0, messages.text("field.appearance"), theme);
-        Runnable apply = () -> applyAppearance.accept(new DesktopDisplayConfiguration(
-                (String) locale.getSelectedItem(), (ThemeMode) theme.getSelectedItem()));
+        java.util.concurrent.atomic.AtomicBoolean applying = new java.util.concurrent.atomic.AtomicBoolean();
+        Runnable apply = () -> {
+            if (applying.getAndSet(true)) return;
+            try {
+                if (gold.debug.windowstolinux.app.ui.component.DesktopTaskExecutor.hasActiveTasks()) {
+                    locale.setSelectedItem(appearance.localeTag());
+                    theme.setSelectedItem(appearance.themeMode());
+                    javax.swing.JOptionPane.showMessageDialog(panel, messages.text("auto.appearance.busy"));
+                    return;
+                }
+                applyAppearance.accept(new DesktopDisplayConfiguration(
+                        (String) locale.getSelectedItem(), (ThemeMode) theme.getSelectedItem()));
+            } finally { applying.set(false); }
+        };
         locale.addActionListener(event -> apply.run());
         theme.addActionListener(event -> apply.run());
         appearanceCard.add(form, BorderLayout.CENTER);
         JPanel diagnostics = c.transparent(new BorderLayout(0, 6));
+        diagnostics.setMaximumSize(new java.awt.Dimension(Integer.MAX_VALUE, 40));
         JLabel diagnosticPath = new JLabel(messages.diagnosticsPath());
         diagnosticPath.setToolTipText(messages.diagnosticsPath());
         JButton openDiagnostics = c.secondaryButton(messages.text("settings.diagnostics.open"));
@@ -61,9 +76,9 @@ public final class SettingPage {
         });
         diagnostics.add(diagnosticPath, BorderLayout.CENTER);
         diagnostics.add(openDiagnostics, BorderLayout.EAST);
-        appearanceCard.add(diagnostics, BorderLayout.SOUTH);
+        advanced.addOption(diagnostics);
         center.add(appearanceCard);
-        panel.add(center, BorderLayout.CENTER);
+        page.add(center, BorderLayout.CENTER);
     }
 
     /** Returns the page panel. / 返回页面面板。 */

@@ -61,6 +61,14 @@ public final class ReviewedMultiComponentDeploymentService {
             SshCredential credential,
             HostKeyEvaluator hostKeyVerifier
     ) {
+        return deploy(plan, reviewedComponents, applicationHealth, gateway, endpoint, credential, hostKeyVerifier, ignored -> { });
+    }
+
+    /** Executes with per-operation component and application progress. */
+    public MultiComponentDeploymentResult deploy(MultiComponentDeploymentPlan plan,
+            List<ReviewedComponentDeployment> reviewedComponents, ApplicationHealthGate applicationHealth,
+            DeploymentLinuxGateway gateway, SshEndpoint endpoint, SshCredential credential,
+            HostKeyEvaluator hostKeyVerifier, java.util.function.Consumer<gold.debug.windowstolinux.shared.deploy.contract.result.deployment.DeploymentEvent> progress) {
         plan = Objects.requireNonNull(plan, "plan");
         applicationHealth = Objects.requireNonNull(applicationHealth, "applicationHealth");
         gateway = Objects.requireNonNull(gateway, "gateway");
@@ -74,7 +82,8 @@ public final class ReviewedMultiComponentDeploymentService {
             credential.clear();
             throw failure;
         }
-        List<DeploymentEvent> applicationEvents = new ArrayList<>();
+        contexts.values().forEach(context -> context.events = new DeploymentEventJournal(progress));
+        List<DeploymentEvent> applicationEvents = new DeploymentEventJournal(progress);
         try (DeploymentRemoteSession session = gateway.connect(endpoint, credential.duplicate(), hostKeyVerifier)) {
             Optional<MultiComponentDeploymentResult> rejected = preflight(plan, contexts, session, applicationEvents);
             if (rejected.isPresent()) return rejected.orElseThrow();

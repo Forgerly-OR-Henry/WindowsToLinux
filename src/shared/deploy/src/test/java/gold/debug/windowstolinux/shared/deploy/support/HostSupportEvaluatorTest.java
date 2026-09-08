@@ -16,6 +16,8 @@ import gold.debug.windowstolinux.shared.model.server.security.LinuxSecurityModul
 import gold.debug.windowstolinux.shared.model.server.security.LinuxSecurityPosture;
 import gold.debug.windowstolinux.shared.model.server.security.LinuxSecurityState;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 
 import java.util.Map;
 import java.util.List;
@@ -59,6 +61,29 @@ class HostSupportEvaluatorTest {
                 CpuMicroarchitectureLevel.X86_64_V3, Set.of("avx", "avx2", "bmi1", "bmi2", "f16c", "fma", "movbe", "xsave"));
         assertEquals(HostSupportStatus.READY_FOR_RUNTIME_VALIDATION,
                 HostSupportEvaluator.evaluate(ready, facts, runtime).support());
+    }
+
+    @ParameterizedTest
+    @CsvSource({
+            "9, UNKNOWN, REQUIRES_CPU_REVIEW",
+            "9, X86_64_V1, REQUIRES_CPU_REVIEW",
+            "9, X86_64_V2, READY_FOR_RUNTIME_VALIDATION",
+            "9, X86_64_V3, READY_FOR_RUNTIME_VALIDATION",
+            "9, X86_64_V4, READY_FOR_RUNTIME_VALIDATION",
+            "10, UNKNOWN, REQUIRES_CPU_REVIEW",
+            "10, X86_64_V1, REQUIRES_CPU_REVIEW",
+            "10, X86_64_V2, REQUIRES_CPU_REVIEW",
+            "10, X86_64_V3, READY_FOR_RUNTIME_VALIDATION",
+            "10, X86_64_V4, READY_FOR_RUNTIME_VALIDATION"
+    })
+    void enforcesCentosStreamCpuBaselines(String version, CpuMicroarchitectureLevel cpu,
+                                         HostSupportStatus expected) {
+        var host = capabilities(LinuxDistroType.CENTOS_STREAM, version, "dnf", true, true, true,
+                cpu, Set.of("sse4_2", "popcnt"));
+        var runtime = new DeploymentRuntimeSpecification.NodeService(22, new HealthCheck.Tcp(18080, 10, 1));
+
+        assertEquals(expected, HostSupportEvaluator.evaluate(host,
+                facts(DeploymentProjectType.NODE_SERVICE, DeploymentBuildToolType.NPM), runtime).support());
     }
 
     @Test

@@ -20,7 +20,7 @@ import java.util.Optional;
 /** Holds the mutable state of one component inside a reviewed transaction. / 持有一次经审阅事务中单个组件的可变状态。 */
 final class MultiComponentTransactionContext {
     final ReviewedComponentDeployment component;
-    final List<DeploymentEvent> events = new ArrayList<>();
+    List<DeploymentEvent> events = new ArrayList<>();
     ComponentTransactionState state = ComponentTransactionState.PRECONDITION_REJECTED;
     RemoteWorkspace workspace;
     DeploymentBuildResult build;

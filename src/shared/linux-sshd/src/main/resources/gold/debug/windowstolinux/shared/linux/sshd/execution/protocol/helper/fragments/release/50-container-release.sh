@@ -99,9 +99,9 @@ start_container_release() {
   for spec in "${container_volumes[@]}"; do
     source="${spec%%:*}"
     if "$container_engine" volume inspect "$source" >/dev/null 2>&1; then
-      [ "$("$container_engine" volume inspect --format '{{ index .Labels \"io.windowstolinux.owner\" }}' "$source")" = "$manifest" ] \
-        && [ "$("$container_engine" volume inspect --format '{{ index .Labels \"io.windowstolinux.application\" }}' "$source")" = "$managed_data_application" ] \
-        && [ "$("$container_engine" volume inspect --format '{{ index .Labels \"io.windowstolinux.component\" }}' "$source")" = "$managed_data_component" ] \
+      [ "$("$container_engine" volume inspect --format '{{ index .Labels "io.windowstolinux.owner" }}' "$source")" = "$manifest" ] \
+        && [ "$("$container_engine" volume inspect --format '{{ index .Labels "io.windowstolinux.application" }}' "$source")" = "$managed_data_application" ] \
+        && [ "$("$container_engine" volume inspect --format '{{ index .Labels "io.windowstolinux.component" }}' "$source")" = "$managed_data_component" ] \
         || reject container-volume-owner
     else
       "$container_engine" volume create --label "io.windowstolinux.owner=$manifest" \
@@ -178,8 +178,8 @@ publish_container() {
   [ -z "$(find -P "$source" -xdev -type f -links +1 -print -quit)" ] || reject source-hardlink
   candidate_image="windowstolinux-candidate:$candidate_id"; image="$(container_image "$app" "$release_digest")"
   "$container_engine" image inspect "$candidate_image" >/dev/null
-  [ "$("$container_engine" image inspect --format '{{ index .Config.Labels \"io.windowstolinux.application\" }}' "$candidate_image")" = "$app" ] \
-    && [ "$("$container_engine" image inspect --format '{{ index .Config.Labels \"io.windowstolinux.candidate\" }}' "$candidate_image")" = "$candidate_id" ] \
+  [ "$("$container_engine" image inspect --format '{{ index .Config.Labels "io.windowstolinux.application" }}' "$candidate_image")" = "$app" ] \
+    && [ "$("$container_engine" image inspect --format '{{ index .Config.Labels "io.windowstolinux.candidate" }}' "$candidate_image")" = "$candidate_id" ] \
     || reject container-image-owner
   "$container_engine" tag "$candidate_image" "$image"
   install -d -o root -g root -m 755 -- "$root" "$releases" "$release"

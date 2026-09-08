@@ -145,6 +145,7 @@ public final class ManagedResourcePersistenceCodec {
             case POSTGRESQL -> 2;
             case MYSQL -> 3;
             case MARIADB -> 4;
+            case REDIS -> 5;
         };
     }
 
@@ -154,6 +155,7 @@ public final class ManagedResourcePersistenceCodec {
             case 2 -> ManagedDatabaseEngineType.POSTGRESQL;
             case 3 -> ManagedDatabaseEngineType.MYSQL;
             case 4 -> ManagedDatabaseEngineType.MARIADB;
+            case 5 -> ManagedDatabaseEngineType.REDIS;
             default -> throw new IOException("managed database engine is unsupported");
         };
     }

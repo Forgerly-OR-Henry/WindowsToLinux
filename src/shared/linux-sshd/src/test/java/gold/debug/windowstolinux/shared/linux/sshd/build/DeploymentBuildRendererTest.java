@@ -112,7 +112,7 @@ class DeploymentBuildRendererTest {
         assertTrue(kotlinGradle.contains("sha256sum --check --status"));
         assertTrue(service(new KotlinCompilerBuildRenderer(), DeploymentBuildToolType.KOTLINC,
                 "2.0.21", "demo", "demo.MainKt", OptionalInt.empty())
-                .contains("kotlinc -jvm-target 21 -include-runtime"));
+                .contains("run \"$kotlin_compiler\" -jvm-target 21 -include-runtime"));
         assertTrue(service(new ComposerBuildRenderer(), DeploymentBuildToolType.COMPOSER_LOCKED, "8.3", "public",
                 "public/index.php", OptionalInt.of(8080)).contains("--no-plugins --no-scripts"));
         assertTrue(service(new PhpCliBuildRenderer(), DeploymentBuildToolType.PHP_CLI, "8.3", "public",

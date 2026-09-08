@@ -1,4 +1,4 @@
-package gold.debug.windowstolinux.app.ui.deployment;
+package gold.debug.windowstolinux.app.service.config;
 
 import gold.debug.windowstolinux.shared.config.contract.definition.ConfigurationScope;
 import gold.debug.windowstolinux.shared.config.contract.definition.ConfigurationValue;

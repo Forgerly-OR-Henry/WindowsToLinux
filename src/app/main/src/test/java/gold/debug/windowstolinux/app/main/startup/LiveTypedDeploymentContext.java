@@ -229,8 +229,20 @@ final class LiveTypedDeploymentContext implements AutoCloseable {
                 DeploymentPlanAction.VERIFY_CONFIGURATION_SNAPSHOT, DeploymentPlanAction.VERIFY_SECRET_REVISIONS,
                 DeploymentPlanAction.CHECK_HEALTH,
                 DeploymentPlanAction.ROLLBACK_ON_FAILURE)));
-        return withMaster(master -> service.deployReviewedWithStoredPassword(request, profile, MODE, master,
+        DeploymentResult result = withMaster(master -> service.deployReviewedWithStoredPassword(request, profile, MODE, master,
                 fingerprint -> true).result());
+        System.out.printf("LIVE_DEPLOYMENT application=%s type=%s revision=%d status=%s release=%s%n",
+                applicationId, runtime.projectType(), configurationRevision, result.status(),
+                result.publishedReleaseSha256().orElse("none"));
+        result.events().stream().filter(event -> !event.succeeded()).forEach(event ->
+                System.out.printf("LIVE_FAILURE application=%s step=%s evidence=%s%n",
+                        applicationId, event.step().code(), event.evidence()));
+        if (result.status() == gold.debug.windowstolinux.shared.model.deployment.DeploymentStatus.SUCCEEDED) {
+            assertTrue(result.nonFatalFailures().isEmpty(), () -> result.nonFatalFailures().toString());
+            assertTrue(service.listManagedApplications().stream().anyMatch(app -> app.id().equals(applicationId)),
+                    "successful deployment must remain available for product lifecycle operations");
+        }
+        return result;
     }
 
     void saveSecret(SecretReference reference, String credentialKey, char[] value) throws Exception {

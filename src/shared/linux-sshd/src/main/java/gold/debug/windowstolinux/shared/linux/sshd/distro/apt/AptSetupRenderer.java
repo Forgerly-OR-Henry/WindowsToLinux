@@ -53,12 +53,14 @@ public final class AptSetupRenderer {
                 SetupScriptRenderer.renderCpuCheck(profile.requiredCpu()),
                 SetupScriptRenderer.quote(username));
         String install = """
+                export DEBIAN_FRONTEND=noninteractive
+                export NEEDRESTART_MODE=l
                 if [ "$elevation" = root ]; then
                   /usr/bin/apt-get -o DPkg::Lock::Timeout=%d update
                   /usr/bin/apt-get -o DPkg::Lock::Timeout=%d install -y --no-install-recommends %s
                 else
-                  /usr/bin/sudo -n /usr/bin/apt-get -o DPkg::Lock::Timeout=%d update
-                  /usr/bin/sudo -n /usr/bin/apt-get -o DPkg::Lock::Timeout=%d install -y --no-install-recommends %s
+                  /usr/bin/sudo -n DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=l /usr/bin/apt-get -o DPkg::Lock::Timeout=%d update
+                  /usr/bin/sudo -n DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=l /usr/bin/apt-get -o DPkg::Lock::Timeout=%d install -y --no-install-recommends %s
                 fi
                 """.formatted(LOCK_TIMEOUT_SECONDS, LOCK_TIMEOUT_SECONDS, packages,
                 LOCK_TIMEOUT_SECONDS, LOCK_TIMEOUT_SECONDS, packages);
@@ -69,6 +71,8 @@ public final class AptSetupRenderer {
                 + install
                 + "prepare_stage=post-install-checks\n"
                 + SetupScriptRenderer.renderJava21RuntimeInstallation()
+                + (profile.capabilityChecks() == gold.debug.windowstolinux.shared.linux.sshd.distro.contract.profile.EcosystemCapabilityProfile.UBUNTU_2404
+                    ? gold.debug.windowstolinux.shared.linux.sshd.capability.ecosystem.KotlinCompilerToolchain.installationScript() : "")
                 + renderCommonChecks()
                 + EcosystemCapabilityScriptRenderer.render(profile.capabilityChecks())
                 + """

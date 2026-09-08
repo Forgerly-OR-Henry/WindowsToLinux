@@ -32,8 +32,17 @@ public record DesktopViewState(
         ManagedPageState managed,
         BackupPageState backup,
         AiPageState ai,
-        SettingPageState settings
+        SettingPageState settings,
+        java.util.Map<String, Boolean> expanded,
+        java.util.Map<String, String> deploymentSelection,
+        java.util.Map<String, gold.debug.windowstolinux.app.service.deployment.single.DeploymentHandoff> handoffs
 ) implements AutoCloseable {
+    /** Creates a view state with no expanded inspectors, as on first launch. */
+    public DesktopViewState(String page, DeploymentPageState deployment, MultiComponentPageState multiComponent,
+                            ServerPageState server, ManagedPageState managed, BackupPageState backup,
+                            AiPageState ai, SettingPageState settings) {
+        this(page, deployment, multiComponent, server, managed, backup, ai, settings, java.util.Map.of(), java.util.Map.of(), java.util.Map.of());
+    }
     /**
      * Creates a {@code DesktopViewState} instance.
      *
@@ -50,6 +59,9 @@ public record DesktopViewState(
      * @throws NullPointerException if a required argument is {@code null} / 必要参数为 {@code null} 时
      */
     public DesktopViewState {
+        expanded = java.util.Map.copyOf(expanded);
+        handoffs = java.util.Map.copyOf(handoffs);
+        deploymentSelection = java.util.Map.copyOf(deploymentSelection);
         Objects.requireNonNull(page, "page");
         Objects.requireNonNull(deployment, "deployment");
         Objects.requireNonNull(multiComponent, "multiComponent");
@@ -65,5 +77,6 @@ public record DesktopViewState(
     public void close() {
         server.close();
         ai.close();
+        backup.close();
     }
 }

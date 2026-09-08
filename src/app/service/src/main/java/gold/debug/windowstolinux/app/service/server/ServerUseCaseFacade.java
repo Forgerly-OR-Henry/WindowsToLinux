@@ -29,6 +29,10 @@ import java.util.function.Predicate;
  * <p>提供 {@code ServerUseCaseFacade} 实现。
  */
 public final class ServerUseCaseFacade {
+    /** Lists saved profiles for the desktop selector. */
+    public java.util.List<ServerProfile> list() throws SQLException {
+        return profiles.listServerProfiles().stream().map(ServerProfile::fromStored).toList();
+    }
     private final ServerProfileRepository profiles;
     private final DesktopSecretStoreService secrets;
     private final DeploymentLinuxGateway gateway;

@@ -137,6 +137,14 @@ public final class ReviewedDeploymentUseCase {
                                                       gold.debug.windowstolinux.shared.model.security.CredentialStorageMode mode,
                                                       char[] masterPassword, Predicate<String> confirmation)
             throws SecretStoreException, SQLException {
+        return deployWithStoredPassword(request, profile, mode, masterPassword, confirmation, ignored -> { });
+    }
+
+    /** Publishes actual execution events without changing the reviewed request. */
+    public DeploymentOutcome deployWithStoredPassword(ReviewedDeploymentRequest request, ServerProfile profile,
+            gold.debug.windowstolinux.shared.model.security.CredentialStorageMode mode,
+            char[] masterPassword, Predicate<String> confirmation, java.util.function.Consumer<gold.debug.windowstolinux.shared.deploy.contract.result.deployment.DeploymentEvent> progress)
+            throws SecretStoreException, SQLException {
         if (profile.credentialMode() != mode) {
             throw ApplicationServiceException.create(ApplicationServiceFailureType.STORAGE_MODE_MISMATCH,
                     "Credential storage mode does not match the saved server profile");
@@ -146,7 +154,7 @@ public final class ReviewedDeploymentUseCase {
             resolvedSecrets = resolveSecrets(request.secretReferences(), masterPassword);
             try (SecretStore store = servers.secrets().open(mode, masterPassword)) {
             return deploy(request, profile.endpoint(), servers.loadPassword(profile, store),
-                    servers.hostKeyVerifier(profile, confirmation), resolvedSecrets);
+                    servers.hostKeyVerifier(profile, confirmation), resolvedSecrets, progress);
             }
         } finally {
             resolvedSecrets.forEach(ResolvedSecretRevision::close);
@@ -167,12 +175,12 @@ public final class ReviewedDeploymentUseCase {
             throw ApplicationServiceException.create(ApplicationServiceFailureType.APPLICATION_SECRET_REFERENCE_MISSING,
                     "Reviewed deployments with secret references require resolved stored revisions");
         }
-        return deploy(request, endpoint, credential, verifier, List.of());
+        return deploy(request, endpoint, credential, verifier, List.of(), ignored -> { });
     }
 
     private DeploymentOutcome deploy(ReviewedDeploymentRequest request, SshEndpoint endpoint,
                                     SshCredential credential, HostKeyEvaluator verifier,
-                                    List<ResolvedSecretRevision> resolvedSecrets) throws SQLException {
+                                    List<ResolvedSecretRevision> resolvedSecrets, java.util.function.Consumer<gold.debug.windowstolinux.shared.deploy.contract.result.deployment.DeploymentEvent> progress) throws SQLException {
         request = Objects.requireNonNull(request, "request");
         ManagedApplication application = ManagedApplicationIdentityResolver.resolve(
                 applications, request.facts().applicationId(), request.server());
@@ -180,16 +188,7 @@ public final class ReviewedDeploymentUseCase {
         lock.lock();
         try {
             DeploymentResult result = service.deploy(request, application, gateway, endpoint, credential, verifier,
-                    resolvedSecrets);
-            if (result.finalObservation().isPresent()) {
-                try {
-                    applications.saveObservation(result.finalObservation().orElseThrow());
-                } catch (SQLException failure) {
-                    result = result.withNonFatalFailure(FailureDescriptor.create(
-                            ApplicationServiceFailureType.LOCAL_OBSERVATION_SAVE_FAILED,
-                            result.operationIdentity(), "Remote observation was verified but local history storage failed"));
-                }
-            }
+                    resolvedSecrets, progress);
             if (result.status() == DeploymentStatus.SUCCEEDED) {
                 try {
                     recordSuccessful(graphs, application,
@@ -201,6 +200,17 @@ public final class ReviewedDeploymentUseCase {
                     result = result.withNonFatalFailure(FailureDescriptor.create(
                             ApplicationServiceFailureType.DEPLOYMENT_RECORD_SAVE_FAILED,
                             result.operationIdentity(), "Remote deployment succeeded but local managed inventory storage failed"));
+                }
+            }
+            if (result.finalObservation().isPresent()) {
+                try {
+                    if (applications.find(application.id()).isPresent()) {
+                        applications.saveObservation(result.finalObservation().orElseThrow());
+                    }
+                } catch (SQLException failure) {
+                    result = result.withNonFatalFailure(FailureDescriptor.create(
+                            ApplicationServiceFailureType.LOCAL_OBSERVATION_SAVE_FAILED,
+                            result.operationIdentity(), "Remote observation was verified but local history storage failed"));
                 }
             }
             return DeploymentOutcome.from(result, request, application);

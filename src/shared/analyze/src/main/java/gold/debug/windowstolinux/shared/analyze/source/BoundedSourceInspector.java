@@ -29,7 +29,7 @@ public final class BoundedSourceInspector {
             ".ts", ".tsx", ".jsx", ".mjs", ".cjs", ".mts", ".cts", ".ini", ".cfg", ".gradle",
             ".go", ".rs", ".cs", ".csproj", ".kts", ".php", ".rb", ".c", ".h", ".cc", ".cpp",
             ".cxx", ".hpp", ".scala", ".sbt", ".clj", ".cljs", ".cljc", ".edn", ".ex", ".exs",
-            ".dart", ".lua", ".pl", ".pm", ".swift", ".sh", ".html", ".htm"
+            ".dart", ".lua", ".pl", ".pm", ".swift", ".sh", ".html", ".htm", ".sql"
     );
 
     /**

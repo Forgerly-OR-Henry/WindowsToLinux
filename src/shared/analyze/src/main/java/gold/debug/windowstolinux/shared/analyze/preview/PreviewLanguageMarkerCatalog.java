@@ -16,9 +16,9 @@ import java.util.List;
 import java.util.Locale;
 
 /**
- * Collects declared language markers that remain available to recognition. from bounded paths and fixed metadata names without evaluating content.
+ * Collects markers only for languages without a dedicated ecosystem inspector.
  *
- * <p>通过有界路径与固定元数据名称收集仍可用于识别的声明式语言标记，不求值其内容。
+ * <p>仅收集尚无独立生态检查器的语言标记，不求值文件内容。
  */
 public final class PreviewLanguageMarkerCatalog {
     /** Returns all declared language markers without selecting a primary language or executable. / 返回全部附加语言标记，不选择主要语言或可执行文件。 */
@@ -36,22 +36,13 @@ public final class PreviewLanguageMarkerCatalog {
         }
         List<AnalysisEvidence> evidence = new ArrayList<>();
         firstEvidence.forEach((language, path) -> evidence.add(new AnalysisEvidence(
-                LocalizedMessage.of("analysis.language.previewSource", "language", language.name()),
+                LocalizedMessage.of("analysis.language.sourceMarker", "language", language.name()),
                 path.toString(), LocalizedMessage.of("analysis.deployment.evidence.detected"), EvidenceConfidenceLevel.HIGH)));
         return new ProjectLanguageFacts(ecosystems, languages, java.util.Map.of(), evidence);
     }
 
     private static Marker marker(Path path) {
         String name = path.getFileName().toString().toLowerCase(Locale.ROOT);
-        if (name.endsWith(".go") || name.equals("go.mod")) return marker(LanguageEcosystemType.GO, SourceLanguageType.GO);
-        if (name.endsWith(".rs") || name.equals("cargo.toml")) return marker(LanguageEcosystemType.RUST, SourceLanguageType.RUST);
-        if (name.endsWith(".cs") || name.endsWith(".csproj")) return marker(LanguageEcosystemType.DOTNET, SourceLanguageType.CSHARP);
-        if (name.endsWith(".kt") || name.endsWith(".kts")) return marker(LanguageEcosystemType.KOTLIN, SourceLanguageType.KOTLIN);
-        if (name.endsWith(".php") || name.equals("composer.json")) return marker(LanguageEcosystemType.PHP, SourceLanguageType.PHP);
-        if (name.endsWith(".rb") || name.equals("gemfile")) return marker(LanguageEcosystemType.RUBY, SourceLanguageType.RUBY);
-        if (name.endsWith(".c") || name.endsWith(".h")) return marker(LanguageEcosystemType.NATIVE, SourceLanguageType.C);
-        if (name.endsWith(".cc") || name.endsWith(".cpp") || name.endsWith(".cxx") || name.endsWith(".hpp"))
-            return marker(LanguageEcosystemType.NATIVE, SourceLanguageType.CPP);
         if (name.endsWith(".scala") || name.equals("build.sbt")) return marker(LanguageEcosystemType.ALTERNATIVE_VM, SourceLanguageType.SCALA);
         if (name.endsWith(".clj") || name.endsWith(".cljs") || name.endsWith(".cljc") || name.equals("deps.edn"))
             return marker(LanguageEcosystemType.ALTERNATIVE_VM, SourceLanguageType.CLOJURE);

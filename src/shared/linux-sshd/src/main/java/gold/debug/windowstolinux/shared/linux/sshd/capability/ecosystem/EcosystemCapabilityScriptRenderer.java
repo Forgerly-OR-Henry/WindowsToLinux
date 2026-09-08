@@ -50,7 +50,7 @@ public final class EcosystemCapabilityScriptRenderer {
                 prepare_check=dotnet-version
                 dotnet --version | grep -Eq '^(8|9)[.]0([.][0-9]+)?$'
                 prepare_check=kotlinc-version
-                kotlinc -version 2>&1 | grep -Eq 'kotlinc-jvm (1[.]9|2[.][0-9]+)[.][0-9]+'
+                "$kotlin_compiler" -version 2>&1 | grep -Eq 'kotlinc-jvm (1[.]9|2[.][0-9]+)[.][0-9]+'
                 prepare_check=php-version
                 php -r 'exit(PHP_MAJOR_VERSION === 8 && PHP_MINOR_VERSION >= 2 && PHP_MINOR_VERSION <= 4 ? 0 : 1);'
                 prepare_check=composer-version

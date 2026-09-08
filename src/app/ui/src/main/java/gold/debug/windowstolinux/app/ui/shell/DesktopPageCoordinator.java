@@ -50,7 +50,7 @@ final class DesktopPageCoordinator {
         managed = new ManagedPage(service, server, components, messages);
         backup = new BackupPage(owner, service, components, messages);
         deployment = new DeploymentPage(owner, service, server, components, messages,
-                () -> navigator.show("servers", "nav.servers", "page.servers.description"), managed::selectApplication);
+                () -> navigator.show("components", "nav.components", "page.components.description"), managed::selectApplication);
         multiComponent = new MultiComponentPage(owner, service, server, components, messages,
                 () -> navigator.show("servers", "nav.servers", "page.servers.description"), managed::selectApplication);
         ai = new AiPage(service, deployment, components, messages);
@@ -69,9 +69,14 @@ final class DesktopPageCoordinator {
     void currentPage(String page) { currentPage = page; }
 
     DesktopViewState captureViewState() {
+        java.util.Map<String, Boolean> expanded = new java.util.LinkedHashMap<>();
+        panels().forEach((name, panel) -> {
+            if (panel instanceof gold.debug.windowstolinux.app.ui.component.AdvancedOptionsPane pane)
+                expanded.put(name, pane.expanded());
+        });
         return new DesktopViewState(currentPage, deployment.captureState(), multiComponent.captureState(),
                 server.captureState(), managed.captureState(), backup.captureState(), ai.captureState(),
-                settings.captureState());
+                settings.captureState(), expanded, deployment.captureSelection(), deployment.captureHandoffs());
     }
 
     void restoreViewState(DesktopViewState state) {
@@ -82,6 +87,18 @@ final class DesktopPageCoordinator {
         backup.restoreState(state.backup());
         ai.restoreState(state.ai());
         settings.restoreState(state.settings());
+        deployment.restoreSelection(state.deploymentSelection());
+        deployment.restoreHandoffs(state.handoffs());
+        panels().forEach((name, panel) -> {
+            if (panel instanceof gold.debug.windowstolinux.app.ui.component.AdvancedOptionsPane pane)
+                pane.setExpanded(state.expanded().getOrDefault(name, false));
+        });
         navigator.show(state.page(), "nav." + state.page(), "page." + state.page() + ".description");
+    }
+
+    private java.util.Map<String, JPanel> panels() {
+        return java.util.Map.of("deployment", deployment.panel(), "components", multiComponent.panel(),
+                "servers", server.panel(), "applications", managed.panel(), "backup", backup.panel(),
+                "ai", ai.panel(), "settings", settings.panel());
     }
 }

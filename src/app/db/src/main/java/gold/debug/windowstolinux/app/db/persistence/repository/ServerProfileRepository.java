@@ -20,6 +20,20 @@ public final class ServerProfileRepository {
         this.connections = Objects.requireNonNull(connections, "connections");
     }
 
+    /** Lists saved connection profiles without loading any secrets. */
+    public java.util.List<StoredServerProfile> listServerProfiles() throws SQLException {
+        java.util.List<StoredServerProfile> profiles = new java.util.ArrayList<>();
+        try (Connection connection = connections.open();
+             PreparedStatement statement = connection.prepareStatement(
+                     "SELECT id, host, ssh_port, username, credential_key, credential_mode FROM server_profile ORDER BY id");
+             ResultSet result = statement.executeQuery()) {
+            while (result.next()) profiles.add(new StoredServerProfile(result.getString("id"), result.getString("host"),
+                    result.getInt("ssh_port"), result.getString("username"), result.getString("credential_key"),
+                    result.getString("credential_mode")));
+        }
+        return java.util.List.copyOf(profiles);
+    }
+
     /** Saves a trusted server identity. / 保存可信服务器身份。 */
     public void saveServer(ServerIdentity server) throws SQLException {
         try (Connection connection = connections.open()) {

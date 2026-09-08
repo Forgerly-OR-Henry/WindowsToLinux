@@ -48,13 +48,30 @@ public final class DeploymentAnalysisCoordinator {
 
     /** Analyzes one explicitly selected type without executing source. / 在不执行源码的情况下分析一个显式选择的类型。 */
     public DeploymentProjectAssessment analyze(Path selectedSourceDirectory, DeploymentProjectType projectType) {
+        return analyze(selectedSourceDirectory, projectType, java.util.Optional.empty(), false);
+    }
+
+    /** Collects deployment facts but preserves a mandatory DB review missing field for schema-changing source. */
+    public DeploymentProjectAssessment analyzeForDatabaseReview(Path source, DeploymentProjectType type) {
+        return analyze(source, type, java.util.Optional.empty(), true);
+    }
+
+    /** Applies a source-bound database review after the corresponding DB operation has been verified. */
+    public DeploymentProjectAssessment analyze(Path source, DeploymentProjectType type,
+            gold.debug.windowstolinux.shared.model.ecosystem.db.DatabaseSchemaReview review) {
+        return analyze(source, type, java.util.Optional.of(review), false);
+    }
+
+    private DeploymentProjectAssessment analyze(Path selectedSourceDirectory, DeploymentProjectType projectType,
+            java.util.Optional<gold.debug.windowstolinux.shared.model.ecosystem.db.DatabaseSchemaReview> review, boolean deferDatabase) {
         List<RejectionReason> rejections = new ArrayList<>();
         Path root = normalizeRoot(selectedSourceDirectory, rejections);
         if (root == null) {
             return DeploymentProjectAssessment.rejected(rejections);
         }
         SourceInspectionFacts source = sourceInspector.inspect(root, rejections);
-        mutationPolicy.validate(source, rejections);
+        boolean pendingDatabase = deferDatabase && mutationPolicy.requiresReview(source);
+        if (!pendingDatabase) mutationPolicy.validate(source, rejections, review);
         if (!rejections.isEmpty()) {
             return DeploymentProjectAssessment.rejected(rejections);
         }
@@ -67,6 +84,14 @@ public final class DeploymentAnalysisCoordinator {
             }
             if (projectType == DeploymentProjectType.RECOGNITION_PREVIEW) {
                 return DeploymentProjectAssessment.recognitionPreview(inspected.facts());
+            }
+            if (pendingDatabase) {
+                var facts = inspected.facts();
+                var missing = new ArrayList<>(facts.missingInformation());
+                missing.add(LocalizedMessage.of("analysis.db.reviewRequired"));
+                return DeploymentProjectAssessment.requiresInput(new gold.debug.windowstolinux.shared.model.project.DeploymentProjectFacts(
+                        facts.sourceRoot(), facts.applicationId(), facts.projectType(), facts.buildTool(), facts.support(), facts.languageFacts(),
+                        facts.evidence(), facts.conflicts(), missing), inspected.runtimeSuggestion());
             }
             return inspected.facts().readyForPlanning()
                     ? DeploymentProjectAssessment.ready(inspected.facts(), inspected.runtimeSuggestion())

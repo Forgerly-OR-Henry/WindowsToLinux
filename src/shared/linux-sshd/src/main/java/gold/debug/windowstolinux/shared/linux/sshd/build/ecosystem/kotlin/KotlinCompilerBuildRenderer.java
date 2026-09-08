@@ -27,12 +27,12 @@ public final class KotlinCompilerBuildRenderer implements DeploymentBuildRendere
             throw new IllegalArgumentException("Kotlin compiler renderer requires reviewed kotlinc inputs");
         }
         String version = SafeBuildScriptEnvelope.shellQuote(kotlin.version());
-        String command = """
-                command -v kotlinc >/dev/null
+        String command = gold.debug.windowstolinux.shared.linux.sshd.capability.ecosystem.KotlinCompilerToolchain.selectionScript() + """
+                test -x "$kotlin_compiler"
                 command -v java >/dev/null
                 java -version 2>&1 | grep -Eq 'version "21([.]|")'
                 compiler_version=%s
-                kotlinc -version 2>&1 | grep -F "kotlinc-jvm $compiler_version"
+                "$kotlin_compiler" -version 2>&1 | grep -F "kotlinc-jvm $compiler_version"
                 test -f ./windowstolinux-kotlin.properties
                 source_root=$(sed -n 's/^sourceRoot=//p' ./windowstolinux-kotlin.properties)
                 test -n "$source_root"
@@ -41,7 +41,7 @@ public final class KotlinCompilerBuildRenderer implements DeploymentBuildRendere
                 mapfile -d '' -t sources < <(find -P "$source_root" -type f -name '*.kt' -print0 | LC_ALL=C sort -z)
                 test "${#sources[@]}" -ge 1
                 mkdir -p ./.w2l/kotlin/lib
-                run kotlinc -jvm-target 21 -include-runtime -d ./.w2l/kotlin/lib/app.jar "${sources[@]}"
+                run "$kotlin_compiler" -jvm-target 21 -include-runtime -d ./.w2l/kotlin/lib/app.jar "${sources[@]}"
                 test -f ./.w2l/kotlin/lib/app.jar
                 test ! -L ./.w2l/kotlin/lib/app.jar
                 printf 'ARTIFACT=%%s\n' ./.w2l/kotlin/lib/app.jar

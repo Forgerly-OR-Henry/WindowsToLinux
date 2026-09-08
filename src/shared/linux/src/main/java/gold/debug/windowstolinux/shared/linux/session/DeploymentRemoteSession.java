@@ -32,6 +32,10 @@ import java.util.List;
  */
 public interface DeploymentRemoteSession extends LinuxRemoteSession, RemoteDatabasePort, RemoteBackupArtifactPort,
         RemoteRestoreFilePort, RemoteRestoreActivationPort {
+    /** Native provisioning is supplied by transports that implement the DB protocol. */
+    default gold.debug.windowstolinux.shared.linux.ecosystem.db.NativeDatabasePort nativeDatabases() {
+        throw new UnsupportedOperationException("native DB provisioning is unavailable on this transport");
+    }
     /** Collects distribution and container facts before one typed deployment. / 在类型化部署前采集发行版和容器事实。 */
     LinuxCapabilityFacts collectDeploymentCapabilities() throws LinuxOperationException;
 

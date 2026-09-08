@@ -1,5 +1,6 @@
 package gold.debug.windowstolinux.shared.analyze.ecosystem.c.cmake;
 
+import gold.debug.windowstolinux.shared.analyze.ecosystem.c.CLanguageInspector;
 import gold.debug.windowstolinux.shared.analyze.service.ServiceMetadataInspector;
 import gold.debug.windowstolinux.shared.analyze.source.ProjectIdentityResolver;
 import gold.debug.windowstolinux.shared.analyze.source.SourceInspectionFacts;
@@ -75,10 +76,8 @@ public final class CmakeDeploymentInspector implements DeploymentTypeInspector {
         EnumSet<SourceLanguageType> languages = EnumSet.noneOf(SourceLanguageType.class);
         for (String targetSource : targetSources) {
             if (!ServiceMetadataInspector.present(root, targetSource)) missing.add(targetSource);
-            String lower = targetSource.toLowerCase(java.util.Locale.ROOT);
-            if (lower.endsWith(".c")) languages.add(SourceLanguageType.C);
-            else if (lower.endsWith(".cc") || lower.endsWith(".cpp") || lower.endsWith(".cxx")) languages.add(SourceLanguageType.CPP);
-            else conflicts.add("cmake-non-source:" + targetSource);
+            CLanguageInspector.compilationLanguage(targetSource).ifPresentOrElse(languages::add,
+                    () -> conflicts.add("cmake-non-source:" + targetSource));
         }
         if (languages.isEmpty()) missing.add("C or C++ target source");
         String target = targets.size() == 1 ? targets.getFirst() : null;

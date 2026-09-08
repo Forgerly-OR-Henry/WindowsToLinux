@@ -62,11 +62,12 @@ class EcosystemExtensionProductEntryAcceptanceTest {
     @TestFactory
     Stream<DynamicTest> deploysRollsBackAndRestoresEveryChangedArchitecture() {
         String selected = System.getProperty("managed.runtime.extension.type", "all").trim();
-        List<ArchitectureType> architectures = Arrays.stream(ArchitectureType.values())
-                .filter(architecture -> selected.equalsIgnoreCase("all")
-                        || architecture.key().equalsIgnoreCase(selected)
-                        || architecture.name().equalsIgnoreCase(selected))
-                .toList();
+        List<ArchitectureType> architectures = selected.equalsIgnoreCase("all") ? List.of(ArchitectureType.values())
+                : Arrays.stream(selected.split(",", -1)).map(value -> Arrays.stream(ArchitectureType.values())
+                        .filter(architecture -> architecture.key().equalsIgnoreCase(value.trim())
+                                || architecture.name().equalsIgnoreCase(value.trim())).findFirst()
+                        .orElseThrow(() -> new IllegalArgumentException("unknown extension architecture: " + value)))
+                        .distinct().toList();
         assertFalse(architectures.isEmpty(), () -> "unknown managed.runtime.extension.type: " + selected);
         return architectures.stream().map(architecture -> DynamicTest.dynamicTest(
                 architecture.key(), () -> exercise(architecture)));
@@ -275,7 +276,7 @@ class EcosystemExtensionProductEntryAcceptanceTest {
         for (String required : List.of("target-capabilities", "typed-host-compatibility", "source-upload",
                 "remote-build", "deployment-inputs", "snapshot", "publish", "candidate-health",
                 "final-observation", "release-retention", "candidate-cleanup")) {
-            assertTrue(result.events().stream().anyMatch(event -> event.step().equals(required) && event.succeeded()),
+            assertTrue(result.events().stream().anyMatch(event -> event.step().code().equals(required) && event.succeeded()),
                     () -> "missing successful " + required + ": " + result.events());
         }
     }

@@ -192,6 +192,12 @@ class UbuntuTypedDeploymentAcceptanceTest {
             assertHttp(port, marker);
         }
         verifyLifecycleAfterDesktopRestart(temporaryDirectory, applicationId, port, marker);
+        try (LiveTypedDeploymentContext cleanup = new LiveTypedDeploymentContext(temporaryDirectory)) {
+            assertEquals(AutostartState.DISABLED,
+                    cleanup.lifecycle(applicationId, LifecycleAction.DISABLE_AUTOSTART).autostartState());
+            assertEquals(RuntimeState.STOPPED, cleanup.lifecycle(applicationId, LifecycleAction.STOP).runtimeState());
+            System.out.printf("LIVE_STOPPED application=%s%n", applicationId);
+        }
     }
 
     private static DeploymentRuntimeSpecification.Container containerRuntime(
@@ -240,7 +246,7 @@ class UbuntuTypedDeploymentAcceptanceTest {
         for (String required : List.of("target-capabilities", "typed-host-compatibility", "source-upload",
                 "remote-build", "deployment-inputs", "snapshot", "publish", "candidate-health",
                 "final-observation", "release-retention", "candidate-cleanup")) {
-            assertTrue(result.events().stream().anyMatch(event -> event.step().equals(required) && event.succeeded()),
+            assertTrue(result.events().stream().anyMatch(event -> event.step().code().equals(required) && event.succeeded()),
                     () -> "missing successful " + required + ": " + result.events());
         }
     }

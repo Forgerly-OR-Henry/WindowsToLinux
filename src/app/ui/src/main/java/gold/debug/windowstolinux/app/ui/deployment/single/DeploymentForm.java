@@ -1,7 +1,7 @@
 package gold.debug.windowstolinux.app.ui.deployment.single;
 
-import gold.debug.windowstolinux.app.ui.deployment.DeploymentConfigurationParser;
-import gold.debug.windowstolinux.app.ui.deployment.DeploymentRuntimeParser;
+import gold.debug.windowstolinux.app.service.config.DeploymentConfigurationParser;
+import gold.debug.windowstolinux.app.service.deployment.automatic.DeploymentRuntimeParser;
 
 import gold.debug.windowstolinux.app.service.source.ReviewedSourcePreparation;
 import gold.debug.windowstolinux.app.ui.i18n.PageMessagePresenter;
@@ -144,11 +144,34 @@ final class DeploymentForm {
     HealthCheck healthCheck() {
         int seconds = Integer.parseInt(timeout.getText().trim());
         return switch ((HealthMode) healthMode.getSelectedItem()) {
+            case AUTOMATIC -> throw new IllegalArgumentException("automatic health checks require source analysis");
             case HTTP -> new HealthCheck.Http(URI.create(healthEndpoint.getText().trim()),
                     Integer.parseInt(expectedStatus.getText().trim()), seconds);
             case TCP -> new HealthCheck.Tcp(Integer.parseInt(healthEndpoint.getText().trim()), seconds,
                     Integer.parseInt(stability.getText().trim()));
         };
+    }
+
+    /** Preserves an explicit health mode even when the endpoint still needs source analysis or user input. */
+    void automaticHealthInputs(java.util.Map<String, String> values) {
+        HealthMode selected = (HealthMode) healthMode.getSelectedItem();
+        String endpoint = healthEndpoint.getText().trim();
+        if (selected != HealthMode.AUTOMATIC) values.put("healthMode", selected.name());
+        if (endpoint.isEmpty()) return;
+        HealthMode effective = selected == HealthMode.AUTOMATIC
+                ? (endpoint.matches("[0-9]+") ? HealthMode.TCP : HealthMode.HTTP) : selected;
+        values.put("healthMode", effective.name());
+        if (effective == HealthMode.TCP) values.put("port", endpoint);
+        else {
+            URI uri = URI.create(endpoint);
+            int defaultPort = switch (java.util.Objects.toString(uri.getScheme(), "")) {
+                case "http" -> 80;
+                case "https" -> 443;
+                default -> throw new IllegalArgumentException("health endpoint must use HTTP or HTTPS");
+            };
+            values.put("healthEndpoint", uri.toString());
+            values.put("port", Integer.toString(uri.getPort() > 0 ? uri.getPort() : defaultPort));
+        }
     }
 
     Optional<UserAccessUrl> userAccessUrl(HealthCheck health) {
@@ -250,6 +273,7 @@ final class DeploymentForm {
     }
 
     private enum HealthMode {
+        /** Source-backed automatic selection. / 依据源码自动选择。 */ AUTOMATIC,
         /** HTTP health check. / HTTP 健康检查。 */ HTTP,
         /** TCP health check. / TCP 健康检查。 */ TCP
     }

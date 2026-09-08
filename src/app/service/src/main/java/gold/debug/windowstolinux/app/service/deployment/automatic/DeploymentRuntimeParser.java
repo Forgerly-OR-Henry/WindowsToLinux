@@ -1,4 +1,4 @@
-package gold.debug.windowstolinux.app.ui.deployment;
+package gold.debug.windowstolinux.app.service.deployment.automatic;
 
 import gold.debug.windowstolinux.shared.config.secretref.SecretReference;
 import gold.debug.windowstolinux.shared.config.resource.ManagedDatabaseBinding;

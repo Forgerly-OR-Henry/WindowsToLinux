@@ -61,6 +61,16 @@ public final class SshCommandExecutor {
         return execute(script, timeout, preserveOutput, false, null);
     }
 
+    /** Streams an implementation-owned script without Linux's per-argument size limit. / 流式传输实现自有脚本，避免 Linux 单参数长度限制。 */
+    public CommandResult execScript(String script, Duration timeout, boolean preserveOutput)
+            throws LinuxOperationException {
+        Objects.requireNonNull(script, "script");
+        // Parse the complete group before commands run; installers must not consume the script stream.
+        // 先解析整个命令组，再执行；安装器不能读取剩余的脚本输入。
+        byte[] input = ("{\n" + script + "\n} </dev/null\n").getBytes(StandardCharsets.UTF_8);
+        return execute("exec /bin/bash -ls", timeout, preserveOutput, false, input);
+    }
+
     /**
      * Keeps short-lived helper protocol values available only to the implementation parser.
      *
@@ -195,11 +205,15 @@ public final class SshCommandExecutor {
     }
 
     private static String sanitize(String text) {
-        String bounded = text.length() > MAX_EVIDENCE_CHARS ? text.substring(0, MAX_EVIDENCE_CHARS) : text;
-        return bounded
+        String redacted = text
                 .replaceAll("(?i)(password|secret|token|api[_-]?key)\\s*[:=]\\s*\\S+", "$1=<redacted>")
                 .replaceAll("(?i)(https?://)[^\\s/@:]+:[^\\s/@]+@", "$1<redacted>@")
                 .replaceAll("-----BEGIN [A-Z ]+-----[\\s\\S]*?-----END [A-Z ]+-----", "<redacted-key>");
+        if (redacted.length() <= MAX_EVIDENCE_CHARS) return redacted;
+        String omitted = "\n[... output omitted ...]\n";
+        int head = (MAX_EVIDENCE_CHARS - omitted.length()) / 2;
+        int tail = MAX_EVIDENCE_CHARS - omitted.length() - head;
+        return redacted.substring(0, head) + omitted + redacted.substring(redacted.length() - tail);
     }
 
     private static String safeException(IOException exception) {

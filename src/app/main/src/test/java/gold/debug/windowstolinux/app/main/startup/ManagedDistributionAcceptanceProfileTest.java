@@ -29,7 +29,7 @@ class ManagedDistributionAcceptanceProfileTest {
     @Test
     void acceptsCentosStreamNineAndKeepsStreamTenCpuRejectionExplicit() {
         ManagedDistributionAcceptanceProfile nine = ManagedDistributionAcceptanceProfile.from(target(
-                "centos-stream", "9", "x86-64-v1"));
+                "centos-stream", "9", "x86-64-v2"));
         ManagedDistributionAcceptanceProfile tenV2 = ManagedDistributionAcceptanceProfile.from(Map.of(
                 "managed.distro.expected", "centos-stream",
                 "managed.distro.expected-version", "10",
@@ -39,10 +39,17 @@ class ManagedDistributionAcceptanceProfileTest {
         ));
 
         assertEquals(LinuxDistroType.CENTOS_STREAM, nine.distro());
+        assertEquals(CpuMicroarchitectureLevel.X86_64_V2, nine.requiredCpu());
         assertEquals(ManagedDistributionAcceptanceProfile.SetupExpectationKind.SUCCEEDS,
                 nine.preparationExpectation());
         assertEquals(ManagedDistributionAcceptanceProfile.SetupExpectationKind.REJECTS,
                 tenV2.preparationExpectation());
+    }
+
+    @Test
+    void rejectsCentosStreamNineSuccessBelowItsCpuBaseline() {
+        assertThrows(IllegalArgumentException.class, () -> ManagedDistributionAcceptanceProfile.from(target(
+                "centos-stream", "9", "x86-64-v1")));
     }
 
     @Test

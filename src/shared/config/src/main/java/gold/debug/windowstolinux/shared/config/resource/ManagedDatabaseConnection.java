@@ -39,8 +39,9 @@ public sealed interface ManagedDatabaseConnection
             engine = Objects.requireNonNull(engine, "engine");
             if (engine != ManagedDatabaseEngineType.POSTGRESQL
                     && engine != ManagedDatabaseEngineType.MYSQL
-                    && engine != ManagedDatabaseEngineType.MARIADB) {
-                throw new IllegalArgumentException("server connection requires PostgreSQL, MySQL or MariaDB");
+                    && engine != ManagedDatabaseEngineType.MARIADB
+                    && engine != ManagedDatabaseEngineType.REDIS) {
+                throw new IllegalArgumentException("server connection requires PostgreSQL, MySQL, MariaDB or Redis");
             }
             host = text(host, "host", 253);
             if (host.contains("/") || host.contains("\\") || host.chars().anyMatch(Character::isWhitespace)) {

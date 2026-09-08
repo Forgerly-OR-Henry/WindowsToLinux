@@ -5,6 +5,8 @@ import gold.debug.windowstolinux.shared.model.security.CredentialStorageMode;
 
 /** Narrow server context consumed by deployment and lifecycle pages. / 部署与生命周期页面使用的窄服务器上下文。 */
 public interface ServerContext {
+    /** Selects a saved profile without reading its password. */
+    void selectProfile(ServerProfile profile);
     /** Returns the entered profile. / 返回已输入资料。 */
     ServerProfile profile();
     /** Returns the selected credential mode. / 返回已选凭据模式。 */

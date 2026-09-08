@@ -7,7 +7,7 @@
 - 文档状态：**统一 Spring Boot Reviewed/helper v3 与 Podman Quadlet 已完成当前 Ubuntu 24.04 x86-64 产品入口验收；CentOS Stream 9 x86-64 产品入口验收完成**
 - 当前实现：本地目录与无凭据网络 Git 来源均进入唯一 Reviewed 分析/计划路径；Spring Boot 由一个项目类型和三种固定构建工具入口表达，发布身份与 SQLite v5 已收敛；Ubuntu 24.04 与 CentOS Stream 9 x86-64 证据均只覆盖精确验收夹具，不外推到 Ubuntu 22.04、CentOS Stream 10 或其他发行版。CentOS Stream 9 已由产品入口完成准备、部署、回滚与生命周期验收，其余发行版实机测试按当前范围延后
 - 更新日期：2026-08-14
-- 上级文档：[开发总纲](../DEVELOPMENT.md)
+- 上级文档：[开发总纲](DEVELOPMENT.md)
 
 ## 文档导航
 

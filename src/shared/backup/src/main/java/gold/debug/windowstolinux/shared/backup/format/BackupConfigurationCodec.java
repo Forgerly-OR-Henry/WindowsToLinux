@@ -163,6 +163,7 @@ public final class BackupConfigurationCodec {
                 case POSTGRESQL -> 2;
                 case MYSQL -> 3;
                 case MARIADB -> 4;
+                case REDIS -> throw new IOException("complete Redis backup is unsupported");
             });
             if (database.connection() instanceof ManagedDatabaseConnection.Sqlite sqlite) {
                 text(output, sqlite.fileName(), 128);
