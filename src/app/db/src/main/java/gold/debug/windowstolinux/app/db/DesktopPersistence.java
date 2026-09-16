@@ -32,6 +32,7 @@ public final class DesktopPersistence implements AutoCloseable {
     /** UI theme preference key. / UI 主题偏好键。 */
     public static final String UI_THEME_SETTING = "ui.theme";
 
+    private final gold.debug.windowstolinux.app.db.persistence.repository.ExternalApplicationRepository externalApplications;
     private final ServerProfileRepository servers;
     private final DesktopPreferenceRepository preferences;
     private final AiProfileRepository aiProfiles;
@@ -43,6 +44,7 @@ public final class DesktopPersistence implements AutoCloseable {
 
     private DesktopPersistence(DesktopConnectionFactory connections) {
         servers = new ServerProfileRepository(connections);
+        externalApplications = new gold.debug.windowstolinux.app.db.persistence.repository.ExternalApplicationRepository(connections);
         preferences = new DesktopPreferenceRepository(connections);
         aiProfiles = new AiProfileRepository(connections);
         configurations = new ConfigurationSnapshotRepository(connections);
@@ -76,6 +78,8 @@ public final class DesktopPersistence implements AutoCloseable {
 
     /** Returns the server/profile repository. / 返回服务器/资料仓库。 */
     public ServerProfileRepository servers() { return servers; }
+    /** Returns external lifecycle registrations and local presentation. / 返回外部生命周期登记与本地显示设置。 */
+    public gold.debug.windowstolinux.app.db.persistence.repository.ExternalApplicationRepository externalApplications() { return externalApplications; }
     /** Returns the preference repository. / 返回偏好仓库。 */
     public DesktopPreferenceRepository preferences() { return preferences; }
     /** Returns the AI profile repository. / 返回 AI 资料仓库。 */

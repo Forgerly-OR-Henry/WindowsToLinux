@@ -32,6 +32,10 @@ import java.util.List;
  * <p>已验证受管部署会话的有界扩展，覆盖全部部署单组件项目类型。
  */
 public interface DeploymentRemoteSession extends LinuxRemoteSession, RemoteRestoreFilePort {
+    /** Optional discovery capability bound to the authenticated session. / 绑定已认证会话的可选应用发现能力。 */
+    default gold.debug.windowstolinux.shared.linux.runtime.ExternalApplicationPort externalApplications() {
+        throw new UnsupportedOperationException("external application discovery is unavailable on this transport");
+    }
     /** Existing database capability bound to this connection. / 绑定当前连接的既有数据库能力。 */
     RemoteDatabasePort databaseOperations();
 

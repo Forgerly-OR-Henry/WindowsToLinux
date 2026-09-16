@@ -10,7 +10,9 @@ import java.util.Objects;
  * @param applicationId the {@code applicationId} value / {@code applicationId} 值
  * @param output the {@code output} value / {@code output} 值
  */
-public record ManagedPageState(String applicationId, String output) {
+public record ManagedPageState(String applicationId, String output, String typeFilter, String serverFilter) {
+    /** Preserves earlier page snapshots. / 保留此前页面快照。 */
+    public ManagedPageState(String applicationId, String output) { this(applicationId, output, "", ""); }
     /**
      * Creates a {@code ManagedPageState} instance.
      *
@@ -23,5 +25,6 @@ public record ManagedPageState(String applicationId, String output) {
     public ManagedPageState {
         Objects.requireNonNull(applicationId, "applicationId");
         Objects.requireNonNull(output, "output");
+        Objects.requireNonNull(typeFilter, "typeFilter"); Objects.requireNonNull(serverFilter, "serverFilter");
     }
 }
