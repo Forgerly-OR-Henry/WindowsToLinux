@@ -80,7 +80,7 @@ class DesktopLanguageSwitchStateTest {
             assertEquals("database-password:1", chineseState.deployment().secretReferences());
             assertEquals("12", chineseState.deployment().healthTimeoutSeconds());
             assertEquals("7", chineseState.deployment().tcpStabilitySeconds());
-            assertTrue(chineseState.deployment().rootBuild());
+            assertEquals(false, chineseState.deployment().rootBuild(), "historical root build UI state must be cleared");
             assertTrue(chineseState.deployment().experimentalAdapterRisk());
             assertEquals("deployment diagnostic", chineseState.deployment().output());
             assertEquals("shop", chineseState.multiComponent().applicationId());

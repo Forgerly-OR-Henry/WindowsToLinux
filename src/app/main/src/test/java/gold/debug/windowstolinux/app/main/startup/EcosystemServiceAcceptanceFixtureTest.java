@@ -6,7 +6,9 @@ import org.junit.jupiter.api.io.TempDir;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Map;
 
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -19,9 +21,26 @@ class EcosystemServiceAcceptanceFixtureTest {
         Path root = EcosystemServiceAcceptanceFixture.create(temporaryDirectory, DeploymentProjectType.PHP_SERVICE,
                 "php-fixture", "8.3", "unused", false, null);
 
-        String router = Files.readString(root.resolve("public/index.php"));
-        assertTrue(router.contains("http_response_code(503)"));
-        assertFalse(router.contains("exit("));
+        String configuration = Files.readString(root.resolve("src/Configuration.php"));
+        assertTrue(configuration.contains("503"));
+        assertFalse(Files.readString(root.resolve("public/index.php")).contains("exit("));
+        assertTrue(Files.readString(root.resolve("src/SummaryService.php")).contains("Opis\\JsonSchema\\Validator"));
+        assertTrue(Files.readString(root.resolve("composer.lock")).contains("opis/json-schema"));
+    }
+
+    @Test
+    void textCustomizationPreservesTheBinaryWrapperAndKeepsCopiedSourcesIndependent() throws Exception {
+        Path original = RepositoryServiceFixture.repositoryRoot()
+                .resolve("test/java/gradle/spring-boot/success-deployment-smoke");
+        byte[] wrapper = Files.readAllBytes(original.resolve("gradle/wrapper/gradle-wrapper.jar"));
+        Path root = RepositoryServiceFixture.copy(temporaryDirectory, "copied-service", "java/gradle/spring-boot", true);
+        RepositoryServiceFixture.replaceText(root, Map.of("gradle", "customized", "deployment-smoke-ok", "copied-ok"));
+        assertArrayEquals(wrapper, Files.readAllBytes(root.resolve("gradle/wrapper/gradle-wrapper.jar")));
+        assertTrue(Files.readString(root.resolve("gradle/wrapper/gradle-wrapper.properties")).contains("customized"));
+        assertTrue(Files.readString(original.resolve("gradle/wrapper/gradle-wrapper.properties")).contains("gradle"));
+        try (var files = Files.walk(root.resolve("src/main/java"))) {
+            assertTrue(files.filter(path -> path.toString().endsWith(".java")).count() >= 5);
+        }
     }
 
     @Test

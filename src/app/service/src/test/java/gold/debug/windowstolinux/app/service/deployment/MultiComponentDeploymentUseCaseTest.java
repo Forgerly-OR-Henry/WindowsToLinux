@@ -5,7 +5,7 @@ import gold.debug.windowstolinux.app.db.entity.CurrentRelease;
 import gold.debug.windowstolinux.app.db.entity.ManagedApplicationGraph;
 import gold.debug.windowstolinux.app.db.entity.SuccessfulManagedDeployment;
 import gold.debug.windowstolinux.app.service.DesktopApplicationFacade;
-import gold.debug.windowstolinux.app.service.deployment.multi.MultiComponentReviewInput;
+import gold.debug.windowstolinux.app.service.contract.definition.MultiComponentReviewInput;
 import gold.debug.windowstolinux.app.service.deployment.multi.ReviewedComponentApplication;
 import gold.debug.windowstolinux.app.service.server.ServerProfile;
 import gold.debug.windowstolinux.shared.analyze.component.ComponentAnalysisRequest;

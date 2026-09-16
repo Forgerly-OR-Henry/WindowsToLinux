@@ -26,11 +26,11 @@ public final class RubyCliBuildRenderer implements DeploymentBuildRenderer {
                 || facts.buildTool() != DeploymentBuildToolType.RUBY_CLI) {
             throw new IllegalArgumentException("Ruby CLI renderer requires reviewed dependency-free inputs");
         }
-        String version = SafeBuildScriptEnvelope.shellQuote(ruby.version());
+        String version = ruby.version();
         String entrypoint = SafeBuildScriptEnvelope.shellQuote("./" + ruby.entrypoint());
         String command = """
                 command -v ruby >/dev/null
-                ruby -e 'print RUBY_VERSION' | grep -Fx %s
+                ruby -e 'print RUBY_VERSION' | grep -Fx "${WTL_RUBY_VERSION:-%s}"
                 test -f ./windowstolinux-ruby.properties
                 test ! -e ./Gemfile
                 test ! -e ./Gemfile.lock

@@ -1,5 +1,7 @@
 package gold.debug.windowstolinux.shared.deploy.execution.environment;
 
+import gold.debug.windowstolinux.shared.linux.error.LinuxOperationException;
+
 import gold.debug.windowstolinux.shared.linux.connection.HostKeyDecision;
 import gold.debug.windowstolinux.shared.linux.connection.HostKeyEvaluator;
 import gold.debug.windowstolinux.shared.linux.connection.LinuxGateway;
@@ -68,9 +70,29 @@ class EnvironmentSetupServiceTest {
                 acceptingHostKey()
         );
 
-        assertEquals(1, connections.get());
+        assertEquals(2, connections.get());
         assertTrue(session.prepared);
         assertTrue(result.capabilities().supportsManagedDeployment(false, new HealthCheck.Tcp(8080, 1, 1)));
+        assertCleared(password);
+    }
+
+    @Test
+    void successfulInstallationDoesNotHideAFailedFreshSshLogin() throws Exception {
+        FakeSession session = new FakeSession();
+        AtomicInteger connections = new AtomicInteger();
+        LinuxGateway gateway = (endpoint, credential, verifier) -> {
+            if (connections.incrementAndGet() == 1) return session;
+            throw LinuxOperationException.create(
+                    gold.debug.windowstolinux.shared.linux.error.LinuxOperationFailureType.CONNECTION_FAILED,
+                    "post-install SSH unavailable");
+        };
+        SshCredential.Password password = new SshCredential.Password("test-only".toCharArray());
+        LinuxOperationException failure = assertThrows(LinuxOperationException.class, () ->
+                new EnvironmentSetupService().prepare(new EnvironmentSetupApproval("server-one", true, Instant.now()),
+                        gateway, endpoint(), password, acceptingHostKey()));
+        assertTrue(session.prepared);
+        assertEquals("post-install SSH unavailable", failure.failure().diagnostic());
+        assertEquals(2, connections.get());
         assertCleared(password);
     }
 
@@ -112,7 +134,7 @@ class EnvironmentSetupServiceTest {
 
         /** Performs the {@code uploadSource} operation. / 执行 {@code uploadSource} 操作。 */
         @Override
-        public SourceUploadResult uploadSource(SourceArchiveDescriptor archive, RemoteWorkspace workspace) {
+        public SourceUploadResult uploadSource(SourceArchiveDescriptor archive, RemoteWorkspace workspace, long maxWorkspaceBytes) {
             throw unsupported();
         }
 

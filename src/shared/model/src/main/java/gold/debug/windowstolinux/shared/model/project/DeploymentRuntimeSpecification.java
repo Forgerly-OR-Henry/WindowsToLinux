@@ -26,19 +26,61 @@ public sealed interface DeploymentRuntimeSpecification permits DeploymentRuntime
     /** Returns the required layered health check. / 返回所需的分层健康检查。 */
     HealthCheck healthCheck();
 
+    /** Returns the declared runtime identity policy. / 返回声明的运行身份策略。 */
+    RuntimeIdentityMode identityPolicy();
+
+    /** Copies runtime facts with an explicit current or historical identity policy. / 使用明确的当前或历史身份策略复制运行事实。 */
+    default DeploymentRuntimeSpecification withIdentityPolicy(RuntimeIdentityMode policy) {
+        return switch (this) {
+            case SpringBoot value -> new SpringBoot(value.javaVersion(), value.healthCheck(), policy);
+            case JavaJar value -> new JavaJar(value.jarRelativePath(), value.mainClass(), value.javaVersion(), value.jvmArguments(), value.applicationArguments(), value.healthCheck(), policy);
+            case JavaSource value -> new JavaSource(value.sourceRoot(), value.mainClass(), value.javaVersion(), value.jvmArguments(), value.applicationArguments(), value.healthCheck(), policy);
+            case NodeService value -> new NodeService(value.nodeMajorVersion(), value.healthCheck(), policy);
+            case PythonService value -> new PythonService(value.pythonVersion(), value.entrypoint(), value.healthCheck(), policy);
+            case StaticSite value -> new StaticSite(value.outputDirectory(), value.nodeMajorVersion(), value.healthCheck(), policy);
+            case Container value -> new Container(value.engine(), value.publishedPorts(), value.volumes(), value.healthCheck(), policy);
+            case GoService value -> new GoService(value.version(), value.artifactName(), value.entrypoint(), value.healthCheck(), policy);
+            case RustService value -> new RustService(value.version(), value.artifactName(), value.entrypoint(), value.healthCheck(), policy);
+            case DotNetService value -> new DotNetService(value.version(), value.artifactName(), value.entrypoint(), value.healthCheck(), policy);
+            case KotlinService value -> new KotlinService(value.version(), value.artifactName(), value.entrypoint(), value.jvmTarget(), value.healthCheck(), policy);
+            case PhpService value -> new PhpService(value.version(), value.artifactName(), value.entrypoint(), value.servicePort(), value.healthCheck(), policy);
+            case RubyService value -> new RubyService(value.version(), value.artifactName(), value.entrypoint(), value.servicePort(), value.healthCheck(), policy);
+            case CmakeService value -> new CmakeService(value.preset(), value.target(), value.artifactName(), value.healthCheck(), policy);
+        };
+    }
+
+    private static void requireIdentityPolicy(RuntimeIdentityMode actual, RuntimeIdentityMode supported) {
+        Objects.requireNonNull(actual, "identityPolicy");
+        if (actual != supported && actual != RuntimeIdentityMode.LEGACY_UNSPECIFIED) {
+            throw new IllegalArgumentException("runtime identity policy does not match its execution backend");
+        }
+    }
+
     /** Spring Boot systemd runtime independent of its reviewed build tool. / 与经审阅构建工具无关的 Spring Boot systemd 运行时。 */
-    record SpringBoot(HealthCheck healthCheck) implements DeploymentRuntimeSpecification {
+    record SpringBoot(String javaVersion, HealthCheck healthCheck, RuntimeIdentityMode identityPolicy) implements DeploymentRuntimeSpecification {
+        /** Creates a runtime with the current explicit isolation policy. / 使用当前明确隔离策略创建运行时。 */
+        public SpringBoot(String javaVersion, HealthCheck healthCheck) {
+            this(javaVersion, healthCheck, RuntimeIdentityMode.SYSTEMD_DYNAMIC);
+        }
         /** Creates a {@code SpringBoot} specification. / 创建 {@code SpringBoot} 规范。 */
-        public SpringBoot { healthCheck = Objects.requireNonNull(healthCheck, "healthCheck"); }
+        public SpringBoot {
+            requireIdentityPolicy(identityPolicy, RuntimeIdentityMode.SYSTEMD_DYNAMIC); javaVersion = requireJavaVersion(javaVersion); healthCheck = Objects.requireNonNull(healthCheck, "healthCheck"); }
+        public SpringBoot(HealthCheck healthCheck) { this("21", healthCheck); }
         /** Returns the supported deployment project type. / 返回支持的部署项目类型。 */
         @Override public DeploymentProjectType projectType() { return DeploymentProjectType.SPRING_BOOT; }
     }
 
     /** Java JAR systemd runtime with structured JVM and application arguments. / 具有结构化 JVM 和应用参数的 Java JAR systemd 运行时。 */
     record JavaJar(String jarRelativePath, String mainClass, String javaVersion, List<String> jvmArguments,
-                   List<String> applicationArguments, HealthCheck healthCheck) implements DeploymentRuntimeSpecification {
+                   List<String> applicationArguments, HealthCheck healthCheck, RuntimeIdentityMode identityPolicy) implements DeploymentRuntimeSpecification {
+        /** Creates a runtime with the current explicit isolation policy. / 使用当前明确隔离策略创建运行时。 */
+        public JavaJar(String jarRelativePath, String mainClass, String javaVersion, List<String> jvmArguments,
+                   List<String> applicationArguments, HealthCheck healthCheck) {
+            this(jarRelativePath, mainClass, javaVersion, jvmArguments, applicationArguments, healthCheck, RuntimeIdentityMode.SYSTEMD_DYNAMIC);
+        }
         /** Creates a {@code JavaJar} specification. / 创建 {@code JavaJar} 规范。 */
         public JavaJar {
+            requireIdentityPolicy(identityPolicy, RuntimeIdentityMode.SYSTEMD_DYNAMIC);
             jarRelativePath = relativePath(jarRelativePath, "jarRelativePath");
             mainClass = javaName(mainClass, "mainClass");
             javaVersion = requireJavaVersion(javaVersion);
@@ -52,15 +94,18 @@ public sealed interface DeploymentRuntimeSpecification permits DeploymentRuntime
 
     /** Dependency-free Java source compiled into one executable JAR on the target. / 在目标机编译为单一可执行 JAR 的无依赖 Java 源码。 */
     record JavaSource(String sourceRoot, String mainClass, String javaVersion, List<String> jvmArguments,
-                      List<String> applicationArguments, HealthCheck healthCheck) implements DeploymentRuntimeSpecification {
+                      List<String> applicationArguments, HealthCheck healthCheck, RuntimeIdentityMode identityPolicy) implements DeploymentRuntimeSpecification {
+        /** Creates a runtime with the current explicit isolation policy. / 使用当前明确隔离策略创建运行时。 */
+        public JavaSource(String sourceRoot, String mainClass, String javaVersion, List<String> jvmArguments,
+                      List<String> applicationArguments, HealthCheck healthCheck) {
+            this(sourceRoot, mainClass, javaVersion, jvmArguments, applicationArguments, healthCheck, RuntimeIdentityMode.SYSTEMD_DYNAMIC);
+        }
         /** Creates a reviewed Java source specification. / 创建经审阅的 Java 源码规范。 */
         public JavaSource {
+            requireIdentityPolicy(identityPolicy, RuntimeIdentityMode.SYSTEMD_DYNAMIC);
             sourceRoot = relativePath(sourceRoot, "sourceRoot");
             mainClass = javaName(mainClass, "mainClass");
             javaVersion = requireJavaVersion(javaVersion);
-            if (!"21".equals(javaVersion)) {
-                throw new IllegalArgumentException("Java source compilation requires the fixed Java 21 baseline");
-            }
             jvmArguments = safeArguments(jvmArguments, "jvmArguments");
             applicationArguments = safeArguments(applicationArguments, "applicationArguments");
             healthCheck = Objects.requireNonNull(healthCheck, "healthCheck");
@@ -70,10 +115,15 @@ public sealed interface DeploymentRuntimeSpecification permits DeploymentRuntime
     }
 
     /** Lockfile-backed Node service runtime. / 由锁文件支持的 Node 服务运行时。 */
-    record NodeService(int nodeMajorVersion, HealthCheck healthCheck) implements DeploymentRuntimeSpecification {
+    record NodeService(int nodeMajorVersion, HealthCheck healthCheck, RuntimeIdentityMode identityPolicy) implements DeploymentRuntimeSpecification {
+        /** Creates a runtime with the current explicit isolation policy. / 使用当前明确隔离策略创建运行时。 */
+        public NodeService(int nodeMajorVersion, HealthCheck healthCheck) {
+            this(nodeMajorVersion, healthCheck, RuntimeIdentityMode.SYSTEMD_DYNAMIC);
+        }
         /** Creates a {@code NodeService} specification. / 创建 {@code NodeService} 规范。 */
         public NodeService {
-            if (nodeMajorVersion < 18 || nodeMajorVersion > 24) {
+            requireIdentityPolicy(identityPolicy, RuntimeIdentityMode.SYSTEMD_DYNAMIC);
+            if (nodeMajorVersion < 0) {
                 throw new IllegalArgumentException("nodeMajorVersion must be a supported explicit major version");
             }
             healthCheck = Objects.requireNonNull(healthCheck, "healthCheck");
@@ -83,9 +133,14 @@ public sealed interface DeploymentRuntimeSpecification permits DeploymentRuntime
     }
 
     /** Project-virtual-environment Python runtime. / 项目虚拟环境 Python 运行时。 */
-    record PythonService(String pythonVersion, String entrypoint, HealthCheck healthCheck) implements DeploymentRuntimeSpecification {
+    record PythonService(String pythonVersion, String entrypoint, HealthCheck healthCheck, RuntimeIdentityMode identityPolicy) implements DeploymentRuntimeSpecification {
+        /** Creates a runtime with the current explicit isolation policy. / 使用当前明确隔离策略创建运行时。 */
+        public PythonService(String pythonVersion, String entrypoint, HealthCheck healthCheck) {
+            this(pythonVersion, entrypoint, healthCheck, RuntimeIdentityMode.SYSTEMD_DYNAMIC);
+        }
         /** Creates a {@code PythonService} specification. / 创建 {@code PythonService} 规范。 */
         public PythonService {
+            requireIdentityPolicy(identityPolicy, RuntimeIdentityMode.SYSTEMD_DYNAMIC);
             pythonVersion = requirePythonVersion(pythonVersion);
             entrypoint = pythonEntrypoint(entrypoint);
             healthCheck = Objects.requireNonNull(healthCheck, "healthCheck");
@@ -96,9 +151,15 @@ public sealed interface DeploymentRuntimeSpecification permits DeploymentRuntime
 
     /** Static site served only from a bounded generated output directory. / 仅从有界生成输出目录提供的静态站点。 */
     record StaticSite(String outputDirectory, OptionalInt nodeMajorVersion,
-                      HealthCheck.Http healthCheck) implements DeploymentRuntimeSpecification {
+                      HealthCheck.Http healthCheck, RuntimeIdentityMode identityPolicy) implements DeploymentRuntimeSpecification {
+        /** Creates a runtime with the current explicit isolation policy. / 使用当前明确隔离策略创建运行时。 */
+        public StaticSite(String outputDirectory, OptionalInt nodeMajorVersion,
+                      HealthCheck.Http healthCheck) {
+            this(outputDirectory, nodeMajorVersion, healthCheck, RuntimeIdentityMode.SYSTEMD_DYNAMIC);
+        }
         /** Creates a {@code StaticSite} specification. / 创建 {@code StaticSite} 规范。 */
         public StaticSite {
+            requireIdentityPolicy(identityPolicy, RuntimeIdentityMode.SYSTEMD_DYNAMIC);
             outputDirectory = relativePath(outputDirectory, "outputDirectory");
             if (outputDirectory.equals(".")) {
                 throw new IllegalArgumentException("outputDirectory must not expose the source root");
@@ -106,7 +167,7 @@ public sealed interface DeploymentRuntimeSpecification permits DeploymentRuntime
             healthCheck = Objects.requireNonNull(healthCheck, "healthCheck");
             nodeMajorVersion = Objects.requireNonNull(nodeMajorVersion, "nodeMajorVersion");
             if (nodeMajorVersion.isPresent()
-                    && (nodeMajorVersion.getAsInt() < 18 || nodeMajorVersion.getAsInt() > 24)) {
+                    && nodeMajorVersion.getAsInt() < 0) {
                 throw new IllegalArgumentException("nodeMajorVersion must be a supported explicit major version");
             }
         }
@@ -120,9 +181,15 @@ public sealed interface DeploymentRuntimeSpecification permits DeploymentRuntime
 
     /** One image and one container without privileged or host-namespace escape options. / 不含特权或宿主命名空间逃逸选项的单镜像单容器。 */
     record Container(ContainerEngineType engine, Map<Integer, Integer> publishedPorts, List<ManagedVolume> volumes,
-                     HealthCheck healthCheck) implements DeploymentRuntimeSpecification {
+                     HealthCheck healthCheck, RuntimeIdentityMode identityPolicy) implements DeploymentRuntimeSpecification {
+        /** Creates a runtime with the current explicit isolation policy. / 使用当前明确隔离策略创建运行时。 */
+        public Container(ContainerEngineType engine, Map<Integer, Integer> publishedPorts, List<ManagedVolume> volumes,
+                     HealthCheck healthCheck) {
+            this(engine, publishedPorts, volumes, healthCheck, RuntimeIdentityMode.CONTAINER_NON_ROOT);
+        }
         /** Creates a {@code Container} specification. / 创建 {@code Container} 规范。 */
         public Container {
+            requireIdentityPolicy(identityPolicy, RuntimeIdentityMode.CONTAINER_NON_ROOT);
             engine = Objects.requireNonNull(engine, "engine");
             publishedPorts = Map.copyOf(Objects.requireNonNull(publishedPorts, "publishedPorts"));
             if (publishedPorts.isEmpty()) {
@@ -142,11 +209,15 @@ public sealed interface DeploymentRuntimeSpecification permits DeploymentRuntime
     }
 
     /** Go service compiled from one locked module. / 从一个锁定模块编译的 Go 服务。 */
-    record GoService(String version, String artifactName, String entrypoint, HealthCheck healthCheck)
-            implements DeploymentRuntimeSpecification {
+    record GoService(String version, String artifactName, String entrypoint, HealthCheck healthCheck, RuntimeIdentityMode identityPolicy) implements DeploymentRuntimeSpecification {
+        /** Creates a runtime with the current explicit isolation policy. / 使用当前明确隔离策略创建运行时。 */
+        public GoService(String version, String artifactName, String entrypoint, HealthCheck healthCheck) {
+            this(version, artifactName, entrypoint, healthCheck, RuntimeIdentityMode.SYSTEMD_DYNAMIC);
+        }
         /** Creates an instance of this type. / 创建此类型的实例。 */
         public GoService {
-            version = validateServiceVersion(version, "1\\.(?:22|23|24)"); artifactName = safeName(artifactName, "artifactName");
+            requireIdentityPolicy(identityPolicy, RuntimeIdentityMode.SYSTEMD_DYNAMIC);
+            version = requireVersionToken(version); artifactName = safeName(artifactName, "artifactName");
             entrypoint = relativePath(entrypoint, "entrypoint"); requireExact(entrypoint, "main.go", "Go entrypoint");
             healthCheck = Objects.requireNonNull(healthCheck, "healthCheck");
         }
@@ -155,11 +226,15 @@ public sealed interface DeploymentRuntimeSpecification permits DeploymentRuntime
     }
 
     /** Rust service compiled from one locked Cargo package. / 从一个锁定 Cargo 包编译的 Rust 服务。 */
-    record RustService(String version, String artifactName, String entrypoint, HealthCheck healthCheck)
-            implements DeploymentRuntimeSpecification {
+    record RustService(String version, String artifactName, String entrypoint, HealthCheck healthCheck, RuntimeIdentityMode identityPolicy) implements DeploymentRuntimeSpecification {
+        /** Creates a runtime with the current explicit isolation policy. / 使用当前明确隔离策略创建运行时。 */
+        public RustService(String version, String artifactName, String entrypoint, HealthCheck healthCheck) {
+            this(version, artifactName, entrypoint, healthCheck, RuntimeIdentityMode.SYSTEMD_DYNAMIC);
+        }
         /** Creates an instance of this type. / 创建此类型的实例。 */
         public RustService {
-            version = validateServiceVersion(version, "1\\.(?:7[5-9]|8[0-9]|9[0-9])(?:\\.[0-9]+)?"); artifactName = safeName(artifactName, "artifactName");
+            requireIdentityPolicy(identityPolicy, RuntimeIdentityMode.SYSTEMD_DYNAMIC);
+            version = requireVersionToken(version); artifactName = safeName(artifactName, "artifactName");
             entrypoint = relativePath(entrypoint, "entrypoint"); requireExact(entrypoint, "src/main.rs", "Rust entrypoint");
             healthCheck = Objects.requireNonNull(healthCheck, "healthCheck");
         }
@@ -168,11 +243,15 @@ public sealed interface DeploymentRuntimeSpecification permits DeploymentRuntime
     }
 
     /** .NET service published from one locked project. / 从一个锁定项目发布的 .NET 服务。 */
-    record DotNetService(String version, String artifactName, String entrypoint, HealthCheck healthCheck)
-            implements DeploymentRuntimeSpecification {
+    record DotNetService(String version, String artifactName, String entrypoint, HealthCheck healthCheck, RuntimeIdentityMode identityPolicy) implements DeploymentRuntimeSpecification {
+        /** Creates a runtime with the current explicit isolation policy. / 使用当前明确隔离策略创建运行时。 */
+        public DotNetService(String version, String artifactName, String entrypoint, HealthCheck healthCheck) {
+            this(version, artifactName, entrypoint, healthCheck, RuntimeIdentityMode.SYSTEMD_DYNAMIC);
+        }
         /** Creates an instance of this type. / 创建此类型的实例。 */
         public DotNetService {
-            version = validateServiceVersion(version, "(?:8|9)\\.0(?:\\.[0-9]+)?"); artifactName = safeName(artifactName, "artifactName");
+            requireIdentityPolicy(identityPolicy, RuntimeIdentityMode.SYSTEMD_DYNAMIC);
+            version = requireVersionToken(version); artifactName = safeName(artifactName, "artifactName");
             entrypoint = relativePath(entrypoint, "entrypoint"); requireExact(entrypoint, artifactName + ".dll", ".NET entrypoint");
             healthCheck = Objects.requireNonNull(healthCheck, "healthCheck");
         }
@@ -180,24 +259,36 @@ public sealed interface DeploymentRuntimeSpecification permits DeploymentRuntime
         @Override public DeploymentProjectType projectType() { return DeploymentProjectType.DOTNET_SERVICE; }
     }
 
-    /** Kotlin/JVM service with an exact compiler or plugin version and fixed Java 21 target. / 具有精确编译器或插件版本并固定到 Java 21 的 Kotlin/JVM 服务。 */
-    record KotlinService(String version, String artifactName, String entrypoint, HealthCheck healthCheck)
-            implements DeploymentRuntimeSpecification {
+    /** Kotlin/JVM service with an exact compiler or plugin version and an explicit JVM target. / 具有精确编译器或插件版本及显式 JVM 目标的 Kotlin/JVM 服务。 */
+    record KotlinService(String version, String artifactName, String entrypoint, String jvmTarget, HealthCheck healthCheck, RuntimeIdentityMode identityPolicy) implements DeploymentRuntimeSpecification {
+        /** Creates a runtime with the current explicit isolation policy. / 使用当前明确隔离策略创建运行时。 */
+        public KotlinService(String version, String artifactName, String entrypoint, String jvmTarget, HealthCheck healthCheck) {
+            this(version, artifactName, entrypoint, jvmTarget, healthCheck, RuntimeIdentityMode.SYSTEMD_DYNAMIC);
+        }
         /** Creates an instance of this type. / 创建此类型的实例。 */
         public KotlinService {
-            version = validateServiceVersion(version, "(?:1\\.9|2\\.[0-9]+)\\.[0-9]+"); artifactName = safeName(artifactName, "artifactName");
+            requireIdentityPolicy(identityPolicy, RuntimeIdentityMode.SYSTEMD_DYNAMIC);
+            jvmTarget = requireJavaVersion(jvmTarget);
+            version = requireVersionToken(version); artifactName = safeName(artifactName, "artifactName");
             entrypoint = javaName(entrypoint, "entrypoint"); healthCheck = Objects.requireNonNull(healthCheck, "healthCheck");
         }
         /** Returns the supported deployment project type. / 返回支持的部署项目类型。 */
+        public KotlinService(String version, String artifactName, String entrypoint, HealthCheck healthCheck) {
+            this(version, artifactName, entrypoint, "21", healthCheck);
+        }
         @Override public DeploymentProjectType projectType() { return DeploymentProjectType.KOTLIN_SERVICE; }
     }
 
     /** Composer-locked PHP HTTP service. / Composer 锁定的 PHP HTTP 服务。 */
-    record PhpService(String version, String artifactName, String entrypoint, int servicePort, HealthCheck healthCheck)
-            implements DeploymentRuntimeSpecification {
+    record PhpService(String version, String artifactName, String entrypoint, int servicePort, HealthCheck healthCheck, RuntimeIdentityMode identityPolicy) implements DeploymentRuntimeSpecification {
+        /** Creates a runtime with the current explicit isolation policy. / 使用当前明确隔离策略创建运行时。 */
+        public PhpService(String version, String artifactName, String entrypoint, int servicePort, HealthCheck healthCheck) {
+            this(version, artifactName, entrypoint, servicePort, healthCheck, RuntimeIdentityMode.SYSTEMD_DYNAMIC);
+        }
         /** Creates an instance of this type. / 创建此类型的实例。 */
         public PhpService {
-            version = validateServiceVersion(version, "8\\.(?:2|3|4)"); artifactName = safeName(artifactName, "artifactName");
+            requireIdentityPolicy(identityPolicy, RuntimeIdentityMode.SYSTEMD_DYNAMIC);
+            version = requireVersionToken(version); artifactName = safeName(artifactName, "artifactName");
             entrypoint = relativePath(entrypoint, "entrypoint"); requireExact(artifactName, "public", "PHP document root");
             requireExact(entrypoint, "public/index.php", "PHP router"); requirePort(servicePort);
             healthCheck = Objects.requireNonNull(healthCheck, "healthCheck");
@@ -207,11 +298,15 @@ public sealed interface DeploymentRuntimeSpecification permits DeploymentRuntime
     }
 
     /** Bundler-backed or dependency-free Ruby service. / Bundler 支持或无依赖 Ruby 服务。 */
-    record RubyService(String version, String artifactName, String entrypoint, int servicePort, HealthCheck healthCheck)
-            implements DeploymentRuntimeSpecification {
+    record RubyService(String version, String artifactName, String entrypoint, int servicePort, HealthCheck healthCheck, RuntimeIdentityMode identityPolicy) implements DeploymentRuntimeSpecification {
+        /** Creates a runtime with the current explicit isolation policy. / 使用当前明确隔离策略创建运行时。 */
+        public RubyService(String version, String artifactName, String entrypoint, int servicePort, HealthCheck healthCheck) {
+            this(version, artifactName, entrypoint, servicePort, healthCheck, RuntimeIdentityMode.SYSTEMD_DYNAMIC);
+        }
         /** Creates an instance of this type. / 创建此类型的实例。 */
         public RubyService {
-            version = validateServiceVersion(version, "3\\.(?:2|3|4)(?:\\.[0-9]+)?"); artifactName = safeName(artifactName, "artifactName");
+            requireIdentityPolicy(identityPolicy, RuntimeIdentityMode.SYSTEMD_DYNAMIC);
+            version = requireVersionToken(version); artifactName = safeName(artifactName, "artifactName");
             entrypoint = relativePath(entrypoint, "entrypoint");
             boolean bundler = artifactName.equals("bundle") && entrypoint.equals("config.ru");
             boolean cli = artifactName.equals("source") && entrypoint.endsWith(".rb");
@@ -226,10 +321,14 @@ public sealed interface DeploymentRuntimeSpecification permits DeploymentRuntime
     }
 
     /** One fixed CMake preset and one C or C++ service executable. / 一个固定 CMake preset 与单一 C 或 C++ 服务可执行文件。 */
-    record CmakeService(String preset, String target, String artifactName, HealthCheck healthCheck)
-            implements DeploymentRuntimeSpecification {
+    record CmakeService(String preset, String target, String artifactName, HealthCheck healthCheck, RuntimeIdentityMode identityPolicy) implements DeploymentRuntimeSpecification {
+        /** Creates a runtime with the current explicit isolation policy. / 使用当前明确隔离策略创建运行时。 */
+        public CmakeService(String preset, String target, String artifactName, HealthCheck healthCheck) {
+            this(preset, target, artifactName, healthCheck, RuntimeIdentityMode.SYSTEMD_DYNAMIC);
+        }
         /** Creates a reviewed CMake service specification. / 创建经审阅的 CMake 服务规范。 */
         public CmakeService {
+            requireIdentityPolicy(identityPolicy, RuntimeIdentityMode.SYSTEMD_DYNAMIC);
             preset = safeName(preset, "preset");
             target = safeName(target, "target");
             artifactName = safeName(artifactName, "artifactName");
@@ -284,9 +383,9 @@ public sealed interface DeploymentRuntimeSpecification permits DeploymentRuntime
         return value;
     }
 
-    private static String validateServiceVersion(String value, String pattern) {
+    private static String requireVersionToken(String value) {
         value = Objects.requireNonNull(value, "version").trim();
-        if (!value.matches(pattern)) {
+        if (!value.matches("[A-Za-z0-9][A-Za-z0-9._+-]{0,95}")) {
             throw new IllegalArgumentException("version is not allowed for the selected service runtime");
         }
         return value;
@@ -306,15 +405,15 @@ public sealed interface DeploymentRuntimeSpecification permits DeploymentRuntime
 
     private static String requireJavaVersion(String value) {
         value = Objects.requireNonNull(value, "javaVersion").trim();
-        if (!value.matches("(?:17|21|22)")) {
-            throw new IllegalArgumentException("javaVersion must be one supported major version");
-        }
-        return value;
+        var parsed = gold.debug.windowstolinux.shared.model.toolchain.ToolchainVersion.parse(
+                gold.debug.windowstolinux.shared.model.toolchain.ToolchainEcosystemType.JAVA, value);
+        if (parsed.isEmpty()) throw new IllegalArgumentException("javaVersion must be an explicit version");
+        return parsed.orElseThrow().branch();
     }
 
     private static String requirePythonVersion(String value) {
         value = Objects.requireNonNull(value, "pythonVersion").trim();
-        if (!value.matches("3\\.(?:10|11|12|13)")) {
+        if (!value.matches("[0-9]{1,9}\\.[0-9]{1,9}(?:\\.[0-9]{1,9})?(?:[-+][A-Za-z0-9._-]+)?")) {
             throw new IllegalArgumentException("pythonVersion must be one supported explicit minor version");
         }
         return value;

@@ -228,7 +228,7 @@ class DeploymentAnalysisCoordinatorTest {
     }
 
     @Test
-    void recognitionPreviewReportsEveryPhaseThreeCandidateWithoutCreatingADeploymentPath() throws Exception {
+    void recognitionPreviewReportsEveryCandidateLanguageWithoutCreatingADeploymentPath() throws Exception {
         Path project = Files.createDirectories(temporaryDirectory.resolve("recognition-preview"));
         for (String file : new String[]{"main.go", "main.rs", "Program.cs", "Main.kt", "index.php", "app.rb",
                 "native.c", "native.cpp", "Main.scala", "core.clj", "app.ex", "main.dart", "init.lua",

@@ -6,6 +6,18 @@ import gold.debug.windowstolinux.shared.model.failure.FailureSeverityLevel;
 
 /** Stable failures raised at the desktop application-service boundary. / 桌面应用服务边界抛出的稳定失败。 */
 public enum ApplicationServiceFailureType implements FailureDefinition {
+    DATABASE_AUTH_REQUIRED("service.database.auth-required", "database",
+            "service.error.databaseAuthRequired", FailureSeverityLevel.ERROR, FailureRecoveryAction.REQUEST_USER_CORRECTION),
+    DATABASE_STATE_CHANGED("service.database.state-changed", "database",
+            "service.error.databaseStateChanged", FailureSeverityLevel.ERROR, FailureRecoveryAction.REQUEST_USER_CORRECTION),
+    DATABASE_INITIALIZATION_FAILED("service.database.initialization-failed", "database",
+            "service.error.databaseInitializationFailed", FailureSeverityLevel.ERROR, FailureRecoveryAction.REQUEST_USER_CORRECTION),
+    DATABASE_MANUAL_RESTORE_REQUIRED("service.database.manual-restore-required", "database",
+            "service.error.databaseManualRestoreRequired", FailureSeverityLevel.ERROR, FailureRecoveryAction.REQUIRE_MANUAL_RECOVERY),
+    DATABASE_VERSION_UNSUPPORTED("service.database.version-unsupported", "database",
+            "service.error.databaseVersionUnsupported", FailureSeverityLevel.ERROR, FailureRecoveryAction.REQUEST_USER_CORRECTION),
+    DATABASE_ACTION_FAILED("service.database.action-failed", "database",
+            "service.error.databaseActionFailed", FailureSeverityLevel.ERROR, FailureRecoveryAction.REQUEST_USER_CORRECTION),
     STORAGE_MODE_MISMATCH("service.validation.storage-mode-mismatch", "validation",
             "service.error.storageModeMismatch", FailureSeverityLevel.ERROR, FailureRecoveryAction.REQUEST_USER_CORRECTION),
     DEPLOYMENT_ANALYSIS_REQUIRED("service.deployment.analysis-required", "deployment",

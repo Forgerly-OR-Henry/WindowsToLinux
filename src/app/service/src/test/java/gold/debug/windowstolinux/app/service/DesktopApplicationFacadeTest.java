@@ -92,8 +92,10 @@ class DesktopApplicationFacadeTest {
             char[] password = service.loadPasswordCredential(profile, secretStore).copy();
             assertArrayEquals("ssh-password".toCharArray(), password);
             java.util.Arrays.fill(password, '\0');
-            assertEquals(HostKeyDecision.ACCEPT_FIRST_USE,
-                    service.hostKeyVerifier(profile, fingerprint -> fingerprint.equals("SHA256:first")).verify(profile.endpoint(), "SHA256:first"));
+            var firstUse = service.hostKeyVerifier(profile, fingerprint -> fingerprint.equals("SHA256:first"));
+            assertEquals(HostKeyDecision.ACCEPT_FIRST_USE, firstUse.verify(profile.endpoint(), "SHA256:first"));
+            assertTrue(database.servers().findServer(profile.id()).isEmpty());
+            assertTrue(firstUse.authenticated(profile.endpoint(), new gold.debug.windowstolinux.shared.linux.connection.HostKeyObservation("SHA256:first", "SHA256:first")));
             assertEquals(HostKeyDecision.REJECT,
                     service.hostKeyVerifier(profile, fingerprint -> true).verify(profile.endpoint(), "SHA256:changed"));
             assertEquals("SHA256:first", database.servers().findServer(profile.id()).orElseThrow().hostKeySha256(),
@@ -120,6 +122,30 @@ class DesktopApplicationFacadeTest {
             }
             assertThrows(java.sql.SQLException.class,
                     () -> service.saveDeploymentSecretRevision(revision, secretStore, "replacement".toCharArray()));
+        }
+    }
+
+    @Test
+    void createsSecretStorageMetadataFromUserInputAndClearsRejectedInputs() throws Exception {
+        try (DesktopPersistence database = DesktopPersistence.open(temporaryDirectory)) {
+            DesktopApplicationFacade service = new DesktopApplicationFacade(database, temporaryDirectory.resolve("work"), unusedGateway());
+            char[] master = "correct master password".toCharArray(), value = "initial-value".toCharArray();
+            SecretReference reference = service.saveDeploymentSecretRevision(" database-password:7 ",
+                    CredentialStorageMode.MASTER_PASSWORD, master, value);
+            var saved = database.applicationSecrets().findRevision(reference).orElseThrow();
+            assertEquals("application-secret/database-password/7", saved.credentialKey());
+            assertEquals(CredentialStorageMode.MASTER_PASSWORD, saved.credentialMode());
+            assertTrue(saved.createdAt().isAfter(Instant.EPOCH));
+            assertArrayEquals(new char[master.length], master); assertArrayEquals(new char[value.length], value);
+            char[] replacement = "replacement".toCharArray();
+            assertThrows(java.sql.SQLException.class, () -> service.saveDeploymentSecretRevision("database-password:7",
+                    CredentialStorageMode.MASTER_PASSWORD, "correct master password".toCharArray(), replacement));
+            assertArrayEquals(new char[replacement.length], replacement);
+            char[] invalidMaster = "correct master password".toCharArray(), invalidValue = "unused".toCharArray();
+            assertThrows(IllegalArgumentException.class, () -> service.saveDeploymentSecretRevision("missing-revision",
+                    CredentialStorageMode.MASTER_PASSWORD, invalidMaster, invalidValue));
+            assertArrayEquals(new char[invalidMaster.length], invalidMaster);
+            assertArrayEquals(new char[invalidValue.length], invalidValue);
         }
     }
 
@@ -235,7 +261,7 @@ class DesktopApplicationFacadeTest {
     }
 
     @Test
-    void requiresAFreshRootApprovalBoundToTheReviewedSourceAndServer() throws Exception {
+    void rejectsRootBuildEvenWithHistoricalApproval() throws Exception {
         ServerIdentity server = server("server-one", "192.0.2.10", "SHA256:AAAAAAAAAAAA");
         BuildLimitConfiguration rootLimits = new BuildLimitConfiguration(1200, 1024, 4096,
                 4L * 1024 * 1024, 2L * 1024 * 1024 * 1024, true);
@@ -246,12 +272,8 @@ class DesktopApplicationFacadeTest {
             assertThrows(IllegalArgumentException.class, () ->
                     createRequest(service, supportedPreparation("demo"), server, rootLimits, false));
 
-            ReviewedDeploymentRequest approved = createRequest(service, supportedPreparation("demo"), server,
-                    rootLimits, true);
-            assertTrue(approved.approval().rootBuildAccepted());
-            assertEquals(approved.archive().contentSha256(), approved.approval().sourceSha256());
-            assertEquals(server.id(), approved.approval().serverId());
-            assertEquals(approved.facts().applicationId(), approved.approval().applicationId());
+            assertThrows(IllegalArgumentException.class, () ->
+                    createRequest(service, supportedPreparation("demo"), server, rootLimits, true));
         }
     }
 

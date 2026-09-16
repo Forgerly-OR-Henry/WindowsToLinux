@@ -18,7 +18,7 @@ import java.util.regex.Pattern;
 
 /** Inspects one locked Go module service without executing Go. / 在不执行 Go 的情况下检查一个锁定的 Go Module 服务。 */
 public final class GoModuleDeploymentInspector implements DeploymentTypeInspector {
-    private static final Pattern GO_VERSION = Pattern.compile("(?m)^go\\s+(1\\.[0-9]+)(?:\\.[0-9]+)?\\s*$");
+    private static final Pattern GO_VERSION = Pattern.compile("(?m)^go\\s+([0-9]+(?:\\.[0-9]+){1,2}(?:[-+][A-Za-z0-9._-]+)?)\\s*$");
 
     @Override
     public DeploymentProjectType projectType() {

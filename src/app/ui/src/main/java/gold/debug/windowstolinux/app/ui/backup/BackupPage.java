@@ -24,7 +24,6 @@ import javax.swing.JTextField;
 import java.awt.BorderLayout;
 import java.awt.Component;
 import java.awt.FlowLayout;
-import java.awt.GridLayout;
 import java.nio.file.InvalidPathException;
 import java.nio.file.Path;
 import java.util.Arrays;
@@ -346,7 +345,7 @@ public final class BackupPage {
                 Path selected = Path.of(archivePath.getText()).toAbsolutePath().normalize();
                 chooser.setCurrentDirectory(selected.getParent().toFile());
             } catch (InvalidPathException | NullPointerException ignored) {
-                // The chooser remains at its safe platform default.
+                // The chooser remains at its safe platform default. / 选择器保持平台的安全默认设置。
             }
         }
         if (chooser.showOpenDialog(owner) == JFileChooser.APPROVE_OPTION) {

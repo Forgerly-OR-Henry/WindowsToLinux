@@ -12,11 +12,8 @@ import gold.debug.windowstolinux.shared.model.project.DeploymentProjectFacts;
 
 import java.io.IOException;
 import java.net.URI;
-import java.net.http.HttpClient;
-import java.net.http.HttpRequest;
-import java.net.http.HttpResponse;
-import java.nio.charset.StandardCharsets;
-import java.time.Duration;
+import gold.debug.windowstolinux.shared.ai.transport.RoleChatTransport;
+import gold.debug.windowstolinux.shared.ai.transport.HttpRoleChatTransport;
 import java.util.Arrays;
 import java.util.Objects;
 
@@ -26,8 +23,7 @@ import java.util.Objects;
  * <p>仅使用已脱敏的确定性事实调用 OpenAI 兼容端点。
  */
 public final class OpenAiCompatibleStructuralAnalysisClient {
-    private static final Duration REQUEST_TIMEOUT = Duration.ofSeconds(30);
-    private final HttpClient httpClient;
+    private final RoleChatTransport transport;
     private final ProviderEndpointPolicy endpointPolicy;
     private final ChatCompletionResponseParser responseParser;
 
@@ -37,11 +33,11 @@ public final class OpenAiCompatibleStructuralAnalysisClient {
      * <p>创建 {@code OpenAiCompatibleStructuralAnalysisClient} 实例。
      */
     public OpenAiCompatibleStructuralAnalysisClient() {
-        this(HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(10)).build());
+        this(new HttpRoleChatTransport());
     }
 
-    OpenAiCompatibleStructuralAnalysisClient(HttpClient httpClient) {
-        this.httpClient = Objects.requireNonNull(httpClient, "httpClient");
+    OpenAiCompatibleStructuralAnalysisClient(RoleChatTransport transport) {
+        this.transport = Objects.requireNonNull(transport, "transport");
         this.endpointPolicy = new ProviderEndpointPolicy();
         this.responseParser = new ChatCompletionResponseParser();
     }
@@ -78,16 +74,7 @@ public final class OpenAiCompatibleStructuralAnalysisClient {
         }
         char[] keyCopy = Arrays.copyOf(apiKey, apiKey.length);
         try {
-            HttpRequest request = HttpRequest.newBuilder(endpoint)
-                    .timeout(REQUEST_TIMEOUT)
-                    .header("Authorization", "Bearer " + new String(keyCopy))
-                    .header("Content-Type", "application/json")
-                    .POST(HttpRequest.BodyPublishers.ofString(
-                            requestBody,
-                            StandardCharsets.UTF_8))
-                    .build();
-            HttpResponse<String> response = httpClient.send(request,
-                    HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
+            var response = transport.send(endpoint, keyCopy, requestBody);
             if (response.statusCode() < 200 || response.statusCode() >= 300) {
                 throw AiAnalysisException.create(AiAnalysisFailureType.HTTP_REJECTED,
                         java.util.Map.of("status", response.statusCode()),

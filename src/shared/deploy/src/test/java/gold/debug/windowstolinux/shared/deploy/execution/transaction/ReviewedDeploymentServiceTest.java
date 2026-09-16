@@ -74,6 +74,40 @@ class ReviewedDeploymentServiceTest {
     @TempDir Path temporaryDirectory;
 
     @Test
+    void publishesThePreparedBindingWithoutOverwritingTheDeclaredRuntime() {
+        var runtime = new DeploymentRuntimeSpecification.SpringBoot("16", new HealthCheck.Tcp(8080, 5, 1));
+        var request = request(runtime);
+        var requirement = gold.debug.windowstolinux.shared.linux.build.ProjectToolchainRequirements.from(request.facts(), runtime).getFirst();
+        var tools = new gold.debug.windowstolinux.shared.model.toolchain.ResolvedToolchainSet("fixture", List.of(
+                new gold.debug.windowstolinux.shared.model.toolchain.ResolvedToolchainSet.Selection(requirement,
+                        gold.debug.windowstolinux.shared.model.toolchain.ToolchainVersion.parse(requirement.ecosystem(), "17.0.12").orElseThrow(),
+                        "/usr/local/lib/windowstolinux/toolchains/versions/java-" + SHA,
+                        gold.debug.windowstolinux.shared.model.toolchain.ResolvedToolchainSet.OriginType.MANAGED,
+                        "https://api.adoptium.net/fixture", SHA)));
+        var base = fakeSession(EnumSet.noneOf(DeploymentProjectType.class));
+        AtomicInteger publications = new AtomicInteger();
+        var session = (DeploymentRemoteSession) Proxy.newProxyInstance(getClass().getClassLoader(),
+                new Class<?>[]{DeploymentRemoteSession.class}, (proxy, method, arguments) -> {
+                    if (method.getName().equals("prepareToolchains"))
+                        return new gold.debug.windowstolinux.shared.linux.build.ToolchainPreparationResult(tools, base.collectDeploymentCapabilities());
+                    if (method.getName().equals("buildDeployment")) return new DeploymentBuildResult(true, SHA, "fixture", tools);
+                    if (method.getName().equals("publishDeployment")) {
+                        publications.incrementAndGet();
+                        assertTrue(java.util.Arrays.stream(arguments).anyMatch(a -> a instanceof DeploymentBuildResult b && b.toolchains().equals(tools)));
+                        assertTrue(java.util.Arrays.asList(arguments).contains(runtime));
+                    }
+                    return method.invoke(base, arguments);
+                });
+        var result = new ReviewedDeploymentService().deploy(request, application(), (endpoint, credential, verifier) -> session,
+                new SshEndpoint("server-one", "example.test", 22, "root"), new SshCredential.Password("password".toCharArray()),
+                (endpoint, fingerprint) -> HostKeyDecision.ACCEPT_EXISTING);
+        assertEquals(DeploymentStatus.SUCCEEDED, result.status());
+        assertEquals(1, publications.get());
+        assertEquals(ReviewedReleaseIdentityResolver.bind(ReviewedReleaseIdentityResolver.from(request), tools), result.publishedReleaseSha256().orElseThrow());
+        assertEquals("16", ((DeploymentRuntimeSpecification.SpringBoot) request.runtime()).javaVersion());
+    }
+
+    @Test
     void drivesEveryReviewedProjectTypeThroughOneBoundedTransaction() {
         EnumSet<DeploymentProjectType> built = EnumSet.noneOf(DeploymentProjectType.class);
         DeploymentRemoteSession session = fakeSession(built);
@@ -81,7 +115,7 @@ class ReviewedDeploymentServiceTest {
         for (DeploymentRuntimeSpecification runtime : runtimes()) {
             ReviewedDeploymentRequest request = request(runtime);
             DeploymentResult result = new ReviewedDeploymentService().deploy(request, application(), gateway,
-                    new SshEndpoint("server-one", "example.test", 22, "deployer"),
+                    new SshEndpoint("server-one", "example.test", 22, "root"),
                     new SshCredential.Password("password".toCharArray()), (endpoint, fingerprint) -> HostKeyDecision.ACCEPT_EXISTING);
             assertEquals(DeploymentStatus.SUCCEEDED, result.status());
             assertEquals(ReviewedReleaseIdentityResolver.from(request), result.publishedReleaseSha256().orElseThrow());
@@ -100,7 +134,7 @@ class ReviewedDeploymentServiceTest {
         };
 
         DeploymentResult result = new ReviewedDeploymentService().deploy(request(runtimes().get(2)), application(), gateway,
-                new SshEndpoint("server-one", "example.test", 22, "deployer"),
+                new SshEndpoint("server-one", "example.test", 22, "root"),
                 new SshCredential.Password("password".toCharArray()), (endpoint, fingerprint) -> HostKeyDecision.ACCEPT_EXISTING);
 
         assertEquals(DeploymentStatus.PRECONDITION_REJECTED, result.status());
@@ -122,7 +156,7 @@ class ReviewedDeploymentServiceTest {
         };
 
         DeploymentResult result = new ReviewedDeploymentService().deploy(request(runtimes().getFirst()), application(), gateway,
-                new SshEndpoint("server-one", "example.test", 22, "deployer"),
+                new SshEndpoint("server-one", "example.test", 22, "root"),
                 new SshCredential.Password("password".toCharArray()), (endpoint, fingerprint) -> HostKeyDecision.ACCEPT_EXISTING);
 
         assertEquals(DeploymentStatus.FAILED_FIRST_DEPLOYMENT, result.status());
@@ -141,7 +175,7 @@ class ReviewedDeploymentServiceTest {
         DeploymentLinuxGateway gateway = (endpoint, credential, verifier) -> session;
 
         DeploymentResult result = new ReviewedDeploymentService().deploy(request(runtimes().getFirst()), application(), gateway,
-                new SshEndpoint("server-one", "example.test", 22, "deployer"),
+                new SshEndpoint("server-one", "example.test", 22, "root"),
                 new SshCredential.Password("password".toCharArray()),
                 (endpoint, fingerprint) -> HostKeyDecision.ACCEPT_EXISTING);
 
@@ -151,6 +185,56 @@ class ReviewedDeploymentServiceTest {
         assertTrue(result.events().stream().anyMatch(event -> event.step()
                 == gold.debug.windowstolinux.shared.model.deployment.DeploymentTraceEvent.HELPER_PROTOCOL
                 && !event.succeeded()));
+    }
+
+    @Test void doesNotCommitAHealthyButStoppedFinalRuntime() {
+        var base = fakeSession(EnumSet.noneOf(DeploymentProjectType.class));
+        var result = deployWith((proxy, method, arguments) -> method.getName().equals("observeDeployment")
+                ? new LifecycleObservation(application(), RuntimeState.STOPPED, AutostartState.DISABLED,
+                        true, Instant.now(), "stopped fixture") : method.invoke(base, arguments));
+        assertEquals(DeploymentStatus.FAILED_FIRST_DEPLOYMENT, result.status());
+        assertTrue(result.publishedReleaseSha256().isEmpty());
+    }
+
+    @Test void keepsPublishedIdentityAndWarningWhenCandidateCleanupFails() {
+        var base = fakeSession(EnumSet.noneOf(DeploymentProjectType.class));
+        var result = deployWith((proxy, method, arguments) -> method.getName().equals("cleanupCandidate")
+                ? new RemoteStepResult(false, false, "fixture residual mount") : method.invoke(base, arguments));
+        assertEquals(DeploymentStatus.SUCCEEDED, result.status());
+        assertTrue(result.publishedReleaseSha256().isPresent());
+        assertEquals(1, result.nonFatalFailures().size());
+    }
+
+    @Test void failedBuildWithUnverifiedCleanupRequiresManualRecovery() {
+        var base = fakeSession(EnumSet.noneOf(DeploymentProjectType.class));
+        var result = deployWith((proxy, method, arguments) -> switch (method.getName()) {
+            case "buildDeployment" -> DeploymentBuildResult.failed(SHA, "fixture failed build");
+            case "cleanupCandidate" -> new RemoteStepResult(false, false, "fixture residual process");
+            default -> method.invoke(base, arguments);
+        });
+        assertEquals(DeploymentStatus.MANUAL_RECOVERY_REQUIRED, result.status());
+    }
+
+    @Test void retentionFailureCannotRollBackAVerifiedPublication() {
+        var base = fakeSession(EnumSet.noneOf(DeploymentProjectType.class));
+        var result = deployWith((proxy, method, arguments) -> {
+            if (method.getName().equals("retainRecentSuccessfulReleases")) {
+                throw LinuxOperationException.create(LinuxOperationFailureType.COMMAND_FAILED, "fixture retention failure");
+            }
+            if (method.getName().equals("rollbackDeployment")) throw new AssertionError("committed publication was rolled back");
+            return method.invoke(base, arguments);
+        });
+        assertEquals(DeploymentStatus.SUCCEEDED, result.status());
+        assertTrue(result.publishedReleaseSha256().isPresent());
+        assertEquals(1, result.nonFatalFailures().size());
+    }
+
+    private DeploymentResult deployWith(java.lang.reflect.InvocationHandler handler) {
+        var session = (DeploymentRemoteSession) Proxy.newProxyInstance(getClass().getClassLoader(),
+                new Class<?>[]{DeploymentRemoteSession.class}, handler);
+        return new ReviewedDeploymentService().deploy(request(runtimes().getFirst()), application(),
+                (endpoint, credential, verifier) -> session, new SshEndpoint("server-one", "example.test", 22, "root"),
+                new SshCredential.Password("fixture".toCharArray()), (endpoint, fingerprint) -> HostKeyDecision.ACCEPT_EXISTING);
     }
 
     private DeploymentRemoteSession fakeSession(EnumSet<DeploymentProjectType> built) {
@@ -172,6 +256,7 @@ class ReviewedDeploymentServiceTest {
                     return switch (method.getName()) {
                     case "collectCapabilities" -> new ServerCapabilityFacts("Ubuntu 24.04", "x86_64", true, true, true,
                             true, true, true, true, true, helperProtocolVersion, 10L * 1024 * 1024 * 1024, "fixture");
+                    case "prepareToolchains" -> java.lang.reflect.InvocationHandler.invokeDefault(proxy, method, arguments);
                     case "collectDeploymentCapabilities" -> new LinuxCapabilityFacts(LinuxDistroType.UBUNTU, "24.04",
                             "x86_64", "apt", "amd64", true, true, true, true,
                             java.util.Set.of(21), java.util.Set.of(22), true, true,
@@ -206,7 +291,8 @@ class ReviewedDeploymentServiceTest {
                         built.add(facts.projectType());
                         yield DeploymentBuildResult.succeeded(SHA, "fixture build");
                     }
-                    case "stageDeploymentInputs" -> new DeploymentInputManifest(SHA, List.of());
+                    case "stageDeploymentInputs" -> new gold.debug.windowstolinux.shared.linux.protocol.RemoteDeploymentInputs(
+                            ((gold.debug.windowstolinux.shared.linux.protocol.RemoteRuntimeConfiguration) arguments[1]).sha256(), List.of());
                     case "snapshotDeployment" -> ReleaseSnapshot.firstDeployment("fixture snapshot");
                     case "cleanupCandidate" -> {
                         counters.cleanups.incrementAndGet();

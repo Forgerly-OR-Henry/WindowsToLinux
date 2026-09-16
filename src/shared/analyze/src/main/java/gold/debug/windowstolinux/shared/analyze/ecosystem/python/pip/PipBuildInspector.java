@@ -17,7 +17,7 @@ public final class PipBuildInspector {
         Path path = root.resolve(lockFile);
         if (!BoundedMetadataInspector.regular(path)) return Optional.empty();
         String content = BoundedMetadataInspector.read(path);
-        String logical = content.replace("\\\r\\\n", "\\\n").replace("\\\\\\\n", " ");
+        String logical = content.replace("\r\n", "\n").replace("\\\n", " ");
         boolean valid = logical.lines().map(String::trim)
                 .filter(line -> !line.isEmpty() && !line.startsWith("#"))
                 .allMatch(line -> !line.startsWith("-") && line.contains("==") && HASH.matcher(line).find());

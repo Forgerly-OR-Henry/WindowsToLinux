@@ -28,12 +28,18 @@ public final class DotNetSdkBuildRenderer implements DeploymentBuildRenderer {
                 export DOTNET_NOLOGO=1
                 export DOTNET_GCHeapHardLimit=0x40000000
                 command -v dotnet >/dev/null
-                dotnet --version | grep -Eq %s
+                dotnet_command=(dotnet)
+                if [ -n "${WTL_DOTNET_VERSION:-}" ]; then
+                  test -f "$DOTNET_ROOT/sdk/$WTL_DOTNET_VERSION/dotnet.dll"
+                  dotnet_command=("$DOTNET_ROOT/dotnet" exec "$DOTNET_ROOT/sdk/$WTL_DOTNET_VERSION/dotnet.dll")
+                  export MSBuildSDKsPath="$DOTNET_ROOT/sdk/$WTL_DOTNET_VERSION/Sdks"
+                  "${dotnet_command[@]}" --version | grep -Fx "$WTL_DOTNET_VERSION"
+                else dotnet --version | grep -Eq %s; fi
                 test -f ./global.json
                 test -f ./packages.lock.json
-                run dotnet restore --locked-mode
+                run "${dotnet_command[@]}" restore --locked-mode
                 mkdir -p ./.w2l/dotnet
-                run dotnet publish --no-restore --configuration Release --output ./.w2l/dotnet
+                run "${dotnet_command[@]}" publish --no-restore --configuration Release --output ./.w2l/dotnet
                 test -f "./.w2l/dotnet/$artifact_name.dll"
                 test ! -L "./.w2l/dotnet/$artifact_name.dll"
                 printf 'ARTIFACT=%%s\n' "./.w2l/dotnet/$artifact_name.dll"

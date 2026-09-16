@@ -2,6 +2,7 @@ package gold.debug.windowstolinux.app.db.persistence.serialization;
 
 import gold.debug.windowstolinux.shared.model.health.HealthCheck;
 import gold.debug.windowstolinux.shared.model.project.DeploymentRuntimeSpecification;
+import gold.debug.windowstolinux.shared.model.project.RuntimeIdentityMode;
 
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
@@ -17,7 +18,7 @@ import java.util.OptionalInt;
 /** Strict versioned storage codec for one reviewed non-secret runtime definition. / 单个已审阅非秘密运行时定义的严格版本化存储编解码器。 */
 public final class DeploymentRuntimePersistenceCodec {
     private static final int MAGIC = 0x57544c52;
-    private static final int VERSION = 1;
+    private static final int VERSION = 3;
     private static final int MAX_DOCUMENT_BYTES = 1_048_576;
     private static final int MAX_COLLECTION_SIZE = 4_096;
 
@@ -28,6 +29,7 @@ public final class DeploymentRuntimePersistenceCodec {
             output.writeInt(MAGIC);
             output.writeByte(VERSION);
             output.writeByte(type(runtime));
+            output.writeUTF(runtime.identityPolicy().name());
             writePayload(output, runtime);
         }
         byte[] document = bytes.toByteArray();
@@ -43,10 +45,15 @@ public final class DeploymentRuntimePersistenceCodec {
             throw new IOException("reviewed runtime document size is invalid");
         }
         try (DataInputStream input = new DataInputStream(new ByteArrayInputStream(document))) {
-            if (input.readInt() != MAGIC || input.readUnsignedByte() != VERSION) {
+            if (input.readInt() != MAGIC) {
                 throw new IOException("reviewed runtime document header is unsupported");
             }
-            DeploymentRuntimeSpecification runtime = readPayload(input, input.readUnsignedByte(), healthCheck);
+            int version = input.readUnsignedByte();
+            if (version < 1 || version > VERSION) throw new IOException("unsupported runtime format");
+            int type = input.readUnsignedByte();
+            RuntimeIdentityMode policy = version >= 3 ? RuntimeIdentityMode.valueOf(input.readUTF())
+                    : RuntimeIdentityMode.LEGACY_UNSPECIFIED;
+            DeploymentRuntimeSpecification runtime = readPayload(input, type, healthCheck, version).withIdentityPolicy(policy);
             if (input.read() != -1) {
                 throw new IOException("reviewed runtime document contains trailing data");
             }
@@ -78,7 +85,7 @@ public final class DeploymentRuntimePersistenceCodec {
 
     private static void writePayload(DataOutputStream output, DeploymentRuntimeSpecification runtime) throws IOException {
         switch (runtime) {
-            case DeploymentRuntimeSpecification.SpringBoot ignored -> { }
+            case DeploymentRuntimeSpecification.SpringBoot value -> output.writeUTF(value.javaVersion());
             case DeploymentRuntimeSpecification.JavaJar value -> {
                 output.writeUTF(value.jarRelativePath()); output.writeUTF(value.mainClass());
                 output.writeUTF(value.javaVersion()); writeStrings(output, value.jvmArguments());
@@ -103,8 +110,10 @@ public final class DeploymentRuntimePersistenceCodec {
                     value.artifactName(), value.entrypoint());
             case DeploymentRuntimeSpecification.DotNetService value -> writeService(output, value.version(),
                     value.artifactName(), value.entrypoint());
-            case DeploymentRuntimeSpecification.KotlinService value -> writeService(output, value.version(),
-                    value.artifactName(), value.entrypoint());
+            case DeploymentRuntimeSpecification.KotlinService value -> {
+                writeService(output, value.version(), value.artifactName(), value.entrypoint());
+                output.writeUTF(value.jvmTarget());
+            }
             case DeploymentRuntimeSpecification.PhpService value -> {
                 writeService(output, value.version(), value.artifactName(), value.entrypoint());
                 output.writeInt(value.servicePort());
@@ -119,10 +128,10 @@ public final class DeploymentRuntimePersistenceCodec {
         }
     }
 
-    private static DeploymentRuntimeSpecification readPayload(DataInputStream input, int type, HealthCheck health)
+    private static DeploymentRuntimeSpecification readPayload(DataInputStream input, int type, HealthCheck health, int version)
             throws IOException {
         return switch (type) {
-            case 1 -> new DeploymentRuntimeSpecification.SpringBoot(health);
+            case 1 -> new DeploymentRuntimeSpecification.SpringBoot(version == 1 ? "21" : input.readUTF(), health);
             case 2 -> new DeploymentRuntimeSpecification.JavaJar(input.readUTF(), input.readUTF(), input.readUTF(),
                     readStrings(input), readStrings(input), health);
             case 3 -> new DeploymentRuntimeSpecification.JavaSource(input.readUTF(), input.readUTF(), input.readUTF(),
@@ -135,7 +144,8 @@ public final class DeploymentRuntimePersistenceCodec {
             case 8 -> new DeploymentRuntimeSpecification.GoService(input.readUTF(), input.readUTF(), input.readUTF(), health);
             case 9 -> new DeploymentRuntimeSpecification.RustService(input.readUTF(), input.readUTF(), input.readUTF(), health);
             case 10 -> new DeploymentRuntimeSpecification.DotNetService(input.readUTF(), input.readUTF(), input.readUTF(), health);
-            case 11 -> new DeploymentRuntimeSpecification.KotlinService(input.readUTF(), input.readUTF(), input.readUTF(), health);
+            case 11 -> new DeploymentRuntimeSpecification.KotlinService(input.readUTF(), input.readUTF(), input.readUTF(),
+                    version == 1 ? "21" : input.readUTF(), health);
             case 12 -> new DeploymentRuntimeSpecification.PhpService(input.readUTF(), input.readUTF(), input.readUTF(),
                     input.readInt(), health);
             case 13 -> new DeploymentRuntimeSpecification.RubyService(input.readUTF(), input.readUTF(), input.readUTF(),

@@ -27,13 +27,13 @@ import java.util.Optional;
  * <p>提供 {@code SourcePreparationUseCase} 实现。
  */
 public final class SourcePreparationUseCase {
-    /** Freezes local input before automatic discovery or any remote change. */
+    /** Freezes local input before automatic discovery or any remote change. / 在自动发现或任何远端变更之前冻结本地输入。 */
     public gold.debug.windowstolinux.shared.source.snapshot.SourceDirectorySnapshot snapshot(Path directory) throws IOException {
         return gold.debug.windowstolinux.shared.source.snapshot.SourceDirectorySnapshot.create(directory,
                 workspace.workDirectory().resolve("source-snapshots"));
     }
 
-    /** Preserves the repository name for analyzers that derive the application identity from its directory. */
+    /** Preserves the repository name for analyzers that derive the application identity from its directory. / 保留仓库名称，供根据目录推导应用身份的分析器使用。 */
     public gold.debug.windowstolinux.shared.source.snapshot.SourceDirectorySnapshot snapshot(GitSnapshot git) throws IOException {
         String path = git.remote().location().getPath().replaceFirst("/+$", "");
         String name = path.substring(path.lastIndexOf('/') + 1).replaceFirst("\\.git$", "");
@@ -41,7 +41,7 @@ public final class SourcePreparationUseCase {
                 workspace.workDirectory().resolve("source-snapshots"), name);
     }
 
-    /** Resolves the whole Git source once so every component uses the same commit. */
+    /** Resolves the whole Git source once so every component uses the same commit. / 仅解析一次完整 Git 源码，使每个组件使用相同提交。 */
     public GitSnapshot snapshotGit(GitSourceRequest request) throws GitSnapshotException {
         return gitSnapshots.prepare(request, gitWorkspace);
     }
@@ -96,12 +96,12 @@ public final class SourcePreparationUseCase {
         return archive(sourceDirectory, assessment);
     }
 
-    /** Preserves database review as a missing field while discovering runtime inputs. */
+    /** Preserves database review as a missing field while discovering runtime inputs. / 发现运行输入时，将数据库审阅保留为待补充字段。 */
     public ReviewedSourcePreparation prepareAutomatic(Path sourceDirectory, DeploymentProjectType projectType) throws IOException {
         return archive(sourceDirectory, analyzer.analyzeForDatabaseReview(sourceDirectory, projectType));
     }
 
-    /** Creates the final archive only after database evidence admits the same frozen source. */
+    /** Creates the final archive only after database evidence admits the same frozen source. / 仅在数据库证据允许同一冻结源码后创建最终归档。 */
     public ReviewedSourcePreparation prepareWithDatabaseReview(Path sourceDirectory, DeploymentProjectType projectType,
             gold.debug.windowstolinux.shared.model.ecosystem.db.DatabaseSchemaReview review) throws IOException {
         return archive(sourceDirectory, analyzer.analyze(sourceDirectory, projectType, review));
@@ -129,7 +129,7 @@ public final class SourcePreparationUseCase {
         return prepareMultiComponent(applicationRoot, applicationId, requests, java.util.Map.of());
     }
 
-    /** Archives a validated graph after each schema-bearing component has been reviewed. */
+    /** Archives a validated graph after each schema-bearing component has been reviewed. / 各含模式声明的组件完成审阅后，归档已验证的组件图。 */
     public PreparedMultiComponentSource prepareMultiComponent(Path applicationRoot, String applicationId,
             List<ComponentAnalysisRequest> requests, java.util.Map<String, gold.debug.windowstolinux.shared.model.ecosystem.db.DatabaseSchemaReview> reviews)
             throws IOException {

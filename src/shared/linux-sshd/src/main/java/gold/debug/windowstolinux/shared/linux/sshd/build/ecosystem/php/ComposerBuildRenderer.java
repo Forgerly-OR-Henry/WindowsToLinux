@@ -23,11 +23,11 @@ public final class ComposerBuildRenderer implements DeploymentBuildRenderer {
                 || facts.buildTool() != DeploymentBuildToolType.COMPOSER_LOCKED) {
             throw new IllegalArgumentException("Composer renderer requires reviewed locked PHP inputs");
         }
-        String version = SafeBuildScriptEnvelope.shellQuote(php.version());
+        String version = php.version();
         String command = """
                 command -v php >/dev/null
                 command -v composer >/dev/null
-                php -r 'printf("%%d.%%d", PHP_MAJOR_VERSION, PHP_MINOR_VERSION);' | grep -Fx %s
+                php -r 'printf("%%d.%%d", PHP_MAJOR_VERSION, PHP_MINOR_VERSION);' | grep -Fx "${WTL_PHP_BRANCH:-%s}"
                 test -f ./composer.json
                 test -f ./composer.lock
                 test -f ./public/index.php

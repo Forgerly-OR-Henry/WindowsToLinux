@@ -83,7 +83,7 @@ public record LinuxCapabilityFacts(
             throw new IllegalArgumentException("nodeMajorVersions must contain bounded positive majors");
         }
         pythonVersions = Set.copyOf(Objects.requireNonNull(pythonVersions, "pythonVersions"));
-        if (pythonVersions.stream().anyMatch(minor -> minor == null || !minor.matches("3\\.(?:10|11|12|13)"))) {
+        if (pythonVersions.stream().anyMatch(minor -> minor == null || !minor.matches("[0-9]{1,3}\\.[0-9]{1,3}"))) {
             throw new IllegalArgumentException("pythonVersions must contain supported normalized versions");
         }
         java.util.EnumMap<DeploymentProjectType, Set<String>> normalizedService =
@@ -150,12 +150,12 @@ public record LinuxCapabilityFacts(
             return false;
         }
         return switch (projectType) {
-            case GO_SERVICE -> value.matches("1\\.(?:22|23|24)");
-            case RUST_SERVICE -> value.matches("1\\.(?:7[5-9]|8[0-9]|9[0-9])(?:\\.[0-9]+)?");
-            case DOTNET_SERVICE -> value.matches("(?:8|9)\\.0(?:\\.[0-9]+)?");
-            case KOTLIN_SERVICE -> value.equals("21");
-            case PHP_SERVICE -> value.matches("8\\.(?:2|3|4)");
-            case RUBY_SERVICE -> value.matches("3\\.(?:2|3|4)(?:\\.[0-9]+)?");
+            case GO_SERVICE -> value.matches("[0-9A-Za-z][0-9A-Za-z.+_-]{0,95}");
+            case RUST_SERVICE -> value.matches("[0-9A-Za-z][0-9A-Za-z.+_-]{0,95}");
+            case DOTNET_SERVICE -> value.matches("[0-9A-Za-z][0-9A-Za-z.+_-]{0,95}");
+            case KOTLIN_SERVICE -> value.matches("[0-9A-Za-z][0-9A-Za-z.+_-]{0,95}");
+            case PHP_SERVICE -> value.matches("[0-9A-Za-z][0-9A-Za-z.+_-]{0,95}");
+            case RUBY_SERVICE -> value.matches("[0-9A-Za-z][0-9A-Za-z.+_-]{0,95}");
             default -> false;
         };
     }

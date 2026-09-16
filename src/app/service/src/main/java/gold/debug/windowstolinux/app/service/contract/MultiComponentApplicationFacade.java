@@ -2,7 +2,7 @@ package gold.debug.windowstolinux.app.service.contract;
 
 import gold.debug.windowstolinux.app.secret.SecretStoreException;
 import gold.debug.windowstolinux.app.service.deployment.multi.ManagedMultiComponentApplication;
-import gold.debug.windowstolinux.app.service.deployment.multi.MultiComponentReviewInput;
+import gold.debug.windowstolinux.app.service.contract.definition.MultiComponentReviewInput;
 import gold.debug.windowstolinux.app.service.deployment.multi.ReviewedMultiComponentApplication;
 import gold.debug.windowstolinux.app.service.server.ServerProfile;
 import gold.debug.windowstolinux.app.service.source.PreparedMultiComponentSource;
@@ -25,6 +25,13 @@ import java.util.function.Predicate;
 
 /** Narrow application operations required by whole-application deployment and lifecycle. / 整应用部署与生命周期所需的窄应用操作。 */
 public interface MultiComponentApplicationFacade {
+    /** Parses component analysis within the service boundary. / 在服务边界内解析组件分析输入。 */
+    ComponentAnalysisRequest parseComponentAnalysis(gold.debug.windowstolinux.app.service.contract.definition.ComponentFormInput input);
+
+    /** Parses review inputs against the analyzed managed identity. / 根据已分析受管身份解析审阅输入。 */
+    MultiComponentReviewInput parseComponentReview(gold.debug.windowstolinux.app.service.contract.definition.ComponentFormInput input,
+            String managedApplicationId, boolean containerRisk, boolean experimentalRisk);
+
     PreparedMultiComponentSource prepareReviewedMultiComponentSource(
             Path applicationRoot, String applicationId, List<ComponentAnalysisRequest> components) throws IOException;
 

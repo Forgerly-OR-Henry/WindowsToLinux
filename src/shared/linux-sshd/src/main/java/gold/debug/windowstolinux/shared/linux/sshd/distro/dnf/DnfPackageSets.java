@@ -7,7 +7,7 @@ import java.util.List;
 final class DnfPackageSets {
     private static final List<String> BASE = List.of(
             "java-21-openjdk-devel", "maven", "curl", "sudo", "tar", "gzip", "iproute", "coreutils",
-            "util-linux", "findutils", "gawk", "nodejs", "npm", "cmake", "ninja-build", "gcc", "gcc-c++", "podman"
+            "e2fsprogs", "skopeo", "acl", "shadow-utils", "util-linux", "findutils", "gawk", "nodejs", "npm", "cmake", "ninja-build", "gcc", "gcc-c++", "podman"
     );
 
     private DnfPackageSets() {
@@ -18,6 +18,9 @@ final class DnfPackageSets {
             throw new IllegalArgumentException("enterprise package profile supports only major 9 or 10");
         }
         List<String> packages = new ArrayList<>(BASE);
+        if ("9".equals(major)) {
+            packages.addAll(List.of("openssh", "openssh-server", "openssh-clients"));
+        }
         String python = "9".equals(major) ? "python3.11" : "python3.12";
         packages.add(python);
         packages.add(python + "-pip");

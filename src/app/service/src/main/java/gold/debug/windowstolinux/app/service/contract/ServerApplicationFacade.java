@@ -27,4 +27,10 @@ public interface ServerApplicationFacade {
             ServerProfile profile, CredentialStorageMode mode, char[] masterPassword,
             Predicate<String> confirmation, boolean installationConfirmed)
             throws SecretStoreException, SQLException, LinuxOperationException;
+
+    EnvironmentSetupResult prepareEnvironmentWithStoredPassword(
+            ServerProfile profile, CredentialStorageMode mode, char[] masterPassword,
+            Predicate<String> confirmation, boolean installationConfirmed,
+            Predicate<gold.debug.windowstolinux.shared.model.server.security.SelinuxPreparationPlan> systemConfirmation)
+            throws SecretStoreException, SQLException, LinuxOperationException;
 }

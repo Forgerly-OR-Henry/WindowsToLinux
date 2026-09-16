@@ -26,7 +26,9 @@ public final class GoBuildRenderer implements DeploymentBuildRenderer {
         String command = """
                 artifact_name=%s
                 command -v go >/dev/null
-                go version | grep -Eq %s
+                if [ -n "${WTL_GO_VERSION:-}" ]; then
+                  go version | grep -F "go version go${WTL_GO_VERSION} "
+                else go version | grep -Eq %s; fi
                 test -f ./go.mod
                 test -f ./go.sum
                 test -f ./main.go

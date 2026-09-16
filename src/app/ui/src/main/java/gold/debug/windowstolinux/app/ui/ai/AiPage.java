@@ -23,7 +23,6 @@ import java.awt.FlowLayout;
 import java.awt.GridBagLayout;
 import java.net.URI;
 import java.util.Map;
-import java.util.Optional;
 
 /** Owns the optional AI form, temporary secrets, state, and explanation workflow. / 持有可选 AI 表单、临时秘密、状态与解释流程。 */
 public final class AiPage {

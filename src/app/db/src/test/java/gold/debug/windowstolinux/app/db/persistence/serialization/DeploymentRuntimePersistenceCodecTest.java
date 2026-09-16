@@ -20,6 +20,18 @@ class DeploymentRuntimePersistenceCodecTest {
             URI.create("http://127.0.0.1:18081/health"), 200, 20);
     private final DeploymentRuntimePersistenceCodec codec = new DeploymentRuntimePersistenceCodec();
 
+    @Test void preservesNewTargetsAndLegacyJava21Meaning() throws Exception {
+        var java8 = new DeploymentRuntimeSpecification.SpringBoot("8", TCP);
+        var kotlin8 = new DeploymentRuntimeSpecification.KotlinService("1.8.22", "demo", "demo.MainKt", "8", TCP);
+        assertEquals(java8, codec.read(codec.write(java8), TCP));
+        assertEquals(kotlin8, codec.read(codec.write(kotlin8), TCP));
+        // A version-one Spring Boot payload contains only magic, format and runtime tag. / 第一版 Spring Boot 载荷仅包含魔数、格式和运行时标签。
+        byte[] legacy = Arrays.copyOf(codec.write(java8), 6);
+        legacy[4] = 1;
+        assertEquals(new DeploymentRuntimeSpecification.SpringBoot("21", TCP).withIdentityPolicy(
+                gold.debug.windowstolinux.shared.model.project.RuntimeIdentityMode.LEGACY_UNSPECIFIED), codec.read(legacy, TCP));
+    }
+
     @Test
     void roundTripsEveryReviewedRuntimeWithoutASecondHealthCopy() throws Exception {
         Map<Integer, Integer> ports = new LinkedHashMap<>();

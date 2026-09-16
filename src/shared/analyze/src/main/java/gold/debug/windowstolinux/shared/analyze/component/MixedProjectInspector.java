@@ -41,12 +41,12 @@ public final class MixedProjectInspector {
         return analyze(selectedApplicationRoot, applicationId, requests, Map.of(), false);
     }
 
-    /** Checks graph conflicts while retaining the pending database review as an input requirement. */
+    /** Checks graph conflicts while retaining the pending database review as an input requirement. / 检查组件图冲突，同时将未完成数据库审阅保留为输入要求。 */
     public MultiComponentProjectAssessment analyzeAutomatic(Path root, String applicationId, List<ComponentAnalysisRequest> requests) {
         return analyze(root, applicationId, requests, Map.of(), true);
     }
 
-    /** Rechecks every component using source-bound database evidence. */
+    /** Rechecks every component using source-bound database evidence. / 使用与源码绑定的数据库证据重新检查每个组件。 */
     public MultiComponentProjectAssessment analyze(Path root, String applicationId, List<ComponentAnalysisRequest> requests,
             Map<String, gold.debug.windowstolinux.shared.model.ecosystem.db.DatabaseSchemaReview> reviews) {
         return analyze(root, applicationId, requests, reviews, false);
@@ -144,7 +144,7 @@ public final class MixedProjectInspector {
                                                            String componentId) {
         String managedId = managedComponentId(applicationId, componentId);
         return new DeploymentProjectFacts(facts.sourceRoot(), managedId, facts.projectType(), facts.buildTool(),
-                facts.support(), facts.languageFacts(), facts.evidence(), facts.conflicts(), facts.missingInformation());
+                facts.support(), facts.languageFacts(), facts.evidence(), facts.conflicts(), facts.missingInformation(), facts.toolchainRequirements());
     }
 
     private static String managedComponentId(String applicationId, String componentId) {

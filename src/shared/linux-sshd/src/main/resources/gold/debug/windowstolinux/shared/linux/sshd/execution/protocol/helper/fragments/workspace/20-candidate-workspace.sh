@@ -1,4 +1,10 @@
 expected_unit_digest() {
+  local legacy_runtime_user="$deployer" unit="${2:-$(unit_path "$1")}"
+  if [ -f "$unit" ]; then
+    assert_root_owned_regular "$unit"
+    legacy_runtime_user="$(sed -n 's/^User=//p' "$unit")"
+    [[ "$legacy_runtime_user" =~ ^[a-z_][a-z0-9_-]{0,31}$ ]] || reject legacy-runtime-user
+  fi
   render_unit "$1" | sha256sum | awk '{print $1}'
 }
 initialise_controlled_roots() {
@@ -63,9 +69,10 @@ assert_current_or_empty() {
   fi
 }
 create_candidate() {
-  [ "$#" -eq 2 ] || reject candidate-arguments
+  [ "$#" -eq 3 ] || reject candidate-arguments
   local app="$1"
   local candidate_id="$2"
+  require_workspace_limit "$3"
   require_app "$app"
   require_candidate "$app" "$candidate_id"
   initialise_controlled_roots
@@ -78,6 +85,7 @@ create_candidate() {
   printf '%s\n' "$deployer" > "$candidate/.deployer"
   chown root:root -- "$candidate/.deployer"
   chmod 444 -- "$candidate/.deployer"
+  create_workspace_volume "$candidate" "$3"
   assert_candidate_for_deployer "$candidate"
   printf 'CANDIDATE=%s\n' "$candidate"
 }
@@ -91,6 +99,12 @@ cleanup_candidate() {
   candidate="$(candidate_root "$candidate_id")"
   if [ -e "$candidate" ] || [ -L "$candidate" ]; then
     assert_candidate_for_deployer "$candidate"
+    stop_candidate_build "$app" "$candidate_id"
+    if mountpoint -q "$candidate/mutable"; then freeze_candidate_build "$app" "$candidate_id"; fi
+    cleanup_container_builder "$candidate"
+    cleanup_candidate_image "$app" "$candidate_id"
+    cleanup_restore_candidates "$candidate"
+    cleanup_workspace_volume "$candidate"
     rm -rf --one-file-system -- "$candidate"
   fi
   printf 'CANDIDATE_CLEANED=1\n'
@@ -128,4 +142,18 @@ create_snapshot() {
   printf 'SNAPSHOT_TOKEN=%s\n' "$token"
   printf 'PREVIOUS=1\n'
   printf 'PREVIOUS_RUNNING=%s\n' "$previous_running"
+}
+
+create_restore_candidate() {
+  [ "$#" -eq 2 ] || reject restore-candidate-arguments
+  require_app "$1"; require_candidate "$1" "$2"
+  initialise_controlled_roots
+  local candidate="$(candidate_root "$2")"
+  [ ! -e "$candidate" ] && [ ! -L "$candidate" ] || reject candidate-exists
+  install -d -o root -g root -m 711 -- "$candidate"
+  install -d -o root -g root -m 700 -- "$candidate/mutable"
+  printf '%s\n' "$deployer" > "$candidate/.deployer"
+  printf 'restore\n' > "$candidate/.purpose"
+  chmod 400 -- "$candidate/.deployer" "$candidate/.purpose"
+  printf 'CANDIDATE=%s\n' "$candidate"
 }

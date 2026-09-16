@@ -44,15 +44,17 @@ public sealed interface BackupComponentRuntime permits BackupComponentRuntime.Sp
     DeploymentRuntimeSpecification toSpecification();
 
     /** Spring Boot runtime. / Spring Boot 运行时。 */
-    record SpringBoot(BackupHealthCheck healthCheck) implements BackupComponentRuntime {
+    record SpringBoot(String javaVersion, BackupHealthCheck healthCheck) implements BackupComponentRuntime {
+        public SpringBoot(BackupHealthCheck healthCheck) { this("21", healthCheck); }
         /** Validates this runtime. / 校验此运行时。 */
         public SpringBoot {
+            javaVersion = javaVersion == null ? "21" : javaVersion;
             healthCheck = required(healthCheck);
-            new DeploymentRuntimeSpecification.SpringBoot(healthCheck.toHealthCheck());
+            new DeploymentRuntimeSpecification.SpringBoot(javaVersion, healthCheck.toHealthCheck());
         }
         @Override public DeploymentProjectType projectType() { return DeploymentProjectType.SPRING_BOOT; }
         @Override public DeploymentRuntimeSpecification toSpecification() {
-            return new DeploymentRuntimeSpecification.SpringBoot(healthCheck.toHealthCheck());
+            return new DeploymentRuntimeSpecification.SpringBoot(javaVersion, healthCheck.toHealthCheck());
         }
     }
 
@@ -219,18 +221,22 @@ public sealed interface BackupComponentRuntime permits BackupComponentRuntime.Sp
     }
 
     /** Kotlin service runtime. / Kotlin 服务运行时。 */
-    record KotlinService(String version, String artifactName, String entrypoint, BackupHealthCheck healthCheck)
+    record KotlinService(String version, String artifactName, String entrypoint, String jvmTarget, BackupHealthCheck healthCheck)
             implements BackupComponentRuntime {
+        public KotlinService(String version, String artifactName, String entrypoint, BackupHealthCheck healthCheck) {
+            this(version, artifactName, entrypoint, "21", healthCheck);
+        }
         /** Validates and normalizes this runtime. / 校验并规范化此运行时。 */
         public KotlinService {
+            jvmTarget = jvmTarget == null ? "21" : jvmTarget;
             healthCheck = required(healthCheck);
             DeploymentRuntimeSpecification.KotlinService checked = new DeploymentRuntimeSpecification.KotlinService(
-                    version, artifactName, entrypoint, healthCheck.toHealthCheck());
+                    version, artifactName, entrypoint, jvmTarget, healthCheck.toHealthCheck());
             version = checked.version(); artifactName = checked.artifactName(); entrypoint = checked.entrypoint();
         }
         @Override public DeploymentProjectType projectType() { return DeploymentProjectType.KOTLIN_SERVICE; }
         @Override public DeploymentRuntimeSpecification toSpecification() {
-            return new DeploymentRuntimeSpecification.KotlinService(version, artifactName, entrypoint,
+            return new DeploymentRuntimeSpecification.KotlinService(version, artifactName, entrypoint, jvmTarget,
                     healthCheck.toHealthCheck());
         }
     }
@@ -289,7 +295,7 @@ public sealed interface BackupComponentRuntime permits BackupComponentRuntime.Sp
     /** Copies one canonical runtime into the portable schema. / 将一个规范运行时复制到可移植 schema。 */
     public static BackupComponentRuntime from(DeploymentRuntimeSpecification runtime) {
         return switch (Objects.requireNonNull(runtime, "runtime")) {
-            case DeploymentRuntimeSpecification.SpringBoot value -> new SpringBoot(BackupHealthCheck.from(value.healthCheck()));
+            case DeploymentRuntimeSpecification.SpringBoot value -> new SpringBoot(value.javaVersion(), BackupHealthCheck.from(value.healthCheck()));
             case DeploymentRuntimeSpecification.JavaJar value -> new JavaJar(value.jarRelativePath(), value.mainClass(),
                     value.javaVersion(), value.jvmArguments(), value.applicationArguments(), BackupHealthCheck.from(value.healthCheck()));
             case DeploymentRuntimeSpecification.JavaSource value -> new JavaSource(value.sourceRoot(), value.mainClass(),
@@ -309,7 +315,7 @@ public sealed interface BackupComponentRuntime permits BackupComponentRuntime.Sp
             case DeploymentRuntimeSpecification.DotNetService value -> new DotNetService(value.version(), value.artifactName(),
                     value.entrypoint(), BackupHealthCheck.from(value.healthCheck()));
             case DeploymentRuntimeSpecification.KotlinService value -> new KotlinService(value.version(), value.artifactName(),
-                    value.entrypoint(), BackupHealthCheck.from(value.healthCheck()));
+                    value.entrypoint(), value.jvmTarget(), BackupHealthCheck.from(value.healthCheck()));
             case DeploymentRuntimeSpecification.PhpService value -> new PhpService(value.version(), value.artifactName(),
                     value.entrypoint(), value.servicePort(), BackupHealthCheck.from(value.healthCheck()));
             case DeploymentRuntimeSpecification.RubyService value -> new RubyService(value.version(), value.artifactName(),

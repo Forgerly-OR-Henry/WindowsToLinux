@@ -108,13 +108,13 @@ database_inspect() {
       if [ "$type" = mariadb ]; then client="$(command -v mariadb || true)"; dump="$(command -v mariadb-dump || true)"; else client="$(command -v mysql || true)"; dump="$(command -v mysqldump || true)"; fi
       if [ -n "$client" ] && [ -n "$dump" ]; then
         defaults="$(database_mysql_defaults "$app" "$type" "$database_secret_identifier" "$database_secret_revision" "$database_tls")"
-        if ! engine="$($client --defaults-extra-file="$defaults" --host="$database_host" --port="$database_port" --user="$database_username" --batch --skip-column-names -e 'SELECT VERSION()' 2>/dev/null)"; then
+        if ! engine="$(run_mysql_client "$client" "$defaults" --host="$database_host" --port="$database_port" --user="$database_username" --batch --skip-column-names -e 'SELECT VERSION()' 2>/dev/null)"; then
           rm -f -- "$defaults"; reject database-inspect-failed
         fi
         tool="$($dump --version | awk '{print $5}' | tr -d ',')"; available=1
         server_major="${engine%%.*}"; tool_major="${tool%%.*}"
         if [[ "$server_major" =~ ^[0-9]+$ && "$tool_major" =~ ^[0-9]+$ ]] && [ "$server_major" = "$tool_major" ]; then compatible=1; fi
-        if ! non_transactional="$($client --defaults-extra-file="$defaults" --host="$database_host" --port="$database_port" --user="$database_username" --batch --skip-column-names --database="$database_name" -e "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = DATABASE() AND engine IS NOT NULL AND engine NOT IN ('InnoDB','NDB')" 2>/dev/null)"; then
+        if ! non_transactional="$(run_mysql_client "$client" "$defaults" --host="$database_host" --port="$database_port" --user="$database_username" --batch --skip-column-names --database="$database_name" -e "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = DATABASE() AND engine IS NOT NULL AND engine NOT IN ('InnoDB','NDB')" 2>/dev/null)"; then
           rm -f -- "$defaults"; reject database-engine-inspect-failed
         fi
         [ "$non_transactional" = 0 ] && transactional=1
@@ -168,7 +168,7 @@ database_export() {
         ! systemctl is-active --quiet "$(unit_name "$app")" || reject database-writes-active
         transaction_option=--lock-all-tables; limited=1
       else rm -f -- "$defaults"; reject database-consistency-mode; fi
-      if ! "$dump" --defaults-extra-file="$defaults" --host="$database_host" --port="$database_port" --user="$database_username" "$transaction_option" --routines --events --triggers --result-file="$tmp" "$database_name"; then
+      if ! run_mysql_client "$dump" "$defaults" --host="$database_host" --port="$database_port" --user="$database_username" "$transaction_option" --routines --events --triggers "$database_name" > "$tmp"; then
         rm -f -- "$defaults"; reject database-export-failed
       fi
       rm -f -- "$defaults"
@@ -252,15 +252,15 @@ database_restore_candidate() {
     else
       if [ "$type" = mariadb ]; then client="$(command -v mariadb)"; else client="$(command -v mysql)"; fi
       defaults="$(database_mysql_defaults "$credential_app" "$type" "$database_secret_identifier" "$database_secret_revision" "$database_tls")"
-      if ! "$client" --defaults-extra-file="$defaults" --host="$database_host" --port="$database_port" --user="$database_username" -e "CREATE DATABASE \`$candidate_database\`"; then
+      if ! run_mysql_client "$client" "$defaults" --host="$database_host" --port="$database_port" --user="$database_username" -e "CREATE DATABASE \`$candidate_database\`"; then
         rm -f -- "$defaults"; reject database-candidate-create-failed
       fi
-      if ! "$client" --defaults-extra-file="$defaults" --host="$database_host" --port="$database_port" --user="$database_username" "$candidate_database" < "$artifact"; then
-        "$client" --defaults-extra-file="$defaults" --host="$database_host" --port="$database_port" --user="$database_username" -e "DROP DATABASE IF EXISTS \`$candidate_database\`" >/dev/null 2>&1 || true
+      if ! run_mysql_client "$client" "$defaults" --host="$database_host" --port="$database_port" --user="$database_username" "$candidate_database" < "$artifact"; then
+        run_mysql_client "$client" "$defaults" --host="$database_host" --port="$database_port" --user="$database_username" -e "DROP DATABASE IF EXISTS \`$candidate_database\`" >/dev/null 2>&1 || true
         rm -f -- "$defaults"; reject database-restore-failed
       fi
-      if ! "$client" --defaults-extra-file="$defaults" --host="$database_host" --port="$database_port" --user="$database_username" --database="$candidate_database" -e 'SHOW TABLES' >/dev/null; then
-        "$client" --defaults-extra-file="$defaults" --host="$database_host" --port="$database_port" --user="$database_username" -e "DROP DATABASE IF EXISTS \`$candidate_database\`" >/dev/null 2>&1 || true
+      if ! run_mysql_client "$client" "$defaults" --host="$database_host" --port="$database_port" --user="$database_username" --database="$candidate_database" -e 'SHOW TABLES' >/dev/null; then
+        run_mysql_client "$client" "$defaults" --host="$database_host" --port="$database_port" --user="$database_username" -e "DROP DATABASE IF EXISTS \`$candidate_database\`" >/dev/null 2>&1 || true
         rm -f -- "$defaults"; reject database-restore-schema
       fi
       rm -f -- "$defaults"
@@ -287,7 +287,7 @@ database_discard_candidate() {
     else
       if [ "$type" = mariadb ]; then client="$(command -v mariadb)"; else client="$(command -v mysql)"; fi
       credentials="$(database_mysql_defaults "$credential_app" "$type" "$database_secret_identifier" "$database_secret_revision" "$database_tls")"
-      if ! "$client" --defaults-extra-file="$credentials" --host="$database_host" --port="$database_port" --user="$database_username" -e "DROP DATABASE IF EXISTS \`$candidate_database\`"; then rm -f -- "$credentials"; reject database-candidate-discard-failed; fi
+      if ! run_mysql_client "$client" "$credentials" --host="$database_host" --port="$database_port" --user="$database_username" -e "DROP DATABASE IF EXISTS \`$candidate_database\`"; then rm -f -- "$credentials"; reject database-candidate-discard-failed; fi
     fi
     rm -f -- "$credentials"
   fi

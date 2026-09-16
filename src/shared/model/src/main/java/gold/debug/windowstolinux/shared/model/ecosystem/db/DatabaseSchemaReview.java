@@ -2,7 +2,7 @@ package gold.debug.windowstolinux.shared.model.ecosystem.db;
 
 import java.util.*;
 
-/** A source-bound result of verified initialization or separately approved existing-schema work. */
+/** A source-bound result of verified initialization or separately approved existing-schema work. / 与源码绑定的验证结果，来自已验证初始化或单独获批的现有模式操作。 */
 public record DatabaseSchemaReview(String inspectionSha256, Set<String> databaseIds, Set<String> initializedSqlPaths,
                                    boolean newOwnedDatabaseInitialized, boolean existingSchemaChangeApproved,
                                    boolean frameworkMigrationsDisabled) {

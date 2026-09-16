@@ -20,8 +20,11 @@ public final class CandidateWorkspaceExecutor {
     }
 
     /** Creates the exact reviewed candidate workspace. / 创建精确的经审阅候选工作区。 */
-    public RemoteStepResult create(RemoteWorkspace workspace) throws LinuxOperationException {
-        var result = commands.exec(command("candidate-create", workspace), Duration.ofSeconds(20), true);
+    public RemoteStepResult create(RemoteWorkspace workspace, long maxWorkspaceBytes) throws LinuxOperationException {
+        if (maxWorkspaceBytes < 64L * 1024 * 1024 || maxWorkspaceBytes > 128L * 1024 * 1024 * 1024) {
+            throw new IllegalArgumentException("candidate workspace budget is outside the supported hard limit");
+        }
+        var result = commands.exec(command("candidate-create", workspace) + " " + maxWorkspaceBytes, Duration.ofMinutes(5), true);
         return new RemoteStepResult(result.succeeded(), result.timedOut(), result.succeeded()
                 ? "Controlled helper created the managed candidate directory"
                 : "Controlled helper could not create the managed candidate directory: " + result.failureEvidence());
@@ -35,9 +38,15 @@ public final class CandidateWorkspaceExecutor {
                 : "Controlled helper could not clean the current candidate directory: " + result.failureEvidence());
     }
 
+    /** Prepares a restore candidate without authorizing project builds. / 准备恢复候选，不授权项目构建。 */
+    public RemoteStepResult createRestore(RemoteWorkspace workspace) throws LinuxOperationException {
+        var result = commands.exec(command("candidate-restore-create", workspace), Duration.ofSeconds(20), true);
+        return new RemoteStepResult(result.succeeded(), result.timedOut(), result.failureEvidence());
+    }
+
     private static String command(String verb, RemoteWorkspace workspace) {
         Objects.requireNonNull(workspace, "workspace");
-        return "sudo -n " + SshCommandExecutor.quote(ManagedHelperBundle.PATH) + ' '
+        return SshCommandExecutor.quote(ManagedHelperBundle.PATH) + ' '
                 + SshCommandExecutor.quote(verb) + ' ' + SshCommandExecutor.quote(workspace.applicationId()) + ' '
                 + SshCommandExecutor.quote(workspace.candidateId());
     }

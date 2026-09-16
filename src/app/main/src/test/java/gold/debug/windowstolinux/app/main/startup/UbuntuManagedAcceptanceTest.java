@@ -38,6 +38,7 @@ import java.util.Optional;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 
 /**
  * Opt-in real-host acceptance test. It reads the SSH password only from WINDOWSTOLINUX_TEST_SSH_PASSWORD and is never part of ordinary Maven gates.
@@ -55,8 +56,9 @@ class UbuntuManagedAcceptanceTest {
         String accessUrlProperty = System.getProperty("managed.access.url");
         String businessMarker = System.getProperty("managed.business.marker");
         String host = System.getProperty("managed.ssh.host");
-        String username = System.getProperty("managed.ssh.user", "ubuntu");
-        boolean rootBuild = Boolean.getBoolean("managed.root-build");
+        String username = System.getProperty("managed.ssh.user", "root");
+        boolean rootBuild = false;
+        assertFalse(Boolean.getBoolean("managed.root-build"), "root builds were removed in helper v7");
         String password = System.getenv("WINDOWSTOLINUX_TEST_SSH_PASSWORD");
         HealthCheck.Http health = httpHealth(System.getProperty("managed.health.url", "http://127.0.0.1:18080/actuator/health"));
         assertTrue(sourceProperty != null && !sourceProperty.isBlank(), "managed.hello.source is required");
@@ -64,8 +66,7 @@ class UbuntuManagedAcceptanceTest {
         assertTrue(businessMarker != null && !businessMarker.isBlank(), "managed.business.marker is required");
         assertTrue(host != null && !host.isBlank(), "managed.ssh.host is required");
         assertTrue(username != null && !username.isBlank(), "managed.ssh.user is required");
-        assertTrue(!"root".equals(username) || rootBuild,
-                "a root SSH session requires the explicit managed.root-build=true confirmation");
+        assertEquals("root", username, "root management must launch only restricted builds");
         assertTrue(password != null && !password.isBlank(), "WINDOWSTOLINUX_TEST_SSH_PASSWORD is required");
         Path source = Path.of(sourceProperty).toAbsolutePath().normalize();
         assertTrue(Files.isDirectory(source), "Hello World source directory is required");

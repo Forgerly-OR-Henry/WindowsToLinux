@@ -31,7 +31,7 @@ class DesktopTextArchitectureTest {
     @Test void nativeDatabaseDiagnosticsHaveMatchingKeysInsteadOfEnglishProtocolSentences() throws Exception {
         var english = gold.debug.windowstolinux.app.ui.i18n.MessageCatalog.forLanguageTag("en");
         var chinese = gold.debug.windowstolinux.app.ui.i18n.MessageCatalog.forLanguageTag("zh-CN");
-        String helper = Files.readString(repositoryRoot().resolve("src/shared/linux-sshd/src/main/resources/gold/debug/windowstolinux/shared/linux/sshd/ecosystem/db/10-native-instances.sh"));
+        String helper = Files.readString(repositoryRoot().resolve("src/shared/linux-sshd/src/main/resources/gold/debug/windowstolinux/shared/linux/sshd/execution/protocol/helper/fragments/database/10-native-instances.sh"));
         var codes = Pattern.compile("conflicts\\.append\\('([^']+)'").matcher(helper);
         while (codes.find()) {
             String code = codes.group(1).split("\\|",2)[0];
@@ -39,8 +39,9 @@ class DesktopTextArchitectureTest {
             assertNotNull(english.text("db.conflict."+code,java.util.Map.of("instance","fixture")));
             assertNotNull(chinese.text("db.conflict."+code,java.util.Map.of("instance","fixture")));
         }
-        for (var failure : gold.debug.windowstolinux.shared.linux.ecosystem.db.NativeDatabasePort.FailureType.values()) {
-            String key = "db.failure."+failure.name().toLowerCase(java.util.Locale.ROOT);
+        for (var failure : gold.debug.windowstolinux.app.service.failure.ApplicationServiceFailureType.values()) {
+            if (!failure.phase().equals("database")) continue;
+            String key = failure.messageKey();
             assertNotNull(english.text(key)); assertNotNull(chinese.text(key));
         }
     }

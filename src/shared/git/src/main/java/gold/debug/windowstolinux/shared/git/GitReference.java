@@ -8,9 +8,9 @@ import java.util.Objects;
  * <p>用户选择的可变或不可变 Git 引用；分析前会将其解析为 Commit。
  */
 public sealed interface GitReference permits GitReference.Branch, GitReference.Tag, GitReference.Commit, GitReference.DefaultBranch {
-    /** Remote HEAD, resolved and pinned by the controlled fetch before analysis. */
+    /** Remote HEAD, resolved and pinned by the controlled fetch before analysis. / 远端 HEAD，在分析前由受控抓取解析并固定。 */
     record DefaultBranch() implements GitReference {
-        /** Returns the remote default reference. */
+        /** Returns the remote default reference. / 返回远端默认引用。 */
         @Override public String value() { return "HEAD"; }
     }
     /**

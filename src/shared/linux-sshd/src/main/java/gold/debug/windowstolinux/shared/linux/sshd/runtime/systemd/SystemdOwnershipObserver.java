@@ -1,11 +1,9 @@
 package gold.debug.windowstolinux.shared.linux.sshd.runtime.systemd;
 
 import gold.debug.windowstolinux.shared.linux.error.LinuxOperationException;
-import gold.debug.windowstolinux.shared.linux.error.LinuxOperationFailureType;
 import gold.debug.windowstolinux.shared.linux.sshd.command.SshCommandExecutor;
-import gold.debug.windowstolinux.shared.model.lifecycle.AutostartState;
+import gold.debug.windowstolinux.shared.linux.sshd.execution.protocol.runtime.ManagedRuntimeProtocolExecutor;
 import gold.debug.windowstolinux.shared.model.lifecycle.LifecycleObservation;
-import gold.debug.windowstolinux.shared.model.lifecycle.RuntimeState;
 import gold.debug.windowstolinux.shared.model.managed.ManagedApplication;
 
 import java.nio.charset.StandardCharsets;
@@ -72,7 +70,10 @@ public final class SystemdOwnershipObserver {
                 fi
                 if [ "$current_path" -eq 1 ] && [ "$owner_file" -eq 1 ] && [ "$owner_value" -eq 1 ] && [ "$fragment" -eq 1 ] \
                   && [ "$dropins" -eq 1 ] && [ "$unit_digest" -eq 1 ]; then owner=1; fi
-                runtime=$(systemctl is-active %s 2>/dev/null || true)
+                if state=$(systemctl show --property=ActiveState,SubState,Result,ExecMainCode,ExecMainStatus,MainPID %s); then
+                  printf 'QUERY_OK=1\n%%s\n' "$state"
+                else printf 'QUERY_OK=0\n'; fi
+                runtime=unknown
                 enabled=$(systemctl is-enabled %s 2>/dev/null || true)
                 printf 'OWNER=%%s\nCURRENT_PATH=%%s\nOWNER_FILE=%%s\nOWNER_VALUE=%%s\nFRAGMENT=%%s\nDROPINS=%%s\nUNIT_DIGEST=%%s\nRUNTIME=%%s\nENABLED=%%s\n' \
                   "$owner" "$current_path" "$owner_file" "$owner_value" "$fragment" "$dropins" "$unit_digest" "$runtime" "$enabled"
@@ -83,34 +84,19 @@ public final class SystemdOwnershipObserver {
                 SshCommandExecutor.quote(application.systemdUnit()));
         var result = commands.exec("/bin/bash -lc " + SshCommandExecutor.quote(script), Duration.ofSeconds(20), true);
         if (!result.succeeded()) {
-            throw LinuxOperationException.create(LinuxOperationFailureType.RUNTIME_OBSERVATION_FAILED,
-                    "Failed to observe the actual managed application state");
+            return ManagedRuntimeProtocolExecutor.nativeObservation(application, Map.of("QUERY_OK", "0"));
         }
         Map<String, String> values = SshCommandExecutor.lines(result.output());
         boolean ownership = "1".equals(values.get("OWNER"));
-        String rawRuntime = values.getOrDefault("RUNTIME", "unknown");
-        String rawAutostart = values.getOrDefault("ENABLED", "unknown");
-        RuntimeState runtime = ownership ? runtimeState(rawRuntime) : RuntimeState.UNKNOWN;
-        AutostartState autostart = ownership ? autostartState(rawAutostart) : AutostartState.UNKNOWN;
-        String evidence = ownership ? "State verified through remote managed identity (runtime=" + rawRuntime
-                + ", enabled=" + rawAutostart + ")"
+        LifecycleObservation observation = ManagedRuntimeProtocolExecutor.nativeObservation(application, values);
+        String evidence = ownership ? observation.evidence()
                 : "Managed identity is missing or externally modified (owner-file="
                 + values.getOrDefault("OWNER_FILE", "0") + ", current-path=" + values.getOrDefault("CURRENT_PATH", "0")
                 + ", owner-value=" + values.getOrDefault("OWNER_VALUE", "0")
                 + ", fragment=" + values.getOrDefault("FRAGMENT", "0")
                 + ", dropins=" + values.getOrDefault("DROPINS", "0")
                 + ", unit-digest=" + values.getOrDefault("UNIT_DIGEST", "0") + ")";
-        return new LifecycleObservation(application, runtime, autostart, ownership, Instant.now(), evidence);
-    }
-
-    private static RuntimeState runtimeState(String value) {
-        return "active".equals(value) ? RuntimeState.RUNNING
-                : "inactive".equals(value) ? RuntimeState.STOPPED : RuntimeState.UNKNOWN;
-    }
-
-    private static AutostartState autostartState(String value) {
-        return "enabled".equals(value) ? AutostartState.ENABLED
-                : "disabled".equals(value) ? AutostartState.DISABLED : AutostartState.UNKNOWN;
+        return new LifecycleObservation(application, observation.runtimeState(), observation.autostartState(), ownership, Instant.now(), evidence);
     }
 
     private static String sha256(String value) {

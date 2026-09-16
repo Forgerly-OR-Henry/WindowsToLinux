@@ -7,7 +7,7 @@ import java.io.StringReader;
 import java.util.*;
 import java.util.regex.Pattern;
 
-/** Reads explicit DB declarations and conventional Spring endpoints without retaining credentials. */
+/** Reads explicit DB declarations and conventional Spring endpoints without retaining credentials. / 读取显式数据库声明和常规 Spring 端点，不保留凭据。 */
 public final class DatabaseProjectInspector {
     private static final Pattern JDBC = Pattern.compile("jdbc:(postgresql|mysql|mariadb)://([^/\\s]+)/(\\$\\{[^}]+}|[A-Za-z0-9_]+)", Pattern.CASE_INSENSITIVE);
     public record Assessment(List<DatabaseRequirement> databases, List<String> sqlCandidates, boolean schemaReviewRequired, boolean unknownDatabase,
@@ -63,7 +63,7 @@ public final class DatabaseProjectInspector {
             while (jdbc.find()) {
                 String family = jdbc.group(1).toUpperCase(Locale.ROOT), endpoint = jdbc.group(2), database = jdbc.group(3);
                 if (!observed.add(family+":"+endpoint+"/"+database)) continue;
-                // External or templated hosts need an explicit DB binding; native installation is never redirected to them.
+                // External or templated hosts need an explicit DB binding; native installation is never redirected to them. / 外部或模板主机需要显式数据库绑定，原生安装绝不重定向到这些主机。
                 if (!endpoint.matches("(?:localhost|127\\.0\\.0\\.1)(?::[0-9]+)?")) endpointConfirmation = true;
                 DatabaseEngineType engine = DatabaseEngineType.valueOf(family);
                 String name = database.matches("[a-z][a-z0-9_]{0,62}") ? database : "";
@@ -77,7 +77,7 @@ public final class DatabaseProjectInspector {
                         spring ? "SPRING_DATASOURCE_PASSWORD" : "",initialization,spring,"JDBC endpoint declaration"));
             }
             if (Pattern.compile("(?:spring\\.(?:data\\.)?redis\\.|redis://|rediss://)").matcher(text).find()) {
-                // URI credentials are never kept; a URI or unrecognized host requires the user's explicit target decision.
+                // URI credentials are never kept; a URI or unrecognized host requires the user's explicit target decision. / 不保留 URI 凭据，URI 或无法识别的主机需要用户明确选择目标。
                 if (text.contains("redis://") || text.contains("rediss://")) endpointConfirmation = true;
                 var host = Pattern.compile("spring\\.(?:data\\.)?redis\\.host\\s*[=:]\\s*([^\\s]+)").matcher(text);
                 if (host.find() && !Set.of("localhost","127.0.0.1").contains(host.group(1))) endpointConfirmation = true;

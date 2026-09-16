@@ -26,10 +26,10 @@ public final class PhpCliBuildRenderer implements DeploymentBuildRenderer {
                 || facts.buildTool() != DeploymentBuildToolType.PHP_CLI) {
             throw new IllegalArgumentException("PHP CLI renderer requires reviewed dependency-free inputs");
         }
-        String version = SafeBuildScriptEnvelope.shellQuote(php.version());
+        String version = php.version();
         String command = """
                 command -v php >/dev/null
-                php -r 'printf("%%d.%%d", PHP_MAJOR_VERSION, PHP_MINOR_VERSION);' | grep -Fx %s
+                php -r 'printf("%%d.%%d", PHP_MAJOR_VERSION, PHP_MINOR_VERSION);' | grep -Fx "${WTL_PHP_BRANCH:-%s}"
                 test -f ./windowstolinux-php.properties
                 test -f ./public/index.php
                 test ! -e ./composer.json

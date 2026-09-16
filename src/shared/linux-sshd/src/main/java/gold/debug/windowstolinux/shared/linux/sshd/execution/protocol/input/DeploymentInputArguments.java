@@ -1,6 +1,6 @@
 package gold.debug.windowstolinux.shared.linux.sshd.execution.protocol.input;
 
-import gold.debug.windowstolinux.shared.config.revision.DeploymentInputManifest;
+import gold.debug.windowstolinux.shared.linux.protocol.RemoteDeploymentInputs;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -11,13 +11,13 @@ public final class DeploymentInputArguments {
     private DeploymentInputArguments() { }
 
     /** Performs the {@code from} operation. / 执行 {@code from} 操作。 */
-    public static List<String> from(DeploymentInputManifest inputs) {
+    public static List<String> from(RemoteDeploymentInputs inputs) {
         Objects.requireNonNull(inputs, "inputs");
         List<String> values = new ArrayList<>(List.of(inputs.configurationSha256(),
                 Integer.toString(inputs.secrets().size())));
         inputs.secrets().forEach(secret -> {
-            values.add(secret.reference().identifier());
-            values.add(Long.toString(secret.reference().revision()));
+            values.add(secret.identifier());
+            values.add(Long.toString(secret.revision()));
             values.add(secret.sha256());
         });
         return List.copyOf(values);

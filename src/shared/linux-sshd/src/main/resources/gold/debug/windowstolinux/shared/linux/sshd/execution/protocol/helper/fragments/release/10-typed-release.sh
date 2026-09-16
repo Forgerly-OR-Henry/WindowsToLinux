@@ -1,11 +1,27 @@
+copy_sealed_source() {
+  local source="$1" target="$2" file relative
+  cp -R --no-preserve=all -- "$source" "$target"
+  chown -hR root:root -- "$target"
+  setfacl -R -b -- "$target"
+  find -P "$target" -xdev -type d -exec setfacl -k -- {} +
+  find -P "$target" -xdev -type d -exec chmod 755 -- {} +
+  find -P "$target" -xdev -type f -exec chmod 644 -- {} +
+  while IFS= read -r -d '' file; do
+    relative="${file#"$source"/}"
+    chmod 755 -- "$target/$relative"
+  done < <(find -P "$source" -xdev -type f -perm /111 -print0)
+}
 seal_deployment_tree() {
   local app="$1"
   local candidate_id="$2"
   local release="$3"
   shift 3
+  current_application="$app"
   parse_deployment_inputs "$@"
+  [ "$runtime_identity_policy" = SYSTEMD_DYNAMIC ] || reject runtime-identity-policy
   parse_managed_data_bindings "${deployment_remaining_arguments[@]}"
-  set -- "${managed_data_remaining_arguments[@]}"
+  parse_toolchain_binding "${managed_data_remaining_arguments[@]}"
+  set -- "${toolchain_remaining_arguments[@]}"
   [ "$#" -ge 1 ] || reject runtime-arguments
   local kind="$1"
   shift
@@ -15,15 +31,14 @@ seal_deployment_tree() {
   mutable="$candidate/mutable"
   source="$mutable/source"
   assert_candidate_for_deployer "$candidate"
+  assert_sealed_build "$app" "$candidate_id"
   [ -d "$mutable" ] && [ ! -L "$mutable" ] || reject mutable-workspace
-  chown root:root -- "$mutable"
-  chmod 700 -- "$mutable"
+  assert_root_owned_directory "$mutable"
   [ -d "$source" ] && [ ! -L "$source" ] || reject source-directory
   [ -z "$(find -P "$source" -xdev -type l -print -quit)" ] || reject source-symlink
   [ -z "$(find -P "$source" -xdev ! -type f ! -type d -print -quit)" ] || reject source-special-file
   install -d -o root -g root -m 755 -- "$release"
-  cp -a --no-preserve=ownership -- "$source" "$release/source"
-  chown -R root:root -- "$release/source"
+  copy_sealed_source "$source" "$release/source"
   [ -z "$(find -P "$release/source" -xdev -type l -print -quit)" ] || reject release-symlink
   case "$kind" in
     springboot)
@@ -36,8 +51,8 @@ seal_deployment_tree() {
       esac
       mapfile -d '' -t artifacts < <(find -P "$artifact_root" -maxdepth 1 -type f -name '*.jar' ! -name '*-plain.jar' ! -name '*-sources.jar' ! -name '*-javadoc.jar' -print0 | LC_ALL=C sort -z)
       [ "${#artifacts[@]}" -eq 1 ] || reject artifact-count
-      manifest="$(mktemp -d "$mutable/.manifest.XXXXXX")"
-      (cd "$manifest" && jar xf "${artifacts[0]}" META-INF/MANIFEST.MF)
+      manifest="$(mktemp -d "$release/.manifest.XXXXXX")"
+      (cd "$manifest" && PATH="$toolchain_path" jar xf "${artifacts[0]}" META-INF/MANIFEST.MF)
       tr -d '\r' < "$manifest/META-INF/MANIFEST.MF" | grep -Eq '^Main-Class: org\.springframework\.boot\.loader\.(launch\.)?JarLauncher$' \
         || reject springboot-launcher
       rm -rf --one-file-system -- "$manifest"
@@ -147,6 +162,9 @@ seal_deployment_tree() {
       ;;
     *) reject runtime-kind ;;
   esac
+  if [ -n "$toolchain_binding" ]; then
+    install -o root -g root -m 444 -- "/usr/local/lib/windowstolinux/toolchains/bindings/$toolchain_binding" "$release/.windowstolinux-toolchains"
+  fi
   prepare_managed_data_bindings "$release/source"
 }
 publish_deployment() {
@@ -174,11 +192,11 @@ publish_deployment() {
     rm -rf --one-file-system -- "$release"
   fi
   [ ! -e "$release" ] && [ ! -L "$release" ] || reject release-exists
+  if [ "$previous_present" -eq 1 ]; then stop_application_unit "$app"; fi
   seal_deployment_tree "$app" "$candidate_id" "$release" "$@"
   printf '%s\n' "$manifest" > "$release/.windowstolinux-owner"
   chown root:root -- "$release/.windowstolinux-owner"; chmod 444 -- "$release/.windowstolinux-owner"
   save_deployment_parameters "$release/.windowstolinux-deployment-parameters" "$@"
-  if [ "$previous_present" -eq 1 ]; then systemctl stop "$(unit_name "$app")"; fi
   ln -sfnT -- "$release" "$root/current"
   tmp="$(mktemp /etc/systemd/system/.windowstolinux-managed.XXXXXX)"
   trap 'rm -f -- "$tmp"' EXIT

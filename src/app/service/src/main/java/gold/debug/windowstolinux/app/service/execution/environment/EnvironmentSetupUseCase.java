@@ -12,7 +12,6 @@ import gold.debug.windowstolinux.shared.linux.error.LinuxOperationException;
 import gold.debug.windowstolinux.shared.linux.connection.LinuxGateway;
 import gold.debug.windowstolinux.shared.model.deployment.EnvironmentSetupApproval;
 import gold.debug.windowstolinux.shared.model.deployment.EnvironmentSetupResult;
-import gold.debug.windowstolinux.shared.model.message.LocalizedMessage;
 import gold.debug.windowstolinux.shared.model.security.CredentialStorageMode;
 
 import java.sql.SQLException;
@@ -72,6 +71,14 @@ public final class EnvironmentSetupUseCase {
                                                         char[] masterPassword, Predicate<String> confirmation,
                                                         boolean installationConfirmed)
             throws SecretStoreException, SQLException, LinuxOperationException {
+        return prepare(profile, mode, masterPassword, confirmation, installationConfirmed, null);
+    }
+
+    /** Adds dedicated system-change consent without widening ordinary installation approval. / 增加独立系统变更批准，不扩大普通安装批准范围。 */
+    public EnvironmentSetupResult prepare(ServerProfile profile, CredentialStorageMode mode,
+            char[] masterPassword, Predicate<String> confirmation, boolean installationConfirmed,
+            Predicate<gold.debug.windowstolinux.shared.model.server.security.SelinuxPreparationPlan> systemConfirmation)
+            throws SecretStoreException, SQLException, LinuxOperationException {
         try {
             Objects.requireNonNull(profile, "profile");
             if (profile.credentialMode() != mode) {
@@ -84,6 +91,10 @@ public final class EnvironmentSetupUseCase {
             ReentrantLock lock = locks.forServer(profile.id());
             lock.lock();
             try (SecretStore store = servers.secrets().open(mode, masterPassword)) {
+                if (systemConfirmation != null) {
+                    return service.prepare(approval, gateway, profile.endpoint(), servers.loadPassword(profile, store),
+                            servers.hostKeyVerifier(profile, confirmation), systemConfirmation);
+                }
                 return service.prepare(approval, gateway, profile.endpoint(), servers.loadPassword(profile, store),
                         servers.hostKeyVerifier(profile, confirmation));
             } finally {

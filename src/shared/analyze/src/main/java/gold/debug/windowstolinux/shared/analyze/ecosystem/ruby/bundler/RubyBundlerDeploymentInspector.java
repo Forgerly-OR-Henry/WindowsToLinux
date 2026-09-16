@@ -26,7 +26,7 @@ public final class RubyBundlerDeploymentInspector implements DeploymentTypeInspe
     public DeploymentTypeAssessment inspect(Path root, SourceInspectionFacts source, ProjectLanguageFacts languageFacts,
                                             List<RejectionReason> rejections) throws IOException {
         String version = ServiceMetadataInspector.readIfPresent(root.resolve(".ruby-version")).trim();
-        if (!version.matches("3\\.(?:2|3|4)(?:\\.[0-9]+)?")) {
+        if (!version.matches("[0-9]+(?:\\.[0-9]+){1,2}(?:[-+][A-Za-z0-9._-]+)?")) {
             version = null;
         }
         RubyBundlerFacts facts = new RubyBundlerFacts(version,

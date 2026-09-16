@@ -28,7 +28,7 @@ public final class GradleBuildRenderer implements DeploymentBuildRenderer {
                 test -f ./gradle/wrapper/gradle-wrapper.properties
                 test -f ./gradle/wrapper/gradle-wrapper.jar
                 chmod 700 -- ./gradlew
-                run ./gradlew --no-daemon -x test bootJar
+                run ./gradlew --no-daemon -x test bootJar "${java_gradle_arguments[@]}"
                 """ + SpringBootArtifactBuildScript.verify("./build/libs");
         return SafeBuildScriptEnvelope.wrap(facts, workspace, limits, command);
     }

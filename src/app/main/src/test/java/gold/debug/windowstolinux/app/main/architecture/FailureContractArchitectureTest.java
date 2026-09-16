@@ -14,6 +14,12 @@ import gold.debug.windowstolinux.shared.linux.error.LinuxOperationFailureType;
 import gold.debug.windowstolinux.shared.model.deployment.DeploymentApprovalFailureType;
 import gold.debug.windowstolinux.shared.model.failure.FailureDefinition;
 import gold.debug.windowstolinux.shared.source.archive.SourceArchiveFailureType;
+import gold.debug.windowstolinux.shared.backup.contract.validation.BackupFailureType;
+import gold.debug.windowstolinux.app.secret.crypto.BackupSecretFailureType;
+import gold.debug.windowstolinux.app.windows.update.DesktopUpdateFailureType;
+import gold.debug.windowstolinux.app.windows.uninstall.DesktopUninstallFailureType;
+import gold.debug.windowstolinux.shared.linux.error.NativeDatabaseFailureType;
+import com.sun.source.tree.Tree;
 
 import org.junit.jupiter.api.Test;
 
@@ -50,6 +56,11 @@ class FailureContractArchitectureTest {
 
     private static final Map<Class<? extends Enum<?>>, String> FAILURE_TYPES = Map.ofEntries(
             Map.entry(AiAnalysisFailureType.class, "ai"),
+            Map.entry(BackupFailureType.class, "backup"),
+            Map.entry(BackupSecretFailureType.class, "secret"),
+            Map.entry(DesktopUpdateFailureType.class, "windows"),
+            Map.entry(DesktopUninstallFailureType.class, "windows"),
+            Map.entry(NativeDatabaseFailureType.class, "linux"),
             Map.entry(ApplicationServiceFailureType.class, "service"),
             Map.entry(ConfigurationFailureType.class, "configuration"),
             Map.entry(DeploymentApprovalFailureType.class, "deployment"),
@@ -91,23 +102,99 @@ class FailureContractArchitectureTest {
 
     @Test
     void customExceptionsExposeOnlyTheStructuredFailureContract() throws Exception {
-        List<String> violations = new ArrayList<>();
-        for (Path source : productionSources()) {
-            String name = source.getFileName().toString();
-            if (!name.endsWith("Exception.java")) continue;
-            String content = Files.readString(source);
-            if (!content.contains("implements FailureCarrier")) {
-                violations.add(projectRoot().relativize(source) + " does not implement FailureCarrier");
-            }
-            if (!name.matches("[A-Z][A-Za-z0-9]+Exception\\.java")) {
-                violations.add(projectRoot().relativize(source) + " does not name its failure boundary");
-            }
-        }
+        List<String> violations = exceptionViolations(ArchitectureSourceInspector.production());
         assertTrue(violations.isEmpty(), () -> "custom exception violations: " + violations);
         assertFalse(Files.exists(projectRoot().resolve(
                 "src/shared/model/src/main/java/gold/debug/windowstolinux/shared/model/message/LocalizedFailure.java")));
         assertFalse(Files.exists(projectRoot().resolve(
                 "src/shared/model/src/main/java/gold/debug/windowstolinux/shared/model/message/LocalizedOperationException.java")));
+    }
+
+    @Test
+    void everyProductionFailureDefinitionMustBeRegistered() throws Exception {
+        assertEquals(Set.of(), registrationDifferences(ArchitectureSourceInspector.production(),
+                FAILURE_TYPES.keySet().stream().map(Class::getCanonicalName).collect(java.util.stream.Collectors.toSet())));
+    }
+
+    @Test
+    void missingAndStaleRegistrationsCannotPass() throws Exception {
+        var sources = ArchitectureSourceInspector.production();
+        var registered = new HashSet<>(FAILURE_TYPES.keySet().stream().map(Class::getCanonicalName).toList());
+        registered.remove(BackupFailureType.class.getCanonicalName());
+        assertEquals(Set.of(BackupFailureType.class.getCanonicalName()), registrationDifferences(sources, registered));
+        registered.add(BackupFailureType.class.getCanonicalName());
+        registered.add("unavailable.StaleFailureType");
+        assertEquals(Set.of("unavailable.StaleFailureType"), registrationDifferences(sources, registered));
+    }
+
+    @Test
+    void newlyAddedNestedFailureDefinitionsCannotEscapeRegistration() throws Exception {
+        var sources = ArchitectureSourceInspector.snippets(Map.of("fixture.FailureFixtures", """
+                package fixture;
+                import gold.debug.windowstolinux.shared.model.failure.*;
+                class FailureFixtures {
+                    enum AddedFailureType implements FailureDefinition {
+                        NEW;
+                        public String code() { return "fixture.operation.added"; }
+                        public String domain() { return "fixture"; }
+                        public String phase() { return "operation"; }
+                        public String messageKey() { return "fixture.error.added"; }
+                        public FailureSeverityLevel severity() { return FailureSeverityLevel.ERROR; }
+                        public FailureRecoveryAction recoveryAction() { return FailureRecoveryAction.NONE; }
+                    }
+                }
+                """));
+        assertEquals(Set.of("fixture.FailureFixtures.AddedFailureType"), registrationDifferences(sources, Set.of()));
+    }
+
+    @Test
+    void nestedAndIndirectExceptionsAreCheckedByType() throws Exception {
+        var sources = ArchitectureSourceInspector.snippets(Map.of("fixture.ExceptionFixtures", """
+                package fixture;
+                class ExceptionFixtures {
+                    static class MissingContractException extends RuntimeException { }
+                    static class IndirectException extends MissingContractException { }
+                    static class StructuredException extends RuntimeException
+                            implements gold.debug.windowstolinux.shared.model.failure.FailureCarrier {
+                        public gold.debug.windowstolinux.shared.model.failure.FailureDescriptor failure() { return null; }
+                    }
+                    static class InheritedException extends StructuredException { }
+                    static class WrongName extends StructuredException { }
+                }
+                """));
+        var violations = exceptionViolations(sources);
+        assertTrue(violations.stream().anyMatch(value -> value.contains("MissingContractException")));
+        assertTrue(violations.stream().anyMatch(value -> value.contains("IndirectException")));
+        assertTrue(violations.stream().anyMatch(value -> value.contains("WrongName") && value.contains("name")));
+        assertFalse(violations.stream().anyMatch(value -> value.contains("StructuredException") || value.contains("InheritedException")));
+    }
+
+    private static Set<String> registrationDifferences(List<ArchitectureSourceInspector.JavaSource> sources,
+                                                       Set<String> registered) {
+        Set<String> discovered = new HashSet<>();
+        sources.stream().flatMap(source -> source.types().stream())
+                .filter(type -> type.failureDefinition() && type.kind() != Tree.Kind.INTERFACE)
+                .forEach(type -> {
+                    assertEquals(Tree.Kind.ENUM, type.kind(), type.name() + " must be an enum");
+                    discovered.add(type.name());
+                });
+        Set<String> differences = new HashSet<>(discovered);
+        differences.removeAll(registered);
+        Set<String> stale = new HashSet<>(registered);
+        stale.removeAll(discovered);
+        differences.addAll(stale);
+        return differences;
+    }
+
+    private static List<String> exceptionViolations(List<ArchitectureSourceInspector.JavaSource> sources) {
+        List<String> violations = new ArrayList<>();
+        sources.stream().flatMap(source -> source.types().stream()).filter(ArchitectureSourceInspector.JavaType::throwable)
+                .forEach(type -> {
+                    if (!type.failureCarrier()) violations.add(type.name() + " does not implement FailureCarrier");
+                    if (!type.simpleName().matches("[A-Z][A-Za-z0-9]+Exception"))
+                        violations.add(type.name() + " does not name its failure boundary");
+                });
+        return violations;
     }
 
     @Test

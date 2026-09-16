@@ -15,7 +15,6 @@ import gold.debug.windowstolinux.shared.model.lifecycle.LifecycleObservation;
 import gold.debug.windowstolinux.shared.model.lifecycle.RuntimeState;
 import gold.debug.windowstolinux.shared.model.project.DeploymentProjectType;
 import gold.debug.windowstolinux.shared.model.project.DeploymentRuntimeSpecification;
-import gold.debug.windowstolinux.shared.model.capability.LinuxCapabilityFacts;
 import org.junit.jupiter.api.DynamicTest;
 import org.junit.jupiter.api.TestFactory;
 import org.junit.jupiter.api.condition.EnabledIfSystemProperty;
@@ -71,54 +70,65 @@ class UbuntuEcosystemServiceAcceptanceTest {
         String firstSecretValue = randomSecret();
         String secondSecretValue = randomSecret();
 
-        try (LiveTypedDeploymentContext context = new LiveTypedDeploymentContext(stateRoot)) {
-            LinuxCapabilityFacts capabilities = context.inspectDeploymentCapabilities();
-            String version = projectType == DeploymentProjectType.KOTLIN_SERVICE ? "2.0.21"
-                    : capabilities.serviceRuntimeVersions().getOrDefault(projectType, java.util.Set.of())
-                    .stream().sorted().findFirst().orElseThrow(() -> new AssertionError(
-                            "prepared target did not expose an exact " + projectType + " runtime version"));
-            Path wrapper = projectType == DeploymentProjectType.KOTLIN_SERVICE ? verifiedWrapperJar() : null;
-            Path sourceRoot = EcosystemServiceAcceptanceFixture.create(sources, projectType, applicationId, version,
-                    suffix + "-live-v1", true, wrapper);
-            context.saveSecret(firstSecret, "application/service/" + suffix + "/1",
-                    firstSecretValue.toCharArray());
-            ReviewedSourcePreparation firstSource = context.prepare(sourceRoot, projectType);
-            DeploymentRuntimeSpecification runtime = runtime(projectType, version, applicationId, port);
-            DeploymentResult first = context.deploy(firstSource, 1, configuration(port), List.of(firstSecret),
-                    runtime, access(port));
+        try (AutoCloseable cleanup = () -> {
+            try (LiveTypedDeploymentContext context = new LiveTypedDeploymentContext(stateRoot)) {
+                context.stopTestApplications();
+            }
+        }) {
+            try (LiveTypedDeploymentContext context = new LiveTypedDeploymentContext(stateRoot)) {
+                String version = switch (projectType) {
+                    case GO_SERVICE -> "1.24";
+                    case RUST_SERVICE -> "1.89.0";
+                    case DOTNET_SERVICE -> "8.0.408";
+                    case KOTLIN_SERVICE -> "2.0.21";
+                    case PHP_SERVICE -> "8.3";
+                    case RUBY_SERVICE -> "3.3";
+                    default -> throw new IllegalArgumentException("unsupported ecosystem service type");
+                };
+                Path wrapper = projectType == DeploymentProjectType.KOTLIN_SERVICE ? verifiedWrapperJar() : null;
+                Path sourceRoot = EcosystemServiceAcceptanceFixture.create(sources, projectType, applicationId, version,
+                        suffix + "-live-v1", true, wrapper);
+                context.saveSecret(firstSecret, "application/service/" + suffix + "/1",
+                        firstSecretValue.toCharArray());
+                ReviewedSourcePreparation firstSource = context.prepare(sourceRoot, projectType);
+                assertEquals(applicationId, firstSource.assessment().facts().orElseThrow().applicationId());
+                DeploymentRuntimeSpecification runtime = runtime(projectType, version, applicationId, port);
+                DeploymentResult first = context.deploy(firstSource, 1, configuration(port), List.of(firstSecret),
+                        runtime, access(port));
 
-            assertSuccessful(first, applicationId);
-            assertSecretFree(first, firstSecretValue);
-            assertHttp(port, suffix + "-live-v1");
-            verifyLifecycle(context, applicationId);
+                assertSuccessful(first, applicationId);
+                assertSecretFree(first, firstSecretValue);
+                assertHttp(port, suffix + "-live-v1");
+                verifyLifecycle(context, applicationId);
 
-            context.saveSecret(secondSecret, "application/service/" + suffix + "/2",
-                    secondSecretValue.toCharArray());
-            EcosystemServiceAcceptanceFixture.create(sources, projectType, applicationId, version, "unused", false, wrapper);
-            ReviewedSourcePreparation failedSource = context.prepare(sourceRoot, projectType);
-            DeploymentResult failed = context.deploy(failedSource, 2, configuration(port), List.of(secondSecret),
-                    runtime, access(port));
+                context.saveSecret(secondSecret, "application/service/" + suffix + "/2",
+                        secondSecretValue.toCharArray());
+                EcosystemServiceAcceptanceFixture.create(sources, projectType, applicationId, version, "unused", false, wrapper);
+                ReviewedSourcePreparation failedSource = context.prepare(sourceRoot, projectType);
+                DeploymentResult failed = context.deploy(failedSource, 2, configuration(port), List.of(secondSecret),
+                        runtime, access(port));
 
-            assertEquals(DeploymentStatus.FAILED_ROLLED_BACK, failed.status(), () -> failed.events().toString());
-            assertTrue(failed.events().stream().anyMatch(event -> event.step().code().equals("rollback") && event.succeeded()),
-                    () -> failed.events().toString());
-            assertSecretFree(failed, firstSecretValue);
-            assertSecretFree(failed, secondSecretValue);
-            LifecycleObservation restored = context.lifecycle(applicationId, LifecycleAction.REFRESH_STATUS);
-            assertEquals(RuntimeState.RUNNING, restored.runtimeState());
-            assertEquals(AutostartState.DISABLED, restored.autostartState());
-            assertTrue(restored.ownershipVerified());
-            assertHttp(port, suffix + "-live-v1");
-        }
+                assertEquals(DeploymentStatus.FAILED_ROLLED_BACK, failed.status(), () -> failed.events().toString());
+                assertTrue(failed.events().stream().anyMatch(event -> event.step().code().equals("rollback") && event.succeeded()),
+                        () -> failed.events().toString());
+                assertSecretFree(failed, firstSecretValue);
+                assertSecretFree(failed, secondSecretValue);
+                LifecycleObservation restored = context.lifecycle(applicationId, LifecycleAction.REFRESH_STATUS);
+                assertEquals(RuntimeState.RUNNING, restored.runtimeState());
+                assertEquals(AutostartState.DISABLED, restored.autostartState());
+                assertTrue(restored.ownershipVerified());
+                assertHttp(port, suffix + "-live-v1");
+            }
 
-        try (LiveTypedDeploymentContext restarted = new LiveTypedDeploymentContext(stateRoot)) {
-            LifecycleObservation restored = restarted.lifecycle(applicationId, LifecycleAction.REFRESH_STATUS);
-            assertEquals(RuntimeState.RUNNING, restored.runtimeState());
-            assertEquals(AutostartState.DISABLED, restored.autostartState());
-            assertTrue(restored.ownershipVerified());
-            assertEquals(RuntimeState.RUNNING,
-                    restarted.lifecycle(applicationId, LifecycleAction.RESTART).runtimeState());
-            assertHttp(port, suffix + "-live-v1");
+            try (LiveTypedDeploymentContext restarted = new LiveTypedDeploymentContext(stateRoot)) {
+                LifecycleObservation restored = restarted.lifecycle(applicationId, LifecycleAction.REFRESH_STATUS);
+                assertEquals(RuntimeState.RUNNING, restored.runtimeState());
+                assertEquals(AutostartState.DISABLED, restored.autostartState());
+                assertTrue(restored.ownershipVerified());
+                assertEquals(RuntimeState.RUNNING,
+                        restarted.lifecycle(applicationId, LifecycleAction.RESTART).runtimeState());
+                assertHttp(port, suffix + "-live-v1");
+            }
         }
     }
 

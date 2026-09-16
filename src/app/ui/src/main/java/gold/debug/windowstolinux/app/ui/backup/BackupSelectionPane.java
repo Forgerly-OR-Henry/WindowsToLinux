@@ -9,7 +9,7 @@ import java.awt.*;
 import java.util.List;
 import java.util.function.Consumer;
 
-/** Owns saved backup/migration choices and keeps their exact identifiers in the advanced drawer. */
+/** Owns saved backup/migration choices and keeps their exact identifiers in the advanced drawer. / 持有已保存的备份和迁移选项，并在高级面板中保留其精确标识。 */
 final class BackupSelectionPane extends JPanel {
     private final BackupApplicationFacade service;
     private final Consumer<Exception> failure;

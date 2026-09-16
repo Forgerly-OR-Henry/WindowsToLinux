@@ -6,7 +6,6 @@ import gold.debug.windowstolinux.shared.config.revision.ConfigurationEntry;
 import gold.debug.windowstolinux.shared.model.deployment.DeploymentStatus;
 import gold.debug.windowstolinux.shared.model.health.HealthCheck;
 import gold.debug.windowstolinux.shared.model.health.UserAccessUrl;
-import gold.debug.windowstolinux.shared.model.lifecycle.LifecycleAction;
 import gold.debug.windowstolinux.shared.model.lifecycle.RuntimeState;
 import gold.debug.windowstolinux.shared.model.project.DeploymentProjectType;
 import gold.debug.windowstolinux.shared.model.project.DeploymentRuntimeSpecification;
@@ -24,7 +23,7 @@ import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-/** Covers languages absent from the original live fixture matrix through the production service. / 通过生产服务补齐原实机矩阵缺少的语言夹具。 */
+/** Covers additional source build combinations through the production service. / 通过生产服务补齐源码构建组合。 */
 @EnabledIfSystemProperty(named = "managed.runtime.additional", matches = "true")
 class UbuntuAdditionalLanguageAcceptanceTest {
     private static final String RUN_ID = Long.toUnsignedString(System.nanoTime(), 36);
@@ -34,23 +33,51 @@ class UbuntuAdditionalLanguageAcceptanceTest {
     @Test
     void deploysLocalMavenSpringBoot() throws Exception {
         int port = PORT_BASE;
-        exercise("spring", "java/maven/spring-boot/phase3-ubuntu-regression", port,
-                new DeploymentRuntimeSpecification.SpringBoot(health(port)), "phase three ubuntu regression");
+        exercise("spring", "java/maven/spring-boot/success-deployment-smoke", port,
+                new DeploymentRuntimeSpecification.SpringBoot(health(port)), "deployment-smoke-ok");
     }
 
     @Test
     void deploysCppThroughCmake() throws Exception {
         int port = PORT_BASE + 1;
-        exercise("cpp", "c/cmake/cpp-service/phase3-ready", port,
-                new DeploymentRuntimeSpecification.CmakeService("w2l-release", "phase3_cmake", "phase3_cmake", health(port)),
-                "phase3-live-ok");
+        exercise("cpp", "c/cmake/cpp-service/success-deployment-smoke", port,
+                new DeploymentRuntimeSpecification.CmakeService("w2l-release", "http_service", "http_service", health(port)),
+                "deployment-smoke-ok");
     }
 
     @Test
     void buildsTypescriptAndDeploysCompiledNodeService() throws Exception {
         int port = PORT_BASE + 2;
-        exercise("typescript", "node/npm/typescript-service/phase3-ready", port,
-                new DeploymentRuntimeSpecification.NodeService(18, health(port)), "typescript-live-ok");
+        exercise("typescript", "node/npm/typescript-service/success-deployment-smoke", port,
+                new DeploymentRuntimeSpecification.NodeService(18, health(port)), "deployment-smoke-ok");
+    }
+
+    @Test
+    void deploysLocalMavenWrapperSpringBoot() throws Exception {
+        int port = PORT_BASE + 3;
+        exercise("spring-wrapper", "java/maven-wrapper/spring-boot/success-deployment-smoke", port,
+                new DeploymentRuntimeSpecification.SpringBoot(health(port)), "deployment-smoke-ok");
+    }
+
+    @Test
+    void deploysLocalGradleSpringBoot() throws Exception {
+        int port = PORT_BASE + 4;
+        exercise("spring-gradle", "java/gradle/spring-boot/success-deployment-smoke", port,
+                new DeploymentRuntimeSpecification.SpringBoot(health(port)), "deployment-smoke-ok");
+    }
+
+    @Test
+    void buildsTypescriptWithPnpm() throws Exception {
+        int port = PORT_BASE + 5;
+        exercise("typescript-pnpm", "node/pnpm/typescript-service/success-deployment-smoke", port,
+                new DeploymentRuntimeSpecification.NodeService(18, health(port)), "deployment-smoke-ok");
+    }
+
+    @Test
+    void buildsTypescriptWithYarn() throws Exception {
+        int port = PORT_BASE + 6;
+        exercise("typescript-yarn", "node/yarn/typescript-service/success-deployment-smoke", port,
+                new DeploymentRuntimeSpecification.NodeService(18, health(port)), "deployment-smoke-ok");
     }
 
     private void exercise(String kind, String fixture, int port, DeploymentRuntimeSpecification runtime, String marker)
@@ -58,17 +85,21 @@ class UbuntuAdditionalLanguageAcceptanceTest {
         String id = "wtl-live-" + kind + "-" + RUN_ID;
         Path source = copyFixture(fixture, temporaryDirectory.resolve("sources").resolve(id));
         if (runtime.projectType() == DeploymentProjectType.SPRING_BOOT) {
-            replace(source.resolve("pom.xml"), "phase3-ubuntu-regression", id);
+            for (String name : List.of("pom.xml", "settings.gradle")) {
+                if (Files.isRegularFile(source.resolve(name))) replace(source.resolve(name), "fixture-http-service", id);
+            }
         } else if (runtime.projectType() == DeploymentProjectType.NODE_SERVICE) {
-            replace(source.resolve("package.json"), "wtl-typescript-live", id);
-            replace(source.resolve("package-lock.json"), "wtl-typescript-live", id);
+            for (String name : List.of("package.json", "package-lock.json", "pnpm-lock.yaml", "yarn.lock")) {
+                if (Files.isRegularFile(source.resolve(name))) replace(source.resolve(name), "wtl-typescript-live", id);
+            }
         }
         try (LiveTypedDeploymentContext context = new LiveTypedDeploymentContext(temporaryDirectory.resolve("state"))) {
             var preparation = context.prepare(source, runtime.projectType());
             String applicationId = preparation.assessment().facts().orElseThrow().applicationId();
+            assertEquals(id, applicationId);
             String host = System.getProperty("managed.ssh.host");
             URI access = URI.create("http://" + host + ":" + port + "/");
-            try {
+            try (AutoCloseable cleanup = context::stopTestApplications) {
                 var result = context.deploy(preparation, 1, List.of(number("PORT", port), number("SERVER_PORT", port)),
                         List.of(), runtime, Optional.of(new UserAccessUrl(access)));
                 assertEquals(DeploymentStatus.SUCCEEDED, result.status(), () -> result.events().toString());
@@ -85,11 +116,20 @@ class UbuntuAdditionalLanguageAcceptanceTest {
                     connection.disconnect();
                 }
                 System.out.printf("LIVE_HTTP application=%s url=%s marker=%s%n", applicationId, access, marker);
-            } finally {
-                if (context.service.listManagedApplications().stream().anyMatch(app -> app.id().equals(applicationId))) {
-                    context.lifecycle(applicationId, LifecycleAction.DISABLE_AUTOSTART);
-                    assertEquals(RuntimeState.STOPPED, context.lifecycle(applicationId, LifecycleAction.STOP).runtimeState());
-                    System.out.printf("LIVE_STOPPED application=%s%n", applicationId);
+                if (kind.equals("typescript-yarn")) {
+                    for (var action : List.of(
+                            gold.debug.windowstolinux.shared.model.lifecycle.LifecycleAction.STOP,
+                            gold.debug.windowstolinux.shared.model.lifecycle.LifecycleAction.STOP,
+                            gold.debug.windowstolinux.shared.model.lifecycle.LifecycleAction.START,
+                            gold.debug.windowstolinux.shared.model.lifecycle.LifecycleAction.RESTART,
+                            gold.debug.windowstolinux.shared.model.lifecycle.LifecycleAction.ENABLE_AUTOSTART,
+                            gold.debug.windowstolinux.shared.model.lifecycle.LifecycleAction.DISABLE_AUTOSTART)) {
+                        var observed = context.lifecycle(applicationId, action);
+                        assertTrue(observed.ownershipVerified());
+                        assertEquals(action == gold.debug.windowstolinux.shared.model.lifecycle.LifecycleAction.STOP
+                                ? RuntimeState.STOPPED : RuntimeState.RUNNING, observed.runtimeState(), observed::toString);
+                        System.out.printf("LIVE_YARN_LIFECYCLE application=%s action=%s evidence=%s%n", applicationId, action, observed.evidence());
+                    }
                 }
             }
         }

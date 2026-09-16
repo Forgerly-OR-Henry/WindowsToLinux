@@ -26,7 +26,7 @@ public final class SourceBoundaryValidator {
             ".git", ".idea", "target", "node_modules", ".m2", ".gradle", "logs"
     );
     private static final Set<String> EXCLUDED_FILE_NAMES = Set.of(
-            ".env", "id_rsa", "id_dsa", "id_ecdsa", "id_ed25519", "known_hosts"
+            ".env", ".npmrc", ".pypirc", "id_rsa", "id_dsa", "id_ecdsa", "id_ed25519", "known_hosts"
     );
 
     /**
@@ -165,7 +165,7 @@ public final class SourceBoundaryValidator {
 
     private static boolean isExcludedFile(Path file) {
         String name = file.getFileName().toString().toLowerCase(Locale.ROOT);
-        return EXCLUDED_FILE_NAMES.contains(name) || name.endsWith(".pem") || name.endsWith(".key")
+        return EXCLUDED_FILE_NAMES.contains(name) || name.startsWith(".env.") || name.endsWith(".pem") || name.endsWith(".key")
                 || name.endsWith(".p12") || name.endsWith(".pfx") || name.endsWith(".log");
     }
 

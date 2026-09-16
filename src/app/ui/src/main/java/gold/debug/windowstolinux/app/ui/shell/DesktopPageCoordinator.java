@@ -1,6 +1,8 @@
 package gold.debug.windowstolinux.app.ui.shell;
 
-import gold.debug.windowstolinux.app.service.DesktopApplicationFacade;
+import gold.debug.windowstolinux.app.service.contract.AutomaticDeploymentApplicationFacade;
+import gold.debug.windowstolinux.app.service.contract.ManagedApplicationFacade;
+import gold.debug.windowstolinux.app.service.contract.BackupApplicationFacade;
 import gold.debug.windowstolinux.app.ui.ai.AiPage;
 import gold.debug.windowstolinux.app.ui.backup.BackupPage;
 import gold.debug.windowstolinux.app.ui.display.DesktopDisplayConfiguration;
@@ -33,14 +35,14 @@ final class DesktopPageCoordinator {
     private final SettingPage settings;
     private String currentPage = "deployment";
 
-    DesktopPageCoordinator(DesktopFrame owner, DesktopApplicationFacade service, MessageCatalog catalog,
+    <T extends AutomaticDeploymentApplicationFacade & ManagedApplicationFacade & BackupApplicationFacade> DesktopPageCoordinator(DesktopFrame owner, T service, MessageCatalog catalog,
                            DesktopDisplayConfiguration appearance, DesktopComponentFactory components,
                            DesktopDisplayChangeHandler appearanceChangeListener, PageNavigationController navigator) {
         this(owner, service, catalog, appearance, components, appearanceChangeListener, navigator,
                 FailureReportStore.disabled());
     }
 
-    DesktopPageCoordinator(DesktopFrame owner, DesktopApplicationFacade service, MessageCatalog catalog,
+    <T extends AutomaticDeploymentApplicationFacade & ManagedApplicationFacade & BackupApplicationFacade> DesktopPageCoordinator(DesktopFrame owner, T service, MessageCatalog catalog,
                            DesktopDisplayConfiguration appearance, DesktopComponentFactory components,
                            DesktopDisplayChangeHandler appearanceChangeListener, PageNavigationController navigator,
                            FailureReportStore reports) {

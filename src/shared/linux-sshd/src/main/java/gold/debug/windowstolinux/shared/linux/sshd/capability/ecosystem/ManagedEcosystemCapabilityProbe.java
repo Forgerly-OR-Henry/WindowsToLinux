@@ -22,7 +22,8 @@ public final class ManagedEcosystemCapabilityProbe {
 
     /** Renders the complete language and toolchain portion of the platform probe. / 渲染平台探测中的完整语言与工具链部分。 */
     public static String platformToolChecks() {
-        return gold.debug.windowstolinux.shared.linux.sshd.capability.ecosystem.KotlinCompilerToolchain.selectionScript() + """
+        return """
+                kotlin_compiler="$(command -v kotlinc || true)"
                 if [ -x "$managed_java" ]; then
                   printf 'JAVA_MAJORS='
                   "$managed_java" -XshowSettings:properties -version 2>&1 | awk -F= '/java.specification.version/ {gsub(/[[:space:]]/, "", $2); print $2; exit}'
@@ -39,7 +40,8 @@ public final class ManagedEcosystemCapabilityProbe {
                 if command -v python3 >/dev/null 2>&1; then printf 'PYTHON3=1\\n'; else printf 'PYTHON3=0\\n'; fi
                 printf 'PYTHON_VERSIONS='
                 first_python=1
-                for version in 3.10 3.11 3.12 3.13; do
+                for executable in $(compgen -c | LC_ALL=C sort -u | grep -E '^python[0-9]+[.][0-9]+$'); do
+                  version="${executable#python}"
                   if command -v "python$version" >/dev/null 2>&1 && "python$version" -m venv --help >/dev/null 2>&1; then
                     if [ "$first_python" -eq 0 ]; then printf ','; fi
                     printf '%s' "$version"
@@ -48,7 +50,7 @@ public final class ManagedEcosystemCapabilityProbe {
                 done
                 printf '\\n'
                 if command -v go >/dev/null 2>&1; then
-                  printf 'SERVICE_GO='; go version | sed -E 's/^go version go(1[.][0-9]+).*/\\1/'
+                  printf 'SERVICE_GO='; go version | sed -E 's/^go version go([^ ]+).*/\\1/'
                 else printf 'SERVICE_GO=\\n'; fi
                 if command -v rustc >/dev/null 2>&1 && command -v cargo >/dev/null 2>&1; then
                   printf 'SERVICE_RUST='; rustc --version | awk '{print $2}'
@@ -69,7 +71,7 @@ public final class ManagedEcosystemCapabilityProbe {
                   printf 'TOOL_JAVA='; "$managed_java" -XshowSettings:properties -version 2>&1 | awk -F= '/java.specification.version/ {gsub(/[[:space:]]/, "", $2); print $2; exit}'
                 else printf 'TOOL_JAVA=\\n'; fi
                 if command -v javac >/dev/null 2>&1; then printf 'TOOL_JAVAC='; javac -version 2>&1 | awk '{print $2}'; else printf 'TOOL_JAVAC=\\n'; fi
-                if command -v jar >/dev/null 2>&1; then printf 'TOOL_JAR='; jar --version 2>&1 | awk '{print $2}'; else printf 'TOOL_JAR=\\n'; fi
+                if command -v jar >/dev/null 2>&1; then printf 'TOOL_JAR='; { jar --version 2>/dev/null || javac -version 2>&1; } | awk '{print $2}' ; else printf 'TOOL_JAR=\\n'; fi
                 if command -v node >/dev/null 2>&1; then printf 'TOOL_NODE='; node --version | sed -E 's/^v//'; else printf 'TOOL_NODE=\\n'; fi
                 if command -v npm >/dev/null 2>&1; then printf 'TOOL_NPM='; npm --version; else printf 'TOOL_NPM=\\n'; fi
                 if command -v pnpm >/dev/null 2>&1; then printf 'TOOL_PNPM='; pnpm --version; else printf 'TOOL_PNPM=\\n'; fi
@@ -77,7 +79,8 @@ public final class ManagedEcosystemCapabilityProbe {
                 if command -v mvn >/dev/null 2>&1; then printf 'TOOL_MAVEN='; mvn -version 2>/dev/null | awk 'NR==1 {print $3}'; else printf 'TOOL_MAVEN=\\n'; fi
                 printf 'TOOL_PYTHON='
                 first_python=1
-                for version in 3.10 3.11 3.12 3.13; do
+                for executable in $(compgen -c | LC_ALL=C sort -u | grep -E '^python[0-9]+[.][0-9]+$'); do
+                  version="${executable#python}"
                   if command -v "python$version" >/dev/null 2>&1; then
                     if [ "$first_python" -eq 0 ]; then printf ','; fi
                     printf '%s' "$version"; first_python=0

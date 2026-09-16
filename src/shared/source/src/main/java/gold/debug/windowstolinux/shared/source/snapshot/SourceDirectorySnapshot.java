@@ -5,7 +5,7 @@ import java.io.IOException;
 import java.nio.file.*;
 import java.nio.file.attribute.BasicFileAttributes;
 
-/** A private, source-only directory frozen before analysis and used by every component. */
+/** A private, source-only directory frozen before analysis and used by every component. / 分析前冻结的私有纯源码目录，供所有组件共同使用。 */
 public final class SourceDirectorySnapshot implements AutoCloseable {
     private final Path directory;
     private final Object identity;
@@ -16,12 +16,12 @@ public final class SourceDirectorySnapshot implements AutoCloseable {
         this.identity = Files.readAttributes(directory, BasicFileAttributes.class, LinkOption.NOFOLLOW_LINKS).fileKey();
     }
 
-    /** Copies the validated manifest into a new private directory outside the user's source tree. */
+    /** Copies the validated manifest into a new private directory outside the user's source tree. / 将已验证清单复制到用户源码树之外的新私有目录。 */
     public static SourceDirectorySnapshot create(Path source, Path workspace) throws IOException {
         return create(source, workspace, source.toAbsolutePath().normalize().getFileName().toString());
     }
 
-    /** Keeps the source name stable when the original directory is a generic Git checkout. */
+    /** Keeps the source name stable when the original directory is a generic Git checkout. / 原始目录为通用 Git 检出目录时，保持源码名称稳定。 */
     public static SourceDirectorySnapshot create(Path source, Path workspace, String sourceName) throws IOException {
         if (sourceName == null || sourceName.isBlank() || sourceName.equals(".") || sourceName.equals("..")
                 || sourceName.matches(".*[\\\\/:*?\"<>|\\p{Cntrl}].*")) throw new IOException("invalid source name");
@@ -51,10 +51,10 @@ public final class SourceDirectorySnapshot implements AutoCloseable {
         }
     }
 
-    /** Returns the frozen source root. */
+    /** Returns the frozen source root. / 返回冻结的源码根目录。 */
     public Path directory() { return sourceRoot; }
 
-    /** Removes only this exact private directory; replacement or symbolic roots are rejected. */
+    /** Removes only this exact private directory; replacement or symbolic roots are rejected. / 仅删除本次精确私有目录，拒绝被替换或符号链接形式的根目录。 */
     @Override public void close() throws IOException {
         if (!Files.exists(directory, LinkOption.NOFOLLOW_LINKS)) return;
         var attributes = Files.readAttributes(directory, BasicFileAttributes.class, LinkOption.NOFOLLOW_LINKS);

@@ -1,9 +1,5 @@
 package gold.debug.windowstolinux.shared.linux.sshd.execution.protocol.input;
 
-import gold.debug.windowstolinux.shared.config.contract.definition.ConfigurationScope;
-import gold.debug.windowstolinux.shared.config.contract.definition.ConfigurationValue;
-import gold.debug.windowstolinux.shared.config.revision.ConfigurationEntry;
-import gold.debug.windowstolinux.shared.config.revision.ConfigurationSnapshot;
 import org.junit.jupiter.api.Test;
 
 import java.nio.charset.StandardCharsets;
@@ -16,10 +12,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class DeploymentConfigurationRendererTest {
     @Test
     void rendersOnlyRuntimeScopeWithoutShellEvaluation() {
-        ConfigurationSnapshot snapshot = ConfigurationSnapshot.create("demo", 1, "v1", Instant.EPOCH, List.of(
-                new ConfigurationEntry("PORT", ConfigurationScope.RUNTIME, new ConfigurationValue.Number(8080)),
-                new ConfigurationEntry("RUNTIME_LABEL", ConfigurationScope.RUNTIME, new ConfigurationValue.Text("$(touch /tmp/pwned)")),
-                new ConfigurationEntry("BUILD_LABEL", ConfigurationScope.BUILD, new ConfigurationValue.Text("build"))));
+        var snapshot = new gold.debug.windowstolinux.shared.linux.protocol.RemoteRuntimeConfiguration("demo", "a".repeat(64),
+                java.util.Map.of("PORT", "8080", "RUNTIME_LABEL", "$(touch /tmp/pwned)"));
 
         String systemd = new String(DeploymentConfigurationRenderer.systemd(snapshot), StandardCharsets.UTF_8);
         String container = new String(DeploymentConfigurationRenderer.container(snapshot), StandardCharsets.UTF_8);

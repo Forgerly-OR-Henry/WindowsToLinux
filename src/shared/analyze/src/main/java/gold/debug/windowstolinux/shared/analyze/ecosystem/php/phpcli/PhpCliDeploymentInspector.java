@@ -32,7 +32,7 @@ public final class PhpCliDeploymentInspector {
         if (metadata.isEmpty()) missing.add(METADATA);
         Map<String, String> values = properties(metadata, conflicts);
         String version = values.get("phpVersion");
-        if (version == null || !version.matches("8\\.(?:2|3|4)")) { version = null; missing.add("phpVersion=8.x"); }
+        if (version == null || !version.matches("[0-9]+(?:\\.[0-9]+){1,2}(?:[-+][A-Za-z0-9._-]+)?")) { version = null; missing.add("phpVersion=..."); }
         String documentRoot = relative(values.get("documentRoot"));
         if (!"public".equals(documentRoot)) { documentRoot = null; missing.add("documentRoot=public"); }
         String entrypoint = relative(values.get("entrypoint"));

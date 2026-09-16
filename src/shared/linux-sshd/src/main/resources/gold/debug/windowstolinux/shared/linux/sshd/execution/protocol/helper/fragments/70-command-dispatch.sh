@@ -11,7 +11,14 @@ case "$verb" in
     [ "$#" -eq 0 ] || reject probe-arguments
     printf 'HELPER=1\nPROTOCOL=%s\n' "$helper_protocol"
     ;;
+  workspace-recover) recover_workspaces "$@" ;;
   candidate-create) create_candidate "$@" ;;
+  candidate-restore-create) create_restore_candidate "$@" ;;
+  build-preflight) preflight_build "$@" ;;
+  build-run) run_restricted_build "$@" ;;
+  build-freeze) freeze_candidate_build "$@" ;;
+  build-identity) prepare_build_identity "$@" ;;
+  build-stop) stop_candidate_build "$@" ;;
   candidate-cleanup) cleanup_candidate "$@" ;;
   stage-config) stage_configuration "$@" ;;
   stage-secret) stage_secret "$@" ;;
@@ -39,6 +46,9 @@ case "$verb" in
   restore-recover) restore_recover_component "$@" ;;
   snapshot-deployment) snapshot_deployment "$@" ;;
   publish-deployment) publish_deployment "$@" ;;
+  prepare-toolchains)
+    case "${1:-}" in prepare|bind|verify) prepare_official_toolchains "$@" ;; *) reject toolchain-verb ;; esac
+    ;;
   retain) retain_releases "$@" ;;
   rollback-deployment) rollback_deployment "$@" ;;
   rollback-deployment-first) rollback_deployment_first "$@" ;;

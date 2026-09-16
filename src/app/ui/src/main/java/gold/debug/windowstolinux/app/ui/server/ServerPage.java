@@ -81,7 +81,7 @@ public final class ServerPage implements ServerContext {
         return new ServerProfile(serverId, host.getText().trim(), Integer.parseInt(port.getText().trim()),
                 username.getText().trim(), "ssh/" + serverId + "/password", credentialMode());
     }
-    /** Synchronizes saved selection with manual server and component operations. */
+    /** Synchronizes saved selection with manual server and component operations. / 同步已保存选择与手动服务器及组件操作。 */
     @Override public void selectProfile(ServerProfile profile) {
         id.setText(profile.id()); host.setText(profile.host()); port.setText(Integer.toString(profile.sshPort()));
         username.setText(profile.username()); credentialMode.setSelectedItem(profile.credentialMode()); password.setText("");
@@ -190,10 +190,8 @@ public final class ServerPage implements ServerContext {
             if (!saved.equals(entered)) {
                 throw new IllegalStateException(messages.text("environment.serverChanged"));
             }
-            String confirmation = messages.text("environment.confirm", Map.of("serverId", saved.id(), "host", saved.host(),
-                    "port", saved.sshPort(), "username", saved.username()));
-            if (JOptionPane.showConfirmDialog(owner, confirmation, messages.text("environment.confirm.title"),
-                    JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE) != JOptionPane.YES_OPTION) {
+            if (!gold.debug.windowstolinux.app.ui.component.SystemPreparationDialog.confirmEnvironment(owner, messages,
+                    Map.of("serverId", saved.id(), "host", saved.host(), "port", saved.sshPort(), "username", saved.username()))) {
                 return;
             }
             char[] master = masterPassword();
@@ -201,7 +199,12 @@ public final class ServerPage implements ServerContext {
             output.setText(messages.text("environment.preparing"));
             DesktopTaskExecutor.run(
                     () -> service.prepareEnvironmentWithStoredPassword(saved, saved.credentialMode(), master,
-                            ServerPage.this::confirmFingerprint, true),
+                            ServerPage.this::confirmFingerprint, true, plan ->
+                                    gold.debug.windowstolinux.app.ui.component.SystemPreparationDialog.confirm(owner, messages,
+                                            Map.of("serverId", saved.id(), "host", saved.host(),
+                                                    "security", plan.securityState().name(), "reboot",
+                                                    plan.state() == gold.debug.windowstolinux.shared.model.server.security.SelinuxPreparationState.UNPREPARED
+                                                            || plan.state() == gold.debug.windowstolinux.shared.model.server.security.SelinuxPreparationState.REBOOT_PENDING))),
                     result -> {
                         setBusy(false);
                         output.setText(environmentSummary(result));

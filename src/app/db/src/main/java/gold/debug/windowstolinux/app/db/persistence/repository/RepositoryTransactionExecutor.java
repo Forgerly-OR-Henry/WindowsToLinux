@@ -34,15 +34,16 @@ final class RepositoryTransactionExecutor {
 
     static void upsertServer(Connection connection, ServerIdentity server) throws SQLException {
         try (PreparedStatement statement = connection.prepareStatement("""
-                INSERT INTO server (id, host, ssh_port, host_key_sha256) VALUES (?, ?, ?, ?)
-                ON CONFLICT(id) DO UPDATE SET host=excluded.host, ssh_port=excluded.ssh_port,
-                    host_key_sha256=excluded.host_key_sha256
+                INSERT INTO server (id, host, ssh_port, host_key_sha256, host_key_format) VALUES (?, ?, ?, ?, 'SSH_WIRE')
+                ON CONFLICT(id) DO UPDATE SET id=excluded.id
+                WHERE server.host=excluded.host AND server.ssh_port=excluded.ssh_port
+                  AND server.host_key_sha256=excluded.host_key_sha256
                 """)) {
             statement.setString(1, server.id());
             statement.setString(2, server.host());
             statement.setInt(3, server.sshPort());
             statement.setString(4, server.hostKeySha256());
-            statement.executeUpdate();
+            if (statement.executeUpdate() != 1) throw new SQLException("server trust identity changed concurrently");
         }
     }
 

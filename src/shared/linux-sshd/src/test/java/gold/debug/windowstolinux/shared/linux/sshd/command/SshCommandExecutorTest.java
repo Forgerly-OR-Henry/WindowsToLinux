@@ -1,8 +1,7 @@
 package gold.debug.windowstolinux.shared.linux.sshd.command;
 
 import org.apache.sshd.client.SshClient;
-import org.apache.sshd.server.SshServer;
-import org.apache.sshd.server.keyprovider.SimpleGeneratorHostKeyProvider;
+import gold.debug.windowstolinux.shared.linux.sshd.session.LoopbackSshServer;
 import org.apache.sshd.server.shell.ProcessShell;
 import org.apache.sshd.server.shell.InvertedShellWrapper;
 import org.junit.jupiter.api.Test;
@@ -16,6 +15,7 @@ import java.util.concurrent.atomic.AtomicReference;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
+@org.junit.jupiter.api.parallel.Isolated
 class SshCommandExecutorTest {
     @TempDir Path temporaryDirectory;
 
@@ -24,16 +24,13 @@ class SshCommandExecutorTest {
         String bash = System.getProperty("managed.test.bash", "/bin/bash");
         assumeTrue(java.nio.file.Files.isExecutable(Path.of(bash)), "Bash is required for transport execution");
         AtomicReference<String> receivedCommand = new AtomicReference<>();
-        try (SshServer server = SshServer.setUpDefaultServer(); SshClient client = SshClient.setUpDefaultClient()) {
-            server.setHost("127.0.0.1");
-            server.setPort(0);
-            server.setKeyPairProvider(new SimpleGeneratorHostKeyProvider(temporaryDirectory.resolve("host-key")));
-            server.setPasswordAuthenticator((user, password, session) -> true);
+        try (var fixture = new LoopbackSshServer(temporaryDirectory, server -> {
             server.setCommandFactory((channel, command) -> {
                 receivedCommand.set(command);
                 return new InvertedShellWrapper(new ProcessShell(bash, "-lc", command));
             });
-            server.start();
+        }); SshClient client = SshClient.setUpDefaultClient()) {
+            var server = fixture.server();
             client.setServerKeyVerifier((session, address, key) -> true);
             client.start();
             try (var session = client.connect("test", "127.0.0.1", server.getPort())
@@ -67,10 +64,16 @@ class SshCommandExecutorTest {
                 assertTrue(verboseFailure.output().contains("PREPARE_CHECK_FAILED=compiler-version"));
                 assertFalse(verboseFailure.failureEvidence().contains("private-value"));
                 assertTrue(verboseFailure.output().length() <= SshCommandExecutor.MAX_EVIDENCE_CHARS);
+                var overflow = executor.execWithOutputLimit("printf 'PROTOCOL=7\\n'; head -c 200000 /dev/zero",
+                        Duration.ofSeconds(10), 4096);
+                assertFalse(overflow.succeeded(), "a truncated protocol must never succeed");
+                assertTrue(overflow.failureEvidence().contains("byte limit"), overflow::failureEvidence);
+                var following = executor.execProtocol("printf 'ALIVE=1'", Duration.ofSeconds(10), true);
+                assertTrue(following.succeeded(), following::failureEvidence);
+                assertEquals("ALIVE=1", following.output());
                 gold.debug.windowstolinux.shared.linux.sshd.session.SshSessionLifecycleExecutor.closeQuietly(session);
             }
             gold.debug.windowstolinux.shared.linux.sshd.session.SshSessionLifecycleExecutor.closeQuietly(client);
-            server.close(false).await(Duration.ofSeconds(10));
         }
     }
 }

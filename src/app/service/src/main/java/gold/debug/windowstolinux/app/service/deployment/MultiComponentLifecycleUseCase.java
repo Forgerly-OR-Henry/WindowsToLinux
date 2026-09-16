@@ -18,7 +18,6 @@ import gold.debug.windowstolinux.shared.deploy.plan.MultiComponentDeploymentPlan
 import gold.debug.windowstolinux.shared.deploy.contract.result.lifecycle.MultiComponentLifecycleResult;
 import gold.debug.windowstolinux.shared.linux.connection.DeploymentLinuxGateway;
 import gold.debug.windowstolinux.shared.model.lifecycle.LifecycleAction;
-import gold.debug.windowstolinux.shared.model.lifecycle.LifecycleObservation;
 import gold.debug.windowstolinux.shared.model.failure.FailureDescriptor;
 import gold.debug.windowstolinux.shared.model.security.CredentialStorageMode;
 

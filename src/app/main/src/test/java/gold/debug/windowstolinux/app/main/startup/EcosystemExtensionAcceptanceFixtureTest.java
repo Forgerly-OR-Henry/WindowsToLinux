@@ -27,6 +27,7 @@ class EcosystemExtensionAcceptanceFixtureTest {
             var assessment = analyzer.analyze(root, architecture.projectType());
             assertEquals(DeploymentAdmissionStatus.READY_FOR_PLANNING, assessment.admission(), assessment.toString());
             assertEquals(architecture.buildTool(), assessment.facts().orElseThrow().buildTool());
+            assertEquals("fixture-" + architecture.key(), assessment.facts().orElseThrow().applicationId());
             String content;
             try (Stream<Path> files = Files.walk(root)) {
                 content = files.filter(Files::isRegularFile).map(EcosystemExtensionAcceptanceFixtureTest::read)
@@ -47,6 +48,7 @@ class EcosystemExtensionAcceptanceFixtureTest {
             var assessment = analyzer.analyze(root, architecture.projectType());
             assertEquals(DeploymentAdmissionStatus.READY_FOR_PLANNING, assessment.admission(), assessment.toString());
             assertEquals(architecture.buildTool(), assessment.facts().orElseThrow().buildTool());
+            assertEquals("fixture-311-" + architecture.key(), assessment.facts().orElseThrow().applicationId());
         }
     }
 

@@ -1,79 +1,145 @@
 package gold.debug.windowstolinux.app.main.startup;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import gold.debug.windowstolinux.shared.analyze.core.DeploymentAnalysisCoordinator;
 import gold.debug.windowstolinux.shared.model.analysis.DeploymentAdmissionStatus;
+import gold.debug.windowstolinux.shared.model.language.SourceLanguageType;
+import gold.debug.windowstolinux.shared.model.project.DeploymentArchitectureType;
 import gold.debug.windowstolinux.shared.model.project.DeploymentBuildToolType;
 import gold.debug.windowstolinux.shared.model.project.DeploymentProjectType;
+import gold.debug.windowstolinux.shared.model.project.DeploymentSupportCatalog;
+import org.junit.jupiter.api.DynamicTest;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.TestFactory;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.*;
 
-/** Audits one independent checked-in fixture for every changed Phase Three architecture. / 审计每个三期变更架构的独立入库夹具。 */
+/** Checks language/tool coverage and each scenario's actual admission result. / 检查语言工具覆盖及各场景的实际准入结果。 */
 class EcosystemExtensionFixtureMatrixTest {
-    @Test
-    void everyChangedArchitectureHasAPlanningReadyIndependentFixture() {
-        DeploymentAnalysisCoordinator analyzer = new DeploymentAnalysisCoordinator();
-        Path repository = repositoryRoot();
-        List<Fixture> fixtures = List.of(
-                fixture("java/jdk", DeploymentProjectType.JAVA_SOURCE, DeploymentBuildToolType.JDK),
-                fixture("node/npm", DeploymentProjectType.NODE_SERVICE, DeploymentBuildToolType.NPM),
-                fixture("node/pnpm", DeploymentProjectType.NODE_SERVICE, DeploymentBuildToolType.PNPM),
-                fixture("node/yarn", DeploymentProjectType.NODE_SERVICE, DeploymentBuildToolType.YARN),
-                fixture("python/pip", DeploymentProjectType.PYTHON_SERVICE, DeploymentBuildToolType.PIP_LOCKED),
-                fixture("python/pipenv", DeploymentProjectType.PYTHON_SERVICE, DeploymentBuildToolType.PIPENV_LOCKED),
-                fixture("python/poetry", DeploymentProjectType.PYTHON_SERVICE, DeploymentBuildToolType.POETRY_LOCKED),
-                fixture("python/uv", DeploymentProjectType.PYTHON_SERVICE, DeploymentBuildToolType.UV_LOCKED),
-                fixture("kotlin/kotlinc", DeploymentProjectType.KOTLIN_SERVICE, DeploymentBuildToolType.KOTLINC),
-                fixture("php/phpcli", DeploymentProjectType.PHP_SERVICE, DeploymentBuildToolType.PHP_CLI),
-                fixture("ruby/rubycli", DeploymentProjectType.RUBY_SERVICE, DeploymentBuildToolType.RUBY_CLI),
-                fixture("c/cmake", DeploymentProjectType.CMAKE_SERVICE, DeploymentBuildToolType.CMAKE),
-                new Fixture(Path.of("test/c/cmake/cpp-service/phase3-ready"), DeploymentProjectType.CMAKE_SERVICE,
-                        DeploymentBuildToolType.CMAKE),
-                new Fixture(Path.of("test/node/npm/typescript-service/phase3-ready"), DeploymentProjectType.NODE_SERVICE,
-                        DeploymentBuildToolType.NPM));
+    private static final Set<String> SCENARIOS = Set.of("success-deployment-smoke", "success-json-api",
+            "success-runtime-config", "failure-health-rollback", "failure-configuration-rejected");
 
-        assertEquals(fixtures.size(), fixtures.stream().map(Fixture::relativePath).distinct().count());
+    @TestFactory
+    Stream<DynamicTest> allScenariosHaveTheExpectedAdmissionAndLanguage() throws Exception {
+        Path repository = repositoryRoot();
+        return fixtures().stream().flatMap(fixture -> SCENARIOS.stream().sorted().map(scenario ->
+                DynamicTest.dynamicTest(fixture.path() + "/" + scenario, () -> {
+                    Path root = repository.resolve("test").resolve(fixture.path()).resolve(scenario);
+                    var result = new DeploymentAnalysisCoordinator().analyze(root, fixture.projectType());
+                    if (scenario.equals("failure-configuration-rejected")) {
+                        assertTrue(Set.of(DeploymentAdmissionStatus.REJECTED, DeploymentAdmissionStatus.REQUIRES_INPUT)
+                                .contains(result.admission()), result.toString());
+                    } else {
+                        assertEquals(DeploymentAdmissionStatus.READY_FOR_PLANNING, result.admission(), result.toString());
+                        var facts = result.facts().orElseThrow();
+                        assertEquals(fixture.buildTool(), facts.buildTool());
+                        assertTrue(facts.languageFacts().sourceLanguages().contains(fixture.language()),
+                                () -> fixture.path() + ": " + facts.languageFacts());
+                        assertTrue(result.runtimeSuggestion().isPresent());
+                    }
+                })));
+    }
+
+    @Test
+    void everySourceBuildArchitectureHasExactlyThreeSuccessAndTwoFailureGroups() throws Exception {
+        List<Fixture> fixtures = fixtures();
+        assertEquals(25, fixtures.size());
+        assertEquals(12, fixtures.stream().map(Fixture::language).distinct().count());
+        assertEquals(fixtures.size(), fixtures.stream().map(Fixture::path).distinct().count());
+        Set<DeploymentArchitectureType> sourceArchitectures = DeploymentSupportCatalog.deployableArchitectures().stream()
+                .filter(architecture -> !Set.of(DeploymentProjectType.JAVA_JAR, DeploymentProjectType.STATIC_SITE,
+                        DeploymentProjectType.DOCKERFILE_CONTAINER).contains(architecture.projectType()))
+                .collect(Collectors.toSet());
+        assertEquals(sourceArchitectures, fixtures.stream().map(fixture -> new DeploymentArchitectureType(
+                fixture.projectType(), fixture.buildTool())).collect(Collectors.toSet()));
+        Set<String> actualPaths = new HashSet<>();
+        Path testRoot = repositoryRoot().resolve("test");
+        try (var paths = Files.walk(testRoot, 3)) {
+            paths.filter(Files::isDirectory).filter(path -> testRoot.relativize(path).getNameCount() == 3)
+                    .forEach(path -> actualPaths.add(testRoot.relativize(path).toString().replace('\\', '/')));
+        }
+        assertEquals(fixtures.stream().map(Fixture::path).collect(Collectors.toSet()), actualPaths);
         for (Fixture fixture : fixtures) {
-            Path root = repository.resolve(fixture.relativePath());
-            assertTrue(Files.isDirectory(root), () -> "missing architecture fixture: " + root);
-            var assessment = analyzer.analyze(root, fixture.projectType());
-            assertEquals(DeploymentAdmissionStatus.READY_FOR_PLANNING, assessment.admission(),
-                    () -> fixture.relativePath() + ": " + assessment);
-            assertEquals(fixture.buildTool(), assessment.facts().orElseThrow().buildTool(),
-                    fixture.relativePath().toString());
-            assertTrue(assessment.runtimeSuggestion().isPresent(), fixture.relativePath().toString());
-            if (fixture.relativePath().toString().contains("cpp-service")) {
-                assertTrue(assessment.facts().orElseThrow().languageFacts().sourceLanguages()
-                        .contains(gold.debug.windowstolinux.shared.model.language.SourceLanguageType.CPP));
+            try (var groups = Files.list(testRoot.resolve(fixture.path()))) {
+                assertEquals(SCENARIOS, groups.filter(Files::isDirectory).map(path -> path.getFileName().toString())
+                        .collect(Collectors.toSet()), fixture.path());
             }
-            if (fixture.relativePath().toString().contains("typescript-service")) {
-                assertTrue(assessment.facts().orElseThrow().languageFacts().sourceLanguages()
-                        .contains(gold.debug.windowstolinux.shared.model.language.SourceLanguageType.TYPESCRIPT));
+        }
+        for (String language : List.of("JAVASCRIPT", "TYPESCRIPT")) {
+            assertEquals(Set.of(DeploymentBuildToolType.NPM, DeploymentBuildToolType.PNPM, DeploymentBuildToolType.YARN),
+                    fixtures.stream().filter(fixture -> fixture.language().name().equals(language))
+                            .map(Fixture::buildTool).collect(Collectors.toSet()));
+        }
+    }
+
+    private static List<Fixture> fixtures() throws Exception {
+        JsonNode entries = new ObjectMapper().readTree(repositoryRoot().resolve("test/matrix.json").toFile());
+        assertTrue(entries.isArray());
+        java.util.ArrayList<Fixture> result = new java.util.ArrayList<>();
+        for (JsonNode entry : entries) {
+            result.add(new Fixture(entry.required("path").asText(),
+                    SourceLanguageType.valueOf(entry.required("language").asText()),
+                    DeploymentProjectType.valueOf(entry.required("projectType").asText()),
+                    DeploymentBuildToolType.valueOf(entry.required("buildTool").asText())));
+        }
+        return List.copyOf(result);
+    }
+
+    @Test
+    void allScenariosContainRealSourceModulesAndNativeHeaders() throws Exception {
+        Path root = repositoryRoot().resolve("test");
+        for (Fixture fixture : fixtures()) {
+            String extension = switch (fixture.language()) {
+                case C -> ".c";
+                case CPP -> ".cpp";
+                case CSHARP -> ".cs";
+                case GO -> ".go";
+                case JAVA -> ".java";
+                case KOTLIN -> ".kt";
+                case JAVASCRIPT -> ".js";
+                case TYPESCRIPT -> ".ts";
+                case PHP -> ".php";
+                case PYTHON -> ".py";
+                case RUBY -> ".rb";
+                case RUST -> ".rs";
+                default -> throw new AssertionError(fixture.language());
+            };
+            for (String scenario : SCENARIOS) {
+                Path project = root.resolve(fixture.path()).resolve(scenario);
+                List<Path> files;
+                try (var paths = Files.walk(project)) { files = paths.filter(Files::isRegularFile).toList(); }
+                var implementations = files.stream().filter(path -> path.toString().endsWith(extension))
+                        .filter(path -> !Set.of("build.js", "__init__.py").contains(path.getFileName().toString()))
+                        .filter(path -> !path.toString().replace('\\', '/').contains("/src/test/"))
+                        .filter(path -> !path.getFileName().toString().endsWith(".d.ts")).toList();
+                assertTrue(implementations.size() >= 4, fixture.path() + "/" + scenario);
+                for (Path implementation : implementations) assertFalse(Files.readString(implementation).isBlank(), implementation.toString());
+                if (fixture.language() == SourceLanguageType.C || fixture.language() == SourceLanguageType.CPP) {
+                    assertTrue(files.stream().anyMatch(path -> path.toString().endsWith(
+                            fixture.language() == SourceLanguageType.C ? ".h" : ".hpp")), project.toString());
+                    String cmake = Files.readString(project.resolve("CMakeLists.txt"));
+                    for (Path implementation : implementations) assertTrue(cmake.contains(project.relativize(implementation).toString().replace('\\', '/')));
+                }
             }
         }
     }
 
-    private static Fixture fixture(String architecture, DeploymentProjectType projectType,
-                                   DeploymentBuildToolType buildTool) {
-        return new Fixture(Path.of("test", architecture, "http-service", "phase3-ready"), projectType, buildTool);
-    }
-
     private static Path repositoryRoot() {
-        Path current = Path.of("").toAbsolutePath().normalize();
-        while (current != null) {
-            if (Files.isRegularFile(current.resolve("pom.xml"))
-                    && Files.isRegularFile(current.resolve("docs/development/PHASE-3-SUPPLEMENT-ECOSYSTEM.md"))) {
-                return current;
-            }
-            current = current.getParent();
+        for (Path current = Path.of("").toAbsolutePath().normalize(); current != null; current = current.getParent()) {
+            if (Files.isRegularFile(current.resolve("test/matrix.json")) && Files.isRegularFile(current.resolve("pom.xml"))) return current;
         }
         throw new IllegalStateException("WindowsToLinux repository root was not found");
     }
 
-    private record Fixture(Path relativePath, DeploymentProjectType projectType, DeploymentBuildToolType buildTool) { }
+    private record Fixture(String path, SourceLanguageType language, DeploymentProjectType projectType,
+                           DeploymentBuildToolType buildTool) { }
 }

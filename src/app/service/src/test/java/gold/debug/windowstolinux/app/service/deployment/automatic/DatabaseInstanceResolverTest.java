@@ -1,4 +1,6 @@
 package gold.debug.windowstolinux.app.service.deployment.automatic;
+import gold.debug.windowstolinux.shared.linux.error.NativeDatabaseException;
+import gold.debug.windowstolinux.shared.linux.error.NativeDatabaseFailureType;
 
 import gold.debug.windowstolinux.app.service.contract.definition.*;
 
@@ -31,13 +33,13 @@ class DatabaseInstanceResolverTest {
             return switch (method.getName()) {
                 case "inspectDatabase" -> new Inventory(DatabaseEngineType.POSTGRESQL,instances,Optional.of(candidate),List.of());
                 case "installDatabase" -> {
-                    if (stale) { stale = false; throw new DatabaseFailure(FailureType.STATE_CHANGED); }
+                    if (stale) { stale = false; throw new NativeDatabaseException(NativeDatabaseFailureType.STATE_CHANGED); }
                     waiting = !instances.isEmpty();
                     instances = List.of(instance("target","17.2",!waiting));
                     yield new Inventory(DatabaseEngineType.POSTGRESQL,instances,Optional.of(candidate),List.of());
                 }
                 case "startDatabase" -> {
-                    if (waiting) throw new DatabaseFailure(FailureType.MANUAL_RESTORE_REQUIRED);
+                    if (waiting) throw new NativeDatabaseException(NativeDatabaseFailureType.MANUAL_RESTORE_REQUIRED);
                     Instance old = (Instance)args[0]; yield instance(old.id(),old.version(),true);
                 }
                 case "confirmDatabaseRestored" -> { waiting = false; yield instance("target","17.2",true); }
@@ -84,7 +86,7 @@ class DatabaseInstanceResolverTest {
     }
     @Test void persistedRestoreWaitCannotBeBypassedByCompatibleRunningVersion() {
         instances = List.of(instance("target","17.2",true)); waiting = true; approve = false;
-        var failure = assertThrows(DatabaseFailure.class, () -> resolve(">=17"));
-        assertEquals(FailureType.MANUAL_RESTORE_REQUIRED,failure.reason()); assertFalse(actions.contains("installDatabase"));
+        var failure = assertThrows(NativeDatabaseException.class, () -> resolve(">=17"));
+        assertEquals(NativeDatabaseFailureType.MANUAL_RESTORE_REQUIRED,failure.reason()); assertFalse(actions.contains("installDatabase"));
     }
 }

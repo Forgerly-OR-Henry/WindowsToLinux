@@ -9,7 +9,7 @@ import gold.debug.windowstolinux.shared.model.deployment.DeploymentInputField;
 import java.util.*;
 import java.util.concurrent.CancellationException;
 
-/** AI-first resolution with deterministic candidate verification and a grouped user fallback. */
+/** AI-first resolution with deterministic candidate verification and a grouped user fallback. / 优先使用 AI 解析，通过确定性候选验证，并在需要时集中询问用户。 */
 public final class AutomaticInputCompletion {
     private final AiApplicationFacade ai;
     public AutomaticInputCompletion(AiApplicationFacade ai) { this.ai = Objects.requireNonNull(ai); }

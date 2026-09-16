@@ -47,16 +47,35 @@ restore_prepare_component() {
   chown -R root:root -- "$staged"; find "$staged" -type d -exec chmod 700 {} +; find "$staged" -type f -exec chmod 400 {} +
   root="$(restore_component_root "$candidate" "$component")"; [ ! -e "$root" ] && [ ! -L "$root" ] || reject restore-component-exists
   install -d -o root -g root -m 700 -- "$root/release" "$root/data" "$root/rollback"
+  printf '%s\n' "$token" > "$root/activation-token"; chmod 400 -- "$root/activation-token"
   archive="$staged/$release_member"; assert_restore_archive "$archive"
   tar --extract --file "$archive" --directory "$root/release" --no-same-owner --no-same-permissions
   chown -R root:root -- "$root/release"; assert_root_owned_regular "$root/release/.windowstolinux-owner"
   [ "$(cat -- "$root/release/.windowstolinux-owner")" = "$owner" ] || reject restore-owner
   if [ -e "$root/release/.windowstolinux-deployment-parameters" ]; then
+    if [ -e "$root/release/.windowstolinux-toolchains" ]; then
+      assert_root_owned_regular "$root/release/.windowstolinux-toolchains"
+      [ "$(stat -c '%s' -- "$root/release/.windowstolinux-toolchains")" -le 65536 ] || reject restore-toolchain-size
+      local previous_binding restored_binding toolchain_result
+      previous_binding="$(sha256sum -- "$root/release/.windowstolinux-toolchains" | awk '{print $1}')"
+      toolchain_result="$(prepare_official_toolchains restore "$(base64 -w0 -- "$root/release/.windowstolinux-toolchains")")" || reject restore-toolchain-preparation
+      restored_binding="$(printf '%s\n' "$toolchain_result" | sed -n 's/^TOOLCHAIN_BINDING=//p')"; require_digest "$restored_binding"
+      if [ "$previous_binding" != "$restored_binding" ]; then
+        awk -v old="$previous_binding" -v new="$restored_binding" 'previous == "tools-v1" && $0 == old {$0=new} {print;previous=$0}' \
+          "$root/release/.windowstolinux-deployment-parameters" > "$root/relocated-parameters"
+        install -o root -g root -m 444 -- "$root/relocated-parameters" "$root/release/.windowstolinux-deployment-parameters"
+        install -o root -g root -m 444 -- "/usr/local/lib/windowstolinux/toolchains/bindings/$restored_binding" "$root/release/.windowstolinux-toolchains"
+        rm -f -- "$root/relocated-parameters"
+      fi
+      prepare_official_toolchains relocate-venv "$root/release" "$restored_binding" || reject restore-python-relocation
+    fi
     current_application="$app"; load_deployment_parameters "$root/release/.windowstolinux-deployment-parameters"
     parse_deployment_inputs "${deployment_runtime_parameters[@]}"; assert_deployment_inputs "$app" systemd
+    [ "$runtime_identity_policy" = SYSTEMD_DYNAMIC ] || reject restore-runtime-identity-policy
     printf 'deployment\n' > "$root/kind"
   else
     current_application="$app"; load_container_parameters "$root/release/.windowstolinux-container-parameters"
+    [ "$runtime_identity_policy" = CONTAINER_NON_ROOT ] || reject restore-runtime-identity-policy
     assert_deployment_inputs "$app" container; printf 'container\n' > "$root/kind"
   fi
   for member in "${persistent[@]}"; do
@@ -71,24 +90,37 @@ restore_prepare_component() {
   printf 'PREPARED=1\nCOMPONENT=%s\n' "$component"
 }
 restore_start_deployment_candidate() {
-  local candidate="$1" token="$2" component="$3" root app port fake unit tmp spec binding logical mode link target
+  local candidate="$1" token="$2" component="$3" root app port fake unit tmp spec binding logical mode link target relative private public
   root="$(restore_component_root "$candidate" "$component")"; assert_root_owned_directory "$root"
   mapfile -t identity < "$root/identity"; app="${identity[0]}"; current_application="$app"
   load_deployment_parameters "$root/release/.windowstolinux-deployment-parameters"
+  [ "$runtime_identity_policy" = SYSTEMD_DYNAMIC ] || reject restore-runtime-identity-policy
   parse_deployment_inputs "${deployment_runtime_parameters[@]}"; parse_managed_data_bindings "${deployment_remaining_arguments[@]}"
+  relative="windowstolinux/restore/$token/$component"; private="/var/lib/private/$relative"; public="/var/lib/$relative"
+  [ ! -e "$private" ] && [ ! -e "$public" ] && [ ! -L "$public" ] || reject restore-state-exists
+  printf '%s\n' "$relative" > "$root/candidate-state"; chmod 400 -- "$root/candidate-state"
+  install -d -o root -g root -m 700 -- /var/lib/private "$private/files"
+  install -d -o root -g root -m 755 -- "${public%/*}"
+  ln -srT -- "$private" "$public"
   for spec in "${managed_data_bindings[@]}"; do
-    binding="${spec%%:*}"; logical="${spec#*:}"; logical="${logical%:*}"; target="$root/data/$binding"; link="$root/release/source/$logical"
-    [ -d "$target" ] && [ ! -L "$target" ] || reject restore-data-missing
-    install -d -o root -g root -m 755 -- "$(dirname -- "$link")"; rm -rf --one-file-system -- "$link" 2>/dev/null || true
+    binding="${spec%%:*}"; logical="${spec#*:}"; logical="${logical%:*}"; target="$public/files/$binding"; link="$root/release/source/$logical"
+    [ -d "$root/data/$binding" ] && [ ! -L "$root/data/$binding" ] || reject restore-data-missing
+    cp -a -- "$root/data/$binding" "$target"
+    install -d -o root -g root -m 755 -- "$(dirname -- "$link")"
+    rm -rf --one-file-system -- "$link"
     ln -sT -- "$target" "$link"
   done
-  fake="$root/application"; install -d -o root -g root -m 755 -- "$fake/releases"; ln -sT -- "$root/release" "$fake/current"
+  fake="/run/windowstolinux-restore-$token-$component"
   port="$(awk -F: 'NR==1 {print $2}' "$root/ports")"; require_service_port "$port"
   deployment_root_override="$fake"; deployment_service_port_override="$port"; deployment_bind_address_override=127.0.0.1
+  runtime_state_override="$relative"; runtime_identity_override="restore-$token-$component"
   unit="$(restore_unit_name "$token" "$component")"; tmp="$(mktemp /run/systemd/system/.windowstolinux-restore.XXXXXX)"
   render_deployment_unit "$app" "${deployment_runtime_parameters[@]}" > "$tmp"
+  printf '\n[Service]\nRuntimeDirectory=%s\nBindReadOnlyPaths=%s:%s/current\n' "${fake#/run/}" "$root/release" "$fake" >> "$tmp"
+  find -P "$root/release" -type d -exec chmod 755 {} +
+  find -P "$root/release" -type f -exec chmod a+r {} +
   install -o root -g root -m 600 -- "$tmp" "/run/systemd/system/$unit"; rm -f -- "$tmp"
-  unset deployment_root_override deployment_service_port_override deployment_bind_address_override
+  unset deployment_root_override deployment_service_port_override deployment_bind_address_override runtime_state_override runtime_identity_override
   systemctl daemon-reload; systemctl start "$unit"; printf 'STARTED=1\nUNIT=%s\n' "$unit"
 }
 restore_start_container_candidate() {
@@ -98,12 +130,15 @@ restore_start_container_candidate() {
   app="${identity[0]}"; owner="${identity[1]}"; release="${identity[2]}"; oci="${identity[3]}"; current_application="$app"
   load_container_parameters "$root/release/.windowstolinux-container-parameters"; mapfile -t mappings < "$root/ports"
   image="windowstolinux-restore-$token-$component:stage"; name="$(restore_container_name "$token" "$component")"
-  if [ "$container_engine" = podman ]; then
-    [ "$oci" != - ] || reject restore-oci-required; podman load -i "$(candidate_root "$candidate")/mutable/restore/$oci" >/dev/null
-    podman tag "$(container_image "$app" "$release")" "$image"
-  else docker build --label "io.windowstolinux.restore=$token" --tag "$image" "$root/release/source" >/dev/null; fi
+  [ "$oci" != - ] || reject restore-image-required
+  ! "$container_engine" image inspect "$image" >/dev/null 2>&1 || reject restore-image-collision
+  ! "$container_engine" inspect "$name" >/dev/null 2>&1 || reject restore-container-collision
+  printf '%s\n' "$image" > "$root/candidate-image"; chmod 400 -- "$root/candidate-image"
+  import_restore_image "$container_engine" "$(candidate_root "$candidate")/mutable/restore/$oci" "$image"
+  local runtime_user
+  runtime_user="$(container_nonroot_user "$container_engine" "$image")"
   config="$(configuration_path "$app" "$deployment_configuration_digest" container)"
-  args=("$container_engine" run -d --name "$name" --restart no --label "io.windowstolinux.restore=$token" --env-file "$config")
+  args=("$container_engine" run -d --name "$name" --restart no --user "$runtime_user" --security-opt no-new-privileges --cap-drop ALL --label "io.windowstolinux.restore=$token" --env-file "$config")
   index=0; for spec in "${container_ports[@]}"; do
     [ "$index" -lt "${#mappings[@]}" ] || reject restore-port-count
     args+=(--publish "127.0.0.1:${mappings[$index]#*:}:${spec#*:}"); index=$((index+1)); done
@@ -111,14 +146,18 @@ restore_start_container_candidate() {
   for spec in "${container_volumes[@]}"; do
     source="${spec%%:*}"; destination="${spec#*:}"; destination="${destination%:*}"; mode="${spec##*:}"
     local candidate_volume="windowstolinux-restore-${token:0:12}-${source#windowstolinux-}"
+    ! "$container_engine" volume inspect "$candidate_volume" >/dev/null 2>&1 || reject restore-volume-collision
     "$container_engine" volume create --label "io.windowstolinux.restore=$token" "$candidate_volume" >/dev/null
     local mountpoint="$($container_engine volume inspect --format '{{.Mountpoint}}' "$candidate_volume")"
+    prepare_container_volume_access "$container_engine" "$candidate_volume" "$runtime_user"
     [ -d "$root/data/$source" ] || reject restore-volume-missing; cp -a --no-preserve=ownership -- "$root/data/$source/." "$mountpoint/"
+    chown -hR "${runtime_user%%:*}:${runtime_user#*:}" -- "$mountpoint"
     if [ "$mode" = 1 ]; then args+=(--mount "type=volume,source=$candidate_volume,destination=$destination,readonly"); else args+=(--mount "type=volume,source=$candidate_volume,destination=$destination"); fi
   done
   index=0; while [ "$index" -lt "${#deployment_secret_identifiers[@]}" ]; do
     secret_name="${deployment_secret_names[$index]}"; secret_destination="/run/secrets/$secret_name"
     secret="$(secret_revision_path "$app" "${deployment_secret_identifiers[$index]}" "${deployment_secret_revisions[$index]}")"
+    secret="$(container_secret_delivery "$app" "$release" "$runtime_user" "$secret" "$secret_name")"
     args+=(--mount "type=bind,source=$secret,destination=$secret_destination,readonly" --env "$secret_name=$secret_destination"); index=$((index+1)); done
   args+=("$image"); "${args[@]}" >/dev/null; printf 'STARTED=1\nCONTAINER=%s\n' "$name"
 }
@@ -131,10 +170,65 @@ restore_start_candidate() {
 }
 restore_stop_candidate() {
   [ "$#" -eq 3 ] || reject restore-stop-arguments
-  local candidate="$1" token="$2" component="$3" root kind name
-  require_restore_token "$token"; root="$(restore_component_root "$candidate" "$component")"; kind="$(cat -- "$root/kind")"
-  if [ "$kind" = deployment ]; then name="$(restore_unit_name "$token" "$component")"; systemctl stop "$name" 2>/dev/null || true; rm -f -- "/run/systemd/system/$name"; systemctl daemon-reload
-  else mapfile -t identity < "$root/identity"; current_application="${identity[0]}"; load_container_parameters "$root/release/.windowstolinux-container-parameters"
-    name="$(restore_container_name "$token" "$component")"; "$container_engine" rm -f "$name" >/dev/null 2>&1 || true; fi
+  local candidate="$1" token="$2" component="$3" root kind name state path image volume
+  require_restore_token "$token"; require_app "$component"
+  root="$(restore_component_root "$candidate" "$component")"; kind="$(cat -- "$root/kind")"
+  if [ "$kind" = deployment ]; then
+    name="$(restore_unit_name "$token" "$component")"
+    state="$(systemctl show --value --property LoadState "$name" 2>/dev/null || true)"
+    if [ "$state" = loaded ]; then systemctl stop "$name" || reject restore-stop-failed; fi
+    state="$(systemctl show --value --property ActiveState "$name" 2>/dev/null || true)"
+    case "$state" in inactive|failed|'') ;; *) reject restore-runtime-active ;; esac
+    rm -f -- "/run/systemd/system/$name"; systemctl daemon-reload
+    if [ -e "$root/candidate-state" ]; then
+      assert_root_owned_regular "$root/candidate-state"
+      path="$(cat -- "$root/candidate-state")"
+      [ "$path" = "windowstolinux/restore/$token/$component" ] || reject restore-state-record
+      if [ -L "/var/lib/$path" ]; then
+        [ "$(readlink -- "/var/lib/$path")" = "/var/lib/private/$path" ] || reject restore-state-mapping
+        rm -f -- "/var/lib/$path"
+      fi
+      if [ -d "/var/lib/private/$path" ]; then
+        [ ! -L "/var/lib/private/$path" ] && [ "$(readlink -f -- "/var/lib/private/$path")" = "/var/lib/private/$path" ] || reject restore-state-path
+        rm -rf --one-file-system -- "/var/lib/private/$path"
+      fi
+      rmdir -- "/var/lib/windowstolinux/restore/$token" "/var/lib/private/windowstolinux/restore/$token" 2>/dev/null || true
+      rm -f -- "$root/candidate-state"
+    fi
+  else
+    mapfile -t identity < "$root/identity"; current_application="${identity[0]}"
+    load_container_parameters "$root/release/.windowstolinux-container-parameters"
+    name="$(restore_container_name "$token" "$component")"
+    if "$container_engine" inspect "$name" >/dev/null 2>&1; then
+      [ "$("$container_engine" inspect --format '{{ index .Config.Labels "io.windowstolinux.restore" }}' "$name")" = "$token" ] || reject restore-container-owner
+      "$container_engine" rm -f "$name" >/dev/null || reject restore-container-stop
+    fi
+    for spec in "${container_volumes[@]}"; do
+      source="${spec%%:*}"; volume="windowstolinux-restore-${token:0:12}-${source#windowstolinux-}"
+      if "$container_engine" volume inspect "$volume" >/dev/null 2>&1; then
+        [ "$("$container_engine" volume inspect --format '{{ index .Labels "io.windowstolinux.restore" }}' "$volume")" = "$token" ] || reject restore-volume-owner
+        "$container_engine" volume rm "$volume" >/dev/null || reject restore-volume-cleanup
+      fi
+    done
+    image="windowstolinux-restore-$token-$component:stage"
+    if [ -e "$root/candidate-image" ]; then
+      assert_root_owned_regular "$root/candidate-image"
+      [ "$(cat -- "$root/candidate-image")" = "$image" ] || reject restore-image-record
+      if "$container_engine" image inspect "$image" >/dev/null 2>&1; then "$container_engine" image rm "$image" >/dev/null || reject restore-image-cleanup; fi
+      rm -f -- "$root/candidate-image"
+    fi
+  fi
   printf 'STOPPED=1\n'
+}
+cleanup_restore_candidates() {
+  local candidate="$1" root component token
+  [ -d "$candidate/mutable/restore-activation" ] || return 0
+  for root in "$candidate/mutable/restore-activation"/*; do
+    [ -d "$root" ] && [ ! -L "$root" ] || continue
+    component="${root##*/}"; require_app "$component"
+    if [ -e "$root/kind" ] && [ -e "$root/activation-token" ]; then
+      assert_root_owned_regular "$root/activation-token"; token="$(cat -- "$root/activation-token")"
+      restore_stop_candidate "${candidate##*/}" "$token" "$component"
+    fi
+  done
 }

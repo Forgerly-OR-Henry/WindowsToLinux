@@ -1,9 +1,6 @@
 package gold.debug.windowstolinux.app.service.backup;
 
-import gold.debug.windowstolinux.app.service.failure.ApplicationServiceException;
-import gold.debug.windowstolinux.app.service.failure.ApplicationServiceFailureType;
 import gold.debug.windowstolinux.shared.backup.contract.spi.DatabaseBackupArtifact;
-import gold.debug.windowstolinux.shared.backup.contract.spi.DatabaseConnectionProfile;
 import gold.debug.windowstolinux.shared.backup.contract.spi.DatabaseRestoreRequest;
 import gold.debug.windowstolinux.shared.backup.contract.validation.BackupException;
 import gold.debug.windowstolinux.shared.backup.contract.validation.BackupFailureType;
@@ -15,7 +12,6 @@ import gold.debug.windowstolinux.shared.backup.manifest.BackupMember;
 import gold.debug.windowstolinux.shared.backup.manifest.BackupMemberKind;
 import gold.debug.windowstolinux.shared.config.resource.ManagedDatabaseBinding;
 import gold.debug.windowstolinux.shared.config.resource.ManagedDatabaseConnection;
-import gold.debug.windowstolinux.shared.config.resource.ManagedDatabaseEngineType;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -41,6 +37,15 @@ record RestoreArchiveModel(
             BackupMember member = exactMember(activation, component.configurationSnapshotPath(),
                     BackupMemberKind.CONFIGURATION);
             BackupConfigurationDocument document = codec.readActivation(readMember(activation, member));
+            var policy = document.runtimeConfiguration().identityPolicy();
+            if (policy == gold.debug.windowstolinux.shared.model.project.RuntimeIdentityMode.LEGACY_UNSPECIFIED) {
+                throw new IOException("Historical backup has no runtime identity policy; redeploy with controlled migration and create a new backup before automatic activation");
+            }
+            boolean container = component.runtime().projectType() == gold.debug.windowstolinux.shared.model.project.DeploymentProjectType.DOCKERFILE_CONTAINER;
+            if (container != (policy == gold.debug.windowstolinux.shared.model.project.RuntimeIdentityMode.CONTAINER_NON_ROOT)) {
+                throw new IOException("Backup runtime identity policy differs from the execution backend");
+            }
+            if (container) exactMember(activation, "runtime/" + component.componentId() + ".oci", BackupMemberKind.RUNTIME);
             if (!document.configuration().applicationId().equals(component.managedApplicationId())
                     || !document.runtimeConfiguration().healthCheck().equals(
                     component.runtime().healthCheck().toHealthCheck())) {
@@ -78,7 +83,7 @@ record RestoreArchiveModel(
         }
         DatabaseOwner owner = databases.getFirst(); BackupMember member = members.getFirst();
         if (!member.path().equals("database/" + owner.binding().databaseId() + ".dump")
-                || type(owner.binding().connection().engine()) != type
+                || BackupDatabaseProfileMapper.type(owner.binding().connection().engine()) != type
                 || owner.binding().connection() instanceof ManagedDatabaseConnection.Server server
                 && !owner.component().secretReferences().orElseThrow().contains(server.passwordReference())) {
             throw new IOException("database artifact, binding, type, or secret identity differs from the manifest");
@@ -91,7 +96,7 @@ record RestoreArchiveModel(
                 activation.validation().manifest().applicationId(), owner.component().managedApplicationId(),
                 activation.localCandidate().inspection().applicationId() + "-"
                         + activation.validation().archiveSha256().substring(0, 16),
-                profile(owner.binding().connection()), artifact);
+                BackupDatabaseProfileMapper.profile(owner.binding().connection()), artifact);
         return Optional.of(new DatabaseMaterial(request,
                 activation.restoreCandidate().root().resolve(member.path()).normalize(), artifact));
     }
@@ -128,24 +133,7 @@ record RestoreArchiveModel(
         }
     }
 
-    private static DatabaseConnectionProfile profile(ManagedDatabaseConnection connection) {
-        if (connection instanceof ManagedDatabaseConnection.Sqlite sqlite) {
-            return new DatabaseConnectionProfile.Sqlite(sqlite.fileName());
-        }
-        ManagedDatabaseConnection.Server server = (ManagedDatabaseConnection.Server) connection;
-        return new DatabaseConnectionProfile.Server(type(server.engine()), server.host(), server.port(),
-                server.database(), server.username(), server.passwordReference(), server.tlsRequired());
-    }
 
-    private static BackupDatabaseType type(ManagedDatabaseEngineType type) {
-        return switch (type) {
-            case SQLITE -> BackupDatabaseType.SQLITE;
-            case POSTGRESQL -> BackupDatabaseType.POSTGRESQL;
-            case MYSQL -> BackupDatabaseType.MYSQL;
-            case MARIADB -> BackupDatabaseType.MARIADB;
-            case REDIS -> throw ApplicationServiceException.create(ApplicationServiceFailureType.BACKUP_INPUT_INCOMPLETE, "complete Redis backup is unsupported");
-        };
-    }
 
     record DatabaseMaterial(DatabaseRestoreRequest request, Path localArtifact, DatabaseBackupArtifact artifact) { }
     private record DatabaseOwner(BackupComponent component, ManagedDatabaseBinding binding) { }

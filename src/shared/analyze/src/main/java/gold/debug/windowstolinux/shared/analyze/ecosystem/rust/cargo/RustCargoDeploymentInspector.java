@@ -19,7 +19,7 @@ import java.util.regex.Pattern;
 /** Inspects one locked Cargo service without executing Rust tools. / 在不执行 Rust 工具的情况下检查一个锁定的 Cargo 服务。 */
 public final class RustCargoDeploymentInspector implements DeploymentTypeInspector {
     private static final Pattern RUST_VERSION = Pattern.compile(
-            "(?:channel\\s*=\\s*[\"']|^)(1\\.[0-9]+(?:\\.[0-9]+)?)[\"']?", Pattern.MULTILINE);
+            "(?:channel\\s*=\\s*[\"']|^)([A-Za-z0-9][A-Za-z0-9._+-]*)[\"']?", Pattern.MULTILINE);
     private static final Pattern CRATE_NAME = Pattern.compile(
             "(?m)^name\\s*=\\s*[\"']([A-Za-z0-9][A-Za-z0-9._-]{0,127})[\"']");
 

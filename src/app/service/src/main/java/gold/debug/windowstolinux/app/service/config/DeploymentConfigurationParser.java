@@ -1,5 +1,6 @@
 package gold.debug.windowstolinux.app.service.config;
 
+import gold.debug.windowstolinux.shared.config.secretref.SecretReference;
 import gold.debug.windowstolinux.shared.config.contract.definition.ConfigurationScope;
 import gold.debug.windowstolinux.shared.config.contract.definition.ConfigurationValue;
 import gold.debug.windowstolinux.shared.config.revision.ConfigurationEntry;
@@ -50,4 +51,20 @@ public final class DeploymentConfigurationParser {
         }
         return new ConfigurationValue.Text(value);
     }
+    /** Parses exact public secret references for configuration and deployment. / 为配置和部署解析精确公开秘密引用。 */
+    public static List<SecretReference> secrets(String input) {
+        List<SecretReference> references = new ArrayList<>();
+        for (String item : input.split(";")) {
+            String value = item.trim();
+            if (value.isEmpty()) continue;
+            int separator = value.lastIndexOf(':');
+            if (separator < 1 || separator == value.length() - 1) {
+                throw new IllegalArgumentException("secret reference must contain an identifier and revision");
+            }
+            references.add(new SecretReference(value.substring(0, separator).trim(),
+                    Long.parseLong(value.substring(separator + 1).trim())));
+        }
+        return List.copyOf(references);
+    }
+
 }

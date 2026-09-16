@@ -30,6 +30,7 @@ class AutomaticDeploymentUseCaseTest {
     @TempDir Path directory;
     private final List<String> calls = new ArrayList<>();
     private boolean completeMultiple;
+    private boolean declineEnvironment;
     private DeploymentStatus terminal = DeploymentStatus.SUCCEEDED;
     private final ServerIdentity server = new ServerIdentity("test-server", "192.0.2.1", 22, "SHA256:test-fingerprint");
     private final ServerProfile profile = new ServerProfile("test-server", "192.0.2.1", 22, "test", "ssh-test", CredentialStorageMode.WINDOWS_CREDENTIAL_MANAGER);
@@ -43,7 +44,9 @@ class AutomaticDeploymentUseCaseTest {
         assertEquals(1, result.handoffs().size());
         assertEquals(1, Collections.frequency(calls, "environment"));
         assertEquals(1, Collections.frequency(calls, "deploy"));
+        assertEquals(1, Collections.frequency(calls, "environment-confirmed"));
         assertTrue(calls.indexOf("input") < calls.indexOf("environment"));
+        assertTrue(calls.indexOf("environment-confirmed") < calls.indexOf("environment"));
         assertArrayEquals(new char[master.length], master);
         try (var snapshots = Files.list(directory.resolve("work/source-snapshots"))) { assertEquals(0, snapshots.count()); }
     }
@@ -54,6 +57,19 @@ class AutomaticDeploymentUseCaseTest {
                 new AutomaticDeploymentRequest(Optional.of(root), Optional.empty(), profile, Map.of()),
                 new char[0], interaction(true), ignored -> true, ignored -> { }));
         assertFalse(calls.contains("environment")); assertFalse(calls.contains("deploy"));
+    }
+
+    @Test void decliningSystemPackagesStopsBeforePreparationAndDeployment() throws Exception {
+        declineEnvironment = true;
+        Path root = node(directory.resolve("source"), "demo");
+        char[] master = "test-only".toCharArray();
+        assertThrows(CancellationException.class, () -> useCase().deploy(
+                new AutomaticDeploymentRequest(Optional.of(root), Optional.empty(), profile, Map.of()),
+                master, interaction(false), ignored -> true, ignored -> { }));
+        assertTrue(calls.contains("environment-declined"));
+        assertFalse(calls.contains("environment"));
+        assertFalse(calls.contains("deploy"));
+        assertArrayEquals(new char[master.length], master);
     }
 
     @Test void cancellingDatabaseInputsStopsBeforeServerChecksAndEnvironmentChanges() throws Exception {
@@ -97,7 +113,7 @@ class AutomaticDeploymentUseCaseTest {
                 if (fields.stream().anyMatch(field -> field.id().equals("application/healthOwner"))) return Optional.empty();
                 return original.requestInputs(fields);
             }
-            @Override public boolean confirm(String key, Map<String, ?> details) { return true; }
+            @Override public boolean confirm(String key, Map<String, ?> details) { return original.confirm(key, details); }
             @Override public char[] requestSecret(String key) { throw new AssertionError("no secret is needed"); }
         };
         assertThrows(CancellationException.class, () -> useCase().deploy(new AutomaticDeploymentRequest(Optional.of(root), Optional.empty(), profile,
@@ -152,7 +168,15 @@ class AutomaticDeploymentUseCaseTest {
                         : field.choices().isEmpty() ? field.value() : field.choices().getFirst()));
                 return Optional.of(answers);
             }
-            @Override public boolean confirm(String key, Map<String, ?> details) { return true; }
+            @Override public boolean confirm(String key, Map<String, ?> details) {
+                if (key.equals("environment.confirm")) {
+                    assertEquals(profile.id(), details.get("serverId"));
+                    assertEquals(profile.host(), details.get("host"));
+                    calls.add(declineEnvironment ? "environment-declined" : "environment-confirmed");
+                    return !declineEnvironment;
+                }
+                return true;
+            }
             @Override public char[] requestSecret(String key) { throw new AssertionError("no secret is needed"); }
         };
     }
@@ -193,7 +217,7 @@ class AutomaticDeploymentUseCaseTest {
                             var desktop = new gold.debug.windowstolinux.app.service.DesktopApplicationFacade(persistence,directory.resolve("review-work"),
                                     (endpoint,credential,verifier) -> { throw new AssertionError("review must not connect"); });
                             yield desktop.createReviewedMultiComponentApplication(source,server,
-                                    (List<gold.debug.windowstolinux.app.service.deployment.multi.MultiComponentReviewInput>)args[2],(ApplicationHealthGate)args[3]);
+                                    (List<gold.debug.windowstolinux.app.service.contract.definition.MultiComponentReviewInput>)args[2],(ApplicationHealthGate)args[3]);
                         }
                     }
                     case "deployAutomaticallyReviewed" -> {

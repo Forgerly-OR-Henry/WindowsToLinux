@@ -13,7 +13,7 @@ import java.util.List;
 import java.util.Objects;
 import java.util.function.BooleanSupplier;
 
-/** A page-local, initially closed inspector preserving the original input controls. */
+/** A page-local, initially closed inspector preserving the original input controls. / 页面专属且初始折叠的检查面板，保留原有输入控件。 */
 public final class AdvancedOptionsPane extends JPanel {
     private final JPanel fields = new JPanel();
     private final JScrollPane drawer;
@@ -23,7 +23,7 @@ public final class AdvancedOptionsPane extends JPanel {
     private final List<BooleanSupplier> changes = new ArrayList<>();
     private final java.util.Map<Component, Boolean> disabledInputs = new java.util.IdentityHashMap<>();
 
-    /** Wraps a primary page without hiding its operation log behind an overlay. */
+    /** Wraps a primary page without hiding its operation log behind an overlay. / 包装主页面，不使用覆盖层遮挡其操作日志。 */
     public AdvancedOptionsPane(JComponent primary, DesktopComponentFactory components, PageMessagePresenter messages) {
         super(new BorderLayout(12, 8));
         this.messages = messages;
@@ -48,7 +48,7 @@ public final class AdvancedOptionsPane extends JPanel {
         add(drawer, BorderLayout.EAST);
     }
 
-    /** Adds one labeled input with an accessible, explanatory question-mark button. */
+    /** Adds one labeled input with an accessible, explanatory question-mark button. / 添加一个带标签的输入及支持无障碍访问的说明问号按钮。 */
     public void field(String key, JComponent input) {
         JPanel row = new JPanel(new BorderLayout(4, 5));
         row.setOpaque(false);
@@ -67,17 +67,17 @@ public final class AdvancedOptionsPane extends JPanel {
         observe(input);
     }
 
-    /** Adds a secondary operation or informational card. */
+    /** Adds a secondary operation or informational card. / 添加次要操作或信息卡片。 */
     public void addOption(JComponent option) {
         option.setAlignmentX(Component.LEFT_ALIGNMENT);
         fields.add(option);
         fields.add(Box.createVerticalStrut(10));
     }
 
-    /** Returns whether this page's inspector is expanded. */
+    /** Returns whether this page's inspector is expanded. / 返回当前页面检查面板是否展开。 */
     public boolean expanded() { return drawer.isVisible(); }
 
-    /** Freezes operation inputs while retaining each control's prior enabled state and readable output. */
+    /** Freezes operation inputs while retaining each control's prior enabled state and readable output. / 冻结操作输入，同时保留各控件原有启用状态和可读输出。 */
     public void setBusy(boolean busy) {
         if (busy) {
             if (disabledInputs.isEmpty()) disableInputs(this);
@@ -99,7 +99,7 @@ public final class AdvancedOptionsPane extends JPanel {
         }
     }
 
-    /** Restores visibility without changing any input values. */
+    /** Restores visibility without changing any input values. / 恢复可见性，不改变输入值。 */
     public void setExpanded(boolean value) {
         drawer.setVisible(value);
         toggle.setText(messages.text(value ? "advanced.hide" : "advanced.show"));
@@ -115,7 +115,7 @@ public final class AdvancedOptionsPane extends JPanel {
         }
     }
 
-    /** Creates a native FlatLaf circular help control with hover and keyboard access. */
+    /** Creates a native FlatLaf circular help control with hover and keyboard access. / 创建支持悬停和键盘访问的 FlatLaf 原生圆形帮助控件。 */
     public static JButton help(String description) {
         JButton button = new JButton();
         button.putClientProperty("JButton.buttonType", "help");

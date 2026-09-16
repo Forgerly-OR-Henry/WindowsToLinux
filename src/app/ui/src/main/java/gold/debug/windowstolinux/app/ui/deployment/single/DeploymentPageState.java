@@ -55,8 +55,35 @@ public record DeploymentPageState(
         boolean rootBuild,
         boolean experimentalAdapterRisk,
         String output,
-        ReviewedSourcePreparation preparation
+        ReviewedSourcePreparation preparation,
+        String kotlinJvmTarget
 ) {
+    public DeploymentPageState(String projectType,
+        String healthMode,
+        String healthEndpoint,
+        String expectedHttpStatus,
+        String healthTimeoutSeconds,
+        String tcpStabilitySeconds,
+        String userAccessUrl,
+        String runtimePrimary,
+        String runtimeSecondary,
+        String javaVersion,
+        String jvmArguments,
+        String applicationArguments,
+        String containerEngine,
+        String containerPorts,
+        String containerVolumes,
+        String configurationEntries,
+        String databaseMode,
+        String databaseDetails,
+        String secretReferences,
+        boolean rootBuild,
+        boolean experimentalAdapterRisk,
+        String output,
+        ReviewedSourcePreparation preparation) {
+        this(projectType, healthMode, healthEndpoint, expectedHttpStatus, healthTimeoutSeconds, tcpStabilitySeconds, userAccessUrl, runtimePrimary, runtimeSecondary, javaVersion, jvmArguments, applicationArguments, containerEngine, containerPorts, containerVolumes, configurationEntries, databaseMode, databaseDetails, secretReferences, rootBuild, experimentalAdapterRisk, output, preparation, "");
+    }
+
     /**
      * Creates a {@code DeploymentPageState} instance.
      *

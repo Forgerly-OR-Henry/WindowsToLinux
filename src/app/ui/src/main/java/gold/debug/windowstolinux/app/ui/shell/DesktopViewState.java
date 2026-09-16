@@ -37,7 +37,7 @@ public record DesktopViewState(
         java.util.Map<String, String> deploymentSelection,
         java.util.Map<String, gold.debug.windowstolinux.app.service.deployment.single.DeploymentHandoff> handoffs
 ) implements AutoCloseable {
-    /** Creates a view state with no expanded inspectors, as on first launch. */
+    /** Creates a view state with no expanded inspectors, as on first launch. / 创建所有检查面板均折叠的视图状态，与首次启动一致。 */
     public DesktopViewState(String page, DeploymentPageState deployment, MultiComponentPageState multiComponent,
                             ServerPageState server, ManagedPageState managed, BackupPageState backup,
                             AiPageState ai, SettingPageState settings) {

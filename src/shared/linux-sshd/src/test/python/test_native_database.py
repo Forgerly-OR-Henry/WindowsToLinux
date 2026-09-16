@@ -1,4 +1,4 @@
-"""Offline behavior checks for the bundled native DB helper; never contacts a server."""
+"""Offline behavior checks for the bundled native DB helper; never contacts a server. / 对内置原生数据库 helper 进行离线行为检查，不连接服务器。"""
 import json
 import os
 import pathlib
@@ -11,8 +11,8 @@ from unittest.mock import patch
 if sys.platform == 'win32':
     sys.modules.setdefault('fcntl', types.SimpleNamespace(LOCK_EX=1, LOCK_NB=2, flock=lambda *args: None))
 
-RESOURCE = pathlib.Path(__file__).resolve().parents[2] / 'main/resources/gold/debug/windowstolinux/shared/linux/sshd/ecosystem/db'
-CODE = ''.join(path.read_text(encoding='utf-8') for path in sorted(RESOURCE.glob('*.sh'))).split("<<'WTL_NATIVE_DB_PY'\n", 1)[1].split('\nWTL_NATIVE_DB_PY', 1)[0]
+RESOURCE = pathlib.Path(__file__).resolve().parents[2] / 'main/resources/gold/debug/windowstolinux/shared/linux/sshd/execution/protocol/helper/fragments/database'
+CODE = ''.join((RESOURCE / name).read_text(encoding='utf-8') for name in ('10-native-instances.sh', '20-native-targets.sh')).split("<<'WTL_NATIVE_DB_PY'\n", 1)[1].split('\nWTL_NATIVE_DB_PY', 1)[0]
 DB = {'__name__': 'native_database_offline_test'}
 exec(compile(CODE, str(RESOURCE), 'exec'), DB)
 
@@ -45,8 +45,8 @@ class NativeDatabaseTest(unittest.TestCase):
                         'sourceSha256': 'c' * 64, 'sql': 'CREATE TABLE sample (id integer);', 'existingApproved': 'false'}
         seams = {'state_directory': lambda: self.directory}
         if sys.platform == 'win32':
-            # Windows cannot represent the helper's POSIX root/0600 ownership contract.
-            # These tests exercise state transitions; production ownership checks remain unchanged.
+            # Windows cannot represent the helper's POSIX root/0600 ownership contract. / Windows 无法表达 helper 的 POSIX root 属主与 0600 权限契约。
+            # These tests exercise state transitions; production ownership checks remain unchanged. / 这些测试覆盖状态转换，生产属主校验保持不变。
             seams['read_state'] = lambda path: json.loads(path.read_text()) if path.exists() else {}
         self.fixture = patch.dict(DB, seams)
         self.fixture.start(); self.addCleanup(self.fixture.stop)

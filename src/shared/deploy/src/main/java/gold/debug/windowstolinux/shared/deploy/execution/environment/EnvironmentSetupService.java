@@ -17,6 +17,23 @@ import java.util.Objects;
  * <p>运行一个经过显式批准的环境准备操作。它被有意与部署分离，以防安装作为上传项目的隐式副作用发生。
  */
 public final class EnvironmentSetupService {
+    /** Separately confirms system changes before the ordinary installation operation. / 在普通安装前独立确认系统变更。 */
+    public EnvironmentSetupResult prepare(EnvironmentSetupApproval approval, LinuxGateway gateway,
+            SshEndpoint endpoint, SshCredential credential, HostKeyEvaluator verifier,
+            java.util.function.Predicate<gold.debug.windowstolinux.shared.model.server.security.SelinuxPreparationPlan> systemConfirmation)
+            throws LinuxOperationException {
+        Objects.requireNonNull(credential, "credential");
+        try {
+            Objects.requireNonNull(approval, "approval").requireAcceptedFor(endpoint.serverId());
+            Objects.requireNonNull(systemConfirmation, "systemConfirmation");
+            HostKeyEvaluator pinned = new SelinuxPreparationService().prepare(gateway, endpoint, credential,
+                    verifier, systemConfirmation);
+            return prepare(approval, gateway, endpoint, credential.duplicate(), pinned);
+        } finally {
+            credential.clear();
+        }
+    }
+
     /**
      * Performs the {@code prepare} operation.
      *
@@ -43,8 +60,13 @@ public final class EnvironmentSetupService {
             Objects.requireNonNull(approval, "approval").requireAcceptedFor(Objects.requireNonNull(endpoint, "endpoint").serverId());
             Objects.requireNonNull(gateway, "gateway");
             Objects.requireNonNull(hostKeyVerifier, "hostKeyVerifier");
+            EnvironmentSetupResult installed;
             try (LinuxRemoteSession session = gateway.connect(endpoint, credential.duplicate(), hostKeyVerifier)) {
-                return session.prepareEnvironment(approval);
+                installed = session.prepareEnvironment(approval);
+            }
+            try (LinuxRemoteSession verified = gateway.connect(endpoint, credential.duplicate(), hostKeyVerifier)) {
+                return new EnvironmentSetupResult(verified.collectCapabilities(), installed.evidence()
+                        + "\nVerified capabilities through a fresh authenticated SSH connection after preparation.");
             }
         } finally {
             credential.clear();

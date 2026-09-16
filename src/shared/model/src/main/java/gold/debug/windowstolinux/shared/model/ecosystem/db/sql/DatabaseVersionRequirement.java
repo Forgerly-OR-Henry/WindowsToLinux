@@ -3,7 +3,7 @@ package gold.debug.windowstolinux.shared.model.ecosystem.db.sql;
 import java.util.*;
 import java.util.regex.Pattern;
 
-/** Explicit database release constraints; a newer version is compatible with a minimum requirement. */
+/** Explicit database release constraints; a newer version is compatible with a minimum requirement. / 显式数据库版本约束，较新版本兼容最低版本要求。 */
 public final class DatabaseVersionRequirement {
     private static final Pattern TERM = Pattern.compile("(>=|<=|>|<|=)?([0-9]{1,3}(?:\\.[0-9]{1,3}){0,2})(?:\\.x)?");
     private final String declaration;

@@ -38,6 +38,7 @@ import java.util.zip.GZIPInputStream;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 
 /**
  * Opt-in deployment proving that a standard Maven Wrapper is used only on the Ubuntu candidate.
@@ -54,15 +55,15 @@ class UbuntuManagedMavenWrapperAcceptanceTest {
         String sourceProperty = System.getProperty("managed.wrapper.source");
         String accessUrlProperty = System.getProperty("managed.wrapper.access.url");
         String host = System.getProperty("managed.ssh.host");
-        String username = System.getProperty("managed.ssh.user", "ubuntu");
-        boolean rootBuild = Boolean.getBoolean("managed.root-build");
+        String username = System.getProperty("managed.ssh.user", "root");
+        boolean rootBuild = false;
+        assertFalse(Boolean.getBoolean("managed.root-build"), "root builds were removed in helper v7");
         String password = System.getenv("WINDOWSTOLINUX_TEST_SSH_PASSWORD");
         assertPresent(sourceProperty, "managed.wrapper.source");
         assertPresent(accessUrlProperty, "managed.wrapper.access.url");
         assertPresent(host, "managed.ssh.host");
         assertPresent(username, "managed.ssh.user");
-        assertTrue(!"root".equals(username) || rootBuild,
-                "a root SSH session requires the explicit managed.root-build=true confirmation");
+        assertEquals("root", username, "root management must launch only restricted builds");
         assertPresent(password, "WINDOWSTOLINUX_TEST_SSH_PASSWORD");
         Path source = Path.of(sourceProperty).toAbsolutePath().normalize();
         assertTrue(Files.isDirectory(source), "Maven Wrapper source directory is required");
@@ -99,7 +100,7 @@ class UbuntuManagedMavenWrapperAcceptanceTest {
                     "managed-wrapper-master".toCharArray(), fingerprint -> true);
             assertEquals(DeploymentStatus.SUCCEEDED, result.status(), () -> result.events().toString());
             URI accessUrl = requireHttpAccessUrl(result, userAccessUrl.url());
-            assertDesktopCanAccess(accessUrl, "Phase One Wrapper Service");
+            assertDesktopCanAccess(accessUrl, "deployment-smoke-ok");
             assertEvent(result, "source-upload", true);
             assertTrue(result.events().stream().anyMatch(event -> "remote-build".equals(event.step())
                             && event.evidence().contains("MAVEN_WRAPPER")),

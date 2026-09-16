@@ -84,6 +84,8 @@ public record DeploymentRuntimeAssessment(
         JAVA_MAIN_CLASS,
         /** Java major version. / Java 主版本。 */
         JAVA_VERSION,
+        /** Kotlin JVM bytecode target, separate from its compiler. / 与编译器版本分离的 Kotlin JVM 字节码目标。 */
+        KOTLIN_JVM_TARGET,
         /** Node.js major version. / Node.js 主版本。 */
         NODE_MAJOR_VERSION,
         /** Python minor version. / Python 次版本。 */
@@ -110,7 +112,8 @@ public record DeploymentRuntimeAssessment(
 
     private static EnumSet<RuntimeInputType> allowedInputs(DeploymentProjectType projectType) {
         return switch (projectType) {
-            case SPRING_BOOT, DOCKERFILE_CONTAINER, RECOGNITION_PREVIEW -> EnumSet.noneOf(RuntimeInputType.class);
+            case SPRING_BOOT -> EnumSet.of(RuntimeInputType.JAVA_VERSION);
+            case DOCKERFILE_CONTAINER, RECOGNITION_PREVIEW -> EnumSet.noneOf(RuntimeInputType.class);
             case JAVA_JAR -> EnumSet.of(RuntimeInputType.JAVA_JAR_PATH, RuntimeInputType.JAVA_MAIN_CLASS,
                     RuntimeInputType.JAVA_VERSION);
             case JAVA_SOURCE -> EnumSet.of(RuntimeInputType.JAVA_SOURCE_ROOT, RuntimeInputType.JAVA_MAIN_CLASS,
@@ -118,7 +121,9 @@ public record DeploymentRuntimeAssessment(
             case NODE_SERVICE -> EnumSet.of(RuntimeInputType.NODE_MAJOR_VERSION);
             case PYTHON_SERVICE -> EnumSet.of(RuntimeInputType.PYTHON_VERSION, RuntimeInputType.PYTHON_ENTRYPOINT);
             case STATIC_SITE -> EnumSet.of(RuntimeInputType.STATIC_OUTPUT_DIRECTORY, RuntimeInputType.NODE_MAJOR_VERSION);
-            case GO_SERVICE, RUST_SERVICE, DOTNET_SERVICE, KOTLIN_SERVICE ->
+            case KOTLIN_SERVICE -> EnumSet.of(RuntimeInputType.SERVICE_VERSION, RuntimeInputType.SERVICE_ARTIFACT,
+                    RuntimeInputType.SERVICE_ENTRYPOINT, RuntimeInputType.KOTLIN_JVM_TARGET);
+            case GO_SERVICE, RUST_SERVICE, DOTNET_SERVICE ->
                     EnumSet.of(RuntimeInputType.SERVICE_VERSION, RuntimeInputType.SERVICE_ARTIFACT,
                             RuntimeInputType.SERVICE_ENTRYPOINT);
             case PHP_SERVICE, RUBY_SERVICE -> EnumSet.of(RuntimeInputType.SERVICE_VERSION,

@@ -32,7 +32,8 @@ public record DeploymentProjectFacts(
         ProjectLanguageFacts languageFacts,
         List<AnalysisEvidence> evidence,
         List<LocalizedMessage> conflicts,
-        List<LocalizedMessage> missingInformation
+        List<LocalizedMessage> missingInformation,
+        List<gold.debug.windowstolinux.shared.model.toolchain.ToolchainRequirement> toolchainRequirements
 ) {
     /**
      * Creates a {@code DeploymentProjectFacts} instance.
@@ -64,6 +65,20 @@ public record DeploymentProjectFacts(
         evidence = List.copyOf(Objects.requireNonNull(evidence, "evidence"));
         conflicts = List.copyOf(Objects.requireNonNull(conflicts, "conflicts"));
         missingInformation = List.copyOf(Objects.requireNonNull(missingInformation, "missingInformation"));
+        toolchainRequirements = List.copyOf(Objects.requireNonNull(toolchainRequirements, "toolchainRequirements"));
+    }
+
+    /** Existing callers without source toolchain declarations retain their original facts. / 没有工具链声明的既有调用保留原事实。 */
+    public DeploymentProjectFacts(Path sourceRoot, String applicationId, DeploymentProjectType projectType,
+            DeploymentBuildToolType buildTool, DeploymentSupportProfile support, ProjectLanguageFacts languageFacts,
+            List<AnalysisEvidence> evidence, List<LocalizedMessage> conflicts, List<LocalizedMessage> missingInformation) {
+        this(sourceRoot, applicationId, projectType, buildTool, support, languageFacts, evidence, conflicts,
+                missingInformation, List.of());
+    }
+
+    public DeploymentProjectFacts withToolchains(List<gold.debug.windowstolinux.shared.model.toolchain.ToolchainRequirement> requirements) {
+        return new DeploymentProjectFacts(sourceRoot, applicationId, projectType, buildTool, support, languageFacts,
+                evidence, conflicts, missingInformation, requirements);
     }
 
     /** Creates facts for callers that have no separate language observations. / 为没有单独语言观测的调用方创建事实。 */

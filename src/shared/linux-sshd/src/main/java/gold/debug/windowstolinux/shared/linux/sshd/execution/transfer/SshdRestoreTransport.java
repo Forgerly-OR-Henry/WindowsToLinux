@@ -47,7 +47,7 @@ public final class SshdRestoreTransport implements RemoteRestoreFilePort {
         Objects.requireNonNull(request, "request");
         verifyLocalCandidate(request);
         RemoteWorkspace workspace = new RemoteWorkspace(request.applicationId(), request.archiveSha256());
-        RemoteStepResult prepared = candidates.create(workspace);
+        RemoteStepResult prepared = candidates.createRestore(workspace);
         if (!prepared.succeeded()) {
             throw LinuxOperationException.create(
                     LinuxOperationFailureType.CANDIDATE_PREPARATION_FAILED, prepared.evidence());

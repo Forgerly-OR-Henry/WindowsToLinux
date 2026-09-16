@@ -22,6 +22,7 @@ import gold.debug.windowstolinux.shared.backup.restore.BackupRestoreStatus;
 import gold.debug.windowstolinux.shared.backup.restore.RestoreMaterialKind;
 import gold.debug.windowstolinux.shared.backup.contract.validation.BackupException;
 import gold.debug.windowstolinux.shared.config.revision.DeploymentInputManifest;
+import gold.debug.windowstolinux.shared.deploy.execution.transaction.DeploymentInputMapper;
 import gold.debug.windowstolinux.shared.config.secretref.ResolvedSecretRevision;
 import gold.debug.windowstolinux.shared.config.secretref.SecretReference;
 import gold.debug.windowstolinux.shared.deploy.execution.transaction.ManagedRestoreDeploymentPort;
@@ -139,7 +140,7 @@ public final class ManagedRestoreUseCase {
                         servers.hostKeyVerifier(profile,
                                 java.util.Objects.requireNonNull(firstUseConfirmation, "firstUseConfirmation")))) {
                     credential.clear();
-                    var activationEvidence = session.inspectRestoreActivation(
+                    var activationEvidence = session.restoreActivation().inspectRestoreActivation(
                             model.activation().validation().manifest().applicationId(),
                             model.activation().validation().verifiedBytes());
                     boolean existingOwned = recorder.existingOwnedTarget(model, profile.id());
@@ -182,8 +183,8 @@ public final class ManagedRestoreUseCase {
                 ServerIdentity targetIdentity = servers.findTrusted(profile.id()).orElseThrow(() ->
                         ApplicationServiceException.create(ApplicationServiceFailureType.SERVER_PROFILE_MISSING,
                                 "the accepted target host key identity was not persisted"));
-                DatabaseOperationPort databaseOperations = new LinuxDatabaseOperationPort(session);
-                var activationEvidence = session.inspectRestoreActivation(
+                DatabaseOperationPort databaseOperations = new LinuxDatabaseOperationPort(session.databaseOperations());
+                var activationEvidence = session.restoreActivation().inspectRestoreActivation(
                         model.activation().validation().manifest().applicationId(),
                         model.activation().validation().verifiedBytes());
                 boolean existingOwned = recorder.existingOwnedTarget(model, profile.id());
@@ -196,7 +197,7 @@ public final class ManagedRestoreUseCase {
                 BackupRestoreResult result;
                 try {
                     var candidates = new LinuxRestoreCandidateAdapter(session,
-                            new ManagedRestoreDeploymentPort(session), inputs);
+                            new ManagedRestoreDeploymentPort(session.restoreActivation()), inputs);
                     result = new BackupRestoreCoordinator(new BackupRestorePreflight(), candidates,
                             DatabaseAdapterRegistry.defaults(databaseOperations)).restore(plan);
                 } finally {
@@ -256,7 +257,7 @@ public final class ManagedRestoreUseCase {
             if (secrets.size() != expected.size()) throw new IllegalStateException("component secret revisions differ");
             ManagedApplication application = ManagedApplication.forManaged(component.managedApplicationId(), target,
                     component.ownershipManifestSha256());
-            inputs.put(component.componentId(), session.stageDeploymentInputs(
+            inputs.put(component.componentId(), DeploymentInputMapper.stage(session,
                     application, document.configuration(), secrets));
         }
         return Map.copyOf(inputs);

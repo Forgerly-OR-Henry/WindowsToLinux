@@ -21,7 +21,7 @@ database_postgresql_exists() {
 }
 database_mysql_exists() {
   local client="$1" credentials="$2" name="$3"
-  "$client" --defaults-extra-file="$credentials" --host="$database_host" --port="$database_port" \
+  run_mysql_client "$client" "$credentials" --host="$database_host" --port="$database_port" \
     --user="$database_username" --batch --skip-column-names -e \
     "SELECT 1 FROM information_schema.schemata WHERE schema_name='$name'" 2>/dev/null | grep -qx 1
 }
@@ -47,12 +47,12 @@ database_commit_mysql() {
   database_mysql_exists "$client" "$credentials" "$database_activation_database" || { rm -f -- "$credentials"; reject database-candidate-missing; }
   [ ! -e "$rollback_dump" ] && [ ! -L "$rollback_dump" ] || { rm -f -- "$credentials"; reject database-rollback-exists; }
   if database_mysql_exists "$client" "$credentials" "$database_name"; then
-    previous=1; "$dump" --defaults-extra-file="$credentials" --host="$database_host" --port="$database_port" --user="$database_username" --lock-all-tables --routines --events --triggers --result-file="$rollback_dump" "$database_name" || { rm -f -- "$credentials" "$rollback_dump"; reject database-rollback-export; }
+    previous=1; run_mysql_client "$dump" "$credentials" --host="$database_host" --port="$database_port" --user="$database_username" --lock-all-tables --routines --events --triggers "$database_name" > "$rollback_dump" || { rm -f -- "$credentials" "$rollback_dump"; reject database-rollback-export; }
     chown root:root -- "$rollback_dump"; chmod 400 -- "$rollback_dump"
   fi
   printf '%s\n%s\nprepared\n' "$database_activation_type" "$previous" > "$database_activation_state"; chown root:root -- "$database_activation_state"; chmod 400 -- "$database_activation_state"
-  "$client" --defaults-extra-file="$credentials" --host="$database_host" --port="$database_port" --user="$database_username" -e "DROP DATABASE IF EXISTS \`$database_name\`; CREATE DATABASE \`$database_name\`" || { rm -f -- "$credentials"; reject database-commit-create; }
-  "$client" --defaults-extra-file="$credentials" --host="$database_host" --port="$database_port" --user="$database_username" "$database_name" < "$database_activation_artifact" || { rm -f -- "$credentials"; reject database-commit-import; }
+  run_mysql_client "$client" "$credentials" --host="$database_host" --port="$database_port" --user="$database_username" -e "DROP DATABASE IF EXISTS \`$database_name\`; CREATE DATABASE \`$database_name\`" || { rm -f -- "$credentials"; reject database-commit-create; }
+  run_mysql_client "$client" "$credentials" --host="$database_host" --port="$database_port" --user="$database_username" "$database_name" < "$database_activation_artifact" || { rm -f -- "$credentials"; reject database-commit-import; }
   database_mysql_exists "$client" "$credentials" "$database_name" || { rm -f -- "$credentials"; reject database-commit-verify; }
   printf '%s\n%s\ncommitted\n' "$database_activation_type" "$previous" > "$database_activation_state"; rm -f -- "$credentials"
 }
@@ -83,13 +83,13 @@ database_recover_mysql() {
   local previous="$1" client credentials rollback_dump="$backups_root/database-rollback-$database_activation_suffix.sql"
   if [ "$database_activation_type" = mariadb ]; then client="$(command -v mariadb)"; else client="$(command -v mysql)"; fi
   credentials="$(database_mysql_defaults "$database_activation_credential_app" "$database_activation_type" "$database_secret_identifier" "$database_secret_revision" "$database_tls")"
-  "$client" --defaults-extra-file="$credentials" --host="$database_host" --port="$database_port" --user="$database_username" -e "DROP DATABASE IF EXISTS \`$database_name\`" || { rm -f -- "$credentials"; reject database-recover-drop; }
+  run_mysql_client "$client" "$credentials" --host="$database_host" --port="$database_port" --user="$database_username" -e "DROP DATABASE IF EXISTS \`$database_name\`" || { rm -f -- "$credentials"; reject database-recover-drop; }
   if [ "$previous" = 1 ]; then assert_root_owned_regular "$rollback_dump"
-    "$client" --defaults-extra-file="$credentials" --host="$database_host" --port="$database_port" --user="$database_username" -e "CREATE DATABASE \`$database_name\`" || { rm -f -- "$credentials"; reject database-recover-create; }
-    "$client" --defaults-extra-file="$credentials" --host="$database_host" --port="$database_port" --user="$database_username" "$database_name" < "$rollback_dump" || { rm -f -- "$credentials"; reject database-recover-import; }
+    run_mysql_client "$client" "$credentials" --host="$database_host" --port="$database_port" --user="$database_username" -e "CREATE DATABASE \`$database_name\`" || { rm -f -- "$credentials"; reject database-recover-create; }
+    run_mysql_client "$client" "$credentials" --host="$database_host" --port="$database_port" --user="$database_username" "$database_name" < "$rollback_dump" || { rm -f -- "$credentials"; reject database-recover-import; }
     database_mysql_exists "$client" "$credentials" "$database_name" || { rm -f -- "$credentials"; reject database-recover-verify; }
   else ! database_mysql_exists "$client" "$credentials" "$database_name" || { rm -f -- "$credentials"; reject database-recover-absence; }; fi
-  "$client" --defaults-extra-file="$credentials" --host="$database_host" --port="$database_port" --user="$database_username" -e "DROP DATABASE IF EXISTS \`$database_activation_database\`" || { rm -f -- "$credentials"; reject database-candidate-discard-failed; }
+  run_mysql_client "$client" "$credentials" --host="$database_host" --port="$database_port" --user="$database_username" -e "DROP DATABASE IF EXISTS \`$database_activation_database\`" || { rm -f -- "$credentials"; reject database-candidate-discard-failed; }
   rm -f -- "$credentials" "$rollback_dump"
 }
 database_recover_candidate() {

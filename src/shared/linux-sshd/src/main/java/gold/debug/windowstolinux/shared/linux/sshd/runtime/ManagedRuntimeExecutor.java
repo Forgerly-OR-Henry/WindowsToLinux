@@ -17,7 +17,9 @@ import gold.debug.windowstolinux.shared.model.lifecycle.LifecycleObservation;
 import gold.debug.windowstolinux.shared.model.lifecycle.RuntimeState;
 import gold.debug.windowstolinux.shared.model.managed.ManagedApplication;
 
+import gold.debug.windowstolinux.shared.model.project.DeploymentRuntimeSpecification;
 import java.util.Objects;
+import java.util.Optional;
 
 /** Restores lifecycle control from sealed remote runtime markers after an application restart. / 应用重启后从已封存的远端运行时标记恢复生命周期控制。 */
 public final class ManagedRuntimeExecutor {
@@ -55,16 +57,40 @@ public final class ManagedRuntimeExecutor {
     public LifecycleObservation execute(ManagedApplication application, LifecycleAction action, HealthCheck healthCheck)
             throws LinuxOperationException {
         ManagedRuntimeIdentity identity = runtimeKinds.inspect(application);
+        return execute(application, identity, action, healthCheck, true);
+    }
+
+    /** Executes a reviewed runtime specification through the same verified actions. / 以相同的已验证动作执行审阅后的运行规格。 */
+    public LifecycleObservation execute(ManagedApplication application, DeploymentRuntimeSpecification runtime,
+                                        LifecycleAction action) throws LinuxOperationException {
+        Objects.requireNonNull(runtime, "runtime");
+        ManagedRuntimeIdentity identity = runtime instanceof DeploymentRuntimeSpecification.Container container
+                ? new ManagedRuntimeIdentity(ManagedRuntimeIdentity.Kind.CONTAINER, Optional.of(container.engine()))
+                : new ManagedRuntimeIdentity(ManagedRuntimeIdentity.Kind.DEPLOYMENT, Optional.empty());
+        return execute(application, identity, action, runtime.healthCheck(), false);
+    }
+
+    private LifecycleObservation execute(ManagedApplication application, ManagedRuntimeIdentity identity,
+            LifecycleAction action, HealthCheck healthCheck, boolean persisted) throws LinuxOperationException {
+        Objects.requireNonNull(action, "action");
         LifecycleObservation before = observe(application, identity);
         if (!before.ownershipVerified() || action == LifecycleAction.REFRESH_STATUS) {
             return before;
+        }
+        if (identity.kind() != ManagedRuntimeIdentity.Kind.CONTAINER
+                && (before.runtimeState() == RuntimeState.UNKNOWN || (before.runtimeState() == RuntimeState.ERROR
+                && action != LifecycleAction.STOP && action != LifecycleAction.DISABLE_AUTOSTART))) {
+            throw LinuxOperationException.create(LinuxOperationFailureType.LIFECYCLE_ACTION_FAILED,
+                    "Native runtime state requires refresh or a verified STOP before START; " + before.evidence());
         }
         if (action == LifecycleAction.START && before.runtimeState() != RuntimeState.STOPPED) {
             throw LinuxOperationException.create(LinuxOperationFailureType.START_REQUIRES_STOPPED,
                     "Start is allowed only for a managed runtime confirmed as stopped");
         }
         if (identity.kind() == ManagedRuntimeIdentity.Kind.ORDINARY) {
-            return systemdLifecycle.execute(application, action, healthCheck);
+            LifecycleObservation after = systemdLifecycle.execute(application, action, healthCheck);
+            verifyPostcondition(action, after);
+            return after;
         }
         String verb = verb(action);
         RemoteStepResult result = identity.kind() == ManagedRuntimeIdentity.Kind.CONTAINER
@@ -82,9 +108,10 @@ public final class ManagedRuntimeExecutor {
                         "Post-start health check failed");
             }
         }
-        LifecycleObservation after = observe(application, runtimeKinds.inspect(application));
+        LifecycleObservation after = observe(application, persisted ? runtimeKinds.inspect(application) : identity);
         verifyPostcondition(action, after);
-        return after;
+        return new LifecycleObservation(after.application(), after.runtimeState(), after.autostartState(),
+                after.ownershipVerified(), after.observedAt(), after.evidence() + "; " + result.evidence());
     }
 
     private LifecycleObservation observe(ManagedApplication application, ManagedRuntimeIdentity identity)
@@ -116,7 +143,7 @@ public final class ManagedRuntimeExecutor {
             case DISABLE_AUTOSTART -> observation.autostartState() == AutostartState.DISABLED;
             case REFRESH_STATUS -> true;
         };
-        if (!verified) {
+        if (!observation.ownershipVerified() || !verified) {
             throw LinuxOperationException.create(LinuxOperationFailureType.LIFECYCLE_ACTION_FAILED,
                     "Managed runtime lifecycle postcondition was not verified: " + observation.evidence());
         }

@@ -6,8 +6,8 @@ import org.apache.sshd.client.channel.ClientChannel;
 import org.apache.sshd.client.channel.ClientChannelEvent;
 import org.apache.sshd.client.session.ClientSession;
 
-import java.io.ByteArrayOutputStream;
 import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
@@ -65,8 +65,7 @@ public final class SshCommandExecutor {
     public CommandResult execScript(String script, Duration timeout, boolean preserveOutput)
             throws LinuxOperationException {
         Objects.requireNonNull(script, "script");
-        // Parse the complete group before commands run; installers must not consume the script stream.
-        // 先解析整个命令组，再执行；安装器不能读取剩余的脚本输入。
+        // Parse the complete group before commands run; installers must not consume the script stream. / 先解析整个命令组，再执行；安装器不能读取剩余的脚本输入。
         byte[] input = ("{\n" + script + "\n} </dev/null\n").getBytes(StandardCharsets.UTF_8);
         return execute("exec /bin/bash -ls", timeout, preserveOutput, false, input);
     }
@@ -98,17 +97,35 @@ public final class SshCommandExecutor {
         return execute(script, timeout, true, true, input);
     }
 
+    /** Streams a controlled build script with the reviewed response limit. / 按经审阅响应上限流式发送受控构建脚本。 */
+    public CommandResult execProtocolWithInput(String script, byte[] input, Duration timeout, long maxBytes)
+            throws LinuxOperationException {
+        Objects.requireNonNull(input, "input");
+        if (input.length > 1048576) throw new IllegalArgumentException("Controlled build script exceeds 1 MiB");
+        return execute(script, timeout, true, true, input, maxBytes);
+    }
+
     private CommandResult execute(String script, Duration timeout, boolean preserveOutput,
                                   boolean preserveProtocolOutput, byte[] input) throws LinuxOperationException {
-        ByteArrayOutputStream output = new ByteArrayOutputStream();
-        ByteArrayOutputStream error = new ByteArrayOutputStream();
+        return execute(script, timeout, preserveOutput, preserveProtocolOutput, input, 1024 * 1024);
+    }
+
+    /** Executes a build with its reviewed output budget. / 按经审阅输出预算执行构建。 */
+    public CommandResult execWithOutputLimit(String script, Duration timeout, long maxBytes)
+            throws LinuxOperationException {
+        return execute(script, timeout, true, false, null, maxBytes);
+    }
+
+    private CommandResult execute(String script, Duration timeout, boolean preserveOutput,
+                                  boolean preserveProtocolOutput, byte[] input, long maxBytes) throws LinuxOperationException {
         String command = "/bin/bash -lc " + quote(script);
         try (ClientChannel channel = session.createExecChannel(command)) {
+            CommandOutputCapture capture = new CommandOutputCapture(maxBytes, preserveOutput, () -> channel.close(true));
             if (input != null) {
                 channel.setIn(new ByteArrayInputStream(input));
             }
-            channel.setOut(output);
-            channel.setErr(error);
+            channel.setOut(capture.stdout());
+            channel.setErr(capture.stderr());
             channel.open().verify(timeout);
             var events = channel.waitFor(EnumSet.of(ClientChannelEvent.CLOSED), timeout);
             boolean timedOut = !events.contains(ClientChannelEvent.CLOSED);
@@ -116,11 +133,12 @@ public final class SshCommandExecutor {
                 channel.close(true);
             }
             Integer exit = channel.getExitStatus();
-            boolean succeeded = !timedOut && exit != null && exit == 0;
-            String rawOutput = preserveOutput ? output.toString(StandardCharsets.UTF_8) : "";
+            boolean succeeded = !timedOut && !capture.exceeded() && exit != null && exit == 0;
+            String rawOutput = capture.output();
             String evidenceOutput = sanitize(rawOutput);
             String text = preserveProtocolOutput ? rawOutput : evidenceOutput;
-            String errorText = preserveOutput ? sanitize(error.toString(StandardCharsets.UTF_8)) : "";
+            String errorText = capture.exceeded() ? "SSH output exceeded the confirmed byte limit"
+                    : preserveOutput ? sanitize(capture.error()) : "";
             return new CommandResult(succeeded, timedOut, text, evidenceOutput, errorText, exit);
         } catch (IOException exception) {
             throw LinuxOperationException.create(LinuxOperationFailureType.SSH_COMMAND_FAILED,

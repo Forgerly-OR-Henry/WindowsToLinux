@@ -14,6 +14,24 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class PythonBuildInspectorTest {
+    @org.junit.jupiter.api.Test
+    void acceptsRealMultilineHashLocksAndRejectsAnUnhashedDependency() throws Exception {
+        Path directory = java.nio.file.Files.createTempDirectory("pip-lock-test");
+        try {
+            var inspector = new gold.debug.windowstolinux.shared.analyze.ecosystem.python.pip.PipBuildInspector();
+            String lock = "jsonschema==4.26.0 \\\n    --hash=sha256:" + "a".repeat(64)
+                    + " \\\n    --hash=sha256:" + "b".repeat(64) + "\n# via fixture\n";
+            for (String newline : List.of("\n", "\r\n")) {
+                java.nio.file.Files.writeString(directory.resolve("requirements.lock"), lock.replace("\n", newline));
+                org.junit.jupiter.api.Assertions.assertTrue(inspector.inspect(directory).isPresent());
+            }
+            java.nio.file.Files.writeString(directory.resolve("requirements.lock"), lock + "unhashed==1.0\n");
+            org.junit.jupiter.api.Assertions.assertTrue(inspector.inspect(directory).isEmpty());
+        } finally {
+            java.nio.file.Files.deleteIfExists(directory.resolve("requirements.lock"));
+            java.nio.file.Files.delete(directory);
+        }
+    }
     @TempDir Path temporaryDirectory;
 
     @Test

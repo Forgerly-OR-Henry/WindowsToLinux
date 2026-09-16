@@ -22,6 +22,14 @@ public final class HostSupportEvaluator {
     private HostSupportEvaluator() {
     }
 
+    /** Checks the unchanged platform boundary before project-specific installation is allowed. / 允许安装项目专属工具前，检查保持不变的平台边界。 */
+    public static HostSupportDecision evaluatePlatform(LinuxCapabilityFacts capabilities) {
+        List<String> evidence = new ArrayList<>();
+        if (!capabilities.x86_64()) return result(HostSupportStatus.UNSUPPORTED, "architecture must be x86_64", evidence);
+        if (!capabilities.systemdAvailable()) return result(HostSupportStatus.UNSUPPORTED, "systemd is required", evidence);
+        return new HostSupportDecision(DistributionSupportEvaluator.evaluate(capabilities, evidence), evidence);
+    }
+
     /**
      * Evaluates the selected runtime against live host facts.
      *
@@ -33,6 +41,11 @@ public final class HostSupportEvaluator {
      */
     public static HostSupportDecision evaluate(LinuxCapabilityFacts capabilities, DeploymentProjectFacts facts,
                                                DeploymentRuntimeSpecification runtime) {
+        return evaluate(capabilities, facts, runtime, new gold.debug.windowstolinux.shared.model.toolchain.ResolvedToolchainSet("legacy", List.of()));
+    }
+
+    public static HostSupportDecision evaluate(LinuxCapabilityFacts capabilities, DeploymentProjectFacts facts,
+            DeploymentRuntimeSpecification runtime, gold.debug.windowstolinux.shared.model.toolchain.ResolvedToolchainSet tools) {
         capabilities = Objects.requireNonNull(capabilities, "capabilities");
         facts = Objects.requireNonNull(facts, "facts");
         runtime = Objects.requireNonNull(runtime, "runtime");
@@ -50,7 +63,7 @@ public final class HostSupportEvaluator {
         if (base != HostSupportStatus.READY_FOR_RUNTIME_VALIDATION) {
             return new HostSupportDecision(base, evidence);
         }
-        RuntimeCapabilityDecision runtimeDecision = RuntimeCapabilityEvaluator.evaluate(capabilities, facts, runtime);
+        RuntimeCapabilityDecision runtimeDecision = RuntimeCapabilityEvaluator.evaluate(capabilities, facts, runtime, tools);
         if (!runtimeDecision.supported()) {
             return result(HostSupportStatus.UNSUPPORTED, runtimeDecision.detail().orElseThrow(), evidence);
         }

@@ -1,8 +1,14 @@
 package gold.debug.windowstolinux.app.ui.deployment.multi;
 
+import gold.debug.windowstolinux.app.service.contract.definition.ComponentHealthMode;
+
+import gold.debug.windowstolinux.app.service.contract.definition.ComponentFormInput;
+
+import gold.debug.windowstolinux.app.service.contract.definition.DatabaseReviewMode;
+
 import gold.debug.windowstolinux.app.service.deployment.multi.ReviewedMultiComponentApplication;
 import gold.debug.windowstolinux.app.service.source.PreparedMultiComponentSource;
-import gold.debug.windowstolinux.app.service.deployment.automatic.DeploymentRuntimeParser;
+import gold.debug.windowstolinux.app.service.contract.MultiComponentApplicationFacade;
 import gold.debug.windowstolinux.app.ui.i18n.PageMessagePresenter;
 import gold.debug.windowstolinux.shared.model.lifecycle.LifecycleAction;
 import gold.debug.windowstolinux.shared.model.project.DeploymentProjectType;
@@ -30,10 +36,11 @@ final class MultiComponentDraftController {
     final JComboBox<DeploymentProjectType> projectType = new JComboBox<>(DeploymentProjectType.values());
     final JTextField runtimePrimary = new JTextField(18);
     final JTextField runtimeSecondary = new JTextField(18);
+    final JTextField kotlinJvmTarget = new JTextField(6);
     final JTextField runtimeVersion = new JTextField(10);
     final JTextField runtimeArguments = new JTextField(18);
     final JTextField runtimeAdditional = new JTextField(18);
-    final JComboBox<MultiComponentHealthMode> healthMode = new JComboBox<>(MultiComponentHealthMode.values());
+    final JComboBox<ComponentHealthMode> healthMode = new JComboBox<>(ComponentHealthMode.values());
     final JTextField healthEndpoint = new JTextField(22);
     final JTextField expectedStatus = new JTextField("200", 6);
     final JTextField timeoutSeconds = new JTextField("20", 6);
@@ -44,23 +51,23 @@ final class MultiComponentDraftController {
     final JTextField dependencies = new JTextField(20);
     final ResourceControls resources = new ResourceControls();
     final JCheckBox required;
-    final JCheckBox rootBuild;
     final LifecycleControls lifecycle = new LifecycleControls();
     final DraftControls draftControls = new DraftControls();
     private final PageMessagePresenter messages;
+    private final MultiComponentApplicationFacade service;
 
-    MultiComponentDraftController(PageMessagePresenter messages) {
+    MultiComponentDraftController(PageMessagePresenter messages, MultiComponentApplicationFacade service) {
         this.messages = messages;
+        this.service = service;
         required = new JCheckBox(messages.text("component.required"), true);
-        rootBuild = new JCheckBox(messages.text("rootBuild"));
         messages.localize(projectType, "project.type.");
         messages.localize(healthMode, "health.mode.");
         messages.localize(resources.databaseMode, "database.review.mode.");
         messages.localize(lifecycle.action, "lifecycle.action.");
         resources.databaseMode.addActionListener(event -> resources.databaseDetails.setEnabled(
-                resources.databaseMode.getSelectedItem() != DeploymentRuntimeParser.DatabaseReviewMode.UNREVIEWED
-                        && resources.databaseMode.getSelectedItem() != DeploymentRuntimeParser.DatabaseReviewMode.NONE));
-        resources.databaseMode.setSelectedItem(DeploymentRuntimeParser.DatabaseReviewMode.UNREVIEWED);
+                resources.databaseMode.getSelectedItem() != DatabaseReviewMode.UNREVIEWED
+                        && resources.databaseMode.getSelectedItem() != DatabaseReviewMode.NONE));
+        resources.databaseMode.setSelectedItem(DatabaseReviewMode.UNREVIEWED);
         resources.databaseDetails.setEnabled(false);
         draftControls.list.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
         draftControls.list.addListSelectionListener(event -> {
@@ -87,9 +94,9 @@ final class MultiComponentDraftController {
         refreshDraftList();
     }
 
-    MultiComponentDraft addOrUpdate() {
-        MultiComponentDraft draft = draftFromForm();
-        draft.analysisRequest();
+    ComponentFormInput addOrUpdate() {
+        ComponentFormInput draft = draftFromForm();
+        service.parseComponentAnalysis(draft);
         draftControls.drafts.put(draft.componentId(), draft);
         if (application.healthComponentId.getText().isBlank()) {
             application.healthComponentId.setText(draft.componentId());
@@ -98,16 +105,16 @@ final class MultiComponentDraftController {
         return draft;
     }
 
-    Optional<MultiComponentDraft> removeSelected() {
-        Optional<MultiComponentDraft> selected = selectedDraft();
+    Optional<ComponentFormInput> removeSelected() {
+        Optional<ComponentFormInput> selected = selectedDraft();
         selected.ifPresent(draft -> draftControls.drafts.remove(draft.componentId()));
         if (selected.isPresent()) refreshDraftList();
         return selected;
     }
 
-    List<MultiComponentDraft> orderedDrafts() {
+    List<ComponentFormInput> orderedDrafts() {
         return draftControls.drafts.values().stream()
-                .sorted(Comparator.comparing(MultiComponentDraft::componentId)).toList();
+                .sorted(Comparator.comparing(ComponentFormInput::componentId)).toList();
     }
 
     Set<String> draftIds() {
@@ -118,7 +125,7 @@ final class MultiComponentDraftController {
         return draftControls.drafts.isEmpty();
     }
 
-    MultiComponentDraft draft(String componentId) {
+    ComponentFormInput draft(String componentId) {
         return draftControls.drafts.get(componentId);
     }
 
@@ -142,28 +149,28 @@ final class MultiComponentDraftController {
         return identifiers(lifecycle.targets.getText());
     }
 
-    private MultiComponentDraft draftFromForm() {
-        return new MultiComponentDraft(componentId.getText(), relativeRoot.getText(),
+    private ComponentFormInput draftFromForm() {
+        return new ComponentFormInput(componentId.getText(), relativeRoot.getText(),
                 (DeploymentProjectType) projectType.getSelectedItem(), runtimePrimary.getText(),
                 runtimeSecondary.getText(), runtimeVersion.getText(), runtimeArguments.getText(),
-                runtimeAdditional.getText(), (MultiComponentHealthMode) healthMode.getSelectedItem(),
+                runtimeAdditional.getText(), (ComponentHealthMode) healthMode.getSelectedItem(),
                 healthEndpoint.getText(), expectedStatus.getText(), timeoutSeconds.getText(), stabilitySeconds.getText(),
                 accessUrl.getText(), artifacts.getText(), ports.getText(), dependencies.getText(),
                 resources.configuration.getText(),
-                (DeploymentRuntimeParser.DatabaseReviewMode) resources.databaseMode.getSelectedItem(),
-                resources.databaseDetails.getText(), resources.secrets.getText(), required.isSelected(), rootBuild.isSelected());
+                (DatabaseReviewMode) resources.databaseMode.getSelectedItem(),
+                resources.databaseDetails.getText(), resources.secrets.getText(), required.isSelected(), false, kotlinJvmTarget.getText());
     }
 
     private MultiComponentFormState formState() {
         return new MultiComponentFormState(componentId.getText(), relativeRoot.getText(),
                 ((DeploymentProjectType) projectType.getSelectedItem()).name(), runtimePrimary.getText(),
                 runtimeSecondary.getText(), runtimeVersion.getText(), runtimeArguments.getText(),
-                runtimeAdditional.getText(), ((MultiComponentHealthMode) healthMode.getSelectedItem()).name(),
+                runtimeAdditional.getText(), ((ComponentHealthMode) healthMode.getSelectedItem()).name(),
                 healthEndpoint.getText(), expectedStatus.getText(), timeoutSeconds.getText(), stabilitySeconds.getText(),
                 accessUrl.getText(), artifacts.getText(), ports.getText(), dependencies.getText(),
                 resources.configuration.getText(),
-                ((DeploymentRuntimeParser.DatabaseReviewMode) resources.databaseMode.getSelectedItem()).name(),
-                resources.databaseDetails.getText(), resources.secrets.getText(), required.isSelected(), rootBuild.isSelected());
+                ((DatabaseReviewMode) resources.databaseMode.getSelectedItem()).name(),
+                resources.databaseDetails.getText(), resources.secrets.getText(), required.isSelected(), false, kotlinJvmTarget.getText());
     }
 
     private void applyFormState(MultiComponentFormState state) {
@@ -173,9 +180,10 @@ final class MultiComponentDraftController {
         runtimePrimary.setText(state.runtimePrimary());
         runtimeSecondary.setText(state.runtimeSecondary());
         runtimeVersion.setText(state.runtimeVersion());
+        kotlinJvmTarget.setText(state.kotlinJvmTarget());
         runtimeArguments.setText(state.runtimeArguments());
         runtimeAdditional.setText(state.runtimeAdditional());
-        healthMode.setSelectedItem(MultiComponentHealthMode.valueOf(state.healthMode()));
+        healthMode.setSelectedItem(ComponentHealthMode.valueOf(state.healthMode()));
         healthEndpoint.setText(state.healthEndpoint());
         expectedStatus.setText(state.expectedStatus());
         timeoutSeconds.setText(state.timeoutSeconds());
@@ -185,26 +193,25 @@ final class MultiComponentDraftController {
         ports.setText(state.ports());
         dependencies.setText(state.dependencies());
         resources.configuration.setText(state.configuration());
-        resources.databaseMode.setSelectedItem(DeploymentRuntimeParser.DatabaseReviewMode.valueOf(state.databaseMode()));
+        resources.databaseMode.setSelectedItem(DatabaseReviewMode.valueOf(state.databaseMode()));
         resources.databaseDetails.setText(state.databaseDetails());
         resources.secrets.setText(state.secrets());
         required.setSelected(state.required());
-        rootBuild.setSelected(state.rootBuild());
     }
 
-    private void applyDraft(MultiComponentDraft draft) {
+    private void applyDraft(ComponentFormInput draft) {
         applyFormState(new MultiComponentFormState(draft.componentId(), draft.relativeSourceRoot(),
                 draft.projectType().name(), draft.runtimePrimary(), draft.runtimeSecondary(), draft.runtimeVersion(),
                 draft.runtimeArguments(), draft.runtimeAdditional(), draft.healthMode().name(), draft.healthEndpoint(),
                 draft.expectedStatus(), draft.timeoutSeconds(), draft.stabilitySeconds(), draft.userAccessUrl(),
                 draft.artifactPaths(), draft.declaredPorts(), draft.dependencies(), draft.configurationEntries(),
                 draft.databaseMode().name(), draft.databaseDetails(), draft.secretReferences(), draft.required(),
-                draft.rootBuild()));
+                draft.rootBuild(), draft.kotlinJvmTarget()));
     }
 
-    private Optional<MultiComponentDraft> selectedDraft() {
+    private Optional<ComponentFormInput> selectedDraft() {
         int index = draftControls.list.getSelectedIndex();
-        List<MultiComponentDraft> ordered = orderedDrafts();
+        List<ComponentFormInput> ordered = orderedDrafts();
         return index < 0 || index >= ordered.size() ? Optional.empty() : Optional.of(ordered.get(index));
     }
 
@@ -242,8 +249,8 @@ final class MultiComponentDraftController {
     /** Groups the non-secret resource review controls for one component. / 组合一个组件不含秘密值的资源审阅控件。 */
     static final class ResourceControls {
         final JTextField configuration = new JTextField(22);
-        final JComboBox<DeploymentRuntimeParser.DatabaseReviewMode> databaseMode =
-                new JComboBox<>(DeploymentRuntimeParser.DatabaseReviewMode.values());
+        final JComboBox<DatabaseReviewMode> databaseMode =
+                new JComboBox<>(DatabaseReviewMode.values());
         final JTextField databaseDetails = new JTextField(22);
         final JTextField secrets = new JTextField(20);
     }
@@ -251,6 +258,6 @@ final class MultiComponentDraftController {
     static final class DraftControls {
         final DefaultListModel<String> listModel = new DefaultListModel<>();
         final JList<String> list = new JList<>(listModel);
-        private final Map<String, MultiComponentDraft> drafts = new LinkedHashMap<>();
+        private final Map<String, ComponentFormInput> drafts = new LinkedHashMap<>();
     }
 }

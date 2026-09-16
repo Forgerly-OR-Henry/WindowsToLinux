@@ -11,6 +11,7 @@ import gold.debug.windowstolinux.shared.config.revision.ConfigurationEntry;
 import gold.debug.windowstolinux.shared.config.revision.ConfigurationSnapshot;
 import gold.debug.windowstolinux.shared.config.secretref.SecretReference;
 import gold.debug.windowstolinux.shared.model.health.HealthCheck;
+import gold.debug.windowstolinux.shared.model.project.RuntimeIdentityMode;
 import gold.debug.windowstolinux.shared.model.health.UserAccessUrl;
 import gold.debug.windowstolinux.shared.model.managed.ManagedApplicationRuntimeConfiguration;
 import gold.debug.windowstolinux.shared.model.project.component.ComponentDataPath;
@@ -35,7 +36,7 @@ import java.util.Optional;
 public final class BackupConfigurationCodec {
     private static final int MAGIC = 0x57544243;
     private static final int INSPECTION_VERSION = 1;
-    private static final int ACTIVATION_VERSION = 2;
+    private static final int ACTIVATION_VERSION = 3;
     private static final int MAX_BYTES = 4 * 1024 * 1024;
     private static final int MAX_FILES = 4_096;
     private static final int MAX_DATABASES = 256;
@@ -73,17 +74,17 @@ public final class BackupConfigurationCodec {
         try (DataInputStream input = new DataInputStream(new ByteArrayInputStream(document))) {
             if (input.readInt() != MAGIC) throw new IOException("backup configuration document magic is unsupported");
             int version = input.readUnsignedByte();
-            if (version != INSPECTION_VERSION && version != ACTIVATION_VERSION) {
+            if (version < INSPECTION_VERSION || version > ACTIVATION_VERSION) {
                 throw new IOException("backup configuration document version is unsupported");
             }
-            if (activationRequired && version != ACTIVATION_VERSION) {
+            if (activationRequired && version < 2) {
                 throw new IOException("backup configuration lacks exact resource and runtime activation state");
             }
             ConfigurationSnapshot snapshot = readSnapshot(input);
             Optional<ManagedComponentResourceBindings> resources = Optional.empty();
             Optional<ManagedApplicationRuntimeConfiguration> runtime = Optional.empty();
-            if (version == ACTIVATION_VERSION) {
-                resources = Optional.of(readResources(input)); runtime = Optional.of(readRuntime(input));
+            if (version >= 2) {
+                resources = Optional.of(readResources(input)); runtime = Optional.of(readRuntime(input, version));
             }
             if (input.read() >= 0) throw new IOException("backup configuration document has trailing bytes");
             return new Parsed(snapshot, resources, runtime);
@@ -216,6 +217,7 @@ public final class BackupConfigurationCodec {
 
     private static void writeRuntime(DataOutputStream output, ManagedApplicationRuntimeConfiguration runtime)
             throws IOException {
+        text(output, runtime.identityPolicy().name(), 64);
         switch (runtime.healthCheck()) {
             case HealthCheck.Http health -> {
                 output.writeByte(1); text(output, health.endpoint().toString(), 2_048);
@@ -232,7 +234,9 @@ public final class BackupConfigurationCodec {
         }
     }
 
-    private static ManagedApplicationRuntimeConfiguration readRuntime(DataInputStream input) throws IOException {
+    private static ManagedApplicationRuntimeConfiguration readRuntime(DataInputStream input, int version) throws IOException {
+        RuntimeIdentityMode policy = version >= 3 ? RuntimeIdentityMode.valueOf(text(input, 64))
+                : RuntimeIdentityMode.LEGACY_UNSPECIFIED;
         HealthCheck health = switch (input.readUnsignedByte()) {
             case 1 -> new HealthCheck.Http(URI.create(text(input, 2_048)), input.readInt(), input.readInt());
             case 2 -> new HealthCheck.Tcp(input.readInt(), input.readInt(), input.readInt());
@@ -240,7 +244,7 @@ public final class BackupConfigurationCodec {
         };
         Optional<UserAccessUrl> access = input.readBoolean()
                 ? Optional.of(new UserAccessUrl(URI.create(text(input, 2_048)))) : Optional.empty();
-        return new ManagedApplicationRuntimeConfiguration(health, access);
+        return new ManagedApplicationRuntimeConfiguration(health, access, policy);
     }
 
     private static int bounded(int value, int minimum, int maximum, String field) throws IOException {

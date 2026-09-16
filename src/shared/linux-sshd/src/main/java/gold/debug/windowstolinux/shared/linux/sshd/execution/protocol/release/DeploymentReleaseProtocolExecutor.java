@@ -1,6 +1,7 @@
 package gold.debug.windowstolinux.shared.linux.sshd.execution.protocol.release;
 
 import gold.debug.windowstolinux.shared.linux.sshd.execution.protocol.helper.ManagedHelperBundle;
+import gold.debug.windowstolinux.shared.linux.sshd.execution.protocol.runtime.ManagedRuntimeProtocolExecutor;
 import gold.debug.windowstolinux.shared.linux.sshd.execution.protocol.input.DeploymentInputArguments;
 import gold.debug.windowstolinux.shared.linux.sshd.execution.protocol.input.ManagedContentArguments;
 import gold.debug.windowstolinux.shared.linux.sshd.execution.protocol.runtime.DeploymentRuntimeArguments;
@@ -13,16 +14,13 @@ import gold.debug.windowstolinux.shared.linux.protocol.RemoteStepResult;
 import gold.debug.windowstolinux.shared.linux.sshd.command.SshCommandExecutor;
 import gold.debug.windowstolinux.shared.linux.transfer.RemoteWorkspace;
 import gold.debug.windowstolinux.shared.linux.protocol.backup.ManagedContentPublication;
-import gold.debug.windowstolinux.shared.config.revision.DeploymentInputManifest;
+import gold.debug.windowstolinux.shared.linux.protocol.RemoteDeploymentInputs;
 import gold.debug.windowstolinux.shared.model.managed.ManagedApplication;
-import gold.debug.windowstolinux.shared.model.lifecycle.AutostartState;
 import gold.debug.windowstolinux.shared.model.lifecycle.LifecycleObservation;
-import gold.debug.windowstolinux.shared.model.lifecycle.RuntimeState;
 import gold.debug.windowstolinux.shared.model.project.DeploymentRuntimeSpecification;
 import gold.debug.windowstolinux.shared.model.project.DeploymentProjectFacts;
 
 import java.time.Duration;
-import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -67,7 +65,7 @@ public final class DeploymentReleaseProtocolExecutor {
     public RemoteStepResult publish(ManagedApplication application, DeploymentProjectFacts facts,
                                     RemoteWorkspace workspace, DeploymentBuildResult build,
                                     String releaseIdentity, DeploymentRuntimeSpecification runtime,
-                                    DeploymentInputManifest inputs, ManagedContentPublication contentPublication,
+                                    RemoteDeploymentInputs inputs, ManagedContentPublication contentPublication,
                                     ReleaseSnapshot snapshot)
             throws LinuxOperationException {
         if (!build.succeeded()) {
@@ -77,8 +75,14 @@ public final class DeploymentReleaseProtocolExecutor {
         Objects.requireNonNull(snapshot, "snapshot");
         List<String> values = new ArrayList<>(List.of(application.id(), workspace.candidateId(), releaseIdentity,
                 application.ownershipManifestSha256()));
+        values.add("identity-v1");
+        values.add(runtime.identityPolicy().name());
         values.addAll(DeploymentInputArguments.from(inputs));
         values.addAll(ManagedContentArguments.from(contentPublication));
+        if (!build.toolchains().selections().isEmpty()) {
+            values.add("tools-v1");
+            values.add(gold.debug.windowstolinux.shared.model.toolchain.ToolchainBindingCodec.identity(build.toolchains()));
+        }
         values.addAll(DeploymentRuntimeArguments.from(facts, runtime));
         var result = commands.exec(helperCommand("publish-deployment", values), Duration.ofSeconds(120), true);
         return new RemoteStepResult(result.succeeded(), result.timedOut(), result.succeeded()
@@ -89,7 +93,7 @@ public final class DeploymentReleaseProtocolExecutor {
     /** Rolls back a reviewed candidate. / 回滚经审阅的候选版本。 */
     public RemoteStepResult rollback(ManagedApplication application, ReleaseSnapshot snapshot,
                                      DeploymentBuildResult build, String releaseIdentity,
-                                     DeploymentRuntimeSpecification runtime, DeploymentInputManifest inputs)
+                                     DeploymentRuntimeSpecification runtime, RemoteDeploymentInputs inputs)
             throws LinuxOperationException {
         if (!build.succeeded()) {
             throw LinuxOperationException.create(LinuxOperationFailureType.UNVERIFIED_BUILD_ROLLBACK,
@@ -116,25 +120,17 @@ public final class DeploymentReleaseProtocolExecutor {
         List<String> values = List.of(application.id(), application.ownershipManifestSha256());
         var result = commands.execProtocol(helperCommand("observe-deployment", values), Duration.ofSeconds(20), true);
         if (!result.succeeded()) {
-            throw LinuxOperationException.create(LinuxOperationFailureType.RUNTIME_OBSERVATION_FAILED,
-                    "Controlled helper could not verify the managed deployment runtime: " + result.failureEvidence());
+            return ManagedRuntimeProtocolExecutor.nativeObservation(application, Map.of("QUERY_OK", "0"));
         }
         Map<String, String> valuesByName = SshCommandExecutor.lines(result.output());
-        boolean ownership = "1".equals(valuesByName.get("OWNER"));
-        RuntimeState state = ownership && "1".equals(valuesByName.get("RUNNING")) ? RuntimeState.RUNNING
-                : ownership ? RuntimeState.STOPPED : RuntimeState.UNKNOWN;
-        String enabled = valuesByName.getOrDefault("ENABLED", "");
-        AutostartState autostart = ownership && "enabled".equals(enabled) ? AutostartState.ENABLED
-                : ownership ? AutostartState.DISABLED : AutostartState.UNKNOWN;
-        return new LifecycleObservation(application, state, autostart, ownership, Instant.now(), ownership
-                ? "Controlled helper verified the managed runtime ownership and state"
-                : "Controlled helper could not verify managed runtime ownership");
+        return ManagedRuntimeProtocolExecutor.nativeObservation(application, valuesByName);
     }
 
     private RemoteStepResult step(String verb, List<String> values, String successEvidence) throws LinuxOperationException {
         var result = commands.exec(helperCommand(verb, values), Duration.ofSeconds(90), true);
         return new RemoteStepResult(result.succeeded(), result.timedOut(),
-                result.succeeded() ? successEvidence : result.failureEvidence());
+                (result.succeeded() ? successEvidence : result.failureEvidence()) + (verb.equals("lifecycle-deployment")
+                        ? ManagedRuntimeProtocolExecutor.stopEvidence(result.output()) : ""));
     }
 
     private static String helperCommand(String verb, List<String> values) {

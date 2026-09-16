@@ -18,7 +18,7 @@ import gold.debug.windowstolinux.app.service.deployment.ReviewedDeploymentUseCas
 import gold.debug.windowstolinux.app.service.deployment.MultiComponentDeploymentUseCase;
 import gold.debug.windowstolinux.app.service.deployment.MultiComponentLifecycleUseCase;
 import gold.debug.windowstolinux.app.service.deployment.multi.ManagedMultiComponentApplication;
-import gold.debug.windowstolinux.app.service.deployment.multi.MultiComponentReviewInput;
+import gold.debug.windowstolinux.app.service.contract.definition.MultiComponentReviewInput;
 import gold.debug.windowstolinux.app.service.deployment.multi.ReviewedMultiComponentApplication;
 import gold.debug.windowstolinux.app.service.execution.environment.EnvironmentSetupUseCase;
 import gold.debug.windowstolinux.app.service.execution.lifecycle.LifecycleOutcome;
@@ -105,16 +105,26 @@ import java.util.Set;
 public final class DesktopApplicationFacade implements AiApplicationFacade, DeploymentApplicationFacade,
         MultiComponentApplicationFacade, ServerApplicationFacade, ManagedApplicationFacade, BackupApplicationFacade,
         gold.debug.windowstolinux.app.service.contract.AutomaticDeploymentApplicationFacade {
+    /** Converts the current form using its existing automatic deployment use case. / 使用现有自动部署用例转换当前表单。 */
+    @Override public gold.debug.windowstolinux.app.service.contract.definition.AutomaticDeploymentRequest createAutomaticDeploymentRequest(
+            gold.debug.windowstolinux.app.service.contract.definition.DeploymentSourceInput source,
+            ServerProfile server, gold.debug.windowstolinux.app.service.contract.definition.DeploymentFormInput input) {
+        return gold.debug.windowstolinux.app.service.deployment.automatic.DeploymentFormUseCase.request(source, server, input);
+    }
+
     private final gold.debug.windowstolinux.app.service.deployment.automatic.AutomaticDeploymentUseCase automatic;
 
-    /** Executes one automatic desktop operation through the reviewed service contracts. */
+    /** Executes one automatic desktop operation through the reviewed service contracts. / 通过经审阅的服务契约执行一次桌面自动操作。 */
     @Override public gold.debug.windowstolinux.app.service.contract.definition.AutomaticDeploymentOutcome deployAutomatically(
             gold.debug.windowstolinux.app.service.contract.definition.AutomaticDeploymentRequest request, char[] master,
             gold.debug.windowstolinux.app.service.contract.definition.AutomaticDeploymentInteraction interaction,
             Predicate<String> fingerprint, java.util.function.Consumer<gold.debug.windowstolinux.shared.model.message.LocalizedMessage> progress) throws Exception {
-        return automatic.deploy(request, master, interaction, fingerprint, progress);
+        try { return automatic.deploy(request, master, interaction, fingerprint, progress); }
+        catch (gold.debug.windowstolinux.shared.linux.error.NativeDatabaseException failure) {
+            throw gold.debug.windowstolinux.app.service.failure.ApplicationServiceException.nativeDatabase(failure);
+        }
     }
-    /** Lists non-secret profiles for all desktop server selectors. */
+    /** Lists non-secret profiles for all desktop server selectors. / 为所有桌面服务器选择器列出非秘密配置。 */
     @Override public List<ServerProfile> listServerProfiles() throws SQLException { return servers.list(); }
     private final SourcePreparationUseCase source;
     private final ServerUseCaseFacade servers;
@@ -126,7 +136,10 @@ public final class DesktopApplicationFacade implements AiApplicationFacade, Depl
     @Override public gold.debug.windowstolinux.shared.analyze.ecosystem.db.DatabaseProjectInspector.Assessment completeAutomaticDatabaseInputs(
             Path root, String applicationId, gold.debug.windowstolinux.shared.analyze.ecosystem.db.DatabaseProjectInspector.Assessment assessment,
             char[] master, gold.debug.windowstolinux.app.service.contract.definition.AutomaticDeploymentInteraction interaction) throws Exception {
-        return automaticDatabases.completeInputs(root, applicationId, assessment, master, interaction);
+        try { return automaticDatabases.completeInputs(root, applicationId, assessment, master, interaction); }
+        catch (gold.debug.windowstolinux.shared.linux.error.NativeDatabaseException failure) {
+            throw gold.debug.windowstolinux.app.service.failure.ApplicationServiceException.nativeDatabase(failure);
+        }
     }
 
     @Override public gold.debug.windowstolinux.app.service.contract.definition.AutomaticDatabasePreparation prepareAutomaticDatabases(
@@ -134,10 +147,27 @@ public final class DesktopApplicationFacade implements AiApplicationFacade, Depl
             gold.debug.windowstolinux.shared.analyze.ecosystem.db.DatabaseProjectInspector.Assessment assessment, char[] master,
             gold.debug.windowstolinux.app.service.contract.definition.AutomaticDeploymentInteraction interaction,
             java.util.function.Predicate<String> fingerprint, java.util.function.Consumer<gold.debug.windowstolinux.shared.model.message.LocalizedMessage> progress) throws Exception {
-        return automaticDatabases.prepare(root, applicationId, server, assessment, master, interaction, fingerprint, progress);
+        try { return automaticDatabases.prepare(root, applicationId, server, assessment, master, interaction, fingerprint, progress); }
+        catch (gold.debug.windowstolinux.shared.linux.error.NativeDatabaseException failure) {
+            throw gold.debug.windowstolinux.app.service.failure.ApplicationServiceException.nativeDatabase(failure);
+        }
     }
     private final EnvironmentSetupUseCase environment;
     private final ReviewedDeploymentUseCase reviewedDeployment;
+    /** Parses component form inputs through their owning use case. / 通过所属用例解析组件表单输入。 */
+    @Override public gold.debug.windowstolinux.shared.analyze.component.ComponentAnalysisRequest parseComponentAnalysis(
+            gold.debug.windowstolinux.app.service.contract.definition.ComponentFormInput input) {
+        return new gold.debug.windowstolinux.app.service.deployment.automatic.ComponentFormUseCase(input).analysisRequest();
+    }
+
+    /** Parses review metadata without exposing service internals to UI. / 解析审阅元数据，不向 UI 暴露服务内部实现。 */
+    @Override public MultiComponentReviewInput parseComponentReview(
+            gold.debug.windowstolinux.app.service.contract.definition.ComponentFormInput input,
+            String managedApplicationId, boolean containerRisk, boolean experimentalRisk) {
+        return new gold.debug.windowstolinux.app.service.deployment.automatic.ComponentFormUseCase(input)
+                .reviewInput(managedApplicationId, containerRisk, experimentalRisk);
+    }
+
     private final MultiComponentDeploymentUseCase multiComponentDeployment;
     private final MultiComponentLifecycleUseCase multiComponentLifecycle;
     private final LifecycleUseCase lifecycle;
@@ -528,6 +558,12 @@ public final class DesktopApplicationFacade implements AiApplicationFacade, Depl
         deploymentConfiguration.saveSecretRevision(revision, store, value);
     }
 
+    /** Saves a user-entered secret reference without accepting storage metadata from UI. / 保存用户输入的秘密引用，不接受 UI 提供的存储元数据。 */
+    @Override public SecretReference saveDeploymentSecretRevision(String referenceInput, CredentialStorageMode mode,
+            char[] masterPassword, char[] value) throws SQLException, SecretStoreException {
+        return deploymentConfiguration.saveSecretRevision(referenceInput, mode, masterPassword, value);
+    }
+
     /** Stores one immutable application-secret revision through the selected desktop secret store. / 通过选定的桌面秘密存储保存一个不可变应用秘密修订。 */
     public void saveDeploymentSecretRevision(StoredApplicationSecretRevision revision, CredentialStorageMode mode,
                                              char[] masterPassword, char[] value)
@@ -621,6 +657,15 @@ public final class DesktopApplicationFacade implements AiApplicationFacade, Depl
             Predicate<String> confirmation, boolean installationConfirmed)
             throws SecretStoreException, SQLException, LinuxOperationException {
         return environment.prepare(profile, mode, masterPassword, confirmation, installationConfirmed);
+    }
+
+    /** Prepares the target with a separate, target-bound system-change confirmation. / 使用独立且绑定目标的系统变更确认准备目标机。 */
+    public EnvironmentSetupResult prepareEnvironmentWithStoredPassword(
+            ServerProfile profile, CredentialStorageMode mode, char[] masterPassword,
+            Predicate<String> confirmation, boolean installationConfirmed,
+            Predicate<gold.debug.windowstolinux.shared.model.server.security.SelinuxPreparationPlan> systemConfirmation)
+            throws SecretStoreException, SQLException, LinuxOperationException {
+        return environment.prepare(profile, mode, masterPassword, confirmation, installationConfirmed, systemConfirmation);
     }
 
     /**
@@ -749,7 +794,7 @@ public final class DesktopApplicationFacade implements AiApplicationFacade, Depl
         return servers.loadPassword(profile, store);
     }
 
-    /** Executes the same single transaction with streaming progress. */
+    /** Executes the same single transaction with streaming progress. / 以流式进度执行相同的单组件事务。 */
     @Override public DeploymentOutcome deployAutomaticallyReviewed(ReviewedDeploymentRequest request,
             ServerProfile profile, char[] master, Predicate<String> fingerprint,
             java.util.function.Consumer<gold.debug.windowstolinux.shared.model.message.LocalizedMessage> progress) throws Exception {
@@ -757,7 +802,7 @@ public final class DesktopApplicationFacade implements AiApplicationFacade, Depl
                 event -> progress.accept(event.message()));
     }
 
-    /** Executes the same whole-application transaction with streaming progress. */
+    /** Executes the same whole-application transaction with streaming progress. / 以流式进度执行相同的整应用事务。 */
     @Override public MultiComponentDeploymentResult deployAutomaticallyReviewed(ReviewedMultiComponentApplication request,
             ServerProfile profile, char[] master, Predicate<String> fingerprint,
             java.util.function.Consumer<gold.debug.windowstolinux.shared.model.message.LocalizedMessage> progress) throws Exception {
