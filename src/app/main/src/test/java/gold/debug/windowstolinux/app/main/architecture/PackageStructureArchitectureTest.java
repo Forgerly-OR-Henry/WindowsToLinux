@@ -348,8 +348,10 @@ class PackageStructureArchitectureTest {
         assertEquals(REPOSITORIES, fileNames(repositories));
         Set<String> expectedResources = new HashSet<>(HELPER_FRAGMENTS);
         expectedResources.add("selinux-preparation.sh");
+        expectedResources.addAll(Set.of("apparmor-namespace.sh", "systemd-manager-isolation.sh",
+                "selinux-command-entry.sh", "centos-source-repositories.py"));
         assertEquals(expectedResources, fileNamesRecursively(fragments));
-        assertEquals(Set.of("selinux-preparation.sh"), fileNames(fragments.resolve("distro/dnf")));
+        assertEquals(Set.of("selinux-preparation.sh", "centos-source-repositories.py"), fileNames(fragments.resolve("distro/dnf")));
         assertEquals(Set.of("10-native-instances.sh", "20-native-targets.sh", "64-database-client.sh",
                         "65-database-backup.sh", "66-database-activation.sh"),
                 fileNames(fragments.resolve("execution/protocol/helper/fragments/database")));

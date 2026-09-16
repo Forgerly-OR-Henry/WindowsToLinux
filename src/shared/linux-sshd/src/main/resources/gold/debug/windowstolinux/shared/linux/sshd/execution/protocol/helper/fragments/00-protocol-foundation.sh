@@ -222,9 +222,7 @@ render_deployment_unit() {
   fi
   config="$(configuration_path "$app" "$deployment_configuration_digest" systemd)"
   wrap_database_runtime
-  if [ -e /sys/fs/selinux/enforce ]; then
-    case "$command" in /usr/bin/env\ *) ;; *) command="/usr/bin/env $command" ;; esac
-  fi
+# @compat:selinux-entry@
   cat <<UNIT
 [Unit]
 Description=WindowsToLinux managed $app

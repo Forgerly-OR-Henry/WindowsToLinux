@@ -828,7 +828,10 @@ src/  # 项目源码与模块根目录
 │  │  │  │  ├─ database/  # 原生数据库固定远程协议包
 │  │  │  │  │  └─ SshdNativeDatabasePort.java  # 通过固定 helper 动词和敏感标准输入管理原生 DB
 │  │  │  │  ├─ helper/  # helper 资源拼装与版本校验包
-│  │  │  │  │  └─ ManagedHelperBundle.java  # 从固定职责片段拼装 root 持有的受管 helper 并拒绝协议漂移
+│  │  │  │  │  ├─ AppArmorNamespaceCompatibility.java  # 暂存引擎 AppArmor profile 探测片段
+│  │  │  │  │  ├─ CentosStreamRepositoryCompatibility.java  # 暂存 CRB 事务参数与源码依赖片段
+│  │  │  │  │  ├─ ManagedHelperBundle.java  # 从固定职责片段拼装 root 持有的受管 helper 并拒绝协议漂移
+│  │  │  │  │  └─ SystemdIsolationCompatibility.java  # 暂存 SELinux 隔离和标准启动入口
 │  │  │  │  ├─ input/  # 配置与秘密输入封存包
 │  │  │  │  │  ├─ DeploymentConfigurationRenderer.java  # 为 systemd 与容器使用方渲染不可变运行时配置
 │  │  │  │  │  ├─ DeploymentInputArguments.java  # 将非秘密输入清单转换为确定性辅助程序参数
@@ -867,10 +870,12 @@ src/  # 项目源码与模块根目录
 │  │  └─ resources/  # 受管 helper 生产资源目录
 │  │     ├─ distro/  # 发行版系统准备资源
 │  │     │  └─ dnf/  # DNF 发行版固定系统准备
+│  │     │     ├─ centos-source-repositories.py  # CentOS 9/10 源码依赖事务 CRB 选择
 │  │     │     └─ selinux-preparation.sh  # 备份配置、修复标签、重启与验证强制模式的受控步骤
 │  │     ├─ execution/  # SSHD 执行流程资源功能组
 │  │     │  └─ protocol/  # helper 协议资源目录
 │  │     │     └─ helper/  # root 持有 helper 资源目录
+│  │     │        ├─ apparmor-namespace.sh  # 实际引擎 profile 的命名空间探测
 │  │     │        └─ fragments/  # 按职责拆分的 helper 脚本片段目录
 │  │     │           ├─ 00-protocol-foundation.sh  # 定义受管 helper 协议的安全基线、路径和输入校验函数
 │  │     │           ├─ 70-command-dispatch.sh  # 将 helper 协议命令分派到固定的受管操作
@@ -910,6 +915,8 @@ src/  # 项目源码与模块根目录
 │  │     │  │  └─ helper/  # Podman Quadlet helper 片段目录
 │  │     │  │     └─ 55-podman-quadlet.sh  # 生成并管理 Podman Quadlet 容器运行单元
 │  │     │  └─ systemd/  # systemd 运行资源目录
+│  │     │     ├─ selinux-command-entry.sh  # SELinux 标准服务启动入口
+│  │     │     ├─ systemd-manager-isolation.sh  # systemd 管理接口隔离
 │  │     │     └─ helper/  # systemd 生命周期 helper 片段目录
 │  │     │        ├─ 60-lifecycle.sh  # 执行受管 systemd 应用的启动、停止、重启和自启操作
 │  │     │        └─ 61-dynamic-identity.sh  # 动态服务身份、StateDirectory 和旧布局恢复
