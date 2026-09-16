@@ -1114,3 +1114,17 @@ src/  # 项目源码与模块根目录
 ```
 
 外部应用扫描配套资源：`src/shared/linux-sshd/src/main/resources/gold/debug/windowstolinux/shared/linux/sshd/runtime/external-applications.py`，经已认证会话按固定程序流式执行，不加入已安装 helper，摘要与既有安装快照不变。
+
+### 2026-09-16 AI 模型优先级
+
+- `src/app/db/src/main/java/gold/debug/windowstolinux/app/db/entity/StoredAiProviderConfiguration.java`：AI 模型配置、顺序、调用与取消的实现或验证。
+- `src/app/db/src/main/java/gold/debug/windowstolinux/app/db/execution/migration/AiPrioritySchemaMigration.java`：AI 模型配置、顺序、调用与取消的实现或验证。
+- `src/app/db/src/test/java/gold/debug/windowstolinux/app/db/persistence/repository/AiPriorityRepositoryTest.java`：AI 模型配置、顺序、调用与取消的实现或验证。
+- `src/app/service/src/main/java/gold/debug/windowstolinux/app/service/ai/AiConfigurationUseCase.java`：AI 模型配置、顺序、调用与取消的实现或验证。
+- `src/app/service/src/main/java/gold/debug/windowstolinux/app/service/ai/AiProviderChain.java`：AI 模型配置、顺序、调用与取消的实现或验证。
+- `src/app/service/src/main/java/gold/debug/windowstolinux/app/service/ai/AiProviderSummary.java`：AI 模型配置、顺序、调用与取消的实现或验证。
+- `src/app/service/src/test/java/gold/debug/windowstolinux/app/service/ai/AiProviderChainTest.java`：AI 模型配置、顺序、调用与取消的实现或验证。
+- `src/app/ui/src/main/java/gold/debug/windowstolinux/app/ui/ai/AiProviderDialog.java`：AI 模型配置、顺序、调用与取消的实现或验证。
+- `src/app/ui/src/main/java/gold/debug/windowstolinux/app/ui/ai/AiProviderDragTransfer.java`：AI 模型配置、顺序、调用与取消的实现或验证。
+- `src/app/ui/src/main/java/gold/debug/windowstolinux/app/ui/component/DesktopTaskHandle.java`：AI 模型配置、顺序、调用与取消的实现或验证。
+- `src/shared/ai/src/main/java/gold/debug/windowstolinux/shared/ai/collaboration/invocation/AiProviderAttempt.java`：AI 模型配置、顺序、调用与取消的实现或验证。

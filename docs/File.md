@@ -1481,3 +1481,5 @@ linux-sshd 通过 linux 契约采集服务器已有环境
 | 2.0.1-phase1-implementation | 2026-08-08 | 同步一期已实现模块与真实 Ubuntu 待验收状态；未改变目录、模块名称或依赖方向。 |
 | 2.0.0-roadmap-rebaseline | 2026-08-08 | 结构由设计状态转为已初始化，固定 Maven 坐标、Java 包前缀、RunModeDetector 位置和新增模块讨论规则。 |
 | 1.7.0-managed-lifecycle | 2026-08-07 | 历史结构基线，确认模块职责、依赖、生命周期和数据目录。 |
+
+AI 模型配置：db 的 ai_provider_control 保存启用与顺序，service.ai.AiProviderChain 负责唯一全局调用策略，AiConfigurationUseCase 使用固定探测保存模型及版本化密钥引用；UI 的 AiProviderDialog 与 AiProviderDragTransfer 只通过窄 AI 门面调用。

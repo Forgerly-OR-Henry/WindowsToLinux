@@ -7,9 +7,9 @@ import java.net.URI;
 import java.util.Objects;
 
 /**
- * An explicitly selected named AI provider; a request never falls back to a different provider.
+ * Named non-secret AI provider metadata; runtime order is owned by the global invocation chain.
  *
- * <p>一个显式选择的命名 AI 提供者；请求绝不回退到另一个提供者。
+ * <p>命名的非秘密 AI 提供者元数据，运行顺序由全局调用链负责。
  *
  * @param id stable selection identifier / 稳定选择标识
  * @param chatCompletionsEndpoint OpenAI-compatible endpoint / OpenAI 兼容端点

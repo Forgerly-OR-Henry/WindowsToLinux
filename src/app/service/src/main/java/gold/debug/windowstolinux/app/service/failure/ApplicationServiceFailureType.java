@@ -6,6 +6,7 @@ import gold.debug.windowstolinux.shared.model.failure.FailureSeverityLevel;
 
 /** Stable failures raised at the desktop application-service boundary. / 桌面应用服务边界抛出的稳定失败。 */
 public enum ApplicationServiceFailureType implements FailureDefinition {
+    AI_CONFIGURATION_TEST_FAILED("service.ai.configuration-test-failed", "ai", "service.error.aiConfigurationTestFailed", FailureSeverityLevel.ERROR, FailureRecoveryAction.REQUEST_USER_CORRECTION),
     DATABASE_AUTH_REQUIRED("service.database.auth-required", "database",
             "service.error.databaseAuthRequired", FailureSeverityLevel.ERROR, FailureRecoveryAction.REQUEST_USER_CORRECTION),
     DATABASE_STATE_CHANGED("service.database.state-changed", "database",
