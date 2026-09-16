@@ -177,6 +177,8 @@ public final class DesktopApplicationFacade implements AiApplicationFacade, Depl
     private final MultiComponentDeploymentUseCase multiComponentDeployment;
     private final MultiComponentLifecycleUseCase multiComponentLifecycle;
     private final LifecycleUseCase lifecycle;
+    private final gold.debug.windowstolinux.app.service.execution.lifecycle.ApplicationInventoryUseCase applicationInventory;
+    private final gold.debug.windowstolinux.app.service.execution.lifecycle.ExternalApplicationUseCase externalApplications;
     private final BackupUseCase backup;
     private final ManagedBackupInputUseCase backupInputs;
     private final RemoteBackupCreationUseCase remoteBackup;
@@ -226,6 +228,8 @@ public final class DesktopApplicationFacade implements AiApplicationFacade, Depl
         this.multiComponentLifecycle = new MultiComponentLifecycleUseCase(persistence.managedApplications(),
                 persistence.managedApplicationGraphs(), new MultiComponentLifecycleService(), linuxGateway, servers, locks);
         this.lifecycle = new LifecycleUseCase(persistence.managedApplications(), linuxGateway, servers, locks);
+        this.applicationInventory = new gold.debug.windowstolinux.app.service.execution.lifecycle.ApplicationInventoryUseCase(persistence.managedApplications(), persistence.externalApplications(), servers);
+        this.externalApplications = new gold.debug.windowstolinux.app.service.execution.lifecycle.ExternalApplicationUseCase(persistence.externalApplications(), persistence.managedApplications(), servers, linuxGateway, locks);
         this.backup = new BackupUseCase(workDirectory);
         this.backupInputs = new ManagedBackupInputUseCase(persistence.managedApplicationGraphs(),
                 persistence.managedApplications(), persistence.configurations(), persistence.applicationSecrets());
@@ -815,4 +819,36 @@ public final class DesktopApplicationFacade implements AiApplicationFacade, Depl
         return multiComponentDeployment.deployWithStoredPassword(request, profile, profile.credentialMode(), master, fingerprint,
                 event -> progress.accept(event.message()));
     }
+    /** Lists both strict managed and external lifecycle registrations. / 列出严格受管和外部生命周期登记。 */
+    @Override public java.util.List<gold.debug.windowstolinux.app.service.execution.lifecycle.ApplicationSummary> listApplications() throws SQLException {
+        return applicationInventory.list();
+    }
+    /** Saves only local presentation. / 仅保存本地显示设置。 */
+    @Override public void saveApplicationPresentation(String key, String name, String category, String accessUrl) throws SQLException {
+        applicationInventory.savePresentation(key, name, category, accessUrl);
+    }
+    /** Scans selected server metadata without mutation. / 扫描所选服务器元数据，不作修改。 */
+    @Override public gold.debug.windowstolinux.app.service.execution.lifecycle.ApplicationScan scanApplications(String serverId, char[] master,
+            java.util.function.Predicate<String> confirmation) throws Exception {
+        return externalApplications.scan(serverId, master, confirmation);
+    }
+    /** Adopts only a freshly rechecked selected identity. / 仅接管刚复核过的所选身份。 */
+    @Override public String adoptApplication(gold.debug.windowstolinux.app.service.execution.lifecycle.ApplicationScan scan,
+            gold.debug.windowstolinux.shared.model.lifecycle.DiscoveredApplication candidate, char[] master,
+            java.util.function.Predicate<String> confirmation) throws Exception {
+        return externalApplications.adopt(scan, candidate, master, confirmation);
+    }
+    /** Routes each application through its original ownership and capability contract. / 让每种应用经其原有归属及能力契约执行。 */
+    @Override public gold.debug.windowstolinux.app.service.execution.lifecycle.ApplicationLifecycleResult executeApplicationLifecycle(String key,
+            LifecycleAction action, char[] master, java.util.function.Predicate<String> confirmation) throws Exception {
+        if (key.startsWith("external:")) return externalApplications.execute(key, action, master, confirmation);
+        try {
+            if (!key.startsWith("managed:")) throw new IllegalArgumentException("invalid application key");
+            var result = lifecycle.executePersisted(key.substring(8), action, master);
+            return new gold.debug.windowstolinux.app.service.execution.lifecycle.ApplicationLifecycleResult(
+                    result.observation().map(value -> value.runtimeState()).orElse(gold.debug.windowstolinux.shared.model.lifecycle.RuntimeState.UNKNOWN),
+                    result.observation().map(value -> value.observedAt()).orElseGet(java.time.Instant::now), java.util.Optional.of(result));
+        } finally { java.util.Arrays.fill(master, '\0'); }
+    }
+
 }

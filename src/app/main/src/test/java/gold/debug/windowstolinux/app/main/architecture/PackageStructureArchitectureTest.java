@@ -74,7 +74,7 @@ class PackageStructureArchitectureTest {
     private static final Set<String> REPOSITORIES = Set.of(
             "AiProfileRepository.java", "ApplicationSecretRepository.java", "ConfigurationSnapshotRepository.java",
             "DesktopPreferenceRepository.java", "EncryptedSecretRepository.java", "ManagedApplicationRepository.java",
-            "ManagedApplicationGraphRepository.java", "RepositoryTransactionExecutor.java", "ServerProfileRepository.java");
+            "ManagedApplicationGraphRepository.java", "RepositoryTransactionExecutor.java", "ServerProfileRepository.java", "ExternalApplicationRepository.java");
     private static final Set<String> HELPER_FRAGMENTS = Set.of("21-workspace-volume.sh", "22-restricted-build.sh", "23-container-builder.sh", "24-build-entry.sh", "25-workspace-recovery.sh", "26-build-output.sh", "12-container-image-input.sh", "61-dynamic-identity.sh", "64-database-client.sh",
             "00-protocol-foundation.sh", "10-typed-release.sh", "15-deployment-input.sh", "17-managed-content.sh", "20-candidate-workspace.sh",
             "35-ecosystem-dispatch.sh", "40-typed-runtime.sh", "50-container-release.sh", "52-container-recovery.sh", "55-podman-quadlet.sh", "60-lifecycle.sh",
@@ -349,7 +349,7 @@ class PackageStructureArchitectureTest {
         Set<String> expectedResources = new HashSet<>(HELPER_FRAGMENTS);
         expectedResources.add("selinux-preparation.sh");
         expectedResources.addAll(Set.of("apparmor-namespace.sh", "systemd-manager-isolation.sh",
-                "selinux-command-entry.sh", "centos-source-repositories.py"));
+                "selinux-command-entry.sh", "centos-source-repositories.py", "external-applications.py"));
         assertEquals(expectedResources, fileNamesRecursively(fragments));
         assertEquals(Set.of("selinux-preparation.sh", "centos-source-repositories.py"), fileNames(fragments.resolve("distro/dnf")));
         assertEquals(Set.of("10-native-instances.sh", "20-native-targets.sh", "64-database-client.sh",
@@ -1068,6 +1068,9 @@ class PackageStructureArchitectureTest {
                 "gold.debug.windowstolinux.app.service.deployment.multi.ReviewedMultiComponentApplication",
                 "gold.debug.windowstolinux.app.service.deployment.single.DeploymentHandoff",
                 "gold.debug.windowstolinux.app.service.execution.lifecycle.ManagedApplicationSnapshot",
+                "gold.debug.windowstolinux.app.service.execution.lifecycle.ApplicationSummary",
+                "gold.debug.windowstolinux.app.service.execution.lifecycle.ApplicationScan",
+                "gold.debug.windowstolinux.app.service.execution.lifecycle.ApplicationLifecycleResult",
                 "gold.debug.windowstolinux.app.service.server.ServerProfile",
                 "gold.debug.windowstolinux.app.service.server.ServerSummary",
                 "gold.debug.windowstolinux.app.service.source.PreparedMultiComponentSource",

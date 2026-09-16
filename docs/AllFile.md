@@ -25,6 +25,8 @@ src/  # 项目源码与模块根目录
 │  │  │  ├─ StoredAiRoleAssignment.java  # 从一个固定协作角色到一个命名提供者的非秘密分配
 │  │  │  ├─ StoredApplicationSecretRevision.java  # 用于定位普通配置和发布目录之外秘密的不可变元数据
 │  │  │  ├─ StoredServerObservation.java  # 带时间的服务器连接检查证据
+│  │  │  ├─ StoredExternalApplication.java  # 独立外部应用登记与端点身份
+│  │  │  ├─ StoredApplicationPresentation.java  # 应用名称分类和入口覆盖
 │  │  │  ├─ StoredServerProfile.java  # 非秘密桌面连接元数据；密码或密钥保留在 app/secret 中
 │  │  │  └─ SuccessfulManagedDeployment.java  # 经验证部署事务后持久化的一个组件状态
 │  │  ├─ execution/  # 数据库执行流程功能组
@@ -45,6 +47,7 @@ src/  # 项目源码与模块根目录
 │  │     │  ├─ ManagedApplicationGraphRepository.java  # 将持久整应用拓扑与成功组件版本原子保存
 │  │     │  ├─ ManagedApplicationRepository.java  # 保存受管应用、运行契约、发布和生命周期观测
 │  │     │  ├─ RepositoryTransactionExecutor.java  # 由聚焦仓库使用的共享事务原语
+│  │     │  ├─ ExternalApplicationRepository.java  # 外部登记去重事务及显示设置
 │  │     │  └─ ServerProfileRepository.java  # 保存服务器信任身份与不含凭据的连接资料
 │  │     └─ serialization/  # SQLite 中复杂类型的严格版本化序列化
 │  │        ├─ ComponentPathPersistenceCodec.java  # 编解码成功部署时已审阅且不含秘密的数据路径清单
@@ -159,6 +162,11 @@ src/  # 项目源码与模块根目录
 │  │  │  └─ lifecycle/  # 受管应用生命周期用例包
 │  │  │     ├─ LifecycleOutcome.java  # 单次桌面生命周期用例的无秘密结果
 │  │  │     ├─ LifecycleUseCase.java  # 编排受管应用的实时观测、生命周期和自启操作
+│  │  │     ├─ ApplicationSummary.java  # 明确区分部署接管和观测时间的统一摘要
+│  │  │     ├─ ApplicationScan.java  # 候选与既有归属映射及接管能力
+│  │  │     ├─ ApplicationLifecycleResult.java  # 保留受管诊断的统一操作结果
+│  │  │     ├─ ApplicationInventoryUseCase.java  # 统一原生与外部清单及组合筛选字段
+│  │  │     ├─ ExternalApplicationUseCase.java  # 扫描接管和身份复核的外部生命周期
 │  │  │     └─ ManagedApplicationSnapshot.java  # 已持久化的资源归属、成功部署契约和发布身份；并非远端运行时状态声明
 │  │  ├─ failure/  # 桌面用例编排失败包
 │  │  │  ├─ ApplicationServiceException.java  # 受控桌面用例失败的结构化异常
@@ -221,6 +229,8 @@ src/  # 项目源码与模块根目录
 │  │  │  ├─ MessageCatalog.java  # 从区域设置资源包解析应用消息键和非递归命名占位符
 │  │  │  └─ PageMessagePresenter.java  # 独立页面控制器共享的本地化与诊断格式化
 │  │  ├─ managed/  # 受管应用清单与生命周期页面包
+│  │  │  ├─ ApplicationScanDialog.java  # 独立扫描与明确选择接管窗口
+│  │  │  ├─ ApplicationPresentationDialog.java  # 应用分类名称和入口的独立编辑窗口
 │  │  │  ├─ ManagedPage.java  # 持有受管应用选择、已保存运行检查详情和生命周期流程
 │  │  │  └─ ManagedPageState.java  # 保存受管应用页当前选择的应用标识与输出内容
 │  │  ├─ server/  # 服务器配置与能力验证页面包
@@ -740,6 +750,7 @@ src/  # 项目源码与模块根目录
 │  │  │     └─ RemoteRestoreStagingRequest.java  # 绑定本地候选、摘要、字节及精确成员清单的请求
 │  │  ├─ runtime/  # 受管运行时观察与控制契约包
 │  │  │  ├─ HealthCheckResult.java  # 完整受管部署健康检查策略的结果，而不只是进程检查
+│  │  │  ├─ ExternalApplicationPort.java  # 既有应用发现与生命周期窄端口
 │  │  │  └─ LinuxRuntimeExecutor.java  # 受管运行时观测、健康检查和生命周期契约
 │  │  ├─ session/  # 有界远端会话契约包
 │  │  │  ├─ DeploymentRemoteSession.java  # 组合类型化部署与远程数据库能力的已验证受管会话
@@ -880,6 +891,7 @@ src/  # 项目源码与模块根目录
 │  │  │     └─ SshdSourceTransport.java  # 通过 SFTP 将已校验源码归档传入受管候选工作区
 │  │  ├─ runtime/  # 目标应用运行机制分组包
 │  │  │  ├─ ContainerRuntimeExecutor.java  # 只观察和健康检查由受管发布根目录所有的命名容器
+│  │  │  ├─ SshdExternalApplicationPort.java  # 固定程序的扫描协议及身份复核
 │  │  │  ├─ ManagedRuntimeExecutor.java  # 应用重启后从已封存的远端运行时标记恢复生命周期控制
 │  │  │  ├─ ManagedRuntimeIdentity.java  # 在不持久化重复运行时规格的情况下识别已封存运行时类型
 │  │  │  ├─ ManagedRuntimeKindProbe.java  # 通过固定 helper 协议读取 root 所有的当前发布标记
@@ -1006,6 +1018,11 @@ src/  # 项目源码与模块根目录
 │  │  │  └─ SourceLanguageType.java  # 由有界文件路径或元数据条目证实的源码语言类型
 │  │  ├─ lifecycle/  # 生命周期动作与状态模型包
 │  │  │  ├─ ApplicationAutostartState.java  # 一个应用全部组件的实时自启汇总状态
+│  │  │  ├─ ExternalApplicationKind.java  # systemd 与 Docker 既有运行时类型
+│  │  │  ├─ ExternalApplicationTarget.java  # 精确运行时身份和扫描指纹
+│  │  │  ├─ DiscoveredApplication.java  # 有界候选状态及可用操作
+│  │  │  ├─ ExternalApplicationScan.java  # 扫描候选和部分失败
+│  │  │  ├─ ExternalScanIssueType.java  # 扫描不完整原因
 │  │  │  ├─ ApplicationRuntimeState.java  # 一个应用全部组件的实时运行汇总状态
 │  │  │  ├─ AutostartState.java  # 受管单元经过验证的 systemd 启用状态
 │  │  │  ├─ LifecycleAction.java  # 受支持的受管部署动作；不存在删除或任意服务动作
@@ -1095,3 +1112,5 @@ src/  # 项目源码与模块根目录
    ├─ service/  # Web 业务服务职责预留模块
    └─ task/  # Web 后台任务职责预留模块
 ```
+
+外部应用扫描配套资源：`src/shared/linux-sshd/src/main/resources/gold/debug/windowstolinux/shared/linux/sshd/runtime/external-applications.py`，经已认证会话按固定程序流式执行，不加入已安装 helper，摘要与既有安装快照不变。

@@ -91,6 +91,9 @@ public final class SshdLinuxRemoteSession implements DeploymentRemoteSession {
     private final gold.debug.windowstolinux.shared.linux.ecosystem.db.NativeDatabasePort nativeDatabases;
     private final SshdBackupArtifactPort backupArtifacts;
     private final SshdRestoreActivationPort restoreActivation;
+    private final gold.debug.windowstolinux.shared.linux.runtime.ExternalApplicationPort externalApplications;
+    /** Returns bounded application discovery on this trusted session. / 返回当前可信会话上的有界应用发现能力。 */
+    @Override public gold.debug.windowstolinux.shared.linux.runtime.ExternalApplicationPort externalApplications() { return externalApplications; }
 
     /** Creates an instance of this type. / 创建此类型的实例。 */
     public SshdLinuxRemoteSession(SshClient client, ClientSession session,
@@ -99,6 +102,7 @@ public final class SshdLinuxRemoteSession implements DeploymentRemoteSession {
         this.session = session;
         this.username = endpoint.username();
         SshCommandExecutor commands = new SshCommandExecutor(session);
+        this.externalApplications = new gold.debug.windowstolinux.shared.linux.sshd.runtime.SshdExternalApplicationPort(commands);
         this.selinux = new gold.debug.windowstolinux.shared.linux.sshd.distro.dnf.SelinuxPreparationExecutor(commands, endpoint.serverId());
         this.databases = new SshdDatabaseOperationPort(commands);
         this.nativeDatabases = new gold.debug.windowstolinux.shared.linux.sshd.execution.protocol.database.SshdNativeDatabasePort(commands);

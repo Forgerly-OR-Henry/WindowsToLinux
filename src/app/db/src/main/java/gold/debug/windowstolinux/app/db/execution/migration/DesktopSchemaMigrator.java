@@ -19,7 +19,7 @@ public final class DesktopSchemaMigrator {
      *
      * <p>公开 {@code CURRENT_SCHEMA_VERSION} 常量。
      */
-    public static final int CURRENT_SCHEMA_VERSION = 13;
+    public static final int CURRENT_SCHEMA_VERSION = 14;
 
     private DesktopSchemaMigrator() {
     }
@@ -294,6 +294,22 @@ public final class DesktopSchemaMigrator {
                         statement.execute("ALTER TABLE server_profile ADD COLUMN connected INTEGER NOT NULL DEFAULT 0");
                     if (!hasColumn(statement, "server_profile", "operating_system"))
                         statement.execute("ALTER TABLE server_profile ADD COLUMN operating_system TEXT NOT NULL DEFAULT ''");
+                }
+                if (version < 14) {
+                    statement.execute("""
+                            CREATE TABLE IF NOT EXISTS external_application (
+                              id TEXT PRIMARY KEY, server_id TEXT NOT NULL REFERENCES server_profile(id),
+                              host TEXT NOT NULL, ssh_port INTEGER NOT NULL, username TEXT NOT NULL,
+                              kind TEXT NOT NULL CHECK(kind IN ('SYSTEMD','DOCKER')), runtime_identity TEXT NOT NULL,
+                              fingerprint TEXT NOT NULL, display_name TEXT NOT NULL, runtime_state TEXT NOT NULL,
+                              can_start INTEGER NOT NULL, can_stop INTEGER NOT NULL, adopted_at TEXT NOT NULL,
+                              observed_at TEXT NOT NULL, UNIQUE(server_id, kind, runtime_identity))
+                            """);
+                    statement.execute("""
+                            CREATE TABLE IF NOT EXISTS application_presentation (
+                              application_key TEXT PRIMARY KEY, display_name TEXT NOT NULL,
+                              category TEXT NOT NULL CHECK(category IN ('WEBSITE','APP')), access_url TEXT)
+                            """);
                 }
                 statement.execute("PRAGMA user_version = " + CURRENT_SCHEMA_VERSION);
                 connection.commit();

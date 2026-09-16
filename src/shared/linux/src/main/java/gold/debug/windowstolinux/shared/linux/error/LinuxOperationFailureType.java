@@ -6,6 +6,9 @@ import gold.debug.windowstolinux.shared.model.failure.FailureSeverityLevel;
 
 /** Failures owned by Linux connection, inspection, transfer and runtime operations. / Linux 连接、采集、传输与运行操作持有的失败类型。 */
 public enum LinuxOperationFailureType implements FailureDefinition {
+    EXTERNAL_IDENTITY_CHANGED("linux.lifecycle.external-identity-changed", "lifecycle", "linux.error.externalIdentityChanged", FailureRecoveryAction.REQUEST_USER_CORRECTION),
+    EXTERNAL_OWNERSHIP_REQUIRED("linux.lifecycle.external-ownership-required", "lifecycle", "linux.error.externalOwnershipRequired", FailureRecoveryAction.REQUEST_USER_CORRECTION),
+    EXTERNAL_OPERATION_FAILED("linux.lifecycle.external-operation-failed", "lifecycle", "linux.error.externalOperationFailed", FailureRecoveryAction.REQUEST_USER_CORRECTION),
     AUTHENTICATION_FAILED("linux.connection.authentication-failed", "connection", "linux.error.authenticationFailed", FailureRecoveryAction.REQUEST_USER_CORRECTION),
     CONNECTION_FAILED("linux.connection.connection-failed", "connection", "linux.error.connectionFailed", FailureRecoveryAction.RECONNECT),
     HOST_KEY_REJECTED("linux.connection.host-key-rejected", "connection", "linux.error.hostKeyRejected", FailureRecoveryAction.REQUEST_USER_CORRECTION),
