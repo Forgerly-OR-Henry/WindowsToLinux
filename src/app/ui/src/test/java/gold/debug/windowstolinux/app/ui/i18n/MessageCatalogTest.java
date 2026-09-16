@@ -39,8 +39,8 @@ class MessageCatalogTest {
     void rendersEnglishAndSimplifiedChineseWithNamedArguments() {
         assertEquals("Deployment", english.text("nav.deployment"));
         assertEquals("部署", chinese.text("nav.deployment"));
-        assertEquals("Backup and restore", english.text("nav.backup"));
-        assertEquals("备份与恢复", chinese.text("nav.backup"));
+        assertEquals("Backups", english.text("nav.backup"));
+        assertEquals("备份", chinese.text("nav.backup"));
         assertEquals("Deployment failed: network timeout", english.text(
                 LocalizedMessage.of("deployment.failed", Map.of("detail", "network timeout"))));
         assertEquals("部署失败：network timeout", chinese.text(

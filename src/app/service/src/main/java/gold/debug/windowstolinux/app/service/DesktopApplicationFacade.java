@@ -521,7 +521,7 @@ public final class DesktopApplicationFacade implements AiApplicationFacade, Depl
      */
     public void saveAiProviderProfile(AiProviderProfile profile, char[] masterPassword, char[] apiKey)
             throws SQLException, SecretStoreException {
-        ai.saveNamed(profile, masterPassword, apiKey);
+        ai.saveConfiguration(profile, profile.id(), masterPassword, apiKey);
     }
 
     /**
@@ -850,5 +850,16 @@ public final class DesktopApplicationFacade implements AiApplicationFacade, Depl
                     result.observation().map(value -> value.observedAt()).orElseGet(java.time.Instant::now), java.util.Optional.of(result));
         } finally { java.util.Arrays.fill(master, '\0'); }
     }
+
+    /** Returns ordered model cards. / 返回有序模型卡片。 */
+    @Override public java.util.List<gold.debug.windowstolinux.app.service.ai.AiProviderSummary> listAiConfigurations() throws SQLException { return ai.configurations(); }
+    /** Tests and stores model configuration without sending user project content. / 测试并保存模型配置，不发送用户项目内容。 */
+    @Override public void saveAiConfiguration(AiProviderProfile profile, String name, char[] master, char[] key) throws SQLException, SecretStoreException {
+        ai.saveConfiguration(profile, name, master, key);
+    }
+    /** Changes model enablement without changing its position. / 改变模型启用状态，不改变位置。 */
+    @Override public void setAiProviderEnabled(String id, boolean enabled) throws SQLException { ai.setEnabled(id, enabled); }
+    /** Saves global model order transactionally. / 通过事务保存全局模型顺序。 */
+    @Override public void reorderAiProviders(java.util.List<String> ids) throws SQLException { ai.reorder(ids); }
 
 }

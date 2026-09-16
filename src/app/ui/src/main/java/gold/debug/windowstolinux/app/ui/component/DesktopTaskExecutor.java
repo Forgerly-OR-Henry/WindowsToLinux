@@ -16,19 +16,27 @@ public final class DesktopTaskExecutor {
 
     /** Executes a business-neutral Swing task with explicit success and failure callbacks. / 使用显式成功和失败回调执行无业务依赖的 Swing 任务。 */
     public static <T> void run(Callable<T> operation, Consumer<T> success, Consumer<Exception> failure) {
+        submit(operation, success, failure);
+    }
+
+    /** Returns a cancellation handle while retaining completion-after-cleanup semantics. / 返回取消句柄，保持资源清理后才完成的语义。 */
+    public static <T> DesktopTaskHandle submit(Callable<T> operation, Consumer<T> success, Consumer<Exception> failure) {
         Objects.requireNonNull(operation, "operation");
         Objects.requireNonNull(success, "success");
         Objects.requireNonNull(failure, "failure");
         ACTIVE.incrementAndGet();
+        DesktopTaskHandle handle = new DesktopTaskHandle();
         new SwingWorker<T, Void>() {
             @Override
             protected T doInBackground() throws Exception {
-                return operation.call();
+                try { handle.begin(); return operation.call(); }
+                finally { handle.end(); }
             }
 
             @Override
             protected void done() {
                 try {
+                    if (handle.cancelled()) throw new java.util.concurrent.CancellationException("Desktop task cancelled");
                     success.accept(get());
                 } catch (Exception exception) {
                     failure.accept(exception);
@@ -37,5 +45,6 @@ public final class DesktopTaskExecutor {
                 }
             }
         }.execute();
+        return handle;
     }
 }

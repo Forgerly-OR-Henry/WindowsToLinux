@@ -32,6 +32,8 @@ public final class AiUseCaseFacade {
     private final AiProfileRepository profiles;
     private final DesktopSecretStoreService secrets;
     private final OpenAiCompatibleRoleClient roleClient;
+    private final AiProviderChain chain;
+    private final AiConfigurationUseCase configuration;
 
     /**
      * Creates a {@code AiUseCaseFacade} instance.
@@ -50,6 +52,8 @@ public final class AiUseCaseFacade {
         this.profiles = Objects.requireNonNull(profiles, "profiles");
         this.secrets = Objects.requireNonNull(secrets, "secrets");
         this.roleClient = Objects.requireNonNull(roleClient, "roleClient");
+        this.chain = new AiProviderChain(profiles, secrets);
+        this.configuration = new AiConfigurationUseCase(profiles, secrets, roleClient);
     }
 
     /**
@@ -96,7 +100,7 @@ public final class AiUseCaseFacade {
      *
      * <p>保存一个显式命名的 AI 提供者，而不改变旧版默认提供者。
      */
-    public void saveNamed(AiProviderProfile profile, char[] masterPassword, char[] apiKey)
+    void saveNamed(AiProviderProfile profile, char[] masterPassword, char[] apiKey)
             throws SQLException, SecretStoreException {
         Objects.requireNonNull(profile, "profile");
         try (SecretStore store = secrets.open(profile.credentialMode(), masterPassword)) {
@@ -114,7 +118,7 @@ public final class AiUseCaseFacade {
      * <p>列出命名 AI 提供者，而不读取其 API Key。
      */
     public List<AiProviderProfile> listNamed() throws SQLException {
-        return profiles.listNamed().stream().map(AiProviderProfile::fromStored).toList();
+        return profiles.listConfigured().stream().map(value -> AiProviderProfile.fromStored(value.profile())).toList();
     }
 
     /** Assigns one fixed collaboration role to one existing named provider. / 将一个固定协作角色分配给一个已有命名提供者。 */
@@ -127,99 +131,72 @@ public final class AiUseCaseFacade {
         return profiles.listRoleAssignments().stream().map(AiRoleAssignment::fromStored).toList();
     }
 
-    /** Invokes only the provider assigned to the context role and preserves its validated evidence. / 仅调用分配给上下文角色的提供者并保留其验证证据。 */
+    /** Lists ordered enablement and verification metadata. / 列出有序启用及验证元数据。 */
+    public List<AiProviderSummary> configurations() throws SQLException {
+        return profiles.listConfigured().stream().map(value -> new AiProviderSummary(AiProviderProfile.fromStored(value.profile()),
+                value.name(), value.enabled(), value.priority(), value.verifiedAt())).toList();
+    }
+    /** Tests the selected model with a fixed synthetic context before saving. / 保存前使用固定合成上下文测试所选模型。 */
+    public void saveConfiguration(AiProviderProfile profile, String name, char[] master, char[] key) throws SQLException, SecretStoreException {
+        configuration.save(profile, name, master, key);
+    }
+    /** Changes enablement while retaining position. / 改变启用状态并保留位置。 */
+    public void setEnabled(String id, boolean enabled) throws SQLException { profiles.setEnabled(id, enabled); }
+    /** Saves a complete priority permutation transactionally. / 通过事务保存完整优先级排列。 */
+    public void reorder(List<String> ids) throws SQLException { profiles.reorder(ids); }
+
+    /** Preserves role prompts and validation while trying enabled providers in global order. / 保留角色提示与校验，按全局顺序尝试启用提供者。 */
     public Optional<AiRoleInvocationResult> invokeRole(AiRoleContext context, char[] masterPassword)
             throws SQLException, SecretStoreException {
         Objects.requireNonNull(context, "context");
-        try {
-            Optional<AiRoleAssignment> assignment = profiles.findRoleAssignment(context.role().name())
-                    .map(AiRoleAssignment::fromStored);
-            if (assignment.isEmpty()) return Optional.empty();
-            Optional<AiProviderProfile> profile = profiles.findNamed(assignment.orElseThrow().providerId())
-                    .map(AiProviderProfile::fromStored);
-            if (profile.isEmpty()) return Optional.empty();
-            AiProviderProfile selected = profile.orElseThrow();
-            try (SecretStore store = secrets.open(selected.credentialMode(), masterPassword)) {
-                char[] apiKey = store.read(selected.credentialKey()).orElseGet(() -> new char[0]);
-                try {
-                    AiRoleBinding binding = new AiRoleBinding(context.role(), selected.id(),
-                            selected.chatCompletionsEndpoint(), selected.model());
-                    return Optional.of(roleClient.invoke(binding, apiKey, context));
-                } finally {
-                    clear(apiKey);
-                }
-            }
-        } finally {
-            clear(masterPassword);
-        }
+        var result = chain.invoke(masterPassword, (profile, key) -> {
+            var value = roleClient.invoke(new AiRoleBinding(context.role(), profile.id(), profile.chatCompletionsEndpoint(), profile.model()), key, context);
+            return new AiProviderChain.Attempt<>(value, value.evidence().status(), value.evidence().validationDetail());
+        });
+        if (result.snapshot().isEmpty()) return Optional.empty();
+        var evidence = result.value().map(AiRoleInvocationResult::evidence).orElseGet(() -> {
+            var last = result.snapshot().getLast();
+            return roleClient.invoke(new AiRoleBinding(context.role(), last.id(), last.chatCompletionsEndpoint(), last.model()), new char[0], context).evidence();
+        });
+        if (!result.valid()) evidence = new gold.debug.windowstolinux.shared.ai.collaboration.invocation.AiInvocationEvidence(evidence.role(), evidence.providerId(),
+                evidence.model(), evidence.redactedInputSummary(), evidence.inputSha256(), gold.debug.windowstolinux.shared.ai.collaboration.invocation.AiInvocationStatus.UNAVAILABLE,
+                Optional.empty(), "all-enabled-providers-failed", evidence.observedAt());
+        return Optional.of(new AiRoleInvocationResult(evidence, result.attempts()));
     }
 
-    /**
-     * Performs the {@code explain} operation.
-     *
-     * <p>执行 {@code explain} 操作。
-     *
-     * @param preparation the {@code preparation} value / {@code preparation} 值
-     * @param profile the {@code profile} value / {@code profile} 值
-     * @param mode the {@code mode} value / {@code mode} 值
-     * @param masterPassword the {@code masterPassword} value / {@code masterPassword} 值
-     * @param languageTag the {@code languageTag} value / {@code languageTag} 值
-     * @return the operation result / 操作结果
-     */
-    /** Explains the result of a selected typed static source inspection. / 解释选定类型化静态源码检查的结果。 */
+    /** Retains the older explanation signature while honoring current global model ordering. / 保留旧解释签名，同时遵循当前全局模型顺序。 */
     public AiAnalysisOutcome explain(ReviewedSourcePreparation preparation, AiProfile profile,
                                      CredentialStorageMode mode, char[] masterPassword, String languageTag) {
+        return explainReviewed(preparation, masterPassword, languageTag);
+    }
+
+    private AiAnalysisOutcome explainReviewed(ReviewedSourcePreparation preparation, char[] master, String languageTag) {
         if (preparation.assessment().facts().isEmpty()) {
-            return AiAnalysisOutcome.unavailable(LocalizedMessage.of("ai.status.analysisRequired"));
+            clear(master); return AiAnalysisOutcome.unavailable(LocalizedMessage.of("ai.status.analysisRequired"));
         }
-        return explainFacts(preparation.assessment().facts().orElseThrow(), profile, mode, masterPassword, languageTag);
-    }
-
-    private AiAnalysisOutcome explainFacts(gold.debug.windowstolinux.shared.model.project.DeploymentProjectFacts facts,
-                                            AiProfile profile, CredentialStorageMode mode, char[] masterPassword,
-                                            String languageTag) {
-        if (profile.credentialMode() != mode) {
-            return AiAnalysisOutcome.unavailable(LocalizedMessage.of("ai.status.storageModeMismatch"));
-        }
-        try (SecretStore store = secrets.open(mode, masterPassword)) {
-            char[] apiKey = store.read(profile.credentialKey()).orElse(null);
-            if (apiKey == null) {
-                return AiAnalysisOutcome.unavailable(LocalizedMessage.of("ai.status.apiKeyMissing"));
-            }
-            try {
-                String explanation = new OpenAiCompatibleStructuralAnalysisClient().analyze(
-                        profile.chatCompletionsEndpoint(), profile.model(), apiKey, facts,
-                        AiResponseLanguageType.fromLanguageTag(languageTag)).explanation();
-                return AiAnalysisOutcome.available(explanation);
-            } finally {
-                clear(apiKey);
-            }
-        } catch (AiAnalysisException | SecretStoreException exception) {
-            return AiAnalysisOutcome.unavailable(exception.failure().userMessage(), exception.failure().diagnostic());
-        } finally {
-            clear(masterPassword);
-        }
-    }
-
-    /**
-     * Calls only the named provider selected by its stored identifier; no alternative provider is consulted on failure.
-     *
-     * <p>仅调用由已存储标识选定的命名提供者；失败时不会咨询其他提供者。
-     */
-    public AiAnalysisOutcome explainNamed(ReviewedSourcePreparation preparation, String providerId, char[] masterPassword,
-                                          String languageTag) {
         try {
-            AiProviderProfile profile = profiles.findNamed(providerId).map(AiProviderProfile::fromStored)
-                    .orElse(null);
-            if (profile == null) {
-                return AiAnalysisOutcome.unavailable(LocalizedMessage.of("ai.status.providerMissing"));
-            }
-            return explain(preparation, profile.selectedProfile(), profile.credentialMode(), masterPassword, languageTag);
-        } catch (SQLException exception) {
-            clear(masterPassword);
-            return AiAnalysisOutcome.unavailable(LocalizedMessage.of("ai.status.providerMissing"),
-                    "The selected AI provider metadata could not be read");
-        }
+            var result = chain.invoke(master, (profile, key) -> {
+                try {
+                    var value = new OpenAiCompatibleStructuralAnalysisClient().analyze(profile.chatCompletionsEndpoint(), profile.model(), key,
+                            preparation.assessment().facts().orElseThrow(), AiResponseLanguageType.fromLanguageTag(languageTag));
+                    return new AiProviderChain.Attempt<>(AiAnalysisOutcome.available(value.explanation()),
+                            gold.debug.windowstolinux.shared.ai.collaboration.invocation.AiInvocationStatus.VALIDATED, "structural-schema-validated");
+                } catch (AiAnalysisException failure) {
+                    return new AiProviderChain.Attempt<>(AiAnalysisOutcome.unavailable(failure.failure().userMessage(), failure.failure().diagnostic()),
+                            gold.debug.windowstolinux.shared.ai.collaboration.invocation.AiInvocationStatus.INVALID_OUTPUT, failure.failure().code());
+                }
+            });
+            var value = result.valid() ? result.value().orElseThrow() : AiAnalysisOutcome.unavailable(
+                    LocalizedMessage.of(result.snapshot().isEmpty() ? "ai.status.noEnabledProviders" : "ai.status.allProvidersFailed"));
+            return new AiAnalysisOutcome(value.available(), value.status(), value.content(), value.diagnostic(), result.attempts());
+        } catch (SQLException failure) {
+            return AiAnalysisOutcome.unavailable(LocalizedMessage.of("ai.status.providerMissing"), "AI configuration snapshot could not be read");
+        } finally { clear(master); }
+    }
+
+    /** Named legacy requests also use the global chain; role bindings are retained only as migration metadata. / 旧命名请求同样使用全局调用链，角色绑定仅作为迁移元数据保留。 */
+    public AiAnalysisOutcome explainNamed(ReviewedSourcePreparation preparation, String providerId, char[] masterPassword, String languageTag) {
+        return explainReviewed(preparation, masterPassword, languageTag);
     }
 
     private static void clear(char[] value) {

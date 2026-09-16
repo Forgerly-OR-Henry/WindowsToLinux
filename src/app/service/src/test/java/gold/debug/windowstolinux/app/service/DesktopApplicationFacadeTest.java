@@ -150,12 +150,12 @@ class DesktopApplicationFacadeTest {
     }
 
     @Test
-    void keepsNamedAiProvidersExplicitAndDoesNotUseTheLegacyDefaultAsFallback() throws Exception {
+    void listsConfiguredModelsAndRequiresFactsBeforeGlobalInvocation() throws Exception {
         try (DesktopPersistence database = DesktopPersistence.open(temporaryDirectory)) {
             DesktopApplicationFacade service = new DesktopApplicationFacade(database, temporaryDirectory.resolve("work"), unusedGateway());
             AiProviderProfile provider = new AiProviderProfile("analysis", URI.create("https://analysis.example.test/v1/chat/completions"),
                     "gpt-5", "ai/analysis/api-key", CredentialStorageMode.MASTER_PASSWORD);
-            service.saveAiProviderProfile(provider, "correct master password".toCharArray(), "analysis-key".toCharArray());
+            database.aiProfiles().saveNamed(provider.stored());
 
             assertEquals(java.util.List.of(provider), service.listAiProviderProfiles());
             AiAnalysisOutcome unavailable = service.requestAiExplanationFromProvider(
@@ -164,7 +164,7 @@ class DesktopApplicationFacadeTest {
                                     gold.debug.windowstolinux.shared.model.message.LocalizedMessage.of("test.rejected"), "test"))),
                             Optional.empty(), Optional.empty(), java.util.List.of()),
                     "missing", "correct master password".toCharArray(), "en");
-            assertEquals("ai.status.providerMissing", unavailable.status().key());
+            assertEquals("ai.status.analysisRequired", unavailable.status().key());
         }
     }
 

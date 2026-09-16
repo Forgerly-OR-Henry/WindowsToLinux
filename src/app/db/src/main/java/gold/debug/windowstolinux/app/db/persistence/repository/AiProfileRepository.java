@@ -4,6 +4,8 @@ import gold.debug.windowstolinux.app.db.persistence.connection.DesktopConnection
 import gold.debug.windowstolinux.app.db.entity.StoredAiProfile;
 import gold.debug.windowstolinux.app.db.entity.StoredAiProviderProfile;
 import gold.debug.windowstolinux.app.db.entity.StoredAiRoleAssignment;
+import gold.debug.windowstolinux.app.db.entity.StoredAiProviderConfiguration;
+import java.time.Instant;
 
 import java.sql.Connection;
 import java.sql.PreparedStatement;
@@ -53,19 +55,76 @@ public final class AiProfileRepository {
 
     /** Saves a named provider profile. / 保存命名提供者资料。 */
     public void saveNamed(StoredAiProviderProfile profile) throws SQLException {
-        try (Connection connection = connections.open();
-             PreparedStatement statement = connection.prepareStatement("""
-                     INSERT INTO ai_provider_profile (profile_id, endpoint, model, credential_key, credential_mode)
-                     VALUES (?, ?, ?, ?, ?)
-                     ON CONFLICT(profile_id) DO UPDATE SET endpoint=excluded.endpoint, model=excluded.model,
-                         credential_key=excluded.credential_key, credential_mode=excluded.credential_mode
-                     """)) {
-            statement.setString(1, profile.id());
-            statement.setString(2, profile.endpoint());
-            statement.setString(3, profile.model());
-            statement.setString(4, profile.credentialKey());
-            statement.setString(5, profile.credentialMode());
-            statement.executeUpdate();
+        saveConfiguration(profile, profile.id(), null);
+    }
+
+    /** Stores a profile only after its selected-model probe succeeded. / 仅在所选模型探测成功后保存配置。 */
+    public void saveVerified(StoredAiProviderProfile profile, String name, Instant verifiedAt) throws SQLException {
+        saveConfiguration(profile, name, Objects.requireNonNull(verifiedAt));
+    }
+
+    private void saveConfiguration(StoredAiProviderProfile profile, String name, Instant verifiedAt) throws SQLException {
+        new StoredAiProviderConfiguration(profile, name, true, 0, Optional.ofNullable(verifiedAt));
+        try (Connection connection = connections.open()) {
+            RepositoryTransactionExecutor.execute(connection, () -> {
+                try (PreparedStatement statement = connection.prepareStatement("""
+                        INSERT INTO ai_provider_profile (profile_id, endpoint, model, credential_key, credential_mode)
+                        VALUES (?, ?, ?, ?, ?) ON CONFLICT(profile_id) DO UPDATE SET endpoint=excluded.endpoint,
+                        model=excluded.model, credential_key=excluded.credential_key, credential_mode=excluded.credential_mode
+                        """)) {
+                    statement.setString(1, profile.id()); statement.setString(2, profile.endpoint()); statement.setString(3, profile.model());
+                    statement.setString(4, profile.credentialKey()); statement.setString(5, profile.credentialMode()); statement.executeUpdate();
+                }
+                try (PreparedStatement statement = connection.prepareStatement("""
+                        INSERT INTO ai_provider_control(profile_id,display_name,enabled,priority,verified_at)
+                        VALUES (?,?,1,(SELECT COALESCE(MAX(priority),-1)+1 FROM ai_provider_control),?)
+                        ON CONFLICT(profile_id) DO UPDATE SET display_name=excluded.display_name, verified_at=excluded.verified_at
+                        """)) {
+                    statement.setString(1, profile.id()); statement.setString(2, name.trim());
+                    statement.setString(3, verifiedAt == null ? null : verifiedAt.toString()); statement.executeUpdate();
+                }
+            });
+        }
+    }
+
+    /** Reads one consistent ordered snapshot of profiles and their controls. / 读取配置及其控制状态的一致有序快照。 */
+    public List<StoredAiProviderConfiguration> listConfigured() throws SQLException {
+        try (Connection connection = connections.open(); PreparedStatement statement = connection.prepareStatement("""
+                SELECT p.*, c.display_name, c.enabled, c.priority, c.verified_at FROM ai_provider_profile p
+                JOIN ai_provider_control c ON c.profile_id=p.profile_id ORDER BY c.priority,p.profile_id
+                """); ResultSet result = statement.executeQuery()) {
+            List<StoredAiProviderConfiguration> values = new ArrayList<>();
+            while (result.next()) values.add(new StoredAiProviderConfiguration(provider(result), result.getString("display_name"),
+                    result.getBoolean("enabled"), result.getInt("priority"), Optional.ofNullable(result.getString("verified_at")).map(Instant::parse)));
+            return List.copyOf(values);
+        }
+    }
+
+    /** Changes enablement without changing the saved position. / 改变启用状态，不改变已保存位置。 */
+    public void setEnabled(String id, boolean enabled) throws SQLException {
+        try (Connection connection = connections.open(); PreparedStatement statement = connection.prepareStatement("UPDATE ai_provider_control SET enabled=? WHERE profile_id=?")) {
+            statement.setBoolean(1, enabled); statement.setString(2, id);
+            if (statement.executeUpdate() != 1) throw new SQLException("AI provider no longer exists");
+        }
+    }
+
+    /** Saves a complete permutation atomically; stale or duplicate lists leave ordering unchanged. / 原子保存完整排列，过期或重复列表不改变顺序。 */
+    public void reorder(List<String> ids) throws SQLException {
+        List<String> order = List.copyOf(ids);
+        try (Connection connection = connections.open()) {
+            RepositoryTransactionExecutor.execute(connection, () -> {
+                java.util.Set<String> saved = new java.util.HashSet<>();
+                try (var statement = connection.prepareStatement("SELECT profile_id FROM ai_provider_control"); var rows = statement.executeQuery()) {
+                    while (rows.next()) saved.add(rows.getString(1));
+                }
+                if (order.size() != saved.size() || !saved.equals(new java.util.HashSet<>(order))) throw new SQLException("AI order must contain every saved provider exactly once");
+                try (var statement = connection.prepareStatement("UPDATE ai_provider_control SET priority=? WHERE profile_id=?")) {
+                    for (int index = 0; index < order.size(); index++) {
+                        statement.setInt(1, index); statement.setString(2, order.get(index)); statement.addBatch();
+                    }
+                    statement.executeBatch();
+                }
+            });
         }
     }
 

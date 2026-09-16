@@ -492,7 +492,7 @@ class PackageStructureArchitectureTest {
         register(packages, "gold.debug.windowstolinux.shared.ai.collaboration.advice",
                 "AiAdviceDecision", "RoleAdviceAssessment");
         register(packages, "gold.debug.windowstolinux.shared.ai.collaboration.invocation",
-                "AiInvocationEvidence", "AiInvocationStatus", "AiRoleInvocationResult");
+                "AiInvocationEvidence", "AiInvocationStatus", "AiRoleInvocationResult", "AiProviderAttempt");
         register(packages, "gold.debug.windowstolinux.shared.ai.collaboration.role",
                 "AiCollaborationRoleKind", "AiRoleBinding", "AiRoleContext", "ProjectAnalysisRoleContext",
                 "DeploymentRiskRoleContext", "ErrorExplanationRoleContext");
@@ -549,7 +549,7 @@ class PackageStructureArchitectureTest {
         Map<String, String> packages = new LinkedHashMap<>();
         register(packages, "gold.debug.windowstolinux.shared.ai.collaboration",
                 "AiAdviceDecision", "RoleAdviceAssessment", "AiInvocationEvidence", "AiInvocationStatus",
-                "AiRoleInvocationResult", "AiCollaborationRoleKind", "AiRoleBinding", "AiRoleContext",
+                "AiRoleInvocationResult", "AiProviderAttempt", "AiCollaborationRoleKind", "AiRoleBinding", "AiRoleContext",
                 "ProjectAnalysisRoleContext", "DeploymentRiskRoleContext", "ErrorExplanationRoleContext");
         register(packages, "gold.debug.windowstolinux.app.ui.deployment",
                 "DeploymentAnalysisPresenter", "DeploymentForm", "DeploymentPage", "DeploymentPageState",
@@ -1057,6 +1057,7 @@ class PackageStructureArchitectureTest {
     void linuxAndUiHonorTheNarrowExecutionAndServiceBoundaries() throws Exception {
         var allowedUiServiceTypes = Set.of(
                 "gold.debug.windowstolinux.app.service.ai.AiProviderProfile",
+                "gold.debug.windowstolinux.app.service.ai.AiProviderSummary",
                 "gold.debug.windowstolinux.app.service.ai.AiRoleAssignment",
                 "gold.debug.windowstolinux.app.service.backup.BackupArchiveInspection",
                 "gold.debug.windowstolinux.app.service.backup.CreatedBackupArchive",

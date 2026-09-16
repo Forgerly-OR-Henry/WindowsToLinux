@@ -14,7 +14,10 @@ import java.util.Objects;
  * @param content the {@code content} value / {@code content} 值
  * @param diagnostic the {@code diagnostic} value / {@code diagnostic} 值
  */
-public record AiAnalysisOutcome(boolean available, LocalizedMessage status, String content, String diagnostic) {
+public record AiAnalysisOutcome(boolean available, LocalizedMessage status, String content, String diagnostic,
+                                java.util.List<gold.debug.windowstolinux.shared.ai.collaboration.invocation.AiProviderAttempt> attempts) {
+    /** Preserves results created before ordered invocation. / 保留有序调用引入前的结果构造。 */
+    public AiAnalysisOutcome(boolean available, LocalizedMessage status, String content, String diagnostic) { this(available, status, content, diagnostic, java.util.List.of()); }
     /**
      * Creates a {@code AiAnalysisOutcome} instance.
      *
@@ -30,6 +33,7 @@ public record AiAnalysisOutcome(boolean available, LocalizedMessage status, Stri
         status = Objects.requireNonNull(status, "status");
         content = Objects.requireNonNull(content, "content");
         diagnostic = Objects.requireNonNull(diagnostic, "diagnostic");
+        attempts = java.util.List.copyOf(attempts);
     }
 
     /**

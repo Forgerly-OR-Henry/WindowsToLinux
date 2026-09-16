@@ -19,7 +19,7 @@ public final class DesktopSchemaMigrator {
      *
      * <p>公开 {@code CURRENT_SCHEMA_VERSION} 常量。
      */
-    public static final int CURRENT_SCHEMA_VERSION = 14;
+    public static final int CURRENT_SCHEMA_VERSION = 15;
 
     private DesktopSchemaMigrator() {
     }
@@ -311,6 +311,7 @@ public final class DesktopSchemaMigrator {
                               category TEXT NOT NULL CHECK(category IN ('WEBSITE','APP')), access_url TEXT)
                             """);
                 }
+                if (version < 15) AiPrioritySchemaMigration.apply(statement);
                 statement.execute("PRAGMA user_version = " + CURRENT_SCHEMA_VERSION);
                 connection.commit();
             } catch (SQLException exception) {
