@@ -34,6 +34,15 @@ public final class ServerUseCaseFacade {
     public java.util.List<ServerProfile> list() throws SQLException {
         return profiles.listServerProfiles().stream().map(ServerProfile::fromStored).toList();
     }
+    /** Lists server cards using saved check evidence. / 使用已保存的检查证据列出服务器卡片。 */
+    public java.util.List<ServerSummary> summaries() throws SQLException {
+        java.util.List<ServerSummary> result = new java.util.ArrayList<>();
+        for (ServerProfile profile : list()) {
+            var observation = profiles.observation(profile.id());
+            result.add(new ServerSummary(profile, observation.checkedAt(), observation.connected(), observation.operatingSystem()));
+        }
+        return java.util.List.copyOf(result);
+    }
     private final ServerProfileRepository profiles;
     private final DesktopSecretStoreService secrets;
     private final DeploymentLinuxGateway gateway;
@@ -70,7 +79,11 @@ public final class ServerUseCaseFacade {
         Objects.requireNonNull(profile, "profile");
         Objects.requireNonNull(store, "store");
         try {
-            store.save(profile.credentialKey(), password);
+            if (password.length == 0) {
+                var existing = profiles.findServerProfile(profile.id()).orElseThrow(() -> new IllegalArgumentException("server password is required"));
+                if (!existing.credentialKey().equals(profile.credentialKey()) || !existing.credentialMode().equals(profile.credentialMode().name()))
+                    throw new IllegalArgumentException("changing credential storage requires a password");
+            } else store.save(profile.credentialKey(), password);
             profiles.saveServerProfile(profile.stored());
         } finally {
             clear(password);
@@ -221,8 +234,14 @@ public final class ServerUseCaseFacade {
             try (SecretStore store = secrets.open(mode, masterPassword);
                  DeploymentRemoteSession session = gateway.connect(profile.endpoint(), secrets.loadPassword(profile, store),
                      hostKeyVerifier(profile, confirmation))) {
-                return session.collectCapabilities();
+                ServerCapabilityFacts facts = session.collectCapabilities();
+                profiles.recordObservation(profile.stored(), true, facts.operatingSystem() + " / " + facts.architecture());
+                return facts;
             }
+        } catch (SecretStoreException | LinuxOperationException failure) {
+            try { profiles.recordObservation(profile.stored(), false, ""); }
+            catch (SQLException recording) { failure.addSuppressed(recording); }
+            throw failure;
         } finally {
             clear(masterPassword);
         }

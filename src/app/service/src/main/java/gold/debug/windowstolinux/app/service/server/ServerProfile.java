@@ -24,7 +24,8 @@ public record ServerProfile(
         int sshPort,
         String username,
         String credentialKey,
-        CredentialStorageMode credentialMode
+        CredentialStorageMode credentialMode,
+        String displayName
 ) {
     /**
      * Creates a {@code ServerProfile} instance.
@@ -39,7 +40,14 @@ public record ServerProfile(
      * @param credentialMode the {@code credentialMode} value / {@code credentialMode} 值
      * @throws NullPointerException if a required argument is {@code null} / 必要参数为 {@code null} 时
      */
+    /** Preserves profiles created before display names were added. / 保留显示名称引入前创建的资料。 */
+    public ServerProfile(String id, String host, int sshPort, String username, String credentialKey, CredentialStorageMode credentialMode) {
+        this(id, host, sshPort, username, credentialKey, credentialMode, id);
+    }
+
     public ServerProfile {
+        displayName = Objects.requireNonNull(displayName, "displayName").trim();
+        if (displayName.isEmpty() || displayName.length() > 120) throw new IllegalArgumentException("invalid server display name");
         Objects.requireNonNull(credentialKey, "credentialKey");
         Objects.requireNonNull(credentialMode, "credentialMode");
         new SshEndpoint(id, host, sshPort, username);
@@ -64,7 +72,7 @@ public record ServerProfile(
      * @return the operation result / 操作结果
      */
     public StoredServerProfile stored() {
-        return new StoredServerProfile(id, host, sshPort, username, credentialKey, credentialMode.name());
+        return new StoredServerProfile(id, host, sshPort, username, credentialKey, credentialMode.name(), displayName);
     }
 
     /**
@@ -78,7 +86,7 @@ public record ServerProfile(
     public static ServerProfile fromStored(StoredServerProfile profile) {
         return new ServerProfile(
                 profile.id(), profile.host(), profile.sshPort(), profile.username(), profile.credentialKey(),
-                CredentialStorageMode.valueOf(profile.credentialMode())
+                CredentialStorageMode.valueOf(profile.credentialMode()), profile.displayName()
         );
     }
 }

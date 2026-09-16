@@ -24,6 +24,7 @@ src/  # 项目源码与模块根目录
 │  │  │  ├─ StoredAiProviderProfile.java  # 命名的非秘密 AI 提供者元数据；仅持久化其不透明的凭据存储键
 │  │  │  ├─ StoredAiRoleAssignment.java  # 从一个固定协作角色到一个命名提供者的非秘密分配
 │  │  │  ├─ StoredApplicationSecretRevision.java  # 用于定位普通配置和发布目录之外秘密的不可变元数据
+│  │  │  ├─ StoredServerObservation.java  # 带时间的服务器连接检查证据
 │  │  │  ├─ StoredServerProfile.java  # 非秘密桌面连接元数据；密码或密钥保留在 app/secret 中
 │  │  │  └─ SuccessfulManagedDeployment.java  # 经验证部署事务后持久化的一个组件状态
 │  │  ├─ execution/  # 数据库执行流程功能组
@@ -167,11 +168,13 @@ src/  # 项目源码与模块根目录
 │  │  ├─ server/  # 服务器资料、信任与能力用例包
 │  │  │  ├─ DesktopSecretStoreService.java  # 按平台能力选择 Windows 凭据或数据库秘密存储
 │  │  │  ├─ ServerProfile.java  # 已保存的非秘密桌面连接资料
+│  │  │  ├─ ServerSummary.java  # 服务器卡片与名称地址查询摘要
 │  │  │  └─ ServerUseCaseFacade.java  # 编排服务器资料、主机信任、连接验证与能力探测
 │  │  └─ source/  # 本地与 Git 源码准备用例包
 │  │     ├─ PreparedComponentSource.java  # 一个混合项目组件的经审阅不可变源码输入
 │  │     ├─ PreparedMultiComponentSource.java  # 整个混合应用的静态评估及独立不可变归档
 │  │     ├─ ReviewedSourcePreparation.java  # 在计划经审阅部署前展示的类型化源码分析和安全归档结果
+│  │     ├─ SourceSelectionService.java  # 既有 Git 地址及本地目录边界内的源码输入识别
 │  │     └─ SourcePreparationUseCase.java  # 将本地目录或固定 Git 来源统一准备为经审阅源码
 │  ├─ ui/  # Swing 桌面界面模块
 │  │  ├─ ai/  # AI 配置与解释结果页面包
@@ -201,6 +204,7 @@ src/  # 项目源码与模块根目录
 │  │  │     ├─ DeploymentAnalysisPresenter.java  # 格式化本地化语言、证据、冲突、缺失输入和拒绝摘要
 │  │  │     ├─ DeploymentForm.java  # 持有部署控件、非秘密表单状态与领域输入映射
 │  │  │     ├─ DeploymentInputDialog.java  # 保留缺项表单并展开脱敏 AI 问答和风险确认
+│  │  │     ├─ DeploymentSourceCard.java  # 支持拖入与粘贴及后台识别的源码卡片
 │  │  │     ├─ DeploymentPage.java  # 持有源码选择、审阅状态、部署表单与完整经审阅部署流程
 │  │  │     └─ DeploymentPageState.java  # 保存单组件部署页尚未提交的运行、健康、配置和源码审阅状态
 │  │  ├─ diagnostic/  # 结构化失败安全展示包
@@ -221,9 +225,12 @@ src/  # 项目源码与模块根目录
 │  │  │  └─ ManagedPageState.java  # 保存受管应用页当前选择的应用标识与输出内容
 │  │  ├─ server/  # 服务器配置与能力验证页面包
 │  │  │  ├─ ServerContext.java  # 部署与生命周期页面使用的窄服务器上下文
+│  │  │  ├─ ServerInventoryPane.java  # 名称与地址搜索及服务器纵向卡片列表
 │  │  │  ├─ ServerPage.java  # 持有服务器表单、内存凭据状态与服务器流程
 │  │  │  ├─ ServerPageState.java  # 保存桌面外观重建期间尚未提交的服务器表单状态
-│  │  │  └─ ServerSelectionPane.java  # 查询已保存服务器并支持就地添加
+│  │  │  ├─ ServerProfileDialog.java  # 独立服务器添加编辑及保存检查窗口
+│  │  │  ├─ ServerTrustPrompt.java  # 后台连接期间的事件线程主机指纹确认
+│  │  │  └─ ServerSelectionPane.java  # 目标摘要卡片与独立可搜索选择窗口
 │  │  ├─ setting/  # 桌面设置页面与状态包
 │  │  │  ├─ SettingPage.java  # 持有外观控件与即时应用流程
 │  │  │  └─ SettingPageState.java  # 设置立即生效，因此没有需要保留的未保存页面局部值

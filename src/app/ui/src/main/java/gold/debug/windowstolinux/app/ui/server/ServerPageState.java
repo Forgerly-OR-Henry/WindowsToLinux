@@ -19,6 +19,7 @@ public final class ServerPageState implements AutoCloseable {
     private final CredentialStorageMode credentialMode;
     private final char[] masterPassword;
     private final String output;
+    private final String displayName, search, credentialKey;
 
     /**
      * Creates a {@code ServerPageState} instance.
@@ -37,6 +38,20 @@ public final class ServerPageState implements AutoCloseable {
      */
     public ServerPageState(String id, String host, String port, String username, char[] password,
                            CredentialStorageMode credentialMode, char[] masterPassword, String output) {
+        this(id, host, port, username, password, credentialMode, masterPassword, output, id, "");
+    }
+
+    /** Captures selected display name and search query. / 捕获所选显示名称及搜索条件。 */
+    public ServerPageState(String id, String host, String port, String username, char[] password,
+                           CredentialStorageMode credentialMode, char[] masterPassword, String output, String displayName, String search) {
+        this(id, host, port, username, password, credentialMode, masterPassword, output, displayName, search, "ssh/" + id + "/password");
+    }
+
+    /** Preserves the exact credential reference across appearance changes. / 在外观变化时保留精确凭据引用。 */
+    public ServerPageState(String id, String host, String port, String username, char[] password,
+                           CredentialStorageMode credentialMode, char[] masterPassword, String output, String displayName, String search, String credentialKey) {
+        this.credentialKey = Objects.requireNonNull(credentialKey, "credentialKey");
+        this.displayName = displayName; this.search = search;
         this.id = Objects.requireNonNull(id, "id");
         this.host = Objects.requireNonNull(host, "host");
         this.port = Objects.requireNonNull(port, "port");
@@ -111,6 +126,13 @@ public final class ServerPageState implements AutoCloseable {
      * @return the operation result / 操作结果
      */
     public String output() { return output; }
+
+    /** Returns the selected display name. / 返回所选显示名称。 */
+    public String displayName() { return displayName; }
+    /** Returns the inventory query. / 返回列表查询。 */
+    public String search() { return search; }
+    /** Returns the saved credential reference, never the secret. / 返回已保存的凭据引用，不包含秘密。 */
+    public String credentialKey() { return credentialKey; }
 
     /** Closes this resource. / 关闭此资源。 */
     @Override public void close() {

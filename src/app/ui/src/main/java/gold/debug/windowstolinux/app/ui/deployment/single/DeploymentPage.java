@@ -51,7 +51,6 @@ public final class DeploymentPage implements ReviewContext {
     private final PageMessagePresenter messages;
     private final Consumer<String> applicationSelection;
     private final Runnable openServers;
-    private final DeploymentAnalysisPresenter presenter;
     private final DeploymentForm form;
     private final JTextArea output = DesktopComponentFactory.outputArea();
     private final JPanel panel;
@@ -66,9 +65,9 @@ public final class DeploymentPage implements ReviewContext {
     private final JScrollPane handoffScroll = new JScrollPane(handoffs,ScrollPaneConstants.VERTICAL_SCROLLBAR_NEVER,
             ScrollPaneConstants.HORIZONTAL_SCROLLBAR_AS_NEEDED);
     private ServerSelectionPane serverSelection;
+    private DeploymentSourceCard sourceCard;
     private JButton start;
     private boolean busy;
-    private JPanel sourceSelection;
     private final Map<String, DeploymentHandoff> completedHandoffs = new LinkedHashMap<>();
     private DesktopComponentFactory components;
 
@@ -82,7 +81,6 @@ public final class DeploymentPage implements ReviewContext {
         this.messages = messages;
         this.openServers = openServers;
         this.applicationSelection = applicationSelection;
-        presenter = new DeploymentAnalysisPresenter(messages);
         form = new DeploymentForm(messages, () -> reviewedPreparation = null);
         panel = createPanel(components);
     }
@@ -111,27 +109,17 @@ public final class DeploymentPage implements ReviewContext {
         JPanel source = c.card(new BorderLayout(0, 12));
         source.add(c.sectionHeading(messages.text("auto.source"), messages.text("auto.source.hint")), BorderLayout.NORTH);
         sourceMode.addItem(messages.text("auto.local")); sourceMode.addItem(messages.text("auto.git"));
-        JPanel sourceFields = c.transparent(new BorderLayout(0, 10));
-        sourceFields.add(sourceMode, BorderLayout.NORTH);
-        JPanel sourceDeck = c.transparent(new java.awt.CardLayout());
-        JPanel local = c.transparent(new BorderLayout(0, 8));
-        sourcePath.setEditable(false);
-        JButton browse = c.secondaryButton(messages.text("auto.browse"));
-        browse.addActionListener(event -> {
-            JFileChooser chooser = new JFileChooser(); chooser.setFileSelectionMode(JFileChooser.DIRECTORIES_ONLY);
-            if (chooser.showOpenDialog(owner) == JFileChooser.APPROVE_OPTION) sourcePath.setText(chooser.getSelectedFile().toString());
+        sourceCard = new DeploymentSourceCard(service, c, messages, value -> {
+            sourceMode.setSelectedIndex(value.directory().isPresent() ? 0 : 1);
+            sourcePath.setText(value.directory().map(Path::toString).orElse("")); gitAddress.setText(value.gitAddress());
         });
-        local.add(sourcePath, BorderLayout.CENTER); local.add(browse, BorderLayout.EAST);
-        sourceDeck.add(local, "local"); sourceDeck.add(gitAddress, "git");
-        sourceMode.addActionListener(event -> ((java.awt.CardLayout) sourceDeck.getLayout()).show(sourceDeck,
-                sourceMode.getSelectedIndex() == 0 ? "local" : "git"));
-        sourceFields.add(sourceDeck, BorderLayout.CENTER); source.add(sourceFields, BorderLayout.CENTER);
+        source.add(sourceCard, BorderLayout.CENTER);
         JPanel target = c.card(new BorderLayout(0, 12));
         target.add(c.sectionHeading(messages.text("auto.server"), messages.text("auto.server.hint")), BorderLayout.NORTH);
         serverSelection = new ServerSelectionPane(service, c, messages, serverContext::selectProfile);
         target.add(serverSelection, BorderLayout.CENTER);
         JPanel columns = sourceAndTarget(c, source, target);
-        selection.add(columns, BorderLayout.CENTER); sourceSelection = selection;
+        selection.add(columns, BorderLayout.CENTER);
         JPanel top = c.transparent(new BorderLayout(0, 12)); top.add(selection, BorderLayout.CENTER);
         start = c.primaryButton(messages.text("auto.start")); start.setPreferredSize(new Dimension(160, 36));
         start.addActionListener(event -> startAutomatic());
@@ -146,15 +134,9 @@ public final class DeploymentPage implements ReviewContext {
     }
 
     private JPanel sourceAndTarget(DesktopComponentFactory c, JPanel source, JPanel target) {
-        JPanel columns = c.transparent(new java.awt.GridBagLayout());
-        var constraints = new java.awt.GridBagConstraints();
-        constraints.fill = java.awt.GridBagConstraints.BOTH; constraints.weightx = 1; constraints.weighty = 1;
-        columns.add(source, constraints);
-        JLabel direction = new JLabel(messages.text("auto.direction"), SwingConstants.CENTER);
-        direction.setPreferredSize(new Dimension(28, 28));
-        constraints.weightx = 0; columns.add(direction, constraints);
-        constraints.weightx = 1; columns.add(target, constraints);
-        return columns;
+        JPanel columns = c.transparent(new java.awt.GridLayout(1, 2, 20, 0));
+        source.setPreferredSize(new Dimension(0, 180)); target.setPreferredSize(new Dimension(0, 180));
+        columns.add(source); columns.add(target); return columns;
     }
 
     private void configureAdvanced(AdvancedOptionsPane advanced, DesktopComponentFactory c) {
@@ -194,7 +176,7 @@ public final class DeploymentPage implements ReviewContext {
     public Map<String, String> captureSelection() {
         return Map.of("sourceMode", Integer.toString(sourceMode.getSelectedIndex()), "source", sourcePath.getText(),
                 "git", gitAddress.getText(), "reference", gitReference.getText(), "kind", Integer.toString(gitKind.getSelectedIndex()),
-                "detect", Boolean.toString(detectType.isSelected()), "server", serverSelection.profile() == null ? "" : serverSelection.profile().id());
+                "detect", Boolean.toString(detectType.isSelected()), "server", serverSelection.selectedId(), "sourceText", sourceCard.inputText());
     }
 
     /** Restores source selection after an appearance change. / 外观变更后恢复源码选择。 */
@@ -203,6 +185,7 @@ public final class DeploymentPage implements ReviewContext {
         sourceMode.setSelectedIndex(Integer.parseInt(state.get("sourceMode"))); sourcePath.setText(state.get("source"));
         gitAddress.setText(state.get("git")); gitReference.setText(state.get("reference"));
         gitKind.setSelectedIndex(Integer.parseInt(state.get("kind"))); detectType.setSelected(Boolean.parseBoolean(state.get("detect")));
+        sourceCard.restore(state.getOrDefault("sourceText", sourceMode.getSelectedIndex() == 0 ? sourcePath.getText() : gitAddress.getText()));
         serverSelection.select(state.get("server"));
     }
 
