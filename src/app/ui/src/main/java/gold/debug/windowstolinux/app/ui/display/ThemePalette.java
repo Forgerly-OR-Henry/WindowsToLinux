@@ -46,7 +46,7 @@ public record ThemePalette(
     public static ThemePalette light() {
         return new ThemePalette(
                 new Color(246, 248, 252), Color.WHITE, new Color(224, 229, 239),
-                new Color(20, 32, 54), new Color(214, 223, 240), new Color(49, 96, 184),
+                new Color(239, 243, 250), new Color(42, 61, 89), new Color(49, 96, 184),
                 new Color(42, 108, 224), new Color(30, 86, 186), new Color(96, 107, 126),
                 new Color(237, 242, 251), new Color(42, 61, 89), new Color(229, 239, 255),
                 new Color(232, 236, 244)

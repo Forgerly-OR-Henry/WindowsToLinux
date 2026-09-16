@@ -68,8 +68,9 @@ class BeginnerDesktopLayoutTest {
             DesktopFrame frame = new DesktopFrame(null, catalog, DesktopDisplayConfiguration.defaults(),
                     ThemePalette.light(), (source, selected) -> { }, null);
             try {
-                for (int[] size : List.of(new int[]{1180, 740}, new int[]{1060, 680})) {
-                    var root = frame.getContentPane(); root.setSize(size[0], size[1]); layout(root);
+                for (int[] size : List.of(new int[]{1180, 780}, new int[]{1060, 720})) {
+                    frame.setLocation(0, 0); frame.setSize(size[0], size[1]); frame.setVisible(true);
+                    var root = frame.getContentPane(); layout(root);
                     AdvancedOptionsPane deployment = descendants(root).filter(AdvancedOptionsPane.class::isInstance)
                             .map(AdvancedOptionsPane.class::cast).findFirst().orElseThrow();
                     assertFalse(deployment.expanded());
@@ -81,10 +82,12 @@ class BeginnerDesktopLayoutTest {
                     assertTrue(log.getHeight() >= 200, "Log must remain readable: " + log.getSize() + " parent=" + log.getParent().getSize());
                     assertTrue(deploy.getWidth() >= 120 && deploy.getHeight() >= 30);
                     render(root, "deployment-" + size[0] + ".png");
-                    deployment.setExpanded(true); layout(root);
+                    Dimension previousLogSize = log.getSize();
+                    deployment.setExpanded(true); frame.validate(); layout(root);
+                    assertEquals(previousLogSize, log.getSize(), "Opening an inspector must preserve the workspace size");
                     assertTrue(log.getWidth() >= 360, "Inspector must not overlap the log");
                     assertTrue(log.getHeight() >= 200);
-                    long help = descendants(deployment).filter(JButton.class::isInstance).map(JButton.class::cast)
+                    long help = Stream.concat(descendants(root), java.util.Arrays.stream(frame.getOwnedWindows()).flatMap(BeginnerDesktopLayoutTest::descendants)).filter(JButton.class::isInstance).map(JButton.class::cast)
                             .filter(button -> "help".equals(button.getClientProperty("JButton.buttonType")))
                             .peek(button -> {
                                 assertNotNull(button.getToolTipText());
