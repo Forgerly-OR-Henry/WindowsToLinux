@@ -1,15 +1,4 @@
-render_systemd_manager_isolation() {
-  local paths='-/run/dbus -/run/docker.sock -/run/podman -/run/user' path
-  if [ -e /sys/fs/selinux/enforce ]; then
-    # Hide manager sockets without denying systemd namespace setup access to the directory.
-    printf 'TemporaryFileSystem=/run/systemd:ro\n'
-    printf 'BindReadOnlyPaths=-/run/systemd/dynamic-uid -/run/systemd/userdb\n'
-  else
-    paths="-/run/systemd/private -/run/systemd/journal -/run/systemd/notify $paths"
-  fi
-  for path in "$@"; do paths+=" -$path"; done
-  printf 'InaccessiblePaths=%s\n' "$paths"
-}
+# @compat:systemd-isolation@
 # Persistent state is addressed by application/component, never a recycled UID.
 dynamic_state_relative() {
   printf 'windowstolinux/data/%s/%s' "$managed_data_application" "$managed_data_component"

@@ -88,6 +88,9 @@ public final class ManagedHelperBundle {
                     throw new IllegalStateException("managed-deployment privilege helper fragment is unavailable: " + fragment);
                 }
                 String content = new String(stream.readAllBytes(), StandardCharsets.UTF_8).replace("\r\n", "\n");
+                content = AppArmorNamespaceCompatibility.expand(content);
+                content = SystemdIsolationCompatibility.expand(content);
+                content = CentosStreamRepositoryCompatibility.expand(content);
                 if (fragment.startsWith("toolchain/")) {
                     if (fragment.endsWith("10-release-metadata.py")) output.write(
                             ("prepare_official_toolchains() {\n  /usr/bin/python3 -I - \"$@\" <<'WTL_OFFICIAL_TOOLCHAINS'\n"

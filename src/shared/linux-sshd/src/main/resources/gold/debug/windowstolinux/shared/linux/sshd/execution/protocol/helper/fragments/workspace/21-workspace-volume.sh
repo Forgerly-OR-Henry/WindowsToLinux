@@ -14,14 +14,7 @@ preflight_build() {
     if [ "$1" = docker ]; then
       command -v rootlesskit >/dev/null && command -v slirp4netns >/dev/null && command -v dockerd >/dev/null || reject docker-rootless-tools
     else command -v podman >/dev/null || reject podman-rootless-tools; fi
-    local profile=podman
-    local -a namespace_properties=()
-    [ "$1" != docker ] || profile=rootlesskit
-    # Probe under the engine's existing policy instead of an unrelated unshare label.
-    if [ -r /sys/kernel/security/apparmor/profiles ] \
-      && grep -q "^$profile (" /sys/kernel/security/apparmor/profiles; then
-      namespace_properties+=(--property="AppArmorProfile=$profile")
-    fi
+# @compat:apparmor@
     systemd-run --quiet --wait --pipe --collect --property=DynamicUser=yes --property=RuntimeMaxSec=10 "${namespace_properties[@]}" \
       /usr/bin/unshare --user --map-root-user /usr/bin/true || reject container-user-namespace-unavailable
   fi

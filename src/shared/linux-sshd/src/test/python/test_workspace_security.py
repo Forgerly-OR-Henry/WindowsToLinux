@@ -5,6 +5,7 @@ import json
 import os
 import pathlib
 import sys
+from compatibility_resources import read_fragment
 import subprocess
 import shutil
 import tempfile
@@ -14,7 +15,7 @@ import unittest
 from unittest import mock
 
 SOURCE = pathlib.Path(__file__).resolve().parents[2] / 'main/resources/gold/debug/windowstolinux/shared/linux/sshd'
-fragment = (SOURCE / 'execution/protocol/helper/fragments/workspace/26-build-output.sh').read_text()
+fragment = read_fragment(SOURCE / 'execution/protocol/helper/fragments/workspace/26-build-output.sh')
 MONITOR = fragment.split("<<'WTL_BUILD_OUTPUT'\n", 1)[1].split('\nWTL_BUILD_OUTPUT', 1)[0]
 
 
@@ -95,8 +96,8 @@ class SystemdManagerIsolationTest(unittest.TestCase):
         bash = os.environ.get('MANAGED_TEST_BASH') or shutil.which('bash')
         if not bash or not pathlib.Path(bash).is_file():
             self.skipTest('Bash is unavailable')
-        foundation = (SOURCE / 'execution/protocol/helper/fragments/00-protocol-foundation.sh').read_text()
-        identity = (SOURCE / 'runtime/systemd/helper/61-dynamic-identity.sh').read_text()
+        foundation = read_fragment(SOURCE / 'execution/protocol/helper/fragments/00-protocol-foundation.sh')
+        identity = read_fragment(SOURCE / 'runtime/systemd/helper/61-dynamic-identity.sh')
         for selinux, kind in [('0', 'javasource'), ('1', 'javasource'), ('1', 'node')]:
             with self.subTest(selinux=selinux, kind=kind):
                 setup = r'''
@@ -143,8 +144,8 @@ else render_deployment_unit app node 18 NPM; fi
         bash = os.environ.get('MANAGED_TEST_BASH') or shutil.which('bash')
         if not bash or not pathlib.Path(bash).is_file():
             self.skipTest('Bash is unavailable')
-        foundation = (SOURCE / 'execution/protocol/helper/fragments/00-protocol-foundation.sh').read_text()
-        identity = (SOURCE / 'runtime/systemd/helper/61-dynamic-identity.sh').read_text()
+        foundation = read_fragment(SOURCE / 'execution/protocol/helper/fragments/00-protocol-foundation.sh')
+        identity = read_fragment(SOURCE / 'runtime/systemd/helper/61-dynamic-identity.sh')
         for selinux in ['0', '1']:
             with self.subTest(selinux=selinux):
                 setup = r'''
@@ -184,7 +185,7 @@ class ContainerNamespacePreflightTest(unittest.TestCase):
         bash = shutil.which('bash') or 'E:/Program/Git/bin/bash.exe'
         if not pathlib.Path(bash).is_file():
             self.skipTest('Bash is unavailable')
-        source = (SOURCE / 'execution/protocol/helper/fragments/workspace/21-workspace-volume.sh').read_text()
+        source = read_fragment(SOURCE / 'execution/protocol/helper/fragments/workspace/21-workspace-volume.sh')
         cases = [('docker', 'rootlesskit (unconfined)', 'rootlesskit', False),
                  ('podman', 'podman (unconfined)', 'podman', False),
                  ('docker', 'podman (unconfined)', '', False),
@@ -237,7 +238,7 @@ class ContainerEngineReadinessTest(unittest.TestCase):
         bash = shutil.which('bash') or 'E:/Program/Git/bin/bash.exe'
         if not pathlib.Path(bash).is_file():
             self.skipTest('Bash is unavailable')
-        entry = (SOURCE / 'execution/protocol/helper/fragments/workspace/24-build-entry.sh').read_text()
+        entry = read_fragment(SOURCE / 'execution/protocol/helper/fragments/workspace/24-build-entry.sh')
         body = entry.split('wait_engine_ready() {', 1)[1].split('\n}\nwait_engine_ready', 1)[0]
         function = 'wait_engine_ready() {' + body.replace('/usr/bin/timeout', 'engine_probe') + '\n}\n'
         for engine in ('docker', 'podman'):
@@ -279,7 +280,7 @@ engine_probe() {
 class ContainerBootstrapPathsTest(unittest.TestCase):
     def test_only_copied_links_in_a_child_namespace_are_replaced(self):
         bash = shutil.which('bash') or 'E:/Program/Git/bin/bash.exe'
-        entry = (SOURCE / 'execution/protocol/helper/fragments/workspace/24-build-entry.sh').read_text()
+        entry = read_fragment(SOURCE / 'execution/protocol/helper/fragments/workspace/24-build-entry.sh')
         body = entry.split("--copy-up=/etc --copy-up=/run /bin/bash -ceu '\n", 1)[1].split(
             "\n      ' wtl-docker-child", 1)[0]
         for scenario in ('valid', 'parent', 'nonroot', 'host-run', 'real-directory'):
@@ -320,7 +321,7 @@ class ContainerExportNormalizationTest(unittest.TestCase):
                 'main/java/gold/debug/windowstolinux/shared/linux/sshd/build/workload/ContainerBuildRenderer.java').read_text()
         normalizer = textwrap.dedent(java.split("<<'WTL_PODMAN_EXPORT'\n", 1)[1].split(
             '\n                WTL_PODMAN_EXPORT', 1)[0])
-        fragment = (SOURCE / 'execution/protocol/helper/fragments/release/12-container-image-input.sh').read_text()
+        fragment = read_fragment(SOURCE / 'execution/protocol/helper/fragments/release/12-container-image-input.sh')
         validator = fragment.split("<<'WTL_IMAGE_INPUT'\n", 1)[1].split('\nWTL_IMAGE_INPUT', 1)[0]
         for scenario in ('valid', 'escape', 'unknown-layer', 'hardlink', 'root'):
             with self.subTest(scenario=scenario), tempfile.TemporaryDirectory() as temporary:
@@ -364,7 +365,7 @@ class ContainerMigrationTest(unittest.TestCase):
         bash = shutil.which('bash') or 'E:/Program/Git/bin/bash.exe'
         if not pathlib.Path(bash).is_file():
             self.skipTest('Bash is unavailable')
-        fragment = (SOURCE / 'execution/protocol/helper/fragments/release/52-container-recovery.sh').read_text()
+        fragment = read_fragment(SOURCE / 'execution/protocol/helper/fragments/release/52-container-recovery.sh')
         for scenario in ('rollback', 'copy-failure', 'stop-failure'):
             with self.subTest(scenario=scenario), tempfile.TemporaryDirectory() as temporary:
                 root = pathlib.Path(temporary)
@@ -419,7 +420,7 @@ class DynamicStateMappingTest(unittest.TestCase):
         bash = shutil.which('bash') or 'E:/Program/Git/bin/bash.exe'
         if not pathlib.Path(bash).is_file():
             self.skipTest('Bash is unavailable')
-        fragment = (SOURCE / 'runtime/systemd/helper/61-dynamic-identity.sh').read_text()
+        fragment = read_fragment(SOURCE / 'runtime/systemd/helper/61-dynamic-identity.sh')
         script = fragment + r"""
 set -eu
 public=/var/lib/windowstolinux/data/example/api
@@ -440,7 +441,7 @@ done
 class CandidateCleanupTest(unittest.TestCase):
     def test_image_cleanup_selects_exact_tag_and_preserves_other_tags_and_failed_records(self):
         bash = shutil.which('bash') or 'E:/Program/Git/bin/bash.exe'
-        fragment = (SOURCE / 'execution/protocol/helper/fragments/release/12-container-image-input.sh').read_text()
+        fragment = read_fragment(SOURCE / 'execution/protocol/helper/fragments/release/12-container-image-input.sh')
         for failure in ('none', 'query', 'owner', 'remove'):
             with self.subTest(failure=failure), tempfile.TemporaryDirectory() as temporary:
                 marker = pathlib.Path(temporary) / '.image-engine'
@@ -482,7 +483,7 @@ podman() {
         bash = shutil.which('bash') or 'E:/Program/Git/bin/bash.exe'
         if not pathlib.Path(bash).is_file():
             self.skipTest('Bash is unavailable')
-        fragment = (SOURCE / 'execution/protocol/helper/fragments/workspace/20-candidate-workspace.sh').read_text()
+        fragment = read_fragment(SOURCE / 'execution/protocol/helper/fragments/workspace/20-candidate-workspace.sh')
         for failed in (False, True):
             with self.subTest(freeze_failed=failed), tempfile.TemporaryDirectory() as temporary:
                 script = fragment + r"""

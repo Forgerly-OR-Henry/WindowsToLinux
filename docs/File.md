@@ -1,5 +1,9 @@
 # WindowsToLinux 项目文件结构
 
+## 平台补丁临时抽离（2026-09-16）
+
+系统补丁保持实际能力判定及原语义。AppArmorNamespaceCompatibility 暂存于 execution.protocol.helper；SystemdIsolationCompatibility、CentosStreamRepositoryCompatibility 同样暂存于 execution.protocol.helper，避免 helper 与 runtime/distro 的包依赖环。脚本资源分别保留于 helper、runtime.systemd 和 distro.dnf，ManagedHelperBundle 展开原片段的固定标记，输出字节不变。以下历史路径说明以此临时映射为准，最终归属待用户决定，见[临时记录](temporary/ubuntu-centos-patches.md)。
+
 ## CentOS 系统准备增量（2026-09-14，已接入，实机验收进行中）
 
 沿用既有 `model.server.security`、`linux.distro`、`linux-sshd.distro.dnf`、`deploy.execution.environment`、`app.service.execution.environment` 与 UI 服务器/部署职责。新增 SELinux 类型化计划、准备状态及窄操作端口；固定脚本资源镜像 `distro/dnf/selinux-preparation.sh`，不进入能力探测器或通用任意命令入口，不新增 Maven 模块或 Java 职责包。产品须先获得专门系统变更确认，再备份配置、修复标签、重启、校验原指纹重连并确认 Enforcing；普通安装批准不包含系统变更。

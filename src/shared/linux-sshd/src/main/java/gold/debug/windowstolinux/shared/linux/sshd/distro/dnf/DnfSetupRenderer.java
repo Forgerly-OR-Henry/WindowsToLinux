@@ -4,6 +4,7 @@ import gold.debug.windowstolinux.shared.linux.sshd.distro.contract.profile.Distr
 import gold.debug.windowstolinux.shared.linux.sshd.capability.ecosystem.EcosystemCapabilityScriptRenderer;
 import gold.debug.windowstolinux.shared.linux.sshd.distro.generation.script.SetupScriptRenderer;
 import gold.debug.windowstolinux.shared.linux.sshd.execution.protocol.helper.ManagedHelperBundle;
+import gold.debug.windowstolinux.shared.linux.sshd.execution.protocol.helper.CentosStreamRepositoryCompatibility;
 import gold.debug.windowstolinux.shared.linux.error.LinuxOperationException;
 import gold.debug.windowstolinux.shared.linux.error.LinuxOperationFailureType;
 import gold.debug.windowstolinux.shared.model.capability.LinuxCapabilityFacts;
@@ -67,7 +68,7 @@ public final class DnfSetupRenderer {
                 SetupScriptRenderer.quote(username));
         String install = """
                   /usr/bin/dnf %s-y install %s
-                """.formatted(withCrb ? "--enablerepo=crb " : "", packages);
+                """.formatted(CentosStreamRepositoryCompatibility.installationOptions(withCrb), packages);
         return preflight
                 + "prepare_stage=security-observation\n"
                 + SetupScriptRenderer.renderSecurityObservationFunctions()

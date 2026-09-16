@@ -132,11 +132,7 @@ def source_dependencies(layout):
         run(['/usr/bin/apt-get', '-o', 'DPkg::Lock::Timeout=120', 'install', '-y', '--no-install-recommends']
             + common_apt + apt, environment=environment)
     elif pathlib.Path('/usr/bin/dnf').is_file():
-        release = dict(line.split('=', 1) for line in pathlib.Path('/etc/os-release').read_text().splitlines()
-                       if '=' in line and not line.lstrip().startswith('#'))
-        centos = release.get('ID', '').strip().strip('\"\'') == 'centos'
-        version = release.get('VERSION_ID', '').strip().strip('\"\'')
-        repositories = ['--enablerepo=crb'] if centos and version in ('9', '10') else []
+# @compat:centos-repositories@
         run(['/usr/bin/dnf', '-y'] + repositories + ['install'] + common_dnf + dnf)
     else:
         fail('platform', 'the platform has no supported dependency installer')

@@ -1,5 +1,6 @@
 """Execute the real lifecycle fragments with an inert systemctl command boundary."""
 import pathlib
+from compatibility_resources import read_fragment
 import shutil
 import subprocess
 import tempfile
@@ -13,7 +14,7 @@ class NativeLifecycleTest(unittest.TestCase):
         bash = shutil.which('bash') or 'E:/Program/Git/bin/bash.exe'
         if not pathlib.Path(bash).is_file():
             self.skipTest('Bash is unavailable')
-        identity = (SOURCE / 'runtime/systemd/helper/61-dynamic-identity.sh').read_text()
+        identity = read_fragment(SOURCE / 'runtime/systemd/helper/61-dynamic-identity.sh')
         lifecycle = (SOURCE / ('runtime/systemd/helper/60-lifecycle.sh' if legacy else
                               'execution/protocol/helper/fragments/runtime/40-typed-runtime.sh')).read_text()
         setup = r'''

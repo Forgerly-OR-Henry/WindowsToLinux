@@ -1,5 +1,6 @@
 """Offline tests of official metadata adapters and installation boundaries; no remote support claims. / 官方元数据适配器和安装边界的离线测试，不代表远端支持验证。"""
 import sys
+from compatibility_resources import read_fragment
 sys.dont_write_bytecode = True
 import hashlib
 import base64
@@ -17,7 +18,7 @@ from unittest import mock
 SOURCE = pathlib.Path(__file__).resolve().parents[2] / 'main/resources/gold/debug/windowstolinux/shared/linux/sshd/toolchain'
 import types
 preparation = types.ModuleType('preparation')
-script = '\n'.join(path.read_text(encoding='utf-8') for path in sorted(SOURCE.glob('*.py')))
+script = '\n'.join(read_fragment(path) for path in sorted(SOURCE.glob('*.py')))
 exec(compile(script, 'official_toolchains', 'exec'), preparation.__dict__)
 DIGEST = 'a' * 64
 
