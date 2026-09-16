@@ -34,6 +34,7 @@ final class DesktopWindowController {
     private DesktopDisplayConfiguration appearance;
     private ThemeMode effectiveTheme;
     private DesktopFrame frame;
+    private int windowState = java.awt.Frame.NORMAL;
 
     DesktopWindowController(DesktopPersistence database, DesktopApplicationFacade service,
                             DesktopDisplayConfiguration appearance, FailureReportStore reports) {
@@ -64,7 +65,8 @@ final class DesktopWindowController {
         }
         ThemeMode newEffectiveTheme = SystemThemeResolver.effectiveTheme(selected.themeMode());
         DesktopViewState viewState = source.captureViewState();
-        Rectangle bounds = source.getBounds();
+        Rectangle bounds = source.workspaceWindowBounds();
+        windowState = source.getExtendedState();
         source.dispose();
         appearance = selected;
         effectiveTheme = newEffectiveTheme;
@@ -79,11 +81,20 @@ final class DesktopWindowController {
         if (bounds != null) {
             frame.setBounds(bounds);
         }
+        try {
+            frame.setNavigationCollapsed(Boolean.parseBoolean(database.preferences().find("ui.navigationCollapsed").orElse("false")));
+        } catch (SQLException failure) { throw new IllegalStateException("Navigation preference could not be read", failure); }
+        frame.onNavigationChange(collapsed -> {
+            try { database.preferences().save("ui.navigationCollapsed", Boolean.toString(collapsed)); }
+            catch (SQLException failure) { throw new IllegalStateException("Navigation preference could not be saved", failure); }
+        });
+        frame.setExtendedState(windowState);
         frame.setVisible(true);
     }
 
     private void refreshSystemThemeIfChanged() {
-        if (appearance.themeMode() != ThemeMode.SYSTEM || !checkingSystemTheme.compareAndSet(false, true)) {
+        if (gold.debug.windowstolinux.app.ui.component.DesktopTaskExecutor.hasActiveTasks()
+                || appearance.themeMode() != ThemeMode.SYSTEM || !checkingSystemTheme.compareAndSet(false, true)) {
             return;
         }
         CompletableFuture.supplyAsync(() -> SystemThemeResolver.effectiveTheme(ThemeMode.SYSTEM))
@@ -91,7 +102,8 @@ final class DesktopWindowController {
                     checkingSystemTheme.set(false);
                     if (frame != null && theme != effectiveTheme) {
                         DesktopViewState viewState = frame.captureViewState();
-                        Rectangle bounds = frame.getBounds();
+                        Rectangle bounds = frame.workspaceWindowBounds();
+                        windowState = frame.getExtendedState();
                         frame.dispose();
                         effectiveTheme = theme;
                         DesktopThemeService.apply(theme);

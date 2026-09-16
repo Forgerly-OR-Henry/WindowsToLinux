@@ -183,9 +183,12 @@ src/  # 项目源码与模块根目录
 │  │  │  └─ BackupSelectionPane.java  # 查询已保存应用与服务器并保留精确选择状态
 │  │  ├─ component/  # 可复用桌面组件包
 │  │  │  ├─ AdvancedOptionsPane.java  # 提供可伸缩侧栏、嵌套输入修改提示、操作冻结与问号帮助
+│  │  │  ├─ AdvancedWindowHost.java  # 保持工作区尺寸的窗口检查面板宿主
 │  │  │  ├─ DesktopComponentFactory.java  # 创建桌面页面复用的按钮、表单和布局组件
+│  │  │  ├─ DesktopIcons.java  # 随主题着色的 Lucide SVG 图标
 │  │  │  ├─ DesktopTaskExecutor.java  # 后台运行操作、回送 Swing 结果并记录活动任务以保护外观重建
 │  │  │  └─ SystemPreparationDialog.java  # 默认拒绝的系统配置与服务器重启确认框
+│  │  │  ├─ RoundedCard.java  # 共享圆角卡片绘制
 │  │  ├─ deployment/  # 部署审阅上下文与输入解析包
 │  │  │  ├─ ReviewContext.java  # 可选 AI 页面使用的窄当前审阅视图
 │  │  │  ├─ multi/  # 多组件编辑、页面与结果呈现包
@@ -231,6 +234,24 @@ src/  # 项目源码与模块根目录
 │  │  │  ├─ DesktopViewState.java  # 在为外观热更新重建外壳时聚合各页面持有的状态
 │  │  │  └─ PageNavigationController.java  # 在不向页面公开 Swing 组件的情况下导航外壳
 │  │  └─ resources/  # 桌面界面生产资源目录
+│  │     ├─ component/  # 共用组件资源
+│  │     │  └─ icons/  # Lucide 图标及上游许可
+│  │     │     ├─ archive.svg  # 导航及操作图标
+│  │     │     ├─ bot.svg  # 导航及操作图标
+│  │     │     ├─ chevron-right.svg  # 导航及操作图标
+│  │     │     ├─ folder-open.svg  # 导航及操作图标
+│  │     │     ├─ git-branch.svg  # 导航及操作图标
+│  │     │     ├─ grip-vertical.svg  # 导航及操作图标
+│  │     │     ├─ LICENSE.txt  # 上游完整许可声明
+│  │     │     ├─ panel-left-close.svg  # 导航及操作图标
+│  │     │     ├─ panel-left-open.svg  # 导航及操作图标
+│  │     │     ├─ panels-top-left.svg  # 导航及操作图标
+│  │     │     ├─ plus.svg  # 导航及操作图标
+│  │     │     ├─ refresh-cw.svg  # 导航及操作图标
+│  │     │     ├─ rocket.svg  # 导航及操作图标
+│  │     │     ├─ search.svg  # 导航及操作图标
+│  │     │     ├─ server.svg  # 导航及操作图标
+│  │     │     └─ settings.svg  # 导航及操作图标
 │  │     └─ i18n/  # 桌面本地化资源目录
 │  │        └─ messages/  # 英文与简体中文消息目录
 │  │           ├─ Messages.properties  # 提供桌面界面的英文基准消息目录

@@ -70,6 +70,17 @@ final class DesktopPageCoordinator {
 
     void currentPage(String page) { currentPage = page; }
 
+    gold.debug.windowstolinux.app.ui.component.AdvancedOptionsPane inspector(String page) {
+        JPanel panel = panels().get(page);
+        return panel instanceof gold.debug.windowstolinux.app.ui.component.AdvancedOptionsPane pane ? pane : null;
+    }
+
+    void bindInspectors(gold.debug.windowstolinux.app.ui.component.AdvancedWindowHost controller) {
+        panels().values().forEach(panel -> {
+            if (panel instanceof gold.debug.windowstolinux.app.ui.component.AdvancedOptionsPane pane) pane.bind(controller);
+        });
+    }
+
     DesktopViewState captureViewState() {
         java.util.Map<String, Boolean> expanded = new java.util.LinkedHashMap<>();
         panels().forEach((name, panel) -> {

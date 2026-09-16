@@ -55,6 +55,12 @@ public final class DesktopFrame extends JFrame {
     private final JLabel pageTitle = new JLabel();
     private final JLabel pageDescription = new JLabel();
     private String currentPage = PAGE_DEPLOYMENT;
+    private JPanel sidebar;
+    private JButton collapse;
+    private JLabel navigationLabel;
+    private boolean navigationCollapsed;
+    private java.util.function.Consumer<Boolean> navigationChange = value -> { };
+    private gold.debug.windowstolinux.app.ui.component.AdvancedWindowHost advancedWindows;
 
     /**
      * Creates a {@code DesktopFrame} instance.
@@ -114,6 +120,8 @@ public final class DesktopFrame extends JFrame {
         root.add(navigationSidebar(), BorderLayout.WEST);
         root.add(pageDeck(), BorderLayout.CENTER);
         setContentPane(root);
+        advancedWindows = new gold.debug.windowstolinux.app.ui.component.AdvancedWindowHost(this, root);
+        pageCoordinator.bindInspectors(advancedWindows);
         if (viewState == null) {
             showPage(PAGE_DEPLOYMENT, "nav.deployment", "page.deployment.description");
         } else {
@@ -155,38 +163,61 @@ public final class DesktopFrame extends JFrame {
     }
 
     private JComponent navigationSidebar() {
-        JPanel sidebar = new JPanel();
+        sidebar = new JPanel();
         sidebar.setBackground(palette.sidebarBackground());
-        sidebar.setBorder(BorderFactory.createEmptyBorder(20, 14, 18, 14));
+        sidebar.setBorder(BorderFactory.createEmptyBorder(14, 8, 12, 8));
         sidebar.setLayout(new BoxLayout(sidebar, BoxLayout.Y_AXIS));
         sidebar.setPreferredSize(new Dimension(168, 0));
-
-        JLabel navigationLabel = new JLabel(t("nav.workspace"));
-        navigationLabel.setForeground(palette.sidebarForeground());
-        navigationLabel.setFont(navigationLabel.getFont().deriveFont(Font.BOLD, 12f));
-        navigationLabel.setBorder(BorderFactory.createEmptyBorder(0, 10, 8, 0));
+        collapse = new JButton();
+        collapse.setAlignmentX(Component.LEFT_ALIGNMENT);
+        collapse.setMaximumSize(new Dimension(Integer.MAX_VALUE, 36));
+        collapse.putClientProperty(FlatClientProperties.BUTTON_TYPE, FlatClientProperties.BUTTON_TYPE_TOOLBAR_BUTTON);
+        collapse.addActionListener(event -> { setNavigationCollapsed(!navigationCollapsed); navigationChange.accept(navigationCollapsed); });
+        sidebar.add(collapse);
+        navigationLabel = new JLabel(t("nav.workspace"));
+        navigationLabel.setForeground(palette.subduedText());
+        navigationLabel.setBorder(BorderFactory.createEmptyBorder(12, 12, 8, 0));
         navigationLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
         sidebar.add(navigationLabel);
-        sidebar.add(navigationButton(PAGE_DEPLOYMENT, "nav.deployment", "page.deployment.description"));
-        sidebar.add(Box.createVerticalStrut(6));
-        sidebar.add(navigationButton(PAGE_APPLICATIONS, "nav.applications", "page.applications.description"));
-        sidebar.add(Box.createVerticalStrut(6));
-        sidebar.add(navigationButton(PAGE_BACKUP, "nav.backup", "page.backup.description"));
-        sidebar.add(Box.createVerticalStrut(6));
-        sidebar.add(navigationButton(PAGE_SERVERS, "nav.servers", "page.servers.description"));
-        sidebar.add(Box.createVerticalStrut(6));
-        sidebar.add(navigationButton(PAGE_AI, "nav.ai", "page.ai.description"));
-        sidebar.add(Box.createVerticalStrut(6));
-        sidebar.add(navigationButton(PAGE_SETTINGS, "nav.settings", "page.settings.description"));
+        for (String page : java.util.List.of(PAGE_DEPLOYMENT, PAGE_SERVERS, PAGE_APPLICATIONS, PAGE_BACKUP, PAGE_AI)) {
+            sidebar.add(navigationButton(page, "nav." + page, "page." + page + ".description"));
+            sidebar.add(Box.createVerticalStrut(6));
+        }
         sidebar.add(Box.createVerticalGlue());
-
-        JLabel scope = new JLabel(t("sidebar.scope"));
-        scope.setForeground(palette.sidebarForeground());
-        scope.setFont(scope.getFont().deriveFont(12f));
-        scope.setBorder(BorderFactory.createEmptyBorder(12, 10, 4, 6));
-        scope.setAlignmentX(Component.LEFT_ALIGNMENT);
-        sidebar.add(scope);
+        sidebar.add(navigationButton(PAGE_SETTINGS, "nav.settings", "page.settings.description"));
+        setNavigationCollapsed(false);
         return sidebar;
+    }
+
+    /** Applies the navigation layout without rebuilding active pages. / 调整导航布局且不重建活动页面。 */
+    public void setNavigationCollapsed(boolean value) {
+        navigationCollapsed = value;
+        sidebar.setPreferredSize(new Dimension(value ? 64 : 168, 0));
+        navigationLabel.setVisible(!value);
+        navigationButtons.forEach((key, button) -> {
+            button.setText(value ? "" : t("nav." + key));
+            button.setHorizontalAlignment(value ? JButton.CENTER : JButton.LEFT);
+            button.setIconTextGap(10);
+        });
+        String label = t(value ? "nav.expand" : "nav.collapse");
+        collapse.setText(value ? "" : label);
+        collapse.setToolTipText(label);
+        collapse.getAccessibleContext().setAccessibleName(label);
+        collapse.setIcon(gold.debug.windowstolinux.app.ui.component.DesktopIcons.icon(
+                value ? "panel-left-open" : "panel-left-close", 20, collapse::getForeground));
+        sidebar.revalidate(); sidebar.repaint();
+    }
+
+    /** Reports the current navigation preference. / 返回当前导航偏好。 */
+    public boolean navigationCollapsed() { return navigationCollapsed; }
+    /** Installs preference persistence owned by startup. / 注入由启动层负责的偏好保存。 */
+    public void onNavigationChange(java.util.function.Consumer<Boolean> listener) { navigationChange = listener; }
+    /** Captures the primary window bounds for appearance changes. / 捕获外观变更所需主窗口尺寸。 */
+    public java.awt.Rectangle workspaceWindowBounds() { return advancedWindows.workspaceBounds(); }
+
+    @Override public void setVisible(boolean value) {
+        super.setVisible(value);
+        if (value && advancedWindows != null) advancedWindows.activate(pageCoordinator.inspector(currentPage));
     }
 
     private JButton navigationButton(String page, String labelKey, String descriptionKey) {
@@ -196,7 +227,17 @@ public final class DesktopFrame extends JFrame {
         button.setMaximumSize(new Dimension(Integer.MAX_VALUE, 42));
         button.setPreferredSize(new Dimension(140, 42));
         button.setBorder(BorderFactory.createEmptyBorder(0, 12, 0, 12));
-        button.setFocusPainted(false);
+        button.setToolTipText(t(labelKey));
+        button.getAccessibleContext().setAccessibleName(t(labelKey));
+        String icon = switch (page) {
+            case PAGE_DEPLOYMENT -> "rocket";
+            case PAGE_SERVERS -> "server";
+            case PAGE_APPLICATIONS -> "panels-top-left";
+            case PAGE_BACKUP -> "archive";
+            case PAGE_AI -> "bot";
+            default -> "settings";
+        };
+        button.setIcon(gold.debug.windowstolinux.app.ui.component.DesktopIcons.icon(icon, 20, button::getForeground));
         button.setForeground(palette.sidebarForeground());
         button.setBackground(palette.sidebarBackground());
         button.setContentAreaFilled(false);
@@ -227,6 +268,7 @@ public final class DesktopFrame extends JFrame {
         pageLayout.show(pages, page);
         currentPage = page;
         pageCoordinator.currentPage(page);
+        if (advancedWindows != null && isVisible()) advancedWindows.activate(pageCoordinator.inspector(page));
         pageTitle.setText(t(titleKey));
         pageDescription.setText(t(descriptionKey));
         navigationButtons.forEach((key, button) -> {

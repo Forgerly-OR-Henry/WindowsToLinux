@@ -18,6 +18,8 @@ public final class AdvancedOptionsPane extends JPanel {
     private final JPanel fields = new JPanel();
     private final JScrollPane drawer;
     private final JButton toggle;
+    private boolean expanded;
+    private AdvancedWindowHost windowController;
     private final JLabel modified = new JLabel();
     private final PageMessagePresenter messages;
     private final List<BooleanSupplier> changes = new ArrayList<>();
@@ -25,14 +27,14 @@ public final class AdvancedOptionsPane extends JPanel {
 
     /** Wraps a primary page without hiding its operation log behind an overlay. / 包装主页面，不使用覆盖层遮挡其操作日志。 */
     public AdvancedOptionsPane(JComponent primary, DesktopComponentFactory components, PageMessagePresenter messages) {
-        super(new BorderLayout(12, 8));
+        super(new BorderLayout(0, 8));
         this.messages = messages;
         setOpaque(false);
         fields.setOpaque(false);
         fields.setLayout(new BoxLayout(fields, BoxLayout.Y_AXIS));
         fields.setBorder(BorderFactory.createEmptyBorder(12, 12, 12, 12));
         drawer = new JScrollPane(fields);
-        drawer.setPreferredSize(new Dimension(310, 0));
+        drawer.setPreferredSize(new Dimension(AdvancedWindowHost.WIDTH, 0));
         drawer.setMinimumSize(new Dimension(240, 0));
         drawer.setHorizontalScrollBarPolicy(ScrollPaneConstants.HORIZONTAL_SCROLLBAR_NEVER);
         drawer.getVerticalScrollBar().setUnitIncrement(18);
@@ -45,7 +47,6 @@ public final class AdvancedOptionsPane extends JPanel {
         toolbar.add(help(messages.text("advanced.help")));
         add(toolbar, BorderLayout.NORTH);
         add(primary, BorderLayout.CENTER);
-        add(drawer, BorderLayout.EAST);
     }
 
     /** Adds one labeled input with an accessible, explanatory question-mark button. / 添加一个带标签的输入及支持无障碍访问的说明问号按钮。 */
@@ -75,12 +76,17 @@ public final class AdvancedOptionsPane extends JPanel {
     }
 
     /** Returns whether this page's inspector is expanded. / 返回当前页面检查面板是否展开。 */
-    public boolean expanded() { return drawer.isVisible(); }
+    public boolean expanded() { return expanded; }
+
+    /** Binds the inspector to its window host. / 将检查面板绑定到窗口宿主。 */
+    public void bind(AdvancedWindowHost controller) { windowController = controller; }
+    JComponent drawer() { return drawer; }
+    String inspectorTitle() { return messages.text("advanced.show"); }
 
     /** Freezes operation inputs while retaining each control's prior enabled state and readable output. / 冻结操作输入，同时保留各控件原有启用状态和可读输出。 */
     public void setBusy(boolean busy) {
         if (busy) {
-            if (disabledInputs.isEmpty()) disableInputs(this);
+            if (disabledInputs.isEmpty()) { disableInputs(this); disableInputs(drawer); }
         } else {
             disabledInputs.forEach(Component::setEnabled);
             disabledInputs.clear();
@@ -101,17 +107,17 @@ public final class AdvancedOptionsPane extends JPanel {
 
     /** Restores visibility without changing any input values. / 恢复可见性，不改变输入值。 */
     public void setExpanded(boolean value) {
-        drawer.setVisible(value);
+        expanded = value;
         toggle.setText(messages.text(value ? "advanced.hide" : "advanced.show"));
         refreshChanges();
-        revalidate();
-        repaint();
-        if (SwingUtilities.getWindowAncestor(this) instanceof JDialog dialog) {
-            dialog.pack();
-            Rectangle bounds = dialog.getGraphicsConfiguration().getBounds();
-            dialog.setSize(Math.min(dialog.getWidth(), bounds.width - 40), Math.min(dialog.getHeight(), bounds.height - 80));
-            dialog.setLocation(Math.max(bounds.x + 20, Math.min(dialog.getX(), bounds.x + bounds.width - dialog.getWidth() - 20)),
-                    Math.max(bounds.y + 20, Math.min(dialog.getY(), bounds.y + bounds.height - dialog.getHeight() - 60)));
+        if (windowController == null) {
+            Window owner = SwingUtilities.getWindowAncestor(this);
+            if (owner != null) {
+                windowController = new AdvancedWindowHost(owner, this);
+                windowController.activate(this);
+            }
+        } else {
+            windowController.update(this);
         }
     }
 

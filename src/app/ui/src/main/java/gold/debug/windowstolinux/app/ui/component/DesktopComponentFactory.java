@@ -93,11 +93,8 @@ public final class DesktopComponentFactory {
      * @return the operation result / 操作结果
      */
     public JPanel card(LayoutManager layout) {
-        JPanel card = new JPanel(layout);
-        card.setBackground(palette.cardBackground());
-        card.setBorder(BorderFactory.createCompoundBorder(
-                BorderFactory.createLineBorder(palette.cardBorder()),
-                BorderFactory.createEmptyBorder(16, 18, 16, 18)));
+        JPanel card = new RoundedCard(layout, palette.cardBackground(), palette.cardBorder());
+        card.setBorder(BorderFactory.createEmptyBorder(16, 18, 16, 18));
         return card;
     }
 
