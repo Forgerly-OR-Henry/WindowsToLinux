@@ -214,6 +214,8 @@ public final class DesktopFrame extends JFrame {
     public void onNavigationChange(java.util.function.Consumer<Boolean> listener) { navigationChange = listener; }
     /** Captures the primary window bounds for appearance changes. / 捕获外观变更所需主窗口尺寸。 */
     public java.awt.Rectangle workspaceWindowBounds() { return advancedWindows.workspaceBounds(); }
+    /** Restores normal dimensions independently of maximized state. / 独立于最大化状态恢复普通尺寸。 */
+    public void restoreWorkspaceWindowBounds(java.awt.Rectangle bounds) { advancedWindows.restoreWorkspaceBounds(bounds); }
 
     @Override public void setVisible(boolean value) {
         super.setVisible(value);

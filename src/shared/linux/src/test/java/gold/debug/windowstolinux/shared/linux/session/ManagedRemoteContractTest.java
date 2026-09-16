@@ -40,7 +40,7 @@ class ManagedRemoteContractTest {
                 "stageDeploymentInputs", "snapshotDeployment", "publishDeployment", "rollbackDeployment",
                 "checkDeploymentHealth", "observeDeployment", "executeDeploymentLifecycle",
                 "retainRecentSuccessfulReleases", "stageRestoreFiles", "discardRestoreFiles",
-                "databaseOperations", "backupArtifacts", "restoreActivation", "nativeDatabases", "selinuxPreparation"
+                "databaseOperations", "backupArtifacts", "restoreActivation", "nativeDatabases", "selinuxPreparation", "externalApplications"
         ), deploymentMethods);
         assertFalse(gold.debug.windowstolinux.shared.linux.protocol.database.RemoteDatabasePort.class.isAssignableFrom(DeploymentRemoteSession.class));
         assertFalse(gold.debug.windowstolinux.shared.linux.protocol.backup.RemoteBackupArtifactPort.class.isAssignableFrom(DeploymentRemoteSession.class));
@@ -49,6 +49,11 @@ class ManagedRemoteContractTest {
         assertFalse(deploymentMethods.contains("snapshot"));
         assertFalse(deploymentMethods.contains("publish"));
         assertFalse(deploymentMethods.contains("rollback"));
+        assertEquals(Set.of("scan", "execute"), java.util.Arrays.stream(gold.debug.windowstolinux.shared.linux.runtime.ExternalApplicationPort.class.getMethods())
+                .map(Method::getName).collect(Collectors.toSet()));
+        for (Method method : gold.debug.windowstolinux.shared.linux.runtime.ExternalApplicationPort.class.getMethods()) {
+            assertFalse(java.util.Arrays.stream(method.getParameterTypes()).anyMatch(String.class::equals), "external lifecycle must not expose raw commands or unbound target names");
+        }
         for (Method method : gold.debug.windowstolinux.shared.linux.distro.SelinuxEnvironmentPreparer.class.getMethods()) {
             assertTrue(java.util.Arrays.stream(method.getParameterTypes()).allMatch(
                     gold.debug.windowstolinux.shared.model.server.security.SelinuxPreparationPlan.class::equals),

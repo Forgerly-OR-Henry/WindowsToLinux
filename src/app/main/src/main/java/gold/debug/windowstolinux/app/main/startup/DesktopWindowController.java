@@ -79,7 +79,7 @@ final class DesktopWindowController {
         ThemePalette palette = effectiveTheme == ThemeMode.DARK ? ThemePalette.dark() : ThemePalette.light();
         frame = new DesktopFrame(service, catalog, appearance, palette, this::applyAppearance, viewState, reports);
         if (bounds != null) {
-            frame.setBounds(bounds);
+            frame.restoreWorkspaceWindowBounds(bounds);
         }
         try {
             frame.setNavigationCollapsed(Boolean.parseBoolean(database.preferences().find("ui.navigationCollapsed").orElse("false")));

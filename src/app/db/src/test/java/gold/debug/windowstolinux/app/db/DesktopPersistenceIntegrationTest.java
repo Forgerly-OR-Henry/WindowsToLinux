@@ -444,6 +444,8 @@ class DesktopPersistenceIntegrationTest {
         String preservedIdentity = "d".repeat(64);
         try (Connection connection = DriverManager.getConnection("jdbc:sqlite:" + databaseFile);
              Statement statement = connection.createStatement()) {
+            statement.execute("CREATE TABLE ai_profile (id TEXT PRIMARY KEY, endpoint TEXT NOT NULL, model TEXT NOT NULL, credential_key TEXT NOT NULL, credential_mode TEXT NOT NULL)");
+            statement.execute("CREATE TABLE ai_provider_profile (profile_id TEXT PRIMARY KEY, endpoint TEXT NOT NULL, model TEXT NOT NULL, credential_key TEXT NOT NULL, credential_mode TEXT NOT NULL)");
             statement.execute("CREATE TABLE server (id TEXT PRIMARY KEY, host TEXT NOT NULL, ssh_port INTEGER NOT NULL, host_key_sha256 TEXT NOT NULL)");
             statement.execute("CREATE TABLE managed_application (id TEXT PRIMARY KEY, server_id TEXT NOT NULL REFERENCES server(id), systemd_unit TEXT NOT NULL, release_root TEXT NOT NULL, ownership_manifest_sha256 TEXT NOT NULL)");
             statement.execute("CREATE TABLE managed_application_release (application_id TEXT PRIMARY KEY REFERENCES managed_application(id), artifact_sha256 TEXT NOT NULL, published_at INTEGER NOT NULL)");

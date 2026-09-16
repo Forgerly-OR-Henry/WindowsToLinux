@@ -15,7 +15,7 @@ import java.util.function.BooleanSupplier;
 
 /** A page-local, initially closed inspector preserving the original input controls. / 页面专属且初始折叠的检查面板，保留原有输入控件。 */
 public final class AdvancedOptionsPane extends JPanel {
-    private final JPanel fields = new JPanel();
+    private final JPanel fields = new InspectorFieldsPane();
     private final JScrollPane drawer;
     private final JButton toggle;
     private boolean expanded;
@@ -64,6 +64,7 @@ public final class AdvancedOptionsPane extends JPanel {
         row.add(input, BorderLayout.CENTER);
         row.setBorder(BorderFactory.createEmptyBorder(0, 0, 12, 0));
         row.setMaximumSize(new Dimension(Integer.MAX_VALUE, row.getPreferredSize().height));
+        row.setMinimumSize(new Dimension(0, row.getPreferredSize().height));
         fields.add(row);
         observe(input);
     }
@@ -174,5 +175,13 @@ public final class AdvancedOptionsPane extends JPanel {
     private void refreshChanges() {
         modified.setText(changes.stream().anyMatch(BooleanSupplier::getAsBoolean)
                 ? messages.text("advanced.modified") : "");
+    }
+
+    private static final class InspectorFieldsPane extends JPanel implements Scrollable {
+        @Override public Dimension getPreferredScrollableViewportSize() { return getPreferredSize(); }
+        @Override public int getScrollableUnitIncrement(Rectangle visible, int orientation, int direction) { return 18; }
+        @Override public int getScrollableBlockIncrement(Rectangle visible, int orientation, int direction) { return Math.max(18, visible.height - 18); }
+        @Override public boolean getScrollableTracksViewportWidth() { return true; }
+        @Override public boolean getScrollableTracksViewportHeight() { return false; }
     }
 }
