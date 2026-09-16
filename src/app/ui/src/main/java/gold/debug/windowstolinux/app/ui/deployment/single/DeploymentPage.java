@@ -104,6 +104,7 @@ public final class DeploymentPage implements ReviewContext {
     private JPanel createPanel(DesktopComponentFactory c) {
         components = c;
         JPanel page = c.pagePanel();
+        ((BorderLayout) page.getLayout()).setVgap(12);
         AdvancedOptionsPane advanced = new AdvancedOptionsPane(page, c, messages);
         JPanel selection = c.transparent(new BorderLayout(12, 0));
         JPanel source = c.card(new BorderLayout(0, 12));
@@ -121,7 +122,8 @@ public final class DeploymentPage implements ReviewContext {
         JPanel columns = sourceAndTarget(c, source, target);
         selection.add(columns, BorderLayout.CENTER);
         JPanel top = c.transparent(new BorderLayout(0, 12)); top.add(selection, BorderLayout.CENTER);
-        start = c.primaryButton(messages.text("auto.start")); start.setPreferredSize(new Dimension(160, 36));
+        start = c.primaryButton(messages.text("auto.start"));
+        Dimension actionSize = start.getPreferredSize(); start.setPreferredSize(new Dimension(Math.max(160, actionSize.width), Math.max(36, actionSize.height)));
         start.addActionListener(event -> startAutomatic());
         JPanel actions = c.transparent(new FlowLayout(FlowLayout.RIGHT, 0, 0)); actions.add(start);
         top.add(actions, BorderLayout.SOUTH); page.add(top, BorderLayout.NORTH);

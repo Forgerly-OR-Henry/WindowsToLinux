@@ -14,20 +14,38 @@ public final class AdvancedWindowHost implements AutoCloseable {
     private JComponent mounted;
     private boolean docked;
     private boolean closing;
+    private Rectangle normalBounds;
+    private boolean maximized;
 
     /** Creates a controller for a BorderLayout window host. / 为窗口 BorderLayout 容器创建控制器。 */
     public AdvancedWindowHost(Window owner, Container host) {
         this.owner = owner;
         this.host = host;
+        normalBounds = owner.getBounds();
+        owner.addComponentListener(new ComponentAdapter() {
+            @Override public void componentMoved(ComponentEvent event) { rememberNormalBounds(); }
+            @Override public void componentResized(ComponentEvent event) { rememberNormalBounds(); }
+        });
         owner.addWindowListener(new WindowAdapter() {
             @Override public void windowClosed(WindowEvent event) { close(); }
         });
-        if (owner instanceof JFrame frame) frame.addWindowStateListener(event -> {
-            if (docked && (frame.getExtendedState() & Frame.MAXIMIZED_BOTH) != 0) {
-                unmount();
-                update(active);
-            }
-        });
+        if (owner instanceof JFrame frame) frame.addWindowStateListener(event -> stateChanged(frame));
+    }
+
+    private void stateChanged(JFrame frame) {
+        boolean maximum = (frame.getExtendedState() & Frame.MAXIMIZED_BOTH) != 0;
+        if (maximum) {
+            maximized = true;
+            if (docked) { unmount(); update(active); }
+        } else if (maximized && (frame.getExtendedState() & Frame.ICONIFIED) == 0) {
+            Rectangle restore = new Rectangle(normalBounds);
+            unmount(); maximized = false; owner.setBounds(restore); update(active);
+        }
+    }
+
+    private void rememberNormalBounds() {
+        if (closing || maximized || owner instanceof Frame frame && frame.getExtendedState() != Frame.NORMAL) return;
+        normalBounds = owner.getBounds(); if (docked) normalBounds.width -= WIDTH;
     }
 
     /** Selects the page; each page retains its own open state. / 切换页面，保留各页面展开状态。 */
@@ -48,6 +66,7 @@ public final class AdvancedWindowHost implements AutoCloseable {
         Rectangle usable = usableBounds(owner);
         boolean maximized = owner instanceof Frame frame && (frame.getExtendedState() & Frame.MAXIMIZED_BOTH) != 0;
         if (!maximized && owner.getX() + owner.getWidth() + WIDTH <= usable.x + usable.width) {
+            normalBounds = owner.getBounds();
             host.add(mounted, BorderLayout.EAST);
             docked = true;
             owner.setSize(owner.getWidth() + WIDTH, owner.getHeight());
@@ -68,10 +87,14 @@ public final class AdvancedWindowHost implements AutoCloseable {
 
     /** Returns bounds without the inspector's extra width, for theme rebuilding. / 返回不含检查面板附加宽度的窗口尺寸。 */
     public Rectangle workspaceBounds() {
+        if (maximized || owner instanceof Frame frame && frame.getExtendedState() != Frame.NORMAL) return new Rectangle(normalBounds);
         Rectangle bounds = owner.getBounds();
         if (docked) bounds.width -= WIDTH;
         return bounds;
     }
+
+    /** Restores normal bounds before applying a saved maximized window state. / 应用已保存最大化状态前恢复普通窗口尺寸。 */
+    public void restoreWorkspaceBounds(Rectangle bounds) { normalBounds = new Rectangle(bounds); owner.setBounds(bounds); }
 
     private void unmount() {
         closing = true;

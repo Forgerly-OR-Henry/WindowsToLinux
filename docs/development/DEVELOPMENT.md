@@ -25,7 +25,7 @@
 
 WindowsToLinux 是面向个人和小型自托管场景的部署管理工具。用户选择源码或 Git 版本并提供目标 Linux 服务器后，软件负责确定性分析、连接检查、目标机环境准备、源码传输、目标机构建、受控发布、健康检查和失败恢复。部署成功的内容进入“已部署应用”，可查看远端实际状态并执行启动、停止、重启、启用自启和停用自启。
 
-产品不是通用 SSH 终端、服务器面板、任意 systemd/容器管理器或官方托管 SaaS。所有修改只能作用于具有 WindowsToLinux 受管标识且能够验证资源归属的应用。
+产品不提供通用 SSH 终端、任意命令执行或官方托管 SaaS。部署、更新、回滚、备份与开机自启仍要求 WindowsToLinux 受管契约和资源归属验证。经扫描并由用户选择接管的外部 systemd 服务或 Docker 容器只开放状态、访问入口、启动、停止、重启；每次操作复核服务器及实际运行目标身份，保留原配置。
 
 | 范围 | 当前代码与入口 | 验证边界 |
 | --- | --- | --- |
@@ -33,7 +33,7 @@ WindowsToLinux 是面向个人和小型自托管场景的部署管理工具。�
 | 源码与 AI | 本地/Git 快照、确定性分析、结构化建议及缺项表单 | 不执行用户项目代码；私有 Git 凭据和完整真实 AI 组合未接通或未验证 |
 | 部署与身份 | 目标 Linux 构建；root 管理、临时构建身份、独立运行身份；helper v7 | 代表性 Ubuntu 24 部署有既有记录；其他系统和完整攻击/故障矩阵不能外推 |
 | 工具链 | `ToolchainSupportCatalog` 修订 `2026-09-09.1`，按需求选择、准备和固定精确版本 | 允许分支不等于每个补丁、框架和环境都实测 |
-| 持久化与归档 | SQLite v12、运行时及备份激活配置 v3、manifest schema v4 | 旧版本有明确读取及缺失语义，不把当前版本倒写到历史证据 |
+| 持久化与归档 | SQLite v15、运行时及备份激活配置 v3、manifest schema v4 | v13–v15 增加服务器摘要、外部接管和 AI 优先级；旧版本有明确读取及缺失语义，不把当前版本倒写到历史证据 |
 | 备份恢复迁移 | 完整桌面用例已接入共享归档及 Linux 端口 | 实际数据库备份恢复及双服务器迁移仍为 RUNTIME-PENDING |
 | 数据库管理 | 原生 PostgreSQL/MySQL/MariaDB/Redis 需求、认证、审批与准备链路 | 管理范围不等于一致性备份范围；SQLite 完整远端备份、多数据库归档仍受限 |
 | Web | Java 目标模块仅有 POM，Vue 前端只有工程骨架 | 五期业务未实现，六期生产方向未开始 |
@@ -74,7 +74,7 @@ WindowsToLinux 是面向个人和小型自托管场景的部署管理工具。�
 | `shared/linux-sshd` | [新增：Ubuntu、SFTP、受控 helper 与 systemd 实现](PHASE-1.md#deployment) | [增强：语言构建、Docker/Podman 与发行版准备](PHASE-2.md#deployment) | [增强：原生构建 Renderer、更多发行版与运行协议](PHASE-3.md#ecosystem) | [增强：工具链、低权限构建、动态运行、DB 与备份恢复协议](PHASE-4.md#isolation) | [规划复用](PHASE-5.md#api) | 沿用 |
 | `shared/model` | [新增：项目、健康、受管身份与生命周期契约](PHASE-1.md#source) | [增强：扩展构建、运行时、语言事实与配置绑定](PHASE-2.md#analysis) | [增强：精确构建架构、分级支持、组件图和角色事实](PHASE-3.md#ecosystem) | [增强：工具链目录/绑定、运行身份、数据库与结构化失败模型](PHASE-4.md#toolchains) | [规划复用](PHASE-5.md#api) | 沿用 |
 | `shared/source` | [新增：可重复归档及路径、秘密排除边界](PHASE-1.md#source) | [增强：Git 与本地共用来源摘要和排除规则](PHASE-2.md#git) | 沿用 | [修复：秘密文件排除与有界快照输入](PHASE-4.md#security) | [规划复用](PHASE-5.md#api) | 沿用 |
-| `app/db` | [新增：服务器与受管应用持久化](PHASE-1.md#lifecycle) | [增强：配置修订、秘密绑定和发布身份](PHASE-2.md#configuration) | [增强：角色分配和成功整应用图持久化](PHASE-3.md#transaction) | [增强：SQLite v12，运行时编码 v3、资源/健康/秘密/身份持久化](PHASE-4.md#backup) | 沿用 | 沿用 |
+| `app/db` | [新增：服务器与受管应用持久化](PHASE-1.md#lifecycle) | [增强：配置修订、秘密绑定和发布身份](PHASE-2.md#configuration) | [增强：角色分配和成功整应用图持久化](PHASE-3.md#transaction) | [增强：SQLite v15，运行时编码 v3、资源/健康/秘密/身份及桌面清单持久化](PHASE-4.md#backup) | 沿用 | 沿用 |
 | `app/main` | [新增：CLASS/JAR/APP 启动装配](PHASE-1.md#desktop) | [增强：新增共享能力装配](PHASE-2.md#deployment) | [增强：生态注册与跨模块验收入口](PHASE-3.md#architecture) | [修复：跨模块装配、结构门禁与验收连接收尾](PHASE-4.md#architecture) | 沿用 | [规划：正式维护产品入口及外部执行器交接](PHASE-6.md#maintenance) |
 | `app/secret` | [新增：SSH/AI 凭据存储](PHASE-1.md#desktop) | [增强：应用秘密的标识和修订](PHASE-2.md#configuration) | 沿用 | [增强：备份加密、精确修订解析及受管凭据删除](PHASE-4.md#maintenance) | 沿用 | 沿用 |
 | `app/service` | [新增：桌面用例编排与状态登记](PHASE-1.md#deployment) | [增强：Git、配置、容器和 AI 用例接线](PHASE-2.md#deployment) | [增强：组件审阅、整应用部署及生命周期入口](PHASE-3.md#transaction) | [增强：自动编排、数据库补全、完整备份恢复与离线迁移](PHASE-4.md#automatic) | 沿用 | [规划：正式维护产品入口及外部执行器交接](PHASE-6.md#maintenance) |
@@ -100,6 +100,7 @@ WindowsToLinux 是面向个人和小型自托管场景的部署管理工具。�
 - AI 是可选分析补充，不是部署授权。未配置 AI 时，正式支持范围内的确定性流程必须可用。
 - AI 不接触 SSH、Git、数据库或 API 原始凭据，不获得任意 Shell，不得绕过类型、路径、命令、权限、影响范围和资源归属校验。
 - AI 输出必须转成结构化建议，经确定性校验和必要用户确认后才能进入计划。
+- 运行时共用启用模型顺序；角色保留独立上下文、提示和结果校验。只有连接、HTTP 或校验失败才切换模型；有效拒绝及风险判断直接返回，取消终止整条链。
 
 ### 用户项目构建边界
 
@@ -140,7 +141,7 @@ WindowsToLinux 是面向个人和小型自托管场景的部署管理工具。�
 
 ### 受管生命周期
 
-- 状态刷新、启动、停止、重启、启用自启、停用自启只作用于可验证归属的受管资源。
+- 受管生命周期继续验证原归属；外部接管仅允许绑定精确 systemd 定义摘要或 Docker 容器 ID 的状态、启动、停止、重启。身份变化要求重新扫描，外部应用不具备受管自启、更新、回滚和备份能力。
 - 启动和停止不改变自启；启用或停用自启不改变当前运行状态；重启保留自启设置。
 - 数据库中保存的是最后观测值，目标服务器实时查询结果才是当前事实。
 - 资源缺失、标识不符、外部修改、连接失败或结果无法复核时返回未知/异常，不猜测执行、不自动重建、不标记成功。

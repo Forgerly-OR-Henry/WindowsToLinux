@@ -1128,3 +1128,6 @@ src/  # 项目源码与模块根目录
 - `src/app/ui/src/main/java/gold/debug/windowstolinux/app/ui/ai/AiProviderDragTransfer.java`：AI 模型配置、顺序、调用与取消的实现或验证。
 - `src/app/ui/src/main/java/gold/debug/windowstolinux/app/ui/component/DesktopTaskHandle.java`：AI 模型配置、顺序、调用与取消的实现或验证。
 - `src/shared/ai/src/main/java/gold/debug/windowstolinux/shared/ai/collaboration/invocation/AiProviderAttempt.java`：AI 模型配置、顺序、调用与取消的实现或验证。
+- `src/app/ui/src/test/java/gold/debug/windowstolinux/app/ui/ai/AiModelInventoryTest.java`：真实模型卡片、键盘顺序、独立弹窗失败保留和取消清理。
+- `src/app/ui/src/test/java/gold/debug/windowstolinux/app/ui/component/AdvancedWindowTransitionTest.java`：实际最大化、还原和检查面板窗口清理。
+- `src/app/ui/src/test/java/gold/debug/windowstolinux/app/ui/shell/DesktopAppearanceAcceptanceTest.java`：中英文、浅深主题、三种缩放、外观重建及可重生成截图。

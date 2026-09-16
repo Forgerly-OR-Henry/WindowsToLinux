@@ -17,7 +17,7 @@ class BeginnerDesktopLayoutTest {
     @Test void allPagesKeepTheirDrawerAndInputsAcrossLanguageAndThemeRebuild() throws Exception {
         org.junit.jupiter.api.Assumptions.assumeFalse(GraphicsEnvironment.isHeadless());
         SwingUtilities.invokeAndWait(() -> {
-            FlatLightLaf.setup();
+            DesktopThemeService.install(ThemeMode.LIGHT);
             DesktopFrame frame = new DesktopFrame(null, MessageCatalog.forLanguageTag("zh-CN"), DesktopDisplayConfiguration.defaults(),
                     ThemePalette.light(), (source, selected) -> { }, null);
             DesktopFrame restored = null;
@@ -63,7 +63,7 @@ class BeginnerDesktopLayoutTest {
     @Test void keepsPrimaryActionLogAndHelpVisibleAtSupportedSizes() throws Exception {
         org.junit.jupiter.api.Assumptions.assumeFalse(GraphicsEnvironment.isHeadless());
         SwingUtilities.invokeAndWait(() -> {
-            FlatLightLaf.setup();
+            DesktopThemeService.install(ThemeMode.LIGHT);
             var catalog = MessageCatalog.forLanguageTag("zh-CN");
             DesktopFrame frame = new DesktopFrame(null, catalog, DesktopDisplayConfiguration.defaults(),
                     ThemePalette.light(), (source, selected) -> { }, null);
