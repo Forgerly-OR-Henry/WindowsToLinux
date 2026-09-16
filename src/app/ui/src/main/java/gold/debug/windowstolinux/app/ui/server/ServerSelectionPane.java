@@ -2,106 +2,75 @@ package gold.debug.windowstolinux.app.ui.server;
 
 import gold.debug.windowstolinux.app.service.contract.ServerApplicationFacade;
 import gold.debug.windowstolinux.app.service.server.ServerProfile;
-import gold.debug.windowstolinux.app.ui.component.AdvancedOptionsPane;
-import gold.debug.windowstolinux.app.ui.component.DesktopComponentFactory;
-import gold.debug.windowstolinux.app.ui.component.DesktopTaskExecutor;
+import gold.debug.windowstolinux.app.service.server.ServerSummary;
+import gold.debug.windowstolinux.app.ui.component.*;
 import gold.debug.windowstolinux.app.ui.i18n.PageMessagePresenter;
-import gold.debug.windowstolinux.shared.model.security.CredentialStorageMode;
 import javax.swing.*;
 import java.awt.*;
-import java.util.Arrays;
-import java.util.Map;
 import java.util.function.Consumer;
 
-/** Saved server selection with an in-place, secret-clearing add dialog. / 已保存服务器选择器，带可清零秘密的原位添加对话框。 */
+/** A target card opening an independent searchable server picker. / 打开独立可搜索服务器选择窗口的目标卡片。 */
 public final class ServerSelectionPane extends JPanel {
-    private final JComboBox<ServerProfile> servers = new JComboBox<>();
     private final ServerApplicationFacade service;
     private final PageMessagePresenter messages;
-    private final DesktopComponentFactory components;
+    private final DesktopComponentFactory c;
     private final Consumer<ServerProfile> selected;
+    private final JButton choose;
+    private final JLabel endpoint = new JLabel(), evidence = new JLabel();
+    private ServerProfile profile;
     private String desiredId;
     private boolean loading;
 
-    /** Creates a non-secret selector. Loading starts when it is first shown. / 创建非秘密选择器，首次展示时开始加载。 */
-    public ServerSelectionPane(ServerApplicationFacade service, DesktopComponentFactory components,
+    /** Creates a card; saved summaries load when shown. / 创建卡片，在展示时加载已保存摘要。 */
+    public ServerSelectionPane(ServerApplicationFacade service, DesktopComponentFactory c,
                                PageMessagePresenter messages, Consumer<ServerProfile> selected) {
-        super(new BorderLayout(6, 12));
-        this.service = service; this.messages = messages; this.components = components; this.selected = selected;
-        setOpaque(false);
-        servers.setRenderer(new DefaultListCellRenderer() {
-            @Override public Component getListCellRendererComponent(JList<?> list, Object value, int index,
-                                                                     boolean selection, boolean focus) {
-                return super.getListCellRendererComponent(list, value instanceof ServerProfile p
-                        ? p.id() + "  (" + p.username() + "@" + p.host() + ")" : "", index, selection, focus);
-            }
+        super(new BorderLayout(0, 8)); setOpaque(false);
+        this.service = service; this.messages = messages; this.c = c; this.selected = selected;
+        choose = c.secondaryButton(messages.text("server.choose"));
+        choose.putClientProperty("JButton.buttonType", null); choose.putClientProperty("FlatLaf.style", "arc: 16");
+        choose.setIcon(DesktopIcons.icon("server", 30, choose::getForeground));
+        choose.setPreferredSize(new Dimension(0, 72)); choose.addActionListener(event -> open());
+        JPanel details = c.transparent(new GridLayout(0, 1, 0, 6)); details.add(endpoint); details.add(evidence);
+        add(choose, BorderLayout.CENTER); add(details, BorderLayout.SOUTH);
+        addHierarchyListener(event -> {
+            if ((event.getChangeFlags() & java.awt.event.HierarchyEvent.SHOWING_CHANGED) != 0 && isShowing()) reload();
         });
-        servers.addActionListener(event -> { if (!loading && profile() != null) selected.accept(profile()); });
-        add(servers, BorderLayout.NORTH);
-        JPanel actions = components.transparent(new FlowLayout(FlowLayout.LEFT, 6, 0));
-        JButton create = components.secondaryButton(messages.text("auto.addServer"));
-        create.addActionListener(event -> addServer());
-        JButton refresh = components.secondaryButton(messages.text("auto.refreshServers"));
-        refresh.addActionListener(event -> reload());
-        actions.add(create); actions.add(refresh); add(actions, BorderLayout.CENTER);
-        addHierarchyListener(event -> { if (isShowing() && servers.getItemCount() == 0 && service != null) reload(); });
     }
 
-    /** Returns the selected saved profile or null. / 返回选中的已保存配置，无选择时返回 null。 */
-    public ServerProfile profile() { return (ServerProfile) servers.getSelectedItem(); }
+    /** Returns the saved selection or null. / 返回已保存选择，无选择返回 null。 */
+    public ServerProfile profile() { return profile; }
+    /** Captures selection even while its background refresh is pending. / 在后台刷新尚未完成时仍能捕获选择。 */
+    public String selectedId() { return desiredId != null ? desiredId : profile == null ? "" : profile.id(); }
+    /** Restores selection without overwriting unsaved server context. / 恢复选择，不覆盖未保存服务器上下文。 */
+    public void select(String serverId) { desiredId = serverId; reload(); }
 
-    /** Remembers the selection across a theme or language change. / 在主题或语言切换时记住选择。 */
-    public void select(String serverId) { desiredId = serverId; if (service != null) reload(); }
-
-    /** Refreshes the saved inventory on a background thread. / 在后台线程刷新已保存条目。 */
+    /** Refreshes the dated summary in the background. / 在后台刷新带时间的摘要。 */
     public void reload() {
         if (service == null || loading) return;
         loading = true;
-        String id = profile() == null ? "" : profile().id();
-        DesktopTaskExecutor.run(service::listServerProfiles, values -> {
-            boolean restored = desiredId != null;
-            String chosen = restored ? desiredId : id;
-            servers.removeAllItems(); values.forEach(servers::addItem);
-            if (restored || !chosen.isBlank()) servers.setSelectedIndex(-1);
-            values.stream().filter(value -> value.id().equals(chosen)).findFirst().ifPresent(servers::setSelectedItem);
-            desiredId = null; loading = false;
-            if (!restored && profile() != null) selected.accept(profile());
-        }, failure -> { loading = false; JOptionPane.showMessageDialog(this, messages.safe(failure)); });
+        DesktopTaskExecutor.run(service::listServerSummaries, values -> {
+            boolean restoring = desiredId != null;
+            String id = selectedId();
+            ServerSummary chosen = values.stream().filter(value -> value.profile().id().equals(id)).findFirst().orElse(null);
+            if (chosen == null && !restoring && id.isBlank() && !values.isEmpty()) chosen = values.getFirst();
+            profile = chosen == null ? null : chosen.profile();
+            choose.setText(profile == null ? messages.text("server.choose") : profile.displayName());
+            endpoint.setText(profile == null ? messages.text("auto.server.hint") : profile.host() + " : " + profile.sshPort());
+            evidence.setText(chosen == null ? "" : ServerInventoryPane.description(chosen, messages));
+            evidence.setToolTipText(evidence.getText()); desiredId = null; loading = false;
+            if (!restoring && profile != null) selected.accept(profile);
+        }, failure -> { loading = false; evidence.setText(messages.safe(failure)); });
     }
 
-    private void addServer() {
-        JTextField host = new JTextField(22), username = new JTextField(22), port = new JTextField("22");
-        JTextField id = new JTextField("server-" + java.util.UUID.randomUUID().toString().substring(0, 8));
-        JPasswordField password = new JPasswordField(22), master = new JPasswordField(22);
-        JComboBox<CredentialStorageMode> storage = new JComboBox<>(CredentialStorageMode.values());
-        storage.setSelectedItem(CredentialStorageMode.WINDOWS_CREDENTIAL_MANAGER);
-        master.setEnabled(false);
-        storage.addActionListener(event -> master.setEnabled(storage.getSelectedItem() == CredentialStorageMode.MASTER_PASSWORD));
-        messages.localize(storage, "credential.mode.");
-        JPanel form = components.transparent(new GridBagLayout());
-        components.addField(form, 0, 0, messages.text("field.host"), host);
-        components.addField(form, 1, 0, messages.text("field.sshUser"), username);
-        components.addField(form, 2, 0, messages.text("field.sshPassword"), password);
-        AdvancedOptionsPane pane = new AdvancedOptionsPane(form, components, messages);
-        pane.field("field.serverId", id); pane.field("field.sshPort", port);
-        pane.field("field.credentialStorage", storage); pane.field("field.masterPassword", master);
-        try {
-            if (JOptionPane.showConfirmDialog(this, pane, messages.text("auto.addServer"),
-                    JOptionPane.OK_CANCEL_OPTION, JOptionPane.PLAIN_MESSAGE) != JOptionPane.OK_OPTION) return;
-            CredentialStorageMode mode = (CredentialStorageMode) storage.getSelectedItem();
-            ServerProfile profile = new ServerProfile(id.getText().trim(), host.getText().trim(),
-                    Integer.parseInt(port.getText().trim()), username.getText().trim(),
-                    "ssh/" + id.getText().trim() + "/password", mode);
-            char[] secret = password.getPassword(), unlock = master.getPassword();
-            DesktopTaskExecutor.run(() -> {
-                try {
-                    if (service.findServerProfile(profile.id()).isPresent()) throw new IllegalArgumentException("server identifier already exists");
-                    service.saveServerProfile(profile, mode, unlock, secret); return profile;
-                } finally { Arrays.fill(secret, '\0'); Arrays.fill(unlock, '\0'); }
-            }, saved -> { selected.accept(saved); select(saved.id()); }, failure -> JOptionPane.showMessageDialog(this,
-                    messages.text("auto.invalid", Map.of("detail", messages.safe(failure)))));
-        } catch (Exception failure) {
-            JOptionPane.showMessageDialog(this, messages.text("auto.invalid", Map.of("detail", messages.safe(failure))));
-        } finally { password.setText(""); master.setText(""); }
+    private void open() {
+        if (service == null) return;
+        JDialog dialog = new JDialog(SwingUtilities.getWindowAncestor(this), messages.text("server.choose"), Dialog.ModalityType.APPLICATION_MODAL);
+        ServerInventoryPane inventory = new ServerInventoryPane(service, c, messages, true, value -> {
+            profile = value; selected.accept(value); select(value.id()); dialog.dispose();
+        });
+        inventory.setBorder(BorderFactory.createEmptyBorder(20, 20, 20, 20));
+        dialog.setContentPane(inventory); dialog.setSize(780, 560); dialog.setMinimumSize(new Dimension(620, 420));
+        dialog.setLocationRelativeTo(this); dialog.setDefaultCloseOperation(WindowConstants.DISPOSE_ON_CLOSE);
+        dialog.setVisible(true); reload();
     }
 }

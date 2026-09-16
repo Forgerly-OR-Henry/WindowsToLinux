@@ -2,6 +2,7 @@ package gold.debug.windowstolinux.app.db.persistence.repository;
 
 import gold.debug.windowstolinux.app.db.persistence.connection.DesktopConnectionFactory;
 import gold.debug.windowstolinux.app.db.entity.StoredServerProfile;
+import gold.debug.windowstolinux.app.db.entity.StoredServerObservation;
 import gold.debug.windowstolinux.shared.model.server.ServerIdentity;
 
 import java.sql.Connection;
@@ -25,11 +26,11 @@ public final class ServerProfileRepository {
         java.util.List<StoredServerProfile> profiles = new java.util.ArrayList<>();
         try (Connection connection = connections.open();
              PreparedStatement statement = connection.prepareStatement(
-                     "SELECT id, host, ssh_port, username, credential_key, credential_mode FROM server_profile ORDER BY id");
+                     "SELECT id, host, ssh_port, username, credential_key, credential_mode, display_name FROM server_profile ORDER BY id");
              ResultSet result = statement.executeQuery()) {
             while (result.next()) profiles.add(new StoredServerProfile(result.getString("id"), result.getString("host"),
                     result.getInt("ssh_port"), result.getString("username"), result.getString("credential_key"),
-                    result.getString("credential_mode")));
+                    result.getString("credential_mode"), result.getString("display_name")));
         }
         return java.util.List.copyOf(profiles);
     }
@@ -94,11 +95,15 @@ public final class ServerProfileRepository {
     public void saveServerProfile(StoredServerProfile profile) throws SQLException {
         try (Connection connection = connections.open();
              PreparedStatement statement = connection.prepareStatement("""
-                     INSERT INTO server_profile (id, host, ssh_port, username, credential_key, credential_mode)
-                     VALUES (?, ?, ?, ?, ?, ?)
+                     INSERT INTO server_profile (id, host, ssh_port, username, credential_key, credential_mode, display_name)
+                     VALUES (?, ?, ?, ?, ?, ?, ?)
                      ON CONFLICT(id) DO UPDATE SET host=excluded.host, ssh_port=excluded.ssh_port,
                          username=excluded.username, credential_key=excluded.credential_key,
-                         credential_mode=excluded.credential_mode
+                         credential_mode=excluded.credential_mode, display_name=excluded.display_name,
+                         last_checked=CASE WHEN server_profile.host=excluded.host AND server_profile.ssh_port=excluded.ssh_port
+                           AND server_profile.username=excluded.username THEN server_profile.last_checked ELSE NULL END,
+                         operating_system=CASE WHEN server_profile.host=excluded.host AND server_profile.ssh_port=excluded.ssh_port
+                           AND server_profile.username=excluded.username THEN server_profile.operating_system ELSE '' END
                      """)) {
             statement.setString(1, profile.id());
             statement.setString(2, profile.host());
@@ -106,6 +111,7 @@ public final class ServerProfileRepository {
             statement.setString(4, profile.username());
             statement.setString(5, profile.credentialKey());
             statement.setString(6, profile.credentialMode());
+            statement.setString(7, profile.displayName());
             statement.executeUpdate();
         }
     }
@@ -114,14 +120,37 @@ public final class ServerProfileRepository {
     public Optional<StoredServerProfile> findServerProfile(String serverId) throws SQLException {
         try (Connection connection = connections.open();
              PreparedStatement statement = connection.prepareStatement("""
-                     SELECT id, host, ssh_port, username, credential_key, credential_mode FROM server_profile WHERE id=?
+                     SELECT id, host, ssh_port, username, credential_key, credential_mode, display_name FROM server_profile WHERE id=?
                      """)) {
             statement.setString(1, serverId);
             try (ResultSet result = statement.executeQuery()) {
                 return result.next() ? Optional.of(new StoredServerProfile(result.getString("id"), result.getString("host"),
                         result.getInt("ssh_port"), result.getString("username"), result.getString("credential_key"),
-                        result.getString("credential_mode"))) : Optional.empty();
+                        result.getString("credential_mode"), result.getString("display_name"))) : Optional.empty();
             }
         }
     }
+    /** Reads the dated result of a connection check. / 读取带时间的连接检查结果。 */
+    public StoredServerObservation observation(String serverId) throws SQLException {
+        try (Connection connection = connections.open(); PreparedStatement statement = connection.prepareStatement(
+                "SELECT last_checked, connected, operating_system FROM server_profile WHERE id=?")) {
+            statement.setString(1, serverId);
+            try (ResultSet result = statement.executeQuery()) {
+                if (!result.next()) throw new SQLException("server profile no longer exists");
+                return new StoredServerObservation(Optional.ofNullable(result.getString(1)).map(java.time.Instant::parse),
+                        result.getBoolean(2), result.getString(3));
+            }
+        }
+    }
+
+    /** Ignores results for endpoints edited during a check. / 忽略检查期间被修改的端点结果。 */
+    public void recordObservation(StoredServerProfile profile, boolean connected, String system) throws SQLException {
+        try (Connection connection = connections.open(); PreparedStatement statement = connection.prepareStatement(
+                "UPDATE server_profile SET last_checked=?, connected=?, operating_system=? WHERE id=? AND host=? AND ssh_port=? AND username=?")) {
+            statement.setString(1, java.time.Instant.now().toString()); statement.setBoolean(2, connected);
+            statement.setString(3, system); statement.setString(4, profile.id()); statement.setString(5, profile.host());
+            statement.setInt(6, profile.sshPort()); statement.setString(7, profile.username()); statement.executeUpdate();
+        }
+    }
+
 }

@@ -125,7 +125,13 @@ public final class DesktopApplicationFacade implements AiApplicationFacade, Depl
         }
     }
     /** Lists non-secret profiles for all desktop server selectors. / 为所有桌面服务器选择器列出非秘密配置。 */
+    @Override public List<gold.debug.windowstolinux.app.service.server.ServerSummary> listServerSummaries() throws SQLException { return servers.summaries(); }
+    /** Lists saved connection profiles. / 列出已保存的连接资料。 */
     @Override public List<ServerProfile> listServerProfiles() throws SQLException { return servers.list(); }
+    /** Detects the source form through service parsing. / 通过服务解析识别源码输入。 */
+    @Override public gold.debug.windowstolinux.app.service.contract.definition.DeploymentSourceInput identifyDeploymentSource(String value) {
+        return gold.debug.windowstolinux.app.service.source.SourceSelectionService.identify(value);
+    }
     private final SourcePreparationUseCase source;
     private final ServerUseCaseFacade servers;
     private final AiUseCaseFacade ai;

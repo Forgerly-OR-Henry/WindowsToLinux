@@ -20,7 +20,8 @@ public record StoredServerProfile(
         int sshPort,
         String username,
         String credentialKey,
-        String credentialMode
+        String credentialMode,
+        String displayName
 ) {
     /**
      * Creates a {@code StoredServerProfile} instance.
@@ -35,7 +36,14 @@ public record StoredServerProfile(
      * @param credentialMode the {@code credentialMode} value / {@code credentialMode} 值
      * @throws IllegalArgumentException if an argument violates the required constraints / 参数违反必要约束时
      */
+    /** Preserves profiles created before display names were added. / 保留显示名称引入前创建的资料。 */
+    public StoredServerProfile(String id, String host, int sshPort, String username, String credentialKey, String credentialMode) {
+        this(id, host, sshPort, username, credentialKey, credentialMode, id);
+    }
+
     public StoredServerProfile {
+        displayName = Objects.requireNonNull(displayName, "displayName").trim();
+        if (displayName.isEmpty() || displayName.length() > 120) throw new IllegalArgumentException("invalid server display name");
         id = requireId(id, "id");
         host = requireText(host, "host");
         username = requireText(username, "username");

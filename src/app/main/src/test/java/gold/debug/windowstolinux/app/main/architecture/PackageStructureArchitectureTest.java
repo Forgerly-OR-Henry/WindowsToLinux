@@ -66,7 +66,7 @@ class PackageStructureArchitectureTest {
             "ReviewContext.java");
     private static final Set<String> DEPLOYMENT_SINGLE = Set.of(
             "DeploymentAnalysisPresenter.java", "DeploymentForm.java", "DeploymentPage.java",
-            "DeploymentPageState.java", "DeploymentInputDialog.java");
+            "DeploymentPageState.java", "DeploymentInputDialog.java", "DeploymentSourceCard.java");
     private static final Set<String> DEPLOYMENT_MULTI = Set.of(
             "MultiComponentDraftController.java", "MultiComponentFormState.java",
             "MultiComponentPage.java", "MultiComponentPageState.java",
@@ -510,7 +510,7 @@ class PackageStructureArchitectureTest {
                 "AutomaticDatabaseUseCase", "AutomaticDeploymentUseCase", "AutomaticInputCompletion", "AutomaticRuntimeResolver",
                 "DatabaseInstanceResolver", "DeploymentRuntimeParser", "DeploymentFormUseCase", "ComponentFormUseCase");
         register(packages, "gold.debug.windowstolinux.app.service.config", "DeploymentConfigurationParser");
-        register(packages, "gold.debug.windowstolinux.app.ui.deployment.single", "DeploymentInputDialog");
+        register(packages, "gold.debug.windowstolinux.app.ui.deployment.single", "DeploymentInputDialog", "DeploymentSourceCard");
         register(packages, "gold.debug.windowstolinux.shared.ai.collaboration.role", "DeploymentInputRoleContext");
         register(packages, "gold.debug.windowstolinux.app.service.deployment",
                 "ManagedApplicationIdentityResolver", "ReviewedDeploymentUseCase", "MultiComponentDeploymentUseCase",
@@ -1069,6 +1069,7 @@ class PackageStructureArchitectureTest {
                 "gold.debug.windowstolinux.app.service.deployment.single.DeploymentHandoff",
                 "gold.debug.windowstolinux.app.service.execution.lifecycle.ManagedApplicationSnapshot",
                 "gold.debug.windowstolinux.app.service.server.ServerProfile",
+                "gold.debug.windowstolinux.app.service.server.ServerSummary",
                 "gold.debug.windowstolinux.app.service.source.PreparedMultiComponentSource",
                 "gold.debug.windowstolinux.app.service.source.ReviewedSourcePreparation");
         List<String> problems = new ArrayList<>();

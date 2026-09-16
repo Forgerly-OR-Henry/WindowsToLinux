@@ -19,7 +19,7 @@ public final class DesktopSchemaMigrator {
      *
      * <p>公开 {@code CURRENT_SCHEMA_VERSION} 常量。
      */
-    public static final int CURRENT_SCHEMA_VERSION = 12;
+    public static final int CURRENT_SCHEMA_VERSION = 13;
 
     private DesktopSchemaMigrator() {
     }
@@ -282,6 +282,18 @@ public final class DesktopSchemaMigrator {
                     if (!hasColumn(statement, "server", "host_key_format")) {
                         statement.execute("ALTER TABLE server ADD COLUMN host_key_format TEXT NOT NULL DEFAULT 'LEGACY_X509'");
                     }
+                }
+                if (version < 13) {
+                    if (!hasColumn(statement, "server_profile", "display_name")) {
+                        statement.execute("ALTER TABLE server_profile ADD COLUMN display_name TEXT NOT NULL DEFAULT ''");
+                        statement.execute("UPDATE server_profile SET display_name=id");
+                    }
+                    if (!hasColumn(statement, "server_profile", "last_checked"))
+                        statement.execute("ALTER TABLE server_profile ADD COLUMN last_checked TEXT");
+                    if (!hasColumn(statement, "server_profile", "connected"))
+                        statement.execute("ALTER TABLE server_profile ADD COLUMN connected INTEGER NOT NULL DEFAULT 0");
+                    if (!hasColumn(statement, "server_profile", "operating_system"))
+                        statement.execute("ALTER TABLE server_profile ADD COLUMN operating_system TEXT NOT NULL DEFAULT ''");
                 }
                 statement.execute("PRAGMA user_version = " + CURRENT_SCHEMA_VERSION);
                 connection.commit();

@@ -303,7 +303,7 @@ class DesktopPersistenceIntegrationTest {
              Statement statement = connection.createStatement();
              var version = statement.executeQuery("PRAGMA user_version")) {
             assertTrue(version.next());
-            assertEquals(12, version.getInt(1));
+            assertEquals(gold.debug.windowstolinux.app.db.execution.migration.DesktopSchemaMigrator.CURRENT_SCHEMA_VERSION, version.getInt(1));
         }
     }
 
@@ -394,7 +394,7 @@ class DesktopPersistenceIntegrationTest {
              Statement statement = connection.createStatement();
              var version = statement.executeQuery("PRAGMA user_version")) {
             assertTrue(version.next());
-            assertEquals(12, version.getInt(1));
+            assertEquals(gold.debug.windowstolinux.app.db.execution.migration.DesktopSchemaMigrator.CURRENT_SCHEMA_VERSION, version.getInt(1));
         }
     }
 
@@ -471,7 +471,7 @@ class DesktopPersistenceIntegrationTest {
             }
             try (var version = statement.executeQuery("PRAGMA user_version")) {
                 assertTrue(version.next());
-                assertEquals(12, version.getInt(1));
+                assertEquals(gold.debug.windowstolinux.app.db.execution.migration.DesktopSchemaMigrator.CURRENT_SCHEMA_VERSION, version.getInt(1));
             }
         }
     }

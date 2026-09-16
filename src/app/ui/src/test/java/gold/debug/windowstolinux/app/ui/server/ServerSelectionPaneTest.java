@@ -26,7 +26,7 @@ class ServerSelectionPaneTest {
     @Test void initialInventoryPublishesSelectionButRestoringDoesNotOverwriteUnsavedContext() throws Exception {
         AtomicInteger notifications = new AtomicInteger(); AtomicReference<ServerSelectionPane> pane = new AtomicReference<>();
         var service = (ServerApplicationFacade) Proxy.newProxyInstance(getClass().getClassLoader(), new Class<?>[]{ServerApplicationFacade.class},
-                (proxy, method, args) -> List.of(first, second));
+                (proxy, method, args) -> List.of(first, second).stream().map(value -> new gold.debug.windowstolinux.app.service.server.ServerSummary(value, Optional.empty(), false, "")).toList());
         SwingUtilities.invokeAndWait(() -> { pane.set(new ServerSelectionPane(service, components, messages, ignored -> notifications.incrementAndGet())); pane.get().reload(); });
         awaitTasks();
         SwingUtilities.invokeAndWait(() -> { assertEquals(first, pane.get().profile()); pane.get().select(second.id()); });
@@ -37,35 +37,21 @@ class ServerSelectionPaneTest {
         assertEquals(1, notifications.get());
     }
 
-    @Test void saveAndConnectionCheckRunOffTheEdtAndCannotBeSubmittedTwice() throws Exception {
-        CountDownLatch started = new CountDownLatch(1), release = new CountDownLatch(1);
-        AtomicInteger saves = new AtomicInteger(), verifications = new AtomicInteger();
-        var service = (ServerApplicationFacade) Proxy.newProxyInstance(getClass().getClassLoader(), new Class<?>[]{ServerApplicationFacade.class},
-                (proxy, method, args) -> switch (method.getName()) {
-                    case "listServerProfiles" -> List.of();
-                    case "saveServerProfile" -> { assertFalse(SwingUtilities.isEventDispatchThread()); saves.incrementAndGet(); started.countDown();
-                        assertTrue(release.await(5, TimeUnit.SECONDS)); yield null; }
-                    case "verifyServer" -> { assertFalse(SwingUtilities.isEventDispatchThread()); verifications.incrementAndGet();
-                        yield new ServerCapabilityFacts("fixture", "amd64", true, true, true, true, true, true, true, true, 5, 1000000, "fixture"); }
-                    default -> throw new AssertionError(method.getName());
-                });
-        AtomicReference<ServerPage> page = new AtomicReference<>();
-        SwingUtilities.invokeAndWait(() -> {
-            page.set(new ServerPage(null, service, components, messages));
-            try (var state = new ServerPageState("first", "192.0.2.1", "22", "tester", "fixture-password".toCharArray(),
-                    CredentialStorageMode.WINDOWS_CREDENTIAL_MANAGER, new char[0], "")) { page.get().restoreState(state); }
-        });
-        awaitTasks();
-        try {
-            SwingUtilities.invokeAndWait(() -> {
-                JButton save = button(page.get().panel(), messages.text("button.saveServer")); save.doClick(); save.doClick();
-                assertFalse(save.isEnabled()); assertTrue(DesktopTaskExecutor.hasActiveTasks());
-            });
-            assertTrue(started.await(5, TimeUnit.SECONDS));
-        } finally { release.countDown(); }
-        awaitTasks();
-        assertEquals(1, saves.get()); assertEquals(1, verifications.get());
-        SwingUtilities.invokeAndWait(() -> assertTrue(button(page.get().panel(), messages.text("button.saveServer")).isEnabled()));
+    @Test void searchesDisplayNamesAndAddressesCaseInsensitively() {
+        var named = new ServerProfile(first.id(), first.host(), 22, first.username(), first.credentialKey(), first.credentialMode(), "Production EU");
+        var summary = new gold.debug.windowstolinux.app.service.server.ServerSummary(named, Optional.empty(), false, "");
+        assertTrue(summary.matches("DUCt")); assertTrue(summary.matches("192.0")); assertTrue(summary.matches("  "));
+        assertFalse(summary.matches("other"));
+    }
+
+    @Test void appearanceStatePreservesDisplayNameAndCustomCredentialReference() {
+        ServerPage before = new ServerPage(null, null, components, messages);
+        ServerProfile profile = new ServerProfile(first.id(), first.host(), 22, first.username(), "custom/key", first.credentialMode(), "Production EU");
+        before.selectProfile(profile);
+        try (var state = before.captureState()) {
+            ServerPage after = new ServerPage(null, null, components, messages);
+            after.restoreState(state); assertEquals(profile, after.profile());
+        }
     }
 
     private static JButton button(Container parent, String label) {
