@@ -1,11 +1,13 @@
 package gold.debug.windowstolinux.app.service.deployment.automatic;
 
+import gold.debug.windowstolinux.app.service.contract.definition.DatabaseReviewMode;
+
 import gold.debug.windowstolinux.app.service.contract.definition.*;
 
 import gold.debug.windowstolinux.app.service.contract.AutomaticDeploymentApplicationFacade;
 import gold.debug.windowstolinux.app.service.source.*;
 import gold.debug.windowstolinux.app.service.config.DeploymentConfigurationParser;
-import gold.debug.windowstolinux.app.service.deployment.multi.MultiComponentReviewInput;
+import gold.debug.windowstolinux.app.service.contract.definition.MultiComponentReviewInput;
 import gold.debug.windowstolinux.app.service.deployment.single.DeploymentHandoff;
 import gold.debug.windowstolinux.app.service.lock.ServerOperationLockRegistry;
 import gold.debug.windowstolinux.shared.analyze.component.*;
@@ -25,20 +27,20 @@ import java.util.concurrent.CancellationException;
 import java.util.function.Consumer;
 import java.util.function.Predicate;
 
-/** Executes one click-time operation, pausing only for missing inputs and concrete risk decisions. */
+/** Executes one click-time operation, pausing only for missing inputs and concrete risk decisions. / 执行一次点击触发的操作，仅因缺失输入或具体风险决策暂停。 */
 public final class AutomaticDeploymentUseCase {
     private final AutomaticDeploymentApplicationFacade service;
     private final SourcePreparationUseCase source;
     private final ServerOperationLockRegistry locks;
     private final AutomaticRuntimeResolver runtime = new AutomaticRuntimeResolver();
 
-    /** Binds the existing reviewed operations and shared server lock. */
+    /** Binds the existing reviewed operations and shared server lock. / 绑定既有审阅操作和共享服务器锁。 */
     public AutomaticDeploymentUseCase(AutomaticDeploymentApplicationFacade service, SourcePreparationUseCase source,
                                       ServerOperationLockRegistry locks) {
         this.service = service; this.source = source; this.locks = locks;
     }
 
-    /** Freezes the source, resolves its runtime, and executes a single reviewed transaction. */
+    /** Freezes the source, resolves its runtime, and executes a single reviewed transaction. / 冻结源码、解析运行时并执行一次已审阅事务。 */
     public AutomaticDeploymentOutcome deploy(AutomaticDeploymentRequest request, char[] master,
             AutomaticDeploymentInteraction interaction, Predicate<String> fingerprint, Consumer<LocalizedMessage> progress) throws Exception {
         var lock = locks.forServer(request.server().id());
@@ -167,8 +169,6 @@ public final class AutomaticDeploymentUseCase {
                     }
                 }
             }
-            if (Boolean.parseBoolean(values.getOrDefault("rootBuild", "false")) && !interaction.confirm("auto.risk.root", Map.of("component", entry.getKey())))
-                throw new CancellationException();
             if (preparations.get(entry.getKey()).assessment().facts().orElseThrow().support().level() == DeploymentSupportLevel.EXPERIMENTAL_ADAPTER
                     && !Boolean.parseBoolean(values.getOrDefault("experimentalAdapterRisk", "false"))
                     && !interaction.confirm("auto.risk.experimental", Map.of("component", entry.getKey()))) throw new CancellationException();
@@ -187,7 +187,7 @@ public final class AutomaticDeploymentUseCase {
             Map<String, String> values = inputs.get(component);
             String id = prepared.assessment().facts().orElseThrow().applicationId();
             var config = configuration(id, values);
-            // Validate local inputs before preparing any database or environment.
+            // Validate local inputs before preparing any database or environment. / 在准备任何数据库或环境前验证本地输入。
             runtime.access(values, server.host()); limits(values);
             var db = prepareDatabases(root.resolve(discovered.getFirst().relativeRoot()), id, databaseAssessments.get(component),
                     request, values, master, interaction, fingerprint, progress);
@@ -198,11 +198,11 @@ public final class AutomaticDeploymentUseCase {
             var reviewed = service.createReviewedDeploymentRequest(prepared, server, config,
                     secrets(values, db), bindings(values, db),
                     runtime.runtime(DeploymentProjectType.valueOf(values.get("type")), values), runtime.access(values, server.host()),
-                    limits(values), Boolean.parseBoolean(values.getOrDefault("rootBuild", "false")), true, true);
+                    limits(values), false, true, true);
             service.planDeployment(reviewed);
             service.saveDeploymentConfigurationSnapshot(config);
             progress.accept(LocalizedMessage.of("auto.progress.environment"));
-            if (db.bindings().isEmpty()) service.prepareEnvironmentWithStoredPassword(request.server(), request.server().credentialMode(), master.clone(), fingerprint, true);
+            if (db.bindings().isEmpty()) prepareEnvironment(request, master, fingerprint, interaction);
             progress.accept(LocalizedMessage.of("auto.progress.deploy"));
             var outcome = service.deployAutomaticallyReviewed(reviewed, request.server(), master.clone(), fingerprint, progress);
             return new AutomaticDeploymentOutcome(id, outcome.status(), outcome.handoff().map(value -> Map.of(component, value)).orElse(Map.of()));
@@ -264,7 +264,7 @@ public final class AutomaticDeploymentUseCase {
                 new ApplicationHealthGate(healthOwner, runtime.health(inputs.get(healthOwner))));
         for (var input : reviews) service.saveDeploymentConfigurationSnapshot(input.configuration());
         progress.accept(LocalizedMessage.of("auto.progress.environment"));
-        service.prepareEnvironmentWithStoredPassword(request.server(), request.server().credentialMode(), master.clone(), fingerprint, true);
+        prepareEnvironment(request, master, fingerprint, interaction);
         progress.accept(LocalizedMessage.of("auto.progress.deploy"));
         var result = service.deployAutomaticallyReviewed(reviewed, request.server(), master.clone(), fingerprint, progress);
         Map<String, DeploymentHandoff> handoffs = new LinkedHashMap<>();
@@ -302,10 +302,22 @@ public final class AutomaticDeploymentUseCase {
         if (values.get("type").equals("DOCKERFILE_CONTAINER")) throw new IllegalArgumentException(
                 "native database access from isolated containers requires an explicit reachable database binding; configure the DB binding in advanced options");
         progress.accept(LocalizedMessage.of("auto.progress.environment"));
-        service.prepareEnvironmentWithStoredPassword(request.server(), request.server().credentialMode(), master.clone(), fingerprint, true);
+        prepareEnvironment(request, master, fingerprint, interaction);
         return service.prepareAutomaticDatabases(root, id, request.server(), assessment, master.clone(), interaction, fingerprint, progress);
     }
 
+    private void prepareEnvironment(AutomaticDeploymentRequest request, char[] master,
+            Predicate<String> fingerprint, AutomaticDeploymentInteraction interaction) throws Exception {
+        if (!interaction.confirm("environment.confirm", Map.of("serverId", request.server().id(),
+                "host", request.server().host(), "port", request.server().sshPort(),
+                "username", request.server().username()))) throw new CancellationException();
+        service.prepareEnvironmentWithStoredPassword(request.server(), request.server().credentialMode(),
+                master.clone(), fingerprint, true, plan -> interaction.confirm("environment.system.confirm", Map.of(
+                        "serverId", request.server().id(), "host", request.server().host(),
+                        "security", plan.securityState().name(), "reboot",
+                        plan.state() == gold.debug.windowstolinux.shared.model.server.security.SelinuxPreparationState.UNPREPARED
+                                || plan.state() == gold.debug.windowstolinux.shared.model.server.security.SelinuxPreparationState.REBOOT_PENDING)));
+    }
     private static ConfigurationSnapshot withDatabases(ConfigurationSnapshot config, AutomaticDatabasePreparation db) {
         var entries = new LinkedHashMap<String, gold.debug.windowstolinux.shared.config.revision.ConfigurationEntry>();
         config.entries().forEach(entry -> entries.put(entry.key(), entry));
@@ -318,12 +330,12 @@ public final class AutomaticDeploymentUseCase {
     }
 
     private static List<gold.debug.windowstolinux.shared.config.secretref.SecretReference> secrets(Map<String,String> values, AutomaticDatabasePreparation db) {
-        var result = new ArrayList<>(DeploymentRuntimeParser.secrets(values.getOrDefault("secrets", ""))); result.addAll(db.secrets());
+        var result = new ArrayList<>(gold.debug.windowstolinux.app.service.config.DeploymentConfigurationParser.secrets(values.getOrDefault("secrets", ""))); result.addAll(db.secrets());
         return List.copyOf(result);
     }
 
     private static Optional<List<gold.debug.windowstolinux.shared.config.resource.ManagedDatabaseBinding>> bindings(Map<String,String> values, AutomaticDatabasePreparation db) {
-        return db.bindings().isEmpty() ? DeploymentRuntimeParser.databaseBindings(DeploymentRuntimeParser.DatabaseReviewMode.valueOf(
+        return db.bindings().isEmpty() ? DeploymentRuntimeParser.databaseBindings(DatabaseReviewMode.valueOf(
                 values.getOrDefault("databaseMode", "NONE")), values.getOrDefault("databaseDetails", "")) : Optional.of(db.bindings());
     }
 
@@ -350,8 +362,9 @@ public final class AutomaticDeploymentUseCase {
     }
 
     private static BuildLimitConfiguration limits(Map<String, String> values) {
-        return Boolean.parseBoolean(values.getOrDefault("rootBuild", "false"))
-                ? new BuildLimitConfiguration(1800, 1024, 4096, 4L * 1024 * 1024, 4L * 1024 * 1024 * 1024, true)
-                : BuildLimitConfiguration.defaultNonRoot();
+        if (Boolean.parseBoolean(values.getOrDefault("rootBuild", "false"))) {
+            throw new IllegalArgumentException("Root builds are not supported");
+        }
+        return BuildLimitConfiguration.defaultNonRoot();
     }
 }

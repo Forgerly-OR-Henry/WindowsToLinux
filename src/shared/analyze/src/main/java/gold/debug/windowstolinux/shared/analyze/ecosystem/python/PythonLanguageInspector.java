@@ -29,7 +29,7 @@ import java.util.regex.Pattern;
 public final class PythonLanguageInspector {
     private static final int MAX_METADATA_BYTES = 2 * 1024 * 1024;
     private static final Pattern PYTHON_VERSION = Pattern.compile("(?m)^\\s*requires-python\\s*=\\s*\\\"([^\\\"\\r\\n]+)\\\"\\s*$");
-    private static final Pattern EXACT_PYTHON = Pattern.compile("^\\s*==?3\\.(10|11|12|13)(?:\\.\\*)?\\s*$");
+    private static final Pattern EXACT_PYTHON = Pattern.compile("^\\s*(?:==?)?([0-9]{1,9}\\.[0-9]{1,9})(?:\\.[0-9*]+)?(?:[-+][A-Za-z0-9._-]+)?\\s*$");
 
     /** Returns deterministic Python ecosystem and source facts. / 返回确定性的 Python 生态与源码事实。 */
     public ProjectLanguageFacts inspect(Path root, SourceInspectionFacts source) throws IOException {
@@ -55,7 +55,7 @@ public final class PythonLanguageInspector {
             if (version.find()) {
                 Matcher exact = EXACT_PYTHON.matcher(version.group(1));
                 if (exact.matches()) {
-                    values.put(LanguageFactKind.PYTHON_VERSION, "3." + exact.group(1));
+                    values.put(LanguageFactKind.PYTHON_VERSION, exact.group(1));
                     evidence.add(evidence("analysis.deployment.runtime.evidence.pythonVersion", "pyproject.toml#requires-python"));
                 }
             }

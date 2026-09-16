@@ -31,8 +31,12 @@ public final class JdkBuildRenderer implements DeploymentBuildRenderer {
         String command = """
                 command -v javac >/dev/null
                 command -v jar >/dev/null
-                javac -version 2>&1 | grep -Eq '^javac 21([.]|$)'
-                jar --version 2>&1 | grep -Eq '^jar 21([.]|$)'
+                selected_java="${WTL_JAVA_BRANCH:-%s}"
+                target_java=%s
+                javac -version 2>&1
+                if [ "$selected_java" = 8 ]; then
+                  javac_arguments=(-source "1.$target_java" -target "1.$target_java")
+                else javac_arguments=(--release "$target_java"); fi
                 source_root=%s
                 main_class=%s
                 test -d "$source_root"
@@ -40,16 +44,15 @@ public final class JdkBuildRenderer implements DeploymentBuildRenderer {
                 mapfile -d '' -t sources < <(find -P "$source_root" -type f -name '*.java' -print0 | LC_ALL=C sort -z)
                 test "${#sources[@]}" -ge 1
                 mkdir -p ./.w2l/java/classes
-                run javac --release 21 -proc:none -encoding UTF-8 -d ./.w2l/java/classes "${sources[@]}"
+                run javac "${javac_arguments[@]}" -proc:none -encoding UTF-8 -d ./.w2l/java/classes "${sources[@]}"
                 main_path="./.w2l/java/classes/${main_class//.//}.class"
                 test -f "$main_path"
                 printf 'Manifest-Version: 1.0\nMain-Class: %%s\n\n' "$main_class" > ./.w2l/java/MANIFEST.MF
-                run jar --create --file ./.w2l/java/app.jar --date=1980-01-01T00:00:02Z \
-                  --manifest ./.w2l/java/MANIFEST.MF -C ./.w2l/java/classes .
+                run jar cfm ./.w2l/java/app.jar ./.w2l/java/MANIFEST.MF -C ./.w2l/java/classes .
                 test -f ./.w2l/java/app.jar
                 test ! -L ./.w2l/java/app.jar
                 printf 'ARTIFACT=%%s\n' ./.w2l/java/app.jar
-                """.formatted(sourceRoot, mainClass);
+                """.formatted(javaSource.javaVersion(), SafeBuildScriptEnvelope.shellQuote(javaSource.javaVersion()), sourceRoot, mainClass);
         return SafeBuildScriptEnvelope.wrap(facts, workspace, limits, command);
     }
 }

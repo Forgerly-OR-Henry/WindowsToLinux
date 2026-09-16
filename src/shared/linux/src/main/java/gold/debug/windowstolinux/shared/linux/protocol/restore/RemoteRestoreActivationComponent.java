@@ -1,6 +1,6 @@
 package gold.debug.windowstolinux.shared.linux.protocol.restore;
 
-import gold.debug.windowstolinux.shared.config.revision.DeploymentInputManifest;
+import gold.debug.windowstolinux.shared.linux.protocol.RemoteDeploymentInputs;
 import gold.debug.windowstolinux.shared.model.project.DeploymentRuntimeSpecification;
 
 import java.util.List;
@@ -19,7 +19,7 @@ public record RemoteRestoreActivationComponent(
         Optional<String> ociArchivePath,
         List<String> dependsOn,
         DeploymentRuntimeSpecification runtime,
-        DeploymentInputManifest inputs,
+        RemoteDeploymentInputs inputs,
         List<RemoteRestorePortBinding> ports
 ) {
     /** Validates exact managed identities and candidate-relative members. / 校验精确受管身份及候选相对成员。 */

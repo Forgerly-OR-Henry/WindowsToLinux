@@ -1,5 +1,7 @@
 package gold.debug.windowstolinux.app.service.deployment.automatic;
 
+import gold.debug.windowstolinux.app.service.contract.definition.DatabaseReviewMode;
+
 import gold.debug.windowstolinux.shared.model.deployment.DeploymentInputField;
 import gold.debug.windowstolinux.shared.model.project.*;
 import gold.debug.windowstolinux.shared.model.health.*;
@@ -8,9 +10,9 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.*;
 
-/** Resolves source-backed runtime defaults and validates the same domain objects as manual deployment. */
+/** Resolves source-backed runtime defaults and validates the same domain objects as manual deployment. / 解析有源码依据的运行时默认值，并校验与手动部署相同的领域对象。 */
 public final class AutomaticRuntimeResolver {
-    /** Applies known declarations, without manufacturing unknown entry points or ports. */
+    /** Applies known declarations, without manufacturing unknown entry points or ports. / 应用已知声明，不臆造未知入口或端口。 */
     public Map<String, String> defaults(DeploymentProjectType type, DeploymentRuntimeAssessment suggested, Path root) {
         Map<String, String> values = new LinkedHashMap<>();
         values.put("healthMode", type == DeploymentProjectType.STATIC_SITE || type == DeploymentProjectType.SPRING_BOOT ? "HTTP" : "TCP");
@@ -22,6 +24,7 @@ public final class AutomaticRuntimeResolver {
                 case JAVA_JAR_PATH, JAVA_SOURCE_ROOT, PYTHON_VERSION, STATIC_OUTPUT_DIRECTORY, SERVICE_ARTIFACT, CMAKE_ARTIFACT -> "primary";
                 case JAVA_MAIN_CLASS, PYTHON_ENTRYPOINT, SERVICE_ENTRYPOINT, CMAKE_TARGET -> "secondary";
                 case JAVA_VERSION, NODE_MAJOR_VERSION, SERVICE_VERSION, CMAKE_PRESET -> "version";
+                case KOTLIN_JVM_TARGET -> "jvmTarget";
                 case SERVICE_PORT -> "port";
             }, value));
             suggested.suggestedHealthPort().ifPresent(port -> values.put("port", port.toString()));
@@ -36,10 +39,11 @@ public final class AutomaticRuntimeResolver {
         return values;
     }
 
-    /** Returns all missing fields together so a single dialog can collect them. */
+    /** Returns all missing fields together so a single dialog can collect them. / 集中返回所有缺失字段，便于一个对话框统一收集。 */
     public List<DeploymentInputField> missing(String component, DeploymentProjectType type, Map<String, String> values) {
         List<String> required = new ArrayList<>(List.of("port"));
         switch (type) {
+            case SPRING_BOOT -> required.add("version");
             case JAVA_JAR, JAVA_SOURCE, GO_SERVICE, RUST_SERVICE, DOTNET_SERVICE, KOTLIN_SERVICE,
                     PHP_SERVICE, RUBY_SERVICE, CMAKE_SERVICE -> required.addAll(List.of("primary", "secondary", "version"));
             case NODE_SERVICE -> required.add("version");
@@ -48,16 +52,17 @@ public final class AutomaticRuntimeResolver {
             case DOCKERFILE_CONTAINER -> required.add("ports");
             default -> { }
         }
+        if (type == DeploymentProjectType.KOTLIN_SERVICE) required.add("jvmTarget");
         return required.stream().filter(key -> values.getOrDefault(key, "").isBlank())
                 .map(key -> field(component, key, "", List.of())).toList();
     }
 
-    /** Builds a bounded question descriptor for one runtime input. */
+    /** Builds a bounded question descriptor for one runtime input. / 为一个运行输入构建有界问题描述。 */
     public static DeploymentInputField field(String component, String key, String value, List<String> choices) {
         return new DeploymentInputField(component + "/" + key, "auto.field." + key, "auto.help." + key, value, choices);
     }
 
-    /** Exposes every supplied runtime/configuration input that can fail local validation. */
+    /** Exposes every supplied runtime/configuration input that can fail local validation. / 暴露所有可能在本地校验失败的已提供运行时或配置输入。 */
     public List<DeploymentInputField> corrections(String component, Map<String, String> values) {
         Map<String, String> labels = Map.ofEntries(
                 Map.entry("healthMode", "field.healthMode"), Map.entry("healthEndpoint", "field.healthEndpoint"),
@@ -70,14 +75,14 @@ public final class AutomaticRuntimeResolver {
         List<DeploymentInputField> fields = new ArrayList<>();
         for (String key : List.of("port", "primary", "secondary", "version", "ports", "healthMode", "healthEndpoint",
                 "expectedStatus", "timeout", "stability", "accessUrl", "configuration", "secrets", "databaseMode",
-                "databaseDetails", "containerEngine", "volumes", "jvmArguments", "arguments")) {
+                "databaseDetails", "containerEngine", "volumes", "jvmArguments", "arguments", "jvmTarget")) {
             boolean missingDatabaseDetails = key.equals("databaseDetails") && values.containsKey("databaseMode")
                     && !Set.of("NONE", "UNREVIEWED").contains(values.get("databaseMode"));
             if (!values.containsKey(key) && !missingDatabaseDetails) continue;
             List<String> choices = switch (key) {
                 case "healthMode" -> List.of("HTTP", "TCP");
                 case "containerEngine" -> List.of("PODMAN", "DOCKER");
-                case "databaseMode" -> Arrays.stream(DeploymentRuntimeParser.DatabaseReviewMode.values()).map(Enum::name).toList();
+                case "databaseMode" -> Arrays.stream(DatabaseReviewMode.values()).map(Enum::name).toList();
                 default -> List.of();
             };
             fields.add(labels.containsKey(key) ? new DeploymentInputField(component + "/" + key,
@@ -87,14 +92,14 @@ public final class AutomaticRuntimeResolver {
         return List.copyOf(fields);
     }
 
-    /** Converts the completed inputs to the existing typed runtime contract. */
+    /** Converts the completed inputs to the existing typed runtime contract. / 将补齐的输入转换为现有类型化运行时契约。 */
     public DeploymentRuntimeSpecification runtime(DeploymentProjectType type, Map<String, String> v) {
         HealthCheck health = health(v);
         if (type == DeploymentProjectType.STATIC_SITE && !(health instanceof HealthCheck.Http))
             throw new IllegalArgumentException("static sites require HTTP health checks");
         String primary = v.getOrDefault("primary", ""), secondary = v.getOrDefault("secondary", ""), version = v.getOrDefault("version", "");
         return switch (type) {
-            case SPRING_BOOT -> new DeploymentRuntimeSpecification.SpringBoot(health);
+            case SPRING_BOOT -> new DeploymentRuntimeSpecification.SpringBoot(version, health);
             case JAVA_JAR -> new DeploymentRuntimeSpecification.JavaJar(primary, secondary, version,
                     DeploymentRuntimeParser.arguments(v.getOrDefault("jvmArguments", "")), DeploymentRuntimeParser.arguments(v.getOrDefault("arguments", "")), health);
             case JAVA_SOURCE -> new DeploymentRuntimeSpecification.JavaSource(primary, secondary, version,
@@ -107,13 +112,15 @@ public final class AutomaticRuntimeResolver {
                     DeploymentRuntimeSpecification.ContainerEngineType.valueOf(v.getOrDefault("containerEngine", "PODMAN")),
                     DeploymentRuntimeParser.ports(v.getOrDefault("ports", "")), DeploymentRuntimeParser.volumes(v.getOrDefault("volumes", "")), health);
             case CMAKE_SERVICE -> new DeploymentRuntimeSpecification.CmakeService(version, secondary, primary, health);
-            case GO_SERVICE, RUST_SERVICE, DOTNET_SERVICE, KOTLIN_SERVICE, PHP_SERVICE, RUBY_SERVICE ->
+            case KOTLIN_SERVICE -> new DeploymentRuntimeSpecification.KotlinService(version, primary, secondary,
+                    v.getOrDefault("jvmTarget", ""), health);
+            case GO_SERVICE, RUST_SERVICE, DOTNET_SERVICE, PHP_SERVICE, RUBY_SERVICE ->
                     DeploymentRuntimeParser.service(type, version, primary, secondary, health);
             case RECOGNITION_PREVIEW -> throw new IllegalArgumentException("recognition preview cannot deploy");
         };
     }
 
-    /** Matches the fixed build adapters' output contract, namespaced to the application root. */
+    /** Matches the fixed build adapters' output contract, namespaced to the application root. / 匹配固定构建适配器的输出契约，并以应用根目录限定命名空间。 */
     public List<String> artifacts(Path relativeRoot, DeploymentProjectFacts facts, Map<String, String> values) {
         String artifact = switch (facts.projectType()) {
             case NODE_SERVICE -> "package.json";
@@ -128,7 +135,7 @@ public final class AutomaticRuntimeResolver {
         return List.of(relativeRoot.resolve(artifact).toString().replace('\\', '/'));
     }
 
-    /** Builds a server-local health probe without claiming public reachability. */
+    /** Builds a server-local health probe without claiming public reachability. / 构建服务器本地健康探针，不声称已验证公网可达性。 */
     public HealthCheck health(Map<String, String> v) {
         int port = Integer.parseInt(v.get("port"));
         int timeout = Integer.parseInt(v.getOrDefault("timeout", "10"));
@@ -140,7 +147,7 @@ public final class AutomaticRuntimeResolver {
         return new HealthCheck.Tcp(port, timeout, Integer.parseInt(v.getOrDefault("stability", "5")));
     }
 
-    /** Resolves an explicitly configured access URL or the direct server endpoint for an HTTP application. */
+    /** Resolves an explicitly configured access URL or the direct server endpoint for an HTTP application. / 为 HTTP 应用解析显式访问地址或服务器直连端点。 */
     public Optional<UserAccessUrl> access(Map<String, String> v, String host) {
         if (!v.getOrDefault("healthMode", "TCP").equals("HTTP")) {
             if (!v.getOrDefault("accessUrl", "").isBlank())

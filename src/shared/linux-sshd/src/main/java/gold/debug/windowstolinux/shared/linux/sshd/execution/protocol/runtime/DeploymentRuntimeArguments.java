@@ -35,7 +35,7 @@ public final class DeploymentRuntimeArguments {
             case DeploymentRuntimeSpecification.GoService service -> serviceArguments("go", service.version(), service.artifactName(), service.entrypoint(), null);
             case DeploymentRuntimeSpecification.RustService service -> serviceArguments("rust", service.version(), service.artifactName(), service.entrypoint(), null);
             case DeploymentRuntimeSpecification.DotNetService service -> serviceArguments("dotnet", service.version(), service.artifactName(), service.entrypoint(), null);
-            case DeploymentRuntimeSpecification.KotlinService service -> List.of("kotlin", "21", service.artifactName(),
+            case DeploymentRuntimeSpecification.KotlinService service -> List.of("kotlin", service.jvmTarget(), service.artifactName(),
                     service.entrypoint(), facts.buildTool().name());
             case DeploymentRuntimeSpecification.PhpService service -> serviceArguments(
                     facts.buildTool() == gold.debug.windowstolinux.shared.model.project.DeploymentBuildToolType.PHP_CLI

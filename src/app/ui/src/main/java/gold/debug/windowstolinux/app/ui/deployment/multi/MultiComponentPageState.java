@@ -1,5 +1,7 @@
 package gold.debug.windowstolinux.app.ui.deployment.multi;
 
+import gold.debug.windowstolinux.app.service.contract.definition.ComponentFormInput;
+
 import gold.debug.windowstolinux.app.service.deployment.multi.ReviewedMultiComponentApplication;
 import gold.debug.windowstolinux.app.service.source.PreparedMultiComponentSource;
 import gold.debug.windowstolinux.shared.model.lifecycle.LifecycleAction;
@@ -15,7 +17,7 @@ public record MultiComponentPageState(
         String lifecycleTargets,
         LifecycleAction lifecycleAction,
         MultiComponentFormState form,
-        List<MultiComponentDraft> drafts,
+        List<ComponentFormInput> drafts,
         String output,
         PreparedMultiComponentSource preparation,
         ReviewedMultiComponentApplication review

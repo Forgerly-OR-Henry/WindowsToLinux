@@ -11,7 +11,7 @@ import gold.debug.windowstolinux.app.secret.SecretStoreException;
 import gold.debug.windowstolinux.app.secret.SecretStoreFailureType;
 import gold.debug.windowstolinux.app.service.failure.ApplicationServiceException;
 import gold.debug.windowstolinux.app.service.failure.ApplicationServiceFailureType;
-import gold.debug.windowstolinux.app.service.deployment.multi.MultiComponentReviewInput;
+import gold.debug.windowstolinux.app.service.contract.definition.MultiComponentReviewInput;
 import gold.debug.windowstolinux.app.service.deployment.multi.ReviewedComponentApplication;
 import gold.debug.windowstolinux.app.service.deployment.multi.ReviewedMultiComponentApplication;
 import gold.debug.windowstolinux.app.service.lock.ServerOperationLockRegistry;
@@ -33,10 +33,8 @@ import gold.debug.windowstolinux.shared.linux.connection.HostKeyEvaluator;
 import gold.debug.windowstolinux.shared.linux.connection.SshCredential;
 import gold.debug.windowstolinux.shared.linux.connection.SshEndpoint;
 import gold.debug.windowstolinux.shared.model.deployment.DeploymentStatus;
-import gold.debug.windowstolinux.shared.model.lifecycle.LifecycleObservation;
 import gold.debug.windowstolinux.shared.model.failure.FailureDescriptor;
 import gold.debug.windowstolinux.shared.model.managed.ManagedApplicationRuntimeConfiguration;
-import gold.debug.windowstolinux.shared.model.message.LocalizedMessage;
 import gold.debug.windowstolinux.shared.model.security.CredentialStorageMode;
 import gold.debug.windowstolinux.shared.model.server.ServerIdentity;
 
@@ -156,7 +154,7 @@ public final class MultiComponentDeploymentUseCase {
         return deployWithStoredPassword(review, profile, mode, masterPassword, confirmation, ignored -> { });
     }
 
-    /** Publishes application and component events while the transaction runs. */
+    /** Publishes application and component events while the transaction runs. / 在事务运行期间发布应用和组件事件。 */
     public MultiComponentDeploymentResult deployWithStoredPassword(ReviewedMultiComponentApplication review,
             ServerProfile profile, CredentialStorageMode mode, char[] masterPassword, Predicate<String> confirmation,
             java.util.function.Consumer<gold.debug.windowstolinux.shared.deploy.contract.result.deployment.DeploymentEvent> progress) throws SecretStoreException, SQLException {
@@ -229,7 +227,7 @@ public final class MultiComponentDeploymentUseCase {
         List<SuccessfulManagedDeployment> deployments = review.components().stream().map(component ->
                 new SuccessfulManagedDeployment(component.application(),
                         new ManagedApplicationRuntimeConfiguration(component.request().runtime().healthCheck(),
-                                component.request().userAccessUrl()),
+                                component.request().userAccessUrl(), component.request().runtime().identityPolicy()),
                         new CurrentRelease(component.application().id(),
                                 ReviewedReleaseIdentityResolver.from(component.request()), publishedAt),
                         component.request().configuration(), component.request().secretReferences())).toList();

@@ -46,15 +46,15 @@ class UbuntuManagedBuildLimitAcceptanceTest {
         String baselineProperty = System.getProperty("managed.build-limits.v1.source");
         String failingProperty = System.getProperty("managed.build-limits.failure.source");
         String host = System.getProperty("managed.ssh.host");
-        String username = System.getProperty("managed.ssh.user", "ubuntu");
-        boolean rootBuild = Boolean.getBoolean("managed.root-build");
+        String username = System.getProperty("managed.ssh.user", "root");
+        boolean rootBuild = false;
+        assertFalse(Boolean.getBoolean("managed.root-build"), "root builds were removed in helper v7");
         String password = System.getenv("WINDOWSTOLINUX_TEST_SSH_PASSWORD");
         assertPresent(baselineProperty, "managed.build-limits.v1.source");
         assertPresent(failingProperty, "managed.build-limits.failure.source");
         assertPresent(host, "managed.ssh.host");
         assertPresent(username, "managed.ssh.user");
-        assertTrue(!"root".equals(username) || rootBuild,
-                "a root SSH session requires the explicit managed.root-build=true confirmation");
+        assertEquals("root", username, "root management must launch only restricted builds");
         assertPresent(password, "WINDOWSTOLINUX_TEST_SSH_PASSWORD");
         Path baseline = source(baselineProperty, "baseline source");
         Path failing = source(failingProperty, "failing source");

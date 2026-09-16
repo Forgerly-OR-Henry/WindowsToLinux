@@ -20,7 +20,7 @@ public interface LinuxSourceTransport {
      * @return the operation result / 操作结果
      * @throws LinuxOperationException if the operation cannot be completed / 无法完成操作时
      */
-    SourceUploadResult uploadSource(SourceArchiveDescriptor archive, RemoteWorkspace workspace) throws LinuxOperationException;
+    SourceUploadResult uploadSource(SourceArchiveDescriptor archive, RemoteWorkspace workspace, long maxWorkspaceBytes) throws LinuxOperationException;
 
     /**
      * Performs the {@code cleanupCandidate} operation.

@@ -31,7 +31,11 @@ class LanguageServiceInspectionTest {
                     assessment.facts().orElseThrow().support().level(), project.type().name());
             assertEquals(project.buildTool(), assessment.facts().orElseThrow().buildTool(), project.type().name());
             var runtime = assessment.runtimeSuggestion().orElseThrow();
-            assertEquals(project.runtimeValues(), runtime.values(), project.type().name());
+            var expected = new java.util.EnumMap<DeploymentRuntimeAssessment.RuntimeInputType, String>(DeploymentRuntimeAssessment.RuntimeInputType.class);
+            expected.putAll(project.runtimeValues());
+            if (project.type() == DeploymentProjectType.KOTLIN_SERVICE)
+                expected.put(DeploymentRuntimeAssessment.RuntimeInputType.KOTLIN_JVM_TARGET, "21");
+            assertEquals(expected, runtime.values(), project.type().name());
             assertEquals(project.requiresServicePort(), runtime.requiredUserInput().stream()
                     .anyMatch(message -> message.key().equals("analysis.service.servicePort")), project.type().name());
         }

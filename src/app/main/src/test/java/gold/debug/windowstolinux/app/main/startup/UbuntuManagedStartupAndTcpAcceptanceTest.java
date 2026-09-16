@@ -29,6 +29,7 @@ import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 
 /**
  * Opt-in live acceptance for startup failure and TCP ownership-aware health checks.
@@ -46,16 +47,16 @@ class UbuntuManagedStartupAndTcpAcceptanceTest {
         String startupFailureProperty = System.getProperty("managed.startup-tcp.startup.source");
         String wrongPortProperty = System.getProperty("managed.startup-tcp.wrong-port.source");
         String host = System.getProperty("managed.ssh.host");
-        String username = System.getProperty("managed.ssh.user", "ubuntu");
-        boolean rootBuild = Boolean.getBoolean("managed.root-build");
+        String username = System.getProperty("managed.ssh.user", "root");
+        boolean rootBuild = false;
+        assertFalse(Boolean.getBoolean("managed.root-build"), "root builds were removed in helper v7");
         String password = System.getenv("WINDOWSTOLINUX_TEST_SSH_PASSWORD");
         assertPresent(baselineProperty, "managed.startup-tcp.v1.source");
         assertPresent(startupFailureProperty, "managed.startup-tcp.startup.source");
         assertPresent(wrongPortProperty, "managed.startup-tcp.wrong-port.source");
         assertPresent(host, "managed.ssh.host");
         assertPresent(username, "managed.ssh.user");
-        assertTrue(!"root".equals(username) || rootBuild,
-                "a root SSH session requires the explicit managed.root-build=true confirmation");
+        assertEquals("root", username, "root management must launch only restricted builds");
         assertPresent(password, "WINDOWSTOLINUX_TEST_SSH_PASSWORD");
         Path baseline = source(baselineProperty, "baseline source");
         Path startupFailure = source(startupFailureProperty, "startup-failure source");

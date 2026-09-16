@@ -10,7 +10,7 @@ import java.util.regex.Pattern;
 /** Inspects the Yarn lockfile architecture. / 检查 Yarn 锁文件架构。 */
 public final class YarnBuildInspector {
     private static final Pattern MANAGER = Pattern.compile(
-            "\\\"packageManager\\\"\\s*:\\s*\\\"yarn@4\\.[0-9]+\\.[0-9]+(?:[-+][0-9A-Za-z._-]+)?\\\"");
+            "\\\"packageManager\\\"\\s*:\\s*\\\"yarn@[0-9]+\\.[0-9]+\\.[0-9]+(?:[-+][0-9A-Za-z._-]+)?\\\"");
     private static final Pattern METADATA = Pattern.compile("(?m)^__metadata:\\s*$");
     private static final Pattern METADATA_VERSION = Pattern.compile("(?m)^\\s+version:\\s*[0-9]+\\s*$");
 

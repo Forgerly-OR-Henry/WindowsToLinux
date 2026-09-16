@@ -37,7 +37,7 @@ class UbuntuManagedEnvironmentSetupAcceptanceTest {
     @Test
     void preparesTheFixedUbuntuToolsetThroughTheProductEntryPointAndIsIdempotent() throws Exception {
         String host = requiredProperty("managed.ssh.host");
-        String username = System.getProperty("managed.ssh.user", "ubuntu");
+        String username = System.getProperty("managed.ssh.user", "root");
         String sshPassword = requiredEnvironment("WINDOWSTOLINUX_TEST_SSH_PASSWORD");
         String masterPassword = System.getenv().getOrDefault(
                 "WINDOWSTOLINUX_TEST_MASTER_PASSWORD", DEFAULT_TEST_MASTER_PASSWORD

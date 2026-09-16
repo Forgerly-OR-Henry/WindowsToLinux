@@ -72,7 +72,7 @@ public final class ReviewedDeploymentService {
         return deploy(request, application, gateway, endpoint, credential, hostKeyVerifier, resolvedSecrets, ignored -> { });
     }
 
-    /** Executes with a per-operation observer of real transaction events. */
+    /** Executes with a per-operation observer of real transaction events. / 使用本次操作的观察器接收真实事务事件。 */
     public DeploymentResult deploy(ReviewedDeploymentRequest request, ManagedApplication application,
             DeploymentLinuxGateway gateway, SshEndpoint endpoint, SshCredential credential,
             HostKeyEvaluator hostKeyVerifier, List<ResolvedSecretRevision> resolvedSecrets,
@@ -96,41 +96,45 @@ public final class ReviewedDeploymentService {
         DeploymentBuildResult build = null;
         DeploymentInputManifest inputs = null;
         boolean candidateMayExist = false;
+        LifecycleObservation committedObservation = null;
         try (DeploymentRemoteSession session = gateway.connect(endpoint, credential.duplicate(), hostKeyVerifier)) {
             DeploymentResult preflightRejection = preflight(request, session, events);
             if (preflightRejection != null) return preflightRejection;
 
             candidateMayExist = true;
-            var receipt = session.uploadSource(request.archive(), workspace);
+            var receipt = session.uploadSource(request.archive(), workspace, request.limits().maxWorkspaceBytes());
             if (!receipt.contentSha256().equals(request.archive().contentSha256())
                     || receipt.byteCount() != request.archive().byteCount()) {
-                cleanup(session, workspace, events);
+                if (!cleanup(session, workspace, events)) return new DeploymentResult(
+                        DeploymentStatus.MANUAL_RECOVERY_REQUIRED, events, Optional.empty(), Optional.empty());
                 return rejected(events, DeploymentTraceEvent.SOURCE_UPLOAD,
                         "Target archive digest or size differs from the reviewed archive");
             }
             events.add(DeploymentEvent.result(DeploymentTraceEvent.SOURCE_UPLOAD, true, receipt.evidence()));
 
             build = session.buildDeployment(request.facts(), request.runtime(), workspace, request.limits(),
-                    request.configuration());
+                    DeploymentInputMapper.build(request.configuration()));
             events.add(DeploymentEvent.result(DeploymentTraceEvent.REMOTE_BUILD, build.succeeded(), build.evidence()));
             if (!build.succeeded()) {
-                cleanup(session, workspace, events);
-                return new DeploymentResult(DeploymentStatus.FAILED_BUILD, events, Optional.empty(), Optional.empty());
+                boolean cleaned = cleanup(session, workspace, events);
+                return new DeploymentResult(cleaned ? DeploymentStatus.FAILED_BUILD : DeploymentStatus.MANUAL_RECOVERY_REQUIRED, events, Optional.empty(), Optional.empty());
             }
             if (!request.archive().contentSha256().equals(build.sourceSha256())) {
-                cleanup(session, workspace, events);
+                if (!cleanup(session, workspace, events)) return new DeploymentResult(
+                        DeploymentStatus.MANUAL_RECOVERY_REQUIRED, events, Optional.empty(), Optional.empty());
                 return rejected(events, DeploymentTraceEvent.BUILD_PROVENANCE,
                         "The build result is not bound to the reviewed source archive");
             }
 
-            inputs = session.stageDeploymentInputs(application, request.configuration(), resolvedSecrets);
+            inputs = DeploymentInputMapper.stage(session, application, request.configuration(), resolvedSecrets);
+            releaseIdentity = ReviewedReleaseIdentityResolver.bind(releaseIdentity, build.toolchains());
             events.add(DeploymentEvent.result(DeploymentTraceEvent.DEPLOYMENT_INPUTS, true,
                     "Immutable configuration and exact secret revisions were sealed outside the release tree"));
 
             snapshot = session.snapshotDeployment(application, request.runtime());
             events.add(DeploymentEvent.result(DeploymentTraceEvent.SNAPSHOT, true, snapshot.evidence()));
             RemoteStepResult publish = session.publishDeployment(application, request.facts(), workspace, build, releaseIdentity,
-                    request.runtime(), inputs,
+                    request.runtime(), DeploymentInputMapper.manifest(inputs),
                     new ManagedContentPublication(application.id(), application.id(), java.util.List.of()), snapshot);
             events.add(DeploymentEvent.result(DeploymentTraceEvent.PUBLISH, publish.succeeded(), publish.evidence()));
             if (!publish.succeeded()) {
@@ -142,17 +146,20 @@ public final class ReviewedDeploymentService {
                 return recover(session, request, application, workspace, snapshot, build, releaseIdentity, inputs, events);
             }
             LifecycleObservation observation = session.observeDeployment(application, request.runtime());
-            events.add(DeploymentEvent.result(DeploymentTraceEvent.FINAL_OBSERVATION, observation.ownershipVerified(), observation.evidence()));
-            if (!observation.ownershipVerified()) {
+            events.add(DeploymentEvent.result(DeploymentTraceEvent.FINAL_OBSERVATION, observation.ownershipVerified() && observation.runtimeState() == RuntimeState.RUNNING, observation.evidence()));
+            if (!observation.ownershipVerified() || observation.runtimeState() != RuntimeState.RUNNING) {
                 return recover(session, request, application, workspace, snapshot, build, releaseIdentity, inputs, events);
             }
-            RemoteStepResult retention = session.retainRecentSuccessfulReleases(application);
-            events.add(DeploymentEvent.result(DeploymentTraceEvent.RELEASE_RETENTION, retention.succeeded(), retention.evidence()));
-            cleanup(session, workspace, events);
-            return new DeploymentResult(DeploymentStatus.SUCCEEDED, events, Optional.of(observation),
-                    Optional.of(releaseIdentity));
+            committedObservation = observation;
+            return finishPublication(session, application, workspace, observation, releaseIdentity, events);
         } catch (LinuxOperationException exception) {
             events.add(DeploymentEvent.failed(DeploymentTraceEvent.LINUX_OPERATION, exception.failure()));
+            if (committedObservation != null) {
+                return new DeploymentResult(DeploymentStatus.SUCCEEDED, events, Optional.of(committedObservation),
+                        Optional.of(releaseIdentity)).withNonFatalFailure(failure(
+                        DeploymentExecutionFailureType.POST_PUBLICATION_CLEANUP_PENDING,
+                        "Release identity was verified before the session cleanup failed"));
+            }
             if (snapshot != null && build != null && build.succeeded() && inputs != null) {
                 return recoverAfterInterruptedSession(request, application, gateway, endpoint, credential,
                         hostKeyVerifier, workspace, snapshot, build, releaseIdentity, inputs, events);
@@ -174,6 +181,25 @@ public final class ReviewedDeploymentService {
         }
     }
 
+    private static DeploymentResult finishPublication(DeploymentRemoteSession session, ManagedApplication application,
+            RemoteWorkspace workspace, LifecycleObservation observation, String releaseIdentity,
+            List<DeploymentEvent> events) {
+    boolean retained = false;
+    try {
+        RemoteStepResult retention = session.retainRecentSuccessfulReleases(application);
+        retained = retention.succeeded();
+        events.add(DeploymentEvent.result(DeploymentTraceEvent.RELEASE_RETENTION, retained, retention.evidence()));
+    } catch (LinuxOperationException exception) {
+        events.add(DeploymentEvent.failed(DeploymentTraceEvent.RELEASE_RETENTION, exception.failure()));
+    }
+    boolean cleaned = cleanup(session, workspace, events);
+    DeploymentResult result = new DeploymentResult(DeploymentStatus.SUCCEEDED, events, Optional.of(observation),
+            Optional.of(releaseIdentity));
+    return retained && cleaned ? result : result.withNonFatalFailure(failure(
+            DeploymentExecutionFailureType.POST_PUBLICATION_CLEANUP_PENDING,
+            "The verified release remains active; candidate or retained release cleanup needs attention"));
+    }
+
     private static DeploymentResult validateRequestBinding(
             ReviewedDeploymentRequest request, ManagedApplication application, SshEndpoint endpoint,
             List<DeploymentEvent> events) {
@@ -182,9 +208,9 @@ public final class ReviewedDeploymentService {
             return rejected(events, DeploymentTraceEvent.MANAGED_IDENTITY,
                     "Reviewed request and managed application identity do not match");
         }
-        if (request.limits().runAsRoot() != "root".equals(endpoint.username())) {
+        if (request.limits().runAsRoot() || !"root".equals(endpoint.username())) {
             return rejected(events, DeploymentTraceEvent.ROOT_BUILD_SESSION,
-                    "Root build approval and the SSH account must agree before a candidate is created");
+                    "Root management and restricted build execution are required before a candidate is created");
         }
         return null;
     }
@@ -212,8 +238,14 @@ public final class ReviewedDeploymentService {
         }
         events.add(DeploymentEvent.result(DeploymentTraceEvent.TARGET_CAPABILITIES, true,
                 "Target capabilities were collected before the reviewed deployment"));
+        var platform = HostSupportEvaluator.evaluatePlatform(session.collectDeploymentCapabilities());
+        if (platform.support() != HostSupportStatus.READY_FOR_RUNTIME_VALIDATION)
+            return rejected(events, DeploymentTraceEvent.TYPED_HOST_COMPATIBILITY, String.join("; ", platform.evidence()));
+        events.add(DeploymentEvent.result(DeploymentTraceEvent.TYPED_HOST_COMPATIBILITY, true,
+                "Preparing the reviewed project toolchains before uploading source"));
+        var prepared = session.prepareToolchains(request.facts(), request.runtime(), request.limits());
         HostSupportDecision typedCompatibility = HostSupportEvaluator.evaluate(
-                session.collectDeploymentCapabilities(), request.facts(), request.runtime());
+                prepared.capabilities(), request.facts(), request.runtime(), prepared.toolchains());
         events.add(DeploymentEvent.result(DeploymentTraceEvent.TYPED_HOST_COMPATIBILITY,
                 typedCompatibility.support() == HostSupportStatus.READY_FOR_RUNTIME_VALIDATION,
                 String.join("; ", typedCompatibility.evidence())));
@@ -229,10 +261,10 @@ public final class ReviewedDeploymentService {
                                              List<DeploymentEvent> events)
             throws LinuxOperationException {
         RemoteStepResult rollback = session.rollbackDeployment(application, snapshot, build, releaseIdentity,
-                request.runtime(), inputs);
+                request.runtime(), DeploymentInputMapper.manifest(inputs));
         events.add(DeploymentEvent.result(DeploymentTraceEvent.ROLLBACK, rollback.succeeded(), rollback.evidence()));
-        cleanup(session, workspace, events);
-        if (!rollback.succeeded()) {
+        boolean cleaned = cleanup(session, workspace, events);
+        if (!rollback.succeeded() || !cleaned) {
             return new DeploymentResult(DeploymentStatus.MANUAL_RECOVERY_REQUIRED, events, Optional.empty(), Optional.empty());
         }
         if (!snapshot.hasPreviousRelease()) {

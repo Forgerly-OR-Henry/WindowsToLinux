@@ -1,0 +1,16 @@
+{
+  "name": "http-service-pnpm",
+  "version": "1.0.0",
+  "private": true,
+  "packageManager": "pnpm@10.15.1",
+  "engines": {
+    "node": "18"
+  },
+  "scripts": {
+    "build": "node build.js",
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "zod": "3.25.76"
+  }
+}

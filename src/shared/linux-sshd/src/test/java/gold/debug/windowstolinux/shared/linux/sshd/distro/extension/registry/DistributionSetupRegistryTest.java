@@ -3,6 +3,13 @@ package gold.debug.windowstolinux.shared.linux.sshd.distro.extension.registry;
 import gold.debug.windowstolinux.shared.linux.error.LinuxOperationException;
 import gold.debug.windowstolinux.shared.linux.protocol.ManagedHelperProtocol;
 import gold.debug.windowstolinux.shared.linux.sshd.distro.apt.AptSetupRenderer;
+import gold.debug.windowstolinux.shared.linux.sshd.distro.DistributionSetupRenderer;
+import gold.debug.windowstolinux.shared.linux.sshd.distro.apt.DebianSetupRenderer;
+import gold.debug.windowstolinux.shared.linux.sshd.distro.apt.UbuntuSetupRenderer;
+import gold.debug.windowstolinux.shared.linux.sshd.distro.dnf.AlmaLinuxSetupRenderer;
+import gold.debug.windowstolinux.shared.linux.sshd.distro.dnf.CentosStreamSetupRenderer;
+import gold.debug.windowstolinux.shared.linux.sshd.distro.dnf.OracleLinuxSetupRenderer;
+import gold.debug.windowstolinux.shared.linux.sshd.distro.dnf.RockyLinuxSetupRenderer;
 import gold.debug.windowstolinux.shared.model.capability.LinuxCapabilityFacts;
 import gold.debug.windowstolinux.shared.model.capability.ServerCapabilityFacts;
 import gold.debug.windowstolinux.shared.model.health.HealthCheck;
@@ -24,6 +31,7 @@ import java.util.HexFormat;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.stream.Collectors;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -32,7 +40,39 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class DistributionSetupRegistryTest {
     @Test
-    void rootPreparationPathDoesNotRequirePreinstalledSudoAndNonRootPathDoes() throws Exception {
+    void registersExactlyTheSixNamedDistributionImplementations() {
+        assertEquals(Map.of(
+                LinuxDistroType.UBUNTU, UbuntuSetupRenderer.class,
+                LinuxDistroType.DEBIAN, DebianSetupRenderer.class,
+                LinuxDistroType.CENTOS_STREAM, CentosStreamSetupRenderer.class,
+                LinuxDistroType.ROCKY_LINUX, RockyLinuxSetupRenderer.class,
+                LinuxDistroType.ALMALINUX, AlmaLinuxSetupRenderer.class,
+                LinuxDistroType.ORACLE_LINUX, OracleLinuxSetupRenderer.class),
+                DistributionSetupCatalog.defaults().stream().collect(Collectors.toMap(
+                        DistributionSetupRenderer::distro, Object::getClass)));
+    }
+
+    @Test
+    void everyEnterpriseImplementationRejectsMissingEnforcingEvidence() {
+        for (DistributionSetupRenderer renderer : List.of(new CentosStreamSetupRenderer(),
+                new RockyLinuxSetupRenderer(), new AlmaLinuxSetupRenderer(), new OracleLinuxSetupRenderer())) {
+            for (LinuxSecurityPosture security : List.of(
+                    new LinuxSecurityPosture(LinuxSecurityModuleType.SELINUX, LinuxSecurityState.PERMISSIVE,
+                            LinuxFirewallKind.NONE, LinuxFirewallState.INACTIVE),
+                    new LinuxSecurityPosture(LinuxSecurityModuleType.NONE, LinuxSecurityState.DISABLED,
+                            LinuxFirewallKind.NONE, LinuxFirewallState.INACTIVE))) {
+                String version = renderer.distro() == LinuxDistroType.CENTOS_STREAM ? "10" : "10.2";
+                LinuxCapabilityFacts facts = facts(renderer.distro(), version, "x86_64", security);
+                LinuxOperationException failure = assertThrows(LinuxOperationException.class,
+                        () -> renderer.render(facts, "deployer"));
+                assertEquals("Enterprise Linux automatic preparation requires collected SELinux enforcing evidence",
+                        failure.failure().diagnostic());
+            }
+        }
+    }
+
+    @Test
+    void rootPreparationRejectsOtherIdentitiesBeforeInstallation() throws Exception {
         String script = renderSetup(LinuxDistroType.UBUNTU, "24.04", "amd64", "root");
         int timeout = AptSetupRenderer.LOCK_TIMEOUT_SECONDS;
 
@@ -42,16 +82,11 @@ class DistributionSetupRegistryTest {
         assertTrue(firstAptMutation > script.indexOf("test \"$(uname -m)\" = x86_64"));
         assertTrue(firstAptMutation > script.indexOf("command -v systemctl >/dev/null 2>&1"));
         assertTrue(firstAptMutation > script.indexOf("test -x /usr/bin/apt-get"));
-        assertTrue(script.contains("if [ \"$(id -u)\" -eq 0 ]; then\n  elevation=root"));
-        assertTrue(script.contains("elif [ -x /usr/bin/sudo ] && /usr/bin/sudo -n true"));
-        assertTrue(script.contains("/usr/bin/sudo -n /usr/bin/apt-get --version >/dev/null"));
-        assertTrue(script.contains("/usr/bin/sudo -n /usr/sbin/visudo -V >/dev/null"));
-        assertTrue(script.contains("/usr/bin/sudo -n /usr/bin/install --version >/dev/null"));
+        assertTrue(script.contains("root-management-required"));
+        assertTrue(script.indexOf("root-management-required") < firstAptMutation);
+        assertFalse(script.contains("sudo -n"));
         assertTrue(script.contains("/usr/bin/apt-get -o DPkg::Lock::Timeout=" + timeout + " update"));
         assertTrue(script.contains("/usr/bin/apt-get -o DPkg::Lock::Timeout=" + timeout
-                + " install -y --no-install-recommends openjdk-21-jdk-headless maven curl sudo"));
-        assertTrue(script.contains("/usr/bin/sudo -n DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=l /usr/bin/apt-get -o DPkg::Lock::Timeout=" + timeout + " update"));
-        assertTrue(script.contains("/usr/bin/sudo -n DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=l /usr/bin/apt-get -o DPkg::Lock::Timeout=" + timeout
                 + " install -y --no-install-recommends openjdk-21-jdk-headless maven curl sudo"));
         assertTrue(script.contains("command -v tar >/dev/null 2>&1"));
         assertTrue(script.contains("command -v gzip >/dev/null 2>&1"));
@@ -63,12 +98,12 @@ class DistributionSetupRegistryTest {
         assertTrue(script.contains("docker info >/dev/null 2>&1"));
         assertTrue(script.contains("podman info >/dev/null 2>&1"));
         assertFalse(script.contains("command -v unzip"));
-        assertTrue(script.contains("/usr/bin/install -o root -g root -m 440 \"$tmp\" '/etc/sudoers.d/windowstolinux-managed'"));
+        assertFalse(script.contains("NOPASSWD"));
         assertTrue(script.contains("/usr/bin/install -o root -g root -m 755 \"$helper_tmp\" '/usr/local/lib/windowstolinux/managed-helper'"));
-        assertTrue(script.contains("helper_probe=\"$(\"/usr/bin/sudo\" -n '/usr/local/lib/windowstolinux/managed-helper' probe)\""));
+        assertTrue(script.contains("helper_probe=\"$('/usr/local/lib/windowstolinux/managed-helper' probe)\""));
         assertTrue(script.contains("grep -qx 'PROTOCOL=" + ManagedHelperProtocol.VERSION + "'"));
         assertFalse(script.contains("sudo -S"));
-        assertFalse(script.contains("/var/lib/windowstolinux/work"));
+        assertFalse(script.substring(0, script.indexOf("\nhelper_tmp=")).contains("candidate-create"));
     }
 
     @Test
@@ -87,18 +122,19 @@ class DistributionSetupRegistryTest {
         assertFalse(centos.contains("VARIANT_ID"));
         assertTrue(centos.contains("test \"${VERSION_ID:-}\" = '9'"));
         assertTrue(centos.indexOf("test \"$(getenforce)\" = Enforcing")
-                < centos.indexOf("/usr/bin/dnf -y install"));
+                < centos.indexOf("/usr/bin/dnf --enablerepo=crb -y install"));
         assertTrue(rocky.contains("test \"${ID:-}\" = 'rocky'"));
         assertTrue(rocky.contains("test \"${VERSION_ID:-}\" = '10.2'"));
         assertTrue(rocky.contains("x86-64-v3.*supported"));
         assertTrue(alma.contains("test \"${ID:-}\" = 'almalinux'"));
         assertTrue(oracle.contains("test \"${ID:-}\" = 'ol'"));
-        assertTrue(centos.contains("/usr/bin/dnf -y install java-21-openjdk-devel maven curl sudo"));
-        assertTrue(centos.contains("/usr/bin/sudo -n /usr/bin/dnf -y install java-21-openjdk-devel maven curl sudo"));
+        assertTrue(centos.contains("/usr/bin/dnf --enablerepo=crb -y install java-21-openjdk-devel maven curl sudo"));
+        assertFalse(centos.contains("sudo -n"));
         for (String script : List.of(ubuntu, debian, centos, rocky, alma, oracle)) {
-            int mutation = script.contains("/usr/bin/apt-get")
+            String preparationPath = script.substring(0, script.indexOf("\nhelper_tmp="));
+            int mutation = preparationPath.contains("/usr/bin/apt-get")
                     ? script.indexOf("/usr/bin/apt-get -o DPkg::Lock::Timeout=")
-                    : script.indexOf("/usr/bin/dnf -y install");
+                    : script.indexOf("/usr/bin/dnf ");
             assertTrue(mutation > script.indexOf("security_before=\"$(security_state)\""));
             assertTrue(script.contains("test \"$security_after\" = \"$security_before\""));
             assertTrue(script.contains("*:active) test \"$firewall_after\" = \"$firewall_before\""));
@@ -112,7 +148,6 @@ class DistributionSetupRegistryTest {
             assertTrue(script.contains("java-21-openjdk*/bin/java"));
             assertTrue(script.contains("/usr/local/lib/windowstolinux/java-21"));
             assertFalse(script.contains("alternatives --set"));
-            String preparationPath = script.substring(0, script.indexOf("\nhelper="));
             assertFalse(preparationPath.contains("setenforce"));
             assertFalse(preparationPath.contains("systemctl disable"));
             assertFalse(preparationPath.contains("systemctl stop"));
@@ -127,28 +162,29 @@ class DistributionSetupRegistryTest {
         int cpuCheckPosition = script.indexOf(cpuCheck);
 
         assertTrue(cpuCheckPosition >= 0, "preparation must check the distribution CPU baseline");
-        assertTrue(cpuCheckPosition < script.indexOf("/usr/bin/dnf -y install"),
+        assertTrue(cpuCheckPosition < script.indexOf("/usr/bin/dnf --enablerepo=crb -y install"),
                 "CPU validation must precede package installation");
+        assertFalse(script.contains("config-manager"), "CRB must not be permanently enabled");
     }
 
     @Test
     void preservesEverySupportedScriptAndUnsupportedRejectionSnapshot() throws Exception {
         List<ScriptSnapshot> scripts = List.of(
-                new ScriptSnapshot(LinuxDistroType.UBUNTU, "22.04", "amd64", "e726ab4118f4eea4efd6979a3ae807cd7777c9d716b7e17585d65d36ac476fda"),
-                new ScriptSnapshot(LinuxDistroType.UBUNTU, "24.04", "amd64", "9d5e2a639f4558cc74662f2b5795f622cc12c7c89d6f1573ccd03738db78b1c4"),
-                new ScriptSnapshot(LinuxDistroType.DEBIAN, "13", "amd64", "232967df09eba24ed9b99566c9cea9daf1e559c06915fb7dcd21a7856acf7a76"),
-                new ScriptSnapshot(LinuxDistroType.CENTOS_STREAM, "9", "x86_64", "9d6622a7be770de622232010c6491bfbe79bf84d482d1f5c405d1dc45fdf1115"),
-                new ScriptSnapshot(LinuxDistroType.CENTOS_STREAM, "10", "x86_64", "1571b29315ce085f8df7046040e1952fa1f56fa69b5e6630e51a8af6ea8c3e6f"),
-                new ScriptSnapshot(LinuxDistroType.ROCKY_LINUX, "9.8", "x86_64", "6ca5a3d0e372951dc5a34fef18804c7496efa3a9fdb1f0894429b541ab54d66d"),
-                new ScriptSnapshot(LinuxDistroType.ROCKY_LINUX, "10.2", "x86_64", "50161e3eac32b90202bf04d7eff56610e5531340ba70a2792d090e1e955f8355"),
-                new ScriptSnapshot(LinuxDistroType.ALMALINUX, "9.8", "x86_64", "5aa1edb7157776dbbcadf12fec5b46730477bc034ce1b6ae9838afd73ebcf7eb"),
-                new ScriptSnapshot(LinuxDistroType.ALMALINUX, "10.2", "x86_64", "73580439c75e3753c2abf903918646e3815b76a59b7866a852ab13dc123d839b"),
-                new ScriptSnapshot(LinuxDistroType.ORACLE_LINUX, "9.7", "x86_64", "ac5ed3ed276357a77fb760897df81ff1b3c8120aa85aa392b2e9ac1601d558de"),
-                new ScriptSnapshot(LinuxDistroType.ORACLE_LINUX, "10.2", "x86_64", "bb4610139d4ee51eaaa7343acddc9186944426c157b012b336119268a886e8cd"));
+                new ScriptSnapshot(LinuxDistroType.UBUNTU, "22.04", "amd64", "eaf1ab933802a5cc6f23c7899558d38322d939b407f2bbb3fa56197d68d4bfdb"),
+                new ScriptSnapshot(LinuxDistroType.UBUNTU, "24.04", "amd64", "d6a8dffd72420a00b543f984c496b98d576dd7fd95910f137245ce77fa73c5fd"),
+                new ScriptSnapshot(LinuxDistroType.DEBIAN, "13", "amd64", "df2d1bef590e8eb49152a09be960a26b15c362f961a97872eb246a5eddb6e7fb"),
+                new ScriptSnapshot(LinuxDistroType.CENTOS_STREAM, "9", "x86_64", "b38b653a1fdf665a402169555b2f44374044595a60767161c458af4199321064"),
+                new ScriptSnapshot(LinuxDistroType.CENTOS_STREAM, "10", "x86_64", "2ed63cbe44581d7fcb0ea20f01e0e8937a4d0f7fe5969144cc1df74c17072d95"),
+                new ScriptSnapshot(LinuxDistroType.ROCKY_LINUX, "9.8", "x86_64", "a3076895b9f8a77e75680e0a124523911a418f1e38c4c04740706baab2c59720"),
+                new ScriptSnapshot(LinuxDistroType.ROCKY_LINUX, "10.2", "x86_64", "b5b590980b5e0799d2f2c209cf4c4b0db00914579bfe36d498ddbc1b890ce294"),
+                new ScriptSnapshot(LinuxDistroType.ALMALINUX, "9.8", "x86_64", "6c086a497330035aaaf6bc26f51c259ce99591cd28ee2a267bb47ac1922384e8"),
+                new ScriptSnapshot(LinuxDistroType.ALMALINUX, "10.2", "x86_64", "184ba47e84210c2d0d73e1f730d53334bcc5d0fb59eac1e0b1b0bf2cf662656d"),
+                new ScriptSnapshot(LinuxDistroType.ORACLE_LINUX, "9.7", "x86_64", "569185d16a2a4811e36a7e0cf04d65be1afed1545a21700b5d294e7bcacaab9d"),
+                new ScriptSnapshot(LinuxDistroType.ORACLE_LINUX, "10.2", "x86_64", "0f586d32997be24872857301ed152528bb54885545f3bc7b130bb057fd682d5e"));
         List<String> changed = new ArrayList<>();
         for (ScriptSnapshot snapshot : scripts) {
             String actual = sha256(renderSetup(
-                    snapshot.distro(), snapshot.version(), snapshot.packageArchitecture(), "deployer"));
+                    snapshot.distro(), snapshot.version(), snapshot.packageArchitecture(), "root"));
             if (!snapshot.sha256().equals(actual)) {
                 changed.add(snapshot.distro() + " " + snapshot.version() + "=" + actual);
             }
@@ -163,7 +199,7 @@ class DistributionSetupRegistryTest {
                 new RejectedSnapshot(LinuxDistroType.ALMALINUX, "10.2", "x86_64_v2"),
                 new RejectedSnapshot(LinuxDistroType.ORACLE_LINUX, "9.6", "x86_64"))) {
             LinuxOperationException failure = assertThrows(LinuxOperationException.class, () -> renderSetup(
-                    snapshot.distro(), snapshot.version(), snapshot.packageArchitecture(), "deployer"));
+                    snapshot.distro(), snapshot.version(), snapshot.packageArchitecture(), "root"));
             assertEquals("linux.error.environmentUnsupportedDistro", failure.failure().userMessage().key());
             assertEquals("The collected distribution version is outside the managed deployment preparation matrix",
                     failure.failure().diagnostic());
@@ -196,12 +232,16 @@ class DistributionSetupRegistryTest {
                 enterprise ? LinuxSecurityModuleType.SELINUX : LinuxSecurityModuleType.APPARMOR,
                 enterprise ? LinuxSecurityState.ENFORCING : LinuxSecurityState.ENABLED,
                 LinuxFirewallKind.NONE, LinuxFirewallState.INACTIVE);
-        LinuxCapabilityFacts capabilities = new LinuxCapabilityFacts(
+        return DistributionSetupRegistry.defaults().render(facts(distro, version, packageArchitecture, security), username);
+    }
+
+    private static LinuxCapabilityFacts facts(LinuxDistroType distro, String version, String packageArchitecture,
+                                               LinuxSecurityPosture security) {
+        return new LinuxCapabilityFacts(
                 distro, version, "x86_64", distro == LinuxDistroType.UBUNTU || distro == LinuxDistroType.DEBIAN ? "apt" : "dnf",
                 packageArchitecture, true, false, false, false,
                 Set.of(), Set.of(), false, false, Set.of(), false, Map.of(), Map.of(), false, false,
                 CpuMicroarchitectureLevel.X86_64_V3, Set.of(), security, "test capabilities");
-        return DistributionSetupRegistry.defaults().render(capabilities, username);
     }
 
     private static String sha256(String script) throws Exception {

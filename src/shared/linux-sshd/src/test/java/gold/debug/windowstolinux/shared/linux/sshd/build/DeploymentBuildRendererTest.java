@@ -64,16 +64,16 @@ class DeploymentBuildRendererTest {
         assertTrue(render(new GradleBuildRenderer(), DeploymentBuildToolType.GRADLE_WRAPPER, spring)
                 .contains("./gradlew --no-daemon -x test bootJar"));
         assertTrue(render(new MavenBuildRenderer(), DeploymentBuildToolType.MAVEN_WRAPPER, spring)
-                .contains("./mvnw -B -DskipTests package"));
+                .contains("./mvnw -B \"${maven_toolchain_arguments[@]}\" -DskipTests package"));
         assertTrue(render(new MavenBuildRenderer(), DeploymentBuildToolType.MAVEN, spring)
-                .contains("run mvn -B -DskipTests package"));
+                .contains("run mvn -B \"${maven_toolchain_arguments[@]}\" -DskipTests package"));
         assertTrue(render(new JavaJarBuildRenderer(), DeploymentBuildToolType.JAVA,
                 new DeploymentRuntimeSpecification.JavaJar("server.jar", "demo.Main", "21", List.of(), List.of(), TCP))
                 .contains("test -f \"$artifact\""));
         String jdk = render(new JdkBuildRenderer(), DeploymentBuildToolType.JDK,
                 new DeploymentRuntimeSpecification.JavaSource("src", "demo.Main", "21", List.of(), List.of(), TCP));
-        assertTrue(jdk.contains("javac --release 21 -proc:none"));
-        assertTrue(jdk.contains("jar --create --file ./.w2l/java/app.jar --date=1980-01-01T00:00:02Z"));
+        assertTrue(jdk.contains("javac \"${javac_arguments[@]}\" -proc:none"));
+        assertTrue(jdk.contains("jar cfm ./.w2l/java/app.jar ./.w2l/java/MANIFEST.MF"));
 
         var node = new DeploymentRuntimeSpecification.NodeService(22, TCP);
         assertTrue(render(new NpmBuildRenderer(), DeploymentBuildToolType.NPM, node).contains("npm ci --ignore-scripts"));
@@ -92,7 +92,7 @@ class DeploymentBuildRendererTest {
         assertTrue(poetry.contains("poetry sync --only main --no-root --no-interaction"));
         assertFalse(poetry.contains("poetry install"));
         assertTrue(render(new UvBuildRenderer(), DeploymentBuildToolType.UV_LOCKED, python)
-                .contains("uv sync --active --frozen --no-dev"));
+                .contains("uv sync --active --locked --no-dev"));
 
         assertTrue(render(new StaticSiteBuildRenderer(), DeploymentBuildToolType.STATIC_SITE_BUILD,
                 new DeploymentRuntimeSpecification.StaticSite("public", HTTP)).contains("test -d './public'"));
@@ -104,15 +104,21 @@ class DeploymentBuildRendererTest {
         assertTrue(service(new CargoBuildRenderer(), DeploymentBuildToolType.CARGO_LOCKED, "1.89.0", "demo",
                 "src/main.rs", OptionalInt.empty()).contains("cargo build --locked --release"));
         assertTrue(service(new DotNetSdkBuildRenderer(), DeploymentBuildToolType.DOTNET_LOCKED, "8.0.408", "Demo",
-                "Demo.dll", OptionalInt.empty()).contains("dotnet restore --locked-mode"));
+                "Demo.dll", OptionalInt.empty()).contains("\"${dotnet_command[@]}\" restore --locked-mode"));
 
         String kotlinGradle = service(new KotlinGradleBuildRenderer(), DeploymentBuildToolType.GRADLE_KOTLIN_WRAPPER,
                 "2.0.21", "demo", "demo.MainKt", OptionalInt.empty());
         assertTrue(kotlinGradle.contains("--no-daemon installDist"));
         assertTrue(kotlinGradle.contains("sha256sum --check --status"));
+        assertTrue(kotlinGradle.contains("gradle_cache_root=\"$mutable/home/gradle-distributions\""));
+        assertFalse(kotlinGradle.contains("/var/lib/windowstolinux/cache"));
+        assertTrue(kotlinGradle.contains("wrapper_properties=\"$wrapper_root/gradle/wrapper/gradle-wrapper.properties\""));
+        assertTrue(kotlinGradle.contains("--project-dir \"$source\""));
+        assertTrue(kotlinGradle.contains("distribution_urls[0]//\\\\:/:"));
+        assertFalse(kotlinGradle.contains("wrapper_properties=./gradle/"));
         assertTrue(service(new KotlinCompilerBuildRenderer(), DeploymentBuildToolType.KOTLINC,
                 "2.0.21", "demo", "demo.MainKt", OptionalInt.empty())
-                .contains("run \"$kotlin_compiler\" -jvm-target 21 -include-runtime"));
+                .contains("run \"$kotlin_compiler\" -jvm-target '21' -include-runtime"));
         assertTrue(service(new ComposerBuildRenderer(), DeploymentBuildToolType.COMPOSER_LOCKED, "8.3", "public",
                 "public/index.php", OptionalInt.of(8080)).contains("--no-plugins --no-scripts"));
         assertTrue(service(new PhpCliBuildRenderer(), DeploymentBuildToolType.PHP_CLI, "8.3", "public",
@@ -155,6 +161,88 @@ class DeploymentBuildRendererTest {
     }
 
     @Test
+    void rendersCatalogBoundariesWithExplicitSelectionsAndUnchangedProjectTargets() {
+        var catalog = gold.debug.windowstolinux.shared.model.toolchain.ToolchainSupportCatalog.defaults();
+        for (var ecosystem : gold.debug.windowstolinux.shared.model.toolchain.ToolchainEcosystemType.values()) {
+            var branches = catalog.branches(ecosystem);
+            for (var branch : List.of(branches.getFirst(), branches.get(branches.size() / 2), branches.getLast())) {
+                String version = branch.version();
+                DeploymentRuntimeSpecification runtime = switch (ecosystem) {
+                    case JAVA -> new DeploymentRuntimeSpecification.JavaSource("src", "demo.Main", version, List.of(), List.of(), TCP);
+                    case NODE -> new DeploymentRuntimeSpecification.NodeService(Integer.parseInt(version), TCP);
+                    case PYTHON -> new DeploymentRuntimeSpecification.PythonService(version, "demo.main", TCP);
+                    case GO -> new DeploymentRuntimeSpecification.GoService(version, "demo", "main.go", TCP);
+                    case RUST -> new DeploymentRuntimeSpecification.RustService(version, "demo", "src/main.rs", TCP);
+                    case DOTNET -> new DeploymentRuntimeSpecification.DotNetService(version + ".0.100", "Demo", "Demo.dll", TCP);
+                    case KOTLIN -> new DeploymentRuntimeSpecification.KotlinService(version, "demo", "demo.MainKt", "8", TCP);
+                    case PHP -> new DeploymentRuntimeSpecification.PhpService(version, "public", "public/index.php", 8080, TCP);
+                    case RUBY -> new DeploymentRuntimeSpecification.RubyService(version, "source", "server.rb", 8080, TCP);
+                    case C, CPP -> new DeploymentRuntimeSpecification.CmakeService("w2l-release", "demo", "demo", TCP);
+                };
+                DeploymentBuildRenderer renderer = switch (ecosystem) {
+                    case JAVA -> new JdkBuildRenderer(); case NODE -> new NpmBuildRenderer();
+                    case PYTHON -> new PipBuildRenderer(); case GO -> new GoBuildRenderer();
+                    case RUST -> new CargoBuildRenderer(); case DOTNET -> new DotNetSdkBuildRenderer();
+                    case KOTLIN -> new KotlinCompilerBuildRenderer(); case PHP -> new PhpCliBuildRenderer();
+                    case RUBY -> new RubyCliBuildRenderer(); case C, CPP -> new CmakeBuildRenderer();
+                };
+                var tool = renderer.buildTools().iterator().next();
+                String build = render(renderer, tool, runtime);
+                assertTrue(build.contains("BUILD_TOOL=" + tool.name()), ecosystem + version);
+                if (ecosystem == gold.debug.windowstolinux.shared.model.toolchain.ToolchainEcosystemType.C
+                        || ecosystem == gold.debug.windowstolinux.shared.model.toolchain.ToolchainEcosystemType.CPP) {
+                    assertTrue(build.contains("cmake --preset"));
+                    assertFalse(build.contains("-DCMAKE_C_STANDARD="));
+                    continue;
+                }
+                var requirement = gold.debug.windowstolinux.shared.model.toolchain.ToolchainRequirement.declared(ecosystem,
+                        version, "boundary-fixture", gold.debug.windowstolinux.shared.model.toolchain.ToolchainRequirement.PurposeType.BUILD);
+                var exact = gold.debug.windowstolinux.shared.model.toolchain.ToolchainVersion.parse(ecosystem,
+                        version + (ecosystem.branchSegments() == 1 ? ".0.1" : ".1")).orElseThrow();
+                var set = new gold.debug.windowstolinux.shared.model.toolchain.ResolvedToolchainSet(catalog.revision(), List.of(
+                        new gold.debug.windowstolinux.shared.model.toolchain.ResolvedToolchainSet.Selection(requirement, exact,
+                                "/usr/local/lib/windowstolinux/toolchains/versions/fixture-" + SHA,
+                                gold.debug.windowstolinux.shared.model.toolchain.ResolvedToolchainSet.OriginType.MANAGED,
+                                "https://example.test/fixture", SHA)));
+                String environment = gold.debug.windowstolinux.shared.linux.sshd.toolchain.ToolchainBuildEnvironment.render(set);
+                assertTrue(environment.contains("WTL_" + ecosystem.name() + "_VERSION='" + exact.text() + "'"));
+                assertTrue(environment.contains("export PATH='/usr/local/lib/windowstolinux/toolchains/versions/fixture-"));
+                if (ecosystem == gold.debug.windowstolinux.shared.model.toolchain.ToolchainEcosystemType.JAVA)
+                    assertTrue(build.contains("target_java='" + version + "'"));
+                assertFalse(build.contains("sed -i"), "version preparation must not edit project declarations");
+            }
+        }
+    }
+
+    @Test
+    void jdkBuildRejectsSystemFallbackWhenBoundCompilerIsInaccessible() throws Exception {
+        String bash = System.getProperty("managed.test.bash", "");
+        org.junit.jupiter.api.Assumptions.assumeFalse(bash.isBlank(), "requires an explicitly selected bash");
+        var ecosystem = gold.debug.windowstolinux.shared.model.toolchain.ToolchainEcosystemType.JAVA;
+        var requirement = gold.debug.windowstolinux.shared.model.toolchain.ToolchainRequirement.declared(ecosystem,
+                "21", "fixture", gold.debug.windowstolinux.shared.model.toolchain.ToolchainRequirement.PurposeType.BUILD);
+        var version = gold.debug.windowstolinux.shared.model.toolchain.ToolchainVersion.parse(ecosystem, "21.0.12.1+1").orElseThrow();
+        var selection = new gold.debug.windowstolinux.shared.model.toolchain.ResolvedToolchainSet.Selection(requirement,
+                version, "/wtl-selected-jdk", gold.debug.windowstolinux.shared.model.toolchain.ResolvedToolchainSet.OriginType.MANAGED,
+                "https://example.test/fixture", SHA);
+        String guard = gold.debug.windowstolinux.shared.linux.sshd.toolchain.ToolchainBuildEnvironment.render(
+                new gold.debug.windowstolinux.shared.model.toolchain.ResolvedToolchainSet("fixture", List.of(selection)));
+        for (boolean available : new boolean[]{false, true}) {
+            String setup = "export WTL_JAVA_HOME=/wtl-selected-jdk\n"
+                    + "command() { printf '%s\\n' /" + (available ? "wtl-selected-jdk" : "system-jdk") + "/bin/$2; }\n"
+                    + "[() { if test \"$1\" = '!' && test \"$2\" = -x; then return 1; fi; builtin [ \"$@\"; }\n";
+            Process process = new ProcessBuilder(bash, "--noprofile", "--norc").redirectErrorStream(true).start();
+            try (var input = process.getOutputStream()) {
+                input.write((setup + guard + "printf 'BOUND_JDK_ACCEPTED\\n'\n").getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            }
+            String output = new String(process.getInputStream().readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
+            org.junit.jupiter.api.Assertions.assertEquals(available ? 0 : 65, process.waitFor(), output);
+            org.junit.jupiter.api.Assertions.assertEquals(available, output.contains("BOUND_JDK_ACCEPTED"), output);
+            org.junit.jupiter.api.Assertions.assertEquals(!available, output.contains("TOOLCHAIN_FAILURE=integrity"), output);
+        }
+    }
+
+    @Test
     void registryRequiresExactlyOneRendererForEveryArchitecture() {
         List<DeploymentBuildRenderer> complete = renderers();
         new DeploymentBuildRendererRegistry(complete);
@@ -162,6 +250,40 @@ class DeploymentBuildRendererTest {
                 java.util.stream.Stream.concat(complete.stream(), java.util.stream.Stream.of(new NpmBuildRenderer())).toList()));
         assertThrows(IllegalArgumentException.class, () -> new DeploymentBuildRendererRegistry(
                 complete.subList(0, complete.size() - 1)));
+    }
+
+    @Test
+    void containerExtractionScopesItsMaskAndUsesTheExistingHardVolumeLimit() throws Exception {
+        String bash = System.getProperty("managed.test.bash", "");
+        org.junit.jupiter.api.Assumptions.assumeFalse(bash.isBlank(), "requires an explicitly selected bash");
+        for (boolean container : new boolean[]{false, true}) {
+            var workspace = new RemoteWorkspace("demo", SHA);
+            String script = SafeBuildScriptEnvelope.wrap(facts(container ? DeploymentProjectType.DOCKERFILE_CONTAINER
+                            : DeploymentProjectType.NODE_SERVICE, container ? DeploymentBuildToolType.CONTAINER_BUILD
+                            : DeploymentBuildToolType.NPM), workspace, BuildLimitConfiguration.defaultNonRoot(),
+                    "printf 'PROJECT_MASK=%s\\n' \"$(umask)\"");
+            script = script.replace(workspace.candidateRoot(), temporaryDirectory.resolve(container ? "container" : "ordinary")
+                    .toString().replace('\\', '/'));
+            String setup = """
+                    umask 077
+                    test() { if [ "$1" = -f ]; then return 0; fi; builtin test "$@"; }
+                    sha256sum() { printf '%s\\n' '%s'; }
+                    tar() {
+                      case "$1" in -tzf) echo entry ;; -tvzf) echo '-file' ;;
+                        --extract) printf 'EXTRACT_MASK=%%s\\n' "$(umask)" ;; esac
+                    }
+                    du() { echo 'UNREADABLE_ENGINE_FILE' >&2; return 7; }
+                    """.formatted("%s", SHA);
+            Process process = new ProcessBuilder(bash, "--noprofile", "--norc").redirectErrorStream(true).start();
+            try (var input = process.getOutputStream()) {
+                input.write((setup + script).getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            }
+            String output = new String(process.getInputStream().readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
+            org.junit.jupiter.api.Assertions.assertEquals(container ? 0 : 7, process.waitFor(), output);
+            assertTrue(output.contains("EXTRACT_MASK=" + (container ? "0022" : "0077")), output);
+            assertTrue(output.contains("PROJECT_MASK=0077"), output);
+            org.junit.jupiter.api.Assertions.assertEquals(!container, output.contains("UNREADABLE_ENGINE_FILE"), output);
+        }
     }
 
     private String render(DeploymentBuildRenderer renderer, DeploymentBuildToolType tool,

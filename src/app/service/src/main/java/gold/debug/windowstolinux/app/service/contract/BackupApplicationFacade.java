@@ -18,7 +18,7 @@ import java.util.function.Predicate;
 
 /** UI-facing persisted-input assessment, local inspection, and candidate preparation contract. / 面向 UI 的持久化输入评估、本地检查与候选准备契约。 */
 public interface BackupApplicationFacade {
-    /** Lists saved choices for beginner backup and migration forms. */
+    /** Lists saved choices for beginner backup and migration forms. / 列出供简易备份和迁移表单选择的已保存项。 */
     java.util.List<gold.debug.windowstolinux.app.service.execution.lifecycle.ManagedApplicationSnapshot> listManagedApplicationSummaries() throws SQLException;
     java.util.List<gold.debug.windowstolinux.app.service.server.ServerProfile> listServerProfiles() throws SQLException;
 

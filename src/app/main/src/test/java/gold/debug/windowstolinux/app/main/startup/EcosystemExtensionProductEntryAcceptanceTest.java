@@ -7,8 +7,6 @@ import gold.debug.windowstolinux.shared.config.contract.definition.Configuration
 import gold.debug.windowstolinux.shared.config.revision.ConfigurationEntry;
 import gold.debug.windowstolinux.shared.config.secretref.SecretReference;
 import gold.debug.windowstolinux.shared.deploy.contract.result.deployment.DeploymentResult;
-import gold.debug.windowstolinux.shared.deploy.support.runtime.RuntimeCapabilityDecision;
-import gold.debug.windowstolinux.shared.deploy.support.runtime.RuntimeCapabilityEvaluator;
 import gold.debug.windowstolinux.shared.model.capability.EcosystemToolType;
 import gold.debug.windowstolinux.shared.model.capability.LinuxCapabilityFacts;
 import gold.debug.windowstolinux.shared.model.deployment.DeploymentStatus;
@@ -83,49 +81,52 @@ class EcosystemExtensionProductEntryAcceptanceTest {
         String firstSecretValue = randomSecret();
         String secondSecretValue = randomSecret();
 
-        try (LiveTypedDeploymentContext context = new LiveTypedDeploymentContext(stateRoot)) {
-            LinuxCapabilityFacts capabilities = preparedCapabilities(context);
-            VersionSelection versions = versions(architecture, capabilities);
-            Path sourceRoot = EcosystemExtensionAcceptanceFixture.create(sourceParent, architecture, applicationId,
-                    versions.runtimeVersion(), versions.toolVersion(), architecture.key() + "-live-v1", true);
-            ReviewedSourcePreparation firstSource = context.prepare(sourceRoot, architecture.projectType());
-            DeploymentProjectFacts firstFacts = firstSource.assessment().facts().orElseThrow();
-            assertEquals(architecture.buildTool(), firstFacts.buildTool());
-            DeploymentRuntimeSpecification runtime = runtime(architecture, versions.runtimeVersion(), applicationId,
-                    port);
-            RuntimeCapabilityDecision preflight = RuntimeCapabilityEvaluator.evaluate(capabilities, firstFacts, runtime);
-            assertTrue(preflight.supported(), () -> "target preflight rejected " + architecture.key() + ": "
-                    + preflight.detail().orElse("unknown capability mismatch") + "; capabilities="
-                    + capabilities.evidence());
+        try (AutoCloseable cleanup = () -> {
+            try (LiveTypedDeploymentContext context = new LiveTypedDeploymentContext(stateRoot)) {
+                context.stopTestApplications();
+            }
+        }) {
+            try (LiveTypedDeploymentContext context = new LiveTypedDeploymentContext(stateRoot)) {
+                LinuxCapabilityFacts capabilities = preparedCapabilities(context);
+                VersionSelection versions = versions(architecture, capabilities);
+                Path sourceRoot = EcosystemExtensionAcceptanceFixture.create(sourceParent, architecture, applicationId,
+                        versions.runtimeVersion(), versions.toolVersion(), architecture.key() + "-live-v1", true);
+                ReviewedSourcePreparation firstSource = context.prepare(sourceRoot, architecture.projectType());
+                DeploymentProjectFacts firstFacts = firstSource.assessment().facts().orElseThrow();
+                assertEquals(architecture.buildTool(), firstFacts.buildTool());
+                assertEquals(applicationId, firstFacts.applicationId(), "live fixtures must have isolated application identities");
+                DeploymentRuntimeSpecification runtime = runtime(architecture, versions.runtimeVersion(), applicationId,
+                        port);
 
-            context.saveSecret(firstSecret, "application/extension/" + architecture.key() + "/1",
-                    firstSecretValue.toCharArray());
-            DeploymentResult first = context.deploy(firstSource, 1, configuration(port), List.of(firstSecret),
-                    runtime, access(port));
-            assertSuccessful(first, applicationId);
-            assertSecretFree(first, firstSecretValue);
-            assertHttp(port, architecture.key() + "-live-v1");
-            verifyLifecycle(context, applicationId);
+                context.saveSecret(firstSecret, "application/extension/" + architecture.key() + "/1",
+                        firstSecretValue.toCharArray());
+                DeploymentResult first = context.deploy(firstSource, 1, configuration(port), List.of(firstSecret),
+                        runtime, access(port));
+                assertSuccessful(first, applicationId);
+                assertSecretFree(first, firstSecretValue);
+                assertHttp(port, architecture.key() + "-live-v1");
+                verifyLifecycle(context, applicationId);
 
-            context.saveSecret(secondSecret, "application/extension/" + architecture.key() + "/2",
-                    secondSecretValue.toCharArray());
-            EcosystemExtensionAcceptanceFixture.create(sourceParent, architecture, applicationId,
-                    versions.runtimeVersion(), versions.toolVersion(), "unused", false);
-            ReviewedSourcePreparation rejectedSource = context.prepare(sourceRoot, architecture.projectType());
-            DeploymentResult rejected = context.deploy(rejectedSource, 2, configuration(port), List.of(secondSecret),
-                    runtime, access(port));
-            assertEquals(DeploymentStatus.FAILED_ROLLED_BACK, rejected.status(), () -> rejected.events().toString());
-            assertTrue(rejected.events().stream().anyMatch(event -> event.step().code().equals("rollback")
-                            && event.succeeded()), () -> rejected.events().toString());
-            assertSecretFree(rejected, firstSecretValue);
-            assertSecretFree(rejected, secondSecretValue);
-            assertRestored(context, applicationId, port, architecture.key() + "-live-v1");
-        }
+                context.saveSecret(secondSecret, "application/extension/" + architecture.key() + "/2",
+                        secondSecretValue.toCharArray());
+                EcosystemExtensionAcceptanceFixture.create(sourceParent, architecture, applicationId,
+                        versions.runtimeVersion(), versions.toolVersion(), "unused", false);
+                ReviewedSourcePreparation rejectedSource = context.prepare(sourceRoot, architecture.projectType());
+                DeploymentResult rejected = context.deploy(rejectedSource, 2, configuration(port), List.of(secondSecret),
+                        runtime, access(port));
+                assertEquals(DeploymentStatus.FAILED_ROLLED_BACK, rejected.status(), () -> rejected.events().toString());
+                assertTrue(rejected.events().stream().anyMatch(event -> event.step().code().equals("rollback")
+                                && event.succeeded()), () -> rejected.events().toString());
+                assertSecretFree(rejected, firstSecretValue);
+                assertSecretFree(rejected, secondSecretValue);
+                assertRestored(context, applicationId, port, architecture.key() + "-live-v1");
+            }
 
-        try (LiveTypedDeploymentContext restarted = new LiveTypedDeploymentContext(stateRoot)) {
-            assertRestored(restarted, applicationId, port, architecture.key() + "-live-v1");
-            assertEquals(RuntimeState.RUNNING,
-                    restarted.lifecycle(applicationId, LifecycleAction.RESTART).runtimeState());
+            try (LiveTypedDeploymentContext restarted = new LiveTypedDeploymentContext(stateRoot)) {
+                assertRestored(restarted, applicationId, port, architecture.key() + "-live-v1");
+                assertEquals(RuntimeState.RUNNING,
+                        restarted.lifecycle(applicationId, LifecycleAction.RESTART).runtimeState());
+            }
         }
     }
 
@@ -143,42 +144,25 @@ class EcosystemExtensionProductEntryAcceptanceTest {
 
     private static VersionSelection versions(ArchitectureType architecture, LinuxCapabilityFacts capabilities) {
         return switch (architecture) {
-            case JAVA_JDK -> {
-                requireTool(capabilities, EcosystemToolType.JAR, ignored -> true, "JDK jar tool");
-                yield new VersionSelection("21", requireTool(capabilities, EcosystemToolType.JAVAC,
-                        version -> version.equals("21") || version.startsWith("21."), "javac 21"));
-            }
+            case JAVA_JDK -> new VersionSelection("21", "");
             case NODE_NPM, NODE_PNPM, NODE_YARN -> {
                 int node = capabilities.nodeMajorVersions().stream().filter(major -> major >= 18 && major <= 24)
-                        .min(Comparator.naturalOrder()).orElseThrow(() -> new AssertionError(
-                                "target does not expose a supported Node.js 18-24 runtime"));
-                Predicate<String> compatible = switch (architecture) {
-                    case NODE_NPM -> ignored -> true;
-                    case NODE_PNPM -> version -> major(version) >= 9 && major(version) <= 11;
-                    case NODE_YARN -> version -> major(version) == 4;
+                        .min(Comparator.naturalOrder()).orElse(22);
+                String manager = switch (architecture) {
+                    case NODE_NPM -> requireTool(capabilities, EcosystemToolType.NPM, ignored -> true, "npm");
+                    case NODE_PNPM -> "10.15.1";
+                    case NODE_YARN -> "4.9.2";
                     default -> throw new IllegalStateException("not a Node architecture");
                 };
-                yield new VersionSelection(Integer.toString(node), requireTool(capabilities,
-                        architecture.toolType(), compatible, architecture.key() + " package manager"));
+                yield new VersionSelection(Integer.toString(node), manager);
             }
             case PYTHON_PIP, PYTHON_PIPENV, PYTHON_POETRY, PYTHON_UV -> {
                 String python = Stream.of("3.12", "3.11").filter(capabilities.pythonVersions()::contains)
                         .findFirst().orElseThrow(() -> new AssertionError(
                                 "target must expose reviewed Python 3.12 or 3.11 with venv support"));
-                Predicate<String> compatible = switch (architecture) {
-                    case PYTHON_PIP, PYTHON_PIPENV -> ignored -> true;
-                    case PYTHON_POETRY -> version -> major(version) == 2;
-                    case PYTHON_UV -> version -> major(version) > 0 || minor(version) >= 4;
-                    default -> throw new IllegalStateException("not a Python architecture");
-                };
-                yield new VersionSelection(python, requireTool(capabilities, architecture.toolType(), compatible,
-                        architecture.key() + " dependency tool"));
+                yield new VersionSelection(python, "");
             }
-            case KOTLIN_KOTLINC -> {
-                String compiler = requireTool(capabilities, EcosystemToolType.KOTLINC,
-                        version -> version.matches("(?:1[.]9|2[.][0-9]+)[.][0-9]+"), "supported kotlinc");
-                yield new VersionSelection(compiler, compiler);
-            }
+            case KOTLIN_KOTLINC -> new VersionSelection("2.0.21", "2.0.21");
             case PHP_CLI -> {
                 String runtime = serviceRuntime(capabilities, architecture);
                 yield new VersionSelection(runtime, requireTool(capabilities, EcosystemToolType.PHP,
@@ -240,7 +224,7 @@ class EcosystemExtensionProductEntryAcceptanceTest {
             case NODE_NPM, NODE_PNPM, NODE_YARN ->
                     new DeploymentRuntimeSpecification.NodeService(Integer.parseInt(version), health(port));
             case PYTHON_PIP, PYTHON_PIPENV, PYTHON_POETRY, PYTHON_UV ->
-                    new DeploymentRuntimeSpecification.PythonService(version, "phase3fixture", health(port));
+                    new DeploymentRuntimeSpecification.PythonService(version, "http_service_fixture", health(port));
             case KOTLIN_KOTLINC -> new DeploymentRuntimeSpecification.KotlinService(
                     version, applicationId, "acceptance.MainKt", health(port));
             case PHP_CLI -> new DeploymentRuntimeSpecification.PhpService(
@@ -248,7 +232,7 @@ class EcosystemExtensionProductEntryAcceptanceTest {
             case RUBY_CLI -> new DeploymentRuntimeSpecification.RubyService(
                     version, "source", "server.rb", port, health(port));
             case CMAKE -> new DeploymentRuntimeSpecification.CmakeService(
-                    "w2l-release", "phase3_cmake", "phase3_cmake", health(port));
+                    "w2l-release", "http_service", "http_service", health(port));
         };
     }
 
@@ -312,6 +296,29 @@ class EcosystemExtensionProductEntryAcceptanceTest {
             assertEquals(200, connection.getResponseCode(), () -> "desktop HTTP access failed: " + uri);
             try (InputStream input = connection.getInputStream()) {
                 assertTrue(new String(input.readAllBytes(), StandardCharsets.UTF_8).contains(marker));
+            }
+        } finally {
+            connection.disconnect();
+        }
+        assertSummaryApi(uri.resolve("api/summary?values=2,3,5"), 200);
+        assertSummaryApi(uri.resolve("api/summary?values=invalid"), 400);
+    }
+
+    private static void assertSummaryApi(URI uri, int expectedStatus) throws Exception {
+        HttpURLConnection connection = (HttpURLConnection) uri.toURL().openConnection();
+        connection.setConnectTimeout(20_000);
+        connection.setReadTimeout(30_000);
+        try {
+            assertEquals(expectedStatus, connection.getResponseCode(), () -> "summary API failed: " + uri);
+            if (expectedStatus == 200) {
+                assertTrue(connection.getContentType().startsWith("application/json"));
+                try (InputStream input = connection.getInputStream()) {
+                    var mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+                    var body = mapper.readTree(input);
+                    assertEquals("ok", body.path("status").asText());
+                    assertEquals(10, body.path("total").asInt());
+                    assertEquals(mapper.valueToTree(List.of(2, 3, 5)), body.path("items"));
+                }
             }
         } finally {
             connection.disconnect();

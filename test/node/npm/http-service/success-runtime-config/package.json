@@ -1,0 +1,15 @@
+{
+  "name": "http-service-npm",
+  "version": "1.0.0",
+  "private": true,
+  "engines": {
+    "node": "18"
+  },
+  "scripts": {
+    "build": "node build.js",
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "zod": "3.25.76"
+  }
+}

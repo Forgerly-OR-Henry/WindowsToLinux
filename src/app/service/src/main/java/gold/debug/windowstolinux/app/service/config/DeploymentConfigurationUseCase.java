@@ -80,6 +80,20 @@ public final class DeploymentConfigurationUseCase {
         }
     }
 
+    /** Parses user input and creates immutable storage metadata in the service. / 在服务内解析用户输入并创建不可变存储元数据。 */
+    public SecretReference saveSecretRevision(String referenceInput, gold.debug.windowstolinux.shared.model.security.CredentialStorageMode mode,
+            char[] masterPassword, char[] value) throws SQLException, SecretStoreException {
+        try {
+            var references = gold.debug.windowstolinux.app.service.config.DeploymentConfigurationParser.secrets(referenceInput);
+            if (references.size() != 1) throw new IllegalArgumentException("one exact secret revision is required");
+            var reference = references.getFirst();
+            var revision = new StoredApplicationSecretRevision(reference,
+                    "application-secret/" + reference.identifier() + "/" + reference.revision(), mode, java.time.Instant.now());
+            saveSecretRevision(revision, mode, masterPassword, value);
+            return reference;
+        } finally { clear(masterPassword); clear(value); }
+    }
+
     /** Stores one secret revision through the selected desktop-backed secret store. / 通过选定的桌面秘密存储保存一个秘密修订。 */
     public void saveSecretRevision(StoredApplicationSecretRevision revision, gold.debug.windowstolinux.shared.model.security.CredentialStorageMode mode,
                                    char[] masterPassword, char[] value) throws SQLException, SecretStoreException {

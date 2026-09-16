@@ -7,11 +7,12 @@ import gold.debug.windowstolinux.app.service.failure.ApplicationServiceException
 import gold.debug.windowstolinux.app.service.failure.ApplicationServiceFailureType;
 import gold.debug.windowstolinux.shared.linux.connection.HostKeyDecision;
 import gold.debug.windowstolinux.shared.linux.connection.HostKeyEvaluator;
+import gold.debug.windowstolinux.shared.linux.connection.HostKeyObservation;
+import gold.debug.windowstolinux.shared.linux.connection.SshEndpoint;
 import gold.debug.windowstolinux.shared.linux.error.LinuxOperationException;
 import gold.debug.windowstolinux.shared.linux.connection.DeploymentLinuxGateway;
 import gold.debug.windowstolinux.shared.linux.session.DeploymentRemoteSession;
 import gold.debug.windowstolinux.shared.linux.connection.SshCredential;
-import gold.debug.windowstolinux.shared.model.message.LocalizedMessage;
 import gold.debug.windowstolinux.shared.model.security.CredentialStorageMode;
 import gold.debug.windowstolinux.shared.model.capability.LinuxCapabilityFacts;
 import gold.debug.windowstolinux.shared.model.capability.ServerCapabilityFacts;
@@ -29,7 +30,7 @@ import java.util.function.Predicate;
  * <p>提供 {@code ServerUseCaseFacade} 实现。
  */
 public final class ServerUseCaseFacade {
-    /** Lists saved profiles for the desktop selector. */
+    /** Lists saved profiles for the desktop selector. / 列出桌面选择器使用的已保存配置。 */
     public java.util.List<ServerProfile> list() throws SQLException {
         return profiles.listServerProfiles().stream().map(ServerProfile::fromStored).toList();
     }
@@ -136,22 +137,50 @@ public final class ServerUseCaseFacade {
     public HostKeyEvaluator hostKeyVerifier(ServerProfile profile, Predicate<String> firstUseConfirmation) {
         Objects.requireNonNull(profile, "profile");
         Objects.requireNonNull(firstUseConfirmation, "firstUseConfirmation");
-        return (endpoint, observedFingerprint) -> {
-            try {
-                Optional<ServerIdentity> known = profiles.findServer(profile.id());
-                if (known.isPresent()) {
-                    ServerIdentity server = known.orElseThrow();
-                    return server.host().equals(profile.host()) && server.sshPort() == profile.sshPort()
-                            && server.hostKeySha256().equals(observedFingerprint)
-                            ? HostKeyDecision.ACCEPT_EXISTING : HostKeyDecision.REJECT;
-                }
-                if (!firstUseConfirmation.test(observedFingerprint)) {
+        return new HostKeyEvaluator() {
+            private Optional<ServerIdentity> expected = Optional.empty();
+            private HostKeyObservation accepted;
+
+            /** Verifies a standard fingerprint without historical conversion. / 验证标准指纹，不执行历史转换。 */
+            @Override public HostKeyDecision verify(SshEndpoint endpoint, String fingerprint) {
+                return verify(endpoint, new HostKeyObservation(fingerprint, fingerprint));
+            }
+
+            /** Rejects changed keys before any authentication credential is sent. / 在发送认证凭据前拒绝变化的公钥。 */
+            @Override public HostKeyDecision verify(SshEndpoint endpoint, HostKeyObservation observation) {
+                accepted = null;
+                if (!endpoint.host().equals(profile.host()) || endpoint.port() != profile.sshPort()
+                        || !endpoint.username().equals(profile.username())) return HostKeyDecision.REJECT;
+                try {
+                    expected = profiles.findServer(profile.id());
+                    if (expected.isPresent()) {
+                        ServerIdentity known = expected.orElseThrow();
+                        String matching = profiles.hasLegacyHostKey(known)
+                                ? observation.legacyEncodedSha256() : observation.sshSha256();
+                        if (!known.host().equals(endpoint.host()) || known.sshPort() != endpoint.port()
+                                || !known.hostKeySha256().equals(matching)) return HostKeyDecision.REJECT;
+                        accepted = observation;
+                        return HostKeyDecision.ACCEPT_EXISTING;
+                    }
+                    if (!firstUseConfirmation.test(observation.sshSha256())) return HostKeyDecision.REJECT;
+                    accepted = observation;
+                    return HostKeyDecision.ACCEPT_FIRST_USE;
+                } catch (SQLException failure) {
                     return HostKeyDecision.REJECT;
                 }
-                profiles.saveServer(new ServerIdentity(profile.id(), profile.host(), profile.sshPort(), observedFingerprint));
-                return HostKeyDecision.ACCEPT_FIRST_USE;
-            } catch (SQLException exception) {
-                return HostKeyDecision.REJECT;
+            }
+
+            /** Commits only the same accepted handshake key after authentication. / 认证后仅提交同一握手中已接受的公钥。 */
+            @Override public boolean authenticated(SshEndpoint endpoint, HostKeyObservation observation) {
+                if (!observation.equals(accepted) || !endpoint.equals(profile.endpoint())) return false;
+                try {
+                    profiles.saveAuthenticatedServer(new ServerIdentity(profile.id(), profile.host(), profile.sshPort(),
+                            observation.sshSha256()), expected);
+                    accepted = null;
+                    return true;
+                } catch (SQLException failure) {
+                    return false;
+                }
             }
         };
     }

@@ -30,8 +30,6 @@ import java.util.stream.Collectors;
  * <p>部署主机只读能力契约的 Apache SSHD 实现。
  */
 public final class SshdPlatformCapabilityCollector implements LinuxPlatformCapabilityCollector {
-    private static final int READ_ONLY_ATTEMPTS = 3;
-    private static final Duration READ_ONLY_RETRY_DELAY = Duration.ofMillis(250);
     private final SshCommandExecutor commands;
     private final String hostFingerprint;
 
@@ -48,7 +46,7 @@ public final class SshdPlatformCapabilityCollector implements LinuxPlatformCapab
     /** Performs the {@code collectDeploymentCapabilities} operation. / 执行 {@code collectDeploymentCapabilities} 操作。 */
     @Override
     public LinuxCapabilityFacts collectDeploymentCapabilities() throws LinuxOperationException {
-        var result = collectReadOnly(ManagedPlatformCapabilityProbe.render());
+        var result = CapabilityReadExecutor.collect(commands, LinuxOperationFailureType.DEPLOYMENT_CAPABILITY_COLLECTION_FAILED, ManagedPlatformCapabilityProbe.render());
         if (!result.succeeded()) {
             throw LinuxOperationException.create(LinuxOperationFailureType.DEPLOYMENT_CAPABILITY_COLLECTION_FAILED,
                     "Failed to collect typed deployment target capabilities: " + result.failureEvidence());
@@ -68,7 +66,7 @@ public final class SshdPlatformCapabilityCollector implements LinuxPlatformCapab
         Set<Integer> javaMajors = integerVersions(values.getOrDefault("JAVA_MAJORS", ""));
         Set<Integer> nodeMajors = integerVersions(values.getOrDefault("NODE_MAJORS", ""));
         Set<String> pythonVersions = Arrays.stream(values.getOrDefault("PYTHON_VERSIONS", "").split(","))
-                .map(String::trim).filter(value -> value.matches("3\\.(?:10|11|12|13)"))
+                .map(String::trim).filter(value -> value.matches("[0-9]{1,3}\\.[0-9]{1,3}"))
                 .collect(Collectors.toUnmodifiableSet());
         java.util.EnumMap<DeploymentProjectType, Set<String>> serviceVersions =
                 new java.util.EnumMap<>(DeploymentProjectType.class);
@@ -111,29 +109,7 @@ public final class SshdPlatformCapabilityCollector implements LinuxPlatformCapab
                 "1".equals(values.get("PODMAN_OPERATIONAL")), cpuLevel, flags, security, evidence);
     }
 
-    private SshCommandExecutor.CommandResult collectReadOnly(String script) throws LinuxOperationException {
-        for (int attempt = 1; attempt <= READ_ONLY_ATTEMPTS; attempt++) {
-            try {
-                return commands.exec(script, Duration.ofSeconds(20), true);
-            } catch (LinuxOperationException failure) {
-                if (!SshCommandExecutor.isTransientTransportFailure(failure) || attempt == READ_ONLY_ATTEMPTS) {
-                    throw failure;
-                }
-                waitForRetry();
-            }
-        }
-        throw new IllegalStateException("read-only SSH retry loop completed without a result");
-    }
 
-    private static void waitForRetry() throws LinuxOperationException {
-        try {
-            Thread.sleep(READ_ONLY_RETRY_DELAY.toMillis());
-        } catch (InterruptedException exception) {
-            Thread.currentThread().interrupt();
-            throw LinuxOperationException.create(LinuxOperationFailureType.DEPLOYMENT_CAPABILITY_COLLECTION_FAILED,
-                    "Read-only deployment capability collection retry was interrupted", exception);
-        }
-    }
 
     private static Set<Integer> integerVersions(String value) {
         return Arrays.stream(Objects.requireNonNull(value, "value").split(","))
@@ -152,7 +128,7 @@ public final class SshdPlatformCapabilityCollector implements LinuxPlatformCapab
             if ("7".equals(version) || "8".equals(version)) {
                 return LinuxDistroType.LEGACY_CENTOS;
             }
-            // CentOS Linux ended at 8; Stream 9/10 images commonly omit VARIANT_ID.
+            // CentOS Linux ended at 8; Stream 9/10 images commonly omit VARIANT_ID. / CentOS Linux 止于第 8 版，Stream 9 和 10 镜像通常省略 VARIANT_ID。
             // CentOS Linux 在 8 结束；Stream 9/10 镜像通常省略 VARIANT_ID。
             if ("9".equals(version) || "10".equals(version)) {
                 return LinuxDistroType.CENTOS_STREAM;
@@ -221,12 +197,12 @@ public final class SshdPlatformCapabilityCollector implements LinuxPlatformCapab
 
     private static boolean validServiceVersion(DeploymentProjectType projectType, String value) {
         return switch (projectType) {
-            case GO_SERVICE -> value.matches("1\\.(?:22|23|24)");
-            case RUST_SERVICE -> value.matches("1\\.(?:7[5-9]|8[0-9]|9[0-9])(?:\\.[0-9]+)?");
-            case DOTNET_SERVICE -> value.matches("(?:8|9)\\.0(?:\\.[0-9]+)?");
-            case KOTLIN_SERVICE -> value.equals("21");
-            case PHP_SERVICE -> value.matches("8\\.(?:2|3|4)");
-            case RUBY_SERVICE -> value.matches("3\\.(?:2|3|4)(?:\\.[0-9]+)?");
+            case GO_SERVICE -> value.matches("[0-9A-Za-z][0-9A-Za-z.+_-]{0,95}");
+            case RUST_SERVICE -> value.matches("[0-9A-Za-z][0-9A-Za-z.+_-]{0,95}");
+            case DOTNET_SERVICE -> value.matches("[0-9A-Za-z][0-9A-Za-z.+_-]{0,95}");
+            case KOTLIN_SERVICE -> value.matches("[0-9A-Za-z][0-9A-Za-z.+_-]{0,95}");
+            case PHP_SERVICE -> value.matches("[0-9A-Za-z][0-9A-Za-z.+_-]{0,95}");
+            case RUBY_SERVICE -> value.matches("[0-9A-Za-z][0-9A-Za-z.+_-]{0,95}");
             default -> false;
         };
     }

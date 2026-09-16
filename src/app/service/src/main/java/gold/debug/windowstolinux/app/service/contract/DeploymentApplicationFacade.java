@@ -1,6 +1,5 @@
 package gold.debug.windowstolinux.app.service.contract;
 
-import gold.debug.windowstolinux.app.db.entity.StoredApplicationSecretRevision;
 import gold.debug.windowstolinux.app.secret.SecretStoreException;
 import gold.debug.windowstolinux.app.service.deployment.single.DeploymentOutcome;
 import gold.debug.windowstolinux.app.service.server.ServerProfile;
@@ -62,7 +61,7 @@ public interface DeploymentApplicationFacade {
             ReviewedDeploymentRequest request, ServerProfile profile, CredentialStorageMode mode,
             char[] masterPassword, Predicate<String> confirmation) throws SecretStoreException, SQLException;
 
-    void saveDeploymentSecretRevision(StoredApplicationSecretRevision revision, CredentialStorageMode mode,
+    SecretReference saveDeploymentSecretRevision(String referenceInput, CredentialStorageMode mode,
                                       char[] masterPassword, char[] value)
             throws SQLException, SecretStoreException;
 }

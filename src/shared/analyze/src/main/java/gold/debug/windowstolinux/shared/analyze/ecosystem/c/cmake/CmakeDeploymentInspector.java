@@ -41,7 +41,7 @@ public final class CmakeDeploymentInspector implements DeploymentTypeInspector {
     private static final Pattern COMMAND = Pattern.compile("(?i)([A-Za-z_][A-Za-z0-9_]*)\\s*\\(");
     private static final Pattern EXECUTABLE = Pattern.compile("(?im)^\\s*add_executable\\s*\\(\\s*([A-Za-z0-9][A-Za-z0-9._-]{0,127})\\s+([^\\r\\n)]+)\\)");
     private static final Pattern MINIMUM = Pattern.compile(
-            "(?im)^\\s*cmake_minimum_required\\s*\\(\\s*VERSION\\s+3[.]25\\s*\\)\\s*$");
+            "(?im)^\\s*cmake_minimum_required\\s*\\(\\s*VERSION\\s+[0-9]+(?:[.][0-9]+){1,2}\\s*\\)\\s*$");
     private static final Pattern PROJECT = Pattern.compile(
             "(?im)^\\s*project\\s*\\(\\s*[A-Za-z0-9][A-Za-z0-9._-]{0,127}\\s+LANGUAGES\\s+([^\\r\\n)]+)\\)\\s*$");
     private static final Pattern FEATURES = Pattern.compile(
@@ -121,7 +121,7 @@ public final class CmakeDeploymentInspector implements DeploymentTypeInspector {
         }
         REVIEWED_COMMANDS.stream().filter(command -> commandCounts.getOrDefault(command, 0) != 1)
                 .forEach(command -> conflicts.add("cmake-command-count:" + command));
-        if (!MINIMUM.matcher(executableCmake).find()) missing.add("cmake minimum 3.25");
+        if (!MINIMUM.matcher(executableCmake).find()) missing.add("cmake minimum version");
         return executableCmake;
     }
 
@@ -141,10 +141,9 @@ public final class CmakeDeploymentInspector implements DeploymentTypeInspector {
             if (target == null || !target.equals(features.group(1))) conflicts.add("cmake-feature-target");
             compileFeatures.addAll(List.of(features.group(2).trim().split("\\s+")));
         }
-        Set<String> expectedFeatures = languages.equals(Set.of(SourceLanguageType.C)) ? Set.of("c_std_17")
-                : languages.equals(Set.of(SourceLanguageType.CPP)) ? Set.of("cxx_std_20")
-                : Set.of("c_std_17", "cxx_std_20");
-        if (featureDeclarations != 1 || !Set.copyOf(compileFeatures).equals(expectedFeatures)) {
+        if (featureDeclarations != 1 || compileFeatures.size() != languages.size()
+                || languages.contains(SourceLanguageType.C) && compileFeatures.stream().filter(f -> f.matches("c_std_[0-9]+" )).count() != 1
+                || languages.contains(SourceLanguageType.CPP) && compileFeatures.stream().filter(f -> f.matches("cxx_std_[0-9]+" )).count() != 1) {
             conflicts.add("cmake-compile-features");
         }
     }

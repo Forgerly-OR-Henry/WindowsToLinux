@@ -16,6 +16,17 @@ import java.util.HexFormat;
 public final class ReviewedReleaseIdentityResolver {
     private ReviewedReleaseIdentityResolver() { }
 
+    /** Pins the exact prepared tools into a new release without changing legacy identities. / 将精确准备的工具绑定到新发布，不改变旧版身份。 */
+    public static String bind(String reviewedIdentity, gold.debug.windowstolinux.shared.model.toolchain.ResolvedToolchainSet tools) {
+        if (tools.selections().isEmpty()) return reviewedIdentity;
+        try {
+            var digest = MessageDigest.getInstance("SHA-256");
+            update(digest, "reviewed-release-tools-v1"); update(digest, reviewedIdentity);
+            update(digest, gold.debug.windowstolinux.shared.model.toolchain.ToolchainBindingCodec.identity(tools));
+            return HexFormat.of().formatHex(digest.digest());
+        } catch (NoSuchAlgorithmException e) { throw new IllegalStateException(e); }
+    }
+
     /** Returns a deterministic release SHA-256 covering source, configuration, database bindings, secrets, and runtime. / 返回覆盖源码、配置、数据库绑定、秘密与运行时的确定性发布 SHA-256。 */
     public static String from(ReviewedDeploymentRequest request) {
         try {
@@ -39,9 +50,12 @@ public final class ReviewedReleaseIdentityResolver {
     }
 
     private static void runtime(MessageDigest digest, DeploymentRuntimeSpecification runtime) {
+        update(digest, runtime.identityPolicy().name());
         update(digest, runtime.projectType().name());
         switch (runtime) {
-            case DeploymentRuntimeSpecification.SpringBoot ignored -> { }
+            case DeploymentRuntimeSpecification.SpringBoot value -> {
+                if (!value.javaVersion().equals("21")) update(digest, "java-target=" + value.javaVersion());
+            }
             case DeploymentRuntimeSpecification.JavaJar javaJar -> {
                 update(digest, javaJar.jarRelativePath());
                 update(digest, javaJar.mainClass());
@@ -82,7 +96,10 @@ public final class ReviewedReleaseIdentityResolver {
             case DeploymentRuntimeSpecification.GoService service -> service(digest, "go", service.version(), service.artifactName(), service.entrypoint(), null);
             case DeploymentRuntimeSpecification.RustService service -> service(digest, "rust", service.version(), service.artifactName(), service.entrypoint(), null);
             case DeploymentRuntimeSpecification.DotNetService service -> service(digest, "dotnet", service.version(), service.artifactName(), service.entrypoint(), null);
-            case DeploymentRuntimeSpecification.KotlinService service -> service(digest, "kotlin", service.version(), service.artifactName(), service.entrypoint(), null);
+            case DeploymentRuntimeSpecification.KotlinService value -> {
+                service(digest, "kotlin", value.version(), value.artifactName(), value.entrypoint(), null);
+                if (!value.jvmTarget().equals("21")) update(digest, "jvm-target=" + value.jvmTarget());
+            }
             case DeploymentRuntimeSpecification.PhpService service -> service(digest, "php", service.version(), service.artifactName(), service.entrypoint(), service.servicePort());
             case DeploymentRuntimeSpecification.RubyService service -> service(digest, "ruby", service.version(), service.artifactName(), service.entrypoint(), service.servicePort());
             case DeploymentRuntimeSpecification.CmakeService service ->

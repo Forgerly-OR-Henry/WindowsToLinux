@@ -21,7 +21,7 @@ class ManagedRemoteContractTest {
 
         assertEquals(Set.of(
                 "collectCapabilities", "prepareEnvironment", "uploadSource", "cleanupCandidate", "checkHealth",
-                "observe", "executeLifecycle", "close"
+                "observe", "executeLifecycle", "close", "selinuxPreparation"
         ), methods);
         for (Method method : LinuxRemoteSession.class.getMethods()) {
             assertFalse(java.util.Arrays.stream(method.getParameterTypes()).anyMatch(String.class::equals),
@@ -35,22 +35,25 @@ class ManagedRemoteContractTest {
                 .map(Method::getName)
                 .collect(Collectors.toSet());
         assertEquals(Set.of(
-                "collectCapabilities", "prepareEnvironment", "uploadSource", "cleanupCandidate", "checkHealth",
+                "collectCapabilities", "prepareEnvironment", "prepareToolchains", "uploadSource", "cleanupCandidate", "checkHealth",
                 "observe", "executeLifecycle", "close", "collectDeploymentCapabilities", "buildDeployment",
                 "stageDeploymentInputs", "snapshotDeployment", "publishDeployment", "rollbackDeployment",
                 "checkDeploymentHealth", "observeDeployment", "executeDeploymentLifecycle",
-                "retainRecentSuccessfulReleases", "inspect", "export", "restoreCandidate", "discardCandidate",
-                "copyArtifact", "stageArtifact", "discardArtifact", "stageRestoreFiles", "discardRestoreFiles"
-                , "createBackupArtifact", "copyBackupArtifact", "discardBackupOperation",
-                "inspectRestoreActivation", "startRestoreActivation", "verifyRestoreComponents",
-                "verifyRestoreApplication", "prepareRestoreCommit", "startRestoreFormal",
-                "commitRestoreActivation", "recoverRestoreActivation", "quiesceRestoreRecovery",
-                "commitCandidate", "recoverCandidate", "nativeDatabases"
+                "retainRecentSuccessfulReleases", "stageRestoreFiles", "discardRestoreFiles",
+                "databaseOperations", "backupArtifacts", "restoreActivation", "nativeDatabases", "selinuxPreparation"
         ), deploymentMethods);
+        assertFalse(gold.debug.windowstolinux.shared.linux.protocol.database.RemoteDatabasePort.class.isAssignableFrom(DeploymentRemoteSession.class));
+        assertFalse(gold.debug.windowstolinux.shared.linux.protocol.backup.RemoteBackupArtifactPort.class.isAssignableFrom(DeploymentRemoteSession.class));
+        assertFalse(gold.debug.windowstolinux.shared.linux.protocol.restore.RemoteRestoreActivationPort.class.isAssignableFrom(DeploymentRemoteSession.class));
         assertFalse(deploymentMethods.contains("build"));
         assertFalse(deploymentMethods.contains("snapshot"));
         assertFalse(deploymentMethods.contains("publish"));
         assertFalse(deploymentMethods.contains("rollback"));
+        for (Method method : gold.debug.windowstolinux.shared.linux.distro.SelinuxEnvironmentPreparer.class.getMethods()) {
+            assertTrue(java.util.Arrays.stream(method.getParameterTypes()).allMatch(
+                    gold.debug.windowstolinux.shared.model.server.security.SelinuxPreparationPlan.class::equals),
+                    () -> method + " must accept only the previously inspected system preparation plan");
+        }
         assertTrue(java.util.Arrays.stream(DeploymentLinuxGateway.class.getDeclaredMethods())
                         .allMatch(method -> method.getName().equals("connect")),
                 "typed gateway must expose only its covariant typed connection");

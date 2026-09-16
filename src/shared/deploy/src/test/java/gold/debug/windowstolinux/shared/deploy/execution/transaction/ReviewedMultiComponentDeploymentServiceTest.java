@@ -169,6 +169,44 @@ class ReviewedMultiComponentDeploymentServiceTest {
         assertTrue(fixture.log.stream().noneMatch(value -> value.equals("execute:START:shop-web")));
     }
 
+    @Test void failedComponentsCanRefreshDisableAndStopButCannotRestartDirectly() {
+        LifecycleFixture fixture = new LifecycleFixture();
+        fixture.runtime.replaceAll((ignored, state) -> RuntimeState.ERROR);
+        var refreshed = lifecycle(fixture, Set.of(), LifecycleAction.REFRESH_STATUS);
+        assertTrue(refreshed.accepted());
+        assertEquals(ApplicationRuntimeState.ERROR, refreshed.runtimeState());
+        for (var action : List.of(LifecycleAction.START, LifecycleAction.RESTART, LifecycleAction.ENABLE_AUTOSTART)) {
+            assertTrue(!lifecycle(fixture, Set.copyOf(IDS), action).accepted());
+        }
+        assertTrue(fixture.log.stream().noneMatch(value -> value.startsWith("execute:")));
+        assertTrue(!lifecycle(fixture, Set.of("database"), LifecycleAction.STOP).accepted(),
+                "a failed dependent may be waiting to restart and must remain protected");
+        assertTrue(lifecycle(fixture, Set.copyOf(IDS), LifecycleAction.DISABLE_AUTOSTART).accepted());
+        assertTrue(lifecycle(fixture, Set.copyOf(IDS), LifecycleAction.STOP).accepted());
+        assertTrue(lifecycle(fixture, Set.copyOf(IDS), LifecycleAction.STOP).accepted());
+        assertTrue(lifecycle(fixture, Set.copyOf(IDS), LifecycleAction.START).accepted());
+        fixture.runtime.put("shop-api", RuntimeState.UNKNOWN);
+        assertTrue(!lifecycle(fixture, Set.copyOf(IDS), LifecycleAction.STOP).accepted());
+    }
+
+    @Test void singleComponentUsesTheSameErrorRecoveryAdmission() {
+        LifecycleFixture fixture = new LifecycleFixture();
+        var component = components().getFirst();
+        fixture.runtime.put(component.application().id(), RuntimeState.ERROR);
+        for (var action : List.of(LifecycleAction.REFRESH_STATUS, LifecycleAction.RESTART,
+                LifecycleAction.ENABLE_AUTOSTART, LifecycleAction.DISABLE_AUTOSTART, LifecycleAction.STOP,
+                LifecycleAction.START)) {
+            var result = new gold.debug.windowstolinux.shared.deploy.execution.lifecycle.ManagedLifecycleService().execute(
+                    component.application(), action, component.request().runtime().healthCheck(),
+                    (endpoint, credential, verifier) -> fixture.session(),
+                    new SshEndpoint("server-one", "example.test", 22, "root"),
+                    new SshCredential.Password("fixture".toCharArray()),
+                    (endpoint, fingerprint) -> HostKeyDecision.ACCEPT_EXISTING);
+            assertEquals(action != LifecycleAction.RESTART && action != LifecycleAction.ENABLE_AUTOSTART,
+                    result.accepted(), action.toString());
+        }
+    }
+
     private gold.debug.windowstolinux.shared.deploy.contract.result.lifecycle.MultiComponentLifecycleResult lifecycle(
             LifecycleFixture fixture, Set<String> targets, LifecycleAction action) {
         DeploymentLinuxGateway gateway = (endpoint, credential, verifier) -> fixture.session();
@@ -177,7 +215,7 @@ class ReviewedMultiComponentDeploymentServiceTest {
                         component.request().runtime().healthCheck()))
                 .toList();
         return new MultiComponentLifecycleService().execute(plan(), managed, targets, action, gateway,
-                new SshEndpoint("server-one", "example.test", 22, "deployer"),
+                new SshEndpoint("server-one", "example.test", 22, "root"),
                 new SshCredential.Password("fixture-password".toCharArray()),
                 (endpoint, fingerprint) -> HostKeyDecision.ACCEPT_EXISTING);
     }
@@ -187,7 +225,7 @@ class ReviewedMultiComponentDeploymentServiceTest {
         return new ReviewedMultiComponentDeploymentService().deploy(plan(), components(),
                 new ApplicationHealthGate("web", new HealthCheck.Http(
                         URI.create("http://127.0.0.1:8082/ready"), 200, 5)), gateway,
-                new SshEndpoint("server-one", "example.test", 22, "deployer"),
+                new SshEndpoint("server-one", "example.test", 22, "root"),
                 new SshCredential.Password("fixture-password".toCharArray()),
                 (endpoint, fingerprint) -> HostKeyDecision.ACCEPT_EXISTING);
     }
@@ -314,7 +352,8 @@ class ReviewedMultiComponentDeploymentServiceTest {
                             case "collectCapabilities" -> new ServerCapabilityFacts("Ubuntu 24.04", "x86_64", true,
                                     true, true, true, true, true, true, true, ManagedHelperProtocol.VERSION,
                                     32L * 1024 * 1024 * 1024, "fixture");
-                            case "collectDeploymentCapabilities" -> new LinuxCapabilityFacts(LinuxDistroType.UBUNTU, "24.04",
+                            case "prepareToolchains" -> java.lang.reflect.InvocationHandler.invokeDefault(proxy, method, arguments);
+                    case "collectDeploymentCapabilities" -> new LinuxCapabilityFacts(LinuxDistroType.UBUNTU, "24.04",
                                     "x86_64", "apt", "amd64", true, true, true, true, java.util.Set.of(21),
                                     java.util.Set.of(22), true, true, java.util.Set.of("3.12"), true, Map.of(), Map.of(),
                                     true, true, CpuMicroarchitectureLevel.X86_64_V3, java.util.Set.of("sse4_2"),
@@ -323,7 +362,7 @@ class ReviewedMultiComponentDeploymentServiceTest {
                             case "uploadSource" -> upload((SourceArchiveDescriptor) arguments[0],
                                     (RemoteWorkspace) arguments[1]);
                             case "buildDeployment" -> build((RemoteWorkspace) arguments[2]);
-                            case "stageDeploymentInputs" -> stage((ManagedApplication) arguments[0]);
+                            case "stageDeploymentInputs" -> stage((ManagedApplication) arguments[0], ((gold.debug.windowstolinux.shared.linux.protocol.RemoteRuntimeConfiguration) arguments[1]).sha256());
                             case "snapshotDeployment" -> snapshot((ManagedApplication) arguments[0]);
                             case "executeDeploymentLifecycle" -> stop((ManagedApplication) arguments[0],
                                     (LifecycleAction) arguments[2]);
@@ -354,9 +393,9 @@ class ReviewedMultiComponentDeploymentServiceTest {
             return DeploymentBuildResult.succeeded(workspace.sourceSha256(), "fixture build");
         }
 
-        private DeploymentInputManifest stage(ManagedApplication application) {
+        private gold.debug.windowstolinux.shared.linux.protocol.RemoteDeploymentInputs stage(ManagedApplication application, String sha) {
             log.add("stage:" + application.id());
-            return new DeploymentInputManifest(application.ownershipManifestSha256(), List.of());
+            return new gold.debug.windowstolinux.shared.linux.protocol.RemoteDeploymentInputs(sha, List.of());
         }
 
         private ReleaseSnapshot snapshot(ManagedApplication application) {

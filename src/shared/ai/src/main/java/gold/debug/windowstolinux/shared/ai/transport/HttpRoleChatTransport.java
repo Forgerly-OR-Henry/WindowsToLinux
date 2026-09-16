@@ -11,6 +11,9 @@ import java.util.Objects;
 
 /** JDK HTTP transport for the exact selected OpenAI-compatible endpoint. / 精确所选 OpenAI 兼容端点的 JDK HTTP 传输。 */
 public final class HttpRoleChatTransport implements RoleChatTransport {
+    private static final class ClientHolder {
+        private static final HttpClient CLIENT = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(10)).build();
+    }
     /** Creates the JDK HTTP transport. / 创建 JDK HTTP 传输。 */
     public HttpRoleChatTransport() {
     }
@@ -19,13 +22,11 @@ public final class HttpRoleChatTransport implements RoleChatTransport {
     @Override public RoleChatResult send(URI endpoint, char[] apiKey, String requestBody)
             throws IOException, InterruptedException {
         Objects.requireNonNull(apiKey, "apiKey");
-        HttpClient client = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(10)).build();
         HttpRequest request = HttpRequest.newBuilder(endpoint).timeout(Duration.ofSeconds(30))
                 .header("Authorization", "Bearer " + new String(apiKey))
                 .header("Content-Type", "application/json")
                 .POST(HttpRequest.BodyPublishers.ofString(requestBody, StandardCharsets.UTF_8)).build();
-        HttpResponse<String> response = client.send(request,
-                HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
-        return new RoleChatResult(response.statusCode(), response.body());
+        HttpResponse<byte[]> response = ClientHolder.CLIENT.send(request, ignored -> new LimitedHttpBodySubscriber());
+        return new RoleChatResult(response.statusCode(), new String(response.body(), StandardCharsets.UTF_8));
     }
 }

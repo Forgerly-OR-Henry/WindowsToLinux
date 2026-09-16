@@ -44,14 +44,14 @@ class UbuntuManagedFirstFailureAcceptanceTest {
     void cleansTheFirstCandidateWhenItsPublishedHttpHealthCheckFails() throws Exception {
         String sourceProperty = System.getProperty("managed.first-failure.source");
         String host = System.getProperty("managed.ssh.host");
-        String username = System.getProperty("managed.ssh.user", "ubuntu");
-        boolean rootBuild = Boolean.getBoolean("managed.root-build");
+        String username = System.getProperty("managed.ssh.user", "root");
+        boolean rootBuild = false;
+        assertFalse(Boolean.getBoolean("managed.root-build"), "root builds were removed in helper v7");
         String password = System.getenv("WINDOWSTOLINUX_TEST_SSH_PASSWORD");
         assertTrue(sourceProperty != null && !sourceProperty.isBlank(), "managed.first-failure.source is required");
         assertTrue(host != null && !host.isBlank(), "managed.ssh.host is required");
         assertTrue(username != null && !username.isBlank(), "managed.ssh.user is required");
-        assertTrue(!"root".equals(username) || rootBuild,
-                "a root SSH session requires the explicit managed.root-build=true confirmation");
+        assertEquals("root", username, "root management must launch only restricted builds");
         assertTrue(password != null && !password.isBlank(), "WINDOWSTOLINUX_TEST_SSH_PASSWORD is required");
         Path source = Path.of(sourceProperty).toAbsolutePath().normalize();
         assertTrue(Files.isDirectory(source), "first-failure source directory is required");

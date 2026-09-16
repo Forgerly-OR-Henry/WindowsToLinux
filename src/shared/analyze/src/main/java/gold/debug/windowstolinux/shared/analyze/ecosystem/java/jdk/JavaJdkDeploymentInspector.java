@@ -22,6 +22,8 @@ import java.util.EnumMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.HashSet;
+import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -33,6 +35,7 @@ public final class JavaJdkDeploymentInspector implements DeploymentTypeInspector
     private static final Pattern MAIN_METHOD = Pattern.compile(
             "\\bpublic\\s+static\\s+void\\s+main\\s*\\(\\s*String\\s*(?:\\[\\]|\\.\\.\\.)\\s+[A-Za-z_$][A-Za-z0-9_$]*\\s*\\)");
     private static final Pattern IMPORT = Pattern.compile("(?m)^\\s*import\\s+(?:static\\s+)?([A-Za-z_$][A-Za-z0-9_$.]*)(?:\\.\\*)?\\s*;");
+    private static final Pattern PACKAGE = Pattern.compile("(?m)^\\s*package\\s+([A-Za-z_$][A-Za-z0-9_$.]*)\\s*;");
 
     /** Returns the Java source project type. / 返回 Java 源码项目类型。 */
     @Override
@@ -58,10 +61,12 @@ public final class JavaJdkDeploymentInspector implements DeploymentTypeInspector
         Map<String, String> values = properties(text, conflicts);
         String sourceRoot = safePath(values.get("sourceRoot"));
         String mainClass = javaName(values.get("mainClass"));
-        String javaVersion = "21".equals(values.get("javaVersion")) ? "21" : null;
+        String javaVersion = gold.debug.windowstolinux.shared.model.toolchain.ToolchainVersion.parse(
+                gold.debug.windowstolinux.shared.model.toolchain.ToolchainEcosystemType.JAVA, values.get("javaVersion"))
+                .map(gold.debug.windowstolinux.shared.model.toolchain.ToolchainVersion::branch).orElse(null);
         if (sourceRoot == null) missing.add("sourceRoot=...");
         if (mainClass == null) missing.add("mainClass=...");
-        if (javaVersion == null) missing.add("javaVersion=21");
+        if (javaVersion == null) missing.add("javaVersion=...");
 
         List<String> javaFiles = source.relativeFiles().stream().map(path -> path.toString().replace('\\', '/'))
                 .filter(path -> path.endsWith(".java")).sorted().toList();
@@ -85,6 +90,14 @@ public final class JavaJdkDeploymentInspector implements DeploymentTypeInspector
                         || path.equals("module-info.java") || path.endsWith(".jar"))) {
             conflicts.add("java-external-build-or-module");
         }
+        Set<String> localTypes = new HashSet<>();
+        for (String relative : javaFiles) {
+            if (sourceRoot == null || !relative.startsWith(sourceRoot + "/")) continue;
+            Matcher declaredPackage = PACKAGE.matcher(BoundedMetadataInspector.read(root.resolve(relative)));
+            String filename = Path.of(relative).getFileName().toString();
+            String name = filename.substring(0, filename.length() - ".java".length());
+            localTypes.add(declaredPackage.find() ? declaredPackage.group(1) + "." + name : name);
+        }
         int mainMethods = 0;
         for (String relative : javaFiles) {
             String java = BoundedMetadataInspector.read(root.resolve(relative));
@@ -94,7 +107,11 @@ public final class JavaJdkDeploymentInspector implements DeploymentTypeInspector
             Matcher imports = IMPORT.matcher(java);
             while (imports.find()) {
                 String imported = imports.group(1);
-                if (!(imported.startsWith("java.") || imported.startsWith("javax.") || imported.startsWith("jdk."))) {
+                if (!(imported.startsWith("java.") || imported.startsWith("javax.") || imported.startsWith("jdk.")
+                        || imported.startsWith("com.sun.net.httpserver.")
+                        || localTypes.stream().anyMatch(type -> imported.equals(type) || imported.startsWith(type + ".")
+                                || imported.endsWith(".") && type.startsWith(imported)
+                                && type.lastIndexOf('.') == imported.length() - 1))) {
                     conflicts.add("java-external-import:" + imported);
                 }
             }

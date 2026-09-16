@@ -41,6 +41,20 @@ public final class ApplicationServiceException extends RuntimeException implemen
                 FailureDescriptor.create(type, OperationIdentity.create(), arguments, diagnostic), cause);
     }
 
+    /** Translates native database failures at the service boundary. / 在服务边界转换原生数据库失败。 */
+    public static ApplicationServiceException nativeDatabase(
+            gold.debug.windowstolinux.shared.linux.error.NativeDatabaseException failure) {
+        ApplicationServiceFailureType type = switch (failure.reason()) {
+            case AUTH_REQUIRED -> ApplicationServiceFailureType.DATABASE_AUTH_REQUIRED;
+            case STATE_CHANGED -> ApplicationServiceFailureType.DATABASE_STATE_CHANGED;
+            case INITIALIZATION_FAILED -> ApplicationServiceFailureType.DATABASE_INITIALIZATION_FAILED;
+            case MANUAL_RESTORE_REQUIRED -> ApplicationServiceFailureType.DATABASE_MANUAL_RESTORE_REQUIRED;
+            case VERSION_UNSUPPORTED -> ApplicationServiceFailureType.DATABASE_VERSION_UNSUPPORTED;
+            case ACTION_FAILED -> ApplicationServiceFailureType.DATABASE_ACTION_FAILED;
+        };
+        return create(type, "Native database operation requires attention: " + failure.reason().name(), failure);
+    }
+
     /** Returns the structured failure. / 返回结构化失败。 */
     @Override public FailureDescriptor failure() { return failure; }
 }

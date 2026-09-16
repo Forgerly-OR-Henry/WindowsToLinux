@@ -51,12 +51,12 @@ public final class DeploymentAnalysisCoordinator {
         return analyze(selectedSourceDirectory, projectType, java.util.Optional.empty(), false);
     }
 
-    /** Collects deployment facts but preserves a mandatory DB review missing field for schema-changing source. */
+    /** Collects deployment facts but preserves a mandatory DB review missing field for schema-changing source. / 收集部署事实，但对包含模式变更的源码保留强制数据库审阅字段。 */
     public DeploymentProjectAssessment analyzeForDatabaseReview(Path source, DeploymentProjectType type) {
         return analyze(source, type, java.util.Optional.empty(), true);
     }
 
-    /** Applies a source-bound database review after the corresponding DB operation has been verified. */
+    /** Applies a source-bound database review after the corresponding DB operation has been verified. / 对应数据库操作通过验证后，应用与源码绑定的数据库审阅。 */
     public DeploymentProjectAssessment analyze(Path source, DeploymentProjectType type,
             gold.debug.windowstolinux.shared.model.ecosystem.db.DatabaseSchemaReview review) {
         return analyze(source, type, java.util.Optional.of(review), false);
@@ -85,13 +85,17 @@ public final class DeploymentAnalysisCoordinator {
             if (projectType == DeploymentProjectType.RECOGNITION_PREVIEW) {
                 return DeploymentProjectAssessment.recognitionPreview(inspected.facts());
             }
+            inspected = new DeploymentTypeAssessment(inspected.facts().withToolchains(
+                    new gold.debug.windowstolinux.shared.analyze.toolchain.ToolchainDeclarationInspector().inspect(root)),
+                    inspected.runtimeSuggestion());
+            inspected = enrichToolchainSuggestion(inspected);
             if (pendingDatabase) {
                 var facts = inspected.facts();
                 var missing = new ArrayList<>(facts.missingInformation());
                 missing.add(LocalizedMessage.of("analysis.db.reviewRequired"));
                 return DeploymentProjectAssessment.requiresInput(new gold.debug.windowstolinux.shared.model.project.DeploymentProjectFacts(
                         facts.sourceRoot(), facts.applicationId(), facts.projectType(), facts.buildTool(), facts.support(), facts.languageFacts(),
-                        facts.evidence(), facts.conflicts(), missing), inspected.runtimeSuggestion());
+                        facts.evidence(), facts.conflicts(), missing, facts.toolchainRequirements()), inspected.runtimeSuggestion());
             }
             return inspected.facts().readyForPlanning()
                     ? DeploymentProjectAssessment.ready(inspected.facts(), inspected.runtimeSuggestion())
@@ -100,6 +104,27 @@ public final class DeploymentAnalysisCoordinator {
             return DeploymentProjectAssessment.rejected(List.of(rejection("DEPLOYMENT_SOURCE_READ_FAILED",
                     "analysis.deployment.rejection.sourceReadFailed")));
         }
+    }
+
+    private static DeploymentTypeAssessment enrichToolchainSuggestion(DeploymentTypeAssessment inspected) {
+        var facts = inspected.facts();
+        if (facts.projectType() != DeploymentProjectType.SPRING_BOOT
+                && facts.projectType() != DeploymentProjectType.KOTLIN_SERVICE) return inspected;
+        var java = facts.toolchainRequirements().stream()
+                .filter(r -> r.ecosystem() == gold.debug.windowstolinux.shared.model.toolchain.ToolchainEcosystemType.JAVA)
+                .flatMap(r -> r.version().stream()).map(gold.debug.windowstolinux.shared.model.toolchain.ToolchainVersion::branch)
+                .distinct().toList();
+        if (java.size() != 1) return inspected;
+        var previous = inspected.runtimeSuggestion();
+        var values = new java.util.EnumMap<gold.debug.windowstolinux.shared.model.project.DeploymentRuntimeAssessment.RuntimeInputType, String>(
+                gold.debug.windowstolinux.shared.model.project.DeploymentRuntimeAssessment.RuntimeInputType.class);
+        values.putAll(previous.values());
+        values.put(facts.projectType() == DeploymentProjectType.SPRING_BOOT
+                ? gold.debug.windowstolinux.shared.model.project.DeploymentRuntimeAssessment.RuntimeInputType.JAVA_VERSION
+                : gold.debug.windowstolinux.shared.model.project.DeploymentRuntimeAssessment.RuntimeInputType.KOTLIN_JVM_TARGET, java.getFirst());
+        return new DeploymentTypeAssessment(facts, new gold.debug.windowstolinux.shared.model.project.DeploymentRuntimeAssessment(
+                previous.projectType(), values, previous.suggestedHealthPort(), previous.suggestedContainerPorts(),
+                previous.suggestedManagedVolumes(), previous.evidence(), previous.requiredUserInput()));
     }
 
     private static Path normalizeRoot(Path source, List<RejectionReason> rejections) {

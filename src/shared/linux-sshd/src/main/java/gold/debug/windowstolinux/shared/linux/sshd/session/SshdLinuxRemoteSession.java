@@ -3,17 +3,12 @@ package gold.debug.windowstolinux.shared.linux.sshd.session;
 import gold.debug.windowstolinux.shared.linux.sshd.command.SshCommandExecutor;
 import gold.debug.windowstolinux.shared.linux.sshd.backup.SshdDatabaseOperationPort;
 import gold.debug.windowstolinux.shared.linux.sshd.backup.SshdBackupArtifactPort;
-import gold.debug.windowstolinux.shared.linux.protocol.database.RemoteDatabasePort.BackupArtifact;
-import gold.debug.windowstolinux.shared.linux.protocol.database.RemoteDatabasePort.BackupRequest;
-import gold.debug.windowstolinux.shared.linux.protocol.database.RemoteDatabasePort.CompatibilityEvidence;
-import gold.debug.windowstolinux.shared.linux.protocol.database.RemoteDatabasePort.DatabaseConsistencyMode;
-import gold.debug.windowstolinux.shared.linux.protocol.database.RemoteDatabasePort.RestoreEvidence;
-import gold.debug.windowstolinux.shared.linux.protocol.database.RemoteDatabasePort.RestoreRequest;
 
+import gold.debug.windowstolinux.shared.linux.protocol.database.RemoteDatabasePort;
+import gold.debug.windowstolinux.shared.linux.protocol.backup.RemoteBackupArtifactPort;
 import gold.debug.windowstolinux.shared.linux.build.DeploymentBuildResult;
 import gold.debug.windowstolinux.shared.linux.session.DeploymentRemoteSession;
 import gold.debug.windowstolinux.shared.linux.error.LinuxOperationException;
-import gold.debug.windowstolinux.shared.linux.error.LinuxOperationFailureType;
 import gold.debug.windowstolinux.shared.linux.connection.SshEndpoint;
 import gold.debug.windowstolinux.shared.linux.protocol.ReleaseSnapshot;
 import gold.debug.windowstolinux.shared.linux.protocol.RemoteStepResult;
@@ -29,9 +24,10 @@ import gold.debug.windowstolinux.shared.linux.sshd.execution.protocol.release.De
 import gold.debug.windowstolinux.shared.linux.sshd.execution.protocol.release.ContainerReleaseProtocolExecutor;
 import gold.debug.windowstolinux.shared.linux.sshd.execution.protocol.input.DeploymentInputProtocolExecutor;
 import gold.debug.windowstolinux.shared.linux.sshd.execution.protocol.restore.SshdRestoreActivationPort;
-import gold.debug.windowstolinux.shared.config.revision.ConfigurationSnapshot;
-import gold.debug.windowstolinux.shared.config.revision.DeploymentInputManifest;
-import gold.debug.windowstolinux.shared.config.secretref.ResolvedSecretRevision;
+import gold.debug.windowstolinux.shared.linux.protocol.RemoteRuntimeConfiguration;
+import gold.debug.windowstolinux.shared.linux.build.RemoteBuildEnvironment;
+import gold.debug.windowstolinux.shared.linux.protocol.RemoteDeploymentInputs;
+import gold.debug.windowstolinux.shared.linux.protocol.RemoteSecretPayload;
 import gold.debug.windowstolinux.shared.linux.sshd.runtime.systemd.SystemdHealthProbe;
 import gold.debug.windowstolinux.shared.linux.sshd.runtime.systemd.SystemdLifecycleExecutor;
 import gold.debug.windowstolinux.shared.linux.sshd.runtime.systemd.SystemdOwnershipObserver;
@@ -43,10 +39,7 @@ import gold.debug.windowstolinux.shared.linux.sshd.execution.transfer.SshdRestor
 import gold.debug.windowstolinux.shared.linux.protocol.restore.RemoteRestoreStagingEvidence;
 import gold.debug.windowstolinux.shared.linux.protocol.restore.RemoteRestoreStagingRequest;
 import gold.debug.windowstolinux.shared.linux.protocol.restore.RemoteRestoreActivationPort;
-import gold.debug.windowstolinux.shared.linux.protocol.restore.RemoteRestoreActivationRequest;
 import gold.debug.windowstolinux.shared.linux.protocol.backup.ManagedContentPublication;
-import gold.debug.windowstolinux.shared.linux.protocol.backup.RemoteBackupArtifact;
-import gold.debug.windowstolinux.shared.linux.protocol.backup.RemoteBackupArtifactRequest;
 import gold.debug.windowstolinux.shared.linux.transfer.RemoteWorkspace;
 import gold.debug.windowstolinux.shared.linux.transfer.SourceUploadResult;
 import gold.debug.windowstolinux.shared.model.archive.SourceArchiveDescriptor;
@@ -56,7 +49,6 @@ import gold.debug.windowstolinux.shared.model.deployment.EnvironmentSetupResult;
 import gold.debug.windowstolinux.shared.model.health.HealthCheck;
 import gold.debug.windowstolinux.shared.model.lifecycle.LifecycleAction;
 import gold.debug.windowstolinux.shared.model.lifecycle.LifecycleObservation;
-import gold.debug.windowstolinux.shared.model.lifecycle.RuntimeState;
 import gold.debug.windowstolinux.shared.model.managed.ManagedApplication;
 import gold.debug.windowstolinux.shared.model.project.DeploymentProjectFacts;
 import gold.debug.windowstolinux.shared.model.project.DeploymentRuntimeSpecification;
@@ -66,8 +58,6 @@ import org.apache.sshd.client.SshClient;
 import org.apache.sshd.client.session.ClientSession;
 
 import java.util.List;
-import java.io.InputStream;
-import java.io.OutputStream;
 
 /**
  * Unified session facade delegating each typed capability to its implementation package.
@@ -81,6 +71,7 @@ public final class SshdLinuxRemoteSession implements DeploymentRemoteSession {
     private final SshdCapabilityCollector capabilities;
     private final SshdPlatformCapabilityCollector deploymentCapabilities;
     private final ManagedEnvironmentExecutor environment;
+    private final gold.debug.windowstolinux.shared.linux.distro.SelinuxEnvironmentPreparer selinux;
     private final SshdSourceTransport transfer;
     private final SshdRestoreTransport restoreTransfer;
     private final DeploymentBuildExecutor deploymentBuild;
@@ -94,7 +85,7 @@ public final class SshdLinuxRemoteSession implements DeploymentRemoteSession {
     private final SystemdLifecycleExecutor systemdLifecycle;
     private final ContainerRuntimeExecutor containerRuntime;
     private final ManagedRuntimeExecutor managedRuntime;
-    /** Returns native DB operations for this already authenticated and trusted connection. */
+    /** Returns native DB operations for this already authenticated and trusted connection. / 返回当前已认证且可信连接的原生数据库操作能力。 */
     @Override public gold.debug.windowstolinux.shared.linux.ecosystem.db.NativeDatabasePort nativeDatabases() { return nativeDatabases; }
     private final SshdDatabaseOperationPort databases;
     private final gold.debug.windowstolinux.shared.linux.ecosystem.db.NativeDatabasePort nativeDatabases;
@@ -108,8 +99,9 @@ public final class SshdLinuxRemoteSession implements DeploymentRemoteSession {
         this.session = session;
         this.username = endpoint.username();
         SshCommandExecutor commands = new SshCommandExecutor(session);
+        this.selinux = new gold.debug.windowstolinux.shared.linux.sshd.distro.dnf.SelinuxPreparationExecutor(commands, endpoint.serverId());
         this.databases = new SshdDatabaseOperationPort(commands);
-        this.nativeDatabases = new gold.debug.windowstolinux.shared.linux.sshd.ecosystem.db.SshdNativeDatabasePort(commands);
+        this.nativeDatabases = new gold.debug.windowstolinux.shared.linux.sshd.execution.protocol.database.SshdNativeDatabasePort(commands);
         this.backupArtifacts = new SshdBackupArtifactPort(commands);
         this.restoreActivation = new SshdRestoreActivationPort(commands);
         this.capabilities = new SshdCapabilityCollector(commands, hostFingerprint);
@@ -147,6 +139,14 @@ public final class SshdLinuxRemoteSession implements DeploymentRemoteSession {
         return deploymentCapabilities.collectDeploymentCapabilities();
     }
 
+    @Override
+    public gold.debug.windowstolinux.shared.linux.build.ToolchainPreparationResult prepareToolchains(
+            DeploymentProjectFacts facts, DeploymentRuntimeSpecification runtime, BuildLimitConfiguration limits)
+            throws LinuxOperationException {
+        var tools = deploymentBuild.prepare(facts, runtime, limits);
+        return new gold.debug.windowstolinux.shared.linux.build.ToolchainPreparationResult(tools, collectDeploymentCapabilities());
+    }
+
     /** Performs the {@code prepareEnvironment} operation. / 执行 {@code prepareEnvironment} 操作。 */
     @Override
     public EnvironmentSetupResult prepareEnvironment(
@@ -154,27 +154,32 @@ public final class SshdLinuxRemoteSession implements DeploymentRemoteSession {
         return environment.prepare(approval);
     }
 
+    /** Returns fixed system preparation for this trusted session. / 返回当前可信会话的固定系统准备能力。 */
+    @Override public gold.debug.windowstolinux.shared.linux.distro.SelinuxEnvironmentPreparer selinuxPreparation() {
+        return selinux;
+    }
+
     /** Performs the {@code uploadSource} operation. / 执行 {@code uploadSource} 操作。 */
     @Override
-    public SourceUploadResult uploadSource(SourceArchiveDescriptor archive, RemoteWorkspace workspace)
+    public SourceUploadResult uploadSource(SourceArchiveDescriptor archive, RemoteWorkspace workspace, long maxWorkspaceBytes)
             throws LinuxOperationException {
-        return transfer.upload(archive, workspace);
+        return transfer.upload(archive, workspace, maxWorkspaceBytes);
     }
 
     /** Performs the {@code buildDeployment} operation. / 执行 {@code buildDeployment} 操作。 */
     @Override
     public DeploymentBuildResult buildDeployment(DeploymentProjectFacts facts, DeploymentRuntimeSpecification runtime,
                                                  RemoteWorkspace workspace, BuildLimitConfiguration limits,
-                                                 ConfigurationSnapshot configuration)
+                                                 RemoteBuildEnvironment configuration)
             throws LinuxOperationException {
         return deploymentBuild.build(facts, runtime, workspace, limits, configuration);
     }
 
     /** Performs the {@code stageDeploymentInputs} operation. / 执行 {@code stageDeploymentInputs} 操作。 */
     @Override
-    public DeploymentInputManifest stageDeploymentInputs(ManagedApplication application,
-                                                         ConfigurationSnapshot configuration,
-                                                         List<ResolvedSecretRevision> secrets)
+    public RemoteDeploymentInputs stageDeploymentInputs(ManagedApplication application,
+                                                         RemoteRuntimeConfiguration configuration,
+                                                         List<RemoteSecretPayload> secrets)
             throws LinuxOperationException {
         return deploymentInputs.stage(application, configuration, secrets);
     }
@@ -240,7 +245,7 @@ public final class SshdLinuxRemoteSession implements DeploymentRemoteSession {
     public RemoteStepResult publishDeployment(ManagedApplication application, DeploymentProjectFacts facts,
                                               RemoteWorkspace workspace,
                                               DeploymentBuildResult buildResult, String releaseIdentity,
-                                              DeploymentRuntimeSpecification runtime, DeploymentInputManifest inputs,
+                                              DeploymentRuntimeSpecification runtime, RemoteDeploymentInputs inputs,
                                               ManagedContentPublication contentPublication, ReleaseSnapshot snapshot)
             throws LinuxOperationException {
         if (runtime instanceof DeploymentRuntimeSpecification.Container container) {
@@ -255,7 +260,7 @@ public final class SshdLinuxRemoteSession implements DeploymentRemoteSession {
     @Override
     public RemoteStepResult rollbackDeployment(ManagedApplication application, ReleaseSnapshot snapshot,
                                                DeploymentBuildResult buildResult, String releaseIdentity,
-                                               DeploymentRuntimeSpecification runtime, DeploymentInputManifest inputs)
+                                               DeploymentRuntimeSpecification runtime, RemoteDeploymentInputs inputs)
             throws LinuxOperationException {
         if (runtime instanceof DeploymentRuntimeSpecification.Container container) {
             return containerProtocol.rollback(application, snapshot, buildResult, releaseIdentity, container, inputs);
@@ -288,157 +293,17 @@ public final class SshdLinuxRemoteSession implements DeploymentRemoteSession {
     public LifecycleObservation executeDeploymentLifecycle(ManagedApplication application,
                                                             DeploymentRuntimeSpecification runtime,
                                                             LifecycleAction action) throws LinuxOperationException {
-        LifecycleObservation before = observeDeployment(application, runtime);
-        if (!before.ownershipVerified()) {
-            return before;
-        }
-        if (action == LifecycleAction.REFRESH_STATUS) {
-            return before;
-        }
-        if (action == LifecycleAction.START && before.runtimeState() != RuntimeState.STOPPED) {
-            throw LinuxOperationException.create(LinuxOperationFailureType.START_REQUIRES_STOPPED,
-                    "Start is allowed only for a managed runtime confirmed as stopped");
-        }
-        String verb = switch (action) {
-            case START -> "start";
-            case STOP -> "stop";
-            case RESTART -> "restart";
-            case ENABLE_AUTOSTART -> "enable";
-            case DISABLE_AUTOSTART -> "disable";
-            case REFRESH_STATUS -> throw new IllegalStateException("handled above");
-        };
-        RemoteStepResult result = runtime instanceof DeploymentRuntimeSpecification.Container container
-                ? containerProtocol.lifecycle(application, verb)
-                : deploymentProtocol.lifecycle(application, verb);
-        if (!result.succeeded()) {
-            throw LinuxOperationException.create(LinuxOperationFailureType.LIFECYCLE_ACTION_FAILED, result.evidence());
-        }
-        if ((action == LifecycleAction.START || action == LifecycleAction.RESTART)
-                && !checkDeploymentHealth(application, runtime, runtime.healthCheck()).healthy()) {
-            throw LinuxOperationException.create(LinuxOperationFailureType.POST_START_HEALTH_FAILED,
-                    "Post-start health check failed");
-        }
-        return observeDeployment(application, runtime);
+        return managedRuntime.execute(application, runtime, action);
     }
 
-    @Override
-    public CompatibilityEvidence inspect(BackupRequest request) throws LinuxOperationException {
-        return databases.inspect(request);
-    }
+    /** Returns the connection's database operations. / 返回当前连接的数据库操作能力。 */
+    @Override public RemoteDatabasePort databaseOperations() { return databases; }
 
-    @Override
-    public BackupArtifact export(BackupRequest request, DatabaseConsistencyMode consistencyMode)
-            throws LinuxOperationException {
-        return databases.export(request, consistencyMode);
-    }
+    /** Returns the connection's backup artifacts. / 返回当前连接的备份制品能力。 */
+    @Override public RemoteBackupArtifactPort backupArtifacts() { return backupArtifacts; }
 
-    @Override
-    public RestoreEvidence restoreCandidate(RestoreRequest request) throws LinuxOperationException {
-        return databases.restoreCandidate(request);
-    }
-
-    @Override
-    public gold.debug.windowstolinux.shared.linux.protocol.database.RemoteDatabasePort.CommitEvidence
-    commitCandidate(RestoreRequest request) throws LinuxOperationException {
-        return databases.commitCandidate(request);
-    }
-
-    @Override
-    public gold.debug.windowstolinux.shared.linux.protocol.database.RemoteDatabasePort.RecoveryEvidence
-    recoverCandidate(RestoreRequest request) throws LinuxOperationException {
-        return databases.recoverCandidate(request);
-    }
-
-    @Override
-    public void discardCandidate(RestoreRequest request) throws LinuxOperationException {
-        databases.discardCandidate(request);
-    }
-
-    @Override
-    public void copyArtifact(BackupArtifact artifact, OutputStream destination) throws LinuxOperationException {
-        databases.copyArtifact(artifact, destination);
-    }
-
-    @Override
-    public void stageArtifact(BackupArtifact artifact, InputStream source) throws LinuxOperationException {
-        databases.stageArtifact(artifact, source);
-    }
-
-    @Override
-    public void discardArtifact(BackupArtifact artifact) throws LinuxOperationException {
-        databases.discardArtifact(artifact);
-    }
-
-    @Override
-    public RemoteBackupArtifact createBackupArtifact(RemoteBackupArtifactRequest request)
-            throws LinuxOperationException {
-        return backupArtifacts.createBackupArtifact(request);
-    }
-
-    @Override
-    public void copyBackupArtifact(RemoteBackupArtifact artifact, OutputStream destination)
-            throws LinuxOperationException {
-        backupArtifacts.copyBackupArtifact(artifact, destination);
-    }
-
-    @Override
-    public RemoteStepResult discardBackupOperation(String operationId) throws LinuxOperationException {
-        return backupArtifacts.discardBackupOperation(operationId);
-    }
-
-    @Override
-    public RemoteRestoreActivationPort.PreflightEvidence inspectRestoreActivation(
-            String applicationId, long requiredBytes) throws LinuxOperationException {
-        return restoreActivation.inspectRestoreActivation(applicationId, requiredBytes);
-    }
-
-    @Override
-    public RemoteRestoreActivationPort.StepEvidence startRestoreActivation(
-            RemoteRestoreActivationRequest request) throws LinuxOperationException {
-        return restoreActivation.startRestoreActivation(request);
-    }
-
-    @Override
-    public RemoteRestoreActivationPort.StepEvidence prepareRestoreCommit(
-            RemoteRestoreActivationRequest request) throws LinuxOperationException {
-        return restoreActivation.prepareRestoreCommit(request);
-    }
-
-    @Override
-    public RemoteRestoreActivationPort.StepEvidence startRestoreFormal(
-            RemoteRestoreActivationRequest request) throws LinuxOperationException {
-        return restoreActivation.startRestoreFormal(request);
-    }
-
-    @Override
-    public RemoteRestoreActivationPort.StepEvidence verifyRestoreComponents(
-            RemoteRestoreActivationRequest request) throws LinuxOperationException {
-        return restoreActivation.verifyRestoreComponents(request);
-    }
-
-    @Override
-    public RemoteRestoreActivationPort.StepEvidence verifyRestoreApplication(
-            RemoteRestoreActivationRequest request) throws LinuxOperationException {
-        return restoreActivation.verifyRestoreApplication(request);
-    }
-
-    @Override
-    public RemoteRestoreActivationPort.CommitEvidence commitRestoreActivation(
-            RemoteRestoreActivationRequest request) throws LinuxOperationException {
-        return restoreActivation.commitRestoreActivation(request);
-    }
-
-    @Override
-    public RemoteRestoreActivationPort.StepEvidence quiesceRestoreRecovery(
-            RemoteRestoreActivationRequest request) throws LinuxOperationException {
-        return restoreActivation.quiesceRestoreRecovery(request);
-    }
-
-    @Override
-    public RemoteRestoreActivationPort.RecoveryEvidence recoverRestoreActivation(
-            RemoteRestoreActivationRequest request) throws LinuxOperationException {
-        return restoreActivation.recoverRestoreActivation(request);
-    }
+    /** Returns the connection's restore activation. / 返回当前连接的恢复激活能力。 */
+    @Override public RemoteRestoreActivationPort restoreActivation() { return restoreActivation; }
 
     /** Closes this resource. / 关闭此资源。 */
     @Override

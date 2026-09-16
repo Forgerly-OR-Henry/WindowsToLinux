@@ -104,11 +104,14 @@ backup_create_artifact() {
       target="$root/$artifact.pax"
     else
       [ "$resource" = image ] || reject backup-resource
-      [ "$engine" = podman ] || reject backup-oci-unsupported
       image="$(container_image "$app" "$release")"; image_id="$(cat -- "$previous_path/.windowstolinux-container-image-id")"
       [ "$("$engine" image inspect --format '{{.Id}}' "$image")" = "$image_id" ] || reject backup-image-identity
       target="$root/$artifact.oci"; [ ! -e "$target" ] && [ ! -L "$target" ] || reject backup-artifact-exists
-      "$engine" save --format oci-archive --output "$target" "$image"
+      if [ "$engine" = podman ]; then
+        podman save --format oci-archive --output "$target" "$image"
+      else
+        /usr/bin/skopeo --override-arch amd64 copy "docker-daemon:$image" "oci-archive:$target:$image" >/dev/null
+      fi
       chown root:root -- "$target"; chmod 400 -- "$target"
       [ "$(stat -c '%s' -- "$target")" -le "$maximum" ] || { rm -f -- "$target"; reject backup-limit; }
     fi

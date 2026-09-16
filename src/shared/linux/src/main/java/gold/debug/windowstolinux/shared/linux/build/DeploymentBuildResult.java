@@ -11,7 +11,11 @@ import java.util.Objects;
  * @param sourceSha256 the verified uploaded source archive digest / 已验证上传源码归档摘要
  * @param evidence bounded non-secret build evidence / 有界非秘密构建证据
  */
-public record DeploymentBuildResult(boolean succeeded, String sourceSha256, String evidence) {
+public record DeploymentBuildResult(boolean succeeded, String sourceSha256, String evidence,
+        gold.debug.windowstolinux.shared.model.toolchain.ResolvedToolchainSet toolchains) {
+    public DeploymentBuildResult(boolean succeeded, String sourceSha256, String evidence) {
+        this(succeeded, sourceSha256, evidence, new gold.debug.windowstolinux.shared.model.toolchain.ResolvedToolchainSet("legacy", java.util.List.of()));
+    }
     /** Creates a {@code DeploymentBuildResult} instance. / 创建 {@code DeploymentBuildResult} 实例。 */
     public DeploymentBuildResult {
         sourceSha256 = Objects.requireNonNull(sourceSha256, "sourceSha256");
@@ -19,6 +23,7 @@ public record DeploymentBuildResult(boolean succeeded, String sourceSha256, Stri
             throw new IllegalArgumentException("sourceSha256 must be a lowercase SHA-256 digest");
         }
         evidence = Objects.requireNonNull(evidence, "evidence");
+        toolchains = Objects.requireNonNull(toolchains, "toolchains");
     }
 
     /** Creates a failed result bound to the reviewed source. / 创建绑定到已审阅源码的失败结果。 */

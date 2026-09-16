@@ -37,7 +37,6 @@ import gold.debug.windowstolinux.shared.backup.format.BackupConfigurationDocumen
 import gold.debug.windowstolinux.shared.backup.manifest.BackupComponent;
 import gold.debug.windowstolinux.shared.backup.manifest.BackupComponentRuntime;
 import gold.debug.windowstolinux.shared.backup.manifest.BackupDatabase;
-import gold.debug.windowstolinux.shared.backup.manifest.BackupDatabaseType;
 import gold.debug.windowstolinux.shared.backup.manifest.BackupHealthCheck;
 import gold.debug.windowstolinux.shared.backup.manifest.BackupIdentity;
 import gold.debug.windowstolinux.shared.backup.manifest.BackupInventory;
@@ -47,7 +46,6 @@ import gold.debug.windowstolinux.shared.backup.manifest.BackupMemberKind;
 import gold.debug.windowstolinux.shared.backup.manifest.BackupRuntime;
 import gold.debug.windowstolinux.shared.config.resource.ManagedDatabaseBinding;
 import gold.debug.windowstolinux.shared.config.resource.ManagedDatabaseConnection;
-import gold.debug.windowstolinux.shared.config.resource.ManagedDatabaseEngineType;
 import gold.debug.windowstolinux.shared.config.secretref.ResolvedSecretRevision;
 import gold.debug.windowstolinux.shared.config.secretref.SecretReference;
 import gold.debug.windowstolinux.shared.deploy.contract.MultiComponentDeploymentPlan;
@@ -254,7 +252,7 @@ public final class RemoteBackupCreationUseCase {
         String operationId = operationId();
         List<Material> collected = new ArrayList<>();
         DatabaseBackupArtifact databaseArtifact = null;
-        LinuxDatabaseOperationPort databaseOperations = new LinuxDatabaseOperationPort(session);
+        LinuxDatabaseOperationPort databaseOperations = new LinuxDatabaseOperationPort(session.databaseOperations());
         Exception failure = null;
         try {
             for (String componentId : context.plan().stopOrder()) {
@@ -286,7 +284,7 @@ public final class RemoteBackupCreationUseCase {
                                 "data/" + componentId + "/volumes/" + volume.name() + ".pax",
                                 BackupMemberKind.PERSISTENT_CONTENT));
                     }
-                    if (container.engine() == DeploymentRuntimeSpecification.ContainerEngineType.PODMAN) {
+                    {
                         collected.add(downloadManagedArtifact(context, component, attempt, session, operationId,
                                 RemoteBackupArtifactKind.OCI_IMAGE, "image",
                                 "runtime/" + componentId + ".oci", BackupMemberKind.RUNTIME));
@@ -328,7 +326,7 @@ public final class RemoteBackupCreationUseCase {
         }
         try {
             if (databaseArtifact != null) databaseOperations.discardArtifact(databaseArtifact);
-            RemoteStepResult cleanup = session.discardBackupOperation(operationId);
+            RemoteStepResult cleanup = session.backupArtifacts().discardBackupOperation(operationId);
             if (!cleanup.succeeded()) {
                 throw BackupException.create(BackupFailureType.CLEANUP_FAILED,
                         "the managed backup operation could not be discarded after collection");
@@ -398,13 +396,13 @@ public final class RemoteBackupCreationUseCase {
             String memberPath,
             BackupMemberKind memberKind
     ) throws LinuxOperationException, IOException {
-        RemoteBackupArtifact remote = session.createBackupArtifact(new RemoteBackupArtifactRequest(operationId,
+        RemoteBackupArtifact remote = session.backupArtifacts().createBackupArtifact(new RemoteBackupArtifactRequest(operationId,
                 context.graph().applicationId(), component.graph().componentId(), component.graph().application(),
                 component.release().releaseSha256(), kind, resourceId, MAXIMUM_REMOTE_ARTIFACT_BYTES));
         Path local = materials.member(attempt, memberPath);
         try (OutputStream output = Files.newOutputStream(local, StandardOpenOption.CREATE_NEW,
                 StandardOpenOption.WRITE)) {
-            session.copyBackupArtifact(remote, output);
+            session.backupArtifacts().copyBackupArtifact(remote, output);
         }
         ManagedArtifactEvidence evidence = kind == RemoteBackupArtifactKind.OCI_IMAGE
                 ? artifactValidator.validateOci(local) : artifactValidator.validatePax(local);
@@ -576,7 +574,7 @@ public final class RemoteBackupCreationUseCase {
         List<DatabaseContext> databases = new ArrayList<>();
         context.components().values().forEach(component -> component.graph().reviewedResourceBindings().orElseThrow()
                 .databaseBindings().orElseThrow().forEach(binding -> databases.add(
-                        new DatabaseContext(component, binding, profile(binding.connection())))));
+                        new DatabaseContext(component, binding, BackupDatabaseProfileMapper.profile(binding.connection())))));
         return List.copyOf(databases);
     }
 
@@ -585,24 +583,7 @@ public final class RemoteBackupCreationUseCase {
         return databases.isEmpty() ? Optional.empty() : Optional.of(databases.getFirst());
     }
 
-    private static DatabaseConnectionProfile profile(ManagedDatabaseConnection connection) {
-        if (connection instanceof ManagedDatabaseConnection.Sqlite sqlite) {
-            return new DatabaseConnectionProfile.Sqlite(sqlite.fileName());
-        }
-        ManagedDatabaseConnection.Server server = (ManagedDatabaseConnection.Server) connection;
-        return new DatabaseConnectionProfile.Server(type(server.engine()), server.host(), server.port(),
-                server.database(), server.username(), server.passwordReference(), server.tlsRequired());
-    }
 
-    private static BackupDatabaseType type(ManagedDatabaseEngineType type) {
-        return switch (type) {
-            case SQLITE -> BackupDatabaseType.SQLITE;
-            case POSTGRESQL -> BackupDatabaseType.POSTGRESQL;
-            case MYSQL -> BackupDatabaseType.MYSQL;
-            case MARIADB -> BackupDatabaseType.MARIADB;
-            case REDIS -> throw ApplicationServiceException.create(ApplicationServiceFailureType.BACKUP_INPUT_INCOMPLETE, "complete Redis backup is unsupported");
-        };
-    }
 
     private BackupRuntime runtime(
             LinuxCapabilityFacts linux, ServerCapabilityFacts server, BackupContext context) {

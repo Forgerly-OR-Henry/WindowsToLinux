@@ -27,6 +27,7 @@ retain_releases() {
     elif [ "$retained_noncurrent" -lt 2 ]; then
       retained_noncurrent=$((retained_noncurrent + 1))
     else
+      remove_container_secret_delivery "$app" "$release_digest"
       rm -rf --one-file-system -- "$release"
     fi
   done
@@ -75,7 +76,7 @@ rollback_previous() {
   fi
   assert_root_owned_regular "$unit"
   [ "$(sha256sum -- "$unit" | awk '{print $1}')" = "$expected" ] || reject current-unit
-  systemctl stop "$(unit_name "$app")" || true
+  stop_application_unit "$app"
   ln -sfnT -- "$previous" "$root/current"
   install -o root -g root -m 644 -- "$snapshot/unit" "$unit"
   systemctl daemon-reload
@@ -87,9 +88,9 @@ rollback_previous() {
   if [ "$previous_runtime" = active ]; then
     systemctl start "$(unit_name "$app")"
   else
-    systemctl stop "$(unit_name "$app")" || true
+    stop_application_unit "$app"
   fi
-  if [ -e "$candidate" ] || [ -L "$candidate" ]; then
+  if [ "$candidate" != "$previous" ] && { [ -e "$candidate" ] || [ -L "$candidate" ]; }; then
     rm -rf --one-file-system -- "$candidate"
   fi
   rm -rf --one-file-system -- "$snapshot"
@@ -121,7 +122,7 @@ rollback_first() {
   if [ -e "$unit" ] || [ -L "$unit" ]; then
     assert_root_owned_regular "$unit"
     [ "$(sha256sum -- "$unit" | awk '{print $1}')" = "$expected" ] || reject current-unit
-    systemctl stop "$(unit_name "$app")" || true
+    stop_application_unit "$app"
     rm -f -- "$unit"
   fi
   if [ -e "$root/current" ] || [ -L "$root/current" ]; then
@@ -149,7 +150,8 @@ lifecycle() {
   esac
   assert_current_or_empty "$app" "$manifest"
   [ "$previous_present" -eq 1 ] || reject lifecycle-unmanaged
-  systemctl "$action" "$(unit_name "$app")"
+  if [ "$action" = stop ]; then stop_requested_application_unit "$app"
+  else systemctl "$action" "$(unit_name "$app")"; fi
   printf 'LIFECYCLE=%s\n' "$action"
 }
 

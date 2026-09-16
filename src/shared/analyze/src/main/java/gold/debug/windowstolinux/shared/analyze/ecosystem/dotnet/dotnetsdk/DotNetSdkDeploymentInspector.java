@@ -21,7 +21,7 @@ import java.util.regex.Pattern;
 /** Inspects one locked .NET Web SDK service without executing dotnet. / 在不执行 dotnet 的情况下检查一个锁定的 .NET Web SDK 服务。 */
 public final class DotNetSdkDeploymentInspector implements DeploymentTypeInspector {
     private static final Pattern DOTNET_VERSION = Pattern.compile(
-            "[\"']version[\"']\\s*:\\s*[\"']((?:8|9)\\.0(?:\\.[0-9]+)?)[\"']");
+            "[\"']version[\"']\\s*:\\s*[\"']([0-9]+(?:\\.[0-9]+){0,2}(?:[-+][A-Za-z0-9._-]+)?)[\"']");
     private static final Pattern DOTNET_WEB_SDK = Pattern.compile(
             "<Project\\s+Sdk\\s*=\\s*[\"']Microsoft\\.NET\\.Sdk\\.Web[\"']", Pattern.CASE_INSENSITIVE);
 

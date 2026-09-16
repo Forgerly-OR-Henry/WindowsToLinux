@@ -100,7 +100,7 @@ class NativeArchitectureInspectionTest {
     }
 
     @Test
-    void stopsCmakeBeforeExecutionWhenItsToolchainContractIsNotExact() throws Exception {
+    void acceptsNewCmakeMinimumWhileRejectingUnreviewedPresetHooks() throws Exception {
         Fixture version = cmake();
         Files.writeString(version.root().resolve("CMakeLists.txt"),
                 Files.readString(version.root().resolve("CMakeLists.txt")).replace("VERSION 3.25", "VERSION 3.26"));
@@ -109,12 +109,53 @@ class NativeArchitectureInspectionTest {
                 Files.readString(preset.root().resolve("CMakePresets.json")).replace(
                         "\"cacheVariables\"", "\"environment\": {\"CMAKE_PROJECT_INCLUDE\": \"hook.cmake\"}, \"cacheVariables\""));
 
-        assertFalse(analyze(version).admission() == DeploymentAdmissionStatus.READY_FOR_PLANNING);
+        assertEquals(DeploymentAdmissionStatus.READY_FOR_PLANNING, analyze(version).admission());
         assertFalse(analyze(preset).admission() == DeploymentAdmissionStatus.READY_FOR_PLANNING);
     }
 
     private DeploymentProjectAssessment analyze(Fixture fixture) throws Exception {
         return new DeploymentAnalysisCoordinator().analyze(fixture.root(), fixture.type());
+    }
+
+    @Test
+    void admitsLocalCrossPackageImportsButRejectsMissingAndExternalDeclarations() throws Exception {
+        Fixture javaFixture = javaSource();
+        write(javaFixture.root(), "src/demo/Main.java", """
+                package demo;
+                import demo.business.Calculator;
+                import static demo.business.Calculator.sum;
+                public final class Main { public static void main(String[] args) { System.out.println(sum()); } }
+                """);
+        write(javaFixture.root(), "src/demo/business/Calculator.java", """
+                package demo.business;
+                public final class Calculator { public static int sum() { return 6; } }
+                """);
+        Fixture kotlinFixture = kotlin();
+        write(kotlinFixture.root(), "src/demo/Main.kt", """
+                package demo
+                import demo.business.Calculator as Service
+                import demo.business.sum
+                fun main() { println(Service().value() + sum()) }
+                """);
+        write(kotlinFixture.root(), "src/demo/business/Calculator.kt", """
+                package demo.business
+                class Calculator { fun value() = 3 }
+                fun sum() = 6
+                """);
+        for (Fixture fixture : List.of(javaFixture, kotlinFixture)) {
+            assertEquals(DeploymentAdmissionStatus.READY_FOR_PLANNING, analyze(fixture).admission());
+        }
+        Files.delete(javaFixture.root().resolve("src/demo/business/Calculator.java"));
+        Files.delete(kotlinFixture.root().resolve("src/demo/business/Calculator.kt"));
+        for (Fixture fixture : List.of(javaFixture, kotlinFixture)) {
+            assertFalse(analyze(fixture).admission() == DeploymentAdmissionStatus.READY_FOR_PLANNING);
+        }
+        write(javaFixture.root(), "src/demo/business/Unrelated.java", "package demo.business; public class Unrelated {}\n");
+        write(kotlinFixture.root(), "src/demo/business/Unrelated.kt", "package demo.business\nclass Unrelated\n");
+        for (Fixture fixture : List.of(javaFixture, kotlinFixture)) {
+            assertFalse(analyze(fixture).admission() == DeploymentAdmissionStatus.READY_FOR_PLANNING,
+                    "an existing local package must not admit undeclared imports");
+        }
     }
 
     private Fixture javaSource() throws Exception {

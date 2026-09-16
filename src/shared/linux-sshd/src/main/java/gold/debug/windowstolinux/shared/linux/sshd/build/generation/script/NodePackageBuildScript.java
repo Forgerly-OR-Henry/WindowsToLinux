@@ -12,7 +12,7 @@ public final class NodePackageBuildScript {
     public static String render(DeploymentBuildToolType tool, int nodeMajorVersion, boolean staticSite, String outputDirectory) {
         String installAndBuild = switch (tool) {
             case NPM -> "test -f ./package-lock.json\nrun npm ci --ignore-scripts\nrun npm run build";
-            case PNPM -> "test -f ./pnpm-lock.yaml\nrun pnpm install --frozen-lockfile --ignore-scripts\nrun pnpm run build";
+            case PNPM -> "test -f ./pnpm-lock.yaml\nrun pnpm install --frozen-lockfile --ignore-scripts --node-linker=hoisted --package-import-method=copy\nrun pnpm run build";
             case YARN -> "test -f ./yarn.lock\nexport YARN_ENABLE_SCRIPTS=false\n"
                     + "run yarn install --immutable\nrun yarn run build";
             default -> throw new IllegalArgumentException("Node source requires one fixed package manager");
@@ -22,15 +22,17 @@ public final class NodePackageBuildScript {
                 + SafeBuildScriptEnvelope.shellQuote("./" + outputDirectory)
                 : "printf 'ARTIFACT=%s\\n' ./package.json";
         return """
-                node --version | grep -Eq %s
+                if [ -n "${WTL_NODE_BRANCH:-}" ]; then
+                  node -p 'process.versions.node.split(".")[0]' | grep -Fx "$WTL_NODE_BRANCH"
+                else node --version | grep -Eq %s; fi
                 %s
                 %s
                 %s
-                """.formatted(SafeBuildScriptEnvelope.shellQuote("^v" + nodeMajorVersion + "\\."), installAndBuild,
+                """.formatted(SafeBuildScriptEnvelope.shellQuote("^v" + nodeMajorVersion + "\\."), NodeDependencyToolPreparation.render(tool) + installAndBuild,
                 normalizeBinaryLinks(), artifact);
     }
 
-    // npm creates executable links even with lifecycle scripts disabled; releases remain free of symlinks.
+    // npm creates executable links even with lifecycle scripts disabled; releases remain free of symlinks. / 即使禁用生命周期脚本，npm 仍会创建可执行链接，发布目录继续禁止符号链接。
     // npm 在禁用生命周期脚本时仍创建命令链接；转换后发布目录仍不允许符号链接。
     static String normalizeBinaryLinks() {
         return """

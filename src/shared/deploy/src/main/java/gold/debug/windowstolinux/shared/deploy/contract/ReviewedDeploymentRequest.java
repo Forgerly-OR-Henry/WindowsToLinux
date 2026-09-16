@@ -86,8 +86,11 @@ public record ReviewedDeploymentRequest(
                 || !archive.contentSha256().equals(approval.sourceSha256())) {
             throw new IllegalArgumentException("archive, source revision, and approval must bind the same SHA-256");
         }
-        if (limits.runAsRoot() != approval.rootBuildAccepted()) {
-            throw new IllegalArgumentException("root-build approval must match the requested build mode");
+        if (runtime.identityPolicy() == gold.debug.windowstolinux.shared.model.project.RuntimeIdentityMode.LEGACY_UNSPECIFIED) {
+            throw new IllegalArgumentException("New deployment requires an explicit runtime identity policy");
+        }
+        if (limits.runAsRoot() || approval.rootBuildAccepted()) {
+            throw new IllegalArgumentException("Root builds are no longer supported; root manages the project and a restricted identity builds it");
         }
         if (runtime instanceof DeploymentRuntimeSpecification.Container container
                 && container.engine() == DeploymentRuntimeSpecification.ContainerEngineType.DOCKER && !containerDaemonRiskAccepted) {

@@ -57,42 +57,55 @@ final class GitCommandExecutor {
         }
         BoundedOutput output = new BoundedOutput(process.getInputStream(), maximumOutputBytes);
         Thread reader = Thread.ofVirtual().name("windowstolinux-git-output").start(output);
-        if (!process.waitFor(commandTimeout.toMillis(), TimeUnit.MILLISECONDS)) {
-            terminateTree(process);
+        java.util.Set<ProcessHandle> children = new java.util.LinkedHashSet<>();
+        Throwable primaryFailure = null;
+        try {
+            long deadline = System.nanoTime() + commandTimeout.toNanos();
+            while (process.isAlive()) {
+                children.addAll(process.descendants().toList());
+                long remaining = deadline - System.nanoTime();
+                if (remaining <= 0) throw GitSnapshotException.create(GitSnapshotFailureType.TIMEOUT,
+                        "Git command exceeded its configured execution limit");
+                process.waitFor(Math.min(100, Math.max(1, TimeUnit.NANOSECONDS.toMillis(remaining))), TimeUnit.MILLISECONDS);
+            }
             try {
-                finishReader(process, reader);
+                finishReader(reader);
             } catch (IOException exception) {
                 throw GitSnapshotException.create(GitSnapshotFailureType.COMMAND_FAILED,
-                        "Git output could not be closed after a timeout", exception);
+                        "Git command output reader did not terminate safely", exception);
             }
-            throw GitSnapshotException.create(GitSnapshotFailureType.TIMEOUT,
-                    "Git command exceeded the two-minute execution limit");
+            IOException outputFailure = output.failure().orElse(null);
+            if (outputFailure != null) {
+                throw GitSnapshotException.create(GitSnapshotFailureType.COMMAND_FAILED,
+                        "Git command output could not be read safely", outputFailure);
+            }
+            if (output.exceeded()) {
+                throw GitSnapshotException.create(GitSnapshotFailureType.COMMAND_FAILED,
+                        "Git command output exceeded the safe diagnostic bound");
+            }
+            if (process.exitValue() != 0) {
+                GitSnapshotFailureType type = transientNetworkFailure(output.bytes())
+                        ? GitSnapshotFailureType.TRANSIENT_NETWORK_FAILURE
+                        : command.contains("fetch")
+                        ? GitSnapshotFailureType.REFERENCE_UNAVAILABLE
+                        : GitSnapshotFailureType.COMMAND_FAILED;
+                throw GitSnapshotException.create(type,
+                        "Git command returned a controlled non-success result without exposing remote output");
+            }
+            return new String(output.bytes(), StandardCharsets.UTF_8);
+        } catch (GitSnapshotException | InterruptedException | RuntimeException failure) {
+            primaryFailure = failure;
+            throw failure;
+        } finally {
+            try {
+                cleanup(process, children, reader);
+            } catch (IOException cleanupFailure) {
+                if (primaryFailure != null) primaryFailure.addSuppressed(cleanupFailure);
+                else throw GitSnapshotException.create(GitSnapshotFailureType.COMMAND_FAILED,
+                        "Git process cleanup could not be verified", cleanupFailure);
+            }
+            if (primaryFailure instanceof InterruptedException) Thread.currentThread().interrupt();
         }
-        try {
-            finishReader(process, reader);
-        } catch (IOException exception) {
-            throw GitSnapshotException.create(GitSnapshotFailureType.COMMAND_FAILED,
-                    "Git command output reader did not terminate safely", exception);
-        }
-        IOException outputFailure = output.failure().orElse(null);
-        if (outputFailure != null) {
-            throw GitSnapshotException.create(GitSnapshotFailureType.COMMAND_FAILED,
-                    "Git command output could not be read safely", outputFailure);
-        }
-        if (output.exceeded()) {
-            throw GitSnapshotException.create(GitSnapshotFailureType.COMMAND_FAILED,
-                    "Git command output exceeded the safe diagnostic bound");
-        }
-        if (process.exitValue() != 0) {
-            GitSnapshotFailureType type = transientNetworkFailure(output.bytes())
-                    ? GitSnapshotFailureType.TRANSIENT_NETWORK_FAILURE
-                    : command.contains("fetch")
-                    ? GitSnapshotFailureType.REFERENCE_UNAVAILABLE
-                    : GitSnapshotFailureType.COMMAND_FAILED;
-            throw GitSnapshotException.create(type,
-                    "Git command returned a controlled non-success result without exposing remote output");
-        }
-        return new String(output.bytes(), StandardCharsets.UTF_8);
     }
 
     private static boolean transientNetworkFailure(byte[] output) {
@@ -117,28 +130,30 @@ final class GitCommandExecutor {
         return configured;
     }
 
-    private static void terminateTree(Process process) throws InterruptedException {
-        List<ProcessHandle> descendants = process.descendants().toList();
-        for (int index = descendants.size() - 1; index >= 0; index--) {
-            descendants.get(index).destroyForcibly();
-        }
-        process.destroyForcibly();
-        process.waitFor(10, TimeUnit.SECONDS);
-        for (ProcessHandle descendant : descendants) {
-            try {
-                descendant.onExit().get(10, TimeUnit.SECONDS);
-            } catch (java.util.concurrent.ExecutionException | java.util.concurrent.TimeoutException ignored) {
-                // The bounded caller still fails; a later workspace cleanup verifies that no handle remains. / 有界调用方仍会失败；后续工作区清理会验证没有句柄残留。
+    private static void cleanup(Process process, java.util.Set<ProcessHandle> children, Thread reader)
+            throws IOException {
+        boolean interrupted = Thread.interrupted();
+        children.addAll(process.descendants().toList());
+        children.forEach(child -> { if (child.isAlive()) child.destroyForcibly(); });
+        if (process.isAlive()) process.destroyForcibly();
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
+        try {
+            process.getInputStream().close();
+            process.getOutputStream().close();
+            process.getErrorStream().close();
+            while (System.nanoTime() < deadline
+                    && (process.isAlive() || reader.isAlive() || children.stream().anyMatch(ProcessHandle::isAlive))) {
+                try { Thread.sleep(20); } catch (InterruptedException failure) { interrupted = true; }
             }
+            if (process.isAlive() || reader.isAlive() || children.stream().anyMatch(ProcessHandle::isAlive))
+                throw new IOException("Task-owned Git process or reader remains after cleanup deadline");
+        } finally {
+            if (interrupted) Thread.currentThread().interrupt();
         }
     }
 
-    private static void finishReader(Process process, Thread reader) throws IOException, InterruptedException {
+    private static void finishReader(Thread reader) throws IOException, InterruptedException {
         reader.join(10_000);
-        if (reader.isAlive()) {
-            process.getInputStream().close();
-            reader.join(10_000);
-        }
         if (reader.isAlive()) {
             throw new IOException("Git command output reader did not terminate");
         }

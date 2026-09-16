@@ -32,7 +32,6 @@ import gold.debug.windowstolinux.shared.linux.connection.SshEndpoint;
 import gold.debug.windowstolinux.shared.model.deployment.DeploymentStatus;
 import gold.debug.windowstolinux.shared.model.managed.ManagedApplication;
 import gold.debug.windowstolinux.shared.model.managed.ManagedApplicationRuntimeConfiguration;
-import gold.debug.windowstolinux.shared.model.message.LocalizedMessage;
 import gold.debug.windowstolinux.shared.model.failure.FailureDescriptor;
 import gold.debug.windowstolinux.shared.model.server.ServerIdentity;
 
@@ -140,7 +139,7 @@ public final class ReviewedDeploymentUseCase {
         return deployWithStoredPassword(request, profile, mode, masterPassword, confirmation, ignored -> { });
     }
 
-    /** Publishes actual execution events without changing the reviewed request. */
+    /** Publishes actual execution events without changing the reviewed request. / 发布实际执行事件，不改变已审阅请求。 */
     public DeploymentOutcome deployWithStoredPassword(ReviewedDeploymentRequest request, ServerProfile profile,
             gold.debug.windowstolinux.shared.model.security.CredentialStorageMode mode,
             char[] masterPassword, Predicate<String> confirmation, java.util.function.Consumer<gold.debug.windowstolinux.shared.deploy.contract.result.deployment.DeploymentEvent> progress)
@@ -192,7 +191,7 @@ public final class ReviewedDeploymentUseCase {
             if (result.status() == DeploymentStatus.SUCCEEDED) {
                 try {
                     recordSuccessful(graphs, application,
-                            new ManagedApplicationRuntimeConfiguration(request.runtime().healthCheck(), request.userAccessUrl()),
+                            new ManagedApplicationRuntimeConfiguration(request.runtime().healthCheck(), request.userAccessUrl(), request.runtime().identityPolicy()),
                             new CurrentRelease(application.id(), result.publishedReleaseSha256().orElseThrow(), Instant.now()),
                             request.runtime(), request.configuration(), request.secretReferences(),
                             request.databaseBindings());

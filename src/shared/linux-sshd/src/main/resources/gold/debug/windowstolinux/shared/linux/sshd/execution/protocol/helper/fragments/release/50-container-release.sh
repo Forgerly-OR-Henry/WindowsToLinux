@@ -33,6 +33,7 @@ parse_container_parameters() {
 save_container_parameters() {
   local target="$1" spec source destination mode
   {
+    if [ "$runtime_identity_policy" != LEGACY_UNSPECIFIED ]; then printf 'identity-v1\n%s\n' "$runtime_identity_policy"; fi
     printf '%s\n' "$deployment_configuration_digest"
     printf '%s\n' "${#deployment_secret_identifiers[@]}"
     local index=0
@@ -67,7 +68,7 @@ container_name() { printf 'windowstolinux-%s' "$1"; }
 container_image() { printf 'windowstolinux-%s:%s' "$1" "$2"; }
 container_current_release() {
   local app="$1" manifest="$2"
-  local root releases current current_digest
+  local root releases current current_digest found runtime_image
   root="$(app_root "$app")"; releases="$root/releases"
   previous_present=0; previous_path=; previous_running=0
   if [ -e "$root/current" ] || [ -L "$root/current" ]; then
@@ -85,6 +86,11 @@ container_current_release() {
     [ "$(cat -- "$current/.windowstolinux-container-engine")" = "$container_engine" ] || reject container-engine-change
     [ "$("$container_engine" image inspect --format '{{.Id}}' "$(container_image "$app" "$current_digest")")" \
       = "$(cat -- "$current/.windowstolinux-container-image-id")" ] || reject container-image-identity
+    found="$("$container_engine" ps --all --filter "name=$(container_name "$app")" --format '{{.Names}}')" || reject container-query
+    if printf '%s\n' "$found" | grep -Fxq -- "$(container_name "$app")"; then
+      runtime_image="$("$container_engine" inspect --format '{{.Image}}' "$(container_name "$app")")" || reject container-query
+      [ "$runtime_image" = "$(cat -- "$current/.windowstolinux-container-image-id")" ] || reject current-container-identity
+    fi
     previous_present=1; previous_path="$current"
     if "$container_engine" inspect --format '{{.State.Running}}' "$(container_name "$app")" 2>/dev/null | grep -qx true; then previous_running=1; fi
   fi
@@ -92,10 +98,16 @@ container_current_release() {
 start_container_release() {
   local app="$1" release_digest="$2" manifest="$3"
   local image name volume spec source destination mode config index secret secret_name secret_destination
-  local -a args
+  local -a args identity_options=()
+  local runtime_user=
   image="$(container_image "$app" "$release_digest")"; name="$(container_name "$app")"
+  if [ "$runtime_identity_policy" = CONTAINER_NON_ROOT ]; then
+    runtime_user="$(container_nonroot_user "$container_engine" "$image")"
+    identity_options=(--user "$runtime_user" --security-opt no-new-privileges --cap-drop ALL)
+  else [ "$runtime_identity_policy" = LEGACY_UNSPECIFIED ] || reject container-identity-policy; fi
   assert_deployment_inputs "$app" container
   [ "${#managed_data_bindings[@]}" -eq 0 ] || reject container-managed-file-binding
+  stop_container_runtime "$app"
   for spec in "${container_volumes[@]}"; do
     source="${spec%%:*}"
     if "$container_engine" volume inspect "$source" >/dev/null 2>&1; then
@@ -108,11 +120,15 @@ start_container_release() {
         --label "io.windowstolinux.application=$managed_data_application" \
         --label "io.windowstolinux.component=$managed_data_component" "$source" >/dev/null
     fi
+    if [ -n "$runtime_user" ]; then
+      stage_container_volume_migration "$app" "$manifest" "$source" "$runtime_user"
+      prepare_container_volume_access "$container_engine" "$source" "$runtime_user"
+    fi
   done
   config="$(configuration_path "$app" "$deployment_configuration_digest" container)"
   if [ "$container_engine" = docker ]; then
     "$container_engine" rm -f -- "$name" >/dev/null 2>&1 || true
-    args=("$container_engine" run -d --name "$name" --restart unless-stopped --env-file "$config")
+    args=("$container_engine" run -d --name "$name" --restart unless-stopped "${identity_options[@]}" --env-file "$config")
     for spec in "${container_ports[@]}"; do args+=(--publish "$spec"); done
     for spec in "${container_volumes[@]}"; do
       source="${spec%%:*}"; destination="${spec#*:}"; destination="${destination%:*}"; mode="${spec##*:}"
@@ -122,6 +138,7 @@ start_container_release() {
     while [ "$index" -lt "${#deployment_secret_identifiers[@]}" ]; do
       secret_name="${deployment_secret_names[$index]}"; secret_destination="/run/secrets/$secret_name"
       secret="$(secret_revision_path "$app" "${deployment_secret_identifiers[$index]}" "${deployment_secret_revisions[$index]}")"
+      if [ -n "$runtime_user" ]; then secret="$(container_secret_delivery "$app" "$release_digest" "$runtime_user" "$secret" "$secret_name")"; fi
       args+=(--mount "type=bind,source=$secret,destination=$secret_destination,readonly" --env "$secret_name=$secret_destination")
       index=$((index + 1))
     done
@@ -136,6 +153,7 @@ start_container_release() {
     {
       printf '[Container]\nImage=%s\nContainerName=%s\n' "$image" "$name"
       printf 'EnvironmentFile=%s\n' "$config"
+      if [ -n "$runtime_user" ]; then printf 'User=%s\nNoNewPrivileges=true\nDropCapability=all\n' "$runtime_user"; fi
       for spec in "${container_ports[@]}"; do printf 'PublishPort=%s\n' "$spec"; done
       for spec in "${container_volumes[@]}"; do
         source="${spec%%:*}"; destination="${spec#*:}"; destination="${destination%:*}"; mode="${spec##*:}"
@@ -145,6 +163,7 @@ start_container_release() {
       while [ "$index" -lt "${#deployment_secret_identifiers[@]}" ]; do
         secret_name="${deployment_secret_names[$index]}"; secret_destination="/run/secrets/$secret_name"
         secret="$(secret_revision_path "$app" "${deployment_secret_identifiers[$index]}" "${deployment_secret_revisions[$index]}")"
+        if [ -n "$runtime_user" ]; then secret="$(container_secret_delivery "$app" "$release_digest" "$runtime_user" "$secret" "$secret_name")"; fi
         printf 'Volume=%s:%s:ro\nEnvironment=%s=%s\n' "$secret" "$secret_destination" "$secret_name" "$secret_destination"
         index=$((index + 1))
       done
@@ -170,21 +189,27 @@ publish_container() {
   parse_managed_data_bindings "${deployment_remaining_arguments[@]}"
   [ "${#managed_data_bindings[@]}" -eq 0 ] || reject container-managed-file-binding
   parse_container_parameters "${managed_data_remaining_arguments[@]}"
+  [ "$runtime_identity_policy" = CONTAINER_NON_ROOT ] || reject container-identity-policy
+  if [ "$previous_present" -eq 0 ]; then
+    local existing
+    existing="$("$container_engine" ps --all --filter "name=$(container_name "$app")" --format '{{.Names}}')" || reject container-query
+    ! printf '%s\n' "$existing" | grep -Fxq -- "$(container_name "$app")" || reject unmanaged-container
+  fi
   [ ! -e "$release" ] && [ ! -L "$release" ] || reject release-exists
   assert_candidate_for_deployer "$candidate"
   source="$candidate/mutable/source"; [ -d "$source" ] && [ ! -L "$source" ] || reject source-directory
   [ -z "$(find -P "$source" -xdev -type l -print -quit)" ] || reject source-symlink
   [ -z "$(find -P "$source" -xdev ! -type f ! -type d -print -quit)" ] || reject source-special-file
   [ -z "$(find -P "$source" -xdev -type f -links +1 -print -quit)" ] || reject source-hardlink
-  candidate_image="windowstolinux-candidate:$candidate_id"; image="$(container_image "$app" "$release_digest")"
+  candidate_image="$(candidate_image_name "$container_engine" "$candidate_id")"; image="$(container_image "$app" "$release_digest")"
+  import_candidate_image "$app" "$candidate_id" "$container_engine"
   "$container_engine" image inspect "$candidate_image" >/dev/null
   [ "$("$container_engine" image inspect --format '{{ index .Config.Labels "io.windowstolinux.application" }}' "$candidate_image")" = "$app" ] \
     && [ "$("$container_engine" image inspect --format '{{ index .Config.Labels "io.windowstolinux.candidate" }}' "$candidate_image")" = "$candidate_id" ] \
     || reject container-image-owner
   "$container_engine" tag "$candidate_image" "$image"
   install -d -o root -g root -m 755 -- "$root" "$releases" "$release"
-  cp -a --no-preserve=ownership -- "$source" "$release/source"
-  chown -R root:root -- "$release/source"
+  copy_sealed_source "$source" "$release/source"
   printf '%s\n' "$manifest" > "$release/.windowstolinux-owner"
   printf '%s\n' "$container_engine" > "$release/.windowstolinux-container-engine"
   "$container_engine" image inspect --format '{{.Id}}' "$image" > "$release/.windowstolinux-container-image-id"

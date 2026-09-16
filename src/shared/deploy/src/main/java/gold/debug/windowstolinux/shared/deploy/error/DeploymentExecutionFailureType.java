@@ -15,6 +15,7 @@ public enum DeploymentExecutionFailureType implements FailureDefinition {
     ARITHMETIC_OVERFLOW("deployment.preflight.arithmetic-overflow", "preflight", "deployment.error.arithmeticOverflow", FailureSeverityLevel.ERROR, FailureRecoveryAction.REQUEST_USER_CORRECTION),
     CLEANUP_UNVERIFIED("deployment.cleanup.unverified", "cleanup", "deployment.error.cleanupUnverified", FailureSeverityLevel.ERROR, FailureRecoveryAction.REQUIRE_MANUAL_RECOVERY),
     ROLLBACK_UNVERIFIED("deployment.rollback.unverified", "rollback", "deployment.error.rollbackUnverified", FailureSeverityLevel.ERROR, FailureRecoveryAction.REQUIRE_MANUAL_RECOVERY),
+    POST_PUBLICATION_CLEANUP_PENDING("deployment.cleanup.pending", "cleanup", "deployment.error.cleanupPending", FailureSeverityLevel.WARNING, FailureRecoveryAction.CLEANUP),
     LOCAL_OBSERVATION_PERSISTENCE_FAILED("deployment.persistence.observation-save-failed", "persistence", "deployment.error.observationSaveFailed", FailureSeverityLevel.WARNING, FailureRecoveryAction.RETRY);
 
     private final String code;

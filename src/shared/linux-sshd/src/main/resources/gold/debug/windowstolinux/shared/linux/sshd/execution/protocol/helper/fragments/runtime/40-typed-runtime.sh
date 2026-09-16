@@ -48,6 +48,8 @@ snapshot_deployment() {
     chown root:root -- "$snapshot/deployment-parameters"
     chmod 600 -- "$snapshot/deployment-parameters"
   fi
+  printf '%s\n' "$token" > "$(app_root "$app")/.migration-snapshot"
+  chmod 400 -- "$(app_root "$app")/.migration-snapshot"
   printf 'SNAPSHOT_TOKEN=%s\n' "$token"
   printf 'PREVIOUS=1\n'
   printf 'PREVIOUS_RUNNING=%s\n' "$previous_running"
@@ -73,7 +75,7 @@ rollback_deployment() {
     current_application="$app"; load_deployment_parameters "$snapshot/deployment-parameters"
     expected="$(expected_deployment_unit_digest "$app" "${deployment_runtime_parameters[@]}")"
   else
-    expected="$(expected_unit_digest "$app")"
+    expected="$(expected_unit_digest "$app" "$snapshot/unit")"
   fi
   [ "$(sha256sum -- "$snapshot/unit" | awk '{print $1}')" = "$expected" ] || reject snapshot-unit
   if [ -e "$candidate" ] || [ -L "$candidate" ]; then
@@ -81,13 +83,14 @@ rollback_deployment() {
     [ "$(cat -- "$candidate/.windowstolinux-owner")" = "$manifest" ] || reject candidate-owner
     assert_root_owned_regular "$candidate/.windowstolinux-deployment-parameters"
   fi
-  systemctl stop "$(unit_name "$app")" || true
+  stop_application_unit "$app"
+  restore_dynamic_state_migration "$snapshot"
   ln -sfnT -- "$previous" "$root/current"
   install -o root -g root -m 644 -- "$snapshot/unit" "$unit"
   systemctl daemon-reload
   if [ "$(cat -- "$snapshot/enabled")" = enabled ]; then systemctl enable "$(unit_name "$app")"; else systemctl disable "$(unit_name "$app")"; fi
-  if [ "$previous_runtime" = active ]; then systemctl start "$(unit_name "$app")"; else systemctl stop "$(unit_name "$app")" || true; fi
-  if [ -e "$candidate" ] || [ -L "$candidate" ]; then rm -rf --one-file-system -- "$candidate"; fi
+  if [ "$previous_runtime" = active ]; then systemctl start "$(unit_name "$app")"; else stop_application_unit "$app"; fi
+  if [ "$candidate" != "$previous" ] && { [ -e "$candidate" ] || [ -L "$candidate" ]; }; then rm -rf --one-file-system -- "$candidate"; fi
   rm -rf --one-file-system -- "$snapshot"
   printf 'ROLLED_BACK=1\n'
 }
@@ -120,7 +123,7 @@ rollback_deployment_first() {
   expected="$(expected_deployment_unit_digest "$app" "${deployment_runtime_parameters[@]}")"
   if [ -e "$unit" ] || [ -L "$unit" ]; then
     assert_root_owned_regular "$unit"; [ "$(sha256sum -- "$unit" | awk '{print $1}')" = "$expected" ] || reject current-unit
-    systemctl stop "$(unit_name "$app")" || true; rm -f -- "$unit"
+    stop_application_unit "$app"; rm -f -- "$unit"
   fi
   if [ -e "$root/current" ] || [ -L "$root/current" ]; then rm -f -- "$root/current"; fi
   rm -rf --one-file-system -- "$candidate"
@@ -134,7 +137,8 @@ lifecycle_deployment() {
   case "$action" in start|stop|restart|enable|disable) ;; *) reject lifecycle-action ;; esac
   assert_deployment_current_or_empty "$app" "$manifest"
   [ "$previous_present" -eq 1 ] || reject lifecycle-unmanaged
-  systemctl "$action" "$(unit_name "$app")"
+  if [ "$action" = stop ]; then stop_requested_application_unit "$app"
+  else systemctl "$action" "$(unit_name "$app")"; fi
   printf 'LIFECYCLE=%s\n' "$action"
 }
 observe_deployment() {
@@ -146,4 +150,5 @@ observe_deployment() {
   if systemctl is-active --quiet "$(unit_name "$app")"; then running=1; else running=0; fi
   enabled="$(systemctl is-enabled "$(unit_name "$app")" 2>/dev/null || true)"
   printf 'OWNER=1\nRUNNING=%s\nENABLED=%s\n' "$running" "$enabled"
+  observe_application_unit "$(unit_name "$app")"
 }

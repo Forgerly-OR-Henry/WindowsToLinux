@@ -33,6 +33,11 @@ final class MultiComponentLifecyclePolicy {
                     plan, observations, Set.of(), observations.keySet());
         }
         if (action == LifecycleAction.REFRESH_STATUS) return null;
+        if (action != LifecycleAction.STOP && action != LifecycleAction.DISABLE_AUTOSTART
+                && targets.stream().anyMatch(id -> observations.get(id).runtimeState() == RuntimeState.ERROR)) {
+            return result(false, LocalizedMessage.of("lifecycle.errorRequiresStop"),
+                    plan, observations, Set.of(), targets);
+        }
         Set<String> unsafe = dependencyImpact(plan, targets, action, observations);
         if (!unsafe.isEmpty()) {
             return result(false, LocalizedMessage.of("lifecycle.applicationDependencyImpact",
@@ -146,7 +151,7 @@ final class MultiComponentLifecyclePolicy {
                     LifecycleObservation observation = observations.get(dependent);
                     boolean affected = action == LifecycleAction.DISABLE_AUTOSTART
                             ? observation.autostartState() == AutostartState.ENABLED
-                            : observation.runtimeState() == RuntimeState.RUNNING;
+                            : observation.runtimeState() == RuntimeState.RUNNING || observation.runtimeState() == RuntimeState.ERROR;
                     if (!targets.contains(dependent) && affected) unsafe.add(dependent);
                 }
             }
@@ -173,7 +178,7 @@ final class MultiComponentLifecyclePolicy {
 
     private static boolean verified(LifecycleObservation observation) {
         return observation != null && observation.ownershipVerified()
-                && observation.runtimeState() != RuntimeState.UNKNOWN && observation.runtimeState() != RuntimeState.ERROR
+                && observation.runtimeState() != RuntimeState.UNKNOWN
                 && observation.autostartState() != AutostartState.UNKNOWN
                 && observation.autostartState() != AutostartState.ERROR;
     }

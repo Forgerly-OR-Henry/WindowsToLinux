@@ -133,6 +133,7 @@ class DesktopPersistenceIntegrationTest {
         Path databaseFile = dataDirectory.resolve("windowstolinux.db");
         try (Connection connection = DriverManager.getConnection("jdbc:sqlite:" + databaseFile);
              Statement statement = connection.createStatement()) {
+            createLegacyRuntimeTable(statement);
             statement.execute("PRAGMA user_version = 2");
         }
 
@@ -302,7 +303,7 @@ class DesktopPersistenceIntegrationTest {
              Statement statement = connection.createStatement();
              var version = statement.executeQuery("PRAGMA user_version")) {
             assertTrue(version.next());
-            assertEquals(11, version.getInt(1));
+            assertEquals(12, version.getInt(1));
         }
     }
 
@@ -393,7 +394,7 @@ class DesktopPersistenceIntegrationTest {
              Statement statement = connection.createStatement();
              var version = statement.executeQuery("PRAGMA user_version")) {
             assertTrue(version.next());
-            assertEquals(11, version.getInt(1));
+            assertEquals(12, version.getInt(1));
         }
     }
 
@@ -449,6 +450,7 @@ class DesktopPersistenceIntegrationTest {
             statement.execute("INSERT INTO server VALUES ('server-one', 'example.test', 22, 'SHA256:fixture')");
             statement.execute("INSERT INTO managed_application VALUES ('demo', 'server-one', 'windowstolinux-demo.service', '/var/lib/windowstolinux/apps/demo', '" + "a".repeat(64) + "')");
             statement.execute("INSERT INTO managed_application_release VALUES ('demo', '" + preservedIdentity + "', 1)");
+            createLegacyRuntimeTable(statement);
             statement.execute("PRAGMA user_version = 4");
         }
 
@@ -469,7 +471,7 @@ class DesktopPersistenceIntegrationTest {
             }
             try (var version = statement.executeQuery("PRAGMA user_version")) {
                 assertTrue(version.next());
-                assertEquals(11, version.getInt(1));
+                assertEquals(12, version.getInt(1));
             }
         }
     }
@@ -657,4 +659,13 @@ class DesktopPersistenceIntegrationTest {
                 .mapToObj(index -> new ManagedFileBinding("file-" + (index + 1), paths.get(index))).toList();
         return new ManagedComponentResourceBindings(files, Optional.of(List.of()));
     }
+    private static void createLegacyRuntimeTable(Statement statement) throws Exception {
+        statement.execute("""
+                CREATE TABLE managed_application_runtime_configuration (
+                    application_id TEXT PRIMARY KEY, health_kind TEXT NOT NULL, http_endpoint TEXT,
+                    http_expected_status INTEGER, tcp_port INTEGER, health_timeout_seconds INTEGER NOT NULL,
+                    tcp_stability_seconds INTEGER, user_access_url TEXT)
+                """);
+    }
+
 }

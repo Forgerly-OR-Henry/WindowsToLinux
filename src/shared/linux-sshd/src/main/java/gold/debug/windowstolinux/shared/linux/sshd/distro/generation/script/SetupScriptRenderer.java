@@ -10,8 +10,6 @@ import java.util.Objects;
 public final class SetupScriptRenderer {
     /** Represents the {@code TIMEOUT} value. / 表示 {@code TIMEOUT} 值。 */
     public static final Duration TIMEOUT = Duration.ofMinutes(15);
-    /** Represents the {@code SUDOERS_PATH} value. / 表示 {@code SUDOERS_PATH} 值。 */
-    public static final String SUDOERS_PATH = "/etc/sudoers.d/windowstolinux-managed";
 
     private SetupScriptRenderer() {
     }
@@ -23,12 +21,6 @@ public final class SetupScriptRenderer {
             throw new IllegalArgumentException("username is not a supported Linux account name");
         }
         return username;
-    }
-
-    /** Performs the {@code renderSudoers} operation. / 执行 {@code renderSudoers} 操作。 */
-    public static String renderSudoers(String username) {
-        return "# Managed by WindowsToLinux managed deployment; only the constrained helper is granted.\n"
-                + requireUsername(username) + " ALL=(root) NOPASSWD: " + ManagedHelperBundle.PATH + "\n";
     }
 
     /** Performs the {@code renderCpuCheck} operation. / 执行 {@code renderCpuCheck} 操作。 */
@@ -114,33 +106,45 @@ public final class SetupScriptRenderer {
 
     /** Performs the {@code renderHelperInstallation} operation. / 执行 {@code renderHelperInstallation} 操作。 */
     public static String renderHelperInstallation(String username) {
-        String sudoers = renderSudoers(username);
-        String helper = ManagedHelperBundle.renderScript();
+        requireUsername(username);
         return """
-                tmp=$(/usr/bin/mktemp /tmp/windowstolinux-managed-sudoers.XXXXXX)
+                [ "$(id -u)" -eq 0 ] || { printf 'PREPARE_REJECT=root-management-required\\n'; exit 64; }
                 helper_tmp=$(/usr/bin/mktemp /tmp/windowstolinux-managed-helper.XXXXXX)
-                cleanup_files="$cleanup_files $tmp $helper_tmp"
-                sudoers=%s
-                helper=%s
-                printf '%%s' "$sudoers" > "$tmp"
-                printf '%%s' "$helper" > "$helper_tmp"
-                if [ "$elevation" = root ]; then
-                  /usr/sbin/visudo -cf "$tmp"
-                  /usr/bin/install -d -o root -g root -m 755 %s
-                  /usr/bin/install -o root -g root -m 755 "$helper_tmp" %s
-                  /usr/bin/install -o root -g root -m 440 "$tmp" %s
-                else
-                  /usr/bin/sudo -n /usr/sbin/visudo -cf "$tmp"
-                  /usr/bin/sudo -n /usr/bin/install -d -o root -g root -m 755 %s
-                  /usr/bin/sudo -n /usr/bin/install -o root -g root -m 755 "$helper_tmp" %s
-                  /usr/bin/sudo -n /usr/bin/install -o root -g root -m 440 "$tmp" %s
+                entry_tmp=$(/usr/bin/mktemp /tmp/windowstolinux-build-entry.XXXXXX)
+                cleanup_files="$cleanup_files $helper_tmp $entry_tmp"
+                printf '%%s' %s > "$helper_tmp"
+                printf '%%s' %s > "$entry_tmp"
+                /usr/bin/install -d -o root -g root -m 755 %s
+                /usr/bin/install -o root -g root -m 755 "$helper_tmp" %s
+                /usr/bin/install -o root -g root -m 755 "$entry_tmp" %s
+                recovery_unit=/etc/systemd/system/windowstolinux-workspace-recovery.service
+                [ ! -L "$recovery_unit" ] || exit 64
+                recovery_tmp=$(/usr/bin/mktemp /tmp/windowstolinux-workspace-recovery.XXXXXX)
+                cleanup_files="$cleanup_files $recovery_tmp"
+                cat > "$recovery_tmp" <<'WTL_RECOVERY_UNIT'
+                [Unit]
+                Description=WindowsToLinux temporary workspace recovery
+                After=local-fs.target
+                Before=multi-user.target
+                [Service]
+                Type=oneshot
+                ExecStart=/usr/local/lib/windowstolinux/managed-helper workspace-recover
+                [Install]
+                WantedBy=multi-user.target
+                WTL_RECOVERY_UNIT
+                if [ -e "$recovery_unit" ]; then
+                  [ "$(stat -c '%%u:%%g' "$recovery_unit")" = 0:0 ] || exit 64
+                  cmp -s "$recovery_unit" "$recovery_tmp" || { printf 'PREPARE_REJECT=recovery-unit-conflict\\n'; exit 64; }
                 fi
-                helper_probe="$("/usr/bin/sudo" -n %s probe)"
+                /usr/bin/install -o root -g root -m 644 "$recovery_tmp" "$recovery_unit"
+                systemctl daemon-reload
+                systemctl enable windowstolinux-workspace-recovery.service
+                helper_probe="$(%s probe)"
                 printf '%%s\\n' "$helper_probe" | /usr/bin/grep -qx 'HELPER=1'
                 printf '%%s\\n' "$helper_probe" | /usr/bin/grep -qx 'PROTOCOL=%d'
-                """.formatted(quote(sudoers), quote(helper), quote(ManagedHelperBundle.DIRECTORY),
-                quote(ManagedHelperBundle.PATH), quote(SUDOERS_PATH), quote(ManagedHelperBundle.DIRECTORY),
-                quote(ManagedHelperBundle.PATH), quote(SUDOERS_PATH), quote(ManagedHelperBundle.PATH),
+                """.formatted(quote(ManagedHelperBundle.renderScript()), quote(ManagedHelperBundle.renderBuildEntry()),
+                quote(ManagedHelperBundle.DIRECTORY), quote(ManagedHelperBundle.PATH),
+                quote(ManagedHelperBundle.DIRECTORY + "/build-entry"), quote(ManagedHelperBundle.PATH),
                 ManagedHelperBundle.PROTOCOL_VERSION);
     }
 
@@ -159,19 +163,44 @@ public final class SetupScriptRenderer {
                 java_runtime_tmp=$(/usr/bin/mktemp /tmp/windowstolinux-managed-java.XXXXXX)
                 cleanup_files="$cleanup_files $java_runtime_tmp"
                 printf '%%s\\n' '#!/bin/sh' "exec $java_runtime \\"\\$@\\"" > "$java_runtime_tmp"
-                if [ "$elevation" = root ]; then
                   /usr/bin/install -d -o root -g root -m 755 %s
                   /usr/bin/install -o root -g root -m 755 "$java_runtime_tmp" %s
-                else
-                  /usr/bin/sudo -n /usr/bin/install -d -o root -g root -m 755 %s
-                  /usr/bin/sudo -n /usr/bin/install -o root -g root -m 755 "$java_runtime_tmp" %s
-                fi
-                """.formatted(quote(ManagedHelperBundle.DIRECTORY), quote(ManagedHelperBundle.JAVA_RUNTIME_PATH),
-                quote(ManagedHelperBundle.DIRECTORY), quote(ManagedHelperBundle.JAVA_RUNTIME_PATH));
+                """.formatted(quote(ManagedHelperBundle.DIRECTORY), quote(ManagedHelperBundle.JAVA_RUNTIME_PATH));
     }
 
     /** Performs the {@code quote} operation. / 执行 {@code quote} 操作。 */
     public static String quote(String value) {
         return "'" + value.replace("'", "'\"'\"'") + "'";
+    }
+    /** Verifies common prepared tools independently of the package manager. / 独立于包管理器校验共同准备工具。 */
+    public static String renderCommonChecks() {
+        return """
+                prepare_check=java-command
+                test -x %s
+                prepare_check=java-version
+                java_version="$(%s -version 2>&1)"
+                prepare_check=java-21
+                printf 'PREPARE_JAVA_VERSION=%%s\\n' "$java_version"
+                printf '%%s\\n' "$java_version" | /usr/bin/grep -Eq '(^|[^0-9])21[.]'
+                prepare_check=maven-command
+                command -v mvn >/dev/null 2>&1
+                prepare_check=curl-command
+                command -v curl >/dev/null 2>&1
+                prepare_check=tar-command
+                command -v tar >/dev/null 2>&1
+                prepare_check=gzip-command
+                command -v gzip >/dev/null 2>&1
+                prepare_check=ss-command
+                command -v ss >/dev/null 2>&1
+                prepare_check=setsid-command
+                command -v setsid >/dev/null 2>&1
+                prepare_check=timeout-command
+                command -v timeout >/dev/null 2>&1
+                prepare_check=du-command
+                command -v du >/dev/null 2>&1
+                """.formatted(SetupScriptRenderer.quote(
+                gold.debug.windowstolinux.shared.linux.sshd.execution.protocol.helper.ManagedHelperBundle.JAVA_RUNTIME_PATH),
+                SetupScriptRenderer.quote(
+                gold.debug.windowstolinux.shared.linux.sshd.execution.protocol.helper.ManagedHelperBundle.JAVA_RUNTIME_PATH));
     }
 }

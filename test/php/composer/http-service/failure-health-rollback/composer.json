@@ -1,0 +1,17 @@
+{
+  "name": "windowstolinux/http-fixture",
+  "require": {
+    "opis/json-schema": "2.6.0"
+  },
+  "config": {
+    "platform": {
+      "php": "8.3"
+    },
+    "sort-packages": true
+  },
+  "autoload": {
+    "psr-4": {
+      "Fixture\\": "src/"
+    }
+  }
+}

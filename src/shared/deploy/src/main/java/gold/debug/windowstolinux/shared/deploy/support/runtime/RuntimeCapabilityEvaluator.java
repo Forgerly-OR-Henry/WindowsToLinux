@@ -15,6 +15,21 @@ public final class RuntimeCapabilityEvaluator {
     private RuntimeCapabilityEvaluator() {
     }
 
+    public static RuntimeCapabilityDecision evaluate(LinuxCapabilityFacts capabilities, DeploymentProjectFacts facts,
+            DeploymentRuntimeSpecification runtime, gold.debug.windowstolinux.shared.model.toolchain.ResolvedToolchainSet tools) {
+        if (tools.selections().isEmpty()) return evaluate(capabilities, facts, runtime);
+        var catalog = gold.debug.windowstolinux.shared.model.toolchain.ToolchainSupportCatalog.defaults();
+        for (var requirement : gold.debug.windowstolinux.shared.linux.build.ProjectToolchainRequirements.from(facts, runtime)) {
+            var candidates = catalog.candidates(requirement);
+            if (candidates.isEmpty()) return RuntimeCapabilityDecision.unsupportedRuntime("No supported toolchain candidate: " + requirement.declaration());
+            var selected = tools.selections().stream().filter(s -> s.requirement().equals(requirement)).findFirst();
+            if (selected.isEmpty() || !catalog.permits(selected.orElseThrow().version())
+                    || candidates.stream().noneMatch(b -> b.version().equals(selected.orElseThrow().version().branch())))
+                return RuntimeCapabilityDecision.unsupportedRuntime("Prepared toolchain does not match the reviewed requirement");
+        }
+        return RuntimeCapabilityDecision.supportedRuntime();
+    }
+
     /** Evaluates runtime tools and versions without connecting to or mutating the host. / 在不连接或修改主机的情况下评估运行时工具与版本。 */
     public static RuntimeCapabilityDecision evaluate(
             LinuxCapabilityFacts capabilities,
@@ -27,6 +42,10 @@ public final class RuntimeCapabilityEvaluator {
         if (facts.projectType() != runtime.projectType()) {
             throw new IllegalArgumentException("project facts and runtime must use the same type");
         }
+        for (var requirement : gold.debug.windowstolinux.shared.linux.build.ProjectToolchainRequirements.from(facts, runtime)) {
+            if (gold.debug.windowstolinux.shared.model.toolchain.ToolchainSupportCatalog.defaults().candidates(requirement).isEmpty())
+                return RuntimeCapabilityDecision.unsupportedRuntime("No supported toolchain candidate: " + requirement.declaration());
+        }
         String detail = missingRuntime(capabilities, facts, runtime);
         return detail == null ? RuntimeCapabilityDecision.supportedRuntime()
                 : RuntimeCapabilityDecision.unsupportedRuntime(detail);
@@ -35,9 +54,9 @@ public final class RuntimeCapabilityEvaluator {
     private static String missingRuntime(LinuxCapabilityFacts capabilities, DeploymentProjectFacts facts,
                                          DeploymentRuntimeSpecification runtime) {
         return switch (runtime) {
-            case DeploymentRuntimeSpecification.SpringBoot ignored -> {
-                if (!capabilities.javaMajorVersions().contains(21)) {
-                    yield "Java 21 is required for the Spring Boot build and runtime";
+            case DeploymentRuntimeSpecification.SpringBoot java -> {
+                if (!capabilities.javaMajorVersions().contains(Integer.parseInt(java.javaVersion()))) {
+                    yield "The declared Java version requires preparation for the Spring Boot build and runtime";
                 }
                 yield facts.buildTool() == DeploymentBuildToolType.MAVEN && !capabilities.mavenAvailable()
                         ? "Maven is required for the reviewed system Maven build" : null;
@@ -45,10 +64,10 @@ public final class RuntimeCapabilityEvaluator {
             case DeploymentRuntimeSpecification.JavaJar javaJar ->
                     capabilities.javaMajorVersions().contains(Integer.parseInt(javaJar.javaVersion())) ? null
                             : "the selected Java major is not available";
-            case DeploymentRuntimeSpecification.JavaSource ignored ->
-                    capabilities.javaMajorVersions().contains(21) && hasMajor(capabilities, EcosystemToolType.JAVAC, "21")
+            case DeploymentRuntimeSpecification.JavaSource java ->
+                    capabilities.javaMajorVersions().contains(Integer.parseInt(java.javaVersion())) && hasMajor(capabilities, EcosystemToolType.JAVAC, java.javaVersion())
                             && hasTool(capabilities, EcosystemToolType.JAR) ? null
-                            : "Java source requires Java 21, javac 21, and the JDK jar tool";
+                            : "Java source requires its declared JDK, javac, and jar tools";
             case DeploymentRuntimeSpecification.NodeService node -> {
                 EcosystemToolType packageManager = switch (facts.buildTool()) {
                     case NPM -> EcosystemToolType.NPM;
@@ -91,11 +110,11 @@ public final class RuntimeCapabilityEvaluator {
             case DeploymentRuntimeSpecification.DotNetService service ->
                     serviceVersion(capabilities, service.projectType(), service.version());
             case DeploymentRuntimeSpecification.KotlinService service -> {
-                boolean java21 = capabilities.javaMajorVersions().contains(21);
+                boolean java = capabilities.javaMajorVersions().contains(Integer.parseInt(service.jvmTarget()));
                 boolean compiler = facts.buildTool() != DeploymentBuildToolType.KOTLINC
                         || hasVersion(capabilities, EcosystemToolType.KOTLINC, service.version());
-                yield java21 && compiler ? null
-                        : "the selected Kotlin architecture requires its exact compiler and Java 21";
+                yield java && compiler ? null
+                        : "the selected Kotlin architecture requires its declared compiler and JVM toolchain";
             }
             case DeploymentRuntimeSpecification.PhpService service ->
                     serviceVersion(capabilities, service.projectType(), service.version()) == null
@@ -148,8 +167,8 @@ public final class RuntimeCapabilityEvaluator {
     ) {
         return switch (tool) {
             case NPM -> hasTool(capabilities, tool);
-            case PNPM -> anyVersion(capabilities, tool, segments -> segments[0] >= 9 && segments[0] <= 11);
-            case YARN -> anyVersion(capabilities, tool, segments -> segments[0] == 4);
+            case PNPM -> anyVersion(capabilities, tool, segments -> segments[0] >= 8);
+            case YARN -> anyVersion(capabilities, tool, segments -> segments[0] >= 2);
             default -> false;
         };
     }
@@ -160,7 +179,7 @@ public final class RuntimeCapabilityEvaluator {
     ) {
         return switch (tool) {
             case PIP, PIPENV -> hasTool(capabilities, tool);
-            case POETRY -> anyVersion(capabilities, tool, segments -> segments[0] == 2);
+            case POETRY -> anyVersion(capabilities, tool, segments -> segments[0] >= 2);
             case UV -> anyVersion(capabilities, tool,
                     segments -> segments[0] > 0 || segments[1] >= 4);
             default -> false;

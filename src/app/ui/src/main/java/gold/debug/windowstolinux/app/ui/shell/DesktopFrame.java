@@ -1,6 +1,8 @@
 package gold.debug.windowstolinux.app.ui.shell;
 
-import gold.debug.windowstolinux.app.service.DesktopApplicationFacade;
+import gold.debug.windowstolinux.app.service.contract.AutomaticDeploymentApplicationFacade;
+import gold.debug.windowstolinux.app.service.contract.ManagedApplicationFacade;
+import gold.debug.windowstolinux.app.service.contract.BackupApplicationFacade;
 import gold.debug.windowstolinux.app.ui.display.DesktopDisplayConfiguration;
 import gold.debug.windowstolinux.app.ui.shell.DesktopDisplayChangeHandler;
 import gold.debug.windowstolinux.app.ui.display.ThemePalette;
@@ -61,11 +63,11 @@ public final class DesktopFrame extends JFrame {
      *
      * @param service the {@code service} value / {@code service} 值
      */
-    public DesktopFrame(DesktopApplicationFacade service) {
+    public <T extends AutomaticDeploymentApplicationFacade & ManagedApplicationFacade & BackupApplicationFacade> DesktopFrame(T service) {
         this(service, DesktopDisplayConfiguration.defaults(), FailureReportStore.disabled());
     }
 
-    private DesktopFrame(DesktopApplicationFacade service, DesktopDisplayConfiguration appearance,
+    private <T extends AutomaticDeploymentApplicationFacade & ManagedApplicationFacade & BackupApplicationFacade> DesktopFrame(T service, DesktopDisplayConfiguration appearance,
                          FailureReportStore reports) {
         this(service, MessageCatalog.forLanguageTag(appearance.localeTag()),
                 appearance, ThemePalette.light(), (source, selected) -> { }, null, reports);
@@ -83,7 +85,7 @@ public final class DesktopFrame extends JFrame {
      * @param appearanceChangeListener the {@code appearanceChangeListener} value / {@code appearanceChangeListener} 值
      * @param viewState the {@code viewState} value / {@code viewState} 值
      */
-    public DesktopFrame(DesktopApplicationFacade service, MessageCatalog messages,
+    public <T extends AutomaticDeploymentApplicationFacade & ManagedApplicationFacade & BackupApplicationFacade> DesktopFrame(T service, MessageCatalog messages,
                         DesktopDisplayConfiguration appearance, ThemePalette palette,
                         DesktopDisplayChangeHandler appearanceChangeListener,
                         DesktopViewState viewState) {
@@ -92,7 +94,7 @@ public final class DesktopFrame extends JFrame {
     }
 
     /** Creates a desktop frame with safe diagnostic reporting. / 创建带安全诊断报告的桌面窗口。 */
-    public DesktopFrame(DesktopApplicationFacade service, MessageCatalog messages,
+    public <T extends AutomaticDeploymentApplicationFacade & ManagedApplicationFacade & BackupApplicationFacade> DesktopFrame(T service, MessageCatalog messages,
                         DesktopDisplayConfiguration appearance, ThemePalette palette,
                         DesktopDisplayChangeHandler appearanceChangeListener,
                         DesktopViewState viewState, FailureReportStore reports) {

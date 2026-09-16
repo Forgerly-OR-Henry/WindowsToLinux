@@ -57,10 +57,10 @@ public final class SshdSourceTransport {
      * @return the operation result / 操作结果
      * @throws LinuxOperationException if the operation cannot be completed / 无法完成操作时
      */
-    public SourceUploadResult upload(SourceArchiveDescriptor archive, RemoteWorkspace workspace)
+    public SourceUploadResult upload(SourceArchiveDescriptor archive, RemoteWorkspace workspace, long maxWorkspaceBytes)
             throws LinuxOperationException {
         LocalArchivePolicy.verify(archive);
-        RemoteStepResult prepared = candidates.create(workspace);
+        RemoteStepResult prepared = candidates.create(workspace, maxWorkspaceBytes);
         if (!prepared.succeeded()) {
             throw LinuxOperationException.create(LinuxOperationFailureType.CANDIDATE_PREPARATION_FAILED, prepared.evidence());
         }

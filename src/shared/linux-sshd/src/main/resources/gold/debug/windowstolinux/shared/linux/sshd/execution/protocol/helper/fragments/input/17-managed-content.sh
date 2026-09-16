@@ -34,7 +34,8 @@ assert_managed_data_links() {
     link="$source_root/$logical"; target="$(managed_data_binding_root "$binding")"
     [ -L "$link" ] || reject managed-data-link
     actual="$(readlink -f -- "$link")"
-    [ "$actual" = "$target" ] || reject managed-data-link-target
+    assert_managed_state_mapping
+    [ "$actual" = "$(readlink -f -- "$target")" ] || reject managed-data-link-target
     [ -d "$target" ] && [ ! -L "$target" ] || reject managed-data-directory
     [ -z "$(find -P "$target" -xdev -type l -print -quit)" ] || reject managed-data-link-content
     [ -z "$(find -P "$target" -xdev ! -type f ! -type d -print -quit)" ] || reject managed-data-special-file
@@ -44,8 +45,8 @@ assert_managed_data_links() {
 }
 prepare_managed_data_bindings() {
   local source_root="$1" spec binding logical mode link target seed parent
+  if [ "$runtime_identity_policy" = SYSTEMD_DYNAMIC ]; then prepare_dynamic_state "$current_application"; fi
   install -d -o root -g root -m 755 -- "$data_root" "$data_root/$managed_data_application" \
-    "$data_root/$managed_data_application/$managed_data_component" \
     "$data_root/$managed_data_application/$managed_data_component/files"
   for spec in "${managed_data_bindings[@]}"; do
     binding="${spec%%:*}"; logical="${spec#*:}"; logical="${logical%:*}"; mode="${spec##*:}"

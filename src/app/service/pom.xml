@@ -4,6 +4,7 @@
     <parent><groupId>gold.debug.windowstolinux</groupId><artifactId>windowstolinux-app</artifactId><version>0.1.0-SNAPSHOT</version><relativePath>../pom.xml</relativePath></parent>
     <artifactId>windowstolinux-app-service</artifactId>
     <dependencies>
+        <dependency><groupId>gold.debug.windowstolinux</groupId><artifactId>windowstolinux-shared-source</artifactId><version>${project.version}</version></dependency>
         <dependency><groupId>gold.debug.windowstolinux</groupId><artifactId>windowstolinux-app-windows</artifactId><version>${project.version}</version></dependency>
         <dependency><groupId>gold.debug.windowstolinux</groupId><artifactId>windowstolinux-app-db</artifactId><version>${project.version}</version></dependency>
         <dependency><groupId>gold.debug.windowstolinux</groupId><artifactId>windowstolinux-app-secret</artifactId><version>${project.version}</version></dependency>

@@ -201,7 +201,7 @@ public final class ManagedRestoreDeploymentPort implements RestoreDeploymentPort
             components.add(new RemoteRestoreActivationComponent(component.componentId(),
                     component.managedApplicationId(), component.ownershipManifestSha256(), component.releaseSha256(),
                     component.releaseManifestPath(), component.persistentArchivePaths(), component.ociArchivePath(),
-                    component.dependsOn(), component.runtime(), inputs, ports));
+                    component.dependsOn(), component.runtime(), DeploymentInputMapper.manifest(inputs), ports));
         }
         return new RemoteRestoreActivationRequest(request.applicationId(), request.candidateId(),
                 request.candidateToken(), request.archiveSha256(), request.remoteCandidateRoot(),

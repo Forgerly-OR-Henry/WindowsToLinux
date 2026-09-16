@@ -29,7 +29,7 @@ import java.util.regex.Pattern;
 public final class NodeLanguageInspector {
     private static final int MAX_METADATA_BYTES = 2 * 1024 * 1024;
     private static final Pattern NODE_ENGINE = Pattern.compile("\\\"node\\\"\\s*:\\s*\\\"([^\\\"\\r\\n]+)\\\"");
-    private static final Pattern EXACT_NODE = Pattern.compile("^\\s*v?(18|19|20|21|22|23|24)(?:\\.0\\.0)?\\s*$");
+    private static final Pattern EXACT_NODE = Pattern.compile("^\\s*v?([0-9]{1,9})(?:\\.[0-9]{1,9}){0,2}(?:[-+][A-Za-z0-9._-]+)?\\s*$");
 
     /** Returns deterministic Node.js ecosystem and source facts. / 返回确定性的 Node.js 生态与源码事实。 */
     public ProjectLanguageFacts inspect(Path root, SourceInspectionFacts source) throws IOException {

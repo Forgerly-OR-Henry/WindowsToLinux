@@ -33,7 +33,7 @@ public final class RubyCliDeploymentInspector {
         if (metadata.isEmpty()) missing.add(METADATA);
         Map<String, String> values = properties(metadata, conflicts);
         String version = values.get("rubyVersion");
-        if (version == null || !version.matches("3\\.(?:2|3|4)(?:\\.[0-9]+)?")) { version = null; missing.add("rubyVersion=3.x"); }
+        if (version == null || !version.matches("[0-9]+(?:\\.[0-9]+){1,2}(?:[-+][A-Za-z0-9._-]+)?")) { version = null; missing.add("rubyVersion=..."); }
         String entrypoint = relative(values.get("entrypoint"));
         if (entrypoint == null || !entrypoint.endsWith(".rb")) { entrypoint = null; missing.add("entrypoint=*.rb"); }
         if (entrypoint != null && !ServiceMetadataInspector.present(root, entrypoint)) missing.add(entrypoint);

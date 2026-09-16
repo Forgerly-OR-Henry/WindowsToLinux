@@ -11,7 +11,7 @@ public final class DesktopTaskExecutor {
     private DesktopTaskExecutor() {
     }
 
-    /** Prevents appearance rebuilds from detaching callbacks from any active page operation. */
+    /** Prevents appearance rebuilds from detaching callbacks from any active page operation. / 防止外观重建使回调脱离任何正在执行的页面操作。 */
     public static boolean hasActiveTasks() { return ACTIVE.get() > 0; }
 
     /** Executes a business-neutral Swing task with explicit success and failure callbacks. / 使用显式成功和失败回调执行无业务依赖的 Swing 任务。 */

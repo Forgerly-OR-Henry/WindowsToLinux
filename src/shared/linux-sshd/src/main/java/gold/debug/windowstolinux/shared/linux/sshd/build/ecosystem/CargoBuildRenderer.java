@@ -26,7 +26,9 @@ public final class CargoBuildRenderer implements DeploymentBuildRenderer {
                 artifact_name=%s
                 command -v rustc >/dev/null
                 command -v cargo >/dev/null
-                rustc --version | grep -Eq %s
+                if [ -n "${WTL_RUST_VERSION:-}" ]; then
+                  rustc --version | grep -F "rustc ${WTL_RUST_VERSION} "
+                else rustc --version | grep -Eq %s; fi
                 test -f ./Cargo.toml
                 test -f ./Cargo.lock
                 test -f ./rust-toolchain.toml

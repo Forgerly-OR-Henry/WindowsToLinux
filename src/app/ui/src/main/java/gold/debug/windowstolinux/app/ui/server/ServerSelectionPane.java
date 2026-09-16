@@ -13,7 +13,7 @@ import java.util.Arrays;
 import java.util.Map;
 import java.util.function.Consumer;
 
-/** Saved server selection with an in-place, secret-clearing add dialog. */
+/** Saved server selection with an in-place, secret-clearing add dialog. / 已保存服务器选择器，带可清零秘密的原位添加对话框。 */
 public final class ServerSelectionPane extends JPanel {
     private final JComboBox<ServerProfile> servers = new JComboBox<>();
     private final ServerApplicationFacade service;
@@ -23,7 +23,7 @@ public final class ServerSelectionPane extends JPanel {
     private String desiredId;
     private boolean loading;
 
-    /** Creates a non-secret selector. Loading starts when it is first shown. */
+    /** Creates a non-secret selector. Loading starts when it is first shown. / 创建非秘密选择器，首次展示时开始加载。 */
     public ServerSelectionPane(ServerApplicationFacade service, DesktopComponentFactory components,
                                PageMessagePresenter messages, Consumer<ServerProfile> selected) {
         super(new BorderLayout(6, 12));
@@ -47,13 +47,13 @@ public final class ServerSelectionPane extends JPanel {
         addHierarchyListener(event -> { if (isShowing() && servers.getItemCount() == 0 && service != null) reload(); });
     }
 
-    /** Returns the selected saved profile or null. */
+    /** Returns the selected saved profile or null. / 返回选中的已保存配置，无选择时返回 null。 */
     public ServerProfile profile() { return (ServerProfile) servers.getSelectedItem(); }
 
-    /** Remembers the selection across a theme or language change. */
+    /** Remembers the selection across a theme or language change. / 在主题或语言切换时记住选择。 */
     public void select(String serverId) { desiredId = serverId; if (service != null) reload(); }
 
-    /** Refreshes the saved inventory on a background thread. */
+    /** Refreshes the saved inventory on a background thread. / 在后台线程刷新已保存条目。 */
     public void reload() {
         if (service == null || loading) return;
         loading = true;

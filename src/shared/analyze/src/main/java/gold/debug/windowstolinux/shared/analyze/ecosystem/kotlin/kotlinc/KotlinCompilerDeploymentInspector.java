@@ -17,6 +17,8 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.HashSet;
+import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -28,6 +30,8 @@ public final class KotlinCompilerDeploymentInspector {
     private static final Pattern IMPORT = Pattern.compile("(?m)^\\s*import\\s+([A-Za-z_$][A-Za-z0-9_$.]*)");
     private static final Pattern PACKAGE = Pattern.compile(
             "(?m)^\\s*package\\s+([A-Za-z_$][A-Za-z0-9_$]*(?:\\.[A-Za-z_$][A-Za-z0-9_$]*)*)\\s*$");
+    private static final Pattern DECLARATION = Pattern.compile(
+            "\\b(?:class|interface|object|fun|val|var|typealias)\\s+([A-Za-z_$][A-Za-z0-9_$]*)");
 
     /** Inspects one native Kotlin compiler architecture. / 检查一个原生 Kotlin 编译器架构。 */
     public DeploymentTypeAssessment inspect(
@@ -47,7 +51,9 @@ public final class KotlinCompilerDeploymentInspector {
         if (compilerVersion == null) missing.add("compilerVersion=...");
         if (sourceRoot == null) missing.add("sourceRoot=...");
         if (mainClass == null) missing.add("mainClass=...");
-        if (!"21".equals(values.get("jvmTarget"))) missing.add("jvmTarget=21");
+        if (gold.debug.windowstolinux.shared.model.toolchain.ToolchainVersion.parse(
+                gold.debug.windowstolinux.shared.model.toolchain.ToolchainEcosystemType.JAVA, values.get("jvmTarget")).isEmpty())
+            missing.add("jvmTarget=...");
         List<String> sources = source.relativeFiles().stream().map(path -> path.toString().replace('\\', '/'))
                 .filter(path -> path.endsWith(".kt")).sorted().toList();
         if (sources.isEmpty()) missing.add("Kotlin source files");
@@ -59,6 +65,15 @@ public final class KotlinCompilerDeploymentInspector {
                 path.equals("build.gradle") || path.equals("build.gradle.kts") || path.equals("gradlew")
                         || path.endsWith(".jar"))) {
             conflicts.add("kotlin-external-build");
+        }
+        Set<String> localDeclarations = new HashSet<>();
+        for (String relative : sources) {
+            if (sourceRoot == null || !relative.startsWith(sourceRoot + "/")) continue;
+            String kotlin = BoundedMetadataInspector.read(root.resolve(relative));
+            Matcher declaredPackage = PACKAGE.matcher(kotlin);
+            String prefix = declaredPackage.find() ? declaredPackage.group(1) + "." : "";
+            Matcher declarations = DECLARATION.matcher(kotlin);
+            while (declarations.find()) localDeclarations.add(prefix + declarations.group(1));
         }
         int mainCount = 0;
         String detectedMainClass = null;
@@ -72,7 +87,10 @@ public final class KotlinCompilerDeploymentInspector {
             Matcher imports = IMPORT.matcher(kotlin);
             while (imports.find()) {
                 String imported = imports.group(1);
-                if (!(imported.startsWith("kotlin.") || imported.startsWith("java.") || imported.startsWith("javax."))) {
+                if (!(imported.startsWith("kotlin.") || imported.startsWith("java.") || imported.startsWith("javax.")
+                        || localDeclarations.stream().anyMatch(declaration -> imported.equals(declaration)
+                                || imported.startsWith(declaration + ".") || imported.endsWith(".")
+                                && declaration.startsWith(imported) && declaration.lastIndexOf('.') == imported.length() - 1))) {
                     conflicts.add("kotlin-external-import:" + imported);
                 }
             }
@@ -104,7 +122,7 @@ public final class KotlinCompilerDeploymentInspector {
     }
 
     private static String version(String value) {
-        return value != null && value.matches("(?:1\\.9|2\\.[0-9]+)\\.[0-9]+") ? value : null;
+        return value != null && value.matches("[0-9]+(?:\\.[0-9]+){1,2}(?:[-+][A-Za-z0-9._-]+)?") ? value : null;
     }
 
     private static String relative(String value) {

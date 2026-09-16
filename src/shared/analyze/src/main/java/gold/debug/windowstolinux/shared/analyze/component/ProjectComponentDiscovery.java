@@ -6,12 +6,12 @@ import java.nio.file.*;
 import java.nio.file.attribute.BasicFileAttributes;
 import java.util.*;
 
-/** Bounded static discovery; directories and declarations are evidence, never executable instructions. */
+/** Bounded static discovery; directories and declarations are evidence, never executable instructions. / 有界静态发现，目录和声明仅作为证据，不作为可执行指令。 */
 public final class ProjectComponentDiscovery {
     private static final Set<String> EXCLUDED = Set.of(".git", ".idea", ".ai-workspace", "node_modules", "target",
             "build", "dist", ".venv", "venv", "vendor", "test", "tests", "examples", "docs");
 
-    /** Discovers at most 64 component roots without executing project content or following links. */
+    /** Discovers at most 64 component roots without executing project content or following links. / 最多发现 64 个组件根目录，不执行项目内容或跟随链接。 */
     public List<DiscoveredProjectComponent> discover(Path selected) throws IOException {
         Path root = selected.toAbsolutePath().normalize();
         if (!Files.isDirectory(root, LinkOption.NOFOLLOW_LINKS) || Files.isSymbolicLink(root))

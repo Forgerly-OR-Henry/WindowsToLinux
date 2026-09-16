@@ -19,7 +19,7 @@ public final class DesktopSchemaMigrator {
      *
      * <p>公开 {@code CURRENT_SCHEMA_VERSION} 常量。
      */
-    public static final int CURRENT_SCHEMA_VERSION = 11;
+    public static final int CURRENT_SCHEMA_VERSION = 12;
 
     private DesktopSchemaMigrator() {
     }
@@ -274,6 +274,14 @@ public final class DesktopSchemaMigrator {
                             ALTER TABLE managed_application_graph
                             ADD COLUMN application_health_check BLOB
                             """);
+                }
+                if (version < 12) {
+                    if (!hasColumn(statement, "managed_application_runtime_configuration", "identity_policy")) {
+                        statement.execute("ALTER TABLE managed_application_runtime_configuration ADD COLUMN identity_policy TEXT NOT NULL DEFAULT 'LEGACY_UNSPECIFIED'");
+                    }
+                    if (!hasColumn(statement, "server", "host_key_format")) {
+                        statement.execute("ALTER TABLE server ADD COLUMN host_key_format TEXT NOT NULL DEFAULT 'LEGACY_X509'");
+                    }
                 }
                 statement.execute("PRAGMA user_version = " + CURRENT_SCHEMA_VERSION);
                 connection.commit();

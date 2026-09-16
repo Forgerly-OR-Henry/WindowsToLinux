@@ -20,7 +20,7 @@ public final class ServerProfileRepository {
         this.connections = Objects.requireNonNull(connections, "connections");
     }
 
-    /** Lists saved connection profiles without loading any secrets. */
+    /** Lists saved connection profiles without loading any secrets. / 列出已保存连接配置，不加载任何秘密。 */
     public java.util.List<StoredServerProfile> listServerProfiles() throws SQLException {
         java.util.List<StoredServerProfile> profiles = new java.util.ArrayList<>();
         try (Connection connection = connections.open();
@@ -51,6 +51,42 @@ public final class ServerProfileRepository {
                 return result.next() ? Optional.of(new ServerIdentity(result.getString("id"), result.getString("host"),
                         result.getInt("ssh_port"), result.getString("host_key_sha256"))) : Optional.empty();
             }
+        }
+    }
+
+    /** Checks the format of the exact trust record rather than guessing from its text. / 核对精确信任记录的格式，不通过文本猜测。 */
+    public boolean hasLegacyHostKey(ServerIdentity expected) throws SQLException {
+        try (Connection connection = connections.open(); PreparedStatement statement = connection.prepareStatement(
+                "SELECT host_key_format FROM server WHERE id=? AND host=? AND ssh_port=? AND host_key_sha256=?")) {
+            statement.setString(1, expected.id()); statement.setString(2, expected.host());
+            statement.setInt(3, expected.sshPort()); statement.setString(4, expected.hostKeySha256());
+            try (ResultSet result = statement.executeQuery()) {
+                return result.next() && "LEGACY_X509".equals(result.getString(1));
+            }
+        }
+    }
+
+    /** Atomically records authenticated trust or migrates an unchanged historical key. / 原子记录认证后的信任，或迁移未发生变化的历史公钥。 */
+    public void saveAuthenticatedServer(ServerIdentity observed, Optional<ServerIdentity> expected) throws SQLException {
+        try (Connection connection = connections.open()) {
+            RepositoryTransactionExecutor.execute(connection, () -> {
+                if (expected.isPresent() && !expected.orElseThrow().hostKeySha256().equals(observed.hostKeySha256())) {
+                    ServerIdentity prior = expected.orElseThrow();
+                    if (!prior.id().equals(observed.id()) || !prior.host().equals(observed.host()) || prior.sshPort() != observed.sshPort()) {
+                        throw new SQLException("authenticated server endpoint differs from trusted endpoint");
+                    }
+                    try (PreparedStatement statement = connection.prepareStatement("""
+                            UPDATE server SET host_key_sha256=?, host_key_format='SSH_WIRE'
+                            WHERE id=? AND host=? AND ssh_port=? AND host_key_sha256=? AND host_key_format='LEGACY_X509'
+                            """)) {
+                        statement.setString(1, observed.hostKeySha256()); statement.setString(2, prior.id());
+                        statement.setString(3, prior.host()); statement.setInt(4, prior.sshPort());
+                        statement.setString(5, prior.hostKeySha256());
+                        if (statement.executeUpdate() != 1) throw new SQLException("historical host key changed before migration");
+                    }
+                }
+                RepositoryTransactionExecutor.upsertServer(connection, observed);
+            });
         }
     }
 

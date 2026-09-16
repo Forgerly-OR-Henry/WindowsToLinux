@@ -1,13 +1,11 @@
 package gold.debug.windowstolinux.app.ui.deployment.single;
 
+
 import gold.debug.windowstolinux.app.service.contract.definition.*;
 
 import gold.debug.windowstolinux.app.ui.deployment.ReviewContext;
-import gold.debug.windowstolinux.app.service.deployment.automatic.DeploymentRuntimeParser;
 
-import gold.debug.windowstolinux.app.db.entity.StoredApplicationSecretRevision;
 import gold.debug.windowstolinux.app.service.contract.AutomaticDeploymentApplicationFacade;
-import gold.debug.windowstolinux.app.service.deployment.automatic.*;
 import gold.debug.windowstolinux.app.service.deployment.single.DeploymentHandoff;
 import gold.debug.windowstolinux.app.ui.component.AdvancedOptionsPane;
 import gold.debug.windowstolinux.app.ui.server.ServerSelectionPane;
@@ -18,32 +16,14 @@ import java.util.LinkedHashMap;
 import java.util.Arrays;
 import gold.debug.windowstolinux.app.service.server.ServerProfile;
 import gold.debug.windowstolinux.app.service.source.ReviewedSourcePreparation;
-import gold.debug.windowstolinux.app.service.deployment.single.DeploymentOutcome;
 import gold.debug.windowstolinux.app.ui.component.DesktopComponentFactory;
 import gold.debug.windowstolinux.app.ui.component.DesktopTaskExecutor;
 import gold.debug.windowstolinux.app.ui.server.ServerContext;
 import gold.debug.windowstolinux.app.ui.i18n.PageMessagePresenter;
-import gold.debug.windowstolinux.shared.config.revision.ConfigurationEntry;
-import gold.debug.windowstolinux.shared.config.revision.ConfigurationSnapshot;
-import gold.debug.windowstolinux.shared.config.resource.ManagedDatabaseBinding;
-import gold.debug.windowstolinux.shared.config.resource.ManagedDatabaseConnection;
-import gold.debug.windowstolinux.shared.config.secretref.SecretReference;
-import gold.debug.windowstolinux.shared.deploy.contract.ReviewedDeploymentPlan;
-import gold.debug.windowstolinux.shared.deploy.contract.ReviewedDeploymentRequest;
-import gold.debug.windowstolinux.shared.deploy.contract.result.deployment.DeploymentResult;
-import gold.debug.windowstolinux.shared.git.GitRemote;
-import gold.debug.windowstolinux.shared.git.GitSourceRequest;
-import gold.debug.windowstolinux.shared.model.deployment.BuildLimitConfiguration;
 import gold.debug.windowstolinux.shared.model.deployment.DeploymentStatus;
-import gold.debug.windowstolinux.shared.model.health.HealthCheck;
 import gold.debug.windowstolinux.shared.model.health.UserAccessUrl;
-import gold.debug.windowstolinux.shared.model.project.DeploymentProjectType;
-import gold.debug.windowstolinux.shared.model.project.DeploymentRuntimeSpecification;
-import gold.debug.windowstolinux.shared.model.project.DeploymentRuntimeAssessment;
-import gold.debug.windowstolinux.shared.model.project.DeploymentSupportLevel;
 import gold.debug.windowstolinux.shared.model.security.CredentialStorageMode;
 
-import javax.swing.BorderFactory;
 import javax.swing.JButton;
 import javax.swing.JCheckBox;
 import javax.swing.JComboBox;
@@ -57,15 +37,10 @@ import javax.swing.JTextField;
 import java.awt.BorderLayout;
 import java.awt.FlowLayout;
 import java.awt.GridBagLayout;
-import java.awt.GridLayout;
-import java.net.URI;
 import java.nio.file.Path;
-import java.time.Instant;
-import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
-import java.util.OptionalInt;
 import java.util.function.Consumer;
 
 /** Owns source selection, review state, deployment forms, and the complete reviewed deployment workflow. / 持有源码选择、审阅状态、部署表单与完整经审阅部署流程。 */
@@ -198,6 +173,7 @@ public final class DeploymentPage implements ReviewContext {
         advanced.field("field.runtimePrimary", form.runtimePrimary);
         advanced.field("field.runtimeSecondary", form.runtimeSecondary);
         advanced.field("field.runtimeVersion", form.runtimeVersion);
+        advanced.field("auto.field.jvmTarget", form.kotlinJvmTarget);
         advanced.field("field.jvmArguments", form.jvmArguments);
         advanced.field("field.applicationArguments", form.applicationArguments);
         advanced.field("field.containerEngine", form.containerEngine);
@@ -207,7 +183,6 @@ public final class DeploymentPage implements ReviewContext {
         advanced.field("field.databaseReviewMode", form.databaseMode);
         advanced.field("field.databaseDetails", form.databaseDetails);
         advanced.field("field.secretReferences", form.secretReferences);
-        advanced.field("rootBuild", form.rootBuild);
         advanced.field("experimentalAdapterRisk", form.experimentalAdapterRisk);
         JButton secret = c.secondaryButton(messages.text("button.saveSecretRevision"));
         secret.addActionListener(event -> saveSecret()); advanced.field("field.secretRevision", secret);
@@ -215,14 +190,14 @@ public final class DeploymentPage implements ReviewContext {
         manual.addActionListener(event -> openServers.run()); advanced.addOption(manual);
     }
 
-    /** Captures source selection independently from typed advanced inputs. */
+    /** Captures source selection independently from typed advanced inputs. / 独立于类型化高级输入捕获源码选择。 */
     public Map<String, String> captureSelection() {
         return Map.of("sourceMode", Integer.toString(sourceMode.getSelectedIndex()), "source", sourcePath.getText(),
                 "git", gitAddress.getText(), "reference", gitReference.getText(), "kind", Integer.toString(gitKind.getSelectedIndex()),
                 "detect", Boolean.toString(detectType.isSelected()), "server", serverSelection.profile() == null ? "" : serverSelection.profile().id());
     }
 
-    /** Restores source selection after an appearance change. */
+    /** Restores source selection after an appearance change. / 外观变更后恢复源码选择。 */
     public void restoreSelection(Map<String, String> state) {
         if (state.isEmpty()) return;
         sourceMode.setSelectedIndex(Integer.parseInt(state.get("sourceMode"))); sourcePath.setText(state.get("source"));
@@ -231,7 +206,7 @@ public final class DeploymentPage implements ReviewContext {
         serverSelection.select(state.get("server"));
     }
 
-    /** Reports active work so an appearance rebuild cannot detach a running operation. */
+    /** Reports active work so an appearance rebuild cannot detach a running operation. / 报告正在执行的任务，防止外观重建使操作脱离页面。 */
     public boolean busy() { return busy; }
 
     private void startAutomatic() {
@@ -242,30 +217,10 @@ public final class DeploymentPage implements ReviewContext {
                 append(messages.text("auto.selectRequired")); return;
             }
             Optional<Path> directory = sourceMode.getSelectedIndex() == 0 ? Optional.of(Path.of(sourcePath.getText())) : Optional.empty();
-            Optional<GitSourceRequest> git = Optional.empty();
-            if (directory.isEmpty()) {
-                GitRemote remote = GitRemote.parse(gitAddress.getText().trim());
-                var reference = gitReference.getText().isBlank() ? new gold.debug.windowstolinux.shared.git.GitReference.DefaultBranch()
-                        : DeploymentRuntimeParser.gitReference(gitKind.getSelectedIndex(), gitReference.getText().trim());
-                git = Optional.of(new GitSourceRequest(remote, reference, java.util.Set.of(remote.host().orElseThrow()),
-                        4L * 1024 * 1024 * 1024, false));
-            }
-            Map<String, String> values = new LinkedHashMap<>();
-            if (!detectType.isSelected()) values.put("type", form.projectType().name());
-            values.put("primary", form.runtimePrimary.getText()); values.put("secondary", form.runtimeSecondary.getText());
-            values.put("version", form.runtimeVersion.getText()); values.put("configuration", form.configurationEntries.getText());
-            values.put("secrets", form.secretReferences.getText()); values.put("databaseDetails", form.databaseDetails.getText());
-            if (form.databaseMode.getSelectedItem() != DeploymentRuntimeParser.DatabaseReviewMode.UNREVIEWED)
-                values.put("databaseMode", ((DeploymentRuntimeParser.DatabaseReviewMode) form.databaseMode.getSelectedItem()).name());
-            values.put("expectedStatus", form.expectedStatus.getText()); values.put("timeout", form.timeout.getText());
-            values.put("stability", form.stability.getText()); values.put("accessUrl", form.accessUrl.getText());
-            values.put("rootBuild", Boolean.toString(form.rootBuild.isSelected()));
-            values.put("experimentalAdapterRisk", Boolean.toString(form.experimentalAdapterRisk.isSelected()));
-            values.put("jvmArguments", form.jvmArguments.getText()); values.put("arguments", form.applicationArguments.getText());
-            values.put("ports", form.containerPorts.getText()); values.put("volumes", form.containerVolumes.getText());
-            if (form.containerEngine.getSelectedItem() != null) values.put("containerEngine", form.containerEngine.getSelectedItem().toString());
-            form.automaticHealthInputs(values);
-            AutomaticDeploymentRequest request = new AutomaticDeploymentRequest(directory, git, server, values);
+            AutomaticDeploymentRequest request = service.createAutomaticDeploymentRequest(
+                    new gold.debug.windowstolinux.app.service.contract.definition.DeploymentSourceInput(directory,
+                            gitAddress.getText(), gitKind.getSelectedIndex(), gitReference.getText()), server,
+                    form.input(detectType.isSelected()));
             char[] entered = serverContext.masterPassword();
             if (server.credentialMode() == CredentialStorageMode.MASTER_PASSWORD && entered.length == 0)
                 entered = new DeploymentInputDialog(owner, service, components, messages, () -> new char[0]).requestSecret("field.masterPassword");
@@ -289,9 +244,7 @@ public final class DeploymentPage implements ReviewContext {
                 finish();
                 Throwable reason = failure; while (reason.getCause() != null) reason = reason.getCause();
                 append(reason instanceof java.util.concurrent.CancellationException ? messages.text("auto.cancelled")
-                        : reason instanceof gold.debug.windowstolinux.shared.linux.ecosystem.db.NativeDatabasePort.DatabaseFailure database
-                        && database.reason() == gold.debug.windowstolinux.shared.linux.ecosystem.db.NativeDatabasePort.FailureType.MANUAL_RESTORE_REQUIRED
-                        ? messages.text("db.manualRequired") : messages.safe(failure));
+                        : messages.safe(failure));
             });
         } catch (Exception failure) { append(messages.safe(failure)); }
     }
@@ -307,10 +260,10 @@ public final class DeploymentPage implements ReviewContext {
         start.setEnabled(true); start.setText(messages.text("auto.start"));
     }
 
-    /** Captures only successful delivery entries for appearance rebuilds. */
+    /** Captures only successful delivery entries for appearance rebuilds. / 仅捕获成功交付项，供外观重建使用。 */
     public Map<String, DeploymentHandoff> captureHandoffs() { return Map.copyOf(completedHandoffs); }
 
-    /** Restores clickable and copyable entries without duplicating the execution log. */
+    /** Restores clickable and copyable entries without duplicating the execution log. / 恢复可点击和复制的条目，不重复执行日志。 */
     public void restoreHandoffs(Map<String, DeploymentHandoff> saved) {
         completedHandoffs.clear(); completedHandoffs.putAll(saved); handoffs.removeAll();
         handoffScroll.setVisible(!saved.isEmpty());
@@ -337,18 +290,14 @@ public final class DeploymentPage implements ReviewContext {
         if (busy) return;
         JPasswordField field = new JPasswordField(24);
         try {
-            List<SecretReference> references = form.secretReferences();
-            if (references.size() != 1) throw new IllegalArgumentException(messages.text("validation.secretSingleRevision"));
-            SecretReference reference = references.getFirst();
+            String referenceInput = form.secretReferences.getText();
             if (JOptionPane.showConfirmDialog(owner, field, messages.text("secret.value.title"), JOptionPane.OK_CANCEL_OPTION,
                     JOptionPane.WARNING_MESSAGE) != JOptionPane.OK_OPTION) return;
             CredentialStorageMode mode = serverContext.credentialMode();
             char[] master = serverContext.masterPassword(), value = field.getPassword();
-            var revision = new StoredApplicationSecretRevision(reference,
-                    "application-secret/" + reference.identifier() + "/" + reference.revision(), mode, Instant.now());
             busy = true; ((AdvancedOptionsPane) panel).setBusy(true);
             DesktopTaskExecutor.run(() -> {
-                try { service.saveDeploymentSecretRevision(revision, mode, master, value); return reference; }
+                try { return service.saveDeploymentSecretRevision(referenceInput, mode, master, value); }
                 finally { Arrays.fill(master, '\0'); Arrays.fill(value, '\0'); }
             }, saved -> {
                 finish(); output.setText(messages.text("secret.saved", Map.of("reference", saved.identifier() + ":" + saved.revision())));

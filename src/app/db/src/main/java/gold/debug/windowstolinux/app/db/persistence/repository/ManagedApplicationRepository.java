@@ -138,7 +138,7 @@ public final class ManagedApplicationRepository {
     public Optional<ManagedApplicationRuntimeConfiguration> findRuntime(String applicationId) throws SQLException {
         try (Connection connection = connections.open(); PreparedStatement statement = connection.prepareStatement("""
                 SELECT health_kind, http_endpoint, http_expected_status, tcp_port, health_timeout_seconds,
-                       tcp_stability_seconds, user_access_url
+                       tcp_stability_seconds, user_access_url, identity_policy
                 FROM managed_application_runtime_configuration WHERE application_id=?
                 """)) {
             statement.setString(1, applicationId);
@@ -242,12 +242,12 @@ public final class ManagedApplicationRepository {
         try (PreparedStatement statement = connection.prepareStatement("""
                 INSERT INTO managed_application_runtime_configuration (
                     application_id, health_kind, http_endpoint, http_expected_status, tcp_port,
-                    health_timeout_seconds, tcp_stability_seconds, user_access_url
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    health_timeout_seconds, tcp_stability_seconds, user_access_url, identity_policy
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(application_id) DO UPDATE SET health_kind=excluded.health_kind,
                     http_endpoint=excluded.http_endpoint, http_expected_status=excluded.http_expected_status,
                     tcp_port=excluded.tcp_port, health_timeout_seconds=excluded.health_timeout_seconds,
-                    tcp_stability_seconds=excluded.tcp_stability_seconds, user_access_url=excluded.user_access_url
+                    tcp_stability_seconds=excluded.tcp_stability_seconds, user_access_url=excluded.user_access_url, identity_policy=excluded.identity_policy
                 """)) {
             statement.setString(1, applicationId);
             if (configuration.healthCheck() instanceof HealthCheck.Http http) {
@@ -269,6 +269,7 @@ public final class ManagedApplicationRepository {
             } else {
                 throw new SQLException("unsupported managed-deployment health-check type");
             }
+            statement.setString(9, configuration.identityPolicy().name());
             statement.executeUpdate();
         }
     }
@@ -295,14 +296,15 @@ public final class ManagedApplicationRepository {
 
     static ManagedApplicationRuntimeConfiguration readRuntime(ResultSet result) throws SQLException {
         try {
+            var policy = gold.debug.windowstolinux.shared.model.project.RuntimeIdentityMode.valueOf(required(result, "identity_policy"));
             String kind = result.getString("health_kind");
             int timeout = result.getInt("health_timeout_seconds");
             return switch (kind) {
                 case "HTTP" -> new ManagedApplicationRuntimeConfiguration(new HealthCheck.Http(
                         URI.create(required(result, "http_endpoint")), result.getInt("http_expected_status"), timeout),
-                        Optional.of(new UserAccessUrl(URI.create(required(result, "user_access_url")))));
+                        Optional.of(new UserAccessUrl(URI.create(required(result, "user_access_url")))), policy);
                 case "TCP" -> new ManagedApplicationRuntimeConfiguration(new HealthCheck.Tcp(result.getInt("tcp_port"),
-                        timeout, result.getInt("tcp_stability_seconds")), Optional.empty());
+                        timeout, result.getInt("tcp_stability_seconds")), Optional.empty(), policy);
                 default -> throw new SQLException("saved managed-deployment health-check type is invalid");
             };
         } catch (IllegalArgumentException exception) {
@@ -311,10 +313,8 @@ public final class ManagedApplicationRepository {
     }
 
     private static String required(ResultSet result, String column) throws SQLException {
-        String value = result.getString(column);
-        if (value == null || value.isBlank()) {
-            throw new SQLException("saved managed-deployment runtime configuration is missing " + column);
-        }
-        return value;
+        return Optional.ofNullable(result.getString(column)).filter(value -> !value.isBlank())
+                .orElseThrow(() -> new SQLException(
+                        "saved managed-deployment runtime configuration is missing " + column));
     }
 }

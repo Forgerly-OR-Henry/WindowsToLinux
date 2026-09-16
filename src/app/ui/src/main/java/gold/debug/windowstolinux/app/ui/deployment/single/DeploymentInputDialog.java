@@ -16,7 +16,7 @@ import java.util.concurrent.Callable;
 import java.util.concurrent.FutureTask;
 import java.util.function.Supplier;
 
-/** One grouped missing-input form with a contextual AI conversation in its right inspector. */
+/** One grouped missing-input form with a contextual AI conversation in its right inspector. / 集中展示缺失输入的表单，右侧检查面板提供上下文 AI 对话。 */
 public final class DeploymentInputDialog implements AutomaticDeploymentInteraction {
     private final Component owner;
     private final AiApplicationFacade service;
@@ -24,13 +24,13 @@ public final class DeploymentInputDialog implements AutomaticDeploymentInteracti
     private final PageMessagePresenter messages;
     private final Supplier<char[]> master;
 
-    /** Binds the optional assistant and secret-copy supplier without retaining secret values. */
+    /** Binds the optional assistant and secret-copy supplier without retaining secret values. / 绑定可选助手和秘密副本提供方，不保留秘密值。 */
     public DeploymentInputDialog(Component owner, AiApplicationFacade service, DesktopComponentFactory components,
                                  PageMessagePresenter messages, Supplier<char[]> master) {
         this.owner = owner; this.service = service; this.components = components; this.messages = messages; this.master = master;
     }
 
-    /** Displays all current non-secret missing fields together. */
+    /** Displays all current non-secret missing fields together. / 集中展示当前所有非秘密缺失字段。 */
     @Override public Optional<Map<String, String>> requestInputs(List<DeploymentInputField> fields) {
         return onEdt(() -> {
             JPanel form = components.transparent(new GridBagLayout());
@@ -103,7 +103,7 @@ public final class DeploymentInputDialog implements AutomaticDeploymentInteracti
         return choices;
     }
 
-    /** Requires a separate affirmative decision for a concrete risk. */
+    /** Requires a separate affirmative decision for a concrete risk. / 要求对具体风险作出独立的肯定决策。 */
     @Override public boolean confirmDatabaseReplacement(Map<String, ?> details) {
         return onEdt(() -> {
             JPanel panel = components.transparent(new BorderLayout(0, 12));
@@ -124,8 +124,14 @@ public final class DeploymentInputDialog implements AutomaticDeploymentInteracti
         });
     }
 
-    /** Requires a separate affirmative decision for a concrete risk. */
+    /** Requires a separate affirmative decision for a concrete risk. / 要求对具体风险作出独立的肯定决策。 */
     @Override public boolean confirm(String key, Map<String, ?> details) {
+        if (key.equals("environment.confirm")) {
+            return gold.debug.windowstolinux.app.ui.component.SystemPreparationDialog.confirmEnvironment(owner, messages, details);
+        }
+        if (key.equals("environment.system.confirm")) {
+            return gold.debug.windowstolinux.app.ui.component.SystemPreparationDialog.confirm(owner, messages, details);
+        }
         Map<String,?> arguments = key.equals("db.conflict") ? Map.of("detail", ((List<?>)details.get("conflicts")).stream()
                 .map(value -> value.toString().split("\\|",2)).map(parts -> messages.text("db.conflict."+parts[0],
                         Map.of("instance",parts.length > 1 ? parts[1] : ""))).collect(java.util.stream.Collectors.joining("\n"))) : details;
@@ -133,7 +139,7 @@ public final class DeploymentInputDialog implements AutomaticDeploymentInteracti
                 JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE) == JOptionPane.YES_OPTION);
     }
 
-    /** Uses a password field and returns only a caller-owned character array. */
+    /** Uses a password field and returns only a caller-owned character array. / 使用密码控件，仅返回由调用方持有的字符数组。 */
     @Override public char[] requestSecret(String key) {
         return onEdt(() -> {
             JPasswordField input = new JPasswordField(24);

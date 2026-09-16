@@ -146,7 +146,7 @@ public final class ConfigurationSnapshotRepository {
         Optional<ConfigurationSnapshot> existing = find(connection, snapshot.applicationId(), snapshot.revision());
         if (existing.isPresent()) {
             ConfigurationSnapshot stored = existing.orElseThrow();
-            // SQLite stores milliseconds and reads entries in key order; the digest binds their canonical content.
+            // SQLite stores milliseconds and reads entries in key order; the digest binds their canonical content. / SQLite 保存毫秒并按键顺序读取条目，摘要绑定其规范化内容。
             // SQLite 保存毫秒并按键读取条目，摘要绑定规范内容，避免精度与排序差异被误判为修改。
             if (!stored.sha256().equals(snapshot.sha256())
                     || stored.createdAt().toEpochMilli() != snapshot.createdAt().toEpochMilli()) {

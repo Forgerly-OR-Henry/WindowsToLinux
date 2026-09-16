@@ -1,16 +1,10 @@
 package gold.debug.windowstolinux.app.ui.deployment.single;
 
-import gold.debug.windowstolinux.app.service.config.DeploymentConfigurationParser;
-import gold.debug.windowstolinux.app.service.deployment.automatic.DeploymentRuntimeParser;
+import gold.debug.windowstolinux.app.service.contract.definition.DatabaseReviewMode;
+
 
 import gold.debug.windowstolinux.app.service.source.ReviewedSourcePreparation;
 import gold.debug.windowstolinux.app.ui.i18n.PageMessagePresenter;
-import gold.debug.windowstolinux.shared.config.revision.ConfigurationEntry;
-import gold.debug.windowstolinux.shared.config.revision.ConfigurationSnapshot;
-import gold.debug.windowstolinux.shared.config.resource.ManagedDatabaseBinding;
-import gold.debug.windowstolinux.shared.config.secretref.SecretReference;
-import gold.debug.windowstolinux.shared.model.health.HealthCheck;
-import gold.debug.windowstolinux.shared.model.health.UserAccessUrl;
 import gold.debug.windowstolinux.shared.model.project.DeploymentProjectType;
 import gold.debug.windowstolinux.shared.model.project.DeploymentRuntimeSpecification;
 import gold.debug.windowstolinux.shared.model.project.DeploymentRuntimeAssessment;
@@ -18,11 +12,6 @@ import gold.debug.windowstolinux.shared.model.project.DeploymentRuntimeAssessmen
 import javax.swing.JCheckBox;
 import javax.swing.JComboBox;
 import javax.swing.JTextField;
-import java.net.URI;
-import java.time.Instant;
-import java.util.List;
-import java.util.Optional;
-import java.util.OptionalInt;
 
 /** Owns deployment controls, non-secret form state, and domain input mapping. / 持有部署控件、非秘密表单状态与领域输入映射。 */
 final class DeploymentForm {
@@ -36,6 +25,7 @@ final class DeploymentForm {
     final JTextField runtimePrimary = new JTextField(20);
     final JTextField runtimeSecondary = new JTextField(20);
     final JTextField runtimeVersion = new JTextField(6);
+    final JTextField kotlinJvmTarget = new JTextField(6);
     final JTextField jvmArguments = new JTextField(20);
     final JTextField applicationArguments = new JTextField(20);
     final JComboBox<DeploymentRuntimeSpecification.ContainerEngineType> containerEngine =
@@ -43,17 +33,15 @@ final class DeploymentForm {
     final JTextField containerPorts = new JTextField(20);
     final JTextField containerVolumes = new JTextField(20);
     final JTextField configurationEntries = new JTextField(30);
-    final JComboBox<DeploymentRuntimeParser.DatabaseReviewMode> databaseMode =
-            new JComboBox<>(DeploymentRuntimeParser.DatabaseReviewMode.values());
+    final JComboBox<DatabaseReviewMode> databaseMode =
+            new JComboBox<>(DatabaseReviewMode.values());
     final JTextField databaseDetails = new JTextField(30);
     final JTextField secretReferences = new JTextField(20);
-    final JCheckBox rootBuild;
     final JCheckBox experimentalAdapterRisk;
     private final PageMessagePresenter messages;
 
     DeploymentForm(PageMessagePresenter messages, Runnable reviewInvalidation) {
         this.messages = messages;
-        rootBuild = new JCheckBox(messages.text("rootBuild"));
         experimentalAdapterRisk = new JCheckBox(messages.text("experimentalAdapterRisk"));
         messages.localize(projectType, "project.type.");
         messages.localize(healthMode, "health.mode.");
@@ -64,10 +52,10 @@ final class DeploymentForm {
             reviewInvalidation.run();
         });
         databaseMode.addActionListener(event -> databaseDetails.setEnabled(
-                databaseMode.getSelectedItem() != DeploymentRuntimeParser.DatabaseReviewMode.UNREVIEWED
-                        && databaseMode.getSelectedItem() != DeploymentRuntimeParser.DatabaseReviewMode.NONE));
+                databaseMode.getSelectedItem() != DatabaseReviewMode.UNREVIEWED
+                        && databaseMode.getSelectedItem() != DatabaseReviewMode.NONE));
         containerEngine.setSelectedItem(null);
-        databaseMode.setSelectedItem(DeploymentRuntimeParser.DatabaseReviewMode.UNREVIEWED);
+        databaseMode.setSelectedItem(DatabaseReviewMode.UNREVIEWED);
         databaseDetails.setEnabled(false);
     }
 
@@ -79,9 +67,9 @@ final class DeploymentForm {
                 containerEngine.getSelectedItem() == null ? ""
                 : ((DeploymentRuntimeSpecification.ContainerEngineType) containerEngine.getSelectedItem()).name(),
                 containerPorts.getText(), containerVolumes.getText(), configurationEntries.getText(),
-                ((DeploymentRuntimeParser.DatabaseReviewMode) databaseMode.getSelectedItem()).name(),
-                databaseDetails.getText(), secretReferences.getText(), rootBuild.isSelected(), experimentalAdapterRisk.isSelected(),
-                output, preparation);
+                ((DatabaseReviewMode) databaseMode.getSelectedItem()).name(),
+                databaseDetails.getText(), secretReferences.getText(), false, experimentalAdapterRisk.isSelected(),
+                output, preparation, kotlinJvmTarget.getText());
     }
 
     void restore(DeploymentPageState state) {
@@ -95,6 +83,7 @@ final class DeploymentForm {
         runtimePrimary.setText(state.runtimePrimary());
         runtimeSecondary.setText(state.runtimeSecondary());
         runtimeVersion.setText(state.javaVersion());
+        kotlinJvmTarget.setText(state.kotlinJvmTarget());
         jvmArguments.setText(state.jvmArguments());
         applicationArguments.setText(state.applicationArguments());
         containerEngine.setSelectedItem(state.containerEngine().isBlank() ? null
@@ -102,10 +91,9 @@ final class DeploymentForm {
         containerPorts.setText(state.containerPorts());
         containerVolumes.setText(state.containerVolumes());
         configurationEntries.setText(state.configurationEntries());
-        databaseMode.setSelectedItem(DeploymentRuntimeParser.DatabaseReviewMode.valueOf(state.databaseMode()));
+        databaseMode.setSelectedItem(DatabaseReviewMode.valueOf(state.databaseMode()));
         databaseDetails.setText(state.databaseDetails());
         secretReferences.setText(state.secretReferences());
-        rootBuild.setSelected(state.rootBuild());
         experimentalAdapterRisk.setSelected(state.experimentalAdapterRisk());
     }
 
@@ -113,104 +101,15 @@ final class DeploymentForm {
         return (DeploymentProjectType) projectType.getSelectedItem();
     }
 
-    ConfigurationSnapshot configurationSnapshot(String applicationId) {
-        List<ConfigurationEntry> entries;
-        try {
-            entries = DeploymentConfigurationParser.parse(configurationEntries.getText());
-        } catch (IllegalArgumentException exception) {
-            throw new IllegalArgumentException(messages.text("validation.configurationEntry"), exception);
-        }
-        return ConfigurationSnapshot.create(applicationId, Instant.now().toEpochMilli(), "runtime-v1", Instant.now(), entries);
-    }
-
-    List<SecretReference> secretReferences() {
-        try {
-            return DeploymentRuntimeParser.secrets(secretReferences.getText());
-        } catch (IllegalArgumentException exception) {
-            throw new IllegalArgumentException(messages.text("validation.secretReference"), exception);
-        }
-    }
-
-    Optional<List<ManagedDatabaseBinding>> databaseBindings() {
-        try {
-            return DeploymentRuntimeParser.databaseBindings(
-                    (DeploymentRuntimeParser.DatabaseReviewMode) databaseMode.getSelectedItem(),
-                    databaseDetails.getText());
-        } catch (IllegalArgumentException exception) {
-            throw new IllegalArgumentException(messages.text("validation.databaseBinding"), exception);
-        }
-    }
-
-    HealthCheck healthCheck() {
-        int seconds = Integer.parseInt(timeout.getText().trim());
-        return switch ((HealthMode) healthMode.getSelectedItem()) {
-            case AUTOMATIC -> throw new IllegalArgumentException("automatic health checks require source analysis");
-            case HTTP -> new HealthCheck.Http(URI.create(healthEndpoint.getText().trim()),
-                    Integer.parseInt(expectedStatus.getText().trim()), seconds);
-            case TCP -> new HealthCheck.Tcp(Integer.parseInt(healthEndpoint.getText().trim()), seconds,
-                    Integer.parseInt(stability.getText().trim()));
-        };
-    }
-
-    /** Preserves an explicit health mode even when the endpoint still needs source analysis or user input. */
-    void automaticHealthInputs(java.util.Map<String, String> values) {
-        HealthMode selected = (HealthMode) healthMode.getSelectedItem();
-        String endpoint = healthEndpoint.getText().trim();
-        if (selected != HealthMode.AUTOMATIC) values.put("healthMode", selected.name());
-        if (endpoint.isEmpty()) return;
-        HealthMode effective = selected == HealthMode.AUTOMATIC
-                ? (endpoint.matches("[0-9]+") ? HealthMode.TCP : HealthMode.HTTP) : selected;
-        values.put("healthMode", effective.name());
-        if (effective == HealthMode.TCP) values.put("port", endpoint);
-        else {
-            URI uri = URI.create(endpoint);
-            int defaultPort = switch (java.util.Objects.toString(uri.getScheme(), "")) {
-                case "http" -> 80;
-                case "https" -> 443;
-                default -> throw new IllegalArgumentException("health endpoint must use HTTP or HTTPS");
-            };
-            values.put("healthEndpoint", uri.toString());
-            values.put("port", Integer.toString(uri.getPort() > 0 ? uri.getPort() : defaultPort));
-        }
-    }
-
-    Optional<UserAccessUrl> userAccessUrl(HealthCheck health) {
-        String value = accessUrl.getText().trim();
-        if (health instanceof HealthCheck.Http) {
-            if (value.isBlank()) throw new IllegalArgumentException(messages.text("validation.httpAccessRequired"));
-            return Optional.of(new UserAccessUrl(URI.create(value)));
-        }
-        if (!value.isBlank()) throw new IllegalArgumentException(messages.text("validation.tcpAccessForbidden"));
-        return Optional.empty();
-    }
-
-    DeploymentRuntimeSpecification runtimeSpecification(HealthCheck health) {
-        return switch (projectType()) {
-            case SPRING_BOOT -> new DeploymentRuntimeSpecification.SpringBoot(health);
-            case JAVA_JAR -> new DeploymentRuntimeSpecification.JavaJar(runtimePrimary.getText(), runtimeSecondary.getText(),
-                    runtimeVersion.getText(), DeploymentRuntimeParser.arguments(jvmArguments.getText()),
-                    DeploymentRuntimeParser.arguments(applicationArguments.getText()), health);
-            case JAVA_SOURCE -> new DeploymentRuntimeSpecification.JavaSource(runtimePrimary.getText(),
-                    runtimeSecondary.getText(), runtimeVersion.getText(),
-                    DeploymentRuntimeParser.arguments(jvmArguments.getText()),
-                    DeploymentRuntimeParser.arguments(applicationArguments.getText()), health);
-            case NODE_SERVICE -> new DeploymentRuntimeSpecification.NodeService(
-                    Integer.parseInt(runtimeVersion.getText().trim()), health);
-            case PYTHON_SERVICE -> new DeploymentRuntimeSpecification.PythonService(
-                    runtimePrimary.getText(), runtimeSecondary.getText(), health);
-            case STATIC_SITE -> new DeploymentRuntimeSpecification.StaticSite(runtimePrimary.getText(),
-                    runtimeVersion.getText().isBlank() ? OptionalInt.empty()
-                            : OptionalInt.of(Integer.parseInt(runtimeVersion.getText().trim())), requireHttp(health));
-            case DOCKERFILE_CONTAINER -> new DeploymentRuntimeSpecification.Container(
-                    (DeploymentRuntimeSpecification.ContainerEngineType) containerEngine.getSelectedItem(),
-                    ports(), volumes(), health);
-            case GO_SERVICE, RUST_SERVICE, DOTNET_SERVICE, KOTLIN_SERVICE, PHP_SERVICE, RUBY_SERVICE ->
-                    DeploymentRuntimeParser.service(projectType(), runtimeVersion.getText(), runtimePrimary.getText(),
-                            runtimeSecondary.getText(), health);
-            case CMAKE_SERVICE -> new DeploymentRuntimeSpecification.CmakeService(runtimeVersion.getText(),
-                    runtimeSecondary.getText(), runtimePrimary.getText(), health);
-            case RECOGNITION_PREVIEW -> throw new IllegalArgumentException(messages.text("analysis.preview.noDeployment"));
-        };
+    /** Captures controls without parsing configuration, databases or runtime notation. / 捕获控件，不解析配置、数据库或运行时记法。 */
+    gold.debug.windowstolinux.app.service.contract.definition.DeploymentFormInput input(boolean detectType) {
+        return new gold.debug.windowstolinux.app.service.contract.definition.DeploymentFormInput(detectType, projectType(),
+                runtimePrimary.getText(), runtimeSecondary.getText(), runtimeVersion.getText(), kotlinJvmTarget.getText(),
+                configurationEntries.getText(), secretReferences.getText(), (DatabaseReviewMode) databaseMode.getSelectedItem(),
+                databaseDetails.getText(), ((HealthMode) healthMode.getSelectedItem()).name(), healthEndpoint.getText(),
+                expectedStatus.getText(), timeout.getText(), stability.getText(), accessUrl.getText(), jvmArguments.getText(),
+                applicationArguments.getText(), containerPorts.getText(), containerVolumes.getText(),
+                (DeploymentRuntimeSpecification.ContainerEngineType) containerEngine.getSelectedItem(), experimentalAdapterRisk.isSelected());
     }
 
     void applyRuntimeSuggestions(ReviewedSourcePreparation preparation) {
@@ -219,6 +118,7 @@ final class DeploymentForm {
         suggestion.value(DeploymentRuntimeAssessment.RuntimeInputType.JAVA_JAR_PATH).ifPresent(runtimePrimary::setText);
         suggestion.value(DeploymentRuntimeAssessment.RuntimeInputType.JAVA_SOURCE_ROOT).ifPresent(runtimePrimary::setText);
         suggestion.value(DeploymentRuntimeAssessment.RuntimeInputType.JAVA_MAIN_CLASS).ifPresent(runtimeSecondary::setText);
+        suggestion.value(DeploymentRuntimeAssessment.RuntimeInputType.KOTLIN_JVM_TARGET).ifPresent(kotlinJvmTarget::setText);
         suggestion.value(DeploymentRuntimeAssessment.RuntimeInputType.JAVA_VERSION).ifPresent(runtimeVersion::setText);
         suggestion.value(DeploymentRuntimeAssessment.RuntimeInputType.NODE_MAJOR_VERSION).ifPresent(runtimeVersion::setText);
         suggestion.value(DeploymentRuntimeAssessment.RuntimeInputType.PYTHON_VERSION).ifPresent(runtimePrimary::setText);
@@ -241,35 +141,15 @@ final class DeploymentForm {
         }
     }
 
-    private java.util.Map<Integer, Integer> ports() {
-        try {
-            return DeploymentRuntimeParser.ports(containerPorts.getText());
-        } catch (IllegalArgumentException exception) {
-            throw new IllegalArgumentException(messages.text("validation.containerPort"), exception);
-        }
-    }
-
-    private List<DeploymentRuntimeSpecification.ManagedVolume> volumes() {
-        try {
-            return DeploymentRuntimeParser.volumes(containerVolumes.getText());
-        } catch (IllegalArgumentException exception) {
-            throw new IllegalArgumentException(messages.text("validation.containerVolume"), exception);
-        }
-    }
-
     private void resetRuntimeInputs() {
         runtimePrimary.setText("");
         runtimeSecondary.setText("");
         runtimeVersion.setText("");
+        kotlinJvmTarget.setText("");
         jvmArguments.setText("");
         applicationArguments.setText("");
         containerPorts.setText("");
         containerVolumes.setText("");
-    }
-
-    private HealthCheck.Http requireHttp(HealthCheck health) {
-        if (health instanceof HealthCheck.Http http) return http;
-        throw new IllegalArgumentException(messages.text("validation.staticHttpRequired"));
     }
 
     private enum HealthMode {

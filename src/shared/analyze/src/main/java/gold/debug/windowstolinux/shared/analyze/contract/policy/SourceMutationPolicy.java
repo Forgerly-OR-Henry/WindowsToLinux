@@ -24,7 +24,7 @@ public final class SourceMutationPolicy {
         validate(source, rejections, java.util.Optional.empty());
     }
 
-    /** Admits schema declarations only with matching database evidence and disabled duplicate framework entrypoints. */
+    /** Admits schema declarations only with matching database evidence and disabled duplicate framework entrypoints. / 仅在数据库证据匹配且重复框架入口被禁用时接纳模式声明。 */
     public void validate(SourceInspectionFacts source, List<RejectionReason> rejections,
                          java.util.Optional<gold.debug.windowstolinux.shared.model.ecosystem.db.DatabaseSchemaReview> review) {
         if (review.filter(value -> value.inspectionSha256().equals(inspectionDigest(source)))
@@ -40,13 +40,13 @@ public final class SourceMutationPolicy {
         }
     }
 
-    /** Detects review needs during static discovery without authorizing a deployment. */
+    /** Detects review needs during static discovery without authorizing a deployment. / 在静态发现中检测审阅需求，不授权部署。 */
     public boolean requiresReview(SourceInspectionFacts source) {
         return source.relativeFiles().stream().anyMatch(SourceMutationPolicy::databaseChangePath)
                 || DATABASE_MIGRATION.matcher(source.scannedText()).find();
     }
 
-    /** Binds approval to the bounded file list and exact inspected contents. */
+    /** Binds approval to the bounded file list and exact inspected contents. / 将批准绑定有界文件列表及精确检查内容。 */
     public static String inspectionDigest(SourceInspectionFacts source) {
         try {
             String content = source.relativeFiles().stream().map(path -> path.toString().replace('\\', '/')).sorted()

@@ -25,17 +25,69 @@ public final class ContainerBuildRenderer implements DeploymentBuildRenderer {
                 || facts.buildTool() != DeploymentBuildToolType.CONTAINER_BUILD) {
             throw new IllegalArgumentException("Container renderer requires reviewed Dockerfile inputs");
         }
-        String engine = SafeBuildScriptEnvelope.shellQuote(container.engine().name().toLowerCase(Locale.ROOT));
-        String tag = SafeBuildScriptEnvelope.shellQuote("windowstolinux-candidate:" + workspace.candidateId());
+        String engine = container.engine().name().equals("DOCKER")
+                ? "docker --host=unix://\"$WTL_BUILD_SOCKET\"" : "podman --remote --url=unix://\"$WTL_BUILD_SOCKET\"";
+        String repository = container.engine().name().equals("PODMAN")
+                ? "localhost/windowstolinux-candidate:" : "windowstolinux-candidate:";
+        String tag = SafeBuildScriptEnvelope.shellQuote(repository + workspace.candidateId());
         String application = SafeBuildScriptEnvelope.shellQuote(facts.applicationId());
         String candidate = SafeBuildScriptEnvelope.shellQuote(workspace.candidateId());
         String command = """
-                command -v %s >/dev/null
+                test -S "$WTL_BUILD_SOCKET"
+                %s version >/dev/null
                 test -f ./Dockerfile
                 run %s build --pull=true --label io.windowstolinux.application=%s --label io.windowstolinux.candidate=%s --tag %s --file ./Dockerfile .
                 image_id=$(%s image inspect --format '{{.Id}}' %s)
+                %s save %s --output \"$mutable/candidate-image.tar\" %s
+                %s
                 printf 'ARTIFACT=%%s\n' "$image_id"
-                """.formatted(engine, engine, application, candidate, tag, engine, tag);
+                """.formatted(engine, engine, application, candidate, tag, engine, tag, engine,
+                        container.engine().name().equals("PODMAN") ? "--format=docker-archive" : "", tag,
+                        container.engine().name().equals("PODMAN") ? normalizePodmanExport() : "");
         return SafeBuildScriptEnvelope.wrap(facts, workspace, limits, command);
+    }
+
+    /** Omits only redundant legacy layer aliases before immutable validation. / 不可变校验前仅去除冗余旧格式层别名。 */
+    private static String normalizePodmanExport() {
+        return """
+                /usr/bin/python3 -I - "$mutable/candidate-image.tar" <<'WTL_PODMAN_EXPORT'
+                import json, os, re, sys, tarfile
+                archive = sys.argv[1]
+                with tarfile.open(archive, 'r:') as source:
+                    members = {}
+                    for item in source:
+                        if len(members) >= 10000 or item.name in members:
+                            raise SystemExit('BUILD_REJECT=container-export-members')
+                        members[item.name] = item
+                    manifest = members.get('manifest.json')
+                    if manifest is None or not manifest.isfile() or manifest.size > 524288:
+                        raise SystemExit('BUILD_REJECT=container-export-manifest')
+                    with source.extractfile(manifest) as stream:
+                        metadata = json.load(stream)
+                    if not isinstance(metadata, list) or len(metadata) != 1:
+                        raise SystemExit('BUILD_REJECT=container-export-manifest')
+                    layers = metadata[0].get('Layers', [])
+                    aliases = set()
+                    for item in members.values():
+                        if not item.issym():
+                            continue
+                        target = item.linkname.removeprefix('../')
+                        if not re.fullmatch(r'[0-9a-f]{64}/layer[.]tar', item.name) or not re.fullmatch(
+                                r'[.][.]/[0-9a-f]{64}[.]tar', item.linkname) or target not in layers or not (
+                                target in members and members[target].isfile()) or item.size != 0:
+                            raise SystemExit('BUILD_REJECT=container-export-link')
+                        aliases.add(item.name)
+                    with tarfile.open(archive + '.normalized', 'x', format=tarfile.PAX_FORMAT) as output:
+                        for item in members.values():
+                            if item.name in aliases:
+                                continue
+                            if item.isfile():
+                                with source.extractfile(item) as stream:
+                                    output.addfile(item, stream)
+                            else:
+                                output.addfile(item)
+                os.replace(archive + '.normalized', archive)
+                WTL_PODMAN_EXPORT
+                """;
     }
 }

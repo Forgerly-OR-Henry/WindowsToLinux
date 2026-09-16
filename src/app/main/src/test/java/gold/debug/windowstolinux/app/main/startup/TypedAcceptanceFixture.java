@@ -10,7 +10,7 @@ import java.util.jar.JarEntry;
 import java.util.jar.JarOutputStream;
 import java.util.jar.Manifest;
 
-/** Creates dependency-free deterministic sources for live typed deployment acceptance. / 为类型化部署实时验收创建无依赖的确定性源码。 */
+/** Prepares deterministic workloads for live typed deployment acceptance. / 为类型化部署实时验收准备确定性工作负载。 */
 final class TypedAcceptanceFixture {
     private static final String PYTHON_IMAGE_DIGEST =
             "sha256:6d43704baacd1bfbe7c295d7f13079d5d8104ed33568873133f8fc69980419df";
@@ -91,75 +91,29 @@ final class TypedAcceptanceFixture {
     }
 
     static Path node(Path parent, String applicationId, boolean healthy, String marker) throws IOException {
-        Path root = directory(parent, applicationId);
-        write(root.resolve("package.json"), """
-                {
-                  "name": "%s",
-                  "version": "1.0.0",
-                  "private": true,
-                  "engines": { "node": "18" },
-                  "scripts": { "build": "node build.js", "start": "node server.js" }
-                }
-                """.formatted(applicationId));
-        write(root.resolve("package-lock.json"), """
-                {
-                  "name": "%s",
-                  "version": "1.0.0",
-                  "lockfileVersion": 3,
-                  "requires": true,
-                  "packages": {
-                    "": { "name": "%s", "version": "1.0.0", "engines": { "node": "18" } }
-                  }
-                }
-                """.formatted(applicationId, applicationId));
-        write(root.resolve("build.js"), """
-                const fs = require('fs');
-                if (process.env.BUILD_LABEL !== 'bounded-build') process.exit(31);
-                fs.writeFileSync('build.marker', 'built');
-                """);
-        String server = healthy ? """
-                const crypto = require('crypto');
-                const fs = require('fs');
-                const http = require('http');
+        Path root = RepositoryServiceFixture.copy(parent, applicationId, "node/npm/http-service", true);
+        RepositoryServiceFixture.replaceText(root, java.util.Map.of("deployment-smoke-ok", marker,
+                "http-service-npm", applicationId));
+        Path build = root.resolve("build.js");
+        Files.writeString(build, "if (process.env.BUILD_LABEL !== 'bounded-build') process.exit(31);\n" + Files.readString(build));
+        Path entrypoint = root.resolve("server.js");
+        String guard = healthy ? """
+                const crypto = require('node:crypto');
+                const fs = require('node:fs');
                 if (process.env.BUILD_LABEL) process.exit(32);
                 const secretPath = process.env.WINDOWSTOLINUX_SECRET_DEPLOYMENT_PROBE_FILE;
                 const digest = crypto.createHash('sha256').update(fs.readFileSync(secretPath)).digest('hex');
                 if (digest !== process.env.EXPECTED_SECRET_SHA256) process.exit(33);
-                http.createServer((request, response) => {
-                  response.writeHead(200, {'content-type': 'text/plain'});
-                  response.end('%s');
-                }).listen(Number(process.env.PORT), '0.0.0.0');
-                """.formatted(marker) : "process.exit(34);\n";
-        write(root.resolve("server.js"), server);
+                """ : "process.exit(34);\n";
+        Files.writeString(entrypoint, guard + Files.readString(entrypoint));
         return root;
     }
 
     static Path python(Path parent, String applicationId) throws IOException {
-        Path root = directory(parent, applicationId);
-        write(root.resolve("pyproject.toml"), """
-                [project]
-                name = "%s"
-                version = "1.0.0"
-                requires-python = "==3.12"
-                """.formatted(applicationId));
-        write(root.resolve("requirements.lock"), "");
-        write(root.resolve("demo/__init__.py"), "");
-        write(root.resolve("demo/__main__.py"), """
-                import http.server
-                import os
-
-                class Handler(http.server.BaseHTTPRequestHandler):
-                    def do_GET(self):
-                        body = b"python-live-ok"
-                        self.send_response(200)
-                        self.send_header("Content-Length", str(len(body)))
-                        self.end_headers()
-                        self.wfile.write(body)
-                    def log_message(self, format, *args):
-                        pass
-
-                http.server.ThreadingHTTPServer(("0.0.0.0", int(os.environ["PORT"])), Handler).serve_forever()
-                """);
+        Path root = RepositoryServiceFixture.copy(parent, applicationId, "python/pip/http-service", true);
+        RepositoryServiceFixture.replaceText(root, java.util.Map.of("deployment-smoke-ok", "python-live-ok",
+                "http-service-fixture", applicationId));
+        Files.move(root.resolve("http_service_fixture"), root.resolve("demo"));
         return root;
     }
 
@@ -176,6 +130,7 @@ final class TypedAcceptanceFixture {
                 FROM python:3.12-alpine@%s
                 WORKDIR /app
                 COPY server.py /app/server.py
+                USER 10001:10001
                 CMD ["python", "/app/server.py"]
                 """.formatted(PYTHON_IMAGE_DIGEST));
         String server = healthy ? """

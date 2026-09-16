@@ -1,0 +1,14 @@
+{
+  "version": 3,
+  "configurePresets": [
+    {
+      "name": "w2l-release",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/.w2l/cmake-build",
+      "cacheVariables": { "CMAKE_BUILD_TYPE": "Release" }
+    }
+  ],
+  "buildPresets": [
+    { "name": "w2l-release-build", "configurePreset": "w2l-release" }
+  ]
+}

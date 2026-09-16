@@ -43,6 +43,12 @@ public final class SystemdLifecycleExecutor {
                                         String expectedUnitContent) throws LinuxOperationException {
         LifecycleObservation before = observer.observe(application, expectedUnitContent);
         if (!before.ownershipVerified()) return before;
+        if (action == LifecycleAction.REFRESH_STATUS) return before;
+        if (before.runtimeState() == RuntimeState.UNKNOWN || (before.runtimeState() == RuntimeState.ERROR
+                && action != LifecycleAction.STOP && action != LifecycleAction.DISABLE_AUTOSTART)) {
+            throw LinuxOperationException.create(LinuxOperationFailureType.LIFECYCLE_ACTION_FAILED,
+                    "Native runtime state requires refresh or a verified STOP before START; " + before.evidence());
+        }
         if (action == LifecycleAction.START && before.runtimeState() != RuntimeState.STOPPED) {
             throw LinuxOperationException.create(LinuxOperationFailureType.START_REQUIRES_STOPPED,
                     "Start is allowed only for a managed application confirmed as stopped");
@@ -55,8 +61,9 @@ public final class SystemdLifecycleExecutor {
             case DISABLE_AUTOSTART -> "disable";
             case REFRESH_STATUS -> null;
         };
-        if (actionVerb != null && !runtimes.lifecycle(application, actionVerb).succeeded()) {
-            throw LinuxOperationException.create(LinuxOperationFailureType.LIFECYCLE_ACTION_FAILED, "systemd lifecycle operation failed");
+        var result = runtimes.lifecycle(application, actionVerb);
+        if (!result.succeeded()) {
+            throw LinuxOperationException.create(LinuxOperationFailureType.LIFECYCLE_ACTION_FAILED, result.evidence());
         }
         if ((action == LifecycleAction.START || action == LifecycleAction.RESTART)
                 && !health.check(application, healthCheck).healthy()) {
@@ -65,7 +72,8 @@ public final class SystemdLifecycleExecutor {
         LifecycleObservation after = action == LifecycleAction.STOP
                 ? awaitStopped(application, expectedUnitContent) : observer.observe(application, expectedUnitContent);
         verifyPostconditions(application, action, after);
-        return after;
+        return new LifecycleObservation(after.application(), after.runtimeState(), after.autostartState(),
+                after.ownershipVerified(), after.observedAt(), after.evidence() + "; " + result.evidence());
     }
 
     private LifecycleObservation awaitStopped(ManagedApplication application, String expectedUnitContent)

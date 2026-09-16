@@ -43,7 +43,7 @@ public final class SshdRestoreActivationPort implements RemoteRestoreActivationP
     @Override
     public PreflightEvidence inspectRestoreActivation(String applicationId, long requiredBytes)
             throws LinuxOperationException {
-        var result = step("restore-preflight", List.of(applicationId, Long.toString(requiredBytes)), false,
+        var result = step("restore-preflight", List.of(applicationId, Long.toString(requiredBytes)),
                 LinuxOperationFailureType.RESTORE_ACTIVATION_FAILED);
         Map<String, String> values = SshCommandExecutor.lines(result.output());
         long available;
@@ -58,7 +58,7 @@ public final class SshdRestoreActivationPort implements RemoteRestoreActivationP
         }
         return new PreflightEvidence("1".equals(values.get("MANAGED_ROOT_WRITABLE")),
                 "1".equals(values.get("FOREIGN_CONFLICT")), available, occupied,
-                List.of("Managed restore root capacity and live TCP listeners were collected through helper v5"));
+                List.of("Managed restore root capacity and live TCP listeners were collected through the versioned helper"));
     }
 
     @Override
@@ -66,7 +66,7 @@ public final class SshdRestoreActivationPort implements RemoteRestoreActivationP
             throws LinuxOperationException {
         Objects.requireNonNull(request, "request");
         for (RemoteRestoreActivationComponent component : request.components()) {
-            step("restore-prepare", prepareArguments(request, component), true,
+            step("restore-prepare", prepareArguments(request, component),
                     LinuxOperationFailureType.RESTORE_ACTIVATION_FAILED);
         }
         if (request.mode() == RemoteRestoreActivationMode.PARALLEL_LOOPBACK) {
@@ -96,7 +96,7 @@ public final class SshdRestoreActivationPort implements RemoteRestoreActivationP
         List<String> arguments = new ArrayList<>(List.of(request.candidateId(), request.candidateToken(),
                 Integer.toString(request.components().size())));
         request.components().forEach(component -> arguments.add(component.componentId()));
-        step("restore-mark-quiesced", arguments, true, LinuxOperationFailureType.RESTORE_ACTIVATION_FAILED);
+        step("restore-mark-quiesced", arguments, LinuxOperationFailureType.RESTORE_ACTIVATION_FAILED);
         return new StepEvidence(true, List.of("Old and candidate processes stopped",
                 "Application-wide stopped-write marker recorded by managed helper"));
     }
@@ -261,13 +261,13 @@ public final class SshdRestoreActivationPort implements RemoteRestoreActivationP
     private SshCommandExecutor.CommandResult componentStep(
             String verb, RemoteRestoreActivationRequest request, RemoteRestoreActivationComponent component,
             LinuxOperationFailureType failure) throws LinuxOperationException {
-        return step(verb, List.of(request.candidateId(), request.candidateToken(), component.componentId()), true, failure);
+        return step(verb, List.of(request.candidateId(), request.candidateToken(), component.componentId()), failure);
     }
 
     private SshCommandExecutor.CommandResult step(
-            String verb, List<String> arguments, boolean mutation, LinuxOperationFailureType failure)
+            String verb, List<String> arguments, LinuxOperationFailureType failure)
             throws LinuxOperationException {
-        var result = commands.execProtocol(command(verb, arguments), STEP_TIMEOUT, mutation);
+        var result = commands.execProtocol(command(verb, arguments), verb.equals("restore-prepare") ? Duration.ofMinutes(121) : STEP_TIMEOUT, true);
         if (!result.succeeded()) throw LinuxOperationException.create(failure,
                 "controlled restore helper step failed: " + result.failureEvidence());
         return result;

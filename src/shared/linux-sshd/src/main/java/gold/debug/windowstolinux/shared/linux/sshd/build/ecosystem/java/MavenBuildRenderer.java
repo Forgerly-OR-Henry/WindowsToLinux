@@ -29,15 +29,24 @@ public final class MavenBuildRenderer implements DeploymentBuildRenderer {
                     test -f ./mvnw
                     test -f ./.mvn/wrapper/maven-wrapper.properties
                     chmod 700 -- ./mvnw
-                    run ./mvnw -B -DskipTests package
+                    run ./mvnw -v
+                    run ./mvnw -B "${maven_toolchain_arguments[@]}" -DskipTests package
                     """;
             case MAVEN -> """
                     command -v mvn >/dev/null 2>&1
-                    run mvn -B -DskipTests package
+                    run mvn -v
+                    run mvn -B "${maven_toolchain_arguments[@]}" -DskipTests package
                     """;
             default -> throw new IllegalArgumentException("Maven renderer requires a Maven build identity");
         };
         return SafeBuildScriptEnvelope.wrap(facts, workspace, limits,
-                build + SpringBootArtifactBuildScript.verify("./target"));
+                """
+                maven_toolchain_arguments=()
+                if [ -n "${WTL_JAVA_HOME:-}" ]; then
+                  toolchains="$mutable/home/wtl-toolchains.xml"
+                  printf '<toolchains><toolchain><type>jdk</type><provides><version>%s</version></provides><configuration><jdkHome>%s</jdkHome></configuration></toolchain></toolchains>\\n' "$WTL_JAVA_BRANCH" "$WTL_JAVA_HOME" > "$toolchains"
+                  maven_toolchain_arguments=(--global-toolchains "$toolchains" --toolchains "$toolchains" "-Dmaven.compiler.executable=$WTL_JAVA_HOME/bin/javac" -Dmaven.compiler.fork=true)
+                fi
+                """ + build + SpringBootArtifactBuildScript.verify("./target"));
     }
 }

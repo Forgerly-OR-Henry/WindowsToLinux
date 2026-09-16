@@ -1,4 +1,6 @@
 package gold.debug.windowstolinux.app.service.deployment.automatic;
+import gold.debug.windowstolinux.shared.linux.error.NativeDatabaseException;
+import gold.debug.windowstolinux.shared.linux.error.NativeDatabaseFailureType;
 
 import gold.debug.windowstolinux.app.service.contract.definition.*;
 
@@ -12,7 +14,7 @@ import java.util.*;
 import java.util.concurrent.CancellationException;
 import java.util.function.Consumer;
 
-/** Resolves an installed instance before considering installation, with operation-bound replacement decisions. */
+/** Resolves an installed instance before considering installation, with operation-bound replacement decisions. / 先解析已安装实例，再考虑安装，并将替换决策绑定本次操作。 */
 final class DatabaseInstanceResolver {
     private DatabaseInstanceResolver() { }
     static Instance resolve(NativeDatabasePort port, String serverId, DatabaseRequirement requirement,
@@ -32,7 +34,7 @@ final class DatabaseInstanceResolver {
                 }
                 progress.accept(LocalizedMessage.of("db.install", "database", requirement.engine().name()));
                 inventory = port.installDatabase(requirement.engine(), inventory.candidate().orElseThrow(), Optional.empty());
-                if (!inventory.conflicts().isEmpty() || inventory.instances().isEmpty()) throw new DatabaseFailure(FailureType.STATE_CHANGED);
+                if (!inventory.conflicts().isEmpty() || inventory.instances().isEmpty()) throw new NativeDatabaseException(NativeDatabaseFailureType.STATE_CHANGED);
             }
             Instance selected = choose(inventory.instances(), interaction);
             if (!version.accepts(selected.version())) {
@@ -52,20 +54,20 @@ final class DatabaseInstanceResolver {
                 Replacement approval = new Replacement(serverId, selected, candidate, UUID.randomUUID(), true, true);
                 progress.accept(LocalizedMessage.of("db.replacing", "database", requirement.engine().name()));
                 try { port.installDatabase(requirement.engine(), candidate, Optional.of(approval)); }
-                catch (DatabaseFailure changed) {
-                    if (changed.reason() == FailureType.STATE_CHANGED) continue;
+                catch (NativeDatabaseException changed) {
+                    if (changed.reason() == NativeDatabaseFailureType.STATE_CHANGED) continue;
                     throw changed;
                 }
                 selected = awaitRestoration(port, requirement, interaction, progress);
             }
             try {
                 selected = port.startDatabase(selected);
-            } catch (DatabaseFailure failure) {
-                if (failure.reason() == FailureType.MANUAL_RESTORE_REQUIRED) selected = awaitRestoration(port, requirement, interaction, progress);
-                else if (failure.reason() == FailureType.STATE_CHANGED) continue;
+            } catch (NativeDatabaseException failure) {
+                if (failure.reason() == NativeDatabaseFailureType.MANUAL_RESTORE_REQUIRED) selected = awaitRestoration(port, requirement, interaction, progress);
+                else if (failure.reason() == NativeDatabaseFailureType.STATE_CHANGED) continue;
                 else throw failure;
             }
-            if (!version.accepts(selected.version())) throw new DatabaseFailure(FailureType.STATE_CHANGED);
+            if (!version.accepts(selected.version())) throw new NativeDatabaseException(NativeDatabaseFailureType.STATE_CHANGED);
             progress.accept(LocalizedMessage.of("db.reused", "database", requirement.engine().name() + " " + selected.version()));
             return selected;
         }
@@ -78,15 +80,15 @@ final class DatabaseInstanceResolver {
             while (true) {
                 progress.accept(LocalizedMessage.of("db.waitingRestore", "database", requirement.engine().name()));
                 if (!interaction.confirm("db.restoreConfirmed", Map.of("database", requirement.engine().name())))
-                    throw new DatabaseFailure(FailureType.MANUAL_RESTORE_REQUIRED);
+                    throw new NativeDatabaseException(NativeDatabaseFailureType.MANUAL_RESTORE_REQUIRED);
                 Inventory refreshed = port.inspectDatabase(requirement.engine());
                 if (!refreshed.conflicts().isEmpty() || refreshed.instances().isEmpty()) continue;
                 Instance selected = choose(refreshed.instances(), interaction);
                 try { return port.confirmDatabaseRestored(selected, admin); }
-                catch (DatabaseFailure failure) {
-                    if (failure.reason() == FailureType.AUTH_REQUIRED) {
+                catch (NativeDatabaseException failure) {
+                    if (failure.reason() == NativeDatabaseFailureType.AUTH_REQUIRED) {
                         Arrays.fill(admin, '\0'); admin = interaction.requestSecret("db.adminPassword");
-                    } else if (failure.reason() != FailureType.STATE_CHANGED && failure.reason() != FailureType.MANUAL_RESTORE_REQUIRED) throw failure;
+                    } else if (failure.reason() != NativeDatabaseFailureType.STATE_CHANGED && failure.reason() != NativeDatabaseFailureType.MANUAL_RESTORE_REQUIRED) throw failure;
                 }
             }
         } finally { Arrays.fill(admin, '\0'); }

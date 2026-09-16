@@ -56,8 +56,9 @@ public final class JavaJarManifestInspector {
     private static String supportedVersion(String... candidates) {
         for (String candidate : candidates) {
             if (candidate == null) continue;
-            Matcher matcher = Pattern.compile("^\\s*(17|21|22)(?:[._].*)?\\s*$").matcher(candidate);
-            if (matcher.matches()) return matcher.group(1);
+            var version = gold.debug.windowstolinux.shared.model.toolchain.ToolchainVersion.parse(
+                    gold.debug.windowstolinux.shared.model.toolchain.ToolchainEcosystemType.JAVA, candidate);
+            if (version.isPresent()) return version.orElseThrow().branch();
         }
         return null;
     }

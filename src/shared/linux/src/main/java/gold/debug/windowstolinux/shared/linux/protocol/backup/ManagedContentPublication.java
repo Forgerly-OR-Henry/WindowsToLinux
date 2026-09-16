@@ -1,6 +1,5 @@
 package gold.debug.windowstolinux.shared.linux.protocol.backup;
 
-import gold.debug.windowstolinux.shared.config.resource.ManagedFileBinding;
 
 import java.util.Comparator;
 import java.util.List;
@@ -10,7 +9,7 @@ import java.util.Objects;
 public record ManagedContentPublication(
         String applicationId,
         String componentId,
-        List<ManagedFileBinding> fileBindings
+        List<RemoteManagedFileBinding> fileBindings
 ) {
     /** Validates stable identities, canonical order and non-overlapping logical paths. / 校验稳定身份、规范顺序及互不重叠的逻辑路径。 */
     public ManagedContentPublication {
@@ -18,9 +17,9 @@ public record ManagedContentPublication(
         componentId = managedId(componentId, "componentId");
         fileBindings = List.copyOf(Objects.requireNonNull(fileBindings, "fileBindings").stream()
                 .map(value -> Objects.requireNonNull(value, "file binding"))
-                .sorted(Comparator.comparing(ManagedFileBinding::bindingId)).toList());
+                .sorted(Comparator.comparing(RemoteManagedFileBinding::bindingId)).toList());
         if (fileBindings.size() > 32
-                || fileBindings.stream().map(ManagedFileBinding::bindingId).distinct().count() != fileBindings.size()) {
+                || fileBindings.stream().map(RemoteManagedFileBinding::bindingId).distinct().count() != fileBindings.size()) {
             throw new IllegalArgumentException("managed file bindings must be bounded and unique");
         }
         for (int first = 0; first < fileBindings.size(); first++) {

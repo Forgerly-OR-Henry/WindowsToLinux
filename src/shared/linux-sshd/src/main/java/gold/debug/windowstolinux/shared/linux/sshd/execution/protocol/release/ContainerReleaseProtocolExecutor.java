@@ -5,7 +5,7 @@ import gold.debug.windowstolinux.shared.linux.sshd.execution.protocol.input.Depl
 import gold.debug.windowstolinux.shared.linux.sshd.execution.protocol.input.ManagedContentArguments;
 import gold.debug.windowstolinux.shared.linux.sshd.execution.protocol.runtime.ContainerRuntimeArguments;
 
-import gold.debug.windowstolinux.shared.config.revision.DeploymentInputManifest;
+import gold.debug.windowstolinux.shared.linux.protocol.RemoteDeploymentInputs;
 import gold.debug.windowstolinux.shared.linux.build.DeploymentBuildResult;
 import gold.debug.windowstolinux.shared.linux.error.LinuxOperationException;
 import gold.debug.windowstolinux.shared.linux.error.LinuxOperationFailureType;
@@ -60,7 +60,7 @@ public final class ContainerReleaseProtocolExecutor {
     /** Publishes exactly one reviewed container. / 发布恰好一个经审阅的容器。 */
     public RemoteStepResult publish(ManagedApplication application, RemoteWorkspace workspace, DeploymentBuildResult build,
                                     String releaseIdentity, DeploymentRuntimeSpecification.Container runtime,
-                                    DeploymentInputManifest inputs, ManagedContentPublication contentPublication,
+                                    RemoteDeploymentInputs inputs, ManagedContentPublication contentPublication,
                                     ReleaseSnapshot snapshot) throws LinuxOperationException {
         if (!build.succeeded()) {
             throw LinuxOperationException.create(LinuxOperationFailureType.UNVERIFIED_BUILD_PUBLISH,
@@ -73,6 +73,8 @@ public final class ContainerReleaseProtocolExecutor {
         }
         List<String> values = new ArrayList<>(List.of(application.id(), workspace.candidateId(), releaseIdentity,
                 application.ownershipManifestSha256()));
+        values.add("identity-v1");
+        values.add(runtime.identityPolicy().name());
         values.addAll(DeploymentInputArguments.from(inputs));
         values.addAll(ManagedContentArguments.from(contentPublication));
         values.addAll(ContainerRuntimeArguments.from(runtime));
@@ -82,7 +84,7 @@ public final class ContainerReleaseProtocolExecutor {
     /** Rolls back a managed container. / 回滚受管容器。 */
     public RemoteStepResult rollback(ManagedApplication application, ReleaseSnapshot snapshot,
                                      DeploymentBuildResult build, String releaseIdentity,
-                                     DeploymentRuntimeSpecification.Container runtime, DeploymentInputManifest inputs)
+                                     DeploymentRuntimeSpecification.Container runtime, RemoteDeploymentInputs inputs)
             throws LinuxOperationException {
         if (!build.succeeded()) {
             throw LinuxOperationException.create(LinuxOperationFailureType.UNVERIFIED_BUILD_ROLLBACK,

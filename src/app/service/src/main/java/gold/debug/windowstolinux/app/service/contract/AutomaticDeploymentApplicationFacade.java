@@ -7,9 +7,13 @@ import gold.debug.windowstolinux.shared.model.message.LocalizedMessage;
 import java.util.function.Consumer;
 import java.util.function.Predicate;
 
-/** Desktop automatic deployment boundary; domain execution remains in existing reviewed use cases. */
+/** Desktop automatic deployment boundary; domain execution remains in existing reviewed use cases. / 桌面自动部署边界，领域执行仍由现有审阅用例负责。 */
 public interface AutomaticDeploymentApplicationFacade extends DeploymentApplicationFacade, MultiComponentApplicationFacade,
         ServerApplicationFacade, AiApplicationFacade {
+    /** Parses typed source and deployment controls inside the service boundary. / 在服务边界内解析源码与部署控件。 */
+    AutomaticDeploymentRequest createAutomaticDeploymentRequest(DeploymentSourceInput source,
+            gold.debug.windowstolinux.app.service.server.ServerProfile server, DeploymentFormInput input);
+
     gold.debug.windowstolinux.shared.analyze.ecosystem.db.DatabaseProjectInspector.Assessment completeAutomaticDatabaseInputs(
             java.nio.file.Path root, String applicationId,
             gold.debug.windowstolinux.shared.analyze.ecosystem.db.DatabaseProjectInspector.Assessment assessment,

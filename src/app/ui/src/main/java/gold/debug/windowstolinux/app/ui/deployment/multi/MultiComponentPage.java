@@ -1,7 +1,9 @@
 package gold.debug.windowstolinux.app.ui.deployment.multi;
 
+import gold.debug.windowstolinux.app.service.contract.definition.ComponentFormInput;
+
 import gold.debug.windowstolinux.app.service.contract.MultiComponentApplicationFacade;
-import gold.debug.windowstolinux.app.service.deployment.multi.MultiComponentReviewInput;
+import gold.debug.windowstolinux.app.service.contract.definition.MultiComponentReviewInput;
 import gold.debug.windowstolinux.app.service.deployment.multi.ReviewedMultiComponentApplication;
 import gold.debug.windowstolinux.app.service.server.ServerProfile;
 import gold.debug.windowstolinux.app.service.source.PreparedMultiComponentSource;
@@ -10,40 +12,24 @@ import gold.debug.windowstolinux.app.ui.component.DesktopTaskExecutor;
 import gold.debug.windowstolinux.app.ui.server.ServerContext;
 import gold.debug.windowstolinux.app.ui.i18n.PageMessagePresenter;
 import gold.debug.windowstolinux.shared.deploy.contract.ApplicationHealthGate;
-import gold.debug.windowstolinux.shared.deploy.contract.result.deployment.MultiComponentDeploymentResult;
-import gold.debug.windowstolinux.shared.deploy.contract.result.lifecycle.MultiComponentLifecycleResult;
 import gold.debug.windowstolinux.shared.model.deployment.DeploymentStatus;
 import gold.debug.windowstolinux.shared.model.lifecycle.LifecycleAction;
 import gold.debug.windowstolinux.shared.model.project.DeploymentProjectType;
-import gold.debug.windowstolinux.shared.model.project.DeploymentRuntimeSpecification;
 import gold.debug.windowstolinux.shared.model.project.DeploymentSupportLevel;
 
 import javax.swing.BorderFactory;
-import javax.swing.DefaultListModel;
 import javax.swing.JButton;
-import javax.swing.JCheckBox;
-import javax.swing.JComboBox;
 import javax.swing.JFileChooser;
 import javax.swing.JFrame;
-import javax.swing.JList;
 import javax.swing.JOptionPane;
 import javax.swing.JPanel;
 import javax.swing.JScrollPane;
-import javax.swing.JTabbedPane;
 import javax.swing.JTextArea;
-import javax.swing.JTextField;
-import javax.swing.ListSelectionModel;
 import java.awt.BorderLayout;
-import java.awt.Dimension;
-import java.awt.FlowLayout;
 import java.awt.GridBagLayout;
 import java.nio.file.Path;
 import java.util.ArrayList;
-import java.util.Comparator;
-import java.util.LinkedHashMap;
-import java.util.LinkedHashSet;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.function.Consumer;
@@ -79,7 +65,7 @@ public final class MultiComponentPage {
         this.openServers = openServers;
         this.applicationSelection = applicationSelection;
         presenter = new MultiComponentResultPresenter(messages);
-        editor = new MultiComponentDraftController(messages);
+        editor = new MultiComponentDraftController(messages, service);
         panel = createPanel(components);
     }
 
@@ -139,6 +125,7 @@ public final class MultiComponentPage {
         advanced.field("field.runtimePrimary", editor.runtimePrimary);
         advanced.field("field.runtimeSecondary", editor.runtimeSecondary);
         advanced.field("field.runtimeVersion", editor.runtimeVersion);
+        advanced.field("auto.field.jvmTarget", editor.kotlinJvmTarget);
         advanced.field("field.jvmArguments", editor.runtimeArguments);
         advanced.field("component.field.runtimeAdditional", editor.runtimeAdditional);
         advanced.field("field.healthMode", editor.healthMode);
@@ -155,9 +142,7 @@ public final class MultiComponentPage {
         advanced.field("field.databaseReviewMode", editor.resources.databaseMode);
         advanced.field("field.databaseDetails", editor.resources.databaseDetails);
         editor.required.setBorder(BorderFactory.createEmptyBorder());
-        editor.rootBuild.setBorder(BorderFactory.createEmptyBorder());
         advanced.field("component.required", editor.required);
-        advanced.field("rootBuild", editor.rootBuild);
 
         editor.draftControls.list.setVisibleRowCount(4);
         graph.add(new JScrollPane(editor.draftControls.list), BorderLayout.CENTER);
@@ -191,7 +176,7 @@ public final class MultiComponentPage {
 
     private void addOrUpdate() {
         try {
-            MultiComponentDraft draft = editor.addOrUpdate();
+            ComponentFormInput draft = editor.addOrUpdate();
             invalidateReview();
             output.setText(messages.text("component.draft.saved", Map.of("component", draft.componentId())));
         } catch (Exception exception) {
@@ -212,7 +197,7 @@ public final class MultiComponentPage {
             Path root = Path.of(editor.applicationRoot());
             String id = editor.applicationId();
             List<gold.debug.windowstolinux.shared.analyze.component.ComponentAnalysisRequest> requests =
-                    editor.orderedDrafts().stream().map(MultiComponentDraft::analysisRequest).toList();
+                    editor.orderedDrafts().stream().map(service::parseComponentAnalysis).toList();
             output.setText(messages.text("component.analysis.running"));
             setBusy(true);
             DesktopTaskExecutor.run(
@@ -241,13 +226,10 @@ public final class MultiComponentPage {
             ServerProfile profile = serverContext.profile();
             var server = service.findTrustedServer(profile.id()).orElseThrow(
                     () -> new IllegalStateException(messages.text("deployment.serverFirst")));
-            List<String> rootComponents = editor.orderedDrafts().stream().filter(MultiComponentDraft::rootBuild)
-                    .map(MultiComponentDraft::componentId).toList();
-            if (!confirmRisk("component.rootRisk.title", "component.rootRisk", rootComponents)) return;
             List<String> dockerComponents = editor.orderedDrafts().stream().filter(draft ->
                             draft.projectType() == DeploymentProjectType.DOCKERFILE_CONTAINER
                                     && "DOCKER".equalsIgnoreCase(draft.runtimePrimary()))
-                    .map(MultiComponentDraft::componentId).toList();
+                    .map(ComponentFormInput::componentId).toList();
             if (!confirmRisk("deployment.dockerRisk.title", "component.dockerRisk", dockerComponents)) return;
             List<String> experimentalComponents = preparation.assessment().components().stream()
                     .filter(component -> component.facts().support().level() == DeploymentSupportLevel.EXPERIMENTAL_ADAPTER)
@@ -256,16 +238,16 @@ public final class MultiComponentPage {
                     experimentalComponents)) return;
             List<MultiComponentReviewInput> inputs = new ArrayList<>();
             for (var component : preparation.assessment().components()) {
-                MultiComponentDraft draft = editor.draft(component.componentId());
-                inputs.add(draft.reviewInput(component.facts().applicationId(),
+                ComponentFormInput draft = editor.draft(component.componentId());
+                inputs.add(service.parseComponentReview(draft, component.facts().applicationId(),
                         dockerComponents.contains(component.componentId()),
                         experimentalComponents.contains(component.componentId())));
             }
             String healthOwner = editor.healthComponentId();
-            MultiComponentDraft ownerDraft = editor.draft(healthOwner);
+            ComponentFormInput ownerDraft = editor.draft(healthOwner);
             if (ownerDraft == null) throw new IllegalArgumentException(messages.text("component.validation.healthOwner"));
             ReviewedMultiComponentApplication candidate = service.createReviewedMultiComponentApplication(
-                    preparation, server, inputs, new ApplicationHealthGate(healthOwner, ownerDraft.healthCheck()));
+                    preparation, server, inputs, new ApplicationHealthGate(healthOwner, service.parseComponentAnalysis(ownerDraft).runtime().orElseThrow().healthCheck()));
             if (JOptionPane.showConfirmDialog(owner, presenter.review(candidate), messages.text("component.review.title"),
                     JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE) != JOptionPane.YES_OPTION) return;
             char[] masterPassword = serverContext.masterPassword();

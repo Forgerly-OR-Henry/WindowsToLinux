@@ -1,4 +1,6 @@
 package gold.debug.windowstolinux.app.service.deployment.automatic;
+import gold.debug.windowstolinux.shared.linux.error.NativeDatabaseException;
+import gold.debug.windowstolinux.shared.linux.error.NativeDatabaseFailureType;
 
 import gold.debug.windowstolinux.app.service.contract.definition.*;
 
@@ -31,7 +33,7 @@ import java.util.concurrent.CancellationException;
 import java.util.function.Consumer;
 import java.util.function.Predicate;
 
-/** Prepares application-scoped native databases and immutable credentials before the publishing transaction. */
+/** Prepares application-scoped native databases and immutable credentials before the publishing transaction. / 在发布事务前准备应用范围的原生数据库和不可变凭据。 */
 public final class AutomaticDatabaseUseCase {
     private final ServerUseCaseFacade servers;
     private final DeploymentLinuxGateway gateway;
@@ -47,7 +49,7 @@ public final class AutomaticDatabaseUseCase {
         this.configurations = configurations; this.completion = new AutomaticInputCompletion(ai);
     }
 
-    /** Completes and validates source-side DB inputs before any connection or environment change. */
+    /** Completes and validates source-side DB inputs before any connection or environment change. / 在任何连接或环境变更前，补齐并验证源码侧数据库输入。 */
     public DatabaseProjectInspector.Assessment completeInputs(Path root, String applicationId,
             DatabaseProjectInspector.Assessment assessment, char[] master, AutomaticDeploymentInteraction interaction) throws Exception {
         try {
@@ -95,8 +97,8 @@ public final class AutomaticDatabaseUseCase {
                                 target = port.prepareDatabaseTarget(instance, applicationId, requirement.database(), requirement.username(),
                                         reference.identifier(), reference.revision(), password, admin);
                                 break;
-                            } catch (DatabaseFailure failure) {
-                                if (failure.reason() != FailureType.AUTH_REQUIRED || createdNow) throw failure;
+                            } catch (NativeDatabaseException failure) {
+                                if (failure.reason() != NativeDatabaseFailureType.AUTH_REQUIRED || createdNow) throw failure;
                                 Arrays.fill(password,'\0'); password = interaction.requestSecret("db.applicationPassword");
                                 if (stored.isPresent()) { reference = new SecretReference(identifier,reference.revision()+1); stored = Optional.empty(); }
                             }
@@ -105,14 +107,14 @@ public final class AutomaticDatabaseUseCase {
                         if (sql.length > 0) {
                             progress.accept(LocalizedMessage.of("db.initializing", "database", requirement.id()));
                             try { target = port.initializeDatabase(target, sourceDigest(root), sql, password, false); }
-                            catch (DatabaseFailure failure) {
-                                if (failure.reason() != FailureType.STATE_CHANGED || createdNow) throw failure;
+                            catch (NativeDatabaseException failure) {
+                                if (failure.reason() != NativeDatabaseFailureType.STATE_CHANGED || createdNow) throw failure;
                                 if (!interaction.confirm("db.existingSchema", Map.of("database", requirement.database(),
                                         "files", String.join(", ", requirement.initializationFiles())))) throw new CancellationException();
                                 target = port.initializeDatabase(target, sourceDigest(root), sql, password, true);
                                 existingApproved = true;
                             }
-                            if (target.initialization() != InitializationState.COMPLETE) throw new DatabaseFailure(FailureType.INITIALIZATION_FAILED);
+                            if (target.initialization() != InitializationState.COMPLETE) throw new NativeDatabaseException(NativeDatabaseFailureType.INITIALIZATION_FAILED);
                             newInitialized |= createdNow && target.owned();
                             existingApproved |= !createdNow;
                             initialized.addAll(requirement.initializationFiles());
@@ -147,8 +149,8 @@ public final class AutomaticDatabaseUseCase {
         try {
             while (true) {
                 try { return new TargetAccess(port.inspectDatabaseTarget(instance, applicationId, requirement.database(), requirement.username(), password), password); }
-                catch (DatabaseFailure failure) {
-                    if (failure.reason() != FailureType.AUTH_REQUIRED) throw failure;
+                catch (NativeDatabaseException failure) {
+                    if (failure.reason() != NativeDatabaseFailureType.AUTH_REQUIRED) throw failure;
                     Arrays.fill(password,'\0'); password = interaction.requestSecret("db.adminPassword");
                 }
             }
@@ -274,7 +276,7 @@ public final class AutomaticDatabaseUseCase {
     }
     private void saveCredential(SecretReference reference, ServerProfile profile, char[] master, char[] password) throws Exception {
         configurations.saveSecretRevision(new StoredApplicationSecretRevision(reference,
-                "application-secret/"+reference.identifier()+"/"+reference.revision(),profile.credentialMode(),Instant.now()),
+                "application-secret/"+digest(reference.identifier())+"/"+reference.revision(),profile.credentialMode(),Instant.now()),
                 profile.credentialMode(),master.clone(),password.clone());
     }
     private static String sourceDigest(Path root) {

@@ -1,7 +1,5 @@
 package gold.debug.windowstolinux.app.service.backup;
 
-import gold.debug.windowstolinux.app.secret.SecretStoreException;
-import gold.debug.windowstolinux.app.secret.crypto.BackupSecretException;
 import gold.debug.windowstolinux.app.service.deployment.MultiComponentLifecycleUseCase;
 import gold.debug.windowstolinux.app.service.deployment.multi.ManagedMultiComponentApplication;
 import gold.debug.windowstolinux.app.service.server.ServerProfile;
@@ -9,16 +7,13 @@ import gold.debug.windowstolinux.shared.backup.contract.spi.OfflineMigrationPort
 import gold.debug.windowstolinux.shared.backup.contract.spi.OfflineMigrationRequest;
 import gold.debug.windowstolinux.shared.backup.contract.validation.BackupException;
 import gold.debug.windowstolinux.shared.backup.contract.validation.BackupFailureType;
-import gold.debug.windowstolinux.shared.backup.execution.migration.OfflineMigrationStatus;
 import gold.debug.windowstolinux.shared.backup.restore.BackupRestoreStatus;
-import gold.debug.windowstolinux.shared.linux.error.LinuxOperationException;
 import gold.debug.windowstolinux.shared.model.lifecycle.ApplicationRuntimeState;
 import gold.debug.windowstolinux.shared.model.lifecycle.LifecycleAction;
 
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.sql.SQLException;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Objects;

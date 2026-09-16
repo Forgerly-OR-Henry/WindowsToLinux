@@ -5,6 +5,9 @@ import gold.debug.windowstolinux.shared.linux.sshd.session.SshSessionLifecycleEx
 import gold.debug.windowstolinux.shared.linux.sshd.command.SshCommandExecutor;
 
 import gold.debug.windowstolinux.shared.linux.connection.HostKeyDecision;
+import gold.debug.windowstolinux.shared.linux.connection.HostKeyObservation;
+import org.apache.sshd.common.config.keys.KeyUtils;
+import org.apache.sshd.common.digest.BuiltinDigests;
 import gold.debug.windowstolinux.shared.linux.connection.HostKeyEvaluator;
 import gold.debug.windowstolinux.shared.linux.error.LinuxOperationException;
 import gold.debug.windowstolinux.shared.linux.error.LinuxOperationFailureType;
@@ -74,11 +77,14 @@ public final class SshdLinuxGateway implements DeploymentLinuxGateway {
     ) throws LinuxOperationException {
         SshClient client = credentialScopedClient(credential);
         AtomicReference<String> observedFingerprint = new AtomicReference<>();
+        AtomicReference<HostKeyObservation> observedKey = new AtomicReference<>();
         AtomicReference<HostKeyDecision> hostKeyDecision = new AtomicReference<>();
         client.setServerKeyVerifier((session, remote, key) -> {
-            String fingerprint = fingerprint(key);
+            String fingerprint = KeyUtils.getFingerPrint(BuiltinDigests.sha256, key);
+            HostKeyObservation observation = new HostKeyObservation(fingerprint, legacyFingerprint(key));
+            observedKey.set(observation);
             observedFingerprint.set(fingerprint);
-            HostKeyDecision decision = hostKeyVerifier.verify(endpoint, fingerprint);
+            HostKeyDecision decision = hostKeyVerifier.verify(endpoint, observation);
             hostKeyDecision.set(decision);
             return decision == HostKeyDecision.ACCEPT_FIRST_USE || decision == HostKeyDecision.ACCEPT_EXISTING;
         });
@@ -106,6 +112,10 @@ public final class SshdLinuxGateway implements DeploymentLinuxGateway {
             } catch (Exception exception) {
                 SshSessionLifecycleExecutor.closeQuietly(client);
                 String fingerprint = observedFingerprint.get();
+                if (fingerprint == null) {
+                    throw LinuxOperationException.create(LinuxOperationFailureType.CONNECTION_FAILED,
+                            "SSH transport closed before host verification and authentication completed", exception);
+                }
                 if (hostKeyDecision.get() == HostKeyDecision.REJECT && fingerprint != null) {
                     throw LinuxOperationException.create(LinuxOperationFailureType.HOST_KEY_REJECTED, Map.of(
                             "fingerprint", fingerprint),
@@ -116,6 +126,10 @@ public final class SshdLinuxGateway implements DeploymentLinuxGateway {
                 throw LinuxOperationException.create(LinuxOperationFailureType.AUTHENTICATION_FAILED,
                         "SSH authentication failed; verify the SSH user, credential, and server authentication policy"
                                 + evidence, exception);
+            }
+            if (observedKey.get() == null || !hostKeyVerifier.authenticated(endpoint, observedKey.get())) {
+                throw LinuxOperationException.create(LinuxOperationFailureType.HOST_KEY_REJECTED,
+                        "Authenticated host key could not be committed without replacing a conflicting trust record");
             }
             return new SshdLinuxRemoteSession(client, session, endpoint, observedFingerprint.get());
         } catch (Exception exception) {
@@ -129,7 +143,8 @@ public final class SshdLinuxGateway implements DeploymentLinuxGateway {
     }
 
     static boolean isTransientConnectionFailure(LinuxOperationException failure) {
-        return SshCommandExecutor.isTransientTransportFailure(failure);
+        return LinuxOperationFailureType.CONNECTION_FAILED.code().equals(failure.failure().code())
+                || SshCommandExecutor.isTransientTransportFailure(failure);
     }
 
     private static boolean waitForRetry() {
@@ -197,7 +212,7 @@ public final class SshdLinuxGateway implements DeploymentLinuxGateway {
         SshSessionLifecycleExecutor.closeQuietly(session);
     }
 
-    private static String fingerprint(PublicKey key) {
+    private static String legacyFingerprint(PublicKey key) {
         try {
             byte[] digest = MessageDigest.getInstance("SHA-256").digest(key.getEncoded());
             return "SHA256:" + Base64.getEncoder().withoutPadding().encodeToString(digest);

@@ -3,7 +3,7 @@
 WindowsToLinux 是面向个人和小型自托管场景的 Windows 桌面部署管理工具。首页选择本地源码或 Git 地址及目标服务器后，可一键完成识别、补全、环境准备、构建、发布与健康检查。技术参数放入默认收起的右侧高级选项，每项提供问号帮助。
 
 > [!IMPORTANT]
-> 项目仍在开发中，尚未提供正式安装包。当前 helper v5 的 Ubuntu 24 全语言实机结果见[部署验收记录](docs/development/UBUNTU-24-LIVE-DEPLOYMENT-2026-09-08.md)；数据库、备份恢复和迁移仍为 `RUNTIME-PENDING`。证据仅覆盖记录中的精确夹具与环境。
+> 项目仍在开发中，尚未提供正式安装包。helper v7 的代表性部署和历史 helper v5 基线见[四期验收](docs/development/PHASE-4.md#acceptance)；数据库、备份恢复和迁移仍为 `RUNTIME-PENDING`。证据仅覆盖记录中的精确夹具与环境。
 
 ## 核心能力
 
@@ -21,11 +21,13 @@ WindowsToLinux 是面向个人和小型自托管场景的 Windows 桌面部署�
 
 ## 当前状态
 
+[四期动态工具链](docs/development/PHASE-4.md#toolchains) 本地实现与门禁已通过：全版本声明识别与受控构建分离，支持范围集中维护，后续兼容新分支优先追加目录和测试。当前允许分支以代码目录为准；代表组合的实机结果见四期验收，未覆盖版本及环境不外推。
+
 | 范围 | 状态 |
 | --- | --- |
 | Swing 桌面端 | 一键部署与高级侧栏已接入生命周期、备份、恢复和迁移入口 |
 | 本地验证 | JDK 21 多模块 Maven 门禁和前端测试链已建立 |
-| Linux 实机证据 | 当前 helper v5 已在同一台 Ubuntu 24.04 x86-64 上验证各支持语言，具体部署路径与结果见验收记录；其他发行版不外推 |
+| Linux 实机证据 | helper v7 已有 Ubuntu 24.04 x86-64 的 25 种源码代表组合及 JAR/静态/容器记录，分项范围见四期验收；不等于 125 场景全部通过，不外推其他发行版 |
 | Web 前端 | Vue 3 / TypeScript / Vite 测试骨架，尚无业务后端 |
 | 正式发布 | 官网、下载链和 Windows 生产更新/卸载执行器尚未完成 |
 
@@ -121,11 +123,11 @@ npm.cmd run test:e2e
 ## 文档
 
 - [产品说明书](docs/PRODUCT-MANUAL.md)：功能、使用流程、安全边界和限制；
-- [开发总纲与文档导航](docs/development/DEVELOPMENT.md)：六期主文档、各期补充文档、验收文档及统一命名规则；
+- [开发总纲与文档导航](docs/development/DEVELOPMENT.md)：六期路线、模块演进索引、通用规则；各期主文档包含功能增量与验收；
 - [项目文件结构](docs/File.md)：模块、包、依赖方向和维护规则；
-- [四期补充：面向新手的一体化自动部署](docs/development/PHASE-4-SUPPLEMENT-AUTOMATIC-DEPLOYMENT.md)：新手界面、一体化自动部署、AI 补全与 DB 管理的已确认实施目标；
-- [四期实机验收模板](docs/development/PHASE-4-RUNTIME-ACCEPTANCE.md)：真实环境证据要求。
-- [Ubuntu 24 全语言实机记录](docs/development/UBUNTU-24-LIVE-DEPLOYMENT-2026-09-08.md)：同机部署矩阵、实际修复和验证边界。
+- [四期面向新手的一体化自动部署](docs/development/PHASE-4.md#automatic)：新手界面、一体化自动部署、AI 补全与 DB 管理的已确认实施目标；
+- [四期验收方法与证据](docs/development/PHASE-4.md#acceptance-methods)：真实环境证据要求。
+- [四期历史部署基线](docs/development/PHASE-4.md#acceptance-baseline)：同机部署矩阵、实际修复和验证边界。
 
 ## 参与贡献
 

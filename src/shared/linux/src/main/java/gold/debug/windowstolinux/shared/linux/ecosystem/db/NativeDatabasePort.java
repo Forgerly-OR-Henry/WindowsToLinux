@@ -4,15 +4,8 @@ import gold.debug.windowstolinux.shared.model.ecosystem.db.DatabaseEngineType;
 import gold.debug.windowstolinux.shared.linux.error.LinuxOperationException;
 import java.util.*;
 
-/** Typed native database operations; passwords and SQL travel only through sensitive input streams. */
+/** Typed native database operations; passwords and SQL travel only through sensitive input streams. / 类型化原生数据库操作，密码和 SQL 仅通过敏感输入流传输。 */
 public interface NativeDatabasePort {
-    enum FailureType { AUTH_REQUIRED, STATE_CHANGED, INITIALIZATION_FAILED, MANUAL_RESTORE_REQUIRED, VERSION_UNSUPPORTED, ACTION_FAILED }
-    /** A bounded protocol failure that contains no command output, SQL or password. */
-    final class DatabaseFailure extends RuntimeException {
-        private final FailureType reason;
-        public DatabaseFailure(FailureType reason) { super("native DB: " + reason.name()); this.reason = reason; }
-        public FailureType reason() { return reason; }
-    }
     Inventory inspectDatabase(DatabaseEngineType engine) throws LinuxOperationException;
     Inventory installDatabase(DatabaseEngineType engine, PackageCandidate target, Optional<Replacement> replacement) throws LinuxOperationException;
     Instance startDatabase(Instance instance) throws LinuxOperationException;
@@ -40,7 +33,7 @@ public interface NativeDatabasePort {
             if (instances.size() > 64 || conflicts.size() > 64 || instances.stream().anyMatch(instance -> instance.engine() != engine)) throw new IllegalArgumentException("invalid DB inventory");
         }
     }
-    /** One operation's exact instance/version approval; data recovery remains a separate user action. */
+    /** One operation's exact instance/version approval; data recovery remains a separate user action. / 本次操作对精确实例和版本的批准，数据恢复仍需用户单独操作。 */
     record Replacement(String serverId, Instance previous, PackageCandidate target, UUID operation, boolean backupConfirmed, boolean downtimeConfirmed) {
         public Replacement {
             serverId = token(serverId); Objects.requireNonNull(previous); Objects.requireNonNull(target); Objects.requireNonNull(operation);

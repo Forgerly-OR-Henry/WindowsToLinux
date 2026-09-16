@@ -60,6 +60,10 @@ public final class ManagedLifecycleService {
             if (action == LifecycleAction.START && before.runtimeState() != gold.debug.windowstolinux.shared.model.lifecycle.RuntimeState.STOPPED) {
                 return new LifecycleActionResult(false, LocalizedMessage.of("lifecycle.startOnlyStopped"), Optional.of(before));
             }
+            if (before.runtimeState() == gold.debug.windowstolinux.shared.model.lifecycle.RuntimeState.ERROR
+                    && action != LifecycleAction.STOP && action != LifecycleAction.DISABLE_AUTOSTART) {
+                return new LifecycleActionResult(false, LocalizedMessage.of("lifecycle.errorRequiresStop"), Optional.of(before));
+            }
             LifecycleObservation after = session.executeLifecycle(application, action, healthCheck);
             return new LifecycleActionResult(after.ownershipVerified(), LocalizedMessage.of("lifecycle.remoteResultVerified"), Optional.of(after));
         } catch (LinuxOperationException exception) {

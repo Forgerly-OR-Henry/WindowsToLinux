@@ -1,22 +1,24 @@
 package gold.debug.windowstolinux.shared.linux.sshd.distro.extension.registry;
 
 import gold.debug.windowstolinux.shared.linux.sshd.distro.DistributionSetupRenderer;
-import gold.debug.windowstolinux.shared.linux.sshd.distro.apt.DebianFamilySetupCatalog;
-import gold.debug.windowstolinux.shared.linux.sshd.distro.dnf.EnterpriseLinuxSetupCatalog;
+import gold.debug.windowstolinux.shared.linux.sshd.distro.apt.DebianSetupRenderer;
+import gold.debug.windowstolinux.shared.linux.sshd.distro.apt.UbuntuSetupRenderer;
+import gold.debug.windowstolinux.shared.linux.sshd.distro.dnf.AlmaLinuxSetupRenderer;
+import gold.debug.windowstolinux.shared.linux.sshd.distro.dnf.CentosStreamSetupRenderer;
+import gold.debug.windowstolinux.shared.linux.sshd.distro.dnf.OracleLinuxSetupRenderer;
+import gold.debug.windowstolinux.shared.linux.sshd.distro.dnf.RockyLinuxSetupRenderer;
 
-import java.util.ArrayList;
 import java.util.List;
 
-/** Assembles data-driven setup profiles without owning package-manager mechanics. / 装配数据驱动的准备配置，但不持有包管理器机械流程。 */
+/** Assembles implemented distribution renderers only. / 仅装配已实现的具名发行版渲染器。 */
 public final class DistributionSetupCatalog {
     private DistributionSetupCatalog() {
     }
 
     /** Returns the complete fixed supported-distribution profile set. / 返回完整且固定的受支持发行版配置集合。 */
     public static List<DistributionSetupRenderer> defaults() {
-        List<DistributionSetupRenderer> profiles = new ArrayList<>();
-        profiles.addAll(DebianFamilySetupCatalog.defaults());
-        profiles.addAll(EnterpriseLinuxSetupCatalog.defaults());
-        return List.copyOf(profiles);
+        return List.of(new UbuntuSetupRenderer(), new DebianSetupRenderer(),
+                new CentosStreamSetupRenderer(), new RockyLinuxSetupRenderer(),
+                new AlmaLinuxSetupRenderer(), new OracleLinuxSetupRenderer());
     }
 }

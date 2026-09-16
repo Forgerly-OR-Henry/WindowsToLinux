@@ -21,6 +21,7 @@ import gold.debug.windowstolinux.shared.model.project.DeploymentRuntimeSpecifica
 import gold.debug.windowstolinux.shared.model.language.LanguageEcosystemType;
 import gold.debug.windowstolinux.shared.model.language.SourceLanguageType;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.condition.EnabledIfSystemProperty;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -48,6 +49,13 @@ class UbuntuTypedDeploymentAcceptanceTest {
     private static final String RUN_ID = Long.toUnsignedString(System.nanoTime(), 36);
     @TempDir Path temporaryDirectory;
 
+    @AfterEach
+    void stopRegisteredTestApplications() throws Exception {
+        try (LiveTypedDeploymentContext context = new LiveTypedDeploymentContext(temporaryDirectory)) {
+            context.stopTestApplications();
+        }
+    }
+
     @Test
     void deploysJavaJarFromLocalUserSelection() throws Exception {
         int port = port(1);
@@ -60,7 +68,9 @@ class UbuntuTypedDeploymentAcceptanceTest {
                             List.of(), health(port)), access(port));
             assertSuccessful(result, applicationId);
             assertHttp(port, "java-live-ok");
+            verifyLifecycle(context, applicationId);
         }
+        verifyLifecycleAfterDesktopRestart(temporaryDirectory, applicationId, port, "java-live-ok");
     }
 
     @Test
@@ -88,7 +98,9 @@ class UbuntuTypedDeploymentAcceptanceTest {
                     new DeploymentRuntimeSpecification.StaticSite("public", health(port)), access(port));
             assertSuccessful(result, applicationId);
             assertHttp(port, "static-live-ok");
+            verifyLifecycle(context, applicationId);
         }
+        verifyLifecycleAfterDesktopRestart(temporaryDirectory, applicationId, port, "static-live-ok");
     }
 
     @Test
@@ -192,12 +204,6 @@ class UbuntuTypedDeploymentAcceptanceTest {
             assertHttp(port, marker);
         }
         verifyLifecycleAfterDesktopRestart(temporaryDirectory, applicationId, port, marker);
-        try (LiveTypedDeploymentContext cleanup = new LiveTypedDeploymentContext(temporaryDirectory)) {
-            assertEquals(AutostartState.DISABLED,
-                    cleanup.lifecycle(applicationId, LifecycleAction.DISABLE_AUTOSTART).autostartState());
-            assertEquals(RuntimeState.STOPPED, cleanup.lifecycle(applicationId, LifecycleAction.STOP).runtimeState());
-            System.out.printf("LIVE_STOPPED application=%s%n", applicationId);
-        }
     }
 
     private static DeploymentRuntimeSpecification.Container containerRuntime(

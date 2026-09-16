@@ -1,6 +1,6 @@
 package gold.debug.windowstolinux.app.main.startup;
 
-import gold.debug.windowstolinux.app.service.deployment.multi.MultiComponentReviewInput;
+import gold.debug.windowstolinux.app.service.contract.definition.MultiComponentReviewInput;
 import gold.debug.windowstolinux.shared.analyze.component.ComponentAnalysisRequest;
 import gold.debug.windowstolinux.shared.config.contract.definition.ConfigurationScope;
 import gold.debug.windowstolinux.shared.config.contract.definition.ConfigurationValue;
@@ -39,7 +39,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  */
 final class ManagedMultiComponentDeploymentAcceptanceFixture {
     private static final BuildLimitConfiguration LIMITS = new BuildLimitConfiguration(1800, 1024, 3072,
-            8L * 1024 * 1024, 4L * 1024 * 1024 * 1024, true);
+            8L * 1024 * 1024, 4L * 1024 * 1024 * 1024, false);
 
     private ManagedMultiComponentDeploymentAcceptanceFixture() {
     }
@@ -53,53 +53,80 @@ final class ManagedMultiComponentDeploymentAcceptanceFixture {
         TypedAcceptanceFixture.javaJar(root, "api", "api-v1", true);
         TypedAcceptanceFixture.javaJar(root, "web", "web-v1", true);
 
-        try (LiveTypedDeploymentContext context = new LiveTypedDeploymentContext(temporaryDirectory)) {
-            var firstPrepared = context.prepareMulti(root, applicationId, requests(apiPort, webPort));
-            List<MultiComponentReviewInput> firstInputs = inputs(firstPrepared, apiPort, webPort, 1);
-            var firstReview = context.reviewMulti(firstPrepared, firstInputs,
-                    new ApplicationHealthGate("web", health(webPort)));
-            var first = context.deployMulti(firstReview, firstInputs);
+        try (AutoCloseable cleanup = () -> stopApplication(temporaryDirectory, applicationId)) {
+            try (LiveTypedDeploymentContext context = new LiveTypedDeploymentContext(temporaryDirectory)) {
+                var firstPrepared = context.prepareMulti(root, applicationId, requests(apiPort, webPort));
+                List<MultiComponentReviewInput> firstInputs = inputs(firstPrepared, apiPort, webPort, 1);
+                var firstReview = context.reviewMulti(firstPrepared, firstInputs,
+                        new ApplicationHealthGate("web", health(webPort)));
+                var first = context.deployMulti(firstReview, firstInputs);
 
-            assertEquals(DeploymentStatus.SUCCEEDED, first.status(), () -> first.applicationEvents().toString());
-            assertTrue(first.componentResults().stream()
-                    .allMatch(component -> component.state() == ComponentTransactionState.SUCCEEDED));
-            assertHttp(apiPort, "api-v1");
-            assertHttp(webPort, "web-v1");
+                assertEquals(DeploymentStatus.SUCCEEDED, first.status(),
+                        () -> first.applicationEvents() + " components=" + first.componentResults());
+                assertTrue(first.componentResults().stream()
+                        .allMatch(component -> component.state() == ComponentTransactionState.SUCCEEDED));
+                assertHttp(apiPort, "api-v1");
+                assertHttp(webPort, "web-v1");
+                context.assertRuntimeIdentity(firstPrepared.components().get("api").facts().applicationId(), runtime(apiPort));
+                context.assertRuntimeIdentity(firstPrepared.components().get("web").facts().applicationId(), runtime(webPort));
 
-            TypedAcceptanceFixture.javaJar(root, "api", "api-v2", true);
-            TypedAcceptanceFixture.javaJar(root, "web", "unused", false);
-            var failedPrepared = context.prepareMulti(root, applicationId, requests(apiPort, webPort));
-            List<MultiComponentReviewInput> failedInputs = inputs(failedPrepared, apiPort, webPort, 2);
-            var failedReview = context.reviewMulti(failedPrepared, failedInputs,
-                    new ApplicationHealthGate("web", health(webPort)));
-            var failed = context.deployMulti(failedReview, failedInputs);
+                TypedAcceptanceFixture.javaJar(root, "api", "api-v2", true);
+                TypedAcceptanceFixture.javaJar(root, "web", "unused", false);
+                var failedPrepared = context.prepareMulti(root, applicationId, requests(apiPort, webPort));
+                List<MultiComponentReviewInput> failedInputs = inputs(failedPrepared, apiPort, webPort, 2);
+                var failedReview = context.reviewMulti(failedPrepared, failedInputs,
+                        new ApplicationHealthGate("web", health(webPort)));
+                var failed = context.deployMulti(failedReview, failedInputs);
 
-            assertEquals(DeploymentStatus.FAILED_ROLLED_BACK, failed.status(),
-                    () -> failed.applicationEvents().toString());
-            assertTrue(failed.componentResults().stream()
-                    .allMatch(component -> component.state() == ComponentTransactionState.RESTORED));
-            assertHttp(apiPort, "api-v1");
-            assertHttp(webPort, "web-v1");
+                assertEquals(DeploymentStatus.FAILED_ROLLED_BACK, failed.status(),
+                        () -> failed.applicationEvents() + " components=" + failed.componentResults());
+                assertTrue(failed.componentResults().stream()
+                        .allMatch(component -> component.state() == ComponentTransactionState.RESTORED));
+                assertHttp(apiPort, "api-v1");
+                assertHttp(webPort, "web-v1");
+            }
+
+            try (LiveTypedDeploymentContext restarted = new LiveTypedDeploymentContext(temporaryDirectory)) {
+                var restored = restarted.service.findManagedMultiComponentApplication(applicationId).orElseThrow();
+                assertEquals(List.of("api", "web"), restored.plan().startOrder());
+                Set<String> all = Set.of("api", "web");
+                var stopped = restarted.lifecycleMulti(applicationId, all, LifecycleAction.STOP);
+                assertTrue(stopped.accepted(), stopped::toString);
+                assertEquals(ApplicationRuntimeState.STOPPED, stopped.runtimeState());
+                var started = restarted.lifecycleMulti(applicationId, all, LifecycleAction.START);
+                assertTrue(started.accepted(), started::toString);
+                assertEquals(ApplicationRuntimeState.RUNNING, started.runtimeState());
+                var restartedApplication = restarted.lifecycleMulti(applicationId, all, LifecycleAction.RESTART);
+                assertTrue(restartedApplication.accepted(), restartedApplication::toString);
+                assertEquals(ApplicationRuntimeState.RUNNING, restartedApplication.runtimeState());
+                var enabled = restarted.lifecycleMulti(applicationId, all, LifecycleAction.ENABLE_AUTOSTART);
+                assertTrue(enabled.accepted(), enabled::toString);
+                assertEquals(ApplicationAutostartState.ENABLED, enabled.autostartState());
+                var disabled = restarted.lifecycleMulti(applicationId, all, LifecycleAction.DISABLE_AUTOSTART);
+                assertTrue(disabled.accepted(), disabled::toString);
+                assertEquals(ApplicationAutostartState.DISABLED, disabled.autostartState());
+                assertHttp(apiPort, "api-v1");
+                assertHttp(webPort, "web-v1");
+            }
         }
+    }
 
-        try (LiveTypedDeploymentContext restarted = new LiveTypedDeploymentContext(temporaryDirectory)) {
-            var restored = restarted.service.findManagedMultiComponentApplication(applicationId).orElseThrow();
-            assertEquals(List.of("api", "web"), restored.plan().startOrder());
+    private static void stopApplication(Path directory, String applicationId) throws Exception {
+        try (LiveTypedDeploymentContext context = new LiveTypedDeploymentContext(directory)) {
+            if (context.service.findManagedMultiComponentApplication(applicationId).isEmpty()) {
+                context.stopTestApplications();
+                return;
+            }
             Set<String> all = Set.of("api", "web");
-            var stopped = restarted.lifecycleMulti(applicationId, all, LifecycleAction.STOP);
-            assertTrue(stopped.accepted(), stopped::toString);
-            assertEquals(ApplicationRuntimeState.STOPPED, stopped.runtimeState());
-            var started = restarted.lifecycleMulti(applicationId, all, LifecycleAction.START);
-            assertTrue(started.accepted(), started::toString);
-            assertEquals(ApplicationRuntimeState.RUNNING, started.runtimeState());
-            var enabled = restarted.lifecycleMulti(applicationId, all, LifecycleAction.ENABLE_AUTOSTART);
-            assertTrue(enabled.accepted(), enabled::toString);
-            assertEquals(ApplicationAutostartState.ENABLED, enabled.autostartState());
-            var disabled = restarted.lifecycleMulti(applicationId, all, LifecycleAction.DISABLE_AUTOSTART);
+            var disabled = context.lifecycleMulti(applicationId, all, LifecycleAction.DISABLE_AUTOSTART);
             assertTrue(disabled.accepted(), disabled::toString);
             assertEquals(ApplicationAutostartState.DISABLED, disabled.autostartState());
-            assertHttp(apiPort, "api-v1");
-            assertHttp(webPort, "web-v1");
+            for (int attempt = 0; attempt < 2; attempt++) {
+                var stopped = context.lifecycleMulti(applicationId, all, LifecycleAction.STOP);
+                assertTrue(stopped.accepted(), stopped::toString);
+                assertEquals(ApplicationRuntimeState.STOPPED, stopped.runtimeState());
+            }
+            System.out.println("LIVE_MULTI_STOPPED application=" + applicationId);
         }
     }
 

@@ -36,6 +36,41 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class SshdLinuxGatewayTest {
     @Test
+    void peerClosingBeforeHostKeyVerificationRetriesThreeConnectionsThenFails() throws Exception {
+        var peerFailure = new java.util.concurrent.atomic.AtomicReference<Throwable>();
+        var attempts = new java.util.concurrent.atomic.AtomicInteger();
+        try (var listener = new java.net.ServerSocket(0, 1, java.net.InetAddress.getByName("127.0.0.1"))) {
+            listener.setSoTimeout(45000);
+            Thread peer = Thread.ofPlatform().name("closing-ssh-peer").start(() -> {
+                try {
+                    for (int attempt = 0; attempt < 3; attempt++) {
+                        try (var socket = listener.accept()) {
+                            attempts.incrementAndGet();
+                            socket.setSoTimeout(5000);
+                            socket.getOutputStream().write("SSH-2.0-WindowsToLinuxClosingPeer\r\n".getBytes(java.nio.charset.StandardCharsets.US_ASCII));
+                            socket.getOutputStream().flush();
+                            new java.io.BufferedReader(new java.io.InputStreamReader(socket.getInputStream(),
+                                    java.nio.charset.StandardCharsets.US_ASCII)).readLine();
+                        }
+                    }
+                } catch (Throwable failure) { peerFailure.set(failure); }
+            });
+            try {
+                var credential = new SshCredential.Password("test-only".toCharArray());
+                LinuxOperationException failure = assertThrows(LinuxOperationException.class, () ->
+                        new SshdLinuxGateway().connect(new SshEndpoint("closing-peer", "127.0.0.1", listener.getLocalPort(), "root"),
+                                credential, (endpoint, fingerprint) -> { throw new AssertionError("No host key was sent"); }));
+                assertEquals(LinuxOperationFailureType.CONNECTION_FAILED.code(), failure.failure().code(), failure::toString);
+            } finally {
+                listener.close();
+                assertTrue(peer.join(Duration.ofSeconds(6)), "Closing SSH peer did not exit");
+            }
+            assertEquals(null, peerFailure.get());
+            assertEquals(3, attempts.get());
+        }
+    }
+
+    @Test
     void rendersTheCanonicalUnitWithExactlyOneTrailingNewline() {
         ManagedApplication application = ManagedApplication.forManaged("managed-hello",
                 new ServerIdentity("ubuntu-managed", "192.0.2.1", 22, "SHA256:abc123456789"),
@@ -105,7 +140,7 @@ class SshdLinuxGatewayTest {
     }
 
     @Test
-    void retriesOnlyTimeoutShapedConnectionFailures() {
+    void retriesTransportConnectionsAndExistingTimeoutsButNotAuthenticationOrTrustRejection() {
         LinuxOperationException timeout = LinuxOperationException.create(LinuxOperationFailureType.AUTHENTICATION_FAILED,
                 "authentication timed out", new TimeoutException("timed out"));
         LinuxOperationException rejected = LinuxOperationException.create(LinuxOperationFailureType.AUTHENTICATION_FAILED,
@@ -113,6 +148,10 @@ class SshdLinuxGatewayTest {
 
         assertTrue(SshdLinuxGateway.isTransientConnectionFailure(timeout));
         assertFalse(SshdLinuxGateway.isTransientConnectionFailure(rejected));
+        assertTrue(SshdLinuxGateway.isTransientConnectionFailure(LinuxOperationException.create(
+                LinuxOperationFailureType.CONNECTION_FAILED, "connection closed")));
+        assertFalse(SshdLinuxGateway.isTransientConnectionFailure(LinuxOperationException.create(
+                LinuxOperationFailureType.HOST_KEY_REJECTED, "changed fingerprint")));
     }
 
     @Test
@@ -143,16 +182,13 @@ class SshdLinuxGatewayTest {
     }
 
     @Test
-    void sudoersGrantsOnlyTheConstrainedRootOwnedHelper() {
-        assertEquals("""
-                # Managed by WindowsToLinux managed deployment; only the constrained helper is granted.
-                deployer ALL=(root) NOPASSWD: /usr/local/lib/windowstolinux/managed-helper
-                """, SetupScriptRenderer.renderSudoers("deployer"));
-        String sudoers = SetupScriptRenderer.renderSudoers("deployer");
-        for (String unsafeBinary : List.of("/usr/bin/install", "/usr/bin/tee", "/usr/bin/systemctl", "/usr/bin/ln", "/usr/bin/rm", "/usr/bin/cp")) {
-            assertFalse(sudoers.contains(unsafeBinary));
-        }
-        assertThrows(IllegalArgumentException.class, () -> SetupScriptRenderer.renderSudoers("root;evil"));
+    void rootManagementDoesNotGrantPermanentProjectSudoPermissions() {
+        String installation = SetupScriptRenderer.renderHelperInstallation("root");
+        assertFalse(installation.contains("NOPASSWD"));
+        assertFalse(installation.contains("sudoers"));
+        assertTrue(installation.contains("root-management-required"));
+        assertTrue(installation.contains("windowstolinux-workspace-recovery.service"));
+        assertThrows(IllegalArgumentException.class, () -> SetupScriptRenderer.renderHelperInstallation("root;evil"));
     }
 
     @Test
@@ -166,12 +202,12 @@ class SshdLinuxGatewayTest {
         assertTrue(helper.contains("case \"$action\" in\n    start|stop|restart|enable|disable)"));
         assertTrue(helper.contains("require_candidate \"$app\" \"$candidate_id\""));
         assertTrue(helper.contains("candidate=\"$(candidate_root \"$candidate_id\")\""));
-        assertTrue(helper.contains("seal_candidate_artifact"));
+        assertTrue(helper.contains("assert_sealed_build"));
         assertTrue(helper.indexOf("printf 'SNAPSHOT_TOKEN=%s\\n' \"$token\"")
                         < helper.indexOf("printf 'PREVIOUS=1\\n'"),
                 "snapshot protocol must emit the token before the previous-release marker");
-        assertTrue(helper.contains("install -o root -g root -m 555 -- \"$sealed_artifact\" \"$release/app.jar\""));
-        assertTrue(helper.contains("for attempt in {1..20}; do"));
+        assertTrue(helper.contains("install -o root -g root -m 555 -- \"$artifact\" \"$release/app.jar\""));
+        assertTrue(helper.contains("stop_application_unit()"));
         assertTrue(helper.contains("systemctl show --value --property MainPID"));
         assertTrue(helper.contains("reject stop-incomplete"));
         assertFalse(helper.contains("eval "));

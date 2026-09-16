@@ -204,7 +204,8 @@ class RemoteBackupCreationUseCaseTest {
     }
 
     private static ManagedApplicationRuntimeConfiguration runtimeConfiguration() {
-        return new ManagedApplicationRuntimeConfiguration(new HealthCheck.Tcp(18080, 10, 1), Optional.empty());
+        return new ManagedApplicationRuntimeConfiguration(new HealthCheck.Tcp(18080, 10, 1), Optional.empty(),
+                gold.debug.windowstolinux.shared.model.project.RuntimeIdentityMode.SYSTEMD_DYNAMIC);
     }
 
     private static ComponentDataPath dataPath() {
@@ -220,7 +221,8 @@ class RemoteBackupCreationUseCaseTest {
             byte[] pax, List<String> log, RuntimeState[] state, boolean failFirstArtifact) throws Exception {
         String digest = HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(pax));
         return (DeploymentRemoteSession) Proxy.newProxyInstance(RemoteBackupCreationUseCaseTest.class.getClassLoader(),
-                new Class<?>[]{DeploymentRemoteSession.class}, (proxy, method, arguments) -> switch (method.getName()) {
+                new Class<?>[]{DeploymentRemoteSession.class, gold.debug.windowstolinux.shared.linux.protocol.backup.RemoteBackupArtifactPort.class, gold.debug.windowstolinux.shared.linux.protocol.database.RemoteDatabasePort.class}, (proxy, method, arguments) -> switch (method.getName()) {
+                    case "backupArtifacts", "databaseOperations" -> proxy;
                     case "collectCapabilities" -> new ServerCapabilityFacts("Ubuntu 24.04", "x86_64", true,
                             true, true, true, true, true, true, true, ManagedHelperProtocolVersion.CURRENT,
                             16L * 1024 * 1024 * 1024, "fixture");

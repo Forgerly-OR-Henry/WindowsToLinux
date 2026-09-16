@@ -67,6 +67,12 @@ normalize_secret_environment_name() {
 }
 parse_deployment_inputs() {
   [ "$#" -ge 2 ] || reject deployment-input-arguments
+  runtime_identity_policy=LEGACY_UNSPECIFIED
+  if [ "$1" = identity-v1 ]; then
+    [ "$#" -ge 4 ] || reject runtime-identity-arguments
+    runtime_identity_policy="$2"; shift 2
+    case "$runtime_identity_policy" in SYSTEMD_DYNAMIC|CONTAINER_NON_ROOT) ;; *) reject runtime-identity-policy ;; esac
+  fi
   deployment_configuration_digest="$1"; shift; require_digest "$deployment_configuration_digest"
   require_count "$1"; local secret_count="$1"; shift
   deployment_secret_identifiers=(); deployment_secret_revisions=(); deployment_secret_digests=(); deployment_secret_names=()

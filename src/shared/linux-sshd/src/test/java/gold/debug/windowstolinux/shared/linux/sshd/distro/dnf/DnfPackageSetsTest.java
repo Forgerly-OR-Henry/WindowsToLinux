@@ -12,9 +12,9 @@ class DnfPackageSetsTest {
     void keepsEnterpriseLinuxPackageSetsExact() {
         List<String> base = List.of(
                 "java-21-openjdk-devel", "maven", "curl", "sudo", "tar", "gzip", "iproute", "coreutils",
-                "util-linux", "findutils", "gawk", "nodejs", "npm", "cmake", "ninja-build", "gcc", "gcc-c++", "podman"
+                "e2fsprogs", "skopeo", "acl", "shadow-utils", "util-linux", "findutils", "gawk", "nodejs", "npm", "cmake", "ninja-build", "gcc", "gcc-c++", "podman"
         );
-        assertEquals(append(base, "python3.11", "python3.11-pip"), DnfPackageSets.enterprise("9"));
+        assertEquals(append(base, "openssh", "openssh-server", "openssh-clients", "python3.11", "python3.11-pip"), DnfPackageSets.enterprise("9"));
         assertEquals(append(base, "python3.12", "python3.12-pip"), DnfPackageSets.enterprise("10"));
         assertThrows(IllegalArgumentException.class, () -> DnfPackageSets.enterprise("11"));
     }

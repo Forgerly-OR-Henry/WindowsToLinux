@@ -8,7 +8,6 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
-import java.util.Comparator;
 
 /** Copies reviewed repository fixtures and changes only runtime-bound acceptance values. / 复制经审阅的仓库夹具，且只修改运行时绑定的验收值。 */
 final class EcosystemExtensionAcceptanceFixture {
@@ -17,74 +16,44 @@ final class EcosystemExtensionAcceptanceFixture {
     /** Creates a healthy or health-rejected source tree for one exact architecture. / 为一个精确架构创建健康或健康拒绝源码树。 */
     static Path create(Path parent, ArchitectureType architecture, String applicationId, String runtimeVersion,
                        String toolVersion, String marker, boolean healthy) throws IOException {
-        Path root = parent.resolve(applicationId);
-        reset(root);
-        String variant = architecture.pythonLocked() && runtimeVersion.equals("3.11")
-                ? "phase3-ready-py311" : "phase3-ready";
-        Path template = repositoryRoot().resolve(Path.of("test", architecture.fixturePath(),
-                "http-service", variant));
-        copy(template, root);
-        int status = healthy ? 200 : 503;
-        try (var files = Files.walk(root)) {
-            for (Path file : files.filter(Files::isRegularFile).toList()) {
-                String content = Files.readString(file);
-                String updated = content.replace("phase3-live-ok", marker)
-                        .replace("STATUS_CODE = 200", "STATUS_CODE = " + status)
-                        .replace("const status = 200", "const status = " + status)
-                        .replace("http_response_code(200)", "http_response_code(" + status + ")")
-                        .replace("status = 200", "status = " + status)
-                        .replace("status_code = 200", "status_code = " + status);
-                if (architecture.projectType() == DeploymentProjectType.NODE_SERVICE) {
-                    updated = updated.replace(architecture.templateApplicationId(), applicationId)
-                            .replace("\"node\": \"18\"", "\"node\": \"" + runtimeVersion + "\"");
-                    if (architecture.toolType() == EcosystemToolType.PNPM) {
-                        updated = updated.replace("pnpm@10.15.1", "pnpm@" + toolVersion);
-                    } else if (architecture.toolType() == EcosystemToolType.YARN) {
-                        updated = updated.replace("yarn@4.9.2", "yarn@" + toolVersion);
-                    }
-                } else if (architecture == ArchitectureType.PYTHON_PIP && runtimeVersion.equals("3.11")) {
-                    updated = updated.replace("==3.12.*", "==3.11.*");
-                } else if (architecture == ArchitectureType.KOTLIN_KOTLINC) {
-                    updated = updated.replace("compilerVersion=2.0.21", "compilerVersion=" + runtimeVersion);
-                } else if (architecture == ArchitectureType.PHP_CLI) {
-                    updated = updated.replace("phpVersion=8.3", "phpVersion=" + runtimeVersion);
-                } else if (architecture == ArchitectureType.RUBY_CLI) {
-                    updated = updated.replace("rubyVersion=3.3", "rubyVersion=" + runtimeVersion);
+        Path root = RepositoryServiceFixture.copy(parent, applicationId,
+                architecture.fixturePath() + "/http-service", healthy);
+        if (architecture.pythonLocked() && runtimeVersion.equals("3.11")) {
+            String tool = architecture.fixturePath().substring("python/".length());
+            for (String name : switch (architecture) {
+                case PYTHON_PIPENV -> new String[]{"pyproject.toml", "Pipfile", "Pipfile.lock"};
+                case PYTHON_POETRY -> new String[]{"pyproject.toml", "poetry.lock"};
+                case PYTHON_UV -> new String[]{"pyproject.toml", "uv.lock"};
+                default -> throw new IllegalStateException("not a locked Python architecture");
+            }) {
+                try (var input = EcosystemExtensionAcceptanceFixture.class.getResourceAsStream(
+                        "/fixtures/python311/" + tool + "/" + name)) {
+                    if (input == null) throw new IOException("missing Python 3.11 fixture metadata: " + tool + "/" + name);
+                    Files.copy(input, root.resolve(name), StandardCopyOption.REPLACE_EXISTING);
                 }
-                if (!updated.equals(content)) Files.writeString(file, updated);
             }
         }
+        var replacements = new java.util.LinkedHashMap<String, String>();
+        replacements.put("deployment-smoke-ok", marker);
+        if (architecture.projectType() == DeploymentProjectType.NODE_SERVICE) {
+            replacements.put(architecture.templateApplicationId(), applicationId);
+            replacements.put("\"node\": \"18\"", "\"node\": \"" + runtimeVersion + "\"");
+            if (architecture.toolType() == EcosystemToolType.PNPM) replacements.put("pnpm@10.15.1", "pnpm@" + toolVersion);
+            if (architecture.toolType() == EcosystemToolType.YARN) replacements.put("yarn@4.9.2", "yarn@" + toolVersion);
+        } else if (architecture.projectType() == DeploymentProjectType.PYTHON_SERVICE) {
+            replacements.put("http-service-fixture", applicationId);
+            if (architecture == ArchitectureType.PYTHON_PIP && runtimeVersion.equals("3.11")) {
+                replacements.put("==3.12.*", "==3.11.*");
+            }
+        } else if (architecture == ArchitectureType.KOTLIN_KOTLINC) {
+            replacements.put("compilerVersion=2.0.21", "compilerVersion=" + runtimeVersion);
+        } else if (architecture == ArchitectureType.PHP_CLI) {
+            replacements.put("phpVersion=8.3", "phpVersion=" + runtimeVersion);
+        } else if (architecture == ArchitectureType.RUBY_CLI) {
+            replacements.put("rubyVersion=3.3", "rubyVersion=" + runtimeVersion);
+        }
+        RepositoryServiceFixture.replaceText(root, replacements);
         return root;
-    }
-
-    private static void copy(Path source, Path target) throws IOException {
-        if (!Files.isDirectory(source)) throw new IOException("missing reviewed fixture: " + source);
-        try (var paths = Files.walk(source)) {
-            for (Path path : paths.toList()) {
-                Path destination = target.resolve(source.relativize(path));
-                if (Files.isDirectory(path)) Files.createDirectories(destination);
-                else Files.copy(path, destination, StandardCopyOption.COPY_ATTRIBUTES);
-            }
-        }
-    }
-
-    private static void reset(Path root) throws IOException {
-        if (Files.exists(root)) {
-            try (var paths = Files.walk(root)) {
-                for (Path path : paths.sorted(Comparator.reverseOrder()).toList()) Files.delete(path);
-            }
-        }
-        Files.createDirectories(root);
-    }
-
-    private static Path repositoryRoot() {
-        Path current = Path.of("").toAbsolutePath().normalize();
-        while (current != null) {
-            if (Files.isRegularFile(current.resolve("pom.xml"))
-                    && Files.isDirectory(current.resolve("test"))) return current;
-            current = current.getParent();
-        }
-        throw new IllegalStateException("WindowsToLinux repository root was not found");
     }
 
     /** Identifies every changed build architecture independently. / 独立标识每个发生变更的构建架构。 */
@@ -92,11 +61,11 @@ final class EcosystemExtensionAcceptanceFixture {
         JAVA_JDK("java-jdk", "java/jdk", DeploymentProjectType.JAVA_SOURCE, DeploymentBuildToolType.JDK,
                 EcosystemToolType.JAVAC, ""),
         NODE_NPM("node-npm", "node/npm", DeploymentProjectType.NODE_SERVICE, DeploymentBuildToolType.NPM,
-                EcosystemToolType.NPM, "phase3-node-npm"),
+                EcosystemToolType.NPM, "http-service-npm"),
         NODE_PNPM("node-pnpm", "node/pnpm", DeploymentProjectType.NODE_SERVICE, DeploymentBuildToolType.PNPM,
-                EcosystemToolType.PNPM, "phase3-node-pnpm"),
+                EcosystemToolType.PNPM, "http-service-pnpm"),
         NODE_YARN("node-yarn", "node/yarn", DeploymentProjectType.NODE_SERVICE, DeploymentBuildToolType.YARN,
-                EcosystemToolType.YARN, "phase3-node-yarn"),
+                EcosystemToolType.YARN, "http-service-yarn"),
         PYTHON_PIP("python-pip", "python/pip", DeploymentProjectType.PYTHON_SERVICE,
                 DeploymentBuildToolType.PIP_LOCKED, EcosystemToolType.PIP, ""),
         PYTHON_PIPENV("python-pipenv", "python/pipenv", DeploymentProjectType.PYTHON_SERVICE,

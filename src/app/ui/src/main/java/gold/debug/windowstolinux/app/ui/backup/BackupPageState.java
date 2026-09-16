@@ -16,7 +16,7 @@ public record BackupPageState(
         char[] backupPassword,
         char[] masterPassword
 ) implements AutoCloseable {
-    /** Constructs a default backup task with retained prior page values. */
+    /** Constructs a default backup task with retained prior page values. / 保留页面先前输入，构造默认备份任务。 */
     public BackupPageState(String applicationId, String targetServerId, String archivePath, String destinationPath,
                            String output, PreparedBackupCandidate preparedCandidate) {
         this(applicationId, targetServerId, archivePath, destinationPath, output, preparedCandidate, 0, new char[0], new char[0]);

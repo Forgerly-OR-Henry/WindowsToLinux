@@ -37,7 +37,7 @@ class UbuntuManagedHostTrustAcceptanceTest {
     @Test
     void recordsTheRealFirstUseKeyThenBlocksAMismatchedTrustedKeyWithoutCredentialLeakage() throws Exception {
         String host = System.getProperty("managed.ssh.host");
-        String username = System.getProperty("managed.ssh.user", "ubuntu");
+        String username = System.getProperty("managed.ssh.user", "root");
         String password = System.getenv("WINDOWSTOLINUX_TEST_SSH_PASSWORD");
         assertPresent(host, "managed.ssh.host");
         assertPresent(username, "managed.ssh.user");

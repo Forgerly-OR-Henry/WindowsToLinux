@@ -2,10 +2,9 @@ package gold.debug.windowstolinux.shared.linux.sshd.execution.protocol.input;
 
 import gold.debug.windowstolinux.shared.linux.sshd.execution.protocol.helper.ManagedHelperBundle;
 
-import gold.debug.windowstolinux.shared.config.revision.ConfigurationSnapshot;
-import gold.debug.windowstolinux.shared.config.revision.DeploymentInputManifest;
-import gold.debug.windowstolinux.shared.config.secretref.ResolvedSecretRevision;
-import gold.debug.windowstolinux.shared.config.secretref.SecretRevisionDigest;
+import gold.debug.windowstolinux.shared.linux.protocol.RemoteRuntimeConfiguration;
+import gold.debug.windowstolinux.shared.linux.protocol.RemoteDeploymentInputs;
+import gold.debug.windowstolinux.shared.linux.protocol.RemoteSecretPayload;
 import gold.debug.windowstolinux.shared.linux.error.LinuxOperationException;
 import gold.debug.windowstolinux.shared.linux.error.LinuxOperationFailureType;
 import gold.debug.windowstolinux.shared.linux.sshd.command.SshCommandExecutor;
@@ -14,7 +13,6 @@ import gold.debug.windowstolinux.shared.model.managed.ManagedApplication;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.Duration;
-import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Comparator;
 import java.util.HexFormat;
@@ -31,26 +29,25 @@ public final class DeploymentInputProtocolExecutor {
     }
 
     /** Seals one immutable configuration and exact secret-revision set. / 封存一个不可变配置与精确秘密修订集合。 */
-    public DeploymentInputManifest stage(ManagedApplication application, ConfigurationSnapshot configuration,
-                                         List<ResolvedSecretRevision> secrets) throws LinuxOperationException {
+    public RemoteDeploymentInputs stage(ManagedApplication application, RemoteRuntimeConfiguration configuration,
+                                         List<RemoteSecretPayload> secrets) throws LinuxOperationException {
         Objects.requireNonNull(application, "application");
         Objects.requireNonNull(configuration, "configuration");
         secrets = List.copyOf(Objects.requireNonNull(secrets, "secrets"));
         if (!application.id().equals(configuration.applicationId())) {
             throw new IllegalArgumentException("runtime configuration must match the managed application");
         }
+        var manifest = new RemoteDeploymentInputs(configuration.sha256(), secrets.stream().map(RemoteSecretPayload::digest).toList());
         stageConfiguration(application.id(), configuration.sha256(), "systemd",
                 DeploymentConfigurationRenderer.systemd(configuration));
         stageConfiguration(application.id(), configuration.sha256(), "container",
                 DeploymentConfigurationRenderer.container(configuration));
-        List<SecretRevisionDigest> digests = new ArrayList<>();
-        for (ResolvedSecretRevision secret : secrets.stream()
-                .sorted(Comparator.comparing((ResolvedSecretRevision value) -> value.reference().identifier())
-                        .thenComparingLong(value -> value.reference().revision())).toList()) {
+        for (RemoteSecretPayload secret : secrets.stream()
+                .sorted(Comparator.comparing((RemoteSecretPayload value) -> value.digest().identifier())
+                        .thenComparingLong(value -> value.digest().revision())).toList()) {
             stageSecret(application.id(), secret);
-            digests.add(secret.digest());
         }
-        return new DeploymentInputManifest(configuration.sha256(), digests);
+        return manifest;
     }
 
     private void stageConfiguration(String applicationId, String configurationSha256, String format, byte[] payload)
@@ -63,11 +60,11 @@ public final class DeploymentInputProtocolExecutor {
         }
     }
 
-    private void stageSecret(String applicationId, ResolvedSecretRevision secret) throws LinuxOperationException {
+    private void stageSecret(String applicationId, RemoteSecretPayload secret) throws LinuxOperationException {
         byte[] payload = secret.copyValue();
         try {
-            execute("stage-secret", List.of(applicationId, secret.reference().identifier(),
-                    Long.toString(secret.reference().revision()), secret.digest().sha256(),
+            execute("stage-secret", List.of(applicationId, secret.digest().identifier(),
+                    Long.toString(secret.digest().revision()), secret.digest().sha256(),
                     Integer.toString(secret.digest().byteCount())), payload);
         } finally {
             Arrays.fill(payload, (byte) 0);

@@ -3,7 +3,7 @@ package gold.debug.windowstolinux.shared.model.ecosystem.db;
 import gold.debug.windowstolinux.shared.model.ecosystem.db.sql.DatabaseVersionRequirement;
 import java.util.*;
 
-/** Non-secret database declarations extracted from a component or completed by its user. */
+/** Non-secret database declarations extracted from a component or completed by its user. / 从组件提取或由用户补齐的非秘密数据库声明。 */
 public record DatabaseRequirement(String id, DatabaseEngineType engine, String version, String database, String username,
                                   String environmentPrefix, String passwordEnvironment, List<String> initializationFiles,
                                   boolean springDatasource, String evidence) {

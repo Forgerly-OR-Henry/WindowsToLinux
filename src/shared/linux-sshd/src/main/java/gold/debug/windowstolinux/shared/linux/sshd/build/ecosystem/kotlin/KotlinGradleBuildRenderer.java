@@ -26,27 +26,46 @@ public final class KotlinGradleBuildRenderer implements DeploymentBuildRenderer 
             throw new IllegalArgumentException("Kotlin Gradle renderer requires reviewed Gradle inputs");
         }
         String command = """
+                kotlin_gradle_arguments=()
+                if [ -n "${WTL_KOTLIN_VERSION:-}" ]; then
+                  kotlin_init="$mutable/home/wtl-kotlin-toolchain.gradle"
+                  cat > "$kotlin_init" <<'WTL_KOTLIN_INIT'
+                gradle.settingsEvaluated { settings ->
+                    settings.pluginManagement.resolutionStrategy.eachPlugin { details ->
+                        if (details.requested.id.id == 'org.jetbrains.kotlin.jvm') {
+                            details.useVersion(System.getenv('WTL_KOTLIN_VERSION'))
+                        }
+                    }
+                }
+                WTL_KOTLIN_INIT
+                  kotlin_gradle_arguments=(--init-script "$kotlin_init")
+                fi
                 export GRADLE_OPTS='-Dorg.gradle.jvmargs=-Xmx768m -XX:MaxMetaspaceSize=384m'
                 command -v java >/dev/null
                 command -v curl >/dev/null
                 command -v flock >/dev/null
-                java -version 2>&1 | grep -Eq 'version "21([.]|")'
+                java -version 2>&1
                 test -f ./build.gradle.kts
                 test -f ./gradle.lockfile
                 test -f ./gradle/wrapper/gradle-wrapper.jar
                 test -f ./gradle/wrapper/gradle-wrapper.properties
                 test -f ./gradlew
-                chmod u+x ./gradlew
-                wrapper_properties=./gradle/wrapper/gradle-wrapper.properties
+                wrapper_root="$mutable/home/wtl-gradle-wrapper"
+                mkdir -p "$wrapper_root/gradle/wrapper"
+                cp -- ./gradlew "$wrapper_root/gradlew"
+                cp -- ./gradle/wrapper/gradle-wrapper.jar "$wrapper_root/gradle/wrapper/gradle-wrapper.jar"
+                cp -- ./gradle/wrapper/gradle-wrapper.properties "$wrapper_root/gradle/wrapper/gradle-wrapper.properties"
+                chmod u+x "$wrapper_root/gradlew"
+                wrapper_properties="$wrapper_root/gradle/wrapper/gradle-wrapper.properties"
                 mapfile -t distribution_urls < <(sed -n 's/^distributionUrl=//p' "$wrapper_properties")
                 [ "${#distribution_urls[@]}" -eq 1 ]
-                distribution_url="${distribution_urls[0]//\\:/:}"
+                distribution_url="${distribution_urls[0]//\\\\:/:}"
                 case "$distribution_url" in
                   https://services.gradle.org/distributions/*|https://downloads.gradle.org/distributions/*)
                     mapfile -t distribution_sums < <(sed -n 's/^distributionSha256Sum=//p' "$wrapper_properties")
                     [ "${#distribution_sums[@]}" -eq 1 ]
                     printf '%s\n' "${distribution_sums[0]}" | grep -Eq '^[0-9a-f]{64}$'
-                    gradle_cache_root=/var/lib/windowstolinux/cache/gradle-distributions
+                    gradle_cache_root="$mutable/home/gradle-distributions"
                     install -d -m 0700 -- "$gradle_cache_root"
                     test -d "$gradle_cache_root"
                     test ! -L "$gradle_cache_root"
@@ -78,8 +97,8 @@ public final class KotlinGradleBuildRenderer implements DeploymentBuildRenderer 
                     ;;
                   *) exit 64 ;;
                 esac
-                retry_run 3 ./gradlew --no-daemon --version
-                run ./gradlew --no-daemon installDist
+                retry_run 3 "$wrapper_root/gradlew" --project-dir "$source" --no-daemon --version
+                run "$wrapper_root/gradlew" --project-dir "$source" --no-daemon installDist "${java_gradle_arguments[@]}" "${kotlin_gradle_arguments[@]}"
                 mapfile -t distributions < <(find ./build/install -mindepth 1 -maxdepth 1 -type d -print)
                 [ "${#distributions[@]}" -eq 1 ]
                 test -d "${distributions[0]}/lib"

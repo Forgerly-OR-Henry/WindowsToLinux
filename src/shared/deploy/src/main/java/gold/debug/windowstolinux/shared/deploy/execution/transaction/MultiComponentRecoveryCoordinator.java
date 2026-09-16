@@ -74,7 +74,7 @@ final class MultiComponentRecoveryCoordinator {
                 if (context.snapshot == null || (!context.publishAttempted && !context.stopAttempted)) continue;
                 hadPrevious |= context.snapshot.hasPreviousRelease();
                 var rollback = recovery.rollbackDeployment(context.component.application(), context.snapshot, context.build,
-                        context.releaseIdentity, context.component.request().runtime(), context.inputs);
+                        context.releaseIdentity, context.component.request().runtime(), DeploymentInputMapper.manifest(context.inputs));
                 context.event(DeploymentTraceEvent.ROLLBACK, rollback.succeeded(), rollback.evidence());
                 if (!rollback.succeeded()) {
                     context.state = ComponentTransactionState.MANUAL_RECOVERY_REQUIRED;

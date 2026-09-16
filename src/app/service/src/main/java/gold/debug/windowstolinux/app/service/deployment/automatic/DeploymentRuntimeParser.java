@@ -1,5 +1,7 @@
 package gold.debug.windowstolinux.app.service.deployment.automatic;
 
+import gold.debug.windowstolinux.app.service.contract.definition.DatabaseReviewMode;
+
 import gold.debug.windowstolinux.shared.config.secretref.SecretReference;
 import gold.debug.windowstolinux.shared.config.resource.ManagedDatabaseBinding;
 import gold.debug.windowstolinux.shared.config.resource.ManagedDatabaseConnection;
@@ -19,15 +21,6 @@ import java.util.Optional;
 /** Parses bounded desktop runtime, database, secret-reference, and Git-reference notation. / 解析桌面端有界运行时、数据库、秘密引用与 Git 引用记法。 */
 public final class DeploymentRuntimeParser {
     private DeploymentRuntimeParser() { }
-
-    /** Database scopes the user can explicitly review in the current deployment form. / 用户可在当前部署表单中显式审阅的数据库范围。 */
-    public enum DatabaseReviewMode {
-        UNREVIEWED,
-        NONE,
-        POSTGRESQL,
-        MYSQL,
-        MARIADB
-    }
 
     /**
      * Parses zero or one explicitly reviewed server database binding.
@@ -50,7 +43,7 @@ public final class DeploymentRuntimeParser {
         if (values.length != 7) {
             throw new IllegalArgumentException("server database binding must contain seven fields");
         }
-        List<SecretReference> passwordReferences = secrets(values[5]);
+        List<SecretReference> passwordReferences = gold.debug.windowstolinux.app.service.config.DeploymentConfigurationParser.secrets(values[5]);
         if (passwordReferences.size() != 1) {
             throw new IllegalArgumentException("server database binding requires one password reference");
         }
@@ -64,21 +57,6 @@ public final class DeploymentRuntimeParser {
                 Integer.parseInt(values[2].trim()), values[3].trim(), values[4].trim(),
                 passwordReferences.getFirst(), tlsRequired);
         return Optional.of(List.of(new ManagedDatabaseBinding(values[0].trim(), connection)));
-    }
-
-    public static List<SecretReference> secrets(String input) {
-        List<SecretReference> references = new ArrayList<>();
-        for (String item : input.split(";")) {
-            String value = item.trim();
-            if (value.isEmpty()) continue;
-            int separator = value.lastIndexOf(':');
-            if (separator < 1 || separator == value.length() - 1) {
-                throw new IllegalArgumentException("secret reference must contain an identifier and revision");
-            }
-            references.add(new SecretReference(value.substring(0, separator).trim(),
-                    Long.parseLong(value.substring(separator + 1).trim())));
-        }
-        return List.copyOf(references);
     }
 
     public static Map<Integer, Integer> ports(String input) {

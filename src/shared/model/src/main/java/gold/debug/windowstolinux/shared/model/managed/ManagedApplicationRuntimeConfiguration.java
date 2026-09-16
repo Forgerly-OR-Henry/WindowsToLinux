@@ -3,6 +3,8 @@ package gold.debug.windowstolinux.shared.model.managed;
 import gold.debug.windowstolinux.shared.model.health.HealthCheck;
 import gold.debug.windowstolinux.shared.model.health.UserAccessUrl;
 
+import gold.debug.windowstolinux.shared.model.project.RuntimeIdentityMode;
+
 import java.util.Objects;
 import java.util.Optional;
 
@@ -16,8 +18,14 @@ import java.util.Optional;
  */
 public record ManagedApplicationRuntimeConfiguration(
         HealthCheck healthCheck,
-        Optional<UserAccessUrl> userAccessUrl
+        Optional<UserAccessUrl> userAccessUrl,
+        RuntimeIdentityMode identityPolicy
 ) {
+    /** Reads historical health-only runtime state without inventing an identity policy. / 读取历史健康运行状态，不推断缺失的身份策略。 */
+    public ManagedApplicationRuntimeConfiguration(HealthCheck healthCheck, Optional<UserAccessUrl> userAccessUrl) {
+        this(healthCheck, userAccessUrl, RuntimeIdentityMode.LEGACY_UNSPECIFIED);
+    }
+
     /**
      * Creates a {@code ManagedApplicationRuntimeConfiguration} instance.
      *
@@ -29,6 +37,7 @@ public record ManagedApplicationRuntimeConfiguration(
      * @throws NullPointerException if a required argument is {@code null} / 必要参数为 {@code null} 时
      */
     public ManagedApplicationRuntimeConfiguration {
+        identityPolicy = Objects.requireNonNull(identityPolicy, "identityPolicy");
         healthCheck = Objects.requireNonNull(healthCheck, "healthCheck");
         userAccessUrl = Objects.requireNonNull(userAccessUrl, "userAccessUrl");
         if (healthCheck instanceof HealthCheck.Http && userAccessUrl.isEmpty()) {
