@@ -1,5 +1,7 @@
 package gold.debug.windowstolinux.app.ui.managed;
 
+import com.formdev.flatlaf.FlatClientProperties;
+import com.formdev.flatlaf.util.UIScale;
 import gold.debug.windowstolinux.app.service.contract.ManagedApplicationFacade;
 import gold.debug.windowstolinux.app.service.execution.lifecycle.ApplicationSummary;
 import gold.debug.windowstolinux.app.service.execution.lifecycle.ApplicationLifecycleResult;
@@ -58,7 +60,7 @@ public final class ManagedPage {
     private JPanel createPanel() {
         JPanel page = c.pagePanel(); AdvancedOptionsPane advanced = new AdvancedOptionsPane(page, c, messages);
         JPanel toolbar = c.transparent(new BorderLayout(12, 0));
-        JPanel filters = c.transparent(new FlowLayout(FlowLayout.LEFT, 8, 0));
+        JPanel filters = c.transparent(new GridBagLayout());
         type.setRenderer(new DefaultListCellRenderer() {
             @Override public Component getListCellRendererComponent(JList<?> list, Object value, int index, boolean selected, boolean focus) {
                 return super.getListCellRendererComponent(list, messages.text(value == null || value.toString().isEmpty() ? "apps.allTypes" : "apps.category." + value), index, selected, focus);
@@ -66,12 +68,18 @@ public final class ManagedPage {
         });
         type.addActionListener(event -> render()); server.addItem(new ServerChoice("", messages.text("apps.allServers")));
         server.addActionListener(event -> { if (!loading) { desiredServer = selectedServer(); render(); } });
-        filters.add(type); filters.add(server); toolbar.add(filters);
+        GridBagConstraints filterLayout = new GridBagConstraints();
+        filterLayout.gridy = 0; filterLayout.weighty = 1; filterLayout.fill = GridBagConstraints.VERTICAL;
+        filterLayout.insets = new Insets(0, 0, 0, 8);
+        filters.add(type, filterLayout); filters.add(server, filterLayout);
+        filterLayout.weightx = 1; filters.add(Box.createHorizontalGlue(), filterLayout); toolbar.add(filters);
         JPanel actions = c.transparent(new FlowLayout(FlowLayout.RIGHT, 8, 0));
         JButton refresh = c.secondaryButton(messages.text("button.refreshApplications")); refresh.addActionListener(event -> refresh());
         JButton add = c.primaryButton(messages.text("apps.add")); add.addActionListener(event -> {
             if (service != null) new ApplicationScanDialog(SwingUtilities.getWindowAncestor(panel), service, c, messages, this::selectApplication).setVisible(true);
         });
+        for (JComponent control : new JComponent[]{refresh, add})
+            control.putClientProperty(FlatClientProperties.MINIMUM_HEIGHT, 36);
         actions.add(refresh); actions.add(add); toolbar.add(actions, BorderLayout.EAST); page.add(toolbar, BorderLayout.NORTH);
         cards.setLayout(new BoxLayout(cards, BoxLayout.Y_AXIS)); cards.setOpaque(false);
         JScrollPane scroll = new JScrollPane(cards); scroll.setBorder(BorderFactory.createEmptyBorder()); scroll.getVerticalScrollBar().setUnitIncrement(20);
@@ -108,7 +116,9 @@ public final class ManagedPage {
 
     private JPanel card(ApplicationSummary app) {
         JPanel wrapper = c.transparent(new BorderLayout()); wrapper.setBorder(BorderFactory.createEmptyBorder(0, 0, 12, 0));
-        JPanel card = c.card(new BorderLayout(0, 12)); wrapper.add(card); wrapper.setMaximumSize(new Dimension(Integer.MAX_VALUE, 198));
+        JPanel card = c.card(new BorderLayout(0, 12)); wrapper.add(card);
+        card.setBorder(BorderFactory.createEmptyBorder(20, 18, 20, 18));
+        wrapper.setMaximumSize(new Dimension(Integer.MAX_VALUE, UIScale.scale(216)));
         JPanel title = c.transparent(new BorderLayout(12, 0));
         JLabel name = new JLabel(app.name()); name.putClientProperty("html.disable", true); name.setFont(name.getFont().deriveFont(Font.BOLD, 16f));
         name.setIcon(DesktopIcons.icon(app.category().equals("WEBSITE") ? "panels-top-left" : "archive", 22, name::getForeground));
@@ -134,6 +144,8 @@ public final class ManagedPage {
         JButton edit = c.secondaryButton(messages.text("apps.edit")); edit.addActionListener(event -> {
             applicationId.setText(app.key()); new ApplicationPresentationDialog(SwingUtilities.getWindowAncestor(panel), service, c, messages, app, this::refresh).setVisible(true);
         }); actions.add(edit); card.add(actions, BorderLayout.SOUTH);
+        for (Component control : actions.getComponents())
+            ((JButton) control).putClientProperty(FlatClientProperties.MINIMUM_HEIGHT, 36);
         card.addMouseListener(new java.awt.event.MouseAdapter() { @Override public void mouseClicked(java.awt.event.MouseEvent event) { applicationId.setText(app.key()); } });
         return wrapper;
     }

@@ -35,7 +35,7 @@ public final class DesktopMain {
         RunModeResolver.RuntimeLayout layout;
         DesktopStorageLayout dataLayout;
         try {
-            layout = RunModeResolver.resolve(DesktopMain.class);
+            layout = RunModeResolver.resolve();
             dataLayout = DesktopStorageLayout.from(layout.dataDirectory());
         } catch (RuntimeException failure) {
             showStartupFailure(FailureReportStore.disabled(), initialMessages,
@@ -84,7 +84,7 @@ public final class DesktopMain {
                     dataLayout.workDirectory(), dataLayout.backupsDirectory(), new SshdLinuxGateway());
             SwingUtilities.invokeLater(() -> {
                 try {
-                    new DesktopWindowController(database, service, appearance, reports).showInitialWindow();
+                    new DesktopWindowController(database, service, appearance, reports, layout.mode()).showInitialWindow();
                 } catch (RuntimeException failure) {
                     throw DesktopStartupException.create(DesktopSystemFailureType.UI_INITIALIZATION_FAILED,
                             "The desktop user interface could not be initialized", failure);

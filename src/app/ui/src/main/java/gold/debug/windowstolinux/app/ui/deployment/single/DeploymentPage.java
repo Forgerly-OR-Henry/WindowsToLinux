@@ -25,7 +25,7 @@ import gold.debug.windowstolinux.shared.model.health.UserAccessUrl;
 import gold.debug.windowstolinux.shared.model.security.CredentialStorageMode;
 
 import javax.swing.JButton;
-import javax.swing.JCheckBox;
+import gold.debug.windowstolinux.app.ui.component.ToggleSwitch;
 import javax.swing.JComboBox;
 import javax.swing.JFileChooser;
 import javax.swing.JFrame;
@@ -60,7 +60,7 @@ public final class DeploymentPage implements ReviewContext {
     private final JTextField gitReference = new JTextField();
     private final JComboBox<String> sourceMode = new JComboBox<>();
     private final JComboBox<String> gitKind = new JComboBox<>();
-    private final JCheckBox detectType = new JCheckBox();
+    private final ToggleSwitch detectType = new ToggleSwitch();
     private final JPanel handoffs = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 0));
     private final JScrollPane handoffScroll = new JScrollPane(handoffs,ScrollPaneConstants.VERTICAL_SCROLLBAR_NEVER,
             ScrollPaneConstants.HORIZONTAL_SCROLLBAR_AS_NEEDED);
@@ -136,9 +136,23 @@ public final class DeploymentPage implements ReviewContext {
     }
 
     private JPanel sourceAndTarget(DesktopComponentFactory c, JPanel source, JPanel target) {
-        JPanel columns = c.transparent(new java.awt.GridLayout(1, 2, 20, 0));
-        source.setPreferredSize(new Dimension(0, 180)); target.setPreferredSize(new Dimension(0, 180));
-        columns.add(source); columns.add(target); return columns;
+        JPanel columns = c.transparent(new GridBagLayout());
+        int height = Math.max(source.getPreferredSize().height, target.getPreferredSize().height);
+        source.setPreferredSize(new Dimension(0, height)); target.setPreferredSize(new Dimension(0, height));
+        JLabel direction = c.badge("");
+        direction.setName("deployment.direction");
+        direction.setIcon(gold.debug.windowstolinux.app.ui.component.DesktopIcons.icon("arrow-right", 24, direction::getForeground));
+        direction.setBorder(BorderFactory.createEmptyBorder(8, 8, 8, 8));
+        direction.setToolTipText(messages.text("auto.direction"));
+        direction.getAccessibleContext().setAccessibleName(messages.text("auto.direction"));
+        var constraints = new java.awt.GridBagConstraints();
+        constraints.fill = java.awt.GridBagConstraints.BOTH; constraints.weightx = 1; constraints.weighty = 1;
+        columns.add(source, constraints);
+        constraints.gridx = 1; constraints.weightx = 0; constraints.fill = java.awt.GridBagConstraints.NONE;
+        constraints.insets = new java.awt.Insets(0, 12, 0, 12); columns.add(direction, constraints);
+        constraints.gridx = 2; constraints.weightx = 1; constraints.fill = java.awt.GridBagConstraints.BOTH;
+        constraints.insets = new java.awt.Insets(0, 0, 0, 0); columns.add(target, constraints);
+        return columns;
     }
 
     private void configureAdvanced(AdvancedOptionsPane advanced, DesktopComponentFactory c) {
@@ -187,7 +201,8 @@ public final class DeploymentPage implements ReviewContext {
         sourceMode.setSelectedIndex(Integer.parseInt(state.get("sourceMode"))); sourcePath.setText(state.get("source"));
         gitAddress.setText(state.get("git")); gitReference.setText(state.get("reference"));
         gitKind.setSelectedIndex(Integer.parseInt(state.get("kind"))); detectType.setSelected(Boolean.parseBoolean(state.get("detect")));
-        sourceCard.restore(state.getOrDefault("sourceText", sourceMode.getSelectedIndex() == 0 ? sourcePath.getText() : gitAddress.getText()));
+        String acceptedSource = sourceMode.getSelectedIndex() == 0 ? sourcePath.getText() : gitAddress.getText();
+        sourceCard.restore(state.getOrDefault("sourceText", acceptedSource), !acceptedSource.isBlank());
         serverSelection.select(state.get("server"));
     }
 

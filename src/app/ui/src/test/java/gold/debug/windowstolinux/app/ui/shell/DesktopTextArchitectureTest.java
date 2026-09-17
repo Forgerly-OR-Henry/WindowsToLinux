@@ -15,7 +15,7 @@ class DesktopTextArchitectureTest {
     private static final Pattern HAN_TEXT = Pattern.compile("\\p{IsHan}");
 
     @Test void visibleSwingCopyMustComeFromMessageKeysInEveryLanguage() throws Exception {
-        Pattern visibleLiteral = Pattern.compile("(?:new\\s+(?:JLabel|JButton|JCheckBox|JRadioButton)\\s*\\(|\\.(?:primaryButton|secondaryButton|setText|setToolTipText|addItem)\\s*\\()\\s*\"([^\"]*)\"");
+        Pattern visibleLiteral = Pattern.compile("(?:new\\s+(?:JLabel|JButton|JCheckBox|JRadioButton|ToggleSwitch)\\s*\\(|\\.(?:primaryButton|secondaryButton|setText|setToolTipText|addItem)\\s*\\()\\s*\"([^\"]*)\"");
         try (var files = Files.walk(repositoryRoot().resolve("src/app/ui/src/main/java"))) {
             for (Path file : files.filter(path -> path.toString().endsWith(".java")).toList()) {
                 var matches = visibleLiteral.matcher(Files.readString(file));

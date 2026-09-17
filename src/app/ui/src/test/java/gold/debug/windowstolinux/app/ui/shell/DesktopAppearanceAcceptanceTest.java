@@ -56,13 +56,54 @@ class DesktopAppearanceAcceptanceTest {
                         }
                         capture(frame,"desktop-"+theme.name().toLowerCase()+"-"+scale+"-advanced.png"); pane.setExpanded(false);
                         frame.setNavigationCollapsed(true); frame.validate(); assertTrue(frame.navigationCollapsed());
+                        assertCenteredNavigation(frame, catalog);
                         JButton deploy = descendants(pane).filter(JButton.class::isInstance).map(JButton.class::cast).filter(button -> button.getText().equals(catalog.text("auto.start"))).findFirst().orElseThrow();
                         assertTrue(deploy.isShowing()); assertTrue(deploy.getWidth() >= deploy.getFontMetrics(deploy.getFont()).stringWidth(deploy.getText()) + deploy.getInsets().left + deploy.getInsets().right, "deployment button must fit its scaled label");
                         capture(frame,"desktop-"+theme.name().toLowerCase()+"-"+scale+"-collapsed.png");
+                        var sourceCard = descendants(pane).filter(gold.debug.windowstolinux.app.ui.deployment.single.DeploymentSourceCard.class::isInstance)
+                                .map(gold.debug.windowstolinux.app.ui.deployment.single.DeploymentSourceCard.class::cast).findFirst().orElseThrow();
+                        String sourceUrl = "https://github.com/MHSanaei/3x-ui.git";
+                        sourceCard.restore(sourceUrl, true); frame.validate();
+                        JButton selectedSource = descendants(sourceCard).filter(JButton.class::isInstance).map(JButton.class::cast)
+                                .filter(button -> sourceUrl.equals(button.getText())).findFirst().orElseThrow();
+                        assertFalse(selectedSource.isEnabled());
+                        assertTrue(selectedSource.getHeight() >= com.formdev.flatlaf.util.UIScale.scale(84));
+                        assertTrue(descendants(sourceCard).filter(JTextField.class::isInstance).noneMatch(Component::isVisible));
+                        capture(frame,"desktop-"+theme.name().toLowerCase()+"-"+scale+"-selected.png");
                     } finally { frame.dispose(); }
                 });
             }
         } finally { SwingUtilities.invokeAndWait(() -> { if(previous==null)System.clearProperty("flatlaf.uiScale");else System.setProperty("flatlaf.uiScale",previous); DesktopThemeService.install(ThemeMode.LIGHT); }); }
+    }
+    private static void assertCenteredNavigation(DesktopFrame frame, MessageCatalog catalog) {
+        Container root = frame.getContentPane();
+        Container sidebar = (Container) ((BorderLayout) root.getLayout()).getLayoutComponent(BorderLayout.WEST);
+        assertEquals(64, sidebar.getWidth());
+        assertEquals(root.getHeight(), sidebar.getHeight());
+        JLabel mark = descendants(sidebar).filter(JLabel.class::isInstance).map(JLabel.class::cast)
+                .filter(label -> catalog.text("app.mark").equals(label.getText())).findFirst().orElseThrow();
+        Rectangle brand = SwingUtilities.convertRectangle(mark.getParent(), mark.getBounds(), sidebar);
+        assertEquals(sidebar.getWidth() / 2.0, brand.getCenterX(), 0.5, "Brand mark must be centered");
+        for (JButton button : descendants(sidebar).filter(JButton.class::isInstance).map(JButton.class::cast).toList()) {
+            Icon original = button.getIcon();
+            var painted = new java.util.concurrent.atomic.AtomicReference<Rectangle>();
+            button.setIcon(new Icon() {
+                public int getIconWidth() { return original.getIconWidth(); }
+                public int getIconHeight() { return original.getIconHeight(); }
+                public void paintIcon(Component owner, Graphics graphics, int x, int y) {
+                    painted.set(SwingUtilities.convertRectangle(button,
+                            new Rectangle(x, y, getIconWidth(), getIconHeight()), sidebar));
+                    original.paintIcon(owner, graphics, x, y);
+                }
+            });
+            var image = new java.awt.image.BufferedImage(button.getWidth(), button.getHeight(), java.awt.image.BufferedImage.TYPE_INT_RGB);
+            var graphics = image.createGraphics();
+            try { button.paint(graphics); } finally { graphics.dispose(); button.setIcon(original); }
+            assertNotNull(painted.get());
+            assertEquals(sidebar.getWidth() / 2.0, painted.get().getCenterX(), 0.5,
+                    "Navigation icon must be centered: " + button.getAccessibleContext().getAccessibleName());
+            assertNotNull(button.getToolTipText());
+        }
     }
     private static void capture(JFrame frame,String file) {
         try { RepaintManager.currentManager(frame).validateInvalidComponents(); frame.validate(); var image = new java.awt.image.BufferedImage(frame.getWidth(),frame.getHeight(),java.awt.image.BufferedImage.TYPE_INT_RGB); var g=image.createGraphics();frame.paint(g);g.dispose();Files.createDirectories(Path.of("target/visual-checks"));javax.imageio.ImageIO.write(image,"png",Path.of("target/visual-checks",file).toFile()); }

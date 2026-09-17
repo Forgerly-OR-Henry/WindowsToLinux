@@ -1,20 +1,20 @@
 package gold.debug.windowstolinux.app.main.runtime;
 
+import gold.debug.windowstolinux.app.db.DesktopPersistence;
+
 import java.net.URI;
 import java.net.URL;
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.security.CodeSource;
 import java.security.ProtectionDomain;
-import java.util.Locale;
 import java.util.Objects;
 import java.util.Optional;
 
 /**
- * Resolves the application home and its fixed {@code data} directory for the supported development, JAR and jpackage layouts.
+ * Resolves the fixed {@code data} directory from the DB module in CLASS/JAR mode or the EXE in jpackage mode.
  *
- * <p>为受支持的开发、JAR 和 jpackage 布局解析应用主目录及其固定 {@code data} 目录。
+ * <p>CLASS/JAR 模式按 DB 模块、jpackage 模式按 EXE 解析固定 {@code data} 目录。
  */
 public final class RunModeResolver {
 
@@ -97,11 +97,10 @@ public final class RunModeResolver {
      *
      * <p>检测当前运行模式。
      *
-     * @param anchorClass the {@code anchorClass} value / {@code anchorClass} 值
      * @return the operation result / 操作结果
      */
-    public static RunMode detect(Class<?> anchorClass) {
-        return resolveKnown(anchorClass)
+    public static RunMode detect() {
+        return resolveKnown()
                 .map(RuntimeLayout::mode)
                 .orElse(RunMode.RUN_UNKNOWN);
     }
@@ -111,13 +110,12 @@ public final class RunModeResolver {
      *
      * <p>解析当前运行时布局。
      *
-     * @param anchorClass the {@code anchorClass} value / {@code anchorClass} 值
      * @return the operation result / 操作结果
      */
-    public static RuntimeLayout resolve(Class<?> anchorClass) {
-        return resolveKnown(anchorClass).orElseThrow(() -> new IllegalStateException(
-                "Application runtime layout could not be recognized; ensure anchorClass comes from app/main and "
-                        + "launch through Maven, an executable JAR, or a jpackage application"
+    public static RuntimeLayout resolve() {
+        return resolveKnown().orElseThrow(() -> new IllegalStateException(
+                "Application runtime layout could not be recognized; ensure app/db is loaded from "
+                        + "Maven output, its module JAR, or a jpackage application"
         ));
     }
 
@@ -126,18 +124,16 @@ public final class RunModeResolver {
      *
      * <p>执行 {@code resolveDataDirectory} 操作。
      *
-     * @param anchorClass the {@code anchorClass} value / {@code anchorClass} 值
      * @return the operation result / 操作结果
      */
-    public static Path resolveDataDirectory(Class<?> anchorClass) {
-        return resolve(anchorClass).dataDirectory();
+    public static Path resolveDataDirectory() {
+        return resolve().dataDirectory();
     }
 
-    private static Optional<RuntimeLayout> resolveKnown(Class<?> anchorClass) {
-        Objects.requireNonNull(anchorClass, "anchorClass");
+    private static Optional<RuntimeLayout> resolveKnown() {
         return resolveFromEvidence(
                 currentProcessCommand(),
-                codeSourcePath(anchorClass),
+                codeSourcePath(DesktopPersistence.class),
                 currentWorkingDirectory()
         );
     }

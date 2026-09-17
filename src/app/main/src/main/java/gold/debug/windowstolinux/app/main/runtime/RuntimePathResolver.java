@@ -41,7 +41,7 @@ final class RuntimePathResolver {
         while (current != null) {
             Optional<Path> directModule = validatedModuleHome(current);
             if (directModule.isPresent()) return directModule;
-            Optional<Path> repositoryModule = validatedModuleHome(current.resolve("src/app/main"));
+            Optional<Path> repositoryModule = validatedModuleHome(current.resolve("src/app/db"));
             if (repositoryModule.isPresent()) return repositoryModule;
             current = current.getParent();
         }
@@ -67,7 +67,7 @@ final class RuntimePathResolver {
         if (!Files.isRegularFile(pom)) return Optional.empty();
         try {
             String pomContent = Files.readString(pom);
-            return pomContent.contains("<artifactId>windowstolinux-app-main</artifactId>")
+            return pomContent.contains("<artifactId>windowstolinux-app-db</artifactId>")
                     ? Optional.of(normalized) : Optional.empty();
         } catch (Exception ignored) {
             // An unreadable candidate is rejected and other bounded layout candidates remain available. / 不可读候选会被拒绝，其他有界布局候选仍可继续检查。

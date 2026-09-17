@@ -85,7 +85,7 @@ public final class AiPage {
         details.add(title, BorderLayout.NORTH); details.add(new JLabel(value.profile().model() + "  ·  " + value.profile().chatCompletionsEndpoint()));
         String verification = value.verifiedAt().map(time -> messages.text("ai.models.verified", Map.of("time", DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm").withZone(ZoneId.systemDefault()).format(time))))
                 .orElseGet(() -> messages.text("ai.models.unverified")); details.add(new JLabel(verification), BorderLayout.SOUTH); card.add(details);
-        JPanel actions = c.transparent(new FlowLayout(FlowLayout.RIGHT, 6, 0)); JCheckBox enabled = new JCheckBox(messages.text("ai.models.enabled"), value.enabled()); enabled.setOpaque(false);
+        JPanel actions = c.transparent(new FlowLayout(FlowLayout.RIGHT, 6, 0)); ToggleSwitch enabled = new ToggleSwitch(messages.text("ai.models.enabled"), value.enabled());
         enabled.addActionListener(event -> mutate(() -> service.setAiProviderEnabled(value.profile().id(), enabled.isSelected()))); actions.add(enabled);
         JButton up = c.secondaryButton("↑"), down = c.secondaryButton("↓"), edit = c.secondaryButton(messages.text("ai.models.edit"));
         up.setToolTipText(messages.text("ai.models.up")); down.setToolTipText(messages.text("ai.models.down")); up.getAccessibleContext().setAccessibleName(messages.text("ai.models.up")); down.getAccessibleContext().setAccessibleName(messages.text("ai.models.down"));

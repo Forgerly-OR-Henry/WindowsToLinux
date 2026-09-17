@@ -44,6 +44,7 @@ class ManagedHelperBundleTest {
         String sha256 = HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(bytes));
 
         assertEquals(ManagedHelperBundle.EXPECTED_SHA256, sha256);
+        assertFalse(ManagedHelperBundle.renderScript().contains("# @compat:"));
         assertTrue(ManagedHelperBundle.renderScript().startsWith("#!/usr/bin/env bash\n"));
         assertTrue(ManagedHelperBundle.renderScript().endsWith("esac\n"));
         assertEquals("/usr/local/lib/windowstolinux/managed-helper", ManagedHelperBundle.PATH);

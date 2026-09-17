@@ -45,11 +45,11 @@ public record ThemePalette(
      */
     public static ThemePalette light() {
         return new ThemePalette(
-                new Color(246, 248, 252), Color.WHITE, new Color(224, 229, 239),
-                new Color(239, 243, 250), new Color(42, 61, 89), new Color(49, 96, 184),
-                new Color(42, 108, 224), new Color(30, 86, 186), new Color(96, 107, 126),
-                new Color(237, 242, 251), new Color(42, 61, 89), new Color(229, 239, 255),
-                new Color(232, 236, 244)
+                new Color(245, 247, 251), Color.WHITE, new Color(228, 233, 241),
+                new Color(248, 250, 253), new Color(44, 56, 76), new Color(229, 238, 255),
+                new Color(48, 103, 219), new Color(45, 86, 174), new Color(104, 117, 139),
+                new Color(246, 248, 252), new Color(66, 82, 105), new Color(234, 240, 250),
+                new Color(218, 226, 238)
         );
     }
 
@@ -62,11 +62,11 @@ public record ThemePalette(
      */
     public static ThemePalette dark() {
         return new ThemePalette(
-                new Color(31, 35, 43), new Color(42, 47, 56), new Color(69, 76, 89),
-                new Color(17, 24, 39), new Color(211, 220, 236), new Color(57, 110, 202),
-                new Color(86, 156, 255), new Color(159, 202, 255), new Color(184, 195, 213),
-                new Color(58, 67, 82), new Color(225, 232, 242), new Color(45, 71, 111),
-                new Color(83, 91, 106)
+                new Color(20, 25, 34), new Color(28, 35, 47), new Color(45, 55, 71),
+                new Color(23, 29, 40), new Color(221, 228, 239), new Color(40, 61, 92),
+                new Color(65, 123, 232), new Color(159, 194, 255), new Color(155, 169, 191),
+                new Color(34, 44, 60), new Color(216, 224, 239), new Color(38, 56, 82),
+                new Color(57, 71, 94)
         );
     }
 }

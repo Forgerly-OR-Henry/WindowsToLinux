@@ -9,7 +9,7 @@ import gold.debug.windowstolinux.shared.model.project.DeploymentProjectType;
 import gold.debug.windowstolinux.shared.model.project.DeploymentRuntimeSpecification;
 import gold.debug.windowstolinux.shared.model.project.DeploymentRuntimeAssessment;
 
-import javax.swing.JCheckBox;
+import gold.debug.windowstolinux.app.ui.component.ToggleSwitch;
 import javax.swing.JComboBox;
 import javax.swing.JTextField;
 
@@ -37,12 +37,12 @@ final class DeploymentForm {
             new JComboBox<>(DatabaseReviewMode.values());
     final JTextField databaseDetails = new JTextField(30);
     final JTextField secretReferences = new JTextField(20);
-    final JCheckBox experimentalAdapterRisk;
+    final ToggleSwitch experimentalAdapterRisk;
     private final PageMessagePresenter messages;
 
     DeploymentForm(PageMessagePresenter messages, Runnable reviewInvalidation) {
         this.messages = messages;
-        experimentalAdapterRisk = new JCheckBox(messages.text("experimentalAdapterRisk"));
+        experimentalAdapterRisk = new ToggleSwitch();
         messages.localize(projectType, "project.type.");
         messages.localize(healthMode, "health.mode.");
         messages.localize(containerEngine, "container.engine.");

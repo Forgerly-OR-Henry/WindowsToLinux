@@ -17,8 +17,8 @@ class RunModeResolverTest {
     Path temporaryDirectory;
 
     @Test
-    void resolvesMavenClassesToModuleDataDirectory() throws Exception {
-        Path moduleHome = temporaryDirectory.resolve("module");
+    void resolvesMavenDbClassesToModuleDataDirectory() throws Exception {
+        Path moduleHome = temporaryDirectory.resolve("repository/src/app/db");
         Path classes = Files.createDirectories(moduleHome.resolve("target/classes"));
 
         RunModeResolver.RuntimeLayout layout = resolve(Optional.empty(), Optional.of(classes));
@@ -29,8 +29,8 @@ class RunModeResolverTest {
     }
 
     @Test
-    void resolvesMavenTestClassesToModuleDataDirectory() throws Exception {
-        Path moduleHome = temporaryDirectory.resolve("module");
+    void resolvesMavenDbTestClassesToModuleDataDirectory() throws Exception {
+        Path moduleHome = temporaryDirectory.resolve("repository/src/app/db");
         Path testClasses = Files.createDirectories(moduleHome.resolve("target/test-classes"));
 
         RunModeResolver.RuntimeLayout layout = resolve(Optional.empty(), Optional.of(testClasses));
@@ -40,19 +40,22 @@ class RunModeResolverTest {
     }
 
     @Test
-    void resolvesValidatedIdeClassOutputToTheAppMainModule() throws Exception {
+    void resolvesValidatedIdeClassOutputToTheDbModuleFromTheMainWorkingDirectory() throws Exception {
         Path repository = temporaryDirectory.resolve("repository");
-        Path moduleHome = Files.createDirectories(repository.resolve("src/app/main"));
+        Path moduleHome = Files.createDirectories(repository.resolve("src/app/db"));
         Files.writeString(
                 moduleHome.resolve("pom.xml"),
-                "<project><artifactId>windowstolinux-app-main</artifactId></project>"
+                "<project><artifactId>windowstolinux-app-db</artifactId></project>"
         );
-        Path ideClasses = Files.createDirectories(repository.resolve("out/production/app-main"));
+        Path mainModule = Files.createDirectories(repository.resolve("src/app/main"));
+        Files.writeString(mainModule.resolve("pom.xml"),
+                "<project><artifactId>windowstolinux-app-main</artifactId></project>");
+        Path ideClasses = Files.createDirectories(repository.resolve("out/production/app-db"));
 
         RunModeResolver.RuntimeLayout layout = RunModeResolver.resolveFromEvidence(
                 Optional.empty(),
                 Optional.of(ideClasses),
-                Optional.of(repository)
+                Optional.of(mainModule)
         ).orElseThrow();
 
         assertEquals(RunModeResolver.RunMode.RUN_CLASS, layout.mode());
@@ -61,25 +64,67 @@ class RunModeResolverTest {
     }
 
     @Test
-    void resolvesExecutableJarToSiblingDataDirectory() throws Exception {
+    void resolvesDbJarToSiblingDataDirectoryWhenTheMainJarIsElsewhere() throws Exception {
         Path distribution = Files.createDirectories(temporaryDirectory.resolve("distribution"));
-        Path jar = Files.createFile(distribution.resolve("windowstolinux.jar"));
+        Files.createFile(distribution.resolve("Main.jar"));
+        Path dbDirectory = Files.createDirectories(distribution.resolve("lib"));
+        Path jar = Files.createFile(dbDirectory.resolve("DB.jar"));
+
+        RunModeResolver.RuntimeLayout layout = RunModeResolver.resolveFromEvidence(
+                Optional.empty(), Optional.of(jar), Optional.of(distribution)).orElseThrow();
+
+        assertEquals(RunModeResolver.RunMode.RUN_JAR, layout.mode());
+        assertEquals(dbDirectory.toAbsolutePath(), layout.applicationHome());
+        assertEquals(dbDirectory.resolve("data").toAbsolutePath(), layout.dataDirectory());
+    }
+
+    @Test
+    void acceptsTheVersionedDbModuleJarName() throws Exception {
+        Path dbDirectory = Files.createDirectories(temporaryDirectory.resolve("lib"));
+        Path jar = Files.createFile(dbDirectory.resolve("windowstolinux-app-db-0.1.0-SNAPSHOT.jar"));
 
         RunModeResolver.RuntimeLayout layout = resolve(Optional.empty(), Optional.of(jar));
 
         assertEquals(RunModeResolver.RunMode.RUN_JAR, layout.mode());
-        assertEquals(distribution.toAbsolutePath(), layout.applicationHome());
-        assertEquals(distribution.resolve("data").toAbsolutePath(), layout.dataDirectory());
+        assertEquals(dbDirectory.resolve("data").toAbsolutePath(), layout.dataDirectory());
+    }
+
+    @Test
+    void rejectsIdeFallbackWhenOnlyTheMainModuleIsAvailable() throws Exception {
+        Path repository = temporaryDirectory.resolve("repository");
+        Path mainModule = Files.createDirectories(repository.resolve("src/app/main"));
+        Files.writeString(mainModule.resolve("pom.xml"),
+                "<project><artifactId>windowstolinux-app-main</artifactId></project>");
+        Path ideClasses = Files.createDirectories(repository.resolve("out/production/app-db"));
+
+        assertTrue(RunModeResolver.resolveFromEvidence(
+                Optional.empty(), Optional.of(ideClasses), Optional.of(mainModule)).isEmpty());
+    }
+
+    @Test
+    void prefersDbCodeSourceOverAnotherWorkingDirectory() throws Exception {
+        Path moduleHome = temporaryDirectory.resolve("repository/src/app/db");
+        Path classes = Files.createDirectories(moduleHome.resolve("target/classes"));
+        Path otherModule = Files.createDirectories(temporaryDirectory.resolve("other/src/app/db"));
+        Files.writeString(otherModule.resolve("pom.xml"),
+                "<project><artifactId>windowstolinux-app-db</artifactId></project>");
+
+        RunModeResolver.RuntimeLayout layout = RunModeResolver.resolveFromEvidence(
+                Optional.empty(), Optional.of(classes), Optional.of(otherModule)).orElseThrow();
+
+        assertEquals(moduleHome.resolve("data").toAbsolutePath(), layout.dataDirectory());
     }
 
     @Test
     void resolvesJpackageExecutableToAppImageDataDirectory() throws Exception {
         Path appImage = createJpackageLayout("desktop-app");
         Path executable = Files.createFile(appImage.resolve("WindowsToLinux.exe"));
+        Path dbDirectory = Files.createDirectories(appImage.resolve("app/lib"));
+        Path dbJar = Files.createFile(dbDirectory.resolve("DB.jar"));
 
         RunModeResolver.RuntimeLayout layout = resolve(
                 Optional.of(executable),
-                Optional.of(temporaryDirectory.resolve("ignored/target/classes"))
+                Optional.of(dbJar)
         );
 
         assertEquals(RunModeResolver.RunMode.RUN_APP, layout.mode());
@@ -88,9 +133,9 @@ class RunModeResolverTest {
     }
 
     @Test
-    void resolvesJarInsideJpackageImageAsAppMode() throws Exception {
+    void resolvesDbJarInsideJpackageImageAsAppMode() throws Exception {
         Path appImage = createJpackageLayout("jar-app");
-        Path jar = Files.createFile(appImage.resolve("app/windowstolinux.jar"));
+        Path jar = Files.createFile(appImage.resolve("app/DB.jar"));
 
         RunModeResolver.RuntimeLayout layout = resolve(Optional.empty(), Optional.of(jar));
 
@@ -129,13 +174,13 @@ class RunModeResolverTest {
     }
 
     @Test
-    void publicDetectionRecognizesTheMavenTestRuntime() {
+    void publicDetectionUsesTheDbModuleEvenWhenCalledFromMainTests() {
         assertEquals(
                 RunModeResolver.RunMode.RUN_CLASS,
-                RunModeResolver.detect(RunModeResolverTest.class)
+                RunModeResolver.detect()
         );
-        assertTrue(RunModeResolver.resolveDataDirectory(RunModeResolverTest.class)
-                .endsWith(Path.of("src", "app", "main", "data")));
+        assertTrue(RunModeResolver.resolveDataDirectory()
+                .endsWith(Path.of("src", "app", "db", "data")));
     }
 
     private Path createJpackageLayout(String name) throws Exception {

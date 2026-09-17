@@ -189,12 +189,12 @@
 - 首次使用敏感存储时，用户选择主密码加密模式或 Windows Credential Manager 模式。主密码不得保存；SQLite 只能保存版本化密文和必要元数据。
 - 错误、进度、日志、崩溃报告和 AI 上下文不得泄露原始密码、私钥、口令或 API Key。
 
-`app/main` 使用 `RunModeResolver` 解析固定位置，不提供系统属性、命令行、注册表或指针文件覆盖：
+`app/main` 使用 `RunModeResolver` 解析固定位置；CLASS/JAR 以 `app/db` 的 `DesktopPersistence` 类实际加载位置为锚点，APP 仍以启动器 EXE 为准，不提供系统属性、命令行、注册表或指针文件覆盖：
 
 | 模式 | applicationHome | data |
 | --- | --- | --- |
-| CLASS | `src/app/main` | `src/app/main/data` |
-| JAR | 主 JAR 所在目录 | JAR 同级 `data` |
+| CLASS | `src/app/db` | `src/app/db/data` |
+| JAR | DB 模块 JAR 所在目录 | DB JAR 同级 `data` |
 | APP | jpackage EXE/app-image 根目录 | EXE 同级 `data` |
 
 无法识别或目录不可写时停止启动，不回退到当前目录、用户目录或临时目录。jpackage 使用按当前用户安装和可选择安装目录，避免把固定数据位置放到普通用户不可写目录。

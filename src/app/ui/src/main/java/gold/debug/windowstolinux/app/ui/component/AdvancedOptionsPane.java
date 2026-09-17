@@ -15,9 +15,10 @@ import java.util.function.BooleanSupplier;
 
 /** A page-local, initially closed inspector preserving the original input controls. / 页面专属且初始折叠的检查面板，保留原有输入控件。 */
 public final class AdvancedOptionsPane extends JPanel {
-    private final JPanel fields = new InspectorFieldsPane();
+    private final InspectorFieldsPane fields = new InspectorFieldsPane();
     private final JScrollPane drawer;
     private final JButton toggle;
+    private final JPanel toolbar;
     private boolean expanded;
     private AdvancedWindowHost windowController;
     private final JLabel modified = new JLabel();
@@ -41,7 +42,7 @@ public final class AdvancedOptionsPane extends JPanel {
         drawer.setVisible(false);
         toggle = components.secondaryButton(messages.text("advanced.show"));
         toggle.addActionListener(event -> setExpanded(!expanded()));
-        JPanel toolbar = components.transparent(new FlowLayout(FlowLayout.RIGHT, 8, 0));
+        toolbar = components.transparent(new FlowLayout(FlowLayout.RIGHT, 8, 0));
         toolbar.add(modified);
         toolbar.add(toggle);
         toolbar.add(help(messages.text("advanced.help")));
@@ -51,20 +52,57 @@ public final class AdvancedOptionsPane extends JPanel {
 
     /** Adds one labeled input with an accessible, explanatory question-mark button. / 添加一个带标签的输入及支持无障碍访问的说明问号按钮。 */
     public void field(String key, JComponent input) {
-        JPanel row = new JPanel(new BorderLayout(4, 5));
+        JTextArea label = new JTextArea(messages.text(key));
+        label.setEditable(false);
+        label.setFocusable(false);
+        label.setOpaque(false);
+        label.setBorder(null);
+        label.setMargin(new Insets(0, 0, 0, 0));
+        label.setFont(UIManager.getFont("Label.font"));
+        label.setForeground(UIManager.getColor("Label.foreground"));
+        label.setLineWrap(true);
+        label.setWrapStyleWord(true);
+        input.getAccessibleContext().setAccessibleName(messages.text(key));
+        boolean switchField = input instanceof ToggleSwitch;
+        if (switchField) ((ToggleSwitch) input).setText(null);
+        JButton help = help(messages.text("help." + key));
+        JPanel controls = new JPanel(new FlowLayout(FlowLayout.RIGHT, 0, 0));
+        controls.setOpaque(false);
+        if (switchField) { controls.add(input); controls.add(Box.createHorizontalStrut(6)); }
+        controls.add(help);
+        JPanel row = new JPanel(new BorderLayout(6, 5)) {
+            @Override public Dimension getPreferredSize() {
+                int width = fields.contentWidth() - controls.getPreferredSize().width - 6;
+                label.setSize(Math.max(1, width), Short.MAX_VALUE);
+                return super.getPreferredSize();
+            }
+            @Override public Dimension getMaximumSize() {
+                return new Dimension(Integer.MAX_VALUE, getPreferredSize().height);
+            }
+            @Override public Dimension getMinimumSize() {
+                return new Dimension(0, getPreferredSize().height);
+            }
+        };
         row.setOpaque(false);
         row.setAlignmentX(Component.LEFT_ALIGNMENT);
-        JPanel heading = new JPanel(new FlowLayout(FlowLayout.LEFT, 4, 0));
+        JPanel heading = new JPanel(new BorderLayout(6, 0));
         heading.setOpaque(false);
-        JLabel label = new JLabel(messages.text(key));
-        label.setLabelFor(input);
-        heading.add(label);
-        heading.add(help(messages.text("help." + key)));
+        JPanel helpColumn = new JPanel(switchField ? new GridBagLayout() : new BorderLayout());
+        helpColumn.setOpaque(false);
+        if (switchField) helpColumn.add(controls);
+        else helpColumn.add(controls, BorderLayout.NORTH);
+        if (switchField) {
+            JPanel textColumn = new JPanel(new GridBagLayout());
+            textColumn.setOpaque(false);
+            GridBagConstraints placement = new GridBagConstraints();
+            placement.weightx = 1; placement.fill = GridBagConstraints.HORIZONTAL;
+            textColumn.add(label, placement);
+            heading.add(textColumn, BorderLayout.CENTER);
+        } else heading.add(label, BorderLayout.CENTER);
+        heading.add(helpColumn, BorderLayout.EAST);
         row.add(heading, BorderLayout.NORTH);
-        row.add(input, BorderLayout.CENTER);
+        if (!switchField) row.add(input, BorderLayout.CENTER);
         row.setBorder(BorderFactory.createEmptyBorder(0, 0, 12, 0));
-        row.setMaximumSize(new Dimension(Integer.MAX_VALUE, row.getPreferredSize().height));
-        row.setMinimumSize(new Dimension(0, row.getPreferredSize().height));
         fields.add(row);
         observe(input);
     }
@@ -81,6 +119,8 @@ public final class AdvancedOptionsPane extends JPanel {
 
     /** Binds the inspector to its window host. / 将检查面板绑定到窗口宿主。 */
     public void bind(AdvancedWindowHost controller) { windowController = controller; }
+    /** Moves the existing controls into the desktop header; standalone dialogs keep their local toolbar. / 将原控件移入桌面顶部栏，独立弹窗仍保留本地工具栏。 */
+    public JComponent headerControls() { remove(toolbar); return toolbar; }
     JComponent drawer() { return drawer; }
     String inspectorTitle() { return messages.text("advanced.show"); }
 
@@ -178,6 +218,23 @@ public final class AdvancedOptionsPane extends JPanel {
     }
 
     private static final class InspectorFieldsPane extends JPanel implements Scrollable {
+        private int measuredWidth = -1;
+
+        int contentWidth() {
+            int width = getParent() instanceof JViewport viewport ? viewport.getExtentSize().width : getWidth();
+            if (width <= 0) width = AdvancedWindowHost.WIDTH;
+            return Math.max(1, width - getInsets().left - getInsets().right);
+        }
+
+        @Override public Dimension getPreferredSize() {
+            int width = contentWidth();
+            if (measuredWidth != width) {
+                measuredWidth = width;
+                ((BoxLayout) getLayout()).invalidateLayout(this);
+            }
+            return super.getPreferredSize();
+        }
+
         @Override public Dimension getPreferredScrollableViewportSize() { return getPreferredSize(); }
         @Override public int getScrollableUnitIncrement(Rectangle visible, int orientation, int direction) { return 18; }
         @Override public int getScrollableBlockIncrement(Rectangle visible, int orientation, int direction) { return Math.max(18, visible.height - 18); }

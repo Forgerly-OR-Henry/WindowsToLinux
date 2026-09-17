@@ -3,9 +3,9 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2] / 'main/resources/gold/debug/windowstolinux/shared/linux/sshd'
 INSERTS = {
-    '# @compat:apparmor@\n': 'execution/protocol/helper/apparmor-namespace.sh',
-    '# @compat:systemd-isolation@\n': 'runtime/systemd/systemd-manager-isolation.sh',
-    '# @compat:selinux-entry@\n': 'runtime/systemd/selinux-command-entry.sh',
+    '# @compat:apparmor@\n': 'execution/protocol/helper/fragments/workspace/apparmor-namespace.sh',
+    '# @compat:systemd-isolation@\n': 'runtime/systemd/helper/systemd-manager-isolation.sh',
+    '# @compat:selinux-entry@\n': 'runtime/systemd/helper/selinux-command-entry.sh',
     '# @compat:centos-repositories@\n': 'distro/dnf/centos-source-repositories.py',
 }
 

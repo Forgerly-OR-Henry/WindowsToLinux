@@ -35,7 +35,7 @@ public final class DesktopFailureReportStore implements FailureReportStore {
 
     /** Creates the report store and performs startup rotation best-effort. / 创建报告存储并在启动时尽力轮转。 */
     public DesktopFailureReportStore(Path dataDirectory) {
-        directory = dataDirectory.toAbsolutePath().normalize().resolve("diagnostics");
+        directory = dataDirectory.toAbsolutePath().normalize().resolve("error-logs");
         try {
             Files.createDirectories(directory);
             rotate();

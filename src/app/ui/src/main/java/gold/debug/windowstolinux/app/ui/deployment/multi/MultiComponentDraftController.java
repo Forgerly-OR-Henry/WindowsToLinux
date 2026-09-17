@@ -14,7 +14,7 @@ import gold.debug.windowstolinux.shared.model.lifecycle.LifecycleAction;
 import gold.debug.windowstolinux.shared.model.project.DeploymentProjectType;
 
 import javax.swing.DefaultListModel;
-import javax.swing.JCheckBox;
+import gold.debug.windowstolinux.app.ui.component.ToggleSwitch;
 import javax.swing.JComboBox;
 import javax.swing.JList;
 import javax.swing.JTextField;
@@ -50,7 +50,7 @@ final class MultiComponentDraftController {
     final JTextField ports = new JTextField(20);
     final JTextField dependencies = new JTextField(20);
     final ResourceControls resources = new ResourceControls();
-    final JCheckBox required;
+    final ToggleSwitch required;
     final LifecycleControls lifecycle = new LifecycleControls();
     final DraftControls draftControls = new DraftControls();
     private final PageMessagePresenter messages;
@@ -59,7 +59,7 @@ final class MultiComponentDraftController {
     MultiComponentDraftController(PageMessagePresenter messages, MultiComponentApplicationFacade service) {
         this.messages = messages;
         this.service = service;
-        required = new JCheckBox(messages.text("component.required"), true);
+        required = new ToggleSwitch(null, true);
         messages.localize(projectType, "project.type.");
         messages.localize(healthMode, "health.mode.");
         messages.localize(resources.databaseMode, "database.review.mode.");
