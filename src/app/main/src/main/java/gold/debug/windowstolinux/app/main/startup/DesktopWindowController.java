@@ -1,6 +1,7 @@
 package gold.debug.windowstolinux.app.main.startup;
 
 import gold.debug.windowstolinux.app.db.DesktopPersistence;
+import gold.debug.windowstolinux.app.main.runtime.RunModeResolver.RunMode;
 import gold.debug.windowstolinux.app.service.DesktopApplicationFacade;
 import gold.debug.windowstolinux.app.ui.display.DesktopDisplayConfiguration;
 import gold.debug.windowstolinux.app.ui.display.DesktopThemeService;
@@ -30,6 +31,7 @@ final class DesktopWindowController {
     private final Timer systemThemeTimer;
     private final AtomicBoolean checkingSystemTheme = new AtomicBoolean();
     private final FailureReportStore reports;
+    private final boolean uiDebugEnabled;
 
     private DesktopDisplayConfiguration appearance;
     private ThemeMode effectiveTheme;
@@ -37,11 +39,12 @@ final class DesktopWindowController {
     private int windowState = java.awt.Frame.NORMAL;
 
     DesktopWindowController(DesktopPersistence database, DesktopApplicationFacade service,
-                            DesktopDisplayConfiguration appearance, FailureReportStore reports) {
+                            DesktopDisplayConfiguration appearance, FailureReportStore reports, RunMode mode) {
         this.database = database;
         this.service = service;
         this.appearance = appearance;
         this.reports = reports;
+        this.uiDebugEnabled = mode == RunMode.RUN_CLASS;
         this.effectiveTheme = SystemThemeResolver.effectiveTheme(appearance.themeMode());
         this.systemThemeTimer = new Timer(5_000, event -> refreshSystemThemeIfChanged());
         this.systemThemeTimer.setRepeats(true);
@@ -77,7 +80,7 @@ final class DesktopWindowController {
     private void showWindow(Rectangle bounds, DesktopViewState viewState) {
         MessageCatalog catalog = MessageCatalog.forLanguageTag(appearance.localeTag());
         ThemePalette palette = effectiveTheme == ThemeMode.DARK ? ThemePalette.dark() : ThemePalette.light();
-        frame = new DesktopFrame(service, catalog, appearance, palette, this::applyAppearance, viewState, reports);
+        frame = new DesktopFrame(service, catalog, appearance, palette, this::applyAppearance, viewState, reports, uiDebugEnabled);
         if (bounds != null) {
             frame.restoreWorkspaceWindowBounds(bounds);
         }

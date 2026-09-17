@@ -75,12 +75,21 @@ public final class DesktopComponentFactory {
      * @return the operation result / 操作结果
      */
     public JLabel badge(String text) {
-        JLabel badge = new JLabel(text);
-        badge.setOpaque(true);
+        JLabel badge = new JLabel(text) {
+            @Override protected void paintComponent(java.awt.Graphics graphics) {
+                var g = (java.awt.Graphics2D) graphics.create();
+                try {
+                    g.setRenderingHint(java.awt.RenderingHints.KEY_ANTIALIASING, java.awt.RenderingHints.VALUE_ANTIALIAS_ON);
+                    g.setColor(getBackground());
+                    g.fillRoundRect(0, 0, getWidth(), getHeight(), getHeight(), getHeight());
+                } finally { g.dispose(); }
+                super.paintComponent(graphics);
+            }
+        };
         badge.setBackground(palette.badgeBackground());
         badge.setForeground(palette.accentDark());
         badge.setFont(badge.getFont().deriveFont(Font.BOLD, 11f));
-        badge.setBorder(BorderFactory.createEmptyBorder(5, 8, 5, 8));
+        badge.setBorder(BorderFactory.createEmptyBorder(6, 10, 6, 10));
         return badge;
     }
 
@@ -111,6 +120,7 @@ public final class DesktopComponentFactory {
         JPanel heading = transparent(new BorderLayout(0, 3));
         JLabel label = new JLabel(title);
         label.setFont(label.getFont().deriveFont(Font.BOLD, 15f));
+        label.setForeground(palette.sidebarForeground());
         JLabel detail = new JLabel(description);
         detail.setForeground(palette.subduedText());
         detail.setFont(detail.getFont().deriveFont(12f));
@@ -162,6 +172,8 @@ public final class DesktopComponentFactory {
         button.setBackground(palette.accent());
         button.setForeground(Color.WHITE);
         decorate(button);
+        button.putClientProperty(FlatClientProperties.STYLE, java.util.Map.of(
+                "arc", 12, "borderWidth", 0, "focusWidth", 1));
         return button;
     }
 
@@ -225,7 +237,10 @@ public final class DesktopComponentFactory {
         JPanel card = card(new BorderLayout(0, 12));
         card.add(sectionHeading(title, description), BorderLayout.NORTH);
         JScrollPane scrollPane = new JScrollPane(output);
-        scrollPane.setBorder(BorderFactory.createLineBorder(palette.inputBorder()));
+        output.setBackground(palette.cardBackground());
+        output.setForeground(palette.sidebarForeground());
+        scrollPane.getViewport().setBackground(palette.cardBackground());
+        scrollPane.setBorder(BorderFactory.createMatteBorder(1, 0, 0, 0, palette.cardBorder()));
         scrollPane.getVerticalScrollBar().setUnitIncrement(16);
         card.add(scrollPane, BorderLayout.CENTER);
         return card;
@@ -271,9 +286,11 @@ public final class DesktopComponentFactory {
         return area;
     }
 
-    private static void decorate(JButton button) {
-        button.setFocusPainted(false);
-        button.setOpaque(true);
-        button.putClientProperty(FlatClientProperties.BUTTON_TYPE, FlatClientProperties.BUTTON_TYPE_ROUND_RECT);
+    private void decorate(JButton button) {
+        button.setFocusPainted(true);
+        button.setOpaque(false);
+        button.putClientProperty(FlatClientProperties.STYLE, java.util.Map.of(
+                "arc", 12, "borderColor", palette.inputBorder(), "focusedBorderColor", palette.accent(),
+                "hoverBorderColor", palette.accent(), "focusWidth", 1));
     }
 }

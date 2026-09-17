@@ -111,9 +111,9 @@ public final class DeploymentInputDialog implements AutomaticDeploymentInteracti
             explanation.setText(messages.text("db.replaceConfirmed", details)); explanation.setRows(7); explanation.setColumns(48);
             panel.add(explanation, BorderLayout.CENTER);
             JPanel checks = components.transparent(new GridLayout(0, 1, 0, 8));
-            JCheckBox backup = new JCheckBox(messages.text("db.replace.backup"));
-            JCheckBox downtime = new JCheckBox(messages.text("db.replace.downtime"));
-            JCheckBox replacement = new JCheckBox(messages.text("db.replace.software"));
+            ToggleSwitch backup = new ToggleSwitch(messages.text("db.replace.backup"), false);
+            ToggleSwitch downtime = new ToggleSwitch(messages.text("db.replace.downtime"), false);
+            ToggleSwitch replacement = new ToggleSwitch(messages.text("db.replace.software"), false);
             checks.add(backup); checks.add(downtime); checks.add(replacement); panel.add(checks, BorderLayout.SOUTH);
             while (JOptionPane.showConfirmDialog(owner, panel, messages.text("auto.waiting"), JOptionPane.OK_CANCEL_OPTION,
                     JOptionPane.WARNING_MESSAGE) == JOptionPane.OK_OPTION) {

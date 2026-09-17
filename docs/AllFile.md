@@ -57,13 +57,13 @@ src/  # 项目源码与模块根目录
 │  ├─ main/  # 桌面应用入口与模块装配模块
 │  │  ├─ AppMain.java  # WindowsToLinux 桌面应用入口
 │  │  ├─ diagnostic/  # 系统级失败、未捕获异常边界与本地诊断报告包
-│  │  │  ├─ DesktopFailureReportStore.java  # 原子写入、截断、脱敏并轮转固定 data/diagnostics 报告
+│  │  │  ├─ DesktopFailureReportStore.java  # 原子写入、截断、脱敏并轮转固定 data/error-logs 报告
 │  │  │  ├─ DesktopStartupException.java  # 启动布局、数据库及 UI 装配失败的结构化异常
 │  │  │  ├─ DesktopSystemFailureType.java  # 桌面系统级启动、运行、资源和关闭失败目录
 │  │  │  └─ DesktopUncaughtFailureBoundary.java  # 捕获线程边界失败并对 JVM 致命错误尽力记录后退出
 │  │  ├─ runtime/  # 本地运行布局与路径解析包
 │  │  │  ├─ DesktopStorageLayout.java  # 从唯一运行模式 data 根派生数据库、受管应用、工作、备份和诊断路径
-│  │  │  ├─ RunModeResolver.java  # 为受支持的开发、JAR 和 jpackage 布局解析应用主目录及其固定 data 目录
+│  │  │  ├─ RunModeResolver.java  # CLASS/JAR 按 DB 模块定位固定 data 目录，jpackage 按 EXE 定位
 │  │  │  └─ RuntimePathResolver.java  # 定位并验证受支持的开发、JAR 与 jpackage 文件系统布局
 │  │  └─ startup/  # 桌面启动与窗口装配包
 │  │     ├─ DesktopMain.java  # 使用受管部署要求固定数据目录的生产桌面引导程序
@@ -198,8 +198,9 @@ src/  # 项目源码与模块根目录
 │  │  │  ├─ DesktopComponentFactory.java  # 创建桌面页面复用的按钮、表单和布局组件
 │  │  │  ├─ DesktopIcons.java  # 随主题着色的 Lucide SVG 图标
 │  │  │  ├─ DesktopTaskExecutor.java  # 后台运行操作、回送 Swing 结果并记录活动任务以保护外观重建
-│  │  │  └─ SystemPreparationDialog.java  # 默认拒绝的系统配置与服务器重启确认框
 │  │  │  ├─ RoundedCard.java  # 共享圆角卡片绘制
+│  │  │  ├─ SystemPreparationDialog.java  # 默认拒绝的系统配置与服务器重启确认框
+│  │  │  └─ ToggleSwitch.java  # 保留原生二值状态、键盘及无障碍行为的后置滑块开关
 │  │  ├─ deployment/  # 部署审阅上下文与输入解析包
 │  │  │  ├─ ReviewContext.java  # 可选 AI 页面使用的窄当前审阅视图
 │  │  │  ├─ multi/  # 多组件编辑、页面与结果呈现包
@@ -212,7 +213,7 @@ src/  # 项目源码与模块根目录
 │  │  │     ├─ DeploymentAnalysisPresenter.java  # 格式化本地化语言、证据、冲突、缺失输入和拒绝摘要
 │  │  │     ├─ DeploymentForm.java  # 持有部署控件、非秘密表单状态与领域输入映射
 │  │  │     ├─ DeploymentInputDialog.java  # 保留缺项表单并展开脱敏 AI 问答和风险确认
-│  │  │     ├─ DeploymentSourceCard.java  # 支持拖入与粘贴及后台识别的源码卡片
+│  │  │     ├─ DeploymentSourceCard.java  # 单项源码选择、后台识别及卡片内展示，清除后可重新拖入或粘贴
 │  │  │     ├─ DeploymentPage.java  # 持有源码选择、审阅状态、部署表单与完整经审阅部署流程
 │  │  │     └─ DeploymentPageState.java  # 保存单组件部署页尚未提交的运行、健康、配置和源码审阅状态
 │  │  ├─ diagnostic/  # 结构化失败安全展示包
@@ -240,10 +241,12 @@ src/  # 项目源码与模块根目录
 │  │  │  ├─ ServerPageState.java  # 保存桌面外观重建期间尚未提交的服务器表单状态
 │  │  │  ├─ ServerProfileDialog.java  # 独立服务器添加编辑及保存检查窗口
 │  │  │  ├─ ServerTrustPrompt.java  # 后台连接期间的事件线程主机指纹确认
-│  │  │  └─ ServerSelectionPane.java  # 目标摘要卡片与独立可搜索选择窗口
+│  │  │  └─ ServerSelectionPane.java  # 单台目标选择与清除、摘要卡片及独立可搜索选择窗口
 │  │  ├─ setting/  # 桌面设置页面与状态包
 │  │  │  ├─ SettingPage.java  # 持有外观控件与即时应用流程
-│  │  │  └─ SettingPageState.java  # 设置立即生效，因此没有需要保留的未保存页面局部值
+│  │  │  ├─ SettingPageState.java  # 设置立即生效，因此没有需要保留的未保存页面局部值
+│  │  │  ├─ UiDebugDialog.java  # Class 模式主页面导航与运行过程弹窗预览目录
+│  │  │  └─ UiPreviewService.java  # 固定示例数据及默认拒绝真实操作的隔离预览服务
 │  │  ├─ shell/  # 主窗口、导航与页面装配包
 │  │  │  ├─ DesktopDisplayChangeHandler.java  # 保存选定外观，并在事件线程上替换活动桌面窗口
 │  │  │  ├─ DesktopFrame.java  # 只负责导航、页面装配和窗口生命周期的窗口外壳
@@ -254,6 +257,7 @@ src/  # 项目源码与模块根目录
 │  │     ├─ component/  # 共用组件资源
 │  │     │  └─ icons/  # Lucide 图标及上游许可
 │  │     │     ├─ archive.svg  # 导航及操作图标
+│  │     │     ├─ arrow-right.svg  # 源码到目标服务器的部署方向图标
 │  │     │     ├─ bot.svg  # 导航及操作图标
 │  │     │     ├─ chevron-right.svg  # 导航及操作图标
 │  │     │     ├─ folder-open.svg  # 导航及操作图标
@@ -867,10 +871,7 @@ src/  # 项目源码与模块根目录
 │  │  │  │  ├─ database/  # 原生数据库固定远程协议包
 │  │  │  │  │  └─ SshdNativeDatabasePort.java  # 通过固定 helper 动词和敏感标准输入管理原生 DB
 │  │  │  │  ├─ helper/  # helper 资源拼装与版本校验包
-│  │  │  │  │  ├─ AppArmorNamespaceCompatibility.java  # 暂存引擎 AppArmor profile 探测片段
-│  │  │  │  │  ├─ CentosStreamRepositoryCompatibility.java  # 暂存 CRB 事务参数与源码依赖片段
-│  │  │  │  │  ├─ ManagedHelperBundle.java  # 从固定职责片段拼装 root 持有的受管 helper 并拒绝协议漂移
-│  │  │  │  │  └─ SystemdIsolationCompatibility.java  # 暂存 SELinux 隔离和标准启动入口
+│  │  │  │  │  └─ ManagedHelperBundle.java  # 统一展开固定职责资源并拼装 root 持有的受管 helper，拒绝协议漂移
 │  │  │  │  ├─ input/  # 配置与秘密输入封存包
 │  │  │  │  │  ├─ DeploymentConfigurationRenderer.java  # 为 systemd 与容器使用方渲染不可变运行时配置
 │  │  │  │  │  ├─ DeploymentInputArguments.java  # 将非秘密输入清单转换为确定性辅助程序参数
@@ -915,7 +916,6 @@ src/  # 项目源码与模块根目录
 │  │     ├─ execution/  # SSHD 执行流程资源功能组
 │  │     │  └─ protocol/  # helper 协议资源目录
 │  │     │     └─ helper/  # root 持有 helper 资源目录
-│  │     │        ├─ apparmor-namespace.sh  # 实际引擎 profile 的命名空间探测
 │  │     │        └─ fragments/  # 按职责拆分的 helper 脚本片段目录
 │  │     │           ├─ 00-protocol-foundation.sh  # 定义受管 helper 协议的安全基线、路径和输入校验函数
 │  │     │           ├─ 70-command-dispatch.sh  # 将 helper 协议命令分派到固定的受管操作
@@ -949,17 +949,18 @@ src/  # 项目源码与模块根目录
 │  │     │              ├─ 23-container-builder.sh  # 临时 rootless 账号和 UID/GID 映射
 │  │     │              ├─ 24-build-entry.sh  # 独立安装的非特权构建与 rootless 后端入口
 │  │     │              ├─ 25-workspace-recovery.sh  # 开机回收受管候选，隔离不明残留
-│  │     │              └─ 26-build-output.sh  # root 控制器累计输出预算和有界日志
+│  │     │              ├─ 26-build-output.sh  # root 控制器累计输出预算和有界日志
+│  │     │              └─ apparmor-namespace.sh  # 工作区使用实际引擎 AppArmor profile 探测命名空间
 │  │     ├─ runtime/  # 目标应用运行资源目录
 │  │     │  ├─ container/  # 容器运行资源目录
 │  │     │  │  └─ helper/  # Podman Quadlet helper 片段目录
 │  │     │  │     └─ 55-podman-quadlet.sh  # 生成并管理 Podman Quadlet 容器运行单元
 │  │     │  └─ systemd/  # systemd 运行资源目录
-│  │     │     ├─ selinux-command-entry.sh  # SELinux 标准服务启动入口
-│  │     │     ├─ systemd-manager-isolation.sh  # systemd 管理接口隔离
 │  │     │     └─ helper/  # systemd 生命周期 helper 片段目录
 │  │     │        ├─ 60-lifecycle.sh  # 执行受管 systemd 应用的启动、停止、重启和自启操作
-│  │     │        └─ 61-dynamic-identity.sh  # 动态服务身份、StateDirectory 和旧布局恢复
+│  │     │        ├─ 61-dynamic-identity.sh  # 动态服务身份、StateDirectory 和旧布局恢复
+│  │     │        ├─ selinux-command-entry.sh  # SELinux 标准服务启动入口
+│  │     │        └─ systemd-manager-isolation.sh  # systemd 管理接口隔离
 │  │     └─ toolchain/  # 工具链声明、分支目录及受管准备职责包
 │  │        ├─ 10-release-metadata.py  # 解析官方发布元数据、版本和可信摘要
 │  │        ├─ 20-installation-boundaries.py  # 校验归档、系统依赖、归属和有界子进程

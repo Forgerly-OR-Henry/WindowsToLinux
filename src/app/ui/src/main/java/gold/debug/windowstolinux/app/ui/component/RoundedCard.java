@@ -19,9 +19,9 @@ final class RoundedCard extends JPanel {
         try {
             g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
             g.setColor(getBackground());
-            g.fillRoundRect(0, 0, getWidth() - 1, getHeight() - 1, 18, 18);
+            g.fillRoundRect(0, 0, getWidth() - 1, getHeight() - 1, 24, 24);
             g.setColor(outline);
-            g.drawRoundRect(0, 0, getWidth() - 1, getHeight() - 1, 18, 18);
+            g.drawRoundRect(0, 0, getWidth() - 1, getHeight() - 1, 24, 24);
         } finally { g.dispose(); }
         super.paintComponent(graphics);
     }

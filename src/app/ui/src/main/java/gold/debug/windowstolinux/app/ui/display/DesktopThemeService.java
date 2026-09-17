@@ -36,6 +36,15 @@ public final class DesktopThemeService {
         UIManager.put("ScrollBar.width", 14);
         UIManager.put("TitlePane.unifiedBackground", true);
 
+        ThemePalette palette = effectiveTheme == ThemeMode.DARK ? ThemePalette.dark() : ThemePalette.light();
+        UIManager.put("Label.foreground", palette.sidebarForeground());
+        UIManager.put("Component.borderColor", palette.inputBorder());
+        UIManager.put("Component.focusColor", palette.accent());
+        for (String type : java.util.List.of("TextField", "PasswordField", "FormattedTextField", "TextArea", "ComboBox", "Spinner")) {
+            UIManager.put(type + ".background", palette.cardBackground());
+            UIManager.put(type + ".foreground", palette.sidebarForeground());
+        }
+
         Font defaultFont = UIManager.getFont("defaultFont");
         if (defaultFont != null) {
             UIManager.put("defaultFont", defaultFont.deriveFont(13f));

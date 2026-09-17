@@ -8,6 +8,7 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.HexFormat;
 import java.util.List;
+import java.util.Map;
 import gold.debug.windowstolinux.shared.linux.protocol.ManagedHelperProtocol;
 
 /** Assembles the root-owned managed helper from fixed responsibility fragments and rejects protocol drift. / 从固定职责片段拼装 root 持有的受管 helper 并拒绝协议漂移。 */
@@ -23,6 +24,11 @@ public final class ManagedHelperBundle {
     /** Expected byte-for-byte helper bundle identity. / 预期的 helper 逐字节身份。 */
     public static final String EXPECTED_SHA256 = "1f10cece3ee7a3c9d75e9000c2b1c6bbe950afc11da65b65cc71ed26f4a2af87";
     private static final String ROOT = "/gold/debug/windowstolinux/shared/linux/sshd/";
+    private static final Map<String, String> RESOURCE_INSERTS = Map.of(
+            "# @compat:apparmor@\n", "execution/protocol/helper/fragments/workspace/apparmor-namespace.sh",
+            "# @compat:systemd-isolation@\n", "runtime/systemd/helper/systemd-manager-isolation.sh",
+            "# @compat:selinux-entry@\n", "runtime/systemd/helper/selinux-command-entry.sh",
+            "# @compat:centos-repositories@\n", "distro/dnf/centos-source-repositories.py");
     private static final List<String> FRAGMENTS = List.of(
             "execution/protocol/helper/fragments/00-protocol-foundation.sh",
             "execution/protocol/helper/fragments/release/10-typed-release.sh",
@@ -88,9 +94,7 @@ public final class ManagedHelperBundle {
                     throw new IllegalStateException("managed-deployment privilege helper fragment is unavailable: " + fragment);
                 }
                 String content = new String(stream.readAllBytes(), StandardCharsets.UTF_8).replace("\r\n", "\n");
-                content = AppArmorNamespaceCompatibility.expand(content);
-                content = SystemdIsolationCompatibility.expand(content);
-                content = CentosStreamRepositoryCompatibility.expand(content);
+                content = expandResourceInserts(content);
                 if (fragment.startsWith("toolchain/")) {
                     if (fragment.endsWith("10-release-metadata.py")) output.write(
                             ("prepare_official_toolchains() {\n  /usr/bin/python3 -I - \"$@\" <<'WTL_OFFICIAL_TOOLCHAINS'\n"
@@ -111,6 +115,20 @@ public final class ManagedHelperBundle {
             }
         }
         return output.toByteArray();
+    }
+
+    private static String expandResourceInserts(String script) throws IOException {
+        for (var insert : RESOURCE_INSERTS.entrySet()) {
+            if (!script.contains(insert.getKey())) continue;
+            try (InputStream input = ManagedHelperBundle.class.getResourceAsStream(ROOT + insert.getValue())) {
+                if (input == null) {
+                    throw new IllegalStateException("managed-deployment privilege helper insert is unavailable: " + insert.getValue());
+                }
+                script = script.replace(insert.getKey(),
+                        new String(input.readAllBytes(), StandardCharsets.UTF_8).replace("\r\n", "\n"));
+            }
+        }
+        return script;
     }
 
     private static String catalogLiteral(gold.debug.windowstolinux.shared.model.toolchain.ToolchainSupportCatalog catalog) {

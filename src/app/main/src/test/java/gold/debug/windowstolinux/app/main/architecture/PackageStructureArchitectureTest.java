@@ -352,6 +352,13 @@ class PackageStructureArchitectureTest {
                 "selinux-command-entry.sh", "centos-source-repositories.py", "external-applications.py"));
         assertEquals(expectedResources, fileNamesRecursively(fragments));
         assertEquals(Set.of("selinux-preparation.sh", "centos-source-repositories.py"), fileNames(fragments.resolve("distro/dnf")));
+        assertEquals(Set.of(), fileNames(fragments.resolve("execution/protocol/helper")));
+        assertEquals(Set.of(), fileNames(fragments.resolve("runtime/systemd")));
+        assertEquals(Set.of("60-lifecycle.sh", "61-dynamic-identity.sh", "systemd-manager-isolation.sh",
+                "selinux-command-entry.sh"), fileNames(fragments.resolve("runtime/systemd/helper")));
+        assertEquals(Set.of("20-candidate-workspace.sh", "21-workspace-volume.sh", "22-restricted-build.sh",
+                "23-container-builder.sh", "24-build-entry.sh", "25-workspace-recovery.sh", "26-build-output.sh",
+                "apparmor-namespace.sh"), fileNames(fragments.resolve("execution/protocol/helper/fragments/workspace")));
         assertEquals(Set.of("10-native-instances.sh", "20-native-targets.sh", "64-database-client.sh",
                         "65-database-backup.sh", "66-database-activation.sh"),
                 fileNames(fragments.resolve("execution/protocol/helper/fragments/database")));

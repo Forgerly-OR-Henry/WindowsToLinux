@@ -1,8 +1,8 @@
 # WindowsToLinux 项目文件结构
 
-## 平台补丁临时抽离（2026-09-16）
+## 平台补丁正式归属（2026-09-16，本地验证完成）
 
-系统补丁保持实际能力判定及原语义。AppArmorNamespaceCompatibility 暂存于 execution.protocol.helper；SystemdIsolationCompatibility、CentosStreamRepositoryCompatibility 同样暂存于 execution.protocol.helper，避免 helper 与 runtime/distro 的包依赖环。脚本资源分别保留于 helper、runtime.systemd 和 distro.dnf，ManagedHelperBundle 展开原片段的固定标记，输出字节不变。以下历史路径说明以此临时映射为准，最终归属待用户决定，见[临时记录](temporary/ubuntu-centos-patches.md)。
+系统补丁按实际职责归属并保持能力判定及原语义：AppArmor 资源位于 `execution/protocol/helper/fragments/workspace/apparmor-namespace.sh`；systemd 隔离与 SELinux 启动入口位于 `runtime/systemd/helper/systemd-manager-isolation.sh` 和 `runtime/systemd/helper/selinux-command-entry.sh`；CentOS CRB 资源保留在 `distro/dnf/centos-source-repositories.py`。`ManagedHelperBundle` 统一读取固定资源并展开标记，替代三个临时 Java 包装类；CRB 事务参数由 `DnfSetupRenderer` 直接生成，发行版选择继续由 `CentosStreamSetupRenderer` 持有。资源装配不依赖 runtime/distro 的 Java 实现类，包依赖门禁已通过。helper 摘要及发行版安装快照保持不变，以下历史路径说明以此归属为准，见[归属记录](temporary/ubuntu-centos-patches.md)。
 
 ## CentOS 系统准备增量（2026-09-14，已接入，实机验收进行中）
 
@@ -10,11 +10,11 @@
 
 `/var/lib/windowstolinux/system-preparation/selinux/` 仅保存 root 所有的原始 SELinux 配置和非秘密阶段信息；不放置应用源码、运行数据或凭据。`distro` 在明确确认下可处理该系统前置配置，覆盖下文“只准备系统工具”的旧范围；其余安全策略保持不变。DNF 9 固定包事务同时选择官方 OpenSSH 包，安装后检查 sshd；环境服务必须通过新 SSH 认证重新采集能力。普通包安装和 SELinux/重启分别确认。保持所有 Ubuntu 专用处理，详细阶段和验收见[四期系统准备](development/PHASE-4.md#acceptance)。
 
-CentOS 后续实测修补继续归既有 helper：在 `runtime/systemd/helper/61-dynamic-identity.sh` 统一渲染 systemd 管理接口隔离属性，构建与运行身份片段复用；该函数按职责从基础协议片段移入，保持既有 300 行门禁，不通过压缩代码或扩大上限规避。SELinux 启用时以只读临时文件系统覆盖 `/run/systemd`，仅只读映射原先未屏蔽的 `dynamic-uid` 和 `userdb` 身份查询目录，隐藏实际控制、日志和通知接口，避免直接覆盖通知 socket 被策略拒绝，也避免将命名空间内部所需的父目录设为不可访问。非 SELinux 平台保留原路径集合。不新增策略模块、不放宽权限、不关闭隔离。系统准备的 `ausearch` 显式读取审计日志，避免 SSH 标准输入被误当日志。源码验收使用产品选择的工具链，不要求系统默认 javac 版本匹配项目。
+CentOS 后续实测修补继续归既有 helper：`runtime/systemd/helper/systemd-manager-isolation.sh` 定义 systemd 管理接口隔离渲染，在 `runtime/systemd/helper/61-dynamic-identity.sh` 的固定标记处展开，由构建与运行身份片段复用；保持既有 300 行门禁，不通过压缩代码或扩大上限规避。SELinux 启用时以只读临时文件系统覆盖 `/run/systemd`，仅只读映射原先未屏蔽的 `dynamic-uid` 和 `userdb` 身份查询目录，隐藏实际控制、日志和通知接口，避免直接覆盖通知 socket 被策略拒绝，也避免将命名空间内部所需的父目录设为不可访问。非 SELinux 平台保留原路径集合。不新增策略模块、不放宽权限、不关闭隔离。系统准备的 `ausearch` 显式读取审计日志，避免 SSH 标准输入被误当日志。源码验收使用产品选择的工具链，不要求系统默认 javac 版本匹配项目。
 
 SELinux 上的类型化普通服务经 `/usr/bin/env` 执行已审核命令，复用发行版为标准 `bin_t` 入口提供的服务域转换；不向 `init_t` 增加 execmem 权限，不重标记系统目录或安装宽泛策略。下载工具链路径、版本绑定、动态 UID、NoNewPrivileges 和文件系统隔离保持约束；系统 Enforcing 状态不代表应用已有专属 SELinux 策略。
 
-源码工具链的系统依赖仍由现有 `toolchain/20-installation-boundaries.py` 负责。只对 `/etc/os-release` 明确为 CentOS 9/10 的 DNF 事务临时启用既有 CRB，以安装 gdbm-devel 等官方构建依赖；不新增仓库、不永久改配置，APT 与其他 DNF 平台路径保留。Node 实机夹具在系统没有受支持版本时申请已支持的独立 Node 22，继续由产品选择与验证实际工具链。
+源码工具链的系统依赖仍由现有 `toolchain/20-installation-boundaries.py` 负责，CentOS 仓库选择在固定标记处嵌入 `distro/dnf/centos-source-repositories.py`。只对 `/etc/os-release` 明确为 CentOS 9/10 的 DNF 事务临时启用既有 CRB，以安装 gdbm-devel 等官方构建依赖；不新增仓库、不永久改配置，APT 与其他 DNF 平台路径保留。Node 实机夹具在系统没有受支持版本时申请已支持的独立 Node 22，继续由产品选择与验证实际工具链。
 
 ## 全量结构审查修正（2026-09-10，本地验证完成）
 
@@ -127,11 +127,11 @@ WindowsToLinux/
    │  │  ├─ deployment/       共享审阅上下文与部署交互
    │  │  │  ├─ multi/         多组件编辑、状态、页面和结果呈现
    │  │  │  └─ single/        单组件表单、状态、页面和分析呈现
-   │  │  ├─ diagnostic/       结构化失败安全展示、报告引用与诊断目录入口
+   │  │  ├─ diagnostic/       结构化失败安全展示、报告引用与错误日志目录入口
    │  │  ├─ i18n/             消息目录和本地化边界
    │  │  ├─ managed/          受管应用列表与生命周期交互
    │  │  ├─ server/           服务器配置和能力验证界面
-   │  │  ├─ setting/          桌面设置界面
+   │  │  ├─ setting/          桌面设置界面及仅 Class 模式显示的隔离弹窗预览
    │  │  └─ shell/            主窗口、导航和页面装配
    │  └─ windows/             Windows 平台边界
    │     ├─ uninstall/        无默认选择的受管卸载边界与精确残留结果
@@ -940,8 +940,8 @@ Web 端所有加密、解密、测试主密钥和服务端凭据操作都必须�
 6. 恢复结果必须记录为 `NOT_REQUIRED`、`NOT_ATTEMPTED`、`SUCCEEDED`、`FAILED` 或 `UNVERIFIED`。回滚或清理无法验证时部署终态固定为 `MANUAL_RECOVERY_REQUIRED`；不得以异常被捕获、命令已发出或重连成功冒充业务恢复成功。
 7. SSH 连接与只读能力采集最多重试 3 次、固定间隔 250 ms；认证、主机指纹拒绝、协议不兼容和线程中断不重试，中断必须恢复线程标记。Git 瞬时网络失败最多重新创建临时工作区重试 2 次、固定间隔 500 ms；每次失败都先完成可验证清理，工具缺失、引用无效、完整性失败和中断不重试。
 8. SQLite 连接必须设置 5 秒 `busy_timeout`，启动执行 `quick_check`，事务保证提交或回滚。锁定允许有界等待；损坏、较新 schema、磁盘不可用或回滚失败必须明确停止并请求处理，不自动修复数据库，也不修改现有 schema 作为错误治理手段。
-9. 固定数据目录下的 `data/diagnostics/` 保存 UTF-8 文本报告：单份最多 256 KiB，最多保留 50 份，启动和写入后清理最旧文件；临时文件完整写入后使用原子移动发布。报告写入失败不得递归生成新报告。
-10. 报告只包含结构化字段、安全诊断、异常类名和栈帧；不得包含未知异常原始消息、密码、私钥、API Key、秘密配置、源码正文或未脱敏第三方响应。UI 展示本地化消息、错误码、operationId、安全摘要、恢复结果和报告位置；平台支持时可打开诊断目录，否则保留可复制路径。
+9. 固定数据目录下的 `data/error-logs/` 保存 UTF-8 文本报告：单份最多 256 KiB，最多保留 50 份，启动和写入后清理最旧文件；临时文件完整写入后使用原子移动发布。报告写入失败不得递归生成新报告。
+10. 报告只包含结构化字段、安全诊断、异常类名和栈帧；不得包含未知异常原始消息、密码、私钥、API Key、秘密配置、源码正文或未脱敏第三方响应。UI 展示本地化消息、错误码、operationId、安全摘要、恢复结果和报告位置；平台支持时可打开错误日志目录，否则保留可复制路径。
 11. `VirtualMachineError`、`LinkageError` 等致命 JVM 错误只做尽力记录后退出，不承诺继续运行。AI 失败只生成 `ai.*` 描述并保留确定性分析结果，不参与错误分类授权、部署重试、回滚决策或执行授权。
 12. `FailureContractArchitectureTest` 以 JDK AST 遍历全部生产失败定义并与登记表双向核对，新增未登记、漏登记和失效登记均失败；按类型继承关系检查顶级及嵌套异常的 `Exception` 后缀和 `FailureCarrier`，不得按文件名筛选。继续检查错误码格式和唯一性、模块归属、类型命名、中英文消息键一致、用户边界及静默捕获，并在 `target/failure-catalog.md` 生成不跟踪的失败目录。原生 DB 六类原因由 `linux.error` 提供结构化描述，服务边界保留既有 `service.database.*` 及恢复建议。
 13. 故障注入至少覆盖数据库锁定/损坏/回滚失败、目录不可写、归档中断/清理失败、Git 工具缺失/超时、SSH 瞬时断线/认证失败、健康失败回滚、回滚不可验证、AI 不可用、报告截断/轮转/脱敏、启动失败和未知 UI 异常。局部测试只证明本地错误语义；真实 Linux 修改路径仍必须通过现有产品入口验收。
@@ -1207,12 +1207,13 @@ main    ──→ shared/{model,git,analyze,ai,config,linux,linux-sshd,deploy,ba
 
 | 运行模式 | `data` 目录 |
 | --- | --- |
-| CLASS | `src/app/main/data`，与 `src/app/main/target` 同级。 |
-| JAR | 主 JAR 文件所在目录下的 `data`。 |
+| CLASS | `src/app/db/data`，与 `src/app/db/target` 同级。 |
+| JAR | DB 模块 JAR 文件（如 `DB.jar`）所在目录下的 `data`。 |
 | APP | `jpackage` 启动器 EXE 所在目录下的 `data`。 |
 
 - `jpackage` 安装包启用按当前用户安装和安装目录选择，避免默认安装到普通用户不可写的 `Program Files`。
-- CLASS 模式优先依据 Maven `target/classes`/`target/test-classes` 定位模块；JetBrains 等 IDE 输出不在模块内时，只有验证工作区中的 `windowstolinux-app-main` POM 后才解析到 `src/app/main`，不会直接把工作目录当作应用目录。
+- CLASS/JAR 模式固定使用 `app/db` 的 `DesktopPersistence` 类作为代码源锚点，不依据主入口模块的位置或固定 JAR 文件名猜测数据目录。
+- CLASS 模式优先依据 DB 模块的 Maven `target/classes`/`target/test-classes` 定位模块；JetBrains 等 IDE 输出不在模块内时，只有验证工作区中的 `windowstolinux-app-db` POM 后才解析到 `src/app/db`，不会直接把工作目录当作数据基准目录。
 - 应用启动时必须验证解析出的 `data` 目录可以创建和写入；验证失败则停止启动并提示用户重新安装到可写目录。
 - 不得静默回退到用户目录、临时目录或其他位置，避免同一安装出现多个不一致的数据副本。
 - APP 模式下数据始终跟随 EXE 安装目录；升级和卸载时按四期文档定义的规则处理。
@@ -1222,19 +1223,14 @@ main    ──→ shared/{model,git,analyze,ai,config,linux,linux-sshd,deploy,ba
 ```text
 <resolved-data>/
 ├─ windowstolinux.db
-├─ managed-applications/
-│  └─ <application-id>/
-│     ├─ files/<binding-id>/
-│     └─ databases/<database-id>/
 ├─ work/
 ├─ backups/
-└─ diagnostics/
+└─ error-logs/
 ```
 
 - `main` 只能从 `RunModeResolver` 已解析的唯一 `data` 根派生这些固定子项；不得写死 `/var/lib`、Windows 盘符、用户目录或临时目录，也不得新增覆盖入口或静默回退。
-- `files/<binding-id>` 使用稳定受管标识寻址；分析得到的逻辑 `ComponentDataPath` 作为经审阅元数据保存，不得直接拼成桌面物理路径。
-- SQLite 文件只允许位于 `databases/<database-id>/` 下并使用已校验的普通文件名。PostgreSQL、MySQL 和 MariaDB 只保存非秘密端点、库名、用户名、TLS 要求及精确 `SecretReference`，不保存密码值。
-- 该目录是 Windows 桌面控制面的本地持久化和工作结构，不是目标 Linux 的远端资源目录。远端文件、卷、数据库导出和恢复路径仍必须由后续产品流程显式收集、验证和映射。
+- 桌面 SQLite 保存文件绑定和数据库绑定等管理记录；分析得到的逻辑 `ComponentDataPath` 作为经审阅元数据保存，不得直接拼成桌面物理路径。数据库连接保存非秘密信息和精确 `SecretReference`，不保存密码值。
+- 实际部署应用的持久化文件、容器卷和数据库保留在目标服务器或对应数据库服务中。桌面端通过 `work` 收集、验证和暂存备份及恢复材料，通过备份归档保存时间点副本。
 
 ### 6.1 Linux 受管数据与取材目录
 
@@ -1396,7 +1392,7 @@ linux-sshd 通过 linux 契约采集服务器已有环境
 | 3.51.0-candidate-restore-ports | 2026-08-22 | 冻结恢复候选混合端口策略：容器全部宿主端口及静态站点、PHP、Ruby 的类型化监听端口可在应用锁内从 `49152-65535` 分配回环候选端口；没有明确监听覆盖契约的其余运行时必须短停机，不得从健康端口或配置猜测。模式按整应用选择，任一组件需要短停机时不得用新旧组件混合图冒充候选健康。候选健康仅作预检，提交后必须恢复正式端口并重新完成组件与整应用健康；任一失败须验证旧发布恢复，否则进入人工恢复。离线迁移复用同一链，成功仍等待人工外部流量切换并保留源端。该文档变更不构成真实 Linux 运行证据。 |
 | 3.50.0-application-health-evidence | 2026-08-22 | SQLite 升至 v11，新成功部署把独立审阅的整应用健康探针作为有界版本化非秘密载荷与整应用图原子保存；v10 及更旧记录保持显式缺失，备份创建不得从健康归属组件或当前界面值反推。 |
 | 3.49.0-managed-remote-backup | 2026-08-22 | 冻结完整远端取材方案：普通服务发布时把经审阅文件绑定实际迁入 `/var/lib/windowstolinux/data/<application>/<component>/files/<binding>` 并复核发布树映射；容器只接受具有精确归属标签的应用命名卷，并保存不可变镜像身份。新增类型化受管文件/卷/发布 PAX TAR、OCI Archive 创建、流式回读和精确清理边界；默认整应用短暂停写后依次取材并恢复原运行状态，数据库继续使用四种固定适配协议。helper 协议升级为 v5，旧 helper 不静默兼容；Windows 最终归档继续复用同目录私有临时、完整校验、无覆盖原子发布及最终复验。候选端口与真实恢复迁移继续后置到下一检查点，新增协议实机证据保持 `RUNTIME-PENDING`。 |
-| 3.48.0-managed-resource-bindings | 2026-08-22 | 桌面本地存储统一从 `RunModeResolver` 的唯一 `data` 根派生 `windowstolinux.db`、`managed-applications`、`work`、`backups` 和 `diagnostics`，不写死平台路径或增加回退。SQLite 升至 v10，新成功部署原子保存稳定文件绑定及 SQLite/PostgreSQL/MySQL/MariaDB 非秘密数据库绑定；数据库范围区分未知与显式为空，服务器密码只保存本次部署已审阅的精确秘密引用，v9 旧图保持资源绑定缺失。数据库绑定进入发布身份摘要，备份准入新增资源/数据库审阅缺失结果；远端物理采集、候选端口与完整归档产品入口仍为 `RUNTIME-PENDING`。完整 28-POM JDK 21 离线门禁通过 393 项测试、0 失败、0 错误、25 项真实环境条件跳过，124 份 Surefire 报告。 |
+| 3.48.0-managed-resource-bindings | 2026-08-22 | 桌面本地存储统一从 `RunModeResolver` 的唯一 `data` 根派生固定子目录，不写死平台路径或增加回退；当前布局以第 6 节为准。SQLite 升至 v10，新成功部署原子保存稳定文件绑定及 SQLite/PostgreSQL/MySQL/MariaDB 非秘密数据库绑定；数据库范围区分未知与显式为空，服务器密码只保存本次部署已审阅的精确秘密引用，v9 旧图保持资源绑定缺失。数据库绑定进入发布身份摘要，备份准入新增资源/数据库审阅缺失结果；远端物理采集、候选端口与完整归档产品入口仍为 `RUNTIME-PENDING`。完整 28-POM JDK 21 离线门禁通过 393 项测试、0 失败、0 错误、25 项真实环境条件跳过，124 份 Surefire 报告。 |
 | 3.47.0-schema-v4-activation-bindings | 2026-08-22 | 将备份写入格式升级为 schema v4：每组件保存发布 SHA-256 和精确秘密修订，应用发布集合使用依赖顺序、固定域与长度分隔的 SHA-256，应用秘密集合必须等于组件并集；同一标识不同修订可共存。deploy 激活请求携带并独立复核相同身份。schema v3 保留确定性读取、本地检查、候选准备和密码认证，但在远端暂存前失败关闭；v4 排除 `secrets.enc` 时保留元数据但同样不得自动激活。聚焦测试覆盖摘要/并集篡改、规范顺序、v3 往返及适配器直调零远端修改；完整 28-POM JDK 21 离线门禁通过 380 项测试、0 失败、0 错误、25 项真实环境条件跳过，121 份 Surefire 报告。 |
 | 3.46.0-secret-authentication-ui | 2026-08-22 | 将已有 `secrets.enc` 完整认证接入桌面备份页面：独立备份密码只作为短生命周期字符数组进入现有 Argon2id/AES-GCM 用例，输入框立即清空，用例成功或失败均清零调用数组。认证成功后页面只保留不含秘密的本地候选和修订数量，已解码秘密文档在后台任务返回前关闭并清零；备份密码及明文秘密不进入页面状态、输出或日志。JDK 21 完整 28-POM 离线门禁通过 369 项测试、0 失败、0 错误、25 项真实环境条件跳过；该入口只证明本地密码与加密成员匹配，不代表远端恢复。 |
 | 3.45.0-managed-input-ui | 2026-08-22 | 将已有受管备份持久化输入准入接入桌面备份页面：用户输入受管应用标识后，在不连接服务器的情况下逐应用/组件显示整应用图、当前发布、已审阅运行时、数据路径状态、精确发布配置和秘密引用绑定缺失项。完整结果仍明确声明只代表桌面 SQLite 元数据完整，不代表远端文件、卷、数据库或服务定义可归档；应用标识、输出和当前候选在语言/主题重建时共同保留。JDK 21 完整 28-POM 离线门禁通过 368 项测试、0 失败、0 错误、25 项真实环境条件跳过。 |

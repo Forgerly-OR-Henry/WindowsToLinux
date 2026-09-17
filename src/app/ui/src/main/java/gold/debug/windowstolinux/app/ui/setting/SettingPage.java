@@ -25,6 +25,12 @@ public final class SettingPage {
     /** Creates the stateful settings controller. / 创建有状态设置控制器。 */
     public SettingPage(DesktopComponentFactory c, PageMessagePresenter messages, DesktopDisplayConfiguration appearance,
                         Consumer<DesktopDisplayConfiguration> applyAppearance) {
+        this(c, messages, appearance, applyAppearance, null);
+    }
+
+    /** Adds the optional Class-only preview action supplied by the startup layer. / 添加启动层提供的可选 Class 模式预览入口。 */
+    public SettingPage(DesktopComponentFactory c, PageMessagePresenter messages, DesktopDisplayConfiguration appearance,
+                       Consumer<DesktopDisplayConfiguration> applyAppearance, Runnable openUiDebug) {
         JPanel page = c.pagePanel();
         var advanced = new gold.debug.windowstolinux.app.ui.component.AdvancedOptionsPane(page, c, messages);
         panel = advanced;
@@ -77,6 +83,13 @@ public final class SettingPage {
         diagnostics.add(diagnosticPath, BorderLayout.CENTER);
         diagnostics.add(openDiagnostics, BorderLayout.EAST);
         advanced.addOption(diagnostics);
+        if (openUiDebug != null) {
+            JButton debug = c.secondaryButton(messages.text("settings.debug.open"));
+            debug.setName("settings.uiDebug");
+            debug.setToolTipText(messages.text("settings.debug.hint"));
+            debug.addActionListener(event -> openUiDebug.run());
+            advanced.addOption(debug);
+        }
         center.add(appearanceCard);
         page.add(center, BorderLayout.CENTER);
     }
@@ -93,9 +106,12 @@ public final class SettingPage {
             /** Performs the {@code getListCellRendererComponent} operation. / 执行 {@code getListCellRendererComponent} 操作。 */
             @Override public Component getListCellRendererComponent(javax.swing.JList<?> list, Object value, int index,
                                                                     boolean selected, boolean focus) {
-                return super.getListCellRendererComponent(list,
-                        MessageCatalog.SIMPLIFIED_CHINESE_TAG.equals(value) ? messages.text("locale.zhCN")
-                                : messages.text("locale.en"), index, selected, focus);
+                String languageTag = MessageCatalog.normalizeLanguageTag((String) value);
+                String key = "locale." + languageTag;
+                String label = messages.text("locale.option", java.util.Map.of(
+                        "native", MessageCatalog.forLanguageTag(languageTag).text(key),
+                        "translated", messages.text(key)));
+                return super.getListCellRendererComponent(list, label, index, selected, focus);
             }
         };
     }

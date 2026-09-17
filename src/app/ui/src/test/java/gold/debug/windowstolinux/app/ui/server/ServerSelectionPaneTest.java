@@ -29,7 +29,18 @@ class ServerSelectionPaneTest {
                 (proxy, method, args) -> List.of(first, second).stream().map(value -> new gold.debug.windowstolinux.app.service.server.ServerSummary(value, Optional.empty(), false, "")).toList());
         SwingUtilities.invokeAndWait(() -> { pane.set(new ServerSelectionPane(service, components, messages, ignored -> notifications.incrementAndGet())); pane.get().reload(); });
         awaitTasks();
-        SwingUtilities.invokeAndWait(() -> { assertEquals(first, pane.get().profile()); pane.get().select(second.id()); });
+        SwingUtilities.invokeAndWait(() -> {
+            assertEquals(first, pane.get().profile());
+            assertFalse(button(pane.get(), first.displayName()).isEnabled());
+            pane.get().open(null);
+            assertEquals(first, pane.get().profile());
+            button(pane.get(), messages.text("server.clear")).doClick(0);
+            assertNull(pane.get().profile()); assertEquals("", pane.get().selectedId());
+            assertTrue(button(pane.get(), messages.text("server.choose")).isEnabled());
+            pane.get().reload();
+        });
+        awaitTasks();
+        SwingUtilities.invokeAndWait(() -> { assertNull(pane.get().profile()); pane.get().select(second.id()); });
         awaitTasks();
         SwingUtilities.invokeAndWait(() -> { assertEquals(second, pane.get().profile()); pane.get().select("missing"); });
         awaitTasks();

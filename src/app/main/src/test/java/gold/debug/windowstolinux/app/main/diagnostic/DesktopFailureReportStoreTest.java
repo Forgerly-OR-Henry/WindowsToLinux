@@ -10,6 +10,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -26,6 +27,7 @@ class DesktopFailureReportStoreTest {
                 new IllegalStateException("Bearer should-never-be-recorded"));
 
         Path first = reports.record(structured).orElseThrow().reportPath().orElseThrow();
+        assertEquals(temporaryDirectory.resolve("data/error-logs"), first.getParent());
         byte[] bytes = Files.readAllBytes(first);
         String content = new String(bytes, StandardCharsets.UTF_8);
         assertTrue(bytes.length <= DesktopFailureReportStore.MAX_REPORT_BYTES);
@@ -52,7 +54,7 @@ class DesktopFailureReportStoreTest {
     @Test
     void reportWriteFailureDoesNotRecurseOrEscape() throws Exception {
         Path data = Files.createDirectories(temporaryDirectory.resolve("blocked"));
-        Files.writeString(data.resolve("diagnostics"), "not a directory");
+        Files.writeString(data.resolve("error-logs"), "not a directory");
         DesktopFailureReportStore reports = new DesktopFailureReportStore(data);
 
         var recorded = reports.record(new RuntimeException("raw message"));

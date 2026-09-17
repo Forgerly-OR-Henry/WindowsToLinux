@@ -99,7 +99,7 @@ npm.cmd run test:e2e
 2. 创建 **Application** 运行配置；
 3. 主类选择 `gold.debug.windowstolinux.app.main.AppMain`；
 4. 模块选择 `windowstolinux-app-main`；
-5. 启动后，CLASS 模式的数据会写入 `src/app/main/data/`。
+5. 启动后，CLASS 模式的数据会写入 DB 模块下的 `src/app/db/data/`。
 
 为避免日常启动触发全项目测试和打包，可把 `APP` 配置为“先增量编译，再直接启动”：
 

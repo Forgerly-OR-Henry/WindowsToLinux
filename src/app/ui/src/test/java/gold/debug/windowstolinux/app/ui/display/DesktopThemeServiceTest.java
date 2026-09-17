@@ -35,14 +35,21 @@ class DesktopThemeServiceTest {
     }
 
     @Test
-    void createsTheFiveEntryDesktopShellWhenGraphicsAreAvailable() throws Exception {
+    void keepsNavigationFullHeightAlongsideTheWorkspace() throws Exception {
         assumeFalse(GraphicsEnvironment.isHeadless());
         AtomicReference<DesktopFrame> frame = new AtomicReference<>();
 
         SwingUtilities.invokeAndWait(() -> {
             DesktopFrame desktopFrame = new DesktopFrame(null);
             frame.set(desktopFrame);
-            assertEquals(3, desktopFrame.getContentPane().getComponentCount());
+            var root = desktopFrame.getContentPane();
+            root.setSize(1060, 680); root.doLayout();
+            var layout = (java.awt.BorderLayout) root.getLayout();
+            var sidebar = layout.getLayoutComponent(java.awt.BorderLayout.WEST);
+            var workspace = layout.getLayoutComponent(java.awt.BorderLayout.CENTER);
+            assertEquals(0, sidebar.getY());
+            assertEquals(root.getHeight(), sidebar.getHeight());
+            assertEquals(sidebar.getX() + sidebar.getWidth(), workspace.getX());
         });
 
         SwingUtilities.invokeAndWait(() -> frame.get().dispose());

@@ -6,6 +6,8 @@ import org.junit.jupiter.api.io.TempDir;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -25,24 +27,14 @@ class DesktopStorageLayoutTest {
 
         assertEquals(root.toAbsolutePath(), layout.root());
         assertEquals(layout.root().resolve("windowstolinux.db"), layout.databaseFile());
-        assertTrue(Files.isDirectory(layout.managedApplicationsDirectory()));
         assertTrue(Files.isDirectory(layout.workDirectory()));
         assertTrue(Files.isDirectory(layout.backupsDirectory()));
         assertTrue(Files.isDirectory(layout.diagnosticsDirectory()));
-        assertEquals(layout.root().resolve("managed-applications/demo/files/file-uploads"),
-                layout.fileBindingDirectory("demo", "file-uploads"));
-        assertEquals(layout.root().resolve("managed-applications/demo/databases/orders/application.db"),
-                layout.sqliteDatabaseFile("demo", "orders", "application.db"));
-    }
-
-    @Test
-    void rejectsUnsafeIdentifiersAndDatabaseFilePathSyntax() {
-        DesktopStorageLayout layout = DesktopStorageLayout.from(temporaryDirectory.resolve("data"));
-
-        assertThrows(IllegalArgumentException.class,
-                () -> layout.fileBindingDirectory("../outside", "file-one"));
-        assertThrows(IllegalArgumentException.class,
-                () -> layout.sqliteDatabaseFile("demo", "orders", "../outside.db"));
+        assertEquals(layout.root().resolve("error-logs"), layout.diagnosticsDirectory());
+        try (var children = Files.list(layout.root())) {
+            assertEquals(Set.of("work", "backups", "error-logs"),
+                    children.map(path -> path.getFileName().toString()).collect(Collectors.toSet()));
+        }
     }
 
     @Test

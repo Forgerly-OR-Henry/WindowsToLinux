@@ -1,5 +1,7 @@
 package gold.debug.windowstolinux.app.ui.server;
 
+import com.formdev.flatlaf.FlatClientProperties;
+import com.formdev.flatlaf.util.UIScale;
 import gold.debug.windowstolinux.app.service.contract.ServerApplicationFacade;
 import gold.debug.windowstolinux.app.service.server.ServerProfile;
 import gold.debug.windowstolinux.app.service.server.ServerSummary;
@@ -39,6 +41,8 @@ public final class ServerInventoryPane extends JPanel {
         JPanel actions = c.transparent(new FlowLayout(FlowLayout.RIGHT, 8, 0));
         JButton add = c.primaryButton(messages.text("auto.addServer")); add.addActionListener(event -> edit(null));
         JButton refresh = c.secondaryButton(messages.text("auto.refreshServers")); refresh.addActionListener(event -> reload());
+        for (JComponent control : new JComponent[]{search, refresh, add})
+            control.putClientProperty(FlatClientProperties.MINIMUM_HEIGHT, 36);
         actions.add(refresh); actions.add(add); toolbar.add(actions, BorderLayout.EAST); add(toolbar, BorderLayout.NORTH);
         cards.setOpaque(false); cards.setLayout(new BoxLayout(cards, BoxLayout.Y_AXIS));
         JScrollPane scroll = new JScrollPane(cards); scroll.setBorder(BorderFactory.createEmptyBorder()); scroll.getViewport().setOpaque(false);
@@ -69,7 +73,8 @@ public final class ServerInventoryPane extends JPanel {
         var matches = values.stream().filter(value -> value.matches(search.getText())).toList();
         for (ServerSummary value : matches) {
             JPanel card = c.card(new BorderLayout(16, 10));
-            card.setMaximumSize(new Dimension(Integer.MAX_VALUE, 148));
+            card.setBorder(BorderFactory.createEmptyBorder(20, 18, 20, 18));
+            card.setMaximumSize(new Dimension(Integer.MAX_VALUE, UIScale.scale(160)));
             JPanel details = c.transparent(new GridLayout(0, 1, 0, 6));
             JLabel title = new JLabel(value.profile().displayName()); title.setFont(title.getFont().deriveFont(Font.BOLD, 16f));
             title.setIcon(DesktopIcons.icon("server", 22, title::getForeground)); details.add(title);
@@ -80,6 +85,8 @@ public final class ServerInventoryPane extends JPanel {
             action.setEnabled(picker || !checking.contains(value.profile().id()));
             action.addActionListener(event -> { if (picker) selected.accept(value.profile()); else check(value, action); });
             JButton edit = c.secondaryButton(messages.text("server.edit")); edit.addActionListener(event -> edit(value.profile()));
+            for (JButton button : new JButton[]{action, edit})
+                button.putClientProperty(FlatClientProperties.MINIMUM_HEIGHT, 36);
             actions.add(action); actions.add(edit); card.add(actions, BorderLayout.EAST);
             cards.add(card); cards.add(Box.createVerticalStrut(12));
         }
