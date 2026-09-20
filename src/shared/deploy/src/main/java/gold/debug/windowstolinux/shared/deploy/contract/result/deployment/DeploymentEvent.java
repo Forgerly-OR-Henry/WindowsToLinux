@@ -31,7 +31,8 @@ public record DeploymentEvent(
     public static DeploymentEvent result(DeploymentTraceEvent step, boolean succeeded, String evidence) {
         return new DeploymentEvent(step, succeeded,
                 LocalizedMessage.of(succeeded ? "deployment.event.succeeded" : "deployment.event.failed",
-                        Map.of("step", step.code())), evidence, Optional.empty());
+                        succeeded ? Map.of("step", step.code()) : Map.of("step", step.code(), "detail", evidence)),
+                evidence, Optional.empty());
     }
 
     /** Creates a typed failed step carrying its shared failure descriptor. / 创建携带共用失败描述的类型化失败步骤。 */
