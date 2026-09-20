@@ -16,26 +16,28 @@ public final class SshSessionLifecycleExecutor {
 
     /** Closes a client and stops its resources. / 关闭客户端并停止其资源。 */
     public static void closeQuietly(SshClient client) {
+        closeConnection(client);
         try {
-            if (!client.close(false).await(CLOSE_TIMEOUT)) {
-                client.close(true).await(CLOSE_TIMEOUT);
-            }
             client.stop();
-        } catch (IOException | RuntimeException ignored) {
+        } catch (RuntimeException ignored) {
             // A failed connection should not obscure its safe primary error. / 连接失败不应掩盖其安全的首要错误。
         }
     }
 
     /** Closes a client session and drains Windows NIO2 completion briefly. / 关闭客户端会话并短暂排空 Windows NIO2 完成回调。 */
     public static void closeQuietly(ClientSession session) {
+        closeConnection(session);
+        awaitWindowsNio2Completion();
+    }
+
+    private static void closeConnection(org.apache.sshd.common.Closeable connection) {
         try {
-            if (!session.close(false).await(CLOSE_TIMEOUT)) {
-                session.close(true).await(CLOSE_TIMEOUT);
-            }
-            awaitWindowsNio2Completion();
+            if (connection.close(false).await(CLOSE_TIMEOUT)) return;
         } catch (IOException | RuntimeException ignored) {
-            // Session shutdown cannot change the already completed operation result. / 会话关闭不能改变已完成操作的结果。
+            // A failed graceful close must still reach forced channel cleanup. / 优雅关闭异常后仍须执行强制通道回收。
         }
+        try { connection.close(true).await(CLOSE_TIMEOUT); }
+        catch (IOException | RuntimeException ignored) { /* Preserve the primary operation result. / 保留首要操作结果。 */ }
     }
 
     private static void awaitWindowsNio2Completion() {
