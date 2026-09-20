@@ -35,7 +35,7 @@ public final class SpringBootDeploymentInspector implements DeploymentTypeInspec
     private static final Pattern BOOT_PLUGIN = Pattern.compile("(?i)(org\\.springframework\\.boot|spring-boot)");
     private static final Pattern EXTERNAL_CONFIG = Pattern.compile(
             "spring\\.config\\.(import|location|additional-location)|SPRING_CONFIG_(IMPORT|LOCATION|ADDITIONAL_LOCATION)"
-                    + "|System\\.getenv\\s*\\(|spring\\.application\\.json", Pattern.CASE_INSENSITIVE);
+                    + "|spring\\.application\\.json", Pattern.CASE_INSENSITIVE);
     private static final Pattern APPLICATION_SECRET = Pattern.compile(
             "(?i)(password|secret|api[_-]?key|access[_-]?key|token)\\s*[:=]"
                     + "|@Value\\s*\\(\\s*\\\"?\\$\\{[^}]*?(password|secret|key|token)[^}]*}");

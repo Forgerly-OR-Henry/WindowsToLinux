@@ -105,6 +105,18 @@ class SpringBootDeploymentInspectorTest {
     }
 
     @Test
+    void acceptsOrdinaryRuntimeEnvironmentWithoutAcceptingExternalConfigImports() throws Exception {
+        Path root = mavenProject("environment", bootPom());
+        Path source = root.resolve("src/main/java/example/Settings.java");
+        Files.createDirectories(source.getParent());
+        Files.writeString(source, "class Settings { String port = System.getenv(\"PORT\"); "
+                + "String data = System.getenv().getOrDefault(\"DATA_DIR\", \"data\"); }");
+        assertEquals(DeploymentAdmissionStatus.READY_FOR_PLANNING, analyze(root).admission());
+        Files.writeString(source, "class Settings { String config = System.getenv(\"SPRING_CONFIG_IMPORT\"); }");
+        assertRejected(root, "EXTERNAL_CONFIGURATION_DETECTED");
+    }
+
+    @Test
     void rejectsDisabledExecutableJarForEitherBuildSystem() throws Exception {
         Path maven = mavenProject("maven-disabled", bootPom().replace("</plugin>", "<skip>true</skip></plugin>"));
         assertRejected(maven, "SPRING_BOOT_EXECUTABLE_JAR_DISABLED");
