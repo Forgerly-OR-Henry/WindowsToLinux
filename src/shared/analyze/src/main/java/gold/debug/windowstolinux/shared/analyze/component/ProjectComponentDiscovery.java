@@ -57,8 +57,12 @@ public final class ProjectComponentDiscovery {
         return switch (name) {
             case "pom.xml", "build.gradle", "build.gradle.kts" -> {
                 String declared = text(file);
-                yield declared.matches("(?s).*<packaging>\\s*pom\\s*</packaging>.*") ? Set.of()
-                    : Set.of(declared.contains("spring-boot") ? DeploymentProjectType.SPRING_BOOT : DeploymentProjectType.JAVA_JAR);
+                if (declared.matches("(?s).*<packaging>\\s*pom\\s*</packaging>.*")) yield Set.of();
+                if (declared.contains("spring-boot") || declared.contains("org.springframework.boot"))
+                    yield Set.of(DeploymentProjectType.SPRING_BOOT);
+                if (name.equals("build.gradle.kts") && declared.matches("(?s).*kotlin\\s*\\(\\s*[\"']jvm[\"']\\s*\\).*"))
+                    yield Set.of(DeploymentProjectType.KOTLIN_SERVICE);
+                yield Set.of(DeploymentProjectType.JAVA_JAR);
             }
             case "package.json" -> {
                 String value = text(file);
