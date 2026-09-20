@@ -3,7 +3,7 @@
 WindowsToLinux 是面向个人和小型自托管场景的 Windows 桌面部署管理工具。首页选择本地源码或 Git 地址及目标服务器后，可一键完成识别、补全、环境准备、构建、发布与健康检查。技术参数放入默认收起的右侧高级选项，每项提供问号帮助。
 
 > [!IMPORTANT]
-> 项目仍在开发中，尚未提供正式安装包。helper v7 的代表性部署和历史 helper v5 基线见[四期验收](docs/development/PHASE-4.md#acceptance)；数据库、备份恢复和迁移仍为 `RUNTIME-PENDING`。证据仅覆盖记录中的精确夹具与环境。
+> 项目仍在开发中，尚未提供正式安装包。当前 helper v9 已通过 Ubuntu 24 八个多语言原生项目的代表性产品部署与业务验收，见[多语言记录](test/multi-language/VERIFICATION.md)。其他发行版、容器、备份恢复及双机迁移仍待验证；历史 helper v7/v5 证据见[四期验收](docs/development/PHASE-4.md#acceptance)，不外推为全场景通过。
 
 ## 核心能力
 

@@ -40,4 +40,4 @@ python samples/generate.py "运行 日志" --records 100000
 
 子程序 NDJSON 协议为版本 2：`start(sequence=0)`、`summary(sequence=1)`、`end(sequence=2,messages=3,records=总行数)`，均带 `component=cpp-log`。Rust 核对消息顺序、字段及级别/服务/分钟/错误组计数。诊断写 stderr。退出码：0 成功、2 参数错误、3 输入文件错误、4 子程序/协议/资源汇总失败；批量取最大错误码。
 
-Windows 标准验收使用 100000 条独立生成记录，覆盖实际 gzip、格式等价、筛选、顺序、部分失败、超限和子程序故障。实际记录见上级 `VERIFICATION.md`；Linux 实机和产品部署待验证。生成文件、临时解压和报告不作为源码提交。
+Windows 标准验收使用 100000 条独立生成记录，覆盖实际 gzip、格式等价、筛选、顺序、部分失败、超限和子程序故障。实际记录见上级 `VERIFICATION.md`；Ubuntu 产品部署和按需入口处理样本的证据见上级记录；标准规模 Linux 验收未执行。生成文件、临时解压和报告不作为源码提交。

@@ -1,5 +1,30 @@
 # v2 多语言业务验收记录
 
+## Ubuntu 产品部署验收（2026-09-20）
+
+**8/8 项目通过产品自动部署、代表性跨语言业务与适用的生命周期/持久化验收。** 通过 `MultilingualLiveDeploymentAcceptanceTest` 调用桌面应用门面的正式自动部署链，目标为 Ubuntu 24.04 x86-64（2 核、约 4 GiB 内存、29 GiB 根磁盘、AppArmor）。依赖准备、构建、发布、生命周期和失败候选清理由产品执行；直接 SSH 仅用于只读诊断。测试端口和前端 API 地址写入隔离源码副本，原始业务实现没有为部署绕过而改写。
+
+| 项目 | 成功应用标识 | 实际 Linux 验收 |
+|---|---|---|
+| 任务看板 | `wtl-polyglot-tasks-451eec5h8` | TypeScript/Java 发布、创建任务、STOP/START/RESTART、SQLite 数据保留 |
+| 文件收发 | `wtl-polyglot-file-transfer-6331hqlhz` | TypeScript/Go 网关、65,536 字节真实上传下载比对、重启后内容与 SQLite 记录保留 |
+| 资产借还 | `wtl-polyglot-asset-lending-6713pjags` | JavaScript/C# 创建资产、借用提交/审批/出库/归还、重启后已关闭单据保留 |
+| CSV 工作台 | `wtl-polyglot-csv-6bfe6yo8c` | JavaScript/PHP/Python 发布、后台队列生成报告、3 行/6 问题/1 有效行校验、worker 统一重启及报告保留 |
+| 问卷管理 | `wtl-polyglot-survey-6hebtbij0` | TypeScript/Kotlin/Ruby 发布、真实提交得分 84.21、三个组件统一重启与历史成绩保留 |
+| 多源日志 | `wtl-polyglot-log-analyzer-5t9gkhm34` | Rust/C++ 按需安装入口处理真实样本：7 行、6 匹配、3 条 ERROR |
+| 目录快照 | `wtl-polyglot-directory-diff-5vuztkn8o` | Python/C++ 按需安装入口创建快照，随后从 SQLite 历史查询到该记录 |
+| 分块二进制 | `wtl-polyglot-binary-inspector-5up88wqjw` | Rust/C 按需入口正常输入 5 条记录、总和 7；损坏输入退出码 2 |
+
+五个网站涉及的常驻组件均由产品停止并禁用自启，三个按需工具没有遗留常驻进程。 最终产品 helper 准备及新 SSH 连接复核通过，摘要为 `fecb8ce674358d07ec686ea503a77821e39579374ba88df54bf12520506ca40e`。
+
+相关产品门禁：精确暂存树 Maven `verify` 通过，915 项 Java 测试中 869 通过、46 条件跳过；helper Python 97 项中 96 通过、1 平台条件跳过。日志和失败记录保留在 `.ai-workspace/progress/history/2026-09-20-multilanguage-live-evidence/`。
+
+本轮还记录了构建失败后的候选清理，以及首次发布自检失败后的成功回滚。早期 systemd 错误配置的失败发布留有不活动恢复材料；部分 SFTP 上传曾失败并保留句柄，产品关闭策略修复后通过产品清理入口回收。该次上传异常的内部根因没有得到确认，后续重复上传成功不能替代根因证明。
+
+当前 Linux 验收是部署及代表性业务闭环：网页以真实 HTTP/API 请求验证，未在该服务器重复 Chromium 操作或下方 Windows 标准规模的 59 个检查组。也不覆盖 CentOS、Docker/Podman、外部数据库、备份恢复、双机迁移或长期负载。下方 Windows 记录及其范围原样保留，不与 Linux 结果合并扩大结论。
+
+复现：设置 `WINDOWSTOLINUX_TEST_SSH_PASSWORD` 等既有实机测试凭据环境变量，通过 Maven 选择 `MultilingualLiveDeploymentAcceptanceTest`，显式开启 `-Dmanaged.runtime.polyglot=true` 并提供目标 SSH 属性。密码不写入源码、命令参数或证据。清理中断候选的修复测试另需显式启用 `managed.runtime.polyglotRepair` 并指定准确应用和源码摘要。
+
 验证日期：2026-09-19 至 2026-09-20；环境：Windows x64。最终连续执行 `verify-all --profile standard`，**8/8 项目依赖安装、构建和标准业务验收通过**，五个网页均完成真实 Chromium 操作。首次 v1 记录原样保留主体于 [历史记录](VERIFICATION-v1.md)，不用于证明本版通过。
 
 ## 功能、规模与故障结果
@@ -50,4 +75,4 @@ quick 使用较小主数据但保留业务/故障检查；标准规模见 [入�
 
 本任务启动的验证进程已退出，临时工具/缓存、构建副本、运行数据和准备脚本已清理，保留报告与截图。受测副本的 198 个源码文件内容核对一致，其中 Ruby 故障测试恢复时仅产生换行差异，已记录并将后续清理改为原字节恢复。
 
-Linux 实机、WindowsToLinux 产品部署、发布、回滚及恢复均为待验证。本机普通符号链接创建返回 WinError 1314，实际验证了 Windows 目录联接及重解析点跳过；普通符号链接的实际平台检查仍待具备权限的环境。目录一致性为两遍扫描/摘要校验，不宣称操作系统原子卷快照。
+上述 Windows 验收完成时，Linux 实机及产品部署尚待验证；本次新增 Linux 部署与代表性回滚证据见文首，恢复和迁移仍待验证。本机普通符号链接创建返回 WinError 1314，实际验证了 Windows 目录联接及重解析点跳过；普通符号链接的实际平台检查仍待具备权限的环境。目录一致性为两遍扫描/摘要校验，不宣称操作系统原子卷快照。

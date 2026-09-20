@@ -23,7 +23,7 @@ $env:DATA_DIR="D:\CSV 演示数据"
 $env:ANALYZER_URL="http://127.0.0.1:18131"
 ```
 
-第一个终端运行 `php -S 127.0.0.1:18130 -t public router.php`；第二个运行 `php worker.php`。浏览器打开 `http://127.0.0.1:18130`。结束体验时在三个终端分别 Ctrl+C。Linux 对应 `.venv/bin/python` 与 `export` 语法；Linux 实机尚待验证。
+第一个终端运行 `php -S 127.0.0.1:18130 -t public router.php`；第二个运行 `php worker.php`。浏览器打开 `http://127.0.0.1:18130`。结束体验时在三个终端分别 Ctrl+C。Linux 对应 `.venv/bin/python` 与 `export` 语法；Ubuntu 产品部署、队列/分析服务和重启证据见上级验证记录。
 
 PHP 页面与 Python 分别提供 `/healthz`，`/api/worker` 显示工作进程心跳。每个数据目录只允许一个 PHP 工作进程，使用进程文件锁防止重复消费；不同独立数据目录可各自运行。此样例直接使用 v2 数据目录，不迁移旧数据库。
 
