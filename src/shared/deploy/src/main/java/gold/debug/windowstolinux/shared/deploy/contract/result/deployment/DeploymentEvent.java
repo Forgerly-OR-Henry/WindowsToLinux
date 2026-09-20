@@ -38,7 +38,9 @@ public record DeploymentEvent(
     /** Creates a typed failed step carrying its shared failure descriptor. / 创建携带共用失败描述的类型化失败步骤。 */
     public static DeploymentEvent failed(DeploymentTraceEvent step, FailureDescriptor failure) {
         Objects.requireNonNull(failure, "failure");
-        return new DeploymentEvent(step, false, failure.userMessage(), failure.diagnostic(), Optional.of(failure));
+        return new DeploymentEvent(step, false,
+                LocalizedMessage.of("deployment.event.failed", Map.of("step", step.code(), "detail", failure.diagnostic())),
+                failure.diagnostic(), Optional.of(failure));
     }
 
     /** Returns this event with a carried failure rebound to the enclosing operation. / 返回将携带失败绑定到外层操作的事件。 */
