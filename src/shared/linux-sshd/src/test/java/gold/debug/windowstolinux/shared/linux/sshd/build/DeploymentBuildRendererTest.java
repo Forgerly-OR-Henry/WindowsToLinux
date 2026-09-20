@@ -136,6 +136,48 @@ class DeploymentBuildRendererTest {
     }
 
     @Test
+    void kotlinWrapperAcceptsWindowsLineEndingsWithoutModifyingSource() throws Exception {
+        String bash = System.getProperty("managed.test.bash", "/bin/bash");
+        org.junit.jupiter.api.Assumptions.assumeTrue(java.nio.file.Files.isExecutable(Path.of(bash)), "Bash required");
+        String build = service(new KotlinGradleBuildRenderer(), DeploymentBuildToolType.GRADLE_KOTLIN_WRAPPER,
+                "2.0.21", "demo", "demo.MainKt", OptionalInt.empty());
+        String body = build.substring(build.indexOf("wrapper_root="), build.indexOf("run \"$wrapper_root/gradlew\" --project-dir \"$source\" --no-daemon installDist"));
+        // Git Bash lacks flock/POSIX install permissions; this test exercises wrapper text and checksum handling. / 此测试验证 wrapper 文本和校验和，不验证 Git Bash 缺失的 POSIX 权限与锁。
+        String platformSetup = System.getProperty("os.name", "").startsWith("Windows")
+                ? "install() { mkdir -p -- \"${@: -1}\"; }\nflock() { :; }\n" : "";
+        for (String newline : List.of("\n", "\r\n")) {
+            Path root = java.nio.file.Files.createDirectory(temporaryDirectory.resolve(newline.length() == 1 ? "lf" : "crlf"));
+            Path wrapper = java.nio.file.Files.createDirectories(root.resolve("gradle/wrapper"));
+            java.nio.file.Files.writeString(wrapper.resolve("gradle-wrapper.jar"), "fixture");
+            String script = "#!/bin/sh" + newline + "printf WRAPPER_OK" + newline;
+            java.nio.file.Files.writeString(root.resolve("gradlew"), script);
+            byte[] archive = "fixture distribution".getBytes(java.nio.charset.StandardCharsets.UTF_8);
+            String digest = java.util.HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256").digest(archive));
+            Path cache = java.nio.file.Files.createDirectories(root.resolve("mutable/home/gradle-distributions"));
+            java.nio.file.Files.write(cache.resolve(digest + ".zip"), archive);
+            String properties = "distributionUrl=https\\://downloads.gradle.org/distributions/gradle-8.10.2-bin.zip" + newline
+                    + "distributionSha256Sum=" + digest + newline;
+            java.nio.file.Files.writeString(wrapper.resolve("gradle-wrapper.properties"), properties);
+            Path log = root.resolve("output.txt");
+            Process process = new ProcessBuilder(bash, "-s").directory(root.toFile())
+                    .redirectErrorStream(true).redirectOutput(log.toFile()).start();
+            try {
+                try (var input = process.getOutputStream()) {
+                    input.write(("set -euo pipefail\nexport PATH=/usr/bin:/bin:$PATH\nsource=$PWD\nmutable=$PWD/mutable\n"
+                            + platformSetup + "retry_run() { shift; \"$@\"; }\n" + body).getBytes(java.nio.charset.StandardCharsets.UTF_8));
+                }
+                assertTrue(process.waitFor(15, java.util.concurrent.TimeUnit.SECONDS));
+                org.junit.jupiter.api.Assertions.assertEquals(0, process.exitValue(), java.nio.file.Files.readString(log));
+                assertTrue(java.nio.file.Files.readString(log).contains("WRAPPER_OK"));
+                org.junit.jupiter.api.Assertions.assertEquals(script, java.nio.file.Files.readString(root.resolve("gradlew")));
+                org.junit.jupiter.api.Assertions.assertEquals(properties, java.nio.file.Files.readString(wrapper.resolve("gradle-wrapper.properties")));
+            } finally {
+                if (process.isAlive()) { process.destroyForcibly(); assertTrue(process.waitFor(10, java.util.concurrent.TimeUnit.SECONDS)); }
+            }
+        }
+    }
+
+    @Test
     void rendersBuiltStaticSitesOnlyWithAnExplicitNodeMajor() {
         for (DeploymentBuildToolType tool : List.of(DeploymentBuildToolType.NPM, DeploymentBuildToolType.PNPM,
                 DeploymentBuildToolType.YARN)) {

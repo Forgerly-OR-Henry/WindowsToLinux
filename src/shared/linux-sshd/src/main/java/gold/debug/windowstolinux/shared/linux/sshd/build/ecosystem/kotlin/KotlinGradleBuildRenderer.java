@@ -52,9 +52,9 @@ public final class KotlinGradleBuildRenderer implements DeploymentBuildRenderer 
                 test -f ./gradlew
                 wrapper_root="$mutable/home/wtl-gradle-wrapper"
                 mkdir -p "$wrapper_root/gradle/wrapper"
-                cp -- ./gradlew "$wrapper_root/gradlew"
+                sed 's/\\r$//' ./gradlew > "$wrapper_root/gradlew"
                 cp -- ./gradle/wrapper/gradle-wrapper.jar "$wrapper_root/gradle/wrapper/gradle-wrapper.jar"
-                cp -- ./gradle/wrapper/gradle-wrapper.properties "$wrapper_root/gradle/wrapper/gradle-wrapper.properties"
+                sed 's/\\r$//' ./gradle/wrapper/gradle-wrapper.properties > "$wrapper_root/gradle/wrapper/gradle-wrapper.properties"
                 chmod u+x "$wrapper_root/gradlew"
                 wrapper_properties="$wrapper_root/gradle/wrapper/gradle-wrapper.properties"
                 mapfile -t distribution_urls < <(sed -n 's/^distributionUrl=//p' "$wrapper_properties")
