@@ -39,7 +39,7 @@ public final class DotNetSdkBuildRenderer implements DeploymentBuildRenderer {
                 test -f ./packages.lock.json
                 run "${dotnet_command[@]}" restore --locked-mode
                 mkdir -p ./.w2l/dotnet
-                run "${dotnet_command[@]}" publish --no-restore --configuration Release --output ./.w2l/dotnet
+                run "${dotnet_command[@]}" publish --no-restore --configuration Release "-p:PublishDir=$PWD/.w2l/dotnet/"
                 test -f "./.w2l/dotnet/$artifact_name.dll"
                 test ! -L "./.w2l/dotnet/$artifact_name.dll"
                 printf 'ARTIFACT=%%s\n' "./.w2l/dotnet/$artifact_name.dll"

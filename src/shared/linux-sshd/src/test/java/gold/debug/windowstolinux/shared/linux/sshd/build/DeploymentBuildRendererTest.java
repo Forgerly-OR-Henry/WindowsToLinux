@@ -103,8 +103,10 @@ class DeploymentBuildRendererTest {
                 OptionalInt.empty()).contains("go build -mod=readonly"));
         assertTrue(service(new CargoBuildRenderer(), DeploymentBuildToolType.CARGO_LOCKED, "1.89.0", "demo",
                 "src/main.rs", OptionalInt.empty()).contains("cargo build --locked --release"));
-        assertTrue(service(new DotNetSdkBuildRenderer(), DeploymentBuildToolType.DOTNET_LOCKED, "8.0.408", "Demo",
-                "Demo.dll", OptionalInt.empty()).contains("\"${dotnet_command[@]}\" restore --locked-mode"));
+        String dotnet = service(new DotNetSdkBuildRenderer(), DeploymentBuildToolType.DOTNET_LOCKED, "8.0.408", "Demo",
+                "Demo.dll", OptionalInt.empty());
+        assertTrue(dotnet.contains("\"${dotnet_command[@]}\" restore --locked-mode"));
+        assertTrue(dotnet.contains("publish --no-restore --configuration Release \"-p:PublishDir=$PWD/.w2l/dotnet/\""));
 
         String kotlinGradle = service(new KotlinGradleBuildRenderer(), DeploymentBuildToolType.GRADLE_KOTLIN_WRAPPER,
                 "2.0.21", "demo", "demo.MainKt", OptionalInt.empty());
