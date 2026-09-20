@@ -93,6 +93,7 @@ public final class SourceBoundaryValidator {
      * @throws IOException if the operation cannot be completed / 无法完成操作时
      */
     public SourceManifest collect(Path root) throws IOException {
+        Set<String> explicitFiles = explicitFiles(root);
         List<SourceEntry> included = new ArrayList<>();
         List<String> excluded = new ArrayList<>();
         long[] byteCount = {0L};
@@ -116,7 +117,7 @@ public final class SourceBoundaryValidator {
                 if (Files.isSymbolicLink(file) || !attributes.isRegularFile()) {
                     throw new IOException("only regular files can be archived: " + root.relativize(file));
                 }
-                if (isExcludedFile(file)) {
+                if (isExcludedFile(file) && !explicitFiles.contains(normalizedRelative(root, file))) {
                     excluded.add(normalizedRelative(root, file));
                     return FileVisitResult.CONTINUE;
                 }
@@ -165,8 +166,38 @@ public final class SourceBoundaryValidator {
 
     private static boolean isExcludedFile(Path file) {
         String name = file.getFileName().toString().toLowerCase(Locale.ROOT);
+        return isSensitiveFile(name) || name.endsWith(".log");
+    }
+
+    private static boolean isSensitiveFile(String name) {
         return EXCLUDED_FILE_NAMES.contains(name) || name.startsWith(".env.") || name.endsWith(".pem") || name.endsWith(".key")
-                || name.endsWith(".p12") || name.endsWith(".pfx") || name.endsWith(".log");
+                || name.endsWith(".p12") || name.endsWith(".pfx");
+    }
+
+    /** Explicit resources can include sample logs but cannot override secret or source boundaries. / 显式资源可纳入样例日志，但不能绕过秘密或源码边界。 */
+    private static Set<String> explicitFiles(Path root) throws IOException {
+        Path declaration = root.resolve("windowstolinux-application.properties");
+        if (!Files.exists(declaration, LinkOption.NOFOLLOW_LINKS)) return Set.of();
+        if (!Files.isRegularFile(declaration, LinkOption.NOFOLLOW_LINKS) || Files.size(declaration) > 65536)
+            throw new IOException("application source declaration must be a bounded regular file");
+        var properties = new java.util.Properties();
+        try (var reader = Files.newBufferedReader(declaration)) { properties.load(reader); }
+        String value = properties.getProperty("source.include", "");
+        if (value.isBlank()) return Set.of();
+        var result = new java.util.HashSet<String>();
+        for (String item : value.split(",", -1)) {
+            String relative = gold.debug.windowstolinux.shared.model.project.application.ApplicationCommand.relative(item.trim(), false);
+            Path file = root.resolve(relative).normalize();
+            if (result.size() >= 32 || !result.add(relative) || !file.startsWith(root)
+                    || !relative.equals(normalizedRelative(root, file))
+                    || !Files.isRegularFile(file, LinkOption.NOFOLLOW_LINKS)
+                    || isSensitiveFile(file.getFileName().toString().toLowerCase(Locale.ROOT)))
+                throw new IOException("explicit source resource violates archive boundaries");
+            rejectSymbolicLinksInPath(file, "explicit source resource must not traverse symbolic links");
+            for (Path part : Path.of(relative)) if (EXCLUDED_DIRECTORIES.contains(part.toString()))
+                throw new IOException("explicit source resource crosses an excluded directory");
+        }
+        return Set.copyOf(result);
     }
 
     private static void rejectSymbolicLinksInPath(Path path, String message) {

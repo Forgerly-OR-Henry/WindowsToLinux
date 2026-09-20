@@ -79,6 +79,16 @@ class ReviewedMultiComponentDeploymentServiceTest {
     @TempDir Path temporaryDirectory;
 
     @Test
+    void unexpectedPublicationExceptionStillRestoresAndCleansEveryCandidate() {
+        Fixture fixture = new Fixture(null, null);
+        fixture.throwDuringPublish = true;
+        var result = deploy(fixture);
+        assertEquals(DeploymentStatus.FAILED_ROLLED_BACK, result.status());
+        assertEquals(3, fixture.log.stream().filter(value -> value.startsWith("cleanup:")).count());
+        assertOrdered(fixture.log, List.of("rollback:shop-web", "rollback:shop-api", "rollback:shop-database"));
+    }
+
+    @Test
     void buildsAndSnapshotsEveryComponentBeforeSwitchingInDependencyOrder() {
         Fixture fixture = new Fixture(null, null);
 
@@ -86,6 +96,12 @@ class ReviewedMultiComponentDeploymentServiceTest {
 
         assertEquals(DeploymentStatus.SUCCEEDED, result.status());
         assertTrue(result.applicationReleaseIdentity().orElseThrow().matches("[0-9a-f]{64}"));
+        assertEquals(Set.copyOf(IDS),result.componentReleaseIdentities().keySet());
+        assertTrue(result.componentReleaseIdentities().values().stream().allMatch(value->value.matches("[a-f0-9]{64}")));
+        var warning=gold.debug.windowstolinux.shared.model.failure.FailureDescriptor.create(
+                gold.debug.windowstolinux.shared.deploy.error.DeploymentExecutionFailureType.LOCAL_OBSERVATION_PERSISTENCE_FAILED,
+                result.operationIdentity(),"synthetic local warning");
+        assertEquals(result.componentReleaseIdentities(),result.withNonFatalFailure(warning).componentReleaseIdentities());
         assertTrue(result.componentResults().stream()
                 .allMatch(component -> component.state() == ComponentTransactionState.SUCCEEDED));
         assertBeforeAll(fixture.log, "build:shop-web", "snapshot:shop-web");
@@ -101,6 +117,7 @@ class ReviewedMultiComponentDeploymentServiceTest {
         var result = deploy(fixture);
 
         assertEquals(DeploymentStatus.FAILED_ROLLED_BACK, result.status());
+        assertTrue(result.componentReleaseIdentities().isEmpty());
         assertTrue(result.componentResults().stream()
                 .allMatch(component -> component.state() == ComponentTransactionState.RESTORED));
         assertOrdered(fixture.log, List.of("rollback:shop-web", "rollback:shop-api", "rollback:shop-database"));
@@ -307,7 +324,8 @@ class ReviewedMultiComponentDeploymentServiceTest {
                         case "observe" -> observe((ManagedApplication) arguments[0]);
                         case "executeLifecycle" -> execute((ManagedApplication) arguments[0],
                                 (LifecycleAction) arguments[1]);
-                        case "close" -> null;
+                        case "backupArtifacts" -> ApplicationMaintenanceFixture.port();
+                    case "close" -> null;
                         case "toString" -> "multi-component lifecycle fixture session";
                         default -> throw new AssertionError("unexpected lifecycle operation: " + method.getName());
                     });
@@ -336,6 +354,7 @@ class ReviewedMultiComponentDeploymentServiceTest {
 
     private final class Fixture {
         private final List<String> log = new ArrayList<>();
+        private boolean throwDuringPublish;
         private final String unhealthyId;
         private final String rollbackFailureId;
 
@@ -366,7 +385,10 @@ class ReviewedMultiComponentDeploymentServiceTest {
                             case "snapshotDeployment" -> snapshot((ManagedApplication) arguments[0]);
                             case "executeDeploymentLifecycle" -> stop((ManagedApplication) arguments[0],
                                     (LifecycleAction) arguments[2]);
-                            case "publishDeployment" -> step("publish", (ManagedApplication) arguments[0], true);
+                            case "publishDeployment" -> {
+                                if (throwDuringPublish) throw new IllegalArgumentException("synthetic publication exception");
+                                yield step("publish", (ManagedApplication) arguments[0], true);
+                            }
                             case "checkDeploymentHealth" -> health((ManagedApplication) arguments[0]);
                             case "observeDeployment" -> observation("observe", (ManagedApplication) arguments[0],
                                     RuntimeState.RUNNING);
@@ -375,7 +397,8 @@ class ReviewedMultiComponentDeploymentServiceTest {
                             case "observe" -> observation("restore-observe", (ManagedApplication) arguments[0],
                                     RuntimeState.RUNNING);
                             case "cleanupCandidate" -> cleanup((RemoteWorkspace) arguments[0]);
-                            case "close" -> null;
+                            case "backupArtifacts" -> ApplicationMaintenanceFixture.port();
+                    case "close" -> null;
                             case "toString" -> "multi-component fixture session";
                             default -> throw new AssertionError("unexpected remote operation: " + name);
                         };

@@ -38,24 +38,13 @@ class BackupManifestCodecTest {
     }
 
     @Test
-    void roundTripsLegacySchemaV3WithoutInventingActivationBindings() throws Exception {
-        BackupManifest manifest = legacyManifest(new byte[]{1, 2, 3});
+    void rejectsPreviousSchemasInsteadOfInventingFhsBindings() throws Exception {
         BackupManifestCodec codec = new BackupManifestCodec();
-
-        byte[] encoded = codec.write(manifest);
-        String json = new String(encoded, StandardCharsets.UTF_8);
-        BackupManifest restored = codec.read(encoded);
-
-        assertEquals("3", restored.schemaVersion());
-        assertFalse(restored.supportsAutomaticActivation());
-        assertEquals(List.of("db.password"), restored.inventory().legacySecretReferences());
-        assertTrue(restored.inventory().secretReferences().isEmpty());
-        assertTrue(restored.inventory().components().getFirst().releaseSha256().isEmpty());
-        assertTrue(json.contains("\"releaseIdentity\":\"release-1\""));
-        assertTrue(json.contains("\"secretReferences\":[\"db.password\"]"));
-        assertFalse(json.contains("releaseSetSha256"));
-        assertFalse(json.contains("releaseSha256"));
-        assertEquals(json, new String(codec.write(restored), StandardCharsets.UTF_8));
+        String json = new String(codec.write(sampleManifest(new byte[]{1})), StandardCharsets.UTF_8);
+        for (String version : List.of("3", "4", "5")) {
+            String old = json.replace("\"schemaVersion\":\"6\"", "\"schemaVersion\":\"" + version + "\"");
+            assertThrows(java.io.IOException.class, () -> codec.read(old.getBytes(StandardCharsets.UTF_8)));
+        }
     }
 
     @Test
@@ -91,26 +80,5 @@ class BackupManifestCodecTest {
         return BackupManifest.create(Instant.parse("2026-08-21T00:00:00Z"), "sample", inventory, members);
     }
 
-    private static BackupManifest legacyManifest(byte[] content) throws Exception {
-        String digest = java.util.HexFormat.of().formatHex(
-                java.security.MessageDigest.getInstance("SHA-256").digest(content));
-        List<BackupMember> members = List.of(
-                new BackupMember("releases/release-1.json", content.length, digest, BackupMemberKind.RELEASE),
-                new BackupMember("config/application.json", content.length, digest, BackupMemberKind.CONFIGURATION),
-                new BackupMember("runtime/sample.service", content.length, digest, BackupMemberKind.RUNTIME));
-        BackupHealthCheck health = BackupHealthCheck.tcp(8080, 30, 5);
-        BackupComponent component = BackupComponent.legacy("sample", "sample", "a".repeat(64),
-                "releases/release-1.json", "config/application.json", "runtime/sample.service", List.of(),
-                new BackupComponentRuntime.SpringBoot(health));
-        BackupInventory inventory = new BackupInventory(
-                List.of("releases/release-1.json"), List.of("config/application.json"), List.of(),
-                List.of("/srv/sample/content"), List.of("sample-content"), BackupDatabase.none(),
-                BackupIdentity.legacy("sample", "server-1", "/opt/windowstolinux/apps/sample", "release-1"),
-                List.of("runtime/sample.service"), List.of(component), "sample", health,
-                new BackupRuntime("ubuntu", "24.04", "systemd", "255", "x86_64", List.of("systemd")),
-                List.of("restore requires the managed root to be empty"), List.of("db.password"));
-        return new BackupManifest(BackupManifest.CURRENT_FORMAT, BackupManifest.LEGACY_SCHEMA_VERSION,
-                Instant.parse("2026-08-21T00:00:00Z").toString(), "sample", inventory, members,
-                BackupProvenance.unsigned());
-    }
+
 }

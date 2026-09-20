@@ -127,7 +127,7 @@ public final class ManagedRestoreDeploymentPort implements RestoreDeploymentPort
             RemoteRestoreActivationRequest activation = attempts.get(request.candidateId());
             if (activation == null) {
                 var preflight = remote.inspectRestoreActivation(request.applicationId(), 0);
-                activation = activation(request, planner.plan(request, preflight.occupiedTcpPorts(), true));
+                activation = activation(request, planner.plan(request, preflight.occupiedTcpPorts(), preflight.occupiedUdpPorts(), true));
             }
             RemoteRestoreActivationPort.StepEvidence stopped = remote.quiesceRestoreRecovery(activation);
             return new HealthEvidence(stopped.completed(), stopped.evidence());
@@ -143,7 +143,7 @@ public final class ManagedRestoreDeploymentPort implements RestoreDeploymentPort
             RemoteRestoreActivationRequest activation = attempts.get(request.candidateId());
             if (activation == null) {
                 var preflight = remote.inspectRestoreActivation(request.applicationId(), 0);
-                activation = activation(request, planner.plan(request, preflight.occupiedTcpPorts()));
+                activation = activation(request, planner.plan(request, preflight.occupiedTcpPorts(), preflight.occupiedUdpPorts(), false));
             }
             RemoteRestoreActivationPort.RecoveryEvidence recovered = remote.recoverRestoreActivation(activation);
             if (recovered.candidateRemoved() && recovered.previousGraphVerified()) {
@@ -164,7 +164,7 @@ public final class ManagedRestoreDeploymentPort implements RestoreDeploymentPort
             throw new IllegalStateException("restore target preflight rejected activation: "
                     + String.join("; ", preflight.evidence()));
         }
-        CandidatePortPlan ports = planner.plan(request, preflight.occupiedTcpPorts(), databaseActivationRequired);
+        CandidatePortPlan ports = planner.plan(request, preflight.occupiedTcpPorts(), preflight.occupiedUdpPorts(), databaseActivationRequired);
         activation = activation(request, ports);
         RemoteRestoreActivationPort.StepEvidence started = remote.startRestoreActivation(activation);
         if (!started.completed()) throw new IllegalStateException("restore activation preparation was incomplete");
@@ -197,7 +197,7 @@ public final class ManagedRestoreDeploymentPort implements RestoreDeploymentPort
             var inputs = component.inputManifest().orElseThrow(() ->
                     new IllegalStateException("exact deployment inputs were not staged before restore activation"));
             var ports = plan.components().get(component.componentId()).stream().map(binding ->
-                    new RemoteRestorePortBinding(binding.officialPort(), binding.candidatePort())).toList();
+                    new RemoteRestorePortBinding(binding.officialPort(), binding.candidatePort(), binding.protocol())).toList();
             components.add(new RemoteRestoreActivationComponent(component.componentId(),
                     component.managedApplicationId(), component.ownershipManifestSha256(), component.releaseSha256(),
                     component.releaseManifestPath(), component.persistentArchivePaths(), component.ociArchivePath(),
@@ -205,8 +205,7 @@ public final class ManagedRestoreDeploymentPort implements RestoreDeploymentPort
         }
         return new RemoteRestoreActivationRequest(request.applicationId(), request.candidateId(),
                 request.candidateToken(), request.archiveSha256(), request.remoteCandidateRoot(),
-                plan.mode() == CandidatePortMode.PARALLEL_LOOPBACK
-                        ? RemoteRestoreActivationMode.PARALLEL_LOOPBACK : RemoteRestoreActivationMode.SHORT_STOP,
+                RemoteRestoreActivationMode.valueOf(plan.mode().name()),
                 components, request.applicationHealthComponentId(), request.applicationHealthCheck());
     }
 

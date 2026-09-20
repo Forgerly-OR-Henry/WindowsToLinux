@@ -37,7 +37,10 @@ public interface RemoteRestoreActivationPort {
 
     /** Read-only target facts. / 只读目标事实。 */
     record PreflightEvidence(boolean managedRootWritable, boolean foreignApplicationConflict,
-                             long availableBytes, Set<Integer> occupiedTcpPorts, List<String> evidence) {
+                             long availableBytes, Set<Integer> occupiedTcpPorts, List<String> evidence, Set<Integer> occupiedUdpPorts) {
+        public PreflightEvidence(boolean writable, boolean conflict, long bytes, Set<Integer> tcp, List<String> evidence) {
+            this(writable, conflict, bytes, tcp, evidence, Set.of());
+        }
         /** Validates bounded target evidence. / 校验有界目标证据。 */
         public PreflightEvidence {
             if (availableBytes < 0) throw new IllegalArgumentException("availableBytes is invalid");
@@ -45,6 +48,8 @@ public interface RemoteRestoreActivationPort {
             if (occupiedTcpPorts.stream().anyMatch(port -> port == null || port < 1 || port > 65535)) {
                 throw new IllegalArgumentException("occupiedTcpPorts is invalid");
             }
+            occupiedUdpPorts = Set.copyOf(occupiedUdpPorts);
+            if (occupiedUdpPorts.stream().anyMatch(port -> port < 1 || port > 65535)) throw new IllegalArgumentException("invalid UDP port");
             evidence = checked(evidence);
         }
     }

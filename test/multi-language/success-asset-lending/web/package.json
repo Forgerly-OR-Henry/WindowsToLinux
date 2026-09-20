@@ -1,0 +1,13 @@
+{
+  "name": "wtl-asset-lending-web",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=24 <25"
+  },
+  "scripts": {
+    "build": "node build.mjs",
+    "start": "node dist/server.js"
+  }
+}

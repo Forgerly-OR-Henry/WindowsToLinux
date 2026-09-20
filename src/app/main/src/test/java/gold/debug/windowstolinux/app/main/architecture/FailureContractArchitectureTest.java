@@ -15,7 +15,7 @@ import gold.debug.windowstolinux.shared.model.deployment.DeploymentApprovalFailu
 import gold.debug.windowstolinux.shared.model.failure.FailureDefinition;
 import gold.debug.windowstolinux.shared.source.archive.SourceArchiveFailureType;
 import gold.debug.windowstolinux.shared.backup.contract.validation.BackupFailureType;
-import gold.debug.windowstolinux.app.secret.crypto.BackupSecretFailureType;
+import gold.debug.windowstolinux.shared.backup.crypto.BackupSecretFailureType;
 import gold.debug.windowstolinux.app.windows.update.DesktopUpdateFailureType;
 import gold.debug.windowstolinux.app.windows.uninstall.DesktopUninstallFailureType;
 import gold.debug.windowstolinux.shared.linux.error.NativeDatabaseFailureType;

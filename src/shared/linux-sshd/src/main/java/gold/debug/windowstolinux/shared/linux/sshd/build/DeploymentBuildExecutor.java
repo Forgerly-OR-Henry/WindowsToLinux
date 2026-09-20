@@ -144,7 +144,9 @@ public final class DeploymentBuildExecutor {
         DeploymentBuildRenderer renderer = renderers.require(facts.projectType(), facts.buildTool());
         String script = BuildConfigurationEnvironmentRenderer.render(configuration)
                 + gold.debug.windowstolinux.shared.linux.sshd.toolchain.ToolchainBuildEnvironment.render(tools)
-                + renderer.render(facts, runtime, workspace, limits);
+                + renderer.render(facts, runtime, workspace, limits)
+                + gold.debug.windowstolinux.shared.linux.sshd.build.generation.script.CompanionBuildScript.render(runtime.workload())
+                + (runtime.workload().companions().isEmpty() ? "" : "\ntest \"$(du -sb \"$mutable\" | cut -f1)\" -le " + limits.maxWorkspaceBytes() + "\n");
         String engine = runtime instanceof DeploymentRuntimeSpecification.Container container
                 ? container.engine().name().toLowerCase(java.util.Locale.ROOT) : "ordinary";
         long remainingSeconds = Duration.ofNanos(deadline - System.nanoTime()).toSeconds();

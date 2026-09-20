@@ -1,0 +1,8 @@
+{
+  "assetIds": [1, 2],
+  "borrower": "林同学",
+  "dueDate": "2030-10-01",
+  "purpose": "演示设备借用",
+  "actor": "林同学",
+  "requestId": "demo-loan-001"
+}

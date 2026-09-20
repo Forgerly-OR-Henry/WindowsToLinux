@@ -13,8 +13,19 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class RunModeResolverTest {
 
-    @TempDir
+    @TempDir(factory = RuntimeFixtureDirectory.class)
     Path temporaryDirectory;
+
+    /** Layout fixtures must not inherit an enclosing repository from a workspace JVM temp override. */
+    static final class RuntimeFixtureDirectory implements org.junit.jupiter.api.io.TempDirFactory {
+        @Override public Path createTempDirectory(org.junit.jupiter.api.extension.AnnotatedElementContext element,
+                org.junit.jupiter.api.extension.ExtensionContext context) throws java.io.IOException {
+            String systemTemp=System.getenv("TEMP");
+            if(systemTemp==null || systemTemp.isBlank())systemTemp=System.getenv("TMPDIR");
+            if(systemTemp==null || systemTemp.isBlank())systemTemp="/tmp";
+            return Files.createTempDirectory(Path.of(systemTemp),"w2l-runtime-layout-");
+        }
+    }
 
     @Test
     void resolvesMavenDbClassesToModuleDataDirectory() throws Exception {
@@ -174,13 +185,14 @@ class RunModeResolverTest {
     }
 
     @Test
-    void publicDetectionUsesTheDbModuleEvenWhenCalledFromMainTests() {
-        assertEquals(
-                RunModeResolver.RunMode.RUN_CLASS,
-                RunModeResolver.detect()
-        );
-        assertTrue(RunModeResolver.resolveDataDirectory()
-                .endsWith(Path.of("src", "app", "db", "data")));
+    void publicDetectionUsesTheDbModuleEvenWhenCalledFromMainTests() throws Exception {
+        Path dbSource=Path.of(gold.debug.windowstolinux.app.db.DesktopPersistence.class
+                .getProtectionDomain().getCodeSource().getLocation().toURI()).toAbsolutePath().normalize();
+        // Maven test uses classes; verify packages upstream modules before loading this test.
+        boolean packaged=Files.isRegularFile(dbSource);
+        assertEquals(packaged?RunModeResolver.RunMode.RUN_JAR:RunModeResolver.RunMode.RUN_CLASS,RunModeResolver.detect());
+        Path expectedHome=packaged?dbSource.getParent():dbSource.getParent().getParent();
+        assertEquals(expectedHome.resolve("data"),RunModeResolver.resolveDataDirectory());
     }
 
     private Path createJpackageLayout(String name) throws Exception {

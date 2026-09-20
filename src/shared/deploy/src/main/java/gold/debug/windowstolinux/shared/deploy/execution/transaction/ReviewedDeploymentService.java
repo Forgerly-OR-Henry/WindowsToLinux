@@ -90,6 +90,8 @@ public final class ReviewedDeploymentService {
         List<DeploymentEvent> events = new DeploymentEventJournal(progress);
         DeploymentResult initialRejection = validateRequestBinding(request, application, endpoint, events);
         if (initialRejection != null) return initialRejection;
+        for (var message : gold.debug.windowstolinux.shared.deploy.input.ManagedStoragePreparation.preview(request))
+            events.add(new DeploymentEvent(DeploymentTraceEvent.APPLICATION_PREFLIGHT,true,message,message.arguments().toString(),Optional.empty()));
         RemoteWorkspace workspace = new RemoteWorkspace(application.id(), request.archive().contentSha256());
         String releaseIdentity = ReviewedReleaseIdentityResolver.from(request);
         ReleaseSnapshot snapshot = null;
@@ -135,7 +137,8 @@ public final class ReviewedDeploymentService {
             events.add(DeploymentEvent.result(DeploymentTraceEvent.SNAPSHOT, true, snapshot.evidence()));
             RemoteStepResult publish = session.publishDeployment(application, request.facts(), workspace, build, releaseIdentity,
                     request.runtime(), DeploymentInputMapper.manifest(inputs),
-                    new ManagedContentPublication(application.id(), application.id(), java.util.List.of()), snapshot);
+                    new ManagedContentPublication(application.id(), application.id(), DeploymentInputMapper.storage(application.id(),
+                            new gold.debug.windowstolinux.shared.config.resource.ManagedComponentResourceBindings(request.fileBindings(), request.databaseBindings()), request.runtime())), snapshot);
             events.add(DeploymentEvent.result(DeploymentTraceEvent.PUBLISH, publish.succeeded(), publish.evidence()));
             if (!publish.succeeded()) {
                 return recover(session, request, application, workspace, snapshot, build, releaseIdentity, inputs, events);
@@ -146,10 +149,11 @@ public final class ReviewedDeploymentService {
                 return recover(session, request, application, workspace, snapshot, build, releaseIdentity, inputs, events);
             }
             LifecycleObservation observation = session.observeDeployment(application, request.runtime());
-            events.add(DeploymentEvent.result(DeploymentTraceEvent.FINAL_OBSERVATION, observation.ownershipVerified() && observation.runtimeState() == RuntimeState.RUNNING, observation.evidence()));
-            if (!observation.ownershipVerified() || observation.runtimeState() != RuntimeState.RUNNING) {
+            events.add(DeploymentEvent.result(DeploymentTraceEvent.FINAL_OBSERVATION, observation.ownershipVerified() && observation.runtimeState() == (request.runtime().workload().mode() == gold.debug.windowstolinux.shared.model.project.application.ApplicationWorkload.ExecutionMode.ON_DEMAND ? RuntimeState.INSTALLED : RuntimeState.RUNNING), observation.evidence()));
+            if (!observation.ownershipVerified() || observation.runtimeState() != (request.runtime().workload().mode() == gold.debug.windowstolinux.shared.model.project.application.ApplicationWorkload.ExecutionMode.ON_DEMAND ? RuntimeState.INSTALLED : RuntimeState.RUNNING)) {
                 return recover(session, request, application, workspace, snapshot, build, releaseIdentity, inputs, events);
             }
+            session.backupArtifacts().endMaintenance(application, "deployment-" + releaseIdentity);
             committedObservation = observation;
             return finishPublication(session, application, workspace, observation, releaseIdentity, events);
         } catch (LinuxOperationException exception) {
@@ -268,6 +272,7 @@ public final class ReviewedDeploymentService {
             return new DeploymentResult(DeploymentStatus.MANUAL_RECOVERY_REQUIRED, events, Optional.empty(), Optional.empty());
         }
         if (!snapshot.hasPreviousRelease()) {
+            session.backupArtifacts().endMaintenance(application, "deployment-" + releaseIdentity);
             return new DeploymentResult(DeploymentStatus.FAILED_FIRST_DEPLOYMENT, events, Optional.empty(), Optional.empty());
         }
         LifecycleObservation restored;
@@ -280,10 +285,11 @@ public final class ReviewedDeploymentService {
         }
         events.add(DeploymentEvent.result(DeploymentTraceEvent.ROLLBACK_OBSERVATION, restored.ownershipVerified(), restored.evidence()));
         boolean expectedState = snapshot.previousWasRunning()
-                ? restored.runtimeState() == RuntimeState.RUNNING : restored.runtimeState() == RuntimeState.STOPPED;
+                ? restored.runtimeState() == RuntimeState.RUNNING : restored.runtimeState() == RuntimeState.STOPPED || restored.runtimeState() == RuntimeState.INSTALLED;
         if (!restored.ownershipVerified() || !expectedState) {
             return new DeploymentResult(DeploymentStatus.MANUAL_RECOVERY_REQUIRED, events, Optional.of(restored), Optional.empty());
         }
+        session.backupArtifacts().endMaintenance(application, "deployment-" + releaseIdentity);
         return new DeploymentResult(DeploymentStatus.FAILED_ROLLED_BACK, events, Optional.of(restored), Optional.empty());
     }
 

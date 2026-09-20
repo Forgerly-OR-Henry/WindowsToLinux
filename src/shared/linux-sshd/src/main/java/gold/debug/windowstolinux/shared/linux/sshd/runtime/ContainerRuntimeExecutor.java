@@ -1,5 +1,7 @@
 package gold.debug.windowstolinux.shared.linux.sshd.runtime;
 
+import gold.debug.windowstolinux.shared.linux.sshd.execution.protocol.runtime.ApplicationHealthProbe;
+
 import gold.debug.windowstolinux.shared.linux.error.LinuxOperationException;
 import gold.debug.windowstolinux.shared.linux.error.LinuxOperationFailureType;
 import gold.debug.windowstolinux.shared.linux.runtime.HealthCheckResult;
@@ -39,31 +41,7 @@ public final class ContainerRuntimeExecutor {
     public HealthCheckResult checkHealth(ManagedApplication application,
                                          DeploymentRuntimeSpecification.ContainerEngineType runtimeEngine,
                                          HealthCheck healthCheck) throws LinuxOperationException {
-        String engine = runtimeEngine.name().toLowerCase(java.util.Locale.ROOT);
-        String container = "windowstolinux-" + application.id();
-        String probe = healthCheck instanceof HealthCheck.Http http
-                ? "curl --fail --silent --max-time 3 --output /dev/null --write-out '%{http_code}' "
-                + SshCommandExecutor.quote(http.endpoint().toASCIIString()) + " | grep -qx "
-                + SshCommandExecutor.quote(Integer.toString(http.expectedStatus()))
-                : "timeout 3 /bin/bash -c '</dev/tcp/127.0.0.1/" + ((HealthCheck.Tcp) healthCheck).port() + "'";
-        String script = """
-                set -euo pipefail
-                deadline=$((SECONDS + %d))
-                while [ "$SECONDS" -lt "$deadline" ]; do
-                  if %s inspect --format '{{.State.Running}}' %s 2>/dev/null | grep -qx true && %s; then
-                    printf 'HEALTHY=1\\n'
-                    exit 0
-                  fi
-                  sleep 1
-                done
-                exit 1
-                """.formatted(healthCheck.timeoutSeconds(), SshCommandExecutor.quote(engine),
-                SshCommandExecutor.quote(container), probe);
-        var result = commands.exec("/bin/bash -lc " + SshCommandExecutor.quote(script),
-                Duration.ofSeconds(healthCheck.timeoutSeconds() + 15L), true);
-        return new HealthCheckResult(result.succeeded() && "1".equals(SshCommandExecutor.lines(result.output()).get("HEALTHY")),
-                result.succeeded() ? "Managed container loopback health check completed"
-                        : "Managed container health check failed: " + result.failureEvidence());
+        return ApplicationHealthProbe.check(commands, application, healthCheck);
     }
 
     /** Observes release-root ownership, engine state, and engine-specific autostart. / 观察发布根归属、引擎状态和引擎专属自启。 */

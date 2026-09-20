@@ -306,6 +306,7 @@ class ReviewedDeploymentServiceTest {
                     case "checkDeploymentHealth" -> new HealthCheckResult(true, "fixture health");
                     case "observeDeployment", "executeDeploymentLifecycle" -> new LifecycleObservation(application(), RuntimeState.RUNNING,
                             AutostartState.DISABLED, true, Instant.now(), "fixture observation");
+                    case "backupArtifacts" -> ApplicationMaintenanceFixture.port();
                     case "close" -> null;
                     case "toString" -> "fixture session";
                     default -> throw new AssertionError("unexpected remote capability: " + method.getName());

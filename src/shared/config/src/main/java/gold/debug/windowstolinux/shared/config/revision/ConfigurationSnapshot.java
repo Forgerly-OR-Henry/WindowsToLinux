@@ -47,9 +47,6 @@ public record ConfigurationSnapshot(
         schemaVersion = requireIdentifier(schemaVersion, "schemaVersion");
         createdAt = Objects.requireNonNull(createdAt, "createdAt");
         entries = List.copyOf(Objects.requireNonNull(entries, "entries"));
-        if (entries.isEmpty()) {
-            throw ConfigurationException.create(ConfigurationFailureType.SNAPSHOT_EMPTY, "A configuration snapshot must contain at least one entry");
-        }
         if (entries.stream().map(ConfigurationEntry::key).distinct().count() != entries.size()) {
             throw ConfigurationException.create(ConfigurationFailureType.DUPLICATE_KEY, "Configuration snapshot keys must be unique");
         }

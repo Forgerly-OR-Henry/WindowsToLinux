@@ -31,7 +31,7 @@ class EcosystemServiceAcceptanceFixtureTest {
     @Test
     void textCustomizationPreservesTheBinaryWrapperAndKeepsCopiedSourcesIndependent() throws Exception {
         Path original = RepositoryServiceFixture.repositoryRoot()
-                .resolve("test/java/gradle/spring-boot/success-deployment-smoke");
+                .resolve("test/single-language/java/gradle/spring-boot/success-deployment-smoke");
         byte[] wrapper = Files.readAllBytes(original.resolve("gradle/wrapper/gradle-wrapper.jar"));
         Path root = RepositoryServiceFixture.copy(temporaryDirectory, "copied-service", "java/gradle/spring-boot", true);
         RepositoryServiceFixture.replaceText(root, Map.of("gradle", "customized", "deployment-smoke-ok", "copied-ok"));

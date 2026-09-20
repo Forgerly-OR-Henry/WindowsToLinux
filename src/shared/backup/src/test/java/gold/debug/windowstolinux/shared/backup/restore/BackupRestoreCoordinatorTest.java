@@ -91,24 +91,9 @@ class BackupRestoreCoordinatorTest {
     }
 
     @Test
-    void schemaV3StopsBeforeAnyAutomaticRestoreMutation() throws Exception {
-        RecordingCandidatePort port = new RecordingCandidatePort(false, false);
+    void schemaV3IsRejectedBeforeAPlanCanBeConstructed() throws Exception {
         BackupRestorePlan current = plan("x86_64");
-        BackupManifest legacy = legacy(current.validation().manifest());
-        BackupArchiveValidation validation = new BackupArchiveValidation(
-                current.validation().archiveSha256(), legacy, current.validation().verifiedBytes(),
-                current.validation().provenanceStatus());
-        BackupRestorePlan legacyPlan = new BackupRestorePlan(validation,
-                new BackupRestoreCandidate(current.candidate().root(), legacy, current.candidate().extractedBytes()),
-                current.localCandidateParent(), current.candidateId(), current.materialKind(), current.target(),
-                current.databaseRestore());
-
-        BackupRestoreResult result = coordinator(port).restore(legacyPlan);
-
-        assertEquals(BackupRestoreStatus.FAILED_EXISTING_PRESERVED, result.status());
-        assertEquals("backup.restore.preflight-failed", result.failure().orElseThrow().code());
-        assertEquals(0, port.stageCalls);
-        assertFalse(port.recoveryCalled);
+        org.junit.jupiter.api.Assertions.assertThrows(java.io.IOException.class, () -> legacy(current.validation().manifest()));
     }
 
     @Test
@@ -189,7 +174,7 @@ class BackupRestoreCoordinatorTest {
     }
 
     @Test
-    void databaseCommitOccursInsideStoppedWriteBoundaryBeforeFormalHealth() throws Exception {
+    void sqliteCommitOccursOnlyAfterIsolatedHealthAndStoppedWrites() throws Exception {
         List<String> calls = new ArrayList<>();
         RecordingCandidatePort port = new RecordingCandidatePort(false, false, calls);
         SuccessfulDatabaseAdapter database = new SuccessfulDatabaseAdapter(calls);
@@ -198,12 +183,11 @@ class BackupRestoreCoordinatorTest {
                 new DatabaseAdapterRegistry(List.of(database))).restore(databasePlan());
 
         assertEquals(BackupRestoreStatus.SUCCEEDED, result.status());
-        assertEquals(List.of("stage", "database-restore", "prepare-commit", "database-commit",
-                "components", "application", "commit"), calls);
+        assertEquals(List.of("stage", "database-restore", "components", "application", "prepare-commit", "database-commit", "commit"), calls);
     }
 
     @Test
-    void failureAfterDatabaseCommitQuiescesProcessesThenRecoversDatabaseAndRelease() throws Exception {
+    void sqliteHealthFailureStopsCandidateBeforeDiscardWithoutTouchingFormalDatabase() throws Exception {
         List<String> calls = new ArrayList<>();
         RecordingCandidatePort port = new RecordingCandidatePort(true, false, calls);
         SuccessfulDatabaseAdapter database = new SuccessfulDatabaseAdapter(calls);
@@ -212,8 +196,33 @@ class BackupRestoreCoordinatorTest {
                 new DatabaseAdapterRegistry(List.of(database))).restore(databasePlan());
 
         assertEquals(BackupRestoreStatus.FAILED_EXISTING_PRESERVED, result.status());
-        assertEquals(List.of("stage", "database-restore", "prepare-commit", "database-commit",
-                "components", "quiesce", "database-recover", "recover"), calls);
+        assertEquals(List.of("stage", "database-restore", "components", "quiesce", "database-discard", "recover"), calls);
+    }
+
+    @Test
+    void sqliteApplicationCommitFailureQuiescesBeforeRestoringDatabaseAndRelease() throws Exception {
+        List<String> calls = new ArrayList<>();
+        RecordingCandidatePort port = new RecordingCandidatePort(false, false, calls);
+        port.commitFailure = true;
+        BackupRestoreResult result = new BackupRestoreCoordinator(new BackupRestorePreflight(), port,
+                new DatabaseAdapterRegistry(List.of(new SuccessfulDatabaseAdapter(calls)))).restore(databasePlan());
+
+        assertEquals(BackupRestoreStatus.FAILED_EXISTING_PRESERVED, result.status());
+        assertEquals(List.of("stage", "database-restore", "components", "application", "prepare-commit",
+                "database-commit", "commit", "quiesce", "database-recover", "recover"), calls);
+    }
+
+    @Test
+    void sqliteCandidateStopFailureRetainsCandidateAndRequiresManualRecovery() throws Exception {
+        List<String> calls = new ArrayList<>();
+        RecordingCandidatePort port = new RecordingCandidatePort(true, false, calls);
+        port.quiesceFailure = true;
+        BackupRestoreResult result = new BackupRestoreCoordinator(new BackupRestorePreflight(), port,
+                new DatabaseAdapterRegistry(List.of(new SuccessfulDatabaseAdapter(calls)))).restore(databasePlan());
+
+        assertEquals(BackupRestoreStatus.MANUAL_RECOVERY_REQUIRED, result.status());
+        assertEquals(List.of("stage", "database-restore", "components", "quiesce"), calls);
+        assertFalse(port.recoveryCalled);
     }
 
     private BackupRestoreCoordinator coordinator(RestoreCandidatePort port) {
@@ -270,7 +279,7 @@ class BackupRestoreCoordinatorTest {
         DatabaseBackupArtifact artifact = new DatabaseBackupArtifact("artifact-1", 128, "c".repeat(64),
                 database, List.of("consistent SQLite artifact"));
         DatabaseRestoreRequest restore = new DatabaseRestoreRequest("sample", candidateId,
-                new DatabaseConnectionProfile.Sqlite("data/application.db"), artifact);
+                new DatabaseConnectionProfile.Sqlite("main", gold.debug.windowstolinux.shared.model.managed.ManagedStorageLocation.defaults(), "application.db"), artifact);
         RestoreTargetProfile target = target(
                 "ubuntu", "24.04", "x86_64", BackupDatabaseType.SQLITE, "3.46", 1024, true, false);
         return new BackupRestorePlan(validation, new BackupRestoreCandidate(root, manifest, 8), parent,
@@ -300,7 +309,7 @@ class BackupRestoreCoordinatorTest {
         BackupManifestCodec codec = new BackupManifestCodec();
         ObjectMapper mapper = new ObjectMapper();
         ObjectNode root = (ObjectNode) mapper.readTree(codec.write(current));
-        root.put("schemaVersion", BackupManifest.LEGACY_SCHEMA_VERSION);
+        root.put("schemaVersion", "3");
         ObjectNode inventory = (ObjectNode) root.get("inventory");
         ObjectNode identity = (ObjectNode) inventory.get("identity");
         identity.remove("releaseSetSha256");
@@ -339,6 +348,8 @@ class BackupRestoreCoordinatorTest {
         private final boolean recoveryFailure;
         private int stageCalls;
         private boolean recoveryCalled;
+        private boolean commitFailure;
+        private boolean quiesceFailure;
         private final List<String> calls;
 
         private RecordingCandidatePort(boolean componentFailure, boolean recoveryFailure) {
@@ -384,14 +395,14 @@ class BackupRestoreCoordinatorTest {
         public CommitEvidence commit(
                 RestoreCandidateRequest request, FileEvidence files, Optional<String> databaseToken) {
             calls.add("commit");
-            return new CommitEvidence(true, true, "release-active", List.of("candidate committed atomically"));
+            return new CommitEvidence(!commitFailure, !commitFailure, "release-active", List.of("candidate commit checked"));
         }
 
         @Override
         public HealthEvidence quiesceForRecovery(
                 RestoreCandidateRequest request, Optional<FileEvidence> files) {
             calls.add("quiesce");
-            return new HealthEvidence(true, List.of("recovery quiesced"));
+            return new HealthEvidence(!quiesceFailure, List.of("recovery quiescence checked"));
         }
 
         @Override

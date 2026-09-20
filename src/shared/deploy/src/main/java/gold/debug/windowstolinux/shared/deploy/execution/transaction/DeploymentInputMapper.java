@@ -45,7 +45,25 @@ public final class DeploymentInputMapper {
     /** Retains managed file identities and logical paths in canonical order. / 以规范顺序保留受管文件身份和逻辑路径。 */
     public static List<RemoteManagedFileBinding> files(List<ManagedFileBinding> bindings) {
         return bindings.stream().sorted(Comparator.comparing(ManagedFileBinding::bindingId))
-                .map(value -> new RemoteManagedFileBinding(value.bindingId(), value.dataPath())).toList();
+                .map(value -> new RemoteManagedFileBinding(value.bindingId(), value.dataPath(), value.location(), value.resourceType(), "", value.seedFile(), List.of(), value.contentSha256())).toList();
+    }
+
+    public static List<RemoteManagedFileBinding> storage(String applicationId,
+            gold.debug.windowstolinux.shared.config.resource.ManagedComponentResourceBindings bindings,
+            gold.debug.windowstolinux.shared.model.project.DeploymentRuntimeSpecification runtime) {
+        var result = new ArrayList<RemoteManagedFileBinding>(files(bindings.fileBindings()));
+        gold.debug.windowstolinux.shared.config.resource.ManagedStoragePlan.resolve(applicationId, bindings, runtime);
+        for (var binding : bindings.databaseBindings().orElse(List.of())) {
+            if (binding.connection() instanceof gold.debug.windowstolinux.shared.config.resource.ManagedDatabaseConnection.Sqlite sqlite) {
+                var path = new gold.debug.windowstolinux.shared.model.project.component.ComponentDataPath(
+                        sqlite.accessPath().isEmpty() ? sqlite.physicalPath(applicationId,binding.databaseId()) : sqlite.accessPath(),
+                        gold.debug.windowstolinux.shared.model.project.component.ComponentDataPath.AccessMode.READ_WRITE, "sqlite", true);
+                result.add(new RemoteManagedFileBinding(binding.databaseId(), path, sqlite.location(),
+                        gold.debug.windowstolinux.shared.model.managed.ManagedStorageLocation.StorageResourceType.DATABASE,
+                        sqlite.fileName(), sqlite.seedFile(), sqlite.initializationFiles(), ""));
+            }
+        }
+        return List.copyOf(result);
     }
 
     /** Owns and clears every projected secret, including partial conversion and failed staging. / 持有并清零每个投影秘密，包括转换中断和暂存失败路径。 */

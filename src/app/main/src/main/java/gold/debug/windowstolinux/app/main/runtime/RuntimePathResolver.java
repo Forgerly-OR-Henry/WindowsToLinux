@@ -43,6 +43,7 @@ final class RuntimePathResolver {
             if (directModule.isPresent()) return directModule;
             Optional<Path> repositoryModule = validatedModuleHome(current.resolve("src/app/db"));
             if (repositoryModule.isPresent()) return repositoryModule;
+            if (Files.isRegularFile(current.resolve("src/app/main/pom.xml"))) return Optional.empty();
             current = current.getParent();
         }
         return Optional.empty();

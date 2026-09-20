@@ -4,7 +4,7 @@ import gold.debug.windowstolinux.app.service.contract.definition.ComponentHealth
 
 import gold.debug.windowstolinux.app.service.contract.definition.ComponentFormInput;
 
-import gold.debug.windowstolinux.app.service.contract.definition.DatabaseReviewMode;
+import gold.debug.windowstolinux.shared.model.deployment.DatabaseReviewMode;
 
 import gold.debug.windowstolinux.app.service.deployment.multi.ReviewedMultiComponentApplication;
 import gold.debug.windowstolinux.app.service.source.PreparedMultiComponentSource;
@@ -44,7 +44,7 @@ final class MultiComponentDraftController {
     final JTextField healthEndpoint = new JTextField(22);
     final JTextField expectedStatus = new JTextField("200", 6);
     final JTextField timeoutSeconds = new JTextField("20", 6);
-    final JTextField stabilitySeconds = new JTextField("1", 6);
+    final JTextField stabilitySeconds = new JTextField("5", 6);
     final JTextField accessUrl = new JTextField(22);
     final JTextField artifacts = new JTextField(20);
     final JTextField ports = new JTextField(20);
@@ -158,7 +158,7 @@ final class MultiComponentDraftController {
                 accessUrl.getText(), artifacts.getText(), ports.getText(), dependencies.getText(),
                 resources.configuration.getText(),
                 (DatabaseReviewMode) resources.databaseMode.getSelectedItem(),
-                resources.databaseDetails.getText(), resources.secrets.getText(), required.isSelected(), false, kotlinJvmTarget.getText());
+                resources.databaseDetails.getText(), resources.secrets.getText(), required.isSelected(), false, kotlinJvmTarget.getText(), resources.applicationDeclaration.getText());
     }
 
     private MultiComponentFormState formState() {
@@ -170,10 +170,11 @@ final class MultiComponentDraftController {
                 accessUrl.getText(), artifacts.getText(), ports.getText(), dependencies.getText(),
                 resources.configuration.getText(),
                 ((DatabaseReviewMode) resources.databaseMode.getSelectedItem()).name(),
-                resources.databaseDetails.getText(), resources.secrets.getText(), required.isSelected(), false, kotlinJvmTarget.getText());
+                resources.databaseDetails.getText(), resources.secrets.getText(), required.isSelected(), false, kotlinJvmTarget.getText(), resources.applicationDeclaration.getText());
     }
 
     private void applyFormState(MultiComponentFormState state) {
+        resources.applicationDeclaration.setText(state.applicationDeclaration());
         componentId.setText(state.componentId());
         relativeRoot.setText(state.relativeRoot());
         projectType.setSelectedItem(DeploymentProjectType.valueOf(state.projectType()));
@@ -206,7 +207,7 @@ final class MultiComponentDraftController {
                 draft.expectedStatus(), draft.timeoutSeconds(), draft.stabilitySeconds(), draft.userAccessUrl(),
                 draft.artifactPaths(), draft.declaredPorts(), draft.dependencies(), draft.configurationEntries(),
                 draft.databaseMode().name(), draft.databaseDetails(), draft.secretReferences(), draft.required(),
-                draft.rootBuild(), draft.kotlinJvmTarget()));
+                draft.rootBuild(), draft.kotlinJvmTarget(), draft.applicationDeclaration()));
     }
 
     private Optional<ComponentFormInput> selectedDraft() {
@@ -248,6 +249,7 @@ final class MultiComponentDraftController {
 
     /** Groups the non-secret resource review controls for one component. / 组合一个组件不含秘密值的资源审阅控件。 */
     static final class ResourceControls {
+        final javax.swing.JTextArea applicationDeclaration = new javax.swing.JTextArea(6, 30);
         final JTextField configuration = new JTextField(22);
         final JComboBox<DatabaseReviewMode> databaseMode =
                 new JComboBox<>(DatabaseReviewMode.values());

@@ -1,0 +1,149 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>项目任务看板</title>
+    <link rel="stylesheet" href="/style.css" />
+  </head>
+  <body>
+    <header>
+      <h1>项目任务看板</h1>
+      <p>项目隔离 · 任务依赖 · 审核流转 · 版本冲突</p>
+    </header>
+    <nav>
+      <a href="#overview">项目概览</a> <a href="#list">任务列表</a>
+      <a href="#edit" id="new-task">新建任务</a>
+    </nav>
+    <p id="loading" role="status"></p>
+    <p id="message" role="alert"></p>
+    <section>
+      <label>项目<select id="project"></select></label
+      ><label>演示操作成员<select id="actor"></select></label>
+      <p>固定演示成员选择，不属于身份认证。</p>
+    </section>
+    <main>
+      <section data-page="overview">
+        <h2>项目概览</h2>
+        <p id="stats"></p>
+        <div id="status-stats"></div>
+        <table>
+          <thead>
+            <tr>
+              <th>负责人</th>
+              <th>任务数</th>
+            </tr>
+          </thead>
+          <tbody id="owner-stats"></tbody>
+        </table>
+        <h3>创建项目</h3>
+        <form id="project-form">
+          <label>名称<input id="project-name" required maxlength="80" /></label
+          ><button>创建项目</button>
+        </form>
+      </section>
+      <section data-page="list" hidden>
+        <h2>任务列表</h2>
+        <form id="filters">
+          <label>标题<input id="query" /></label
+          ><label>标签<input id="label-filter" /></label
+          ><label>负责人<select id="owner-filter"></select></label
+          ><label
+            >优先级<select id="priority-filter">
+              <option value="0">全部</option>
+              <option value="1">普通</option>
+              <option value="2">重要</option>
+              <option value="3">紧急</option>
+            </select></label
+          ><label
+            >状态<select id="status">
+              <option value="">全部</option>
+              <option value="todo">待办</option>
+              <option value="doing">进行中</option>
+              <option value="review">待审核</option>
+              <option value="done">完成</option>
+            </select></label
+          ><label><input id="overdue" type="checkbox" />仅逾期</label
+          ><button>筛选</button>
+        </form>
+        <p id="total"></p>
+        <table>
+          <thead>
+            <tr>
+              <th>编号</th>
+              <th>标题</th>
+              <th>负责人</th>
+              <th>优先级</th>
+              <th>标签</th>
+              <th>截止日期</th>
+              <th>状态</th>
+              <th>操作</th>
+            </tr>
+          </thead>
+          <tbody id="rows"></tbody>
+        </table>
+        <button id="prev">上一页</button><span id="page"></span
+        ><button id="next">下一页</button>
+      </section>
+      <section data-page="edit" hidden>
+        <h2 id="edit-title">新建任务</h2>
+        <form id="editor">
+          <label>标题<input id="title" required maxlength="120" /></label
+          ><label
+            >描述<textarea id="description" maxlength="2000"></textarea></label
+          ><label>负责人<select id="owner"></select></label
+          ><label
+            >优先级<select id="priority">
+              <option value="1">普通</option>
+              <option value="2">重要</option>
+              <option value="3">紧急</option>
+            </select></label
+          ><label>截止日期<input id="due-date" type="date" /></label
+          ><label>标签（逗号分隔）<input id="labels" /></label
+          ><label>依赖任务编号（逗号分隔）<input id="dependencies" /></label
+          ><button>保存任务</button>
+        </form>
+        <p id="edit-version"></p>
+        <button id="reload-edit" type="button" hidden>
+          丢弃本次编辑并重新加载
+        </button>
+      </section>
+      <section data-page="detail" hidden>
+        <h2 id="detail-title"></h2>
+        <p id="detail-meta"></p>
+        <p id="detail-description"></p>
+        <div id="transitions"></div>
+        <h3>依赖任务</h3>
+        <ul id="dependency-list"></ul>
+        <h3>评论</h3>
+        <ul id="comments"></ul>
+        <form id="comment-form">
+          <label
+            >评论内容<textarea
+              id="comment"
+              required
+              maxlength="1000"
+            ></textarea></label
+          ><button>发表评论</button>
+        </form>
+        <button id="history-link">查看操作历史</button>
+      </section>
+      <section data-page="history" hidden>
+        <h2>任务操作历史</h2>
+        <table>
+          <thead>
+            <tr>
+              <th>操作</th>
+              <th>成员</th>
+              <th>内容</th>
+              <th>时间</th>
+            </tr>
+          </thead>
+          <tbody id="history"></tbody>
+        </table>
+        <button id="back-detail">返回任务详情</button>
+      </section>
+    </main>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

@@ -45,6 +45,14 @@ public final class ServiceMetadataInspector {
         return BoundedMetadataInspector.regular(path) ? BoundedMetadataInspector.read(path) : "";
     }
 
+    /** Reads a declared runtime entrypoint without executing project code. / 读取已声明的运行入口而不执行项目代码。 */
+    public static String applicationEntrypoint(Path root, String fallback) throws IOException {
+        var values = new java.util.Properties();
+        values.load(new java.io.StringReader(readIfPresent(root.resolve("windowstolinux-application.properties"))));
+        String entry = values.getProperty("runtime.secondary", values.getProperty("command.entrypoint", fallback));
+        return gold.debug.windowstolinux.shared.model.project.application.ApplicationCommand.relative(entry, false);
+    }
+
     /** Returns an immutable list with one additional missing item. / 返回增加一个缺失项后的不可变列表。 */
     public static List<String> append(List<String> values, String value) {
         List<String> result = new ArrayList<>(values);

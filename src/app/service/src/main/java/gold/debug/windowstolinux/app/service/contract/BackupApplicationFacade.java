@@ -7,7 +7,7 @@ import gold.debug.windowstolinux.app.service.backup.PreparedBackupSecrets;
 import gold.debug.windowstolinux.app.service.backup.CreatedBackupArchive;
 import gold.debug.windowstolinux.app.service.backup.ManagedRestoreOutcome;
 import gold.debug.windowstolinux.app.service.backup.ManagedOfflineMigrationOutcome;
-import gold.debug.windowstolinux.app.secret.crypto.BackupSecretException;
+import gold.debug.windowstolinux.shared.backup.crypto.BackupSecretException;
 import gold.debug.windowstolinux.app.secret.SecretStoreException;
 import gold.debug.windowstolinux.shared.linux.error.LinuxOperationException;
 

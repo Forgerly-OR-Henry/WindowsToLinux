@@ -162,6 +162,7 @@ public final class DeploymentPage implements ReviewContext {
         gitKind.addItem(messages.text("git.reference.kind.commit"));
         advanced.field("auto.gitKind", gitKind); advanced.field("auto.gitReference", gitReference);
         advanced.field("field.projectType", form.projectType);
+        advanced.field("field.applicationDeclaration", new JScrollPane(form.applicationDeclaration));
         advanced.field("field.healthMode", form.healthMode);
         advanced.field("field.healthEndpoint", form.healthEndpoint);
         advanced.field("field.expectedStatus", form.expectedStatus);
@@ -272,6 +273,7 @@ public final class DeploymentPage implements ReviewContext {
 
     private void showHandoff(String id, DeploymentHandoff result, boolean log) {
         String text = result instanceof DeploymentHandoff.HttpAccessUrl url ? url.url().toString()
+                : result instanceof DeploymentHandoff.ApplicationEntry entry ? entry.command()
                 : ((DeploymentHandoff.SystemdStartCommand) result).command();
         if (log) append(id + ": " + text);
         JButton copy = components.secondaryButton(id + " · " + messages.text("auto.copy"));

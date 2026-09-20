@@ -1,0 +1,2640 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "WindowsToLinux internal Web API",
+    "version": "1.0.0",
+    "description": "Phase 5 only. Fixed server-owned internal user/workspace. Loopback, same-origin and explicit headers are not authentication. Never expose publicly. Resource views contain metadata and encrypted references only. Lists are bounded to 1000. Task kinds have closed input schemas; deploy overrides use shared typed field IDs. No shell or client-provided task state is accepted."
+  },
+  "servers": [
+    {
+      "url": "http://127.0.0.1:8765/api/v1"
+    }
+  ],
+  "paths": {
+    "/health": {
+      "get": {
+        "summary": "Internal-test health",
+        "operationId": "get_health",
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "status": {
+                      "const": "ok"
+                    },
+                    "mode": {
+                      "const": "internal-test"
+                    }
+                  },
+                  "required": [
+                    "status",
+                    "mode"
+                  ]
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Safe error; no stack, command, SQL, local path or secret",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/servers": {
+      "get": {
+        "summary": "List scoped servers",
+        "operationId": "get_servers",
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Server"
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Safe error; no stack, command, SQL, local path or secret",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "Save server; password is write-only",
+        "operationId": "post_servers",
+        "responses": {
+          "201": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Server"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Safe error; no stack, command, SQL, local path or secret",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "Origin",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Exact http://127.0.0.1:<actual-port>"
+          },
+          {
+            "name": "X-W2L-Client",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "const": "web"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ServerInput"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/sources": {
+      "get": {
+        "summary": "List scoped sources",
+        "operationId": "get_sources",
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Source"
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Safe error; no stack, command, SQL, local path or secret",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "Begin an upload",
+        "operationId": "post_sources",
+        "responses": {
+          "201": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Source"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Safe error; no stack, command, SQL, local path or secret",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "Origin",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Exact http://127.0.0.1:<actual-port>"
+          },
+          {
+            "name": "X-W2L-Client",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "const": "web"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "name"
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    "/applications": {
+      "get": {
+        "summary": "List scoped applications",
+        "operationId": "get_applications",
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Application"
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Safe error; no stack, command, SQL, local path or secret",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/backups": {
+      "get": {
+        "summary": "List scoped backups",
+        "operationId": "get_backups",
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Backup"
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Safe error; no stack, command, SQL, local path or secret",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/ai/profiles": {
+      "get": {
+        "summary": "List scoped ai/profiles",
+        "operationId": "get_ai_profiles",
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/AiProfile"
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Safe error; no stack, command, SQL, local path or secret",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "Verify selected AI model then save as a durable task",
+        "operationId": "post_ai_profiles",
+        "responses": {
+          "202": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskAccepted"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Safe error; no stack, command, SQL, local path or secret",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "Origin",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Exact http://127.0.0.1:<actual-port>"
+          },
+          {
+            "name": "X-W2L-Client",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "const": "web"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AiInput"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/tasks": {
+      "get": {
+        "summary": "List scoped tasks",
+        "operationId": "get_tasks",
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Task"
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Safe error; no stack, command, SQL, local path or secret",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "Submit server-prepared operation",
+        "operationId": "post_tasks",
+        "responses": {
+          "202": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskAccepted"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Safe error; no stack, command, SQL, local path or secret",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "Origin",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Exact http://127.0.0.1:<actual-port>"
+          },
+          {
+            "name": "X-W2L-Client",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "const": "web"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TaskInput"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/servers/{id}": {
+      "put": {
+        "summary": "Edit server with optimistic version; active target cannot change endpoint",
+        "operationId": "put_servers_id",
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Server"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Safe error; no stack, command, SQL, local path or secret",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Origin",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Exact http://127.0.0.1:<actual-port>"
+          },
+          {
+            "name": "X-W2L-Client",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "const": "web"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ServerInput"
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "summary": "Delete unreferenced server",
+        "operationId": "delete_servers_id",
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Empty"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Safe error; no stack, command, SQL, local path or secret",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Origin",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Exact http://127.0.0.1:<actual-port>"
+          },
+          {
+            "name": "X-W2L-Client",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "const": "web"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Version"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/sources/{id}/files": {
+      "put": {
+        "summary": "Stream one relative file",
+        "operationId": "put_sources_id_files",
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Empty"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Safe error; no stack, command, SQL, local path or secret",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "path",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Origin",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Exact http://127.0.0.1:<actual-port>"
+          },
+          {
+            "name": "X-W2L-Client",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "const": "web"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/octet-stream": {
+              "schema": {
+                "type": "string",
+                "format": "binary"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/sources/{id}/archive": {
+      "put": {
+        "summary": "Extract a bounded ZIP or tar.gz",
+        "operationId": "put_sources_id_archive",
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Empty"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Safe error; no stack, command, SQL, local path or secret",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "format",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "enum": [
+                "zip",
+                "tar.gz"
+              ]
+            }
+          },
+          {
+            "name": "Origin",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Exact http://127.0.0.1:<actual-port>"
+          },
+          {
+            "name": "X-W2L-Client",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "const": "web"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/octet-stream": {
+              "schema": {
+                "type": "string",
+                "format": "binary"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/sources/{id}/complete": {
+      "post": {
+        "summary": "Freeze source and content digest",
+        "operationId": "post_sources_id_complete",
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Source"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Safe error; no stack, command, SQL, local path or secret",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Origin",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Exact http://127.0.0.1:<actual-port>"
+          },
+          {
+            "name": "X-W2L-Client",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "const": "web"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Empty"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/applications/{id}": {
+      "put": {
+        "summary": "Edit application presentation",
+        "operationId": "put_applications_id",
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Application"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Safe error; no stack, command, SQL, local path or secret",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Origin",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Exact http://127.0.0.1:<actual-port>"
+          },
+          {
+            "name": "X-W2L-Client",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "const": "web"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ApplicationInput"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/preferences": {
+      "get": {
+        "summary": "Read current internal user preferences",
+        "operationId": "get_preferences",
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Preferences"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Safe error; no stack, command, SQL, local path or secret",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "summary": "Save partial preferences",
+        "operationId": "put_preferences",
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Preferences"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Safe error; no stack, command, SQL, local path or secret",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "Origin",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Exact http://127.0.0.1:<actual-port>"
+          },
+          {
+            "name": "X-W2L-Client",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "const": "web"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Preferences"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/secrets": {
+      "post": {
+        "summary": "Encrypt a decision secret or immutable application environment revision",
+        "operationId": "post_secrets",
+        "responses": {
+          "201": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SecretSaved"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Safe error; no stack, command, SQL, local path or secret",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "Origin",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Exact http://127.0.0.1:<actual-port>"
+          },
+          {
+            "name": "X-W2L-Client",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "const": "web"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Secret"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/ai/profiles/{id}": {
+      "put": {
+        "summary": "Verify changed AI model then save",
+        "operationId": "put_ai_profiles_id",
+        "responses": {
+          "202": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskAccepted"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Safe error; no stack, command, SQL, local path or secret",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Origin",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Exact http://127.0.0.1:<actual-port>"
+          },
+          {
+            "name": "X-W2L-Client",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "const": "web"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AiInput"
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "summary": "Delete AI profile",
+        "operationId": "delete_ai_profiles_id",
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Empty"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Safe error; no stack, command, SQL, local path or secret",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Origin",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Exact http://127.0.0.1:<actual-port>"
+          },
+          {
+            "name": "X-W2L-Client",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "const": "web"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Version"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/ai/profiles/{id}/enabled": {
+      "put": {
+        "summary": "Change enabled state",
+        "operationId": "put_ai_profiles_id_enabled",
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AiProfile"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Safe error; no stack, command, SQL, local path or secret",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Origin",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Exact http://127.0.0.1:<actual-port>"
+          },
+          {
+            "name": "X-W2L-Client",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "const": "web"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "enabled": {
+                    "type": "boolean"
+                  },
+                  "version": {
+                    "type": "integer",
+                    "minimum": 1
+                  }
+                },
+                "required": [
+                  "enabled",
+                  "version"
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    "/ai/order": {
+      "put": {
+        "summary": "Replace exact profile permutation",
+        "operationId": "put_ai_order",
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/AiProfile"
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Safe error; no stack, command, SQL, local path or secret",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "Origin",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Exact http://127.0.0.1:<actual-port>"
+          },
+          {
+            "name": "X-W2L-Client",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "const": "web"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "ids": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    },
+                    "uniqueItems": true
+                  }
+                },
+                "required": [
+                  "ids"
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    "/backups/upload": {
+      "put": {
+        "summary": "Upload and validate portable archive",
+        "operationId": "put_backups_upload",
+        "responses": {
+          "201": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Backup"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Safe error; no stack, command, SQL, local path or secret",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "name",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Origin",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Exact http://127.0.0.1:<actual-port>"
+          },
+          {
+            "name": "X-W2L-Client",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "const": "web"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/octet-stream": {
+              "schema": {
+                "type": "string",
+                "format": "binary"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/backups/{id}/download": {
+      "get": {
+        "summary": "Revalidate and download exact archive",
+        "operationId": "get_backups_id_download",
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/zip": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Safe error; no stack, command, SQL, local path or secret",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    },
+    "/tasks/{id}": {
+      "get": {
+        "summary": "Read durable task and pending decisions",
+        "operationId": "get_tasks_id",
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Task"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Safe error; no stack, command, SQL, local path or secret",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    },
+    "/tasks/{id}/cancel": {
+      "post": {
+        "summary": "Request controlled cancellation",
+        "operationId": "post_tasks_id_cancel",
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Task"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Safe error; no stack, command, SQL, local path or secret",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Origin",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Exact http://127.0.0.1:<actual-port>"
+          },
+          {
+            "name": "X-W2L-Client",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "const": "web"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Empty"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/tasks/{id}/decisions/{decisionId}": {
+      "post": {
+        "summary": "Answer unexpired server decision",
+        "operationId": "post_tasks_id_decisions_decisionId",
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Task"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Safe error; no stack, command, SQL, local path or secret",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "decisionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Origin",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Exact http://127.0.0.1:<actual-port>"
+          },
+          {
+            "name": "X-W2L-Client",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "const": "web"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Decision"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/tasks/{id}/events": {
+      "get": {
+        "summary": "Replay events after cursor; Last-Event-ID header takes precedence",
+        "operationId": "get_tasks_id_events",
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Safe error; no stack, command, SQL, local path or secret",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "after",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0
+            }
+          },
+          {
+            "name": "Last-Event-ID",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        ],
+        "description": "SSE event: task. id is the increasing sequence; each data line contains the Event JSON schema. The terminal event is drained before closing. Reconnect with Last-Event-ID or after."
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "Error": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "correlationId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "message",
+          "correlationId"
+        ]
+      },
+      "TaskAccepted": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "ServerInput": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "host": {
+            "type": "string"
+          },
+          "port": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 65535
+          },
+          "username": {
+            "type": "string"
+          },
+          "password": {
+            "type": "string",
+            "writeOnly": true
+          },
+          "version": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "name",
+          "host",
+          "username"
+        ]
+      },
+      "AiInput": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "endpoint": {
+            "type": "string"
+          },
+          "model": {
+            "type": "string"
+          },
+          "apiKey": {
+            "type": "string",
+            "writeOnly": true
+          },
+          "version": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "name",
+          "endpoint",
+          "model"
+        ]
+      },
+      "ApplicationInput": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "category": {
+            "enum": [
+              "",
+              "WEBSITE",
+              "SERVICE",
+              "OTHER"
+            ]
+          },
+          "accessUrl": {
+            "type": "string"
+          },
+          "version": {
+            "type": "integer",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "name",
+          "version"
+        ]
+      },
+      "Preferences": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "theme": {
+            "enum": [
+              "light",
+              "dark",
+              "system"
+            ]
+          },
+          "language": {
+            "enum": [
+              "zh-CN",
+              "en"
+            ]
+          },
+          "navigationCollapsed": {
+            "enum": [
+              "true",
+              "false"
+            ]
+          }
+        },
+        "required": []
+      },
+      "Version": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "version": {
+            "type": "integer",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "version"
+        ]
+      },
+      "Empty": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {},
+        "required": []
+      },
+      "Secret": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "value": {
+            "type": "string",
+            "writeOnly": true
+          },
+          "environment": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "value"
+        ]
+      },
+      "Decision": {
+        "description": "Exact shape depends on the persisted prompt. SECRET accepts only an encrypted secretId. INPUTS accepts only requested field IDs. No raw secret may be answered here.",
+        "oneOf": [
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "accepted": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "accepted"
+            ]
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "secretId": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "secretId"
+            ]
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "values": {
+                "type": "object",
+                "additionalProperties": {
+                  "type": "string"
+                }
+              }
+            },
+            "required": [
+              "values"
+            ]
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "replacementConfirmed": {
+                "type": "boolean"
+              },
+              "backupConfirmed": {
+                "type": "boolean"
+              },
+              "downtimeConfirmed": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "replacementConfirmed",
+              "backupConfirmed",
+              "downtimeConfirmed"
+            ]
+          }
+        ]
+      },
+      "TaskInput": {
+        "oneOf": [
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "kind": {
+                "const": "SERVER_PROBE"
+              },
+              "input": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "serverId": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "serverId"
+                ]
+              }
+            },
+            "required": [
+              "kind",
+              "input"
+            ]
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "kind": {
+                "const": "GIT_SNAPSHOT"
+              },
+              "input": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "url": {
+                    "type": "string"
+                  },
+                  "referenceKind": {
+                    "enum": [
+                      "default",
+                      "branch",
+                      "tag",
+                      "commit"
+                    ]
+                  },
+                  "reference": {
+                    "type": "string"
+                  },
+                  "name": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "url"
+                ]
+              }
+            },
+            "required": [
+              "kind",
+              "input"
+            ]
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "kind": {
+                "const": "ANALYZE"
+              },
+              "input": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "sourceId": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "sourceId"
+                ]
+              }
+            },
+            "required": [
+              "kind",
+              "input"
+            ]
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "kind": {
+                "const": "DEPLOY"
+              },
+              "input": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "sourceId": {
+                    "type": "string"
+                  },
+                  "serverId": {
+                    "type": "string"
+                  },
+                  "overrides": {
+                    "type": "object",
+                    "additionalProperties": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "required": [
+                  "sourceId",
+                  "serverId"
+                ]
+              }
+            },
+            "required": [
+              "kind",
+              "input"
+            ]
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "kind": {
+                "const": "LIFECYCLE"
+              },
+              "input": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "applicationId": {
+                    "type": "string"
+                  },
+                  "action": {
+                    "enum": [
+                      "REFRESH_STATUS",
+                      "START",
+                      "STOP",
+                      "RESTART",
+                      "ENABLE_AUTOSTART",
+                      "DISABLE_AUTOSTART"
+                    ]
+                  }
+                },
+                "required": [
+                  "applicationId",
+                  "action"
+                ]
+              }
+            },
+            "required": [
+              "kind",
+              "input"
+            ]
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "kind": {
+                "const": "APPLICATION_SCAN"
+              },
+              "input": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "serverId": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "serverId"
+                ]
+              }
+            },
+            "required": [
+              "kind",
+              "input"
+            ]
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "kind": {
+                "const": "APPLICATION_ADOPT"
+              },
+              "input": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "scanTaskId": {
+                    "type": "string"
+                  },
+                  "candidateKey": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "scanTaskId",
+                  "candidateKey"
+                ]
+              }
+            },
+            "required": [
+              "kind",
+              "input"
+            ]
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "kind": {
+                "const": "BACKUP_CREATE"
+              },
+              "input": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "applicationId": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "applicationId"
+                ]
+              }
+            },
+            "required": [
+              "kind",
+              "input"
+            ]
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "kind": {
+                "const": "RESTORE"
+              },
+              "input": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "backupId": {
+                    "type": "string"
+                  },
+                  "serverId": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "backupId",
+                  "serverId"
+                ]
+              }
+            },
+            "required": [
+              "kind",
+              "input"
+            ]
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "kind": {
+                "const": "RESTORE_PREFLIGHT"
+              },
+              "input": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "backupId": {
+                    "type": "string"
+                  },
+                  "serverId": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "backupId",
+                  "serverId"
+                ]
+              }
+            },
+            "required": [
+              "kind",
+              "input"
+            ]
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "kind": {
+                "const": "MIGRATE"
+              },
+              "input": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "applicationId": {
+                    "type": "string"
+                  },
+                  "targetServerId": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "applicationId",
+                  "targetServerId"
+                ]
+              }
+            },
+            "required": [
+              "kind",
+              "input"
+            ]
+          }
+        ]
+      },
+      "Server": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "version": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "host": {
+            "type": "string"
+          },
+          "port": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "username": {
+            "type": "string"
+          },
+          "fingerprint": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "credentialConfigured": {
+            "type": "boolean"
+          },
+          "observation": {
+            "type": "object"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "version",
+          "host",
+          "port",
+          "username",
+          "fingerprint",
+          "credentialConfigured",
+          "observation"
+        ]
+      },
+      "Source": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "state": {
+            "enum": [
+              "UPLOADING",
+              "READY",
+              "FAILED"
+            ]
+          },
+          "kind": {
+            "enum": [
+              "UPLOAD",
+              "GIT"
+            ]
+          },
+          "digest": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "byteCount": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "createdAt": {
+            "type": "string"
+          },
+          "provenance": {
+            "type": "object"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "state",
+          "kind",
+          "digest",
+          "byteCount",
+          "createdAt",
+          "provenance"
+        ]
+      },
+      "Application": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "serverId": {
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "MANAGED",
+              "EXTERNAL"
+            ]
+          },
+          "version": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "category": {
+            "type": "string"
+          },
+          "accessUrl": {
+            "type": "string"
+          },
+          "deployedAt": {
+            "type": "string"
+          },
+          "deploymentState": {
+            "type": "string"
+          },
+          "observation": {
+            "type": [
+              "object",
+              "null"
+            ]
+          },
+          "types": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "serverId",
+          "kind",
+          "version",
+          "category",
+          "accessUrl",
+          "deployedAt",
+          "deploymentState",
+          "observation"
+        ]
+      },
+      "AiProfile": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "version": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "endpoint": {
+            "type": "string"
+          },
+          "model": {
+            "type": "string"
+          },
+          "verifiedAt": {
+            "type": "string"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "priority": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "credentialConfigured": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "version",
+          "endpoint",
+          "model",
+          "verifiedAt",
+          "enabled",
+          "priority",
+          "credentialConfigured"
+        ]
+      },
+      "Backup": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "version": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "createdAt": {
+            "type": "string"
+          },
+          "digest": {
+            "type": "string"
+          },
+          "byteCount": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "inspection": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "application": {
+                "type": "string"
+              },
+              "schema": {
+                "type": "string"
+              },
+              "canRestore": {
+                "type": "boolean"
+              },
+              "components": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "database": {
+                "type": "string"
+              },
+              "provenance": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "application",
+              "schema",
+              "canRestore",
+              "components",
+              "database",
+              "provenance"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "version",
+          "createdAt",
+          "digest",
+          "byteCount",
+          "inspection"
+        ]
+      },
+      "Task": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "state": {
+            "enum": [
+              "QUEUED",
+              "ANALYZING",
+              "WAITING_DECISION",
+              "RUNNING",
+              "CANCELLING",
+              "CANCELLED",
+              "SUCCEEDED",
+              "FAILED",
+              "INTERRUPTED",
+              "REVALIDATION_REQUIRED"
+            ]
+          },
+          "createdAt": {
+            "type": "string"
+          },
+          "updatedAt": {
+            "type": "string"
+          },
+          "errorCode": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "result": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "description": "Structured result for the submitted kind; never raw SSH output or credentials."
+          },
+          "decision": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "kind": {
+                "enum": [
+                  "HOST_KEY",
+                  "CONFIRM",
+                  "INPUTS",
+                  "SECRET",
+                  "DATABASE_REPLACEMENT"
+                ]
+              },
+              "expiresAt": {
+                "type": "string"
+              },
+              "prompt": {
+                "type": "object"
+              }
+            },
+            "required": [
+              "id",
+              "kind",
+              "expiresAt",
+              "prompt"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "state",
+          "createdAt",
+          "updatedAt",
+          "errorCode",
+          "result"
+        ]
+      },
+      "Event": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "sequence": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "kind": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "details": {
+            "type": "object"
+          },
+          "createdAt": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "sequence",
+          "kind",
+          "message",
+          "details",
+          "createdAt"
+        ]
+      },
+      "SecretSaved": {
+        "oneOf": [
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "secretId": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "secretId"
+            ]
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "identifier": {
+                "type": "string"
+              },
+              "revision": {
+                "type": "integer",
+                "minimum": 0
+              }
+            },
+            "required": [
+              "identifier",
+              "revision"
+            ]
+          }
+        ]
+      }
+    }
+  }
+}

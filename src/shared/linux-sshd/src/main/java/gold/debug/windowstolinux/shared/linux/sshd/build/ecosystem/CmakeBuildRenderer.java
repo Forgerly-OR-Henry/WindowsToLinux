@@ -45,8 +45,8 @@ public final class CmakeBuildRenderer implements DeploymentBuildRenderer {
                 test "$preset" = w2l-release
                 test -f ./CMakeLists.txt
                 test -f ./CMakePresets.json
-                run cmake --preset "$preset"
-                run cmake --build --preset "$preset-build" --target "$target" --parallel 1
+                run cmake -S . -B .w2l/cmake-build -G Ninja -DCMAKE_BUILD_TYPE=Release
+                run cmake --build .w2l/cmake-build --target "$target" --parallel 1
                 artifact="./.w2l/cmake-build/$target"
                 test -x "$artifact"
                 test ! -L "$artifact"

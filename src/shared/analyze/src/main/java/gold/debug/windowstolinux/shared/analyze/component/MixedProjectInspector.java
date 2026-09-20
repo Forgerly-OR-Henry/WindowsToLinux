@@ -144,7 +144,7 @@ public final class MixedProjectInspector {
                                                            String componentId) {
         String managedId = managedComponentId(applicationId, componentId);
         return new DeploymentProjectFacts(facts.sourceRoot(), managedId, facts.projectType(), facts.buildTool(),
-                facts.support(), facts.languageFacts(), facts.evidence(), facts.conflicts(), facts.missingInformation(), facts.toolchainRequirements());
+                facts.support(), facts.languageFacts(), facts.evidence(), facts.conflicts(), facts.missingInformation(), facts.toolchainRequirements(), facts.buildDirectory());
     }
 
     private static String managedComponentId(String applicationId, String componentId) {

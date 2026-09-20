@@ -73,13 +73,8 @@ public record DeploymentOutcome(DeploymentResult result, Optional<DeploymentHand
     }
 
     private static DeploymentHandoff successHandoff(ReviewedDeploymentRequest request, ManagedApplication application) {
-        if (request.runtime().healthCheck() instanceof HealthCheck.Http) {
-            return new DeploymentHandoff.HttpAccessUrl(request.userAccessUrl()
-                    .orElseThrow(() -> new IllegalStateException("HTTP deployment is missing the reviewed user access URL"))
-                    .url());
-        }
-        return new DeploymentHandoff.SystemdStartCommand(request.facts().applicationId(), application.systemdUnit(),
-                application.ownershipManifestSha256());
+        return new DeploymentHandoff.ApplicationEntry(gold.debug.windowstolinux.shared.model.managed.ApplicationUsage.from(
+                application, request.runtime().workload()));
     }
 
 }

@@ -26,7 +26,11 @@ public record ManagedContentPublication(
             String left = fileBindings.get(first).dataPath().path();
             for (int second = first + 1; second < fileBindings.size(); second++) {
                 String right = fileBindings.get(second).dataPath().path();
-                if (left.equals(right) || left.startsWith(right + "/") || right.startsWith(left + "/")) {
+                boolean directories = fileBindings.get(first).resourceType()
+                        != gold.debug.windowstolinux.shared.model.managed.ManagedStorageLocation.StorageResourceType.DATABASE
+                        && fileBindings.get(second).resourceType()
+                        != gold.debug.windowstolinux.shared.model.managed.ManagedStorageLocation.StorageResourceType.DATABASE;
+                if (left.equals(right) || directories && (left.startsWith(right + "/") || right.startsWith(left + "/"))) {
                     throw new IllegalArgumentException("managed logical data paths must not overlap");
                 }
             }

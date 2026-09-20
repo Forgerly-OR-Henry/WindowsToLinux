@@ -22,6 +22,9 @@ import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.Optional;
+import gold.debug.windowstolinux.shared.model.project.application.*;
+import gold.debug.windowstolinux.shared.model.toolchain.*;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -135,6 +138,31 @@ class RuntimeCapabilityEvaluatorTest {
                             Map.of(), List.of()), List.of(), List.of(), List.of());
         }
         return new DeploymentProjectFacts(Path.of("."), "demo", type, tool, List.of(), List.of(), List.of());
+    }
+
+    @Test
+    void mixedApplicationsUseHostCompilersAlongsidePreparedLanguageTools() {
+        for (var ecosystem : List.of(ToolchainEcosystemType.C, ToolchainEcosystemType.CPP)) {
+            var rust = ToolchainRequirement.declared(ToolchainEcosystemType.RUST, "1.89.0", "Cargo.toml",
+                    ToolchainRequirement.PurposeType.BUILD);
+            var nativeTool = ToolchainRequirement.declared(ecosystem, "17", "native/CMakeLists.txt",
+                    ToolchainRequirement.PurposeType.LANGUAGE_TARGET);
+            var project = facts(DeploymentProjectType.RUST_SERVICE, DeploymentBuildToolType.CARGO_LOCKED)
+                    .withToolchains(List.of(rust, nativeTool));
+            var workload = new ApplicationWorkload(ApplicationWorkload.ExecutionMode.ON_DEMAND, true,
+                    ApplicationCommand.primary(), "", List.of(), Optional.of(new ApplicationCommand("", List.of("--help"))),
+                    "usage", Optional.empty(), List.of(), List.of(new ApplicationCompanion("worker", "native",
+                    ApplicationCompanion.BuildType.CMAKE_SERVICE, ".w2l/bin/worker", "NATIVE_HELPER")));
+            var runtime = new DeploymentRuntimeSpecification.RustService("1.89.0", "demo", "src/main.rs", HEALTH)
+                    .withWorkload(workload);
+            var prepared = new ResolvedToolchainSet(ToolchainSupportCatalog.defaults().revision(), List.of(
+                    new ResolvedToolchainSet.Selection(rust, ToolchainVersion.parse(ToolchainEcosystemType.RUST, "1.89.0").orElseThrow(),
+                            "/opt/rust", ResolvedToolchainSet.OriginType.MANAGED, "fixture", "a".repeat(64))));
+            assertTrue(RuntimeCapabilityEvaluator.evaluate(capabilities(), project, runtime, prepared).supported());
+            var tools = new java.util.EnumMap<>(capabilities().ecosystemToolVersions());
+            tools.remove(ecosystem == ToolchainEcosystemType.C ? EcosystemToolType.C_COMPILER : EcosystemToolType.CPP_COMPILER);
+            assertEquals(false, RuntimeCapabilityEvaluator.evaluate(withTools(capabilities(), tools), project, runtime, prepared).supported());
+        }
     }
 
     private static LinuxCapabilityFacts capabilities() {

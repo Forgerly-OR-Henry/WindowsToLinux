@@ -30,7 +30,7 @@ public final class BundlerBuildRenderer implements DeploymentBuildRenderer {
                 ruby -e 'print RUBY_VERSION' | grep -Fx "${WTL_RUBY_VERSION:-%s}"
                 test -f ./Gemfile
                 test -f ./Gemfile.lock
-                test -f ./config.ru
+                test -f ./%s
                 bundler_version="$(awk '/^BUNDLED WITH$/ {getline; gsub(/^[ \\t]+|[ \\t]+$/, ""); print}' ./Gemfile.lock)"
                 [[ "$bundler_version" =~ ^[0-9]+[.][0-9]+[.][0-9]+$ ]] || { printf 'BUILD_REJECT=bundler-exact-version-required\\n'; exit 64; }
                 [ "${bundler_version%%%%.*}" -ge 2 ] || { printf 'BUILD_TOOL_INCOMPATIBLE=bundler-config-set\\n'; exit 64; }
@@ -41,11 +41,13 @@ public final class BundlerBuildRenderer implements DeploymentBuildRenderer {
                 bundle config set --local deployment true
                 bundle config set --local path vendor/bundle
                 run bundle install --jobs 1 --retry 0
-                run bundle exec ruby -e 'require "rack"; require "webrick"'
+                %s
                 test -d ./vendor/bundle
                 test -z "$(find ./vendor/bundle -xdev -type l -print -quit)"
                 printf 'ARTIFACT=%%s\n' ./vendor/bundle
-                """.formatted(version);
+                """.formatted(version, ruby.entrypoint(), ruby.servicePort() == 0
+                        ? "run bundle exec ruby -c ./" + ruby.entrypoint()
+                        : "run bundle exec ruby -e 'require \"rack\"; require \"webrick\"'");
         return SafeBuildScriptEnvelope.wrap(facts, workspace, limits, command);
     }
 }

@@ -22,12 +22,11 @@ public final class ContainerRuntimeArguments {
         runtime = Objects.requireNonNull(runtime, "runtime");
         List<String> values = new ArrayList<>();
         values.add(runtime.engine().name().toLowerCase(java.util.Locale.ROOT));
-        List<Map.Entry<Integer, Integer>> ports = runtime.publishedPorts().entrySet().stream()
-                .sorted(Map.Entry.comparingByKey()).toList();
+        var ports = runtime.workload().endpoints();
         values.add(Integer.toString(ports.size()));
         ports.forEach(port -> {
-            values.add(Integer.toString(port.getKey()));
-            values.add(Integer.toString(port.getValue()));
+            values.add(port.protocol().transport()); values.add(port.bindAddress());
+            values.add(Integer.toString(port.hostPort())); values.add(Integer.toString(port.targetPort()));
         });
         List<DeploymentRuntimeSpecification.ManagedVolume> volumes = runtime.volumes().stream()
                 .sorted(Comparator.comparing(DeploymentRuntimeSpecification.ManagedVolume::name)).toList();

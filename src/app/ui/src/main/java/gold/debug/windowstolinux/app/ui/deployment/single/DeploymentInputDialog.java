@@ -3,7 +3,7 @@ package gold.debug.windowstolinux.app.ui.deployment.single;
 import gold.debug.windowstolinux.app.service.contract.definition.*;
 
 import gold.debug.windowstolinux.app.service.contract.AiApplicationFacade;
-import gold.debug.windowstolinux.app.service.contract.definition.AutomaticDeploymentInteraction;
+import gold.debug.windowstolinux.shared.deploy.contract.AutomaticDeploymentInteraction;
 import gold.debug.windowstolinux.app.ui.component.*;
 import gold.debug.windowstolinux.app.ui.i18n.PageMessagePresenter;
 import gold.debug.windowstolinux.shared.model.deployment.DeploymentInputField;
@@ -86,12 +86,18 @@ public final class DeploymentInputDialog implements AutomaticDeploymentInteracti
             if (choice != JOptionPane.OK_OPTION) return Optional.empty();
             Map<String, String> values = new LinkedHashMap<>();
             inputs.forEach((id, input) -> values.put(id, input instanceof JTextField text ? text.getText().trim()
+                    : input instanceof JScrollPane scroll ? ((JTextArea) scroll.getViewport().getView()).getText().trim()
                     : Objects.toString(((JComboBox<?>) input).getSelectedItem(), "")));
             return Optional.of(values);
         });
     }
 
     private JComponent input(DeploymentInputField field) {
+        if (field.id().equals("applicationDeclaration") || field.id().endsWith("/applicationDeclaration")) {
+            JTextArea declaration = new JTextArea(field.value(), 12, 44);
+            declaration.setFont(new Font(Font.MONOSPACED, Font.PLAIN, 12));
+            return new JScrollPane(declaration);
+        }
         if (field.choices().isEmpty()) return new JTextField(field.value(), 24);
         JComboBox<String> choices = new JComboBox<>(field.choices().toArray(String[]::new));
         choices.setRenderer(new DefaultListCellRenderer() {

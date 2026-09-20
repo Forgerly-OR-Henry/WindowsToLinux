@@ -88,8 +88,8 @@ class SshdLinuxGatewayTest {
                 [Service]
                 Type=simple
                 User=ubuntu
-                WorkingDirectory=/var/lib/windowstolinux/apps/managed-hello/current
-                ExecStart=/usr/local/lib/windowstolinux/java-21 -jar /var/lib/windowstolinux/apps/managed-hello/current/app.jar
+                WorkingDirectory=/opt/windowstolinux/apps/managed-hello/current
+                ExecStart=/usr/local/lib/windowstolinux/java-21 -jar /opt/windowstolinux/apps/managed-hello/current/app.jar
                 Restart=on-failure
                 RestartSec=5
                 SuccessExitStatus=143

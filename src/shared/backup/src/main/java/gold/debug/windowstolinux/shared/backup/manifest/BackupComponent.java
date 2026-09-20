@@ -24,7 +24,7 @@ public record BackupComponent(
     private static final Comparator<SecretReference> SECRET_ORDER = Comparator
             .comparing(SecretReference::identifier).thenComparingLong(SecretReference::revision);
 
-    /** Creates one schema-v4 component with exact release and secret bindings. / 创建带精确发布及秘密绑定的 schema v4 组件。 */
+    /** Creates one schema-v5 component with exact release and secret bindings. / 创建带精确发布及秘密绑定的 schema v5 组件。 */
     public BackupComponent(
             String componentId,
             String managedApplicationId,
@@ -84,7 +84,7 @@ public record BackupComponent(
                 Optional.empty(), Optional.empty());
     }
 
-    /** Returns whether this component carries schema-v4 activation bindings. / 返回组件是否携带 schema v4 激活绑定。 */
+    /** Returns whether this component carries schema-v5 activation bindings. / 返回组件是否携带 schema v5 激活绑定。 */
     public boolean hasExactActivationBindings() {
         return releaseSha256.isPresent();
     }

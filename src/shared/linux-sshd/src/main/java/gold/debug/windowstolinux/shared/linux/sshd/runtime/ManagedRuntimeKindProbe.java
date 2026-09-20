@@ -23,11 +23,14 @@ public final class ManagedRuntimeKindProbe {
     /** Identifies one current release only after helper ownership verification. / 仅在 helper 验证归属后识别当前发布。 */
     ManagedRuntimeIdentity inspect(ManagedApplication application) throws LinuxOperationException {
         Map<String, String> values = runtimes.inspect(application);
+        var mode = "ON_DEMAND".equals(values.get("MODE"))
+                ? gold.debug.windowstolinux.shared.model.project.application.ApplicationWorkload.ExecutionMode.ON_DEMAND
+                : gold.debug.windowstolinux.shared.model.project.application.ApplicationWorkload.ExecutionMode.DAEMON;
         return switch (values.getOrDefault("KIND", "")) {
             case "ordinary" -> new ManagedRuntimeIdentity(ManagedRuntimeIdentity.Kind.ORDINARY, Optional.empty());
-            case "deployment" -> new ManagedRuntimeIdentity(ManagedRuntimeIdentity.Kind.DEPLOYMENT, Optional.empty());
+            case "deployment" -> new ManagedRuntimeIdentity(ManagedRuntimeIdentity.Kind.DEPLOYMENT, Optional.empty(), mode);
             case "container" -> new ManagedRuntimeIdentity(ManagedRuntimeIdentity.Kind.CONTAINER,
-                    Optional.of(parseEngine(values.get("ENGINE"))));
+                    Optional.of(parseEngine(values.get("ENGINE"))), mode);
             default -> throw LinuxOperationException.create(LinuxOperationFailureType.RUNTIME_OBSERVATION_FAILED,
                     "Controlled helper returned an unsupported managed runtime kind");
         };

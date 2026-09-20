@@ -76,7 +76,8 @@ public record DeploymentComponent(
                 Objects.requireNonNull(dependencies, "dependencies").stream()
                         .map(value -> identifier(value, "dependency")).toList())));
         isolation = Objects.requireNonNull(isolation, "isolation");
-        if (runtime.isPresent() && !ports.contains(healthPort(runtime.orElseThrow().healthCheck()))) {
+        if (runtime.isPresent() && runtime.orElseThrow().healthCheck().portNumber().isPresent()
+                && !ports.contains(runtime.orElseThrow().healthCheck().portNumber().orElseThrow())) {
             throw new IllegalArgumentException("component ports must include the health-check port");
         }
     }
@@ -86,12 +87,6 @@ public record DeploymentComponent(
         return runtime.map(DeploymentRuntimeSpecification::healthCheck);
     }
 
-    private static int healthPort(HealthCheck health) {
-        if (health instanceof HealthCheck.Tcp tcp) return tcp.port();
-        HealthCheck.Http http = (HealthCheck.Http) health;
-        int port = http.endpoint().getPort();
-        return port > 0 ? port : "https".equalsIgnoreCase(http.endpoint().getScheme()) ? 443 : 80;
-    }
 
     private static String identifier(String value, String name) {
         value = Objects.requireNonNull(value, name).trim();

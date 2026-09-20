@@ -17,6 +17,7 @@ public final class ApplicationPresentationDialog extends JDialog {
         JTextField url = new JTextField(application.accessUrl().map(value -> value.url().toString()).orElse(""), 28);
         JComboBox<String> category = new JComboBox<>(new String[]{"WEBSITE", "APP"});
         category.setSelectedItem(application.category());
+        category.setEnabled(application.external());
         category.setRenderer(new DefaultListCellRenderer() {
             @Override public Component getListCellRendererComponent(JList<?> list, Object value, int index, boolean selected, boolean focus) {
                 return super.getListCellRendererComponent(list, messages.text("apps.category." + value), index, selected, focus);
@@ -34,7 +35,7 @@ public final class ApplicationPresentationDialog extends JDialog {
             setDefaultCloseOperation(DO_NOTHING_ON_CLOSE);
             DesktopTaskExecutor.run(() -> { service.saveApplicationPresentation(application.key(), enteredName, enteredCategory, enteredUrl); return true; },
                     result -> { saved.run(); dispose(); }, failure -> {
-                        save.setEnabled(true); name.setEnabled(true); category.setEnabled(true); url.setEnabled(true);
+                        save.setEnabled(true); name.setEnabled(true); category.setEnabled(application.external()); url.setEnabled(true);
                         setDefaultCloseOperation(DISPOSE_ON_CLOSE); status.setText(messages.safe(failure));
                     });
         });

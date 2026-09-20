@@ -6,12 +6,12 @@ import gold.debug.windowstolinux.app.db.persistence.repository.ApplicationSecret
 import gold.debug.windowstolinux.app.db.persistence.repository.ConfigurationSnapshotRepository;
 import gold.debug.windowstolinux.app.db.persistence.repository.ManagedApplicationGraphRepository;
 import gold.debug.windowstolinux.app.db.persistence.repository.ManagedApplicationRepository;
-import gold.debug.windowstolinux.app.db.persistence.serialization.DeploymentRuntimePersistenceCodec;
+import gold.debug.windowstolinux.shared.config.persistence.serialization.DeploymentRuntimePersistenceCodec;
 import gold.debug.windowstolinux.app.secret.SecretStore;
 import gold.debug.windowstolinux.app.secret.SecretStoreException;
 import gold.debug.windowstolinux.app.secret.SecretStoreFailureType;
-import gold.debug.windowstolinux.app.secret.crypto.BackupSecretCryptoService;
-import gold.debug.windowstolinux.app.secret.crypto.BackupSecretException;
+import gold.debug.windowstolinux.shared.backup.crypto.BackupSecretCryptoService;
+import gold.debug.windowstolinux.shared.backup.crypto.BackupSecretException;
 import gold.debug.windowstolinux.app.service.failure.ApplicationServiceException;
 import gold.debug.windowstolinux.app.service.failure.ApplicationServiceFailureType;
 import gold.debug.windowstolinux.app.service.lock.ServerOperationLockRegistry;
@@ -145,6 +145,11 @@ public final class RemoteBackupCreationUseCase {
             char[] masterPassword,
             Predicate<String> firstUseConfirmation
     ) throws SQLException, SecretStoreException, LinuxOperationException, IOException, BackupSecretException {
+        return createUsingSavedProfile(applicationId,destination,backupPassword,masterPassword,firstUseConfirmation,null);
+    }
+    public CreatedBackupArchive createUsingSavedProfile(String applicationId, Path destination, char[] backupPassword,
+            char[] masterPassword, Predicate<String> firstUseConfirmation, String heldMaintenance)
+            throws SQLException, SecretStoreException, LinuxOperationException, IOException, BackupSecretException {
         try {
             Optional<ManagedApplicationGraph> graph = graphs.find(applicationId);
             if (graph.isEmpty()) {
@@ -156,7 +161,7 @@ public final class RemoteBackupCreationUseCase {
                     ApplicationServiceException.create(ApplicationServiceFailureType.SERVER_PROFILE_MISSING,
                             "the managed application's saved server profile is unavailable"));
             return create(applicationId, destination, backupPassword, profile, profile.credentialMode(),
-                    masterPassword, firstUseConfirmation);
+                    masterPassword, firstUseConfirmation, heldMaintenance);
         } finally {
             clear(backupPassword); clear(masterPassword);
         }
@@ -172,6 +177,11 @@ public final class RemoteBackupCreationUseCase {
             char[] masterPassword,
             Predicate<String> firstUseConfirmation
     ) throws SQLException, SecretStoreException, LinuxOperationException, IOException, BackupSecretException {
+        return create(applicationId,destination,backupPassword,profile,mode,masterPassword,firstUseConfirmation,null);
+    }
+    private CreatedBackupArchive create(String applicationId, Path destination, char[] backupPassword,
+            ServerProfile profile, CredentialStorageMode mode, char[] masterPassword, Predicate<String> firstUseConfirmation,
+            String heldMaintenance) throws SQLException, SecretStoreException, LinuxOperationException, IOException, BackupSecretException {
         try {
             ManagedBackupInputAssessment assessment = inputAssessment.assess(applicationId);
             if (!assessment.persistedInputsComplete()) {
@@ -185,7 +195,7 @@ public final class RemoteBackupCreationUseCase {
             lock.lock();
             try {
                 return createLocked(context, destination, backupPassword, profile, mode, masterPassword,
-                        firstUseConfirmation);
+                        firstUseConfirmation, heldMaintenance);
             } finally {
                 lock.unlock();
             }
@@ -195,6 +205,38 @@ public final class RemoteBackupCreationUseCase {
         }
     }
 
+    /** Pauses or resumes managed task admission for an enclosing offline migration. / 离线迁移的任务准入窗口。 */
+    public void taskAdmission(String applicationId, String token, boolean pause, char[] masterPassword,
+            Predicate<String> confirmation) throws SQLException, SecretStoreException, LinuxOperationException {
+        try {
+            var graph=graphs.find(applicationId).orElseThrow();
+            var profile=servers.find(graph.components().getFirst().application().server().id()).orElseThrow();
+            try (SecretStore store=servers.secrets().open(profile.credentialMode(),masterPassword)) {
+                var credential=servers.loadPassword(profile,store);
+                try (DeploymentRemoteSession session=gateway.connect(profile.endpoint(),credential,servers.hostKeyVerifier(profile,confirmation))) {
+                    var paused=new ArrayList<gold.debug.windowstolinux.shared.model.managed.ManagedApplication>();
+                    try {
+                        for(var component:graph.components()) {
+                            if(pause)session.backupArtifacts().beginMaintenance(component.application(),token);
+                            else session.backupArtifacts().endMaintenance(component.application(),token);
+                            paused.add(component.application());
+                        }
+                    } catch(LinuxOperationException failure) {
+                        if(pause)for(var app:paused.reversed())try { session.backupArtifacts().endMaintenance(app,token); }
+                        catch(LinuxOperationException recovery) { failure.addSuppressed(recovery); }
+                        throw failure;
+                    }
+                } finally { credential.clear(); }
+            }
+        } finally { clear(masterPassword); }
+    }
+    /** Returns only reviewed daemon component IDs. / 只返回经审阅的长期进程组件。 */
+    public Set<String> daemonComponents(String applicationId) throws SQLException {
+        return graphs.find(applicationId).orElseThrow().components().stream()
+                .filter(component -> component.runtimeConfiguration().workload().supportsLifecycle())
+                .map(ManagedApplicationGraph.Component::componentId).collect(java.util.stream.Collectors.toSet());
+    }
+
     private CreatedBackupArchive createLocked(
             BackupContext context,
             Path destination,
@@ -202,7 +244,7 @@ public final class RemoteBackupCreationUseCase {
             ServerProfile profile,
             CredentialStorageMode mode,
             char[] masterPassword,
-        Predicate<String> firstUseConfirmation
+        Predicate<String> firstUseConfirmation, String heldMaintenance
     ) throws SQLException, SecretStoreException, LinuxOperationException, IOException, BackupSecretException {
         WindowsBackupMaterialAttempt attempt = materials.createAttempt();
         CreatedBackupArchive created;
@@ -213,7 +255,7 @@ public final class RemoteBackupCreationUseCase {
                 SshCredential.Password credential = servers.loadPassword(profile, store);
                 try (DeploymentRemoteSession session = gateway.connect(profile.endpoint(), credential, verifier)) {
                     credential.clear();
-                    CollectedRemoteBackup remote = collectRemote(context, attempt, session);
+                    CollectedRemoteBackup remote = collectRemote(context, attempt, session, heldMaintenance);
                     List<Material> all = new ArrayList<>(remote.materials());
                     addLocalDefinitions(context, attempt, all);
                     addEncryptedSecrets(context, attempt, all, backupPassword, masterPassword);
@@ -237,7 +279,7 @@ public final class RemoteBackupCreationUseCase {
     }
 
     private CollectedRemoteBackup collectRemote(
-            BackupContext context, WindowsBackupMaterialAttempt attempt, DeploymentRemoteSession session)
+            BackupContext context, WindowsBackupMaterialAttempt attempt, DeploymentRemoteSession session, String heldMaintenance)
             throws LinuxOperationException, IOException {
         ServerCapabilityFacts serverFacts = session.collectCapabilities();
         LinuxCapabilityFacts linuxFacts = session.collectDeploymentCapabilities();
@@ -249,12 +291,17 @@ public final class RemoteBackupCreationUseCase {
         Map<String, LifecycleObservation> observations = observe(context, session);
         List<String> originallyRunning = context.plan().startOrder().stream()
                 .filter(componentId -> observations.get(componentId).runtimeState() == RuntimeState.RUNNING).toList();
-        String operationId = operationId();
+        String operationId = heldMaintenance == null ? operationId() : heldMaintenance;
         List<Material> collected = new ArrayList<>();
         DatabaseBackupArtifact databaseArtifact = null;
         LinuxDatabaseOperationPort databaseOperations = new LinuxDatabaseOperationPort(session.databaseOperations());
         Exception failure = null;
+        List<gold.debug.windowstolinux.shared.model.managed.ManagedApplication> paused = new ArrayList<>();
         try {
+            for (var component : context.components().values()) {
+                session.backupArtifacts().beginMaintenance(component.graph().application(), operationId);
+                paused.add(component.graph().application());
+            }
             for (String componentId : context.plan().stopOrder()) {
                 if (!originallyRunning.contains(componentId)) continue;
                 ComponentContext component = context.components().get(componentId);
@@ -278,12 +325,6 @@ public final class RemoteBackupCreationUseCase {
                             BackupMemberKind.PERSISTENT_CONTENT));
                 }
                 if (component.runtime() instanceof DeploymentRuntimeSpecification.Container container) {
-                    for (var volume : container.volumes()) {
-                        collected.add(downloadManagedArtifact(context, component, attempt, session, operationId,
-                                RemoteBackupArtifactKind.VOLUME, volume.name(),
-                                "data/" + componentId + "/volumes/" + volume.name() + ".pax",
-                                BackupMemberKind.PERSISTENT_CONTENT));
-                    }
                     {
                         collected.add(downloadManagedArtifact(context, component, attempt, session, operationId,
                                 RemoteBackupArtifactKind.OCI_IMAGE, "image",
@@ -326,6 +367,7 @@ public final class RemoteBackupCreationUseCase {
         }
         try {
             if (databaseArtifact != null) databaseOperations.discardArtifact(databaseArtifact);
+            if (heldMaintenance == null) for (var app : paused.reversed()) session.backupArtifacts().endMaintenance(app, operationId);
             RemoteStepResult cleanup = session.backupArtifacts().discardBackupOperation(operationId);
             if (!cleanup.succeeded()) {
                 throw BackupException.create(BackupFailureType.CLEANUP_FAILED,
@@ -349,7 +391,8 @@ public final class RemoteBackupCreationUseCase {
                     component.runtime());
             if (!observation.ownershipVerified()
                     || observation.runtimeState() != RuntimeState.RUNNING
-                    && observation.runtimeState() != RuntimeState.STOPPED) {
+                    && observation.runtimeState() != RuntimeState.STOPPED
+                    && observation.runtimeState() != RuntimeState.INSTALLED) {
                 throw BackupException.create(BackupFailureType.DATABASE_PREFLIGHT_FAILED,
                         "every component requires one authoritative running or stopped observation before backup");
             }
@@ -489,7 +532,7 @@ public final class RemoteBackupCreationUseCase {
                 && member.path().contains("/volumes/")).map(BackupMember::path).toList();
         BackupIdentity identity = new BackupIdentity(context.graph().applicationId(),
                 context.graph().components().getFirst().application().server().id(),
-                "/var/lib/windowstolinux/apps/" + context.graph().applicationId(),
+                "/opt/windowstolinux/apps/" + context.graph().applicationId(),
                 BackupInventory.computeReleaseSetSha256(components));
         BackupInventory inventory = new BackupInventory(
                 components.stream().map(BackupComponent::releaseManifestPath).toList(),
@@ -554,16 +597,12 @@ public final class RemoteBackupCreationUseCase {
         List<DatabaseContext> databases = databases(context);
         if (databases.size() > 1) {
             throw ApplicationServiceException.create(ApplicationServiceFailureType.BACKUP_INPUT_INCOMPLETE,
-                    "schema v4 supports exactly zero or one reviewed database artifact per application");
-        }
-        if (!databases.isEmpty() && databases.getFirst().binding().connection() instanceof ManagedDatabaseConnection.Sqlite) {
-            throw ApplicationServiceException.create(ApplicationServiceFailureType.BACKUP_INPUT_INCOMPLETE,
-                    "SQLite backup requires an explicitly reviewed managed application-relative physical mapping");
+                    "schema v5 supports exactly zero or one reviewed database artifact per application");
         }
         if (!databases.isEmpty()) {
             DatabaseContext database = databases.getFirst();
-            ManagedDatabaseConnection.Server server = (ManagedDatabaseConnection.Server) database.binding().connection();
-            if (!database.component().secretReferences().contains(server.passwordReference())) {
+            if (database.binding().connection() instanceof ManagedDatabaseConnection.Server server
+                    && !database.component().secretReferences().contains(server.passwordReference())) {
                 throw ApplicationServiceException.create(ApplicationServiceFailureType.BACKUP_INPUT_INCOMPLETE,
                         "the reviewed database password revision is not bound to the component release");
             }
@@ -574,7 +613,7 @@ public final class RemoteBackupCreationUseCase {
         List<DatabaseContext> databases = new ArrayList<>();
         context.components().values().forEach(component -> component.graph().reviewedResourceBindings().orElseThrow()
                 .databaseBindings().orElseThrow().forEach(binding -> databases.add(
-                        new DatabaseContext(component, binding, BackupDatabaseProfileMapper.profile(binding.connection())))));
+                        new DatabaseContext(component, binding, BackupDatabaseProfileMapper.profile(binding)))));
         return List.copyOf(databases);
     }
 

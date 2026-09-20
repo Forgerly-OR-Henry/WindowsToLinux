@@ -86,6 +86,9 @@ public record ServerCapabilityFacts(
         boolean healthToolsAvailable = switch (healthCheck) {
             case HealthCheck.Http ignored -> curlAvailable && socketInspectionAvailable;
             case HealthCheck.Tcp ignored -> socketInspectionAvailable;
+            case HealthCheck.Udp ignored -> socketInspectionAvailable;
+            case HealthCheck.Process ignored -> true;
+            case HealthCheck.Command ignored -> true;
         };
         boolean supportedOperatingSystem = supportedOperatingSystem();
         return supportedOperatingSystem

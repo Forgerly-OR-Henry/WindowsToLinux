@@ -4,11 +4,60 @@ import java.net.URI;
 import java.util.Objects;
 
 /**
- * The only two managed-deployment health strategies.
+ * Reviewed network, process and isolated installation validation strategies.
  *
- * <p>受管部署仅有的两种健康检查策略。
+ * <p>经审阅的网络、进程与隔离安装验证策略。
  */
-public sealed interface HealthCheck permits HealthCheck.Http, HealthCheck.Tcp {
+public sealed interface HealthCheck permits HealthCheck.Http, HealthCheck.Tcp, HealthCheck.Process,
+        HealthCheck.Command, HealthCheck.Udp {
+    /** Process readiness without a network endpoint. / 无网络端口的进程就绪检查。 */
+    record Process(int timeoutSeconds, int stabilitySeconds) implements HealthCheck {
+        public Process {
+            validateTimeout(timeoutSeconds);
+            if (stabilitySeconds < 1 || stabilitySeconds > timeoutSeconds)
+                throw new IllegalArgumentException("process stability must fit inside its timeout");
+        }
+    }
+
+    /** Bounded program verification, executed with the application identity. / 使用应用身份执行的有界程序验证。 */
+    record Command(gold.debug.windowstolinux.shared.model.project.application.ApplicationCommand command,
+                   String expectedOutput, int timeoutSeconds) implements HealthCheck {
+        public Command {
+            Objects.requireNonNull(command); Objects.requireNonNull(expectedOutput); validateTimeout(timeoutSeconds);
+            if (expectedOutput.length() > 4096 || expectedOutput.indexOf(0) >= 0)
+                throw new IllegalArgumentException("verification output exceeds its bounds");
+        }
+    }
+
+    /** UDP requires an actual reply or an explicit protocol probe, never send success. / UDP 必须有响应或明确协议探针。 */
+    record Udp(int port, String requestHex, String responseHex,
+               java.util.Optional<gold.debug.windowstolinux.shared.model.project.application.ApplicationCommand> probe,
+               int timeoutSeconds) implements HealthCheck {
+        public Udp {
+            validateTimeout(timeoutSeconds); Objects.requireNonNull(probe);
+            Objects.requireNonNull(requestHex); Objects.requireNonNull(responseHex);
+            if (port < 1 || port > 65535) throw new IllegalArgumentException("invalid UDP port");
+            if (probe.isPresent()) {
+                if (!requestHex.isEmpty() || !responseHex.isEmpty()) throw new IllegalArgumentException("mixed UDP probe modes");
+            } else if (!requestHex.matches("(?:[0-9a-fA-F]{2}){1,4096}")
+                    || !responseHex.matches("(?:[0-9a-fA-F]{2}){1,4096}"))
+                throw new IllegalArgumentException("UDP health requires bounded request and response bytes");
+            requestHex = requestHex.toLowerCase(java.util.Locale.ROOT);
+            responseHex = responseHex.toLowerCase(java.util.Locale.ROOT);
+        }
+    }
+
+    /** The optional transport port, independent of exposure. / 独立于对外范围的可选传输端口。 */
+    default java.util.OptionalInt portNumber() {
+        return switch (this) {
+            case Http http -> java.util.OptionalInt.of(http.endpoint().getPort() > 0 ? http.endpoint().getPort()
+                    : "https".equalsIgnoreCase(http.endpoint().getScheme()) ? 443 : 80);
+            case Tcp tcp -> java.util.OptionalInt.of(tcp.port());
+            case Udp udp -> java.util.OptionalInt.of(udp.port());
+            case Process ignored -> java.util.OptionalInt.empty();
+            case Command ignored -> java.util.OptionalInt.empty();
+        };
+    }
     /**
      * Performs the {@code timeoutSeconds} operation.
      *

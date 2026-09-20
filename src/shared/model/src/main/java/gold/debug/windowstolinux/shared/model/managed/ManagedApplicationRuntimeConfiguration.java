@@ -19,8 +19,14 @@ import java.util.Optional;
 public record ManagedApplicationRuntimeConfiguration(
         HealthCheck healthCheck,
         Optional<UserAccessUrl> userAccessUrl,
-        RuntimeIdentityMode identityPolicy
+        RuntimeIdentityMode identityPolicy,
+        gold.debug.windowstolinux.shared.model.project.application.ApplicationWorkload workload
 ) {
+    public ManagedApplicationRuntimeConfiguration(HealthCheck healthCheck, Optional<UserAccessUrl> userAccessUrl,
+                                                   RuntimeIdentityMode identityPolicy) {
+        this(healthCheck, userAccessUrl, identityPolicy,
+                gold.debug.windowstolinux.shared.model.project.application.ApplicationWorkload.unspecified());
+    }
     /** Reads historical health-only runtime state without inventing an identity policy. / 读取历史健康运行状态，不推断缺失的身份策略。 */
     public ManagedApplicationRuntimeConfiguration(HealthCheck healthCheck, Optional<UserAccessUrl> userAccessUrl) {
         this(healthCheck, userAccessUrl, RuntimeIdentityMode.LEGACY_UNSPECIFIED);
@@ -38,13 +44,8 @@ public record ManagedApplicationRuntimeConfiguration(
      */
     public ManagedApplicationRuntimeConfiguration {
         identityPolicy = Objects.requireNonNull(identityPolicy, "identityPolicy");
+        workload = Objects.requireNonNull(workload, "workload");
         healthCheck = Objects.requireNonNull(healthCheck, "healthCheck");
         userAccessUrl = Objects.requireNonNull(userAccessUrl, "userAccessUrl");
-        if (healthCheck instanceof HealthCheck.Http && userAccessUrl.isEmpty()) {
-            throw new IllegalArgumentException("HTTP deployment requires an explicit user access URL");
-        }
-        if (healthCheck instanceof HealthCheck.Tcp && userAccessUrl.isPresent()) {
-            throw new IllegalArgumentException("TCP deployment must not claim an HTTP user access URL");
-        }
     }
 }

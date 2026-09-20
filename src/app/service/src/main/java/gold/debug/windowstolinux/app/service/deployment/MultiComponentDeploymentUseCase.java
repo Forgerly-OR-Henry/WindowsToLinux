@@ -109,16 +109,18 @@ public final class MultiComponentDeploymentUseCase {
                 throw new IllegalArgumentException("prepared component facts differ from the admitted graph");
             }
             var application = ManagedApplicationIdentityResolver.resolve(applications, source.facts().applicationId(), server);
+            var initialResources = ReviewedComponentApplication.resourceBindings(componentId,component.dataPaths(),input.databaseBindings());
+            var storage = gold.debug.windowstolinux.shared.deploy.input.ManagedStoragePreparation.prepare(source.facts().sourceRoot(),application.id(),
+                    input.configuration(),component.runtime().orElseThrow(),initialResources.fileBindings());
             ReviewedDeploymentRequest request = new ReviewedDeploymentRequest(server, source.facts(),
-                    source.sourceRevision(), source.archive(), input.configuration(), input.secretReferences(),
-                    input.databaseBindings(),
+                    source.sourceRevision(), source.archive(), storage.configuration(), input.secretReferences(),
+                    input.databaseBindings(), storage.files(),
                     component.runtime().orElseThrow(), input.userAccessUrl(), input.limits(),
                     new DeploymentApproval(application.id(), source.archive().contentSha256(), server.id(),
                             input.limits().runAsRoot(), Instant.now()),
                     input.containerDaemonRiskAccepted(), input.experimentalAdapterRiskAccepted());
             reviewed.add(new ReviewedComponentApplication(componentId, request, application,
-                    ReviewedComponentApplication.resourceBindings(componentId, component.dataPaths(),
-                            input.databaseBindings())));
+                    new gold.debug.windowstolinux.shared.config.resource.ManagedComponentResourceBindings(storage.files(),input.databaseBindings())));
         }
         return new ReviewedMultiComponentApplication(plan, reviewed, applicationHealth);
     }
@@ -227,7 +229,7 @@ public final class MultiComponentDeploymentUseCase {
         List<SuccessfulManagedDeployment> deployments = review.components().stream().map(component ->
                 new SuccessfulManagedDeployment(component.application(),
                         new ManagedApplicationRuntimeConfiguration(component.request().runtime().healthCheck(),
-                                component.request().userAccessUrl(), component.request().runtime().identityPolicy()),
+                                component.request().userAccessUrl(), component.request().runtime().identityPolicy(), component.request().runtime().workload()),
                         new CurrentRelease(component.application().id(),
                                 ReviewedReleaseIdentityResolver.from(component.request()), publishedAt),
                         component.request().configuration(), component.request().secretReferences())).toList();

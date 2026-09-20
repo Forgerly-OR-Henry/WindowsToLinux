@@ -107,7 +107,7 @@ class BackupManifestSchemaV4Test {
                 ids.stream().map(id -> "releases/" + id + ".json").toList(),
                 ids.stream().map(id -> "config/" + id + ".json").toList(), secrets, List.of(), List.of(),
                 BackupDatabase.none(),
-                new BackupIdentity("sample", "server-1", "/var/lib/windowstolinux/apps/sample", releaseSet),
+                new BackupIdentity("sample", "server-1", "/opt/windowstolinux/apps/sample", releaseSet),
                 ids.stream().map(id -> "runtime/" + id + ".service").toList(), components,
                 components.getLast().componentId(), HEALTH,
                 new BackupRuntime("ubuntu", "24.04", "systemd", "255", "x86_64", List.of("systemd")),

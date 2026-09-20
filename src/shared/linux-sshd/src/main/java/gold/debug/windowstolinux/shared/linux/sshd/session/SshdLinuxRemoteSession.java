@@ -286,10 +286,7 @@ public final class SshdLinuxRemoteSession implements DeploymentRemoteSession {
     @Override
     public LifecycleObservation observeDeployment(ManagedApplication application, DeploymentRuntimeSpecification runtime)
             throws LinuxOperationException {
-        if (runtime instanceof DeploymentRuntimeSpecification.Container container) {
-            return containerRuntime.observe(application, container);
-        }
-        return deploymentProtocol.observe(application);
+        return managedRuntime.observe(application);
     }
 
     /** Performs the {@code executeDeploymentLifecycle} operation. / 执行 {@code executeDeploymentLifecycle} 操作。 */

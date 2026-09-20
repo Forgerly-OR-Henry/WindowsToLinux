@@ -26,6 +26,7 @@ import java.util.*;
 import java.util.concurrent.CancellationException;
 import static org.junit.jupiter.api.Assertions.*;
 
+@org.junit.jupiter.api.Timeout(30)
 class AutomaticDeploymentUseCaseTest {
     @TempDir Path directory;
     private final List<String> calls = new ArrayList<>();
@@ -57,6 +58,16 @@ class AutomaticDeploymentUseCaseTest {
                 new AutomaticDeploymentRequest(Optional.of(root), Optional.empty(), profile, Map.of()),
                 new char[0], interaction(true), ignored -> true, ignored -> { }));
         assertFalse(calls.contains("environment")); assertFalse(calls.contains("deploy"));
+    }
+
+    @Test void noPortBackgroundApplicationCompletesWithoutInventingNetworkConfiguration() throws Exception {
+        Path root = node(directory.resolve("background"), "background");
+        Files.delete(root.resolve("windowstolinux-application.properties"));
+        var result = useCase().deploy(new AutomaticDeploymentRequest(Optional.of(root), Optional.empty(), profile, Map.of()),
+                new char[0], interaction(false), ignored -> true, ignored -> { });
+        assertEquals(DeploymentStatus.SUCCEEDED, result.status());
+        assertEquals(1, Collections.frequency(calls, "input"));
+        assertTrue(calls.contains("deploy"));
     }
 
     @Test void decliningSystemPackagesStopsBeforePreparationAndDeployment() throws Exception {
@@ -165,7 +176,7 @@ class AutomaticDeploymentUseCaseTest {
                 Map<String, String> answers = new LinkedHashMap<>();
                 fields.forEach(field -> answers.put(field.id(), field.id().endsWith("/port") ? "18080"
                         : field.id().endsWith("/dependencies") ? (field.id().startsWith("web/") ? "api" : "")
-                        : field.choices().isEmpty() ? field.value() : field.choices().getFirst()));
+                        : field.choices().isEmpty() || field.choices().contains(field.value()) ? field.value() : field.choices().getFirst()));
                 return Optional.of(answers);
             }
             @Override public boolean confirm(String key, Map<String, ?> details) {
@@ -199,7 +210,10 @@ class AutomaticDeploymentUseCaseTest {
                         assertNotEquals(directory.resolve("source"), source.assessment().facts().orElseThrow().sourceRoot());
                         assertTrue(Files.exists(source.archive().orElseThrow().localArchive()));
                         var config = (ConfigurationSnapshot) args[2];
-                        assertEquals(1, config.entries().size()); assertEquals("PORT", config.entries().getFirst().key());
+                        var runtime = (DeploymentRuntimeSpecification) args[5];
+                        if (runtime.healthCheck().portNumber().isPresent()) {
+                            assertEquals(1, config.entries().size()); assertEquals("PORT", config.entries().getFirst().key());
+                        } else assertTrue(config.entries().isEmpty());
                         yield new ReviewedDeploymentRequest(server, source.assessment().facts().orElseThrow(), source.sourceRevision().orElseThrow(),
                                 source.archive().orElseThrow(), config, List.of(), Optional.of(List.of()), (DeploymentRuntimeSpecification) args[5],
                                 (Optional<UserAccessUrl>) args[6], (BuildLimitConfiguration) args[7], new DeploymentApproval(config.applicationId(),
@@ -241,6 +255,7 @@ class AutomaticDeploymentUseCaseTest {
 
     private static Path node(Path root, String name) throws Exception {
         Files.createDirectories(root);
+        Files.writeString(root.resolve("windowstolinux-application.properties"), "version=1\nhealth.mode=TCP\n");
         Files.writeString(root.resolve("package.json"), "{\"name\":\"" + name + "\",\"engines\":{\"node\":\"22\"},\"scripts\":{\"build\":\"build\",\"start\":\"start\"}}");
         Files.writeString(root.resolve("package-lock.json"), "{\"name\":\"" + name + "\",\"lockfileVersion\":3,\"packages\":{\"\":{\"name\":\"" + name + "\"}}}");
         return root;

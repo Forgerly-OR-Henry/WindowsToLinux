@@ -67,14 +67,11 @@ public final class ContainerReleaseProtocolExecutor {
                     "An unverified container build cannot be published");
         }
         Objects.requireNonNull(snapshot, "snapshot");
-        if (!contentPublication.fileBindings().isEmpty()) {
-            throw LinuxOperationException.create(LinuxOperationFailureType.UNVERIFIED_BUILD_PUBLISH,
-                    "Container persistent data must use reviewed owned named volumes");
-        }
         List<String> values = new ArrayList<>(List.of(application.id(), workspace.candidateId(), releaseIdentity,
                 application.ownershipManifestSha256()));
-        values.add("identity-v1");
+        values.add("identity-v2");
         values.add(runtime.identityPolicy().name());
+        values.add(gold.debug.windowstolinux.shared.linux.sshd.execution.protocol.runtime.ApplicationWorkloadArguments.payload(runtime));
         values.addAll(DeploymentInputArguments.from(inputs));
         values.addAll(ManagedContentArguments.from(contentPublication));
         values.addAll(ContainerRuntimeArguments.from(runtime));

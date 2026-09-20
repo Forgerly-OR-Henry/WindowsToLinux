@@ -18,14 +18,12 @@ public record CandidatePortPlan(CandidatePortMode mode, Map<String, List<Candida
                 throw new IllegalArgumentException("candidate port component is invalid or duplicated");
             }
         });
-        if (copied.isEmpty() || mode == CandidatePortMode.PARALLEL_LOOPBACK
-                && copied.values().stream().anyMatch(List::isEmpty)
-                || mode == CandidatePortMode.SHORT_STOP
+        if (copied.isEmpty()  || mode != CandidatePortMode.PARALLEL_LOOPBACK
                 && copied.values().stream().anyMatch(values -> !values.isEmpty())) {
             throw new IllegalArgumentException("candidate port bindings differ from the application mode");
         }
         long distinctCandidates = copied.values().stream().flatMap(List::stream)
-                .map(CandidatePortBinding::candidatePort).distinct().count();
+                .map(binding -> binding.protocol() + ":" + binding.candidatePort()).distinct().count();
         long candidateCount = copied.values().stream().mapToLong(List::size).sum();
         if (distinctCandidates != candidateCount) {
             throw new IllegalArgumentException("candidate ports must be unique across the application");

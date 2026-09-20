@@ -29,10 +29,11 @@ public final class RubyBundlerDeploymentInspector implements DeploymentTypeInspe
         if (!version.matches("[0-9]+(?:\\.[0-9]+){1,2}(?:[-+][A-Za-z0-9._-]+)?")) {
             version = null;
         }
+        String entrypoint = ServiceMetadataInspector.applicationEntrypoint(root, "config.ru");
         RubyBundlerFacts facts = new RubyBundlerFacts(version,
-                ServiceMetadataInspector.missing(root, "Gemfile", "Gemfile.lock", ".ruby-version", "config.ru"));
+                ServiceMetadataInspector.missing(root, "Gemfile", "Gemfile.lock", ".ruby-version", entrypoint));
         ServiceProjectFacts shape = new ServiceProjectFacts(".ruby-version", facts.version(), "bundle",
-                ServiceMetadataInspector.present(root, "config.ru") ? "config.ru" : null, facts.missingFiles());
+                ServiceMetadataInspector.present(root, entrypoint) ? entrypoint : null, facts.missingFiles());
         return ServiceInspectionAssembler.assemble(root, projectType(), DeploymentBuildToolType.BUNDLER_LOCKED,
                 languageFacts, shape, true);
     }

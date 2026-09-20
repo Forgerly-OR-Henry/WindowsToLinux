@@ -27,8 +27,37 @@ public record MultiComponentFormState(
         String secrets,
         boolean required,
         boolean rootBuild,
-        String kotlinJvmTarget
+        String kotlinJvmTarget,
+        String applicationDeclaration
 ) {
+    public MultiComponentFormState(
+        String componentId,
+        String relativeRoot,
+        String projectType,
+        String runtimePrimary,
+        String runtimeSecondary,
+        String runtimeVersion,
+        String runtimeArguments,
+        String runtimeAdditional,
+        String healthMode,
+        String healthEndpoint,
+        String expectedStatus,
+        String timeoutSeconds,
+        String stabilitySeconds,
+        String accessUrl,
+        String artifacts,
+        String ports,
+        String dependencies,
+        String configuration,
+        String databaseMode,
+        String databaseDetails,
+        String secrets,
+        boolean required,
+        boolean rootBuild,
+        String kotlinJvmTarget) {
+        this(componentId, relativeRoot, projectType, runtimePrimary, runtimeSecondary, runtimeVersion, runtimeArguments, runtimeAdditional, healthMode, healthEndpoint, expectedStatus, timeoutSeconds, stabilitySeconds, accessUrl, artifacts, ports, dependencies, configuration, databaseMode, databaseDetails, secrets, required, rootBuild, kotlinJvmTarget, "");
+    }
+
     public MultiComponentFormState(String componentId,
         String relativeRoot,
         String projectType,
@@ -57,6 +86,7 @@ public record MultiComponentFormState(
 
     /** Rejects missing state values. / 拒绝缺失状态值。 */
     public MultiComponentFormState {
+        Objects.requireNonNull(applicationDeclaration, "applicationDeclaration");
         Objects.requireNonNull(componentId, "componentId");
         Objects.requireNonNull(relativeRoot, "relativeRoot");
         Objects.requireNonNull(projectType, "projectType");

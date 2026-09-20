@@ -75,6 +75,8 @@ def verify_system(record):
 
 def installation_key(ecosystem, identity, expected):
     recipe = '\nruby-openssl-3.0.3' if ecosystem == 'RUBY' and version_key(identity)[:2] == (3, 0) else ''
+    if ecosystem == 'PHP':
+        recipe = '\nphp-cli-iconv-v1'
     return hashlib.sha256((ecosystem + '\n' + identity + '\n' + expected + recipe).encode()).hexdigest()
 
 
@@ -140,7 +142,7 @@ def install(ecosystem, identity, url, algorithm, expected, layout):
                 else:
                     source_dependencies(layout)
                     options = {'python': ['--with-ensurepip=install'],
-                               'php': ['--disable-all', '--enable-cli', '--enable-mbstring', '--with-openssl', '--with-zlib', '--enable-phar', '--enable-tokenizer', '--enable-session', '--enable-filter', '--with-curl', '--enable-pdo', '--with-pdo-pgsql', '--with-pdo-mysql=mysqlnd', '--with-mysqli=mysqlnd', '--with-pgsql', '--with-sqlite3', '--with-pdo-sqlite'],
+                               'php': ['--disable-all', '--enable-cli', '--enable-mbstring', '--with-iconv', '--with-openssl', '--with-zlib', '--enable-phar', '--enable-tokenizer', '--enable-session', '--enable-filter', '--with-curl', '--enable-pdo', '--with-pdo-pgsql', '--with-pdo-mysql=mysqlnd', '--with-mysqli=mysqlnd', '--with-pgsql', '--with-sqlite3', '--with-pdo-sqlite'],
                                'ruby': ['--disable-install-doc']}[layout]
                     if layout == 'ruby' and version_key(identity)[:2] == (3, 0):
                         options.append('--with-out-ext=openssl')
@@ -181,6 +183,10 @@ def probe(ecosystem, directory, expected):
         run([str(directory / 'bin/javac'), '-version'])
     if ecosystem == 'PYTHON':
         run([str(directory / 'bin/python3'), '-c', 'import ssl, sqlite3, bz2, lzma, venv, zlib'])
+    if ecosystem == 'PHP':
+        run([str(directory / 'bin/php'), '-r',
+             'foreach (["curl", "iconv", "mbstring", "pdo", "pdo_sqlite"] as $extension) '
+             '{ if (!extension_loaded($extension)) { fwrite(STDERR, "missing PHP extension: " . $extension); exit(1); } }'])
     if ecosystem == 'RUBY':
         run([str(directory / 'bin/ruby'), '-e', 'require "openssl"; require "zlib"; require "yaml"'])
 

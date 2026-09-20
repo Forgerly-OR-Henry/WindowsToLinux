@@ -1,6 +1,7 @@
 package gold.debug.windowstolinux.shared.config.resource;
 
 import gold.debug.windowstolinux.shared.config.secretref.SecretReference;
+import gold.debug.windowstolinux.shared.model.managed.ManagedStorageLocation;
 
 import java.util.Objects;
 
@@ -11,14 +12,29 @@ public sealed interface ManagedDatabaseConnection
     ManagedDatabaseEngineType engine();
 
     /** SQLite file name within its managed database directory. / SQLite 受管数据库目录内的文件名。 */
-    record Sqlite(String fileName) implements ManagedDatabaseConnection {
+    record Sqlite(String fileName, ManagedStorageLocation location, String accessPath, String seedFile, java.util.List<String> initializationFiles) implements ManagedDatabaseConnection {
         /** Validates one plain file name without path syntax. / 校验不含路径语法的普通文件名。 */
         public Sqlite {
+            seedFile = gold.debug.windowstolinux.shared.model.ecosystem.db.SqliteFileRequirement.relativeSourceFile(seedFile);
+            initializationFiles = java.util.List.copyOf(initializationFiles);
+            if (initializationFiles.size() > 32) throw new IllegalArgumentException("too many initialization files");
+            initializationFiles.forEach(gold.debug.windowstolinux.shared.model.ecosystem.db.SqliteFileRequirement::relativeSourceFile);
+            location = Objects.requireNonNull(location, "location");
+            accessPath = Objects.requireNonNull(accessPath, "accessPath").trim();
+            if (!accessPath.isEmpty()) accessPath = ManagedStorageLocation.validatedPath(accessPath);
             fileName = Objects.requireNonNull(fileName, "fileName").trim();
             if (!fileName.matches("[A-Za-z0-9][A-Za-z0-9._-]{0,127}")
                     || fileName.equals(".") || fileName.equals("..")) {
                 throw new IllegalArgumentException("SQLite fileName must be a bounded plain file name");
             }
+        }
+
+        public Sqlite(String fileName, ManagedStorageLocation location, String accessPath) { this(fileName, location, accessPath, "", java.util.List.of()); }
+
+        public Sqlite(String fileName) { this(fileName, ManagedStorageLocation.defaults(), ""); }
+
+        public String physicalPath(String applicationId, String databaseId) {
+            return location.resolve(applicationId, ManagedStorageLocation.StorageResourceType.DATABASE, databaseId) + "/" + fileName;
         }
 
         @Override public ManagedDatabaseEngineType engine() { return ManagedDatabaseEngineType.SQLITE; }

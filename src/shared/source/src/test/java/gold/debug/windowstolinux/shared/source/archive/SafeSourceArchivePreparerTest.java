@@ -30,6 +30,25 @@ class SafeSourceArchivePreparerTest {
     private final SafeSourceArchivePreparer archiver = new SafeSourceArchivePreparer();
 
     @Test
+    void explicitApplicationResourcesIncludeSampleLogsButKeepSecretAndDirectoryExclusions() throws Exception {
+        Path source = Files.createDirectories(temporaryDirectory.resolve("resources"));
+        Files.createDirectories(source.resolve("samples"));
+        Files.writeString(source.resolve("samples/events.log"), "synthetic fixture\n");
+        Files.writeString(source.resolve("debug.log"), "runtime output\n");
+        Path declaration = source.resolve("windowstolinux-application.properties");
+        Files.writeString(declaration, "version=1\nsource.include=samples/events.log\n");
+        var archive = archiver.archive(source, temporaryDirectory.resolve("included.tar.gz"));
+        assertTrue(readTarEntries(archive.archivePath()).stream().anyMatch(entry -> entry.path().equals("samples/events.log")));
+        assertTrue(archive.excludedEntries().contains("debug.log"));
+        for (String forbidden : List.of(".env", "samples/secret.key", "logs/runtime.log", "../outside.log", "./samples/events.log")) {
+            Path file = source.resolve(forbidden).normalize();
+            Files.createDirectories(file.getParent()); Files.writeString(file, "excluded");
+            Files.writeString(declaration, "version=1\nsource.include=" + forbidden + "\n");
+            assertThrows(SourceArchiveException.class, () -> archiver.archive(source, temporaryDirectory.resolve("forbidden.tar.gz")), forbidden);
+        }
+    }
+
+    @Test
     void archivesOnlyAllowedSourceFilesAsReproducibleRegularTarEntries() throws Exception {
         Path source = Files.createDirectories(temporaryDirectory.resolve("source"));
         Files.writeString(source.resolve("pom.xml"), "<project/>");

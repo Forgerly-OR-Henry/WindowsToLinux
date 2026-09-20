@@ -30,12 +30,12 @@ public final class ComposerBuildRenderer implements DeploymentBuildRenderer {
                 php -r 'printf("%%d.%%d", PHP_MAJOR_VERSION, PHP_MINOR_VERSION);' | grep -Fx "${WTL_PHP_BRANCH:-%s}"
                 test -f ./composer.json
                 test -f ./composer.lock
-                test -f ./public/index.php
+                test -f ./%s
                 COMPOSER_ALLOW_SUPERUSER=0 run php "$(command -v composer)" install --no-dev --no-interaction --no-progress --prefer-dist --classmap-authoritative --no-plugins --no-scripts
                 test -f ./vendor/autoload.php
                 test -z "$(find ./vendor -xdev -type l -print -quit)"
                 printf 'ARTIFACT=%%s\n' ./vendor
-                """.formatted(version);
+                """.formatted(version, php.entrypoint());
         return SafeBuildScriptEnvelope.wrap(facts, workspace, limits, command);
     }
 }

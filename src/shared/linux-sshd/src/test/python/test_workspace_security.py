@@ -97,7 +97,8 @@ class SystemdManagerIsolationTest(unittest.TestCase):
         if not bash or not pathlib.Path(bash).is_file():
             self.skipTest('Bash is unavailable')
         foundation = read_fragment(SOURCE / 'execution/protocol/helper/fragments/00-protocol-foundation.sh')
-        identity = read_fragment(SOURCE / 'runtime/systemd/helper/61-dynamic-identity.sh')
+        identity = read_fragment(SOURCE / 'runtime/systemd/helper/61-service-identity.sh')
+        application = read_fragment(SOURCE / 'execution/protocol/helper/fragments/runtime/41-application-runtime.sh')
         for selinux, kind in [('0', 'javasource'), ('1', 'javasource'), ('1', 'node')]:
             with self.subTest(selinux=selinux, kind=kind):
                 setup = r'''
@@ -118,7 +119,9 @@ require_relative_path() { :; }; require_java_main() { :; }; require_bound_versio
 require_safe_argument() { test "$1" = -Xmx128m || test "$1" = checked-argument; }
 deployment_secret_identifiers=(); deployment_configuration_digest=fixture
 managed_data_application=app; managed_data_component=main; managed_data_bindings=()
-runtime_identity_policy=SYSTEMD_DYNAMIC; toolchain_binding=''
+runtime_identity_policy=SYSTEMD_STATIC; toolchain_binding=''
+application_mode=DAEMON; application_builddir=''; application_workdir=''; application_entry=''
+application_args=(); application_worker_ids=(); application_input_sources=(); application_companion_ids=()
 toolchain_java=/usr/local/lib/windowstolinux/toolchains/java/bin/java
 toolchain_path=/usr/local/lib/windowstolinux/toolchains/node/bin
 if test "$TEST_KIND" = javasource; then
@@ -126,18 +129,23 @@ if test "$TEST_KIND" = javasource; then
 else render_deployment_unit app node 18 NPM; fi
 '''
                 result = subprocess.run([bash, '--noprofile', '--norc', '-s'],
-                                        input=foundation + '\n' + identity + '\n' + setup,
+                                        input=foundation + '\n' + identity + '\n' + application + '\n' + setup,
                                         env=dict(os.environ, TEST_SELINUX=selinux, TEST_KIND=kind),
                                         text=True, capture_output=True, timeout=10)
                 self.assertEqual(0, result.returncode, result.stderr)
                 command = next(line for line in result.stdout.splitlines() if line.startswith('ExecStart='))
                 if kind == 'javasource':
-                    expected = '/usr/local/lib/windowstolinux/toolchains/java/bin/java -Xmx128m -cp /var/lib/windowstolinux/apps/app/current/app.jar acceptance.Main checked-argument'
-                    self.assertEqual('ExecStart=' + ('/usr/bin/env ' if selinux == '1' else '') + expected, command)
+                    expected = '/usr/local/lib/windowstolinux/toolchains/java/bin/java -Xmx128m -cp /opt/windowstolinux/apps/app/current/app.jar acceptance.Main checked-argument'
+                    import shlex
+                    self.assertEqual(shlex.split(('/usr/bin/env ' if selinux == '1' else '') + expected),
+                                     shlex.split(command.removeprefix('ExecStart=')))
                 else:
                     self.assertEqual(1, command.count('/usr/bin/env'))
-                    self.assertIn('npm --prefix /var/lib/windowstolinux/apps/app/current/source start', command)
-                self.assertIn('DynamicUser=yes', result.stdout)
+                    import shlex
+                    self.assertEqual(['npm', '--prefix', '/opt/windowstolinux/apps/app/current/source', 'start'],
+                                     shlex.split(command.removeprefix('ExecStart='))[-4:])
+                self.assertIn('User=wtlr-a172cedcae47474b\nGroup=wtlr-a172cedcae47474b', result.stdout)
+                self.assertNotIn('DynamicUser=', result.stdout)
                 self.assertIn('NoNewPrivileges=yes', result.stdout)
 
     def test_selinux_hides_manager_directory_and_preserves_other_platform_paths(self):
@@ -145,7 +153,7 @@ else render_deployment_unit app node 18 NPM; fi
         if not bash or not pathlib.Path(bash).is_file():
             self.skipTest('Bash is unavailable')
         foundation = read_fragment(SOURCE / 'execution/protocol/helper/fragments/00-protocol-foundation.sh')
-        identity = read_fragment(SOURCE / 'runtime/systemd/helper/61-dynamic-identity.sh')
+        identity = read_fragment(SOURCE / 'runtime/systemd/helper/61-service-identity.sh')
         for selinux in ['0', '1']:
             with self.subTest(selinux=selinux):
                 setup = r'''
@@ -157,7 +165,7 @@ else render_deployment_unit app node 18 NPM; fi
 }
 getent() { return 1; }
 managed_data_application=app; managed_data_component=main; managed_data_bindings=()
-render_dynamic_runtime_identity app
+render_service_runtime_identity app
 '''
                 result = subprocess.run([bash, '--noprofile', '--norc', '-s'],
                                         input=foundation + '\n' + identity + '\n' + setup,
@@ -176,7 +184,8 @@ render_dynamic_runtime_identity app
                     self.assertTrue({'-/run/systemd/private', '-/run/systemd/journal',
                                      '-/run/systemd/notify'}.issubset(paths))
                 self.assertTrue({'-/run/dbus', '-/run/docker.sock', '-/run/podman', '-/run/user'}.issubset(paths))
-                self.assertIn('DynamicUser=yes', result.stdout)
+                self.assertIn('User=wtlr-a172cedcae47474b\nGroup=wtlr-a172cedcae47474b', result.stdout)
+                self.assertNotIn('DynamicUser=', result.stdout)
                 self.assertIn('NoNewPrivileges=yes', result.stdout)
 
 
@@ -360,82 +369,30 @@ class ContainerExportNormalizationTest(unittest.TestCase):
                         self.assertEqual(b'layer bytes', output.extractfile(layer).read())
 
 
-class ContainerMigrationTest(unittest.TestCase):
-    def test_stopped_volume_data_is_restored_and_failed_copy_never_marks_migrated(self):
+class FixedIdentityTest(unittest.TestCase):
+    def test_component_accounts_are_stable_distinct_and_never_use_root(self):
         bash = shutil.which('bash') or 'E:/Program/Git/bin/bash.exe'
-        if not pathlib.Path(bash).is_file():
-            self.skipTest('Bash is unavailable')
+        fragment = read_fragment(SOURCE / 'runtime/systemd/helper/61-service-identity.sh')
+        result = subprocess.run([bash, '-s'], input='set -eu\nexport PATH=/usr/bin:/bin:$PATH\n'+fragment+'\nservice_identity_name alpha; echo; service_identity_name alpha; echo; service_identity_name alpha-api; echo',
+                                text=True, capture_output=True, timeout=10)
+        self.assertEqual(0,result.returncode,result.stderr)
+        names=result.stdout.splitlines()
+        self.assertEqual(names[0],names[1]); self.assertNotEqual(names[0],names[2])
+        self.assertRegex(names[0],r'^wtlr-[a-f0-9]{16}$')
+
+    def test_stop_failure_is_reported_before_data_can_be_switched(self):
+        bash = shutil.which('bash') or 'E:/Program/Git/bin/bash.exe'
         fragment = read_fragment(SOURCE / 'execution/protocol/helper/fragments/release/52-container-recovery.sh')
-        for scenario in ('rollback', 'copy-failure', 'stop-failure'):
-            with self.subTest(scenario=scenario), tempfile.TemporaryDirectory() as temporary:
-                root = pathlib.Path(temporary)
-                (root / 'snapshot').mkdir()
-                (root / 'volume').mkdir()
-                (root / 'volume/original').write_text('old application data')
-                (root / '.container-migration-snapshot').write_text('token')
-                # Git Bash receives its own canonical path to avoid Windows path conversion ambiguity. / 向 Git Bash 传入其规范路径，避免 Windows 路径转换歧义。
-                setup = r"""
+        script = fragment + r'''
 set -eu
-root="$(pwd)"
-app_root() { printf '%s' "$root"; }
-snapshot_root() { printf '%s/snapshot' "$root"; }
-require_snapshot_token() { test "$1" = token; }
-assert_root_owned_regular() { test -f "$1" && test ! -L "$1"; }
-assert_root_owned_directory() { test -d "$1" && test ! -L "$1"; }
-reject() { printf 'REJECT=%s\n' "$1"; exit 41; }
-chown() { :; }
-getfacl() { printf 'original-acl\n'; }
-setfacl() { printf 'ACL_RESTORED\n'; }
-controlled_container_volume_path() { printf '%s/volume' "$root"; }
-container_name() { printf 'windowstolinux-demo'; }
+reject() { echo "REJECT=$1"; exit 41; }
+container_name() { echo windowstolinux-demo; }
 container_engine=docker
-printf '%s/volume\n' "$root" > "$root/snapshot/volume-fixture.path"
-container_volumes=(fixture:/data:0)
-"""
-                if scenario == 'stop-failure':
-                    action = 'docker() { if [ "$1" = inspect ]; then return 0; else return 1; fi; }; stop_container_runtime demo'
-                else:
-                    action = ('cp() { return 1; }; ' if scenario == 'copy-failure' else '')
-                    action += 'stage_container_volume_migration demo owner fixture 10001:10001\n'
-                    if scenario == 'rollback':
-                        action += r"""
-printf 'new application data' > "$root/volume/original"
-printf 'new' > "$root/volume/new-file"
-restore_container_volume_access demo owner "$root/snapshot"
-"""
-                result = subprocess.run([bash, '--noprofile', '--norc', '-s'], cwd=root,
-                                        input=fragment + '\n' + setup + '\n' + action,
-                                        text=True, capture_output=True, timeout=20)
-                self.assertEqual(0 if scenario == 'rollback' else 41, result.returncode, result.stderr + result.stdout)
-                self.assertEqual('old application data', (root / 'volume/original').read_text())
-                self.assertFalse((root / 'volume/new-file').exists())
-                if scenario == 'rollback':
-                    self.assertIn('ACL_RESTORED', result.stdout)
-                else:
-                    self.assertFalse((root / 'snapshot/volume-fixture.migrated').exists())
-
-
-class DynamicStateMappingTest(unittest.TestCase):
-    def test_only_exact_private_target_or_its_canonical_relative_link_is_admitted(self):
-        bash = shutil.which('bash') or 'E:/Program/Git/bin/bash.exe'
-        if not pathlib.Path(bash).is_file():
-            self.skipTest('Bash is unavailable')
-        fragment = read_fragment(SOURCE / 'runtime/systemd/helper/61-dynamic-identity.sh')
-        script = fragment + r"""
-set -eu
-public=/var/lib/windowstolinux/data/example/api
-private=/var/lib/private/windowstolinux/data/example/api
-readlink() { printf '%s' "$link"; }
-for link in "$private" ../../../private/windowstolinux/data/example/api; do
-  state_link_matches "$public" "$private" || exit 41
-done
-for link in /etc ../../../private/windowstolinux/data/other/api ../api/../../../private/windowstolinux/data/example/api; do
-  if state_link_matches "$public" "$private"; then exit 42; fi
-done
-"""
-        result = subprocess.run([bash, '--noprofile', '--norc', '-s'], input=script,
-                                text=True, capture_output=True, timeout=20)
-        self.assertEqual(0, result.returncode, result.stderr + result.stdout)
+docker() { if [ "$1" = inspect ]; then return 0; else return 1; fi; }
+stop_container_runtime demo
+'''
+        result=subprocess.run([bash,'-s'],input=script,text=True,capture_output=True,timeout=10)
+        self.assertEqual(41,result.returncode,result.stderr)
 
 
 class CandidateCleanupTest(unittest.TestCase):
@@ -449,6 +406,7 @@ class CandidateCleanupTest(unittest.TestCase):
                 script = fragment + r'''
 set -eu
 candidate_root() { pwd; }
+export PATH=/usr/bin:/bin:$PATH
 assert_root_owned_regular() { :; }
 reject() { echo "$1" >&2; exit 64; }
 podman() {

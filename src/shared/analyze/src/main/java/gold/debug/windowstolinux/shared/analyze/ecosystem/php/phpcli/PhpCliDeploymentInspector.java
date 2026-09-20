@@ -34,9 +34,9 @@ public final class PhpCliDeploymentInspector {
         String version = values.get("phpVersion");
         if (version == null || !version.matches("[0-9]+(?:\\.[0-9]+){1,2}(?:[-+][A-Za-z0-9._-]+)?")) { version = null; missing.add("phpVersion=..."); }
         String documentRoot = relative(values.get("documentRoot"));
-        if (!"public".equals(documentRoot)) { documentRoot = null; missing.add("documentRoot=public"); }
+        if (!"public".equals(documentRoot) && !"source".equals(documentRoot)) { documentRoot = null; missing.add("documentRoot=public"); }
         String entrypoint = relative(values.get("entrypoint"));
-        if (!"public/index.php".equals(entrypoint)) { entrypoint = null; missing.add("entrypoint=public/index.php"); }
+        if (!("source".equals(documentRoot) && entrypoint != null && entrypoint.endsWith(".php")) && !"public/index.php".equals(entrypoint)) { entrypoint = null; missing.add("entrypoint=public/index.php"); }
         if (entrypoint != null && !ServiceMetadataInspector.present(root, entrypoint)) missing.add(entrypoint);
         boolean anyPhp = source.relativeFiles().stream().anyMatch(path -> path.toString().toLowerCase(java.util.Locale.ROOT).endsWith(".php"));
         if (!anyPhp) missing.add("PHP source files");

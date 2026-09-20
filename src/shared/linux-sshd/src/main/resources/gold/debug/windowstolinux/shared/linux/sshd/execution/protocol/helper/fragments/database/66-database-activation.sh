@@ -9,7 +9,11 @@ database_activation_arguments() {
   database_activation_suffix="${database_activation_candidate##*-}"; database_activation_database="w2l_${database_activation_suffix}"
   database_activation_rollback="w2l_prev_${database_activation_suffix}"
   if [ "$database_activation_type" = sqlite ]; then
-    [ "$#" -eq 1 ] || reject database-sqlite-arguments; require_relative_path "$1"; database_activation_relative="$1"
+    database_sqlite_arguments "$database_activation_credential_app" "$@"
+    assert_root_owned_regular "$database_activation_root/database/sqlite-binding"
+    [ "$(cat -- "$database_activation_root/database/sqlite-binding")" = "$(printf '%s\n' "$database_activation_credential_app" "$database_sqlite_binding" "$database_sqlite_location_type" "$database_sqlite_location_path" "$database_sqlite_file")" ] || reject database-candidate-binding
+    database_activation_sqlite_candidate="$database_activation_root/database/$database_sqlite_binding/$database_sqlite_file"
+    database_activation_sqlite_journal="$database_sqlite_directory/.restore-$database_activation_suffix"
   else database_server_arguments "$database_activation_type" "$@"
     if [ "$database_activation_type" = postgresql ]; then [ "${#database_name}" -le 63 ] || reject database-postgresql-name-too-long; fi
   fi
@@ -56,11 +60,76 @@ database_commit_mysql() {
   database_mysql_exists "$client" "$credentials" "$database_name" || { rm -f -- "$credentials"; reject database-commit-verify; }
   printf '%s\n%s\ncommitted\n' "$database_activation_type" "$previous" > "$database_activation_state"; rm -f -- "$credentials"
 }
+sqlite_file_set_digest() {
+  local target="$1" suffix
+  for suffix in '' -wal -shm -journal; do
+    if [ -e "$target$suffix" ]; then printf '%s:%s\n' "${suffix:-main}" "$(sha256sum -- "$target$suffix" | awk '{print $1}')"
+    else printf '%s:-\n' "${suffix:-main}"; fi
+  done | sha256sum | awk '{print $1}'
+}
+database_commit_sqlite() {
+  local target="$database_sqlite_target" journal="$database_activation_sqlite_journal" previous=0 digest=none owner suffix
+  current_application="$database_activation_credential_app"
+  binding="$database_sqlite_binding"; storage_kind=DATABASE; location_type="$database_sqlite_location_type"; location_path="$database_sqlite_location_path"
+  assert_storage_parent "$database_sqlite_directory"; record_storage_binding "$database_sqlite_directory"
+  prepare_service_identity "$current_application"; owner="$(service_identity_name "$current_application")"
+  if [ -e "$database_activation_root/database/sqlite-owner" ]; then
+    assert_root_owned_regular "$database_activation_root/database/sqlite-owner"
+    owner="$(cat -- "$database_activation_root/database/sqlite-owner")"
+    [[ "$owner" =~ ^[1-9][0-9]*:[1-9][0-9]*$ ]] || reject database-owner
+  fi
+  install -d -o root -g root -m 755 -- "${database_sqlite_directory%/*}"
+  if [ ! -e "$database_sqlite_directory" ]; then install -d -o "${owner%%:*}" -g "${owner#*:}" -m 700 -- "$database_sqlite_directory"; fi
+  [ ! -e "$journal" ] && [ ! -L "$journal" ] || reject database-rollback-exists
+  assert_sqlite_file "$database_activation_sqlite_candidate"
+  install -d -o root -g root -m 700 -- "$journal/previous" "$journal/failed"
+  sqlite3 -readonly -- "$database_activation_sqlite_candidate" ".backup '$journal/next'" || reject database-commit-copy
+  [ "$(sqlite3 -readonly -- "$journal/next" 'PRAGMA integrity_check;' 2>/dev/null)" = ok ] || reject database-commit-integrity
+  if [ -e "$target" ] || [ -L "$target" ]; then assert_sqlite_file "$target"; previous=1; digest="$(sqlite_file_set_digest "$target")"; fi
+  printf 'sqlite\n%s\nprepared\n%s\n' "$previous" "$digest" > "$database_activation_state"
+  chmod 400 -- "$database_activation_state"; sync -f "$database_activation_state"; sync -f "$journal/next"
+  for suffix in '' -wal -shm -journal; do
+    if [ -e "$target$suffix" ]; then mv -T -- "$target$suffix" "$journal/previous/value$suffix"; fi
+  done
+  sync -f "$database_sqlite_directory"
+  chown "${owner%%:*}:${owner#*:}" -- "$journal/next"; chmod 600 -- "$journal/next"
+  mv -T -- "$journal/next" "$target"; sync -f "$database_sqlite_directory"
+  printf 'sqlite\n%s\ncommitted\n%s\n' "$previous" "$digest" > "$database_activation_state"; sync -f "$database_activation_state"
+}
+database_recover_sqlite() {
+  local previous="$1" target="$database_sqlite_target" journal="$database_activation_sqlite_journal" suffix old_digest="${activation[3]}"
+  assert_storage_parent "$database_sqlite_directory"; assert_root_owned_directory "$journal"
+  if [ "$previous" = 1 ] && [ -e "$journal/previous/value" ]; then
+    # Complete a partially interrupted move before checking the retained file set.
+    for suffix in -wal -shm -journal; do
+      if [ ! -e "$journal/previous/value$suffix" ] && [ -e "$target$suffix" ] && [ ! -e "$target" ]; then
+        [ ! -L "$target$suffix" ] || reject database-recovery-companion; mv -T -- "$target$suffix" "$journal/previous/value$suffix"
+      fi
+    done
+    assert_sqlite_file "$journal/previous/value"
+    [ "$(sqlite_file_set_digest "$journal/previous/value")" = "$old_digest" ] || reject database-rollback-digest
+    if [ -e "$target" ] || [ -L "$target" ]; then assert_sqlite_file "$target"; fi
+    for suffix in '' -wal -shm -journal; do
+      if [ -e "$target$suffix" ]; then mv -T -- "$target$suffix" "$journal/failed/value$suffix"; fi
+      if [ -e "$journal/previous/value$suffix" ]; then mv -T -- "$journal/previous/value$suffix" "$target$suffix"; fi
+    done
+  elif [ "$previous" = 1 ]; then
+    assert_sqlite_file "$target"; [ "$(sqlite_file_set_digest "$target")" = "$old_digest" ] || reject database-rollback-unprovable
+  else
+    if [ -e "$target" ] || [ -L "$target" ]; then assert_sqlite_file "$target"; fi
+    for suffix in '' -wal -shm -journal; do if [ -e "$target$suffix" ]; then mv -T -- "$target$suffix" "$journal/failed/value$suffix"; fi; done
+  fi
+  sync -f "$database_sqlite_directory"
+  if [ "$previous" = 1 ]; then [ "$(sqlite3 -readonly -- "$target" 'PRAGMA integrity_check;' 2>/dev/null)" = ok ] || reject database-recovery-integrity
+  else [ ! -e "$target" ] && [ ! -L "$target" ] || reject database-recovery-absence; fi
+  database_discard_candidate "$database_activation_app" "$database_activation_credential_app" "$database_activation_candidate" sqlite \
+      "$database_sqlite_binding" "$database_sqlite_location_type" "$database_sqlite_location_path" "$database_sqlite_file" >/dev/null
+}
 database_commit_candidate() {
   database_activation_arguments "$@"; assert_root_owned_regular "$(restore_activation_root "$database_activation_candidate")/.application-quiesced"
   [ ! -e "$database_activation_state" ] && [ ! -L "$database_activation_state" ] || reject database-activation-exists
-  [ "$database_activation_type" != sqlite ] || reject database-sqlite-activation-unsupported
-  if [ "$database_activation_type" = postgresql ]; then database_commit_postgresql; else database_commit_mysql; fi
+  if [ "$database_activation_type" = sqlite ]; then database_commit_sqlite
+  elif [ "$database_activation_type" = postgresql ]; then database_commit_postgresql; else database_commit_mysql; fi
   printf 'CANDIDATE_ID=%s\nCOMMITTED=1\nPREVIOUS_RETAINED=1\n' "$database_activation_candidate"
 }
 database_recover_postgresql() {
@@ -99,8 +168,8 @@ database_recover_candidate() {
   else
     assert_root_owned_regular "$database_activation_state"; mapfile -t activation < "$database_activation_state"
     [ "${activation[0]}" = "$database_activation_type" ] || reject database-recovery-type; [ "${activation[1]}" = 0 ] || [ "${activation[1]}" = 1 ] || reject database-recovery-state
-    [ "$database_activation_type" != sqlite ] || reject database-sqlite-activation-unsupported
-    if [ "$database_activation_type" = postgresql ]; then database_recover_postgresql "${activation[1]}"; else database_recover_mysql "${activation[1]}"; fi
+    if [ "$database_activation_type" = sqlite ]; then database_recover_sqlite "${activation[1]}"
+    elif [ "$database_activation_type" = postgresql ]; then database_recover_postgresql "${activation[1]}"; else database_recover_mysql "${activation[1]}"; fi
     rm -f -- "$database_activation_state"
   fi
   printf 'CANDIDATE_ID=%s\nRECOVERED=1\nPREVIOUS_VERIFIED=1\nCANDIDATE_REMOVED=1\n' "$database_activation_candidate"

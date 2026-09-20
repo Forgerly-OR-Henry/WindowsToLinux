@@ -68,10 +68,14 @@ public final class SshdSourceTransport {
         try (SftpFileSystem fileSystem = SftpClientFactory.instance().createSftpFileSystem(session)) {
             Path destination = fileSystem.getPath(remoteArchive);
             Files.copy(archive.localArchive(), destination, StandardCopyOption.REPLACE_EXISTING);
-        } catch (IOException exception) {
+        } catch (IOException | RuntimeException exception) {
             cleanupAfterFailure(workspace);
+            StackTraceElement[] frames = exception.getStackTrace();
             throw LinuxOperationException.create(LinuxOperationFailureType.SOURCE_UPLOAD_FAILED,
-                    "SFTP source archive upload failed", exception);
+                    "SFTP source archive upload failed (" + exception.getClass().getSimpleName()
+                            + (frames.length == 0 ? "" : " at " + java.util.Arrays.stream(frames).limit(5)
+                                    .map(StackTraceElement::toString).collect(java.util.stream.Collectors.joining(" <- ")))
+                            + ")", exception);
         }
         String verificationScript = """
                 printf 'DIGEST='; sha256sum %s | awk '{print $1}'

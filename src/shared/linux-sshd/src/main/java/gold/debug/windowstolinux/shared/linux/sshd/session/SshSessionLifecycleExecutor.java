@@ -37,7 +37,9 @@ public final class SshSessionLifecycleExecutor {
             // A failed graceful close must still reach forced channel cleanup. / 优雅关闭异常后仍须执行强制通道回收。
         }
         try { connection.close(true).await(CLOSE_TIMEOUT); }
-        catch (IOException | RuntimeException ignored) { /* Preserve the primary operation result. / 保留首要操作结果。 */ }
+        catch (IOException | RuntimeException ignored) {
+            // Preserve the primary operation result. / 保留首要操作结果。
+        }
     }
 
     private static void awaitWindowsNio2Completion() {

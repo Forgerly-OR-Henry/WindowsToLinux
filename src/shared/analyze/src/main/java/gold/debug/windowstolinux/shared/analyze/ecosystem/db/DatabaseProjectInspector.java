@@ -54,7 +54,8 @@ public final class DatabaseProjectInspector {
                         properties.getProperty(prefix+"database", ""),properties.getProperty(prefix+"username", ""),
                         properties.getProperty(prefix+"environmentPrefix", ""),properties.getProperty(prefix+"passwordEnvironment", ""),
                         Arrays.stream(properties.getProperty(prefix+"initialize", "").split(",")).map(String::trim).filter(value -> !value.isEmpty()).toList(),
-                        Boolean.parseBoolean(properties.getProperty(prefix+"springDatasource", "false")),"windowstolinux-db.properties#"+prefix));
+                        Boolean.parseBoolean(properties.getProperty(prefix+"springDatasource", "false")),"windowstolinux-db.properties#"+prefix,
+                        engine == DatabaseEngineType.SQLITE ? Optional.of(sqliteDeclaration(properties,prefix)) : Optional.empty()));
             }
             if (databases.isEmpty() || databases.size() > 16 || databases.stream().map(DatabaseRequirement::id).distinct().count() != databases.size())
                 throw new IOException("database declarations must be nonempty, unique and bounded");
@@ -76,6 +77,7 @@ public final class DatabaseProjectInspector {
                 databases.add(new DatabaseRequirement("sql"+(databases.size()+1),engine,"",name,username.find() ? username.group(1) : "",spring ? "SPRING_DATASOURCE" : "",
                         spring ? "SPRING_DATASOURCE_PASSWORD" : "",initialization,spring,"JDBC endpoint declaration"));
             }
+            databases.addAll(sqliteDatasources(text));
             if (Pattern.compile("(?:spring\\.(?:data\\.)?redis\\.|redis://|rediss://)").matcher(text).find()) {
                 // URI credentials are never kept; a URI or unrecognized host requires the user's explicit target decision. / 不保留 URI 凭据，URI 或无法识别的主机需要用户明确选择目标。
                 if (text.contains("redis://") || text.contains("rediss://")) endpointConfirmation = true;
@@ -86,7 +88,38 @@ public final class DatabaseProjectInspector {
                         prefix.isEmpty() ? "" : prefix+"_PASSWORD",List.of(),false,"Redis endpoint declaration"));
             }
         }
-        return new Assessment(databases,sql,schema,databases.isEmpty() && schema,endpointConfirmation);
+        return new Assessment(databases,sql,schema,databases.isEmpty() && (schema || text.contains("sqlite") && !text.contains(":memory:")),endpointConfirmation);
+    }
+    private static List<DatabaseRequirement> sqliteDatasources(String text) throws IOException {
+        List<DatabaseRequirement> databases = new ArrayList<>();
+        var sqlite = Pattern.compile("(?m)^\\s*spring\\.datasource\\.url\\s*[=:]\\s*jdbc:sqlite:([^\\r\\n]+)").matcher(text);
+        Set<String> sqlitePaths = new LinkedHashSet<>();
+        while (sqlite.find()) sqlitePaths.add(sqlite.group(1).trim());
+        if (sqlitePaths.size() > 1) throw new IOException("conflicting SQLite datasource paths require an explicit DB declaration");
+        for (String path : sqlitePaths) {
+            if (path.equals(":memory:")) continue;
+            databases.add(new DatabaseRequirement("sqlite",DatabaseEngineType.SQLITE,"","","","","",List.of(),true,
+                    "Spring SQLite datasource",Optional.of(SqliteFileRequirement.fromPath(path,"SPRING_DATASOURCE_URL",""))));
+        }
+        return databases;
+    }
+    private static SqliteFileRequirement sqliteDeclaration(Properties properties,String prefix) {
+        var file=SqliteFileRequirement.fromPath(properties.getProperty(prefix+"path"),properties.getProperty(prefix+"pathEnvironment",""),properties.getProperty(prefix+"seed",""));
+        if (!properties.containsKey(prefix+"hostLocation")) return file;
+        var location=new gold.debug.windowstolinux.shared.model.managed.ManagedStorageLocation(
+                gold.debug.windowstolinux.shared.model.managed.ManagedStorageLocation.StorageLocationType.valueOf(properties.getProperty(prefix+"hostLocation")),properties.getProperty(prefix+"hostPath",""));
+        return new SqliteFileRequirement(location,file.fileName(),file.accessPath(),file.pathEnvironment(),file.seedFile(),true);
+    }
+
+    public static Assessment containerStorage(Assessment assessment) {
+        var databases=assessment.databases().stream().map(database -> {
+            if (database.sqlite().isEmpty()) return database;
+            var file=database.sqlite().orElseThrow();
+            if (file.hostLocationExplicit() || !file.accessPath().startsWith("/")) return database;
+            var host=new SqliteFileRequirement(gold.debug.windowstolinux.shared.model.managed.ManagedStorageLocation.defaults(),file.fileName(),file.accessPath(),file.pathEnvironment(),file.seedFile(),true);
+            return new DatabaseRequirement(database.id(),database.engine(),database.version(),database.database(),database.username(),database.environmentPrefix(),database.passwordEnvironment(),database.initializationFiles(),database.springDatasource(),database.evidence(),Optional.of(host));
+        }).toList();
+        return new Assessment(databases,assessment.sqlCandidates(),assessment.schemaReviewRequired(),assessment.unknownDatabase(),assessment.endpointConfirmationRequired());
     }
     private static String defaultVersion(DatabaseEngineType engine) { return engine == DatabaseEngineType.REDIS ? ">=6.2" : ""; }
 }

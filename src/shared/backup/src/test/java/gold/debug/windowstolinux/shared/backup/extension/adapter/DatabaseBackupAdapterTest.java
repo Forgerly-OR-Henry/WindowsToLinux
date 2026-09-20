@@ -29,7 +29,7 @@ class DatabaseBackupAdapterTest {
         RecordingPort port = new RecordingPort(evidence(
                 BackupDatabaseType.SQLITE, true, true, true));
         DatabaseBackupRequest request = new DatabaseBackupRequest(
-                "sample", new DatabaseConnectionProfile.Sqlite("data/application.db"), false, false);
+                "sample", new DatabaseConnectionProfile.Sqlite("main", gold.debug.windowstolinux.shared.model.managed.ManagedStorageLocation.defaults(), "application.db"), false, false);
 
         DatabaseBackupArtifact artifact = new SqliteDatabaseAdapter(port).backup(request);
 
@@ -42,7 +42,7 @@ class DatabaseBackupAdapterTest {
         RecordingPort port = new RecordingPort(evidence(
                 BackupDatabaseType.SQLITE, true, false, true));
         DatabaseBackupRequest request = new DatabaseBackupRequest(
-                "sample", new DatabaseConnectionProfile.Sqlite("data/application.db"), false, false);
+                "sample", new DatabaseConnectionProfile.Sqlite("main", gold.debug.windowstolinux.shared.model.managed.ManagedStorageLocation.defaults(), "application.db"), false, false);
 
         BackupException failure = assertThrows(BackupException.class,
                 () -> new SqliteDatabaseAdapter(port).backup(request));
@@ -131,7 +131,7 @@ class DatabaseBackupAdapterTest {
     @Test
     void connectionProfilesRejectTraversalAndCredentialBearingHosts() {
         assertThrows(IllegalArgumentException.class,
-                () -> new DatabaseConnectionProfile.Sqlite("../active.db"));
+                () -> new DatabaseConnectionProfile.Sqlite("main", gold.debug.windowstolinux.shared.model.managed.ManagedStorageLocation.defaults(), "../active.db"));
         assertThrows(IllegalArgumentException.class, () -> new DatabaseConnectionProfile.Server(
                 BackupDatabaseType.POSTGRESQL, "user:password@db.example", 5432,
                 "sample", "sample", new SecretReference("db.password", 1), true));

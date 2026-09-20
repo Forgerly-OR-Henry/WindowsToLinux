@@ -1,6 +1,6 @@
 package gold.debug.windowstolinux.app.ui.deployment.single;
 
-import gold.debug.windowstolinux.app.service.contract.definition.DatabaseReviewMode;
+import gold.debug.windowstolinux.shared.model.deployment.DatabaseReviewMode;
 
 
 import gold.debug.windowstolinux.app.service.source.ReviewedSourcePreparation;
@@ -12,6 +12,7 @@ import gold.debug.windowstolinux.shared.model.project.DeploymentRuntimeAssessmen
 import gold.debug.windowstolinux.app.ui.component.ToggleSwitch;
 import javax.swing.JComboBox;
 import javax.swing.JTextField;
+import javax.swing.JTextArea;
 
 /** Owns deployment controls, non-secret form state, and domain input mapping. / 持有部署控件、非秘密表单状态与领域输入映射。 */
 final class DeploymentForm {
@@ -32,6 +33,7 @@ final class DeploymentForm {
             new JComboBox<>(DeploymentRuntimeSpecification.ContainerEngineType.values());
     final JTextField containerPorts = new JTextField(20);
     final JTextField containerVolumes = new JTextField(20);
+    final JTextArea applicationDeclaration = new JTextArea(6, 30);
     final JTextField configurationEntries = new JTextField(30);
     final JComboBox<DatabaseReviewMode> databaseMode =
             new JComboBox<>(DatabaseReviewMode.values());
@@ -69,13 +71,14 @@ final class DeploymentForm {
                 containerPorts.getText(), containerVolumes.getText(), configurationEntries.getText(),
                 ((DatabaseReviewMode) databaseMode.getSelectedItem()).name(),
                 databaseDetails.getText(), secretReferences.getText(), false, experimentalAdapterRisk.isSelected(),
-                output, preparation, kotlinJvmTarget.getText());
+                output, preparation, kotlinJvmTarget.getText(), applicationDeclaration.getText());
     }
 
     void restore(DeploymentPageState state) {
         projectType.setSelectedItem(DeploymentProjectType.valueOf(state.projectType()));
         healthMode.setSelectedItem(HealthMode.valueOf(state.healthMode()));
         healthEndpoint.setText(state.healthEndpoint());
+        applicationDeclaration.setText(state.applicationDeclaration());
         expectedStatus.setText(state.expectedHttpStatus());
         timeout.setText(state.healthTimeoutSeconds());
         stability.setText(state.tcpStabilitySeconds());
@@ -109,7 +112,7 @@ final class DeploymentForm {
                 databaseDetails.getText(), ((HealthMode) healthMode.getSelectedItem()).name(), healthEndpoint.getText(),
                 expectedStatus.getText(), timeout.getText(), stability.getText(), accessUrl.getText(), jvmArguments.getText(),
                 applicationArguments.getText(), containerPorts.getText(), containerVolumes.getText(),
-                (DeploymentRuntimeSpecification.ContainerEngineType) containerEngine.getSelectedItem(), experimentalAdapterRisk.isSelected());
+                (DeploymentRuntimeSpecification.ContainerEngineType) containerEngine.getSelectedItem(), experimentalAdapterRisk.isSelected(), applicationDeclaration.getText());
     }
 
     void applyRuntimeSuggestions(ReviewedSourcePreparation preparation) {
@@ -155,6 +158,6 @@ final class DeploymentForm {
     private enum HealthMode {
         /** Source-backed automatic selection. / 依据源码自动选择。 */ AUTOMATIC,
         /** HTTP health check. / HTTP 健康检查。 */ HTTP,
-        /** TCP health check. / TCP 健康检查。 */ TCP
+        /** TCP health check. / TCP 健康检查。 */ TCP, PROCESS, COMMAND, UDP
     }
 }

@@ -7,6 +7,27 @@ case "$verb" in
   *) require_deployer ;;
 esac
 case "$verb" in
+  publish-deployment|publish-container|rollback-deployment|rollback-deployment-first|rollback-container|rollback-container-first|retain)
+    application_maintenance "${1:-}"
+    application_operation_token=
+    case "$verb" in
+      publish-*) require_digest "$3"; application_operation_token="deployment-$3" ;;
+      rollback-*) require_digest "$2"; application_operation_token="deployment-$2" ;;
+      retain) application_operation_token="deployment-$(basename -- "$(readlink -f -- "$(app_root "$1")/current")")" ;;
+    esac
+    application_marker="$(application_lock_directory "$1")/maintenance"
+    if [ -e "$application_marker" ]; then
+      assert_root_owned_regular "$application_marker"
+      [ "$(cat -- "$application_marker")" = "$application_operation_token" ] || reject application-maintenance-in-progress
+    elif [[ "$verb" = publish-* ]]; then
+      printf '%s\n' "$application_operation_token" > "$application_marker"; chmod 600 -- "$application_marker"
+    fi ;;
+esac
+case "$verb" in
+  application-maintenance) application_maintenance_control "$@" ;;
+  application-health) application_health "$@" ;;
+  app-run) application_job "$1" "$2" run "${@:3}" ;;
+  app-client) application_job "$1" "$2" client "${@:3}" ;;
   probe)
     [ "$#" -eq 0 ] || reject probe-arguments
     printf 'HELPER=1\nPROTOCOL=%s\n' "$helper_protocol"
@@ -37,6 +58,7 @@ case "$verb" in
   backup-discard) backup_discard_operation "$@" ;;
   restore-preflight) restore_preflight "$@" ;;
   restore-prepare) restore_prepare_component "$@" ;;
+  restore-application-health) restore_application_health "$@" ;;
   restore-start-candidate) restore_start_candidate "$@" ;;
   restore-stop-candidate) restore_stop_candidate "$@" ;;
   restore-mark-quiesced) restore_mark_quiesced "$@" ;;

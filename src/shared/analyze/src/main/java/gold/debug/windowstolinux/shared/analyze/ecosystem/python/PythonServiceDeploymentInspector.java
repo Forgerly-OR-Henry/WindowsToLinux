@@ -50,7 +50,7 @@ public final class PythonServiceDeploymentInspector implements DeploymentTypeIns
         PythonBuildFacts project = inspected.orElseThrow();
         List<LocalizedMessage> missing = new ArrayList<>();
         List<LocalizedMessage> conflicts = new ArrayList<>();
-        if (project.lockFiles().isEmpty()) {
+        if (project.lockFiles().isEmpty() && project.buildTool() != gold.debug.windowstolinux.shared.model.project.DeploymentBuildToolType.PYTHON_STDLIB) {
             missing.add(LocalizedMessage.of("analysis.deployment.missing.pythonLockfile"));
         } else if (project.lockFiles().size() > 1) {
             conflicts.add(LocalizedMessage.of("analysis.deployment.conflict.multiplePythonLockfiles"));

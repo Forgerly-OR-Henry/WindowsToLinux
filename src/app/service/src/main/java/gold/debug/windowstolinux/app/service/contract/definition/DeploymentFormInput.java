@@ -1,5 +1,7 @@
 package gold.debug.windowstolinux.app.service.contract.definition;
 
+import gold.debug.windowstolinux.shared.model.deployment.DatabaseReviewMode;
+
 import gold.debug.windowstolinux.shared.model.project.DeploymentProjectType;
 import gold.debug.windowstolinux.shared.model.project.DeploymentRuntimeSpecification.ContainerEngineType;
 import java.util.Objects;
@@ -10,7 +12,16 @@ public record DeploymentFormInput(boolean detectType, DeploymentProjectType proj
         String configuration, String secrets, DatabaseReviewMode databaseMode, String databaseDetails,
         String healthMode, String healthEndpoint, String expectedStatus, String timeout, String stability,
         String accessUrl, String jvmArguments, String arguments, String ports, String volumes,
+        ContainerEngineType containerEngine, boolean experimentalAdapterRisk, String applicationDeclaration) {
+    public DeploymentFormInput(boolean detectType, DeploymentProjectType projectType,
+        String primary, String secondary, String version, String jvmTarget,
+        String configuration, String secrets, DatabaseReviewMode databaseMode, String databaseDetails,
+        String healthMode, String healthEndpoint, String expectedStatus, String timeout, String stability,
+        String accessUrl, String jvmArguments, String arguments, String ports, String volumes,
         ContainerEngineType containerEngine, boolean experimentalAdapterRisk) {
+        this(detectType, projectType, primary, secondary, version, jvmTarget, configuration, secrets, databaseMode, databaseDetails, healthMode, healthEndpoint, expectedStatus, timeout, stability, accessUrl, jvmArguments, arguments, ports, volumes, containerEngine, experimentalAdapterRisk, "");
+    }
+
     /** Keeps incomplete controls as data until service-side parsing. / 将未完成控件保留为数据，交由服务解析。 */
     public DeploymentFormInput {
         Objects.requireNonNull(projectType, "projectType");

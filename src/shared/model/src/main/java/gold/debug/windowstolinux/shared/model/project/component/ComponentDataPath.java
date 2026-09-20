@@ -7,7 +7,7 @@ import java.util.Objects;
  *
  * <p>一个具有显式模式和访问契约的逻辑持久化数据路径。
  *
- * @param path managed relative data path / 受管相对数据路径
+ * @param path declared application access path / 已声明的应用访问路径
  * @param access access mode / 访问模式
  * @param schemaId stable compatibility schema identifier / 稳定兼容模式标识符
  * @param reversible whether writes can be reversed by this deployment transaction / 写入能否由本次部署事务回退
@@ -15,7 +15,7 @@ import java.util.Objects;
 public record ComponentDataPath(String path, AccessMode access, String schemaId, boolean reversible) {
     /** Validates a bounded logical data contract. / 验证有界逻辑数据契约。 */
     public ComponentDataPath {
-        path = requireRelative(path);
+        path = gold.debug.windowstolinux.shared.model.managed.ManagedStorageLocation.validatedPath(path);
         access = Objects.requireNonNull(access, "access");
         schemaId = requireIdentifier(schemaId, "schemaId");
         if (access == AccessMode.READ_ONLY && !reversible) {
@@ -29,15 +29,6 @@ public record ComponentDataPath(String path, AccessMode access, String schemaId,
         READ_ONLY,
         /** Reads and writes. / 读写。 */
         READ_WRITE
-    }
-
-    private static String requireRelative(String value) {
-        value = Objects.requireNonNull(value, "path").trim().replace('\\', '/');
-        if (!value.matches("[a-z0-9][a-z0-9._/-]{0,254}") || value.startsWith("/")
-                || value.contains("..") || value.contains("//")) {
-            throw new IllegalArgumentException("data path must be a bounded managed relative path");
-        }
-        return value;
     }
 
     private static String requireIdentifier(String value, String name) {

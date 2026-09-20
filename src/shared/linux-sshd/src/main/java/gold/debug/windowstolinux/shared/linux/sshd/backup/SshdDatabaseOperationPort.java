@@ -164,7 +164,7 @@ public final class SshdDatabaseOperationPort implements RemoteDatabasePort {
     }
 
     private static String reference(ConnectionProfile profile) {
-        if (profile instanceof ConnectionProfile.Sqlite sqlite) return sqlite.relativePath();
+        if (profile instanceof ConnectionProfile.Sqlite sqlite) return sqlite.bindingId();
         ConnectionProfile.Server server = (ConnectionProfile.Server) profile;
         return server.host() + ":" + server.port() + "/" + server.database();
     }

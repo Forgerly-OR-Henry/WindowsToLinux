@@ -56,7 +56,7 @@ class ManagedHelperBundleTest {
     void exposesOnlyVersionedTypedOperationsAndKeepsLegacyGradleReadCompatibility() {
         String helper = ManagedHelperBundle.renderScript();
 
-        assertEquals(7, ManagedHelperBundle.PROTOCOL_VERSION);
+        assertEquals(9, ManagedHelperBundle.PROTOCOL_VERSION);
         assertTrue(helper.contains("printf 'HELPER=1\\nPROTOCOL=%s\\n' \"$helper_protocol\""));
         assertTrue(helper.contains("gradle)"));
         assertTrue(helper.contains("[ \"$kind\" != gradle ] || reject legacy-gradle-write"));
@@ -76,14 +76,15 @@ class ManagedHelperBundleTest {
         assertTrue(helper.contains("database-recover-candidate) database_recover_candidate \"$@\""));
         assertTrue(helper.contains("database-discard-candidate) database_discard_candidate \"$@\""));
         assertTrue(helper.contains("assert_root_owned_regular \"$(restore_activation_root \"$database_activation_candidate\")/.application-quiesced\""));
-        assertTrue(helper.contains("[ \"$database_activation_type\" != sqlite ] || reject database-sqlite-activation-unsupported"));
+        assertTrue(helper.contains("database_commit_sqlite()"));
+        assertTrue(helper.contains("database_recover_sqlite()"));
         assertTrue(helper.contains("--lock-all-tables --routines --events --triggers"));
         assertTrue(helper.contains("[ \"${#database_name}\" -le 63 ] || reject database-postgresql-name-too-long"));
         assertTrue(helper.contains("PREVIOUS_VERIFIED=1\\nCANDIDATE_REMOVED=1"));
         assertTrue(helper.contains("backup-create) backup_create_artifact \"$@\""));
         assertTrue(helper.contains("backup-read) backup_read_artifact \"$@\""));
         assertTrue(helper.contains("backup-discard) backup_discard_operation \"$@\""));
-        assertTrue(helper.contains("data_root=\"$base_root/data\""));
+        assertTrue(helper.contains("data_root=/var/opt/windowstolinux/apps"));
         assertTrue(helper.contains("rm -f -- \"$pgpass\"; reject database-restore-failed"));
         assertTrue(helper.contains("DROP DATABASE IF EXISTS"));
         assertTrue(helper.contains("dropdb --if-exists --force --no-password"));
@@ -108,7 +109,8 @@ class ManagedHelperBundleTest {
         assertTrue(helper.contains("tr -d '\\r' < \"$manifest/META-INF/MANIFEST.MF\" | grep -Eq"));
         assertTrue(helper.contains("if [ ! -e \"$candidate/.windowstolinux-owner\" ] && [ ! -L \"$candidate/.windowstolinux-owner\" ]; then"));
         assertTrue(helper.contains("[ ! -e \"$release/.windowstolinux-owner\" ] && [ ! -L \"$release/.windowstolinux-owner\" ] || reject release-exists"));
-        assertTrue(helper.contains("[ \"$previous_path\" = \"$release\" ] && [ \"$previous_running\" -eq 1 ]"));
+        assertTrue(helper.contains("[ \"$previous_path\" = \"$release\" ]; then"));
+        assertTrue(helper.contains("reject release-parameters-changed"));
         assertTrue(helper.contains("ln -sfnT -- \"$previous\" \"$root/current\""));
         assertTrue(helper.contains("install -o root -g root -m 644 -- \"$snapshot/unit\" \"$unit\""));
         assertTrue(helper.contains("if [ \"$previous_runtime\" = active ]; then systemctl start"));

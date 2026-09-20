@@ -139,7 +139,7 @@ class UbuntuAdditionalLanguageAcceptanceTest {
         Path repository = Path.of("").toAbsolutePath();
         while (repository != null && !Files.isDirectory(repository.resolve("test"))) repository = repository.getParent();
         assertNotNull(repository, "repository fixtures are required");
-        Path template = repository.resolve("test").resolve(relative);
+        Path template = repository.resolve("test/single-language").resolve(relative);
         try (var paths = Files.walk(template)) {
             for (Path path : paths.toList()) {
                 Path destination = target.resolve(template.relativize(path));

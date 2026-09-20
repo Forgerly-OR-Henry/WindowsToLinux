@@ -1,7 +1,7 @@
 package gold.debug.windowstolinux.app.service.deployment.automatic;
 
 import gold.debug.windowstolinux.app.service.contract.AiApplicationFacade;
-import gold.debug.windowstolinux.app.service.contract.definition.AutomaticDeploymentInteraction;
+import gold.debug.windowstolinux.shared.deploy.contract.AutomaticDeploymentInteraction;
 import gold.debug.windowstolinux.shared.analyze.ecosystem.db.DatabaseProjectInspector;
 import gold.debug.windowstolinux.shared.model.ecosystem.db.*;
 import gold.debug.windowstolinux.shared.model.deployment.DeploymentInputField;

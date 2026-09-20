@@ -23,6 +23,13 @@ public final class ManagedContentArguments {
             values.add(binding.bindingId());
             values.add(binding.dataPath().path());
             values.add(binding.dataPath().access() == ComponentDataPath.AccessMode.READ_ONLY ? "ro" : "rw");
+            values.add(binding.resourceType().name());
+            values.add(binding.location().type().name());
+            values.add(binding.location().path().isEmpty() ? "-" : binding.location().path());
+            values.add(binding.databaseFileName().isEmpty() ? "-" : binding.databaseFileName());
+            values.add(binding.seedFile().isEmpty() ? "-" : binding.seedFile());
+            values.add(binding.initializationFiles().isEmpty() ? "-" : String.join(",", binding.initializationFiles()));
+            values.add(binding.configurationSha256().isEmpty() ? "-" : binding.configurationSha256());
         });
         return List.copyOf(values);
     }

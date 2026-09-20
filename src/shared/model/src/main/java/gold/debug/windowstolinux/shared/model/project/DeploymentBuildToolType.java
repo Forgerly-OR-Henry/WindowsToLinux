@@ -26,6 +26,8 @@ public enum DeploymentBuildToolType {
     YARN,
     /** pip with one fully hashed requirements lock. / 搭配完整哈希依赖锁的 pip。 */
     PIP_LOCKED,
+    /** Explicit standard-library-only Python project. */
+    PYTHON_STDLIB,
     /** Pipenv with its checked-in lock. / 搭配已检入锁文件的 Pipenv。 */
     PIPENV_LOCKED,
     /** Poetry with its checked-in lock. / 搭配已检入锁文件的 Poetry。 */

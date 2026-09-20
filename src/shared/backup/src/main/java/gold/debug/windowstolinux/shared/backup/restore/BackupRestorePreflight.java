@@ -17,7 +17,7 @@ public final class BackupRestorePreflight {
     public List<String> verify(BackupRestorePlan plan) throws BackupException {
         List<String> evidence = new ArrayList<>();
         if (!plan.validation().manifest().supportsAutomaticActivation()) {
-            throw failed("restore manifest lacks schema-v4 activation bindings or required encrypted secrets");
+            throw failed("restore manifest lacks schema-v5 activation bindings or required encrypted secrets");
         }
         if (!Files.isDirectory(plan.candidate().root(), LinkOption.NOFOLLOW_LINKS)
                 || Files.isSymbolicLink(plan.candidate().root())) {

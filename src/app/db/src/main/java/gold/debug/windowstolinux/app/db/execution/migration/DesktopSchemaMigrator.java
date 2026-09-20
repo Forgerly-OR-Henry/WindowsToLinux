@@ -19,7 +19,7 @@ public final class DesktopSchemaMigrator {
      *
      * <p>公开 {@code CURRENT_SCHEMA_VERSION} 常量。
      */
-    public static final int CURRENT_SCHEMA_VERSION = 15;
+    public static final int CURRENT_SCHEMA_VERSION = 16;
 
     private DesktopSchemaMigrator() {
     }
@@ -312,6 +312,7 @@ public final class DesktopSchemaMigrator {
                             """);
                 }
                 if (version < 15) AiPrioritySchemaMigration.apply(statement);
+                if (version < 16) ApplicationRuntimeSchemaMigration.apply(statement);
                 statement.execute("PRAGMA user_version = " + CURRENT_SCHEMA_VERSION);
                 connection.commit();
             } catch (SQLException exception) {

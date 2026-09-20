@@ -8,22 +8,23 @@ podman_quadlet_autostart_enabled() {
 podman_cni_marker_path() { printf '%s/.windowstolinux-podman-cni-ports' "$(app_root "$1")"; }
 podman_cni_comment() { printf 'windowstolinux-podman-%s' "$1"; }
 podman_cni_clear_rules() {
-  local app="$1" marker rule ip port extra comment
+  local app="$1" marker rule ip port protocol extra comment
   marker="$(podman_cni_marker_path "$app")"; comment="$(podman_cni_comment "$app")"
   if [ ! -e "$marker" ] && [ ! -L "$marker" ]; then return; fi
   assert_root_owned_regular "$marker"
   while IFS= read -r rule; do
-    IFS=: read -r ip port extra <<< "$rule"
+    IFS=: read -r protocol ip port extra <<< "$rule"
     [ -n "$ip" ] && [ -n "$port" ] && [ -z "$extra" ] || reject podman-cni-marker
+    case "$protocol" in tcp|udp) ;; *) reject podman-cni-marker ;; esac
     [[ "$ip" =~ ^([0-9]{1,3}[.]){3}[0-9]{1,3}$ ]] || reject podman-cni-marker
     [[ "$port" =~ ^[0-9]{1,5}$ ]] && [ "$port" -ge 1 ] && [ "$port" -le 65535 ] || reject podman-cni-marker
-    iptables -w -D CNI-ADMIN -d "$ip/32" -p tcp --dport "$port" -m comment --comment "$comment" -j ACCEPT 2>/dev/null || true
+    iptables -w -D CNI-ADMIN -d "$ip/32" -p "$protocol" --dport "$port" -m comment --comment "$comment" -j ACCEPT 2>/dev/null || true
   done < "$marker"
   rm -f -- "$marker"
 }
 podman_cni_forward() {
   [ "$#" -eq 2 ] || reject podman-cni-forward-arguments
-  local app="$1" manifest="$2" backend image ip root marker tmp spec port comment
+  local app="$1" manifest="$2" backend image ip root marker tmp spec port protocol comment
   require_app "$app"; require_digest "$manifest"
   container_current_release "$app" "$manifest"
   [ "$previous_present" -eq 1 ] && [ "$container_engine" = podman ] || reject podman-cni-current
@@ -39,10 +40,10 @@ podman_cni_forward() {
   tmp="$(mktemp "$root/.windowstolinux-podman-cni.XXXXXX")"
   trap 'rm -f -- "$tmp"' EXIT
   for spec in "${container_ports[@]}"; do
-    port="${spec#*:}"
-    iptables -w -C CNI-ADMIN -d "$ip/32" -p tcp --dport "$port" -m comment --comment "$comment" -j ACCEPT 2>/dev/null \
-      || iptables -w -I CNI-ADMIN 1 -d "$ip/32" -p tcp --dport "$port" -m comment --comment "$comment" -j ACCEPT
-    printf '%s:%s\n' "$ip" "$port" >> "$tmp"
+    protocol="${spec##*/}"; port="${spec%/*}"; port="${port##*:}"
+    iptables -w -C CNI-ADMIN -d "$ip/32" -p "$protocol" --dport "$port" -m comment --comment "$comment" -j ACCEPT 2>/dev/null \
+      || iptables -w -I CNI-ADMIN 1 -d "$ip/32" -p "$protocol" --dport "$port" -m comment --comment "$comment" -j ACCEPT
+    printf '%s:%s:%s\n' "$protocol" "$ip" "$port" >> "$tmp"
   done
   install -o root -g root -m 600 -- "$tmp" "$marker"
   rm -f -- "$tmp"; trap - EXIT

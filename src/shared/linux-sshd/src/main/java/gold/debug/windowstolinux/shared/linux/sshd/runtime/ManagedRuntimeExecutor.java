@@ -64,9 +64,7 @@ public final class ManagedRuntimeExecutor {
     public LifecycleObservation execute(ManagedApplication application, DeploymentRuntimeSpecification runtime,
                                         LifecycleAction action) throws LinuxOperationException {
         Objects.requireNonNull(runtime, "runtime");
-        ManagedRuntimeIdentity identity = runtime instanceof DeploymentRuntimeSpecification.Container container
-                ? new ManagedRuntimeIdentity(ManagedRuntimeIdentity.Kind.CONTAINER, Optional.of(container.engine()))
-                : new ManagedRuntimeIdentity(ManagedRuntimeIdentity.Kind.DEPLOYMENT, Optional.empty());
+        ManagedRuntimeIdentity identity = runtimeKinds.inspect(application);
         return execute(application, identity, action, runtime.healthCheck(), false);
     }
 
@@ -92,6 +90,9 @@ public final class ManagedRuntimeExecutor {
             verifyPostcondition(action, after);
             return after;
         }
+        if (identity.mode() == gold.debug.windowstolinux.shared.model.project.application.ApplicationWorkload.ExecutionMode.ON_DEMAND)
+            throw LinuxOperationException.create(LinuxOperationFailureType.LIFECYCLE_ACTION_FAILED,
+                    "On-demand tools have no lifecycle actions; use the reviewed application command");
         String verb = verb(action);
         RemoteStepResult result = identity.kind() == ManagedRuntimeIdentity.Kind.CONTAINER
                 ? containerProtocol.lifecycle(application, verb)
@@ -116,6 +117,9 @@ public final class ManagedRuntimeExecutor {
 
     private LifecycleObservation observe(ManagedApplication application, ManagedRuntimeIdentity identity)
             throws LinuxOperationException {
+        if (identity.mode() == gold.debug.windowstolinux.shared.model.project.application.ApplicationWorkload.ExecutionMode.ON_DEMAND)
+            return new LifecycleObservation(application, RuntimeState.INSTALLED, AutostartState.DISABLED, true,
+                    java.time.Instant.now(), "Owned on-demand application is installed; no persistent process required");
         return switch (identity.kind()) {
             case ORDINARY -> systemdObservation.observe(application);
             case DEPLOYMENT -> deploymentProtocol.observe(application);

@@ -84,6 +84,8 @@ public final class ReviewedMultiComponentDeploymentService {
         }
         contexts.values().forEach(context -> context.events = new DeploymentEventJournal(progress));
         List<DeploymentEvent> applicationEvents = new DeploymentEventJournal(progress);
+        for (var context : contexts.values()) for (var message : gold.debug.windowstolinux.shared.deploy.input.ManagedStoragePreparation.preview(context.component.request()))
+            applicationEvents.add(new DeploymentEvent(DeploymentTraceEvent.APPLICATION_PREFLIGHT,true,message,message.arguments().toString(),Optional.empty()));
         boolean committed = false;
         try (DeploymentRemoteSession session = gateway.connect(endpoint, credential.duplicate(), hostKeyVerifier)) {
             Optional<MultiComponentDeploymentResult> rejected = preflight(plan, contexts, session, applicationEvents);
@@ -94,6 +96,8 @@ public final class ReviewedMultiComponentDeploymentService {
             stopOldComponents(plan, contexts, session, applicationEvents);
             publishAndCheck(plan, contexts, applicationHealth, session, applicationEvents);
             observeAll(plan, contexts, session, applicationEvents);
+            for (var context : contexts.values()) session.backupArtifacts().endMaintenance(
+                    context.component.application(), "deployment-" + context.releaseIdentity);
             committed = true;
             boolean retained = true;
             for (MultiComponentTransactionContext context : contexts.values()) {
@@ -124,6 +128,15 @@ public final class ReviewedMultiComponentDeploymentService {
                             OperationIdentity.create(), "Deployment size arithmetic exceeded its bounded range")));
             return MultiComponentRecoveryCoordinator.recover(
                     plan, contexts, gateway, endpoint, credential, hostKeyVerifier, applicationEvents);
+        } catch (RuntimeException failure) {
+            StackTraceElement[] frames = failure.getStackTrace();
+            applicationEvents.add(DeploymentEvent.failed(DeploymentTraceEvent.MULTI_COMPONENT_LINUX_OPERATION,
+                    FailureDescriptor.create(DeploymentExecutionFailureType.SWITCH_UNVERIFIED,
+                            OperationIdentity.create(), "Unexpected deployment failure: " + failure.getClass().getSimpleName()
+                                    + (frames.length == 0 ? "" : " at " + frames[0]))));
+            if (committed) return committedResult(plan, contexts, applicationEvents, true);
+            return MultiComponentRecoveryCoordinator.recover(
+                    plan, contexts, gateway, endpoint, credential, hostKeyVerifier, applicationEvents);
         } finally {
             credential.clear();
         }
@@ -136,6 +149,8 @@ public final class ReviewedMultiComponentDeploymentService {
                 "All reviewed components and the application health gate were verified"));
         var result = MultiComponentTransactionContext.result(DeploymentStatus.SUCCEEDED, events, contexts,
                 Optional.of(applicationIdentity(plan, contexts)));
+        result = result.withComponentReleaseIdentities(contexts.entrySet().stream().collect(
+                java.util.stream.Collectors.toMap(Map.Entry::getKey, entry -> entry.getValue().releaseIdentity)));
         return cleanupPending ? result.withNonFatalFailure(FailureDescriptor.create(
                 DeploymentExecutionFailureType.POST_PUBLICATION_CLEANUP_PENDING, OperationIdentity.create(),
                 "Verified component release identities remain active; temporary resource cleanup needs attention")) : result;
@@ -269,7 +284,7 @@ public final class ReviewedMultiComponentDeploymentService {
             var publish = session.publishDeployment(context.component.application(), request.facts(), context.workspace,
                     context.build, context.releaseIdentity, request.runtime(), DeploymentInputMapper.manifest(context.inputs),
                     new ManagedContentPublication(plan.applicationId(), context.component.componentId(),
-                            DeploymentInputMapper.files(context.component.resourceBindings().fileBindings())), context.snapshot);
+                            DeploymentInputMapper.storage(context.component.application().id(), context.component.resourceBindings(), request.runtime())), context.snapshot);
             context.event(DeploymentTraceEvent.PUBLISH, publish.succeeded(), publish.evidence());
             if (!publish.succeeded()) throw DeploymentSwitchException.create(DeploymentTraceEvent.PUBLISH,
                     DeploymentExecutionFailureType.PUBLISH_FAILED, "A component publication step failed");
@@ -300,7 +315,7 @@ public final class ReviewedMultiComponentDeploymentService {
             context.observation = session.observeDeployment(context.component.application(),
                     context.component.request().runtime());
             context.event(DeploymentTraceEvent.FINAL_OBSERVATION, context.observation.ownershipVerified(), context.observation.evidence());
-            if (!context.observation.ownershipVerified() || context.observation.runtimeState() != RuntimeState.RUNNING) {
+            if (!context.observation.ownershipVerified() || context.observation.runtimeState() != (context.component.request().runtime().workload().mode() == gold.debug.windowstolinux.shared.model.project.application.ApplicationWorkload.ExecutionMode.ON_DEMAND ? RuntimeState.INSTALLED : RuntimeState.RUNNING)) {
                 throw DeploymentSwitchException.create(DeploymentTraceEvent.FINAL_OBSERVATION,
                         DeploymentExecutionFailureType.OBSERVATION_UNVERIFIED,
                         "A final component runtime observation could not be verified");

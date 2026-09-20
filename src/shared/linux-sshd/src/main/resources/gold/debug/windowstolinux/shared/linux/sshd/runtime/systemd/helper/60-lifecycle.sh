@@ -177,13 +177,13 @@ inspect_managed_runtime() {
       || reject runtime-marker-conflict
     assert_deployment_current_or_empty "$app" "$manifest"
     [ "$previous_present" -eq 1 ] || reject lifecycle-unmanaged
-    printf 'KIND=deployment\n'
+    printf 'KIND=deployment\nMODE=%s\n' "$application_mode"
   elif [ -e "$current/.windowstolinux-container-parameters" ] || [ -L "$current/.windowstolinux-container-parameters" ]; then
     [ ! -e "$current/.windowstolinux-deployment-parameters" ] && [ ! -L "$current/.windowstolinux-deployment-parameters" ] \
       || reject runtime-marker-conflict
     container_current_release "$app" "$manifest"
     [ "$previous_present" -eq 1 ] || reject lifecycle-unmanaged
-    printf 'KIND=container\nENGINE=%s\n' "$container_engine"
+    printf 'KIND=container\nENGINE=%s\nMODE=%s\n' "$container_engine" "$application_mode"
   else
     [ ! -e "$current/.windowstolinux-container-engine" ] && [ ! -L "$current/.windowstolinux-container-engine" ] \
       || reject runtime-marker-incomplete

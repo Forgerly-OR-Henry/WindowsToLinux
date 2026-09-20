@@ -5,7 +5,7 @@ configuration_path() {
   printf '%s/%s.env' "$(configuration_directory "$1" "$2")" "$3"
 }
 secret_revision_directory() {
-  printf '%s/%s/%s/%s' "$secrets_root" "$1" "$2" "$3"
+  printf '%s/%s/secrets/%s/%s' "$secrets_root" "$1" "$2" "$3"
 }
 secret_revision_path() {
   printf '%s/value' "$(secret_revision_directory "$1" "$2" "$3")"
@@ -44,7 +44,8 @@ stage_configuration() {
   [ "$format" = systemd ] || [ "$format" = container ] || reject configuration-format
   initialise_controlled_roots
   directory="$(configuration_directory "$app" "$configuration_digest")"
-  install -d -o root -g root -m 700 -- "$configurations_root/$app" "$directory"
+  install -d -o root -g root -m 755 -- "$configurations_root/$app"
+  install -d -o root -g root -m 700 -- "$directory"
   assert_root_owned_directory "$configurations_root/$app"; assert_root_owned_directory "$directory"
   target="$(configuration_path "$app" "$configuration_digest" "$format")"
   receive_immutable_payload "$target" "$payload_digest" "$payload_size"
@@ -56,8 +57,9 @@ stage_secret() {
   require_digest "$payload_digest"; require_payload_size "$payload_size"; [ "$payload_size" -gt 0 ] || reject secret-empty
   initialise_controlled_roots
   directory="$(secret_revision_directory "$app" "$identifier" "$revision")"
-  install -d -o root -g root -m 700 -- "$secrets_root/$app" "$secrets_root/$app/$identifier" "$directory"
-  assert_root_owned_directory "$secrets_root/$app"; assert_root_owned_directory "$secrets_root/$app/$identifier"
+  install -d -o root -g root -m 755 -- "$secrets_root/$app"
+  install -d -o root -g root -m 700 -- "$secrets_root/$app/secrets" "$secrets_root/$app/secrets/$identifier" "$directory"
+  assert_root_owned_directory "$secrets_root/$app"; assert_root_owned_directory "$secrets_root/$app/secrets/$identifier"
   assert_root_owned_directory "$directory"
   target="$(secret_revision_path "$app" "$identifier" "$revision")"
   receive_immutable_payload "$target" "$payload_digest" "$payload_size"
@@ -67,11 +69,12 @@ normalize_secret_environment_name() {
 }
 parse_deployment_inputs() {
   [ "$#" -ge 2 ] || reject deployment-input-arguments
-  runtime_identity_policy=LEGACY_UNSPECIFIED
-  if [ "$1" = identity-v1 ]; then
+  [ "$1" = identity-v2 ] || reject unsupported-runtime-format
+  [ "$1" = identity-v2 ] || reject unsupported-runtime-format
+  if [ "$1" = identity-v2 ]; then
     [ "$#" -ge 4 ] || reject runtime-identity-arguments
-    runtime_identity_policy="$2"; shift 2
-    case "$runtime_identity_policy" in SYSTEMD_DYNAMIC|CONTAINER_NON_ROOT) ;; *) reject runtime-identity-policy ;; esac
+    runtime_identity_policy="$2"; parse_application_payload "$3"; shift 3
+    case "$runtime_identity_policy" in SYSTEMD_STATIC|CONTAINER_NON_ROOT) ;; *) reject runtime-identity-policy ;; esac
   fi
   deployment_configuration_digest="$1"; shift; require_digest "$deployment_configuration_digest"
   require_count "$1"; local secret_count="$1"; shift

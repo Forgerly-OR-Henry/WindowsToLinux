@@ -30,6 +30,7 @@ public final class DeploymentSupportCatalog {
                 architecture(DeploymentProjectType.NODE_SERVICE, DeploymentBuildToolType.PNPM),
                 architecture(DeploymentProjectType.NODE_SERVICE, DeploymentBuildToolType.YARN),
                 architecture(DeploymentProjectType.PYTHON_SERVICE, DeploymentBuildToolType.PIP_LOCKED),
+                architecture(DeploymentProjectType.PYTHON_SERVICE, DeploymentBuildToolType.PYTHON_STDLIB),
                 architecture(DeploymentProjectType.PYTHON_SERVICE, DeploymentBuildToolType.PIPENV_LOCKED),
                 architecture(DeploymentProjectType.PYTHON_SERVICE, DeploymentBuildToolType.POETRY_LOCKED),
                 architecture(DeploymentProjectType.PYTHON_SERVICE, DeploymentBuildToolType.UV_LOCKED),
@@ -74,6 +75,7 @@ public final class DeploymentSupportCatalog {
                 default -> invalid(type, buildTool);
             };
             case PYTHON_SERVICE -> switch (buildTool) {
+                case PYTHON_STDLIB -> experimental(SourceLanguageType.PYTHON, "stdlib", "Standard-library Python application");
                 case PIP_LOCKED -> formal(SourceLanguageType.PYTHON, "pip", "Python service");
                 case PIPENV_LOCKED -> experimental(SourceLanguageType.PYTHON, "pipenv", "Python service");
                 case POETRY_LOCKED -> experimental(SourceLanguageType.PYTHON, "poetry", "Python service");

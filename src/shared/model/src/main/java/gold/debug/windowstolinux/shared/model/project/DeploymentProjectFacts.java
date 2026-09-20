@@ -33,7 +33,8 @@ public record DeploymentProjectFacts(
         List<AnalysisEvidence> evidence,
         List<LocalizedMessage> conflicts,
         List<LocalizedMessage> missingInformation,
-        List<gold.debug.windowstolinux.shared.model.toolchain.ToolchainRequirement> toolchainRequirements
+        List<gold.debug.windowstolinux.shared.model.toolchain.ToolchainRequirement> toolchainRequirements,
+        String buildDirectory
 ) {
     /**
      * Creates a {@code DeploymentProjectFacts} instance.
@@ -41,6 +42,7 @@ public record DeploymentProjectFacts(
      * <p>创建 {@code DeploymentProjectFacts} 实例。
      */
     public DeploymentProjectFacts {
+        buildDirectory = gold.debug.windowstolinux.shared.model.project.application.ApplicationCommand.relative(buildDirectory, true);
         sourceRoot = Objects.requireNonNull(sourceRoot, "sourceRoot").toAbsolutePath().normalize();
         applicationId = Objects.requireNonNull(applicationId, "applicationId").trim();
         if (!applicationId.matches("[a-z0-9][a-z0-9-]{0,62}")) {
@@ -68,6 +70,17 @@ public record DeploymentProjectFacts(
         toolchainRequirements = List.copyOf(Objects.requireNonNull(toolchainRequirements, "toolchainRequirements"));
     }
 
+    public DeploymentProjectFacts(Path root, String id, DeploymentProjectType type, DeploymentBuildToolType tool,
+            DeploymentSupportProfile support, ProjectLanguageFacts language, List<AnalysisEvidence> evidence,
+            List<LocalizedMessage> conflicts, List<LocalizedMessage> missing,
+            List<gold.debug.windowstolinux.shared.model.toolchain.ToolchainRequirement> requirements) {
+        this(root, id, type, tool, support, language, evidence, conflicts, missing, requirements, "");
+    }
+    public DeploymentProjectFacts inBundle(Path root, String directory, String bundleApplicationId) {
+        return new DeploymentProjectFacts(root, bundleApplicationId, projectType, buildTool, support, languageFacts,
+                evidence, conflicts, missingInformation, toolchainRequirements, directory);
+    }
+
     /** Existing callers without source toolchain declarations retain their original facts. / 没有工具链声明的既有调用保留原事实。 */
     public DeploymentProjectFacts(Path sourceRoot, String applicationId, DeploymentProjectType projectType,
             DeploymentBuildToolType buildTool, DeploymentSupportProfile support, ProjectLanguageFacts languageFacts,
@@ -78,7 +91,7 @@ public record DeploymentProjectFacts(
 
     public DeploymentProjectFacts withToolchains(List<gold.debug.windowstolinux.shared.model.toolchain.ToolchainRequirement> requirements) {
         return new DeploymentProjectFacts(sourceRoot, applicationId, projectType, buildTool, support, languageFacts,
-                evidence, conflicts, missingInformation, requirements);
+                evidence, conflicts, missingInformation, requirements, buildDirectory);
     }
 
     /** Creates facts for callers that have no separate language observations. / 为没有单独语言观测的调用方创建事实。 */

@@ -31,15 +31,15 @@ public final class PhpCliBuildRenderer implements DeploymentBuildRenderer {
                 command -v php >/dev/null
                 php -r 'printf("%%d.%%d", PHP_MAJOR_VERSION, PHP_MINOR_VERSION);' | grep -Fx "${WTL_PHP_BRANCH:-%s}"
                 test -f ./windowstolinux-php.properties
-                test -f ./public/index.php
+                test -f ./%s
                 test ! -e ./composer.json
                 test ! -e ./composer.lock
                 mapfile -d '' -t sources < <(find -P . -type f -name '*.php' -print0 | LC_ALL=C sort -z)
                 test "${#sources[@]}" -ge 1
                 for source_file in "${sources[@]}"; do run php -n -l "$source_file"; done
-                test -z "$(find -P ./public -type l -print -quit)"
+                test -z "$(find -P . -type l -print -quit)"
                 printf 'ARTIFACT=%%s\n' ./public
-                """.formatted(version);
+                """.formatted(version, php.entrypoint());
         return SafeBuildScriptEnvelope.wrap(facts, workspace, limits, command);
     }
 }

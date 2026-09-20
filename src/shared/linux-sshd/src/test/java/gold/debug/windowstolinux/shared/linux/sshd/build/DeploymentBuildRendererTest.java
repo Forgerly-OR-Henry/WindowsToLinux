@@ -131,7 +131,7 @@ class DeploymentBuildRendererTest {
                 "server.rb", OptionalInt.of(8080)).contains("ruby -c"));
         String cmake = render(new CmakeBuildRenderer(), DeploymentBuildToolType.CMAKE,
                 new DeploymentRuntimeSpecification.CmakeService("w2l-release", "demo", "demo", TCP));
-        assertTrue(cmake.contains("cmake --preset \"$preset\""));
+        assertTrue(cmake.contains("cmake -S . -B .w2l/cmake-build"));
         assertTrue(cmake.contains("ldd \"./.w2l/bin/$target\""));
     }
 
@@ -279,7 +279,7 @@ class DeploymentBuildRendererTest {
                 assertTrue(build.contains("BUILD_TOOL=" + tool.name()), ecosystem + version);
                 if (ecosystem == gold.debug.windowstolinux.shared.model.toolchain.ToolchainEcosystemType.C
                         || ecosystem == gold.debug.windowstolinux.shared.model.toolchain.ToolchainEcosystemType.CPP) {
-                    assertTrue(build.contains("cmake --preset"));
+                    assertTrue(build.contains("cmake -S . -B .w2l/cmake-build"));
                     assertFalse(build.contains("-DCMAKE_C_STANDARD="));
                     continue;
                 }

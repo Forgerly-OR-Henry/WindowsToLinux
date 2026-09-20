@@ -190,6 +190,8 @@ public final class SetupScriptRenderer {
                 command -v tar >/dev/null 2>&1
                 prepare_check=gzip-command
                 command -v gzip >/dev/null 2>&1
+                prepare_check=sqlite3-command
+                command -v sqlite3 >/dev/null 2>&1
                 prepare_check=ss-command
                 command -v ss >/dev/null 2>&1
                 prepare_check=setsid-command

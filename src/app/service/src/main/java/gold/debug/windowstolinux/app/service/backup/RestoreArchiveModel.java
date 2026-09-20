@@ -23,7 +23,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
-/** Locally decoded exact schema-v4 state used before any target mutation. / 任何目标修改前在本地解码的精确 schema-v4 状态。 */
+/** Locally decoded exact schema-v5 state used before any target mutation. / 任何目标修改前在本地解码的精确 schema-v5 状态。 */
 record RestoreArchiveModel(
         PreparedBackupActivation activation,
         Map<String, BackupConfigurationDocument> configurations,
@@ -74,10 +74,6 @@ record RestoreArchiveModel(
             }
             return Optional.empty();
         }
-        if (type == BackupDatabaseType.SQLITE) {
-            throw BackupException.create(BackupFailureType.RESTORE_PREFLIGHT_FAILED,
-                    "SQLite physical activation is not supported by the current managed release mapping");
-        }
         if (databases.size() != 1 || members.size() != 1) {
             throw new IOException("automatic restore requires exactly one reviewed database binding and artifact");
         }
@@ -96,7 +92,7 @@ record RestoreArchiveModel(
                 activation.validation().manifest().applicationId(), owner.component().managedApplicationId(),
                 activation.localCandidate().inspection().applicationId() + "-"
                         + activation.validation().archiveSha256().substring(0, 16),
-                BackupDatabaseProfileMapper.profile(owner.binding().connection()), artifact);
+                BackupDatabaseProfileMapper.profile(owner.binding()), artifact);
         return Optional.of(new DatabaseMaterial(request,
                 activation.restoreCandidate().root().resolve(member.path()).normalize(), artifact));
     }

@@ -84,7 +84,7 @@ rollback_deployment() {
     assert_root_owned_regular "$candidate/.windowstolinux-deployment-parameters"
   fi
   stop_application_unit "$app"
-  restore_dynamic_state_migration "$snapshot"
+  if [ "$previous_kind" = deployment ]; then prepare_managed_data_bindings "$previous/source"; fi
   ln -sfnT -- "$previous" "$root/current"
   install -o root -g root -m 644 -- "$snapshot/unit" "$unit"
   systemctl daemon-reload
@@ -137,6 +137,7 @@ lifecycle_deployment() {
   case "$action" in start|stop|restart|enable|disable) ;; *) reject lifecycle-action ;; esac
   assert_deployment_current_or_empty "$app" "$manifest"
   [ "$previous_present" -eq 1 ] || reject lifecycle-unmanaged
+  [ "$application_mode" = DAEMON ] || reject application-lifecycle-not-applicable
   if [ "$action" = stop ]; then stop_requested_application_unit "$app"
   else systemctl "$action" "$(unit_name "$app")"; fi
   printf 'LIFECYCLE=%s\n' "$action"
@@ -147,6 +148,9 @@ observe_deployment() {
   require_app "$app"; require_digest "$manifest"
   assert_deployment_current_or_empty "$app" "$manifest"
   [ "$previous_present" -eq 1 ] || reject lifecycle-unmanaged
+  if [ "$application_mode" = ON_DEMAND ]; then
+    printf 'OWNER=1\nINSTALLED=1\nRUNNING=0\nENABLED=not-applicable\nQUERY_OK=1\nActiveState=inactive\nMainPID=0\n'; return
+  fi
   if systemctl is-active --quiet "$(unit_name "$app")"; then running=1; else running=0; fi
   enabled="$(systemctl is-enabled "$(unit_name "$app")" 2>/dev/null || true)"
   printf 'OWNER=1\nRUNNING=%s\nENABLED=%s\n' "$running" "$enabled"

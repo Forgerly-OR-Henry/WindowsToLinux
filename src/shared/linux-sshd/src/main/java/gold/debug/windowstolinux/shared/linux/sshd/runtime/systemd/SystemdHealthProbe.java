@@ -22,7 +22,7 @@ public final class SystemdHealthProbe {
     /** Checks service health and response ownership. / 检查服务健康与响应归属。 */
     public HealthCheckResult check(ManagedApplication application, HealthCheck healthCheck) throws LinuxOperationException {
         Objects.requireNonNull(application, "application");
-        return checkUnit(application.systemdUnit(), healthCheck);
+        return gold.debug.windowstolinux.shared.linux.sshd.execution.protocol.runtime.ApplicationHealthProbe.check(commands, application, healthCheck);
     }
 
     /** Checks one deterministic restore-candidate unit with the same listener ownership proof. / 使用相同监听归属证明检查一个确定性恢复候选单元。 */

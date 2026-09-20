@@ -30,6 +30,9 @@ public record ReviewedComponentDeployment(
         application = Objects.requireNonNull(application, "application");
         resolvedSecrets = List.copyOf(Objects.requireNonNull(resolvedSecrets, "resolvedSecrets"));
         resourceBindings = Objects.requireNonNull(resourceBindings, "resourceBindings");
+        request = request.withFiles(resourceBindings.fileBindings());
+        resourceBindings = new ManagedComponentResourceBindings(request.fileBindings(),resourceBindings.databaseBindings());
+        if (!request.databaseBindings().equals(resourceBindings.databaseBindings())) throw new IllegalArgumentException("database resource bindings differ from reviewed request");
         if (!application.id().equals(request.facts().applicationId()) || !application.server().equals(request.server())) {
             throw new IllegalArgumentException("component request and managed identity must match");
         }
@@ -42,6 +45,6 @@ public record ReviewedComponentDeployment(
     public ReviewedComponentDeployment(String componentId, ReviewedDeploymentRequest request,
                                        ManagedApplication application, List<ResolvedSecretRevision> resolvedSecrets) {
         this(componentId, request, application, resolvedSecrets,
-                new ManagedComponentResourceBindings(List.of(), request.databaseBindings()));
+                new ManagedComponentResourceBindings(request.fileBindings(), request.databaseBindings()));
     }
 }

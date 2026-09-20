@@ -36,6 +36,7 @@ public final class ReviewedDeploymentPlanner {
      */
     public ReviewedDeploymentPlan plan(ReviewedDeploymentRequest request) {
         request = Objects.requireNonNull(request, "request");
+        gold.debug.windowstolinux.shared.deploy.input.ApplicationDeclaration.verifyBuildOwnership(request.facts(), request.runtime());
         return adapters.require(request.facts().projectType()).plan(request);
     }
 }
