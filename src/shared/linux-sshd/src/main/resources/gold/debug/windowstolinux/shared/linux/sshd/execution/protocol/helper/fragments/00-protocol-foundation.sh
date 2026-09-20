@@ -5,14 +5,14 @@ PATH=/usr/sbin:/usr/bin:/sbin:/bin
 umask 077
 helper_path=/usr/local/lib/windowstolinux/managed-helper
 helper_directory=/usr/local/lib/windowstolinux
-helper_protocol=7
-base_root=/var/lib/windowstolinux; applications_root="$base_root/apps"
+helper_protocol=9
+base_root=/var/lib/windowstolinux; applications_root=/opt/windowstolinux/apps
 work_root="$base_root/work"
 snapshots_root="$base_root/snapshots"
-configurations_root="$base_root/configurations"
-secrets_root="$base_root/secrets"
+configurations_root=/etc/opt/windowstolinux/apps
+secrets_root=/etc/opt/windowstolinux/apps
 backups_root="$base_root/backups"
-data_root="$base_root/data"
+data_root=/var/opt/windowstolinux/apps
 reject() {
   printf 'MANAGED_HELPER_REJECT=%s\n' "$1" >&2
   exit 64
@@ -53,7 +53,7 @@ require_snapshot_token() {
   [[ "$1" =~ ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$ ]] || reject snapshot-token
 }
 app_root() {
-  printf '%s/apps/%s' "$base_root" "$1"
+  printf '%s/%s' "$applications_root" "$1"
 }
 unit_name() {
   printf 'windowstolinux-%s.service' "$1"
@@ -101,9 +101,8 @@ ExecStart=/usr/local/lib/windowstolinux/java-21 -jar $root/current/app.jar
 Restart=on-failure
 RestartSec=5
 SuccessExitStatus=143
-[Install]
-WantedBy=multi-user.target
 UNIT
+  if [ "$application_mode" = DAEMON ]; then printf '[Install]\nWantedBy=multi-user.target\n'; fi
 }
 require_relative_path() {
   [[ "$1" =~ ^[A-Za-z0-9._/-]{1,255}$ ]] || reject relative-path
@@ -127,6 +126,7 @@ require_count() {
 }
 render_deployment_unit() {
   local app="$1"
+  current_application="$app"
   shift
   parse_deployment_inputs "$@"
   parse_managed_data_bindings "${deployment_remaining_arguments[@]}"
@@ -196,7 +196,7 @@ render_deployment_unit() {
       [ "$#" -eq 3 ] || reject runtime-arguments
       require_bound_version PYTHON "$1" '^3\.(10|11|12|13)$'
       [[ "$2" =~ ^[A-Za-z_][A-Za-z0-9_.]{0,127}$ ]] || reject python-entrypoint
-      case "$3" in PIP_LOCKED|PIPENV_LOCKED|POETRY_LOCKED|UV_LOCKED) ;; *) reject python-build-tool ;; esac
+      case "$3" in PIP_LOCKED|PIPENV_LOCKED|POETRY_LOCKED|UV_LOCKED|PYTHON_STDLIB) ;; *) reject python-build-tool ;; esac
       command="$root/current/source/.venv/bin/python -m $2"
       ;;
     static)
@@ -221,20 +221,26 @@ render_deployment_unit() {
     case "$kind" in springboot|java|javasource) require_bound_version JAVA 0 '^0$' ;; esac
   fi
   config="$(configuration_path "$app" "$deployment_configuration_digest" systemd)"
+  prepare_application_primary_argv "$root"
+  application_runtime_kind="$kind"
+  render_application_command "$kind" "$root"
   wrap_database_runtime
 # @compat:selinux-entry@
+  local service_type=simple service_restart=on-failure service_command="$command"
+  if [ "$application_mode" = ON_DEMAND ]; then service_type=oneshot; service_restart=no; service_command=/usr/bin/true; fi
   cat <<UNIT
 [Unit]
 Description=WindowsToLinux managed $app
 After=network.target
 [Service]
-Type=simple
+Type=$service_type
 UNIT
   if [ "$runtime_identity_policy" = LEGACY_UNSPECIFIED ]; then printf 'User=%s\n' "${legacy_runtime_user:-$deployer}"; fi
-  if [ "$runtime_identity_policy" = SYSTEMD_DYNAMIC ]; then
-    render_dynamic_runtime_identity "$app"
+  if [ "$runtime_identity_policy" = SYSTEMD_STATIC ]; then
+    render_service_runtime_identity "$app"
   fi
-  printf 'WorkingDirectory=%s/current/source\nEnvironmentFile=%s\n' "$root" "$config"
+  printf 'WorkingDirectory=%s\nEnvironmentFile=%s\n' "$root/current/source${application_workdir:+/$application_workdir}" "$config"
+  render_application_bindings "$root"
   index=0
   while [ "$index" -lt "${#deployment_secret_identifiers[@]}" ]; do
     name="${deployment_secret_names[$index]}"
@@ -244,14 +250,13 @@ UNIT
     index=$((index + 1))
   done
   cat <<UNIT
-ExecStart=$command
-Restart=on-failure
+ExecStart=$service_command
+Restart=$service_restart
 RestartSec=5
 SuccessExitStatus=143
 
-[Install]
-WantedBy=multi-user.target
 UNIT
+  if [ "$application_mode" = DAEMON ]; then printf '[Install]\nWantedBy=multi-user.target\n'; fi
 }
 assert_deployment_current_or_empty() {
   local app="$1"

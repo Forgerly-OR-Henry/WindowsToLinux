@@ -20,5 +20,9 @@
         <dependency><groupId>gold.debug.windowstolinux</groupId><artifactId>windowstolinux-shared-backup</artifactId><version>${project.version}</version></dependency>
         <dependency><groupId>org.slf4j</groupId><artifactId>slf4j-nop</artifactId><version>${slf4j.version}</version></dependency>
         <dependency><groupId>org.junit.jupiter</groupId><artifactId>junit-jupiter</artifactId><scope>test</scope></dependency>
+        <!-- Test-only classpath for repository-wide attributed Web architecture checks. -->
+        <dependency><groupId>org.springframework.boot</groupId><artifactId>spring-boot-starter-webmvc</artifactId><version>4.1.1</version><scope>test</scope></dependency>
+        <dependency><groupId>com.baomidou</groupId><artifactId>mybatis-plus-spring-boot4-starter</artifactId><version>3.5.17</version><scope>test</scope></dependency>
+        <dependency><groupId>tools.jackson.core</groupId><artifactId>jackson-databind</artifactId><version>3.1.2</version><scope>test</scope></dependency>
     </dependencies>
 </project>

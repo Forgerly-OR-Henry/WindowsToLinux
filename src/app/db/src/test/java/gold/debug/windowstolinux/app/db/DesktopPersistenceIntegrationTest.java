@@ -280,6 +280,7 @@ class DesktopPersistenceIntegrationTest {
             statement.execute("UPDATE managed_application_graph_component SET reviewed_resource_bindings=NULL");
             statement.execute("UPDATE managed_application_graph SET application_health_check=NULL");
             statement.execute("DELETE FROM application_release_configuration_binding");
+            statement.execute("UPDATE managed_application_runtime_configuration SET health_kind='TCP', tcp_port=18081, tcp_stability_seconds=1, runtime_payload=NULL");
             statement.execute("PRAGMA user_version = 7");
         }
 
@@ -333,6 +334,7 @@ class DesktopPersistenceIntegrationTest {
             statement.execute("UPDATE managed_application_graph_component SET reviewed_resource_bindings=NULL");
             statement.execute("UPDATE managed_application_graph SET application_health_check=NULL");
             statement.execute("DELETE FROM application_release_configuration_binding");
+            statement.execute("UPDATE managed_application_runtime_configuration SET health_kind='TCP', tcp_port=18081, tcp_stability_seconds=1, runtime_payload=NULL");
             statement.execute("PRAGMA user_version = 8");
         }
 
@@ -376,6 +378,7 @@ class DesktopPersistenceIntegrationTest {
              Statement statement = connection.createStatement()) {
             statement.execute("UPDATE managed_application_graph_component SET reviewed_resource_bindings=NULL");
             statement.execute("UPDATE managed_application_graph SET application_health_check=NULL");
+            statement.execute("UPDATE managed_application_runtime_configuration SET health_kind='TCP', tcp_port=18081, tcp_stability_seconds=1, runtime_payload=NULL");
             statement.execute("PRAGMA user_version = 9");
         }
 
@@ -450,7 +453,7 @@ class DesktopPersistenceIntegrationTest {
             statement.execute("CREATE TABLE managed_application (id TEXT PRIMARY KEY, server_id TEXT NOT NULL REFERENCES server(id), systemd_unit TEXT NOT NULL, release_root TEXT NOT NULL, ownership_manifest_sha256 TEXT NOT NULL)");
             statement.execute("CREATE TABLE managed_application_release (application_id TEXT PRIMARY KEY REFERENCES managed_application(id), artifact_sha256 TEXT NOT NULL, published_at INTEGER NOT NULL)");
             statement.execute("INSERT INTO server VALUES ('server-one', 'example.test', 22, 'SHA256:fixture')");
-            statement.execute("INSERT INTO managed_application VALUES ('demo', 'server-one', 'windowstolinux-demo.service', '/var/lib/windowstolinux/apps/demo', '" + "a".repeat(64) + "')");
+            statement.execute("INSERT INTO managed_application VALUES ('demo', 'server-one', 'windowstolinux-demo.service', '/opt/windowstolinux/apps/demo', '" + "a".repeat(64) + "')");
             statement.execute("INSERT INTO managed_application_release VALUES ('demo', '" + preservedIdentity + "', 1)");
             createLegacyRuntimeTable(statement);
             statement.execute("PRAGMA user_version = 4");
@@ -498,7 +501,7 @@ class DesktopPersistenceIntegrationTest {
                 application.setString(1, "demo");
                 application.setString(2, "server-one");
                 application.setString(3, "windowstolinux-demo.service");
-                application.setString(4, "/var/lib/windowstolinux/apps/demo");
+                application.setString(4, "/opt/windowstolinux/apps/demo");
                 application.setString(5, "a".repeat(64));
                 application.executeUpdate();
             }

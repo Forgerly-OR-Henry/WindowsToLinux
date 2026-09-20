@@ -33,6 +33,21 @@ public final class SshdBackupArtifactPort implements RemoteBackupArtifactPort {
         this.commands = Objects.requireNonNull(commands, "commands");
     }
 
+    @Override public void beginMaintenance(gold.debug.windowstolinux.shared.model.managed.ManagedApplication app, String token)
+            throws LinuxOperationException { maintenance(app, token, "begin"); }
+    @Override public void endMaintenance(gold.debug.windowstolinux.shared.model.managed.ManagedApplication app, String token)
+            throws LinuxOperationException { maintenance(app, token, "end"); }
+    private void maintenance(gold.debug.windowstolinux.shared.model.managed.ManagedApplication app, String token, String action)
+            throws LinuxOperationException {
+        if (!token.matches("(?:(?:backup|restore)-[0-9a-f]{32}|deployment-[0-9a-f]{64})")) throw new IllegalArgumentException("invalid maintenance token");
+        var result = commands.execProtocol("sudo -n "
+                + gold.debug.windowstolinux.shared.linux.sshd.execution.protocol.helper.ManagedHelperBundle.PATH
+                + " application-maintenance " + action + " " + app.id() + " " + app.ownershipManifestSha256() + " " + token,
+                Duration.ofSeconds(40), true);
+        if (!result.succeeded()) throw LinuxOperationException.create(LinuxOperationFailureType.BACKUP_ARTIFACT_CREATION_FAILED,
+                "Application maintenance could not be verified: " + result.failureEvidence());
+    }
+
     @Override
     public RemoteBackupArtifact createBackupArtifact(RemoteBackupArtifactRequest request)
             throws LinuxOperationException {

@@ -10,7 +10,14 @@ import java.util.Optional;
 public record ApplicationSummary(String key, String name, String category, String serverId, String serverName, String host,
                                  Optional<Instant> deployedAt, Optional<Instant> adoptedAt, RuntimeState lastState,
                                  Optional<Instant> observedAt, Optional<UserAccessUrl> accessUrl, boolean external,
-                                 boolean canStart, boolean canStop, boolean needsMasterPassword) {
+                                 boolean canStart, boolean canStop, boolean needsMasterPassword,
+                                 Optional<gold.debug.windowstolinux.shared.model.managed.ApplicationUsage> usage) {
+    public ApplicationSummary(String key, String name, String category, String serverId, String serverName, String host,
+            Optional<Instant> deployedAt, Optional<Instant> adoptedAt, RuntimeState lastState, Optional<Instant> observedAt,
+            Optional<UserAccessUrl> accessUrl, boolean external, boolean canStart, boolean canStop, boolean needsMasterPassword) {
+        this(key, name, category, serverId, serverName, host, deployedAt, adoptedAt, lastState, observedAt,
+                accessUrl, external, canStart, canStop, needsMasterPassword, Optional.empty());
+    }
     /** Newest successful deployment or explicitly labeled adoption first, then stable ID. / 成功部署或明确标记的接管时间倒序，同时间按稳定 ID 排序。 */
     public static Comparator<ApplicationSummary> newestFirst() {
         return Comparator.comparing((ApplicationSummary value) -> value.deployedAt.or(() -> value.adoptedAt).orElse(Instant.MIN))

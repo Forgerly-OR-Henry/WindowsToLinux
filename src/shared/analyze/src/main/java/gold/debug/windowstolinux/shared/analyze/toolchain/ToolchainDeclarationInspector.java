@@ -41,6 +41,8 @@ public final class ToolchainDeclarationInspector {
         read(result, root, "windowstolinux-ruby.properties", RUBY, RUNTIME, "(?m)^(?:rubyVersion|version)=([^\\r\\n]+)$");
         read(result, root, "CMakeLists.txt", C, LANGUAGE_TARGET, "\\bc_std_([0-9]+)\\b");
         read(result, root, "CMakeLists.txt", CPP, LANGUAGE_TARGET, "\\bcxx_std_([0-9]+)\\b");
+        read(result, root, "CMakeLists.txt", C, LANGUAGE_TARGET, "(?i)set\\s*\\(\\s*CMAKE_C_STANDARD\\s+([0-9]+)\\s*\\)");
+        read(result, root, "CMakeLists.txt", CPP, LANGUAGE_TARGET, "(?i)set\\s*\\(\\s*CMAKE_CXX_STANDARD\\s+([0-9]+)\\s*\\)");
         return List.copyOf(result);
     }
 

@@ -1,0 +1,18 @@
+{
+  "name": "gold-debug/csv-inspector",
+  "require": {
+    "php": ">=8.3 <8.4",
+    "ext-pdo_sqlite": "*",
+    "ext-curl": "*",
+    "ext-mbstring": "*",
+    "opis/json-schema": "2.6.0"
+  },
+  "autoload": {
+    "psr-4": {
+      "CsvInspector\\": "src/"
+    }
+  },
+  "config": {
+    "sort-packages": true
+  }
+}

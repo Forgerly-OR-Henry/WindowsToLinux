@@ -12,7 +12,7 @@ public record BackupIdentity(
         Optional<String> legacyReleaseIdentity,
         Optional<String> releaseSetSha256
 ) {
-    /** Creates one schema-v4 identity with an exact release-set digest. / 创建带精确发布集合摘要的 schema v4 身份。 */
+    /** Creates one schema-v5 identity with an exact release-set digest. / 创建带精确发布集合摘要的 schema v5 身份。 */
     public BackupIdentity(String applicationId, String serverId, String managedRoot, String releaseSetSha256) {
         this(applicationId, serverId, managedRoot, Optional.empty(), Optional.of(releaseSetSha256));
     }

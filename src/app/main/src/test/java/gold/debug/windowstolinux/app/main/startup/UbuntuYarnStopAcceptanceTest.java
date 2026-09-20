@@ -37,7 +37,7 @@ class UbuntuYarnStopAcceptanceTest {
                         (remote, fingerprint) -> pin.equals(fingerprint) ? HostKeyDecision.ACCEPT_EXISTING : HostKeyDecision.REJECT)) {
                     for (String id : System.getProperty("managed.runtime.yarn.existing").split(",")) {
                         assertTrue(id.matches("[a-z0-9][a-z0-9-]{0,62}"));
-                        String root = "/var/lib/windowstolinux/apps/" + id;
+                        String root = "/opt/windowstolinux/apps/" + id;
                         var manifest = diagnostics.execProtocol("cat " + root + "/current/.windowstolinux-owner", Duration.ofSeconds(10), true);
                         assertTrue(manifest.succeeded(), manifest::failureEvidence);
                         var application = ManagedApplication.forManaged(id, identity, manifest.output().strip());

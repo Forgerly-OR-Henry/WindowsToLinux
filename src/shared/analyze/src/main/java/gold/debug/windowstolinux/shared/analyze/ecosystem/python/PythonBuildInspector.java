@@ -42,7 +42,9 @@ public final class PythonBuildInspector {
                 .flatMap(Optional::stream)
                 .toList();
         List<String> lockFiles = selected.stream().map(PythonBuildArchitectureFacts::lockFile).toList();
-        DeploymentBuildToolType buildTool = selected.size() == 1
+        boolean stdlib = selected.isEmpty() && toml.matches("(?s).*\n?\\s*dependencies\\s*=\\s*\\[\\s*]\\s*(?:\n|$).*")
+                && !toml.contains("dynamic") && !toml.contains("[tool.poetry.dependencies]");
+        DeploymentBuildToolType buildTool = stdlib ? DeploymentBuildToolType.PYTHON_STDLIB : selected.size() == 1
                 ? selected.getFirst().buildTool() : DeploymentBuildToolType.PIP_LOCKED;
         return Optional.of(new PythonBuildFacts(ProjectIdentityResolver.applicationId(root, toml, NAME),
                 buildTool, lockFiles));

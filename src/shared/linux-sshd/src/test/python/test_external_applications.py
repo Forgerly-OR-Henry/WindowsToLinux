@@ -3,6 +3,7 @@ import importlib.util
 import io
 from pathlib import Path
 import stat
+import sys
 import types
 import unittest
 from unittest.mock import patch, mock_open
@@ -10,7 +11,12 @@ from unittest.mock import patch, mock_open
 SOURCE = Path(__file__).parents[2] / 'main/resources/gold/debug/windowstolinux/shared/linux/sshd/runtime/external-applications.py'
 SPEC = importlib.util.spec_from_file_location('external_applications', SOURCE)
 APP = importlib.util.module_from_spec(SPEC)
-SPEC.loader.exec_module(APP)
+previous_bytecode_policy = sys.dont_write_bytecode
+try:
+    sys.dont_write_bytecode = True
+    SPEC.loader.exec_module(APP)
+finally:
+    sys.dont_write_bytecode = previous_bytecode_policy
 FP = 'a' * 64
 CID = 'b' * 64
 

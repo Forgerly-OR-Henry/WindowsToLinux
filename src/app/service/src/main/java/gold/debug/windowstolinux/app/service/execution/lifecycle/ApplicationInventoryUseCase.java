@@ -30,13 +30,15 @@ public final class ApplicationInventoryUseCase {
         for (var app : managed.list()) {
             var profile = Optional.ofNullable(profiles.get(app.server().id()));
             var runtime = managed.findRuntime(app.id()); var observation = managed.findObservation(app);
+            var usage = gold.debug.windowstolinux.shared.model.managed.ApplicationUsage.from(app,
+                    runtime.map(value -> value.workload()).orElse(gold.debug.windowstolinux.shared.model.project.application.ApplicationWorkload.unspecified()));
             var url = runtime.flatMap(value -> value.userAccessUrl());
-            var presentation = external.presentation("managed:" + app.id()).orElse(new StoredApplicationPresentation("managed:" + app.id(), app.id(), url.isPresent() ? "WEBSITE" : "APP", url));
-            result.add(new ApplicationSummary(presentation.key(), presentation.name(), presentation.category(), app.server().id(),
+            var presentation = external.presentation("managed:" + app.id()).orElse(new StoredApplicationPresentation("managed:" + app.id(), app.id(), usage.category().equals("WEBSITE") ? "WEBSITE" : "APP", url));
+            result.add(new ApplicationSummary(presentation.key(), presentation.name(), usage.category(), app.server().id(),
                     profile.map(value -> value.displayName()).orElse(app.server().id()), app.server().host(),
                     managed.findRelease(app.id()).map(CurrentRelease::publishedAt), Optional.empty(),
                     observation.map(value -> value.runtimeState()).orElse(RuntimeState.UNKNOWN), observation.map(value -> value.observedAt()),
-                    presentation.accessUrl(), false, true, true, profile.map(value -> value.credentialMode() == CredentialStorageMode.MASTER_PASSWORD).orElse(false)));
+                    presentation.accessUrl().filter(value -> usage.category().equals("WEBSITE")), false, usage.lifecycle(), usage.lifecycle(), profile.map(value -> value.credentialMode() == CredentialStorageMode.MASTER_PASSWORD).orElse(false), Optional.of(usage)));
         }
         for (var registered : external.list()) {
             var profile = Optional.ofNullable(profiles.get(registered.serverId())); var app = registered.application();
@@ -53,7 +55,13 @@ public final class ApplicationInventoryUseCase {
     public void savePresentation(String key, String name, String category, String url) throws SQLException {
         if (key.startsWith("managed:") ? managed.find(key.substring(8)).isEmpty() : external.find(key).isEmpty())
             throw new IllegalArgumentException("application no longer exists");
+        if (key.startsWith("managed:")) {
+            var app = managed.find(key.substring(8)).orElseThrow();
+            var runtime = managed.findRuntime(app.id());
+            String derived = runtime.filter(value -> value.workload().reviewed()).map(value -> value.workload().category().name()).orElse("UNKNOWN");
+            if (!derived.equals(category)) throw new IllegalArgumentException("Managed category comes from reviewed service declarations");
+        }
         Optional<UserAccessUrl> access = url.isBlank() ? Optional.empty() : Optional.of(new UserAccessUrl(URI.create(url.trim())));
-        external.savePresentation(new StoredApplicationPresentation(key, name, category, access));
+        external.savePresentation(new StoredApplicationPresentation(key, name, category.equals("UNKNOWN") ? "APP" : category, access));
     }
 }

@@ -1,10 +1,12 @@
 package gold.debug.windowstolinux.app.service.backup;
 
+import gold.debug.windowstolinux.shared.backup.restore.RestoreTargetEvaluator;
+
 import gold.debug.windowstolinux.app.db.persistence.repository.ApplicationSecretRepository;
 import gold.debug.windowstolinux.app.db.persistence.repository.ManagedApplicationGraphRepository;
 import gold.debug.windowstolinux.app.secret.SecretStore;
 import gold.debug.windowstolinux.app.secret.SecretStoreException;
-import gold.debug.windowstolinux.app.secret.crypto.BackupSecretException;
+import gold.debug.windowstolinux.shared.backup.crypto.BackupSecretException;
 import gold.debug.windowstolinux.app.service.failure.ApplicationServiceException;
 import gold.debug.windowstolinux.app.service.failure.ApplicationServiceFailureType;
 import gold.debug.windowstolinux.app.service.lock.ServerOperationLockRegistry;
@@ -144,7 +146,7 @@ public final class ManagedRestoreUseCase {
                             model.activation().validation().manifest().applicationId(),
                             model.activation().validation().verifiedBytes());
                     boolean existingOwned = recorder.existingOwnedTarget(model, profile.id());
-                    var target = targetEvaluator.evaluate(model, profile.id(), session.collectCapabilities(),
+                    var target = targetEvaluator.evaluate(model.activation().validation().manifest(), model.database().isPresent(), profile.id(), session.collectCapabilities(),
                             session.collectDeploymentCapabilities(), activationEvidence, existingOwned);
                     BackupRestorePlan plan = plan(model, target);
                     new BackupRestorePreflight().verify(plan);
@@ -188,7 +190,7 @@ public final class ManagedRestoreUseCase {
                         model.activation().validation().manifest().applicationId(),
                         model.activation().validation().verifiedBytes());
                 boolean existingOwned = recorder.existingOwnedTarget(model, profile.id());
-                var target = targetEvaluator.evaluate(model, profile.id(), session.collectCapabilities(),
+                var target = targetEvaluator.evaluate(model.activation().validation().manifest(), model.database().isPresent(), profile.id(), session.collectCapabilities(),
                         session.collectDeploymentCapabilities(), activationEvidence, existingOwned);
                 BackupRestorePlan plan = plan(model, target);
                 new BackupRestorePreflight().verify(plan);

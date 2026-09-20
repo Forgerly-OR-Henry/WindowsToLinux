@@ -85,11 +85,6 @@ public final class ManagedPage {
         JScrollPane scroll = new JScrollPane(cards); scroll.setBorder(BorderFactory.createEmptyBorder()); scroll.getVerticalScrollBar().setUnitIncrement(20);
         scroll.setOpaque(false); scroll.getViewport().setOpaque(false); page.add(scroll); page.add(status, BorderLayout.SOUTH);
         advanced.field("field.applicationId", applicationId); output.setRows(12); advanced.addOption(new JScrollPane(output));
-        for (LifecycleAction action : List.of(LifecycleAction.ENABLE_AUTOSTART, LifecycleAction.DISABLE_AUTOSTART)) {
-            JButton button = c.secondaryButton(messages.text(action == LifecycleAction.ENABLE_AUTOSTART ? "button.enableAutostart" : "button.disableAutostart"));
-            button.addActionListener(event -> applications.stream().filter(value -> !value.external() && matchesSelection(value)).findFirst().ifPresent(value -> execute(value, action)));
-            advanced.addOption(button);
-        }
         return advanced;
     }
 
@@ -118,7 +113,7 @@ public final class ManagedPage {
         JPanel wrapper = c.transparent(new BorderLayout()); wrapper.setBorder(BorderFactory.createEmptyBorder(0, 0, 12, 0));
         JPanel card = c.card(new BorderLayout(0, 12)); wrapper.add(card);
         card.setBorder(BorderFactory.createEmptyBorder(20, 18, 20, 18));
-        wrapper.setMaximumSize(new Dimension(Integer.MAX_VALUE, UIScale.scale(216)));
+        wrapper.setMaximumSize(new Dimension(Integer.MAX_VALUE, UIScale.scale(300)));
         JPanel title = c.transparent(new BorderLayout(12, 0));
         JLabel name = new JLabel(app.name()); name.putClientProperty("html.disable", true); name.setFont(name.getFont().deriveFont(Font.BOLD, 16f));
         name.setIcon(DesktopIcons.icon(app.category().equals("WEBSITE") ? "panels-top-left" : "archive", 22, name::getForeground));
@@ -135,9 +130,14 @@ public final class ManagedPage {
         access.setToolTipText(app.accessUrl().map(value -> value.url().toString()).orElse(messages.text("managed.noWebEntry")));
         access.addActionListener(event -> app.accessUrl().ifPresent(value -> {
             try { Desktop.getDesktop().browse(value.url()); } catch (Exception failure) { status.setText(messages.safe(failure)); }
-        })); actions.add(access);
-        for (LifecycleAction action : List.of(LifecycleAction.REFRESH_STATUS, LifecycleAction.START, LifecycleAction.STOP, LifecycleAction.RESTART)) {
-            JButton button = c.secondaryButton(messages.text("button." + (action == LifecycleAction.REFRESH_STATUS ? "refreshStatus" : action.name().toLowerCase(Locale.ROOT))));
+        })); if (app.accessUrl().isPresent()) actions.add(access);
+        addUsage(app, details, actions);
+        for (LifecycleAction action : List.of(LifecycleAction.REFRESH_STATUS, LifecycleAction.START, LifecycleAction.STOP, LifecycleAction.RESTART, LifecycleAction.ENABLE_AUTOSTART, LifecycleAction.DISABLE_AUTOSTART)) {
+            if (action != LifecycleAction.REFRESH_STATUS && app.usage().map(usage -> !usage.lifecycle()).orElse(false)) continue;
+            if (app.external() && (action == LifecycleAction.ENABLE_AUTOSTART || action == LifecycleAction.DISABLE_AUTOSTART)) continue;
+            String label = switch (action) { case REFRESH_STATUS -> "refreshStatus"; case ENABLE_AUTOSTART -> "enableAutostart";
+                case DISABLE_AUTOSTART -> "disableAutostart"; default -> action.name().toLowerCase(Locale.ROOT); };
+            JButton button = c.secondaryButton(messages.text("button." + label));
             button.setEnabled(switch (action) { case START -> app.canStart(); case STOP -> app.canStop(); case RESTART -> app.canStart() && app.canStop(); default -> true; });
             button.addActionListener(event -> execute(app, action)); actions.add(button);
         }
@@ -148,6 +148,24 @@ public final class ManagedPage {
             ((JButton) control).putClientProperty(FlatClientProperties.MINIMUM_HEIGHT, 36);
         card.addMouseListener(new java.awt.event.MouseAdapter() { @Override public void mouseClicked(java.awt.event.MouseEvent event) { applicationId.setText(app.key()); } });
         return wrapper;
+    }
+
+    private void addUsage(ApplicationSummary app, JPanel details, JPanel actions) {
+        app.usage().ifPresent(usage -> {
+            if (!usage.reviewed()) details.add(new JLabel(messages.text("apps.reanalysisRequired")));
+            for (String endpoint : usage.endpoints()) details.add(new JLabel(endpoint));
+            if (usage.category().equals("APP") && !usage.command().isBlank()) {
+                JButton command = c.secondaryButton(messages.text("apps.command"));
+                command.addActionListener(event -> {
+                    JTextArea text = new JTextArea(usage.command(), 3, 60); text.setEditable(false); text.setLineWrap(true); text.setWrapStyleWord(true);
+                    int result = JOptionPane.showOptionDialog(panel, new JScrollPane(text), messages.text("apps.command"),
+                            JOptionPane.DEFAULT_OPTION, JOptionPane.PLAIN_MESSAGE, null,
+                            new String[]{messages.text("apps.copyCommand"), messages.text("button.close")}, null);
+                    if (result == 0) Toolkit.getDefaultToolkit().getSystemClipboard().setContents(new java.awt.datatransfer.StringSelection(usage.command()), null);
+                });
+                actions.add(command);
+            }
+        });
     }
 
     private void execute(ApplicationSummary app, LifecycleAction action) {

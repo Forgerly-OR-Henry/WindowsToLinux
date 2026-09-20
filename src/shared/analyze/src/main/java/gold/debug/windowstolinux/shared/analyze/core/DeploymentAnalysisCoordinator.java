@@ -76,17 +76,33 @@ public final class DeploymentAnalysisCoordinator {
             return DeploymentProjectAssessment.rejected(rejections);
         }
         try {
-            ProjectLanguageFacts languageFacts = languageInspector.inspect(root, source);
+            var bundle = gold.debug.windowstolinux.shared.analyze.source.ApplicationBundleInspector.declaration(root);
+            Path mainRoot = gold.debug.windowstolinux.shared.analyze.source.ApplicationBundleInspector.mainRoot(root, bundle);
+            var declaredType = gold.debug.windowstolinux.shared.analyze.source.ApplicationBundleInspector.type(bundle);
+            if (declaredType.isPresent() && declaredType.orElseThrow() != projectType) throw new IOException("application build type differs from selection");
+            SourceInspectionFacts mainSource = mainRoot.equals(root) ? source : sourceInspector.inspect(mainRoot, rejections);
+            var companionTools = new ArrayList<gold.debug.windowstolinux.shared.model.toolchain.ToolchainRequirement>();
+            for (Path companion : gold.debug.windowstolinux.shared.analyze.source.ApplicationBundleInspector.companions(root, bundle)) {
+                var companionSource = sourceInspector.inspect(companion, rejections);
+                var companionFacts = inspectors.require(DeploymentProjectType.CMAKE_SERVICE).inspect(companion, companionSource,
+                        languageInspector.inspect(companion, companionSource), rejections);
+                if (companionFacts == null || !companionFacts.facts().readyForPlanning()) throw new IOException("companion build declaration is incomplete");
+                companionTools.addAll(new gold.debug.windowstolinux.shared.analyze.toolchain.ToolchainDeclarationInspector().inspect(companion));
+            }
+            ProjectLanguageFacts languageFacts = languageInspector.inspect(mainRoot, mainSource);
             DeploymentTypeAssessment inspected = inspectors.require(Objects.requireNonNull(projectType, "projectType"))
-                    .inspect(root, source, languageFacts, rejections);
+                    .inspect(mainRoot, mainSource, languageFacts, rejections);
             if (inspected == null || !rejections.isEmpty()) {
                 return DeploymentProjectAssessment.rejected(rejections);
             }
             if (projectType == DeploymentProjectType.RECOGNITION_PREVIEW) {
                 return DeploymentProjectAssessment.recognitionPreview(inspected.facts());
             }
+            companionTools.addAll(new gold.debug.windowstolinux.shared.analyze.toolchain.ToolchainDeclarationInspector().inspect(mainRoot));
             inspected = new DeploymentTypeAssessment(inspected.facts().withToolchains(
-                    new gold.debug.windowstolinux.shared.analyze.toolchain.ToolchainDeclarationInspector().inspect(root)),
+                    companionTools).inBundle(root, root.relativize(mainRoot).toString().replace('\\', '/'),
+                    mainRoot.equals(root) ? inspected.facts().applicationId()
+                            : gold.debug.windowstolinux.shared.analyze.source.ProjectIdentityResolver.rootApplicationId(root)),
                     inspected.runtimeSuggestion());
             inspected = enrichToolchainSuggestion(inspected);
             if (pendingDatabase) {
@@ -95,12 +111,12 @@ public final class DeploymentAnalysisCoordinator {
                 missing.add(LocalizedMessage.of("analysis.db.reviewRequired"));
                 return DeploymentProjectAssessment.requiresInput(new gold.debug.windowstolinux.shared.model.project.DeploymentProjectFacts(
                         facts.sourceRoot(), facts.applicationId(), facts.projectType(), facts.buildTool(), facts.support(), facts.languageFacts(),
-                        facts.evidence(), facts.conflicts(), missing, facts.toolchainRequirements()), inspected.runtimeSuggestion());
+                        facts.evidence(), facts.conflicts(), missing, facts.toolchainRequirements(), facts.buildDirectory()), inspected.runtimeSuggestion());
             }
             return inspected.facts().readyForPlanning()
                     ? DeploymentProjectAssessment.ready(inspected.facts(), inspected.runtimeSuggestion())
                     : DeploymentProjectAssessment.requiresInput(inspected.facts(), inspected.runtimeSuggestion());
-        } catch (IOException exception) {
+        } catch (IOException | IllegalArgumentException exception) {
             return DeploymentProjectAssessment.rejected(List.of(rejection("DEPLOYMENT_SOURCE_READ_FAILED",
                     "analysis.deployment.rejection.sourceReadFailed")));
         }

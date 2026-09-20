@@ -7,7 +7,7 @@ import java.util.List;
 final class DnfPackageSets {
     private static final List<String> BASE = List.of(
             "java-21-openjdk-devel", "maven", "curl", "sudo", "tar", "gzip", "iproute", "coreutils",
-            "e2fsprogs", "skopeo", "acl", "shadow-utils", "util-linux", "findutils", "gawk", "nodejs", "npm", "cmake", "ninja-build", "gcc", "gcc-c++", "podman"
+            "e2fsprogs", "skopeo", "acl", "sqlite", "shadow-utils", "util-linux", "findutils", "gawk", "nodejs", "npm", "cmake", "ninja-build", "gcc", "gcc-c++", "podman"
     );
 
     private DnfPackageSets() {

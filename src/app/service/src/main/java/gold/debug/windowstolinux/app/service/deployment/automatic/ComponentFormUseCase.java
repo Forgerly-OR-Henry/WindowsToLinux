@@ -1,8 +1,9 @@
 package gold.debug.windowstolinux.app.service.deployment.automatic;
 
 
-import gold.debug.windowstolinux.app.service.config.DeploymentConfigurationParser;
-import gold.debug.windowstolinux.app.service.deployment.automatic.DeploymentRuntimeParser;
+import gold.debug.windowstolinux.shared.config.input.DeploymentConfigurationParser;
+import gold.debug.windowstolinux.shared.deploy.input.DeploymentRuntimeParser;
+import gold.debug.windowstolinux.shared.model.project.DeploymentProjectType;
 
 import gold.debug.windowstolinux.app.service.contract.definition.MultiComponentReviewInput;
 import gold.debug.windowstolinux.shared.analyze.component.ComponentAnalysisRequest;
@@ -39,7 +40,7 @@ public final class ComponentFormUseCase {
         HealthCheck health = healthCheck();
         var runtime = runtime(health);
         var configuration = DeploymentConfigurationParser.parse(input.configurationEntries());
-        var secrets = gold.debug.windowstolinux.app.service.config.DeploymentConfigurationParser.secrets(input.secretReferences());
+        var secrets = gold.debug.windowstolinux.shared.config.input.DeploymentConfigurationParser.secrets(input.secretReferences());
         var databases = DeploymentRuntimeParser.databaseBindings(input.databaseMode(), input.databaseDetails());
         databases.orElseThrow().stream()
                 .map(binding -> binding.connection())
@@ -61,7 +62,7 @@ public final class ComponentFormUseCase {
                                           boolean experimentalRiskAccepted) {
         if (input.rootBuild()) throw new IllegalArgumentException("Root builds are no longer supported; review the draft with restricted execution");
         var entries = DeploymentConfigurationParser.parse(input.configurationEntries());
-        var secrets = gold.debug.windowstolinux.app.service.config.DeploymentConfigurationParser.secrets(input.secretReferences());
+        var secrets = gold.debug.windowstolinux.shared.config.input.DeploymentConfigurationParser.secrets(input.secretReferences());
         var databases = DeploymentRuntimeParser.databaseBindings(input.databaseMode(), input.databaseDetails());
         return new MultiComponentReviewInput(input.componentId(),
                 ConfigurationSnapshot.create(managedApplicationId, Instant.now().toEpochMilli(), "runtime-v1",
@@ -72,52 +73,42 @@ public final class ComponentFormUseCase {
 
     /** Returns the typed health contract. / 返回类型化健康契约。 */
     public HealthCheck healthCheck() {
-        int timeout = Integer.parseInt(input.timeoutSeconds().trim());
-        return switch (input.healthMode()) {
-            case HTTP -> new HealthCheck.Http(URI.create(input.healthEndpoint().trim()),
-                    Integer.parseInt(input.expectedStatus().trim()), timeout);
-            case TCP -> new HealthCheck.Tcp(Integer.parseInt(input.healthEndpoint().trim()), timeout,
-                    Integer.parseInt(input.stabilitySeconds().trim()));
-        };
+        return new gold.debug.windowstolinux.shared.deploy.input.AutomaticRuntimeResolver().health(values());
     }
 
-    private DeploymentRuntimeSpecification runtime(HealthCheck health) {
-        return switch (input.projectType()) {
-            case SPRING_BOOT -> new DeploymentRuntimeSpecification.SpringBoot(input.runtimeVersion(), health);
-            case JAVA_JAR -> new DeploymentRuntimeSpecification.JavaJar(input.runtimePrimary(), input.runtimeSecondary(),
-                    input.runtimeVersion(), DeploymentRuntimeParser.arguments(input.runtimeArguments()),
-                    DeploymentRuntimeParser.arguments(input.runtimeAdditional()), health);
-            case JAVA_SOURCE -> new DeploymentRuntimeSpecification.JavaSource(input.runtimePrimary(), input.runtimeSecondary(),
-                    input.runtimeVersion(), DeploymentRuntimeParser.arguments(input.runtimeArguments()),
-                    DeploymentRuntimeParser.arguments(input.runtimeAdditional()), health);
-            case NODE_SERVICE -> new DeploymentRuntimeSpecification.NodeService(
-                    Integer.parseInt(input.runtimeVersion().trim()), health);
-            case PYTHON_SERVICE -> new DeploymentRuntimeSpecification.PythonService(
-                    input.runtimeVersion(), input.runtimeSecondary(), health);
-            case STATIC_SITE -> new DeploymentRuntimeSpecification.StaticSite(input.runtimePrimary(),
-                    input.runtimeVersion().isBlank() ? OptionalInt.empty()
-                            : OptionalInt.of(Integer.parseInt(input.runtimeVersion().trim())), requireHttp(health));
-            case DOCKERFILE_CONTAINER -> new DeploymentRuntimeSpecification.Container(
-                    DeploymentRuntimeSpecification.ContainerEngineType.valueOf(input.runtimePrimary().toUpperCase(Locale.ROOT)),
-                    DeploymentRuntimeParser.ports(input.runtimeSecondary()),
-                    DeploymentRuntimeParser.volumes(input.runtimeAdditional()), health);
-            case KOTLIN_SERVICE -> new DeploymentRuntimeSpecification.KotlinService(input.runtimeVersion(), input.runtimePrimary(), input.runtimeSecondary(), input.kotlinJvmTarget(), health);
-            case GO_SERVICE, RUST_SERVICE, DOTNET_SERVICE, PHP_SERVICE, RUBY_SERVICE ->
-                    DeploymentRuntimeParser.service(input.projectType(), input.runtimeVersion(), input.runtimePrimary(), input.runtimeSecondary(), health);
-            case CMAKE_SERVICE -> new DeploymentRuntimeSpecification.CmakeService(input.runtimeVersion(), input.runtimeSecondary(),
-                    input.runtimePrimary(), health);
-            case RECOGNITION_PREVIEW -> throw new IllegalArgumentException(
-                    "recognition-preview components cannot enter deployment review");
-        };
-    }
-
-    private Optional<UserAccessUrl> userAccess() {
-        if (input.healthMode() == ComponentHealthMode.HTTP) {
-            if (input.userAccessUrl().isBlank()) throw new IllegalArgumentException("HTTP components require a user access URL");
-            return Optional.of(new UserAccessUrl(URI.create(input.userAccessUrl())));
+    private java.util.Map<String,String> values() {
+        var values = new java.util.LinkedHashMap<String,String>();
+        values.put("version",input.runtimeVersion()); values.put("primary",input.runtimePrimary());
+        values.put("secondary",input.runtimeSecondary()); values.put("jvmTarget",input.kotlinJvmTarget());
+        values.put("jvmArguments",input.runtimeArguments()); values.put("arguments",input.runtimeAdditional());
+        values.put("healthMode",input.healthMode().name()); values.put("timeout",input.timeoutSeconds());
+        values.put("stability",input.stabilitySeconds()); values.put("expectedStatus",input.expectedStatus());
+        values.put("applicationDeclaration",input.applicationDeclaration()); values.put("accessUrl",input.userAccessUrl());
+        if(input.healthMode()==ComponentHealthMode.HTTP) {
+            values.put("healthEndpoint",input.healthEndpoint());
+            var endpoint=URI.create(input.healthEndpoint());
+            values.put("port",Integer.toString(endpoint.getPort()>0?endpoint.getPort():"https".equals(endpoint.getScheme())?443:80));
+        } else if(input.healthMode()==ComponentHealthMode.TCP || input.healthMode()==ComponentHealthMode.UDP) values.put("port",input.healthEndpoint());
+        if(input.projectType()==DeploymentProjectType.PYTHON_SERVICE) values.put("primary",input.runtimeVersion());
+        if(input.projectType()==DeploymentProjectType.DOCKERFILE_CONTAINER) {
+            values.put("containerEngine",input.runtimePrimary().toUpperCase(Locale.ROOT));
+            values.put("ports",input.runtimeSecondary()); values.put("volumes",input.runtimeAdditional());
         }
-        if (!input.userAccessUrl().isBlank()) throw new IllegalArgumentException("TCP components cannot declare a user access URL");
-        return Optional.empty();
+        return gold.debug.windowstolinux.shared.deploy.input.ApplicationDeclaration.completed(values);
+    }
+    private DeploymentRuntimeSpecification runtime(HealthCheck health) {
+        var resolver=new gold.debug.windowstolinux.shared.deploy.input.AutomaticRuntimeResolver();
+        var values=values();
+        if(!resolver.missing(input.componentId(),input.projectType(),values).isEmpty())
+            throw new IllegalArgumentException("Complete the application service exposure and runtime declaration before review");
+        return resolver.runtime(input.projectType(),values);
+    }
+    private Optional<UserAccessUrl> userAccess() {
+        var workload=gold.debug.windowstolinux.shared.deploy.input.ApplicationDeclaration.resolve(values());
+        if(workload.category()!=gold.debug.windowstolinux.shared.model.project.application.ApplicationWorkload.CategoryType.WEBSITE)
+            return Optional.empty();
+        String declared=workload.endpoints().stream().map(endpoint -> endpoint.accessUrl()).filter(url -> !url.isBlank()).findFirst().orElse(input.userAccessUrl());
+        return declared.isBlank()?Optional.empty():Optional.of(new UserAccessUrl(URI.create(declared)));
     }
 
     private static HealthCheck.Http requireHttp(HealthCheck health) {

@@ -1,8 +1,8 @@
 package gold.debug.windowstolinux.app.ui.deployment.single;
 
-import gold.debug.windowstolinux.app.service.contract.definition.DatabaseReviewMode;
+import gold.debug.windowstolinux.shared.model.deployment.DatabaseReviewMode;
 
-import gold.debug.windowstolinux.app.service.deployment.automatic.DeploymentRuntimeParser;
+import gold.debug.windowstolinux.shared.deploy.input.DeploymentRuntimeParser;
 import gold.debug.windowstolinux.app.ui.i18n.MessageCatalog;
 import gold.debug.windowstolinux.app.ui.i18n.PageMessagePresenter;
 import gold.debug.windowstolinux.shared.config.resource.ManagedDatabaseConnection;

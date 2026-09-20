@@ -41,7 +41,7 @@ class RepositoryHttpFixtureTest {
     }
 
     private void exercise(String scenario, String label) throws Exception {
-        Path fixture = repositoryRoot().resolve("test/java/jdk/http-service").resolve(scenario);
+        Path fixture = repositoryRoot().resolve("test/single-language/java/jdk/http-service").resolve(scenario);
         Path classes = Files.createDirectories(temporaryDirectory.resolve(scenario + (label == null ? "-default" : "")).resolve("classes"));
         assertEquals(0, compile(fixture, classes, false));
         Path artifact = classes.getParent().resolve("app.jar");
@@ -111,7 +111,7 @@ class RepositoryHttpFixtureTest {
 
     @Test
     void omittingTheModelPreventsACompleteBuild() throws Exception {
-        Path fixture = repositoryRoot().resolve("test/java/jdk/http-service/success-json-api");
+        Path fixture = repositoryRoot().resolve("test/single-language/java/jdk/http-service/success-json-api");
         Path classes = Files.createDirectories(temporaryDirectory.resolve("missing-model"));
         assertNotEquals(0, compile(fixture, classes, true));
     }
@@ -202,7 +202,7 @@ class RepositoryHttpFixtureTest {
 
     private static Path repositoryRoot() {
         for (Path path = Path.of("").toAbsolutePath().normalize(); path != null; path = path.getParent()) {
-            if (Files.isRegularFile(path.resolve("test/matrix.json"))) return path;
+            if (Files.isRegularFile(path.resolve("test/single-language/matrix.json"))) return path;
         }
         throw new IllegalStateException("fixture repository root was not found");
     }

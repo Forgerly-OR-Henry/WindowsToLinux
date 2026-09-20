@@ -1,9 +1,9 @@
 package gold.debug.windowstolinux.app.service.backup;
 
-import gold.debug.windowstolinux.app.secret.crypto.BackupSecretCryptoService;
-import gold.debug.windowstolinux.app.secret.crypto.BackupSecretDocument;
-import gold.debug.windowstolinux.app.secret.crypto.BackupSecretException;
-import gold.debug.windowstolinux.app.secret.crypto.BackupSecretFailureType;
+import gold.debug.windowstolinux.shared.backup.crypto.BackupSecretCryptoService;
+import gold.debug.windowstolinux.shared.backup.crypto.BackupSecretDocument;
+import gold.debug.windowstolinux.shared.backup.crypto.BackupSecretException;
+import gold.debug.windowstolinux.shared.backup.crypto.BackupSecretFailureType;
 import gold.debug.windowstolinux.app.windows.workspace.WindowsRestoreAttempt;
 import gold.debug.windowstolinux.app.windows.workspace.WindowsRestoreWorkspace;
 import gold.debug.windowstolinux.app.windows.workspace.WindowsWorkspaceException;
@@ -92,7 +92,7 @@ public final class BackupUseCase {
         }
     }
 
-    /** Prepares complete schema-v4 material for one immediate product activation. / 为一次即时产品激活准备完整 schema-v4 材料。 */
+    /** Prepares complete schema-v5 material for one immediate product activation. / 为一次即时产品激活准备完整 schema-v5 材料。 */
     PreparedBackupActivation prepareForActivation(Path archive, char[] backupPassword)
             throws IOException, BackupSecretException {
         PreparedMaterial prepared = null;
@@ -101,7 +101,7 @@ public final class BackupUseCase {
             prepared = prepareValidated(archive);
             if (!prepared.validation().manifest().supportsAutomaticActivation()) {
                 throw BackupSecretException.create(BackupSecretFailureType.PAYLOAD_INVALID,
-                        "the selected backup lacks schema-v4 automatic activation identities");
+                        "the selected backup lacks schema-v5 automatic activation identities");
             }
             if (!prepared.validation().manifest().inventory().secretReferences().isEmpty()) {
                 document = authenticate(prepared, backupPassword);

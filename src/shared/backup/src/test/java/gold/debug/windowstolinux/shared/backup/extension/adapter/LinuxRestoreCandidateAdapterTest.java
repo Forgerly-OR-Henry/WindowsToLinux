@@ -123,7 +123,7 @@ class LinuxRestoreCandidateAdapterTest {
         BackupInventory inventory = new BackupInventory(
                 List.of("releases/sample.json"), List.of("config/sample.json"), secrets, List.of(), List.of(),
                 BackupDatabase.none(),
-                new BackupIdentity("sample", "source-server", "/var/lib/windowstolinux/apps/sample",
+                new BackupIdentity("sample", "source-server", "/opt/windowstolinux/apps/sample",
                         BackupInventory.computeReleaseSetSha256(List.of(component))),
                 List.of("runtime/sample.service"), List.of(component), "sample", health,
                 new BackupRuntime("ubuntu", "24.04", "systemd", "255", "x86_64", List.of("systemd")),

@@ -138,7 +138,7 @@ public final class ManagedApplicationRepository {
     public Optional<ManagedApplicationRuntimeConfiguration> findRuntime(String applicationId) throws SQLException {
         try (Connection connection = connections.open(); PreparedStatement statement = connection.prepareStatement("""
                 SELECT health_kind, http_endpoint, http_expected_status, tcp_port, health_timeout_seconds,
-                       tcp_stability_seconds, user_access_url, identity_policy
+                       tcp_stability_seconds, user_access_url, identity_policy, runtime_payload
                 FROM managed_application_runtime_configuration WHERE application_id=?
                 """)) {
             statement.setString(1, applicationId);
@@ -240,38 +240,20 @@ public final class ManagedApplicationRepository {
     private static void upsertRuntime(Connection connection, String applicationId,
                                       ManagedApplicationRuntimeConfiguration configuration) throws SQLException {
         try (PreparedStatement statement = connection.prepareStatement("""
-                INSERT INTO managed_application_runtime_configuration (
-                    application_id, health_kind, http_endpoint, http_expected_status, tcp_port,
-                    health_timeout_seconds, tcp_stability_seconds, user_access_url, identity_policy
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO managed_application_runtime_configuration
+                    (application_id, health_kind, health_timeout_seconds, user_access_url, identity_policy, runtime_payload)
+                VALUES (?, 'TYPED', ?, ?, ?, ?)
                 ON CONFLICT(application_id) DO UPDATE SET health_kind=excluded.health_kind,
-                    http_endpoint=excluded.http_endpoint, http_expected_status=excluded.http_expected_status,
-                    tcp_port=excluded.tcp_port, health_timeout_seconds=excluded.health_timeout_seconds,
-                    tcp_stability_seconds=excluded.tcp_stability_seconds, user_access_url=excluded.user_access_url, identity_policy=excluded.identity_policy
+                    health_timeout_seconds=excluded.health_timeout_seconds,user_access_url=excluded.user_access_url,
+                    identity_policy=excluded.identity_policy,runtime_payload=excluded.runtime_payload,
+                    http_endpoint=NULL,http_expected_status=NULL,tcp_port=NULL,tcp_stability_seconds=NULL
                 """)) {
-            statement.setString(1, applicationId);
-            if (configuration.healthCheck() instanceof HealthCheck.Http http) {
-                statement.setString(2, "HTTP");
-                statement.setString(3, http.endpoint().toASCIIString());
-                statement.setInt(4, http.expectedStatus());
-                statement.setNull(5, Types.INTEGER);
-                statement.setInt(6, http.timeoutSeconds());
-                statement.setNull(7, Types.INTEGER);
-                statement.setString(8, configuration.userAccessUrl().orElseThrow().url().toASCIIString());
-            } else if (configuration.healthCheck() instanceof HealthCheck.Tcp tcp) {
-                statement.setString(2, "TCP");
-                statement.setNull(3, Types.VARCHAR);
-                statement.setNull(4, Types.INTEGER);
-                statement.setInt(5, tcp.port());
-                statement.setInt(6, tcp.timeoutSeconds());
-                statement.setInt(7, tcp.stabilitySeconds());
-                statement.setNull(8, Types.VARCHAR);
-            } else {
-                throw new SQLException("unsupported managed-deployment health-check type");
-            }
-            statement.setString(9, configuration.identityPolicy().name());
+            statement.setString(1, applicationId); statement.setInt(2, configuration.healthCheck().timeoutSeconds());
+            statement.setString(3, configuration.userAccessUrl().map(url -> url.url().toString()).orElse(null));
+            statement.setString(4, configuration.identityPolicy().name());
+            statement.setBytes(5, new gold.debug.windowstolinux.shared.config.persistence.serialization.ApplicationRuntimeConfigurationCodec().write(configuration));
             statement.executeUpdate();
-        }
+        } catch (java.io.IOException failure) { throw new SQLException("invalid application runtime payload", failure); }
     }
 
     private static void upsertRelease(Connection connection, CurrentRelease release) throws SQLException {
@@ -296,6 +278,10 @@ public final class ManagedApplicationRepository {
 
     static ManagedApplicationRuntimeConfiguration readRuntime(ResultSet result) throws SQLException {
         try {
+            if ("TYPED".equals(result.getString("health_kind"))) {
+                try { return new gold.debug.windowstolinux.shared.config.persistence.serialization.ApplicationRuntimeConfigurationCodec().read(result.getBytes("runtime_payload")); }
+                catch (java.io.IOException failure) { throw new SQLException("application runtime requires reanalysis", failure); }
+            }
             var policy = gold.debug.windowstolinux.shared.model.project.RuntimeIdentityMode.valueOf(required(result, "identity_policy"));
             String kind = result.getString("health_kind");
             int timeout = result.getInt("health_timeout_seconds");

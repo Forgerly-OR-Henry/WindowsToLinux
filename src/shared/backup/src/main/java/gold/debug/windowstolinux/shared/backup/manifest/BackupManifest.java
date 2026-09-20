@@ -23,9 +23,7 @@ public record BackupManifest(
     /** Current stable archive format identifier. / 当前稳定归档格式标识。 */
     public static final String CURRENT_FORMAT = "windowstolinux-backup";
     /** Current manifest schema version. / 当前清单模式版本。 */
-    public static final String CURRENT_SCHEMA_VERSION = "4";
-    /** Legacy schema retained for local inspection and preparation only. / 仅为本地检查及准备保留的旧版 schema。 */
-    public static final String LEGACY_SCHEMA_VERSION = "3";
+    public static final String CURRENT_SCHEMA_VERSION = "6";
 
     /** Validates schema compatibility and complete member uniqueness. / 校验模式兼容性与完整成员唯一性。 */
     public BackupManifest {
@@ -37,8 +35,7 @@ public record BackupManifest(
         members = List.copyOf(Objects.requireNonNull(members, "members"));
         provenance = Objects.requireNonNull(provenance, "provenance");
         if (!CURRENT_FORMAT.equals(format)
-                || (!CURRENT_SCHEMA_VERSION.equals(schemaVersion)
-                && !LEGACY_SCHEMA_VERSION.equals(schemaVersion))) {
+                || !CURRENT_SCHEMA_VERSION.equals(schemaVersion)) {
             throw new IllegalArgumentException("unsupported backup format or schema version");
         }
         try {

@@ -1,6 +1,6 @@
 package gold.debug.windowstolinux.app.service.backup;
 
-import gold.debug.windowstolinux.app.secret.crypto.BackupSecretDocument;
+import gold.debug.windowstolinux.shared.backup.crypto.BackupSecretDocument;
 import gold.debug.windowstolinux.shared.backup.contract.validation.BackupArchiveValidation;
 import gold.debug.windowstolinux.shared.backup.restore.BackupRestoreCandidate;
 import gold.debug.windowstolinux.shared.config.secretref.ResolvedSecretRevision;

@@ -28,31 +28,29 @@ public final class RestoreCandidatePortPlanner {
     /** Forces stopped-write mode when a database must be activated before process health. / 数据库需先激活再检查进程健康时强制停写模式。 */
     public CandidatePortPlan plan(
             RestoreDeploymentRequest request, Set<Integer> unavailablePorts, boolean databaseActivationRequired) {
+        return plan(request, unavailablePorts, Set.of(), databaseActivationRequired);
+    }
+
+    public CandidatePortPlan plan(RestoreDeploymentRequest request, Set<Integer> tcp, Set<Integer> udp, boolean databaseActivationRequired) {
         Objects.requireNonNull(request, "request");
-        Set<Integer> unavailable = new HashSet<>(Objects.requireNonNull(unavailablePorts, "unavailablePorts"));
-        if (unavailable.stream().anyMatch(port -> port == null || port < 1 || port > 65535)) {
-            throw new IllegalArgumentException("unavailablePorts contains an invalid port");
-        }
-        boolean parallel = !databaseActivationRequired
+        Set<String> unavailable = new HashSet<>();
+        tcp.forEach(port -> unavailable.add("tcp:" + port)); udp.forEach(port -> unavailable.add("udp:" + port));
+        boolean parallel = (!databaseActivationRequired || request.isolatedDatabase())
                 && request.components().stream().allMatch(this::supportsTypedOverride);
         LinkedHashMap<String, List<CandidatePortBinding>> bindings = new LinkedHashMap<>();
         if (!parallel) {
             request.components().forEach(component -> bindings.put(component.componentId(), List.of()));
-            return new CandidatePortPlan(CandidatePortMode.SHORT_STOP, bindings);
+            return new CandidatePortPlan(request.isolatedDatabase() ? CandidatePortMode.ISOLATED_STOPPED : CandidatePortMode.SHORT_STOP, bindings);
         }
-        Set<Integer> official = new HashSet<>();
-        request.components().forEach(component -> official.addAll(officialPorts(component)));
-        unavailable.addAll(official);
-        int candidate = FIRST_CANDIDATE_PORT;
+        request.components().forEach(component -> officialPorts(component).forEach(port -> unavailable.add(port.protocol() + ":" + port.officialPort())));
         for (RestoreDeploymentComponent component : request.components()) {
             List<CandidatePortBinding> selected = new ArrayList<>();
-            for (int officialPort : officialPorts(component)) {
-                while (candidate <= LAST_CANDIDATE_PORT && unavailable.contains(candidate)) candidate++;
-                if (candidate > LAST_CANDIDATE_PORT) {
-                    throw new IllegalStateException("no dynamic candidate port remains in the reviewed range");
-                }
-                selected.add(new CandidatePortBinding(officialPort, candidate));
-                unavailable.add(candidate++);
+            for (var port : officialPorts(component)) {
+                int candidate = FIRST_CANDIDATE_PORT;
+                while (candidate <= LAST_CANDIDATE_PORT && unavailable.contains(port.protocol() + ":" + candidate)) candidate++;
+                if (candidate > LAST_CANDIDATE_PORT) throw new IllegalStateException("no candidate port remains");
+                selected.add(new CandidatePortBinding(port.officialPort(), candidate, port.protocol()));
+                unavailable.add(port.protocol() + ":" + candidate);
             }
             bindings.put(component.componentId(), List.copyOf(selected));
         }
@@ -60,6 +58,7 @@ public final class RestoreCandidatePortPlanner {
     }
 
     private boolean supportsTypedOverride(RestoreDeploymentComponent component) {
+        if (component.runtime().healthCheck().portNumber().isEmpty() && component.runtime().workload().endpoints().isEmpty()) return true;
         return switch (component.runtime()) {
             case DeploymentRuntimeSpecification.Container ignored -> true;
             case DeploymentRuntimeSpecification.StaticSite ignored -> true;
@@ -69,21 +68,15 @@ public final class RestoreCandidatePortPlanner {
         };
     }
 
-    private List<Integer> officialPorts(RestoreDeploymentComponent component) {
-        return switch (component.runtime()) {
-            case DeploymentRuntimeSpecification.Container container -> container.publishedPorts().keySet().stream()
-                    .sorted().toList();
-            case DeploymentRuntimeSpecification.StaticSite site -> List.of(healthPort(site.healthCheck()));
-            case DeploymentRuntimeSpecification.PhpService service -> List.of(service.servicePort());
-            case DeploymentRuntimeSpecification.RubyService service -> List.of(service.servicePort());
-            default -> List.of();
-        };
-    }
+    private record OfficialPort(int officialPort, String protocol) { }
 
-    private static int healthPort(HealthCheck health) {
-        if (health instanceof HealthCheck.Tcp tcp) return tcp.port();
-        HealthCheck.Http http = (HealthCheck.Http) health;
-        if (http.endpoint().getPort() >= 1) return http.endpoint().getPort();
-        return http.endpoint().getScheme().equalsIgnoreCase("https") ? 443 : 80;
+    private List<OfficialPort> officialPorts(RestoreDeploymentComponent component) {
+        var runtime = component.runtime();
+        if (!runtime.workload().endpoints().isEmpty()) return runtime.workload().endpoints().stream()
+                .map(endpoint -> new OfficialPort(endpoint.hostPort(), endpoint.protocol().transport())).toList();
+        if (runtime instanceof DeploymentRuntimeSpecification.Container container) return container.publishedPorts().keySet().stream().sorted()
+                .map(port -> new OfficialPort(port, "tcp")).toList();
+        return runtime.healthCheck().portNumber().stream().mapToObj(port -> new OfficialPort(port,
+                runtime.healthCheck() instanceof HealthCheck.Udp ? "udp" : "tcp")).toList();
     }
 }

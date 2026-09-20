@@ -244,7 +244,7 @@ class DesktopApplicationFacadeTest {
     void rejectsNonCanonicalManagedIdentityWithoutOverwritingIt() throws Exception {
         ServerIdentity server = server("server-one", "192.0.2.10", "SHA256:AAAAAAAAAAAA");
         ManagedApplication nonCanonical = new ManagedApplication(
-                "demo", server, "windowstolinux-other.service", "/var/lib/windowstolinux/apps/demo", "a".repeat(64)
+                "demo", server, "windowstolinux-other.service", "/opt/windowstolinux/apps/demo", "a".repeat(64)
         );
         try (DesktopPersistence database = DesktopPersistence.open(temporaryDirectory.resolve("data"))) {
             database.managedApplications().save(nonCanonical);

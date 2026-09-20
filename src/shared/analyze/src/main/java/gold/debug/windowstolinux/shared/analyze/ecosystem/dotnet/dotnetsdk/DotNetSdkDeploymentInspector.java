@@ -44,9 +44,15 @@ public final class DotNetSdkDeploymentInspector implements DeploymentTypeInspect
         }
         String artifact = projects.size() == 1
                 ? projects.getFirst().getFileName().toString().replaceFirst("\\.csproj$", "") : null;
-        if (projects.size() == 1
-                && !DOTNET_WEB_SDK.matcher(ServiceMetadataInspector.readIfPresent(projects.getFirst())).find()) {
-            missing = ServiceMetadataInspector.append(missing, "Microsoft.NET.Sdk.Web");
+        if (projects.size() == 1) {
+            String project = ServiceMetadataInspector.readIfPresent(projects.getFirst());
+            boolean console = Pattern.compile("<Project\\s+Sdk\\s*=\\s*[\"']Microsoft\\.NET\\.Sdk[\"']", Pattern.CASE_INSENSITIVE)
+                    .matcher(project).find() && Pattern.compile("<OutputType>\\s*Exe\\s*</OutputType>", Pattern.CASE_INSENSITIVE).matcher(project).find();
+            boolean worker = project.contains("Microsoft.NET.Sdk.Worker");
+            if (!DOTNET_WEB_SDK.matcher(project).find() && !console && !worker)
+                missing = ServiceMetadataInspector.append(missing, "executable Microsoft.NET.Sdk, Web or Worker project");
+            if (Pattern.compile("(?i)(?:net[0-9.]+-windows|<(?:UseWPF|UseWindowsForms)>\\s*true)").matcher(project).find())
+                missing = ServiceMetadataInspector.append(missing, "Linux-compatible non-GUI project");
         }
         if (!ServiceMetadataInspector.present(root, "Program.cs")) {
             missing = ServiceMetadataInspector.append(missing, "Program.cs");

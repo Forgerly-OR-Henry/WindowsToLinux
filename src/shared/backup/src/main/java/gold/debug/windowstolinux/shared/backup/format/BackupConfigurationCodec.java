@@ -36,7 +36,7 @@ import java.util.Optional;
 public final class BackupConfigurationCodec {
     private static final int MAGIC = 0x57544243;
     private static final int INSPECTION_VERSION = 1;
-    private static final int ACTIVATION_VERSION = 3;
+    private static final int ACTIVATION_VERSION = 5;
     private static final int MAX_BYTES = 4 * 1024 * 1024;
     private static final int MAX_FILES = 4_096;
     private static final int MAX_DATABASES = 256;
@@ -74,17 +74,17 @@ public final class BackupConfigurationCodec {
         try (DataInputStream input = new DataInputStream(new ByteArrayInputStream(document))) {
             if (input.readInt() != MAGIC) throw new IOException("backup configuration document magic is unsupported");
             int version = input.readUnsignedByte();
-            if (version < INSPECTION_VERSION || version > ACTIVATION_VERSION) {
+            if (version != INSPECTION_VERSION && version != ACTIVATION_VERSION) {
                 throw new IOException("backup configuration document version is unsupported");
             }
-            if (activationRequired && version < 2) {
+            if (activationRequired && version != ACTIVATION_VERSION) {
                 throw new IOException("backup configuration lacks exact resource and runtime activation state");
             }
             ConfigurationSnapshot snapshot = readSnapshot(input);
             Optional<ManagedComponentResourceBindings> resources = Optional.empty();
             Optional<ManagedApplicationRuntimeConfiguration> runtime = Optional.empty();
-            if (version >= 2) {
-                resources = Optional.of(readResources(input)); runtime = Optional.of(readRuntime(input, version));
+            if (version == ACTIVATION_VERSION) {
+                resources = Optional.of(readResources(input)); runtime = Optional.of(readRuntime(input));
             }
             if (input.read() >= 0) throw new IOException("backup configuration document has trailing bytes");
             return new Parsed(snapshot, resources, runtime);
@@ -125,7 +125,7 @@ public final class BackupConfigurationCodec {
     private static ConfigurationSnapshot readSnapshot(DataInputStream input) throws IOException {
         String application = text(input, 128); long revision = input.readLong();
         String schema = text(input, 128); Instant created = Instant.parse(text(input, 128));
-        String sha256 = text(input, 64); int count = bounded(input.readInt(), 1, 4_096, "configuration entry");
+        String sha256 = text(input, 64); int count = bounded(input.readInt(), 0, 4_096, "configuration entry");
         List<ConfigurationEntry> entries = new ArrayList<>(count); String previous = null;
         for (int index = 0; index < count; index++) {
             String key = text(input, 64); ConfigurationScope scope = ConfigurationScope.valueOf(text(input, 64));
@@ -153,9 +153,12 @@ public final class BackupConfigurationCodec {
         }
         output.writeInt(resources.fileBindings().size());
         for (ManagedFileBinding file : resources.fileBindings()) {
-            text(output, file.bindingId(), 63); text(output, file.dataPath().path(), 255);
+            text(output, file.bindingId(), 63); text(output, file.dataPath().path(), 512);
             output.writeByte(file.dataPath().access() == ComponentDataPath.AccessMode.READ_ONLY ? 1 : 2);
             text(output, file.dataPath().schemaId(), 128); output.writeBoolean(file.dataPath().reversible());
+            text(output, file.location().type().name(), 32); text(output, file.location().path().isEmpty() ? "-" : file.location().path(), 512);
+            text(output, file.resourceType().name(), 32);
+            text(output,file.seedFile().isEmpty() ? "-" : file.seedFile(),512); text(output,file.contentSha256().isEmpty() ? "-" : file.contentSha256(),64);
         }
         output.writeInt(resources.databaseBindings().orElseThrow().size());
         for (ManagedDatabaseBinding database : resources.databaseBindings().orElseThrow()) {
@@ -168,6 +171,11 @@ public final class BackupConfigurationCodec {
             });
             if (database.connection() instanceof ManagedDatabaseConnection.Sqlite sqlite) {
                 text(output, sqlite.fileName(), 128);
+                text(output, sqlite.location().type().name(), 32); text(output, sqlite.location().path().isEmpty() ? "-" : sqlite.location().path(), 512);
+                text(output, sqlite.accessPath().isEmpty() ? "-" : sqlite.accessPath(), 512);
+                text(output, sqlite.seedFile().isEmpty() ? "-" : sqlite.seedFile(), 512);
+                output.writeInt(sqlite.initializationFiles().size());
+                for (String file : sqlite.initializationFiles()) text(output,file,512);
             } else {
                 ManagedDatabaseConnection.Server server = (ManagedDatabaseConnection.Server) database.connection();
                 text(output, server.host(), 253); output.writeInt(server.port()); text(output, server.database(), 128);
@@ -181,14 +189,20 @@ public final class BackupConfigurationCodec {
         int fileCount = bounded(input.readInt(), 0, MAX_FILES, "file binding");
         List<ManagedFileBinding> files = new ArrayList<>(fileCount);
         for (int index = 0; index < fileCount; index++) {
-            String id = text(input, 63); String path = text(input, 255);
+            String id = text(input, 63); String path = text(input, 512);
             ComponentDataPath.AccessMode access = switch (input.readUnsignedByte()) {
                 case 1 -> ComponentDataPath.AccessMode.READ_ONLY;
                 case 2 -> ComponentDataPath.AccessMode.READ_WRITE;
                 default -> throw new IOException("backup file binding access mode is unsupported");
             };
             String schema = text(input, 128); boolean reversible = input.readBoolean();
-            files.add(new ManagedFileBinding(id, new ComponentDataPath(path, access, schema, reversible)));
+            var locationType = gold.debug.windowstolinux.shared.model.managed.ManagedStorageLocation.StorageLocationType.valueOf(text(input, 32));
+            String locationPath = text(input, 512);
+            var location = new gold.debug.windowstolinux.shared.model.managed.ManagedStorageLocation(locationType, locationPath.equals("-") ? "" : locationPath);
+            var resourceType = gold.debug.windowstolinux.shared.model.managed.ManagedStorageLocation.StorageResourceType.valueOf(text(input,32));
+            String seed = text(input,512), digest = text(input,64);
+            files.add(new ManagedFileBinding(id, new ComponentDataPath(path, access, schema, reversible), location,
+                    resourceType,seed.equals("-") ? "" : seed, digest.equals("-") ? "" : digest));
         }
         int databaseCount = bounded(input.readInt(), 0, MAX_DATABASES, "database binding");
         List<ManagedDatabaseBinding> databases = new ArrayList<>(databaseCount);
@@ -202,7 +216,7 @@ public final class BackupConfigurationCodec {
                 default -> throw new IOException("backup database engine is unsupported");
             };
             ManagedDatabaseConnection connection = engine == ManagedDatabaseEngineType.SQLITE
-                    ? new ManagedDatabaseConnection.Sqlite(text(input, 128))
+                    ? readSqlite(input)
                     : new ManagedDatabaseConnection.Server(engine, text(input, 253), input.readInt(),
                     text(input, 128), text(input, 128), new SecretReference(text(input, 64), input.readLong()),
                     input.readBoolean());
@@ -215,36 +229,24 @@ public final class BackupConfigurationCodec {
         return result;
     }
 
-    private static void writeRuntime(DataOutputStream output, ManagedApplicationRuntimeConfiguration runtime)
-            throws IOException {
-        text(output, runtime.identityPolicy().name(), 64);
-        switch (runtime.healthCheck()) {
-            case HealthCheck.Http health -> {
-                output.writeByte(1); text(output, health.endpoint().toString(), 2_048);
-                output.writeInt(health.expectedStatus()); output.writeInt(health.timeoutSeconds());
-            }
-            case HealthCheck.Tcp health -> {
-                output.writeByte(2); output.writeInt(health.port()); output.writeInt(health.timeoutSeconds());
-                output.writeInt(health.stabilitySeconds());
-            }
-        }
-        output.writeBoolean(runtime.userAccessUrl().isPresent());
-        if (runtime.userAccessUrl().isPresent()) {
-            text(output, runtime.userAccessUrl().orElseThrow().url().toString(), 2_048);
-        }
+    private static ManagedDatabaseConnection.Sqlite readSqlite(DataInputStream input) throws IOException {
+        String file = text(input,128), type = text(input,32), path = text(input,512), access = text(input,512), seed = text(input,512);
+        int size = input.readInt(); if (size < 0 || size > 32) throw new IOException("invalid initialization file count");
+        var files = new java.util.ArrayList<String>(); for (int i=0; i<size; i++) files.add(text(input,512));
+        return new ManagedDatabaseConnection.Sqlite(file, new gold.debug.windowstolinux.shared.model.managed.ManagedStorageLocation(
+                gold.debug.windowstolinux.shared.model.managed.ManagedStorageLocation.StorageLocationType.valueOf(type), path.equals("-") ? "" : path),
+                access.equals("-") ? "" : access, seed.equals("-") ? "" : seed, files);
     }
 
-    private static ManagedApplicationRuntimeConfiguration readRuntime(DataInputStream input, int version) throws IOException {
-        RuntimeIdentityMode policy = version >= 3 ? RuntimeIdentityMode.valueOf(text(input, 64))
-                : RuntimeIdentityMode.LEGACY_UNSPECIFIED;
-        HealthCheck health = switch (input.readUnsignedByte()) {
-            case 1 -> new HealthCheck.Http(URI.create(text(input, 2_048)), input.readInt(), input.readInt());
-            case 2 -> new HealthCheck.Tcp(input.readInt(), input.readInt(), input.readInt());
-            default -> throw new IOException("backup runtime health type is unsupported");
-        };
-        Optional<UserAccessUrl> access = input.readBoolean()
-                ? Optional.of(new UserAccessUrl(URI.create(text(input, 2_048)))) : Optional.empty();
-        return new ManagedApplicationRuntimeConfiguration(health, access, policy);
+    private static void writeRuntime(DataOutputStream output, ManagedApplicationRuntimeConfiguration runtime)
+            throws IOException {
+        byte[] payload = new gold.debug.windowstolinux.shared.config.persistence.serialization.ApplicationRuntimeConfigurationCodec().write(runtime);
+        output.writeInt(payload.length); output.write(payload);
+    }
+
+    private static ManagedApplicationRuntimeConfiguration readRuntime(DataInputStream input) throws IOException {
+        int length = bounded(input.readInt(), 1, 1_048_576, "runtime payload");
+        return new gold.debug.windowstolinux.shared.config.persistence.serialization.ApplicationRuntimeConfigurationCodec().read(input.readNBytes(length));
     }
 
     private static int bounded(int value, int minimum, int maximum, String field) throws IOException {

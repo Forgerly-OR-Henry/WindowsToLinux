@@ -1,0 +1,151 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>问卷与评分管理</title>
+    <link rel="stylesheet" href="/style.css" />
+  </head>
+  <body>
+    <header>
+      <h1>问卷与评分管理</h1>
+      <p>草稿编辑 · 不可变发布版本 · 条件题 · Ruby 规则评分</p>
+    </header>
+    <nav>
+      <a href="#surveys">问卷列表</a
+      ><button id="back-survey" type="button">当前问卷详情</button>
+    </nav>
+    <p>
+      <label>演示经办人<select id="actor"></select></label>
+      固定演示身份，不属于身份认证。
+    </p>
+    <p id="loading" role="status"></p>
+    <p id="message" role="alert"></p>
+    <main>
+      <section data-page="surveys">
+        <h2>问卷列表</h2>
+        <table>
+          <thead>
+            <tr>
+              <th>名称</th>
+              <th>版本数</th>
+              <th>答卷数</th>
+              <th>操作</th>
+            </tr>
+          </thead>
+          <tbody id="surveys"></tbody>
+        </table>
+        <h3>新建问卷</h3>
+        <form id="create-survey">
+          <label>名称<input id="survey-name" required maxlength="120" /></label
+          ><button>创建草稿</button>
+        </form>
+      </section>
+      <section data-page="detail" hidden>
+        <h2 id="survey-title"></h2>
+        <p id="stats"></p>
+        <button id="clone">基于最新版本创建草稿</button>
+        <table>
+          <thead>
+            <tr>
+              <th>版本</th>
+              <th>状态</th>
+              <th>答卷数</th>
+              <th>平均分</th>
+              <th>操作</th>
+            </tr>
+          </thead>
+          <tbody id="revisions"></tbody>
+        </table>
+        <h3>问卷操作历史</h3>
+        <table>
+          <thead>
+            <tr>
+              <th>操作</th>
+              <th>经办人</th>
+              <th>版本标识</th>
+              <th>时间</th>
+            </tr>
+          </thead>
+          <tbody id="events"></tbody>
+        </table>
+      </section>
+      <section data-page="edit" hidden>
+        <h2 id="edit-title">编辑草稿</h2>
+        <p>
+          发布后不可修改；新增草稿形成下一版本。条件题只引用前面的非条件单选题。选项每行使用“值|文本|分数”。
+        </p>
+        <form id="editor">
+          <label
+            >问卷标题<input id="content-title" required maxlength="120"
+          /></label>
+          <div id="questions-editor"></div>
+          <button id="add-question" type="button">增加问题</button
+          ><button>保存草稿</button>
+        </form>
+        <button id="publish">发布已保存草稿</button>
+        <p id="edit-version"></p>
+      </section>
+      <section data-page="fill" hidden>
+        <h2 id="fill-title"></h2>
+        <p id="fill-version"></p>
+        <form id="answers">
+          <label>填写人<select id="respondent"></select></label>
+          <div id="questions"></div>
+          <button id="submit">提交评分</button>
+        </form>
+      </section>
+      <section data-page="result" hidden>
+        <h2>答卷结果</h2>
+        <p id="result-meta"></p>
+        <p id="score"></p>
+        <table>
+          <thead>
+            <tr>
+              <th>维度</th>
+              <th>加权得分</th>
+              <th>满分</th>
+              <th>百分制</th>
+            </tr>
+          </thead>
+          <tbody id="dimensions"></tbody>
+        </table>
+        <h3>逐题规则解释</h3>
+        <table>
+          <thead>
+            <tr>
+              <th>题号</th>
+              <th>维度</th>
+              <th>得分</th>
+              <th>规则解释</th>
+            </tr>
+          </thead>
+          <tbody id="parts"></tbody>
+        </table>
+        <p id="hidden-questions"></p>
+        <h3>提交时的题目与答案</h3>
+        <ul id="original-answers"></ul>
+        <a id="export">导出结果 JSON</a
+        ><button id="result-history">查看本版本历史答卷</button>
+      </section>
+      <section data-page="history" hidden>
+        <h2 id="history-title">历史答卷</h2>
+        <p id="history-total"></p>
+        <table>
+          <thead>
+            <tr>
+              <th>答卷</th>
+              <th>填写人</th>
+              <th>得分</th>
+              <th>时间</th>
+              <th>操作</th>
+            </tr>
+          </thead>
+          <tbody id="history"></tbody>
+        </table>
+        <button id="prev">上一页</button><button id="next">下一页</button>
+      </section>
+    </main>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

@@ -71,14 +71,24 @@ final class ComponentGraphValidator {
                     issues.add(issue(ComponentIssue.SeverityLevel.SAFETY_REJECTION, "COMPONENT_ARTIFACT_OVERLAP", ids,
                             "analysis.component.artifactOverlap"));
                 }
-                Set<Integer> ports = new TreeSet<>(first.ports());
-                ports.retainAll(second.ports());
+                Set<String> ports = new TreeSet<>(transportPorts(first));
+                ports.retainAll(transportPorts(second));
                 if (!ports.isEmpty()) {
                     issues.add(issue(ComponentIssue.SeverityLevel.SAFETY_REJECTION, "COMPONENT_PORT_CONFLICT", ids,
                             "analysis.component.portConflict"));
                 }
             }
         }
+    }
+
+    private static Set<String> transportPorts(DeploymentComponent component) {
+        var endpoints = component.runtime().map(runtime -> runtime.workload().endpoints()).orElse(List.of());
+        if (!endpoints.isEmpty()) return endpoints.stream().map(endpoint -> endpoint.portKey())
+                .collect(java.util.stream.Collectors.toSet());
+        String protocol = component.runtime().filter(runtime -> runtime.healthCheck()
+                instanceof gold.debug.windowstolinux.shared.model.health.HealthCheck.Udp).isPresent() ? "udp" : "tcp";
+        return component.ports().stream().map(port -> protocol + ":" + port)
+                .collect(java.util.stream.Collectors.toSet());
     }
 
     private static void validateData(List<DeploymentComponent> components, List<ComponentIssue> issues) {

@@ -10,6 +10,7 @@ public record DeploymentInputField(String id, String labelKey, String helpKey, S
         if (id == null || !id.matches("[a-zA-Z0-9._/-]{1,160}")) throw new IllegalArgumentException("invalid input identifier");
         Objects.requireNonNull(labelKey); Objects.requireNonNull(helpKey); Objects.requireNonNull(value);
         choices = List.copyOf(choices);
-        if (value.length() > 4096 || choices.size() > 64) throw new IllegalArgumentException("input descriptor exceeds limits");
+        int limit = id.equals("applicationDeclaration") || id.endsWith("/applicationDeclaration") ? 65536 : 4096;
+        if (value.length() > limit || choices.size() > 64) throw new IllegalArgumentException("input descriptor exceeds limits");
     }
 }

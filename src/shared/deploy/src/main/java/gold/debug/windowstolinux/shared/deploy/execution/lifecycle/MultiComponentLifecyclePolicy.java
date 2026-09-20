@@ -33,6 +33,8 @@ final class MultiComponentLifecyclePolicy {
                     plan, observations, Set.of(), observations.keySet());
         }
         if (action == LifecycleAction.REFRESH_STATUS) return null;
+        if (targets.stream().anyMatch(id -> observations.get(id).runtimeState() == RuntimeState.INSTALLED))
+            return result(false, LocalizedMessage.of("lifecycle.onDemandCommandRequired"), plan, observations, Set.of(), targets);
         if (action != LifecycleAction.STOP && action != LifecycleAction.DISABLE_AUTOSTART
                 && targets.stream().anyMatch(id -> observations.get(id).runtimeState() == RuntimeState.ERROR)) {
             return result(false, LocalizedMessage.of("lifecycle.errorRequiresStop"),
@@ -188,8 +190,10 @@ final class MultiComponentLifecyclePolicy {
             return ApplicationRuntimeState.UNKNOWN;
         }
         if (observations.stream().anyMatch(value -> value.runtimeState() == RuntimeState.ERROR)) return ApplicationRuntimeState.ERROR;
-        if (observations.stream().allMatch(value -> value.runtimeState() == RuntimeState.RUNNING)) return ApplicationRuntimeState.RUNNING;
-        if (observations.stream().allMatch(value -> value.runtimeState() == RuntimeState.STOPPED)) return ApplicationRuntimeState.STOPPED;
+        if (observations.stream().allMatch(value -> value.runtimeState() == RuntimeState.INSTALLED)) return ApplicationRuntimeState.INSTALLED;
+        var daemons = observations.stream().filter(value -> value.runtimeState() != RuntimeState.INSTALLED).toList();
+        if (daemons.stream().allMatch(value -> value.runtimeState() == RuntimeState.RUNNING)) return ApplicationRuntimeState.RUNNING;
+        if (daemons.stream().allMatch(value -> value.runtimeState() == RuntimeState.STOPPED)) return ApplicationRuntimeState.STOPPED;
         return ApplicationRuntimeState.PARTIALLY_RUNNING;
     }
 

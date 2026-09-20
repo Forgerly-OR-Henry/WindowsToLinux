@@ -1,0 +1,7 @@
+2026-09-19T10:00:00Z INFO [api] 服务启动
+2026-09-19T10:00:10Z ERROR [api] connection timeout
+2026-09-19T10:00:20Z WARN [worker] 磁盘空间不足
+2026-09-19T10:01:00Z ERROR [api] connection timeout
+2026-09-19T10:01:20Z ERROR [api] invalid token
+not a valid record
+2026-09-19T10:02:00Z INFO [worker] 处理完成

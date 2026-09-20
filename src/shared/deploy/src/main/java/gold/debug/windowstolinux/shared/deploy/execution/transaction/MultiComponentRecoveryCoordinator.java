@@ -85,7 +85,7 @@ final class MultiComponentRecoveryCoordinator {
                     LifecycleObservation restored = recovery.observeDeployment(context.component.application(),
                             context.component.request().runtime());
                     boolean expected = restored.ownershipVerified() && (context.snapshot.previousWasRunning()
-                            ? restored.runtimeState() == RuntimeState.RUNNING : restored.runtimeState() == RuntimeState.STOPPED);
+                            ? restored.runtimeState() == RuntimeState.RUNNING : restored.runtimeState() == RuntimeState.STOPPED || restored.runtimeState() == RuntimeState.INSTALLED);
                     context.observation = restored;
                     context.event(DeploymentTraceEvent.ROLLBACK_OBSERVATION, expected, restored.evidence());
                     context.state = expected ? ComponentTransactionState.RESTORED
@@ -97,6 +97,8 @@ final class MultiComponentRecoveryCoordinator {
             }
             manual |= !cleanupAll(contexts, recovery);
             if (manual) return result(DeploymentStatus.MANUAL_RECOVERY_REQUIRED, applicationEvents, contexts);
+            for (var context : contexts.values()) if (context.publishAttempted) recovery.backupArtifacts().endMaintenance(
+                    context.component.application(), "deployment-" + context.releaseIdentity);
             contexts.values().stream().filter(context -> context.state == ComponentTransactionState.PRECONDITION_REJECTED
                     && context.workspace != null).forEach(context -> context.state = ComponentTransactionState.CANDIDATE_DISCARDED);
             return result(hadPrevious ? DeploymentStatus.FAILED_ROLLED_BACK : DeploymentStatus.FAILED_FIRST_DEPLOYMENT,

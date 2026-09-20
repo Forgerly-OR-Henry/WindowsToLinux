@@ -1,5 +1,11 @@
 package gold.debug.windowstolinux.app.service;
 
+import gold.debug.windowstolinux.shared.backup.crypto.BackupSecretException;
+
+import gold.debug.windowstolinux.shared.deploy.contract.AutomaticDatabasePreparation;
+
+import gold.debug.windowstolinux.shared.deploy.contract.AutomaticDeploymentInteraction;
+
 import gold.debug.windowstolinux.app.service.contract.definition.*;
 
 import gold.debug.windowstolinux.app.db.DesktopPersistence;
@@ -117,7 +123,7 @@ public final class DesktopApplicationFacade implements AiApplicationFacade, Depl
     /** Executes one automatic desktop operation through the reviewed service contracts. / 通过经审阅的服务契约执行一次桌面自动操作。 */
     @Override public gold.debug.windowstolinux.app.service.contract.definition.AutomaticDeploymentOutcome deployAutomatically(
             gold.debug.windowstolinux.app.service.contract.definition.AutomaticDeploymentRequest request, char[] master,
-            gold.debug.windowstolinux.app.service.contract.definition.AutomaticDeploymentInteraction interaction,
+            gold.debug.windowstolinux.shared.deploy.contract.AutomaticDeploymentInteraction interaction,
             Predicate<String> fingerprint, java.util.function.Consumer<gold.debug.windowstolinux.shared.model.message.LocalizedMessage> progress) throws Exception {
         try { return automatic.deploy(request, master, interaction, fingerprint, progress); }
         catch (gold.debug.windowstolinux.shared.linux.error.NativeDatabaseException failure) {
@@ -141,17 +147,17 @@ public final class DesktopApplicationFacade implements AiApplicationFacade, Depl
 
     @Override public gold.debug.windowstolinux.shared.analyze.ecosystem.db.DatabaseProjectInspector.Assessment completeAutomaticDatabaseInputs(
             Path root, String applicationId, gold.debug.windowstolinux.shared.analyze.ecosystem.db.DatabaseProjectInspector.Assessment assessment,
-            char[] master, gold.debug.windowstolinux.app.service.contract.definition.AutomaticDeploymentInteraction interaction) throws Exception {
+            char[] master, gold.debug.windowstolinux.shared.deploy.contract.AutomaticDeploymentInteraction interaction) throws Exception {
         try { return automaticDatabases.completeInputs(root, applicationId, assessment, master, interaction); }
         catch (gold.debug.windowstolinux.shared.linux.error.NativeDatabaseException failure) {
             throw gold.debug.windowstolinux.app.service.failure.ApplicationServiceException.nativeDatabase(failure);
         }
     }
 
-    @Override public gold.debug.windowstolinux.app.service.contract.definition.AutomaticDatabasePreparation prepareAutomaticDatabases(
+    @Override public gold.debug.windowstolinux.shared.deploy.contract.AutomaticDatabasePreparation prepareAutomaticDatabases(
             Path root, String applicationId, ServerProfile server,
             gold.debug.windowstolinux.shared.analyze.ecosystem.db.DatabaseProjectInspector.Assessment assessment, char[] master,
-            gold.debug.windowstolinux.app.service.contract.definition.AutomaticDeploymentInteraction interaction,
+            gold.debug.windowstolinux.shared.deploy.contract.AutomaticDeploymentInteraction interaction,
             java.util.function.Predicate<String> fingerprint, java.util.function.Consumer<gold.debug.windowstolinux.shared.model.message.LocalizedMessage> progress) throws Exception {
         try { return automaticDatabases.prepare(root, applicationId, server, assessment, master, interaction, fingerprint, progress); }
         catch (gold.debug.windowstolinux.shared.linux.error.NativeDatabaseException failure) {
@@ -254,7 +260,7 @@ public final class DesktopApplicationFacade implements AiApplicationFacade, Depl
             String applicationId, Path destination, char[] backupPassword, char[] masterPassword,
             Predicate<String> firstUseConfirmation
     ) throws SQLException, SecretStoreException, LinuxOperationException, IOException,
-            gold.debug.windowstolinux.app.secret.crypto.BackupSecretException {
+            gold.debug.windowstolinux.shared.backup.crypto.BackupSecretException {
         return remoteBackup.createUsingSavedProfile(applicationId, destination, backupPassword, masterPassword,
                 firstUseConfirmation);
     }
@@ -265,7 +271,7 @@ public final class DesktopApplicationFacade implements AiApplicationFacade, Depl
             Path archive, String targetServerId, char[] backupPassword, char[] masterPassword,
             Predicate<String> firstUseConfirmation
     ) throws SQLException, SecretStoreException, LinuxOperationException, IOException,
-            gold.debug.windowstolinux.app.secret.crypto.BackupSecretException {
+            gold.debug.windowstolinux.shared.backup.crypto.BackupSecretException {
         return managedRestore.restoreUsingSavedProfile(archive, targetServerId, backupPassword, masterPassword,
                 firstUseConfirmation);
     }
@@ -276,7 +282,7 @@ public final class DesktopApplicationFacade implements AiApplicationFacade, Depl
             String applicationId, String targetServerId, char[] backupPassword, char[] masterPassword,
             boolean stopWindowApproved, Predicate<String> firstUseConfirmation
     ) throws SQLException, SecretStoreException, LinuxOperationException, IOException,
-            gold.debug.windowstolinux.app.secret.crypto.BackupSecretException {
+            gold.debug.windowstolinux.shared.backup.crypto.BackupSecretException {
         return managedMigration.prepare(applicationId, targetServerId, backupPassword, masterPassword,
                 stopWindowApproved, firstUseConfirmation);
     }
@@ -302,7 +308,7 @@ public final class DesktopApplicationFacade implements AiApplicationFacade, Depl
     /** Prepares a candidate and authenticates its manifest-bound encrypted revisions. / 准备候选并认证其清单绑定加密修订。 */
     @Override
     public PreparedBackupSecrets prepareBackupCandidateWithSecrets(Path archive, char[] backupPassword)
-            throws IOException, gold.debug.windowstolinux.app.secret.crypto.BackupSecretException {
+            throws IOException, gold.debug.windowstolinux.shared.backup.crypto.BackupSecretException {
         return backup.prepareWithSecrets(archive, backupPassword);
     }
 

@@ -58,9 +58,15 @@ class ContainerProtocolContractTest {
                 DeploymentRuntimeSpecification.ContainerEngineType.PODMAN, Map.of(9000, 9001, 8080, 8081),
                 List.of(new DeploymentRuntimeSpecification.ManagedVolume("windowstolinux-demo-cache", "/cache", true),
                         new DeploymentRuntimeSpecification.ManagedVolume("windowstolinux-demo-data", "/data", false)),
-                new HealthCheck.Tcp(8080, 5, 1));
+                new HealthCheck.Tcp(8080, 5, 1), gold.debug.windowstolinux.shared.model.project.RuntimeIdentityMode.CONTAINER_NON_ROOT,
+                new gold.debug.windowstolinux.shared.model.project.application.ApplicationWorkload(
+                    gold.debug.windowstolinux.shared.model.project.application.ApplicationWorkload.ExecutionMode.DAEMON, true,
+                    gold.debug.windowstolinux.shared.model.project.application.ApplicationCommand.primary(), "", List.of(
+                        new gold.debug.windowstolinux.shared.model.project.application.ApplicationEndpoint("tcp", gold.debug.windowstolinux.shared.model.project.application.ApplicationEndpoint.ProtocolType.TCP,"0.0.0.0",8080,8081,gold.debug.windowstolinux.shared.model.project.application.ApplicationEndpoint.ExposureType.EXTERNAL,""),
+                        new gold.debug.windowstolinux.shared.model.project.application.ApplicationEndpoint("udp", gold.debug.windowstolinux.shared.model.project.application.ApplicationEndpoint.ProtocolType.UDP,"0.0.0.0",9000,9001,gold.debug.windowstolinux.shared.model.project.application.ApplicationEndpoint.ExposureType.EXTERNAL,"")),
+                    java.util.Optional.empty(),"",java.util.Optional.empty(),List.of(),List.of()));
 
-        assertEquals(List.of("podman", "2", "8080", "8081", "9000", "9001", "2",
+        assertEquals(List.of("podman", "2", "tcp", "0.0.0.0", "8080", "8081", "udp", "0.0.0.0", "9000", "9001", "2",
                 "windowstolinux-demo-cache", "/cache", "1", "windowstolinux-demo-data", "/data", "0"),
                 ContainerRuntimeArguments.from(runtime));
     }

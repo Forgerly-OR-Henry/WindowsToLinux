@@ -43,6 +43,7 @@ public final class SafeBuildScriptEnvelope {
                 test -z "$(find "$source" -xdev -type l -print -quit)"
                 test -z "$(find "$source" -xdev ! -type f ! -type d -print -quit)"
                 cd "$source"
+                %s
                 run() {
                   "$@"
                 }
@@ -96,6 +97,7 @@ public final class SafeBuildScriptEnvelope {
                 """.formatted(shellQuote(workspace.candidateRoot()), shellQuote(mutable), shellQuote(source),
                 shellQuote(workspace.sourceSha256()),
                 extractSource(container),
+                facts.buildDirectory().isEmpty() ? "" : "cd -- " + shellQuote(facts.buildDirectory()),
                 command,
                 workspaceAccounting(container, limits), facts.buildTool().name());
     }

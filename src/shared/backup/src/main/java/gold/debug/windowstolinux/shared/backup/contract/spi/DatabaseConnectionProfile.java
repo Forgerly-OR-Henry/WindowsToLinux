@@ -11,11 +11,14 @@ public sealed interface DatabaseConnectionProfile
     /** Returns the database family. / 返回数据库族。 */
     BackupDatabaseType type();
 
-    /** Managed relative SQLite path. / 受管相对 SQLite 路径。 */
-    record Sqlite(String relativePath) implements DatabaseConnectionProfile {
-        /** Validates a relative path without traversal or platform drive syntax. / 校验无穿越或平台驱动器语法的相对路径。 */
+    /** Reviewed SQLite physical binding. / 已审阅的 SQLite 物理绑定。 */
+    record Sqlite(String bindingId, gold.debug.windowstolinux.shared.model.managed.ManagedStorageLocation location, String fileName) implements DatabaseConnectionProfile {
+        /** Validates the reviewed storage binding and plain database file name. / 校验已审阅存储绑定和数据库文件名。 */
         public Sqlite {
-            relativePath = DatabaseContractRules.relativePath(relativePath, "relativePath");
+            if (!Objects.requireNonNull(bindingId).matches("[a-z0-9][a-z0-9-]{0,62}")) throw new IllegalArgumentException("invalid SQLite storage binding");
+            Objects.requireNonNull(location);
+            if (location.type() == gold.debug.windowstolinux.shared.model.managed.ManagedStorageLocation.StorageLocationType.UNRESOLVED) throw new IllegalArgumentException("SQLite location must be reviewed");
+            if (!Objects.requireNonNull(fileName).matches("[A-Za-z0-9][A-Za-z0-9._-]{0,127}")) throw new IllegalArgumentException("invalid SQLite file name");
         }
 
         @Override public BackupDatabaseType type() { return BackupDatabaseType.SQLITE; }

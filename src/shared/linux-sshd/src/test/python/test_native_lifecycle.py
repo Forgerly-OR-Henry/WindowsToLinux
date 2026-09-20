@@ -10,21 +10,22 @@ SOURCE = pathlib.Path(__file__).resolve().parents[2] / 'main/resources/gold/debu
 
 
 class NativeLifecycleTest(unittest.TestCase):
-    def run_helper(self, mode, action='stop', legacy=False, twice=False):
+    def run_helper(self, mode, action='stop', legacy=False, twice=False, workload='DAEMON'):
         bash = shutil.which('bash') or 'E:/Program/Git/bin/bash.exe'
         if not pathlib.Path(bash).is_file():
             self.skipTest('Bash is unavailable')
-        identity = read_fragment(SOURCE / 'runtime/systemd/helper/61-dynamic-identity.sh')
+        identity = read_fragment(SOURCE / 'runtime/systemd/helper/61-service-identity.sh')
         lifecycle = (SOURCE / ('runtime/systemd/helper/60-lifecycle.sh' if legacy else
                               'execution/protocol/helper/fragments/runtime/40-typed-runtime.sh')).read_text()
         setup = r'''
 set -eu
 export PATH=/usr/bin:/bin:$PATH
 mode="$1"
+application_mode="$2"
 CGROUP_ROOT="$PWD/cgroup"
 mkdir -p "$CGROUP_ROOT/test"
 : > "$CGROUP_ROOT/test/cgroup.procs"
-case "$mode" in residue) printf '222\n' > "$CGROUP_ROOT/test/cgroup.procs" ;; esac
+case "$mode" in residue|bad-residue) printf '222\n' > "$CGROUP_ROOT/test/cgroup.procs" ;; esac
 printf failed > state
 reject() { printf 'REJECT=%s\n' "$1"; exit 64; }
 require_app() { :; }
@@ -38,16 +39,16 @@ systemctl() {
   case "$1" in
     stop)
       touch stopped
-      case "$mode" in stopfail) return 1 ;; timeout) return 124 ;; transition) printf deactivating > state ;; normal) printf inactive > state ;; esac ;;
+      case "$mode" in stopfail|bad-setting|bad-residue|bad-pid|bad-active) return 1 ;; timeout) return 124 ;; transition) printf deactivating > state ;; normal) printf inactive > state ;; esac ;;
     reset-failed) [ "$mode" != resetfail ] || return 1; printf inactive > state ;;
     is-active) return 3 ;;
     is-enabled) printf 'disabled\n'; return 1 ;;
     show)
       if [ "$2" = --value ]; then
         case "$4" in
-          LoadState) case "$mode" in loadqueryfail) return 1 ;; loadempty) : ;; notfound) printf 'not-found\n' ;; *) printf 'loaded\n' ;; esac ;;
-          ActiveState) cat state ;;
-          MainPID) if [ "$mode" = pid ]; then printf 222; else printf 0; fi ;;
+          LoadState) case "$mode" in loadqueryfail) return 1 ;; loadempty) : ;; notfound) printf 'not-found\n' ;; bad-*) printf 'bad-setting\n' ;; *) printf 'loaded\n' ;; esac ;;
+          ActiveState) if [ "$mode" = bad-active ]; then printf active; else cat state; fi ;;
+          MainPID) if [ "$mode" = pid ] || [ "$mode" = bad-pid ]; then printf 222; else printf 0; fi ;;
           ControlGroup) printf '/test\n' ;;
         esac
       else
@@ -63,13 +64,33 @@ systemctl() {
         call = f'{entry} demo {action} digest\n'
         if action == 'observe':
             call = 'observe_deployment demo digest\n'
+        if action == 'recovery-stop':
+            call = 'stop_application_unit demo\n'
         script = setup + identity.replace('/sys/fs/cgroup', '${CGROUP_ROOT}') + '\n' + lifecycle + '\n' + call * (2 if twice else 1)
         with tempfile.TemporaryDirectory() as temporary:
-            result = subprocess.run([bash, '-s', '--', mode], input=script, text=True,
+            result = subprocess.run([bash, '-s', '--', mode, workload], input=script, text=True,
                                     cwd=temporary, capture_output=True, timeout=10)
             calls = pathlib.Path(temporary, 'calls')
             log = calls.read_text() if calls.exists() else ''
         return result, log
+
+    def test_recovery_of_bad_unit_requires_independently_verified_stopped_state(self):
+        for mode, expected in [('bad-setting', 0), ('bad-pid', 64), ('bad-active', 64), ('bad-residue', 64)]:
+            with self.subTest(mode=mode):
+                result, calls = self.run_helper(mode, action='recovery-stop')
+                self.assertEqual(expected, result.returncode, result.stdout + result.stderr)
+                self.assertIn('stop windowstolinux-demo.service', calls)
+
+    def test_one_shot_remains_installed_and_rejects_every_lifecycle_mutation(self):
+        result, calls = self.run_helper('normal', action='observe', workload='ON_DEMAND')
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertIn('INSTALLED=1', result.stdout)
+        self.assertEqual('', calls)
+        for action in ('start', 'stop', 'restart', 'enable', 'disable'):
+            result, calls = self.run_helper('normal', action=action, workload='ON_DEMAND')
+            self.assertEqual(64, result.returncode, result.stderr)
+            self.assertIn('application-lifecycle-not-applicable', result.stdout)
+            self.assertEqual('', calls)
 
     def test_checked_stop_clears_only_current_failed_unit_and_is_idempotent(self):
         for legacy in (False, True):

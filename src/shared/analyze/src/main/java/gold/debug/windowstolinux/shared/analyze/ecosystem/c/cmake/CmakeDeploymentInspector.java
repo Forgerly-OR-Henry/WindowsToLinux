@@ -37,7 +37,8 @@ public final class CmakeDeploymentInspector implements DeploymentTypeInspector {
             + "\"cacheVariables\":{\"CMAKE_BUILD_TYPE\":\"Release\"}}],\"buildPresets\":[{"
             + "\"name\":\"w2l-release-build\",\"configurePreset\":\"w2l-release\"}]}";
     private static final Set<String> REVIEWED_COMMANDS = Set.of(
-            "add_executable", "cmake_minimum_required", "project", "target_compile_features");
+            "add_executable", "cmake_minimum_required", "project", "target_compile_features", "set",
+            "target_include_directories", "target_compile_options", "target_link_options", "if", "endif");
     private static final Pattern COMMAND = Pattern.compile("(?i)([A-Za-z_][A-Za-z0-9_]*)\\s*\\(");
     private static final Pattern EXECUTABLE = Pattern.compile("(?im)^\\s*add_executable\\s*\\(\\s*([A-Za-z0-9][A-Za-z0-9._-]{0,127})\\s+([^\\r\\n)]+)\\)");
     private static final Pattern MINIMUM = Pattern.compile(
@@ -76,7 +77,7 @@ public final class CmakeDeploymentInspector implements DeploymentTypeInspector {
         EnumSet<SourceLanguageType> languages = EnumSet.noneOf(SourceLanguageType.class);
         for (String targetSource : targetSources) {
             if (!ServiceMetadataInspector.present(root, targetSource)) missing.add(targetSource);
-            CLanguageInspector.compilationLanguage(targetSource).ifPresentOrElse(languages::add,
+            if (!targetSource.matches(".*\\.(?:h|hpp|hxx)$")) CLanguageInspector.compilationLanguage(targetSource).ifPresentOrElse(languages::add,
                     () -> conflicts.add("cmake-non-source:" + targetSource));
         }
         if (languages.isEmpty()) missing.add("C or C++ target source");
@@ -107,7 +108,7 @@ public final class CmakeDeploymentInspector implements DeploymentTypeInspector {
 
     private static String validateBuildDefinitions(String cmake, String presets, List<String> missing,
                                                    List<String> conflicts) {
-        if (!presets.replaceAll("\\s+", "").equals(REVIEWED_PRESETS)) {
+        if (!presets.replaceAll("\\s+", "").replace("${sourceDir}/build", "${sourceDir}/.w2l/cmake-build").equals(REVIEWED_PRESETS)) {
             conflicts.add("cmake-presets-not-exact");
         }
         String executableCmake = cmake.replaceAll("(?m)#.*$", "");
@@ -119,8 +120,17 @@ public final class CmakeDeploymentInspector implements DeploymentTypeInspector {
             commandCounts.merge(command, 1, Integer::sum);
             if (!REVIEWED_COMMANDS.contains(command)) conflicts.add("cmake-command:" + command);
         }
-        REVIEWED_COMMANDS.stream().filter(command -> commandCounts.getOrDefault(command, 0) != 1)
+        Set.of("add_executable", "cmake_minimum_required", "project").stream().filter(command -> commandCounts.getOrDefault(command, 0) != 1)
                 .forEach(command -> conflicts.add("cmake-command-count:" + command));
+        Matcher settings = Pattern.compile("(?is)\\bset\\s*\\(([^)]*)\\)").matcher(executableCmake);
+        while (settings.find()) if (!settings.group(1).trim().matches("CMAKE_(?:C|CXX)_STANDARD(?:_REQUIRED)?\\s+(?:[0-9]{2}|ON)"))
+            conflicts.add("cmake-setting:" + settings.group(1));
+        Matcher includes = Pattern.compile("(?is)target_include_directories\\s*\\(\\s*\\S+\\s+(?:SYSTEM\\s+)?PRIVATE\\s+([^)]*)\\)").matcher(executableCmake);
+        while (includes.find()) for (String directory : includes.group(1).trim().split("\\s+"))
+            if (relative(directory) == null) conflicts.add("cmake-include-path:" + directory);
+        Matcher options = Pattern.compile("(?is)target_(?:compile|link)_options\\s*\\(\\s*\\S+\\s+PRIVATE\\s+([^)]*)\\)").matcher(executableCmake);
+        while (options.find()) for (String option : options.group(1).trim().split("\\s+"))
+            if (!Set.of("-Wall", "-Wextra", "-Werror", "-pedantic", "-municode", "-static-libgcc", "-static-libstdc++").contains(option)) conflicts.add("cmake-option:" + option);
         if (!MINIMUM.matcher(executableCmake).find()) missing.add("cmake minimum version");
         return executableCmake;
     }
@@ -140,6 +150,14 @@ public final class CmakeDeploymentInspector implements DeploymentTypeInspector {
             featureDeclarations++;
             if (target == null || !target.equals(features.group(1))) conflicts.add("cmake-feature-target");
             compileFeatures.addAll(List.of(features.group(2).trim().split("\\s+")));
+        }
+        if (featureDeclarations == 0) {
+            for (SourceLanguageType language : languages) {
+                String family = language == SourceLanguageType.C ? "C" : "CXX";
+                if (!Pattern.compile("(?is)\\bset\\s*\\(\\s*CMAKE_" + family + "_STANDARD\\s+(?:99|11|14|17|20|23)\\s*\\)").matcher(executableCmake).find())
+                    conflicts.add("cmake-language-standard:" + family);
+            }
+            return;
         }
         if (featureDeclarations != 1 || compileFeatures.size() != languages.size()
                 || languages.contains(SourceLanguageType.C) && compileFeatures.stream().filter(f -> f.matches("c_std_[0-9]+" )).count() != 1

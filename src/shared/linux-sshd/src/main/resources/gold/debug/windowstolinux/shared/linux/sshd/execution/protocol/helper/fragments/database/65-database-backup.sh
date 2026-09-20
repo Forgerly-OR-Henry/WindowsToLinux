@@ -1,36 +1,3 @@
-require_database_type() {
-  case "$1" in sqlite|postgresql|mysql|mariadb) ;; *) reject database-type ;; esac
-}
-require_database_name() {
-  [[ "$1" =~ ^[A-Za-z_][A-Za-z0-9_.-]{0,127}$ ]] || reject database-name
-}
-require_database_host() {
-  [[ "$1" =~ ^[a-z0-9][a-z0-9.-]{0,252}[a-z0-9]$ ]] || [[ "$1" =~ ^[a-z0-9]$ ]] || reject database-host
-}
-require_boolean() {
-  [ "$1" = 0 ] || [ "$1" = 1 ] || reject boolean
-}
-require_artifact_id() {
-  [[ "$1" =~ ^db-[0-9a-f]{32}$ ]] || reject database-artifact-id
-}
-require_artifact_size() {
-  [[ "$1" =~ ^[1-9][0-9]{0,10}$ ]] || reject database-artifact-size
-  [ "$1" -le 4294967296 ] || reject database-artifact-size
-}
-database_artifact_path() {
-  printf '%s/%s' "$backups_root" "$1"
-}
-database_source_path() {
-  local app="$1" relative="$2" root source resolved
-  require_app "$app"; require_relative_path "$relative"
-  root="$(readlink -f -- "$(app_root "$app")/current")"
-  [ -n "$root" ] && [ -d "$root" ] || reject database-application-current
-  source="$root/$relative"
-  [ -f "$source" ] && [ ! -L "$source" ] || reject database-source-file
-  resolved="$(readlink -f -- "$source")"
-  case "$resolved" in "$root"/*) ;; *) reject database-source-boundary ;; esac
-  printf '%s' "$resolved"
-}
 database_password_path() {
   local app="$1" identifier="$2" revision="$3" path
   require_app "$app"; require_secret_identifier "$identifier"; require_revision "$revision"
@@ -82,11 +49,14 @@ database_inspect() {
   local app="$1" type="$2" engine=unavailable tool=unavailable available=0 compatible=0 online=0 transactional=0
   shift 2; require_app "$app"; require_database_type "$type"
   if [ "$type" = sqlite ]; then
-    [ "$#" -eq 1 ] || reject database-sqlite-arguments
-    local source; source="$(database_source_path "$app" "$1")"
+    [ "$#" -eq 4 ] || reject database-sqlite-arguments
+    database_sqlite_arguments "$app" "$@"
+    local source=
+    if [ -L "$(app_root "$app")/current" ]; then source="$(database_source_path "$app" "$@")"
+    elif [ -e "$database_sqlite_target" ] || [ -L "$database_sqlite_target" ]; then reject database-unowned-target; fi
     if command -v sqlite3 >/dev/null 2>&1; then
       tool="$(sqlite3 --version | awk '{print $1}')"; engine="$tool"; available=1; compatible=1; online=1; transactional=1
-      [ "$(sqlite3 -- "$source" 'PRAGMA quick_check;' 2>/dev/null)" = ok ] || reject database-sqlite-integrity
+      if [ -n "$source" ]; then [ "$(sqlite3 -readonly -- "$source" 'PRAGMA integrity_check;' 2>/dev/null)" = ok ] || reject database-sqlite-integrity; fi
     fi
   else
     database_server_arguments "$type" "$@"
@@ -141,15 +111,15 @@ database_export() {
   artifact="$(database_artifact_path "$artifact_id")"; tmp="$(mktemp "$backups_root/.database.XXXXXX")"
   trap 'rm -f -- "$tmp"' EXIT
   if [ "$type" = sqlite ]; then
-    [ "$#" -eq 1 ] || reject database-sqlite-arguments
-    local source; source="$(database_source_path "$app" "$1")"
+    [ "$#" -eq 4 ] || reject database-sqlite-arguments
+    local source; source="$(database_source_path "$app" "$@")"
     if [ "$mode" = sqlite-online ]; then
-      sqlite3 -- "$source" ".backup '$tmp'"
+      sqlite3 -readonly -- "$source" ".backup '$tmp'"
     elif [ "$mode" = sqlite-stopped ] && [ "$writes_stopped" = 1 ] && [ "$exclusive" = 1 ]; then
       ! systemctl is-active --quiet "$(unit_name "$app")" || reject database-writes-active
-      cp --reflink=auto -- "$source" "$tmp"
+      sqlite3 -readonly -- "$source" ".backup '$tmp'"
     else reject database-consistency-mode; fi
-    [ "$(sqlite3 -- "$tmp" 'PRAGMA quick_check;' 2>/dev/null)" = ok ] || reject database-export-integrity
+    [ "$(sqlite3 -- "$tmp" 'PRAGMA integrity_check;' 2>/dev/null)" = ok ] || reject database-export-integrity
   else
     database_server_arguments "$type" "$@"
     if [ "$type" = postgresql ]; then
@@ -224,13 +194,16 @@ database_restore_candidate() {
   candidate_root_path="$(candidate_root "$candidate")"; assert_candidate_for_deployer "$candidate_root_path"
   install -d -o root -g root -m 700 -- "$candidate_root_path/database"
   if [ "$type" = sqlite ]; then
-    [ "$#" -eq 1 ] || reject database-sqlite-arguments; require_relative_path "$1"
-    local target="$candidate_root_path/database/application.db"
+    database_sqlite_arguments "$credential_app" "$@"
+    local target="$candidate_root_path/database/$database_sqlite_binding/$database_sqlite_file"
     [ ! -e "$target" ] && [ ! -L "$target" ] || reject database-candidate-exists
+    install -d -o root -g root -m 700 -- "${target%/*}"
     install -o root -g root -m 600 -- "$artifact" "$target"
-    if [ "$(sqlite3 -- "$target" 'PRAGMA quick_check;' 2>/dev/null)" != ok ]; then
+    if [ "$(sqlite3 -- "$target" 'PRAGMA integrity_check;' 2>/dev/null)" != ok ]; then
       rm -f -- "$target"; reject database-restore-integrity
     fi
+    printf '%s\n' "$credential_app" "$database_sqlite_binding" "$database_sqlite_location_type" "$database_sqlite_location_path" "$database_sqlite_file" > "$candidate_root_path/database/sqlite-binding"
+    chmod 400 -- "$candidate_root_path/database/sqlite-binding"
     token="$candidate"
   else
     database_server_arguments "$type" "$@"
@@ -275,9 +248,13 @@ database_discard_candidate() {
   shift 4; require_app "$app"; require_app "$credential_app"; require_candidate "$app" "$candidate"; require_database_type "$type"
   candidate_root_path="$(candidate_root "$candidate")"; assert_candidate_for_deployer "$candidate_root_path"
   if [ "$type" = sqlite ]; then
-    [ "$#" -eq 1 ] || reject database-sqlite-arguments; require_relative_path "$1"
-    local target="$candidate_root_path/database/application.db"
-    if [ -e "$target" ] || [ -L "$target" ]; then assert_root_owned_regular "$target"; rm -f -- "$target"; fi
+    database_sqlite_arguments "$credential_app" "$@"
+    local target="$candidate_root_path/database/$database_sqlite_binding/$database_sqlite_file"
+    if [ -e "$target" ] || [ -L "$target" ]; then
+      assert_sqlite_file "$target"; rm -f -- "$target" "$target-wal" "$target-shm" "$target-journal"
+    fi
+    rm -f -- "$candidate_root_path/database/sqlite-binding" "$candidate_root_path/database/sqlite-owner"
+    rmdir -- "${target%/*}" 2>/dev/null || true
   else
     database_server_arguments "$type" "$@"
     local suffix="${candidate##*-}" candidate_database="w2l_${suffix}" credentials client

@@ -75,8 +75,9 @@ class PackageStructureArchitectureTest {
             "AiProfileRepository.java", "ApplicationSecretRepository.java", "ConfigurationSnapshotRepository.java",
             "DesktopPreferenceRepository.java", "EncryptedSecretRepository.java", "ManagedApplicationRepository.java",
             "ManagedApplicationGraphRepository.java", "RepositoryTransactionExecutor.java", "ServerProfileRepository.java", "ExternalApplicationRepository.java");
-    private static final Set<String> HELPER_FRAGMENTS = Set.of("21-workspace-volume.sh", "22-restricted-build.sh", "23-container-builder.sh", "24-build-entry.sh", "25-workspace-recovery.sh", "26-build-output.sh", "12-container-image-input.sh", "61-dynamic-identity.sh", "64-database-client.sh",
-            "00-protocol-foundation.sh", "10-typed-release.sh", "15-deployment-input.sh", "17-managed-content.sh", "20-candidate-workspace.sh",
+    private static final Set<String> HELPER_FRAGMENTS = Set.of("21-workspace-volume.sh", "22-restricted-build.sh", "23-container-builder.sh", "24-build-entry.sh", "25-workspace-recovery.sh", "26-build-output.sh", "12-container-image-input.sh", "61-service-identity.sh", "64-database-client.sh",
+            "00-protocol-foundation.sh", "10-typed-release.sh", "15-deployment-input.sh", "16-application-input.sh", "17-managed-content.sh", "18-container-storage.sh", "20-candidate-workspace.sh",
+            "41-application-runtime.sh", "42-application-job.sh", "43-application-container.sh", "44-application-health.sh", "45-application-container-contract.sh", "57-application-restore.sh",
             "35-ecosystem-dispatch.sh", "40-typed-runtime.sh", "50-container-release.sh", "52-container-recovery.sh", "55-podman-quadlet.sh", "60-lifecycle.sh",
             "54-restore-candidate.sh", "56-restore-commit.sh", "65-database-backup.sh", "66-database-activation.sh",
             "67-managed-backup.sh", "70-command-dispatch.sh", "10-release-metadata.py", "20-installation-boundaries.py", "30-managed-installation.py", "40-binding-protocol.py", "10-native-instances.sh", "20-native-targets.sh");
@@ -111,7 +112,9 @@ class PackageStructureArchitectureTest {
             "HostSupportDecision", "HostSupportEvaluator", "HostSupportEvaluatorTest", "HostSupportStatus",
             "ManagedHelperBundle", "ManagedHelperBundleTest", "ManagedHelperProtocol", "ManagedHelperProtocolVersion",
             "MultiComponentDraftController", "OracleLinuxSupportPolicy", "PageNavigationController",
-            "RockyLinuxSupportPolicy", "UbuntuSupportPolicy", "WindowsCredentialManagerSecretStore");
+            "RockyLinuxSupportPolicy", "UbuntuSupportPolicy", "WindowsCredentialManagerSecretStore",
+            "WebAiController", "WebApplicationController", "WebBackupController", "WebErrorController", "WebHealthController",
+            "WebPreferenceController", "WebSecretController", "WebServerController", "WebSourceController", "WebTaskController");
     private static final Set<String> FORBIDDEN_RESOURCE_TOKENS = Set.of(
             "bean", "checker", "common", "concrete", "generic", "impl", "implementation", "legacy", "misc",
             "new", "object", "old", "processor", "temp", "temporary", "util", "utils");
@@ -124,7 +127,7 @@ class PackageStructureArchitectureTest {
             "generation", Set.of("prompt", "renderer", "script", "template"),
             "extension", Set.of("adapter", "registry"),
             "execution", Set.of("collection", "environment", "lifecycle", "migration", "protocol", "transaction", "transfer"),
-            "persistence", Set.of("connection", "repository", "serialization"));
+            "persistence", Set.of("connection", "mapper", "repository", "serialization"));
     private static final Map<String, String> RESPONSIBILITY_FUNCTIONAL_GROUPS = Map.ofEntries(
             Map.entry("capability", "contract"), Map.entry("definition", "contract"),
             Map.entry("policy", "contract"), Map.entry("profile", "contract"),
@@ -136,7 +139,7 @@ class PackageStructureArchitectureTest {
             Map.entry("lifecycle", "execution"), Map.entry("migration", "execution"),
             Map.entry("protocol", "execution"), Map.entry("transaction", "execution"),
             Map.entry("transfer", "execution"), Map.entry("connection", "persistence"),
-            Map.entry("repository", "persistence"), Map.entry("serialization", "persistence"));
+            Map.entry("mapper", "persistence"), Map.entry("repository", "persistence"), Map.entry("serialization", "persistence"));
     private static final Set<String> UNGROUPED_RESPONSIBILITY_EXCEPTIONS = Set.of(
             "gold.debug.windowstolinux.shared.linux.sshd.capability",
             "gold.debug.windowstolinux.shared.linux.sshd.connection",
@@ -354,7 +357,7 @@ class PackageStructureArchitectureTest {
         assertEquals(Set.of("selinux-preparation.sh", "centos-source-repositories.py"), fileNames(fragments.resolve("distro/dnf")));
         assertEquals(Set.of(), fileNames(fragments.resolve("execution/protocol/helper")));
         assertEquals(Set.of(), fileNames(fragments.resolve("runtime/systemd")));
-        assertEquals(Set.of("60-lifecycle.sh", "61-dynamic-identity.sh", "systemd-manager-isolation.sh",
+        assertEquals(Set.of("60-lifecycle.sh", "61-service-identity.sh", "systemd-manager-isolation.sh",
                 "selinux-command-entry.sh"), fileNames(fragments.resolve("runtime/systemd/helper")));
         assertEquals(Set.of("20-candidate-workspace.sh", "21-workspace-volume.sh", "22-restricted-build.sh",
                 "23-container-builder.sh", "24-build-entry.sh", "25-workspace-recovery.sh", "26-build-output.sh",
@@ -514,9 +517,11 @@ class PackageStructureArchitectureTest {
                 "MultiComponentResultPresenter");
 
         register(packages, "gold.debug.windowstolinux.app.service.deployment.automatic",
-                "AutomaticDatabaseUseCase", "AutomaticDeploymentUseCase", "AutomaticInputCompletion", "AutomaticRuntimeResolver",
-                "DatabaseInstanceResolver", "DeploymentRuntimeParser", "DeploymentFormUseCase", "ComponentFormUseCase");
-        register(packages, "gold.debug.windowstolinux.app.service.config", "DeploymentConfigurationParser");
+                "AutomaticDatabaseUseCase", "AutomaticDeploymentUseCase", "AutomaticInputCompletion",
+                "DeploymentFormUseCase", "ComponentFormUseCase");
+        register(packages, "gold.debug.windowstolinux.shared.deploy.execution.environment", "DatabaseInstanceResolver", "NativeDatabasePreparationService");
+        register(packages, "gold.debug.windowstolinux.shared.deploy.input", "AutomaticRuntimeResolver", "DeploymentRuntimeParser");
+        register(packages, "gold.debug.windowstolinux.shared.config.input", "DeploymentConfigurationParser");
         register(packages, "gold.debug.windowstolinux.app.ui.deployment.single", "DeploymentInputDialog", "DeploymentSourceCard");
         register(packages, "gold.debug.windowstolinux.shared.ai.collaboration.role", "DeploymentInputRoleContext");
         register(packages, "gold.debug.windowstolinux.app.service.deployment",
@@ -544,6 +549,8 @@ class PackageStructureArchitectureTest {
                 "DeploymentSupportLevel", "DeploymentSupportProfile", "SourceRevision", "ValidatedDeploymentTarget");
         register(packages, "gold.debug.windowstolinux.shared.model.project.component",
                 "ComponentDataPath", "ComponentIsolationSpecification", "DeploymentComponent");
+        register(packages, "gold.debug.windowstolinux.shared.model.project.application",
+                "ApplicationCommand", "ApplicationCompanion", "ApplicationEndpoint", "ApplicationInput", "ApplicationWorker", "ApplicationWorkload");
         register(packages, "gold.debug.windowstolinux.shared.model.server",
                 "CpuMicroarchitectureLevel", "LinuxDistroType", "ManagedHelperProtocolVersion", "ServerIdentity");
         register(packages, "gold.debug.windowstolinux.shared.model.server.security",
@@ -728,6 +735,7 @@ class PackageStructureArchitectureTest {
                 String content = Files.readString(source);
                 var declaration = TOP_LEVEL_TYPE.matcher(content);
                 if (!declaration.find()) {
+                    if (source.getFileName().toString().equals("package-info.java") && content.matches("(?s).*\\bpackage\\s+[a-zA-Z0-9_.]+\\s*;\\s*")) continue;
                     problems.add(source + " has no top-level type declaration");
                     continue;
                 }
@@ -746,8 +754,7 @@ class PackageStructureArchitectureTest {
                     if (fileName.endsWith("IT.java")) {
                         problems.add(fileName + " uses the obsolete IT suffix");
                     }
-                    boolean executableTest = content.contains("@Test") || content.contains("@ParameterizedTest")
-                            || content.contains("@RepeatedTest") || content.contains("@TestFactory");
+                    boolean executableTest = hasExecutableTestAnnotation(content);
                     if (executableTest && !fileName.endsWith("Test.java")) {
                         problems.add(fileName + " is executable test code without a Test suffix");
                     }
@@ -760,6 +767,17 @@ class PackageStructureArchitectureTest {
             }
         }
         assertTrue(problems.isEmpty(), () -> "unified naming violations: " + problems);
+    }
+
+    @Test void testConfigurationDoesNotCountAsAnExecutableTest() {
+        assertFalse(hasExecutableTestAnnotation("@TestConfiguration class Example { }"));
+        assertTrue(hasExecutableTestAnnotation("@Test void sample() { }"));
+        assertTrue(hasExecutableTestAnnotation("@org.junit.jupiter.api.Test void sample() { }"));
+        assertTrue(hasExecutableTestAnnotation("@ParameterizedTest void sample(int value) { }"));
+    }
+
+    private static boolean hasExecutableTestAnnotation(String content) {
+        return Pattern.compile("@(?:[\\w$]+\\.)*(?:Test|ParameterizedTest|RepeatedTest|TestFactory)\\b").matcher(content).find();
     }
 
     @Test
@@ -1110,13 +1128,13 @@ class PackageStructureArchitectureTest {
     @Test
     void relocatedTestsAndRemovedDirectoriesMatchTheirResponsibilities() throws Exception {
         Path root = projectRoot();
-        for (var entry : Map.of("DeploymentRuntimeParserTest", "deployment/automatic",
+        for (var entry : Map.of("DeploymentRuntimeParserTest", "deploy",
                 "DeploymentConfigurationParserTest", "config").entrySet()) {
-            Path test = root.resolve("src/app/service/src/test/java/gold/debug/windowstolinux/app/service/"
-                    + entry.getValue() + "/" + entry.getKey() + ".java");
+            Path test = root.resolve("src/shared/" + entry.getValue() + "/src/test/java/gold/debug/windowstolinux/shared/"
+                    + entry.getValue() + "/input/" + entry.getKey() + ".java");
             assertTrue(Files.isRegularFile(test));
-            assertTrue(Files.readString(test).contains("package gold.debug.windowstolinux.app.service."
-                    + entry.getValue().replace('/', '.') + ";"));
+            assertTrue(Files.readString(test).contains("package gold.debug.windowstolinux.shared."
+                    + entry.getValue() + ".input;"));
             assertFalse(Files.exists(root.resolve("src/app/ui/src/test/java/gold/debug/windowstolinux/app/ui/deployment/"
                     + entry.getKey() + ".java")));
         }
@@ -1205,7 +1223,8 @@ class PackageStructureArchitectureTest {
                 }.scan(declaration, null);
             }
         }
-        assertEquals(List.of("AppMain.java:main"), entrypoints);
+        assertEquals(Set.of("AppMain.java:main", "WebMain.java:main"), new HashSet<>(entrypoints));
+        assertEquals(2, entrypoints.size());
     }
 
     private static Set<String> fileNamesRecursively(Path directory) throws IOException {

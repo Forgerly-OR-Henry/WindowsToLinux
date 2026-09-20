@@ -31,7 +31,7 @@ public final class ReviewedReleaseIdentityResolver {
     public static String from(ReviewedDeploymentRequest request) {
         try {
             MessageDigest digest = MessageDigest.getInstance("SHA-256");
-            update(digest, "reviewed-release-v3");
+            update(digest, "reviewed-release-v5");
             update(digest, request.sourceRevision().sourceSha256());
             update(digest, request.facts().buildTool().name());
             update(digest, request.configuration().sha256());
@@ -41,6 +41,12 @@ public final class ReviewedReleaseIdentityResolver {
                         update(digest, reference.identifier());
                         update(digest, Long.toString(reference.revision()));
                     });
+            request.fileBindings().stream().sorted(Comparator.comparing(gold.debug.windowstolinux.shared.config.resource.ManagedFileBinding::bindingId)).forEach(binding -> {
+                update(digest, binding.bindingId()); update(digest, binding.dataPath().path());
+                update(digest, binding.dataPath().access().name()); update(digest, binding.dataPath().schemaId());
+                update(digest, Boolean.toString(binding.dataPath().reversible())); update(digest, binding.resourceType().name());
+                update(digest, binding.location().type().name()); update(digest, binding.location().path()); update(digest, binding.seedFile()); update(digest, binding.contentSha256());
+            });
             databaseBindings(digest, request);
             runtime(digest, request.runtime());
             return HexFormat.of().formatHex(digest.digest());
@@ -50,62 +56,10 @@ public final class ReviewedReleaseIdentityResolver {
     }
 
     private static void runtime(MessageDigest digest, DeploymentRuntimeSpecification runtime) {
-        update(digest, runtime.identityPolicy().name());
-        update(digest, runtime.projectType().name());
-        switch (runtime) {
-            case DeploymentRuntimeSpecification.SpringBoot value -> {
-                if (!value.javaVersion().equals("21")) update(digest, "java-target=" + value.javaVersion());
-            }
-            case DeploymentRuntimeSpecification.JavaJar javaJar -> {
-                update(digest, javaJar.jarRelativePath());
-                update(digest, javaJar.mainClass());
-                update(digest, javaJar.javaVersion());
-                javaJar.jvmArguments().forEach(value -> update(digest, value));
-                update(digest, "application-arguments");
-                javaJar.applicationArguments().forEach(value -> update(digest, value));
-            }
-            case DeploymentRuntimeSpecification.JavaSource javaSource -> {
-                update(digest, javaSource.sourceRoot());
-                update(digest, javaSource.mainClass());
-                update(digest, javaSource.javaVersion());
-                javaSource.jvmArguments().forEach(value -> update(digest, value));
-                update(digest, "application-arguments");
-                javaSource.applicationArguments().forEach(value -> update(digest, value));
-            }
-            case DeploymentRuntimeSpecification.NodeService node ->
-                    update(digest, Integer.toString(node.nodeMajorVersion()));
-            case DeploymentRuntimeSpecification.PythonService python -> {
-                update(digest, python.pythonVersion());
-                update(digest, python.entrypoint());
-            }
-            case DeploymentRuntimeSpecification.StaticSite site -> {
-                update(digest, site.outputDirectory());
-                update(digest, site.nodeMajorVersion().isPresent()
-                        ? Integer.toString(site.nodeMajorVersion().getAsInt()) : "no-node");
-            }
-            case DeploymentRuntimeSpecification.Container container -> {
-                update(digest, container.engine().name());
-                container.publishedPorts().entrySet().stream().sorted(java.util.Map.Entry.comparingByKey())
-                        .forEach(entry -> update(digest, entry.getKey() + ":" + entry.getValue()));
-                container.volumes().stream().sorted(Comparator.comparing(
-                                DeploymentRuntimeSpecification.ManagedVolume::name)
-                                .thenComparing(DeploymentRuntimeSpecification.ManagedVolume::containerPath))
-                        .forEach(volume -> update(digest, volume.name() + ":" + volume.containerPath()
-                                + ":" + volume.readOnly()));
-            }
-            case DeploymentRuntimeSpecification.GoService service -> service(digest, "go", service.version(), service.artifactName(), service.entrypoint(), null);
-            case DeploymentRuntimeSpecification.RustService service -> service(digest, "rust", service.version(), service.artifactName(), service.entrypoint(), null);
-            case DeploymentRuntimeSpecification.DotNetService service -> service(digest, "dotnet", service.version(), service.artifactName(), service.entrypoint(), null);
-            case DeploymentRuntimeSpecification.KotlinService value -> {
-                service(digest, "kotlin", value.version(), value.artifactName(), value.entrypoint(), null);
-                if (!value.jvmTarget().equals("21")) update(digest, "jvm-target=" + value.jvmTarget());
-            }
-            case DeploymentRuntimeSpecification.PhpService service -> service(digest, "php", service.version(), service.artifactName(), service.entrypoint(), service.servicePort());
-            case DeploymentRuntimeSpecification.RubyService service -> service(digest, "ruby", service.version(), service.artifactName(), service.entrypoint(), service.servicePort());
-            case DeploymentRuntimeSpecification.CmakeService service ->
-                    service(digest, "cmake", service.preset(), service.target(), service.artifactName(), null);
-        }
-        health(digest, runtime.healthCheck());
+        try {
+            digest.update(new gold.debug.windowstolinux.shared.config.persistence.serialization.DeploymentRuntimePersistenceCodec().write(runtime));
+            digest.update(new gold.debug.windowstolinux.shared.config.persistence.serialization.HealthCheckCodec().write(runtime.healthCheck()));
+        } catch (java.io.IOException failure) { throw new IllegalArgumentException("invalid release runtime", failure); }
     }
 
     private static void databaseBindings(MessageDigest digest, ReviewedDeploymentRequest request) {
@@ -119,6 +73,8 @@ public final class ReviewedReleaseIdentityResolver {
             update(digest, binding.connection().engine().name());
             if (binding.connection() instanceof ManagedDatabaseConnection.Sqlite sqlite) {
                 update(digest, sqlite.fileName());
+                update(digest, sqlite.location().type().name()); update(digest, sqlite.location().path()); update(digest, sqlite.accessPath());
+                update(digest, sqlite.seedFile()); sqlite.initializationFiles().forEach(file -> update(digest,file));
                 return;
             }
             ManagedDatabaseConnection.Server server = (ManagedDatabaseConnection.Server) binding.connection();
@@ -130,32 +86,6 @@ public final class ReviewedReleaseIdentityResolver {
             update(digest, Long.toString(server.passwordReference().revision()));
             update(digest, Boolean.toString(server.tlsRequired()));
         });
-    }
-
-    private static void service(MessageDigest digest, String ecosystem, String version, String artifact, String entrypoint,
-                                Integer port) {
-        update(digest, ecosystem);
-        update(digest, version);
-        update(digest, artifact);
-        update(digest, entrypoint);
-        update(digest, port == null ? "no-service-port" : Integer.toString(port));
-    }
-
-    private static void health(MessageDigest digest, HealthCheck healthCheck) {
-        switch (healthCheck) {
-            case HealthCheck.Http http -> {
-                update(digest, "http");
-                update(digest, http.endpoint().toASCIIString());
-                update(digest, Integer.toString(http.expectedStatus()));
-                update(digest, Integer.toString(http.timeoutSeconds()));
-            }
-            case HealthCheck.Tcp tcp -> {
-                update(digest, "tcp");
-                update(digest, Integer.toString(tcp.port()));
-                update(digest, Integer.toString(tcp.timeoutSeconds()));
-                update(digest, Integer.toString(tcp.stabilitySeconds()));
-            }
-        }
     }
 
     private static void update(MessageDigest digest, String value) {

@@ -128,6 +128,7 @@ public final class MultiComponentPage {
         advanced.field("auto.field.jvmTarget", editor.kotlinJvmTarget);
         advanced.field("field.jvmArguments", editor.runtimeArguments);
         advanced.field("component.field.runtimeAdditional", editor.runtimeAdditional);
+        advanced.field("field.applicationDeclaration", new javax.swing.JScrollPane(editor.resources.applicationDeclaration));
         advanced.field("field.healthMode", editor.healthMode);
         advanced.field("field.healthEndpoint", editor.healthEndpoint);
         advanced.field("field.expectedStatus", editor.expectedStatus);

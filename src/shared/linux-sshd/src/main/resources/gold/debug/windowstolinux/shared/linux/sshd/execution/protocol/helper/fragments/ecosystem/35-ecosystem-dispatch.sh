@@ -3,6 +3,7 @@ parse_toolchain_binding() {
   toolchain_path=/usr/local/bin:/usr/bin:/bin
   toolchain_java=/usr/local/lib/windowstolinux/java-21
   toolchain_python=/usr/bin/python3
+  toolchain_node=/usr/bin/node
   toolchain_dotnet=/usr/bin/dotnet
   toolchain_php=php
   toolchain_ruby=ruby
@@ -28,7 +29,8 @@ parse_toolchain_binding() {
       assert_root_owned_regular "$directory/.w2l-toolchain.json"
       case "$eco" in
         JAVA) toolchain_java="$directory/bin/java" ;;
-        NODE|GO|RUST|KOTLIN) ;;
+        NODE) toolchain_node="$directory/bin/node" ;;
+        GO|RUST|KOTLIN) ;;
         PYTHON) toolchain_python="$directory/bin/python3" ;;
         DOTNET) toolchain_dotnet="$directory/dotnet" ;;
         PHP) toolchain_php="$directory/bin/php" ;;
@@ -87,25 +89,38 @@ render_ecosystem_runtime_command() {
     php)
       [ "$#" -eq 4 ] || reject runtime-arguments
       require_bound_version PHP "$1" '^8\.(2|3|4)$'
+      require_relative_path "$3"; [[ "$3" = *.php ]] || reject php-entrypoint
+      if [ "$4" = 0 ]; then
+        [ "$2" = source ] || reject php-artifact
+        ecosystem_runtime_command_result="$toolchain_php $root/current/source/$3"; return
+      fi
       [ "$2" = public ] || reject php-document-root
-      [ "$3" = public/index.php ] || reject php-router
       local php_port="${deployment_service_port_override:-$4}" php_bind="${deployment_bind_address_override:-0.0.0.0}"
       require_service_port "$php_port"; [ "$php_bind" = 0.0.0.0 ] || [ "$php_bind" = 127.0.0.1 ] || reject runtime-bind-address
-      ecosystem_runtime_command_result="/usr/bin/env PATH=$toolchain_path $toolchain_php -S $php_bind:$php_port -t $root/current/source/public $root/current/source/public/index.php"
+      ecosystem_runtime_command_result="/usr/bin/env PATH=$toolchain_path $toolchain_php -S $php_bind:$php_port -t $root/current/source/public $root/current/source/$3"
       ;;
     phpcli)
       [ "$#" -eq 4 ] || reject runtime-arguments
       require_bound_version PHP "$1" '^8\.(2|3|4)$'
+      require_relative_path "$3"; [[ "$3" = *.php ]] || reject php-entrypoint
+      if [ "$4" = 0 ]; then
+        [ "$2" = source ] || reject php-artifact
+        ecosystem_runtime_command_result="$toolchain_php $root/current/source/$3"; return
+      fi
       [ "$2" = public ] || reject php-document-root
-      [ "$3" = public/index.php ] || reject php-router
       local phpcli_port="${deployment_service_port_override:-$4}" phpcli_bind="${deployment_bind_address_override:-0.0.0.0}"
       require_service_port "$phpcli_port"; [ "$phpcli_bind" = 0.0.0.0 ] || [ "$phpcli_bind" = 127.0.0.1 ] || reject runtime-bind-address
-      ecosystem_runtime_command_result="/usr/bin/env PATH=$toolchain_path $toolchain_php -n -S $phpcli_bind:$phpcli_port -t $root/current/source/public $root/current/source/public/index.php"
+      ecosystem_runtime_command_result="/usr/bin/env PATH=$toolchain_path $toolchain_php -n -S $phpcli_bind:$phpcli_port -t $root/current/source/public $root/current/source/$3"
       ;;
     ruby)
       [ "$#" -eq 4 ] || reject runtime-arguments
       require_bound_version RUBY "$1" '^3\.(2|3|4)([.][0-9]+)?$'
       [ "$2" = bundle ] || reject ruby-artifact
+      require_relative_path "$3"
+      if [ "$4" = 0 ]; then
+        [[ "$3" = *.rb ]] || reject ruby-entrypoint
+        ecosystem_runtime_command_result="/usr/bin/env PATH=$root/current/source/.w2l/bundler/bin:$toolchain_path GEM_HOME=$root/current/source/.w2l/bundler GEM_PATH=$root/current/source/.w2l/bundler: bundle exec $toolchain_ruby $root/current/source/$3"; return
+      fi
       [ "$3" = config.ru ] || reject ruby-entrypoint
       local ruby_port="${deployment_service_port_override:-$4}" ruby_bind="${deployment_bind_address_override:-0.0.0.0}"
       require_service_port "$ruby_port"; [ "$ruby_bind" = 0.0.0.0 ] || [ "$ruby_bind" = 127.0.0.1 ] || reject runtime-bind-address
@@ -121,7 +136,7 @@ render_ecosystem_runtime_command() {
       require_relative_path "$3"
       [[ "$3" = *.rb ]] || reject ruby-entrypoint
       local rubycli_port="${deployment_service_port_override:-$4}"
-      require_service_port "$rubycli_port"
+      [ "$rubycli_port" = 0 ] || require_service_port "$rubycli_port"
       ecosystem_runtime_command_result="/usr/bin/env PATH=$toolchain_path PORT=$rubycli_port $toolchain_ruby $root/current/source/$3"
       ;;
     cmake)

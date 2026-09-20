@@ -42,6 +42,7 @@ public record ReviewedDeploymentRequest(
         ConfigurationSnapshot configuration,
         List<SecretReference> secretReferences,
         Optional<List<ManagedDatabaseBinding>> databaseBindings,
+        List<gold.debug.windowstolinux.shared.config.resource.ManagedFileBinding> fileBindings,
         DeploymentRuntimeSpecification runtime,
         Optional<UserAccessUrl> userAccessUrl,
         BuildLimitConfiguration limits,
@@ -65,13 +66,37 @@ public record ReviewedDeploymentRequest(
                 .map(values -> List.copyOf(values.stream()
                         .map(value -> Objects.requireNonNull(value, "database binding"))
                         .sorted(java.util.Comparator.comparing(ManagedDatabaseBinding::databaseId)).toList()));
+        fileBindings = List.copyOf(Objects.requireNonNull(fileBindings, "fileBindings"));
         runtime = Objects.requireNonNull(runtime, "runtime");
+        if (runtime instanceof DeploymentRuntimeSpecification.Container container) {
+            var mutable = new java.util.ArrayList<>(fileBindings);
+            for (var volume : container.volumes()) {
+                if (mutable.stream().noneMatch(binding -> binding.bindingId().equals(volume.bindingId())))
+                    mutable.add(new gold.debug.windowstolinux.shared.config.resource.ManagedFileBinding(volume.bindingId(),
+                            new gold.debug.windowstolinux.shared.model.project.component.ComponentDataPath(volume.containerPath(),volume.readOnly()
+                                    ? gold.debug.windowstolinux.shared.model.project.component.ComponentDataPath.AccessMode.READ_ONLY
+                                    : gold.debug.windowstolinux.shared.model.project.component.ComponentDataPath.AccessMode.READ_WRITE,"files",true),
+                            gold.debug.windowstolinux.shared.model.managed.ManagedStorageLocation.defaults()));
+            }
+            for (var volume : container.volumes()) {
+                var binding = mutable.stream().filter(file -> file.bindingId().equals(volume.bindingId())).findFirst().orElseThrow();
+                if (!binding.dataPath().path().equals(volume.containerPath())
+                        || binding.resourceType() != gold.debug.windowstolinux.shared.model.managed.ManagedStorageLocation.StorageResourceType.FILE
+                        || (binding.dataPath().access() == gold.debug.windowstolinux.shared.model.project.component.ComponentDataPath.AccessMode.READ_ONLY) != volume.readOnly())
+                    throw new IllegalArgumentException("container volume and storage binding differ");
+            }
+            fileBindings = List.copyOf(mutable);
+        }
+        gold.debug.windowstolinux.shared.config.resource.ManagedStoragePlan.resolve(facts.applicationId(),
+                new gold.debug.windowstolinux.shared.config.resource.ManagedComponentResourceBindings(fileBindings, databaseBindings), runtime);
         userAccessUrl = Objects.requireNonNull(userAccessUrl, "userAccessUrl");
         limits = Objects.requireNonNull(limits, "limits");
         approval = Objects.requireNonNull(approval, "approval");
         if (!facts.readyForPlanning()) {
             throw new IllegalArgumentException("typed deployment requests require complete deterministic project facts");
         }
+        if (!facts.buildDirectory().equals(runtime.workload().buildDirectory()))
+            throw new IllegalArgumentException("runtime build directory differs from analyzed source ownership");
         if (facts.projectType() != runtime.projectType()) {
             throw new IllegalArgumentException("runtime specification must match the analyzed project type");
         }
@@ -96,9 +121,9 @@ public record ReviewedDeploymentRequest(
                 && container.engine() == DeploymentRuntimeSpecification.ContainerEngineType.DOCKER && !containerDaemonRiskAccepted) {
             throw new IllegalArgumentException("Docker deployments require a fresh explicit daemon-risk approval");
         }
-        if (facts.support().level()
+        if ((facts.support().level()
                 == gold.debug.windowstolinux.shared.model.project.DeploymentSupportLevel.EXPERIMENTAL_ADAPTER
-                && !experimentalAdapterRiskAccepted) {
+                || !runtime.workload().companions().isEmpty()) && !experimentalAdapterRiskAccepted) {
             throw new IllegalArgumentException(
                     "experimental adapters require a fresh explicit test-environment approval");
         }
@@ -117,6 +142,20 @@ public record ReviewedDeploymentRequest(
                 .anyMatch(connection -> !reviewedSecretReferences.contains(connection.passwordReference()))) {
             throw new IllegalArgumentException("server database password references must belong to the reviewed deployment");
         }
+    }
+
+    public ReviewedDeploymentRequest(ServerIdentity server, DeploymentProjectFacts facts, SourceRevision sourceRevision,
+            SourceArchiveDescriptor archive, ConfigurationSnapshot configuration, List<SecretReference> secretReferences,
+            Optional<List<ManagedDatabaseBinding>> databaseBindings, DeploymentRuntimeSpecification runtime,
+            Optional<UserAccessUrl> userAccessUrl, BuildLimitConfiguration limits, DeploymentApproval approval,
+            boolean containerDaemonRiskAccepted, boolean experimentalAdapterRiskAccepted) {
+        this(server, facts, sourceRevision, archive, configuration, secretReferences, databaseBindings, List.of(), runtime,
+                userAccessUrl, limits, approval, containerDaemonRiskAccepted, experimentalAdapterRiskAccepted);
+    }
+
+    public ReviewedDeploymentRequest withFiles(List<gold.debug.windowstolinux.shared.config.resource.ManagedFileBinding> files) {
+        return new ReviewedDeploymentRequest(server, facts, sourceRevision, archive, configuration, secretReferences,
+                databaseBindings, files, runtime, userAccessUrl, limits, approval, containerDaemonRiskAccepted, experimentalAdapterRiskAccepted);
     }
 
     /**

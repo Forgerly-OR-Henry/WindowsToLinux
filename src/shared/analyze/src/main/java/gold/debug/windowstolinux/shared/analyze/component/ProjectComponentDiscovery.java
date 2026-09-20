@@ -1,5 +1,6 @@
 package gold.debug.windowstolinux.shared.analyze.component;
 
+import gold.debug.windowstolinux.shared.analyze.source.ApplicationBundleInspector;
 import gold.debug.windowstolinux.shared.model.project.DeploymentProjectType;
 import java.io.IOException;
 import java.nio.file.*;
@@ -16,6 +17,13 @@ public final class ProjectComponentDiscovery {
         Path root = selected.toAbsolutePath().normalize();
         if (!Files.isDirectory(root, LinkOption.NOFOLLOW_LINKS) || Files.isSymbolicLink(root))
             throw new IOException("source must be a regular directory");
+        var bundle = ApplicationBundleInspector.declaration(root);
+        var declared = ApplicationBundleInspector.type(bundle);
+        if (declared.isPresent()) {
+            ApplicationBundleInspector.mainRoot(root, bundle);
+            ApplicationBundleInspector.companions(root, bundle);
+            return List.of(new DiscoveredProjectComponent("app", Path.of(""), List.of(declared.orElseThrow())));
+        }
         Map<Path, Set<DeploymentProjectType>> candidates = new TreeMap<>();
         Files.walkFileTree(root, EnumSet.noneOf(FileVisitOption.class), 12, new SimpleFileVisitor<>() {
             private int count;

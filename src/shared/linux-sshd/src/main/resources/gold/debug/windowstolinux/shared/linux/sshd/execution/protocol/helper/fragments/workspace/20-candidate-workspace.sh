@@ -8,7 +8,15 @@ expected_unit_digest() {
   render_unit "$1" | sha256sum | awk '{print $1}'
 }
 initialise_controlled_roots() {
-  install -d -o root -g root -m 755 -- "$base_root" "$applications_root" "$work_root" "$snapshots_root" "$configurations_root" "$secrets_root" "$backups_root"
+  local path
+  for path in "$base_root/apps" "$base_root/configurations" "$base_root/data" "$base_root/secrets"; do
+    [ ! -e "$path" ] && [ ! -L "$path" ] || reject unsupported-legacy-layout
+  done
+  for path in "$base_root" "$applications_root" "$work_root" "$snapshots_root" "$configurations_root" "$secrets_root" "$backups_root" "$data_root"; do
+    assert_storage_parent "$path"
+    if [ -e "$path" ] || [ -L "$path" ]; then assert_root_owned_directory "$path"; fi
+  done
+  install -d -o root -g root -m 755 -- "$base_root" "$applications_root" "$work_root" "$snapshots_root" "$configurations_root" "$secrets_root" "$backups_root" "$data_root"
   assert_root_owned_directory "$base_root"
   assert_root_owned_directory "$applications_root"
   assert_root_owned_directory "$work_root"

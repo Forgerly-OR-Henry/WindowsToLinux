@@ -40,7 +40,7 @@ public record ManagedApplication(
         server = Objects.requireNonNull(server, "server");
         systemdUnit = requireUnit(systemdUnit);
         releaseRoot = Objects.requireNonNull(releaseRoot, "releaseRoot");
-        if (!releaseRoot.matches("/var/lib/windowstolinux/apps/[a-z0-9][a-z0-9-]{0,62}")) {
+        if (!releaseRoot.equals(ManagedStorageLocation.installationRoot(id))) {
             throw new IllegalArgumentException("releaseRoot must stay under the managed application root");
         }
         ownershipManifestSha256 = Objects.requireNonNull(ownershipManifestSha256, "ownershipManifestSha256");
@@ -65,7 +65,7 @@ public record ManagedApplication(
                 normalizedId,
                 server,
                 "windowstolinux-" + normalizedId + ".service",
-                "/var/lib/windowstolinux/apps/" + normalizedId,
+                ManagedStorageLocation.installationRoot(normalizedId),
                 ownershipManifestSha256
         );
     }

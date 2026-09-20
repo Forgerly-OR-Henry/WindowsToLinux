@@ -1,5 +1,9 @@
 package gold.debug.windowstolinux.app.service.deployment.automatic;
 
+import gold.debug.windowstolinux.shared.deploy.input.DeploymentRuntimeParser;
+
+import gold.debug.windowstolinux.shared.model.deployment.DatabaseReviewMode;
+
 import gold.debug.windowstolinux.app.service.contract.definition.*;
 import gold.debug.windowstolinux.app.service.server.ServerProfile;
 import gold.debug.windowstolinux.shared.git.GitReference;
@@ -43,18 +47,19 @@ public final class DeploymentFormUseCase {
         values.put("ports", input.ports()); values.put("volumes", input.volumes());
         if (input.containerEngine() != null) values.put("containerEngine", input.containerEngine().name());
         health(input, values);
+        values.put("applicationDeclaration", input.applicationDeclaration());
         return Map.copyOf(values);
     }
 
     private static void health(DeploymentFormInput input, Map<String, String> values) {
         String selected = input.healthMode();
-        if (!Set.of("AUTOMATIC", "HTTP", "TCP").contains(selected)) throw new IllegalArgumentException("invalid health mode");
+        if (!Set.of("AUTOMATIC", "HTTP", "TCP", "UDP", "PROCESS", "COMMAND").contains(selected)) throw new IllegalArgumentException("invalid health mode");
         String endpoint = input.healthEndpoint().trim();
         if (!selected.equals("AUTOMATIC")) values.put("healthMode", selected);
-        if (endpoint.isEmpty()) return;
+        if (endpoint.isEmpty() || Set.of("PROCESS", "COMMAND").contains(selected)) return;
         String effective = selected.equals("AUTOMATIC") ? (endpoint.matches("[0-9]+") ? "TCP" : "HTTP") : selected;
         values.put("healthMode", effective);
-        if (effective.equals("TCP")) values.put("port", endpoint);
+        if (effective.equals("TCP") || effective.equals("UDP")) values.put("port", endpoint);
         else {
             URI uri = URI.create(endpoint);
             int defaultPort = switch (java.util.Objects.toString(uri.getScheme(), "")) {

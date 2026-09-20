@@ -7,6 +7,8 @@ import gold.debug.windowstolinux.shared.model.lifecycle.*;
 import gold.debug.windowstolinux.shared.model.managed.*;
 import gold.debug.windowstolinux.shared.model.health.*;
 import gold.debug.windowstolinux.shared.model.server.ServerIdentity;
+import gold.debug.windowstolinux.shared.model.project.application.*;
+import gold.debug.windowstolinux.shared.model.project.RuntimeIdentityMode;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import java.nio.file.Path;
@@ -24,7 +26,10 @@ class ApplicationInventoryUseCaseTest {
         String externalId = "external:" + UUID.randomUUID();
         try (var db = DesktopPersistence.open(directory)) {
             db.servers().saveServerProfile(new StoredServerProfile(server.id(), server.host(), 22, "tester", "ssh/server/password", "MASTER_PASSWORD", "Production"));
-            var runtime = new ManagedApplicationRuntimeConfiguration(new HealthCheck.Http(URI.create("http://127.0.0.1:8080"), 200, 10), Optional.of(new UserAccessUrl(URI.create("https://example.test"))));
+            var workload = new ApplicationWorkload(ApplicationWorkload.ExecutionMode.DAEMON, true, ApplicationCommand.primary(), "",
+                    List.of(new ApplicationEndpoint("web", ApplicationEndpoint.ProtocolType.HTTPS, "0.0.0.0", 8080, 8080, ApplicationEndpoint.ExposureType.EXTERNAL, "https://example.test")),
+                    Optional.empty(), "", Optional.empty(), List.of(), List.of());
+            var runtime = new ManagedApplicationRuntimeConfiguration(new HealthCheck.Http(URI.create("http://127.0.0.1:8080"), 200, 10), Optional.of(new UserAccessUrl(URI.create("https://example.test"))), RuntimeIdentityMode.SYSTEMD_STATIC, workload);
             for (String id : List.of("b", "a")) db.managedApplications().recordSuccessfulDeployment(ManagedApplication.forManaged(id, server, "a".repeat(64)), runtime, new CurrentRelease(id, "b".repeat(64), time));
             db.managedApplications().save(ManagedApplication.forManaged("unknown", server, "a".repeat(64)));
             db.externalApplications().adopt(new StoredExternalApplication(externalId, server.id(), server.host(), 22, "tester",
@@ -36,9 +41,10 @@ class ApplicationInventoryUseCaseTest {
             assertTrue(list.getFirst().deployedAt().isEmpty()); assertEquals(time.plusSeconds(1), list.getFirst().adoptedAt().orElseThrow());
             assertEquals(2, list.stream().filter(value -> value.matches("WEBSITE", "server")).count());
             assertEquals(0, list.stream().filter(value -> value.matches("WEBSITE", "other")).count());
-            inventory.savePresentation("managed:a", "Renamed", "APP", "https://example.test/new");
+            assertThrows(IllegalArgumentException.class, () -> inventory.savePresentation("managed:a", "Renamed", "APP", "https://example.test/new"));
+            inventory.savePresentation("managed:a", "Renamed", "WEBSITE", "https://example.test/new");
             var updated = inventory.list().stream().filter(value -> value.key().equals("managed:a")).findFirst().orElseThrow();
-            assertEquals("Renamed", updated.name()); assertEquals("APP", updated.category()); assertTrue(updated.accessUrl().isPresent());
+            assertEquals("Renamed", updated.name()); assertEquals("WEBSITE", updated.category()); assertTrue(updated.accessUrl().isPresent());
             assertTrue(db.managedApplications().findRuntime("a").orElseThrow().userAccessUrl().orElseThrow().url().getPath().isEmpty(), "editing entry must not modify runtime configuration");
         }
     }

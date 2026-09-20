@@ -1,12 +1,20 @@
 package gold.debug.windowstolinux.app.service.deployment.automatic;
 
-import gold.debug.windowstolinux.app.service.contract.definition.DatabaseReviewMode;
+import gold.debug.windowstolinux.shared.deploy.contract.AutomaticDatabasePreparation;
+
+import gold.debug.windowstolinux.shared.deploy.contract.AutomaticDeploymentInteraction;
+
+import gold.debug.windowstolinux.shared.deploy.input.DeploymentRuntimeParser;
+
+import gold.debug.windowstolinux.shared.deploy.input.AutomaticRuntimeResolver;
+
+import gold.debug.windowstolinux.shared.model.deployment.DatabaseReviewMode;
 
 import gold.debug.windowstolinux.app.service.contract.definition.*;
 
 import gold.debug.windowstolinux.app.service.contract.AutomaticDeploymentApplicationFacade;
 import gold.debug.windowstolinux.app.service.source.*;
-import gold.debug.windowstolinux.app.service.config.DeploymentConfigurationParser;
+import gold.debug.windowstolinux.shared.config.input.DeploymentConfigurationParser;
 import gold.debug.windowstolinux.app.service.contract.definition.MultiComponentReviewInput;
 import gold.debug.windowstolinux.app.service.deployment.single.DeploymentHandoff;
 import gold.debug.windowstolinux.app.service.lock.ServerOperationLockRegistry;
@@ -127,6 +135,10 @@ public final class AutomaticDeploymentUseCase {
         for (var component : discovered) {
             var assessment = databaseAssessments.get(component.id());
             var values = inputs.get(component.id());
+            if (values.get("type").equals("DOCKERFILE_CONTAINER")) {
+                assessment = gold.debug.windowstolinux.shared.analyze.ecosystem.db.DatabaseProjectInspector.containerStorage(assessment);
+                databaseAssessments.put(component.id(),assessment);
+            }
             if ((!assessment.databases().isEmpty() || assessment.unknownDatabase()) && !values.containsKey("databaseMode")) {
                 if (assessment.endpointConfirmationRequired() && !interaction.confirm("db.nativeEndpoint", Map.of())) throw new CancellationException();
                 databaseAssessments.put(component.id(), service.completeAutomaticDatabaseInputs(root.resolve(component.relativeRoot()),
@@ -142,6 +154,7 @@ public final class AutomaticDeploymentUseCase {
         for (var entry : inputs.entrySet()) {
             Map<String, String> values = entry.getValue();
             while (true) {
+                if (Thread.currentThread().isInterrupted()) throw new CancellationException();
                 try {
                     if (values.getOrDefault("databaseMode", "").equals("UNREVIEWED")) values.remove("databaseMode");
                     var assessment = databases.get(entry.getKey());
@@ -152,13 +165,14 @@ public final class AutomaticDeploymentUseCase {
                         throw new IllegalArgumentException("explicit database scope conflicts with source declarations");
                     runtime.runtime(DeploymentProjectType.valueOf(values.get("type")), values);
                     runtime.access(values, host);
-                    configuration(preparations.get(entry.getKey()).assessment().facts().orElseThrow().applicationId(), values);
+                    configuration(preparations.get(entry.getKey()).assessment().facts().orElseThrow().applicationId(),values);
                     secrets(values, AutomaticDatabasePreparation.empty());
                     bindings(values, AutomaticDatabasePreparation.empty());
                     limits(values);
                     break;
                 }
                 catch (IllegalArgumentException invalid) {
+                    var previous = Map.copyOf(values);
                     progress.accept(LocalizedMessage.of("auto.progress.invalid", "component", entry.getKey()));
                     Map<String, String> corrected = new LinkedHashMap<>();
                     answer(runtime.corrections(entry.getKey(), values), corrected, interaction);
@@ -167,8 +181,12 @@ public final class AutomaticDeploymentUseCase {
                             "jvmArguments", "arguments", "volumes")) {
                         if (values.getOrDefault(key, "").isBlank()) values.remove(key);
                     }
+                    if (values.equals(previous)) throw invalid;
                 }
             }
+            var storageFacts = preparations.get(entry.getKey()).assessment().facts().orElseThrow();
+            gold.debug.windowstolinux.shared.deploy.input.ManagedStoragePreparation.prepare(storageFacts.sourceRoot(),storageFacts.applicationId(),
+                    configuration(storageFacts.applicationId(),values),runtime.runtime(DeploymentProjectType.valueOf(values.get("type")),values),List.of());
             if (preparations.get(entry.getKey()).assessment().facts().orElseThrow().support().level() == DeploymentSupportLevel.EXPERIMENTAL_ADAPTER
                     && !Boolean.parseBoolean(values.getOrDefault("experimentalAdapterRisk", "false"))
                     && !interaction.confirm("auto.risk.experimental", Map.of("component", entry.getKey()))) throw new CancellationException();
@@ -200,7 +218,7 @@ public final class AutomaticDeploymentUseCase {
                     runtime.runtime(DeploymentProjectType.valueOf(values.get("type")), values), runtime.access(values, server.host()),
                     limits(values), false, true, true);
             service.planDeployment(reviewed);
-            service.saveDeploymentConfigurationSnapshot(config);
+            service.saveDeploymentConfigurationSnapshot(reviewed.configuration());
             progress.accept(LocalizedMessage.of("auto.progress.environment"));
             if (db.bindings().isEmpty()) prepareEnvironment(request, master, fingerprint, interaction);
             progress.accept(LocalizedMessage.of("auto.progress.deploy"));
@@ -228,7 +246,7 @@ public final class AutomaticDeploymentUseCase {
             components.add(new ComponentAnalysisRequest(component.id(), path.isBlank() ? "." : path,
                     specification.projectType(), Optional.of(specification),
                     runtime.artifacts(component.relativeRoot(), preparations.get(component.id()).assessment().facts().orElseThrow(), values),
-                    Set.of(Integer.parseInt(values.get("port"))),
+                    specification.workload().endpoints().stream().map(endpoint -> endpoint.hostPort()).collect(java.util.stream.Collectors.toSet()),
                     List.of(), List.of(), List.of(), dependencies, true, ComponentIsolationSpecification.managed()));
         }
         var graph = new MixedProjectInspector().analyzeAutomatic(root, applicationId, components);
@@ -262,7 +280,9 @@ public final class AutomaticDeploymentUseCase {
         }
         var reviewed = service.createReviewedMultiComponentApplication(prepared, server, reviews,
                 new ApplicationHealthGate(healthOwner, runtime.health(inputs.get(healthOwner))));
-        for (var input : reviews) service.saveDeploymentConfigurationSnapshot(input.configuration());
+        for (var component : reviewed.components()) {
+            service.saveDeploymentConfigurationSnapshot(component.request().configuration());
+        }
         progress.accept(LocalizedMessage.of("auto.progress.environment"));
         prepareEnvironment(request, master, fingerprint, interaction);
         progress.accept(LocalizedMessage.of("auto.progress.deploy"));
@@ -270,8 +290,8 @@ public final class AutomaticDeploymentUseCase {
         Map<String, DeploymentHandoff> handoffs = new LinkedHashMap<>();
         if (result.status() == DeploymentStatus.SUCCEEDED) for (var component : reviewed.components()) {
             var access = component.request().userAccessUrl();
-            handoffs.put(component.componentId(), access.isPresent() ? new DeploymentHandoff.HttpAccessUrl(access.orElseThrow().url())
-                    : new DeploymentHandoff.SystemdStartCommand(component.application().id(), component.application().systemdUnit(), component.application().ownershipManifestSha256()));
+            handoffs.put(component.componentId(), new DeploymentHandoff.ApplicationEntry(
+                    gold.debug.windowstolinux.shared.model.managed.ApplicationUsage.from(component.application(), component.request().runtime().workload())));
         }
         return new AutomaticDeploymentOutcome(applicationId, result.status(), handoffs);
     }
@@ -299,7 +319,7 @@ public final class AutomaticDeploymentUseCase {
             if (assessment.schemaReviewRequired()) throw new IllegalArgumentException("schema initialization requires an automatic DB declaration or a separately reviewed schema change");
             return AutomaticDatabasePreparation.empty();
         }
-        if (values.get("type").equals("DOCKERFILE_CONTAINER")) throw new IllegalArgumentException(
+        if (values.get("type").equals("DOCKERFILE_CONTAINER") && assessment.databases().stream().anyMatch(database -> database.engine() != gold.debug.windowstolinux.shared.model.ecosystem.db.DatabaseEngineType.SQLITE)) throw new IllegalArgumentException(
                 "native database access from isolated containers requires an explicit reachable database binding; configure the DB binding in advanced options");
         progress.accept(LocalizedMessage.of("auto.progress.environment"));
         prepareEnvironment(request, master, fingerprint, interaction);
@@ -330,7 +350,7 @@ public final class AutomaticDeploymentUseCase {
     }
 
     private static List<gold.debug.windowstolinux.shared.config.secretref.SecretReference> secrets(Map<String,String> values, AutomaticDatabasePreparation db) {
-        var result = new ArrayList<>(gold.debug.windowstolinux.app.service.config.DeploymentConfigurationParser.secrets(values.getOrDefault("secrets", ""))); result.addAll(db.secrets());
+        var result = new ArrayList<>(gold.debug.windowstolinux.shared.config.input.DeploymentConfigurationParser.secrets(values.getOrDefault("secrets", ""))); result.addAll(db.secrets());
         return List.copyOf(result);
     }
 
@@ -352,9 +372,10 @@ public final class AutomaticDeploymentUseCase {
     }
 
     private static ConfigurationSnapshot configuration(String id, Map<String, String> values) {
+        values = gold.debug.windowstolinux.shared.deploy.input.ApplicationDeclaration.completed(values);
         var entries = new ArrayList<>(DeploymentConfigurationParser.parse(values.getOrDefault("configuration", "")));
         String portKey = values.get("type").equals("SPRING_BOOT") ? "SERVER_PORT" : "PORT";
-        if (entries.stream().noneMatch(entry -> entry.key().equals(portKey))) entries.add(
+        if (values.containsKey("port") && entries.stream().noneMatch(entry -> entry.key().equals(portKey))) entries.add(
                 new gold.debug.windowstolinux.shared.config.revision.ConfigurationEntry(portKey,
                         gold.debug.windowstolinux.shared.config.contract.definition.ConfigurationScope.RUNTIME,
                         new gold.debug.windowstolinux.shared.config.contract.definition.ConfigurationValue.Number(Long.parseLong(values.get("port")))));

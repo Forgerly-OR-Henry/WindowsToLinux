@@ -1,7 +1,7 @@
 package gold.debug.windowstolinux.app.service.backup;
 
 import gold.debug.windowstolinux.app.secret.SecretStoreException;
-import gold.debug.windowstolinux.app.secret.crypto.BackupSecretException;
+import gold.debug.windowstolinux.shared.backup.crypto.BackupSecretException;
 import gold.debug.windowstolinux.app.service.deployment.MultiComponentLifecycleUseCase;
 import gold.debug.windowstolinux.app.service.failure.ApplicationServiceException;
 import gold.debug.windowstolinux.app.service.failure.ApplicationServiceFailureType;

@@ -29,11 +29,15 @@ public final class PhpComposerDeploymentInspector implements DeploymentTypeInspe
     @Override
     public DeploymentTypeAssessment inspect(Path root, SourceInspectionFacts source, ProjectLanguageFacts languageFacts,
                                             List<RejectionReason> rejections) throws IOException {
-        PhpComposerFacts facts = new PhpComposerFacts(ServiceMetadataInspector.match(
-                ServiceMetadataInspector.readIfPresent(root.resolve("composer.json")), PHP_VERSION),
-                ServiceMetadataInspector.missing(root, "composer.json", "composer.lock", "public/index.php"));
-        ServiceProjectFacts shape = new ServiceProjectFacts("composer.json", facts.version(), "public",
-                ServiceMetadataInspector.present(root, "public/index.php") ? "public/index.php" : null,
+        String entrypoint = ServiceMetadataInspector.applicationEntrypoint(root, "public/index.php");
+        var declaration = gold.debug.windowstolinux.shared.analyze.source.ApplicationBundleInspector.declaration(root);
+        String declaredVersion = declaration.getProperty("runtime.version", ServiceMetadataInspector.match(
+                ServiceMetadataInspector.readIfPresent(root.resolve("composer.json")), PHP_VERSION));
+        PhpComposerFacts facts = new PhpComposerFacts(declaredVersion,
+                ServiceMetadataInspector.missing(root, "composer.json", "composer.lock", entrypoint));
+        ServiceProjectFacts shape = new ServiceProjectFacts("composer.json", facts.version(),
+                java.nio.file.Files.isDirectory(root.resolve("public")) ? "public" : "source",
+                ServiceMetadataInspector.present(root, entrypoint) ? entrypoint : null,
                 facts.missingFiles());
         return ServiceInspectionAssembler.assemble(root, projectType(), DeploymentBuildToolType.COMPOSER_LOCKED,
                 languageFacts, shape, true);

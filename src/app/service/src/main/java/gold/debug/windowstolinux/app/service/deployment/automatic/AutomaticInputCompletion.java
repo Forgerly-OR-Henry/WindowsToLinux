@@ -1,5 +1,7 @@
 package gold.debug.windowstolinux.app.service.deployment.automatic;
 
+import gold.debug.windowstolinux.shared.deploy.contract.AutomaticDeploymentInteraction;
+
 import gold.debug.windowstolinux.app.service.contract.definition.*;
 
 import gold.debug.windowstolinux.app.service.contract.AiApplicationFacade;
@@ -40,7 +42,8 @@ public final class AutomaticInputCompletion {
         Map<String, String> values = new LinkedHashMap<>();
         for (var field : fields) {
             String value = answered.get(field.id());
-            if (value == null || value.length() > 4096 || !field.choices().isEmpty() && !field.choices().contains(value))
+            int limit = field.id().equals("applicationDeclaration") || field.id().endsWith("/applicationDeclaration") ? 65536 : 4096;
+            if (value == null || value.length() > limit || !field.choices().isEmpty() && !field.choices().contains(value))
                 throw new IllegalArgumentException("missing or invalid answer: " + field.id());
             values.put(field.id(),value.trim());
         }

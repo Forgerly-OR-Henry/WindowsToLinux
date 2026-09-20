@@ -170,17 +170,17 @@ class DistributionSetupRegistryTest {
     @Test
     void preservesEverySupportedScriptAndUnsupportedRejectionSnapshot() throws Exception {
         List<ScriptSnapshot> scripts = List.of(
-                new ScriptSnapshot(LinuxDistroType.UBUNTU, "22.04", "amd64", "eaf1ab933802a5cc6f23c7899558d38322d939b407f2bbb3fa56197d68d4bfdb"),
-                new ScriptSnapshot(LinuxDistroType.UBUNTU, "24.04", "amd64", "d6a8dffd72420a00b543f984c496b98d576dd7fd95910f137245ce77fa73c5fd"),
-                new ScriptSnapshot(LinuxDistroType.DEBIAN, "13", "amd64", "df2d1bef590e8eb49152a09be960a26b15c362f961a97872eb246a5eddb6e7fb"),
-                new ScriptSnapshot(LinuxDistroType.CENTOS_STREAM, "9", "x86_64", "b38b653a1fdf665a402169555b2f44374044595a60767161c458af4199321064"),
-                new ScriptSnapshot(LinuxDistroType.CENTOS_STREAM, "10", "x86_64", "2ed63cbe44581d7fcb0ea20f01e0e8937a4d0f7fe5969144cc1df74c17072d95"),
-                new ScriptSnapshot(LinuxDistroType.ROCKY_LINUX, "9.8", "x86_64", "a3076895b9f8a77e75680e0a124523911a418f1e38c4c04740706baab2c59720"),
-                new ScriptSnapshot(LinuxDistroType.ROCKY_LINUX, "10.2", "x86_64", "b5b590980b5e0799d2f2c209cf4c4b0db00914579bfe36d498ddbc1b890ce294"),
-                new ScriptSnapshot(LinuxDistroType.ALMALINUX, "9.8", "x86_64", "6c086a497330035aaaf6bc26f51c259ce99591cd28ee2a267bb47ac1922384e8"),
-                new ScriptSnapshot(LinuxDistroType.ALMALINUX, "10.2", "x86_64", "184ba47e84210c2d0d73e1f730d53334bcc5d0fb59eac1e0b1b0bf2cf662656d"),
-                new ScriptSnapshot(LinuxDistroType.ORACLE_LINUX, "9.7", "x86_64", "569185d16a2a4811e36a7e0cf04d65be1afed1545a21700b5d294e7bcacaab9d"),
-                new ScriptSnapshot(LinuxDistroType.ORACLE_LINUX, "10.2", "x86_64", "0f586d32997be24872857301ed152528bb54885545f3bc7b130bb057fd682d5e"));
+                new ScriptSnapshot(LinuxDistroType.UBUNTU, "22.04", "amd64", "20defc681436d59394eb64ffa0ee0eca8938f6c40fe53be9f607e0857e0304ec"),
+                new ScriptSnapshot(LinuxDistroType.UBUNTU, "24.04", "amd64", "af6df83156021b5655255d4c551fc461c4227f334980c973e57cde20093e9423"),
+                new ScriptSnapshot(LinuxDistroType.DEBIAN, "13", "amd64", "d670ddca907c2b6e24c3f77be9c09b5b6dc8594a7d864dbb566dfba666a1be47"),
+                new ScriptSnapshot(LinuxDistroType.CENTOS_STREAM, "9", "x86_64", "0c9c1ebd8357e266c5dbaab8ae179b74427a783ecc6a40b175b2ba046eca649f"),
+                new ScriptSnapshot(LinuxDistroType.CENTOS_STREAM, "10", "x86_64", "e4ad84b23e55197e0d7b97e11eaa92b4bbeda7e9bd0dca0e2afac450e0754195"),
+                new ScriptSnapshot(LinuxDistroType.ROCKY_LINUX, "9.8", "x86_64", "48e039d94dbe04f85ecb2369fa5c518d5877b5e6691fe438f385e886d77ad045"),
+                new ScriptSnapshot(LinuxDistroType.ROCKY_LINUX, "10.2", "x86_64", "415620fcd896228718dcd6df511780505309435c37d99bb9ac78d205fbd81274"),
+                new ScriptSnapshot(LinuxDistroType.ALMALINUX, "9.8", "x86_64", "a114ab8c3933440fba93a05c460078d58695e4c27bf638e392612adc4d149edb"),
+                new ScriptSnapshot(LinuxDistroType.ALMALINUX, "10.2", "x86_64", "57bd981c65d1202309910a4e46101804b76ad7dc398e57ad01588646d3eef188"),
+                new ScriptSnapshot(LinuxDistroType.ORACLE_LINUX, "9.7", "x86_64", "fdd50a3c7255ded1c72afe14f8aff4e3803914c55bfaec9766a911faaac36bc2"),
+                new ScriptSnapshot(LinuxDistroType.ORACLE_LINUX, "10.2", "x86_64", "588078f7ec20218b3ebea29f4063fc3ae3a7841ad7d2fd7b22b2334d27d96c41"));
         List<String> changed = new ArrayList<>();
         for (ScriptSnapshot snapshot : scripts) {
             String actual = sha256(renderSetup(

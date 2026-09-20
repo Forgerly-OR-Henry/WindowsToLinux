@@ -1,5 +1,7 @@
 package gold.debug.windowstolinux.app.service.deployment.automatic;
 
+import gold.debug.windowstolinux.shared.model.deployment.DatabaseReviewMode;
+
 import gold.debug.windowstolinux.app.service.contract.definition.*;
 import gold.debug.windowstolinux.app.service.server.ServerProfile;
 import gold.debug.windowstolinux.shared.git.GitReference;

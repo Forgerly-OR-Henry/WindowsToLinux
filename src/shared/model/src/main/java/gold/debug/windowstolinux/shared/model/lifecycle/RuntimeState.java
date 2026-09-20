@@ -12,6 +12,8 @@ public enum RuntimeState {
      * <p>表示 {@code RUNNING} 选项。
      */
     RUNNING,
+    /** Verified installed on-demand tool; no daemon is expected. */
+    INSTALLED,
     /**
      * Represents the {@code STOPPED} option.
      *

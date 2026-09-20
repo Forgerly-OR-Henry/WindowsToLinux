@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="gold.debug.windowstolinux.web.db.persistence.mapper.WebTaskMapper">
+    <update id="transition">
+        UPDATE tasks SET state=#{to},result_json=#{result},error_code=#{error},updated_at=#{now},finished_at=#{finished}
+        WHERE workspace_id=#{scope.workspaceId} AND id=#{id} AND state IN
+        <foreach collection="from" item="state" open="(" separator="," close=")">#{state}</foreach>
+    </update>
+</mapper>

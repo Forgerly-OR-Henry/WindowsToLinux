@@ -27,6 +27,7 @@ class ModuleDependencyArchitectureTest {
             ROOT + "shared.ai.collaboration.role.DeploymentInputRoleContext",
             ROOT + "shared.analyze.component.ComponentAnalysisRequest",
             ROOT + "shared.deploy.contract.ApplicationHealthGate",
+            ROOT + "shared.deploy.contract.AutomaticDeploymentInteraction",
             ROOT + "shared.config.resource.ManagedDatabaseBinding",
             ROOT + "shared.config.resource.ManagedDatabaseConnection",
             ROOT + "shared.deploy.contract.result.deployment.MultiComponentDeploymentResult",

@@ -1,0 +1,15 @@
+package gold.debug.windowstolinux.web.db.persistence.mapper;
+
+import com.baomidou.mybatisplus.core.mapper.BaseMapper;
+import gold.debug.windowstolinux.web.db.entity.WebPreferenceEntity;
+import org.apache.ibatis.annotations.*;
+
+@Mapper
+public interface WebPreferenceMapper extends BaseMapper<WebPreferenceEntity> {
+    @Insert("""
+            INSERT INTO preferences(workspace_id,user_id,name,value,updated_at)
+            VALUES (#{workspaceId},#{userId},#{name},#{value},#{updatedAt})
+            ON CONFLICT(workspace_id,user_id,name) DO UPDATE SET value=excluded.value,updated_at=excluded.updated_at
+            """)
+    int save(WebPreferenceEntity preference);
+}

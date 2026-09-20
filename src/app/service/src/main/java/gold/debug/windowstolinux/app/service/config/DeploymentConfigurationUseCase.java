@@ -1,5 +1,7 @@
 package gold.debug.windowstolinux.app.service.config;
 
+import gold.debug.windowstolinux.shared.config.input.DeploymentConfigurationParser;
+
 import gold.debug.windowstolinux.app.db.persistence.repository.ApplicationSecretRepository;
 import gold.debug.windowstolinux.app.db.persistence.repository.ConfigurationSnapshotRepository;
 import gold.debug.windowstolinux.app.db.entity.StoredApplicationSecretRevision;
@@ -84,7 +86,7 @@ public final class DeploymentConfigurationUseCase {
     public SecretReference saveSecretRevision(String referenceInput, gold.debug.windowstolinux.shared.model.security.CredentialStorageMode mode,
             char[] masterPassword, char[] value) throws SQLException, SecretStoreException {
         try {
-            var references = gold.debug.windowstolinux.app.service.config.DeploymentConfigurationParser.secrets(referenceInput);
+            var references = gold.debug.windowstolinux.shared.config.input.DeploymentConfigurationParser.secrets(referenceInput);
             if (references.size() != 1) throw new IllegalArgumentException("one exact secret revision is required");
             var reference = references.getFirst();
             var revision = new StoredApplicationSecretRevision(reference,

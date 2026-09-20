@@ -75,8 +75,9 @@ public final class DeploymentReleaseProtocolExecutor {
         Objects.requireNonNull(snapshot, "snapshot");
         List<String> values = new ArrayList<>(List.of(application.id(), workspace.candidateId(), releaseIdentity,
                 application.ownershipManifestSha256()));
-        values.add("identity-v1");
+        values.add("identity-v2");
         values.add(runtime.identityPolicy().name());
+        values.add(gold.debug.windowstolinux.shared.linux.sshd.execution.protocol.runtime.ApplicationWorkloadArguments.payload(runtime));
         values.addAll(DeploymentInputArguments.from(inputs));
         values.addAll(ManagedContentArguments.from(contentPublication));
         if (!build.toolchains().selections().isEmpty()) {

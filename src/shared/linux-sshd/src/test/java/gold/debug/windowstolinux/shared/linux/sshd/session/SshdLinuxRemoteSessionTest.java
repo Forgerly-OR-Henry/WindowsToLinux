@@ -33,7 +33,7 @@ class SshdLinuxRemoteSessionTest {
             assertSame(databases, session.databaseOperations());
             assertSame(artifacts, session.backupArtifacts());
             assertSame(activation, session.restoreActivation());
-            var request = new RemoteDatabasePort.BackupRequest("demo", new RemoteDatabasePort.ConnectionProfile.Sqlite("data/app.db"), false, false);
+            var request = new RemoteDatabasePort.BackupRequest("demo", new RemoteDatabasePort.ConnectionProfile.Sqlite("main", gold.debug.windowstolinux.shared.model.managed.ManagedStorageLocation.defaults(), "app.db"), false, false);
             assertTrue(databases.inspect(request).toolAvailable());
             assertTrue(artifacts.discardBackupOperation("operation-one").succeeded());
             assertTrue(activation.inspectRestoreActivation("demo", 1024).managedRootWritable());

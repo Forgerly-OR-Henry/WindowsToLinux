@@ -10,7 +10,7 @@ import java.util.Objects;
  * <p>仅在部署成功后可用的无秘密结构化后续步骤。
  */
 public sealed interface DeploymentHandoff permits DeploymentHandoff.HttpAccessUrl,
-        DeploymentHandoff.SystemdStartCommand {
+        DeploymentHandoff.SystemdStartCommand, DeploymentHandoff.ApplicationEntry {
 
     /**
      * Performs the {@code kind} operation.
@@ -38,6 +38,7 @@ public sealed interface DeploymentHandoff permits DeploymentHandoff.HttpAccessUr
          *
          * <p>表示 {@code SYSTEMD_START_COMMAND} 选项。
          */
+        APPLICATION_ENTRY,
         SYSTEMD_START_COMMAND
     }
 
@@ -144,4 +145,9 @@ public sealed interface DeploymentHandoff permits DeploymentHandoff.HttpAccessUr
                     + applicationId + " start " + ownershipManifestSha256;
         }
     }
+    record ApplicationEntry(gold.debug.windowstolinux.shared.model.managed.ApplicationUsage usage) implements DeploymentHandoff {
+        public Kind kind() { return Kind.APPLICATION_ENTRY; }
+        public String command() { return usage.endpoints().isEmpty() ? usage.command() : String.join("\n", usage.endpoints()); }
+    }
+
 }

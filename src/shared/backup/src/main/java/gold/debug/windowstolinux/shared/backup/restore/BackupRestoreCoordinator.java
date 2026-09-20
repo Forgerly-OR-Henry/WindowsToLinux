@@ -65,6 +65,7 @@ public final class BackupRestoreCoordinator {
                 database = Optional.of(restored);
                 events.add(success(current, restored.evidence()));
 
+                if (plan.validation().manifest().inventory().database().type() != gold.debug.windowstolinux.shared.backup.manifest.BackupDatabaseType.SQLITE) {
                 current = RestoreCandidateState.DATABASE_COMMITTED;
                 RestoreCandidatePort.HealthEvidence prepared = candidates.prepareCommit(
                         candidateRequest, staged, Optional.of(restored.connectionToken()));
@@ -72,6 +73,7 @@ public final class BackupRestoreCoordinator {
                 databaseCommitAttempted = true;
                 var committedDatabase = adapter.commitCandidate(plan.databaseRestore().orElseThrow());
                 events.add(success(current, committedDatabase.evidence()));
+                }
             }
 
             Optional<String> databaseToken = database.map(DatabaseRestoreEvidence::connectionToken);
@@ -86,6 +88,17 @@ public final class BackupRestoreCoordinator {
                     candidateRequest, staged, databaseToken);
             requireHealth(application, "whole-application restore health failed");
             events.add(success(current, application.evidence()));
+
+            if (plan.databaseRestore().isPresent() && plan.validation().manifest().inventory().database().type()
+                    == gold.debug.windowstolinux.shared.backup.manifest.BackupDatabaseType.SQLITE) {
+                current = RestoreCandidateState.DATABASE_COMMITTED;
+                var prepared = candidates.prepareCommit(candidateRequest,staged,databaseToken);
+                requireHealth(prepared,"isolated SQLite candidate and formal graph must stop before activation");
+                databaseCommitAttempted = true;
+                var committedDatabase = databases.require(gold.debug.windowstolinux.shared.backup.manifest.BackupDatabaseType.SQLITE)
+                        .commitCandidate(plan.databaseRestore().orElseThrow());
+                events.add(success(current,committedDatabase.evidence()));
+            }
 
             current = RestoreCandidateState.COMMITTED;
             RestoreCandidatePort.CommitEvidence committed = candidates.commit(
@@ -126,21 +139,24 @@ public final class BackupRestoreCoordinator {
                     events, database, Optional.empty(), Optional.of(safe));
         }
         List<Throwable> recoveryFailures = new ArrayList<>();
-        if (databaseCommitAttempted) {
+        boolean recoveryQuiesced = true;
+        if (databaseMutationAttempted) {
             try {
                 RestoreCandidatePort.HealthEvidence stopped = candidates.quiesceForRecovery(
                         plan.candidateRequest(), files);
                 if (!stopped.healthy()) throw new IllegalStateException("database recovery quiesce is unverified");
             } catch (Exception exception) {
-                recoveryFailures.add(exception);
+                recoveryFailures.add(exception); recoveryQuiesced = false;
             }
+        }
+        if (databaseCommitAttempted && recoveryQuiesced) {
             try {
                 databases.require(plan.validation().manifest().inventory().database().type())
                         .recoverCandidate(plan.databaseRestore().orElseThrow());
             } catch (Exception exception) {
                 recoveryFailures.add(exception);
             }
-        } else if (databaseMutationAttempted && plan.databaseRestore().isPresent()) {
+        } else if (databaseMutationAttempted && recoveryQuiesced && plan.databaseRestore().isPresent()) {
             try {
                 databases.require(plan.validation().manifest().inventory().database().type())
                         .discardCandidate(plan.databaseRestore().orElseThrow());
@@ -148,6 +164,7 @@ public final class BackupRestoreCoordinator {
         }
         RestoreCandidatePort.RecoveryEvidence recovered = null;
         try {
+            if (!recoveryQuiesced) throw new IllegalStateException("candidate processes may still be using database files; retain them for manual recovery");
             recovered = candidates.recoverExisting(plan.candidateRequest(), files);
             if (!recovered.candidateRemoved() || !recovered.existingReleaseVerified()) {
                 recoveryFailures.add(new IllegalStateException("restore recovery evidence is incomplete"));

@@ -53,6 +53,8 @@ public final class ManagedLifecycleService {
             if (action == LifecycleAction.REFRESH_STATUS) {
                 return new LifecycleActionResult(true, LocalizedMessage.of("lifecycle.statusFetched"), Optional.of(before));
             }
+            if (before.runtimeState() == gold.debug.windowstolinux.shared.model.lifecycle.RuntimeState.INSTALLED)
+                return new LifecycleActionResult(false, LocalizedMessage.of("lifecycle.onDemandCommandRequired"), Optional.of(before));
             if (before.runtimeState() == gold.debug.windowstolinux.shared.model.lifecycle.RuntimeState.UNKNOWN
                     || before.autostartState() == gold.debug.windowstolinux.shared.model.lifecycle.AutostartState.UNKNOWN) {
                 return new LifecycleActionResult(false, LocalizedMessage.of("lifecycle.remoteStateUnverified"), Optional.of(before));

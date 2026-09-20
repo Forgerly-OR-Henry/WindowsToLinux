@@ -47,6 +47,19 @@ class BackupConfigurationCodecTest {
     }
 
     @Test
+    void emptyConfigurationForAnOnDemandToolSurvivesBackupActivation() throws Exception {
+        var command = new gold.debug.windowstolinux.shared.model.project.application.ApplicationCommand("main.py", List.of("--help"));
+        var workload = new gold.debug.windowstolinux.shared.model.project.application.ApplicationWorkload(
+                gold.debug.windowstolinux.shared.model.project.application.ApplicationWorkload.ExecutionMode.ON_DEMAND,
+                true, command, "", List.of(), Optional.of(command), "usage", Optional.empty(), List.of(), List.of());
+        var runtime = new ManagedApplicationRuntimeConfiguration(new HealthCheck.Command(command, "usage", 10), Optional.empty(),
+                gold.debug.windowstolinux.shared.model.project.RuntimeIdentityMode.SYSTEMD_STATIC, workload);
+        var document = new BackupConfigurationDocument(ConfigurationSnapshot.create("cli", 1, "runtime-v1", Instant.now(), List.of()),
+                new ManagedComponentResourceBindings(List.of(), Optional.of(List.of())), runtime);
+        assertEquals(document, codec.readActivation(codec.writeActivation(document)));
+    }
+
+    @Test
     void rejectsTruncationAndTrailingBytes() throws Exception {
         byte[] valid = codec.writeActivation(document());
 

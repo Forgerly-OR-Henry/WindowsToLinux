@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="gold.debug.windowstolinux.web.db.persistence.mapper.WebAiProfileMapper">
+    <update id="replace">
+        UPDATE ai_profiles SET name=#{row.name},document=#{row.document},updated_at=#{row.updatedAt},priority=#{row.priority},enabled=#{row.enabled},secret_id=#{row.secretId},secret_version=#{row.secretVersion},version=version+1
+        WHERE workspace_id=#{row.workspaceId} AND id=#{row.id} AND version=#{expectedVersion}
+    </update>
+</mapper>

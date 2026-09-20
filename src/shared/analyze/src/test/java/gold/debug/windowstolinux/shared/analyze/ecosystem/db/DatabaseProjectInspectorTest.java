@@ -13,6 +13,30 @@ import static org.junit.jupiter.api.Assertions.*;
 
 class DatabaseProjectInspectorTest {
     @TempDir Path root;
+    @Test void sqliteManifestKeepsFileInitializationWithoutServerCredentials() throws Exception {
+        Files.writeString(root.resolve("windowstolinux-db.properties"), "db=main\ndb.main.engine=SQLITE\ndb.main.path=state/store.db\ndb.main.initialize=initial.sql\ndb.main.seed=seed.db\n");
+        var database = new DatabaseProjectInspector().inspect(root).databases().getFirst();
+        assertEquals(DatabaseEngineType.SQLITE,database.engine());
+        assertEquals("",database.username()); assertEquals("",database.passwordEnvironment());
+        assertEquals("state/store.db",database.sqlite().orElseThrow().accessPath());
+        assertEquals("seed.db",database.sqlite().orElseThrow().seedFile());
+        assertEquals(List.of("initial.sql"),database.initializationFiles());
+    }
+    @Test void sqliteSpringRetainsLiteralPathAndDoesNotDefaultUnresolvedVariables() throws Exception {
+        Files.writeString(root.resolve("application.properties"), "spring.datasource.url=jdbc:sqlite:storage/app.db\n");
+        var database = new DatabaseProjectInspector().inspect(root).databases().getFirst();
+        assertEquals("storage/app.db",database.sqlite().orElseThrow().accessPath());
+        assertEquals("SPRING_DATASOURCE_URL",database.sqlite().orElseThrow().pathEnvironment());
+        Files.writeString(root.resolve("application.properties"), "spring.datasource.url=jdbc:sqlite:${DB_FILE}\n");
+        database = new DatabaseProjectInspector().inspect(root).databases().getFirst();
+        assertEquals(gold.debug.windowstolinux.shared.model.managed.ManagedStorageLocation.StorageLocationType.UNRESOLVED,
+                database.sqlite().orElseThrow().location().type());
+    }
+    @Test void sqliteMemoryIsNotOfferedAsPersistentDatabase() throws Exception {
+        Files.writeString(root.resolve("application.properties"), "spring.datasource.url=jdbc:sqlite::memory:\n");
+        var result = new DatabaseProjectInspector().inspect(root);
+        assertTrue(result.databases().isEmpty()); assertFalse(result.unknownDatabase());
+    }
     @Test void keepsExternalEngineAndRequiresExplicitEndpointDecisionWithoutLeakingPassword() throws Exception {
         Files.writeString(root.resolve("application.properties"),"spring.datasource.url=jdbc:mysql://db.example.test:3306/demo\nspring.datasource.password=top-secret\n");
         var assessment = new DatabaseProjectInspector().inspect(root);

@@ -77,7 +77,8 @@ public final class DatabaseCommandRenderer {
     private void appendConnection(List<String> arguments, RemoteDatabasePort.ConnectionProfile connection) {
         arguments.add(typeToken(connection.type()));
         if (connection instanceof RemoteDatabasePort.ConnectionProfile.Sqlite sqlite) {
-            arguments.add(sqlite.relativePath());
+            arguments.add(sqlite.bindingId()); arguments.add(sqlite.location().type().name());
+            arguments.add(sqlite.location().path().isEmpty() ? "-" : sqlite.location().path()); arguments.add(sqlite.fileName());
             return;
         }
         RemoteDatabasePort.ConnectionProfile.Server server = (RemoteDatabasePort.ConnectionProfile.Server) connection;

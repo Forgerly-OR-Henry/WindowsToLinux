@@ -4,9 +4,9 @@ import gold.debug.windowstolinux.app.service.contract.definition.ComponentHealth
 
 import gold.debug.windowstolinux.app.service.contract.definition.ComponentFormInput;
 
-import gold.debug.windowstolinux.app.service.contract.definition.DatabaseReviewMode;
+import gold.debug.windowstolinux.shared.model.deployment.DatabaseReviewMode;
 
-import gold.debug.windowstolinux.app.service.deployment.automatic.DeploymentRuntimeParser;
+import gold.debug.windowstolinux.shared.deploy.input.DeploymentRuntimeParser;
 import gold.debug.windowstolinux.shared.model.project.DeploymentProjectType;
 import gold.debug.windowstolinux.shared.model.project.DeploymentRuntimeSpecification;
 import org.junit.jupiter.api.Test;
@@ -53,6 +53,7 @@ class ComponentFormUseCaseTest {
                 "200", "20", "1", healthMode == ComponentHealthMode.HTTP
                 ? "http://example.test:18081/" : "", "api/dist", "18081", "database",
                 "PORT=18081", DatabaseReviewMode.NONE, "",
-                "database-password:1", true, false);
+                "database-password:1", true, false, "",
+                "version=1\nmode=DAEMON\nhealth.mode=TCP\nhealth.port=18081\nendpoints=service\nendpoint.service.protocol=TCP\nendpoint.service.port=18081\nendpoint.service.exposure=EXTERNAL\n");
     }
 }

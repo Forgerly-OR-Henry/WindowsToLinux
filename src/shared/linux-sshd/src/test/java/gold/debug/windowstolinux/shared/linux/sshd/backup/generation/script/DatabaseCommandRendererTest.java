@@ -35,7 +35,7 @@ class DatabaseCommandRendererTest {
                 RemoteDatabasePort.DatabaseConsistencyMode.SQLITE_ONLINE_BACKUP, List.of(), List.of("verified"));
         RemoteDatabasePort.RestoreRequest restore = new RemoteDatabasePort.RestoreRequest(
                 "suite", "sample", "suite-0123456789abcdef",
-                new RemoteDatabasePort.ConnectionProfile.Sqlite("data/application.db"), artifact);
+                new RemoteDatabasePort.ConnectionProfile.Sqlite("main", gold.debug.windowstolinux.shared.model.managed.ManagedStorageLocation.defaults(), "application.db"), artifact);
 
         assertTrue(renderer.readArtifact(artifact).contains("'128' '" + "a".repeat(64) + "'"));
         assertTrue(renderer.stageArtifact(artifact).contains("'database-stage-artifact'"));

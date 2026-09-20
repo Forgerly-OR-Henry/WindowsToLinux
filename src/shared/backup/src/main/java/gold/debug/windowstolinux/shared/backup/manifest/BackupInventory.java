@@ -29,7 +29,7 @@ public record BackupInventory(
     private static final Comparator<SecretReference> SECRET_ORDER = Comparator
             .comparing(SecretReference::identifier).thenComparingLong(SecretReference::revision);
 
-    /** Creates one schema-v4 inventory with exact application secret references. / 创建带精确应用秘密引用的 schema v4 清单。 */
+    /** Creates one schema-v5 inventory with exact application secret references. / 创建带精确应用秘密引用的 schema v5 清单。 */
     public BackupInventory(
             List<String> releaseManifests,
             List<String> configurationSnapshots,
@@ -90,7 +90,7 @@ public record BackupInventory(
         validateVersionBindings(identity, components, secretReferences, legacySecretReferences);
     }
 
-    /** Computes the canonical schema-v4 release-set digest in dependency order. / 按依赖顺序计算规范 schema v4 发布集合摘要。 */
+    /** Computes the canonical schema-v5 release-set digest in dependency order. / 按依赖顺序计算规范 schema v5 发布集合摘要。 */
     public static String computeReleaseSetSha256(List<BackupComponent> components) {
         components = List.copyOf(Objects.requireNonNull(components, "components"));
         return ReleaseSetDigest.sha256(components.stream().map(component ->
@@ -149,7 +149,7 @@ public record BackupInventory(
         if (exact) {
             if (identity.releaseSetSha256().isEmpty() || identity.legacyReleaseIdentity().isPresent()
                     || !legacySecretReferences.isEmpty()) {
-                throw new IllegalArgumentException("schema-v4 inventory requires only exact release and secret bindings");
+                throw new IllegalArgumentException("schema-v5 inventory requires only exact release and secret bindings");
             }
             String expectedReleaseSet = computeReleaseSetSha256(components);
             if (!identity.releaseSetSha256().orElseThrow().equals(expectedReleaseSet)) {

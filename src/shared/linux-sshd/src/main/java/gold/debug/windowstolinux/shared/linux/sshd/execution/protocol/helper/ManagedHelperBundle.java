@@ -22,7 +22,7 @@ public final class ManagedHelperBundle {
     /** Platform-owned Java 21 launcher used by every managed systemd unit. / 每个受管 systemd 单元使用的平台持有 Java 21 启动器。 */
     public static final String JAVA_RUNTIME_PATH = DIRECTORY + "/java-21";
     /** Expected byte-for-byte helper bundle identity. / 预期的 helper 逐字节身份。 */
-    public static final String EXPECTED_SHA256 = "1f10cece3ee7a3c9d75e9000c2b1c6bbe950afc11da65b65cc71ed26f4a2af87";
+    public static final String EXPECTED_SHA256 = "fecb8ce674358d07ec686ea503a77821e39579374ba88df54bf12520506ca40e";
     private static final String ROOT = "/gold/debug/windowstolinux/shared/linux/sshd/";
     private static final Map<String, String> RESOURCE_INSERTS = Map.of(
             "# @compat:apparmor@\n", "execution/protocol/helper/fragments/workspace/apparmor-namespace.sh",
@@ -34,7 +34,9 @@ public final class ManagedHelperBundle {
             "execution/protocol/helper/fragments/release/10-typed-release.sh",
             "execution/protocol/helper/fragments/release/12-container-image-input.sh",
             "execution/protocol/helper/fragments/input/15-deployment-input.sh",
+            "execution/protocol/helper/fragments/input/16-application-input.sh",
             "execution/protocol/helper/fragments/input/17-managed-content.sh",
+            "execution/protocol/helper/fragments/release/18-container-storage.sh",
             "execution/protocol/helper/fragments/workspace/20-candidate-workspace.sh",
             "execution/protocol/helper/fragments/workspace/21-workspace-volume.sh",
             "execution/protocol/helper/fragments/workspace/22-restricted-build.sh",
@@ -45,12 +47,18 @@ public final class ManagedHelperBundle {
             "toolchain/10-release-metadata.py", "toolchain/20-installation-boundaries.py",
             "toolchain/30-managed-installation.py", "toolchain/40-binding-protocol.py",
             "execution/protocol/helper/fragments/runtime/40-typed-runtime.sh",
+            "execution/protocol/helper/fragments/runtime/41-application-runtime.sh",
+            "execution/protocol/helper/fragments/runtime/42-application-job.sh",
+            "execution/protocol/helper/fragments/runtime/43-application-container.sh",
+            "execution/protocol/helper/fragments/runtime/44-application-health.sh",
+            "execution/protocol/helper/fragments/runtime/45-application-container-contract.sh",
             "execution/protocol/helper/fragments/release/50-container-release.sh",
             "execution/protocol/helper/fragments/release/52-container-recovery.sh",
             "execution/protocol/helper/fragments/restore/54-restore-candidate.sh",
             "execution/protocol/helper/fragments/restore/56-restore-commit.sh",
+            "execution/protocol/helper/fragments/restore/57-application-restore.sh",
             "runtime/container/helper/55-podman-quadlet.sh", "runtime/systemd/helper/60-lifecycle.sh",
-            "runtime/systemd/helper/61-dynamic-identity.sh",
+            "runtime/systemd/helper/61-service-identity.sh",
             "execution/protocol/helper/fragments/database/64-database-client.sh",
             "execution/protocol/helper/fragments/database/65-database-backup.sh",
             "execution/protocol/helper/fragments/database/66-database-activation.sh",
@@ -108,7 +116,7 @@ public final class ManagedHelperBundle {
                     content += "build_entry_sha256=" + sha256(renderBuildEntry().getBytes(StandardCharsets.UTF_8)) + "\n";
                 }
                 // The embedded Python resource is literal; legacy shell resources retain their established normalization. / 嵌入的 Python 资源保持字面内容，旧版 Shell 资源继续使用既有规范化处理。
-                output.write(((fragment.endsWith("10-native-instances.sh") || fragment.endsWith("20-native-targets.sh") || fragment.endsWith("23-container-builder.sh") || fragment.endsWith("12-container-image-input.sh")) ? content : content.replace("\\\\", "\\")).getBytes(StandardCharsets.UTF_8));
+                output.write(((fragment.endsWith("10-native-instances.sh") || fragment.endsWith("20-native-targets.sh") || fragment.endsWith("23-container-builder.sh") || fragment.endsWith("12-container-image-input.sh") || fragment.endsWith("18-container-storage.sh") || fragment.contains("application-")) ? content : content.replace("\\\\", "\\")).getBytes(StandardCharsets.UTF_8));
             } catch (IOException exception) {
                 throw new IllegalStateException("managed-deployment privilege helper fragment cannot be read: " + fragment,
                         exception);

@@ -2,6 +2,7 @@ target/
 /.ai-workspace/
 /.idea/
 /src/app/db/data/
+/src/web/db/data/
 !.mvn/wrapper/maven-wrapper.jar
 !**/src/main/**/target/
 !**/src/test/**/target/

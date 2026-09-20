@@ -2,7 +2,7 @@ package gold.debug.windowstolinux.app.service.deployment.automatic;
 
 import gold.debug.windowstolinux.app.db.DesktopPersistence;
 import gold.debug.windowstolinux.app.service.DesktopApplicationFacade;
-import gold.debug.windowstolinux.app.service.contract.definition.AutomaticDeploymentInteraction;
+import gold.debug.windowstolinux.shared.deploy.contract.AutomaticDeploymentInteraction;
 import gold.debug.windowstolinux.app.service.server.ServerProfile;
 import gold.debug.windowstolinux.shared.analyze.ecosystem.db.DatabaseProjectInspector;
 import gold.debug.windowstolinux.shared.linux.ecosystem.db.NativeDatabasePort;

@@ -12,12 +12,19 @@ public record BackupHealthCheck(
         int expectedStatus,
         int port,
         int timeoutSeconds,
-        int stabilitySeconds
+        int stabilitySeconds,
+        String payload
 ) {
+    public BackupHealthCheck(BackupHealthCheckType type, String endpoint, int expectedStatus, int port, int timeoutSeconds, int stabilitySeconds) {
+        this(type, endpoint, expectedStatus, port, timeoutSeconds, stabilitySeconds, "");
+    }
     /** Rejects mixed HTTP/TCP fields and validates through the canonical model. / 拒绝混合的 HTTP/TCP 字段并通过规范模型校验。 */
     public BackupHealthCheck {
         type = Objects.requireNonNull(type, "type");
         endpoint = Objects.requireNonNull(endpoint, "endpoint").trim();
+        payload = Objects.requireNonNull(payload);
+        if ((type == BackupHealthCheckType.HTTP || type == BackupHealthCheckType.TCP) && !payload.isEmpty())
+            throw new IllegalArgumentException("mixed portable health payload");
         switch (type) {
             case HTTP -> {
                 if (endpoint.isEmpty() || port != 0 || stabilitySeconds != 0) {
@@ -26,6 +33,13 @@ public record BackupHealthCheck(
                 HealthCheck.Http checked = new HealthCheck.Http(
                         URI.create(endpoint), expectedStatus, timeoutSeconds);
                 endpoint = checked.endpoint().toString();
+            }
+            case PROCESS, COMMAND, UDP -> {
+                if (!endpoint.isEmpty() || expectedStatus != 0 || port != 0 || stabilitySeconds != 0)
+                    throw new IllegalArgumentException("mixed portable health fields");
+                HealthCheck decoded = decode(payload);
+                if (!decoded.getClass().getSimpleName().equalsIgnoreCase(type.name()) || decoded.timeoutSeconds() != timeoutSeconds)
+                    throw new IllegalArgumentException("portable health discriminator mismatch");
             }
             case TCP -> {
                 if (!endpoint.isEmpty() || expectedStatus != 0) {
@@ -52,6 +66,7 @@ public record BackupHealthCheck(
         return switch (type) {
             case HTTP -> new HealthCheck.Http(URI.create(endpoint), expectedStatus, timeoutSeconds);
             case TCP -> new HealthCheck.Tcp(port, timeoutSeconds, stabilitySeconds);
+            case PROCESS, COMMAND, UDP -> decode(payload);
         };
     }
 
@@ -60,6 +75,20 @@ public record BackupHealthCheck(
         return switch (Objects.requireNonNull(healthCheck, "healthCheck")) {
             case HealthCheck.Http http -> http(http.endpoint(), http.expectedStatus(), http.timeoutSeconds());
             case HealthCheck.Tcp tcp -> tcp(tcp.port(), tcp.timeoutSeconds(), tcp.stabilitySeconds());
+            case HealthCheck.Process process -> extended(BackupHealthCheckType.PROCESS, process);
+            case HealthCheck.Command command -> extended(BackupHealthCheckType.COMMAND, command);
+            case HealthCheck.Udp udp -> extended(BackupHealthCheckType.UDP, udp);
         };
+    }
+
+    private static BackupHealthCheck extended(BackupHealthCheckType type, HealthCheck health) {
+        try { return new BackupHealthCheck(type, "", 0, 0, health.timeoutSeconds(), 0,
+                java.util.Base64.getEncoder().encodeToString(new gold.debug.windowstolinux.shared.config.persistence.serialization.HealthCheckCodec().write(health)));
+        } catch (java.io.IOException failure) { throw new IllegalArgumentException("invalid portable health", failure); }
+    }
+    private static HealthCheck decode(String payload) {
+        if (payload.length() > 90000) throw new IllegalArgumentException("portable health payload too large");
+        try { return new gold.debug.windowstolinux.shared.config.persistence.serialization.HealthCheckCodec().read(java.util.Base64.getDecoder().decode(payload)); }
+        catch (java.io.IOException failure) { throw new IllegalArgumentException("unsupported portable health", failure); }
     }
 }

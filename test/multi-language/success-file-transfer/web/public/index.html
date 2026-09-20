@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>文件收发站</title>
+    <link rel="stylesheet" href="/style.css" />
+  </head>
+  <body>
+    <header>
+      <h1>文件收发站</h1>
+      <p>文件夹 · 分块续传 · 不可变历史版本</p>
+    </header>
+    <nav>
+      <a href="#list">文件列表</a> <a href="#upload">上传 / 续传</a>
+      <a href="#history">上传历史</a>
+    </nav>
+    <p id="loading" role="status"></p>
+    <p id="message" role="alert"></p>
+    <section>
+      <label>当前文件夹<select id="folder"></select></label>
+      <form id="folder-form">
+        <label>新文件夹<input id="folder-name" required maxlength="80" /></label
+        ><button>创建文件夹</button>
+      </form>
+    </section>
+    <main>
+      <section data-page="list">
+        <h2>已发布文件</h2>
+        <form id="filters">
+          <label>名称筛选<input id="query" /></label><button>查询</button>
+        </form>
+        <p id="stats"></p>
+        <table>
+          <thead>
+            <tr>
+              <th>名称</th>
+              <th>版本</th>
+              <th>字节</th>
+              <th>SHA-256</th>
+              <th>操作</th>
+            </tr>
+          </thead>
+          <tbody id="rows"></tbody>
+        </table>
+        <button id="previous">上一页</button><button id="next">下一页</button>
+      </section>
+      <section data-page="upload" hidden>
+        <h2>上传与恢复</h2>
+        <p>
+          先选择文件；断点续传需重新选择相同文件并填写会话标识。刷新页面后已确认分块仍保留。同文件夹同名文件发布为新版本。
+        </p>
+        <form id="upload">
+          <label
+            >选择文件<input id="files" type="file" multiple required /></label
+          ><label>恢复会话标识（只选一个文件）<input id="session-id" /></label
+          ><button id="upload-button">开始 / 继续上传</button>
+        </form>
+        <progress id="progress" max="100" value="0"></progress>
+        <p id="progress-text" role="status"></p>
+        <button id="pause" disabled>暂停</button
+        ><button id="cancel">取消会话</button>
+        <pre id="session-detail"></pre>
+      </section>
+      <section data-page="history" hidden>
+        <h2>上传历史</h2>
+        <p>最近 200 次；未完成文件不可下载。</p>
+        <table>
+          <thead>
+            <tr>
+              <th>名称</th>
+              <th>状态</th>
+              <th>时间</th>
+              <th>操作</th>
+            </tr>
+          </thead>
+          <tbody id="history"></tbody>
+        </table>
+      </section>
+      <section data-page="detail" hidden>
+        <h2 id="detail-title">文件版本</h2>
+        <table>
+          <thead>
+            <tr>
+              <th>版本</th>
+              <th>字节</th>
+              <th>SHA-256</th>
+              <th>发布时间</th>
+              <th>下载</th>
+            </tr>
+          </thead>
+          <tbody id="versions"></tbody>
+        </table>
+      </section>
+    </main>
+    <script type="module" src="/client.js"></script>
+  </body>
+</html>

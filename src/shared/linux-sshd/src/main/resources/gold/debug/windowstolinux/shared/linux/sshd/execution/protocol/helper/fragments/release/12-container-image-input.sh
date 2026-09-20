@@ -96,22 +96,6 @@ container_secret_delivery() {
   install -o "$uid" -g root -m 400 -- "$source" "$target"
   printf '%s' "$target"
 }
-prepare_container_volume_access() {
-  local engine="$1" volume="$2" user="$3" path uid gid options
-  uid="${user%%:*}"; gid="${user#*:}"; [ "$uid" != "$gid" ] || gid="$uid"
-  [ "$("$engine" volume inspect --format '{{.Driver}}' "$volume")" = local ] || reject container-volume-driver
-  options="$("$engine" volume inspect --format '{{json .Options}}' "$volume")"
-  case "$options" in null|'{}') ;; *) reject container-volume-options ;; esac
-  path="$("$engine" volume inspect --format '{{.Mountpoint}}' "$volume")"
-  case "$engine:$path" in docker:/var/lib/docker/volumes/*/_data|podman:/var/lib/containers/storage/volumes/*/_data) ;; *) reject container-volume-storage-path ;; esac
-  [ -d "$path" ] && [ ! -L "$path" ] && [ "$(readlink -f -- "$path")" = "$path" ] || reject container-volume-path
-  if [ -z "$(find -P "$path" -mindepth 1 -maxdepth 1 -print -quit)" ]; then
-    chown "$uid:$gid" -- "$path"; chmod 700 -- "$path"
-  else
-    [ "$(stat -c %u "$path")" = "$uid" ] || reject container-volume-user-migration-required
-  fi
-}
-
 import_restore_image() {
   local engine="$1" archive="$2" image="$3" destination
   assert_root_owned_regular "$archive"

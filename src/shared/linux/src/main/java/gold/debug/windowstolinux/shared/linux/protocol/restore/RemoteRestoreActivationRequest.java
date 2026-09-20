@@ -43,14 +43,13 @@ public record RemoteRestoreActivationRequest(
             throw new IllegalArgumentException("restore activation component count is invalid");
         }
         Set<String> seen = new HashSet<>();
-        Set<Integer> candidatePorts = new HashSet<>();
+        Set<String> candidatePorts = new HashSet<>();
         for (RemoteRestoreActivationComponent component : components) {
             if (!seen.containsAll(component.dependsOn()) || !seen.add(component.componentId())) {
                 throw new IllegalArgumentException("restore activation components are not dependency-first");
             }
-            if (mode == RemoteRestoreActivationMode.PARALLEL_LOOPBACK && component.ports().isEmpty()
-                    || mode == RemoteRestoreActivationMode.SHORT_STOP && !component.ports().isEmpty()
-                    || component.ports().stream().anyMatch(binding -> !candidatePorts.add(binding.candidatePort()))) {
+            if (mode != RemoteRestoreActivationMode.PARALLEL_LOOPBACK && !component.ports().isEmpty()
+                    || component.ports().stream().anyMatch(binding -> !candidatePorts.add(binding.protocol() + ":" + binding.candidatePort()))) {
                 throw new IllegalArgumentException("restore activation ports differ from the selected mode");
             }
         }

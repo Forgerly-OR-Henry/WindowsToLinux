@@ -1,0 +1,12 @@
+{
+  "projectId": 1,
+  "title": "确认活动物料",
+  "description": "登记活动宣传资料及设备清单",
+  "ownerId": 1,
+  "priority": 2,
+  "labels": ["中文", "验收"],
+  "dependsOn": [1],
+  "dueDate": "2030-10-01",
+  "version": 0,
+  "actorId": 1
+}

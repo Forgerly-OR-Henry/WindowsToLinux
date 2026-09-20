@@ -20,10 +20,16 @@ public record MultiComponentDeploymentResult(
         List<ComponentDeploymentResult> componentResults,
         Optional<String> applicationReleaseIdentity,
         OperationIdentity operationIdentity,
-        List<FailureDescriptor> nonFatalFailures
+        List<FailureDescriptor> nonFatalFailures,
+        java.util.Map<String, String> componentReleaseIdentities
 ) {
     /** Validates application and component terminal consistency. / 验证应用与组件终态一致性。 */
     public MultiComponentDeploymentResult {
+        componentReleaseIdentities = java.util.Map.copyOf(componentReleaseIdentities);
+        if (!componentReleaseIdentities.isEmpty() && (status != DeploymentStatus.SUCCEEDED
+                || !componentReleaseIdentities.keySet().equals(componentResults.stream().map(ComponentDeploymentResult::componentId).collect(java.util.stream.Collectors.toSet()))
+                || componentReleaseIdentities.values().stream().anyMatch(value -> !value.matches("[0-9a-f]{64}"))))
+            throw new IllegalArgumentException("published component identities must exactly cover a successful transaction");
         status = Objects.requireNonNull(status, "status");
         applicationEvents = List.copyOf(Objects.requireNonNull(applicationEvents, "applicationEvents"));
         componentResults = List.copyOf(Objects.requireNonNull(componentResults, "componentResults").stream()
@@ -58,6 +64,19 @@ public record MultiComponentDeploymentResult(
 
     /** Creates a result and derives one identity for application and component evidence. / 创建结果并为应用及组件证据派生同一标识。 */
     public MultiComponentDeploymentResult(DeploymentStatus status, List<DeploymentEvent> applicationEvents,
+            List<ComponentDeploymentResult> componentResults, Optional<String> applicationReleaseIdentity,
+            OperationIdentity operationIdentity, List<FailureDescriptor> nonFatalFailures) {
+        this(status, applicationEvents, componentResults, applicationReleaseIdentity, operationIdentity, nonFatalFailures, java.util.Map.of());
+    }
+
+    /** Captures the exact published identities after toolchain binding. */
+    public MultiComponentDeploymentResult withComponentReleaseIdentities(java.util.Map<String, String> identities) {
+        return new MultiComponentDeploymentResult(status, applicationEvents, componentResults,
+                applicationReleaseIdentity, operationIdentity, nonFatalFailures, identities);
+    }
+
+    /** Creates a result with a new operation identity. */
+    public MultiComponentDeploymentResult(DeploymentStatus status, List<DeploymentEvent> applicationEvents,
                                           List<ComponentDeploymentResult> componentResults,
                                           Optional<String> applicationReleaseIdentity) {
         this(status, applicationEvents, componentResults, applicationReleaseIdentity,
@@ -70,7 +89,7 @@ public record MultiComponentDeploymentResult(
         List<FailureDescriptor> warnings = new java.util.ArrayList<>(nonFatalFailures);
         warnings.add(failure.withOperationIdentity(operationIdentity));
         return new MultiComponentDeploymentResult(status, applicationEvents, componentResults,
-                applicationReleaseIdentity, operationIdentity, warnings);
+                applicationReleaseIdentity, operationIdentity, warnings, componentReleaseIdentities);
     }
 
     private static OperationIdentity identity(List<DeploymentEvent> applicationEvents,

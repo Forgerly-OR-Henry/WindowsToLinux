@@ -197,7 +197,8 @@ public final class LinuxRestoreCandidateAdapter implements RestoreCandidatePort 
                 request.manifest().inventory().identity().releaseSetSha256().orElseThrow(),
                 request.manifest().inventory().secretReferences(), remoteRoot, candidateToken, components,
                 request.manifest().inventory().applicationHealthComponentId(),
-                request.manifest().inventory().applicationHealthCheck().toHealthCheck());
+                request.manifest().inventory().applicationHealthCheck().toHealthCheck(),
+                request.manifest().inventory().database().type() == gold.debug.windowstolinux.shared.backup.manifest.BackupDatabaseType.SQLITE);
     }
 
     private RestoreDeploymentComponent component(BackupComponent component, RestoreCandidateRequest request) {
@@ -217,7 +218,7 @@ public final class LinuxRestoreCandidateAdapter implements RestoreCandidatePort 
     private static void requireAutomaticActivation(RestoreCandidateRequest request) throws BackupException {
         if (!Objects.requireNonNull(request, "request").manifest().supportsAutomaticActivation()) {
             throw BackupException.create(BackupFailureType.RESTORE_PREFLIGHT_FAILED,
-                    "restore manifest lacks schema-v4 activation bindings or required encrypted secrets");
+                    "restore manifest lacks schema-v5 activation bindings or required encrypted secrets");
         }
     }
 

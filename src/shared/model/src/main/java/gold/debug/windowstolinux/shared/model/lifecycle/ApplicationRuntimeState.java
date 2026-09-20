@@ -4,6 +4,8 @@ package gold.debug.windowstolinux.shared.model.lifecycle;
 public enum ApplicationRuntimeState {
     /** Every component is running. / 每个组件均在运行。 */
     RUNNING,
+    /** All components are installed on-demand tools. */
+    INSTALLED,
     /** Every component is stopped. / 每个组件均已停止。 */
     STOPPED,
     /** Verified components contain both running and stopped states. / 已验证组件同时包含运行和停止状态。 */

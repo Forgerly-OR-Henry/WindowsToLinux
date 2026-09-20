@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>CSV 检查工作台</title>
+    <link rel="stylesheet" href="/style.css" />
+  </head>
+  <body>
+    <header>
+      <h1>CSV 检查工作台</h1>
+      <p>数据集 → 规则模板 → 后台检查 → 问题明细与报告比较</p>
+      <nav>
+        <a href="#datasets">数据集</a><a href="#templates">规则模板</a
+        ><a href="#jobs">检查任务</a><a href="#compare">报告比较</a>
+      </nav>
+    </header>
+    <p id="message" role="alert"></p>
+    <p id="loading" role="status" hidden>正在加载…</p>
+    <main id="view"></main>
+    <script type="module" src="/client.js"></script>
+  </body>
+</html>

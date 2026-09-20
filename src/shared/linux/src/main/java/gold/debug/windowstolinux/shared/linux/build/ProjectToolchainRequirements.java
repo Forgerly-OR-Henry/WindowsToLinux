@@ -38,6 +38,8 @@ public final class ProjectToolchainRequirements {
                     .filter(r -> r.ecosystem() == C || r.ecosystem() == CPP).toList());
             case DeploymentRuntimeSpecification.Container ignored -> { }
         }
+        if (!runtime.workload().companions().isEmpty()) result.addAll(facts.toolchainRequirements().stream()
+                .filter(r -> r.ecosystem() == C || r.ecosystem() == CPP).filter(r -> !result.contains(r)).toList());
         return List.copyOf(result);
     }
 

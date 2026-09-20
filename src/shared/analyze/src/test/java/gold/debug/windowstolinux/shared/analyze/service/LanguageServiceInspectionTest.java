@@ -21,6 +21,20 @@ class LanguageServiceInspectionTest {
     @TempDir Path temporaryDirectory;
 
     @Test
+    void composerServicesCanDeclareTheirVersionAndNonstandardRouter() throws Exception {
+        Path root = root("router");
+        write(root, "composer.json", "{\"require\":{\"php\":\">=8.3 <8.4\"}}\n");
+        write(root, "composer.lock", "{}\n");
+        write(root, "router.php", "<?php echo 'ok';\n");
+        write(root, "public/index.html", "fixture\n");
+        write(root, "windowstolinux-application.properties", "version=1\nmode=DAEMON\nruntime.version=8.3\nruntime.secondary=router.php\n");
+        var assessment = new DeploymentAnalysisCoordinator().analyze(root, DeploymentProjectType.PHP_SERVICE);
+        assertEquals(DeploymentAdmissionStatus.READY_FOR_PLANNING, assessment.admission());
+        assertEquals("8.3", assessment.runtimeSuggestion().orElseThrow().values().get(DeploymentRuntimeAssessment.RuntimeInputType.SERVICE_VERSION));
+        assertEquals("router.php", assessment.runtimeSuggestion().orElseThrow().values().get(DeploymentRuntimeAssessment.RuntimeInputType.SERVICE_ENTRYPOINT));
+    }
+
+    @Test
     void admitsEachCompleteLockedEcosystemServiceProjectShape() throws Exception {
         List<Project> projects = List.of(go(), rust(), dotnet(), kotlin(), php(), ruby());
 

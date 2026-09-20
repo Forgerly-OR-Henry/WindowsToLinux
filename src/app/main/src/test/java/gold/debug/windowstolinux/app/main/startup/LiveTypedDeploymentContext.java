@@ -261,9 +261,9 @@ final class LiveTypedDeploymentContext implements AutoCloseable {
             command = "pid=$(" + engine + " inspect --format '{{.State.Pid}}' windowstolinux-" + applicationId + ")\n";
         } else {
             String unit = "windowstolinux-" + applicationId + ".service";
-            command = "test \"$(systemctl show --value --property DynamicUser " + unit + ")\" = yes\n"
+            command = "test \"$(systemctl show --value --property DynamicUser " + unit + ")\" = no\n"
                     + "user=$(systemctl show --value --property User " + unit + ")\n"
-                    + "! grep -q \"^$user:\" /etc/passwd\n"
+                    + "grep -q \"^$user:\" /etc/passwd\n"
                     + "pid=$(systemctl show --value --property MainPID " + unit + ")\n";
         }
         command = "set -eu\n" + command + "test \"$pid\" -gt 0\n"

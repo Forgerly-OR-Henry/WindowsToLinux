@@ -3,6 +3,10 @@ restore_snapshot_current() {
   local candidate="$1" token="$2" component="$3" root kind output app owner release previous snapshot_token
   root="$(restore_component_root "$candidate" "$component")"; kind="$(cat -- "$root/kind")"; mapfile -t identity < "$root/identity"
   app="${identity[0]}"; owner="${identity[1]}"; release="${identity[2]}"
+  (application_maintenance_control begin "$app" "$owner" "restore-$token") >/dev/null
+  if [ -e "$root/previous" ]; then
+    assert_root_owned_regular "$root/previous"; printf 'SNAPSHOT=1\nPREVIOUS=%s\n' "$(head -n1 -- "$root/previous")"; return
+  fi
   if [ "$kind" = deployment ]; then output="$(snapshot_deployment "$app" "$owner")"
   else current_application="$app"; load_container_parameters "$root/release/.windowstolinux-container-parameters"; output="$(snapshot_container "$app" "$owner")"; fi
   previous="$(printf '%s\n' "$output" | awk -F= '$1=="PREVIOUS"{print $2}')"; [ "$previous" = 0 ] || [ "$previous" = 1 ] || reject restore-snapshot-evidence
@@ -38,27 +42,54 @@ restore_mark_quiesced() {
   printf '%s\n' "$token" > "$marker"; chown root:root -- "$marker"; chmod 400 -- "$marker"
   printf 'QUIESCED=1\n'
 }
+restore_remove_candidate_database_links() {
+  local root="$1" app="$2" spec link target
+  for spec in "${managed_data_bindings[@]}"; do
+    managed_binding_parts "$spec"; [ "$storage_kind" = DATABASE ] || continue
+    link="$(restore_binding_link "$root" "$app")"; target="$(managed_storage_target)"
+    if [ "$runtime_identity_policy" = CONTAINER_NON_ROOT ]; then
+      local container_candidate_files="$root/data" container_storage_view_root="$root/container-view"
+      link="$(container_database_link "$(container_image "$app" "$release")")"; target="/run/windowstolinux/databases/$binding/$database_file"
+    fi
+    if [ -L "$link" ]; then [ "$(readlink -- "$link")" = "$target" ] || reject restore-data-link-changed; rm -f -- "$link"; fi
+  done
+}
 restore_install_managed_files() {
-  local root="$1" app="$2" spec binding logical mode target source rollback status
-  parse_deployment_inputs "${deployment_runtime_parameters[@]}"; parse_managed_data_bindings "${deployment_remaining_arguments[@]}"
-  mapfile -t saved_previous < "$root/previous"; previous_present="${saved_previous[0]}"
-  if [ "$runtime_identity_policy" = SYSTEMD_DYNAMIC ]; then prepare_dynamic_state "$app"; fi
-  assert_managed_state_mapping
+  local root="$1" app="$2" spec target directory source rollback status journal token owner mode
+  current_application="$app"; token="$(cat -- "$root/activation-token")"; require_restore_token "$token"
+  prepare_service_identity "$app"; owner="$(service_identity_name "$app")"
+  if [ "$runtime_identity_policy" = CONTAINER_NON_ROOT ]; then owner="$(container_nonroot_user "$container_engine" "$(container_image "$app" "$release")")"; fi
+  restore_remove_candidate_database_links "$root" "$app"
   rollback="$(restore_data_snapshot_root "$root" "$app")"; install -d -o root -g root -m 700 -- "$rollback"
   for spec in "${managed_data_bindings[@]}"; do
-    binding="${spec%%:*}"; logical="${spec#*:}"; logical="${logical%:*}"; mode="${spec##*:}"
-    target="$(managed_data_binding_root "$binding")"; source="$root/data/$binding"; [ -d "$source" ] && [ ! -L "$source" ] || reject restore-data-missing
-    status="$rollback/$binding.present"; if [ -e "$target" ] || [ -L "$target" ]; then
-      [ -d "$target" ] && [ ! -L "$target" ] || reject restore-data-target
-      install -d -o root -g root -m 700 -- "$rollback/$binding"; cp -a -- "$target/." "$rollback/$binding/"; printf '1\n' > "$status"
-      rm -rf --one-file-system -- "$target"
+    managed_binding_parts "$spec"; [ "$storage_kind" != DATABASE ] || continue
+    target="$(managed_storage_target)"; directory="$(managed_data_binding_root "$binding")"
+    assert_storage_parent "$directory"; record_storage_binding "$directory"
+    if [ "$storage_kind" = CONFIGURATION ]; then
+      source="$root/data/$binding/value"; assert_root_owned_regular "$source"
+      [ "$(sha256sum -- "$source" | awk '{print $1}')" = "$configuration_sha256" ] || reject restore-configuration-digest
+      if [ -e "$target" ] || [ -L "$target" ]; then
+        assert_root_owned_regular "$target"; [ "$(sha256sum -- "$target" | awk '{print $1}')" = "$configuration_sha256" ] || reject restore-configuration-conflict
+      else install -d -o root -g root -m 755 -- "${target%/*}"; install -o root -g root -m 444 -- "$source" "$target"; fi
+      continue
+    fi
+    source="$root/data/$binding"; (assert_storage_tree "$source")
+    install -d -o root -g root -m 755 -- "${target%/*}"
+    journal="${target%/*}/.windowstolinux-restore-$token-$binding"
+    [ ! -e "$journal" ] && [ ! -L "$journal" ] || reject restore-data-journal-exists
+    install -d -o root -g root -m 700 -- "$journal"
+    cp -a --no-preserve=ownership -- "$source" "$journal/next"
+    if [ "$mode" = ro ]; then chown -hR root:"${owner#*:}" -- "$journal/next"; chmod -R u=rX,g=rX,o= -- "$journal/next"
+    else chown -hR "${owner%%:*}:${owner#*:}" -- "$journal/next"; chmod -R u+rwX,go-rwx -- "$journal/next"; fi
+    status="$rollback/$binding.present"
+    if [ -e "$target" ] || [ -L "$target" ]; then
+      (assert_storage_tree "$target"); printf '1\n' > "$status"
     else printf '0\n' > "$status"; fi
-    install -d -o "$deployer" -g "$deployer_group" -m 700 -- "$target"; cp -a --no-preserve=ownership -- "$source/." "$target/"
-    chown -R "$deployer:$deployer_group" -- "$target"
-    local link="$root/release/source/$logical"; install -d -o root -g root -m 755 -- "$(dirname -- "$link")"; rm -rf --one-file-system -- "$link" 2>/dev/null || true
-    ln -sT -- "$target" "$link"; if [ "$mode" = ro ]; then chmod -R a-w,u+rX,go-rwx -- "$target"; else chmod -R u+rwX,go-rwx -- "$target"; fi
+    chmod 400 -- "$status"; sync -f "$status"; sync -f "$journal/next"
+    if [ -e "$target" ]; then mv -T -- "$target" "$journal/previous"; fi
+    sync -f "$journal"
+    mv -T -- "$journal/next" "$target"; sync -f "${target%/*}"
   done
-  chmod 700 -- "$rollback"
 }
 restore_install_release_tree() {
   local root="$1" app="$2" owner="$3" release="$4" target app_root_path releases
@@ -70,25 +101,6 @@ restore_install_release_tree() {
   else copy_sealed_source "$root/release" "$target"; fi
   ln -sfnT -- "$target" "$app_root_path/current"
 }
-restore_install_container_volumes() {
-  local root="$1" app="$2" owner="$3" spec source target mountpoint rollback status
-  rollback="$(restore_data_snapshot_root "$root" "$app")"; install -d -o root -g root -m 700 -- "$rollback"
-  for spec in "${container_volumes[@]}"; do
-    source="${spec%%:*}"; [ -d "$root/data/$source" ] || reject restore-volume-missing
-    status="$rollback/$source.present"
-    if "$container_engine" volume inspect "$source" >/dev/null 2>&1; then
-      [ "$($container_engine volume inspect --format '{{ index .Labels "io.windowstolinux.owner" }}' "$source")" = "$owner" ] || reject restore-volume-owner
-      mountpoint="$($container_engine volume inspect --format '{{.Mountpoint}}' "$source")"; install -d -o root -g root -m 700 -- "$rollback/$source"
-      cp -a -- "$mountpoint/." "$rollback/$source/"; printf '1\n' > "$status"; find "$mountpoint" -mindepth 1 -delete
-    else "$container_engine" volume create --label "io.windowstolinux.owner=$owner" \
-      --label "io.windowstolinux.application=$managed_data_application" --label "io.windowstolinux.component=$managed_data_component" "$source" >/dev/null
-      mountpoint="$($container_engine volume inspect --format '{{.Mountpoint}}' "$source")"; printf '0\n' > "$status"; fi
-    cp -a --no-preserve=ownership -- "$root/data/$source/." "$mountpoint/"
-    local runtime_user="$(container_nonroot_user "$container_engine" "$(container_image "$app" "$release")")"
-    chown -hR "${runtime_user%%:*}:${runtime_user#*:}" -- "$mountpoint"
-  done
-  chmod 700 -- "$rollback"
-}
 restore_start_formal() {
   [ "$#" -eq 3 ] || reject restore-formal-arguments
   local candidate="$1" token="$2" component="$3" root kind app owner release oci unit tmp image
@@ -99,25 +111,27 @@ restore_start_formal() {
   if [ "$kind" = deployment ]; then
     current_application="$app"; load_deployment_parameters "$root/release/.windowstolinux-deployment-parameters"
     restore_install_managed_files "$root" "$app"; restore_install_release_tree "$root" "$app" "$owner" "$release"
+    prepare_managed_data_bindings "$(app_root "$app")/releases/$release/source"
     unit="$(unit_path "$app")"; tmp="$(mktemp /etc/systemd/system/.windowstolinux-restore.XXXXXX)"
     render_deployment_unit "$app" "${deployment_runtime_parameters[@]}" > "$tmp"; install -o root -g root -m 644 -- "$tmp" "$unit"; rm -f -- "$tmp"
-    systemctl daemon-reload; systemctl start "$(unit_name "$app")"
+    systemctl daemon-reload; if [ "$application_mode" = DAEMON ]; then systemctl start "$(unit_name "$app")"; else systemctl disable "$(unit_name "$app")"; fi
   else
     current_application="$app"; load_container_parameters "$root/release/.windowstolinux-container-parameters"
     [ "$oci" != - ] || reject restore-image-required
     import_restore_image "$container_engine" "$(candidate_root "$candidate")/mutable/restore/$oci" "$(container_image "$app" "$release")"
     image="$(container_image "$app" "$release")"; "$container_engine" image inspect "$image" >/dev/null
-    restore_install_container_volumes "$root" "$app" "$owner"
+    restore_install_managed_files "$root" "$app"
     "$container_engine" image inspect --format '{{.Id}}' "$image" > "$root/release/.windowstolinux-container-image-id"
     chown root:root -- "$root/release/.windowstolinux-container-image-id"; chmod 444 -- "$root/release/.windowstolinux-container-image-id"
-    restore_install_release_tree "$root" "$app" "$owner" "$release"; start_container_release "$app" "$release" "$owner"
+    restore_install_release_tree "$root" "$app" "$owner" "$release"
+    start_container_release "$app" "$release" "$owner"
   fi
   printf 'FORMAL_STARTED=1\nAPP=%s\n' "$app"
 }
 restore_quiesce_recovery() {
   [ "$#" -eq 3 ] || reject restore-recovery-quiesce-arguments
   local candidate="$1" token="$2" component="$3" root kind app owner
-  restore_stop_candidate "$candidate" "$token" "$component" >/dev/null || true
+  restore_stop_candidate "$candidate" "$token" "$component" >/dev/null || reject restore-candidate-stop-failed
   root="$(restore_component_root "$candidate" "$component")"; [ -e "$root" ] || { printf 'QUIESCED=1\n'; return; }
   kind="$(cat -- "$root/kind")"; mapfile -t identity < "$root/identity"; app="${identity[0]}"; owner="${identity[1]}"
   if [ -f "$root/previous" ]; then
@@ -128,26 +142,37 @@ restore_quiesce_recovery() {
   printf 'QUIESCED=1\n'
 }
 restore_restore_managed_data() {
-  local root="$1" app="$2" kind="$3" rollback spec binding target status source
+  local root="$1" app="$2" kind="$3" rollback spec target status journal token
   rollback="$(restore_data_snapshot_root "$root" "$app")"; [ -d "$rollback" ] || return 0
-  if [ "$kind" = deployment ]; then
-    current_application="$app"; load_deployment_parameters "$root/release/.windowstolinux-deployment-parameters"
-    parse_deployment_inputs "${deployment_runtime_parameters[@]}"; parse_managed_data_bindings "${deployment_remaining_arguments[@]}"
-    for spec in "${managed_data_bindings[@]}"; do binding="${spec%%:*}"; target="$(managed_data_binding_root "$binding")"; status="$(cat -- "$rollback/$binding.present")"
-      rm -rf --one-file-system -- "$target" 2>/dev/null || true; if [ "$status" = 1 ]; then install -d -o "$deployer" -g "$deployer_group" -m 700 -- "$target"; cp -a -- "$rollback/$binding/." "$target/"; fi; done
-  else
-    current_application="$app"; load_container_parameters "$root/release/.windowstolinux-container-parameters"
-    for spec in "${container_volumes[@]}"; do source="${spec%%:*}"; status="$(cat -- "$rollback/$source.present")"
-      if "$container_engine" volume inspect "$source" >/dev/null 2>&1; then target="$($container_engine volume inspect --format '{{.Mountpoint}}' "$source")"; find "$target" -mindepth 1 -delete
-        if [ "$status" = 1 ]; then cp -a -- "$rollback/$source/." "$target/"; else "$container_engine" volume rm "$source" >/dev/null; fi; fi; done
-  fi
+  token="$(cat -- "$root/activation-token")"; require_restore_token "$token"; current_application="$app"
+  if [ "$kind" = deployment ]; then load_deployment_parameters "$root/release/.windowstolinux-deployment-parameters"
+  else load_container_parameters "$root/release/.windowstolinux-container-parameters"; fi
+  for spec in "${managed_data_bindings[@]}"; do
+    managed_binding_parts "$spec"; [ "$storage_kind" = FILE ] || continue
+    [ -e "$rollback/$binding.present" ] || continue
+    assert_root_owned_regular "$rollback/$binding.present"; status="$(cat -- "$rollback/$binding.present")"
+    target="$(managed_storage_target)"; assert_storage_parent "$target"
+    journal="${target%/*}/.windowstolinux-restore-$token-$binding"; assert_root_owned_directory "$journal"
+    if [ "$status" = 1 ] && [ -d "$journal/previous" ]; then
+      (assert_storage_tree "$journal/previous" "$target")
+      if [ -e "$target" ] || [ -L "$target" ]; then (assert_storage_tree "$target"); mv -T -- "$target" "$journal/failed"; fi
+      mv -T -- "$journal/previous" "$target"
+    elif [ "$status" = 1 ]; then
+      # If the old directory was not moved, next must still be present; otherwise the state is ambiguous.
+      [ -d "$journal/next" ] && [ -d "$target" ] || reject restore-data-recovery-unprovable
+      (assert_storage_tree "$target")
+    elif [ "$status" = 0 ]; then
+      if [ -e "$target" ] || [ -L "$target" ]; then (assert_storage_tree "$target"); mv -T -- "$target" "$journal/failed"; fi
+    else reject restore-data-recovery-state; fi
+    sync -f "${target%/*}"
+  done
 }
 restore_recover_component() {
   [ "$#" -eq 3 ] || reject restore-recover-arguments
   local candidate="$1" token="$2" component="$3" root kind app owner release previous snapshot_token
   root="$(restore_component_root "$candidate" "$component")"; [ -e "$root" ] || { printf 'RECOVERED=1\nPREVIOUS=0\n'; return; }
   kind="$(cat -- "$root/kind")"; mapfile -t identity < "$root/identity"; app="${identity[0]}"; owner="${identity[1]}"; release="${identity[2]}"
-  restore_stop_candidate "$candidate" "$token" "$component" >/dev/null || true
+  restore_stop_candidate "$candidate" "$token" "$component" >/dev/null || reject restore-candidate-stop-failed
   if [ -f "$root/previous" ]; then mapfile -t saved < "$root/previous"; previous="${saved[0]}"; snapshot_token="${saved[1]}"
     restore_restore_managed_data "$root" "$app" "$kind"
     if [ "$kind" = deployment ]; then
@@ -155,4 +180,16 @@ restore_recover_component() {
     else if [ "$previous" = 1 ]; then rollback_container "$app" "$release" "$owner" "$snapshot_token"; else rollback_container_first "$app" "$release" "$owner"; fi; fi
   fi
   printf 'RECOVERED=1\nPREVIOUS=%s\nAPP=%s\n' "${previous:-0}" "$app"
+}
+cleanup_restore_candidates() {
+  local candidate="$1" root component token
+  [ -d "$candidate/mutable/restore-activation" ] || return 0
+  for root in "$candidate/mutable/restore-activation"/*; do
+    [ -d "$root" ] && [ ! -L "$root" ] || continue
+    component="${root##*/}"; require_app "$component"
+    if [ -e "$root/kind" ] && [ -e "$root/activation-token" ]; then
+      assert_root_owned_regular "$root/activation-token"; token="$(cat -- "$root/activation-token")"
+      restore_stop_candidate "${candidate##*/}" "$token" "$component"
+    fi
+  done
 }

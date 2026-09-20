@@ -41,6 +41,17 @@ class ManagedResourcePersistenceCodecTest {
         assertEquals(bindings, codec.read(codec.write(bindings)));
     }
 
+    @Test void retainsSqliteLocationSeedAndInitializationAndRejectsOldResourceFormat() throws Exception {
+        var sqlite = new ManagedDatabaseConnection.Sqlite("shop.db",
+                gold.debug.windowstolinux.shared.model.managed.ManagedStorageLocation.custom("db/shop.db"),
+                "db/shop.db","seed/shop.db",List.of("schema.sql"));
+        var binding = new ManagedComponentResourceBindings(List.of(),Optional.of(List.of(new ManagedDatabaseBinding("main",sqlite))));
+        byte[] bytes=codec.write(binding);
+        assertEquals(binding,codec.read(bytes));
+        bytes[4]=1;
+        assertThrows(IOException.class,()->codec.read(bytes));
+    }
+
     @Test
     void preservesUnknownAndExplicitlyEmptyDatabaseReviewAsDifferentStates() throws Exception {
         ManagedComponentResourceBindings unknown = new ManagedComponentResourceBindings(List.of(), Optional.empty());

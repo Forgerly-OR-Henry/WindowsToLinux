@@ -1,0 +1,17 @@
+{
+  "name": "wtl-file-transfer-web",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=24 <25"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.server.json && tsc -p tsconfig.client.json && node build.mjs",
+    "start": "node dist/server.js"
+  },
+  "devDependencies": {
+    "typescript": "5.9.3",
+    "@types/node": "24.10.1"
+  }
+}

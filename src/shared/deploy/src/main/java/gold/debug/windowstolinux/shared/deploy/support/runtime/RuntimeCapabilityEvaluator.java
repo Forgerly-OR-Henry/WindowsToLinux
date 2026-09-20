@@ -18,10 +18,21 @@ public final class RuntimeCapabilityEvaluator {
     public static RuntimeCapabilityDecision evaluate(LinuxCapabilityFacts capabilities, DeploymentProjectFacts facts,
             DeploymentRuntimeSpecification runtime, gold.debug.windowstolinux.shared.model.toolchain.ResolvedToolchainSet tools) {
         if (tools.selections().isEmpty()) return evaluate(capabilities, facts, runtime);
+        if (!runtime.workload().companions().isEmpty() && !companionBuildTools(capabilities))
+            return RuntimeCapabilityDecision.unsupportedRuntime("Companion builds require CMake 3.25 or later and Ninja");
         var catalog = gold.debug.windowstolinux.shared.model.toolchain.ToolchainSupportCatalog.defaults();
         for (var requirement : gold.debug.windowstolinux.shared.linux.build.ProjectToolchainRequirements.from(facts, runtime)) {
             var candidates = catalog.candidates(requirement);
             if (candidates.isEmpty()) return RuntimeCapabilityDecision.unsupportedRuntime("No supported toolchain candidate: " + requirement.declaration());
+            if (candidates.stream().allMatch(candidate -> candidate.installation()
+                    == gold.debug.windowstolinux.shared.model.toolchain.ToolchainSupportCatalog.InstallationType.SYSTEM_COMPILER)) {
+                EcosystemToolType compiler = requirement.ecosystem()
+                        == gold.debug.windowstolinux.shared.model.toolchain.ToolchainEcosystemType.C
+                        ? EcosystemToolType.C_COMPILER : EcosystemToolType.CPP_COMPILER;
+                if (!hasTool(capabilities, compiler))
+                    return RuntimeCapabilityDecision.unsupportedRuntime("The declared companion compiler is unavailable: " + compiler);
+                continue;
+            }
             var selected = tools.selections().stream().filter(s -> s.requirement().equals(requirement)).findFirst();
             if (selected.isEmpty() || !catalog.permits(selected.orElseThrow().version())
                     || candidates.stream().noneMatch(b -> b.version().equals(selected.orElseThrow().version().branch())))
@@ -42,6 +53,8 @@ public final class RuntimeCapabilityEvaluator {
         if (facts.projectType() != runtime.projectType()) {
             throw new IllegalArgumentException("project facts and runtime must use the same type");
         }
+        if (!runtime.workload().companions().isEmpty() && !companionBuildTools(capabilities))
+            return RuntimeCapabilityDecision.unsupportedRuntime("Companion builds require CMake 3.25 or later and Ninja");
         for (var requirement : gold.debug.windowstolinux.shared.linux.build.ProjectToolchainRequirements.from(facts, runtime)) {
             if (gold.debug.windowstolinux.shared.model.toolchain.ToolchainSupportCatalog.defaults().candidates(requirement).isEmpty())
                 return RuntimeCapabilityDecision.unsupportedRuntime("No supported toolchain candidate: " + requirement.declaration());
@@ -49,6 +62,12 @@ public final class RuntimeCapabilityEvaluator {
         String detail = missingRuntime(capabilities, facts, runtime);
         return detail == null ? RuntimeCapabilityDecision.supportedRuntime()
                 : RuntimeCapabilityDecision.unsupportedRuntime(detail);
+    }
+
+    private static boolean companionBuildTools(LinuxCapabilityFacts capabilities) {
+        return anyVersion(capabilities, EcosystemToolType.CMAKE,
+                version -> version[0] > 3 || version[0] == 3 && version[1] >= 25)
+                && hasTool(capabilities, EcosystemToolType.NINJA);
     }
 
     private static String missingRuntime(LinuxCapabilityFacts capabilities, DeploymentProjectFacts facts,
@@ -81,6 +100,7 @@ public final class RuntimeCapabilityEvaluator {
             }
             case DeploymentRuntimeSpecification.PythonService python -> {
                 EcosystemToolType dependencyTool = switch (facts.buildTool()) {
+                    case PYTHON_STDLIB -> null;
                     case PIP_LOCKED -> EcosystemToolType.PIP;
                     case PIPENV_LOCKED -> EcosystemToolType.PIPENV;
                     case POETRY_LOCKED -> EcosystemToolType.POETRY;
@@ -88,7 +108,7 @@ public final class RuntimeCapabilityEvaluator {
                     default -> throw new IllegalArgumentException("Python service facts require one dependency architecture");
                 };
                 yield capabilities.pythonVersions().contains(python.pythonVersion())
-                        && compatiblePythonTool(capabilities, dependencyTool)
+                        && (dependencyTool == null || compatiblePythonTool(capabilities, dependencyTool))
                         ? null : "the selected Python interpreter and dependency tool must both be available";
             }
             case DeploymentRuntimeSpecification.StaticSite site -> site.nodeMajorVersion().isPresent()

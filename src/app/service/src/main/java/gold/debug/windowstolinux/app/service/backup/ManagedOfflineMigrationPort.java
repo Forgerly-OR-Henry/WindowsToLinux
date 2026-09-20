@@ -38,6 +38,7 @@ final class ManagedOfflineMigrationPort implements OfflineMigrationPort, AutoClo
     private final Predicate<String> confirmation;
     private CreatedBackupArchive finalArchive;
     private ManagedRestoreOutcome restoreOutcome;
+    private final String admission = "backup-" + java.util.UUID.randomUUID().toString().replace("-", "");
 
     ManagedOfflineMigrationPort(
             String applicationId,
@@ -93,16 +94,18 @@ final class ManagedOfflineMigrationPort implements OfflineMigrationPort, AutoClo
     @Override
     public SourceQuiesceEvidence stopSourceWrites(OfflineMigrationRequest request) throws BackupException {
         try {
-            var result = lifecycle.executeLifecycleWithStoredPassword(applicationId, componentIds(),
-                    LifecycleAction.STOP, source, source.credentialMode(), copy(masterPassword));
-            if (!result.accepted() || result.runtimeState() != ApplicationRuntimeState.STOPPED) {
+            backups.taskAdmission(applicationId,admission,true,copy(masterPassword),confirmation);
+            var targets=backups.daemonComponents(applicationId);
+            var result = lifecycle.executeLifecycleWithStoredPassword(applicationId, targets.isEmpty()?componentIds():targets,
+                    targets.isEmpty()?LifecycleAction.REFRESH_STATUS:LifecycleAction.STOP, source, source.credentialMode(), copy(masterPassword));
+            if (!result.accepted() || !Set.of(ApplicationRuntimeState.STOPPED,ApplicationRuntimeState.INSTALLED).contains(result.runtimeState())) {
                 throw new IllegalStateException("source components did not all enter the authoritative stopped state");
             }
-            return new SourceQuiesceEvidence(true, true, request.migrationId() + "-source",
+            return new SourceQuiesceEvidence(true, true, admission,
                     List.of("every source component is authoritatively stopped in dependency-safe order"));
         } catch (Exception exception) {
-            throw failure(BackupFailureType.MIGRATION_QUIESCE_FAILED,
-                    "the source stopped-write boundary could not be verified", exception);
+            return new SourceQuiesceEvidence(false, false, admission,
+                    List.of("source quiesce was not verified; recover daemon state and task admission before retrying"));
         }
     }
 
@@ -111,7 +114,7 @@ final class ManagedOfflineMigrationPort implements OfflineMigrationPort, AutoClo
                                   SourceQuiesceEvidence quiesced) throws BackupException {
         try {
             finalArchive = backups.createUsingSavedProfile(applicationId, finalDestination,
-                    copy(backupPassword), copy(masterPassword), confirmation);
+                    copy(backupPassword), copy(masterPassword), confirmation, admission);
             return new SyncEvidence(Files.size(finalArchive.archive()), finalArchive.inspection().archiveSha256(),
                     true, true, List.of(
                     "complete final archive was collected while every source component remained stopped",
@@ -160,9 +163,11 @@ final class ManagedOfflineMigrationPort implements OfflineMigrationPort, AutoClo
     public RecoveryEvidence recoverSource(OfflineMigrationRequest request, SourceQuiesceEvidence quiesced)
             throws BackupException {
         try {
-            var result = lifecycle.executeLifecycleWithStoredPassword(applicationId, componentIds(),
-                    LifecycleAction.START, source, source.credentialMode(), copy(masterPassword));
-            boolean verified = result.accepted() && result.runtimeState() == ApplicationRuntimeState.RUNNING;
+            var targets=backups.daemonComponents(applicationId);
+            var result = lifecycle.executeLifecycleWithStoredPassword(applicationId, targets.isEmpty()?componentIds():targets,
+                    targets.isEmpty()?LifecycleAction.REFRESH_STATUS:LifecycleAction.START, source, source.credentialMode(), copy(masterPassword));
+            boolean verified = result.accepted() && Set.of(ApplicationRuntimeState.RUNNING,ApplicationRuntimeState.INSTALLED).contains(result.runtimeState());
+            if(verified)backups.taskAdmission(applicationId,admission,false,copy(masterPassword),confirmation);
             return new RecoveryEvidence(verified, verified,
                     List.of("source start recovery was executed and every component runtime was observed"));
         } catch (Exception exception) {

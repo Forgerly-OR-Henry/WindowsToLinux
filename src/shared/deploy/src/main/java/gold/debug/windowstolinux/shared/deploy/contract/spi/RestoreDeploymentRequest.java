@@ -24,7 +24,8 @@ public record RestoreDeploymentRequest(
         String candidateToken,
         List<RestoreDeploymentComponent> components,
         String applicationHealthComponentId,
-        HealthCheck applicationHealthCheck
+        HealthCheck applicationHealthCheck,
+        boolean isolatedDatabase
 ) {
     private static final Comparator<SecretReference> SECRET_ORDER = Comparator
             .comparing(SecretReference::identifier).thenComparingLong(SecretReference::revision);
@@ -86,6 +87,13 @@ public record RestoreDeploymentRequest(
             throw new IllegalArgumentException("application health is not owned by a restored component");
         }
         applicationHealthCheck = Objects.requireNonNull(applicationHealthCheck, "applicationHealthCheck");
+    }
+
+    public RestoreDeploymentRequest(String applicationId,String targetServerId,String candidateId,String archiveSha256,
+            String releaseSetSha256,List<SecretReference> secretReferences,String remoteCandidateRoot,String candidateToken,
+            List<RestoreDeploymentComponent> components,String applicationHealthComponentId,HealthCheck applicationHealthCheck) {
+        this(applicationId,targetServerId,candidateId,archiveSha256,releaseSetSha256,secretReferences,remoteCandidateRoot,candidateToken,
+                components,applicationHealthComponentId,applicationHealthCheck,false);
     }
 
     private static String managedId(String value, String field) {

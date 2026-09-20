@@ -145,7 +145,7 @@ public final class LinuxDatabaseOperationPort implements DatabaseOperationPort {
 
     private static RemoteDatabasePort.ConnectionProfile connection(DatabaseConnectionProfile profile) {
         if (profile instanceof DatabaseConnectionProfile.Sqlite sqlite) {
-            return new RemoteDatabasePort.ConnectionProfile.Sqlite(sqlite.relativePath());
+            return new RemoteDatabasePort.ConnectionProfile.Sqlite(sqlite.bindingId(), sqlite.location(), sqlite.fileName());
         }
         DatabaseConnectionProfile.Server server = (DatabaseConnectionProfile.Server) profile;
         return new RemoteDatabasePort.ConnectionProfile.Server(type(server.type()), server.host(), server.port(),

@@ -255,13 +255,33 @@ class ArchiveAndInstallationTest(unittest.TestCase):
                     root = pathlib.Path(temporary); (root / 'versions').mkdir()
                     def download(url, archive, *args): archive.write_bytes(data); return digest
                     with mock.patch.object(preparation, 'ROOT', root), mock.patch.object(preparation, 'owned_directory'), \
-                         mock.patch.object(preparation, 'download', side_effect=download), mock.patch.object(preparation, 'run'), \
+                         mock.patch.object(preparation, 'download', side_effect=download), mock.patch.object(preparation, 'run') as run, \
                          mock.patch.object(preparation, 'source_dependencies'), mock.patch.object(preparation, 'ruby_legacy_tls', return_value={}), \
                          mock.patch.object(preparation, 'probe') as probe:
                         record = preparation.install(ecosystem, version, 'https://github.com/fixture', 'sha256', digest, layout)
                         self.assertEqual((ecosystem, version, digest), (record['ecosystem'], record['version'], record['sha256']))
                         self.assertEqual(record, json.loads((pathlib.Path(record['directory']) / '.w2l-toolchain.json').read_text()))
                         probe.assert_called_once_with(ecosystem, pathlib.Path(record['directory']), version)
+                        if ecosystem == 'PHP':
+                            self.assertIn('--with-iconv', run.call_args_list[0].args[0])
+
+    def test_php_recipe_does_not_reuse_installations_without_iconv(self):
+        legacy = hashlib.sha256(('PHP\n8.3.33\n' + DIGEST).encode()).hexdigest()
+        self.assertNotEqual(legacy, preparation.installation_key('PHP', '8.3.33', DIGEST))
+        java = hashlib.sha256(('JAVA\n21.0.1\n' + DIGEST).encode()).hexdigest()
+        self.assertEqual(java, preparation.installation_key('JAVA', '21.0.1', DIGEST))
+
+    def test_php_probe_requires_runtime_extensions_before_admission(self):
+        directory = pathlib.Path('selected-php')
+        with mock.patch.object(preparation, 'probe_output', return_value=(0, '8.3.33')), \
+             mock.patch.object(preparation, 'run') as run:
+            preparation.probe('PHP', directory, '8.3.33')
+            self.assertEqual(str(directory / 'bin/php'), run.call_args.args[0][0])
+            for extension in ('curl', 'iconv', 'mbstring', 'pdo', 'pdo_sqlite'):
+                self.assertIn('"' + extension + '"', run.call_args.args[0][2])
+            run.side_effect = preparation.PreparationFailure('probe', 'missing extension')
+            with self.assertRaises(preparation.PreparationFailure):
+                preparation.probe('PHP', directory, '8.3.33')
 
 
 class PortableBindingTest(unittest.TestCase):

@@ -58,7 +58,13 @@ public final class SshdRestoreActivationPort implements RemoteRestoreActivationP
         }
         return new PreflightEvidence("1".equals(values.get("MANAGED_ROOT_WRITABLE")),
                 "1".equals(values.get("FOREIGN_CONFLICT")), available, occupied,
-                List.of("Managed restore root capacity and live TCP listeners were collected through the versioned helper"));
+                List.of("Managed restore capacity and protocol-specific listeners were collected through the versioned helper"),
+                parsePorts(values.getOrDefault("OCCUPIED_UDP_PORTS", "")));
+    }
+
+    private static Set<Integer> parsePorts(String value) {
+        if (value.isEmpty()) return Set.of();
+        return java.util.Arrays.stream(value.split(",")).map(Integer::valueOf).collect(java.util.stream.Collectors.toSet());
     }
 
     @Override
@@ -69,7 +75,10 @@ public final class SshdRestoreActivationPort implements RemoteRestoreActivationP
             step("restore-prepare", prepareArguments(request, component),
                     LinuxOperationFailureType.RESTORE_ACTIVATION_FAILED);
         }
-        if (request.mode() == RemoteRestoreActivationMode.PARALLEL_LOOPBACK) {
+        if (request.mode() == RemoteRestoreActivationMode.ISOLATED_STOPPED) {
+            for (var component : request.components().reversed()) componentStep("restore-snapshot",request,component,LinuxOperationFailureType.RESTORE_ACTIVATION_FAILED);
+        }
+        if (request.mode() != RemoteRestoreActivationMode.SHORT_STOP) {
             for (RemoteRestoreActivationComponent component : request.components()) {
                 componentStep("restore-start-candidate", request, component,
                         LinuxOperationFailureType.RESTORE_ACTIVATION_FAILED);
@@ -83,7 +92,7 @@ public final class SshdRestoreActivationPort implements RemoteRestoreActivationP
     @Override
     public StepEvidence prepareRestoreCommit(RemoteRestoreActivationRequest request)
             throws LinuxOperationException {
-        if (request.mode() == RemoteRestoreActivationMode.PARALLEL_LOOPBACK) {
+        if (request.mode() != RemoteRestoreActivationMode.SHORT_STOP) {
             for (RemoteRestoreActivationComponent component : request.components().reversed()) {
                 componentStep("restore-stop-candidate", request, component,
                         LinuxOperationFailureType.RESTORE_ACTIVATION_FAILED);
@@ -136,6 +145,7 @@ public final class SshdRestoreActivationPort implements RemoteRestoreActivationP
             throws LinuxOperationException {
         boolean componentsHealthy = formalComponentsHealthy(request);
         boolean applicationHealthy = componentsHealthy && formalApplicationHealthy(request);
+        if (componentsHealthy && applicationHealthy) releaseAdmission(request);
         return new CommitEvidence(componentsHealthy && applicationHealthy, true,
                 componentsHealthy, applicationHealthy, request.candidateId(),
                 List.of("Formal component health=" + componentsHealthy,
@@ -169,8 +179,14 @@ public final class SshdRestoreActivationPort implements RemoteRestoreActivationP
             evidence.add(component.componentId() + " recovery=" + recovered
                     + ", previous-runtime-health=" + runtimeVerified);
         }
+        if (previousVerified) releaseAdmission(request);
         return new RecoveryEvidence(true, previousVerified, evidence.isEmpty()
                 ? List.of("No candidate component mutation was present") : evidence);
+    }
+
+    private void releaseAdmission(RemoteRestoreActivationRequest request) throws LinuxOperationException {
+        for (var component : request.components()) step("application-maintenance", List.of("end", component.managedApplicationId(),
+                component.ownershipManifestSha256(), "restore-" + request.candidateToken()), LinuxOperationFailureType.RESTORE_ACTIVATION_FAILED);
     }
 
     private boolean formalComponentsHealthy(RemoteRestoreActivationRequest request) throws LinuxOperationException {
@@ -191,11 +207,10 @@ public final class SshdRestoreActivationPort implements RemoteRestoreActivationP
             throws LinuxOperationException {
         if (request.mode() == RemoteRestoreActivationMode.SHORT_STOP) return formalHealth(component, check);
         HealthCheck candidate = candidateHealth(component, check);
-        if (component.runtime() instanceof DeploymentRuntimeSpecification.Container container) {
-            return candidateContainerHealth(request, component, container, candidate);
-        }
-        return systemdHealth.checkUnit("windowstolinux-restore-" + request.candidateToken() + "-"
-                + component.componentId() + ".service", candidate);
+        var result = step("restore-application-health", List.of(request.candidateId(), request.candidateToken(),
+                component.componentId(), gold.debug.windowstolinux.shared.linux.sshd.execution.protocol.runtime.ApplicationWorkloadArguments.healthPayload(candidate)),
+                LinuxOperationFailureType.RESTORE_ACTIVATION_FAILED);
+        return new HealthCheckResult("1".equals(SshCommandExecutor.lines(result.output()).get("HEALTHY")), "Isolated candidate application validation");
     }
 
     private HealthCheckResult formalHealth(RemoteRestoreActivationComponent component, HealthCheck check)
@@ -209,42 +224,19 @@ public final class SshdRestoreActivationPort implements RemoteRestoreActivationP
         return systemdHealth.check(application, check);
     }
 
-    private HealthCheckResult candidateContainerHealth(
-            RemoteRestoreActivationRequest request,
-            RemoteRestoreActivationComponent component,
-            DeploymentRuntimeSpecification.Container runtime,
-            HealthCheck check
-    ) throws LinuxOperationException {
-        String engine = runtime.engine().name().toLowerCase(java.util.Locale.ROOT);
-        String name = "windowstolinux-restore-" + request.candidateToken() + "-" + component.componentId();
-        String probe = check instanceof HealthCheck.Http http
-                ? "curl --fail --silent --max-time 3 --output /dev/null --write-out '%{http_code}' "
-                + SshCommandExecutor.quote(http.endpoint().toASCIIString()) + " | grep -qx "
-                + SshCommandExecutor.quote(Integer.toString(http.expectedStatus()))
-                : "timeout 3 /bin/bash -c '</dev/tcp/127.0.0.1/" + ((HealthCheck.Tcp) check).port() + "'";
-        String script = "set -euo pipefail; " + SshCommandExecutor.quote(engine)
-                + " inspect --format '{{.State.Running}} {{ index .Config.Labels \"io.windowstolinux.restore\" }}' "
-                + SshCommandExecutor.quote(name) + " | grep -qx " + SshCommandExecutor.quote("true " + request.candidateToken())
-                + "; " + probe + "; printf 'HEALTHY=1\\n'";
-        var result = commands.exec("/bin/bash -lc " + SshCommandExecutor.quote(script),
-                Duration.ofSeconds(check.timeoutSeconds() + 15L), true);
-        return new HealthCheckResult(result.succeeded()
-                && "1".equals(SshCommandExecutor.lines(result.output()).get("HEALTHY")),
-                result.succeeded() ? "Restore candidate container health completed" : result.failureEvidence());
-    }
-
     private static HealthCheck candidateHealth(RemoteRestoreActivationComponent component, HealthCheck check) {
+        if (check.portNumber().isEmpty()) return check;
         int official = port(check);
-        int candidate = component.ports().stream().filter(value -> value.officialPort() == official)
-                .findFirst().orElseThrow(() -> new IllegalArgumentException(
-                        "health port is absent from the exact candidate mapping")).candidatePort();
+        int candidate = component.ports().isEmpty() ? official : component.ports().stream().filter(value -> value.officialPort() == official && value.protocol().equals(check instanceof HealthCheck.Udp ? "udp" : "tcp"))
+                .findFirst().orElseThrow(() -> new IllegalArgumentException("health port is absent from the exact candidate mapping")).candidatePort();
         if (check instanceof HealthCheck.Tcp tcp) {
             return new HealthCheck.Tcp(candidate, tcp.timeoutSeconds(), tcp.stabilitySeconds());
         }
+        if (check instanceof HealthCheck.Udp udp) return new HealthCheck.Udp(candidate, udp.requestHex(), udp.responseHex(), udp.probe(), udp.timeoutSeconds());
         HealthCheck.Http http = (HealthCheck.Http) check;
         try {
             URI source = http.endpoint();
-            return new HealthCheck.Http(new URI(source.getScheme(), source.getUserInfo(), source.getHost(), candidate,
+            return new HealthCheck.Http(new URI(source.getScheme(), source.getUserInfo(), "127.0.0.1", candidate,
                     source.getPath(), source.getQuery(), source.getFragment()), http.expectedStatus(), http.timeoutSeconds());
         } catch (URISyntaxException exception) {
             throw new IllegalArgumentException("candidate health endpoint could not be rebuilt", exception);
@@ -252,10 +244,7 @@ public final class SshdRestoreActivationPort implements RemoteRestoreActivationP
     }
 
     private static int port(HealthCheck check) {
-        if (check instanceof HealthCheck.Tcp tcp) return tcp.port();
-        HealthCheck.Http http = (HealthCheck.Http) check;
-        return http.endpoint().getPort() >= 1 ? http.endpoint().getPort()
-                : http.endpoint().getScheme().equalsIgnoreCase("https") ? 443 : 80;
+        return check.portNumber().orElseThrow();
     }
 
     private SshCommandExecutor.CommandResult componentStep(
@@ -283,6 +272,7 @@ public final class SshdRestoreActivationPort implements RemoteRestoreActivationP
         values.add(component.ociArchivePath().orElse("-"));
         values.add(Integer.toString(component.ports().size()));
         component.ports().forEach(binding -> {
+            values.add(binding.protocol());
             values.add(Integer.toString(binding.officialPort()));
             values.add(Integer.toString(binding.candidatePort()));
         });

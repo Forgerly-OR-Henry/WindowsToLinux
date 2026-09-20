@@ -1,0 +1,17 @@
+{
+  "name": "wtl-task-board-web",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=24 <25"
+  },
+  "scripts": {
+    "build": "tsc --noEmit && vite build",
+    "start": "vite preview --host 127.0.0.1"
+  },
+  "devDependencies": {
+    "typescript": "5.9.3",
+    "vite": "7.3.6"
+  }
+}

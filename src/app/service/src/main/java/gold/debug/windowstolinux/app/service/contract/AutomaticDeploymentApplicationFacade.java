@@ -1,5 +1,9 @@
 package gold.debug.windowstolinux.app.service.contract;
 
+import gold.debug.windowstolinux.shared.deploy.contract.AutomaticDatabasePreparation;
+
+import gold.debug.windowstolinux.shared.deploy.contract.AutomaticDeploymentInteraction;
+
 import gold.debug.windowstolinux.app.service.contract.definition.*;
 
 

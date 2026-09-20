@@ -26,7 +26,7 @@ final class RepositoryServiceFixture {
             }
         }
         String scenario = healthy ? "success-deployment-smoke" : "failure-health-rollback";
-        Path source = repositoryRoot().resolve("test").resolve(combination).resolve(scenario);
+        Path source = repositoryRoot().resolve("test/single-language").resolve(combination).resolve(scenario);
         try (var files = Files.walk(source)) {
             for (Path file : files.toList()) {
                 Path relative = source.relativize(file);
@@ -58,7 +58,7 @@ final class RepositoryServiceFixture {
 
     static Path repositoryRoot() {
         for (Path path = Path.of("").toAbsolutePath().normalize(); path != null; path = path.getParent()) {
-            if (Files.isRegularFile(path.resolve("test/matrix.json"))) return path;
+            if (Files.isRegularFile(path.resolve("test/single-language/matrix.json"))) return path;
         }
         throw new IllegalStateException("fixture repository root was not found");
     }

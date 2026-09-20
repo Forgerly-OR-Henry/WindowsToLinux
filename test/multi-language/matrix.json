@@ -1,0 +1,676 @@
+[
+  {
+    "id": "task-board",
+    "path": "success-task-board",
+    "kind": "web",
+    "languages": [
+      "TYPESCRIPT",
+      "JAVA"
+    ],
+    "components": [
+      "frontend",
+      "backend"
+    ],
+    "sqliteOwner": "backend",
+    "expected": "success",
+    "verification": "task-board",
+    "build": [
+      {
+        "directory": "backend",
+        "command": [
+          "mvn -B -ntp package"
+        ]
+      },
+      {
+        "directory": "frontend",
+        "command": [
+          "npm ci",
+          "npm run build"
+        ]
+      }
+    ],
+    "run": [
+      {
+        "directory": "backend",
+        "command": [
+          "java -jar target/task-board-1.0.0.jar"
+        ]
+      },
+      {
+        "directory": "frontend",
+        "command": [
+          "npm run start -- --port 18100"
+        ]
+      }
+    ],
+    "buildTools": [
+      "MAVEN",
+      "NPM"
+    ],
+    "dependencyManifests": [
+      "backend/pom.xml",
+      "frontend/package-lock.json"
+    ],
+    "acceptance": {
+      "runner": "src/app/main/src/test/python/polyglot_runner.py",
+      "arguments": [
+        "verify",
+        "--project",
+        "task-board",
+        "--profile",
+        "standard"
+      ],
+      "browser": true,
+      "profiles": {
+        "quick": {
+          "createdTasks": 60
+        },
+        "standard": {
+          "createdTasks": 10000
+        }
+      },
+      "seed": 20260919,
+      "businessFlows": [
+        "normal completion",
+        "business rejection",
+        "failure and recovery"
+      ],
+      "independentOracle": true
+    },
+    "dataDirectory": "DATA_DIR",
+    "readme": "README.md",
+    "sampleVersion": 2,
+    "specification": "BUSINESS.md",
+    "protocolVersion": 2
+  },
+  {
+    "id": "file-transfer",
+    "path": "success-file-transfer",
+    "kind": "web",
+    "languages": [
+      "TYPESCRIPT",
+      "GO"
+    ],
+    "components": [
+      "web",
+      "backend"
+    ],
+    "sqliteOwner": "backend",
+    "expected": "success",
+    "verification": "file-transfer",
+    "build": [
+      {
+        "directory": "backend",
+        "command": [
+          "go build -mod=readonly -o file-transfer.exe ."
+        ]
+      },
+      {
+        "directory": "web",
+        "command": [
+          "npm ci",
+          "npm run build"
+        ]
+      }
+    ],
+    "run": [
+      {
+        "directory": "backend",
+        "command": [
+          ".\\file-transfer.exe"
+        ]
+      },
+      {
+        "directory": "web",
+        "command": [
+          "node dist/server.js"
+        ]
+      }
+    ],
+    "buildTools": [
+      "NPM",
+      "GO_MODULE"
+    ],
+    "dependencyManifests": [
+      "web/package-lock.json",
+      "backend/go.sum"
+    ],
+    "acceptance": {
+      "runner": "src/app/main/src/test/python/polyglot_runner.py",
+      "arguments": [
+        "verify",
+        "--project",
+        "file-transfer",
+        "--profile",
+        "standard"
+      ],
+      "browser": true,
+      "profiles": {
+        "quick": {
+          "fileBytes": 2097152
+        },
+        "standard": {
+          "fileBytes": 67108864
+        }
+      },
+      "seed": 20260919,
+      "businessFlows": [
+        "normal completion",
+        "business rejection",
+        "failure and recovery"
+      ],
+      "independentOracle": true
+    },
+    "dataDirectory": "DATA_DIR",
+    "readme": "README.md",
+    "sampleVersion": 2,
+    "specification": "BUSINESS.md",
+    "protocolVersion": 2
+  },
+  {
+    "id": "asset-lending",
+    "path": "success-asset-lending",
+    "kind": "web",
+    "languages": [
+      "JAVASCRIPT",
+      "CSHARP"
+    ],
+    "components": [
+      "web",
+      "backend"
+    ],
+    "sqliteOwner": "backend",
+    "expected": "success",
+    "verification": "asset-lending",
+    "build": [
+      {
+        "directory": "backend",
+        "command": [
+          "dotnet restore --locked-mode",
+          "dotnet publish --no-restore -c Release -o publish"
+        ]
+      },
+      {
+        "directory": "web",
+        "command": [
+          "npm ci",
+          "npm run build"
+        ]
+      }
+    ],
+    "run": [
+      {
+        "directory": "backend",
+        "command": [
+          "dotnet publish/AssetLending.dll"
+        ]
+      },
+      {
+        "directory": "web",
+        "command": [
+          "node dist/server.js"
+        ]
+      }
+    ],
+    "buildTools": [
+      "NPM",
+      "DOTNET_SDK"
+    ],
+    "dependencyManifests": [
+      "web/package-lock.json",
+      "backend/packages.lock.json"
+    ],
+    "acceptance": {
+      "runner": "src/app/main/src/test/python/polyglot_runner.py",
+      "arguments": [
+        "verify",
+        "--project",
+        "asset-lending",
+        "--profile",
+        "standard"
+      ],
+      "browser": true,
+      "profiles": {
+        "quick": {
+          "createdAssets": 50
+        },
+        "standard": {
+          "createdAssets": 10000
+        }
+      },
+      "seed": 20260919,
+      "businessFlows": [
+        "normal completion",
+        "business rejection",
+        "failure and recovery"
+      ],
+      "independentOracle": true
+    },
+    "dataDirectory": "DATA_DIR",
+    "readme": "README.md",
+    "sampleVersion": 2,
+    "specification": "BUSINESS.md",
+    "protocolVersion": 2
+  },
+  {
+    "id": "csv-inspector",
+    "path": "success-csv-inspector",
+    "kind": "web",
+    "languages": [
+      "JAVASCRIPT",
+      "PHP",
+      "PYTHON"
+    ],
+    "components": [
+      "web",
+      "analyzer"
+    ],
+    "sqliteOwner": "web",
+    "expected": "success",
+    "verification": "csv-inspector",
+    "build": [
+      {
+        "directory": "analyzer",
+        "command": [
+          "python -m venv .venv",
+          ".venv\\Scripts\\python.exe -m pip install --require-hashes -r requirements.lock"
+        ]
+      },
+      {
+        "directory": "web",
+        "command": [
+          "composer install --no-dev --no-interaction"
+        ]
+      }
+    ],
+    "run": [
+      {
+        "directory": "analyzer",
+        "command": [
+          ".venv\\Scripts\\python.exe server.py"
+        ]
+      },
+      {
+        "directory": "web",
+        "command": [
+          "php -S 127.0.0.1:18130 -t public router.php"
+        ]
+      },
+      {
+        "directory": "web",
+        "command": [
+          "php worker.php"
+        ]
+      }
+    ],
+    "buildTools": [
+      "COMPOSER",
+      "PIP"
+    ],
+    "dependencyManifests": [
+      "web/composer.lock",
+      "analyzer/requirements.lock"
+    ],
+    "acceptance": {
+      "runner": "src/app/main/src/test/python/polyglot_runner.py",
+      "arguments": [
+        "verify",
+        "--project",
+        "csv-inspector",
+        "--profile",
+        "standard"
+      ],
+      "browser": true,
+      "profiles": {
+        "quick": {
+          "csvRows": 5000
+        },
+        "standard": {
+          "csvRows": 100000
+        }
+      },
+      "seed": 20260919,
+      "businessFlows": [
+        "normal completion",
+        "business rejection",
+        "failure and recovery"
+      ],
+      "independentOracle": true
+    },
+    "dataDirectory": "DATA_DIR",
+    "readme": "README.md",
+    "sampleVersion": 2,
+    "specification": "BUSINESS.md",
+    "protocolVersion": 2
+  },
+  {
+    "id": "survey-scoring",
+    "path": "success-survey-scoring",
+    "kind": "web",
+    "languages": [
+      "TYPESCRIPT",
+      "KOTLIN",
+      "RUBY"
+    ],
+    "components": [
+      "frontend",
+      "backend",
+      "scorer"
+    ],
+    "sqliteOwner": "backend",
+    "expected": "success",
+    "verification": "survey-scoring",
+    "build": [
+      {
+        "directory": "backend",
+        "command": [
+          ".\\gradlew.bat --no-daemon installDist"
+        ]
+      },
+      {
+        "directory": "scorer",
+        "command": [
+          "bundle config set --local path vendor/bundle",
+          "bundle config set --local frozen true",
+          "bundle install"
+        ]
+      },
+      {
+        "directory": "frontend",
+        "command": [
+          "npm ci",
+          "npm run build"
+        ]
+      }
+    ],
+    "run": [
+      {
+        "directory": "scorer",
+        "command": [
+          "bundle exec ruby server.rb"
+        ]
+      },
+      {
+        "directory": "backend",
+        "command": [
+          ".\\build\\install\\survey-scoring\\bin\\survey-scoring.bat"
+        ]
+      },
+      {
+        "directory": "frontend",
+        "command": [
+          "npm run start -- --port 18140"
+        ]
+      }
+    ],
+    "buildTools": [
+      "NPM",
+      "GRADLE",
+      "BUNDLER"
+    ],
+    "dependencyManifests": [
+      "frontend/package-lock.json",
+      "backend/gradle.lockfile",
+      "scorer/Gemfile.lock"
+    ],
+    "acceptance": {
+      "runner": "src/app/main/src/test/python/polyglot_runner.py",
+      "arguments": [
+        "verify",
+        "--project",
+        "survey-scoring",
+        "--profile",
+        "standard"
+      ],
+      "browser": true,
+      "profiles": {
+        "quick": {
+          "submissionRecords": 60
+        },
+        "standard": {
+          "submissionRecords": 10000
+        }
+      },
+      "seed": 20260919,
+      "businessFlows": [
+        "normal completion",
+        "business rejection",
+        "failure and recovery"
+      ],
+      "independentOracle": true
+    },
+    "dataDirectory": "DATA_DIR",
+    "readme": "README.md",
+    "sampleVersion": 2,
+    "specification": "BUSINESS.md",
+    "protocolVersion": 2
+  },
+  {
+    "id": "log-analyzer",
+    "path": "success-log-analyzer",
+    "kind": "cli",
+    "languages": [
+      "RUST",
+      "CPP"
+    ],
+    "components": [
+      "cli",
+      "native"
+    ],
+    "sqliteOwner": null,
+    "expected": "success",
+    "verification": "log-analyzer",
+    "build": [
+      {
+        "directory": "native",
+        "command": [
+          "cmake --preset w2l-release",
+          "cmake --build --preset w2l-release-build"
+        ]
+      },
+      {
+        "directory": "cli",
+        "command": [
+          "cargo build --locked --release"
+        ]
+      }
+    ],
+    "run": [
+      {
+        "directory": ".",
+        "command": [
+          ".\\cli\\target\\release\\log-analyzer.exe --input samples/events.log --format json",
+          ".\\cli\\target\\release\\log-analyzer.exe --input samples/events.log --level ERROR --from 2026-09-19T10:01:00Z --top 1 --output report.json"
+        ]
+      }
+    ],
+    "buildTools": [
+      "CARGO",
+      "CMAKE"
+    ],
+    "dependencyManifests": [
+      "cli/Cargo.lock",
+      "native/vendor/nlohmann/dependency.json"
+    ],
+    "acceptance": {
+      "runner": "src/app/main/src/test/python/polyglot_runner.py",
+      "arguments": [
+        "verify",
+        "--project",
+        "log-analyzer",
+        "--profile",
+        "standard"
+      ],
+      "browser": false,
+      "profiles": {
+        "quick": {
+          "logRecords": 5000
+        },
+        "standard": {
+          "logRecords": 100000
+        }
+      },
+      "seed": 20260919,
+      "businessFlows": [
+        "normal completion",
+        "business rejection",
+        "failure and recovery"
+      ],
+      "independentOracle": true
+    },
+    "dataDirectory": null,
+    "readme": "README.md",
+    "sampleVersion": 2,
+    "specification": "BUSINESS.md",
+    "protocolVersion": 2
+  },
+  {
+    "id": "directory-diff",
+    "path": "success-directory-diff",
+    "kind": "cli",
+    "languages": [
+      "PYTHON",
+      "CPP"
+    ],
+    "components": [
+      "cli",
+      "native"
+    ],
+    "sqliteOwner": "cli",
+    "expected": "success",
+    "verification": "directory-diff",
+    "build": [
+      {
+        "directory": "native",
+        "command": [
+          "cmake --preset w2l-release",
+          "cmake --build --preset w2l-release-build"
+        ]
+      }
+    ],
+    "run": [
+      {
+        "directory": ".",
+        "command": [
+          "python cli/main.py --format json snapshot --root samples/baseline --name baseline"
+        ]
+      }
+    ],
+    "buildTools": [
+      "PYTHON_STDLIB",
+      "CMAKE"
+    ],
+    "dependencyManifests": [
+      "cli/pyproject.toml",
+      "native/vendor/nlohmann/dependency.json"
+    ],
+    "acceptance": {
+      "runner": "src/app/main/src/test/python/polyglot_runner.py",
+      "arguments": [
+        "verify",
+        "--project",
+        "directory-diff",
+        "--profile",
+        "standard"
+      ],
+      "browser": false,
+      "profiles": {
+        "quick": {
+          "files": 501
+        },
+        "standard": {
+          "files": 10001
+        }
+      },
+      "seed": 20260919,
+      "businessFlows": [
+        "normal completion",
+        "business rejection",
+        "failure and recovery"
+      ],
+      "independentOracle": true
+    },
+    "dataDirectory": "--db",
+    "readme": "README.md",
+    "sampleVersion": 2,
+    "specification": "BUSINESS.md",
+    "protocolVersion": 2
+  },
+  {
+    "id": "binary-inspector",
+    "path": "success-binary-inspector",
+    "kind": "cli",
+    "languages": [
+      "RUST",
+      "C"
+    ],
+    "components": [
+      "cli",
+      "native"
+    ],
+    "sqliteOwner": null,
+    "expected": "success",
+    "verification": "binary-inspector",
+    "build": [
+      {
+        "directory": "native",
+        "command": [
+          "cmake --preset w2l-release",
+          "cmake --build --preset w2l-release-build"
+        ]
+      },
+      {
+        "directory": "cli",
+        "command": [
+          "cargo build --locked --release"
+        ]
+      }
+    ],
+    "run": [
+      {
+        "directory": ".",
+        "command": [
+          ".\\cli\\target\\release\\binary-inspector.exe --input samples/normal.bin --input samples/empty.bin --format json --output report.json"
+        ]
+      }
+    ],
+    "buildTools": [
+      "CARGO",
+      "CMAKE"
+    ],
+    "dependencyManifests": [
+      "cli/Cargo.lock"
+    ],
+    "acceptance": {
+      "runner": "src/app/main/src/test/python/polyglot_runner.py",
+      "arguments": [
+        "verify",
+        "--project",
+        "binary-inspector",
+        "--profile",
+        "standard"
+      ],
+      "browser": false,
+      "profiles": {
+        "quick": {
+          "binaryRecords": 5000
+        },
+        "standard": {
+          "binaryRecords": 100000
+        }
+      },
+      "seed": 20260919,
+      "businessFlows": [
+        "normal completion",
+        "business rejection",
+        "failure and recovery"
+      ],
+      "independentOracle": true
+    },
+    "dataDirectory": null,
+    "readme": "README.md",
+    "sampleVersion": 2,
+    "specification": "BUSINESS.md",
+    "protocolVersion": 2
+  }
+]

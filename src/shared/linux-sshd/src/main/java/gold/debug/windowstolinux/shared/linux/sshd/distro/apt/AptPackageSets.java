@@ -6,7 +6,7 @@ import java.util.List;
 final class AptPackageSets {
     static final List<String> BASE = List.of(
             "openjdk-21-jdk-headless", "maven", "curl", "sudo", "tar", "gzip", "iproute2", "coreutils",
-            "e2fsprogs", "skopeo", "acl", "uidmap", "rootlesskit", "slirp4netns", "fuse-overlayfs", "util-linux", "findutils", "gawk", "nodejs", "npm", "python3", "python3-venv", "python3-pip",
+            "e2fsprogs", "skopeo", "acl", "sqlite3", "uidmap", "rootlesskit", "slirp4netns", "fuse-overlayfs", "util-linux", "findutils", "gawk", "nodejs", "npm", "python3", "python3-venv", "python3-pip",
             "cmake", "ninja-build", "gcc", "g++", "docker.io", "podman"
     );
 

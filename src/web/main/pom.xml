@@ -3,7 +3,11 @@
     <modelVersion>4.0.0</modelVersion>
     <parent><groupId>gold.debug.windowstolinux</groupId><artifactId>windowstolinux-web</artifactId><version>0.1.0-SNAPSHOT</version><relativePath>../pom.xml</relativePath></parent>
     <artifactId>windowstolinux-web-main</artifactId>
+    <properties><skipTests>false</skipTests></properties>
     <dependencies>
+        <dependency><groupId>org.springframework.boot</groupId><artifactId>spring-boot-starter-webmvc</artifactId></dependency>
+        <dependency><groupId>org.springframework.boot</groupId><artifactId>spring-boot-starter-test</artifactId><scope>test</scope></dependency>
+        <dependency><groupId>org.junit.jupiter</groupId><artifactId>junit-jupiter</artifactId><scope>test</scope></dependency>
         <dependency><groupId>gold.debug.windowstolinux</groupId><artifactId>windowstolinux-web-api</artifactId><version>${project.version}</version></dependency>
         <dependency><groupId>gold.debug.windowstolinux</groupId><artifactId>windowstolinux-web-auth</artifactId><version>${project.version}</version></dependency>
         <dependency><groupId>gold.debug.windowstolinux</groupId><artifactId>windowstolinux-web-service</artifactId><version>${project.version}</version></dependency>
@@ -21,4 +25,52 @@
         <dependency><groupId>gold.debug.windowstolinux</groupId><artifactId>windowstolinux-shared-deploy</artifactId><version>${project.version}</version></dependency>
         <dependency><groupId>gold.debug.windowstolinux</groupId><artifactId>windowstolinux-shared-backup</artifactId><version>${project.version}</version></dependency>
     </dependencies>
+    <build>
+        <finalName>web</finalName>
+        <resources>
+            <resource><directory>src/main/resources</directory></resource>
+            <resource><directory>../frontend/dist</directory><targetPath>static</targetPath></resource>
+        </resources>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId><artifactId>maven-surefire-plugin</artifactId>
+                <configuration><excludes><exclude>**/WebPackagedRuntimeTest.java</exclude></excludes></configuration>
+            </plugin>
+            <plugin>
+                <groupId>com.github.eirslett</groupId><artifactId>frontend-maven-plugin</artifactId><version>2.0.2</version>
+                <configuration>
+                    <workingDirectory>../frontend</workingDirectory>
+                    <installDirectory>${project.build.directory}/frontend-toolchain</installDirectory>
+                    <nodeVersion>v24.16.0</nodeVersion>
+                </configuration>
+                <executions>
+                    <execution><id>frontend-toolchain</id><phase>generate-resources</phase><goals><goal>install-node-and-npm</goal></goals></execution>
+                    <execution><id>frontend-dependencies</id><phase>generate-resources</phase><goals><goal>npm</goal></goals><configuration><arguments>ci --no-audit --no-fund</arguments></configuration></execution>
+                    <execution><id>frontend-build</id><phase>generate-resources</phase><goals><goal>npm</goal></goals><configuration><arguments>run build</arguments></configuration></execution>
+                    <execution><id>frontend-unit-tests</id><phase>test</phase><goals><goal>npm</goal></goals><configuration><arguments>test</arguments><skip>${skipTests}</skip></configuration></execution>
+                </executions>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId><artifactId>maven-jar-plugin</artifactId>
+                <configuration>
+                    <outputDirectory>${project.build.directory}/web</outputDirectory>
+                    <archive><manifest>
+                        <mainClass>gold.debug.windowstolinux.web.main.WebMain</mainClass>
+                        <addClasspath>true</addClasspath><classpathPrefix>lib/</classpathPrefix><useUniqueVersions>false</useUniqueVersions>
+                    </manifest></archive>
+                </configuration>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId><artifactId>maven-dependency-plugin</artifactId><version>3.8.1</version>
+                <executions><execution><id>web-external-libraries</id><phase>package</phase><goals><goal>copy-dependencies</goal></goals>
+                    <configuration><includeScope>runtime</includeScope><outputDirectory>${project.build.directory}/web/lib</outputDirectory></configuration>
+                </execution></executions>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId><artifactId>maven-failsafe-plugin</artifactId><version>${maven.surefire.version}</version>
+                <executions><execution><goals><goal>integration-test</goal><goal>verify</goal></goals></execution></executions>
+                <configuration><useModulePath>false</useModulePath><includes><include>**/WebPackagedRuntimeTest.java</include></includes></configuration>
+            </plugin>
+        </plugins>
+    </build>
 </project>

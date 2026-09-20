@@ -22,6 +22,7 @@ import gold.debug.windowstolinux.shared.model.project.DeploymentProjectFacts;
 import gold.debug.windowstolinux.shared.model.project.DeploymentProjectType;
 import gold.debug.windowstolinux.shared.model.project.DeploymentRuntimeSpecification;
 import gold.debug.windowstolinux.shared.model.project.SourceRevision;
+import gold.debug.windowstolinux.shared.model.project.application.*;
 import gold.debug.windowstolinux.shared.model.server.ServerIdentity;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -50,10 +51,10 @@ class DeploymentOutcomeTest {
         ReviewedDeploymentRequest request = request(health, Optional.of(new UserAccessUrl(businessUrl)));
         DeploymentOutcome outcome = DeploymentOutcome.from(result(DeploymentStatus.SUCCEEDED), request, application());
 
-        DeploymentHandoff.HttpAccessUrl handoff = assertInstanceOf(
-                DeploymentHandoff.HttpAccessUrl.class, outcome.handoff().orElseThrow());
-        assertEquals(businessUrl, handoff.url());
-        assertNotEquals(health.endpoint(), handoff.url(), "健康端点绝不能作为用户业务网址返回");
+        var handoff = assertInstanceOf(DeploymentHandoff.ApplicationEntry.class, outcome.handoff().orElseThrow());
+        assertEquals(List.of(businessUrl.toString()), handoff.usage().endpoints());
+        assertEquals("WEBSITE", handoff.usage().category());
+        assertTrue(handoff.usage().lifecycle());
     }
 
     @Test
@@ -61,11 +62,10 @@ class DeploymentOutcomeTest {
         ReviewedDeploymentRequest request = request(new HealthCheck.Tcp(18081, 10, 1), Optional.empty());
         DeploymentOutcome outcome = DeploymentOutcome.from(result(DeploymentStatus.SUCCEEDED), request, application());
 
-        DeploymentHandoff.SystemdStartCommand handoff = assertInstanceOf(
-                DeploymentHandoff.SystemdStartCommand.class, outcome.handoff().orElseThrow());
-        assertEquals("windowstolinux-demo.service", handoff.systemdUnit());
+        var handoff = assertInstanceOf(DeploymentHandoff.ApplicationEntry.class, outcome.handoff().orElseThrow());
+        assertEquals("APP", handoff.usage().category());
         assertEquals("sudo /usr/local/lib/windowstolinux/managed-helper lifecycle demo start " + "a".repeat(64),
-                handoff.command());
+                handoff.usage().command());
     }
 
     @Test
@@ -98,7 +98,11 @@ class DeploymentOutcomeTest {
                 ConfigurationSnapshot.create("demo", 1, "v1", Instant.now(), List.of(
                         new ConfigurationEntry("PORT", ConfigurationScope.RUNTIME,
                                 new ConfigurationValue.Number(8080)))), List.of(),
-                new DeploymentRuntimeSpecification.SpringBoot(healthCheck), userAccessUrl, BuildLimitConfiguration.defaultNonRoot(),
+                new DeploymentRuntimeSpecification.SpringBoot(healthCheck).withWorkload(new ApplicationWorkload(
+                        ApplicationWorkload.ExecutionMode.DAEMON, true, ApplicationCommand.primary(), "",
+                        userAccessUrl.map(url -> List.of(new ApplicationEndpoint("web", ApplicationEndpoint.ProtocolType.HTTP, "0.0.0.0",
+                                healthCheck.portNumber().orElseThrow(), healthCheck.portNumber().orElseThrow(), ApplicationEndpoint.ExposureType.EXTERNAL, url.url().toString()))).orElse(List.of()),
+                        Optional.empty(), "", Optional.empty(), List.of(), List.of())), userAccessUrl, BuildLimitConfiguration.defaultNonRoot(),
                 new DeploymentApproval("demo", sourceSha256, server.id(), false, Instant.now()), true, true);
     }
 

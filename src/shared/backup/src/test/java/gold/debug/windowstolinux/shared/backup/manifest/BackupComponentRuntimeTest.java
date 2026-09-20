@@ -102,7 +102,7 @@ class BackupComponentRuntimeTest {
                 ids.stream().map(id -> "releases/" + id + ".json").toList(),
                 ids.stream().map(id -> "config/" + id + ".json").toList(), List.of(), List.of(), List.of(),
                 BackupDatabase.none(),
-                new BackupIdentity("sample", "server-1", "/var/lib/windowstolinux/apps/sample",
+                new BackupIdentity("sample", "server-1", "/opt/windowstolinux/apps/sample",
                         BackupInventory.computeReleaseSetSha256(components)),
                 ids.stream().map(id -> "runtime/" + id + ".service").toList(),
                 components, healthComponentId, health,

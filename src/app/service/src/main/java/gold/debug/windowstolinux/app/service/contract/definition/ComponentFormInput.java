@@ -1,6 +1,6 @@
 package gold.debug.windowstolinux.app.service.contract.definition;
 
-import gold.debug.windowstolinux.app.service.contract.definition.DatabaseReviewMode;
+import gold.debug.windowstolinux.shared.model.deployment.DatabaseReviewMode;
 
 
 import gold.debug.windowstolinux.shared.model.project.DeploymentProjectType;
@@ -36,8 +36,37 @@ public record ComponentFormInput(
         String secretReferences,
         boolean required,
         boolean rootBuild,
-        String kotlinJvmTarget
+        String kotlinJvmTarget,
+        String applicationDeclaration
 ) {
+    public ComponentFormInput(
+        String componentId,
+        String relativeSourceRoot,
+        DeploymentProjectType projectType,
+        String runtimePrimary,
+        String runtimeSecondary,
+        String runtimeVersion,
+        String runtimeArguments,
+        String runtimeAdditional,
+        ComponentHealthMode healthMode,
+        String healthEndpoint,
+        String expectedStatus,
+        String timeoutSeconds,
+        String stabilitySeconds,
+        String userAccessUrl,
+        String artifactPaths,
+        String declaredPorts,
+        String dependencies,
+        String configurationEntries,
+        DatabaseReviewMode databaseMode,
+        String databaseDetails,
+        String secretReferences,
+        boolean required,
+        boolean rootBuild,
+        String kotlinJvmTarget) {
+        this(componentId, relativeSourceRoot, projectType, runtimePrimary, runtimeSecondary, runtimeVersion, runtimeArguments, runtimeAdditional, healthMode, healthEndpoint, expectedStatus, timeoutSeconds, stabilitySeconds, userAccessUrl, artifactPaths, declaredPorts, dependencies, configurationEntries, databaseMode, databaseDetails, secretReferences, required, rootBuild, kotlinJvmTarget, "");
+    }
+
     public ComponentFormInput(String componentId,
         String relativeSourceRoot,
         DeploymentProjectType projectType,
@@ -88,6 +117,8 @@ public record ComponentFormInput(
         databaseDetails = text(databaseDetails);
         secretReferences = text(secretReferences);
         kotlinJvmTarget = text(kotlinJvmTarget);
+        applicationDeclaration = Objects.requireNonNull(applicationDeclaration).trim();
+        if (applicationDeclaration.length()>65536) throw new IllegalArgumentException("application declaration too long");
     }
 
     private static String text(String value) {

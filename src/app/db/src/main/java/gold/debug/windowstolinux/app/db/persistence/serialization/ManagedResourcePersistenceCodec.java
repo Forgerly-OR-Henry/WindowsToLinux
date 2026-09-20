@@ -19,8 +19,13 @@ import java.util.Optional;
 
 /** Strict versioned storage codec for reviewed non-secret managed resource bindings. / 经审阅无秘密受管资源绑定的严格版本化存储编解码器。 */
 public final class ManagedResourcePersistenceCodec {
+    private static java.util.List<String> readInitialization(java.io.DataInputStream input) throws java.io.IOException {
+        int size = input.readInt(); if (size < 0 || size > 32) throw new java.io.IOException("invalid initialization file count");
+        var result = new java.util.ArrayList<String>(); for (int i=0; i<size; i++) result.add(input.readUTF());
+        return java.util.List.copyOf(result);
+    }
     private static final int MAGIC = 0x57544c52;
-    private static final int VERSION = 1;
+    private static final int VERSION = 2;
     private static final int MAX_DOCUMENT_BYTES = 1_048_576;
     private static final int MAX_FILE_BINDINGS = 4_096;
     private static final int MAX_DATABASE_BINDINGS = 256;
@@ -93,6 +98,8 @@ public final class ManagedResourcePersistenceCodec {
         output.writeByte(binding.dataPath().access() == ComponentDataPath.AccessMode.READ_ONLY ? 1 : 2);
         output.writeUTF(binding.dataPath().schemaId());
         output.writeByte(binding.dataPath().reversible() ? 1 : 0);
+        output.writeUTF(binding.location().type().name()); output.writeUTF(binding.location().path());
+        output.writeUTF(binding.resourceType().name()); output.writeUTF(binding.seedFile()); output.writeUTF(binding.contentSha256());
     }
 
     private static ManagedFileBinding readFile(DataInputStream input) throws IOException {
@@ -105,7 +112,10 @@ public final class ManagedResourcePersistenceCodec {
         };
         String schemaId = input.readUTF();
         boolean reversible = readBoolean(input, "managed file binding reversible value");
-        return new ManagedFileBinding(bindingId, new ComponentDataPath(path, access, schemaId, reversible));
+        var location = new gold.debug.windowstolinux.shared.model.managed.ManagedStorageLocation(
+                gold.debug.windowstolinux.shared.model.managed.ManagedStorageLocation.StorageLocationType.valueOf(input.readUTF()), input.readUTF());
+        return new ManagedFileBinding(bindingId, new ComponentDataPath(path, access, schemaId, reversible), location,
+                gold.debug.windowstolinux.shared.model.managed.ManagedStorageLocation.StorageResourceType.valueOf(input.readUTF()), input.readUTF(), input.readUTF());
     }
 
     private static void writeDatabase(DataOutputStream output, ManagedDatabaseBinding binding) throws IOException {
@@ -113,6 +123,9 @@ public final class ManagedResourcePersistenceCodec {
         output.writeByte(engineCode(binding.connection().engine()));
         if (binding.connection() instanceof ManagedDatabaseConnection.Sqlite sqlite) {
             output.writeUTF(sqlite.fileName());
+            output.writeUTF(sqlite.location().type().name()); output.writeUTF(sqlite.location().path()); output.writeUTF(sqlite.accessPath());
+            output.writeUTF(sqlite.seedFile()); output.writeInt(sqlite.initializationFiles().size());
+            for (String file : sqlite.initializationFiles()) output.writeUTF(file);
             return;
         }
         ManagedDatabaseConnection.Server server = (ManagedDatabaseConnection.Server) binding.connection();
@@ -130,7 +143,8 @@ public final class ManagedResourcePersistenceCodec {
         ManagedDatabaseEngineType engine = engine(input.readUnsignedByte());
         ManagedDatabaseConnection connection;
         if (engine == ManagedDatabaseEngineType.SQLITE) {
-            connection = new ManagedDatabaseConnection.Sqlite(input.readUTF());
+            connection = new ManagedDatabaseConnection.Sqlite(input.readUTF(), new gold.debug.windowstolinux.shared.model.managed.ManagedStorageLocation(
+                    gold.debug.windowstolinux.shared.model.managed.ManagedStorageLocation.StorageLocationType.valueOf(input.readUTF()), input.readUTF()), input.readUTF(), input.readUTF(), readInitialization(input));
         } else {
             connection = new ManagedDatabaseConnection.Server(engine, input.readUTF(), input.readInt(),
                     input.readUTF(), input.readUTF(), new SecretReference(input.readUTF(), input.readLong()),

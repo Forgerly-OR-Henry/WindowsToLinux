@@ -33,7 +33,7 @@ class EcosystemExtensionFixtureMatrixTest {
         Path repository = repositoryRoot();
         return fixtures().stream().flatMap(fixture -> SCENARIOS.stream().sorted().map(scenario ->
                 DynamicTest.dynamicTest(fixture.path() + "/" + scenario, () -> {
-                    Path root = repository.resolve("test").resolve(fixture.path()).resolve(scenario);
+                    Path root = repository.resolve("test/single-language").resolve(fixture.path()).resolve(scenario);
                     var result = new DeploymentAnalysisCoordinator().analyze(root, fixture.projectType());
                     if (scenario.equals("failure-configuration-rejected")) {
                         assertTrue(Set.of(DeploymentAdmissionStatus.REJECTED, DeploymentAdmissionStatus.REQUIRES_INPUT)
@@ -52,7 +52,7 @@ class EcosystemExtensionFixtureMatrixTest {
     @Test
     void everySourceBuildArchitectureHasExactlyThreeSuccessAndTwoFailureGroups() throws Exception {
         List<Fixture> fixtures = fixtures();
-        assertEquals(25, fixtures.size());
+        assertEquals(26, fixtures.size());
         assertEquals(12, fixtures.stream().map(Fixture::language).distinct().count());
         assertEquals(fixtures.size(), fixtures.stream().map(Fixture::path).distinct().count());
         Set<DeploymentArchitectureType> sourceArchitectures = DeploymentSupportCatalog.deployableArchitectures().stream()
@@ -62,7 +62,7 @@ class EcosystemExtensionFixtureMatrixTest {
         assertEquals(sourceArchitectures, fixtures.stream().map(fixture -> new DeploymentArchitectureType(
                 fixture.projectType(), fixture.buildTool())).collect(Collectors.toSet()));
         Set<String> actualPaths = new HashSet<>();
-        Path testRoot = repositoryRoot().resolve("test");
+        Path testRoot = repositoryRoot().resolve("test/single-language");
         try (var paths = Files.walk(testRoot, 3)) {
             paths.filter(Files::isDirectory).filter(path -> testRoot.relativize(path).getNameCount() == 3)
                     .forEach(path -> actualPaths.add(testRoot.relativize(path).toString().replace('\\', '/')));
@@ -82,7 +82,7 @@ class EcosystemExtensionFixtureMatrixTest {
     }
 
     private static List<Fixture> fixtures() throws Exception {
-        JsonNode entries = new ObjectMapper().readTree(repositoryRoot().resolve("test/matrix.json").toFile());
+        JsonNode entries = new ObjectMapper().readTree(repositoryRoot().resolve("test/single-language/matrix.json").toFile());
         assertTrue(entries.isArray());
         java.util.ArrayList<Fixture> result = new java.util.ArrayList<>();
         for (JsonNode entry : entries) {
@@ -96,7 +96,7 @@ class EcosystemExtensionFixtureMatrixTest {
 
     @Test
     void allScenariosContainRealSourceModulesAndNativeHeaders() throws Exception {
-        Path root = repositoryRoot().resolve("test");
+        Path root = repositoryRoot().resolve("test/single-language");
         for (Fixture fixture : fixtures()) {
             String extension = switch (fixture.language()) {
                 case C -> ".c";
@@ -135,7 +135,7 @@ class EcosystemExtensionFixtureMatrixTest {
 
     private static Path repositoryRoot() {
         for (Path current = Path.of("").toAbsolutePath().normalize(); current != null; current = current.getParent()) {
-            if (Files.isRegularFile(current.resolve("test/matrix.json")) && Files.isRegularFile(current.resolve("pom.xml"))) return current;
+            if (Files.isRegularFile(current.resolve("test/single-language/matrix.json")) && Files.isRegularFile(current.resolve("pom.xml"))) return current;
         }
         throw new IllegalStateException("WindowsToLinux repository root was not found");
     }

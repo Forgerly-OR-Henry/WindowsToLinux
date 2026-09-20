@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE beans PUBLIC "-//SPRING//DTD BEAN//EN" "https://www.springframework.org/dtd/spring-beans.dtd">
+<beans>
+    <bean id="SQLite" class="org.springframework.jdbc.support.SQLErrorCodes">
+        <property name="databaseProductName" value="SQLite"/>
+        <property name="dataIntegrityViolationCodes" value="19"/>
+        <property name="cannotAcquireLockCodes" value="5,6"/>
+    </bean>
+</beans>

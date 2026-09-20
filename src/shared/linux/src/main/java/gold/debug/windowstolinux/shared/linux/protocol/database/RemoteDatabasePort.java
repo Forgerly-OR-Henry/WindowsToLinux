@@ -68,10 +68,13 @@ public interface RemoteDatabasePort {
         DatabaseType type();
 
         /** Managed relative SQLite path. / 受管 SQLite 相对路径。 */
-        record Sqlite(String relativePath) implements ConnectionProfile {
+        record Sqlite(String bindingId, gold.debug.windowstolinux.shared.model.managed.ManagedStorageLocation location, String fileName) implements ConnectionProfile {
             /** Validates a controlled path. / 校验受控路径。 */
             public Sqlite {
-                relativePath = validatedRelativePath(relativePath, "relativePath");
+                if (!Objects.requireNonNull(bindingId).matches("[a-z0-9][a-z0-9-]{0,62}")) throw new IllegalArgumentException("invalid SQLite storage binding");
+            Objects.requireNonNull(location);
+            if (location.type() == gold.debug.windowstolinux.shared.model.managed.ManagedStorageLocation.StorageLocationType.UNRESOLVED) throw new IllegalArgumentException("SQLite location must be reviewed");
+            if (!Objects.requireNonNull(fileName).matches("[A-Za-z0-9][A-Za-z0-9._-]{0,127}")) throw new IllegalArgumentException("invalid SQLite file name");
             }
 
             @Override public DatabaseType type() { return DatabaseType.SQLITE; }

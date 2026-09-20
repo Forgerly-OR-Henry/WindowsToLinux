@@ -10,9 +10,10 @@ import gold.debug.windowstolinux.shared.config.resource.ManagedDatabaseEngineTyp
 /** Maps stored database bindings to backup profiles without remote work. / 将已存数据库绑定映射为备份配置，不执行远端操作。 */
 final class BackupDatabaseProfileMapper {
     private BackupDatabaseProfileMapper() { }
-    static DatabaseConnectionProfile profile(ManagedDatabaseConnection connection) {
+    static DatabaseConnectionProfile profile(gold.debug.windowstolinux.shared.config.resource.ManagedDatabaseBinding binding) {
+        var connection = binding.connection();
         if (connection instanceof ManagedDatabaseConnection.Sqlite sqlite) {
-            return new DatabaseConnectionProfile.Sqlite(sqlite.fileName());
+            return new DatabaseConnectionProfile.Sqlite(binding.databaseId(),sqlite.location(),sqlite.fileName());
         }
         ManagedDatabaseConnection.Server server = (ManagedDatabaseConnection.Server) connection;
         return new DatabaseConnectionProfile.Server(type(server.engine()), server.host(), server.port(),

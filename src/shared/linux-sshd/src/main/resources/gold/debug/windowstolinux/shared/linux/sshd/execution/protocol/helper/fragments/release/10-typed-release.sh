@@ -18,7 +18,7 @@ seal_deployment_tree() {
   shift 3
   current_application="$app"
   parse_deployment_inputs "$@"
-  [ "$runtime_identity_policy" = SYSTEMD_DYNAMIC ] || reject runtime-identity-policy
+  [ "$runtime_identity_policy" = SYSTEMD_STATIC ] || reject runtime-identity-policy
   parse_managed_data_bindings "${deployment_remaining_arguments[@]}"
   parse_toolchain_binding "${managed_data_remaining_arguments[@]}"
   set -- "${toolchain_remaining_arguments[@]}"
@@ -40,13 +40,15 @@ seal_deployment_tree() {
   install -d -o root -g root -m 755 -- "$release"
   copy_sealed_source "$source" "$release/source"
   [ -z "$(find -P "$release/source" -xdev -type l -print -quit)" ] || reject release-symlink
+  local build_source="$release/source${application_builddir:+/$application_builddir}"
+  assert_root_owned_directory "$build_source"
   case "$kind" in
     springboot)
       [ "$#" -eq 1 ] || reject runtime-arguments
       local artifact_root manifest
       case "$1" in
-        GRADLE_WRAPPER) artifact_root="$release/source/build/libs" ;;
-        MAVEN_WRAPPER|MAVEN) artifact_root="$release/source/target" ;;
+        GRADLE_WRAPPER) artifact_root="$build_source/build/libs" ;;
+        MAVEN_WRAPPER|MAVEN) artifact_root="$build_source/target" ;;
         *) reject springboot-build-tool ;;
       esac
       mapfile -d '' -t artifacts < <(find -P "$artifact_root" -maxdepth 1 -type f -name '*.jar' ! -name '*-plain.jar' ! -name '*-sources.jar' ! -name '*-javadoc.jar' -print0 | LC_ALL=C sort -z)
@@ -63,99 +65,100 @@ seal_deployment_tree() {
       require_relative_path "$1"
       if [ "$kind" = javasource ]; then
         [ "$1" = .w2l/java/app.jar ] || reject java-source-artifact
-        [ -f "$release/source/windowstolinux-java.properties" ] || reject java-source-metadata
+        [ -f "$build_source/windowstolinux-java.properties" ] || reject java-source-metadata
       fi
-      artifact="$release/source/$1"
+      artifact="$build_source/$1"
       [ -f "$artifact" ] && [ ! -L "$artifact" ] || reject java-artifact
       install -o root -g root -m 555 -- "$artifact" "$release/app.jar"
       ;;
     node)
       [ "$#" -eq 2 ] || reject runtime-arguments
-      [ -f "$release/source/package.json" ] || reject node-package
+      [ -f "$build_source/package.json" ] || reject node-package
       case "$2" in
-        NPM) [ -f "$release/source/package-lock.json" ] || reject node-lock ;;
-        PNPM) [ -f "$release/source/pnpm-lock.yaml" ] || reject node-lock ;;
-        YARN) [ -f "$release/source/yarn.lock" ] || reject node-lock ;;
+        NPM) [ -f "$build_source/package-lock.json" ] || reject node-lock ;;
+        PNPM) [ -f "$build_source/pnpm-lock.yaml" ] || reject node-lock ;;
+        YARN) [ -f "$build_source/yarn.lock" ] || reject node-lock ;;
         *) reject node-package-manager ;;
       esac
       ;;
     python)
       [ "$#" -eq 3 ] || reject runtime-arguments
-      [ -x "$release/source/.venv/bin/python" ] || reject python-venv
+      [ -x "$build_source/.venv/bin/python" ] || reject python-venv
       case "$3" in
-        PIP_LOCKED) [ -f "$release/source/requirements.lock" ] || reject python-lock ;;
-        PIPENV_LOCKED) [ -f "$release/source/Pipfile.lock" ] || reject python-lock ;;
-        POETRY_LOCKED) [ -f "$release/source/poetry.lock" ] || reject python-lock ;;
-        UV_LOCKED) [ -f "$release/source/uv.lock" ] || reject python-lock ;;
+        PYTHON_STDLIB) [ -f "$build_source/pyproject.toml" ] || reject python-project ;;
+        PIP_LOCKED) [ -f "$build_source/requirements.lock" ] || reject python-lock ;;
+        PIPENV_LOCKED) [ -f "$build_source/Pipfile.lock" ] || reject python-lock ;;
+        POETRY_LOCKED) [ -f "$build_source/poetry.lock" ] || reject python-lock ;;
+        UV_LOCKED) [ -f "$build_source/uv.lock" ] || reject python-lock ;;
         *) reject python-build-tool ;;
       esac
       ;;
     static)
       [ "$#" -eq 3 ] || reject runtime-arguments
       require_relative_path "$1"
-      [ -d "$release/source/$1" ] && [ ! -L "$release/source/$1" ] || reject static-output
+      [ -d "$build_source/$1" ] && [ ! -L "$build_source/$1" ] || reject static-output
       case "$3" in
         STATIC_SITE_BUILD) ;;
-        NPM) [ -f "$release/source/package-lock.json" ] || reject static-lock ;;
-        PNPM) [ -f "$release/source/pnpm-lock.yaml" ] || reject static-lock ;;
-        YARN) [ -f "$release/source/yarn.lock" ] || reject static-lock ;;
+        NPM) [ -f "$build_source/package-lock.json" ] || reject static-lock ;;
+        PNPM) [ -f "$build_source/pnpm-lock.yaml" ] || reject static-lock ;;
+        YARN) [ -f "$build_source/yarn.lock" ] || reject static-lock ;;
         *) reject static-build-tool ;;
       esac
       ;;
     go|rust)
       [ "$#" -eq 3 ] || reject runtime-arguments
       require_safe_name "$2"
-      artifact="$release/source/.w2l/bin/$2"
+      artifact="$build_source/.w2l/bin/$2"
       [ -x "$artifact" ] && [ ! -L "$artifact" ] || reject ecosystem-binary
       ;;
     dotnet)
       [ "$#" -eq 3 ] || reject runtime-arguments
       require_safe_name "$2"
-      artifact="$release/source/.w2l/dotnet/$2.dll"
+      artifact="$build_source/.w2l/dotnet/$2.dll"
       [ -f "$artifact" ] && [ ! -L "$artifact" ] || reject dotnet-artifact
       ;;
     kotlin)
       [ "$#" -eq 4 ] || reject runtime-arguments
       require_java_main "$3"
       case "$4" in
-        GRADLE_KOTLIN_WRAPPER) [ -f "$release/source/build.gradle.kts" ] || reject kotlin-gradle-metadata ;;
-        KOTLINC) [ -f "$release/source/windowstolinux-kotlin.properties" ] || reject kotlin-compiler-metadata ;;
+        GRADLE_KOTLIN_WRAPPER) [ -f "$build_source/build.gradle.kts" ] || reject kotlin-gradle-metadata ;;
+        KOTLINC) [ -f "$build_source/windowstolinux-kotlin.properties" ] || reject kotlin-compiler-metadata ;;
         *) reject kotlin-build-tool ;;
       esac
-      [ -d "$release/source/.w2l/kotlin/lib" ] || reject kotlin-distribution
-      [ -n "$(find "$release/source/.w2l/kotlin/lib" -maxdepth 1 -type f -name '*.jar' -print -quit)" ] \
+      [ -d "$build_source/.w2l/kotlin/lib" ] || reject kotlin-distribution
+      [ -n "$(find "$build_source/.w2l/kotlin/lib" -maxdepth 1 -type f -name '*.jar' -print -quit)" ] \
         || reject kotlin-distribution
       ;;
     php)
       [ "$#" -eq 4 ] || reject runtime-arguments
-      [ "$2" = public ] && [ "$3" = public/index.php ] || reject php-runtime
-      [ -f "$release/source/public/index.php" ] && [ -f "$release/source/vendor/autoload.php" ] || reject php-artifact
+      require_relative_path "$3"; [[ "$3" = *.php ]] || reject php-runtime
+      [ -f "$build_source/$3" ] && [ -f "$build_source/vendor/autoload.php" ] || reject php-artifact
       ;;
     phpcli)
       [ "$#" -eq 4 ] || reject runtime-arguments
-      [ "$2" = public ] && [ "$3" = public/index.php ] || reject php-runtime
-      [ -f "$release/source/public/index.php" ] || reject php-artifact
-      [ ! -e "$release/source/composer.json" ] && [ ! -e "$release/source/composer.lock" ] || reject php-cli-dependency
+      require_relative_path "$3"; [[ "$3" = *.php ]] || reject php-runtime
+      [ -f "$build_source/$3" ] || reject php-artifact
+      [ ! -e "$build_source/composer.json" ] && [ ! -e "$build_source/composer.lock" ] || reject php-cli-dependency
       ;;
     ruby)
       [ "$#" -eq 4 ] || reject runtime-arguments
-      [ "$2" = bundle ] && [ "$3" = config.ru ] || reject ruby-runtime
-      [ -f "$release/source/config.ru" ] && [ -d "$release/source/vendor/bundle" ] || reject ruby-artifact
+      [ "$2" = bundle ] || reject ruby-runtime; require_relative_path "$3"
+      [ -f "$build_source/$3" ] && [ -d "$build_source/vendor/bundle" ] || reject ruby-artifact
       ;;
     rubycli)
       [ "$#" -eq 4 ] || reject runtime-arguments
       [ "$2" = source ] || reject ruby-artifact
       require_relative_path "$3"
       [[ "$3" = *.rb ]] || reject ruby-entrypoint
-      [ -f "$release/source/$3" ] || reject ruby-artifact
-      [ ! -e "$release/source/Gemfile" ] && [ ! -e "$release/source/Gemfile.lock" ] || reject ruby-cli-dependency
+      [ -f "$build_source/$3" ] || reject ruby-artifact
+      [ ! -e "$build_source/Gemfile" ] && [ ! -e "$build_source/Gemfile.lock" ] || reject ruby-cli-dependency
       ;;
     cmake)
       [ "$#" -eq 3 ] || reject runtime-arguments
       [ "$1" = w2l-release ] || reject cmake-preset
       require_safe_name "$2"
       [ "$3" = "$2" ] || reject cmake-artifact
-      artifact="$release/source/.w2l/bin/$2"
+      artifact="$build_source/.w2l/bin/$2"
       [ -x "$artifact" ] && [ ! -L "$artifact" ] || reject cmake-artifact
       [ -f "$artifact.ldd" ] && [ ! -L "$artifact.ldd" ] || reject cmake-dependencies
       ! grep -F 'not found' "$artifact.ldd" || reject cmake-dependencies
@@ -166,6 +169,7 @@ seal_deployment_tree() {
     install -o root -g root -m 444 -- "/usr/local/lib/windowstolinux/toolchains/bindings/$toolchain_binding" "$release/.windowstolinux-toolchains"
   fi
   prepare_managed_data_bindings "$release/source"
+  application_assert_inputs "$app"
 }
 publish_deployment() {
   [ "$#" -ge 7 ] || reject publish-deployment-arguments
@@ -179,7 +183,9 @@ publish_deployment() {
   local root releases release unit tmp
   root="$(app_root "$app")"; releases="$root/releases"; release="$releases/$release_digest"; unit="$(unit_path "$app")"
   if [ "$previous_present" -eq 1 ] && [ "$previous_kind" = deployment ] \
-      && [ "$previous_path" = "$release" ] && [ "$previous_running" -eq 1 ]; then
+      && [ "$previous_path" = "$release" ]; then
+    [ "$(printf '%s\n' "$@" | sha256sum | awk '{print $1}')" = "$(sha256sum -- "$release/.windowstolinux-deployment-parameters" | awk '{print $1}')" ] || reject release-parameters-changed
+    if [ "$application_mode" = DAEMON ] && [ "$previous_running" = 0 ]; then systemctl start "$(unit_name "$app")"; fi
     printf 'PUBLISHED=1\n'
     return
   fi
@@ -204,6 +210,6 @@ publish_deployment() {
   install -o root -g root -m 644 -- "$tmp" "$unit"
   rm -f -- "$tmp"; trap - EXIT
   systemctl daemon-reload
-  systemctl start "$(unit_name "$app")"
+  if [ "$application_mode" = DAEMON ]; then systemctl start "$(unit_name "$app")"; else systemctl disable "$(unit_name "$app")"; fi
   printf 'PUBLISHED=1\n'
 }

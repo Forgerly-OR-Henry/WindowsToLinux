@@ -4,7 +4,7 @@ import gold.debug.windowstolinux.app.db.persistence.connection.DesktopConnection
 import gold.debug.windowstolinux.app.db.entity.ManagedApplicationGraph;
 import gold.debug.windowstolinux.app.db.entity.SuccessfulManagedDeployment;
 import gold.debug.windowstolinux.app.db.persistence.serialization.ComponentPathPersistenceCodec;
-import gold.debug.windowstolinux.app.db.persistence.serialization.DeploymentRuntimePersistenceCodec;
+import gold.debug.windowstolinux.shared.config.persistence.serialization.DeploymentRuntimePersistenceCodec;
 import gold.debug.windowstolinux.app.db.persistence.serialization.ManagedResourcePersistenceCodec;
 import gold.debug.windowstolinux.app.db.persistence.serialization.HealthCheckPersistenceCodec;
 
@@ -89,7 +89,7 @@ public final class ManagedApplicationGraphRepository {
                            a.id, a.systemd_unit, a.release_root, a.ownership_manifest_sha256,
                            s.id AS server_id, s.host, s.ssh_port, s.host_key_sha256,
                            r.health_kind, r.http_endpoint, r.http_expected_status, r.tcp_port,
-                           r.health_timeout_seconds, r.tcp_stability_seconds, r.user_access_url, r.identity_policy,
+                           r.health_timeout_seconds, r.tcp_stability_seconds, r.user_access_url, r.identity_policy, r.runtime_payload,
                            gc.reviewed_runtime, gc.reviewed_data_paths, gc.reviewed_resource_bindings
                     FROM managed_application_graph_component gc
                     JOIN managed_application a ON a.id=gc.managed_application_id

@@ -96,7 +96,7 @@ class RemoteBackupCreationUseCaseTest {
 
             assertEquals(destination.toAbsolutePath(), created.archive());
             assertTrue(Files.isRegularFile(destination));
-            assertEquals(List.of("observe", "stop", "release", "file-data", "start", "health", "health",
+            assertEquals(List.of("observe", "pause", "stop", "release", "file-data", "start", "health", "health", "resume",
                     "discard"), log);
             assertEquals(4, created.inspection().memberCount());
             assertEquals(RuntimeState.RUNNING, state[0]);
@@ -142,7 +142,7 @@ class RemoteBackupCreationUseCaseTest {
             assertThrows(LinuxOperationException.class, () -> facade.createManagedBackup("demo", destination,
                     backupPassword, master, ignored -> false));
 
-            assertEquals(List.of("observe", "stop", "release", "start", "health", "health", "discard"), log);
+            assertEquals(List.of("observe", "pause", "stop", "release", "start", "health", "health", "resume", "discard"), log);
             assertEquals(RuntimeState.RUNNING, state[0]);
             assertTrue(Files.notExists(destination));
             assertTrue(allCleared(master));
@@ -205,7 +205,7 @@ class RemoteBackupCreationUseCaseTest {
 
     private static ManagedApplicationRuntimeConfiguration runtimeConfiguration() {
         return new ManagedApplicationRuntimeConfiguration(new HealthCheck.Tcp(18080, 10, 1), Optional.empty(),
-                gold.debug.windowstolinux.shared.model.project.RuntimeIdentityMode.SYSTEMD_DYNAMIC);
+                gold.debug.windowstolinux.shared.model.project.RuntimeIdentityMode.SYSTEMD_STATIC);
     }
 
     private static ComponentDataPath dataPath() {
@@ -223,6 +223,10 @@ class RemoteBackupCreationUseCaseTest {
         return (DeploymentRemoteSession) Proxy.newProxyInstance(RemoteBackupCreationUseCaseTest.class.getClassLoader(),
                 new Class<?>[]{DeploymentRemoteSession.class, gold.debug.windowstolinux.shared.linux.protocol.backup.RemoteBackupArtifactPort.class, gold.debug.windowstolinux.shared.linux.protocol.database.RemoteDatabasePort.class}, (proxy, method, arguments) -> switch (method.getName()) {
                     case "backupArtifacts", "databaseOperations" -> proxy;
+                    case "beginMaintenance", "endMaintenance" -> {
+                        assertTrue(((String) arguments[1]).matches("backup-[0-9a-f]{32}"));
+                        log.add(method.getName().equals("beginMaintenance") ? "pause" : "resume"); yield null;
+                    }
                     case "collectCapabilities" -> new ServerCapabilityFacts("Ubuntu 24.04", "x86_64", true,
                             true, true, true, true, true, true, true, ManagedHelperProtocolVersion.CURRENT,
                             16L * 1024 * 1024 * 1024, "fixture");

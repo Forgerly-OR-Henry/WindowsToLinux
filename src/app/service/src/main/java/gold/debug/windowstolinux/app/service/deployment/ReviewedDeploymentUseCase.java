@@ -97,8 +97,9 @@ public final class ReviewedDeploymentUseCase {
                 ApplicationServiceFailureType.DEPLOYMENT_ANALYSIS_REQUIRED,
                 "Typed deployment requires an immutable source identity bound to the reviewed archive"));
         ManagedApplication application = ManagedApplicationIdentityResolver.resolve(applications, facts.applicationId(), server);
+        var storage = gold.debug.windowstolinux.shared.deploy.input.ManagedStoragePreparation.prepare(facts.sourceRoot(),facts.applicationId(),configuration,runtime,List.of());
         return new ReviewedDeploymentRequest(server, facts, sourceRevision,
-                archive, configuration, secretReferences, databaseBindings, runtime, userAccessUrl, limits,
+                archive, storage.configuration(), secretReferences, databaseBindings, storage.files(), runtime, userAccessUrl, limits,
                 new DeploymentApproval(application.id(), archive.contentSha256(), server.id(), rootBuildConfirmed, Instant.now()),
                 containerDaemonRiskAccepted, experimentalAdapterRiskAccepted);
     }
@@ -191,10 +192,10 @@ public final class ReviewedDeploymentUseCase {
             if (result.status() == DeploymentStatus.SUCCEEDED) {
                 try {
                     recordSuccessful(graphs, application,
-                            new ManagedApplicationRuntimeConfiguration(request.runtime().healthCheck(), request.userAccessUrl(), request.runtime().identityPolicy()),
+                            new ManagedApplicationRuntimeConfiguration(request.runtime().healthCheck(), request.userAccessUrl(), request.runtime().identityPolicy(), request.runtime().workload()),
                             new CurrentRelease(application.id(), result.publishedReleaseSha256().orElseThrow(), Instant.now()),
                             request.runtime(), request.configuration(), request.secretReferences(),
-                            request.databaseBindings());
+                            request.databaseBindings(), request.fileBindings());
                 } catch (SQLException failure) {
                     result = result.withNonFatalFailure(FailureDescriptor.create(
                             ApplicationServiceFailureType.DEPLOYMENT_RECORD_SAVE_FAILED,
@@ -226,7 +227,8 @@ public final class ReviewedDeploymentUseCase {
                                  gold.debug.windowstolinux.shared.model.project.DeploymentRuntimeSpecification reviewedRuntime,
                                  ConfigurationSnapshot configuration,
                                  List<SecretReference> secretReferences,
-                                 Optional<List<ManagedDatabaseBinding>> databaseBindings) throws SQLException {
+                                 Optional<List<ManagedDatabaseBinding>> databaseBindings,
+                                 List<gold.debug.windowstolinux.shared.config.resource.ManagedFileBinding> fileBindings) throws SQLException {
         Objects.requireNonNull(graphs, "graphs");
         application = Objects.requireNonNull(application, "application");
         runtimeConfiguration = Objects.requireNonNull(runtimeConfiguration, "runtimeConfiguration");
@@ -235,9 +237,17 @@ public final class ReviewedDeploymentUseCase {
                 release, configuration, secretReferences);
         ManagedApplicationGraph.Component component = new ManagedApplicationGraph.Component(application.id(),
                 application, runtimeConfiguration, List.of(), Optional.of(reviewedRuntime), Optional.of(List.of()),
-                Optional.of(new ManagedComponentResourceBindings(List.of(), databaseBindings)));
+                Optional.of(new ManagedComponentResourceBindings(fileBindings, databaseBindings)));
         graphs.recordSuccessfulApplication(new ManagedApplicationGraph(application.id(), application.id(),
                 Optional.of(reviewedRuntime.healthCheck()), List.of(component)), List.of(deployment));
+    }
+
+    static void recordSuccessful(ManagedApplicationGraphRepository graphs, ManagedApplication application,
+            ManagedApplicationRuntimeConfiguration runtimeConfiguration, CurrentRelease release,
+            gold.debug.windowstolinux.shared.model.project.DeploymentRuntimeSpecification reviewedRuntime,
+            ConfigurationSnapshot configuration, List<SecretReference> secretReferences,
+            Optional<List<ManagedDatabaseBinding>> databaseBindings) throws SQLException {
+        recordSuccessful(graphs,application,runtimeConfiguration,release,reviewedRuntime,configuration,secretReferences,databaseBindings,List.of());
     }
 
     private List<ResolvedSecretRevision> resolveSecrets(List<SecretReference> references, char[] masterPassword)
