@@ -61,9 +61,8 @@ public final class SelinuxPreparationExecutor implements SelinuxEnvironmentPrepa
                     + "' '" + approved.state().name() + "' '" + approved.securityState().name() + "'";
         }
         String script;
-        try (var input = SelinuxPreparationExecutor.class.getResourceAsStream("selinux-preparation.sh")) {
-            if (input == null) throw new IOException("Missing SELinux preparation resource");
-            script = new String(input.readAllBytes(), StandardCharsets.UTF_8);
+        try {
+            script = loadScript();
         } catch (IOException failure) {
             throw LinuxOperationException.create(LinuxOperationFailureType.ENVIRONMENT_PREPARATION_FAILED,
                     "Cannot load SELinux preparation resource", failure);
@@ -75,5 +74,12 @@ public final class SelinuxPreparationExecutor implements SelinuxEnvironmentPrepa
                     "SELinux preparation " + operation + " failed: " + result.failureEvidence());
         }
         return result.output();
+    }
+
+    static String loadScript() throws IOException {
+        try (var input = SelinuxPreparationExecutor.class.getResourceAsStream("selinux-preparation.sh")) {
+            if (input == null) throw new IOException("Missing SELinux preparation resource");
+            return new String(input.readAllBytes(), StandardCharsets.UTF_8).replace("\r\n", "\n");
+        }
     }
 }
