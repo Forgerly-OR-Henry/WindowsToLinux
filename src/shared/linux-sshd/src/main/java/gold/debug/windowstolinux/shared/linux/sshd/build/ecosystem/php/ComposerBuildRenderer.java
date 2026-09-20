@@ -31,7 +31,7 @@ public final class ComposerBuildRenderer implements DeploymentBuildRenderer {
                 test -f ./composer.json
                 test -f ./composer.lock
                 test -f ./public/index.php
-                COMPOSER_ALLOW_SUPERUSER=0 run composer install --no-dev --no-interaction --no-progress --prefer-dist --classmap-authoritative --no-plugins --no-scripts
+                COMPOSER_ALLOW_SUPERUSER=0 run php "$(command -v composer)" install --no-dev --no-interaction --no-progress --prefer-dist --classmap-authoritative --no-plugins --no-scripts
                 test -f ./vendor/autoload.php
                 test -z "$(find ./vendor -xdev -type l -print -quit)"
                 printf 'ARTIFACT=%%s\n' ./vendor
