@@ -178,6 +178,50 @@ class DeploymentBuildRendererTest {
     }
 
     @Test
+    void composerUsesSelectedPhpEvenWhenItsShebangPointsToAnotherInterpreter() throws Exception {
+        String bash = System.getProperty("managed.test.bash", "/bin/bash");
+        org.junit.jupiter.api.Assumptions.assumeTrue(java.nio.file.Files.isExecutable(Path.of(bash)), "Bash required");
+        String build = render(new ComposerBuildRenderer(), DeploymentBuildToolType.COMPOSER_LOCKED,
+                new DeploymentRuntimeSpecification.PhpService("8.3", "public", "public/index.php", 8080, TCP));
+        String body = build.substring(build.indexOf("command -v php"), build.indexOf("printf 'ARTIFACT="));
+        String setup = """
+                set -euo pipefail
+                export PATH=/usr/bin:/bin:$PATH
+                mkdir -p tools public
+                touch composer.json composer.lock public/index.php
+                cat > tools/composer <<'COMPOSER'
+                #!/unselected/system/php
+                COMPOSER
+                cat > tools/php <<'PHP'
+                #!/bin/bash
+                set -euo pipefail
+                if [ "$1" = -r ]; then printf '8.3'; exit; fi
+                [ "$1" = "$PWD/tools/composer" ] && [ "$2" = install ]
+                printf selected-php > selected-interpreter
+                mkdir -p vendor
+                touch vendor/autoload.php
+                PHP
+                chmod +x tools/php tools/composer
+                export PATH="$PWD/tools:$PATH"
+                run() { "$@"; }
+                """;
+        Path log = temporaryDirectory.resolve("composer-output.txt");
+        Process process = new ProcessBuilder(bash, "-s").directory(temporaryDirectory.toFile())
+                .redirectErrorStream(true).redirectOutput(log.toFile()).start();
+        try {
+            try (var input = process.getOutputStream()) {
+                input.write((setup + body).getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            }
+            assertTrue(process.waitFor(15, java.util.concurrent.TimeUnit.SECONDS));
+            org.junit.jupiter.api.Assertions.assertEquals(0, process.exitValue(), java.nio.file.Files.readString(log));
+            org.junit.jupiter.api.Assertions.assertEquals("selected-php",
+                    java.nio.file.Files.readString(temporaryDirectory.resolve("selected-interpreter")));
+        } finally {
+            if (process.isAlive()) { process.destroyForcibly(); assertTrue(process.waitFor(10, java.util.concurrent.TimeUnit.SECONDS)); }
+        }
+    }
+
+    @Test
     void rendersBuiltStaticSitesOnlyWithAnExplicitNodeMajor() {
         for (DeploymentBuildToolType tool : List.of(DeploymentBuildToolType.NPM, DeploymentBuildToolType.PNPM,
                 DeploymentBuildToolType.YARN)) {
