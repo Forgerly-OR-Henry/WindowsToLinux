@@ -79,4 +79,4 @@ Web 数据采用 HTTP 与 UTF-8 JSON，文件收发和 CSV 上传使用文件流
 
 ## 验证范围
 
-实际结果见 [VERIFICATION.md](VERIFICATION.md)。本次仅验证 Windows 本地构建和运行；Linux 实机、产品部署、发布、回滚、恢复以及产品的控制台运行能力均未由此证明。原有 125 个单语言场景及历史验证记录见 [single-language](../single-language/README.md)。
+实际结果见 [VERIFICATION.md](VERIFICATION.md)。Windows 标准业务验收与 2026-09-20 Ubuntu 产品部署验收分别记录；后者覆盖八项目发布、代表性业务和按需入口，恢复、跨机迁移及其他平台仍待验证。原有 125 个单语言场景及历史验证记录见 [single-language](../single-language/README.md)。

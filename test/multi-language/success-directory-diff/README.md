@@ -50,4 +50,4 @@ C++ stdout 为 NDJSON 版本 2，component=cpp-scan；start、entry/skip/problem
 
 退出码：0 成功、2 输入/业务约束错误、3 文件/SQLite 错误、4 子程序/协议错误。`SAMPLE_FAULT_POINT=scan-started|hashes-computed|snapshot-publishing` 和 `SAMPLE_FAULT_DIR` 仅用于运行器确定性中断验收，默认关闭。
 
-Windows 标准验收覆盖 10001 个文件、真实目录联接、SHA-256、10 个同名竞争请求、扫描变化和提交中断。普通符号链接创建受本机权限限制，Linux 符号链接及实机部署待验证，见上级 `VERIFICATION.md`。扫描目录、数据库和报告不提交。
+Windows 标准验收覆盖 10001 个文件、真实目录联接、SHA-256、10 个同名竞争请求、扫描变化和提交中断。普通符号链接创建受本机权限限制，Linux 普通符号链接仍待验证；Ubuntu 产品部署、按需快照和历史查询已经实测，见上级 `VERIFICATION.md`。扫描目录、数据库和报告不提交。

@@ -1,17 +1,11 @@
 # WindowsToLinux 产品说明书
 
-## 身份与资源限制
-
-新流程由 root 管理服务器环境及项目。项目构建使用临时低权限身份；原生应用以独立动态身份运行，容器应用使用明确的数字非 root UID/GID。本工具不创建永久项目管理账号。源码、构建缓存和产物放入预留容量的构建卷，容量含文件系统元数据；空间或必要隔离能力不足时在上传前停止；构建启动时再次复核。临时账号、进程或挂载清理失败会单独报告，发布成功与清理完成分别展示。已有 Ubuntu 24 代表性部署、容器和 Yarn 生命周期记录；完整身份故障、数据库备份恢复与迁移矩阵仍未覆盖，详见[四期验收](development/PHASE-4.md#acceptance)。
-
-> [四期动态工具链](development/PHASE-4.md#toolchains) 已将全版本识别与允许构建的版本分开：构建证据保留项目声明、候选版本和实际使用版本。源码、锁文件和应用目标不被自动改写；本地门禁已通过，版本矩阵仍不代表全部实机通过，验证结果见所属功能验收章节。
-
 ## 文档信息
 
 - 产品：WindowsToLinux
 - 说明书版本：`1.5.0-implementation-alignment`
-- 对应功能检查点：当前四期工作区；历史基线 `030bee5`
-- 更新日期：2026-09-10
+- 对应功能：当前桌面端、共享部署与 APP/FHS；六期上线能力仍为规划。
+- 更新日期：2026-09-20
 - 适用对象：首次使用者、有 Linux 基础的高级用户、部署维护人员和项目开发者
 - 结构权威：[File.md](File.md)
 - 开发状态权威：[DEVELOPMENT.md](development/DEVELOPMENT.md)
@@ -68,7 +62,7 @@ Windows 桌面静态校验与明确审阅
         ↓
 Apache SSHD 建立受信主机连接
         ↓
-目标 Linux 上的固定 managed helper v7 协议
+目标 Linux 上的固定 managed helper v9 协议
         ↓
 候选构建/恢复、健康检查、提交或旧版本恢复
         ↓
@@ -159,6 +153,10 @@ CentOS Stream 9/10 的 SELinux 未处于强制模式时，还会显示独立的�
 
 实现上，每种运行时都有封闭类型，不使用任意“运行命令”字符串。构建参数、监听端口、健康检查、容器端口、卷和版本要求均经过对应领域类型校验。
 
+### 工具链选择
+
+项目声明、候选和实际使用的精确版本分别记录；软件按支持目录匹配、复用或准备工具链，不自动改源码、锁文件和应用目标。不同语言的识别范围、允许构建范围及实机覆盖不能混用，详见[四期工具链](development/PHASE-4.md#toolchains)。
+
 ## 8. 配置与秘密
 
 ### 8.1 普通配置
@@ -190,7 +188,7 @@ CentOS Stream 9/10 的 SELinux 未处于强制模式时，还会显示独立的�
 3. 仅在缺少信息、首次主机信任或高风险操作时回答弹窗；未配置 AI 不影响继续；
 4. 查看持续日志，完成后复制访问网址或启动命令。
 
-健康检查默认按项目识别；需要覆盖时可明确选择 HTTP 或 TCP，即使检查地址留空也保留该选择。源码侧的运行参数、DB 缺项和整应用健康代表组件会先补齐，再检查服务器；填写错误后在同一任务内修正并重新校验。运行期间输入和重复操作会锁定，外观切换需等当前操作完成。
+健康检查默认按项目识别；需要覆盖时可明确选择 HTTP、TCP、UDP、PROCESS 或 COMMAND；无端口 APP 使用进程稳定性或安装自检。源码侧的运行参数、DB 缺项和整应用健康代表组件会先补齐，再检查服务器；填写错误后在同一任务内修正并重新校验。运行期间输入和重复操作会锁定，外观切换需等当前操作完成。
 
 ### 9.2 实现机制
 
@@ -202,11 +200,11 @@ CentOS Stream 9/10 的 SELinux 未处于强制模式时，还会显示独立的�
 - 任一步失败都尝试恢复旧发布并重新验证；恢复不可验证时返回 `MANUAL_RECOVERY_REQUIRED`；
 - 成功后原子保存当前发布、完整运行时、配置、秘密引用、资源绑定和整应用图。
 
-自动流程从源码声明或明确的 DB 清单识别数据库。无声明且无迁移标记时记录显式空范围；存在外部端点、冲突或缺项时补问，不静默改成服务器本地数据库。高级区域仍可手工提供已审阅连接及精确秘密引用。SQLite 物理映射尚未完成，不在新部署的 DB 选择器开放。
+自动流程从源码声明或明确的 DB 清单识别数据库。无声明且无迁移标记时记录显式空范围；存在外部端点、冲突或缺项时补问，不静默改成服务器本地数据库。高级区域仍可手工提供已审阅连接及精确秘密引用。SQLite 已加入文件型分支和桌面/Web 选择器；具体路径声明见下文。
 
 ### 9.3 DB 自动管理
 
-DB 直接安装到受支持服务器系统。已安装且兼容的 PostgreSQL、MySQL、MariaDB 或 Redis 优先复用；停止运行也算已安装。多个实例让用户选择，缺少管理或应用连接凭据时补问。程序不会将 MySQL 项目改成 PostgreSQL，也不会因为版本较新就卸载。
+PostgreSQL/MySQL/MariaDB/Redis 直接安装到受支持服务器系统。SQLite 使用应用文件，不创建数据库服务、端口、账号或密码。已安装且兼容的 PostgreSQL、MySQL、MariaDB 或 Redis 优先复用；停止运行也算已安装。多个实例让用户选择，缺少管理或应用连接凭据时补问。程序不会将 MySQL 项目改成 PostgreSQL，也不会因为版本较新就卸载。
 
 版本不兼容时，用户必须先自行备份，确认停机准备，并明确同意卸载旧软件、安装目标版本。授权绑定当前服务器、实例及版本，执行前再次复核。程序不清空数据目录、不替用户迁移数据；进入人工恢复等待状态后，由用户按数据库支持的升级路径恢复，再重新检查继续。安装完成不等于数据恢复完成。
 
@@ -234,9 +232,55 @@ db.cache.passwordEnvironment=REDIS_PASSWORD
 
 多个数据库分别绑定自己的初始化文件，不能把一个库的 SQL 复制执行到其他库。已明确指定入口的声明按各库执行；需要补问时可为不需要初始化的库留空，但存在结构变更时必须至少明确一个 SQL 入口。Redis 不接受 SQL 初始化或 JDBC 数据源声明。高级连接绑定也必须覆盖源码声明的 DB 类型和范围。
 
-自动初始化只适用于本次创建、归属可证明且再次检查为空的应用库，使用应用级权限。执行记录绑定 SQL 内容；已完成任务重试只验证，不重复写入。初始化失败或状态变化时停止并要求人工处理，不自动清除失败记录或重放 SQL。已有库结构变更需独立确认。经校验的 Spring 初始化完成后关闭框架重复初始化、Flyway/Liquibase 和 JPA 自动建表入口；本轮不提供任意迁移脚本执行器。
+自动初始化只适用于本次创建、归属可证明且再次检查为空的应用库，使用应用级权限。执行记录绑定 SQL 内容；已完成任务重试只验证，不重复写入。初始化失败或状态变化时停止并要求人工处理，不自动清除失败记录或重放 SQL。已有库结构变更需独立确认。经校验的 Spring 初始化完成后关闭框架重复初始化、Flyway/Liquibase 和 JPA 自动建表入口；不提供任意迁移脚本执行器。
 
 Redis 使用限定于应用前缀的账号，应用须按该前缀访问。隔离容器不能直接使用宿主 `127.0.0.1` 数据库，当前需在高级区域提供容器可访问的明确 DB 绑定。未知安装来源、无法确认的实例、残留配置或不支持的系统仓库版本会停止并说明问题。MongoDB 自动安装、Redis 完整备份和多数据库完整备份尚未提供；这些资源会被登记，完整备份入口明确拒绝，避免漏备后报告成功。
+
+### 9.4 FHS 路径与 SQLite
+
+每个受管组件使用自己的应用标识 `A`，默认安装根为 `/opt/windowstolinux/apps/A/`，部署配置在 `/etc/opt/windowstolinux/apps/A/`，文件和数据库在 `/var/opt/windowstolinux/apps/A/`。工具工作区及其他数据库引擎内部目录不变。新 helper 拒绝旧布局和旧备份，不自动搬迁、删除服务器数据或清空客户端数据库；本轮实机验收需要重装后的专用服务器。
+
+用户明确声明的存储和配置优先。绝对宿主路径只能在本应用安装根的严格子路径，不能指向应用根、其他应用、发布目录或控制文件；相对路径保留应用访问方式，实体放在安装根内 `persistent/` 的独立绑定目录。未确定、含变量或冲突的输入直接报错，不会被默认路径替换。该自定义规则属于产品允许的例外，默认结构遵循 FHS。
+
+在组件源码根提供 `windowstolinux-storage.properties`，例如：
+
+```properties
+storage=uploads,settings
+storage.uploads.kind=FILE
+storage.uploads.location=DEFAULT
+storage.uploads.access=uploads
+storage.uploads.environment=UPLOADS_DIRECTORY
+storage.uploads.mode=rw
+storage.settings.kind=CONFIGURATION
+storage.settings.location=DEFAULT
+storage.settings.access=config/settings.json
+storage.settings.environment=APP_SETTINGS_FILE
+storage.settings.seed=config/settings.json
+```
+
+这些环境变量必须已经被应用支持。配置文件按种子内容摘要保存只读修订；运行时需要修改的设置应声明为 `FILE` 数据，而不是 `CONFIGURATION`。普通文件可用 `seed` 明确指定源码目录；后续部署不覆盖已有内容。若源码无法确定路径，应先补全声明或产品提示的 SQLite 输入，再重新部署。
+
+SQLite 默认声明：
+
+```properties
+db=main
+db.main.engine=SQLITE
+db.main.path=DEFAULT
+db.main.pathEnvironment=APP_DATABASE_FILE
+# 可选的首次初始化输入
+# db.main.seed=seed/application.db
+# db.main.initialize=schema.sql
+```
+
+未指定 SQLite 文件路径时默认文件名为 `application.db`，位于 `/var/opt/windowstolinux/apps/A/databases/main/`。明确的 `db.main.path=data/shop.db` 使用安装根内稳定数据映射；Spring 的字面 `spring.datasource.url=jdbc:sqlite:...` 可识别并通过 `SPRING_DATASOURCE_URL` 交付。内存数据库不纳入持久化支持，SQLite 驱动仍由项目依赖提供。
+
+容器保留镜像里的路径，例如 `db.main.path=/app/data/application.db`。未显式指定宿主位置时使用默认宿主数据库目录；可用 `db.main.hostLocation=CUSTOM` 和 `db.main.hostPath=/opt/windowstolinux/apps/A/state` 明确选择受限宿主位置。配置只读、容器根文件系统只读，SQLite 和文件使用受管 bind mount；宿主 `sqlite3` 负责初始化及一致性备份，业务镜像不需要该命令。镜像种子只导入一次。容器 SQLite 访问路径须有非根父目录，不能直接放在容器 `/`；与工作目录或文件绑定共用父目录时由受管只读视图或精确别名保留其余内容。
+
+预检展示资源类型、路径来源、应用访问位置、宿主位置及读写模式。非法位置不静默改写，运行时写权限阻止未声明的越界持久写入。更新、回滚及发布清理保留持久目录。
+
+### 9.5 构建身份与资源限制
+
+部署流程由 root 管理服务器环境及项目。项目构建使用临时低权限身份；原生应用以每组件固定、不可登录、无管理权限的系统账号运行，容器应用使用明确的数字非 root UID/GID。运行账号随应用保留，构建临时账号按归属清理。源码、构建缓存和产物放入预留容量的构建卷，容量含文件系统元数据；空间或必要隔离能力不足时在上传前停止；构建启动时再次复核。临时账号、进程或挂载清理失败会单独报告，发布成功与清理完成分别展示。已有 Ubuntu 24 代表性部署、容器和 Yarn 生命周期记录；完整身份故障、数据库备份恢复与迁移矩阵仍未覆盖，详见[四期验收](development/PHASE-4.md#acceptance)。
 
 ## 10. 多组件应用
 
@@ -277,25 +321,25 @@ Redis 使用限定于应用前缀的账号，应用须按该前缀访问。隔�
 
 ### 12.2 备份内容
 
-schema v4 归档可以包含：
+schema v6 归档可以包含：
 
 - `manifest.json`：应用、组件、依赖、发布摘要、环境、数据库、健康和成员清单；
 - 每组件发布树；
 - 每组件精确普通配置、资源绑定、运行健康和用户访问 URL；
 - 已审阅普通文件树；
-- 受管容器命名卷；
+- 受管容器宿主绑定目录；
 - 经归属验证的 Podman OCI Archive，或恢复时所需已审阅源码；
-- PostgreSQL、MySQL 或 MariaDB 一致性数据库导出；
+- SQLite、PostgreSQL、MySQL 或 MariaDB 一致性数据库制品；
 - AES-256-GCM 加密的精确秘密修订集合。
 
-当前自动完整备份明确限制为零或一个受支持的 SQL 数据库；Redis 或多个数据库绑定会在远端备份前明确拒绝。SQLite 连接模型和一致性适配器已经存在，但产品备份仍会因缺少已审阅的应用相对物理映射而在远端操作前拒绝。
+当前自动完整备份明确限制为零或一个受支持的 SQL 数据库；Redis 或多个数据库绑定会在远端备份前明确拒绝。SQLite 绑定保存精确文件名、存储选择、访问路径及所属组件；普通文件归档排除数据库及 WAL/SHM/journal，数据库通过 Backup API 单独取材并检查完整性。
 
 ### 12.3 远端一致性实现
 
 1. 实时观察所有组件；
 2. 按依赖逆序停止原先正在运行的组件；
 3. 验证无写入者；
-4. 使用 helper v7 创建严格 PAX TAR、命名卷、OCI 和数据库制品；
+4. 使用 helper v9 创建严格 PAX TAR、宿主绑定目录、OCI 和数据库制品；
 5. 每个制品流式下载到 Windows 受管工作区并独立复核大小、SHA-256 和格式；
 6. 按依赖顺序恢复原来运行的组件；
 7. 重新执行组件和整应用健康检查；
@@ -317,13 +361,13 @@ schema v4 归档可以包含：
 
 桌面一次只跟踪一个当前候选。删除授权绑定工作区签发对象和目录文件身份；重建对象、工作区外路径、链接或外部替换均不会被误删。应用重启后不扫描和猜测旧候选。
 
-schema v3 可以检查、准备本地候选和做旧秘密标识认证，但由于缺少 schema v4 的精确发布及秘密修订绑定，不能自动远端激活。
+当前只接受 schema v6；schema v3/v4/v5 和旧激活配置明确返回版本不支持，不转换、不删除原归档。
 
 ## 14. 受管恢复
 
 ### 14.1 用户操作
 
-1. 在备份页选择“恢复”任务和 schema v4 完整归档；
+1. 在备份页选择“恢复”任务和 schema v6 完整归档；
 2. 从列表选择已保存目标服务器；
 3. 输入独立备份密码；
 4. 按所选凭据存储方式输入主密码；
@@ -336,14 +380,14 @@ schema v3 可以检查、准备本地候选和做旧秘密标识认证，但由�
 恢复在暂存远端输入前完成以下检查：
 
 - 归档和全部成员再次完整校验；
-- schema v4 发布、秘密、配置、资源、运行时和数据库身份完全一致；
+- schema v6 发布、秘密、配置、资源、运行时和数据库身份完全一致；
 - 目标主机 helper、sudo、tar、systemd、架构、发行版和类型化运行时能力满足要求；
 - 正式端口无外部占用，或本地已有图证明是该目标拥有的同一应用；
 - 目标受管根可写且至少具有两副本空间；
 - 归属冲突和外部流量变更均为否；
 - 数据库制品类型和版本身份可用于候选阶段。
 
-数据库目标密码来自归档中的精确秘密修订。前置阶段不假装目标已有该秘密；秘密暂存后，数据库候选恢复阶段再执行真实连接、工具和版本兼容检查。
+服务器型数据库目标密码来自归档中的精确秘密修订；SQLite 不要求数据库账号或密码。前置阶段不假装目标已有该秘密；秘密暂存后，数据库候选恢复阶段再执行真实连接、工具和版本兼容检查。
 
 ### 14.3 候选端口混合策略
 
@@ -375,7 +419,7 @@ schema v3 可以检查、准备本地候选和做旧秘密标识认证，但由�
 
 本地接管状态与远端状态分开：若同一应用的源图仍绑定另一台服务器，远端可成功但本地状态为 `DEFERRED_SOURCE_RETAINED`，避免静默覆盖仍需恢复的源端控制记录。
 
-当前 SQLite 物理恢复明确失败关闭，不会把数据库文件猜测复制到发布树。
+SQLite 先在独立候选数据库上验证组件和整应用健康，再停写提交。无法明确覆盖监听端口时，先停止旧应用，再以正式端口启动仍然隔离数据的候选；这不会提前提交候选数据库。原生服务通过 systemd 隔离映射重定向硬编码绝对路径，容器只挂候选数据。切换在目标文件系统内进行并保留原数据库及伴随文件；失败先确认候选和正式写入者退出，再回退数据库、配置和发布。无法确认停写时保留现场，返回人工恢复状态。
 
 ## 15. 双服务器离线迁移
 
@@ -446,24 +490,24 @@ AI 只用于对脱敏静态事实生成解释或建议，不参与确定性准�
 | 静态分析、类型化部署、生命周期 | 已实现 | helper v7 的 Ubuntu 24 与 CentOS Stream 9 代表性部署、起停及回滚证据见[四期验收](development/PHASE-4.md#acceptance)；未执行的语言和运行类型不视为通过 |
 | 一体化首页、右侧高级帮助、中英文映射 | 已实现，有布局和文案门禁 | 本地 Swing 离屏视觉检查 |
 | 自动编排、AI 缺项与 DB 管理 | 已实现，有确定性用例及原生 helper 离线测试 | 自动 UI、真实 AI 与数据库安装/替换的组合验收仍为 `RUNTIME-PENDING` |
-| 当前 helper v7 环境准备与部署 | 已实现 | Ubuntu 24.04 x86-64 已记录幂等准备、25 种源码代表组合及 JAR/静态/容器路径；具体生命周期和回滚范围按四期矩阵，不等于 125 场景全部通过 |
+| 当前 helper v9 FHS/SQLite/APP | 实现及本地门禁通过 | Ubuntu 24 八个多语言原生项目已通过代表性部署/业务/生命周期验收；其他平台、备份恢复及迁移仍待验证，helper v7 记录仅作历史证据 |
 | 完整远端备份 | 已实现并有桌面入口及默认跳过的文件型产品门面验收 | 真实 Linux、容器和数据库执行为 `RUNTIME-PENDING` |
-| schema v4 受管恢复 | 已实现并有桌面入口及默认跳过的双服务器产品门面验收 | 真实候选端口、正式提交和数据库恢复为 `RUNTIME-PENDING` |
+| schema v6 受管恢复 | 已实现并有桌面入口及默认跳过的双服务器产品门面验收 | 真实候选端口、正式提交和数据库恢复为 `RUNTIME-PENDING` |
 | 双服务器离线迁移 | 已实现并有桌面入口及默认跳过的停写迁移产品门面验收 | 双端真实执行和人工切流前终态为 `RUNTIME-PENDING` |
-| 五期 Web 功能服务台 | 未实现；规划为只在回环内部测试、无登录认证的功能版本 | 无 |
+| 五期 Web 功能服务台 | 共享规则与内部后端基础已接入；独立前端工作尚未纳入本批提交 | 后端本地门禁见四期，真实 Web 目标部署待验收 |
 | 六期官网与上线安全 | 仅有方向文档；主页、登录认证、公开部署和正式下载均未实现 | 无 |
 | 六期 Windows 生产更新/卸载产品入口 | 四期安全核心已实现，生产入口未实现 | 无 |
 
 本地自动化测试可以证明确定性逻辑、协议形状、安全拒绝和恢复顺序，但不能证明真实 SSH、systemd、容器、端口、数据库或文件系统行为已经成功。
 
-本地 UI/自动编排结果见[四期验收表](development/PHASE-4.md#acceptance-local)，helper v7 真实部署、修复与回归见[四期实际覆盖](development/PHASE-4.md#acceptance-live)，旧 helper v5 结果见[历史基线](development/PHASE-4.md#acceptance-baseline)。历史报告数量不作为当前工作区的验证结果；未执行的数据库、备份恢复和迁移继续标记 `RUNTIME-PENDING`。
+本地 UI 结果见[桌面验收](development/PHASE-4.md#acceptance-desktop)，自动编排结果见[部署验收](development/PHASE-4.md#acceptance-local)，helper v7 真实部署、修复与回归见[四期实际覆盖](development/PHASE-4.md#acceptance-live)，旧 helper v5 结果见[历史基线](development/PHASE-4.md#acceptance-baseline)。历史报告数量不作为当前工作区的验证结果；未执行的数据库、备份恢复和迁移继续标记 `RUNTIME-PENDING`。
 
 ## 19. 尚未实现或明确后置的能力
 
 - 人工外部切流后的目标持久化接管流程；
-- SQLite 自动完整备份和物理恢复映射；
+- 新 FHS/SQLite/APP 流程的真实 Ubuntu/CentOS、原生/Docker/Podman 及双服务器完整矩阵验收；
 - Redis 和一个应用多个数据库制品的完整备份/恢复；
-- 五期回环内部测试 Web 功能服务台；
+- 五期 Web 前端集成及真实 Linux、原生数据库、AI 与跨机备份迁移验收；
 - 六期公开官网主页、上线登录认证、公开部署和正式发布下载；
 - 自动 DNS、代理或负载均衡切换；
 - 六期 Windows 独立更新/卸载执行器、生产信任材料及实际文件替换/删除；具体方案在六期实施前另行确认。
@@ -493,3 +537,88 @@ Windows 更新与卸载已有签名验证、HMAC-SHA256 交接、程序/SQLite �
 - [四期验收方法与证据](development/PHASE-4.md#acceptance-methods)：真实环境配置和证据模板；
 - [PHASE-5.md](development/PHASE-5.md)：回环内部测试 Web 功能服务台范围；
 - [PHASE-6.md](development/PHASE-6.md)：官网、上线认证、正式发布下载和生产维护的大致方向。
+
+
+## 已部署应用、后台 APP 与一次性工具
+
+应用列表保留所有成功部署的内容，包括已经停止的网站和执行结束的工具。分类依据经审阅的服务声明：为其他机器或外部用户提供 HTTP、HTTPS、TCP、UDP 服务（包括局域网）归为网站；其余为 APP。下载文件、连接数据库、内部通信和本机健康检查不会单独改变分类。反向代理后的业务服务仍需声明为 `EXTERNAL`。
+
+| 运行内容 | 操作 | 使用入口 |
+| --- | --- | --- |
+| 长期网站或网络服务 | 启动、停止、重启、自启动 | HTTP(S) 网址，或 TCP/UDP 协议、地址、端口 |
+| 长期后台 APP | 启动、停止、重启、自启动 | 配套客户端命令；没有客户端时显示管理命令 |
+| 一次性 APP | 查看、复制命令；不提供启停、重启或自启动 | 受管 helper 的按需运行命令 |
+
+一次性工具显示“已安装可用”，不以持续存在进程作为成功条件。命令在目标 Linux 的终端运行，输入输出及退出码由业务程序返回；产品不提供内嵌终端、任务表单、定时任务或 GUI。详情、版本、备份恢复仍按适用能力提供。旧记录保留，但缺少新的运行声明时提示重新分析，不能依据旧网址自动推定网站类型。
+
+在项目根目录添加 UTF-8 的 `windowstolinux-application.properties`，或在桌面/Web 的应用运行声明中补填相同内容。声明不会作为 Shell 执行；参数按 `arg.0`、`arg.1` 连续编号传递，空格、中文和 `$` 均是参数本身。入口相对发布源码根，工作目录默认发布源码根。省略 `command.entrypoint` 时使用该语言适配器已审阅的主入口。
+
+```properties
+version=1
+mode=ON_DEMAND
+command.entrypoint=cli/main.py
+workingDirectory=
+verification.entrypoint=cli/main.py
+verification.arg.0=--self-test
+expectedOutput=self-test-ok
+health.timeout=10
+inputs=source
+input.source.hostPath=/srv/reports/input
+input.source.accessPath=/inputs/source
+```
+
+`ON_DEMAND` 必须声明安装验证入口，部署只执行隔离数据上的自检，不能把正式业务任务当作验证。已有 SQLite 使用宿主备份工具复制到验证目录；不会覆盖正式数据库或重放任务。默认同一 APP 同时只运行一个受管任务，重复调用返回忙碌。
+
+长期后台 APP 使用 `mode=DAEMON`，默认连续稳定运行 5 秒；可用 `health.mode=COMMAND` 和 `verification.*` 指定随包自检。配套客户端用 `client.entrypoint`、`client.arg.0` 等声明。没有运行声明时，即使未发现端口也要确认是否向外提供服务；默认建议本机 APP。有外部服务但协议或端口不明确时须补填，不能由访问网址推定。网络服务示例：
+
+```properties
+version=1
+mode=DAEMON
+endpoints=events
+endpoint.events.protocol=UDP
+endpoint.events.bind=0.0.0.0
+endpoint.events.port=9000
+endpoint.events.targetPort=9000
+endpoint.events.exposure=EXTERNAL
+health.mode=UDP
+health.port=9000
+health.requestHex=70696e67
+health.responseHex=706f6e67
+```
+
+UDP 必须验证监听归属和预期响应；也可用随包 `verification.*` 探针代替十六进制请求/响应。TCP 和 UDP 分开判断端口冲突。所有健康结果只证明目标主机本地探测，不代表公网或局域网的防火墙、代理已经放通。HTTP(S) 端点可以声明 `endpoint.<标识>.url` 作为公开入口。
+
+混合控制台项目可声明 `buildDirectory=cli`、`projectType=RUST_SERVICE`（或对应类型），以及配套 C/C++ 构建单元：
+
+```properties
+companions=worker
+companion.worker.type=CMAKE_SERVICE
+companion.worker.sourcePath=native
+companion.worker.artifactPath=.w2l/bin/worker
+companion.worker.environment=NATIVE_HELPER
+```
+
+主构建目录和配套构建关系必须写入源码声明后重新分析，界面补填不能绕过构建准入。配套单元必须通过受限 CMake 分析与构建，产物随主程序固定到同一发布版本，由主程序通过声明的环境变量调用，不创建独立服务。Python 标准库项目可在 `pyproject.toml` 明确声明 `dependencies = []`。这不改变各语言适配器现有的正式或试验支持等级。
+
+不需要环境变量的 APP 可以使用空配置，不必添加无用的端口或占位变量。
+
+原生常驻应用可声明最多 8 个同运行时工作进程，例如 PHP 页面和消费 SQLite 队列的 worker：
+
+```properties
+mode=DAEMON
+workers=queue
+worker.queue.entrypoint=worker.php
+worker.queue.arg.0=--foreground
+```
+
+工作进程必须保持前台运行，入口为源码内常规文件，参数仍按连续编号传递。它们共享主服务的账号、工作目录、环境变量和存储；任一进程退出都会停止同组其他进程，再由现有 systemd 重启策略处理。部署、回滚和生命周期以整个应用为单位。`ON_DEMAND` 不接受工作进程，容器多进程由镜像入口管理。工作进程声明进入发布身份和持久化配置；未声明工作进程的既有运行格式保持不变。该扩展已通过 Ubuntu CSV 项目的真实队列处理、统一重启及持久化报告验收，范围见 [多语言记录](../test/multi-language/VERIFICATION.md)。
+
+Composer PHP 项目可通过 `runtime.version` 明确版本，通过 `runtime.secondary` 指定 `router.php` 等源码内路由文件；HTTP 文档根仍为 `public`，依赖仍须有 Composer 锁文件。
+
+必须随源码交付的样例日志可在应用声明中写明 `source.include=samples/events.log`。此字段接受最多 32 个逗号分隔的精确相对文件路径，不支持通配符；默认运行日志仍排除，显式声明也不能纳入密钥、环境秘密文件、排除目录或源码根以外的文件。
+
+写入目录继续使用本说明书的 `/opt`、`/etc/opt`、`/var/opt` 及自定义路径规则。报告目录需在 `windowstolinux-storage.properties` 声明，SQLite 需在数据库声明中绑定；命令参数不能扩大写权限。外部输入仅只读绑定，不能覆盖系统目录、程序、配置或受管存储，不自动修改原文件权限、属主或安全标签。输入的内容不进入备份；恢复到另一主机时必须重新检查来源及可读权限。
+
+更新、回滚、备份和恢复会暂停新任务并最多等待当前任务 30 秒，超时返回忙碌，不强杀任务。离线迁移的最终备份复用源端停写窗口；目标完成后源端数据保留，源端任务准入保持暂停，避免两端同时写入。失败且恢复验证通过后才恢复准入；不能证明完整恢复时报告人工恢复状态。
+
+Ubuntu 24 原生常驻与按需代表性部署已通过八个多语言项目验证，详见 [多语言记录](../test/multi-language/VERIFICATION.md)；UDP、命令中断、容器执行、CentOS 及跨机矩阵仍为 `RUNTIME-PENDING`。

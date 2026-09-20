@@ -21,7 +21,7 @@ python samples/generate.py --output-dir "规模 数据" --records 100000
 .\cli\target\release\binary-inspector.exe --input "规模 数据/large.bin" --format json
 ```
 
-Linux 使用 `./` 并去掉 `.exe`；Linux 实机尚未验收。CLI 默认相对自身定位 `native/build/binary-worker[.exe]`，可以从任意工作目录运行；`NATIVE_HELPER` 覆盖子程序完整路径。
+Linux 使用 `./` 并去掉 `.exe`；Ubuntu 产品按需入口的验收范围见上级记录。CLI 默认相对自身定位 `native/build/binary-worker[.exe]`，可以从任意工作目录运行；`NATIVE_HELPER` 覆盖子程序完整路径。
 
 normal.bin：2 块、5 条记录，其中 3 条测量和 2 条事件；sum=7、min=-2、max=5、flagsOr=3。事件为“启动”“完成”。范围 -2..4 的测量筛选应得到 2 条、sum=2。empty.bin 为 0 块/0 条。损坏和截断输入明确失败，报告保留块号（从 0 开始）及文件字节偏移。
 
@@ -48,4 +48,4 @@ normal.bin：2 块、5 条记录，其中 3 条测量和 2 条事件；sum=7、m
 
 退出码：0 成功、2 格式/参数/校验错误、3 文件错误、4 子程序/协议错误；批量取最大错误码。报告中 successful 项的统计继续保留，不把失败项加入汇总。
 
-Windows 标准验收使用 100000 条记录、98 块、75000 条测量和 25000 条事件，独立计算 CRC/汇总并注入具体偏移错误，见上级 `VERIFICATION.md`。Linux 和 WindowsToLinux 产品部署未验证。大数据由生成器产生，不提交。
+Windows 标准验收使用 100000 条记录、98 块、75000 条测量和 25000 条事件，独立计算 CRC/汇总并注入具体偏移错误，见上级 `VERIFICATION.md`。Ubuntu 产品部署、按需入口及正常/损坏样本已经实测，范围见上级记录；标准规模 Linux 验收未执行。大数据由生成器产生，不提交。

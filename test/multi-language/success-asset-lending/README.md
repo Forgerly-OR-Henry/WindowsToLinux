@@ -44,4 +44,4 @@ UTF-8 JSON，C# 响应带 `X-Sample-Protocol: 2`。Node 校验协议和响应必
 
 隔离故障配置 `SAMPLE_FAULT_POINT=approval-reserved` 与 `SAMPLE_FAULT_DIR` 在事务首次占用后写入 ready 文件并等待 release 文件，60 秒超时，默认关闭。验收在此处终止 C# 并核对 SQLite 回滚，之后正常审批必须成功。
 
-数据库、依赖目录、构建产物和验收输出不提交。Windows 实际结果见上级验证记录；Linux 实机及产品部署仍待验证。
+数据库、依赖目录、构建产物和验收输出不提交。Windows 实际结果见上级验证记录；Ubuntu 产品部署、真实借还和重启证据见上级记录；标准规模 Linux 验收未执行。

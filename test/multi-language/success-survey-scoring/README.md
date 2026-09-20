@@ -61,4 +61,4 @@ Kotlin 的 UTF-8 JSON 响应带 X-Sample-Protocol:2。错误体 `{error}`，输�
 
 隔离故障闸门 SAMPLE_FAULT_POINT 可取 score-returned 或 submission-written，配合 SAMPLE_FAULT_DIR 在评分后或事务内写入 ready 文件，再等 release 文件，默认关闭、60 秒超时。运行器核验启动器的真实 JVM 归属并终止 JVM，检查不留下重复或半成品答卷。
 
-构建产物、数据库、生成数据和测试结果不提交。Windows 实际状态见上级验证记录；Linux 实机及产品部署待验证。
+构建产物、数据库、生成数据和测试结果不提交。Windows 实际状态见上级验证记录；Ubuntu 产品部署、真实 Ruby 评分和重启证据见上级记录；标准规模 Linux 验收未执行。

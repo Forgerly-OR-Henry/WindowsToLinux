@@ -47,4 +47,4 @@ Java 配置 HOST（默认 127.0.0.1）、PORT（18101）、DATA_DIR（当前目�
 
 隔离故障闸门：`SAMPLE_FAULT_POINT=task-written`、`SAMPLE_FAULT_DIR`。写入事务期间产生 task-written.ready，等待 task-written.release，60 秒超时，默认关闭。验收在边界终止 Java 后检查事务整体回滚，再执行正常修改。
 
-数据库、构建目录及生成输出不提交。Windows 本轮结果见上级验证记录；Linux 实机与 WindowsToLinux 产品部署仍待验证。
+数据库、构建目录及生成输出不提交。Windows 本轮结果见上级验证记录；Ubuntu 产品部署、任务写入和生命周期证据见上级记录；标准规模 Linux 验收未执行。

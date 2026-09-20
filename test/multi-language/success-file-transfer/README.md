@@ -50,4 +50,4 @@ UTF-8 JSON，Go 响应带 `X-Sample-Protocol: 2`。Node 对协议错误、必要
 
 故障闸门仅用于隔离验收：`SAMPLE_FAULT_POINT=chunk-written|before-publish`、`SAMPLE_FAULT_DIR`。到达边界写入 `<point>.ready` 后等待同目录 `<point>.release`，60 秒超时报错，默认关闭。不能把闸门配置用于日常体验。
 
-数据库、分块、版本、生成样本和构建产物不提交。Windows 本轮结果见上级验证记录；Linux 实机、产品部署、回滚恢复仍待验证。
+数据库、分块、版本、生成样本和构建产物不提交。Windows 本轮结果见上级验证记录；Ubuntu 产品部署、上传下载和重启证据见上级记录；本项目回滚恢复及标准规模 Linux 验收未执行。
