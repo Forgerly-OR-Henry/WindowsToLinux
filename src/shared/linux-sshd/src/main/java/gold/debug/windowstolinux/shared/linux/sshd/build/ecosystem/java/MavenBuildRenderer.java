@@ -30,12 +30,12 @@ public final class MavenBuildRenderer implements DeploymentBuildRenderer {
                     test -f ./.mvn/wrapper/maven-wrapper.properties
                     chmod 700 -- ./mvnw
                     run ./mvnw -v
-                    run ./mvnw -B "${maven_toolchain_arguments[@]}" -DskipTests package
+                    maven_package ./mvnw -B "${maven_toolchain_arguments[@]}" -DskipTests package
                     """;
             case MAVEN -> """
                     command -v mvn >/dev/null 2>&1
                     run mvn -v
-                    run mvn -B "${maven_toolchain_arguments[@]}" -DskipTests package
+                    maven_package mvn -B "${maven_toolchain_arguments[@]}" -DskipTests package
                     """;
             default -> throw new IllegalArgumentException("Maven renderer requires a Maven build identity");
         };
@@ -47,6 +47,26 @@ public final class MavenBuildRenderer implements DeploymentBuildRenderer {
                   printf '<toolchains><toolchain><type>jdk</type><provides><version>%s</version></provides><configuration><jdkHome>%s</jdkHome></configuration></toolchain></toolchains>\\n' "$WTL_JAVA_BRANCH" "$WTL_JAVA_HOME" > "$toolchains"
                   maven_toolchain_arguments=(--global-toolchains "$toolchains" --toolchains "$toolchains" "-Dmaven.compiler.executable=$WTL_JAVA_HOME/bin/javac" -Dmaven.compiler.fork=true)
                 fi
-                """ + build + SpringBootArtifactBuildScript.verify("./target"));
+                """ + downloadRetry() + build + SpringBootArtifactBuildScript.verify("./target"));
+    }
+
+    static String downloadRetry() {
+        return """
+                maven_package() {
+                  local attempt status log="$mutable/maven-download-attempt.log"
+                  local -a pipeline_status
+                  for attempt in 1 2; do
+                    if "$@" 2>&1 | tee "$log"; then rm -f -- "$log"; return 0
+                    else pipeline_status=("${PIPESTATUS[@]}"); fi
+                    status="${pipeline_status[0]}"
+                    if [ "${pipeline_status[1]}" -ne 0 ]; then rm -f -- "$log"; return "${pipeline_status[1]}"; fi
+                    if [ "$attempt" -eq 2 ] || ! grep -Eq '^\\[ERROR\\].*Could not transfer artifact.*(Premature end of Content-Length|Connection reset|Read timed out)' "$log"; then
+                      rm -f -- "$log"; return "$status"
+                    fi
+                    printf 'BUILD_DOWNLOAD_RETRY=maven:%s/2\\n' "$attempt"
+                    sleep 2
+                  done
+                }
+                """;
     }
 }

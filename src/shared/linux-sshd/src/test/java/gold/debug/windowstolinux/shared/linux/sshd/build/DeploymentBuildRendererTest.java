@@ -66,7 +66,7 @@ class DeploymentBuildRendererTest {
         assertTrue(render(new MavenBuildRenderer(), DeploymentBuildToolType.MAVEN_WRAPPER, spring)
                 .contains("./mvnw -B \"${maven_toolchain_arguments[@]}\" -DskipTests package"));
         assertTrue(render(new MavenBuildRenderer(), DeploymentBuildToolType.MAVEN, spring)
-                .contains("run mvn -B \"${maven_toolchain_arguments[@]}\" -DskipTests package"));
+                .contains("maven_package mvn -B \"${maven_toolchain_arguments[@]}\" -DskipTests package"));
         assertTrue(render(new JavaJarBuildRenderer(), DeploymentBuildToolType.JAVA,
                 new DeploymentRuntimeSpecification.JavaJar("server.jar", "demo.Main", "21", List.of(), List.of(), TCP))
                 .contains("test -f \"$artifact\""));
