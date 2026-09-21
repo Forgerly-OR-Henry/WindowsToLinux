@@ -30,13 +30,16 @@ final class DeploymentTaskControls extends JPanel {
     private String taskId;
     /** Polls only process-local state while a task is active. / 仅在任务活动时轮询进程内状态。 */
     private final javax.swing.Timer timer;
+    /** Supplies a fresh temporary unlock buffer on the UI thread. / 在界面线程提供新的临时解锁缓冲区。 */
+    private final java.util.function.Supplier<char[]> credentials;
     /** Builds controls without starting work or polling. / 构建控件，不启动工作或轮询。
      * @param service narrow task facade / 窄任务门面
      * @param messages localized messages / 本地化消息
+     * @param credentials fresh unlock buffer / 新解锁缓冲区
      * @param output visible log / 可见日志
      */
-    DeploymentTaskControls(AutomaticDeploymentApplicationFacade service,PageMessagePresenter messages,Consumer<String> output){
-        super(new FlowLayout(FlowLayout.LEFT,6,0));this.service=service;this.messages=messages;this.output=output;setOpaque(false);
+    DeploymentTaskControls(AutomaticDeploymentApplicationFacade service,PageMessagePresenter messages,Consumer<String> output,java.util.function.Supplier<char[]> credentials){
+        super(new FlowLayout(FlowLayout.LEFT,6,0));this.service=service;this.messages=messages;this.output=output;this.credentials=credentials;setOpaque(false);
         pause.setText(messages.text("deployment.task.pause"));resume.setText(messages.text("deployment.task.resume"));cancel.setText(messages.text("deployment.task.cancel"));
         refreshModels.setText(messages.text("deployment.task.refreshModels"));refreshModels.addActionListener(e->command(AgentTaskCommandAction.REFRESH_MODELS));
         pause.addActionListener(e->command(AgentTaskCommandAction.PAUSE));resume.addActionListener(e->command(AgentTaskCommandAction.RESUME));cancel.addActionListener(e->command(AgentTaskCommandAction.CANCEL));
@@ -72,7 +75,14 @@ final class DeploymentTaskControls extends JPanel {
                     events->details.setText(events.stream().map(value->value.get("created_at")+" "+value.get("event_type")+" "+value.get("action_id")+" "+value.get("detail")).collect(java.util.stream.Collectors.joining("\n"))),
                     failure->details.setText(messages.safe(failure)));});
             JSplitPane split=new JSplitPane(JSplitPane.HORIZONTAL_SPLIT,new JScrollPane(tasks),new JScrollPane(details));split.setResizeWeight(.35);split.setPreferredSize(new Dimension(900,480));
-            JOptionPane.showMessageDialog(this,split,messages.text("deployment.task.history"),JOptionPane.PLAIN_MESSAGE);
+            JButton inspect=new JButton(messages.text("deployment.task.inspect"));
+            inspect.addActionListener(event->{if(tasks.getSelectedIndex()<0)return;String id=rows.get(tasks.getSelectedIndex()).get("id");
+                char[] master=credentials.get();inspect.setEnabled(false);
+                DesktopTaskExecutor.run(()->{try{return service.inspectDeploymentTask(id,master);}finally{Arrays.fill(master,'\0');}},
+                    observed->{inspect.setEnabled(true);details.append("\n"+messages.text("deployment.agent.unresolvedOutcome")+"\n"+observed);},
+                    failure->{inspect.setEnabled(true);details.append("\n"+messages.safe(failure));});});
+            JPanel historyPanel=new JPanel(new BorderLayout(0,8));historyPanel.add(split,BorderLayout.CENTER);historyPanel.add(inspect,BorderLayout.SOUTH);
+            JOptionPane.showMessageDialog(this,historyPanel,messages.text("deployment.task.history"),JOptionPane.PLAIN_MESSAGE);
         },failure->output.accept(messages.safe(failure)));
     }
 }

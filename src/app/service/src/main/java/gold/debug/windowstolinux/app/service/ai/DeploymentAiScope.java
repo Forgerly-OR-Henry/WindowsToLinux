@@ -24,6 +24,22 @@ public final class DeploymentAiScope implements AutoCloseable {
     private long reportedTokens;
     /** Number of calls with reported token usage. / 返回 Token 用量的调用数。 */
     private long measuredCalls;
+    /** Metadata-only audit sink. / 仅元数据审计端口。 */
+    private java.util.function.Consumer<Map<String,String>> events=event->{};
+    /** Actual human callbacks. / 实际人工回调次数。 */
+    private long humanInterventions;
+    /** Installs a durable sink before model calls. / 模型调用前安装持久化端口。
+     * @param events metadata-only events / 仅元数据事件
+     */
+    public void audit(java.util.function.Consumer<Map<String,String>> events){this.events=Objects.requireNonNull(events);}
+    /** Counts an actual human interaction without retaining its answer. / 记录实际人工交互，不保留回答。 */
+    public void human(){humanInterventions++;}
+    /** Records the actual purpose and profile without prompt or endpoint data. / 记录实际用途及模型身份，不记录提示词或端点。
+     * @param purpose route / 路由
+     * @param profile model identity / 模型身份
+     * @param status protocol outcome / 协议结果
+     */
+    public void attempted(AiPurposeType purpose,String profile,String status){events.accept(Map.of("type","MODEL_ATTEMPT","action","","detail",purpose.name()+":"+profile+":"+status));}
     /** Returns remaining models without resetting prior failures. / 返回剩余模型，不重置历史失败。
      * @param purpose independent route / 独立路由
      * @return immutable suffix / 不可变后缀
@@ -34,7 +50,8 @@ public final class DeploymentAiScope implements AutoCloseable {
      * @return whether another model remains / 是否还有后续模型
      */
     public boolean advance(AiPurposeType purpose){var remaining=remaining(purpose);if(!remaining.isEmpty())consumed.computeIfAbsent(purpose,p->new HashSet<>()).add(remaining.getFirst());
-        positions.put(purpose,positions.getOrDefault(purpose,0)+1);return !remaining(purpose).isEmpty();}
+        positions.put(purpose,positions.getOrDefault(purpose,0)+1);
+        events.accept(Map.of("type","MODEL_HANDOFF","action","","detail",purpose.name()+":"+(remaining.isEmpty()?"exhausted":remaining.getFirst().id())+"->"+(remaining(purpose).isEmpty()?"exhausted":remaining(purpose).getFirst().id())));return !remaining(purpose).isEmpty();}
     /** Counts an attempted provider request. / 记录一次提供者请求尝试。 */
     public void called(){calls++;}
     /** Records usage only when returned by the provider. / 仅在提供者返回用量时记录。
@@ -44,7 +61,7 @@ public final class DeploymentAiScope implements AutoCloseable {
     /** Captures nonsecret routing and usage evidence. / 捕获非秘密路由及用量证据。
      * @return bounded metrics / 有界指标
      */
-    public Map<String,String> metrics(){return Map.of("modelCalls",Long.toString(calls),"reportedTokens",Long.toString(reportedTokens),"callsWithTokenUsage",Long.toString(measuredCalls));}
+    public Map<String,String> metrics(){return Map.of("modelCalls",Long.toString(calls),"reportedTokens",Long.toString(reportedTokens),"callsWithTokenUsage",Long.toString(measuredCalls),"humanInterventions",Long.toString(humanInterventions));}
     /** Opening thread, used to prevent accidental cross-worker cleanup. / 打开线程，用于防止跨线程清理。 */
     private final Thread owner=Thread.currentThread();
     /** Opens one non-nested deployment scope. / 打开一个不可嵌套部署作用域。

@@ -270,7 +270,8 @@ public final class DeploymentPage implements ReviewContext {
         output.setText(messages.text("auto.idle"));
         JPanel log = c.outputCard(messages.text("auto.log"), messages.text("auto.log.hint"), output);
         handoffs.setOpaque(false); handoffScroll.setVisible(false); handoffScroll.setPreferredSize(new Dimension(0,46));
-        taskControls=new DeploymentTaskControls(service,messages,this::append);
+        taskControls=new DeploymentTaskControls(service,messages,this::append,()->{
+            char[] master=serverContext.masterPassword();return master.length==0?new DeploymentInputDialog(owner,service,c,messages).requestSecret("field.masterPassword"):master;});
         JPanel taskFooter=c.transparent(new BorderLayout(0,8));taskFooter.add(taskControls,BorderLayout.NORTH);taskFooter.add(handoffScroll,BorderLayout.SOUTH);
         log.add(taskFooter, BorderLayout.SOUTH); page.add(log, BorderLayout.CENTER);
         configureAdvanced(advanced, c,openServers);

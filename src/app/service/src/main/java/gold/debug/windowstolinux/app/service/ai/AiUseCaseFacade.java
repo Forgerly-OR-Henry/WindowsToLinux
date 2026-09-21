@@ -28,6 +28,8 @@ public final class AiUseCaseFacade {
      * <p>角色客户端。
      */
     private final OpenAiCompatibleRoleClient roleClient;
+    /** Dedicated strict protocol; separate request contexts for decisions and reviews. / 专用严格协议，决策及审批使用独立请求上下文。 */
+    private final gold.debug.windowstolinux.shared.ai.client.AgentProtocolClient agentClient;
     /**
      * Chain.
      * <p>调用链。
@@ -48,8 +50,7 @@ public final class AiUseCaseFacade {
      */
     public gold.debug.windowstolinux.shared.model.deployment.AssistedDeploymentAdvice assist(String phase,java.util.Map<String,java.util.List<String>> candidates,
             java.util.Map<String,String> evidence,char[] master)throws SQLException{
-        var client=new gold.debug.windowstolinux.shared.ai.client.AgentProtocolClient();
-        var result=chain.invoke(master,(profile,key)->{var reply=client.assist(profile.chatCompletionsEndpoint(),profile.model(),key,phase,candidates,evidence);
+        var result=chain.invoke(master,(profile,key)->{var reply=agentClient.assist(profile.chatCompletionsEndpoint(),profile.model(),key,phase,candidates,evidence);
             DeploymentAiScope.current().ifPresent(scope->scope.usage(reply.tokens()));
             return new AiProviderChain.Attempt<>(reply.value(),gold.debug.windowstolinux.shared.ai.collaboration.invocation.AiInvocationStatus.VALIDATED,"assisted-advice-validated");});
         if(!result.valid())throw new IllegalStateException("deployment-models-unavailable");return result.value().orElseThrow();
@@ -58,7 +59,7 @@ public final class AiUseCaseFacade {
      * @param master unlock buffer / 解锁缓冲区
      * @return task-owned adapter / 任务所属适配器
      */
-    public DeploymentAgentModelAdapter agentModels(char[] master){return new DeploymentAgentModelAdapter(chain,new gold.debug.windowstolinux.shared.ai.client.AgentProtocolClient(),master);}
+    public DeploymentAgentModelAdapter agentModels(char[] master){return new DeploymentAgentModelAdapter(chain,agentClient,master);}
     /**
      * Tests visual understanding separately from the text save probe. / 独立于文字保存测试验证视觉理解。
      *
@@ -90,6 +91,17 @@ public final class AiUseCaseFacade {
      * @throws NullPointerException if a required input is absent / 必需输入缺失时
      */
     AiUseCaseFacade(AiProfileRepository profiles, DesktopSecretStoreService secrets, OpenAiCompatibleRoleClient roleClient) {
+        this(profiles,secrets,roleClient,new gold.debug.windowstolinux.shared.ai.client.AgentProtocolClient());
+    }
+    /** Injects both advisory and Agent transports for isolated contract tests. / 为隔离契约测试注入建议及 Agent 传输。
+     * @param profiles model repository / 模型仓库
+     * @param secrets credential boundary / 凭据边界
+     * @param roleClient existing advisory protocol / 既有建议协议
+     * @param agentClient strict isolated Agent protocol / 严格独立 Agent 协议
+     */
+    AiUseCaseFacade(AiProfileRepository profiles,DesktopSecretStoreService secrets,OpenAiCompatibleRoleClient roleClient,
+            gold.debug.windowstolinux.shared.ai.client.AgentProtocolClient agentClient){
+        this.agentClient=Objects.requireNonNull(agentClient);
         this.profiles = Objects.requireNonNull(profiles, "profiles");
         Objects.requireNonNull(secrets, "secrets");
         this.roleClient = Objects.requireNonNull(roleClient, "roleClient");

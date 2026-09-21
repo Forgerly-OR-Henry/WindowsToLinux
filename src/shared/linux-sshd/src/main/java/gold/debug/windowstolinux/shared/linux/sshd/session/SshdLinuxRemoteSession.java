@@ -387,6 +387,18 @@ public final class SshdLinuxRemoteSession implements DeploymentRemoteSession {
         return candidates.cleanup(workspace);
     }
 
+    /** Queries the exact candidate's task marker. / 查询精确候选项的任务标记。
+     * @param candidate exact task and candidate / 精确任务及候选项
+     * @return observed facts / 观测事实
+     * @throws LinuxOperationException if observation fails / 观测失败时
+     */
+    @Override public java.util.Map<String,String> inspectTaskCandidate(gold.debug.windowstolinux.shared.linux.transfer.RemoteTaskCandidate candidate)throws LinuxOperationException{return candidates.inspectTask(candidate.workspace(),candidate.taskId());}
+    /** Stops and cleans only a task-owned candidate. / 仅停止并清理任务所属候选项。
+     * @param candidate exact task and candidate / 精确任务及候选项
+     * @return cleanup result / 清理结果
+     * @throws LinuxOperationException if execution fails / 执行失败时
+     */
+    @Override public RemoteStepResult cleanupTaskCandidate(gold.debug.windowstolinux.shared.linux.transfer.RemoteTaskCandidate candidate)throws LinuxOperationException{return candidates.cleanupTask(candidate.workspace(),candidate.taskId());}
     /**
      * Stages restore files.
      * <p>暂存恢复文件集合。

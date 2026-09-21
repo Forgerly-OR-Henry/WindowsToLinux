@@ -518,7 +518,7 @@ class PackageStructureArchitectureTest {
 
         register(packages, "gold.debug.windowstolinux.app.service.deployment.automatic",
                 "AutomaticDatabaseUseCase", "AutomaticDeploymentUseCase", "AutomaticInputCompletion",
-                "DeploymentFormUseCase", "ComponentFormUseCase", "AgentDeploymentInteraction", "AgentManagedToolCatalog", "AssistedDeploymentAdvisor", "AutomaticActionDescription", "AutomaticAgentBoundary", "AutomaticDeploymentTaskService");
+                "DeploymentFormUseCase", "ComponentFormUseCase", "AgentDeploymentInteraction", "AgentManagedToolCatalog", "AssistedDeploymentAdvisor", "AutomaticActionDescription", "AutomaticAgentBoundary", "AutomaticDeploymentTaskService", "AgentRemoteToolService", "DeploymentDiagnosticEvidence");
         register(packages, "gold.debug.windowstolinux.shared.deploy.execution.environment", "DatabaseInstanceResolver", "NativeDatabasePreparationService");
         register(packages, "gold.debug.windowstolinux.shared.deploy.input", "AutomaticRuntimeResolver", "DeploymentRuntimeParser");
         register(packages, "gold.debug.windowstolinux.shared.config.input", "DeploymentConfigurationParser");

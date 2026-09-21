@@ -38,6 +38,8 @@ public final class DeploymentAgentSession {
     private final Map<String,Integer> evidenceRounds=new HashMap<>();
     /** Actions awaiting a new observation before another review. / 等待新观察后才能再次审批的动作。 */
     private final Map<String,String> awaitingEvidence=new HashMap<>();
+    /** Last verifiable facts for each semantic diagnostic operation. / 每个语义诊断操作上次可验证事实。 */
+    private final Map<String,String> observedFacts=new HashMap<>();
     /** Binds ports without invoking a model or executor. / 绑定端口，不调用模型或执行器。
      * @param taskId task identity / 任务身份
      * @param target server identity / 服务器身份
@@ -87,19 +89,32 @@ public final class DeploymentAgentSession {
             if(denied.contains(action.intentBinding())){control.awaitUser("approval-rejected");continue;}
             if(action.binding().equals(awaitingEvidence.get(action.id()))){control.awaitUser("approval-needs-evidence");continue;}
             if(!approve(action,executor,menu.values()))continue;
+            AgentObservation observed=dispatch(action,executor);
+            if(action.id().equals(required)){if(!observed.succeeded())stalled();else noProgress=0;return observed;}
+            menu.remove(action.id());
+            String actual=AgentAction.digest(new TreeMap<>(observed.facts()).toString());
+            boolean changed=!actual.equals(observedFacts.put(action.intentBinding(),actual));
+            if(observed.succeeded()&&changed)noProgress=0;else stalled();
+        }
+    }
+    /** Persists dispatch intent and preserves uncertainty until actual execution returns. / 持久化派发意图，直至实际执行返回前保留不确定状态。
+     * @param action approved exact operation / 已批准精确操作
+     * @param executor controlled execution port / 受控执行端口
+     * @return actual observation / 实际观测
+     * @throws Exception when execution or durable evidence fails / 执行或持久化证据失败时
+     */
+    private AgentObservation dispatch(AgentAction action,AgentExecutionPort executor)throws Exception{
             // Persist intent before dispatch; journal failure prevents remote effects. / 先记录意图，记录失败时不产生远端影响。
             event("EXECUTING",action.id(),action.binding());executed.add(action.id());
             AgentObservation observed;
             try{observed=executor.execute(action);}
             catch(Exception failure){
-                if(failure instanceof java.util.concurrent.CancellationException&&action.tool()==AgentToolType.ANALYZE_SOURCE){event("CANCELLED",action.id(),action.binding());control.finish(AgentTaskState.CANCELLED);}
+                if(!action.tool().modifiesServer()){event("RESULT",action.id(),"true:false:read-only-query-failed");control.finish(failure instanceof java.util.concurrent.CancellationException?AgentTaskState.CANCELLED:AgentTaskState.FAILED);}
                 else{event("UNKNOWN",action.id(),action.binding());control.finish(AgentTaskState.UNKNOWN);}throw failure;}
             event(observed.known()?"RESULT":"UNKNOWN",action.id(),observed.known()+":"+observed.succeeded()+":"+AgentAction.digest(new TreeMap<>(observed.facts()).toString()));
             history.add(action.tool().name()+" "+action.id()+" known="+observed.known()+" success="+observed.succeeded()+" facts="+new TreeMap<>(observed.facts()));
             if(!observed.known()){control.finish(AgentTaskState.UNKNOWN);throw new IllegalStateException("execution outcome unknown; reconcile before any replay");}
-            if(action.id().equals(required)){if(!observed.succeeded())stalled();else noProgress=0;return observed;}
-            menu.remove(action.id());if(observed.succeeded())noProgress=0;else stalled();
-        }
+        return observed;
     }
     /** Applies mandatory local, independent AI and optional per-action human approval. / 应用强制本地、独立 AI 及按策略逐动作人工审批。
      * @param action exact selected action / 精确所选动作
@@ -109,6 +124,7 @@ public final class DeploymentAgentSession {
      * @throws Exception on unavailable validation / 验证不可用时
      */
     private boolean approve(AgentAction action,AgentExecutionPort executor,Collection<AgentAction> available)throws Exception{
+            if(evidenceRounds.getOrDefault(action.id(),0)>2){control.awaitUser("approval-needs-evidence");return false;}
             AgentRiskLevel local=executor.validate(action);
             event("LOCAL_VALIDATION",action.id(),local.name());
             if(local==AgentRiskLevel.FORBIDDEN||action.risk()==AgentRiskLevel.FORBIDDEN){
@@ -119,11 +135,11 @@ public final class DeploymentAgentSession {
             catch(Exception failure){if(Thread.currentThread().isInterrupted())throw failure;control.awaitUser("approval-service-unavailable");return false;}
             control.checkpoint();
             event("AI_REVIEW",action.id(),review.decision().name()+":"+review.risk().name()+":"+review.binding());
-            if(review.decision()!=AgentReviewDecision.ALLOW){
+            if(review.decision()!=AgentReviewDecision.ALLOW||review.risk()==AgentRiskLevel.FORBIDDEN){
                 history.add("action "+action.id()+" "+review.decision().name());
-                if(review.decision()==AgentReviewDecision.DENY){denied.add(action.intentBinding());control.awaitUser("approval-rejected");}
+                if(review.decision()==AgentReviewDecision.DENY||review.risk()==AgentRiskLevel.FORBIDDEN){denied.add(action.intentBinding());control.awaitUser("approval-rejected");}
                 else{awaitingEvidence.put(action.id(),action.binding());
-                    if(evidenceRounds.merge(action.id(),1,Integer::sum)>2||available.stream().noneMatch(a->a.tool()==AgentToolType.SERVICE_STATUS||a.tool()==AgentToolType.SERVICE_LOGS||a.tool()==AgentToolType.VERIFY_SERVER))control.awaitUser("approval-needs-evidence");}
+                    if(evidenceRounds.merge(action.id(),1,Integer::sum)>2||available.stream().noneMatch(a->a.tool()==AgentToolType.SERVICE_STATUS||a.tool()==AgentToolType.SERVICE_LOGS||a.tool()==AgentToolType.VERIFY_SERVER||a.tool()==AgentToolType.CANDIDATE_STATUS))control.awaitUser("approval-needs-evidence");}
                 return false;
             }
             AgentRiskLevel risk;

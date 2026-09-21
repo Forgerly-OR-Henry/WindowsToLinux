@@ -25,4 +25,14 @@ class AgentTaskRepositoryTest {
         try(var db=DesktopPersistence.open(directory)){var r=db.agentTasks();r.create("task","server","a".repeat(64),DeploymentAutomationMode.AGENT,AgentApprovalMode.FULL_CONTROL,"b".repeat(64),"deployment-v1","approval-v1");r.state("task",AgentTaskState.UNKNOWN);}
         try(var db=DesktopPersistence.open(directory)){assertEquals("UNKNOWN",db.agentTasks().recent().getFirst().get("state"));}
     }
+    @Test void anUnfinishedDispatchBlocksANewTaskEvenWhenTerminalStateWasWronglyRecorded()throws Exception{
+        try(var db=DesktopPersistence.open(directory)){
+            var r=db.agentTasks();r.create("task","server","a".repeat(64),DeploymentAutomationMode.AGENT,AgentApprovalMode.AUTOMATIC,"b".repeat(64),"deployment-v1","approval-v1");
+            assertTrue(r.unresolved("server").isEmpty());r.event("task","EXECUTING","op","c".repeat(64));r.state("task",AgentTaskState.FAILED);
+            assertEquals(List.of("task"),r.unresolved("server"));assertTrue(r.unresolved("other").isEmpty());
+            r.event("task","RECONCILIATION_QUERY","op","candidate=absent");assertEquals(List.of("task"),r.unresolved("server"));
+            r.event("task","RESULT","different-action","known");assertEquals(List.of("task"),r.unresolved("server"));
+            r.event("task","RESULT","op","known");assertTrue(r.unresolved("server").isEmpty());
+        }
+    }
 }

@@ -11,24 +11,48 @@ import java.util.List;
 import java.util.Map;
 import gold.debug.windowstolinux.shared.linux.protocol.ManagedHelperProtocol;
 
-/** Assembles the root-owned managed helper from fixed responsibility fragments and rejects protocol drift. / 从固定职责片段拼装 root 持有的受管 helper 并拒绝协议漂移。 */
+/**
+ * Assembles the root-owned managed helper from fixed responsibility fragments and rejects protocol drift. / 从固定职责片段拼装 root 持有的受管 helper 并拒绝协议漂移。
+ */
 public final class ManagedHelperBundle {
-    /** Protocol version printed by this exact helper bundle. / 此精确 helper 包输出的协议版本。 */
+    /**
+     * Protocol version printed by this exact helper bundle. / 此精确 helper 包输出的协议版本。
+     */
     public static final int PROTOCOL_VERSION = ManagedHelperProtocol.VERSION;
-    /** Platform-owned helper installation directory. / 平台持有的 helper 安装目录。 */
+    /**
+     * Platform-owned helper installation directory. / 平台持有的 helper 安装目录。
+     */
     public static final String DIRECTORY = "/usr/local/lib/windowstolinux";
-    /** Fixed root management entrypoint. / 固定的 root 管理入口。 */
+    /**
+     * Fixed root management entrypoint. / 固定的 root 管理入口。
+     */
     public static final String PATH = DIRECTORY + "/managed-helper";
-    /** Platform-owned Java 21 launcher used by every managed systemd unit. / 每个受管 systemd 单元使用的平台持有 Java 21 启动器。 */
+    /**
+     * Platform-owned Java 21 launcher used by every managed systemd unit. / 每个受管 systemd 单元使用的平台持有 Java 21 启动器。
+     */
     public static final String JAVA_RUNTIME_PATH = DIRECTORY + "/java-21";
-    /** Expected byte-for-byte helper bundle identity. / 预期的 helper 逐字节身份。 */
-    public static final String EXPECTED_SHA256 = "fecb8ce674358d07ec686ea503a77821e39579374ba88df54bf12520506ca40e";
+    /**
+     * Expected byte-for-byte helper bundle identity. / 预期的 helper 逐字节身份。
+     */
+    public static final String EXPECTED_SHA256 = "461cc90a1562fd4ecb91c017465d74b0fe3b5ec7f96c97446cc6014d6ff1ff63";
+    /**
+     * ROOT.
+     * <p>根目录。
+     */
     private static final String ROOT = "/gold/debug/windowstolinux/shared/linux/sshd/";
+    /**
+     * RESOURCE INSERTS.
+     * <p>资源INSERTS。
+     */
     private static final Map<String, String> RESOURCE_INSERTS = Map.of(
             "# @compat:apparmor@\n", "execution/protocol/helper/fragments/workspace/apparmor-namespace.sh",
             "# @compat:systemd-isolation@\n", "runtime/systemd/helper/systemd-manager-isolation.sh",
             "# @compat:selinux-entry@\n", "runtime/systemd/helper/selinux-command-entry.sh",
             "# @compat:centos-repositories@\n", "distro/dnf/centos-source-repositories.py");
+    /**
+     * Ordered packaged helper fragments.
+     * <p>有序打包 helper 片段。
+     */
     private static final List<String> FRAGMENTS = List.of(
             "execution/protocol/helper/fragments/00-protocol-foundation.sh",
             "execution/protocol/helper/fragments/release/10-typed-release.sh",
@@ -67,7 +91,12 @@ public final class ManagedHelperBundle {
             "execution/protocol/helper/fragments/database/20-native-targets.sh",
             "execution/protocol/helper/fragments/70-command-dispatch.sh");
 
-    /** Installed non-privileged build entrypoint. / 安装后的非特权构建入口。 */
+    /**
+     * Installed non-privileged build entrypoint. / 安装后的非特权构建入口。
+     *
+     * @return render build entry text / 渲染构建条目文本
+     * @throws IllegalStateException if the required state or runtime facility is unavailable / 所需状态或运行设施不可用时
+     */
     public static String renderBuildEntry() {
         try (InputStream stream = ManagedHelperBundle.class.getResourceAsStream(ROOT
                 + "execution/protocol/helper/fragments/workspace/24-build-entry.sh")) {
@@ -78,9 +107,18 @@ public final class ManagedHelperBundle {
         }
     }
 
+    /**
+     * Prevents instantiation of this static contract helper.
+     * <p>防止实例化当前静态契约辅助类。
+     */
     private ManagedHelperBundle() { }
 
-    /** Assembles and verifies the immutable helper protocol script. / 拼装并验证不可变 helper 协议脚本。 */
+    /**
+     * Assembles and verifies the immutable helper protocol script. / 拼装并验证不可变 helper 协议脚本。
+     *
+     * @return render script text / 渲染脚本文本
+     * @throws IllegalStateException if the required state or runtime facility is unavailable / 所需状态或运行设施不可用时
+     */
     public static String renderScript() {
         byte[] bytes = assemble();
         String actual = sha256(bytes);
@@ -90,10 +128,24 @@ public final class ManagedHelperBundle {
         return new String(bytes, StandardCharsets.UTF_8);
     }
 
+    /**
+     * Combines fixed helper fragments with resource inserts and the shipped toolchain catalog into UTF-8 bytes.
+     * <p>将固定 helper 片段、资源插入内容及随附工具链目录组合为 UTF-8 字节。
+     *
+     * @return encoded or copied content buffer / 编码或复制得到的内容缓冲区
+     */
     static byte[] assemble() {
         return assemble(gold.debug.windowstolinux.shared.model.toolchain.ToolchainSupportCatalog.defaults());
     }
 
+    /**
+     * Combines fixed helper fragments with resource inserts and the shipped toolchain catalog into UTF-8 bytes.
+     * <p>将固定 helper 片段、资源插入内容及随附工具链目录组合为 UTF-8 字节。
+     *
+     * @param catalog catalog / 目录
+     * @return encoded or copied content buffer / 编码或复制得到的内容缓冲区
+     * @throws IllegalStateException if the required state or runtime facility is unavailable / 所需状态或运行设施不可用时
+     */
     static byte[] assemble(gold.debug.windowstolinux.shared.model.toolchain.ToolchainSupportCatalog catalog) {
         ByteArrayOutputStream output = new ByteArrayOutputStream();
         for (String fragment : FRAGMENTS) {
@@ -125,6 +177,15 @@ public final class ManagedHelperBundle {
         return output.toByteArray();
     }
 
+    /**
+     * Replaces known helper insertion markers with their required packaged resource contents.
+     * <p>使用必需的打包资源内容替换已知 helper 插入标记。
+     *
+     * @param script build script path / 构建脚本路径
+     * @return expand resource inserts text / expand资源Inserts文本
+     * @throws IOException if the required file or stream operation fails / 所需文件或流操作失败时
+     * @throws IllegalStateException if the required state or runtime facility is unavailable / 所需状态或运行设施不可用时
+     */
     private static String expandResourceInserts(String script) throws IOException {
         for (var insert : RESOURCE_INSERTS.entrySet()) {
             if (!script.contains(insert.getKey())) continue;
@@ -139,6 +200,13 @@ public final class ManagedHelperBundle {
         return script;
     }
 
+    /**
+     * Renders the supported toolchain catalog as the helper's fixed Python data literal.
+     * <p>将受支持工具链目录渲染为 helper 的固定 Python 数据字面量。
+     *
+     * @param catalog catalog / 目录
+     * @return catalog literal text / 目录Literal文本
+     */
     private static String catalogLiteral(gold.debug.windowstolinux.shared.model.toolchain.ToolchainSupportCatalog catalog) {
         StringBuilder data = new StringBuilder("SHIPPED_CATALOG = {\n");
         for (var ecosystem : gold.debug.windowstolinux.shared.model.toolchain.ToolchainEcosystemType.values()) {
@@ -149,6 +217,14 @@ public final class ManagedHelperBundle {
         return data.append("}\n").toString();
     }
 
+    /**
+     * Computes the SHA-256 content identity used for independent integrity checks.
+     * <p>计算独立完整性检查使用的 SHA-256 内容身份。
+     *
+     * @param bytes content buffer processed by the current codec or stream / 当前编解码器或流处理的内容缓冲区
+     * @return computed SHA-256 content digest / 已计算的 SHA-256 内容摘要
+     * @throws IllegalStateException if the required state or runtime facility is unavailable / 所需状态或运行设施不可用时
+     */
     private static String sha256(byte[] bytes) {
         try {
             return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(bytes));

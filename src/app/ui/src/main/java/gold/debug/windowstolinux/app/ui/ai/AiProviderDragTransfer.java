@@ -8,6 +8,8 @@ import java.util.function.*;
 
 /** Reorders one model list without transferring purpose membership. / 只调整一个模型列表顺序，不转移用途成员。 */
 final class AiProviderDragTransfer extends TransferHandler {
+    /** Drag identity bound to this handler. / 绑定当前处理器的拖动身份。 */
+    private Transferable exported;
     /** Owned list. / 所属列表。 */
     private final JList<String> list;
     /** Receives the complete reordered list. / 接收完整新顺序。 */
@@ -26,7 +28,8 @@ final class AiProviderDragTransfer extends TransferHandler {
      * @param source source component / 来源控件
      * @return selected identity / 所选标识
      */
-    @Override protected Transferable createTransferable(JComponent source) { return new StringSelection(list.getSelectedValue()); }
+    @Override protected Transferable createTransferable(JComponent source) { if(source!=list||list.getSelectedValue()==null)return null;
+        exported=new StringSelection(list.getSelectedValue());return exported; }
     /** Allows reorder gestures. / 允许排序手势。
      * @param component source component / 来源控件
      * @return move operation / 移动操作
@@ -38,7 +41,7 @@ final class AiProviderDragTransfer extends TransferHandler {
      */
     @Override public boolean canImport(TransferSupport support) {
         return !busy.getAsBoolean() && support.isDrop() && support.getComponent()==list
-                && support.isDataFlavorSupported(DataFlavor.stringFlavor);
+                && support.getTransferable()==exported && support.isDataFlavorSupported(DataFlavor.stringFlavor);
     }
     /** Applies a validated drop. / 应用已校验放置。
      * @param support transfer details / 传输详情

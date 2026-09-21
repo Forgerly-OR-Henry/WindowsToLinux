@@ -155,6 +155,7 @@ public final class AutomaticDeploymentUseCase {
             ()->service.verifyServer(request.server(), request.server().credentialMode(), master.clone(), fingerprint));
         if(capabilities!=null)serverFacts=Map.of("observedOs",capabilities.operatingSystem(),"observedArchitecture",capabilities.architecture(),
             "helperVersion",Integer.toString(capabilities.managedHelperProtocolVersion()),"availableBytes",Long.toString(capabilities.availableBytes()));
+        if(assistance!=null)preflight(preparationEvidence(resolved));
         if(agent!=null){serverFacts.forEach(agent::fact);
             agent.register("server-capabilities",AgentToolType.VERIFY_SERVER,Map.of("effect","Read current server deployment capabilities"),()->true,()->{
                 var observed=service.verifyServer(request.server(),request.server().credentialMode(),master.clone(),fingerprint);
@@ -360,12 +361,11 @@ public final class AutomaticDeploymentUseCase {
                 AgentManagedToolCatalog.register(agent,managed,request.server(),Set.of(id),master);
             service.saveDeploymentConfigurationSnapshot(reviewed.configuration());
             var description=AutomaticActionDescription.deployment(reviewed);
-            preflight(description);
             progress.accept(LocalizedMessage.of("auto.progress.environment"));
             if (db.bindings().isEmpty()) prepareEnvironment(request, master, fingerprint, interaction);
             progress.accept(LocalizedMessage.of("auto.progress.deploy"));
             var outcome = operation(AgentToolType.DEPLOY_TRANSACTION,description,()->service.deployAutomaticallyReviewed(reviewed, request.server(), master.clone(), fingerprint, progress));
-            if(assistance!=null&&outcome.status()!=DeploymentStatus.SUCCEEDED)assistance.check("FAILURE",Map.of("deploymentStatus",outcome.status().name()));
+            if(assistance!=null&&outcome.status()!=DeploymentStatus.SUCCEEDED)assistance.check("FAILURE",DeploymentDiagnosticEvidence.from(outcome));
             return new AutomaticDeploymentOutcome(id, outcome.status(), outcome.handoff().map(value -> Map.of(component, value)).orElse(Map.of()));
     }
 
@@ -446,12 +446,11 @@ public final class AutomaticDeploymentUseCase {
             service.saveDeploymentConfigurationSnapshot(component.request().configuration());
         }
         var description=AutomaticActionDescription.deployment(reviewed);
-        preflight(description);
         progress.accept(LocalizedMessage.of("auto.progress.environment"));
         prepareEnvironment(request, master, fingerprint, interaction);
         progress.accept(LocalizedMessage.of("auto.progress.deploy"));
         var result = operation(AgentToolType.DEPLOY_TRANSACTION,description,()->service.deployAutomaticallyReviewed(reviewed, request.server(), master.clone(), fingerprint, progress));
-        if(assistance!=null&&result.status()!=DeploymentStatus.SUCCEEDED)assistance.check("FAILURE",Map.of("deploymentStatus",result.status().name()));
+        if(assistance!=null&&result.status()!=DeploymentStatus.SUCCEEDED)assistance.check("FAILURE",DeploymentDiagnosticEvidence.from(result));
         Map<String, DeploymentHandoff> handoffs = new LinkedHashMap<>();
         if (result.status() == DeploymentStatus.SUCCEEDED) for (var component : reviewed.components()) {
             var access = component.request().userAccessUrl();
@@ -685,6 +684,25 @@ public final class AutomaticDeploymentUseCase {
         return agent==null?operation.call():agent.execute(type,parameters,operation);
     }
 
+    /** Describes validated runtime and data scope before any environment or database mutation. / 在环境或数据库变更前描述已校验运行及数据范围。
+     * @param resolved locally completed inputs / 本地补齐输入
+     * @return bounded nonsecret review facts / 有界非秘密审阅事实
+     */
+    private Map<String,String> preparationEvidence(ResolvedInputs resolved){
+        var facts=new LinkedHashMap<String,String>();facts.put("healthOwner",resolved.healthOwner());
+        for(var component:resolved.discovered()){
+            var values=resolved.inputs().get(component.id());var type=DeploymentProjectType.valueOf(values.get("type"));
+            var specification=runtime.runtime(type,values);limits(values);
+            String prefix=component.id()+"/";
+            facts.put(prefix+"type",type.name());facts.put(prefix+"runtimeIdentity",specification.identityPolicy().name());
+            facts.put(prefix+"health",gold.debug.windowstolinux.shared.ai.redaction.AgentEvidenceText.redact(specification.healthCheck().toString()));
+            facts.put(prefix+"dependencies",values.getOrDefault("dependencies",""));
+            facts.put(prefix+"dataBindings",gold.debug.windowstolinux.shared.ai.redaction.AgentEvidenceText.redact(values.getOrDefault("fileBindings","declared source bindings")));
+            facts.put(prefix+"databaseMode",values.getOrDefault("databaseMode","NONE"));
+            facts.put(prefix+"configurationDigest",AgentAction.digest(new TreeMap<>(values).toString()));
+        }
+        return Map.copyOf(facts);
+    }
     /** Includes actual server observations in the fixed preflight checkpoint. / 在固定预检节点中包含实际服务器观察。
      * @param description exact nonsecret operation description / 精确非秘密操作描述
      */
