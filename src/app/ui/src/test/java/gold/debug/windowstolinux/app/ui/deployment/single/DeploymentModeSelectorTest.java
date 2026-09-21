@@ -15,7 +15,7 @@ class DeploymentModeSelectorTest {
             assertEquals(0,slider.getMinimum());assertEquals(2,slider.getMaximum());assertTrue(slider.getSnapToTicks());assertTrue(slider.getPaintLabels());
             selector.restore(DeploymentAutomationMode.AGENT,AgentApprovalMode.MANUAL_REVIEW);
             assertEquals(AgentApprovalMode.MANUAL_REVIEW,selector.approval());selector.setBusy(true);assertFalse(slider.isEnabled());
-            assertTrue(((JLabel)selector.getComponent(1)).getText().contains("极高价值"));
+            assertTrue(((JTextArea)selector.getComponent(1)).getText().contains("极高价值"));
             selector.setBusy(false);assertTrue(slider.isEnabled());
         });
     }

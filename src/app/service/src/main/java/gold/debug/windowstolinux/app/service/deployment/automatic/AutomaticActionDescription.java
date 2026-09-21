@@ -32,7 +32,7 @@ public final class AutomaticActionDescription {
         result.put("healthOwner",request.applicationHealth().componentId());
         int index=0;for(var component:request.components()){
             String prefix="component"+(++index)+"/";
-            deployment(component.request()).forEach((key,value)->result.put(prefix+key,value));
+            result.put(prefix+"review",new TreeMap<>(deployment(component.request())).toString());
         }
         if(result.size()>128)throw new IllegalArgumentException("component review exceeds supported context");
         return Map.copyOf(result);

@@ -50,4 +50,15 @@ class AutomaticAgentBoundaryTest {
         var boundary=new AutomaticAgentBoundary("task",server,AgentApprovalMode.FULL_CONTROL,models,control,human,event->{},()->true);boundary.freeze(root);
         assertThrows(CancellationException.class,()->boundary.execute(AgentToolType.DEPLOY_TRANSACTION,Map.of("application","demo"),()->{throw new AssertionError("changed source executed");}));
     }
+    @Test void cancellationAfterSuccessfulPublicationPreservesTheActualResult()throws Exception{
+        Files.writeString(root.resolve("app.txt"),"source");var control=new AgentTaskControl(state->{});
+        var models=new AgentModelPort(){
+            public AgentDecision decide(String g,List<AgentAction> actions,List<String> h,int left){var a=actions.getFirst();return new AgentDecision(AgentDecisionType.EXECUTE,a.id(),a.binding(),"deploy");}
+            public AgentReview review(String g,AgentAction a,AgentRiskLevel risk){return new AgentReview(AgentReviewDecision.ALLOW,risk,a.binding(),"owned",List.copyOf(a.evidence().keySet()));}
+            public boolean advanceDeployment(){throw new AssertionError();}
+        };
+        var boundary=new AutomaticAgentBoundary("task",server,AgentApprovalMode.FULL_CONTROL,models,control,human,event->{},()->true);boundary.freeze(root);
+        assertEquals("publication-verified",boundary.execute(AgentToolType.DEPLOY_TRANSACTION,Map.of("application","demo"),()->{control.cancel();return "publication-verified";}));
+        control.finish(AgentTaskState.SUCCEEDED);assertEquals(AgentTaskState.SUCCEEDED,control.state());
+    }
 }

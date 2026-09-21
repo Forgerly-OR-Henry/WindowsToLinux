@@ -85,6 +85,31 @@ class AiModelInventoryTest {
             assertTrue(cleanup.await(3,TimeUnit.SECONDS));assertTrue(dialog.get().isDisplayable());release.countDown();idle();assertFalse(dialog.get().isDisplayable());
         }finally{release.countDown();SwingUtilities.invokeAndWait(()->dialog.get().dispose());}
     }
+    @Test void inlineColumnsRemainEqualAndRestoreFullWidthInBothThemes()throws Exception{
+        AiApplicationFacade service=(AiApplicationFacade)Proxy.newProxyInstance(getClass().getClassLoader(),new Class<?>[]{AiApplicationFacade.class},(p,m,a)->switch(m.getName()){
+            case "listAiConfigurations"->List.of(model("deployment",0),model("review",1),model("vision",2));
+            case "listAiPurpose"->List.of(new AiPurposeAssignment("review",true));
+            default->throw new AssertionError(m);
+        });
+        for(boolean dark:List.of(false,true)){
+            var pane=new AtomicReference<AiModelInventoryPane>();
+            SwingUtilities.invokeAndWait(()->{if(dark)com.formdev.flatlaf.FlatDarkLaf.setup();else FlatLightLaf.setup();
+                pane.set(new AiModelInventoryPane(service,new DesktopComponentFactory(dark?ThemePalette.dark():ThemePalette.light()),messages,v->{}));pane.get().refresh();});idle();
+            SwingUtilities.invokeAndWait(()->{
+                var root=pane.get();root.setSize(850,450);layout(root);var inventory=field(root,"inventoryScroll",JScrollPane.class);int width=inventory.getWidth();
+                field(root,"inventory",JList.class).setSelectedIndex(1);root.open(AiPurposeType.APPROVAL);layout(root);
+                var editor=field(root,"editor",JPanel.class);assertEquals(inventory.getWidth(),editor.getWidth(),2);assertTrue(inventory.getWidth()>320);
+                assertEquals(3,field(root,"inventory",JList.class).getModel().getSize());render(root,"models-"+(dark?"dark":"light")+"-split.png");
+                button(root,"ai.purpose.cancel").doClick();layout(root);assertEquals(width,inventory.getWidth());assertEquals("review",field(root,"inventory",JList.class).getSelectedValue());render(root,"models-"+(dark?"dark":"light")+"-full.png");
+            });
+        }
+        SwingUtilities.invokeAndWait(FlatLightLaf::setup);
+    }
+    private static void layout(Container root){root.doLayout();for(var child:root.getComponents())if(child instanceof Container nested)layout(nested);}
+    private static void render(JComponent root,String name){try{
+        var image=new java.awt.image.BufferedImage(root.getWidth(),root.getHeight(),java.awt.image.BufferedImage.TYPE_INT_RGB);var graphics=image.createGraphics();root.paint(graphics);graphics.dispose();
+        var directory=java.nio.file.Path.of("target/visual-checks");java.nio.file.Files.createDirectories(directory);javax.imageio.ImageIO.write(image,"png",directory.resolve(name).toFile());
+    }catch(java.io.IOException failure){throw new AssertionError(failure);}}
     private static JButton button(Container root,String name){return descendants(root).filter(v->name.equals(v.getName())).map(JButton.class::cast).findFirst().orElseThrow();}
     private static <T>T field(Object target,String name,Class<T> type){try{var f=target.getClass().getDeclaredField(name);f.setAccessible(true);return type.cast(f.get(target));}catch(Exception e){throw new AssertionError(e);}}
     private static void idle()throws Exception{long end=System.nanoTime()+TimeUnit.SECONDS.toNanos(30);while(DesktopTaskExecutor.hasActiveTasks()&&System.nanoTime()<end)Thread.sleep(10);assertFalse(DesktopTaskExecutor.hasActiveTasks());SwingUtilities.invokeAndWait(()->{});}

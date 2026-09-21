@@ -385,7 +385,7 @@ public final class DesktopApplicationFacade implements AiApplicationFacade, Depl
         this.servers = new ServerUseCaseFacade(persistence.servers(), secrets, linuxGateway);
         this.source = new SourcePreparationUseCase(new DeploymentAnalysisCoordinator(), new WindowsSourcePreparer(workDirectory));
         this.ai = new AiUseCaseFacade(persistence.aiProfiles(), secrets);
-        this.automatic = new gold.debug.windowstolinux.app.service.deployment.automatic.AutomaticDeploymentTaskService(this, ai, source, locks, persistence.agentTasks());
+        this.automatic = new gold.debug.windowstolinux.app.service.deployment.automatic.AutomaticDeploymentTaskService(this, ai, source, locks, persistence.agentTasks(), new gold.debug.windowstolinux.app.service.deployment.automatic.AgentRemoteToolService(servers,linuxGateway));
         this.recovery = new gold.debug.windowstolinux.app.service.recovery.SshRecoveryUseCase(persistence, locks, servers, secrets, linuxGateway);
         this.deploymentAgentTools = new ReadOnlyDeploymentAgentFacade();
         this.deploymentConfiguration = new DeploymentConfigurationUseCase(
@@ -1430,4 +1430,11 @@ public final class DesktopApplicationFacade implements AiApplicationFacade, Depl
      */
     @Override public java.util.List<java.util.Map<String,String>> deploymentTaskEvents(String taskId) throws java.sql.SQLException{return automatic.events(taskId);}
 
+    /** Queries recorded task candidates without authorizing a retry. / 查询任务候选项，不授权重试。
+     * @param taskId task identity / 任务身份
+     * @param master scoped credential buffer / 限定凭据缓冲区
+     * @return actual observations / 实际观测
+     * @throws Exception when observation fails / 观测失败时
+     */
+    @Override public java.util.List<java.util.Map<String,String>> inspectDeploymentTask(String taskId,char[] master)throws Exception{return automatic.inspect(taskId,master);}
 }

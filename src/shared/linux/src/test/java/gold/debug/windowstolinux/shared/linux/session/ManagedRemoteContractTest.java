@@ -20,7 +20,7 @@ class ManagedRemoteContractTest {
                 .collect(Collectors.toSet());
 
         assertEquals(Set.of(
-                "collectCapabilities", "prepareEnvironment", "uploadSource", "cleanupCandidate", "checkHealth",
+                "verifyConnection", "collectCapabilities", "prepareEnvironment", "uploadSource", "cleanupCandidate", "inspectTaskCandidate", "cleanupTaskCandidate", "checkHealth",
                 "observe", "executeLifecycle", "close", "selinuxPreparation"
         ), methods);
         for (Method method : LinuxRemoteSession.class.getMethods()) {
@@ -35,7 +35,7 @@ class ManagedRemoteContractTest {
                 .map(Method::getName)
                 .collect(Collectors.toSet());
         assertEquals(Set.of(
-                "collectCapabilities", "prepareEnvironment", "prepareToolchains", "uploadSource", "cleanupCandidate", "checkHealth",
+                "verifyConnection", "collectCapabilities", "prepareEnvironment", "prepareToolchains", "uploadSource", "cleanupCandidate", "inspectTaskCandidate", "cleanupTaskCandidate", "checkHealth",
                 "observe", "executeLifecycle", "close", "collectDeploymentCapabilities", "buildDeployment",
                 "stageDeploymentInputs", "snapshotDeployment", "publishDeployment", "rollbackDeployment",
                 "checkDeploymentHealth", "observeDeployment", "executeDeploymentLifecycle",

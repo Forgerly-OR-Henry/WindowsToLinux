@@ -71,6 +71,23 @@ public final class AgentTaskRepository {
             s.setString(1,Instant.now().toString());s.executeUpdate();
         }
     }
+    /** Finds uncertain effects independently of the latest task state or UI history limit. / 独立于末次任务状态及界面历史上限查找不确定影响。
+     * @param server exact server identity / 精确服务器身份
+     * @return unresolved task identifiers / 未确认任务标识
+     * @throws SQLException when durable evidence cannot be read / 无法读取持久化证据时
+     */
+    public List<String> unresolved(String server)throws SQLException{
+        var ids=new ArrayList<String>();
+        String sql="""
+            SELECT t.id FROM deployment_agent_task t WHERE t.server_id=? AND
+            (t.state='UNKNOWN' OR EXISTS(SELECT 1 FROM deployment_agent_event e
+            WHERE e.task_id=t.id AND e.event_type='EXECUTING' AND NOT EXISTS
+            (SELECT 1 FROM deployment_agent_event r WHERE r.task_id=e.task_id AND r.action_id=e.action_id
+            AND r.sequence>e.sequence AND r.event_type IN ('RESULT','CANCELLED')))) ORDER BY t.started_at
+            """;
+        try(var c=connections.open();var s=c.prepareStatement(sql)){s.setString(1,server);try(var rows=s.executeQuery()){while(rows.next())ids.add(rows.getString(1));}}
+        return List.copyOf(ids);
+    }
     /** Reads bounded recent records for App history. / 为 App 历史读取有界最近记录。
      * @return nonsecret task rows / 非秘密任务记录
      * @throws SQLException on read failure / 读取失败时
@@ -91,5 +108,15 @@ public final class AgentTaskRepository {
         try(var c=connections.open();var s=c.prepareStatement("SELECT sequence,event_type,action_id,detail,created_at FROM deployment_agent_event WHERE task_id=? ORDER BY sequence LIMIT 1000")){
             s.setString(1,id);try(var rows=s.executeQuery()){while(rows.next()){var row=new LinkedHashMap<String,String>();for(String key:List.of("sequence","event_type","action_id","detail","created_at"))row.put(key,rows.getString(key));result.add(Map.copyOf(row));}}
         }return List.copyOf(result);
+    }
+    /** Reads exact persisted task identity without a history limit. / 不依赖历史上限读取精确持久化任务身份。
+     * @param id task identity / 任务身份
+     * @return persisted identity if present / 存在时返回持久化身份
+     * @throws SQLException when the record cannot be read / 无法读取记录时
+     */
+    public Optional<Map<String,String>> find(String id)throws SQLException{
+        try(var c=connections.open();var s=c.prepareStatement("SELECT server_id,target_digest,state FROM deployment_agent_task WHERE id=?")){
+            s.setString(1,id);try(var rows=s.executeQuery()){return rows.next()?Optional.of(Map.of("server_id",rows.getString(1),"target_digest",rows.getString(2),"state",rows.getString(3))):Optional.empty();}
+        }
     }
 }

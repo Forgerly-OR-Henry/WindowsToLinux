@@ -175,6 +175,8 @@ final class AiModelInventoryPane extends JPanel {
     /** Splits the available width without replacing the inventory control. / 不替换清单控件而分配可用宽度。 */
     private void layoutColumns(){
         int scroll=inventoryScroll.getVerticalScrollBar().getValue();
+        inventoryScroll.setMinimumSize(new Dimension(0,0));editor.setMinimumSize(new Dimension(0,0));
+        inventoryScroll.setPreferredSize(new Dimension(0,320));editor.setPreferredSize(new Dimension(0,320));
         columns.removeAll(); GridBagConstraints g=new GridBagConstraints();g.fill=GridBagConstraints.BOTH;g.weighty=1;g.weightx=1;
         columns.add(inventoryScroll,g);
         if(purpose!=null){g.gridx=1;g.weightx=0;g.fill=GridBagConstraints.NONE;g.insets=new Insets(0,8,0,8);columns.add(arrows,g);

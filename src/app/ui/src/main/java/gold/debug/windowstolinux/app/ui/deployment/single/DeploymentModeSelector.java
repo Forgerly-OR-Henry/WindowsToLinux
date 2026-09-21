@@ -13,7 +13,7 @@ final class DeploymentModeSelector extends JPanel {
     /** Agent human-confirmation policy. / Agent 人工确认策略。 */
     private final JComboBox<AgentApprovalMode> approval=new JComboBox<>(AgentApprovalMode.values());
     /** Current mode explanation. / 当前模式说明。 */
-    private final JLabel description=new JLabel();
+    private final JTextArea description=new JTextArea(2,30);
     /** Localized messages. / 本地化消息。 */
     private final PageMessagePresenter messages;
     /** Builds standard controls without invoking models. / 构建标准控件且不调用模型。
@@ -28,6 +28,8 @@ final class DeploymentModeSelector extends JPanel {
         approval.setName("deployment.approval");approval.setSelectedItem(AgentApprovalMode.AUTOMATIC);
         messages.localize(approval,"deployment.approval.");approval.getAccessibleContext().setAccessibleName(messages.text("deployment.approval.label"));
         JPanel row=new JPanel(new FlowLayout(FlowLayout.LEFT,8,0));row.setOpaque(false);row.add(slider);row.add(approval);
+        description.setEditable(false);description.setOpaque(false);description.setLineWrap(true);description.setWrapStyleWord(true);
+        description.setFont(UIManager.getFont("Label.font"));description.setForeground(UIManager.getColor("Label.foreground"));description.setFocusable(false);
         add(row);add(description,BorderLayout.SOUTH);slider.addChangeListener(event->update());approval.addActionListener(event->update());update();
     }
     /** Returns the selected mode. / 返回所选模式。
@@ -52,6 +54,7 @@ final class DeploymentModeSelector extends JPanel {
         approval.setVisible(mode()==DeploymentAutomationMode.AGENT);
         String key=mode()==DeploymentAutomationMode.AGENT&&approval()==AgentApprovalMode.MANUAL_REVIEW
             ?"deployment.approval.manualHint":"deployment.mode.description."+mode().name();
+        description.setRows(mode()==DeploymentAutomationMode.AGENT&&approval()==AgentApprovalMode.MANUAL_REVIEW?3:2);
         description.setText(messages.text(key));description.setToolTipText(messages.text(key));revalidate();
     }
 }

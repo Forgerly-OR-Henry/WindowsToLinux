@@ -21,17 +21,17 @@ final class AgentManagedToolCatalog {
         for(var saved:lifecycle.listManagedApplicationSummaries()){
             var app=saved.application();
             if(!applicationIds.contains(app.id())||!app.server().id().equals(server.id())||!app.server().host().equals(server.host())||app.server().sshPort()!=server.sshPort())continue;
-            for(var action:List.of(LifecycleAction.REFRESH_STATUS,LifecycleAction.RESTART)){
-                var type=action==LifecycleAction.REFRESH_STATUS?AgentToolType.SERVICE_STATUS:AgentToolType.RESTART_SERVICE;
+            for(var type:List.of(AgentToolType.SERVICE_STATUS,AgentToolType.SERVICE_LOGS,AgentToolType.RESTART_SERVICE)){
+                var action=type==AgentToolType.RESTART_SERVICE?LifecycleAction.RESTART:LifecycleAction.REFRESH_STATUS;
                 boundary.register(type+":"+app.id(),type,Map.of("application",app.id(),"service",app.systemdUnit(),"releaseRoot",app.releaseRoot(),
-                    "ownership",app.ownershipManifestSha256(),"currentRelease",saved.currentReleaseSha256().orElse("none")),
+                    "ownership",app.ownershipManifestSha256(),"currentRelease",saved.currentReleaseSha256().orElse("none"),"effect",type==AgentToolType.SERVICE_LOGS?"Read bounded managed runtime diagnostic evidence, including available state and exit-code details; no arbitrary log path":type.name()),
                     ()->{try{return lifecycle.listManagedApplicationSummaries().stream().anyMatch(now->now.application().equals(app)&&now.currentReleaseSha256().equals(saved.currentReleaseSha256()));}
                         catch(java.sql.SQLException failure){return false;}},
                     ()->{var result=lifecycle.executePersistedLifecycleWithStoredPassword(app.id(),action,master.clone());
                         if(result.observation().isEmpty())return new AgentObservation(false,false,Map.of("service",app.systemdUnit(),"result","no-verified-observation"));
                         var observed=result.observation().orElseThrow();
                         return new AgentObservation(true,result.accepted()&&observed.ownershipVerified(),Map.of("service",app.systemdUnit(),
-                            "state",observed.runtimeState().name(),"autostart",observed.autostartState().name(),"ownershipVerified",Boolean.toString(observed.ownershipVerified())));});
+                            "state",observed.runtimeState().name(),"autostart",observed.autostartState().name(),"ownershipVerified",Boolean.toString(observed.ownershipVerified()),"diagnostics",type==AgentToolType.SERVICE_LOGS?gold.debug.windowstolinux.shared.ai.redaction.AgentEvidenceText.redact(observed.evidence()):"not-requested"));});
             }
         }
     }

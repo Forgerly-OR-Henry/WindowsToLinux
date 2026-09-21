@@ -165,3 +165,39 @@ create_restore_candidate() {
   chmod 400 -- "$candidate/.deployer" "$candidate/.purpose"
   printf 'CANDIDATE=%s\n' "$candidate"
 }
+
+# Task-specific commands never adopt an existing unbound candidate.
+require_agent_task() { [[ "$1" =~ ^[a-zA-Z0-9-]{1,80}$ ]] || reject task-identity; }
+create_task_candidate() {
+  [ "$#" -eq 4 ] || reject task-candidate-arguments
+  require_agent_task "$4"
+  create_candidate "$1" "$2" "$3"
+  local candidate; candidate="$(candidate_root "$2")"
+  printf '%s\n' "$4" > "$candidate/.agent-task"
+  chown root:root -- "$candidate/.agent-task"; chmod 444 -- "$candidate/.agent-task"
+}
+assert_task_candidate() {
+  require_app "$1"; require_candidate "$1" "$2"; require_agent_task "$3"
+  local candidate; candidate="$(candidate_root "$2")"
+  assert_root_owned_directory "$work_root"
+  if [ -e "$candidate" ] || [ -L "$candidate" ]; then
+    assert_candidate_for_deployer "$candidate"
+    assert_root_owned_regular "$candidate/.agent-task"
+    [ "$(cat -- "$candidate/.agent-task")" = "$3" ] || reject foreign-task-candidate
+  fi
+}
+query_task_candidate() {
+  [ "$#" -eq 3 ] || reject task-query-arguments
+  assert_task_candidate "$@"
+  local candidate unit state
+  candidate="$(candidate_root "$2")"; unit="$(build_unit_name "$2")"
+  state="$(systemctl show --value --property=ActiveState "$unit")" || reject task-build-query
+  case "$state" in active|activating|deactivating|reloading) state=yes;; inactive|failed|'') state=no;; *) reject task-build-state;; esac
+  if [ -e "$candidate" ]; then printf 'CANDIDATE_STATE=owned\n'; else printf 'CANDIDATE_STATE=absent\n'; fi
+  printf 'BUILD_ACTIVE=%s\n' "$state"
+}
+cleanup_task_candidate() {
+  [ "$#" -eq 3 ] || reject task-cleanup-arguments
+  assert_task_candidate "$@"
+  cleanup_candidate "$1" "$2"
+}

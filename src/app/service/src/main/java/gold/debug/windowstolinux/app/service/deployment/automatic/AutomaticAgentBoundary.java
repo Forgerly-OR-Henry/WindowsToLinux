@@ -145,7 +145,8 @@ public final class AutomaticAgentBoundary {
                 }finally{depth--;}
             }
         });
-        control.checkpoint();return result.get();
+        if(type!=AgentToolType.DEPLOY_TRANSACTION||!observation(result.get()).succeeded())control.checkpoint();
+        return result.get();
     }
     /** Creates an exact action with a monotonically increasing plan version. / 创建计划版本单调增加的精确动作。
      * @param type capability / 能力
@@ -161,7 +162,7 @@ public final class AutomaticAgentBoundary {
      * @param type registered capability / 已登记能力
      * @return deterministic severity / 确定性严重程度
      */
-    private static AgentRiskLevel risk(AgentToolType type){return switch(type){case ANALYZE_SOURCE,VERIFY_SERVER,SERVICE_STATUS,SERVICE_LOGS->AgentRiskLevel.NORMAL;default->AgentRiskLevel.HIGH;};}
+    private static AgentRiskLevel risk(AgentToolType type){return switch(type){case ANALYZE_SOURCE,VERIFY_SERVER,SERVICE_STATUS,SERVICE_LOGS,CANDIDATE_STATUS->AgentRiskLevel.NORMAL;default->AgentRiskLevel.HIGH;};}
     /** Converts actual typed results without trusting model completion claims. / 转换实际类型化结果，不信任模型完成声明。
      * @param result existing result / 既有结果
      * @return verified status evidence / 已验证状态证据
@@ -169,7 +170,7 @@ public final class AutomaticAgentBoundary {
     private static AgentObservation observation(Object result){
         DeploymentStatus status=result instanceof gold.debug.windowstolinux.app.service.deployment.single.DeploymentOutcome outcome?outcome.status()
             :result instanceof gold.debug.windowstolinux.shared.deploy.contract.result.deployment.MultiComponentDeploymentResult multiple?multiple.status():null;
-        if(status!=null)return new AgentObservation(status!=DeploymentStatus.MANUAL_RECOVERY_REQUIRED,status==DeploymentStatus.SUCCEEDED,Map.of("deploymentStatus",status.name()));
+        if(status!=null)return new AgentObservation(status!=DeploymentStatus.MANUAL_RECOVERY_REQUIRED,status==DeploymentStatus.SUCCEEDED,DeploymentDiagnosticEvidence.from(result));
         if(result instanceof gold.debug.windowstolinux.shared.model.capability.ServerCapabilityFacts facts)return new AgentObservation(true,true,Map.of(
             "os",facts.operatingSystem(),"architecture",facts.architecture(),"helperVersion",Integer.toString(facts.managedHelperProtocolVersion()),"availableBytes",Long.toString(facts.availableBytes())));
         return new AgentObservation(true,true,Map.of("operation","completed"));

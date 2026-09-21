@@ -34,6 +34,9 @@ case "$verb" in
     ;;
   workspace-recover) recover_workspaces "$@" ;;
   candidate-create) create_candidate "$@" ;;
+  candidate-create-task) create_task_candidate "$@" ;;
+  candidate-query-task) query_task_candidate "$@" ;;
+  candidate-cleanup-task) cleanup_task_candidate "$@" ;;
   candidate-restore-create) create_restore_candidate "$@" ;;
   build-preflight) preflight_build "$@" ;;
   build-run) run_restricted_build "$@" ;;

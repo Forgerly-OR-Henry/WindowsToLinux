@@ -166,4 +166,11 @@ public interface AutomaticDeploymentApplicationFacade extends DeploymentApplicat
      */
     java.util.List<java.util.Map<String,String>> deploymentTaskEvents(String taskId) throws java.sql.SQLException;
 
+    /** Queries recorded task candidates without executing or replaying a deployment. / 查询任务候选项，不执行或重放部署。
+     * @param taskId task identity / 任务身份
+     * @param master scoped credential buffer / 限定凭据缓冲区
+     * @return actual observations / 实际观测
+     * @throws Exception when observation fails / 观测失败时
+     */
+    java.util.List<java.util.Map<String,String>> inspectDeploymentTask(String taskId,char[] master)throws Exception;
 }

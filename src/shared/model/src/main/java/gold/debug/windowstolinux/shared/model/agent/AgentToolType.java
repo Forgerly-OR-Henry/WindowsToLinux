@@ -19,5 +19,11 @@ public enum AgentToolType {
     /** Restart an owned service. / 重启一个受管服务。 */
     RESTART_SERVICE,
     /** Clean a task-owned candidate through the existing helper. / 通过既有助手清理任务所属候选。 */
-    CLEAN_CANDIDATE;
+    CLEAN_CANDIDATE,
+    /** Query a task-bound candidate and build process. / 查询任务绑定候选项及构建进程。 */
+    CANDIDATE_STATUS;
+    /** Identifies operations whose uncertain result may have changed the server. / 标识结果不确定时可能改变服务器的操作。
+     * @return whether the operation writes remote state / 操作是否写入远端状态
+     */
+    public boolean modifiesServer(){return switch(this){case ANALYZE_SOURCE,VERIFY_SERVER,SERVICE_STATUS,SERVICE_LOGS,CANDIDATE_STATUS->false;default->true;};}
 }

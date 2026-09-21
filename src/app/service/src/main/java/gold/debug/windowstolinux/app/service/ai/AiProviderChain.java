@@ -73,6 +73,8 @@ final class AiProviderChain {
                 } finally { if (key != null) Arrays.fill(key, '\0'); }
                 attempts.add(new AiProviderAttempt(profile.id(), profile.model(), result == null ? AiInvocationStatus.UNAVAILABLE : result.status(),
                         result == null ? "credential-or-provider-unavailable" : result.detail(), Instant.now()));
+                String recordedStatus=result==null?"UNAVAILABLE":result.status().name();
+                scope.ifPresent(value->value.attempted(purpose,profile.id(),recordedStatus));
                 if (result != null) {
                     last = Optional.of(result.value());
                     if (result.status() == AiInvocationStatus.VALIDATED) return new Outcome<>(last, List.copyOf(attempts), true, snapshot);
