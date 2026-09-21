@@ -18,7 +18,17 @@ import java.util.*;
  */
 public record AgentAction(String id,String taskId,String target,String sourceRevision,long planRevision,
         AgentToolType tool,Map<String,String> parameters,Map<String,String> evidence,AgentRiskLevel risk) {
-    /** Validates bounded identity and freezes arguments. / 验证有界身份并冻结参数。 */
+    /** Validates bounded identity and freezes arguments. / 验证有界身份并冻结参数。
+     * @param id unique operation identifier / 唯一操作标识
+     * @param taskId owning task / 所属任务
+     * @param target fixed server and execution identity / 固定服务器及执行身份
+     * @param sourceRevision frozen source digest / 冻结源码摘要
+     * @param planRevision current plan revision / 当前计划修订
+     * @param tool registered capability / 已登记能力
+     * @param parameters exact nonsecret arguments or secret reference digests / 精确非秘密参数或秘密引用摘要
+     * @param evidence observed nonsecret evidence keyed by reference / 以引用为键的非秘密观察证据
+     * @param risk deterministic local risk / 确定性本地风险
+     */
     public AgentAction {
         for(String value:List.of(id,taskId,target,sourceRevision)) if(value.isBlank()||value.length()>1024||value.chars().anyMatch(Character::isISOControl))throw new IllegalArgumentException("invalid action identity");
         Objects.requireNonNull(tool);Objects.requireNonNull(risk);
@@ -35,6 +45,10 @@ public record AgentAction(String id,String taskId,String target,String sourceRev
         append(value,Integer.toString(evidence.size()));new TreeMap<>(evidence).forEach((k,v)->{append(value,k);append(value,v);});
         return digest(value.toString());
     }
+    /** Identifies semantic operation scope independently of model/configuration changes. / 独立于模型及配置变更识别操作语义范围。
+     * @return stable rejection identity / 稳定拒绝身份
+     */
+    public String intentBinding(){return new AgentAction("intent",taskId,target,sourceRevision,1,tool,parameters,Map.of(),risk).binding();}
     /** Computes a stable nonreversible SHA-256 digest. / 计算稳定不可逆的 SHA-256 摘要。
      * @param value content to bind / 待绑定内容
      * @return hex digest / 十六进制摘要

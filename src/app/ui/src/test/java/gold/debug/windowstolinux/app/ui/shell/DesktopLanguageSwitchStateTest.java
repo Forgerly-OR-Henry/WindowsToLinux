@@ -55,10 +55,7 @@ class DesktopLanguageSwitchStateTest {
                 new ManagedPageState("demo", "lifecycle diagnostic"),
                 new BackupPageState("demo", "server-two", "C:\\backups\\demo.zip", "C:\\backups\\next.zip",
                         "backup diagnostic", backupCandidate, 1, "backup-secret".toCharArray(), "backup-master".toCharArray()),
-                new AiPageState("https://example.test/v1/chat/completions", "model-x", "analysis",
-                        AiCollaborationRoleKind.PROJECT_ANALYSIS,
-                        "api-secret".toCharArray(), CredentialStorageMode.WINDOWS_CREDENTIAL_MANAGER,
-                        new char[0], "AI diagnostic"),
+                new AiPageState(new char[0], "AI diagnostic", gold.debug.windowstolinux.app.ui.ai.AiInventoryState.empty()),
                 new SettingPageState());
 
         DesktopViewState englishState = restoreAndCapture(MessageCatalog.ENGLISH_TAG, initial);
@@ -104,10 +101,6 @@ class DesktopLanguageSwitchStateTest {
             assertEquals("server-two", chineseState.backup().targetServerId());
             assertArrayEquals("backup-secret".toCharArray(), chineseState.backup().backupPassword());
             assertArrayEquals("backup-master".toCharArray(), chineseState.backup().masterPassword());
-            assertEquals("model-x", chineseState.ai().model());
-            assertEquals("analysis", chineseState.ai().providerId());
-            assertEquals(AiCollaborationRoleKind.PROJECT_ANALYSIS, chineseState.ai().role());
-            assertArrayEquals("api-secret".toCharArray(), chineseState.ai().apiKey());
             assertEquals("AI diagnostic", chineseState.ai().output());
         } finally {
             chineseState.close();

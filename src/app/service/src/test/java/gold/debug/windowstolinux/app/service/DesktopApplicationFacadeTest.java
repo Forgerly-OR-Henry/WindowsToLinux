@@ -3,8 +3,6 @@ package gold.debug.windowstolinux.app.service;
 import gold.debug.windowstolinux.app.db.DesktopPersistence;
 import gold.debug.windowstolinux.app.db.entity.CurrentRelease;
 import gold.debug.windowstolinux.app.db.entity.StoredApplicationSecretRevision;
-import gold.debug.windowstolinux.app.service.ai.AiProfile;
-import gold.debug.windowstolinux.app.service.ai.AiAnalysisOutcome;
 import gold.debug.windowstolinux.app.service.ai.AiProviderProfile;
 import gold.debug.windowstolinux.app.service.execution.lifecycle.LifecycleOutcome;
 import gold.debug.windowstolinux.app.service.failure.ApplicationServiceException;
@@ -82,13 +80,9 @@ class DesktopApplicationFacadeTest {
             DesktopApplicationFacade service = new DesktopApplicationFacade(
                     database, temporaryDirectory.resolve("work"), unusedGateway());
             service.saveServerProfile(profile, secretStore, "ssh-password".toCharArray());
-            AiProfile aiProfile = new AiProfile(URI.create("https://example.test/v1/chat/completions"), "gpt-5",
-                    "ai/default/api-key", CredentialStorageMode.MASTER_PASSWORD);
-            service.saveAiProfile(aiProfile, CredentialStorageMode.MASTER_PASSWORD,
-                    "correct master password".toCharArray(), "ai-key".toCharArray());
+
 
             assertEquals(profile, service.findServerProfile("server-one").orElseThrow());
-            assertEquals(aiProfile, service.findAiProfile().orElseThrow());
             char[] password = service.loadPasswordCredential(profile, secretStore).copy();
             assertArrayEquals("ssh-password".toCharArray(), password);
             java.util.Arrays.fill(password, '\0');
@@ -150,21 +144,14 @@ class DesktopApplicationFacadeTest {
     }
 
     @Test
-    void listsConfiguredModelsAndRequiresFactsBeforeGlobalInvocation() throws Exception {
+    void listsConfiguredModelsThroughTheSupportedConfigurationInventory() throws Exception {
         try (DesktopPersistence database = DesktopPersistence.open(temporaryDirectory)) {
             DesktopApplicationFacade service = new DesktopApplicationFacade(database, temporaryDirectory.resolve("work"), unusedGateway());
             AiProviderProfile provider = new AiProviderProfile("analysis", URI.create("https://analysis.example.test/v1/chat/completions"),
                     "gpt-5", "ai/analysis/api-key", CredentialStorageMode.MASTER_PASSWORD);
             database.aiProfiles().saveNamed(provider.stored());
 
-            assertEquals(java.util.List.of(provider), service.listAiProviderProfiles());
-            AiAnalysisOutcome unavailable = service.requestAiExplanationFromProvider(
-                    new ReviewedSourcePreparation(DeploymentProjectAssessment.rejected(java.util.List.of(
-                            new gold.debug.windowstolinux.shared.model.analysis.RejectionReason("TEST_REJECTED",
-                                    gold.debug.windowstolinux.shared.model.message.LocalizedMessage.of("test.rejected"), "test"))),
-                            Optional.empty(), Optional.empty(), java.util.List.of()),
-                    "missing", "correct master password".toCharArray(), "en");
-            assertEquals("ai.status.analysisRequired", unavailable.status().key());
+            assertEquals(java.util.List.of(provider), service.listAiConfigurations().stream().map(gold.debug.windowstolinux.app.service.ai.AiProviderSummary::profile).toList());
         }
     }
 

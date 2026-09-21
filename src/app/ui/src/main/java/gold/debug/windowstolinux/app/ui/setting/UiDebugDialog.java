@@ -25,25 +25,68 @@ import java.util.Optional;
 import java.util.concurrent.CancellationException;
 import java.util.function.Consumer;
 
-/** Class-only catalog of live page links and isolated, reusable dialog previews. / 仅 Class 模式使用的主页面导航与隔离弹窗预览目录。 */
+/**
+ * Class-only catalog of live page links and isolated, reusable dialog previews. / 仅 Class 模式使用的主页面导航与隔离弹窗预览目录。
+ */
 public final class UiDebugDialog extends JDialog {
+    /**
+     * Carries the appearance values currently selected for the desktop preview.
+     * <p>携带桌面预览当前选择的外观参数。
+     *
+     * @param id stable identifier within the owning registry / 所属登记表内的稳定标识
+     * @param label label / 标签
+     * @param open open / 打开
+     */
     record Preview(String id, String label, Runnable open) {
+        /**
+         * Returns label.
+         * <p>返回标签。
+         *
+         * @return label / 标签
+         */
         @Override public String toString() { return label; }
     }
 
+    /**
+     * Reviewed components in the application graph.
+     * <p>应用图中的已审阅组件。
+     */
     private final DesktopComponentFactory components;
+    /**
+     * Bound page message presenter collaborator for localized message resolver.
+     * <p>处理本地化消息解析器的页面消息展示器协作对象。
+     */
     private final PageMessagePresenter messages;
+    /**
+     * Bound ui preview service collaborator for preview.
+     * <p>处理预览的界面预览服务协作对象。
+     */
     private final UiPreviewService preview;
+    /**
+     * Source content consumed by this operation.
+     * <p>当前操作消费的源内容。
+     */
     private final DeploymentInputDialog input;
+    /**
+     * Previews.
+     * <p>预览集合。
+     */
     private final List<Preview> previews = new ArrayList<>();
 
-    /** Uses the current theme and language without acquiring production service access. / 使用当前主题与语言，不获取真实业务服务。 */
+    /**
+     * Uses the current theme and language without acquiring production service access. / 使用当前主题与语言，不获取真实业务服务。
+     *
+     * @param owner component or resource identity owning the operation / 持有操作的组件或资源身份
+     * @param components reviewed components in the application graph / 应用图中的已审阅组件
+     * @param catalog catalog / 目录
+     * @param navigate navigate / 导航
+     */
     public UiDebugDialog(Window owner, DesktopComponentFactory components, MessageCatalog catalog, Consumer<String> navigate) {
         super(owner, catalog.text("settings.debug.open"), ModalityType.MODELESS);
         this.components = components;
         this.messages = new PageMessagePresenter(catalog);
         preview = new UiPreviewService(messages);
-        input = new DeploymentInputDialog(this, preview.facade, components, messages, () -> new char[0]);
+        input = new DeploymentInputDialog(this, preview.facade, components, messages);
         JPanel body = components.pagePanel();
         body.setBorder(BorderFactory.createEmptyBorder(20, 20, 20, 20));
         JPanel heading = components.transparent(new BorderLayout(0, 12));
@@ -66,6 +109,12 @@ public final class UiDebugDialog extends JDialog {
         JButton open = components.primaryButton(messages.text("debug.open"));
         open.addActionListener(event -> { if (list.getSelectedValue() != null) list.getSelectedValue().open().run(); });
         list.addMouseListener(new MouseAdapter() {
+            /**
+             * Handles the mouse click on the associated desktop control.
+             * <p>处理关联桌面控件上的鼠标点击。
+             *
+             * @param event state or UI event being processed / 正在处理的状态或 UI 事件
+             */
             @Override public void mouseClicked(MouseEvent event) { if (event.getClickCount() == 2) open.doClick(); }
         });
         JPanel actions = components.transparent(new FlowLayout(FlowLayout.RIGHT)); actions.add(open); body.add(actions, BorderLayout.SOUTH);
@@ -73,6 +122,10 @@ public final class UiDebugDialog extends JDialog {
         setSize(760, 720); setMinimumSize(new Dimension(660, 540)); setLocationRelativeTo(owner);
     }
 
+    /**
+     * Registers desktop dialog previews against isolated preview data and callbacks.
+     * <p>使用隔离预览数据及回调登记桌面对话框预览。
+     */
     private void registerPreviews() {
         add("server.add", "auto.addServer", () -> show(new ServerProfileDialog(this, preview.facade, components, messages, null, value -> { })));
         add("server.edit", "server.edit", () -> show(new ServerProfileDialog(this, preview.facade, components, messages, preview.server, value -> { })));
@@ -137,11 +190,50 @@ public final class UiDebugDialog extends JDialog {
         add("file.save", "debug.file.save", () -> new JFileChooser().showSaveDialog(this));
     }
 
+    /**
+     * Adds ui debug dialog.
+     * <p>添加界面Debug对话框。
+     *
+     * @param id stable identifier within the owning registry / 所属登记表内的稳定标识
+     * @param key lookup key within the current contract / 当前契约内的查找键
+     * @param open open / 打开
+     */
     private void add(String id, String key, Runnable open) { previews.add(new Preview(id, messages.text(key), open)); }
+    /**
+     * Registers a preview action for the named confirmation with its supplied details.
+     * <p>为具名确认及其提供的详情登记预览动作。
+     *
+     * @param key lookup key within the current contract / 当前契约内的查找键
+     * @param label label / 标签
+     * @param details details / 详情
+     */
     private void confirmation(String key, String label, Map<String, ?> details) { add(key, label, () -> input.confirm(key, details)); }
+    /**
+     * Confirms localized explanation.
+     * <p>确认本地化说明。
+     *
+     * @param id stable identifier within the owning registry / 所属登记表内的稳定标识
+     * @param title title / 标题
+     * @param key lookup key within the current contract / 当前契约内的查找键
+     * @param details details / 详情
+     */
     private void confirmMessage(String id, String title, String key, Map<String, ?> details) { add(id, title, () -> confirmMessage(title, key, details)); }
+    /**
+     * Confirms localized explanation.
+     * <p>确认本地化说明。
+     *
+     * @param title title / 标题
+     * @param key lookup key within the current contract / 当前契约内的查找键
+     * @param details details / 详情
+     */
     private void confirmMessage(String title, String key, Map<String, ?> details) {
         JOptionPane.showConfirmDialog(this, messages.text(key, details), messages.text(title), JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE);
     }
+    /**
+     * Displays ui debug dialog.
+     * <p>展示界面Debug对话框。
+     *
+     * @param dialog dialog / 对话框
+     */
     private void show(JDialog dialog) { dialog.setVisible(true); }
 }

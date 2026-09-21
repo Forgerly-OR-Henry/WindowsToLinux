@@ -31,6 +31,7 @@ class AutomaticDeploymentUseCaseTest {
     @TempDir Path directory;
     private final List<String> calls = new ArrayList<>();
     private boolean completeMultiple;
+    private AutomaticAgentBoundary agentBoundary;
     private boolean declineEnvironment;
     private DeploymentStatus terminal = DeploymentStatus.SUCCEEDED;
     private final ServerIdentity server = new ServerIdentity("test-server", "192.0.2.1", 22, "SHA256:test-fingerprint");
@@ -169,6 +170,35 @@ class AutomaticDeploymentUseCaseTest {
         assertFalse(calls.contains("multi-review")); assertFalse(calls.contains("environment"));
     }
 
+    @Test void agentApprovesEveryExistingOperationAndKeepsTheTransactionIntact()throws Exception{
+        var reviews=new ArrayList<gold.debug.windowstolinux.shared.model.agent.AgentToolType>();
+        var control=new gold.debug.windowstolinux.shared.deploy.agent.AgentTaskControl(state->{});
+        var models=new gold.debug.windowstolinux.shared.deploy.agent.AgentModelPort(){
+            public gold.debug.windowstolinux.shared.model.agent.AgentDecision decide(String goal,java.util.List<gold.debug.windowstolinux.shared.model.agent.AgentAction> actions,java.util.List<String> history,int budget){
+                var action=actions.getFirst();return new gold.debug.windowstolinux.shared.model.agent.AgentDecision(gold.debug.windowstolinux.shared.model.agent.AgentDecisionType.EXECUTE,action.id(),action.binding(),"next required operation");}
+            public gold.debug.windowstolinux.shared.model.agent.AgentReview review(String goal,gold.debug.windowstolinux.shared.model.agent.AgentAction action,gold.debug.windowstolinux.shared.model.agent.AgentRiskLevel risk){
+                reviews.add(action.tool());calls.add("approved:"+action.tool());return new gold.debug.windowstolinux.shared.model.agent.AgentReview(gold.debug.windowstolinux.shared.model.agent.AgentReviewDecision.ALLOW,risk,action.binding(),"validated exact operation",java.util.List.copyOf(action.evidence().keySet()));}
+            public boolean advanceDeployment(){throw new AssertionError("no model failure");}
+        };
+        agentBoundary=new AutomaticAgentBoundary("task",profile,AgentApprovalMode.FULL_CONTROL,models,control,interaction(false),event->{},()->true);
+        Path root=node(directory.resolve("source"),"demo");
+        var result=useCase().deploy(new AutomaticDeploymentRequest(Optional.of(root),Optional.empty(),profile,Map.of()).withAutomation(DeploymentAutomationMode.AGENT,AgentApprovalMode.FULL_CONTROL),new char[0],interaction(false),value->true,value->{});
+        assertEquals(DeploymentStatus.SUCCEEDED,result.status());
+        assertEquals(List.of(gold.debug.windowstolinux.shared.model.agent.AgentToolType.ANALYZE_SOURCE,gold.debug.windowstolinux.shared.model.agent.AgentToolType.VERIFY_SERVER,
+            gold.debug.windowstolinux.shared.model.agent.AgentToolType.PREPARE_ENVIRONMENT,gold.debug.windowstolinux.shared.model.agent.AgentToolType.DEPLOY_TRANSACTION),reviews);
+        assertTrue(calls.indexOf("approved:VERIFY_SERVER")<calls.indexOf("verify"));
+        assertTrue(calls.indexOf("approved:PREPARE_ENVIRONMENT")<calls.indexOf("environment"));
+        assertTrue(calls.indexOf("approved:DEPLOY_TRANSACTION")<calls.indexOf("deploy"));
+        assertFalse(calls.contains("environment-confirmed"));assertEquals(1,Collections.frequency(calls,"deploy"));
+    }
+
+    @Test void agentCannotEnterTheDeterministicPathWithoutItsApprovalBoundary()throws Exception{
+        Path root=node(directory.resolve("source"),"demo");
+        assertThrows(SecurityException.class,()->useCase().deploy(new AutomaticDeploymentRequest(Optional.of(root),Optional.empty(),profile,Map.of())
+            .withAutomation(DeploymentAutomationMode.AGENT,AgentApprovalMode.FULL_CONTROL),new char[0],interaction(false),value->true,value->{}));
+        assertTrue(calls.isEmpty());
+    }
+
     private AutomaticDeploymentInteraction interaction(boolean cancel) {
         return new AutomaticDeploymentInteraction() {
             @Override public Optional<Map<String, String>> requestInputs(List<DeploymentInputField> fields) {
@@ -250,7 +280,7 @@ class AutomaticDeploymentUseCaseTest {
                     default -> throw new AssertionError("unexpected method: " + method.getName());
                 });
         return new AutomaticDeploymentUseCase(facade, new SourcePreparationUseCase(new DeploymentAnalysisCoordinator(),
-                new WindowsSourcePreparer(directory.resolve("work"))), new ServerOperationLockRegistry());
+                new WindowsSourcePreparer(directory.resolve("work"))), new ServerOperationLockRegistry(),null,agentBoundary);
     }
 
     private static Path node(Path root, String name) throws Exception {

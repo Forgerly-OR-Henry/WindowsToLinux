@@ -32,6 +32,12 @@ public final class DeploymentAgentSession {
     private int remaining=30;
     /** Consecutive non-progress decisions. / 连续无进展决策数。 */
     private int noProgress;
+    /** Denied exact bindings cannot be retried against a different reviewer. / 被拒绝的精确绑定不能换审批者重试。 */
+    private final Set<String> denied=new HashSet<>();
+    /** Evidence requests retain a task-wide per-action budget. / 补证据请求保留任务内逐动作预算。 */
+    private final Map<String,Integer> evidenceRounds=new HashMap<>();
+    /** Actions awaiting a new observation before another review. / 等待新观察后才能再次审批的动作。 */
+    private final Map<String,String> awaitingEvidence=new HashMap<>();
     /** Binds ports without invoking a model or executor. / 绑定端口，不调用模型或执行器。
      * @param taskId task identity / 任务身份
      * @param target server identity / 服务器身份
@@ -64,9 +70,13 @@ public final class DeploymentAgentSession {
         while(true){
             control.checkpoint();
             if(remaining<=0){control.awaitUser("decision-budget-exhausted");continue;}
+            menu.replaceAll((id,action)->executor.refresh(action));
+            var selectable=menu.values().stream().filter(a->!a.binding().equals(awaitingEvidence.get(a.id()))).toList();
+            if(selectable.isEmpty()){control.awaitUser("approval-needs-evidence");continue;}
             AgentDecision decision;
-            try{decision=models.decide(goal,List.copyOf(menu.values()),List.copyOf(history),--remaining);}
+            try{decision=models.decide(goal,selectable,List.copyOf(history),--remaining);}
             catch(Exception failure){if(Thread.currentThread().isInterrupted())throw failure;control.awaitUser("deployment-models-unavailable");continue;}
+            control.checkpoint();
             if(decision.decision()==AgentDecisionType.NEED_INPUT){event("INPUT_REQUIRED","",decision.reason());control.awaitUser("input-required");continue;}
             if(decision.decision()==AgentDecisionType.UNABLE){handoff("model-unable");continue;}
             AgentAction action=menu.get(decision.actionId());
@@ -74,41 +84,61 @@ public final class DeploymentAgentSession {
                 event("PROPOSAL_REJECTED","", "unsupported-action-or-binding");stalled();continue;
             }
             if(executed.contains(action.id())){event("REPLAY_REJECTED",action.id(),action.binding());control.awaitUser("replay-rejected");continue;}
-            AgentRiskLevel local=executor.validate(action);
-            event("LOCAL_VALIDATION",action.id(),local.name());
-            if(local==AgentRiskLevel.FORBIDDEN||action.risk()==AgentRiskLevel.FORBIDDEN){
-                event("DENIED",action.id(),"local-forbidden");control.awaitUser("local-rejected");continue;
-            }
-            AgentReview review;
-            try{review=models.review(goal,action,local);}
-            catch(Exception failure){if(Thread.currentThread().isInterrupted())throw failure;control.awaitUser("approval-service-unavailable");continue;}
-            event("AI_REVIEW",action.id(),review.decision().name()+":"+review.risk().name()+":"+review.binding());
-            if(review.decision()!=AgentReviewDecision.ALLOW){
-                history.add("action "+action.id()+" "+review.decision().name());
-                control.awaitUser(review.decision()==AgentReviewDecision.DENY?"approval-rejected":"approval-needs-evidence");continue;
-            }
-            AgentRiskLevel risk;
-            try{risk=AgentApprovalGate.admit(action,local,review);}
-            catch(SecurityException invalid){control.awaitUser("approval-binding-invalid");continue;}
-            if(AgentApprovalGate.needsHuman(mode,risk)){
-                boolean accepted=human.test(action,review);event("HUMAN_REVIEW",action.id(),Boolean.toString(accepted));
-                if(!accepted){history.add("user rejected "+action.id());control.awaitUser("user-rejected");continue;}
-            }
-            control.checkpoint();
-            AgentRiskLevel rechecked=executor.validate(action);
-            if(rechecked!=local){event("APPROVAL_INVALIDATED",action.id(),"precondition-changed");control.awaitUser("precondition-changed");continue;}
-            AgentApprovalGate.admit(action,rechecked,review);
+            if(denied.contains(action.intentBinding())){control.awaitUser("approval-rejected");continue;}
+            if(action.binding().equals(awaitingEvidence.get(action.id()))){control.awaitUser("approval-needs-evidence");continue;}
+            if(!approve(action,executor,menu.values()))continue;
             // Persist intent before dispatch; journal failure prevents remote effects. / 先记录意图，记录失败时不产生远端影响。
             event("EXECUTING",action.id(),action.binding());executed.add(action.id());
             AgentObservation observed;
             try{observed=executor.execute(action);}
-            catch(Exception failure){event("UNKNOWN",action.id(),action.binding());control.finish(AgentTaskState.UNKNOWN);throw failure;}
+            catch(Exception failure){
+                if(failure instanceof java.util.concurrent.CancellationException&&action.tool()==AgentToolType.ANALYZE_SOURCE){event("CANCELLED",action.id(),action.binding());control.finish(AgentTaskState.CANCELLED);}
+                else{event("UNKNOWN",action.id(),action.binding());control.finish(AgentTaskState.UNKNOWN);}throw failure;}
             event(observed.known()?"RESULT":"UNKNOWN",action.id(),observed.known()+":"+observed.succeeded()+":"+AgentAction.digest(new TreeMap<>(observed.facts()).toString()));
             history.add(action.tool().name()+" "+action.id()+" known="+observed.known()+" success="+observed.succeeded()+" facts="+new TreeMap<>(observed.facts()));
             if(!observed.known()){control.finish(AgentTaskState.UNKNOWN);throw new IllegalStateException("execution outcome unknown; reconcile before any replay");}
-            if(action.id().equals(required))return observed;
+            if(action.id().equals(required)){if(!observed.succeeded())stalled();else noProgress=0;return observed;}
             menu.remove(action.id());if(observed.succeeded())noProgress=0;else stalled();
         }
+    }
+    /** Applies mandatory local, independent AI and optional per-action human approval. / 应用强制本地、独立 AI 及按策略逐动作人工审批。
+     * @param action exact selected action / 精确所选动作
+     * @param executor narrow revalidation port / 窄重新验证端口
+     * @param available evidence tools available at this boundary / 此边界可用证据工具
+     * @return whether fresh approval admits this action / 新审批是否准入此动作
+     * @throws Exception on unavailable validation / 验证不可用时
+     */
+    private boolean approve(AgentAction action,AgentExecutionPort executor,Collection<AgentAction> available)throws Exception{
+            AgentRiskLevel local=executor.validate(action);
+            event("LOCAL_VALIDATION",action.id(),local.name());
+            if(local==AgentRiskLevel.FORBIDDEN||action.risk()==AgentRiskLevel.FORBIDDEN){
+                event("DENIED",action.id(),"local-forbidden");control.awaitUser("local-rejected");return false;
+            }
+            AgentReview review;
+            try{review=models.review(goal,action,local);}
+            catch(Exception failure){if(Thread.currentThread().isInterrupted())throw failure;control.awaitUser("approval-service-unavailable");return false;}
+            control.checkpoint();
+            event("AI_REVIEW",action.id(),review.decision().name()+":"+review.risk().name()+":"+review.binding());
+            if(review.decision()!=AgentReviewDecision.ALLOW){
+                history.add("action "+action.id()+" "+review.decision().name());
+                if(review.decision()==AgentReviewDecision.DENY){denied.add(action.intentBinding());control.awaitUser("approval-rejected");}
+                else{awaitingEvidence.put(action.id(),action.binding());
+                    if(evidenceRounds.merge(action.id(),1,Integer::sum)>2||available.stream().noneMatch(a->a.tool()==AgentToolType.SERVICE_STATUS||a.tool()==AgentToolType.SERVICE_LOGS||a.tool()==AgentToolType.VERIFY_SERVER))control.awaitUser("approval-needs-evidence");}
+                return false;
+            }
+            AgentRiskLevel risk;
+            try{risk=AgentApprovalGate.admit(action,local,review);}
+            catch(SecurityException invalid){control.awaitUser("approval-binding-invalid");return false;}
+            if(AgentApprovalGate.needsHuman(mode,risk)){
+                boolean accepted=human.test(action,review);event("HUMAN_REVIEW",action.id(),Boolean.toString(accepted));
+                if(!accepted){denied.add(action.intentBinding());history.add("user rejected "+action.id());control.awaitUser("user-rejected");return false;}
+            }
+            control.checkpoint();
+            if(!executor.refresh(action).binding().equals(review.binding())){event("APPROVAL_INVALIDATED",action.id(),"configuration-or-evidence-changed");return false;}
+            AgentRiskLevel rechecked=executor.validate(action);
+            if(rechecked!=local){event("APPROVAL_INVALIDATED",action.id(),"precondition-changed");control.awaitUser("precondition-changed");return false;}
+            AgentApprovalGate.admit(action,rechecked,review);
+        return true;
     }
     /** Records an event before its corresponding transition. / 在对应转换前记录事件。
      * @param type event kind / 事件种类

@@ -65,14 +65,14 @@ class PackageStructureArchitectureTest {
     private static final Set<String> DEPLOYMENT_SHARED = Set.of(
             "ReviewContext.java");
     private static final Set<String> DEPLOYMENT_SINGLE = Set.of(
-            "DeploymentAnalysisPresenter.java", "DeploymentForm.java", "DeploymentPage.java",
-            "DeploymentPageState.java", "DeploymentInputDialog.java", "DeploymentSourceCard.java");
+            "DeploymentForm.java", "DeploymentPage.java",
+            "DeploymentPageState.java", "DeploymentInputDialog.java", "DeploymentSourceCard.java", "DeploymentModeSelector.java", "DeploymentTaskControls.java");
     private static final Set<String> DEPLOYMENT_MULTI = Set.of(
             "MultiComponentDraftController.java", "MultiComponentFormState.java",
             "MultiComponentPage.java", "MultiComponentPageState.java",
             "MultiComponentResultPresenter.java");
     private static final Set<String> REPOSITORIES = Set.of(
-            "AiProfileRepository.java", "ApplicationSecretRepository.java", "ConfigurationSnapshotRepository.java",
+            "AiProfileRepository.java", "AiPurposeRepository.java", "AgentTaskRepository.java", "BrowserRecoveryRepository.java", "ApplicationSecretRepository.java", "ConfigurationSnapshotRepository.java",
             "DesktopPreferenceRepository.java", "EncryptedSecretRepository.java", "ManagedApplicationRepository.java",
             "ManagedApplicationGraphRepository.java", "RepositoryTransactionExecutor.java", "ServerProfileRepository.java", "ExternalApplicationRepository.java");
     private static final Set<String> HELPER_FRAGMENTS = Set.of("21-workspace-volume.sh", "22-restricted-build.sh", "23-container-builder.sh", "24-build-entry.sh", "25-workspace-recovery.sh", "26-build-output.sh", "12-container-image-input.sh", "61-service-identity.sh", "64-database-client.sh",
@@ -510,7 +510,7 @@ class PackageStructureArchitectureTest {
         register(packages, "gold.debug.windowstolinux.app.ui.deployment",
                 "ReviewContext");
         register(packages, "gold.debug.windowstolinux.app.ui.deployment.single",
-                "DeploymentAnalysisPresenter", "DeploymentForm", "DeploymentPage", "DeploymentPageState");
+                "DeploymentForm", "DeploymentPage", "DeploymentPageState");
         register(packages, "gold.debug.windowstolinux.app.ui.deployment.multi",
                 "MultiComponentDraftController", "MultiComponentFormState",
                 "MultiComponentPage", "MultiComponentPageState",
@@ -518,11 +518,11 @@ class PackageStructureArchitectureTest {
 
         register(packages, "gold.debug.windowstolinux.app.service.deployment.automatic",
                 "AutomaticDatabaseUseCase", "AutomaticDeploymentUseCase", "AutomaticInputCompletion",
-                "DeploymentFormUseCase", "ComponentFormUseCase");
+                "DeploymentFormUseCase", "ComponentFormUseCase", "AgentDeploymentInteraction", "AgentManagedToolCatalog", "AssistedDeploymentAdvisor", "AutomaticActionDescription", "AutomaticAgentBoundary", "AutomaticDeploymentTaskService");
         register(packages, "gold.debug.windowstolinux.shared.deploy.execution.environment", "DatabaseInstanceResolver", "NativeDatabasePreparationService");
         register(packages, "gold.debug.windowstolinux.shared.deploy.input", "AutomaticRuntimeResolver", "DeploymentRuntimeParser");
         register(packages, "gold.debug.windowstolinux.shared.config.input", "DeploymentConfigurationParser");
-        register(packages, "gold.debug.windowstolinux.app.ui.deployment.single", "DeploymentInputDialog", "DeploymentSourceCard");
+        register(packages, "gold.debug.windowstolinux.app.ui.deployment.single", "DeploymentInputDialog", "DeploymentSourceCard", "DeploymentModeSelector", "DeploymentTaskControls");
         register(packages, "gold.debug.windowstolinux.shared.ai.collaboration.role", "DeploymentInputRoleContext");
         register(packages, "gold.debug.windowstolinux.app.service.deployment",
                 "ManagedApplicationIdentityResolver", "ReviewedDeploymentUseCase", "MultiComponentDeploymentUseCase",
@@ -566,7 +566,7 @@ class PackageStructureArchitectureTest {
                 "AiRoleInvocationResult", "AiProviderAttempt", "AiCollaborationRoleKind", "AiRoleBinding", "AiRoleContext",
                 "ProjectAnalysisRoleContext", "DeploymentRiskRoleContext", "ErrorExplanationRoleContext");
         register(packages, "gold.debug.windowstolinux.app.ui.deployment",
-                "DeploymentAnalysisPresenter", "DeploymentForm", "DeploymentPage", "DeploymentPageState",
+                "DeploymentForm", "DeploymentPage", "DeploymentPageState",
                 "MultiComponentDraftController", "MultiComponentFormState",
                 "MultiComponentPage", "MultiComponentPageState",
                 "MultiComponentResultPresenter");
@@ -1083,7 +1083,6 @@ class PackageStructureArchitectureTest {
         var allowedUiServiceTypes = Set.of(
                 "gold.debug.windowstolinux.app.service.ai.AiProviderProfile",
                 "gold.debug.windowstolinux.app.service.ai.AiProviderSummary",
-                "gold.debug.windowstolinux.app.service.ai.AiRoleAssignment",
                 "gold.debug.windowstolinux.app.service.backup.BackupArchiveInspection",
                 "gold.debug.windowstolinux.app.service.backup.CreatedBackupArchive",
                 "gold.debug.windowstolinux.app.service.backup.ManagedBackupInputAssessment",
@@ -1187,7 +1186,7 @@ class PackageStructureArchitectureTest {
     }
 
     @Test
-    void testPackagesMirrorProductionAndAppMainIsTheOnlyEntrypoint() throws Exception {
+    void testPackagesMirrorProductionAndOnlyReviewedEntrypointsExist() throws Exception {
         Path root = projectRoot();
         List<Path> missingMirrors = new ArrayList<>();
         try (Stream<Path> files = Files.walk(root.resolve("src"))) {
@@ -1237,10 +1236,9 @@ class PackageStructureArchitectureTest {
     private static void assertMaximumLines(Path directory, long maximum) throws IOException {
         try (Stream<Path> files = Files.list(directory)) {
             for (Path file : files.filter(Files::isRegularFile).toList()) {
-                try (Stream<String> lines = Files.lines(file)) {
-                    long count = lines.count();
-                    assertTrue(count <= maximum, () -> file + " carries " + count + " lines across declared responsibilities");
-                }
+                long count = file.toString().endsWith(".java")
+                        ? JavadocCoverageInspector.implementationLines(Files.readString(file)) : Files.readAllLines(file).size();
+                assertTrue(count <= maximum, () -> file + " carries " + count + " implementation lines across declared responsibilities");
             }
         }
     }

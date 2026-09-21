@@ -1,151 +1,182 @@
 package gold.debug.windowstolinux.app.service.ai;
 
 import gold.debug.windowstolinux.app.db.persistence.repository.AiProfileRepository;
-import gold.debug.windowstolinux.app.secret.SecretStore;
 import gold.debug.windowstolinux.app.secret.SecretStoreException;
-import gold.debug.windowstolinux.app.service.failure.ApplicationServiceException;
-import gold.debug.windowstolinux.app.service.failure.ApplicationServiceFailureType;
 import gold.debug.windowstolinux.app.service.server.DesktopSecretStoreService;
-import gold.debug.windowstolinux.app.service.source.ReviewedSourcePreparation;
-import gold.debug.windowstolinux.shared.ai.AiAnalysisException;
-import gold.debug.windowstolinux.shared.ai.client.OpenAiCompatibleStructuralAnalysisClient;
 import gold.debug.windowstolinux.shared.ai.client.OpenAiCompatibleRoleClient;
 import gold.debug.windowstolinux.shared.ai.collaboration.role.AiRoleBinding;
 import gold.debug.windowstolinux.shared.ai.collaboration.role.AiRoleContext;
 import gold.debug.windowstolinux.shared.ai.collaboration.invocation.AiRoleInvocationResult;
-import gold.debug.windowstolinux.shared.ai.generation.prompt.AiResponseLanguageType;
-import gold.debug.windowstolinux.shared.model.message.LocalizedMessage;
-import gold.debug.windowstolinux.shared.model.security.CredentialStorageMode;
 
 import java.sql.SQLException;
-import java.util.Arrays;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 
 /**
- * Provides the {@code AiUseCaseFacade} implementation.
- *
- * <p>提供 {@code AiUseCaseFacade} 实现。
+ * Coordinates grouped model configuration, verification and ordered role invocation.
+ * <p>协调按组模型配置、验证和有序角色调用。
  */
 public final class AiUseCaseFacade {
+    /**
+     * Bound ai profile repository collaborator for profiles.
+     * <p>处理配置资料集合的AI配置资料仓库协作对象。
+     */
     private final AiProfileRepository profiles;
-    private final DesktopSecretStoreService secrets;
+    /**
+     * Role client.
+     * <p>角色客户端。
+     */
     private final OpenAiCompatibleRoleClient roleClient;
+    /**
+     * Chain.
+     * <p>调用链。
+     */
     private final AiProviderChain chain;
+    /**
+     * Reviewed configuration snapshot or settings.
+     * <p>已审阅配置快照或设置。
+     */
     private final AiConfigurationUseCase configuration;
+    /** Calls the deployment route at a fixed assisted checkpoint. / 在固定辅助节点调用部署路由。
+     * @param phase fixed checkpoint / 固定节点
+     * @param candidates nonsecret candidate values / 非秘密候选值
+     * @param evidence observed nonsecret facts / 已观察非秘密事实
+     * @param master unlock buffer / 解锁缓冲区
+     * @return evidence-linked advice / 关联证据的建议
+     * @throws SQLException when routing configuration cannot be read / 无法读取路由配置时
+     */
+    public gold.debug.windowstolinux.shared.model.deployment.AssistedDeploymentAdvice assist(String phase,java.util.Map<String,java.util.List<String>> candidates,
+            java.util.Map<String,String> evidence,char[] master)throws SQLException{
+        var client=new gold.debug.windowstolinux.shared.ai.client.AgentProtocolClient();
+        var result=chain.invoke(master,(profile,key)->{var reply=client.assist(profile.chatCompletionsEndpoint(),profile.model(),key,phase,candidates,evidence);
+            DeploymentAiScope.current().ifPresent(scope->scope.usage(reply.tokens()));
+            return new AiProviderChain.Attempt<>(reply.value(),gold.debug.windowstolinux.shared.ai.collaboration.invocation.AiInvocationStatus.VALIDATED,"assisted-advice-validated");});
+        if(!result.valid())throw new IllegalStateException("deployment-models-unavailable");return result.value().orElseThrow();
+    }
+    /** Opens the independent Agent model ports within a frozen task scope. / 在冻结任务作用域内打开独立 Agent 模型端口。
+     * @param master unlock buffer / 解锁缓冲区
+     * @return task-owned adapter / 任务所属适配器
+     */
+    public DeploymentAgentModelAdapter agentModels(char[] master){return new DeploymentAgentModelAdapter(chain,new gold.debug.windowstolinux.shared.ai.client.AgentProtocolClient(),master);}
+    /**
+     * Tests visual understanding separately from the text save probe. / 独立于文字保存测试验证视觉理解。
+     *
+     * @param id stable identifier within the owning registry / 所属登记表内的稳定标识
+     * @param master master-password buffer used for the scoped secret operation / 限定秘密操作使用的主密码缓冲区
+     * @throws Exception if the delegated operation or caller-provided interaction fails / 被委派操作或调用方提供的交互失败时
+     * @param capability separately tested text or vision capability / 分别测试的文本或视觉能力
+     */
+    public void testCapability(String id, gold.debug.windowstolinux.shared.model.ai.AiCapabilityType capability, char[] master) throws Exception { configuration.testCapability(id, capability, master); }
 
     /**
-     * Creates a {@code AiUseCaseFacade} instance.
+     * Initializes ai use case facade through its shared constructor contract.
+     * <p>通过共享构造契约初始化AI用例门面。
      *
-     * <p>创建 {@code AiUseCaseFacade} 实例。
-     *
-     * @param profiles the {@code profiles} value / {@code profiles} 值
-     * @param secrets the {@code secrets} value / {@code secrets} 值
-     * @throws NullPointerException if a required argument is {@code null} / 必要参数为 {@code null} 时
+     * @param profiles profiles / 配置资料集合
+     * @param secrets credential references or scoped secret-access service / 凭据引用或限定作用域的秘密访问服务
      */
     public AiUseCaseFacade(AiProfileRepository profiles, DesktopSecretStoreService secrets) {
         this(profiles, secrets, new OpenAiCompatibleRoleClient());
     }
 
+    /**
+     * Validates and binds the inputs required by ai use case facade.
+     * <p>校验并绑定AI用例门面所需输入。
+     *
+     * @param profiles profiles / 配置资料集合
+     * @param secrets credential references or scoped secret-access service / 凭据引用或限定作用域的秘密访问服务
+     * @param roleClient role client / 角色客户端
+     * @throws NullPointerException if a required input is absent / 必需输入缺失时
+     */
     AiUseCaseFacade(AiProfileRepository profiles, DesktopSecretStoreService secrets, OpenAiCompatibleRoleClient roleClient) {
         this.profiles = Objects.requireNonNull(profiles, "profiles");
-        this.secrets = Objects.requireNonNull(secrets, "secrets");
+        Objects.requireNonNull(secrets, "secrets");
         this.roleClient = Objects.requireNonNull(roleClient, "roleClient");
         this.chain = new AiProviderChain(profiles, secrets);
         this.configuration = new AiConfigurationUseCase(profiles, secrets, roleClient);
     }
 
-    /**
-     * Stores data through {@code save}.
-     *
-     * <p>通过 {@code save} 保存数据。
-     *
-     * @param profile the {@code profile} value / {@code profile} 值
-     * @param mode the {@code mode} value / {@code mode} 值
-     * @param masterPassword the {@code masterPassword} value / {@code masterPassword} 值
-     * @param apiKey the {@code apiKey} value / {@code apiKey} 值
-     * @throws SQLException if the operation cannot be completed / 无法完成操作时
-     * @throws SecretStoreException if the operation cannot be completed / 无法完成操作时
+    /** Opens an immutable task scope after checking all required purposes. / 检查必需用途后打开不可变任务作用域。
+     * @param mode requested deployment mode / 请求部署模式
+     * @return worker-owned routing scope / 工作线程持有的路由作用域
+     * @throws SQLException if configuration cannot be read / 无法读取配置时
      */
-    public void save(AiProfile profile, CredentialStorageMode mode, char[] masterPassword, char[] apiKey)
-            throws SQLException, SecretStoreException {
-        if (profile.credentialMode() != mode) {
-            throw ApplicationServiceException.create(ApplicationServiceFailureType.STORAGE_MODE_MISMATCH,
-                    "AI credential storage mode does not match the selected save mode");
+    public DeploymentAiScope openDeployment(gold.debug.windowstolinux.shared.model.deployment.DeploymentAutomationMode mode) throws SQLException {
+        return new DeploymentAiScope(mode,deploymentSnapshot(mode));
+    }
+    /** Captures and validates all purpose lists atomically without invoking a model. / 原子捕获并验证全部用途列表，不调用模型。
+     * @param mode requested mode / 请求模式
+     * @return immutable verified routing snapshot / 不可变已验证路由快照
+     * @throws SQLException on configuration read failure / 配置读取失败时
+     */
+    public java.util.Map<gold.debug.windowstolinux.shared.model.ai.AiPurposeType,java.util.List<AiProviderProfile>> deploymentSnapshot(gold.debug.windowstolinux.shared.model.deployment.DeploymentAutomationMode mode)throws SQLException{
+        var snapshot=new java.util.EnumMap<gold.debug.windowstolinux.shared.model.ai.AiPurposeType,java.util.List<AiProviderProfile>>(gold.debug.windowstolinux.shared.model.ai.AiPurposeType.class);
+        if(mode!=gold.debug.windowstolinux.shared.model.deployment.DeploymentAutomationMode.STATIC){
+            profiles.purposeSnapshot().forEach((purpose,values)->snapshot.put(purpose,values.stream().map(v->AiProviderProfile.fromStored(v.profile())).toList()));
+            if(mode==gold.debug.windowstolinux.shared.model.deployment.DeploymentAutomationMode.AGENT&&snapshot.get(gold.debug.windowstolinux.shared.model.ai.AiPurposeType.APPROVAL).isEmpty())
+                throw gold.debug.windowstolinux.app.service.failure.ApplicationServiceException.create(gold.debug.windowstolinux.app.service.failure.ApplicationServiceFailureType.APPROVAL_MODEL_REQUIRED,"No verified enabled approval model is configured");
+            if(snapshot.get(gold.debug.windowstolinux.shared.model.ai.AiPurposeType.DEPLOYMENT).isEmpty())
+                throw gold.debug.windowstolinux.app.service.failure.ApplicationServiceException.create(gold.debug.windowstolinux.app.service.failure.ApplicationServiceFailureType.DEPLOYMENT_MODEL_REQUIRED,"No verified enabled deployment model is configured");
         }
-        try (SecretStore store = secrets.open(mode, masterPassword)) {
-            store.save(profile.credentialKey(), apiKey);
-            profiles.saveDefault(profile.stored());
-        } finally {
-            clear(masterPassword);
-            clear(apiKey);
-        }
+        return java.util.Map.copyOf(snapshot);
     }
 
     /**
-     * Returns the value produced by {@code find}.
+     * Lists ordered enablement and verification metadata. / 列出有序启用及验证元数据。
      *
-     * <p>返回 {@code find} 生成的值。
-     *
-     * @return the optional operation result / 可选操作结果
-     * @throws SQLException if the operation cannot be completed / 无法完成操作时
+     * @return constructed or resolved list / 构造或解析得到的列表
+     * @throws SQLException if the database cannot complete the requested read or transaction / 数据库无法完成请求的读取或事务时
      */
-    public Optional<AiProfile> find() throws SQLException {
-        return profiles.findDefault().map(AiProfile::fromStored);
-    }
-
-    /**
-     * Stores one explicitly named AI provider without changing the legacy default provider.
-     *
-     * <p>保存一个显式命名的 AI 提供者，而不改变旧版默认提供者。
-     */
-    void saveNamed(AiProviderProfile profile, char[] masterPassword, char[] apiKey)
-            throws SQLException, SecretStoreException {
-        Objects.requireNonNull(profile, "profile");
-        try (SecretStore store = secrets.open(profile.credentialMode(), masterPassword)) {
-            store.save(profile.credentialKey(), apiKey);
-            profiles.saveNamed(profile.stored());
-        } finally {
-            clear(masterPassword);
-            clear(apiKey);
-        }
-    }
-
-    /**
-     * Lists named AI providers without reading their API keys.
-     *
-     * <p>列出命名 AI 提供者，而不读取其 API Key。
-     */
-    public List<AiProviderProfile> listNamed() throws SQLException {
-        return profiles.listConfigured().stream().map(value -> AiProviderProfile.fromStored(value.profile())).toList();
-    }
-
-    /** Assigns one fixed collaboration role to one existing named provider. / 将一个固定协作角色分配给一个已有命名提供者。 */
-    public void assignRole(AiRoleAssignment assignment) throws SQLException {
-        profiles.saveRoleAssignment(Objects.requireNonNull(assignment, "assignment").stored());
-    }
-
-    /** Lists explicit role bindings without loading any credential. / 列出显式角色绑定且不加载任何凭据。 */
-    public List<AiRoleAssignment> listRoleAssignments() throws SQLException {
-        return profiles.listRoleAssignments().stream().map(AiRoleAssignment::fromStored).toList();
-    }
-
-    /** Lists ordered enablement and verification metadata. / 列出有序启用及验证元数据。 */
     public List<AiProviderSummary> configurations() throws SQLException {
         return profiles.listConfigured().stream().map(value -> new AiProviderSummary(AiProviderProfile.fromStored(value.profile()),
-                value.name(), value.enabled(), value.priority(), value.verifiedAt())).toList();
+                value.name(), value.priority(), value.revision(), value.textVerifiedAt(), value.visionVerifiedAt())).toList();
     }
-    /** Tests the selected model with a fixed synthetic context before saving. / 保存前使用固定合成上下文测试所选模型。 */
-    public void saveConfiguration(AiProviderProfile profile, String name, char[] master, char[] key) throws SQLException, SecretStoreException {
-        configuration.save(profile, name, master, key);
-    }
-    /** Changes enablement while retaining position. / 改变启用状态并保留位置。 */
-    public void setEnabled(String id, boolean enabled) throws SQLException { profiles.setEnabled(id, enabled); }
-    /** Saves a complete priority permutation transactionally. / 通过事务保存完整优先级排列。 */
+    /**
+     * Saves one category-specific probe. / 保存经过对应类别探测的模型。
+     *
+     * @param profile connection or provider settings supplied to the operation / 提供给操作的连接或提供者设置
+     * @param name human-readable name or diagnostic field label / 可读名称或诊断字段标签
+     * @param master master-password buffer used for the scoped secret operation / 限定秘密操作使用的主密码缓冲区
+     * @param key API credential characters supplied to the selected operation / 提供给所选操作的 API 凭据字符
+     * @throws SQLException if the database cannot complete the requested read or transaction / 数据库无法完成请求的读取或事务时
+     * @throws SecretStoreException if the protected credential cannot be accessed or updated / 无法访问或更新受保护凭据时
+     * @param capability verified text or vision capability / 已验证文本或视觉能力
+     */
+    public void saveConfiguration(AiProviderProfile profile, String name, char[] master, char[] key, gold.debug.windowstolinux.shared.model.ai.AiCapabilityType capability) throws SQLException, SecretStoreException { configuration.save(profile, name, master, key, capability); }
+    /**
+     * Reorders one category. / 调整一个类别的顺序。
+     *
+     * @param ids ids / 标识集合
+     * @throws SQLException if the database cannot complete the requested read or transaction / 数据库无法完成请求的读取或事务时
+     */
     public void reorder(List<String> ids) throws SQLException { profiles.reorder(ids); }
 
-    /** Preserves role prompts and validation while trying enabled providers in global order. / 保留角色提示与校验，按全局顺序尝试启用提供者。 */
+    /** Reads ordered purpose members. / 读取有序用途成员。
+     * @param purpose selected purpose / 所选用途
+     * @return ordered members / 有序成员
+     * @throws SQLException if reading fails / 读取失败时
+     */
+    public java.util.List<gold.debug.windowstolinux.shared.model.ai.AiPurposeAssignment> purpose(gold.debug.windowstolinux.shared.model.ai.AiPurposeType purpose) throws SQLException { return profiles.purposes().list(purpose); }
+    /** Saves an entire purpose draft atomically. / 原子保存完整用途草稿。
+     * @param purpose selected purpose / 所选用途
+     * @param members ordered membership / 有序成员
+     * @throws SQLException if saving fails / 保存失败时
+     */
+    public void savePurpose(gold.debug.windowstolinux.shared.model.ai.AiPurposeType purpose, java.util.List<gold.debug.windowstolinux.shared.model.ai.AiPurposeAssignment> members) throws SQLException { profiles.purposes().save(purpose,members); }
+
+
+    /**
+     * Preserves fixed role prompts and validators while trying enabled regular-group providers in captured priority order; historical role assignments do not select providers.
+     * <p>保留固定角色提示及校验器，按捕获优先级顺序尝试已启用常规组提供者；历史角色分配不参与提供者选择。
+     *
+     * @param context facts and dependencies scoped to the current operation / 限定于当前操作的事实及依赖
+     * @param masterPassword master-password buffer used to unlock protected credentials / 用于解锁受保护凭据的主密码缓冲区
+     * @return validated advice or classified unavailable evidence; empty when no enabled provider exists / 已验证建议或分类不可用证据；没有已启用提供者时为空
+     * @throws SQLException if the database cannot complete the requested read or transaction / 数据库无法完成请求的读取或事务时
+     * @throws SecretStoreException if the protected credential cannot be accessed or updated / 无法访问或更新受保护凭据时
+     * @throws NullPointerException if a required input is absent / 必需输入缺失时
+     */
     public Optional<AiRoleInvocationResult> invokeRole(AiRoleContext context, char[] masterPassword)
             throws SQLException, SecretStoreException {
         Objects.requireNonNull(context, "context");
@@ -164,44 +195,4 @@ public final class AiUseCaseFacade {
         return Optional.of(new AiRoleInvocationResult(evidence, result.attempts()));
     }
 
-    /** Retains the older explanation signature while honoring current global model ordering. / 保留旧解释签名，同时遵循当前全局模型顺序。 */
-    public AiAnalysisOutcome explain(ReviewedSourcePreparation preparation, AiProfile profile,
-                                     CredentialStorageMode mode, char[] masterPassword, String languageTag) {
-        return explainReviewed(preparation, masterPassword, languageTag);
-    }
-
-    private AiAnalysisOutcome explainReviewed(ReviewedSourcePreparation preparation, char[] master, String languageTag) {
-        if (preparation.assessment().facts().isEmpty()) {
-            clear(master); return AiAnalysisOutcome.unavailable(LocalizedMessage.of("ai.status.analysisRequired"));
-        }
-        try {
-            var result = chain.invoke(master, (profile, key) -> {
-                try {
-                    var value = new OpenAiCompatibleStructuralAnalysisClient().analyze(profile.chatCompletionsEndpoint(), profile.model(), key,
-                            preparation.assessment().facts().orElseThrow(), AiResponseLanguageType.fromLanguageTag(languageTag));
-                    return new AiProviderChain.Attempt<>(AiAnalysisOutcome.available(value.explanation()),
-                            gold.debug.windowstolinux.shared.ai.collaboration.invocation.AiInvocationStatus.VALIDATED, "structural-schema-validated");
-                } catch (AiAnalysisException failure) {
-                    return new AiProviderChain.Attempt<>(AiAnalysisOutcome.unavailable(failure.failure().userMessage(), failure.failure().diagnostic()),
-                            gold.debug.windowstolinux.shared.ai.collaboration.invocation.AiInvocationStatus.INVALID_OUTPUT, failure.failure().code());
-                }
-            });
-            var value = result.valid() ? result.value().orElseThrow() : AiAnalysisOutcome.unavailable(
-                    LocalizedMessage.of(result.snapshot().isEmpty() ? "ai.status.noEnabledProviders" : "ai.status.allProvidersFailed"));
-            return new AiAnalysisOutcome(value.available(), value.status(), value.content(), value.diagnostic(), result.attempts());
-        } catch (SQLException failure) {
-            return AiAnalysisOutcome.unavailable(LocalizedMessage.of("ai.status.providerMissing"), "AI configuration snapshot could not be read");
-        } finally { clear(master); }
-    }
-
-    /** Named legacy requests also use the global chain; role bindings are retained only as migration metadata. / 旧命名请求同样使用全局调用链，角色绑定仅作为迁移元数据保留。 */
-    public AiAnalysisOutcome explainNamed(ReviewedSourcePreparation preparation, String providerId, char[] masterPassword, String languageTag) {
-        return explainReviewed(preparation, masterPassword, languageTag);
-    }
-
-    private static void clear(char[] value) {
-        if (value != null) {
-            Arrays.fill(value, '\0');
-        }
-    }
 }
