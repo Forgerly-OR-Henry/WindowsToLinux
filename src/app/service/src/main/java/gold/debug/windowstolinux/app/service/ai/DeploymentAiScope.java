@@ -26,12 +26,20 @@ public final class DeploymentAiScope implements AutoCloseable {
     private long measuredCalls;
     /** Metadata-only audit sink. / 仅元数据审计端口。 */
     private java.util.function.Consumer<Map<String,String>> events=event->{};
+    /** Worker checkpoint before a new provider request. / 新提供者请求前的工作线程检查点。 */
+    private Runnable requestCheckpoint=()->{};
+    /** Installs task pause and cancellation without interrupting an executing server transaction. / 安装任务暂停及取消，不打断正在执行的服务器事务。
+     * @param checkpoint safe request boundary / 安全请求边界
+     */
+    public void beforeRequest(Runnable checkpoint){requestCheckpoint=Objects.requireNonNull(checkpoint);}
+    /** Stops before selecting the next model when pause or cancel is pending. / 暂停或取消待处理时在选择下一模型前停止。 */
+    public void checkpoint(){requestCheckpoint.run();}
     /** Actual human callbacks. / 实际人工回调次数。 */
     private long humanInterventions;
     /** Installs a durable sink before model calls. / 模型调用前安装持久化端口。
      * @param events metadata-only events / 仅元数据事件
      */
-    public void audit(java.util.function.Consumer<Map<String,String>> events){this.events=Objects.requireNonNull(events);}
+    public void audit(java.util.function.Consumer<Map<String,String>> events){this.events=Objects.requireNonNull(events);recordSnapshot();}
     /** Counts an actual human interaction without retaining its answer. / 记录实际人工交互，不保留回答。 */
     public void human(){humanInterventions++;}
     /** Records the actual purpose and profile without prompt or endpoint data. / 记录实际用途及模型身份，不记录提示词或端点。
@@ -95,7 +103,7 @@ public final class DeploymentAiScope implements AutoCloseable {
         var next=new EnumMap<AiPurposeType,List<AiProviderProfile>>(AiPurposeType.class);
         for(var purpose:AiPurposeType.values())next.put(purpose,snapshot.getOrDefault(purpose,List.of()).stream()
             .filter(profile->!consumed.getOrDefault(purpose,Set.of()).contains(profile)).toList());
-        providers=Map.copyOf(next);positions.clear();revision++;
+        providers=Map.copyOf(next);positions.clear();revision++;recordSnapshot();
     }
     /** Returns a nonsecret binding for all frozen model identities and exact credential references. / 返回全部冻结模型身份及精确凭据引用的非秘密绑定。
      * @return revision and digest / 修订及摘要
@@ -103,4 +111,12 @@ public final class DeploymentAiScope implements AutoCloseable {
     public String binding(){return revision+":"+gold.debug.windowstolinux.shared.model.agent.AgentAction.digest(new TreeMap<>(providers).toString());}
     /** Clears the worker scope. / 清理工作线程作用域。 */
     @Override public void close(){if(Thread.currentThread()!=owner||CURRENT.get()!=this)throw new IllegalStateException("wrong deployment scope owner");CURRENT.remove();}
+    /** Records selected model names and configuration identities without endpoints or credentials. / 记录所选模型名称及配置身份，不记录端点或凭据。
+     */
+    private void recordSnapshot(){
+        for(var purpose:AiPurposeType.values()){
+            int order=0;for(var profile:providers(purpose))events.accept(Map.of("type","MODEL_SNAPSHOT","action","","detail",revision+":"+purpose.name()+":"+(++order)+":"+profile.id()+":"+profile.model()+":"
+                +gold.debug.windowstolinux.shared.model.agent.AgentAction.digest(profile.toString())));
+        }
+    }
 }

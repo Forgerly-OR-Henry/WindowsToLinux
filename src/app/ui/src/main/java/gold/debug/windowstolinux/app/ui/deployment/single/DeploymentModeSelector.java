@@ -22,7 +22,7 @@ final class DeploymentModeSelector extends JPanel {
     DeploymentModeSelector(PageMessagePresenter messages){
         super(new BorderLayout(10,3));this.messages=messages;setOpaque(false);
         slider.setName("deployment.automation");slider.setMajorTickSpacing(1);slider.setSnapToTicks(true);slider.setPaintTicks(true);slider.setPaintLabels(true);
-        slider.setPreferredSize(new Dimension(270,58));slider.setMinimumSize(new Dimension(220,58));
+        slider.setPreferredSize(new Dimension(270,44));slider.setMinimumSize(new Dimension(220,44));
         var labels=new Hashtable<Integer,JLabel>();for(var mode:DeploymentAutomationMode.values())labels.put(mode.ordinal(),new JLabel(messages.text("deployment.mode."+mode.name())));
         slider.setLabelTable(labels);slider.getAccessibleContext().setAccessibleName(messages.text("deployment.mode.label"));
         approval.setName("deployment.approval");approval.setSelectedItem(AgentApprovalMode.AUTOMATIC);
@@ -54,7 +54,7 @@ final class DeploymentModeSelector extends JPanel {
         approval.setVisible(mode()==DeploymentAutomationMode.AGENT);
         String key=mode()==DeploymentAutomationMode.AGENT&&approval()==AgentApprovalMode.MANUAL_REVIEW
             ?"deployment.approval.manualHint":"deployment.mode.description."+mode().name();
-        description.setRows(mode()==DeploymentAutomationMode.AGENT&&approval()==AgentApprovalMode.MANUAL_REVIEW?3:2);
+        description.setRows(mode()==DeploymentAutomationMode.AGENT&&approval()==AgentApprovalMode.MANUAL_REVIEW?2:1);
         description.setText(messages.text(key));description.setToolTipText(messages.text(key));revalidate();
     }
 }

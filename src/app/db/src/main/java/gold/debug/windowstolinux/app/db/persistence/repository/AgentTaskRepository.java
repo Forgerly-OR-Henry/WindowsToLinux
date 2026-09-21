@@ -77,15 +77,25 @@ public final class AgentTaskRepository {
      * @throws SQLException when durable evidence cannot be read / 无法读取持久化证据时
      */
     public List<String> unresolved(String server)throws SQLException{
+        return unresolved(server,"");
+    }
+    /** Also checks a frozen endpoint identity so a second saved profile cannot replay uncertain effects. / 同时检查冻结端点身份，避免第二份保存资料重放不确定影响。
+     * @param server saved server identity / 已保存服务器身份
+     * @param endpointDigest digest of normalized host and port / 规范主机及端口摘要
+     * @return unresolved task identities / 未确认任务身份
+     * @throws SQLException if evidence cannot be read / 无法读取证据时
+     */
+    public List<String> unresolved(String server,String endpointDigest)throws SQLException{
         var ids=new ArrayList<String>();
         String sql="""
-            SELECT t.id FROM deployment_agent_task t WHERE t.server_id=? AND
+            SELECT t.id FROM deployment_agent_task t WHERE (t.server_id=? OR EXISTS(SELECT 1 FROM deployment_agent_event target
+            WHERE target.task_id=t.id AND target.event_type='REMOTE_TARGET' AND target.detail=?)) AND
             (t.state='UNKNOWN' OR EXISTS(SELECT 1 FROM deployment_agent_event e
             WHERE e.task_id=t.id AND e.event_type='EXECUTING' AND NOT EXISTS
             (SELECT 1 FROM deployment_agent_event r WHERE r.task_id=e.task_id AND r.action_id=e.action_id
             AND r.sequence>e.sequence AND r.event_type IN ('RESULT','CANCELLED')))) ORDER BY t.started_at
             """;
-        try(var c=connections.open();var s=c.prepareStatement(sql)){s.setString(1,server);try(var rows=s.executeQuery()){while(rows.next())ids.add(rows.getString(1));}}
+        try(var c=connections.open();var s=c.prepareStatement(sql)){s.setString(1,server);s.setString(2,endpointDigest);try(var rows=s.executeQuery()){while(rows.next())ids.add(rows.getString(1));}}
         return List.copyOf(ids);
     }
     /** Reads bounded recent records for App history. / 为 App 历史读取有界最近记录。

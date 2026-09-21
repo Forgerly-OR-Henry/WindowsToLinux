@@ -157,7 +157,7 @@ class BeginnerDesktopLayoutTest {
                     JButton deploy = descendants(deployment).filter(JButton.class::isInstance).map(JButton.class::cast)
                             .filter(button -> button.getText().equals(catalog.text("auto.start"))).findFirst().orElseThrow();
                     JTextArea log = descendants(deployment).filter(JTextArea.class::isInstance).map(JTextArea.class::cast)
-                            .filter(area -> !area.isEditable()).findFirst().orElseThrow();
+                            .filter(area -> "deployment.output".equals(area.getName())).findFirst().orElseThrow();
                     render(root, "deployment-" + size[0] + ".png");
                     assertTrue(log.getHeight() >= 200, "Log must remain readable: " + log.getSize() + " parent=" + log.getParent().getSize());
                     assertTrue(deploy.getWidth() >= 120 && deploy.getHeight() >= 30);

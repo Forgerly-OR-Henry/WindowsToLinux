@@ -244,7 +244,7 @@ public final class DeploymentPage implements ReviewContext {
         ((BorderLayout) page.getLayout()).setVgap(12);
         AdvancedOptionsPane advanced = new AdvancedOptionsPane(page, c, messages);
         JPanel selection = c.transparent(new BorderLayout(12, 0));
-        JPanel source = c.card(new BorderLayout(0, 12));
+        JPanel source = c.card(new BorderLayout(0, 12));source.setBorder(BorderFactory.createEmptyBorder(8,18,8,18));
         source.add(c.sectionHeading(messages.text("auto.source"), messages.text("auto.source.hint")), BorderLayout.NORTH);
         sourceMode.addItem(messages.text("auto.local")); sourceMode.addItem(messages.text("auto.git"));
         sourceCard = new DeploymentSourceCard(service, c, messages, value -> {
@@ -252,7 +252,7 @@ public final class DeploymentPage implements ReviewContext {
             sourcePath.setText(value.directory().map(Path::toString).orElse("")); gitAddress.setText(value.gitAddress());
         });
         source.add(sourceCard, BorderLayout.CENTER);
-        JPanel target = c.card(new BorderLayout(0, 12));
+        JPanel target = c.card(new BorderLayout(0, 12));target.setBorder(BorderFactory.createEmptyBorder(8,18,8,18));
         target.add(c.sectionHeading(messages.text("auto.server"), messages.text("auto.server.hint")), BorderLayout.NORTH);
         serverSelection = new ServerSelectionPane(service, c, messages, serverContext::selectProfile);
         target.add(serverSelection, BorderLayout.CENTER);
@@ -267,13 +267,15 @@ public final class DeploymentPage implements ReviewContext {
         JButton models = c.secondaryButton(messages.text("deployment.configureModels")); models.addActionListener(event -> openAi.run());
         launch.add(models); launch.add(start); actions.add(launch, BorderLayout.EAST);
         top.add(actions, BorderLayout.SOUTH); page.add(top, BorderLayout.NORTH);
-        output.setText(messages.text("auto.idle"));
+        output.setName("deployment.output");output.setText(messages.text("auto.idle"));
         JPanel log = c.outputCard(messages.text("auto.log"), messages.text("auto.log.hint"), output);
         handoffs.setOpaque(false); handoffScroll.setVisible(false); handoffScroll.setPreferredSize(new Dimension(0,46));
         taskControls=new DeploymentTaskControls(service,messages,this::append,()->{
             char[] master=serverContext.masterPassword();return master.length==0?new DeploymentInputDialog(owner,service,c,messages).requestSecret("field.masterPassword"):master;});
-        JPanel taskFooter=c.transparent(new BorderLayout(0,8));taskFooter.add(taskControls,BorderLayout.NORTH);taskFooter.add(handoffScroll,BorderLayout.SOUTH);
-        log.add(taskFooter, BorderLayout.SOUTH); page.add(log, BorderLayout.CENTER);
+        JPanel logHeader=c.transparent(new BorderLayout(8,0));
+        JComponent logTitle=c.sectionHeading(messages.text("auto.log"),"");logTitle.setToolTipText(messages.text("auto.log.hint"));
+        logHeader.add(logTitle,BorderLayout.WEST);logHeader.add(taskControls,BorderLayout.CENTER);
+        log.add(logHeader,BorderLayout.NORTH);log.add(handoffScroll, BorderLayout.SOUTH); page.add(log, BorderLayout.CENTER);
         configureAdvanced(advanced, c,openServers);
         return advanced;
     }
