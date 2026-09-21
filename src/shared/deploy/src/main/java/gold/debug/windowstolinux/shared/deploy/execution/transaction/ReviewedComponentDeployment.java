@@ -11,7 +11,13 @@ import java.util.Objects;
 /**
  * Reviewed inputs and stable managed identity for one application component.
  *
- * <p>一个应用组件的经审阅输入与稳定受管身份。
+ *  <p>一个应用组件的经审阅输入与稳定受管身份。
+ *
+ * @param componentId identifier within the reviewed component graph / 已审阅组件图内的标识
+ * @param request reviewed inputs for the requested operation / 所请求操作的已审阅输入
+ * @param application managed target with its server and ownership identity / 携带服务器及归属身份的受管目标
+ * @param resolvedSecrets resolved secrets / 已解析秘密集合
+ * @param resourceBindings resource bindings / 资源绑定集合
  */
 public record ReviewedComponentDeployment(
         String componentId,
@@ -20,7 +26,17 @@ public record ReviewedComponentDeployment(
         List<ResolvedSecretRevision> resolvedSecrets,
         ManagedComponentResourceBindings resourceBindings
 ) {
-    /** Validates exact identity and secret-revision binding. / 验证精确身份与秘密修订绑定。 */
+    /**
+     * Validates exact identity and secret-revision binding. / 验证精确身份与秘密修订绑定。
+     *
+     * @param componentId identifier within the reviewed component graph / 已审阅组件图内的标识
+     * @param request reviewed inputs for the requested operation / 所请求操作的已审阅输入
+     * @param application managed target with its server and ownership identity / 携带服务器及归属身份的受管目标
+     * @param resolvedSecrets resolved secrets / 已解析秘密集合
+     * @param resourceBindings resource bindings / 资源绑定集合
+     * @throws IllegalArgumentException if an input violates the constraints checked by this contract / 输入违反当前契约检查的约束时
+     * @throws NullPointerException if a required input is absent / 必需输入缺失时
+     */
     public ReviewedComponentDeployment {
         componentId = Objects.requireNonNull(componentId, "componentId").trim();
         if (!componentId.matches("[a-z0-9][a-z0-9-]{0,62}")) {
@@ -41,7 +57,14 @@ public record ReviewedComponentDeployment(
         }
     }
 
-    /** Compatibility constructor for tests and callers with explicitly empty reviewed resources. / 为显式空审阅资源的测试及调用方提供兼容构造。 */
+    /**
+     * Compatibility constructor for tests and callers with explicitly empty reviewed resources. / 为显式空审阅资源的测试及调用方提供兼容构造。
+     *
+     * @param componentId identifier within the reviewed component graph / 已审阅组件图内的标识
+     * @param request reviewed inputs for the requested operation / 所请求操作的已审阅输入
+     * @param application managed target with its server and ownership identity / 携带服务器及归属身份的受管目标
+     * @param resolvedSecrets resolved secrets / 已解析秘密集合
+     */
     public ReviewedComponentDeployment(String componentId, ReviewedDeploymentRequest request,
                                        ManagedApplication application, List<ResolvedSecretRevision> resolvedSecrets) {
         this(componentId, request, application, resolvedSecrets,

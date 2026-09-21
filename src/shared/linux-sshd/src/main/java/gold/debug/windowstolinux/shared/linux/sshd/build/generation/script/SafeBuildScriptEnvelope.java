@@ -6,11 +6,27 @@ import gold.debug.windowstolinux.shared.model.project.DeploymentProjectFacts;
 
 import java.util.Objects;
 
-/** Owns archive validation, extraction, limits, logging, and build-tool attestation shared by all renderers. / 持有全部渲染器共享的归档校验、解压、限制、日志与构建工具证明。 */
+/**
+ * Owns archive validation, extraction, limits, logging, and build-tool attestation shared by all renderers. / 持有全部渲染器共享的归档校验、解压、限制、日志与构建工具证明。
+ */
 public final class SafeBuildScriptEnvelope {
+    /**
+     * Prevents instantiation of this static contract helper.
+     * <p>防止实例化当前静态契约辅助类。
+     */
     private SafeBuildScriptEnvelope() { }
 
-    /** Performs the {@code wrap} operation. / 执行 {@code wrap} 操作。 */
+    /**
+     * Wraps safe build script envelope as text without executing the rendered command.
+     * <p>封装安全构建脚本信封为文本，不执行所渲染命令。
+     *
+     * @param facts typed facts used for deterministic planning / 确定性计划使用的类型化事实
+     * @param workspace platform-owned work area with enforced path boundaries / 具有路径边界约束的平台工作区
+     * @param limits resource and time bounds enforced during execution / 执行期间实施的资源及时间边界
+     * @param command fixed or explicitly reviewed command text / 固定或显式审阅的命令文本
+     * @return wrap text / 包装文本
+     * @throws NullPointerException if a required input is absent / 必需输入缺失时
+     */
     public static String wrap(DeploymentProjectFacts facts, RemoteWorkspace workspace, BuildLimitConfiguration limits, String command) {
         Objects.requireNonNull(facts, "facts");
         Objects.requireNonNull(workspace, "workspace");
@@ -102,13 +118,28 @@ public final class SafeBuildScriptEnvelope {
                 workspaceAccounting(container, limits), facts.buildTool().name());
     }
 
+    /**
+     * Renders bounded source extraction with ownership preservation disabled and the container-specific umask when needed.
+     * <p>渲染不保留归档所有者的有界源码提取命令，并在需要时设置容器专用 umask。
+     *
+     * @param container container / 容器
+     * @return extract source text / 提取源码文本
+     */
     private static String extractSource(boolean container) {
         String extract = "tar --extract --gzip --file \"$archive\" --directory \"$source\" --no-same-owner --no-same-permissions --numeric-owner";
         return container ? "(umask 022; " + extract + ")" : extract;
     }
 
+    /**
+     * Renders fixed workspace accounting protocol text from the reviewed inputs.
+     * <p>根据已审阅输入渲染固定工作区用量统计协议文本。
+     *
+     * @param container container / 容器
+     * @param limits resource and time bounds enforced during execution / 执行期间实施的资源及时间边界
+     * @return workspace accounting text / 工作区用量统计文本
+     */
     private static String workspaceAccounting(boolean container, BuildLimitConfiguration limits) {
-        // Mapped engine files cannot be traversed by the project UID; the root-owned fixed-capacity volume bounds them.
+        // Mapped engine files cannot be traversed by the project UID; the root-owned fixed-capacity volume bounds them. / 项目 UID 无法遍历映射的引擎文件；这些文件受 root 持有的固定容量卷约束。
         if (container) return "printf 'BUILD_WORKSPACE_LIMIT=fixed-volume\\n'";
         return """
                 used=$(du -sb "$mutable" | awk '{print $1}')
@@ -119,6 +150,14 @@ public final class SafeBuildScriptEnvelope {
                 """.formatted(limits.maxWorkspaceBytes());
     }
 
+    /**
+     * Renders fixed jvm environment protocol text from the reviewed inputs.
+     * <p>根据已审阅输入渲染固定jvm环境协议文本。
+     *
+     * @param facts typed facts used for deterministic planning / 确定性计划使用的类型化事实
+     * @param limits resource and time bounds enforced during execution / 执行期间实施的资源及时间边界
+     * @return jvm environment text / jvm环境文本
+     */
     private static String jvmEnvironment(DeploymentProjectFacts facts, BuildLimitConfiguration limits) {
         boolean jvm = switch (facts.buildTool()) {
             case JDK, JAVA, MAVEN, MAVEN_WRAPPER, GRADLE_WRAPPER, KOTLINC, GRADLE_KOTLIN_WRAPPER -> true;
@@ -132,7 +171,14 @@ public final class SafeBuildScriptEnvelope {
                 + "m -XX:ReservedCodeCacheSize=" + Math.min(128, memory / 16) + "m'\n";
     }
 
-    /** Performs the {@code shellQuote} operation. / 执行 {@code shellQuote} 操作。 */
+    /**
+     * Quotes a literal shell argument without evaluating its content.
+     * <p>引用 Shell 字面参数，不求值其内容。
+     *
+     * @param value candidate content accepted or rejected by this contract / 由当前契约接收或拒绝的候选内容
+     * @return shell quote text / shell引用文本
+     * @throws NullPointerException if a required input is absent / 必需输入缺失时
+     */
     public static String shellQuote(String value) {
         return "'" + Objects.requireNonNull(value, "value").replace("'", "'\"'\"'") + "'";
     }

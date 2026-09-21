@@ -20,29 +20,30 @@ import java.awt.LayoutManager;
 import java.util.Objects;
 
 /**
- * Provides the {@code DesktopComponentFactory} implementation.
- *
- * <p>提供 {@code DesktopComponentFactory} 实现。
+ * Creates Swing controls using the selected desktop theme and shared visual conventions.
+ * <p>按所选桌面主题及共享视觉约定创建 Swing 控件。
  */
 public final class DesktopComponentFactory {
+    /**
+     * Palette.
+     * <p>配色。
+     */
     private final ThemePalette palette;
 
     /**
-     * Creates a {@code DesktopComponentFactory} instance.
+     * Validates and binds the inputs required by desktop component factory.
+     * <p>校验并绑定Desktop组件工厂所需输入。
      *
-     * <p>创建 {@code DesktopComponentFactory} 实例。
-     *
-     * @param palette the {@code palette} value / {@code palette} 值
-     * @throws NullPointerException if a required argument is {@code null} / 必要参数为 {@code null} 时
+     * @param palette palette / 配色
+     * @throws NullPointerException if a required input is absent / 必需输入缺失时
      */
     public DesktopComponentFactory(ThemePalette palette) {
         this.palette = Objects.requireNonNull(palette, "palette");
     }
 
     /**
-     * Performs the {@code pagePanel} operation.
-     *
-     * <p>执行 {@code pagePanel} 操作。
+     * Returns page panel.
+     * <p>返回页面面板。
      *
      * @return the operation result / 操作结果
      */
@@ -53,11 +54,10 @@ public final class DesktopComponentFactory {
     }
 
     /**
-     * Performs the {@code transparent} operation.
+     * Creates a nonopaque panel using the supplied layout manager.
+     * <p>使用所提供布局管理器创建非不透明面板。
      *
-     * <p>执行 {@code transparent} 操作。
-     *
-     * @param layout the {@code layout} value / {@code layout} 值
+     * @param layout layout / 布局
      * @return the operation result / 操作结果
      */
     public JPanel transparent(LayoutManager layout) {
@@ -67,15 +67,20 @@ public final class DesktopComponentFactory {
     }
 
     /**
-     * Performs the {@code badge} operation.
+     * Creates a themed rounded badge with the supplied text.
+     * <p>使用所提供文本创建主题化圆角标记。
      *
-     * <p>执行 {@code badge} 操作。
-     *
-     * @param text the {@code text} value / {@code text} 值
+     * @param text bounded text consumed or produced by the current formatter / 当前格式化器消费或生成的有界文本
      * @return the operation result / 操作结果
      */
     public JLabel badge(String text) {
         JLabel badge = new JLabel(text) {
+            /**
+             * Paints component.
+             * <p>绘制组件。
+             *
+             * @param graphics graphics / 图形
+             */
             @Override protected void paintComponent(java.awt.Graphics graphics) {
                 var g = (java.awt.Graphics2D) graphics.create();
                 try {
@@ -94,11 +99,10 @@ public final class DesktopComponentFactory {
     }
 
     /**
-     * Performs the {@code card} operation.
+     * Creates a themed rounded content card with standard inner padding.
+     * <p>创建具有标准内边距的主题化圆角内容卡片。
      *
-     * <p>执行 {@code card} 操作。
-     *
-     * @param layout the {@code layout} value / {@code layout} 值
+     * @param layout layout / 布局
      * @return the operation result / 操作结果
      */
     public JPanel card(LayoutManager layout) {
@@ -108,12 +112,11 @@ public final class DesktopComponentFactory {
     }
 
     /**
-     * Performs the {@code sectionHeading} operation.
+     * Combines a styled section title with its explanatory text.
+     * <p>组合带样式的分区标题及其说明文本。
      *
-     * <p>执行 {@code sectionHeading} 操作。
-     *
-     * @param title the {@code title} value / {@code title} 值
-     * @param description the {@code description} value / {@code description} 值
+     * @param title title / 标题
+     * @param description description / 说明
      * @return the operation result / 操作结果
      */
     public JComponent sectionHeading(String title, String description) {
@@ -130,14 +133,13 @@ public final class DesktopComponentFactory {
     }
 
     /**
-     * Performs the {@code stepCard} operation.
+     * Builds a numbered step card containing its explanation and action button.
+     * <p>构建包含说明及动作按钮的编号步骤卡片。
      *
-     * <p>执行 {@code stepCard} 操作。
-     *
-     * @param index the {@code index} value / {@code index} 值
-     * @param title the {@code title} value / {@code title} 值
-     * @param description the {@code description} value / {@code description} 值
-     * @param action the {@code action} value / {@code action} 值
+     * @param index index / 索引
+     * @param title title / 标题
+     * @param description description / 说明
+     * @param action explicit action selected for the current target / 为当前目标显式选择的动作
      * @return the operation result / 操作结果
      */
     public JPanel stepCard(String index, String title, String description, JButton action) {
@@ -160,11 +162,10 @@ public final class DesktopComponentFactory {
     }
 
     /**
-     * Performs the {@code primaryButton} operation.
+     * Creates an accent-colored primary action button with shared interaction styling.
+     * <p>创建使用强调色及共享交互样式的主动作按钮。
      *
-     * <p>执行 {@code primaryButton} 操作。
-     *
-     * @param text the {@code text} value / {@code text} 值
+     * @param text bounded text consumed or produced by the current formatter / 当前格式化器消费或生成的有界文本
      * @return the operation result / 操作结果
      */
     public JButton primaryButton(String text) {
@@ -172,17 +173,14 @@ public final class DesktopComponentFactory {
         button.setBackground(palette.accent());
         button.setForeground(Color.WHITE);
         decorate(button);
-        button.putClientProperty(FlatClientProperties.STYLE, java.util.Map.of(
-                "arc", 12, "borderWidth", 0, "focusWidth", 1));
         return button;
     }
 
     /**
-     * Performs the {@code secondaryButton} operation.
+     * Creates a secondary action button using the current palette.
+     * <p>使用当前配色创建次级动作按钮。
      *
-     * <p>执行 {@code secondaryButton} 操作。
-     *
-     * @param text the {@code text} value / {@code text} 值
+     * @param text bounded text consumed or produced by the current formatter / 当前格式化器消费或生成的有界文本
      * @return the operation result / 操作结果
      */
     public JButton secondaryButton(String text) {
@@ -194,15 +192,14 @@ public final class DesktopComponentFactory {
     }
 
     /**
-     * Performs the {@code addField} operation.
+     * Adds an accessible label and input pair to the form's grid row.
+     * <p>向表单网格行添加具备无障碍关联的标签及输入控件。
      *
-     * <p>执行 {@code addField} 操作。
-     *
-     * @param panel the {@code panel} value / {@code panel} 值
-     * @param row the {@code row} value / {@code row} 值
-     * @param column the {@code column} value / {@code column} 值
-     * @param label the {@code label} value / {@code label} 值
-     * @param component the {@code component} value / {@code component} 值
+     * @param panel panel / 面板
+     * @param row row / 数据行
+     * @param column column / 列
+     * @param label label / 标签
+     * @param component component / 组件
      */
     public void addField(JPanel panel, int row, int column, String label, Component component) {
         int leftColumn = column * 2;
@@ -224,13 +221,12 @@ public final class DesktopComponentFactory {
     }
 
     /**
-     * Performs the {@code outputCard} operation.
+     * Wraps a text output area in a themed scrollable card with a heading.
+     * <p>将文本输出区包装到具有标题的主题化可滚动卡片。
      *
-     * <p>执行 {@code outputCard} 操作。
-     *
-     * @param title the {@code title} value / {@code title} 值
-     * @param description the {@code description} value / {@code description} 值
-     * @param output the {@code output} value / {@code output} 值
+     * @param title title / 标题
+     * @param description description / 说明
+     * @param output destination receiving the produced content / 接收所生成内容的目标
      * @return the operation result / 操作结果
      */
     public JPanel outputCard(String title, String description, JTextArea output) {
@@ -247,12 +243,11 @@ public final class DesktopComponentFactory {
     }
 
     /**
-     * Performs the {@code informationCard} operation.
+     * Builds a read-only information card from a title and normalized message text.
+     * <p>根据标题及规范化消息文本构建只读信息卡片。
      *
-     * <p>执行 {@code informationCard} 操作。
-     *
-     * @param title the {@code title} value / {@code title} 值
-     * @param message the {@code message} value / {@code message} 值
+     * @param title title / 标题
+     * @param message localized explanation / 本地化说明
      * @return the operation result / 操作结果
      */
     public JPanel informationCard(String title, String message) {
@@ -270,9 +265,8 @@ public final class DesktopComponentFactory {
     }
 
     /**
-     * Performs the {@code outputArea} operation.
-     *
-     * <p>执行 {@code outputArea} 操作。
+     * Returns output area.
+     * <p>返回输出区域。
      *
      * @return the operation result / 操作结果
      */
@@ -286,11 +280,16 @@ public final class DesktopComponentFactory {
         return area;
     }
 
+    /**
+     * Applies shared borderless surfaces while retaining focus and hover feedback.
+     * <p>应用共享的无描边表面，同时保留焦点与悬停反馈。
+     *
+     * @param button button / 按钮
+     */
     private void decorate(JButton button) {
         button.setFocusPainted(true);
         button.setOpaque(false);
         button.putClientProperty(FlatClientProperties.STYLE, java.util.Map.of(
-                "arc", 12, "borderColor", palette.inputBorder(), "focusedBorderColor", palette.accent(),
-                "hoverBorderColor", palette.accent(), "focusWidth", 1));
+                "arc", 12, "borderWidth", 0, "focusWidth", 1));
     }
 }

@@ -11,13 +11,24 @@ import java.util.Objects;
 /**
  * Converts the constrained container runtime model to deterministic helper arguments.
  *
- * <p>将受约束的容器运行模型转换为确定性的辅助程序参数。
+ *  <p>将受约束的容器运行模型转换为确定性的辅助程序参数。
  */
 public final class ContainerRuntimeArguments {
+    /**
+     * Prevents instantiation of this static contract helper.
+     * <p>防止实例化当前静态契约辅助类。
+     */
     private ContainerRuntimeArguments() {
     }
 
-    /** Performs the {@code from} operation. / 执行 {@code from} 操作。 */
+    /**
+     * Maps the reviewed container runtime into its fixed engine, image, port and volume argument sequence.
+     * <p>将已审阅容器运行规格映射为固定的引擎、镜像、端口及卷参数序列。
+     *
+     * @param runtime reviewed language, process and health specification / 已审阅的语言、进程及健康规格
+     * @return constructed or resolved list / 构造或解析得到的列表
+     * @throws NullPointerException if a required input is absent / 必需输入缺失时
+     */
     public static List<String> from(DeploymentRuntimeSpecification.Container runtime) {
         runtime = Objects.requireNonNull(runtime, "runtime");
         List<String> values = new ArrayList<>();

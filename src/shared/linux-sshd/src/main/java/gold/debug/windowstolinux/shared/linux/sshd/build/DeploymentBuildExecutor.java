@@ -45,16 +45,46 @@ import java.util.Objects;
 /**
  * Executes an implementation-rendered, resource-bounded target-host build.
  *
- * <p>执行由实现渲染并受资源限制的目标机构建。
+ *  <p>执行由实现渲染并受资源限制的目标机构建。
  */
 public final class DeploymentBuildExecutor {
+    /**
+     * Bound ssh command executor collaborator for typed remote command boundary.
+     * <p>处理类型化远端命令边界的SSH命令执行器协作对象。
+     */
     private final SshCommandExecutor commands;
+    /**
+     * Account name used by the reviewed connection.
+     * <p>已审阅连接使用的账户名。
+     */
     private final String username;
+    /**
+     * Renderers.
+     * <p>渲染器集合。
+     */
     private final DeploymentBuildRendererRegistry renderers;
+    /**
+     * Toolchain catalog.
+     * <p>工具链目录。
+     */
     private final gold.debug.windowstolinux.shared.model.toolchain.ToolchainSupportCatalog toolchainCatalog =
             gold.debug.windowstolinux.shared.model.toolchain.ToolchainSupportCatalog.defaults();
+    /**
+     * Prepared.
+     * <p>已准备。
+     */
     private final java.util.Map<String, gold.debug.windowstolinux.shared.model.toolchain.ResolvedToolchainSet> prepared = new java.util.HashMap<>();
 
+    /**
+     * Prepares resolved toolchain set.
+     * <p>准备已解析工具链集合。
+     *
+     * @param facts typed facts used for deterministic planning / 确定性计划使用的类型化事实
+     * @param runtime reviewed language, process and health specification / 已审阅的语言、进程及健康规格
+     * @param limits resource and time bounds enforced during execution / 执行期间实施的资源及时间边界
+     * @return constructed or resolved resolved toolchain set / 构造或解析得到的已解析工具链集合
+     * @throws LinuxOperationException if the authenticated remote operation fails or its evidence is rejected / 已认证远端操作失败或其证据被拒绝时
+     */
     public gold.debug.windowstolinux.shared.model.toolchain.ResolvedToolchainSet prepare(
             DeploymentProjectFacts facts, DeploymentRuntimeSpecification runtime, BuildLimitConfiguration limits)
             throws LinuxOperationException {
@@ -77,7 +107,12 @@ public final class DeploymentBuildExecutor {
         return prepared.get(key);
     }
 
-    /** Creates the executor for one authenticated SSH account. / 为一个已认证 SSH 账户创建执行器。 */
+    /**
+     * Creates the executor for one authenticated SSH account. / 为一个已认证 SSH 账户创建执行器。
+     *
+     * @param commands typed remote command boundary / 类型化远端命令边界
+     * @param username account name used by the reviewed connection / 已审阅连接使用的账户名
+     */
     public DeploymentBuildExecutor(SshCommandExecutor commands, String username) {
         this(commands, username, List.of(new GradleBuildRenderer(), new MavenBuildRenderer(),
                 new JavaJarBuildRenderer(), new JdkBuildRenderer(), new NpmBuildRenderer(), new PnpmBuildRenderer(),
@@ -89,6 +124,15 @@ public final class DeploymentBuildExecutor {
                 new CmakeBuildRenderer()));
     }
 
+    /**
+     * Validates and binds the inputs required by deployment build executor.
+     * <p>校验并绑定部署构建执行器所需输入。
+     *
+     * @param commands typed remote command boundary / 类型化远端命令边界
+     * @param username account name used by the reviewed connection / 已审阅连接使用的账户名
+     * @param renderers renderers / 渲染器集合
+     * @throws NullPointerException if a required input is absent / 必需输入缺失时
+     */
     DeploymentBuildExecutor(SshCommandExecutor commands, String username, List<DeploymentBuildRenderer> renderers) {
         this.commands = Objects.requireNonNull(commands, "commands");
         this.username = Objects.requireNonNull(username, "username");
@@ -98,7 +142,15 @@ public final class DeploymentBuildExecutor {
     /**
      * Builds one reviewed source archive with the fixed entrypoint selected by its facts.
      *
-     * <p>使用其事实选定的固定入口构建一个经审阅的源码归档。
+     *  <p>使用其事实选定的固定入口构建一个经审阅的源码归档。
+     *
+     * @param facts typed facts used for deterministic planning / 确定性计划使用的类型化事实
+     * @param runtime reviewed language, process and health specification / 已审阅的语言、进程及健康规格
+     * @param workspace platform-owned work area with enforced path boundaries / 具有路径边界约束的平台工作区
+     * @param limits resource and time bounds enforced during execution / 执行期间实施的资源及时间边界
+     * @param configuration reviewed configuration snapshot or settings / 已审阅配置快照或设置
+     * @return one reviewed source archive with the fixed entrypoint selected by its facts / 使用其事实选定的固定入口构建一个经审阅的源码归档
+     * @throws LinuxOperationException if the authenticated remote operation fails or its evidence is rejected / 已认证远端操作失败或其证据被拒绝时
      */
     public DeploymentBuildResult build(DeploymentProjectFacts facts, DeploymentRuntimeSpecification runtime,
                                        RemoteWorkspace workspace, BuildLimitConfiguration limits, RemoteBuildEnvironment configuration)
@@ -123,6 +175,22 @@ public final class DeploymentBuildExecutor {
         return result;
     }
 
+    /**
+     * Runs the reviewed build in a bounded remote workspace and converts helper evidence into the sealed build result.
+     * <p>在有界远端工作区运行已审阅构建，并将 helper 证据转换为封存构建结果。
+     *
+     * @param facts typed facts used for deterministic planning / 确定性计划使用的类型化事实
+     * @param runtime reviewed language, process and health specification / 已审阅的语言、进程及健康规格
+     * @param workspace platform-owned work area with enforced path boundaries / 具有路径边界约束的平台工作区
+     * @param limits resource and time bounds enforced during execution / 执行期间实施的资源及时间边界
+     * @param configuration reviewed configuration snapshot or settings / 已审阅配置快照或设置
+     * @param tools tools / 工具集合
+     * @param deadline deadline / 截止时刻
+     * @return constructed or resolved deployment build result / 构造或解析得到的部署构建结果
+     * @throws LinuxOperationException if the authenticated remote operation fails or its evidence is rejected / 已认证远端操作失败或其证据被拒绝时
+     * @throws IllegalArgumentException if an input violates the constraints checked by this contract / 输入违反当前契约检查的约束时
+     * @throws NullPointerException if a required input is absent / 必需输入缺失时
+     */
     private DeploymentBuildResult execute(DeploymentProjectFacts facts, DeploymentRuntimeSpecification runtime,
             RemoteWorkspace workspace, BuildLimitConfiguration limits, RemoteBuildEnvironment configuration,
             gold.debug.windowstolinux.shared.model.toolchain.ResolvedToolchainSet tools, long deadline) throws LinuxOperationException {
@@ -180,6 +248,13 @@ public final class DeploymentBuildExecutor {
                         + "; " + selectionEvidence(tools), tools);
     }
 
+    /**
+     * Formats the toolchain binding digest and each resolved version selection as build evidence.
+     * <p>将工具链绑定摘要及各已解析版本选择格式化为构建证据。
+     *
+     * @param tools tools / 工具集合
+     * @return the toolchain binding digest and each resolved version selection as build evidence / 将工具链绑定摘要及各已解析版本选择格式化为构建证据
+     */
     private String selectionEvidence(gold.debug.windowstolinux.shared.model.toolchain.ResolvedToolchainSet tools) {
         return "toolchain binding=" + gold.debug.windowstolinux.shared.model.toolchain.ToolchainBindingCodec.identity(tools)
                 + "; " + tools.selections().stream().map(s -> s.requirement().ecosystem() + " requested="

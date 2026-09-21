@@ -6,11 +6,11 @@ import java.util.Objects;
 /**
  * A single, explicit confirmation to install the fixed managed-deployment Ubuntu toolset on one trusted target. It deliberately carries no package, command or path input.
  *
- * <p>在一个可信目标上安装固定受管部署 Ubuntu 工具集的单次明确确认。它刻意不携带包、命令或路径输入。
+ *  <p>在一个可信目标上安装固定受管部署 Ubuntu 工具集的单次明确确认。它刻意不携带包、命令或路径输入。
  *
- * @param serverId the {@code serverId} value / {@code serverId} 值
- * @param installationAccepted the {@code installationAccepted} value / {@code installationAccepted} 值
- * @param confirmedAt the {@code confirmedAt} value / {@code confirmedAt} 值
+ * @param serverId persisted server identifier / 持久化服务器标识
+ * @param installationAccepted installation accepted / 安装已接受
+ * @param confirmedAt confirmed at / 已确认时刻
  */
 public record EnvironmentSetupApproval(
         String serverId,
@@ -18,14 +18,13 @@ public record EnvironmentSetupApproval(
         Instant confirmedAt
 ) {
     /**
-     * Creates a {@code EnvironmentSetupApproval} instance.
+     * Validates and binds the inputs required by environment setup approval.
+     * <p>校验并绑定环境SetupApproval所需输入。
      *
-     * <p>创建 {@code EnvironmentSetupApproval} 实例。
-     *
-     * @param serverId the {@code serverId} value / {@code serverId} 值
-     * @param installationAccepted the {@code installationAccepted} value / {@code installationAccepted} 值
-     * @param confirmedAt the {@code confirmedAt} value / {@code confirmedAt} 值
-     * @throws NullPointerException if a required argument is {@code null} / 必要参数为 {@code null} 时
+     * @param serverId persisted server identifier / 持久化服务器标识
+     * @param installationAccepted installation accepted / 安装已接受
+     * @param confirmedAt confirmed at / 已确认时刻
+     * @throws NullPointerException if a required input is absent / 必需输入缺失时
      */
     public EnvironmentSetupApproval {
         serverId = identifier(serverId, "serverId");
@@ -35,9 +34,9 @@ public record EnvironmentSetupApproval(
     /**
      * Rejects a declined or differently targeted confirmation before SSH mutation begins.
      *
-     * <p>在 SSH 修改开始前拒绝被否决或目标不匹配的确认。
+     *  <p>在 SSH 修改开始前拒绝被否决或目标不匹配的确认。
      *
-     * @param expectedServerId the {@code expectedServerId} value / {@code expectedServerId} 值
+     * @param expectedServerId expected server id / 预期服务器标识
      */
     public void requireAcceptedFor(String expectedServerId) {
         if (!installationAccepted) {
@@ -50,6 +49,16 @@ public record EnvironmentSetupApproval(
         }
     }
 
+    /**
+     * Validates an identifier against the bounded syntax of the owning contract.
+     * <p>按所属契约的有界语法验证标识。
+     *
+     * @param value candidate content accepted or rejected by this contract / 由当前契约接收或拒绝的候选内容
+     * @param name human-readable name or diagnostic field label / 可读名称或诊断字段标签
+     * @return identifier text / 标识文本
+     * @throws IllegalArgumentException if an input violates the constraints checked by this contract / 输入违反当前契约检查的约束时
+     * @throws NullPointerException if a required input is absent / 必需输入缺失时
+     */
     private static String identifier(String value, String name) {
         value = Objects.requireNonNull(value, name).toLowerCase(java.util.Locale.ROOT);
         if (!value.matches("[a-z0-9][a-z0-9-]{0,62}")) {

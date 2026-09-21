@@ -10,7 +10,7 @@ import gold.debug.windowstolinux.shared.model.failure.FailureSeverityLevel;
 public enum ApplicationServiceFailureType implements FailureDefinition {
     /** Approval models are required before Agent side effects. / Agent 副作用前必须存在审批模型。 */
     APPROVAL_MODEL_REQUIRED("service.ai.approval-model-required", "ai", "service.error.approvalModelRequired", FailureSeverityLevel.ERROR, FailureRecoveryAction.REQUEST_USER_CORRECTION),
-    /** Assisted and Agent tasks require deployment models. / 半 AI 及 Agent 任务需要部署模型。 */
+    /** Assisted and Agent tasks require deployment models. / AI 辅助 及 Agent 任务需要部署模型。 */
     DEPLOYMENT_MODEL_REQUIRED("service.ai.deployment-model-required", "ai", "service.error.deploymentModelRequired", FailureSeverityLevel.ERROR, FailureRecoveryAction.REQUEST_USER_CORRECTION),
 
     /**

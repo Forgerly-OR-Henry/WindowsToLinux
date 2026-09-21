@@ -6,9 +6,17 @@ import java.io.IOException;
 import java.nio.file.Path;
 import java.util.Optional;
 
-/** Inspects the uv lockfile architecture. / 检查 uv 锁文件架构。 */
+/**
+ * Inspects the uv lockfile architecture. / 检查 uv 锁文件架构。
+ */
 public final class UvBuildInspector {
-    /** Returns uv facts when uv.lock exists. / 在 uv.lock 存在时返回 uv 事实。 */
+    /**
+     * Returns uv facts when uv.lock exists. / 在 uv.lock 存在时返回 uv 事实。
+     *
+     * @param root root directory defining the filesystem boundary / 定义文件系统边界的根目录
+     * @return matching result, or empty when no admitted value exists / 匹配结果；不存在已准入内容时为空
+     * @throws IOException if the required file or stream operation fails / 所需文件或流操作失败时
+     */
     public Optional<String> inspect(Path root) throws IOException {
         String lockFile = "uv.lock";
         Path path = root.resolve(lockFile);

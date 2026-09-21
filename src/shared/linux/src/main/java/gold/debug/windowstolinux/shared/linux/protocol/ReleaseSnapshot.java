@@ -6,25 +6,24 @@ import java.util.Optional;
 /**
  * Opaque remote rollback reference captured before a deployment changes state.
  *
- * <p>部署改变状态之前捕获的不透明远端回滚引用。
+ *  <p>部署改变状态之前捕获的不透明远端回滚引用。
  *
- * @param hasPreviousRelease the {@code hasPreviousRelease} value / {@code hasPreviousRelease} 值
- * @param previousWasRunning the {@code previousWasRunning} value / {@code previousWasRunning} 值
- * @param rollbackToken the {@code rollbackToken} value / {@code rollbackToken} 值
- * @param evidence the {@code evidence} value / {@code evidence} 值
+ * @param hasPreviousRelease has previous release / 具有此前发布
+ * @param previousWasRunning previous was running / 此前Was运行中
+ * @param rollbackToken rollback token / 回滚令牌
+ * @param evidence observations supporting the reported result / 支持所报告结果的观测证据
  */
 public record ReleaseSnapshot(boolean hasPreviousRelease, boolean previousWasRunning, Optional<String> rollbackToken, String evidence) {
     /**
-     * Creates a {@code ReleaseSnapshot} instance.
+     * Validates and binds the inputs required by release snapshot.
+     * <p>校验并绑定发布快照所需输入。
      *
-     * <p>创建 {@code ReleaseSnapshot} 实例。
-     *
-     * @param hasPreviousRelease the {@code hasPreviousRelease} value / {@code hasPreviousRelease} 值
-     * @param previousWasRunning the {@code previousWasRunning} value / {@code previousWasRunning} 值
-     * @param rollbackToken the {@code rollbackToken} value / {@code rollbackToken} 值
-     * @param evidence the {@code evidence} value / {@code evidence} 值
+     * @param hasPreviousRelease has previous release / 具有此前发布
+     * @param previousWasRunning previous was running / 此前Was运行中
+     * @param rollbackToken rollback token / 回滚令牌
+     * @param evidence observations supporting the reported result / 支持所报告结果的观测证据
      * @throws IllegalArgumentException if an argument violates the required constraints / 参数违反必要约束时
-     * @throws NullPointerException if a required argument is {@code null} / 必要参数为 {@code null} 时
+     * @throws NullPointerException if a required input is absent / 必需输入缺失时
      */
     public ReleaseSnapshot {
         rollbackToken = Objects.requireNonNull(rollbackToken, "rollbackToken");
@@ -38,11 +37,10 @@ public record ReleaseSnapshot(boolean hasPreviousRelease, boolean previousWasRun
     }
 
     /**
-     * Performs the {@code firstDeployment} operation.
+     * Builds release snapshot from the supplied first deployment inputs.
+     * <p>根据所提供首次部署输入构建发布快照。
      *
-     * <p>执行 {@code firstDeployment} 操作。
-     *
-     * @param evidence the {@code evidence} value / {@code evidence} 值
+     * @param evidence observations supporting the reported result / 支持所报告结果的观测证据
      * @return the operation result / 操作结果
      */
     public static ReleaseSnapshot firstDeployment(String evidence) {
@@ -50,13 +48,12 @@ public record ReleaseSnapshot(boolean hasPreviousRelease, boolean previousWasRun
     }
 
     /**
-     * Performs the {@code withPreviousRelease} operation.
+     * Returns the contract with the supplied previous release applied.
+     * <p>返回应用所提供此前发布后的契约。
      *
-     * <p>执行 {@code withPreviousRelease} 操作。
-     *
-     * @param token the {@code token} value / {@code token} 值
-     * @param previousWasRunning the {@code previousWasRunning} value / {@code previousWasRunning} 值
-     * @param evidence the {@code evidence} value / {@code evidence} 值
+     * @param token token / 令牌
+     * @param previousWasRunning previous was running / 此前Was运行中
+     * @param evidence observations supporting the reported result / 支持所报告结果的观测证据
      * @return the operation result / 操作结果
      */
     public static ReleaseSnapshot withPreviousRelease(String token, boolean previousWasRunning, String evidence) {

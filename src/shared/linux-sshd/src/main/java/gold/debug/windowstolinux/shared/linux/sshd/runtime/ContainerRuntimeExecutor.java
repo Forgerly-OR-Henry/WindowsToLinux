@@ -21,36 +21,75 @@ import java.util.Objects;
 /**
  * Observes and health-checks only the named container owned by the managed release root.
  *
- * <p>只观察和健康检查由受管发布根目录所有的命名容器。
+ *  <p>只观察和健康检查由受管发布根目录所有的命名容器。
  */
 public final class ContainerRuntimeExecutor {
+    /**
+     * Bound ssh command executor collaborator for typed remote command boundary.
+     * <p>处理类型化远端命令边界的SSH命令执行器协作对象。
+     */
     private final SshCommandExecutor commands;
 
-    /** Creates the container runtime executor. / 创建容器运行时执行器。 */
+    /**
+     * Creates the container runtime executor. / 创建容器运行时执行器。
+     *
+     * @param commands typed remote command boundary / 类型化远端命令边界
+     * @throws NullPointerException if a required input is absent / 必需输入缺失时
+     */
     public ContainerRuntimeExecutor(SshCommandExecutor commands) {
         this.commands = Objects.requireNonNull(commands, "commands");
     }
 
-    /** Performs a loopback health check while the named engine container remains running. / 在命名引擎容器持续运行时执行回环健康检查。 */
+    /**
+     * Performs a loopback health check while the named engine container remains running. / 在命名引擎容器持续运行时执行回环健康检查。
+     *
+     * @param application managed target with its server and ownership identity / 携带服务器及归属身份的受管目标
+     * @param runtime reviewed language, process and health specification / 已审阅的语言、进程及健康规格
+     * @param healthCheck reviewed probe and its success criteria / 已审阅探测及其成功条件
+     * @return constructed or resolved health check result / 构造或解析得到的健康检查结果
+     * @throws LinuxOperationException if the authenticated remote operation fails or its evidence is rejected / 已认证远端操作失败或其证据被拒绝时
+     */
     public HealthCheckResult checkHealth(ManagedApplication application, DeploymentRuntimeSpecification.Container runtime,
                                          HealthCheck healthCheck) throws LinuxOperationException {
         return checkHealth(application, runtime.engine(), healthCheck);
     }
 
-    /** Performs a loopback health check for a remotely identified managed engine. / 为远端识别出的受管引擎执行回环健康检查。 */
+    /**
+     * Performs a loopback health check for a remotely identified managed engine. / 为远端识别出的受管引擎执行回环健康检查。
+     *
+     * @param application managed target with its server and ownership identity / 携带服务器及归属身份的受管目标
+     * @param runtimeEngine runtime engine / 运行时引擎
+     * @param healthCheck reviewed probe and its success criteria / 已审阅探测及其成功条件
+     * @return constructed or resolved health check result / 构造或解析得到的健康检查结果
+     * @throws LinuxOperationException if the authenticated remote operation fails or its evidence is rejected / 已认证远端操作失败或其证据被拒绝时
+     */
     public HealthCheckResult checkHealth(ManagedApplication application,
                                          DeploymentRuntimeSpecification.ContainerEngineType runtimeEngine,
                                          HealthCheck healthCheck) throws LinuxOperationException {
         return ApplicationHealthProbe.check(commands, application, healthCheck);
     }
 
-    /** Observes release-root ownership, engine state, and engine-specific autostart. / 观察发布根归属、引擎状态和引擎专属自启。 */
+    /**
+     * Observes release-root ownership, engine state, and engine-specific autostart. / 观察发布根归属、引擎状态和引擎专属自启。
+     *
+     * @param application managed target with its server and ownership identity / 携带服务器及归属身份的受管目标
+     * @param runtime reviewed language, process and health specification / 已审阅的语言、进程及健康规格
+     * @return constructed or resolved lifecycle observation / 构造或解析得到的生命周期观测
+     * @throws LinuxOperationException if the authenticated remote operation fails or its evidence is rejected / 已认证远端操作失败或其证据被拒绝时
+     */
     public LifecycleObservation observe(ManagedApplication application, DeploymentRuntimeSpecification.Container runtime)
             throws LinuxOperationException {
         return observe(application, runtime.engine());
     }
 
-    /** Observes a remotely identified managed container engine. / 观察远端识别出的受管容器引擎。 */
+    /**
+     * Observes a remotely identified managed container engine. / 观察远端识别出的受管容器引擎。
+     *
+     * @param application managed target with its server and ownership identity / 携带服务器及归属身份的受管目标
+     * @param runtimeEngine runtime engine / 运行时引擎
+     * @return constructed or resolved lifecycle observation / 构造或解析得到的生命周期观测
+     * @throws LinuxOperationException if the authenticated remote operation fails or its evidence is rejected / 已认证远端操作失败或其证据被拒绝时
+     */
     public LifecycleObservation observe(ManagedApplication application,
                                         DeploymentRuntimeSpecification.ContainerEngineType runtimeEngine)
             throws LinuxOperationException {

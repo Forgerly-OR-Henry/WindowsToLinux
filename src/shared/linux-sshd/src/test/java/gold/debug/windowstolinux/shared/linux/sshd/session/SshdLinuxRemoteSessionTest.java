@@ -23,6 +23,15 @@ import static org.junit.jupiter.api.Assertions.*;
 @org.junit.jupiter.api.parallel.Isolated
 class SshdLinuxRemoteSessionTest {
     @TempDir Path directory;
+    @Test void recoveryProbeUsesOnlyAFixedCommandWithoutBashOrHelper() throws Exception {
+        try (var fixture = new Fixture(directory)) {
+            fixture.session.verifyConnection();
+            assertEquals("printf 'WTL_SSH_READY\\n'", fixture.lastCommand);
+            assertEquals(1, fixture.calls.get()); assertEquals(0, fixture.mutations);
+            fixture.probeOutput = "unverified";
+            assertThrows(LinuxOperationException.class, fixture.session::verifyConnection);
+        }
+    }
 
     @Test void existingCapabilitiesShareOneAuthenticatedConnectionAndFailAfterClose() throws Exception {
         try (var fixture = new Fixture(directory)) {
@@ -106,6 +115,7 @@ class SshdLinuxRemoteSessionTest {
         volatile boolean failed;
         volatile boolean oldHelper, queryFailed;
         int mutations;
+        volatile String lastCommand = "", probeOutput = "WTL_SSH_READY\n";
 
         Fixture(Path directory) throws Exception {
             loopback = new LoopbackSshServer(directory, this::configure);
@@ -135,6 +145,7 @@ class SshdLinuxRemoteSessionTest {
                 @Override public void start(org.apache.sshd.server.channel.ChannelSession channel,
                         org.apache.sshd.server.Environment environment) throws IOException {
                     calls.incrementAndGet();
+                    lastCommand = command;
                     output.write(reply(command).getBytes(StandardCharsets.UTF_8)); output.flush();
                     exit.onExit(rejected || (queryFailed && command.contains("observe-deployment")) ? 64 : 0);
                 }
@@ -144,6 +155,7 @@ class SshdLinuxRemoteSessionTest {
 
         private String reply(String command) {
             if (rejected) return "";
+            if (command.equals("printf 'WTL_SSH_READY\\n'")) return probeOutput;
             if (command.contains("database-inspect")) return "TYPE=sqlite\nENGINE_VERSION=3.40\nTOOL_VERSION=3.40\nTOOL_AVAILABLE=1\nENGINE_COMPATIBLE=1\nONLINE_BACKUP_AVAILABLE=1\nALL_TABLES_TRANSACTIONAL=1\n";
             if (command.contains("restore-preflight")) return "AVAILABLE_BYTES=1048576\nMANAGED_ROOT_WRITABLE=1\nFOREIGN_CONFLICT=0\n";
             if (command.contains("inspect-runtime")) return "KIND=deployment\n";

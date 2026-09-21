@@ -8,15 +8,18 @@ import java.util.Objects;
 /**
  * A parsed Git remote that never embeds a credential in its location.
  *
- * <p>解析后的 Git 远端；其位置绝不嵌入凭据。
+ *  <p>解析后的 Git 远端；其位置绝不嵌入凭据。
  *
  * @param location the remote URI / 远端 URI
  */
 public record GitRemote(URI location) {
     /**
-     * Creates a {@code GitRemote} instance.
+     * Validates and binds the inputs required by git remote.
+     * <p>校验并绑定Git远端所需输入。
      *
-     * <p>创建 {@code GitRemote} 实例。
+     * @param location the remote URI / 远端 URI
+     * @throws IllegalArgumentException if an input violates the constraints checked by this contract / 输入违反当前契约检查的约束时
+     * @throws NullPointerException if a required input is absent / 必需输入缺失时
      */
     public GitRemote {
         location = Objects.requireNonNull(location, "location").normalize();
@@ -39,10 +42,12 @@ public record GitRemote(URI location) {
     /**
      * Parses a remote URI without accepting scp-like or credential-bearing syntax.
      *
-     * <p>解析远端 URI，不接受 scp 风格或携带凭据的语法。
+     *  <p>解析远端 URI，不接受 scp 风格或携带凭据的语法。
      *
      * @param value the remote URI text / 远端 URI 文本
      * @return the parsed remote / 解析后的远端
+     * @throws IllegalArgumentException if an input violates the constraints checked by this contract / 输入违反当前契约检查的约束时
+     * @throws NullPointerException if a required input is absent / 必需输入缺失时
      */
     public static GitRemote parse(String value) {
         try {
@@ -55,7 +60,7 @@ public record GitRemote(URI location) {
     /**
      * Returns the normalized host for allow-list checks.
      *
-     * <p>返回用于允许列表检查的规范化主机名。
+     *  <p>返回用于允许列表检查的规范化主机名。
      *
      * @return the optional normalized host / 可选的规范化主机名
      */

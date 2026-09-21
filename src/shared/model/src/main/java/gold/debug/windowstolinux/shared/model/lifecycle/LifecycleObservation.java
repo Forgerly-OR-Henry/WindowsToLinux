@@ -8,14 +8,14 @@ import java.util.Objects;
 /**
  * A verified remote state observed for a managed application.
  *
- * <p>为受管应用观测到的已验证远端状态。
+ *  <p>为受管应用观测到的已验证远端状态。
  *
- * @param application the {@code application} value / {@code application} 值
- * @param runtimeState the {@code runtimeState} value / {@code runtimeState} 值
- * @param autostartState the {@code autostartState} value / {@code autostartState} 值
- * @param ownershipVerified the {@code ownershipVerified} value / {@code ownershipVerified} 值
- * @param observedAt the {@code observedAt} value / {@code observedAt} 值
- * @param evidence the {@code evidence} value / {@code evidence} 值
+ * @param application managed target with its server and ownership identity / 携带服务器及归属身份的受管目标
+ * @param runtimeState runtime state / 运行时状态
+ * @param autostartState autostart state / 自动启动状态
+ * @param ownershipVerified ownership verified / 归属已验证
+ * @param observedAt observed at / 已观测时刻
+ * @param evidence observations supporting the reported result / 支持所报告结果的观测证据
  */
 public record LifecycleObservation(
         ManagedApplication application,
@@ -26,18 +26,17 @@ public record LifecycleObservation(
         String evidence
 ) {
     /**
-     * Creates a {@code LifecycleObservation} instance.
+     * Validates and binds the inputs required by lifecycle observation.
+     * <p>校验并绑定生命周期观测所需输入。
      *
-     * <p>创建 {@code LifecycleObservation} 实例。
-     *
-     * @param application the {@code application} value / {@code application} 值
-     * @param runtimeState the {@code runtimeState} value / {@code runtimeState} 值
-     * @param autostartState the {@code autostartState} value / {@code autostartState} 值
-     * @param ownershipVerified the {@code ownershipVerified} value / {@code ownershipVerified} 值
-     * @param observedAt the {@code observedAt} value / {@code observedAt} 值
-     * @param evidence the {@code evidence} value / {@code evidence} 值
+     * @param application managed target with its server and ownership identity / 携带服务器及归属身份的受管目标
+     * @param runtimeState runtime state / 运行时状态
+     * @param autostartState autostart state / 自动启动状态
+     * @param ownershipVerified ownership verified / 归属已验证
+     * @param observedAt observed at / 已观测时刻
+     * @param evidence observations supporting the reported result / 支持所报告结果的观测证据
      * @throws IllegalArgumentException if an argument violates the required constraints / 参数违反必要约束时
-     * @throws NullPointerException if a required argument is {@code null} / 必要参数为 {@code null} 时
+     * @throws NullPointerException if a required input is absent / 必需输入缺失时
      */
     public LifecycleObservation {
         application = Objects.requireNonNull(application, "application");

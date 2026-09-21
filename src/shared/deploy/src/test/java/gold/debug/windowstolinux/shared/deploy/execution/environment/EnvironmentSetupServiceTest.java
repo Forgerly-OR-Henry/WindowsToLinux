@@ -33,6 +33,31 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class EnvironmentSetupServiceTest {
     @Test
+    void recordsFailureBeforeAnyMutationForBothPreparationEntryPoints() {
+        AtomicInteger connections = new AtomicInteger();
+        LinuxGateway gateway = (endpoint, credential, verifier) -> {
+            connections.incrementAndGet();
+            credential.clear();
+            throw LinuxOperationException.create(
+                    gold.debug.windowstolinux.shared.linux.error.LinuxOperationFailureType.CONNECTION_FAILED,
+                    "initial connection unavailable");
+        };
+        for (boolean systemPreparation : new boolean[] {false, true}) {
+            var password = new SshCredential.Password("test-only".toCharArray());
+            var approval = new EnvironmentSetupApproval("server-one", true, Instant.now());
+            LinuxOperationException failure = assertThrows(LinuxOperationException.class, () -> {
+                if (systemPreparation) new EnvironmentSetupService().prepare(approval, gateway, endpoint(), password,
+                        acceptingHostKey(), plan -> { throw new AssertionError("no system change can be proposed before SSH"); });
+                else new EnvironmentSetupService().prepare(approval, gateway, endpoint(), password, acceptingHostKey());
+            });
+            assertTrue(failure.environmentNotStarted());
+            assertTrue(failure.completedEnvironment().isEmpty());
+            assertCleared(password);
+        }
+        assertEquals(2, connections.get());
+    }
+
+    @Test
     void refusesAnUnconfirmedPreparationBeforeOpeningSshAndClearsTheCredential() {
         AtomicInteger connections = new AtomicInteger();
         SshCredential.Password password = new SshCredential.Password("not-reused".toCharArray());
@@ -92,6 +117,7 @@ class EnvironmentSetupServiceTest {
                         gateway, endpoint(), password, acceptingHostKey()));
         assertTrue(session.prepared);
         assertEquals("post-install SSH unavailable", failure.failure().diagnostic());
+        assertTrue(failure.completedEnvironment().isPresent());
         assertEquals(2, connections.get());
         assertCleared(password);
     }

@@ -21,19 +21,49 @@ import java.util.Locale;
 import java.util.Optional;
 import java.util.regex.Pattern;
 
-/** Writes bounded, rotated, secret-free UTF-8 failure reports under the fixed data directory. / 在固定数据目录下写入有界、轮转且无秘密的 UTF-8 失败报告。 */
+/**
+ * Writes bounded, rotated, secret-free UTF-8 failure reports under the fixed data directory. / 在固定数据目录下写入有界、轮转且无秘密的 UTF-8 失败报告。
+ */
 public final class DesktopFailureReportStore implements FailureReportStore {
+    /**
+     * MAX REPORT BYTES.
+     * <p>最大报告字节。
+     */
     static final int MAX_REPORT_BYTES = 256 * 1024;
+    /**
+     * MAX REPORTS.
+     * <p>最大报告集合。
+     */
     static final int MAX_REPORTS = 50;
+    /**
+     * FILE TIME.
+     * <p>文件时间。
+     */
     private static final DateTimeFormatter FILE_TIME = DateTimeFormatter
             .ofPattern("yyyyMMdd-HHmmss-SSS", Locale.ROOT).withZone(ZoneOffset.UTC);
+    /**
+     * Pattern recognizing pattern matching secret-like assignments for redaction.
+     * <p>用于识别匹配疑似秘密赋值以供脱敏的模式的匹配模式。
+     */
     private static final Pattern SENSITIVE_ASSIGNMENT = Pattern.compile(
             "(?i)(password|passphrase|private[-_ ]?key|api[-_ ]?key|secret|token)\\s*[:=]\\s*[^\\s,;]+"
     );
+    /**
+     * Pattern recognizing pattern matching bearer authorization material for redaction.
+     * <p>用于识别匹配 bearer 授权素材以供脱敏的模式的匹配模式。
+     */
     private static final Pattern BEARER = Pattern.compile("(?i)bearer\\s+[A-Za-z0-9._~+/=-]+");
+    /**
+     * Directory within the caller's controlled storage boundary.
+     * <p>调用方受控存储边界内的目录。
+     */
     private final Path directory;
 
-    /** Creates the report store and performs startup rotation best-effort. / 创建报告存储并在启动时尽力轮转。 */
+    /**
+     * Creates the report store and performs startup rotation best-effort. / 创建报告存储并在启动时尽力轮转。
+     *
+     * @param dataDirectory data directory / 数据目录
+     */
     public DesktopFailureReportStore(Path dataDirectory) {
         directory = dataDirectory.toAbsolutePath().normalize().resolve("error-logs");
         try {
@@ -44,7 +74,12 @@ public final class DesktopFailureReportStore implements FailureReportStore {
         }
     }
 
-    /** Records one report best-effort and never throws. / 尽力记录一份报告且绝不抛出异常。 */
+    /**
+     * Records one report best-effort and never throws. / 尽力记录一份报告且绝不抛出异常。
+     *
+     * @param throwable throwable / 异常原因
+     * @return matching result, or empty when no admitted value exists / 匹配结果；不存在已准入内容时为空
+     */
     @Override
     public synchronized Optional<FailureReportRecord> record(Throwable throwable) {
         if (throwable == null) {
@@ -83,8 +118,20 @@ public final class DesktopFailureReportStore implements FailureReportStore {
         return Optional.of(new FailureReportRecord(descriptor, directory, report));
     }
 
+    /**
+     * Returns diagnostics directory.
+     * <p>返回诊断目录。
+     *
+     * @return matching result, or empty when no admitted value exists / 匹配结果；不存在已准入内容时为空
+     */
     @Override public Optional<Path> diagnosticsDirectory() { return Optional.of(directory); }
 
+    /**
+     * Removes the oldest diagnostic text reports beyond the retention limit.
+     * <p>删除超出保留上限的最旧诊断文本报告。
+     *
+     * @throws IOException if the required file or stream operation fails / 所需文件或流操作失败时
+     */
     private void rotate() throws IOException {
         if (!Files.isDirectory(directory)) {
             return;
@@ -101,6 +148,14 @@ public final class DesktopFailureReportStore implements FailureReportStore {
         }
     }
 
+    /**
+     * Builds a size-bounded diagnostic report from classified and redacted failure evidence.
+     * <p>根据分类且脱敏的失败证据构建大小有界的诊断报告。
+     *
+     * @param failure structured failure occurrence retained for safe reporting / 保留用于安全报告的结构化失败实例
+     * @param throwable throwable / 异常原因
+     * @return a size-bounded diagnostic report from classified and redacted failure evidence / 根据分类且脱敏的失败证据构建大小有界的诊断报告
+     */
     private static byte[] boundedReport(FailureDescriptor failure, Throwable throwable) {
         StringBuilder report = new StringBuilder(4096);
         append(report, "timestamp", Instant.now().toString());
@@ -130,10 +185,25 @@ public final class DesktopFailureReportStore implements FailureReportStore {
         return truncateUtf8(report.toString());
     }
 
+    /**
+     * Appends desktop failure report store.
+     * <p>追加Desktop失败报告存储。
+     *
+     * @param report report / 报告
+     * @param key lookup key within the current contract / 当前契约内的查找键
+     * @param value candidate content accepted or rejected by this contract / 由当前契约接收或拒绝的候选内容
+     */
     private static void append(StringBuilder report, String key, String value) {
         report.append(key).append('=').append(value == null ? "" : value).append('\n');
     }
 
+    /**
+     * Truncates report text to the UTF-8 byte bound while appending the fixed truncation marker.
+     * <p>将报告文本截断到 UTF-8 字节边界，并追加固定截断标记。
+     *
+     * @param content content / 内容
+     * @return encoded or copied content buffer / 编码或复制得到的内容缓冲区
+     */
     private static byte[] truncateUtf8(String content) {
         byte[] encoded = content.getBytes(StandardCharsets.UTF_8);
         if (encoded.length <= MAX_REPORT_BYTES) {
@@ -154,11 +224,25 @@ public final class DesktopFailureReportStore implements FailureReportStore {
         return (content.substring(0, low) + marker).getBytes(StandardCharsets.UTF_8);
     }
 
+    /**
+     * Redacts sensitive content from desktop failure report store.
+     * <p>脱敏Desktop失败报告存储。
+     *
+     * @param diagnostic bounded non-secret detail for diagnostic reporting / 用于诊断报告的有界非秘密详情
+     * @return redact text / 脱敏文本
+     */
     private static String redact(String diagnostic) {
         return BEARER.matcher(SENSITIVE_ASSIGNMENT.matcher(diagnostic).replaceAll("$1=[REDACTED]"))
                 .replaceAll("Bearer [REDACTED]");
     }
 
+    /**
+     * Finds the first FailureCarrier in the causal chain without exposing arbitrary exception messages.
+     * <p>查找原因链中的第一个 FailureCarrier，不暴露任意异常消息。
+     *
+     * @param throwable throwable / 异常原因
+     * @return matching result, or empty when no admitted value exists / 匹配结果；不存在已准入内容时为空
+     */
     private static Optional<FailureDescriptor> structured(Throwable throwable) {
         Throwable current = throwable;
         while (current != null) {
@@ -170,6 +254,13 @@ public final class DesktopFailureReportStore implements FailureReportStore {
         return Optional.empty();
     }
 
+    /**
+     * Builds the structured failure descriptor for unknown descriptor.
+     * <p>为未知描述符构建结构化失败描述。
+     *
+     * @param throwable throwable / 异常原因
+     * @return the structured failure descriptor for unknown descriptor / 为未知描述符构建结构化失败描述
+     */
     private static FailureDescriptor unknownDescriptor(Throwable throwable) {
         DesktopSystemFailureType type = throwable instanceof VirtualMachineError
                 ? DesktopSystemFailureType.RESOURCE_EXHAUSTED

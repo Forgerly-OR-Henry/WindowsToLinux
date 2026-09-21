@@ -7,11 +7,23 @@ import java.nio.file.Path;
 import java.util.Optional;
 import java.util.regex.Pattern;
 
-/** Inspects the hash-locked pip architecture. / 检查使用哈希锁定的 pip 架构。 */
+/**
+ * Inspects the hash-locked pip architecture. / 检查使用哈希锁定的 pip 架构。
+ */
 public final class PipBuildInspector {
+    /**
+     * Pattern recognizing HASH.
+     * <p>用于识别哈希的匹配模式。
+     */
     private static final Pattern HASH = Pattern.compile("--hash=sha256:[0-9a-fA-F]{64}");
 
-    /** Returns pip facts when requirements.lock exists. / 在 requirements.lock 存在时返回 pip 事实。 */
+    /**
+     * Returns pip facts when requirements.lock exists. / 在 requirements.lock 存在时返回 pip 事实。
+     *
+     * @param root root directory defining the filesystem boundary / 定义文件系统边界的根目录
+     * @return matching result, or empty when no admitted value exists / 匹配结果；不存在已准入内容时为空
+     * @throws IOException if the required file or stream operation fails / 所需文件或流操作失败时
+     */
     public Optional<String> inspect(Path root) throws IOException {
         String lockFile = "requirements.lock";
         Path path = root.resolve(lockFile);

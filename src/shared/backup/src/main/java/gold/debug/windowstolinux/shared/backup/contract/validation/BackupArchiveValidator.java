@@ -36,25 +36,60 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.zip.ZipEntry;
 
-/** Validates an untrusted backup without extracting any member. / 在不提取任何成员的情况下校验不受信备份。 */
+/**
+ * Validates an untrusted backup without extracting any member. / 在不提取任何成员的情况下校验不受信备份。
+ */
 public final class BackupArchiveValidator {
+    /**
+     * BUFFER SIZE.
+     * <p>缓冲区大小。
+     */
     private static final int BUFFER_SIZE = 64 * 1024;
+    /**
+     * Bound backup archive policy collaborator for explicit validation and resource-bound policy.
+     * <p>处理显式校验及资源边界策略的备份归档策略协作对象。
+     */
     private final BackupArchivePolicy policy;
+    /**
+     * Signature trust.
+     * <p>签名信任。
+     */
     private final BackupSignatureTrust signatureTrust;
+    /**
+     * Bound backup manifest codec collaborator for codec.
+     * <p>处理编解码器的备份清单编解码器协作对象。
+     */
     private final BackupManifestCodec codec = new BackupManifestCodec();
 
-    /** Creates an integrity-only validator. / 创建仅校验完整性的校验器。 */
+    /**
+     * Creates an integrity-only validator. / 创建仅校验完整性的校验器。
+     *
+     * @param policy explicit validation and resource-bound policy / 显式校验及资源边界策略
+     */
     public BackupArchiveValidator(BackupArchivePolicy policy) {
         this(policy, null);
     }
 
-    /** Creates a validator that can also verify optional provenance. / 创建还可校验可选来源签名的校验器。 */
+    /**
+     * Creates a validator that can also verify optional provenance. / 创建还可校验可选来源签名的校验器。
+     *
+     * @param policy explicit validation and resource-bound policy / 显式校验及资源边界策略
+     * @param signatureTrust signature trust / 签名信任
+     * @throws NullPointerException if a required input is absent / 必需输入缺失时
+     */
     public BackupArchiveValidator(BackupArchivePolicy policy, BackupSignatureTrust signatureTrust) {
         this.policy = Objects.requireNonNull(policy, "policy");
         this.signatureTrust = signatureTrust;
     }
 
-    /** Verifies structure, bounds, exact member hashes and optional signature. / 校验结构、边界、精确成员摘要及可选签名。 */
+    /**
+     * Verifies structure, bounds, exact member hashes and optional signature. / 校验结构、边界、精确成员摘要及可选签名。
+     *
+     * @param archive source or backup archive descriptor or filesystem path / 源码或备份归档描述或文件系统路径
+     * @return constructed or resolved backup archive validation / 构造或解析得到的备份归档校验
+     * @throws BackupException if backup validation or the controlled backup operation fails / 备份校验或受控备份操作失败时
+     * @throws NullPointerException if a required input is absent / 必需输入缺失时
+     */
     public BackupArchiveValidation validate(Path archive) throws BackupException {
         Path normalized = Objects.requireNonNull(archive, "archive").toAbsolutePath().normalize();
         ensureArchiveFile(normalized);
@@ -77,6 +112,13 @@ public final class BackupArchiveValidator {
                 state.verifiedBytes(), state.provenanceStatus());
     }
 
+    /**
+     * Requires a regular non-symlink archive file within the configured size bound.
+     * <p>要求归档为配置大小边界内的常规非符号链接文件。
+     *
+     * @param archive source or backup archive descriptor or filesystem path / 源码或备份归档描述或文件系统路径
+     * @throws BackupException if backup validation or the controlled backup operation fails / 备份校验或受控备份操作失败时
+     */
     private void ensureArchiveFile(Path archive) throws BackupException {
         try {
             if (!Files.isRegularFile(archive) || Files.isSymbolicLink(archive)) {
@@ -96,6 +138,15 @@ public final class BackupArchiveValidator {
         }
     }
 
+    /**
+     * Validates the open archive's manifest, exact member set, sizes and digests before issuing independent validation evidence.
+     * <p>在生成独立验证证据前，校验已打开归档的清单、精确成员集合、大小及摘要。
+     *
+     * @param zip zip / ZIP 归档
+     * @return constructed or resolved validation state / 构造或解析得到的校验状态
+     * @throws BackupException if backup validation or the controlled backup operation fails / 备份校验或受控备份操作失败时
+     * @throws IOException if the required file or stream operation fails / 所需文件或流操作失败时
+     */
     private ValidationState validateOpenArchive(ZipFile zip) throws BackupException, IOException {
         List<ZipArchiveEntry> entries = Collections.list(zip.getEntries());
         if (entries.isEmpty() || entries.size() > policy.maximumMembers() + 1) {
@@ -132,6 +183,14 @@ public final class BackupArchiveValidator {
         return new ValidationState(manifest, verifiedBytes, verifyProvenance(manifest));
     }
 
+    /**
+     * Validates ZIP entry shapes and indexes paths while rejecting duplicate or case-colliding names.
+     * <p>校验 ZIP 条目形态并索引路径，同时拒绝重复名称及大小写冲突。
+     *
+     * @param entries the type-checked entries / 经类型检查的条目
+     * @return constructed or resolved map / 构造或解析得到的映射
+     * @throws BackupException if backup validation or the controlled backup operation fails / 备份校验或受控备份操作失败时
+     */
     private Map<String, ZipArchiveEntry> indexEntries(List<ZipArchiveEntry> entries) throws BackupException {
         Map<String, ZipArchiveEntry> indexed = new HashMap<>();
         Set<String> caseInsensitive = new HashSet<>();
@@ -146,6 +205,13 @@ public final class BackupArchiveValidator {
         return Map.copyOf(indexed);
     }
 
+    /**
+     * Rejects unsafe ZIP names, links, unsupported methods and oversized or invalid entry metadata.
+     * <p>拒绝不安全 ZIP 名称、链接、不支持的压缩方式，以及超大或无效条目元数据。
+     *
+     * @param entry entry / 条目
+     * @throws BackupException if backup validation or the controlled backup operation fails / 备份校验或受控备份操作失败时
+     */
     private void validateEntryShape(ZipArchiveEntry entry) throws BackupException {
         String name = entry.getName();
         if (!"manifest.json".equals(name)) ArchivePathRules.validate(name, policy.maximumPathLength());
@@ -184,6 +250,14 @@ public final class BackupArchiveValidator {
         }
     }
 
+    /**
+     * Validates declared member.
+     * <p>校验已声明成员。
+     *
+     * @param entry entry / 条目
+     * @param member member / 成员
+     * @throws BackupException if backup validation or the controlled backup operation fails / 备份校验或受控备份操作失败时
+     */
     private void validateDeclaredMember(ZipArchiveEntry entry, BackupMember member) throws BackupException {
         if (entry.getSize() != member.size()) {
             throw BackupException.create(BackupFailureType.INTEGRITY_FAILED,
@@ -191,6 +265,14 @@ public final class BackupArchiveValidator {
         }
     }
 
+    /**
+     * Decodes validated ownership or backup inventory document.
+     * <p>解码已验证归属或备份资源清单文档。
+     *
+     * @param document document / 文档
+     * @return validated ownership or backup inventory document / 已验证归属或备份资源清单文档
+     * @throws BackupException if backup validation or the controlled backup operation fails / 备份校验或受控备份操作失败时
+     */
     private BackupManifest decodeManifest(byte[] document) throws BackupException {
         try {
             return codec.read(document);
@@ -200,6 +282,15 @@ public final class BackupArchiveValidator {
         }
     }
 
+    /**
+     * Consumes and closes an entry stream, checking its exact byte count while computing SHA-256.
+     * <p>消费并关闭条目流，在计算 SHA-256 的同时检查精确字节数。
+     *
+     * @param input source content consumed by this operation / 当前操作消费的源内容
+     * @param expectedSize expected size / 预期大小
+     * @return hash entry text / 哈希条目文本
+     * @throws BackupException if backup validation or the controlled backup operation fails / 备份校验或受控备份操作失败时
+     */
     private String hashEntry(InputStream input, long expectedSize) throws BackupException {
         MessageDigest digest = sha256();
         long count = 0;
@@ -227,6 +318,15 @@ public final class BackupArchiveValidator {
         return HexFormat.of().formatHex(digest.digest());
     }
 
+    /**
+     * Verifies provenance.
+     * <p>验证来源证据。
+     *
+     * @param manifest validated ownership or backup inventory document / 已验证归属或备份资源清单文档
+     * @return constructed or resolved backup provenance status / 构造或解析得到的备份来源证据状态
+     * @throws BackupException if backup validation or the controlled backup operation fails / 备份校验或受控备份操作失败时
+     * @throws NullPointerException if a required input is absent / 必需输入缺失时
+     */
     private BackupProvenanceStatus verifyProvenance(BackupManifest manifest) throws BackupException {
         BackupProvenance provenance = manifest.provenance();
         if (!provenance.signed()) return BackupProvenanceStatus.NOT_PRESENT;
@@ -249,6 +349,14 @@ public final class BackupArchiveValidator {
         }
     }
 
+    /**
+     * Opens the local archive and computes its complete SHA-256 content digest.
+     * <p>打开本地归档并计算完整 SHA-256 内容摘要。
+     *
+     * @param path filesystem or archive member path used by this operation / 当前操作使用的文件系统或归档成员路径
+     * @return hash file text / 哈希文件文本
+     * @throws BackupException if backup validation or the controlled backup operation fails / 备份校验或受控备份操作失败时
+     */
     private String hashFile(Path path) throws BackupException {
         MessageDigest digest = sha256();
         byte[] buffer = new byte[BUFFER_SIZE];
@@ -262,6 +370,17 @@ public final class BackupArchiveValidator {
         }
     }
 
+    /**
+     * Reads bounded.
+     * <p>读取有界。
+     *
+     * @param input source content consumed by this operation / 当前操作消费的源内容
+     * @param maximumBytes maximum bytes / 最大字节
+     * @param failureType failure type / 失败类型
+     * @param diagnostic bounded non-secret detail for diagnostic reporting / 用于诊断报告的有界非秘密详情
+     * @return bounded / 有界
+     * @throws BackupException if backup validation or the controlled backup operation fails / 备份校验或受控备份操作失败时
+     */
     private static byte[] readBounded(InputStream input, int maximumBytes, BackupFailureType failureType,
                                       String diagnostic) throws BackupException {
         try (input; ByteArrayOutputStream output = new ByteArrayOutputStream(Math.min(maximumBytes, 16 * 1024))) {
@@ -282,6 +401,13 @@ public final class BackupArchiveValidator {
         }
     }
 
+    /**
+     * Creates a SHA-256 accumulator for independent content evidence.
+     * <p>创建用于独立内容证据的 SHA-256 累加器。
+     *
+     * @return new SHA-256 digest accumulator / 新的 SHA-256 摘要累加器
+     * @throws BackupException if backup validation or the controlled backup operation fails / 备份校验或受控备份操作失败时
+     */
     private static MessageDigest sha256() throws BackupException {
         try {
             return MessageDigest.getInstance("SHA-256");
@@ -290,6 +416,14 @@ public final class BackupArchiveValidator {
         }
     }
 
+    /**
+     * Accumulates archive member evidence while enforcing manifest and size constraints.
+     * <p>在执行清单和大小约束时累计归档成员证据。
+     *
+     * @param manifest validated ownership or backup inventory document / 已验证归属或备份资源清单文档
+     * @param verifiedBytes verified bytes / 已验证字节
+     * @param provenanceStatus provenance status / 来源证据状态
+     */
     private record ValidationState(
             BackupManifest manifest, long verifiedBytes, BackupProvenanceStatus provenanceStatus) {
     }

@@ -10,7 +10,17 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 
-/** Versioned root manifest for one portable backup archive. / 单个可移植备份归档的版本化根清单。 */
+/**
+ * Versioned root manifest for one portable backup archive. / 单个可移植备份归档的版本化根清单。
+ *
+ * @param format format / 格式
+ * @param schemaVersion the configuration schema version / 配置模式版本
+ * @param createdAtUtc created at utc / 已创建时刻UTC
+ * @param applicationId managed application identifier / 受管应用标识
+ * @param inventory inventory / 清单
+ * @param members members / 成员集合
+ * @param provenance provenance / 来源证据
+ */
 public record BackupManifest(
         String format,
         String schemaVersion,
@@ -20,12 +30,28 @@ public record BackupManifest(
         List<BackupMember> members,
         BackupProvenance provenance
 ) {
-    /** Current stable archive format identifier. / 当前稳定归档格式标识。 */
+    /**
+     * Current stable archive format identifier. / 当前稳定归档格式标识。
+     */
     public static final String CURRENT_FORMAT = "windowstolinux-backup";
-    /** Current manifest schema version. / 当前清单模式版本。 */
+    /**
+     * Current manifest schema version. / 当前清单模式版本。
+     */
     public static final String CURRENT_SCHEMA_VERSION = "6";
 
-    /** Validates schema compatibility and complete member uniqueness. / 校验模式兼容性与完整成员唯一性。 */
+    /**
+     * Validates schema compatibility and complete member uniqueness. / 校验模式兼容性与完整成员唯一性。
+     *
+     * @param format format / 格式
+     * @param schemaVersion the configuration schema version / 配置模式版本
+     * @param createdAtUtc created at utc / 已创建时刻UTC
+     * @param applicationId managed application identifier / 受管应用标识
+     * @param inventory inventory / 清单
+     * @param members members / 成员集合
+     * @param provenance provenance / 来源证据
+     * @throws IllegalArgumentException if an input violates the constraints checked by this contract / 输入违反当前契约检查的约束时
+     * @throws NullPointerException if a required input is absent / 必需输入缺失时
+     */
     public BackupManifest {
         format = BackupManifestRules.requiredText(format, "format", 64);
         schemaVersion = BackupManifestRules.requiredText(schemaVersion, "schemaVersion", 16);
@@ -61,7 +87,16 @@ public record BackupManifest(
         validateInventoryMembers(inventory, members);
     }
 
-    /** Creates an unsigned current-format manifest. / 创建当前格式的未签名清单。 */
+    /**
+     * Creates an unsigned current-format manifest. / 创建当前格式的未签名清单。
+     *
+     * @param createdAt instant at which this record was created / 当前记录创建时刻
+     * @param applicationId managed application identifier / 受管应用标识
+     * @param inventory inventory / 清单
+     * @param members members / 成员集合
+     * @return an unsigned current-format manifest / 当前格式的未签名清单
+     * @throws NullPointerException if a required input is absent / 必需输入缺失时
+     */
     public static BackupManifest create(
             Instant createdAt, String applicationId, BackupInventory inventory, List<BackupMember> members) {
         return new BackupManifest(CURRENT_FORMAT, CURRENT_SCHEMA_VERSION,
@@ -69,22 +104,43 @@ public record BackupManifest(
                 inventory, members, BackupProvenance.unsigned());
     }
 
-    /** Returns an equivalent manifest with new provenance. / 返回带新来源信息的等价清单。 */
+    /**
+     * Returns an equivalent manifest with new provenance. / 返回带新来源信息的等价清单。
+     *
+     * @param newProvenance new provenance / 新来源证据
+     * @return an equivalent manifest with new provenance / 带新来源信息的等价清单
+     */
     public BackupManifest withProvenance(BackupProvenance newProvenance) {
         return new BackupManifest(format, schemaVersion, createdAtUtc, applicationId, inventory, members, newProvenance);
     }
 
-    /** Returns whether this manifest contains all identities required for automatic activation. / 返回清单是否包含自动激活所需的全部身份。 */
+    /**
+     * Returns whether this manifest contains all identities required for automatic activation. / 返回清单是否包含自动激活所需的全部身份。
+     *
+     * @return true when returns whether this manifest contains all identities required for automatic activation, false otherwise / 返回清单是否包含自动激活所需的全部身份时为 true，否则为 false
+     */
     public boolean supportsAutomaticActivation() {
         return CURRENT_SCHEMA_VERSION.equals(schemaVersion)
                 && (inventory.secretReferences().isEmpty() || includesEncryptedSecrets());
     }
 
-    /** Returns whether the archive declares its one fixed encrypted-secret member. / 返回归档是否声明唯一固定加密秘密成员。 */
+    /**
+     * Returns whether the archive declares its one fixed encrypted-secret member. / 返回归档是否声明唯一固定加密秘密成员。
+     *
+     * @return true when returns whether the archive declares its one fixed encrypted-secret member, false otherwise / 返回归档是否声明唯一固定加密秘密成员时为 true，否则为 false
+     */
     public boolean includesEncryptedSecrets() {
         return members.stream().anyMatch(member -> member.kind() == BackupMemberKind.ENCRYPTED_SECRETS);
     }
 
+    /**
+     * Validates inventory members and rejects inputs outside the declared constraints.
+     * <p>校验清单成员集合并拒绝超出已声明约束的输入。
+     *
+     * @param inventory inventory / 清单
+     * @param members members / 成员集合
+     * @throws IllegalArgumentException if an input violates the constraints checked by this contract / 输入违反当前契约检查的约束时
+     */
     private static void validateInventoryMembers(BackupInventory inventory, List<BackupMember> members) {
         Map<String, BackupMemberKind> indexed = new HashMap<>();
         members.forEach(member -> indexed.put(member.path(), member.kind()));
@@ -105,6 +161,15 @@ public record BackupManifest(
         }
     }
 
+    /**
+     * Requires members and rejects inputs outside the declared constraints.
+     * <p>要求成员集合并拒绝超出已声明约束的输入。
+     *
+     * @param indexed indexed / 已索引
+     * @param requiredPaths required paths / 必需路径集合
+     * @param requiredKind required kind / 必需种类
+     * @throws IllegalArgumentException if an input violates the constraints checked by this contract / 输入违反当前契约检查的约束时
+     */
     private static void requireMembers(
             Map<String, BackupMemberKind> indexed, List<String> requiredPaths, BackupMemberKind requiredKind) {
         for (String path : requiredPaths) {

@@ -4,11 +4,26 @@ import gold.debug.windowstolinux.shared.linux.sshd.build.generation.script.SafeB
 
 import gold.debug.windowstolinux.shared.model.project.DeploymentBuildToolType;
 
-/** Renders the package-manager-specific portion shared by Node services and built static sites. / 渲染 Node 服务与构建型静态站点共享的包管理器部分。 */
+/**
+ * Renders the package-manager-specific portion shared by Node services and built static sites. / 渲染 Node 服务与构建型静态站点共享的包管理器部分。
+ */
 public final class NodePackageBuildScript {
+    /**
+     * Prevents instantiation of this static contract helper.
+     * <p>防止实例化当前静态契约辅助类。
+     */
     private NodePackageBuildScript() { }
 
-    /** Renders the controlled output. / 渲染受控输出。 */
+    /**
+     * Renders the controlled output. / 渲染受控输出。
+     *
+     * @param tool tool / 工具
+     * @param nodeMajorVersion node major version / 节点主版本版本
+     * @param staticSite static site / 静态Site
+     * @param outputDirectory output directory / 输出目录
+     * @return render text / 渲染文本
+     * @throws IllegalArgumentException if an input violates the constraints checked by this contract / 输入违反当前契约检查的约束时
+     */
     public static String render(DeploymentBuildToolType tool, int nodeMajorVersion, boolean staticSite, String outputDirectory) {
         String installAndBuild = switch (tool) {
             case NPM -> "test -f ./package-lock.json\nrun npm ci --ignore-scripts\nrun npm run build";
@@ -34,6 +49,12 @@ public final class NodePackageBuildScript {
 
     // npm creates executable links even with lifecycle scripts disabled; releases remain free of symlinks. / 即使禁用生命周期脚本，npm 仍会创建可执行链接，发布目录继续禁止符号链接。
     // npm 在禁用生命周期脚本时仍创建命令链接；转换后发布目录仍不允许符号链接。
+    /**
+     * Normalizes binary links as text without executing the rendered command.
+     * <p>规范化二进制链接集合为文本，不执行所渲染命令。
+     *
+     * @return normalize binary links text / 规范化二进制链接集合文本
+     */
     static String normalizeBinaryLinks() {
         return """
                 run python3 - <<'WTL_NODE_BIN_LINKS'

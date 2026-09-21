@@ -3,14 +3,14 @@ package gold.debug.windowstolinux.shared.model.deployment;
 /**
  * Explicit, reviewed limits for the fixed managed-deployment remote Maven build entrypoint.
  *
- * <p>固定受管部署远程 Maven 构建入口经过审阅的明确限制。
+ *  <p>固定受管部署远程 Maven 构建入口经过审阅的明确限制。
  *
- * @param timeoutSeconds the {@code timeoutSeconds} value / {@code timeoutSeconds} 值
- * @param maxProcesses the {@code maxProcesses} value / {@code maxProcesses} 值
- * @param maxMemoryMiB the {@code maxMemoryMiB} value / {@code maxMemoryMiB} 值
- * @param maxOutputBytes the {@code maxOutputBytes} value / {@code maxOutputBytes} 值
- * @param maxWorkspaceBytes the {@code maxWorkspaceBytes} value / {@code maxWorkspaceBytes} 值
- * @param runAsRoot the {@code runAsRoot} value / {@code runAsRoot} 值
+ * @param timeoutSeconds maximum waiting time in seconds / 最长等待时间，单位为秒
+ * @param maxProcesses max processes / 最大进程
+ * @param maxMemoryMiB max memory mi B / 最大内存MiB
+ * @param maxOutputBytes max output bytes / 最大输出字节
+ * @param maxWorkspaceBytes max workspace bytes / 最大工作区字节
+ * @param runAsRoot run as root / 运行As根目录
  */
 public record BuildLimitConfiguration(
         int timeoutSeconds,
@@ -21,16 +21,15 @@ public record BuildLimitConfiguration(
         boolean runAsRoot
 ) {
     /**
-     * Creates a {@code BuildLimitConfiguration} instance.
+     * Validates and binds the inputs required by build limit configuration.
+     * <p>校验并绑定构建限制配置所需输入。
      *
-     * <p>创建 {@code BuildLimitConfiguration} 实例。
-     *
-     * @param timeoutSeconds the {@code timeoutSeconds} value / {@code timeoutSeconds} 值
-     * @param maxProcesses the {@code maxProcesses} value / {@code maxProcesses} 值
-     * @param maxMemoryMiB the {@code maxMemoryMiB} value / {@code maxMemoryMiB} 值
-     * @param maxOutputBytes the {@code maxOutputBytes} value / {@code maxOutputBytes} 值
-     * @param maxWorkspaceBytes the {@code maxWorkspaceBytes} value / {@code maxWorkspaceBytes} 值
-     * @param runAsRoot the {@code runAsRoot} value / {@code runAsRoot} 值
+     * @param timeoutSeconds maximum waiting time in seconds / 最长等待时间，单位为秒
+     * @param maxProcesses max processes / 最大进程
+     * @param maxMemoryMiB max memory mi B / 最大内存MiB
+     * @param maxOutputBytes max output bytes / 最大输出字节
+     * @param maxWorkspaceBytes max workspace bytes / 最大工作区字节
+     * @param runAsRoot run as root / 运行As根目录
      * @throws IllegalArgumentException if an argument violates the required constraints / 参数违反必要约束时
      */
     public BuildLimitConfiguration {
@@ -52,9 +51,8 @@ public record BuildLimitConfiguration(
     }
 
     /**
-     * Performs the {@code defaultNonRoot} operation.
-     *
-     * <p>执行 {@code defaultNonRoot} 操作。
+     * Builds build limit configuration from the supplied default non root inputs.
+     * <p>根据所提供默认非根目录输入构建构建限制配置。
      *
      * @return the operation result / 操作结果
      */

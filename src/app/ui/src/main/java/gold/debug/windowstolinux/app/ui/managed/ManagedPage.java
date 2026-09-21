@@ -18,33 +18,113 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 
-/** Card inventory with combined filters and contract-specific lifecycle operations. / 支持组合筛选及按契约执行生命周期的卡片清单。 */
+/**
+ * Card inventory with combined filters and contract-specific lifecycle operations. / 支持组合筛选及按契约执行生命周期的卡片清单。
+ */
 public final class ManagedPage {
+    /**
+     * Bound managed application facade collaborator for application service used by the caller.
+     * <p>处理调用方使用的应用服务的受管应用门面协作对象。
+     */
     private final ManagedApplicationFacade service;
+    /**
+     * Server context.
+     * <p>服务器上下文。
+     */
     private final ServerContext serverContext;
+    /**
+     * Bound page message presenter collaborator for localized message resolver.
+     * <p>处理本地化消息解析器的页面消息展示器协作对象。
+     */
     private final PageMessagePresenter messages;
+    /**
+     * The themed desktop component factory.
+     * <p>主题化桌面组件工厂。
+     */
     private final DesktopComponentFactory c;
+    /**
+     * Swing control for application id.
+     * <p>应用标识对应的 Swing 控件。
+     */
     private final JTextField applicationId = new JTextField();
+    /**
+     * Swing control for output.
+     * <p>输出对应的 Swing 控件。
+     */
     private final JTextArea output = DesktopComponentFactory.outputArea();
+    /**
+     * Selected member of the supported type set.
+     * <p>受支持类型集合中的所选项。
+     */
     private final JComboBox<String> type = new JComboBox<>(new String[]{"", "WEBSITE", "APP"});
+    /**
+     * Server identity or selected server configuration.
+     * <p>服务器身份或所选服务器配置。
+     */
     private final JComboBox<ServerChoice> server = new JComboBox<>();
+    /**
+     * Swing control for cards.
+     * <p>卡片集合对应的 Swing 控件。
+     */
     private final JPanel cards = new JPanel();
+    /**
+     * Swing control for status.
+     * <p>状态对应的 Swing 控件。
+     */
     private final JLabel status = new JLabel();
+    /**
+     * Swing control for panel.
+     * <p>面板对应的 Swing 控件。
+     */
     private final JPanel panel;
+    /**
+     * Applications.
+     * <p>应用集合。
+     */
     private List<ApplicationSummary> applications = List.of();
+    /**
+     * Desired server.
+     * <p>期望服务器。
+     */
     private String desiredServer = "";
+    /**
+     * Whether saved choices are being loaded and selection callbacks must be deferred.
+     * <p>是否正在加载已保存选项且须延后选择回调。
+     * <p>busy:
+     * Whether a page action is in progress and conflicting controls must remain disabled.
+     * <p>页面动作是否正在进行且冲突控件须保持禁用。
+     */
     private boolean loading, busy;
 
-    /** Creates the application page without connecting to a server. / 创建应用页面，不连接服务器。 */
+    /**
+     * Creates the application page without connecting to a server. / 创建应用页面，不连接服务器。
+     *
+     * @param service application service used by the caller / 调用方使用的应用服务
+     * @param serverContext server context / 服务器上下文
+     * @param c the themed desktop component factory / 主题化桌面组件工厂
+     * @param messages localized message resolver / 本地化消息解析器
+     */
     public ManagedPage(ManagedApplicationFacade service, ServerContext serverContext, DesktopComponentFactory c, PageMessagePresenter messages) {
         this.service = service; this.serverContext = serverContext; this.c = c; this.messages = messages; panel = createPanel();
         panel.addHierarchyListener(event -> { if ((event.getChangeFlags() & java.awt.event.HierarchyEvent.SHOWING_CHANGED) != 0 && panel.isShowing()) refresh(); });
     }
-    /** Returns the card page. / 返回卡片页面。 */
+    /**
+     * Returns the card page. / 返回卡片页面。
+     *
+     * @return the card page / 卡片页面
+     */
     public JPanel panel() { return panel; }
-    /** Captures filters and selected application across appearance changes. / 在外观变化时捕获筛选及所选应用。 */
+    /**
+     * Captures filters and selected application across appearance changes. / 在外观变化时捕获筛选及所选应用。
+     *
+     * @return constructed or resolved managed page state / 构造或解析得到的受管页面状态
+     */
     public ManagedPageState captureState() { return new ManagedPageState(applicationId.getText(), output.getText(), (String) type.getSelectedItem(), selectedServer()); }
-    /** Restores independent filter and diagnostic state. / 恢复独立筛选及诊断状态。 */
+    /**
+     * Restores independent filter and diagnostic state. / 恢复独立筛选及诊断状态。
+     *
+     * @param state current lifecycle or workflow state / 当前生命周期或工作流状态
+     */
     public void restoreState(ManagedPageState state) {
         applicationId.setText(state.applicationId()); output.setText(state.output()); desiredServer = state.serverFilter();
         loading = true;
@@ -52,16 +132,37 @@ public final class ManagedPage {
         loading = false;
         type.setSelectedItem(state.typeFilter());
     }
-    /** Selects a deployment handoff or newly adopted registration. / 选择部署交接或新接管登记。 */
+    /**
+     * Selects a deployment handoff or newly adopted registration. / 选择部署交接或新接管登记。
+     *
+     * @param key lookup key within the current contract / 当前契约内的查找键
+     */
     public void selectApplication(String key) {
         applicationId.setText(key); output.setText(messages.text("deployment.selected", Map.of("application", key))); refresh();
     }
 
+    /**
+     * Builds the managed-application inventory with filtering, refresh and lifecycle controls.
+     * <p>构建受管应用清单，包含筛选、刷新及生命周期控件。
+     *
+     * @return the managed-application inventory with filtering, refresh and lifecycle controls / 受管应用清单，包含筛选、刷新及生命周期控件
+     */
     private JPanel createPanel() {
         JPanel page = c.pagePanel(); AdvancedOptionsPane advanced = new AdvancedOptionsPane(page, c, messages);
         JPanel toolbar = c.transparent(new BorderLayout(12, 0));
         JPanel filters = c.transparent(new GridBagLayout());
         type.setRenderer(new DefaultListCellRenderer() {
+            /**
+             * Returns list cell renderer component.
+             * <p>返回列表Cell渲染器组件。
+             *
+             * @param list list / 列表
+             * @param value candidate content accepted or rejected by this contract / 由当前契约接收或拒绝的候选内容
+             * @param index index / 索引
+             * @param selected explicitly selected item or state / 显式选择的项目或状态
+             * @param focus focus / 焦点
+             * @return list cell renderer component / 列表Cell渲染器组件
+             */
             @Override public Component getListCellRendererComponent(JList<?> list, Object value, int index, boolean selected, boolean focus) {
                 return super.getListCellRendererComponent(list, messages.text(value == null || value.toString().isEmpty() ? "apps.allTypes" : "apps.category." + value), index, selected, focus);
             }
@@ -88,6 +189,10 @@ public final class ManagedPage {
         return advanced;
     }
 
+    /**
+     * Loads current application cards asynchronously while preserving the page's selection and busy state.
+     * <p>异步加载当前应用卡片，并保留页面选择及忙碌状态。
+     */
     private void refresh() {
         if (service == null || loading || busy) return;
         loading = true; status.setText(messages.text("apps.loading"));
@@ -101,6 +206,10 @@ public final class ManagedPage {
         }, failure -> { loading = false; status.setText(messages.safe(failure)); });
     }
 
+    /**
+     * Renders managed page.
+     * <p>渲染受管页面。
+     */
     private void render() {
         if (loading) return;
         cards.removeAll();
@@ -109,6 +218,13 @@ public final class ManagedPage {
         status.setText(shown.isEmpty() ? messages.text("apps.empty") : ""); cards.revalidate(); cards.repaint();
     }
 
+    /**
+     * Builds a managed-application card containing its description, state and available lifecycle actions.
+     * <p>构建受管应用卡片，包含说明、状态及可用生命周期动作。
+     *
+     * @param app app / 应用
+     * @return a managed-application card containing its description, state and available lifecycle actions / 受管应用卡片，包含说明、状态及可用生命周期动作
+     */
     private JPanel card(ApplicationSummary app) {
         JPanel wrapper = c.transparent(new BorderLayout()); wrapper.setBorder(BorderFactory.createEmptyBorder(0, 0, 12, 0));
         JPanel card = c.card(new BorderLayout(0, 12)); wrapper.add(card);
@@ -146,10 +262,25 @@ public final class ManagedPage {
         }); actions.add(edit); card.add(actions, BorderLayout.SOUTH);
         for (Component control : actions.getComponents())
             ((JButton) control).putClientProperty(FlatClientProperties.MINIMUM_HEIGHT, 36);
-        card.addMouseListener(new java.awt.event.MouseAdapter() { @Override public void mouseClicked(java.awt.event.MouseEvent event) { applicationId.setText(app.key()); } });
+        card.addMouseListener(new java.awt.event.MouseAdapter() {
+        /**
+         * Handles the mouse click on the associated desktop control.
+         * <p>处理关联桌面控件上的鼠标点击。
+         *
+         * @param event state or UI event being processed / 正在处理的状态或 UI 事件
+         */
+         @Override public void mouseClicked(java.awt.event.MouseEvent event) { applicationId.setText(app.key()); } });
         return wrapper;
     }
 
+    /**
+     * Adds reviewed access and application-command information, indicating when reanalysis is required.
+     * <p>添加已审阅访问及应用命令信息，并指示何时需要重新分析。
+     *
+     * @param app app / 应用
+     * @param details details / 详情
+     * @param actions actions / 动作集合
+     */
     private void addUsage(ApplicationSummary app, JPanel details, JPanel actions) {
         app.usage().ifPresent(usage -> {
             if (!usage.reviewed()) details.add(new JLabel(messages.text("apps.reanalysisRequired")));
@@ -168,6 +299,13 @@ public final class ManagedPage {
         });
     }
 
+    /**
+     * Submits the selected lifecycle action through the service and updates the card with fresh observation evidence.
+     * <p>通过服务提交所选生命周期动作，并使用新观测证据更新卡片。
+     *
+     * @param app app / 应用
+     * @param action explicit action selected for the current target / 为当前目标显式选择的动作
+     */
     private void execute(ApplicationSummary app, LifecycleAction action) {
         if (busy) return;
         char[] master = serverContext.masterPassword();
@@ -184,6 +322,13 @@ public final class ManagedPage {
         }, result -> { finish(); output.setText(describe(result)); refresh(); }, failure -> { finish(); output.setText(messages.safe(failure)); status.setText(messages.safe(failure)); });
     }
 
+    /**
+     * Formats observed runtime state, observation time and the managed action's acceptance result.
+     * <p>格式化观测运行状态、观测时间及受管动作的准入结果。
+     *
+     * @param result typed outcome produced by the delegated operation / 被委派操作产生的类型化结果
+     * @return observed runtime state, observation time and the managed action's acceptance result / 观测运行状态、观测时间及受管动作的准入结果
+     */
     private String describe(ApplicationLifecycleResult result) {
         String summary = messages.text("runtime.state." + result.state().name().toLowerCase(Locale.ROOT)) + "  ·  " + time(result.observedAt());
         return result.managed().map(value -> summary + "\n" + messages.text(value.accepted() ? "lifecycle.accepted" : "lifecycle.rejected",
@@ -192,9 +337,47 @@ public final class ManagedPage {
                 + value.failure().map(failure -> "\n" + failure.code()).orElse("")
                 + value.nonFatalFailures().stream().map(failure -> "\n" + failure.code() + " " + messages.catalog().text(failure.userMessage())).reduce("", String::concat)).orElse(summary);
     }
+    /**
+     * Finishes managed page.
+     * <p>完成受管页面。
+     */
     private void finish() { busy = false; ((AdvancedOptionsPane) panel).setBusy(false); }
+    /**
+     * Reports whether the selection condition holds for this contract.
+     * <p>判断当前契约是否满足选择条件。
+     *
+     * @param app app / 应用
+     * @return true when selection condition holds for this contract, false otherwise / 当前契约是否满足选择条件时为 true，否则为 false
+     */
     private boolean matchesSelection(ApplicationSummary app) { return app.key().equals(applicationId.getText()) || app.key().equals("managed:" + applicationId.getText()); }
+    /**
+     * Returns selected server.
+     * <p>返回已选服务器。
+     *
+     * @return selected server / 已选服务器
+     */
     private String selectedServer() { return server.getSelectedItem() instanceof ServerChoice choice ? choice.id : desiredServer; }
+    /**
+     * Formats an instant to minute precision in the system's default time zone.
+     * <p>按系统默认时区将时刻格式化到分钟精度。
+     *
+     * @param time time / 时间
+     * @return an instant to minute precision in the system's default time zone / 按系统默认时区将时刻格式化到分钟精度
+     */
     private static String time(Instant time) { return DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm").withZone(ZoneId.systemDefault()).format(time); }
-    private record ServerChoice(String id, String label) { @Override public String toString() { return label; } }
+    /**
+     * Pairs the server identity with its label for managed-application selection.
+     * <p>将服务器身份与受管应用选择所用标签配对。
+     *
+     * @param id stable identifier within the owning registry / 所属登记表内的稳定标识
+     * @param label label / 标签
+     */
+    private record ServerChoice(String id, String label) {
+    /**
+     * Returns label.
+     * <p>返回标签。
+     *
+     * @return label / 标签
+     */
+     @Override public String toString() { return label; } }
 }

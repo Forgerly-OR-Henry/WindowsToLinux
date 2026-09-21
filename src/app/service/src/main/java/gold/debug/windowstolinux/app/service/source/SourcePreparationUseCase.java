@@ -22,18 +22,29 @@ import java.util.Objects;
 import java.util.Optional;
 
 /**
- * Provides the {@code SourcePreparationUseCase} implementation.
- *
- * <p>提供 {@code SourcePreparationUseCase} 实现。
+ * Freezes reviewed local or pinned Git sources into verified deployment archives.
+ * <p>将经审阅的本地或固定 Git 源码冻结为已验证部署归档。
  */
 public final class SourcePreparationUseCase {
-    /** Freezes local input before automatic discovery or any remote change. / 在自动发现或任何远端变更之前冻结本地输入。 */
+    /**
+     * Freezes local input before automatic discovery or any remote change. / 在自动发现或任何远端变更之前冻结本地输入。
+     *
+     * @param directory directory within the caller's controlled storage boundary / 调用方受控存储边界内的目录
+     * @return constructed or resolved source directory snapshot / 构造或解析得到的源码目录快照
+     * @throws IOException if the required file or stream operation fails / 所需文件或流操作失败时
+     */
     public gold.debug.windowstolinux.shared.source.snapshot.SourceDirectorySnapshot snapshot(Path directory) throws IOException {
         return gold.debug.windowstolinux.shared.source.snapshot.SourceDirectorySnapshot.create(directory,
                 workspace.workDirectory().resolve("source-snapshots"));
     }
 
-    /** Preserves the repository name for analyzers that derive the application identity from its directory. / 保留仓库名称，供根据目录推导应用身份的分析器使用。 */
+    /**
+     * Preserves the repository name for analyzers that derive the application identity from its directory. / 保留仓库名称，供根据目录推导应用身份的分析器使用。
+     *
+     * @param git Git source / Git 源码
+     * @return constructed or resolved source directory snapshot / 构造或解析得到的源码目录快照
+     * @throws IOException if the required file or stream operation fails / 所需文件或流操作失败时
+     */
     public gold.debug.windowstolinux.shared.source.snapshot.SourceDirectorySnapshot snapshot(GitSnapshot git) throws IOException {
         String path = git.remote().location().getPath().replaceFirst("/+$", "");
         String name = path.substring(path.lastIndexOf('/') + 1).replaceFirst("\\.git$", "");
@@ -41,29 +52,60 @@ public final class SourcePreparationUseCase {
                 workspace.workDirectory().resolve("source-snapshots"), name);
     }
 
-    /** Resolves the whole Git source once so every component uses the same commit. / 仅解析一次完整 Git 源码，使每个组件使用相同提交。 */
+    /**
+     * Resolves the whole Git source once so every component uses the same commit. / 仅解析一次完整 Git 源码，使每个组件使用相同提交。
+     *
+     * @param request reviewed inputs for the requested operation / 所请求操作的已审阅输入
+     * @return the whole Git source once so every component uses the same commit / 仅解析一次完整 Git 源码，使每个组件使用相同提交
+     * @throws GitSnapshotException if the git snapshot boundary rejects the operation / Git快照边界拒绝当前操作时
+     */
     public GitSnapshot snapshotGit(GitSourceRequest request) throws GitSnapshotException {
         return gitSnapshots.prepare(request, gitWorkspace);
     }
+    /**
+     * Bound deployment analysis coordinator collaborator for analyzer.
+     * <p>处理分析器的部署分析协调器协作对象。
+     */
     private final DeploymentAnalysisCoordinator analyzer;
+    /**
+     * Bound windows source preparer collaborator for platform-owned work area with enforced path boundaries.
+     * <p>处理具有路径边界约束的平台工作区的Windows源码准备器协作对象。
+     */
     private final WindowsSourcePreparer workspace;
+    /**
+     * Bound git snapshot preparer collaborator for git snapshots.
+     * <p>处理Git快照集合的Git快照准备器协作对象。
+     */
     private final GitSnapshotPreparer gitSnapshots;
+    /**
+     * Git workspace.
+     * <p>Git工作区。
+     */
     private final Path gitWorkspace;
 
     /**
-     * Creates a {@code SourcePreparationUseCase} instance.
+     * Validates and binds the inputs required by source preparation use case.
+     * <p>校验并绑定源码准备用例所需输入。
      *
-     * <p>创建 {@code SourcePreparationUseCase} 实例。
-     *
-     * @param analyzer the {@code analyzer} value / {@code analyzer} 值
-     * @param workspace the {@code workspace} value / {@code workspace} 值
-     * @throws NullPointerException if a required argument is {@code null} / 必要参数为 {@code null} 时
+     * @param analyzer analyzer / 分析器
+     * @param workspace platform-owned work area with enforced path boundaries / 具有路径边界约束的平台工作区
+     * @throws NullPointerException if a required input is absent / 必需输入缺失时
      */
     public SourcePreparationUseCase(DeploymentAnalysisCoordinator analyzer, WindowsSourcePreparer workspace) {
         this(analyzer, workspace, new GitSnapshotPreparer(),
                 Objects.requireNonNull(workspace, "workspace").workDirectory().resolve("git-snapshots"));
     }
 
+    /**
+     * Validates and binds the inputs required by source preparation use case.
+     * <p>校验并绑定源码准备用例所需输入。
+     *
+     * @param analyzer analyzer / 分析器
+     * @param workspace platform-owned work area with enforced path boundaries / 具有路径边界约束的平台工作区
+     * @param gitSnapshots git snapshots / Git快照集合
+     * @param gitWorkspace git workspace / Git工作区
+     * @throws NullPointerException if a required input is absent / 必需输入缺失时
+     */
     SourcePreparationUseCase(DeploymentAnalysisCoordinator analyzer, WindowsSourcePreparer workspace,
                              GitSnapshotPreparer gitSnapshots, Path gitWorkspace) {
         this.analyzer = Objects.requireNonNull(analyzer, "analyzer");
@@ -73,18 +115,9 @@ public final class SourcePreparationUseCase {
     }
 
     /**
-     * Performs the {@code prepare} operation.
-     *
-     * <p>执行 {@code prepare} 操作。
-     *
-     * @param sourceDirectory the {@code sourceDirectory} value / {@code sourceDirectory} 值
-     * @return the operation result / 操作结果
-     * @throws IOException if the operation cannot be completed / 无法完成操作时
-     */
-    /**
      * Performs the selected typed static analysis before creating an archive; it never executes project content.
      *
-     * <p>在创建归档前执行选定的类型化静态分析；绝不执行项目内容。
+     *  <p>在创建归档前执行选定的类型化静态分析；绝不执行项目内容。
      *
      * @param sourceDirectory the user-selected source directory / 用户选择的源码目录
      * @param projectType the explicitly selected single-component type / 显式选择的单组件类型
@@ -96,17 +129,41 @@ public final class SourcePreparationUseCase {
         return archive(sourceDirectory, assessment);
     }
 
-    /** Preserves database review as a missing field while discovering runtime inputs. / 发现运行输入时，将数据库审阅保留为待补充字段。 */
+    /**
+     * Preserves database review as a missing field while discovering runtime inputs. / 发现运行输入时，将数据库审阅保留为待补充字段。
+     *
+     * @param sourceDirectory the user-selected source directory / 用户选择的源码目录
+     * @param projectType supported project deployment category / 受支持的项目部署类别
+     * @return constructed or resolved reviewed source preparation / 构造或解析得到的已审阅源码准备
+     * @throws IOException if the required file or stream operation fails / 所需文件或流操作失败时
+     */
     public ReviewedSourcePreparation prepareAutomatic(Path sourceDirectory, DeploymentProjectType projectType) throws IOException {
         return archive(sourceDirectory, analyzer.analyzeForDatabaseReview(sourceDirectory, projectType));
     }
 
-    /** Creates the final archive only after database evidence admits the same frozen source. / 仅在数据库证据允许同一冻结源码后创建最终归档。 */
+    /**
+     * Creates the final archive only after database evidence admits the same frozen source. / 仅在数据库证据允许同一冻结源码后创建最终归档。
+     *
+     * @param sourceDirectory the user-selected source directory / 用户选择的源码目录
+     * @param projectType supported project deployment category / 受支持的项目部署类别
+     * @param review review / 审阅
+     * @return the final archive only after database evidence admits the same frozen source / 仅在数据库证据允许同一冻结源码后创建最终归档
+     * @throws IOException if the required file or stream operation fails / 所需文件或流操作失败时
+     */
     public ReviewedSourcePreparation prepareWithDatabaseReview(Path sourceDirectory, DeploymentProjectType projectType,
             gold.debug.windowstolinux.shared.model.ecosystem.db.DatabaseSchemaReview review) throws IOException {
         return archive(sourceDirectory, analyzer.analyze(sourceDirectory, projectType, review));
     }
 
+    /**
+     * Builds reviewed source preparation from the supplied archive inputs.
+     * <p>根据所提供归档输入构建已审阅源码准备。
+     *
+     * @param sourceDirectory the user-selected source directory / 用户选择的源码目录
+     * @param assessment the typed static assessment / 类型化静态评估
+     * @return reviewed source preparation from the supplied archive inputs / 根据所提供归档输入构建已审阅源码准备
+     * @throws IOException if the required file or stream operation fails / 所需文件或流操作失败时
+     */
     private ReviewedSourcePreparation archive(Path sourceDirectory, DeploymentProjectAssessment assessment) throws IOException {
         if (assessment.admission() != DeploymentAdmissionStatus.READY_FOR_PLANNING) {
             return new ReviewedSourcePreparation(assessment, Optional.empty(), Optional.empty(), List.of());
@@ -121,7 +178,13 @@ public final class SourcePreparationUseCase {
     /**
      * Analyzes an explicit component graph and creates one independent safe archive per admitted component.
      *
-     * <p>分析显式组件图，并为每个准入组件创建一个独立安全归档。
+     *  <p>分析显式组件图，并为每个准入组件创建一个独立安全归档。
+     *
+     * @param applicationRoot application root / 应用根目录
+     * @param applicationId managed application identifier / 受管应用标识
+     * @param requests requests / 请求集合
+     * @return constructed or resolved prepared multi component source / 构造或解析得到的已准备多组件源码
+     * @throws IOException if the required file or stream operation fails / 所需文件或流操作失败时
      */
     public PreparedMultiComponentSource prepareMultiComponent(Path applicationRoot, String applicationId,
                                                                List<ComponentAnalysisRequest> requests)
@@ -129,7 +192,16 @@ public final class SourcePreparationUseCase {
         return prepareMultiComponent(applicationRoot, applicationId, requests, java.util.Map.of());
     }
 
-    /** Archives a validated graph after each schema-bearing component has been reviewed. / 各含模式声明的组件完成审阅后，归档已验证的组件图。 */
+    /**
+     * Archives a validated graph after each schema-bearing component has been reviewed. / 各含模式声明的组件完成审阅后，归档已验证的组件图。
+     *
+     * @param applicationRoot application root / 应用根目录
+     * @param applicationId managed application identifier / 受管应用标识
+     * @param requests requests / 请求集合
+     * @param reviews reviews / 审阅集合
+     * @return constructed or resolved prepared multi component source / 构造或解析得到的已准备多组件源码
+     * @throws IOException if the required file or stream operation fails / 所需文件或流操作失败时
+     */
     public PreparedMultiComponentSource prepareMultiComponent(Path applicationRoot, String applicationId,
             List<ComponentAnalysisRequest> requests, java.util.Map<String, gold.debug.windowstolinux.shared.model.ecosystem.db.DatabaseSchemaReview> reviews)
             throws IOException {
@@ -155,7 +227,7 @@ public final class SourcePreparationUseCase {
     /**
      * Resolves a user-selected Git reference to one detached commit, then analyzes that exact checkout without executing project code.
      *
-     * <p>将用户选择的 Git 引用解析为一个分离 Commit，然后在不执行项目代码的情况下分析该精确检出。
+     *  <p>将用户选择的 Git 引用解析为一个分离 Commit，然后在不执行项目代码的情况下分析该精确检出。
      *
      * @param request the explicit credential-free Git source request / 显式且不含凭据的 Git 源码请求
      * @param projectType the user-selected type / 用户选择的类型

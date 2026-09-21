@@ -27,16 +27,32 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 
-/** Stores managed applications, runtime contracts, releases, and lifecycle observations. / 保存受管应用、运行契约、发布和生命周期观测。 */
+/**
+ * Stores managed applications, runtime contracts, releases, and lifecycle observations. / 保存受管应用、运行契约、发布和生命周期观测。
+ */
 public final class ManagedApplicationRepository {
+    /**
+     * Factory for scoped database connections.
+     * <p>限定作用域数据库连接的工厂。
+     */
     private final DesktopConnectionFactory connections;
 
-    /** Creates the repository. / 创建仓库。 */
+    /**
+     * Creates the repository. / 创建仓库。
+     *
+     * @param connections factory for scoped database connections / 限定作用域数据库连接的工厂
+     * @throws NullPointerException if a required input is absent / 必需输入缺失时
+     */
     public ManagedApplicationRepository(DesktopConnectionFactory connections) {
         this.connections = Objects.requireNonNull(connections, "connections");
     }
 
-    /** Saves a managed application identity. / 保存受管应用身份。 */
+    /**
+     * Saves a managed application identity. / 保存受管应用身份。
+     *
+     * @param application managed target with its server and ownership identity / 携带服务器及归属身份的受管目标
+     * @throws SQLException if the database cannot complete the requested read or transaction / 数据库无法完成请求的读取或事务时
+     */
     public void save(ManagedApplication application) throws SQLException {
         try (Connection connection = connections.open()) {
             RepositoryTransactionExecutor.execute(connection, () -> {
@@ -46,7 +62,16 @@ public final class ManagedApplicationRepository {
         }
     }
 
-    /** Atomically records all successful-deployment state. / 原子记录全部成功部署状态。 */
+    /**
+     * Atomically records all successful-deployment state. / 原子记录全部成功部署状态。
+     *
+     * @param application managed target with its server and ownership identity / 携带服务器及归属身份的受管目标
+     * @param runtimeConfiguration runtime configuration / 运行时配置
+     * @param release release / 发布
+     * @throws SQLException if the database cannot complete the requested read or transaction / 数据库无法完成请求的读取或事务时
+     * @throws IllegalArgumentException if an input violates the constraints checked by this contract / 输入违反当前契约检查的约束时
+     * @throws NullPointerException if a required input is absent / 必需输入缺失时
+     */
     public void recordSuccessfulDeployment(ManagedApplication application,
                                            ManagedApplicationRuntimeConfiguration runtimeConfiguration,
                                            CurrentRelease release) throws SQLException {
@@ -66,7 +91,14 @@ public final class ManagedApplicationRepository {
         }
     }
 
-    /** Atomically records every component of one successful whole-application transaction. / 原子记录一次成功整应用事务的全部组件。 */
+    /**
+     * Atomically records every component of one successful whole-application transaction. / 原子记录一次成功整应用事务的全部组件。
+     *
+     * @param deployments deployments / 部署集合
+     * @throws SQLException if the database cannot complete the requested read or transaction / 数据库无法完成请求的读取或事务时
+     * @throws IllegalArgumentException if an input violates the constraints checked by this contract / 输入违反当前契约检查的约束时
+     * @throws NullPointerException if a required input is absent / 必需输入缺失时
+     */
     public void recordSuccessfulDeployments(List<SuccessfulManagedDeployment> deployments) throws SQLException {
         List<SuccessfulManagedDeployment> records = List.copyOf(Objects.requireNonNull(deployments, "deployments"));
         if (records.isEmpty() || records.stream().map(value -> value.application().id()).distinct().count()
@@ -78,7 +110,18 @@ public final class ManagedApplicationRepository {
         }
     }
 
-    /** Atomically records reviewed success with exact configuration and secret-revision bindings. / 原子记录经审阅的成功状态及精确配置、秘密修订绑定。 */
+    /**
+     * Atomically records reviewed success with exact configuration and secret-revision bindings. / 原子记录经审阅的成功状态及精确配置、秘密修订绑定。
+     *
+     * @param application managed target with its server and ownership identity / 携带服务器及归属身份的受管目标
+     * @param runtimeConfiguration runtime configuration / 运行时配置
+     * @param release release / 发布
+     * @param configuration reviewed configuration snapshot or settings / 已审阅配置快照或设置
+     * @param secretReferences immutable identifiers and revisions of required secrets / 所需秘密的不可变标识及修订
+     * @throws SQLException if the database cannot complete the requested read or transaction / 数据库无法完成请求的读取或事务时
+     * @throws IllegalArgumentException if an input violates the constraints checked by this contract / 输入违反当前契约检查的约束时
+     * @throws NullPointerException if a required input is absent / 必需输入缺失时
+     */
     public void recordSuccessfulDeployment(ManagedApplication application,
                                            ManagedApplicationRuntimeConfiguration runtimeConfiguration, CurrentRelease release,
                                            ConfigurationSnapshot configuration, List<SecretReference> secretReferences) throws SQLException {
@@ -105,7 +148,13 @@ public final class ManagedApplicationRepository {
         }
     }
 
-    /** Finds a managed application. / 查找受管应用。 */
+    /**
+     * Finds a managed application. / 查找受管应用。
+     *
+     * @param applicationId managed application identifier / 受管应用标识
+     * @return matching result, or empty when no admitted value exists / 匹配结果；不存在已准入内容时为空
+     * @throws SQLException if the database cannot complete the requested read or transaction / 数据库无法完成请求的读取或事务时
+     */
     public Optional<ManagedApplication> find(String applicationId) throws SQLException {
         try (Connection connection = connections.open(); PreparedStatement statement = connection.prepareStatement("""
                 SELECT a.id, a.systemd_unit, a.release_root, a.ownership_manifest_sha256,
@@ -119,7 +168,12 @@ public final class ManagedApplicationRepository {
         }
     }
 
-    /** Lists managed applications. / 列出受管应用。 */
+    /**
+     * Lists managed applications. / 列出受管应用。
+     *
+     * @return constructed or resolved list / 构造或解析得到的列表
+     * @throws SQLException if the database cannot complete the requested read or transaction / 数据库无法完成请求的读取或事务时
+     */
     public List<ManagedApplication> list() throws SQLException {
         try (Connection connection = connections.open(); PreparedStatement statement = connection.prepareStatement("""
                 SELECT a.id, a.systemd_unit, a.release_root, a.ownership_manifest_sha256,
@@ -134,7 +188,13 @@ public final class ManagedApplicationRepository {
         }
     }
 
-    /** Finds the persisted runtime contract. / 查找持久化运行契约。 */
+    /**
+     * Finds the persisted runtime contract. / 查找持久化运行契约。
+     *
+     * @param applicationId managed application identifier / 受管应用标识
+     * @return matching result, or empty when no admitted value exists / 匹配结果；不存在已准入内容时为空
+     * @throws SQLException if the database cannot complete the requested read or transaction / 数据库无法完成请求的读取或事务时
+     */
     public Optional<ManagedApplicationRuntimeConfiguration> findRuntime(String applicationId) throws SQLException {
         try (Connection connection = connections.open(); PreparedStatement statement = connection.prepareStatement("""
                 SELECT health_kind, http_endpoint, http_expected_status, tcp_port, health_timeout_seconds,
@@ -148,14 +208,25 @@ public final class ManagedApplicationRepository {
         }
     }
 
-    /** Saves the current release. / 保存当前发布。 */
+    /**
+     * Saves the current release. / 保存当前发布。
+     *
+     * @param release release / 发布
+     * @throws SQLException if the database cannot complete the requested read or transaction / 数据库无法完成请求的读取或事务时
+     */
     public void saveRelease(CurrentRelease release) throws SQLException {
         try (Connection connection = connections.open()) {
             upsertRelease(connection, release);
         }
     }
 
-    /** Finds the current release. / 查找当前发布。 */
+    /**
+     * Finds the current release. / 查找当前发布。
+     *
+     * @param applicationId managed application identifier / 受管应用标识
+     * @return matching result, or empty when no admitted value exists / 匹配结果；不存在已准入内容时为空
+     * @throws SQLException if the database cannot complete the requested read or transaction / 数据库无法完成请求的读取或事务时
+     */
     public Optional<CurrentRelease> findRelease(String applicationId) throws SQLException {
         try (Connection connection = connections.open(); PreparedStatement statement = connection.prepareStatement("""
                 SELECT application_id, release_sha256, published_at FROM managed_application_release WHERE application_id=?
@@ -169,7 +240,12 @@ public final class ManagedApplicationRepository {
         }
     }
 
-    /** Saves the last non-authoritative lifecycle observation. / 保存最后一项非权威生命周期观测。 */
+    /**
+     * Saves the last non-authoritative lifecycle observation. / 保存最后一项非权威生命周期观测。
+     *
+     * @param observation observation / 观测
+     * @throws SQLException if the database cannot complete the requested read or transaction / 数据库无法完成请求的读取或事务时
+     */
     public void saveObservation(LifecycleObservation observation) throws SQLException {
         try (Connection connection = connections.open(); PreparedStatement statement = connection.prepareStatement("""
                 INSERT INTO application_observation (
@@ -189,7 +265,13 @@ public final class ManagedApplicationRepository {
         }
     }
 
-    /** Finds the last non-authoritative lifecycle observation. / 查找最后一项非权威生命周期观测。 */
+    /**
+     * Finds the last non-authoritative lifecycle observation. / 查找最后一项非权威生命周期观测。
+     *
+     * @param application managed target with its server and ownership identity / 携带服务器及归属身份的受管目标
+     * @return matching result, or empty when no admitted value exists / 匹配结果；不存在已准入内容时为空
+     * @throws SQLException if the database cannot complete the requested read or transaction / 数据库无法完成请求的读取或事务时
+     */
     public Optional<LifecycleObservation> findObservation(ManagedApplication application) throws SQLException {
         try (Connection connection = connections.open(); PreparedStatement statement = connection.prepareStatement("""
                 SELECT runtime_state, autostart_state, ownership_verified, observed_at, evidence
@@ -207,6 +289,14 @@ public final class ManagedApplicationRepository {
         }
     }
 
+    /**
+     * Inserts or updates managed target with its server and ownership identity.
+     * <p>插入或更新携带服务器及归属身份的受管目标。
+     *
+     * @param connection connection scoped to the current database or remote operation / 限定于当前数据库或远端操作的连接
+     * @param application managed target with its server and ownership identity / 携带服务器及归属身份的受管目标
+     * @throws SQLException if the database cannot complete the requested read or transaction / 数据库无法完成请求的读取或事务时
+     */
     private static void upsertApplication(Connection connection, ManagedApplication application) throws SQLException {
         try (PreparedStatement statement = connection.prepareStatement("""
                 INSERT INTO managed_application (id, server_id, systemd_unit, release_root, ownership_manifest_sha256)
@@ -223,6 +313,14 @@ public final class ManagedApplicationRepository {
         }
     }
 
+    /**
+     * Records successful deployments.
+     * <p>记录成功部署集合。
+     *
+     * @param connection connection scoped to the current database or remote operation / 限定于当前数据库或远端操作的连接
+     * @param deployments deployments / 部署集合
+     * @throws SQLException if the database cannot complete the requested read or transaction / 数据库无法完成请求的读取或事务时
+     */
     static void recordSuccessfulDeployments(Connection connection,
                                             List<SuccessfulManagedDeployment> deployments) throws SQLException {
         for (SuccessfulManagedDeployment deployment : deployments) {
@@ -237,6 +335,15 @@ public final class ManagedApplicationRepository {
         }
     }
 
+    /**
+     * Inserts or updates reviewed language, process and health specification.
+     * <p>插入或更新已审阅的语言、进程及健康规格。
+     *
+     * @param connection connection scoped to the current database or remote operation / 限定于当前数据库或远端操作的连接
+     * @param applicationId managed application identifier / 受管应用标识
+     * @param configuration reviewed configuration snapshot or settings / 已审阅配置快照或设置
+     * @throws SQLException if the database cannot complete the requested read or transaction / 数据库无法完成请求的读取或事务时
+     */
     private static void upsertRuntime(Connection connection, String applicationId,
                                       ManagedApplicationRuntimeConfiguration configuration) throws SQLException {
         try (PreparedStatement statement = connection.prepareStatement("""
@@ -256,6 +363,14 @@ public final class ManagedApplicationRepository {
         } catch (java.io.IOException failure) { throw new SQLException("invalid application runtime payload", failure); }
     }
 
+    /**
+     * Inserts or updates release.
+     * <p>插入或更新发布。
+     *
+     * @param connection connection scoped to the current database or remote operation / 限定于当前数据库或远端操作的连接
+     * @param release release / 发布
+     * @throws SQLException if the database cannot complete the requested read or transaction / 数据库无法完成请求的读取或事务时
+     */
     private static void upsertRelease(Connection connection, CurrentRelease release) throws SQLException {
         try (PreparedStatement statement = connection.prepareStatement("""
                 INSERT INTO managed_application_release (application_id, release_sha256, published_at) VALUES (?, ?, ?)
@@ -269,6 +384,14 @@ public final class ManagedApplicationRepository {
         }
     }
 
+    /**
+     * Reads managed target with its server and ownership identity.
+     * <p>读取携带服务器及归属身份的受管目标。
+     *
+     * @param result typed outcome produced by the delegated operation / 被委派操作产生的类型化结果
+     * @return managed target with its server and ownership identity / 携带服务器及归属身份的受管目标
+     * @throws SQLException if the database cannot complete the requested read or transaction / 数据库无法完成请求的读取或事务时
+     */
     static ManagedApplication readApplication(ResultSet result) throws SQLException {
         return new ManagedApplication(result.getString("id"), new ServerIdentity(result.getString("server_id"),
                 result.getString("host"), result.getInt("ssh_port"), result.getString("host_key_sha256")),
@@ -276,6 +399,14 @@ public final class ManagedApplicationRepository {
                 result.getString("ownership_manifest_sha256"));
     }
 
+    /**
+     * Reads reviewed language, process and health specification.
+     * <p>读取已审阅的语言、进程及健康规格。
+     *
+     * @param result typed outcome produced by the delegated operation / 被委派操作产生的类型化结果
+     * @return reviewed language, process and health specification / 已审阅的语言、进程及健康规格
+     * @throws SQLException if the database cannot complete the requested read or transaction / 数据库无法完成请求的读取或事务时
+     */
     static ManagedApplicationRuntimeConfiguration readRuntime(ResultSet result) throws SQLException {
         try {
             if ("TYPED".equals(result.getString("health_kind"))) {
@@ -298,6 +429,15 @@ public final class ManagedApplicationRepository {
         }
     }
 
+    /**
+     * Requires the named input to be present and valid before continuing.
+     * <p>继续前要求具名输入存在且有效。
+     *
+     * @param result typed outcome produced by the delegated operation / 被委派操作产生的类型化结果
+     * @param column column / 列
+     * @return required text / 必需文本
+     * @throws SQLException if the database cannot complete the requested read or transaction / 数据库无法完成请求的读取或事务时
+     */
     private static String required(ResultSet result, String column) throws SQLException {
         return Optional.ofNullable(result.getString(column)).filter(value -> !value.isBlank())
                 .orElseThrow(() -> new SQLException(

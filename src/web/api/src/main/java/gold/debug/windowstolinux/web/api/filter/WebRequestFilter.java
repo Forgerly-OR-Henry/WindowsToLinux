@@ -2,7 +2,7 @@ package gold.debug.windowstolinux.web.api.filter;
 
 import gold.debug.windowstolinux.web.api.config.WebHttpPolicy;
 import gold.debug.windowstolinux.web.api.error.WebErrorResponse;
-import gold.debug.windowstolinux.web.service.contract.WebJson;
+import gold.debug.windowstolinux.web.service.persistence.serialization.WebJsonCodec;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.http.*;
 import org.springframework.core.Ordered;
@@ -18,15 +18,48 @@ import java.nio.charset.StandardCharsets;
 import java.util.*;
 import java.util.concurrent.Semaphore;
 
+/**
+ * Enforces request size, origin and maintenance boundaries before controller dispatch.
+ * <p>在分派到控制器前执行请求大小、来源及维护边界检查。
+ */
 @Component
 @Order(Ordered.HIGHEST_PRECEDENCE + 10)
 public final class WebRequestFilter extends OncePerRequestFilter {
+    /**
+     * Bound web http policy collaborator for explicit validation and resource-bound policy.
+     * <p>处理显式校验及资源边界策略的WebHTTP策略协作对象。
+     */
     private final WebHttpPolicy policy;
+    /**
+     * Requests.
+     * <p>请求集合。
+     * <p>streams:
+     * Streams.
+     * <p>流集合。
+     * <p>uploads:
+     * Uploads.
+     * <p>上传集合。
+     */
     private final Semaphore requests, streams, uploads;
+    /**
+     * Binds the supplied dependencies and state for web request filter.
+     * <p>为Web请求筛选绑定传入的依赖及状态。
+     *
+     * @param policy explicit validation and resource-bound policy / 显式校验及资源边界策略
+     */
     public WebRequestFilter(WebHttpPolicy policy) {
         this.policy = policy; requests = new Semaphore(policy.requests()); streams = new Semaphore(policy.streams()); uploads = new Semaphore(policy.uploads());
     }
 
+    /**
+     * Checks do filter internal syntax and bounds before returning the admitted content.
+     * <p>在返回已准入内容前检查do筛选内部语法及边界。
+     *
+     * @param request reviewed inputs for the requested operation / 所请求操作的已审阅输入
+     * @param response response / 响应
+     * @param chain chain / 调用链
+     * @throws IOException if the required file or stream operation fails / 所需文件或流操作失败时
+     */
     @Override protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain chain) throws IOException {
         headers(response);
         boolean acquired = requests.tryAcquire(); Semaphore operation = null;
@@ -45,11 +78,18 @@ public final class WebRequestFilter extends OncePerRequestFilter {
         } catch (Exception failure) {
             if (!response.isCommitted()) {
                 var error = WebErrorResponse.from(failure); response.setStatus(error.status());
-                response.setContentType("application/json;charset=UTF-8"); response.getWriter().write(WebJson.write(error));
+                response.setContentType("application/json;charset=UTF-8"); response.getWriter().write(WebJsonCodec.write(error));
             }
         } finally { if (operation != null) operation.release(); if (acquired) requests.release(); }
     }
 
+    /**
+     * Checks guard syntax and bounds before returning the admitted content.
+     * <p>在返回已准入内容前检查guard语法及边界。
+     *
+     * @param request reviewed inputs for the requested operation / 所请求操作的已审阅输入
+     * @throws IOException if the required file or stream operation fails / 所需文件或流操作失败时
+     */
     private void guard(HttpServletRequest request) throws IOException {
         String host = "127.0.0.1:" + request.getLocalPort(), origin = "http://" + host;
         if (!InetAddress.getByName(request.getRemoteAddr()).isLoopbackAddress()
@@ -69,6 +109,13 @@ public final class WebRequestFilter extends OncePerRequestFilter {
         }
     }
 
+    /**
+     * Checks query syntax and bounds before returning the admitted content.
+     * <p>在返回已准入内容前检查查询语法及边界。
+     *
+     * @param request reviewed inputs for the requested operation / 所请求操作的已审阅输入
+     * @throws IllegalArgumentException if an input violates the constraints checked by this contract / 输入违反当前契约检查的约束时
+     */
     private void query(HttpServletRequest request) {
         String query = request.getQueryString(); if (query == null) return;
         if (query.length() > policy.queryCharacters()) throw new ResponseStatusException(HttpStatus.PAYLOAD_TOO_LARGE);
@@ -78,9 +125,22 @@ public final class WebRequestFilter extends OncePerRequestFilter {
             if (!names.add(URLDecoder.decode(parts[0], StandardCharsets.UTF_8))) throw new IllegalArgumentException("Duplicate query parameter");
         }
     }
+    /**
+     * Uploads web request filter.
+     * <p>上传Web请求筛选。
+     *
+     * @param path filesystem or archive member path used by this operation / 当前操作使用的文件系统或归档成员路径
+     * @return true when uploads web request filter, false otherwise / 上传Web请求筛选时为 true，否则为 false
+     */
     private static boolean upload(String path) {
         return path.matches("/api/v1/sources/[a-f0-9-]{36}/(files|archive)") || path.equals("/api/v1/backups/upload");
     }
+    /**
+     * Adds the fixed no-cache, content-type, framing, referrer and content-security response headers.
+     * <p>添加固定的禁用缓存、内容类型、框架、来源及内容安全响应头。
+     *
+     * @param response response / 响应
+     */
     private static void headers(HttpServletResponse response) {
         response.setHeader("Cache-Control", "no-store"); response.setHeader("X-Content-Type-Options", "nosniff");
         response.setHeader("Referrer-Policy", "no-referrer"); response.setHeader("X-Frame-Options", "DENY");

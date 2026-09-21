@@ -9,7 +9,16 @@ import java.util.Set;
 /**
  * Deterministic build and runtime ordering for one reviewed component graph.
  *
- * <p>一个经审阅组件图的确定性构建与运行顺序。
+ *  <p>一个经审阅组件图的确定性构建与运行顺序。
+ *
+ * @param applicationId managed application identifier / 受管应用标识
+ * @param buildWaves build waves / 构建批次集合
+ * @param stopOrder stop order / 停止顺序
+ * @param startOrder start order / 启动顺序
+ * @param healthOrder health order / 健康顺序
+ * @param rollbackOrder rollback order / 回滚顺序
+ * @param candidateNamespaces candidate namespaces / 候选命名空间集合
+ * @param dependencies component identifiers that must precede this component / 必须先于当前组件执行的组件标识
  */
 public record MultiComponentDeploymentPlan(
         String applicationId,
@@ -21,7 +30,20 @@ public record MultiComponentDeploymentPlan(
         Map<String, String> candidateNamespaces,
         Map<String, List<String>> dependencies
 ) {
-    /** Validates an internally consistent component transaction plan. / 验证内部一致的组件事务计划。 */
+    /**
+     * Validates an internally consistent component transaction plan. / 验证内部一致的组件事务计划。
+     *
+     * @param applicationId managed application identifier / 受管应用标识
+     * @param buildWaves build waves / 构建批次集合
+     * @param stopOrder stop order / 停止顺序
+     * @param startOrder start order / 启动顺序
+     * @param healthOrder health order / 健康顺序
+     * @param rollbackOrder rollback order / 回滚顺序
+     * @param candidateNamespaces candidate namespaces / 候选命名空间集合
+     * @param dependencies component identifiers that must precede this component / 必须先于当前组件执行的组件标识
+     * @throws IllegalArgumentException if an input violates the constraints checked by this contract / 输入违反当前契约检查的约束时
+     * @throws NullPointerException if a required input is absent / 必需输入缺失时
+     */
     public MultiComponentDeploymentPlan {
         applicationId = Objects.requireNonNull(applicationId, "applicationId");
         buildWaves = List.copyOf(Objects.requireNonNull(buildWaves, "buildWaves").stream()

@@ -5,10 +5,26 @@ import gold.debug.windowstolinux.shared.model.health.HealthCheck;
 
 import java.util.Objects;
 
-/** Renders layered health scripts that bind a listening port to the managed systemd cgroup. / 渲染将监听端口绑定到受管 systemd 控制组的分层健康脚本。 */
+/**
+ * Renders layered health scripts that bind a listening port to the managed systemd cgroup. / 渲染将监听端口绑定到受管 systemd 控制组的分层健康脚本。
+ */
 public final class SystemdHealthScriptRenderer {
+    /**
+     * Prevents instantiation of this static contract helper.
+     * <p>防止实例化当前静态契约辅助类。
+     */
     private SystemdHealthScriptRenderer() { }
 
+    /**
+     * Renders the fixed systemd ownership and health verification script for the reviewed service and check.
+     * <p>为已审阅服务及检查渲染固定 systemd 归属及健康验证脚本。
+     *
+     * @param systemdUnit systemd unit / systemd单元
+     * @param healthCheck reviewed probe and its success criteria / 已审阅探测及其成功条件
+     * @return render text / 渲染文本
+     * @throws IllegalArgumentException if an input violates the constraints checked by this contract / 输入违反当前契约检查的约束时
+     * @throws NullPointerException if a required input is absent / 必需输入缺失时
+     */
     static String render(String systemdUnit, HealthCheck healthCheck) {
         Objects.requireNonNull(systemdUnit, "systemdUnit");
         Objects.requireNonNull(healthCheck, "healthCheck");
@@ -87,6 +103,12 @@ public final class SystemdHealthScriptRenderer {
         throw new IllegalArgumentException("Unsupported health-check type");
     }
 
+    /**
+     * Renders fixed listener ownership function protocol text from the reviewed inputs.
+     * <p>根据已审阅输入渲染固定监听器归属函数协议文本。
+     *
+     * @return listener ownership function text / 监听器归属函数文本
+     */
     private static String listenerOwnershipFunction() {
         return """
                 set -euo pipefail

@@ -8,7 +8,16 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 
-/** Terminal restore result separating health, commit and recovery evidence. / 区分健康、提交和恢复证据的恢复终态结果。 */
+/**
+ * Terminal restore result separating health, commit and recovery evidence. / 区分健康、提交和恢复证据的恢复终态结果。
+ *
+ * @param operationIdentity correlation identity of the enclosing user operation / 外层用户操作的关联标识
+ * @param status classification of the current operation result / 当前操作结果的分类
+ * @param events ordered progress or transaction events / 有序进度或事务事件
+ * @param databaseEvidence database evidence / 数据库证据
+ * @param activeReleaseToken active release token / 活跃发布令牌
+ * @param failure structured failure occurrence retained for safe reporting / 保留用于安全报告的结构化失败实例
+ */
 public record BackupRestoreResult(
         OperationIdentity operationIdentity,
         BackupRestoreStatus status,
@@ -17,7 +26,18 @@ public record BackupRestoreResult(
         Optional<String> activeReleaseToken,
         Optional<FailureDescriptor> failure
 ) {
-    /** Validates status-specific evidence. / 校验终态对应证据。 */
+    /**
+     * Validates status-specific evidence. / 校验终态对应证据。
+     *
+     * @param operationIdentity correlation identity of the enclosing user operation / 外层用户操作的关联标识
+     * @param status classification of the current operation result / 当前操作结果的分类
+     * @param events ordered progress or transaction events / 有序进度或事务事件
+     * @param databaseEvidence database evidence / 数据库证据
+     * @param activeReleaseToken active release token / 活跃发布令牌
+     * @param failure structured failure occurrence retained for safe reporting / 保留用于安全报告的结构化失败实例
+     * @throws IllegalArgumentException if an input violates the constraints checked by this contract / 输入违反当前契约检查的约束时
+     * @throws NullPointerException if a required input is absent / 必需输入缺失时
+     */
     public BackupRestoreResult {
         operationIdentity = Objects.requireNonNull(operationIdentity, "operationIdentity");
         status = Objects.requireNonNull(status, "status");

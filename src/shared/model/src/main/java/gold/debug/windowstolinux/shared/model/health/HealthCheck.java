@@ -6,12 +6,25 @@ import java.util.Objects;
 /**
  * Reviewed network, process and isolated installation validation strategies.
  *
- * <p>经审阅的网络、进程与隔离安装验证策略。
+ *  <p>经审阅的网络、进程与隔离安装验证策略。
  */
 public sealed interface HealthCheck permits HealthCheck.Http, HealthCheck.Tcp, HealthCheck.Process,
         HealthCheck.Command, HealthCheck.Udp {
-    /** Process readiness without a network endpoint. / 无网络端口的进程就绪检查。 */
+    /**
+     * Process readiness without a network endpoint. / 无网络端口的进程就绪检查。
+     *
+     * @param timeoutSeconds maximum waiting time in seconds / 最长等待时间，单位为秒
+     * @param stabilitySeconds required continuous healthy interval in seconds / 要求连续健康的时间间隔，单位为秒
+     */
     record Process(int timeoutSeconds, int stabilitySeconds) implements HealthCheck {
+        /**
+         * Validates and binds the inputs required by process.
+         * <p>校验并绑定进程所需输入。
+         *
+         * @param timeoutSeconds maximum waiting time in seconds / 最长等待时间，单位为秒
+         * @param stabilitySeconds required continuous healthy interval in seconds / 要求连续健康的时间间隔，单位为秒
+         * @throws IllegalArgumentException if an input violates the constraints checked by this contract / 输入违反当前契约检查的约束时
+         */
         public Process {
             validateTimeout(timeoutSeconds);
             if (stabilitySeconds < 1 || stabilitySeconds > timeoutSeconds)
@@ -19,9 +32,25 @@ public sealed interface HealthCheck permits HealthCheck.Http, HealthCheck.Tcp, H
         }
     }
 
-    /** Bounded program verification, executed with the application identity. / 使用应用身份执行的有界程序验证。 */
+    /**
+     * Bounded program verification, executed with the application identity. / 使用应用身份执行的有界程序验证。
+     *
+     * @param command fixed or explicitly reviewed command text / 固定或显式审阅的命令文本
+     * @param expectedOutput expected output / 预期输出
+     * @param timeoutSeconds maximum waiting time in seconds / 最长等待时间，单位为秒
+     */
     record Command(gold.debug.windowstolinux.shared.model.project.application.ApplicationCommand command,
                    String expectedOutput, int timeoutSeconds) implements HealthCheck {
+        /**
+         * Validates and binds the inputs required by command.
+         * <p>校验并绑定命令所需输入。
+         *
+         * @param command fixed or explicitly reviewed command text / 固定或显式审阅的命令文本
+         * @param expectedOutput expected output / 预期输出
+         * @param timeoutSeconds maximum waiting time in seconds / 最长等待时间，单位为秒
+         * @throws IllegalArgumentException if an input violates the constraints checked by this contract / 输入违反当前契约检查的约束时
+         * @throws NullPointerException if a required input is absent / 必需输入缺失时
+         */
         public Command {
             Objects.requireNonNull(command); Objects.requireNonNull(expectedOutput); validateTimeout(timeoutSeconds);
             if (expectedOutput.length() > 4096 || expectedOutput.indexOf(0) >= 0)
@@ -29,10 +58,30 @@ public sealed interface HealthCheck permits HealthCheck.Http, HealthCheck.Tcp, H
         }
     }
 
-    /** UDP requires an actual reply or an explicit protocol probe, never send success. / UDP 必须有响应或明确协议探针。 */
+    /**
+     * UDP requires an actual reply or an explicit protocol probe, never send success. / UDP 必须有响应或明确协议探针。
+     *
+     * @param port network port number in the reviewed endpoint / 已审阅端点中的网络端口号
+     * @param requestHex request hex / 请求Hex
+     * @param responseHex response hex / 响应Hex
+     * @param probe probe / 探测
+     * @param timeoutSeconds maximum waiting time in seconds / 最长等待时间，单位为秒
+     */
     record Udp(int port, String requestHex, String responseHex,
                java.util.Optional<gold.debug.windowstolinux.shared.model.project.application.ApplicationCommand> probe,
                int timeoutSeconds) implements HealthCheck {
+        /**
+         * Validates and binds the inputs required by udp.
+         * <p>校验并绑定Udp所需输入。
+         *
+         * @param port network port number in the reviewed endpoint / 已审阅端点中的网络端口号
+         * @param requestHex request hex / 请求Hex
+         * @param responseHex response hex / 响应Hex
+         * @param probe probe / 探测
+         * @param timeoutSeconds maximum waiting time in seconds / 最长等待时间，单位为秒
+         * @throws IllegalArgumentException if an input violates the constraints checked by this contract / 输入违反当前契约检查的约束时
+         * @throws NullPointerException if a required input is absent / 必需输入缺失时
+         */
         public Udp {
             validateTimeout(timeoutSeconds); Objects.requireNonNull(probe);
             Objects.requireNonNull(requestHex); Objects.requireNonNull(responseHex);
@@ -47,7 +96,11 @@ public sealed interface HealthCheck permits HealthCheck.Http, HealthCheck.Tcp, H
         }
     }
 
-    /** The optional transport port, independent of exposure. / 独立于对外范围的可选传输端口。 */
+    /**
+     * The optional transport port, independent of exposure. / 独立于对外范围的可选传输端口。
+     *
+     * @return matching result, or empty when no admitted value exists / 匹配结果；不存在已准入内容时为空
+     */
     default java.util.OptionalInt portNumber() {
         return switch (this) {
             case Http http -> java.util.OptionalInt.of(http.endpoint().getPort() > 0 ? http.endpoint().getPort()
@@ -59,9 +112,8 @@ public sealed interface HealthCheck permits HealthCheck.Http, HealthCheck.Tcp, H
         };
     }
     /**
-     * Performs the {@code timeoutSeconds} operation.
-     *
-     * <p>执行 {@code timeoutSeconds} 操作。
+     * Returns maximum waiting time in seconds.
+     * <p>返回最长等待时间，单位为秒。
      *
      * @return the operation result / 操作结果
      */
@@ -70,23 +122,22 @@ public sealed interface HealthCheck permits HealthCheck.Http, HealthCheck.Tcp, H
     /**
      * Represents an immutable {@code Http} value.
      *
-     * <p>表示不可变的 {@code Http} 值。
+     *  <p>表示不可变的 {@code Http} 值。
      *
-     * @param endpoint the {@code endpoint} value / {@code endpoint} 值
-     * @param expectedStatus the {@code expectedStatus} value / {@code expectedStatus} 值
-     * @param timeoutSeconds the {@code timeoutSeconds} value / {@code timeoutSeconds} 值
+     * @param endpoint reviewed network endpoint / 已审阅网络端点
+     * @param expectedStatus expected status / 预期状态
+     * @param timeoutSeconds maximum waiting time in seconds / 最长等待时间，单位为秒
      */
     record Http(URI endpoint, int expectedStatus, int timeoutSeconds) implements HealthCheck {
         /**
-         * Creates a {@code Http} instance.
+         * Validates and binds the inputs required by http.
+         * <p>校验并绑定HTTP所需输入。
          *
-         * <p>创建 {@code Http} 实例。
-         *
-         * @param endpoint the {@code endpoint} value / {@code endpoint} 值
-         * @param expectedStatus the {@code expectedStatus} value / {@code expectedStatus} 值
-         * @param timeoutSeconds the {@code timeoutSeconds} value / {@code timeoutSeconds} 值
+         * @param endpoint reviewed network endpoint / 已审阅网络端点
+         * @param expectedStatus expected status / 预期状态
+         * @param timeoutSeconds maximum waiting time in seconds / 最长等待时间，单位为秒
          * @throws IllegalArgumentException if an argument violates the required constraints / 参数违反必要约束时
-         * @throws NullPointerException if a required argument is {@code null} / 必要参数为 {@code null} 时
+         * @throws NullPointerException if a required input is absent / 必需输入缺失时
          */
         public Http {
             endpoint = Objects.requireNonNull(endpoint, "endpoint");
@@ -110,21 +161,20 @@ public sealed interface HealthCheck permits HealthCheck.Http, HealthCheck.Tcp, H
     /**
      * Represents an immutable {@code Tcp} value.
      *
-     * <p>表示不可变的 {@code Tcp} 值。
+     *  <p>表示不可变的 {@code Tcp} 值。
      *
-     * @param port the {@code port} value / {@code port} 值
-     * @param timeoutSeconds the {@code timeoutSeconds} value / {@code timeoutSeconds} 值
-     * @param stabilitySeconds the {@code stabilitySeconds} value / {@code stabilitySeconds} 值
+     * @param port network port number in the reviewed endpoint / 已审阅端点中的网络端口号
+     * @param timeoutSeconds maximum waiting time in seconds / 最长等待时间，单位为秒
+     * @param stabilitySeconds required continuous healthy interval in seconds / 要求连续健康的时间间隔，单位为秒
      */
     record Tcp(int port, int timeoutSeconds, int stabilitySeconds) implements HealthCheck {
         /**
-         * Creates a {@code Tcp} instance.
+         * Validates and binds the inputs required by tcp.
+         * <p>校验并绑定Tcp所需输入。
          *
-         * <p>创建 {@code Tcp} 实例。
-         *
-         * @param port the {@code port} value / {@code port} 值
-         * @param timeoutSeconds the {@code timeoutSeconds} value / {@code timeoutSeconds} 值
-         * @param stabilitySeconds the {@code stabilitySeconds} value / {@code stabilitySeconds} 值
+         * @param port network port number in the reviewed endpoint / 已审阅端点中的网络端口号
+         * @param timeoutSeconds maximum waiting time in seconds / 最长等待时间，单位为秒
+         * @param stabilitySeconds required continuous healthy interval in seconds / 要求连续健康的时间间隔，单位为秒
          * @throws IllegalArgumentException if an argument violates the required constraints / 参数违反必要约束时
          */
         public Tcp {
@@ -138,6 +188,13 @@ public sealed interface HealthCheck permits HealthCheck.Http, HealthCheck.Tcp, H
         }
     }
 
+    /**
+     * Validates timeout and rejects inputs outside the declared constraints.
+     * <p>校验超时并拒绝超出已声明约束的输入。
+     *
+     * @param timeoutSeconds maximum waiting time in seconds / 最长等待时间，单位为秒
+     * @throws IllegalArgumentException if an input violates the constraints checked by this contract / 输入违反当前契约检查的约束时
+     */
     private static void validateTimeout(int timeoutSeconds) {
         if (timeoutSeconds < 1 || timeoutSeconds > 300) {
             throw new IllegalArgumentException("timeoutSeconds must be between 1 and 300");

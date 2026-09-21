@@ -12,7 +12,18 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 
-/** Authoritative application lifecycle result with every component preserved. / 保留每个组件的权威应用生命周期结果。 */
+/**
+ * Authoritative application lifecycle result with every component preserved. / 保留每个组件的权威应用生命周期结果。
+ *
+ * @param accepted accepted / 已接受
+ * @param message localized explanation / 本地化说明
+ * @param runtimeState runtime state / 运行时状态
+ * @param autostartState autostart state / 自动启动状态
+ * @param componentResults component results / 组件结果集合
+ * @param operationIdentity correlation identity of the enclosing user operation / 外层用户操作的关联标识
+ * @param failure structured failure occurrence retained for safe reporting / 保留用于安全报告的结构化失败实例
+ * @param nonFatalFailures non fatal failures / 非致命失败集合
+ */
 public record MultiComponentLifecycleResult(
         boolean accepted,
         LocalizedMessage message,
@@ -23,7 +34,20 @@ public record MultiComponentLifecycleResult(
         Optional<FailureDescriptor> failure,
         List<FailureDescriptor> nonFatalFailures
 ) {
-    /** Validates whole-application and component outcome consistency. / 验证整体应用与组件结果一致性。 */
+    /**
+     * Validates whole-application and component outcome consistency. / 验证整体应用与组件结果一致性。
+     *
+     * @param accepted accepted / 已接受
+     * @param message localized explanation / 本地化说明
+     * @param runtimeState runtime state / 运行时状态
+     * @param autostartState autostart state / 自动启动状态
+     * @param componentResults component results / 组件结果集合
+     * @param operationIdentity correlation identity of the enclosing user operation / 外层用户操作的关联标识
+     * @param failure structured failure occurrence retained for safe reporting / 保留用于安全报告的结构化失败实例
+     * @param nonFatalFailures non fatal failures / 非致命失败集合
+     * @throws IllegalArgumentException if an input violates the constraints checked by this contract / 输入违反当前契约检查的约束时
+     * @throws NullPointerException if a required input is absent / 必需输入缺失时
+     */
     public MultiComponentLifecycleResult {
         message = Objects.requireNonNull(message, "message");
         runtimeState = Objects.requireNonNull(runtimeState, "runtimeState");
@@ -48,7 +72,15 @@ public record MultiComponentLifecycleResult(
         }
     }
 
-    /** Creates a lifecycle result without a structured terminal failure. / 创建不含结构化终止失败的生命周期结果。 */
+    /**
+     * Creates a lifecycle result without a structured terminal failure. / 创建不含结构化终止失败的生命周期结果。
+     *
+     * @param accepted accepted / 已接受
+     * @param message localized explanation / 本地化说明
+     * @param runtimeState runtime state / 运行时状态
+     * @param autostartState autostart state / 自动启动状态
+     * @param componentResults component results / 组件结果集合
+     */
     public MultiComponentLifecycleResult(boolean accepted, LocalizedMessage message,
                                          ApplicationRuntimeState runtimeState,
                                          ApplicationAutostartState autostartState,
@@ -57,7 +89,13 @@ public record MultiComponentLifecycleResult(
                 OperationIdentity.create(), Optional.empty(), List.of());
     }
 
-    /** Adds a non-fatal warning while preserving authoritative component observations. / 添加非致命警告且保留权威组件观测。 */
+    /**
+     * Adds a non-fatal warning while preserving authoritative component observations. / 添加非致命警告且保留权威组件观测。
+     *
+     * @param warning warning / 警告
+     * @return constructed or resolved multi component lifecycle result / 构造或解析得到的多组件生命周期结果
+     * @throws NullPointerException if a required input is absent / 必需输入缺失时
+     */
     public MultiComponentLifecycleResult withNonFatalFailure(FailureDescriptor warning) {
         Objects.requireNonNull(warning, "warning");
         List<FailureDescriptor> warnings = new java.util.ArrayList<>(nonFatalFailures);

@@ -15,14 +15,38 @@ import java.util.List;
 import java.util.Map;
 import java.util.OptionalInt;
 
-/** Strict versioned storage codec for one reviewed non-secret runtime definition. / 单个已审阅非秘密运行时定义的严格版本化存储编解码器。 */
+/**
+ * Strict versioned storage codec for one reviewed non-secret runtime definition. / 单个已审阅非秘密运行时定义的严格版本化存储编解码器。
+ */
 public final class DeploymentRuntimePersistenceCodec {
+    /**
+     * MAGIC.
+     * <p>格式标记。
+     */
     private static final int MAGIC = 0x57544c52;
+    /**
+     * VERSION.
+     * <p>版本。
+     */
     private static final int VERSION = 5;
+    /**
+     * MAX DOCUMENT BYTES.
+     * <p>最大文档字节。
+     */
     private static final int MAX_DOCUMENT_BYTES = 1_048_576;
+    /**
+     * MAX COLLECTION SIZE.
+     * <p>最大采集大小。
+     */
     private static final int MAX_COLLECTION_SIZE = 4_096;
 
-    /** Encodes one runtime without duplicating its separately persisted health contract. / 编码运行时且不重复其单独持久化的健康契约。 */
+    /**
+     * Encodes one runtime without duplicating its separately persisted health contract. / 编码运行时且不重复其单独持久化的健康契约。
+     *
+     * @param runtime reviewed language, process and health specification / 已审阅的语言、进程及健康规格
+     * @return one runtime without duplicating its separately persisted health contract / 运行时且不重复其单独持久化的健康契约
+     * @throws IOException if the required file or stream operation fails / 所需文件或流操作失败时
+     */
     public byte[] write(DeploymentRuntimeSpecification runtime) throws IOException {
         ByteArrayOutputStream bytes = new ByteArrayOutputStream();
         try (DataOutputStream output = new DataOutputStream(bytes)) {
@@ -40,7 +64,14 @@ public final class DeploymentRuntimePersistenceCodec {
         return document;
     }
 
-    /** Decodes one exact runtime using the independently persisted health contract. / 使用独立持久化的健康契约解码一个精确运行时。 */
+    /**
+     * Decodes one exact runtime using the independently persisted health contract. / 使用独立持久化的健康契约解码一个精确运行时。
+     *
+     * @param document document / 文档
+     * @param healthCheck reviewed probe and its success criteria / 已审阅探测及其成功条件
+     * @return one exact runtime using the independently persisted health contract / 使用独立持久化的健康契约解码一个精确运行时
+     * @throws IOException if the required file or stream operation fails / 所需文件或流操作失败时
+     */
     public DeploymentRuntimeSpecification read(byte[] document, HealthCheck healthCheck) throws IOException {
         if (document == null || document.length == 0 || document.length > MAX_DOCUMENT_BYTES) {
             throw new IOException("reviewed runtime document size is invalid");
@@ -64,6 +95,14 @@ public final class DeploymentRuntimePersistenceCodec {
         }
     }
 
+    /**
+     * Encodes the runtime variant as its stable persistence discriminator.
+     * <p>将运行规格变体编码为稳定持久化判别码。
+     *
+     * @param runtime reviewed language, process and health specification / 已审阅的语言、进程及健康规格
+     * @return the runtime variant as its stable persistence discriminator / 将运行规格变体编码为稳定持久化判别码
+     * @throws IOException if the required file or stream operation fails / 所需文件或流操作失败时
+     */
     private static int type(DeploymentRuntimeSpecification runtime) throws IOException {
         if (runtime == null) throw new IOException("reviewed runtime is required");
         return switch (runtime) {
@@ -84,6 +123,14 @@ public final class DeploymentRuntimePersistenceCodec {
         };
     }
 
+    /**
+     * Writes the selected runtime variant's fields using its established binary persistence layout.
+     * <p>使用既定二进制持久化布局写入所选运行变体字段。
+     *
+     * @param output destination receiving the produced content / 接收所生成内容的目标
+     * @param runtime reviewed language, process and health specification / 已审阅的语言、进程及健康规格
+     * @throws IOException if the required file or stream operation fails / 所需文件或流操作失败时
+     */
     private static void writePayload(DataOutputStream output, DeploymentRuntimeSpecification runtime) throws IOException {
         switch (runtime) {
             case DeploymentRuntimeSpecification.SpringBoot value -> output.writeUTF(value.javaVersion());
@@ -129,6 +176,16 @@ public final class DeploymentRuntimePersistenceCodec {
         }
     }
 
+    /**
+     * Reads the selected runtime discriminator into its exact typed deployment specification.
+     * <p>根据所选运行判别码读取精确类型化部署规格。
+     *
+     * @param input source content consumed by this operation / 当前操作消费的源内容
+     * @param type selected member of the supported type set / 受支持类型集合中的所选项
+     * @param health health / 健康
+     * @return the selected runtime discriminator into its exact typed deployment specification / 根据所选运行判别码读取精确类型化部署规格
+     * @throws IOException if the required file or stream operation fails / 所需文件或流操作失败时
+     */
     private static DeploymentRuntimeSpecification readPayload(DataInputStream input, int type, HealthCheck health)
             throws IOException {
         return switch (type) {
@@ -156,6 +213,14 @@ public final class DeploymentRuntimePersistenceCodec {
         };
     }
 
+    /**
+     * Writes container.
+     * <p>写入容器。
+     *
+     * @param output destination receiving the produced content / 接收所生成内容的目标
+     * @param value candidate content accepted or rejected by this contract / 由当前契约接收或拒绝的候选内容
+     * @throws IOException if the required file or stream operation fails / 所需文件或流操作失败时
+     */
     private static void writeContainer(DataOutputStream output, DeploymentRuntimeSpecification.Container value)
             throws IOException {
         output.writeByte(value.engine() == DeploymentRuntimeSpecification.ContainerEngineType.DOCKER ? 1 : 2);
@@ -171,6 +236,15 @@ public final class DeploymentRuntimePersistenceCodec {
         }
     }
 
+    /**
+     * Reconstructs the container engine, image, ports and volumes from bounded binary runtime fields.
+     * <p>根据有界二进制运行字段重建容器引擎、镜像、端口及卷。
+     *
+     * @param input source content consumed by this operation / 当前操作消费的源内容
+     * @param health health / 健康
+     * @return constructed or resolved container / 构造或解析得到的容器
+     * @throws IOException if the required file or stream operation fails / 所需文件或流操作失败时
+     */
     private static DeploymentRuntimeSpecification.Container readContainer(DataInputStream input, HealthCheck health)
             throws IOException {
         DeploymentRuntimeSpecification.ContainerEngineType engine = switch (input.readUnsignedByte()) {
@@ -192,17 +266,43 @@ public final class DeploymentRuntimePersistenceCodec {
         return new DeploymentRuntimeSpecification.Container(engine, ports, volumes, health);
     }
 
+    /**
+     * Writes application service used by the caller.
+     * <p>写入调用方使用的应用服务。
+     *
+     * @param output destination receiving the produced content / 接收所生成内容的目标
+     * @param version version of the relevant protocol, configuration or runtime / 相应协议、配置或运行时的版本
+     * @param artifact verified build or backup artifact metadata / 已验证构建或备份制品元数据
+     * @param entrypoint reviewed executable, module or main entry used to start the workload / 启动工作负载所用的已审阅可执行文件、模块或主入口
+     * @throws IOException if the required file or stream operation fails / 所需文件或流操作失败时
+     */
     private static void writeService(DataOutputStream output, String version, String artifact, String entrypoint)
             throws IOException {
         output.writeUTF(version); output.writeUTF(artifact); output.writeUTF(entrypoint);
     }
 
+    /**
+     * Writes strings.
+     * <p>写入字符串集合。
+     *
+     * @param output destination receiving the produced content / 接收所生成内容的目标
+     * @param values ordered contents supplied to the current conversion or validation / 提供给当前转换或校验的有序内容
+     * @throws IOException if the required file or stream operation fails / 所需文件或流操作失败时
+     */
     private static void writeStrings(DataOutputStream output, List<String> values) throws IOException {
         if (values.size() > 32) throw new IOException("reviewed runtime argument list exceeds its bound");
         output.writeInt(values.size());
         for (String value : values) output.writeUTF(value);
     }
 
+    /**
+     * Reads strings.
+     * <p>读取字符串集合。
+     *
+     * @param input source content consumed by this operation / 当前操作消费的源内容
+     * @return strings / 字符串集合
+     * @throws IOException if the required file or stream operation fails / 所需文件或流操作失败时
+     */
     private static List<String> readStrings(DataInputStream input) throws IOException {
         int count = input.readInt();
         if (count < 0 || count > 32) throw new IOException("reviewed runtime argument count is invalid");
@@ -211,6 +311,14 @@ public final class DeploymentRuntimePersistenceCodec {
         return List.copyOf(values);
     }
 
+    /**
+     * Writes count.
+     * <p>写入数量。
+     *
+     * @param output destination receiving the produced content / 接收所生成内容的目标
+     * @param count count / 数量
+     * @throws IOException if the required file or stream operation fails / 所需文件或流操作失败时
+     */
     private static void writeCount(DataOutputStream output, int count) throws IOException {
         if (count < 0 || count > MAX_COLLECTION_SIZE) {
             throw new IOException("reviewed runtime collection exceeds its storage bound");
@@ -218,6 +326,14 @@ public final class DeploymentRuntimePersistenceCodec {
         output.writeInt(count);
     }
 
+    /**
+     * Reads count.
+     * <p>读取数量。
+     *
+     * @param input source content consumed by this operation / 当前操作消费的源内容
+     * @return count / 数量
+     * @throws IOException if the required file or stream operation fails / 所需文件或流操作失败时
+     */
     private static int readCount(DataInputStream input) throws IOException {
         int count = input.readInt();
         if (count < 0 || count > MAX_COLLECTION_SIZE) {
@@ -226,6 +342,14 @@ public final class DeploymentRuntimePersistenceCodec {
         return count;
     }
 
+    /**
+     * Reads boolean.
+     * <p>读取布尔。
+     *
+     * @param input source content consumed by this operation / 当前操作消费的源内容
+     * @return true when reads boolean, false otherwise / 读取布尔时为 true，否则为 false
+     * @throws IOException if the required file or stream operation fails / 所需文件或流操作失败时
+     */
     private static boolean readBoolean(DataInputStream input) throws IOException {
         return switch (input.readUnsignedByte()) {
             case 0 -> false;
@@ -234,11 +358,27 @@ public final class DeploymentRuntimePersistenceCodec {
         };
     }
 
+    /**
+     * Decodes zero as an absent Node version and rejects negative persisted versions.
+     * <p>将零解码为缺失的 Node 版本，并拒绝持久化负版本值。
+     *
+     * @param version version of the relevant protocol, configuration or runtime / 相应协议、配置或运行时的版本
+     * @return matching result, or empty when no admitted value exists / 匹配结果；不存在已准入内容时为空
+     * @throws IOException if the required file or stream operation fails / 所需文件或流操作失败时
+     */
     private static OptionalInt optionalVersion(int version) throws IOException {
         if (version < 0) throw new IOException("reviewed static-site Node version is invalid");
         return version == 0 ? OptionalInt.empty() : OptionalInt.of(version);
     }
 
+    /**
+     * Requires a stored static-site health contract to be an HTTP health check.
+     * <p>要求持久化静态站点健康契约为 HTTP 健康检查。
+     *
+     * @param health health / 健康
+     * @return constructed or resolved http / 构造或解析得到的HTTP
+     * @throws IOException if the required file or stream operation fails / 所需文件或流操作失败时
+     */
     private static HealthCheck.Http http(HealthCheck health) throws IOException {
         if (health instanceof HealthCheck.Http value) return value;
         throw new IOException("reviewed static-site health contract must be HTTP");

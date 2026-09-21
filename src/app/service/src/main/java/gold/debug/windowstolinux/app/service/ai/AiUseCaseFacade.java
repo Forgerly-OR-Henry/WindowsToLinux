@@ -29,7 +29,7 @@ public final class AiUseCaseFacade {
      */
     private final OpenAiCompatibleRoleClient roleClient;
     /** Dedicated strict protocol; separate request contexts for decisions and reviews. / 专用严格协议，决策及审批使用独立请求上下文。 */
-    private final gold.debug.windowstolinux.shared.ai.client.AgentProtocolClient agentClient;
+    private final gold.debug.windowstolinux.shared.ai.client.DeploymentAiProtocolClient agentClient;
     /**
      * Chain.
      * <p>调用链。
@@ -91,7 +91,7 @@ public final class AiUseCaseFacade {
      * @throws NullPointerException if a required input is absent / 必需输入缺失时
      */
     AiUseCaseFacade(AiProfileRepository profiles, DesktopSecretStoreService secrets, OpenAiCompatibleRoleClient roleClient) {
-        this(profiles,secrets,roleClient,new gold.debug.windowstolinux.shared.ai.client.AgentProtocolClient());
+        this(profiles,secrets,roleClient,new gold.debug.windowstolinux.shared.ai.client.DeploymentAiProtocolClient());
     }
     /** Injects both advisory and Agent transports for isolated contract tests. / 为隔离契约测试注入建议及 Agent 传输。
      * @param profiles model repository / 模型仓库
@@ -100,7 +100,7 @@ public final class AiUseCaseFacade {
      * @param agentClient strict isolated Agent protocol / 严格独立 Agent 协议
      */
     AiUseCaseFacade(AiProfileRepository profiles,DesktopSecretStoreService secrets,OpenAiCompatibleRoleClient roleClient,
-            gold.debug.windowstolinux.shared.ai.client.AgentProtocolClient agentClient){
+            gold.debug.windowstolinux.shared.ai.client.DeploymentAiProtocolClient agentClient){
         this.agentClient=Objects.requireNonNull(agentClient);
         this.profiles = Objects.requireNonNull(profiles, "profiles");
         Objects.requireNonNull(secrets, "secrets");

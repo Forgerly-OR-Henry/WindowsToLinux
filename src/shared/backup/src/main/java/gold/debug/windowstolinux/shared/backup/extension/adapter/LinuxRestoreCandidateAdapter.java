@@ -22,18 +22,44 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.Map;
 
-/** Maps portable restore evidence onto deploy-owned activation and Linux-owned file staging. / 将可移植恢复证据映射到 deploy 持有的激活及 Linux 持有的文件暂存。 */
+/**
+ * Maps portable restore evidence onto deploy-owned activation and Linux-owned file staging. / 将可移植恢复证据映射到 deploy 持有的激活及 Linux 持有的文件暂存。
+ */
 public final class LinuxRestoreCandidateAdapter implements RestoreCandidatePort {
+    /**
+     * Controlled filesystem access or reviewed file inventory.
+     * <p>受控文件系统访问或已审阅文件清单。
+     */
     private final RemoteRestoreFilePort files;
+    /**
+     * Deployments.
+     * <p>部署集合。
+     */
     private final RestoreDeploymentPort deployments;
+    /**
+     * Activation inputs.
+     * <p>激活输入集合。
+     */
     private final Map<String, DeploymentInputManifest> activationInputs;
 
-    /** Creates the one-way backup-to-deploy-to-Linux adapter. / 创建 backup 到 deploy 再到 Linux 的单向适配器。 */
+    /**
+     * Creates the one-way backup-to-deploy-to-Linux adapter. / 创建 backup 到 deploy 再到 Linux 的单向适配器。
+     *
+     * @param files controlled filesystem access or reviewed file inventory / 受控文件系统访问或已审阅文件清单
+     * @param deployments deployments / 部署集合
+     */
     public LinuxRestoreCandidateAdapter(RemoteRestoreFilePort files, RestoreDeploymentPort deployments) {
         this(files, deployments, Map.of());
     }
 
-    /** Creates an adapter with exact short-lived inputs already staged on the target. / 使用已暂存到目标端的精确短生命周期输入创建适配器。 */
+    /**
+     * Creates an adapter with exact short-lived inputs already staged on the target. / 使用已暂存到目标端的精确短生命周期输入创建适配器。
+     *
+     * @param files controlled filesystem access or reviewed file inventory / 受控文件系统访问或已审阅文件清单
+     * @param deployments deployments / 部署集合
+     * @param activationInputs activation inputs / 激活输入集合
+     * @throws NullPointerException if a required input is absent / 必需输入缺失时
+     */
     public LinuxRestoreCandidateAdapter(
             RemoteRestoreFilePort files,
             RestoreDeploymentPort deployments,
@@ -44,7 +70,13 @@ public final class LinuxRestoreCandidateAdapter implements RestoreCandidatePort 
         this.activationInputs = Map.copyOf(Objects.requireNonNull(activationInputs, "activationInputs"));
     }
 
-    /** Stages every validated archive member without addressing the active release. / 暂存每个已验证归档成员且不寻址活跃发布。 */
+    /**
+     * Stages every validated archive member without addressing the active release. / 暂存每个已验证归档成员且不寻址活跃发布。
+     *
+     * @param request reviewed inputs for the requested operation / 所请求操作的已审阅输入
+     * @return constructed or resolved file evidence / 构造或解析得到的文件证据
+     * @throws BackupException if backup validation or the controlled backup operation fails / 备份校验或受控备份操作失败时
+     */
     @Override
     public FileEvidence stageFiles(RestoreCandidateRequest request) throws BackupException {
         requireAutomaticActivation(request);
@@ -58,7 +90,15 @@ public final class LinuxRestoreCandidateAdapter implements RestoreCandidatePort 
         }
     }
 
-    /** Delegates component activation and health only from the closed typed component schema. / 仅从封闭类型化组件 schema 委派组件激活及健康检查。 */
+    /**
+     * Delegates component activation and health only from the closed typed component schema. / 仅从封闭类型化组件 schema 委派组件激活及健康检查。
+     *
+     * @param request reviewed inputs for the requested operation / 所请求操作的已审阅输入
+     * @param staged staged / 已暂存
+     * @param databaseToken database token / 数据库令牌
+     * @return constructed or resolved health evidence / 构造或解析得到的健康证据
+     * @throws BackupException if backup validation or the controlled backup operation fails / 备份校验或受控备份操作失败时
+     */
     @Override
     public HealthEvidence verifyComponents(
             RestoreCandidateRequest request, FileEvidence staged, Optional<String> databaseToken)
@@ -74,7 +114,15 @@ public final class LinuxRestoreCandidateAdapter implements RestoreCandidatePort 
         }
     }
 
-    /** Delegates the declared whole-application health gate. / 委派已声明的整应用健康门。 */
+    /**
+     * Delegates the declared whole-application health gate. / 委派已声明的整应用健康门。
+     *
+     * @param request reviewed inputs for the requested operation / 所请求操作的已审阅输入
+     * @param staged staged / 已暂存
+     * @param databaseToken database token / 数据库令牌
+     * @return constructed or resolved health evidence / 构造或解析得到的健康证据
+     * @throws BackupException if backup validation or the controlled backup operation fails / 备份校验或受控备份操作失败时
+     */
     @Override
     public HealthEvidence verifyApplication(
             RestoreCandidateRequest request, FileEvidence staged, Optional<String> databaseToken)
@@ -90,6 +138,16 @@ public final class LinuxRestoreCandidateAdapter implements RestoreCandidatePort 
         }
     }
 
+    /**
+     * Prepares the resolved full commit.
+     * <p>准备已解析的完整 Commit。
+     *
+     * @param request reviewed inputs for the requested operation / 所请求操作的已审阅输入
+     * @param staged staged / 已暂存
+     * @param databaseToken database token / 数据库令牌
+     * @return constructed or resolved health evidence / 构造或解析得到的健康证据
+     * @throws BackupException if backup validation or the controlled backup operation fails / 备份校验或受控备份操作失败时
+     */
     @Override
     public HealthEvidence prepareCommit(
             RestoreCandidateRequest request, FileEvidence staged, Optional<String> databaseToken)
@@ -105,7 +163,15 @@ public final class LinuxRestoreCandidateAdapter implements RestoreCandidatePort 
         }
     }
 
-    /** Commits only through deploy and retains its rollback token. / 仅通过 deploy 提交并保留其回滚令牌。 */
+    /**
+     * Commits only through deploy and retains its rollback token. / 仅通过 deploy 提交并保留其回滚令牌。
+     *
+     * @param request reviewed inputs for the requested operation / 所请求操作的已审阅输入
+     * @param staged staged / 已暂存
+     * @param databaseToken database token / 数据库令牌
+     * @return constructed or resolved commit evidence / 构造或解析得到的提交证据
+     * @throws BackupException if backup validation or the controlled backup operation fails / 备份校验或受控备份操作失败时
+     */
     @Override
     public CommitEvidence commit(
             RestoreCandidateRequest request, FileEvidence staged, Optional<String> databaseToken)
@@ -122,6 +188,15 @@ public final class LinuxRestoreCandidateAdapter implements RestoreCandidatePort 
         }
     }
 
+    /**
+     * Stops target writes before attempting to restore the previous state.
+     * <p>在尝试恢复此前状态前停止目标写入。
+     *
+     * @param request reviewed inputs for the requested operation / 所请求操作的已审阅输入
+     * @param staged staged / 已暂存
+     * @return constructed or resolved health evidence / 构造或解析得到的健康证据
+     * @throws BackupException if backup validation or the controlled backup operation fails / 备份校验或受控备份操作失败时
+     */
     @Override
     public HealthEvidence quiesceForRecovery(
             RestoreCandidateRequest request, Optional<FileEvidence> staged) throws BackupException {
@@ -138,7 +213,15 @@ public final class LinuxRestoreCandidateAdapter implements RestoreCandidatePort 
         }
     }
 
-    /** Attempts deploy rollback and candidate cleanup independently. / 独立尝试 deploy 回滚和候选清理。 */
+    /**
+     * Attempts deploy rollback and candidate cleanup independently. / 独立尝试 deploy 回滚和候选清理。
+     *
+     * @param request reviewed inputs for the requested operation / 所请求操作的已审阅输入
+     * @param staged staged / 已暂存
+     * @return constructed or resolved recovery evidence / 构造或解析得到的恢复证据
+     * @throws BackupException if backup validation or the controlled backup operation fails / 备份校验或受控备份操作失败时
+     * @throws IllegalStateException if the required state or runtime facility is unavailable / 所需状态或运行设施不可用时
+     */
     @Override
     public RecoveryEvidence recoverExisting(
             RestoreCandidateRequest request, Optional<FileEvidence> staged) throws BackupException {
@@ -181,6 +264,13 @@ public final class LinuxRestoreCandidateAdapter implements RestoreCandidatePort 
         return new RecoveryEvidence(candidateRemoved, existingVerified, evidence);
     }
 
+    /**
+     * Builds remote restore staging request from the supplied staging request inputs.
+     * <p>根据所提供暂存请求输入构建远端恢复暂存请求。
+     *
+     * @param request reviewed inputs for the requested operation / 所请求操作的已审阅输入
+     * @return remote restore staging request from the supplied staging request inputs / 根据所提供暂存请求输入构建远端恢复暂存请求
+     */
     private static RemoteRestoreStagingRequest stagingRequest(RestoreCandidateRequest request) {
         List<RemoteRestoreMember> members = request.manifest().members().stream()
                 .map(member -> new RemoteRestoreMember(member.path(), member.size(), member.sha256())).toList();
@@ -188,6 +278,14 @@ public final class LinuxRestoreCandidateAdapter implements RestoreCandidatePort 
                 request.localCandidateRoot(), request.verifiedBytes(), members);
     }
 
+    /**
+     * Builds restore deployment request from the supplied deployment request inputs.
+     * <p>根据所提供部署请求输入构建恢复部署请求。
+     *
+     * @param request reviewed inputs for the requested operation / 所请求操作的已审阅输入
+     * @param candidateToken candidate token / 候选令牌
+     * @return restore deployment request from the supplied deployment request inputs / 根据所提供部署请求输入构建恢复部署请求
+     */
     private RestoreDeploymentRequest deploymentRequest(RestoreCandidateRequest request, String candidateToken) {
         List<RestoreDeploymentComponent> components = request.manifest().inventory().components().stream()
                 .map(component -> component(component, request)).toList();
@@ -201,6 +299,14 @@ public final class LinuxRestoreCandidateAdapter implements RestoreCandidatePort 
                 request.manifest().inventory().database().type() == gold.debug.windowstolinux.shared.backup.manifest.BackupDatabaseType.SQLITE);
     }
 
+    /**
+     * Builds restore deployment component from the supplied component inputs.
+     * <p>根据所提供组件输入构建恢复部署组件。
+     *
+     * @param component component / 组件
+     * @param request reviewed inputs for the requested operation / 所请求操作的已审阅输入
+     * @return restore deployment component from the supplied component inputs / 根据所提供组件输入构建恢复部署组件
+     */
     private RestoreDeploymentComponent component(BackupComponent component, RestoreCandidateRequest request) {
         String prefix = "data/" + component.componentId() + "/";
         List<String> persistent = request.manifest().members().stream()
@@ -215,6 +321,14 @@ public final class LinuxRestoreCandidateAdapter implements RestoreCandidatePort 
                 persistent, oci);
     }
 
+    /**
+     * Requires automatic activation.
+     * <p>要求自动激活。
+     *
+     * @param request reviewed inputs for the requested operation / 所请求操作的已审阅输入
+     * @throws BackupException if backup validation or the controlled backup operation fails / 备份校验或受控备份操作失败时
+     * @throws NullPointerException if a required input is absent / 必需输入缺失时
+     */
     private static void requireAutomaticActivation(RestoreCandidateRequest request) throws BackupException {
         if (!Objects.requireNonNull(request, "request").manifest().supportsAutomaticActivation()) {
             throw BackupException.create(BackupFailureType.RESTORE_PREFLIGHT_FAILED,
@@ -222,6 +336,15 @@ public final class LinuxRestoreCandidateAdapter implements RestoreCandidatePort 
         }
     }
 
+    /**
+     * Validates supplied content before returning it to the next stage.
+     * <p>在将所提供内容返回给下一阶段前完成校验。
+     *
+     * @param token token / 令牌
+     * @return matching result, or empty when no admitted value exists / 匹配结果；不存在已准入内容时为空
+     * @throws IllegalArgumentException if an input violates the constraints checked by this contract / 输入违反当前契约检查的约束时
+     * @throws NullPointerException if a required input is absent / 必需输入缺失时
+     */
     private static Optional<String> checked(Optional<String> token) {
         token = Objects.requireNonNull(token, "databaseToken");
         token.ifPresent(value -> {

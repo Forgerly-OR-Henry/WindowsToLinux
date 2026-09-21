@@ -1,19 +1,41 @@
 package gold.debug.windowstolinux.shared.linux.sshd.distro.contract.profile;
 
-/** Fixed runtime checks selected only by implementation-owned distribution adapters. / 仅由实现持有的发行版适配器选择的固定运行时检查。 */
+/**
+ * Fixed runtime checks selected only by implementation-owned distribution adapters. / 仅由实现持有的发行版适配器选择的固定运行时检查。
+ */
 public enum EcosystemCapabilityProfile {
-    /** Represents the {@code UBUNTU_2204} value. / 表示 {@code UBUNTU_2204} 值。 */
+    /**
+     * UBUNTU 2204 classification within ecosystem capability profile.
+     * <p>生态能力配置资料中的UBUNTU2204分类。
+     */
     UBUNTU_2204,
-    /** Represents the {@code UBUNTU_2404} value. / 表示 {@code UBUNTU_2404} 值。 */
+    /**
+     * Ubuntu 24.04 validation target classification within ecosystem capability profile.
+     * <p>生态能力配置资料中的Ubuntu 24.04 验证目标分类。
+     */
     UBUNTU_2404,
-    /** Represents the {@code DEBIAN_13} value. / 表示 {@code DEBIAN_13} 值。 */
+    /**
+     * DEBIAN 13 classification within ecosystem capability profile.
+     * <p>生态能力配置资料中的DEBIAN13分类。
+     */
     DEBIAN_13,
-    /** Represents the {@code ENTERPRISE_9} value. / 表示 {@code ENTERPRISE_9} 值。 */
+    /**
+     * ENTERPRISE 9 classification within ecosystem capability profile.
+     * <p>生态能力配置资料中的企业版9分类。
+     */
     ENTERPRISE_9,
-    /** Represents the {@code ENTERPRISE_10} value. / 表示 {@code ENTERPRISE_10} 值。 */
+    /**
+     * ENTERPRISE 10 classification within ecosystem capability profile.
+     * <p>生态能力配置资料中的企业版10分类。
+     */
     ENTERPRISE_10;
 
-    /** Performs the {@code pythonCommand} operation. / 执行 {@code pythonCommand} 操作。 */
+    /**
+     * Returns python command.
+     * <p>返回python命令。
+     *
+     * @return python command / python命令
+     */
     public String pythonCommand() {
         return switch (this) {
             case UBUNTU_2204 -> "python3.10";

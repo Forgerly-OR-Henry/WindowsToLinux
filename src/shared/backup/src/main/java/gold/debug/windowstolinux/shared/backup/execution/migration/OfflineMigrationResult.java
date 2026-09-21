@@ -7,7 +7,20 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 
-/** Terminal preparation result that never claims an external switch or source deletion. / 绝不声称外部切流或删除源端的迁移准备终态。 */
+/**
+ * Terminal preparation result that never claims an external switch or source deletion. / 绝不声称外部切流或删除源端的迁移准备终态。
+ *
+ * @param operationIdentity correlation identity of the enclosing user operation / 外层用户操作的关联标识
+ * @param status classification of the current operation result / 当前操作结果的分类
+ * @param events ordered progress or transaction events / 有序进度或事务事件
+ * @param sourceWritesStopped source writes stopped / 源码写入集合已停止
+ * @param targetCandidateReady target candidate ready / 目标候选就绪
+ * @param externalTrafficSwitched external traffic switched / 外部流量Switched
+ * @param sourceRetained source retained / 源码已保留
+ * @param targetCandidateId target candidate id / 目标候选标识
+ * @param sourceRecoveryToken source recovery token / 源码恢复令牌
+ * @param failure structured failure occurrence retained for safe reporting / 保留用于安全报告的结构化失败实例
+ */
 public record OfflineMigrationResult(
         OperationIdentity operationIdentity,
         OfflineMigrationStatus status,
@@ -20,7 +33,22 @@ public record OfflineMigrationResult(
         Optional<String> sourceRecoveryToken,
         Optional<FailureDescriptor> failure
 ) {
-    /** Enforces safe status-specific evidence. / 强制安全的终态对应证据。 */
+    /**
+     * Enforces safe status-specific evidence. / 强制安全的终态对应证据。
+     *
+     * @param operationIdentity correlation identity of the enclosing user operation / 外层用户操作的关联标识
+     * @param status classification of the current operation result / 当前操作结果的分类
+     * @param events ordered progress or transaction events / 有序进度或事务事件
+     * @param sourceWritesStopped source writes stopped / 源码写入集合已停止
+     * @param targetCandidateReady target candidate ready / 目标候选就绪
+     * @param externalTrafficSwitched external traffic switched / 外部流量Switched
+     * @param sourceRetained source retained / 源码已保留
+     * @param targetCandidateId target candidate id / 目标候选标识
+     * @param sourceRecoveryToken source recovery token / 源码恢复令牌
+     * @param failure structured failure occurrence retained for safe reporting / 保留用于安全报告的结构化失败实例
+     * @throws IllegalArgumentException if an input violates the constraints checked by this contract / 输入违反当前契约检查的约束时
+     * @throws NullPointerException if a required input is absent / 必需输入缺失时
+     */
     public OfflineMigrationResult {
         operationIdentity = Objects.requireNonNull(operationIdentity, "operationIdentity");
         status = Objects.requireNonNull(status, "status");

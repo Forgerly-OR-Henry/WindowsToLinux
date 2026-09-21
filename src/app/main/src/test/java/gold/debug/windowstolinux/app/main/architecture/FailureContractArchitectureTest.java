@@ -71,6 +71,7 @@ class FailureContractArchitectureTest {
             Map.entry(LinuxOperationFailureType.class, "linux"),
             Map.entry(SecretStoreFailureType.class, "secret"),
             Map.entry(SourceArchiveFailureType.class, "source"),
+            Map.entry(gold.debug.windowstolinux.app.windows.recovery.BrowserRecoveryFailureType.class, "windows"),
             Map.entry(WindowsWorkspaceFailureType.class, "windows"));
 
     @Test

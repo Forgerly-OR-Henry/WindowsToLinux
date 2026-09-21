@@ -38,15 +38,19 @@ import java.util.Optional;
 /**
  * Executes one reviewed, type-specific deployment through the same bounded transaction semantics as every managed application.
  *
- * <p>通过与所有受管应用相同的有界事务语义执行一个经审阅、类型专属的部署。
+ *  <p>通过与所有受管应用相同的有界事务语义执行一个经审阅、类型专属的部署。
  */
 public final class ReviewedDeploymentService {
+    /**
+     * MINIMUM FREE SPACE MULTIPLIER.
+     * <p>最小剩余SPACEMULTIPLIER。
+     */
     private static final long MINIMUM_FREE_SPACE_MULTIPLIER = 3;
 
     /**
      * Deploys one fully reviewed request without accepting a raw command or an inferred runtime.
      *
-     * <p>部署一个完整审阅的请求，不接受原始命令或推断的运行时。
+     *  <p>部署一个完整审阅的请求，不接受原始命令或推断的运行时。
      *
      * @param request the reviewed deployment input / 经审阅的部署输入
      * @param application the stable managed identity / 稳定的受管身份
@@ -55,6 +59,7 @@ public final class ReviewedDeploymentService {
      * @param credential the selected credential / 选定的凭据
      * @param hostKeyVerifier the host-key verifier / 主机密钥验证器
      * @return the terminal deployment result / 部署终态结果
+     * @throws IllegalArgumentException if an input violates the constraints checked by this contract / 输入违反当前契约检查的约束时
      */
     public DeploymentResult deploy(ReviewedDeploymentRequest request, ManagedApplication application,
                                    DeploymentLinuxGateway gateway, SshEndpoint endpoint, SshCredential credential,
@@ -65,14 +70,39 @@ public final class ReviewedDeploymentService {
         return deploy(request, application, gateway, endpoint, credential, hostKeyVerifier, List.of());
     }
 
-    /** Executes a reviewed transaction with short-lived exact secret revisions. / 使用短生命周期精确秘密修订执行经审阅事务。 */
+    /**
+     * Executes a reviewed transaction with short-lived exact secret revisions. / 使用短生命周期精确秘密修订执行经审阅事务。
+     *
+     * @param request reviewed inputs for the requested operation / 所请求操作的已审阅输入
+     * @param application managed target with its server and ownership identity / 携带服务器及归属身份的受管目标
+     * @param gateway factory for authenticated Linux sessions / 已认证 Linux 会话的工厂
+     * @param endpoint reviewed network endpoint / 已审阅网络端点
+     * @param credential authentication material scoped to the current connection / 限定于当前连接的认证素材
+     * @param hostKeyVerifier the host-key verifier / 主机密钥验证器
+     * @param resolvedSecrets resolved secrets / 已解析秘密集合
+     * @return constructed or resolved deployment result / 构造或解析得到的部署结果
+     */
     public DeploymentResult deploy(ReviewedDeploymentRequest request, ManagedApplication application,
                                    DeploymentLinuxGateway gateway, SshEndpoint endpoint, SshCredential credential,
                                    HostKeyEvaluator hostKeyVerifier, List<ResolvedSecretRevision> resolvedSecrets) {
         return deploy(request, application, gateway, endpoint, credential, hostKeyVerifier, resolvedSecrets, ignored -> { });
     }
 
-    /** Executes with a per-operation observer of real transaction events. / 使用本次操作的观察器接收真实事务事件。 */
+    /**
+     * Executes with a per-operation observer of real transaction events. / 使用本次操作的观察器接收真实事务事件。
+     *
+     * @param request reviewed inputs for the requested operation / 所请求操作的已审阅输入
+     * @param application managed target with its server and ownership identity / 携带服务器及归属身份的受管目标
+     * @param gateway factory for authenticated Linux sessions / 已认证 Linux 会话的工厂
+     * @param endpoint reviewed network endpoint / 已审阅网络端点
+     * @param credential authentication material scoped to the current connection / 限定于当前连接的认证素材
+     * @param hostKeyVerifier the host-key verifier / 主机密钥验证器
+     * @param resolvedSecrets resolved secrets / 已解析秘密集合
+     * @param progress progress / 进度
+     * @return constructed or resolved deployment result / 构造或解析得到的部署结果
+     * @throws IllegalArgumentException if an input violates the constraints checked by this contract / 输入违反当前契约检查的约束时
+     * @throws NullPointerException if a required input is absent / 必需输入缺失时
+     */
     public DeploymentResult deploy(ReviewedDeploymentRequest request, ManagedApplication application,
             DeploymentLinuxGateway gateway, SshEndpoint endpoint, SshCredential credential,
             HostKeyEvaluator hostKeyVerifier, List<ResolvedSecretRevision> resolvedSecrets,
@@ -185,6 +215,18 @@ public final class ReviewedDeploymentService {
         }
     }
 
+    /**
+     * Finishes publication.
+     * <p>完成发布。
+     *
+     * @param session session used for the current scoped operation / 当前限定作用域操作使用的会话
+     * @param application managed target with its server and ownership identity / 携带服务器及归属身份的受管目标
+     * @param workspace platform-owned work area with enforced path boundaries / 具有路径边界约束的平台工作区
+     * @param observation observation / 观测
+     * @param releaseIdentity digest identifying the exact published release / 标识精确已发布版本的摘要
+     * @param events ordered progress or transaction events / 有序进度或事务事件
+     * @return constructed or resolved deployment result / 构造或解析得到的部署结果
+     */
     private static DeploymentResult finishPublication(DeploymentRemoteSession session, ManagedApplication application,
             RemoteWorkspace workspace, LifecycleObservation observation, String releaseIdentity,
             List<DeploymentEvent> events) {
@@ -204,6 +246,16 @@ public final class ReviewedDeploymentService {
             "The verified release remains active; candidate or retained release cleanup needs attention"));
     }
 
+    /**
+     * Validates request binding.
+     * <p>校验请求绑定。
+     *
+     * @param request reviewed inputs for the requested operation / 所请求操作的已审阅输入
+     * @param application managed target with its server and ownership identity / 携带服务器及归属身份的受管目标
+     * @param endpoint reviewed network endpoint / 已审阅网络端点
+     * @param events ordered progress or transaction events / 有序进度或事务事件
+     * @return constructed or resolved deployment result; null when no matching value is available / 构造或解析得到的部署结果；没有匹配值时为 null
+     */
     private static DeploymentResult validateRequestBinding(
             ReviewedDeploymentRequest request, ManagedApplication application, SshEndpoint endpoint,
             List<DeploymentEvent> events) {
@@ -219,6 +271,16 @@ public final class ReviewedDeploymentService {
         return null;
     }
 
+    /**
+     * Checks source footprint and remote deployment prerequisites before allowing release changes.
+     * <p>在允许发布变更前检查源码占用及远端部署前提条件。
+     *
+     * @param request reviewed inputs for the requested operation / 所请求操作的已审阅输入
+     * @param session session used for the current scoped operation / 当前限定作用域操作使用的会话
+     * @param events ordered progress or transaction events / 有序进度或事务事件
+     * @return constructed or resolved deployment result / 构造或解析得到的部署结果
+     * @throws LinuxOperationException if the authenticated remote operation fails or its evidence is rejected / 已认证远端操作失败或其证据被拒绝时
+     */
     private static DeploymentResult preflight(
             ReviewedDeploymentRequest request, DeploymentRemoteSession session, List<DeploymentEvent> events)
             throws LinuxOperationException {
@@ -258,6 +320,22 @@ public final class ReviewedDeploymentService {
                 Optional.empty(), Optional.empty());
     }
 
+    /**
+     * Attempts verified rollback through a recovery session and retains both the original deployment failure and recovery evidence.
+     * <p>通过恢复会话尝试已验证回滚，并保留原始部署失败及恢复证据。
+     *
+     * @param session session used for the current scoped operation / 当前限定作用域操作使用的会话
+     * @param request reviewed inputs for the requested operation / 所请求操作的已审阅输入
+     * @param application managed target with its server and ownership identity / 携带服务器及归属身份的受管目标
+     * @param workspace platform-owned work area with enforced path boundaries / 具有路径边界约束的平台工作区
+     * @param snapshot immutable observation or configuration revision used by the operation / 操作使用的不可变观测或配置修订
+     * @param build build / 构建
+     * @param releaseIdentity digest identifying the exact published release / 标识精确已发布版本的摘要
+     * @param inputs reviewed non-secret deployment input fields / 已审阅的非秘密部署输入字段
+     * @param events ordered progress or transaction events / 有序进度或事务事件
+     * @return constructed or resolved deployment result / 构造或解析得到的部署结果
+     * @throws LinuxOperationException if the authenticated remote operation fails or its evidence is rejected / 已认证远端操作失败或其证据被拒绝时
+     */
     private static DeploymentResult recover(DeploymentRemoteSession session, ReviewedDeploymentRequest request,
                                              ManagedApplication application, RemoteWorkspace workspace,
                                              ReleaseSnapshot snapshot, DeploymentBuildResult build,
@@ -293,6 +371,24 @@ public final class ReviewedDeploymentService {
         return new DeploymentResult(DeploymentStatus.FAILED_ROLLED_BACK, events, Optional.of(restored), Optional.empty());
     }
 
+    /**
+     * Recovers after interrupted session.
+     * <p>恢复之后已中断会话。
+     *
+     * @param request reviewed inputs for the requested operation / 所请求操作的已审阅输入
+     * @param application managed target with its server and ownership identity / 携带服务器及归属身份的受管目标
+     * @param gateway factory for authenticated Linux sessions / 已认证 Linux 会话的工厂
+     * @param endpoint reviewed network endpoint / 已审阅网络端点
+     * @param credential authentication material scoped to the current connection / 限定于当前连接的认证素材
+     * @param hostKeyVerifier the host-key verifier / 主机密钥验证器
+     * @param workspace platform-owned work area with enforced path boundaries / 具有路径边界约束的平台工作区
+     * @param snapshot immutable observation or configuration revision used by the operation / 操作使用的不可变观测或配置修订
+     * @param build build / 构建
+     * @param releaseIdentity digest identifying the exact published release / 标识精确已发布版本的摘要
+     * @param inputs reviewed non-secret deployment input fields / 已审阅的非秘密部署输入字段
+     * @param events ordered progress or transaction events / 有序进度或事务事件
+     * @return constructed or resolved deployment result / 构造或解析得到的部署结果
+     */
     private static DeploymentResult recoverAfterInterruptedSession(
             ReviewedDeploymentRequest request, ManagedApplication application, DeploymentLinuxGateway gateway,
             SshEndpoint endpoint, SshCredential credential, HostKeyEvaluator hostKeyVerifier, RemoteWorkspace workspace,
@@ -312,6 +408,18 @@ public final class ReviewedDeploymentService {
         }
     }
 
+    /**
+     * Cleans up after interrupted session.
+     * <p>清理之后已中断会话。
+     *
+     * @param gateway factory for authenticated Linux sessions / 已认证 Linux 会话的工厂
+     * @param endpoint reviewed network endpoint / 已审阅网络端点
+     * @param credential authentication material scoped to the current connection / 限定于当前连接的认证素材
+     * @param hostKeyVerifier the host-key verifier / 主机密钥验证器
+     * @param workspace platform-owned work area with enforced path boundaries / 具有路径边界约束的平台工作区
+     * @param events ordered progress or transaction events / 有序进度或事务事件
+     * @return constructed or resolved deployment result / 构造或解析得到的部署结果
+     */
     private static DeploymentResult cleanupAfterInterruptedSession(
             DeploymentLinuxGateway gateway, SshEndpoint endpoint, SshCredential credential,
             HostKeyEvaluator hostKeyVerifier, RemoteWorkspace workspace, List<DeploymentEvent> events
@@ -332,6 +440,15 @@ public final class ReviewedDeploymentService {
                 Optional.empty(), Optional.empty());
     }
 
+    /**
+     * Builds a rejected result with its retained reason and evidence.
+     * <p>构建被拒绝结果并保留其原因及证据。
+     *
+     * @param events ordered progress or transaction events / 有序进度或事务事件
+     * @param step step / 步骤
+     * @param evidence observations supporting the reported result / 支持所报告结果的观测证据
+     * @return a rejected result with its retained reason and evidence / 被拒绝结果并保留其原因及证据
+     */
     private static DeploymentResult rejected(
             List<DeploymentEvent> events, DeploymentTraceEvent step, String evidence) {
         events.add(DeploymentEvent.failed(step,
@@ -339,6 +456,15 @@ public final class ReviewedDeploymentService {
         return new DeploymentResult(DeploymentStatus.PRECONDITION_REJECTED, events, Optional.empty(), Optional.empty());
     }
 
+    /**
+     * Cleans up reviewed deployment.
+     * <p>清理已审阅部署。
+     *
+     * @param session session used for the current scoped operation / 当前限定作用域操作使用的会话
+     * @param workspace platform-owned work area with enforced path boundaries / 具有路径边界约束的平台工作区
+     * @param events ordered progress or transaction events / 有序进度或事务事件
+     * @return true when cleans up reviewed deployment, false otherwise / 清理已审阅部署时为 true，否则为 false
+     */
     private static boolean cleanup(DeploymentRemoteSession session, RemoteWorkspace workspace, List<DeploymentEvent> events) {
         try {
             RemoteStepResult cleanup = session.cleanupCandidate(workspace);
@@ -350,6 +476,14 @@ public final class ReviewedDeploymentService {
         }
     }
 
+    /**
+     * Creates or preserves the module-owned failure for the supplied cause and diagnostic evidence.
+     * <p>为所提供原因及诊断证据创建或保留模块自有失败。
+     *
+     * @param type selected member of the supported type set / 受支持类型集合中的所选项
+     * @param diagnostic bounded non-secret detail for diagnostic reporting / 用于诊断报告的有界非秘密详情
+     * @return or preserves the module-owned failure for the supplied cause and diagnostic evidence / 为所提供原因及诊断证据创建或保留模块自有失败
+     */
     private static FailureDescriptor failure(DeploymentExecutionFailureType type, String diagnostic) {
         return FailureDescriptor.create(type, OperationIdentity.create(), diagnostic);
     }

@@ -1,0 +1,22 @@
+<script setup lang="ts">
+import { onMounted,ref,watch } from 'vue'
+import { request } from '../../shared/api/client'
+import { t,errorText } from '../../shared/i18n/messages'
+import AppIcon from '../../shared/ui/AppIcon.vue'
+interface AiProfile {id:string;name:string;endpoint:string;model:string;version:number;enabled:boolean;priority:number;verifiedAt:string}
+const props=defineProps<{active:boolean}>(),emit=defineEmits<{task:[id:string]}>()
+const profiles=ref<AiProfile[]>([]),editor=ref<HTMLDialogElement>(),editing=ref(''),error=ref(''),busy=ref(false)
+const form=ref({name:'',endpoint:'',model:'',apiKey:'',version:0})
+async function load(){try{profiles.value=await request<AiProfile[]>('ai/profiles');error.value=''}catch(e){error.value=errorText(e)}}
+function edit(profile?:AiProfile){editing.value=profile?.id??'';form.value={name:profile?.name??'',endpoint:profile?.endpoint??'',model:profile?.model??'',apiKey:'',version:profile?.version??0};editor.value?.showModal()}
+async function save(){busy.value=true;try{const task=await request<{id:string}>(editing.value?`ai/profiles/${editing.value}`:'ai/profiles',editing.value?'PUT':'POST',form.value);form.value.apiKey='';editor.value?.close();emit('task',task.id)}catch(e){error.value=errorText(e)}finally{form.value.apiKey='';busy.value=false}}
+async function enabled(profile:AiProfile){try{await request(`ai/profiles/${profile.id}/enabled`,'PUT',{enabled:!profile.enabled,version:profile.version});await load()}catch(e){error.value=errorText(e)}}
+async function move(index:number,direction:number){const ids=profiles.value.map(p=>p.id),other=index+direction;if(other<0||other>=ids.length)return;[ids[index],ids[other]]=[ids[other]!,ids[index]!];try{profiles.value=await request<AiProfile[]>('ai/order','PUT',{ids})}catch(e){error.value=errorText(e)}}
+async function remove(profile:AiProfile){if(!window.confirm(t('confirmModelDelete')))return;try{await request(`ai/profiles/${profile.id}`,'DELETE',{version:profile.version});await load()}catch(e){error.value=errorText(e)}}
+watch(()=>props.active,active=>{if(active)void load()});onMounted(load)
+</script>
+<template><section><header class="page-heading"><div><p class="eyebrow">AI CONFIGURATION</p><h1>{{t('ai')}}</h1><p>{{t('aiHint')}}</p></div><button class="primary" @click="edit()"><AppIcon name="plus"/>{{t('addModel')}}</button></header><p v-if="error&&!editor?.open" class="error" role="alert">{{error}}</p>
+  <div v-if="!profiles.length" class="empty"><AppIcon name="ai"/><h2>{{t('noModels')}}</h2><p>{{t('noModelsHint')}}</p></div>
+  <div class="model-list"><article v-for="(profile,index) in profiles" :key="profile.id" class="resource-card model-card"><span class="model-number">{{String(index+1).padStart(2,'0')}}</span><div class="model-information"><h2>{{profile.name}}</h2><p>{{profile.model}}</p><small class="mono break">{{profile.endpoint}}</small><p class="help">{{t('verifiedAt')}} {{new Date(profile.verifiedAt).toLocaleString()}}</p></div><div class="model-actions"><button :aria-pressed="profile.enabled" @click="enabled(profile)">{{t(profile.enabled?'enabled':'disabled')}}</button><div class="button-row"><button :disabled="index===0" :aria-label="t('moveUp')" @click="move(index,-1)">↑</button><button :disabled="index===profiles.length-1" :aria-label="t('moveDown')" @click="move(index,1)">↓</button><button @click="edit(profile)">{{t('edit')}}</button><button class="danger-text" @click="remove(profile)">{{t('remove')}}</button></div></div></article></div>
+  <dialog ref="editor" @close="form.apiKey=''" @cancel="form.apiKey=''"><form @submit.prevent="save"><header><h2>{{t(editing?'editModel':'addModel')}}</h2><button type="button" class="icon-button" :aria-label="t('close')" @click="editor?.close()"><AppIcon name="close"/></button></header><p v-if="error" class="error" role="alert">{{error}}</p><label>{{t('name')}}<input v-model="form.name" required maxlength="120"/></label><label>{{t('endpoint')}}<input v-model="form.endpoint" type="url" required maxlength="2048" placeholder="https://provider.example/v1/chat/completions"/></label><label>{{t('model')}}<input v-model="form.model" required maxlength="128"/></label><label>API Key<input v-model="form.apiKey" type="password" :required="!editing" autocomplete="new-password"/></label><p class="help">{{t('modelSaveHint')}}</p><footer><button type="button" @click="editor?.close()">{{t('cancel')}}</button><button class="primary" :disabled="busy">{{t('testAndSave')}}</button></footer></form></dialog>
+</section></template>

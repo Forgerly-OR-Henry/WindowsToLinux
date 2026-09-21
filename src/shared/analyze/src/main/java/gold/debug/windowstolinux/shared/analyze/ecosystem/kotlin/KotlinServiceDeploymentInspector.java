@@ -15,15 +15,38 @@ import java.io.IOException;
 import java.nio.file.Path;
 import java.util.List;
 
-/** Selects exactly one reviewed Kotlin build architecture. / 恰好选择一个经审阅的 Kotlin 构建架构。 */
+/**
+ * Selects exactly one reviewed Kotlin build architecture. / 恰好选择一个经审阅的 Kotlin 构建架构。
+ */
 public final class KotlinServiceDeploymentInspector implements DeploymentTypeInspector {
+    /**
+     * Bound kotlin gradle deployment inspector collaborator for gradle.
+     * <p>处理Gradle 构建的KotlinGradle部署检查器协作对象。
+     */
     private final KotlinGradleDeploymentInspector gradle = new KotlinGradleDeploymentInspector();
+    /**
+     * Bound kotlin compiler deployment inspector collaborator for kotlinc.
+     * <p>处理Kotlin 编译器的Kotlin编译器部署检查器协作对象。
+     */
     private final KotlinCompilerDeploymentInspector kotlinc = new KotlinCompilerDeploymentInspector();
 
-    /** Returns the Kotlin service project type. / 返回 Kotlin 服务项目类型。 */
+    /**
+     * Returns the Kotlin service project type. / 返回 Kotlin 服务项目类型。
+     *
+     * @return the Kotlin service project type /  Kotlin 服务项目类型
+     */
     @Override public DeploymentProjectType projectType() { return DeploymentProjectType.KOTLIN_SERVICE; }
 
-    /** Rejects architecture conflicts and delegates to one architecture inspector. / 拒绝架构冲突并委派给一个架构检查器。 */
+    /**
+     * Rejects architecture conflicts and delegates to one architecture inspector. / 拒绝架构冲突并委派给一个架构检查器。
+     *
+     * @param root root directory defining the filesystem boundary / 定义文件系统边界的根目录
+     * @param source source identity or content read by the operation / 操作读取的源身份或内容
+     * @param languageFacts language facts / 语言事实
+     * @param rejections reasons preventing admission to the next stage / 阻止进入下一阶段的原因
+     * @return constructed or resolved deployment type assessment; null when no matching value is available / 构造或解析得到的部署类型评估；没有匹配值时为 null
+     * @throws IOException if the required file or stream operation fails / 所需文件或流操作失败时
+     */
     @Override
     public DeploymentTypeAssessment inspect(Path root, SourceInspectionFacts source, ProjectLanguageFacts languageFacts,
                                             List<RejectionReason> rejections) throws IOException {

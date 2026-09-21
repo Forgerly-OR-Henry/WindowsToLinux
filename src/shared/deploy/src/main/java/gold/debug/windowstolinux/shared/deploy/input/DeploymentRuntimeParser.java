@@ -20,14 +20,26 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 
-/** Parses bounded desktop runtime, database, secret-reference, and Git-reference notation. / 解析桌面端有界运行时、数据库、秘密引用与 Git 引用记法。 */
+/**
+ * Parses bounded desktop runtime, database, secret-reference, and Git-reference notation. / 解析桌面端有界运行时、数据库、秘密引用与 Git 引用记法。
+ */
 public final class DeploymentRuntimeParser {
+    /**
+     * Prevents instantiation of this static contract helper.
+     * <p>防止实例化当前静态契约辅助类。
+     */
     private DeploymentRuntimeParser() { }
 
     /**
      * Parses zero or one explicitly reviewed server database binding.
      *
-     * <p>解析零个或一个显式审阅的服务器数据库绑定。
+     *  <p>解析零个或一个显式审阅的服务器数据库绑定。
+     *
+     * @param mode selected operating or storage mode / 所选运行或存储模式
+     * @param input source content consumed by this operation / 当前操作消费的源内容
+     * @return matching result, or empty when no admitted value exists / 匹配结果；不存在已准入内容时为空
+     * @throws IllegalArgumentException if an input violates the constraints checked by this contract / 输入违反当前契约检查的约束时
+     * @throws NullPointerException if a required input is absent / 必需输入缺失时
      */
     public static Optional<List<ManagedDatabaseBinding>> databaseBindings(DatabaseReviewMode mode, String input) {
         mode = Objects.requireNonNull(mode, "mode");
@@ -67,6 +79,14 @@ public final class DeploymentRuntimeParser {
         return Optional.of(List.of(new ManagedDatabaseBinding(values[0].trim(), connection)));
     }
 
+    /**
+     * Parses semicolon-separated host-to-container port pairs and rejects invalid mappings.
+     * <p>解析分号分隔的主机到容器端口对，并拒绝无效映射。
+     *
+     * @param input source content consumed by this operation / 当前操作消费的源内容
+     * @return semicolon-separated host-to-container port pairs and rejects invalid mappings / 分号分隔的主机到容器端口对，并拒绝无效映射
+     * @throws IllegalArgumentException if an input violates the constraints checked by this contract / 输入违反当前契约检查的约束时
+     */
     public static Map<Integer, Integer> ports(String input) {
         Map<Integer, Integer> values = new LinkedHashMap<>();
         for (String pair : input.split(";")) {
@@ -80,6 +100,14 @@ public final class DeploymentRuntimeParser {
         return Map.copyOf(values);
     }
 
+    /**
+     * Checks volumes syntax and bounds before returning the admitted content.
+     * <p>在返回已准入内容前检查卷集合语法及边界。
+     *
+     * @param input source content consumed by this operation / 当前操作消费的源内容
+     * @return constructed or resolved list / 构造或解析得到的列表
+     * @throws IllegalArgumentException if an input violates the constraints checked by this contract / 输入违反当前契约检查的约束时
+     */
     public static List<DeploymentRuntimeSpecification.ManagedVolume> volumes(String input) {
         if (input.isBlank()) return List.of();
         List<DeploymentRuntimeSpecification.ManagedVolume> values = new ArrayList<>();
@@ -95,10 +123,29 @@ public final class DeploymentRuntimeParser {
         return List.copyOf(values);
     }
 
+    /**
+     * Splits a nonblank argument string on whitespace; blank input produces an empty list.
+     * <p>按空白字符拆分非空参数字符串；空白输入生成空列表。
+     *
+     * @param input source content consumed by this operation / 当前操作消费的源内容
+     * @return constructed or resolved list / 构造或解析得到的列表
+     */
     public static List<String> arguments(String input) {
         return input.isBlank() ? List.of() : List.of(input.trim().split("\\s+"));
     }
 
+    /**
+     * Constructs the selected language-service runtime from its reviewed version, artifact, entrypoint and health check.
+     * <p>根据已审阅版本、制品、入口及健康检查构建所选语言服务运行规格。
+     *
+     * @param selected explicitly selected item or state / 显式选择的项目或状态
+     * @param version version of the relevant protocol, configuration or runtime / 相应协议、配置或运行时的版本
+     * @param artifact verified build or backup artifact metadata / 已验证构建或备份制品元数据
+     * @param entrypoint reviewed executable, module or main entry used to start the workload / 启动工作负载所用的已审阅可执行文件、模块或主入口
+     * @param health health / 健康
+     * @return the selected language-service runtime from its reviewed version, artifact, entrypoint and health check / 根据已审阅版本、制品、入口及健康检查构建所选语言服务运行规格
+     * @throws IllegalArgumentException if an input violates the constraints checked by this contract / 输入违反当前契约检查的约束时
+     */
     public static DeploymentRuntimeSpecification service(DeploymentProjectType selected, String version,
                                                    String artifact, String entrypoint, HealthCheck health) {
         return switch (selected) {
@@ -112,10 +159,26 @@ public final class DeploymentRuntimeParser {
         };
     }
 
+    /**
+     * Returns the health check's port, using zero when that check has no port.
+     * <p>返回健康检查端口；该检查没有端口时使用零。
+     *
+     * @param health health / 健康
+     * @return the health check's port, using zero when that check has no port / 健康检查端口；该检查没有端口时使用零
+     */
     private static int healthPort(HealthCheck health) {
         return health.portNumber().orElse(0);
     }
 
+    /**
+     * Maps the selected index to a Git branch, tag or commit reference and rejects unsupported choices.
+     * <p>将所选索引映射为 Git 分支、标签或提交引用，并拒绝不支持的选择。
+     *
+     * @param index index / 索引
+     * @param value candidate content accepted or rejected by this contract / 由当前契约接收或拒绝的候选内容
+     * @return constructed or resolved git reference / 构造或解析得到的Git引用
+     * @throws IllegalArgumentException if an input violates the constraints checked by this contract / 输入违反当前契约检查的约束时
+     */
     public static GitReference gitReference(int index, String value) {
         return switch (index) {
             case 0 -> new GitReference.Branch(value);

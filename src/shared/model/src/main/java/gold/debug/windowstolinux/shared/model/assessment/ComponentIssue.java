@@ -8,7 +8,7 @@ import java.util.Objects;
 /**
  * One component-scoped input requirement or hard safety rejection.
  *
- * <p>一个组件范围的输入要求或硬安全拒绝。
+ *  <p>一个组件范围的输入要求或硬安全拒绝。
  *
  * @param severity issue severity / 问题严重性
  * @param code stable machine-readable code / 稳定机器可读代码
@@ -16,7 +16,16 @@ import java.util.Objects;
  * @param message localized explanation / 本地化说明
  */
 public record ComponentIssue(SeverityLevel severity, String code, List<String> componentIds, LocalizedMessage message) {
-    /** Validates one component-scoped issue. / 验证一个组件范围问题。 */
+    /**
+     * Validates one component-scoped issue. / 验证一个组件范围问题。
+     *
+     * @param severity severity level assigned to the failure definition / 分配给失败定义的严重级别
+     * @param code stable machine-readable classification code / 稳定的机器可读分类码
+     * @param componentIds affected component identifiers / 受影响的组件标识符
+     * @param message localized explanation / 本地化说明
+     * @throws IllegalArgumentException if an input violates the constraints checked by this contract / 输入违反当前契约检查的约束时
+     * @throws NullPointerException if a required input is absent / 必需输入缺失时
+     */
     public ComponentIssue {
         severity = Objects.requireNonNull(severity, "severity");
         code = Objects.requireNonNull(code, "code").trim();
@@ -28,11 +37,17 @@ public record ComponentIssue(SeverityLevel severity, String code, List<String> c
         message = Objects.requireNonNull(message, "message");
     }
 
-    /** Component issue severity. / 组件问题严重性。 */
+    /**
+     * Component issue severity. / 组件问题严重性。
+     */
     public enum SeverityLevel {
-        /** Missing deterministic user input. / 缺少确定性用户输入。 */
+        /**
+         * Missing deterministic user input. / 缺少确定性用户输入。
+         */
         REQUIRES_INPUT,
-        /** Unsafe contradiction that stops target mutation. / 阻止目标修改的不安全矛盾。 */
+        /**
+         * Unsafe contradiction that stops target mutation. / 阻止目标修改的不安全矛盾。
+         */
         SAFETY_REJECTION
     }
 }

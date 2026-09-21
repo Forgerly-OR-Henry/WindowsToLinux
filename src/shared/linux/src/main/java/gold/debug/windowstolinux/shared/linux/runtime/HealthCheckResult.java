@@ -5,20 +5,19 @@ import java.util.Objects;
 /**
  * The result of a full managed-deployment health strategy, not merely a process check.
  *
- * <p>完整受管部署健康检查策略的结果，而不只是进程检查。
+ *  <p>完整受管部署健康检查策略的结果，而不只是进程检查。
  *
- * @param healthy the {@code healthy} value / {@code healthy} 值
- * @param evidence the {@code evidence} value / {@code evidence} 值
+ * @param healthy healthy / 健康
+ * @param evidence observations supporting the reported result / 支持所报告结果的观测证据
  */
 public record HealthCheckResult(boolean healthy, String evidence) {
     /**
-     * Creates a {@code HealthCheckResult} instance.
+     * Validates and binds the inputs required by health check result.
+     * <p>校验并绑定健康检查结果所需输入。
      *
-     * <p>创建 {@code HealthCheckResult} 实例。
-     *
-     * @param healthy the {@code healthy} value / {@code healthy} 值
-     * @param evidence the {@code evidence} value / {@code evidence} 值
-     * @throws NullPointerException if a required argument is {@code null} / 必要参数为 {@code null} 时
+     * @param healthy healthy / 健康
+     * @param evidence observations supporting the reported result / 支持所报告结果的观测证据
+     * @throws NullPointerException if a required input is absent / 必需输入缺失时
      */
     public HealthCheckResult {
         evidence = Objects.requireNonNull(evidence, "evidence");

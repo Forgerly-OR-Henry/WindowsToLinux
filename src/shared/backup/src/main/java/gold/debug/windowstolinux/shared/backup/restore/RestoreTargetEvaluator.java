@@ -19,8 +19,24 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Set;
 
-/** Converts live read-only target evidence into the strict portable restore profile. / 将实时只读目标证据转换为严格可移植恢复资料。 */
+/**
+ * Converts live read-only target evidence into the strict portable restore profile. / 将实时只读目标证据转换为严格可移植恢复资料。
+ */
 public final class RestoreTargetEvaluator {
+    /**
+     * Combines observed host, runtime, storage and port facts into the target profile used by restore admission.
+     * <p>将已观测主机、运行环境、存储及端口事实组合为恢复准入使用的目标资料。
+     *
+     * @param manifest validated ownership or backup inventory document / 已验证归属或备份资源清单文档
+     * @param databasePresent database present / 数据库存在
+     * @param serverId persisted server identifier / 持久化服务器标识
+     * @param server server identity or selected server configuration / 服务器身份或所选服务器配置
+     * @param linux linux / Linux 操作
+     * @param activation activation / 激活
+     * @param existingOwnedApplication existing owned application / 既有已持有应用
+     * @return constructed or resolved restore target profile / 构造或解析得到的恢复目标配置资料
+     * @throws BackupException if backup validation or the controlled backup operation fails / 备份校验或受控备份操作失败时
+     */
     public RestoreTargetProfile evaluate(
             BackupManifest manifest, boolean databasePresent,
             String serverId,
@@ -53,6 +69,15 @@ public final class RestoreTargetEvaluator {
                 evidence.stream().distinct().toList());
     }
 
+    /**
+     * Requires reviewed server hostname or IP address.
+     * <p>要求已审阅服务器主机名或 IP 地址。
+     *
+     * @param manifest validated ownership or backup inventory document / 已验证归属或备份资源清单文档
+     * @param server server identity or selected server configuration / 服务器身份或所选服务器配置
+     * @param linux linux / Linux 操作
+     * @throws BackupException if backup validation or the controlled backup operation fails / 备份校验或受控备份操作失败时
+     */
     private static void requireHost(
             BackupManifest manifest, ServerCapabilityFacts server, LinuxCapabilityFacts linux) throws BackupException {
         if (server.managedHelperProtocolVersion() != ManagedHelperProtocolVersion.CURRENT
@@ -73,6 +98,15 @@ public final class RestoreTargetEvaluator {
         }
     }
 
+    /**
+     * Checks whether observed target capabilities satisfy the archived runtime's required tools and versions.
+     * <p>检查已观测目标能力是否满足归档运行规格所需工具及版本。
+     *
+     * @param runtime reviewed language, process and health specification / 已审阅的语言、进程及健康规格
+     * @param server server identity or selected server configuration / 服务器身份或所选服务器配置
+     * @param linux linux / Linux 操作
+     * @return true when checks whether observed target capabilities satisfy the archived runtime's required tools and versions, false otherwise / 已观测目标能力是否满足归档运行规格所需工具及版本时为 true，否则为 false
+     */
     private static boolean runtimeReady(
             DeploymentRuntimeSpecification runtime, ServerCapabilityFacts server, LinuxCapabilityFacts linux) {
         return switch (runtime) {
@@ -97,11 +131,28 @@ public final class RestoreTargetEvaluator {
         };
     }
 
+    /**
+     * Tests the version predicate against the supplied evidence.
+     * <p>根据所提供证据检查版本条件。
+     *
+     * @param linux linux / Linux 操作
+     * @param runtime reviewed language, process and health specification / 已审阅的语言、进程及健康规格
+     * @param version version of the relevant protocol, configuration or runtime / 相应协议、配置或运行时的版本
+     * @return true when version predicate against the supplied evidence, false otherwise / 根据所提供证据检查版本条件时为 true，否则为 false
+     */
     private static boolean version(
             LinuxCapabilityFacts linux, DeploymentRuntimeSpecification runtime, String version) {
         return linux.serviceRuntimeVersions().getOrDefault(runtime.projectType(), Set.of()).contains(version);
     }
 
+    /**
+     * Collects the application's declared endpoint ports for the selected transport.
+     * <p>采集应用针对所选传输协议声明的端点端口。
+     *
+     * @param manifest validated ownership or backup inventory document / 已验证归属或备份资源清单文档
+     * @param transport transport / 传输
+     * @return constructed or resolved set / 构造或解析得到的集合
+     */
     private static Set<Integer> officialPorts(BackupManifest manifest, String transport) {
         Set<Integer> ports = new HashSet<>();
         manifest.inventory().components().forEach(component -> {
@@ -114,6 +165,13 @@ public final class RestoreTargetEvaluator {
         return Set.copyOf(ports);
     }
 
+    /**
+     * Builds the failure outcome while retaining available classified evidence.
+     * <p>构建失败结果并保留可用的分类证据。
+     *
+     * @param diagnostic bounded non-secret detail for diagnostic reporting / 用于诊断报告的有界非秘密详情
+     * @return the failure outcome while retaining available classified evidence / 失败结果并保留可用的分类证据
+     */
     private static BackupException failed(String diagnostic) {
         return BackupException.create(BackupFailureType.RESTORE_PREFLIGHT_FAILED, diagnostic);
     }

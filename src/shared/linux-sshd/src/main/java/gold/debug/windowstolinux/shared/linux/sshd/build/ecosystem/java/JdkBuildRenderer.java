@@ -11,14 +11,33 @@ import gold.debug.windowstolinux.shared.model.project.DeploymentRuntimeSpecifica
 
 import java.util.Set;
 
-/** Renders the dependency-free JDK source architecture. / 渲染无依赖 JDK 源码架构。 */
+/**
+ * Renders the dependency-free JDK source architecture. / 渲染无依赖 JDK 源码架构。
+ */
 public final class JdkBuildRenderer implements DeploymentBuildRenderer {
-    /** Returns the Java source project type. / 返回 Java 源码项目类型。 */
+    /**
+     * Returns the Java source project type. / 返回 Java 源码项目类型。
+     *
+     * @return the Java source project type /  Java 源码项目类型
+     */
     @Override public DeploymentProjectType projectType() { return DeploymentProjectType.JAVA_SOURCE; }
-    /** Returns the JDK build identity. / 返回 JDK 构建身份。 */
+    /**
+     * Returns the JDK build identity. / 返回 JDK 构建身份。
+     *
+     * @return the JDK build identity /  JDK 构建身份
+     */
     @Override public Set<DeploymentBuildToolType> buildTools() { return Set.of(DeploymentBuildToolType.JDK); }
 
-    /** Renders fixed javac and jar commands with deterministic output paths. / 以确定输出路径渲染固定 javac 与 jar 命令。 */
+    /**
+     * Renders fixed javac and jar commands with deterministic output paths. / 以确定输出路径渲染固定 javac 与 jar 命令。
+     *
+     * @param facts typed facts used for deterministic planning / 确定性计划使用的类型化事实
+     * @param runtime reviewed language, process and health specification / 已审阅的语言、进程及健康规格
+     * @param workspace platform-owned work area with enforced path boundaries / 具有路径边界约束的平台工作区
+     * @param limits resource and time bounds enforced during execution / 执行期间实施的资源及时间边界
+     * @return render text / 渲染文本
+     * @throws IllegalArgumentException if an input violates the constraints checked by this contract / 输入违反当前契约检查的约束时
+     */
     @Override
     public String render(DeploymentProjectFacts facts, DeploymentRuntimeSpecification runtime,
                          RemoteWorkspace workspace, BuildLimitConfiguration limits) {

@@ -6,7 +6,7 @@ import gold.debug.windowstolinux.app.service.contract.*;
 import gold.debug.windowstolinux.app.service.contract.definition.*;
 import gold.debug.windowstolinux.app.service.lock.ServerOperationLockRegistry;
 import gold.debug.windowstolinux.app.service.source.SourcePreparationUseCase;
-import gold.debug.windowstolinux.shared.ai.client.AgentProtocolClient;
+import gold.debug.windowstolinux.shared.ai.client.DeploymentAiProtocolClient;
 import gold.debug.windowstolinux.shared.deploy.agent.AgentTaskControl;
 import gold.debug.windowstolinux.shared.deploy.contract.AutomaticDeploymentInteraction;
 import gold.debug.windowstolinux.shared.model.ai.AiPurposeType;
@@ -90,7 +90,7 @@ public final class AutomaticDeploymentTaskService {
             String id=request.taskId();var frozen=new TreeMap<String,String>();
             for(var purpose:AiPurposeType.values())frozen.put(purpose.name(),scope.providers(purpose).toString());
             records.create(id,request.server().id(),AgentAction.digest(AutomaticAgentBoundary.target(request.server())),request.automationMode(),request.approvalMode(),
-                AgentAction.digest(frozen.toString()),AgentProtocolClient.DEPLOYMENT_SKILL,AgentProtocolClient.APPROVAL_SKILL);
+                AgentAction.digest(frozen.toString()),DeploymentAiProtocolClient.DEPLOYMENT_SKILL,DeploymentAiProtocolClient.APPROVAL_SKILL);
             records.event(id,"REMOTE_TARGET","",endpointBinding(request));
             var control=new AgentTaskControl(state->{try{records.state(id,state);}catch(java.sql.SQLException failure){throw new IllegalStateException("cannot persist task state",failure);}
                 progress.accept(LocalizedMessage.of("deployment.agent.state","state",state.name()));});

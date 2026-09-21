@@ -3,10 +3,24 @@ package gold.debug.windowstolinux.app.ui.component;
 import javax.swing.JPanel;
 import java.awt.*;
 
-/** One shared, scalable rounded surface. / 共用的可缩放圆角表面。 */
+/**
+ * One shared, scalable rounded surface. / 共用的可缩放圆角表面。
+ */
 final class RoundedCard extends JPanel {
+    /**
+     * Outline.
+     * <p>轮廓。
+     */
     private final Color outline;
 
+    /**
+     * Binds the supplied dependencies and state for rounded card.
+     * <p>为Rounded卡片绑定传入的依赖及状态。
+     *
+     * @param layout layout / 布局
+     * @param background background / 背景
+     * @param outline outline / 轮廓
+     */
     RoundedCard(LayoutManager layout, Color background, Color outline) {
         super(layout);
         this.outline = outline;
@@ -14,6 +28,12 @@ final class RoundedCard extends JPanel {
         setOpaque(false);
     }
 
+    /**
+     * Paints component.
+     * <p>绘制组件。
+     *
+     * @param graphics graphics / 图形
+     */
     @Override protected void paintComponent(Graphics graphics) {
         Graphics2D g = (Graphics2D) graphics.create();
         try {

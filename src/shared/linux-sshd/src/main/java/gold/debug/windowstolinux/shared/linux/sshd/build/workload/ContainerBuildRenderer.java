@@ -12,13 +12,34 @@ import gold.debug.windowstolinux.shared.model.project.DeploymentRuntimeSpecifica
 
 import java.util.Locale;
 
-/** Renders the fixed Dockerfile container image build. / 渲染固定 Dockerfile 容器镜像构建。 */
+/**
+ * Renders the fixed Dockerfile container image build. / 渲染固定 Dockerfile 容器镜像构建。
+ */
 public final class ContainerBuildRenderer implements DeploymentBuildRenderer {
-    /** Returns the supported deployment project type. / 返回支持的部署项目类型。 */
+    /**
+     * Returns the supported deployment project type. / 返回支持的部署项目类型。
+     *
+     * @return the supported deployment project type / 支持的部署项目类型
+     */
     @Override public DeploymentProjectType projectType() { return DeploymentProjectType.DOCKERFILE_CONTAINER; }
+    /**
+     * Returns the supported build-tool identifiers recognized by this strategy.
+     * <p>返回当前策略识别的受支持构建工具标识。
+     *
+     * @return the supported build-tool identifiers recognized by this strategy / 当前策略识别的受支持构建工具标识
+     */
     @Override public java.util.Set<DeploymentBuildToolType> buildTools() { return java.util.Set.of(DeploymentBuildToolType.CONTAINER_BUILD); }
 
-    /** Renders the controlled output. / 渲染受控输出。 */
+    /**
+     * Renders the controlled output. / 渲染受控输出。
+     *
+     * @param facts typed facts used for deterministic planning / 确定性计划使用的类型化事实
+     * @param runtime reviewed language, process and health specification / 已审阅的语言、进程及健康规格
+     * @param workspace platform-owned work area with enforced path boundaries / 具有路径边界约束的平台工作区
+     * @param limits resource and time bounds enforced during execution / 执行期间实施的资源及时间边界
+     * @return render text / 渲染文本
+     * @throws IllegalArgumentException if an input violates the constraints checked by this contract / 输入违反当前契约检查的约束时
+     */
     @Override public String render(DeploymentProjectFacts facts, DeploymentRuntimeSpecification runtime,
                                    RemoteWorkspace workspace, BuildLimitConfiguration limits) {
         if (!(runtime instanceof DeploymentRuntimeSpecification.Container container)
@@ -47,7 +68,11 @@ public final class ContainerBuildRenderer implements DeploymentBuildRenderer {
         return SafeBuildScriptEnvelope.wrap(facts, workspace, limits, command);
     }
 
-    /** Omits only redundant legacy layer aliases before immutable validation. / 不可变校验前仅去除冗余旧格式层别名。 */
+    /**
+     * Omits only redundant legacy layer aliases before immutable validation. / 不可变校验前仅去除冗余旧格式层别名。
+     *
+     * @return normalize podman export text / 规范化Podman导出文本
+     */
     private static String normalizePodmanExport() {
         return """
                 /usr/bin/python3 -I - "$mutable/candidate-image.tar" <<'WTL_PODMAN_EXPORT'

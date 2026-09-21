@@ -10,16 +10,33 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 
-/** Coordinates an independently handed-off program and SQLite update transaction. / 编排已独立交接的程序及 SQLite 更新事务。 */
+/**
+ * Coordinates an independently handed-off program and SQLite update transaction. / 编排已独立交接的程序及 SQLite 更新事务。
+ */
 public final class DesktopUpdateCoordinator {
+    /**
+     * Network port number in the reviewed endpoint.
+     * <p>已审阅端点中的网络端口号。
+     */
     private final DesktopUpdatePort port;
 
-    /** Creates an updater coordinator over one platform implementation. / 基于一个平台实现创建更新协调器。 */
+    /**
+     * Creates an updater coordinator over one platform implementation. / 基于一个平台实现创建更新协调器。
+     *
+     * @param port network port number in the reviewed endpoint / 已审阅端点中的网络端口号
+     * @throws NullPointerException if a required input is absent / 必需输入缺失时
+     */
     public DesktopUpdateCoordinator(DesktopUpdatePort port) {
         this.port = Objects.requireNonNull(port, "port");
     }
 
-    /** Quiesces the main process and creates a paired backup without replacing any running file. / 停收主进程并创建成对备份，不替换任何运行中文件。 */
+    /**
+     * Quiesces the main process and creates a paired backup without replacing any running file. / 停收主进程并创建成对备份，不替换任何运行中文件。
+     *
+     * @param update update / 更新
+     * @return constructed or resolved desktop update preparation result / 构造或解析得到的Desktop更新准备结果
+     * @throws NullPointerException if a required input is absent / 必需输入缺失时
+     */
     public DesktopUpdatePreparationResult prepare(DesktopUpdateVerification update) {
         Objects.requireNonNull(update, "update");
         OperationIdentity operation = OperationIdentity.create();
@@ -54,7 +71,13 @@ public final class DesktopUpdateCoordinator {
         }
     }
 
-    /** Runs only after an external updater receives the handoff and observes the main process exit. / 仅在外部更新器收到交接并确认主进程退出后执行。 */
+    /**
+     * Runs only after an external updater receives the handoff and observes the main process exit. / 仅在外部更新器收到交接并确认主进程退出后执行。
+     *
+     * @param handoff handoff / 交接
+     * @return constructed or resolved desktop update result / 构造或解析得到的Desktop更新结果
+     * @throws NullPointerException if a required input is absent / 必需输入缺失时
+     */
     public DesktopUpdateResult apply(DesktopUpdateHandoff handoff) {
         Objects.requireNonNull(handoff, "handoff");
         OperationIdentity operation = handoff.operationIdentity();
@@ -110,6 +133,17 @@ public final class DesktopUpdateCoordinator {
         }
     }
 
+    /**
+     * Builds desktop update result from the supplied rollback inputs.
+     * <p>根据所提供回滚输入构建Desktop更新结果。
+     *
+     * @param update update / 更新
+     * @param operation operation / 操作
+     * @param events ordered progress or transaction events / 有序进度或事务事件
+     * @param backup the local backup page state / 本地备份页面状态
+     * @param original original / 原始
+     * @return desktop update result from the supplied rollback inputs / 根据所提供回滚输入构建Desktop更新结果
+     */
     private DesktopUpdateResult rollback(
             DesktopUpdateVerification update,
             OperationIdentity operation,
@@ -140,6 +174,15 @@ public final class DesktopUpdateCoordinator {
         }
     }
 
+    /**
+     * Requires step.
+     * <p>要求步骤。
+     *
+     * @param evidence observations supporting the reported result / 支持所报告结果的观测证据
+     * @param type selected member of the supported type set / 受支持类型集合中的所选项
+     * @param diagnostic bounded non-secret detail for diagnostic reporting / 用于诊断报告的有界非秘密详情
+     * @throws DesktopUpdateException if the desktop update boundary rejects the operation / Desktop更新边界拒绝当前操作时
+     */
     private static void requireStep(
             DesktopUpdatePort.StepEvidence evidence, DesktopUpdateFailureType type, String diagnostic)
             throws DesktopUpdateException {
@@ -148,18 +191,41 @@ public final class DesktopUpdateCoordinator {
         }
     }
 
+    /**
+     * Creates or preserves the module-owned failure for the supplied cause and diagnostic evidence.
+     * <p>为所提供原因及诊断证据创建或保留模块自有失败。
+     *
+     * @param exception original exception being classified or translated / 正在分类或转换的原始异常
+     * @return or preserves the module-owned failure for the supplied cause and diagnostic evidence / 为所提供原因及诊断证据创建或保留模块自有失败
+     */
     private static FailureDescriptor failure(Exception exception) {
         if (exception instanceof DesktopUpdateException update) return update.failure();
         return DesktopUpdateException.create(DesktopUpdateFailureType.TRANSACTION_FAILED,
                 "unexpected desktop update transaction failure", exception).failure();
     }
 
+    /**
+     * Builds a successful outcome from the supplied completion evidence.
+     * <p>根据所提供的完成证据构建成功结果。
+     *
+     * @param state current lifecycle or workflow state / 当前生命周期或工作流状态
+     * @param evidence observations supporting the reported result / 支持所报告结果的观测证据
+     * @return a successful outcome from the supplied completion evidence / 根据所提供的完成证据构建成功结果
+     */
     private static DesktopUpdateEvent success(DesktopUpdateState state, List<String> evidence) {
         String joined = String.join("; ", evidence);
         if (joined.length() > 1024) joined = joined.substring(0, 1024);
         return new DesktopUpdateEvent(state, true, joined);
     }
 
+    /**
+     * Builds a successful outcome from the supplied completion evidence.
+     * <p>根据所提供的完成证据构建成功结果。
+     *
+     * @param state current lifecycle or workflow state / 当前生命周期或工作流状态
+     * @param evidence observations supporting the reported result / 支持所报告结果的观测证据
+     * @return a successful outcome from the supplied completion evidence / 根据所提供的完成证据构建成功结果
+     */
     private static DesktopUpdateEvent success(DesktopUpdateState state, String evidence) {
         return new DesktopUpdateEvent(state, true, evidence);
     }

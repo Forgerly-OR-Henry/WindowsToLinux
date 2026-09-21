@@ -5,9 +5,21 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
 
-/** Non-secret execution binding; it contains no configuration definitions or revision history. / 不含配置定义和历史的非秘密执行绑定。 */
+/**
+ * Non-secret execution binding; it contains no configuration definitions or revision history. / 不含配置定义和历史的非秘密执行绑定。
+ *
+ * @param configurationSha256 the immutable configuration digest / 不可变配置摘要
+ * @param secrets credential references or scoped secret-access service / 凭据引用或限定作用域的秘密访问服务
+ */
 public record RemoteDeploymentInputs(String configurationSha256, List<SecretDigest> secrets) {
-    /** Rejects ambiguous wire bindings before any helper call. / 在调用 helper 前拒绝歧义绑定。 */
+    /**
+     * Rejects ambiguous wire bindings before any helper call. / 在调用 helper 前拒绝歧义绑定。
+     *
+     * @param configurationSha256 the immutable configuration digest / 不可变配置摘要
+     * @param secrets credential references or scoped secret-access service / 凭据引用或限定作用域的秘密访问服务
+     * @throws IllegalArgumentException if an input violates the constraints checked by this contract / 输入违反当前契约检查的约束时
+     * @throws NullPointerException if a required input is absent / 必需输入缺失时
+     */
     public RemoteDeploymentInputs {
         Objects.requireNonNull(configurationSha256, "configurationSha256");
         if (!configurationSha256.matches("[0-9a-f]{64}")) throw new IllegalArgumentException("invalid configuration digest");
@@ -18,9 +30,25 @@ public record RemoteDeploymentInputs(String configurationSha256, List<SecretDige
             throw new IllegalArgumentException("secret bindings must be bounded and unambiguous");
     }
 
-    /** Exact public identity and content metadata of one secret payload. / 单个秘密载荷的精确公开身份与内容元数据。 */
+    /**
+     * Exact public identity and content metadata of one secret payload. / 单个秘密载荷的精确公开身份与内容元数据。
+     *
+     * @param identifier the stable secret identifier / 稳定的秘密标识
+     * @param revision immutable configuration or secret revision number / 不可变配置或秘密修订号
+     * @param sha256 lower-case hexadecimal SHA-256 digest / 小写十六进制 SHA-256 摘要
+     * @param byteCount measured content length in bytes / 实测内容长度，单位为字节
+     */
     public record SecretDigest(String identifier, long revision, String sha256, int byteCount) {
-        /** Validates only execution metadata, without loading a secret. / 仅校验执行元数据，不读取秘密。 */
+        /**
+         * Validates only execution metadata, without loading a secret. / 仅校验执行元数据，不读取秘密。
+         *
+         * @param identifier the stable secret identifier / 稳定的秘密标识
+         * @param revision immutable configuration or secret revision number / 不可变配置或秘密修订号
+         * @param sha256 lower-case hexadecimal SHA-256 digest / 小写十六进制 SHA-256 摘要
+         * @param byteCount measured content length in bytes / 实测内容长度，单位为字节
+         * @throws IllegalArgumentException if an input violates the constraints checked by this contract / 输入违反当前契约检查的约束时
+         * @throws NullPointerException if a required input is absent / 必需输入缺失时
+         */
         public SecretDigest {
             Objects.requireNonNull(identifier, "identifier");
             Objects.requireNonNull(sha256, "sha256");

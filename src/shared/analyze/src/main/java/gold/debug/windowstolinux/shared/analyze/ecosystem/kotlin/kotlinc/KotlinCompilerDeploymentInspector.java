@@ -22,18 +22,53 @@ import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-/** Inspects dependency-free Kotlin/JVM source with explicit compiler metadata. / 使用显式编译器元数据检查无依赖 Kotlin/JVM 源码。 */
+/**
+ * Inspects dependency-free Kotlin/JVM source with explicit compiler metadata. / 使用显式编译器元数据检查无依赖 Kotlin/JVM 源码。
+ */
 public final class KotlinCompilerDeploymentInspector {
+    /**
+     * METADATA.
+     * <p>元数据。
+     */
     private static final String METADATA = "windowstolinux-kotlin.properties";
+    /**
+     * Pattern recognizing PROPERTY.
+     * <p>用于识别属性的匹配模式。
+     */
     private static final Pattern PROPERTY = Pattern.compile("(?m)^([A-Za-z][A-Za-z0-9]*)=([^\\r\\n]+)$");
+    /**
+     * Pattern recognizing MAIN.
+     * <p>用于识别主的匹配模式。
+     */
     private static final Pattern MAIN = Pattern.compile("(?m)^\\s*fun\\s+main\\s*\\(");
+    /**
+     * Pattern recognizing IMPORT.
+     * <p>用于识别导入的匹配模式。
+     */
     private static final Pattern IMPORT = Pattern.compile("(?m)^\\s*import\\s+([A-Za-z_$][A-Za-z0-9_$.]*)");
+    /**
+     * Pattern recognizing PACKAGE.
+     * <p>用于识别软件包的匹配模式。
+     */
     private static final Pattern PACKAGE = Pattern.compile(
             "(?m)^\\s*package\\s+([A-Za-z_$][A-Za-z0-9_$]*(?:\\.[A-Za-z_$][A-Za-z0-9_$]*)*)\\s*$");
+    /**
+     * Pattern recognizing DECLARATION.
+     * <p>用于识别声明的匹配模式。
+     */
     private static final Pattern DECLARATION = Pattern.compile(
             "\\b(?:class|interface|object|fun|val|var|typealias)\\s+([A-Za-z_$][A-Za-z0-9_$]*)");
 
-    /** Inspects one native Kotlin compiler architecture. / 检查一个原生 Kotlin 编译器架构。 */
+    /**
+     * Inspects one native Kotlin compiler architecture. / 检查一个原生 Kotlin 编译器架构。
+     *
+     * @param root root directory defining the filesystem boundary / 定义文件系统边界的根目录
+     * @param source source identity or content read by the operation / 操作读取的源身份或内容
+     * @param languageFacts language facts / 语言事实
+     * @param rejections reasons preventing admission to the next stage / 阻止进入下一阶段的原因
+     * @return constructed or resolved deployment type assessment / 构造或解析得到的部署类型评估
+     * @throws IOException if the required file or stream operation fails / 所需文件或流操作失败时
+     */
     public DeploymentTypeAssessment inspect(
             Path root,
             SourceInspectionFacts source,
@@ -109,6 +144,14 @@ public final class KotlinCompilerDeploymentInspector {
                 DeploymentBuildToolType.KOTLINC, languageFacts, shape, false);
     }
 
+    /**
+     * Extracts literal source properties and records conflicting duplicate declarations.
+     * <p>提取字面源码属性并记录冲突的重复声明。
+     *
+     * @param text bounded text consumed or produced by the current formatter / 当前格式化器消费或生成的有界文本
+     * @param conflicts the observed conflicting facts / 观察到的冲突事实
+     * @return literal source properties and records conflicting duplicate declarations / 字面源码属性并记录冲突的重复声明
+     */
     private static Map<String, String> properties(String text, List<String> conflicts) {
         Map<String, String> result = new java.util.LinkedHashMap<>();
         Matcher matcher = PROPERTY.matcher(text);
@@ -121,10 +164,24 @@ public final class KotlinCompilerDeploymentInspector {
         return Map.copyOf(result);
     }
 
+    /**
+     * Accepts the supported numeric compiler-version syntax and returns null for invalid input.
+     * <p>接受受支持的数字编译器版本语法，并对无效输入返回 null。
+     *
+     * @param value candidate content accepted or rejected by this contract / 由当前契约接收或拒绝的候选内容
+     * @return version text / 版本文本
+     */
     private static String version(String value) {
         return value != null && value.matches("[0-9]+(?:\\.[0-9]+){1,2}(?:[-+][A-Za-z0-9._-]+)?") ? value : null;
     }
 
+    /**
+     * Validates a relative path against the enclosing resource boundary.
+     * <p>按所属资源边界验证相对路径。
+     *
+     * @param value candidate content accepted or rejected by this contract / 由当前契约接收或拒绝的候选内容
+     * @return relative text; null when no matching value is available / 相对文本；没有匹配值时为 null
+     */
     private static String relative(String value) {
         if (value == null) return null;
         value = value.replace('\\', '/');
@@ -132,10 +189,25 @@ public final class KotlinCompilerDeploymentInspector {
                 && !value.contains("//") ? value : null;
     }
 
+    /**
+     * Returns a syntactically valid Java qualified name, or null otherwise.
+     * <p>返回语法有效的 Java 限定名，否则返回 null。
+     *
+     * @param value candidate content accepted or rejected by this contract / 由当前契约接收或拒绝的候选内容
+     * @return a syntactically valid Java qualified name, or null otherwise / 语法有效的 Java 限定名，否则返回 null
+     */
     private static String javaName(String value) {
         return value != null && value.matches("[A-Za-z_$][A-Za-z0-9_$]*(?:\\.[A-Za-z_$][A-Za-z0-9_$]*)*") ? value : null;
     }
 
+    /**
+     * Derives the Kotlin file's generated JVM main-class name from its file stem and package declaration.
+     * <p>根据 Kotlin 文件名主体及包声明派生生成的 JVM 主类名。
+     *
+     * @param relative relative / 相对
+     * @param source source identity or content read by the operation / 操作读取的源身份或内容
+     * @return generated main class text; null when no matching value is available / 已生成主类文本；没有匹配值时为 null
+     */
     private static String generatedMainClass(String relative, String source) {
         String file = Path.of(relative).getFileName().toString();
         String stem = file.substring(0, file.length() - ".kt".length());

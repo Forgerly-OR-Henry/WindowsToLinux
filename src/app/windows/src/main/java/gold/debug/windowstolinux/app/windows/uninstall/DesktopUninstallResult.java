@@ -7,7 +7,16 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 
-/** Desktop uninstall result with exact failed residual items. / 带精确失败残留项目的桌面卸载结果。 */
+/**
+ * Desktop uninstall result with exact failed residual items. / 带精确失败残留项目的桌面卸载结果。
+ *
+ * @param operationIdentity correlation identity of the enclosing user operation / 外层用户操作的关联标识
+ * @param status classification of the current operation result / 当前操作结果的分类
+ * @param events ordered progress or transaction events / 有序进度或事务事件
+ * @param residualItems residual items / 残留项目集合
+ * @param intentionallyRetainedItems intentionally retained items / 有意已保留项目集合
+ * @param failure structured failure occurrence retained for safe reporting / 保留用于安全报告的结构化失败实例
+ */
 public record DesktopUninstallResult(
         OperationIdentity operationIdentity,
         DesktopUninstallStatus status,
@@ -16,7 +25,18 @@ public record DesktopUninstallResult(
         List<String> intentionallyRetainedItems,
         Optional<FailureDescriptor> failure
 ) {
-    /** Validates status, failure and residual consistency. / 校验终态、失败及残留一致性。 */
+    /**
+     * Validates status, failure and residual consistency. / 校验终态、失败及残留一致性。
+     *
+     * @param operationIdentity correlation identity of the enclosing user operation / 外层用户操作的关联标识
+     * @param status classification of the current operation result / 当前操作结果的分类
+     * @param events ordered progress or transaction events / 有序进度或事务事件
+     * @param residualItems residual items / 残留项目集合
+     * @param intentionallyRetainedItems intentionally retained items / 有意已保留项目集合
+     * @param failure structured failure occurrence retained for safe reporting / 保留用于安全报告的结构化失败实例
+     * @throws IllegalArgumentException if an input violates the constraints checked by this contract / 输入违反当前契约检查的约束时
+     * @throws NullPointerException if a required input is absent / 必需输入缺失时
+     */
     public DesktopUninstallResult {
         operationIdentity = Objects.requireNonNull(operationIdentity, "operationIdentity");
         status = Objects.requireNonNull(status, "status");

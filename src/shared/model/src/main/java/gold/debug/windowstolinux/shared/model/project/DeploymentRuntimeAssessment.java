@@ -13,7 +13,7 @@ import java.util.Optional;
 /**
  * Source-backed, reviewable runtime values inferred without running project content.
  *
- * <p>在不运行项目内容的情况下推导出的、可审阅的源码依据运行时值。
+ *  <p>在不运行项目内容的情况下推导出的、可审阅的源码依据运行时值。
  *
  * @param projectType the analyzed project type / 已分析的项目类型
  * @param values the type-specific suggested scalar values / 类型专属建议标量值
@@ -32,7 +32,19 @@ public record DeploymentRuntimeAssessment(
         List<AnalysisEvidence> evidence,
         List<LocalizedMessage> requiredUserInput
 ) {
-    /** Creates a source-backed runtime suggestion. / 创建源码依据的运行时建议。 */
+    /**
+     * Creates a source-backed runtime suggestion. / 创建源码依据的运行时建议。
+     *
+     * @param projectType supported project deployment category / 受支持的项目部署类别
+     * @param values ordered contents supplied to the current conversion or validation / 提供给当前转换或校验的有序内容
+     * @param suggestedHealthPort the observed port suggestion when exactly one safe value exists / 恰有一个安全值时观察到的端口建议
+     * @param suggestedContainerPorts the reviewed same-port container publication suggestions / 经审阅的同端口容器发布建议
+     * @param suggestedManagedVolumes the source-declared managed-volume suggestions / 源码声明的受管卷建议
+     * @param evidence observations supporting the reported result / 支持所报告结果的观测证据
+     * @param requiredUserInput unresolved values that remain an explicit human decision / 仍需人工明确决定的未解析值
+     * @throws IllegalArgumentException if an input violates the constraints checked by this contract / 输入违反当前契约检查的约束时
+     * @throws NullPointerException if a required input is absent / 必需输入缺失时
+     */
     public DeploymentRuntimeAssessment {
         projectType = Objects.requireNonNull(projectType, "projectType");
         DeploymentProjectType selectedType = projectType;
@@ -63,53 +75,106 @@ public record DeploymentRuntimeAssessment(
         requiredUserInput = List.copyOf(Objects.requireNonNull(requiredUserInput, "requiredUserInput"));
     }
 
-    /** Returns one suggested scalar value when it was unambiguously observed. / 返回存在唯一观察结果时的一项建议标量值。 */
+    /**
+     * Returns one suggested scalar value when it was unambiguously observed. / 返回存在唯一观察结果时的一项建议标量值。
+     *
+     * @param input source content consumed by this operation / 当前操作消费的源内容
+     * @return matching result, or empty when no admitted value exists / 匹配结果；不存在已准入内容时为空
+     * @throws NullPointerException if a required input is absent / 必需输入缺失时
+     */
     public Optional<String> value(RuntimeInputType input) {
         return Optional.ofNullable(values.get(Objects.requireNonNull(input, "input")));
     }
 
-    /** Creates a mutable builder map scoped to the selected type. / 创建限定于选定类型的可变构建映射。 */
+    /**
+     * Creates a mutable builder map scoped to the selected type. / 创建限定于选定类型的可变构建映射。
+     *
+     * @param projectType supported project deployment category / 受支持的项目部署类别
+     * @return a mutable builder map scoped to the selected type / 限定于选定类型的可变构建映射
+     * @throws NullPointerException if a required input is absent / 必需输入缺失时
+     */
     public static Map<RuntimeInputType, String> valuesFor(DeploymentProjectType projectType) {
         Objects.requireNonNull(projectType, "projectType");
         return new EnumMap<>(RuntimeInputType.class);
     }
 
-    /** Stable scalar input names exposed by a typed source inference. / 类型化源码推导公开的稳定标量输入名称。 */
+    /**
+     * Stable scalar input names exposed by a typed source inference. / 类型化源码推导公开的稳定标量输入名称。
+     */
     public enum RuntimeInputType {
-        /** Java JAR relative path. / Java JAR 相对路径。 */
+        /**
+         * Java JAR relative path. / Java JAR 相对路径。
+         */
         JAVA_JAR_PATH,
-        /** Java source root relative path. / Java 源码根相对路径。 */
+        /**
+         * Java source root relative path. / Java 源码根相对路径。
+         */
         JAVA_SOURCE_ROOT,
-        /** Java binary main class. / Java 二进制主类。 */
+        /**
+         * Java binary main class. / Java 二进制主类。
+         */
         JAVA_MAIN_CLASS,
-        /** Java major version. / Java 主版本。 */
+        /**
+         * Java major version. / Java 主版本。
+         */
         JAVA_VERSION,
-        /** Kotlin JVM bytecode target, separate from its compiler. / 与编译器版本分离的 Kotlin JVM 字节码目标。 */
+        /**
+         * Kotlin JVM bytecode target, separate from its compiler. / 与编译器版本分离的 Kotlin JVM 字节码目标。
+         */
         KOTLIN_JVM_TARGET,
-        /** Node.js major version. / Node.js 主版本。 */
+        /**
+         * Node.js major version. / Node.js 主版本。
+         */
         NODE_MAJOR_VERSION,
-        /** Python minor version. / Python 次版本。 */
+        /**
+         * Python minor version. / Python 次版本。
+         */
         PYTHON_VERSION,
-        /** Python module entrypoint. / Python 模块入口。 */
+        /**
+         * Python module entrypoint. / Python 模块入口。
+         */
         PYTHON_ENTRYPOINT,
-        /** Static-site generated output directory. / 静态站点生成输出目录。 */
+        /**
+         * Static-site generated output directory. / 静态站点生成输出目录。
+         */
         STATIC_OUTPUT_DIRECTORY,
-        /** Ecosystem service language/toolchain version. / 生态服务语言或工具链版本。 */
+        /**
+         * Ecosystem service language/toolchain version. / 生态服务语言或工具链版本。
+         */
         SERVICE_VERSION,
-        /** Ecosystem service artifact or package name. / 生态服务产物或包名。 */
+        /**
+         * Ecosystem service artifact or package name. / 生态服务产物或包名。
+         */
         SERVICE_ARTIFACT,
-        /** Ecosystem service bounded entrypoint. / 生态服务有界入口。 */
+        /**
+         * Ecosystem service bounded entrypoint. / 生态服务有界入口。
+         */
         SERVICE_ENTRYPOINT,
-        /** Ecosystem service fixed port. / 生态服务固定端口。 */
+        /**
+         * Ecosystem service fixed port. / 生态服务固定端口。
+         */
         SERVICE_PORT,
-        /** CMake configure preset. / CMake 配置 preset。 */
+        /**
+         * CMake configure preset. / CMake 配置 preset。
+         */
         CMAKE_PRESET,
-        /** CMake executable target. / CMake 可执行目标。 */
+        /**
+         * CMake executable target. / CMake 可执行目标。
+         */
         CMAKE_TARGET,
-        /** CMake artifact name. / CMake 制品名称。 */
+        /**
+         * CMake artifact name. / CMake 制品名称。
+         */
         CMAKE_ARTIFACT
     }
 
+    /**
+     * Returns the runtime input kinds supported by the selected project type.
+     * <p>返回所选项目类型支持的运行输入种类。
+     *
+     * @param projectType supported project deployment category / 受支持的项目部署类别
+     * @return the runtime input kinds supported by the selected project type / 所选项目类型支持的运行输入种类
+     */
     private static EnumSet<RuntimeInputType> allowedInputs(DeploymentProjectType projectType) {
         return switch (projectType) {
             case SPRING_BOOT -> EnumSet.of(RuntimeInputType.JAVA_VERSION);
@@ -133,6 +198,13 @@ public record DeploymentRuntimeAssessment(
         };
     }
 
+    /**
+     * Requires network port number in the reviewed endpoint and rejects inputs outside the declared constraints.
+     * <p>要求已审阅端点中的网络端口号并拒绝超出已声明约束的输入。
+     *
+     * @param port network port number in the reviewed endpoint / 已审阅端点中的网络端口号
+     * @throws IllegalArgumentException if an input violates the constraints checked by this contract / 输入违反当前契约检查的约束时
+     */
     private static void requirePort(int port) {
         if (port < 1 || port > 65535) {
             throw new IllegalArgumentException("suggested ports must be in the TCP/UDP port range");

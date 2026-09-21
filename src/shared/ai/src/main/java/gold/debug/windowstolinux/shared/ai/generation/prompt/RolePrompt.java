@@ -5,11 +5,25 @@ import gold.debug.windowstolinux.shared.ai.collaboration.role.AiRoleContext;
 
 import java.util.Objects;
 
-/** Builds a fixed role-specific request whose response must match one exact JSON schema. / 构建响应必须匹配唯一 JSON 模式的固定角色请求。 */
+/**
+ * Builds a fixed role-specific request whose response must match one exact JSON schema. / 构建响应必须匹配唯一 JSON 模式的固定角色请求。
+ */
 public final class RolePrompt {
+    /**
+     * Prevents instantiation of this static contract helper.
+     * <p>防止实例化当前静态契约辅助类。
+     */
     private RolePrompt() { }
 
-    /** Builds the request after enforcing the role-context boundary. / 强制角色上下文边界后构建请求。 */
+    /**
+     * Builds the request after enforcing the role-context boundary. / 强制角色上下文边界后构建请求。
+     *
+     * @param binding binding / 绑定
+     * @param context facts and dependencies scoped to the current operation / 限定于当前操作的事实及依赖
+     * @return the request after enforcing the role-context boundary / 强制角色上下文边界后构建请求
+     * @throws IllegalArgumentException if an input violates the constraints checked by this contract / 输入违反当前契约检查的约束时
+     * @throws NullPointerException if a required input is absent / 必需输入缺失时
+     */
     public static String requestBody(AiRoleBinding binding, AiRoleContext context) {
         Objects.requireNonNull(binding, "binding");
         Objects.requireNonNull(context, "context");
@@ -30,6 +44,13 @@ public final class RolePrompt {
                 .formatted(escape(binding.model()), escape(system), escape(context.redactedSummary()));
     }
 
+    /**
+     * Escapes backslashes, quotes and line separators for the embedded JSON string.
+     * <p>为嵌入 JSON 字符串转义反斜杠、引号及换行符。
+     *
+     * @param value candidate content accepted or rejected by this contract / 由当前契约接收或拒绝的候选内容
+     * @return escape text / 转义文本
+     */
     private static String escape(String value) {
         return value.replace("\\", "\\\\").replace("\"", "\\\"")
                 .replace("\r", "\\r").replace("\n", "\\n");

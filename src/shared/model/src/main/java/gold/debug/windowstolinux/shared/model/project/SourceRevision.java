@@ -8,7 +8,7 @@ import java.util.Optional;
 /**
  * Immutable source identity used to bind analysis, target-host build, and deployment records.
  *
- * <p>用于绑定分析、目标机构建和部署记录的不可变源码身份。
+ *  <p>用于绑定分析、目标机构建和部署记录的不可变源码身份。
  *
  * @param sourceSha256 the deterministic source archive digest / 确定性源码归档摘要
  * @param commit the optional pinned Git commit / 可选的固定 Git Commit
@@ -18,9 +18,15 @@ import java.util.Optional;
 public record SourceRevision(String sourceSha256, Optional<String> commit, Optional<URI> remote,
                              Map<String, String> submoduleCommits) {
     /**
-     * Creates a {@code SourceRevision} instance.
+     * Validates and binds the inputs required by source revision.
+     * <p>校验并绑定源码修订所需输入。
      *
-     * <p>创建 {@code SourceRevision} 实例。
+     * @param sourceSha256 SHA-256 identity of the frozen source snapshot / 已冻结源码快照的 SHA-256 身份
+     * @param commit the optional pinned Git commit / 可选的固定 Git Commit
+     * @param remote the credential-free Git remote when the source was checked out from Git / 源码来自 Git 检出时不含凭据的 Git 远端
+     * @param submoduleCommits the pinned submodule commits / 固定的子模块 Commit
+     * @throws IllegalArgumentException if an input violates the constraints checked by this contract / 输入违反当前契约检查的约束时
+     * @throws NullPointerException if a required input is absent / 必需输入缺失时
      */
     public SourceRevision {
         sourceSha256 = requireSha256(sourceSha256, "sourceSha256");
@@ -41,11 +47,27 @@ public record SourceRevision(String sourceSha256, Optional<String> commit, Optio
         }
     }
 
-    /** Creates a local or legacy source revision without a Git provenance record. / 创建没有 Git 溯源记录的本地或旧版源码修订。 */
+    /**
+     * Creates a local or legacy source revision without a Git provenance record. / 创建没有 Git 溯源记录的本地或旧版源码修订。
+     *
+     * @param sourceSha256 SHA-256 identity of the frozen source snapshot / 已冻结源码快照的 SHA-256 身份
+     * @param commit the optional pinned Git commit / 可选的固定 Git Commit
+     * @param submoduleCommits the pinned submodule commits / 固定的子模块 Commit
+     */
     public SourceRevision(String sourceSha256, Optional<String> commit, Map<String, String> submoduleCommits) {
         this(sourceSha256, commit, Optional.empty(), submoduleCommits);
     }
 
+    /**
+     * Validates and returns lower-case hexadecimal SHA-256 digest and rejects inputs outside the declared constraints.
+     * <p>校验并返回小写十六进制 SHA-256 摘要并拒绝超出已声明约束的输入。
+     *
+     * @param value candidate content accepted or rejected by this contract / 由当前契约接收或拒绝的候选内容
+     * @param name human-readable name or diagnostic field label / 可读名称或诊断字段标签
+     * @return require sha 256 text / 要求SHA256文本
+     * @throws IllegalArgumentException if an input violates the constraints checked by this contract / 输入违反当前契约检查的约束时
+     * @throws NullPointerException if a required input is absent / 必需输入缺失时
+     */
     private static String requireSha256(String value, String name) {
         value = Objects.requireNonNull(value, name).trim().toLowerCase(java.util.Locale.ROOT);
         if (!value.matches("[0-9a-f]{64}")) {
@@ -54,6 +76,16 @@ public record SourceRevision(String sourceSha256, Optional<String> commit, Optio
         return value;
     }
 
+    /**
+     * Validates and returns full Git object identifier in hexadecimal SHA-1 form and rejects inputs outside the declared constraints.
+     * <p>校验并返回十六进制 SHA-1 形式的完整 Git 对象标识并拒绝超出已声明约束的输入。
+     *
+     * @param value candidate content accepted or rejected by this contract / 由当前契约接收或拒绝的候选内容
+     * @param name human-readable name or diagnostic field label / 可读名称或诊断字段标签
+     * @return require sha 1 text / 要求SHA1文本
+     * @throws IllegalArgumentException if an input violates the constraints checked by this contract / 输入违反当前契约检查的约束时
+     * @throws NullPointerException if a required input is absent / 必需输入缺失时
+     */
     private static String requireSha1(String value, String name) {
         value = Objects.requireNonNull(value, name).trim().toLowerCase(java.util.Locale.ROOT);
         if (!value.matches("[0-9a-f]{40}")) {
@@ -62,6 +94,15 @@ public record SourceRevision(String sourceSha256, Optional<String> commit, Optio
         return value;
     }
 
+    /**
+     * Validates and returns credential free remote and rejects inputs outside the declared constraints.
+     * <p>校验并返回凭据剩余远端并拒绝超出已声明约束的输入。
+     *
+     * @param value candidate content accepted or rejected by this contract / 由当前契约接收或拒绝的候选内容
+     * @return constructed or resolved URI / 构造或解析得到的URI
+     * @throws IllegalArgumentException if an input violates the constraints checked by this contract / 输入违反当前契约检查的约束时
+     * @throws NullPointerException if a required input is absent / 必需输入缺失时
+     */
     private static URI requireCredentialFreeRemote(URI value) {
         URI normalized = Objects.requireNonNull(value, "remote").normalize();
         String scheme = normalized.getScheme();

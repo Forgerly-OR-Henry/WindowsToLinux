@@ -174,8 +174,8 @@ class BeginnerDesktopLayoutTest {
                     assertEquals(source.getBounds().getCenterY(), direction.getBounds().getCenterY(), 1);
                     assertTrue(direction.getWidth() >= direction.getIcon().getIconWidth());
                     render(root, "deployment-" + size[0] + ".png");
-                    var sourceCard = descendants((Container) source).filter(gold.debug.windowstolinux.app.ui.deployment.single.DeploymentSourceCard.class::isInstance)
-                            .map(gold.debug.windowstolinux.app.ui.deployment.single.DeploymentSourceCard.class::cast).findFirst().orElseThrow();
+                    var sourceCard = descendants((Container) source).filter(gold.debug.windowstolinux.app.ui.deployment.automatic.DeploymentSourceCard.class::isInstance)
+                            .map(gold.debug.windowstolinux.app.ui.deployment.automatic.DeploymentSourceCard.class::cast).findFirst().orElseThrow();
                     sourceCard.restore("https://github.com/MHSanaei/3x-ui.git", true); layout(root);
                     render(root, "deployment-selected-" + size[0] + ".png");
                     sourceCard.restore("", false); layout(root);

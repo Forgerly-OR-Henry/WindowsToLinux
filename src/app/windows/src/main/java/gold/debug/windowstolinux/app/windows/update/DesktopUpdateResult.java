@@ -7,7 +7,16 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 
-/** Terminal update result with paired program/database recovery evidence. / 带程序及数据库成对恢复证据的更新终态。 */
+/**
+ * Terminal update result with paired program/database recovery evidence. / 带程序及数据库成对恢复证据的更新终态。
+ *
+ * @param operationIdentity correlation identity of the enclosing user operation / 外层用户操作的关联标识
+ * @param status classification of the current operation result / 当前操作结果的分类
+ * @param requestedVersion requested version / 已请求版本
+ * @param events ordered progress or transaction events / 有序进度或事务事件
+ * @param rollbackBackupToken rollback backup token / 回滚备份令牌
+ * @param failure structured failure occurrence retained for safe reporting / 保留用于安全报告的结构化失败实例
+ */
 public record DesktopUpdateResult(
         OperationIdentity operationIdentity,
         DesktopUpdateStatus status,
@@ -16,7 +25,18 @@ public record DesktopUpdateResult(
         Optional<String> rollbackBackupToken,
         Optional<FailureDescriptor> failure
 ) {
-    /** Validates status-specific evidence. / 校验终态对应证据。 */
+    /**
+     * Validates status-specific evidence. / 校验终态对应证据。
+     *
+     * @param operationIdentity correlation identity of the enclosing user operation / 外层用户操作的关联标识
+     * @param status classification of the current operation result / 当前操作结果的分类
+     * @param requestedVersion requested version / 已请求版本
+     * @param events ordered progress or transaction events / 有序进度或事务事件
+     * @param rollbackBackupToken rollback backup token / 回滚备份令牌
+     * @param failure structured failure occurrence retained for safe reporting / 保留用于安全报告的结构化失败实例
+     * @throws IllegalArgumentException if an input violates the constraints checked by this contract / 输入违反当前契约检查的约束时
+     * @throws NullPointerException if a required input is absent / 必需输入缺失时
+     */
     public DesktopUpdateResult {
         operationIdentity = Objects.requireNonNull(operationIdentity, "operationIdentity");
         status = Objects.requireNonNull(status, "status");

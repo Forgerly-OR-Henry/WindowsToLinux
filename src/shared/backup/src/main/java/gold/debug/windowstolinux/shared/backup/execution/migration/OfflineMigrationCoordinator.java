@@ -14,17 +14,38 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 
-/** Prepares an offline migration through final verification and stops before manual traffic switching. / 将离线迁移准备到最终验证并在人工切流前停止。 */
+/**
+ * Prepares an offline migration through final verification and stops before manual traffic switching. / 将离线迁移准备到最终验证并在人工切流前停止。
+ */
 public final class OfflineMigrationCoordinator {
+    /**
+     * TARGET SPACE MULTIPLIER.
+     * <p>目标SPACEMULTIPLIER。
+     */
     private static final long TARGET_SPACE_MULTIPLIER = 2;
+    /**
+     * Network port number in the reviewed endpoint.
+     * <p>已审阅端点中的网络端口号。
+     */
     private final OfflineMigrationPort port;
 
-    /** Creates a coordinator over one bounded platform port. / 基于一个受限平台端口创建协调器。 */
+    /**
+     * Creates a coordinator over one bounded platform port. / 基于一个受限平台端口创建协调器。
+     *
+     * @param port network port number in the reviewed endpoint / 已审阅端点中的网络端口号
+     * @throws NullPointerException if a required input is absent / 必需输入缺失时
+     */
     public OfflineMigrationCoordinator(OfflineMigrationPort port) {
         this.port = Objects.requireNonNull(port, "port");
     }
 
-    /** Executes deterministic preflight, synchronization, quiesce and target verification. / 执行确定性的预检、同步、停写及目标验证。 */
+    /**
+     * Executes deterministic preflight, synchronization, quiesce and target verification. / 执行确定性的预检、同步、停写及目标验证。
+     *
+     * @param request reviewed inputs for the requested operation / 所请求操作的已审阅输入
+     * @return constructed or resolved offline migration result / 构造或解析得到的离线迁移结果
+     * @throws NullPointerException if a required input is absent / 必需输入缺失时
+     */
     public OfflineMigrationResult prepare(OfflineMigrationRequest request) {
         Objects.requireNonNull(request, "request");
         OperationIdentity operation = OperationIdentity.create();
@@ -93,6 +114,19 @@ public final class OfflineMigrationCoordinator {
         }
     }
 
+    /**
+     * Restores the source-side running state after migration failure and records whether recovery is verified or requires manual intervention.
+     * <p>迁移失败后恢复源端运行状态，并记录恢复已验证还是需要人工干预。
+     *
+     * @param request reviewed inputs for the requested operation / 所请求操作的已审阅输入
+     * @param operation operation / 操作
+     * @param events ordered progress or transaction events / 有序进度或事务事件
+     * @param quiesced quiesced / 已停写
+     * @param targetMutationAttempted target mutation attempted / 目标变更已尝试
+     * @param sourceMutationAttempted source mutation attempted / 源码变更已尝试
+     * @param original original / 原始
+     * @return constructed or resolved offline migration result / 构造或解析得到的离线迁移结果
+     */
     private OfflineMigrationResult recover(
             OfflineMigrationRequest request,
             OperationIdentity operation,
@@ -163,6 +197,16 @@ public final class OfflineMigrationCoordinator {
         return failed(operation, OfflineMigrationStatus.MANUAL_RECOVERY_REQUIRED, events, failed);
     }
 
+    /**
+     * Builds the failure outcome while retaining available classified evidence.
+     * <p>构建失败结果并保留可用的分类证据。
+     *
+     * @param operation operation / 操作
+     * @param status classification of the current operation result / 当前操作结果的分类
+     * @param events ordered progress or transaction events / 有序进度或事务事件
+     * @param failure structured failure occurrence retained for safe reporting / 保留用于安全报告的结构化失败实例
+     * @return the failure outcome while retaining available classified evidence / 失败结果并保留可用的分类证据
+     */
     private static OfflineMigrationResult failed(
             OperationIdentity operation,
             OfflineMigrationStatus status,
@@ -173,6 +217,16 @@ public final class OfflineMigrationCoordinator {
                 Optional.empty(), Optional.empty(), Optional.of(failure));
     }
 
+    /**
+     * Requires sync.
+     * <p>要求同步。
+     *
+     * @param sync sync / 同步
+     * @param request reviewed inputs for the requested operation / 所请求操作的已审阅输入
+     * @param writesStopped writes stopped / 写入集合已停止
+     * @param diagnostic bounded non-secret detail for diagnostic reporting / 用于诊断报告的有界非秘密详情
+     * @throws BackupException if backup validation or the controlled backup operation fails / 备份校验或受控备份操作失败时
+     */
     private static void requireSync(
             OfflineMigrationPort.SyncEvidence sync,
             OfflineMigrationRequest request,
@@ -184,6 +238,13 @@ public final class OfflineMigrationCoordinator {
         }
     }
 
+    /**
+     * Creates or preserves the module-owned failure for the supplied cause and diagnostic evidence.
+     * <p>为所提供原因及诊断证据创建或保留模块自有失败。
+     *
+     * @param exception original exception being classified or translated / 正在分类或转换的原始异常
+     * @return or preserves the module-owned failure for the supplied cause and diagnostic evidence / 为所提供原因及诊断证据创建或保留模块自有失败
+     */
     private static FailureDescriptor failure(Exception exception) {
         if (exception instanceof BackupException backup) return backup.failure();
         BackupFailureType type = exception instanceof ArithmeticException
@@ -191,6 +252,14 @@ public final class OfflineMigrationCoordinator {
         return BackupException.create(type, "unexpected offline migration failure", exception).failure();
     }
 
+    /**
+     * Builds a successful outcome from the supplied completion evidence.
+     * <p>根据所提供的完成证据构建成功结果。
+     *
+     * @param state current lifecycle or workflow state / 当前生命周期或工作流状态
+     * @param evidence observations supporting the reported result / 支持所报告结果的观测证据
+     * @return a successful outcome from the supplied completion evidence / 根据所提供的完成证据构建成功结果
+     */
     private static OfflineMigrationEvent success(OfflineMigrationState state, List<String> evidence) {
         String joined = String.join("; ", evidence);
         if (joined.length() > 1024) joined = joined.substring(0, 1024);

@@ -6,13 +6,40 @@ import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 
-/** One client-side boundary for publication and restoration. / 发布与恢复共用的客户端路径边界。 */
+/**
+ * One client-side boundary for publication and restoration. / 发布与恢复共用的客户端路径边界。
+ */
 public final class ManagedStoragePlan {
+    /**
+     * Prevents instantiation of this static contract helper.
+     * <p>防止实例化当前静态契约辅助类。
+     */
     private ManagedStoragePlan() { }
 
+    /**
+     * Describes one reviewed resource in the managed storage preparation plan.
+     * <p>描述受管存储准备计划中的一个已审阅资源。
+     *
+     * @param id stable identifier within the owning registry / 所属登记表内的稳定标识
+     * @param kind selected member of the supported kind set / 受支持种类集合中的所选项
+     * @param location the remote URI / 远端 URI
+     * @param accessPath access path / 访问路径
+     * @param physicalPath physical path / physical路径
+     * @param readOnly read only / 读取仅
+     */
     public record Resource(String id, ManagedStorageLocation.StorageResourceType kind,
                            ManagedStorageLocation location, String accessPath, String physicalPath, boolean readOnly) { }
 
+    /**
+     * Resolves reviewed storage declarations into physical managed locations while rejecting overlaps and unsafe access mappings.
+     * <p>将已审阅存储声明解析为物理受管位置，并拒绝重叠及不安全访问映射。
+     *
+     * @param applicationId managed application identifier / 受管应用标识
+     * @param bindings bindings / 绑定集合
+     * @param runtime reviewed language, process and health specification / 已审阅的语言、进程及健康规格
+     * @return reviewed storage declarations into physical managed locations while rejecting overlaps and unsafe access mappings / 将已审阅存储声明解析为物理受管位置，并拒绝重叠及不安全访问映射
+     * @throws IllegalArgumentException if an input violates the constraints checked by this contract / 输入违反当前契约检查的约束时
+     */
     public static List<Resource> resolve(String applicationId, ManagedComponentResourceBindings bindings,
                                          DeploymentRuntimeSpecification runtime) {
         boolean container = runtime instanceof DeploymentRuntimeSpecification.Container;

@@ -7,13 +7,19 @@ import java.util.Objects;
 /**
  * A selected Node package-manager architecture and its lockfile.
  *
- * <p>选中的 Node 包管理器架构及其锁文件。
+ *  <p>选中的 Node 包管理器架构及其锁文件。
  *
  * @param buildTool fixed build tool / 固定构建工具
  * @param lockFile fixed lockfile name / 固定锁文件名
  */
 public record NodeBuildArchitectureFacts(DeploymentBuildToolType buildTool, String lockFile) {
-    /** Validates the fixed architecture facts. / 验证固定架构事实。 */
+    /**
+     * Validates the fixed architecture facts. / 验证固定架构事实。
+     *
+     * @param buildTool fixed build tool / 固定构建工具
+     * @param lockFile fixed lockfile name / 固定锁文件名
+     * @throws NullPointerException if a required input is absent / 必需输入缺失时
+     */
     public NodeBuildArchitectureFacts {
         buildTool = Objects.requireNonNull(buildTool, "buildTool");
         lockFile = Objects.requireNonNull(lockFile, "lockFile");

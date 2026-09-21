@@ -6,21 +6,20 @@ import java.util.Objects;
 /**
  * Fixed, server-side paths derived only from a validated application ID and source digest.
  *
- * <p>仅根据已验证应用 ID 和源码摘要推导的固定服务端路径。
+ *  <p>仅根据已验证应用 ID 和源码摘要推导的固定服务端路径。
  *
- * @param applicationId the {@code applicationId} value / {@code applicationId} 值
- * @param sourceSha256 the {@code sourceSha256} value / {@code sourceSha256} 值
+ * @param applicationId managed application identifier / 受管应用标识
+ * @param sourceSha256 SHA-256 identity of the frozen source snapshot / 已冻结源码快照的 SHA-256 身份
  */
 public record RemoteWorkspace(String applicationId, String sourceSha256) {
     /**
-     * Creates a {@code RemoteWorkspace} instance.
+     * Validates and binds the inputs required by remote workspace.
+     * <p>校验并绑定远端工作区所需输入。
      *
-     * <p>创建 {@code RemoteWorkspace} 实例。
-     *
-     * @param applicationId the {@code applicationId} value / {@code applicationId} 值
-     * @param sourceSha256 the {@code sourceSha256} value / {@code sourceSha256} 值
+     * @param applicationId managed application identifier / 受管应用标识
+     * @param sourceSha256 SHA-256 identity of the frozen source snapshot / 已冻结源码快照的 SHA-256 身份
      * @throws IllegalArgumentException if an argument violates the required constraints / 参数违反必要约束时
-     * @throws NullPointerException if a required argument is {@code null} / 必要参数为 {@code null} 时
+     * @throws NullPointerException if a required input is absent / 必需输入缺失时
      */
     public RemoteWorkspace {
         applicationId = Objects.requireNonNull(applicationId, "applicationId").toLowerCase(Locale.ROOT);
@@ -36,7 +35,7 @@ public record RemoteWorkspace(String applicationId, String sourceSha256) {
     /**
      * Checks the condition represented by {@code candidateId}.
      *
-     * <p>检查 {@code candidateId} 表示的条件。
+     *  <p>检查 {@code candidateId} 表示的条件。
      *
      * @return the operation result / 操作结果
      */
@@ -47,7 +46,7 @@ public record RemoteWorkspace(String applicationId, String sourceSha256) {
     /**
      * Checks the condition represented by {@code candidateRoot}.
      *
-     * <p>检查 {@code candidateRoot} 表示的条件。
+     *  <p>检查 {@code candidateRoot} 表示的条件。
      *
      * @return the operation result / 操作结果
      */

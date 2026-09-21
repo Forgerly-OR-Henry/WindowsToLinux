@@ -9,42 +9,39 @@ import gold.debug.windowstolinux.shared.model.managed.ManagedApplication;
 /**
  * Managed runtime observation, health and lifecycle contract.
  *
- * <p>受管运行时观测、健康检查和生命周期契约。
+ *  <p>受管运行时观测、健康检查和生命周期契约。
  */
 public interface LinuxRuntimeExecutor {
     /**
-     * Performs the {@code checkHealth} operation.
+     * Checks health.
+     * <p>检查健康。
      *
-     * <p>执行 {@code checkHealth} 操作。
-     *
-     * @param application the {@code application} value / {@code application} 值
-     * @param healthCheck the {@code healthCheck} value / {@code healthCheck} 值
+     * @param application managed target with its server and ownership identity / 携带服务器及归属身份的受管目标
+     * @param healthCheck reviewed probe and its success criteria / 已审阅探测及其成功条件
      * @return the operation result / 操作结果
-     * @throws LinuxOperationException if the operation cannot be completed / 无法完成操作时
+     * @throws LinuxOperationException if the authenticated remote operation fails or its evidence is rejected / 已认证远端操作失败或其证据被拒绝时
      */
     HealthCheckResult checkHealth(ManagedApplication application, HealthCheck healthCheck) throws LinuxOperationException;
 
     /**
-     * Performs the {@code observe} operation.
+     * Observes lifecycle observation.
+     * <p>观测生命周期观测。
      *
-     * <p>执行 {@code observe} 操作。
-     *
-     * @param application the {@code application} value / {@code application} 值
+     * @param application managed target with its server and ownership identity / 携带服务器及归属身份的受管目标
      * @return the operation result / 操作结果
-     * @throws LinuxOperationException if the operation cannot be completed / 无法完成操作时
+     * @throws LinuxOperationException if the authenticated remote operation fails or its evidence is rejected / 已认证远端操作失败或其证据被拒绝时
      */
     LifecycleObservation observe(ManagedApplication application) throws LinuxOperationException;
 
     /**
-     * Performs the {@code executeLifecycle} operation.
+     * Executes lifecycle.
+     * <p>执行生命周期。
      *
-     * <p>执行 {@code executeLifecycle} 操作。
-     *
-     * @param application the {@code application} value / {@code application} 值
-     * @param action the {@code action} value / {@code action} 值
-     * @param healthCheck the {@code healthCheck} value / {@code healthCheck} 值
+     * @param application managed target with its server and ownership identity / 携带服务器及归属身份的受管目标
+     * @param action explicit action selected for the current target / 为当前目标显式选择的动作
+     * @param healthCheck reviewed probe and its success criteria / 已审阅探测及其成功条件
      * @return the operation result / 操作结果
-     * @throws LinuxOperationException if the operation cannot be completed / 无法完成操作时
+     * @throws LinuxOperationException if the authenticated remote operation fails or its evidence is rejected / 已认证远端操作失败或其证据被拒绝时
      */
     LifecycleObservation executeLifecycle(ManagedApplication application, LifecycleAction action, HealthCheck healthCheck)
             throws LinuxOperationException;

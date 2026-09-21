@@ -20,11 +20,27 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 
-/** Applies pure target, dependency-impact, final-state, and aggregation rules. / 应用纯目标、依赖影响、最终状态与汇总规则。 */
+/**
+ * Applies pure target, dependency-impact, final-state, and aggregation rules. / 应用纯目标、依赖影响、最终状态与汇总规则。
+ */
 final class MultiComponentLifecyclePolicy {
+    /**
+     * Prevents instantiation of this static contract helper.
+     * <p>防止实例化当前静态契约辅助类。
+     */
     private MultiComponentLifecyclePolicy() {
     }
 
+    /**
+     * Validates multi component lifecycle result.
+     * <p>校验多组件生命周期结果。
+     *
+     * @param plan deterministic reviewed execution order and targets / 确定的已审阅执行顺序及目标
+     * @param targets targets / 目标集合
+     * @param action explicit action selected for the current target / 为当前目标显式选择的动作
+     * @param observations observations / 观测集合
+     * @return constructed or resolved multi component lifecycle result; null when no matching value is available / 构造或解析得到的多组件生命周期结果；没有匹配值时为 null
+     */
     static MultiComponentLifecycleResult validate(MultiComponentDeploymentPlan plan, Set<String> targets,
                                                   LifecycleAction action,
                                                   Map<String, LifecycleObservation> observations) {
@@ -49,6 +65,14 @@ final class MultiComponentLifecyclePolicy {
         return null;
     }
 
+    /**
+     * Reports whether the multi component lifecycle policy condition holds for this contract.
+     * <p>判断当前契约是否满足多组件生命周期策略条件。
+     *
+     * @param action explicit action selected for the current target / 为当前目标显式选择的动作
+     * @param observation observation / 观测
+     * @return true when multi component lifecycle policy condition holds for this contract, false otherwise / 当前契约是否满足多组件生命周期策略条件时为 true，否则为 false
+     */
     static boolean matches(LifecycleAction action, LifecycleObservation observation) {
         if (!observation.ownershipVerified()) return false;
         return switch (action) {
@@ -61,10 +85,29 @@ final class MultiComponentLifecyclePolicy {
         };
     }
 
+    /**
+     * Reports whether the final condition holds for this contract.
+     * <p>判断当前契约是否满足最终条件。
+     *
+     * @param action explicit action selected for the current target / 为当前目标显式选择的动作
+     * @param observation observation / 观测
+     * @return true when final condition holds for this contract, false otherwise / 当前契约是否满足最终条件时为 true，否则为 false
+     */
     static boolean matchesFinal(LifecycleAction action, LifecycleObservation observation) {
         return matches(action == LifecycleAction.RESTART ? LifecycleAction.START : action, observation);
     }
 
+    /**
+     * Creates or preserves the module-owned failure for the supplied cause and diagnostic evidence.
+     * <p>为所提供原因及诊断证据创建或保留模块自有失败。
+     *
+     * @param plan deterministic reviewed execution order and targets / 确定的已审阅执行顺序及目标
+     * @param observations observations / 观测集合
+     * @param attempted attempted / 已尝试
+     * @param failed failed / 失败
+     * @param failure structured failure occurrence retained for safe reporting / 保留用于安全报告的结构化失败实例
+     * @return or preserves the module-owned failure for the supplied cause and diagnostic evidence / 为所提供原因及诊断证据创建或保留模块自有失败
+     */
     static MultiComponentLifecycleResult failure(MultiComponentDeploymentPlan plan,
                                                  Map<String, LifecycleObservation> observations,
                                                  Set<String> attempted, Set<String> failed,
@@ -79,6 +122,18 @@ final class MultiComponentLifecyclePolicy {
                 java.util.Optional.of(failure), List.of());
     }
 
+    /**
+     * Builds multi component lifecycle result from the supplied result inputs.
+     * <p>根据所提供结果输入构建多组件生命周期结果。
+     *
+     * @param accepted accepted / 已接受
+     * @param message localized explanation / 本地化说明
+     * @param plan deterministic reviewed execution order and targets / 确定的已审阅执行顺序及目标
+     * @param observations observations / 观测集合
+     * @param attempted attempted / 已尝试
+     * @param failed failed / 失败
+     * @return multi component lifecycle result from the supplied result inputs / 根据所提供结果输入构建多组件生命周期结果
+     */
     static MultiComponentLifecycleResult result(boolean accepted, LocalizedMessage message,
                                                 MultiComponentDeploymentPlan plan,
                                                 Map<String, LifecycleObservation> observations,
@@ -102,6 +157,16 @@ final class MultiComponentLifecyclePolicy {
                 componentResults);
     }
 
+    /**
+     * Indexes managed components in plan order and validates that they match the deployment plan.
+     * <p>按计划顺序索引受管组件，并校验其与部署计划匹配。
+     *
+     * @param plan deterministic reviewed execution order and targets / 确定的已审阅执行顺序及目标
+     * @param managed managed / 受管
+     * @return constructed or resolved linked hash map / 构造或解析得到的Linked哈希映射
+     * @throws IllegalArgumentException if an input violates the constraints checked by this contract / 输入违反当前契约检查的约束时
+     * @throws NullPointerException if a required input is absent / 必需输入缺失时
+     */
     static LinkedHashMap<String, ManagedComponentLifecycle> components(
             MultiComponentDeploymentPlan plan, List<ManagedComponentLifecycle> managed) {
         Map<String, ManagedComponentLifecycle> indexed = new LinkedHashMap<>();
@@ -124,6 +189,17 @@ final class MultiComponentLifecyclePolicy {
         return ordered;
     }
 
+    /**
+     * Validates and produces normalized targets for the next contract boundary.
+     * <p>校验并生成供下一契约边界使用的规范化目标集合。
+     *
+     * @param components reviewed components in the application graph / 应用图中的已审阅组件
+     * @param requested requested / 已请求
+     * @param action explicit action selected for the current target / 为当前目标显式选择的动作
+     * @return constructed or resolved set / 构造或解析得到的集合
+     * @throws IllegalArgumentException if an input violates the constraints checked by this contract / 输入违反当前契约检查的约束时
+     * @throws NullPointerException if a required input is absent / 必需输入缺失时
+     */
     static Set<String> normalizedTargets(Set<String> components, Set<String> requested, LifecycleAction action) {
         Objects.requireNonNull(requested, "targetComponentIds");
         Set<String> targets = new LinkedHashSet<>(requested.stream().sorted().toList());
@@ -134,6 +210,16 @@ final class MultiComponentLifecyclePolicy {
         return targets;
     }
 
+    /**
+     * Finds dependencies or dependents whose observed state makes the selected lifecycle action unsafe.
+     * <p>查找观测状态使所选生命周期动作不安全的依赖项或被依赖项。
+     *
+     * @param plan deterministic reviewed execution order and targets / 确定的已审阅执行顺序及目标
+     * @param targets targets / 目标集合
+     * @param action explicit action selected for the current target / 为当前目标显式选择的动作
+     * @param observations observations / 观测集合
+     * @return dependencies or dependents whose observed state makes the selected lifecycle action unsafe / 观测状态使所选生命周期动作不安全的依赖项或被依赖项
+     */
     private static Set<String> dependencyImpact(MultiComponentDeploymentPlan plan, Set<String> targets,
                                                 LifecycleAction action,
                                                 Map<String, LifecycleObservation> observations) {
@@ -161,6 +247,13 @@ final class MultiComponentLifecyclePolicy {
         return unsafe;
     }
 
+    /**
+     * Reverses the dependency graph into direct dependent sets.
+     * <p>将依赖图反转为直接被依赖项集合。
+     *
+     * @param dependencies component identifiers that must precede this component / 必须先于当前组件执行的组件标识
+     * @return constructed or resolved map / 构造或解析得到的映射
+     */
     private static Map<String, Set<String>> dependents(Map<String, List<String>> dependencies) {
         Map<String, Set<String>> result = new LinkedHashMap<>();
         dependencies.keySet().forEach(id -> result.put(id, new LinkedHashSet<>()));
@@ -168,6 +261,14 @@ final class MultiComponentLifecyclePolicy {
         return result;
     }
 
+    /**
+     * Traverses the reverse graph to collect all transitive dependents without revisiting nodes.
+     * <p>遍历反向图，收集所有传递被依赖项且不重复访问节点。
+     *
+     * @param id stable identifier within the owning registry / 所属登记表内的稳定标识
+     * @param dependents dependents / 被依赖项集合
+     * @return constructed or resolved set / 构造或解析得到的集合
+     */
     private static Set<String> transitiveDependents(String id, Map<String, Set<String>> dependents) {
         Set<String> result = new LinkedHashSet<>();
         List<String> pending = new ArrayList<>(dependents.get(id));
@@ -178,6 +279,13 @@ final class MultiComponentLifecyclePolicy {
         return result;
     }
 
+    /**
+     * Tests the verified predicate against the supplied evidence.
+     * <p>根据所提供证据检查已验证条件。
+     *
+     * @param observation observation / 观测
+     * @return true when verified predicate against the supplied evidence, false otherwise / 根据所提供证据检查已验证条件时为 true，否则为 false
+     */
     private static boolean verified(LifecycleObservation observation) {
         return observation != null && observation.ownershipVerified()
                 && observation.runtimeState() != RuntimeState.UNKNOWN
@@ -185,6 +293,13 @@ final class MultiComponentLifecyclePolicy {
                 && observation.autostartState() != AutostartState.ERROR;
     }
 
+    /**
+     * Aggregates component observations into the application's runtime state, preserving unknown or mixed states.
+     * <p>将组件观测聚合为整应用运行状态，并保留未知或混合状态。
+     *
+     * @param observations observations / 观测集合
+     * @return constructed or resolved application runtime state / 构造或解析得到的应用运行时状态
+     */
     private static ApplicationRuntimeState runtime(java.util.Collection<LifecycleObservation> observations) {
         if (observations.isEmpty() || observations.stream().anyMatch(value -> value.runtimeState() == RuntimeState.UNKNOWN)) {
             return ApplicationRuntimeState.UNKNOWN;
@@ -197,6 +312,13 @@ final class MultiComponentLifecyclePolicy {
         return ApplicationRuntimeState.PARTIALLY_RUNNING;
     }
 
+    /**
+     * Aggregates component autostart observations into the application's autostart state.
+     * <p>将组件自动启动观测聚合为整应用自动启动状态。
+     *
+     * @param observations observations / 观测集合
+     * @return constructed or resolved application autostart state / 构造或解析得到的应用自动启动状态
+     */
     private static ApplicationAutostartState autostart(java.util.Collection<LifecycleObservation> observations) {
         if (observations.isEmpty() || observations.stream().anyMatch(value -> value.autostartState() == AutostartState.UNKNOWN)) {
             return ApplicationAutostartState.UNKNOWN;

@@ -14,38 +14,38 @@ import java.util.Optional;
 /**
  * Resolves the fixed {@code data} directory from the DB module in CLASS/JAR mode or the EXE in jpackage mode.
  *
- * <p>CLASS/JAR 模式按 DB 模块、jpackage 模式按 EXE 解析固定 {@code data} 目录。
+ *  <p>CLASS/JAR 模式按 DB 模块、jpackage 模式按 EXE 解析固定 {@code data} 目录。
  */
 public final class RunModeResolver {
 
     /**
      * Defines the supported {@code RunMode} values.
      *
-     * <p>定义受支持的 {@code RunMode} 取值。
+     *  <p>定义受支持的 {@code RunMode} 取值。
      */
     public enum RunMode {
         /**
          * Represents the {@code RUN_CLASS} option.
          *
-         * <p>表示 {@code RUN_CLASS} 选项。
+         *  <p>表示 {@code RUN_CLASS} 选项。
          */
         RUN_CLASS,
         /**
          * Represents the {@code RUN_JAR} option.
          *
-         * <p>表示 {@code RUN_JAR} 选项。
+         *  <p>表示 {@code RUN_JAR} 选项。
          */
         RUN_JAR,
         /**
          * Represents the {@code RUN_APP} option.
          *
-         * <p>表示 {@code RUN_APP} 选项。
+         *  <p>表示 {@code RUN_APP} 选项。
          */
         RUN_APP,
         /**
          * Represents the {@code RUN_UNKNOWN} option.
          *
-         * <p>表示 {@code RUN_UNKNOWN} 选项。
+         *  <p>表示 {@code RUN_UNKNOWN} 选项。
          */
         RUN_UNKNOWN
     }
@@ -53,11 +53,11 @@ public final class RunModeResolver {
     /**
      * A resolved runtime layout. Unknown layouts are deliberately not representable so callers cannot silently fall back to the working directory.
      *
-     * <p>已解析的运行时布局。未知布局被刻意设计为不可表示，从而防止调用方静默回退到工作目录。
+     *  <p>已解析的运行时布局。未知布局被刻意设计为不可表示，从而防止调用方静默回退到工作目录。
      *
-     * @param mode the {@code mode} value / {@code mode} 值
-     * @param applicationHome the {@code applicationHome} value / {@code applicationHome} 值
-     * @param dataDirectory the {@code dataDirectory} value / {@code dataDirectory} 值
+     * @param mode selected operating or storage mode / 所选运行或存储模式
+     * @param applicationHome application home / 应用Home
+     * @param dataDirectory data directory / 数据目录
      */
     public record RuntimeLayout(
             RunMode mode,
@@ -65,15 +65,14 @@ public final class RunModeResolver {
             Path dataDirectory
     ) {
         /**
-         * Creates a {@code RuntimeLayout} instance.
+         * Validates and binds the inputs required by runtime layout.
+         * <p>校验并绑定运行时布局所需输入。
          *
-         * <p>创建 {@code RuntimeLayout} 实例。
-         *
-         * @param mode the {@code mode} value / {@code mode} 值
-         * @param applicationHome the {@code applicationHome} value / {@code applicationHome} 值
-         * @param dataDirectory the {@code dataDirectory} value / {@code dataDirectory} 值
+         * @param mode selected operating or storage mode / 所选运行或存储模式
+         * @param applicationHome application home / 应用Home
+         * @param dataDirectory data directory / 数据目录
          * @throws IllegalArgumentException if an argument violates the required constraints / 参数违反必要约束时
-         * @throws NullPointerException if a required argument is {@code null} / 必要参数为 {@code null} 时
+         * @throws NullPointerException if a required input is absent / 必需输入缺失时
          */
         public RuntimeLayout {
             Objects.requireNonNull(mode, "mode");
@@ -84,18 +83,31 @@ public final class RunModeResolver {
             dataDirectory = normalize(dataDirectory, "dataDirectory");
         }
 
+        /**
+         * Normalizes path.
+         * <p>规范化路径。
+         *
+         * @param path filesystem or archive member path used by this operation / 当前操作使用的文件系统或归档成员路径
+         * @param name human-readable name or diagnostic field label / 可读名称或诊断字段标签
+         * @return constructed or resolved path / 构造或解析得到的路径
+         * @throws NullPointerException if a required input is absent / 必需输入缺失时
+         */
         private static Path normalize(Path path, String name) {
             return Objects.requireNonNull(path, name).toAbsolutePath().normalize();
         }
     }
 
+    /**
+     * Prevents instantiation of this static contract helper.
+     * <p>防止实例化当前静态契约辅助类。
+     */
     private RunModeResolver() {
     }
 
     /**
      * Detects the current runtime mode.
      *
-     * <p>检测当前运行模式。
+     *  <p>检测当前运行模式。
      *
      * @return the operation result / 操作结果
      */
@@ -108,7 +120,7 @@ public final class RunModeResolver {
     /**
      * Resolves the current runtime layout.
      *
-     * <p>解析当前运行时布局。
+     *  <p>解析当前运行时布局。
      *
      * @return the operation result / 操作结果
      */
@@ -120,9 +132,8 @@ public final class RunModeResolver {
     }
 
     /**
-     * Performs the {@code resolveDataDirectory} operation.
-     *
-     * <p>执行 {@code resolveDataDirectory} 操作。
+     * Resolves data directory.
+     * <p>解析数据目录。
      *
      * @return the operation result / 操作结果
      */
@@ -130,6 +141,12 @@ public final class RunModeResolver {
         return resolve().dataDirectory();
     }
 
+    /**
+     * Resolves known.
+     * <p>解析已知。
+     *
+     * @return matching result, or empty when no admitted value exists / 匹配结果；不存在已准入内容时为空
+     */
     private static Optional<RuntimeLayout> resolveKnown() {
         return resolveFromEvidence(
                 currentProcessCommand(),
@@ -141,10 +158,10 @@ public final class RunModeResolver {
     /**
      * Package-private deterministic seam used by tests without global state changes.
      *
-     * <p>供测试使用且不改变全局状态的包级确定性接缝。
+     *  <p>供测试使用且不改变全局状态的包级确定性接缝。
      *
-     * @param processCommand the {@code processCommand} value / {@code processCommand} 值
-     * @param codeSource the {@code codeSource} value / {@code codeSource} 值
+     * @param processCommand process command / 进程命令
+     * @param codeSource code source / 代码源码
      * @return the optional operation result / 可选操作结果
      */
     static Optional<RuntimeLayout> resolveFromEvidence(
@@ -157,13 +174,13 @@ public final class RunModeResolver {
     /**
      * Package-private overload that allows deterministic IDE layout tests.
      *
-     * <p>允许确定性 IDE 布局测试的包级重载。
+     *  <p>允许确定性 IDE 布局测试的包级重载。
      *
-     * @param processCommand the {@code processCommand} value / {@code processCommand} 值
-     * @param codeSource the {@code codeSource} value / {@code codeSource} 值
-     * @param workingDirectory the {@code workingDirectory} value / {@code workingDirectory} 值
+     * @param processCommand process command / 进程命令
+     * @param codeSource code source / 代码源码
+     * @param workingDirectory working directory / 工作目录
      * @return the optional operation result / 可选操作结果
-     * @throws NullPointerException if a required argument is {@code null} / 必要参数为 {@code null} 时
+     * @throws NullPointerException if a required input is absent / 必需输入缺失时
      */
     static Optional<RuntimeLayout> resolveFromEvidence(
             Optional<Path> processCommand,
@@ -198,6 +215,13 @@ public final class RunModeResolver {
                 .map(home -> RuntimePathResolver.layout(RunMode.RUN_CLASS, home));
     }
 
+    /**
+     * Resolves the anchor class's protection-domain location when it is available as a local path.
+     * <p>在锚点类的保护域位置可表示为本地路径时解析该位置。
+     *
+     * @param anchorClass anchor class / 锚点类
+     * @return matching result, or empty when no admitted value exists / 匹配结果；不存在已准入内容时为空
+     */
     private static Optional<Path> codeSourcePath(Class<?> anchorClass) {
         try {
             ProtectionDomain protectionDomain = anchorClass.getProtectionDomain();
@@ -223,6 +247,12 @@ public final class RunModeResolver {
         }
     }
 
+    /**
+     * Returns current process command.
+     * <p>返回当前进程命令。
+     *
+     * @return matching result, or empty when no admitted value exists / 匹配结果；不存在已准入内容时为空
+     */
     private static Optional<Path> currentProcessCommand() {
         try {
             return ProcessHandle.current().info().command().map(Paths::get);
@@ -232,6 +262,12 @@ public final class RunModeResolver {
         }
     }
 
+    /**
+     * Returns current working directory.
+     * <p>返回当前工作目录。
+     *
+     * @return matching result, or empty when no admitted value exists / 匹配结果；不存在已准入内容时为空
+     */
     private static Optional<Path> currentWorkingDirectory() {
         try {
             return Optional.of(Path.of(""));

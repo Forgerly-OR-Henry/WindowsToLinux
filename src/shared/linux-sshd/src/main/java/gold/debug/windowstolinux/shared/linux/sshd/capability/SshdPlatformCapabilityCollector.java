@@ -27,23 +27,40 @@ import java.util.stream.Collectors;
 /**
  * Apache SSHD implementation of the read-only typed deployment host capability contract.
  *
- * <p>部署主机只读能力契约的 Apache SSHD 实现。
+ *  <p>部署主机只读能力契约的 Apache SSHD 实现。
  */
 public final class SshdPlatformCapabilityCollector implements LinuxPlatformCapabilityCollector {
+    /**
+     * Bound ssh command executor collaborator for typed remote command boundary.
+     * <p>处理类型化远端命令边界的SSH命令执行器协作对象。
+     */
     private final SshCommandExecutor commands;
+    /**
+     * Host fingerprint.
+     * <p>主机指纹。
+     */
     private final String hostFingerprint;
 
     /**
-     * Creates a {@code SshdPlatformCapabilityCollector} instance.
+     * Validates and binds the inputs required by sshd platform capability collector.
+     * <p>校验并绑定Sshd平台能力Collector所需输入。
      *
-     * <p>创建 {@code SshdPlatformCapabilityCollector} 实例。
+     * @param commands typed remote command boundary / 类型化远端命令边界
+     * @param hostFingerprint host fingerprint / 主机指纹
+     * @throws NullPointerException if a required input is absent / 必需输入缺失时
      */
     public SshdPlatformCapabilityCollector(SshCommandExecutor commands, String hostFingerprint) {
         this.commands = Objects.requireNonNull(commands, "commands");
         this.hostFingerprint = Objects.requireNonNull(hostFingerprint, "hostFingerprint");
     }
 
-    /** Performs the {@code collectDeploymentCapabilities} operation. / 执行 {@code collectDeploymentCapabilities} 操作。 */
+    /**
+     * Collects deployment capabilities.
+     * <p>采集部署能力。
+     *
+     * @return constructed or resolved linux capability facts / 构造或解析得到的Linux能力事实
+     * @throws LinuxOperationException if the authenticated remote operation fails or its evidence is rejected / 已认证远端操作失败或其证据被拒绝时
+     */
     @Override
     public LinuxCapabilityFacts collectDeploymentCapabilities() throws LinuxOperationException {
         var result = CapabilityReadExecutor.collect(commands, LinuxOperationFailureType.DEPLOYMENT_CAPABILITY_COLLECTION_FAILED, ManagedPlatformCapabilityProbe.render());
@@ -54,6 +71,15 @@ public final class SshdPlatformCapabilityCollector implements LinuxPlatformCapab
         return fromValues(SshCommandExecutor.lines(result.output()), hostFingerprint);
     }
 
+    /**
+     * Parses allowlisted platform probe fields into typed Linux capabilities while preserving unknown or absent evidence.
+     * <p>将白名单平台探测字段解析为类型化 Linux 能力，并保留未知或缺失证据。
+     *
+     * @param values ordered contents supplied to the current conversion or validation / 提供给当前转换或校验的有序内容
+     * @param hostFingerprint host fingerprint / 主机指纹
+     * @return allowlisted platform probe fields into typed Linux capabilities while preserving unknown or absent evidence / 将白名单平台探测字段解析为类型化 Linux 能力，并保留未知或缺失证据
+     * @throws NullPointerException if a required input is absent / 必需输入缺失时
+     */
     static LinuxCapabilityFacts fromValues(Map<String, String> values, String hostFingerprint) {
         Objects.requireNonNull(values, "values");
         String id = normalized(values.getOrDefault("DISTRO_ID", "unknown"));
@@ -111,12 +137,29 @@ public final class SshdPlatformCapabilityCollector implements LinuxPlatformCapab
 
 
 
+    /**
+     * Collects valid one- or two-digit versions from a comma-separated capability field.
+     * <p>从逗号分隔的能力字段采集有效的一至两位数字版本。
+     *
+     * @param value candidate content accepted or rejected by this contract / 由当前契约接收或拒绝的候选内容
+     * @return constructed or resolved set / 构造或解析得到的集合
+     * @throws NullPointerException if a required input is absent / 必需输入缺失时
+     */
     private static Set<Integer> integerVersions(String value) {
         return Arrays.stream(Objects.requireNonNull(value, "value").split(","))
                 .map(String::trim).filter(item -> item.matches("[0-9]{1,2}"))
                 .map(Integer::valueOf).collect(Collectors.toUnmodifiableSet());
     }
 
+    /**
+     * Classifies the Linux distribution from its observed identifier, variant and version.
+     * <p>根据已观测标识、变体及版本对 Linux 发行版分类。
+     *
+     * @param id stable identifier within the owning registry / 所属登记表内的稳定标识
+     * @param variant variant / 变体
+     * @param version version of the relevant protocol, configuration or runtime / 相应协议、配置或运行时的版本
+     * @return constructed or resolved linux distro type / 构造或解析得到的Linux发行版类型
+     */
     private static LinuxDistroType classify(String id, String variant, String version) {
         if ("ubuntu".equals(id)) {
             return LinuxDistroType.UBUNTU;
@@ -146,6 +189,13 @@ public final class SshdPlatformCapabilityCollector implements LinuxPlatformCapab
         return LinuxDistroType.OTHER;
     }
 
+    /**
+     * Maps a normalized CPU capability token to the supported microarchitecture classification.
+     * <p>将规范化 CPU 能力令牌映射为受支持微架构分类。
+     *
+     * @param value candidate content accepted or rejected by this contract / 由当前契约接收或拒绝的候选内容
+     * @return constructed or resolved cpu microarchitecture level / 构造或解析得到的CpuMicroarchitecture级别
+     */
     private static CpuMicroarchitectureLevel cpuLevel(String value) {
         return switch (normalized(value)) {
             case "x86-64-v1" -> CpuMicroarchitectureLevel.X86_64_V1;
@@ -156,6 +206,13 @@ public final class SshdPlatformCapabilityCollector implements LinuxPlatformCapab
         };
     }
 
+    /**
+     * Parses SELinux, AppArmor and related platform security observations into the typed security posture.
+     * <p>将 SELinux、AppArmor 及相关平台安全观测解析为类型化安全状态。
+     *
+     * @param values ordered contents supplied to the current conversion or validation / 提供给当前转换或校验的有序内容
+     * @return sELinux, AppArmor and related platform security observations into the typed security posture / 将 SELinux、AppArmor 及相关平台安全观测解析为类型化安全状态
+     */
     private static LinuxSecurityPosture security(Map<String, String> values) {
         LinuxSecurityModuleType module = switch (normalized(values.getOrDefault("SECURITY_MODULE", "unknown"))) {
             case "apparmor" -> LinuxSecurityModuleType.APPARMOR;
@@ -185,16 +242,38 @@ public final class SshdPlatformCapabilityCollector implements LinuxPlatformCapab
         return new LinuxSecurityPosture(module, state, firewall, firewallState);
     }
 
+    /**
+     * Normalizes the supplied contents according to the owning contract.
+     * <p>按所属契约规范化所提供内容。
+     *
+     * @param value candidate content accepted or rejected by this contract / 由当前契约接收或拒绝的候选内容
+     * @return normalized text / 规范化文本
+     * @throws NullPointerException if a required input is absent / 必需输入缺失时
+     */
     private static String normalized(String value) {
         value = Objects.requireNonNull(value, "value").trim().toLowerCase(Locale.ROOT);
         return value.isBlank() ? "unknown" : value;
     }
+    /**
+     * Returns service project types.
+     * <p>返回服务项目类型集合。
+     *
+     * @return service project types / 服务项目类型集合
+     */
     private static java.util.Set<DeploymentProjectType> serviceProjectTypes() {
         return java.util.EnumSet.of(DeploymentProjectType.GO_SERVICE, DeploymentProjectType.RUST_SERVICE,
                 DeploymentProjectType.DOTNET_SERVICE, DeploymentProjectType.KOTLIN_SERVICE,
                 DeploymentProjectType.PHP_SERVICE, DeploymentProjectType.RUBY_SERVICE);
     }
 
+    /**
+     * Tests the valid service version predicate against the supplied evidence.
+     * <p>根据所提供证据检查有效服务版本条件。
+     *
+     * @param projectType supported project deployment category / 受支持的项目部署类别
+     * @param value candidate content accepted or rejected by this contract / 由当前契约接收或拒绝的候选内容
+     * @return true when valid service version predicate against the supplied evidence, false otherwise / 根据所提供证据检查有效服务版本条件时为 true，否则为 false
+     */
     private static boolean validServiceVersion(DeploymentProjectType projectType, String value) {
         return switch (projectType) {
             case GO_SERVICE -> value.matches("[0-9A-Za-z][0-9A-Za-z.+_-]{0,95}");

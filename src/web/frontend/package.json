@@ -13,7 +13,8 @@
     "build": "npm run typecheck && vite build",
     "preview": "vite preview",
     "install:e2e-browser": "node scripts/playwright-local.mjs install chromium",
-    "test:e2e": "node scripts/playwright-local.mjs test"
+    "test:e2e": "node scripts/playwright-local.mjs test",
+    "test:e2e:boot": "node scripts/playwright-local.mjs test --config playwright.boot.config.ts"
   },
   "dependencies": {
     "vue": "3.5.41"

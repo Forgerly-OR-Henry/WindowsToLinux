@@ -12,14 +12,38 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Objects;
 
-/** Strict versioned storage codec for reviewed non-secret component data paths. / 经审阅非秘密组件数据路径的严格版本化存储编解码器。 */
+/**
+ * Strict versioned storage codec for reviewed non-secret component data paths. / 经审阅非秘密组件数据路径的严格版本化存储编解码器。
+ */
 public final class ComponentPathPersistenceCodec {
+    /**
+     * MAGIC.
+     * <p>格式标记。
+     */
     private static final int MAGIC = 0x57544c44;
+    /**
+     * VERSION.
+     * <p>版本。
+     */
     private static final int VERSION = 1;
+    /**
+     * MAX DOCUMENT BYTES.
+     * <p>最大文档字节。
+     */
     private static final int MAX_DOCUMENT_BYTES = 1_048_576;
+    /**
+     * MAX PATHS.
+     * <p>最大路径集合。
+     */
     private static final int MAX_PATHS = 4_096;
 
-    /** Encodes one complete canonical data-path list, including an explicitly empty list. / 编码一个完整规范数据路径列表，包括显式空列表。 */
+    /**
+     * Encodes one complete canonical data-path list, including an explicitly empty list. / 编码一个完整规范数据路径列表，包括显式空列表。
+     *
+     * @param paths paths / 路径集合
+     * @return one complete canonical data-path list, including an explicitly empty list / 一个完整规范数据路径列表，包括显式空列表
+     * @throws IOException if the required file or stream operation fails / 所需文件或流操作失败时
+     */
     public byte[] write(List<ComponentDataPath> paths) throws IOException {
         List<ComponentDataPath> canonical = canonical(paths);
         ByteArrayOutputStream bytes = new ByteArrayOutputStream();
@@ -41,7 +65,13 @@ public final class ComponentPathPersistenceCodec {
         return document;
     }
 
-    /** Decodes one exact canonical data-path list and rejects partial or extended documents. / 解码一个精确规范数据路径列表并拒绝部分或扩展文档。 */
+    /**
+     * Decodes one exact canonical data-path list and rejects partial or extended documents. / 解码一个精确规范数据路径列表并拒绝部分或扩展文档。
+     *
+     * @param document document / 文档
+     * @return one exact canonical data-path list and rejects partial or extended documents / 一个精确规范数据路径列表并拒绝部分或扩展文档
+     * @throws IOException if the required file or stream operation fails / 所需文件或流操作失败时
+     */
     public List<ComponentDataPath> read(byte[] document) throws IOException {
         if (document == null || document.length == 0 || document.length > MAX_DOCUMENT_BYTES) {
             throw new IOException("reviewed data-path document size is invalid");
@@ -83,6 +113,15 @@ public final class ComponentPathPersistenceCodec {
         }
     }
 
+    /**
+     * Validates and canonicalizes the supplied identity or path representation.
+     * <p>校验并规范化提供的身份或路径表示。
+     *
+     * @param paths paths / 路径集合
+     * @return constructed or resolved list / 构造或解析得到的列表
+     * @throws IOException if the required file or stream operation fails / 所需文件或流操作失败时
+     * @throws NullPointerException if a required input is absent / 必需输入缺失时
+     */
     private static List<ComponentDataPath> canonical(List<ComponentDataPath> paths) throws IOException {
         Objects.requireNonNull(paths, "paths");
         if (paths.size() > MAX_PATHS) {

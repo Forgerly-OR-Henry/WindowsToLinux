@@ -11,14 +11,33 @@ import gold.debug.windowstolinux.shared.model.project.DeploymentRuntimeSpecifica
 
 import java.util.Set;
 
-/** Renders dependency-free Ruby source through Ruby CLI syntax validation. / 通过 Ruby CLI 语法验证渲染无依赖 Ruby 源码。 */
+/**
+ * Renders dependency-free Ruby source through Ruby CLI syntax validation. / 通过 Ruby CLI 语法验证渲染无依赖 Ruby 源码。
+ */
 public final class RubyCliBuildRenderer implements DeploymentBuildRenderer {
-    /** Returns the Ruby service type. / 返回 Ruby 服务类型。 */
+    /**
+     * Returns the Ruby service type. / 返回 Ruby 服务类型。
+     *
+     * @return the Ruby service type /  Ruby 服务类型
+     */
     @Override public DeploymentProjectType projectType() { return DeploymentProjectType.RUBY_SERVICE; }
-    /** Returns the Ruby CLI identity. / 返回 Ruby CLI 身份。 */
+    /**
+     * Returns the Ruby CLI identity. / 返回 Ruby CLI 身份。
+     *
+     * @return the Ruby CLI identity /  Ruby CLI 身份
+     */
     @Override public Set<DeploymentBuildToolType> buildTools() { return Set.of(DeploymentBuildToolType.RUBY_CLI); }
 
-    /** Renders exact-version syntax checks and one reviewed entrypoint. / 渲染精确版本语法检查与单一经审阅入口。 */
+    /**
+     * Renders exact-version syntax checks and one reviewed entrypoint. / 渲染精确版本语法检查与单一经审阅入口。
+     *
+     * @param facts typed facts used for deterministic planning / 确定性计划使用的类型化事实
+     * @param runtime reviewed language, process and health specification / 已审阅的语言、进程及健康规格
+     * @param workspace platform-owned work area with enforced path boundaries / 具有路径边界约束的平台工作区
+     * @param limits resource and time bounds enforced during execution / 执行期间实施的资源及时间边界
+     * @return render text / 渲染文本
+     * @throws IllegalArgumentException if an input violates the constraints checked by this contract / 输入违反当前契约检查的约束时
+     */
     @Override
     public String render(DeploymentProjectFacts facts, DeploymentRuntimeSpecification runtime,
                          RemoteWorkspace workspace, BuildLimitConfiguration limits) {

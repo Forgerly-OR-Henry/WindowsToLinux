@@ -8,20 +8,19 @@ import java.util.Locale;
 /**
  * Persistable display preferences selected in the desktop settings page.
  *
- * <p>在桌面设置页面选择的可持久化显示偏好。
+ *  <p>在桌面设置页面选择的可持久化显示偏好。
  *
- * @param localeTag the {@code localeTag} value / {@code localeTag} 值
- * @param themeMode the {@code themeMode} value / {@code themeMode} 值
+ * @param localeTag locale tag / 区域标签
+ * @param themeMode theme mode / 主题模式
  */
 public record DesktopDisplayConfiguration(String localeTag, ThemeMode themeMode) {
     /**
-     * Creates a {@code DesktopDisplayConfiguration} instance.
+     * Validates and binds the inputs required by desktop display configuration.
+     * <p>校验并绑定Desktop显示配置所需输入。
      *
-     * <p>创建 {@code DesktopDisplayConfiguration} 实例。
-     *
-     * @param localeTag the {@code localeTag} value / {@code localeTag} 值
-     * @param themeMode the {@code themeMode} value / {@code themeMode} 值
-     * @throws NullPointerException if a required argument is {@code null} / 必要参数为 {@code null} 时
+     * @param localeTag locale tag / 区域标签
+     * @param themeMode theme mode / 主题模式
+     * @throws NullPointerException if a required input is absent / 必需输入缺失时
      */
     public DesktopDisplayConfiguration {
         localeTag = Objects.requireNonNull(localeTag, "localeTag");
@@ -29,9 +28,8 @@ public record DesktopDisplayConfiguration(String localeTag, ThemeMode themeMode)
     }
 
     /**
-     * Performs the {@code defaults} operation.
-     *
-     * <p>执行 {@code defaults} 操作。
+     * Returns defaults.
+     * <p>返回默认集合。
      *
      * @return the operation result / 操作结果
      */
@@ -40,11 +38,10 @@ public record DesktopDisplayConfiguration(String localeTag, ThemeMode themeMode)
     }
 
     /**
-     * Performs the {@code defaults} operation.
+     * Builds desktop display configuration from the supplied defaults inputs.
+     * <p>根据所提供默认集合输入构建Desktop显示配置。
      *
-     * <p>执行 {@code defaults} 操作。
-     *
-     * @param systemLocale the {@code systemLocale} value / {@code systemLocale} 值
+     * @param systemLocale system locale / 系统区域
      * @return the operation result / 操作结果
      */
     public static DesktopDisplayConfiguration defaults(Locale systemLocale) {
@@ -54,13 +51,13 @@ public record DesktopDisplayConfiguration(String localeTag, ThemeMode themeMode)
     /**
      * Creates a value through {@code fromStoredValues}.
      *
-     * <p>通过 {@code fromStoredValues} 创建值。
+     *  <p>通过 {@code fromStoredValues} 创建值。
      *
-     * @param storedLocaleTag the {@code storedLocaleTag} value / {@code storedLocaleTag} 值
-     * @param storedThemeMode the {@code storedThemeMode} value / {@code storedThemeMode} 值
-     * @param systemLocale the {@code systemLocale} value / {@code systemLocale} 值
+     * @param storedLocaleTag stored locale tag / 已存储区域标签
+     * @param storedThemeMode stored theme mode / 已存储主题模式
+     * @param systemLocale system locale / 系统区域
      * @return the operation result / 操作结果
-     * @throws NullPointerException if a required argument is {@code null} / 必要参数为 {@code null} 时
+     * @throws NullPointerException if a required input is absent / 必需输入缺失时
      */
     public static DesktopDisplayConfiguration fromStoredValues(String storedLocaleTag, String storedThemeMode,
                                                      Locale systemLocale) {

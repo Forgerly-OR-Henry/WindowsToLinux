@@ -15,23 +15,53 @@ import java.util.HexFormat;
 import java.util.Map;
 import java.util.Objects;
 
-/** Observes runtime state only after proving release and unit ownership. / 仅在证明发布与 unit 归属后观察运行状态。 */
+/**
+ * Observes runtime state only after proving release and unit ownership. / 仅在证明发布与 unit 归属后观察运行状态。
+ */
 public final class SystemdOwnershipObserver {
+    /**
+     * Bound ssh command executor collaborator for typed remote command boundary.
+     * <p>处理类型化远端命令边界的SSH命令执行器协作对象。
+     */
     private final SshCommandExecutor commands;
+    /**
+     * Account name used by the reviewed connection.
+     * <p>已审阅连接使用的账户名。
+     */
     private final String username;
 
-    /** Creates an ownership observer. / 创建归属观察器。 */
+    /**
+     * Creates an ownership observer. / 创建归属观察器。
+     *
+     * @param commands typed remote command boundary / 类型化远端命令边界
+     * @param username account name used by the reviewed connection / 已审阅连接使用的账户名
+     * @throws NullPointerException if a required input is absent / 必需输入缺失时
+     */
     public SystemdOwnershipObserver(SshCommandExecutor commands, String username) {
         this.commands = Objects.requireNonNull(commands, "commands");
         this.username = Objects.requireNonNull(username, "username");
     }
 
-    /** Observes a legacy managed unit rendered from the stored application. / 观察由存储应用渲染的旧受管 unit。 */
+    /**
+     * Observes a legacy managed unit rendered from the stored application. / 观察由存储应用渲染的旧受管 unit。
+     *
+     * @param application managed target with its server and ownership identity / 携带服务器及归属身份的受管目标
+     * @return constructed or resolved lifecycle observation / 构造或解析得到的生命周期观测
+     * @throws LinuxOperationException if the authenticated remote operation fails or its evidence is rejected / 已认证远端操作失败或其证据被拒绝时
+     */
     public LifecycleObservation observe(ManagedApplication application) throws LinuxOperationException {
         return observe(application, SystemdUnitRenderer.render(username, application));
     }
 
-    /** Observes a unit against complete expected content. / 对照完整预期内容观察 unit。 */
+    /**
+     * Observes a unit against complete expected content. / 对照完整预期内容观察 unit。
+     *
+     * @param application managed target with its server and ownership identity / 携带服务器及归属身份的受管目标
+     * @param expectedUnitContent expected unit content / 预期单元内容
+     * @return constructed or resolved lifecycle observation / 构造或解析得到的生命周期观测
+     * @throws LinuxOperationException if the authenticated remote operation fails or its evidence is rejected / 已认证远端操作失败或其证据被拒绝时
+     * @throws NullPointerException if a required input is absent / 必需输入缺失时
+     */
     public LifecycleObservation observe(ManagedApplication application, String expectedUnitContent)
             throws LinuxOperationException {
         application = Objects.requireNonNull(application, "application");
@@ -99,6 +129,14 @@ public final class SystemdOwnershipObserver {
         return new LifecycleObservation(application, observation.runtimeState(), observation.autostartState(), ownership, Instant.now(), evidence);
     }
 
+    /**
+     * Computes the SHA-256 content identity used for independent integrity checks.
+     * <p>计算独立完整性检查使用的 SHA-256 内容身份。
+     *
+     * @param value candidate content accepted or rejected by this contract / 由当前契约接收或拒绝的候选内容
+     * @return computed SHA-256 content digest / 已计算的 SHA-256 内容摘要
+     * @throws IllegalStateException if the required state or runtime facility is unavailable / 所需状态或运行设施不可用时
+     */
     private static String sha256(String value) {
         try {
             return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(value.getBytes(StandardCharsets.UTF_8)));

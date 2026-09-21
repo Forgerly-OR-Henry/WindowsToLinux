@@ -11,7 +11,7 @@ import java.util.Objects;
 /**
  * One type-checked non-secret value inside an immutable configuration snapshot.
  *
- * <p>不可变配置快照中的一个经过类型检查的非秘密值。
+ *  <p>不可变配置快照中的一个经过类型检查的非秘密值。
  *
  * @param key the declared key / 声明的键
  * @param scope the consumption scope / 使用范围
@@ -19,9 +19,13 @@ import java.util.Objects;
  */
 public record ConfigurationEntry(String key, ConfigurationScope scope, ConfigurationValue value) {
     /**
-     * Creates a {@code ConfigurationEntry} instance.
+     * Validates and binds the inputs required by configuration entry.
+     * <p>校验并绑定配置条目所需输入。
      *
-     * <p>创建 {@code ConfigurationEntry} 实例。
+     * @param key lookup key within the current contract / 当前契约内的查找键
+     * @param scope ownership or configuration scope of the operation / 操作的归属或配置作用域
+     * @param value candidate content accepted or rejected by this contract / 由当前契约接收或拒绝的候选内容
+     * @throws NullPointerException if a required input is absent / 必需输入缺失时
      */
     public ConfigurationEntry {
         key = Objects.requireNonNull(key, "key").trim();

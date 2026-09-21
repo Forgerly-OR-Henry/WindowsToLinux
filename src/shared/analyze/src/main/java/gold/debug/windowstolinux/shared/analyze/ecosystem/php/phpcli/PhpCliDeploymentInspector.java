@@ -18,12 +18,31 @@ import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-/** Inspects one dependency-free PHP CLI service without executing PHP. / 在不执行 PHP 的情况下检查一个无依赖 PHP CLI 服务。 */
+/**
+ * Inspects one dependency-free PHP CLI service without executing PHP. / 在不执行 PHP 的情况下检查一个无依赖 PHP CLI 服务。
+ */
 public final class PhpCliDeploymentInspector {
+    /**
+     * METADATA.
+     * <p>元数据。
+     */
     private static final String METADATA = "windowstolinux-php.properties";
+    /**
+     * Pattern recognizing PROPERTY.
+     * <p>用于识别属性的匹配模式。
+     */
     private static final Pattern PROPERTY = Pattern.compile("(?m)^([A-Za-z][A-Za-z0-9]*)=([^\\r\\n]+)$");
 
-    /** Inspects fixed PHP CLI metadata and source boundaries. / 检查固定 PHP CLI 元数据与源码边界。 */
+    /**
+     * Inspects fixed PHP CLI metadata and source boundaries. / 检查固定 PHP CLI 元数据与源码边界。
+     *
+     * @param root root directory defining the filesystem boundary / 定义文件系统边界的根目录
+     * @param source source identity or content read by the operation / 操作读取的源身份或内容
+     * @param languageFacts language facts / 语言事实
+     * @param rejections reasons preventing admission to the next stage / 阻止进入下一阶段的原因
+     * @return constructed or resolved deployment type assessment / 构造或解析得到的部署类型评估
+     * @throws IOException if the required file or stream operation fails / 所需文件或流操作失败时
+     */
     public DeploymentTypeAssessment inspect(Path root, SourceInspectionFacts source, ProjectLanguageFacts languageFacts,
                                             List<RejectionReason> rejections) throws IOException {
         List<String> missing = new ArrayList<>();
@@ -52,6 +71,14 @@ public final class PhpCliDeploymentInspector {
                 DeploymentBuildToolType.PHP_CLI, languageFacts, shape, true);
     }
 
+    /**
+     * Extracts literal source properties and records conflicting duplicate declarations.
+     * <p>提取字面源码属性并记录冲突的重复声明。
+     *
+     * @param text bounded text consumed or produced by the current formatter / 当前格式化器消费或生成的有界文本
+     * @param conflicts the observed conflicting facts / 观察到的冲突事实
+     * @return literal source properties and records conflicting duplicate declarations / 字面源码属性并记录冲突的重复声明
+     */
     private static Map<String, String> properties(String text, List<String> conflicts) {
         Map<String, String> result = new java.util.LinkedHashMap<>();
         Matcher matcher = PROPERTY.matcher(text);
@@ -64,6 +91,13 @@ public final class PhpCliDeploymentInspector {
         return Map.copyOf(result);
     }
 
+    /**
+     * Validates a relative path against the enclosing resource boundary.
+     * <p>按所属资源边界验证相对路径。
+     *
+     * @param value candidate content accepted or rejected by this contract / 由当前契约接收或拒绝的候选内容
+     * @return relative text; null when no matching value is available / 相对文本；没有匹配值时为 null
+     */
     private static String relative(String value) {
         if (value == null) return null;
         value = value.replace('\\', '/');

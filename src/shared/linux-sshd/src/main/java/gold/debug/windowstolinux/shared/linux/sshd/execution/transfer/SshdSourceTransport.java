@@ -21,24 +21,34 @@ import java.util.Map;
 import java.util.Objects;
 
 /**
- * Provides the {@code SshdSourceTransport} implementation.
- *
- * <p>提供 {@code SshdSourceTransport} 实现。
+ * Streams reviewed source archives into controlled remote staging and verifies transfer evidence.
+ * <p>将经审阅源码归档流式传入受控远端暂存区并验证传输证据。
  */
 public final class SshdSourceTransport {
+    /**
+     * Session used for the current scoped operation.
+     * <p>当前限定作用域操作使用的会话。
+     */
     private final ClientSession session;
+    /**
+     * Bound ssh command executor collaborator for typed remote command boundary.
+     * <p>处理类型化远端命令边界的SSH命令执行器协作对象。
+     */
     private final SshCommandExecutor commands;
+    /**
+     * Bound candidate workspace executor collaborator for candidates.
+     * <p>处理候选集合的候选工作区执行器协作对象。
+     */
     private final CandidateWorkspaceExecutor candidates;
 
     /**
-     * Creates a {@code SshdSourceTransport} instance.
+     * Validates and binds the inputs required by sshd source transport.
+     * <p>校验并绑定Sshd源码传输所需输入。
      *
-     * <p>创建 {@code SshdSourceTransport} 实例。
-     *
-     * @param session the {@code session} value / {@code session} 值
-     * @param commands the {@code commands} value / {@code commands} 值
-     * @param candidates the {@code candidates} value / {@code candidates} 值
-     * @throws NullPointerException if a required argument is {@code null} / 必要参数为 {@code null} 时
+     * @param session session used for the current scoped operation / 当前限定作用域操作使用的会话
+     * @param commands typed remote command boundary / 类型化远端命令边界
+     * @param candidates candidates / 候选集合
+     * @throws NullPointerException if a required input is absent / 必需输入缺失时
      */
     public SshdSourceTransport(ClientSession session, SshCommandExecutor commands,
                               CandidateWorkspaceExecutor candidates) {
@@ -48,14 +58,14 @@ public final class SshdSourceTransport {
     }
 
     /**
-     * Performs the {@code upload} operation.
+     * Transfers the reviewed source archive to owned remote staging and verifies the resulting upload evidence.
+     * <p>将已审阅源码归档传输到自有远端暂存区，并验证所得上传证据。
      *
-     * <p>执行 {@code upload} 操作。
-     *
-     * @param archive the {@code archive} value / {@code archive} 值
-     * @param workspace the {@code workspace} value / {@code workspace} 值
+     * @param archive source or backup archive descriptor or filesystem path / 源码或备份归档描述或文件系统路径
+     * @param workspace platform-owned work area with enforced path boundaries / 具有路径边界约束的平台工作区
+     * @param maxWorkspaceBytes max workspace bytes / 最大工作区字节
      * @return the operation result / 操作结果
-     * @throws LinuxOperationException if the operation cannot be completed / 无法完成操作时
+     * @throws LinuxOperationException if the authenticated remote operation fails or its evidence is rejected / 已认证远端操作失败或其证据被拒绝时
      */
     public SourceUploadResult upload(SourceArchiveDescriptor archive, RemoteWorkspace workspace, long maxWorkspaceBytes)
             throws LinuxOperationException {
@@ -94,6 +104,12 @@ public final class SshdSourceTransport {
                 "SFTP upload and SHA-256 verification completed");
     }
 
+    /**
+     * Cleans up after failure.
+     * <p>清理之后失败。
+     *
+     * @param workspace platform-owned work area with enforced path boundaries / 具有路径边界约束的平台工作区
+     */
     private void cleanupAfterFailure(RemoteWorkspace workspace) {
         try {
             candidates.cleanup(workspace);

@@ -5,16 +5,20 @@ import gold.debug.windowstolinux.shared.linux.sshd.capability.ecosystem.ManagedE
 /**
  * Fixed read-only shell program for collecting typed deployment distribution, container, and CPU facts.
  *
- * <p>用于采集部署发行版、容器和 CPU 事实的固定只读 Shell 程序。
+ *  <p>用于采集部署发行版、容器和 CPU 事实的固定只读 Shell 程序。
  */
 public final class ManagedPlatformCapabilityProbe {
+    /**
+     * Prevents instantiation of this static contract helper.
+     * <p>防止实例化当前静态契约辅助类。
+     */
     private ManagedPlatformCapabilityProbe() {
     }
 
     /**
      * Renders the implementation-owned capability probe with no caller-provided shell fragment.
      *
-     * <p>渲染由实现持有的能力探测，不接受调用方提供的 Shell 片段。
+     *  <p>渲染由实现持有的能力探测，不接受调用方提供的 Shell 片段。
      *
      * @return fixed capability probe / 固定能力探测
      */
@@ -83,6 +87,12 @@ public final class ManagedPlatformCapabilityProbe {
                 """ + firewallProbe();
     }
 
+    /**
+     * Renders the fixed read-only firewall capability observation script.
+     * <p>渲染固定的只读防火墙能力观测脚本。
+     *
+     * @return firewall probe text / 防火墙探测文本
+     */
     static String firewallProbe() {
         return """
                 if command -v firewall-cmd >/dev/null 2>&1; then

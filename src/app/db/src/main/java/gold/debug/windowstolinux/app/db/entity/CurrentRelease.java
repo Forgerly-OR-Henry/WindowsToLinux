@@ -6,23 +6,22 @@ import java.util.Objects;
 /**
  * Last successfully published release identity for one managed application.
  *
- * <p>某个受管应用最后成功发布的发布身份。
+ *  <p>某个受管应用最后成功发布的发布身份。
  *
- * @param applicationId the {@code applicationId} value / {@code applicationId} 值
+ * @param applicationId managed application identifier / 受管应用标识
  * @param releaseSha256 the release identity digest / 发布身份摘要
- * @param publishedAt the {@code publishedAt} value / {@code publishedAt} 值
+ * @param publishedAt published at / 已发布时刻
  */
 public record CurrentRelease(String applicationId, String releaseSha256, Instant publishedAt) {
     /**
-     * Creates a {@code CurrentRelease} instance.
+     * Validates and binds the inputs required by current release.
+     * <p>校验并绑定当前发布所需输入。
      *
-     * <p>创建 {@code CurrentRelease} 实例。
-     *
-     * @param applicationId the {@code applicationId} value / {@code applicationId} 值
+     * @param applicationId managed application identifier / 受管应用标识
      * @param releaseSha256 the release identity digest / 发布身份摘要
-     * @param publishedAt the {@code publishedAt} value / {@code publishedAt} 值
+     * @param publishedAt published at / 已发布时刻
      * @throws IllegalArgumentException if an argument violates the required constraints / 参数违反必要约束时
-     * @throws NullPointerException if a required argument is {@code null} / 必要参数为 {@code null} 时
+     * @throws NullPointerException if a required input is absent / 必需输入缺失时
      */
     public CurrentRelease {
         applicationId = Objects.requireNonNull(applicationId, "applicationId");

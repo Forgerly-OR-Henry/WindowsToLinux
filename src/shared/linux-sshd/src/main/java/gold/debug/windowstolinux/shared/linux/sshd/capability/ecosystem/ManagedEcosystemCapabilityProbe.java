@@ -2,17 +2,31 @@ package gold.debug.windowstolinux.shared.linux.sshd.capability.ecosystem;
 
 import gold.debug.windowstolinux.shared.linux.sshd.execution.protocol.helper.ManagedHelperBundle;
 
-/** Renders read-only language and build-tool capability probes. / 渲染只读语言与构建工具能力探测。 */
+/**
+ * Renders read-only language and build-tool capability probes. / 渲染只读语言与构建工具能力探测。
+ */
 public final class ManagedEcosystemCapabilityProbe {
+    /**
+     * Prevents instantiation of this static contract helper.
+     * <p>防止实例化当前静态契约辅助类。
+     */
     private ManagedEcosystemCapabilityProbe() {
     }
 
-    /** Renders the managed Java environment shared by capability probes. / 渲染能力探测共享的受管 Java 环境。 */
+    /**
+     * Renders the managed Java environment shared by capability probes. / 渲染能力探测共享的受管 Java 环境。
+     *
+     * @return managed java environment text / 受管Java环境文本
+     */
     public static String managedJavaEnvironment() {
         return "managed_java=" + quote(ManagedHelperBundle.JAVA_RUNTIME_PATH) + "\n";
     }
 
-    /** Renders the Java and Maven checks used by the compact host probe. / 渲染简要主机探测使用的 Java 与 Maven 检查。 */
+    /**
+     * Renders the Java and Maven checks used by the compact host probe. / 渲染简要主机探测使用的 Java 与 Maven 检查。
+     *
+     * @return host tool checks text / 主机工具检查集合文本
+     */
     public static String hostToolChecks() {
         return """
                 if [ -x "$managed_java" ] && "$managed_java" -version 2>&1 | grep -Eq '(^|[^0-9])21[.]'; then printf 'JAVA21=1\\n'; else printf 'JAVA21=0\\n'; fi
@@ -20,7 +34,11 @@ public final class ManagedEcosystemCapabilityProbe {
                 """;
     }
 
-    /** Renders the complete language and toolchain portion of the platform probe. / 渲染平台探测中的完整语言与工具链部分。 */
+    /**
+     * Renders the complete language and toolchain portion of the platform probe. / 渲染平台探测中的完整语言与工具链部分。
+     *
+     * @return platform tool checks text / 平台工具检查集合文本
+     */
     public static String platformToolChecks() {
         return """
                 kotlin_compiler="$(command -v kotlinc || true)"
@@ -107,6 +125,13 @@ public final class ManagedEcosystemCapabilityProbe {
                 """;
     }
 
+    /**
+     * Quotes a literal argument for the fixed command-rendering boundary.
+     * <p>为固定命令渲染边界引用字面参数。
+     *
+     * @param value candidate content accepted or rejected by this contract / 由当前契约接收或拒绝的候选内容
+     * @return quote text / 引用文本
+     */
     private static String quote(String value) {
         return "'" + value.replace("'", "'\"'\"'") + "'";
     }

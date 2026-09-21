@@ -7,9 +7,17 @@ import gold.debug.windowstolinux.shared.model.capability.LinuxCapabilityFacts;
 
 import java.util.List;
 
-/** AlmaLinux compatibility policy including its explicit x86-64-v2 variant boundary. / 包含明确 x86-64-v2 变体边界的 AlmaLinux 兼容性策略。 */
+/**
+ * AlmaLinux compatibility policy including its explicit x86-64-v2 variant boundary. / 包含明确 x86-64-v2 变体边界的 AlmaLinux 兼容性策略。
+ */
 final class AlmaLinuxSupportPolicy implements DistributionSupportPolicy {
-    /** Evaluates the supplied compatibility evidence. / 评估提供的兼容性证据。 */
+    /**
+     * Evaluates the supplied compatibility evidence. / 评估提供的兼容性证据。
+     *
+     * @param capabilities observed target tools and runtime capabilities / 目标工具及运行能力观测
+     * @param evidence observations supporting the reported result / 支持所报告结果的观测证据
+     * @return constructed or resolved host support status / 构造或解析得到的主机支持状态
+     */
     @Override
     public HostSupportStatus evaluate(LinuxCapabilityFacts capabilities, List<String> evidence) {
         if (!"dnf".equals(capabilities.packageManager())
@@ -39,6 +47,15 @@ final class AlmaLinuxSupportPolicy implements DistributionSupportPolicy {
         return enterprise(capabilities, CpuMicroarchitectureLevel.X86_64_V3, evidence);
     }
 
+    /**
+     * Applies enterprise CPU prerequisites and the supported AlmaLinux host policy.
+     * <p>应用企业版 CPU 前提条件及受支持 AlmaLinux 主机策略。
+     *
+     * @param capabilities observed target tools and runtime capabilities / 目标工具及运行能力观测
+     * @param cpuLevel cpu level / cpu级别
+     * @param evidence observations supporting the reported result / 支持所报告结果的观测证据
+     * @return constructed or resolved host support status / 构造或解析得到的主机支持状态
+     */
     private static HostSupportStatus enterprise(LinuxCapabilityFacts capabilities, CpuMicroarchitectureLevel cpuLevel,
                                           List<String> evidence) {
         HostSupportStatus cpu = DistributionSupportRules.requireCpu(capabilities, cpuLevel, "AlmaLinux", evidence);

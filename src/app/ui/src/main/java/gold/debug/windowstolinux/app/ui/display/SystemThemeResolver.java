@@ -8,18 +8,21 @@ import java.util.Optional;
 /**
  * Reads the Windows application appearance preference without writing to the system registry.
  *
- * <p>读取 Windows 应用外观偏好，但不写入系统注册表。
+ *  <p>读取 Windows 应用外观偏好，但不写入系统注册表。
  */
 public final class SystemThemeResolver {
+    /**
+     * Prevents instantiation of this static contract helper.
+     * <p>防止实例化当前静态契约辅助类。
+     */
     private SystemThemeResolver() {
     }
 
     /**
-     * Performs the {@code effectiveTheme} operation.
+     * Uses an explicit theme unchanged, otherwise resolves the Windows preference with a light-theme fallback.
+     * <p>原样使用显式主题，否则解析 Windows 偏好，并以浅色主题作为回退。
      *
-     * <p>执行 {@code effectiveTheme} 操作。
-     *
-     * @param preference the {@code preference} value / {@code preference} 值
+     * @param preference preference / 偏好
      * @return the operation result / 操作结果
      */
     public static ThemeMode effectiveTheme(ThemeMode preference) {
@@ -29,6 +32,12 @@ public final class SystemThemeResolver {
         return windowsPrefersLight().map(light -> light ? ThemeMode.LIGHT : ThemeMode.DARK).orElse(ThemeMode.LIGHT);
     }
 
+    /**
+     * Returns windows prefers light.
+     * <p>返回Windows偏好浅色。
+     *
+     * @return matching result, or empty when no admitted value exists / 匹配结果；不存在已准入内容时为空
+     */
     static Optional<Boolean> windowsPrefersLight() {
         if (!System.getProperty("os.name", "").toLowerCase(Locale.ROOT).contains("windows")) {
             return Optional.empty();

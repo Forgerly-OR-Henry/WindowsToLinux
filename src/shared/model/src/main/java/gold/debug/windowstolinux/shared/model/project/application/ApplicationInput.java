@@ -2,8 +2,24 @@ package gold.debug.windowstolinux.shared.model.project.application;
 
 import java.util.Objects;
 
-/** External input is read-only and excluded from application backup contents. / 外部输入只读且不进入应用内容备份。 */
+/**
+ * External input is read-only and excluded from application backup contents. / 外部输入只读且不进入应用内容备份。
+ *
+ * @param id stable identifier within the owning registry / 所属登记表内的稳定标识
+ * @param hostPath host path / 主机路径
+ * @param accessPath access path / 访问路径
+ */
 public record ApplicationInput(String id, String hostPath, String accessPath) {
+    /**
+     * Validates and binds the inputs required by application input.
+     * <p>校验并绑定应用输入所需输入。
+     *
+     * @param id stable identifier within the owning registry / 所属登记表内的稳定标识
+     * @param hostPath host path / 主机路径
+     * @param accessPath access path / 访问路径
+     * @throws IllegalArgumentException if an input violates the constraints checked by this contract / 输入违反当前契约检查的约束时
+     * @throws NullPointerException if a required input is absent / 必需输入缺失时
+     */
     public ApplicationInput {
         if (!Objects.requireNonNull(id).matches("[a-z0-9][a-z0-9-]{0,62}"))
             throw new IllegalArgumentException("invalid input identifier");
@@ -21,6 +37,15 @@ public record ApplicationInput(String id, String hostPath, String accessPath) {
         }
     }
 
+    /**
+     * Checks absolute syntax and bounds before returning the admitted content.
+     * <p>在返回已准入内容前检查绝对语法及边界。
+     *
+     * @param value candidate content accepted or rejected by this contract / 由当前契约接收或拒绝的候选内容
+     * @return absolute text / 绝对文本
+     * @throws IllegalArgumentException if an input violates the constraints checked by this contract / 输入违反当前契约检查的约束时
+     * @throws NullPointerException if a required input is absent / 必需输入缺失时
+     */
     private static String absolute(String value) {
         Objects.requireNonNull(value);
         if (!value.startsWith("/") || value.equals("/") || value.length() > 512 || value.contains("//")

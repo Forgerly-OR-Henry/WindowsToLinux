@@ -18,10 +18,15 @@ import java.util.Locale;
 /**
  * Collects markers only for languages without a dedicated ecosystem inspector.
  *
- * <p>仅收集尚无独立生态检查器的语言标记，不求值文件内容。
+ *  <p>仅收集尚无独立生态检查器的语言标记，不求值文件内容。
  */
 public final class PreviewLanguageMarkerCatalog {
-    /** Returns all declared language markers without selecting a primary language or executable. / 返回全部附加语言标记，不选择主要语言或可执行文件。 */
+    /**
+     * Returns all declared language markers without selecting a primary language or executable. / 返回全部附加语言标记，不选择主要语言或可执行文件。
+     *
+     * @param source source identity or content read by the operation / 操作读取的源身份或内容
+     * @return all declared language markers without selecting a primary language or executable / 全部附加语言标记，不选择主要语言或可执行文件
+     */
     public ProjectLanguageFacts inspect(SourceInspectionFacts source) {
         EnumSet<LanguageEcosystemType> ecosystems = EnumSet.noneOf(LanguageEcosystemType.class);
         EnumSet<SourceLanguageType> languages = EnumSet.noneOf(SourceLanguageType.class);
@@ -41,6 +46,13 @@ public final class PreviewLanguageMarkerCatalog {
         return new ProjectLanguageFacts(ecosystems, languages, java.util.Map.of(), evidence);
     }
 
+    /**
+     * Maps a recognized filename or suffix to its preview-only language ecosystem marker.
+     * <p>将已识别文件名或后缀映射为仅供预览的语言生态标记。
+     *
+     * @param path filesystem or archive member path used by this operation / 当前操作使用的文件系统或归档成员路径
+     * @return constructed or resolved marker; null when no matching value is available / 构造或解析得到的标记；没有匹配值时为 null
+     */
     private static Marker marker(Path path) {
         String name = path.getFileName().toString().toLowerCase(Locale.ROOT);
         if (name.endsWith(".scala") || name.equals("build.sbt")) return marker(LanguageEcosystemType.ALTERNATIVE_VM, SourceLanguageType.SCALA);
@@ -58,10 +70,25 @@ public final class PreviewLanguageMarkerCatalog {
         return null;
     }
 
+    /**
+     * Maps a recognized filename or suffix to its preview-only language ecosystem marker.
+     * <p>将已识别文件名或后缀映射为仅供预览的语言生态标记。
+     *
+     * @param ecosystem ecosystem / 生态
+     * @param language selected language identity / 选定语言身份
+     * @return constructed or resolved marker / 构造或解析得到的标记
+     */
     private static Marker marker(LanguageEcosystemType ecosystem, SourceLanguageType language) {
         return new Marker(ecosystem, language);
     }
 
+    /**
+     * Maps a source marker to the language evidence displayed during preview.
+     * <p>将源码标记映射到预览展示的语言证据。
+     *
+     * @param ecosystem ecosystem / 生态
+     * @param language selected language identity / 选定语言身份
+     */
     private record Marker(LanguageEcosystemType ecosystem, SourceLanguageType language) {
     }
 }

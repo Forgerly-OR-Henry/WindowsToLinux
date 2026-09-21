@@ -4,12 +4,24 @@ import gold.debug.windowstolinux.shared.linux.sshd.distro.contract.profile.Ecosy
 
 import java.util.Objects;
 
-/** Renders the fixed runtime checks selected by a distribution profile. / 渲染发行版配置选择的固定运行时检查。 */
+/**
+ * Renders the fixed runtime checks selected by a distribution profile. / 渲染发行版配置选择的固定运行时检查。
+ */
 public final class EcosystemCapabilityScriptRenderer {
+    /**
+     * Prevents instantiation of this static contract helper.
+     * <p>防止实例化当前静态契约辅助类。
+     */
     private EcosystemCapabilityScriptRenderer() {
     }
 
-    /** Renders capability checks without changing their evidence order. / 渲染能力检查且不改变证据顺序。 */
+    /**
+     * Renders capability checks without changing their evidence order. / 渲染能力检查且不改变证据顺序。
+     *
+     * @param profile connection or provider settings supplied to the operation / 提供给操作的连接或提供者设置
+     * @return render text / 渲染文本
+     * @throws NullPointerException if a required input is absent / 必需输入缺失时
+     */
     public static String render(EcosystemCapabilityProfile profile) {
         profile = Objects.requireNonNull(profile, "profile");
         String python = profile.pythonCommand();

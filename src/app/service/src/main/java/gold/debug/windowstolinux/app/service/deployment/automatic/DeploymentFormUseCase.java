@@ -15,11 +15,24 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 
-/** Converts typed form controls inside the automatic deployment use case. / 在自动部署用例内转换类型化表单控件。 */
+/**
+ * Converts typed form controls inside the automatic deployment use case. / 在自动部署用例内转换类型化表单控件。
+ */
 public final class DeploymentFormUseCase {
+    /**
+     * Prevents instantiation of this static contract helper.
+     * <p>防止实例化当前静态契约辅助类。
+     */
     private DeploymentFormUseCase() { }
 
-    /** Parses source references without moving Git policy into the UI. / 解析源码引用，不将 Git 策略移入 UI。 */
+    /**
+     * Parses source references without moving Git policy into the UI. / 解析源码引用，不将 Git 策略移入 UI。
+     *
+     * @param source source identity or content read by the operation / 操作读取的源身份或内容
+     * @param server server identity or selected server configuration / 服务器身份或所选服务器配置
+     * @param input source content consumed by this operation / 当前操作消费的源内容
+     * @return source references without moving Git policy into the UI / 源码引用，不将 Git 策略移入 UI
+     */
     public static AutomaticDeploymentRequest request(DeploymentSourceInput source, ServerProfile server, DeploymentFormInput input) {
         Optional<GitSourceRequest> git = Optional.empty();
         if (source.directory().isEmpty()) {
@@ -32,6 +45,13 @@ public final class DeploymentFormUseCase {
         return new AutomaticDeploymentRequest(source.directory(), git, server, overrides(input));
     }
 
+    /**
+     * Projects explicit form selections into the automatic deployment input overrides.
+     * <p>将显式表单选择投影为自动部署输入覆盖项。
+     *
+     * @param input source content consumed by this operation / 当前操作消费的源内容
+     * @return constructed or resolved map / 构造或解析得到的映射
+     */
     private static Map<String, String> overrides(DeploymentFormInput input) {
         Map<String, String> values = new LinkedHashMap<>();
         if (!input.detectType()) values.put("type", input.projectType().name());
@@ -51,6 +71,14 @@ public final class DeploymentFormUseCase {
         return Map.copyOf(values);
     }
 
+    /**
+     * Parses the selected health mode and validates its HTTP, TCP or application verification fields.
+     * <p>解析所选健康模式，并校验其 HTTP、TCP 或应用验证字段。
+     *
+     * @param input source content consumed by this operation / 当前操作消费的源内容
+     * @param values ordered contents supplied to the current conversion or validation / 提供给当前转换或校验的有序内容
+     * @throws IllegalArgumentException if an input violates the constraints checked by this contract / 输入违反当前契约检查的约束时
+     */
     private static void health(DeploymentFormInput input, Map<String, String> values) {
         String selected = input.healthMode();
         if (!Set.of("AUTOMATIC", "HTTP", "TCP", "UDP", "PROCESS", "COMMAND").contains(selected)) throw new IllegalArgumentException("invalid health mode");

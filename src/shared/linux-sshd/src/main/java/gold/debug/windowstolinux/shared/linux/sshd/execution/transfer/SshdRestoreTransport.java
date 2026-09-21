@@ -28,19 +28,46 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.stream.Stream;
 
-/** SFTP restore staging with exact local inventory and independent remote read-back. / 使用精确本地清单和独立远端回读的 SFTP 恢复暂存。 */
+/**
+ * SFTP restore staging with exact local inventory and independent remote read-back. / 使用精确本地清单和独立远端回读的 SFTP 恢复暂存。
+ */
 public final class SshdRestoreTransport implements RemoteRestoreFilePort {
+    /**
+     * BUFFER SIZE.
+     * <p>缓冲区大小。
+     */
     private static final int BUFFER_SIZE = 64 * 1024;
+    /**
+     * Session used for the current scoped operation.
+     * <p>当前限定作用域操作使用的会话。
+     */
     private final ClientSession session;
+    /**
+     * Bound candidate workspace executor collaborator for candidates.
+     * <p>处理候选集合的候选工作区执行器协作对象。
+     */
     private final CandidateWorkspaceExecutor candidates;
 
-    /** Creates an isolated restore transport. / 创建隔离恢复传输器。 */
+    /**
+     * Creates an isolated restore transport. / 创建隔离恢复传输器。
+     *
+     * @param session session used for the current scoped operation / 当前限定作用域操作使用的会话
+     * @param candidates candidates / 候选集合
+     * @throws NullPointerException if a required input is absent / 必需输入缺失时
+     */
     public SshdRestoreTransport(ClientSession session, CandidateWorkspaceExecutor candidates) {
         this.session = Objects.requireNonNull(session, "session");
         this.candidates = Objects.requireNonNull(candidates, "candidates");
     }
 
-    /** Verifies, uploads, re-reads and re-verifies every exact member. / 校验、上传、回读并再次校验每个精确成员。 */
+    /**
+     * Verifies, uploads, re-reads and re-verifies every exact member. / 校验、上传、回读并再次校验每个精确成员。
+     *
+     * @param request reviewed inputs for the requested operation / 所请求操作的已审阅输入
+     * @return constructed or resolved remote restore staging evidence / 构造或解析得到的远端恢复暂存证据
+     * @throws LinuxOperationException if the authenticated remote operation fails or its evidence is rejected / 已认证远端操作失败或其证据被拒绝时
+     * @throws NullPointerException if a required input is absent / 必需输入缺失时
+     */
     @Override
     public RemoteRestoreStagingEvidence stageRestoreFiles(RemoteRestoreStagingRequest request)
             throws LinuxOperationException {
@@ -82,13 +109,27 @@ public final class SshdRestoreTransport implements RemoteRestoreFilePort {
                         "The existing managed release path was not addressed by the staging operation"));
     }
 
-    /** Discards the exact candidate through the existing fixed helper verb. / 通过现有固定 helper 动词丢弃精确候选。 */
+    /**
+     * Discards the exact candidate through the existing fixed helper verb. / 通过现有固定 helper 动词丢弃精确候选。
+     *
+     * @param request reviewed inputs for the requested operation / 所请求操作的已审阅输入
+     * @return constructed or resolved remote step result / 构造或解析得到的远端步骤结果
+     * @throws LinuxOperationException if the authenticated remote operation fails or its evidence is rejected / 已认证远端操作失败或其证据被拒绝时
+     * @throws NullPointerException if a required input is absent / 必需输入缺失时
+     */
     @Override
     public RemoteStepResult discardRestoreFiles(RemoteRestoreStagingRequest request) throws LinuxOperationException {
         Objects.requireNonNull(request, "request");
         return candidates.cleanup(new RemoteWorkspace(request.applicationId(), request.archiveSha256()));
     }
 
+    /**
+     * Requires every staged restore member to remain within the candidate boundary and match its declared size and digest.
+     * <p>要求每个暂存恢复成员仍位于候选边界内，并匹配声明大小及摘要。
+     *
+     * @param request reviewed inputs for the requested operation / 所请求操作的已审阅输入
+     * @throws LinuxOperationException if the authenticated remote operation fails or its evidence is rejected / 已认证远端操作失败或其证据被拒绝时
+     */
     private static void verifyLocalCandidate(RemoteRestoreStagingRequest request) throws LinuxOperationException {
         Path root = request.localCandidateRoot();
         try {
@@ -123,6 +164,14 @@ public final class SshdRestoreTransport implements RemoteRestoreFilePort {
         }
     }
 
+    /**
+     * Verifies remote candidate.
+     * <p>验证远端候选。
+     *
+     * @param request reviewed inputs for the requested operation / 所请求操作的已审阅输入
+     * @param remoteRoot remote root / 远端根目录
+     * @throws LinuxOperationException if the authenticated remote operation fails or its evidence is rejected / 已认证远端操作失败或其证据被拒绝时
+     */
     private static void verifyRemoteCandidate(RemoteRestoreStagingRequest request, Path remoteRoot)
             throws LinuxOperationException {
         try {
@@ -144,6 +193,15 @@ public final class SshdRestoreTransport implements RemoteRestoreFilePort {
         }
     }
 
+    /**
+     * Resolves and validates one staged restore member beneath its local candidate root.
+     * <p>在本地候选根目录下解析并校验一个暂存恢复成员。
+     *
+     * @param request reviewed inputs for the requested operation / 所请求操作的已审阅输入
+     * @param member member / 成员
+     * @return and validates one staged restore member beneath its local candidate root / 在本地候选根目录下解析并校验一个暂存恢复成员
+     * @throws LinuxOperationException if the authenticated remote operation fails or its evidence is rejected / 已认证远端操作失败或其证据被拒绝时
+     */
     private static Path localPath(RemoteRestoreStagingRequest request, RemoteRestoreMember member)
             throws LinuxOperationException {
         Path path = request.localCandidateRoot().resolve(member.path()).normalize();
@@ -153,6 +211,15 @@ public final class SshdRestoreTransport implements RemoteRestoreFilePort {
         return path;
     }
 
+    /**
+     * Computes or retrieves content identity for independent evidence checks.
+     * <p>计算或取得用于独立证据检查的内容身份。
+     *
+     * @param input source content consumed by this operation / 当前操作消费的源内容
+     * @return or retrieves content identity for independent evidence checks / 或取得用于独立证据检查的内容身份
+     * @throws IOException if the required file or stream operation fails / 所需文件或流操作失败时
+     * @throws IllegalStateException if the required state or runtime facility is unavailable / 所需状态或运行设施不可用时
+     */
     private static ContentDigest digest(InputStream input) throws IOException {
         MessageDigest digest;
         try {
@@ -173,6 +240,12 @@ public final class SshdRestoreTransport implements RemoteRestoreFilePort {
         return new ContentDigest(size, HexFormat.of().formatHex(digest.digest()));
     }
 
+    /**
+     * Cleans up after failure.
+     * <p>清理之后失败。
+     *
+     * @param workspace platform-owned work area with enforced path boundaries / 具有路径边界约束的平台工作区
+     */
     private void cleanupAfterFailure(RemoteWorkspace workspace) {
         try {
             candidates.cleanup(workspace);
@@ -181,15 +254,38 @@ public final class SshdRestoreTransport implements RemoteRestoreFilePort {
         }
     }
 
+    /**
+     * Builds the structured failure descriptor for invalid local.
+     * <p>为无效本地构建结构化失败描述。
+     *
+     * @param diagnostic bounded non-secret detail for diagnostic reporting / 用于诊断报告的有界非秘密详情
+     * @param cause original failure retained as the nested cause / 保留为嵌套原因的原始失败
+     * @return the structured failure descriptor for invalid local / 为无效本地构建结构化失败描述
+     */
     private static LinuxOperationException invalidLocal(String diagnostic, Throwable cause) {
         return LinuxOperationException.create(LinuxOperationFailureType.RESTORE_SOURCE_INVALID, diagnostic, cause);
     }
 
+    /**
+     * Builds the structured failure descriptor for verification failure.
+     * <p>为验证失败构建结构化失败描述。
+     *
+     * @param diagnostic bounded non-secret detail for diagnostic reporting / 用于诊断报告的有界非秘密详情
+     * @param cause original failure retained as the nested cause / 保留为嵌套原因的原始失败
+     * @return the structured failure descriptor for verification failure / 为验证失败构建结构化失败描述
+     */
     private static LinuxOperationException verificationFailure(String diagnostic, Throwable cause) {
         return LinuxOperationException.create(
                 LinuxOperationFailureType.RESTORE_UPLOAD_VERIFICATION_FAILED, diagnostic, cause);
     }
 
+    /**
+     * Pairs transferred content size with its independently measured digest.
+     * <p>将传输内容大小与独立测量的摘要配对。
+     *
+     * @param size size / 大小
+     * @param sha256 lower-case hexadecimal SHA-256 digest / 小写十六进制 SHA-256 摘要
+     */
     private record ContentDigest(long size, String sha256) {
     }
 }

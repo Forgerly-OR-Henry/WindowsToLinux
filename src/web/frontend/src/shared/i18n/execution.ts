@@ -1,0 +1,916 @@
+export const execution:Record<string,readonly [string,string]>={
+  "event.APPLICATION_PREFLIGHT": ["应用运行预检", "Application execution preflight"],
+  "detail.storage.application": ["应用", "Application"],
+  "detail.storage.binding": ["绑定", "Binding"],
+  "detail.storage.kind": ["资源类型", "Resource kind"],
+  "detail.storage.source": ["路径来源", "Location source"],
+  "detail.storage.access": ["应用访问路径", "Application access path"],
+  "detail.storage.host": ["宿主实际位置", "Host location"],
+  "detail.storage.mode": ["读写模式", "Access mode"],
+  "event.STORAGE_PREFLIGHT": ["存储路径预检", "Storage path preflight"],
+  "db.field.path": ["SQLite 应用访问路径", "SQLite application access path"],
+  "db.help.path": ["应用实际使用的文件路径，或 DEFAULT；不能包含未解析变量。", "Application file path or DEFAULT; unresolved variables are not accepted."],
+  "db.field.pathEnvironment": ["数据库路径环境变量", "Database path environment variable"],
+  "db.help.pathEnvironment": ["应用已支持的环境变量名称。", "An environment variable supported by the application."],
+  "confirm.db.sqliteInitialization": ["首次创建 SQLite 时执行已审阅初始化；已有数据库保留。", "Run reviewed initialization only when creating SQLite; preserve existing databases."],
+  "event.managed-identity": [
+    "受管应用身份",
+    "Managed application identity"
+  ],
+  "event.root-build-session": [
+    "root 管理与受限构建身份",
+    "Root management and restricted build identity"
+  ],
+  "event.helper-protocol": [
+    "受管 helper 协议",
+    "Managed helper protocol"
+  ],
+  "event.application-preflight": [
+    "应用前置检查",
+    "Application preflight"
+  ],
+  "event.component-build-wave": [
+    "组件构建波次",
+    "Component build wave"
+  ],
+  "event.target-capabilities": [
+    "目标机能力",
+    "Target capabilities"
+  ],
+  "event.typed-host-compatibility": [
+    "类型化主机兼容性",
+    "Typed host compatibility"
+  ],
+  "event.source-workspace": [
+    "源码工作区",
+    "Source workspace"
+  ],
+  "event.target-space": [
+    "目标机可用空间",
+    "Target free space"
+  ],
+  "event.source-upload": [
+    "源码上传",
+    "Source upload"
+  ],
+  "event.remote-build": [
+    "远程构建",
+    "Remote build"
+  ],
+  "event.build-provenance": [
+    "构建来源验证",
+    "Build provenance verification"
+  ],
+  "event.candidate-ready": [
+    "候选版本就绪",
+    "Candidate ready"
+  ],
+  "event.deployment-inputs": [
+    "部署输入",
+    "Deployment inputs"
+  ],
+  "event.snapshot": [
+    "发布快照",
+    "Release snapshot"
+  ],
+  "event.application-snapshot": [
+    "应用快照",
+    "Application snapshot"
+  ],
+  "event.stop-old": [
+    "停止旧组件",
+    "Stop old component"
+  ],
+  "event.application-stop": [
+    "应用停止顺序",
+    "Application stop ordering"
+  ],
+  "event.publish": [
+    "发布候选版本",
+    "Publish candidate"
+  ],
+  "event.candidate-health": [
+    "候选版本健康检查",
+    "Candidate health check"
+  ],
+  "event.application-health": [
+    "应用整体健康检查",
+    "Application health check"
+  ],
+  "event.final-observation": [
+    "最终归属观测",
+    "Final ownership observation"
+  ],
+  "event.application-observation": [
+    "应用整体观测",
+    "Application observation"
+  ],
+  "event.release-retention": [
+    "发布版本保留",
+    "Release retention"
+  ],
+  "event.application-commit": [
+    "应用事务提交",
+    "Application commit"
+  ],
+  "event.linux-operation": [
+    "受控 Linux 操作",
+    "Controlled Linux operation"
+  ],
+  "event.multi-component-linux-operation": [
+    "多组件 Linux 操作",
+    "Multi-component Linux operation"
+  ],
+  "event.rollback": [
+    "回滚",
+    "Rollback"
+  ],
+  "event.rollback-health": [
+    "回滚健康检查",
+    "Rollback health check"
+  ],
+  "event.rollback-observation": [
+    "回滚观测",
+    "Rollback observation"
+  ],
+  "event.recovery-reconnect": [
+    "恢复重连",
+    "Recovery reconnect"
+  ],
+  "event.application-recovery-reconnect": [
+    "应用恢复重连",
+    "Application recovery reconnect"
+  ],
+  "event.application-rollback": [
+    "应用整体回滚",
+    "Application rollback"
+  ],
+  "event.candidate-cleanup-reconnect": [
+    "候选清理重连",
+    "Candidate cleanup reconnect"
+  ],
+  "event.candidate-cleanup": [
+    "候选目录清理",
+    "Candidate cleanup"
+  ],
+  "db.inspect": [
+    "正在检查已安装的 DB 实例：{database}",
+    "Checking installed DB instances: {database}"
+  ],
+  "confirm.db.inspect": [
+    "正在检查已安装的 DB 实例：{database}",
+    "Checking installed DB instances: {database}"
+  ],
+  "event.db.inspect": [
+    "正在检查已安装的 DB 实例：{database}",
+    "Checking installed DB instances: {database}"
+  ],
+  "db.install": [
+    "正在安装受支持的系统 DB 软件包：{database}",
+    "Installing the supported system DB package: {database}"
+  ],
+  "confirm.db.install": [
+    "正在安装受支持的系统 DB 软件包：{database}",
+    "Installing the supported system DB package: {database}"
+  ],
+  "event.db.install": [
+    "正在安装受支持的系统 DB 软件包：{database}",
+    "Installing the supported system DB package: {database}"
+  ],
+  "db.replacing": [
+    "正在替换 DB 软件，用户数据仍需您恢复：{database}",
+    "Replacing DB software; user data restoration remains pending: {database}"
+  ],
+  "confirm.db.replacing": [
+    "正在替换 DB 软件，用户数据仍需您恢复：{database}",
+    "Replacing DB software; user data restoration remains pending: {database}"
+  ],
+  "event.db.replacing": [
+    "正在替换 DB 软件，用户数据仍需您恢复：{database}",
+    "Replacing DB software; user data restoration remains pending: {database}"
+  ],
+  "db.reused": [
+    "使用已核验的现有 DB 实例：{database}",
+    "Using the verified existing DB instance: {database}"
+  ],
+  "confirm.db.reused": [
+    "使用已核验的现有 DB 实例：{database}",
+    "Using the verified existing DB instance: {database}"
+  ],
+  "event.db.reused": [
+    "使用已核验的现有 DB 实例：{database}",
+    "Using the verified existing DB instance: {database}"
+  ],
+  "db.waitingRestore": [
+    "等待您恢复数据并核验：{database}",
+    "Waiting for your data restoration and verification: {database}"
+  ],
+  "confirm.db.waitingRestore": [
+    "等待您恢复数据并核验：{database}",
+    "Waiting for your data restoration and verification: {database}"
+  ],
+  "event.db.waitingRestore": [
+    "等待您恢复数据并核验：{database}",
+    "Waiting for your data restoration and verification: {database}"
+  ],
+  "db.conflict": [
+    "DB 检查发现以下情况：\n{detail}\n请在服务器上处理后选择“是”重新检查；选择“否”停止本次任务。",
+    "The DB inventory needs attention:\n{detail}\nResolve the conflict on the server, then choose Yes to check again. No stops this task."
+  ],
+  "confirm.db.conflict": [
+    "DB 检查发现以下情况：\n{detail}\n请在服务器上处理后选择“是”重新检查；选择“否”停止本次任务。",
+    "The DB inventory needs attention:\n{detail}\nResolve the conflict on the server, then choose Yes to check again. No stops this task."
+  ],
+  "event.db.conflict": [
+    "DB 检查发现以下情况：\n{detail}\n请在服务器上处理后选择“是”重新检查；选择“否”停止本次任务。",
+    "The DB inventory needs attention:\n{detail}\nResolve the conflict on the server, then choose Yes to check again. No stops this task."
+  ],
+  "db.versionUnavailable": [
+    "当前系统仓库不能满足 DB 版本要求 {required}。请调整项目要求或服务器仓库后选择“是”重新检查；选择“否”停止任务。",
+    "The configured system repositories cannot satisfy DB version {required}. Adjust the requirement or repository on the server, then choose Yes to check again. No stops this task."
+  ],
+  "confirm.db.versionUnavailable": [
+    "当前系统仓库不能满足 DB 版本要求 {required}。请调整项目要求或服务器仓库后选择“是”重新检查；选择“否”停止任务。",
+    "The configured system repositories cannot satisfy DB version {required}. Adjust the requirement or repository on the server, then choose Yes to check again. No stops this task."
+  ],
+  "event.db.versionUnavailable": [
+    "当前系统仓库不能满足 DB 版本要求 {required}。请调整项目要求或服务器仓库后选择“是”重新检查；选择“否”停止任务。",
+    "The configured system repositories cannot satisfy DB version {required}. Adjust the requirement or repository on the server, then choose Yes to check again. No stops this task."
+  ],
+  "db.replaceConfirmed": [
+    "服务器：{server}\n实例：{instance}\n当前版本：{current}\n项目要求：{required}\n目标版本：{target}\n保留的数据目录：{data}\n安装软件不会自动恢复或迁移旧数据。",
+    "Server: {server}\nInstance: {instance}\nCurrent version: {current}\nRequired version: {required}\nTarget version: {target}\nPreserved data path: {data}\nSoftware installation does not restore or migrate your data."
+  ],
+  "confirm.db.replaceConfirmed": [
+    "服务器：{server}\n实例：{instance}\n当前版本：{current}\n项目要求：{required}\n目标版本：{target}\n保留的数据目录：{data}\n安装软件不会自动恢复或迁移旧数据。",
+    "Server: {server}\nInstance: {instance}\nCurrent version: {current}\nRequired version: {required}\nTarget version: {target}\nPreserved data path: {data}\nSoftware installation does not restore or migrate your data."
+  ],
+  "event.db.replaceConfirmed": [
+    "服务器：{server}\n实例：{instance}\n当前版本：{current}\n项目要求：{required}\n目标版本：{target}\n保留的数据目录：{data}\n安装软件不会自动恢复或迁移旧数据。",
+    "Server: {server}\nInstance: {instance}\nCurrent version: {current}\nRequired version: {required}\nTarget version: {target}\nPreserved data path: {data}\nSoftware installation does not restore or migrate your data."
+  ],
+  "db.restoreConfirmed": [
+    "您是否已完成 {database} 数据恢复或迁移，并启动了目标实例？选择“是”将核验连接后继续；选择“否”保留等待人工恢复状态。",
+    "Have you restored or migrated your {database} data and started the intended instance? Yes verifies the connection and continues. No leaves the operation waiting for manual restoration."
+  ],
+  "confirm.db.restoreConfirmed": [
+    "您是否已完成 {database} 数据恢复或迁移，并启动了目标实例？选择“是”将核验连接后继续；选择“否”保留等待人工恢复状态。",
+    "Have you restored or migrated your {database} data and started the intended instance? Yes verifies the connection and continues. No leaves the operation waiting for manual restoration."
+  ],
+  "event.db.restoreConfirmed": [
+    "您是否已完成 {database} 数据恢复或迁移，并启动了目标实例？选择“是”将核验连接后继续；选择“否”保留等待人工恢复状态。",
+    "Have you restored or migrated your {database} data and started the intended instance? Yes verifies the connection and continues. No leaves the operation waiting for manual restoration."
+  ],
+  "db.adminPassword": [
+    "DB 管理员密码（仅本次任务使用）",
+    "DB administrator password (used only for this task)"
+  ],
+  "confirm.db.adminPassword": [
+    "DB 管理员密码（仅本次任务使用）",
+    "DB administrator password (used only for this task)"
+  ],
+  "event.db.adminPassword": [
+    "DB 管理员密码（仅本次任务使用）",
+    "DB administrator password (used only for this task)"
+  ],
+  "db.applicationPassword": [
+    "现有应用数据库账号的密码",
+    "Existing application DB account password"
+  ],
+  "confirm.db.applicationPassword": [
+    "现有应用数据库账号的密码",
+    "Existing application DB account password"
+  ],
+  "event.db.applicationPassword": [
+    "现有应用数据库账号的密码",
+    "Existing application DB account password"
+  ],
+  "db.creating": [
+    "正在创建应用专用数据库和限定权限的账号：{database}",
+    "Creating an owned application DB and restricted account: {database}"
+  ],
+  "confirm.db.creating": [
+    "正在创建应用专用数据库和限定权限的账号：{database}",
+    "Creating an owned application DB and restricted account: {database}"
+  ],
+  "event.db.creating": [
+    "正在创建应用专用数据库和限定权限的账号：{database}",
+    "Creating an owned application DB and restricted account: {database}"
+  ],
+  "db.connecting": [
+    "正在核验现有应用数据库账号：{database}",
+    "Verifying the existing application DB account: {database}"
+  ],
+  "confirm.db.connecting": [
+    "正在核验现有应用数据库账号：{database}",
+    "Verifying the existing application DB account: {database}"
+  ],
+  "event.db.connecting": [
+    "正在核验现有应用数据库账号：{database}",
+    "Verifying the existing application DB account: {database}"
+  ],
+  "db.initializing": [
+    "正在执行并记录选定的 SQL 初始化入口：{database}",
+    "Initializing and recording the selected SQL entry: {database}"
+  ],
+  "confirm.db.initializing": [
+    "正在执行并记录选定的 SQL 初始化入口：{database}",
+    "Initializing and recording the selected SQL entry: {database}"
+  ],
+  "event.db.initializing": [
+    "正在执行并记录选定的 SQL 初始化入口：{database}",
+    "Initializing and recording the selected SQL entry: {database}"
+  ],
+  "db.existingSchema": [
+    "数据库 {database} 已存在。是否使用应用账号执行这些结构变更：{files}？请先检查 SQL 并备份，再确认；选择“否”停止部署。",
+    "Database {database} already exists. Apply the selected schema changes ({files}) using the application account? Confirm only after checking the SQL and your backup. No stops deployment."
+  ],
+  "confirm.db.existingSchema": [
+    "数据库 {database} 已存在。是否使用应用账号执行这些结构变更：{files}？请先检查 SQL 并备份，再确认；选择“否”停止部署。",
+    "Database {database} already exists. Apply the selected schema changes ({files}) using the application account? Confirm only after checking the SQL and your backup. No stops deployment."
+  ],
+  "event.db.existingSchema": [
+    "数据库 {database} 已存在。是否使用应用账号执行这些结构变更：{files}？请先检查 SQL 并备份，再确认；选择“否”停止部署。",
+    "Database {database} already exists. Apply the selected schema changes ({files}) using the application account? Confirm only after checking the SQL and your backup. No stops deployment."
+  ],
+  "db.replace.backup": [
+    "我已完成并检查数据库备份。",
+    "I have completed and checked my database backup."
+  ],
+  "confirm.db.replace.backup": [
+    "我已完成并检查数据库备份。",
+    "I have completed and checked my database backup."
+  ],
+  "event.db.replace.backup": [
+    "我已完成并检查数据库备份。",
+    "I have completed and checked my database backup."
+  ],
+  "db.replace.downtime": [
+    "我已做好服务停机和数据恢复准备。",
+    "I have prepared for service downtime and data restoration."
+  ],
+  "confirm.db.replace.downtime": [
+    "我已做好服务停机和数据恢复准备。",
+    "I have prepared for service downtime and data restoration."
+  ],
+  "event.db.replace.downtime": [
+    "我已做好服务停机和数据恢复准备。",
+    "I have prepared for service downtime and data restoration."
+  ],
+  "db.replace.software": [
+    "我同意卸载此旧版 DB 软件，并安装上方显示的目标版本。",
+    "I authorize uninstalling this old DB software and installing the displayed target version."
+  ],
+  "confirm.db.replace.software": [
+    "我同意卸载此旧版 DB 软件，并安装上方显示的目标版本。",
+    "I authorize uninstalling this old DB software and installing the displayed target version."
+  ],
+  "event.db.replace.software": [
+    "我同意卸载此旧版 DB 软件，并安装上方显示的目标版本。",
+    "I authorize uninstalling this old DB software and installing the displayed target version."
+  ],
+  "db.replace.checkAll": [
+    "只有打开全部确认开关，才能授权本次指定实例和版本的替换。",
+    "All three confirmations are required for this exact replacement."
+  ],
+  "confirm.db.replace.checkAll": [
+    "只有打开全部确认开关，才能授权本次指定实例和版本的替换。",
+    "All three confirmations are required for this exact replacement."
+  ],
+  "event.db.replace.checkAll": [
+    "只有打开全部确认开关，才能授权本次指定实例和版本的替换。",
+    "All three confirmations are required for this exact replacement."
+  ],
+  "db.field.engine": [
+    "DB 类型",
+    "DB type"
+  ],
+  "confirm.db.field.engine": [
+    "DB 类型",
+    "DB type"
+  ],
+  "event.db.field.engine": [
+    "DB 类型",
+    "DB type"
+  ],
+  "db.field.database": [
+    "应用数据库名称／Redis 键前缀",
+    "Application database / Redis key namespace"
+  ],
+  "confirm.db.field.database": [
+    "应用数据库名称／Redis 键前缀",
+    "Application database / Redis key namespace"
+  ],
+  "event.db.field.database": [
+    "应用数据库名称／Redis 键前缀",
+    "Application database / Redis key namespace"
+  ],
+  "db.field.username": [
+    "应用 DB 账号",
+    "Application DB account"
+  ],
+  "confirm.db.field.username": [
+    "应用 DB 账号",
+    "Application DB account"
+  ],
+  "event.db.field.username": [
+    "应用 DB 账号",
+    "Application DB account"
+  ],
+  "db.field.environmentPrefix": [
+    "配置环境变量前缀",
+    "Configuration environment prefix"
+  ],
+  "confirm.db.field.environmentPrefix": [
+    "配置环境变量前缀",
+    "Configuration environment prefix"
+  ],
+  "event.db.field.environmentPrefix": [
+    "配置环境变量前缀",
+    "Configuration environment prefix"
+  ],
+  "db.field.passwordEnvironment": [
+    "密码环境变量名称",
+    "Password environment variable"
+  ],
+  "confirm.db.field.passwordEnvironment": [
+    "密码环境变量名称",
+    "Password environment variable"
+  ],
+  "event.db.field.passwordEnvironment": [
+    "密码环境变量名称",
+    "Password environment variable"
+  ],
+  "db.field.initialize": [
+    "SQL 初始化入口",
+    "Initialization SQL entry"
+  ],
+  "confirm.db.field.initialize": [
+    "SQL 初始化入口",
+    "Initialization SQL entry"
+  ],
+  "event.db.field.initialize": [
+    "SQL 初始化入口",
+    "Initialization SQL entry"
+  ],
+  "db.field.instance": [
+    "现有 DB 实例",
+    "Existing DB instance"
+  ],
+  "confirm.db.field.instance": [
+    "现有 DB 实例",
+    "Existing DB instance"
+  ],
+  "event.db.field.instance": [
+    "现有 DB 实例",
+    "Existing DB instance"
+  ],
+  "db.help.engine": [
+    "选择项目要求的数据库类型；程序不会自动换成另一种引擎。",
+    "Select the type required by the project. The program never substitutes another engine automatically."
+  ],
+  "confirm.db.help.engine": [
+    "选择项目要求的数据库类型；程序不会自动换成另一种引擎。",
+    "Select the type required by the project. The program never substitutes another engine automatically."
+  ],
+  "event.db.help.engine": [
+    "选择项目要求的数据库类型；程序不会自动换成另一种引擎。",
+    "Select the type required by the project. The program never substitutes another engine automatically."
+  ],
+  "db.help.database": [
+    "已有库请填实际名称，新库可使用生成的专用名称。Redis 中此项为应用的键前缀，应用写入的键必须使用该前缀。",
+    "Use the existing application database name, or a new dedicated name. For Redis this is the application's key prefix; keys must use this prefix."
+  ],
+  "confirm.db.help.database": [
+    "已有库请填实际名称，新库可使用生成的专用名称。Redis 中此项为应用的键前缀，应用写入的键必须使用该前缀。",
+    "Use the existing application database name, or a new dedicated name. For Redis this is the application's key prefix; keys must use this prefix."
+  ],
+  "event.db.help.database": [
+    "已有库请填实际名称，新库可使用生成的专用名称。Redis 中此项为应用的键前缀，应用写入的键必须使用该前缀。",
+    "Use the existing application database name, or a new dedicated name. For Redis this is the application's key prefix; keys must use this prefix."
+  ],
+  "db.help.username": [
+    "填写应用使用的账号。只有创建新的应用数据库时，才创建专用账号；复用已有库不会重置账号。",
+    "Use the account expected by the application. A new dedicated account is created only for a newly created database."
+  ],
+  "confirm.db.help.username": [
+    "填写应用使用的账号。只有创建新的应用数据库时，才创建专用账号；复用已有库不会重置账号。",
+    "Use the account expected by the application. A new dedicated account is created only for a newly created database."
+  ],
+  "event.db.help.username": [
+    "填写应用使用的账号。只有创建新的应用数据库时，才创建专用账号；复用已有库不会重置账号。",
+    "Use the account expected by the application. A new dedicated account is created only for a newly created database."
+  ],
+  "db.help.environmentPrefix": [
+    "程序实际读取的变量前缀，例如 DB 或 SPRING_DATASOURCE。自动提供 HOST、PORT、DATABASE、USERNAME；Spring 使用 JDBC URL。",
+    "The variable prefix read by your program, such as DB or SPRING_DATASOURCE. The program supplies HOST, PORT, DATABASE and USERNAME; Spring receives its JDBC URL."
+  ],
+  "confirm.db.help.environmentPrefix": [
+    "程序实际读取的变量前缀，例如 DB 或 SPRING_DATASOURCE。自动提供 HOST、PORT、DATABASE、USERNAME；Spring 使用 JDBC URL。",
+    "The variable prefix read by your program, such as DB or SPRING_DATASOURCE. The program supplies HOST, PORT, DATABASE and USERNAME; Spring receives its JDBC URL."
+  ],
+  "event.db.help.environmentPrefix": [
+    "程序实际读取的变量前缀，例如 DB 或 SPRING_DATASOURCE。自动提供 HOST、PORT、DATABASE、USERNAME；Spring 使用 JDBC URL。",
+    "The variable prefix read by your program, such as DB or SPRING_DATASOURCE. The program supplies HOST, PORT, DATABASE and USERNAME; Spring receives its JDBC URL."
+  ],
+  "db.help.passwordEnvironment": [
+    "应用读取密码的变量，例如 DB_PASSWORD。系统运行方式在启动时读取受保护的凭据；容器必须明确支持 DB_PASSWORD_FILE 等文件变量。",
+    "The variable your program reads, such as DB_PASSWORD. Native runtimes receive the protected credential at startup. Containers require an explicitly supported DB_PASSWORD_FILE variable."
+  ],
+  "confirm.db.help.passwordEnvironment": [
+    "应用读取密码的变量，例如 DB_PASSWORD。系统运行方式在启动时读取受保护的凭据；容器必须明确支持 DB_PASSWORD_FILE 等文件变量。",
+    "The variable your program reads, such as DB_PASSWORD. Native runtimes receive the protected credential at startup. Containers require an explicitly supported DB_PASSWORD_FILE variable."
+  ],
+  "event.db.help.passwordEnvironment": [
+    "应用读取密码的变量，例如 DB_PASSWORD。系统运行方式在启动时读取受保护的凭据；容器必须明确支持 DB_PASSWORD_FILE 等文件变量。",
+    "The variable your program reads, such as DB_PASSWORD. Native runtimes receive the protected credential at startup. Containers require an explicitly supported DB_PASSWORD_FILE variable."
+  ],
+  "db.help.initialize": [
+    "选择在新建且确认为空的应用库中执行一次的 SQL 文件。已有库另行确认结构变更；失败会记录，重试不会盲目重复执行。",
+    "Select the SQL file to run once on the newly owned, empty database. Existing databases require a separate schema-change confirmation. Failure is recorded and never blindly retried."
+  ],
+  "confirm.db.help.initialize": [
+    "选择在新建且确认为空的应用库中执行一次的 SQL 文件。已有库另行确认结构变更；失败会记录，重试不会盲目重复执行。",
+    "Select the SQL file to run once on the newly owned, empty database. Existing databases require a separate schema-change confirmation. Failure is recorded and never blindly retried."
+  ],
+  "event.db.help.initialize": [
+    "选择在新建且确认为空的应用库中执行一次的 SQL 文件。已有库另行确认结构变更；失败会记录，重试不会盲目重复执行。",
+    "Select the SQL file to run once on the newly owned, empty database. Existing databases require a separate schema-change confirmation. Failure is recorded and never blindly retried."
+  ],
+  "db.help.instance": [
+    "选择要复用的已有实例。选项包含实例标识、版本和端口；服务停止也属于已安装，不能据此重复安装。",
+    "Choose the existing instance to reuse. Each entry shows its identifier, version and port; stopped instances are still existing installations."
+  ],
+  "confirm.db.help.instance": [
+    "选择要复用的已有实例。选项包含实例标识、版本和端口；服务停止也属于已安装，不能据此重复安装。",
+    "Choose the existing instance to reuse. Each entry shows its identifier, version and port; stopped instances are still existing installations."
+  ],
+  "event.db.help.instance": [
+    "选择要复用的已有实例。选项包含实例标识、版本和端口；服务停止也属于已安装，不能据此重复安装。",
+    "Choose the existing instance to reuse. Each entry shows its identifier, version and port; stopped instances are still existing installations."
+  ],
+  "db.nativeEndpoint": [
+    "项目声明了外部或尚未确定的 DB 地址。是否在本次部署服务器上使用相同类型的 DB，并替换应用连接配置？选择“否”停止任务；如需继续使用原数据库，请在高级选项中填写明确的外部 DB 绑定。",
+    "The project declares an external or unresolved DB address. Use the same DB engine on the selected deployment server and replace the application connection settings? No stops this task; configure an explicit external DB binding in Advanced options to keep using the original server."
+  ],
+  "confirm.db.nativeEndpoint": [
+    "项目声明了外部或尚未确定的 DB 地址。是否在本次部署服务器上使用相同类型的 DB，并替换应用连接配置？选择“否”停止任务；如需继续使用原数据库，请在高级选项中填写明确的外部 DB 绑定。",
+    "The project declares an external or unresolved DB address. Use the same DB engine on the selected deployment server and replace the application connection settings? No stops this task; configure an explicit external DB binding in Advanced options to keep using the original server."
+  ],
+  "event.db.nativeEndpoint": [
+    "项目声明了外部或尚未确定的 DB 地址。是否在本次部署服务器上使用相同类型的 DB，并替换应用连接配置？选择“否”停止任务；如需继续使用原数据库，请在高级选项中填写明确的外部 DB 绑定。",
+    "The project declares an external or unresolved DB address. Use the same DB engine on the selected deployment server and replace the application connection settings? No stops this task; configure an explicit external DB binding in Advanced options to keep using the original server."
+  ],
+  "db.manualRequired": [
+    "等待人工处理数据库，本次未交付成功部署。请先在服务器完成恢复，再使用相同项目重新启动部署；程序会先检查已保存的数据库操作记录，不能直接重复初始化。",
+    "Waiting for manual DB recovery. No successful deployment was published. Complete recovery on the server, then start the same deployment again; the saved DB operation journal will be checked before continuing."
+  ],
+  "confirm.db.manualRequired": [
+    "等待人工处理数据库，本次未交付成功部署。请先在服务器完成恢复，再使用相同项目重新启动部署；程序会先检查已保存的数据库操作记录，不能直接重复初始化。",
+    "Waiting for manual DB recovery. No successful deployment was published. Complete recovery on the server, then start the same deployment again; the saved DB operation journal will be checked before continuing."
+  ],
+  "event.db.manualRequired": [
+    "等待人工处理数据库，本次未交付成功部署。请先在服务器完成恢复，再使用相同项目重新启动部署；程序会先检查已保存的数据库操作记录，不能直接重复初始化。",
+    "Waiting for manual DB recovery. No successful deployment was published. Complete recovery on the server, then start the same deployment again; the saved DB operation journal will be checked before continuing."
+  ],
+  "db.engine.postgresql": [
+    "PostgreSQL",
+    "PostgreSQL"
+  ],
+  "confirm.db.engine.postgresql": [
+    "PostgreSQL",
+    "PostgreSQL"
+  ],
+  "event.db.engine.postgresql": [
+    "PostgreSQL",
+    "PostgreSQL"
+  ],
+  "db.engine.mysql": [
+    "MySQL",
+    "MySQL"
+  ],
+  "confirm.db.engine.mysql": [
+    "MySQL",
+    "MySQL"
+  ],
+  "event.db.engine.mysql": [
+    "MySQL",
+    "MySQL"
+  ],
+  "db.engine.mariadb": [
+    "MariaDB",
+    "MariaDB"
+  ],
+  "confirm.db.engine.mariadb": [
+    "MariaDB",
+    "MariaDB"
+  ],
+  "event.db.engine.mariadb": [
+    "MariaDB",
+    "MariaDB"
+  ],
+  "db.engine.redis": [
+    "Redis",
+    "Redis"
+  ],
+  "confirm.db.engine.redis": [
+    "Redis",
+    "Redis"
+  ],
+  "event.db.engine.redis": [
+    "Redis",
+    "Redis"
+  ],
+  "db.engine.sqlite": [
+    "SQLite",
+    "SQLite"
+  ],
+  "confirm.db.engine.sqlite": [
+    "SQLite",
+    "SQLite"
+  ],
+  "event.db.engine.sqlite": [
+    "SQLite",
+    "SQLite"
+  ],
+  "db.conflict.unknown_source": [
+    "发现来自其他安装来源的数据库服务，无法确认其系统软件包。",
+    "A DB server is installed outside the supported package manager."
+  ],
+  "confirm.db.conflict.unknown_source": [
+    "发现来自其他安装来源的数据库服务，无法确认其系统软件包。",
+    "A DB server is installed outside the supported package manager."
+  ],
+  "event.db.conflict.unknown_source": [
+    "发现来自其他安装来源的数据库服务，无法确认其系统软件包。",
+    "A DB server is installed outside the supported package manager."
+  ],
+  "db.conflict.mariadb_installed": [
+    "已安装 MariaDB，不能静默替换为 MySQL。",
+    "MariaDB exists; it will not be silently replaced by MySQL."
+  ],
+  "confirm.db.conflict.mariadb_installed": [
+    "已安装 MariaDB，不能静默替换为 MySQL。",
+    "MariaDB exists; it will not be silently replaced by MySQL."
+  ],
+  "event.db.conflict.mariadb_installed": [
+    "已安装 MariaDB，不能静默替换为 MySQL。",
+    "MariaDB exists; it will not be silently replaced by MySQL."
+  ],
+  "db.conflict.mysql_installed": [
+    "已安装 MySQL，不能静默替换为 MariaDB。",
+    "MySQL exists; it will not be silently replaced by MariaDB."
+  ],
+  "confirm.db.conflict.mysql_installed": [
+    "已安装 MySQL，不能静默替换为 MariaDB。",
+    "MySQL exists; it will not be silently replaced by MariaDB."
+  ],
+  "event.db.conflict.mysql_installed": [
+    "已安装 MySQL，不能静默替换为 MariaDB。",
+    "MySQL exists; it will not be silently replaced by MariaDB."
+  ],
+  "db.conflict.postgresql_path": [
+    "某个 PostgreSQL 实例的配置路径不在支持范围。",
+    "A PostgreSQL cluster configuration path is unsupported."
+  ],
+  "confirm.db.conflict.postgresql_path": [
+    "某个 PostgreSQL 实例的配置路径不在支持范围。",
+    "A PostgreSQL cluster configuration path is unsupported."
+  ],
+  "event.db.conflict.postgresql_path": [
+    "某个 PostgreSQL 实例的配置路径不在支持范围。",
+    "A PostgreSQL cluster configuration path is unsupported."
+  ],
+  "db.conflict.postgresql_source": [
+    "无法确认某个 PostgreSQL 实例的软件来源。",
+    "A PostgreSQL cluster has an unknown software source."
+  ],
+  "confirm.db.conflict.postgresql_source": [
+    "无法确认某个 PostgreSQL 实例的软件来源。",
+    "A PostgreSQL cluster has an unknown software source."
+  ],
+  "event.db.conflict.postgresql_source": [
+    "无法确认某个 PostgreSQL 实例的软件来源。",
+    "A PostgreSQL cluster has an unknown software source."
+  ],
+  "db.conflict.defaults_file": [
+    "实例 {instance} 需要明确的配置文件。",
+    "Instance {instance} needs an explicit configuration file."
+  ],
+  "confirm.db.conflict.defaults_file": [
+    "实例 {instance} 需要明确的配置文件。",
+    "Instance {instance} needs an explicit configuration file."
+  ],
+  "event.db.conflict.defaults_file": [
+    "实例 {instance} 需要明确的配置文件。",
+    "Instance {instance} needs an explicit configuration file."
+  ],
+  "db.conflict.redis_instance": [
+    "无法确定 Redis 实例 {instance} 的配置文件。",
+    "Redis instance {instance} has no identifiable configuration file."
+  ],
+  "confirm.db.conflict.redis_instance": [
+    "无法确定 Redis 实例 {instance} 的配置文件。",
+    "Redis instance {instance} has no identifiable configuration file."
+  ],
+  "event.db.conflict.redis_instance": [
+    "无法确定 Redis 实例 {instance} 的配置文件。",
+    "Redis instance {instance} has no identifiable configuration file."
+  ],
+  "db.conflict.redis_config": [
+    "无法确定 Redis 配置。",
+    "Redis configuration cannot be identified."
+  ],
+  "confirm.db.conflict.redis_config": [
+    "无法确定 Redis 配置。",
+    "Redis configuration cannot be identified."
+  ],
+  "event.db.conflict.redis_config": [
+    "无法确定 Redis 配置。",
+    "Redis configuration cannot be identified."
+  ],
+  "db.conflict.redis_cluster": [
+    "Redis 的外部配置引用或集群设置需要人工检查。",
+    "Redis includes or clustering need manual inspection."
+  ],
+  "confirm.db.conflict.redis_cluster": [
+    "Redis 的外部配置引用或集群设置需要人工检查。",
+    "Redis includes or clustering need manual inspection."
+  ],
+  "event.db.conflict.redis_cluster": [
+    "Redis 的外部配置引用或集群设置需要人工检查。",
+    "Redis includes or clustering need manual inspection."
+  ],
+  "db.conflict.postgresql_service": [
+    "PostgreSQL 服务 {instance} 需要明确的实例配置适配。",
+    "PostgreSQL service {instance} needs an explicit cluster adapter."
+  ],
+  "confirm.db.conflict.postgresql_service": [
+    "PostgreSQL 服务 {instance} 需要明确的实例配置适配。",
+    "PostgreSQL service {instance} needs an explicit cluster adapter."
+  ],
+  "event.db.conflict.postgresql_service": [
+    "PostgreSQL 服务 {instance} 需要明确的实例配置适配。",
+    "PostgreSQL service {instance} needs an explicit cluster adapter."
+  ],
+  "db.conflict.instance_unknown": [
+    "数据库软件包已安装，但尚无法确定实例。",
+    "DB packages are installed but no instance could be identified."
+  ],
+  "confirm.db.conflict.instance_unknown": [
+    "数据库软件包已安装，但尚无法确定实例。",
+    "DB packages are installed but no instance could be identified."
+  ],
+  "event.db.conflict.instance_unknown": [
+    "数据库软件包已安装，但尚无法确定实例。",
+    "DB packages are installed but no instance could be identified."
+  ],
+  "db.conflict.data_without_package": [
+    "存在旧数据库数据，但找不到对应的已安装服务软件包。",
+    "Existing DB data has no identified installed server package."
+  ],
+  "confirm.db.conflict.data_without_package": [
+    "存在旧数据库数据，但找不到对应的已安装服务软件包。",
+    "Existing DB data has no identified installed server package."
+  ],
+  "event.db.conflict.data_without_package": [
+    "存在旧数据库数据，但找不到对应的已安装服务软件包。",
+    "Existing DB data has no identified installed server package."
+  ],
+  "db.initialize.none": [
+    "此数据库不执行初始化",
+    "No initialization for this database"
+  ],
+  "confirm.db.initialize.none": [
+    "此数据库不执行初始化",
+    "No initialization for this database"
+  ],
+  "event.db.initialize.none": [
+    "此数据库不执行初始化",
+    "No initialization for this database"
+  ],
+  "db.multipleReplacement": [
+    "实例 {instance} 不满足版本要求 {required}，替换共用软件包可能影响其他已安装实例。请先人工处理实例与软件包关系，再选择“是”重新检查，或选择“否”停止。",
+    "Instance {instance} does not satisfy {required}, and replacing shared packages may affect other installed instances. Resolve the instance/package layout manually, then choose Yes to inspect again or No to stop."
+  ],
+  "confirm.db.multipleReplacement": [
+    "实例 {instance} 不满足版本要求 {required}，替换共用软件包可能影响其他已安装实例。请先人工处理实例与软件包关系，再选择“是”重新检查，或选择“否”停止。",
+    "Instance {instance} does not satisfy {required}, and replacing shared packages may affect other installed instances. Resolve the instance/package layout manually, then choose Yes to inspect again or No to stop."
+  ],
+  "event.db.multipleReplacement": [
+    "实例 {instance} 不满足版本要求 {required}，替换共用软件包可能影响其他已安装实例。请先人工处理实例与软件包关系，再选择“是”重新检查，或选择“否”停止。",
+    "Instance {instance} does not satisfy {required}, and replacing shared packages may affect other installed instances. Resolve the instance/package layout manually, then choose Yes to inspect again or No to stop."
+  ],
+  "db.conflict.version_unknown": [
+    "无法确定某个已安装数据库的版本；不会将它视为未安装。",
+    "An installed database version cannot be determined; it is not treated as absent."
+  ],
+  "confirm.db.conflict.version_unknown": [
+    "无法确定某个已安装数据库的版本；不会将它视为未安装。",
+    "An installed database version cannot be determined; it is not treated as absent."
+  ],
+  "event.db.conflict.version_unknown": [
+    "无法确定某个已安装数据库的版本；不会将它视为未安装。",
+    "An installed database version cannot be determined; it is not treated as absent."
+  ],
+  "event.SOURCE_FETCHING": [
+    "获取 Git 源码",
+    "Fetching Git source"
+  ],
+  "event.SOURCE_ANALYZING": [
+    "静态分析项目",
+    "Analyzing source"
+  ],
+  "event.ENVIRONMENT_PREPARING": [
+    "准备部署环境",
+    "Preparing environment"
+  ],
+  "event.DEPLOYMENT_STARTED": [
+    "开始部署",
+    "Deployment started"
+  ],
+  "event.INPUT_CORRECTION_REQUIRED": [
+    "需要修正参数",
+    "Input correction required"
+  ],
+  "event.BACKUP_COLLECTING": [
+    "收集备份内容",
+    "Collecting backup material"
+  ],
+  "event.RESTORE_STARTED": [
+    "开始恢复",
+    "Restore started"
+  ],
+  "event.REMOTE_CLEANUP_REQUIRED": [
+    "需要检查远端临时文件清理",
+    "Verify remote temporary-file cleanup"
+  ],
+  "event.AI_TESTING": [
+    "验证模型连接与输出",
+    "Testing model connection and output"
+  ],
+  "event.AI_ATTEMPT": [
+    "模型尝试已完成",
+    "Model attempt completed"
+  ],
+  "event.AI_PROVIDER_UNAVAILABLE": [
+    "此模型暂不可用，继续下一项",
+    "Model unavailable; trying the next one"
+  ],
+  "event.QUEUED": [
+    "等待执行",
+    "Queued"
+  ],
+  "event.RUNNING": [
+    "执行中",
+    "Running"
+  ],
+  "event.ANALYZING": [
+    "分析中",
+    "Analyzing"
+  ],
+  "event.WAITING_DECISION": [
+    "等待决定",
+    "Awaiting decision"
+  ],
+  "event.CANCELLING": [
+    "正在取消",
+    "Cancelling"
+  ],
+  "event.CANCELLED": [
+    "已取消",
+    "Cancelled"
+  ],
+  "event.SUCCEEDED": [
+    "已完成",
+    "Succeeded"
+  ],
+  "event.FAILED": [
+    "执行失败",
+    "Failed"
+  ],
+  "event.INTERRUPTED": [
+    "被系统中断",
+    "Interrupted"
+  ],
+  "event.REVALIDATION_REQUIRED": [
+    "需要重新验证",
+    "Revalidation required"
+  ],
+  "addSecret": [
+    "添加应用秘密",
+    "Add application secret"
+  ],
+  "secretEnvironment": [
+    "环境变量名称",
+    "Environment variable"
+  ],
+  "secretValue": [
+    "秘密值",
+    "Secret value"
+  ],
+  "saveSecret": [
+    "加密保存并填入引用",
+    "Encrypt and add reference"
+  ]
+}

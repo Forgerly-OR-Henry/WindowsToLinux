@@ -21,15 +21,29 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
-/** Produces a static recognition result that cannot enter archive preparation or deployment. / 生成无法进入归档准备或部署的静态识别结果。 */
+/**
+ * Produces a static recognition result that cannot enter archive preparation or deployment. / 生成无法进入归档准备或部署的静态识别结果。
+ */
 public final class PreviewInspector implements DeploymentTypeInspector {
-    /** Returns the supported deployment project type. / 返回支持的部署项目类型。 */
+    /**
+     * Returns the supported deployment project type. / 返回支持的部署项目类型。
+     *
+     * @return the supported deployment project type / 支持的部署项目类型
+     */
     @Override
     public DeploymentProjectType projectType() {
         return DeploymentProjectType.RECOGNITION_PREVIEW;
     }
 
-    /** Inspects source facts for this deployment type. / 检查此部署类型的源码事实。 */
+    /**
+     * Inspects source facts for this deployment type. / 检查此部署类型的源码事实。
+     *
+     * @param root root directory defining the filesystem boundary / 定义文件系统边界的根目录
+     * @param source source identity or content read by the operation / 操作读取的源身份或内容
+     * @param languageFacts language facts / 语言事实
+     * @param rejections reasons preventing admission to the next stage / 阻止进入下一阶段的原因
+     * @return constructed or resolved deployment type assessment / 构造或解析得到的部署类型评估
+     */
     @Override
     public DeploymentTypeAssessment inspect(Path root, SourceInspectionFacts source, ProjectLanguageFacts languageFacts,
                                             List<RejectionReason> rejections) {

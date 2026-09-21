@@ -10,11 +10,27 @@ import gold.debug.windowstolinux.shared.model.project.DeploymentRuntimeSpecifica
 
 import java.util.Objects;
 
-/** Matches one typed runtime against already collected host tool capabilities. / 将一个类型化运行时与已采集的主机工具能力进行匹配。 */
+/**
+ * Matches one typed runtime against already collected host tool capabilities. / 将一个类型化运行时与已采集的主机工具能力进行匹配。
+ */
 public final class RuntimeCapabilityEvaluator {
+    /**
+     * Prevents instantiation of this static contract helper.
+     * <p>防止实例化当前静态契约辅助类。
+     */
     private RuntimeCapabilityEvaluator() {
     }
 
+    /**
+     * Checks the requested runtime and any resolved toolchain bindings against observed server capabilities.
+     * <p>根据已观测服务器能力检查请求运行规格及已解析工具链绑定。
+     *
+     * @param capabilities observed target tools and runtime capabilities / 目标工具及运行能力观测
+     * @param facts typed facts used for deterministic planning / 确定性计划使用的类型化事实
+     * @param runtime reviewed language, process and health specification / 已审阅的语言、进程及健康规格
+     * @param tools tools / 工具集合
+     * @return constructed or resolved runtime capability decision / 构造或解析得到的运行时能力决定
+     */
     public static RuntimeCapabilityDecision evaluate(LinuxCapabilityFacts capabilities, DeploymentProjectFacts facts,
             DeploymentRuntimeSpecification runtime, gold.debug.windowstolinux.shared.model.toolchain.ResolvedToolchainSet tools) {
         if (tools.selections().isEmpty()) return evaluate(capabilities, facts, runtime);
@@ -41,7 +57,17 @@ public final class RuntimeCapabilityEvaluator {
         return RuntimeCapabilityDecision.supportedRuntime();
     }
 
-    /** Evaluates runtime tools and versions without connecting to or mutating the host. / 在不连接或修改主机的情况下评估运行时工具与版本。 */
+    /**
+     * Checks the requested runtime and any resolved toolchain bindings against observed server capabilities.
+     * <p>根据已观测服务器能力检查请求运行规格及已解析工具链绑定。
+     *
+     * @param capabilities observed target tools and runtime capabilities / 目标工具及运行能力观测
+     * @param facts typed facts used for deterministic planning / 确定性计划使用的类型化事实
+     * @param runtime reviewed language, process and health specification / 已审阅的语言、进程及健康规格
+     * @return constructed or resolved runtime capability decision / 构造或解析得到的运行时能力决定
+     * @throws IllegalArgumentException if an input violates the constraints checked by this contract / 输入违反当前契约检查的约束时
+     * @throws NullPointerException if a required input is absent / 必需输入缺失时
+     */
     public static RuntimeCapabilityDecision evaluate(
             LinuxCapabilityFacts capabilities,
             DeploymentProjectFacts facts,
@@ -64,12 +90,29 @@ public final class RuntimeCapabilityEvaluator {
                 : RuntimeCapabilityDecision.unsupportedRuntime(detail);
     }
 
+    /**
+     * Tests the companion build tools predicate against the supplied evidence.
+     * <p>根据所提供证据检查配套单元构建工具集合条件。
+     *
+     * @param capabilities observed target tools and runtime capabilities / 目标工具及运行能力观测
+     * @return true when companion build tools predicate against the supplied evidence, false otherwise / 根据所提供证据检查配套单元构建工具集合条件时为 true，否则为 false
+     */
     private static boolean companionBuildTools(LinuxCapabilityFacts capabilities) {
         return anyVersion(capabilities, EcosystemToolType.CMAKE,
                 version -> version[0] > 3 || version[0] == 3 && version[1] >= 25)
                 && hasTool(capabilities, EcosystemToolType.NINJA);
     }
 
+    /**
+     * Returns the reason a requested runtime is unavailable, or null when the observed capabilities satisfy it.
+     * <p>返回请求运行环境不可用的原因；观测能力满足要求时返回 null。
+     *
+     * @param capabilities observed target tools and runtime capabilities / 目标工具及运行能力观测
+     * @param facts typed facts used for deterministic planning / 确定性计划使用的类型化事实
+     * @param runtime reviewed language, process and health specification / 已审阅的语言、进程及健康规格
+     * @return missing runtime reason, or null when the capability is available / 缺失运行环境原因；能力可用时为 null
+     * @throws IllegalArgumentException if an input violates the constraints checked by this contract / 输入违反当前契约检查的约束时
+     */
     private static String missingRuntime(LinuxCapabilityFacts capabilities, DeploymentProjectFacts facts,
                                          DeploymentRuntimeSpecification runtime) {
         return switch (runtime) {
@@ -159,6 +202,15 @@ public final class RuntimeCapabilityEvaluator {
         };
     }
 
+    /**
+     * Returns null when the exact service runtime version is installed, otherwise returns an unavailable-runtime reason.
+     * <p>精确服务运行版本已安装时返回 null，否则返回运行环境不可用原因。
+     *
+     * @param capabilities observed target tools and runtime capabilities / 目标工具及运行能力观测
+     * @param projectType supported project deployment category / 受支持的项目部署类别
+     * @param version version of the relevant protocol, configuration or runtime / 相应协议、配置或运行时的版本
+     * @return missing version reason, or null when the exact version is available / 缺失版本原因；精确版本可用时为 null
+     */
     private static String serviceVersion(
             LinuxCapabilityFacts capabilities,
             DeploymentProjectType projectType,
@@ -168,19 +220,53 @@ public final class RuntimeCapabilityEvaluator {
                 ? null : "the selected ecosystem service runtime version is not available";
     }
 
+    /**
+     * Reports whether the tool condition holds for this contract.
+     * <p>判断当前契约是否满足工具条件。
+     *
+     * @param capabilities observed target tools and runtime capabilities / 目标工具及运行能力观测
+     * @param tool tool / 工具
+     * @return true when tool condition holds for this contract, false otherwise / 当前契约是否满足工具条件时为 true，否则为 false
+     */
     private static boolean hasTool(LinuxCapabilityFacts capabilities, EcosystemToolType tool) {
         return !capabilities.ecosystemToolVersions().getOrDefault(tool, java.util.Set.of()).isEmpty();
     }
 
+    /**
+     * Reports whether the version of the relevant protocol, configuration or runtime condition holds for this contract.
+     * <p>判断当前契约是否满足相应协议、配置或运行时的版本条件。
+     *
+     * @param capabilities observed target tools and runtime capabilities / 目标工具及运行能力观测
+     * @param tool tool / 工具
+     * @param version version of the relevant protocol, configuration or runtime / 相应协议、配置或运行时的版本
+     * @return true when version of the relevant protocol, configuration or runtime condition holds for this contract, false otherwise / 当前契约是否满足相应协议、配置或运行时的版本条件时为 true，否则为 false
+     */
     private static boolean hasVersion(LinuxCapabilityFacts capabilities, EcosystemToolType tool, String version) {
         return capabilities.ecosystemToolVersions().getOrDefault(tool, java.util.Set.of()).contains(version);
     }
 
+    /**
+     * Reports whether the major condition holds for this contract.
+     * <p>判断当前契约是否满足主版本条件。
+     *
+     * @param capabilities observed target tools and runtime capabilities / 目标工具及运行能力观测
+     * @param tool tool / 工具
+     * @param major major / 主版本
+     * @return true when major condition holds for this contract, false otherwise / 当前契约是否满足主版本条件时为 true，否则为 false
+     */
     private static boolean hasMajor(LinuxCapabilityFacts capabilities, EcosystemToolType tool, String major) {
         return capabilities.ecosystemToolVersions().getOrDefault(tool, java.util.Set.of()).stream()
                 .anyMatch(version -> version.equals(major) || version.startsWith(major + "."));
     }
 
+    /**
+     * Tests the compatible node package manager predicate against the supplied evidence.
+     * <p>根据所提供证据检查兼容节点软件包管理器条件。
+     *
+     * @param capabilities observed target tools and runtime capabilities / 目标工具及运行能力观测
+     * @param tool tool / 工具
+     * @return true when compatible node package manager predicate against the supplied evidence, false otherwise / 根据所提供证据检查兼容节点软件包管理器条件时为 true，否则为 false
+     */
     private static boolean compatibleNodePackageManager(
             LinuxCapabilityFacts capabilities,
             EcosystemToolType tool
@@ -193,6 +279,14 @@ public final class RuntimeCapabilityEvaluator {
         };
     }
 
+    /**
+     * Tests the compatible python tool predicate against the supplied evidence.
+     * <p>根据所提供证据检查兼容Python工具条件。
+     *
+     * @param capabilities observed target tools and runtime capabilities / 目标工具及运行能力观测
+     * @param tool tool / 工具
+     * @return true when compatible python tool predicate against the supplied evidence, false otherwise / 根据所提供证据检查兼容Python工具条件时为 true，否则为 false
+     */
     private static boolean compatiblePythonTool(
             LinuxCapabilityFacts capabilities,
             EcosystemToolType tool
@@ -206,6 +300,15 @@ public final class RuntimeCapabilityEvaluator {
         };
     }
 
+    /**
+     * Tests the any version predicate against the supplied evidence.
+     * <p>根据所提供证据检查任意版本条件。
+     *
+     * @param capabilities observed target tools and runtime capabilities / 目标工具及运行能力观测
+     * @param tool tool / 工具
+     * @param accepted accepted / 已接受
+     * @return true when any version predicate against the supplied evidence, false otherwise / 根据所提供证据检查任意版本条件时为 true，否则为 false
+     */
     private static boolean anyVersion(
             LinuxCapabilityFacts capabilities,
             EcosystemToolType tool,
@@ -217,6 +320,13 @@ public final class RuntimeCapabilityEvaluator {
                 .anyMatch(accepted);
     }
 
+    /**
+     * Parses major and optional minor numeric version components, returning null for unsupported syntax.
+     * <p>解析数字主版本及可选次版本，对不支持的语法返回 null。
+     *
+     * @param version version of the relevant protocol, configuration or runtime / 相应协议、配置或运行时的版本
+     * @return major/minor pair, or null when the text is not numeric version evidence / 主次版本对；文本不是数字版本证据时为 null
+     */
     private static int[] numericVersion(String version) {
         java.util.regex.Matcher matcher = java.util.regex.Pattern.compile("^(\\d+)(?:[.](\\d+))?").matcher(version);
         if (!matcher.find()) return null;

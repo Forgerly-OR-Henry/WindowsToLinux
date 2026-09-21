@@ -60,8 +60,8 @@ class DesktopAppearanceAcceptanceTest {
                         JButton deploy = descendants(pane).filter(JButton.class::isInstance).map(JButton.class::cast).filter(button -> button.getText().equals(catalog.text("auto.start"))).findFirst().orElseThrow();
                         assertTrue(deploy.isShowing()); assertTrue(deploy.getWidth() >= deploy.getFontMetrics(deploy.getFont()).stringWidth(deploy.getText()) + deploy.getInsets().left + deploy.getInsets().right, "deployment button must fit its scaled label");
                         capture(frame,"desktop-"+theme.name().toLowerCase()+"-"+scale+"-collapsed.png");
-                        var sourceCard = descendants(pane).filter(gold.debug.windowstolinux.app.ui.deployment.single.DeploymentSourceCard.class::isInstance)
-                                .map(gold.debug.windowstolinux.app.ui.deployment.single.DeploymentSourceCard.class::cast).findFirst().orElseThrow();
+                        var sourceCard = descendants(pane).filter(gold.debug.windowstolinux.app.ui.deployment.automatic.DeploymentSourceCard.class::isInstance)
+                                .map(gold.debug.windowstolinux.app.ui.deployment.automatic.DeploymentSourceCard.class::cast).findFirst().orElseThrow();
                         String sourceUrl = "https://github.com/MHSanaei/3x-ui.git";
                         sourceCard.restore(sourceUrl, true); frame.validate();
                         JButton selectedSource = descendants(sourceCard).filter(JButton.class::isInstance).map(JButton.class::cast)
@@ -70,6 +70,10 @@ class DesktopAppearanceAcceptanceTest {
                         assertTrue(selectedSource.getHeight() >= com.formdev.flatlaf.util.UIScale.scale(84));
                         assertTrue(descendants(sourceCard).filter(JTextField.class::isInstance).noneMatch(Component::isVisible));
                         capture(frame,"desktop-"+theme.name().toLowerCase()+"-"+scale+"-selected.png");
+                        descendants(frame).filter(JButton.class::isInstance).map(JButton.class::cast)
+                                .filter(button->catalog.text("nav.settings").equals(button.getAccessibleContext().getAccessibleName())).findFirst().orElseThrow().doClick(0);
+                        frame.validate();
+                        capture(frame,"settings-"+theme.name().toLowerCase()+"-"+scale+".png");
                     } finally { frame.dispose(); }
                 });
             }

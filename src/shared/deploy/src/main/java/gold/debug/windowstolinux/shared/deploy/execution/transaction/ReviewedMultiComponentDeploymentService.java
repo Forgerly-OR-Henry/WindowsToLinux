@@ -44,13 +44,22 @@ import java.util.Optional;
 /**
  * Executes one whole-application transaction through a single verified typed session.
  *
- * <p>通过单个已验证类型化会话执行一个整体应用事务。
+ *  <p>通过单个已验证类型化会话执行一个整体应用事务。
  */
 public final class ReviewedMultiComponentDeploymentService {
     /**
      * Builds all candidates, snapshots every affected component, switches in dependency order, and restores all on failure.
      *
-     * <p>构建全部候选、快照每个受影响组件、按依赖顺序切换，并在失败时恢复全部组件。
+     *  <p>构建全部候选、快照每个受影响组件、按依赖顺序切换，并在失败时恢复全部组件。
+     *
+     * @param plan deterministic reviewed execution order and targets / 确定的已审阅执行顺序及目标
+     * @param reviewedComponents reviewed components / 已审阅组件集合
+     * @param applicationHealth caller-supplied whole-application health contract / 调用方提供的整应用健康契约
+     * @param gateway factory for authenticated Linux sessions / 已认证 Linux 会话的工厂
+     * @param endpoint reviewed network endpoint / 已审阅网络端点
+     * @param credential authentication material scoped to the current connection / 限定于当前连接的认证素材
+     * @param hostKeyVerifier the host-key verifier / 主机密钥验证器
+     * @return all candidates, snapshots every affected component, switches in dependency order, and restores all on failure / 全部候选、快照每个受影响组件、按依赖顺序切换，并在失败时恢复全部组件
      */
     public MultiComponentDeploymentResult deploy(
             MultiComponentDeploymentPlan plan,
@@ -64,7 +73,20 @@ public final class ReviewedMultiComponentDeploymentService {
         return deploy(plan, reviewedComponents, applicationHealth, gateway, endpoint, credential, hostKeyVerifier, ignored -> { });
     }
 
-    /** Executes with per-operation component and application progress. / 以本次操作的组件和应用进度执行。 */
+    /**
+     * Executes with per-operation component and application progress. / 以本次操作的组件和应用进度执行。
+     *
+     * @param plan deterministic reviewed execution order and targets / 确定的已审阅执行顺序及目标
+     * @param reviewedComponents reviewed components / 已审阅组件集合
+     * @param applicationHealth caller-supplied whole-application health contract / 调用方提供的整应用健康契约
+     * @param gateway factory for authenticated Linux sessions / 已认证 Linux 会话的工厂
+     * @param endpoint reviewed network endpoint / 已审阅网络端点
+     * @param credential authentication material scoped to the current connection / 限定于当前连接的认证素材
+     * @param hostKeyVerifier the host-key verifier / 主机密钥验证器
+     * @param progress progress / 进度
+     * @return constructed or resolved multi component deployment result / 构造或解析得到的多组件部署结果
+     * @throws NullPointerException if a required input is absent / 必需输入缺失时
+     */
     public MultiComponentDeploymentResult deploy(MultiComponentDeploymentPlan plan,
             List<ReviewedComponentDeployment> reviewedComponents, ApplicationHealthGate applicationHealth,
             DeploymentLinuxGateway gateway, SshEndpoint endpoint, SshCredential credential,
@@ -142,6 +164,16 @@ public final class ReviewedMultiComponentDeploymentService {
         }
     }
 
+    /**
+     * Marks all component transactions successful and records whether committed-release cleanup remains pending.
+     * <p>将所有组件事务标记为成功，并记录已提交发布的清理是否仍待完成。
+     *
+     * @param plan deterministic reviewed execution order and targets / 确定的已审阅执行顺序及目标
+     * @param contexts contexts / 上下文集合
+     * @param events ordered progress or transaction events / 有序进度或事务事件
+     * @param cleanupPending cleanup pending / 清理待处理
+     * @return constructed or resolved multi component deployment result / 构造或解析得到的多组件部署结果
+     */
     private static MultiComponentDeploymentResult committedResult(MultiComponentDeploymentPlan plan,
             Map<String, MultiComponentTransactionContext> contexts, List<DeploymentEvent> events, boolean cleanupPending) {
         contexts.values().forEach(context -> context.state = ComponentTransactionState.SUCCEEDED);
@@ -156,6 +188,17 @@ public final class ReviewedMultiComponentDeploymentService {
                 "Verified component release identities remain active; temporary resource cleanup needs attention")) : result;
     }
 
+    /**
+     * Checks shared server and per-component prerequisites, returning a rejection result when deployment cannot safely proceed.
+     * <p>检查共享服务器及各组件前提条件，无法安全继续部署时返回拒绝结果。
+     *
+     * @param plan deterministic reviewed execution order and targets / 确定的已审阅执行顺序及目标
+     * @param contexts contexts / 上下文集合
+     * @param session session used for the current scoped operation / 当前限定作用域操作使用的会话
+     * @param applicationEvents application events / 应用事件集合
+     * @return matching result, or empty when no admitted value exists / 匹配结果；不存在已准入内容时为空
+     * @throws LinuxOperationException if the authenticated remote operation fails or its evidence is rejected / 已认证远端操作失败或其证据被拒绝时
+     */
     private static Optional<MultiComponentDeploymentResult> preflight(
             MultiComponentDeploymentPlan plan, Map<String, MultiComponentTransactionContext> contexts, DeploymentRemoteSession session,
             List<DeploymentEvent> applicationEvents) throws LinuxOperationException {
@@ -200,6 +243,17 @@ public final class ReviewedMultiComponentDeploymentService {
         return Optional.empty();
     }
 
+    /**
+     * Builds every reviewed component candidate before permitting whole-application publication.
+     * <p>在允许整应用发布前构建所有已审阅组件候选。
+     *
+     * @param plan deterministic reviewed execution order and targets / 确定的已审阅执行顺序及目标
+     * @param contexts contexts / 上下文集合
+     * @param session session used for the current scoped operation / 当前限定作用域操作使用的会话
+     * @param applicationEvents application events / 应用事件集合
+     * @return every reviewed component candidate before permitting whole-application publication; null when no matching value is available / 在允许整应用发布前构建所有已审阅组件候选；没有匹配值时为 null
+     * @throws LinuxOperationException if the authenticated remote operation fails or its evidence is rejected / 已认证远端操作失败或其证据被拒绝时
+     */
     private static MultiComponentDeploymentResult buildAll(
             MultiComponentDeploymentPlan plan, Map<String, MultiComponentTransactionContext> contexts, DeploymentRemoteSession session,
             List<DeploymentEvent> applicationEvents) throws LinuxOperationException {
@@ -242,6 +296,16 @@ public final class ReviewedMultiComponentDeploymentService {
         return null;
     }
 
+    /**
+     * Snapshots each component in dependency-safe stop order before modifying its current deployment.
+     * <p>修改组件当前部署前，按依赖安全的停机顺序为各组件创建快照。
+     *
+     * @param plan deterministic reviewed execution order and targets / 确定的已审阅执行顺序及目标
+     * @param contexts contexts / 上下文集合
+     * @param session session used for the current scoped operation / 当前限定作用域操作使用的会话
+     * @param applicationEvents application events / 应用事件集合
+     * @throws LinuxOperationException if the authenticated remote operation fails or its evidence is rejected / 已认证远端操作失败或其证据被拒绝时
+     */
     private static void snapshotAll(MultiComponentDeploymentPlan plan, Map<String, MultiComponentTransactionContext> contexts,
                                     DeploymentRemoteSession session, List<DeploymentEvent> applicationEvents)
             throws LinuxOperationException {
@@ -254,6 +318,16 @@ public final class ReviewedMultiComponentDeploymentService {
                 "Every affected release, runtime, autostart, configuration, and secret revision was captured"));
     }
 
+    /**
+     * Stops old components.
+     * <p>停止old组件集合。
+     *
+     * @param plan deterministic reviewed execution order and targets / 确定的已审阅执行顺序及目标
+     * @param contexts contexts / 上下文集合
+     * @param session session used for the current scoped operation / 当前限定作用域操作使用的会话
+     * @param applicationEvents application events / 应用事件集合
+     * @throws LinuxOperationException if the authenticated remote operation fails or its evidence is rejected / 已认证远端操作失败或其证据被拒绝时
+     */
     private static void stopOldComponents(MultiComponentDeploymentPlan plan, Map<String, MultiComponentTransactionContext> contexts,
                                           DeploymentRemoteSession session, List<DeploymentEvent> applicationEvents)
             throws LinuxOperationException {
@@ -274,6 +348,17 @@ public final class ReviewedMultiComponentDeploymentService {
                 "Previously running affected components were stopped in reverse dependency order"));
     }
 
+    /**
+     * Publishes components in dependency order and verifies component and whole-application health before committing success.
+     * <p>按依赖顺序发布组件，并在提交成功前验证组件及整应用健康。
+     *
+     * @param plan deterministic reviewed execution order and targets / 确定的已审阅执行顺序及目标
+     * @param contexts contexts / 上下文集合
+     * @param applicationHealth caller-supplied whole-application health contract / 调用方提供的整应用健康契约
+     * @param session session used for the current scoped operation / 当前限定作用域操作使用的会话
+     * @param applicationEvents application events / 应用事件集合
+     * @throws LinuxOperationException if the authenticated remote operation fails or its evidence is rejected / 已认证远端操作失败或其证据被拒绝时
+     */
     private static void publishAndCheck(
             MultiComponentDeploymentPlan plan, Map<String, MultiComponentTransactionContext> contexts, ApplicationHealthGate applicationHealth,
             DeploymentRemoteSession session, List<DeploymentEvent> applicationEvents) throws LinuxOperationException {
@@ -307,6 +392,16 @@ public final class ReviewedMultiComponentDeploymentService {
                 "The whole-application health gate did not pass");
     }
 
+    /**
+     * Observes all.
+     * <p>观测全部。
+     *
+     * @param plan deterministic reviewed execution order and targets / 确定的已审阅执行顺序及目标
+     * @param contexts contexts / 上下文集合
+     * @param session session used for the current scoped operation / 当前限定作用域操作使用的会话
+     * @param applicationEvents application events / 应用事件集合
+     * @throws LinuxOperationException if the authenticated remote operation fails or its evidence is rejected / 已认证远端操作失败或其证据被拒绝时
+     */
     private static void observeAll(MultiComponentDeploymentPlan plan, Map<String, MultiComponentTransactionContext> contexts,
                                          DeploymentRemoteSession session, List<DeploymentEvent> applicationEvents)
             throws LinuxOperationException {
@@ -325,6 +420,18 @@ public final class ReviewedMultiComponentDeploymentService {
                 "Every component ownership and running state was observed from the target"));
     }
 
+    /**
+     * Validates reviewed component coverage and constructs transaction contexts in the plan's deterministic order.
+     * <p>校验已审阅组件覆盖范围，并按计划的确定顺序构建事务上下文。
+     *
+     * @param plan deterministic reviewed execution order and targets / 确定的已审阅执行顺序及目标
+     * @param reviewed reviewed / 已审阅
+     * @param endpoint reviewed network endpoint / 已审阅网络端点
+     * @param applicationHealth caller-supplied whole-application health contract / 调用方提供的整应用健康契约
+     * @return constructed or resolved linked hash map / 构造或解析得到的Linked哈希映射
+     * @throws IllegalArgumentException if an input violates the constraints checked by this contract / 输入违反当前契约检查的约束时
+     * @throws NullPointerException if a required input is absent / 必需输入缺失时
+     */
     private static LinkedHashMap<String, MultiComponentTransactionContext> contexts(
             MultiComponentDeploymentPlan plan, List<ReviewedComponentDeployment> reviewed, SshEndpoint endpoint,
             ApplicationHealthGate applicationHealth) {
@@ -352,6 +459,16 @@ public final class ReviewedMultiComponentDeploymentService {
         return contexts;
     }
 
+    /**
+     * Builds a rejected result with its retained reason and evidence.
+     * <p>构建被拒绝结果并保留其原因及证据。
+     *
+     * @param contexts contexts / 上下文集合
+     * @param applicationEvents application events / 应用事件集合
+     * @param step step / 步骤
+     * @param evidence observations supporting the reported result / 支持所报告结果的观测证据
+     * @return a rejected result with its retained reason and evidence / 被拒绝结果并保留其原因及证据
+     */
     private static MultiComponentDeploymentResult rejected(Map<String, MultiComponentTransactionContext> contexts,
                                                            List<DeploymentEvent> applicationEvents,
                                                            DeploymentTraceEvent step, String evidence) {
@@ -362,6 +479,15 @@ public final class ReviewedMultiComponentDeploymentService {
                 DeploymentStatus.PRECONDITION_REJECTED, applicationEvents, contexts, Optional.empty());
     }
 
+    /**
+     * Hashes the application identifier and ordered component identities into a deterministic application release identity.
+     * <p>对应用标识及有序组件身份计算哈希，得到确定的整应用发布身份。
+     *
+     * @param plan deterministic reviewed execution order and targets / 确定的已审阅执行顺序及目标
+     * @param contexts contexts / 上下文集合
+     * @return application identity text / 应用身份文本
+     * @throws IllegalStateException if the required state or runtime facility is unavailable / 所需状态或运行设施不可用时
+     */
     private static String applicationIdentity(MultiComponentDeploymentPlan plan, Map<String, MultiComponentTransactionContext> contexts) {
         try {
             MessageDigest digest = MessageDigest.getInstance("SHA-256");
@@ -377,6 +503,13 @@ public final class ReviewedMultiComponentDeploymentService {
         }
     }
 
+    /**
+     * Updates reviewed multi component deployment.
+     * <p>更新已审阅多组件部署。
+     *
+     * @param digest content identity used for independent verification / 独立验证所用的内容身份
+     * @param value candidate content accepted or rejected by this contract / 由当前契约接收或拒绝的候选内容
+     */
     private static void update(MessageDigest digest, String value) {
         digest.update(value.getBytes(StandardCharsets.UTF_8));
         digest.update((byte) 0);

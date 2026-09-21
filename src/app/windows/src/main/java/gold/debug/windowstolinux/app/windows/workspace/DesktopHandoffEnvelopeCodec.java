@@ -12,27 +12,78 @@ import java.security.MessageDigest;
 import java.util.Arrays;
 import java.util.Objects;
 
-/** Authenticated binary envelope shared by independently transported desktop handoffs. / 独立传输桌面交接共用的认证二进制信封。 */
+/**
+ * Authenticated binary envelope shared by independently transported desktop handoffs. / 独立传输桌面交接共用的认证二进制信封。
+ */
 public final class DesktopHandoffEnvelopeCodec {
+    /**
+     * MAGIC.
+     * <p>格式标记。
+     */
     private static final int MAGIC = 0x57544846;
+    /**
+     * VERSION.
+     * <p>版本。
+     */
     private static final int VERSION = 1;
+    /**
+     * TAG BYTES.
+     * <p>标签字节。
+     */
     private static final int TAG_BYTES = 32;
+    /**
+     * MAXIMUM PAYLOAD BYTES.
+     * <p>最大载荷字节。
+     */
     private static final int MAXIMUM_PAYLOAD_BYTES = 1024 * 1024;
+    /**
+     * MAXIMUM DOCUMENT BYTES.
+     * <p>最大文档字节。
+     */
     private static final int MAXIMUM_DOCUMENT_BYTES = MAXIMUM_PAYLOAD_BYTES + TAG_BYTES + 32;
 
-    /** Closed handoff purposes prevent one authenticated document from crossing maintenance operations. / 封闭交接用途防止认证文档跨维护操作使用。 */
+    /**
+     * Closed handoff purposes prevent one authenticated document from crossing maintenance operations. / 封闭交接用途防止认证文档跨维护操作使用。
+     */
     public enum PurposeType {
+        /**
+         * UPDATE classification within purpose type.
+         * <p>用途类型中的更新分类。
+         */
         UPDATE(1),
+        /**
+         * UNINSTALL classification within purpose type.
+         * <p>用途类型中的卸载分类。
+         */
         UNINSTALL(2);
 
+        /**
+         * Stable machine-readable classification code.
+         * <p>稳定的机器可读分类码。
+         */
         private final int code;
 
+        /**
+         * Binds the supplied dependencies and state for purpose type.
+         * <p>为用途类型绑定传入的依赖及状态。
+         *
+         * @param code stable machine-readable classification code / 稳定的机器可读分类码
+         */
         PurposeType(int code) {
             this.code = code;
         }
     }
 
-    /** Authenticates one bounded payload without retaining the caller-owned key. / 认证一个有界载荷且不持有调用方密钥。 */
+    /**
+     * Authenticates one bounded payload without retaining the caller-owned key. / 认证一个有界载荷且不持有调用方密钥。
+     *
+     * @param purpose purpose / 用途
+     * @param payload payload / 载荷
+     * @param authenticationKey authentication key / 认证键
+     * @return encoded or copied content buffer / 编码或复制得到的内容缓冲区
+     * @throws WindowsWorkspaceException if the windows workspace boundary rejects the operation / Windows工作区边界拒绝当前操作时
+     * @throws NullPointerException if a required input is absent / 必需输入缺失时
+     */
     public byte[] write(PurposeType purpose, byte[] payload, SecretKey authenticationKey)
             throws WindowsWorkspaceException {
         purpose = Objects.requireNonNull(purpose, "purpose");
@@ -68,7 +119,16 @@ public final class DesktopHandoffEnvelopeCodec {
         }
     }
 
-    /** Authenticates the complete envelope before parsing or returning any payload bytes. / 在解析或返回任何载荷字节前认证完整信封。 */
+    /**
+     * Authenticates the complete envelope before parsing or returning any payload bytes. / 在解析或返回任何载荷字节前认证完整信封。
+     *
+     * @param expectedPurpose expected purpose / 预期用途
+     * @param document document / 文档
+     * @param authenticationKey authentication key / 认证键
+     * @return encoded or copied content buffer / 编码或复制得到的内容缓冲区
+     * @throws WindowsWorkspaceException if the windows workspace boundary rejects the operation / Windows工作区边界拒绝当前操作时
+     * @throws NullPointerException if a required input is absent / 必需输入缺失时
+     */
     public byte[] read(PurposeType expectedPurpose, byte[] document, SecretKey authenticationKey)
             throws WindowsWorkspaceException {
         expectedPurpose = Objects.requireNonNull(expectedPurpose, "expectedPurpose");
@@ -111,6 +171,15 @@ public final class DesktopHandoffEnvelopeCodec {
         }
     }
 
+    /**
+     * Authenticates the handoff body with the required HmacSHA256 key.
+     * <p>使用所需 HmacSHA256 密钥认证交接正文。
+     *
+     * @param body body / 正文
+     * @param authenticationKey authentication key / 认证键
+     * @return encoded or copied content buffer / 编码或复制得到的内容缓冲区
+     * @throws WindowsWorkspaceException if the windows workspace boundary rejects the operation / Windows工作区边界拒绝当前操作时
+     */
     private static byte[] tag(byte[] body, SecretKey authenticationKey) throws WindowsWorkspaceException {
         if (authenticationKey == null) {
             throw invalid("desktop handoff authentication key is missing", null);
@@ -132,6 +201,14 @@ public final class DesktopHandoffEnvelopeCodec {
         }
     }
 
+    /**
+     * Creates the owning module's failure for rejected input or evidence.
+     * <p>为被拒绝输入或证据创建所属模块的失败。
+     *
+     * @param diagnostic bounded non-secret detail for diagnostic reporting / 用于诊断报告的有界非秘密详情
+     * @param cause original failure retained as the nested cause / 保留为嵌套原因的原始失败
+     * @return the owning module's failure for rejected input or evidence / 为被拒绝输入或证据创建所属模块的失败
+     */
     private static WindowsWorkspaceException invalid(String diagnostic, Throwable cause) {
         return WindowsWorkspaceException.create(WindowsWorkspaceFailureType.HANDOFF_INVALID, diagnostic, cause);
     }

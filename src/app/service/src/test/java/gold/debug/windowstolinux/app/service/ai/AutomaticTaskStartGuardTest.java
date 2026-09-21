@@ -21,7 +21,7 @@ import static org.junit.jupiter.api.Assertions.*;
 class AutomaticTaskStartGuardTest {
     @TempDir Path root;
     final ServerProfile server=new ServerProfile("server","example.invalid",22,"deploy","ref",CredentialStorageMode.MASTER_PASSWORD);
-    AiUseCaseFacade ai(DesktopPersistence db){return new AiUseCaseFacade(db.aiProfiles(),new DesktopSecretStoreService(db.encryptedSecrets()),new OpenAiCompatibleRoleClient(),new AgentProtocolClient((url,key,body)->{throw new AssertionError("no AI before preflight");}));}
+    AiUseCaseFacade ai(DesktopPersistence db){return new AiUseCaseFacade(db.aiProfiles(),new DesktopSecretStoreService(db.encryptedSecrets()),new OpenAiCompatibleRoleClient(),new DeploymentAiProtocolClient((url,key,body)->{throw new AssertionError("no AI before preflight");}));}
     AutomaticDeploymentTaskService task(DesktopPersistence db){
         var facade=(AutomaticDeploymentApplicationFacade)java.lang.reflect.Proxy.newProxyInstance(getClass().getClassLoader(),new Class<?>[]{AutomaticDeploymentApplicationFacade.class},(p,m,a)->{throw new AssertionError("preflight must precede source, SSH, upload and environment: "+m);});
         return new AutomaticDeploymentTaskService(facade,ai(db),null,new ServerOperationLockRegistry(),db.agentTasks(),null);

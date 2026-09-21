@@ -4,7 +4,7 @@
 
 ## 文档信息与导航
 
-- 文档结构版本：`3.0.0-functional-phases`；整理日期：2026-09-10。
+- 文档组织：按功能与模块维护，期数表示能力增量；整理日期：2026-09-19。
 - 状态：二期功能已进入现有桌面链路；Ubuntu/Stream 验收保留精确历史范围，现行部署与身份规则见四期。
 - 依据：现行行为以当前代码和适用的运行证据为准；本期引入范围与后期调整分开说明。
 - [开发总纲](DEVELOPMENT.md) · [现行结构](../File.md) · [1期](PHASE-1.md) · [3期](PHASE-3.md) · [4期](PHASE-4.md) · [5期](PHASE-5.md) · [6期](PHASE-6.md)
@@ -18,10 +18,9 @@
   - [3.4 多类型构建、容器发布与生命周期](#deployment)
   - [3.5 Linux 范围与旧系统兼容边界](#linux)
   - [3.6 多 Provider 与只读 Agent](#ai)
-- [4. 实施顺序与依赖](#implementation)
+- [4. 功能依赖与实现约束](#implementation)
 - [5. 验收标准与验证记录](#acceptance)
 - [6. 剩余事项与后续边界](#remaining)
-- [7. 功能演进与历史版本记录](#history)
 
 <a id="goals"></a>
 
@@ -128,7 +127,7 @@
 
 **涉及模块与分工：** `shared/config` 定义不可变值与秘密引用；`app/db` 存实例和修订，`app/secret` 存秘密，`app/service` 绑定发布。
 
-二期历史持久化基线为 SQLite v5；当前已为 v12，运行时编码 v3。四期进一步保存资源、健康和运行身份，不把这些字段倒计为二期新增。
+二期历史持久化基线为 SQLite v5；当前已为 v15，运行时编码 v3。四期进一步保存资源、健康和运行身份，不把这些字段倒计为二期新增。
 
 #### 普通配置快照
 
@@ -192,21 +191,21 @@
 
 **涉及模块与分工：** `shared/ai` 提供结构化调用与只读工具，`app/service` 选择 Provider，`app/secret` 短时提供密钥。
 
-- 可以保存多条 OpenAI 兼容 API 记录及默认模型；自动调用只使用用户预先指定的记录，不在失败时静默把数据发送到另一服务。
+- 可以保存多条 OpenAI 兼容 API 记录及默认模型；二期自动调用使用预先指定记录，不静默外发；现行启用顺序和失败切换由[四期模型规则](PHASE-4.md#ai)定义。
 - API Key 通过平台 `secret` 保存，调用模块只获得短时使用能力，不向界面返回原始值。
 - AI 默认提供结构化分析；可选垂直 Agent 只能调用类型化的只读分析和计划工具，不能拥有任意 Shell、直接 SSH、凭据读取或跳过确认的执行权限。
 - 多模型协作和角色编排属于三期。
 
 <a id="implementation"></a>
 
-## 4. 实施顺序与依赖
+## 4. 功能依赖与实现约束
 
-1. 扩展项目事实、支持等级、配置和密钥引用模型。
-2. 实现 Git 固定 Commit 与平台只读分析快照。
-3. 逐个实现 Java、Node、Python、静态和单容器适配器，每个适配器独立端到端验收。
-4. 实现配置快照、密钥修订引用和回滚保留策略。
-5. 扩展 Linux 发行版/版本/CPU 能力矩阵和容器生命周期。
-6. 实现多 API 与受控 Agent，集中执行安全和失败测试。
+| 功能 | 依赖与约束 |
+| --- | --- |
+| Git 来源 | 固定 Commit 与安全快照先于类型分析和目标机构建。 |
+| 配置与秘密 | 不可变修订和精确引用参与发布身份，回滚必须恢复原绑定。 |
+| 类型与容器适配 | 每类项目独立完成分析、计划、构建和验收；发行版能力不能由同语言成功样例外推。 |
+| AI 建议 | 使用已经脱敏的类型化事实，建议必须通过确定性校验后才进入计划。 |
 
 <a id="acceptance"></a>
 
@@ -242,20 +241,16 @@
 - [x] 命名 Provider 只按指定标识调用，缺失时不回退；API Key 不可回读；AI 只接受 `DeploymentProjectFacts` 并发送脱敏结构化事实；Agent 工具面只含有界分析和计划，未含 Shell/SSH/凭据读取。
 - [x] 所有新增代码位于既有 Maven 叶子模块与 `File.md` 规定的包结构内，未新增模块或循环依赖。
 
-### 项目、Git、容器与系统回归证据
+### 项目、Git、容器与系统证据
 
-> 历史记录：仅证明下列版本、环境和夹具的结果，不作为当前工作区的新验证。
+| 功能 | 版本与环境 | 已验证结果和限制 |
+| --- | --- | --- |
+| 分析、Git、配置与 Provider | 2026-08-12，JDK 21 本地门禁 | 28 模块、160 项测试，0 失败/错误、2 项平台条件跳过；覆盖静态事实、固定 Commit、不可变配置及秘密修订、受限工具、类型化计划和模块边界。前端类型检查、Vitest、构建和 Chromium 骨架流程独立通过。 |
+| 六类部署与公开 Git | 迁移前 Ubuntu 24.04 x86-64，DesktopApplicationService/SSHD | 普通 JAR、Node、Python、静态、Dockerfile 及公开 Git 固定 Commit 的 Gradle Spring Boot 完成分析、归档、构建、发布、健康和观测；不证明后续统一链路。 |
+| Reviewed 与 Podman | 2026-08-13，同一精确 Ubuntu 目标，helper v3 | 统一 Spring Boot 准备、发布、失败恢复、回滚、生命周期、Wrapper、资源/归属及主机信任独立通过；Podman Quadlet 另有 HTTP、回滚、自启及生命周期证据。 |
+| CentOS Stream 9 | 2026-08-14，x86-64-v3，SELinux Enforcing | 可选 VARIANT_ID 识别缺口修复后仍曾在 SSH KEX 前中断；最终产品准备和整应用成功范围见[三期发行版验收](PHASE-3.md#acceptance-linux)。中间失败不计通过，Stream 10、Ubuntu 22.04 和其他目标不据此外推。 |
 
-- 已完成本地实现与负向测试：Git 分支/Tag 固定 Commit、禁用 Hook、拒绝未经支持的 Submodule/LFS 和 URL 凭据；桌面端可选择本地目录或无凭据网络 Git 来源，Git 来源的 URI、Commit 和归档摘要会绑定进发布请求；六种类型的有界静态识别、冲突/缺失输入与确定性计划，以及唯一且受支持的 Java/Node/Python/静态/容器运行时建议；桌面端只在源码分析后回填这些建议，允许人工覆核和修改，填写受限结构化运行时/非秘密配置/秘密修订引用，审阅确定性计划并以已保存凭据提交；SQLite v5 保存不可变普通配置、秘密修订绑定和发布身份摘要，并无损迁移 v4 旧值；Linux 事实采集与 Ubuntu、CentOS Stream、旧 CentOS 的保守矩阵；Ubuntu 22.04/24.04 与 CentOS Stream 9/10 的固定环境准备脚本；Docker/Podman 不可混淆的自启契约；命名 Provider 与仅含分析/计划工具的可选 Agent 表面。
-- 六种项目类型均已有受控目标机构建、发布、快照、回滚、健康和生命周期代码：Node 的 npm/pnpm/yarn 与锁文件保持一致，Python 仅在候选目录创建虚拟环境，静态站点仅暴露已审阅的产物目录，容器使用受管镜像标签及 Docker restart policy 或 Podman Quadlet。发布快照保存旧的运行参数与自启状态，回滚不得复用新版本配置。
-- 基础语言事实已统一进入 `DeploymentProjectFacts`：只从有界源码路径、JAR Manifest、`package.json`/`tsconfig`、`pyproject.toml` 和扩展名收集确定性证据，不读取任意二进制、不执行源码、不猜测主要语言。JavaScript 与 TypeScript 可同时显示，但不会自动拆成多组件，也不会替代用户显式项目类型选择。
-- Node 构建型静态站点不再具有隐藏默认版本：只有精确 `engines.node` 才能回填主版本，范围或缺失值必须由用户填写；纯静态站点不要求且不得携带 Node 主版本。
-- 2026-08-12 使用 JDK 21 执行 `mvn.cmd -B -ntp -o verify`，28 个 Maven 模块全部成功；该次生成的 44 份 Surefire 报告共 160 项测试，0 失败、0 错误、2 项因当时平台能力跳过。前端另行完成离线 `npm.cmd ci`、类型检查、Vitest（1 项）、生产构建和项目本地 Chromium Playwright（1 项）。`git diff --check`、生产源码期数命名与旧大类扫描、无隐藏 Node 20 默认值边界、435 个中英文消息键及非空值边界、包结构与 `File.md` 一致性、helper 固定 SHA-256 均通过。
-- 迁移前实机验收使用新装 Ubuntu 24.04 x86-64，并严格从当时的 `DesktopApplicationService` 与 Apache SSHD 网关进入：本地普通 JAR、Node.js、Python、纯静态站点、Dockerfile 容器，以及公开 Git 固定 Commit 的 Gradle Spring Boot 均完成分析、归档、目标机构建、发布、健康和远端观测。该证据不证明后续统一链路。
-- 2026-08-13 当时产品入口在同一精确 Ubuntu 24.04 x86-64 目标完成统一 Spring Boot Reviewed/helper v3 的环境准备、发布、健康、失败恢复、回滚、生命周期、Wrapper、资源限制、归属安全和主机信任验收；Podman Quadlet 亦完成部署、HTTP、回滚、生命周期和自启验收。Ubuntu 22.04、CentOS Stream 9/10、私有 Git 凭据及其他发行版仍为 `RUNTIME-PENDING`，不能从该证据外推。
-- 2026-08-14 当时 CentOS Stream 9 目标由产品入口识别为 x86-64-v3；经用户授权的固定测试环境引导后，产品入口复验 SELinux Enforcing。准备回归随即暴露并修复准备脚本仍要求可省略 `VARIANT_ID` 的缺口；后续目标在 SSH 密钥交换前主动关闭连接，无法继续确认准备、发布、回滚或生命周期，且未使用手工部署替代。该状态不是 CentOS 成功验收；其余发行版实机测试按当时范围延后。
-
-Stream 9 连接中断属于中间失败。后续成功证据已记录于[三期发行版验收](PHASE-3.md#acceptance-linux)，保留失败经过并以该精确目标复验更新汇总，不扩展到其他系统。
+基础语言事实只来自有界元数据，JavaScript/TypeScript 共存不自动形成多组件；构建型静态站点没有隐藏 Node 默认值。公开 Git 和指定平台秘密修订的证据不能代替私有远端凭据验收。
 
 <a id="remaining"></a>
 
@@ -267,47 +262,3 @@ Stream 9 连接中断属于中间失败。后续成功证据已记录于[三期�
 - Web 版本、SaaS、多用户、Kubernetes或任意服务器终端。
 
 私有 Git 凭据、Submodule、LFS 未接通；旧 CentOS 没有自动准备和完整部署证据。新版身份隔离后的语言组合结果见四期。
-
-<a id="history"></a>
-
-## 7. 功能演进与历史版本记录
-
-以下按功能归组保留原版本、日期和阶段变化。各行仅表示当时的设计或验收范围；若旧记录无法证明变更期次或版本归属，不能用当前实现反推。
-
-### 阶段范围与开发规范
-
-| 来源 / 版本 | 日期 | 历史变化与证据 |
-| --- | --- | --- |
-| P2 / 1.1.0-phase2 至 1.7.0-managed-lifecycle | 2026-08-07 | 历史需求，范围已由五期路线重新分配。 |
-
-### 源码与工具链
-
-| 来源 / 版本 | 日期 | 历史变化与证据 |
-| --- | --- | --- |
-| P2 / 2.2.0-local-execution-contracts | 2026-08-12 | 补齐六类项目的受控目标机构建、发布、快照、回滚、健康和生命周期代码；容器与非容器快照保存旧运行参数和自启状态；接入类型化主机矩阵及 Ubuntu 22.04/24.04、CentOS Stream 9/10 固定环境准备脚本。本地自动化验证完成，真实目标机验收仍为 `RUNTIME-PENDING`。 |
-
-### 配置秘密与数据库
-
-| 来源 / 版本 | 日期 | 历史变化与证据 |
-| --- | --- | --- |
-| P2 / 2.7.4-centos-stream-acceptance | 2026-08-14 | Stream 9 x86-64 通过产品入口两次环境准备、两组件发布、故障候选整应用回滚、应用/数据库重启和生命周期验收；SELinux 与防火墙态保持验收前观测值，未外推至 Stream 10。 |
-| P2 / 2.7.3-centos-stream-recovery-blocked | 2026-08-14 | Stream 9 经授权测试环境引导后已由产品入口复验 SELinux Enforcing；修复准备脚本遗漏的可选 `VARIANT_ID` 条件，并保留失败阶段与标准错误/输出。目标随后在 SSH 密钥交换前关闭连接，完整验收仍为 `RUNTIME-PENDING`。 |
-| P2 / 2.6.0-reviewed-runtime-acceptance | 2026-08-12 | 完成从用户选定本地/Git 源码、基础语言事实、审阅计划、不可变配置/秘密输入到完整部署的职责闭环；Ubuntu 24.04 x86-64 已实机验证六类项目、公开 Git 固定 Commit、代表性生命周期和失败回滚，未验收矩阵保持 `RUNTIME-PENDING`。 |
-| P2 / 2.5.0-responsibility-boundaries | 2026-08-12 | 补齐 Java、Node.js/JavaScript/TypeScript、Python 基础语言事实和中英文摘要；取消构建型静态站点的 Node 默认版本；按职责拆分分析、桌面页面、SQLite 仓库、Git 快照、六类构建、systemd 与 helper，并增加结构门禁。真实目标机验收仍为 `RUNTIME-PENDING`。 |
-| P2 / 2.4.0-reviewed-source-inference | 2026-08-12 | 将无凭据网络 Git 来源接入桌面至发布请求的相同审阅链路，并用 `SourceRevision` 绑定固定 Commit、来源和归档摘要；补齐可审阅的源码运行时建议和桌面回填，去除 Node、Python、Java、静态站点、容器端口及配置表单中的无依据默认值；秘密修订引用不再固定为空。真实目标机验收仍为 `RUNTIME-PENDING`。 |
-| P2 / 2.3.0-desktop-typed-workflow | 2026-08-12 | 补齐桌面端六类项目的类型选择、静态分析、安全归档、结构化运行时/非秘密配置、计划审阅和已保存凭据提交；AI 对类型化事实只发送脱敏应用标识、项目类型和固定构建入口。目标机端到端验收仍为 `RUNTIME-PENDING`。 |
-| P2 / 2.1.0-phase2-local-implementation | 2026-08-12 | 实现并本地验证 Git 只读快照、六类静态分析/计划、配置与密钥修订、Linux/容器契约和受限 Provider/Agent；所有二期真实运行环境验收保持 `RUNTIME-PENDING`。 |
-| P2 / 2.0.0-phase2 | 2026-08-08 | 聚焦部署宽度，加入 Git、配置快照/共享密钥、常用类型、容器和 Ubuntu/CentOS；移除平台本机构建。 |
-
-### 部署与生命周期
-
-| 来源 / 版本 | 日期 | 历史变化与证据 |
-| --- | --- | --- |
-| P2 / 2.7.2-centos-stream-safety-stop | 2026-08-14 | 修复 CentOS Stream 9/10 的可选 `VARIANT_ID` 识别技术债，并加入精确 CentOS 产品入口验收契约。当前 Stream 9 因 SELinux Disabled 在准备前安全停止，未形成部署成功证据；其他发行版测试按当前范围延后。 |
-| P2 / 2.7.1-reviewed-v3-podman-ubuntu-acceptance | 2026-08-13 | 统一 Spring Boot Reviewed/helper v3 与 Podman Quadlet 由产品入口在 Ubuntu 24.04 x86-64 完成独立验收；未运行的 Ubuntu、CentOS 与其他发行版矩阵仍为 `RUNTIME-PENDING`。 |
-
-### 备份恢复与维护
-
-| 来源 / 版本 | 日期 | 历史变化与证据 |
-| --- | --- | --- |
-| P2 / 2.7.0-spring-boot-reviewed-convergence | 2026-08-13 | 将 Maven/Gradle Spring Boot 统一为一个 Reviewed 项目类型和三个固定构建入口，接入 helper v2、发布身份 v2 与 SQLite v5；迁移前实机证据保留但不外推，新链路为 `RUNTIME-PENDING`。 |

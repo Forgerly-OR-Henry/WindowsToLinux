@@ -96,7 +96,7 @@ class RemoteBackupCreationUseCaseTest {
 
             assertEquals(destination.toAbsolutePath(), created.archive());
             assertTrue(Files.isRegularFile(destination));
-            assertEquals(List.of("observe", "pause", "stop", "release", "file-data", "start", "health", "health", "resume",
+            assertEquals(List.of("observe", "pause", "stop", "release", "file-data", "observe", "start", "health", "health", "resume",
                     "discard"), log);
             assertEquals(4, created.inspection().memberCount());
             assertEquals(RuntimeState.RUNNING, state[0]);
@@ -142,7 +142,7 @@ class RemoteBackupCreationUseCaseTest {
             assertThrows(LinuxOperationException.class, () -> facade.createManagedBackup("demo", destination,
                     backupPassword, master, ignored -> false));
 
-            assertEquals(List.of("observe", "pause", "stop", "release", "start", "health", "health", "resume", "discard"), log);
+            assertEquals(List.of("observe", "pause", "stop", "release", "observe", "start", "health", "health", "resume", "discard"), log);
             assertEquals(RuntimeState.RUNNING, state[0]);
             assertTrue(Files.notExists(destination));
             assertTrue(allCleared(master));

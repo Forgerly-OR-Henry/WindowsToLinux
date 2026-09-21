@@ -27,23 +27,62 @@ import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-/** Inspects dependency-free Java source with explicit JDK build metadata. / 使用显式 JDK 构建元数据检查无依赖 Java 源码。 */
+/**
+ * Inspects dependency-free Java source with explicit JDK build metadata. / 使用显式 JDK 构建元数据检查无依赖 Java 源码。
+ */
 public final class JavaJdkDeploymentInspector implements DeploymentTypeInspector {
+    /**
+     * METADATA.
+     * <p>元数据。
+     */
     private static final String METADATA = "windowstolinux-java.properties";
+    /**
+     * Pattern recognizing PROPERTY.
+     * <p>用于识别属性的匹配模式。
+     */
     private static final Pattern PROPERTY = Pattern.compile("(?m)^([A-Za-z][A-Za-z0-9]*)=([^\\r\\n]+)$");
+    /**
+     * Pattern recognizing JAVA NAME.
+     * <p>用于识别Java名称的匹配模式。
+     */
     private static final Pattern JAVA_NAME = Pattern.compile("[A-Za-z_$][A-Za-z0-9_$]*(?:\\.[A-Za-z_$][A-Za-z0-9_$]*)*");
+    /**
+     * Pattern recognizing MAIN METHOD.
+     * <p>用于识别主METHOD的匹配模式。
+     */
     private static final Pattern MAIN_METHOD = Pattern.compile(
             "\\bpublic\\s+static\\s+void\\s+main\\s*\\(\\s*String\\s*(?:\\[\\]|\\.\\.\\.)\\s+[A-Za-z_$][A-Za-z0-9_$]*\\s*\\)");
+    /**
+     * Pattern recognizing IMPORT.
+     * <p>用于识别导入的匹配模式。
+     */
     private static final Pattern IMPORT = Pattern.compile("(?m)^\\s*import\\s+(?:static\\s+)?([A-Za-z_$][A-Za-z0-9_$.]*)(?:\\.\\*)?\\s*;");
+    /**
+     * Pattern recognizing PACKAGE.
+     * <p>用于识别软件包的匹配模式。
+     */
     private static final Pattern PACKAGE = Pattern.compile("(?m)^\\s*package\\s+([A-Za-z_$][A-Za-z0-9_$.]*)\\s*;");
 
-    /** Returns the Java source project type. / 返回 Java 源码项目类型。 */
+    /**
+     * Returns the Java source project type. / 返回 Java 源码项目类型。
+     *
+     * @return the Java source project type /  Java 源码项目类型
+     */
     @Override
     public DeploymentProjectType projectType() {
         return DeploymentProjectType.JAVA_SOURCE;
     }
 
-    /** Inspects explicit source-root, main-class, version, and dependency boundaries. / 检查显式源码根、主类、版本与依赖边界。 */
+    /**
+     * Inspects explicit source-root, main-class, version, and dependency boundaries. / 检查显式源码根、主类、版本与依赖边界。
+     *
+     * @param root root directory defining the filesystem boundary / 定义文件系统边界的根目录
+     * @param source source identity or content read by the operation / 操作读取的源身份或内容
+     * @param languageFacts language facts / 语言事实
+     * @param rejections reasons preventing admission to the next stage / 阻止进入下一阶段的原因
+     * @return constructed or resolved deployment type assessment / 构造或解析得到的部署类型评估
+     * @throws IOException if the required file or stream operation fails / 所需文件或流操作失败时
+     */
     @Override
     public DeploymentTypeAssessment inspect(
             Path root,
@@ -140,6 +179,14 @@ public final class JavaJdkDeploymentInspector implements DeploymentTypeInspector
                 Optional.empty(), Map.of(), List.of(), facts.evidence(), required));
     }
 
+    /**
+     * Extracts literal source properties and records conflicting duplicate declarations.
+     * <p>提取字面源码属性并记录冲突的重复声明。
+     *
+     * @param text bounded text consumed or produced by the current formatter / 当前格式化器消费或生成的有界文本
+     * @param conflicts the observed conflicting facts / 观察到的冲突事实
+     * @return literal source properties and records conflicting duplicate declarations / 字面源码属性并记录冲突的重复声明
+     */
     private static Map<String, String> properties(String text, List<String> conflicts) {
         Map<String, String> values = new java.util.LinkedHashMap<>();
         Matcher matcher = PROPERTY.matcher(text);
@@ -152,6 +199,13 @@ public final class JavaJdkDeploymentInspector implements DeploymentTypeInspector
         return Map.copyOf(values);
     }
 
+    /**
+     * Validates and produces safe path for the next contract boundary.
+     * <p>校验并生成供下一契约边界使用的安全路径。
+     *
+     * @param value candidate content accepted or rejected by this contract / 由当前契约接收或拒绝的候选内容
+     * @return safe path text; null when no matching value is available / 安全路径文本；没有匹配值时为 null
+     */
     private static String safePath(String value) {
         if (value == null) return null;
         value = value.trim().replace('\\', '/');
@@ -159,14 +213,35 @@ public final class JavaJdkDeploymentInspector implements DeploymentTypeInspector
                 && !value.contains("//") ? value : null;
     }
 
+    /**
+     * Returns a trimmed valid Java name, or null when the input is absent or invalid.
+     * <p>返回去除首尾空白的有效 Java 名称；输入缺失或无效时返回 null。
+     *
+     * @param value candidate content accepted or rejected by this contract / 由当前契约接收或拒绝的候选内容
+     * @return a trimmed valid Java name, or null when the input is absent or invalid / 去除首尾空白的有效 Java 名称；输入缺失或无效时返回 null
+     */
     private static String javaName(String value) {
         return value != null && JAVA_NAME.matcher(value.trim()).matches() ? value.trim() : null;
     }
 
+    /**
+     * Replaces a null metadata value with an empty string.
+     * <p>将 null 元数据值替换为空字符串。
+     *
+     * @param value candidate content accepted or rejected by this contract / 由当前契约接收或拒绝的候选内容
+     * @return value text / 内容文本
+     */
     private static String value(String value) {
         return value == null ? "" : value;
     }
 
+    /**
+     * Binds a static source observation to its localized conclusion and confidence.
+     * <p>将静态源码观测与本地化结论及置信度绑定。
+     *
+     * @param source source identity or content read by the operation / 操作读取的源身份或内容
+     * @return constructed or resolved analysis evidence / 构造或解析得到的分析证据
+     */
     private static AnalysisEvidence evidence(String source) {
         return new AnalysisEvidence(LocalizedMessage.of("analysis.java.jdk.metadata"), source,
                 LocalizedMessage.of("analysis.deployment.evidence.detected"), EvidenceConfidenceLevel.HIGH);

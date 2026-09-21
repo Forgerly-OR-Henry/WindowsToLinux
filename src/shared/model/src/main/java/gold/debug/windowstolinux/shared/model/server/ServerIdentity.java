@@ -6,25 +6,24 @@ import java.util.Objects;
 /**
  * Non-secret identity of a target server and its trusted SSH host key.
  *
- * <p>目标服务器及其可信 SSH 主机密钥的非秘密身份。
+ *  <p>目标服务器及其可信 SSH 主机密钥的非秘密身份。
  *
- * @param id the {@code id} value / {@code id} 值
- * @param host the {@code host} value / {@code host} 值
- * @param sshPort the {@code sshPort} value / {@code sshPort} 值
- * @param hostKeySha256 the {@code hostKeySha256} value / {@code hostKeySha256} 值
+ * @param id stable identifier within the owning registry / 所属登记表内的稳定标识
+ * @param host reviewed server hostname or IP address / 已审阅服务器主机名或 IP 地址
+ * @param sshPort ssh port / SSH端口
+ * @param hostKeySha256 host key sha 256 / 主机键SHA256
  */
 public record ServerIdentity(String id, String host, int sshPort, String hostKeySha256) {
     /**
-     * Creates a {@code ServerIdentity} instance.
+     * Validates and binds the inputs required by server identity.
+     * <p>校验并绑定服务器身份所需输入。
      *
-     * <p>创建 {@code ServerIdentity} 实例。
-     *
-     * @param id the {@code id} value / {@code id} 值
-     * @param host the {@code host} value / {@code host} 值
-     * @param sshPort the {@code sshPort} value / {@code sshPort} 值
-     * @param hostKeySha256 the {@code hostKeySha256} value / {@code hostKeySha256} 值
+     * @param id stable identifier within the owning registry / 所属登记表内的稳定标识
+     * @param host reviewed server hostname or IP address / 已审阅服务器主机名或 IP 地址
+     * @param sshPort ssh port / SSH端口
+     * @param hostKeySha256 host key sha 256 / 主机键SHA256
      * @throws IllegalArgumentException if an argument violates the required constraints / 参数违反必要约束时
-     * @throws NullPointerException if a required argument is {@code null} / 必要参数为 {@code null} 时
+     * @throws NullPointerException if a required input is absent / 必需输入缺失时
      */
     public ServerIdentity {
         id = requireIdentifier(id, "id");
@@ -44,13 +43,13 @@ public record ServerIdentity(String id, String host, int sshPort, String hostKey
     /**
      * Validates the input through {@code requireIdentifier}.
      *
-     * <p>通过 {@code requireIdentifier} 验证输入。
+     *  <p>通过 {@code requireIdentifier} 验证输入。
      *
-     * @param value the {@code value} value / {@code value} 值
-     * @param name the {@code name} value / {@code name} 值
+     * @param value candidate content accepted or rejected by this contract / 由当前契约接收或拒绝的候选内容
+     * @param name human-readable name or diagnostic field label / 可读名称或诊断字段标签
      * @return the operation result / 操作结果
      * @throws IllegalArgumentException if an argument violates the required constraints / 参数违反必要约束时
-     * @throws NullPointerException if a required argument is {@code null} / 必要参数为 {@code null} 时
+     * @throws NullPointerException if a required input is absent / 必需输入缺失时
      */
     public static String requireIdentifier(String value, String name) {
         value = Objects.requireNonNull(value, name).toLowerCase(Locale.ROOT);

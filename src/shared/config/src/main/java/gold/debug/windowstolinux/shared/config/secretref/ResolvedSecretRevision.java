@@ -16,20 +16,38 @@ import java.util.Objects;
 /**
  * Short-lived resolved secret bytes used only for an authenticated deployment transfer.
  *
- * <p>仅用于已认证部署传输的短生命周期已解析秘密字节。
+ *  <p>仅用于已认证部署传输的短生命周期已解析秘密字节。
  */
 public final class ResolvedSecretRevision implements AutoCloseable {
-    /** Maximum UTF-8 payload accepted for one revision. / 单个修订允许的最大 UTF-8 载荷。 */
+    /**
+     * Maximum UTF-8 payload accepted for one revision. / 单个修订允许的最大 UTF-8 载荷。
+     */
     public static final int MAX_VALUE_BYTES = 65_536;
 
+    /**
+     * Immutable public secret identity.
+     * <p>不可变公开秘密身份。
+     */
     private final SecretReference reference;
+    /**
+     * Candidate content accepted or rejected by this contract.
+     * <p>由当前契约接收或拒绝的候选内容。
+     */
     private final byte[] value;
+    /**
+     * Content identity used for independent verification.
+     * <p>独立验证所用的内容身份。
+     */
     private final SecretRevisionDigest digest;
 
     /**
      * Copies a caller-owned character value without creating an immutable plaintext string.
      *
-     * <p>复制调用方持有的字符值，且不创建不可清除的明文字符串。
+     *  <p>复制调用方持有的字符值，且不创建不可清除的明文字符串。
+     *
+     * @param reference immutable public secret identity / 不可变公开秘密身份
+     * @param value candidate content accepted or rejected by this contract / 由当前契约接收或拒绝的候选内容
+     * @throws NullPointerException if a required input is absent / 必需输入缺失时
      */
     public ResolvedSecretRevision(SecretReference reference, char[] value) {
         this.reference = Objects.requireNonNull(reference, "reference");
@@ -45,22 +63,38 @@ public final class ResolvedSecretRevision implements AutoCloseable {
         this.digest = new SecretRevisionDigest(reference, sha256(bytes), bytes.length);
     }
 
-    /** Returns the opaque immutable reference. / 返回透明的不可变引用。 */
+    /**
+     * Returns the opaque immutable reference. / 返回透明的不可变引用。
+     *
+     * @return the opaque immutable reference / 透明的不可变引用
+     */
     public SecretReference reference() {
         return reference;
     }
 
-    /** Returns public integrity metadata without exposing plaintext. / 返回不暴露明文的公开完整性元数据。 */
+    /**
+     * Returns public integrity metadata without exposing plaintext. / 返回不暴露明文的公开完整性元数据。
+     *
+     * @return public integrity metadata without exposing plaintext / 不暴露明文的公开完整性元数据
+     */
     public SecretRevisionDigest digest() {
         return digest;
     }
 
-    /** Returns a caller-owned byte copy that must be cleared. / 返回必须由调用方清除的字节副本。 */
+    /**
+     * Returns a caller-owned byte copy that must be cleared. / 返回必须由调用方清除的字节副本。
+     *
+     * @return a caller-owned byte copy that must be cleared / 必须由调用方清除的字节副本
+     */
     public synchronized byte[] copyValue() {
         return value.clone();
     }
 
-    /** Returns a caller-owned character copy for a text-only platform secret store. / 为仅文本的平台秘密存储返回调用方持有的字符副本。 */
+    /**
+     * Returns a caller-owned character copy for a text-only platform secret store. / 为仅文本的平台秘密存储返回调用方持有的字符副本。
+     *
+     * @return a caller-owned character copy for a text-only platform secret store / 为仅文本的平台秘密存储返回调用方持有的字符副本
+     */
     public synchronized char[] copyCharacters() {
         try {
             CharBuffer decoded = StandardCharsets.UTF_8.newDecoder()
@@ -76,18 +110,32 @@ public final class ResolvedSecretRevision implements AutoCloseable {
         }
     }
 
-    /** Closes this resource. / 关闭此资源。 */
+    /**
+     * Closes this resource. / 关闭此资源。
+     */
     @Override
     public synchronized void close() {
         Arrays.fill(value, (byte) 0);
     }
 
-    /** Performs the {@code toString} operation. / 执行 {@code toString} 操作。 */
+    /**
+     * Returns the diagnostic text representation of this object.
+     * <p>返回当前对象的诊断文本表示。
+     *
+     * @return the diagnostic text representation of this object / 当前对象的诊断文本表示
+     */
     @Override
     public String toString() {
         return "ResolvedSecretRevision[reference=" + reference + ", value=<redacted>]";
     }
 
+    /**
+     * Computes the SHA-256 content identity used for independent integrity checks.
+     * <p>计算独立完整性检查使用的 SHA-256 内容身份。
+     *
+     * @param value candidate content accepted or rejected by this contract / 由当前契约接收或拒绝的候选内容
+     * @return computed SHA-256 content digest / 已计算的 SHA-256 内容摘要
+     */
     private static String sha256(byte[] value) {
         try {
             return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(value));

@@ -7,12 +7,12 @@ import java.util.Objects;
 /**
  * A compact, non-secret source of one deterministic project fact.
  *
- * <p>单个确定性项目事实的紧凑、非秘密来源。
+ *  <p>单个确定性项目事实的紧凑、非秘密来源。
  *
- * @param subject the {@code subject} value / {@code subject} 值
- * @param source the {@code source} value / {@code source} 值
- * @param conclusion the {@code conclusion} value / {@code conclusion} 值
- * @param confidence the {@code confidence} value / {@code confidence} 值
+ * @param subject subject / 对象
+ * @param source source identity or content read by the operation / 操作读取的源身份或内容
+ * @param conclusion conclusion / 结论
+ * @param confidence confidence / 置信度
  */
 public record AnalysisEvidence(
         LocalizedMessage subject,
@@ -21,15 +21,14 @@ public record AnalysisEvidence(
         EvidenceConfidenceLevel confidence
 ) {
     /**
-     * Creates a {@code AnalysisEvidence} instance.
+     * Validates and binds the inputs required by analysis evidence.
+     * <p>校验并绑定分析证据所需输入。
      *
-     * <p>创建 {@code AnalysisEvidence} 实例。
-     *
-     * @param subject the {@code subject} value / {@code subject} 值
-     * @param source the {@code source} value / {@code source} 值
-     * @param conclusion the {@code conclusion} value / {@code conclusion} 值
-     * @param confidence the {@code confidence} value / {@code confidence} 值
-     * @throws NullPointerException if a required argument is {@code null} / 必要参数为 {@code null} 时
+     * @param subject subject / 对象
+     * @param source source identity or content read by the operation / 操作读取的源身份或内容
+     * @param conclusion conclusion / 结论
+     * @param confidence confidence / 置信度
+     * @throws NullPointerException if a required input is absent / 必需输入缺失时
      */
     public AnalysisEvidence {
         subject = Objects.requireNonNull(subject, "subject");
@@ -38,6 +37,16 @@ public record AnalysisEvidence(
         confidence = Objects.requireNonNull(confidence, "confidence");
     }
 
+    /**
+     * Trims required text and rejects missing or invalid content.
+     * <p>去除必填文本首尾空白，并拒绝缺失或无效内容。
+     *
+     * @param value candidate content accepted or rejected by this contract / 由当前契约接收或拒绝的候选内容
+     * @param name human-readable name or diagnostic field label / 可读名称或诊断字段标签
+     * @return require text text / 要求文本文本
+     * @throws IllegalArgumentException if an input violates the constraints checked by this contract / 输入违反当前契约检查的约束时
+     * @throws NullPointerException if a required input is absent / 必需输入缺失时
+     */
     private static String requireText(String value, String name) {
         value = Objects.requireNonNull(value, name).trim();
         if (value.isBlank() || value.length() > 512) {

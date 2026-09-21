@@ -9,13 +9,13 @@ import java.util.Objects;
 /**
  * A typed non-secret configuration value that cannot carry a shell fragment.
  *
- * <p>类型化的非秘密配置值，不能携带 Shell 片段。
+ *  <p>类型化的非秘密配置值，不能携带 Shell 片段。
  */
 public sealed interface ConfigurationValue permits ConfigurationValue.Text, ConfigurationValue.Number, ConfigurationValue.Flag {
     /**
      * Renders the canonical value used only for immutable snapshot hashing.
      *
-     * <p>渲染仅用于不可变快照摘要的规范值。
+     *  <p>渲染仅用于不可变快照摘要的规范值。
      *
      * @return the canonical non-secret representation / 规范的非秘密表示
      */
@@ -24,7 +24,7 @@ public sealed interface ConfigurationValue permits ConfigurationValue.Text, Conf
     /**
      * A bounded text value without line breaks or shell control characters.
      *
-     * <p>不含换行或 Shell 控制字符的有界文本值。
+     *  <p>不含换行或 Shell 控制字符的有界文本值。
      *
      * @param value the value / 值
      */
@@ -32,7 +32,10 @@ public sealed interface ConfigurationValue permits ConfigurationValue.Text, Conf
         /**
          * Creates a {@code Text} value.
          *
-         * <p>创建 {@code Text} 值。
+         *  <p>创建 {@code Text} 值。
+         *
+         * @param value candidate content accepted or rejected by this contract / 由当前契约接收或拒绝的候选内容
+         * @throws NullPointerException if a required input is absent / 必需输入缺失时
          */
         public Text {
             value = Objects.requireNonNull(value, "value").trim();
@@ -42,7 +45,12 @@ public sealed interface ConfigurationValue permits ConfigurationValue.Text, Conf
             }
         }
 
-        /** Performs the {@code canonicalValue} operation. / 执行 {@code canonicalValue} 操作。 */
+        /**
+         * Returns candidate content accepted or rejected by this contract.
+         * <p>返回由当前契约接收或拒绝的候选内容。
+         *
+         * @return candidate content accepted or rejected by this contract / 由当前契约接收或拒绝的候选内容
+         */
         @Override
         public String canonicalValue() {
             return value;
@@ -52,12 +60,17 @@ public sealed interface ConfigurationValue permits ConfigurationValue.Text, Conf
     /**
      * An integer value with an explicit inclusive range.
      *
-     * <p>具有显式闭区间的整数值。
+     *  <p>具有显式闭区间的整数值。
      *
      * @param value the value / 值
      */
     record Number(long value) implements ConfigurationValue {
-        /** Performs the {@code canonicalValue} operation. / 执行 {@code canonicalValue} 操作。 */
+        /**
+         * Validates and produces canonical value for the next contract boundary.
+         * <p>校验并生成供下一契约边界使用的规范内容。
+         *
+         * @return canonical value text / 规范内容文本
+         */
         @Override
         public String canonicalValue() {
             return Long.toString(value);
@@ -67,12 +80,17 @@ public sealed interface ConfigurationValue permits ConfigurationValue.Text, Conf
     /**
      * A boolean value.
      *
-     * <p>布尔值。
+     *  <p>布尔值。
      *
      * @param value the value / 值
      */
     record Flag(boolean value) implements ConfigurationValue {
-        /** Performs the {@code canonicalValue} operation. / 执行 {@code canonicalValue} 操作。 */
+        /**
+         * Validates and produces canonical value for the next contract boundary.
+         * <p>校验并生成供下一契约边界使用的规范内容。
+         *
+         * @return canonical value text / 规范内容文本
+         */
         @Override
         public String canonicalValue() {
             return Boolean.toString(value);

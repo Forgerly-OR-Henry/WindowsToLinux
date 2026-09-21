@@ -3,9 +3,22 @@ package gold.debug.windowstolinux.app.db.execution.migration;
 import java.sql.SQLException;
 import java.sql.Statement;
 
-/** Adds global ordering while preserving all legacy providers, role bindings and credential references. / 增加全局顺序，保留全部旧提供者、角色绑定及凭据引用。 */
+/**
+ * Adds global ordering while preserving all legacy providers, role bindings and credential references. / 增加全局顺序，保留全部旧提供者、角色绑定及凭据引用。
+ */
 final class AiPrioritySchemaMigration {
+    /**
+     * Prevents instantiation of this static contract helper.
+     * <p>防止实例化当前静态契约辅助类。
+     */
     private AiPrioritySchemaMigration() { }
+    /**
+     * Applies ai priority schema migration.
+     * <p>应用AI优先级结构迁移。
+     *
+     * @param statement statement / 语句
+     * @throws SQLException if the database cannot complete the requested read or transaction / 数据库无法完成请求的读取或事务时
+     */
     static void apply(Statement statement) throws SQLException {
         statement.execute("""
                 INSERT OR IGNORE INTO ai_provider_profile (profile_id, endpoint, model, credential_key, credential_mode)

@@ -12,7 +12,7 @@ import java.util.Set;
 /**
  * Live, non-secret host facts used only to decide whether a typed deployment plan may be offered.
  *
- * <p>仅用于决定能否提供部署计划的实时、非秘密主机事实。
+ *  <p>仅用于决定能否提供部署计划的实时、非秘密主机事实。
  *
  * @param distro independently classified distribution family / 独立分类的发行版系列
  * @param version observed distribution version / 观测到的发行版版本
@@ -64,9 +64,34 @@ public record LinuxCapabilityFacts(
         String evidence
 ) {
     /**
-     * Creates a {@code LinuxCapabilityFacts} instance.
+     * Validates and binds the inputs required by linux capability facts.
+     * <p>校验并绑定Linux能力事实所需输入。
      *
-     * <p>创建 {@code LinuxCapabilityFacts} 实例。
+     * @param distro independently classified distribution family / 独立分类的发行版系列
+     * @param version version of the relevant protocol, configuration or runtime / 相应协议、配置或运行时的版本
+     * @param architecture observed machine architecture / 观测到的机器架构
+     * @param packageManager observed package manager / 观测到的包管理器
+     * @param packageArchitecture observed package architecture / 观测到的软件包架构
+     * @param systemdAvailable whether systemd is present / 是否存在 systemd
+     * @param dockerAvailable whether the Docker client is present / 是否存在 Docker 客户端
+     * @param podmanAvailable whether the Podman client is present / 是否存在 Podman 客户端
+     * @param podmanQuadletAvailable whether Quadlet support is present / 是否存在 Quadlet 支持
+     * @param javaMajorVersions observed Java major versions / 观察到的 Java 主版本
+     * @param nodeMajorVersions observed Node.js major versions / 观察到的 Node.js 主版本
+     * @param npmAvailable whether npm is present / 是否存在 npm
+     * @param mavenAvailable whether Maven is present / 是否存在 Maven
+     * @param pythonVersions observed Python interpreters with venv support / 观察到且支持 venv 的 Python 解释器
+     * @param python3Available whether the generic Python 3 executable is available / 通用 Python 3 可执行文件是否可用
+     * @param serviceRuntimeVersions exact observed versions for ecosystem service toolchains / 生态服务工具链的精确观测版本
+     * @param ecosystemToolVersions exact observed versions for language and build tools / 语言与构建工具的精确观测版本
+     * @param dockerOperational whether Docker is usable by the authenticated account / 已认证账户能否使用 Docker
+     * @param podmanOperational whether Podman is usable by the authenticated account / 已认证账户能否使用 Podman
+     * @param cpuMicroarchitecture highest cumulative CPU level confirmed by the runtime linker / 运行时链接器确认的最高累积 CPU 级别
+     * @param cpuFlags observed CPU instruction flags / 观测到的 CPU 指令标志
+     * @param securityPosture observed mandatory-access-control and firewall state / 观测到的强制访问控制与防火墙状态
+     * @param evidence observations supporting the reported result / 支持所报告结果的观测证据
+     * @throws IllegalArgumentException if an input violates the constraints checked by this contract / 输入违反当前契约检查的约束时
+     * @throws NullPointerException if a required input is absent / 必需输入缺失时
      */
     public LinuxCapabilityFacts {
         distro = Objects.requireNonNull(distro, "distro");
@@ -124,12 +149,24 @@ public record LinuxCapabilityFacts(
     /**
      * Checks whether this capability record is an x86-64 host.
      *
-     * <p>检查此能力记录是否为 x86-64 主机。
+     *  <p>检查此能力记录是否为 x86-64 主机。
+     *
+     * @return true when checks whether this capability record is an x86-64 host, false otherwise / 此能力记录是否为 x86-64 主机时为 true，否则为 false
      */
     public boolean x86_64() {
         return architecture.equals("x86_64") || architecture.equals("amd64");
     }
 
+    /**
+     * Checks fact syntax and bounds before returning the admitted content.
+     * <p>在返回已准入内容前检查事实语法及边界。
+     *
+     * @param value candidate content accepted or rejected by this contract / 由当前契约接收或拒绝的候选内容
+     * @param name human-readable name or diagnostic field label / 可读名称或诊断字段标签
+     * @return fact text / 事实文本
+     * @throws IllegalArgumentException if an input violates the constraints checked by this contract / 输入违反当前契约检查的约束时
+     * @throws NullPointerException if a required input is absent / 必需输入缺失时
+     */
     private static String fact(String value, String name) {
         value = Objects.requireNonNull(value, name).trim().toLowerCase(java.util.Locale.ROOT);
         if (value.isBlank() || value.length() > 64 || !value.matches("[a-z0-9._-]+")) {
@@ -138,6 +175,13 @@ public record LinuxCapabilityFacts(
         return value;
     }
 
+    /**
+     * Tests the service project type predicate against the supplied evidence.
+     * <p>根据所提供证据检查服务项目类型条件。
+     *
+     * @param projectType supported project deployment category / 受支持的项目部署类别
+     * @return true when service project type predicate against the supplied evidence, false otherwise / 根据所提供证据检查服务项目类型条件时为 true，否则为 false
+     */
     private static boolean serviceProjectType(DeploymentProjectType projectType) {
         return switch (projectType) {
             case GO_SERVICE, RUST_SERVICE, DOTNET_SERVICE, KOTLIN_SERVICE, PHP_SERVICE, RUBY_SERVICE -> true;
@@ -145,6 +189,14 @@ public record LinuxCapabilityFacts(
         };
     }
 
+    /**
+     * Tests the valid service version predicate against the supplied evidence.
+     * <p>根据所提供证据检查有效服务版本条件。
+     *
+     * @param projectType supported project deployment category / 受支持的项目部署类别
+     * @param value candidate content accepted or rejected by this contract / 由当前契约接收或拒绝的候选内容
+     * @return true when valid service version predicate against the supplied evidence, false otherwise / 根据所提供证据检查有效服务版本条件时为 true，否则为 false
+     */
     private static boolean validServiceVersion(DeploymentProjectType projectType, String value) {
         if (value == null) {
             return false;

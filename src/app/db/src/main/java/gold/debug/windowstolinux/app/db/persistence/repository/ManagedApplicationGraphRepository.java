@@ -6,7 +6,7 @@ import gold.debug.windowstolinux.app.db.entity.SuccessfulManagedDeployment;
 import gold.debug.windowstolinux.app.db.persistence.serialization.ComponentPathPersistenceCodec;
 import gold.debug.windowstolinux.shared.config.persistence.serialization.DeploymentRuntimePersistenceCodec;
 import gold.debug.windowstolinux.app.db.persistence.serialization.ManagedResourcePersistenceCodec;
-import gold.debug.windowstolinux.app.db.persistence.serialization.HealthCheckPersistenceCodec;
+import gold.debug.windowstolinux.shared.config.persistence.serialization.HealthCheckCodec;
 
 import java.sql.Connection;
 import java.sql.PreparedStatement;
@@ -21,20 +21,55 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 
-/** Stores durable whole-application topology atomically with successful component releases. / 将持久整应用拓扑与成功组件版本原子保存。 */
+/**
+ * Stores durable whole-application topology atomically with successful component releases. / 将持久整应用拓扑与成功组件版本原子保存。
+ */
 public final class ManagedApplicationGraphRepository {
+    /**
+     * Bound deployment runtime persistence codec collaborator for RUNTIME CODEC.
+     * <p>处理运行时编解码器的部署运行时持久化编解码器协作对象。
+     */
     private static final DeploymentRuntimePersistenceCodec RUNTIME_CODEC = new DeploymentRuntimePersistenceCodec();
+    /**
+     * Bound component path persistence codec collaborator for DATA PATH CODEC.
+     * <p>处理数据路径编解码器的组件路径持久化编解码器协作对象。
+     */
     private static final ComponentPathPersistenceCodec DATA_PATH_CODEC = new ComponentPathPersistenceCodec();
+    /**
+     * Bound managed resource persistence codec collaborator for RESOURCE CODEC.
+     * <p>处理资源编解码器的受管资源持久化编解码器协作对象。
+     */
     private static final ManagedResourcePersistenceCodec RESOURCE_CODEC = new ManagedResourcePersistenceCodec();
-    private static final HealthCheckPersistenceCodec HEALTH_CODEC = new HealthCheckPersistenceCodec();
+    /**
+     * Bound health check codec collaborator for HEALTH CODEC.
+     * <p>处理健康编解码器的健康检查编解码器协作对象。
+     */
+    private static final HealthCheckCodec HEALTH_CODEC = new HealthCheckCodec();
+    /**
+     * Factory for scoped database connections.
+     * <p>限定作用域数据库连接的工厂。
+     */
     private final DesktopConnectionFactory connections;
 
-    /** Creates the focused graph repository. / 创建聚焦的图仓库。 */
+    /**
+     * Creates the focused graph repository. / 创建聚焦的图仓库。
+     *
+     * @param connections factory for scoped database connections / 限定作用域数据库连接的工厂
+     * @throws NullPointerException if a required input is absent / 必需输入缺失时
+     */
     public ManagedApplicationGraphRepository(DesktopConnectionFactory connections) {
         this.connections = Objects.requireNonNull(connections, "connections");
     }
 
-    /** Atomically records component success together with its durable whole-application graph. / 原子记录组件成功状态及其持久整应用图。 */
+    /**
+     * Atomically records component success together with its durable whole-application graph. / 原子记录组件成功状态及其持久整应用图。
+     *
+     * @param graph graph / 图
+     * @param deployments deployments / 部署集合
+     * @throws SQLException if the database cannot complete the requested read or transaction / 数据库无法完成请求的读取或事务时
+     * @throws IllegalArgumentException if an input violates the constraints checked by this contract / 输入违反当前契约检查的约束时
+     * @throws NullPointerException if a required input is absent / 必需输入缺失时
+     */
     public void recordSuccessfulApplication(ManagedApplicationGraph graph,
                                             List<SuccessfulManagedDeployment> deployments) throws SQLException {
         graph = Objects.requireNonNull(graph, "graph");
@@ -61,7 +96,14 @@ public final class ManagedApplicationGraphRepository {
         }
     }
 
-    /** Finds a durable whole-application graph without returning build or secret values. / 查找不返回构建值或秘密值的持久整应用图。 */
+    /**
+     * Finds a durable whole-application graph without returning build or secret values. / 查找不返回构建值或秘密值的持久整应用图。
+     *
+     * @param applicationId managed application identifier / 受管应用标识
+     * @return matching result, or empty when no admitted value exists / 匹配结果；不存在已准入内容时为空
+     * @throws SQLException if the database cannot complete the requested read or transaction / 数据库无法完成请求的读取或事务时
+     * @throws NullPointerException if a required input is absent / 必需输入缺失时
+     */
     public Optional<ManagedApplicationGraph> find(String applicationId) throws SQLException {
         applicationId = Objects.requireNonNull(applicationId, "applicationId").trim();
         try (Connection connection = connections.open(); PreparedStatement graphStatement = connection.prepareStatement("""
@@ -145,6 +187,14 @@ public final class ManagedApplicationGraphRepository {
         }
     }
 
+    /**
+     * Replaces the application's component topology and reviewed resource bindings inside the caller's transaction.
+     * <p>在调用方事务内替换应用组件拓扑及已审阅资源绑定。
+     *
+     * @param connection connection scoped to the current database or remote operation / 限定于当前数据库或远端操作的连接
+     * @param graph graph / 图
+     * @throws SQLException if the database cannot complete the requested read or transaction / 数据库无法完成请求的读取或事务时
+     */
     private static void replaceGraph(Connection connection, ManagedApplicationGraph graph) throws SQLException {
         try (PreparedStatement dependencies = connection.prepareStatement(
                 "DELETE FROM managed_application_graph_dependency WHERE application_id=?");
@@ -178,6 +228,14 @@ public final class ManagedApplicationGraphRepository {
         insertDependencies(connection, graph);
     }
 
+    /**
+     * Inserts reviewed components in the application graph.
+     * <p>插入应用图中的已审阅组件。
+     *
+     * @param connection connection scoped to the current database or remote operation / 限定于当前数据库或远端操作的连接
+     * @param graph graph / 图
+     * @throws SQLException if the database cannot complete the requested read or transaction / 数据库无法完成请求的读取或事务时
+     */
     private static void insertComponents(Connection connection, ManagedApplicationGraph graph) throws SQLException {
         try (PreparedStatement statement = connection.prepareStatement("""
                 INSERT INTO managed_application_graph_component (
@@ -202,6 +260,14 @@ public final class ManagedApplicationGraphRepository {
         }
     }
 
+    /**
+     * Inserts component identifiers that must precede this component.
+     * <p>插入必须先于当前组件执行的组件标识。
+     *
+     * @param connection connection scoped to the current database or remote operation / 限定于当前数据库或远端操作的连接
+     * @param graph graph / 图
+     * @throws SQLException if the database cannot complete the requested read or transaction / 数据库无法完成请求的读取或事务时
+     */
     private static void insertDependencies(Connection connection, ManagedApplicationGraph graph) throws SQLException {
         try (PreparedStatement statement = connection.prepareStatement("""
                 INSERT INTO managed_application_graph_dependency (
@@ -220,6 +286,15 @@ public final class ManagedApplicationGraphRepository {
         }
     }
 
+    /**
+     * Reads component identifiers that must precede this component.
+     * <p>读取必须先于当前组件执行的组件标识。
+     *
+     * @param connection connection scoped to the current database or remote operation / 限定于当前数据库或远端操作的连接
+     * @param applicationId managed application identifier / 受管应用标识
+     * @return component identifiers that must precede this component / 必须先于当前组件执行的组件标识
+     * @throws SQLException if the database cannot complete the requested read or transaction / 数据库无法完成请求的读取或事务时
+     */
     private static Map<String, List<String>> readDependencies(Connection connection, String applicationId)
             throws SQLException {
         Map<String, List<String>> values = new LinkedHashMap<>();

@@ -9,7 +9,24 @@ import java.util.LinkedHashSet;
 import java.util.Objects;
 import java.util.Set;
 
-/** Complete structured inventory needed to recreate one managed application. / 重建一个受管应用所需的完整结构化清单。 */
+/**
+ * Complete structured inventory needed to recreate one managed application. / 重建一个受管应用所需的完整结构化清单。
+ *
+ * @param releaseManifests release manifests / 发布清单集合
+ * @param configurationSnapshots configuration snapshots / 配置快照集合
+ * @param secretReferences immutable identifiers and revisions of required secrets / 所需秘密的不可变标识及修订
+ * @param persistentFiles persistent files / 持久化文件集合
+ * @param persistentVolumes persistent volumes / 持久化卷集合
+ * @param database reviewed database identity or database operation boundary / 已审阅数据库身份或数据库操作边界
+ * @param identity identity / 身份
+ * @param serviceDefinitions service definitions / 服务定义集合
+ * @param components reviewed components in the application graph / 应用图中的已审阅组件
+ * @param applicationHealthComponentId application health component id / 应用健康组件标识
+ * @param applicationHealthCheck independently reviewed whole-application probe / 独立审阅的整应用探测
+ * @param runtime reviewed language, process and health specification / 已审阅的语言、进程及健康规格
+ * @param recoveryRequirements recovery requirements / 恢复要求集合
+ * @param legacySecretReferences legacy secret references / 历史秘密引用集合
+ */
 public record BackupInventory(
         List<String> releaseManifests,
         List<String> configurationSnapshots,
@@ -26,10 +43,30 @@ public record BackupInventory(
         List<String> recoveryRequirements,
         List<String> legacySecretReferences
 ) {
+    /**
+     * SECRET ORDER.
+     * <p>秘密顺序。
+     */
     private static final Comparator<SecretReference> SECRET_ORDER = Comparator
             .comparing(SecretReference::identifier).thenComparingLong(SecretReference::revision);
 
-    /** Creates one schema-v5 inventory with exact application secret references. / 创建带精确应用秘密引用的 schema v5 清单。 */
+    /**
+     * Creates one schema-v5 inventory with exact application secret references. / 创建带精确应用秘密引用的 schema v5 清单。
+     *
+     * @param releaseManifests release manifests / 发布清单集合
+     * @param configurationSnapshots configuration snapshots / 配置快照集合
+     * @param secretReferences immutable identifiers and revisions of required secrets / 所需秘密的不可变标识及修订
+     * @param persistentFiles persistent files / 持久化文件集合
+     * @param persistentVolumes persistent volumes / 持久化卷集合
+     * @param database reviewed database identity or database operation boundary / 已审阅数据库身份或数据库操作边界
+     * @param identity identity / 身份
+     * @param serviceDefinitions service definitions / 服务定义集合
+     * @param components reviewed components in the application graph / 应用图中的已审阅组件
+     * @param applicationHealthComponentId application health component id / 应用健康组件标识
+     * @param applicationHealthCheck independently reviewed whole-application probe / 独立审阅的整应用探测
+     * @param runtime reviewed language, process and health specification / 已审阅的语言、进程及健康规格
+     * @param recoveryRequirements recovery requirements / 恢复要求集合
+     */
     public BackupInventory(
             List<String> releaseManifests,
             List<String> configurationSnapshots,
@@ -50,7 +87,26 @@ public record BackupInventory(
                 applicationHealthCheck, runtime, recoveryRequirements, List.of());
     }
 
-    /** Freezes a complete, bounded and duplicate-free inventory. / 冻结完整、有界且无重复的清单。 */
+    /**
+     * Freezes a complete, bounded and duplicate-free inventory. / 冻结完整、有界且无重复的清单。
+     *
+     * @param releaseManifests release manifests / 发布清单集合
+     * @param configurationSnapshots configuration snapshots / 配置快照集合
+     * @param secretReferences immutable identifiers and revisions of required secrets / 所需秘密的不可变标识及修订
+     * @param persistentFiles persistent files / 持久化文件集合
+     * @param persistentVolumes persistent volumes / 持久化卷集合
+     * @param database reviewed database identity or database operation boundary / 已审阅数据库身份或数据库操作边界
+     * @param identity identity / 身份
+     * @param serviceDefinitions service definitions / 服务定义集合
+     * @param components reviewed components in the application graph / 应用图中的已审阅组件
+     * @param applicationHealthComponentId application health component id / 应用健康组件标识
+     * @param applicationHealthCheck independently reviewed whole-application probe / 独立审阅的整应用探测
+     * @param runtime reviewed language, process and health specification / 已审阅的语言、进程及健康规格
+     * @param recoveryRequirements recovery requirements / 恢复要求集合
+     * @param legacySecretReferences legacy secret references / 历史秘密引用集合
+     * @throws IllegalArgumentException if an input violates the constraints checked by this contract / 输入违反当前契约检查的约束时
+     * @throws NullPointerException if a required input is absent / 必需输入缺失时
+     */
     public BackupInventory {
         releaseManifests = BackupManifestRules.distinctTexts(releaseManifests, "releaseManifests", 256, 512);
         configurationSnapshots = BackupManifestRules.distinctTexts(
@@ -90,7 +146,13 @@ public record BackupInventory(
         validateVersionBindings(identity, components, secretReferences, legacySecretReferences);
     }
 
-    /** Computes the canonical schema-v5 release-set digest in dependency order. / 按依赖顺序计算规范 schema v5 发布集合摘要。 */
+    /**
+     * Computes the canonical schema-v5 release-set digest in dependency order. / 按依赖顺序计算规范 schema v5 发布集合摘要。
+     *
+     * @param components reviewed components in the application graph / 应用图中的已审阅组件
+     * @return the canonical schema-v5 release-set digest in dependency order / 按依赖顺序计算规范 schema v5 发布集合摘要
+     * @throws NullPointerException if a required input is absent / 必需输入缺失时
+     */
     public static String computeReleaseSetSha256(List<BackupComponent> components) {
         components = List.copyOf(Objects.requireNonNull(components, "components"));
         return ReleaseSetDigest.sha256(components.stream().map(component ->
@@ -100,6 +162,17 @@ public record BackupInventory(
                 .toList());
     }
 
+    /**
+     * Validates reviewed components in the application graph and rejects inputs outside the declared constraints.
+     * <p>校验应用图中的已审阅组件并拒绝超出已声明约束的输入。
+     *
+     * @param releaseManifests release manifests / 发布清单集合
+     * @param configurationSnapshots configuration snapshots / 配置快照集合
+     * @param serviceDefinitions service definitions / 服务定义集合
+     * @param components reviewed components in the application graph / 应用图中的已审阅组件
+     * @param applicationHealthComponentId application health component id / 应用健康组件标识
+     * @throws IllegalArgumentException if an input violates the constraints checked by this contract / 输入违反当前契约检查的约束时
+     */
     private static void validateComponents(
             List<String> releaseManifests,
             List<String> configurationSnapshots,
@@ -135,6 +208,16 @@ public record BackupInventory(
         }
     }
 
+    /**
+     * Validates version bindings and rejects inputs outside the declared constraints.
+     * <p>校验版本绑定集合并拒绝超出已声明约束的输入。
+     *
+     * @param identity identity / 身份
+     * @param components reviewed components in the application graph / 应用图中的已审阅组件
+     * @param secretReferences immutable identifiers and revisions of required secrets / 所需秘密的不可变标识及修订
+     * @param legacySecretReferences legacy secret references / 历史秘密引用集合
+     * @throws IllegalArgumentException if an input violates the constraints checked by this contract / 输入违反当前契约检查的约束时
+     */
     private static void validateVersionBindings(
             BackupIdentity identity,
             List<BackupComponent> components,
@@ -166,6 +249,15 @@ public record BackupInventory(
         }
     }
 
+    /**
+     * Orders and validates immutable secret references for stable serialization.
+     * <p>为稳定序列化排序并校验不可变秘密引用。
+     *
+     * @param references references / 引用集合
+     * @return constructed or resolved list / 构造或解析得到的列表
+     * @throws IllegalArgumentException if an input violates the constraints checked by this contract / 输入违反当前契约检查的约束时
+     * @throws NullPointerException if a required input is absent / 必需输入缺失时
+     */
     private static List<SecretReference> canonicalSecrets(List<SecretReference> references) {
         references = List.copyOf(Objects.requireNonNull(references, "secretReferences"));
         if (references.size() > 64 || references.stream().anyMatch(Objects::isNull)) {

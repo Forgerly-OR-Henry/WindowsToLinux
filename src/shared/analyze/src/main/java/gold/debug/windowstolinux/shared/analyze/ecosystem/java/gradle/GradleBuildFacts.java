@@ -5,7 +5,7 @@ import java.nio.file.Path;
 /**
  * Fixed Gradle build-script and Wrapper facts.
  *
- * <p>固定的 Gradle 构建脚本与 Wrapper 事实。
+ *  <p>固定的 Gradle 构建脚本与 Wrapper 事实。
  *
  * @param applicationId deterministic Gradle root-project identity / 确定性的 Gradle 根项目身份
  * @param script build script path / 构建脚本路径

@@ -55,7 +55,7 @@ WindowsToLinux/
    │  │  ├─ config/           配置快照与秘密修订用例
    │  │  ├─ contract/         UI 按功能依赖的窄应用门面
    │  │  │  └─ definition/    自动部署请求、结果、交互契约及 DB 准备结果
-   │  │  ├─ deployment/       部署用例入口与共享受管身份解析
+   │  │  ├─ deployment/       确定性分析、计划、部署用例与共享受管身份解析
    │  │  │  ├─ automatic/     自动部署编排、运行时补全与原生 DB 准备
    │  │  │  ├─ multi/         多组件审阅、拓扑和受管应用数据契约
    │  │  │  └─ single/        单组件部署结果与安全交接数据契约
@@ -74,7 +74,7 @@ WindowsToLinux/
    │  │  ├─ component/        可复用的桌面界面组件
    │  │  ├─ deployment/       共享审阅上下文与部署交互
    │  │  │  ├─ multi/         多组件编辑、状态、页面和结果呈现
-   │  │  │  └─ single/        单组件表单、状态、页面和分析呈现
+   │  │  │  └─ automatic/     单/多组件自动部署入口、模式、表单与任务状态
    │  │  ├─ diagnostic/       结构化失败安全展示、报告引用与错误日志目录入口
    │  │  ├─ i18n/             消息目录和本地化边界
    │  │  ├─ managed/          受管应用列表与生命周期交互
@@ -150,6 +150,7 @@ WindowsToLinux/
    │  │  └─ workload/         容器与静态站点工作负载识别
    │  ├─ backup/              备份、恢复与跨服务器迁移
    │  │  ├─ contract/         备份规则与契约
+   │  │  │  ├─ definition/    采集输入、已验证成员与原始状态结果
    │  │  │  ├─ spi/           数据库一致性策略、导出制品和候选恢复的模块内窄契约
    │  │  │  └─ validation/    完整性、安全性和兼容性校验
    │  │  ├─ execution/        备份执行流程
@@ -356,10 +357,14 @@ WindowsToLinux/
       │  ├─ ai/               模型验证、保存、顺序和受限建议
       │  ├─ backup/           远端取材、恢复与离线迁移组合
       │  ├─ config/           应用秘密引用和数据库凭据适配
-      │  ├─ contract/         请求上下文、严格 JSON、任务交互和受管应用图
+      │  ├─ contract/         请求上下文、任务交互接口和受管应用图
+      │  │  └─ validation/   字段白名单、文本和非秘密请求校验
       │  ├─ deployment/       单/多组件部署、参数和数据库准备组合
       │  ├─ execution/
       │  │  └─ lifecycle/     应用清单、状态、生命周期和外部应用纳管
+      │  ├─ interaction/      确认、输入决定和进度交互适配
+      │  ├─ persistence/
+      │  │  └─ serialization/  严格 JSON 编解码和对象转换
       │  ├─ server/           服务器资料、凭据、指纹与能力探测
       │  └─ source/           浏览器上传、固定 Git 快照和静态分析
       └─ task/                后台任务和恢复边界
@@ -1052,7 +1057,7 @@ linux-sshd.connection       ──→ linux-sshd.session + linux-sshd.command
 ```text
 ai.collaboration            ──→ ai.collaboration.{invocation,advice}
 ai.collaboration.invocation ──→ ai.collaboration.{advice,role}
-app.ui.deployment.{single,multi} ──→ app.ui.deployment
+app.ui.deployment.{automatic,multi} ──→ app.ui.deployment
 app.service.deployment      ──→ app.service.deployment.{single,multi}
 deploy.support               ──→ deploy.contract.result.compatibility
 deploy.execution.transaction ──→ deploy.contract.result.deployment
@@ -1357,7 +1362,7 @@ linux-sshd 通过 linux 契约采集服务器已有环境
 12. 每次本地化变更必须通过英文/中文键与占位符一致性测试、两种语言渲染测试、缺键和缺参数失败测试、未知语言回退英文测试，以及生产字符串与文本资源汉字边界测试。
 13. 除 `Messages_zh_CN.properties` 外，`src/**/src/main` 下的 Java 字符串、字符和文本块以及非 Java 文本资源不得包含汉字；中英双语 Java 注释、文档、测试和专门验证中文翻译的夹具不受此限制。
 14. 本地化改造不得改变 SQLite schema、部署与安全流程、凭据所有权或秘密传递边界；需要改变这些边界时必须另行评审。
-15. 项目自有代码的自然语言注释采用中英双语（生产非 Java 资源按第 13 条保持英文；第三方、生成内容及协议标记除外），包含 `//`、块注释和 Javadoc；英文说明在前，简体中文说明紧随其后，并在同一注释内表达相同含义。标识符、命令、协议名和原始诊断保持原文，不为满足双语格式而翻译；注释不属于 UI 文案，不进入消息目录。新增或修改注释时必须遵守本规则。
+15. 项目自有代码的自然语言注释采用中英双语（生产非 Java 资源按第 13 条保持英文；第三方、生成内容及协议标记除外），包含 `//`、块注释和 Javadoc；英文说明在前，简体中文说明紧随其后，并在同一注释内表达相同含义。标识符、命令、协议名和原始诊断保持原文，不为满足双语格式而翻译；注释不属于 UI 文案，不进入消息目录。新增或修改注释时必须遵守本规则。`shared`、`app`、`web` 的生产 Java 须覆盖所有显式具名类型、构造器、方法、字段及枚举项，使用标准 Javadoc 并补齐适用标签；record 组件通过类型的 `@param` 说明。`JavadocCoverageTest` 在 AST 层验证覆盖和双语标签，并运行 JDK 21 doclint 检查语法与引用；不要求局部变量或编译器生成成员注释。
 16. 分期是开发路线与验收文档的组织方式，不是产品运行时架构。`src/` 中的模块、包、类、方法、字段、枚举、消息键、配置键、资源名、脚本名和测试名不得以 `PhaseOne`、`PhaseTwo`、`phase1`、`phase2`、一期、二期等期数命名；必须按稳定职责命名。正式文档保留分期标题，内部按功能组织；日期和版本仅为必要证据属性，不维护时间流水账，不把期数泄漏为代码 API 或持久化契约。
 17. `app/ui/deployment` 只收集 `contract.definition` 中声明的表单输入并通过现有服务门面提交；运行时、配置、秘密引用、数据库范围和 Git 引用由服务用例解析，UI 只展示门面暴露的纯数据结果；不得暴露任意 Shell、启动命令、主机路径挂载、数据库密码明文或未审阅的秘密文本。新单/多组件部署必须明确区分数据库范围“尚未审阅”“已审阅且为空”和一个或多个已审阅的服务器 DB 绑定；尚未审阅时不得进入部署。项目类型、运行时字段和容器选项改变后，必须重新进行静态源码分析；桌面页面状态切换外观或语言时必须保留这些尚未提交的表单值。
 18. 类型化部署分析必须把确定的源码元数据作为可审阅的 `DeploymentRuntimeAssessment` 返回，而非由桌面表单写死语言版本、入口、产物目录、端口或卷。仅在值唯一、受支持、边界安全且具有 `AnalysisEvidence` 时才可回填；范围、冲突、任意脚本和文档文字只能作为未解决的用户输入，绝不转换为命令。
@@ -1365,7 +1370,7 @@ linux-sshd 通过 linux 契约采集服务器已有环境
 20. `DeploymentAnalysisCoordinator` 不得导入具体项目类型实现；`ProjectLanguageInspector` 只负责组合确定性的语言事实检查器。低层语言与构建 Inspector 不得修改调用方提供的拒绝集合，生产包与测试包必须镜像，包依赖不得成环，且不得恢复按阶段或宽泛类别聚合实现的包。`deploy.plan` 不得构造具体适配器，`linux.connection` 不得保存异常或组合会话，`linux-sshd.connection` 不得保存 command 或总会话；禁止以兼容壳保留旧类型。
 21. 用户可见和持久化语义统一使用“发布身份摘要”（`release_sha256`）；“制品”仅指构建中待验证的文件。桌面 SQLite 当前 schema 为 v19，版本化迁移按功能保存：发布身份（v4→v5 无损列重命名）、AI 旧角色绑定（v6）与统一顺序/启用/验证记录（v15）、成功组件依赖图（v7）、非秘密运行时和数据绑定（v8–v10）、独立整应用健康探针（v11）、运行身份及指纹格式（v12）、服务器名称与检查（v13）、外部接管及显示覆盖（v14）、APP 类型化运行记录（v16）、非秘密救援记录（v17）、模型库存及独立用途/能力修订（v18）与 Agent 任务事件（v19）。资源、配置和图与成功发布原子保存，旧记录的缺失值不得猜补为最新配置、默认身份或目标机观测。秘密只用已审阅的精确修订引用；数据库范围区分未审阅与显式为空；历史指纹仅在同一公钥认证后迁移。旧图保留并提示重新分析；缺少经审阅的运行方式时不开放生命周期动作，备份缺必要绑定时必须报告缺失；整应用探针不得从单组件反推，桌面物理路径不得替代逻辑文件路径。
 22. `DeploymentSupportProfile` 是语言、框架、支持等级与真实验收目标范围的唯一共享声明；`RECOGNITION_PREVIEW` 只能由 `analyze` 读取有界路径和固定元数据，必须使用 `NONE_PREVIEW`，不得创建源码归档、部署适配器、远端构建渲染器、helper 参数或生命周期入口。Shell 文件只可作为识别证据，不能转换成命令。
-23. `PackageStructureArchitectureTest` 使用 JDK 编译器 AST、物理路径和生产导入图自动检查文件与顶级类型同名、仓库级顶级类型唯一性、顶级及嵌套枚举语义后缀、禁限用词及封闭例外、资源文件名、复数后缀、缩写、测试后缀、模块根包以下最多三层、五个功能组及合法职责、远程契约和领域模型例外、语言/构建架构/发行版分类轴、禁用包名、全部包依赖环、测试包镜像、职责映射、反向依赖、旧 FQCN、旧物理包、旧 helper 资源路径、已删除包装类以及唯一 `AppMain.main`。门禁不设置总包数或单包类型数量硬上限，不得通过文本豁免隐藏结构回归；通过结果只证明当前本地静态结构，不构成新的 Linux 运行证据。
+23. `PackageStructureArchitectureTest` 使用 JDK 编译器 AST、物理路径和生产导入图自动检查文件与顶级类型同名、仓库级顶级类型唯一性、顶级及嵌套枚举语义后缀、禁限用词及封闭例外、资源文件名、复数后缀、缩写、测试后缀、模块根包以下最多三层、五个功能组及合法职责、远程契约和领域模型例外、语言/构建架构/发行版分类轴、禁用包名、全部包依赖环、测试包镜像、职责映射、反向依赖、旧 FQCN、旧物理包、旧 helper 资源路径、已删除包装类以及仅允许的 `AppMain.main` / `WebMain.main` 产品入口。Java 职责规模门禁仅排除 AST 识别的 Javadoc 行，正文、实现注释及嵌入脚本仍计入现有上限，脚本文件上限保持不变；双语文档另由 `JavadocCoverageTest` 负责。门禁不设置总包数或单包类型数量硬上限，不得通过文本豁免隐藏结构回归；通过结果只证明当前本地静态结构，不构成新的 Linux 运行证据。
 24. 每个可进入计划的源码路径必须产生一个精确 `DeploymentArchitectureType`，由 `DeploymentProjectType × DeploymentBuildToolType` 唯一标识；分析注册表、构建 Renderer 注册表、主机生态工具版本和运行时能力判断必须对该身份闭合，禁止恢复宽泛构建工具身份或以参数化 Renderer 隐藏架构差异。新增身份在逐目标产品入口证据完成前保持试验适配或 `RUNTIME-PENDING`。
 
 
@@ -1383,14 +1388,30 @@ linux-sshd 通过 linux 契约采集服务器已有环境
 
 当前 helper 协议 9，部署运行时载荷 5，备份激活配置 5，备份 manifest schema 6，桌面管理库 schema 19。未改变的存储资源载荷仍为 2；外部输入绑定在运行契约中，不另造一份可变资源映射。
 
+### APP 网页控制台救援边界
+
+`app/windows/recovery` 独占 Playwright Java 1.58.0 对象，并在专用线程处理页面事件和终端输入；不接管个人浏览器配置。`app/service/recovery` 使用原有服务器锁，持有救援状态、预算、动作确认和 SSH 验证；`SshRecoveryApplicationFacade`、`SshRecoverySession` 与 `RecoverySnapshot` 是 UI 使用的救援契约。`shared/ai/recovery` 仅生成观察和建议，不执行命令；`shared/linux` 与 `shared/deploy` 不引用 Windows。
+
+桌面模型用途以 `AiPurposeType` 明确划分部署、审批和视觉；`AiCapabilityType` 区分文字/图像测试。显示排序与用途调用顺序分离，任务持有精确配置快照。视觉识别只返回受控观察，部署和审批保持独立上下文。SQLite v18 保存用途与能力修订，v19 保存非秘密 Agent 任务事件；旧 v17 救援记录保持。三模式自动部署不接入浏览器救援，独立救援继续要求用户逐项授权。
+
+## 共享备份采集与结构化救援错误
+
+`shared/backup/execution/collection/BackupCollectionService` 统一准入、原始运行状态观察、依赖顺序停机、发布和资源及数据库采集、运行恢复、健康复核及远端清理。`contract/definition` 的输入携带已审阅绑定、维护标记归属及整应用健康契约；`contract/spi` 由各端提供私有素材输出、配额、取消和进度。桌面及 Web 保留原有整应用健康来源，不从组件配置推导新规则。
+
+取消仅终止采集，必要恢复完成后才向调用者返回取消。恢复无法验证时报告人工恢复状态并保留远端素材与维护标记。只释放本次持有的维护标记；外层迁移持有的标记不在采集步骤释放。原始失败、恢复失败与各项清理失败均保留。
+
+SSH 探测携带原始 `FailureDescriptor`；只有明确连接失败进入重试，认证、主机指纹、凭据、中断及其他失败分别处理。`RecoverySnapshot` 分开表达生命周期与可选失败原因，UI 使用既有安全错误展示。浏览器、观察、持久化记录及清理错误按所属模块登记；数据库和诊断报告不记录终端内容、命令正文或模型响应。
+
+Web JSON 编解码由 `persistence/serialization/WebJsonCodec` 承担；`contract/validation/WebRequestValidator` 处理字段及非秘密输入校验；`interaction/WebTaskInteractionService` 转换确认、输入与进度交互。任务接口仍位于 `contract`，HTTP 与任务协议不变。桌面 AI 门面公开全部模型展示顺序、各用途成员/启用/顺序、独立能力验证及冻结调用链；历史默认配置与角色绑定继续由数据库迁移和持久化测试保护。
+
 ### App 部署模式及 Agent 边界
 
 - `shared/model/agent`：动作、风险、审批决定、任务状态及预算协作所需纯值；`shared/model/deployment` 保存三模式和三审批策略。
-- `shared/ai/client/AgentProtocolClient`：独立决策/审批/辅助协议，严格字段、精确动作绑定和证据引用；旧建议协议不放宽。`resources/skills` 文件名稳定，Skill 内容和任务记录分别带版本。
+- `shared/ai/client/DeploymentAiProtocolClient`：独立决策/审批/辅助协议，严格字段、精确动作绑定和证据引用；旧建议协议不放宽。`resources/skills` 文件名稳定，Skill 内容和任务记录分别带版本。
 - `shared/deploy/agent`：仅依赖注入的决策、审批、执行和人机端口，处理 fail-closed 审批、串行执行、进程内暂停取消、拒绝记忆及全任务预算，不访问 App 数据库或秘密存储。
 - `app/service/deployment/automatic`：模式入口、真实事务适配、精确动作描述、诊断片段、固定辅助节点、受管工具与任务记录；静态任务在服务层零 AI，缺审批模型在网络操作之前阻断。
 - `shared/linux/transfer/DeploymentRemoteTaskScope` 与既有候选契约：工作线程候选归属与注入的创建前记录；SSHD helper 通过 root 所有任务标记验证查询/清理身份，不开放原始 SSH 到模型。
 - `app/db`：v18 用途草稿原子保存与能力修订，v19 任务/事件；未知状态或没有结果的执行意图不能被新任务绕过。查询不是结果确认，不能用候选消失证明任意事务已恢复。
-- `app/ui`：标准三刻度滑块、审批方式、内联左右模型列表和任务控制。任务冻结模式与用途顺序；关闭 App 后不继续旧写操作。
+- `app/ui/deployment/automatic`：单/多组件共用的自动部署页面、表单、模式入口及弹出三档滑块（保留 Swing 原生输入与无障碍行为）、带图标的审批方式和任务控制；`app/ui/ai` 保存模型库存及内联用途列表。任务冻结模式与用途顺序；关闭 App 后不继续旧写操作。
 
 本轮不接入 Web 配置、Web UI 或 Web Agent。能力和限制详见 [App 开发说明](development/PHASE-4.md#agent-modes)与[产品手册](PRODUCT-MANUAL.md#16-app-部署模式与模型用途)。

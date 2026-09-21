@@ -7,7 +7,15 @@ import java.util.Locale;
 import java.util.Objects;
 import java.util.Set;
 
-/** Exact local candidate and member inventory for isolated SFTP staging. / 用于隔离 SFTP 暂存的精确本地候选及成员清单。 */
+/**
+ * Exact local candidate and member inventory for isolated SFTP staging. / 用于隔离 SFTP 暂存的精确本地候选及成员清单。
+ *
+ * @param applicationId managed application identifier / 受管应用标识
+ * @param archiveSha256 SHA-256 identity of the reviewed archive / 已审阅归档的 SHA-256 身份
+ * @param localCandidateRoot local candidate root / 本地候选根目录
+ * @param expectedBytes expected bytes / 预期字节
+ * @param members members / 成员集合
+ */
 public record RemoteRestoreStagingRequest(
         String applicationId,
         String archiveSha256,
@@ -15,7 +23,17 @@ public record RemoteRestoreStagingRequest(
         long expectedBytes,
         List<RemoteRestoreMember> members
 ) {
-    /** Binds every member and byte to the digest-derived candidate namespace. / 将每个成员和字节绑定到摘要派生的候选命名空间。 */
+    /**
+     * Binds every member and byte to the digest-derived candidate namespace. / 将每个成员和字节绑定到摘要派生的候选命名空间。
+     *
+     * @param applicationId managed application identifier / 受管应用标识
+     * @param archiveSha256 SHA-256 identity of the reviewed archive / 已审阅归档的 SHA-256 身份
+     * @param localCandidateRoot local candidate root / 本地候选根目录
+     * @param expectedBytes expected bytes / 预期字节
+     * @param members members / 成员集合
+     * @throws IllegalArgumentException if an input violates the constraints checked by this contract / 输入违反当前契约检查的约束时
+     * @throws NullPointerException if a required input is absent / 必需输入缺失时
+     */
     public RemoteRestoreStagingRequest {
         applicationId = Objects.requireNonNull(applicationId, "applicationId").trim();
         if (!applicationId.matches("[a-z0-9][a-z0-9-]{0,62}")) {
@@ -48,7 +66,11 @@ public record RemoteRestoreStagingRequest(
         }
     }
 
-    /** Returns the only allowed candidate identifier. / 返回唯一允许的候选标识。 */
+    /**
+     * Returns the only allowed candidate identifier. / 返回唯一允许的候选标识。
+     *
+     * @return the only allowed candidate identifier / 唯一允许的候选标识
+     */
     public String candidateId() {
         return applicationId + "-" + archiveSha256.substring(0, 16);
     }

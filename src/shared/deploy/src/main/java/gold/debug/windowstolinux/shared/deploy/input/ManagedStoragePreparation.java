@@ -14,11 +14,36 @@ import java.nio.file.*;
 import java.security.MessageDigest;
 import java.util.*;
 
-/** Resolves explicit source declarations once for desktop and Web. / 桌面与 Web 共用的显式源码存储声明解析。 */
+/**
+ * Resolves explicit source declarations once for desktop and Web. / 桌面与 Web 共用的显式源码存储声明解析。
+ */
 public final class ManagedStoragePreparation {
+    /**
+     * Prevents instantiation of this static contract helper.
+     * <p>防止实例化当前静态契约辅助类。
+     */
     private ManagedStoragePreparation() { }
+    /**
+     * Carries prepared resource bindings and the credentials needed for activation.
+     * <p>携带已准备的资源绑定及激活所需凭据。
+     *
+     * @param configuration reviewed configuration snapshot or settings / 已审阅配置快照或设置
+     * @param files controlled filesystem access or reviewed file inventory / 受控文件系统访问或已审阅文件清单
+     */
     public record Prepared(ConfigurationSnapshot configuration, List<ManagedFileBinding> files) { }
 
+    /**
+     * Validates explicit storage declarations and source seeds, derives immutable configuration revisions and merges them with reviewed bindings.
+     * <p>校验显式存储声明及源码种子，派生不可变配置修订，并将其与已审阅绑定合并。
+     *
+     * @param root root directory defining the filesystem boundary / 定义文件系统边界的根目录
+     * @param applicationId managed application identifier / 受管应用标识
+     * @param configuration reviewed configuration snapshot or settings / 已审阅配置快照或设置
+     * @param runtime reviewed language, process and health specification / 已审阅的语言、进程及健康规格
+     * @param existing existing / 既有
+     * @return constructed or resolved prepared / 构造或解析得到的已准备
+     * @throws IllegalArgumentException if an input violates the constraints checked by this contract / 输入违反当前契约检查的约束时
+     */
     public static Prepared prepare(Path root, String applicationId, ConfigurationSnapshot configuration,
                                    DeploymentRuntimeSpecification runtime, List<ManagedFileBinding> existing) {
         var files = new LinkedHashMap<String,ManagedFileBinding>();
@@ -93,6 +118,13 @@ public final class ManagedStoragePreparation {
         }
     }
 
+    /**
+     * Describes the reviewed managed storage locations and handoff actions without modifying them.
+     * <p>描述已审阅受管存储位置及交接动作，不修改存储。
+     *
+     * @param request reviewed inputs for the requested operation / 所请求操作的已审阅输入
+     * @return constructed or resolved list / 构造或解析得到的列表
+     */
     public static List<gold.debug.windowstolinux.shared.model.message.LocalizedMessage> preview(
             gold.debug.windowstolinux.shared.deploy.contract.ReviewedDeploymentRequest request) {
         var messages = new ArrayList<gold.debug.windowstolinux.shared.model.message.LocalizedMessage>();
@@ -121,6 +153,16 @@ public final class ManagedStoragePreparation {
         return List.copyOf(messages);
     }
 
+    /**
+     * Requires a bounded regular source file whose normalized and real paths remain beneath the reviewed source root.
+     * <p>要求源码文件为有界常规文件，且规范路径及真实路径均位于已审阅源码根目录内。
+     *
+     * @param root root directory defining the filesystem boundary / 定义文件系统边界的根目录
+     * @param source source identity or content read by the operation / 操作读取的源身份或内容
+     * @param limit limit / 限制
+     * @throws IOException if the required file or stream operation fails / 所需文件或流操作失败时
+     * @throws IllegalArgumentException if an input violates the constraints checked by this contract / 输入违反当前契约检查的约束时
+     */
     private static void verifiedSource(Path root, Path source, long limit) throws IOException {
         if (!source.normalize().startsWith(root.normalize()) || !Files.isRegularFile(source,LinkOption.NOFOLLOW_LINKS)
                 || !source.toRealPath().startsWith(root.toRealPath()) || Files.size(source)>limit)

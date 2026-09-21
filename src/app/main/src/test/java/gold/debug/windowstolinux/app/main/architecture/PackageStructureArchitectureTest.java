@@ -64,7 +64,7 @@ class PackageStructureArchitectureTest {
             "DesktopViewState.java", "PageNavigationController.java");
     private static final Set<String> DEPLOYMENT_SHARED = Set.of(
             "ReviewContext.java");
-    private static final Set<String> DEPLOYMENT_SINGLE = Set.of(
+    private static final Set<String> DEPLOYMENT_AUTOMATIC = Set.of(
             "DeploymentForm.java", "DeploymentPage.java",
             "DeploymentPageState.java", "DeploymentInputDialog.java", "DeploymentSourceCard.java", "DeploymentModeSelector.java", "DeploymentTaskControls.java");
     private static final Set<String> DEPLOYMENT_MULTI = Set.of(
@@ -288,12 +288,12 @@ class PackageStructureArchitectureTest {
             new PackageDependencyRule("gold.debug.windowstolinux.shared.ai.collaboration.invocation",
                     Set.of("gold.debug.windowstolinux.shared.ai.collaboration")),
             new PackageDependencyRule("gold.debug.windowstolinux.app.ui.deployment",
-                    Set.of("gold.debug.windowstolinux.app.ui.deployment.single",
+                    Set.of("gold.debug.windowstolinux.app.ui.deployment.automatic",
                             "gold.debug.windowstolinux.app.ui.deployment.multi")),
-            new PackageDependencyRule("gold.debug.windowstolinux.app.ui.deployment.single",
+            new PackageDependencyRule("gold.debug.windowstolinux.app.ui.deployment.automatic",
                     Set.of("gold.debug.windowstolinux.app.ui.deployment.multi")),
             new PackageDependencyRule("gold.debug.windowstolinux.app.ui.deployment.multi",
-                    Set.of("gold.debug.windowstolinux.app.ui.deployment.single")),
+                    Set.of("gold.debug.windowstolinux.app.ui.deployment.automatic")),
             new PackageDependencyRule("gold.debug.windowstolinux.app.service.deployment.single",
                     Set.of("gold.debug.windowstolinux.app.service.deployment",
                             "gold.debug.windowstolinux.app.service.deployment.multi")),
@@ -336,7 +336,7 @@ class PackageStructureArchitectureTest {
         Path core = root.resolve("src/shared/analyze/src/main/java/gold/debug/windowstolinux/shared/analyze/core");
         Path shell = root.resolve("src/app/ui/src/main/java/gold/debug/windowstolinux/app/ui/shell");
         Path deploymentShared = root.resolve("src/app/ui/src/main/java/gold/debug/windowstolinux/app/ui/deployment");
-        Path deploymentSingle = deploymentShared.resolve("single");
+        Path deploymentAutomatic = deploymentShared.resolve("automatic");
         Path deploymentMulti = deploymentShared.resolve("multi");
         Path repositories = root.resolve(
                 "src/app/db/src/main/java/gold/debug/windowstolinux/app/db/persistence/repository");
@@ -346,7 +346,7 @@ class PackageStructureArchitectureTest {
         assertEquals(ANALYSIS_CORE, fileNames(core));
         assertEquals(DESKTOP_SHELL, fileNames(shell));
         assertEquals(DEPLOYMENT_SHARED, fileNames(deploymentShared));
-        assertEquals(DEPLOYMENT_SINGLE, fileNames(deploymentSingle));
+        assertEquals(DEPLOYMENT_AUTOMATIC, fileNames(deploymentAutomatic));
         assertEquals(DEPLOYMENT_MULTI, fileNames(deploymentMulti));
         assertEquals(REPOSITORIES, fileNames(repositories));
         Set<String> expectedResources = new HashSet<>(HELPER_FRAGMENTS);
@@ -370,7 +370,7 @@ class PackageStructureArchitectureTest {
         assertMaximumLines(core, 400);
         assertMaximumLines(shell, 400);
         assertMaximumLines(deploymentShared, 500);
-        assertMaximumLines(deploymentSingle, 500);
+        assertMaximumLines(deploymentAutomatic, 500);
         assertMaximumLines(deploymentMulti, 500);
         assertMaximumLines(repositories, 320);
         assertMaximumLinesRecursively(fragments, 300);
@@ -414,7 +414,7 @@ class PackageStructureArchitectureTest {
                 "src/app/ui/src/main/java/gold/debug/windowstolinux/app/ui/setting",
                 "src/app/service/src/main/java/gold/debug/windowstolinux/app/service/deployment/single",
                 "src/app/service/src/main/java/gold/debug/windowstolinux/app/service/deployment/multi",
-                "src/app/ui/src/main/java/gold/debug/windowstolinux/app/ui/deployment/single",
+                "src/app/ui/src/main/java/gold/debug/windowstolinux/app/ui/deployment/automatic",
                 "src/app/ui/src/main/java/gold/debug/windowstolinux/app/ui/deployment/multi",
                 "src/shared/ai/src/main/java/gold/debug/windowstolinux/shared/ai/collaboration/advice",
                 "src/shared/ai/src/main/java/gold/debug/windowstolinux/shared/ai/collaboration/invocation",
@@ -509,7 +509,7 @@ class PackageStructureArchitectureTest {
 
         register(packages, "gold.debug.windowstolinux.app.ui.deployment",
                 "ReviewContext");
-        register(packages, "gold.debug.windowstolinux.app.ui.deployment.single",
+        register(packages, "gold.debug.windowstolinux.app.ui.deployment.automatic",
                 "DeploymentForm", "DeploymentPage", "DeploymentPageState");
         register(packages, "gold.debug.windowstolinux.app.ui.deployment.multi",
                 "MultiComponentDraftController", "MultiComponentFormState",
@@ -522,10 +522,10 @@ class PackageStructureArchitectureTest {
         register(packages, "gold.debug.windowstolinux.shared.deploy.execution.environment", "DatabaseInstanceResolver", "NativeDatabasePreparationService");
         register(packages, "gold.debug.windowstolinux.shared.deploy.input", "AutomaticRuntimeResolver", "DeploymentRuntimeParser");
         register(packages, "gold.debug.windowstolinux.shared.config.input", "DeploymentConfigurationParser");
-        register(packages, "gold.debug.windowstolinux.app.ui.deployment.single", "DeploymentInputDialog", "DeploymentSourceCard", "DeploymentModeSelector", "DeploymentTaskControls");
+        register(packages, "gold.debug.windowstolinux.app.ui.deployment.automatic", "DeploymentInputDialog", "DeploymentSourceCard", "DeploymentModeSelector", "DeploymentTaskControls");
         register(packages, "gold.debug.windowstolinux.shared.ai.collaboration.role", "DeploymentInputRoleContext");
         register(packages, "gold.debug.windowstolinux.app.service.deployment",
-                "ManagedApplicationIdentityResolver", "ReviewedDeploymentUseCase", "MultiComponentDeploymentUseCase",
+                "DeploymentInspectionUseCase", "ManagedApplicationIdentityResolver", "ReviewedDeploymentUseCase", "MultiComponentDeploymentUseCase",
                 "MultiComponentLifecycleUseCase");
         register(packages, "gold.debug.windowstolinux.app.service.deployment.single",
                 "DeploymentHandoff", "DeploymentOutcome");
