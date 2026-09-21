@@ -36,15 +36,46 @@ import java.util.concurrent.atomic.AtomicReference;
 /**
  * Apache MINA SSHD implementation of the managed-deployment allowlisted remote contract. It accepts a host key only through the supplied verifier and never exposes a public raw-command method.
  *
- * <p>受管部署白名单远程契约的 Apache MINA SSHD 实现。它只通过提供的验证器接受主机密钥，并且绝不公开原始命令方法。
+ *  <p>受管部署白名单远程契约的 Apache MINA SSHD 实现。它只通过提供的验证器接受主机密钥，并且绝不公开原始命令方法。
  */
 public final class SshdLinuxGateway implements DeploymentLinuxGateway {
+    /**
+     * CONNECT TIMEOUT.
+     * <p>连接超时。
+     */
     private static final Duration CONNECT_TIMEOUT = Duration.ofSeconds(30);
+    /**
+     * HEARTBEAT INTERVAL.
+     * <p>心跳间隔。
+     */
     private static final Duration HEARTBEAT_INTERVAL = Duration.ofSeconds(30);
+    /**
+     * Maximum consecutive unanswered SSH heartbeats before connection failure.
+     * <p>判定连接失败前允许的连续未回复 SSH 心跳上限。
+     */
     private static final int HEARTBEAT_NO_REPLY_MAX = 3;
+    /**
+     * TRANSIENT CONNECTION ATTEMPTS.
+     * <p>暂时连接尝试集合。
+     */
     private static final int TRANSIENT_CONNECTION_ATTEMPTS = 3;
+    /**
+     * TRANSIENT RETRY DELAY.
+     * <p>暂时重试延迟。
+     */
     private static final Duration TRANSIENT_RETRY_DELAY = Duration.ofMillis(250);
-    /** Performs the {@code connect} operation. / 执行 {@code connect} 操作。 */
+    /**
+     * Opens an authenticated session after the supplied host-key verification.
+     * <p>在所提供主机密钥验证完成后打开已认证会话。
+     *
+     * @param endpoint reviewed network endpoint / 已审阅网络端点
+     * @param credential authentication material scoped to the current connection / 限定于当前连接的认证素材
+     * @param hostKeyVerifier the host-key verifier / 主机密钥验证器
+     * @return constructed or resolved deployment remote session / 构造或解析得到的部署远端会话
+     * @throws LinuxOperationException if the authenticated remote operation fails or its evidence is rejected / 已认证远端操作失败或其证据被拒绝时
+     * @throws IllegalStateException if the required state or runtime facility is unavailable / 所需状态或运行设施不可用时
+     * @throws NullPointerException if a required input is absent / 必需输入缺失时
+     */
     @Override
     public DeploymentRemoteSession connect(SshEndpoint endpoint, SshCredential credential, HostKeyEvaluator hostKeyVerifier)
             throws LinuxOperationException {
@@ -70,6 +101,16 @@ public final class SshdLinuxGateway implements DeploymentLinuxGateway {
         }
     }
 
+    /**
+     * Makes one authenticated connection attempt using the supplied trust contract.
+     * <p>按提供的信任契约进行一次已认证连接尝试。
+     *
+     * @param endpoint reviewed network endpoint / 已审阅网络端点
+     * @param credential authentication material scoped to the current connection / 限定于当前连接的认证素材
+     * @param hostKeyVerifier the host-key verifier / 主机密钥验证器
+     * @return constructed or resolved deployment remote session / 构造或解析得到的部署远端会话
+     * @throws LinuxOperationException if the authenticated remote operation fails or its evidence is rejected / 已认证远端操作失败或其证据被拒绝时
+     */
     private static DeploymentRemoteSession connectOnce(
             SshEndpoint endpoint,
             SshCredential credential,
@@ -142,11 +183,24 @@ public final class SshdLinuxGateway implements DeploymentLinuxGateway {
         }
     }
 
+    /**
+     * Reports whether the transient connection failure condition holds for this contract.
+     * <p>判断当前契约是否满足暂时连接失败条件。
+     *
+     * @param failure structured failure occurrence retained for safe reporting / 保留用于安全报告的结构化失败实例
+     * @return true when transient connection failure condition holds for this contract, false otherwise / 当前契约是否满足暂时连接失败条件时为 true，否则为 false
+     */
     static boolean isTransientConnectionFailure(LinuxOperationException failure) {
         return LinuxOperationFailureType.CONNECTION_FAILED.code().equals(failure.failure().code())
                 || SshCommandExecutor.isTransientTransportFailure(failure);
     }
 
+    /**
+     * Waits for for retry.
+     * <p>等待对应重试。
+     *
+     * @return true when waits for for retry, false otherwise / 等待对应重试时为 true，否则为 false
+     */
     private static boolean waitForRetry() {
         try {
             Thread.sleep(TRANSIENT_RETRY_DELAY.toMillis());
@@ -157,6 +211,14 @@ public final class SshdLinuxGateway implements DeploymentLinuxGateway {
         }
     }
 
+    /**
+     * Adds the supplied SSH credential and authenticates the session, clearing temporary password copies after use.
+     * <p>添加所提供 SSH 凭据并认证会话，使用后清空临时密码副本。
+     *
+     * @param session session used for the current scoped operation / 当前限定作用域操作使用的会话
+     * @param credential authentication material scoped to the current connection / 限定于当前连接的认证素材
+     * @throws IOException if the required file or stream operation fails / 所需文件或流操作失败时
+     */
     private static void authenticate(ClientSession session, SshCredential credential) throws IOException {
         if (credential instanceof SshCredential.Password password) {
             char[] chars = password.copy();
@@ -176,12 +238,12 @@ public final class SshdLinuxGateway implements DeploymentLinuxGateway {
     /**
      * Prevents ambient keys from the desktop user's SSH directory or agent from consuming the remote server's authentication-attempt budget. Only the credential selected for the saved server profile is ever offered.
      *
-     * <p>防止桌面用户 SSH 目录或代理中的环境密钥消耗远程服务器的认证尝试额度。只会提供已保存服务器资料选定的凭据。
+     *  <p>防止桌面用户 SSH 目录或代理中的环境密钥消耗远程服务器的认证尝试额度。只会提供已保存服务器资料选定的凭据。
      *
-     * @param credential the {@code credential} value / {@code credential} 值
+     * @param credential authentication material scoped to the current connection / 限定于当前连接的认证素材
      * @return the operation result / 操作结果
      * @throws IllegalArgumentException if an argument violates the required constraints / 参数违反必要约束时
-     * @throws NullPointerException if a required argument is {@code null} / 必要参数为 {@code null} 时
+     * @throws NullPointerException if a required input is absent / 必需输入缺失时
      */
     static SshClient credentialScopedClient(SshCredential credential) {
         Objects.requireNonNull(credential, "credential");
@@ -202,16 +264,32 @@ public final class SshdLinuxGateway implements DeploymentLinuxGateway {
         return client;
     }
 
-    /** Delegates client cleanup to the session-owned close policy. / 将客户端清理委托给会话层持有的关闭策略。 */
+    /**
+     * Delegates client cleanup to the session-owned close policy. / 将客户端清理委托给会话层持有的关闭策略。
+     *
+     * @param client client / 客户端
+     */
     public static void closeQuietly(SshClient client) {
         SshSessionLifecycleExecutor.closeQuietly(client);
     }
 
-    /** Delegates session cleanup to the session-owned close policy. / 将会话清理委托给会话层持有的关闭策略。 */
+    /**
+     * Delegates session cleanup to the session-owned close policy. / 将会话清理委托给会话层持有的关闭策略。
+     *
+     * @param session session used for the current scoped operation / 当前限定作用域操作使用的会话
+     */
     public static void closeQuietly(ClientSession session) {
         SshSessionLifecycleExecutor.closeQuietly(session);
     }
 
+    /**
+     * Hashes the encoded public key into the historical unpadded SHA256 fingerprint representation.
+     * <p>对编码公钥计算哈希，得到历史不带填充的 SHA256 指纹表示。
+     *
+     * @param key lookup key within the current contract / 当前契约内的查找键
+     * @return legacy fingerprint text / 历史指纹文本
+     * @throws IllegalStateException if the required state or runtime facility is unavailable / 所需状态或运行设施不可用时
+     */
     private static String legacyFingerprint(PublicKey key) {
         try {
             byte[] digest = MessageDigest.getInstance("SHA-256").digest(key.getEncoded());

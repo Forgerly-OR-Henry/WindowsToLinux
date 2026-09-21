@@ -1,5 +1,5 @@
 package gold.debug.windowstolinux.app.service.ai;
-import gold.debug.windowstolinux.shared.ai.client.AgentProtocolClient;
+import gold.debug.windowstolinux.shared.ai.client.DeploymentAiProtocolClient;
 import gold.debug.windowstolinux.shared.ai.collaboration.invocation.AiInvocationStatus;
 import gold.debug.windowstolinux.shared.deploy.agent.AgentModelPort;
 import gold.debug.windowstolinux.shared.model.ai.AiPurposeType;
@@ -11,7 +11,7 @@ public final class DeploymentAgentModelAdapter implements AgentModelPort,AutoClo
     /** Purpose routing and secret resolution. / 用途路由及秘密解析。 */
     private final AiProviderChain chain;
     /** Strict dedicated Agent protocol. / 严格专用 Agent 协议。 */
-    private final AgentProtocolClient client;
+    private final DeploymentAiProtocolClient client;
     /** Task-owned unlock buffer, wiped on close. / 任务所属解锁缓冲区，关闭时清零。 */
     private final char[] master;
     /** Frozen worker scope. / 冻结工作线程作用域。 */
@@ -21,7 +21,7 @@ public final class DeploymentAgentModelAdapter implements AgentModelPort,AutoClo
      * @param client isolated protocol / 独立协议
      * @param master unlock buffer / 解锁缓冲区
      */
-    DeploymentAgentModelAdapter(AiProviderChain chain,AgentProtocolClient client,char[] master){this.chain=chain;this.client=client;this.master=master.clone();
+    DeploymentAgentModelAdapter(AiProviderChain chain,DeploymentAiProtocolClient client,char[] master){this.chain=chain;this.client=client;this.master=master.clone();
         this.scope=DeploymentAiScope.current().orElseThrow(()->new IllegalStateException("Agent requires deployment scope"));}
     /** Chooses the next action with only deployment-role models. / 仅使用部署用途模型选择下一动作。
      * @param goal fixed goal / 固定目标

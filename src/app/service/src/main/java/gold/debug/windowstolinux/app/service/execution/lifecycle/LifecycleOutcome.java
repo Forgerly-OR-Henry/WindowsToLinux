@@ -13,11 +13,14 @@ import java.util.Optional;
 /**
  * Secret-free result of one desktop lifecycle use case.
  *
- * <p>单次桌面生命周期用例的无秘密结果。
+ *  <p>单次桌面生命周期用例的无秘密结果。
  *
- * @param accepted the {@code accepted} value / {@code accepted} 值
- * @param message the {@code message} value / {@code message} 值
- * @param observation the {@code observation} value / {@code observation} 值
+ * @param accepted accepted / 已接受
+ * @param message localized explanation / 本地化说明
+ * @param observation observation / 观测
+ * @param operationIdentity correlation identity of the enclosing user operation / 外层用户操作的关联标识
+ * @param failure structured failure occurrence retained for safe reporting / 保留用于安全报告的结构化失败实例
+ * @param nonFatalFailures non fatal failures / 非致命失败集合
  */
 public record LifecycleOutcome(
         boolean accepted,
@@ -28,14 +31,17 @@ public record LifecycleOutcome(
         List<FailureDescriptor> nonFatalFailures
 ) {
     /**
-     * Creates a {@code LifecycleOutcome} instance.
+     * Validates and binds the inputs required by lifecycle outcome.
+     * <p>校验并绑定生命周期结果所需输入。
      *
-     * <p>创建 {@code LifecycleOutcome} 实例。
-     *
-     * @param accepted the {@code accepted} value / {@code accepted} 值
-     * @param message the {@code message} value / {@code message} 值
-     * @param observation the {@code observation} value / {@code observation} 值
-     * @throws NullPointerException if a required argument is {@code null} / 必要参数为 {@code null} 时
+     * @param accepted accepted / 已接受
+     * @param message localized explanation / 本地化说明
+     * @param observation observation / 观测
+     * @param operationIdentity correlation identity of the enclosing user operation / 外层用户操作的关联标识
+     * @param failure structured failure occurrence retained for safe reporting / 保留用于安全报告的结构化失败实例
+     * @param nonFatalFailures non fatal failures / 非致命失败集合
+     * @throws IllegalArgumentException if an input violates the constraints checked by this contract / 输入违反当前契约检查的约束时
+     * @throws NullPointerException if a required input is absent / 必需输入缺失时
      */
     public LifecycleOutcome {
         message = Objects.requireNonNull(message, "message");
@@ -54,7 +60,13 @@ public record LifecycleOutcome(
         }
     }
 
-    /** Creates a result without a structured terminal failure. / 创建不含结构化终止失败的结果。 */
+    /**
+     * Creates a result without a structured terminal failure. / 创建不含结构化终止失败的结果。
+     *
+     * @param accepted accepted / 已接受
+     * @param message localized explanation / 本地化说明
+     * @param observation observation / 观测
+     */
     public LifecycleOutcome(boolean accepted, LocalizedMessage message, Optional<LifecycleObservation> observation) {
         this(accepted, message, observation, OperationIdentity.create(), Optional.empty(), List.of());
     }

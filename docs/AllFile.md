@@ -54,7 +54,6 @@ src/  # 项目源码与模块根目录
 │  │     │  └─ ServerProfileRepository.java  # 保存服务器信任身份与不含凭据的连接资料
 │  │     └─ serialization/  # SQLite 中复杂类型的严格版本化序列化
 │  │        ├─ ComponentPathPersistenceCodec.java  # 编解码成功部署时已审阅且不含秘密的数据路径清单
-│  │        ├─ HealthCheckPersistenceCodec.java  # 编解码独立审阅并与整应用图原子保存的应用级健康探针
 │  │        └─ ManagedResourcePersistenceCodec.java  # 编解码稳定文件绑定及未知或显式审阅的非秘密数据库绑定
 │  ├─ main/  # 桌面应用入口与模块装配模块
 │  │  ├─ AppMain.java  # WindowsToLinux 桌面应用入口
@@ -81,17 +80,13 @@ src/  # 项目源码与模块根目录
 │  ├─ service/  # 桌面应用用例编排模块
 │  │  ├─ DesktopApplicationFacade.java  # 统一暴露桌面端服务器、源码、部署、生命周期、备份和 AI 用例门面
 │  │  ├─ ai/  # AI 配置、角色与分析用例包
-│  │  │  ├─ AiAnalysisOutcome.java  # 适合界面使用的可选 AI 解释操作结果
 │  │  │  ├─ AiConfigurationUseCase.java  # 桌面模型测试、保存与顺序编排
-│  │  │  ├─ AiProfile.java  # 为可选结构解释保存的非秘密 OpenAI 兼容元数据
 │  │  │  ├─ AiProviderChain.java  # 按优先级验证 AI 建议并处理取消
 │  │  │  ├─ AiProviderProfile.java  # 一个显式选择的命名 AI 提供者；请求绝不回退到另一个提供者
 │  │  │  ├─ AiProviderSummary.java  # 非秘密 AI 模型卡片摘要
-│  │  │  ├─ AiRoleAssignment.java  # 从一个固定 AI 角色到一个命名提供者的类型化非秘密映射
 │  │  │  ├─ AiUseCaseFacade.java  # 编排 AI Provider、角色绑定、结构化分析与解释用例
 │  │  │  ├─ DeploymentAgentModelAdapter.java  # 凭据适配器，部署与审批不共享会话状态
 │  │  │  ├─ DeploymentAiScope.java  # 工作线程持有的不可变路由作用域，嵌套辅助不能绕过静态模式
-│  │  │  ├─ ReadOnlyDeploymentAgentFacade.java  # 旧建议型 AI 的有界静态分析及确定性计划入口；部署 Agent 使用独立契约
 │  │  │  └─ RecoveryAiUseCase.java  # 按配置快照分组回退并分离观察和诊断
 │  │  ├─ backup/  # 受管备份、目标恢复、双服务器离线迁移及本地候选用例包
 │  │  │  ├─ BackupArchiveCreationUseCase.java  # 编排临时写入、双重完整校验与无覆盖原子发布
@@ -138,6 +133,7 @@ src/  # 项目源码与模块根目录
 │  │  │     ├─ MultiComponentReviewInput.java  # 一个静态准入组件由用户审阅的可变输入
 │  │  │     └─ RecoverySnapshot.java  # 不含原始观察的临时救援界面快照
 │  │  ├─ deployment/  # 部署流程与受管身份包
+│  │  │  ├─ DeploymentInspectionUseCase.java  # 有界的确定性源码分析和部署计划生成
 │  │  │  ├─ ManagedApplicationIdentityResolver.java  # 解析一个规范桌面受管身份，不包含部署专属行为
 │  │  │  ├─ MultiComponentDeploymentUseCase.java  # 负责经审阅整应用部署与生命周期的桌面产品边界
 │  │  │  ├─ MultiComponentLifecycleUseCase.java  # 负责持久多组件应用恢复与生命周期操作
@@ -214,7 +210,7 @@ src/  # 项目源码与模块根目录
 │  │  │  ├─ AdvancedOptionsPane.java  # 提供可伸缩侧栏、嵌套输入修改提示、操作冻结与问号帮助
 │  │  │  ├─ AdvancedWindowHost.java  # 保持工作区尺寸的窗口检查面板宿主
 │  │  │  ├─ DesktopComponentFactory.java  # 创建桌面页面复用的按钮、表单和布局组件
-│  │  │  ├─ DesktopIcons.java  # 随主题着色的 Lucide SVG 图标
+│  │  │  ├─ DesktopIcons.java  # 随主题着色的内置 SVG 图标
 │  │  │  ├─ DesktopTaskExecutor.java  # 后台运行操作、回送 Swing 结果并记录活动任务以保护外观重建
 │  │  │  ├─ DesktopTaskHandle.java  # 桌面后台任务完成和取消句柄
 │  │  │  ├─ RoundedCard.java  # 共享圆角卡片绘制
@@ -228,13 +224,12 @@ src/  # 项目源码与模块根目录
 │  │  │  │  ├─ MultiComponentPage.java  # 用于显式混合项目审阅、整应用部署和生命周期的桌面产品页面
 │  │  │  │  ├─ MultiComponentPageState.java  # 完整且不含秘密的多组件页面状态
 │  │  │  │  └─ MultiComponentResultPresenter.java  # 为桌面输出区格式化有界多组件审阅与结果证据
-│  │  │  └─ single/  # 单组件表单、页面与分析呈现包
-│  │  │     ├─ DeploymentAnalysisPresenter.java  # 格式化本地化语言、证据、冲突、缺失输入和拒绝摘要
+│  │  │  └─ automatic/  # 单/多组件自动部署入口、表单与任务控制包
 │  │  │     ├─ DeploymentForm.java  # 持有部署控件、非秘密表单状态与领域输入映射
 │  │  │     ├─ DeploymentInputDialog.java  # 保留缺项表单并展开脱敏 AI 问答和风险确认
-│  │  │     ├─ DeploymentModeSelector.java  # 标准三档部署滑块及独立审批策略
+│  │  │     ├─ DeploymentModeSelector.java  # 当前模式入口、弹出三档滑块及带图标的审批策略
 │  │  │     ├─ DeploymentPage.java  # 持有源码选择、审阅状态、部署表单与完整经审阅部署流程
-│  │  │     ├─ DeploymentPageState.java  # 保存单组件部署页尚未提交的运行、健康、配置和源码审阅状态
+│  │  │     ├─ DeploymentPageState.java  # 保存自动部署页尚未提交的运行、健康、配置和源码审阅状态
 │  │  │     ├─ DeploymentSourceCard.java  # 单项源码选择、后台识别及卡片内展示，清除后可重新拖入或粘贴
 │  │  │     └─ DeploymentTaskControls.java  # 显式暂停、恢复、取消控件及持久化非秘密任务历史
 │  │  ├─ diagnostic/  # 结构化失败安全展示包
@@ -242,6 +237,7 @@ src/  # 项目源码与模块根目录
 │  │  │  ├─ FailureReportRecord.java  # 可呈现的本地诊断报告引用
 │  │  │  └─ FailureReportStore.java  # UI 与 main 诊断写入实现之间的窄契约
 │  │  ├─ display/  # 主题、外观与区域设置包
+│  │  │  ├─ DesktopComboBoxUi.java  # 统一固定下拉框入口宽度，保留展开列表完整内容
 │  │  │  ├─ DesktopDisplayConfiguration.java  # 在桌面设置页面选择的可持久化显示偏好
 │  │  │  ├─ DesktopThemeService.java  # 受管部署 Swing 桌面客户端共用的 FlatLaf 设置
 │  │  │  ├─ SystemThemeResolver.java  # 读取 Windows 应用外观偏好，但不写入系统注册表
@@ -256,6 +252,7 @@ src/  # 项目源码与模块根目录
 │  │  │  ├─ ManagedPage.java  # 持有受管应用选择、已保存运行检查详情和生命周期流程
 │  │  │  └─ ManagedPageState.java  # 保存受管应用页当前选择的应用标识与输出内容
 │  │  ├─ recovery/  # 网页控制台 SSH 救援职责包
+│  │  │  ├─ RecoveryInteractionPresenter.java  # 服务器检查及环境准备的救援交接
 │  │  │  └─ SshRecoveryDialog.java  # 人工登录交接、终端绑定及命令确认
 │  │  ├─ server/  # 服务器配置与能力验证页面包
 │  │  │  ├─ ServerContext.java  # 部署与生命周期页面使用的窄服务器上下文
@@ -278,15 +275,17 @@ src/  # 项目源码与模块根目录
 │  │  │  └─ PageNavigationController.java  # 在不向页面公开 Swing 组件的情况下导航外壳
 │  │  └─ resources/  # 桌面界面生产资源目录
 │  │     ├─ component/  # 共用组件资源
-│  │     │  └─ icons/  # Lucide 图标及上游许可
+│  │     │  └─ icons/  # 界面 SVG 图标及 Lucide 上游许可
 │  │     │     ├─ LICENSE.txt  # 上游完整许可声明
 │  │     │     ├─ archive.svg  # 导航及操作图标
 │  │     │     ├─ arrow-right.svg  # 源码到目标服务器的部署方向图标
 │  │     │     ├─ bot.svg  # 导航及操作图标
+│  │     │     ├─ chevron-down.svg  # 模式入口的展开箭头
 │  │     │     ├─ chevron-right.svg  # 导航及操作图标
 │  │     │     ├─ folder-open.svg  # 导航及操作图标
 │  │     │     ├─ git-branch.svg  # 导航及操作图标
 │  │     │     ├─ grip-vertical.svg  # 导航及操作图标
+│  │     │     ├─ hand.svg  # 人工复审的手掌图标
 │  │     │     ├─ panel-left-close.svg  # 导航及操作图标
 │  │     │     ├─ panel-left-open.svg  # 导航及操作图标
 │  │     │     ├─ panels-top-left.svg  # 导航及操作图标
@@ -295,7 +294,9 @@ src/  # 项目源码与模块根目录
 │  │     │     ├─ rocket.svg  # 导航及操作图标
 │  │     │     ├─ search.svg  # 导航及操作图标
 │  │     │     ├─ server.svg  # 导航及操作图标
-│  │     │     └─ settings.svg  # 导航及操作图标
+│  │     │     ├─ settings.svg  # 导航及操作图标
+│  │     │     ├─ shield-alert.svg  # 完全控制的警示盾牌图标
+│  │     │     └─ shield.svg  # 自动审批的盾牌图标
 │  │     └─ i18n/  # 桌面本地化资源目录
 │  │        └─ messages/  # 英文与简体中文消息目录
 │  │           ├─ Messages.properties  # 提供桌面界面的英文基准消息目录
@@ -358,7 +359,7 @@ src/  # 项目源码与模块根目录
 │  │  ├─ AiAnalysisFailureType.java  # 可选 AI 失败码；不参与授权、回滚或确定性分类
 │  │  ├─ AiStructuralAssessment.java  # 可选解释文本；它绝不改变确定性的项目支持判断或部署决策
 │  │  ├─ client/  # Provider HTTP 客户端与传输契约包
-│  │  │  ├─ AgentProtocolClient.java  # 部署决策与独立审批的专用严格协议
+│  │  │  ├─ DeploymentAiProtocolClient.java  # 部署辅助、决策与独立审批的严格协议
 │  │  │  ├─ OpenAiCompatibleRoleClient.java  # 仅调用一个已配置提供者并只保留已验证的不含凭据证据
 │  │  │  └─ OpenAiCompatibleStructuralAnalysisClient.java  # 仅使用已脱敏的确定性事实调用 OpenAI 兼容端点
 │  │  ├─ collaboration/  # 确定性优先的 AI 协调包
@@ -405,7 +406,7 @@ src/  # 项目源码与模块根目录
 │  │  └─ resources/  # 生产资源目录
 │  │     └─ skills/  # 内置版本化部署及审批流程
 │  │        ├─ approval.md  # 审批 Agent 版本化内置流程
-│  │        ├─ assisted.md  # 半 AI 固定节点建议流程
+│  │        ├─ assisted.md  # AI 辅助 固定节点建议流程
 │  │        └─ deployment.md  # 部署 Agent 版本化内置流程
 │  ├─ analyze/  # 源码与部署条件静态分析模块
 │  │  ├─ component/  # 多组件项目发现与依赖图分析包
@@ -538,7 +539,12 @@ src/  # 项目源码与模块根目录
 │  │     └─ StaticWebDeploymentInspector.java  # 区分纯静态内容与由锁文件支持的 Node 静态构建
 │  ├─ backup/  # 平台无关的版本化备份、恢复与迁移契约模块
 │  │  ├─ contract/  # 备份规则与平台窄契约
+│  │  │  ├─ definition/  # definition 职责目录
+│  │  │  │  ├─ BackupCollectionRequest.java  # 停写采集的组件、操作归属和健康检查契约
+│  │  │  │  └─ BackupCollectionResult.java  # 已验证备份成员、运行证据和原始组件状态
 │  │  │  ├─ spi/  # 数据库一致性操作、制品和候选恢复契约
+│  │  │  │  ├─ BackupCollectionInteraction.java  # 采集进度与取消交互端口
+│  │  │  │  ├─ BackupCollectionMaterialPort.java  # 平台私有素材目录与输出配额端口
 │  │  │  │  ├─ DatabaseBackupAdapter.java  # 按数据库类型执行预检、导出和候选恢复策略
 │  │  │  │  ├─ DatabaseBackupArtifact.java  # 已导出数据库制品的大小、摘要和一致性证据
 │  │  │  │  ├─ DatabaseBackupRequest.java  # 数据库备份身份、连接、运行状态和写入排他声明
@@ -564,6 +570,8 @@ src/  # 项目源码与模块根目录
 │  │  │     ├─ BackupManifestValidator.java  # 对解码清单应用资源策略
 │  │  │     ├─ BackupProvenanceStatus.java  # 未签名、未验证与已验证来源状态
 │  │  │     ├─ BackupSignatureTrust.java  # 显式受信备份签名公钥解析契约
+│  │  │     ├─ ManagedArtifactEvidence.java  # 受管制品格式、大小、摘要和成员数量验证证据
+│  │  │     ├─ ManagedArtifactFormatType.java  # PAX TAR 与 OCI Archive 的封闭取材格式
 │  │  │     └─ ManagedArtifactValidator.java  # 不提取地严格验证受管 PAX TAR 与 OCI Archive 取材制品
 │  │  ├─ crypto/  # 认证加密与备份秘密格式
 │  │  │  ├─ BackupSecretCryptoService.java  # 使用调用级独立备份密码生成或认证 secrets.enc
@@ -573,8 +581,7 @@ src/  # 项目源码与模块根目录
 │  │  │  └─ BackupSecretFailureType.java  # 备份密码、加密、统一认证及认证后载荷失败定义
 │  │  ├─ execution/  # 备份、恢复和迁移执行流程
 │  │  │  ├─ collection/  # 受管远端取材格式与独立验证证据
-│  │  │  │  ├─ ManagedArtifactEvidence.java  # 受管制品格式、大小、摘要和成员数量验证证据
-│  │  │  │  └─ ManagedArtifactFormatType.java  # PAX TAR 与 OCI Archive 的封闭取材格式
+│  │  │  │  └─ BackupCollectionService.java  # 桌面与 Web 共用的准入、停机、采集、恢复和清理编排
 │  │  │  └─ migration/  # 显式停写且只允许人工外部切流的离线迁移编排
 │  │  │     ├─ OfflineMigrationCoordinator.java  # 目标预检、初始/最终同步、停写、验证和失败恢复状态机
 │  │  │     ├─ OfflineMigrationEvent.java  # 单个有界无秘密迁移证据事件
@@ -1363,9 +1370,9 @@ src/  # 项目源码与模块根目录
    │  │  ├─ OperationCompletionState.java  # 业务操作最终状态
    │  │  ├─ PreparedWebOperation.java  # 已解析的任务输入、目标锁与执行器
    │  │  ├─ TaskInteraction.java  # 进度、取消与持久化用户决定
-   │  │  ├─ WebJson.java  # 严格 JSON 编解码和字段白名单
    │  │  ├─ WebRequestContext.java  # 服务端提供的用户和空间上下文
-   │  │  └─ WebTaskPrompts.java  # 共享部署交互转为可恢复任务决定
+   │  │  └─ validation/  # 请求边界与非秘密输入校验
+   │  │     └─ WebRequestValidator.java  # 字段白名单、文本及非秘密请求校验
    │  ├─ deployment/  # 部署输入与任务提交
    │  │  ├─ WebDatabaseService.java  # 共享原生数据库准备与 Web 凭据交互
    │  │  ├─ WebDeploymentInputs.java  # 确定性分析、AI 辅助与用户补全
@@ -1373,6 +1380,11 @@ src/  # 项目源码与模块根目录
    │  ├─ execution/  # 执行流程
    │  │  └─ lifecycle/  # 生命周期与接管
    │  │     └─ WebApplicationInventory.java  # 应用图、卡片、生命周期与外部应用接管
+   │  ├─ interaction/  # 任务确认和交互适配
+   │  │  └─ WebTaskInteractionService.java  # 任务确认、输入补全和进度交互适配
+   │  ├─ persistence/  # 数据编解码职责组
+   │  │  └─ serialization/  # 持久化与接口数据序列化
+   │  │     └─ WebJsonCodec.java  # 严格 JSON 编解码和对象转换
    │  ├─ release/  # 发布身份与六期发布预留
    │  │  └─ package-info.java  # 六期职责说明，仅预留，不提供可调用实现
    │  ├─ server/  # 服务器配置与观测
@@ -1388,33 +1400,3 @@ src/  # 项目源码与模块根目录
       └─ scheduler/  # 任务并发与交互调度
          └─ WebTaskScheduler.java  # 持久化任务排队、互斥、取消、决定与重启重新验证
 ```
-
-## APP 运行契约新增文件（2026-09-19）
-
-下表补充本次新增维护文件；Java 包路径仍省略 `gold/debug/windowstolinux/<模块>/`，资源路径省略 Linux SSHD 资源根。既有主树及其他任务的索引保持原位置。
-
-| 模块 | 包内文件或资源 | 职责 |
-| --- | --- | --- |
-| `app/db` | `execution/migration/ApplicationRuntimeSchemaMigration.java` | 保留旧记录并新增类型化 APP 运行契约列 |
-| `shared/analyze` | `source/ApplicationBundleInspector.java` | 解析主构建目录和随主程序发布的配套构建单元 |
-| `shared/model` | `project/application/ApplicationCommand.java` | 固定入口和字面参数数组 |
-| `shared/model` | `project/application/ApplicationCompanion.java` | 配套 C/C++ 产物及所属发布的环境绑定 |
-| `shared/model` | `project/application/ApplicationEndpoint.java` | 经审阅的协议、作用范围与宿主及容器端口 |
-| `shared/model` | `project/application/ApplicationInput.java` | 外部只读输入的路径契约 |
-| `shared/model` | `project/application/ApplicationWorkload.java` | 分类、执行方式、验证、工作目录与资源声明 |
-| `shared/model` | `project/application/ApplicationWorker.java` | 共享常驻主服务运行身份与存储的前台工作进程 |
-| `shared/model` | `managed/ApplicationUsage.java` | 两端共享的使用命令、端点和操作能力 |
-| `shared/config` | `persistence/serialization/ApplicationRuntimeConfigurationCodec.java` | 受管运行配置的版本化编码 |
-| `shared/config` | `persistence/serialization/ApplicationWorkloadCodec.java` | APP 运行声明的规范化二进制编码 |
-| `shared/config` | `persistence/serialization/HealthCheckCodec.java` | HTTP、TCP、UDP、进程与命令验证编码 |
-| `shared/deploy` | `input/ApplicationDeclaration.java` | 声明文件、桌面和 Web 补填的统一解析 |
-| `shared/linux-sshd` | `build/generation/script/CompanionBuildScript.java` | 同一受限候选内的 CMake 配套构建 |
-| `shared/linux-sshd` | `execution/protocol/runtime/ApplicationWorkloadArguments.java` | 运行声明和独立健康验证到 helper 的有界参数协议 |
-| `shared/linux-sshd` | `execution/protocol/runtime/ApplicationHealthProbe.java` | 调用当前封存发布的受控验证入口 |
-| `shared/linux-sshd/resources` | `execution/protocol/helper/fragments/input/16-application-input.sh` | 独立解析和验证 APP 运行协议 |
-| `shared/linux-sshd/resources` | `execution/protocol/helper/fragments/runtime/41-application-runtime.sh` | 任务登记、维护准入和输入校验 |
-| `shared/linux-sshd/resources` | `execution/protocol/helper/fragments/runtime/42-application-job.sh` | 原生非 root 前台任务及隔离验证 |
-| `shared/linux-sshd/resources` | `execution/protocol/helper/fragments/runtime/43-application-container.sh` | 一次性任务容器和清理 |
-| `shared/linux-sshd/resources` | `execution/protocol/helper/fragments/runtime/44-application-health.sh` | 稳定进程、受控自检与 TCP/HTTP/UDP 协议验证 |
-| `shared/linux-sshd/resources` | `execution/protocol/helper/fragments/runtime/45-application-container-contract.sh` | 镜像固定入口、挂载及端口实际映射核对 |
-| `shared/linux-sshd/resources` | `execution/protocol/helper/fragments/restore/57-application-restore.sh` | 候选 APP 验证与候选端口映射 |

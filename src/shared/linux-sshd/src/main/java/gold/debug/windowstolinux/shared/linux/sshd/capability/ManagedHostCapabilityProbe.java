@@ -5,22 +5,24 @@ import gold.debug.windowstolinux.shared.linux.sshd.capability.ecosystem.ManagedE
 import java.util.Objects;
 
 /**
- * Provides the {@code ManagedHostCapabilityProbe} implementation.
- *
- * <p>提供 {@code ManagedHostCapabilityProbe} 实现。
+ * Renders bounded host probes for tools, privilege boundaries and the managed helper protocol.
+ * <p>渲染用于工具、权限边界及受管 helper 协议的有界主机探测。
  */
 public final class ManagedHostCapabilityProbe {
+    /**
+     * Prevents instantiation of this static contract helper.
+     * <p>防止实例化当前静态契约辅助类。
+     */
     private ManagedHostCapabilityProbe() {
     }
 
     /**
-     * Performs the {@code render} operation.
+     * Renders managed host capability probe as text without executing the rendered command.
+     * <p>渲染受管主机能力探测为文本，不执行所渲染命令。
      *
-     * <p>执行 {@code render} 操作。
-     *
-     * @param helperPath the {@code helperPath} value / {@code helperPath} 值
+     * @param helperPath helper path / helper路径
      * @return the operation result / 操作结果
-     * @throws NullPointerException if a required argument is {@code null} / 必要参数为 {@code null} 时
+     * @throws NullPointerException if a required input is absent / 必需输入缺失时
      */
     public static String render(String helperPath) {
         return "managed_helper=" + quote(Objects.requireNonNull(helperPath, "helperPath")) + "\n"
@@ -46,6 +48,13 @@ public final class ManagedHostCapabilityProbe {
                 """;
     }
 
+    /**
+     * Quotes a literal argument for the fixed command-rendering boundary.
+     * <p>为固定命令渲染边界引用字面参数。
+     *
+     * @param value candidate content accepted or rejected by this contract / 由当前契约接收或拒绝的候选内容
+     * @return quote text / 引用文本
+     */
     private static String quote(String value) {
         return "'" + value.replace("'", "'\"'\"'") + "'";
     }

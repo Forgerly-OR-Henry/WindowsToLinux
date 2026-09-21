@@ -11,21 +11,26 @@ import java.util.List;
 /**
  * Internal shared ordering for typed deployment adapters.
  *
- * <p>类型化部署适配器的内部共用顺序。
+ *  <p>类型化部署适配器的内部共用顺序。
  */
 public final class DeploymentPlanFactory {
+    /**
+     * Prevents instantiation of this static contract helper.
+     * <p>防止实例化当前静态契约辅助类。
+     */
     private DeploymentPlanFactory() { }
 
     /**
      * Produces a safe short-downtime transaction shape for one adapter.
      *
-     * <p>为一个适配器生成安全短停机事务形状。
+     *  <p>为一个适配器生成安全短停机事务形状。
      *
      * @param request the reviewed request / 经审阅的请求
      * @param expectedType the expected type / 预期类型
      * @param staticOutput whether static output verification is required / 是否需要静态输出验证
      * @param containerPolicy whether container policy verification is required / 是否需要容器策略验证
      * @return the deterministic plan / 确定性计划
+     * @throws IllegalArgumentException if an input violates the constraints checked by this contract / 输入违反当前契约检查的约束时
      */
     public static ReviewedDeploymentPlan plan(ReviewedDeploymentRequest request, DeploymentProjectType expectedType,
                                                boolean staticOutput, boolean containerPolicy) {

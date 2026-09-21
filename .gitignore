@@ -49,3 +49,7 @@ dist/
 playwright-report/
 test-results/
 coverage/
+
+### Python test caches ###
+__pycache__/
+*.pyc

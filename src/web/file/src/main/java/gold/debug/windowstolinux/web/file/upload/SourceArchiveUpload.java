@@ -11,14 +11,45 @@ import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
 import java.util.zip.GZIPInputStream;
 
-/** Bounded extraction; ZIP central-directory metadata is checked before accepting members. */
+/**
+ * Extracts bounded source archives and checks ZIP central-directory metadata before accepting members.
+ * <p>提取有界源码归档，并在接受成员前检查 ZIP 中央目录元数据。
+ */
 public final class SourceArchiveUpload {
+    /**
+     * Platform-owned work area with enforced path boundaries.
+     * <p>具有路径边界约束的平台工作区。
+     */
     private final WebWorkspace workspace;
+    /**
+     * Binds the supplied dependencies and state for source archive upload.
+     * <p>为源码归档上传绑定传入的依赖及状态。
+     *
+     * @param workspace platform-owned work area with enforced path boundaries / 具有路径边界约束的平台工作区
+     */
     public SourceArchiveUpload(WebWorkspace workspace) { this.workspace = workspace; }
 
+    /**
+     * Serializes archive extraction against the workspace to preserve quota and ownership checks.
+     * <p>相对于工作区串行执行归档提取，以保持配额及归属检查。
+     *
+     * @param address address / 地址
+     * @param format format / 格式
+     * @param input source content consumed by this operation / 当前操作消费的源内容
+     * @throws IOException if the required file or stream operation fails / 所需文件或流操作失败时
+     */
     public void extract(WorkspaceAddress address, String format, InputStream input) throws IOException {
         synchronized(workspace) { extractLocked(address,format,input); }
     }
+    /**
+     * Spools an accepted ZIP or tar.gz upload to owned storage, extracts bounded contents and cleans up the spool.
+     * <p>将准入的 ZIP 或 tar.gz 上传暂存到自有存储，提取有界内容并清理暂存文件。
+     *
+     * @param address address / 地址
+     * @param format format / 格式
+     * @param input source content consumed by this operation / 当前操作消费的源内容
+     * @throws IOException if the required file or stream operation fails / 所需文件或流操作失败时
+     */
     private void extractLocked(WorkspaceAddress address,String format,InputStream input) throws IOException {
         if (!format.equals("zip") && !format.equals("tar.gz")) throw new IOException("Unsupported source archive");
         Path spool = workspace.directory(address).resolve("upload.archive");
@@ -40,6 +71,14 @@ public final class SourceArchiveUpload {
         } finally { if (created) Files.deleteIfExists(spool); }
     }
 
+    /**
+     * Extracts readable regular ZIP members while enforcing member count, path and workspace quotas.
+     * <p>提取可读常规 ZIP 成员，并执行成员数量、路径及工作区配额约束。
+     *
+     * @param address address / 地址
+     * @param archive source or backup archive descriptor or filesystem path / 源码或备份归档描述或文件系统路径
+     * @throws IOException if the required file or stream operation fails / 所需文件或流操作失败时
+     */
     private void zip(WorkspaceAddress address, Path archive) throws IOException {
         try (var zip = ZipFile.builder().setPath(archive).get()) {
             var entries = zip.getEntries();
@@ -61,6 +100,14 @@ public final class SourceArchiveUpload {
         }
     }
 
+    /**
+     * Extracts bounded regular tar.gz members while rejecting links and unsupported entry types.
+     * <p>提取有界常规 tar.gz 成员，并拒绝链接及不支持的条目类型。
+     *
+     * @param address address / 地址
+     * @param archive source or backup archive descriptor or filesystem path / 源码或备份归档描述或文件系统路径
+     * @throws IOException if the required file or stream operation fails / 所需文件或流操作失败时
+     */
     private void tar(WorkspaceAddress address, Path archive) throws IOException {
         try (var input = new TarArchiveInputStream(new GZIPInputStream(Files.newInputStream(archive)))) {
             int count = 0;

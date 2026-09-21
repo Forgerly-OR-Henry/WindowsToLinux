@@ -10,18 +10,22 @@ import java.util.Objects;
 /**
  * A safe, non-secret failure from the optional AI explanation path.
  *
- * <p>可选 AI 解释路径产生的安全、非秘密失败。
+ *  <p>可选 AI 解释路径产生的安全、非秘密失败。
  */
 public final class AiAnalysisException extends Exception implements FailureCarrier {
+    /**
+     * Structured failure occurrence retained for safe reporting.
+     * <p>保留用于安全报告的结构化失败实例。
+     */
     private final FailureDescriptor failure;
 
     /**
-     * Creates a {@code AiAnalysisException} instance.
+     * Validates and binds the inputs required by ai analysis exception.
+     * <p>校验并绑定AI分析异常所需输入。
      *
-     * <p>创建 {@code AiAnalysisException} 实例。
-     *
-     * @param userMessage the {@code userMessage} value / {@code userMessage} 值
-     * @param diagnostic the {@code diagnostic} value / {@code diagnostic} 值
+     * @param failure structured failure occurrence retained for safe reporting / 保留用于安全报告的结构化失败实例
+     * @param cause original failure retained as the nested cause / 保留为嵌套原因的原始失败
+     * @throws NullPointerException if a required input is absent / 必需输入缺失时
      */
     public AiAnalysisException(FailureDescriptor failure, Throwable cause) {
         super(Objects.requireNonNull(failure, "failure").diagnostic(), cause);
@@ -29,30 +33,49 @@ public final class AiAnalysisException extends Exception implements FailureCarri
     }
 
     /**
-     * Creates a {@code AiAnalysisException} instance.
+     * Creates ai analysis exception.
+     * <p>创建AI分析异常。
      *
-     * <p>创建 {@code AiAnalysisException} 实例。
-     *
-     * @param userMessage the {@code userMessage} value / {@code userMessage} 值
-     * @param diagnostic the {@code diagnostic} value / {@code diagnostic} 值
-     * @param cause the {@code cause} value / {@code cause} 值
-     * @throws NullPointerException if a required argument is {@code null} / 必要参数为 {@code null} 时
+     * @param type selected member of the supported type set / 受支持类型集合中的所选项
+     * @param diagnostic bounded non-secret detail for diagnostic reporting / 用于诊断报告的有界非秘密详情
+     * @return ai analysis exception / AI分析异常
      */
     public static AiAnalysisException create(AiAnalysisFailureType type, String diagnostic) {
         return create(type, Map.of(), diagnostic, null);
     }
 
-    /** Creates a typed AI failure with its original cause. / 创建带原始原因的类型化 AI 失败。 */
+    /**
+     * Creates a typed AI failure with its original cause. / 创建带原始原因的类型化 AI 失败。
+     *
+     * @param type selected member of the supported type set / 受支持类型集合中的所选项
+     * @param diagnostic bounded non-secret detail for diagnostic reporting / 用于诊断报告的有界非秘密详情
+     * @param cause original failure retained as the nested cause / 保留为嵌套原因的原始失败
+     * @return a typed AI failure with its original cause / 带原始原因的类型化 AI 失败
+     */
     public static AiAnalysisException create(AiAnalysisFailureType type, String diagnostic, Throwable cause) {
         return create(type, Map.of(), diagnostic, cause);
     }
 
-    /** Creates a typed AI failure with safe message arguments. / 创建带安全消息参数的类型化 AI 失败。 */
+    /**
+     * Creates a typed AI failure with safe message arguments. / 创建带安全消息参数的类型化 AI 失败。
+     *
+     * @param type selected member of the supported type set / 受支持类型集合中的所选项
+     * @param arguments literal arguments passed to the fixed command or message template / 传给固定命令或消息模板的字面参数
+     * @param diagnostic bounded non-secret detail for diagnostic reporting / 用于诊断报告的有界非秘密详情
+     * @param cause original failure retained as the nested cause / 保留为嵌套原因的原始失败
+     * @return a typed AI failure with safe message arguments / 带安全消息参数的类型化 AI 失败
+     */
     public static AiAnalysisException create(
             AiAnalysisFailureType type, Map<String, ?> arguments, String diagnostic, Throwable cause) {
         return new AiAnalysisException(
                 FailureDescriptor.create(type, OperationIdentity.create(), arguments, diagnostic), cause);
     }
 
+    /**
+     * Returns structured failure occurrence retained for safe reporting.
+     * <p>返回保留用于安全报告的结构化失败实例。
+     *
+     * @return structured failure occurrence retained for safe reporting / 保留用于安全报告的结构化失败实例
+     */
     @Override public FailureDescriptor failure() { return failure; }
 }

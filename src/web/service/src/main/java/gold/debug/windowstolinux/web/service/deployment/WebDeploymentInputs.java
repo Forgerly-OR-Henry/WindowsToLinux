@@ -1,5 +1,9 @@
 package gold.debug.windowstolinux.web.service.deployment;
 
+import gold.debug.windowstolinux.web.service.interaction.WebTaskInteractionService;
+
+import gold.debug.windowstolinux.web.service.persistence.serialization.WebJsonCodec;
+
 import tools.jackson.databind.JsonNode;
 import gold.debug.windowstolinux.shared.analyze.component.*;
 import gold.debug.windowstolinux.shared.analyze.core.DeploymentAnalysisCoordinator;
@@ -11,16 +15,50 @@ import gold.debug.windowstolinux.web.service.contract.*;
 import java.nio.file.Path;
 import java.util.*;
 
-/** Resolves the same deterministic runtime inputs used by the desktop automatic flow. */
+/**
+ * Resolves the deterministic runtime inputs shared with desktop automatic deployment.
+ * <p>解析与桌面自动部署共享的确定性运行输入。
+ */
 public final class WebDeploymentInputs {
+    /**
+     * KEYS.
+     * <p>键集合。
+     */
     private static final Set<String> KEYS = Set.of("applicationDeclaration", "executionMode", "exposure", "requestHex", "responseHex", "type", "primary", "secondary", "version", "port", "healthMode", "healthEndpoint",
             "expectedStatus", "timeout", "stability", "accessUrl", "jvmArguments", "arguments", "ports", "volumes", "containerEngine",
             "jvmTarget", "nodeBuild", "configuration", "secrets", "databaseMode", "databaseDetails", "dependencies");
+    /**
+     * Bound automatic runtime resolver collaborator for resolver.
+     * <p>处理解析器的自动运行时解析器协作对象。
+     */
     private final AutomaticRuntimeResolver resolver = new AutomaticRuntimeResolver();
+    /**
+     * Bound gold debug windowstolinux web service ai web ai service collaborator for the supplied web ai service.
+     * <p>处理所提供的WebAI服务的golddebugwindowstolinuxWeb服务AIWebAI服务协作对象。
+     */
     private final gold.debug.windowstolinux.web.service.ai.WebAiService ai;
+    /**
+     * Facts and dependencies scoped to the current operation.
+     * <p>限定于当前操作的事实及依赖。
+     */
     private final WebRequestContext context;
+    /**
+     * Binds the supplied dependencies and state for web deployment inputs.
+     * <p>为Web部署输入集合绑定传入的依赖及状态。
+     *
+     * @param ai the supplied web ai service / 所提供的WebAI服务
+     * @param context facts and dependencies scoped to the current operation / 限定于当前操作的事实及依赖
+     */
     public WebDeploymentInputs(gold.debug.windowstolinux.web.service.ai.WebAiService ai,WebRequestContext context) { this.ai=ai;this.context=context; }
 
+    /**
+     * Checks overrides syntax and bounds before returning the admitted content.
+     * <p>在返回已准入内容前检查覆盖项集合语法及边界。
+     *
+     * @param node node / 节点
+     * @return constructed or resolved map / 构造或解析得到的映射
+     * @throws IllegalArgumentException if an input violates the constraints checked by this contract / 输入违反当前契约检查的约束时
+     */
     public static Map<String, String> overrides(JsonNode node) {
         if (node.isMissingNode()) return Map.of();
         if (!node.isObject() || node.size() > 1024) throw new IllegalArgumentException("Invalid advanced inputs");
@@ -35,6 +73,19 @@ public final class WebDeploymentInputs {
         return Map.copyOf(result);
     }
 
+    /**
+     * Combines deterministic component facts and explicit overrides, then asks only for unresolved reviewed runtime fields.
+     * <p>组合确定性组件事实及显式覆盖项，随后仅请求未解决的已审阅运行字段。
+     *
+     * @param root root directory defining the filesystem boundary / 定义文件系统边界的根目录
+     * @param components reviewed components in the application graph / 应用图中的已审阅组件
+     * @param overrides overrides / 覆盖项集合
+     * @param host reviewed server hostname or IP address / 已审阅服务器主机名或 IP 地址
+     * @param interaction caller-owned progress, confirmation and input callbacks / 调用方持有的进度、确认及输入回调
+     * @return constructed or resolved map / 构造或解析得到的映射
+     * @throws Exception if the delegated operation or caller-provided interaction fails / 被委派操作或调用方提供的交互失败时
+     * @throws IllegalArgumentException if an input violates the constraints checked by this contract / 输入违反当前契约检查的约束时
+     */
     public Map<String,Map<String,String>> resolve(Path root, List<DiscoveredProjectComponent> components, Map<String,String> overrides,
                                                  String host, TaskInteraction interaction) throws Exception {
         if (components.isEmpty() || components.size() > 64) throw new IllegalArgumentException("No bounded deployable components found");
@@ -75,8 +126,8 @@ public final class WebDeploymentInputs {
                     break;
                 } catch (IllegalArgumentException invalid) {
                     if (attempt >= 4) throw invalid;
-                    interaction.progress("INPUT_CORRECTION_REQUIRED", WebJson.object().put("component", entry.getKey()));
-                    WebTaskPrompts.inputs(interaction, resolver.corrections(entry.getKey(), values)).forEach((key,value) -> values.put(key.split("/",2)[1], value));
+                    interaction.progress("INPUT_CORRECTION_REQUIRED", WebJsonCodec.object().put("component", entry.getKey()));
+                    WebTaskInteractionService.inputs(interaction, resolver.corrections(entry.getKey(), values)).forEach((key,value) -> values.put(key.split("/",2)[1], value));
                     for (String key : List.of("healthEndpoint", "accessUrl", "jvmArguments", "arguments", "volumes", "databaseDetails", "configuration", "secrets"))
                         if (values.getOrDefault(key, "").isBlank()) values.remove(key);
                 }

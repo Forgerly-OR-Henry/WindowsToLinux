@@ -1,5 +1,7 @@
 package gold.debug.windowstolinux.web.service;
 
+import gold.debug.windowstolinux.web.service.persistence.serialization.WebJsonCodec;
+
 import tools.jackson.databind.JsonNode;
 import gold.debug.windowstolinux.shared.ai.client.OpenAiCompatibleRoleClient;
 import gold.debug.windowstolinux.shared.ai.transport.RoleChatResult;
@@ -63,10 +65,10 @@ class WebBusinessTest {
         inventory=new WebApplicationInventory(resources,database.tasks(),servers,java.time.Duration.ofMinutes(5));secrets=new WebApplicationSecrets(credentials);
         ai=new WebAiService(resources,credentials,new OpenAiCompatibleRoleClient((endpoint,secret,body)->{
             calls.add(endpoint.getHost());
-            return new RoleChatResult(200,invalidAi?"{}":WebJson.write(Map.of("choices",List.of(Map.of("message",Map.of("content","{\"decision\":\"CLEAR\",\"summary\":\"verified\",\"findings\":[]}"))))));
+            return new RoleChatResult(200,invalidAi?"{}":WebJsonCodec.write(Map.of("choices",List.of(Map.of("message",Map.of("content","{\"decision\":\"CLEAR\",\"summary\":\"verified\",\"findings\":[]}"))))));
         },Clock.systemUTC()));
         deployment=new WebDeploymentService(servers,sources,inventory,secrets,ai);
-        serverId=servers.save(context,null,WebJson.read("{\"name\":\"Test\",\"host\":\"192.0.2.10\",\"port\":22,\"username\":\"root\",\"password\":\"synthetic\"}")).path("id").asText();
+        serverId=servers.save(context,null,WebJsonCodec.read("{\"name\":\"Test\",\"host\":\"192.0.2.10\",\"port\":22,\"username\":\"root\",\"password\":\"synthetic\"}")).path("id").asText();
     }
     @AfterEach void cleanup(){key.close();database.close();}
 
@@ -125,7 +127,7 @@ class WebBusinessTest {
     }
 
     @Test void encryptedPortableBackupRestoresThroughTheSharedCandidateFlow() throws Exception {
-        var secret=secrets.save(context,WebJson.read("{\"environment\":\"API_TOKEN\",\"value\":\"synthetic-application-token\"}"));
+        var secret=secrets.save(context,WebJsonCodec.read("{\"environment\":\"API_TOKEN\",\"value\":\"synthetic-application-token\"}"));
         var result=deploy(source(Map.of("index.html","hello")),Map.of("port","18080","secrets",secret.path("identifier").asText()+":1"));
         assertEquals("SUCCEEDED",result.path("status").asText());String application=result.path("applicationId").asText();
         var backups=backups();char[] password="synthetic-backup-pass".toCharArray();
@@ -160,15 +162,15 @@ class WebBusinessTest {
 
     @Test void offlineMigrationStopsSourceAndLeavesTrafficSwitchManual() throws Exception {
         var result=deploy(source(Map.of("index.html","hello")),Map.of("port","18080"));assertEquals("SUCCEEDED",result.path("status").asText());
-        String target=servers.save(context,null,WebJson.read("{\"name\":\"Target\",\"host\":\"192.0.2.11\",\"port\":22,\"username\":\"root\",\"password\":\"synthetic\"}")).path("id").asText();
-        decisionSecret=secrets.save(context,WebJson.read("{\"value\":\"synthetic-backup-pass\"}")).path("secretId").asText();
-        var migrated=backups().prepare(context,"MIGRATE",WebJson.object().put("applicationId",result.path("applicationId").asText()).put("targetServerId",target)).work().execute(interaction());
+        String target=servers.save(context,null,WebJsonCodec.read("{\"name\":\"Target\",\"host\":\"192.0.2.11\",\"port\":22,\"username\":\"root\",\"password\":\"synthetic\"}")).path("id").asText();
+        decisionSecret=secrets.save(context,WebJsonCodec.read("{\"value\":\"synthetic-backup-pass\"}")).path("secretId").asText();
+        var migrated=backups().prepare(context,"MIGRATE",WebJsonCodec.object().put("applicationId",result.path("applicationId").asText()).put("targetServerId",target)).work().execute(interaction());
         assertEquals("READY_FOR_MANUAL_TRAFFIC_SWITCH",migrated.path("status").asText(),migrated.toString());
         assertFalse(migrated.path("externalTrafficChanged").asBoolean());assertTrue(migrated.path("sourceRetained").asBoolean());
         assertEquals(RuntimeState.STOPPED,runtimeStates.get(serverId));assertEquals(RuntimeState.RUNNING,runtimeStates.get(target));assertEquals(2,inventory.list(context).size());
     }
     @Test void aiSaveIsValidatedAndEndpointChangeCannotReuseTheOldKey() throws Exception {
-        var input=WebJson.read("{\"name\":\"Test AI\",\"endpoint\":\"https://provider.invalid/v1/chat/completions\",\"model\":\"test-model\",\"apiKey\":\"synthetic-key\"}");
+        var input=WebJsonCodec.read("{\"name\":\"Test AI\",\"endpoint\":\"https://provider.invalid/v1/chat/completions\",\"model\":\"test-model\",\"apiKey\":\"synthetic-key\"}");
         var operation=ai.save(context,null,input);assertFalse(operation.request().toString().contains("synthetic-key"));
         var saved=operation.work().execute(interaction());assertEquals("Test AI",saved.path("name").asText(),saved.toString());assertFalse(saved.toString().contains("synthetic-key"));
         var changed=((tools.jackson.databind.node.ObjectNode)input).deepCopy().put("endpoint","https://other.invalid/v1/chat/completions").put("apiKey","").put("version",saved.path("version").asLong());
@@ -177,7 +179,7 @@ class WebBusinessTest {
     }
     private JsonNode deploy(String id,Map<String,String> inputs) throws Exception {
         var values=new HashMap<>(inputs);values.putIfAbsent("primary","public");
-        return deployment.prepare(context,WebJson.object().put("sourceId",id).put("serverId",serverId).set("overrides",WebJson.tree(values))).work().execute(interaction());
+        return deployment.prepare(context,WebJsonCodec.object().put("sourceId",id).put("serverId",serverId).set("overrides",WebJsonCodec.tree(values))).work().execute(interaction());
     }
     private String source(Map<String,String> files) throws Exception {
         String id=sources.begin(context,"sample").path("id").asText();
@@ -192,9 +194,9 @@ class WebBusinessTest {
         @Override public void checkCancelled() throws InterruptedException {if(Thread.currentThread().isInterrupted())throw new InterruptedException();}
         @Override public void completion(OperationCompletionState state){calls.add(state.name());}
         @Override public JsonNode decide(String kind,JsonNode prompt){
-            if(kind.equals("SECRET"))return WebJson.object().put("secretId",decisionSecret);
-            calls.add(kind);if(kind.equals("INPUTS")){var values=WebJson.object();for(var field:prompt.path("fields")){String id=field.path("id").asText();values.put(id,field.path("choices").isEmpty()?field.path("value").asText():field.path("choices").get(0).asText());}return WebJson.object().set("values",values);}
-            return WebJson.object().put("accepted",!(declineEnvironment&&prompt.path("code").asText().equals("ENVIRONMENT_PREPARATION")));
+            if(kind.equals("SECRET"))return WebJsonCodec.object().put("secretId",decisionSecret);
+            calls.add(kind);if(kind.equals("INPUTS")){var values=WebJsonCodec.object();for(var field:prompt.path("fields")){String id=field.path("id").asText();values.put(id,field.path("choices").isEmpty()?field.path("value").asText():field.path("choices").get(0).asText());}return WebJsonCodec.object().set("values",values);}
+            return WebJsonCodec.object().put("accepted",!(declineEnvironment&&prompt.path("code").asText().equals("ENVIRONMENT_PREPARATION")));
         }
     };}
     private DeploymentRemoteSession remote(String connectedServer){return (DeploymentRemoteSession)Proxy.newProxyInstance(getClass().getClassLoader(),new Class<?>[]{DeploymentRemoteSession.class},(proxy,method,args)->{

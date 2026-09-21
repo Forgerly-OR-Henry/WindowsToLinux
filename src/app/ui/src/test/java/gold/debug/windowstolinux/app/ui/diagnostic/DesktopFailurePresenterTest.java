@@ -12,6 +12,14 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class DesktopFailurePresenterTest {
+    @Test void structuredSnapshotsUseTheSameRedactionAndOperationIdentity() {
+        var descriptor = ApplicationServiceException.create(ApplicationServiceFailureType.RECOVERY_PROBE_FAILED,
+                "password=hidden-value Bearer hidden-bearer").failure();
+        var presenter = new DesktopFailurePresenter(MessageCatalog.forLanguageTag("en")::text, FailureReportStore.disabled());
+        String text = presenter.present(descriptor);
+        assertTrue(text.contains(descriptor.code())); assertTrue(text.contains(descriptor.operationIdentity().toString()));
+        assertFalse(text.contains("hidden-value")); assertFalse(text.contains("hidden-bearer"));
+    }
     @Test
     void hidesUnknownMessagesAndUnwrapsStructuredTaskFailures() {
         DesktopFailurePresenter presenter = new DesktopFailurePresenter(

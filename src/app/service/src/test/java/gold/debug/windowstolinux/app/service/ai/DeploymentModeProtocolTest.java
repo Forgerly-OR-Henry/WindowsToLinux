@@ -32,7 +32,7 @@ class DeploymentModeProtocolTest {
             db.aiProfiles().saveVerified(profile.stored(),id,Instant.now());members.add(new AiPurposeAssignment(id,true));}
         db.aiProfiles().purposes().save(purpose,members);
     }
-    AiUseCaseFacade facade(DesktopPersistence db,RoleChatTransport transport){return new AiUseCaseFacade(db.aiProfiles(),new DesktopSecretStoreService(db.encryptedSecrets()),new OpenAiCompatibleRoleClient(),new AgentProtocolClient(transport));}
+    AiUseCaseFacade facade(DesktopPersistence db,RoleChatTransport transport){return new AiUseCaseFacade(db.aiProfiles(),new DesktopSecretStoreService(db.encryptedSecrets()),new OpenAiCompatibleRoleClient(),new DeploymentAiProtocolClient(transport));}
     RoleChatResult reply(Object response)throws java.io.IOException{return new RoleChatResult(200,json.writeValueAsString(Map.of("choices",List.of(Map.of("message",Map.of("content",json.writeValueAsString(response)))),"usage",Map.of("total_tokens",9))));}
     JsonNode input(String body)throws java.io.IOException{return json.readTree(json.readTree(body).path("messages").get(1).path("content").asText());}
     AgentAction action(){return new AgentAction("operation","task","server/account","a".repeat(64),1,AgentToolType.VERIFY_SERVER,Map.of(),Map.of("identity","verified"),AgentRiskLevel.NORMAL);}

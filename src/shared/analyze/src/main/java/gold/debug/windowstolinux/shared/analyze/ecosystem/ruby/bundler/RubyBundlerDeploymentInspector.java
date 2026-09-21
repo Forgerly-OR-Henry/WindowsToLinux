@@ -15,13 +15,32 @@ import java.io.IOException;
 import java.nio.file.Path;
 import java.util.List;
 
-/** Inspects one Bundler-locked Rack service without executing Ruby. / 在不执行 Ruby 的情况下检查一个 Bundler 锁定的 Rack 服务。 */
+/**
+ * Inspects one Bundler-locked Rack service without executing Ruby. / 在不执行 Ruby 的情况下检查一个 Bundler 锁定的 Rack 服务。
+ */
 public final class RubyBundlerDeploymentInspector implements DeploymentTypeInspector {
+    /**
+     * Returns the supported project category handled by this strategy.
+     * <p>返回当前策略处理的受支持项目类别。
+     *
+     * @return the supported project category handled by this strategy / 当前策略处理的受支持项目类别
+     */
     @Override
     public DeploymentProjectType projectType() {
         return DeploymentProjectType.RUBY_SERVICE;
     }
 
+    /**
+     * Inspects deployment type assessment.
+     * <p>检查部署类型评估。
+     *
+     * @param root root directory defining the filesystem boundary / 定义文件系统边界的根目录
+     * @param source source identity or content read by the operation / 操作读取的源身份或内容
+     * @param languageFacts language facts / 语言事实
+     * @param rejections reasons preventing admission to the next stage / 阻止进入下一阶段的原因
+     * @return constructed or resolved deployment type assessment / 构造或解析得到的部署类型评估
+     * @throws IOException if the required file or stream operation fails / 所需文件或流操作失败时
+     */
     @Override
     public DeploymentTypeAssessment inspect(Path root, SourceInspectionFacts source, ProjectLanguageFacts languageFacts,
                                             List<RejectionReason> rejections) throws IOException {

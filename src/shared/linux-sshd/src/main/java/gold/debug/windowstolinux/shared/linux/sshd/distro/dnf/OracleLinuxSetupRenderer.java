@@ -8,15 +8,29 @@ import gold.debug.windowstolinux.shared.model.server.CpuMicroarchitectureLevel;
 import gold.debug.windowstolinux.shared.model.server.LinuxDistroType;
 import gold.debug.windowstolinux.shared.linux.error.LinuxOperationException;
 
-/** Owns Oracle Linux preparation differences. / 持有 Oracle Linux 专属的环境准备差异。 */
+/**
+ * Owns Oracle Linux preparation differences. / 持有 Oracle Linux 专属的环境准备差异。
+ */
 public final class OracleLinuxSetupRenderer implements DistributionSetupRenderer {
-    /** Returns the prepared distribution. / 返回所准备的发行版。 */
+    /**
+     * Returns the prepared distribution. / 返回所准备的发行版。
+     *
+     * @return the prepared distribution / 所准备的发行版
+     */
     @Override
     public LinuxDistroType distro() {
         return LinuxDistroType.ORACLE_LINUX;
     }
 
-    /** Renders the fixed distribution preparation. / 渲染该发行版的固定环境准备脚本。 */
+    /**
+     * Renders the fixed distribution preparation. / 渲染该发行版的固定环境准备脚本。
+     *
+     * @param facts typed facts used for deterministic planning / 确定性计划使用的类型化事实
+     * @param username account name used by the reviewed connection / 已审阅连接使用的账户名
+     * @return render text / 渲染文本
+     * @throws LinuxOperationException if the authenticated remote operation fails or its evidence is rejected / 已认证远端操作失败或其证据被拒绝时
+     * @throws IllegalArgumentException if an input violates the constraints checked by this contract / 输入违反当前契约检查的约束时
+     */
     @Override
     public String render(LinuxCapabilityFacts facts, String username) throws LinuxOperationException {
         DnfSetupRenderer.requireEnterpriseSecurity(facts);

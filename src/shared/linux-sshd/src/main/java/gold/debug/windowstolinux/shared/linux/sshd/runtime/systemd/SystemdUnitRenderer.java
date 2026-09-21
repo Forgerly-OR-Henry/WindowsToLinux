@@ -6,25 +6,31 @@ import gold.debug.windowstolinux.shared.linux.sshd.execution.protocol.helper.Man
 import java.util.Objects;
 
 /**
- * Provides the {@code SystemdUnitRenderer} implementation.
- *
- * <p>提供 {@code SystemdUnitRenderer} 实现。
+ * Builds systemd unit text from reviewed runtime, identity and storage contracts.
+ * <p>根据已审阅的运行、身份及存储契约构建 systemd 单元文本。
  */
 public final class SystemdUnitRenderer {
+    /**
+     * JAVA BINARY.
+     * <p>Java二进制。
+     */
     private static final String JAVA_BINARY = ManagedHelperBundle.JAVA_RUNTIME_PATH;
 
+    /**
+     * Prevents instantiation of this static contract helper.
+     * <p>防止实例化当前静态契约辅助类。
+     */
     private SystemdUnitRenderer() {
     }
 
     /**
-     * Performs the {@code render} operation.
+     * Renders systemd unit as text without executing the rendered command.
+     * <p>渲染Systemd单元为文本，不执行所渲染命令。
      *
-     * <p>执行 {@code render} 操作。
-     *
-     * @param username the {@code username} value / {@code username} 值
-     * @param application the {@code application} value / {@code application} 值
+     * @param username account name used by the reviewed connection / 已审阅连接使用的账户名
+     * @param application managed target with its server and ownership identity / 携带服务器及归属身份的受管目标
      * @return the operation result / 操作结果
-     * @throws NullPointerException if a required argument is {@code null} / 必要参数为 {@code null} 时
+     * @throws NullPointerException if a required input is absent / 必需输入缺失时
      */
     public static String render(String username, ManagedApplication application) {
         Objects.requireNonNull(username, "username");

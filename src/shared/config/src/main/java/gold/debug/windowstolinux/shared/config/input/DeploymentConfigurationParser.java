@@ -9,11 +9,23 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 
-/** Parses the bounded desktop build/runtime configuration notation. / 解析桌面端有界构建/运行配置记法。 */
+/**
+ * Parses the bounded desktop build/runtime configuration notation. / 解析桌面端有界构建/运行配置记法。
+ */
 public final class DeploymentConfigurationParser {
+    /**
+     * Prevents instantiation of this static contract helper.
+     * <p>防止实例化当前静态契约辅助类。
+     */
     private DeploymentConfigurationParser() { }
 
-    /** Parses semicolon-separated entries, defaulting unprefixed keys to runtime scope. / 解析分号分隔项，并将无前缀键默认为运行范围。 */
+    /**
+     * Parses semicolon-separated entries, defaulting unprefixed keys to runtime scope. / 解析分号分隔项，并将无前缀键默认为运行范围。
+     *
+     * @param input source content consumed by this operation / 当前操作消费的源内容
+     * @return semicolon-separated entries, defaulting unprefixed keys to runtime scope / 分号分隔项，并将无前缀键默认为运行范围
+     * @throws IllegalArgumentException if an input violates the constraints checked by this contract / 输入违反当前契约检查的约束时
+     */
     public static List<ConfigurationEntry> parse(String input) {
         List<ConfigurationEntry> entries = new ArrayList<>();
         for (String item : input.split(";")) {
@@ -42,6 +54,13 @@ public final class DeploymentConfigurationParser {
         return List.copyOf(entries);
     }
 
+    /**
+     * Builds configuration value from the supplied configuration value inputs.
+     * <p>根据所提供配置内容输入构建配置内容。
+     *
+     * @param value candidate content accepted or rejected by this contract / 由当前契约接收或拒绝的候选内容
+     * @return configuration value from the supplied configuration value inputs / 根据所提供配置内容输入构建配置内容
+     */
     private static ConfigurationValue configurationValue(String value) {
         if (value.matches("-?[0-9]+")) {
             return new ConfigurationValue.Number(Long.parseLong(value));
@@ -51,7 +70,13 @@ public final class DeploymentConfigurationParser {
         }
         return new ConfigurationValue.Text(value);
     }
-    /** Parses exact public secret references for configuration and deployment. / 为配置和部署解析精确公开秘密引用。 */
+    /**
+     * Parses exact public secret references for configuration and deployment. / 为配置和部署解析精确公开秘密引用。
+     *
+     * @param input source content consumed by this operation / 当前操作消费的源内容
+     * @return exact public secret references for configuration and deployment / 为配置和部署解析精确公开秘密引用
+     * @throws IllegalArgumentException if an input violates the constraints checked by this contract / 输入违反当前契约检查的约束时
+     */
     public static List<SecretReference> secrets(String input) {
         List<SecretReference> references = new ArrayList<>();
         for (String item : input.split(";")) {

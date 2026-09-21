@@ -5,23 +5,22 @@ import java.util.Objects;
 /**
  * Sanitized result from a named, fixed Linux operation.
  *
- * <p>具名固定 Linux 操作产生的已净化结果。
+ *  <p>具名固定 Linux 操作产生的已净化结果。
  *
- * @param succeeded the {@code succeeded} value / {@code succeeded} 值
- * @param timedOut the {@code timedOut} value / {@code timedOut} 值
- * @param evidence the {@code evidence} value / {@code evidence} 值
+ * @param succeeded whether the build and artifact verification succeeded / 构建和产物验证是否成功
+ * @param timedOut timed out / 超时输出
+ * @param evidence observations supporting the reported result / 支持所报告结果的观测证据
  */
 public record RemoteStepResult(boolean succeeded, boolean timedOut, String evidence) {
     /**
-     * Creates a {@code RemoteStepResult} instance.
+     * Validates and binds the inputs required by remote step result.
+     * <p>校验并绑定远端步骤结果所需输入。
      *
-     * <p>创建 {@code RemoteStepResult} 实例。
-     *
-     * @param succeeded the {@code succeeded} value / {@code succeeded} 值
-     * @param timedOut the {@code timedOut} value / {@code timedOut} 值
-     * @param evidence the {@code evidence} value / {@code evidence} 值
+     * @param succeeded whether the build and artifact verification succeeded / 构建和产物验证是否成功
+     * @param timedOut timed out / 超时输出
+     * @param evidence observations supporting the reported result / 支持所报告结果的观测证据
      * @throws IllegalArgumentException if an argument violates the required constraints / 参数违反必要约束时
-     * @throws NullPointerException if a required argument is {@code null} / 必要参数为 {@code null} 时
+     * @throws NullPointerException if a required input is absent / 必需输入缺失时
      */
     public RemoteStepResult {
         evidence = Objects.requireNonNull(evidence, "evidence");

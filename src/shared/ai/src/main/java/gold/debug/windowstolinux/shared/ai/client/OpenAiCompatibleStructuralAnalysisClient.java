@@ -20,22 +20,40 @@ import java.util.Objects;
 /**
  * Calls an OpenAI-compatible endpoint with redacted deterministic facts only.
  *
- * <p>仅使用已脱敏的确定性事实调用 OpenAI 兼容端点。
+ *  <p>仅使用已脱敏的确定性事实调用 OpenAI 兼容端点。
  */
 public final class OpenAiCompatibleStructuralAnalysisClient {
+    /**
+     * Transport.
+     * <p>传输。
+     */
     private final RoleChatTransport transport;
+    /**
+     * Bound provider endpoint policy collaborator for endpoint policy.
+     * <p>处理端点策略的提供者端点策略协作对象。
+     */
     private final ProviderEndpointPolicy endpointPolicy;
+    /**
+     * Response parser.
+     * <p>响应解析器。
+     */
     private final ChatCompletionResponseParser responseParser;
 
     /**
-     * Creates a {@code OpenAiCompatibleStructuralAnalysisClient} instance.
-     *
-     * <p>创建 {@code OpenAiCompatibleStructuralAnalysisClient} 实例。
+     * Initializes open ai compatible structural analysis client through its shared constructor contract.
+     * <p>通过共享构造契约初始化打开AI兼容Structural分析客户端。
      */
     public OpenAiCompatibleStructuralAnalysisClient() {
         this(new HttpRoleChatTransport());
     }
 
+    /**
+     * Validates and binds the inputs required by open ai compatible structural analysis client.
+     * <p>校验并绑定打开AI兼容Structural分析客户端所需输入。
+     *
+     * @param transport transport / 传输
+     * @throws NullPointerException if a required input is absent / 必需输入缺失时
+     */
     OpenAiCompatibleStructuralAnalysisClient(RoleChatTransport transport) {
         this.transport = Objects.requireNonNull(transport, "transport");
         this.endpointPolicy = new ProviderEndpointPolicy();
@@ -43,20 +61,16 @@ public final class OpenAiCompatibleStructuralAnalysisClient {
     }
 
     /**
-     * Performs the {@code analyze} operation.
+     * Analyzes selected typed deployment facts without transmitting a source path or source contents. / 在不传输源码路径或内容的情况下分析选定类型化部署事实。
      *
-     * <p>执行 {@code analyze} 操作。
-     *
-     * @param endpoint the {@code endpoint} value / {@code endpoint} 值
-     * @param model the {@code model} value / {@code model} 值
-     * @param apiKey the {@code apiKey} value / {@code apiKey} 值
-     * @param facts the {@code facts} value / {@code facts} 值
-     * @param responseLanguage the {@code responseLanguage} value / {@code responseLanguage} 值
-     * @return the operation result / 操作结果
-     * @throws AiAnalysisException if the operation cannot be completed / 无法完成操作时
-     * @throws NullPointerException if a required argument is {@code null} / 必要参数为 {@code null} 时
+     * @param endpoint reviewed network endpoint / 已审阅网络端点
+     * @param model configured model identifier sent to the provider / 发送给提供者的已配置模型标识
+     * @param apiKey api key / api键
+     * @param facts typed facts used for deterministic planning / 确定性计划使用的类型化事实
+     * @param responseLanguage response language / 响应语言
+     * @return constructed or resolved ai structural assessment / 构造或解析得到的AIStructural评估
+     * @throws AiAnalysisException if the ai analysis boundary rejects the operation / AI分析边界拒绝当前操作时
      */
-    /** Analyzes selected typed deployment facts without transmitting a source path or source contents. / 在不传输源码路径或内容的情况下分析选定类型化部署事实。 */
     public AiStructuralAssessment analyze(URI endpoint, String model, char[] apiKey, DeploymentProjectFacts facts,
                                         AiResponseLanguageType responseLanguage)
             throws AiAnalysisException {
@@ -66,6 +80,17 @@ public final class OpenAiCompatibleStructuralAnalysisClient {
                 RedactedDeploymentProjectFacts.from(facts), responseLanguage));
     }
 
+    /**
+     * Sends the bounded analysis request with the scoped API key, validates the HTTP response and parses only the supported structured result.
+     * <p>使用限定作用域 API 密钥发送有界分析请求，验证 HTTP 响应，并仅解析受支持结构化结果。
+     *
+     * @param endpoint reviewed network endpoint / 已审阅网络端点
+     * @param apiKey api key / api键
+     * @param requestBody request body / 请求正文
+     * @return constructed or resolved ai structural assessment / 构造或解析得到的AIStructural评估
+     * @throws AiAnalysisException if the ai analysis boundary rejects the operation / AI分析边界拒绝当前操作时
+     * @throws NullPointerException if a required input is absent / 必需输入缺失时
+     */
     private AiStructuralAssessment send(URI endpoint, char[] apiKey, String requestBody)
             throws AiAnalysisException {
         Objects.requireNonNull(apiKey, "apiKey");

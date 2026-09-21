@@ -8,7 +8,7 @@ import gold.debug.windowstolinux.app.ui.display.DesktopDisplayConfiguration;
 import gold.debug.windowstolinux.app.ui.display.ThemeMode;
 import gold.debug.windowstolinux.app.ui.display.ThemePalette;
 import gold.debug.windowstolinux.app.ui.component.DesktopComponentFactory;
-import gold.debug.windowstolinux.app.ui.deployment.single.DeploymentPageState;
+import gold.debug.windowstolinux.app.ui.deployment.automatic.DeploymentPageState;
 import gold.debug.windowstolinux.app.ui.deployment.multi.MultiComponentFormState;
 import gold.debug.windowstolinux.app.ui.deployment.multi.MultiComponentPageState;
 import gold.debug.windowstolinux.app.ui.i18n.MessageCatalog;
@@ -64,6 +64,7 @@ class DesktopLanguageSwitchStateTest {
         englishState.close();
         try {
             assertEquals("ai", chineseState.page());
+            assertEquals("ASSISTED",chineseState.deploymentSelection().get("automation"));
             assertEquals("TCP", chineseState.deployment().healthMode());
             assertEquals("PYTHON_SERVICE", chineseState.deployment().projectType());
             assertEquals("3.12", chineseState.deployment().runtimePrimary());

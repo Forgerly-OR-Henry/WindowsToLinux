@@ -16,9 +16,27 @@ import java.util.*;
 import java.util.concurrent.CancellationException;
 import java.util.function.Consumer;
 
-/** Resolves an installed instance before considering installation, with operation-bound replacement decisions. / 先解析已安装实例，再考虑安装，并将替换决策绑定本次操作。 */
+/**
+ * Resolves an installed instance before considering installation, with operation-bound replacement decisions. / 先解析已安装实例，再考虑安装，并将替换决策绑定本次操作。
+ */
 final class DatabaseInstanceResolver {
+    /**
+     * Prevents instantiation of this static contract helper.
+     * <p>防止实例化当前静态契约辅助类。
+     */
     private DatabaseInstanceResolver() { }
+    /**
+     * Selects a compatible database instance or performs an explicitly approved installation or replacement through the native database port.
+     * <p>选择兼容数据库实例，或通过原生数据库端口执行显式批准的安装或替换。
+     *
+     * @param port network port number in the reviewed endpoint / 已审阅端点中的网络端口号
+     * @param serverId persisted server identifier / 持久化服务器标识
+     * @param requirement requirement / 要求
+     * @param interaction caller-owned progress, confirmation and input callbacks / 调用方持有的进度、确认及输入回调
+     * @param progress progress / 进度
+     * @return a compatible database instance or performs an explicitly approved installation or replacement through the native database port / 兼容数据库实例，或通过原生数据库端口执行显式批准的安装或替换
+     * @throws Exception if the delegated operation or caller-provided interaction fails / 被委派操作或调用方提供的交互失败时
+     */
     static Instance resolve(NativeDatabasePort port, String serverId, DatabaseRequirement requirement,
                             AutomaticDeploymentInteraction interaction, Consumer<LocalizedMessage> progress) throws Exception {
         var version = new DatabaseVersionRequirement(requirement.version());
@@ -75,6 +93,17 @@ final class DatabaseInstanceResolver {
         }
     }
 
+    /**
+     * Waits for restoration.
+     * <p>等待恢复。
+     *
+     * @param port network port number in the reviewed endpoint / 已审阅端点中的网络端口号
+     * @param requirement requirement / 要求
+     * @param interaction caller-owned progress, confirmation and input callbacks / 调用方持有的进度、确认及输入回调
+     * @param progress progress / 进度
+     * @return constructed or resolved instance / 构造或解析得到的实例
+     * @throws Exception if the delegated operation or caller-provided interaction fails / 被委派操作或调用方提供的交互失败时
+     */
     private static Instance awaitRestoration(NativeDatabasePort port, DatabaseRequirement requirement,
             AutomaticDeploymentInteraction interaction, Consumer<LocalizedMessage> progress) throws Exception {
         char[] admin = new char[0];
@@ -96,6 +125,14 @@ final class DatabaseInstanceResolver {
         } finally { Arrays.fill(admin, '\0'); }
     }
 
+    /**
+     * Chooses instance.
+     * <p>选择实例。
+     *
+     * @param instances instances / 实例集合
+     * @param interaction caller-owned progress, confirmation and input callbacks / 调用方持有的进度、确认及输入回调
+     * @return constructed or resolved instance / 构造或解析得到的实例
+     */
     private static Instance choose(List<Instance> instances, AutomaticDeploymentInteraction interaction) {
         if (instances.size() == 1) return instances.getFirst();
         List<String> options = instances.stream().map(instance -> instance.id() + " | " + instance.version() + " | " + instance.port()).toList();

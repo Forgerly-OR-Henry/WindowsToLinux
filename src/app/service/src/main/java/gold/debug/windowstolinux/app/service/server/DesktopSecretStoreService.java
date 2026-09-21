@@ -13,35 +13,36 @@ import java.util.Arrays;
 import java.util.Objects;
 
 /**
- * Provides the {@code DesktopSecretStoreService} implementation.
- *
- * <p>提供 {@code DesktopSecretStoreService} 实现。
+ * Selects the desktop credential adapter for the requested storage mode.
+ * <p>根据所请求的存储模式选择桌面凭据适配器。
  */
 public final class DesktopSecretStoreService {
+    /**
+     * Bound encrypted secret repository collaborator for encrypted secrets.
+     * <p>处理加密秘密集合的加密秘密仓库协作对象。
+     */
     private final EncryptedSecretRepository encryptedSecrets;
 
     /**
-     * Creates a {@code DesktopSecretStoreService} instance.
+     * Validates and binds the inputs required by desktop secret store service.
+     * <p>校验并绑定Desktop秘密存储服务所需输入。
      *
-     * <p>创建 {@code DesktopSecretStoreService} 实例。
-     *
-     * @param encryptedSecrets the {@code encryptedSecrets} value / {@code encryptedSecrets} 值
-     * @throws NullPointerException if a required argument is {@code null} / 必要参数为 {@code null} 时
+     * @param encryptedSecrets encrypted secrets / 加密秘密集合
+     * @throws NullPointerException if a required input is absent / 必需输入缺失时
      */
     public DesktopSecretStoreService(EncryptedSecretRepository encryptedSecrets) {
         this.encryptedSecrets = Objects.requireNonNull(encryptedSecrets, "encryptedSecrets");
     }
 
     /**
-     * Performs the {@code open} operation.
+     * Opens secret store.
+     * <p>打开秘密存储。
      *
-     * <p>执行 {@code open} 操作。
-     *
-     * @param mode the {@code mode} value / {@code mode} 值
-     * @param masterPassword the {@code masterPassword} value / {@code masterPassword} 值
+     * @param mode selected operating or storage mode / 所选运行或存储模式
+     * @param masterPassword master-password buffer used to unlock protected credentials / 用于解锁受保护凭据的主密码缓冲区
      * @return the operation result / 操作结果
-     * @throws SecretStoreException if the operation cannot be completed / 无法完成操作时
-     * @throws NullPointerException if a required argument is {@code null} / 必要参数为 {@code null} 时
+     * @throws SecretStoreException if the protected credential cannot be accessed or updated / 无法访问或更新受保护凭据时
+     * @throws NullPointerException if a required input is absent / 必需输入缺失时
      */
     public SecretStore open(CredentialStorageMode mode, char[] masterPassword) throws SecretStoreException {
         return switch (Objects.requireNonNull(mode, "mode")) {
@@ -54,12 +55,12 @@ public final class DesktopSecretStoreService {
     /**
      * Returns the value produced by {@code loadPassword}.
      *
-     * <p>返回 {@code loadPassword} 生成的值。
+     *  <p>返回 {@code loadPassword} 生成的值。
      *
-     * @param profile the {@code profile} value / {@code profile} 值
-     * @param store the {@code store} value / {@code store} 值
+     * @param profile connection or provider settings supplied to the operation / 提供给操作的连接或提供者设置
+     * @param store store / 存储
      * @return the operation result / 操作结果
-     * @throws SecretStoreException if the operation cannot be completed / 无法完成操作时
+     * @throws SecretStoreException if the protected credential cannot be accessed or updated / 无法访问或更新受保护凭据时
      */
     public SshCredential.Password loadPassword(ServerProfile profile, SecretStore store) throws SecretStoreException {
         char[] password = store.read(profile.credentialKey())

@@ -19,21 +19,20 @@ import java.util.Optional;
 /**
  * Applies lifecycle actions only after a live ownership verification.
  *
- * <p>仅在实时验证资源归属后应用生命周期动作。
+ *  <p>仅在实时验证资源归属后应用生命周期动作。
  */
 public final class ManagedLifecycleService {
     /**
-     * Performs the {@code execute} operation.
+     * Executes lifecycle action result.
+     * <p>执行生命周期动作结果。
      *
-     * <p>执行 {@code execute} 操作。
-     *
-     * @param application the {@code application} value / {@code application} 值
-     * @param action the {@code action} value / {@code action} 值
-     * @param healthCheck the {@code healthCheck} value / {@code healthCheck} 值
-     * @param gateway the {@code gateway} value / {@code gateway} 值
-     * @param endpoint the {@code endpoint} value / {@code endpoint} 值
-     * @param credential the {@code credential} value / {@code credential} 值
-     * @param hostKeyVerifier the {@code hostKeyVerifier} value / {@code hostKeyVerifier} 值
+     * @param application managed target with its server and ownership identity / 携带服务器及归属身份的受管目标
+     * @param action explicit action selected for the current target / 为当前目标显式选择的动作
+     * @param healthCheck reviewed probe and its success criteria / 已审阅探测及其成功条件
+     * @param gateway factory for authenticated Linux sessions / 已认证 Linux 会话的工厂
+     * @param endpoint reviewed network endpoint / 已审阅网络端点
+     * @param credential authentication material scoped to the current connection / 限定于当前连接的认证素材
+     * @param hostKeyVerifier the host-key verifier / 主机密钥验证器
      * @return the operation result / 操作结果
      */
     public LifecycleActionResult execute(

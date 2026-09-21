@@ -9,10 +9,24 @@ import java.util.List;
 import static gold.debug.windowstolinux.shared.model.toolchain.ToolchainEcosystemType.*;
 import static gold.debug.windowstolinux.shared.model.toolchain.ToolchainRequirement.PurposeType.*;
 
-/** Shared projection of reviewed runtime inputs and original declarations. / 审阅输入与原始声明的公共工具链需求投影。 */
+/**
+ * Shared projection of reviewed runtime inputs and original declarations. / 审阅输入与原始声明的公共工具链需求投影。
+ */
 public final class ProjectToolchainRequirements {
+    /**
+     * Prevents instantiation of this static contract helper.
+     * <p>防止实例化当前静态契约辅助类。
+     */
     private ProjectToolchainRequirements() { }
 
+    /**
+     * Derives exact ecosystem tool requirements from the reviewed project architecture and runtime specification.
+     * <p>根据已审阅项目架构及运行规格派生精确生态工具要求。
+     *
+     * @param facts typed facts used for deterministic planning / 确定性计划使用的类型化事实
+     * @param runtime reviewed language, process and health specification / 已审阅的语言、进程及健康规格
+     * @return constructed or resolved list / 构造或解析得到的列表
+     */
     public static List<ToolchainRequirement> from(DeploymentProjectFacts facts, DeploymentRuntimeSpecification runtime) {
         List<ToolchainRequirement> result = new ArrayList<>();
         switch (runtime) {
@@ -43,6 +57,16 @@ public final class ProjectToolchainRequirements {
         return List.copyOf(result);
     }
 
+    /**
+     * Adds project toolchain requirements.
+     * <p>添加项目工具链要求集合。
+     *
+     * @param result typed outcome produced by the delegated operation / 被委派操作产生的类型化结果
+     * @param facts typed facts used for deterministic planning / 确定性计划使用的类型化事实
+     * @param ecosystem ecosystem / 生态
+     * @param reviewed reviewed / 已审阅
+     * @throws IllegalArgumentException if an input violates the constraints checked by this contract / 输入违反当前契约检查的约束时
+     */
     private static void add(List<ToolchainRequirement> result, DeploymentProjectFacts facts,
             ToolchainEcosystemType ecosystem, String reviewed) {
         ToolchainRequirement selected = ToolchainRequirement.declared(ecosystem, reviewed, "reviewed-runtime", BUILD);

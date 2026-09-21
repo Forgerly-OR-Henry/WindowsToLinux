@@ -18,7 +18,7 @@ import java.util.Optional;
 /**
  * Fully reviewed typed deployment input that contains identities and typed definitions, never a shell command.
  *
- * <p>经过完整审阅的部署输入，包含身份和类型化定义，绝不包含 Shell 命令。
+ *  <p>经过完整审阅的部署输入，包含身份和类型化定义，绝不包含 Shell 命令。
  *
  * @param server the trusted target server / 可信目标服务器
  * @param facts the complete static project facts / 完整静态项目事实
@@ -27,6 +27,7 @@ import java.util.Optional;
  * @param configuration the immutable normal configuration / 不可变普通配置
  * @param secretReferences the opaque secret revisions / 透明秘密修订引用
  * @param databaseBindings the reviewed database scope, or empty when it was not reviewed / 经审阅数据库范围；未审阅时为空
+ * @param fileBindings file bindings / 文件绑定集合
  * @param runtime the type-specific runtime definition / 类型专属运行定义
  * @param userAccessUrl the optional user-facing HTTP URL / 可选的用户访问 HTTP URL
  * @param limits the target-host build limits / 目标机构建限制
@@ -51,9 +52,25 @@ public record ReviewedDeploymentRequest(
         boolean experimentalAdapterRiskAccepted
 ) {
     /**
-     * Creates a {@code ReviewedDeploymentRequest} instance.
+     * Validates and binds the inputs required by reviewed deployment request.
+     * <p>校验并绑定已审阅部署请求所需输入。
      *
-     * <p>创建 {@code ReviewedDeploymentRequest} 实例。
+     * @param server server identity or selected server configuration / 服务器身份或所选服务器配置
+     * @param facts typed facts used for deterministic planning / 确定性计划使用的类型化事实
+     * @param sourceRevision the bound source revision / 绑定的源码修订
+     * @param archive source or backup archive descriptor or filesystem path / 源码或备份归档描述或文件系统路径
+     * @param configuration reviewed configuration snapshot or settings / 已审阅配置快照或设置
+     * @param secretReferences immutable identifiers and revisions of required secrets / 所需秘密的不可变标识及修订
+     * @param databaseBindings the reviewed database scope, or empty when it was not reviewed / 经审阅数据库范围；未审阅时为空
+     * @param fileBindings file bindings / 文件绑定集合
+     * @param runtime reviewed language, process and health specification / 已审阅的语言、进程及健康规格
+     * @param userAccessUrl the optional user-facing HTTP URL / 可选的用户访问 HTTP URL
+     * @param limits resource and time bounds enforced during execution / 执行期间实施的资源及时间边界
+     * @param approval the per-source, per-server approval / 按源码、服务器绑定的批准
+     * @param containerDaemonRiskAccepted the explicit Docker daemon risk approval / 显式 Docker 守护进程风险批准
+     * @param experimentalAdapterRiskAccepted the fresh experimental-adapter test-environment approval / 本次试验适配器测试环境批准
+     * @throws IllegalArgumentException if an input violates the constraints checked by this contract / 输入违反当前契约检查的约束时
+     * @throws NullPointerException if a required input is absent / 必需输入缺失时
      */
     public ReviewedDeploymentRequest {
         server = Objects.requireNonNull(server, "server");
@@ -144,6 +161,24 @@ public record ReviewedDeploymentRequest(
         }
     }
 
+    /**
+     * Initializes reviewed deployment request through its shared constructor contract.
+     * <p>通过共享构造契约初始化已审阅部署请求。
+     *
+     * @param server server identity or selected server configuration / 服务器身份或所选服务器配置
+     * @param facts typed facts used for deterministic planning / 确定性计划使用的类型化事实
+     * @param sourceRevision the bound source revision / 绑定的源码修订
+     * @param archive source or backup archive descriptor or filesystem path / 源码或备份归档描述或文件系统路径
+     * @param configuration reviewed configuration snapshot or settings / 已审阅配置快照或设置
+     * @param secretReferences immutable identifiers and revisions of required secrets / 所需秘密的不可变标识及修订
+     * @param databaseBindings the reviewed database scope, or empty when it was not reviewed / 经审阅数据库范围；未审阅时为空
+     * @param runtime reviewed language, process and health specification / 已审阅的语言、进程及健康规格
+     * @param userAccessUrl the optional user-facing HTTP URL / 可选的用户访问 HTTP URL
+     * @param limits resource and time bounds enforced during execution / 执行期间实施的资源及时间边界
+     * @param approval the per-source, per-server approval / 按源码、服务器绑定的批准
+     * @param containerDaemonRiskAccepted the explicit Docker daemon risk approval / 显式 Docker 守护进程风险批准
+     * @param experimentalAdapterRiskAccepted the fresh experimental-adapter test-environment approval / 本次试验适配器测试环境批准
+     */
     public ReviewedDeploymentRequest(ServerIdentity server, DeploymentProjectFacts facts, SourceRevision sourceRevision,
             SourceArchiveDescriptor archive, ConfigurationSnapshot configuration, List<SecretReference> secretReferences,
             Optional<List<ManagedDatabaseBinding>> databaseBindings, DeploymentRuntimeSpecification runtime,
@@ -153,6 +188,13 @@ public record ReviewedDeploymentRequest(
                 userAccessUrl, limits, approval, containerDaemonRiskAccepted, experimentalAdapterRiskAccepted);
     }
 
+    /**
+     * Returns the contract with the supplied files applied.
+     * <p>返回应用所提供文件集合后的契约。
+     *
+     * @param files controlled filesystem access or reviewed file inventory / 受控文件系统访问或已审阅文件清单
+     * @return the contract with the supplied files applied / 应用所提供文件集合后的契约
+     */
     public ReviewedDeploymentRequest withFiles(List<gold.debug.windowstolinux.shared.config.resource.ManagedFileBinding> files) {
         return new ReviewedDeploymentRequest(server, facts, sourceRevision, archive, configuration, secretReferences,
                 databaseBindings, files, runtime, userAccessUrl, limits, approval, containerDaemonRiskAccepted, experimentalAdapterRiskAccepted);
@@ -161,7 +203,20 @@ public record ReviewedDeploymentRequest(
     /**
      * Creates a request without reviewed database scope for existing callers.
      *
-     * <p>为现有调用方创建尚未审阅数据库范围的请求。
+     *  <p>为现有调用方创建尚未审阅数据库范围的请求。
+     *
+     * @param server server identity or selected server configuration / 服务器身份或所选服务器配置
+     * @param facts typed facts used for deterministic planning / 确定性计划使用的类型化事实
+     * @param sourceRevision the bound source revision / 绑定的源码修订
+     * @param archive source or backup archive descriptor or filesystem path / 源码或备份归档描述或文件系统路径
+     * @param configuration reviewed configuration snapshot or settings / 已审阅配置快照或设置
+     * @param secretReferences immutable identifiers and revisions of required secrets / 所需秘密的不可变标识及修订
+     * @param runtime reviewed language, process and health specification / 已审阅的语言、进程及健康规格
+     * @param userAccessUrl the optional user-facing HTTP URL / 可选的用户访问 HTTP URL
+     * @param limits resource and time bounds enforced during execution / 执行期间实施的资源及时间边界
+     * @param approval the per-source, per-server approval / 按源码、服务器绑定的批准
+     * @param containerDaemonRiskAccepted the explicit Docker daemon risk approval / 显式 Docker 守护进程风险批准
+     * @param experimentalAdapterRiskAccepted the fresh experimental-adapter test-environment approval / 本次试验适配器测试环境批准
      */
     public ReviewedDeploymentRequest(
             ServerIdentity server,
@@ -184,7 +239,19 @@ public record ReviewedDeploymentRequest(
     /**
      * Creates a request without reviewed database scope or experimental-adapter permission.
      *
-     * <p>创建不含数据库范围审阅或试验适配器许可的请求。
+     *  <p>创建不含数据库范围审阅或试验适配器许可的请求。
+     *
+     * @param server server identity or selected server configuration / 服务器身份或所选服务器配置
+     * @param facts typed facts used for deterministic planning / 确定性计划使用的类型化事实
+     * @param sourceRevision the bound source revision / 绑定的源码修订
+     * @param archive source or backup archive descriptor or filesystem path / 源码或备份归档描述或文件系统路径
+     * @param configuration reviewed configuration snapshot or settings / 已审阅配置快照或设置
+     * @param secretReferences immutable identifiers and revisions of required secrets / 所需秘密的不可变标识及修订
+     * @param runtime reviewed language, process and health specification / 已审阅的语言、进程及健康规格
+     * @param userAccessUrl the optional user-facing HTTP URL / 可选的用户访问 HTTP URL
+     * @param limits resource and time bounds enforced during execution / 执行期间实施的资源及时间边界
+     * @param approval the per-source, per-server approval / 按源码、服务器绑定的批准
+     * @param containerDaemonRiskAccepted the explicit Docker daemon risk approval / 显式 Docker 守护进程风险批准
      */
     public ReviewedDeploymentRequest(
             ServerIdentity server,

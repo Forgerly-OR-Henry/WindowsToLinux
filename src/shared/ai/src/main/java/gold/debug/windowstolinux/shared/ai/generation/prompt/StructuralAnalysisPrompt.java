@@ -7,24 +7,25 @@ import java.util.Objects;
 /**
  * Builds the fixed structural-analysis request from already-redacted facts.
  *
- * <p>根据已经脱敏的事实构建固定结构分析请求。
+ *  <p>根据已经脱敏的事实构建固定结构分析请求。
  */
 public final class StructuralAnalysisPrompt {
+    /**
+     * Prevents instantiation of this static contract helper.
+     * <p>防止实例化当前静态契约辅助类。
+     */
     private StructuralAnalysisPrompt() {
     }
 
     /**
-     * Performs the {@code requestBody} operation.
+     * Builds an AI request from type and fixed build-entrypoint facts only. / 仅从类型和固定构建入口事实构建 AI 请求。
      *
-     * <p>执行 {@code requestBody} 操作。
-     *
-     * @param model the {@code model} value / {@code model} 值
-     * @param facts the {@code facts} value / {@code facts} 值
-     * @param responseLanguage the {@code responseLanguage} value / {@code responseLanguage} 值
-     * @return the operation result / 操作结果
-     * @throws NullPointerException if a required argument is {@code null} / 必要参数为 {@code null} 时
+     * @param model configured model identifier sent to the provider / 发送给提供者的已配置模型标识
+     * @param facts typed facts used for deterministic planning / 确定性计划使用的类型化事实
+     * @param responseLanguage response language / 响应语言
+     * @return an AI request from type and fixed build-entrypoint facts only / 仅从类型和固定构建入口事实构建 AI 请求
+     * @throws NullPointerException if a required input is absent / 必需输入缺失时
      */
-    /** Builds an AI request from type and fixed build-entrypoint facts only. / 仅从类型和固定构建入口事实构建 AI 请求。 */
     public static String requestBody(String model, RedactedDeploymentProjectFacts facts,
                                      AiResponseLanguageType responseLanguage) {
         Objects.requireNonNull(facts, "facts");
@@ -38,6 +39,13 @@ public final class StructuralAnalysisPrompt {
                 escapeJson(facts.projectType()), escapeJson(facts.buildTool())).replaceAll("\\R", "");
     }
 
+    /**
+     * Escapes backslashes, quotes and line separators in a JSON string value.
+     * <p>转义 JSON 字符串值中的反斜杠、引号及换行符。
+     *
+     * @param value candidate content accepted or rejected by this contract / 由当前契约接收或拒绝的候选内容
+     * @return escape json text / 转义JSON文本
+     */
     private static String escapeJson(String value) {
         return value.replace("\\", "\\\\").replace("\"", "\\\"")
                 .replace("\r", "\\r").replace("\n", "\\n");

@@ -2,10 +2,23 @@ package gold.debug.windowstolinux.shared.linux.sshd.build.generation.script;
 
 import gold.debug.windowstolinux.shared.model.project.DeploymentBuildToolType;
 
-/** Prepares the project's exact manager without changing its manifest or lock. / 准备项目固定包管理器，不改声明或锁文件。 */
+/**
+ * Prepares the project's exact manager without changing its manifest or lock. / 准备项目固定包管理器，不改声明或锁文件。
+ */
 final class NodeDependencyToolPreparation {
+    /**
+     * Prevents instantiation of this static contract helper.
+     * <p>防止实例化当前静态契约辅助类。
+     */
     private NodeDependencyToolPreparation() { }
 
+    /**
+     * Renders node dependency tool preparation as text without executing the rendered command.
+     * <p>渲染节点依赖工具准备为文本，不执行所渲染命令。
+     *
+     * @param tool tool / 工具
+     * @return render text / 渲染文本
+     */
     static String render(DeploymentBuildToolType tool) {
         return """
                 manager=%s

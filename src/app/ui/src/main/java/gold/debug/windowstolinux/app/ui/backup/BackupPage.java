@@ -31,31 +31,127 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicBoolean;
 
-/** Owns local backup validation and isolated candidate preparation. / 持有本地备份校验与隔离候选准备。 */
+/**
+ * Owns local backup validation and isolated candidate preparation. / 持有本地备份校验与隔离候选准备。
+ */
 public final class BackupPage {
+    /**
+     * Component or resource identity owning the operation.
+     * <p>持有操作的组件或资源身份。
+     */
     private final Component owner;
+    /**
+     * Bound backup application facade collaborator for application service used by the caller.
+     * <p>处理调用方使用的应用服务的备份应用门面协作对象。
+     */
     private final BackupApplicationFacade service;
+    /**
+     * Bound page message presenter collaborator for localized message resolver.
+     * <p>处理本地化消息解析器的页面消息展示器协作对象。
+     */
     private final PageMessagePresenter messages;
+    /**
+     * Selections.
+     * <p>选择集合。
+     */
     private final BackupSelectionPane selections;
+    /**
+     * Swing control for archive path.
+     * <p>归档路径对应的 Swing 控件。
+     */
     private final JTextField archivePath = new JTextField();
+    /**
+     * Swing control for destination path.
+     * <p>目的地路径对应的 Swing 控件。
+     */
     private final JTextField destinationPath = new JTextField();
+    /**
+     * Swing control for backup password.
+     * <p>备份密码对应的 Swing 控件。
+     */
     private final JPasswordField backupPassword = new JPasswordField();
+    /**
+     * Swing control for master password.
+     * <p>主密码对应的 Swing 控件。
+     */
     private final JPasswordField masterPassword = new JPasswordField();
+    /**
+     * Swing control for output.
+     * <p>输出对应的 Swing 控件。
+     */
     private final JTextArea output = DesktopComponentFactory.outputArea();
+    /**
+     * Swing control for panel.
+     * <p>面板对应的 Swing 控件。
+     */
     private final JPanel panel;
+    /**
+     * Swing control for inspect button.
+     * <p>检查按钮对应的 Swing 控件。
+     */
     private JButton inspectButton;
+    /**
+     * Swing control for prepare button.
+     * <p>准备按钮对应的 Swing 控件。
+     */
     private JButton prepareButton;
+    /**
+     * Swing control for discard button.
+     * <p>丢弃按钮对应的 Swing 控件。
+     */
     private JButton discardButton;
+    /**
+     * Swing control for assess button.
+     * <p>评估按钮对应的 Swing 控件。
+     */
     private JButton assessButton;
+    /**
+     * Swing control for prepare secrets button.
+     * <p>准备秘密集合按钮对应的 Swing 控件。
+     */
     private JButton prepareSecretsButton;
+    /**
+     * Swing control for create button.
+     * <p>创建按钮对应的 Swing 控件。
+     */
     private JButton createButton;
+    /**
+     * Swing control for restore button.
+     * <p>恢复按钮对应的 Swing 控件。
+     */
     private JButton restoreButton;
+    /**
+     * Swing control for migrate button.
+     * <p>迁移按钮对应的 Swing 控件。
+     */
     private JButton migrateButton;
+    /**
+     * Prepared candidate.
+     * <p>已准备候选。
+     */
     private PreparedBackupCandidate preparedCandidate;
+    /**
+     * Task.
+     * <p>任务。
+     */
     private final javax.swing.JComboBox<String> task = new javax.swing.JComboBox<>();
+    /**
+     * Swing control for archive row.
+     * <p>归档数据行对应的 Swing 控件。
+     * <p>destinationRow:
+     * Swing control for destination row.
+     * <p>目的地数据行对应的 Swing 控件。
+     */
     private JPanel archiveRow, destinationRow;
 
-    /** Creates the functional local backup page. / 创建本地备份功能页面。 */
+    /**
+     * Creates the functional local backup page. / 创建本地备份功能页面。
+     *
+     * @param owner component or resource identity owning the operation / 持有操作的组件或资源身份
+     * @param service application service used by the caller / 调用方使用的应用服务
+     * @param components reviewed components in the application graph / 应用图中的已审阅组件
+     * @param messages localized message resolver / 本地化消息解析器
+     */
     public BackupPage(Component owner, BackupApplicationFacade service,
                       DesktopComponentFactory components, PageMessagePresenter messages) {
         this.owner = owner;
@@ -67,18 +163,30 @@ public final class BackupPage {
         panel = createPanel(components);
     }
 
-    /** Returns the page panel. / 返回页面面板。 */
+    /**
+     * Returns the page panel. / 返回页面面板。
+     *
+     * @return the page panel / 页面面板
+     */
     public JPanel panel() {
         return panel;
     }
 
-    /** Captures page-owned values. / 捕获页面持有的值。 */
+    /**
+     * Captures page-owned values. / 捕获页面持有的值。
+     *
+     * @return constructed or resolved backup page state / 构造或解析得到的备份页面状态
+     */
     public BackupPageState captureState() {
         return new BackupPageState(selections.applicationId(), selections.targetServerId(), archivePath.getText(), destinationPath.getText(),
                 output.getText(), preparedCandidate, task.getSelectedIndex(), backupPassword.getPassword(), masterPassword.getPassword());
     }
 
-    /** Restores page-owned values. / 恢复页面持有的值。 */
+    /**
+     * Restores page-owned values. / 恢复页面持有的值。
+     *
+     * @param state current lifecycle or workflow state / 当前生命周期或工作流状态
+     */
     public void restoreState(BackupPageState state) {
         selections.restore(state.applicationId(),state.targetServerId());
         archivePath.setText(state.archivePath());
@@ -92,6 +200,13 @@ public final class BackupPage {
         setBusy(false);
     }
 
+    /**
+     * Builds the backup task page with source selection, protected inputs and operation controls.
+     * <p>构建备份任务页面，包含源码选择、受保护输入及操作控件。
+     *
+     * @param components reviewed components in the application graph / 应用图中的已审阅组件
+     * @return the backup task page with source selection, protected inputs and operation controls / 备份任务页面，包含源码选择、受保护输入及操作控件
+     */
     private JPanel createPanel(DesktopComponentFactory components) {
         JPanel page = components.pagePanel();
         var advanced = new gold.debug.windowstolinux.app.ui.component.AdvancedOptionsPane(page, components, messages);
@@ -147,6 +262,14 @@ public final class BackupPage {
         return advanced;
     }
 
+    /**
+     * Builds the backup inspection, creation and restore action controls.
+     * <p>构建备份检查、创建及恢复动作控件。
+     *
+     * @param components reviewed components in the application graph / 应用图中的已审阅组件
+     * @param advanced advanced / 高级
+     * @return the backup inspection, creation and restore action controls / 备份检查、创建及恢复动作控件
+     */
     private JPanel actionButtons(DesktopComponentFactory components, gold.debug.windowstolinux.app.ui.component.AdvancedOptionsPane advanced) {
         JPanel actions = components.transparent(new FlowLayout(FlowLayout.LEFT, 8, 0));
         inspectButton = components.secondaryButton(messages.text("backup.button.inspect"));
@@ -175,6 +298,10 @@ public final class BackupPage {
         return actions;
     }
 
+    /**
+     * Updates task.
+     * <p>更新任务。
+     */
     private void updateTask() {
         int selected = task.getSelectedIndex();
         selections.task(selected);
@@ -183,6 +310,10 @@ public final class BackupPage {
         if (panel != null) panel.revalidate();
     }
 
+    /**
+     * Submits the reviewed backup restore from the desktop page and displays its classified completion outcome.
+     * <p>从桌面页面提交已审阅备份恢复，并展示分类完成结果。
+     */
     private void restoreManagedBackup() {
         Path selected = selectedArchive();
         if (selected == null) return;
@@ -212,6 +343,10 @@ public final class BackupPage {
         }, this::showFailure);
     }
 
+    /**
+     * Collects the selected source and target inputs and starts the controlled offline migration workflow.
+     * <p>收集所选源和目标输入，并启动受控离线迁移流程。
+     */
     private void prepareOfflineMigration() {
         String application = selections.applicationId().trim();
         String target = selections.targetServerId().trim();
@@ -246,6 +381,10 @@ public final class BackupPage {
         }, this::showFailure);
     }
 
+    /**
+     * Selects caller-selected destination inside the permitted boundary.
+     * <p>选择调用方选择的许可边界内目的地。
+     */
     private void selectDestination() {
         JFileChooser chooser = new JFileChooser();
         chooser.setFileSelectionMode(JFileChooser.FILES_ONLY);
@@ -256,6 +395,10 @@ public final class BackupPage {
         }
     }
 
+    /**
+     * Collects the selected application and backup destination and starts a cancellable desktop backup task.
+     * <p>收集所选应用及备份目的地，并启动可取消桌面备份任务。
+     */
     private void createManagedBackup() {
         String application = selections.applicationId().trim();
         Path destination;
@@ -300,6 +443,13 @@ public final class BackupPage {
         }, this::showFailure);
     }
 
+    /**
+     * Confirms pinned or freshly observed host-key fingerprint.
+     * <p>确认固定或新近观测的主机密钥指纹。
+     *
+     * @param fingerprint pinned or freshly observed host-key fingerprint / 固定或新近观测的主机密钥指纹
+     * @return true when confirms pinned or freshly observed host-key fingerprint, false otherwise / 确认固定或新近观测的主机密钥指纹时为 true，否则为 false
+     */
     private boolean confirmFingerprint(String fingerprint) {
         AtomicBoolean accepted = new AtomicBoolean(false);
         try {
@@ -314,6 +464,14 @@ public final class BackupPage {
         return accepted.get();
     }
 
+    /**
+     * Confirms operation.
+     * <p>确认操作。
+     *
+     * @param key lookup key within the current contract / 当前契约内的查找键
+     * @param details details / 详情
+     * @return true when confirms operation, false otherwise / 确认操作时为 true，否则为 false
+     */
     private boolean confirmOperation(String key, Map<String, ?> details) {
         boolean accepted = JOptionPane.showConfirmDialog(owner, messages.text(key, details),
                 messages.text("backup.operation.confirm.title"), JOptionPane.YES_NO_OPTION,
@@ -322,6 +480,10 @@ public final class BackupPage {
         return accepted;
     }
 
+    /**
+     * Checks the selected application's backup prerequisites asynchronously and displays missing input evidence.
+     * <p>异步检查所选应用的备份前提条件，并展示缺失输入证据。
+     */
     private void assessManagedInputs() {
         String selected = selections.applicationId().trim();
         if (selected.isBlank()) {
@@ -337,6 +499,10 @@ public final class BackupPage {
         }, this::showFailure);
     }
 
+    /**
+     * Selects source or backup archive descriptor or filesystem path.
+     * <p>选择源码或备份归档描述或文件系统路径。
+     */
     private void selectArchive() {
         JFileChooser chooser = new JFileChooser();
         chooser.setFileSelectionMode(JFileChooser.FILES_ONLY);
@@ -355,6 +521,10 @@ public final class BackupPage {
         }
     }
 
+    /**
+     * Inspects selected archive.
+     * <p>检查已选归档。
+     */
     private void inspectSelectedArchive() {
         Path selected = selectedArchive();
         if (selected == null) return;
@@ -367,6 +537,10 @@ public final class BackupPage {
         }, this::showFailure);
     }
 
+    /**
+     * Prepares selected archive.
+     * <p>准备已选归档。
+     */
     private void prepareSelectedArchive() {
         Path selected = selectedArchive();
         if (selected == null) return;
@@ -380,6 +554,10 @@ public final class BackupPage {
         }, this::showFailure);
     }
 
+    /**
+     * Authenticates the selected archive in a worker, closes decrypted secret material and clears the entered password before displaying the candidate.
+     * <p>在工作线程认证所选归档，展示候选前关闭解密秘密素材并清空输入密码。
+     */
     private void prepareSelectedArchiveWithSecrets() {
         Path selected = selectedArchive();
         if (selected == null) return;
@@ -408,6 +586,10 @@ public final class BackupPage {
         }, this::showFailure);
     }
 
+    /**
+     * Discards prepared candidate.
+     * <p>清理已准备候选。
+     */
     private void discardPreparedCandidate() {
         PreparedBackupCandidate candidate = preparedCandidate;
         if (candidate == null) return;
@@ -424,6 +606,12 @@ public final class BackupPage {
         }, this::showFailure);
     }
 
+    /**
+     * Returns selected archive.
+     * <p>返回已选归档。
+     *
+     * @return selected archive; null when no matching value is available / 已选归档；没有匹配值时为 null
+     */
     private Path selectedArchive() {
         if (archivePath.getText().isBlank()) {
             output.setText(messages.text("backup.selectRequired"));
@@ -437,6 +625,13 @@ public final class BackupPage {
         }
     }
 
+    /**
+     * Formats inspection.
+     * <p>格式化检查。
+     *
+     * @param inspection inspection / 检查
+     * @return inspection / 检查
+     */
     private String formatInspection(BackupArchiveInspection inspection) {
         String provenance = messages.text("backup.provenance."
                 + inspection.provenanceStatus().name().toLowerCase(Locale.ROOT));
@@ -451,6 +646,13 @@ public final class BackupPage {
                 "provenance", provenance));
     }
 
+    /**
+     * Formats candidate.
+     * <p>格式化候选。
+     *
+     * @param candidate candidate / 候选
+     * @return candidate / 候选
+     */
     private String formatCandidate(PreparedBackupCandidate candidate) {
         BackupArchiveInspection inspection = candidate.inspection();
         return messages.text("backup.prepared", Map.of(
@@ -460,6 +662,13 @@ public final class BackupPage {
                 "sha256", inspection.archiveSha256()));
     }
 
+    /**
+     * Formats created.
+     * <p>格式化已创建。
+     *
+     * @param created created / 已创建
+     * @return created / 已创建
+     */
     private String formatCreated(CreatedBackupArchive created) {
         BackupArchiveInspection inspection = created.inspection();
         return messages.text("backup.created", Map.of(
@@ -468,6 +677,13 @@ public final class BackupPage {
                 "bytes", inspection.verifiedBytes(), "sha256", inspection.archiveSha256()));
     }
 
+    /**
+     * Formats restored.
+     * <p>格式化已恢复。
+     *
+     * @param restored restored / 已恢复
+     * @return restored / 已恢复
+     */
     private String formatRestored(ManagedRestoreOutcome restored) {
         String warnings = restored.warnings().isEmpty() ? messages.text("backup.inputs.none")
                 : restored.warnings().stream().map(messages::text).collect(java.util.stream.Collectors.joining("\n"));
@@ -476,6 +692,13 @@ public final class BackupPage {
                 "control", messages.text("backup.restore.control." + restored.controlState().name().toLowerCase(Locale.ROOT)), "warnings", warnings));
     }
 
+    /**
+     * Formats migrated.
+     * <p>格式化已迁移。
+     *
+     * @param migrated migrated / 已迁移
+     * @return migrated / 已迁移
+     */
     private String formatMigrated(ManagedOfflineMigrationOutcome migrated) {
         String archive = migrated.retainedFinalArchive().map(Path::toString)
                 .orElse(messages.text("backup.inputs.none"));
@@ -488,6 +711,13 @@ public final class BackupPage {
                 "archive", archive, "warnings", warnings));
     }
 
+    /**
+     * Formats the typed static assessment.
+     * <p>格式化类型化静态评估。
+     *
+     * @param assessment the typed static assessment / 类型化静态评估
+     * @return the typed static assessment / 类型化静态评估
+     */
     String formatAssessment(ManagedBackupInputAssessment assessment) {
         String components = assessment.componentIds().isEmpty()
                 ? messages.text("backup.inputs.none") : String.join(", ", assessment.componentIds());
@@ -515,6 +745,15 @@ public final class BackupPage {
                 "missing", blockers));
     }
 
+    /**
+     * Formats authenticated candidate.
+     * <p>格式化已认证候选。
+     *
+     * @param candidate candidate / 候选
+     * @param secretRevisionCount secret revision count / 秘密修订数量
+     * @return authenticated candidate / 已认证候选
+     * @throws IllegalArgumentException if an input violates the constraints checked by this contract / 输入违反当前契约检查的约束时
+     */
     String formatAuthenticatedCandidate(PreparedBackupCandidate candidate, int secretRevisionCount) {
         if (secretRevisionCount < 1) {
             throw new IllegalArgumentException("authenticated secret revision count must be positive");
@@ -526,16 +765,35 @@ public final class BackupPage {
                 "sha256", candidate.inspection().archiveSha256()));
     }
 
+    /**
+     * Localizes the specific missing backup-input reason.
+     * <p>本地化具体的备份输入缺失原因。
+     *
+     * @param reason reason / 原因
+     * @return missing input text / 缺失输入文本
+     */
     private String missingInput(ManagedBackupInputAssessment.MissingInputType reason) {
         return messages.text("backup.inputs.missing." + reason.name().toLowerCase(Locale.ROOT));
     }
 
+    /**
+     * Displays structured failure occurrence retained for safe reporting.
+     * <p>展示保留用于安全报告的结构化失败实例。
+     *
+     * @param exception original exception being classified or translated / 正在分类或转换的原始异常
+     */
     private void showFailure(Exception exception) {
         output.setText(messages.text("backup.failed", Map.of("detail", messages.safe(exception))));
         output.setCaretPosition(0);
         setBusy(false);
     }
 
+    /**
+     * Updates whether a page action is in progress and conflicting controls must remain disabled.
+     * <p>更新页面动作是否正在进行且冲突控件须保持禁用。
+     *
+     * @param busy whether a page action is in progress and conflicting controls must remain disabled / 页面动作是否正在进行且冲突控件须保持禁用
+     */
     private void setBusy(boolean busy) {
         if (panel instanceof gold.debug.windowstolinux.app.ui.component.AdvancedOptionsPane advanced) advanced.setBusy(busy);
         task.setEnabled(!busy); selections.busy(busy);
@@ -551,6 +809,13 @@ public final class BackupPage {
         discardButton.setEnabled(!busy && preparedCandidate != null);
     }
 
+    /**
+     * Pairs a validated restore candidate with the secrets unlocked for that attempt.
+     * <p>将已验证恢复候选与为本次尝试解锁的秘密配对。
+     *
+     * @param candidate candidate / 候选
+     * @param secretRevisionCount secret revision count / 秘密修订数量
+     */
     private record AuthenticatedCandidate(
             PreparedBackupCandidate candidate,
             int secretRevisionCount

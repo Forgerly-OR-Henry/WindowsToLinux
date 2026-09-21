@@ -13,22 +13,28 @@ import java.util.Map;
 import java.util.Objects;
 
 /**
- * Provides the {@code SshdCapabilityCollector} implementation.
- *
- * <p>提供 {@code SshdCapabilityCollector} 实现。
+ * Collects typed Linux capabilities through the authenticated SSH command executor.
+ * <p>通过已认证的 SSH 命令执行器采集类型化 Linux 能力。
  */
 public final class SshdCapabilityCollector {
+    /**
+     * Bound ssh command executor collaborator for typed remote command boundary.
+     * <p>处理类型化远端命令边界的SSH命令执行器协作对象。
+     */
     private final SshCommandExecutor commands;
+    /**
+     * Host fingerprint.
+     * <p>主机指纹。
+     */
     private final String hostFingerprint;
 
     /**
-     * Creates a {@code SshdCapabilityCollector} instance.
+     * Validates and binds the inputs required by sshd capability collector.
+     * <p>校验并绑定Sshd能力Collector所需输入。
      *
-     * <p>创建 {@code SshdCapabilityCollector} 实例。
-     *
-     * @param commands the {@code commands} value / {@code commands} 值
-     * @param hostFingerprint the {@code hostFingerprint} value / {@code hostFingerprint} 值
-     * @throws NullPointerException if a required argument is {@code null} / 必要参数为 {@code null} 时
+     * @param commands typed remote command boundary / 类型化远端命令边界
+     * @param hostFingerprint host fingerprint / 主机指纹
+     * @throws NullPointerException if a required input is absent / 必需输入缺失时
      */
     public SshdCapabilityCollector(SshCommandExecutor commands, String hostFingerprint) {
         this.commands = Objects.requireNonNull(commands, "commands");
@@ -36,12 +42,11 @@ public final class SshdCapabilityCollector {
     }
 
     /**
-     * Performs the {@code collect} operation.
-     *
-     * <p>执行 {@code collect} 操作。
+     * Collects server capability facts.
+     * <p>采集服务器能力事实。
      *
      * @return the operation result / 操作结果
-     * @throws LinuxOperationException if the operation cannot be completed / 无法完成操作时
+     * @throws LinuxOperationException if the authenticated remote operation fails or its evidence is rejected / 已认证远端操作失败或其证据被拒绝时
      */
     public ServerCapabilityFacts collect() throws LinuxOperationException {
         var result = CapabilityReadExecutor.collect(commands, LinuxOperationFailureType.CAPABILITY_COLLECTION_FAILED, ManagedHostCapabilityProbe.render(ManagedHelperBundle.PATH));
@@ -67,6 +72,13 @@ public final class SshdCapabilityCollector {
         );
     }
 
+    /**
+     * Parses a one-to-three-digit helper protocol version, using zero for missing or malformed input.
+     * <p>解析一至三位数字的 helper 协议版本；缺失或格式无效输入使用零。
+     *
+     * @param value candidate content accepted or rejected by this contract / 由当前契约接收或拒绝的候选内容
+     * @return a one-to-three-digit helper protocol version, using zero for missing or malformed input / 一至三位数字的 helper 协议版本；缺失或格式无效输入使用零
+     */
     private static int protocolVersion(String value) {
         return value != null && value.matches("[0-9]{1,3}") ? Integer.parseInt(value) : 0;
     }

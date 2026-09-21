@@ -7,13 +7,13 @@ import java.util.Objects;
 /**
  * Immutable identity of an application owned by WindowsToLinux.
  *
- * <p>由 WindowsToLinux 拥有的应用不可变身份。
+ *  <p>由 WindowsToLinux 拥有的应用不可变身份。
  *
- * @param id the {@code id} value / {@code id} 值
- * @param server the {@code server} value / {@code server} 值
- * @param systemdUnit the {@code systemdUnit} value / {@code systemdUnit} 值
- * @param releaseRoot the {@code releaseRoot} value / {@code releaseRoot} 值
- * @param ownershipManifestSha256 the {@code ownershipManifestSha256} value / {@code ownershipManifestSha256} 值
+ * @param id stable identifier within the owning registry / 所属登记表内的稳定标识
+ * @param server server identity or selected server configuration / 服务器身份或所选服务器配置
+ * @param systemdUnit systemd unit / systemd单元
+ * @param releaseRoot release root / 发布根目录
+ * @param ownershipManifestSha256 digest binding the managed resource to its ownership manifest / 将受管资源绑定到归属清单的摘要
  */
 public record ManagedApplication(
         String id,
@@ -23,17 +23,16 @@ public record ManagedApplication(
         String ownershipManifestSha256
 ) {
     /**
-     * Creates a {@code ManagedApplication} instance.
+     * Validates and binds the inputs required by managed application.
+     * <p>校验并绑定受管应用所需输入。
      *
-     * <p>创建 {@code ManagedApplication} 实例。
-     *
-     * @param id the {@code id} value / {@code id} 值
-     * @param server the {@code server} value / {@code server} 值
-     * @param systemdUnit the {@code systemdUnit} value / {@code systemdUnit} 值
-     * @param releaseRoot the {@code releaseRoot} value / {@code releaseRoot} 值
-     * @param ownershipManifestSha256 the {@code ownershipManifestSha256} value / {@code ownershipManifestSha256} 值
+     * @param id stable identifier within the owning registry / 所属登记表内的稳定标识
+     * @param server server identity or selected server configuration / 服务器身份或所选服务器配置
+     * @param systemdUnit systemd unit / systemd单元
+     * @param releaseRoot release root / 发布根目录
+     * @param ownershipManifestSha256 digest binding the managed resource to its ownership manifest / 将受管资源绑定到归属清单的摘要
      * @throws IllegalArgumentException if an argument violates the required constraints / 参数违反必要约束时
-     * @throws NullPointerException if a required argument is {@code null} / 必要参数为 {@code null} 时
+     * @throws NullPointerException if a required input is absent / 必需输入缺失时
      */
     public ManagedApplication {
         id = ServerIdentity.requireIdentifier(id, "id");
@@ -50,13 +49,12 @@ public record ManagedApplication(
     }
 
     /**
-     * Performs the {@code forManaged} operation.
+     * Builds managed application from the supplied for managed inputs.
+     * <p>根据所提供对应受管输入构建受管应用。
      *
-     * <p>执行 {@code forManaged} 操作。
-     *
-     * @param id the {@code id} value / {@code id} 值
-     * @param server the {@code server} value / {@code server} 值
-     * @param ownershipManifestSha256 the {@code ownershipManifestSha256} value / {@code ownershipManifestSha256} 值
+     * @param id stable identifier within the owning registry / 所属登记表内的稳定标识
+     * @param server server identity or selected server configuration / 服务器身份或所选服务器配置
+     * @param ownershipManifestSha256 digest binding the managed resource to its ownership manifest / 将受管资源绑定到归属清单的摘要
      * @return the operation result / 操作结果
      */
     public static ManagedApplication forManaged(String id, ServerIdentity server, String ownershipManifestSha256) {
@@ -70,6 +68,15 @@ public record ManagedApplication(
         );
     }
 
+    /**
+     * Validates and returns unit and rejects inputs outside the declared constraints.
+     * <p>校验并返回单元并拒绝超出已声明约束的输入。
+     *
+     * @param value candidate content accepted or rejected by this contract / 由当前契约接收或拒绝的候选内容
+     * @return require unit text / 要求单元文本
+     * @throws IllegalArgumentException if an input violates the constraints checked by this contract / 输入违反当前契约检查的约束时
+     * @throws NullPointerException if a required input is absent / 必需输入缺失时
+     */
     private static String requireUnit(String value) {
         value = Objects.requireNonNull(value, "systemdUnit");
         if (!value.matches("windowstolinux-[a-z0-9][a-z0-9-]{0,62}\\.service")) {

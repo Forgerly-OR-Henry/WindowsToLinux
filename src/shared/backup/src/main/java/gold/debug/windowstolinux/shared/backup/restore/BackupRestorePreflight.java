@@ -11,9 +11,17 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.regex.Pattern;
 
-/** Performs all compatibility and local-boundary checks before restore mutation. / 在恢复修改前执行全部兼容性与本地边界检查。 */
+/**
+ * Performs all compatibility and local-boundary checks before restore mutation. / 在恢复修改前执行全部兼容性与本地边界检查。
+ */
 public final class BackupRestorePreflight {
-    /** Returns explicit compatibility evidence or stops before mutation. / 返回显式兼容性证据，否则在修改前停止。 */
+    /**
+     * Returns explicit compatibility evidence or stops before mutation. / 返回显式兼容性证据，否则在修改前停止。
+     *
+     * @param plan deterministic reviewed execution order and targets / 确定的已审阅执行顺序及目标
+     * @return explicit compatibility evidence or stops before mutation / 显式兼容性证据，否则在修改前停止
+     * @throws BackupException if backup validation or the controlled backup operation fails / 备份校验或受控备份操作失败时
+     */
     public List<String> verify(BackupRestorePlan plan) throws BackupException {
         List<String> evidence = new ArrayList<>();
         if (!plan.validation().manifest().supportsAutomaticActivation()) {
@@ -81,16 +89,39 @@ public final class BackupRestorePreflight {
         return List.copyOf(evidence);
     }
 
+    /**
+     * Extracts a numeric major database version from target evidence or rejects the preflight.
+     * <p>从目标证据提取数字数据库主版本，否则拒绝预检。
+     *
+     * @param version version of the relevant protocol, configuration or runtime / 相应协议、配置或运行时的版本
+     * @return a numeric major database version from target evidence or rejects the preflight / 从目标证据提取数字数据库主版本，否则拒绝预检
+     * @throws BackupException if backup validation or the controlled backup operation fails / 备份校验或受控备份操作失败时
+     */
     private static String versionFamily(String version) throws BackupException {
         var matcher = Pattern.compile("(?:^|[^0-9])([0-9]+)(?:[^0-9]|$)").matcher(version);
         if (!matcher.find()) throw failed("database version evidence has no major family");
         return matcher.group(1);
     }
 
+    /**
+     * Builds the failure outcome while retaining available classified evidence.
+     * <p>构建失败结果并保留可用的分类证据。
+     *
+     * @param diagnostic bounded non-secret detail for diagnostic reporting / 用于诊断报告的有界非秘密详情
+     * @return the failure outcome while retaining available classified evidence / 失败结果并保留可用的分类证据
+     */
     private static BackupException failed(String diagnostic) {
         return BackupException.create(BackupFailureType.RESTORE_PREFLIGHT_FAILED, diagnostic);
     }
 
+    /**
+     * Builds the failure outcome while retaining available classified evidence.
+     * <p>构建失败结果并保留可用的分类证据。
+     *
+     * @param diagnostic bounded non-secret detail for diagnostic reporting / 用于诊断报告的有界非秘密详情
+     * @param cause original failure retained as the nested cause / 保留为嵌套原因的原始失败
+     * @return the failure outcome while retaining available classified evidence / 失败结果并保留可用的分类证据
+     */
     private static BackupException failed(String diagnostic, Throwable cause) {
         return BackupException.create(BackupFailureType.RESTORE_PREFLIGHT_FAILED, diagnostic, cause);
     }

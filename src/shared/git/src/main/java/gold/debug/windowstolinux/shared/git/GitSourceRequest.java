@@ -9,7 +9,7 @@ import java.util.Set;
 /**
  * Bounded input for a read-only Git analysis snapshot; credentials remain external to this value.
  *
- * <p>只读 Git 分析快照的有界输入；凭据始终位于此值之外。
+ *  <p>只读 Git 分析快照的有界输入；凭据始终位于此值之外。
  *
  * @param remote the credential-free remote / 不含凭据的远端
  * @param reference the selected reference / 选定引用
@@ -25,9 +25,16 @@ public record GitSourceRequest(
         boolean permitLocalFileRemote
 ) {
     /**
-     * Creates a {@code GitSourceRequest} instance.
+     * Validates and binds the inputs required by git source request.
+     * <p>校验并绑定Git源码请求所需输入。
      *
-     * <p>创建 {@code GitSourceRequest} 实例。
+     * @param remote the credential-free remote / 不含凭据的远端
+     * @param reference the selected reference / 选定引用
+     * @param allowedHosts the normalized allowed network hosts / 规范化的允许网络主机
+     * @param maximumArchiveBytes the maximum generated source archive size / 生成源码归档的最大大小
+     * @param permitLocalFileRemote whether test or controlled local remotes are permitted / 是否允许测试或受控本地远端
+     * @throws IllegalArgumentException if an input violates the constraints checked by this contract / 输入违反当前契约检查的约束时
+     * @throws NullPointerException if a required input is absent / 必需输入缺失时
      */
     public GitSourceRequest {
         remote = Objects.requireNonNull(remote, "remote");
@@ -45,6 +52,15 @@ public record GitSourceRequest(
         }
     }
 
+    /**
+     * Normalizes the normalized allowed network hosts.
+     * <p>规范化规范化的允许网络主机。
+     *
+     * @param allowedHosts the normalized allowed network hosts / 规范化的允许网络主机
+     * @return constructed or resolved set / 构造或解析得到的集合
+     * @throws IllegalArgumentException if an input violates the constraints checked by this contract / 输入违反当前契约检查的约束时
+     * @throws NullPointerException if a required input is absent / 必需输入缺失时
+     */
     private static Set<String> normalizeAllowedHosts(Set<String> allowedHosts) {
         return Set.copyOf(Objects.requireNonNull(allowedHosts, "allowedHosts").stream()
                 .map(host -> Objects.requireNonNull(host, "allowedHosts entry").trim().toLowerCase(java.util.Locale.ROOT))

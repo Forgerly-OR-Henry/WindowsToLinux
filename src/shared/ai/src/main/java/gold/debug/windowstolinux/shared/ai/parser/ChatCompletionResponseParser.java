@@ -7,19 +7,22 @@ import gold.debug.windowstolinux.shared.ai.AiStructuralAssessment;
 /**
  * Parses one bounded Chat Completions response without accepting arbitrary JSON structures.
  *
- * <p>解析单个有界 Chat Completions 响应，不接受任意 JSON 结构。
+ *  <p>解析单个有界 Chat Completions 响应，不接受任意 JSON 结构。
  */
 public final class ChatCompletionResponseParser {
+    /**
+     * MAX RESPONSE CHARS.
+     * <p>最大响应CHARS。
+     */
     private static final int MAX_RESPONSE_CHARS = 8_192;
 
     /**
-     * Performs the {@code parse} operation.
+     * Validates the bounded provider response and extracts the allowed structural assessment, rejecting malformed or incomplete advice.
+     * <p>校验有界提供者响应并提取允许的结构评估，拒绝格式无效或不完整建议。
      *
-     * <p>执行 {@code parse} 操作。
-     *
-     * @param responseBody the {@code responseBody} value / {@code responseBody} 值
+     * @param responseBody response body / 响应正文
      * @return the operation result / 操作结果
-     * @throws AiAnalysisException if the operation cannot be completed / 无法完成操作时
+     * @throws AiAnalysisException if the ai analysis boundary rejects the operation / AI分析边界拒绝当前操作时
      */
     public AiStructuralAssessment parse(String responseBody) throws AiAnalysisException {
         if (responseBody == null || responseBody.length() > 512 * 1024) {
@@ -86,10 +89,27 @@ public final class ChatCompletionResponseParser {
         throw failure(AiAnalysisFailureType.UNTERMINATED_STRING, "AI response contains an unterminated string");
     }
 
+    /**
+     * Creates or preserves the module-owned failure for the supplied cause and diagnostic evidence.
+     * <p>为所提供原因及诊断证据创建或保留模块自有失败。
+     *
+     * @param type selected member of the supported type set / 受支持类型集合中的所选项
+     * @param diagnostic bounded non-secret detail for diagnostic reporting / 用于诊断报告的有界非秘密详情
+     * @return or preserves the module-owned failure for the supplied cause and diagnostic evidence / 为所提供原因及诊断证据创建或保留模块自有失败
+     */
     private static AiAnalysisException failure(AiAnalysisFailureType type, String diagnostic) {
         return AiAnalysisException.create(type, diagnostic);
     }
 
+    /**
+     * Creates or preserves the module-owned failure for the supplied cause and diagnostic evidence.
+     * <p>为所提供原因及诊断证据创建或保留模块自有失败。
+     *
+     * @param type selected member of the supported type set / 受支持类型集合中的所选项
+     * @param diagnostic bounded non-secret detail for diagnostic reporting / 用于诊断报告的有界非秘密详情
+     * @param cause original failure retained as the nested cause / 保留为嵌套原因的原始失败
+     * @return or preserves the module-owned failure for the supplied cause and diagnostic evidence / 为所提供原因及诊断证据创建或保留模块自有失败
+     */
     private static AiAnalysisException failure(AiAnalysisFailureType type, String diagnostic, Throwable cause) {
         return AiAnalysisException.create(type, diagnostic, cause);
     }

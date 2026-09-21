@@ -9,16 +9,34 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Set;
 
-/** Provides evidence-backed support claims for exact project-type and architecture pairs. / 为精确项目类型与架构组合提供证据支撑的支持声明。 */
+/**
+ * Provides evidence-backed support claims for exact project-type and architecture pairs. / 为精确项目类型与架构组合提供证据支撑的支持声明。
+ */
 public final class DeploymentSupportCatalog {
+    /**
+     * Ubuntu 24.04 validation target.
+     * <p>Ubuntu 24.04 验证目标。
+     */
     private static final ValidatedDeploymentTarget UBUNTU_2404 = new ValidatedDeploymentTarget(
             LinuxDistroType.UBUNTU, "24.04", "x86_64", LocalDate.of(2026, 8, 12));
+    /**
+     * PHASE THREE EVIDENCE.
+     * <p>PHASETHREE证据。
+     */
     private static final String PHASE_THREE_EVIDENCE = "phase3-product-entrypoint-2026-08-12";
 
+    /**
+     * Prevents instantiation of this static contract helper.
+     * <p>防止实例化当前静态契约辅助类。
+     */
     private DeploymentSupportCatalog() {
     }
 
-    /** Returns every exact architecture that requires an inspector, renderer, capability gate, and deployment path. / 返回需要检查器、Renderer、能力门禁与部署路径的全部精确架构。 */
+    /**
+     * Returns every exact architecture that requires an inspector, renderer, capability gate, and deployment path. / 返回需要检查器、Renderer、能力门禁与部署路径的全部精确架构。
+     *
+     * @return every exact architecture that requires an inspector, renderer, capability gate, and deployment path / 需要检查器、Renderer、能力门禁与部署路径的全部精确架构
+     */
     public static Set<DeploymentArchitectureType> deployableArchitectures() {
         return Set.of(
                 architecture(DeploymentProjectType.SPRING_BOOT, DeploymentBuildToolType.GRADLE_WRAPPER),
@@ -51,7 +69,14 @@ public final class DeploymentSupportCatalog {
                 architecture(DeploymentProjectType.CMAKE_SERVICE, DeploymentBuildToolType.CMAKE));
     }
 
-    /** Returns the exact checked-in claim for one selected project type and architecture. / 返回所选项目类型与架构的精确已检入声明。 */
+    /**
+     * Returns the exact checked-in claim for one selected project type and architecture. / 返回所选项目类型与架构的精确已检入声明。
+     *
+     * @param type selected member of the supported type set / 受支持类型集合中的所选项
+     * @param buildTool the fixed build entrypoint / 固定构建入口
+     * @return the exact checked-in claim for one selected project type and architecture / 所选项目类型与架构的精确已检入声明
+     * @throws NullPointerException if a required input is absent / 必需输入缺失时
+     */
     public static DeploymentSupportProfile forArchitecture(
             DeploymentProjectType type,
             DeploymentBuildToolType buildTool
@@ -117,20 +142,38 @@ public final class DeploymentSupportCatalog {
         };
     }
 
-    /** Returns a mutation-free recognition-only profile. / 返回禁止修改目标机的仅识别配置。 */
+    /**
+     * Returns a mutation-free recognition-only profile. / 返回禁止修改目标机的仅识别配置。
+     *
+     * @param language selected language identity / 选定语言身份
+     * @return a mutation-free recognition-only profile / 禁止修改目标机的仅识别配置
+     */
     public static DeploymentSupportProfile preview(SourceLanguageType language) {
         return new DeploymentSupportProfile(DeploymentSupportLevel.RECOGNITION_PREVIEW, language, "none",
                 "Unclassified project", List.of(), List.of(),
                 List.of(LocalizedMessage.of("support.limitation.previewOnly")));
     }
 
-    /** Returns an honest result when no bounded marker identified a language. / 在没有有界标记识别语言时返回真实结果。 */
+    /**
+     * Returns an honest result when no bounded marker identified a language. / 在没有有界标记识别语言时返回真实结果。
+     *
+     * @return an honest result when no bounded marker identified a language / 在没有有界标记识别语言时返回真实结果
+     */
     public static DeploymentSupportProfile unrecognized() {
         return new DeploymentSupportProfile(DeploymentSupportLevel.UNRECOGNIZED, SourceLanguageType.UNKNOWN, "none",
                 "Unrecognized project", List.of(), List.of(),
                 List.of(LocalizedMessage.of("support.limitation.unrecognized")));
     }
 
+    /**
+     * Builds deployment support profile from the supplied experimental inputs.
+     * <p>根据所提供实验性输入构建部署支持配置资料。
+     *
+     * @param language selected language identity / 选定语言身份
+     * @param architecture observed machine architecture / 观测到的机器架构
+     * @param framework selected framework or workload identity / 选定框架或工作负载身份
+     * @return deployment support profile from the supplied experimental inputs / 根据所提供实验性输入构建部署支持配置资料
+     */
     private static DeploymentSupportProfile experimental(
             SourceLanguageType language,
             String architecture,
@@ -140,6 +183,15 @@ public final class DeploymentSupportCatalog {
                 framework, List.of(), List.of(), List.of(LocalizedMessage.of("support.limitation.runtimePending")));
     }
 
+    /**
+     * Builds deployment support profile from the supplied formal inputs.
+     * <p>根据所提供正式输入构建部署支持配置资料。
+     *
+     * @param language selected language identity / 选定语言身份
+     * @param architecture observed machine architecture / 观测到的机器架构
+     * @param framework selected framework or workload identity / 选定框架或工作负载身份
+     * @return deployment support profile from the supplied formal inputs / 根据所提供正式输入构建部署支持配置资料
+     */
     private static DeploymentSupportProfile formal(
             SourceLanguageType language,
             String architecture,
@@ -150,10 +202,27 @@ public final class DeploymentSupportCatalog {
                 List.of(LocalizedMessage.of("support.limitation.listedMatrixOnly")));
     }
 
+    /**
+     * Creates the owning module's failure for rejected input or evidence.
+     * <p>为被拒绝输入或证据创建所属模块的失败。
+     *
+     * @param type selected member of the supported type set / 受支持类型集合中的所选项
+     * @param buildTool the fixed build entrypoint / 固定构建入口
+     * @return the owning module's failure for rejected input or evidence / 为被拒绝输入或证据创建所属模块的失败
+     * @throws IllegalArgumentException if an input violates the constraints checked by this contract / 输入违反当前契约检查的约束时
+     */
     private static DeploymentSupportProfile invalid(DeploymentProjectType type, DeploymentBuildToolType buildTool) {
         throw new IllegalArgumentException("build tool " + buildTool + " is not valid for project type " + type);
     }
 
+    /**
+     * Builds deployment architecture type from the supplied architecture inputs.
+     * <p>根据所提供架构输入构建部署架构类型。
+     *
+     * @param projectType supported project deployment category / 受支持的项目部署类别
+     * @param buildTool the fixed build entrypoint / 固定构建入口
+     * @return deployment architecture type from the supplied architecture inputs / 根据所提供架构输入构建部署架构类型
+     */
     private static DeploymentArchitectureType architecture(
             DeploymentProjectType projectType,
             DeploymentBuildToolType buildTool

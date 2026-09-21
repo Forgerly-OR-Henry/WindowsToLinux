@@ -3,7 +3,7 @@ package gold.debug.windowstolinux.app.ui.setting;
 import gold.debug.windowstolinux.app.ui.ai.AiPage;
 import gold.debug.windowstolinux.app.ui.ai.AiProviderDialog;
 import gold.debug.windowstolinux.app.ui.component.DesktopComponentFactory;
-import gold.debug.windowstolinux.app.ui.deployment.single.DeploymentInputDialog;
+import gold.debug.windowstolinux.app.ui.deployment.automatic.DeploymentInputDialog;
 import gold.debug.windowstolinux.app.ui.i18n.MessageCatalog;
 import gold.debug.windowstolinux.app.ui.i18n.PageMessagePresenter;
 import gold.debug.windowstolinux.app.ui.managed.ApplicationPresentationDialog;

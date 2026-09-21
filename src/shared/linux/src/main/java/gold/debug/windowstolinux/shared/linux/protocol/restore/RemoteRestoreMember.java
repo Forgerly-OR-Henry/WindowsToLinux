@@ -3,9 +3,23 @@ package gold.debug.windowstolinux.shared.linux.protocol.restore;
 import java.util.Locale;
 import java.util.Objects;
 
-/** One exact regular candidate member transferred for restore. / 为恢复传输的单个精确常规候选成员。 */
+/**
+ * One exact regular candidate member transferred for restore. / 为恢复传输的单个精确常规候选成员。
+ *
+ * @param path filesystem or archive member path used by this operation / 当前操作使用的文件系统或归档成员路径
+ * @param size size / 大小
+ * @param sha256 lower-case hexadecimal SHA-256 digest / 小写十六进制 SHA-256 摘要
+ */
 public record RemoteRestoreMember(String path, long size, String sha256) {
-    /** Validates a canonical relative path, size and digest. / 校验规范相对路径、大小和摘要。 */
+    /**
+     * Validates a canonical relative path, size and digest. / 校验规范相对路径、大小和摘要。
+     *
+     * @param path filesystem or archive member path used by this operation / 当前操作使用的文件系统或归档成员路径
+     * @param size size / 大小
+     * @param sha256 lower-case hexadecimal SHA-256 digest / 小写十六进制 SHA-256 摘要
+     * @throws IllegalArgumentException if an input violates the constraints checked by this contract / 输入违反当前契约检查的约束时
+     * @throws NullPointerException if a required input is absent / 必需输入缺失时
+     */
     public RemoteRestoreMember {
         path = Objects.requireNonNull(path, "path").trim();
         if (path.isEmpty() || path.length() > 1024 || path.indexOf('\\') >= 0

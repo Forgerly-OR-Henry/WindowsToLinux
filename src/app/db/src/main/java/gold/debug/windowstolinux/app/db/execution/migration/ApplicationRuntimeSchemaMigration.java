@@ -3,9 +3,22 @@ package gold.debug.windowstolinux.app.db.execution.migration;
 import java.sql.SQLException;
 import java.sql.Statement;
 
-/** Preserves old records for inspection while allowing complete typed runtime payloads. / 保留旧记录供检查并保存完整新运行契约。 */
+/**
+ * Preserves old records for inspection while allowing complete typed runtime payloads. / 保留旧记录供检查并保存完整新运行契约。
+ */
 final class ApplicationRuntimeSchemaMigration {
+    /**
+     * Prevents instantiation of this static contract helper.
+     * <p>防止实例化当前静态契约辅助类。
+     */
     private ApplicationRuntimeSchemaMigration() { }
+    /**
+     * Applies application runtime schema migration.
+     * <p>应用应用运行时结构迁移。
+     *
+     * @param statement statement / 语句
+     * @throws SQLException if the database cannot complete the requested read or transaction / 数据库无法完成请求的读取或事务时
+     */
     static void apply(Statement statement) throws SQLException {
         statement.execute("""
                 CREATE TABLE managed_application_runtime_next (

@@ -13,11 +13,26 @@ import java.util.HexFormat;
 import java.util.List;
 import java.util.Objects;
 
-/** Verifies a staged package against one pinned Ed25519 release trust root. / 使用单个固定 Ed25519 发布信任根验证已暂存软件包。 */
+/**
+ * Verifies a staged package against one pinned Ed25519 release trust root. / 使用单个固定 Ed25519 发布信任根验证已暂存软件包。
+ */
 public final class DesktopUpdateVerifier {
+    /**
+     * BUFFER SIZE.
+     * <p>缓冲区大小。
+     */
     private static final int BUFFER_SIZE = 64 * 1024;
 
-    /** Returns evidence only after every trust and compatibility gate passes. / 仅在全部信任及兼容门通过后返回证据。 */
+    /**
+     * Returns evidence only after every trust and compatibility gate passes. / 仅在全部信任及兼容门通过后返回证据。
+     *
+     * @param packageFile package file / 软件包文件
+     * @param manifest validated ownership or backup inventory document / 已验证归属或备份资源清单文档
+     * @param policy explicit validation and resource-bound policy / 显式校验及资源边界策略
+     * @return evidence only after every trust and compatibility gate passes / 仅在全部信任及兼容门通过后返回证据
+     * @throws DesktopUpdateException if the desktop update boundary rejects the operation / Desktop更新边界拒绝当前操作时
+     * @throws NullPointerException if a required input is absent / 必需输入缺失时
+     */
     public DesktopUpdateVerification verify(
             Path packageFile, DesktopUpdateManifest manifest, DesktopUpdateTrustPolicy policy)
             throws DesktopUpdateException {
@@ -68,6 +83,14 @@ public final class DesktopUpdateVerifier {
                 "package architecture matches the running application"));
     }
 
+    /**
+     * Builds package identity from the supplied package identity inputs.
+     * <p>根据所提供软件包身份输入构建软件包身份。
+     *
+     * @param packageFile package file / 软件包文件
+     * @return package identity from the supplied package identity inputs / 根据所提供软件包身份输入构建软件包身份
+     * @throws DesktopUpdateException if the desktop update boundary rejects the operation / Desktop更新边界拒绝当前操作时
+     */
     private static PackageIdentity packageIdentity(Path packageFile) throws DesktopUpdateException {
         try {
             MessageDigest digest = MessageDigest.getInstance("SHA-256");
@@ -88,6 +111,14 @@ public final class DesktopUpdateVerifier {
         }
     }
 
+    /**
+     * Verifies signature.
+     * <p>验证签名。
+     *
+     * @param manifest validated ownership or backup inventory document / 已验证归属或备份资源清单文档
+     * @param policy explicit validation and resource-bound policy / 显式校验及资源边界策略
+     * @throws DesktopUpdateException if the desktop update boundary rejects the operation / Desktop更新边界拒绝当前操作时
+     */
     private static void verifySignature(
             DesktopUpdateManifest manifest, DesktopUpdateTrustPolicy policy) throws DesktopUpdateException {
         try {
@@ -106,5 +137,12 @@ public final class DesktopUpdateVerifier {
         }
     }
 
+    /**
+     * Carries verified update package identity and format information.
+     * <p>携带已验证更新包的身份及格式信息。
+     *
+     * @param bytes content buffer processed by the current codec or stream / 当前编解码器或流处理的内容缓冲区
+     * @param sha256 lower-case hexadecimal SHA-256 digest / 小写十六进制 SHA-256 摘要
+     */
     private record PackageIdentity(long bytes, String sha256) { }
 }

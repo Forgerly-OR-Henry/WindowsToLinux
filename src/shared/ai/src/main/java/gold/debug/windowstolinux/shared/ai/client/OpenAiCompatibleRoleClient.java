@@ -25,24 +25,62 @@ import java.util.HexFormat;
 import java.util.Objects;
 import java.util.Optional;
 
-/** Invokes exactly one configured provider and retains only validated credential-free evidence. / 仅调用一个已配置提供者并只保留已验证的不含凭据证据。 */
+/**
+ * Invokes exactly one configured provider and retains only validated credential-free evidence. / 仅调用一个已配置提供者并只保留已验证的不含凭据证据。
+ */
 public final class OpenAiCompatibleRoleClient {
+    /**
+     * Transport.
+     * <p>传输。
+     */
     private final RoleChatTransport transport;
+    /**
+     * Clock.
+     * <p>时钟。
+     */
     private final Clock clock;
+    /**
+     * Bound provider endpoint policy collaborator for endpoint policy.
+     * <p>处理端点策略的提供者端点策略协作对象。
+     */
     private final ProviderEndpointPolicy endpointPolicy = new ProviderEndpointPolicy();
+    /**
+     * Envelope parser.
+     * <p>信封解析器。
+     */
     private final ChatCompletionResponseParser envelopeParser = new ChatCompletionResponseParser();
+    /**
+     * Advice parser.
+     * <p>建议解析器。
+     */
     private final RoleAdviceParser adviceParser = new RoleAdviceParser();
 
-    /** Creates the production HTTP client. / 创建生产 HTTP 客户端。 */
+    /**
+     * Creates the production HTTP client. / 创建生产 HTTP 客户端。
+     */
     public OpenAiCompatibleRoleClient() { this(new HttpRoleChatTransport(), Clock.systemUTC()); }
 
-    /** Creates a testable client with one transport and clock. / 使用单个传输和时钟创建可测试客户端。 */
+    /**
+     * Creates a testable client with one transport and clock. / 使用单个传输和时钟创建可测试客户端。
+     *
+     * @param transport transport / 传输
+     * @param clock clock / 时钟
+     * @throws NullPointerException if a required input is absent / 必需输入缺失时
+     */
     public OpenAiCompatibleRoleClient(RoleChatTransport transport, Clock clock) {
         this.transport = Objects.requireNonNull(transport, "transport");
         this.clock = Objects.requireNonNull(clock, "clock");
     }
 
-    /** Calls the exact binding once; failures are returned without consulting another provider. / 精确调用绑定一次；失败直接返回且不咨询其他提供者。 */
+    /**
+     * Calls the exact binding once; failures are returned without consulting another provider. / 精确调用绑定一次；失败直接返回且不咨询其他提供者。
+     *
+     * @param binding binding / 绑定
+     * @param apiKey api key / api键
+     * @param context facts and dependencies scoped to the current operation / 限定于当前操作的事实及依赖
+     * @return constructed or resolved ai role invocation result / 构造或解析得到的AI角色调用结果
+     * @throws NullPointerException if a required input is absent / 必需输入缺失时
+     */
     public AiRoleInvocationResult invoke(AiRoleBinding binding, char[] apiKey, AiRoleContext context) {
         Objects.requireNonNull(binding, "binding");
         Objects.requireNonNull(context, "context");
@@ -75,12 +113,31 @@ public final class OpenAiCompatibleRoleClient {
         }
     }
 
+    /**
+     * Builds ai role invocation result from the supplied result inputs.
+     * <p>根据所提供结果输入构建AI角色调用结果。
+     *
+     * @param binding binding / 绑定
+     * @param summary summary / 摘要
+     * @param status classification of the current operation result / 当前操作结果的分类
+     * @param output destination receiving the produced content / 接收所生成内容的目标
+     * @param detail detail / 详情
+     * @return ai role invocation result from the supplied result inputs / 根据所提供结果输入构建AI角色调用结果
+     */
     private AiRoleInvocationResult result(AiRoleBinding binding, String summary, AiInvocationStatus status,
                                           Optional<RoleAdviceAssessment> output, String detail) {
         return new AiRoleInvocationResult(new AiInvocationEvidence(binding.role(), binding.providerId(), binding.model(),
                 summary, sha256(summary), status, output, detail, clock.instant()));
     }
 
+    /**
+     * Computes the SHA-256 content identity used for independent integrity checks.
+     * <p>计算独立完整性检查使用的 SHA-256 内容身份。
+     *
+     * @param value candidate content accepted or rejected by this contract / 由当前契约接收或拒绝的候选内容
+     * @return computed SHA-256 content digest / 已计算的 SHA-256 内容摘要
+     * @throws IllegalStateException if the required state or runtime facility is unavailable / 所需状态或运行设施不可用时
+     */
     private static String sha256(String value) {
         try {
             return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256")

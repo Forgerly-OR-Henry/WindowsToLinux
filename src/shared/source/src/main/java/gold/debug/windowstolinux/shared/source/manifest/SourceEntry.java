@@ -6,23 +6,22 @@ import java.util.Objects;
 /**
  * One immutable regular-file member in a normalized source snapshot.
  *
- * <p>规范化源码快照中的单个不可变普通文件成员。
+ *  <p>规范化源码快照中的单个不可变普通文件成员。
  *
- * @param path the {@code path} value / {@code path} 值
- * @param relativePath the {@code relativePath} value / {@code relativePath} 值
- * @param byteCount the {@code byteCount} value / {@code byteCount} 值
+ * @param path filesystem or archive member path used by this operation / 当前操作使用的文件系统或归档成员路径
+ * @param relativePath relative path / 相对路径
+ * @param byteCount measured content length in bytes / 实测内容长度，单位为字节
  */
 public record SourceEntry(Path path, String relativePath, long byteCount) {
     /**
-     * Creates a {@code SourceEntry} instance.
+     * Validates and binds the inputs required by source entry.
+     * <p>校验并绑定源码条目所需输入。
      *
-     * <p>创建 {@code SourceEntry} 实例。
-     *
-     * @param path the {@code path} value / {@code path} 值
-     * @param relativePath the {@code relativePath} value / {@code relativePath} 值
-     * @param byteCount the {@code byteCount} value / {@code byteCount} 值
+     * @param path filesystem or archive member path used by this operation / 当前操作使用的文件系统或归档成员路径
+     * @param relativePath relative path / 相对路径
+     * @param byteCount measured content length in bytes / 实测内容长度，单位为字节
      * @throws IllegalArgumentException if an argument violates the required constraints / 参数违反必要约束时
-     * @throws NullPointerException if a required argument is {@code null} / 必要参数为 {@code null} 时
+     * @throws NullPointerException if a required input is absent / 必需输入缺失时
      */
     public SourceEntry {
         path = Objects.requireNonNull(path, "path").toAbsolutePath().normalize();

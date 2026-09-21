@@ -5,22 +5,30 @@ import java.util.Objects;
 /**
  * Represents an immutable {@code ManagedPageState} value.
  *
- * <p>表示不可变的 {@code ManagedPageState} 值。
+ *  <p>表示不可变的 {@code ManagedPageState} 值。
  *
- * @param applicationId the {@code applicationId} value / {@code applicationId} 值
- * @param output the {@code output} value / {@code output} 值
+ * @param applicationId managed application identifier / 受管应用标识
+ * @param output destination receiving the produced content / 接收所生成内容的目标
+ * @param typeFilter type filter / 类型筛选
+ * @param serverFilter server filter / 服务器筛选
  */
 public record ManagedPageState(String applicationId, String output, String typeFilter, String serverFilter) {
-    /** Preserves earlier page snapshots. / 保留此前页面快照。 */
+    /**
+     * Preserves earlier page snapshots. / 保留此前页面快照。
+     *
+     * @param applicationId managed application identifier / 受管应用标识
+     * @param output destination receiving the produced content / 接收所生成内容的目标
+     */
     public ManagedPageState(String applicationId, String output) { this(applicationId, output, "", ""); }
     /**
-     * Creates a {@code ManagedPageState} instance.
+     * Validates and binds the inputs required by managed page state.
+     * <p>校验并绑定受管页面状态所需输入。
      *
-     * <p>创建 {@code ManagedPageState} 实例。
-     *
-     * @param applicationId the {@code applicationId} value / {@code applicationId} 值
-     * @param output the {@code output} value / {@code output} 值
-     * @throws NullPointerException if a required argument is {@code null} / 必要参数为 {@code null} 时
+     * @param applicationId managed application identifier / 受管应用标识
+     * @param output destination receiving the produced content / 接收所生成内容的目标
+     * @param typeFilter type filter / 类型筛选
+     * @param serverFilter server filter / 服务器筛选
+     * @throws NullPointerException if a required input is absent / 必需输入缺失时
      */
     public ManagedPageState {
         Objects.requireNonNull(applicationId, "applicationId");

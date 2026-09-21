@@ -7,16 +7,59 @@ import java.io.StringReader;
 import java.util.*;
 import java.util.regex.Pattern;
 
-/** Reads explicit DB declarations and conventional Spring endpoints without retaining credentials. / 读取显式数据库声明和常规 Spring 端点，不保留凭据。 */
+/**
+ * Reads explicit DB declarations and conventional Spring endpoints without retaining credentials. / 读取显式数据库声明和常规 Spring 端点，不保留凭据。
+ */
 public final class DatabaseProjectInspector {
+    /**
+     * Pattern recognizing JDBC datasource declaration.
+     * <p>用于识别JDBC 数据源声明的匹配模式。
+     */
     private static final Pattern JDBC = Pattern.compile("jdbc:(postgresql|mysql|mariadb)://([^/\\s]+)/(\\$\\{[^}]+}|[A-Za-z0-9_]+)", Pattern.CASE_INSENSITIVE);
+    /**
+     * Collects inferred database declarations and their unresolved review findings.
+     * <p>汇总推断的数据库声明及其尚未解决的审阅发现。
+     *
+     * @param databases databases / 数据库集合
+     * @param sqlCandidates sql candidates / SQL候选集合
+     * @param schemaReviewRequired schema review required / 结构审阅必需
+     * @param unknownDatabase unknown database / 未知数据库
+     * @param endpointConfirmationRequired endpoint confirmation required / 端点确认必需
+     */
     public record Assessment(List<DatabaseRequirement> databases, List<String> sqlCandidates, boolean schemaReviewRequired, boolean unknownDatabase,
                              boolean endpointConfirmationRequired) {
+        /**
+         * Binds the supplied dependencies and state for assessment.
+         * <p>为评估绑定传入的依赖及状态。
+         *
+         * @param databases databases / 数据库集合
+         * @param sqlCandidates sql candidates / SQL候选集合
+         * @param schemaReviewRequired schema review required / 结构审阅必需
+         * @param unknownDatabase unknown database / 未知数据库
+         * @param endpointConfirmationRequired endpoint confirmation required / 端点确认必需
+         */
         public Assessment { databases = List.copyOf(databases); sqlCandidates = List.copyOf(sqlCandidates); }
+        /**
+         * Initializes assessment through its shared constructor contract.
+         * <p>通过共享构造契约初始化评估。
+         *
+         * @param databases databases / 数据库集合
+         * @param sqlCandidates sql candidates / SQL候选集合
+         * @param schemaReviewRequired schema review required / 结构审阅必需
+         * @param unknownDatabase unknown database / 未知数据库
+         */
         public Assessment(List<DatabaseRequirement> databases, List<String> sqlCandidates, boolean schemaReviewRequired, boolean unknownDatabase) {
             this(databases,sqlCandidates,schemaReviewRequired,unknownDatabase,false);
         }
     }
+    /**
+     * Reads bounded source metadata and explicit database declarations, producing database requirements, SQL candidates and unresolved review obligations without executing source.
+     * <p>读取有界源码元数据及显式数据库声明，生成数据库要求、SQL 候选及未解决审阅义务，不执行源码。
+     *
+     * @param root root directory defining the filesystem boundary / 定义文件系统边界的根目录
+     * @return bounded source metadata and explicit database declarations, producing database requirements, SQL candidates and unresolved review obligations without executing source / 有界源码元数据及显式数据库声明，生成数据库要求、SQL 候选及未解决审阅义务，不执行源码
+     * @throws IOException if the required file or stream operation fails / 所需文件或流操作失败时
+     */
     public Assessment inspect(Path root) throws IOException {
         Path declaration = root.resolve("windowstolinux-db.properties");
         List<DatabaseRequirement> databases = new ArrayList<>(); List<String> sql = new ArrayList<>();
@@ -90,6 +133,14 @@ public final class DatabaseProjectInspector {
         }
         return new Assessment(databases,sql,schema,databases.isEmpty() && (schema || text.contains("sqlite") && !text.contains(":memory:")),endpointConfirmation);
     }
+    /**
+     * Extracts declared Spring SQLite datasource paths and rejects conflicting or unsafe declarations.
+     * <p>提取声明的 Spring SQLite 数据源路径，并拒绝冲突或不安全声明。
+     *
+     * @param text bounded text consumed or produced by the current formatter / 当前格式化器消费或生成的有界文本
+     * @return declared Spring SQLite datasource paths and rejects conflicting or unsafe declarations / 声明的 Spring SQLite 数据源路径，并拒绝冲突或不安全声明
+     * @throws IOException if the required file or stream operation fails / 所需文件或流操作失败时
+     */
     private static List<DatabaseRequirement> sqliteDatasources(String text) throws IOException {
         List<DatabaseRequirement> databases = new ArrayList<>();
         var sqlite = Pattern.compile("(?m)^\\s*spring\\.datasource\\.url\\s*[=:]\\s*jdbc:sqlite:([^\\r\\n]+)").matcher(text);
@@ -103,6 +154,14 @@ public final class DatabaseProjectInspector {
         }
         return databases;
     }
+    /**
+     * Builds sqlite file requirement from the supplied sqlite declaration inputs.
+     * <p>根据所提供sqlite声明输入构建Sqlite文件要求。
+     *
+     * @param properties properties / 属性集合
+     * @param prefix prefix / 前缀
+     * @return sqlite file requirement from the supplied sqlite declaration inputs / 根据所提供sqlite声明输入构建Sqlite文件要求
+     */
     private static SqliteFileRequirement sqliteDeclaration(Properties properties,String prefix) {
         var file=SqliteFileRequirement.fromPath(properties.getProperty(prefix+"path"),properties.getProperty(prefix+"pathEnvironment",""),properties.getProperty(prefix+"seed",""));
         if (!properties.containsKey(prefix+"hostLocation")) return file;
@@ -111,6 +170,13 @@ public final class DatabaseProjectInspector {
         return new SqliteFileRequirement(location,file.fileName(),file.accessPath(),file.pathEnvironment(),file.seedFile(),true);
     }
 
+    /**
+     * Builds assessment from the supplied container storage inputs.
+     * <p>根据所提供容器存储输入构建评估。
+     *
+     * @param assessment the typed static assessment / 类型化静态评估
+     * @return assessment from the supplied container storage inputs / 根据所提供容器存储输入构建评估
+     */
     public static Assessment containerStorage(Assessment assessment) {
         var databases=assessment.databases().stream().map(database -> {
             if (database.sqlite().isEmpty()) return database;
@@ -121,5 +187,12 @@ public final class DatabaseProjectInspector {
         }).toList();
         return new Assessment(databases,assessment.sqlCandidates(),assessment.schemaReviewRequired(),assessment.unknownDatabase(),assessment.endpointConfirmationRequired());
     }
+    /**
+     * Uses the minimum supported Redis requirement and leaves other database version requirements unspecified.
+     * <p>使用最低受支持 Redis 版本要求，并将其他数据库版本要求留空。
+     *
+     * @param engine engine / 引擎
+     * @return default version text / 默认版本文本
+     */
     private static String defaultVersion(DatabaseEngineType engine) { return engine == DatabaseEngineType.REDIS ? ">=6.2" : ""; }
 }

@@ -2,9 +2,23 @@ package gold.debug.windowstolinux.shared.backup.restore;
 
 import java.util.Objects;
 
-/** One bounded evidence event in a restore attempt. / 一次恢复尝试中的单个有界证据事件。 */
+/**
+ * One bounded evidence event in a restore attempt. / 一次恢复尝试中的单个有界证据事件。
+ *
+ * @param state current lifecycle or workflow state / 当前生命周期或工作流状态
+ * @param succeeded whether the build and artifact verification succeeded / 构建和产物验证是否成功
+ * @param evidence observations supporting the reported result / 支持所报告结果的观测证据
+ */
 public record RestoreCandidateEvent(RestoreCandidateState state, boolean succeeded, String evidence) {
-    /** Validates a non-secret event. / 校验无秘密事件。 */
+    /**
+     * Validates a non-secret event. / 校验无秘密事件。
+     *
+     * @param state current lifecycle or workflow state / 当前生命周期或工作流状态
+     * @param succeeded whether the build and artifact verification succeeded / 构建和产物验证是否成功
+     * @param evidence observations supporting the reported result / 支持所报告结果的观测证据
+     * @throws IllegalArgumentException if an input violates the constraints checked by this contract / 输入违反当前契约检查的约束时
+     * @throws NullPointerException if a required input is absent / 必需输入缺失时
+     */
     public RestoreCandidateEvent {
         state = Objects.requireNonNull(state, "state");
         evidence = Objects.requireNonNull(evidence, "evidence").trim();

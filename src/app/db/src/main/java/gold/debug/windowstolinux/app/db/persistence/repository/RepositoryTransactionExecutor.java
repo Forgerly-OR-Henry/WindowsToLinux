@@ -8,11 +8,25 @@ import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.SQLException;
 
-/** Shared transaction primitives used by focused repositories. / 由聚焦仓库使用的共享事务原语。 */
+/**
+ * Shared transaction primitives used by focused repositories. / 由聚焦仓库使用的共享事务原语。
+ */
 final class RepositoryTransactionExecutor {
+    /**
+     * Prevents instantiation of this static contract helper.
+     * <p>防止实例化当前静态契约辅助类。
+     */
     private RepositoryTransactionExecutor() {
     }
 
+    /**
+     * Executes repository transaction.
+     * <p>执行仓库事务。
+     *
+     * @param connection connection scoped to the current database or remote operation / 限定于当前数据库或远端操作的连接
+     * @param work work / 工作
+     * @throws SQLException if the database cannot complete the requested read or transaction / 数据库无法完成请求的读取或事务时
+     */
     static void execute(Connection connection, SqlWork work) throws SQLException {
         connection.setAutoCommit(false);
         try {
@@ -32,6 +46,14 @@ final class RepositoryTransactionExecutor {
         }
     }
 
+    /**
+     * Inserts or updates server identity or selected server configuration.
+     * <p>插入或更新服务器身份或所选服务器配置。
+     *
+     * @param connection connection scoped to the current database or remote operation / 限定于当前数据库或远端操作的连接
+     * @param server server identity or selected server configuration / 服务器身份或所选服务器配置
+     * @throws SQLException if the database cannot complete the requested read or transaction / 数据库无法完成请求的读取或事务时
+     */
     static void upsertServer(Connection connection, ServerIdentity server) throws SQLException {
         try (PreparedStatement statement = connection.prepareStatement("""
                 INSERT INTO server (id, host, ssh_port, host_key_sha256, host_key_format) VALUES (?, ?, ?, ?, 'SSH_WIRE')
@@ -47,9 +69,18 @@ final class RepositoryTransactionExecutor {
         }
     }
 
+    /**
+     * SQL work executed inside the repository transaction boundary.
+     * <p>在仓库事务边界内执行的 SQL 工作。
+     */
     @FunctionalInterface
     interface SqlWork {
-        /** Performs the {@code execute} operation. / 执行 {@code execute} 操作。 */
+        /**
+         * Executes sql work.
+         * <p>执行SQL工作。
+         *
+         * @throws SQLException if the database cannot complete the requested read or transaction / 数据库无法完成请求的读取或事务时
+         */
         void execute() throws SQLException;
     }
 }

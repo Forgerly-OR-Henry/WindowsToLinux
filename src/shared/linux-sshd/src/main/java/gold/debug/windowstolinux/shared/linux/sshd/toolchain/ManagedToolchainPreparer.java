@@ -11,14 +11,42 @@ import java.util.ArrayList;
 import java.util.Base64;
 import java.util.List;
 
-/** Official release preparation using a product-owned, bounded remote adapter. / 通过产品自有、有界远程适配器准备官方发布。 */
+/**
+ * Official release preparation using a product-owned, bounded remote adapter. / 通过产品自有、有界远程适配器准备官方发布。
+ */
 public final class ManagedToolchainPreparer {
+    /**
+     * Bound ssh command executor collaborator for typed remote command boundary.
+     * <p>处理类型化远端命令边界的SSH命令执行器协作对象。
+     */
     private final SshCommandExecutor commands;
+    /**
+     * Catalog.
+     * <p>目录。
+     */
     private final ToolchainSupportCatalog catalog;
+    /**
+     * Binds the supplied dependencies and state for managed toolchain preparer.
+     * <p>为受管工具链准备器绑定传入的依赖及状态。
+     *
+     * @param commands typed remote command boundary / 类型化远端命令边界
+     * @param catalog catalog / 目录
+     */
     public ManagedToolchainPreparer(SshCommandExecutor commands, ToolchainSupportCatalog catalog) {
         this.commands = commands; this.catalog = catalog;
     }
 
+    /**
+     * Resolves and prepares exact toolchain selections on the target, returning their verified relocatable bindings.
+     * <p>在目标机解析并准备精确工具链选择，返回已验证可重定位绑定。
+     *
+     * @param requirements requirements / 要求集合
+     * @param attempt attempt / 尝试
+     * @param timeoutSeconds maximum waiting time in seconds / 最长等待时间，单位为秒
+     * @return and prepares exact toolchain selections on the target, returning their verified relocatable bindings / 在目标机解析并准备精确工具链选择，返回已验证可重定位绑定
+     * @throws LinuxOperationException if the authenticated remote operation fails or its evidence is rejected / 已认证远端操作失败或其证据被拒绝时
+     * @throws IllegalArgumentException if an input violates the constraints checked by this contract / 输入违反当前契约检查的约束时
+     */
     public ResolvedToolchainSet prepare(List<ToolchainRequirement> requirements, int attempt, int timeoutSeconds)
             throws LinuxOperationException {
         if (attempt < 0 || attempt > 1) throw new IllegalArgumentException("only two toolchain attempts are allowed");
@@ -73,6 +101,14 @@ public final class ManagedToolchainPreparer {
         return set;
     }
 
+    /**
+     * Renders a fixed helper invocation with individually quoted reviewed arguments; does not execute it.
+     * <p>使用逐项引用的已审阅参数渲染固定 helper 调用，不执行该调用。
+     *
+     * @param arguments literal arguments passed to the fixed command or message template / 传给固定命令或消息模板的字面参数
+     * @param prepared prepared / 已准备
+     * @return command text / 命令文本
+     */
     static String command(List<String> arguments, List<ResolvedToolchainSet.Selection> prepared) {
         String javaHome = prepared.stream().filter(s -> s.version().ecosystem() == ToolchainEcosystemType.JAVA)
                 .map(ResolvedToolchainSet.Selection::directory).findFirst().orElse("");
@@ -84,6 +120,13 @@ public final class ManagedToolchainPreparer {
         return prefix + " " + values.stream().map(SshCommandExecutor::quote).collect(java.util.stream.Collectors.joining(" "));
     }
 
+    /**
+     * Builds the rejection for a capability outside the supported contract.
+     * <p>为超出支持契约的能力构建拒绝结果。
+     *
+     * @param detail detail / 详情
+     * @return the rejection for a capability outside the supported contract / 为超出支持契约的能力构建拒绝结果
+     */
     private static LinuxOperationException unsupported(String detail) {
         return LinuxOperationException.create(LinuxOperationFailureType.ENVIRONMENT_REQUIREMENTS_UNMET, detail);
     }

@@ -61,7 +61,7 @@ public final class AutomaticDeploymentUseCase {
      * <p>处理已审阅的语言、进程及健康规格的自动运行时解析器协作对象。
      */
     private final AutomaticRuntimeResolver runtime = new AutomaticRuntimeResolver();
-    /** Optional fixed-checkpoint advisor for assisted mode. / 半 AI 模式的可选固定节点建议器。 */
+    /** Optional fixed-checkpoint advisor for assisted mode. / AI 辅助 模式的可选固定节点建议器。 */
     private final AssistedDeploymentAdvisor assistance;
     /** Mandatory execution boundary for Agent mode. / Agent 模式必需执行边界。 */
     private final AutomaticAgentBoundary agent;

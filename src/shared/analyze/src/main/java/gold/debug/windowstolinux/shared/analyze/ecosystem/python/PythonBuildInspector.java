@@ -17,16 +17,42 @@ import java.util.regex.Pattern;
 /**
  * Reads pyproject.toml and fixed lockfile names without invoking Python.
  *
- * <p>读取 pyproject.toml 与固定锁文件名称，但不调用 Python。
+ *  <p>读取 pyproject.toml 与固定锁文件名称，但不调用 Python。
  */
 public final class PythonBuildInspector {
+    /**
+     * Pattern recognizing NAME.
+     * <p>用于识别名称的匹配模式。
+     */
     private static final Pattern NAME = Pattern.compile("(?m)^\\s*name\\s*=\\s*\\\"([a-z0-9][a-z0-9._-]{0,62})\\\"\\s*$");
+    /**
+     * Bound pip build inspector collaborator for pip.
+     * <p>处理pip 构建的Pip构建检查器协作对象。
+     */
     private final PipBuildInspector pip = new PipBuildInspector();
+    /**
+     * Bound pipenv build inspector collaborator for pipenv.
+     * <p>处理Pipenv 构建的Pipenv构建检查器协作对象。
+     */
     private final PipenvBuildInspector pipenv = new PipenvBuildInspector();
+    /**
+     * Bound poetry build inspector collaborator for poetry.
+     * <p>处理Poetry 构建的Poetry构建检查器协作对象。
+     */
     private final PoetryBuildInspector poetry = new PoetryBuildInspector();
+    /**
+     * Bound uv build inspector collaborator for the supplied uv build inspector.
+     * <p>处理所提供的Uv构建检查器的Uv构建检查器协作对象。
+     */
     private final UvBuildInspector uv = new UvBuildInspector();
 
-    /** Returns Python project facts when pyproject.toml exists. / 在 pyproject.toml 存在时返回 Python 项目事实。 */
+    /**
+     * Returns Python project facts when pyproject.toml exists. / 在 pyproject.toml 存在时返回 Python 项目事实。
+     *
+     * @param root root directory defining the filesystem boundary / 定义文件系统边界的根目录
+     * @return matching result, or empty when no admitted value exists / 匹配结果；不存在已准入内容时为空
+     * @throws IOException if the required file or stream operation fails / 所需文件或流操作失败时
+     */
     public Optional<PythonBuildFacts> inspect(Path root) throws IOException {
         Path pyproject = root.resolve("pyproject.toml");
         if (!BoundedMetadataInspector.regular(pyproject)) {

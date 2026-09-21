@@ -10,16 +10,32 @@ import java.sql.SQLException;
 import java.util.Objects;
 import java.util.Optional;
 
-/** Stores only encrypted opaque secret payloads. / 仅保存加密的不透明秘密载荷。 */
+/**
+ * Stores only encrypted opaque secret payloads. / 仅保存加密的不透明秘密载荷。
+ */
 public final class EncryptedSecretRepository {
+    /**
+     * Factory for scoped database connections.
+     * <p>限定作用域数据库连接的工厂。
+     */
     private final DesktopConnectionFactory connections;
 
-    /** Creates the repository. / 创建仓库。 */
+    /**
+     * Creates the repository. / 创建仓库。
+     *
+     * @param connections factory for scoped database connections / 限定作用域数据库连接的工厂
+     * @throws NullPointerException if a required input is absent / 必需输入缺失时
+     */
     public EncryptedSecretRepository(DesktopConnectionFactory connections) {
         this.connections = Objects.requireNonNull(connections, "connections");
     }
 
-    /** Saves an encrypted payload. / 保存加密载荷。 */
+    /**
+     * Saves an encrypted payload. / 保存加密载荷。
+     *
+     * @param secret secret / 秘密
+     * @throws SQLException if the database cannot complete the requested read or transaction / 数据库无法完成请求的读取或事务时
+     */
     public void save(OpaqueSecret secret) throws SQLException {
         try (Connection connection = connections.open();
              PreparedStatement statement = connection.prepareStatement("""
@@ -36,7 +52,13 @@ public final class EncryptedSecretRepository {
         }
     }
 
-    /** Finds an encrypted payload. / 查找加密载荷。 */
+    /**
+     * Finds an encrypted payload. / 查找加密载荷。
+     *
+     * @param key lookup key within the current contract / 当前契约内的查找键
+     * @return matching result, or empty when no admitted value exists / 匹配结果；不存在已准入内容时为空
+     * @throws SQLException if the database cannot complete the requested read or transaction / 数据库无法完成请求的读取或事务时
+     */
     public Optional<OpaqueSecret> find(String key) throws SQLException {
         try (Connection connection = connections.open();
              PreparedStatement statement = connection.prepareStatement(
@@ -50,7 +72,14 @@ public final class EncryptedSecretRepository {
         }
     }
 
-    /** Deletes one exact encrypted payload and reports whether a row existed. / 删除一个精确加密载荷并报告是否存在记录。 */
+    /**
+     * Deletes one exact encrypted payload and reports whether a row existed. / 删除一个精确加密载荷并报告是否存在记录。
+     *
+     * @param key lookup key within the current contract / 当前契约内的查找键
+     * @return true when deletes one exact encrypted payload and reports whether a row existed, false otherwise / 删除一个精确加密载荷并报告是否存在记录时为 true，否则为 false
+     * @throws SQLException if the database cannot complete the requested read or transaction / 数据库无法完成请求的读取或事务时
+     * @throws NullPointerException if a required input is absent / 必需输入缺失时
+     */
     public boolean delete(String key) throws SQLException {
         try (Connection connection = connections.open();
              PreparedStatement statement = connection.prepareStatement(

@@ -12,16 +12,32 @@ import java.sql.SQLException;
 import java.util.Objects;
 import java.util.Optional;
 
-/** Stores server trust identities and credential-free connection profiles. / 保存服务器信任身份与不含凭据的连接资料。 */
+/**
+ * Stores server trust identities and credential-free connection profiles. / 保存服务器信任身份与不含凭据的连接资料。
+ */
 public final class ServerProfileRepository {
+    /**
+     * Factory for scoped database connections.
+     * <p>限定作用域数据库连接的工厂。
+     */
     private final DesktopConnectionFactory connections;
 
-    /** Creates the repository. / 创建仓库。 */
+    /**
+     * Creates the repository. / 创建仓库。
+     *
+     * @param connections factory for scoped database connections / 限定作用域数据库连接的工厂
+     * @throws NullPointerException if a required input is absent / 必需输入缺失时
+     */
     public ServerProfileRepository(DesktopConnectionFactory connections) {
         this.connections = Objects.requireNonNull(connections, "connections");
     }
 
-    /** Lists saved connection profiles without loading any secrets. / 列出已保存连接配置，不加载任何秘密。 */
+    /**
+     * Lists saved connection profiles without loading any secrets. / 列出已保存连接配置，不加载任何秘密。
+     *
+     * @return constructed or resolved list / 构造或解析得到的列表
+     * @throws SQLException if the database cannot complete the requested read or transaction / 数据库无法完成请求的读取或事务时
+     */
     public java.util.List<StoredServerProfile> listServerProfiles() throws SQLException {
         java.util.List<StoredServerProfile> profiles = new java.util.ArrayList<>();
         try (Connection connection = connections.open();
@@ -35,14 +51,25 @@ public final class ServerProfileRepository {
         return java.util.List.copyOf(profiles);
     }
 
-    /** Saves a trusted server identity. / 保存可信服务器身份。 */
+    /**
+     * Saves a trusted server identity. / 保存可信服务器身份。
+     *
+     * @param server server identity or selected server configuration / 服务器身份或所选服务器配置
+     * @throws SQLException if the database cannot complete the requested read or transaction / 数据库无法完成请求的读取或事务时
+     */
     public void saveServer(ServerIdentity server) throws SQLException {
         try (Connection connection = connections.open()) {
             RepositoryTransactionExecutor.upsertServer(connection, server);
         }
     }
 
-    /** Finds a trusted server identity. / 查找可信服务器身份。 */
+    /**
+     * Finds a trusted server identity. / 查找可信服务器身份。
+     *
+     * @param serverId persisted server identifier / 持久化服务器标识
+     * @return matching result, or empty when no admitted value exists / 匹配结果；不存在已准入内容时为空
+     * @throws SQLException if the database cannot complete the requested read or transaction / 数据库无法完成请求的读取或事务时
+     */
     public Optional<ServerIdentity> findServer(String serverId) throws SQLException {
         try (Connection connection = connections.open();
              PreparedStatement statement = connection.prepareStatement(
@@ -55,7 +82,13 @@ public final class ServerProfileRepository {
         }
     }
 
-    /** Checks the format of the exact trust record rather than guessing from its text. / 核对精确信任记录的格式，不通过文本猜测。 */
+    /**
+     * Checks the format of the exact trust record rather than guessing from its text. / 核对精确信任记录的格式，不通过文本猜测。
+     *
+     * @param expected identity, value or state required for verification / 验证要求的身份、内容或状态
+     * @return true when checks the format of the exact trust record rather than guessing from its text, false otherwise / 核对精确信任记录的格式，不通过文本猜测时为 true，否则为 false
+     * @throws SQLException if the database cannot complete the requested read or transaction / 数据库无法完成请求的读取或事务时
+     */
     public boolean hasLegacyHostKey(ServerIdentity expected) throws SQLException {
         try (Connection connection = connections.open(); PreparedStatement statement = connection.prepareStatement(
                 "SELECT host_key_format FROM server WHERE id=? AND host=? AND ssh_port=? AND host_key_sha256=?")) {
@@ -67,7 +100,13 @@ public final class ServerProfileRepository {
         }
     }
 
-    /** Atomically records authenticated trust or migrates an unchanged historical key. / 原子记录认证后的信任，或迁移未发生变化的历史公钥。 */
+    /**
+     * Atomically records authenticated trust or migrates an unchanged historical key. / 原子记录认证后的信任，或迁移未发生变化的历史公钥。
+     *
+     * @param observed observed / 已观测
+     * @param expected identity, value or state required for verification / 验证要求的身份、内容或状态
+     * @throws SQLException if the database cannot complete the requested read or transaction / 数据库无法完成请求的读取或事务时
+     */
     public void saveAuthenticatedServer(ServerIdentity observed, Optional<ServerIdentity> expected) throws SQLException {
         try (Connection connection = connections.open()) {
             RepositoryTransactionExecutor.execute(connection, () -> {
@@ -91,7 +130,12 @@ public final class ServerProfileRepository {
         }
     }
 
-    /** Saves a credential-free server profile. / 保存不含凭据的服务器资料。 */
+    /**
+     * Saves a credential-free server profile. / 保存不含凭据的服务器资料。
+     *
+     * @param profile connection or provider settings supplied to the operation / 提供给操作的连接或提供者设置
+     * @throws SQLException if the database cannot complete the requested read or transaction / 数据库无法完成请求的读取或事务时
+     */
     public void saveServerProfile(StoredServerProfile profile) throws SQLException {
         try (Connection connection = connections.open();
              PreparedStatement statement = connection.prepareStatement("""
@@ -116,7 +160,13 @@ public final class ServerProfileRepository {
         }
     }
 
-    /** Finds a credential-free server profile. / 查找不含凭据的服务器资料。 */
+    /**
+     * Finds a credential-free server profile. / 查找不含凭据的服务器资料。
+     *
+     * @param serverId persisted server identifier / 持久化服务器标识
+     * @return matching result, or empty when no admitted value exists / 匹配结果；不存在已准入内容时为空
+     * @throws SQLException if the database cannot complete the requested read or transaction / 数据库无法完成请求的读取或事务时
+     */
     public Optional<StoredServerProfile> findServerProfile(String serverId) throws SQLException {
         try (Connection connection = connections.open();
              PreparedStatement statement = connection.prepareStatement("""
@@ -130,7 +180,13 @@ public final class ServerProfileRepository {
             }
         }
     }
-    /** Reads the dated result of a connection check. / 读取带时间的连接检查结果。 */
+    /**
+     * Reads the dated result of a connection check. / 读取带时间的连接检查结果。
+     *
+     * @param serverId persisted server identifier / 持久化服务器标识
+     * @return the dated result of a connection check / 带时间的连接检查结果
+     * @throws SQLException if the database cannot complete the requested read or transaction / 数据库无法完成请求的读取或事务时
+     */
     public StoredServerObservation observation(String serverId) throws SQLException {
         try (Connection connection = connections.open(); PreparedStatement statement = connection.prepareStatement(
                 "SELECT last_checked, connected, operating_system FROM server_profile WHERE id=?")) {
@@ -143,7 +199,14 @@ public final class ServerProfileRepository {
         }
     }
 
-    /** Ignores results for endpoints edited during a check. / 忽略检查期间被修改的端点结果。 */
+    /**
+     * Ignores results for endpoints edited during a check. / 忽略检查期间被修改的端点结果。
+     *
+     * @param profile connection or provider settings supplied to the operation / 提供给操作的连接或提供者设置
+     * @param connected connected / 已连接
+     * @param system system / 系统
+     * @throws SQLException if the database cannot complete the requested read or transaction / 数据库无法完成请求的读取或事务时
+     */
     public void recordObservation(StoredServerProfile profile, boolean connected, String system) throws SQLException {
         try (Connection connection = connections.open(); PreparedStatement statement = connection.prepareStatement(
                 "UPDATE server_profile SET last_checked=?, connected=?, operating_system=? WHERE id=? AND host=? AND ssh_port=? AND username=?")) {

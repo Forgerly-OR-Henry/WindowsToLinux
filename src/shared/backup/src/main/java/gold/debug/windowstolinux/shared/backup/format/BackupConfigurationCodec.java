@@ -32,21 +32,59 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
 
-/** Strict codec for immutable configuration and the complete non-secret activation state. / 不可变配置及完整无秘密激活状态的严格编解码器。 */
+/**
+ * Strict codec for immutable configuration and the complete non-secret activation state. / 不可变配置及完整无秘密激活状态的严格编解码器。
+ */
 public final class BackupConfigurationCodec {
+    /**
+     * MAGIC.
+     * <p>格式标记。
+     */
     private static final int MAGIC = 0x57544243;
+    /**
+     * INSPECTION VERSION.
+     * <p>检查版本。
+     */
     private static final int INSPECTION_VERSION = 1;
+    /**
+     * ACTIVATION VERSION.
+     * <p>激活版本。
+     */
     private static final int ACTIVATION_VERSION = 5;
+    /**
+     * MAX BYTES.
+     * <p>最大字节。
+     */
     private static final int MAX_BYTES = 4 * 1024 * 1024;
+    /**
+     * MAX FILES.
+     * <p>最大文件集合。
+     */
     private static final int MAX_FILES = 4_096;
+    /**
+     * MAX DATABASES.
+     * <p>最大数据库集合。
+     */
     private static final int MAX_DATABASES = 256;
 
-    /** Encodes the historical configuration-only document for compatibility tests and inspection. / 编码历史仅配置文档以供兼容测试及检查。 */
+    /**
+     * Encodes the historical configuration-only document for compatibility tests and inspection. / 编码历史仅配置文档以供兼容测试及检查。
+     *
+     * @param snapshot immutable observation or configuration revision used by the operation / 操作使用的不可变观测或配置修订
+     * @return the historical configuration-only document for compatibility tests and inspection / 历史仅配置文档以供兼容测试及检查
+     * @throws IOException if the required file or stream operation fails / 所需文件或流操作失败时
+     */
     public byte[] write(ConfigurationSnapshot snapshot) throws IOException {
         return encode(INSPECTION_VERSION, output -> writeSnapshot(output, snapshot));
     }
 
-    /** Encodes every exact non-secret input required by automatic activation and later backup. / 编码自动激活及后续备份所需的全部精确无秘密输入。 */
+    /**
+     * Encodes every exact non-secret input required by automatic activation and later backup. / 编码自动激活及后续备份所需的全部精确无秘密输入。
+     *
+     * @param document document / 文档
+     * @return every exact non-secret input required by automatic activation and later backup / 自动激活及后续备份所需的全部精确无秘密输入
+     * @throws IOException if the required file or stream operation fails / 所需文件或流操作失败时
+     */
     public byte[] writeActivation(BackupConfigurationDocument document) throws IOException {
         return encode(ACTIVATION_VERSION, output -> {
             writeSnapshot(output, document.configuration());
@@ -55,18 +93,39 @@ public final class BackupConfigurationCodec {
         });
     }
 
-    /** Decodes the immutable configuration from either supported document version. / 从任一受支持文档版本解码不可变配置。 */
+    /**
+     * Decodes the immutable configuration from either supported document version. / 从任一受支持文档版本解码不可变配置。
+     *
+     * @param document document / 文档
+     * @return the immutable configuration from either supported document version / 从任一受支持文档版本解码不可变配置
+     * @throws IOException if the required file or stream operation fails / 所需文件或流操作失败时
+     */
     public ConfigurationSnapshot read(byte[] document) throws IOException {
         return parse(document, false).configuration();
     }
 
-    /** Decodes a complete activation document and rejects historical configuration-only members. / 解码完整激活文档并拒绝历史仅配置成员。 */
+    /**
+     * Decodes a complete activation document and rejects historical configuration-only members. / 解码完整激活文档并拒绝历史仅配置成员。
+     *
+     * @param document document / 文档
+     * @return a complete activation document and rejects historical configuration-only members / 完整激活文档并拒绝历史仅配置成员
+     * @throws IOException if the required file or stream operation fails / 所需文件或流操作失败时
+     */
     public BackupConfigurationDocument readActivation(byte[] document) throws IOException {
         Parsed parsed = parse(document, true);
         return new BackupConfigurationDocument(parsed.configuration(), parsed.resources().orElseThrow(),
                 parsed.runtime().orElseThrow());
     }
 
+    /**
+     * Decodes a bounded versioned configuration document and rejects invalid fields or trailing content.
+     * <p>解码有界且带版本的配置文档，并拒绝无效字段或尾随内容。
+     *
+     * @param document document / 文档
+     * @param activationRequired activation required / 激活必需
+     * @return decoded versioned application configuration and resource records / 解码后的带版本应用配置及资源记录
+     * @throws IOException if the required file or stream operation fails / 所需文件或流操作失败时
+     */
     private static Parsed parse(byte[] document, boolean activationRequired) throws IOException {
         if (document == null || document.length < 8 || document.length > MAX_BYTES) {
             throw new IOException("backup configuration document length is invalid");
@@ -95,6 +154,15 @@ public final class BackupConfigurationCodec {
         }
     }
 
+    /**
+     * Encodes backup configuration.
+     * <p>编码备份配置。
+     *
+     * @param version version of the relevant protocol, configuration or runtime / 相应协议、配置或运行时的版本
+     * @param writer writer / 写入器
+     * @return backup configuration / 备份配置
+     * @throws IOException if the required file or stream operation fails / 所需文件或流操作失败时
+     */
     private static byte[] encode(int version, Writer writer) throws IOException {
         ByteArrayOutputStream bytes = new ByteArrayOutputStream();
         try (DataOutputStream output = new DataOutputStream(bytes)) {
@@ -104,6 +172,14 @@ public final class BackupConfigurationCodec {
         return bytes.toByteArray();
     }
 
+    /**
+     * Writes the configuration revision and canonical typed entries into the bounded binary backup document.
+     * <p>将配置修订及规范类型化条目写入有界二进制备份文档。
+     *
+     * @param output destination receiving the produced content / 接收所生成内容的目标
+     * @param snapshot immutable observation or configuration revision used by the operation / 操作使用的不可变观测或配置修订
+     * @throws IOException if the required file or stream operation fails / 所需文件或流操作失败时
+     */
     private static void writeSnapshot(DataOutputStream output, ConfigurationSnapshot snapshot) throws IOException {
         text(output, snapshot.applicationId(), 128); output.writeLong(snapshot.revision());
         text(output, snapshot.schemaVersion(), 128); text(output, snapshot.createdAt().toString(), 128);
@@ -122,6 +198,14 @@ public final class BackupConfigurationCodec {
         }
     }
 
+    /**
+     * Reconstructs the immutable configuration revision from bounded typed binary entries.
+     * <p>根据有界类型化二进制条目重建不可变配置修订。
+     *
+     * @param input source content consumed by this operation / 当前操作消费的源内容
+     * @return constructed or resolved configuration snapshot / 构造或解析得到的配置快照
+     * @throws IOException if the required file or stream operation fails / 所需文件或流操作失败时
+     */
     private static ConfigurationSnapshot readSnapshot(DataInputStream input) throws IOException {
         String application = text(input, 128); long revision = input.readLong();
         String schema = text(input, 128); Instant created = Instant.parse(text(input, 128));
@@ -145,6 +229,14 @@ public final class BackupConfigurationCodec {
         return new ConfigurationSnapshot(application, revision, schema, created, entries, sha256);
     }
 
+    /**
+     * Serializes bounded file, configuration and database bindings while preserving the distinction between unreviewed and reviewed-empty database scope.
+     * <p>序列化有界文件、配置及数据库绑定，并保留数据库范围未审阅与已审阅为空的区别。
+     *
+     * @param output destination receiving the produced content / 接收所生成内容的目标
+     * @param resources reviewed file, configuration and database bindings for this component / 当前组件已审阅的文件、配置及数据库绑定
+     * @throws IOException if the required file or stream operation fails / 所需文件或流操作失败时
+     */
     private static void writeResources(DataOutputStream output, ManagedComponentResourceBindings resources)
             throws IOException {
         if (resources.fileBindings().size() > MAX_FILES
@@ -185,6 +277,14 @@ public final class BackupConfigurationCodec {
         }
     }
 
+    /**
+     * Decodes bounded resource bindings and preserves explicit review state without inventing missing bindings.
+     * <p>解码有界资源绑定并保留显式审阅状态，不推断缺失绑定。
+     *
+     * @param input source content consumed by this operation / 当前操作消费的源内容
+     * @return bounded resource bindings and preserves explicit review state without inventing missing bindings / 有界资源绑定并保留显式审阅状态，不推断缺失绑定
+     * @throws IOException if the required file or stream operation fails / 所需文件或流操作失败时
+     */
     private static ManagedComponentResourceBindings readResources(DataInputStream input) throws IOException {
         int fileCount = bounded(input.readInt(), 0, MAX_FILES, "file binding");
         List<ManagedFileBinding> files = new ArrayList<>(fileCount);
@@ -229,6 +329,14 @@ public final class BackupConfigurationCodec {
         return result;
     }
 
+    /**
+     * Reads sqlite.
+     * <p>读取SQLite 数据库。
+     *
+     * @param input source content consumed by this operation / 当前操作消费的源内容
+     * @return sqlite / SQLite 数据库
+     * @throws IOException if the required file or stream operation fails / 所需文件或流操作失败时
+     */
     private static ManagedDatabaseConnection.Sqlite readSqlite(DataInputStream input) throws IOException {
         String file = text(input,128), type = text(input,32), path = text(input,512), access = text(input,512), seed = text(input,512);
         int size = input.readInt(); if (size < 0 || size > 32) throw new IOException("invalid initialization file count");
@@ -238,22 +346,58 @@ public final class BackupConfigurationCodec {
                 access.equals("-") ? "" : access, seed.equals("-") ? "" : seed, files);
     }
 
+    /**
+     * Writes reviewed language, process and health specification.
+     * <p>写入已审阅的语言、进程及健康规格。
+     *
+     * @param output destination receiving the produced content / 接收所生成内容的目标
+     * @param runtime reviewed language, process and health specification / 已审阅的语言、进程及健康规格
+     * @throws IOException if the required file or stream operation fails / 所需文件或流操作失败时
+     */
     private static void writeRuntime(DataOutputStream output, ManagedApplicationRuntimeConfiguration runtime)
             throws IOException {
         byte[] payload = new gold.debug.windowstolinux.shared.config.persistence.serialization.ApplicationRuntimeConfigurationCodec().write(runtime);
         output.writeInt(payload.length); output.write(payload);
     }
 
+    /**
+     * Reads reviewed language, process and health specification.
+     * <p>读取已审阅的语言、进程及健康规格。
+     *
+     * @param input source content consumed by this operation / 当前操作消费的源内容
+     * @return reviewed language, process and health specification / 已审阅的语言、进程及健康规格
+     * @throws IOException if the required file or stream operation fails / 所需文件或流操作失败时
+     */
     private static ManagedApplicationRuntimeConfiguration readRuntime(DataInputStream input) throws IOException {
         int length = bounded(input.readInt(), 1, 1_048_576, "runtime payload");
         return new gold.debug.windowstolinux.shared.config.persistence.serialization.ApplicationRuntimeConfigurationCodec().read(input.readNBytes(length));
     }
 
+    /**
+     * Rejects content exceeding the explicit size or count bound.
+     * <p>拒绝超出显式大小或数量限制的内容。
+     *
+     * @param value candidate content accepted or rejected by this contract / 由当前契约接收或拒绝的候选内容
+     * @param minimum minimum / 最小
+     * @param maximum maximum / 最大
+     * @param field field name or input definition being validated / 正在校验的字段名或输入定义
+     * @return bounded as a numeric result / 有界的数值结果
+     * @throws IOException if the required file or stream operation fails / 所需文件或流操作失败时
+     */
     private static int bounded(int value, int minimum, int maximum, String field) throws IOException {
         if (value < minimum || value > maximum) throw new IOException(field + " count is invalid");
         return value;
     }
 
+    /**
+     * Writes length-prefixed UTF-8 text within the binary format bound.
+     * <p>在二进制格式边界内写入带长度前缀的 UTF-8 文本。
+     *
+     * @param output destination receiving the produced content / 接收所生成内容的目标
+     * @param value candidate content accepted or rejected by this contract / 由当前契约接收或拒绝的候选内容
+     * @param maximum maximum / 最大
+     * @throws IOException if the required file or stream operation fails / 所需文件或流操作失败时
+     */
     private static void text(DataOutputStream output, String value, int maximum) throws IOException {
         byte[] bytes = value.getBytes(StandardCharsets.UTF_8);
         if (bytes.length < 1 || bytes.length > maximum) {
@@ -262,6 +406,15 @@ public final class BackupConfigurationCodec {
         output.writeInt(bytes.length); output.write(bytes);
     }
 
+    /**
+     * Reads bounded length-prefixed UTF-8 text from the binary document.
+     * <p>从二进制文档读取有界且带长度前缀的 UTF-8 文本。
+     *
+     * @param input source content consumed by this operation / 当前操作消费的源内容
+     * @param maximum maximum / 最大
+     * @return bounded length-prefixed UTF-8 text from the binary document / 从二进制文档读取有界且带长度前缀的 UTF-8 文本
+     * @throws IOException if the required file or stream operation fails / 所需文件或流操作失败时
+     */
     private static String text(DataInputStream input, int maximum) throws IOException {
         int length = input.readInt();
         if (length < 1 || length > maximum) throw new IOException("backup configuration text length is invalid");
@@ -275,8 +428,28 @@ public final class BackupConfigurationCodec {
         }
     }
 
+    /**
+     * Writes one bounded portion of the versioned backup configuration stream.
+     * <p>写入版本化备份配置流中的一个有界部分。
+     */
     @FunctionalInterface
-    private interface Writer { void write(DataOutputStream output) throws IOException; }
+    private interface Writer {
+    /**
+     * Writes writer.
+     * <p>写入写入器。
+     *
+     * @param output destination receiving the produced content / 接收所生成内容的目标
+     * @throws IOException if the required file or stream operation fails / 所需文件或流操作失败时
+     */
+     void write(DataOutputStream output) throws IOException; }
+    /**
+     * Holds decoded backup configuration fields before constructing the validated document.
+     * <p>在构造已验证文档前保存解码后的备份配置字段。
+     *
+     * @param configuration reviewed configuration snapshot or settings / 已审阅配置快照或设置
+     * @param resources reviewed file, configuration and database bindings for this component / 当前组件已审阅的文件、配置及数据库绑定
+     * @param runtime reviewed language, process and health specification / 已审阅的语言、进程及健康规格
+     */
     private record Parsed(ConfigurationSnapshot configuration,
                           Optional<ManagedComponentResourceBindings> resources,
                           Optional<ManagedApplicationRuntimeConfiguration> runtime) { }

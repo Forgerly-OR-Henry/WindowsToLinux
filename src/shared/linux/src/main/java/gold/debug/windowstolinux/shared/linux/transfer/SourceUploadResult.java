@@ -5,25 +5,24 @@ import java.util.Objects;
 /**
  * Confirmation that a source archive reached the fixed candidate workspace.
  *
- * <p>源码归档已到达固定候选工作区的确认结果。
+ *  <p>源码归档已到达固定候选工作区的确认结果。
  *
- * @param remoteArchivePath the {@code remoteArchivePath} value / {@code remoteArchivePath} 值
- * @param byteCount the {@code byteCount} value / {@code byteCount} 值
- * @param contentSha256 the {@code contentSha256} value / {@code contentSha256} 值
- * @param evidence the {@code evidence} value / {@code evidence} 值
+ * @param remoteArchivePath remote archive path / 远端归档路径
+ * @param byteCount measured content length in bytes / 实测内容长度，单位为字节
+ * @param contentSha256 content sha 256 / 内容SHA256
+ * @param evidence observations supporting the reported result / 支持所报告结果的观测证据
  */
 public record SourceUploadResult(String remoteArchivePath, long byteCount, String contentSha256, String evidence) {
     /**
-     * Creates a {@code SourceUploadResult} instance.
+     * Validates and binds the inputs required by source upload result.
+     * <p>校验并绑定源码上传结果所需输入。
      *
-     * <p>创建 {@code SourceUploadResult} 实例。
-     *
-     * @param remoteArchivePath the {@code remoteArchivePath} value / {@code remoteArchivePath} 值
-     * @param byteCount the {@code byteCount} value / {@code byteCount} 值
-     * @param contentSha256 the {@code contentSha256} value / {@code contentSha256} 值
-     * @param evidence the {@code evidence} value / {@code evidence} 值
+     * @param remoteArchivePath remote archive path / 远端归档路径
+     * @param byteCount measured content length in bytes / 实测内容长度，单位为字节
+     * @param contentSha256 content sha 256 / 内容SHA256
+     * @param evidence observations supporting the reported result / 支持所报告结果的观测证据
      * @throws IllegalArgumentException if an argument violates the required constraints / 参数违反必要约束时
-     * @throws NullPointerException if a required argument is {@code null} / 必要参数为 {@code null} 时
+     * @throws NullPointerException if a required input is absent / 必需输入缺失时
      */
     public SourceUploadResult {
         remoteArchivePath = Objects.requireNonNull(remoteArchivePath, "remoteArchivePath");

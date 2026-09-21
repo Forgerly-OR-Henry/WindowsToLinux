@@ -6,33 +6,41 @@ import java.util.Objects;
 /**
  * In-memory authentication material supplied by the platform secret module.
  *
- * <p>由平台秘密模块提供的内存认证材料。
+ *  <p>由平台秘密模块提供的内存认证材料。
  */
 public sealed interface SshCredential permits SshCredential.Password, SshCredential.PrivateKey {
-    /** Creates an independently owned credential for a bounded connection attempt. / 为有界连接尝试创建独立持有的凭据。 */
+    /**
+     * Creates an independently owned credential for a bounded connection attempt. / 为有界连接尝试创建独立持有的凭据。
+     *
+     * @return an independently owned credential for a bounded connection attempt / 为有界连接尝试创建独立持有的凭据
+     */
     default SshCredential duplicate() {
         return this;
     }
 
-    /** Clears mutable authentication material owned by this credential. / 清除此凭据持有的可变认证材料。 */
+    /**
+     * Clears mutable authentication material owned by this credential. / 清除此凭据持有的可变认证材料。
+     */
     default void clear() {
         // Immutable private-key references do not expose mutable character material. / 不可变私钥引用不暴露可变字符材料。
     }
 
     /**
-     * Provides the {@code Password} implementation.
-     *
-     * <p>提供 {@code Password} 实现。
+     * Owns a mutable SSH password buffer that must be cleared after connection use.
+     * <p>持有可变 SSH 密码缓冲区，连接使用后必须清空。
      */
     final class Password implements SshCredential {
+        /**
+         * Candidate content accepted or rejected by this contract.
+         * <p>由当前契约接收或拒绝的候选内容。
+         */
         private final char[] value;
 
         /**
-         * Creates a {@code Password} instance.
+         * Validates and binds the inputs required by password.
+         * <p>校验并绑定密码所需输入。
          *
-         * <p>创建 {@code Password} 实例。
-         *
-         * @param value the {@code value} value / {@code value} 值
+         * @param value candidate content accepted or rejected by this contract / 由当前契约接收或拒绝的候选内容
          * @throws IllegalArgumentException if an argument violates the required constraints / 参数违反必要约束时
          */
         public Password(char[] value) {
@@ -43,9 +51,8 @@ public sealed interface SshCredential permits SshCredential.Password, SshCredent
         }
 
         /**
-         * Performs the {@code copy} operation.
-         *
-         * <p>执行 {@code copy} 操作。
+         * Copies char.
+         * <p>复制char。
          *
          * @return the operation result / 操作结果
          */
@@ -53,16 +60,19 @@ public sealed interface SshCredential permits SshCredential.Password, SshCredent
             return value.clone();
         }
 
-        /** Creates a separately clearable password credential. / 创建可单独清除的密码凭据。 */
+        /**
+         * Creates a separately clearable password credential. / 创建可单独清除的密码凭据。
+         *
+         * @return a separately clearable password credential / 可单独清除的密码凭据
+         */
         @Override
         public SshCredential duplicate() {
             return new Password(value);
         }
 
         /**
-         * Performs the {@code clear} operation.
-         *
-         * <p>执行 {@code clear} 操作。
+         * Clears retained credential material after its scoped use.
+         * <p>在限定作用域使用结束后清空保留的凭据素材。
          */
         @Override
         public void clear() {
@@ -73,18 +83,17 @@ public sealed interface SshCredential permits SshCredential.Password, SshCredent
     /**
      * Represents an immutable {@code PrivateKey} value.
      *
-     * <p>表示不可变的 {@code PrivateKey} 值。
+     *  <p>表示不可变的 {@code PrivateKey} 值。
      *
-     * @param keyPair the {@code keyPair} value / {@code keyPair} 值
+     * @param keyPair key pair / 键配对
      */
     record PrivateKey(KeyPair keyPair) implements SshCredential {
         /**
-         * Creates a {@code PrivateKey} instance.
+         * Validates and binds the inputs required by private key.
+         * <p>校验并绑定私有键所需输入。
          *
-         * <p>创建 {@code PrivateKey} 实例。
-         *
-         * @param keyPair the {@code keyPair} value / {@code keyPair} 值
-         * @throws NullPointerException if a required argument is {@code null} / 必要参数为 {@code null} 时
+         * @param keyPair key pair / 键配对
+         * @throws NullPointerException if a required input is absent / 必需输入缺失时
          */
         public PrivateKey {
             keyPair = Objects.requireNonNull(keyPair, "keyPair");

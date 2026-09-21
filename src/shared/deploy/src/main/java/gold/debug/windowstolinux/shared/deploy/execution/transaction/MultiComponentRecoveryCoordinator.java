@@ -19,11 +19,30 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
-/** Coordinates reconnect, rollback, candidate cleanup, and recovery state. / 协调重连、回滚、候选清理与恢复状态。 */
+/**
+ * Coordinates reconnect, rollback, candidate cleanup, and recovery state. / 协调重连、回滚、候选清理与恢复状态。
+ */
 final class MultiComponentRecoveryCoordinator {
+    /**
+     * Prevents instantiation of this static contract helper.
+     * <p>防止实例化当前静态契约辅助类。
+     */
     private MultiComponentRecoveryCoordinator() {
     }
 
+    /**
+     * Recovers component transactions in dependency-safe order, preserving all failures and distinguishing verified rollback from manual recovery.
+     * <p>按依赖安全顺序恢复组件事务，保留全部失败，并区分已验证回滚及人工恢复。
+     *
+     * @param plan deterministic reviewed execution order and targets / 确定的已审阅执行顺序及目标
+     * @param contexts contexts / 上下文集合
+     * @param gateway factory for authenticated Linux sessions / 已认证 Linux 会话的工厂
+     * @param endpoint reviewed network endpoint / 已审阅网络端点
+     * @param credential authentication material scoped to the current connection / 限定于当前连接的认证素材
+     * @param verifier verifier / 验证器
+     * @param applicationEvents application events / 应用事件集合
+     * @return constructed or resolved multi component deployment result / 构造或解析得到的多组件部署结果
+     */
     static MultiComponentDeploymentResult recover(
             MultiComponentDeploymentPlan plan,
             Map<String, MultiComponentTransactionContext> contexts,
@@ -112,6 +131,14 @@ final class MultiComponentRecoveryCoordinator {
         }
     }
 
+    /**
+     * Cleans up all.
+     * <p>清理全部。
+     *
+     * @param contexts contexts / 上下文集合
+     * @param session session used for the current scoped operation / 当前限定作用域操作使用的会话
+     * @return true when cleans up all, false otherwise / 清理全部时为 true，否则为 false
+     */
     static boolean cleanupAll(Map<String, MultiComponentTransactionContext> contexts,
                               DeploymentRemoteSession session) {
         boolean succeeded = true;
@@ -129,6 +156,13 @@ final class MultiComponentRecoveryCoordinator {
         return succeeded;
     }
 
+    /**
+     * Marks nonfailing rejected component workspaces as discarded after candidate cleanup.
+     * <p>候选清理后，将未失败且已拒绝的组件工作区标记为已丢弃。
+     *
+     * @param contexts contexts / 上下文集合
+     * @param failedId failed id / 失败标识
+     */
     static void markDiscarded(Map<String, MultiComponentTransactionContext> contexts, String failedId) {
         contexts.forEach((id, context) -> {
             if (!id.equals(failedId) && context.workspace != null
@@ -138,6 +172,12 @@ final class MultiComponentRecoveryCoordinator {
         });
     }
 
+    /**
+     * Marks affected component contexts when candidate cleanup evidence records failure.
+     * <p>候选清理证据记录失败时标记受影响组件上下文。
+     *
+     * @param contexts contexts / 上下文集合
+     */
     static void markCleanupFailure(Map<String, MultiComponentTransactionContext> contexts) {
         contexts.values().stream()
                 .filter(context -> context.workspace != null
@@ -146,11 +186,26 @@ final class MultiComponentRecoveryCoordinator {
                 .forEach(context -> context.state = ComponentTransactionState.MANUAL_RECOVERY_REQUIRED);
     }
 
+    /**
+     * Requires manual cleanup.
+     * <p>要求人工清理。
+     *
+     * @param contexts contexts / 上下文集合
+     */
     private static void requireManualCleanup(Map<String, MultiComponentTransactionContext> contexts) {
         contexts.values().stream().filter(context -> context.workspace != null)
                 .forEach(context -> context.state = ComponentTransactionState.MANUAL_RECOVERY_REQUIRED);
     }
 
+    /**
+     * Builds the application result from the final status, shared events and per-component transaction contexts.
+     * <p>根据最终状态、共享事件及各组件事务上下文构建应用结果。
+     *
+     * @param status classification of the current operation result / 当前操作结果的分类
+     * @param applicationEvents application events / 应用事件集合
+     * @param contexts contexts / 上下文集合
+     * @return the application result from the final status, shared events and per-component transaction contexts / 根据最终状态、共享事件及各组件事务上下文构建应用结果
+     */
     private static MultiComponentDeploymentResult result(DeploymentStatus status,
                                                          List<DeploymentEvent> applicationEvents,
                                                          Map<String, MultiComponentTransactionContext> contexts) {

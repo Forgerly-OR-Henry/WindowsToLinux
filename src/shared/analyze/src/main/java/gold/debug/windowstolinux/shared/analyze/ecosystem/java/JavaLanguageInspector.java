@@ -19,10 +19,15 @@ import java.util.Optional;
 /**
  * Detects Java source and JAR ecosystem markers without opening an archive.
  *
- * <p>识别 Java 源码与 JAR 生态标记，不打开归档。
+ *  <p>识别 Java 源码与 JAR 生态标记，不打开归档。
  */
 public final class JavaLanguageInspector {
-    /** Returns deterministic Java facts. / 返回确定性的 Java 事实。 */
+    /**
+     * Returns deterministic Java facts. / 返回确定性的 Java 事实。
+     *
+     * @param source source identity or content read by the operation / 操作读取的源身份或内容
+     * @return deterministic Java facts / 确定性的 Java 事实
+     */
     public ProjectLanguageFacts inspect(SourceInspectionFacts source) {
         EnumSet<LanguageEcosystemType> ecosystems = EnumSet.noneOf(LanguageEcosystemType.class);
         EnumSet<SourceLanguageType> languages = EnumSet.noneOf(SourceLanguageType.class);
@@ -42,10 +47,25 @@ public final class JavaLanguageInspector {
         return new ProjectLanguageFacts(ecosystems, languages, Map.of(), evidence);
     }
 
+    /**
+     * Returns the file name in locale-independent lowercase.
+     * <p>返回不依赖区域设置的小写文件名。
+     *
+     * @param path filesystem or archive member path used by this operation / 当前操作使用的文件系统或归档成员路径
+     * @return the file name in locale-independent lowercase / 不依赖区域设置的小写文件名
+     */
     private static String lower(Path path) {
         return path.getFileName().toString().toLowerCase(Locale.ROOT);
     }
 
+    /**
+     * Binds a static source observation to its localized conclusion and confidence.
+     * <p>将静态源码观测与本地化结论及置信度绑定。
+     *
+     * @param key lookup key within the current contract / 当前契约内的查找键
+     * @param source source identity or content read by the operation / 操作读取的源身份或内容
+     * @return constructed or resolved analysis evidence / 构造或解析得到的分析证据
+     */
     private static AnalysisEvidence evidence(String key, String source) {
         return new AnalysisEvidence(LocalizedMessage.of(key), source,
                 LocalizedMessage.of("analysis.deployment.evidence.detected"), EvidenceConfidenceLevel.HIGH);

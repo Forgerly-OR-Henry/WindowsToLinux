@@ -22,14 +22,28 @@ import java.nio.file.LinkOption;
 import java.nio.file.Path;
 import java.util.Locale;
 
-/** Production desktop bootstrap with fixed paths and structured startup boundaries. / 具备固定路径和结构化启动边界的生产桌面引导程序。 */
+/**
+ * Production desktop bootstrap with fixed paths and structured startup boundaries. / 具备固定路径和结构化启动边界的生产桌面引导程序。
+ */
 public final class DesktopMain {
+    /**
+     * MINIMUM FREE BYTES.
+     * <p>最小剩余字节。
+     */
     private static final long MINIMUM_FREE_BYTES = 1024L * 1024L;
 
+    /**
+     * Prevents instantiation of this static contract helper.
+     * <p>防止实例化当前静态契约辅助类。
+     */
     private DesktopMain() {
     }
 
-    /** Starts the desktop and stops safely when a mandatory startup stage fails. / 启动桌面；必要启动阶段失败时安全停止。 */
+    /**
+     * Starts the desktop and stops safely when a mandatory startup stage fails. / 启动桌面；必要启动阶段失败时安全停止。
+     *
+     * @param arguments literal arguments passed to the fixed command or message template / 传给固定命令或消息模板的字面参数
+     */
     public static void launch(String[] arguments) {
         MessageCatalog initialMessages = MessageCatalog.forLanguageTag(Locale.getDefault().toLanguageTag());
         RunModeResolver.RuntimeLayout layout;
@@ -64,8 +78,10 @@ public final class DesktopMain {
             return;
         }
 
+        java.util.concurrent.atomic.AtomicReference<DesktopApplicationFacade> rescueOwner = new java.util.concurrent.atomic.AtomicReference<>();
         Runtime.getRuntime().addShutdownHook(new Thread(() -> {
             try {
+                if (rescueOwner.get() != null) rescueOwner.get().closeSshRecovery();
                 database.close();
             } catch (RuntimeException failure) {
                 reports.record(DesktopStartupException.create(DesktopSystemFailureType.SHUTDOWN_FAILED,
@@ -82,6 +98,7 @@ public final class DesktopMain {
             new DesktopUncaughtFailureBoundary(reports, messages).install();
             DesktopApplicationFacade service = new DesktopApplicationFacade(database,
                     dataLayout.workDirectory(), dataLayout.backupsDirectory(), new SshdLinuxGateway());
+            rescueOwner.set(service);
             SwingUtilities.invokeLater(() -> {
                 try {
                     new DesktopWindowController(database, service, appearance, reports, layout.mode()).showInitialWindow();
@@ -97,6 +114,13 @@ public final class DesktopMain {
         }
     }
 
+    /**
+     * Verifies data directory.
+     * <p>验证数据目录。
+     *
+     * @param layout layout / 布局
+     * @throws java.io.IOException if the required file or stream operation fails / 所需文件或流操作失败时
+     */
     private static void verifyDataDirectory(DesktopStorageLayout layout) throws java.io.IOException {
         layout.initializeDirectories();
         Path normalized = layout.root();
@@ -108,6 +132,14 @@ public final class DesktopMain {
         }
     }
 
+    /**
+     * Displays startup failure.
+     * <p>展示启动失败。
+     *
+     * @param reports reports / 报告集合
+     * @param messages localized message resolver / 本地化消息解析器
+     * @param failure structured failure occurrence retained for safe reporting / 保留用于安全报告的结构化失败实例
+     */
     private static void showStartupFailure(
             FailureReportStore reports, MessageCatalog messages, DesktopStartupException failure) {
         String text = new DesktopFailurePresenter(messages::text, reports).present(failure);

@@ -19,9 +19,24 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 
-/** Executes dependency-safe application lifecycle actions from authoritative remote observations. / 根据权威远端观测执行依赖安全的应用生命周期动作。 */
+/**
+ * Executes dependency-safe application lifecycle actions from authoritative remote observations. / 根据权威远端观测执行依赖安全的应用生命周期动作。
+ */
 public final class MultiComponentLifecycleService {
-    /** Observes every component, validates dependency impact, and executes only the reviewed component set. / 观测每个组件、验证依赖影响并仅执行经审阅的组件集合。 */
+    /**
+     * Observes every component, validates dependency impact, and executes only the reviewed component set. / 观测每个组件、验证依赖影响并仅执行经审阅的组件集合。
+     *
+     * @param plan deterministic reviewed execution order and targets / 确定的已审阅执行顺序及目标
+     * @param managedComponents managed components / 受管组件集合
+     * @param targetComponentIds target component ids / 目标组件标识集合
+     * @param action explicit action selected for the current target / 为当前目标显式选择的动作
+     * @param gateway factory for authenticated Linux sessions / 已认证 Linux 会话的工厂
+     * @param endpoint reviewed network endpoint / 已审阅网络端点
+     * @param credential authentication material scoped to the current connection / 限定于当前连接的认证素材
+     * @param hostKeyVerifier the host-key verifier / 主机密钥验证器
+     * @return constructed or resolved multi component lifecycle result / 构造或解析得到的多组件生命周期结果
+     * @throws NullPointerException if a required input is absent / 必需输入缺失时
+     */
     public MultiComponentLifecycleResult execute(
             MultiComponentDeploymentPlan plan,
             List<ManagedComponentLifecycle> managedComponents,
@@ -77,6 +92,20 @@ public final class MultiComponentLifecycleService {
         }
     }
 
+    /**
+     * Executes explicit action selected for the current target.
+     * <p>执行为当前目标显式选择的动作。
+     *
+     * @param plan deterministic reviewed execution order and targets / 确定的已审阅执行顺序及目标
+     * @param components reviewed components in the application graph / 应用图中的已审阅组件
+     * @param targets targets / 目标集合
+     * @param action explicit action selected for the current target / 为当前目标显式选择的动作
+     * @param session session used for the current scoped operation / 当前限定作用域操作使用的会话
+     * @param attempted attempted / 已尝试
+     * @param failed failed / 失败
+     * @return true when executes explicit action selected for the current target, false otherwise / 执行为当前目标显式选择的动作时为 true，否则为 false
+     * @throws LinuxOperationException if the authenticated remote operation fails or its evidence is rejected / 已认证远端操作失败或其证据被拒绝时
+     */
     private static boolean executeAction(
             MultiComponentDeploymentPlan plan, Map<String, ManagedComponentLifecycle> components, Set<String> targets,
             LifecycleAction action, DeploymentRemoteSession session, Set<String> attempted, Set<String> failed)
@@ -92,6 +121,20 @@ public final class MultiComponentLifecycleService {
         return executeOrdered(order, components, targets, action, session, attempted, failed);
     }
 
+    /**
+     * Executes ordered.
+     * <p>执行有序。
+     *
+     * @param order order / 顺序
+     * @param components reviewed components in the application graph / 应用图中的已审阅组件
+     * @param targets targets / 目标集合
+     * @param action explicit action selected for the current target / 为当前目标显式选择的动作
+     * @param session session used for the current scoped operation / 当前限定作用域操作使用的会话
+     * @param attempted attempted / 已尝试
+     * @param failed failed / 失败
+     * @return true when executes ordered, false otherwise / 执行有序时为 true，否则为 false
+     * @throws LinuxOperationException if the authenticated remote operation fails or its evidence is rejected / 已认证远端操作失败或其证据被拒绝时
+     */
     private static boolean executeOrdered(
             List<String> order, Map<String, ManagedComponentLifecycle> components, Set<String> targets,
             LifecycleAction action, DeploymentRemoteSession session, Set<String> attempted, Set<String> failed)
@@ -110,6 +153,16 @@ public final class MultiComponentLifecycleService {
         return true;
     }
 
+    /**
+     * Observes all.
+     * <p>观测全部。
+     *
+     * @param plan deterministic reviewed execution order and targets / 确定的已审阅执行顺序及目标
+     * @param components reviewed components in the application graph / 应用图中的已审阅组件
+     * @param session session used for the current scoped operation / 当前限定作用域操作使用的会话
+     * @param observations observations / 观测集合
+     * @throws LinuxOperationException if the authenticated remote operation fails or its evidence is rejected / 已认证远端操作失败或其证据被拒绝时
+     */
     private static void observeAll(
             MultiComponentDeploymentPlan plan, Map<String, ManagedComponentLifecycle> components,
             DeploymentRemoteSession session, Map<String, LifecycleObservation> observations)

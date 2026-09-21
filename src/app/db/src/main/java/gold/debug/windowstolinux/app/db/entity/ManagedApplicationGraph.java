@@ -13,14 +13,30 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 
-/** Durable secret-free topology for one successfully deployed application. / 一个已成功部署应用的持久且不含秘密的拓扑。 */
+/**
+ * Durable secret-free topology for one successfully deployed application. / 一个已成功部署应用的持久且不含秘密的拓扑。
+ *
+ * @param applicationId managed application identifier / 受管应用标识
+ * @param healthComponentId health component id / 健康组件标识
+ * @param applicationHealthCheck independently reviewed whole-application probe / 独立审阅的整应用探测
+ * @param components reviewed components in the application graph / 应用图中的已审阅组件
+ */
 public record ManagedApplicationGraph(
         String applicationId,
         String healthComponentId,
         Optional<HealthCheck> applicationHealthCheck,
         List<Component> components
 ) {
-    /** Validates the exact bounded graph. / 验证精确且有界的图。 */
+    /**
+     * Validates the exact bounded graph. / 验证精确且有界的图。
+     *
+     * @param applicationId managed application identifier / 受管应用标识
+     * @param healthComponentId health component id / 健康组件标识
+     * @param applicationHealthCheck independently reviewed whole-application probe / 独立审阅的整应用探测
+     * @param components reviewed components in the application graph / 应用图中的已审阅组件
+     * @throws IllegalArgumentException if an input violates the constraints checked by this contract / 输入违反当前契约检查的约束时
+     * @throws NullPointerException if a required input is absent / 必需输入缺失时
+     */
     public ManagedApplicationGraph {
         applicationId = identifier(applicationId, "applicationId");
         healthComponentId = identifier(healthComponentId, "healthComponentId");
@@ -46,7 +62,17 @@ public record ManagedApplicationGraph(
         }
     }
 
-    /** One persisted component identity, health contract, and dependency set. / 一个持久组件身份、健康契约和依赖集合。 */
+    /**
+     * One persisted component identity, health contract, and dependency set. / 一个持久组件身份、健康契约和依赖集合。
+     *
+     * @param componentId identifier within the reviewed component graph / 已审阅组件图内的标识
+     * @param application managed target with its server and ownership identity / 携带服务器及归属身份的受管目标
+     * @param runtimeConfiguration runtime configuration / 运行时配置
+     * @param dependencies component identifiers that must precede this component / 必须先于当前组件执行的组件标识
+     * @param reviewedRuntime reviewed runtime / 已审阅运行时
+     * @param reviewedDataPaths reviewed data paths / 已审阅数据路径集合
+     * @param reviewedResourceBindings reviewed resource bindings / 已审阅资源绑定集合
+     */
     public record Component(
             String componentId,
             ManagedApplication application,
@@ -56,7 +82,19 @@ public record ManagedApplicationGraph(
             Optional<List<ComponentDataPath>> reviewedDataPaths,
             Optional<ManagedComponentResourceBindings> reviewedResourceBindings
     ) {
-        /** Validates the component without accepting build or secret values. / 验证组件且不接受构建值或秘密值。 */
+        /**
+         * Validates the component without accepting build or secret values. / 验证组件且不接受构建值或秘密值。
+         *
+         * @param componentId identifier within the reviewed component graph / 已审阅组件图内的标识
+         * @param application managed target with its server and ownership identity / 携带服务器及归属身份的受管目标
+         * @param runtimeConfiguration runtime configuration / 运行时配置
+         * @param dependencies component identifiers that must precede this component / 必须先于当前组件执行的组件标识
+         * @param reviewedRuntime reviewed runtime / 已审阅运行时
+         * @param reviewedDataPaths reviewed data paths / 已审阅数据路径集合
+         * @param reviewedResourceBindings reviewed resource bindings / 已审阅资源绑定集合
+         * @throws IllegalArgumentException if an input violates the constraints checked by this contract / 输入违反当前契约检查的约束时
+         * @throws NullPointerException if a required input is absent / 必需输入缺失时
+         */
         public Component {
             componentId = identifier(componentId, "componentId");
             application = Objects.requireNonNull(application, "application");
@@ -90,7 +128,16 @@ public record ManagedApplicationGraph(
             }
         }
 
-        /** Creates a schema-v9 component whose reviewed resource bindings were never persisted. / 创建未曾持久化审阅资源绑定的 schema-v9 组件。 */
+        /**
+         * Creates a schema-v9 component whose reviewed resource bindings were never persisted. / 创建未曾持久化审阅资源绑定的 schema-v9 组件。
+         *
+         * @param componentId identifier within the reviewed component graph / 已审阅组件图内的标识
+         * @param application managed target with its server and ownership identity / 携带服务器及归属身份的受管目标
+         * @param runtimeConfiguration runtime configuration / 运行时配置
+         * @param dependencies component identifiers that must precede this component / 必须先于当前组件执行的组件标识
+         * @param reviewedRuntime reviewed runtime / 已审阅运行时
+         * @param reviewedDataPaths reviewed data paths / 已审阅数据路径集合
+         */
         public Component(String componentId, ManagedApplication application,
                          ManagedApplicationRuntimeConfiguration runtimeConfiguration, List<String> dependencies,
                          Optional<DeploymentRuntimeSpecification> reviewedRuntime,
@@ -99,25 +146,56 @@ public record ManagedApplicationGraph(
                     Optional.empty());
         }
 
-        /** Creates a schema-v8 component whose reviewed data paths were never persisted. / 创建未曾持久化审阅数据路径的 schema-v8 组件。 */
+        /**
+         * Creates a schema-v8 component whose reviewed data paths were never persisted. / 创建未曾持久化审阅数据路径的 schema-v8 组件。
+         *
+         * @param componentId identifier within the reviewed component graph / 已审阅组件图内的标识
+         * @param application managed target with its server and ownership identity / 携带服务器及归属身份的受管目标
+         * @param runtimeConfiguration runtime configuration / 运行时配置
+         * @param dependencies component identifiers that must precede this component / 必须先于当前组件执行的组件标识
+         * @param reviewedRuntime reviewed runtime / 已审阅运行时
+         */
         public Component(String componentId, ManagedApplication application,
                          ManagedApplicationRuntimeConfiguration runtimeConfiguration, List<String> dependencies,
                          Optional<DeploymentRuntimeSpecification> reviewedRuntime) {
             this(componentId, application, runtimeConfiguration, dependencies, reviewedRuntime, Optional.empty());
         }
 
-        /** Creates a legacy component whose exact reviewed runtime and data paths were never persisted. / 创建未曾持久化精确审阅运行时和数据路径的旧组件。 */
+        /**
+         * Creates a legacy component whose exact reviewed runtime and data paths were never persisted. / 创建未曾持久化精确审阅运行时和数据路径的旧组件。
+         *
+         * @param componentId identifier within the reviewed component graph / 已审阅组件图内的标识
+         * @param application managed target with its server and ownership identity / 携带服务器及归属身份的受管目标
+         * @param runtimeConfiguration runtime configuration / 运行时配置
+         * @param dependencies component identifiers that must precede this component / 必须先于当前组件执行的组件标识
+         */
         public Component(String componentId, ManagedApplication application,
                          ManagedApplicationRuntimeConfiguration runtimeConfiguration, List<String> dependencies) {
             this(componentId, application, runtimeConfiguration, dependencies, Optional.empty(), Optional.empty());
         }
     }
 
-    /** Creates a legacy graph whose independently reviewed application health check was never persisted. / 创建未曾持久化独立审阅整应用健康检查的旧图。 */
+    /**
+     * Creates a legacy graph whose independently reviewed application health check was never persisted. / 创建未曾持久化独立审阅整应用健康检查的旧图。
+     *
+     * @param applicationId managed application identifier / 受管应用标识
+     * @param healthComponentId health component id / 健康组件标识
+     * @param components reviewed components in the application graph / 应用图中的已审阅组件
+     */
     public ManagedApplicationGraph(String applicationId, String healthComponentId, List<Component> components) {
         this(applicationId, healthComponentId, Optional.empty(), components);
     }
 
+    /**
+     * Validates an identifier against the bounded syntax of the owning contract.
+     * <p>按所属契约的有界语法验证标识。
+     *
+     * @param value candidate content accepted or rejected by this contract / 由当前契约接收或拒绝的候选内容
+     * @param name human-readable name or diagnostic field label / 可读名称或诊断字段标签
+     * @return identifier text / 标识文本
+     * @throws IllegalArgumentException if an input violates the constraints checked by this contract / 输入违反当前契约检查的约束时
+     * @throws NullPointerException if a required input is absent / 必需输入缺失时
+     */
     private static String identifier(String value, String name) {
         value = Objects.requireNonNull(value, name).trim();
         if (!value.matches("[a-z0-9][a-z0-9-]{0,62}")) {

@@ -1,6 +1,6 @@
 package gold.debug.windowstolinux.web.main;
 
-import gold.debug.windowstolinux.web.service.contract.WebJson;
+import gold.debug.windowstolinux.web.service.persistence.serialization.WebJsonCodec;
 import tools.jackson.databind.JsonNode;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -18,7 +18,7 @@ class WebHttpIntegrationTest {
         try (var runtime = start()) {
             var health = send(runtime, "GET", "/api/v1/health", null, null, null);
             assertEquals(200, health.statusCode());
-            assertEquals("internal-test", WebJson.read(health.body()).path("mode").asText());
+            assertEquals("internal-test", WebJsonCodec.read(health.body()).path("mode").asText());
             assertEquals(403, send(runtime, "POST", "/api/v1/servers", "{}", "https://evil.invalid", "application/json").statusCode());
             assertEquals(415, send(runtime, "POST", "/api/v1/servers", "name=a", runtime.origin(), "application/x-www-form-urlencoded").statusCode());
             assertEquals(403, send(runtime, "POST", "/api/v1/servers", "{}", null, "application/json").statusCode());
@@ -37,12 +37,12 @@ class WebHttpIntegrationTest {
             var response = send(runtime, "POST", "/api/v1/servers", "{\"name\":\"Test server\",\"host\":\"test.invalid\",\"port\":22,\"username\":\"root\",\"password\":\"synthetic-secret\"}", runtime.origin(), "application/json");
             assertEquals(201, response.statusCode(), response.body());
             assertFalse(response.body().contains("synthetic-secret")); assertFalse(response.body().contains("secret_id"));
-            id = WebJson.read(response.body()).path("id").asText();
-            assertTrue(WebJson.read(response.body()).path("credentialConfigured").asBoolean());
+            id = WebJsonCodec.read(response.body()).path("id").asText();
+            assertTrue(WebJsonCodec.read(response.body()).path("credentialConfigured").asBoolean());
         }
         try (var runtime = start()) {
             var response = send(runtime, "GET", "/api/v1/servers", null, null, null);
-            assertEquals(id, WebJson.read(response.body()).get(0).path("id").asText());
+            assertEquals(id, WebJsonCodec.read(response.body()).get(0).path("id").asText());
             assertFalse(response.body().contains("synthetic-secret"));
         }
     }
@@ -129,9 +129,9 @@ class WebHttpIntegrationTest {
                 "w2l.http.heartbeat", "50ms", "w2l.http.event-poll", "10ms"))) {
             var scheduler = runtime.bean(gold.debug.windowstolinux.web.task.scheduler.WebTaskScheduler.class);
             var context = runtime.bean(gold.debug.windowstolinux.web.service.contract.WebRequestContext.class);
-            var operation = new gold.debug.windowstolinux.web.service.contract.PreparedWebOperation("ANALYZE", WebJson.object(),
+            var operation = new gold.debug.windowstolinux.web.service.contract.PreparedWebOperation("ANALYZE", WebJsonCodec.object(),
                     java.util.List.of(), java.util.List.of(), false, null, null, null,
-                    interaction -> { assertTrue(release.await(10, java.util.concurrent.TimeUnit.SECONDS)); return WebJson.object().put("done", true); });
+                    interaction -> { assertTrue(release.await(10, java.util.concurrent.TimeUnit.SECONDS)); return WebJsonCodec.object().put("done", true); });
             String id = scheduler.submit(context, operation);
             var request = HttpRequest.newBuilder(URI.create(runtime.origin() + "/api/v1/tasks/" + id + "/events")).GET().build();
             try (var stream = client.send(request, HttpResponse.BodyHandlers.ofInputStream()).body();
@@ -162,7 +162,7 @@ class WebHttpIntegrationTest {
             var wrongMethod = send(runtime, "POST", "/api/v1/health", "{}", runtime.origin(), "application/json");
             assertEquals(405, wrongMethod.statusCode());
             for (var response : java.util.List.of(oversized, malformed, wrongMethod)) {
-                assertTrue(WebJson.read(response.body()).has("code"), response.body());
+                assertTrue(WebJsonCodec.read(response.body()).has("code"), response.body());
                 assertFalse(response.body().contains(root.toString()));
                 assertFalse(response.body().contains("Exception"));
             }
@@ -186,5 +186,5 @@ class WebHttpIntegrationTest {
         request.method(method, body == null ? HttpRequest.BodyPublishers.noBody() : HttpRequest.BodyPublishers.ofString(body));
         return client.send(request.build(), HttpResponse.BodyHandlers.ofString());
     }
-    private static JsonNode json(HttpResponse<String> response) { assertTrue(response.statusCode() < 300, response.body()); return WebJson.read(response.body()); }
+    private static JsonNode json(HttpResponse<String> response) { assertTrue(response.statusCode() < 300, response.body()); return WebJsonCodec.read(response.body()); }
 }

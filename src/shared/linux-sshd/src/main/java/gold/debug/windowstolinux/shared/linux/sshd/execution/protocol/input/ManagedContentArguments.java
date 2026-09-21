@@ -7,12 +7,24 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 
-/** Converts reviewed managed content bindings to deterministic helper scalars. / 将经审阅受管内容绑定转换为确定性 helper 标量。 */
+/**
+ * Converts reviewed managed content bindings to deterministic helper scalars. / 将经审阅受管内容绑定转换为确定性 helper 标量。
+ */
 public final class ManagedContentArguments {
+    /**
+     * Prevents instantiation of this static contract helper.
+     * <p>防止实例化当前静态契约辅助类。
+     */
     private ManagedContentArguments() {
     }
 
-    /** Returns application, component and exact binding arguments in canonical order. / 以规范顺序返回应用、组件及精确绑定参数。 */
+    /**
+     * Returns application, component and exact binding arguments in canonical order. / 以规范顺序返回应用、组件及精确绑定参数。
+     *
+     * @param publication publication / 发布
+     * @return application, component and exact binding arguments in canonical order / 以规范顺序返回应用、组件及精确绑定参数
+     * @throws NullPointerException if a required input is absent / 必需输入缺失时
+     */
     public static List<String> from(ManagedContentPublication publication) {
         publication = Objects.requireNonNull(publication, "publication");
         List<String> values = new ArrayList<>();

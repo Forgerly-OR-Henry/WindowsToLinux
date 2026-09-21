@@ -5,19 +5,18 @@ import java.util.Objects;
 /**
  * Optional explanatory text; it never changes deterministic project support or deployment decisions.
  *
- * <p>可选解释文本；它绝不改变确定性的项目支持判断或部署决策。
+ *  <p>可选解释文本；它绝不改变确定性的项目支持判断或部署决策。
  *
- * @param explanation the {@code explanation} value / {@code explanation} 值
+ * @param explanation explanation / 解释
  */
 public record AiStructuralAssessment(String explanation) {
     /**
-     * Creates a {@code AiStructuralAssessment} instance.
+     * Validates and binds the inputs required by ai structural assessment.
+     * <p>校验并绑定AIStructural评估所需输入。
      *
-     * <p>创建 {@code AiStructuralAssessment} 实例。
-     *
-     * @param explanation the {@code explanation} value / {@code explanation} 值
+     * @param explanation explanation / 解释
      * @throws IllegalArgumentException if an argument violates the required constraints / 参数违反必要约束时
-     * @throws NullPointerException if a required argument is {@code null} / 必要参数为 {@code null} 时
+     * @throws NullPointerException if a required input is absent / 必需输入缺失时
      */
     public AiStructuralAssessment {
         explanation = Objects.requireNonNull(explanation, "explanation").trim();

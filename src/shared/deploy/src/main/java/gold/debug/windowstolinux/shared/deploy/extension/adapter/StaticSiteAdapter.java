@@ -11,12 +11,22 @@ import gold.debug.windowstolinux.shared.model.project.DeploymentRuntimeSpecifica
 /**
  * Plans static-site publication only after verifying the declared generated output directory.
  *
- * <p>只在验证声明的生成输出目录后计划静态站点发布。
+ *  <p>只在验证声明的生成输出目录后计划静态站点发布。
  */
 public final class StaticSiteAdapter implements DeploymentAdapter {
-    /** Returns the supported deployment project type. / 返回支持的部署项目类型。 */
+    /**
+     * Returns the supported deployment project type. / 返回支持的部署项目类型。
+     *
+     * @return the supported deployment project type / 支持的部署项目类型
+     */
     @Override public DeploymentProjectType projectType() { return DeploymentProjectType.STATIC_SITE; }
-    /** Builds the reviewed deployment plan. / 构建经审阅的部署计划。 */
+    /**
+     * Builds the reviewed deployment plan. / 构建经审阅的部署计划。
+     *
+     * @param request reviewed inputs for the requested operation / 所请求操作的已审阅输入
+     * @return the reviewed deployment plan / 经审阅的部署计划
+     * @throws IllegalArgumentException if an input violates the constraints checked by this contract / 输入违反当前契约检查的约束时
+     */
     @Override public ReviewedDeploymentPlan plan(ReviewedDeploymentRequest request) {
         DeploymentRuntimeSpecification.StaticSite runtime = (DeploymentRuntimeSpecification.StaticSite) request.runtime();
         boolean nodeBuild = request.facts().buildTool() == DeploymentBuildToolType.NPM

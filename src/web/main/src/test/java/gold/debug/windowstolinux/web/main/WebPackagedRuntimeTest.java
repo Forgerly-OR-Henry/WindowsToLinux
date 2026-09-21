@@ -1,6 +1,6 @@
 package gold.debug.windowstolinux.web.main;
 
-import gold.debug.windowstolinux.web.service.contract.WebJson;
+import gold.debug.windowstolinux.web.service.persistence.serialization.WebJsonCodec;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import java.nio.file.*;
@@ -20,9 +20,9 @@ class WebPackagedRuntimeTest {
         try (var process = WebProcessProbe.launch(List.of("-jar", first.resolve("web.jar").toString()), root.resolve("unrelated-one"), keys)) {
             assertEquals(200, process.get("/").statusCode());
             var saved = process.json("POST", "/api/v1/servers", "{\"name\":\"Packaged\",\"host\":\"test.invalid\",\"port\":22,\"username\":\"root\",\"password\":\"synthetic-only\"}");
-            assertEquals(201, saved.statusCode(), saved.body()); id = WebJson.read(saved.body()).path("id").asText();
+            assertEquals(201, saved.statusCode(), saved.body()); id = WebJsonCodec.read(saved.body()).path("id").asText();
             var update = process.json("PUT", "/api/v1/servers/" + id, "{\"name\":\"Updated\",\"host\":\"test.invalid\",\"port\":22,\"username\":\"root\",\"version\":1}");
-            assertEquals(200, update.statusCode(), update.body()); assertEquals(2, WebJson.read(update.body()).path("version").asLong());
+            assertEquals(200, update.statusCode(), update.body()); assertEquals(2, WebJsonCodec.read(update.body()).path("version").asLong());
             assertTrue(Files.isRegularFile(first.resolve("lib/data/windowstolinuxweb.db")));
             assertFalse(Files.exists(root.resolve("unrelated-one/data")));
         }
@@ -30,7 +30,7 @@ class WebPackagedRuntimeTest {
         renameDbJar(moved);
         for (String working : List.of("unrelated-two", "unrelated-three")) {
             try (var process = WebProcessProbe.launch(List.of("-jar", moved.resolve("web.jar").toString()), root.resolve(working), keys)) {
-                var servers = WebJson.read(process.get("/api/v1/servers").body());
+                var servers = WebJsonCodec.read(process.get("/api/v1/servers").body());
                 assertEquals(id, servers.get(0).path("id").asText()); assertEquals("Updated", servers.get(0).path("name").asText());
                 assertTrue(Files.isDirectory(moved.resolve("lib/data/files"))); assertTrue(Files.isDirectory(moved.resolve("lib/data/backups")));
             }

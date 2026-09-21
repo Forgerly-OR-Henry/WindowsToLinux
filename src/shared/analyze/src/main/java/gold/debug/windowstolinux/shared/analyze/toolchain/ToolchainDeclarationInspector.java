@@ -11,8 +11,18 @@ import java.util.regex.Pattern;
 import static gold.debug.windowstolinux.shared.model.toolchain.ToolchainEcosystemType.*;
 import static gold.debug.windowstolinux.shared.model.toolchain.ToolchainRequirement.PurposeType.*;
 
-/** Collects bounded declarations before any release admission, without executing build files. / 不执行构建文件，在发布准入前收集有界版本声明。 */
+/**
+ * Collects bounded declarations before any release admission, without executing build files. / 不执行构建文件，在发布准入前收集有界版本声明。
+ */
 public final class ToolchainDeclarationInspector {
+    /**
+     * Reads bounded explicit toolchain requirements and rejects unsupported or conflicting declarations.
+     * <p>读取有界显式工具链要求，并拒绝不支持或冲突声明。
+     *
+     * @param root root directory defining the filesystem boundary / 定义文件系统边界的根目录
+     * @return bounded explicit toolchain requirements and rejects unsupported or conflicting declarations / 有界显式工具链要求，并拒绝不支持或冲突声明
+     * @throws IOException if the required file or stream operation fails / 所需文件或流操作失败时
+     */
     public List<ToolchainRequirement> inspect(Path root) throws IOException {
         List<ToolchainRequirement> result = new ArrayList<>();
         read(result, root, "windowstolinux-java.properties", JAVA, LANGUAGE_TARGET, "(?m)^javaVersion=([^\\r\\n]+)$");
@@ -46,6 +56,18 @@ public final class ToolchainDeclarationInspector {
         return List.copyOf(result);
     }
 
+    /**
+     * Reads toolchain declaration.
+     * <p>读取工具链声明。
+     *
+     * @param target exact destination or managed target of the operation / 操作的精确目的地或受管目标
+     * @param root root directory defining the filesystem boundary / 定义文件系统边界的根目录
+     * @param file file / 文件
+     * @param ecosystem ecosystem / 生态
+     * @param purpose purpose / 用途
+     * @param pattern pattern / 匹配模式
+     * @throws IOException if the required file or stream operation fails / 所需文件或流操作失败时
+     */
     private static void read(List<ToolchainRequirement> target, Path root, String file, ToolchainEcosystemType ecosystem,
             ToolchainRequirement.PurposeType purpose, String pattern) throws IOException {
         Path path = root.resolve(file);

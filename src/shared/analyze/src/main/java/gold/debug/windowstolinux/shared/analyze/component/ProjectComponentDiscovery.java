@@ -7,12 +7,24 @@ import java.nio.file.*;
 import java.nio.file.attribute.BasicFileAttributes;
 import java.util.*;
 
-/** Bounded static discovery; directories and declarations are evidence, never executable instructions. / 有界静态发现，目录和声明仅作为证据，不作为可执行指令。 */
+/**
+ * Bounded static discovery; directories and declarations are evidence, never executable instructions. / 有界静态发现，目录和声明仅作为证据，不作为可执行指令。
+ */
 public final class ProjectComponentDiscovery {
+    /**
+     * EXCLUDED.
+     * <p>排除。
+     */
     private static final Set<String> EXCLUDED = Set.of(".git", ".idea", ".ai-workspace", "node_modules", "target",
             "build", "dist", ".venv", "venv", "vendor", "test", "tests", "examples", "docs");
 
-    /** Discovers at most 64 component roots without executing project content or following links. / 最多发现 64 个组件根目录，不执行项目内容或跟随链接。 */
+    /**
+     * Discovers at most 64 component roots without executing project content or following links. / 最多发现 64 个组件根目录，不执行项目内容或跟随链接。
+     *
+     * @param selected explicitly selected item or state / 显式选择的项目或状态
+     * @return constructed or resolved list / 构造或解析得到的列表
+     * @throws IOException if the required file or stream operation fails / 所需文件或流操作失败时
+     */
     public List<DiscoveredProjectComponent> discover(Path selected) throws IOException {
         Path root = selected.toAbsolutePath().normalize();
         if (!Files.isDirectory(root, LinkOption.NOFOLLOW_LINKS) || Files.isSymbolicLink(root))
@@ -26,11 +38,32 @@ public final class ProjectComponentDiscovery {
         }
         Map<Path, Set<DeploymentProjectType>> candidates = new TreeMap<>();
         Files.walkFileTree(root, EnumSet.noneOf(FileVisitOption.class), 12, new SimpleFileVisitor<>() {
+            /**
+             * Count.
+             * <p>数量。
+             */
             private int count;
+            /**
+             * Checks the directory boundary before visiting its contents.
+             * <p>在访问目录内容前检查目录边界。
+             *
+             * @param directory directory within the caller's controlled storage boundary / 调用方受控存储边界内的目录
+             * @param attributes attributes / 属性
+             * @return constructed or resolved file visit result / 构造或解析得到的文件Visit结果
+             */
             @Override public FileVisitResult preVisitDirectory(Path directory, BasicFileAttributes attributes) {
                 return !directory.equals(root) && EXCLUDED.contains(directory.getFileName().toString())
                         ? FileVisitResult.SKIP_SUBTREE : FileVisitResult.CONTINUE;
             }
+            /**
+             * Visits file.
+             * <p>遍历文件。
+             *
+             * @param file file / 文件
+             * @param attributes attributes / 属性
+             * @return constructed or resolved file visit result / 构造或解析得到的文件Visit结果
+             * @throws IOException if the required file or stream operation fails / 所需文件或流操作失败时
+             */
             @Override public FileVisitResult visitFile(Path file, BasicFileAttributes attributes) throws IOException {
                 if (++count > 100_000 || candidates.size() > 64) throw new IOException("source discovery limit exceeded");
                 if (Files.isSymbolicLink(file)) throw new IOException("source contains a symbolic link");
@@ -61,6 +94,15 @@ public final class ProjectComponentDiscovery {
         return List.copyOf(result);
     }
 
+    /**
+     * Classifies recognized project marker files using bounded static metadata.
+     * <p>使用有界静态元数据对已识别项目标记文件分类。
+     *
+     * @param name human-readable name or diagnostic field label / 可读名称或诊断字段标签
+     * @param file file / 文件
+     * @return constructed or resolved set / 构造或解析得到的集合
+     * @throws IOException if the required file or stream operation fails / 所需文件或流操作失败时
+     */
     private static Set<DeploymentProjectType> classify(String name, Path file) throws IOException {
         return switch (name) {
             case "pom.xml", "build.gradle", "build.gradle.kts" -> {
@@ -94,6 +136,14 @@ public final class ProjectComponentDiscovery {
         };
     }
 
+    /**
+     * Reads bounded source metadata text from a regular file.
+     * <p>从常规文件读取有界源码元数据文本。
+     *
+     * @param file file / 文件
+     * @return bounded source metadata text from a regular file / 从常规文件读取有界源码元数据文本
+     * @throws IOException if the required file or stream operation fails / 所需文件或流操作失败时
+     */
     private static String text(Path file) throws IOException {
         if (Files.size(file) > 2 * 1024 * 1024) throw new IOException("project declaration exceeds size limit");
         return Files.readString(file);

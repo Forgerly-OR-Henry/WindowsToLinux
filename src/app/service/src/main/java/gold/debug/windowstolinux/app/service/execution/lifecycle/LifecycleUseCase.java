@@ -26,26 +26,40 @@ import java.util.Objects;
 import java.util.concurrent.locks.ReentrantLock;
 
 /**
- * Provides the {@code LifecycleUseCase} implementation.
- *
- * <p>提供 {@code LifecycleUseCase} 实现。
+ * Loads persisted ownership and runtime facts before controlled application lifecycle actions.
+ * <p>在受控应用生命周期操作前读取持久化的归属和运行事实。
  */
 public final class LifecycleUseCase {
+    /**
+     * Bound managed application repository collaborator for applications.
+     * <p>处理应用集合的受管应用仓库协作对象。
+     */
     private final ManagedApplicationRepository applications;
+    /**
+     * Factory for authenticated Linux sessions.
+     * <p>已认证 Linux 会话的工厂。
+     */
     private final LinuxGateway gateway;
+    /**
+     * Bound server use case facade collaborator for server-profile and authenticated-session service.
+     * <p>处理服务器资料及已认证会话服务的服务器用例门面协作对象。
+     */
     private final ServerUseCaseFacade servers;
+    /**
+     * Shared operation locks indexed by target identity.
+     * <p>按目标身份索引的共享操作锁。
+     */
     private final ServerOperationLockRegistry locks;
 
     /**
-     * Creates a {@code LifecycleUseCase} instance.
+     * Validates and binds the inputs required by lifecycle use case.
+     * <p>校验并绑定生命周期用例所需输入。
      *
-     * <p>创建 {@code LifecycleUseCase} 实例。
-     *
-     * @param applications the {@code applications} value / {@code applications} 值
-     * @param gateway the {@code gateway} value / {@code gateway} 值
-     * @param servers the {@code servers} value / {@code servers} 值
-     * @param locks the {@code locks} value / {@code locks} 值
-     * @throws NullPointerException if a required argument is {@code null} / 必要参数为 {@code null} 时
+     * @param applications applications / 应用集合
+     * @param gateway factory for authenticated Linux sessions / 已认证 Linux 会话的工厂
+     * @param servers server-profile and authenticated-session service / 服务器资料及已认证会话服务
+     * @param locks shared operation locks indexed by target identity / 按目标身份索引的共享操作锁
+     * @throws NullPointerException if a required input is absent / 必需输入缺失时
      */
     public LifecycleUseCase(ManagedApplicationRepository applications, LinuxGateway gateway,
                             ServerUseCaseFacade servers, ServerOperationLockRegistry locks) {
@@ -58,22 +72,21 @@ public final class LifecycleUseCase {
     /**
      * Returns the values selected by {@code list}.
      *
-     * <p>返回 {@code list} 选出的值。
+     *  <p>返回 {@code list} 选出的值。
      *
      * @return the operation result collection / 操作结果集合
-     * @throws SQLException if the operation cannot be completed / 无法完成操作时
+     * @throws SQLException if the database cannot complete the requested read or transaction / 数据库无法完成请求的读取或事务时
      */
     public List<ManagedApplication> list() throws SQLException {
         return applications.list();
     }
 
     /**
-     * Performs the {@code summaries} operation.
-     *
-     * <p>执行 {@code summaries} 操作。
+     * Builds list managed application snapshot from the supplied summaries inputs.
+     * <p>根据所提供摘要集合输入构建列表受管应用快照。
      *
      * @return the operation result collection / 操作结果集合
-     * @throws SQLException if the operation cannot be completed / 无法完成操作时
+     * @throws SQLException if the database cannot complete the requested read or transaction / 数据库无法完成请求的读取或事务时
      */
     public List<ManagedApplicationSnapshot> summaries() throws SQLException {
         return applications.list().stream().map(application -> {
@@ -89,16 +102,15 @@ public final class LifecycleUseCase {
     }
 
     /**
-     * Performs the {@code executePersisted} operation.
+     * Executes persisted.
+     * <p>执行已持久化。
      *
-     * <p>执行 {@code executePersisted} 操作。
-     *
-     * @param applicationId the {@code applicationId} value / {@code applicationId} 值
-     * @param action the {@code action} value / {@code action} 值
-     * @param masterPassword the {@code masterPassword} value / {@code masterPassword} 值
+     * @param applicationId managed application identifier / 受管应用标识
+     * @param action explicit action selected for the current target / 为当前目标显式选择的动作
+     * @param masterPassword master-password buffer used to unlock protected credentials / 用于解锁受保护凭据的主密码缓冲区
      * @return the operation result / 操作结果
-     * @throws SecretStoreException if the operation cannot be completed / 无法完成操作时
-     * @throws SQLException if the operation cannot be completed / 无法完成操作时
+     * @throws SecretStoreException if the protected credential cannot be accessed or updated / 无法访问或更新受保护凭据时
+     * @throws SQLException if the database cannot complete the requested read or transaction / 数据库无法完成请求的读取或事务时
      */
     public LifecycleOutcome executePersisted(String applicationId, LifecycleAction action, char[] masterPassword)
             throws SecretStoreException, SQLException {
@@ -107,17 +119,16 @@ public final class LifecycleUseCase {
     }
 
     /**
-     * Performs the {@code executePersistedResult} operation.
+     * Executes persisted result.
+     * <p>执行已持久化结果。
      *
-     * <p>执行 {@code executePersistedResult} 操作。
-     *
-     * @param applicationId the {@code applicationId} value / {@code applicationId} 值
-     * @param action the {@code action} value / {@code action} 值
-     * @param masterPassword the {@code masterPassword} value / {@code masterPassword} 值
+     * @param applicationId managed application identifier / 受管应用标识
+     * @param action explicit action selected for the current target / 为当前目标显式选择的动作
+     * @param masterPassword master-password buffer used to unlock protected credentials / 用于解锁受保护凭据的主密码缓冲区
      * @return the operation result / 操作结果
-     * @throws SecretStoreException if the operation cannot be completed / 无法完成操作时
-     * @throws SQLException if the operation cannot be completed / 无法完成操作时
-     * @throws NullPointerException if a required argument is {@code null} / 必要参数为 {@code null} 时
+     * @throws SecretStoreException if the protected credential cannot be accessed or updated / 无法访问或更新受保护凭据时
+     * @throws SQLException if the database cannot complete the requested read or transaction / 数据库无法完成请求的读取或事务时
+     * @throws NullPointerException if a required input is absent / 必需输入缺失时
      */
     public LifecycleActionResult executePersistedResult(String applicationId, LifecycleAction action,
                                                         char[] masterPassword)
@@ -143,19 +154,18 @@ public final class LifecycleUseCase {
     }
 
     /**
-     * Performs the {@code execute} operation.
+     * Executes lifecycle outcome.
+     * <p>执行生命周期结果。
      *
-     * <p>执行 {@code execute} 操作。
-     *
-     * @param application the {@code application} value / {@code application} 值
-     * @param action the {@code action} value / {@code action} 值
-     * @param healthCheck the {@code healthCheck} value / {@code healthCheck} 值
-     * @param profile the {@code profile} value / {@code profile} 值
-     * @param mode the {@code mode} value / {@code mode} 值
-     * @param masterPassword the {@code masterPassword} value / {@code masterPassword} 值
+     * @param application managed target with its server and ownership identity / 携带服务器及归属身份的受管目标
+     * @param action explicit action selected for the current target / 为当前目标显式选择的动作
+     * @param healthCheck reviewed probe and its success criteria / 已审阅探测及其成功条件
+     * @param profile connection or provider settings supplied to the operation / 提供给操作的连接或提供者设置
+     * @param mode selected operating or storage mode / 所选运行或存储模式
+     * @param masterPassword master-password buffer used to unlock protected credentials / 用于解锁受保护凭据的主密码缓冲区
      * @return the operation result / 操作结果
-     * @throws SecretStoreException if the operation cannot be completed / 无法完成操作时
-     * @throws SQLException if the operation cannot be completed / 无法完成操作时
+     * @throws SecretStoreException if the protected credential cannot be accessed or updated / 无法访问或更新受保护凭据时
+     * @throws SQLException if the database cannot complete the requested read or transaction / 数据库无法完成请求的读取或事务时
      */
     public LifecycleOutcome execute(ManagedApplication application, LifecycleAction action, HealthCheck healthCheck,
                                     ServerProfile profile, CredentialStorageMode mode, char[] masterPassword)
@@ -164,19 +174,18 @@ public final class LifecycleUseCase {
     }
 
     /**
-     * Performs the {@code executeResult} operation.
+     * Executes typed outcome produced by the delegated operation.
+     * <p>执行被委派操作产生的类型化结果。
      *
-     * <p>执行 {@code executeResult} 操作。
-     *
-     * @param application the {@code application} value / {@code application} 值
-     * @param action the {@code action} value / {@code action} 值
-     * @param healthCheck the {@code healthCheck} value / {@code healthCheck} 值
-     * @param profile the {@code profile} value / {@code profile} 值
-     * @param mode the {@code mode} value / {@code mode} 值
-     * @param masterPassword the {@code masterPassword} value / {@code masterPassword} 值
+     * @param application managed target with its server and ownership identity / 携带服务器及归属身份的受管目标
+     * @param action explicit action selected for the current target / 为当前目标显式选择的动作
+     * @param healthCheck reviewed probe and its success criteria / 已审阅探测及其成功条件
+     * @param profile connection or provider settings supplied to the operation / 提供给操作的连接或提供者设置
+     * @param mode selected operating or storage mode / 所选运行或存储模式
+     * @param masterPassword master-password buffer used to unlock protected credentials / 用于解锁受保护凭据的主密码缓冲区
      * @return the operation result / 操作结果
-     * @throws SecretStoreException if the operation cannot be completed / 无法完成操作时
-     * @throws SQLException if the operation cannot be completed / 无法完成操作时
+     * @throws SecretStoreException if the protected credential cannot be accessed or updated / 无法访问或更新受保护凭据时
+     * @throws SQLException if the database cannot complete the requested read or transaction / 数据库无法完成请求的读取或事务时
      */
     public LifecycleActionResult executeResult(ManagedApplication application, LifecycleAction action,
                                                HealthCheck healthCheck, ServerProfile profile,
@@ -208,11 +217,24 @@ public final class LifecycleUseCase {
         }
     }
 
+    /**
+     * Builds lifecycle outcome from the supplied outcome inputs.
+     * <p>根据所提供结果输入构建生命周期结果。
+     *
+     * @param result typed outcome produced by the delegated operation / 被委派操作产生的类型化结果
+     * @return lifecycle outcome from the supplied outcome inputs / 根据所提供结果输入构建生命周期结果
+     */
     private static LifecycleOutcome outcome(LifecycleActionResult result) {
         return new LifecycleOutcome(result.accepted(), result.message(), result.observation(),
                 result.operationIdentity(), result.failure(), result.nonFatalFailures());
     }
 
+    /**
+     * Clears retained credential material after its scoped use.
+     * <p>在限定作用域使用结束后清空保留的凭据素材。
+     *
+     * @param value candidate content accepted or rejected by this contract / 由当前契约接收或拒绝的候选内容
+     */
     private static void clear(char[] value) {
         if (value != null) {
             Arrays.fill(value, '\0');

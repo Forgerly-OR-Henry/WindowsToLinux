@@ -7,9 +7,22 @@ import java.util.Base64;
 import java.util.HexFormat;
 import java.util.ArrayList;
 
-/** Versioned, deterministic release binding without a configuration parser dependency. / 无配置解析依赖的确定性版本化发布绑定。 */
+/**
+ * Versioned, deterministic release binding without a configuration parser dependency. / 无配置解析依赖的确定性版本化发布绑定。
+ */
 public final class ToolchainBindingCodec {
+    /**
+     * Prevents instantiation of this static contract helper.
+     * <p>防止实例化当前静态契约辅助类。
+     */
     private ToolchainBindingCodec() { }
+    /**
+     * Encodes toolchain binding.
+     * <p>编码工具链绑定。
+     *
+     * @param set set / 集合
+     * @return toolchain binding / 工具链绑定
+     */
     public static String encode(ResolvedToolchainSet set) {
         StringBuilder out = new StringBuilder("WTL-TOOLS-1\t" + set.catalogRevision() + "\n");
         for (var s : set.selections()) {
@@ -22,6 +35,14 @@ public final class ToolchainBindingCodec {
         }
         return out.toString();
     }
+    /**
+     * Decodes bounded toolchain bindings with exact versions and provenance, rejecting malformed or trailing data.
+     * <p>解码带精确版本及来源证据的有界工具链绑定，并拒绝格式无效或尾随数据。
+     *
+     * @param text bounded text consumed or produced by the current formatter / 当前格式化器消费或生成的有界文本
+     * @return bounded toolchain bindings with exact versions and provenance, rejecting malformed or trailing data / 带精确版本及来源证据的有界工具链绑定，并拒绝格式无效或尾随数据
+     * @throws IllegalArgumentException if an input violates the constraints checked by this contract / 输入违反当前契约检查的约束时
+     */
     public static ResolvedToolchainSet decode(String text) {
         if (text.length() > 65536 || !text.endsWith("\n")) throw new IllegalArgumentException("invalid binding size or framing");
         String[] lines = text.split("\n");
@@ -40,10 +61,32 @@ public final class ToolchainBindingCodec {
         }
         return new ResolvedToolchainSet(header[1], selections);
     }
+    /**
+     * Computes the SHA-256 identity of the stable UTF-8 toolchain binding encoding.
+     * <p>计算稳定 UTF-8 工具链绑定编码的 SHA-256 身份。
+     *
+     * @param set set / 集合
+     * @return the SHA-256 identity of the stable UTF-8 toolchain binding encoding / 稳定 UTF-8 工具链绑定编码的 SHA-256 身份
+     * @throws IllegalStateException if the required state or runtime facility is unavailable / 所需状态或运行设施不可用时
+     */
     public static String identity(ResolvedToolchainSet set) {
         try { return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(encode(set).getBytes(StandardCharsets.UTF_8))); }
         catch (NoSuchAlgorithmException e) { throw new IllegalStateException(e); }
     }
+    /**
+     * Encodes UTF-8 text as Base64.
+     * <p>将 UTF-8 文本编码为 Base64。
+     *
+     * @param text bounded text consumed or produced by the current formatter / 当前格式化器消费或生成的有界文本
+     * @return uTF-8 text as Base64 / 将 UTF-8 文本编码为 Base64
+     */
     private static String base64(String text) { return Base64.getEncoder().encodeToString(text.getBytes(StandardCharsets.UTF_8)); }
+    /**
+     * Decodes Base64 content into UTF-8 text.
+     * <p>将 Base64 内容解码为 UTF-8 文本。
+     *
+     * @param text bounded text consumed or produced by the current formatter / 当前格式化器消费或生成的有界文本
+     * @return base64 content into UTF-8 text / 将 Base64 内容解码为 UTF-8 文本
+     */
     private static String unbase64(String text) { return new String(Base64.getDecoder().decode(text), StandardCharsets.UTF_8); }
 }

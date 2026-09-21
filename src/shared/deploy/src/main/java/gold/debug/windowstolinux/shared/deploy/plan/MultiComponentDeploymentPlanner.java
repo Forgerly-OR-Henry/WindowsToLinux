@@ -20,10 +20,17 @@ import java.util.TreeSet;
 /**
  * Produces deterministic graph ordering only after mixed-project safety admission.
  *
- * <p>仅在混合项目通过安全准入后生成确定性图顺序。
+ *  <p>仅在混合项目通过安全准入后生成确定性图顺序。
  */
 public final class MultiComponentDeploymentPlanner {
-    /** Plans independent candidates and dependency-ordered runtime actions. / 计划独立候选与依赖有序运行时动作。 */
+    /**
+     * Plans independent candidates and dependency-ordered runtime actions. / 计划独立候选与依赖有序运行时动作。
+     *
+     * @param assessment the typed static assessment / 类型化静态评估
+     * @return constructed or resolved multi component deployment plan / 构造或解析得到的多组件部署计划
+     * @throws IllegalArgumentException if an input violates the constraints checked by this contract / 输入违反当前契约检查的约束时
+     * @throws NullPointerException if a required input is absent / 必需输入缺失时
+     */
     public MultiComponentDeploymentPlan plan(MultiComponentProjectAssessment assessment) {
         assessment = Objects.requireNonNull(assessment, "assessment");
         if (assessment.admission() != DeploymentAdmissionStatus.READY_FOR_PLANNING || !assessment.issues().isEmpty()) {
@@ -43,7 +50,16 @@ public final class MultiComponentDeploymentPlanner {
         return restore(assessment.applicationId(), namespaces, dependencies);
     }
 
-    /** Restores deterministic ordering from a previously validated durable managed graph. / 从先前已验证的持久受管图恢复确定性顺序。 */
+    /**
+     * Restores deterministic ordering from a previously validated durable managed graph. / 从先前已验证的持久受管图恢复确定性顺序。
+     *
+     * @param applicationId managed application identifier / 受管应用标识
+     * @param candidateNamespaces candidate namespaces / 候选命名空间集合
+     * @param componentDependencies component dependencies / 组件依赖
+     * @return constructed or resolved multi component deployment plan / 构造或解析得到的多组件部署计划
+     * @throws IllegalArgumentException if an input violates the constraints checked by this contract / 输入违反当前契约检查的约束时
+     * @throws NullPointerException if a required input is absent / 必需输入缺失时
+     */
     public MultiComponentDeploymentPlan restore(String applicationId, Map<String, String> candidateNamespaces,
                                                 Map<String, List<String>> componentDependencies) {
         applicationId = Objects.requireNonNull(applicationId, "applicationId");
@@ -64,6 +80,14 @@ public final class MultiComponentDeploymentPlanner {
                 namespaces, dependencies);
     }
 
+    /**
+     * Groups dependency-free components into deterministic execution waves and rejects unresolved cycles.
+     * <p>将无剩余依赖的组件分为确定的执行批次，并拒绝未解析的依赖环。
+     *
+     * @param components reviewed components in the application graph / 应用图中的已审阅组件
+     * @return constructed or resolved list / 构造或解析得到的列表
+     * @throws IllegalArgumentException if an input violates the constraints checked by this contract / 输入违反当前契约检查的约束时
+     */
     private static List<List<String>> topologicalWaves(Map<String, List<String>> components) {
         Map<String, Integer> remainingDependencies = new HashMap<>();
         Map<String, Set<String>> dependents = new HashMap<>();

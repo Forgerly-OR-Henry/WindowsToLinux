@@ -5,15 +5,31 @@ import gold.debug.windowstolinux.shared.linux.sshd.capability.ecosystem.Ecosyste
 import gold.debug.windowstolinux.shared.linux.sshd.distro.generation.script.SetupScriptRenderer;
 import gold.debug.windowstolinux.shared.linux.sshd.execution.protocol.helper.ManagedHelperBundle;
 
-/** Fixed APT preparation mechanics used by independent Ubuntu and Debian adapters. / 独立 Ubuntu 与 Debian 适配器使用的固定 APT 准备机械流程。 */
+/**
+ * Fixed APT preparation mechanics used by independent Ubuntu and Debian adapters. / 独立 Ubuntu 与 Debian 适配器使用的固定 APT 准备机械流程。
+ */
 public final class AptSetupRenderer {
-    /** Represents the {@code LOCK_TIMEOUT_SECONDS} value. / 表示 {@code LOCK_TIMEOUT_SECONDS} 值。 */
+    /**
+     * LOCK TIMEOUT SECONDS.
+     * <p>锁超时秒。
+     */
     public static final int LOCK_TIMEOUT_SECONDS = 300;
 
+    /**
+     * Prevents instantiation of this static contract helper.
+     * <p>防止实例化当前静态契约辅助类。
+     */
     private AptSetupRenderer() {
     }
 
-    /** Adds only implementation-owned preparation after package installation. / 仅在安装软件包后加入实现自有的准备步骤。 */
+    /**
+     * Adds only implementation-owned preparation after package installation. / 仅在安装软件包后加入实现自有的准备步骤。
+     *
+     * @param profile connection or provider settings supplied to the operation / 提供给操作的连接或提供者设置
+     * @param username account name used by the reviewed connection / 已审阅连接使用的账户名
+     * @param additionalPreparation additional preparation / 额外准备
+     * @return render text / 渲染文本
+     */
     static String render(DistributionSetupProfile profile, String username, String additionalPreparation) {
         username = SetupScriptRenderer.requireUsername(username);
         String packages = String.join(" ", profile.packages());

@@ -19,12 +19,20 @@ import java.util.Set;
 /**
  * Validates local source boundaries and creates a deterministic safe-file manifest.
  *
- * <p>验证本地源码边界并创建确定性安全文件清单。
+ *  <p>验证本地源码边界并创建确定性安全文件清单。
  */
 public final class SourceBoundaryValidator {
+    /**
+     * EXCLUDED DIRECTORIES.
+     * <p>排除目录集合。
+     */
     private static final Set<String> EXCLUDED_DIRECTORIES = Set.of(
             ".git", ".idea", "target", "node_modules", ".m2", ".gradle", "logs"
     );
+    /**
+     * EXCLUDED FILE NAMES.
+     * <p>排除文件名称集合。
+     */
     private static final Set<String> EXCLUDED_FILE_NAMES = Set.of(
             ".env", ".npmrc", ".pypirc", "id_rsa", "id_dsa", "id_ecdsa", "id_ed25519", "known_hosts"
     );
@@ -32,11 +40,11 @@ public final class SourceBoundaryValidator {
     /**
      * Validates the input through {@code validateSourceDirectory}.
      *
-     * <p>通过 {@code validateSourceDirectory} 验证输入。
+     *  <p>通过 {@code validateSourceDirectory} 验证输入。
      *
-     * @param sourceDirectory the {@code sourceDirectory} value / {@code sourceDirectory} 值
+     * @param sourceDirectory the user-selected source directory / 用户选择的源码目录
      * @return the operation result / 操作结果
-     * @throws IOException if the operation cannot be completed / 无法完成操作时
+     * @throws IOException if the required file or stream operation fails / 所需文件或流操作失败时
      * @throws IllegalArgumentException if an argument violates the required constraints / 参数违反必要约束时
      */
     public Path validateSourceDirectory(Path sourceDirectory) throws IOException {
@@ -54,10 +62,10 @@ public final class SourceBoundaryValidator {
     /**
      * Validates the input through {@code validateDestination}.
      *
-     * <p>通过 {@code validateDestination} 验证输入。
+     *  <p>通过 {@code validateDestination} 验证输入。
      *
-     * @param sourceRoot the {@code sourceRoot} value / {@code sourceRoot} 值
-     * @param requestedArchivePath the {@code requestedArchivePath} value / {@code requestedArchivePath} 值
+     * @param sourceRoot root of the reviewed source tree / 已审阅源码树的根目录
+     * @param requestedArchivePath requested archive path / 已请求归档路径
      * @return the operation result / 操作结果
      * @throws IllegalArgumentException if an argument violates the required constraints / 参数违反必要约束时
      */
@@ -84,13 +92,12 @@ public final class SourceBoundaryValidator {
     }
 
     /**
-     * Performs the {@code collect} operation.
+     * Traverses the admitted source tree into a deterministic manifest while enforcing path, type, count and byte boundaries.
+     * <p>将已准入源码树遍历为确定性清单，并执行路径、类型、数量及字节边界检查。
      *
-     * <p>执行 {@code collect} 操作。
-     *
-     * @param root the {@code root} value / {@code root} 值
+     * @param root root directory defining the filesystem boundary / 定义文件系统边界的根目录
      * @return the operation result / 操作结果
-     * @throws IOException if the operation cannot be completed / 无法完成操作时
+     * @throws IOException if the required file or stream operation fails / 所需文件或流操作失败时
      */
     public SourceManifest collect(Path root) throws IOException {
         Set<String> explicitFiles = explicitFiles(root);
@@ -98,7 +105,15 @@ public final class SourceBoundaryValidator {
         List<String> excluded = new ArrayList<>();
         long[] byteCount = {0L};
         Files.walkFileTree(root, new FileVisitor<>() {
-            /** Performs the {@code preVisitDirectory} operation. / 执行 {@code preVisitDirectory} 操作。 */
+            /**
+             * Checks the directory boundary before visiting its contents.
+             * <p>在访问目录内容前检查目录边界。
+             *
+             * @param directory directory within the caller's controlled storage boundary / 调用方受控存储边界内的目录
+             * @param attributes attributes / 属性
+             * @return constructed or resolved file visit result / 构造或解析得到的文件Visit结果
+             * @throws IOException if the required file or stream operation fails / 所需文件或流操作失败时
+             */
             @Override
             public FileVisitResult preVisitDirectory(Path directory, BasicFileAttributes attributes) throws IOException {
                 if (!directory.equals(root) && Files.isSymbolicLink(directory)) {
@@ -111,7 +126,15 @@ public final class SourceBoundaryValidator {
                 return FileVisitResult.CONTINUE;
             }
 
-            /** Performs the {@code visitFile} operation. / 执行 {@code visitFile} 操作。 */
+            /**
+             * Visits file.
+             * <p>遍历文件。
+             *
+             * @param file file / 文件
+             * @param attributes attributes / 属性
+             * @return constructed or resolved file visit result / 构造或解析得到的文件Visit结果
+             * @throws IOException if the required file or stream operation fails / 所需文件或流操作失败时
+             */
             @Override
             public FileVisitResult visitFile(Path file, BasicFileAttributes attributes) throws IOException {
                 if (Files.isSymbolicLink(file) || !attributes.isRegularFile()) {
@@ -127,13 +150,29 @@ public final class SourceBoundaryValidator {
                 return FileVisitResult.CONTINUE;
             }
 
-            /** Performs the {@code visitFileFailed} operation. / 执行 {@code visitFileFailed} 操作。 */
+            /**
+             * Visits file failed.
+             * <p>遍历文件失败。
+             *
+             * @param file file / 文件
+             * @param exception original exception being classified or translated / 正在分类或转换的原始异常
+             * @return constructed or resolved file visit result / 构造或解析得到的文件Visit结果
+             * @throws IOException if the required file or stream operation fails / 所需文件或流操作失败时
+             */
             @Override
             public FileVisitResult visitFileFailed(Path file, IOException exception) throws IOException {
                 throw new IOException("cannot read source entry: " + file, exception);
             }
 
-            /** Performs the {@code postVisitDirectory} operation. / 执行 {@code postVisitDirectory} 操作。 */
+            /**
+             * Completes the directory traversal step and propagates any traversal failure.
+             * <p>完成目录遍历步骤并传播遍历失败。
+             *
+             * @param directory directory within the caller's controlled storage boundary / 调用方受控存储边界内的目录
+             * @param exception original exception being classified or translated / 正在分类或转换的原始异常
+             * @return constructed or resolved file visit result / 构造或解析得到的文件Visit结果
+             * @throws IOException if the required file or stream operation fails / 所需文件或流操作失败时
+             */
             @Override
             public FileVisitResult postVisitDirectory(Path directory, IOException exception) throws IOException {
                 if (exception != null) {
@@ -149,11 +188,11 @@ public final class SourceBoundaryValidator {
     /**
      * Validates the input through {@code verifyUnchangedRegularFile}.
      *
-     * <p>通过 {@code verifyUnchangedRegularFile} 验证输入。
+     *  <p>通过 {@code verifyUnchangedRegularFile} 验证输入。
      *
-     * @param root the {@code root} value / {@code root} 值
-     * @param entry the {@code entry} value / {@code entry} 值
-     * @throws IOException if the operation cannot be completed / 无法完成操作时
+     * @param root root directory defining the filesystem boundary / 定义文件系统边界的根目录
+     * @param entry entry / 条目
+     * @throws IOException if the required file or stream operation fails / 所需文件或流操作失败时
      */
     public void verifyUnchangedRegularFile(Path root, SourceEntry entry) throws IOException {
         BasicFileAttributes attributes = Files.readAttributes(entry.path(), BasicFileAttributes.class, LinkOption.NOFOLLOW_LINKS);
@@ -164,17 +203,37 @@ public final class SourceBoundaryValidator {
         }
     }
 
+    /**
+     * Reports whether the excluded file condition holds for this contract.
+     * <p>判断当前契约是否满足排除文件条件。
+     *
+     * @param file file / 文件
+     * @return true when excluded file condition holds for this contract, false otherwise / 当前契约是否满足排除文件条件时为 true，否则为 false
+     */
     private static boolean isExcludedFile(Path file) {
         String name = file.getFileName().toString().toLowerCase(Locale.ROOT);
         return isSensitiveFile(name) || name.endsWith(".log");
     }
 
+    /**
+     * Reports whether the sensitive file condition holds for this contract.
+     * <p>判断当前契约是否满足敏感文件条件。
+     *
+     * @param name human-readable name or diagnostic field label / 可读名称或诊断字段标签
+     * @return true when sensitive file condition holds for this contract, false otherwise / 当前契约是否满足敏感文件条件时为 true，否则为 false
+     */
     private static boolean isSensitiveFile(String name) {
         return EXCLUDED_FILE_NAMES.contains(name) || name.startsWith(".env.") || name.endsWith(".pem") || name.endsWith(".key")
                 || name.endsWith(".p12") || name.endsWith(".pfx");
     }
 
-    /** Explicit resources can include sample logs but cannot override secret or source boundaries. / 显式资源可纳入样例日志，但不能绕过秘密或源码边界。 */
+    /**
+     * Explicit resources can include sample logs but cannot override secret or source boundaries. / 显式资源可纳入样例日志，但不能绕过秘密或源码边界。
+     *
+     * @param root root directory defining the filesystem boundary / 定义文件系统边界的根目录
+     * @return constructed or resolved set / 构造或解析得到的集合
+     * @throws IOException if the required file or stream operation fails / 所需文件或流操作失败时
+     */
     private static Set<String> explicitFiles(Path root) throws IOException {
         Path declaration = root.resolve("windowstolinux-application.properties");
         if (!Files.exists(declaration, LinkOption.NOFOLLOW_LINKS)) return Set.of();
@@ -200,6 +259,14 @@ public final class SourceBoundaryValidator {
         return Set.copyOf(result);
     }
 
+    /**
+     * Rejects a symbolic link at the selected path or any ancestor.
+     * <p>拒绝所选路径或任意祖先路径上的符号链接。
+     *
+     * @param path filesystem or archive member path used by this operation / 当前操作使用的文件系统或归档成员路径
+     * @param message localized explanation / 本地化说明
+     * @throws IllegalArgumentException if an input violates the constraints checked by this contract / 输入违反当前契约检查的约束时
+     */
     private static void rejectSymbolicLinksInPath(Path path, String message) {
         for (Path current = path; current != null; current = current.getParent()) {
             if (Files.isSymbolicLink(current)) {
@@ -209,12 +276,11 @@ public final class SourceBoundaryValidator {
     }
 
     /**
-     * Performs the {@code normalizedRelative} operation.
+     * Validates and produces normalized relative for the next contract boundary.
+     * <p>校验并生成供下一契约边界使用的规范化相对。
      *
-     * <p>执行 {@code normalizedRelative} 操作。
-     *
-     * @param root the {@code root} value / {@code root} 值
-     * @param path the {@code path} value / {@code path} 值
+     * @param root root directory defining the filesystem boundary / 定义文件系统边界的根目录
+     * @param path filesystem or archive member path used by this operation / 当前操作使用的文件系统或归档成员路径
      * @return the operation result / 操作结果
      * @throws IllegalArgumentException if an argument violates the required constraints / 参数违反必要约束时
      */

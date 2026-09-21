@@ -7,32 +7,33 @@ import java.sql.Statement;
 import java.util.Objects;
 
 /**
- * Provides the {@code DesktopConnectionFactory} implementation.
- *
- * <p>提供 {@code DesktopConnectionFactory} 实现。
+ * Opens desktop SQLite connections with foreign-key enforcement and a bounded busy timeout.
+ * <p>创建启用外键约束并设置有界忙等待时间的桌面 SQLite 连接。
  */
 public final class DesktopConnectionFactory {
+    /**
+     * The SQLite JDBC connection URL.
+     * <p>SQLite JDBC 连接 URL。
+     */
     private final String jdbcUrl;
 
     /**
-     * Creates a {@code DesktopConnectionFactory} instance.
+     * Validates and binds the inputs required by desktop connection factory.
+     * <p>校验并绑定Desktop连接工厂所需输入。
      *
-     * <p>创建 {@code DesktopConnectionFactory} 实例。
-     *
-     * @param jdbcUrl the {@code jdbcUrl} value / {@code jdbcUrl} 值
-     * @throws NullPointerException if a required argument is {@code null} / 必要参数为 {@code null} 时
+     * @param jdbcUrl the SQLite JDBC connection URL / SQLite JDBC 连接 URL
+     * @throws NullPointerException if a required input is absent / 必需输入缺失时
      */
     public DesktopConnectionFactory(String jdbcUrl) {
         this.jdbcUrl = Objects.requireNonNull(jdbcUrl, "jdbcUrl");
     }
 
     /**
-     * Performs the {@code open} operation.
-     *
-     * <p>执行 {@code open} 操作。
+     * Opens connection.
+     * <p>打开连接。
      *
      * @return the operation result / 操作结果
-     * @throws SQLException if the operation cannot be completed / 无法完成操作时
+     * @throws SQLException if the database cannot complete the requested read or transaction / 数据库无法完成请求的读取或事务时
      */
     public Connection open() throws SQLException {
         Connection connection = DriverManager.getConnection(jdbcUrl);

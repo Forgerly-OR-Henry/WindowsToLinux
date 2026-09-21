@@ -14,7 +14,7 @@ import gold.debug.windowstolinux.app.secret.SecretStore;
 import gold.debug.windowstolinux.app.secret.SecretStoreException;
 import gold.debug.windowstolinux.app.service.ai.AiProviderProfile;
 import gold.debug.windowstolinux.app.service.ai.AiUseCaseFacade;
-import gold.debug.windowstolinux.app.service.ai.ReadOnlyDeploymentAgentFacade;
+import gold.debug.windowstolinux.app.service.deployment.DeploymentInspectionUseCase;
 import gold.debug.windowstolinux.app.service.lock.ServerOperationLockRegistry;
 import gold.debug.windowstolinux.app.service.config.DeploymentConfigurationUseCase;
 import gold.debug.windowstolinux.app.service.deployment.single.DeploymentOutcome;
@@ -204,10 +204,10 @@ public final class DesktopApplicationFacade implements AiApplicationFacade, Depl
      */
     private final gold.debug.windowstolinux.app.service.recovery.SshRecoveryUseCase recovery;
     /**
-     * Bound read only deployment agent facade collaborator for deployment agent tools.
-     * <p>处理部署代理工具集合的读取仅部署代理门面协作对象。
+     * Deterministic source analysis and deployment planning use case.
+     * <p>确定性源码分析和部署规划用例。
      */
-    private final ReadOnlyDeploymentAgentFacade deploymentAgentTools;
+    private final DeploymentInspectionUseCase deploymentInspection;
     /**
      * Deployment configuration.
      * <p>部署配置。
@@ -387,7 +387,7 @@ public final class DesktopApplicationFacade implements AiApplicationFacade, Depl
         this.ai = new AiUseCaseFacade(persistence.aiProfiles(), secrets);
         this.automatic = new gold.debug.windowstolinux.app.service.deployment.automatic.AutomaticDeploymentTaskService(this, ai, source, locks, persistence.agentTasks(), new gold.debug.windowstolinux.app.service.deployment.automatic.AgentRemoteToolService(servers,linuxGateway));
         this.recovery = new gold.debug.windowstolinux.app.service.recovery.SshRecoveryUseCase(persistence, locks, servers, secrets, linuxGateway);
-        this.deploymentAgentTools = new ReadOnlyDeploymentAgentFacade();
+        this.deploymentInspection = new DeploymentInspectionUseCase();
         this.deploymentConfiguration = new DeploymentConfigurationUseCase(
                 persistence.configurations(), persistence.applicationSecrets(), secrets);
         this.automaticDatabases = new gold.debug.windowstolinux.app.service.deployment.automatic.AutomaticDatabaseUseCase(
@@ -557,16 +557,16 @@ public final class DesktopApplicationFacade implements AiApplicationFacade, Depl
     }
 
     /**
-     * Performs the typed deployment bounded static inspection made available to the optional read-only agent.
+     * Performs bounded deterministic analysis of the selected deployment source.
      *
-     *  <p>执行供可选只读 Agent 使用的部署有界静态检查。
+     *  <p>对所选部署源码执行有界的确定性分析。
      *
      * @param sourceDirectory the user-selected source directory / 用户选择的源码目录
      * @param projectType supported project deployment category / 受支持的项目部署类别
      * @return constructed or resolved deployment project assessment / 构造或解析得到的部署项目评估
      */
     public DeploymentProjectAssessment analyzeDeploymentSource(Path sourceDirectory, DeploymentProjectType projectType) {
-        return deploymentAgentTools.analyze(sourceDirectory, projectType);
+        return deploymentInspection.analyze(sourceDirectory, projectType);
     }
 
     /**
@@ -702,7 +702,7 @@ public final class DesktopApplicationFacade implements AiApplicationFacade, Depl
      * @return constructed or resolved reviewed deployment plan / 构造或解析得到的已审阅部署计划
      */
     public ReviewedDeploymentPlan planDeployment(ReviewedDeploymentRequest request) {
-        return deploymentAgentTools.plan(request);
+        return deploymentInspection.plan(request);
     }
 
     /**

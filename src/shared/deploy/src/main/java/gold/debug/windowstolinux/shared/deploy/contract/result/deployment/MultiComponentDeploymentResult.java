@@ -12,7 +12,15 @@ import java.util.Optional;
 /**
  * Application-level transaction result that always preserves every component outcome.
  *
- * <p>始终保留每个组件结果的应用级事务结果。
+ *  <p>始终保留每个组件结果的应用级事务结果。
+ *
+ * @param status classification of the current operation result / 当前操作结果的分类
+ * @param applicationEvents application events / 应用事件集合
+ * @param componentResults component results / 组件结果集合
+ * @param applicationReleaseIdentity application release identity / 应用发布身份
+ * @param operationIdentity correlation identity of the enclosing user operation / 外层用户操作的关联标识
+ * @param nonFatalFailures non fatal failures / 非致命失败集合
+ * @param componentReleaseIdentities component release identities / 组件发布身份集合
  */
 public record MultiComponentDeploymentResult(
         DeploymentStatus status,
@@ -23,7 +31,19 @@ public record MultiComponentDeploymentResult(
         List<FailureDescriptor> nonFatalFailures,
         java.util.Map<String, String> componentReleaseIdentities
 ) {
-    /** Validates application and component terminal consistency. / 验证应用与组件终态一致性。 */
+    /**
+     * Validates application and component terminal consistency. / 验证应用与组件终态一致性。
+     *
+     * @param status classification of the current operation result / 当前操作结果的分类
+     * @param applicationEvents application events / 应用事件集合
+     * @param componentResults component results / 组件结果集合
+     * @param applicationReleaseIdentity application release identity / 应用发布身份
+     * @param operationIdentity correlation identity of the enclosing user operation / 外层用户操作的关联标识
+     * @param nonFatalFailures non fatal failures / 非致命失败集合
+     * @param componentReleaseIdentities component release identities / 组件发布身份集合
+     * @throws IllegalArgumentException if an input violates the constraints checked by this contract / 输入违反当前契约检查的约束时
+     * @throws NullPointerException if a required input is absent / 必需输入缺失时
+     */
     public MultiComponentDeploymentResult {
         componentReleaseIdentities = java.util.Map.copyOf(componentReleaseIdentities);
         if (!componentReleaseIdentities.isEmpty() && (status != DeploymentStatus.SUCCEEDED
@@ -62,20 +82,43 @@ public record MultiComponentDeploymentResult(
         }
     }
 
-    /** Creates a result and derives one identity for application and component evidence. / 创建结果并为应用及组件证据派生同一标识。 */
+    /**
+     * Creates a result and derives one identity for application and component evidence. / 创建结果并为应用及组件证据派生同一标识。
+     *
+     * @param status classification of the current operation result / 当前操作结果的分类
+     * @param applicationEvents application events / 应用事件集合
+     * @param componentResults component results / 组件结果集合
+     * @param applicationReleaseIdentity application release identity / 应用发布身份
+     * @param operationIdentity correlation identity of the enclosing user operation / 外层用户操作的关联标识
+     * @param nonFatalFailures non fatal failures / 非致命失败集合
+     */
     public MultiComponentDeploymentResult(DeploymentStatus status, List<DeploymentEvent> applicationEvents,
             List<ComponentDeploymentResult> componentResults, Optional<String> applicationReleaseIdentity,
             OperationIdentity operationIdentity, List<FailureDescriptor> nonFatalFailures) {
         this(status, applicationEvents, componentResults, applicationReleaseIdentity, operationIdentity, nonFatalFailures, java.util.Map.of());
     }
 
-    /** Captures the exact published identities after toolchain binding. */
+    /**
+     * Returns the contract with the supplied component release identities applied.
+     * <p>返回应用所提供组件发布身份集合后的契约。
+     *
+     * @param identities identities / 身份集合
+     * @return the contract with the supplied component release identities applied / 应用所提供组件发布身份集合后的契约
+     */
     public MultiComponentDeploymentResult withComponentReleaseIdentities(java.util.Map<String, String> identities) {
         return new MultiComponentDeploymentResult(status, applicationEvents, componentResults,
                 applicationReleaseIdentity, operationIdentity, nonFatalFailures, identities);
     }
 
-    /** Creates a result with a new operation identity. */
+    /**
+     * Initializes multi component deployment result through its shared constructor contract.
+     * <p>通过共享构造契约初始化多组件部署结果。
+     *
+     * @param status classification of the current operation result / 当前操作结果的分类
+     * @param applicationEvents application events / 应用事件集合
+     * @param componentResults component results / 组件结果集合
+     * @param applicationReleaseIdentity application release identity / 应用发布身份
+     */
     public MultiComponentDeploymentResult(DeploymentStatus status, List<DeploymentEvent> applicationEvents,
                                           List<ComponentDeploymentResult> componentResults,
                                           Optional<String> applicationReleaseIdentity) {
@@ -83,7 +126,13 @@ public record MultiComponentDeploymentResult(
                 identity(applicationEvents, componentResults), List.of());
     }
 
-    /** Adds a non-fatal warning without changing the authoritative remote result. / 添加非致命警告且不改变权威远端结果。 */
+    /**
+     * Adds a non-fatal warning without changing the authoritative remote result. / 添加非致命警告且不改变权威远端结果。
+     *
+     * @param failure structured failure occurrence retained for safe reporting / 保留用于安全报告的结构化失败实例
+     * @return constructed or resolved multi component deployment result / 构造或解析得到的多组件部署结果
+     * @throws NullPointerException if a required input is absent / 必需输入缺失时
+     */
     public MultiComponentDeploymentResult withNonFatalFailure(FailureDescriptor failure) {
         Objects.requireNonNull(failure, "failure");
         List<FailureDescriptor> warnings = new java.util.ArrayList<>(nonFatalFailures);
@@ -92,6 +141,15 @@ public record MultiComponentDeploymentResult(
                 applicationReleaseIdentity, operationIdentity, warnings, componentReleaseIdentities);
     }
 
+    /**
+     * Reuses an operation identity already carried by failure evidence, creating one only when none exists.
+     * <p>复用失败证据已携带的操作标识，仅在不存在时创建新标识。
+     *
+     * @param applicationEvents application events / 应用事件集合
+     * @param componentResults component results / 组件结果集合
+     * @return constructed or resolved operation identity / 构造或解析得到的操作身份
+     * @throws NullPointerException if a required input is absent / 必需输入缺失时
+     */
     private static OperationIdentity identity(List<DeploymentEvent> applicationEvents,
                                               List<ComponentDeploymentResult> componentResults) {
         java.util.stream.Stream<DeploymentEvent> events = java.util.stream.Stream.concat(

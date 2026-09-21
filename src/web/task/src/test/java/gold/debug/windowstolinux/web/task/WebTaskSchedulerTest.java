@@ -1,5 +1,7 @@
 package gold.debug.windowstolinux.web.task;
 
+import gold.debug.windowstolinux.web.service.persistence.serialization.WebJsonCodec;
+
 import gold.debug.windowstolinux.web.db.WebPersistence;
 import gold.debug.windowstolinux.web.db.WebDatabaseTestContext;
 import gold.debug.windowstolinux.web.db.persistence.repository.WebTaskRepository;
@@ -26,7 +28,7 @@ class WebTaskSchedulerTest {
         var repository = repository();
         try (var scheduler = new WebTaskScheduler(repository, policy(Duration.ofMinutes(30)))) {
             String id = scheduler.submit(CONTEXT, work(false, interaction -> {
-                interaction.progress("ANALYSIS_STARTED", WebJson.object()); return WebJson.object().put("value", 42);
+                interaction.progress("ANALYSIS_STARTED", WebJsonCodec.object()); return WebJsonCodec.object().put("value", 42);
             }));
             await(scheduler, id, "SUCCEEDED");
             assertEquals(42, scheduler.get(CONTEXT, id).path("result").path("value").asInt());
@@ -40,16 +42,16 @@ class WebTaskSchedulerTest {
     @Test void decisionsPersistResumeExactlyOnceAndNeverAcceptAnExpiredAnswer() throws Exception {
         var repository = repository();
         try (var scheduler = new WebTaskScheduler(repository, policy(Duration.ofSeconds(5)))) {
-            String id = scheduler.submit(CONTEXT, work(false, interaction -> interaction.decide("HOST_KEY", WebJson.object().put("fingerprint", "SHA256:test"))));
+            String id = scheduler.submit(CONTEXT, work(false, interaction -> interaction.decide("HOST_KEY", WebJsonCodec.object().put("fingerprint", "SHA256:test"))));
             await(scheduler, id, "WAITING_DECISION");
             String decision = scheduler.get(CONTEXT, id).path("decision").path("id").asText();
             assertFalse(decision.isEmpty());
-            scheduler.answer(CONTEXT, id, decision, WebJson.object().put("accepted", true));
+            scheduler.answer(CONTEXT, id, decision, WebJsonCodec.object().put("accepted", true));
             await(scheduler, id, "SUCCEEDED");
-            assertThrows(Exception.class, () -> scheduler.answer(CONTEXT, id, decision, WebJson.object()));
+            assertThrows(Exception.class, () -> scheduler.answer(CONTEXT, id, decision, WebJsonCodec.object()));
         }
         try (var scheduler = new WebTaskScheduler(repository, policy(Duration.ofMillis(30)))) {
-            String id = scheduler.submit(CONTEXT, work(false, interaction -> interaction.decide("REVIEW", WebJson.object())));
+            String id = scheduler.submit(CONTEXT, work(false, interaction -> interaction.decide("REVIEW", WebJsonCodec.object())));
             await(scheduler, id, "FAILED");
             assertEquals("DECISION_EXPIRED", scheduler.get(CONTEXT, id).path("errorCode").asText());
         }
@@ -57,7 +59,7 @@ class WebTaskSchedulerTest {
 
     @Test void cancellationWakesPendingDecisionAndDoesNotMarkMutationSuccessful() throws Exception {
         try (var scheduler = new WebTaskScheduler(repository(), policy(Duration.ofMinutes(30)))) {
-            String id = scheduler.submit(CONTEXT, work(true, interaction -> interaction.decide("REVIEW", WebJson.object())));
+            String id = scheduler.submit(CONTEXT, work(true, interaction -> interaction.decide("REVIEW", WebJsonCodec.object())));
             await(scheduler, id, "WAITING_DECISION"); scheduler.cancel(CONTEXT, id);
             await(scheduler, id, "REVALIDATION_REQUIRED");
             assertTrue(scheduler.get(CONTEXT, id).path("result").isNull());
@@ -70,7 +72,7 @@ class WebTaskSchedulerTest {
             CountDownLatch firstEntered = new CountDownLatch(1), release = new CountDownLatch(1);
             var operation = work(true, interaction -> {
                 peak.accumulateAndGet(simultaneous.incrementAndGet(), Math::max); firstEntered.countDown();
-                assertTrue(release.await(5, TimeUnit.SECONDS)); simultaneous.decrementAndGet(); return WebJson.object();
+                assertTrue(release.await(5, TimeUnit.SECONDS)); simultaneous.decrementAndGet(); return WebJsonCodec.object();
             });
             String first = scheduler.submit(CONTEXT, operation); assertTrue(firstEntered.await(5, TimeUnit.SECONDS));
             String second = scheduler.submit(CONTEXT, operation); release.countDown();
@@ -103,11 +105,11 @@ class WebTaskSchedulerTest {
     @Test void rejectedDecisionPayloadsDoNotPersistAndValidAnswersRemainPossible() throws Exception {
         var repository=repository();
         try(var scheduler=new WebTaskScheduler(repository, policy(Duration.ofMinutes(30)))) {
-            String id=scheduler.submit(CONTEXT,work(false,interaction->interaction.decide("SECRET",WebJson.object().put("code","backup.password"))));
+            String id=scheduler.submit(CONTEXT,work(false,interaction->interaction.decide("SECRET",WebJsonCodec.object().put("code","backup.password"))));
             await(scheduler,id,"WAITING_DECISION");String decision=scheduler.get(CONTEXT,id).path("decision").path("id").asText();
-            assertThrows(IllegalArgumentException.class,()->scheduler.answer(CONTEXT,id,decision,WebJson.object().put("value","must-not-persist")));
+            assertThrows(IllegalArgumentException.class,()->scheduler.answer(CONTEXT,id,decision,WebJsonCodec.object().put("value","must-not-persist")));
             assertEquals("WAITING_DECISION",scheduler.get(CONTEXT,id).path("state").asText());
-            scheduler.answer(CONTEXT,id,decision,WebJson.object().put("secretId","encrypted-reference"));await(scheduler,id,"SUCCEEDED");
+            scheduler.answer(CONTEXT,id,decision,WebJsonCodec.object().put("secretId","encrypted-reference"));await(scheduler,id,"SUCCEEDED");
             
             try(var connection=database.source().getConnection();var q=connection.createStatement();var rows=q.executeQuery("SELECT answer_json FROM task_decisions")) {
                 assertTrue(rows.next());assertFalse(rows.getString(1).contains("must-not-persist"));assertTrue(rows.getString(1).contains("encrypted-reference"));
@@ -117,22 +119,22 @@ class WebTaskSchedulerTest {
 
     @Test void exactInputFieldsAndChoicesAreCheckedBeforeResuming() throws Exception {
         try(var scheduler=new WebTaskScheduler(repository(), policy(Duration.ofMinutes(30)))) {
-            var fields=WebJson.read("{\"fields\":[{\"id\":\"app/type\",\"choices\":[\"STATIC_SITE\"]}]}");
+            var fields=WebJsonCodec.read("{\"fields\":[{\"id\":\"app/type\",\"choices\":[\"STATIC_SITE\"]}]}");
             String id=scheduler.submit(CONTEXT,work(false,interaction->interaction.decide("INPUTS",fields)));
             await(scheduler,id,"WAITING_DECISION");String decision=scheduler.get(CONTEXT,id).path("decision").path("id").asText();
             for(String invalid:List.of("{\"values\":{\"password\":\"private\"}}","{\"values\":{\"app/type\":\"SHELL\"}}","{\"values\":{\"app/type\":true}}"))
-                assertThrows(IllegalArgumentException.class,()->scheduler.answer(CONTEXT,id,decision,WebJson.read(invalid)));
-            scheduler.answer(CONTEXT,id,decision,WebJson.read("{\"values\":{\"app/type\":\"STATIC_SITE\"}}"));await(scheduler,id,"SUCCEEDED");
+                assertThrows(IllegalArgumentException.class,()->scheduler.answer(CONTEXT,id,decision,WebJsonCodec.read(invalid)));
+            scheduler.answer(CONTEXT,id,decision,WebJsonCodec.read("{\"values\":{\"app/type\":\"STATIC_SITE\"}}"));await(scheduler,id,"SUCCEEDED");
         }
     }
 
     @Test void secretLikeConfigurationIsRejectedBeforeDecisionPersistence() throws Exception {
         try(var scheduler=new WebTaskScheduler(repository(), policy(Duration.ofMinutes(30)))) {
-            var prompt=WebJson.read("{\"fields\":[{\"id\":\"app/configuration\",\"choices\":[]}]}");
+            var prompt=WebJsonCodec.read("{\"fields\":[{\"id\":\"app/configuration\",\"choices\":[]}]}");
             String id=scheduler.submit(CONTEXT,work(false,interaction->interaction.decide("INPUTS",prompt)));
             await(scheduler,id,"WAITING_DECISION");String decision=scheduler.get(CONTEXT,id).path("decision").path("id").asText();
-            assertThrows(RuntimeException.class,()->scheduler.answer(CONTEXT,id,decision,WebJson.read("{\"values\":{\"app/configuration\":\"API_TOKEN=must-not-persist\"}}")));
-            scheduler.answer(CONTEXT,id,decision,WebJson.read("{\"values\":{\"app/configuration\":\"PORT=8080\"}}"));await(scheduler,id,"SUCCEEDED");
+            assertThrows(RuntimeException.class,()->scheduler.answer(CONTEXT,id,decision,WebJsonCodec.read("{\"values\":{\"app/configuration\":\"API_TOKEN=must-not-persist\"}}")));
+            scheduler.answer(CONTEXT,id,decision,WebJsonCodec.read("{\"values\":{\"app/configuration\":\"PORT=8080\"}}"));await(scheduler,id,"SUCCEEDED");
             assertFalse(scheduler.get(CONTEXT,id).toString().contains("must-not-persist"));
         }
     }
@@ -143,7 +145,7 @@ class WebTaskSchedulerTest {
         if (database == null) database = new WebDatabaseTestContext(root); return database.tasks();
     }
     private static PreparedWebOperation work(boolean mutating, PreparedWebOperation.WebWork action) {
-        return new PreparedWebOperation("TEST", WebJson.object(), List.of(), List.of("test.invalid:22"), mutating, null, null, null, action);
+        return new PreparedWebOperation("TEST", WebJsonCodec.object(), List.of(), List.of("test.invalid:22"), mutating, null, null, null, action);
     }
     private static void await(WebTaskScheduler scheduler, String id, String state) throws Exception {
         long until = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);

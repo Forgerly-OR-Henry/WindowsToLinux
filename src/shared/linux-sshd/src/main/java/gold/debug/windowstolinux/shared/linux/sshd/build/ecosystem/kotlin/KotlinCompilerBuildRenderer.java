@@ -11,14 +11,33 @@ import gold.debug.windowstolinux.shared.model.project.DeploymentRuntimeSpecifica
 
 import java.util.Set;
 
-/** Renders dependency-free Kotlin/JVM source with the native compiler. / 使用原生编译器渲染无依赖 Kotlin/JVM 源码。 */
+/**
+ * Renders dependency-free Kotlin/JVM source with the native compiler. / 使用原生编译器渲染无依赖 Kotlin/JVM 源码。
+ */
 public final class KotlinCompilerBuildRenderer implements DeploymentBuildRenderer {
-    /** Returns the Kotlin service type. / 返回 Kotlin 服务类型。 */
+    /**
+     * Returns the Kotlin service type. / 返回 Kotlin 服务类型。
+     *
+     * @return the Kotlin service type /  Kotlin 服务类型
+     */
     @Override public DeploymentProjectType projectType() { return DeploymentProjectType.KOTLIN_SERVICE; }
-    /** Returns the kotlinc build identity. / 返回 kotlinc 构建身份。 */
+    /**
+     * Returns the kotlinc build identity. / 返回 kotlinc 构建身份。
+     *
+     * @return the kotlinc build identity /  kotlinc 构建身份
+     */
     @Override public Set<DeploymentBuildToolType> buildTools() { return Set.of(DeploymentBuildToolType.KOTLINC); }
 
-    /** Renders an exact-version compiler invocation and one runnable JAR. / 渲染精确版本编译器调用与单一可运行 JAR。 */
+    /**
+     * Renders an exact-version compiler invocation and one runnable JAR. / 渲染精确版本编译器调用与单一可运行 JAR。
+     *
+     * @param facts typed facts used for deterministic planning / 确定性计划使用的类型化事实
+     * @param runtime reviewed language, process and health specification / 已审阅的语言、进程及健康规格
+     * @param workspace platform-owned work area with enforced path boundaries / 具有路径边界约束的平台工作区
+     * @param limits resource and time bounds enforced during execution / 执行期间实施的资源及时间边界
+     * @return render text / 渲染文本
+     * @throws IllegalArgumentException if an input violates the constraints checked by this contract / 输入违反当前契约检查的约束时
+     */
     @Override
     public String render(DeploymentProjectFacts facts, DeploymentRuntimeSpecification runtime,
                          RemoteWorkspace workspace, BuildLimitConfiguration limits) {

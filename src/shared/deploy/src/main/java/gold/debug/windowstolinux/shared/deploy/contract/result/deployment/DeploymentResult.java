@@ -13,12 +13,14 @@ import java.util.Optional;
 /**
  * Terminal deployment outcome, including the distinct rollback result.
  *
- * <p>部署终态结果，包括独立的回滚结果。
+ *  <p>部署终态结果，包括独立的回滚结果。
  *
- * @param status the {@code status} value / {@code status} 值
- * @param events the {@code events} value / {@code events} 值
- * @param finalObservation the {@code finalObservation} value / {@code finalObservation} 值
+ * @param status classification of the current operation result / 当前操作结果的分类
+ * @param events ordered progress or transaction events / 有序进度或事务事件
+ * @param finalObservation final observation / 最终观测
  * @param publishedReleaseSha256 the published release identity digest / 已发布的发布身份摘要
+ * @param operationIdentity correlation identity of the enclosing user operation / 外层用户操作的关联标识
+ * @param nonFatalFailures non fatal failures / 非致命失败集合
  */
 public record DeploymentResult(
         DeploymentStatus status,
@@ -29,16 +31,17 @@ public record DeploymentResult(
         List<FailureDescriptor> nonFatalFailures
 ) {
     /**
-     * Creates a {@code DeploymentResult} instance.
+     * Validates and binds the inputs required by deployment result.
+     * <p>校验并绑定部署结果所需输入。
      *
-     * <p>创建 {@code DeploymentResult} 实例。
-     *
-     * @param status the {@code status} value / {@code status} 值
-     * @param events the {@code events} value / {@code events} 值
-     * @param finalObservation the {@code finalObservation} value / {@code finalObservation} 值
+     * @param status classification of the current operation result / 当前操作结果的分类
+     * @param events ordered progress or transaction events / 有序进度或事务事件
+     * @param finalObservation final observation / 最终观测
      * @param publishedReleaseSha256 the published release identity digest / 已发布的发布身份摘要
+     * @param operationIdentity correlation identity of the enclosing user operation / 外层用户操作的关联标识
+     * @param nonFatalFailures non fatal failures / 非致命失败集合
      * @throws IllegalArgumentException if an argument violates the required constraints / 参数违反必要约束时
-     * @throws NullPointerException if a required argument is {@code null} / 必要参数为 {@code null} 时
+     * @throws NullPointerException if a required input is absent / 必需输入缺失时
      */
     public DeploymentResult {
         status = Objects.requireNonNull(status, "status");
@@ -63,14 +66,27 @@ public record DeploymentResult(
         });
     }
 
-    /** Creates a result and derives one operation identity for all carried failures. / 创建结果并为全部携带失败派生同一操作标识。 */
+    /**
+     * Creates a result and derives one operation identity for all carried failures. / 创建结果并为全部携带失败派生同一操作标识。
+     *
+     * @param status classification of the current operation result / 当前操作结果的分类
+     * @param events ordered progress or transaction events / 有序进度或事务事件
+     * @param finalObservation final observation / 最终观测
+     * @param publishedReleaseSha256 the published release identity digest / 已发布的发布身份摘要
+     */
     public DeploymentResult(DeploymentStatus status, List<DeploymentEvent> events,
                             Optional<LifecycleObservation> finalObservation,
                             Optional<String> publishedReleaseSha256) {
         this(status, events, finalObservation, publishedReleaseSha256, identity(events), List.of());
     }
 
-    /** Adds a non-fatal warning without changing the authoritative remote result. / 添加非致命警告且不改变权威远端结果。 */
+    /**
+     * Adds a non-fatal warning without changing the authoritative remote result. / 添加非致命警告且不改变权威远端结果。
+     *
+     * @param failure structured failure occurrence retained for safe reporting / 保留用于安全报告的结构化失败实例
+     * @return constructed or resolved deployment result / 构造或解析得到的部署结果
+     * @throws NullPointerException if a required input is absent / 必需输入缺失时
+     */
     public DeploymentResult withNonFatalFailure(FailureDescriptor failure) {
         Objects.requireNonNull(failure, "failure");
         List<FailureDescriptor> warnings = new java.util.ArrayList<>(nonFatalFailures);
@@ -79,6 +95,14 @@ public record DeploymentResult(
                 operationIdentity, warnings);
     }
 
+    /**
+     * Reuses an operation identity already carried by failure evidence, creating one only when none exists.
+     * <p>复用失败证据已携带的操作标识，仅在不存在时创建新标识。
+     *
+     * @param events ordered progress or transaction events / 有序进度或事务事件
+     * @return constructed or resolved operation identity / 构造或解析得到的操作身份
+     * @throws NullPointerException if a required input is absent / 必需输入缺失时
+     */
     private static OperationIdentity identity(List<DeploymentEvent> events) {
         return Objects.requireNonNull(events, "events").stream().map(DeploymentEvent::failure)
                 .flatMap(Optional::stream).map(FailureDescriptor::operationIdentity).findFirst()

@@ -10,9 +10,18 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.*;
 
-/** Resolves source-backed runtime defaults and validates the same domain objects as manual deployment. / 解析有源码依据的运行时默认值，并校验与手动部署相同的领域对象。 */
+/**
+ * Resolves source-backed runtime defaults and validates the same domain objects as manual deployment. / 解析有源码依据的运行时默认值，并校验与手动部署相同的领域对象。
+ */
 public final class AutomaticRuntimeResolver {
-    /** Applies known declarations, without manufacturing unknown entry points or ports. / 应用已知声明，不臆造未知入口或端口。 */
+    /**
+     * Applies known declarations, without manufacturing unknown entry points or ports. / 应用已知声明，不臆造未知入口或端口。
+     *
+     * @param type selected member of the supported type set / 受支持类型集合中的所选项
+     * @param suggested suggested / 建议
+     * @param root root directory defining the filesystem boundary / 定义文件系统边界的根目录
+     * @return constructed or resolved map / 构造或解析得到的映射
+     */
     public Map<String, String> defaults(DeploymentProjectType type, DeploymentRuntimeAssessment suggested, Path root) {
         Map<String, String> values = new LinkedHashMap<>();
         values.put("healthMode", type == DeploymentProjectType.STATIC_SITE || type == DeploymentProjectType.SPRING_BOOT ? "HTTP" : "TCP");
@@ -44,12 +53,28 @@ public final class AutomaticRuntimeResolver {
         return values;
     }
 
-    /** Returns all missing fields together so a single dialog can collect them. / 集中返回所有缺失字段，便于一个对话框统一收集。 */
+    /**
+     * Returns all missing fields together so a single dialog can collect them. / 集中返回所有缺失字段，便于一个对话框统一收集。
+     *
+     * @param component component / 组件
+     * @param type selected member of the supported type set / 受支持类型集合中的所选项
+     * @param values ordered contents supplied to the current conversion or validation / 提供给当前转换或校验的有序内容
+     * @return all missing fields together so a single dialog can collect them / 集中返回所有缺失字段，便于一个对话框统一收集
+     */
     public List<DeploymentInputField> missing(String component, DeploymentProjectType type, Map<String, String> values) {
         var completed = ApplicationDeclaration.completed(values);
         return missingCompleted(component, type, completed);
     }
 
+    /**
+     * Lists runtime inputs still required after application-declaration values have been applied.
+     * <p>列出应用声明值生效后仍需补全的运行输入。
+     *
+     * @param component component / 组件
+     * @param type selected member of the supported type set / 受支持类型集合中的所选项
+     * @param values ordered contents supplied to the current conversion or validation / 提供给当前转换或校验的有序内容
+     * @return constructed or resolved list / 构造或解析得到的列表
+     */
     private List<DeploymentInputField> missingCompleted(String component, DeploymentProjectType type, Map<String, String> values) {
         List<String> required = new ArrayList<>();
         if (!values.containsKey("application.mode") && !values.containsKey("application.endpoints")) required.add("exposure");
@@ -72,14 +97,28 @@ public final class AutomaticRuntimeResolver {
                         && values.getOrDefault("healthMode", "PROCESS").equals("PROCESS") ? "INTERNAL" : "", List.of())).toList();
     }
 
-    /** Builds a bounded question descriptor for one runtime input. / 为一个运行输入构建有界问题描述。 */
+    /**
+     * Builds a bounded question descriptor for one runtime input. / 为一个运行输入构建有界问题描述。
+     *
+     * @param component component / 组件
+     * @param key lookup key within the current contract / 当前契约内的查找键
+     * @param value candidate content accepted or rejected by this contract / 由当前契约接收或拒绝的候选内容
+     * @param choices choices / 选项集合
+     * @return a bounded question descriptor for one runtime input / 为一个运行输入构建有界问题描述
+     */
     public static DeploymentInputField field(String component, String key, String value, List<String> choices) {
         if (key.equals("executionMode")) choices = List.of("DAEMON", "ON_DEMAND");
         if (key.equals("exposure")) choices = List.of("EXTERNAL", "INTERNAL");
         return new DeploymentInputField(component + "/" + key, "auto.field." + key, "auto.help." + key, value, choices);
     }
 
-    /** Exposes every supplied runtime/configuration input that can fail local validation. / 暴露所有可能在本地校验失败的已提供运行时或配置输入。 */
+    /**
+     * Exposes every supplied runtime/configuration input that can fail local validation. / 暴露所有可能在本地校验失败的已提供运行时或配置输入。
+     *
+     * @param component component / 组件
+     * @param values ordered contents supplied to the current conversion or validation / 提供给当前转换或校验的有序内容
+     * @return constructed or resolved list / 构造或解析得到的列表
+     */
     public List<DeploymentInputField> corrections(String component, Map<String, String> values) {
         Map<String, String> labels = Map.ofEntries(
                 Map.entry("healthMode", "field.healthMode"), Map.entry("healthEndpoint", "field.healthEndpoint"),
@@ -109,7 +148,14 @@ public final class AutomaticRuntimeResolver {
         return List.copyOf(fields);
     }
 
-    /** Converts the completed inputs to the existing typed runtime contract. / 将补齐的输入转换为现有类型化运行时契约。 */
+    /**
+     * Converts the completed inputs to the existing typed runtime contract. / 将补齐的输入转换为现有类型化运行时契约。
+     *
+     * @param type selected member of the supported type set / 受支持类型集合中的所选项
+     * @param v the completed runtime input values / 已补全运行输入值
+     * @return constructed or resolved deployment runtime specification / 构造或解析得到的部署运行时规格
+     * @throws IllegalArgumentException if an input violates the constraints checked by this contract / 输入违反当前契约检查的约束时
+     */
     public DeploymentRuntimeSpecification runtime(DeploymentProjectType type, Map<String, String> v) {
         v = ApplicationDeclaration.completed(v);
         HealthCheck health = health(v);
@@ -139,7 +185,15 @@ public final class AutomaticRuntimeResolver {
         return result.withWorkload(ApplicationDeclaration.resolve(v));
     }
 
-    /** Matches the fixed build adapters' output contract, namespaced to the application root. / 匹配固定构建适配器的输出契约，并以应用根目录限定命名空间。 */
+    /**
+     * Matches the fixed build adapters' output contract, namespaced to the application root. / 匹配固定构建适配器的输出契约，并以应用根目录限定命名空间。
+     *
+     * @param relativeRoot relative root / 相对根目录
+     * @param facts typed facts used for deterministic planning / 确定性计划使用的类型化事实
+     * @param values ordered contents supplied to the current conversion or validation / 提供给当前转换或校验的有序内容
+     * @return constructed or resolved list / 构造或解析得到的列表
+     * @throws IllegalArgumentException if an input violates the constraints checked by this contract / 输入违反当前契约检查的约束时
+     */
     public List<String> artifacts(Path relativeRoot, DeploymentProjectFacts facts, Map<String, String> values) {
         String artifact = switch (facts.projectType()) {
             case NODE_SERVICE -> "package.json";
@@ -154,7 +208,13 @@ public final class AutomaticRuntimeResolver {
         return List.of(relativeRoot.resolve(facts.buildDirectory()).resolve(artifact).toString().replace('\\', '/'));
     }
 
-    /** Builds a server-local health probe without claiming public reachability. / 构建服务器本地健康探针，不声称已验证公网可达性。 */
+    /**
+     * Builds a server-local health probe without claiming public reachability. / 构建服务器本地健康探针，不声称已验证公网可达性。
+     *
+     * @param v the completed runtime input values / 已补全运行输入值
+     * @return a server-local health probe without claiming public reachability / 服务器本地健康探针，不声称已验证公网可达性
+     * @throws IllegalArgumentException if an input violates the constraints checked by this contract / 输入违反当前契约检查的约束时
+     */
     public HealthCheck health(Map<String, String> v) {
         v = ApplicationDeclaration.completed(v);
         int timeout = Integer.parseInt(v.getOrDefault("timeout", "10"));
@@ -173,7 +233,14 @@ public final class AutomaticRuntimeResolver {
         return new HealthCheck.Tcp(port, timeout, Integer.parseInt(v.getOrDefault("stability", "5")));
     }
 
-    /** Resolves an explicitly configured access URL or the direct server endpoint for an HTTP application. / 为 HTTP 应用解析显式访问地址或服务器直连端点。 */
+    /**
+     * Resolves an explicitly configured access URL or the direct server endpoint for an HTTP application. / 为 HTTP 应用解析显式访问地址或服务器直连端点。
+     *
+     * @param v the completed runtime input values / 已补全运行输入值
+     * @param host reviewed server hostname or IP address / 已审阅服务器主机名或 IP 地址
+     * @return matching result, or empty when no admitted value exists / 匹配结果；不存在已准入内容时为空
+     * @throws IllegalArgumentException if an input violates the constraints checked by this contract / 输入违反当前契约检查的约束时
+     */
     public Optional<UserAccessUrl> access(Map<String, String> v, String host) {
         v = ApplicationDeclaration.completed(v);
         var external = ApplicationDeclaration.resolve(v).endpoints().stream()

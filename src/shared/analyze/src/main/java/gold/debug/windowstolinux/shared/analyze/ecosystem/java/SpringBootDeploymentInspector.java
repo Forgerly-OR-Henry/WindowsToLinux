@@ -29,30 +29,67 @@ import java.util.regex.Pattern;
 /**
  * Inspects one Maven or Gradle Spring Boot executable-JAR project without invoking its build.
  *
- * <p>在不调用构建的前提下检查一个 Maven 或 Gradle Spring Boot 可执行 JAR 项目。
+ *  <p>在不调用构建的前提下检查一个 Maven 或 Gradle Spring Boot 可执行 JAR 项目。
  */
 public final class SpringBootDeploymentInspector implements DeploymentTypeInspector {
+    /**
+     * Pattern recognizing Spring Boot build plugin.
+     * <p>用于识别Spring Boot 构建插件的匹配模式。
+     */
     private static final Pattern BOOT_PLUGIN = Pattern.compile("(?i)(org\\.springframework\\.boot|spring-boot)");
+    /**
+     * Pattern recognizing EXTERNAL CONFIG.
+     * <p>用于识别外部配置的匹配模式。
+     */
     private static final Pattern EXTERNAL_CONFIG = Pattern.compile(
             "spring\\.config\\.(import|location|additional-location)|SPRING_CONFIG_(IMPORT|LOCATION|ADDITIONAL_LOCATION)"
                     + "|spring\\.application\\.json", Pattern.CASE_INSENSITIVE);
+    /**
+     * Pattern recognizing APPLICATION SECRET.
+     * <p>用于识别应用秘密的匹配模式。
+     */
     private static final Pattern APPLICATION_SECRET = Pattern.compile(
             "(?i)(password|secret|api[_-]?key|access[_-]?key|token)\\s*[:=]"
                     + "|@Value\\s*\\(\\s*\\\"?\\$\\{[^}]*?(password|secret|key|token)[^}]*}");
+    /**
+     * Pattern recognizing disabled Spring Boot JAR packaging.
+     * <p>用于识别已禁用 Spring Boot JAR 打包的匹配模式。
+     */
     private static final Pattern DISABLED_BOOT_JAR = Pattern.compile(
             "(?is)bootJar(?:\\s*\\{[^}]*enabled\\s*=\\s*false|\\.enabled\\s*=\\s*false)"
                     + "|<artifactId>\\s*spring-boot-maven-plugin\\s*</artifactId>.*?<skip>\\s*true\\s*</skip>");
 
+    /**
+     * Bound maven build inspector collaborator for maven.
+     * <p>处理Maven 构建的Maven构建检查器协作对象。
+     */
     private final MavenBuildInspector maven = new MavenBuildInspector();
+    /**
+     * Bound gradle build inspector collaborator for gradle.
+     * <p>处理Gradle 构建的Gradle构建检查器协作对象。
+     */
     private final GradleBuildInspector gradle = new GradleBuildInspector();
 
-    /** Returns the supported deployment project type. / 返回支持的部署项目类型。 */
+    /**
+     * Returns the supported deployment project type. / 返回支持的部署项目类型。
+     *
+     * @return the supported deployment project type / 支持的部署项目类型
+     */
     @Override
     public DeploymentProjectType projectType() {
         return DeploymentProjectType.SPRING_BOOT;
     }
 
-    /** Inspects source facts for this deployment type. / 检查此部署类型的源码事实。 */
+    /**
+     * Inspects source facts for this deployment type. / 检查此部署类型的源码事实。
+     *
+     * @param root root directory defining the filesystem boundary / 定义文件系统边界的根目录
+     * @param source source identity or content read by the operation / 操作读取的源身份或内容
+     * @param languageFacts language facts / 语言事实
+     * @param rejections reasons preventing admission to the next stage / 阻止进入下一阶段的原因
+     * @return constructed or resolved deployment type assessment; null when no matching value is available / 构造或解析得到的部署类型评估；没有匹配值时为 null
+     * @throws IOException if the required file or stream operation fails / 所需文件或流操作失败时
+     */
     @Override
     public DeploymentTypeAssessment inspect(Path root, SourceInspectionFacts source, ProjectLanguageFacts languageFacts,
                                             List<RejectionReason> rejections) throws IOException {
@@ -84,6 +121,14 @@ public final class SpringBootDeploymentInspector implements DeploymentTypeInspec
         return new DeploymentTypeAssessment(facts, suggestion);
     }
 
+    /**
+     * Inspects Maven metadata for a supported Spring Boot deployment and returns no assessment when that architecture does not match.
+     * <p>检查 Maven 元数据是否构成受支持 Spring Boot 部署；架构不匹配时不返回评估。
+     *
+     * @param root root directory defining the filesystem boundary / 定义文件系统边界的根目录
+     * @param rejections reasons preventing admission to the next stage / 阻止进入下一阶段的原因
+     * @return constructed or resolved build inspection; null when no matching value is available / 构造或解析得到的构建检查；没有匹配值时为 null
+     */
     private BuildInspection inspectMaven(Path root, List<RejectionReason> rejections) {
         Optional<MavenBuildFacts> inspected = maven.inspect(root, rejections);
         if (inspected.isEmpty()) {
@@ -116,6 +161,15 @@ public final class SpringBootDeploymentInspector implements DeploymentTypeInspec
         return new BuildInspection(build.applicationName(), tool, build.pomText(), evidence, List.of());
     }
 
+    /**
+     * Inspects gradle.
+     * <p>检查Gradle 构建。
+     *
+     * @param root root directory defining the filesystem boundary / 定义文件系统边界的根目录
+     * @param rejections reasons preventing admission to the next stage / 阻止进入下一阶段的原因
+     * @return constructed or resolved build inspection; null when no matching value is available / 构造或解析得到的构建检查；没有匹配值时为 null
+     * @throws IOException if the required file or stream operation fails / 所需文件或流操作失败时
+     */
     private BuildInspection inspectGradle(Path root, List<RejectionReason> rejections) throws IOException {
         Optional<GradleBuildFacts> inspected = gradle.inspect(root, rejections);
         if (inspected.isEmpty()) {
@@ -133,6 +187,14 @@ public final class SpringBootDeploymentInspector implements DeploymentTypeInspec
                         build.script().getFileName().toString(), "analysis.deployment.evidence.detected")), missing);
     }
 
+    /**
+     * Inspects common policy.
+     * <p>检查共享策略。
+     *
+     * @param buildText build text / 构建文本
+     * @param source source identity or content read by the operation / 操作读取的源身份或内容
+     * @param rejections reasons preventing admission to the next stage / 阻止进入下一阶段的原因
+     */
     private static void inspectCommonPolicy(String buildText, SourceInspectionFacts source,
                                             List<RejectionReason> rejections) {
         String scannedText = source.scannedText();
@@ -148,17 +210,54 @@ public final class SpringBootDeploymentInspector implements DeploymentTypeInspec
         }
     }
 
+    /**
+     * Builds the admission rejection associated with the supplied reason.
+     * <p>构建与所提供原因关联的准入拒绝。
+     *
+     * @param code stable machine-readable classification code / 稳定的机器可读分类码
+     * @param key lookup key within the current contract / 当前契约内的查找键
+     * @return the admission rejection associated with the supplied reason / 与所提供原因关联的准入拒绝
+     */
     private static RejectionReason rejection(String code, String key) {
         return new RejectionReason(code, LocalizedMessage.of(key), "deployment");
     }
 
+    /**
+     * Collects build-system metadata and the evidence used for deployment admission.
+     * <p>汇总构建系统元数据及部署准入所用证据。
+     *
+     * @param applicationId managed application identifier / 受管应用标识
+     * @param buildTool the fixed build entrypoint / 固定构建入口
+     * @param buildText build text / 构建文本
+     * @param evidence observations supporting the reported result / 支持所报告结果的观测证据
+     * @param missingInformation required explicit user input / 所需的显式用户输入
+     */
     private record BuildInspection(String applicationId, DeploymentBuildToolType buildTool, String buildText,
                                    List<AnalysisEvidence> evidence, List<LocalizedMessage> missingInformation) {
+        /**
+         * Binds the supplied dependencies and state for build inspection.
+         * <p>为构建检查绑定传入的依赖及状态。
+         *
+         * @param applicationId managed application identifier / 受管应用标识
+         * @param buildTool the fixed build entrypoint / 固定构建入口
+         * @param buildText build text / 构建文本
+         * @param evidence observations supporting the reported result / 支持所报告结果的观测证据
+         * @param missingInformation required explicit user input / 所需的显式用户输入
+         */
         private BuildInspection {
             evidence = List.copyOf(evidence);
             missingInformation = List.copyOf(missingInformation);
         }
     }
+    /**
+     * Binds a static source observation to its localized conclusion and confidence.
+     * <p>将静态源码观测与本地化结论及置信度绑定。
+     *
+     * @param subject subject / 对象
+     * @param source source identity or content read by the operation / 操作读取的源身份或内容
+     * @param conclusion conclusion / 结论
+     * @return constructed or resolved analysis evidence / 构造或解析得到的分析证据
+     */
     private static gold.debug.windowstolinux.shared.model.analysis.AnalysisEvidence evidence(String subject, String source, String conclusion) {
         return new gold.debug.windowstolinux.shared.model.analysis.AnalysisEvidence(
                 gold.debug.windowstolinux.shared.model.message.LocalizedMessage.of(subject), source,

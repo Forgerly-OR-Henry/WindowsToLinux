@@ -8,7 +8,7 @@ import gold.debug.windowstolinux.app.ui.backup.BackupPage;
 import gold.debug.windowstolinux.app.ui.display.DesktopDisplayConfiguration;
 import gold.debug.windowstolinux.app.ui.shell.DesktopDisplayChangeHandler;
 import gold.debug.windowstolinux.app.ui.component.DesktopComponentFactory;
-import gold.debug.windowstolinux.app.ui.deployment.single.DeploymentPage;
+import gold.debug.windowstolinux.app.ui.deployment.automatic.DeploymentPage;
 import gold.debug.windowstolinux.app.ui.deployment.multi.MultiComponentPage;
 import gold.debug.windowstolinux.app.ui.i18n.MessageCatalog;
 import gold.debug.windowstolinux.app.ui.i18n.PageMessagePresenter;

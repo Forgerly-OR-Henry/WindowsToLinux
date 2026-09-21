@@ -14,45 +14,71 @@ import java.util.UUID;
 /**
  * Windows desktop entry point for preparing a platform-neutral source archive.
  *
- * <p>准备平台无关源码归档的 Windows 桌面入口。
+ *  <p>准备平台无关源码归档的 Windows 桌面入口。
  */
 public final class WindowsSourcePreparer {
+    /**
+     * MINIMUM FREE BYTES.
+     * <p>最小剩余字节。
+     */
     private static final long MINIMUM_FREE_BYTES = 1024L * 1024L;
+    /**
+     * Bound safe source archive preparer collaborator for archiver.
+     * <p>处理归档生成器的安全源码归档准备器协作对象。
+     */
     private final SafeSourceArchivePreparer archiver;
+    /**
+     * Work directory.
+     * <p>工作目录。
+     */
     private final Path workDirectory;
+    /**
+     * Archive directory.
+     * <p>归档目录。
+     */
     private final Path archiveDirectory;
 
     /**
-     * Creates a {@code WindowsSourcePreparer} instance.
+     * Initializes windows source preparer through its shared constructor contract.
+     * <p>通过共享构造契约初始化Windows源码准备器。
      *
-     * <p>创建 {@code WindowsSourcePreparer} 实例。
-     *
-     * @param workDirectory the {@code workDirectory} value / {@code workDirectory} 值
+     * @param workDirectory work directory / 工作目录
      */
     public WindowsSourcePreparer(Path workDirectory) {
         this(new SafeSourceArchivePreparer(), workDirectory);
     }
 
+    /**
+     * Validates and binds the inputs required by windows source preparer.
+     * <p>校验并绑定Windows源码准备器所需输入。
+     *
+     * @param archiver archiver / 归档生成器
+     * @param workDirectory work directory / 工作目录
+     * @throws NullPointerException if a required input is absent / 必需输入缺失时
+     */
     WindowsSourcePreparer(SafeSourceArchivePreparer archiver, Path workDirectory) {
         this.archiver = Objects.requireNonNull(archiver, "archiver");
         this.workDirectory = Objects.requireNonNull(workDirectory, "workDirectory").toAbsolutePath().normalize();
         this.archiveDirectory = this.workDirectory.resolve("archives");
     }
 
-    /** Returns the platform-owned root shared by archive and Git snapshot operations. / 返回归档和 Git 快照操作共用的平台拥有根目录。 */
+    /**
+     * Returns the platform-owned root shared by archive and Git snapshot operations. / 返回归档和 Git 快照操作共用的平台拥有根目录。
+     *
+     * @return the platform-owned root shared by archive and Git snapshot operations / 归档和 Git 快照操作共用的平台拥有根目录
+     */
     public Path workDirectory() {
         return workDirectory;
     }
 
     /**
-     * Performs the {@code prepare} operation.
+     * Prepares prepared source archive.
+     * <p>准备已准备源码归档。
      *
-     * <p>执行 {@code prepare} 操作。
-     *
-     * @param sourceDirectory the {@code sourceDirectory} value / {@code sourceDirectory} 值
-     * @param applicationId the {@code applicationId} value / {@code applicationId} 值
+     * @param sourceDirectory the user-selected source directory / 用户选择的源码目录
+     * @param applicationId managed application identifier / 受管应用标识
      * @return the operation result / 操作结果
-     * @throws IOException if the operation cannot be completed / 无法完成操作时
+     * @throws WindowsWorkspaceException if the windows workspace boundary rejects the operation / Windows工作区边界拒绝当前操作时
      */
     public PreparedSourceArchive prepare(Path sourceDirectory, String applicationId) throws WindowsWorkspaceException {
         if (applicationId == null || !applicationId.matches("[a-z0-9][a-z0-9-]{0,62}")) {

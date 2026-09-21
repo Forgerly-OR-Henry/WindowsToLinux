@@ -17,7 +17,7 @@ import java.util.Objects;
 /**
  * Immutable, digest-addressed normal configuration for one released application version.
  *
- * <p>一个已发布应用版本的不可变、以摘要寻址的普通配置。
+ *  <p>一个已发布应用版本的不可变、以摘要寻址的普通配置。
  *
  * @param applicationId the managed application identifier / 受管应用标识
  * @param revision the positive immutable revision / 正的不可变修订号
@@ -35,9 +35,16 @@ public record ConfigurationSnapshot(
         String sha256
 ) {
     /**
-     * Creates a {@code ConfigurationSnapshot} instance and checks its canonical digest.
+     * Validates and binds the inputs required by configuration snapshot.
+     * <p>校验并绑定配置快照所需输入。
      *
-     * <p>创建 {@code ConfigurationSnapshot} 实例并检查其规范摘要。
+     * @param applicationId managed application identifier / 受管应用标识
+     * @param revision immutable configuration or secret revision number / 不可变配置或秘密修订号
+     * @param schemaVersion the schema version / 模式版本
+     * @param createdAt instant at which this record was created / 当前记录创建时刻
+     * @param entries the entries / 条目
+     * @param sha256 lower-case hexadecimal SHA-256 digest / 小写十六进制 SHA-256 摘要
+     * @throws NullPointerException if a required input is absent / 必需输入缺失时
      */
     public ConfigurationSnapshot {
         applicationId = requireIdentifier(applicationId, "applicationId");
@@ -59,7 +66,7 @@ public record ConfigurationSnapshot(
     /**
      * Creates an immutable snapshot with its canonical digest.
      *
-     * <p>创建带有规范摘要的不可变快照。
+     *  <p>创建带有规范摘要的不可变快照。
      *
      * @param applicationId the managed application identifier / 受管应用标识
      * @param revision the next positive revision / 下一个正修订号
@@ -67,6 +74,7 @@ public record ConfigurationSnapshot(
      * @param createdAt the creation time / 创建时间
      * @param entries the entries / 条目
      * @return the immutable snapshot / 不可变快照
+     * @throws NullPointerException if a required input is absent / 必需输入缺失时
      */
     public static ConfigurationSnapshot create(
             String applicationId, long revision, String schemaVersion, Instant createdAt, List<ConfigurationEntry> entries
@@ -81,7 +89,7 @@ public record ConfigurationSnapshot(
     /**
      * Finds a value only within its declared scope.
      *
-     * <p>只在其声明范围内查找值。
+     *  <p>只在其声明范围内查找值。
      *
      * @param key the declared key / 声明的键
      * @param scope the required scope / 所需范围
@@ -98,7 +106,13 @@ public record ConfigurationSnapshot(
     /**
      * Computes the deterministic digest for snapshot content.
      *
-     * <p>计算快照内容的确定性摘要。
+     *  <p>计算快照内容的确定性摘要。
+     *
+     * @param applicationId managed application identifier / 受管应用标识
+     * @param revision immutable configuration or secret revision number / 不可变配置或秘密修订号
+     * @param schemaVersion the schema version / 模式版本
+     * @param entries the entries / 条目
+     * @return the deterministic digest for snapshot content / 快照内容的确定性摘要
      */
     public static String computeSha256(String applicationId, long revision, String schemaVersion, List<ConfigurationEntry> entries) {
         try {
@@ -121,11 +135,27 @@ public record ConfigurationSnapshot(
         }
     }
 
+    /**
+     * Updates configuration snapshot.
+     * <p>更新配置快照。
+     *
+     * @param digest content identity used for independent verification / 独立验证所用的内容身份
+     * @param value candidate content accepted or rejected by this contract / 由当前契约接收或拒绝的候选内容
+     */
     private static void update(MessageDigest digest, String value) {
         digest.update(value.getBytes(StandardCharsets.UTF_8));
         digest.update((byte) 0);
     }
 
+    /**
+     * Validates and returns the stable secret identifier.
+     * <p>校验并返回稳定的秘密标识。
+     *
+     * @param value candidate content accepted or rejected by this contract / 由当前契约接收或拒绝的候选内容
+     * @param name human-readable name or diagnostic field label / 可读名称或诊断字段标签
+     * @return require identifier text / 要求标识文本
+     * @throws NullPointerException if a required input is absent / 必需输入缺失时
+     */
     private static String requireIdentifier(String value, String name) {
         value = Objects.requireNonNull(value, name).trim();
         if (!value.matches("[a-z0-9][a-z0-9._-]{0,63}")) {
@@ -135,6 +165,14 @@ public record ConfigurationSnapshot(
         return value;
     }
 
+    /**
+     * Validates and returns lower-case hexadecimal SHA-256 digest.
+     * <p>校验并返回小写十六进制 SHA-256 摘要。
+     *
+     * @param value candidate content accepted or rejected by this contract / 由当前契约接收或拒绝的候选内容
+     * @return require sha 256 text / 要求SHA256文本
+     * @throws NullPointerException if a required input is absent / 必需输入缺失时
+     */
     private static String requireSha256(String value) {
         value = Objects.requireNonNull(value, "sha256");
         if (!value.matches("[0-9a-f]{64}")) {

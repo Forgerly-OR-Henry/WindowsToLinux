@@ -6,15 +6,32 @@ import gold.debug.windowstolinux.shared.model.server.CpuMicroarchitectureLevel;
 import java.time.Duration;
 import java.util.Objects;
 
-/** Fixed shell fragments shared by typed preparation renderers. / 类型化准备渲染器共享的固定 Shell 片段。 */
+/**
+ * Fixed shell fragments shared by typed preparation renderers. / 类型化准备渲染器共享的固定 Shell 片段。
+ */
 public final class SetupScriptRenderer {
-    /** Represents the {@code TIMEOUT} value. / 表示 {@code TIMEOUT} 值。 */
+    /**
+     * TIMEOUT.
+     * <p>超时。
+     */
     public static final Duration TIMEOUT = Duration.ofMinutes(15);
 
+    /**
+     * Prevents instantiation of this static contract helper.
+     * <p>防止实例化当前静态契约辅助类。
+     */
     private SetupScriptRenderer() {
     }
 
-    /** Performs the {@code requireUsername} operation. / 执行 {@code requireUsername} 操作。 */
+    /**
+     * Validates and returns account name used by the reviewed connection and rejects inputs outside the declared constraints as text without executing the rendered command.
+     * <p>校验并返回已审阅连接使用的账户名并拒绝超出已声明约束的输入为文本，不执行所渲染命令。
+     *
+     * @param username account name used by the reviewed connection / 已审阅连接使用的账户名
+     * @return require username text / 要求用户名文本
+     * @throws IllegalArgumentException if an input violates the constraints checked by this contract / 输入违反当前契约检查的约束时
+     * @throws NullPointerException if a required input is absent / 必需输入缺失时
+     */
     public static String requireUsername(String username) {
         username = Objects.requireNonNull(username, "username").trim();
         if (!username.matches("[a-z_][a-z0-9_-]{0,31}")) {
@@ -23,7 +40,14 @@ public final class SetupScriptRenderer {
         return username;
     }
 
-    /** Performs the {@code renderCpuCheck} operation. / 执行 {@code renderCpuCheck} 操作。 */
+    /**
+     * Renders cpu check as text without executing the rendered command.
+     * <p>渲染cpu检查为文本，不执行所渲染命令。
+     *
+     * @param required whether the whole application requires this component / 整体应用是否需要此组件
+     * @return render cpu check text / 渲染Cpu检查文本
+     * @throws IllegalArgumentException if an input violates the constraints checked by this contract / 输入违反当前契约检查的约束时
+     */
     public static String renderCpuCheck(CpuMicroarchitectureLevel required) {
         if (required == CpuMicroarchitectureLevel.X86_64_V1) {
             return ":";
@@ -44,7 +68,12 @@ public final class SetupScriptRenderer {
         """.formatted(level);
     }
 
-    /** Performs the {@code renderStageDiagnostics} operation. / 执行 {@code renderStageDiagnostics} 操作。 */
+    /**
+     * Renders stage diagnostics as text without executing the rendered command.
+     * <p>渲染阶段诊断为文本，不执行所渲染命令。
+     *
+     * @return render stage diagnostics text / 渲染阶段诊断文本
+     */
     public static String renderStageDiagnostics() {
         return """
                 prepare_stage=preflight
@@ -57,7 +86,12 @@ public final class SetupScriptRenderer {
                 """;
     }
 
-    /** Performs the {@code renderSecurityObservationFunctions} operation. / 执行 {@code renderSecurityObservationFunctions} 操作。 */
+    /**
+     * Renders security observation functions as text without executing the rendered command.
+     * <p>渲染安全观测函数集合为文本，不执行所渲染命令。
+     *
+     * @return render security observation functions text / 渲染安全观测函数集合文本
+     */
     public static String renderSecurityObservationFunctions() {
         return """
                 security_state() {
@@ -88,7 +122,12 @@ public final class SetupScriptRenderer {
                 """;
     }
 
-    /** Performs the {@code renderSecurityInvariant} operation. / 执行 {@code renderSecurityInvariant} 操作。 */
+    /**
+     * Renders security invariant as text without executing the rendered command.
+     * <p>渲染安全不变量为文本，不执行所渲染命令。
+     *
+     * @return render security invariant text / 渲染安全不变量文本
+     */
     public static String renderSecurityInvariant() {
         return """
                 security_after="$(security_state)"
@@ -104,7 +143,13 @@ public final class SetupScriptRenderer {
                 """;
     }
 
-    /** Performs the {@code renderHelperInstallation} operation. / 执行 {@code renderHelperInstallation} 操作。 */
+    /**
+     * Renders helper installation as text without executing the rendered command.
+     * <p>渲染helper安装为文本，不执行所渲染命令。
+     *
+     * @param username account name used by the reviewed connection / 已审阅连接使用的账户名
+     * @return render helper installation text / 渲染helper安装文本
+     */
     public static String renderHelperInstallation(String username) {
         requireUsername(username);
         return """
@@ -148,7 +193,12 @@ public final class SetupScriptRenderer {
                 ManagedHelperBundle.PROTOCOL_VERSION);
     }
 
-    /** Performs the {@code renderJava21RuntimeInstallation} operation. / 执行 {@code renderJava21RuntimeInstallation} 操作。 */
+    /**
+     * Renders java 21 runtime installation as text without executing the rendered command.
+     * <p>渲染Java21运行时安装为文本，不执行所渲染命令。
+     *
+     * @return render java 21 runtime installation text / 渲染Java21运行时安装文本
+     */
     public static String renderJava21RuntimeInstallation() {
         return """
                 prepare_check=java-21-runtime
@@ -168,11 +218,21 @@ public final class SetupScriptRenderer {
                 """.formatted(quote(ManagedHelperBundle.DIRECTORY), quote(ManagedHelperBundle.JAVA_RUNTIME_PATH));
     }
 
-    /** Performs the {@code quote} operation. / 执行 {@code quote} 操作。 */
+    /**
+     * Quotes a literal argument for the fixed command-rendering boundary.
+     * <p>为固定命令渲染边界引用字面参数。
+     *
+     * @param value candidate content accepted or rejected by this contract / 由当前契约接收或拒绝的候选内容
+     * @return quote text / 引用文本
+     */
     public static String quote(String value) {
         return "'" + value.replace("'", "'\"'\"'") + "'";
     }
-    /** Verifies common prepared tools independently of the package manager. / 独立于包管理器校验共同准备工具。 */
+    /**
+     * Verifies common prepared tools independently of the package manager. / 独立于包管理器校验共同准备工具。
+     *
+     * @return render common checks text / 渲染共享检查集合文本
+     */
     public static String renderCommonChecks() {
         return """
                 prepare_check=java-command

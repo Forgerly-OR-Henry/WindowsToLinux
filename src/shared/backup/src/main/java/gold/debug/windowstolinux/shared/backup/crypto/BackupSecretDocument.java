@@ -5,11 +5,23 @@ import gold.debug.windowstolinux.shared.config.secretref.ResolvedSecretRevision;
 import java.util.List;
 import java.util.Objects;
 
-/** Owns a complete decoded backup-secret revision set and clears it as one unit. / 持有完整已解码备份秘密修订集并将其整体清零。 */
+/**
+ * Owns a complete decoded backup-secret revision set and clears it as one unit. / 持有完整已解码备份秘密修订集并将其整体清零。
+ */
 public final class BackupSecretDocument implements AutoCloseable {
+    /**
+     * Revisions.
+     * <p>修订集合。
+     */
     private final List<ResolvedSecretRevision> revisions;
 
-    /** Takes ownership of one complete non-empty revision set. / 接管一个完整且非空的修订集。 */
+    /**
+     * Takes ownership of one complete non-empty revision set. / 接管一个完整且非空的修订集。
+     *
+     * @param revisions revisions / 修订集合
+     * @throws IllegalArgumentException if an input violates the constraints checked by this contract / 输入违反当前契约检查的约束时
+     * @throws NullPointerException if a required input is absent / 必需输入缺失时
+     */
     BackupSecretDocument(List<ResolvedSecretRevision> revisions) {
         this.revisions = List.copyOf(Objects.requireNonNull(revisions, "revisions"));
         if (this.revisions.isEmpty()) {
@@ -17,12 +29,18 @@ public final class BackupSecretDocument implements AutoCloseable {
         }
     }
 
-    /** Returns owned short-lived revisions; callers must not retain them after close. / 返回持有的短生命周期修订；关闭后调用方不得继续持有。 */
+    /**
+     * Returns owned short-lived revisions; callers must not retain them after close. / 返回持有的短生命周期修订；关闭后调用方不得继续持有。
+     *
+     * @return owned short-lived revisions; callers must not retain them after close / 持有的短生命周期修订；关闭后调用方不得继续持有
+     */
     public List<ResolvedSecretRevision> revisions() {
         return revisions;
     }
 
-    /** Clears every decoded secret revision. / 清零每个已解码秘密修订。 */
+    /**
+     * Clears every decoded secret revision. / 清零每个已解码秘密修订。
+     */
     @Override
     public void close() {
         revisions.forEach(ResolvedSecretRevision::close);
