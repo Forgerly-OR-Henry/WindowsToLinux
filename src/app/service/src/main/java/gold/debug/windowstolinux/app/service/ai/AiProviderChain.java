@@ -60,7 +60,12 @@ final class AiProviderChain {
             var scope=DeploymentAiScope.current();
             var snapshot = scope.isPresent() ? scope.get().remaining(purpose)
                     : profiles.configuredFor(purpose).stream().map(value -> AiProviderProfile.fromStored(value.profile())).toList();
-            for (AiProviderProfile profile : snapshot) {
+            int position=0;
+            while(true){
+                scope.ifPresent(DeploymentAiScope::checkpoint);
+                var candidates=scope.isPresent()?scope.get().remaining(purpose):snapshot;
+                if(scope.isPresent()?candidates.isEmpty():position>=candidates.size())break;
+                AiProviderProfile profile=scope.isPresent()?candidates.getFirst():candidates.get(position++);
                 checkCancelled(); char[] key = null; Attempt<T> result = null;
                 try (var store = secrets.open(profile.credentialMode(), master)) {
                     key = store.read(profile.credentialKey()).orElseGet(() -> new char[0]);

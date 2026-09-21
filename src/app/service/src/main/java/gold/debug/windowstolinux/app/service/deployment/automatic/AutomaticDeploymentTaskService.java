@@ -62,7 +62,7 @@ public final class AutomaticDeploymentTaskService {
         try(var scope=ai.openDeployment(request.automationMode())){
             var interaction=tracked(scope,suppliedInteraction);
             Predicate<String> fingerprint=value->{scope.human();return suppliedFingerprint.test(value);};
-            if(!records.unresolved(request.server().id()).isEmpty()){progress.accept(LocalizedMessage.of("deployment.agent.unresolvedOutcome"));throw new IllegalStateException("deployment.agent.unresolvedOutcome");}
+            if(!records.unresolved(request.server().id(),endpointBinding(request)).isEmpty()){progress.accept(LocalizedMessage.of("deployment.agent.unresolvedOutcome"));throw new IllegalStateException("deployment.agent.unresolvedOutcome");}
             if(request.automationMode()==DeploymentAutomationMode.STATIC)return new AutomaticDeploymentUseCase(service,source,locks).deploy(request,master,interaction,fingerprint,progress);
             if(request.automationMode()==DeploymentAutomationMode.ASSISTED){
                 try(var advice=new AssistedDeploymentAdvisor(ai,master,interaction,progress)){
@@ -91,12 +91,14 @@ public final class AutomaticDeploymentTaskService {
             for(var purpose:AiPurposeType.values())frozen.put(purpose.name(),scope.providers(purpose).toString());
             records.create(id,request.server().id(),AgentAction.digest(AutomaticAgentBoundary.target(request.server())),request.automationMode(),request.approvalMode(),
                 AgentAction.digest(frozen.toString()),AgentProtocolClient.DEPLOYMENT_SKILL,AgentProtocolClient.APPROVAL_SKILL);
+            records.event(id,"REMOTE_TARGET","",endpointBinding(request));
             var control=new AgentTaskControl(state->{try{records.state(id,state);}catch(java.sql.SQLException failure){throw new IllegalStateException("cannot persist task state",failure);}
                 progress.accept(LocalizedMessage.of("deployment.agent.state","state",state.name()));});
             control.onResume(()->{if(refreshRequested.remove(id)){
                 try{scope.replace(ai.deploymentSnapshot(request.automationMode()));records.event(id,"CONFIGURATION_REPLACED","",scope.binding());}
                 catch(java.sql.SQLException failure){throw new IllegalStateException("cannot replace model snapshot",failure);}
             }});
+            scope.beforeRequest(control::checkpoint);
             if(active.putIfAbsent(id,control)!=null)throw new IllegalStateException("task already running");
             try(var models=ai.agentModels(master)){
                 Consumer<Map<String,String>> journal=event->{try{records.event(id,event.get("type"),event.get("action"),event.get("detail"));}
@@ -206,4 +208,9 @@ public final class AutomaticDeploymentTaskService {
             @Override public boolean confirmDatabaseReplacement(Map<String,?> details){scope.human();return delegate.confirmDatabaseReplacement(details);}
         };
     }
+    /** Binds the selected endpoint independently of its editable saved-profile identifier. / 独立于可编辑保存资料标识绑定所选端点。
+     * @param request frozen task / 冻结任务
+     * @return nonsecret endpoint digest / 非秘密端点摘要
+     */
+    private static String endpointBinding(AutomaticDeploymentRequest request){return AgentAction.digest(request.server().host().toLowerCase(Locale.ROOT)+"|"+request.server().sshPort());}
 }

@@ -281,6 +281,8 @@ class DesktopPersistenceIntegrationTest {
             statement.execute("UPDATE managed_application_graph SET application_health_check=NULL");
             statement.execute("DELETE FROM application_release_configuration_binding");
             statement.execute("UPDATE managed_application_runtime_configuration SET health_kind='TCP', tcp_port=18081, tcp_stability_seconds=1, runtime_payload=NULL");
+            for(String table:java.util.List.of("deployment_agent_event","deployment_agent_task","ai_model_purpose","ai_model_verification","ai_model_inventory"))
+                statement.execute("DROP TABLE "+table);
             statement.execute("PRAGMA user_version = 7");
         }
 
@@ -335,6 +337,8 @@ class DesktopPersistenceIntegrationTest {
             statement.execute("UPDATE managed_application_graph SET application_health_check=NULL");
             statement.execute("DELETE FROM application_release_configuration_binding");
             statement.execute("UPDATE managed_application_runtime_configuration SET health_kind='TCP', tcp_port=18081, tcp_stability_seconds=1, runtime_payload=NULL");
+            for(String table:java.util.List.of("deployment_agent_event","deployment_agent_task","ai_model_purpose","ai_model_verification","ai_model_inventory"))
+                statement.execute("DROP TABLE "+table);
             statement.execute("PRAGMA user_version = 8");
         }
 
@@ -379,6 +383,8 @@ class DesktopPersistenceIntegrationTest {
             statement.execute("UPDATE managed_application_graph_component SET reviewed_resource_bindings=NULL");
             statement.execute("UPDATE managed_application_graph SET application_health_check=NULL");
             statement.execute("UPDATE managed_application_runtime_configuration SET health_kind='TCP', tcp_port=18081, tcp_stability_seconds=1, runtime_payload=NULL");
+            for(String table:java.util.List.of("deployment_agent_event","deployment_agent_task","ai_model_purpose","ai_model_verification","ai_model_inventory"))
+                statement.execute("DROP TABLE "+table);
             statement.execute("PRAGMA user_version = 9");
         }
 

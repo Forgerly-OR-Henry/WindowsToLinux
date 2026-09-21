@@ -38,9 +38,14 @@ public final class AgentProtocolClient {
      * @throws Exception on invalid or unavailable responses / 响应无效或不可用时
      */
     public Reply<AgentDecision> decide(URI endpoint,String model,char[] key,String goal,List<AgentAction> actions,List<String> history,int remaining)throws Exception{
-        var response=request(endpoint,model,key,DEPLOYMENT_SKILL,Map.of("goal",goal,"actions",actions.stream().map(this::action).toList(),"history",history,"remaining",remaining));
+        var evidenceSets=new LinkedHashMap<String,Map<String,String>>();var offered=new ArrayList<Map<String,Object>>();
+        for(var candidate:actions){
+            String reference=AgentAction.digest(json.writeValueAsString(new TreeMap<>(candidate.evidence())));evidenceSets.putIfAbsent(reference,candidate.evidence());
+            var description=new LinkedHashMap<>(action(candidate));description.remove("evidence");description.put("evidenceReference",reference);offered.add(Map.copyOf(description));
+        }
+        var response=request(endpoint,model,key,DEPLOYMENT_SKILL,Map.of("goal",goal,"actions",offered,"evidenceSets",evidenceSets,"history",history,"remaining",remaining));
         JsonNode node=response.value();exact(node,Set.of("decision","actionId","binding","reason"));
-        return new Reply<>(new AgentDecision(AgentDecisionType.valueOf(text(node,"decision")),text(node,"actionId"),text(node,"binding"),text(node,"reason")),response.tokens());
+        return new Reply<>(new AgentDecision(AgentDecisionType.valueOf(text(node,"decision")),text(node,"actionId"),text(node,"binding"),gold.debug.windowstolinux.shared.ai.redaction.AgentEvidenceText.redact(text(node,"reason"))),response.tokens());
     }
     /** Executes one reviewer request with no decision-agent transcript or tools. / 执行一次不携带部署 Agent 会话或工具的审批请求。
      * @param endpoint verified endpoint / 已验证端点
@@ -58,7 +63,7 @@ public final class AgentProtocolClient {
         if(!node.get("evidence").isArray()||node.get("evidence").size()>128)throw new IllegalArgumentException("invalid evidence references");
         var references=new ArrayList<String>();for(var item:node.get("evidence")){if(!item.isTextual())throw new IllegalArgumentException("invalid evidence reference");references.add(item.textValue());}
         var review=new AgentReview(AgentReviewDecision.valueOf(text(node,"decision")),AgentRiskLevel.valueOf(text(node,"risk")),
-                text(node,"binding"),text(node,"reason"),references);
+                text(node,"binding"),gold.debug.windowstolinux.shared.ai.redaction.AgentEvidenceText.redact(text(node,"reason")),references);
         if(!review.binding().equals(action.binding())||!action.evidence().keySet().containsAll(review.evidence())
                 ||review.decision()==AgentReviewDecision.ALLOW&&review.evidence().isEmpty())throw new IllegalArgumentException("unbound review");
         return new Reply<>(review,response.tokens());

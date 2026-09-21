@@ -77,7 +77,7 @@ public final class DeploymentAgentSession {
             if(selectable.isEmpty()){control.awaitUser("approval-needs-evidence");continue;}
             AgentDecision decision;
             try{decision=models.decide(goal,selectable,List.copyOf(history),--remaining);}
-            catch(Exception failure){if(Thread.currentThread().isInterrupted())throw failure;control.awaitUser("deployment-models-unavailable");continue;}
+            catch(Exception failure){if(Thread.currentThread().isInterrupted()||failure instanceof java.util.concurrent.CancellationException)throw failure;control.awaitUser("deployment-models-unavailable");continue;}
             control.checkpoint();
             if(decision.decision()==AgentDecisionType.NEED_INPUT){event("INPUT_REQUIRED","",decision.reason());control.awaitUser("input-required");continue;}
             if(decision.decision()==AgentDecisionType.UNABLE){handoff("model-unable");continue;}
@@ -112,7 +112,9 @@ public final class DeploymentAgentSession {
                 if(!action.tool().modifiesServer()){event("RESULT",action.id(),"true:false:read-only-query-failed");control.finish(failure instanceof java.util.concurrent.CancellationException?AgentTaskState.CANCELLED:AgentTaskState.FAILED);}
                 else{event("UNKNOWN",action.id(),action.binding());control.finish(AgentTaskState.UNKNOWN);}throw failure;}
             event(observed.known()?"RESULT":"UNKNOWN",action.id(),observed.known()+":"+observed.succeeded()+":"+AgentAction.digest(new TreeMap<>(observed.facts()).toString()));
-            history.add(action.tool().name()+" "+action.id()+" known="+observed.known()+" success="+observed.succeeded()+" facts="+new TreeMap<>(observed.facts()));
+            String facts=new TreeMap<>(observed.facts()).toString();
+            history.add(action.tool().name()+" "+action.id()+" known="+observed.known()+" success="+observed.succeeded()+" facts="
+                +(facts.length()>512?facts.substring(0,512)+" [digest="+AgentAction.digest(facts)+"]":facts));
             if(!observed.known()){control.finish(AgentTaskState.UNKNOWN);throw new IllegalStateException("execution outcome unknown; reconcile before any replay");}
         return observed;
     }
@@ -132,11 +134,11 @@ public final class DeploymentAgentSession {
             }
             AgentReview review;
             try{review=models.review(goal,action,local);}
-            catch(Exception failure){if(Thread.currentThread().isInterrupted())throw failure;control.awaitUser("approval-service-unavailable");return false;}
+            catch(Exception failure){if(Thread.currentThread().isInterrupted()||failure instanceof java.util.concurrent.CancellationException)throw failure;control.awaitUser("approval-service-unavailable");return false;}
             control.checkpoint();
-            event("AI_REVIEW",action.id(),review.decision().name()+":"+review.risk().name()+":"+review.binding());
+            event("AI_REVIEW",action.id(),review.decision().name()+":"+review.risk().name()+":"+review.binding()+":"+review.reason());
             if(review.decision()!=AgentReviewDecision.ALLOW||review.risk()==AgentRiskLevel.FORBIDDEN){
-                history.add("action "+action.id()+" "+review.decision().name());
+                history.add("action "+action.id()+" "+review.decision().name()+" reason="+review.reason());
                 if(review.decision()==AgentReviewDecision.DENY||review.risk()==AgentRiskLevel.FORBIDDEN){denied.add(action.intentBinding());control.awaitUser("approval-rejected");}
                 else{awaitingEvidence.put(action.id(),action.binding());
                     if(evidenceRounds.merge(action.id(),1,Integer::sum)>2||available.stream().noneMatch(a->a.tool()==AgentToolType.SERVICE_STATUS||a.tool()==AgentToolType.SERVICE_LOGS||a.tool()==AgentToolType.VERIFY_SERVER||a.tool()==AgentToolType.CANDIDATE_STATUS))control.awaitUser("approval-needs-evidence");}

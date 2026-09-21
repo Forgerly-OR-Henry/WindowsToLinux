@@ -17,6 +17,8 @@ class ServerProfileRepositoryTest {
         try (var connection = DriverManager.getConnection("jdbc:sqlite:" + directory.resolve("windowstolinux.db")); var statement = connection.createStatement()) {
             for (String column : java.util.List.of("display_name", "last_checked", "connected", "operating_system"))
                 statement.execute("ALTER TABLE server_profile DROP COLUMN " + column);
+            for(String table:java.util.List.of("deployment_agent_event","deployment_agent_task","ai_model_purpose","ai_model_verification","ai_model_inventory"))
+                statement.execute("DROP TABLE "+table);
             statement.execute("PRAGMA user_version=12");
         }
         StoredServerProfile renamed = new StoredServerProfile(old.id(), old.host(), 22, old.username(), old.credentialKey(), old.credentialMode(), "Production EU");

@@ -109,4 +109,20 @@ class DeploymentModeProtocolTest {
             }
         }
     }
+    @Test void cancellationStopsBeforeFallbackAndRefreshSelectsOnlyTheNewSnapshot()throws Exception{
+        try(var db=DesktopPersistence.open(directory)){
+            seed(db,AiPurposeType.DEPLOYMENT,"deploy");seed(db,AiPurposeType.APPROVAL,"broken","review");
+            var calls=new AtomicInteger();var facade=facade(db,(endpoint,key,body)->{calls.incrementAndGet();return new RoleChatResult(503,"unavailable");});
+            try(var scope=facade.openDeployment(DeploymentAutomationMode.AGENT);var models=facade.agentModels(master())){
+                scope.beforeRequest(()->{if(calls.get()>0)throw new CancellationException("cancelled before next provider");});
+                assertThrows(CancellationException.class,()->models.review("deploy",action(),AgentRiskLevel.NORMAL));assertEquals(1,calls.get());
+            }
+            seed(db,AiPurposeType.APPROVAL,"review","replacement");var used=new ArrayList<String>();
+            var next=facade(db,(endpoint,key,body)->{used.add(json.readTree(body).path("model").asText());return reply(Map.of("decision","DENY","risk","HIGH","binding",action().binding(),"reason","valid denial","evidence",List.of("identity")));});
+            try(var scope=next.openDeployment(DeploymentAutomationMode.AGENT);var models=next.agentModels(master())){
+                scope.beforeRequest(()->{try{db.aiProfiles().purposes().save(AiPurposeType.APPROVAL,List.of(new AiPurposeAssignment("replacement",true)));scope.replace(next.deploymentSnapshot(DeploymentAutomationMode.AGENT));}catch(Exception failure){throw new IllegalStateException(failure);}scope.beforeRequest(()->{});});
+                assertEquals(AgentReviewDecision.DENY,models.review("deploy",action(),AgentRiskLevel.NORMAL).decision());assertEquals(List.of("replacement"),used);
+            }
+        }
+    }
 }

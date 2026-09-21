@@ -107,7 +107,7 @@ class AiModelInventoryTest {
     }
     private static void layout(Container root){root.doLayout();for(var child:root.getComponents())if(child instanceof Container nested)layout(nested);}
     private static void render(JComponent root,String name){try{
-        var image=new java.awt.image.BufferedImage(root.getWidth(),root.getHeight(),java.awt.image.BufferedImage.TYPE_INT_RGB);var graphics=image.createGraphics();root.paint(graphics);graphics.dispose();
+        var image=new java.awt.image.BufferedImage(root.getWidth(),root.getHeight(),java.awt.image.BufferedImage.TYPE_INT_RGB);var graphics=image.createGraphics();graphics.setColor(UIManager.getColor("Panel.background"));graphics.fillRect(0,0,root.getWidth(),root.getHeight());root.paint(graphics);graphics.dispose();
         var directory=java.nio.file.Path.of("target/visual-checks");java.nio.file.Files.createDirectories(directory);javax.imageio.ImageIO.write(image,"png",directory.resolve(name).toFile());
     }catch(java.io.IOException failure){throw new AssertionError(failure);}}
     private static JButton button(Container root,String name){return descendants(root).filter(v->name.equals(v.getName())).map(JButton.class::cast).findFirst().orElseThrow();}
