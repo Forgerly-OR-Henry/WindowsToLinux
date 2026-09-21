@@ -63,6 +63,37 @@ public final class AgentProtocolClient {
                 ||review.decision()==AgentReviewDecision.ALLOW&&review.evidence().isEmpty())throw new IllegalArgumentException("unbound review");
         return new Reply<>(review,response.tokens());
     }
+    /** Produces evidence-linked advice at a fixed system checkpoint. / 在固定系统节点生成关联证据的建议。
+     * @param endpoint verified endpoint / 已验证端点
+     * @param model frozen model identity / 冻结模型身份
+     * @param key temporary secret / 临时秘密
+     * @param phase fixed workflow checkpoint / 固定流程节点
+     * @param candidates nonsecret candidates only / 仅非秘密候选
+     * @param evidence bounded observed facts / 有界观察事实
+     * @return validated suggestions and usage / 已校验建议及用量
+     * @throws Exception on invalid output or transport failure / 输出无效或传输失败时
+     */
+    public Reply<gold.debug.windowstolinux.shared.model.deployment.AssistedDeploymentAdvice> assist(URI endpoint,String model,char[] key,String phase,
+            Map<String,List<String>> candidates,Map<String,String> evidence)throws Exception{
+        if(!Set.of("ANALYSIS","PREFLIGHT","FAILURE").contains(phase))throw new IllegalArgumentException("unsupported assisted checkpoint");
+        var response=request(endpoint,model,key,"assisted-v1",Map.of("phase",phase,"candidates",candidates,"evidence",evidence));
+        var node=response.value();exact(node,Set.of("summary","suggestions","unresolved"));
+        if(!node.get("suggestions").isArray()||node.get("suggestions").size()>64||!node.get("unresolved").isArray())throw new IllegalArgumentException("invalid assisted list");
+        var suggestions=new ArrayList<gold.debug.windowstolinux.shared.model.deployment.AssistedDeploymentAdvice.Candidate>();
+        for(var suggestion:node.get("suggestions")){
+            exact(suggestion,Set.of("field","candidate","evidence"));
+            String field=text(suggestion,"field"),candidate=text(suggestion,"candidate");var refs=stringList(suggestion.get("evidence"));
+            if(!candidates.getOrDefault(field,List.of()).contains(candidate)||!evidence.keySet().containsAll(refs))throw new IllegalArgumentException("unsupported advice");
+            suggestions.add(new gold.debug.windowstolinux.shared.model.deployment.AssistedDeploymentAdvice.Candidate(field,candidate,refs));
+        }
+        return new Reply<>(new gold.debug.windowstolinux.shared.model.deployment.AssistedDeploymentAdvice(text(node,"summary"),suggestions,stringList(node.get("unresolved"))),response.tokens());
+    }
+    /** Reads bounded string arrays without coercion. / 读取有界字符串数组，不进行强制转换。
+     * @param node parsed array / 已解析数组
+     * @return copied strings / 复制的字符串
+     */
+    private static List<String> stringList(JsonNode node){if(node==null||!node.isArray()||node.size()>64)throw new IllegalArgumentException("string array required");
+        var values=new ArrayList<String>();for(var value:node){if(!value.isTextual()||value.textValue().length()>1024)throw new IllegalArgumentException("invalid string array");values.add(value.textValue());}return List.copyOf(values);}
     /** Creates nonsecret canonical action input. / 创建非秘密规范动作输入。
      * @param action trusted action / 可信动作
      * @return serialized context / 可序列化上下文
@@ -83,7 +114,7 @@ public final class AgentProtocolClient {
         if(key==null||key.length==0)throw new IllegalArgumentException("missing credential");
         String input=json.writeValueAsString(context);if(input.length()>65536)throw new IllegalArgumentException("agent context too large");
         String prompt;
-        try(var stream=AgentProtocolClient.class.getResourceAsStream("/gold/debug/windowstolinux/shared/ai/skills/"+skill+".md")){
+        try(var stream=AgentProtocolClient.class.getResourceAsStream("/gold/debug/windowstolinux/shared/ai/skills/"+skill.replace("-v1","")+".md")){
             if(stream==null)throw new IllegalStateException("missing built-in skill");prompt=new String(stream.readAllBytes(),StandardCharsets.UTF_8);
         }
         String body=json.writeValueAsString(Map.of("model",model,"temperature",0,"messages",List.of(

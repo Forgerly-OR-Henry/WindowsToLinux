@@ -22,7 +22,7 @@ class DeploymentInputDialogTest {
         SwingUtilities.invokeAndWait(() -> {
             JFrame owner = new JFrame();
             var messages = new PageMessagePresenter(MessageCatalog.forLanguageTag("zh-CN"));
-            var input = new DeploymentInputDialog(owner, null, new DesktopComponentFactory(ThemePalette.light()), messages, () -> new char[0]);
+            var input = new DeploymentInputDialog(owner, null, new DesktopComponentFactory(ThemePalette.light()), messages);
             var details = Map.of("server", "preview", "instance", "main", "current", "16", "required", "17", "target", "17", "data", "/preview");
             AtomicReference<Throwable> failure = new AtomicReference<>();
             int[] phase = {0};

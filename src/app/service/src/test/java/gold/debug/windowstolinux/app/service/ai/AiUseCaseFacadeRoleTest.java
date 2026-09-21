@@ -26,7 +26,7 @@ class AiUseCaseFacadeRoleTest {
     @TempDir Path temporaryDirectory;
 
     @Test
-    void invokesOnlyTheProviderExplicitlyAssignedToTheRole() throws Exception {
+    void invokesTheEnabledProviderWithTheRequestedRoleContract() throws Exception {
         AtomicInteger calls = new AtomicInteger();
         var client = new OpenAiCompatibleRoleClient((endpoint, apiKey, body) -> {
             calls.incrementAndGet();
@@ -39,11 +39,14 @@ class AiUseCaseFacadeRoleTest {
         try (DesktopPersistence persistence = DesktopPersistence.open(temporaryDirectory)) {
             AiUseCaseFacade useCases = new AiUseCaseFacade(persistence.aiProfiles(),
                     new DesktopSecretStoreService(persistence.encryptedSecrets()), client);
-            useCases.saveNamed(new AiProviderProfile("analysis",
-                            URI.create("https://analysis.example.test/v1/chat/completions"), "analysis-model",
-                            "ai/analysis", CredentialStorageMode.MASTER_PASSWORD),
-                    "master-password".toCharArray(), "selected-secret".toCharArray());
-            useCases.assignRole(new AiRoleAssignment(AiCollaborationRoleKind.PROJECT_ANALYSIS, "analysis"));
+            var profile = new AiProviderProfile("analysis", URI.create("https://analysis.example.test/v1/chat/completions"),
+                    "analysis-model", "ai/analysis", CredentialStorageMode.MASTER_PASSWORD);
+            persistence.aiProfiles().saveVerified(profile.stored(),profile.id(),java.time.Instant.now());
+            persistence.aiProfiles().purposes().save(gold.debug.windowstolinux.shared.model.ai.AiPurposeType.DEPLOYMENT,java.util.List.of(new gold.debug.windowstolinux.shared.model.ai.AiPurposeAssignment(profile.id(),true)));
+            try (var store = new DesktopSecretStoreService(persistence.encryptedSecrets()).open(
+                    profile.credentialMode(), "master-password".toCharArray())) {
+                store.save(profile.credentialKey(), "selected-secret".toCharArray());
+            }
 
             var result = useCases.invokeRole(new ProjectAnalysisRoleContext("sample-app", "JAVA_MAVEN_SPRING_BOOT",
                     "MAVEN_WRAPPER", "FORMALLY_SUPPORTED", List.of()), "master-password".toCharArray());

@@ -9,29 +9,31 @@ import java.sql.Statement;
 import java.util.Objects;
 
 /**
- * Provides the {@code DesktopSchemaMigrator} implementation.
- *
- * <p>提供 {@code DesktopSchemaMigrator} 实现。
+ * Applies ordered SQLite schema migrations while preserving existing desktop records.
+ * <p>按顺序执行 SQLite 结构迁移并保留既有桌面记录。
  */
 public final class DesktopSchemaMigrator {
     /**
      * Exposes the {@code CURRENT_SCHEMA_VERSION} constant.
      *
-     * <p>公开 {@code CURRENT_SCHEMA_VERSION} 常量。
+     *  <p>公开 {@code CURRENT_SCHEMA_VERSION} 常量。
      */
-    public static final int CURRENT_SCHEMA_VERSION = 16;
+    public static final int CURRENT_SCHEMA_VERSION = 19;
 
+    /**
+     * Prevents instantiation of this static contract helper.
+     * <p>防止实例化当前静态契约辅助类。
+     */
     private DesktopSchemaMigrator() {
     }
 
     /**
-     * Performs the {@code migrate} operation.
+     * Applies supported SQLite migrations in order and rejects databases newer than this application; failed changes are rolled back.
+     * <p>按顺序应用受支持的 SQLite 迁移，并拒绝版本高于当前应用的数据库；失败变更会回滚。
      *
-     * <p>执行 {@code migrate} 操作。
-     *
-     * @param connections the {@code connections} value / {@code connections} 值
-     * @throws SQLException if the operation cannot be completed / 无法完成操作时
-     * @throws NullPointerException if a required argument is {@code null} / 必要参数为 {@code null} 时
+     * @param connections factory for scoped database connections / 限定作用域数据库连接的工厂
+     * @throws SQLException if the database cannot complete the requested read or transaction / 数据库无法完成请求的读取或事务时
+     * @throws NullPointerException if a required input is absent / 必需输入缺失时
      */
     public static void migrate(DesktopConnectionFactory connections) throws SQLException {
         Objects.requireNonNull(connections, "connections");
@@ -313,6 +315,9 @@ public final class DesktopSchemaMigrator {
                 }
                 if (version < 15) AiPrioritySchemaMigration.apply(statement);
                 if (version < 16) ApplicationRuntimeSchemaMigration.apply(statement);
+                if (version < 17) BrowserRecoverySchemaMigration.apply(statement);
+                if (version < 18) AiPurposeSchemaMigration.apply(statement);
+                if (version < 19) AgentTaskSchemaMigration.apply(statement);
                 statement.execute("PRAGMA user_version = " + CURRENT_SCHEMA_VERSION);
                 connection.commit();
             } catch (SQLException exception) {
@@ -322,12 +327,30 @@ public final class DesktopSchemaMigrator {
         }
     }
 
+    /**
+     * Reads SQLite user_version, treating an absent result as version zero.
+     * <p>读取 SQLite user_version，并将缺失结果视为版本零。
+     *
+     * @param statement statement / 语句
+     * @return sQLite user_version, treating an absent result as version zero /  SQLite user_version，并将缺失结果视为版本零
+     * @throws SQLException if the database cannot complete the requested read or transaction / 数据库无法完成请求的读取或事务时
+     */
     private static int schemaVersion(Statement statement) throws SQLException {
         try (ResultSet result = statement.executeQuery("PRAGMA user_version")) {
             return result.next() ? result.getInt(1) : 0;
         }
     }
 
+    /**
+     * Reports whether the column condition holds for this contract.
+     * <p>判断当前契约是否满足列条件。
+     *
+     * @param statement statement / 语句
+     * @param table table / 表
+     * @param column column / 列
+     * @return true when column condition holds for this contract, false otherwise / 当前契约是否满足列条件时为 true，否则为 false
+     * @throws SQLException if the database cannot complete the requested read or transaction / 数据库无法完成请求的读取或事务时
+     */
     private static boolean hasColumn(Statement statement, String table, String column) throws SQLException {
         try (ResultSet result = statement.executeQuery("PRAGMA table_info(" + table + ")")) {
             while (result.next()) {
@@ -339,6 +362,13 @@ public final class DesktopSchemaMigrator {
         }
     }
 
+    /**
+     * Rolls back the transaction and attaches any rollback failure to the original SQL exception.
+     * <p>回滚事务，并将回滚失败附加到原始 SQL 异常。
+     *
+     * @param connection connection scoped to the current database or remote operation / 限定于当前数据库或远端操作的连接
+     * @param original original / 原始
+     */
     private static void rollback(Connection connection, SQLException original) {
         try {
             connection.rollback();

@@ -7,126 +7,110 @@ import gold.debug.windowstolinux.app.ui.deployment.ReviewContext;
 import gold.debug.windowstolinux.app.ui.i18n.PageMessagePresenter;
 import gold.debug.windowstolinux.shared.ai.collaboration.invocation.AiRoleInvocationResult;
 import gold.debug.windowstolinux.shared.ai.collaboration.role.ProjectAnalysisRoleContext;
-import gold.debug.windowstolinux.shared.ai.collaboration.role.AiCollaborationRoleKind;
-import gold.debug.windowstolinux.shared.model.security.CredentialStorageMode;
+import gold.debug.windowstolinux.shared.model.ai.*;
 import javax.swing.*;
-import java.awt.*;
-import java.awt.event.ActionEvent;
-import java.time.ZoneId;
-import java.time.format.DateTimeFormatter;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 
-/** Ordered model inventory and cancellable explanations. / 有序模型清单与可取消的解释。 */
+/** Model inventory, inline purpose selection and explicit model probes. / 模型清单、内联用途选择及显式模型测试。 */
 public final class AiPage {
+    /** Application boundary. / 应用边界。 */
     private final AiApplicationFacade service;
+    /** Previously reviewed source facts. / 已审阅源码事实。 */
     private final ReviewContext reviewContext;
+    /** Localized messages. / 本地化消息。 */
     private final PageMessagePresenter messages;
+    /** Shared component factory. / 共用控件工厂。 */
     private final DesktopComponentFactory c;
-    private final JPasswordField masterPassword = new JPasswordField(20);
-    private final JTextArea output = DesktopComponentFactory.outputArea();
-    private final JPanel cards = new JPanel();
-    private final JLabel status = new JLabel();
+    /** Short-lived unlock input. / 短生命周期解锁输入。 */
+    private final JPasswordField masterPassword=new JPasswordField(20);
+    /** Advice output. / 建议输出。 */
+    private final JTextArea output=DesktopComponentFactory.outputArea();
+    /** Explicit request cancellation. / 显式请求取消。 */
     private final JButton cancel;
-    private final JPanel panel;
-    private final AiProviderDragTransfer transfer;
-    private List<AiProviderSummary> models = List.of();
+    /** Page container. / 页面容器。 */
+    private final AdvancedOptionsPane panel;
+    /** Model list and purpose editor. / 模型列表及用途编辑器。 */
+    private final AiModelInventoryPane inventory;
+    /** Active request. / 活动请求。 */
     private DesktopTaskHandle task;
-    private boolean busy, loading;
-    private AiPageState draft = new AiPageState("", "", "", AiCollaborationRoleKind.PROJECT_ANALYSIS,
-            new char[0], CredentialStorageMode.WINDOWS_CREDENTIAL_MANAGER, new char[0], "");
-
-    /** Creates cards without making network requests. / 创建卡片，不发送网络请求。 */
-    public AiPage(AiApplicationFacade service, ReviewContext reviewContext, DesktopComponentFactory c, PageMessagePresenter messages) {
-        this.service = service; this.reviewContext = reviewContext; this.c = c; this.messages = messages;
-        cancel = c.secondaryButton(messages.text("button.cancel")); cancel.setEnabled(false);
-        cancel.addActionListener(event -> { if (task != null) { task.cancel(); output.setText(messages.text("ai.models.cancelling")); } });
-        transfer = new AiProviderDragTransfer(cards, this::order, this::reorder, () -> busy || loading);
-        panel = createPanel();
-        panel.addHierarchyListener(event -> { if ((event.getChangeFlags() & java.awt.event.HierarchyEvent.SHOWING_CHANGED) != 0 && panel.isShowing()) refresh(); });
+    /** Request guard. / 请求保护。 */
+    private boolean busy;
+    /** Creates the AI settings page. / 创建 AI 设置页面。
+     * @param service application boundary / 应用边界
+     * @param reviewContext reviewed source context / 已审阅源码上下文
+     * @param c component factory / 控件工厂
+     * @param messages localized messages / 本地化消息
+     */
+    public AiPage(AiApplicationFacade service,ReviewContext reviewContext,DesktopComponentFactory c,PageMessagePresenter messages){
+        this.service=service;this.reviewContext=reviewContext;this.c=c;this.messages=messages;
+        inventory=new AiModelInventoryPane(service,c,messages,this::edit);
+        panel=new AdvancedOptionsPane(inventory,c,messages);
+        panel.field("field.masterPassword",masterPassword);
+        for(var capability:AiCapabilityType.values()){
+            JButton test=c.secondaryButton(messages.text("ai.capability.test."+capability.name()));
+            test.addActionListener(event->test(capability));panel.addOption(test);
+        }
+        JButton explain=c.primaryButton(messages.text("button.requestAi"));explain.addActionListener(event->explain());panel.addOption(explain);
+        cancel=c.secondaryButton(messages.text("button.cancel"));cancel.setEnabled(false);
+        cancel.addActionListener(event->{if(task!=null){task.cancel();output.setText(messages.text("ai.models.cancelling"));}});
+        panel.addOption(cancel);output.setRows(16);panel.addOption(new JScrollPane(output));
+        panel.addHierarchyListener(event->{if((event.getChangeFlags()&java.awt.event.HierarchyEvent.SHOWING_CHANGED)!=0&&panel.isShowing())inventory.refresh();});
     }
-    /** Returns the page. / 返回页面。 */
-    public JPanel panel() { return panel; }
-    /** Preserves old transient drafts and current output across appearance changes. / 在外观变化时保留旧临时草稿与当前输出。 */
-    public AiPageState captureState() {
-        return new AiPageState(draft.endpoint(), draft.model(), draft.providerId(), draft.role(), draft.apiKey(), draft.credentialMode(), masterPassword.getPassword(), output.getText());
+    /** Returns the page component. / 返回页面控件。
+     * @return page / 页面
+     */
+    public JPanel panel(){return panel;}
+    /** Captures transient UI state. / 捕获临时界面状态。
+     * @return state snapshot / 状态快照
+     */
+    public AiPageState captureState(){return new AiPageState(masterPassword.getPassword(),output.getText(),inventory.capture());}
+    /** Restores transient UI state. / 恢复临时界面状态。
+     * @param state captured state / 捕获状态
+     */
+    public void restoreState(AiPageState state){
+        char[] password=state.masterPassword();try{masterPassword.setText(new String(password));}finally{Arrays.fill(password,'\0');}
+        output.setText(state.output());inventory.restore(state.inventory());
     }
-    /** Restores transient state without mutating model priority. / 恢复临时状态，不改变模型优先级。 */
-    public void restoreState(AiPageState state) {
-        draft.close(); draft = new AiPageState(state.endpoint(), state.model(), state.providerId(), state.role(), state.apiKey(), state.credentialMode(), new char[0], "");
-        masterPassword.setText(new String(state.masterPassword())); output.setText(state.output());
+    /** Opens model connection editing. / 打开模型连接编辑。
+     * @param existing existing model or absent / 既有模型或空
+     */
+    private void edit(AiProviderSummary existing){
+        if(busy||service==null)return;
+        new AiProviderDialog(SwingUtilities.getWindowAncestor(panel),service,c,messages,existing,inventory::refresh).setVisible(true);
     }
-    private JPanel createPanel() {
-        JPanel page = c.pagePanel(); AdvancedOptionsPane advanced = new AdvancedOptionsPane(page, c, messages);
-        JPanel toolbar = c.transparent(new BorderLayout(12, 0)); toolbar.add(c.sectionHeading(messages.text("ai.models.title"), messages.text("ai.models.description")));
-        JButton add = c.primaryButton(messages.text("ai.models.add")); add.addActionListener(event -> edit(null)); toolbar.add(add, BorderLayout.EAST); page.add(toolbar, BorderLayout.NORTH);
-        cards.setLayout(new BoxLayout(cards, BoxLayout.Y_AXIS)); cards.setOpaque(false); cards.setTransferHandler(transfer);
-        JScrollPane scroll = new JScrollPane(cards); scroll.setBorder(BorderFactory.createEmptyBorder()); scroll.setOpaque(false); scroll.getViewport().setOpaque(false); scroll.getVerticalScrollBar().setUnitIncrement(20);
-        page.add(scroll); page.add(status, BorderLayout.SOUTH); advanced.field("field.masterPassword", masterPassword);
-        JButton explain = c.primaryButton(messages.text("button.requestAi")); explain.addActionListener(event -> explain()); advanced.addOption(explain); advanced.addOption(cancel);
-        output.setRows(16); advanced.addOption(new JScrollPane(output)); return advanced;
+    /** Tests only the selected model and capability. / 仅测试所选模型及能力。
+     * @param capability tested capability / 测试能力
+     */
+    private void test(AiCapabilityType capability){
+        var model=inventory.current();if(busy||service==null||model==null)return;
+        char[] master=masterPassword.getPassword();setBusy(true);output.setText(messages.text("ai.models.testing"));
+        task=DesktopTaskExecutor.submit(()->{try{service.testAiCapability(model.profile().id(),capability,master);return true;}finally{Arrays.fill(master,'\0');}},
+            done->{setBusy(false);output.setText(messages.text("ai.capability.passed"));inventory.refresh();},
+            failure->{setBusy(false);output.setText(messages.safe(failure));});
     }
-    private void refresh() {
-        if (service == null || loading || busy) return; loading = true;
-        DesktopTaskExecutor.run(service::listAiConfigurations, values -> { loading = false; models = values; render(); }, failure -> { loading = false; status.setText(messages.safe(failure)); });
+    /** Requests explicit bounded source explanation. / 请求显式有界源码解释。 */
+    private void explain(){
+        if(busy||service==null)return;var preparation=reviewContext.reviewedPreparation();
+        if(preparation.isEmpty()||preparation.get().assessment().facts().isEmpty()){output.setText(messages.text("ai.analyzeFirst"));return;}
+        char[] master=masterPassword.getPassword();setBusy(true);output.setText(messages.text("ai.requesting"));
+        task=DesktopTaskExecutor.submit(()->{try{return service.invokeAiRole(ProjectAnalysisRoleContext.from(preparation.get().assessment().facts().orElseThrow()),master);}
+            finally{Arrays.fill(master,'\0');}},
+            result->{setBusy(false);output.setText(result.map(this::evidenceText).orElseGet(()->messages.text("ai.status.noEnabledProviders")));},
+            failure->{boolean cancelled=task!=null&&task.cancelled();setBusy(false);output.setText(cancelled?messages.text("ai.models.cancelled"):messages.safe(failure));});
     }
-    private void render() {
-        cards.removeAll(); String preferred = models.stream().filter(AiProviderSummary::enabled).map(value -> value.profile().id()).findFirst().orElse("");
-        for (int index = 0; index < models.size(); index++) cards.add(card(models.get(index), index, preferred));
-        status.setText(messages.text(models.isEmpty() ? "ai.models.empty" : "ai.models.orderHint")); cards.revalidate(); cards.repaint();
+    /** Locks editing while a request is active. / 请求活动期间锁定编辑。
+     * @param value active state / 活动状态
+     */
+    private void setBusy(boolean value){busy=value;panel.setBusy(value);inventory.setLocked(value);cancel.setEnabled(value);if(!value)task=null;}
+    /** Formats validated evidence for display. / 格式化已校验展示证据。
+     * @param result invocation result / 调用结果
+     * @return readable evidence / 可读证据
+     */
+    private String evidenceText(AiRoleInvocationResult result){
+        var e=result.evidence();
+        return messages.text("ai.roleEvidence",Map.of("provider",e.providerId(),"model",e.model(),
+            "status",messages.text("ai.invocation."+e.status().name().toLowerCase(Locale.ROOT)),"digest",e.inputSha256(),"validation",e.validationDetail(),
+            "decision",e.output().map(v->messages.text("ai.decision."+v.decision().name().toLowerCase(Locale.ROOT))).orElse("-"),
+            "summary",e.output().map(v->v.summary()).orElse("-")));
     }
-    private JPanel card(AiProviderSummary value, int index, String preferred) {
-        JPanel card = c.card(new BorderLayout(14, 12)); card.setAlignmentX(Component.LEFT_ALIGNMENT);
-        card.setMaximumSize(new Dimension(Integer.MAX_VALUE, 168)); card.setPreferredSize(new Dimension(600, 156)); card.setTransferHandler(transfer);
-        JLabel grip = new JLabel("⋮⋮"); grip.setFont(grip.getFont().deriveFont(22f)); grip.setToolTipText(messages.text("ai.models.drag")); transfer.install(grip, value.profile().id()); card.add(grip, BorderLayout.WEST);
-        JPanel details = c.transparent(new BorderLayout(0, 10)); JPanel title = c.transparent(new FlowLayout(FlowLayout.LEFT, 8, 0));
-        JLabel name = new JLabel((index + 1) + "  " + value.name()); name.setFont(name.getFont().deriveFont(Font.BOLD, 16f)); title.add(name);
-        if (value.profile().id().equals(preferred)) title.add(c.badge(messages.text("ai.models.preferred")));
-        details.add(title, BorderLayout.NORTH); details.add(new JLabel(value.profile().model() + "  ·  " + value.profile().chatCompletionsEndpoint()));
-        String verification = value.verifiedAt().map(time -> messages.text("ai.models.verified", Map.of("time", DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm").withZone(ZoneId.systemDefault()).format(time))))
-                .orElseGet(() -> messages.text("ai.models.unverified")); details.add(new JLabel(verification), BorderLayout.SOUTH); card.add(details);
-        JPanel actions = c.transparent(new FlowLayout(FlowLayout.RIGHT, 6, 0)); ToggleSwitch enabled = new ToggleSwitch(messages.text("ai.models.enabled"), value.enabled());
-        enabled.addActionListener(event -> mutate(() -> service.setAiProviderEnabled(value.profile().id(), enabled.isSelected()))); actions.add(enabled);
-        JButton up = c.secondaryButton("↑"), down = c.secondaryButton("↓"), edit = c.secondaryButton(messages.text("ai.models.edit"));
-        up.setToolTipText(messages.text("ai.models.up")); down.setToolTipText(messages.text("ai.models.down")); up.getAccessibleContext().setAccessibleName(messages.text("ai.models.up")); down.getAccessibleContext().setAccessibleName(messages.text("ai.models.down"));
-        up.setEnabled(index > 0); down.setEnabled(index + 1 < models.size()); up.addActionListener(event -> move(index, -1)); down.addActionListener(event -> move(index, 1)); edit.addActionListener(event -> edit(value));
-        actions.add(up); actions.add(down); actions.add(edit); card.add(actions, BorderLayout.SOUTH); keyboard(card, index, -1, "alt UP"); keyboard(card, index, 1, "alt DOWN"); return card;
-    }
-    private void keyboard(JPanel card, int index, int delta, String key) {
-        card.getInputMap(JComponent.WHEN_ANCESTOR_OF_FOCUSED_COMPONENT).put(KeyStroke.getKeyStroke(key), key);
-        card.getActionMap().put(key, new AbstractAction() { @Override public void actionPerformed(ActionEvent event) { move(index, delta); } });
-    }
-    private List<String> order() { return models.stream().map(value -> value.profile().id()).toList(); }
-    private void move(int index, int delta) {
-        if (busy || loading || index + delta < 0 || index + delta >= models.size()) return;
-        var reordered = new java.util.ArrayList<>(order()); java.util.Collections.swap(reordered, index, index + delta); reorder(reordered);
-    }
-    private void reorder(List<String> ids) { if (!ids.equals(order())) mutate(() -> service.reorderAiProviders(ids)); }
-    private void mutate(Change change) {
-        if (busy || loading || service == null) return; setBusy(true);
-        DesktopTaskExecutor.run(() -> { change.apply(); return true; }, value -> { setBusy(false); refresh(); }, failure -> { setBusy(false); render(); status.setText(messages.safe(failure)); });
-    }
-    private void edit(AiProviderSummary existing) {
-        if (busy || loading || service == null) return;
-        new AiProviderDialog(SwingUtilities.getWindowAncestor(panel), service, c, messages, existing, this::refresh).setVisible(true);
-    }
-    private void explain() {
-        if (busy || service == null) return; var preparation = reviewContext.reviewedPreparation();
-        if (preparation.isEmpty() || preparation.orElseThrow().assessment().facts().isEmpty()) { output.setText(messages.text("ai.analyzeFirst")); return; }
-        char[] master = masterPassword.getPassword(); output.setText(messages.text("ai.requesting")); setBusy(true); cancel.setEnabled(true);
-        task = DesktopTaskExecutor.submit(() -> {
-            try { return service.invokeAiRole(ProjectAnalysisRoleContext.from(preparation.orElseThrow().assessment().facts().orElseThrow()), master); }
-            finally { java.util.Arrays.fill(master, '\0'); }
-        }, result -> { setBusy(false); output.setText(result.map(this::evidenceText).orElseGet(() -> messages.text("ai.status.noEnabledProviders"))); },
-                failure -> { boolean cancelled = task != null && task.cancelled(); setBusy(false); output.setText(cancelled ? messages.text("ai.models.cancelled") : messages.safe(failure)); });
-    }
-    private void setBusy(boolean value) { busy = value; ((AdvancedOptionsPane) panel).setBusy(value); cancel.setEnabled(false); if (!value) task = null; }
-    private String evidenceText(AiRoleInvocationResult result) {
-        var evidence = result.evidence(); String text = messages.text("ai.roleEvidence", Map.of("provider", evidence.providerId(), "model", evidence.model(),
-                "status", messages.text("ai.invocation." + evidence.status().name().toLowerCase(java.util.Locale.ROOT)), "digest", evidence.inputSha256(), "validation", evidence.validationDetail(),
-                "decision", evidence.output().map(value -> messages.text("ai.decision." + value.decision().name().toLowerCase(java.util.Locale.ROOT))).orElse("-"), "summary", evidence.output().map(value -> value.summary()).orElse("-")));
-        return text + "\n\n" + messages.text("ai.models.attempts") + "\n" + result.attempts().stream().map(value -> value.providerId() + " · " + value.model() + " · "
-                + messages.text("ai.invocation." + value.status().name().toLowerCase(java.util.Locale.ROOT)) + " · " + value.detail()).collect(java.util.stream.Collectors.joining("\n"));
-    }
-    @FunctionalInterface private interface Change { void apply() throws Exception; }
 }

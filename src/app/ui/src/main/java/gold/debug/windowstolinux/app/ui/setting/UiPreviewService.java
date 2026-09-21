@@ -21,22 +21,51 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
-/** Fixed preview data with no production service, storage or transport references. / 固定预览数据，不持有真实服务、存储或传输对象。 */
+/**
+ * Fixed preview data with no production service, storage or transport references. / 固定预览数据，不持有真实服务、存储或传输对象。
+ */
 final class UiPreviewService {
+    /**
+     * Supplies preview-only facade behavior to inspect desktop layouts.
+     * <p>提供预览门面行为以检查桌面布局。
+     */
     interface Facade extends ServerApplicationFacade, AiApplicationFacade, ManagedApplicationFacade { }
 
+    /**
+     * Server identity or selected server configuration.
+     * <p>服务器身份或所选服务器配置。
+     */
     final ServerProfile server;
+    /**
+     * Configured model identifier sent to the provider.
+     * <p>发送给提供者的已配置模型标识。
+     */
     final AiProviderSummary model;
+    /**
+     * Managed target with its server and ownership identity.
+     * <p>携带服务器及归属身份的受管目标。
+     */
     final ApplicationSummary application;
+    /**
+     * Bound facade collaborator for facade.
+     * <p>处理门面的门面协作对象。
+     */
     final Facade facade;
 
+    /**
+     * Binds the supplied dependencies and state for ui preview service.
+     * <p>为界面预览服务绑定传入的依赖及状态。
+     *
+     * @param messages localized message resolver / 本地化消息解析器
+     * @throws UnsupportedOperationException if the requested capability is not implemented by this adapter / 当前适配器未实现所请求能力时
+     */
     UiPreviewService(PageMessagePresenter messages) {
         Instant observed = Instant.parse("2026-09-17T08:00:00Z");
         server = new ServerProfile("preview-server", "192.0.2.10", 22, "root", "preview/ssh",
                 CredentialStorageMode.MASTER_PASSWORD, messages.text("debug.sample.server"));
         model = new AiProviderSummary(new AiProviderProfile("preview-model",
                 URI.create("https://example.invalid/v1/chat/completions"), "preview-model", "ai/provider/preview/api-key",
-                CredentialStorageMode.MASTER_PASSWORD), messages.text("debug.sample.model"), true, 0, Optional.of(observed));
+                CredentialStorageMode.MASTER_PASSWORD), messages.text("debug.sample.model"), 0, 1, Optional.of(observed), Optional.of(observed));
         application = new ApplicationSummary("external:preview-app", messages.text("debug.sample.app"), "WEBSITE",
                 server.id(), server.displayName(), server.host(), Optional.empty(), Optional.of(observed), RuntimeState.RUNNING,
                 Optional.of(observed), Optional.of(new UserAccessUrl(URI.create("https://example.invalid"))), true, true, true, true);

@@ -13,6 +13,15 @@ public final class AgentTaskControl {
     private final Consumer<AgentTaskState> listener;
     /** Retains the reason for a paused boundary. / 保存暂停边界原因。 */
     private String reason="";
+    /** Runs approved configuration replacement on the owning worker, never the UI thread. / 在所属工作线程而非 UI 线程应用获准配置替换。 */
+    private Runnable resumeAction=()->{};
+    /** Whether the worker must recheck explicitly requested resume updates. / 工作线程是否须检查显式恢复更新。 */
+    private boolean resumed;
+    /** Sets the task-owned resume hook. / 设置任务所属恢复钩子。
+     * @param action bounded configuration refresh / 有界配置刷新
+     */
+    public synchronized void onResume(Runnable action){resumeAction=Objects.requireNonNull(action);}
+
     /** Creates process-local task control. / 创建进程内任务控制。
      * @param listener state observer / 状态观察者
      */
@@ -20,7 +29,7 @@ public final class AgentTaskControl {
     /** Requests pause after the current bounded transaction. / 请求当前有界事务后暂停。 */
     public synchronized void pause(){if(state==AgentTaskState.RUNNING)change(AgentTaskState.PAUSE_REQUESTED);}
     /** Resumes only a known, paused task. / 仅恢复结果已知的暂停任务。 */
-    public synchronized void resume(){if(state==AgentTaskState.PAUSED){reason="";change(AgentTaskState.RUNNING);notifyAll();}}
+    public synchronized void resume(){if(state==AgentTaskState.PAUSED){reason="";resumed=true;change(AgentTaskState.RUNNING);notifyAll();}}
     /** Requests cancellation without abandoning an executing remote transaction. / 请求取消，但不遗弃执行中的远端事务。 */
     public synchronized void cancel(){if(state==AgentTaskState.RUNNING||state==AgentTaskState.PAUSED||state==AgentTaskState.PAUSE_REQUESTED){change(AgentTaskState.CANCEL_REQUESTED);notifyAll();}}
     /** Reads the current state. / 读取当前状态。
@@ -39,9 +48,13 @@ public final class AgentTaskControl {
     public synchronized void checkpoint(){
         if(Thread.currentThread().isInterrupted())throw new CancellationException("task interrupted before execution");
         if(state==AgentTaskState.PAUSE_REQUESTED)change(AgentTaskState.PAUSED);
-        while(state==AgentTaskState.PAUSED)try{wait();}catch(InterruptedException interrupted){Thread.currentThread().interrupt();throw new CancellationException("task interrupted at boundary");}
-        if(state==AgentTaskState.CANCEL_REQUESTED){change(AgentTaskState.CANCELLED);throw new CancellationException("task cancelled at safe boundary");}
-        if(state!=AgentTaskState.RUNNING)throw new IllegalStateException("task cannot execute in "+state);
+        while(true){
+            while(state==AgentTaskState.PAUSED)try{wait();}catch(InterruptedException interrupted){Thread.currentThread().interrupt();throw new CancellationException("task interrupted at boundary");}
+            if(state==AgentTaskState.CANCEL_REQUESTED){change(AgentTaskState.CANCELLED);throw new CancellationException("task cancelled at safe boundary");}
+            if(state!=AgentTaskState.RUNNING)throw new IllegalStateException("task cannot execute in "+state);
+            if(resumed){resumed=false;try{resumeAction.run();}catch(RuntimeException invalid){reason="model-configuration-invalid";change(AgentTaskState.PAUSED);continue;}}
+            return;
+        }
     }
     /** Records a terminal or unknown outcome without enabling replay. / 记录终态或未知结果，不允许重放。
      * @param terminal verified terminal state / 已验证终态

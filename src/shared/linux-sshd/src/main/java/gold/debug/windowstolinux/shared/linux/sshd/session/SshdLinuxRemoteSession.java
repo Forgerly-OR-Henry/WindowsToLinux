@@ -62,40 +62,155 @@ import java.util.List;
 /**
  * Unified session facade delegating each typed capability to its implementation package.
  *
- * <p>将各项类型化能力委派给其实现包的统一会话门面。
+ *  <p>将各项类型化能力委派给其实现包的统一会话门面。
  */
 public final class SshdLinuxRemoteSession implements DeploymentRemoteSession {
+    /**
+     * Client.
+     * <p>客户端。
+     */
     private final SshClient client;
+    /**
+     * Session used for the current scoped operation.
+     * <p>当前限定作用域操作使用的会话。
+     */
     private final ClientSession session;
+    /**
+     * Account name used by the reviewed connection.
+     * <p>已审阅连接使用的账户名。
+     */
     private final String username;
+    /**
+     * Observed target tools and runtime capabilities.
+     * <p>目标工具及运行能力观测。
+     */
     private final SshdCapabilityCollector capabilities;
+    /**
+     * Deployment capabilities.
+     * <p>部署能力。
+     */
     private final SshdPlatformCapabilityCollector deploymentCapabilities;
+    /**
+     * Bound managed environment executor collaborator for environment.
+     * <p>处理环境的受管环境执行器协作对象。
+     */
     private final ManagedEnvironmentExecutor environment;
+    /**
+     * Bound gold debug windowstolinux shared linux distro selinux environment preparer collaborator for selinux.
+     * <p>处理selinux 对应的输入或状态的golddebugwindowstolinux共享Linux发行版Selinux环境准备器协作对象。
+     */
     private final gold.debug.windowstolinux.shared.linux.distro.SelinuxEnvironmentPreparer selinux;
+    /**
+     * Transfer.
+     * <p>传输。
+     */
     private final SshdSourceTransport transfer;
+    /**
+     * Restore transfer.
+     * <p>恢复传输。
+     */
     private final SshdRestoreTransport restoreTransfer;
+    /**
+     * Bound deployment build executor collaborator for deployment build.
+     * <p>处理部署构建的部署构建执行器协作对象。
+     */
     private final DeploymentBuildExecutor deploymentBuild;
+    /**
+     * Bound candidate workspace executor collaborator for candidates.
+     * <p>处理候选集合的候选工作区执行器协作对象。
+     */
     private final CandidateWorkspaceExecutor candidates;
+    /**
+     * Bound managed runtime protocol executor collaborator for runtimes.
+     * <p>处理运行时集合的受管运行时协议执行器协作对象。
+     */
     private final ManagedRuntimeProtocolExecutor runtimes;
+    /**
+     * Bound deployment release protocol executor collaborator for deployment protocol.
+     * <p>处理部署协议的部署发布协议执行器协作对象。
+     */
     private final DeploymentReleaseProtocolExecutor deploymentProtocol;
+    /**
+     * Bound container release protocol executor collaborator for container protocol.
+     * <p>处理容器协议的容器发布协议执行器协作对象。
+     */
     private final ContainerReleaseProtocolExecutor containerProtocol;
+    /**
+     * Bound deployment input protocol executor collaborator for deployment inputs.
+     * <p>处理部署输入集合的部署输入协议执行器协作对象。
+     */
     private final DeploymentInputProtocolExecutor deploymentInputs;
+    /**
+     * Systemd health.
+     * <p>systemd健康。
+     */
     private final SystemdHealthProbe systemdHealth;
+    /**
+     * Systemd observation.
+     * <p>systemd观测。
+     */
     private final SystemdOwnershipObserver systemdObservation;
+    /**
+     * Bound systemd lifecycle executor collaborator for systemd lifecycle.
+     * <p>处理systemd生命周期的Systemd生命周期执行器协作对象。
+     */
     private final SystemdLifecycleExecutor systemdLifecycle;
+    /**
+     * Bound container runtime executor collaborator for container runtime.
+     * <p>处理容器运行时的容器运行时执行器协作对象。
+     */
     private final ContainerRuntimeExecutor containerRuntime;
+    /**
+     * Bound managed runtime executor collaborator for managed runtime.
+     * <p>处理受管运行时的受管运行时执行器协作对象。
+     */
     private final ManagedRuntimeExecutor managedRuntime;
-    /** Returns native DB operations for this already authenticated and trusted connection. / 返回当前已认证且可信连接的原生数据库操作能力。 */
+    /**
+     * Returns native DB operations for this already authenticated and trusted connection. / 返回当前已认证且可信连接的原生数据库操作能力。
+     *
+     * @return native DB operations for this already authenticated and trusted connection / 当前已认证且可信连接的原生数据库操作能力
+     */
     @Override public gold.debug.windowstolinux.shared.linux.ecosystem.db.NativeDatabasePort nativeDatabases() { return nativeDatabases; }
+    /**
+     * Databases.
+     * <p>数据库集合。
+     */
     private final SshdDatabaseOperationPort databases;
+    /**
+     * Native databases.
+     * <p>原生数据库集合。
+     */
     private final gold.debug.windowstolinux.shared.linux.ecosystem.db.NativeDatabasePort nativeDatabases;
+    /**
+     * Backup artifacts.
+     * <p>备份制品集合。
+     */
     private final SshdBackupArtifactPort backupArtifacts;
+    /**
+     * Restore activation.
+     * <p>恢复激活。
+     */
     private final SshdRestoreActivationPort restoreActivation;
+    /**
+     * External applications.
+     * <p>外部应用集合。
+     */
     private final gold.debug.windowstolinux.shared.linux.runtime.ExternalApplicationPort externalApplications;
-    /** Returns bounded application discovery on this trusted session. / 返回当前可信会话上的有界应用发现能力。 */
+    /**
+     * Returns bounded application discovery on this trusted session. / 返回当前可信会话上的有界应用发现能力。
+     *
+     * @return bounded application discovery on this trusted session / 当前可信会话上的有界应用发现能力
+     */
     @Override public gold.debug.windowstolinux.shared.linux.runtime.ExternalApplicationPort externalApplications() { return externalApplications; }
 
-    /** Creates an instance of this type. / 创建此类型的实例。 */
+    /**
+     * Creates an instance of this type. / 创建此类型的实例。
+     *
+     * @param client client / 客户端
+     * @param session session used for the current scoped operation / 当前限定作用域操作使用的会话
+     * @param endpoint reviewed network endpoint / 已审阅网络端点
+     * @param hostFingerprint host fingerprint / 主机指纹
+     */
     public SshdLinuxRemoteSession(SshClient client, ClientSession session,
                               SshEndpoint endpoint, String hostFingerprint) {
         this.client = client;
@@ -131,18 +246,49 @@ public final class SshdLinuxRemoteSession implements DeploymentRemoteSession {
                 containerRuntime);
     }
 
-    /** Performs the {@code collectCapabilities} operation. / 执行 {@code collectCapabilities} 操作。 */
+    /**
+     * Collects observed target tools and runtime capabilities.
+     * <p>采集目标工具及运行能力观测。
+     *
+     * @return constructed or resolved server capability facts / 构造或解析得到的服务器能力事实
+     * @throws LinuxOperationException if the authenticated remote operation fails or its evidence is rejected / 已认证远端操作失败或其证据被拒绝时
+     */
     @Override
     public ServerCapabilityFacts collectCapabilities() throws LinuxOperationException {
         return capabilities.collect();
     }
 
-    /** Performs the {@code collectDeploymentCapabilities} operation. / 执行 {@code collectDeploymentCapabilities} 操作。 */
+    /**
+     * Executes a minimal read-only proof on the authenticated connection. / 在已认证连接上执行最小只读证明。
+     *
+     * @throws LinuxOperationException if the authenticated remote operation fails or its evidence is rejected / 已认证远端操作失败或其证据被拒绝时
+     */
+    @Override public void verifyConnection() throws LinuxOperationException {
+        new SshCommandExecutor(session).verifyConnection();
+    }
+
+    /**
+     * Collects deployment capabilities.
+     * <p>采集部署能力。
+     *
+     * @return constructed or resolved linux capability facts / 构造或解析得到的Linux能力事实
+     * @throws LinuxOperationException if the authenticated remote operation fails or its evidence is rejected / 已认证远端操作失败或其证据被拒绝时
+     */
     @Override
     public LinuxCapabilityFacts collectDeploymentCapabilities() throws LinuxOperationException {
         return deploymentCapabilities.collectDeploymentCapabilities();
     }
 
+    /**
+     * Prepares toolchains.
+     * <p>准备工具链集合。
+     *
+     * @param facts typed facts used for deterministic planning / 确定性计划使用的类型化事实
+     * @param runtime reviewed language, process and health specification / 已审阅的语言、进程及健康规格
+     * @param limits resource and time bounds enforced during execution / 执行期间实施的资源及时间边界
+     * @return constructed or resolved toolchain preparation result / 构造或解析得到的工具链准备结果
+     * @throws LinuxOperationException if the authenticated remote operation fails or its evidence is rejected / 已认证远端操作失败或其证据被拒绝时
+     */
     @Override
     public gold.debug.windowstolinux.shared.linux.build.ToolchainPreparationResult prepareToolchains(
             DeploymentProjectFacts facts, DeploymentRuntimeSpecification runtime, BuildLimitConfiguration limits)
@@ -151,26 +297,57 @@ public final class SshdLinuxRemoteSession implements DeploymentRemoteSession {
         return new gold.debug.windowstolinux.shared.linux.build.ToolchainPreparationResult(tools, collectDeploymentCapabilities());
     }
 
-    /** Performs the {@code prepareEnvironment} operation. / 执行 {@code prepareEnvironment} 操作。 */
+    /**
+     * Prepares environment.
+     * <p>准备环境。
+     *
+     * @param approval the per-source, per-server approval / 按源码、服务器绑定的批准
+     * @return constructed or resolved environment setup result / 构造或解析得到的环境Setup结果
+     * @throws LinuxOperationException if the authenticated remote operation fails or its evidence is rejected / 已认证远端操作失败或其证据被拒绝时
+     */
     @Override
     public EnvironmentSetupResult prepareEnvironment(
             EnvironmentSetupApproval approval) throws LinuxOperationException {
         return environment.prepare(approval);
     }
 
-    /** Returns fixed system preparation for this trusted session. / 返回当前可信会话的固定系统准备能力。 */
+    /**
+     * Returns fixed system preparation for this trusted session. / 返回当前可信会话的固定系统准备能力。
+     *
+     * @return fixed system preparation for this trusted session / 当前可信会话的固定系统准备能力
+     */
     @Override public gold.debug.windowstolinux.shared.linux.distro.SelinuxEnvironmentPreparer selinuxPreparation() {
         return selinux;
     }
 
-    /** Performs the {@code uploadSource} operation. / 执行 {@code uploadSource} 操作。 */
+    /**
+     * Uploads source identity or content read by the operation.
+     * <p>上传操作读取的源身份或内容。
+     *
+     * @param archive source or backup archive descriptor or filesystem path / 源码或备份归档描述或文件系统路径
+     * @param workspace platform-owned work area with enforced path boundaries / 具有路径边界约束的平台工作区
+     * @param maxWorkspaceBytes max workspace bytes / 最大工作区字节
+     * @return constructed or resolved source upload result / 构造或解析得到的源码上传结果
+     * @throws LinuxOperationException if the authenticated remote operation fails or its evidence is rejected / 已认证远端操作失败或其证据被拒绝时
+     */
     @Override
     public SourceUploadResult uploadSource(SourceArchiveDescriptor archive, RemoteWorkspace workspace, long maxWorkspaceBytes)
             throws LinuxOperationException {
         return transfer.upload(archive, workspace, maxWorkspaceBytes);
     }
 
-    /** Performs the {@code buildDeployment} operation. / 执行 {@code buildDeployment} 操作。 */
+    /**
+     * Builds deployment.
+     * <p>构建部署。
+     *
+     * @param facts typed facts used for deterministic planning / 确定性计划使用的类型化事实
+     * @param runtime reviewed language, process and health specification / 已审阅的语言、进程及健康规格
+     * @param workspace platform-owned work area with enforced path boundaries / 具有路径边界约束的平台工作区
+     * @param limits resource and time bounds enforced during execution / 执行期间实施的资源及时间边界
+     * @param configuration reviewed configuration snapshot or settings / 已审阅配置快照或设置
+     * @return deployment / 部署
+     * @throws LinuxOperationException if the authenticated remote operation fails or its evidence is rejected / 已认证远端操作失败或其证据被拒绝时
+     */
     @Override
     public DeploymentBuildResult buildDeployment(DeploymentProjectFacts facts, DeploymentRuntimeSpecification runtime,
                                                  RemoteWorkspace workspace, BuildLimitConfiguration limits,
@@ -179,7 +356,16 @@ public final class SshdLinuxRemoteSession implements DeploymentRemoteSession {
         return deploymentBuild.build(facts, runtime, workspace, limits, configuration);
     }
 
-    /** Performs the {@code stageDeploymentInputs} operation. / 执行 {@code stageDeploymentInputs} 操作。 */
+    /**
+     * Stages deployment inputs.
+     * <p>暂存部署输入集合。
+     *
+     * @param application managed target with its server and ownership identity / 携带服务器及归属身份的受管目标
+     * @param configuration reviewed configuration snapshot or settings / 已审阅配置快照或设置
+     * @param secrets credential references or scoped secret-access service / 凭据引用或限定作用域的秘密访问服务
+     * @return constructed or resolved remote deployment inputs / 构造或解析得到的远端部署输入集合
+     * @throws LinuxOperationException if the authenticated remote operation fails or its evidence is rejected / 已认证远端操作失败或其证据被拒绝时
+     */
     @Override
     public RemoteDeploymentInputs stageDeploymentInputs(ManagedApplication application,
                                                          RemoteRuntimeConfiguration configuration,
@@ -188,53 +374,113 @@ public final class SshdLinuxRemoteSession implements DeploymentRemoteSession {
         return deploymentInputs.stage(application, configuration, secrets);
     }
 
-    /** Performs the {@code cleanupCandidate} operation. / 执行 {@code cleanupCandidate} 操作。 */
+    /**
+     * Cleans up candidate.
+     * <p>清理候选。
+     *
+     * @param workspace platform-owned work area with enforced path boundaries / 具有路径边界约束的平台工作区
+     * @return constructed or resolved remote step result / 构造或解析得到的远端步骤结果
+     * @throws LinuxOperationException if the authenticated remote operation fails or its evidence is rejected / 已认证远端操作失败或其证据被拒绝时
+     */
     @Override
     public RemoteStepResult cleanupCandidate(RemoteWorkspace workspace) throws LinuxOperationException {
         return candidates.cleanup(workspace);
     }
 
-    /** Performs the {@code stageRestoreFiles} operation. / 执行 {@code stageRestoreFiles} 操作。 */
+    /**
+     * Stages restore files.
+     * <p>暂存恢复文件集合。
+     *
+     * @param request reviewed inputs for the requested operation / 所请求操作的已审阅输入
+     * @return constructed or resolved remote restore staging evidence / 构造或解析得到的远端恢复暂存证据
+     * @throws LinuxOperationException if the authenticated remote operation fails or its evidence is rejected / 已认证远端操作失败或其证据被拒绝时
+     */
     @Override
     public RemoteRestoreStagingEvidence stageRestoreFiles(RemoteRestoreStagingRequest request)
             throws LinuxOperationException {
         return restoreTransfer.stageRestoreFiles(request);
     }
 
-    /** Performs the {@code discardRestoreFiles} operation. / 执行 {@code discardRestoreFiles} 操作。 */
+    /**
+     * Discards restore files.
+     * <p>清理恢复文件集合。
+     *
+     * @param request reviewed inputs for the requested operation / 所请求操作的已审阅输入
+     * @return constructed or resolved remote step result / 构造或解析得到的远端步骤结果
+     * @throws LinuxOperationException if the authenticated remote operation fails or its evidence is rejected / 已认证远端操作失败或其证据被拒绝时
+     */
     @Override
     public RemoteStepResult discardRestoreFiles(RemoteRestoreStagingRequest request) throws LinuxOperationException {
         return restoreTransfer.discardRestoreFiles(request);
     }
 
-    /** Performs the {@code checkHealth} operation. / 执行 {@code checkHealth} 操作。 */
+    /**
+     * Checks health.
+     * <p>检查健康。
+     *
+     * @param application managed target with its server and ownership identity / 携带服务器及归属身份的受管目标
+     * @param healthCheck reviewed probe and its success criteria / 已审阅探测及其成功条件
+     * @return constructed or resolved health check result / 构造或解析得到的健康检查结果
+     * @throws LinuxOperationException if the authenticated remote operation fails or its evidence is rejected / 已认证远端操作失败或其证据被拒绝时
+     */
     @Override
     public HealthCheckResult checkHealth(ManagedApplication application, HealthCheck healthCheck)
             throws LinuxOperationException {
         return systemdHealth.check(application, healthCheck);
     }
 
-    /** Performs the {@code retainRecentSuccessfulReleases} operation. / 执行 {@code retainRecentSuccessfulReleases} 操作。 */
+    /**
+     * Applies the managed runtime's retention policy to recent successful releases.
+     * <p>对近期成功发布应用受管运行时的保留策略。
+     *
+     * @param application managed target with its server and ownership identity / 携带服务器及归属身份的受管目标
+     * @return constructed or resolved remote step result / 构造或解析得到的远端步骤结果
+     * @throws LinuxOperationException if the authenticated remote operation fails or its evidence is rejected / 已认证远端操作失败或其证据被拒绝时
+     */
     @Override
     public RemoteStepResult retainRecentSuccessfulReleases(ManagedApplication application)
             throws LinuxOperationException {
         return runtimes.retain(application);
     }
 
-    /** Performs the {@code observe} operation. / 执行 {@code observe} 操作。 */
+    /**
+     * Observes lifecycle observation.
+     * <p>观测生命周期观测。
+     *
+     * @param application managed target with its server and ownership identity / 携带服务器及归属身份的受管目标
+     * @return constructed or resolved lifecycle observation / 构造或解析得到的生命周期观测
+     * @throws LinuxOperationException if the authenticated remote operation fails or its evidence is rejected / 已认证远端操作失败或其证据被拒绝时
+     */
     @Override
     public LifecycleObservation observe(ManagedApplication application) throws LinuxOperationException {
         return managedRuntime.observe(application);
     }
 
-    /** Performs the {@code executeLifecycle} operation. / 执行 {@code executeLifecycle} 操作。 */
+    /**
+     * Executes lifecycle.
+     * <p>执行生命周期。
+     *
+     * @param application managed target with its server and ownership identity / 携带服务器及归属身份的受管目标
+     * @param action explicit action selected for the current target / 为当前目标显式选择的动作
+     * @param healthCheck reviewed probe and its success criteria / 已审阅探测及其成功条件
+     * @return constructed or resolved lifecycle observation / 构造或解析得到的生命周期观测
+     * @throws LinuxOperationException if the authenticated remote operation fails or its evidence is rejected / 已认证远端操作失败或其证据被拒绝时
+     */
     @Override
     public LifecycleObservation executeLifecycle(ManagedApplication application, LifecycleAction action,
                                                  HealthCheck healthCheck) throws LinuxOperationException {
         return managedRuntime.execute(application, action, healthCheck);
     }
 
-    /** Performs the {@code snapshotDeployment} operation. / 执行 {@code snapshotDeployment} 操作。 */
+    /**
+     * Captures the current deployment through the container or native snapshot protocol selected by the runtime.
+     * <p>通过运行规格选定的容器或原生快照协议捕获当前部署。
+     *
+     * @param application managed target with its server and ownership identity / 携带服务器及归属身份的受管目标
+     * @param runtime reviewed language, process and health specification / 已审阅的语言、进程及健康规格
+     * @return constructed or resolved release snapshot / 构造或解析得到的发布快照
+     * @throws LinuxOperationException if the authenticated remote operation fails or its evidence is rejected / 已认证远端操作失败或其证据被拒绝时
+     */
     @Override
     public ReleaseSnapshot snapshotDeployment(ManagedApplication application, DeploymentRuntimeSpecification runtime)
             throws LinuxOperationException {
@@ -244,7 +490,22 @@ public final class SshdLinuxRemoteSession implements DeploymentRemoteSession {
         return deploymentProtocol.snapshot(application, runtime);
     }
 
-    /** Performs the {@code publishDeployment} operation. / 执行 {@code publishDeployment} 操作。 */
+    /**
+     * Publishes deployment.
+     * <p>发布部署。
+     *
+     * @param application managed target with its server and ownership identity / 携带服务器及归属身份的受管目标
+     * @param facts typed facts used for deterministic planning / 确定性计划使用的类型化事实
+     * @param workspace platform-owned work area with enforced path boundaries / 具有路径边界约束的平台工作区
+     * @param buildResult build result / 构建结果
+     * @param releaseIdentity digest identifying the exact published release / 标识精确已发布版本的摘要
+     * @param runtime reviewed language, process and health specification / 已审阅的语言、进程及健康规格
+     * @param inputs reviewed non-secret deployment input fields / 已审阅的非秘密部署输入字段
+     * @param contentPublication content publication / 内容发布
+     * @param snapshot immutable observation or configuration revision used by the operation / 操作使用的不可变观测或配置修订
+     * @return constructed or resolved remote step result / 构造或解析得到的远端步骤结果
+     * @throws LinuxOperationException if the authenticated remote operation fails or its evidence is rejected / 已认证远端操作失败或其证据被拒绝时
+     */
     @Override
     public RemoteStepResult publishDeployment(ManagedApplication application, DeploymentProjectFacts facts,
                                               RemoteWorkspace workspace,
@@ -260,7 +521,19 @@ public final class SshdLinuxRemoteSession implements DeploymentRemoteSession {
                 contentPublication, snapshot);
     }
 
-    /** Performs the {@code rollbackDeployment} operation. / 执行 {@code rollbackDeployment} 操作。 */
+    /**
+     * Restores the recorded deployment snapshot through the selected runtime-specific rollback protocol.
+     * <p>通过选定运行环境专用回滚协议恢复已记录部署快照。
+     *
+     * @param application managed target with its server and ownership identity / 携带服务器及归属身份的受管目标
+     * @param snapshot immutable observation or configuration revision used by the operation / 操作使用的不可变观测或配置修订
+     * @param buildResult build result / 构建结果
+     * @param releaseIdentity digest identifying the exact published release / 标识精确已发布版本的摘要
+     * @param runtime reviewed language, process and health specification / 已审阅的语言、进程及健康规格
+     * @param inputs reviewed non-secret deployment input fields / 已审阅的非秘密部署输入字段
+     * @return constructed or resolved remote step result / 构造或解析得到的远端步骤结果
+     * @throws LinuxOperationException if the authenticated remote operation fails or its evidence is rejected / 已认证远端操作失败或其证据被拒绝时
+     */
     @Override
     public RemoteStepResult rollbackDeployment(ManagedApplication application, ReleaseSnapshot snapshot,
                                                DeploymentBuildResult buildResult, String releaseIdentity,
@@ -272,7 +545,16 @@ public final class SshdLinuxRemoteSession implements DeploymentRemoteSession {
         return deploymentProtocol.rollback(application, snapshot, buildResult, releaseIdentity, runtime, inputs);
     }
 
-    /** Performs the {@code checkDeploymentHealth} operation. / 执行 {@code checkDeploymentHealth} 操作。 */
+    /**
+     * Checks deployment health.
+     * <p>检查部署健康。
+     *
+     * @param application managed target with its server and ownership identity / 携带服务器及归属身份的受管目标
+     * @param runtime reviewed language, process and health specification / 已审阅的语言、进程及健康规格
+     * @param healthCheck reviewed probe and its success criteria / 已审阅探测及其成功条件
+     * @return constructed or resolved health check result / 构造或解析得到的健康检查结果
+     * @throws LinuxOperationException if the authenticated remote operation fails or its evidence is rejected / 已认证远端操作失败或其证据被拒绝时
+     */
     @Override
     public HealthCheckResult checkDeploymentHealth(ManagedApplication application, DeploymentRuntimeSpecification runtime,
                                                    HealthCheck healthCheck) throws LinuxOperationException {
@@ -282,14 +564,31 @@ public final class SshdLinuxRemoteSession implements DeploymentRemoteSession {
         return systemdHealth.check(application, healthCheck);
     }
 
-    /** Performs the {@code observeDeployment} operation. / 执行 {@code observeDeployment} 操作。 */
+    /**
+     * Observes deployment.
+     * <p>观测部署。
+     *
+     * @param application managed target with its server and ownership identity / 携带服务器及归属身份的受管目标
+     * @param runtime reviewed language, process and health specification / 已审阅的语言、进程及健康规格
+     * @return constructed or resolved lifecycle observation / 构造或解析得到的生命周期观测
+     * @throws LinuxOperationException if the authenticated remote operation fails or its evidence is rejected / 已认证远端操作失败或其证据被拒绝时
+     */
     @Override
     public LifecycleObservation observeDeployment(ManagedApplication application, DeploymentRuntimeSpecification runtime)
             throws LinuxOperationException {
         return managedRuntime.observe(application);
     }
 
-    /** Performs the {@code executeDeploymentLifecycle} operation. / 执行 {@code executeDeploymentLifecycle} 操作。 */
+    /**
+     * Executes deployment lifecycle.
+     * <p>执行部署生命周期。
+     *
+     * @param application managed target with its server and ownership identity / 携带服务器及归属身份的受管目标
+     * @param runtime reviewed language, process and health specification / 已审阅的语言、进程及健康规格
+     * @param action explicit action selected for the current target / 为当前目标显式选择的动作
+     * @return constructed or resolved lifecycle observation / 构造或解析得到的生命周期观测
+     * @throws LinuxOperationException if the authenticated remote operation fails or its evidence is rejected / 已认证远端操作失败或其证据被拒绝时
+     */
     @Override
     public LifecycleObservation executeDeploymentLifecycle(ManagedApplication application,
                                                             DeploymentRuntimeSpecification runtime,
@@ -297,16 +596,30 @@ public final class SshdLinuxRemoteSession implements DeploymentRemoteSession {
         return managedRuntime.execute(application, runtime, action);
     }
 
-    /** Returns the connection's database operations. / 返回当前连接的数据库操作能力。 */
+    /**
+     * Returns the connection's database operations. / 返回当前连接的数据库操作能力。
+     *
+     * @return the connection's database operations / 当前连接的数据库操作能力
+     */
     @Override public RemoteDatabasePort databaseOperations() { return databases; }
 
-    /** Returns the connection's backup artifacts. / 返回当前连接的备份制品能力。 */
+    /**
+     * Returns the connection's backup artifacts. / 返回当前连接的备份制品能力。
+     *
+     * @return the connection's backup artifacts / 当前连接的备份制品能力
+     */
     @Override public RemoteBackupArtifactPort backupArtifacts() { return backupArtifacts; }
 
-    /** Returns the connection's restore activation. / 返回当前连接的恢复激活能力。 */
+    /**
+     * Returns the connection's restore activation. / 返回当前连接的恢复激活能力。
+     *
+     * @return the connection's restore activation / 当前连接的恢复激活能力
+     */
     @Override public RemoteRestoreActivationPort restoreActivation() { return restoreActivation; }
 
-    /** Closes this resource. / 关闭此资源。 */
+    /**
+     * Closes this resource. / 关闭此资源。
+     */
     @Override
     public void close() {
         try {

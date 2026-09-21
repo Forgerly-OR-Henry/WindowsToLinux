@@ -2,6 +2,12 @@ package gold.debug.windowstolinux.shared.deploy.agent;
 import gold.debug.windowstolinux.shared.model.agent.*;
 /** Narrow executor for an already registered action. / 已登记动作的窄执行接口。 */
 public interface AgentExecutionPort {
+    /** Refreshes pending evidence after a checked diagnostic, invalidating old bindings. / 在受检诊断后刷新待执行证据，使旧绑定失效。
+     * @param action pending action / 待执行动作
+     * @return current trusted action / 当前可信动作
+     */
+    default AgentAction refresh(AgentAction action){return action;}
+
     /** Rechecks ownership, frozen revisions and current preconditions. / 重新检查归属、冻结修订及当前前置条件。
      * @param action exact proposed action / 精确提议动作
      * @return deterministic risk, FORBIDDEN when rejected / 确定性风险，拒绝时为 FORBIDDEN

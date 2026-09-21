@@ -1,108 +1,35 @@
 package gold.debug.windowstolinux.app.ui.ai;
 
-import gold.debug.windowstolinux.shared.model.security.CredentialStorageMode;
-import gold.debug.windowstolinux.shared.ai.collaboration.role.AiCollaborationRoleKind;
+import java.util.*;
 
-import java.util.Arrays;
-import java.util.Objects;
-
-/**
- * Provides the {@code AiPageState} implementation.
- *
- * <p>提供 {@code AiPageState} 实现。
- */
+/** Owns transient AI page state and clears its unlock buffer. / 持有临时 AI 页面状态并清理解锁缓冲区。 */
 public final class AiPageState implements AutoCloseable {
-    private final String endpoint;
-    private final String model;
-    private final String providerId;
-    private final AiCollaborationRoleKind role;
-    private final char[] apiKey;
-    private final CredentialStorageMode credentialMode;
+    /** Short-lived unlock buffer. / 短生命周期解锁缓冲区。 */
     private final char[] masterPassword;
+    /** Visible output. / 可见输出。 */
     private final String output;
-
-    /**
-     * Creates a {@code AiPageState} instance.
-     *
-     * <p>创建 {@code AiPageState} 实例。
-     *
-     * @param endpoint the {@code endpoint} value / {@code endpoint} 值
-     * @param model the {@code model} value / {@code model} 值
-     * @param apiKey the {@code apiKey} value / {@code apiKey} 值
-     * @param credentialMode the {@code credentialMode} value / {@code credentialMode} 值
-     * @param masterPassword the {@code masterPassword} value / {@code masterPassword} 值
-     * @param output the {@code output} value / {@code output} 值
-     * @throws NullPointerException if a required argument is {@code null} / 必要参数为 {@code null} 时
+    /** Nonsecret inventory draft. / 非秘密清单草稿。 */
+    private final AiInventoryState inventory;
+    /** Captures page state without retaining the caller's buffer. / 捕获页面状态且不持有调用方缓冲区。
+     * @param masterPassword unlock input / 解锁输入
+     * @param output visible output / 可见输出
+     * @param inventory inventory draft / 清单草稿
      */
-    public AiPageState(String endpoint, String model, String providerId, AiCollaborationRoleKind role,
-                       char[] apiKey, CredentialStorageMode credentialMode,
-                       char[] masterPassword, String output) {
-        this.endpoint = Objects.requireNonNull(endpoint, "endpoint");
-        this.model = Objects.requireNonNull(model, "model");
-        this.providerId = Objects.requireNonNull(providerId, "providerId");
-        this.role = Objects.requireNonNull(role, "role");
-        this.apiKey = apiKey.clone();
-        this.credentialMode = Objects.requireNonNull(credentialMode, "credentialMode");
-        this.masterPassword = masterPassword.clone();
-        this.output = Objects.requireNonNull(output, "output");
+    public AiPageState(char[] masterPassword,String output,AiInventoryState inventory){
+        this.masterPassword=masterPassword.clone();this.output=Objects.requireNonNull(output);this.inventory=Objects.requireNonNull(inventory);
     }
-
-    /**
-     * Performs the {@code endpoint} operation.
-     *
-     * <p>执行 {@code endpoint} 操作。
-     *
-     * @return the operation result / 操作结果
+    /** Copies the unlock buffer. / 复制解锁缓冲区。
+     * @return disposable copy / 可清理副本
      */
-    public String endpoint() { return endpoint; }
-    /**
-     * Performs the {@code model} operation.
-     *
-     * <p>执行 {@code model} 操作。
-     *
-     * @return the operation result / 操作结果
+    public char[] masterPassword(){return masterPassword.clone();}
+    /** Returns visible output. / 返回可见输出。
+     * @return output / 输出
      */
-    public String model() { return model; }
-    /** Returns the unsaved named-provider identifier. / 返回未保存的命名提供者标识。 */
-    public String providerId() { return providerId; }
-    /** Returns the selected fixed collaboration role. / 返回所选固定协作角色。 */
-    public AiCollaborationRoleKind role() { return role; }
-    /**
-     * Performs the {@code apiKey} operation.
-     *
-     * <p>执行 {@code apiKey} 操作。
-     *
-     * @return the operation result / 操作结果
+    public String output(){return output;}
+    /** Returns the immutable editor state. / 返回不可变编辑状态。
+     * @return editor state / 编辑状态
      */
-    public char[] apiKey() { return apiKey.clone(); }
-    /**
-     * Performs the {@code credentialMode} operation.
-     *
-     * <p>执行 {@code credentialMode} 操作。
-     *
-     * @return the operation result / 操作结果
-     */
-    public CredentialStorageMode credentialMode() { return credentialMode; }
-    /**
-     * Performs the {@code masterPassword} operation.
-     *
-     * <p>执行 {@code masterPassword} 操作。
-     *
-     * @return the operation result / 操作结果
-     */
-    public char[] masterPassword() { return masterPassword.clone(); }
-    /**
-     * Performs the {@code output} operation.
-     *
-     * <p>执行 {@code output} 操作。
-     *
-     * @return the operation result / 操作结果
-     */
-    public String output() { return output; }
-
-    /** Closes this resource. / 关闭此资源。 */
-    @Override public void close() {
-        Arrays.fill(apiKey, '\0');
-        Arrays.fill(masterPassword, '\0');
-    }
+    public AiInventoryState inventory(){return inventory;}
+    /** Clears the owned secret. / 清理持有的秘密。 */
+    @Override public void close(){Arrays.fill(masterPassword,'\0');}
 }
