@@ -1,9 +1,10 @@
 package gold.debug.windowstolinux.web.db.persistence.mapper;
 
+import java.util.Map;
+
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
 import gold.debug.windowstolinux.web.db.entity.*;
 import org.apache.ibatis.annotations.*;
-import java.util.Map;
 
 /**
  * Maps scoped task decision records to explicit database statements.
@@ -30,7 +31,7 @@ public interface WebTaskDecisionMapper extends BaseMapper<WebTaskDecisionEntity>
             AND tasks.id=task_decisions.task_id AND tasks.state='WAITING_DECISION')
             """)
     int answer(@Param("scope") ResourceScope scope, @Param("task") String task, @Param("id") String id,
-               @Param("answer") String answer, @Param("now") String now);
+            @Param("answer") String answer, @Param("now") String now);
 
     /**
      * Selects the latest unanswered decision for a task currently waiting for a decision in the workspace.
@@ -46,5 +47,5 @@ public interface WebTaskDecisionMapper extends BaseMapper<WebTaskDecisionEntity>
             WHERE d.workspace_id=#{scope.workspaceId} AND d.task_id=#{task}
             AND d.answer_json IS NULL AND t.state='WAITING_DECISION' ORDER BY d.rowid DESC LIMIT 1
             """)
-    Map<String,String> pending(@Param("scope") ResourceScope scope, @Param("task") String task);
+    Map<String, String> pending(@Param("scope") ResourceScope scope, @Param("task") String task);
 }

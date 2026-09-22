@@ -1,10 +1,10 @@
 package gold.debug.windowstolinux.app.db.entity;
 
-import gold.debug.windowstolinux.shared.config.secretref.SecretReference;
-import gold.debug.windowstolinux.shared.model.security.CredentialStorageMode;
-
 import java.time.Instant;
 import java.util.Objects;
+
+import gold.debug.windowstolinux.shared.config.secretref.SecretReference;
+import gold.debug.windowstolinux.shared.model.security.CredentialStorageMode;
 
 /**
  * Immutable metadata that locates a secret outside normal configuration and release directories.
@@ -16,12 +16,8 @@ import java.util.Objects;
  * @param credentialMode selected platform-secret-store mode / 已选择的平台秘密存储模式
  * @param createdAt immutable revision creation time / 不可变修订创建时间
  */
-public record StoredApplicationSecretRevision(
-        SecretReference reference,
-        String credentialKey,
-        CredentialStorageMode credentialMode,
-        Instant createdAt
-) {
+public record StoredApplicationSecretRevision(SecretReference reference, String credentialKey,
+        CredentialStorageMode credentialMode, Instant createdAt) {
     /**
      * Validates and binds the inputs required by stored application secret revision.
      * <p>校验并绑定已存储应用秘密修订所需输入。

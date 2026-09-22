@@ -6,4 +6,5 @@ package gold.debug.windowstolinux.shared.ai.transport;
  * @param statusCode status code / 状态代码
  * @param body body / 正文
  */
-public record RoleChatResult(int statusCode, String body) { }
+public record RoleChatResult(int statusCode, String body) {
+}

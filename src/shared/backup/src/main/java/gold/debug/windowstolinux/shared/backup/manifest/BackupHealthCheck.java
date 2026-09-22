@@ -1,9 +1,9 @@
 package gold.debug.windowstolinux.shared.backup.manifest;
 
-import gold.debug.windowstolinux.shared.model.health.HealthCheck;
-
 import java.net.URI;
 import java.util.Objects;
+
+import gold.debug.windowstolinux.shared.model.health.HealthCheck;
 
 /**
  * Strict portable form of one reviewed managed health check. / 单个经审阅受管健康检查的严格可移植形式。
@@ -16,15 +16,8 @@ import java.util.Objects;
  * @param stabilitySeconds required continuous healthy interval in seconds / 要求连续健康的时间间隔，单位为秒
  * @param payload payload / 载荷
  */
-public record BackupHealthCheck(
-        BackupHealthCheckType type,
-        String endpoint,
-        int expectedStatus,
-        int port,
-        int timeoutSeconds,
-        int stabilitySeconds,
-        String payload
-) {
+public record BackupHealthCheck(BackupHealthCheckType type, String endpoint, int expectedStatus, int port,
+        int timeoutSeconds, int stabilitySeconds, String payload) {
     /**
      * Initializes backup health check through its shared constructor contract.
      * <p>通过共享构造契约初始化备份健康检查。
@@ -36,9 +29,11 @@ public record BackupHealthCheck(
      * @param timeoutSeconds maximum waiting time in seconds / 最长等待时间，单位为秒
      * @param stabilitySeconds required continuous healthy interval in seconds / 要求连续健康的时间间隔，单位为秒
      */
-    public BackupHealthCheck(BackupHealthCheckType type, String endpoint, int expectedStatus, int port, int timeoutSeconds, int stabilitySeconds) {
+    public BackupHealthCheck(BackupHealthCheckType type, String endpoint, int expectedStatus, int port,
+            int timeoutSeconds, int stabilitySeconds) {
         this(type, endpoint, expectedStatus, port, timeoutSeconds, stabilitySeconds, "");
     }
+
     /**
      * Rejects mixed HTTP/TCP fields and validates through the canonical model. / 拒绝混合的 HTTP/TCP 字段并通过规范模型校验。
      *
@@ -63,15 +58,15 @@ public record BackupHealthCheck(
                 if (endpoint.isEmpty() || port != 0 || stabilitySeconds != 0) {
                     throw new IllegalArgumentException("HTTP health fields are incomplete or mixed with TCP fields");
                 }
-                HealthCheck.Http checked = new HealthCheck.Http(
-                        URI.create(endpoint), expectedStatus, timeoutSeconds);
+                HealthCheck.Http checked = new HealthCheck.Http(URI.create(endpoint), expectedStatus, timeoutSeconds);
                 endpoint = checked.endpoint().toString();
             }
             case PROCESS, COMMAND, UDP -> {
                 if (!endpoint.isEmpty() || expectedStatus != 0 || port != 0 || stabilitySeconds != 0)
                     throw new IllegalArgumentException("mixed portable health fields");
                 HealthCheck decoded = decode(payload);
-                if (!decoded.getClass().getSimpleName().equalsIgnoreCase(type.name()) || decoded.timeoutSeconds() != timeoutSeconds)
+                if (!decoded.getClass().getSimpleName().equalsIgnoreCase(type.name())
+                        || decoded.timeoutSeconds() != timeoutSeconds)
                     throw new IllegalArgumentException("portable health discriminator mismatch");
             }
             case TCP -> {
@@ -149,10 +144,16 @@ public record BackupHealthCheck(
      * @throws IllegalArgumentException if an input violates the constraints checked by this contract / 输入违反当前契约检查的约束时
      */
     private static BackupHealthCheck extended(BackupHealthCheckType type, HealthCheck health) {
-        try { return new BackupHealthCheck(type, "", 0, 0, health.timeoutSeconds(), 0,
-                java.util.Base64.getEncoder().encodeToString(new gold.debug.windowstolinux.shared.config.persistence.serialization.HealthCheckCodec().write(health)));
-        } catch (java.io.IOException failure) { throw new IllegalArgumentException("invalid portable health", failure); }
+        try {
+            return new BackupHealthCheck(type, "", 0, 0, health.timeoutSeconds(), 0,
+                    java.util.Base64.getEncoder().encodeToString(
+                            new gold.debug.windowstolinux.shared.config.persistence.serialization.HealthCheckCodec()
+                                    .write(health)));
+        } catch (java.io.IOException failure) {
+            throw new IllegalArgumentException("invalid portable health", failure);
+        }
     }
+
     /**
      * Decodes health check.
      * <p>解码健康检查。
@@ -162,8 +163,13 @@ public record BackupHealthCheck(
      * @throws IllegalArgumentException if an input violates the constraints checked by this contract / 输入违反当前契约检查的约束时
      */
     private static HealthCheck decode(String payload) {
-        if (payload.length() > 90000) throw new IllegalArgumentException("portable health payload too large");
-        try { return new gold.debug.windowstolinux.shared.config.persistence.serialization.HealthCheckCodec().read(java.util.Base64.getDecoder().decode(payload)); }
-        catch (java.io.IOException failure) { throw new IllegalArgumentException("unsupported portable health", failure); }
+        if (payload.length() > 90000)
+            throw new IllegalArgumentException("portable health payload too large");
+        try {
+            return new gold.debug.windowstolinux.shared.config.persistence.serialization.HealthCheckCodec()
+                    .read(java.util.Base64.getDecoder().decode(payload));
+        } catch (java.io.IOException failure) {
+            throw new IllegalArgumentException("unsupported portable health", failure);
+        }
     }
 }

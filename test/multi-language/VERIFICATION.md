@@ -4,16 +4,16 @@
 
 **8/8 项目通过产品自动部署、代表性跨语言业务与适用的生命周期/持久化验收。** 通过 `MultilingualLiveDeploymentAcceptanceTest` 调用桌面应用门面的正式自动部署链，目标为 Ubuntu 24.04 x86-64（2 核、约 4 GiB 内存、29 GiB 根磁盘、AppArmor）。依赖准备、构建、发布、生命周期和失败候选清理由产品执行；直接 SSH 仅用于只读诊断。测试端口和前端 API 地址写入隔离源码副本，原始业务实现没有为部署绕过而改写。
 
-| 项目 | 成功应用标识 | 实际 Linux 验收 |
-|---|---|---|
-| 任务看板 | `wtl-polyglot-tasks-451eec5h8` | TypeScript/Java 发布、创建任务、STOP/START/RESTART、SQLite 数据保留 |
-| 文件收发 | `wtl-polyglot-file-transfer-6331hqlhz` | TypeScript/Go 网关、65,536 字节真实上传下载比对、重启后内容与 SQLite 记录保留 |
-| 资产借还 | `wtl-polyglot-asset-lending-6713pjags` | JavaScript/C# 创建资产、借用提交/审批/出库/归还、重启后已关闭单据保留 |
-| CSV 工作台 | `wtl-polyglot-csv-6bfe6yo8c` | JavaScript/PHP/Python 发布、后台队列生成报告、3 行/6 问题/1 有效行校验、worker 统一重启及报告保留 |
-| 问卷管理 | `wtl-polyglot-survey-6hebtbij0` | TypeScript/Kotlin/Ruby 发布、真实提交得分 84.21、三个组件统一重启与历史成绩保留 |
-| 多源日志 | `wtl-polyglot-log-analyzer-5t9gkhm34` | Rust/C++ 按需安装入口处理真实样本：7 行、6 匹配、3 条 ERROR |
-| 目录快照 | `wtl-polyglot-directory-diff-5vuztkn8o` | Python/C++ 按需安装入口创建快照，随后从 SQLite 历史查询到该记录 |
-| 分块二进制 | `wtl-polyglot-binary-inspector-5up88wqjw` | Rust/C 按需入口正常输入 5 条记录、总和 7；损坏输入退出码 2 |
+| 项目       | 成功应用标识                              | 实际 Linux 验收                                                                                   |
+| ---------- | ----------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| 任务看板   | `wtl-polyglot-tasks-451eec5h8`            | TypeScript/Java 发布、创建任务、STOP/START/RESTART、SQLite 数据保留                               |
+| 文件收发   | `wtl-polyglot-file-transfer-6331hqlhz`    | TypeScript/Go 网关、65,536 字节真实上传下载比对、重启后内容与 SQLite 记录保留                     |
+| 资产借还   | `wtl-polyglot-asset-lending-6713pjags`    | JavaScript/C# 创建资产、借用提交/审批/出库/归还、重启后已关闭单据保留                             |
+| CSV 工作台 | `wtl-polyglot-csv-6bfe6yo8c`              | JavaScript/PHP/Python 发布、后台队列生成报告、3 行/6 问题/1 有效行校验、worker 统一重启及报告保留 |
+| 问卷管理   | `wtl-polyglot-survey-6hebtbij0`           | TypeScript/Kotlin/Ruby 发布、真实提交得分 84.21、三个组件统一重启与历史成绩保留                   |
+| 多源日志   | `wtl-polyglot-log-analyzer-5t9gkhm34`     | Rust/C++ 按需安装入口处理真实样本：7 行、6 匹配、3 条 ERROR                                       |
+| 目录快照   | `wtl-polyglot-directory-diff-5vuztkn8o`   | Python/C++ 按需安装入口创建快照，随后从 SQLite 历史查询到该记录                                   |
+| 分块二进制 | `wtl-polyglot-binary-inspector-5up88wqjw` | Rust/C 按需入口正常输入 5 条记录、总和 7；损坏输入退出码 2                                        |
 
 五个网站涉及的常驻组件均由产品停止并禁用自启，三个按需工具没有遗留常驻进程。 最终产品 helper 准备及新 SSH 连接复核通过，摘要为 `fecb8ce674358d07ec686ea503a77821e39579374ba88df54bf12520506ca40e`。
 
@@ -29,16 +29,16 @@
 
 ## 功能、规模与故障结果
 
-| 项目 | 实际主数据规模 | 已通过的主要检查 | 验收耗时 |
-|---|---|---|---:|
-| [项目任务看板](success-task-board/README.md) | 10,008 个任务 | 项目/成员隔离、依赖和状态流、10 路版本竞争、评论、事务中断、浏览器 | 120.312 s |
-| [文件收发站](success-file-transfer/README.md) | 64 MiB 文件、历史版本 | 分块冲突/去重、重启续传、10 路完成只发布一次、下载摘要、发布中断、浏览器 | 20.594 s |
-| [资产借还](success-asset-lending/README.md) | 10,005 件资产 | 多资产单、审批占用原子性、10 路竞争、部分归还/维修、重复请求、浏览器 | 84.266 s |
-| [CSV 工作台](success-csv-inspector/README.md) | 100,000 行、22,937 个问题 | 逐条独立核对、后台取消/重试、worker 中断、报告发布边界、协议故障、浏览器 | 95.125 s |
-| [问卷管理](success-survey-scoring/README.md) | 10,013 份提交 | 真实 Ruby 评分、发布版本不可变、条件题、规则变化、10 路幂等、历史、浏览器 | 127.328 s |
-| [多源日志](success-log-analyzer/README.md) | 100,000 条，文本/JSONL/gzip | 顺序/格式一致、筛选汇总、坏文件继续、资源上限、严格协议及子程序回收 | 2.750 s |
-| [目录快照](success-directory-diff/README.md) | 10,001 个文件 | 独立 SHA-256、同大小变化、重命名候选、联接跳过、扫描/提交中断、10 路同名竞争 | 111.765 s |
-| [分块二进制](success-binary-inspector/README.md) | 100,000 条、98 块、两类记录 | 独立 CRC/汇总、过滤、头/类型/长度/数量/UTF-8/CRC 错误偏移、批量继续、子程序故障 | 2.219 s |
+| 项目                                             | 实际主数据规模              | 已通过的主要检查                                                                |  验收耗时 |
+| ------------------------------------------------ | --------------------------- | ------------------------------------------------------------------------------- | --------: |
+| [项目任务看板](success-task-board/README.md)     | 10,008 个任务               | 项目/成员隔离、依赖和状态流、10 路版本竞争、评论、事务中断、浏览器              | 120.312 s |
+| [文件收发站](success-file-transfer/README.md)    | 64 MiB 文件、历史版本       | 分块冲突/去重、重启续传、10 路完成只发布一次、下载摘要、发布中断、浏览器        |  20.594 s |
+| [资产借还](success-asset-lending/README.md)      | 10,005 件资产               | 多资产单、审批占用原子性、10 路竞争、部分归还/维修、重复请求、浏览器            |  84.266 s |
+| [CSV 工作台](success-csv-inspector/README.md)    | 100,000 行、22,937 个问题   | 逐条独立核对、后台取消/重试、worker 中断、报告发布边界、协议故障、浏览器        |  95.125 s |
+| [问卷管理](success-survey-scoring/README.md)     | 10,013 份提交               | 真实 Ruby 评分、发布版本不可变、条件题、规则变化、10 路幂等、历史、浏览器       | 127.328 s |
+| [多源日志](success-log-analyzer/README.md)       | 100,000 条，文本/JSONL/gzip | 顺序/格式一致、筛选汇总、坏文件继续、资源上限、严格协议及子程序回收             |   2.750 s |
+| [目录快照](success-directory-diff/README.md)     | 10,001 个文件               | 独立 SHA-256、同大小变化、重命名候选、联接跳过、扫描/提交中断、10 路同名竞争    | 111.765 s |
+| [分块二进制](success-binary-inspector/README.md) | 100,000 条、98 块、两类记录 | 独立 CRC/汇总、过滤、头/类型/长度/数量/UTF-8/CRC 错误偏移、批量继续、子程序故障 |   2.219 s |
 
 以上耗时仅为该机器上的业务验收阶段，不含安装和构建，不是吞吐保证。共 59 个验收检查组，每组可能含多个业务断言；不与 JUnit 测试数量混计。种子 20260919、实际规模和每组结果记录在 report.json。看板/资产/问卷规模记录均经真实业务接口写入，问卷逐次调用 Ruby；CSV、日志、目录与二进制预期由独立生成器/参考计算及业务不变量确定。
 

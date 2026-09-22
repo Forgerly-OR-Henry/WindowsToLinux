@@ -1,7 +1,8 @@
 package gold.debug.windowstolinux.shared.model.ecosystem.db;
 
-import gold.debug.windowstolinux.shared.model.managed.ManagedStorageLocation;
 import java.util.Objects;
+
+import gold.debug.windowstolinux.shared.model.managed.ManagedStorageLocation;
 
 /**
  * File location and application input for embedded SQLite. / 嵌入式 SQLite 的文件位置与应用接入声明。
@@ -14,7 +15,7 @@ import java.util.Objects;
  * @param hostLocationExplicit host location explicit / 主机位置显式
  */
 public record SqliteFileRequirement(ManagedStorageLocation location, String fileName, String accessPath,
-                                    String pathEnvironment, String seedFile, boolean hostLocationExplicit) {
+        String pathEnvironment, String seedFile, boolean hostLocationExplicit) {
     /**
      * Initializes sqlite file requirement through its shared constructor contract.
      * <p>通过共享构造契约初始化Sqlite文件要求。
@@ -25,9 +26,11 @@ public record SqliteFileRequirement(ManagedStorageLocation location, String file
      * @param pathEnvironment path environment / 路径环境
      * @param seedFile seed file / 初始种子文件
      */
-    public SqliteFileRequirement(ManagedStorageLocation location,String fileName,String accessPath,String pathEnvironment,String seedFile) {
-        this(location,fileName,accessPath,pathEnvironment,seedFile,false);
+    public SqliteFileRequirement(ManagedStorageLocation location, String fileName, String accessPath,
+            String pathEnvironment, String seedFile) {
+        this(location, fileName, accessPath, pathEnvironment, seedFile, false);
     }
+
     /**
      * Validates and binds the inputs required by sqlite file requirement.
      * <p>校验并绑定Sqlite文件要求所需输入。
@@ -46,7 +49,8 @@ public record SqliteFileRequirement(ManagedStorageLocation location, String file
         if (!Objects.requireNonNull(fileName).matches("[A-Za-z0-9][A-Za-z0-9._-]{0,127}"))
             throw new IllegalArgumentException("SQLite requires a plain database file name");
         accessPath = Objects.requireNonNull(accessPath);
-        if (!accessPath.isEmpty()) accessPath = ManagedStorageLocation.validatedPath(accessPath);
+        if (!accessPath.isEmpty())
+            accessPath = ManagedStorageLocation.validatedPath(accessPath);
         if (!Objects.requireNonNull(pathEnvironment).isEmpty() && !pathEnvironment.matches("[A-Z][A-Z0-9_]{0,63}"))
             throw new IllegalArgumentException("invalid SQLite path environment variable");
         seedFile = relativeSourceFile(seedFile);
@@ -64,11 +68,14 @@ public record SqliteFileRequirement(ManagedStorageLocation location, String file
      */
     public static SqliteFileRequirement fromPath(String path, String environment, String seed) {
         if (path == null || path.equals("DEFAULT"))
-            return new SqliteFileRequirement(ManagedStorageLocation.defaults(), "application.db", "", environment, seed);
+            return new SqliteFileRequirement(ManagedStorageLocation.defaults(), "application.db", "", environment,
+                    seed);
         if (path.isBlank() || path.contains("$") || path.contains("{{"))
-            return new SqliteFileRequirement(ManagedStorageLocation.unresolved(), "application.db", "", environment, seed);
+            return new SqliteFileRequirement(ManagedStorageLocation.unresolved(), "application.db", "", environment,
+                    seed);
         if (path.equals(":memory:") || path.startsWith("file:"))
-            throw new IllegalArgumentException("in-memory databases and SQLite URI options are not persistent file declarations");
+            throw new IllegalArgumentException(
+                    "in-memory databases and SQLite URI options are not persistent file declarations");
         path = ManagedStorageLocation.validatedPath(path);
         int separator = path.lastIndexOf('/');
         String file = path.substring(separator + 1);
@@ -86,9 +93,11 @@ public record SqliteFileRequirement(ManagedStorageLocation location, String file
      * @throws NullPointerException if a required input is absent / 必需输入缺失时
      */
     public static String relativeSourceFile(String value) {
-        if (Objects.requireNonNull(value).isEmpty()) return value;
+        if (Objects.requireNonNull(value).isEmpty())
+            return value;
         value = ManagedStorageLocation.validatedPath(value);
-        if (value.startsWith("/")) throw new IllegalArgumentException("seed and initialization files must belong to the reviewed source");
+        if (value.startsWith("/"))
+            throw new IllegalArgumentException("seed and initialization files must belong to the reviewed source");
         return value;
     }
 }

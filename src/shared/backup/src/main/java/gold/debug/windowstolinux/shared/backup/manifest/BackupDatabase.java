@@ -13,14 +13,8 @@ import java.util.Objects;
  * @param consistencyMode consistency mode / 一致性模式
  * @param limitations localized bounded limitations / 本地化有界限制
  */
-public record BackupDatabase(
-        BackupDatabaseType type,
-        String reference,
-        String engineVersion,
-        String toolVersion,
-        BackupConsistencyMode consistencyMode,
-        List<String> limitations
-) {
+public record BackupDatabase(BackupDatabaseType type, String reference, String engineVersion, String toolVersion,
+        BackupConsistencyMode consistencyMode, List<String> limitations) {
     /**
      * Validates database evidence without accepting implicit consistency claims. / 校验数据库证据且不接受隐式一致性声明。
      *
@@ -46,19 +40,18 @@ public record BackupDatabase(
         if (type != BackupDatabaseType.NONE && consistencyMode == BackupConsistencyMode.NOT_APPLICABLE) {
             throw new IllegalArgumentException("a database backup must record its consistency method");
         }
-        if (type == BackupDatabaseType.SQLITE
-                && consistencyMode != BackupConsistencyMode.SQLITE_ONLINE_BACKUP
+        if (type == BackupDatabaseType.SQLITE && consistencyMode != BackupConsistencyMode.SQLITE_ONLINE_BACKUP
                 && consistencyMode != BackupConsistencyMode.SQLITE_WRITES_STOPPED) {
             throw new IllegalArgumentException("SQLite requires online-backup or stopped-writes evidence");
         }
-        if (type == BackupDatabaseType.POSTGRESQL
-                && consistencyMode != BackupConsistencyMode.POSTGRESQL_LOGICAL_DUMP) {
+        if (type == BackupDatabaseType.POSTGRESQL && consistencyMode != BackupConsistencyMode.POSTGRESQL_LOGICAL_DUMP) {
             throw new IllegalArgumentException("PostgreSQL requires a controlled logical dump");
         }
         if ((type == BackupDatabaseType.MYSQL || type == BackupDatabaseType.MARIADB)
                 && consistencyMode != BackupConsistencyMode.MYSQL_TRANSACTION_SNAPSHOT
                 && consistencyMode != BackupConsistencyMode.MYSQL_WRITES_STOPPED) {
-            throw new IllegalArgumentException("MySQL-compatible databases require transaction or stopped-writes evidence");
+            throw new IllegalArgumentException(
+                    "MySQL-compatible databases require transaction or stopped-writes evidence");
         }
     }
 
@@ -68,7 +61,7 @@ public record BackupDatabase(
      * @return the explicit database-free descriptor / 显式无数据库描述
      */
     public static BackupDatabase none() {
-        return new BackupDatabase(BackupDatabaseType.NONE, "none", "none", "none",
-                BackupConsistencyMode.NOT_APPLICABLE, List.of());
+        return new BackupDatabase(BackupDatabaseType.NONE, "none", "none", "none", BackupConsistencyMode.NOT_APPLICABLE,
+                List.of());
     }
 }

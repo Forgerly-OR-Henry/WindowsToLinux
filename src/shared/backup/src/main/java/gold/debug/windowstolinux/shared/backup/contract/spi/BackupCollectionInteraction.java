@@ -11,6 +11,7 @@ public interface BackupCollectionInteraction {
      * @throws InterruptedException if the waiting or worker thread is interrupted / 等待线程或工作线程被中断时
      */
     void checkCancelled() throws InterruptedException;
+
     /**
      * Reports the next component before downloading its material; this callback runs outside the mandatory recovery steps.
      * <p>在下载素材前报告下一组件；当前回调在必要恢复步骤之外执行。

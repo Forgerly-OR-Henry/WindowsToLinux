@@ -1,7 +1,5 @@
 package gold.debug.windowstolinux.app.windows.workspace;
 
-import javax.crypto.Mac;
-import javax.crypto.SecretKey;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.DataInputStream;
@@ -12,6 +10,9 @@ import java.security.MessageDigest;
 import java.util.Arrays;
 import java.util.Objects;
 
+import javax.crypto.Mac;
+import javax.crypto.SecretKey;
+
 /**
  * Authenticated binary envelope shared by independently transported desktop handoffs. / 独立传输桌面交接共用的认证二进制信封。
  */
@@ -21,21 +22,25 @@ public final class DesktopHandoffEnvelopeCodec {
      * <p>格式标记。
      */
     private static final int MAGIC = 0x57544846;
+
     /**
      * VERSION.
      * <p>版本。
      */
     private static final int VERSION = 1;
+
     /**
      * TAG BYTES.
      * <p>标签字节。
      */
     private static final int TAG_BYTES = 32;
+
     /**
      * MAXIMUM PAYLOAD BYTES.
      * <p>最大载荷字节。
      */
     private static final int MAXIMUM_PAYLOAD_BYTES = 1024 * 1024;
+
     /**
      * MAXIMUM DOCUMENT BYTES.
      * <p>最大文档字节。
@@ -87,7 +92,8 @@ public final class DesktopHandoffEnvelopeCodec {
     public byte[] write(PurposeType purpose, byte[] payload, SecretKey authenticationKey)
             throws WindowsWorkspaceException {
         purpose = Objects.requireNonNull(purpose, "purpose");
-        if (payload == null) throw invalid("desktop handoff payload is missing", null);
+        if (payload == null)
+            throw invalid("desktop handoff payload is missing", null);
         payload = payload.clone();
         if (payload.length == 0 || payload.length > MAXIMUM_PAYLOAD_BYTES) {
             throw invalid("desktop handoff payload is outside the supported boundary", null);
@@ -132,7 +138,8 @@ public final class DesktopHandoffEnvelopeCodec {
     public byte[] read(PurposeType expectedPurpose, byte[] document, SecretKey authenticationKey)
             throws WindowsWorkspaceException {
         expectedPurpose = Objects.requireNonNull(expectedPurpose, "expectedPurpose");
-        if (document == null) throw invalid("desktop handoff envelope is missing", null);
+        if (document == null)
+            throw invalid("desktop handoff envelope is missing", null);
         document = document.clone();
         if (document.length <= TAG_BYTES || document.length > MAXIMUM_DOCUMENT_BYTES) {
             Arrays.fill(document, (byte) 0);
@@ -153,8 +160,7 @@ public final class DesktopHandoffEnvelopeCodec {
                     throw invalid("desktop handoff envelope header is unsupported", null);
                 }
                 int payloadLength = input.readInt();
-                if (payloadLength < 1 || payloadLength > MAXIMUM_PAYLOAD_BYTES
-                        || payloadLength != input.available()) {
+                if (payloadLength < 1 || payloadLength > MAXIMUM_PAYLOAD_BYTES || payloadLength != input.available()) {
                     throw invalid("desktop handoff payload length is inconsistent", null);
                 }
                 return input.readNBytes(payloadLength);
@@ -167,7 +173,8 @@ public final class DesktopHandoffEnvelopeCodec {
             Arrays.fill(document, (byte) 0);
             Arrays.fill(body, (byte) 0);
             Arrays.fill(suppliedTag, (byte) 0);
-            if (expectedTag != null) Arrays.fill(expectedTag, (byte) 0);
+            if (expectedTag != null)
+                Arrays.fill(expectedTag, (byte) 0);
         }
     }
 
@@ -185,9 +192,10 @@ public final class DesktopHandoffEnvelopeCodec {
             throw invalid("desktop handoff authentication key is missing", null);
         }
         byte[] keyBytes = authenticationKey.getEncoded();
-        if (!"HmacSHA256".equalsIgnoreCase(authenticationKey.getAlgorithm())
-                || keyBytes == null || keyBytes.length < 32 || keyBytes.length > 64) {
-            if (keyBytes != null) Arrays.fill(keyBytes, (byte) 0);
+        if (!"HmacSHA256".equalsIgnoreCase(authenticationKey.getAlgorithm()) || keyBytes == null || keyBytes.length < 32
+                || keyBytes.length > 64) {
+            if (keyBytes != null)
+                Arrays.fill(keyBytes, (byte) 0);
             throw invalid("desktop handoff authentication key is invalid", null);
         }
         try {

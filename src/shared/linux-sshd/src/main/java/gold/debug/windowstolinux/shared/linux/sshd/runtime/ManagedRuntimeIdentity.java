@@ -1,9 +1,9 @@
 package gold.debug.windowstolinux.shared.linux.sshd.runtime;
 
-import gold.debug.windowstolinux.shared.model.project.DeploymentRuntimeSpecification;
-
 import java.util.Objects;
 import java.util.Optional;
+
+import gold.debug.windowstolinux.shared.model.project.DeploymentRuntimeSpecification;
 
 /**
  * Identifies the sealed runtime kind without persisting a duplicate runtime specification. / 在不持久化重复运行时规格的情况下识别已封存运行时类型。
@@ -12,8 +12,9 @@ import java.util.Optional;
  * @param containerEngine container engine / 容器引擎
  * @param mode selected operating or storage mode / 所选运行或存储模式
  */
-public record ManagedRuntimeIdentity(Kind kind, Optional<DeploymentRuntimeSpecification.ContainerEngineType> containerEngine,
-                                     gold.debug.windowstolinux.shared.model.project.application.ApplicationWorkload.ExecutionMode mode) {
+public record ManagedRuntimeIdentity(Kind kind,
+        Optional<DeploymentRuntimeSpecification.ContainerEngineType> containerEngine,
+        gold.debug.windowstolinux.shared.model.project.application.ApplicationWorkload.ExecutionMode mode) {
     /**
      * Initializes managed runtime identity through its shared constructor contract.
      * <p>通过共享构造契约初始化受管运行时身份。
@@ -22,8 +23,10 @@ public record ManagedRuntimeIdentity(Kind kind, Optional<DeploymentRuntimeSpecif
      * @param engine engine / 引擎
      */
     public ManagedRuntimeIdentity(Kind kind, Optional<DeploymentRuntimeSpecification.ContainerEngineType> engine) {
-        this(kind, engine, gold.debug.windowstolinux.shared.model.project.application.ApplicationWorkload.ExecutionMode.DAEMON);
+        this(kind, engine,
+                gold.debug.windowstolinux.shared.model.project.application.ApplicationWorkload.ExecutionMode.DAEMON);
     }
+
     /**
      * Creates an instance of this type. / 创建此类型的实例。
      *
@@ -45,17 +48,21 @@ public record ManagedRuntimeIdentity(Kind kind, Optional<DeploymentRuntimeSpecif
      * Selects the managed process or container identity strategy.
      * <p>选择受管进程或容器的身份策略。
      */
-    enum Kind { /**
-     * ORDINARY classification within kind.
-     * <p>种类中的常规分类。
-     */
-    ORDINARY, /**
-     * DEPLOYMENT classification within kind.
-     * <p>种类中的部署分类。
-     */
-    DEPLOYMENT, /**
-     * CONTAINER classification within kind.
-     * <p>种类中的容器分类。
-     */
-    CONTAINER }
+    enum Kind {
+        /**
+        * ORDINARY classification within kind.
+        * <p>种类中的常规分类。
+        */
+        ORDINARY,
+        /**
+        * DEPLOYMENT classification within kind.
+        * <p>种类中的部署分类。
+        */
+        DEPLOYMENT,
+        /**
+        * CONTAINER classification within kind.
+        * <p>种类中的容器分类。
+        */
+        CONTAINER
+    }
 }

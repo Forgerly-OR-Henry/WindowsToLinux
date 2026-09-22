@@ -10,12 +10,8 @@ import java.util.List;
  * @param previousDatabaseRetained previous database retained / 此前数据库已保留
  * @param evidence observations supporting the reported result / 支持所报告结果的观测证据
  */
-public record DatabaseCommitEvidence(
-        String candidateId,
-        boolean committed,
-        boolean previousDatabaseRetained,
-        List<String> evidence
-) {
+public record DatabaseCommitEvidence(String candidateId, boolean committed, boolean previousDatabaseRetained,
+        List<String> evidence) {
     /**
      * Requires a complete committed identity and bounded evidence. / 要求完整提交身份及有界证据。
      *

@@ -1,14 +1,14 @@
 package gold.debug.windowstolinux.app.secret;
 
-import gold.debug.windowstolinux.app.db.persistence.repository.EncryptedSecretRepository;
-import gold.debug.windowstolinux.app.db.entity.OpaqueSecret;
-import gold.debug.windowstolinux.app.secret.SecretStore;
-import gold.debug.windowstolinux.app.secret.SecretStoreException;
-import gold.debug.windowstolinux.app.secret.crypto.Argon2AesGcmCryptoService;
-
 import java.sql.SQLException;
 import java.util.Objects;
 import java.util.Optional;
+
+import gold.debug.windowstolinux.app.db.entity.OpaqueSecret;
+import gold.debug.windowstolinux.app.db.persistence.repository.EncryptedSecretRepository;
+import gold.debug.windowstolinux.app.secret.SecretStore;
+import gold.debug.windowstolinux.app.secret.SecretStoreException;
+import gold.debug.windowstolinux.app.secret.crypto.Argon2AesGcmCryptoService;
 
 /**
  * Database-backed secret store using the crypto package for Argon2id and AES-GCM.
@@ -21,11 +21,13 @@ public final class Argon2AesSecretStore implements SecretStore {
      * <p>Argon2id 及 AES-GCM 信封格式的持久化标识。
      */
     private static final String ALGORITHM = "ARGON2ID-AES-256-GCM-V1";
+
     /**
      * Bound encrypted secret repository collaborator for credential references or scoped secret-access service.
      * <p>处理凭据引用或限定作用域的秘密访问服务的加密秘密仓库协作对象。
      */
     private final EncryptedSecretRepository secrets;
+
     /**
      * Bound argon 2 aes gcm crypto service collaborator for crypto.
      * <p>处理加密的Argon2AesGcm加密服务协作对象。
@@ -62,10 +64,10 @@ public final class Argon2AesSecretStore implements SecretStore {
         }
         try {
             Argon2AesGcmCryptoService.EncryptedPayload encrypted = crypto.encrypt(value);
-            secrets.save(new OpaqueSecret(
-                    key, ALGORITHM, encrypted.salt(), encrypted.nonce(), encrypted.ciphertext()));
+            secrets.save(new OpaqueSecret(key, ALGORITHM, encrypted.salt(), encrypted.nonce(), encrypted.ciphertext()));
         } catch (Exception exception) {
-            throw failure(SecretStoreFailureType.ENCRYPT_FAILED, "Failed to encrypt and store the credential", exception);
+            throw failure(SecretStoreFailureType.ENCRYPT_FAILED, "Failed to encrypt and store the credential",
+                    exception);
         }
     }
 
@@ -87,7 +89,8 @@ public final class Argon2AesSecretStore implements SecretStore {
             }
             OpaqueSecret secret = stored.orElseThrow();
             if (!ALGORITHM.equals(secret.algorithm())) {
-                throw failure(SecretStoreFailureType.VERSION_UNSUPPORTED, "The stored credential encryption version is unsupported");
+                throw failure(SecretStoreFailureType.VERSION_UNSUPPORTED,
+                        "The stored credential encryption version is unsupported");
             }
             return Optional.of(crypto.decrypt(secret));
         } catch (SQLException exception) {
@@ -95,8 +98,8 @@ public final class Argon2AesSecretStore implements SecretStore {
         } catch (SecretStoreException exception) {
             throw exception;
         } catch (Exception exception) {
-            throw failure(SecretStoreFailureType.DECRYPT_FAILED, "The master password is incorrect or the credential is corrupted",
-                    exception);
+            throw failure(SecretStoreFailureType.DECRYPT_FAILED,
+                    "The master password is incorrect or the credential is corrupted", exception);
         }
     }
 
@@ -113,8 +116,7 @@ public final class Argon2AesSecretStore implements SecretStore {
         try {
             return secrets.delete(key);
         } catch (SQLException exception) {
-            throw failure(SecretStoreFailureType.DELETE_FAILED,
-                    "Failed to delete the encrypted credential", exception);
+            throw failure(SecretStoreFailureType.DELETE_FAILED, "Failed to delete the encrypted credential", exception);
         }
     }
 

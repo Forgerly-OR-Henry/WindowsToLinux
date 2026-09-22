@@ -13,13 +13,8 @@ import java.util.Optional;
  * @param legacyReleaseIdentity legacy release identity / 历史发布身份
  * @param releaseSetSha256 release set sha 256 / 发布集合SHA256
  */
-public record BackupIdentity(
-        String applicationId,
-        String serverId,
-        String managedRoot,
-        Optional<String> legacyReleaseIdentity,
-        Optional<String> releaseSetSha256
-) {
+public record BackupIdentity(String applicationId, String serverId, String managedRoot,
+        Optional<String> legacyReleaseIdentity, Optional<String> releaseSetSha256) {
     /**
      * Creates one schema-v5 identity with an exact release-set digest. / 创建带精确发布集合摘要的 schema v5 身份。
      *
@@ -66,10 +61,8 @@ public record BackupIdentity(
      * @param releaseIdentity digest identifying the exact published release / 标识精确已发布版本的摘要
      * @return backup identity from the supplied legacy inputs / 根据所提供历史输入构建备份身份
      */
-    static BackupIdentity legacy(
-            String applicationId, String serverId, String managedRoot, String releaseIdentity) {
-        return new BackupIdentity(applicationId, serverId, managedRoot,
-                Optional.of(releaseIdentity), Optional.empty());
+    static BackupIdentity legacy(String applicationId, String serverId, String managedRoot, String releaseIdentity) {
+        return new BackupIdentity(applicationId, serverId, managedRoot, Optional.of(releaseIdentity), Optional.empty());
     }
 
     /**

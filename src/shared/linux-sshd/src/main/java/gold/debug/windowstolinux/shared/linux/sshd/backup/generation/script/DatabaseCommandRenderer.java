@@ -1,12 +1,12 @@
 package gold.debug.windowstolinux.shared.linux.sshd.backup.generation.script;
 
-import gold.debug.windowstolinux.shared.linux.protocol.database.RemoteDatabasePort;
-import gold.debug.windowstolinux.shared.linux.sshd.command.SshCommandExecutor;
-import gold.debug.windowstolinux.shared.linux.sshd.execution.protocol.helper.ManagedHelperBundle;
-
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
+
+import gold.debug.windowstolinux.shared.linux.protocol.database.RemoteDatabasePort;
+import gold.debug.windowstolinux.shared.linux.sshd.command.SshCommandExecutor;
+import gold.debug.windowstolinux.shared.linux.sshd.execution.protocol.helper.ManagedHelperBundle;
 
 /**
  * Renders only fixed managed-helper database verbs with validated typed arguments. / 仅使用已校验类型化参数渲染固定受管 helper 数据库动词。
@@ -100,8 +100,8 @@ public final class DatabaseCommandRenderer {
      * @return read artifact text / 读取制品文本
      */
     public String readArtifact(RemoteDatabasePort.BackupArtifact artifact) {
-        return command("database-read-artifact", List.of(artifact.artifactId(),
-                Long.toString(artifact.byteCount()), artifact.sha256()));
+        return command("database-read-artifact",
+                List.of(artifact.artifactId(), Long.toString(artifact.byteCount()), artifact.sha256()));
     }
 
     /**
@@ -111,8 +111,8 @@ public final class DatabaseCommandRenderer {
      * @return stage artifact text / 阶段制品文本
      */
     public String stageArtifact(RemoteDatabasePort.BackupArtifact artifact) {
-        return command("database-stage-artifact", List.of(artifact.artifactId(),
-                Long.toString(artifact.byteCount()), artifact.sha256()));
+        return command("database-stage-artifact",
+                List.of(artifact.artifactId(), Long.toString(artifact.byteCount()), artifact.sha256()));
     }
 
     /**
@@ -135,8 +135,10 @@ public final class DatabaseCommandRenderer {
     private void appendConnection(List<String> arguments, RemoteDatabasePort.ConnectionProfile connection) {
         arguments.add(typeToken(connection.type()));
         if (connection instanceof RemoteDatabasePort.ConnectionProfile.Sqlite sqlite) {
-            arguments.add(sqlite.bindingId()); arguments.add(sqlite.location().type().name());
-            arguments.add(sqlite.location().path().isEmpty() ? "-" : sqlite.location().path()); arguments.add(sqlite.fileName());
+            arguments.add(sqlite.bindingId());
+            arguments.add(sqlite.location().type().name());
+            arguments.add(sqlite.location().path().isEmpty() ? "-" : sqlite.location().path());
+            arguments.add(sqlite.fileName());
             return;
         }
         RemoteDatabasePort.ConnectionProfile.Server server = (RemoteDatabasePort.ConnectionProfile.Server) connection;
@@ -178,9 +180,10 @@ public final class DatabaseCommandRenderer {
      */
     private String command(String verb, List<String> arguments) {
         StringBuilder command = new StringBuilder("sudo -n ")
-                .append(SshCommandExecutor.quote(ManagedHelperBundle.PATH)).append(' ')
-                .append(SshCommandExecutor.quote(verb));
-        arguments.forEach(argument -> command.append(' ').append(SshCommandExecutor.quote(argument)));
+                .append(gold.debug.windowstolinux.shared.linux.command.CommandText.quote(ManagedHelperBundle.PATH))
+                .append(' ').append(gold.debug.windowstolinux.shared.linux.command.CommandText.quote(verb));
+        arguments.forEach(argument -> command.append(' ')
+                .append(gold.debug.windowstolinux.shared.linux.command.CommandText.quote(argument)));
         return command.toString();
     }
 

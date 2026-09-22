@@ -1,14 +1,14 @@
 package gold.debug.windowstolinux.app.service.execution.lifecycle;
 
-import gold.debug.windowstolinux.shared.model.message.LocalizedMessage;
-import gold.debug.windowstolinux.shared.model.lifecycle.LifecycleObservation;
-import gold.debug.windowstolinux.shared.model.failure.FailureDescriptor;
-import gold.debug.windowstolinux.shared.model.failure.FailureSeverityLevel;
-import gold.debug.windowstolinux.shared.model.failure.OperationIdentity;
-
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
+
+import gold.debug.windowstolinux.shared.model.failure.FailureDescriptor;
+import gold.debug.windowstolinux.shared.model.failure.FailureSeverityLevel;
+import gold.debug.windowstolinux.shared.model.failure.OperationIdentity;
+import gold.debug.windowstolinux.shared.model.lifecycle.LifecycleObservation;
+import gold.debug.windowstolinux.shared.model.message.LocalizedMessage;
 
 /**
  * Secret-free result of one desktop lifecycle use case.
@@ -22,14 +22,9 @@ import java.util.Optional;
  * @param failure structured failure occurrence retained for safe reporting / 保留用于安全报告的结构化失败实例
  * @param nonFatalFailures non fatal failures / 非致命失败集合
  */
-public record LifecycleOutcome(
-        boolean accepted,
-        LocalizedMessage message,
-        Optional<LifecycleObservation> observation,
-        OperationIdentity operationIdentity,
-        Optional<FailureDescriptor> failure,
-        List<FailureDescriptor> nonFatalFailures
-) {
+public record LifecycleOutcome(boolean accepted, LocalizedMessage message, Optional<LifecycleObservation> observation,
+        OperationIdentity operationIdentity, Optional<FailureDescriptor> failure,
+        List<FailureDescriptor> nonFatalFailures) {
     /**
      * Validates and binds the inputs required by lifecycle outcome.
      * <p>校验并绑定生命周期结果所需输入。
@@ -55,7 +50,8 @@ public record LifecycleOutcome(
         if (accepted && failure.isPresent()) {
             throw new IllegalArgumentException("an accepted lifecycle outcome cannot carry a terminal failure");
         }
-        if (nonFatalFailures.stream().anyMatch(value -> value.definition().severity() != FailureSeverityLevel.WARNING)) {
+        if (nonFatalFailures.stream()
+                .anyMatch(value -> value.definition().severity() != FailureSeverityLevel.WARNING)) {
             throw new IllegalArgumentException("nonFatalFailures may contain warning definitions only");
         }
     }

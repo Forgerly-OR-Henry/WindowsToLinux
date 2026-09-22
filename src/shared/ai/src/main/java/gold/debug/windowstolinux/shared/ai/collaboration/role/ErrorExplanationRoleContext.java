@@ -14,18 +14,22 @@ public record ErrorExplanationRoleContext(String stepCode, String safeDiagnostic
      * Pattern recognizing pattern matching bearer authorization material for redaction.
      * <p>用于识别匹配 bearer 授权素材以供脱敏的模式的匹配模式。
      */
-    private static final Pattern BEARER = Pattern.compile("(?i)(authorization\\s*:\\s*bearer)\\s+[^\\s,;]+", Pattern.MULTILINE);
+    private static final Pattern BEARER = Pattern.compile("(?i)(authorization\\s*:\\s*bearer)\\s+[^\\s,;]+",
+            Pattern.MULTILINE);
+
     /**
      * Pattern recognizing pattern matching sensitive key-value assignments.
      * <p>用于识别匹配敏感键值赋值的模式的匹配模式。
      */
-    private static final Pattern ASSIGNMENT = Pattern.compile(
-            "(?i)(password|passwd|api[_-]?key|token|secret)\\s*[:=]\\s*[^\\s,;]+", Pattern.MULTILINE);
+    private static final Pattern ASSIGNMENT = Pattern
+            .compile("(?i)(password|passwd|api[_-]?key|token|secret)\\s*[:=]\\s*[^\\s,;]+", Pattern.MULTILINE);
+
     /**
      * Pattern recognizing PRIVATE KEY.
      * <p>用于识别私有键的匹配模式。
      */
-    private static final Pattern PRIVATE_KEY = Pattern.compile("(?is)-----BEGIN [^-]{1,32}PRIVATE KEY-----.*?-----END [^-]{1,32}PRIVATE KEY-----");
+    private static final Pattern PRIVATE_KEY = Pattern
+            .compile("(?is)-----BEGIN [^-]{1,32}PRIVATE KEY-----.*?-----END [^-]{1,32}PRIVATE KEY-----");
 
     /**
      * Redacts and validates the bounded error-explanation context. / 脱敏并验证有界错误解释上下文。
@@ -37,9 +41,11 @@ public record ErrorExplanationRoleContext(String stepCode, String safeDiagnostic
      */
     public ErrorExplanationRoleContext {
         stepCode = Objects.requireNonNull(stepCode, "stepCode").trim();
-        if (!stepCode.matches("[a-z0-9][a-z0-9-]{0,63}")) throw new IllegalArgumentException("stepCode is invalid");
+        if (!stepCode.matches("[a-z0-9][a-z0-9-]{0,63}"))
+            throw new IllegalArgumentException("stepCode is invalid");
         safeDiagnostic = redact(Objects.requireNonNull(safeDiagnostic, "safeDiagnostic"));
-        if (safeDiagnostic.isBlank()) safeDiagnostic = "Controlled operation failed without retained diagnostic text";
+        if (safeDiagnostic.isBlank())
+            safeDiagnostic = "Controlled operation failed without retained diagnostic text";
     }
 
     /**
@@ -48,7 +54,10 @@ public record ErrorExplanationRoleContext(String stepCode, String safeDiagnostic
      *
      * @return role / 角色
      */
-    @Override public AiCollaborationRoleKind role() { return AiCollaborationRoleKind.ERROR_EXPLANATION; }
+    @Override
+    public AiCollaborationRoleKind role() {
+        return AiCollaborationRoleKind.ERROR_EXPLANATION;
+    }
 
     /**
      * Returns redacted summary.
@@ -56,7 +65,10 @@ public record ErrorExplanationRoleContext(String stepCode, String safeDiagnostic
      *
      * @return redacted summary / 已脱敏摘要
      */
-    @Override public String redactedSummary() { return "stepCode=" + stepCode + ";safeDiagnostic=" + safeDiagnostic; }
+    @Override
+    public String redactedSummary() {
+        return "stepCode=" + stepCode + ";safeDiagnostic=" + safeDiagnostic;
+    }
 
     /**
      * Redacts sensitive content from error explanation role context.

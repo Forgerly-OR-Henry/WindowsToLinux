@@ -1,0 +1,45 @@
+{
+  "files": {
+    "test/multi-language/success-csv-inspector/samples/demo.csv": "Business sample or golden input: preserve exact bytes, including whitespace.",
+    "test/multi-language/success-csv-inspector/samples/people.csv": "Business sample or golden input: preserve exact bytes, including whitespace.",
+    "test/multi-language/success-csv-inspector/web/seed/datasets/demo.csv": "Business sample or golden input: preserve exact bytes, including whitespace.",
+    "test/multi-language/success-directory-diff/samples/baseline/nested/keep.txt": "Business sample or golden input: preserve exact bytes, including whitespace.",
+    "test/multi-language/success-directory-diff/samples/baseline/remove.txt": "Business sample or golden input: preserve exact bytes, including whitespace.",
+    "test/multi-language/success-directory-diff/samples/baseline/说明 文档.txt": "Business sample or golden input: preserve exact bytes, including whitespace.",
+    "test/multi-language/success-file-transfer/samples/中文 文件.txt": "Business sample or golden input: preserve exact bytes, including whitespace.",
+    "test/multi-language/success-log-analyzer/samples/events.log": "Business sample or golden input: preserve exact bytes, including whitespace."
+  },
+  "excludedNames": [
+    "package-lock.json",
+    "packages.lock.json",
+    "composer.lock",
+    "Cargo.lock",
+    "Gemfile.lock",
+    "poetry.lock",
+    "uv.lock",
+    "Pipfile.lock",
+    "yarn.lock",
+    "pnpm-lock.yaml",
+    "LICENSE",
+    "LICENSE.txt",
+    "mvnw",
+    "mvnw.cmd"
+  ],
+  "excludedSuffixes": [".jar", ".pyc", ".bin", ".lock", ".lockfile", ".sum", ".png", ".jpg", ".ico", ".zip"],
+  "generatedSegments": [
+    "node_modules",
+    "target",
+    ".git",
+    ".idea",
+    ".ai-workspace",
+    "__pycache__",
+    ".venv",
+    "vendor",
+    ".gradle"
+  ],
+  "fragments": {
+    "src/shared/linux-sshd/src/main/resources/gold/debug/windowstolinux/shared/linux/sshd/distro/dnf/centos-source-repositories.py": "Python insertion at eight-space indentation; dedent, format and restore indentation.",
+    "src/shared/linux-sshd/src/main/resources/gold/debug/windowstolinux/shared/linux/sshd/execution/protocol/helper/fragments/database/10-native-instances.sh": "Format jointly with 20-native-targets.sh; a literal Python heredoc spans both files.",
+    "src/shared/linux-sshd/src/main/resources/gold/debug/windowstolinux/shared/linux/sshd/execution/protocol/helper/fragments/database/20-native-targets.sh": "Continuation of 10-native-instances.sh; preserve embedded heredoc bytes."
+  }
+}

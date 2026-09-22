@@ -40,8 +40,7 @@ int run(const std::vector<std::string> &args) {
         const auto max_bytes = number("--max-bytes", 268435456, 1073741824);
         Aggregate aggregate(number("--max-keys", 10000, 100000));
         const auto &input = options["--input"];
-        std::ifstream file(std::filesystem::path(std::u8string(input.begin(), input.end())),
-                           std::ios::binary);
+        std::ifstream file(std::filesystem::path(std::u8string(input.begin(), input.end())), std::ios::binary);
         if (!file) {
             std::cerr << "input file unavailable\n";
             return 3;
@@ -55,8 +54,8 @@ int run(const std::vector<std::string> &args) {
                 break;
             bytes += static_cast<uint64_t>(consumed);
             if (bytes > max_bytes || file.bad() || (file.fail() && !file.eof())) {
-                std::cerr << "file read failed or line/file size limit exceeded at line "
-                          << aggregate.lines + 1 << '\n';
+                std::cerr << "file read failed or line/file size limit exceeded at line " << aggregate.lines + 1
+                          << '\n';
                 return 3;
             }
             std::string line(buffer.data(), static_cast<size_t>(consumed) - (file.eof() ? 0 : 1));
@@ -77,8 +76,7 @@ int run(const std::vector<std::string> &args) {
                 (!options["--service"].empty() && record.service != options["--service"]) ||
                 (!options["--from"].empty() && record.time < options["--from"]) ||
                 (!options["--to"].empty() && record.time > options["--to"]) ||
-                (!options["--keyword"].empty() &&
-                 record.message.find(options["--keyword"]) == std::string::npos))
+                (!options["--keyword"].empty() && record.message.find(options["--keyword"]) == std::string::npos))
                 continue;
             aggregate.add(record);
         }
@@ -92,9 +90,8 @@ int run(const std::vector<std::string> &args) {
             throw std::runtime_error("aggregation output exceeds 8 MiB");
         std::cout << "{\"protocolVersion\":2,\"component\":\"cpp-log\",\"type\":\"start\",\"sequence\":0}\n"
                   << output << '\n';
-        std::cout << nlohmann::json{{"protocolVersion", 2}, {"component", "cpp-log"},
-                                    {"type", "end"},        {"sequence", 2},
-                                    {"messages", 3},        {"records", aggregate.lines}}
+        std::cout << nlohmann::json{{"protocolVersion", 2}, {"component", "cpp-log"}, {"type", "end"},
+                                    {"sequence", 2},        {"messages", 3},          {"records", aggregate.lines}}
                          .dump()
                   << '\n';
         return 0;

@@ -42,12 +42,12 @@ public final class HttpRoleChatTransport implements RoleChatTransport {
      * @throws InterruptedException if the waiting or worker thread is interrupted / 等待线程或工作线程被中断时
      * @throws NullPointerException if a required input is absent / 必需输入缺失时
      */
-    @Override public RoleChatResult send(URI endpoint, char[] apiKey, String requestBody)
+    @Override
+    public RoleChatResult send(URI endpoint, char[] apiKey, String requestBody)
             throws IOException, InterruptedException {
         Objects.requireNonNull(apiKey, "apiKey");
         HttpRequest request = HttpRequest.newBuilder(endpoint).timeout(Duration.ofSeconds(30))
-                .header("Authorization", "Bearer " + new String(apiKey))
-                .header("Content-Type", "application/json")
+                .header("Authorization", "Bearer " + new String(apiKey)).header("Content-Type", "application/json")
                 .POST(HttpRequest.BodyPublishers.ofString(requestBody, StandardCharsets.UTF_8)).build();
         HttpResponse<byte[]> response = ClientHolder.CLIENT.send(request, ignored -> new LimitedHttpBodySubscriber());
         return new RoleChatResult(response.statusCode(), new String(response.body(), StandardCharsets.UTF_8));

@@ -1,7 +1,13 @@
 package gold.debug.windowstolinux.app.service.execution.lifecycle;
 
-import gold.debug.windowstolinux.app.db.persistence.repository.ManagedApplicationRepository;
+import java.sql.SQLException;
+import java.util.Arrays;
+import java.util.List;
+import java.util.Objects;
+import java.util.concurrent.locks.ReentrantLock;
+
 import gold.debug.windowstolinux.app.db.entity.CurrentRelease;
+import gold.debug.windowstolinux.app.db.persistence.repository.ManagedApplicationRepository;
 import gold.debug.windowstolinux.app.secret.SecretStore;
 import gold.debug.windowstolinux.app.secret.SecretStoreException;
 import gold.debug.windowstolinux.app.service.failure.ApplicationServiceException;
@@ -9,21 +15,15 @@ import gold.debug.windowstolinux.app.service.failure.ApplicationServiceFailureTy
 import gold.debug.windowstolinux.app.service.lock.ServerOperationLockRegistry;
 import gold.debug.windowstolinux.app.service.server.ServerProfile;
 import gold.debug.windowstolinux.app.service.server.ServerUseCaseFacade;
-import gold.debug.windowstolinux.shared.deploy.execution.lifecycle.ManagedLifecycleService;
 import gold.debug.windowstolinux.shared.deploy.contract.result.lifecycle.LifecycleActionResult;
+import gold.debug.windowstolinux.shared.deploy.execution.lifecycle.ManagedLifecycleService;
 import gold.debug.windowstolinux.shared.linux.connection.LinuxGateway;
+import gold.debug.windowstolinux.shared.model.failure.FailureDescriptor;
 import gold.debug.windowstolinux.shared.model.health.HealthCheck;
 import gold.debug.windowstolinux.shared.model.lifecycle.LifecycleAction;
-import gold.debug.windowstolinux.shared.model.failure.FailureDescriptor;
 import gold.debug.windowstolinux.shared.model.managed.ManagedApplication;
 import gold.debug.windowstolinux.shared.model.managed.ManagedApplicationRuntimeConfiguration;
 import gold.debug.windowstolinux.shared.model.security.CredentialStorageMode;
-
-import java.sql.SQLException;
-import java.util.Arrays;
-import java.util.List;
-import java.util.Objects;
-import java.util.concurrent.locks.ReentrantLock;
 
 /**
  * Loads persisted ownership and runtime facts before controlled application lifecycle actions.
@@ -35,16 +35,19 @@ public final class LifecycleUseCase {
      * <p>处理应用集合的受管应用仓库协作对象。
      */
     private final ManagedApplicationRepository applications;
+
     /**
      * Factory for authenticated Linux sessions.
      * <p>已认证 Linux 会话的工厂。
      */
     private final LinuxGateway gateway;
+
     /**
      * Bound server use case facade collaborator for server-profile and authenticated-session service.
      * <p>处理服务器资料及已认证会话服务的服务器用例门面协作对象。
      */
     private final ServerUseCaseFacade servers;
+
     /**
      * Shared operation locks indexed by target identity.
      * <p>按目标身份索引的共享操作锁。
@@ -62,7 +65,7 @@ public final class LifecycleUseCase {
      * @throws NullPointerException if a required input is absent / 必需输入缺失时
      */
     public LifecycleUseCase(ManagedApplicationRepository applications, LinuxGateway gateway,
-                            ServerUseCaseFacade servers, ServerOperationLockRegistry locks) {
+            ServerUseCaseFacade servers, ServerOperationLockRegistry locks) {
         this.applications = Objects.requireNonNull(applications, "applications");
         this.gateway = Objects.requireNonNull(gateway, "gateway");
         this.servers = Objects.requireNonNull(servers, "servers");
@@ -131,23 +134,24 @@ public final class LifecycleUseCase {
      * @throws NullPointerException if a required input is absent / 必需输入缺失时
      */
     public LifecycleActionResult executePersistedResult(String applicationId, LifecycleAction action,
-                                                        char[] masterPassword)
-            throws SecretStoreException, SQLException {
+            char[] masterPassword) throws SecretStoreException, SQLException {
         Objects.requireNonNull(applicationId, "applicationId");
         Objects.requireNonNull(action, "action");
         try {
-            ManagedApplication application = applications.find(applicationId).orElseThrow(
-                    () -> ApplicationServiceException.create(ApplicationServiceFailureType.APPLICATION_NOT_SELECTED,
+            ManagedApplication application = applications.find(applicationId)
+                    .orElseThrow(() -> ApplicationServiceException.create(
+                            ApplicationServiceFailureType.APPLICATION_NOT_SELECTED,
                             "No WindowsToLinux-managed application was selected"));
             ManagedApplicationRuntimeConfiguration runtime = applications.findRuntime(applicationId)
                     .orElseThrow(() -> ApplicationServiceException.create(
                             ApplicationServiceFailureType.LEGACY_RUNTIME_MISSING,
                             "Legacy managed record has no runtime configuration; redeploy before lifecycle operations"));
-            ServerProfile profile = servers.find(application.server().id()).orElseThrow(
-                    () -> ApplicationServiceException.create(ApplicationServiceFailureType.SERVER_PROFILE_MISSING,
+            ServerProfile profile = servers.find(application.server().id())
+                    .orElseThrow(() -> ApplicationServiceException.create(
+                            ApplicationServiceFailureType.SERVER_PROFILE_MISSING,
                             "Server connection profile for the managed application was not found"));
-            return executeResult(application, action, runtime.healthCheck(), profile,
-                    profile.credentialMode(), masterPassword);
+            return executeResult(application, action, runtime.healthCheck(), profile, profile.credentialMode(),
+                    masterPassword);
         } finally {
             clear(masterPassword);
         }
@@ -168,7 +172,7 @@ public final class LifecycleUseCase {
      * @throws SQLException if the database cannot complete the requested read or transaction / 数据库无法完成请求的读取或事务时
      */
     public LifecycleOutcome execute(ManagedApplication application, LifecycleAction action, HealthCheck healthCheck,
-                                    ServerProfile profile, CredentialStorageMode mode, char[] masterPassword)
+            ServerProfile profile, CredentialStorageMode mode, char[] masterPassword)
             throws SecretStoreException, SQLException {
         return outcome(executeResult(application, action, healthCheck, profile, mode, masterPassword));
     }
@@ -188,8 +192,7 @@ public final class LifecycleUseCase {
      * @throws SQLException if the database cannot complete the requested read or transaction / 数据库无法完成请求的读取或事务时
      */
     public LifecycleActionResult executeResult(ManagedApplication application, LifecycleAction action,
-                                               HealthCheck healthCheck, ServerProfile profile,
-                                               CredentialStorageMode mode, char[] masterPassword)
+            HealthCheck healthCheck, ServerProfile profile, CredentialStorageMode mode, char[] masterPassword)
             throws SecretStoreException, SQLException {
         if (!application.server().id().equals(profile.id()) || profile.credentialMode() != mode) {
             throw ApplicationServiceException.create(ApplicationServiceFailureType.LIFECYCLE_CONTEXT_MISMATCH,
@@ -198,16 +201,16 @@ public final class LifecycleUseCase {
         ReentrantLock lock = locks.forServer(application.server().id());
         lock.lock();
         try (SecretStore store = servers.secrets().open(mode, masterPassword)) {
-            LifecycleActionResult result = new ManagedLifecycleService().execute(
-                    application, action, healthCheck, gateway, profile.endpoint(),
-                    servers.loadPassword(profile, store), servers.hostKeyVerifier(profile, ignored -> false));
+            LifecycleActionResult result = new ManagedLifecycleService().execute(application, action, healthCheck,
+                    gateway, profile.endpoint(), servers.loadPassword(profile, store),
+                    servers.hostKeyVerifier(profile, ignored -> false));
             if (result.observation().isPresent()) {
                 try {
                     applications.saveObservation(result.observation().orElseThrow());
                 } catch (SQLException failure) {
                     result = result.withNonFatalFailure(FailureDescriptor.create(
-                            ApplicationServiceFailureType.LOCAL_OBSERVATION_SAVE_FAILED,
-                            result.operationIdentity(), "Remote lifecycle observation was verified but local history storage failed"));
+                            ApplicationServiceFailureType.LOCAL_OBSERVATION_SAVE_FAILED, result.operationIdentity(),
+                            "Remote lifecycle observation was verified but local history storage failed"));
                 }
             }
             return result;

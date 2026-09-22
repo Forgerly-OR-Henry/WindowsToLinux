@@ -1,10 +1,10 @@
 package gold.debug.windowstolinux.shared.git;
 
-import gold.debug.windowstolinux.shared.git.GitRemote;
-import gold.debug.windowstolinux.shared.source.archive.SourceArchive;
-
 import java.nio.file.Path;
 import java.util.Objects;
+
+import gold.debug.windowstolinux.shared.git.GitRemote;
+import gold.debug.windowstolinux.shared.source.archive.SourceArchive;
 
 /**
  * A checkout pinned to one commit and paired with a deterministic source archive.

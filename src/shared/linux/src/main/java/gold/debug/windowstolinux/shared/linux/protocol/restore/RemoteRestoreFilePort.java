@@ -14,8 +14,7 @@ public interface RemoteRestoreFilePort {
      * @return constructed or resolved remote restore staging evidence / 构造或解析得到的远端恢复暂存证据
      * @throws LinuxOperationException if the authenticated remote operation fails or its evidence is rejected / 已认证远端操作失败或其证据被拒绝时
      */
-    RemoteRestoreStagingEvidence stageRestoreFiles(RemoteRestoreStagingRequest request)
-            throws LinuxOperationException;
+    RemoteRestoreStagingEvidence stageRestoreFiles(RemoteRestoreStagingRequest request) throws LinuxOperationException;
 
     /**
      * Discards the exact digest-derived candidate workspace. / 丢弃精确的摘要派生候选工作区。

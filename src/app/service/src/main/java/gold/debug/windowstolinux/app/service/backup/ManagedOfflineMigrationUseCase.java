@@ -1,20 +1,5 @@
 package gold.debug.windowstolinux.app.service.backup;
 
-import gold.debug.windowstolinux.app.secret.SecretStoreException;
-import gold.debug.windowstolinux.shared.backup.crypto.BackupSecretException;
-import gold.debug.windowstolinux.app.service.deployment.MultiComponentLifecycleUseCase;
-import gold.debug.windowstolinux.app.service.failure.ApplicationServiceException;
-import gold.debug.windowstolinux.app.service.failure.ApplicationServiceFailureType;
-import gold.debug.windowstolinux.app.service.server.ServerProfile;
-import gold.debug.windowstolinux.app.service.server.ServerUseCaseFacade;
-import gold.debug.windowstolinux.app.windows.workspace.WindowsBackupMaterialAttempt;
-import gold.debug.windowstolinux.app.windows.workspace.WindowsBackupMaterialWorkspace;
-import gold.debug.windowstolinux.app.windows.workspace.WindowsWorkspaceException;
-import gold.debug.windowstolinux.shared.backup.contract.spi.OfflineMigrationRequest;
-import gold.debug.windowstolinux.shared.backup.contract.spi.OfflineMigrationPort;
-import gold.debug.windowstolinux.shared.backup.execution.migration.OfflineMigrationCoordinator;
-import gold.debug.windowstolinux.shared.linux.error.LinuxOperationException;
-
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -26,6 +11,21 @@ import java.util.Objects;
 import java.util.UUID;
 import java.util.function.Predicate;
 
+import gold.debug.windowstolinux.app.secret.SecretStoreException;
+import gold.debug.windowstolinux.app.service.deployment.MultiComponentLifecycleUseCase;
+import gold.debug.windowstolinux.app.service.failure.ApplicationServiceException;
+import gold.debug.windowstolinux.app.service.failure.ApplicationServiceFailureType;
+import gold.debug.windowstolinux.app.service.server.ServerProfile;
+import gold.debug.windowstolinux.app.service.server.ServerUseCaseFacade;
+import gold.debug.windowstolinux.app.windows.workspace.WindowsBackupMaterialAttempt;
+import gold.debug.windowstolinux.app.windows.workspace.WindowsBackupMaterialWorkspace;
+import gold.debug.windowstolinux.app.windows.workspace.WindowsWorkspaceException;
+import gold.debug.windowstolinux.shared.backup.contract.spi.OfflineMigrationPort;
+import gold.debug.windowstolinux.shared.backup.contract.spi.OfflineMigrationRequest;
+import gold.debug.windowstolinux.shared.backup.crypto.BackupSecretException;
+import gold.debug.windowstolinux.shared.backup.execution.migration.OfflineMigrationCoordinator;
+import gold.debug.windowstolinux.shared.linux.error.LinuxOperationException;
+
 /**
  * Creates a complete initial backup, runs the offline transaction and retains the exact final backup. / 创建完整初始备份、执行离线事务并保留精确最终备份。
  */
@@ -35,26 +35,31 @@ public final class ManagedOfflineMigrationUseCase {
      * <p>备份集合。
      */
     private final RemoteBackupCreationUseCase backups;
+
     /**
      * Restores.
      * <p>恢复集合。
      */
     private final ManagedRestoreUseCase restores;
+
     /**
      * Lifecycle.
      * <p>生命周期。
      */
     private final MultiComponentLifecycleUseCase lifecycle;
+
     /**
      * Bound server use case facade collaborator for server-profile and authenticated-session service.
      * <p>处理服务器资料及已认证会话服务的服务器用例门面协作对象。
      */
     private final ServerUseCaseFacade servers;
+
     /**
      * Platform-owned work area with enforced path boundaries.
      * <p>具有路径边界约束的平台工作区。
      */
     private final WindowsBackupMaterialWorkspace workspace;
+
     /**
      * Backups directory.
      * <p>备份集合目录。
@@ -72,20 +77,16 @@ public final class ManagedOfflineMigrationUseCase {
      * @param backupsDirectory backups directory / 备份集合目录
      * @throws NullPointerException if a required input is absent / 必需输入缺失时
      */
-    public ManagedOfflineMigrationUseCase(
-            RemoteBackupCreationUseCase backups,
-            ManagedRestoreUseCase restores,
-            MultiComponentLifecycleUseCase lifecycle,
-            ServerUseCaseFacade servers,
-            Path workDirectory,
-            Path backupsDirectory
-    ) {
+    public ManagedOfflineMigrationUseCase(RemoteBackupCreationUseCase backups, ManagedRestoreUseCase restores,
+            MultiComponentLifecycleUseCase lifecycle, ServerUseCaseFacade servers, Path workDirectory,
+            Path backupsDirectory) {
         this.backups = Objects.requireNonNull(backups, "backups");
         this.restores = Objects.requireNonNull(restores, "restores");
         this.lifecycle = Objects.requireNonNull(lifecycle, "lifecycle");
         this.servers = Objects.requireNonNull(servers, "servers");
         this.workspace = new WindowsBackupMaterialWorkspace(workDirectory);
-        this.backupsDirectory = Objects.requireNonNull(backupsDirectory, "backupsDirectory").toAbsolutePath().normalize();
+        this.backupsDirectory = Objects.requireNonNull(backupsDirectory, "backupsDirectory").toAbsolutePath()
+                .normalize();
     }
 
     /**
@@ -104,24 +105,21 @@ public final class ManagedOfflineMigrationUseCase {
      * @throws IOException if the required file or stream operation fails / 所需文件或流操作失败时
      * @throws BackupSecretException if the backup secret boundary rejects the operation / 备份秘密边界拒绝当前操作时
      */
-    public ManagedOfflineMigrationOutcome prepare(
-            String applicationId,
-            String targetServerId,
-            char[] backupPassword,
-            char[] masterPassword,
-            boolean stopWindowApproved,
-            Predicate<String> firstUseConfirmation
-    ) throws SQLException, SecretStoreException, LinuxOperationException, IOException, BackupSecretException {
+    public ManagedOfflineMigrationOutcome prepare(String applicationId, String targetServerId, char[] backupPassword,
+            char[] masterPassword, boolean stopWindowApproved, Predicate<String> firstUseConfirmation)
+            throws SQLException, SecretStoreException, LinuxOperationException, IOException, BackupSecretException {
         WindowsBackupMaterialAttempt attempt = null;
         ManagedOfflineMigrationPort port = null;
         List<String> warnings = new ArrayList<>();
         try {
-            var managed = lifecycle.findManagedApplication(applicationId).orElseThrow(() ->
-                    ApplicationServiceException.create(ApplicationServiceFailureType.APPLICATION_NOT_MANAGED,
+            var managed = lifecycle.findManagedApplication(applicationId)
+                    .orElseThrow(() -> ApplicationServiceException.create(
+                            ApplicationServiceFailureType.APPLICATION_NOT_MANAGED,
                             "the selected application has no durable whole-application lifecycle graph"));
             String sourceServerId = managed.components().getFirst().application().server().id();
-            ServerProfile source = servers.find(sourceServerId).orElseThrow(() ->
-                    ApplicationServiceException.create(ApplicationServiceFailureType.SERVER_PROFILE_MISSING,
+            ServerProfile source = servers.find(sourceServerId)
+                    .orElseThrow(() -> ApplicationServiceException.create(
+                            ApplicationServiceFailureType.SERVER_PROFILE_MISSING,
                             "the source server profile is unavailable"));
             if (servers.find(targetServerId).isEmpty()) {
                 throw ApplicationServiceException.create(ApplicationServiceFailureType.SERVER_PROFILE_MISSING,
@@ -141,29 +139,36 @@ public final class ManagedOfflineMigrationUseCase {
                     copy(backupPassword), copy(masterPassword), firstUseConfirmation);
             Files.createDirectories(backupsDirectory);
             Path finalPath = backupsDirectory.resolve(applicationId + "-" + migrationId + ".wtlbackup");
-            OfflineMigrationRequest request = new OfflineMigrationRequest(migrationId, applicationId,
-                    sourceServerId, targetServerId, Files.size(initial.archive()), stopWindowApproved);
-            port = new ManagedOfflineMigrationPort(applicationId, source, targetServerId, backups, restores,
-                    lifecycle, managed, initial, finalPath, backupPassword, masterPassword, firstUseConfirmation);
+            OfflineMigrationRequest request = new OfflineMigrationRequest(migrationId, applicationId, sourceServerId,
+                    targetServerId, Files.size(initial.archive()), stopWindowApproved);
+            port = new ManagedOfflineMigrationPort(applicationId, source, targetServerId, backups, restores, lifecycle,
+                    managed, initial, finalPath, backupPassword, masterPassword, firstUseConfirmation);
             var result = new OfflineMigrationCoordinator(port).prepare(request);
             var retainedFinalArchive = port.finalArchive();
-            port.close(); port = null;
-            try { workspace.discard(attempt); }
-            catch (WindowsWorkspaceException exception) {
+            port.close();
+            port = null;
+            try {
+                workspace.discard(attempt);
+            } catch (WindowsWorkspaceException exception) {
                 warnings.add("backup.warning.initialArchiveCleanup");
             }
             attempt = null;
             return new ManagedOfflineMigrationOutcome(result, retainedFinalArchive, warnings);
-        } catch (SQLException | SecretStoreException | LinuxOperationException | IOException
-                 | BackupSecretException | RuntimeException exception) {
-            if (port != null) port.close();
+        } catch (SQLException | SecretStoreException | LinuxOperationException | IOException | BackupSecretException
+                | RuntimeException exception) {
+            if (port != null)
+                port.close();
             if (attempt != null) {
-                try { workspace.discard(attempt); }
-                catch (WindowsWorkspaceException cleanup) { exception.addSuppressed(cleanup); }
+                try {
+                    workspace.discard(attempt);
+                } catch (WindowsWorkspaceException cleanup) {
+                    exception.addSuppressed(cleanup);
+                }
             }
             throw exception;
         } finally {
-            clear(backupPassword); clear(masterPassword);
+            clear(backupPassword);
+            clear(masterPassword);
         }
     }
 
@@ -185,7 +190,10 @@ public final class ManagedOfflineMigrationUseCase {
      *
      * @param value candidate content accepted or rejected by this contract / 由当前契约接收或拒绝的候选内容
      */
-    private static void clear(char[] value) { if (value != null) Arrays.fill(value, '\0'); }
+    private static void clear(char[] value) {
+        if (value != null)
+            Arrays.fill(value, '\0');
+    }
 
     /**
      * Must remain unreachable because the coordinator rejects missing approval before calling its port. / 协调器必须在调用端口前拒绝缺失批准，因此此端口不可到达。
@@ -204,7 +212,11 @@ public final class ManagedOfflineMigrationUseCase {
          * @param request reviewed inputs for the requested operation / 所请求操作的已审阅输入
          * @return constructed or resolved target preflight evidence / 构造或解析得到的目标预检证据
          */
-        @Override public TargetPreflightEvidence preflightTarget(OfflineMigrationRequest request) { throw unreachable(); }
+        @Override
+        public TargetPreflightEvidence preflightTarget(OfflineMigrationRequest request) {
+            throw unreachable();
+        }
+
         /**
          * Copies the initial reviewed source state before the final stop window.
          * <p>在最终停机窗口前复制初始已审阅源状态。
@@ -212,7 +224,11 @@ public final class ManagedOfflineMigrationUseCase {
          * @param request reviewed inputs for the requested operation / 所请求操作的已审阅输入
          * @return constructed or resolved sync evidence / 构造或解析得到的同步证据
          */
-        @Override public SyncEvidence initialSync(OfflineMigrationRequest request) { throw unreachable(); }
+        @Override
+        public SyncEvidence initialSync(OfflineMigrationRequest request) {
+            throw unreachable();
+        }
+
         /**
          * Stops source writes.
          * <p>停止源码写入集合。
@@ -220,7 +236,11 @@ public final class ManagedOfflineMigrationUseCase {
          * @param request reviewed inputs for the requested operation / 所请求操作的已审阅输入
          * @return constructed or resolved source quiesce evidence / 构造或解析得到的源码停写证据
          */
-        @Override public SourceQuiesceEvidence stopSourceWrites(OfflineMigrationRequest request) { throw unreachable(); }
+        @Override
+        public SourceQuiesceEvidence stopSourceWrites(OfflineMigrationRequest request) {
+            throw unreachable();
+        }
+
         /**
          * Copies the final stopped-writer source state used for target activation.
          * <p>复制供目标激活使用的最终停写源状态。
@@ -230,8 +250,12 @@ public final class ManagedOfflineMigrationUseCase {
          * @param quiesced quiesced / 已停写
          * @return constructed or resolved sync evidence / 构造或解析得到的同步证据
          */
-        @Override public SyncEvidence finalSync(OfflineMigrationRequest request, SyncEvidence initial,
-                                                 SourceQuiesceEvidence quiesced) { throw unreachable(); }
+        @Override
+        public SyncEvidence finalSync(OfflineMigrationRequest request, SyncEvidence initial,
+                SourceQuiesceEvidence quiesced) {
+            throw unreachable();
+        }
+
         /**
          * Restores and verify target.
          * <p>恢复与验证目标。
@@ -240,8 +264,11 @@ public final class ManagedOfflineMigrationUseCase {
          * @param finalSync final sync / 最终同步
          * @return constructed or resolved target candidate evidence / 构造或解析得到的目标候选证据
          */
-        @Override public TargetCandidateEvidence restoreAndVerifyTarget(
-                OfflineMigrationRequest request, SyncEvidence finalSync) { throw unreachable(); }
+        @Override
+        public TargetCandidateEvidence restoreAndVerifyTarget(OfflineMigrationRequest request, SyncEvidence finalSync) {
+            throw unreachable();
+        }
+
         /**
          * Discards target candidate.
          * <p>清理目标候选。
@@ -249,7 +276,11 @@ public final class ManagedOfflineMigrationUseCase {
          * @param request reviewed inputs for the requested operation / 所请求操作的已审阅输入
          * @return constructed or resolved recovery evidence / 构造或解析得到的恢复证据
          */
-        @Override public RecoveryEvidence discardTargetCandidate(OfflineMigrationRequest request) { throw unreachable(); }
+        @Override
+        public RecoveryEvidence discardTargetCandidate(OfflineMigrationRequest request) {
+            throw unreachable();
+        }
+
         /**
          * Recovers source identity or content read by the operation.
          * <p>恢复操作读取的源身份或内容。
@@ -258,8 +289,10 @@ public final class ManagedOfflineMigrationUseCase {
          * @param quiesced quiesced / 已停写
          * @return constructed or resolved recovery evidence / 构造或解析得到的恢复证据
          */
-        @Override public RecoveryEvidence recoverSource(
-                OfflineMigrationRequest request, SourceQuiesceEvidence quiesced) { throw unreachable(); }
+        @Override
+        public RecoveryEvidence recoverSource(OfflineMigrationRequest request, SourceQuiesceEvidence quiesced) {
+            throw unreachable();
+        }
 
         /**
          * Builds assertion error from the supplied unreachable inputs.

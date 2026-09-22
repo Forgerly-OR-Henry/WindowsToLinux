@@ -1,11 +1,5 @@
 package gold.debug.windowstolinux.app.windows.update;
 
-import gold.debug.windowstolinux.app.windows.workspace.DesktopHandoffEnvelopeCodec;
-import gold.debug.windowstolinux.app.windows.workspace.WindowsWorkspaceException;
-import gold.debug.windowstolinux.app.windows.workspace.WindowsWorkspaceFailureType;
-import gold.debug.windowstolinux.shared.model.failure.OperationIdentity;
-
-import javax.crypto.SecretKey;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.DataInputStream;
@@ -18,6 +12,13 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.Objects;
 
+import javax.crypto.SecretKey;
+
+import gold.debug.windowstolinux.app.windows.workspace.DesktopHandoffEnvelopeCodec;
+import gold.debug.windowstolinux.app.windows.workspace.WindowsWorkspaceException;
+import gold.debug.windowstolinux.app.windows.workspace.WindowsWorkspaceFailureType;
+import gold.debug.windowstolinux.shared.model.failure.OperationIdentity;
+
 /**
  * Strict authenticated transport codec for an update handoff crossing the process boundary. / 更新交接跨进程边界使用的严格认证传输编解码器。
  */
@@ -27,11 +28,13 @@ public final class DesktopUpdateHandoffCodec {
      * <p>载荷版本。
      */
     private static final int PAYLOAD_VERSION = 1;
+
     /**
      * MAXIMUM ITEMS.
      * <p>最大项目集合。
      */
     private static final int MAXIMUM_ITEMS = 64;
+
     /**
      * Bound desktop handoff envelope codec collaborator for envelope.
      * <p>处理信封的Desktop交接信封编解码器协作对象。
@@ -47,8 +50,7 @@ public final class DesktopUpdateHandoffCodec {
      * @throws WindowsWorkspaceException if the windows workspace boundary rejects the operation / Windows工作区边界拒绝当前操作时
      * @throws NullPointerException if a required input is absent / 必需输入缺失时
      */
-    public byte[] write(DesktopUpdateHandoff handoff, SecretKey authenticationKey)
-            throws WindowsWorkspaceException {
+    public byte[] write(DesktopUpdateHandoff handoff, SecretKey authenticationKey) throws WindowsWorkspaceException {
         Objects.requireNonNull(handoff, "handoff");
         byte[] payload = null;
         try {
@@ -67,7 +69,8 @@ public final class DesktopUpdateHandoffCodec {
         } catch (IOException | RuntimeException exception) {
             throw invalid("update handoff could not be encoded", exception);
         } finally {
-            if (payload != null) Arrays.fill(payload, (byte) 0);
+            if (payload != null)
+                Arrays.fill(payload, (byte) 0);
         }
     }
 
@@ -79,10 +82,8 @@ public final class DesktopUpdateHandoffCodec {
      * @return constructed or resolved desktop update handoff / 构造或解析得到的Desktop更新交接
      * @throws WindowsWorkspaceException if the windows workspace boundary rejects the operation / Windows工作区边界拒绝当前操作时
      */
-    public DesktopUpdateHandoff read(byte[] document, SecretKey authenticationKey)
-            throws WindowsWorkspaceException {
-        byte[] payload = envelope.read(DesktopHandoffEnvelopeCodec.PurposeType.UPDATE,
-                document, authenticationKey);
+    public DesktopUpdateHandoff read(byte[] document, SecretKey authenticationKey) throws WindowsWorkspaceException {
+        byte[] payload = envelope.read(DesktopHandoffEnvelopeCodec.PurposeType.UPDATE, document, authenticationKey);
         try (DataInputStream input = new DataInputStream(new ByteArrayInputStream(payload))) {
             if (input.readInt() != PAYLOAD_VERSION) {
                 throw invalid("update handoff payload version is unsupported", null);
@@ -91,7 +92,8 @@ public final class DesktopUpdateHandoffCodec {
             DesktopUpdateVerification update = readVerification(input);
             DesktopUpdatePort.BackupEvidence backup = readBackup(input);
             List<DesktopUpdateEvent> events = readEvents(input);
-            if (input.available() != 0) throw invalid("update handoff payload has trailing bytes", null);
+            if (input.available() != 0)
+                throw invalid("update handoff payload has trailing bytes", null);
             return new DesktopUpdateHandoff(operation, update, backup, events);
         } catch (WindowsWorkspaceException exception) {
             throw exception;
@@ -139,8 +141,8 @@ public final class DesktopUpdateHandoffCodec {
         long packageBytes = input.readLong();
         String packageSha256 = input.readUTF();
         Instant verifiedAt = Instant.ofEpochSecond(input.readLong(), input.readInt());
-        return new DesktopUpdateVerification(packageFile, releaseId, version, architecture, packageBytes,
-                packageSha256, verifiedAt, readTexts(input));
+        return new DesktopUpdateVerification(packageFile, releaseId, version, architecture, packageBytes, packageSha256,
+                verifiedAt, readTexts(input));
     }
 
     /**
@@ -203,8 +205,8 @@ public final class DesktopUpdateHandoffCodec {
         int count = count(input.readInt(), "update event");
         List<DesktopUpdateEvent> events = new ArrayList<>(count);
         for (int index = 0; index < count; index++) {
-            events.add(new DesktopUpdateEvent(DesktopUpdateState.valueOf(input.readUTF()),
-                    input.readBoolean(), input.readUTF()));
+            events.add(new DesktopUpdateEvent(DesktopUpdateState.valueOf(input.readUTF()), input.readBoolean(),
+                    input.readUTF()));
         }
         return List.copyOf(events);
     }
@@ -219,7 +221,8 @@ public final class DesktopUpdateHandoffCodec {
      */
     private static void writeTexts(DataOutputStream output, List<String> values) throws IOException {
         output.writeInt(values.size());
-        for (String value : values) output.writeUTF(value);
+        for (String value : values)
+            output.writeUTF(value);
     }
 
     /**
@@ -233,7 +236,8 @@ public final class DesktopUpdateHandoffCodec {
     private static List<String> readTexts(DataInputStream input) throws IOException {
         int count = count(input.readInt(), "update evidence");
         List<String> values = new ArrayList<>(count);
-        for (int index = 0; index < count; index++) values.add(input.readUTF());
+        for (int index = 0; index < count; index++)
+            values.add(input.readUTF());
         return List.copyOf(values);
     }
 
@@ -247,7 +251,8 @@ public final class DesktopUpdateHandoffCodec {
      * @throws IOException if the required file or stream operation fails / 所需文件或流操作失败时
      */
     private static int count(int value, String field) throws IOException {
-        if (value < 1 || value > MAXIMUM_ITEMS) throw new IOException(field + " count is invalid");
+        if (value < 1 || value > MAXIMUM_ITEMS)
+            throw new IOException(field + " count is invalid");
         return value;
     }
 

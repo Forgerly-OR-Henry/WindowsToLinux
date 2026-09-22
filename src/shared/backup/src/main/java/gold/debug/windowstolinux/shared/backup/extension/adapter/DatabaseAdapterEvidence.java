@@ -46,9 +46,8 @@ final class DatabaseAdapterEvidence {
      * @return constructed or resolved database backup artifact / 构造或解析得到的数据库备份制品
      * @throws BackupException if backup validation or the controlled backup operation fails / 备份校验或受控备份操作失败时
      */
-    static DatabaseBackupArtifact verifyArtifact(
-            DatabaseBackupArtifact artifact, BackupDatabaseType type, BackupConsistencyMode mode,
-            DatabaseCompatibilityEvidence evidence) throws BackupException {
+    static DatabaseBackupArtifact verifyArtifact(DatabaseBackupArtifact artifact, BackupDatabaseType type,
+            BackupConsistencyMode mode, DatabaseCompatibilityEvidence evidence) throws BackupException {
         if (artifact.database().type() != type || artifact.database().consistencyMode() != mode
                 || !artifact.database().engineVersion().equals(evidence.engineVersion())
                 || !artifact.database().toolVersion().equals(evidence.toolVersion())) {
@@ -67,9 +66,8 @@ final class DatabaseAdapterEvidence {
      * @param type selected member of the supported type set / 受支持类型集合中的所选项
      * @throws BackupException if backup validation or the controlled backup operation fails / 备份校验或受控备份操作失败时
      */
-    static void requireRestoreCompatible(
-            DatabaseRestoreRequest request, DatabaseCompatibilityEvidence evidence, BackupDatabaseType type)
-            throws BackupException {
+    static void requireRestoreCompatible(DatabaseRestoreRequest request, DatabaseCompatibilityEvidence evidence,
+            BackupDatabaseType type) throws BackupException {
         requireReady(evidence, type);
         String sourceFamily = versionFamily(request.artifact().database().engineVersion());
         String targetFamily = versionFamily(evidence.engineVersion());

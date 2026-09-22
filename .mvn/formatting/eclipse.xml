@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<profiles version="23">
+  <profile kind="CodeFormatterProfile" name="WindowsToLinux" version="23">
+    <setting id="org.eclipse.jdt.core.formatter.tabulation.char" value="space" />
+    <setting id="org.eclipse.jdt.core.formatter.tabulation.size" value="4" />
+    <setting id="org.eclipse.jdt.core.formatter.indentation.size" value="4" />
+    <setting id="org.eclipse.jdt.core.formatter.lineSplit" value="120" />
+    <setting id="org.eclipse.jdt.core.formatter.comment.line_length" value="120" />
+    <setting id="org.eclipse.jdt.core.formatter.blank_lines_after_package" value="1" />
+    <setting id="org.eclipse.jdt.core.formatter.blank_lines_after_imports" value="1" />
+    <setting id="org.eclipse.jdt.core.formatter.blank_lines_between_import_groups" value="1" />
+    <setting id="org.eclipse.jdt.core.formatter.blank_lines_before_method" value="1" />
+    <setting id="org.eclipse.jdt.core.formatter.blank_lines_before_field" value="1" />
+    <setting id="org.eclipse.jdt.core.formatter.blank_lines_before_member_type" value="1" />
+    <setting id="org.eclipse.jdt.core.formatter.number_of_empty_lines_to_preserve" value="1" />
+    <setting id="org.eclipse.jdt.core.formatter.keep_simple_if_on_one_line" value="false" />
+    <setting id="org.eclipse.jdt.core.formatter.keep_then_statement_on_same_line" value="false" />
+    <setting id="org.eclipse.jdt.core.formatter.keep_simple_for_body_on_same_line" value="false" />
+    <setting id="org.eclipse.jdt.core.formatter.keep_simple_while_body_on_same_line" value="false" />
+    <setting id="org.eclipse.jdt.core.formatter.keep_simple_do_while_body_on_same_line" value="false" />
+    <setting id="org.eclipse.jdt.core.formatter.insert_space_before_opening_paren_in_if" value="insert" />
+    <setting id="org.eclipse.jdt.core.formatter.insert_space_before_opening_paren_in_for" value="insert" />
+    <setting id="org.eclipse.jdt.core.formatter.insert_space_before_opening_paren_in_while" value="insert" />
+    <setting id="org.eclipse.jdt.core.formatter.insert_space_before_opening_paren_in_switch" value="insert" />
+    <setting id="org.eclipse.jdt.core.formatter.insert_space_before_opening_paren_in_catch" value="insert" />
+    <setting id="org.eclipse.jdt.core.formatter.comment.format_javadoc_comments" value="false" />
+    <setting id="org.eclipse.jdt.core.formatter.comment.format_block_comments" value="false" />
+    <setting id="org.eclipse.jdt.core.formatter.comment.format_line_comments" value="false" />
+  </profile>
+</profiles>

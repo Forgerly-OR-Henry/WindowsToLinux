@@ -103,7 +103,7 @@ final class AnalyzerClient
                     throw new \RuntimeException("问题记录字段无效");
                 }
                 $groups = array_map(
-                    fn($group) => implode(",", $group),
+                    fn ($group) => implode(",", $group),
                     json_decode($job["rules"], true)["unique"],
                 );
                 if (

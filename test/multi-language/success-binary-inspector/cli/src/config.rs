@@ -26,9 +26,7 @@ impl Config {
             forwarded: vec![],
             format: "text".into(),
             output: None,
-            helper: std::env::var_os("NATIVE_HELPER")
-                .map(PathBuf::from)
-                .unwrap_or(default),
+            helper: std::env::var_os("NATIVE_HELPER").map(PathBuf::from).unwrap_or(default),
             timeout: 30000,
             jobs: 2,
         };

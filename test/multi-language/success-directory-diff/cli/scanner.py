@@ -53,15 +53,10 @@ def scan(helper, root, timeout, max_files):
         diagnostic.append(process.stderr.read(1048577))
 
     def watchdog():
-        if (
-            not stop.wait(max(0, deadline - time.monotonic()))
-            and process.poll() is None
-        ):
+        if not stop.wait(max(0, deadline - time.monotonic())) and process.poll() is None:
             process.kill()
 
-    threads = [
-        threading.Thread(target=fn, daemon=True) for fn in [reader, errors, watchdog]
-    ]
+    threads = [threading.Thread(target=fn, daemon=True) for fn in [reader, errors, watchdog]]
     for thread in threads:
         thread.start()
     sequence = files = skips = problems = 0
@@ -112,9 +107,7 @@ def scan(helper, root, timeout, max_files):
                     raise WorkerError("扫描结束数量不一致")
                 ended = True
                 continue
-            if kind not in ["entry", "skip", "problem"] or not isinstance(
-                value.get("path"), str
-            ):
+            if kind not in ["entry", "skip", "problem"] or not isinstance(value.get("path"), str):
                 raise WorkerError("扫描条目缺少字段")
             relative = PurePosixPath(value["path"])
             if (
@@ -151,10 +144,7 @@ def scan(helper, root, timeout, max_files):
         if time.monotonic() >= deadline:
             raise WorkerError("扫描子程序超时")
         if not ended:
-            raise WorkerError(
-                "扫描协议缺少结束标记: "
-                + b"".join(diagnostic).decode("utf-8", errors="replace")
-            )
+            raise WorkerError("扫描协议缺少结束标记: " + b"".join(diagnostic).decode("utf-8", errors="replace"))
         if process.returncode != (3 if problems else 0):
             raise WorkerError("扫描子程序异常退出")
     finally:

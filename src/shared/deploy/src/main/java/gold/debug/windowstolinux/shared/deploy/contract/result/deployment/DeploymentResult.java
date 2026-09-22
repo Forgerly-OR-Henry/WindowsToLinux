@@ -1,14 +1,14 @@
 package gold.debug.windowstolinux.shared.deploy.contract.result.deployment;
 
-import gold.debug.windowstolinux.shared.model.deployment.DeploymentStatus;
-import gold.debug.windowstolinux.shared.model.lifecycle.LifecycleObservation;
-import gold.debug.windowstolinux.shared.model.failure.FailureDescriptor;
-import gold.debug.windowstolinux.shared.model.failure.FailureSeverityLevel;
-import gold.debug.windowstolinux.shared.model.failure.OperationIdentity;
-
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
+
+import gold.debug.windowstolinux.shared.model.deployment.DeploymentStatus;
+import gold.debug.windowstolinux.shared.model.failure.FailureDescriptor;
+import gold.debug.windowstolinux.shared.model.failure.FailureSeverityLevel;
+import gold.debug.windowstolinux.shared.model.failure.OperationIdentity;
+import gold.debug.windowstolinux.shared.model.lifecycle.LifecycleObservation;
 
 /**
  * Terminal deployment outcome, including the distinct rollback result.
@@ -22,14 +22,9 @@ import java.util.Optional;
  * @param operationIdentity correlation identity of the enclosing user operation / 外层用户操作的关联标识
  * @param nonFatalFailures non fatal failures / 非致命失败集合
  */
-public record DeploymentResult(
-        DeploymentStatus status,
-        List<DeploymentEvent> events,
-        Optional<LifecycleObservation> finalObservation,
-        Optional<String> publishedReleaseSha256,
-        OperationIdentity operationIdentity,
-        List<FailureDescriptor> nonFatalFailures
-) {
+public record DeploymentResult(DeploymentStatus status, List<DeploymentEvent> events,
+        Optional<LifecycleObservation> finalObservation, Optional<String> publishedReleaseSha256,
+        OperationIdentity operationIdentity, List<FailureDescriptor> nonFatalFailures) {
     /**
      * Validates and binds the inputs required by deployment result.
      * <p>校验并绑定部署结果所需输入。
@@ -53,11 +48,13 @@ public record DeploymentResult(
         events = events.stream().map(event -> event.withOperationIdentity(normalizedIdentity)).toList();
         nonFatalFailures = List.copyOf(Objects.requireNonNull(nonFatalFailures, "nonFatalFailures").stream()
                 .map(failure -> failure.withOperationIdentity(normalizedIdentity)).toList());
-        if (nonFatalFailures.stream().anyMatch(failure -> failure.definition().severity() != FailureSeverityLevel.WARNING)) {
+        if (nonFatalFailures.stream()
+                .anyMatch(failure -> failure.definition().severity() != FailureSeverityLevel.WARNING)) {
             throw new IllegalArgumentException("nonFatalFailures may contain warning definitions only");
         }
         if (status == DeploymentStatus.SUCCEEDED != publishedReleaseSha256.isPresent()) {
-            throw new IllegalArgumentException("only a successful deployment may report its published release identity");
+            throw new IllegalArgumentException(
+                    "only a successful deployment may report its published release identity");
         }
         publishedReleaseSha256.ifPresent(digest -> {
             if (!digest.matches("[0-9a-f]{64}")) {
@@ -75,8 +72,7 @@ public record DeploymentResult(
      * @param publishedReleaseSha256 the published release identity digest / 已发布的发布身份摘要
      */
     public DeploymentResult(DeploymentStatus status, List<DeploymentEvent> events,
-                            Optional<LifecycleObservation> finalObservation,
-                            Optional<String> publishedReleaseSha256) {
+            Optional<LifecycleObservation> finalObservation, Optional<String> publishedReleaseSha256) {
         this(status, events, finalObservation, publishedReleaseSha256, identity(events), List.of());
     }
 
@@ -91,8 +87,8 @@ public record DeploymentResult(
         Objects.requireNonNull(failure, "failure");
         List<FailureDescriptor> warnings = new java.util.ArrayList<>(nonFatalFailures);
         warnings.add(failure.withOperationIdentity(operationIdentity));
-        return new DeploymentResult(status, events, finalObservation, publishedReleaseSha256,
-                operationIdentity, warnings);
+        return new DeploymentResult(status, events, finalObservation, publishedReleaseSha256, operationIdentity,
+                warnings);
     }
 
     /**
@@ -104,8 +100,7 @@ public record DeploymentResult(
      * @throws NullPointerException if a required input is absent / 必需输入缺失时
      */
     private static OperationIdentity identity(List<DeploymentEvent> events) {
-        return Objects.requireNonNull(events, "events").stream().map(DeploymentEvent::failure)
-                .flatMap(Optional::stream).map(FailureDescriptor::operationIdentity).findFirst()
-                .orElseGet(OperationIdentity::create);
+        return Objects.requireNonNull(events, "events").stream().map(DeploymentEvent::failure).flatMap(Optional::stream)
+                .map(FailureDescriptor::operationIdentity).findFirst().orElseGet(OperationIdentity::create);
     }
 }

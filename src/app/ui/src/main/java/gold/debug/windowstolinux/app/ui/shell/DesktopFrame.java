@@ -1,13 +1,18 @@
 package gold.debug.windowstolinux.app.ui.shell;
 
-import gold.debug.windowstolinux.app.service.contract.AutomaticDeploymentApplicationFacade;
-import gold.debug.windowstolinux.app.service.contract.ManagedApplicationFacade;
-import gold.debug.windowstolinux.app.service.contract.BackupApplicationFacade;
-import gold.debug.windowstolinux.app.ui.display.DesktopDisplayConfiguration;
-import gold.debug.windowstolinux.app.ui.display.ThemePalette;
-import gold.debug.windowstolinux.app.ui.component.DesktopComponentFactory;
-import gold.debug.windowstolinux.app.ui.i18n.MessageCatalog;
-import gold.debug.windowstolinux.app.ui.diagnostic.FailureReportStore;
+import java.awt.AlphaComposite;
+import java.awt.BorderLayout;
+import java.awt.CardLayout;
+import java.awt.Color;
+import java.awt.Component;
+import java.awt.Dimension;
+import java.awt.Font;
+import java.awt.Graphics;
+import java.awt.Graphics2D;
+import java.awt.LayoutManager;
+import java.awt.RenderingHints;
+import java.util.LinkedHashMap;
+import java.util.Map;
 
 import javax.swing.BorderFactory;
 import javax.swing.Box;
@@ -18,19 +23,15 @@ import javax.swing.JFrame;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
 import javax.swing.Timer;
-import java.awt.AlphaComposite;
-import java.awt.Graphics;
-import java.awt.Graphics2D;
-import java.awt.RenderingHints;
-import java.awt.BorderLayout;
-import java.awt.CardLayout;
-import java.awt.Color;
-import java.awt.Component;
-import java.awt.Dimension;
-import java.awt.Font;
-import java.awt.LayoutManager;
-import java.util.LinkedHashMap;
-import java.util.Map;
+
+import gold.debug.windowstolinux.app.service.contract.AutomaticDeploymentApplicationFacade;
+import gold.debug.windowstolinux.app.service.contract.BackupApplicationFacade;
+import gold.debug.windowstolinux.app.service.contract.ManagedApplicationFacade;
+import gold.debug.windowstolinux.app.ui.component.DesktopComponentFactory;
+import gold.debug.windowstolinux.app.ui.diagnostic.FailureReportStore;
+import gold.debug.windowstolinux.app.ui.display.DesktopDisplayConfiguration;
+import gold.debug.windowstolinux.app.ui.display.ThemePalette;
+import gold.debug.windowstolinux.app.ui.i18n.MessageCatalog;
 
 /**
  * Window shell for navigation, page assembly and lifecycle. / 负责导航、页面装配和生命周期的窗口外壳。
@@ -41,31 +42,37 @@ public final class DesktopFrame extends JFrame {
      * <p>页面部署。
      */
     private static final String PAGE_DEPLOYMENT = "deployment";
+
     /**
      * PAGE COMPONENTS.
      * <p>页面组件集合。
      */
     private static final String PAGE_COMPONENTS = "components";
+
     /**
      * PAGE APPLICATIONS.
      * <p>页面应用集合。
      */
     private static final String PAGE_APPLICATIONS = "applications";
+
     /**
      * PAGE BACKUP.
      * <p>页面备份。
      */
     private static final String PAGE_BACKUP = "backup";
+
     /**
      * PAGE SERVERS.
      * <p>页面服务器集合。
      */
     private static final String PAGE_SERVERS = "servers";
+
     /**
      * PAGE AI.
      * <p>页面AI。
      */
     private static final String PAGE_AI = "ai";
+
     /**
      * PAGE SETTINGS.
      * <p>页面设置。
@@ -77,91 +84,110 @@ public final class DesktopFrame extends JFrame {
      * <p>本地化消息解析器。
      */
     private final MessageCatalog messages;
+
     /**
      * Palette.
      * <p>配色。
      */
     private final ThemePalette palette;
+
     /**
      * Reviewed components in the application graph.
      * <p>应用图中的已审阅组件。
      */
     private final DesktopComponentFactory components;
+
     /**
      * Bound desktop page coordinator collaborator for page coordinator.
      * <p>处理页面协调器的Desktop页面协调器协作对象。
      */
     private final DesktopPageCoordinator pageCoordinator;
+
     /**
      * Page layout.
      * <p>页面布局。
      */
     private final CardLayout pageLayout = new CardLayout();
+
     /**
      * Swing control for pages.
      * <p>页面集合对应的 Swing 控件。
      */
     private final JPanel pages = new JPanel(pageLayout);
+
     /**
      * Navigation buttons.
      * <p>导航按钮集合。
      */
     private final Map<String, JButton> navigationButtons = new LinkedHashMap<>();
+
     /**
      * Swing control for page title.
      * <p>页面标题对应的 Swing 控件。
      */
     private final JLabel pageTitle = new JLabel();
+
     /**
      * Swing control for page description.
      * <p>页面说明对应的 Swing 控件。
      */
     private final JLabel pageDescription = new JLabel();
+
     /**
      * Swing control for header actions.
      * <p>头部动作集合对应的 Swing 控件。
      */
     private final JPanel headerActions = new JPanel(new BorderLayout());
+
     /**
      * Current page.
      * <p>当前页面。
      */
     private String currentPage = PAGE_DEPLOYMENT;
+
     /**
      * Swing control for sidebar.
      * <p>侧栏对应的 Swing 控件。
      */
     private JPanel sidebar;
+
     /**
      * Swing control for collapse.
      * <p>折叠对应的 Swing 控件。
      */
     private JButton collapse;
+
     /**
      * Swing control for product name.
      * <p>产品名称对应的 Swing 控件。
      */
     private JLabel productName;
+
     /**
      * Navigation collapsed.
      * <p>导航Collapsed。
      */
     private boolean navigationCollapsed;
+
     /**
      * Navigation expansion fraction from collapsed zero to expanded one.
      * <p>导航展开比例，零为折叠，一为展开。
      */
     private double navigationExpansion = 1;
+
     /**
      * Swing event-thread timer for navigation animation.
      * <p>导航动画使用的 Swing 事件线程定时器。
      */
     private Timer navigationAnimation;
+
     /**
      * Navigation change.
      * <p>导航变更。
      */
-    private java.util.function.Consumer<Boolean> navigationChange = value -> { };
+    private java.util.function.Consumer<Boolean> navigationChange = value -> {
+    };
+
     /**
      * Advanced windows.
      * <p>高级Windows。
@@ -174,9 +200,11 @@ public final class DesktopFrame extends JFrame {
      * @param <T> type of the contract payload / 契约载荷的类型
      * @param service application service used by the caller / 调用方使用的应用服务
      */
-    public <T extends AutomaticDeploymentApplicationFacade & ManagedApplicationFacade & BackupApplicationFacade> DesktopFrame(T service) {
+    public <T extends AutomaticDeploymentApplicationFacade & ManagedApplicationFacade & BackupApplicationFacade> DesktopFrame(
+            T service) {
         this(service, MessageCatalog.forLanguageTag(DesktopDisplayConfiguration.defaults().localeTag()),
-                DesktopDisplayConfiguration.defaults(), ThemePalette.light(), (source, selected) -> { }, null);
+                DesktopDisplayConfiguration.defaults(), ThemePalette.light(), (source, selected) -> {
+                }, null);
     }
 
     /**
@@ -190,10 +218,9 @@ public final class DesktopFrame extends JFrame {
      * @param appearanceChangeListener appearance change listener / 外观变更监听器
      * @param viewState view state / 视图状态
      */
-    public <T extends AutomaticDeploymentApplicationFacade & ManagedApplicationFacade & BackupApplicationFacade> DesktopFrame(T service, MessageCatalog messages,
-                        DesktopDisplayConfiguration appearance, ThemePalette palette,
-                        DesktopDisplayChangeHandler appearanceChangeListener,
-                        DesktopViewState viewState) {
+    public <T extends AutomaticDeploymentApplicationFacade & ManagedApplicationFacade & BackupApplicationFacade> DesktopFrame(
+            T service, MessageCatalog messages, DesktopDisplayConfiguration appearance, ThemePalette palette,
+            DesktopDisplayChangeHandler appearanceChangeListener, DesktopViewState viewState) {
         this(service, messages, appearance, palette, appearanceChangeListener, viewState,
                 FailureReportStore.disabled());
     }
@@ -210,10 +237,10 @@ public final class DesktopFrame extends JFrame {
      * @param viewState view state / 视图状态
      * @param reports reports / 报告集合
      */
-    public <T extends AutomaticDeploymentApplicationFacade & ManagedApplicationFacade & BackupApplicationFacade> DesktopFrame(T service, MessageCatalog messages,
-                        DesktopDisplayConfiguration appearance, ThemePalette palette,
-                        DesktopDisplayChangeHandler appearanceChangeListener,
-                        DesktopViewState viewState, FailureReportStore reports) {
+    public <T extends AutomaticDeploymentApplicationFacade & ManagedApplicationFacade & BackupApplicationFacade> DesktopFrame(
+            T service, MessageCatalog messages, DesktopDisplayConfiguration appearance, ThemePalette palette,
+            DesktopDisplayChangeHandler appearanceChangeListener, DesktopViewState viewState,
+            FailureReportStore reports) {
         this(service, messages, appearance, palette, appearanceChangeListener, viewState, reports, false);
     }
 
@@ -230,16 +257,16 @@ public final class DesktopFrame extends JFrame {
      * @param reports reports / 报告集合
      * @param uiDebugEnabled ui debug enabled / 界面Debug启用
      */
-    public <T extends AutomaticDeploymentApplicationFacade & ManagedApplicationFacade & BackupApplicationFacade> DesktopFrame(T service, MessageCatalog messages,
-                        DesktopDisplayConfiguration appearance, ThemePalette palette,
-                        DesktopDisplayChangeHandler appearanceChangeListener,
-                        DesktopViewState viewState, FailureReportStore reports, boolean uiDebugEnabled) {
+    public <T extends AutomaticDeploymentApplicationFacade & ManagedApplicationFacade & BackupApplicationFacade> DesktopFrame(
+            T service, MessageCatalog messages, DesktopDisplayConfiguration appearance, ThemePalette palette,
+            DesktopDisplayChangeHandler appearanceChangeListener, DesktopViewState viewState,
+            FailureReportStore reports, boolean uiDebugEnabled) {
         super(messages.text("app.name"));
         this.messages = messages;
         this.palette = palette;
         this.components = new DesktopComponentFactory(palette);
-        this.pageCoordinator = new DesktopPageCoordinator(
-                this, service, messages, appearance, components, appearanceChangeListener, this::showPage, reports, uiDebugEnabled);
+        this.pageCoordinator = new DesktopPageCoordinator(this, service, messages, appearance, components,
+                appearanceChangeListener, this::showPage, reports, uiDebugEnabled);
         setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
         setMinimumSize(new Dimension(1060, 720));
         setSize(1180, 780);
@@ -271,10 +298,9 @@ public final class DesktopFrame extends JFrame {
     private JComponent applicationHeader() {
         JPanel header = new JPanel(new BorderLayout());
         header.setBackground(palette.cardBackground());
-        header.setBorder(BorderFactory.createCompoundBorder(
-                BorderFactory.createMatteBorder(0, 0, 1, 0, palette.cardBorder()),
-                BorderFactory.createEmptyBorder(14, 22, 14, 22)
-        ));
+        header.setBorder(
+                BorderFactory.createCompoundBorder(BorderFactory.createMatteBorder(0, 0, 1, 0, palette.cardBorder()),
+                        BorderFactory.createEmptyBorder(14, 22, 14, 22)));
 
         JPanel heading = transparent(new BorderLayout(0, 4));
         pageTitle.setFont(pageTitle.getFont().deriveFont(Font.BOLD, 20f));
@@ -286,7 +312,8 @@ public final class DesktopFrame extends JFrame {
         header.add(heading, BorderLayout.CENTER);
         JPanel status = transparent(new java.awt.GridBagLayout());
         status.add(badge(t("app.badge.managed")));
-        headerActions.setOpaque(false); status.add(headerActions);
+        headerActions.setOpaque(false);
+        status.add(headerActions);
         header.add(status, BorderLayout.EAST);
         return header;
     }
@@ -305,13 +332,16 @@ public final class DesktopFrame extends JFrame {
              *
              * @param graphics graphics / 图形
              */
-            @Override protected void paintComponent(Graphics graphics) {
+            @Override
+            protected void paintComponent(Graphics graphics) {
                 Graphics2D g = (Graphics2D) graphics.create();
                 try {
                     g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
                     g.setColor(palette.accent());
                     g.fillRoundRect(0, 0, getWidth(), getHeight(), 10, 10);
-                } finally { g.dispose(); }
+                } finally {
+                    g.dispose();
+                }
                 super.paintComponent(graphics);
             }
         };
@@ -320,7 +350,8 @@ public final class DesktopFrame extends JFrame {
              * Positions the owned Swing components within the current available bounds.
              * <p>在当前可用边界内排列持有的 Swing 组件。
              */
-            @Override public void doLayout() {
+            @Override
+            public void doLayout() {
                 int center = (int) Math.round(24 - 2 * navigationExpansion);
                 mark.setBounds(center - 15, 3, 30, 30);
                 productName.setBounds(center + 23, 3, productName.getPreferredSize().width, 30);
@@ -365,8 +396,7 @@ public final class DesktopFrame extends JFrame {
         });
         sidebar.add(collapse);
         JPanel divider = components.transparent(new BorderLayout());
-        divider.setBorder(BorderFactory.createCompoundBorder(
-                BorderFactory.createEmptyBorder(16, 12, 16, 12),
+        divider.setBorder(BorderFactory.createCompoundBorder(BorderFactory.createEmptyBorder(16, 12, 16, 12),
                 BorderFactory.createMatteBorder(1, 0, 0, 0, palette.inputBorder())));
         divider.setMaximumSize(new Dimension(Integer.MAX_VALUE, 33));
         divider.setAlignmentX(Component.LEFT_ALIGNMENT);
@@ -398,17 +428,19 @@ public final class DesktopFrame extends JFrame {
      * @param animate animate / 动画
      */
     private void changeNavigationCollapsed(boolean value, boolean animate) {
-        if (navigationAnimation != null) navigationAnimation.stop();
+        if (navigationAnimation != null)
+            navigationAnimation.stop();
         navigationCollapsed = value;
         String label = t(value ? "nav.expand" : "nav.collapse");
         collapse.setText(label);
         collapse.setToolTipText(label);
         collapse.getAccessibleContext().setAccessibleName(label);
-        collapse.setIcon(gold.debug.windowstolinux.app.ui.component.DesktopIcons.icon(
-                value ? "panel-left-open" : "panel-left-close", 20, collapse::getForeground));
+        collapse.setIcon(gold.debug.windowstolinux.app.ui.component.DesktopIcons
+                .icon(value ? "panel-left-open" : "panel-left-close", 20, collapse::getForeground));
         double target = value ? 0 : 1;
         if (!animate || !isShowing()
-                || Boolean.FALSE.equals(java.awt.Toolkit.getDefaultToolkit().getDesktopProperty("win.clientAreaAnimation"))
+                || Boolean.FALSE
+                        .equals(java.awt.Toolkit.getDefaultToolkit().getDesktopProperty("win.clientAreaAnimation"))
                 || "false".equals(System.getProperty("flatlaf.animation"))) {
             layoutNavigation(target);
             return;
@@ -419,7 +451,8 @@ public final class DesktopFrame extends JFrame {
             double elapsed = Math.min(1, (System.nanoTime() - started) / 220_000_000.0);
             double eased = elapsed * elapsed * (3 - 2 * elapsed);
             layoutNavigation(from + (target - from) * eased);
-            if (elapsed >= 1) ((Timer) event.getSource()).stop();
+            if (elapsed >= 1)
+                ((Timer) event.getSource()).stop();
         });
         navigationAnimation.start();
     }
@@ -434,7 +467,8 @@ public final class DesktopFrame extends JFrame {
         navigationExpansion = expansion;
         sidebar.setPreferredSize(new Dimension((int) Math.round(64 + 104 * expansion), 0));
         sidebar.revalidate();
-        if (isDisplayable()) validate();
+        if (isDisplayable())
+            validate();
         sidebar.repaint();
     }
 
@@ -463,12 +497,15 @@ public final class DesktopFrame extends JFrame {
              *
              * @param graphics graphics / 图形
              */
-            @Override protected void paintComponent(Graphics graphics) {
+            @Override
+            protected void paintComponent(Graphics graphics) {
                 Graphics2D g = (Graphics2D) graphics.create();
                 try {
                     g.setComposite(AlphaComposite.SrcOver.derive(navigationTextOpacity()));
                     super.paintComponent(g);
-                } finally { g.dispose(); }
+                } finally {
+                    g.dispose();
+                }
             }
         };
     }
@@ -477,8 +514,10 @@ public final class DesktopFrame extends JFrame {
      * Stops navigation animation before disposing the Swing frame.
      * <p>销毁 Swing 窗口前停止导航动画。
      */
-    @Override public void dispose() {
-        if (navigationAnimation != null) navigationAnimation.stop();
+    @Override
+    public void dispose() {
+        if (navigationAnimation != null)
+            navigationAnimation.stop();
         super.dispose();
     }
 
@@ -487,25 +526,36 @@ public final class DesktopFrame extends JFrame {
      *
      * @return true when reports the current navigation preference, false otherwise / 返回当前导航偏好时为 true，否则为 false
      */
-    public boolean navigationCollapsed() { return navigationCollapsed; }
+    public boolean navigationCollapsed() {
+        return navigationCollapsed;
+    }
+
     /**
      * Installs preference persistence owned by startup. / 注入由启动层负责的偏好保存。
      *
      * @param listener listener / 监听器
      */
-    public void onNavigationChange(java.util.function.Consumer<Boolean> listener) { navigationChange = listener; }
+    public void onNavigationChange(java.util.function.Consumer<Boolean> listener) {
+        navigationChange = listener;
+    }
+
     /**
      * Captures the primary window bounds for appearance changes. / 捕获外观变更所需主窗口尺寸。
      *
      * @return constructed or resolved rectangle / 构造或解析得到的Rectangle
      */
-    public java.awt.Rectangle workspaceWindowBounds() { return advancedWindows.workspaceBounds(); }
+    public java.awt.Rectangle workspaceWindowBounds() {
+        return advancedWindows.workspaceBounds();
+    }
+
     /**
      * Restores normal dimensions independently of maximized state. / 独立于最大化状态恢复普通尺寸。
      *
      * @param bounds bounds / 边界集合
      */
-    public void restoreWorkspaceWindowBounds(java.awt.Rectangle bounds) { advancedWindows.restoreWorkspaceBounds(bounds); }
+    public void restoreWorkspaceWindowBounds(java.awt.Rectangle bounds) {
+        advancedWindows.restoreWorkspaceBounds(bounds);
+    }
 
     /**
      * Updates visible.
@@ -513,9 +563,11 @@ public final class DesktopFrame extends JFrame {
      *
      * @param value candidate content accepted or rejected by this contract / 由当前契约接收或拒绝的候选内容
      */
-    @Override public void setVisible(boolean value) {
+    @Override
+    public void setVisible(boolean value) {
         super.setVisible(value);
-        if (value && advancedWindows != null) advancedWindows.activate(pageCoordinator.inspector(currentPage));
+        if (value && advancedWindows != null)
+            advancedWindows.activate(pageCoordinator.inspector(currentPage));
     }
 
     /**
@@ -583,7 +635,8 @@ public final class DesktopFrame extends JFrame {
         currentPage = page;
         pageCoordinator.currentPage(page);
         pageCoordinator.showInspectorControls(page, headerActions);
-        if (advancedWindows != null && isVisible()) advancedWindows.activate(pageCoordinator.inspector(page));
+        if (advancedWindows != null && isVisible())
+            advancedWindows.activate(pageCoordinator.inspector(page));
         pageTitle.setText(t(titleKey));
         pageDescription.setText(t(descriptionKey));
         navigationButtons.forEach((key, button) -> {
@@ -622,14 +675,17 @@ public final class DesktopFrame extends JFrame {
          *
          * @param graphics graphics / 图形
          */
-        @Override protected void paintComponent(Graphics graphics) {
+        @Override
+        protected void paintComponent(Graphics graphics) {
             Graphics2D g = (Graphics2D) graphics.create();
             try {
                 g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
                 g.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
                 Color surface = isSelected() ? palette.navigationActive() : palette.sidebarBackground();
-                if (getModel().isPressed()) surface = palette.inputBorder();
-                else if (!isSelected() && getModel().isRollover()) surface = palette.secondaryButtonBackground();
+                if (getModel().isPressed())
+                    surface = palette.inputBorder();
+                else if (!isSelected() && getModel().isRollover())
+                    surface = palette.secondaryButtonBackground();
                 g.setColor(surface);
                 g.fillRoundRect(0, 0, getWidth(), getHeight(), 12, 12);
                 if (hasFocus()) {
@@ -647,10 +703,11 @@ public final class DesktopFrame extends JFrame {
                     g.drawString(getText(), x + getIcon().getIconWidth() + 10,
                             (getHeight() - metrics.getHeight()) / 2 + metrics.getAscent());
                 }
-            } finally { g.dispose(); }
+            } finally {
+                g.dispose();
+            }
         }
     }
-
 
     /**
      * Captures page state before rebuilding the window. / 在重建窗口前捕获页面状态。

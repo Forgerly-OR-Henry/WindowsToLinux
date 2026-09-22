@@ -1,9 +1,9 @@
 package gold.debug.windowstolinux.app.service.backup;
 
+import java.util.Objects;
+
 import gold.debug.windowstolinux.shared.backup.contract.validation.BackupArchiveValidation;
 import gold.debug.windowstolinux.shared.backup.contract.validation.BackupProvenanceStatus;
-
-import java.util.Objects;
 
 /**
  * Safe local backup summary after complete archive validation. / 完整归档校验后的安全本地备份摘要。
@@ -17,16 +17,9 @@ import java.util.Objects;
  * @param archiveSha256 SHA-256 identity of the reviewed archive / 已审阅归档的 SHA-256 身份
  * @param provenanceStatus provenance status / 来源证据状态
  */
-public record BackupArchiveInspection(
-        String applicationId,
-        String schemaVersion,
-        String createdAtUtc,
-        int componentCount,
-        int memberCount,
-        long verifiedBytes,
-        String archiveSha256,
-        BackupProvenanceStatus provenanceStatus
-) {
+public record BackupArchiveInspection(String applicationId, String schemaVersion, String createdAtUtc,
+        int componentCount, int memberCount, long verifiedBytes, String archiveSha256,
+        BackupProvenanceStatus provenanceStatus) {
     /**
      * Creates an immutable inspection from complete validation evidence. / 从完整校验证据创建不可变检查结果。
      *
@@ -47,8 +40,7 @@ public record BackupArchiveInspection(
         createdAtUtc = Objects.requireNonNull(createdAtUtc, "createdAtUtc");
         archiveSha256 = Objects.requireNonNull(archiveSha256, "archiveSha256");
         provenanceStatus = Objects.requireNonNull(provenanceStatus, "provenanceStatus");
-        if (componentCount < 1 || memberCount < 1 || verifiedBytes < 0
-                || !archiveSha256.matches("[0-9a-f]{64}")) {
+        if (componentCount < 1 || memberCount < 1 || verifiedBytes < 0 || !archiveSha256.matches("[0-9a-f]{64}")) {
             throw new IllegalArgumentException("backup inspection evidence is invalid");
         }
     }

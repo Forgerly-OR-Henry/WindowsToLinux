@@ -1,13 +1,13 @@
 package gold.debug.windowstolinux.app.db.persistence.repository;
 
-import gold.debug.windowstolinux.app.db.persistence.connection.DesktopConnectionFactory;
-
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.util.Objects;
 import java.util.Optional;
+
+import gold.debug.windowstolinux.app.db.persistence.connection.DesktopConnectionFactory;
 
 /**
  * Stores small non-secret desktop preferences. / 保存小型非秘密桌面偏好。
@@ -39,11 +39,10 @@ public final class DesktopPreferenceRepository {
     public void save(String name, String value) throws SQLException {
         requireText(name, "name");
         requireText(value, "value");
-        try (Connection connection = connections.open();
-             PreparedStatement statement = connection.prepareStatement("""
-                     INSERT INTO desktop_preference (name, value) VALUES (?, ?)
-                     ON CONFLICT(name) DO UPDATE SET value=excluded.value
-                     """)) {
+        try (Connection connection = connections.open(); PreparedStatement statement = connection.prepareStatement("""
+                INSERT INTO desktop_preference (name, value) VALUES (?, ?)
+                ON CONFLICT(name) DO UPDATE SET value=excluded.value
+                """)) {
             statement.setString(1, name);
             statement.setString(2, value);
             statement.executeUpdate();
@@ -60,7 +59,8 @@ public final class DesktopPreferenceRepository {
     public Optional<String> find(String name) throws SQLException {
         requireText(name, "name");
         try (Connection connection = connections.open();
-             PreparedStatement statement = connection.prepareStatement("SELECT value FROM desktop_preference WHERE name=?")) {
+                PreparedStatement statement = connection
+                        .prepareStatement("SELECT value FROM desktop_preference WHERE name=?")) {
             statement.setString(1, name);
             try (ResultSet result = statement.executeQuery()) {
                 return result.next() ? Optional.of(result.getString("value")) : Optional.empty();

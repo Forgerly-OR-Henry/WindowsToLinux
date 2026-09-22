@@ -1,14 +1,31 @@
 package gold.debug.windowstolinux.app.service.backup;
 
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import java.io.ByteArrayInputStream;
+import java.io.OutputStream;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.security.MessageDigest;
+import java.time.Instant;
+import java.util.HexFormat;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import gold.debug.windowstolinux.shared.backup.contract.validation.BackupArchivePolicy;
+import gold.debug.windowstolinux.shared.backup.contract.validation.BackupProvenanceStatus;
 import gold.debug.windowstolinux.shared.backup.crypto.BackupSecretCryptoService;
 import gold.debug.windowstolinux.shared.backup.crypto.BackupSecretException;
 import gold.debug.windowstolinux.shared.backup.crypto.BackupSecretFailureType;
-import gold.debug.windowstolinux.shared.backup.contract.validation.BackupArchivePolicy;
-import gold.debug.windowstolinux.shared.backup.contract.validation.BackupProvenanceStatus;
 import gold.debug.windowstolinux.shared.backup.format.BackupArchiveContent;
 import gold.debug.windowstolinux.shared.backup.format.BackupArchiveWriter;
 import gold.debug.windowstolinux.shared.backup.manifest.BackupComponent;
@@ -27,25 +44,9 @@ import gold.debug.windowstolinux.shared.config.secretref.SecretReference;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
-import java.io.ByteArrayInputStream;
-import java.io.OutputStream;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.security.MessageDigest;
-import java.time.Instant;
-import java.util.HexFormat;
-import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.Map;
-
-import static org.junit.jupiter.api.Assertions.assertArrayEquals;
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.junit.jupiter.api.Assertions.assertThrows;
-
 class BackupUseCaseTest {
-    @TempDir Path temporary;
+    @TempDir
+    Path temporary;
 
     @Test
     void inspectsAndPreparesLocalCandidateWithoutRemoteMutation() throws Exception {
@@ -81,8 +82,8 @@ class BackupUseCaseTest {
         BackupUseCase useCase = new BackupUseCase(temporary.resolve("work"));
         PreparedBackupCandidate prepared = useCase.prepare(archive(content));
         Path retained = prepared.candidateRoot().resolve("config/sample.json");
-        PreparedBackupCandidate reconstructed = new PreparedBackupCandidate(
-                prepared.inspection(), prepared.candidateRoot(), prepared.extractedBytes());
+        PreparedBackupCandidate reconstructed = new PreparedBackupCandidate(prepared.inspection(),
+                prepared.candidateRoot(), prepared.extractedBytes());
 
         assertThrows(gold.debug.windowstolinux.app.windows.workspace.WindowsWorkspaceException.class,
                 () -> useCase.discard(reconstructed));
@@ -97,12 +98,11 @@ class BackupUseCaseTest {
         byte[] content = "validated backup content".getBytes(java.nio.charset.StandardCharsets.UTF_8);
         char[] encryptionPassword = "independent backup password".toCharArray();
         byte[] envelope;
-        try (ResolvedSecretRevision revision = new ResolvedSecretRevision(
-                new SecretReference("database-password", 4), "private-database-value".toCharArray())) {
+        try (ResolvedSecretRevision revision = new ResolvedSecretRevision(new SecretReference("database-password", 4),
+                "private-database-value".toCharArray())) {
             envelope = new BackupSecretCryptoService().encryptRevisions(encryptionPassword, List.of(revision));
         }
-        Path archive = archive(content, envelope,
-                List.of(new SecretReference("database-password", 4)), "with-secret");
+        Path archive = archive(content, envelope, List.of(new SecretReference("database-password", 4)), "with-secret");
         char[] restorePassword = "independent backup password".toCharArray();
 
         ResolvedSecretRevision restored;
@@ -122,12 +122,12 @@ class BackupUseCaseTest {
         byte[] content = "validated backup content".getBytes(java.nio.charset.StandardCharsets.UTF_8);
         char[] encryptionPassword = "independent backup password".toCharArray();
         byte[] envelope;
-        try (ResolvedSecretRevision revision = new ResolvedSecretRevision(
-                new SecretReference("other-password", 1), "private-value".toCharArray())) {
+        try (ResolvedSecretRevision revision = new ResolvedSecretRevision(new SecretReference("other-password", 1),
+                "private-value".toCharArray())) {
             envelope = new BackupSecretCryptoService().encryptRevisions(encryptionPassword, List.of(revision));
         }
-        Path archive = archive(content, envelope,
-                List.of(new SecretReference("database-password", 4)), "mismatched-secret");
+        Path archive = archive(content, envelope, List.of(new SecretReference("database-password", 4)),
+                "mismatched-secret");
         Path work = temporary.resolve("mismatch-work");
         char[] restorePassword = "independent backup password".toCharArray();
 
@@ -143,9 +143,9 @@ class BackupUseCaseTest {
 
     @Test
     void rejectsOldArchiveBeforeExtractingOrAuthenticatingSecrets() throws Exception {
-        Path archive = archive(new byte[]{1},null,List.of(),"old-format",true);
-        BackupUseCase useCase=new BackupUseCase(temporary.resolve("old-work"));
-        assertThrows(Exception.class,()->useCase.inspect(archive));
+        Path archive = archive(new byte[]{1}, null, List.of(), "old-format", true);
+        BackupUseCase useCase = new BackupUseCase(temporary.resolve("old-work"));
+        assertThrows(Exception.class, () -> useCase.inspect(archive));
         assertFalse(Files.exists(temporary.resolve("old-work/restore-candidates")));
     }
 
@@ -158,47 +158,47 @@ class BackupUseCaseTest {
         return archive(content, envelope, secretReferences, fileName, false);
     }
 
-    private Path archive(
-            byte[] content,
-            byte[] envelope,
-            List<SecretReference> secretReferences,
-            String fileName,
-            boolean legacy
-    ) throws Exception {
+    private Path archive(byte[] content, byte[] envelope, List<SecretReference> secretReferences, String fileName,
+            boolean legacy) throws Exception {
         Map<String, byte[]> values = new LinkedHashMap<>();
         values.put("releases/sample.json", content);
         values.put("config/sample.json", content);
         values.put("runtime/sample.service", content);
-        if (envelope != null) values.put("secrets.enc", envelope);
-        List<BackupMember> members = values.entrySet().stream().map(entry -> new BackupMember(
-                entry.getKey(), entry.getValue().length, digest(entry.getValue()), kind(entry.getKey()))).toList();
+        if (envelope != null)
+            values.put("secrets.enc", envelope);
+        List<BackupMember> members = values.entrySet().stream().map(entry -> new BackupMember(entry.getKey(),
+                entry.getValue().length, digest(entry.getValue()), kind(entry.getKey()))).toList();
         BackupHealthCheck health = BackupHealthCheck.tcp(8080, 30, 5);
-        BackupComponent component = new BackupComponent("sample", "sample", "a".repeat(64),
-                "releases/sample.json", "config/sample.json", "runtime/sample.service", List.of(),
+        BackupComponent component = new BackupComponent("sample", "sample", "a".repeat(64), "releases/sample.json",
+                "config/sample.json", "runtime/sample.service", List.of(),
                 new BackupComponentRuntime.NodeService(22, health), "b".repeat(64), secretReferences);
-        BackupInventory inventory = new BackupInventory(
-                List.of("releases/sample.json"), List.of("config/sample.json"), secretReferences, List.of(), List.of(),
-                BackupDatabase.none(),
+        BackupInventory inventory = new BackupInventory(List.of("releases/sample.json"), List.of("config/sample.json"),
+                secretReferences, List.of(), List.of(), BackupDatabase.none(),
                 new BackupIdentity("sample", "server-1", "/opt/windowstolinux/apps/sample",
                         BackupInventory.computeReleaseSetSha256(List.of(component))),
                 List.of("runtime/sample.service"), List.of(component), "sample", health,
-                new BackupRuntime("ubuntu", "24.04", "systemd", "255", "x86_64", List.of("systemd")),
-                List.of());
-        BackupManifest manifest = BackupManifest.create(
-                Instant.parse("2026-08-22T00:00:00Z"), "sample", inventory, members);
+                new BackupRuntime("ubuntu", "24.04", "systemd", "255", "x86_64", List.of("systemd")), List.of());
+        BackupManifest manifest = BackupManifest.create(Instant.parse("2026-08-22T00:00:00Z"), "sample", inventory,
+                members);
 
-        List<BackupArchiveContent> streams = members.stream()
-                .map(member -> new BackupArchiveContent(member,
-                        () -> new ByteArrayInputStream(values.get(member.path())))).toList();
+        List<BackupArchiveContent> streams = members.stream().map(
+                member -> new BackupArchiveContent(member, () -> new ByteArrayInputStream(values.get(member.path()))))
+                .toList();
         Path archive = temporary.resolve(fileName + ".wtl-backup.zip");
         try (OutputStream output = Files.newOutputStream(archive)) {
             if (legacy) {
-                try (var zip=new java.util.zip.ZipOutputStream(output)) {
+                try (var zip = new java.util.zip.ZipOutputStream(output)) {
                     zip.putNextEntry(new java.util.zip.ZipEntry("manifest.json"));
-                    zip.write(legacy(manifest)); zip.closeEntry();
-                    for (var entry:values.entrySet()) { zip.putNextEntry(new java.util.zip.ZipEntry(entry.getKey())); zip.write(entry.getValue()); zip.closeEntry(); }
+                    zip.write(legacy(manifest));
+                    zip.closeEntry();
+                    for (var entry : values.entrySet()) {
+                        zip.putNextEntry(new java.util.zip.ZipEntry(entry.getKey()));
+                        zip.write(entry.getValue());
+                        zip.closeEntry();
+                    }
                 }
-            } else new BackupArchiveWriter(BackupArchivePolicy.defaults()).write(manifest, streams, output);
+            } else
+                new BackupArchiveWriter(BackupArchivePolicy.defaults()).write(manifest, streams, output);
         }
         return archive;
     }
@@ -234,19 +234,26 @@ class BackupUseCaseTest {
     }
 
     private static BackupMemberKind kind(String path) {
-        if (path.startsWith("releases/")) return BackupMemberKind.RELEASE;
-        if (path.startsWith("config/")) return BackupMemberKind.CONFIGURATION;
-        if (path.startsWith("runtime/")) return BackupMemberKind.RUNTIME;
+        if (path.startsWith("releases/"))
+            return BackupMemberKind.RELEASE;
+        if (path.startsWith("config/"))
+            return BackupMemberKind.CONFIGURATION;
+        if (path.startsWith("runtime/"))
+            return BackupMemberKind.RUNTIME;
         return BackupMemberKind.ENCRYPTED_SECRETS;
     }
 
     private static boolean allCleared(char[] value) {
-        for (char character : value) if (character != '\0') return false;
+        for (char character : value)
+            if (character != '\0')
+                return false;
         return true;
     }
 
     private static boolean allCleared(byte[] value) {
-        for (byte current : value) if (current != 0) return false;
+        for (byte current : value)
+            if (current != 0)
+                return false;
         return true;
     }
 }

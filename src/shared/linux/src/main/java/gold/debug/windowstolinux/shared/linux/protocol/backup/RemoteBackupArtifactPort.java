@@ -1,9 +1,9 @@
 package gold.debug.windowstolinux.shared.linux.protocol.backup;
 
+import java.io.OutputStream;
+
 import gold.debug.windowstolinux.shared.linux.error.LinuxOperationException;
 import gold.debug.windowstolinux.shared.linux.protocol.RemoteStepResult;
-
-import java.io.OutputStream;
 
 /**
  * Fixed remote creation, verified streaming and exact cleanup for managed backup artifacts. / 受管备份制品的固定远端创建、校验流式传输与精确清理。
@@ -19,7 +19,9 @@ public interface RemoteBackupArtifactPort {
      * @throws UnsupportedOperationException if the requested capability is not implemented by this adapter / 当前适配器未实现所请求能力时
      */
     default void beginMaintenance(gold.debug.windowstolinux.shared.model.managed.ManagedApplication app, String token)
-            throws LinuxOperationException { throw new UnsupportedOperationException("application maintenance is unavailable"); }
+            throws LinuxOperationException {
+        throw new UnsupportedOperationException("application maintenance is unavailable");
+    }
 
     /**
      * Rejects end maintenance because this adapter does not provide that capability.
@@ -31,7 +33,10 @@ public interface RemoteBackupArtifactPort {
      * @throws UnsupportedOperationException if the requested capability is not implemented by this adapter / 当前适配器未实现所请求能力时
      */
     default void endMaintenance(gold.debug.windowstolinux.shared.model.managed.ManagedApplication app, String token)
-            throws LinuxOperationException { throw new UnsupportedOperationException("application maintenance is unavailable"); }
+            throws LinuxOperationException {
+        throw new UnsupportedOperationException("application maintenance is unavailable");
+    }
+
     /**
      * Creates exactly one artifact from its reviewed managed identity. / 从经审阅受管身份创建一个精确制品。
      *

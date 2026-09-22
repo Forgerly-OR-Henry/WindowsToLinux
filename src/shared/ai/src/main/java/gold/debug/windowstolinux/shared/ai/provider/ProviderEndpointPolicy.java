@@ -1,11 +1,11 @@
 package gold.debug.windowstolinux.shared.ai.provider;
 
-import gold.debug.windowstolinux.shared.ai.AiAnalysisException;
-import gold.debug.windowstolinux.shared.ai.AiAnalysisFailureType;
-
 import java.net.URI;
 import java.util.Locale;
 import java.util.Objects;
+
+import gold.debug.windowstolinux.shared.ai.AiAnalysisException;
+import gold.debug.windowstolinux.shared.ai.AiAnalysisFailureType;
 
 /**
  * Validates the provider endpoint and model before any request is created.

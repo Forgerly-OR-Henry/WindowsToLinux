@@ -12,11 +12,13 @@ public final class WindowsBackupArchiveAttempt {
      * <p>调用方选择的许可边界内目的地。
      */
     private final Path destination;
+
     /**
      * Temporary.
      * <p>临时。
      */
     private final Path temporary;
+
     /**
      * File key.
      * <p>文件键。
@@ -37,8 +39,7 @@ public final class WindowsBackupArchiveAttempt {
         this.destination = Objects.requireNonNull(destination, "destination").toAbsolutePath().normalize();
         this.temporary = Objects.requireNonNull(temporary, "temporary").toAbsolutePath().normalize();
         this.fileKey = fileKey;
-        if (this.destination.equals(this.temporary)
-                || this.destination.getParent() == null
+        if (this.destination.equals(this.temporary) || this.destination.getParent() == null
                 || !this.destination.getParent().equals(this.temporary.getParent())) {
             throw new IllegalArgumentException("backup attempt paths must be distinct siblings");
         }

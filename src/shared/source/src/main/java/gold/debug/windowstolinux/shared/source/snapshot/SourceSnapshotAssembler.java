@@ -1,9 +1,5 @@
 package gold.debug.windowstolinux.shared.source.snapshot;
 
-import gold.debug.windowstolinux.shared.source.manifest.SourceEntry;
-import gold.debug.windowstolinux.shared.source.manifest.SourceManifest;
-import gold.debug.windowstolinux.shared.source.contract.validation.SourceBoundaryValidator;
-
 import java.io.BufferedInputStream;
 import java.io.IOException;
 import java.io.InputStream;
@@ -13,6 +9,10 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Arrays;
 import java.util.zip.GZIPOutputStream;
+
+import gold.debug.windowstolinux.shared.source.contract.validation.SourceBoundaryValidator;
+import gold.debug.windowstolinux.shared.source.manifest.SourceEntry;
+import gold.debug.windowstolinux.shared.source.manifest.SourceManifest;
 
 /**
  * Writes the canonical gzip-compressed ustar representation of a source manifest.
@@ -25,36 +25,43 @@ public final class SourceSnapshotAssembler {
      * <p>TAR块字节。
      */
     private static final int TAR_BLOCK_BYTES = 512;
+
     /**
      * TAR NAME BYTES.
      * <p>TAR名称字节。
      */
     private static final int TAR_NAME_BYTES = 100;
+
     /**
      * TAR PREFIX OFFSET.
      * <p>TAR前缀偏移量。
      */
     private static final int TAR_PREFIX_OFFSET = 345;
+
     /**
      * TAR PREFIX BYTES.
      * <p>TAR前缀字节。
      */
     private static final int TAR_PREFIX_BYTES = 155;
+
     /**
      * TAR SIZE OFFSET.
      * <p>TAR大小偏移量。
      */
     private static final int TAR_SIZE_OFFSET = 124;
+
     /**
      * TAR SIZE BYTES.
      * <p>TAR大小字节。
      */
     private static final int TAR_SIZE_BYTES = 12;
+
     /**
      * TAR CHECKSUM OFFSET.
      * <p>TAR校验和偏移量。
      */
     private static final int TAR_CHECKSUM_OFFSET = 148;
+
     /**
      * TAR CHECKSUM BYTES.
      * <p>TAR校验和字节。
@@ -90,7 +97,7 @@ public final class SourceSnapshotAssembler {
      */
     public void write(Path root, SourceManifest manifest, Path archive) throws IOException {
         try (OutputStream output = Files.newOutputStream(archive);
-             GZIPOutputStream gzip = new GZIPOutputStream(output)) {
+                GZIPOutputStream gzip = new GZIPOutputStream(output)) {
             for (SourceEntry entry : manifest.entries()) {
                 validator.verifyUnchangedRegularFile(root, entry);
                 gzip.write(tarHeader(entry.relativePath(), entry.byteCount()));

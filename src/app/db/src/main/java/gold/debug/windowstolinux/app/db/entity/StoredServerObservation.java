@@ -10,4 +10,5 @@ import java.util.Optional;
  * @param connected connected / 已连接
  * @param operatingSystem operating system / 操作系统
  */
-public record StoredServerObservation(Optional<Instant> checkedAt, boolean connected, String operatingSystem) { }
+public record StoredServerObservation(Optional<Instant> checkedAt, boolean connected, String operatingSystem) {
+}

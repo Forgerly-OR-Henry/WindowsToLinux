@@ -11,13 +11,13 @@ TypeScript 网页编辑问卷和填写答案，Kotlin 独占 SQLite 中的问卷
 3. frontend：`npm ci`、`npm run build`。
 4. 三个终端依次启动 scorer 的 `bundle exec ruby server.rb`、backend 的 `./build/install/survey-scoring/bin/survey-scoring.bat`、frontend 的 `npm run start -- --port 18140`。Linux 去掉 Kotlin 启动器的 `.bat`。浏览器打开 `http://127.0.0.1:18140`；结束后各终端 Ctrl+C。
 
-| 组件 | 配置 | 默认值 |
-|---|---|---|
-| Kotlin | HOST / PORT / DATA_DIR | 127.0.0.1 / 18141 / 当前目录 data |
-| Kotlin | SCORER_URL / SCORER_TIMEOUT_MS / MAX_SCORE_BYTES | http://127.0.0.1:18142 / 5000 / 262144 |
-| Kotlin | WEB_ORIGIN / WORKERS | http://127.0.0.1:18140 / 16（1..64） |
-| Ruby | HOST / PORT / MAX_CLIENTS / REQUEST_TIMEOUT_SECONDS | 127.0.0.1 / 18142 / 32 / 10 |
-| 网页 | runtime-config.json | apiBase 指向 Kotlin；requestTimeoutMs 默认 15000 |
+| 组件   | 配置                                                | 默认值                                           |
+| ------ | --------------------------------------------------- | ------------------------------------------------ |
+| Kotlin | HOST / PORT / DATA_DIR                              | 127.0.0.1 / 18141 / 当前目录 data                |
+| Kotlin | SCORER_URL / SCORER_TIMEOUT_MS / MAX_SCORE_BYTES    | http://127.0.0.1:18142 / 5000 / 262144           |
+| Kotlin | WEB_ORIGIN / WORKERS                                | http://127.0.0.1:18140 / 16（1..64）             |
+| Ruby   | HOST / PORT / MAX_CLIENTS / REQUEST_TIMEOUT_SECONDS | 127.0.0.1 / 18142 / 32 / 10                      |
+| 网页   | runtime-config.json                                 | apiBase 指向 Kotlin；requestTimeoutMs 默认 15000 |
 
 更换页面端口须同步 WEB_ORIGIN。构建后的 dist/runtime-config.json 可直接修改。指定新 DATA_DIR 初始化本版数据库，不迁移旧数据；重启新版目录保留问卷与成绩。两个服务提供 /healthz，不能代替提交评分验收。
 

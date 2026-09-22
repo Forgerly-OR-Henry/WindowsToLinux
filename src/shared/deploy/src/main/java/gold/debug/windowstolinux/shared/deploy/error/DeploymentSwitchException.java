@@ -1,11 +1,11 @@
 package gold.debug.windowstolinux.shared.deploy.error;
 
+import java.util.Objects;
+
 import gold.debug.windowstolinux.shared.model.deployment.DeploymentTraceEvent;
 import gold.debug.windowstolinux.shared.model.failure.FailureCarrier;
 import gold.debug.windowstolinux.shared.model.failure.FailureDescriptor;
 import gold.debug.windowstolinux.shared.model.failure.OperationIdentity;
-
-import java.util.Objects;
 
 /**
  * Structured internal stop/publish/health/observation switch failure. / 结构化内部停止、发布、健康或观测切换失败。
@@ -16,6 +16,7 @@ public final class DeploymentSwitchException extends RuntimeException implements
      * <p>步骤。
      */
     private final DeploymentTraceEvent step;
+
     /**
      * Structured failure occurrence retained for safe reporting.
      * <p>保留用于安全报告的结构化失败实例。
@@ -43,8 +44,8 @@ public final class DeploymentSwitchException extends RuntimeException implements
      * @param diagnostic bounded non-secret detail for diagnostic reporting / 用于诊断报告的有界非秘密详情
      * @return a typed switch failure / 类型化切换失败
      */
-    public static DeploymentSwitchException create(
-            DeploymentTraceEvent step, DeploymentExecutionFailureType type, String diagnostic) {
+    public static DeploymentSwitchException create(DeploymentTraceEvent step, DeploymentExecutionFailureType type,
+            String diagnostic) {
         return new DeploymentSwitchException(step,
                 FailureDescriptor.create(type, OperationIdentity.create(), diagnostic));
     }
@@ -55,12 +56,18 @@ public final class DeploymentSwitchException extends RuntimeException implements
      *
      * @return step / 步骤
      */
-    public DeploymentTraceEvent step() { return step; }
+    public DeploymentTraceEvent step() {
+        return step;
+    }
+
     /**
      * Returns structured failure occurrence retained for safe reporting.
      * <p>返回保留用于安全报告的结构化失败实例。
      *
      * @return structured failure occurrence retained for safe reporting / 保留用于安全报告的结构化失败实例
      */
-    @Override public FailureDescriptor failure() { return failure; }
+    @Override
+    public FailureDescriptor failure() {
+        return failure;
+    }
 }

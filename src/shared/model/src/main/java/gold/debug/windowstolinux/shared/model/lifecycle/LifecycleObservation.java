@@ -1,9 +1,9 @@
 package gold.debug.windowstolinux.shared.model.lifecycle;
 
-import gold.debug.windowstolinux.shared.model.managed.ManagedApplication;
-
 import java.time.Instant;
 import java.util.Objects;
+
+import gold.debug.windowstolinux.shared.model.managed.ManagedApplication;
 
 /**
  * A verified remote state observed for a managed application.
@@ -17,14 +17,8 @@ import java.util.Objects;
  * @param observedAt observed at / 已观测时刻
  * @param evidence observations supporting the reported result / 支持所报告结果的观测证据
  */
-public record LifecycleObservation(
-        ManagedApplication application,
-        RuntimeState runtimeState,
-        AutostartState autostartState,
-        boolean ownershipVerified,
-        Instant observedAt,
-        String evidence
-) {
+public record LifecycleObservation(ManagedApplication application, RuntimeState runtimeState,
+        AutostartState autostartState, boolean ownershipVerified, Instant observedAt, String evidence) {
     /**
      * Validates and binds the inputs required by lifecycle observation.
      * <p>校验并绑定生命周期观测所需输入。

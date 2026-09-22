@@ -1,10 +1,12 @@
 package gold.debug.windowstolinux.shared.backup.extension.adapter;
 
+import java.util.Objects;
+
 import gold.debug.windowstolinux.shared.backup.contract.spi.DatabaseBackupAdapter;
 import gold.debug.windowstolinux.shared.backup.contract.spi.DatabaseBackupArtifact;
 import gold.debug.windowstolinux.shared.backup.contract.spi.DatabaseBackupRequest;
-import gold.debug.windowstolinux.shared.backup.contract.spi.DatabaseCompatibilityEvidence;
 import gold.debug.windowstolinux.shared.backup.contract.spi.DatabaseCommitEvidence;
+import gold.debug.windowstolinux.shared.backup.contract.spi.DatabaseCompatibilityEvidence;
 import gold.debug.windowstolinux.shared.backup.contract.spi.DatabaseOperationPort;
 import gold.debug.windowstolinux.shared.backup.contract.spi.DatabaseRecoveryEvidence;
 import gold.debug.windowstolinux.shared.backup.contract.spi.DatabaseRestoreEvidence;
@@ -13,8 +15,6 @@ import gold.debug.windowstolinux.shared.backup.contract.validation.BackupExcepti
 import gold.debug.windowstolinux.shared.backup.contract.validation.BackupFailureType;
 import gold.debug.windowstolinux.shared.backup.manifest.BackupConsistencyMode;
 import gold.debug.windowstolinux.shared.backup.manifest.BackupDatabaseType;
-
-import java.util.Objects;
 
 /**
  * MySQL-compatible policy with explicit transactional-table limitations. / 显式处理事务表限制的 MySQL 兼容策略。
@@ -25,6 +25,7 @@ public final class MysqlDatabaseAdapter implements DatabaseBackupAdapter {
      * <p>数据库类型。
      */
     private final BackupDatabaseType databaseType;
+
     /**
      * Operations.
      * <p>操作集合。
@@ -53,7 +54,10 @@ public final class MysqlDatabaseAdapter implements DatabaseBackupAdapter {
      *
      * @return database type / 数据库类型
      */
-    @Override public BackupDatabaseType type() { return databaseType; }
+    @Override
+    public BackupDatabaseType type() {
+        return databaseType;
+    }
 
     /**
      * Checks MySQL compatibility evidence and exports using the admitted consistency strategy.
@@ -91,9 +95,10 @@ public final class MysqlDatabaseAdapter implements DatabaseBackupAdapter {
      */
     @Override
     public DatabaseRestoreEvidence restore(DatabaseRestoreRequest request) throws BackupException {
-        if (request.target().type() != type()) throw new IllegalArgumentException("matching MySQL-compatible target is required");
-        DatabaseCompatibilityEvidence evidence = operations.inspect(new DatabaseBackupRequest(
-                request.applicationId(), request.target(), false, false));
+        if (request.target().type() != type())
+            throw new IllegalArgumentException("matching MySQL-compatible target is required");
+        DatabaseCompatibilityEvidence evidence = operations
+                .inspect(new DatabaseBackupRequest(request.applicationId(), request.target(), false, false));
         DatabaseAdapterEvidence.requireRestoreCompatible(request, evidence, type());
         return operations.restoreCandidate(request);
     }
@@ -106,8 +111,10 @@ public final class MysqlDatabaseAdapter implements DatabaseBackupAdapter {
      * @return constructed or resolved database commit evidence / 构造或解析得到的数据库提交证据
      * @throws BackupException if backup validation or the controlled backup operation fails / 备份校验或受控备份操作失败时
      */
-    @Override public DatabaseCommitEvidence commitCandidate(DatabaseRestoreRequest request) throws BackupException {
-        requireRestoreType(request); return operations.commitCandidate(request);
+    @Override
+    public DatabaseCommitEvidence commitCandidate(DatabaseRestoreRequest request) throws BackupException {
+        requireRestoreType(request);
+        return operations.commitCandidate(request);
     }
 
     /**
@@ -118,8 +125,10 @@ public final class MysqlDatabaseAdapter implements DatabaseBackupAdapter {
      * @return constructed or resolved database recovery evidence / 构造或解析得到的数据库恢复证据
      * @throws BackupException if backup validation or the controlled backup operation fails / 备份校验或受控备份操作失败时
      */
-    @Override public DatabaseRecoveryEvidence recoverCandidate(DatabaseRestoreRequest request) throws BackupException {
-        requireRestoreType(request); return operations.recoverCandidate(request);
+    @Override
+    public DatabaseRecoveryEvidence recoverCandidate(DatabaseRestoreRequest request) throws BackupException {
+        requireRestoreType(request);
+        return operations.recoverCandidate(request);
     }
 
     /**
@@ -143,7 +152,8 @@ public final class MysqlDatabaseAdapter implements DatabaseBackupAdapter {
      * @throws IllegalArgumentException if an input violates the constraints checked by this contract / 输入违反当前契约检查的约束时
      */
     private void requireRestoreType(DatabaseRestoreRequest request) {
-        if (request.target().type() != type()) throw new IllegalArgumentException("matching MySQL-compatible target is required");
+        if (request.target().type() != type())
+            throw new IllegalArgumentException("matching MySQL-compatible target is required");
     }
 
     /**
@@ -154,6 +164,7 @@ public final class MysqlDatabaseAdapter implements DatabaseBackupAdapter {
      * @throws IllegalArgumentException if an input violates the constraints checked by this contract / 输入违反当前契约检查的约束时
      */
     private void requireType(DatabaseBackupRequest request) {
-        if (request.connection().type() != type()) throw new IllegalArgumentException("matching MySQL-compatible connection is required");
+        if (request.connection().type() != type())
+            throw new IllegalArgumentException("matching MySQL-compatible connection is required");
     }
 }

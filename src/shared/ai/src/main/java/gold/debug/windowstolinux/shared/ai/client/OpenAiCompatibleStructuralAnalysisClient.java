@@ -1,21 +1,21 @@
 package gold.debug.windowstolinux.shared.ai.client;
 
+import java.io.IOException;
+import java.net.URI;
+import java.util.Arrays;
+import java.util.Objects;
+
 import gold.debug.windowstolinux.shared.ai.AiAnalysisException;
 import gold.debug.windowstolinux.shared.ai.AiAnalysisFailureType;
 import gold.debug.windowstolinux.shared.ai.AiStructuralAssessment;
-import gold.debug.windowstolinux.shared.ai.parser.ChatCompletionResponseParser;
-import gold.debug.windowstolinux.shared.ai.generation.prompt.StructuralAnalysisPrompt;
 import gold.debug.windowstolinux.shared.ai.generation.prompt.AiResponseLanguageType;
+import gold.debug.windowstolinux.shared.ai.generation.prompt.StructuralAnalysisPrompt;
+import gold.debug.windowstolinux.shared.ai.parser.ChatCompletionResponseParser;
 import gold.debug.windowstolinux.shared.ai.provider.ProviderEndpointPolicy;
 import gold.debug.windowstolinux.shared.ai.redaction.RedactedDeploymentProjectFacts;
-import gold.debug.windowstolinux.shared.model.project.DeploymentProjectFacts;
-
-import java.io.IOException;
-import java.net.URI;
-import gold.debug.windowstolinux.shared.ai.transport.RoleChatTransport;
 import gold.debug.windowstolinux.shared.ai.transport.HttpRoleChatTransport;
-import java.util.Arrays;
-import java.util.Objects;
+import gold.debug.windowstolinux.shared.ai.transport.RoleChatTransport;
+import gold.debug.windowstolinux.shared.model.project.DeploymentProjectFacts;
 
 /**
  * Calls an OpenAI-compatible endpoint with redacted deterministic facts only.
@@ -28,11 +28,13 @@ public final class OpenAiCompatibleStructuralAnalysisClient {
      * <p>传输。
      */
     private final RoleChatTransport transport;
+
     /**
      * Bound provider endpoint policy collaborator for endpoint policy.
      * <p>处理端点策略的提供者端点策略协作对象。
      */
     private final ProviderEndpointPolicy endpointPolicy;
+
     /**
      * Response parser.
      * <p>响应解析器。
@@ -72,8 +74,7 @@ public final class OpenAiCompatibleStructuralAnalysisClient {
      * @throws AiAnalysisException if the ai analysis boundary rejects the operation / AI分析边界拒绝当前操作时
      */
     public AiStructuralAssessment analyze(URI endpoint, String model, char[] apiKey, DeploymentProjectFacts facts,
-                                        AiResponseLanguageType responseLanguage)
-            throws AiAnalysisException {
+            AiResponseLanguageType responseLanguage) throws AiAnalysisException {
         endpoint = endpointPolicy.validateEndpoint(endpoint);
         model = endpointPolicy.requireModel(model);
         return send(endpoint, apiKey, StructuralAnalysisPrompt.requestBody(model,
@@ -91,8 +92,7 @@ public final class OpenAiCompatibleStructuralAnalysisClient {
      * @throws AiAnalysisException if the ai analysis boundary rejects the operation / AI分析边界拒绝当前操作时
      * @throws NullPointerException if a required input is absent / 必需输入缺失时
      */
-    private AiStructuralAssessment send(URI endpoint, char[] apiKey, String requestBody)
-            throws AiAnalysisException {
+    private AiStructuralAssessment send(URI endpoint, char[] apiKey, String requestBody) throws AiAnalysisException {
         Objects.requireNonNull(apiKey, "apiKey");
         if (apiKey.length == 0) {
             throw AiAnalysisException.create(AiAnalysisFailureType.API_KEY_MISSING, "AI API key must not be empty");
@@ -112,8 +112,7 @@ public final class OpenAiCompatibleStructuralAnalysisClient {
         } catch (InterruptedException exception) {
             Thread.currentThread().interrupt();
             throw AiAnalysisException.create(AiAnalysisFailureType.REQUEST_INTERRUPTED,
-                    "AI explanation request was interrupted; deterministic analysis results were preserved",
-                    exception);
+                    "AI explanation request was interrupted; deterministic analysis results were preserved", exception);
         } finally {
             Arrays.fill(keyCopy, '\0');
         }

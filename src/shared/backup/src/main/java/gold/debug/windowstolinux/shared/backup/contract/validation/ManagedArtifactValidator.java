@@ -1,12 +1,5 @@
 package gold.debug.windowstolinux.shared.backup.contract.validation;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import gold.debug.windowstolinux.shared.backup.contract.validation.ManagedArtifactEvidence;
-import gold.debug.windowstolinux.shared.backup.contract.validation.ManagedArtifactFormatType;
-import org.apache.commons.compress.archivers.tar.TarArchiveEntry;
-import org.apache.commons.compress.archivers.tar.TarArchiveInputStream;
-
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
@@ -23,6 +16,13 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import gold.debug.windowstolinux.shared.backup.contract.validation.ManagedArtifactEvidence;
+import gold.debug.windowstolinux.shared.backup.contract.validation.ManagedArtifactFormatType;
+import org.apache.commons.compress.archivers.tar.TarArchiveEntry;
+import org.apache.commons.compress.archivers.tar.TarArchiveInputStream;
+
 /**
  * Strict independent validator for helper-generated PAX TAR and OCI archive artifacts. / helper 生成 PAX TAR 与 OCI 归档的严格独立校验器。
  */
@@ -32,11 +32,13 @@ public final class ManagedArtifactValidator {
      * <p>缓冲区大小。
      */
     private static final int BUFFER_SIZE = 64 * 1024;
+
     /**
      * Bound backup archive policy collaborator for explicit validation and resource-bound policy.
      * <p>处理显式校验及资源边界策略的备份归档策略协作对象。
      */
     private final BackupArchivePolicy policy;
+
     /**
      * JSON mapper for managed artifact validator.
      * <p>受管制品校验器使用的 JSON 映射器。
@@ -77,14 +79,13 @@ public final class ManagedArtifactValidator {
         Path file = regular(path);
         OciScan first = scanTar(file, Set.of("oci-layout", "index.json"));
         JsonNode layout = document(first.documents().get("oci-layout"), "oci-layout");
-        if (!layout.isObject() || layout.size() != 1
-                || !"1.0.0".equals(layout.path("imageLayoutVersion").asText())) {
+        if (!layout.isObject() || layout.size() != 1 || !"1.0.0".equals(layout.path("imageLayoutVersion").asText())) {
             throw invalid("OCI layout is not the exact supported version", null);
         }
         JsonNode index = document(first.documents().get("index.json"), "index.json");
         JsonNode manifests = index.path("manifests");
-        if (!index.isObject() || index.path("schemaVersion").asInt(-1) != 2
-                || !manifests.isArray() || manifests.size() != 1) {
+        if (!index.isObject() || index.path("schemaVersion").asInt(-1) != 2 || !manifests.isArray()
+                || manifests.size() != 1) {
             throw invalid("OCI index must describe exactly one schema-v2 image", null);
         }
         Descriptor image = descriptor(manifests.get(0));
@@ -99,10 +100,12 @@ public final class ManagedArtifactValidator {
         Set<String> reachable = new LinkedHashSet<>();
         reachable.add(imagePath);
         Descriptor configuration = descriptor(manifest.path("config"));
-        requireBlob(first.blobs(), configuration); reachable.add(blobPath(configuration.digest()));
+        requireBlob(first.blobs(), configuration);
+        reachable.add(blobPath(configuration.digest()));
         for (JsonNode layer : manifest.path("layers")) {
             Descriptor descriptor = descriptor(layer);
-            requireBlob(first.blobs(), descriptor); reachable.add(blobPath(descriptor.digest()));
+            requireBlob(first.blobs(), descriptor);
+            reachable.add(blobPath(descriptor.digest()));
         }
         if (!reachable.equals(first.blobs().keySet())) {
             throw invalid("OCI archive contains unreachable or missing blobs", null);
@@ -129,12 +132,16 @@ public final class ManagedArtifactValidator {
         try (TarArchiveInputStream archive = new TarArchiveInputStream(Files.newInputStream(path))) {
             TarArchiveEntry entry;
             while ((entry = archive.getNextTarEntry()) != null) {
-                if (!archive.canReadEntryData(entry)) throw invalid("unsupported TAR entry encoding", null);
+                if (!archive.canReadEntryData(entry))
+                    throw invalid("unsupported TAR entry encoding", null);
                 String name = safePath(entry.getName());
-                if (!names.add(name)) throw invalid("duplicate TAR member", null);
+                if (!names.add(name))
+                    throw invalid("duplicate TAR member", null);
                 entries++;
-                if (entries > policy.maximumMembers()) throw invalid("TAR member count exceeds policy", null);
-                if (entry.isDirectory()) continue;
+                if (entries > policy.maximumMembers())
+                    throw invalid("TAR member count exceeds policy", null);
+                if (entry.isDirectory())
+                    continue;
                 if (!entry.isFile() || entry.isLink() || entry.isSymbolicLink()) {
                     throw invalid("TAR contains a link or special member", null);
                 }
@@ -142,16 +149,20 @@ public final class ManagedArtifactValidator {
                     throw invalid("TAR member size exceeds policy", null);
                 }
                 total = Math.addExact(total, entry.getSize());
-                if (total > policy.maximumTotalBytes()) throw invalid("TAR total size exceeds policy", null);
+                if (total > policy.maximumTotalBytes())
+                    throw invalid("TAR total size exceeds policy", null);
                 MessageDigest digest = sha256();
                 ByteArrayOutputStream capture = documents != null && documents.contains(name)
-                        ? new ByteArrayOutputStream() : null;
+                        ? new ByteArrayOutputStream()
+                        : null;
                 long readTotal = 0;
                 int read;
                 while ((read = archive.read(buffer)) >= 0) {
-                    if (read == 0) continue;
+                    if (read == 0)
+                        continue;
                     readTotal = Math.addExact(readTotal, read);
-                    if (readTotal > entry.getSize()) throw invalid("TAR member exceeds declared size", null);
+                    if (readTotal > entry.getSize())
+                        throw invalid("TAR member exceeds declared size", null);
                     digest.update(buffer, 0, read);
                     if (capture != null) {
                         if (capture.size() + read > policy.maximumManifestBytes()) {
@@ -160,7 +171,8 @@ public final class ManagedArtifactValidator {
                         capture.write(buffer, 0, read);
                     }
                 }
-                if (readTotal != entry.getSize()) throw invalid("TAR member is truncated", null);
+                if (readTotal != entry.getSize())
+                    throw invalid("TAR member is truncated", null);
                 String sha = HexFormat.of().formatHex(digest.digest());
                 if (name.startsWith("blobs/sha256/")) {
                     String expected = name.substring("blobs/sha256/".length());
@@ -169,14 +181,16 @@ public final class ManagedArtifactValidator {
                     }
                     blobs.put(name, new Blob(entry.getSize(), sha));
                 }
-                if (capture != null) captured.put(name, capture.toByteArray());
+                if (capture != null)
+                    captured.put(name, capture.toByteArray());
             }
         } catch (BackupException exception) {
             throw exception;
         } catch (IOException | RuntimeException exception) {
             throw invalid("managed TAR artifact could not be validated", exception);
         }
-        if (entries < 1) throw invalid("managed TAR artifact is empty", null);
+        if (entries < 1)
+            throw invalid("managed TAR artifact is empty", null);
         if (documents != null && !captured.keySet().containsAll(documents)) {
             throw invalid("required OCI metadata is missing", null);
         }
@@ -201,7 +215,8 @@ public final class ManagedArtifactValidator {
             byte[] bytes = new byte[BUFFER_SIZE];
             int read;
             while ((read = input.read(bytes)) >= 0) {
-                if (read == 0) continue;
+                if (read == 0)
+                    continue;
                 count = Math.addExact(count, read);
                 digest.update(bytes, 0, read);
             }
@@ -224,8 +239,8 @@ public final class ManagedArtifactValidator {
         path = Objects.requireNonNull(path, "path").toAbsolutePath().normalize();
         try {
             long size = Files.size(path);
-            if (!Files.isRegularFile(path, LinkOption.NOFOLLOW_LINKS) || Files.isSymbolicLink(path)
-                    || size < 1 || size > policy.maximumTotalBytes()) {
+            if (!Files.isRegularFile(path, LinkOption.NOFOLLOW_LINKS) || Files.isSymbolicLink(path) || size < 1
+                    || size > policy.maximumTotalBytes()) {
                 throw invalid("managed artifact is not one bounded regular file", null);
             }
             return path;
@@ -245,11 +260,14 @@ public final class ManagedArtifactValidator {
      */
     private String safePath(String raw) throws BackupException {
         String name = Objects.requireNonNull(raw, "TAR path").replace('\\', '/');
-        while (name.startsWith("./")) name = name.substring(2);
-        if (name.endsWith("/")) name = name.substring(0, name.length() - 1);
-        if (name.isBlank()) return ".";
-        if (name.startsWith("/") || name.length() > policy.maximumPathLength()
-                || name.contains("//") || java.util.Arrays.asList(name.split("/")).contains("..")) {
+        while (name.startsWith("./"))
+            name = name.substring(2);
+        if (name.endsWith("/"))
+            name = name.substring(0, name.length() - 1);
+        if (name.isBlank())
+            return ".";
+        if (name.startsWith("/") || name.length() > policy.maximumPathLength() || name.contains("//")
+                || java.util.Arrays.asList(name.split("/")).contains("..")) {
             throw invalid("TAR member path is unsafe", null);
         }
         return name;
@@ -265,9 +283,13 @@ public final class ManagedArtifactValidator {
      * @throws BackupException if backup validation or the controlled backup operation fails / 备份校验或受控备份操作失败时
      */
     private JsonNode document(byte[] bytes, String name) throws BackupException {
-        if (bytes == null) throw invalid(name + " is missing", null);
-        try { return json.readTree(bytes); }
-        catch (IOException exception) { throw invalid(name + " is not valid JSON", exception); }
+        if (bytes == null)
+            throw invalid(name + " is missing", null);
+        try {
+            return json.readTree(bytes);
+        } catch (IOException exception) {
+            throw invalid(name + " is not valid JSON", exception);
+        }
     }
 
     /**
@@ -283,7 +305,8 @@ public final class ManagedArtifactValidator {
             throw invalid("OCI descriptor is malformed", null);
         }
         long size = value.path("size").asLong(-1);
-        if (size < 0 || size > policy.maximumMemberBytes()) throw invalid("OCI descriptor size is invalid", null);
+        if (size < 0 || size > policy.maximumMemberBytes())
+            throw invalid("OCI descriptor size is invalid", null);
         return new Descriptor(value.path("digest").asText(), size);
     }
 
@@ -297,7 +320,8 @@ public final class ManagedArtifactValidator {
      */
     private void requireBlob(Map<String, Blob> blobs, Descriptor descriptor) throws BackupException {
         Blob blob = blobs.get(blobPath(descriptor.digest()));
-        if (blob == null || blob.size() != descriptor.size()) throw invalid("OCI descriptor blob is missing or differs", null);
+        if (blob == null || blob.size() != descriptor.size())
+            throw invalid("OCI descriptor blob is missing or differs", null);
     }
 
     /**
@@ -307,7 +331,10 @@ public final class ManagedArtifactValidator {
      * @param digest content identity used for independent verification / 独立验证所用的内容身份
      * @return blob path text / 二进制块路径文本
      */
-    private static String blobPath(String digest) { return "blobs/sha256/" + digest.substring("sha256:".length()); }
+    private static String blobPath(String digest) {
+        return "blobs/sha256/" + digest.substring("sha256:".length());
+    }
+
     /**
      * Creates a SHA-256 accumulator for independent content evidence.
      * <p>创建用于独立内容证据的 SHA-256 累加器。
@@ -316,9 +343,13 @@ public final class ManagedArtifactValidator {
      * @throws IllegalStateException if the required state or runtime facility is unavailable / 所需状态或运行设施不可用时
      */
     private static MessageDigest sha256() {
-        try { return MessageDigest.getInstance("SHA-256"); }
-        catch (NoSuchAlgorithmException exception) { throw new IllegalStateException("SHA-256 unavailable", exception); }
+        try {
+            return MessageDigest.getInstance("SHA-256");
+        } catch (NoSuchAlgorithmException exception) {
+            throw new IllegalStateException("SHA-256 unavailable", exception);
+        }
     }
+
     /**
      * Creates the owning module's failure for rejected input or evidence.
      * <p>为被拒绝输入或证据创建所属模块的失败。
@@ -337,7 +368,9 @@ public final class ManagedArtifactValidator {
      * @param size size / 大小
      * @param sha256 lower-case hexadecimal SHA-256 digest / 小写十六进制 SHA-256 摘要
      */
-    private record Blob(long size, String sha256) { }
+    private record Blob(long size, String sha256) {
+    }
+
     /**
      * Carries an OCI descriptor's media type, size and content digest.
      * <p>携带 OCI 描述符的媒体类型、大小及内容摘要。
@@ -345,7 +378,9 @@ public final class ManagedArtifactValidator {
      * @param digest content identity used for independent verification / 独立验证所用的内容身份
      * @param size size / 大小
      */
-    private record Descriptor(String digest, long size) { }
+    private record Descriptor(String digest, long size) {
+    }
+
     /**
      * Collects validated OCI descriptors and the archive members they reference.
      * <p>汇总已验证 OCI 描述符及其引用的归档成员。
@@ -354,5 +389,6 @@ public final class ManagedArtifactValidator {
      * @param blobs blobs / 二进制块集合
      * @param documents documents / 文档集合
      */
-    private record OciScan(int entries, Map<String, Blob> blobs, Map<String, byte[]> documents) { }
+    private record OciScan(int entries, Map<String, Blob> blobs, Map<String, byte[]> documents) {
+    }
 }

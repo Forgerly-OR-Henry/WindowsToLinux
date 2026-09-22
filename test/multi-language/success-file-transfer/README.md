@@ -8,13 +8,13 @@ TypeScript 网页和 Node 网关通过 HTTP 调用 Go。Go 独占 SQLite 元数�
 
 在 `backend` 执行 `go build -mod=readonly -o file-transfer.exe .`，然后 `./file-transfer.exe`。Linux 构建去掉 `.exe`。在另一终端的 `web` 执行 `npm ci`、`npm run build`、`node dist/server.js`，浏览器打开 `http://127.0.0.1:18110`。结束后两终端 Ctrl+C。
 
-| 组件 | 配置 | 默认值 |
-|---|---|---|
-| Go | HOST / PORT | 127.0.0.1 / 18111 |
-| Go | DATA_DIR | 当前工作目录 data |
-| Go | MAX_FILE_BYTES / HTTP_TIMEOUT_SECONDS | 268435456 / 30 |
-| Node | HOST / PORT / API_URL | 127.0.0.1 / 18110 / http://127.0.0.1:18111 |
-| Node | API_TIMEOUT_MS / MAX_API_BYTES | 30000 / 8388608（JSON 响应限制） |
+| 组件 | 配置                                  | 默认值                                     |
+| ---- | ------------------------------------- | ------------------------------------------ |
+| Go   | HOST / PORT                           | 127.0.0.1 / 18111                          |
+| Go   | DATA_DIR                              | 当前工作目录 data                          |
+| Go   | MAX_FILE_BYTES / HTTP_TIMEOUT_SECONDS | 268435456 / 30                             |
+| Node | HOST / PORT / API_URL                 | 127.0.0.1 / 18110 / http://127.0.0.1:18111 |
+| Node | API_TIMEOUT_MS / MAX_API_BYTES        | 30000 / 8388608（JSON 响应限制）           |
 
 PowerShell 示例：`$env:DATA_DIR="D:\样例 数据"`；Linux：`export DATA_DIR="/tmp/样例 数据"`。本版使用全新数据库结构，指定新的 DATA_DIR；不迁移旧版数据库。重启同一新版目录保留数据。一个数据目录由一个 Go 服务实例管理。
 

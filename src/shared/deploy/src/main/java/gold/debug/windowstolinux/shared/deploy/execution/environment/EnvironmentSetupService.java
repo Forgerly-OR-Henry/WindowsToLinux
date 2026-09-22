@@ -1,15 +1,15 @@
 package gold.debug.windowstolinux.shared.deploy.execution.environment;
 
+import java.util.Objects;
+
 import gold.debug.windowstolinux.shared.linux.connection.HostKeyEvaluator;
-import gold.debug.windowstolinux.shared.linux.error.LinuxOperationException;
 import gold.debug.windowstolinux.shared.linux.connection.LinuxGateway;
-import gold.debug.windowstolinux.shared.linux.session.LinuxRemoteSession;
 import gold.debug.windowstolinux.shared.linux.connection.SshCredential;
 import gold.debug.windowstolinux.shared.linux.connection.SshEndpoint;
+import gold.debug.windowstolinux.shared.linux.error.LinuxOperationException;
+import gold.debug.windowstolinux.shared.linux.session.LinuxRemoteSession;
 import gold.debug.windowstolinux.shared.model.deployment.EnvironmentSetupApproval;
 import gold.debug.windowstolinux.shared.model.deployment.EnvironmentSetupResult;
-
-import java.util.Objects;
 
 /**
  * Runs one explicitly approved environment-preparation operation. This is intentionally separate from deployment so installation cannot happen as an implicit side effect of uploading a project.
@@ -31,16 +31,16 @@ public final class EnvironmentSetupService {
      * @throws LinuxOperationException if the authenticated remote operation fails or its evidence is rejected / 已认证远端操作失败或其证据被拒绝时
      * @throws NullPointerException if a required input is absent / 必需输入缺失时
      */
-    public EnvironmentSetupResult prepare(EnvironmentSetupApproval approval, LinuxGateway gateway,
-            SshEndpoint endpoint, SshCredential credential, HostKeyEvaluator verifier,
+    public EnvironmentSetupResult prepare(EnvironmentSetupApproval approval, LinuxGateway gateway, SshEndpoint endpoint,
+            SshCredential credential, HostKeyEvaluator verifier,
             java.util.function.Predicate<gold.debug.windowstolinux.shared.model.server.security.SelinuxPreparationPlan> systemConfirmation)
             throws LinuxOperationException {
         Objects.requireNonNull(credential, "credential");
         try {
             Objects.requireNonNull(approval, "approval").requireAcceptedFor(endpoint.serverId());
             Objects.requireNonNull(systemConfirmation, "systemConfirmation");
-            HostKeyEvaluator pinned = new SelinuxPreparationService().prepare(gateway, endpoint, credential,
-                    verifier, systemConfirmation);
+            HostKeyEvaluator pinned = new SelinuxPreparationService().prepare(gateway, endpoint, credential, verifier,
+                    systemConfirmation);
             return prepare(approval, gateway, endpoint, credential.duplicate(), pinned);
         } finally {
             credential.clear();
@@ -60,23 +60,24 @@ public final class EnvironmentSetupService {
      * @throws LinuxOperationException if the authenticated remote operation fails or its evidence is rejected / 已认证远端操作失败或其证据被拒绝时
      * @throws NullPointerException if a required input is absent / 必需输入缺失时
      */
-    public EnvironmentSetupResult prepare(
-            EnvironmentSetupApproval approval,
-            LinuxGateway gateway,
-            SshEndpoint endpoint,
-            SshCredential credential,
-            HostKeyEvaluator hostKeyVerifier
-    ) throws LinuxOperationException {
+    public EnvironmentSetupResult prepare(EnvironmentSetupApproval approval, LinuxGateway gateway, SshEndpoint endpoint,
+            SshCredential credential, HostKeyEvaluator hostKeyVerifier) throws LinuxOperationException {
         Objects.requireNonNull(credential, "credential");
         try {
-            Objects.requireNonNull(approval, "approval").requireAcceptedFor(Objects.requireNonNull(endpoint, "endpoint").serverId());
+            Objects.requireNonNull(approval, "approval")
+                    .requireAcceptedFor(Objects.requireNonNull(endpoint, "endpoint").serverId());
             Objects.requireNonNull(gateway, "gateway");
             Objects.requireNonNull(hostKeyVerifier, "hostKeyVerifier");
             EnvironmentSetupResult installed;
             LinuxRemoteSession connected;
-            try { connected = gateway.connect(endpoint, credential.duplicate(), hostKeyVerifier); }
-            catch (LinuxOperationException failure) { throw LinuxOperationException.beforeEnvironmentPreparation(failure); }
-            try (LinuxRemoteSession session = connected) { installed = session.prepareEnvironment(approval); }
+            try {
+                connected = gateway.connect(endpoint, credential.duplicate(), hostKeyVerifier);
+            } catch (LinuxOperationException failure) {
+                throw LinuxOperationException.beforeEnvironmentPreparation(failure);
+            }
+            try (LinuxRemoteSession session = connected) {
+                installed = session.prepareEnvironment(approval);
+            }
             try (LinuxRemoteSession verified = gateway.connect(endpoint, credential.duplicate(), hostKeyVerifier)) {
                 return new EnvironmentSetupResult(verified.collectCapabilities(), installed.evidence()
                         + "\nVerified capabilities through a fresh authenticated SSH connection after preparation.");

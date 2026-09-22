@@ -1,9 +1,9 @@
 package gold.debug.windowstolinux.shared.model.assessment;
 
-import gold.debug.windowstolinux.shared.model.message.LocalizedMessage;
-
 import java.util.List;
 import java.util.Objects;
+
+import gold.debug.windowstolinux.shared.model.message.LocalizedMessage;
 
 /**
  * One component-scoped input requirement or hard safety rejection.
@@ -29,9 +29,11 @@ public record ComponentIssue(SeverityLevel severity, String code, List<String> c
     public ComponentIssue {
         severity = Objects.requireNonNull(severity, "severity");
         code = Objects.requireNonNull(code, "code").trim();
-        if (!code.matches("[A-Z][A-Z0-9_]{2,63}")) throw new IllegalArgumentException("invalid component issue code");
+        if (!code.matches("[A-Z][A-Z0-9_]{2,63}"))
+            throw new IllegalArgumentException("invalid component issue code");
         componentIds = List.copyOf(Objects.requireNonNull(componentIds, "componentIds").stream().sorted().toList());
-        if (componentIds.isEmpty() || componentIds.stream().anyMatch(value -> !value.matches("[a-z0-9][a-z0-9-]{0,62}"))) {
+        if (componentIds.isEmpty()
+                || componentIds.stream().anyMatch(value -> !value.matches("[a-z0-9][a-z0-9-]{0,62}"))) {
             throw new IllegalArgumentException("component issues require bounded component identifiers");
         }
         message = Objects.requireNonNull(message, "message");

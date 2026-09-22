@@ -7,4 +7,5 @@ package gold.debug.windowstolinux.web.service.contract;
  * @param workspaceId server-assigned workspace identifier / 服务端分配的工作区标识
  * @param userId user id / 用户标识
  */
-public record WebRequestContext(String workspaceId, String userId) { }
+public record WebRequestContext(String workspaceId, String userId) {
+}

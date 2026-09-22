@@ -1,9 +1,9 @@
 package gold.debug.windowstolinux.shared.backup.contract.spi;
 
-import gold.debug.windowstolinux.shared.backup.manifest.BackupDatabaseType;
-
 import java.util.List;
 import java.util.Objects;
+
+import gold.debug.windowstolinux.shared.backup.manifest.BackupDatabaseType;
 
 /**
  * Tool, engine and table evidence collected before export or restore. / 导出或恢复前采集的工具、引擎与表证据。
@@ -17,16 +17,9 @@ import java.util.Objects;
  * @param allTablesTransactional all tables transactional / 全部表集合Transactional
  * @param evidence observations supporting the reported result / 支持所报告结果的观测证据
  */
-public record DatabaseCompatibilityEvidence(
-        BackupDatabaseType type,
-        String engineVersion,
-        String toolVersion,
-        boolean toolAvailable,
-        boolean engineVersionCompatible,
-        boolean onlineBackupAvailable,
-        boolean allTablesTransactional,
-        List<String> evidence
-) {
+public record DatabaseCompatibilityEvidence(BackupDatabaseType type, String engineVersion, String toolVersion,
+        boolean toolAvailable, boolean engineVersionCompatible, boolean onlineBackupAvailable,
+        boolean allTablesTransactional, List<String> evidence) {
     /**
      * Requires explicit, bounded compatibility evidence. / 要求显式、有界的兼容性证据。
      *

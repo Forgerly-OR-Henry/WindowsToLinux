@@ -12,11 +12,7 @@ import java.util.Objects;
  * @param installationAccepted installation accepted / 安装已接受
  * @param confirmedAt confirmed at / 已确认时刻
  */
-public record EnvironmentSetupApproval(
-        String serverId,
-        boolean installationAccepted,
-        Instant confirmedAt
-) {
+public record EnvironmentSetupApproval(String serverId, boolean installationAccepted, Instant confirmedAt) {
     /**
      * Validates and binds the inputs required by environment setup approval.
      * <p>校验并绑定环境SetupApproval所需输入。

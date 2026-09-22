@@ -1,11 +1,5 @@
 package gold.debug.windowstolinux.shared.linux.sshd.runtime.systemd;
 
-import gold.debug.windowstolinux.shared.linux.error.LinuxOperationException;
-import gold.debug.windowstolinux.shared.linux.sshd.command.SshCommandExecutor;
-import gold.debug.windowstolinux.shared.linux.sshd.execution.protocol.runtime.ManagedRuntimeProtocolExecutor;
-import gold.debug.windowstolinux.shared.model.lifecycle.LifecycleObservation;
-import gold.debug.windowstolinux.shared.model.managed.ManagedApplication;
-
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
@@ -14,6 +8,12 @@ import java.time.Instant;
 import java.util.HexFormat;
 import java.util.Map;
 import java.util.Objects;
+
+import gold.debug.windowstolinux.shared.linux.error.LinuxOperationException;
+import gold.debug.windowstolinux.shared.linux.sshd.command.SshCommandExecutor;
+import gold.debug.windowstolinux.shared.linux.sshd.execution.protocol.runtime.ManagedRuntimeProtocolExecutor;
+import gold.debug.windowstolinux.shared.model.lifecycle.LifecycleObservation;
+import gold.debug.windowstolinux.shared.model.managed.ManagedApplication;
 
 /**
  * Observes runtime state only after proving release and unit ownership. / 仅在证明发布与 unit 归属后观察运行状态。
@@ -24,6 +24,7 @@ public final class SystemdOwnershipObserver {
      * <p>处理类型化远端命令边界的SSH命令执行器协作对象。
      */
     private final SshCommandExecutor commands;
+
     /**
      * Account name used by the reviewed connection.
      * <p>已审阅连接使用的账户名。
@@ -107,26 +108,35 @@ public final class SystemdOwnershipObserver {
                 enabled=$(systemctl is-enabled %s 2>/dev/null || true)
                 printf 'OWNER=%%s\nCURRENT_PATH=%%s\nOWNER_FILE=%%s\nOWNER_VALUE=%%s\nFRAGMENT=%%s\nDROPINS=%%s\nUNIT_DIGEST=%%s\nRUNTIME=%%s\nENABLED=%%s\n' \
                   "$owner" "$current_path" "$owner_file" "$owner_value" "$fragment" "$dropins" "$unit_digest" "$runtime" "$enabled"
-                """.formatted(SshCommandExecutor.quote(application.releaseRoot()), SshCommandExecutor.quote(unitPath),
-                SshCommandExecutor.quote(application.ownershipManifestSha256()),
-                SshCommandExecutor.quote(application.systemdUnit()), SshCommandExecutor.quote(application.systemdUnit()),
-                SshCommandExecutor.quote(unitDigest), SshCommandExecutor.quote(application.systemdUnit()),
-                SshCommandExecutor.quote(application.systemdUnit()));
-        var result = commands.exec("/bin/bash -lc " + SshCommandExecutor.quote(script), Duration.ofSeconds(20), true);
+                """
+                .formatted(gold.debug.windowstolinux.shared.linux.command.CommandText.quote(application.releaseRoot()),
+                        gold.debug.windowstolinux.shared.linux.command.CommandText.quote(unitPath),
+                        gold.debug.windowstolinux.shared.linux.command.CommandText
+                                .quote(application.ownershipManifestSha256()),
+                        gold.debug.windowstolinux.shared.linux.command.CommandText.quote(application.systemdUnit()),
+                        gold.debug.windowstolinux.shared.linux.command.CommandText.quote(application.systemdUnit()),
+                        gold.debug.windowstolinux.shared.linux.command.CommandText.quote(unitDigest),
+                        gold.debug.windowstolinux.shared.linux.command.CommandText.quote(application.systemdUnit()),
+                        gold.debug.windowstolinux.shared.linux.command.CommandText.quote(application.systemdUnit()));
+        var result = commands.exec(
+                "/bin/bash -lc " + gold.debug.windowstolinux.shared.linux.command.CommandText.quote(script),
+                Duration.ofSeconds(20), true);
         if (!result.succeeded()) {
             return ManagedRuntimeProtocolExecutor.nativeObservation(application, Map.of("QUERY_OK", "0"));
         }
-        Map<String, String> values = SshCommandExecutor.lines(result.output());
+        Map<String, String> values = gold.debug.windowstolinux.shared.linux.command.CommandText.lines(result.output());
         boolean ownership = "1".equals(values.get("OWNER"));
         LifecycleObservation observation = ManagedRuntimeProtocolExecutor.nativeObservation(application, values);
-        String evidence = ownership ? observation.evidence()
+        String evidence = ownership
+                ? observation.evidence()
                 : "Managed identity is missing or externally modified (owner-file="
-                + values.getOrDefault("OWNER_FILE", "0") + ", current-path=" + values.getOrDefault("CURRENT_PATH", "0")
-                + ", owner-value=" + values.getOrDefault("OWNER_VALUE", "0")
-                + ", fragment=" + values.getOrDefault("FRAGMENT", "0")
-                + ", dropins=" + values.getOrDefault("DROPINS", "0")
-                + ", unit-digest=" + values.getOrDefault("UNIT_DIGEST", "0") + ")";
-        return new LifecycleObservation(application, observation.runtimeState(), observation.autostartState(), ownership, Instant.now(), evidence);
+                        + values.getOrDefault("OWNER_FILE", "0") + ", current-path="
+                        + values.getOrDefault("CURRENT_PATH", "0") + ", owner-value="
+                        + values.getOrDefault("OWNER_VALUE", "0") + ", fragment=" + values.getOrDefault("FRAGMENT", "0")
+                        + ", dropins=" + values.getOrDefault("DROPINS", "0") + ", unit-digest="
+                        + values.getOrDefault("UNIT_DIGEST", "0") + ")";
+        return new LifecycleObservation(application, observation.runtimeState(), observation.autostartState(),
+                ownership, Instant.now(), evidence);
     }
 
     /**
@@ -139,7 +149,8 @@ public final class SystemdOwnershipObserver {
      */
     private static String sha256(String value) {
         try {
-            return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(value.getBytes(StandardCharsets.UTF_8)));
+            return HexFormat.of()
+                    .formatHex(MessageDigest.getInstance("SHA-256").digest(value.getBytes(StandardCharsets.UTF_8)));
         } catch (NoSuchAlgorithmException exception) {
             throw new IllegalStateException("JDK SHA-256 is unavailable", exception);
         }

@@ -1,7 +1,5 @@
 package gold.debug.windowstolinux.web.main.startup;
 
-import gold.debug.windowstolinux.web.service.persistence.serialization.WebJsonCodec;
-
 import gold.debug.windowstolinux.shared.linux.connection.DeploymentLinuxGateway;
 import gold.debug.windowstolinux.shared.linux.sshd.connection.SshdLinuxGateway;
 import gold.debug.windowstolinux.web.api.config.WebHttpPolicy;
@@ -21,6 +19,7 @@ import gold.debug.windowstolinux.web.service.config.WebApplicationSecrets;
 import gold.debug.windowstolinux.web.service.contract.*;
 import gold.debug.windowstolinux.web.service.deployment.WebDeploymentService;
 import gold.debug.windowstolinux.web.service.execution.lifecycle.WebApplicationInventory;
+import gold.debug.windowstolinux.web.service.persistence.serialization.WebJsonCodec;
 import gold.debug.windowstolinux.web.service.server.WebServerService;
 import gold.debug.windowstolinux.web.service.source.WebSourceService;
 import gold.debug.windowstolinux.web.task.scheduler.WebTaskScheduler;
@@ -41,7 +40,11 @@ public class WebServiceConfiguration {
      *
      * @return constructed or resolved json mapper / 构造或解析得到的JSON映射器
      */
-    @Bean public JsonMapper webJsonMapper() { return WebJsonCodec.mapper(); }
+    @Bean
+    public JsonMapper webJsonMapper() {
+        return WebJsonCodec.mapper();
+    }
+
     /**
      * Assembles the web http policy managed by the Spring application context.
      * <p>装配由 Spring 应用上下文管理的WebHTTP策略。
@@ -49,15 +52,25 @@ public class WebServiceConfiguration {
      * @param properties properties / 属性集合
      * @return constructed or resolved web http policy / 构造或解析得到的WebHTTP策略
      */
-    @Bean public WebHttpPolicy webHttpPolicy(WebRuntimeProperties properties) { return properties.http(); }
+    @Bean
+    public WebHttpPolicy webHttpPolicy(WebRuntimeProperties properties) {
+        return properties.http();
+    }
+
     /**
      * Assembles the deployment linux gateway managed by the Spring application context.
      * <p>装配由 Spring 应用上下文管理的部署Linux网关。
      *
      * @return constructed or resolved deployment linux gateway / 构造或解析得到的部署Linux网关
      */
-    @Bean @ConditionalOnMissingBean(DeploymentLinuxGateway.class)
-    public DeploymentLinuxGateway deploymentLinuxGateway() { return new SshdLinuxGateway(); }
+    @Bean
+    @ConditionalOnMissingBean(DeploymentLinuxGateway.class)
+    public DeploymentLinuxGateway deploymentLinuxGateway() {
+        return new SshdLinuxGateway(gold.debug.windowstolinux.shared.standard.deploy.build.DeploymentBuildExecutor::new,
+                gold.debug.windowstolinux.shared.standard.deploy.distro.extension.registry.DistributionSetupRegistry
+                        .defaults());
+    }
+
     /**
      * Assembles the web credential store managed by the Spring application context.
      * <p>装配由 Spring 应用上下文管理的Web凭据存储。
@@ -66,9 +79,11 @@ public class WebServiceConfiguration {
      * @param key lookup key within the current contract / 当前契约内的查找键
      * @return constructed or resolved web credential store / 构造或解析得到的Web凭据存储
      */
-    @Bean public WebCredentialStore webCredentialStore(WebSecretRepository repository, WebMasterKey key) {
+    @Bean
+    public WebCredentialStore webCredentialStore(WebSecretRepository repository, WebMasterKey key) {
         return new WebCredentialStore(repository, new WebSecretCipher(key));
     }
+
     /**
      * Assembles the web workspace managed by the Spring application context.
      * <p>装配由 Spring 应用上下文管理的Web工作区。
@@ -79,9 +94,12 @@ public class WebServiceConfiguration {
      * @return constructed or resolved web workspace / 构造或解析得到的Web工作区
      * @throws Exception if the delegated operation or caller-provided interaction fails / 被委派操作或调用方提供的交互失败时
      */
-    @Bean public WebWorkspace sourceWorkspace(WebStorageLocation location, WebRuntimeProperties properties, WebInstanceLease lease) throws Exception {
+    @Bean
+    public WebWorkspace sourceWorkspace(WebStorageLocation location, WebRuntimeProperties properties,
+            WebInstanceLease lease) throws Exception {
         return new WebWorkspace(location.files(), properties.files(), properties.storage().minimumFreeBytes());
     }
+
     /**
      * Assembles the web workspace managed by the Spring application context.
      * <p>装配由 Spring 应用上下文管理的Web工作区。
@@ -92,9 +110,12 @@ public class WebServiceConfiguration {
      * @return constructed or resolved web workspace / 构造或解析得到的Web工作区
      * @throws Exception if the delegated operation or caller-provided interaction fails / 被委派操作或调用方提供的交互失败时
      */
-    @Bean public WebWorkspace backupWorkspace(WebStorageLocation location, WebRuntimeProperties properties, WebInstanceLease lease) throws Exception {
+    @Bean
+    public WebWorkspace backupWorkspace(WebStorageLocation location, WebRuntimeProperties properties,
+            WebInstanceLease lease) throws Exception {
         return new WebWorkspace(location.backups(), properties.backups(), properties.storage().minimumFreeBytes());
     }
+
     /**
      * Assembles the web server service managed by the Spring application context.
      * <p>装配由 Spring 应用上下文管理的Web服务器服务。
@@ -104,9 +125,12 @@ public class WebServiceConfiguration {
      * @param gateway factory for authenticated Linux sessions / 已认证 Linux 会话的工厂
      * @return constructed or resolved web server service / 构造或解析得到的Web服务器服务
      */
-    @Bean public WebServerService webServerService(WebResourceRepository resources, WebCredentialStore credentials, DeploymentLinuxGateway gateway) {
+    @Bean
+    public WebServerService webServerService(WebResourceRepository resources, WebCredentialStore credentials,
+            DeploymentLinuxGateway gateway) {
         return new WebServerService(resources, credentials, gateway);
     }
+
     /**
      * Assembles the web source service managed by the Spring application context.
      * <p>装配由 Spring 应用上下文管理的Web源码服务。
@@ -116,9 +140,12 @@ public class WebServiceConfiguration {
      * @param properties properties / 属性集合
      * @return constructed or resolved web source service / 构造或解析得到的Web源码服务
      */
-    @Bean public WebSourceService webSourceService(WebResourceRepository resources, @Qualifier("sourceWorkspace") WebWorkspace files, WebRuntimeProperties properties) {
+    @Bean
+    public WebSourceService webSourceService(WebResourceRepository resources,
+            @Qualifier("sourceWorkspace") WebWorkspace files, WebRuntimeProperties properties) {
         return new WebSourceService(resources, files, properties.maintenance().sourceRetention());
     }
+
     /**
      * Assembles the web application secrets managed by the Spring application context.
      * <p>装配由 Spring 应用上下文管理的Web应用秘密集合。
@@ -126,7 +153,11 @@ public class WebServiceConfiguration {
      * @param credentials credentials / 凭据
      * @return constructed or resolved web application secrets / 构造或解析得到的Web应用秘密集合
      */
-    @Bean public WebApplicationSecrets webApplicationSecrets(WebCredentialStore credentials) { return new WebApplicationSecrets(credentials); }
+    @Bean
+    public WebApplicationSecrets webApplicationSecrets(WebCredentialStore credentials) {
+        return new WebApplicationSecrets(credentials);
+    }
+
     /**
      * Assembles the web application inventory managed by the Spring application context.
      * <p>装配由 Spring 应用上下文管理的Web应用清单。
@@ -137,9 +168,12 @@ public class WebServiceConfiguration {
      * @param properties properties / 属性集合
      * @return constructed or resolved web application inventory / 构造或解析得到的Web应用清单
      */
-    @Bean public WebApplicationInventory webApplicationInventory(WebResourceRepository resources, WebTaskRepository tasks, WebServerService servers, WebRuntimeProperties properties) {
+    @Bean
+    public WebApplicationInventory webApplicationInventory(WebResourceRepository resources, WebTaskRepository tasks,
+            WebServerService servers, WebRuntimeProperties properties) {
         return new WebApplicationInventory(resources, tasks, servers, properties.maintenance().scanValidity());
     }
+
     /**
      * Assembles the web ai service managed by the Spring application context.
      * <p>装配由 Spring 应用上下文管理的WebAI服务。
@@ -148,7 +182,11 @@ public class WebServiceConfiguration {
      * @param credentials credentials / 凭据
      * @return constructed or resolved web ai service / 构造或解析得到的WebAI服务
      */
-    @Bean public WebAiService webAiService(WebResourceRepository resources, WebCredentialStore credentials) { return new WebAiService(resources, credentials); }
+    @Bean
+    public WebAiService webAiService(WebResourceRepository resources, WebCredentialStore credentials) {
+        return new WebAiService(resources, credentials);
+    }
+
     /**
      * Assembles the web deployment service managed by the Spring application context.
      * <p>装配由 Spring 应用上下文管理的Web部署服务。
@@ -160,10 +198,12 @@ public class WebServiceConfiguration {
      * @param ai the supplied web ai service / 所提供的WebAI服务
      * @return constructed or resolved web deployment service / 构造或解析得到的Web部署服务
      */
-    @Bean public WebDeploymentService webDeploymentService(WebServerService servers, WebSourceService sources, WebApplicationInventory applications,
-                                                           WebApplicationSecrets secrets, WebAiService ai) {
+    @Bean
+    public WebDeploymentService webDeploymentService(WebServerService servers, WebSourceService sources,
+            WebApplicationInventory applications, WebApplicationSecrets secrets, WebAiService ai) {
         return new WebDeploymentService(servers, sources, applications, secrets, ai);
     }
+
     /**
      * Assembles the web backup service managed by the Spring application context.
      * <p>装配由 Spring 应用上下文管理的Web备份服务。
@@ -175,10 +215,13 @@ public class WebServiceConfiguration {
      * @param secrets credential references or scoped secret-access service / 凭据引用或限定作用域的秘密访问服务
      * @return constructed or resolved web backup service / 构造或解析得到的Web备份服务
      */
-    @Bean public WebBackupService webBackupService(WebResourceRepository resources, @Qualifier("backupWorkspace") WebWorkspace files,
-                                                   WebServerService servers, WebApplicationInventory applications, WebApplicationSecrets secrets) {
+    @Bean
+    public WebBackupService webBackupService(WebResourceRepository resources,
+            @Qualifier("backupWorkspace") WebWorkspace files, WebServerService servers,
+            WebApplicationInventory applications, WebApplicationSecrets secrets) {
         return new WebBackupService(resources, files, servers, applications, secrets);
     }
+
     /**
      * Assembles the web application service managed by the Spring application context.
      * <p>装配由 Spring 应用上下文管理的Web应用服务。
@@ -193,10 +236,13 @@ public class WebServiceConfiguration {
      * @param backups backups / 备份集合
      * @return constructed or resolved web application service / 构造或解析得到的Web应用服务
      */
-    @Bean public WebApplicationService webApplicationService(WebServerService servers, WebSourceService sources, WebResourceRepository resources,
-            WebApplicationInventory applications, WebDeploymentService deployment, WebAiService ai, WebApplicationSecrets secrets, WebBackupService backups) {
+    @Bean
+    public WebApplicationService webApplicationService(WebServerService servers, WebSourceService sources,
+            WebResourceRepository resources, WebApplicationInventory applications, WebDeploymentService deployment,
+            WebAiService ai, WebApplicationSecrets secrets, WebBackupService backups) {
         return new WebApplicationService(servers, sources, resources, applications, deployment, ai, secrets, backups);
     }
+
     /**
      * Assembles the web request context managed by the Spring application context.
      * <p>装配由 Spring 应用上下文管理的Web请求上下文。
@@ -209,13 +255,18 @@ public class WebServiceConfiguration {
      * @return constructed or resolved web request context / 构造或解析得到的Web请求上下文
      * @throws Exception if the delegated operation or caller-provided interaction fails / 被委派操作或调用方提供的交互失败时
      */
-    @Bean public WebRequestContext webRequestContext(WebPersistence database, WebCredentialStore credentials, WebInstanceLease lease,
-                                                     WebSourceService sources, WebBackupService backups) throws Exception {
-        database.initializeInternalScope(); credentials.verifyMasterKey(WebPersistence.INTERNAL_SCOPE, !lease.databaseExisted());
-        var context = new WebRequestContext(WebPersistence.INTERNAL_SCOPE.workspaceId(), WebPersistence.INTERNAL_SCOPE.userId());
-        sources.recoverTemporary(context); backups.recoverTemporary(context);
+    @Bean
+    public WebRequestContext webRequestContext(WebPersistence database, WebCredentialStore credentials,
+            WebInstanceLease lease, WebSourceService sources, WebBackupService backups) throws Exception {
+        database.initializeInternalScope();
+        credentials.verifyMasterKey(WebPersistence.INTERNAL_SCOPE, !lease.databaseExisted());
+        var context = new WebRequestContext(WebPersistence.INTERNAL_SCOPE.workspaceId(),
+                WebPersistence.INTERNAL_SCOPE.userId());
+        sources.recoverTemporary(context);
+        backups.recoverTemporary(context);
         return context;
     }
+
     /**
      * Assembles the web task scheduler managed by the Spring application context.
      * <p>装配由 Spring 应用上下文管理的Web任务Scheduler。
@@ -226,7 +277,8 @@ public class WebServiceConfiguration {
      * @return constructed or resolved web task scheduler / 构造或解析得到的Web任务Scheduler
      */
     @Bean(destroyMethod = "close")
-    public WebTaskScheduler webTaskScheduler(WebTaskRepository repository, WebRuntimeProperties properties, WebRequestContext context) {
+    public WebTaskScheduler webTaskScheduler(WebTaskRepository repository, WebRuntimeProperties properties,
+            WebRequestContext context) {
         return new WebTaskScheduler(repository, properties.tasks());
     }
 }

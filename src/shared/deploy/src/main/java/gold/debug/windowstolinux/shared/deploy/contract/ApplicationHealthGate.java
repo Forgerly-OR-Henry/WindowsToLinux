@@ -1,8 +1,8 @@
 package gold.debug.windowstolinux.shared.deploy.contract;
 
-import gold.debug.windowstolinux.shared.model.health.HealthCheck;
-
 import java.util.Objects;
+
+import gold.debug.windowstolinux.shared.model.health.HealthCheck;
 
 /**
  * Whole-application health probe owned by one reviewed component endpoint.

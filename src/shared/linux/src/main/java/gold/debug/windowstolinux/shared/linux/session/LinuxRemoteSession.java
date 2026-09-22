@@ -10,11 +10,44 @@ import gold.debug.windowstolinux.shared.linux.transfer.LinuxSourceTransport;
  *
  *  <p>仅由有界、类型化 Linux 能力组成的单个已验证远程会话。
  */
-public interface LinuxRemoteSession extends AutoCloseable,
-        LinuxCapabilityCollector,
-        LinuxEnvironmentPreparer,
-        LinuxSourceTransport,
-        LinuxRuntimeExecutor {
+public interface LinuxRemoteSession
+        extends
+            AutoCloseable,
+            LinuxCapabilityCollector,
+            LinuxEnvironmentPreparer,
+            LinuxSourceTransport,
+            LinuxRuntimeExecutor {
+    /** Returns authenticated environment operations. / 返回已认证环境操作。
+     * @return environment preparation port / 环境准备端口
+     */
+    default LinuxEnvironmentPreparer environment() {
+        throw new UnsupportedOperationException("environment port unavailable");
+    }
+
+    /** Delegates reviewed standard environment preparation. / 委派已审阅标准环境准备。
+     * @param approval target approval / 目标批准
+     * @return preparation evidence / 准备证据
+     * @throws gold.debug.windowstolinux.shared.linux.error.LinuxOperationException on remote failure / 远端失败时
+     */
+    @Override
+    default gold.debug.windowstolinux.shared.model.deployment.EnvironmentSetupResult prepareEnvironment(
+            gold.debug.windowstolinux.shared.model.deployment.EnvironmentSetupApproval approval)
+            throws gold.debug.windowstolinux.shared.linux.error.LinuxOperationException {
+        return environment().prepareEnvironment(approval);
+    }
+
+    /** Delegates neutral managed platform preparation. / 委派通用受管平台准备。
+     * @param approval target approval / 目标批准
+     * @return preparation evidence / 准备证据
+     * @throws gold.debug.windowstolinux.shared.linux.error.LinuxOperationException on remote failure / 远端失败时
+     */
+    @Override
+    default gold.debug.windowstolinux.shared.model.deployment.EnvironmentSetupResult prepareManagedPlatform(
+            gold.debug.windowstolinux.shared.model.deployment.EnvironmentSetupApproval approval)
+            throws gold.debug.windowstolinux.shared.linux.error.LinuxOperationException {
+        return environment().prepareManagedPlatform(approval);
+    }
+
     /**
      * Verifies authenticated read-only execution without a distribution allowlist. / 验证已认证的只读执行，不限制发行版。
      *
@@ -23,6 +56,7 @@ public interface LinuxRemoteSession extends AutoCloseable,
     default void verifyConnection() throws gold.debug.windowstolinux.shared.linux.error.LinuxOperationException {
         collectCapabilities();
     }
+
     /**
      * Closes this resource. / 关闭此资源。
      */

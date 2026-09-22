@@ -1,19 +1,5 @@
 package gold.debug.windowstolinux.app.db.persistence.repository;
 
-import gold.debug.windowstolinux.app.db.persistence.connection.DesktopConnectionFactory;
-import gold.debug.windowstolinux.app.db.entity.CurrentRelease;
-import gold.debug.windowstolinux.app.db.entity.SuccessfulManagedDeployment;
-import gold.debug.windowstolinux.shared.model.health.HealthCheck;
-import gold.debug.windowstolinux.shared.model.health.UserAccessUrl;
-import gold.debug.windowstolinux.shared.model.lifecycle.AutostartState;
-import gold.debug.windowstolinux.shared.model.lifecycle.LifecycleObservation;
-import gold.debug.windowstolinux.shared.model.lifecycle.RuntimeState;
-import gold.debug.windowstolinux.shared.model.managed.ManagedApplication;
-import gold.debug.windowstolinux.shared.model.managed.ManagedApplicationRuntimeConfiguration;
-import gold.debug.windowstolinux.shared.model.server.ServerIdentity;
-import gold.debug.windowstolinux.shared.config.secretref.SecretReference;
-import gold.debug.windowstolinux.shared.config.revision.ConfigurationSnapshot;
-
 import java.net.URI;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
@@ -26,6 +12,20 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
+
+import gold.debug.windowstolinux.app.db.entity.CurrentRelease;
+import gold.debug.windowstolinux.app.db.entity.SuccessfulManagedDeployment;
+import gold.debug.windowstolinux.app.db.persistence.connection.DesktopConnectionFactory;
+import gold.debug.windowstolinux.shared.config.revision.ConfigurationSnapshot;
+import gold.debug.windowstolinux.shared.config.secretref.SecretReference;
+import gold.debug.windowstolinux.shared.model.health.HealthCheck;
+import gold.debug.windowstolinux.shared.model.health.UserAccessUrl;
+import gold.debug.windowstolinux.shared.model.lifecycle.AutostartState;
+import gold.debug.windowstolinux.shared.model.lifecycle.LifecycleObservation;
+import gold.debug.windowstolinux.shared.model.lifecycle.RuntimeState;
+import gold.debug.windowstolinux.shared.model.managed.ManagedApplication;
+import gold.debug.windowstolinux.shared.model.managed.ManagedApplicationRuntimeConfiguration;
+import gold.debug.windowstolinux.shared.model.server.ServerIdentity;
 
 /**
  * Stores managed applications, runtime contracts, releases, and lifecycle observations. / 保存受管应用、运行契约、发布和生命周期观测。
@@ -73,8 +73,7 @@ public final class ManagedApplicationRepository {
      * @throws NullPointerException if a required input is absent / 必需输入缺失时
      */
     public void recordSuccessfulDeployment(ManagedApplication application,
-                                           ManagedApplicationRuntimeConfiguration runtimeConfiguration,
-                                           CurrentRelease release) throws SQLException {
+            ManagedApplicationRuntimeConfiguration runtimeConfiguration, CurrentRelease release) throws SQLException {
         Objects.requireNonNull(application, "application");
         Objects.requireNonNull(runtimeConfiguration, "runtimeConfiguration");
         Objects.requireNonNull(release, "release");
@@ -101,8 +100,8 @@ public final class ManagedApplicationRepository {
      */
     public void recordSuccessfulDeployments(List<SuccessfulManagedDeployment> deployments) throws SQLException {
         List<SuccessfulManagedDeployment> records = List.copyOf(Objects.requireNonNull(deployments, "deployments"));
-        if (records.isEmpty() || records.stream().map(value -> value.application().id()).distinct().count()
-                != records.size()) {
+        if (records.isEmpty()
+                || records.stream().map(value -> value.application().id()).distinct().count() != records.size()) {
             throw new IllegalArgumentException("whole-application persistence requires unique non-empty components");
         }
         try (Connection connection = connections.open()) {
@@ -123,8 +122,8 @@ public final class ManagedApplicationRepository {
      * @throws NullPointerException if a required input is absent / 必需输入缺失时
      */
     public void recordSuccessfulDeployment(ManagedApplication application,
-                                           ManagedApplicationRuntimeConfiguration runtimeConfiguration, CurrentRelease release,
-                                           ConfigurationSnapshot configuration, List<SecretReference> secretReferences) throws SQLException {
+            ManagedApplicationRuntimeConfiguration runtimeConfiguration, CurrentRelease release,
+            ConfigurationSnapshot configuration, List<SecretReference> secretReferences) throws SQLException {
         Objects.requireNonNull(application, "application");
         Objects.requireNonNull(runtimeConfiguration, "runtimeConfiguration");
         Objects.requireNonNull(release, "release");
@@ -133,8 +132,10 @@ public final class ManagedApplicationRepository {
         if (references.size() != secretReferences.size()) {
             throw new IllegalArgumentException("successful release secret references must be unique");
         }
-        if (!application.id().equals(release.applicationId()) || !application.id().equals(configuration.applicationId())) {
-            throw new IllegalArgumentException("current release and configuration must belong to the managed application");
+        if (!application.id().equals(release.applicationId())
+                || !application.id().equals(configuration.applicationId())) {
+            throw new IllegalArgumentException(
+                    "current release and configuration must belong to the managed application");
         }
         try (Connection connection = connections.open()) {
             RepositoryTransactionExecutor.execute(connection, () -> {
@@ -143,7 +144,8 @@ public final class ManagedApplicationRepository {
                 upsertRuntime(connection, application.id(), runtimeConfiguration);
                 upsertRelease(connection, release);
                 ConfigurationSnapshotRepository.saveAndBindRelease(connection, configuration, release.releaseSha256());
-                ApplicationSecretRepository.bindRelease(connection, application.id(), release.releaseSha256(), references);
+                ApplicationSecretRepository.bindRelease(connection, application.id(), release.releaseSha256(),
+                        references);
             });
         }
     }
@@ -228,13 +230,17 @@ public final class ManagedApplicationRepository {
      * @throws SQLException if the database cannot complete the requested read or transaction / 数据库无法完成请求的读取或事务时
      */
     public Optional<CurrentRelease> findRelease(String applicationId) throws SQLException {
-        try (Connection connection = connections.open(); PreparedStatement statement = connection.prepareStatement("""
-                SELECT application_id, release_sha256, published_at FROM managed_application_release WHERE application_id=?
-                """)) {
+        try (Connection connection = connections.open();
+                PreparedStatement statement = connection.prepareStatement(
+                        """
+                                SELECT application_id, release_sha256, published_at FROM managed_application_release WHERE application_id=?
+                                """)) {
             statement.setString(1, applicationId);
             try (ResultSet result = statement.executeQuery()) {
-                return result.next() ? Optional.of(new CurrentRelease(result.getString("application_id"),
-                        result.getString("release_sha256"), Instant.ofEpochMilli(result.getLong("published_at"))))
+                return result.next()
+                        ? Optional.of(new CurrentRelease(result.getString("application_id"),
+                                result.getString("release_sha256"),
+                                Instant.ofEpochMilli(result.getLong("published_at"))))
                         : Optional.empty();
             }
         }
@@ -279,11 +285,12 @@ public final class ManagedApplicationRepository {
                 """)) {
             statement.setString(1, application.id());
             try (ResultSet result = statement.executeQuery()) {
-                return result.next() ? Optional.of(new LifecycleObservation(application,
-                        RuntimeState.valueOf(result.getString("runtime_state")),
-                        AutostartState.valueOf(result.getString("autostart_state")),
-                        result.getInt("ownership_verified") == 1,
-                        Instant.ofEpochMilli(result.getLong("observed_at")), result.getString("evidence")))
+                return result.next()
+                        ? Optional.of(new LifecycleObservation(application,
+                                RuntimeState.valueOf(result.getString("runtime_state")),
+                                AutostartState.valueOf(result.getString("autostart_state")),
+                                result.getInt("ownership_verified") == 1,
+                                Instant.ofEpochMilli(result.getLong("observed_at")), result.getString("evidence")))
                         : Optional.empty();
             }
         }
@@ -321,8 +328,8 @@ public final class ManagedApplicationRepository {
      * @param deployments deployments / 部署集合
      * @throws SQLException if the database cannot complete the requested read or transaction / 数据库无法完成请求的读取或事务时
      */
-    static void recordSuccessfulDeployments(Connection connection,
-                                            List<SuccessfulManagedDeployment> deployments) throws SQLException {
+    static void recordSuccessfulDeployments(Connection connection, List<SuccessfulManagedDeployment> deployments)
+            throws SQLException {
         for (SuccessfulManagedDeployment deployment : deployments) {
             RepositoryTransactionExecutor.upsertServer(connection, deployment.application().server());
             upsertApplication(connection, deployment.application());
@@ -345,22 +352,28 @@ public final class ManagedApplicationRepository {
      * @throws SQLException if the database cannot complete the requested read or transaction / 数据库无法完成请求的读取或事务时
      */
     private static void upsertRuntime(Connection connection, String applicationId,
-                                      ManagedApplicationRuntimeConfiguration configuration) throws SQLException {
-        try (PreparedStatement statement = connection.prepareStatement("""
-                INSERT INTO managed_application_runtime_configuration
-                    (application_id, health_kind, health_timeout_seconds, user_access_url, identity_policy, runtime_payload)
-                VALUES (?, 'TYPED', ?, ?, ?, ?)
-                ON CONFLICT(application_id) DO UPDATE SET health_kind=excluded.health_kind,
-                    health_timeout_seconds=excluded.health_timeout_seconds,user_access_url=excluded.user_access_url,
-                    identity_policy=excluded.identity_policy,runtime_payload=excluded.runtime_payload,
-                    http_endpoint=NULL,http_expected_status=NULL,tcp_port=NULL,tcp_stability_seconds=NULL
-                """)) {
-            statement.setString(1, applicationId); statement.setInt(2, configuration.healthCheck().timeoutSeconds());
+            ManagedApplicationRuntimeConfiguration configuration) throws SQLException {
+        try (PreparedStatement statement = connection.prepareStatement(
+                """
+                        INSERT INTO managed_application_runtime_configuration
+                            (application_id, health_kind, health_timeout_seconds, user_access_url, identity_policy, runtime_payload)
+                        VALUES (?, 'TYPED', ?, ?, ?, ?)
+                        ON CONFLICT(application_id) DO UPDATE SET health_kind=excluded.health_kind,
+                            health_timeout_seconds=excluded.health_timeout_seconds,user_access_url=excluded.user_access_url,
+                            identity_policy=excluded.identity_policy,runtime_payload=excluded.runtime_payload,
+                            http_endpoint=NULL,http_expected_status=NULL,tcp_port=NULL,tcp_stability_seconds=NULL
+                        """)) {
+            statement.setString(1, applicationId);
+            statement.setInt(2, configuration.healthCheck().timeoutSeconds());
             statement.setString(3, configuration.userAccessUrl().map(url -> url.url().toString()).orElse(null));
             statement.setString(4, configuration.identityPolicy().name());
-            statement.setBytes(5, new gold.debug.windowstolinux.shared.config.persistence.serialization.ApplicationRuntimeConfigurationCodec().write(configuration));
+            statement.setBytes(5,
+                    new gold.debug.windowstolinux.shared.config.persistence.serialization.ApplicationRuntimeConfigurationCodec()
+                            .write(configuration));
             statement.executeUpdate();
-        } catch (java.io.IOException failure) { throw new SQLException("invalid application runtime payload", failure); }
+        } catch (java.io.IOException failure) {
+            throw new SQLException("invalid application runtime payload", failure);
+        }
     }
 
     /**
@@ -393,8 +406,9 @@ public final class ManagedApplicationRepository {
      * @throws SQLException if the database cannot complete the requested read or transaction / 数据库无法完成请求的读取或事务时
      */
     static ManagedApplication readApplication(ResultSet result) throws SQLException {
-        return new ManagedApplication(result.getString("id"), new ServerIdentity(result.getString("server_id"),
-                result.getString("host"), result.getInt("ssh_port"), result.getString("host_key_sha256")),
+        return new ManagedApplication(result.getString("id"),
+                new ServerIdentity(result.getString("server_id"), result.getString("host"), result.getInt("ssh_port"),
+                        result.getString("host_key_sha256")),
                 result.getString("systemd_unit"), result.getString("release_root"),
                 result.getString("ownership_manifest_sha256"));
     }
@@ -410,22 +424,30 @@ public final class ManagedApplicationRepository {
     static ManagedApplicationRuntimeConfiguration readRuntime(ResultSet result) throws SQLException {
         try {
             if ("TYPED".equals(result.getString("health_kind"))) {
-                try { return new gold.debug.windowstolinux.shared.config.persistence.serialization.ApplicationRuntimeConfigurationCodec().read(result.getBytes("runtime_payload")); }
-                catch (java.io.IOException failure) { throw new SQLException("application runtime requires reanalysis", failure); }
+                try {
+                    return new gold.debug.windowstolinux.shared.config.persistence.serialization.ApplicationRuntimeConfigurationCodec()
+                            .read(result.getBytes("runtime_payload"));
+                } catch (java.io.IOException failure) {
+                    throw new SQLException("application runtime requires reanalysis", failure);
+                }
             }
-            var policy = gold.debug.windowstolinux.shared.model.project.RuntimeIdentityMode.valueOf(required(result, "identity_policy"));
+            var policy = gold.debug.windowstolinux.shared.model.project.RuntimeIdentityMode
+                    .valueOf(required(result, "identity_policy"));
             String kind = result.getString("health_kind");
             int timeout = result.getInt("health_timeout_seconds");
             return switch (kind) {
-                case "HTTP" -> new ManagedApplicationRuntimeConfiguration(new HealthCheck.Http(
-                        URI.create(required(result, "http_endpoint")), result.getInt("http_expected_status"), timeout),
+                case "HTTP" -> new ManagedApplicationRuntimeConfiguration(
+                        new HealthCheck.Http(URI.create(required(result, "http_endpoint")),
+                                result.getInt("http_expected_status"), timeout),
                         Optional.of(new UserAccessUrl(URI.create(required(result, "user_access_url")))), policy);
-                case "TCP" -> new ManagedApplicationRuntimeConfiguration(new HealthCheck.Tcp(result.getInt("tcp_port"),
-                        timeout, result.getInt("tcp_stability_seconds")), Optional.empty(), policy);
+                case "TCP" -> new ManagedApplicationRuntimeConfiguration(
+                        new HealthCheck.Tcp(result.getInt("tcp_port"), timeout, result.getInt("tcp_stability_seconds")),
+                        Optional.empty(), policy);
                 default -> throw new SQLException("saved managed-deployment health-check type is invalid");
             };
         } catch (IllegalArgumentException exception) {
-            throw new SQLException("saved managed-deployment runtime configuration violates current validation rules", exception);
+            throw new SQLException("saved managed-deployment runtime configuration violates current validation rules",
+                    exception);
         }
     }
 
@@ -439,8 +461,7 @@ public final class ManagedApplicationRepository {
      * @throws SQLException if the database cannot complete the requested read or transaction / 数据库无法完成请求的读取或事务时
      */
     private static String required(ResultSet result, String column) throws SQLException {
-        return Optional.ofNullable(result.getString(column)).filter(value -> !value.isBlank())
-                .orElseThrow(() -> new SQLException(
-                        "saved managed-deployment runtime configuration is missing " + column));
+        return Optional.ofNullable(result.getString(column)).filter(value -> !value.isBlank()).orElseThrow(
+                () -> new SQLException("saved managed-deployment runtime configuration is missing " + column));
     }
 }

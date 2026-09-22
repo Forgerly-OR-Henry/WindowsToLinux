@@ -29,16 +29,12 @@ let page = 1,
   current: Task | null = null;
 async function projects(selected?: number) {
   const list = await api<{ id: number; name: string }[]>("/api/projects");
-  node<HTMLSelectElement>("project").replaceChildren(
-    ...list.map((p) => new Option(p.name, String(p.id))),
-  );
+  node<HTMLSelectElement>("project").replaceChildren(...list.map((p) => new Option(p.name, String(p.id))));
   if (selected) input("project").value = String(selected);
   await members();
 }
 async function members() {
-  const list = await api<{ id: number; name: string }[]>(
-    `/api/members?projectId=${project()}`,
-  );
+  const list = await api<{ id: number; name: string }[]>(`/api/members?projectId=${project()}`);
   for (const id of ["actor", "owner", "owner-filter"])
     node(id).replaceChildren(
       ...(id === "owner-filter" ? [new Option("全部", "0")] : []),
@@ -48,9 +44,7 @@ async function members() {
 async function overview() {
   const s = await api(`/api/stats?projectId=${project()}`);
   node("stats").textContent = `共 ${s.total} 个任务 · 逾期 ${s.overdue}`;
-  node("status-stats").textContent = s.statuses
-    .map((x: any) => `${states[x.status]} ${x.count}`)
-    .join(" · ");
+  node("status-stats").textContent = s.statuses.map((x: any) => `${states[x.status]} ${x.count}`).join(" · ");
   node("owner-stats").replaceChildren(
     ...s.owners.map((m: any) => {
       const r = document.createElement("tr");
@@ -137,9 +131,7 @@ async function detail(id: number) {
   node("dependency-list").replaceChildren(
     ...t.dependencies.map((d) => {
       const li = document.createElement("li");
-      li.append(
-        button(`#${d.id} ${d.title} · ${states[d.status]}`, () => detail(d.id)),
-      );
+      li.append(button(`#${d.id} ${d.title} · ${states[d.status]}`, () => detail(d.id)));
       return li;
     }),
   );
@@ -160,9 +152,7 @@ async function detail(id: number) {
   location.hash = "detail";
 }
 async function edit(id?: number) {
-  editing = id
-    ? await api<Task>(`/api/tasks/${id}?projectId=${project()}`)
-    : null;
+  editing = id ? await api<Task>(`/api/tasks/${id}?projectId=${project()}`) : null;
   node<HTMLFormElement>("editor").reset();
   node("edit-title").textContent = editing ? "编辑任务" : "新建任务";
   node("edit-version").textContent = editing
@@ -176,17 +166,13 @@ async function edit(id?: number) {
     input("priority").value = String(editing.priority);
     input("due-date").value = editing.dueDate;
     input("labels").value = editing.labels.join(",");
-    input("dependencies").value = editing.dependencies
-      .map((d) => d.id)
-      .join(",");
+    input("dependencies").value = editing.dependencies.map((d) => d.id).join(",");
   }
   location.hash = "edit";
 }
 async function route() {
   const name = location.hash.slice(1) || "overview";
-  document
-    .querySelectorAll<HTMLElement>("[data-page]")
-    .forEach((p) => (p.hidden = p.dataset.page !== name));
+  document.querySelectorAll<HTMLElement>("[data-page]").forEach((p) => (p.hidden = p.dataset.page !== name));
   if (name === "overview") await overview();
   if (name === "list") await list();
 }
@@ -211,10 +197,10 @@ form("editor", async () => {
     version: editing?.version || 0,
     actorId: actor(),
   };
-  const result = await api<Task>(
-    editing ? `/api/tasks/${editing.id}` : "/api/tasks",
-    { method: editing ? "PATCH" : "POST", body: JSON.stringify(body) },
-  );
+  const result = await api<Task>(editing ? `/api/tasks/${editing.id}` : "/api/tasks", {
+    method: editing ? "PATCH" : "POST",
+    body: JSON.stringify(body),
+  });
   editing = null;
   await detail(result.id);
 });
@@ -280,8 +266,7 @@ window.onhashchange = () => route().catch(message);
 configure()
   .then(() => projects())
   .then(() => {
-    if (["detail", "edit", "history"].includes(location.hash.slice(1)))
-      location.hash = "overview";
+    if (["detail", "edit", "history"].includes(location.hash.slice(1))) location.hash = "overview";
     return route();
   })
   .catch(message);

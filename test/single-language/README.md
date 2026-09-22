@@ -16,32 +16,32 @@
 
 场景目录统一使用 `<expected-result>-<function>`：`success-` 表示预期部署成功，`failure-` 表示预期部署失败或被阻断。前缀描述部署结果；自动化测试在正确验证这些预期时都应通过。
 
-| 目录 | 预期结果 | 验证内容 |
-| --- | --- | --- |
-| `success-deployment-smoke` | 正常部署，HTTP 200 | 多模块服务的识别、构建、启动与访问；响应 `deployment-smoke-ok` |
-| `success-json-api` | 正常部署，HTTP 200 | `application/json` 响应、结构化数据和 UTF-8/长度处理；Spring Boot 同时保留报价 API 与其单元测试 |
-| `success-runtime-config` | 正常部署，HTTP 200 | 读取运行时 `FIXTURE_LABEL`；未提供时返回 `runtime-config-default`，提供时返回指定值 |
-| `failure-health-rollback` | 构建与启动正常，候选健康失败 | HTTP 返回 503；先发布同组合的正常组，再以相同应用身份和健康规则发布此候选，验证恢复旧版本 |
-| `failure-configuration-rejected` | 部署前被配置准入阻断 | 按实际构建工具缺失锁文件/Wrapper，或提供不支持的版本、打包方式；具体分配见下表 |
+| 目录                             | 预期结果                     | 验证内容                                                                                        |
+| -------------------------------- | ---------------------------- | ----------------------------------------------------------------------------------------------- |
+| `success-deployment-smoke`       | 正常部署，HTTP 200           | 多模块服务的识别、构建、启动与访问；响应 `deployment-smoke-ok`                                  |
+| `success-json-api`               | 正常部署，HTTP 200           | `application/json` 响应、结构化数据和 UTF-8/长度处理；Spring Boot 同时保留报价 API 与其单元测试 |
+| `success-runtime-config`         | 正常部署，HTTP 200           | 读取运行时 `FIXTURE_LABEL`；未提供时返回 `runtime-config-default`，提供时返回指定值             |
+| `failure-health-rollback`        | 构建与启动正常，候选健康失败 | HTTP 返回 503；先发布同组合的正常组，再以相同应用身份和健康规则发布此候选，验证恢复旧版本       |
+| `failure-configuration-rejected` | 部署前被配置准入阻断         | 按实际构建工具缺失锁文件/Wrapper，或提供不支持的版本、打包方式；具体分配见下表                  |
 
 失败按真实问题分配，不能把缺失输入或负向候选计为成功部署。`failure-configuration-rejected` 指不能进入部署计划：实际结果可能是 `REQUIRES_INPUT` 或 `REJECTED`；`failure-health-rollback` 则应通过源码分析，在运行阶段被 HTTP 健康检查拒绝。新夹具不以编译错误冒充健康回滚。
 
 ## 语言与构建工具
 
-| 语言 | 构建工具/方式 | 正常组 | 失败组 | 合计 |
-| --- | --- | ---: | ---: | ---: |
-| Java | gradle, jdk, maven-wrapper, maven | 12 | 8 | 20 |
-| JavaScript | npm, pnpm, yarn | 9 | 6 | 15 |
-| TypeScript | npm, pnpm, yarn | 9 | 6 | 15 |
-| Python | pip, pipenv, poetry, uv | 12 | 8 | 20 |
-| Go | gomodule | 3 | 2 | 5 |
-| Rust | cargo | 3 | 2 | 5 |
-| C# | dotnetsdk | 3 | 2 | 5 |
-| Kotlin | gradle, kotlinc | 6 | 4 | 10 |
-| PHP | composer, phpcli | 6 | 4 | 10 |
-| Ruby | bundler, rubycli | 6 | 4 | 10 |
-| C | cmake | 3 | 2 | 5 |
-| C++ | cmake | 3 | 2 | 5 |
+| 语言       | 构建工具/方式                     | 正常组 | 失败组 | 合计 |
+| ---------- | --------------------------------- | -----: | -----: | ---: |
+| Java       | gradle, jdk, maven-wrapper, maven |     12 |      8 |   20 |
+| JavaScript | npm, pnpm, yarn                   |      9 |      6 |   15 |
+| TypeScript | npm, pnpm, yarn                   |      9 |      6 |   15 |
+| Python     | pip, pipenv, poetry, uv           |     12 |      8 |   20 |
+| Go         | gomodule                          |      3 |      2 |    5 |
+| Rust       | cargo                             |      3 |      2 |    5 |
+| C#         | dotnetsdk                         |      3 |      2 |    5 |
+| Kotlin     | gradle, kotlinc                   |      6 |      4 |   10 |
+| PHP        | composer, phpcli                  |      6 |      4 |   10 |
+| Ruby       | bundler, rubycli                  |      6 |      4 |   10 |
+| C          | cmake                             |      3 |      2 |    5 |
+| C++        | cmake                             |      3 |      2 |    5 |
 
 Java 的 Maven/Spring Boot 从原来的 24 个顶层夹具收敛为 5 组；Maven Wrapper 与 Gradle 独立列为构建方式，各自也是 5 组。重复的 Hello、生命周期、断连及快照令牌专用应用不再各占目录；相关产品验收类仍保留。C++ 继续位于 `c/cmake/cpp-service`，TypeScript 位于 `node/<tool>/typescript-service`，通过服务类型区分源码语言。
 
@@ -51,33 +51,33 @@ Java 的 Maven/Spring Boot 从原来的 24 个顶层夹具收敛为 5 组；Mave
 
 每条路径下都包含上述五组，路径中的语言、工具和服务类型共同确定一个组合。[matrix.json](matrix.json) 是自动化覆盖清单。
 
-| 组合路径 | 配置错误组的失败点 |
-| --- | --- |
-| [c/cmake/cpp-service](c/cmake/cpp-service) | 缺少 `CMakePresets.json` |
-| [c/cmake/http-service](c/cmake/http-service) | 缺少 `CMakePresets.json` |
-| [csharp/dotnetsdk/http-service](csharp/dotnetsdk/http-service) | 缺少 `packages.lock.json` |
-| [go/gomodule/http-service](go/gomodule/http-service) | 缺少 `go.sum` |
-| [java/gradle/spring-boot](java/gradle/spring-boot) | 缺少 `gradle/wrapper/gradle-wrapper.jar` |
-| [java/jdk/http-service](java/jdk/http-service) | Java 版本声明无效 |
-| [java/maven-wrapper/spring-boot](java/maven-wrapper/spring-boot) | 使用不支持的 WAR 打包 |
-| [java/maven/spring-boot](java/maven/spring-boot) | 使用不支持的 WAR 打包 |
-| [kotlin/gradle/http-service](kotlin/gradle/http-service) | 缺少 `gradle.lockfile` |
-| [kotlin/kotlinc/http-service](kotlin/kotlinc/http-service) | Kotlin 编译器版本声明无效 |
-| [node/npm/http-service](node/npm/http-service) | 缺少 `package-lock.json` |
-| [node/npm/typescript-service](node/npm/typescript-service) | 缺少 `package-lock.json` |
-| [node/pnpm/http-service](node/pnpm/http-service) | 缺少 `pnpm-lock.yaml` |
-| [node/pnpm/typescript-service](node/pnpm/typescript-service) | 缺少 `pnpm-lock.yaml` |
-| [node/yarn/http-service](node/yarn/http-service) | 缺少 `yarn.lock` |
-| [node/yarn/typescript-service](node/yarn/typescript-service) | 缺少 `yarn.lock` |
-| [php/composer/http-service](php/composer/http-service) | 缺少 `composer.lock` |
-| [php/phpcli/http-service](php/phpcli/http-service) | PHP 版本声明无效 |
-| [python/pip/http-service](python/pip/http-service) | 缺少 `requirements.lock` |
-| [python/pipenv/http-service](python/pipenv/http-service) | 缺少 `Pipfile.lock` |
-| [python/poetry/http-service](python/poetry/http-service) | 缺少 `poetry.lock` |
-| [python/uv/http-service](python/uv/http-service) | 缺少 `uv.lock` |
-| [ruby/bundler/http-service](ruby/bundler/http-service) | 缺少 `Gemfile.lock` |
-| [ruby/rubycli/http-service](ruby/rubycli/http-service) | Ruby 版本声明无效 |
-| [rust/cargo/http-service](rust/cargo/http-service) | 缺少 `Cargo.lock` |
+| 组合路径                                                         | 配置错误组的失败点                       |
+| ---------------------------------------------------------------- | ---------------------------------------- |
+| [c/cmake/cpp-service](c/cmake/cpp-service)                       | 缺少 `CMakePresets.json`                 |
+| [c/cmake/http-service](c/cmake/http-service)                     | 缺少 `CMakePresets.json`                 |
+| [csharp/dotnetsdk/http-service](csharp/dotnetsdk/http-service)   | 缺少 `packages.lock.json`                |
+| [go/gomodule/http-service](go/gomodule/http-service)             | 缺少 `go.sum`                            |
+| [java/gradle/spring-boot](java/gradle/spring-boot)               | 缺少 `gradle/wrapper/gradle-wrapper.jar` |
+| [java/jdk/http-service](java/jdk/http-service)                   | Java 版本声明无效                        |
+| [java/maven-wrapper/spring-boot](java/maven-wrapper/spring-boot) | 使用不支持的 WAR 打包                    |
+| [java/maven/spring-boot](java/maven/spring-boot)                 | 使用不支持的 WAR 打包                    |
+| [kotlin/gradle/http-service](kotlin/gradle/http-service)         | 缺少 `gradle.lockfile`                   |
+| [kotlin/kotlinc/http-service](kotlin/kotlinc/http-service)       | Kotlin 编译器版本声明无效                |
+| [node/npm/http-service](node/npm/http-service)                   | 缺少 `package-lock.json`                 |
+| [node/npm/typescript-service](node/npm/typescript-service)       | 缺少 `package-lock.json`                 |
+| [node/pnpm/http-service](node/pnpm/http-service)                 | 缺少 `pnpm-lock.yaml`                    |
+| [node/pnpm/typescript-service](node/pnpm/typescript-service)     | 缺少 `pnpm-lock.yaml`                    |
+| [node/yarn/http-service](node/yarn/http-service)                 | 缺少 `yarn.lock`                         |
+| [node/yarn/typescript-service](node/yarn/typescript-service)     | 缺少 `yarn.lock`                         |
+| [php/composer/http-service](php/composer/http-service)           | 缺少 `composer.lock`                     |
+| [php/phpcli/http-service](php/phpcli/http-service)               | PHP 版本声明无效                         |
+| [python/pip/http-service](python/pip/http-service)               | 缺少 `requirements.lock`                 |
+| [python/pipenv/http-service](python/pipenv/http-service)         | 缺少 `Pipfile.lock`                      |
+| [python/poetry/http-service](python/poetry/http-service)         | 缺少 `poetry.lock`                       |
+| [python/uv/http-service](python/uv/http-service)                 | 缺少 `uv.lock`                           |
+| [ruby/bundler/http-service](ruby/bundler/http-service)           | 缺少 `Gemfile.lock`                      |
+| [ruby/rubycli/http-service](ruby/rubycli/http-service)           | Ruby 版本声明无效                        |
+| [rust/cargo/http-service](rust/cargo/http-service)               | 缺少 `Cargo.lock`                        |
 
 ## 使用与验证
 

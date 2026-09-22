@@ -23,68 +23,72 @@ public final class ManagedPlatformCapabilityProbe {
      * @return fixed capability probe / 固定能力探测
      */
     public static String render() {
-        return ManagedEcosystemCapabilityProbe.managedJavaEnvironment() + """
-                set -eu
-                export LC_ALL=C
-                . /etc/os-release
-                printf 'DISTRO_ID=%s\\n' "${ID:-unknown}"
-                printf 'DISTRO_VARIANT=%s\\n' "${VARIANT_ID:-}"
-                printf 'VERSION=%s\\n' "${VERSION_ID:-unknown}"
-                printf 'ARCH='; uname -m
-                if command -v apt-get >/dev/null 2>&1; then printf 'PACKAGE_MANAGER=apt\\n';
-                elif command -v dnf >/dev/null 2>&1; then printf 'PACKAGE_MANAGER=dnf\\n';
-                else printf 'PACKAGE_MANAGER=unknown\\n'; fi
-                if command -v dpkg >/dev/null 2>&1; then printf 'PACKAGE_ARCH='; dpkg --print-architecture
-                elif command -v rpm >/dev/null 2>&1; then printf 'PACKAGE_ARCH='; rpm --eval '%{_arch}'
-                else printf 'PACKAGE_ARCH=unknown\\n'; fi
-                if command -v systemctl >/dev/null 2>&1; then printf 'SYSTEMD=1\\n'; else printf 'SYSTEMD=0\\n'; fi
-                if command -v docker >/dev/null 2>&1; then printf 'DOCKER_CLIENT=1\\n'; else printf 'DOCKER_CLIENT=0\\n'; fi
-                if command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1; then printf 'DOCKER_OPERATIONAL=1\\n'; else printf 'DOCKER_OPERATIONAL=0\\n'; fi
-                if command -v podman >/dev/null 2>&1; then printf 'PODMAN_CLIENT=1\\n'; else printf 'PODMAN_CLIENT=0\\n'; fi
-                if command -v podman >/dev/null 2>&1 && podman info >/dev/null 2>&1; then printf 'PODMAN_OPERATIONAL=1\\n'; else printf 'PODMAN_OPERATIONAL=0\\n'; fi
-                if command -v podman >/dev/null 2>&1 && podman quadlet --help >/dev/null 2>&1; then
-                  printf 'PODMAN_QUADLET=1\\n'
-                else
-                  printf 'PODMAN_QUADLET=0\\n'
-                fi
-                """ + ManagedEcosystemCapabilityProbe.platformToolChecks() + """
-                cpu_level=unknown
-                if [ "$(uname -m)" = x86_64 ]; then
-                  cpu_level=x86-64-v1
-                  loader=
-                  for candidate in /lib64/ld-linux-x86-64.so.2 /lib/x86_64-linux-gnu/ld-linux-x86-64.so.2; do
-                    if [ -x "$candidate" ]; then loader="$candidate"; break; fi
-                  done
-                  if [ -n "$loader" ]; then
-                    loader_help="$($loader --help 2>/dev/null || :)"
-                    if printf '%s\\n' "$loader_help" | grep -Eq 'x86-64-v4.*supported'; then cpu_level=x86-64-v4
-                    elif printf '%s\\n' "$loader_help" | grep -Eq 'x86-64-v3.*supported'; then cpu_level=x86-64-v3
-                    elif printf '%s\\n' "$loader_help" | grep -Eq 'x86-64-v2.*supported'; then cpu_level=x86-64-v2
-                    fi
-                  fi
-                fi
-                printf 'CPU_LEVEL=%s\\n' "$cpu_level"
-                if [ -r /proc/cpuinfo ]; then
-                  printf 'CPU_FLAGS='
-                  awk -F: '/^(flags|Features)[[:space:]]*:/ {print $2; exit}' /proc/cpuinfo | tr ' ' ',' | tr -s ',' | cut -c1-2048
-                else
-                  printf 'CPU_FLAGS=\\n'
-                fi
-                if command -v getenforce >/dev/null 2>&1; then
-                  printf 'SECURITY_MODULE=selinux\\n'
-                  printf 'SECURITY_STATE='; getenforce | tr '[:upper:]' '[:lower:]'
-                elif [ -r /sys/module/apparmor/parameters/enabled ]; then
-                  printf 'SECURITY_MODULE=apparmor\\n'
-                  if grep -Eq '^[Yy]' /sys/module/apparmor/parameters/enabled; then
-                    printf 'SECURITY_STATE=enabled\\n'
-                  else
-                    printf 'SECURITY_STATE=disabled\\n'
-                  fi
-                else
-                  printf 'SECURITY_MODULE=none\\n'
-                  printf 'SECURITY_STATE=disabled\\n'
-                fi
-                """ + firewallProbe();
+        return ManagedEcosystemCapabilityProbe.managedJavaEnvironment()
+                + """
+                        set -eu
+                        export LC_ALL=C
+                        . /etc/os-release
+                        printf 'DISTRO_ID=%s\\n' "${ID:-unknown}"
+                        printf 'DISTRO_VARIANT=%s\\n' "${VARIANT_ID:-}"
+                        printf 'VERSION=%s\\n' "${VERSION_ID:-unknown}"
+                        printf 'ARCH='; uname -m
+                        if command -v apt-get >/dev/null 2>&1; then printf 'PACKAGE_MANAGER=apt\\n';
+                        elif command -v dnf >/dev/null 2>&1; then printf 'PACKAGE_MANAGER=dnf\\n';
+                        else printf 'PACKAGE_MANAGER=unknown\\n'; fi
+                        if command -v dpkg >/dev/null 2>&1; then printf 'PACKAGE_ARCH='; dpkg --print-architecture
+                        elif command -v rpm >/dev/null 2>&1; then printf 'PACKAGE_ARCH='; rpm --eval '%{_arch}'
+                        else printf 'PACKAGE_ARCH=unknown\\n'; fi
+                        if command -v systemctl >/dev/null 2>&1; then printf 'SYSTEMD=1\\n'; else printf 'SYSTEMD=0\\n'; fi
+                        if command -v docker >/dev/null 2>&1; then printf 'DOCKER_CLIENT=1\\n'; else printf 'DOCKER_CLIENT=0\\n'; fi
+                        if command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1; then printf 'DOCKER_OPERATIONAL=1\\n'; else printf 'DOCKER_OPERATIONAL=0\\n'; fi
+                        if command -v podman >/dev/null 2>&1; then printf 'PODMAN_CLIENT=1\\n'; else printf 'PODMAN_CLIENT=0\\n'; fi
+                        if command -v podman >/dev/null 2>&1 && podman info >/dev/null 2>&1; then printf 'PODMAN_OPERATIONAL=1\\n'; else printf 'PODMAN_OPERATIONAL=0\\n'; fi
+                        if command -v podman >/dev/null 2>&1 && podman quadlet --help >/dev/null 2>&1; then
+                          printf 'PODMAN_QUADLET=1\\n'
+                        else
+                          printf 'PODMAN_QUADLET=0\\n'
+                        fi
+                        """
+                + ManagedEcosystemCapabilityProbe.platformToolChecks()
+                + """
+                        cpu_level=unknown
+                        if [ "$(uname -m)" = x86_64 ]; then
+                          cpu_level=x86-64-v1
+                          loader=
+                          for candidate in /lib64/ld-linux-x86-64.so.2 /lib/x86_64-linux-gnu/ld-linux-x86-64.so.2; do
+                            if [ -x "$candidate" ]; then loader="$candidate"; break; fi
+                          done
+                          if [ -n "$loader" ]; then
+                            loader_help="$($loader --help 2>/dev/null || :)"
+                            if printf '%s\\n' "$loader_help" | grep -Eq 'x86-64-v4.*supported'; then cpu_level=x86-64-v4
+                            elif printf '%s\\n' "$loader_help" | grep -Eq 'x86-64-v3.*supported'; then cpu_level=x86-64-v3
+                            elif printf '%s\\n' "$loader_help" | grep -Eq 'x86-64-v2.*supported'; then cpu_level=x86-64-v2
+                            fi
+                          fi
+                        fi
+                        printf 'CPU_LEVEL=%s\\n' "$cpu_level"
+                        if [ -r /proc/cpuinfo ]; then
+                          printf 'CPU_FLAGS='
+                          awk -F: '/^(flags|Features)[[:space:]]*:/ {print $2; exit}' /proc/cpuinfo | tr ' ' ',' | tr -s ',' | cut -c1-2048
+                        else
+                          printf 'CPU_FLAGS=\\n'
+                        fi
+                        if command -v getenforce >/dev/null 2>&1; then
+                          printf 'SECURITY_MODULE=selinux\\n'
+                          printf 'SECURITY_STATE='; getenforce | tr '[:upper:]' '[:lower:]'
+                        elif [ -r /sys/module/apparmor/parameters/enabled ]; then
+                          printf 'SECURITY_MODULE=apparmor\\n'
+                          if grep -Eq '^[Yy]' /sys/module/apparmor/parameters/enabled; then
+                            printf 'SECURITY_STATE=enabled\\n'
+                          else
+                            printf 'SECURITY_STATE=disabled\\n'
+                          fi
+                        else
+                          printf 'SECURITY_MODULE=none\\n'
+                          printf 'SECURITY_STATE=disabled\\n'
+                        fi
+                        """
+                + firewallProbe();
     }
 
     /**

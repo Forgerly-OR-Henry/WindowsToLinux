@@ -1,5 +1,12 @@
 package gold.debug.windowstolinux.app.service.execution.environment;
 
+import java.sql.SQLException;
+import java.time.Instant;
+import java.util.Arrays;
+import java.util.Objects;
+import java.util.concurrent.locks.ReentrantLock;
+import java.util.function.Predicate;
+
 import gold.debug.windowstolinux.app.secret.SecretStore;
 import gold.debug.windowstolinux.app.secret.SecretStoreException;
 import gold.debug.windowstolinux.app.service.failure.ApplicationServiceException;
@@ -8,18 +15,11 @@ import gold.debug.windowstolinux.app.service.lock.ServerOperationLockRegistry;
 import gold.debug.windowstolinux.app.service.server.ServerProfile;
 import gold.debug.windowstolinux.app.service.server.ServerUseCaseFacade;
 import gold.debug.windowstolinux.shared.deploy.execution.environment.EnvironmentSetupService;
-import gold.debug.windowstolinux.shared.linux.error.LinuxOperationException;
 import gold.debug.windowstolinux.shared.linux.connection.LinuxGateway;
+import gold.debug.windowstolinux.shared.linux.error.LinuxOperationException;
 import gold.debug.windowstolinux.shared.model.deployment.EnvironmentSetupApproval;
 import gold.debug.windowstolinux.shared.model.deployment.EnvironmentSetupResult;
 import gold.debug.windowstolinux.shared.model.security.CredentialStorageMode;
-
-import java.sql.SQLException;
-import java.time.Instant;
-import java.util.Arrays;
-import java.util.Objects;
-import java.util.concurrent.locks.ReentrantLock;
-import java.util.function.Predicate;
 
 /**
  * Adapts desktop credentials and approvals to managed Linux environment preparation.
@@ -31,16 +31,19 @@ public final class EnvironmentSetupUseCase {
      * <p>处理调用方使用的应用服务的环境Setup服务协作对象。
      */
     private final EnvironmentSetupService service;
+
     /**
      * Factory for authenticated Linux sessions.
      * <p>已认证 Linux 会话的工厂。
      */
     private final LinuxGateway gateway;
+
     /**
      * Bound server use case facade collaborator for server-profile and authenticated-session service.
      * <p>处理服务器资料及已认证会话服务的服务器用例门面协作对象。
      */
     private final ServerUseCaseFacade servers;
+
     /**
      * Shared operation locks indexed by target identity.
      * <p>按目标身份索引的共享操作锁。
@@ -57,8 +60,8 @@ public final class EnvironmentSetupUseCase {
      * @param locks shared operation locks indexed by target identity / 按目标身份索引的共享操作锁
      * @throws NullPointerException if a required input is absent / 必需输入缺失时
      */
-    public EnvironmentSetupUseCase(EnvironmentSetupService service, LinuxGateway gateway,
-                                         ServerUseCaseFacade servers, ServerOperationLockRegistry locks) {
+    public EnvironmentSetupUseCase(EnvironmentSetupService service, LinuxGateway gateway, ServerUseCaseFacade servers,
+            ServerOperationLockRegistry locks) {
         this.service = Objects.requireNonNull(service, "service");
         this.gateway = Objects.requireNonNull(gateway, "gateway");
         this.servers = Objects.requireNonNull(servers, "servers");
@@ -79,9 +82,8 @@ public final class EnvironmentSetupUseCase {
      * @throws SQLException if the database cannot complete the requested read or transaction / 数据库无法完成请求的读取或事务时
      * @throws LinuxOperationException if the authenticated remote operation fails or its evidence is rejected / 已认证远端操作失败或其证据被拒绝时
      */
-    public EnvironmentSetupResult prepare(ServerProfile profile, CredentialStorageMode mode,
-                                                        char[] masterPassword, Predicate<String> confirmation,
-                                                        boolean installationConfirmed)
+    public EnvironmentSetupResult prepare(ServerProfile profile, CredentialStorageMode mode, char[] masterPassword,
+            Predicate<String> confirmation, boolean installationConfirmed)
             throws SecretStoreException, SQLException, LinuxOperationException {
         return prepare(profile, mode, masterPassword, confirmation, installationConfirmed, null);
     }
@@ -101,8 +103,8 @@ public final class EnvironmentSetupUseCase {
      * @throws LinuxOperationException if the authenticated remote operation fails or its evidence is rejected / 已认证远端操作失败或其证据被拒绝时
      * @throws NullPointerException if a required input is absent / 必需输入缺失时
      */
-    public EnvironmentSetupResult prepare(ServerProfile profile, CredentialStorageMode mode,
-            char[] masterPassword, Predicate<String> confirmation, boolean installationConfirmed,
+    public EnvironmentSetupResult prepare(ServerProfile profile, CredentialStorageMode mode, char[] masterPassword,
+            Predicate<String> confirmation, boolean installationConfirmed,
             Predicate<gold.debug.windowstolinux.shared.model.server.security.SelinuxPreparationPlan> systemConfirmation)
             throws SecretStoreException, SQLException, LinuxOperationException {
         try {
@@ -111,8 +113,8 @@ public final class EnvironmentSetupUseCase {
                 throw ApplicationServiceException.create(ApplicationServiceFailureType.STORAGE_MODE_MISMATCH,
                         "Credential storage mode does not match the saved server profile");
             }
-            EnvironmentSetupApproval approval = new EnvironmentSetupApproval(
-                    profile.id(), installationConfirmed, Instant.now());
+            EnvironmentSetupApproval approval = new EnvironmentSetupApproval(profile.id(), installationConfirmed,
+                    Instant.now());
             approval.requireAcceptedFor(profile.id());
             ReentrantLock lock = locks.forServer(profile.id());
             lock.lock();

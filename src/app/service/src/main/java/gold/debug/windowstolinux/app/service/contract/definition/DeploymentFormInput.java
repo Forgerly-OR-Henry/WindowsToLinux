@@ -1,10 +1,10 @@
 package gold.debug.windowstolinux.app.service.contract.definition;
 
-import gold.debug.windowstolinux.shared.model.deployment.DatabaseReviewMode;
+import java.util.Objects;
 
+import gold.debug.windowstolinux.shared.model.deployment.DatabaseReviewMode;
 import gold.debug.windowstolinux.shared.model.project.DeploymentProjectType;
 import gold.debug.windowstolinux.shared.model.project.DeploymentRuntimeSpecification.ContainerEngineType;
-import java.util.Objects;
 
 /**
  * Typed non-secret controls submitted by the single-component form. / 单组件表单提交的类型化非秘密控件值。
@@ -33,12 +33,12 @@ import java.util.Objects;
  * @param experimentalAdapterRisk experimental adapter risk / 实验性适配器风险
  * @param applicationDeclaration application declaration / 应用声明
  */
-public record DeploymentFormInput(boolean detectType, DeploymentProjectType projectType,
-        String primary, String secondary, String version, String jvmTarget,
-        String configuration, String secrets, DatabaseReviewMode databaseMode, String databaseDetails,
-        String healthMode, String healthEndpoint, String expectedStatus, String timeout, String stability,
-        String accessUrl, String jvmArguments, String arguments, String ports, String volumes,
-        ContainerEngineType containerEngine, boolean experimentalAdapterRisk, String applicationDeclaration) {
+public record DeploymentFormInput(boolean detectType, DeploymentProjectType projectType, String primary,
+        String secondary, String version, String jvmTarget, String configuration, String secrets,
+        DatabaseReviewMode databaseMode, String databaseDetails, String healthMode, String healthEndpoint,
+        String expectedStatus, String timeout, String stability, String accessUrl, String jvmArguments,
+        String arguments, String ports, String volumes, ContainerEngineType containerEngine,
+        boolean experimentalAdapterRisk, String applicationDeclaration) {
     /**
      * Initializes deployment form input through its shared constructor contract.
      * <p>通过共享构造契约初始化部署表单输入。
@@ -66,13 +66,14 @@ public record DeploymentFormInput(boolean detectType, DeploymentProjectType proj
      * @param containerEngine container engine / 容器引擎
      * @param experimentalAdapterRisk experimental adapter risk / 实验性适配器风险
      */
-    public DeploymentFormInput(boolean detectType, DeploymentProjectType projectType,
-        String primary, String secondary, String version, String jvmTarget,
-        String configuration, String secrets, DatabaseReviewMode databaseMode, String databaseDetails,
-        String healthMode, String healthEndpoint, String expectedStatus, String timeout, String stability,
-        String accessUrl, String jvmArguments, String arguments, String ports, String volumes,
-        ContainerEngineType containerEngine, boolean experimentalAdapterRisk) {
-        this(detectType, projectType, primary, secondary, version, jvmTarget, configuration, secrets, databaseMode, databaseDetails, healthMode, healthEndpoint, expectedStatus, timeout, stability, accessUrl, jvmArguments, arguments, ports, volumes, containerEngine, experimentalAdapterRisk, "");
+    public DeploymentFormInput(boolean detectType, DeploymentProjectType projectType, String primary, String secondary,
+            String version, String jvmTarget, String configuration, String secrets, DatabaseReviewMode databaseMode,
+            String databaseDetails, String healthMode, String healthEndpoint, String expectedStatus, String timeout,
+            String stability, String accessUrl, String jvmArguments, String arguments, String ports, String volumes,
+            ContainerEngineType containerEngine, boolean experimentalAdapterRisk) {
+        this(detectType, projectType, primary, secondary, version, jvmTarget, configuration, secrets, databaseMode,
+                databaseDetails, healthMode, healthEndpoint, expectedStatus, timeout, stability, accessUrl,
+                jvmArguments, arguments, ports, volumes, containerEngine, experimentalAdapterRisk, "");
     }
 
     /**
@@ -107,9 +108,9 @@ public record DeploymentFormInput(boolean detectType, DeploymentProjectType proj
     public DeploymentFormInput {
         Objects.requireNonNull(projectType, "projectType");
         Objects.requireNonNull(databaseMode, "databaseMode");
-        for (String value : new String[] { primary, secondary, version, jvmTarget, configuration, secrets,
+        for (String value : new String[]{primary, secondary, version, jvmTarget, configuration, secrets,
                 databaseDetails, healthMode, healthEndpoint, expectedStatus, timeout, stability, accessUrl,
-                jvmArguments, arguments, ports, volumes }) {
+                jvmArguments, arguments, ports, volumes}) {
             if (Objects.requireNonNull(value, "form value").length() > 4096)
                 throw new IllegalArgumentException("deployment form value exceeds bound");
         }

@@ -1,15 +1,5 @@
 package gold.debug.windowstolinux.shared.linux.sshd.backup;
 
-import gold.debug.windowstolinux.shared.linux.error.LinuxOperationException;
-import gold.debug.windowstolinux.shared.linux.error.LinuxOperationFailureType;
-import gold.debug.windowstolinux.shared.linux.protocol.RemoteStepResult;
-import gold.debug.windowstolinux.shared.linux.protocol.backup.RemoteBackupArtifact;
-import gold.debug.windowstolinux.shared.linux.protocol.backup.RemoteBackupArtifactPort;
-import gold.debug.windowstolinux.shared.linux.protocol.backup.RemoteBackupArtifactRequest;
-import gold.debug.windowstolinux.shared.linux.sshd.backup.execution.protocol.ManagedBackupProtocolParser;
-import gold.debug.windowstolinux.shared.linux.sshd.backup.generation.script.ManagedBackupCommandRenderer;
-import gold.debug.windowstolinux.shared.linux.sshd.command.SshCommandExecutor;
-
 import java.io.FilterOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
@@ -20,6 +10,16 @@ import java.time.Duration;
 import java.util.HexFormat;
 import java.util.Objects;
 
+import gold.debug.windowstolinux.shared.linux.error.LinuxOperationException;
+import gold.debug.windowstolinux.shared.linux.error.LinuxOperationFailureType;
+import gold.debug.windowstolinux.shared.linux.protocol.RemoteStepResult;
+import gold.debug.windowstolinux.shared.linux.protocol.backup.RemoteBackupArtifact;
+import gold.debug.windowstolinux.shared.linux.protocol.backup.RemoteBackupArtifactPort;
+import gold.debug.windowstolinux.shared.linux.protocol.backup.RemoteBackupArtifactRequest;
+import gold.debug.windowstolinux.shared.linux.sshd.backup.execution.protocol.ManagedBackupProtocolParser;
+import gold.debug.windowstolinux.shared.linux.sshd.backup.generation.script.ManagedBackupCommandRenderer;
+import gold.debug.windowstolinux.shared.linux.sshd.command.SshCommandExecutor;
+
 /**
  * Apache SSHD managed backup artifacts backed only by fixed helper verbs. / 仅由固定 helper 动词支持的 Apache SSHD 受管备份制品端口。
  */
@@ -29,21 +29,25 @@ public final class SshdBackupArtifactPort implements RemoteBackupArtifactPort {
      * <p>创建超时。
      */
     private static final Duration CREATE_TIMEOUT = Duration.ofMinutes(30);
+
     /**
      * STREAM TIMEOUT.
      * <p>流超时。
      */
     private static final Duration STREAM_TIMEOUT = Duration.ofHours(2);
+
     /**
      * Bound ssh command executor collaborator for typed remote command boundary.
      * <p>处理类型化远端命令边界的SSH命令执行器协作对象。
      */
     private final SshCommandExecutor commands;
+
     /**
      * Renderer.
      * <p>渲染器。
      */
     private final ManagedBackupCommandRenderer renderer = new ManagedBackupCommandRenderer();
+
     /**
      * Parser.
      * <p>解析器。
@@ -68,8 +72,12 @@ public final class SshdBackupArtifactPort implements RemoteBackupArtifactPort {
      * @param token token / 令牌
      * @throws LinuxOperationException if the authenticated remote operation fails or its evidence is rejected / 已认证远端操作失败或其证据被拒绝时
      */
-    @Override public void beginMaintenance(gold.debug.windowstolinux.shared.model.managed.ManagedApplication app, String token)
-            throws LinuxOperationException { maintenance(app, token, "begin"); }
+    @Override
+    public void beginMaintenance(gold.debug.windowstolinux.shared.model.managed.ManagedApplication app, String token)
+            throws LinuxOperationException {
+        maintenance(app, token, "begin");
+    }
+
     /**
      * Releases only the maintenance marker belonging to the supplied operation.
      * <p>仅释放属于所提供操作的维护标记。
@@ -78,8 +86,12 @@ public final class SshdBackupArtifactPort implements RemoteBackupArtifactPort {
      * @param token token / 令牌
      * @throws LinuxOperationException if the authenticated remote operation fails or its evidence is rejected / 已认证远端操作失败或其证据被拒绝时
      */
-    @Override public void endMaintenance(gold.debug.windowstolinux.shared.model.managed.ManagedApplication app, String token)
-            throws LinuxOperationException { maintenance(app, token, "end"); }
+    @Override
+    public void endMaintenance(gold.debug.windowstolinux.shared.model.managed.ManagedApplication app, String token)
+            throws LinuxOperationException {
+        maintenance(app, token, "end");
+    }
+
     /**
      * Checks maintenance syntax and bounds before returning the admitted content.
      * <p>在返回已准入内容前检查维护语法及边界。
@@ -90,15 +102,17 @@ public final class SshdBackupArtifactPort implements RemoteBackupArtifactPort {
      * @throws LinuxOperationException if the authenticated remote operation fails or its evidence is rejected / 已认证远端操作失败或其证据被拒绝时
      * @throws IllegalArgumentException if an input violates the constraints checked by this contract / 输入违反当前契约检查的约束时
      */
-    private void maintenance(gold.debug.windowstolinux.shared.model.managed.ManagedApplication app, String token, String action)
-            throws LinuxOperationException {
-        if (!token.matches("(?:(?:backup|restore)-[0-9a-f]{32}|deployment-[0-9a-f]{64})")) throw new IllegalArgumentException("invalid maintenance token");
+    private void maintenance(gold.debug.windowstolinux.shared.model.managed.ManagedApplication app, String token,
+            String action) throws LinuxOperationException {
+        if (!token.matches("(?:(?:backup|restore)-[0-9a-f]{32}|deployment-[0-9a-f]{64})"))
+            throw new IllegalArgumentException("invalid maintenance token");
         var result = commands.execProtocol("sudo -n "
                 + gold.debug.windowstolinux.shared.linux.sshd.execution.protocol.helper.ManagedHelperBundle.PATH
-                + " application-maintenance " + action + " " + app.id() + " " + app.ownershipManifestSha256() + " " + token,
-                Duration.ofSeconds(40), true);
-        if (!result.succeeded()) throw LinuxOperationException.create(LinuxOperationFailureType.BACKUP_ARTIFACT_CREATION_FAILED,
-                "Application maintenance could not be verified: " + result.failureEvidence());
+                + " application-maintenance " + action + " " + app.id() + " " + app.ownershipManifestSha256() + " "
+                + token, Duration.ofSeconds(40), true);
+        if (!result.succeeded())
+            throw LinuxOperationException.create(LinuxOperationFailureType.BACKUP_ARTIFACT_CREATION_FAILED,
+                    "Application maintenance could not be verified: " + result.failureEvidence());
     }
 
     /**
@@ -141,8 +155,10 @@ public final class SshdBackupArtifactPort implements RemoteBackupArtifactPort {
         VerifyingOutput output = new VerifyingOutput(destination, artifact);
         try {
             var result = commands.execProtocolStreaming(renderer.read(artifact), InputStream.nullInputStream(), output,
-                    STREAM_TIMEOUT);
-            if (!result.succeeded()) throw new IOException(result.failureEvidence());
+                    STREAM_TIMEOUT, "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855", 0,
+                    Math.max(1, artifact.byteCount()));
+            if (!result.succeeded())
+                throw new IOException(result.failureEvidence());
             output.verify();
         } catch (IOException | LinuxOperationException exception) {
             throw LinuxOperationException.create(LinuxOperationFailureType.BACKUP_ARTIFACT_TRANSFER_FAILED,
@@ -178,11 +194,13 @@ public final class SshdBackupArtifactPort implements RemoteBackupArtifactPort {
          * <p>已验证构建或备份制品元数据。
          */
         private final RemoteBackupArtifact artifact;
+
         /**
          * Content identity used for independent verification.
          * <p>独立验证所用的内容身份。
          */
         private final MessageDigest digest = sha256();
+
         /**
          * Count.
          * <p>数量。
@@ -197,7 +215,8 @@ public final class SshdBackupArtifactPort implements RemoteBackupArtifactPort {
          * @param artifact verified build or backup artifact metadata / 已验证构建或备份制品元数据
          */
         private VerifyingOutput(OutputStream output, RemoteBackupArtifact artifact) {
-            super(output); this.artifact = artifact;
+            super(output);
+            this.artifact = artifact;
         }
 
         /**
@@ -207,7 +226,11 @@ public final class SshdBackupArtifactPort implements RemoteBackupArtifactPort {
          * @param value candidate content accepted or rejected by this contract / 由当前契约接收或拒绝的候选内容
          * @throws IOException if the required file or stream operation fails / 所需文件或流操作失败时
          */
-        @Override public void write(int value) throws IOException { write(new byte[]{(byte) value}, 0, 1); }
+        @Override
+        public void write(int value) throws IOException {
+            write(new byte[]{(byte) value}, 0, 1);
+        }
+
         /**
          * Writes verifying output.
          * <p>写入Verifying输出。
@@ -217,18 +240,26 @@ public final class SshdBackupArtifactPort implements RemoteBackupArtifactPort {
          * @param length length / 长度
          * @throws IOException if the required file or stream operation fails / 所需文件或流操作失败时
          */
-        @Override public void write(byte[] bytes, int offset, int length) throws IOException {
+        @Override
+        public void write(byte[] bytes, int offset, int length) throws IOException {
             count = Math.addExact(count, length);
-            if (count > artifact.byteCount()) throw new IOException("backup stream exceeds evidence");
-            digest.update(bytes, offset, length); out.write(bytes, offset, length);
+            if (count > artifact.byteCount())
+                throw new IOException("backup stream exceeds evidence");
+            digest.update(bytes, offset, length);
+            out.write(bytes, offset, length);
         }
+
         /**
          * Closes the resources owned by this instance and completes its cleanup boundary.
          * <p>关闭当前实例持有的资源并完成其清理边界。
          *
          * @throws IOException if the required file or stream operation fails / 所需文件或流操作失败时
          */
-        @Override public void close() throws IOException { flush(); }
+        @Override
+        public void close() throws IOException {
+            flush();
+        }
+
         /**
          * Verifies verifying output.
          * <p>验证Verifying输出。
@@ -236,8 +267,7 @@ public final class SshdBackupArtifactPort implements RemoteBackupArtifactPort {
          * @throws IOException if the required file or stream operation fails / 所需文件或流操作失败时
          */
         private void verify() throws IOException {
-            if (count != artifact.byteCount()
-                    || !HexFormat.of().formatHex(digest.digest()).equals(artifact.sha256())) {
+            if (count != artifact.byteCount() || !HexFormat.of().formatHex(digest.digest()).equals(artifact.sha256())) {
                 throw new IOException("backup stream digest or size differs");
             }
         }
@@ -251,7 +281,10 @@ public final class SshdBackupArtifactPort implements RemoteBackupArtifactPort {
      * @throws IllegalStateException if the required state or runtime facility is unavailable / 所需状态或运行设施不可用时
      */
     private static MessageDigest sha256() {
-        try { return MessageDigest.getInstance("SHA-256"); }
-        catch (NoSuchAlgorithmException exception) { throw new IllegalStateException("SHA-256 unavailable", exception); }
+        try {
+            return MessageDigest.getInstance("SHA-256");
+        } catch (NoSuchAlgorithmException exception) {
+            throw new IllegalStateException("SHA-256 unavailable", exception);
+        }
     }
 }

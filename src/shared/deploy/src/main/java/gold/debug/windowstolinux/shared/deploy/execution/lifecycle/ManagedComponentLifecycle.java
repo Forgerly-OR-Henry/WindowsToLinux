@@ -1,9 +1,9 @@
 package gold.debug.windowstolinux.shared.deploy.execution.lifecycle;
 
-import gold.debug.windowstolinux.shared.model.managed.ManagedApplication;
-import gold.debug.windowstolinux.shared.model.health.HealthCheck;
-
 import java.util.Objects;
+
+import gold.debug.windowstolinux.shared.model.health.HealthCheck;
+import gold.debug.windowstolinux.shared.model.managed.ManagedApplication;
 
 /**
  * Secret-free managed identity and runtime needed for one component lifecycle operation.
@@ -14,11 +14,7 @@ import java.util.Objects;
  * @param application managed target with its server and ownership identity / 携带服务器及归属身份的受管目标
  * @param healthCheck reviewed probe and its success criteria / 已审阅探测及其成功条件
  */
-public record ManagedComponentLifecycle(
-        String componentId,
-        ManagedApplication application,
-        HealthCheck healthCheck
-) {
+public record ManagedComponentLifecycle(String componentId, ManagedApplication application, HealthCheck healthCheck) {
     /**
      * Validates the stable component identity. / 验证稳定组件身份。
      *

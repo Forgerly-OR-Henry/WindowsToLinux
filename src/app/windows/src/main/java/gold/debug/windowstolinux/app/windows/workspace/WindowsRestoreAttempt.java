@@ -12,16 +12,19 @@ public final class WindowsRestoreAttempt {
      * <p>父级。
      */
     private final Path parent;
+
     /**
      * Candidate root.
      * <p>候选根目录。
      */
     private final Path candidateRoot;
+
     /**
      * Identity of the isolated deployment or restore candidate.
      * <p>隔离部署或恢复候选的身份。
      */
     private final String candidateId;
+
     /**
      * Parent file key.
      * <p>父级文件键。
@@ -56,8 +59,7 @@ public final class WindowsRestoreAttempt {
         this.candidateRoot = Objects.requireNonNull(candidateRoot, "candidateRoot").toAbsolutePath().normalize();
         this.candidateId = Objects.requireNonNull(candidateId, "candidateId").trim();
         this.parentFileKey = parentFileKey;
-        if (!this.candidateId.matches("[a-z0-9][a-z0-9-]{0,79}")
-                || !this.candidateRoot.getParent().equals(this.parent)
+        if (!this.candidateId.matches("[a-z0-9][a-z0-9-]{0,79}") || !this.candidateRoot.getParent().equals(this.parent)
                 || !this.candidateRoot.getFileName().toString().equals(this.candidateId)) {
             throw new IllegalArgumentException("restore attempt is outside its exact candidate parent");
         }

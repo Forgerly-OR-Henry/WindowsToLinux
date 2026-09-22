@@ -1,4 +1,5 @@
 namespace Fixture;
+
 public static class FixtureEndpoints
 {
     public static void Map(WebApplication app, FixtureConfiguration configuration)

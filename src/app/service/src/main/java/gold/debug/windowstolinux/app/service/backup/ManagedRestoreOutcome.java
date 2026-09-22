@@ -1,11 +1,11 @@
 package gold.debug.windowstolinux.app.service.backup;
 
-import gold.debug.windowstolinux.shared.backup.restore.BackupRestoreResult;
-import gold.debug.windowstolinux.shared.model.failure.FailureDescriptor;
-
+import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
-import java.util.List;
+
+import gold.debug.windowstolinux.shared.backup.restore.BackupRestoreResult;
+import gold.debug.windowstolinux.shared.model.failure.FailureDescriptor;
 
 /**
  * Product restore result including whether the desktop adopted the verified remote graph. / 包含桌面是否接管已验证远端图的产品恢复结果。
@@ -16,13 +16,8 @@ import java.util.List;
  * @param localFailure local failure / 本地失败
  * @param warnings warnings / 警告集合
  */
-public record ManagedRestoreOutcome(
-        String targetServerId,
-        BackupRestoreResult restore,
-        ManagedRestoreControlState controlState,
-        Optional<FailureDescriptor> localFailure,
-        List<String> warnings
-) {
+public record ManagedRestoreOutcome(String targetServerId, BackupRestoreResult restore,
+        ManagedRestoreControlState controlState, Optional<FailureDescriptor> localFailure, List<String> warnings) {
     /**
      * Keeps a successful remote result distinct from a later local persistence failure. / 区分远端成功与随后本地持久化失败。
      *
@@ -44,12 +39,12 @@ public record ManagedRestoreOutcome(
                 || value.length() > 512 || value.chars().anyMatch(Character::isISOControl))) {
             throw new IllegalArgumentException("restore warnings are invalid");
         }
-        boolean remoteSucceeded = restore.status()
-                == gold.debug.windowstolinux.shared.backup.restore.BackupRestoreStatus.SUCCEEDED;
+        boolean remoteSucceeded = restore
+                .status() == gold.debug.windowstolinux.shared.backup.restore.BackupRestoreStatus.SUCCEEDED;
         if (!remoteSucceeded && (controlState != ManagedRestoreControlState.FAILED || localFailure.isPresent())
                 || remoteSucceeded && controlState == ManagedRestoreControlState.UPDATED && localFailure.isPresent()
                 || remoteSucceeded && controlState == ManagedRestoreControlState.DEFERRED_SOURCE_RETAINED
-                && localFailure.isPresent()
+                        && localFailure.isPresent()
                 || remoteSucceeded && controlState == ManagedRestoreControlState.FAILED && localFailure.isEmpty()) {
             throw new IllegalArgumentException("local restore adoption evidence is inconsistent");
         }

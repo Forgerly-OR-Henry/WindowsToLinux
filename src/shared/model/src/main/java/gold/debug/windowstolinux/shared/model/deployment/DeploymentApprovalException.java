@@ -1,10 +1,10 @@
 package gold.debug.windowstolinux.shared.model.deployment;
 
+import java.util.Objects;
+
 import gold.debug.windowstolinux.shared.model.failure.FailureCarrier;
 import gold.debug.windowstolinux.shared.model.failure.FailureDescriptor;
 import gold.debug.windowstolinux.shared.model.failure.OperationIdentity;
-
-import java.util.Objects;
 
 /**
  * Structured rejection raised before an unapproved target mutation. / 未经批准的目标修改前抛出的结构化拒绝。

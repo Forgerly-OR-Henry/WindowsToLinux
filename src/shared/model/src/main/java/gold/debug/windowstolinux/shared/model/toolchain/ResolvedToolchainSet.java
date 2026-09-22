@@ -16,16 +16,18 @@ public record ResolvedToolchainSet(String catalogRevision, List<Selection> selec
      * <p>记录已解析工具链来自宿主机还是受管安装。
      */
     public enum OriginType {
-    /**
-     * SYSTEM classification within origin type.
-     * <p>源类型中的系统分类。
-     */
-     SYSTEM,
-    /**
-     * MANAGED classification within origin type.
-     * <p>源类型中的受管分类。
-     */
-     MANAGED }
+        /**
+         * SYSTEM classification within origin type.
+         * <p>源类型中的系统分类。
+         */
+        SYSTEM,
+        /**
+         * MANAGED classification within origin type.
+         * <p>源类型中的受管分类。
+         */
+        MANAGED
+    }
+
     /**
      * Binds one required toolchain to an exact executable and version selection.
      * <p>将一个所需工具链绑定到精确的可执行文件及版本选择。
@@ -38,7 +40,7 @@ public record ResolvedToolchainSet(String catalogRevision, List<Selection> selec
      * @param sha256 lower-case hexadecimal SHA-256 digest / 小写十六进制 SHA-256 摘要
      */
     public record Selection(ToolchainRequirement requirement, ToolchainVersion version, String directory,
-                            OriginType origin, String source, String sha256) {
+            OriginType origin, String source, String sha256) {
         /**
          * Validates and binds the inputs required by selection.
          * <p>校验并绑定选择所需输入。
@@ -53,7 +55,9 @@ public record ResolvedToolchainSet(String catalogRevision, List<Selection> selec
          * @throws NullPointerException if a required input is absent / 必需输入缺失时
          */
         public Selection {
-            Objects.requireNonNull(requirement); Objects.requireNonNull(version); Objects.requireNonNull(origin);
+            Objects.requireNonNull(requirement);
+            Objects.requireNonNull(version);
+            Objects.requireNonNull(origin);
             if (requirement.ecosystem() != version.ecosystem() || version.preview())
                 throw new IllegalArgumentException("selected tool must be a matching stable ecosystem");
             if (directory == null || !directory.matches("/(?:[A-Za-z0-9_+.-]+/)*[A-Za-z0-9_+.-]+")
@@ -61,7 +65,8 @@ public record ResolvedToolchainSet(String catalogRevision, List<Selection> selec
                 throw new IllegalArgumentException("invalid toolchain directory");
             if (source == null || source.isBlank() || source.length() > 2048 || source.chars().anyMatch(c -> c < 32))
                 throw new IllegalArgumentException("invalid toolchain source evidence");
-            if (sha256 == null || !sha256.matches("[a-f0-9]{64}")) throw new IllegalArgumentException("toolchain digest required");
+            if (sha256 == null || !sha256.matches("[a-f0-9]{64}"))
+                throw new IllegalArgumentException("toolchain digest required");
         }
     }
     /**
@@ -76,9 +81,12 @@ public record ResolvedToolchainSet(String catalogRevision, List<Selection> selec
         if (catalogRevision == null || !catalogRevision.matches("[A-Za-z0-9._-]{1,96}"))
             throw new IllegalArgumentException("invalid catalog revision");
         selections = List.copyOf(selections);
-        if (selections.size() > 32 || selections.stream().map(s -> s.requirement().ecosystem() + ":" + s.requirement().purpose())
-                .distinct().count() != selections.size()) throw new IllegalArgumentException("duplicate toolchain role");
+        if (selections.size() > 32
+                || selections.stream().map(s -> s.requirement().ecosystem() + ":" + s.requirement().purpose())
+                        .distinct().count() != selections.size())
+            throw new IllegalArgumentException("duplicate toolchain role");
     }
+
     /**
      * Finds optional.
      * <p>查找可选。
@@ -88,6 +96,8 @@ public record ResolvedToolchainSet(String catalogRevision, List<Selection> selec
      * @return matching result, or empty when no admitted value exists / 匹配结果；不存在已准入内容时为空
      */
     public Optional<Selection> find(ToolchainEcosystemType ecosystem, ToolchainRequirement.PurposeType purpose) {
-        return selections.stream().filter(s -> s.requirement().ecosystem() == ecosystem && s.requirement().purpose() == purpose).findFirst();
+        return selections.stream()
+                .filter(s -> s.requirement().ecosystem() == ecosystem && s.requirement().purpose() == purpose)
+                .findFirst();
     }
 }

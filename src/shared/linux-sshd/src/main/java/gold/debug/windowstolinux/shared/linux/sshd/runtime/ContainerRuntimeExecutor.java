@@ -1,22 +1,21 @@
 package gold.debug.windowstolinux.shared.linux.sshd.runtime;
 
-import gold.debug.windowstolinux.shared.linux.sshd.execution.protocol.runtime.ApplicationHealthProbe;
+import java.time.Duration;
+import java.time.Instant;
+import java.util.Map;
+import java.util.Objects;
 
 import gold.debug.windowstolinux.shared.linux.error.LinuxOperationException;
 import gold.debug.windowstolinux.shared.linux.error.LinuxOperationFailureType;
 import gold.debug.windowstolinux.shared.linux.runtime.HealthCheckResult;
 import gold.debug.windowstolinux.shared.linux.sshd.command.SshCommandExecutor;
+import gold.debug.windowstolinux.shared.linux.sshd.execution.protocol.runtime.ApplicationHealthProbe;
 import gold.debug.windowstolinux.shared.model.health.HealthCheck;
 import gold.debug.windowstolinux.shared.model.lifecycle.AutostartState;
 import gold.debug.windowstolinux.shared.model.lifecycle.LifecycleObservation;
 import gold.debug.windowstolinux.shared.model.lifecycle.RuntimeState;
 import gold.debug.windowstolinux.shared.model.managed.ManagedApplication;
 import gold.debug.windowstolinux.shared.model.project.DeploymentRuntimeSpecification;
-
-import java.time.Duration;
-import java.time.Instant;
-import java.util.Map;
-import java.util.Objects;
 
 /**
  * Observes and health-checks only the named container owned by the managed release root.
@@ -49,8 +48,8 @@ public final class ContainerRuntimeExecutor {
      * @return constructed or resolved health check result / 构造或解析得到的健康检查结果
      * @throws LinuxOperationException if the authenticated remote operation fails or its evidence is rejected / 已认证远端操作失败或其证据被拒绝时
      */
-    public HealthCheckResult checkHealth(ManagedApplication application, DeploymentRuntimeSpecification.Container runtime,
-                                         HealthCheck healthCheck) throws LinuxOperationException {
+    public HealthCheckResult checkHealth(ManagedApplication application,
+            DeploymentRuntimeSpecification.Container runtime, HealthCheck healthCheck) throws LinuxOperationException {
         return checkHealth(application, runtime.engine(), healthCheck);
     }
 
@@ -64,8 +63,8 @@ public final class ContainerRuntimeExecutor {
      * @throws LinuxOperationException if the authenticated remote operation fails or its evidence is rejected / 已认证远端操作失败或其证据被拒绝时
      */
     public HealthCheckResult checkHealth(ManagedApplication application,
-                                         DeploymentRuntimeSpecification.ContainerEngineType runtimeEngine,
-                                         HealthCheck healthCheck) throws LinuxOperationException {
+            DeploymentRuntimeSpecification.ContainerEngineType runtimeEngine, HealthCheck healthCheck)
+            throws LinuxOperationException {
         return ApplicationHealthProbe.check(commands, application, healthCheck);
     }
 
@@ -77,8 +76,8 @@ public final class ContainerRuntimeExecutor {
      * @return constructed or resolved lifecycle observation / 构造或解析得到的生命周期观测
      * @throws LinuxOperationException if the authenticated remote operation fails or its evidence is rejected / 已认证远端操作失败或其证据被拒绝时
      */
-    public LifecycleObservation observe(ManagedApplication application, DeploymentRuntimeSpecification.Container runtime)
-            throws LinuxOperationException {
+    public LifecycleObservation observe(ManagedApplication application,
+            DeploymentRuntimeSpecification.Container runtime) throws LinuxOperationException {
         return observe(application, runtime.engine());
     }
 
@@ -91,16 +90,19 @@ public final class ContainerRuntimeExecutor {
      * @throws LinuxOperationException if the authenticated remote operation fails or its evidence is rejected / 已认证远端操作失败或其证据被拒绝时
      */
     public LifecycleObservation observe(ManagedApplication application,
-                                        DeploymentRuntimeSpecification.ContainerEngineType runtimeEngine)
-            throws LinuxOperationException {
+            DeploymentRuntimeSpecification.ContainerEngineType runtimeEngine) throws LinuxOperationException {
         String engine = runtimeEngine.name().toLowerCase(java.util.Locale.ROOT);
         String root = application.releaseRoot();
         String name = "windowstolinux-" + application.id();
         String autostartCommand = runtimeEngine == DeploymentRuntimeSpecification.ContainerEngineType.DOCKER
-                ? SshCommandExecutor.quote(engine) + " inspect --format '{{.HostConfig.RestartPolicy.Name}}' "
-                + SshCommandExecutor.quote(name) + " 2>/dev/null || true"
-                : "if test -f " + SshCommandExecutor.quote("/etc/containers/systemd/" + name
-                + ".container.d/10-windowstolinux-autostart.conf") + "; then printf enabled; else printf no; fi";
+                ? gold.debug.windowstolinux.shared.linux.command.CommandText.quote(engine)
+                        + " inspect --format '{{.HostConfig.RestartPolicy.Name}}' "
+                        + gold.debug.windowstolinux.shared.linux.command.CommandText.quote(name)
+                        + " 2>/dev/null || true"
+                : "if test -f "
+                        + gold.debug.windowstolinux.shared.linux.command.CommandText.quote(
+                                "/etc/containers/systemd/" + name + ".container.d/10-windowstolinux-autostart.conf")
+                        + "; then printf enabled; else printf no; fi";
         String script = """
                 set -eu
                 owner=0
@@ -117,21 +119,31 @@ public final class ContainerRuntimeExecutor {
                 running=$(%s inspect --format '{{.State.Running}}' %s 2>/dev/null || true)
                 enabled=$(%s)
                 printf 'OWNER=%%s\\nRUNNING=%%s\\nENABLED=%%s\\n' "$owner" "$running" "$enabled"
-                """.formatted(SshCommandExecutor.quote(root), SshCommandExecutor.quote(application.ownershipManifestSha256()),
-                SshCommandExecutor.quote(engine), SshCommandExecutor.quote(engine), SshCommandExecutor.quote(name), autostartCommand);
-        var result = commands.exec("/bin/bash -lc " + SshCommandExecutor.quote(script), Duration.ofSeconds(20), true);
+                """.formatted(gold.debug.windowstolinux.shared.linux.command.CommandText.quote(root),
+                gold.debug.windowstolinux.shared.linux.command.CommandText.quote(application.ownershipManifestSha256()),
+                gold.debug.windowstolinux.shared.linux.command.CommandText.quote(engine),
+                gold.debug.windowstolinux.shared.linux.command.CommandText.quote(engine),
+                gold.debug.windowstolinux.shared.linux.command.CommandText.quote(name), autostartCommand);
+        var result = commands.exec(
+                "/bin/bash -lc " + gold.debug.windowstolinux.shared.linux.command.CommandText.quote(script),
+                Duration.ofSeconds(20), true);
         if (!result.succeeded()) {
             throw LinuxOperationException.create(LinuxOperationFailureType.RUNTIME_OBSERVATION_FAILED,
                     "Failed to observe the actual managed container state");
         }
-        Map<String, String> values = SshCommandExecutor.lines(result.output());
+        Map<String, String> values = gold.debug.windowstolinux.shared.linux.command.CommandText.lines(result.output());
         boolean ownership = "1".equals(values.get("OWNER"));
-        RuntimeState state = ownership && "true".equals(values.get("RUNNING")) ? RuntimeState.RUNNING
+        RuntimeState state = ownership && "true".equals(values.get("RUNNING"))
+                ? RuntimeState.RUNNING
                 : ownership ? RuntimeState.STOPPED : RuntimeState.UNKNOWN;
         String enabled = values.getOrDefault("ENABLED", "");
-        AutostartState autostart = ownership && ("enabled".equals(enabled) || (!"no".equals(enabled) && !enabled.isBlank()))
-                ? AutostartState.ENABLED : ownership ? AutostartState.DISABLED : AutostartState.UNKNOWN;
-        return new LifecycleObservation(application, state, autostart, ownership, Instant.now(), ownership
-                ? "Managed container ownership and engine state verified" : "Managed container ownership is missing or modified");
+        AutostartState autostart = ownership
+                && ("enabled".equals(enabled) || (!"no".equals(enabled) && !enabled.isBlank()))
+                        ? AutostartState.ENABLED
+                        : ownership ? AutostartState.DISABLED : AutostartState.UNKNOWN;
+        return new LifecycleObservation(application, state, autostart, ownership, Instant.now(),
+                ownership
+                        ? "Managed container ownership and engine state verified"
+                        : "Managed container ownership is missing or modified");
     }
 }

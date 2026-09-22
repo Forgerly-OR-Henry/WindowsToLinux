@@ -16,8 +16,8 @@ import java.util.Map;
  * @param createdAt instant at which this record was created / 当前记录创建时刻
  * @param updatedAt updated at / 已更新时刻
  */
-public record StoredResource(String id, String name, Map<String, Object> attributes, String document,
-                             long version, String createdAt, String updatedAt) {
+public record StoredResource(String id, String name, Map<String, Object> attributes, String document, long version,
+        String createdAt, String updatedAt) {
     /**
      * Binds the supplied dependencies and state for stored resource.
      * <p>为已存储资源绑定传入的依赖及状态。
@@ -30,5 +30,7 @@ public record StoredResource(String id, String name, Map<String, Object> attribu
      * @param createdAt instant at which this record was created / 当前记录创建时刻
      * @param updatedAt updated at / 已更新时刻
      */
-    public StoredResource { attributes = Collections.unmodifiableMap(new LinkedHashMap<>(attributes)); }
+    public StoredResource {
+        attributes = Collections.unmodifiableMap(new LinkedHashMap<>(attributes));
+    }
 }

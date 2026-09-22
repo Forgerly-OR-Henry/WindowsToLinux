@@ -1,20 +1,5 @@
 package gold.debug.windowstolinux.app.service.contract;
 
-import gold.debug.windowstolinux.app.secret.SecretStoreException;
-import gold.debug.windowstolinux.app.service.deployment.multi.ManagedMultiComponentApplication;
-import gold.debug.windowstolinux.app.service.contract.definition.MultiComponentReviewInput;
-import gold.debug.windowstolinux.app.service.deployment.multi.ReviewedMultiComponentApplication;
-import gold.debug.windowstolinux.app.service.server.ServerProfile;
-import gold.debug.windowstolinux.app.service.source.PreparedMultiComponentSource;
-import gold.debug.windowstolinux.shared.analyze.component.ComponentAnalysisRequest;
-import gold.debug.windowstolinux.shared.config.revision.ConfigurationSnapshot;
-import gold.debug.windowstolinux.shared.deploy.contract.ApplicationHealthGate;
-import gold.debug.windowstolinux.shared.deploy.contract.result.deployment.MultiComponentDeploymentResult;
-import gold.debug.windowstolinux.shared.deploy.contract.result.lifecycle.MultiComponentLifecycleResult;
-import gold.debug.windowstolinux.shared.model.lifecycle.LifecycleAction;
-import gold.debug.windowstolinux.shared.model.security.CredentialStorageMode;
-import gold.debug.windowstolinux.shared.model.server.ServerIdentity;
-
 import java.io.IOException;
 import java.nio.file.Path;
 import java.sql.SQLException;
@@ -22,6 +7,21 @@ import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import java.util.function.Predicate;
+
+import gold.debug.windowstolinux.app.secret.SecretStoreException;
+import gold.debug.windowstolinux.app.service.contract.definition.MultiComponentReviewInput;
+import gold.debug.windowstolinux.app.service.deployment.multi.ManagedMultiComponentApplication;
+import gold.debug.windowstolinux.app.service.deployment.multi.ReviewedMultiComponentApplication;
+import gold.debug.windowstolinux.app.service.server.ServerProfile;
+import gold.debug.windowstolinux.app.service.source.PreparedMultiComponentSource;
+import gold.debug.windowstolinux.shared.config.revision.ConfigurationSnapshot;
+import gold.debug.windowstolinux.shared.deploy.contract.ApplicationHealthGate;
+import gold.debug.windowstolinux.shared.deploy.contract.result.deployment.MultiComponentDeploymentResult;
+import gold.debug.windowstolinux.shared.deploy.contract.result.lifecycle.MultiComponentLifecycleResult;
+import gold.debug.windowstolinux.shared.model.lifecycle.LifecycleAction;
+import gold.debug.windowstolinux.shared.model.security.CredentialStorageMode;
+import gold.debug.windowstolinux.shared.model.server.ServerIdentity;
+import gold.debug.windowstolinux.shared.standard.analyze.component.ComponentAnalysisRequest;
 
 /**
  * Narrow application operations required by whole-application deployment and lifecycle. / 整应用部署与生命周期所需的窄应用操作。
@@ -33,7 +33,8 @@ public interface MultiComponentApplicationFacade {
      * @param input source content consumed by this operation / 当前操作消费的源内容
      * @return component analysis within the service boundary / 在服务边界内解析组件分析输入
      */
-    ComponentAnalysisRequest parseComponentAnalysis(gold.debug.windowstolinux.app.service.contract.definition.ComponentFormInput input);
+    ComponentAnalysisRequest parseComponentAnalysis(
+            gold.debug.windowstolinux.app.service.contract.definition.ComponentFormInput input);
 
     /**
      * Parses review inputs against the analyzed managed identity. / 根据已分析受管身份解析审阅输入。
@@ -44,7 +45,8 @@ public interface MultiComponentApplicationFacade {
      * @param experimentalRisk experimental risk / 实验性风险
      * @return review inputs against the analyzed managed identity / 根据已分析受管身份解析审阅输入
      */
-    MultiComponentReviewInput parseComponentReview(gold.debug.windowstolinux.app.service.contract.definition.ComponentFormInput input,
+    MultiComponentReviewInput parseComponentReview(
+            gold.debug.windowstolinux.app.service.contract.definition.ComponentFormInput input,
             String managedApplicationId, boolean containerRisk, boolean experimentalRisk);
 
     /**
@@ -57,8 +59,8 @@ public interface MultiComponentApplicationFacade {
      * @return constructed or resolved prepared multi component source / 构造或解析得到的已准备多组件源码
      * @throws IOException if the required file or stream operation fails / 所需文件或流操作失败时
      */
-    PreparedMultiComponentSource prepareReviewedMultiComponentSource(
-            Path applicationRoot, String applicationId, List<ComponentAnalysisRequest> components) throws IOException;
+    PreparedMultiComponentSource prepareReviewedMultiComponentSource(Path applicationRoot, String applicationId,
+            List<ComponentAnalysisRequest> components) throws IOException;
 
     /**
      * Finds trusted server.
@@ -81,9 +83,9 @@ public interface MultiComponentApplicationFacade {
      * @return reviewed multi component application / 已审阅多组件应用
      * @throws SQLException if the database cannot complete the requested read or transaction / 数据库无法完成请求的读取或事务时
      */
-    ReviewedMultiComponentApplication createReviewedMultiComponentApplication(
-            PreparedMultiComponentSource prepared, ServerIdentity server, List<MultiComponentReviewInput> inputs,
-            ApplicationHealthGate applicationHealth) throws SQLException;
+    ReviewedMultiComponentApplication createReviewedMultiComponentApplication(PreparedMultiComponentSource prepared,
+            ServerIdentity server, List<MultiComponentReviewInput> inputs, ApplicationHealthGate applicationHealth)
+            throws SQLException;
 
     /**
      * Persists deployment configuration snapshot.
@@ -136,8 +138,7 @@ public interface MultiComponentApplicationFacade {
      * @throws SecretStoreException if the protected credential cannot be accessed or updated / 无法访问或更新受保护凭据时
      * @throws SQLException if the database cannot complete the requested read or transaction / 数据库无法完成请求的读取或事务时
      */
-    MultiComponentLifecycleResult executeManagedMultiComponentLifecycleWithStoredPassword(
-            String applicationId, Set<String> targetComponentIds, LifecycleAction action,
-            ServerProfile profile, CredentialStorageMode mode, char[] masterPassword)
-            throws SecretStoreException, SQLException;
+    MultiComponentLifecycleResult executeManagedMultiComponentLifecycleWithStoredPassword(String applicationId,
+            Set<String> targetComponentIds, LifecycleAction action, ServerProfile profile, CredentialStorageMode mode,
+            char[] masterPassword) throws SecretStoreException, SQLException;
 }

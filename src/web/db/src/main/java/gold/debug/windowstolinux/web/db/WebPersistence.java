@@ -1,10 +1,11 @@
 package gold.debug.windowstolinux.web.db;
 
+import java.time.Instant;
+
 import gold.debug.windowstolinux.web.db.entity.ResourceScope;
 import gold.debug.windowstolinux.web.db.persistence.mapper.WebScopeMapper;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
-import java.time.Instant;
 
 /**
  * Initializes the internal Web workspace without creating login credentials.
@@ -17,6 +18,7 @@ public class WebPersistence {
      * <p>内部作用域。
      */
     public static final ResourceScope INTERNAL_SCOPE = new ResourceScope("internal", "internal");
+
     /**
      * Mapper.
      * <p>映射器。
@@ -28,7 +30,9 @@ public class WebPersistence {
      *
      * @param mapper mapper / 映射器
      */
-    public WebPersistence(WebScopeMapper mapper) { this.mapper = mapper; }
+    public WebPersistence(WebScopeMapper mapper) {
+        this.mapper = mapper;
+    }
 
     /**
      * Initializes internal scope.
@@ -37,6 +41,8 @@ public class WebPersistence {
     @Transactional
     public void initializeInternalScope() {
         String now = Instant.now().toString();
-        mapper.initializeUser(now); mapper.initializeWorkspace(now); mapper.initializeMembership(now);
+        mapper.initializeUser(now);
+        mapper.initializeWorkspace(now);
+        mapper.initializeMembership(now);
     }
 }

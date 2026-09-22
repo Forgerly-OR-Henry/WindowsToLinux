@@ -15,8 +15,10 @@ public record AiRoleInvocationResult(AiInvocationEvidence evidence, java.util.Li
      * @param evidence observations supporting the reported result / 支持所报告结果的观测证据
      */
     public AiRoleInvocationResult(AiInvocationEvidence evidence) {
-        this(evidence, java.util.List.of(new AiProviderAttempt(evidence.providerId(), evidence.model(), evidence.status(), evidence.validationDetail(), evidence.observedAt())));
+        this(evidence, java.util.List.of(new AiProviderAttempt(evidence.providerId(), evidence.model(),
+                evidence.status(), evidence.validationDetail(), evidence.observedAt())));
     }
+
     /**
      * Validates the result wrapper. / 验证结果包装。
      *

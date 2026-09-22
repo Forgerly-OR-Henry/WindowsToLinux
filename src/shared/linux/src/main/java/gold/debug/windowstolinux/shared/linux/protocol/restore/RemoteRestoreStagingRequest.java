@@ -16,13 +16,8 @@ import java.util.Set;
  * @param expectedBytes expected bytes / 预期字节
  * @param members members / 成员集合
  */
-public record RemoteRestoreStagingRequest(
-        String applicationId,
-        String archiveSha256,
-        Path localCandidateRoot,
-        long expectedBytes,
-        List<RemoteRestoreMember> members
-) {
+public record RemoteRestoreStagingRequest(String applicationId, String archiveSha256, Path localCandidateRoot,
+        long expectedBytes, List<RemoteRestoreMember> members) {
     /**
      * Binds every member and byte to the digest-derived candidate namespace. / 将每个成员和字节绑定到摘要派生的候选命名空间。
      *
@@ -43,12 +38,13 @@ public record RemoteRestoreStagingRequest(
         if (!archiveSha256.matches("[0-9a-f]{64}")) {
             throw new IllegalArgumentException("archiveSha256 must be canonical SHA-256");
         }
-        localCandidateRoot = Objects.requireNonNull(localCandidateRoot, "localCandidateRoot")
-                .toAbsolutePath().normalize();
+        localCandidateRoot = Objects.requireNonNull(localCandidateRoot, "localCandidateRoot").toAbsolutePath()
+                .normalize();
         if (!localCandidateRoot.getFileName().toString().equals(applicationId + "-" + archiveSha256.substring(0, 16))) {
             throw new IllegalArgumentException("local candidate root is not bound to the archive digest");
         }
-        if (expectedBytes < 0) throw new IllegalArgumentException("expectedBytes must not be negative");
+        if (expectedBytes < 0)
+            throw new IllegalArgumentException("expectedBytes must not be negative");
         members = List.copyOf(Objects.requireNonNull(members, "members"));
         if (members.isEmpty() || members.size() > 4096) {
             throw new IllegalArgumentException("restore members must contain one to 4096 values");

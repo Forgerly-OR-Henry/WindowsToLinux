@@ -1,9 +1,9 @@
 package gold.debug.windowstolinux.shared.backup.contract.validation;
 
+import java.util.Objects;
+
 import gold.debug.windowstolinux.shared.backup.manifest.BackupManifest;
 import gold.debug.windowstolinux.shared.backup.manifest.BackupMember;
-
-import java.util.Objects;
 
 /**
  * Applies resource policy to a decoded manifest before any extraction. / 在任何提取前把资源策略应用到已解码清单。
@@ -48,7 +48,8 @@ public final class BackupManifestValidator {
             try {
                 total = Math.addExact(total, member.size());
             } catch (ArithmeticException exception) {
-                throw BackupException.create(BackupFailureType.LIMIT_EXCEEDED, "manifest total size overflow", exception);
+                throw BackupException.create(BackupFailureType.LIMIT_EXCEEDED, "manifest total size overflow",
+                        exception);
             }
             if (total > policy.maximumTotalBytes()) {
                 throw BackupException.create(BackupFailureType.LIMIT_EXCEEDED, "manifest total size exceeds policy");

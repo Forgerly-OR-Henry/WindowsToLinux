@@ -1,10 +1,15 @@
 package gold.debug.windowstolinux.shared.backup.restore;
 
-import gold.debug.windowstolinux.shared.backup.manifest.BackupManifest;
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Locale;
+import java.util.Set;
 
 import gold.debug.windowstolinux.shared.backup.contract.validation.BackupException;
 import gold.debug.windowstolinux.shared.backup.contract.validation.BackupFailureType;
 import gold.debug.windowstolinux.shared.backup.manifest.BackupDatabaseType;
+import gold.debug.windowstolinux.shared.backup.manifest.BackupManifest;
 import gold.debug.windowstolinux.shared.backup.restore.RestoreTargetProfile;
 import gold.debug.windowstolinux.shared.linux.protocol.restore.RemoteRestoreActivationPort;
 import gold.debug.windowstolinux.shared.model.capability.LinuxCapabilityFacts;
@@ -12,12 +17,6 @@ import gold.debug.windowstolinux.shared.model.capability.ServerCapabilityFacts;
 import gold.debug.windowstolinux.shared.model.health.HealthCheck;
 import gold.debug.windowstolinux.shared.model.project.DeploymentRuntimeSpecification;
 import gold.debug.windowstolinux.shared.model.server.ManagedHelperProtocolVersion;
-
-import java.util.ArrayList;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Locale;
-import java.util.Set;
 
 /**
  * Converts live read-only target evidence into the strict portable restore profile. / 将实时只读目标证据转换为严格可移植恢复资料。
@@ -37,29 +36,27 @@ public final class RestoreTargetEvaluator {
      * @return constructed or resolved restore target profile / 构造或解析得到的恢复目标配置资料
      * @throws BackupException if backup validation or the controlled backup operation fails / 备份校验或受控备份操作失败时
      */
-    public RestoreTargetProfile evaluate(
-            BackupManifest manifest, boolean databasePresent,
-            String serverId,
-            ServerCapabilityFacts server,
-            LinuxCapabilityFacts linux,
-            RemoteRestoreActivationPort.PreflightEvidence activation,
-            boolean existingOwnedApplication
-    ) throws BackupException {
+    public RestoreTargetProfile evaluate(BackupManifest manifest, boolean databasePresent, String serverId,
+            ServerCapabilityFacts server, LinuxCapabilityFacts linux,
+            RemoteRestoreActivationPort.PreflightEvidence activation, boolean existingOwnedApplication)
+            throws BackupException {
         requireHost(manifest, server, linux);
         Set<Integer> officialPorts = officialPorts(manifest, "tcp");
         Set<Integer> udpPorts = officialPorts(manifest, "udp");
         boolean portsAvailable = existingOwnedApplication
-                || activation.occupiedTcpPorts().stream().noneMatch(officialPorts::contains) && activation.occupiedUdpPorts().stream().noneMatch(udpPorts::contains);
+                || activation.occupiedTcpPorts().stream().noneMatch(officialPorts::contains)
+                        && activation.occupiedUdpPorts().stream().noneMatch(udpPorts::contains);
         BackupDatabaseType databaseType = manifest.inventory().database().type();
         String databaseVersion = databasePresent ? manifest.inventory().database().engineVersion() : "none";
         boolean databaseCompatible = databaseType == BackupDatabaseType.NONE || databasePresent;
-        List<String> evidence = new ArrayList<>(List.of(
-                "target managed-helper protocol and typed runtime capabilities were collected live",
-                existingOwnedApplication
-                        ? "existing target application identity permits its reviewed formal ports"
-                        : "reviewed formal ports were absent from live target listeners"));
-        if (databasePresent) evidence.add(
-                "database artifact identity and engine evidence verified; credential-bound target inspection is candidate-scoped");
+        List<String> evidence = new ArrayList<>(
+                List.of("target managed-helper protocol and typed runtime capabilities were collected live",
+                        existingOwnedApplication
+                                ? "existing target application identity permits its reviewed formal ports"
+                                : "reviewed formal ports were absent from live target listeners"));
+        if (databasePresent)
+            evidence.add(
+                    "database artifact identity and engine evidence verified; credential-bound target inspection is candidate-scoped");
         evidence.addAll(activation.evidence());
         return new RestoreTargetProfile(serverId, linux.distro().name().toLowerCase(Locale.ROOT), linux.version(),
                 linux.architecture(), manifest.inventory().runtime().runtimeKind(),
@@ -78,15 +75,14 @@ public final class RestoreTargetEvaluator {
      * @param linux linux / Linux 操作
      * @throws BackupException if backup validation or the controlled backup operation fails / 备份校验或受控备份操作失败时
      */
-    private static void requireHost(
-            BackupManifest manifest, ServerCapabilityFacts server, LinuxCapabilityFacts linux) throws BackupException {
+    private static void requireHost(BackupManifest manifest, ServerCapabilityFacts server, LinuxCapabilityFacts linux)
+            throws BackupException {
         if (server.managedHelperProtocolVersion() != ManagedHelperProtocolVersion.CURRENT
-                || !server.nonInteractiveSudoAvailable() || !server.tarAvailable()
-                || !server.systemdAvailable() || !linux.systemdAvailable()) {
+                || !server.nonInteractiveSudoAvailable() || !server.tarAvailable() || !server.systemdAvailable()
+                || !linux.systemdAvailable()) {
             throw failed("target lacks the exact managed helper, tar, sudo, or systemd restore boundary");
         }
-        Set<String> required = new HashSet<>(
-                manifest.inventory().runtime().capabilities());
+        Set<String> required = new HashSet<>(manifest.inventory().runtime().capabilities());
         if (required.contains("docker") && !linux.dockerOperational()
                 || required.contains("podman") && !linux.podmanOperational()) {
             throw failed("target container runtime differs from the backup capability evidence");
@@ -107,21 +103,23 @@ public final class RestoreTargetEvaluator {
      * @param linux linux / Linux 操作
      * @return true when checks whether observed target capabilities satisfy the archived runtime's required tools and versions, false otherwise / 已观测目标能力是否满足归档运行规格所需工具及版本时为 true，否则为 false
      */
-    private static boolean runtimeReady(
-            DeploymentRuntimeSpecification runtime, ServerCapabilityFacts server, LinuxCapabilityFacts linux) {
+    private static boolean runtimeReady(DeploymentRuntimeSpecification runtime, ServerCapabilityFacts server,
+            LinuxCapabilityFacts linux) {
         return switch (runtime) {
+            case DeploymentRuntimeSpecification.ManagedProcess ignored -> false;
             case DeploymentRuntimeSpecification.SpringBoot ignored -> server.java21Available();
             case DeploymentRuntimeSpecification.JavaJar ignored -> server.java21Available();
             case DeploymentRuntimeSpecification.JavaSource ignored -> server.java21Available();
             case DeploymentRuntimeSpecification.KotlinService ignored -> server.java21Available();
             case DeploymentRuntimeSpecification.NodeService value ->
-                    linux.nodeMajorVersions().contains(value.nodeMajorVersion());
+                linux.nodeMajorVersions().contains(value.nodeMajorVersion());
             case DeploymentRuntimeSpecification.PythonService value ->
-                    linux.pythonVersions().contains(value.pythonVersion());
+                linux.pythonVersions().contains(value.pythonVersion());
             case DeploymentRuntimeSpecification.StaticSite ignored -> linux.python3Available();
             case DeploymentRuntimeSpecification.Container value ->
-                    value.engine() == DeploymentRuntimeSpecification.ContainerEngineType.DOCKER
-                            ? linux.dockerOperational() : linux.podmanOperational();
+                value.engine() == DeploymentRuntimeSpecification.ContainerEngineType.DOCKER
+                        ? linux.dockerOperational()
+                        : linux.podmanOperational();
             case DeploymentRuntimeSpecification.GoService ignored -> true;
             case DeploymentRuntimeSpecification.RustService ignored -> true;
             case DeploymentRuntimeSpecification.DotNetService value -> version(linux, runtime, value.version());
@@ -140,8 +138,7 @@ public final class RestoreTargetEvaluator {
      * @param version version of the relevant protocol, configuration or runtime / 相应协议、配置或运行时的版本
      * @return true when version predicate against the supplied evidence, false otherwise / 根据所提供证据检查版本条件时为 true，否则为 false
      */
-    private static boolean version(
-            LinuxCapabilityFacts linux, DeploymentRuntimeSpecification runtime, String version) {
+    private static boolean version(LinuxCapabilityFacts linux, DeploymentRuntimeSpecification runtime, String version) {
         return linux.serviceRuntimeVersions().getOrDefault(runtime.projectType(), Set.of()).contains(version);
     }
 
@@ -157,7 +154,8 @@ public final class RestoreTargetEvaluator {
         Set<Integer> ports = new HashSet<>();
         manifest.inventory().components().forEach(component -> {
             var runtime = component.runtime().toSpecification();
-            runtime.workload().endpoints().stream().filter(endpoint -> endpoint.protocol().transport().equals(transport))
+            runtime.workload().endpoints().stream()
+                    .filter(endpoint -> endpoint.protocol().transport().equals(transport))
                     .forEach(endpoint -> ports.add(endpoint.hostPort()));
             if ((runtime.healthCheck() instanceof HealthCheck.Udp ? "udp" : "tcp").equals(transport))
                 runtime.healthCheck().portNumber().ifPresent(ports::add);

@@ -1,28 +1,28 @@
 package gold.debug.windowstolinux.app.service.source;
 
-import gold.debug.windowstolinux.app.windows.workspace.WindowsSourcePreparer;
-import gold.debug.windowstolinux.shared.analyze.core.DeploymentAnalysisCoordinator;
-import gold.debug.windowstolinux.shared.analyze.component.ComponentAnalysisRequest;
-import gold.debug.windowstolinux.shared.git.GitReference;
-import gold.debug.windowstolinux.shared.git.GitRemote;
-import gold.debug.windowstolinux.shared.git.GitSourceRequest;
-import gold.debug.windowstolinux.shared.model.project.DeploymentProjectType;
-import gold.debug.windowstolinux.shared.model.project.DeploymentRuntimeSpecification;
-import gold.debug.windowstolinux.shared.model.project.component.ComponentIsolationSpecification;
-import gold.debug.windowstolinux.shared.model.health.HealthCheck;
-import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.io.TempDir;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.Set;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import gold.debug.windowstolinux.app.windows.workspace.WindowsSourcePreparer;
+import gold.debug.windowstolinux.shared.git.GitReference;
+import gold.debug.windowstolinux.shared.git.GitRemote;
+import gold.debug.windowstolinux.shared.git.GitSourceRequest;
+import gold.debug.windowstolinux.shared.model.health.HealthCheck;
+import gold.debug.windowstolinux.shared.model.project.DeploymentProjectType;
+import gold.debug.windowstolinux.shared.model.project.DeploymentRuntimeSpecification;
+import gold.debug.windowstolinux.shared.model.project.component.ComponentIsolationSpecification;
+import gold.debug.windowstolinux.shared.standard.analyze.component.ComponentAnalysisRequest;
+import gold.debug.windowstolinux.shared.standard.analyze.core.DeploymentAnalysisCoordinator;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 /** Tests the common local and pinned-Git reviewed source boundary. / 测试共用的本地和固定 Git 经审阅源码边界。 */
 class SourcePreparationUseCaseTest {
@@ -43,8 +43,8 @@ class SourcePreparationUseCaseTest {
         git(repository, "commit", "-m", "fixture");
         String commit = git(repository, "rev-parse", "HEAD").trim();
 
-        GitSourceRequest request = new GitSourceRequest(new GitRemote(repository.toUri()), new GitReference.Commit(commit),
-                Set.of(), 64L * 1024 * 1024, true);
+        GitSourceRequest request = new GitSourceRequest(new GitRemote(repository.toUri()),
+                new GitReference.Commit(commit), Set.of(), 64L * 1024 * 1024, true);
         SourcePreparationUseCase useCase = new SourcePreparationUseCase(new DeploymentAnalysisCoordinator(),
                 new WindowsSourcePreparer(temporaryDirectory.resolve("workspace")));
 
@@ -55,7 +55,8 @@ class SourcePreparationUseCaseTest {
         assertEquals(prepared.archive().orElseThrow().contentSha256(),
                 prepared.sourceRevision().orElseThrow().sourceSha256());
         assertTrue(prepared.assessment().runtimeSuggestion().orElseThrow().value(
-                gold.debug.windowstolinux.shared.model.project.DeploymentRuntimeAssessment.RuntimeInputType.NODE_MAJOR_VERSION).isPresent());
+                gold.debug.windowstolinux.shared.model.project.DeploymentRuntimeAssessment.RuntimeInputType.NODE_MAJOR_VERSION)
+                .isPresent());
     }
 
     @Test
@@ -83,23 +84,21 @@ class SourcePreparationUseCaseTest {
         SourcePreparationUseCase useCase = new SourcePreparationUseCase(new DeploymentAnalysisCoordinator(),
                 new WindowsSourcePreparer(workspace));
 
-        PreparedMultiComponentSource prepared = useCase.prepareMultiComponent(application, "shop", List.of(
-                component("api", "api", 18081, Set.of()),
-                component("web", "web", 18082, Set.of("api"))));
+        PreparedMultiComponentSource prepared = useCase.prepareMultiComponent(application, "shop",
+                List.of(component("api", "api", 18081, Set.of()), component("web", "web", 18082, Set.of("api"))));
 
         assertEquals(gold.debug.windowstolinux.shared.model.analysis.DeploymentAdmissionStatus.READY_FOR_PLANNING,
                 prepared.assessment().admission());
         assertEquals(List.of("api", "web"), prepared.components().keySet().stream().toList());
-        assertTrue(prepared.components().values().stream().allMatch(value ->
-                value.archive().localArchive().startsWith(workspace.toAbsolutePath())
+        assertTrue(prepared.components().values().stream()
+                .allMatch(value -> value.archive().localArchive().startsWith(workspace.toAbsolutePath())
                         && Files.isRegularFile(value.archive().localArchive())
                         && value.archive().contentSha256().equals(value.sourceRevision().sourceSha256())));
-        assertEquals(2, prepared.components().values().stream()
-                .map(value -> value.archive().localArchive()).distinct().count());
+        assertEquals(2, prepared.components().values().stream().map(value -> value.archive().localArchive()).distinct()
+                .count());
 
-        PreparedMultiComponentSource rejected = useCase.prepareMultiComponent(application, "conflict", List.of(
-                component("api", "api", 18081, Set.of()),
-                component("web", "web", 18081, Set.of("api"))));
+        PreparedMultiComponentSource rejected = useCase.prepareMultiComponent(application, "conflict",
+                List.of(component("api", "api", 18081, Set.of()), component("web", "web", 18081, Set.of("api"))));
         assertEquals(gold.debug.windowstolinux.shared.model.analysis.DeploymentAdmissionStatus.REJECTED,
                 rejected.assessment().admission());
         assertTrue(rejected.components().isEmpty());
@@ -107,10 +106,9 @@ class SourcePreparationUseCaseTest {
 
     private static ComponentAnalysisRequest component(String id, String root, int port, Set<String> dependencies) {
         return new ComponentAnalysisRequest(id, root, DeploymentProjectType.NODE_SERVICE,
-                Optional.of(new DeploymentRuntimeSpecification.NodeService(22,
-                        new HealthCheck.Tcp(port, 20, 1))),
-                List.of(root + "/dist"), Set.of(port), List.of("PORT"), List.of(), List.of(), dependencies,
-                true, ComponentIsolationSpecification.managed());
+                Optional.of(new DeploymentRuntimeSpecification.NodeService(22, new HealthCheck.Tcp(port, 20, 1))),
+                List.of(root + "/dist"), Set.of(port), List.of("PORT"), List.of(), List.of(), dependencies, true,
+                ComponentIsolationSpecification.managed());
     }
 
     private static void node(Path directory, String name) throws IOException {

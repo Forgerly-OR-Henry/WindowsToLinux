@@ -1,8 +1,11 @@
 package acceptance;
+
+import java.net.InetSocketAddress;
+
 import acceptance.config.FixtureConfiguration;
 import acceptance.http.FixtureHandler;
 import com.sun.net.httpserver.HttpServer;
-import java.net.InetSocketAddress;
+
 public final class Main {
     public static void main(String[] args) throws Exception {
         FixtureConfiguration configuration = FixtureConfiguration.load();

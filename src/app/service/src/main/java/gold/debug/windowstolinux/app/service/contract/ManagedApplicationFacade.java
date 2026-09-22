@@ -1,12 +1,12 @@
 package gold.debug.windowstolinux.app.service.contract;
 
+import java.sql.SQLException;
+import java.util.List;
+
 import gold.debug.windowstolinux.app.secret.SecretStoreException;
 import gold.debug.windowstolinux.app.service.execution.lifecycle.LifecycleOutcome;
 import gold.debug.windowstolinux.app.service.execution.lifecycle.ManagedApplicationSnapshot;
 import gold.debug.windowstolinux.shared.model.lifecycle.LifecycleAction;
-
-import java.sql.SQLException;
-import java.util.List;
 
 /**
  * Narrow application operations required by the managed-applications page. / 受管应用页面所需的窄应用操作。
@@ -20,6 +20,7 @@ public interface ManagedApplicationFacade {
      * @throws SQLException if the database cannot complete the requested read or transaction / 数据库无法完成请求的读取或事务时
      */
     List<gold.debug.windowstolinux.app.service.server.ServerProfile> listServerProfiles() throws SQLException;
+
     /**
      * Lists applications.
      * <p>列出应用集合。
@@ -27,7 +28,9 @@ public interface ManagedApplicationFacade {
      * @return constructed or resolved list / 构造或解析得到的列表
      * @throws SQLException if the database cannot complete the requested read or transaction / 数据库无法完成请求的读取或事务时
      */
-    List<gold.debug.windowstolinux.app.service.execution.lifecycle.ApplicationSummary> listApplications() throws SQLException;
+    List<gold.debug.windowstolinux.app.service.execution.lifecycle.ApplicationSummary> listApplications()
+            throws SQLException;
+
     /**
      * Persists application presentation.
      * <p>持久化应用展示。
@@ -39,6 +42,7 @@ public interface ManagedApplicationFacade {
      * @throws SQLException if the database cannot complete the requested read or transaction / 数据库无法完成请求的读取或事务时
      */
     void saveApplicationPresentation(String key, String name, String category, String accessUrl) throws SQLException;
+
     /**
      * Scans applications.
      * <p>扫描应用集合。
@@ -49,8 +53,9 @@ public interface ManagedApplicationFacade {
      * @return constructed or resolved application scan / 构造或解析得到的应用扫描
      * @throws Exception if the delegated operation or caller-provided interaction fails / 被委派操作或调用方提供的交互失败时
      */
-    gold.debug.windowstolinux.app.service.execution.lifecycle.ApplicationScan scanApplications(String serverId, char[] master,
-            java.util.function.Predicate<String> confirmation) throws Exception;
+    gold.debug.windowstolinux.app.service.execution.lifecycle.ApplicationScan scanApplications(String serverId,
+            char[] master, java.util.function.Predicate<String> confirmation) throws Exception;
+
     /**
      * Adopts a discovered application under the managed inventory after the required user confirmation.
      * <p>在取得所需用户确认后，将已发现应用接管到受管清单。
@@ -65,6 +70,7 @@ public interface ManagedApplicationFacade {
     String adoptApplication(gold.debug.windowstolinux.app.service.execution.lifecycle.ApplicationScan scan,
             gold.debug.windowstolinux.shared.model.lifecycle.DiscoveredApplication application, char[] master,
             java.util.function.Predicate<String> confirmation) throws Exception;
+
     /**
      * Executes application lifecycle.
      * <p>执行应用生命周期。
@@ -76,8 +82,10 @@ public interface ManagedApplicationFacade {
      * @return constructed or resolved application lifecycle result / 构造或解析得到的应用生命周期结果
      * @throws Exception if the delegated operation or caller-provided interaction fails / 被委派操作或调用方提供的交互失败时
      */
-    gold.debug.windowstolinux.app.service.execution.lifecycle.ApplicationLifecycleResult executeApplicationLifecycle(String key,
-            LifecycleAction action, char[] master, java.util.function.Predicate<String> confirmation) throws Exception;
+    gold.debug.windowstolinux.app.service.execution.lifecycle.ApplicationLifecycleResult executeApplicationLifecycle(
+            String key, LifecycleAction action, char[] master, java.util.function.Predicate<String> confirmation)
+            throws Exception;
+
     /**
      * Lists managed application summaries.
      * <p>列出受管应用摘要集合。
@@ -98,7 +106,6 @@ public interface ManagedApplicationFacade {
      * @throws SecretStoreException if the protected credential cannot be accessed or updated / 无法访问或更新受保护凭据时
      * @throws SQLException if the database cannot complete the requested read or transaction / 数据库无法完成请求的读取或事务时
      */
-    LifecycleOutcome executePersistedLifecycleWithStoredPassword(
-            String applicationId, LifecycleAction action, char[] masterPassword)
-            throws SecretStoreException, SQLException;
+    LifecycleOutcome executePersistedLifecycleWithStoredPassword(String applicationId, LifecycleAction action,
+            char[] masterPassword) throws SecretStoreException, SQLException;
 }

@@ -1,11 +1,11 @@
 package gold.debug.windowstolinux.app.service.source;
 
+import java.util.List;
+import java.util.Objects;
+
 import gold.debug.windowstolinux.shared.model.archive.SourceArchiveDescriptor;
 import gold.debug.windowstolinux.shared.model.project.DeploymentProjectFacts;
 import gold.debug.windowstolinux.shared.model.project.SourceRevision;
-
-import java.util.List;
-import java.util.Objects;
 
 /**
  * Reviewed immutable source input for one mixed-project component. / 一个混合项目组件的经审阅不可变源码输入。
@@ -16,13 +16,8 @@ import java.util.Objects;
  * @param sourceRevision the immutable local or pinned-Git source identity / 不可变本地或固定 Git 源码身份
  * @param excludedEntries entries excluded by the safe archive policy / 安全归档策略排除的条目
  */
-public record PreparedComponentSource(
-        String componentId,
-        DeploymentProjectFacts facts,
-        SourceArchiveDescriptor archive,
-        SourceRevision sourceRevision,
-        List<String> excludedEntries
-) {
+public record PreparedComponentSource(String componentId, DeploymentProjectFacts facts, SourceArchiveDescriptor archive,
+        SourceRevision sourceRevision, List<String> excludedEntries) {
     /**
      * Validates the component and archive identity. / 验证组件与归档身份。
      *

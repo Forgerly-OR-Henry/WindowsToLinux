@@ -11,13 +11,8 @@ import java.util.List;
  * @param candidateRemoved candidate removed / 候选已移除
  * @param evidence observations supporting the reported result / 支持所报告结果的观测证据
  */
-public record DatabaseRecoveryEvidence(
-        String candidateId,
-        boolean recovered,
-        boolean previousDatabaseVerified,
-        boolean candidateRemoved,
-        List<String> evidence
-) {
+public record DatabaseRecoveryEvidence(String candidateId, boolean recovered, boolean previousDatabaseVerified,
+        boolean candidateRemoved, List<String> evidence) {
     /**
      * Requires verified recovery and candidate absence. / 要求已验证恢复及候选不存在。
      *

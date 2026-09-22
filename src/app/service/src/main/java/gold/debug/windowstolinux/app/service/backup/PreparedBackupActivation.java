@@ -1,13 +1,13 @@
 package gold.debug.windowstolinux.app.service.backup;
 
-import gold.debug.windowstolinux.shared.backup.crypto.BackupSecretDocument;
-import gold.debug.windowstolinux.shared.backup.contract.validation.BackupArchiveValidation;
-import gold.debug.windowstolinux.shared.backup.restore.BackupRestoreCandidate;
-import gold.debug.windowstolinux.shared.config.secretref.ResolvedSecretRevision;
-
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
+
+import gold.debug.windowstolinux.shared.backup.contract.validation.BackupArchiveValidation;
+import gold.debug.windowstolinux.shared.backup.crypto.BackupSecretDocument;
+import gold.debug.windowstolinux.shared.backup.restore.BackupRestoreCandidate;
+import gold.debug.windowstolinux.shared.config.secretref.ResolvedSecretRevision;
 
 /**
  * Short-lived validated activation material whose secret revisions are cleared on close. / 关闭时清零秘密修订的短生命周期已验证激活材料。
@@ -17,12 +17,9 @@ import java.util.Optional;
  * @param localCandidate local candidate / 本地候选
  * @param secretDocument secret document / 秘密文档
  */
-record PreparedBackupActivation(
-        BackupArchiveValidation validation,
-        BackupRestoreCandidate restoreCandidate,
+record PreparedBackupActivation(BackupArchiveValidation validation, BackupRestoreCandidate restoreCandidate,
         PreparedBackupCandidate localCandidate,
-        Optional<BackupSecretDocument> secretDocument
-) implements AutoCloseable {
+        Optional<BackupSecretDocument> secretDocument) implements AutoCloseable {
     /**
      * Validates and binds the inputs required by prepared backup activation.
      * <p>校验并绑定已准备备份激活所需输入。
@@ -58,5 +55,8 @@ record PreparedBackupActivation(
      * Closes the resources owned by this instance and completes its cleanup boundary.
      * <p>关闭当前实例持有的资源并完成其清理边界。
      */
-    @Override public void close() { secretDocument.ifPresent(BackupSecretDocument::close); }
+    @Override
+    public void close() {
+        secretDocument.ifPresent(BackupSecretDocument::close);
+    }
 }

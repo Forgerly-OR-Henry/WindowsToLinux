@@ -4,6 +4,7 @@ module Fixture
     def initialize(configuration, router)
       @configuration, @router = configuration, router
     end
+
     def run
       server = TCPServer.new('0.0.0.0', @configuration.port)
       loop do

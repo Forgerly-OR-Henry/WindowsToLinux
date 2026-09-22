@@ -27,8 +27,7 @@ final class RuntimePathResolver {
         executable = normalize(executable);
         Path fileName = executable.getFileName();
         Path appImageRoot = executable.getParent();
-        if (fileName == null
-                || !fileName.toString().toLowerCase(Locale.ROOT).endsWith(".exe")
+        if (fileName == null || !fileName.toString().toLowerCase(Locale.ROOT).endsWith(".exe")
                 || !isJPackageWindowsRoot(appImageRoot)) {
             return Optional.empty();
         }
@@ -45,14 +44,16 @@ final class RuntimePathResolver {
     static Optional<RunModeResolver.RuntimeLayout> layoutFromCodeSource(Path sourcePath) {
         sourcePath = normalize(sourcePath);
         if (Files.isDirectory(sourcePath)) {
-            return findMavenModuleHome(sourcePath)
-                    .map(home -> layout(RunModeResolver.RunMode.RUN_CLASS, home));
+            return findMavenModuleHome(sourcePath).map(home -> layout(RunModeResolver.RunMode.RUN_CLASS, home));
         }
-        if (!isJar(sourcePath)) return Optional.empty();
+        if (!isJar(sourcePath))
+            return Optional.empty();
         Optional<Path> appImageRoot = findJPackageHomeFromJar(sourcePath);
-        if (appImageRoot.isPresent()) return Optional.of(layout(RunModeResolver.RunMode.RUN_APP, appImageRoot.get()));
+        if (appImageRoot.isPresent())
+            return Optional.of(layout(RunModeResolver.RunMode.RUN_APP, appImageRoot.get()));
         Path jarDirectory = sourcePath.getParent();
-        return jarDirectory == null ? Optional.empty()
+        return jarDirectory == null
+                ? Optional.empty()
                 : Optional.of(layout(RunModeResolver.RunMode.RUN_JAR, jarDirectory));
     }
 
@@ -67,10 +68,13 @@ final class RuntimePathResolver {
         Path current = normalize(start);
         while (current != null) {
             Optional<Path> directModule = validatedModuleHome(current);
-            if (directModule.isPresent()) return directModule;
+            if (directModule.isPresent())
+                return directModule;
             Optional<Path> repositoryModule = validatedModuleHome(current.resolve("src/app/db"));
-            if (repositoryModule.isPresent()) return repositoryModule;
-            if (Files.isRegularFile(current.resolve("src/app/main/pom.xml"))) return Optional.empty();
+            if (repositoryModule.isPresent())
+                return repositoryModule;
+            if (Files.isRegularFile(current.resolve("src/app/main/pom.xml")))
+                return Optional.empty();
             current = current.getParent();
         }
         return Optional.empty();
@@ -121,11 +125,13 @@ final class RuntimePathResolver {
     private static Optional<Path> validatedModuleHome(Path candidate) {
         Path normalized = normalize(candidate);
         Path pom = normalized.resolve("pom.xml");
-        if (!Files.isRegularFile(pom)) return Optional.empty();
+        if (!Files.isRegularFile(pom))
+            return Optional.empty();
         try {
             String pomContent = Files.readString(pom);
             return pomContent.contains("<artifactId>windowstolinux-app-db</artifactId>")
-                    ? Optional.of(normalized) : Optional.empty();
+                    ? Optional.of(normalized)
+                    : Optional.empty();
         } catch (Exception ignored) {
             // An unreadable candidate is rejected and other bounded layout candidates remain available. / 不可读候选会被拒绝，其他有界布局候选仍可继续检查。
             return Optional.empty();
@@ -142,9 +148,9 @@ final class RuntimePathResolver {
     private static Optional<Path> findMavenModuleHome(Path classesDirectory) {
         Path outputName = classesDirectory.getFileName();
         Path targetDirectory = classesDirectory.getParent();
-        if (outputName == null || targetDirectory == null) return Optional.empty();
-        boolean knownOutput = outputName.toString().equals("classes")
-                || outputName.toString().equals("test-classes");
+        if (outputName == null || targetDirectory == null)
+            return Optional.empty();
+        boolean knownOutput = outputName.toString().equals("classes") || outputName.toString().equals("test-classes");
         Path targetName = targetDirectory.getFileName();
         Path moduleHome = targetDirectory.getParent();
         if (!knownOutput || targetName == null || !targetName.toString().equals("target") || moduleHome == null) {

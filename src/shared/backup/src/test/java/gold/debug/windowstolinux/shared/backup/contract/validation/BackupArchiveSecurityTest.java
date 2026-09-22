@@ -1,14 +1,30 @@
 package gold.debug.windowstolinux.shared.backup.contract.validation;
 
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+
+import java.io.ByteArrayInputStream;
+import java.io.OutputStream;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.security.KeyPair;
+import java.security.KeyPairGenerator;
+import java.time.Instant;
+import java.util.ArrayList;
+import java.util.Base64;
+import java.util.List;
+
 import gold.debug.windowstolinux.shared.backup.format.BackupArchiveContent;
 import gold.debug.windowstolinux.shared.backup.format.BackupArchiveWriter;
-import gold.debug.windowstolinux.shared.backup.manifest.BackupConsistencyMode;
 import gold.debug.windowstolinux.shared.backup.manifest.BackupComponent;
 import gold.debug.windowstolinux.shared.backup.manifest.BackupComponentRuntime;
+import gold.debug.windowstolinux.shared.backup.manifest.BackupConsistencyMode;
 import gold.debug.windowstolinux.shared.backup.manifest.BackupDatabase;
 import gold.debug.windowstolinux.shared.backup.manifest.BackupDatabaseType;
-import gold.debug.windowstolinux.shared.backup.manifest.BackupIdentity;
 import gold.debug.windowstolinux.shared.backup.manifest.BackupHealthCheck;
+import gold.debug.windowstolinux.shared.backup.manifest.BackupIdentity;
 import gold.debug.windowstolinux.shared.backup.manifest.BackupInventory;
 import gold.debug.windowstolinux.shared.backup.manifest.BackupManifest;
 import gold.debug.windowstolinux.shared.backup.manifest.BackupManifestSigner;
@@ -25,33 +41,19 @@ import org.apache.commons.compress.archivers.zip.ZipArchiveOutputStream;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
-import java.io.ByteArrayInputStream;
-import java.io.OutputStream;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.security.KeyPair;
-import java.security.KeyPairGenerator;
-import java.time.Instant;
-import java.util.Base64;
-import java.util.ArrayList;
-import java.util.List;
-
-import static org.junit.jupiter.api.Assertions.assertArrayEquals;
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertThrows;
-
 class BackupArchiveSecurityTest {
-    @TempDir Path temporaryDirectory;
+    @TempDir
+    Path temporaryDirectory;
 
     @Test
     void validatesAndExtractsExactArchiveIntoNewCandidate() throws Exception {
         byte[] content = "portable configuration".getBytes(java.nio.charset.StandardCharsets.UTF_8);
         Path archive = writeArchive("valid.zip", sampleManifest(content), content, BackupArchivePolicy.defaults());
 
-        BackupArchiveValidation validation = new BackupArchiveValidator(BackupArchivePolicy.defaults()).validate(archive);
-        BackupRestoreCandidate candidate = new BackupArchiveExtractor().extract(
-                archive, temporaryDirectory.resolve("candidate"), validation);
+        BackupArchiveValidation validation = new BackupArchiveValidator(BackupArchivePolicy.defaults())
+                .validate(archive);
+        BackupRestoreCandidate candidate = new BackupArchiveExtractor().extract(archive,
+                temporaryDirectory.resolve("candidate"), validation);
 
         assertEquals(BackupProvenanceStatus.NOT_PRESENT, validation.provenanceStatus());
         assertEquals(content.length * 3L, candidate.extractedBytes());
@@ -80,8 +82,8 @@ class BackupArchiveSecurityTest {
         List<BackupArchiveContent> contents = new ArrayList<>();
         contents.add(new BackupArchiveContent(manifest.members().getFirst(),
                 () -> new ByteArrayInputStream("tampered".getBytes())));
-        manifest.members().stream().skip(1).forEach(member -> contents.add(
-                new BackupArchiveContent(member, () -> new ByteArrayInputStream(expected))));
+        manifest.members().stream().skip(1).forEach(
+                member -> contents.add(new BackupArchiveContent(member, () -> new ByteArrayInputStream(expected))));
 
         BackupException failure = assertThrows(BackupException.class, () -> {
             try (OutputStream output = Files.newOutputStream(temporaryDirectory.resolve("wrong.zip"))) {
@@ -96,11 +98,12 @@ class BackupArchiveSecurityTest {
     void reportsVerifiedProvenanceSeparatelyFromIntegrity() throws Exception {
         byte[] content = "signed".getBytes();
         KeyPair keyPair = KeyPairGenerator.getInstance("Ed25519").generateKeyPair();
-        BackupManifest signed = new BackupManifestSigner().sign(sampleManifest(content), "backup-key", keyPair.getPrivate());
+        BackupManifest signed = new BackupManifestSigner().sign(sampleManifest(content), "backup-key",
+                keyPair.getPrivate());
         Path archive = writeArchive("signed.zip", signed, content, BackupArchivePolicy.defaults());
 
-        BackupArchiveValidation validation = new BackupArchiveValidator(
-                BackupArchivePolicy.defaults(), keyId -> keyPair.getPublic()).validate(archive);
+        BackupArchiveValidation validation = new BackupArchiveValidator(BackupArchivePolicy.defaults(),
+                keyId -> keyPair.getPublic()).validate(archive);
 
         assertEquals(BackupProvenanceStatus.VERIFIED, validation.provenanceStatus());
     }
@@ -109,12 +112,13 @@ class BackupArchiveSecurityTest {
     void rejectsInvalidSignatureWhenTrustIsConfigured() throws Exception {
         byte[] content = "signed".getBytes();
         KeyPair keyPair = KeyPairGenerator.getInstance("Ed25519").generateKeyPair();
-        BackupManifest forged = sampleManifest(content).withProvenance(new BackupProvenance(
-                "Ed25519", "backup-key", Base64.getEncoder().encodeToString(new byte[64])));
+        BackupManifest forged = sampleManifest(content).withProvenance(
+                new BackupProvenance("Ed25519", "backup-key", Base64.getEncoder().encodeToString(new byte[64])));
         Path archive = writeArchive("forged.zip", forged, content, BackupArchivePolicy.defaults());
 
-        BackupException failure = assertThrows(BackupException.class, () -> new BackupArchiveValidator(
-                BackupArchivePolicy.defaults(), keyId -> keyPair.getPublic()).validate(archive));
+        BackupException failure = assertThrows(BackupException.class,
+                () -> new BackupArchiveValidator(BackupArchivePolicy.defaults(), keyId -> keyPair.getPublic())
+                        .validate(archive));
 
         assertEquals(BackupFailureType.PROVENANCE_FAILED.code(), failure.failure().code());
     }
@@ -124,8 +128,7 @@ class BackupArchiveSecurityTest {
         byte[] content = new byte[32 * 1024];
         BackupArchivePolicy writePolicy = BackupArchivePolicy.defaults();
         Path archive = writeArchive("compressed.zip", sampleManifest(content), content, writePolicy);
-        BackupArchivePolicy strict = new BackupArchivePolicy(10, 64 * 1024, 128 * 1024,
-                512, 1024 * 1024, 2.0d);
+        BackupArchivePolicy strict = new BackupArchivePolicy(10, 64 * 1024, 128 * 1024, 512, 1024 * 1024, 2.0d);
 
         BackupException failure = assertThrows(BackupException.class,
                 () -> new BackupArchiveValidator(strict).validate(archive));
@@ -137,8 +140,7 @@ class BackupArchiveSecurityTest {
             throws Exception {
         Path archive = temporaryDirectory.resolve(fileName);
         List<BackupArchiveContent> sources = manifest.members().stream()
-                .map(member -> new BackupArchiveContent(member, () -> new ByteArrayInputStream(content)))
-                .toList();
+                .map(member -> new BackupArchiveContent(member, () -> new ByteArrayInputStream(content))).toList();
         try (OutputStream output = Files.newOutputStream(archive)) {
             new BackupArchiveWriter(policy).write(manifest, sources, output);
         }
@@ -149,7 +151,8 @@ class BackupArchiveSecurityTest {
         Path archive = temporaryDirectory.resolve(fileName);
         try (ZipArchiveOutputStream output = new ZipArchiveOutputStream(archive)) {
             ZipArchiveEntry entry = new ZipArchiveEntry(entryName);
-            if (unixMode != 0) entry.setUnixMode(unixMode);
+            if (unixMode != 0)
+                entry.setUnixMode(unixMode);
             output.putArchiveEntry(entry);
             output.write(content);
             output.closeArchiveEntry();
@@ -158,8 +161,8 @@ class BackupArchiveSecurityTest {
     }
 
     private static BackupManifest sampleManifest(byte[] content) throws Exception {
-        String hash = java.util.HexFormat.of().formatHex(
-                java.security.MessageDigest.getInstance("SHA-256").digest(content));
+        String hash = java.util.HexFormat.of()
+                .formatHex(java.security.MessageDigest.getInstance("SHA-256").digest(content));
         List<BackupMember> members = List.of(
                 new BackupMember("releases/release-1.json", content.length, hash, BackupMemberKind.RELEASE),
                 new BackupMember("config/application.json", content.length, hash, BackupMemberKind.CONFIGURATION),
@@ -168,12 +171,12 @@ class BackupArchiveSecurityTest {
                 "sqlite3 3.46", BackupConsistencyMode.SQLITE_ONLINE_BACKUP, List.of());
         BackupHealthCheck health = BackupHealthCheck.tcp(8080, 30, 5);
         SecretReference secret = new SecretReference("db.password", 1);
-        BackupComponent component = new BackupComponent("sample", "sample", "a".repeat(64),
-                "releases/release-1.json", "config/application.json", "runtime/sample.service", List.of(),
+        BackupComponent component = new BackupComponent("sample", "sample", "a".repeat(64), "releases/release-1.json",
+                "config/application.json", "runtime/sample.service", List.of(),
                 new BackupComponentRuntime.SpringBoot(health), "b".repeat(64), List.of(secret));
-        BackupInventory inventory = new BackupInventory(
-                List.of("releases/release-1.json"), List.of("config/application.json"), List.of(secret),
-                List.of("/srv/sample/content"), List.of("sample-content"), database,
+        BackupInventory inventory = new BackupInventory(List.of("releases/release-1.json"),
+                List.of("config/application.json"), List.of(secret), List.of("/srv/sample/content"),
+                List.of("sample-content"), database,
                 new BackupIdentity("sample", "server-1", "/opt/windowstolinux/apps/sample",
                         BackupInventory.computeReleaseSetSha256(List.of(component))),
                 List.of("runtime/sample.service"), List.of(component), "sample", health,

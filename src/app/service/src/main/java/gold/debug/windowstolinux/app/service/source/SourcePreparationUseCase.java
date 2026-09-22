@@ -1,31 +1,42 @@
 package gold.debug.windowstolinux.app.service.source;
 
-import gold.debug.windowstolinux.app.windows.workspace.PreparedSourceArchive;
-import gold.debug.windowstolinux.app.windows.workspace.WindowsSourcePreparer;
-import gold.debug.windowstolinux.shared.analyze.core.DeploymentAnalysisCoordinator;
-import gold.debug.windowstolinux.shared.analyze.component.ComponentAnalysisRequest;
-import gold.debug.windowstolinux.shared.analyze.component.MixedProjectInspector;
-import gold.debug.windowstolinux.shared.git.GitSnapshot;
-import gold.debug.windowstolinux.shared.git.GitSnapshotException;
-import gold.debug.windowstolinux.shared.git.snapshot.GitSnapshotPreparer;
-import gold.debug.windowstolinux.shared.git.GitSourceRequest;
-import gold.debug.windowstolinux.shared.model.assessment.DeploymentProjectAssessment;
-import gold.debug.windowstolinux.shared.model.analysis.DeploymentAdmissionStatus;
-import gold.debug.windowstolinux.shared.model.project.DeploymentProjectType;
-import gold.debug.windowstolinux.shared.model.project.SourceRevision;
-
 import java.io.IOException;
 import java.nio.file.Path;
-import java.util.List;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
+
+import gold.debug.windowstolinux.app.windows.workspace.PreparedSourceArchive;
+import gold.debug.windowstolinux.app.windows.workspace.WindowsSourcePreparer;
+import gold.debug.windowstolinux.shared.git.GitSnapshot;
+import gold.debug.windowstolinux.shared.git.GitSnapshotException;
+import gold.debug.windowstolinux.shared.git.GitSourceRequest;
+import gold.debug.windowstolinux.shared.git.snapshot.GitSnapshotPreparer;
+import gold.debug.windowstolinux.shared.model.analysis.DeploymentAdmissionStatus;
+import gold.debug.windowstolinux.shared.model.assessment.DeploymentProjectAssessment;
+import gold.debug.windowstolinux.shared.model.project.DeploymentProjectType;
+import gold.debug.windowstolinux.shared.model.project.SourceRevision;
+import gold.debug.windowstolinux.shared.standard.analyze.component.ComponentAnalysisRequest;
+import gold.debug.windowstolinux.shared.standard.analyze.component.MixedProjectInspector;
+import gold.debug.windowstolinux.shared.standard.analyze.core.DeploymentAnalysisCoordinator;
 
 /**
  * Freezes reviewed local or pinned Git sources into verified deployment archives.
  * <p>将经审阅的本地或固定 Git 源码冻结为已验证部署归档。
  */
 public final class SourcePreparationUseCase {
+    /** Archives a frozen source without recognition or build policy. / 不经过识别或构建策略归档冻结源码。
+     * @param directory frozen source directory / 冻结源码目录
+     * @param applicationId managed identifier / 受管标识
+     * @return verified archive / 已验证归档
+     * @throws IOException when the source boundary is invalid / 源码边界无效时
+     */
+    public gold.debug.windowstolinux.shared.model.archive.SourceArchiveDescriptor archiveNeutral(Path directory,
+            String applicationId) throws IOException {
+        return workspace.prepare(directory, applicationId).descriptor();
+    }
+
     /**
      * Freezes local input before automatic discovery or any remote change. / 在自动发现或任何远端变更之前冻结本地输入。
      *
@@ -33,7 +44,8 @@ public final class SourcePreparationUseCase {
      * @return constructed or resolved source directory snapshot / 构造或解析得到的源码目录快照
      * @throws IOException if the required file or stream operation fails / 所需文件或流操作失败时
      */
-    public gold.debug.windowstolinux.shared.source.snapshot.SourceDirectorySnapshot snapshot(Path directory) throws IOException {
+    public gold.debug.windowstolinux.shared.source.snapshot.SourceDirectorySnapshot snapshot(Path directory)
+            throws IOException {
         return gold.debug.windowstolinux.shared.source.snapshot.SourceDirectorySnapshot.create(directory,
                 workspace.workDirectory().resolve("source-snapshots"));
     }
@@ -45,7 +57,8 @@ public final class SourcePreparationUseCase {
      * @return constructed or resolved source directory snapshot / 构造或解析得到的源码目录快照
      * @throws IOException if the required file or stream operation fails / 所需文件或流操作失败时
      */
-    public gold.debug.windowstolinux.shared.source.snapshot.SourceDirectorySnapshot snapshot(GitSnapshot git) throws IOException {
+    public gold.debug.windowstolinux.shared.source.snapshot.SourceDirectorySnapshot snapshot(GitSnapshot git)
+            throws IOException {
         String path = git.remote().location().getPath().replaceFirst("/+$", "");
         String name = path.substring(path.lastIndexOf('/') + 1).replaceFirst("\\.git$", "");
         return gold.debug.windowstolinux.shared.source.snapshot.SourceDirectorySnapshot.create(git.checkoutDirectory(),
@@ -67,16 +80,19 @@ public final class SourcePreparationUseCase {
      * <p>处理分析器的部署分析协调器协作对象。
      */
     private final DeploymentAnalysisCoordinator analyzer;
+
     /**
      * Bound windows source preparer collaborator for platform-owned work area with enforced path boundaries.
      * <p>处理具有路径边界约束的平台工作区的Windows源码准备器协作对象。
      */
     private final WindowsSourcePreparer workspace;
+
     /**
      * Bound git snapshot preparer collaborator for git snapshots.
      * <p>处理Git快照集合的Git快照准备器协作对象。
      */
     private final GitSnapshotPreparer gitSnapshots;
+
     /**
      * Git workspace.
      * <p>Git工作区。
@@ -107,7 +123,7 @@ public final class SourcePreparationUseCase {
      * @throws NullPointerException if a required input is absent / 必需输入缺失时
      */
     SourcePreparationUseCase(DeploymentAnalysisCoordinator analyzer, WindowsSourcePreparer workspace,
-                             GitSnapshotPreparer gitSnapshots, Path gitWorkspace) {
+            GitSnapshotPreparer gitSnapshots, Path gitWorkspace) {
         this.analyzer = Objects.requireNonNull(analyzer, "analyzer");
         this.workspace = Objects.requireNonNull(workspace, "workspace");
         this.gitSnapshots = Objects.requireNonNull(gitSnapshots, "gitSnapshots");
@@ -124,7 +140,8 @@ public final class SourcePreparationUseCase {
      * @return the typed analysis and safe archive result / 类型化分析和安全归档结果
      * @throws IOException if source reading or archiving cannot complete / 无法完成源码读取或归档时
      */
-    public ReviewedSourcePreparation prepare(Path sourceDirectory, DeploymentProjectType projectType) throws IOException {
+    public ReviewedSourcePreparation prepare(Path sourceDirectory, DeploymentProjectType projectType)
+            throws IOException {
         DeploymentProjectAssessment assessment = analyzer.analyze(sourceDirectory, projectType);
         return archive(sourceDirectory, assessment);
     }
@@ -137,7 +154,8 @@ public final class SourcePreparationUseCase {
      * @return constructed or resolved reviewed source preparation / 构造或解析得到的已审阅源码准备
      * @throws IOException if the required file or stream operation fails / 所需文件或流操作失败时
      */
-    public ReviewedSourcePreparation prepareAutomatic(Path sourceDirectory, DeploymentProjectType projectType) throws IOException {
+    public ReviewedSourcePreparation prepareAutomatic(Path sourceDirectory, DeploymentProjectType projectType)
+            throws IOException {
         return archive(sourceDirectory, analyzer.analyzeForDatabaseReview(sourceDirectory, projectType));
     }
 
@@ -164,14 +182,16 @@ public final class SourcePreparationUseCase {
      * @return reviewed source preparation from the supplied archive inputs / 根据所提供归档输入构建已审阅源码准备
      * @throws IOException if the required file or stream operation fails / 所需文件或流操作失败时
      */
-    private ReviewedSourcePreparation archive(Path sourceDirectory, DeploymentProjectAssessment assessment) throws IOException {
+    private ReviewedSourcePreparation archive(Path sourceDirectory, DeploymentProjectAssessment assessment)
+            throws IOException {
         if (assessment.admission() != DeploymentAdmissionStatus.READY_FOR_PLANNING) {
             return new ReviewedSourcePreparation(assessment, Optional.empty(), Optional.empty(), List.of());
         }
         String applicationId = assessment.facts().orElseThrow().applicationId();
         PreparedSourceArchive archive = workspace.prepare(sourceDirectory, applicationId);
         return new ReviewedSourcePreparation(assessment, Optional.of(archive.descriptor()),
-                Optional.of(new SourceRevision(archive.descriptor().contentSha256(), Optional.empty(), java.util.Map.of())),
+                Optional.of(
+                        new SourceRevision(archive.descriptor().contentSha256(), Optional.empty(), java.util.Map.of())),
                 archive.excludedEntries());
     }
 
@@ -187,8 +207,7 @@ public final class SourcePreparationUseCase {
      * @throws IOException if the required file or stream operation fails / 所需文件或流操作失败时
      */
     public PreparedMultiComponentSource prepareMultiComponent(Path applicationRoot, String applicationId,
-                                                               List<ComponentAnalysisRequest> requests)
-            throws IOException {
+            List<ComponentAnalysisRequest> requests) throws IOException {
         return prepareMultiComponent(applicationRoot, applicationId, requests, java.util.Map.of());
     }
 
@@ -203,19 +222,20 @@ public final class SourcePreparationUseCase {
      * @throws IOException if the required file or stream operation fails / 所需文件或流操作失败时
      */
     public PreparedMultiComponentSource prepareMultiComponent(Path applicationRoot, String applicationId,
-            List<ComponentAnalysisRequest> requests, java.util.Map<String, gold.debug.windowstolinux.shared.model.ecosystem.db.DatabaseSchemaReview> reviews)
+            List<ComponentAnalysisRequest> requests,
+            java.util.Map<String, gold.debug.windowstolinux.shared.model.ecosystem.db.DatabaseSchemaReview> reviews)
             throws IOException {
         var assessment = new MixedProjectInspector().analyze(applicationRoot, applicationId, requests, reviews);
         if (assessment.admission() != DeploymentAdmissionStatus.READY_FOR_PLANNING) {
             return new PreparedMultiComponentSource(assessment, java.util.Map.of());
         }
         LinkedHashMap<String, PreparedComponentSource> components = new LinkedHashMap<>();
-        for (var component : assessment.components().stream()
-                .filter(value -> value.runtime().isPresent())
+        for (var component : assessment.components().stream().filter(value -> value.runtime().isPresent())
                 .sorted(java.util.Comparator.comparing(
                         gold.debug.windowstolinux.shared.model.project.component.DeploymentComponent::componentId))
                 .toList()) {
-            PreparedSourceArchive archive = workspace.prepare(component.sourceRoot(), component.facts().applicationId());
+            PreparedSourceArchive archive = workspace.prepare(component.sourceRoot(),
+                    component.facts().applicationId());
             SourceRevision revision = new SourceRevision(archive.descriptor().contentSha256(), Optional.empty(),
                     java.util.Map.of());
             components.put(component.componentId(), new PreparedComponentSource(component.componentId(),

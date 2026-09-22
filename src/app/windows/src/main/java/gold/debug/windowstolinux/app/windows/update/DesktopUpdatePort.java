@@ -43,8 +43,7 @@ public interface DesktopUpdatePort {
      * @return constructed or resolved step evidence / 构造或解析得到的步骤证据
      * @throws DesktopUpdateException if the desktop update boundary rejects the operation / Desktop更新边界拒绝当前操作时
      */
-    StepEvidence replaceProgram(DesktopUpdateVerification update, BackupEvidence backup)
-            throws DesktopUpdateException;
+    StepEvidence replaceProgram(DesktopUpdateVerification update, BackupEvidence backup) throws DesktopUpdateException;
 
     /**
      * Migrates the existing SQLite database with the new program's migrator. / 使用新程序的迁移器迁移现有 SQLite 数据库。
@@ -54,8 +53,7 @@ public interface DesktopUpdatePort {
      * @return constructed or resolved step evidence / 构造或解析得到的步骤证据
      * @throws DesktopUpdateException if the desktop update boundary rejects the operation / Desktop更新边界拒绝当前操作时
      */
-    StepEvidence migrateDatabase(DesktopUpdateVerification update, BackupEvidence backup)
-            throws DesktopUpdateException;
+    StepEvidence migrateDatabase(DesktopUpdateVerification update, BackupEvidence backup) throws DesktopUpdateException;
 
     /**
      * Starts and verifies the new program against the preserved data location and credential mode. / 使用保留的数据位置及凭据模式启动并验证新程序。
@@ -65,8 +63,7 @@ public interface DesktopUpdatePort {
      * @return constructed or resolved step evidence / 构造或解析得到的步骤证据
      * @throws DesktopUpdateException if the desktop update boundary rejects the operation / Desktop更新边界拒绝当前操作时
      */
-    StepEvidence startAndVerify(DesktopUpdateVerification update, BackupEvidence backup)
-            throws DesktopUpdateException;
+    StepEvidence startAndVerify(DesktopUpdateVerification update, BackupEvidence backup) throws DesktopUpdateException;
 
     /**
      * Restores the old program and pre-migration SQLite backup as one pair. / 将旧程序及迁移前 SQLite 备份作为一对恢复。
@@ -92,7 +89,9 @@ public interface DesktopUpdatePort {
          * @param verified verified / 已验证
          * @param evidence observations supporting the reported result / 支持所报告结果的观测证据
          */
-        public StepEvidence { evidence = validatedEvidence(evidence); }
+        public StepEvidence {
+            evidence = validatedEvidence(evidence);
+        }
     }
 
     /**
@@ -105,14 +104,8 @@ public interface DesktopUpdatePort {
      * @param credentialModePreserved credential mode preserved / 凭据模式已保留
      * @param evidence observations supporting the reported result / 支持所报告结果的观测证据
      */
-    record BackupEvidence(
-            String backupToken,
-            boolean programBackedUp,
-            boolean databaseBackedUp,
-            boolean dataLocationPreserved,
-            boolean credentialModePreserved,
-            List<String> evidence
-    ) {
+    record BackupEvidence(String backupToken, boolean programBackedUp, boolean databaseBackedUp,
+            boolean dataLocationPreserved, boolean credentialModePreserved, List<String> evidence) {
         /**
          * Validates paired backup evidence. / 校验成对备份证据。
          *
@@ -137,12 +130,8 @@ public interface DesktopUpdatePort {
      * @param handoffAuthenticated handoff authenticated / 交接已认证
      * @param evidence observations supporting the reported result / 支持所报告结果的观测证据
      */
-    record HandoffEvidence(
-            boolean independentUpdaterVerified,
-            boolean mainProcessExited,
-            boolean handoffAuthenticated,
-            List<String> evidence
-    ) {
+    record HandoffEvidence(boolean independentUpdaterVerified, boolean mainProcessExited, boolean handoffAuthenticated,
+            List<String> evidence) {
         /**
          * Validates handoff evidence. / 校验交接证据。
          *
@@ -151,7 +140,9 @@ public interface DesktopUpdatePort {
          * @param handoffAuthenticated handoff authenticated / 交接已认证
          * @param evidence observations supporting the reported result / 支持所报告结果的观测证据
          */
-        public HandoffEvidence { evidence = validatedEvidence(evidence); }
+        public HandoffEvidence {
+            evidence = validatedEvidence(evidence);
+        }
     }
 
     /**
@@ -162,12 +153,8 @@ public interface DesktopUpdatePort {
      * @param previousVersionHealthy previous version healthy / 此前版本健康
      * @param evidence observations supporting the reported result / 支持所报告结果的观测证据
      */
-    record RollbackEvidence(
-            boolean programRestored,
-            boolean databaseRestored,
-            boolean previousVersionHealthy,
-            List<String> evidence
-    ) {
+    record RollbackEvidence(boolean programRestored, boolean databaseRestored, boolean previousVersionHealthy,
+            List<String> evidence) {
         /**
          * Validates rollback evidence. / 校验回滚证据。
          *
@@ -176,7 +163,9 @@ public interface DesktopUpdatePort {
          * @param previousVersionHealthy previous version healthy / 此前版本健康
          * @param evidence observations supporting the reported result / 支持所报告结果的观测证据
          */
-        public RollbackEvidence { evidence = validatedEvidence(evidence); }
+        public RollbackEvidence {
+            evidence = validatedEvidence(evidence);
+        }
     }
 
     /**
@@ -208,7 +197,8 @@ public interface DesktopUpdatePort {
      */
     private static List<String> validatedEvidence(List<String> values) {
         Objects.requireNonNull(values, "evidence");
-        if (values.isEmpty() || values.size() > 64) throw new IllegalArgumentException("update evidence is incomplete");
+        if (values.isEmpty() || values.size() > 64)
+            throw new IllegalArgumentException("update evidence is incomplete");
         List<String> result = values.stream().map(value -> {
             String item = Objects.requireNonNull(value, "evidence item").trim();
             if (item.isEmpty() || item.length() > 512 || item.chars().anyMatch(Character::isISOControl)) {
@@ -216,7 +206,8 @@ public interface DesktopUpdatePort {
             }
             return item;
         }).distinct().toList();
-        if (result.size() != values.size()) throw new IllegalArgumentException("update evidence has duplicates");
+        if (result.size() != values.size())
+            throw new IllegalArgumentException("update evidence has duplicates");
         return result;
     }
 }

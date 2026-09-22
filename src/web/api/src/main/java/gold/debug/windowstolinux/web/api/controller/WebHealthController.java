@@ -1,7 +1,8 @@
 package gold.debug.windowstolinux.web.api.controller;
 
-import org.springframework.web.bind.annotation.*;
 import java.util.Map;
+
+import org.springframework.web.bind.annotation.*;
 
 /**
  * Exposes health HTTP operations through the Web application service.
@@ -16,5 +17,7 @@ public final class WebHealthController {
      * @return constructed or resolved map / 构造或解析得到的映射
      */
     @GetMapping("/api/v1/health")
-    public Map<String,String> health() { return Map.of("status", "ok", "mode", "internal-test"); }
+    public Map<String, String> health() {
+        return Map.of("status", "ok", "mode", "internal-test");
+    }
 }

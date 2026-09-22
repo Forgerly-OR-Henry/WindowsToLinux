@@ -12,13 +12,8 @@ import java.util.Objects;
  * @param availableBytes available bytes / 可用字节
  * @param evidence observations supporting the reported result / 支持所报告结果的观测证据
  */
-public record ManagedRestorePreflightOutcome(
-        String targetServerId,
-        String applicationId,
-        String archiveSha256,
-        long availableBytes,
-        List<String> evidence
-) {
+public record ManagedRestorePreflightOutcome(String targetServerId, String applicationId, String archiveSha256,
+        long availableBytes, List<String> evidence) {
     /**
      * Requires complete bounded preflight evidence. / 要求完整且有界的前置证据。
      *
@@ -56,7 +51,8 @@ public record ManagedRestorePreflightOutcome(
      */
     private static String identifier(String value, String field) {
         value = Objects.requireNonNull(value, field).trim();
-        if (!value.matches("[a-z0-9][a-z0-9-]{0,62}")) throw new IllegalArgumentException(field + " is invalid");
+        if (!value.matches("[a-z0-9][a-z0-9-]{0,62}"))
+            throw new IllegalArgumentException(field + " is invalid");
         return value;
     }
 }

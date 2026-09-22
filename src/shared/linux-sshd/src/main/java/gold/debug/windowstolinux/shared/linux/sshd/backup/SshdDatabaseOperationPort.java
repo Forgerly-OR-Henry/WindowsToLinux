@@ -1,12 +1,5 @@
 package gold.debug.windowstolinux.shared.linux.sshd.backup;
 
-import gold.debug.windowstolinux.shared.linux.error.LinuxOperationException;
-import gold.debug.windowstolinux.shared.linux.error.LinuxOperationFailureType;
-import gold.debug.windowstolinux.shared.linux.protocol.database.RemoteDatabasePort;
-import gold.debug.windowstolinux.shared.linux.sshd.backup.execution.protocol.DatabaseProtocolParser;
-import gold.debug.windowstolinux.shared.linux.sshd.backup.generation.script.DatabaseCommandRenderer;
-import gold.debug.windowstolinux.shared.linux.sshd.command.SshCommandExecutor;
-
 import java.io.FilterInputStream;
 import java.io.FilterOutputStream;
 import java.io.IOException;
@@ -18,6 +11,13 @@ import java.time.Duration;
 import java.util.HexFormat;
 import java.util.Objects;
 
+import gold.debug.windowstolinux.shared.linux.error.LinuxOperationException;
+import gold.debug.windowstolinux.shared.linux.error.LinuxOperationFailureType;
+import gold.debug.windowstolinux.shared.linux.protocol.database.RemoteDatabasePort;
+import gold.debug.windowstolinux.shared.linux.sshd.backup.execution.protocol.DatabaseProtocolParser;
+import gold.debug.windowstolinux.shared.linux.sshd.backup.generation.script.DatabaseCommandRenderer;
+import gold.debug.windowstolinux.shared.linux.sshd.command.SshCommandExecutor;
+
 /**
  * Apache SSHD database port backed only by fixed root-owned helper verbs. / 仅由固定 root 持有 helper 动词支持的 Apache SSHD 数据库端口。
  */
@@ -27,21 +27,25 @@ public final class SshdDatabaseOperationPort implements RemoteDatabasePort {
      * <p>检查超时。
      */
     private static final Duration INSPECTION_TIMEOUT = Duration.ofSeconds(30);
+
     /**
      * DATABASE TIMEOUT.
      * <p>数据库超时。
      */
     private static final Duration DATABASE_TIMEOUT = Duration.ofMinutes(30);
+
     /**
      * Bound ssh command executor collaborator for typed remote command boundary.
      * <p>处理类型化远端命令边界的SSH命令执行器协作对象。
      */
     private final SshCommandExecutor commands;
+
     /**
      * Renderer.
      * <p>渲染器。
      */
     private final DatabaseCommandRenderer renderer;
+
     /**
      * Parser.
      * <p>解析器。
@@ -70,7 +74,7 @@ public final class SshdDatabaseOperationPort implements RemoteDatabasePort {
      */
     @Override
     public CompatibilityEvidence inspect(BackupRequest request) throws LinuxOperationException {
-        SshCommandExecutor.CommandResult result;
+        gold.debug.windowstolinux.shared.linux.command.RemoteCommandResult result;
         try {
             result = commands.execProtocol(renderer.inspect(request), INSPECTION_TIMEOUT, true);
         } catch (LinuxOperationException exception) {
@@ -93,7 +97,7 @@ public final class SshdDatabaseOperationPort implements RemoteDatabasePort {
     @Override
     public BackupArtifact export(BackupRequest request, DatabaseConsistencyMode consistencyMode)
             throws LinuxOperationException {
-        SshCommandExecutor.CommandResult result;
+        gold.debug.windowstolinux.shared.linux.command.RemoteCommandResult result;
         try {
             result = commands.execProtocol(renderer.export(request, consistencyMode), DATABASE_TIMEOUT, true);
         } catch (LinuxOperationException exception) {
@@ -114,7 +118,7 @@ public final class SshdDatabaseOperationPort implements RemoteDatabasePort {
      */
     @Override
     public RestoreEvidence restoreCandidate(RestoreRequest request) throws LinuxOperationException {
-        SshCommandExecutor.CommandResult result;
+        gold.debug.windowstolinux.shared.linux.command.RemoteCommandResult result;
         try {
             result = commands.execProtocol(renderer.restore(request), DATABASE_TIMEOUT, true);
         } catch (LinuxOperationException exception) {
@@ -202,7 +206,8 @@ public final class SshdDatabaseOperationPort implements RemoteDatabasePort {
         VerifyingOutput output = new VerifyingOutput(destination, artifact);
         try {
             var result = commands.execProtocolStreaming(renderer.readArtifact(artifact), InputStream.nullInputStream(),
-                    output, DATABASE_TIMEOUT);
+                    output, DATABASE_TIMEOUT, "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855", 0,
+                    Math.max(1, artifact.byteCount()));
             requireSuccess(result, LinuxOperationFailureType.DATABASE_BACKUP_FAILED,
                     "database artifact streaming failed");
             output.verify();
@@ -227,7 +232,7 @@ public final class SshdDatabaseOperationPort implements RemoteDatabasePort {
         VerifyingInput input = new VerifyingInput(source, artifact);
         try {
             var result = commands.execProtocolStreaming(renderer.stageArtifact(artifact), input,
-                    OutputStream.nullOutputStream(), DATABASE_TIMEOUT);
+                    OutputStream.nullOutputStream(), DATABASE_TIMEOUT, artifact.sha256(), artifact.byteCount(), 4096);
             requireSuccess(result, LinuxOperationFailureType.DATABASE_RESTORE_FAILED,
                     "database artifact staging failed");
             input.verify();
@@ -248,7 +253,8 @@ public final class SshdDatabaseOperationPort implements RemoteDatabasePort {
     public void discardArtifact(BackupArtifact artifact) throws LinuxOperationException {
         try {
             var result = commands.execProtocol(renderer.discardArtifact(artifact), INSPECTION_TIMEOUT, false);
-            requireSuccess(result, LinuxOperationFailureType.DATABASE_BACKUP_FAILED, "database artifact cleanup failed");
+            requireSuccess(result, LinuxOperationFailureType.DATABASE_BACKUP_FAILED,
+                    "database artifact cleanup failed");
         } catch (LinuxOperationException exception) {
             throw LinuxOperationException.create(LinuxOperationFailureType.DATABASE_BACKUP_FAILED,
                     "database artifact cleanup transport failed", exception);
@@ -264,9 +270,8 @@ public final class SshdDatabaseOperationPort implements RemoteDatabasePort {
      * @param operation operation / 操作
      * @throws LinuxOperationException if the authenticated remote operation fails or its evidence is rejected / 已认证远端操作失败或其证据被拒绝时
      */
-    private static void requireSuccess(
-            SshCommandExecutor.CommandResult result, LinuxOperationFailureType type, String operation)
-            throws LinuxOperationException {
+    private static void requireSuccess(gold.debug.windowstolinux.shared.linux.command.RemoteCommandResult result,
+            LinuxOperationFailureType type, String operation) throws LinuxOperationException {
         if (!result.succeeded()) {
             throw LinuxOperationException.create(type, operation + ": " + result.failureEvidence());
         }
@@ -280,7 +285,8 @@ public final class SshdDatabaseOperationPort implements RemoteDatabasePort {
      * @return a non-secret database reference using the SQLite binding or server host, port and database / 使用 SQLite 绑定或服务器主机、端口及数据库构建非秘密数据库引用
      */
     private static String reference(ConnectionProfile profile) {
-        if (profile instanceof ConnectionProfile.Sqlite sqlite) return sqlite.bindingId();
+        if (profile instanceof ConnectionProfile.Sqlite sqlite)
+            return sqlite.bindingId();
         ConnectionProfile.Server server = (ConnectionProfile.Server) profile;
         return server.host() + ":" + server.port() + "/" + server.database();
     }
@@ -295,11 +301,13 @@ public final class SshdDatabaseOperationPort implements RemoteDatabasePort {
          * <p>已验证构建或备份制品元数据。
          */
         private final BackupArtifact artifact;
+
         /**
          * Content identity used for independent verification.
          * <p>独立验证所用的内容身份。
          */
         private final MessageDigest digest = sha256();
+
         /**
          * Count.
          * <p>数量。
@@ -332,7 +340,8 @@ public final class SshdDatabaseOperationPort implements RemoteDatabasePort {
             } catch (ArithmeticException exception) {
                 throw new IOException("database artifact length overflow", exception);
             }
-            if (count > artifact.byteCount()) throw new IOException("database artifact exceeds expected size");
+            if (count > artifact.byteCount())
+                throw new IOException("database artifact exceeds expected size");
             digest.update(bytes, offset, length);
         }
 
@@ -370,7 +379,8 @@ public final class SshdDatabaseOperationPort implements RemoteDatabasePort {
          */
         private VerifyingOutput(OutputStream output, BackupArtifact artifact) {
             super(output);
-            this.verifier = new Verifier(artifact) { };
+            this.verifier = new Verifier(artifact) {
+            };
         }
 
         /**
@@ -380,7 +390,8 @@ public final class SshdDatabaseOperationPort implements RemoteDatabasePort {
          * @param value candidate content accepted or rejected by this contract / 由当前契约接收或拒绝的候选内容
          * @throws IOException if the required file or stream operation fails / 所需文件或流操作失败时
          */
-        @Override public void write(int value) throws IOException {
+        @Override
+        public void write(int value) throws IOException {
             byte[] one = {(byte) value};
             write(one, 0, 1);
         }
@@ -394,7 +405,8 @@ public final class SshdDatabaseOperationPort implements RemoteDatabasePort {
          * @param length length / 长度
          * @throws IOException if the required file or stream operation fails / 所需文件或流操作失败时
          */
-        @Override public void write(byte[] bytes, int offset, int length) throws IOException {
+        @Override
+        public void write(byte[] bytes, int offset, int length) throws IOException {
             verifier.update(bytes, offset, length);
             out.write(bytes, offset, length);
         }
@@ -405,14 +417,20 @@ public final class SshdDatabaseOperationPort implements RemoteDatabasePort {
          *
          * @throws IOException if the required file or stream operation fails / 所需文件或流操作失败时
          */
-        @Override public void close() throws IOException { flush(); }
+        @Override
+        public void close() throws IOException {
+            flush();
+        }
+
         /**
          * Verifies verifying output.
          * <p>验证Verifying输出。
          *
          * @throws IOException if the required file or stream operation fails / 所需文件或流操作失败时
          */
-        private void verify() throws IOException { verifier.verify(); }
+        private void verify() throws IOException {
+            verifier.verify();
+        }
     }
 
     /**
@@ -435,7 +453,8 @@ public final class SshdDatabaseOperationPort implements RemoteDatabasePort {
          */
         private VerifyingInput(InputStream input, BackupArtifact artifact) {
             super(input);
-            this.verifier = new Verifier(artifact) { };
+            this.verifier = new Verifier(artifact) {
+            };
         }
 
         /**
@@ -445,9 +464,11 @@ public final class SshdDatabaseOperationPort implements RemoteDatabasePort {
          * @return verifying input / Verifying输入
          * @throws IOException if the required file or stream operation fails / 所需文件或流操作失败时
          */
-        @Override public int read() throws IOException {
+        @Override
+        public int read() throws IOException {
             int value = in.read();
-            if (value >= 0) verifier.update(new byte[]{(byte) value}, 0, 1);
+            if (value >= 0)
+                verifier.update(new byte[]{(byte) value}, 0, 1);
             return value;
         }
 
@@ -461,9 +482,11 @@ public final class SshdDatabaseOperationPort implements RemoteDatabasePort {
          * @return verifying input / Verifying输入
          * @throws IOException if the required file or stream operation fails / 所需文件或流操作失败时
          */
-        @Override public int read(byte[] bytes, int offset, int length) throws IOException {
+        @Override
+        public int read(byte[] bytes, int offset, int length) throws IOException {
             int read = in.read(bytes, offset, length);
-            if (read > 0) verifier.update(bytes, offset, read);
+            if (read > 0)
+                verifier.update(bytes, offset, read);
             return read;
         }
 
@@ -471,14 +494,19 @@ public final class SshdDatabaseOperationPort implements RemoteDatabasePort {
          * Accepts the callback without side effects because this adapter needs no additional action.
          * <p>接受回调且不产生副作用，因为当前适配器无需额外动作。
          */
-        @Override public void close() { }
+        @Override
+        public void close() {
+        }
+
         /**
          * Verifies verifying input.
          * <p>验证Verifying输入。
          *
          * @throws IOException if the required file or stream operation fails / 所需文件或流操作失败时
          */
-        private void verify() throws IOException { verifier.verify(); }
+        private void verify() throws IOException {
+            verifier.verify();
+        }
     }
 
     /**

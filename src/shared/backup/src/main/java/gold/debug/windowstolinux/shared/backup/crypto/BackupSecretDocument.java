@@ -1,9 +1,9 @@
 package gold.debug.windowstolinux.shared.backup.crypto;
 
-import gold.debug.windowstolinux.shared.config.secretref.ResolvedSecretRevision;
-
 import java.util.List;
 import java.util.Objects;
+
+import gold.debug.windowstolinux.shared.config.secretref.ResolvedSecretRevision;
 
 /**
  * Owns a complete decoded backup-secret revision set and clears it as one unit. / 持有完整已解码备份秘密修订集并将其整体清零。

@@ -1,10 +1,12 @@
 package gold.debug.windowstolinux.app.ui.component;
 
-import com.formdev.flatlaf.extras.FlatSVGIcon;
-import javax.swing.Icon;
 import java.awt.Color;
 import java.util.Objects;
 import java.util.function.Supplier;
+
+import javax.swing.Icon;
+
+import com.formdev.flatlaf.extras.FlatSVGIcon;
 
 /**
  * Theme-aware bundled SVG icons. / 跟随主题的内置 SVG 图标。
@@ -14,7 +16,8 @@ public final class DesktopIcons {
      * Prevents instantiation of this static contract helper.
      * <p>防止实例化当前静态契约辅助类。
      */
-    private DesktopIcons() { }
+    private DesktopIcons() {
+    }
 
     /**
      * Creates an icon whose color follows the owning control. / 图标颜色跟随所属控件。

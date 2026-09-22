@@ -76,7 +76,9 @@ public interface DesktopUninstallPort {
          * @param verified verified / 已验证
          * @param evidence observations supporting the reported result / 支持所报告结果的观测证据
          */
-        public StepEvidence { evidence = validatedEvidence(evidence); }
+        public StepEvidence {
+            evidence = validatedEvidence(evidence);
+        }
     }
 
     /**
@@ -87,12 +89,8 @@ public interface DesktopUninstallPort {
      * @param handoffAuthenticated handoff authenticated / 交接已认证
      * @param evidence observations supporting the reported result / 支持所报告结果的观测证据
      */
-    record HandoffEvidence(
-            boolean independentWorkerVerified,
-            boolean mainProcessExited,
-            boolean handoffAuthenticated,
-            List<String> evidence
-    ) {
+    record HandoffEvidence(boolean independentWorkerVerified, boolean mainProcessExited, boolean handoffAuthenticated,
+            List<String> evidence) {
         /**
          * Validates evidence. / 校验证据。
          *
@@ -101,7 +99,9 @@ public interface DesktopUninstallPort {
          * @param handoffAuthenticated handoff authenticated / 交接已认证
          * @param evidence observations supporting the reported result / 支持所报告结果的观测证据
          */
-        public HandoffEvidence { evidence = validatedEvidence(evidence); }
+        public HandoffEvidence {
+            evidence = validatedEvidence(evidence);
+        }
     }
 
     /**
@@ -113,13 +113,8 @@ public interface DesktopUninstallPort {
      * @param credentialNamespaceVerified credential namespace verified / 凭据命名空间已验证
      * @param evidence observations supporting the reported result / 支持所报告结果的观测证据
      */
-    record BoundaryEvidence(
-            boolean jpackageLayoutVerified,
-            boolean installMarkerVerified,
-            boolean dataMarkerVerified,
-            boolean credentialNamespaceVerified,
-            List<String> evidence
-    ) {
+    record BoundaryEvidence(boolean jpackageLayoutVerified, boolean installMarkerVerified, boolean dataMarkerVerified,
+            boolean credentialNamespaceVerified, List<String> evidence) {
         /**
          * Validates evidence. / 校验证据。
          *
@@ -129,7 +124,9 @@ public interface DesktopUninstallPort {
          * @param credentialNamespaceVerified credential namespace verified / 凭据命名空间已验证
          * @param evidence observations supporting the reported result / 支持所报告结果的观测证据
          */
-        public BoundaryEvidence { evidence = validatedEvidence(evidence); }
+        public BoundaryEvidence {
+            evidence = validatedEvidence(evidence);
+        }
     }
 
     /**
@@ -140,12 +137,7 @@ public interface DesktopUninstallPort {
      * @param residualItems residual items / 残留项目集合
      * @param evidence observations supporting the reported result / 支持所报告结果的观测证据
      */
-    record RemovalEvidence(
-            boolean completed,
-            boolean verified,
-            List<String> residualItems,
-            List<String> evidence
-    ) {
+    record RemovalEvidence(boolean completed, boolean verified, List<String> residualItems, List<String> evidence) {
         /**
          * Validates bounded residuals and evidence. / 校验有界残留及证据。
          *
@@ -198,7 +190,8 @@ public interface DesktopUninstallPort {
             }
             return item;
         }).distinct().toList();
-        if (result.size() != values.size()) throw new IllegalArgumentException(field + " has duplicates");
+        if (result.size() != values.size())
+            throw new IllegalArgumentException(field + " has duplicates");
         return result;
     }
 }

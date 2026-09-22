@@ -73,7 +73,9 @@ public interface RestoreDeploymentPort {
          * @param healthy healthy / 健康
          * @param evidence observations supporting the reported result / 支持所报告结果的观测证据
          */
-        public HealthEvidence { evidence = checkedEvidence(evidence); }
+        public HealthEvidence {
+            evidence = checkedEvidence(evidence);
+        }
     }
 
     /**
@@ -84,8 +86,8 @@ public interface RestoreDeploymentPort {
      * @param activeReleaseToken active release token / 活跃发布令牌
      * @param evidence observations supporting the reported result / 支持所报告结果的观测证据
      */
-    record CommitEvidence(boolean committed, boolean previousReleaseRetained,
-                          String activeReleaseToken, List<String> evidence) {
+    record CommitEvidence(boolean committed, boolean previousReleaseRetained, String activeReleaseToken,
+            List<String> evidence) {
         /**
          * Validates the release token and evidence. / 校验发布令牌和证据。
          *
@@ -113,7 +115,9 @@ public interface RestoreDeploymentPort {
          * @param existingReleaseVerified existing release verified / 既有发布已验证
          * @param evidence observations supporting the reported result / 支持所报告结果的观测证据
          */
-        public RecoveryEvidence { evidence = checkedEvidence(evidence); }
+        public RecoveryEvidence {
+            evidence = checkedEvidence(evidence);
+        }
     }
 
     /**
@@ -145,8 +149,8 @@ public interface RestoreDeploymentPort {
      */
     private static List<String> checkedEvidence(List<String> values) {
         values = List.copyOf(Objects.requireNonNull(values, "evidence"));
-        if (values.isEmpty() || values.size() > 64 || values.stream().anyMatch(value -> value == null
-                || value.isBlank() || value.length() > 512 || value.chars().anyMatch(Character::isISOControl))) {
+        if (values.isEmpty() || values.size() > 64 || values.stream().anyMatch(value -> value == null || value.isBlank()
+                || value.length() > 512 || value.chars().anyMatch(Character::isISOControl))) {
             throw new IllegalArgumentException("restore deployment evidence is invalid");
         }
         return values;

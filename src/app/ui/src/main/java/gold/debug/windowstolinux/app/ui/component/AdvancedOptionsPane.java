@@ -1,10 +1,5 @@
 package gold.debug.windowstolinux.app.ui.component;
 
-import gold.debug.windowstolinux.app.ui.i18n.PageMessagePresenter;
-import javax.swing.*;
-import javax.swing.event.DocumentEvent;
-import javax.swing.event.DocumentListener;
-import javax.swing.text.JTextComponent;
 import java.awt.*;
 import java.awt.event.FocusAdapter;
 import java.awt.event.FocusEvent;
@@ -12,6 +7,13 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 import java.util.function.BooleanSupplier;
+
+import javax.swing.*;
+import javax.swing.event.DocumentEvent;
+import javax.swing.event.DocumentListener;
+import javax.swing.text.JTextComponent;
+
+import gold.debug.windowstolinux.app.ui.i18n.PageMessagePresenter;
 
 /**
  * A page-local, initially closed inspector preserving the original input controls. / 页面专属且初始折叠的检查面板，保留原有输入控件。
@@ -22,46 +24,55 @@ public final class AdvancedOptionsPane extends JPanel {
      * <p>允许或请求的输入字段定义。
      */
     private final InspectorFieldsPane fields = new InspectorFieldsPane();
+
     /**
      * Swing control for drawer.
      * <p>抽屉面板对应的 Swing 控件。
      */
     private final JScrollPane drawer;
+
     /**
      * Swing control for toggle.
      * <p>切换对应的 Swing 控件。
      */
     private final JButton toggle;
+
     /**
      * Swing control for toolbar.
      * <p>工具栏对应的 Swing 控件。
      */
     private final JPanel toolbar;
+
     /**
      * Expanded.
      * <p>已展开。
      */
     private boolean expanded;
+
     /**
      * Window controller.
      * <p>窗口控制器。
      */
     private AdvancedWindowHost windowController;
+
     /**
      * Swing control for modified.
      * <p>已修改对应的 Swing 控件。
      */
     private final JLabel modified = new JLabel();
+
     /**
      * Bound page message presenter collaborator for localized message resolver.
      * <p>处理本地化消息解析器的页面消息展示器协作对象。
      */
     private final PageMessagePresenter messages;
+
     /**
      * Changes.
      * <p>变更集合。
      */
     private final List<BooleanSupplier> changes = new ArrayList<>();
+
     /**
      * Disabled inputs.
      * <p>已禁用输入集合。
@@ -117,11 +128,15 @@ public final class AdvancedOptionsPane extends JPanel {
         label.setWrapStyleWord(true);
         input.getAccessibleContext().setAccessibleName(messages.text(key));
         boolean switchField = input instanceof ToggleSwitch;
-        if (switchField) ((ToggleSwitch) input).setText(null);
+        if (switchField)
+            ((ToggleSwitch) input).setText(null);
         JButton help = help(messages.text("help." + key));
         JPanel controls = new JPanel(new FlowLayout(FlowLayout.RIGHT, 0, 0));
         controls.setOpaque(false);
-        if (switchField) { controls.add(input); controls.add(Box.createHorizontalStrut(6)); }
+        if (switchField) {
+            controls.add(input);
+            controls.add(Box.createHorizontalStrut(6));
+        }
         controls.add(help);
         JPanel row = new JPanel(new BorderLayout(6, 5)) {
             /**
@@ -130,27 +145,32 @@ public final class AdvancedOptionsPane extends JPanel {
              *
              * @return preferred size / 首选大小
              */
-            @Override public Dimension getPreferredSize() {
+            @Override
+            public Dimension getPreferredSize() {
                 int width = fields.contentWidth() - controls.getPreferredSize().width - 6;
                 label.setSize(Math.max(1, width), Short.MAX_VALUE);
                 return super.getPreferredSize();
             }
+
             /**
              * Returns maximum size.
              * <p>返回最大大小。
              *
              * @return maximum size / 最大大小
              */
-            @Override public Dimension getMaximumSize() {
+            @Override
+            public Dimension getMaximumSize() {
                 return new Dimension(Integer.MAX_VALUE, getPreferredSize().height);
             }
+
             /**
              * Returns minimum size.
              * <p>返回最小大小。
              *
              * @return minimum size / 最小大小
              */
-            @Override public Dimension getMinimumSize() {
+            @Override
+            public Dimension getMinimumSize() {
                 return new Dimension(0, getPreferredSize().height);
             }
         };
@@ -160,19 +180,24 @@ public final class AdvancedOptionsPane extends JPanel {
         heading.setOpaque(false);
         JPanel helpColumn = new JPanel(switchField ? new GridBagLayout() : new BorderLayout());
         helpColumn.setOpaque(false);
-        if (switchField) helpColumn.add(controls);
-        else helpColumn.add(controls, BorderLayout.NORTH);
+        if (switchField)
+            helpColumn.add(controls);
+        else
+            helpColumn.add(controls, BorderLayout.NORTH);
         if (switchField) {
             JPanel textColumn = new JPanel(new GridBagLayout());
             textColumn.setOpaque(false);
             GridBagConstraints placement = new GridBagConstraints();
-            placement.weightx = 1; placement.fill = GridBagConstraints.HORIZONTAL;
+            placement.weightx = 1;
+            placement.fill = GridBagConstraints.HORIZONTAL;
             textColumn.add(label, placement);
             heading.add(textColumn, BorderLayout.CENTER);
-        } else heading.add(label, BorderLayout.CENTER);
+        } else
+            heading.add(label, BorderLayout.CENTER);
         heading.add(helpColumn, BorderLayout.EAST);
         row.add(heading, BorderLayout.NORTH);
-        if (!switchField) row.add(input, BorderLayout.CENTER);
+        if (!switchField)
+            row.add(input, BorderLayout.CENTER);
         row.setBorder(BorderFactory.createEmptyBorder(0, 0, 12, 0));
         fields.add(row);
         observe(input);
@@ -194,34 +219,48 @@ public final class AdvancedOptionsPane extends JPanel {
      *
      * @return true when returns whether this page's inspector is expanded, false otherwise / 返回当前页面检查面板是否展开时为 true，否则为 false
      */
-    public boolean expanded() { return expanded; }
+    public boolean expanded() {
+        return expanded;
+    }
 
     /**
      * Binds the inspector to its window host. / 将检查面板绑定到窗口宿主。
      *
      * @param controller controller / 控制器
      */
-    public void bind(AdvancedWindowHost controller) { windowController = controller; }
+    public void bind(AdvancedWindowHost controller) {
+        windowController = controller;
+    }
+
     /**
      * Moves the existing controls into the desktop header; standalone dialogs keep their local toolbar. / 将原控件移入桌面顶部栏，独立弹窗仍保留本地工具栏。
      *
      * @return constructed or resolved J component / 构造或解析得到的J组件
      */
-    public JComponent headerControls() { remove(toolbar); return toolbar; }
+    public JComponent headerControls() {
+        remove(toolbar);
+        return toolbar;
+    }
+
     /**
      * Returns drawer.
      * <p>返回抽屉面板。
      *
      * @return drawer / 抽屉面板
      */
-    JComponent drawer() { return drawer; }
+    JComponent drawer() {
+        return drawer;
+    }
+
     /**
      * Returns inspector title.
      * <p>返回检查器标题。
      *
      * @return inspector title / 检查器标题
      */
-    String inspectorTitle() { return messages.text("advanced.show"); }
+    String inspectorTitle() {
+        return messages.text("advanced.show");
+    }
 
     /**
      * Freezes operation inputs while retaining each control's prior enabled state and readable output. / 冻结操作输入，同时保留各控件原有启用状态和可读输出。
@@ -230,7 +269,10 @@ public final class AdvancedOptionsPane extends JPanel {
      */
     public void setBusy(boolean busy) {
         if (busy) {
-            if (disabledInputs.isEmpty()) { disableInputs(this); disableInputs(drawer); }
+            if (disabledInputs.isEmpty()) {
+                disableInputs(this);
+                disableInputs(drawer);
+            }
         } else {
             disabledInputs.forEach(Component::setEnabled);
             disabledInputs.clear();
@@ -245,13 +287,15 @@ public final class AdvancedOptionsPane extends JPanel {
      */
     private void disableInputs(Container parent) {
         for (Component child : parent.getComponents()) {
-            if (child == toggle || child instanceof JButton button
-                    && "help".equals(button.getClientProperty("JButton.buttonType"))) continue;
+            if (child == toggle
+                    || child instanceof JButton button && "help".equals(button.getClientProperty("JButton.buttonType")))
+                continue;
             if (child instanceof AbstractButton || child instanceof JComboBox<?>
                     || child instanceof JTextComponent text && text.isEditable()) {
                 disabledInputs.put(child, child.isEnabled());
                 child.setEnabled(false);
-            } else if (child instanceof Container container) disableInputs(container);
+            } else if (child instanceof Container container)
+                disableInputs(container);
         }
     }
 
@@ -296,9 +340,11 @@ public final class AdvancedOptionsPane extends JPanel {
              *
              * @param event state or UI event being processed / 正在处理的状态或 UI 事件
              */
-            @Override public void focusGained(FocusEvent event) {
+            @Override
+            public void focusGained(FocusEvent event) {
                 Action action = button.getActionMap().get("postTip");
-                if (action != null) action.actionPerformed(new java.awt.event.ActionEvent(button, 0, "postTip"));
+                if (action != null)
+                    action.actionPerformed(new java.awt.event.ActionEvent(button, 0, "postTip"));
             }
         });
         return button;
@@ -320,26 +366,38 @@ public final class AdvancedOptionsPane extends JPanel {
                  *
                  * @param event state or UI event being processed / 正在处理的状态或 UI 事件
                  */
-                @Override public void insertUpdate(DocumentEvent event) { refreshChanges(); }
+                @Override
+                public void insertUpdate(DocumentEvent event) {
+                    refreshChanges();
+                }
+
                 /**
                  * Removes update.
                  * <p>移除更新。
                  *
                  * @param event state or UI event being processed / 正在处理的状态或 UI 事件
                  */
-                @Override public void removeUpdate(DocumentEvent event) { refreshChanges(); }
+                @Override
+                public void removeUpdate(DocumentEvent event) {
+                    refreshChanges();
+                }
+
                 /**
                  * Responds to a document change by updating the associated form state.
                  * <p>响应文档变更并更新关联表单状态。
                  *
                  * @param event state or UI event being processed / 正在处理的状态或 UI 事件
                  */
-                @Override public void changedUpdate(DocumentEvent event) { refreshChanges(); }
+                @Override
+                public void changedUpdate(DocumentEvent event) {
+                    refreshChanges();
+                }
             });
             return;
         }
         if (input instanceof JTextComponent text) {
-            if (!text.isEditable()) return;
+            if (!text.isEditable())
+                return;
             String initial = text.getText();
             changes.add(() -> !initial.equals(text.getText()));
             text.getDocument().addDocumentListener(new DocumentListener() {
@@ -349,21 +407,32 @@ public final class AdvancedOptionsPane extends JPanel {
                  *
                  * @param event state or UI event being processed / 正在处理的状态或 UI 事件
                  */
-                @Override public void insertUpdate(DocumentEvent event) { refreshChanges(); }
+                @Override
+                public void insertUpdate(DocumentEvent event) {
+                    refreshChanges();
+                }
+
                 /**
                  * Removes update.
                  * <p>移除更新。
                  *
                  * @param event state or UI event being processed / 正在处理的状态或 UI 事件
                  */
-                @Override public void removeUpdate(DocumentEvent event) { refreshChanges(); }
+                @Override
+                public void removeUpdate(DocumentEvent event) {
+                    refreshChanges();
+                }
+
                 /**
                  * Responds to a document change by updating the associated form state.
                  * <p>响应文档变更并更新关联表单状态。
                  *
                  * @param event state or UI event being processed / 正在处理的状态或 UI 事件
                  */
-                @Override public void changedUpdate(DocumentEvent event) { refreshChanges(); }
+                @Override
+                public void changedUpdate(DocumentEvent event) {
+                    refreshChanges();
+                }
             });
         } else if (input instanceof JComboBox<?> combo) {
             Object initial = combo.getSelectedItem();
@@ -374,7 +443,9 @@ public final class AdvancedOptionsPane extends JPanel {
             changes.add(() -> initial != button.isSelected());
             button.addItemListener(event -> refreshChanges());
         } else {
-            for (Component child : input.getComponents()) if (child instanceof JComponent nested) observe(nested);
+            for (Component child : input.getComponents())
+                if (child instanceof JComponent nested)
+                    observe(nested);
         }
     }
 
@@ -383,8 +454,8 @@ public final class AdvancedOptionsPane extends JPanel {
      * <p>刷新变更集合。
      */
     private void refreshChanges() {
-        modified.setText(changes.stream().anyMatch(BooleanSupplier::getAsBoolean)
-                ? messages.text("advanced.modified") : "");
+        modified.setText(
+                changes.stream().anyMatch(BooleanSupplier::getAsBoolean) ? messages.text("advanced.modified") : "");
     }
 
     /**
@@ -406,7 +477,8 @@ public final class AdvancedOptionsPane extends JPanel {
          */
         int contentWidth() {
             int width = getParent() instanceof JViewport viewport ? viewport.getExtentSize().width : getWidth();
-            if (width <= 0) width = AdvancedWindowHost.WIDTH;
+            if (width <= 0)
+                width = AdvancedWindowHost.WIDTH;
             return Math.max(1, width - getInsets().left - getInsets().right);
         }
 
@@ -416,7 +488,8 @@ public final class AdvancedOptionsPane extends JPanel {
          *
          * @return preferred size / 首选大小
          */
-        @Override public Dimension getPreferredSize() {
+        @Override
+        public Dimension getPreferredSize() {
             int width = contentWidth();
             if (measuredWidth != width) {
                 measuredWidth = width;
@@ -431,7 +504,11 @@ public final class AdvancedOptionsPane extends JPanel {
          *
          * @return preferred scrollable viewport size / 首选可滚动视口大小
          */
-        @Override public Dimension getPreferredScrollableViewportSize() { return getPreferredSize(); }
+        @Override
+        public Dimension getPreferredScrollableViewportSize() {
+            return getPreferredSize();
+        }
+
         /**
          * Returns scrollable unit increment.
          * <p>返回可滚动单元增量。
@@ -441,7 +518,11 @@ public final class AdvancedOptionsPane extends JPanel {
          * @param direction direction / 方向
          * @return scrollable unit increment / 可滚动单元增量
          */
-        @Override public int getScrollableUnitIncrement(Rectangle visible, int orientation, int direction) { return 18; }
+        @Override
+        public int getScrollableUnitIncrement(Rectangle visible, int orientation, int direction) {
+            return 18;
+        }
+
         /**
          * Returns scrollable block increment.
          * <p>返回可滚动块增量。
@@ -451,20 +532,31 @@ public final class AdvancedOptionsPane extends JPanel {
          * @param direction direction / 方向
          * @return scrollable block increment / 可滚动块增量
          */
-        @Override public int getScrollableBlockIncrement(Rectangle visible, int orientation, int direction) { return Math.max(18, visible.height - 18); }
+        @Override
+        public int getScrollableBlockIncrement(Rectangle visible, int orientation, int direction) {
+            return Math.max(18, visible.height - 18);
+        }
+
         /**
          * Returns true.
          * <p>返回真。
          *
          * @return true when returns true, false otherwise / 返回真时为 true，否则为 false
          */
-        @Override public boolean getScrollableTracksViewportWidth() { return true; }
+        @Override
+        public boolean getScrollableTracksViewportWidth() {
+            return true;
+        }
+
         /**
          * Returns false.
          * <p>返回假。
          *
          * @return true when returns false, false otherwise / 返回假时为 true，否则为 false
          */
-        @Override public boolean getScrollableTracksViewportHeight() { return false; }
+        @Override
+        public boolean getScrollableTracksViewportHeight() {
+            return false;
+        }
     }
 }

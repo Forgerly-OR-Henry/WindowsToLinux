@@ -16,8 +16,7 @@ export async function api(path, options = {}) {
     el("loading").textContent = pending ? "加载中…" : "";
   }
 }
-export const post = (path, data) =>
-  api(path, { method: "POST", body: JSON.stringify(data) });
+export const post = (path, data) => api(path, { method: "POST", body: JSON.stringify(data) });
 export function error(e) {
   el("message").textContent = e instanceof Error ? e.message : String(e);
 }

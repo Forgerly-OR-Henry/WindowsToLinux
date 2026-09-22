@@ -9,10 +9,7 @@ export const statuses = {
 export function text(value) {
   return String(value ?? "").replace(
     /[&<>"']/g,
-    (c) =>
-      ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[
-        c
-      ],
+    (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c],
   );
 }
 export async function api(path, options = {}) {
@@ -29,8 +26,7 @@ export async function api(path, options = {}) {
   });
   const data = await response.json();
   if (!response.ok) throw Error(data.error || "请求失败");
-  if (response.headers.get("X-Sample-Protocol") !== "2")
-    throw Error("服务协议版本错误");
+  if (response.headers.get("X-Sample-Protocol") !== "2") throw Error("服务协议版本错误");
   return data;
 }
 let pending = 0;
@@ -53,8 +49,6 @@ export function table(headings, rows) {
 export function pager(data, load) {
   document.querySelector("#pages").innerHTML =
     `<button id="previous" ${data.offset === 0 ? "disabled" : ""}>上一页</button><span>共 ${data.total} 条 · ${data.total ? data.offset + 1 : 0}–${Math.min(data.offset + data.limit, data.total)}</span><button id="next" ${data.offset + data.limit >= data.total ? "disabled" : ""}>下一页</button>`;
-  document.querySelector("#previous").onclick = () =>
-    load(Math.max(0, data.offset - data.limit));
-  document.querySelector("#next").onclick = () =>
-    load(data.offset + data.limit);
+  document.querySelector("#previous").onclick = () => load(Math.max(0, data.offset - data.limit));
+  document.querySelector("#next").onclick = () => load(data.offset + data.limit);
 }

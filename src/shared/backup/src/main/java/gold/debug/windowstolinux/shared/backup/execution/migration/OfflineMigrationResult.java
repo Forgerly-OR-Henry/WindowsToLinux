@@ -1,11 +1,11 @@
 package gold.debug.windowstolinux.shared.backup.execution.migration;
 
-import gold.debug.windowstolinux.shared.model.failure.FailureDescriptor;
-import gold.debug.windowstolinux.shared.model.failure.OperationIdentity;
-
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
+
+import gold.debug.windowstolinux.shared.model.failure.FailureDescriptor;
+import gold.debug.windowstolinux.shared.model.failure.OperationIdentity;
 
 /**
  * Terminal preparation result that never claims an external switch or source deletion. / 绝不声称外部切流或删除源端的迁移准备终态。
@@ -21,18 +21,10 @@ import java.util.Optional;
  * @param sourceRecoveryToken source recovery token / 源码恢复令牌
  * @param failure structured failure occurrence retained for safe reporting / 保留用于安全报告的结构化失败实例
  */
-public record OfflineMigrationResult(
-        OperationIdentity operationIdentity,
-        OfflineMigrationStatus status,
-        List<OfflineMigrationEvent> events,
-        boolean sourceWritesStopped,
-        boolean targetCandidateReady,
-        boolean externalTrafficSwitched,
-        boolean sourceRetained,
-        Optional<String> targetCandidateId,
-        Optional<String> sourceRecoveryToken,
-        Optional<FailureDescriptor> failure
-) {
+public record OfflineMigrationResult(OperationIdentity operationIdentity, OfflineMigrationStatus status,
+        List<OfflineMigrationEvent> events, boolean sourceWritesStopped, boolean targetCandidateReady,
+        boolean externalTrafficSwitched, boolean sourceRetained, Optional<String> targetCandidateId,
+        Optional<String> sourceRecoveryToken, Optional<FailureDescriptor> failure) {
     /**
      * Enforces safe status-specific evidence. / 强制安全的终态对应证据。
      *
@@ -56,7 +48,8 @@ public record OfflineMigrationResult(
         targetCandidateId = Objects.requireNonNull(targetCandidateId, "targetCandidateId");
         sourceRecoveryToken = Objects.requireNonNull(sourceRecoveryToken, "sourceRecoveryToken");
         failure = Objects.requireNonNull(failure, "failure");
-        if (events.isEmpty()) throw new IllegalArgumentException("migration result requires events");
+        if (events.isEmpty())
+            throw new IllegalArgumentException("migration result requires events");
         if (externalTrafficSwitched) {
             throw new IllegalArgumentException("offline migration preparation cannot claim an external traffic switch");
         }
@@ -66,13 +59,13 @@ public record OfflineMigrationResult(
         if (status == OfflineMigrationStatus.READY_FOR_MANUAL_TRAFFIC_SWITCH) {
             if (!sourceWritesStopped || !targetCandidateReady || targetCandidateId.isEmpty()
                     || sourceRecoveryToken.isEmpty() || failure.isPresent()) {
-                throw new IllegalArgumentException("ready migration requires stopped source and verified target evidence");
+                throw new IllegalArgumentException(
+                        "ready migration requires stopped source and verified target evidence");
             }
         } else if (failure.isEmpty() || targetCandidateReady || targetCandidateId.isPresent()) {
             throw new IllegalArgumentException("failed migration requires a failure and no ready target candidate");
         }
-        if (failure.isPresent()
-                && !failure.orElseThrow().operationIdentity().equals(operationIdentity)) {
+        if (failure.isPresent() && !failure.orElseThrow().operationIdentity().equals(operationIdentity)) {
             throw new IllegalArgumentException("migration failure must use the result operation identity");
         }
     }

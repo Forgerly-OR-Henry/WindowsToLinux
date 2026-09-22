@@ -1,73 +1,5 @@
 package gold.debug.windowstolinux.app.service.backup;
 
-import gold.debug.windowstolinux.app.db.entity.CurrentRelease;
-import gold.debug.windowstolinux.app.db.entity.ManagedApplicationGraph;
-import gold.debug.windowstolinux.app.db.persistence.repository.ApplicationSecretRepository;
-import gold.debug.windowstolinux.app.db.persistence.repository.ConfigurationSnapshotRepository;
-import gold.debug.windowstolinux.app.db.persistence.repository.ManagedApplicationGraphRepository;
-import gold.debug.windowstolinux.app.db.persistence.repository.ManagedApplicationRepository;
-import gold.debug.windowstolinux.shared.config.persistence.serialization.DeploymentRuntimePersistenceCodec;
-import gold.debug.windowstolinux.app.secret.SecretStore;
-import gold.debug.windowstolinux.app.secret.SecretStoreException;
-import gold.debug.windowstolinux.app.secret.SecretStoreFailureType;
-import gold.debug.windowstolinux.shared.backup.crypto.BackupSecretCryptoService;
-import gold.debug.windowstolinux.shared.backup.crypto.BackupSecretException;
-import gold.debug.windowstolinux.app.service.failure.ApplicationServiceException;
-import gold.debug.windowstolinux.app.service.failure.ApplicationServiceFailureType;
-import gold.debug.windowstolinux.app.service.lock.ServerOperationLockRegistry;
-import gold.debug.windowstolinux.app.service.server.ServerProfile;
-import gold.debug.windowstolinux.app.service.server.ServerUseCaseFacade;
-import gold.debug.windowstolinux.app.windows.workspace.WindowsBackupMaterialAttempt;
-import gold.debug.windowstolinux.app.windows.workspace.WindowsBackupMaterialWorkspace;
-import gold.debug.windowstolinux.app.windows.workspace.WindowsWorkspaceException;
-import gold.debug.windowstolinux.shared.backup.contract.spi.DatabaseBackupAdapter;
-import gold.debug.windowstolinux.shared.backup.contract.spi.DatabaseBackupArtifact;
-import gold.debug.windowstolinux.shared.backup.contract.spi.DatabaseBackupRequest;
-import gold.debug.windowstolinux.shared.backup.contract.spi.DatabaseConnectionProfile;
-import gold.debug.windowstolinux.shared.backup.contract.validation.BackupArchivePolicy;
-import gold.debug.windowstolinux.shared.backup.contract.validation.BackupException;
-import gold.debug.windowstolinux.shared.backup.contract.validation.BackupFailureType;
-import gold.debug.windowstolinux.shared.backup.contract.validation.ManagedArtifactValidator;
-import gold.debug.windowstolinux.shared.backup.contract.validation.ManagedArtifactEvidence;
-import gold.debug.windowstolinux.shared.backup.extension.adapter.LinuxDatabaseOperationPort;
-import gold.debug.windowstolinux.shared.backup.extension.registry.DatabaseAdapterRegistry;
-import gold.debug.windowstolinux.shared.backup.format.BackupArchiveContent;
-import gold.debug.windowstolinux.shared.backup.format.BackupConfigurationCodec;
-import gold.debug.windowstolinux.shared.backup.format.BackupConfigurationDocument;
-import gold.debug.windowstolinux.shared.backup.manifest.BackupComponent;
-import gold.debug.windowstolinux.shared.backup.manifest.BackupComponentRuntime;
-import gold.debug.windowstolinux.shared.backup.manifest.BackupDatabase;
-import gold.debug.windowstolinux.shared.backup.manifest.BackupHealthCheck;
-import gold.debug.windowstolinux.shared.backup.manifest.BackupIdentity;
-import gold.debug.windowstolinux.shared.backup.manifest.BackupInventory;
-import gold.debug.windowstolinux.shared.backup.manifest.BackupManifest;
-import gold.debug.windowstolinux.shared.backup.manifest.BackupMember;
-import gold.debug.windowstolinux.shared.backup.manifest.BackupMemberKind;
-import gold.debug.windowstolinux.shared.backup.manifest.BackupRuntime;
-import gold.debug.windowstolinux.shared.config.resource.ManagedDatabaseBinding;
-import gold.debug.windowstolinux.shared.config.resource.ManagedDatabaseConnection;
-import gold.debug.windowstolinux.shared.config.secretref.ResolvedSecretRevision;
-import gold.debug.windowstolinux.shared.config.secretref.SecretReference;
-import gold.debug.windowstolinux.shared.deploy.contract.MultiComponentDeploymentPlan;
-import gold.debug.windowstolinux.shared.deploy.plan.MultiComponentDeploymentPlanner;
-import gold.debug.windowstolinux.shared.linux.connection.DeploymentLinuxGateway;
-import gold.debug.windowstolinux.shared.linux.connection.HostKeyEvaluator;
-import gold.debug.windowstolinux.shared.linux.connection.SshCredential;
-import gold.debug.windowstolinux.shared.linux.error.LinuxOperationException;
-import gold.debug.windowstolinux.shared.linux.protocol.RemoteStepResult;
-import gold.debug.windowstolinux.shared.linux.protocol.backup.RemoteBackupArtifact;
-import gold.debug.windowstolinux.shared.linux.protocol.backup.RemoteBackupArtifactKind;
-import gold.debug.windowstolinux.shared.linux.protocol.backup.RemoteBackupArtifactRequest;
-import gold.debug.windowstolinux.shared.linux.session.DeploymentRemoteSession;
-import gold.debug.windowstolinux.shared.model.capability.LinuxCapabilityFacts;
-import gold.debug.windowstolinux.shared.model.capability.ServerCapabilityFacts;
-import gold.debug.windowstolinux.shared.model.lifecycle.LifecycleAction;
-import gold.debug.windowstolinux.shared.model.lifecycle.LifecycleObservation;
-import gold.debug.windowstolinux.shared.model.lifecycle.RuntimeState;
-import gold.debug.windowstolinux.shared.model.project.DeploymentRuntimeSpecification;
-import gold.debug.windowstolinux.shared.model.security.CredentialStorageMode;
-import gold.debug.windowstolinux.shared.model.server.ManagedHelperProtocolVersion;
-
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
@@ -93,6 +25,74 @@ import java.util.Set;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.Predicate;
 
+import gold.debug.windowstolinux.app.db.entity.CurrentRelease;
+import gold.debug.windowstolinux.app.db.entity.ManagedApplicationGraph;
+import gold.debug.windowstolinux.app.db.persistence.repository.ApplicationSecretRepository;
+import gold.debug.windowstolinux.app.db.persistence.repository.ConfigurationSnapshotRepository;
+import gold.debug.windowstolinux.app.db.persistence.repository.ManagedApplicationGraphRepository;
+import gold.debug.windowstolinux.app.db.persistence.repository.ManagedApplicationRepository;
+import gold.debug.windowstolinux.app.secret.SecretStore;
+import gold.debug.windowstolinux.app.secret.SecretStoreException;
+import gold.debug.windowstolinux.app.secret.SecretStoreFailureType;
+import gold.debug.windowstolinux.app.service.failure.ApplicationServiceException;
+import gold.debug.windowstolinux.app.service.failure.ApplicationServiceFailureType;
+import gold.debug.windowstolinux.app.service.lock.ServerOperationLockRegistry;
+import gold.debug.windowstolinux.app.service.server.ServerProfile;
+import gold.debug.windowstolinux.app.service.server.ServerUseCaseFacade;
+import gold.debug.windowstolinux.app.windows.workspace.WindowsBackupMaterialAttempt;
+import gold.debug.windowstolinux.app.windows.workspace.WindowsBackupMaterialWorkspace;
+import gold.debug.windowstolinux.app.windows.workspace.WindowsWorkspaceException;
+import gold.debug.windowstolinux.shared.backup.contract.spi.DatabaseBackupAdapter;
+import gold.debug.windowstolinux.shared.backup.contract.spi.DatabaseBackupArtifact;
+import gold.debug.windowstolinux.shared.backup.contract.spi.DatabaseBackupRequest;
+import gold.debug.windowstolinux.shared.backup.contract.spi.DatabaseConnectionProfile;
+import gold.debug.windowstolinux.shared.backup.contract.validation.BackupArchivePolicy;
+import gold.debug.windowstolinux.shared.backup.contract.validation.BackupException;
+import gold.debug.windowstolinux.shared.backup.contract.validation.BackupFailureType;
+import gold.debug.windowstolinux.shared.backup.contract.validation.ManagedArtifactEvidence;
+import gold.debug.windowstolinux.shared.backup.contract.validation.ManagedArtifactValidator;
+import gold.debug.windowstolinux.shared.backup.crypto.BackupSecretCryptoService;
+import gold.debug.windowstolinux.shared.backup.crypto.BackupSecretException;
+import gold.debug.windowstolinux.shared.backup.extension.adapter.LinuxDatabaseOperationPort;
+import gold.debug.windowstolinux.shared.backup.extension.registry.DatabaseAdapterRegistry;
+import gold.debug.windowstolinux.shared.backup.format.BackupArchiveContent;
+import gold.debug.windowstolinux.shared.backup.format.BackupConfigurationCodec;
+import gold.debug.windowstolinux.shared.backup.format.BackupConfigurationDocument;
+import gold.debug.windowstolinux.shared.backup.manifest.BackupComponent;
+import gold.debug.windowstolinux.shared.backup.manifest.BackupComponentRuntime;
+import gold.debug.windowstolinux.shared.backup.manifest.BackupDatabase;
+import gold.debug.windowstolinux.shared.backup.manifest.BackupHealthCheck;
+import gold.debug.windowstolinux.shared.backup.manifest.BackupIdentity;
+import gold.debug.windowstolinux.shared.backup.manifest.BackupInventory;
+import gold.debug.windowstolinux.shared.backup.manifest.BackupManifest;
+import gold.debug.windowstolinux.shared.backup.manifest.BackupMember;
+import gold.debug.windowstolinux.shared.backup.manifest.BackupMemberKind;
+import gold.debug.windowstolinux.shared.backup.manifest.BackupRuntime;
+import gold.debug.windowstolinux.shared.config.persistence.serialization.DeploymentRuntimePersistenceCodec;
+import gold.debug.windowstolinux.shared.config.resource.ManagedDatabaseBinding;
+import gold.debug.windowstolinux.shared.config.resource.ManagedDatabaseConnection;
+import gold.debug.windowstolinux.shared.config.secretref.ResolvedSecretRevision;
+import gold.debug.windowstolinux.shared.config.secretref.SecretReference;
+import gold.debug.windowstolinux.shared.deploy.contract.MultiComponentDeploymentPlan;
+import gold.debug.windowstolinux.shared.linux.connection.DeploymentLinuxGateway;
+import gold.debug.windowstolinux.shared.linux.connection.HostKeyEvaluator;
+import gold.debug.windowstolinux.shared.linux.connection.SshCredential;
+import gold.debug.windowstolinux.shared.linux.error.LinuxOperationException;
+import gold.debug.windowstolinux.shared.linux.protocol.RemoteStepResult;
+import gold.debug.windowstolinux.shared.linux.protocol.backup.RemoteBackupArtifact;
+import gold.debug.windowstolinux.shared.linux.protocol.backup.RemoteBackupArtifactKind;
+import gold.debug.windowstolinux.shared.linux.protocol.backup.RemoteBackupArtifactRequest;
+import gold.debug.windowstolinux.shared.linux.session.DeploymentRemoteSession;
+import gold.debug.windowstolinux.shared.model.capability.LinuxCapabilityFacts;
+import gold.debug.windowstolinux.shared.model.capability.ServerCapabilityFacts;
+import gold.debug.windowstolinux.shared.model.lifecycle.LifecycleAction;
+import gold.debug.windowstolinux.shared.model.lifecycle.LifecycleObservation;
+import gold.debug.windowstolinux.shared.model.lifecycle.RuntimeState;
+import gold.debug.windowstolinux.shared.model.project.DeploymentRuntimeSpecification;
+import gold.debug.windowstolinux.shared.model.security.CredentialStorageMode;
+import gold.debug.windowstolinux.shared.model.server.ManagedHelperProtocolVersion;
+import gold.debug.windowstolinux.shared.standard.deploy.plan.MultiComponentDeploymentPlanner;
+
 /**
  * Creates one complete product backup from exact persisted review evidence and bounded remote protocols. / 从精确持久化审阅证据及有界远端协议创建完整产品备份。
  */
@@ -102,71 +102,85 @@ public final class RemoteBackupCreationUseCase {
      * <p>最大远端制品字节。
      */
     private static final long MAXIMUM_REMOTE_ARTIFACT_BYTES = 4L * 1024 * 1024 * 1024;
+
     /**
      * Bound managed application graph repository collaborator for graphs.
      * <p>处理图集合的受管应用图仓库协作对象。
      */
     private final ManagedApplicationGraphRepository graphs;
+
     /**
      * Bound managed application repository collaborator for applications.
      * <p>处理应用集合的受管应用仓库协作对象。
      */
     private final ManagedApplicationRepository applications;
+
     /**
      * Bound configuration snapshot repository collaborator for configurations.
      * <p>处理配置集合的配置快照仓库协作对象。
      */
     private final ConfigurationSnapshotRepository configurations;
+
     /**
      * Bound application secret repository collaborator for secret metadata.
      * <p>处理秘密元数据的应用秘密仓库协作对象。
      */
     private final ApplicationSecretRepository secretMetadata;
+
     /**
      * Input assessment.
      * <p>输入评估。
      */
     private final ManagedBackupInputUseCase inputAssessment;
+
     /**
      * Factory for authenticated Linux sessions.
      * <p>已认证 Linux 会话的工厂。
      */
     private final DeploymentLinuxGateway gateway;
+
     /**
      * Bound server use case facade collaborator for server-profile and authenticated-session service.
      * <p>处理服务器资料及已认证会话服务的服务器用例门面协作对象。
      */
     private final ServerUseCaseFacade servers;
+
     /**
      * Shared operation locks indexed by target identity.
      * <p>按目标身份索引的共享操作锁。
      */
     private final ServerOperationLockRegistry locks;
+
     /**
      * Materials.
      * <p>素材集合。
      */
     private final WindowsBackupMaterialWorkspace materials;
+
     /**
      * Archives.
      * <p>归档集合。
      */
     private final BackupArchiveCreationUseCase archives;
+
     /**
      * Bound backup configuration codec collaborator for configuration codec.
      * <p>处理配置编解码器的备份配置编解码器协作对象。
      */
     private final BackupConfigurationCodec configurationCodec = new BackupConfigurationCodec();
+
     /**
      * Bound deployment runtime persistence codec collaborator for runtime codec.
      * <p>处理运行时编解码器的部署运行时持久化编解码器协作对象。
      */
     private final DeploymentRuntimePersistenceCodec runtimeCodec = new DeploymentRuntimePersistenceCodec();
+
     /**
      * Bound backup secret crypto service collaborator for backup secrets.
      * <p>处理备份秘密集合的备份秘密加密服务协作对象。
      */
     private final BackupSecretCryptoService backupSecrets = new BackupSecretCryptoService();
+
     /**
      * Random.
      * <p>随机。
@@ -187,17 +201,11 @@ public final class RemoteBackupCreationUseCase {
      * @param workDirectory work directory / 工作目录
      * @throws NullPointerException if a required input is absent / 必需输入缺失时
      */
-    public RemoteBackupCreationUseCase(
-            ManagedApplicationGraphRepository graphs,
-            ManagedApplicationRepository applications,
-            ConfigurationSnapshotRepository configurations,
-            ApplicationSecretRepository secretMetadata,
-            ManagedBackupInputUseCase inputAssessment,
-            DeploymentLinuxGateway gateway,
-            ServerUseCaseFacade servers,
-            ServerOperationLockRegistry locks,
-            Path workDirectory
-    ) {
+    public RemoteBackupCreationUseCase(ManagedApplicationGraphRepository graphs,
+            ManagedApplicationRepository applications, ConfigurationSnapshotRepository configurations,
+            ApplicationSecretRepository secretMetadata, ManagedBackupInputUseCase inputAssessment,
+            DeploymentLinuxGateway gateway, ServerUseCaseFacade servers, ServerOperationLockRegistry locks,
+            Path workDirectory) {
         this.graphs = Objects.requireNonNull(graphs, "graphs");
         this.applications = Objects.requireNonNull(applications, "applications");
         this.configurations = Objects.requireNonNull(configurations, "configurations");
@@ -225,15 +233,13 @@ public final class RemoteBackupCreationUseCase {
      * @throws IOException if the required file or stream operation fails / 所需文件或流操作失败时
      * @throws BackupSecretException if the backup secret boundary rejects the operation / 备份秘密边界拒绝当前操作时
      */
-    public CreatedBackupArchive createUsingSavedProfile(
-            String applicationId,
-            Path destination,
-            char[] backupPassword,
-            char[] masterPassword,
-            Predicate<String> firstUseConfirmation
-    ) throws SQLException, SecretStoreException, LinuxOperationException, IOException, BackupSecretException {
-        return createUsingSavedProfile(applicationId,destination,backupPassword,masterPassword,firstUseConfirmation,null);
+    public CreatedBackupArchive createUsingSavedProfile(String applicationId, Path destination, char[] backupPassword,
+            char[] masterPassword, Predicate<String> firstUseConfirmation)
+            throws SQLException, SecretStoreException, LinuxOperationException, IOException, BackupSecretException {
+        return createUsingSavedProfile(applicationId, destination, backupPassword, masterPassword, firstUseConfirmation,
+                null);
     }
+
     /**
      * Creates using saved profile.
      * <p>创建使用已保存配置资料。
@@ -261,13 +267,15 @@ public final class RemoteBackupCreationUseCase {
                         "the selected application has no persisted whole-application graph");
             }
             String serverId = graph.orElseThrow().components().getFirst().application().server().id();
-            ServerProfile profile = servers.find(serverId).orElseThrow(() ->
-                    ApplicationServiceException.create(ApplicationServiceFailureType.SERVER_PROFILE_MISSING,
+            ServerProfile profile = servers.find(serverId)
+                    .orElseThrow(() -> ApplicationServiceException.create(
+                            ApplicationServiceFailureType.SERVER_PROFILE_MISSING,
                             "the managed application's saved server profile is unavailable"));
-            return create(applicationId, destination, backupPassword, profile, profile.credentialMode(),
-                    masterPassword, firstUseConfirmation, heldMaintenance);
+            return create(applicationId, destination, backupPassword, profile, profile.credentialMode(), masterPassword,
+                    firstUseConfirmation, heldMaintenance);
         } finally {
-            clear(backupPassword); clear(masterPassword);
+            clear(backupPassword);
+            clear(masterPassword);
         }
     }
 
@@ -288,17 +296,14 @@ public final class RemoteBackupCreationUseCase {
      * @throws IOException if the required file or stream operation fails / 所需文件或流操作失败时
      * @throws BackupSecretException if the backup secret boundary rejects the operation / 备份秘密边界拒绝当前操作时
      */
-    public CreatedBackupArchive create(
-            String applicationId,
-            Path destination,
-            char[] backupPassword,
-            ServerProfile profile,
-            CredentialStorageMode mode,
-            char[] masterPassword,
-            Predicate<String> firstUseConfirmation
-    ) throws SQLException, SecretStoreException, LinuxOperationException, IOException, BackupSecretException {
-        return create(applicationId,destination,backupPassword,profile,mode,masterPassword,firstUseConfirmation,null);
+    public CreatedBackupArchive create(String applicationId, Path destination, char[] backupPassword,
+            ServerProfile profile, CredentialStorageMode mode, char[] masterPassword,
+            Predicate<String> firstUseConfirmation)
+            throws SQLException, SecretStoreException, LinuxOperationException, IOException, BackupSecretException {
+        return create(applicationId, destination, backupPassword, profile, mode, masterPassword, firstUseConfirmation,
+                null);
     }
+
     /**
      * Creates created backup archive.
      * <p>创建已创建备份归档。
@@ -319,8 +324,9 @@ public final class RemoteBackupCreationUseCase {
      * @throws BackupSecretException if the backup secret boundary rejects the operation / 备份秘密边界拒绝当前操作时
      */
     private CreatedBackupArchive create(String applicationId, Path destination, char[] backupPassword,
-            ServerProfile profile, CredentialStorageMode mode, char[] masterPassword, Predicate<String> firstUseConfirmation,
-            String heldMaintenance) throws SQLException, SecretStoreException, LinuxOperationException, IOException, BackupSecretException {
+            ServerProfile profile, CredentialStorageMode mode, char[] masterPassword,
+            Predicate<String> firstUseConfirmation, String heldMaintenance)
+            throws SQLException, SecretStoreException, LinuxOperationException, IOException, BackupSecretException {
         try {
             ManagedBackupInputAssessment assessment = inputAssessment.assess(applicationId);
             if (!assessment.persistedInputsComplete()) {
@@ -359,27 +365,40 @@ public final class RemoteBackupCreationUseCase {
     public void taskAdmission(String applicationId, String token, boolean pause, char[] masterPassword,
             Predicate<String> confirmation) throws SQLException, SecretStoreException, LinuxOperationException {
         try {
-            var graph=graphs.find(applicationId).orElseThrow();
-            var profile=servers.find(graph.components().getFirst().application().server().id()).orElseThrow();
-            try (SecretStore store=servers.secrets().open(profile.credentialMode(),masterPassword)) {
-                var credential=servers.loadPassword(profile,store);
-                try (DeploymentRemoteSession session=gateway.connect(profile.endpoint(),credential,servers.hostKeyVerifier(profile,confirmation))) {
-                    var paused=new ArrayList<gold.debug.windowstolinux.shared.model.managed.ManagedApplication>();
+            var graph = graphs.find(applicationId).orElseThrow();
+            var profile = servers.find(graph.components().getFirst().application().server().id()).orElseThrow();
+            try (SecretStore store = servers.secrets().open(profile.credentialMode(), masterPassword)) {
+                var credential = servers.loadPassword(profile, store);
+                try (DeploymentRemoteSession session = gateway.connect(profile.endpoint(), credential,
+                        servers.hostKeyVerifier(profile, confirmation))) {
+                    var paused = new ArrayList<gold.debug.windowstolinux.shared.model.managed.ManagedApplication>();
                     try {
-                        for(var component:graph.components()) {
-                            if(pause)session.backupArtifacts().beginMaintenance(component.application(),token);
-                            else session.backupArtifacts().endMaintenance(component.application(),token);
+                        for (var component : graph.components()) {
+                            if (pause)
+                                session.backupArtifacts().beginMaintenance(component.application(), token);
+                            else
+                                session.backupArtifacts().endMaintenance(component.application(), token);
                             paused.add(component.application());
                         }
-                    } catch(LinuxOperationException failure) {
-                        if(pause)for(var app:paused.reversed())try { session.backupArtifacts().endMaintenance(app,token); }
-                        catch(LinuxOperationException recovery) { failure.addSuppressed(recovery); }
+                    } catch (LinuxOperationException failure) {
+                        if (pause)
+                            for (var app : paused.reversed())
+                                try {
+                                    session.backupArtifacts().endMaintenance(app, token);
+                                } catch (LinuxOperationException recovery) {
+                                    failure.addSuppressed(recovery);
+                                }
                         throw failure;
                     }
-                } finally { credential.clear(); }
+                } finally {
+                    credential.clear();
+                }
             }
-        } finally { clear(masterPassword); }
+        } finally {
+            clear(masterPassword);
+        }
     }
+
     /**
      * Returns only reviewed daemon component IDs. / 只返回经审阅的长期进程组件。
      *
@@ -413,15 +432,10 @@ public final class RemoteBackupCreationUseCase {
      * @throws BackupSecretException if the backup secret boundary rejects the operation / 备份秘密边界拒绝当前操作时
      * @throws NullPointerException if a required input is absent / 必需输入缺失时
      */
-    private CreatedBackupArchive createLocked(
-            BackupContext context,
-            Path destination,
-            char[] backupPassword,
-            ServerProfile profile,
-            CredentialStorageMode mode,
-            char[] masterPassword,
-        Predicate<String> firstUseConfirmation, String heldMaintenance
-    ) throws SQLException, SecretStoreException, LinuxOperationException, IOException, BackupSecretException {
+    private CreatedBackupArchive createLocked(BackupContext context, Path destination, char[] backupPassword,
+            ServerProfile profile, CredentialStorageMode mode, char[] masterPassword,
+            Predicate<String> firstUseConfirmation, String heldMaintenance)
+            throws SQLException, SecretStoreException, LinuxOperationException, IOException, BackupSecretException {
         WindowsBackupMaterialAttempt attempt = materials.createAttempt();
         CreatedBackupArchive created;
         try {
@@ -441,8 +455,8 @@ public final class RemoteBackupCreationUseCase {
                     credential.clear();
                 }
             }
-        } catch (SQLException | SecretStoreException | LinuxOperationException | IOException
-                 | BackupSecretException | RuntimeException exception) {
+        } catch (SQLException | SecretStoreException | LinuxOperationException | IOException | BackupSecretException
+                | RuntimeException exception) {
             try {
                 materials.discard(attempt);
             } catch (WindowsWorkspaceException cleanupFailure) {
@@ -466,68 +480,85 @@ public final class RemoteBackupCreationUseCase {
      * @throws LinuxOperationException if the authenticated remote operation fails or its evidence is rejected / 已认证远端操作失败或其证据被拒绝时
      * @throws IOException if the required file or stream operation fails / 所需文件或流操作失败时
      */
-    private CollectedRemoteBackup collectRemote(
-            BackupContext context, WindowsBackupMaterialAttempt attempt, DeploymentRemoteSession session, String heldMaintenance)
-            throws LinuxOperationException, IOException {
+    private CollectedRemoteBackup collectRemote(BackupContext context, WindowsBackupMaterialAttempt attempt,
+            DeploymentRemoteSession session, String heldMaintenance) throws LinuxOperationException, IOException {
         var request = new gold.debug.windowstolinux.shared.backup.contract.definition.BackupCollectionRequest(
                 context.plan(), context.plan().startOrder().stream().map(id -> {
                     var component = context.components().get(id);
                     return new gold.debug.windowstolinux.shared.backup.contract.definition.BackupCollectionRequest.Component(
-                            id, component.graph().application(), component.runtime(), component.release().releaseSha256(),
+                            id, component.graph().application(), component.runtime(),
+                            component.release().releaseSha256(),
                             component.graph().reviewedResourceBindings().orElseThrow());
                 }).toList(), heldMaintenance == null ? operationId() : heldMaintenance, heldMaintenance == null,
-                new gold.debug.windowstolinux.shared.deploy.contract.ApplicationHealthGate(context.graph().healthComponentId(),
-                        context.graph().applicationHealthCheck().orElseThrow()), Set.copyOf(context.plan().startOrder()),
-                database(context).map(selected -> new gold.debug.windowstolinux.shared.backup.contract.definition.BackupCollectionRequest.Database(
-                        selected.component().graph().componentId(), selected.binding().databaseId(), selected.profile())),
+                new gold.debug.windowstolinux.shared.deploy.contract.ApplicationHealthGate(
+                        context.graph().healthComponentId(), context.graph().applicationHealthCheck().orElseThrow()),
+                Set.copyOf(context.plan().startOrder()),
+                database(context).map(
+                        selected -> new gold.debug.windowstolinux.shared.backup.contract.definition.BackupCollectionRequest.Database(
+                                selected.component().graph().componentId(), selected.binding().databaseId(),
+                                selected.profile())),
                 MAXIMUM_REMOTE_ARTIFACT_BYTES);
         try {
-        var result = new gold.debug.windowstolinux.shared.backup.execution.collection.BackupCollectionService(BackupArchivePolicy.defaults())
-                .collect(request, session, new gold.debug.windowstolinux.shared.backup.contract.spi.BackupCollectionMaterialPort() {
-                    /**
-                     * Resolves a canonical archive-member path within the owning storage boundary.
-                     * <p>在所属存储边界内解析规范归档成员路径。
-                     *
-                     * @param name human-readable name or diagnostic field label / 可读名称或诊断字段标签
-                     * @return a canonical archive-member path within the owning storage boundary / 在所属存储边界内解析规范归档成员路径
-                     * @throws IOException if the required file or stream operation fails / 所需文件或流操作失败时
-                     */
-                    @Override public Path member(String name) throws IOException { return materials.member(attempt, name); }
-                    /**
-                     * Opens output stream.
-                     * <p>打开输出流。
-                     *
-                     * @param path filesystem or archive member path used by this operation / 当前操作使用的文件系统或归档成员路径
-                     * @return constructed or resolved output stream / 构造或解析得到的输出流
-                     * @throws IOException if the required file or stream operation fails / 所需文件或流操作失败时
-                     */
-                    @Override public OutputStream open(Path path) throws IOException {
-                        return Files.newOutputStream(path, StandardOpenOption.CREATE_NEW, StandardOpenOption.WRITE);
-                    }
-                }, new gold.debug.windowstolinux.shared.backup.contract.spi.BackupCollectionInteraction() {
-                    /**
-                     * Checks cancelled.
-                     * <p>检查已取消。
-                     *
-                     * @throws InterruptedException if the waiting or worker thread is interrupted / 等待线程或工作线程被中断时
-                     */
-                    @Override public void checkCancelled() throws InterruptedException {
-                        if (Thread.currentThread().isInterrupted()) throw new InterruptedException("Backup cancelled");
-                    }
-                    /**
-                     * Accepts the callback without side effects because this adapter needs no additional action.
-                     * <p>接受回调且不产生副作用，因为当前适配器无需额外动作。
-                     *
-                     * @param id stable identifier within the owning registry / 所属登记表内的稳定标识
-                     */
-                    @Override public void collecting(String id) { }
-                });
-        return new CollectedRemoteBackup(result.materials().entrySet().stream()
-                .map(entry -> new Material(entry.getKey(), entry.getValue())).toList(), result.database(), result.runtime());
+            var result = new gold.debug.windowstolinux.shared.backup.execution.collection.BackupCollectionService(
+                    BackupArchivePolicy.defaults()).collect(request, session,
+                            new gold.debug.windowstolinux.shared.backup.contract.spi.BackupCollectionMaterialPort() {
+                                /**
+                                 * Resolves a canonical archive-member path within the owning storage boundary.
+                                 * <p>在所属存储边界内解析规范归档成员路径。
+                                 *
+                                 * @param name human-readable name or diagnostic field label / 可读名称或诊断字段标签
+                                 * @return a canonical archive-member path within the owning storage boundary / 在所属存储边界内解析规范归档成员路径
+                                 * @throws IOException if the required file or stream operation fails / 所需文件或流操作失败时
+                                 */
+                                @Override
+                                public Path member(String name) throws IOException {
+                                    return materials.member(attempt, name);
+                                }
+
+                                /**
+                                 * Opens output stream.
+                                 * <p>打开输出流。
+                                 *
+                                 * @param path filesystem or archive member path used by this operation / 当前操作使用的文件系统或归档成员路径
+                                 * @return constructed or resolved output stream / 构造或解析得到的输出流
+                                 * @throws IOException if the required file or stream operation fails / 所需文件或流操作失败时
+                                 */
+                                @Override
+                                public OutputStream open(Path path) throws IOException {
+                                    return Files.newOutputStream(path, StandardOpenOption.CREATE_NEW,
+                                            StandardOpenOption.WRITE);
+                                }
+                            }, new gold.debug.windowstolinux.shared.backup.contract.spi.BackupCollectionInteraction() {
+                                /**
+                                 * Checks cancelled.
+                                 * <p>检查已取消。
+                                 *
+                                 * @throws InterruptedException if the waiting or worker thread is interrupted / 等待线程或工作线程被中断时
+                                 */
+                                @Override
+                                public void checkCancelled() throws InterruptedException {
+                                    if (Thread.currentThread().isInterrupted())
+                                        throw new InterruptedException("Backup cancelled");
+                                }
+
+                                /**
+                                 * Accepts the callback without side effects because this adapter needs no additional action.
+                                 * <p>接受回调且不产生副作用，因为当前适配器无需额外动作。
+                                 *
+                                 * @param id stable identifier within the owning registry / 所属登记表内的稳定标识
+                                 */
+                                @Override
+                                public void collecting(String id) {
+                                }
+                            });
+            return new CollectedRemoteBackup(result.materials().entrySet().stream()
+                    .map(entry -> new Material(entry.getKey(), entry.getValue())).toList(), result.database(),
+                    result.runtime());
         } catch (InterruptedException cancelled) {
             Thread.currentThread().interrupt();
             var interrupted = new java.io.InterruptedIOException("Backup cancelled after necessary recovery");
-            interrupted.initCause(cancelled); throw interrupted;
+            interrupted.initCause(cancelled);
+            throw interrupted;
         }
     }
 
@@ -540,8 +571,8 @@ public final class RemoteBackupCreationUseCase {
      * @param target exact destination or managed target of the operation / 操作的精确目的地或受管目标
      * @throws IOException if the required file or stream operation fails / 所需文件或流操作失败时
      */
-    private void addLocalDefinitions(
-            BackupContext context, WindowsBackupMaterialAttempt attempt, List<Material> target) throws IOException {
+    private void addLocalDefinitions(BackupContext context, WindowsBackupMaterialAttempt attempt, List<Material> target)
+            throws IOException {
         for (String componentId : context.plan().startOrder()) {
             ComponentContext component = context.components().get(componentId);
             target.add(write(attempt, "config/" + componentId + ".bin", BackupMemberKind.CONFIGURATION,
@@ -567,28 +598,26 @@ public final class RemoteBackupCreationUseCase {
      * @throws BackupSecretException if the backup secret boundary rejects the operation / 备份秘密边界拒绝当前操作时
      * @throws IOException if the required file or stream operation fails / 所需文件或流操作失败时
      */
-    private void addEncryptedSecrets(
-            BackupContext context,
-            WindowsBackupMaterialAttempt attempt,
-            List<Material> target,
-            char[] backupPassword,
-            char[] masterPassword
-    ) throws SQLException, SecretStoreException, BackupSecretException, IOException {
+    private void addEncryptedSecrets(BackupContext context, WindowsBackupMaterialAttempt attempt, List<Material> target,
+            char[] backupPassword, char[] masterPassword)
+            throws SQLException, SecretStoreException, BackupSecretException, IOException {
         List<SecretReference> references = context.components().values().stream()
                 .flatMap(component -> component.secretReferences().stream()).distinct()
                 .sorted(Comparator.comparing(SecretReference::identifier).thenComparingLong(SecretReference::revision))
                 .toList();
-        if (references.isEmpty()) return;
+        if (references.isEmpty())
+            return;
         List<ResolvedSecretRevision> resolved = new ArrayList<>();
         byte[] encrypted = null;
         try {
             for (SecretReference reference : references) {
-                var metadata = secretMetadata.findRevision(reference).orElseThrow(() ->
-                        SecretStoreException.create(SecretStoreFailureType.APPLICATION_REFERENCE_MISSING,
+                var metadata = secretMetadata.findRevision(reference).orElseThrow(
+                        () -> SecretStoreException.create(SecretStoreFailureType.APPLICATION_REFERENCE_MISSING,
                                 "Application secret revision metadata is missing"));
                 try (SecretStore store = servers.secrets().open(metadata.credentialMode(), masterPassword)) {
-                    char[] value = store.read(metadata.credentialKey()).orElseThrow(() ->
-                            SecretStoreException.create(SecretStoreFailureType.APPLICATION_REFERENCE_MISSING,
+                    char[] value = store.read(metadata.credentialKey())
+                            .orElseThrow(() -> SecretStoreException.create(
+                                    SecretStoreFailureType.APPLICATION_REFERENCE_MISSING,
                                     "Application secret revision is unavailable from its selected platform store"));
                     try {
                         resolved.add(new ResolvedSecretRevision(reference, value));
@@ -601,7 +630,8 @@ public final class RemoteBackupCreationUseCase {
             target.add(write(attempt, "secrets.enc", BackupMemberKind.ENCRYPTED_SECRETS, encrypted));
         } finally {
             resolved.forEach(ResolvedSecretRevision::close);
-            if (encrypted != null) Arrays.fill(encrypted, (byte) 0);
+            if (encrypted != null)
+                Arrays.fill(encrypted, (byte) 0);
         }
     }
 
@@ -614,8 +644,7 @@ public final class RemoteBackupCreationUseCase {
      * @param materials materials / 素材集合
      * @return constructed or resolved backup manifest / 构造或解析得到的备份清单
      */
-    private BackupManifest manifest(
-            BackupContext context, CollectedRemoteBackup remote, List<Material> materials) {
+    private BackupManifest manifest(BackupContext context, CollectedRemoteBackup remote, List<Material> materials) {
         Map<String, BackupMember> members = new LinkedHashMap<>();
         materials.stream().map(Material::member).sorted(Comparator.comparing(BackupMember::path))
                 .forEach(member -> members.put(member.path(), member));
@@ -623,30 +652,30 @@ public final class RemoteBackupCreationUseCase {
         for (String componentId : context.plan().startOrder()) {
             ComponentContext component = context.components().get(componentId);
             components.add(new BackupComponent(componentId, component.graph().application().id(),
-                    component.graph().application().ownershipManifestSha256(),
-                    "releases/" + componentId + ".pax", "config/" + componentId + ".bin",
-                    "runtime/" + componentId + ".bin", component.graph().dependencies(),
-                    BackupComponentRuntime.from(component.runtime()), component.release().releaseSha256(),
-                    component.secretReferences()));
+                    component.graph().application().ownershipManifestSha256(), "releases/" + componentId + ".pax",
+                    "config/" + componentId + ".bin", "runtime/" + componentId + ".bin",
+                    component.graph().dependencies(), BackupComponentRuntime.from(component.runtime()),
+                    component.release().releaseSha256(), component.secretReferences()));
         }
-        List<SecretReference> secrets = components.stream().flatMap(component ->
-                        component.secretReferences().orElseThrow().stream()).distinct()
+        List<SecretReference> secrets = components.stream()
+                .flatMap(component -> component.secretReferences().orElseThrow().stream()).distinct()
                 .sorted(Comparator.comparing(SecretReference::identifier).thenComparingLong(SecretReference::revision))
                 .toList();
-        List<String> files = members.values().stream().filter(member -> member.kind() == BackupMemberKind.PERSISTENT_CONTENT
-                && member.path().contains("/files/")).map(BackupMember::path).toList();
-        List<String> volumes = members.values().stream().filter(member -> member.kind() == BackupMemberKind.PERSISTENT_CONTENT
-                && member.path().contains("/volumes/")).map(BackupMember::path).toList();
+        List<String> files = members.values().stream().filter(
+                member -> member.kind() == BackupMemberKind.PERSISTENT_CONTENT && member.path().contains("/files/"))
+                .map(BackupMember::path).toList();
+        List<String> volumes = members.values().stream().filter(
+                member -> member.kind() == BackupMemberKind.PERSISTENT_CONTENT && member.path().contains("/volumes/"))
+                .map(BackupMember::path).toList();
         BackupIdentity identity = new BackupIdentity(context.graph().applicationId(),
                 context.graph().components().getFirst().application().server().id(),
                 "/opt/windowstolinux/apps/" + context.graph().applicationId(),
                 BackupInventory.computeReleaseSetSha256(components));
         BackupInventory inventory = new BackupInventory(
                 components.stream().map(BackupComponent::releaseManifestPath).toList(),
-                components.stream().map(BackupComponent::configurationSnapshotPath).toList(), secrets,
-                files, volumes, remote.database(), identity,
-                components.stream().map(BackupComponent::serviceDefinitionPath).toList(), components,
-                context.graph().healthComponentId(),
+                components.stream().map(BackupComponent::configurationSnapshotPath).toList(), secrets, files, volumes,
+                remote.database(), identity, components.stream().map(BackupComponent::serviceDefinitionPath).toList(),
+                components, context.graph().healthComponentId(),
                 BackupHealthCheck.from(context.graph().applicationHealthCheck().orElseThrow()), remote.runtime(),
                 List.of("restore requires managed helper protocol 5",
                         "official ports require a final post-commit health verification"));
@@ -663,8 +692,8 @@ public final class RemoteBackupCreationUseCase {
      * @throws SQLException if the database cannot complete the requested read or transaction / 数据库无法完成请求的读取或事务时
      */
     private BackupContext loadContext(String applicationId) throws SQLException {
-        ManagedApplicationGraph graph = graphs.find(applicationId).orElseThrow(() ->
-                ApplicationServiceException.create(ApplicationServiceFailureType.BACKUP_INPUT_INCOMPLETE,
+        ManagedApplicationGraph graph = graphs.find(applicationId).orElseThrow(
+                () -> ApplicationServiceException.create(ApplicationServiceFailureType.BACKUP_INPUT_INCOMPLETE,
                         "the persisted whole-application graph disappeared"));
         if (graph.applicationHealthCheck().isEmpty()) {
             throw ApplicationServiceException.create(ApplicationServiceFailureType.BACKUP_INPUT_INCOMPLETE,
@@ -674,25 +703,27 @@ public final class RemoteBackupCreationUseCase {
         Map<String, List<String>> dependencies = new LinkedHashMap<>();
         LinkedHashMap<String, ComponentContext> components = new LinkedHashMap<>();
         for (ManagedApplicationGraph.Component component : graph.components()) {
-            CurrentRelease release = applications.findRelease(component.application().id()).orElseThrow(() ->
-                    ApplicationServiceException.create(ApplicationServiceFailureType.BACKUP_INPUT_INCOMPLETE,
+            CurrentRelease release = applications.findRelease(component.application().id())
+                    .orElseThrow(() -> ApplicationServiceException.create(
+                            ApplicationServiceFailureType.BACKUP_INPUT_INCOMPLETE,
                             "one persisted current release disappeared"));
             var configuration = configurations.findRelease(component.application().id(), release.releaseSha256())
                     .orElseThrow(() -> ApplicationServiceException.create(
                             ApplicationServiceFailureType.BACKUP_INPUT_INCOMPLETE,
                             "one exact release configuration disappeared"));
-            List<SecretReference> secrets = secretMetadata.findRelease(component.application().id(),
-                    release.releaseSha256()).orElseThrow(() -> ApplicationServiceException.create(
-                    ApplicationServiceFailureType.BACKUP_INPUT_INCOMPLETE,
-                    "one exact release secret binding disappeared"));
+            List<SecretReference> secrets = secretMetadata
+                    .findRelease(component.application().id(), release.releaseSha256())
+                    .orElseThrow(() -> ApplicationServiceException.create(
+                            ApplicationServiceFailureType.BACKUP_INPUT_INCOMPLETE,
+                            "one exact release secret binding disappeared"));
             DeploymentRuntimeSpecification runtime = component.reviewedRuntime().orElseThrow();
             namespaces.put(component.componentId(), component.application().id());
             dependencies.put(component.componentId(), component.dependencies());
-            components.put(component.componentId(), new ComponentContext(component, release,
-                    configuration, List.copyOf(secrets), runtime));
+            components.put(component.componentId(),
+                    new ComponentContext(component, release, configuration, List.copyOf(secrets), runtime));
         }
-        MultiComponentDeploymentPlan plan = new MultiComponentDeploymentPlanner().restore(
-                graph.applicationId(), namespaces, dependencies);
+        MultiComponentDeploymentPlan plan = new MultiComponentDeploymentPlanner().restore(graph.applicationId(),
+                namespaces, dependencies);
         return new BackupContext(graph, plan, Map.copyOf(components));
     }
 
@@ -708,8 +739,8 @@ public final class RemoteBackupCreationUseCase {
     private static void validateProfile(BackupContext context, ServerProfile profile, CredentialStorageMode mode) {
         Objects.requireNonNull(profile, "profile");
         Objects.requireNonNull(mode, "mode");
-        if (profile.credentialMode() != mode || context.components().values().stream().anyMatch(component ->
-                !component.graph().application().server().id().equals(profile.id())
+        if (profile.credentialMode() != mode || context.components().values().stream()
+                .anyMatch(component -> !component.graph().application().server().id().equals(profile.id())
                         || !component.graph().application().server().host().equals(profile.host())
                         || component.graph().application().server().sshPort() != profile.sshPort())) {
             throw ApplicationServiceException.create(ApplicationServiceFailureType.LIFECYCLE_CONTEXT_MISMATCH,
@@ -749,8 +780,8 @@ public final class RemoteBackupCreationUseCase {
     private static List<DatabaseContext> databases(BackupContext context) {
         List<DatabaseContext> databases = new ArrayList<>();
         context.components().values().forEach(component -> component.graph().reviewedResourceBindings().orElseThrow()
-                .databaseBindings().orElseThrow().forEach(binding -> databases.add(
-                        new DatabaseContext(component, binding, BackupDatabaseProfileMapper.profile(binding)))));
+                .databaseBindings().orElseThrow().forEach(binding -> databases
+                        .add(new DatabaseContext(component, binding, BackupDatabaseProfileMapper.profile(binding)))));
         return List.copyOf(databases);
     }
 
@@ -766,8 +797,6 @@ public final class RemoteBackupCreationUseCase {
         return databases.isEmpty() ? Optional.empty() : Optional.of(databases.getFirst());
     }
 
-
-
     /**
      * Writes material.
      * <p>写入素材。
@@ -779,8 +808,8 @@ public final class RemoteBackupCreationUseCase {
      * @return constructed or resolved material / 构造或解析得到的素材
      * @throws IOException if the required file or stream operation fails / 所需文件或流操作失败时
      */
-    private Material write(
-            WindowsBackupMaterialAttempt attempt, String path, BackupMemberKind kind, byte[] bytes) throws IOException {
+    private Material write(WindowsBackupMaterialAttempt attempt, String path, BackupMemberKind kind, byte[] bytes)
+            throws IOException {
         try {
             Path target = materials.member(attempt, path);
             Files.write(target, bytes, StandardOpenOption.CREATE_NEW, StandardOpenOption.WRITE);
@@ -799,8 +828,8 @@ public final class RemoteBackupCreationUseCase {
      * @return path-sorted archive entries whose suppliers open each local material on demand / 按路径排序的归档条目，其提供函数按需打开各本地素材
      */
     private static List<BackupArchiveContent> contents(List<Material> materials) {
-        return materials.stream().sorted(Comparator.comparing(value -> value.member().path()))
-                .map(material -> new BackupArchiveContent(material.member(), () -> Files.newInputStream(material.path())))
+        return materials.stream().sorted(Comparator.comparing(value -> value.member().path())).map(
+                material -> new BackupArchiveContent(material.member(), () -> Files.newInputStream(material.path())))
                 .toList();
     }
 
@@ -819,7 +848,8 @@ public final class RemoteBackupCreationUseCase {
         try (InputStream input = Files.newInputStream(path)) {
             int read;
             while ((read = input.read(buffer)) >= 0) {
-                if (read == 0) continue;
+                if (read == 0)
+                    continue;
                 size = Math.addExact(size, read);
                 digest.update(buffer, 0, read);
             }
@@ -863,7 +893,8 @@ public final class RemoteBackupCreationUseCase {
      * @param value candidate content accepted or rejected by this contract / 由当前契约接收或拒绝的候选内容
      */
     private static void clear(char[] value) {
-        if (value != null) Arrays.fill(value, '\0');
+        if (value != null)
+            Arrays.fill(value, '\0');
     }
 
     /**
@@ -874,11 +905,9 @@ public final class RemoteBackupCreationUseCase {
      * @param plan deterministic reviewed execution order and targets / 确定的已审阅执行顺序及目标
      * @param components reviewed components in the application graph / 应用图中的已审阅组件
      */
-    private record BackupContext(
-            ManagedApplicationGraph graph,
-            MultiComponentDeploymentPlan plan,
-            Map<String, ComponentContext> components
-    ) { }
+    private record BackupContext(ManagedApplicationGraph graph, MultiComponentDeploymentPlan plan,
+            Map<String, ComponentContext> components) {
+    }
 
     /**
      * Carries a component's persisted release, configuration, secrets and runtime contract.
@@ -890,13 +919,10 @@ public final class RemoteBackupCreationUseCase {
      * @param secretReferences immutable identifiers and revisions of required secrets / 所需秘密的不可变标识及修订
      * @param runtime reviewed language, process and health specification / 已审阅的语言、进程及健康规格
      */
-    private record ComponentContext(
-            ManagedApplicationGraph.Component graph,
-            CurrentRelease release,
+    private record ComponentContext(ManagedApplicationGraph.Component graph, CurrentRelease release,
             gold.debug.windowstolinux.shared.config.revision.ConfigurationSnapshot configuration,
-            List<SecretReference> secretReferences,
-            DeploymentRuntimeSpecification runtime
-    ) { }
+            List<SecretReference> secretReferences, DeploymentRuntimeSpecification runtime) {
+    }
 
     /**
      * Associates one admitted database binding and connection profile with its owning component.
@@ -906,11 +932,9 @@ public final class RemoteBackupCreationUseCase {
      * @param binding binding / 绑定
      * @param profile connection or provider settings supplied to the operation / 提供给操作的连接或提供者设置
      */
-    private record DatabaseContext(
-            ComponentContext component,
-            ManagedDatabaseBinding binding,
-            DatabaseConnectionProfile profile
-    ) { }
+    private record DatabaseContext(ComponentContext component, ManagedDatabaseBinding binding,
+            DatabaseConnectionProfile profile) {
+    }
 
     /**
      * Pairs a validated archive member with its private local material path.
@@ -919,7 +943,9 @@ public final class RemoteBackupCreationUseCase {
      * @param member member / 成员
      * @param path filesystem or archive member path used by this operation / 当前操作使用的文件系统或归档成员路径
      */
-    private record Material(BackupMember member, Path path) { }
+    private record Material(BackupMember member, Path path) {
+    }
+
     /**
      * Records independently measured byte count and SHA-256 identity.
      * <p>记录独立测量的字节数及 SHA-256 身份。
@@ -927,7 +953,9 @@ public final class RemoteBackupCreationUseCase {
      * @param size size / 大小
      * @param sha256 lower-case hexadecimal SHA-256 digest / 小写十六进制 SHA-256 摘要
      */
-    private record Evidence(long size, String sha256) { }
+    private record Evidence(long size, String sha256) {
+    }
+
     /**
      * Contains collected members and the database and runtime facts used by the backup manifest.
      * <p>包含采集成员及备份清单使用的数据库和运行事实。
@@ -936,9 +964,6 @@ public final class RemoteBackupCreationUseCase {
      * @param database reviewed database identity or database operation boundary / 已审阅数据库身份或数据库操作边界
      * @param runtime reviewed language, process and health specification / 已审阅的语言、进程及健康规格
      */
-    private record CollectedRemoteBackup(
-            List<Material> materials,
-            BackupDatabase database,
-            BackupRuntime runtime
-    ) { }
+    private record CollectedRemoteBackup(List<Material> materials, BackupDatabase database, BackupRuntime runtime) {
+    }
 }

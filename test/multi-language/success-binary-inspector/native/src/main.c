@@ -24,7 +24,5 @@ int wmain(int argc, wchar_t **argv) {
     return result;
 }
 #else
-int main(int argc, char **argv) {
-    return run(argc, argv);
-}
+int main(int argc, char **argv) { return run(argc, argv); }
 #endif

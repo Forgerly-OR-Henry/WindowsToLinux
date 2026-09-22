@@ -1,27 +1,26 @@
 package gold.debug.windowstolinux.shared.linux.sshd.execution.protocol.release;
 
-import gold.debug.windowstolinux.shared.linux.sshd.execution.protocol.helper.ManagedHelperBundle;
-import gold.debug.windowstolinux.shared.linux.sshd.execution.protocol.input.DeploymentInputArguments;
-import gold.debug.windowstolinux.shared.linux.sshd.execution.protocol.input.ManagedContentArguments;
-import gold.debug.windowstolinux.shared.linux.sshd.execution.protocol.runtime.ContainerRuntimeArguments;
-
-import gold.debug.windowstolinux.shared.linux.protocol.RemoteDeploymentInputs;
-import gold.debug.windowstolinux.shared.linux.build.DeploymentBuildResult;
-import gold.debug.windowstolinux.shared.linux.error.LinuxOperationException;
-import gold.debug.windowstolinux.shared.linux.error.LinuxOperationFailureType;
-import gold.debug.windowstolinux.shared.linux.protocol.ReleaseSnapshot;
-import gold.debug.windowstolinux.shared.linux.protocol.RemoteStepResult;
-import gold.debug.windowstolinux.shared.linux.sshd.command.SshCommandExecutor;
-import gold.debug.windowstolinux.shared.linux.transfer.RemoteWorkspace;
-import gold.debug.windowstolinux.shared.linux.protocol.backup.ManagedContentPublication;
-import gold.debug.windowstolinux.shared.model.managed.ManagedApplication;
-import gold.debug.windowstolinux.shared.model.project.DeploymentRuntimeSpecification;
-
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+
+import gold.debug.windowstolinux.shared.linux.build.DeploymentBuildResult;
+import gold.debug.windowstolinux.shared.linux.error.LinuxOperationException;
+import gold.debug.windowstolinux.shared.linux.error.LinuxOperationFailureType;
+import gold.debug.windowstolinux.shared.linux.protocol.ReleaseSnapshot;
+import gold.debug.windowstolinux.shared.linux.protocol.RemoteDeploymentInputs;
+import gold.debug.windowstolinux.shared.linux.protocol.RemoteStepResult;
+import gold.debug.windowstolinux.shared.linux.protocol.backup.ManagedContentPublication;
+import gold.debug.windowstolinux.shared.linux.sshd.command.SshCommandExecutor;
+import gold.debug.windowstolinux.shared.linux.sshd.execution.protocol.helper.ManagedHelperBundle;
+import gold.debug.windowstolinux.shared.linux.sshd.execution.protocol.input.DeploymentInputArguments;
+import gold.debug.windowstolinux.shared.linux.sshd.execution.protocol.input.ManagedContentArguments;
+import gold.debug.windowstolinux.shared.linux.sshd.execution.protocol.runtime.ContainerRuntimeArguments;
+import gold.debug.windowstolinux.shared.linux.transfer.RemoteWorkspace;
+import gold.debug.windowstolinux.shared.model.managed.ManagedApplication;
+import gold.debug.windowstolinux.shared.model.project.DeploymentRuntimeSpecification;
 
 /**
  * Applies the distinct Docker restart-policy and Podman Quadlet release protocol.
@@ -55,12 +54,13 @@ public final class ContainerReleaseProtocolExecutor {
      */
     public ReleaseSnapshot snapshot(ManagedApplication application, DeploymentRuntimeSpecification.Container runtime)
             throws LinuxOperationException {
-        var result = commands.execProtocol(command("snapshot-container", application, runtime), Duration.ofSeconds(30), true);
+        var result = commands.execProtocol(command("snapshot-container", application, runtime), Duration.ofSeconds(30),
+                true);
         if (!result.succeeded()) {
             throw LinuxOperationException.create(LinuxOperationFailureType.SNAPSHOT_IDENTITY_UNVERIFIED,
                     "Controlled helper could not verify the existing managed container: " + result.failureEvidence());
         }
-        Map<String, String> values = SshCommandExecutor.lines(result.output());
+        Map<String, String> values = gold.debug.windowstolinux.shared.linux.command.CommandText.lines(result.output());
         if (!"1".equals(values.get("PREVIOUS"))) {
             return ReleaseSnapshot.firstDeployment("No previous managed container release exists");
         }
@@ -88,10 +88,10 @@ public final class ContainerReleaseProtocolExecutor {
      * @throws LinuxOperationException if the authenticated remote operation fails or its evidence is rejected / 已认证远端操作失败或其证据被拒绝时
      * @throws NullPointerException if a required input is absent / 必需输入缺失时
      */
-    public RemoteStepResult publish(ManagedApplication application, RemoteWorkspace workspace, DeploymentBuildResult build,
-                                    String releaseIdentity, DeploymentRuntimeSpecification.Container runtime,
-                                    RemoteDeploymentInputs inputs, ManagedContentPublication contentPublication,
-                                    ReleaseSnapshot snapshot) throws LinuxOperationException {
+    public RemoteStepResult publish(ManagedApplication application, RemoteWorkspace workspace,
+            DeploymentBuildResult build, String releaseIdentity, DeploymentRuntimeSpecification.Container runtime,
+            RemoteDeploymentInputs inputs, ManagedContentPublication contentPublication, ReleaseSnapshot snapshot)
+            throws LinuxOperationException {
         if (!build.succeeded()) {
             throw LinuxOperationException.create(LinuxOperationFailureType.UNVERIFIED_BUILD_PUBLISH,
                     "An unverified container build cannot be published");
@@ -101,7 +101,8 @@ public final class ContainerReleaseProtocolExecutor {
                 application.ownershipManifestSha256()));
         values.add("identity-v2");
         values.add(runtime.identityPolicy().name());
-        values.add(gold.debug.windowstolinux.shared.linux.sshd.execution.protocol.runtime.ApplicationWorkloadArguments.payload(runtime));
+        values.add(gold.debug.windowstolinux.shared.linux.sshd.execution.protocol.runtime.ApplicationWorkloadArguments
+                .payload(runtime));
         values.addAll(DeploymentInputArguments.from(inputs));
         values.addAll(ManagedContentArguments.from(contentPublication));
         values.addAll(ContainerRuntimeArguments.from(runtime));
@@ -121,15 +122,14 @@ public final class ContainerReleaseProtocolExecutor {
      * @throws LinuxOperationException if the authenticated remote operation fails or its evidence is rejected / 已认证远端操作失败或其证据被拒绝时
      */
     public RemoteStepResult rollback(ManagedApplication application, ReleaseSnapshot snapshot,
-                                     DeploymentBuildResult build, String releaseIdentity,
-                                     DeploymentRuntimeSpecification.Container runtime, RemoteDeploymentInputs inputs)
-            throws LinuxOperationException {
+            DeploymentBuildResult build, String releaseIdentity, DeploymentRuntimeSpecification.Container runtime,
+            RemoteDeploymentInputs inputs) throws LinuxOperationException {
         if (!build.succeeded()) {
             throw LinuxOperationException.create(LinuxOperationFailureType.UNVERIFIED_BUILD_ROLLBACK,
                     "An unverified container build cannot be rolled back");
         }
-        List<String> values = new ArrayList<>(List.of(application.id(), releaseIdentity,
-                application.ownershipManifestSha256()));
+        List<String> values = new ArrayList<>(
+                List.of(application.id(), releaseIdentity, application.ownershipManifestSha256()));
         if (snapshot.hasPreviousRelease()) {
             values.add(snapshot.rollbackToken().orElseThrow());
             return step("rollback-container", values, "Controlled helper restored the previous managed container");
@@ -159,7 +159,8 @@ public final class ContainerReleaseProtocolExecutor {
      * @param runtime reviewed language, process and health specification / 已审阅的语言、进程及健康规格
      * @return command text / 命令文本
      */
-    private String command(String verb, ManagedApplication application, DeploymentRuntimeSpecification.Container runtime) {
+    private String command(String verb, ManagedApplication application,
+            DeploymentRuntimeSpecification.Container runtime) {
         return helperCommand(verb, List.of(application.id(), application.ownershipManifestSha256()));
     }
 
@@ -173,7 +174,8 @@ public final class ContainerReleaseProtocolExecutor {
      * @return remote step result from the supplied step inputs / 根据所提供步骤输入构建远端步骤结果
      * @throws LinuxOperationException if the authenticated remote operation fails or its evidence is rejected / 已认证远端操作失败或其证据被拒绝时
      */
-    private RemoteStepResult step(String verb, List<String> values, String successEvidence) throws LinuxOperationException {
+    private RemoteStepResult step(String verb, List<String> values, String successEvidence)
+            throws LinuxOperationException {
         var result = commands.exec(helperCommand(verb, values), Duration.ofSeconds(120), true);
         return new RemoteStepResult(result.succeeded(), result.timedOut(),
                 result.succeeded() ? successEvidence : result.failureEvidence());
@@ -190,10 +192,11 @@ public final class ContainerReleaseProtocolExecutor {
      */
     private static String helperCommand(String verb, List<String> values) {
         StringBuilder command = new StringBuilder("sudo -n ")
-                .append(SshCommandExecutor.quote(ManagedHelperBundle.PATH)).append(' ')
-                .append(SshCommandExecutor.quote(verb));
+                .append(gold.debug.windowstolinux.shared.linux.command.CommandText.quote(ManagedHelperBundle.PATH))
+                .append(' ').append(gold.debug.windowstolinux.shared.linux.command.CommandText.quote(verb));
         for (String value : values) {
-            command.append(' ').append(SshCommandExecutor.quote(Objects.requireNonNull(value, "helper argument")));
+            command.append(' ').append(gold.debug.windowstolinux.shared.linux.command.CommandText
+                    .quote(Objects.requireNonNull(value, "helper argument")));
         }
         return command.toString();
     }

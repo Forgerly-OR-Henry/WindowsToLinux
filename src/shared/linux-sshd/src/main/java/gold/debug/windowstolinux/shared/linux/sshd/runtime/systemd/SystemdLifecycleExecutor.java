@@ -1,5 +1,8 @@
 package gold.debug.windowstolinux.shared.linux.sshd.runtime.systemd;
 
+import java.time.Duration;
+import java.util.Objects;
+
 import gold.debug.windowstolinux.shared.linux.error.LinuxOperationException;
 import gold.debug.windowstolinux.shared.linux.error.LinuxOperationFailureType;
 import gold.debug.windowstolinux.shared.linux.sshd.command.SshCommandExecutor;
@@ -11,9 +14,6 @@ import gold.debug.windowstolinux.shared.model.lifecycle.LifecycleObservation;
 import gold.debug.windowstolinux.shared.model.lifecycle.RuntimeState;
 import gold.debug.windowstolinux.shared.model.managed.ManagedApplication;
 
-import java.time.Duration;
-import java.util.Objects;
-
 /**
  * Executes lifecycle changes only after ownership observation and verifies their postconditions. / 仅在归属观察后执行生命周期变更并验证其后置条件。
  */
@@ -23,21 +23,25 @@ public final class SystemdLifecycleExecutor {
      * <p>处理类型化远端命令边界的SSH命令执行器协作对象。
      */
     private final SshCommandExecutor commands;
+
     /**
      * Bound managed runtime protocol executor collaborator for runtimes.
      * <p>处理运行时集合的受管运行时协议执行器协作对象。
      */
     private final ManagedRuntimeProtocolExecutor runtimes;
+
     /**
      * Observer.
      * <p>观测器。
      */
     private final SystemdOwnershipObserver observer;
+
     /**
      * Health.
      * <p>健康。
      */
     private final SystemdHealthProbe health;
+
     /**
      * Account name used by the reviewed connection.
      * <p>已审阅连接使用的账户名。
@@ -55,7 +59,7 @@ public final class SystemdLifecycleExecutor {
      * @throws NullPointerException if a required input is absent / 必需输入缺失时
      */
     public SystemdLifecycleExecutor(SshCommandExecutor commands, ManagedRuntimeProtocolExecutor runtimes,
-                                    SystemdOwnershipObserver observer, SystemdHealthProbe health, String username) {
+            SystemdOwnershipObserver observer, SystemdHealthProbe health, String username) {
         this.commands = Objects.requireNonNull(commands, "commands");
         this.runtimes = Objects.requireNonNull(runtimes, "runtimes");
         this.observer = Objects.requireNonNull(observer, "observer");
@@ -88,10 +92,12 @@ public final class SystemdLifecycleExecutor {
      * @throws LinuxOperationException if the authenticated remote operation fails or its evidence is rejected / 已认证远端操作失败或其证据被拒绝时
      */
     public LifecycleObservation execute(ManagedApplication application, LifecycleAction action, HealthCheck healthCheck,
-                                        String expectedUnitContent) throws LinuxOperationException {
+            String expectedUnitContent) throws LinuxOperationException {
         LifecycleObservation before = observer.observe(application, expectedUnitContent);
-        if (!before.ownershipVerified()) return before;
-        if (action == LifecycleAction.REFRESH_STATUS) return before;
+        if (!before.ownershipVerified())
+            return before;
+        if (action == LifecycleAction.REFRESH_STATUS)
+            return before;
         if (before.runtimeState() == RuntimeState.UNKNOWN || (before.runtimeState() == RuntimeState.ERROR
                 && action != LifecycleAction.STOP && action != LifecycleAction.DISABLE_AUTOSTART)) {
             throw LinuxOperationException.create(LinuxOperationFailureType.LIFECYCLE_ACTION_FAILED,
@@ -115,10 +121,12 @@ public final class SystemdLifecycleExecutor {
         }
         if ((action == LifecycleAction.START || action == LifecycleAction.RESTART)
                 && !health.check(application, healthCheck).healthy()) {
-            throw LinuxOperationException.create(LinuxOperationFailureType.POST_START_HEALTH_FAILED, "Post-start health check failed");
+            throw LinuxOperationException.create(LinuxOperationFailureType.POST_START_HEALTH_FAILED,
+                    "Post-start health check failed");
         }
         LifecycleObservation after = action == LifecycleAction.STOP
-                ? awaitStopped(application, expectedUnitContent) : observer.observe(application, expectedUnitContent);
+                ? awaitStopped(application, expectedUnitContent)
+                : observer.observe(application, expectedUnitContent);
         verifyPostconditions(application, action, after);
         return new LifecycleObservation(after.application(), after.runtimeState(), after.autostartState(),
                 after.ownershipVerified(), after.observedAt(), after.evidence() + "; " + result.evidence());
@@ -158,15 +166,20 @@ public final class SystemdLifecycleExecutor {
      * @param after after / 之后
      * @throws LinuxOperationException if the authenticated remote operation fails or its evidence is rejected / 已认证远端操作失败或其证据被拒绝时
      */
-    private void verifyPostconditions(ManagedApplication application, LifecycleAction action, LifecycleObservation after)
-            throws LinuxOperationException {
+    private void verifyPostconditions(ManagedApplication application, LifecycleAction action,
+            LifecycleObservation after) throws LinuxOperationException {
         if (action == LifecycleAction.STOP && after.runtimeState() != RuntimeState.STOPPED) {
             throw LinuxOperationException.create(LinuxOperationFailureType.STOP_UNVERIFIED,
-                    "Stop operation could not be verified remotely: state=" + after.runtimeState()
-                            + ", evidence=" + after.evidence());
+                    "Stop operation could not be verified remotely: state=" + after.runtimeState() + ", evidence="
+                            + after.evidence());
         }
-        if (action == LifecycleAction.STOP && !commands.exec("test \"$(systemctl show --value --property MainPID "
-                + SshCommandExecutor.quote(application.systemdUnit()) + ")\" = 0", Duration.ofSeconds(10), false).succeeded()) {
+        if (action == LifecycleAction.STOP
+                && !commands
+                        .exec("test \"$(systemctl show --value --property MainPID "
+                                + gold.debug.windowstolinux.shared.linux.command.CommandText
+                                        .quote(application.systemdUnit())
+                                + ")\" = 0", Duration.ofSeconds(10), false)
+                        .succeeded()) {
             throw LinuxOperationException.create(LinuxOperationFailureType.MAIN_PROCESS_STILL_RUNNING,
                     "A systemd main process is still present after stop");
         }

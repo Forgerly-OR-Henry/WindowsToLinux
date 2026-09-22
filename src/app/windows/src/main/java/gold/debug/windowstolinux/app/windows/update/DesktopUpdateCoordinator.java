@@ -1,14 +1,14 @@
 package gold.debug.windowstolinux.app.windows.update;
 
-import gold.debug.windowstolinux.shared.model.failure.FailureDescriptor;
-import gold.debug.windowstolinux.shared.model.failure.FailureRecoveryAction;
-import gold.debug.windowstolinux.shared.model.failure.FailureRecoveryDisposition;
-import gold.debug.windowstolinux.shared.model.failure.OperationIdentity;
-
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
+
+import gold.debug.windowstolinux.shared.model.failure.FailureDescriptor;
+import gold.debug.windowstolinux.shared.model.failure.FailureRecoveryAction;
+import gold.debug.windowstolinux.shared.model.failure.FailureRecoveryDisposition;
+import gold.debug.windowstolinux.shared.model.failure.OperationIdentity;
 
 /**
  * Coordinates an independently handed-off program and SQLite update transaction. / 编排已独立交接的程序及 SQLite 更新事务。
@@ -49,8 +49,8 @@ public final class DesktopUpdateCoordinator {
 
             state = DesktopUpdateState.BACKUP_CREATED;
             DesktopUpdatePort.BackupEvidence created = port.backupCurrent(update);
-            if (!created.programBackedUp() || !created.databaseBackedUp()
-                    || !created.dataLocationPreserved() || !created.credentialModePreserved()) {
+            if (!created.programBackedUp() || !created.databaseBackedUp() || !created.dataLocationPreserved()
+                    || !created.credentialModePreserved()) {
                 throw DesktopUpdateException.create(DesktopUpdateFailureType.TRANSACTION_FAILED,
                         "program, SQLite, data location and credential mode were not backed up as one update point");
             }
@@ -59,15 +59,14 @@ public final class DesktopUpdateCoordinator {
             return new DesktopUpdatePreparationResult(operation, DesktopUpdatePreparationStatus.READY_FOR_HANDOFF,
                     update.version(), events, Optional.of(handoff), Optional.empty());
         } catch (Exception exception) {
-            FailureDescriptor failure = failure(exception).withOperationIdentity(operation).withRecovery(
-                    FailureRecoveryAction.NONE, FailureRecoveryDisposition.NOT_REQUIRED);
+            FailureDescriptor failure = failure(exception).withOperationIdentity(operation)
+                    .withRecovery(FailureRecoveryAction.NONE, FailureRecoveryDisposition.NOT_REQUIRED);
             if (events.isEmpty() || events.get(events.size() - 1).state() != state
                     || events.get(events.size() - 1).succeeded()) {
                 events.add(new DesktopUpdateEvent(state, false, failure.diagnostic()));
             }
-            return new DesktopUpdatePreparationResult(operation,
-                    DesktopUpdatePreparationStatus.PRECONDITION_REJECTED, update.version(), events,
-                    Optional.empty(), Optional.of(failure));
+            return new DesktopUpdatePreparationResult(operation, DesktopUpdatePreparationStatus.PRECONDITION_REJECTED,
+                    update.version(), events, Optional.empty(), Optional.of(failure));
         }
     }
 
@@ -89,8 +88,7 @@ public final class DesktopUpdateCoordinator {
         try {
 
             DesktopUpdatePort.HandoffEvidence worker = port.verifyIndependentUpdater(update, backup);
-            if (!worker.independentUpdaterVerified() || !worker.mainProcessExited()
-                    || !worker.handoffAuthenticated()) {
+            if (!worker.independentUpdaterVerified() || !worker.mainProcessExited() || !worker.handoffAuthenticated()) {
                 throw DesktopUpdateException.create(DesktopUpdateFailureType.TRANSACTION_FAILED,
                         "independent updater identity, main process exit or handoff authenticity could not be verified");
             }
@@ -123,11 +121,10 @@ public final class DesktopUpdateCoordinator {
                 events.add(new DesktopUpdateEvent(state, false, original.diagnostic()));
             }
             if (!replacementAttempted) {
-                FailureDescriptor safe = original.withRecovery(
-                        FailureRecoveryAction.NONE, FailureRecoveryDisposition.NOT_REQUIRED);
-                return new DesktopUpdateResult(operation, DesktopUpdateStatus.PRECONDITION_REJECTED,
-                        update.version(), events, Optional.of(backup.backupToken()),
-                        Optional.of(safe));
+                FailureDescriptor safe = original.withRecovery(FailureRecoveryAction.NONE,
+                        FailureRecoveryDisposition.NOT_REQUIRED);
+                return new DesktopUpdateResult(operation, DesktopUpdateStatus.PRECONDITION_REJECTED, update.version(),
+                        events, Optional.of(backup.backupToken()), Optional.of(safe));
             }
             return rollback(update, operation, events, backup, original);
         }
@@ -144,13 +141,8 @@ public final class DesktopUpdateCoordinator {
      * @param original original / 原始
      * @return desktop update result from the supplied rollback inputs / 根据所提供回滚输入构建Desktop更新结果
      */
-    private DesktopUpdateResult rollback(
-            DesktopUpdateVerification update,
-            OperationIdentity operation,
-            List<DesktopUpdateEvent> events,
-            DesktopUpdatePort.BackupEvidence backup,
-            FailureDescriptor original
-    ) {
+    private DesktopUpdateResult rollback(DesktopUpdateVerification update, OperationIdentity operation,
+            List<DesktopUpdateEvent> events, DesktopUpdatePort.BackupEvidence backup, FailureDescriptor original) {
         try {
             DesktopUpdatePort.RollbackEvidence rollback = port.rollbackProgramAndDatabase(backup);
             if (!rollback.programRestored() || !rollback.databaseRestored() || !rollback.previousVersionHealthy()) {
@@ -158,19 +150,17 @@ public final class DesktopUpdateCoordinator {
                         "program and pre-migration SQLite backup were not both restored and verified");
             }
             events.add(success(DesktopUpdateState.ROLLBACK_VERIFIED, rollback.evidence()));
-            FailureDescriptor safe = original.withRecovery(
-                    FailureRecoveryAction.ROLLBACK, FailureRecoveryDisposition.SUCCEEDED);
-            return new DesktopUpdateResult(operation, DesktopUpdateStatus.FAILED_ROLLED_BACK, update.version(),
-                    events, Optional.of(backup.backupToken()), Optional.of(safe));
+            FailureDescriptor safe = original.withRecovery(FailureRecoveryAction.ROLLBACK,
+                    FailureRecoveryDisposition.SUCCEEDED);
+            return new DesktopUpdateResult(operation, DesktopUpdateStatus.FAILED_ROLLED_BACK, update.version(), events,
+                    Optional.of(backup.backupToken()), Optional.of(safe));
         } catch (Exception exception) {
             FailureDescriptor failed = failure(DesktopUpdateException.create(DesktopUpdateFailureType.ROLLBACK_FAILED,
-                    "program and SQLite rollback could not be verified", exception))
-                    .withOperationIdentity(operation)
-                    .withRecovery(FailureRecoveryAction.REQUIRE_MANUAL_RECOVERY,
-                            FailureRecoveryDisposition.FAILED);
+                    "program and SQLite rollback could not be verified", exception)).withOperationIdentity(operation)
+                    .withRecovery(FailureRecoveryAction.REQUIRE_MANUAL_RECOVERY, FailureRecoveryDisposition.FAILED);
             events.add(new DesktopUpdateEvent(DesktopUpdateState.ROLLBACK_VERIFIED, false, failed.diagnostic()));
-            return new DesktopUpdateResult(operation, DesktopUpdateStatus.MANUAL_RECOVERY_REQUIRED,
-                    update.version(), events, Optional.of(backup.backupToken()), Optional.of(failed));
+            return new DesktopUpdateResult(operation, DesktopUpdateStatus.MANUAL_RECOVERY_REQUIRED, update.version(),
+                    events, Optional.of(backup.backupToken()), Optional.of(failed));
         }
     }
 
@@ -183,9 +173,8 @@ public final class DesktopUpdateCoordinator {
      * @param diagnostic bounded non-secret detail for diagnostic reporting / 用于诊断报告的有界非秘密详情
      * @throws DesktopUpdateException if the desktop update boundary rejects the operation / Desktop更新边界拒绝当前操作时
      */
-    private static void requireStep(
-            DesktopUpdatePort.StepEvidence evidence, DesktopUpdateFailureType type, String diagnostic)
-            throws DesktopUpdateException {
+    private static void requireStep(DesktopUpdatePort.StepEvidence evidence, DesktopUpdateFailureType type,
+            String diagnostic) throws DesktopUpdateException {
         if (!evidence.completed() || !evidence.verified()) {
             throw DesktopUpdateException.create(type, diagnostic);
         }
@@ -199,7 +188,8 @@ public final class DesktopUpdateCoordinator {
      * @return or preserves the module-owned failure for the supplied cause and diagnostic evidence / 为所提供原因及诊断证据创建或保留模块自有失败
      */
     private static FailureDescriptor failure(Exception exception) {
-        if (exception instanceof DesktopUpdateException update) return update.failure();
+        if (exception instanceof DesktopUpdateException update)
+            return update.failure();
         return DesktopUpdateException.create(DesktopUpdateFailureType.TRANSACTION_FAILED,
                 "unexpected desktop update transaction failure", exception).failure();
     }
@@ -214,7 +204,8 @@ public final class DesktopUpdateCoordinator {
      */
     private static DesktopUpdateEvent success(DesktopUpdateState state, List<String> evidence) {
         String joined = String.join("; ", evidence);
-        if (joined.length() > 1024) joined = joined.substring(0, 1024);
+        if (joined.length() > 1024)
+            joined = joined.substring(0, 1024);
         return new DesktopUpdateEvent(state, true, joined);
     }
 

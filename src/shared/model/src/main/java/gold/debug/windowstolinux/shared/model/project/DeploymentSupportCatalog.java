@@ -1,13 +1,13 @@
 package gold.debug.windowstolinux.shared.model.project;
 
-import gold.debug.windowstolinux.shared.model.language.SourceLanguageType;
-import gold.debug.windowstolinux.shared.model.message.LocalizedMessage;
-import gold.debug.windowstolinux.shared.model.server.LinuxDistroType;
-
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Objects;
 import java.util.Set;
+
+import gold.debug.windowstolinux.shared.model.language.SourceLanguageType;
+import gold.debug.windowstolinux.shared.model.message.LocalizedMessage;
+import gold.debug.windowstolinux.shared.model.server.LinuxDistroType;
 
 /**
  * Provides evidence-backed support claims for exact project-type and architecture pairs. / 为精确项目类型与架构组合提供证据支撑的支持声明。
@@ -17,8 +17,9 @@ public final class DeploymentSupportCatalog {
      * Ubuntu 24.04 validation target.
      * <p>Ubuntu 24.04 验证目标。
      */
-    private static final ValidatedDeploymentTarget UBUNTU_2404 = new ValidatedDeploymentTarget(
-            LinuxDistroType.UBUNTU, "24.04", "x86_64", LocalDate.of(2026, 8, 12));
+    private static final ValidatedDeploymentTarget UBUNTU_2404 = new ValidatedDeploymentTarget(LinuxDistroType.UBUNTU,
+            "24.04", "x86_64", LocalDate.of(2026, 8, 12));
+
     /**
      * PHASE THREE EVIDENCE.
      * <p>PHASETHREE证据。
@@ -38,8 +39,7 @@ public final class DeploymentSupportCatalog {
      * @return every exact architecture that requires an inspector, renderer, capability gate, and deployment path / 需要检查器、Renderer、能力门禁与部署路径的全部精确架构
      */
     public static Set<DeploymentArchitectureType> deployableArchitectures() {
-        return Set.of(
-                architecture(DeploymentProjectType.SPRING_BOOT, DeploymentBuildToolType.GRADLE_WRAPPER),
+        return Set.of(architecture(DeploymentProjectType.SPRING_BOOT, DeploymentBuildToolType.GRADLE_WRAPPER),
                 architecture(DeploymentProjectType.SPRING_BOOT, DeploymentBuildToolType.MAVEN_WRAPPER),
                 architecture(DeploymentProjectType.SPRING_BOOT, DeploymentBuildToolType.MAVEN),
                 architecture(DeploymentProjectType.JAVA_JAR, DeploymentBuildToolType.JAVA),
@@ -77,10 +77,8 @@ public final class DeploymentSupportCatalog {
      * @return the exact checked-in claim for one selected project type and architecture / 所选项目类型与架构的精确已检入声明
      * @throws NullPointerException if a required input is absent / 必需输入缺失时
      */
-    public static DeploymentSupportProfile forArchitecture(
-            DeploymentProjectType type,
-            DeploymentBuildToolType buildTool
-    ) {
+    public static DeploymentSupportProfile forArchitecture(DeploymentProjectType type,
+            DeploymentBuildToolType buildTool) {
         type = Objects.requireNonNull(type, "type");
         buildTool = Objects.requireNonNull(buildTool, "buildTool");
         return switch (type) {
@@ -90,9 +88,11 @@ public final class DeploymentSupportCatalog {
                 default -> invalid(type, buildTool);
             };
             case JAVA_JAR -> buildTool == DeploymentBuildToolType.JAVA
-                    ? formal(SourceLanguageType.JAVA, "jar", "Java executable JAR") : invalid(type, buildTool);
+                    ? formal(SourceLanguageType.JAVA, "jar", "Java executable JAR")
+                    : invalid(type, buildTool);
             case JAVA_SOURCE -> buildTool == DeploymentBuildToolType.JDK
-                    ? experimental(SourceLanguageType.JAVA, "jdk", "Dependency-free Java source") : invalid(type, buildTool);
+                    ? experimental(SourceLanguageType.JAVA, "jdk", "Dependency-free Java source")
+                    : invalid(type, buildTool);
             case NODE_SERVICE -> switch (buildTool) {
                 case NPM -> formal(SourceLanguageType.JAVASCRIPT, "npm", "Node.js service");
                 case PNPM -> experimental(SourceLanguageType.JAVASCRIPT, "pnpm", "Node.js service");
@@ -100,7 +100,8 @@ public final class DeploymentSupportCatalog {
                 default -> invalid(type, buildTool);
             };
             case PYTHON_SERVICE -> switch (buildTool) {
-                case PYTHON_STDLIB -> experimental(SourceLanguageType.PYTHON, "stdlib", "Standard-library Python application");
+                case PYTHON_STDLIB ->
+                    experimental(SourceLanguageType.PYTHON, "stdlib", "Standard-library Python application");
                 case PIP_LOCKED -> formal(SourceLanguageType.PYTHON, "pip", "Python service");
                 case PIPENV_LOCKED -> experimental(SourceLanguageType.PYTHON, "pipenv", "Python service");
                 case POETRY_LOCKED -> experimental(SourceLanguageType.PYTHON, "poetry", "Python service");
@@ -108,21 +109,26 @@ public final class DeploymentSupportCatalog {
                 default -> invalid(type, buildTool);
             };
             case STATIC_SITE -> switch (buildTool) {
-                case STATIC_SITE_BUILD, NPM, PNPM, YARN -> formal(SourceLanguageType.HTML, "static", "Managed static site");
+                case STATIC_SITE_BUILD, NPM, PNPM, YARN ->
+                    formal(SourceLanguageType.HTML, "static", "Managed static site");
                 default -> invalid(type, buildTool);
             };
             case DOCKERFILE_CONTAINER -> buildTool == DeploymentBuildToolType.CONTAINER_BUILD
                     ? formal(SourceLanguageType.CONTAINERFILE, "dockerfile", "Single Dockerfile container")
                     : invalid(type, buildTool);
             case GO_SERVICE -> buildTool == DeploymentBuildToolType.GO_MODULE
-                    ? experimental(SourceLanguageType.GO, "gomodule", "Go service") : invalid(type, buildTool);
+                    ? experimental(SourceLanguageType.GO, "gomodule", "Go service")
+                    : invalid(type, buildTool);
             case RUST_SERVICE -> buildTool == DeploymentBuildToolType.CARGO_LOCKED
-                    ? experimental(SourceLanguageType.RUST, "cargo", "Rust service") : invalid(type, buildTool);
+                    ? experimental(SourceLanguageType.RUST, "cargo", "Rust service")
+                    : invalid(type, buildTool);
             case DOTNET_SERVICE -> buildTool == DeploymentBuildToolType.DOTNET_LOCKED
-                    ? experimental(SourceLanguageType.CSHARP, "dotnetsdk", ".NET service") : invalid(type, buildTool);
+                    ? experimental(SourceLanguageType.CSHARP, "dotnetsdk", ".NET service")
+                    : invalid(type, buildTool);
             case KOTLIN_SERVICE -> switch (buildTool) {
                 case GRADLE_KOTLIN_WRAPPER -> experimental(SourceLanguageType.KOTLIN, "gradle", "Kotlin/JVM service");
-                case KOTLINC -> experimental(SourceLanguageType.KOTLIN, "kotlinc", "Dependency-free Kotlin/JVM service");
+                case KOTLINC ->
+                    experimental(SourceLanguageType.KOTLIN, "kotlinc", "Dependency-free Kotlin/JVM service");
                 default -> invalid(type, buildTool);
             };
             case PHP_SERVICE -> switch (buildTool) {
@@ -136,9 +142,13 @@ public final class DeploymentSupportCatalog {
                 default -> invalid(type, buildTool);
             };
             case CMAKE_SERVICE -> buildTool == DeploymentBuildToolType.CMAKE
-                    ? experimental(SourceLanguageType.C, "cmake", "C/C++ service executable") : invalid(type, buildTool);
+                    ? experimental(SourceLanguageType.C, "cmake", "C/C++ service executable")
+                    : invalid(type, buildTool);
+            case MANAGED_PROCESS ->
+                throw new IllegalArgumentException("generic delivery is outside standard recognition");
             case RECOGNITION_PREVIEW -> buildTool == DeploymentBuildToolType.NONE_PREVIEW
-                    ? preview(SourceLanguageType.UNKNOWN) : invalid(type, buildTool);
+                    ? preview(SourceLanguageType.UNKNOWN)
+                    : invalid(type, buildTool);
         };
     }
 
@@ -174,11 +184,8 @@ public final class DeploymentSupportCatalog {
      * @param framework selected framework or workload identity / 选定框架或工作负载身份
      * @return deployment support profile from the supplied experimental inputs / 根据所提供实验性输入构建部署支持配置资料
      */
-    private static DeploymentSupportProfile experimental(
-            SourceLanguageType language,
-            String architecture,
-            String framework
-    ) {
+    private static DeploymentSupportProfile experimental(SourceLanguageType language, String architecture,
+            String framework) {
         return new DeploymentSupportProfile(DeploymentSupportLevel.EXPERIMENTAL_ADAPTER, language, architecture,
                 framework, List.of(), List.of(), List.of(LocalizedMessage.of("support.limitation.runtimePending")));
     }
@@ -192,11 +199,7 @@ public final class DeploymentSupportCatalog {
      * @param framework selected framework or workload identity / 选定框架或工作负载身份
      * @return deployment support profile from the supplied formal inputs / 根据所提供正式输入构建部署支持配置资料
      */
-    private static DeploymentSupportProfile formal(
-            SourceLanguageType language,
-            String architecture,
-            String framework
-    ) {
+    private static DeploymentSupportProfile formal(SourceLanguageType language, String architecture, String framework) {
         return new DeploymentSupportProfile(DeploymentSupportLevel.FORMALLY_SUPPORTED, language, architecture,
                 framework, List.of(UBUNTU_2404), List.of(PHASE_THREE_EVIDENCE),
                 List.of(LocalizedMessage.of("support.limitation.listedMatrixOnly")));
@@ -223,10 +226,8 @@ public final class DeploymentSupportCatalog {
      * @param buildTool the fixed build entrypoint / 固定构建入口
      * @return deployment architecture type from the supplied architecture inputs / 根据所提供架构输入构建部署架构类型
      */
-    private static DeploymentArchitectureType architecture(
-            DeploymentProjectType projectType,
-            DeploymentBuildToolType buildTool
-    ) {
+    private static DeploymentArchitectureType architecture(DeploymentProjectType projectType,
+            DeploymentBuildToolType buildTool) {
         return new DeploymentArchitectureType(projectType, buildTool);
     }
 }

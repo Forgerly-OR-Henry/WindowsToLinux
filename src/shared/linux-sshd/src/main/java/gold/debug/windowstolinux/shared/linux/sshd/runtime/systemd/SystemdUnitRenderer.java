@@ -1,9 +1,9 @@
 package gold.debug.windowstolinux.shared.linux.sshd.runtime.systemd;
 
-import gold.debug.windowstolinux.shared.model.managed.ManagedApplication;
-import gold.debug.windowstolinux.shared.linux.sshd.execution.protocol.helper.ManagedHelperBundle;
-
 import java.util.Objects;
+
+import gold.debug.windowstolinux.shared.linux.sshd.execution.protocol.helper.ManagedHelperBundle;
+import gold.debug.windowstolinux.shared.model.managed.ManagedApplication;
 
 /**
  * Builds systemd unit text from reviewed runtime, identity and storage contracts.
@@ -51,6 +51,7 @@ public final class SystemdUnitRenderer {
 
                 [Install]
                 WantedBy=multi-user.target
-                """.formatted(application.id(), username, application.releaseRoot(), JAVA_BINARY, application.releaseRoot());
+                """.formatted(application.id(), username, application.releaseRoot(), JAVA_BINARY,
+                application.releaseRoot());
     }
 }

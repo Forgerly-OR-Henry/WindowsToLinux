@@ -89,9 +89,7 @@ pub fn prepare(path: &Path, c: &Config, index: usize) -> Result<Prepared, (i32, 
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default()
         .as_nanos();
-    let target = c
-        .temp
-        .join(format!("log-{}-{stamp}-{index}.tmp", std::process::id()));
+    let target = c.temp.join(format!("log-{}-{stamp}-{index}.tmp", std::process::id()));
     let mut output = OpenOptions::new()
         .write(true)
         .create_new(true)

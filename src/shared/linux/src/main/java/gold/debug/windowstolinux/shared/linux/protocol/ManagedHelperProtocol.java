@@ -6,6 +6,9 @@ import gold.debug.windowstolinux.shared.model.server.ManagedHelperProtocolVersio
  * Stable managed-helper protocol identity shared by preflight and the SSH implementation. / 由预检与 SSH 实现共享的稳定受管 helper 协议身份。
  */
 public final class ManagedHelperProtocol {
+    /** Root-owned helper executable. / root 所有的 helper 可执行文件。 */
+    public static final String PATH = "/usr/local/lib/windowstolinux/managed-helper";
+
     /**
      * Current reviewed deployment protocol version. / 当前经审阅部署协议版本。
      */

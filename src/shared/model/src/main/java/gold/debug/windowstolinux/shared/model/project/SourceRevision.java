@@ -16,7 +16,7 @@ import java.util.Optional;
  * @param submoduleCommits the pinned submodule commits / 固定的子模块 Commit
  */
 public record SourceRevision(String sourceSha256, Optional<String> commit, Optional<URI> remote,
-                             Map<String, String> submoduleCommits) {
+        Map<String, String> submoduleCommits) {
     /**
      * Validates and binds the inputs required by source revision.
      * <p>校验并绑定源码修订所需输入。
@@ -106,9 +106,11 @@ public record SourceRevision(String sourceSha256, Optional<String> commit, Optio
     private static URI requireCredentialFreeRemote(URI value) {
         URI normalized = Objects.requireNonNull(value, "remote").normalize();
         String scheme = normalized.getScheme();
-        if (scheme == null || !(scheme.equalsIgnoreCase("https") || scheme.equalsIgnoreCase("ssh")
-                || scheme.equalsIgnoreCase("file"))
-                || (!scheme.equalsIgnoreCase("file") && (normalized.getHost() == null || normalized.getHost().isBlank()))
+        if (scheme == null
+                || !(scheme.equalsIgnoreCase("https") || scheme.equalsIgnoreCase("ssh")
+                        || scheme.equalsIgnoreCase("file"))
+                || (!scheme.equalsIgnoreCase("file")
+                        && (normalized.getHost() == null || normalized.getHost().isBlank()))
                 || normalized.getRawUserInfo() != null || normalized.getRawQuery() != null
                 || normalized.getRawFragment() != null || normalized.toString().length() > 2048) {
             throw new IllegalArgumentException("remote must be a bounded credential-free Git URI");

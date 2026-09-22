@@ -1,8 +1,5 @@
 package gold.debug.windowstolinux.shared.source.contract.validation;
 
-import gold.debug.windowstolinux.shared.source.manifest.SourceEntry;
-import gold.debug.windowstolinux.shared.source.manifest.SourceManifest;
-
 import java.io.IOException;
 import java.nio.file.FileVisitResult;
 import java.nio.file.FileVisitor;
@@ -16,6 +13,9 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Set;
 
+import gold.debug.windowstolinux.shared.source.manifest.SourceEntry;
+import gold.debug.windowstolinux.shared.source.manifest.SourceManifest;
+
 /**
  * Validates local source boundaries and creates a deterministic safe-file manifest.
  *
@@ -26,16 +26,15 @@ public final class SourceBoundaryValidator {
      * EXCLUDED DIRECTORIES.
      * <p>排除目录集合。
      */
-    private static final Set<String> EXCLUDED_DIRECTORIES = Set.of(
-            ".git", ".idea", "target", "node_modules", ".m2", ".gradle", "logs"
-    );
+    private static final Set<String> EXCLUDED_DIRECTORIES = Set.of(".git", ".idea", "target", "node_modules", ".m2",
+            ".gradle", "logs");
+
     /**
      * EXCLUDED FILE NAMES.
      * <p>排除文件名称集合。
      */
-    private static final Set<String> EXCLUDED_FILE_NAMES = Set.of(
-            ".env", ".npmrc", ".pypirc", "id_rsa", "id_dsa", "id_ecdsa", "id_ed25519", "known_hosts"
-    );
+    private static final Set<String> EXCLUDED_FILE_NAMES = Set.of(".env", ".npmrc", ".pypirc", "id_rsa", "id_dsa",
+            "id_ecdsa", "id_ed25519", "known_hosts");
 
     /**
      * Validates the input through {@code validateSourceDirectory}.
@@ -115,7 +114,8 @@ public final class SourceBoundaryValidator {
              * @throws IOException if the required file or stream operation fails / 所需文件或流操作失败时
              */
             @Override
-            public FileVisitResult preVisitDirectory(Path directory, BasicFileAttributes attributes) throws IOException {
+            public FileVisitResult preVisitDirectory(Path directory, BasicFileAttributes attributes)
+                    throws IOException {
                 if (!directory.equals(root) && Files.isSymbolicLink(directory)) {
                     throw new IOException("symbolic-link directory is not allowed: " + root.relativize(directory));
                 }
@@ -195,9 +195,9 @@ public final class SourceBoundaryValidator {
      * @throws IOException if the required file or stream operation fails / 所需文件或流操作失败时
      */
     public void verifyUnchangedRegularFile(Path root, SourceEntry entry) throws IOException {
-        BasicFileAttributes attributes = Files.readAttributes(entry.path(), BasicFileAttributes.class, LinkOption.NOFOLLOW_LINKS);
-        if (Files.isSymbolicLink(entry.path()) || !attributes.isRegularFile()
-                || attributes.size() != entry.byteCount()
+        BasicFileAttributes attributes = Files.readAttributes(entry.path(), BasicFileAttributes.class,
+                LinkOption.NOFOLLOW_LINKS);
+        if (Files.isSymbolicLink(entry.path()) || !attributes.isRegularFile() || attributes.size() != entry.byteCount()
                 || !entry.relativePath().equals(normalizedRelative(root, entry.path()))) {
             throw new IOException("source entry changed while creating archive: " + entry.relativePath());
         }
@@ -223,8 +223,8 @@ public final class SourceBoundaryValidator {
      * @return true when sensitive file condition holds for this contract, false otherwise / 当前契约是否满足敏感文件条件时为 true，否则为 false
      */
     private static boolean isSensitiveFile(String name) {
-        return EXCLUDED_FILE_NAMES.contains(name) || name.startsWith(".env.") || name.endsWith(".pem") || name.endsWith(".key")
-                || name.endsWith(".p12") || name.endsWith(".pfx");
+        return EXCLUDED_FILE_NAMES.contains(name) || name.startsWith(".env.") || name.endsWith(".pem")
+                || name.endsWith(".key") || name.endsWith(".p12") || name.endsWith(".pfx");
     }
 
     /**
@@ -236,16 +236,21 @@ public final class SourceBoundaryValidator {
      */
     private static Set<String> explicitFiles(Path root) throws IOException {
         Path declaration = root.resolve("windowstolinux-application.properties");
-        if (!Files.exists(declaration, LinkOption.NOFOLLOW_LINKS)) return Set.of();
+        if (!Files.exists(declaration, LinkOption.NOFOLLOW_LINKS))
+            return Set.of();
         if (!Files.isRegularFile(declaration, LinkOption.NOFOLLOW_LINKS) || Files.size(declaration) > 65536)
             throw new IOException("application source declaration must be a bounded regular file");
         var properties = new java.util.Properties();
-        try (var reader = Files.newBufferedReader(declaration)) { properties.load(reader); }
+        try (var reader = Files.newBufferedReader(declaration)) {
+            properties.load(reader);
+        }
         String value = properties.getProperty("source.include", "");
-        if (value.isBlank()) return Set.of();
+        if (value.isBlank())
+            return Set.of();
         var result = new java.util.HashSet<String>();
         for (String item : value.split(",", -1)) {
-            String relative = gold.debug.windowstolinux.shared.model.project.application.ApplicationCommand.relative(item.trim(), false);
+            String relative = gold.debug.windowstolinux.shared.model.project.application.ApplicationCommand
+                    .relative(item.trim(), false);
             Path file = root.resolve(relative).normalize();
             if (result.size() >= 32 || !result.add(relative) || !file.startsWith(root)
                     || !relative.equals(normalizedRelative(root, file))
@@ -253,8 +258,9 @@ public final class SourceBoundaryValidator {
                     || isSensitiveFile(file.getFileName().toString().toLowerCase(Locale.ROOT)))
                 throw new IOException("explicit source resource violates archive boundaries");
             rejectSymbolicLinksInPath(file, "explicit source resource must not traverse symbolic links");
-            for (Path part : Path.of(relative)) if (EXCLUDED_DIRECTORIES.contains(part.toString()))
-                throw new IOException("explicit source resource crosses an excluded directory");
+            for (Path part : Path.of(relative))
+                if (EXCLUDED_DIRECTORIES.contains(part.toString()))
+                    throw new IOException("explicit source resource crosses an excluded directory");
         }
         return Set.copyOf(result);
     }

@@ -2,5 +2,5 @@
   "revisionId": 1,
   "requestId": "demo-score-001",
   "respondent": "林同学",
-  "answers": {"participated":"yes","quality":4,"support":["docs","peer"],"friction":2}
+  "answers": { "participated": "yes", "quality": 4, "support": ["docs", "peer"], "friction": 2 }
 }

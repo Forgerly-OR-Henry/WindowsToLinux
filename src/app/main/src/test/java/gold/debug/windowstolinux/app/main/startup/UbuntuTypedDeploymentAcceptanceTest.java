@@ -1,29 +1,8 @@
 package gold.debug.windowstolinux.app.main.startup;
 
-import gold.debug.windowstolinux.app.service.source.ReviewedSourcePreparation;
-import gold.debug.windowstolinux.shared.config.contract.definition.ConfigurationScope;
-import gold.debug.windowstolinux.shared.config.contract.definition.ConfigurationValue;
-import gold.debug.windowstolinux.shared.config.revision.ConfigurationEntry;
-import gold.debug.windowstolinux.shared.config.secretref.SecretReference;
-import gold.debug.windowstolinux.shared.deploy.contract.result.deployment.DeploymentResult;
-import gold.debug.windowstolinux.shared.git.GitReference;
-import gold.debug.windowstolinux.shared.git.GitRemote;
-import gold.debug.windowstolinux.shared.git.GitSourceRequest;
-import gold.debug.windowstolinux.shared.model.deployment.DeploymentStatus;
-import gold.debug.windowstolinux.shared.model.health.HealthCheck;
-import gold.debug.windowstolinux.shared.model.health.UserAccessUrl;
-import gold.debug.windowstolinux.shared.model.lifecycle.AutostartState;
-import gold.debug.windowstolinux.shared.model.lifecycle.LifecycleAction;
-import gold.debug.windowstolinux.shared.model.lifecycle.LifecycleObservation;
-import gold.debug.windowstolinux.shared.model.lifecycle.RuntimeState;
-import gold.debug.windowstolinux.shared.model.project.DeploymentProjectType;
-import gold.debug.windowstolinux.shared.model.project.DeploymentRuntimeSpecification;
-import gold.debug.windowstolinux.shared.model.language.LanguageEcosystemType;
-import gold.debug.windowstolinux.shared.model.language.SourceLanguageType;
-import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.AfterEach;
-import org.junit.jupiter.api.condition.EnabledIfSystemProperty;
-import org.junit.jupiter.api.io.TempDir;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.InputStream;
 import java.net.HttpURLConnection;
@@ -38,16 +17,40 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import gold.debug.windowstolinux.app.service.source.ReviewedSourcePreparation;
+import gold.debug.windowstolinux.shared.config.contract.definition.ConfigurationScope;
+import gold.debug.windowstolinux.shared.config.contract.definition.ConfigurationValue;
+import gold.debug.windowstolinux.shared.config.revision.ConfigurationEntry;
+import gold.debug.windowstolinux.shared.config.secretref.SecretReference;
+import gold.debug.windowstolinux.shared.deploy.contract.result.deployment.DeploymentResult;
+import gold.debug.windowstolinux.shared.git.GitReference;
+import gold.debug.windowstolinux.shared.git.GitRemote;
+import gold.debug.windowstolinux.shared.git.GitSourceRequest;
+import gold.debug.windowstolinux.shared.model.deployment.DeploymentStatus;
+import gold.debug.windowstolinux.shared.model.health.HealthCheck;
+import gold.debug.windowstolinux.shared.model.health.UserAccessUrl;
+import gold.debug.windowstolinux.shared.model.language.LanguageEcosystemType;
+import gold.debug.windowstolinux.shared.model.language.SourceLanguageType;
+import gold.debug.windowstolinux.shared.model.lifecycle.AutostartState;
+import gold.debug.windowstolinux.shared.model.lifecycle.LifecycleAction;
+import gold.debug.windowstolinux.shared.model.lifecycle.LifecycleObservation;
+import gold.debug.windowstolinux.shared.model.lifecycle.RuntimeState;
+import gold.debug.windowstolinux.shared.model.project.DeploymentProjectType;
+import gold.debug.windowstolinux.shared.model.project.DeploymentRuntimeSpecification;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.condition.EnabledIfSystemProperty;
+import org.junit.jupiter.api.io.TempDir;
 
 /** Opt-in product-entrypoint acceptance for every reviewed typed deployment runtime. / 针对每种经审阅类型化部署运行时的可选产品入口验收。 */
 @EnabledIfSystemProperty(named = "managed.runtime.typed", matches = "true")
 class UbuntuTypedDeploymentAcceptanceTest {
     private static final int PORT_BASE = 30000 + (int) ((System.currentTimeMillis() / 1000) % 10000);
+
     private static final String RUN_ID = Long.toUnsignedString(System.nanoTime(), 36);
-    @TempDir Path temporaryDirectory;
+
+    @TempDir
+    Path temporaryDirectory;
 
     @AfterEach
     void stopRegisteredTestApplications() throws Exception {
@@ -61,11 +64,13 @@ class UbuntuTypedDeploymentAcceptanceTest {
         int port = port(1);
         String applicationId = applicationId("java");
         try (LiveTypedDeploymentContext context = new LiveTypedDeploymentContext(temporaryDirectory)) {
-            ReviewedSourcePreparation source = context.prepare(TypedAcceptanceFixture.javaJar(
-                    temporaryDirectory.resolve("sources"), applicationId), DeploymentProjectType.JAVA_JAR);
+            ReviewedSourcePreparation source = context.prepare(
+                    TypedAcceptanceFixture.javaJar(temporaryDirectory.resolve("sources"), applicationId),
+                    DeploymentProjectType.JAVA_JAR);
             DeploymentResult result = context.deploy(source, 1, runtimeConfiguration(port), List.of(),
                     new DeploymentRuntimeSpecification.JavaJar("app.jar", "acceptance.Probe", "21", List.of(),
-                            List.of(), health(port)), access(port));
+                            List.of(), health(port)),
+                    access(port));
             assertSuccessful(result, applicationId);
             assertHttp(port, "java-live-ok");
             verifyLifecycle(context, applicationId);
@@ -78,8 +83,9 @@ class UbuntuTypedDeploymentAcceptanceTest {
         int port = port(2);
         String applicationId = applicationId("python");
         try (LiveTypedDeploymentContext context = new LiveTypedDeploymentContext(temporaryDirectory)) {
-            ReviewedSourcePreparation source = context.prepare(TypedAcceptanceFixture.python(
-                    temporaryDirectory.resolve("sources"), applicationId), DeploymentProjectType.PYTHON_SERVICE);
+            ReviewedSourcePreparation source = context.prepare(
+                    TypedAcceptanceFixture.python(temporaryDirectory.resolve("sources"), applicationId),
+                    DeploymentProjectType.PYTHON_SERVICE);
             DeploymentResult result = context.deploy(source, 1, runtimeConfiguration(port), List.of(),
                     new DeploymentRuntimeSpecification.PythonService("3.12", "demo", health(port)), access(port));
             assertSuccessful(result, applicationId);
@@ -92,8 +98,9 @@ class UbuntuTypedDeploymentAcceptanceTest {
         int port = port(3);
         String applicationId = applicationId("static");
         try (LiveTypedDeploymentContext context = new LiveTypedDeploymentContext(temporaryDirectory)) {
-            ReviewedSourcePreparation source = context.prepare(TypedAcceptanceFixture.staticSite(
-                    temporaryDirectory.resolve("sources"), applicationId), DeploymentProjectType.STATIC_SITE);
+            ReviewedSourcePreparation source = context.prepare(
+                    TypedAcceptanceFixture.staticSite(temporaryDirectory.resolve("sources"), applicationId),
+                    DeploymentProjectType.STATIC_SITE);
             DeploymentResult result = context.deploy(source, 1, runtimeConfiguration(port), List.of(),
                     new DeploymentRuntimeSpecification.StaticSite("public", health(port)), access(port));
             assertSuccessful(result, applicationId);
@@ -118,8 +125,8 @@ class UbuntuTypedDeploymentAcceptanceTest {
                     .contains(LanguageEcosystemType.JAVA));
             assertTrue(source.assessment().facts().orElseThrow().languageFacts().sourceLanguages()
                     .contains(SourceLanguageType.JAVA));
-            List<ConfigurationEntry> configuration = List.of(
-                    text("ACCEPTANCE_RUN_ID", RUN_ID), text("LOG_PATH", "/var/tmp/"), number("SERVER_PORT", port));
+            List<ConfigurationEntry> configuration = List.of(text("ACCEPTANCE_RUN_ID", RUN_ID),
+                    text("LOG_PATH", "/var/tmp/"), number("SERVER_PORT", port));
             DeploymentResult result = context.deploy(source, 1, configuration, List.of(),
                     new DeploymentRuntimeSpecification.SpringBoot(health(port)), access(port));
             assertSuccessful(result, source.assessment().facts().orElseThrow().applicationId());
@@ -137,11 +144,12 @@ class UbuntuTypedDeploymentAcceptanceTest {
         String secondSecret = randomSecret();
         try (LiveTypedDeploymentContext context = new LiveTypedDeploymentContext(temporaryDirectory)) {
             context.saveSecret(firstReference, "application/deployment-probe/1", firstSecret.toCharArray());
-            Path sourceRoot = TypedAcceptanceFixture.node(temporaryDirectory.resolve("sources"), applicationId,
-                    true, "node-live-v1");
+            Path sourceRoot = TypedAcceptanceFixture.node(temporaryDirectory.resolve("sources"), applicationId, true,
+                    "node-live-v1");
             ReviewedSourcePreparation firstSource = context.prepare(sourceRoot, DeploymentProjectType.NODE_SERVICE);
             DeploymentResult first = context.deploy(firstSource, 1, nodeConfiguration(port, firstSecret),
-                    List.of(firstReference), new DeploymentRuntimeSpecification.NodeService(18, health(port)), access(port));
+                    List.of(firstReference), new DeploymentRuntimeSpecification.NodeService(18, health(port)),
+                    access(port));
             assertSuccessful(first, applicationId);
             assertSecretFree(first, firstSecret);
             assertHttp(port, "node-live-v1");
@@ -151,9 +159,11 @@ class UbuntuTypedDeploymentAcceptanceTest {
             TypedAcceptanceFixture.node(temporaryDirectory.resolve("sources"), applicationId, false, "unused");
             ReviewedSourcePreparation failedSource = context.prepare(sourceRoot, DeploymentProjectType.NODE_SERVICE);
             DeploymentResult failed = context.deploy(failedSource, 2, nodeConfiguration(port, secondSecret),
-                    List.of(secondReference), new DeploymentRuntimeSpecification.NodeService(18, health(port)), access(port));
+                    List.of(secondReference), new DeploymentRuntimeSpecification.NodeService(18, health(port)),
+                    access(port));
             assertEquals(DeploymentStatus.FAILED_ROLLED_BACK, failed.status(), () -> failed.events().toString());
-            assertTrue(failed.events().stream().anyMatch(event -> event.step().code().equals("rollback") && event.succeeded()));
+            assertTrue(failed.events().stream()
+                    .anyMatch(event -> event.step().code().equals("rollback") && event.succeeded()));
             assertSecretFree(failed, firstSecret);
             assertSecretFree(failed, secondSecret);
             LifecycleObservation restored = context.lifecycle(applicationId, LifecycleAction.REFRESH_STATUS);
@@ -174,14 +184,14 @@ class UbuntuTypedDeploymentAcceptanceTest {
         exerciseContainer(DeploymentRuntimeSpecification.ContainerEngineType.PODMAN, "podman", 7);
     }
 
-    private void exerciseContainer(DeploymentRuntimeSpecification.ContainerEngineType engine, String kind, int portOffset)
-            throws Exception {
+    private void exerciseContainer(DeploymentRuntimeSpecification.ContainerEngineType engine, String kind,
+            int portOffset) throws Exception {
         int port = port(portOffset);
         String applicationId = applicationId(kind);
         String marker = kind + "-live-v1";
         try (LiveTypedDeploymentContext context = new LiveTypedDeploymentContext(temporaryDirectory)) {
-            Path sourceRoot = TypedAcceptanceFixture.container(temporaryDirectory.resolve("sources"), applicationId, true,
-                    marker);
+            Path sourceRoot = TypedAcceptanceFixture.container(temporaryDirectory.resolve("sources"), applicationId,
+                    true, marker);
             ReviewedSourcePreparation firstSource = context.prepare(sourceRoot,
                     DeploymentProjectType.DOCKERFILE_CONTAINER);
             DeploymentRuntimeSpecification.Container runtime = containerRuntime(engine, port);
@@ -197,7 +207,8 @@ class UbuntuTypedDeploymentAcceptanceTest {
             DeploymentResult failed = context.deploy(failedSource, 2, runtimeConfiguration(port), List.of(), runtime,
                     access(port));
             assertEquals(DeploymentStatus.FAILED_ROLLED_BACK, failed.status(), () -> failed.events().toString());
-            assertTrue(failed.events().stream().anyMatch(event -> event.step().code().equals("rollback") && event.succeeded()));
+            assertTrue(failed.events().stream()
+                    .anyMatch(event -> event.step().code().equals("rollback") && event.succeeded()));
             LifecycleObservation restored = context.lifecycle(applicationId, LifecycleAction.REFRESH_STATUS);
             assertEquals(RuntimeState.RUNNING, restored.runtimeState());
             assertEquals(AutostartState.DISABLED, restored.autostartState());
@@ -208,8 +219,7 @@ class UbuntuTypedDeploymentAcceptanceTest {
 
     private static DeploymentRuntimeSpecification.Container containerRuntime(
             DeploymentRuntimeSpecification.ContainerEngineType engine, int port) {
-        return new DeploymentRuntimeSpecification.Container(engine,
-                Map.of(port, port), List.of(), health(port));
+        return new DeploymentRuntimeSpecification.Container(engine, Map.of(port, port), List.of(), health(port));
     }
 
     private static List<ConfigurationEntry> nodeConfiguration(int port, String secret) throws Exception {
@@ -239,7 +249,8 @@ class UbuntuTypedDeploymentAcceptanceTest {
     }
 
     private static Optional<UserAccessUrl> access(int port) {
-        return Optional.of(new UserAccessUrl(URI.create("http://" + requiredProperty("managed.ssh.host") + ":" + port + "/")));
+        return Optional
+                .of(new UserAccessUrl(URI.create("http://" + requiredProperty("managed.ssh.host") + ":" + port + "/")));
     }
 
     private static void assertSuccessful(DeploymentResult result, String applicationId) {
@@ -250,9 +261,11 @@ class UbuntuTypedDeploymentAcceptanceTest {
         assertTrue(observation.ownershipVerified(), () -> observation.toString());
         assertEquals(RuntimeState.RUNNING, observation.runtimeState());
         for (String required : List.of("target-capabilities", "typed-host-compatibility", "source-upload",
-                "remote-build", "deployment-inputs", "snapshot", "publish", "candidate-health",
-                "final-observation", "release-retention", "candidate-cleanup")) {
-            assertTrue(result.events().stream().anyMatch(event -> event.step().code().equals(required) && event.succeeded()),
+                "remote-build", "deployment-inputs", "snapshot", "publish", "candidate-health", "final-observation",
+                "release-retention", "candidate-cleanup")) {
+            assertTrue(
+                    result.events().stream()
+                            .anyMatch(event -> event.step().code().equals(required) && event.succeeded()),
                     () -> "missing successful " + required + ": " + result.events());
         }
     }
@@ -267,12 +280,10 @@ class UbuntuTypedDeploymentAcceptanceTest {
         LifecycleObservation started = context.lifecycle(applicationId, LifecycleAction.START);
         assertEquals(RuntimeState.RUNNING, started.runtimeState());
         assertEquals(initialAutostart, started.autostartState());
-        assertEquals(RuntimeState.RUNNING,
-                context.lifecycle(applicationId, LifecycleAction.RESTART).runtimeState());
+        assertEquals(RuntimeState.RUNNING, context.lifecycle(applicationId, LifecycleAction.RESTART).runtimeState());
         assertEquals(AutostartState.ENABLED,
                 context.lifecycle(applicationId, LifecycleAction.ENABLE_AUTOSTART).autostartState());
-        assertEquals(RuntimeState.STOPPED,
-                context.lifecycle(applicationId, LifecycleAction.STOP).runtimeState());
+        assertEquals(RuntimeState.STOPPED, context.lifecycle(applicationId, LifecycleAction.STOP).runtimeState());
         LifecycleObservation enabledStart = context.lifecycle(applicationId, LifecycleAction.START);
         assertEquals(RuntimeState.RUNNING, enabledStart.runtimeState());
         assertEquals(AutostartState.ENABLED, enabledStart.autostartState());
@@ -282,7 +293,7 @@ class UbuntuTypedDeploymentAcceptanceTest {
     }
 
     private static void verifyLifecycleAfterDesktopRestart(Path persistenceRoot, String applicationId, int port,
-                                                           String marker) throws Exception {
+            String marker) throws Exception {
         try (LiveTypedDeploymentContext restarted = new LiveTypedDeploymentContext(persistenceRoot)) {
             LifecycleObservation restored = restarted.lifecycle(applicationId, LifecycleAction.REFRESH_STATUS);
             assertTrue(restored.ownershipVerified());
@@ -330,8 +341,8 @@ class UbuntuTypedDeploymentAcceptanceTest {
     }
 
     private static String sha256(String value) throws Exception {
-        return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256")
-                .digest(value.getBytes(StandardCharsets.UTF_8)));
+        return HexFormat.of()
+                .formatHex(MessageDigest.getInstance("SHA-256").digest(value.getBytes(StandardCharsets.UTF_8)));
     }
 
     private static String requiredProperty(String name) {

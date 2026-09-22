@@ -1,16 +1,16 @@
 package gold.debug.windowstolinux.app.service.server;
 
+import java.util.Arrays;
+import java.util.Objects;
+
 import gold.debug.windowstolinux.app.db.persistence.repository.EncryptedSecretRepository;
+import gold.debug.windowstolinux.app.secret.Argon2AesSecretStore;
 import gold.debug.windowstolinux.app.secret.SecretStore;
 import gold.debug.windowstolinux.app.secret.SecretStoreException;
 import gold.debug.windowstolinux.app.secret.SecretStoreFailureType;
-import gold.debug.windowstolinux.app.secret.Argon2AesSecretStore;
 import gold.debug.windowstolinux.app.secret.WindowsCredentialManagerSecretStore;
 import gold.debug.windowstolinux.shared.linux.connection.SshCredential;
 import gold.debug.windowstolinux.shared.model.security.CredentialStorageMode;
-
-import java.util.Arrays;
-import java.util.Objects;
 
 /**
  * Selects the desktop credential adapter for the requested storage mode.
@@ -46,8 +46,8 @@ public final class DesktopSecretStoreService {
      */
     public SecretStore open(CredentialStorageMode mode, char[] masterPassword) throws SecretStoreException {
         return switch (Objects.requireNonNull(mode, "mode")) {
-            case MASTER_PASSWORD -> new Argon2AesSecretStore(encryptedSecrets,
-                    Objects.requireNonNull(masterPassword, "masterPassword"));
+            case MASTER_PASSWORD ->
+                new Argon2AesSecretStore(encryptedSecrets, Objects.requireNonNull(masterPassword, "masterPassword"));
             case WINDOWS_CREDENTIAL_MANAGER -> new WindowsCredentialManagerSecretStore();
         };
     }

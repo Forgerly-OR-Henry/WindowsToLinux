@@ -1,10 +1,10 @@
 package gold.debug.windowstolinux.shared.linux.protocol.restore;
 
-import gold.debug.windowstolinux.shared.linux.error.LinuxOperationException;
-
 import java.util.List;
 import java.util.Objects;
 import java.util.Set;
+
+import gold.debug.windowstolinux.shared.linux.error.LinuxOperationException;
 
 /**
  * Fixed Linux capability for one staged restore activation transaction. / 单个已暂存恢复激活事务的固定 Linux 能力。
@@ -102,8 +102,8 @@ public interface RemoteRestoreActivationPort {
      * @param evidence observations supporting the reported result / 支持所报告结果的观测证据
      * @param occupiedUdpPorts occupied udp ports / occupiedUdp端口集合
      */
-    record PreflightEvidence(boolean managedRootWritable, boolean foreignApplicationConflict,
-                             long availableBytes, Set<Integer> occupiedTcpPorts, List<String> evidence, Set<Integer> occupiedUdpPorts) {
+    record PreflightEvidence(boolean managedRootWritable, boolean foreignApplicationConflict, long availableBytes,
+            Set<Integer> occupiedTcpPorts, List<String> evidence, Set<Integer> occupiedUdpPorts) {
         /**
          * Initializes preflight evidence through its shared constructor contract.
          * <p>通过共享构造契约初始化预检证据。
@@ -114,9 +114,11 @@ public interface RemoteRestoreActivationPort {
          * @param tcp tcp / tcp 对应的输入或状态
          * @param evidence observations supporting the reported result / 支持所报告结果的观测证据
          */
-        public PreflightEvidence(boolean writable, boolean conflict, long bytes, Set<Integer> tcp, List<String> evidence) {
+        public PreflightEvidence(boolean writable, boolean conflict, long bytes, Set<Integer> tcp,
+                List<String> evidence) {
             this(writable, conflict, bytes, tcp, evidence, Set.of());
         }
+
         /**
          * Validates bounded target evidence. / 校验有界目标证据。
          *
@@ -130,13 +132,15 @@ public interface RemoteRestoreActivationPort {
          * @throws NullPointerException if a required input is absent / 必需输入缺失时
          */
         public PreflightEvidence {
-            if (availableBytes < 0) throw new IllegalArgumentException("availableBytes is invalid");
+            if (availableBytes < 0)
+                throw new IllegalArgumentException("availableBytes is invalid");
             occupiedTcpPorts = Set.copyOf(Objects.requireNonNull(occupiedTcpPorts, "occupiedTcpPorts"));
             if (occupiedTcpPorts.stream().anyMatch(port -> port == null || port < 1 || port > 65535)) {
                 throw new IllegalArgumentException("occupiedTcpPorts is invalid");
             }
             occupiedUdpPorts = Set.copyOf(occupiedUdpPorts);
-            if (occupiedUdpPorts.stream().anyMatch(port -> port < 1 || port > 65535)) throw new IllegalArgumentException("invalid UDP port");
+            if (occupiedUdpPorts.stream().anyMatch(port -> port < 1 || port > 65535))
+                throw new IllegalArgumentException("invalid UDP port");
             evidence = checked(evidence);
         }
     }
@@ -154,7 +158,9 @@ public interface RemoteRestoreActivationPort {
          * @param completed completed / 已完成
          * @param evidence observations supporting the reported result / 支持所报告结果的观测证据
          */
-        public StepEvidence { evidence = checked(evidence); }
+        public StepEvidence {
+            evidence = checked(evidence);
+        }
     }
 
     /**
@@ -167,9 +173,8 @@ public interface RemoteRestoreActivationPort {
      * @param activeReleaseToken active release token / 活跃发布令牌
      * @param evidence observations supporting the reported result / 支持所报告结果的观测证据
      */
-    record CommitEvidence(boolean committed, boolean previousReleaseRetained,
-                          boolean formalComponentsHealthy, boolean formalApplicationHealthy,
-                          String activeReleaseToken, List<String> evidence) {
+    record CommitEvidence(boolean committed, boolean previousReleaseRetained, boolean formalComponentsHealthy,
+            boolean formalApplicationHealthy, String activeReleaseToken, List<String> evidence) {
         /**
          * Validates the formal result. / 校验正式结果。
          *
@@ -206,7 +211,9 @@ public interface RemoteRestoreActivationPort {
          * @param previousGraphVerified previous graph verified / 此前图已验证
          * @param evidence observations supporting the reported result / 支持所报告结果的观测证据
          */
-        public RecoveryEvidence { evidence = checked(evidence); }
+        public RecoveryEvidence {
+            evidence = checked(evidence);
+        }
     }
 
     /**
@@ -220,8 +227,8 @@ public interface RemoteRestoreActivationPort {
      */
     private static List<String> checked(List<String> values) {
         values = List.copyOf(Objects.requireNonNull(values, "evidence"));
-        if (values.isEmpty() || values.size() > 64 || values.stream().anyMatch(value -> value == null
-                || value.isBlank() || value.length() > 512 || value.chars().anyMatch(Character::isISOControl))) {
+        if (values.isEmpty() || values.size() > 64 || values.stream().anyMatch(value -> value == null || value.isBlank()
+                || value.length() > 512 || value.chars().anyMatch(Character::isISOControl))) {
             throw new IllegalArgumentException("restore activation evidence is invalid");
         }
         return values;

@@ -1,7 +1,6 @@
 package gold.debug.windowstolinux.app.windows.update;
 
-import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.io.TempDir;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -9,7 +8,8 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 class DesktopUpdateCoordinatorTest {
     @TempDir
@@ -36,13 +36,11 @@ class DesktopUpdateCoordinatorTest {
         RecordingUpdatePort port = new RecordingUpdatePort(UpdateFailureType.MIGRATION);
 
         DesktopUpdateCoordinator coordinator = new DesktopUpdateCoordinator(port);
-        DesktopUpdateResult result = coordinator.apply(
-                coordinator.prepare(verification()).handoff().orElseThrow());
+        DesktopUpdateResult result = coordinator.apply(coordinator.prepare(verification()).handoff().orElseThrow());
 
         assertEquals(DesktopUpdateStatus.FAILED_ROLLED_BACK, result.status());
         assertEquals(List.of("quiesce", "backup", "handoff", "replace", "migrate", "rollback"), port.calls);
-        assertEquals(DesktopUpdateState.ROLLBACK_VERIFIED,
-                result.events().get(result.events().size() - 1).state());
+        assertEquals(DesktopUpdateState.ROLLBACK_VERIFIED, result.events().get(result.events().size() - 1).state());
     }
 
     @Test
@@ -50,8 +48,7 @@ class DesktopUpdateCoordinatorTest {
         RecordingUpdatePort port = new RecordingUpdatePort(UpdateFailureType.ROLLBACK);
 
         DesktopUpdateCoordinator coordinator = new DesktopUpdateCoordinator(port);
-        DesktopUpdateResult result = coordinator.apply(
-                coordinator.prepare(verification()).handoff().orElseThrow());
+        DesktopUpdateResult result = coordinator.apply(coordinator.prepare(verification()).handoff().orElseThrow());
 
         assertEquals(DesktopUpdateStatus.MANUAL_RECOVERY_REQUIRED, result.status());
         assertEquals("windows.update.rollback-failed", result.failure().orElseThrow().code());
@@ -62,8 +59,7 @@ class DesktopUpdateCoordinatorTest {
         RecordingUpdatePort port = new RecordingUpdatePort(UpdateFailureType.HANDOFF);
 
         DesktopUpdateCoordinator coordinator = new DesktopUpdateCoordinator(port);
-        DesktopUpdateResult result = coordinator.apply(
-                coordinator.prepare(verification()).handoff().orElseThrow());
+        DesktopUpdateResult result = coordinator.apply(coordinator.prepare(verification()).handoff().orElseThrow());
 
         assertEquals(DesktopUpdateStatus.PRECONDITION_REJECTED, result.status());
         assertEquals(List.of("quiesce", "backup", "handoff"), port.calls);
@@ -76,13 +72,18 @@ class DesktopUpdateCoordinatorTest {
                 List.of("signature, digest, version and architecture verified"));
     }
 
-    private enum UpdateFailureType { NONE, HANDOFF, MIGRATION, ROLLBACK }
+    private enum UpdateFailureType {
+        NONE, HANDOFF, MIGRATION, ROLLBACK
+    }
 
     private static final class RecordingUpdatePort implements DesktopUpdatePort {
         private final UpdateFailureType failure;
+
         private final List<String> calls = new ArrayList<>();
 
-        private RecordingUpdatePort(UpdateFailureType failure) { this.failure = failure; }
+        private RecordingUpdatePort(UpdateFailureType failure) {
+            this.failure = failure;
+        }
 
         @Override
         public StepEvidence quiesceTasks() {
@@ -98,8 +99,7 @@ class DesktopUpdateCoordinatorTest {
         }
 
         @Override
-        public HandoffEvidence verifyIndependentUpdater(
-                DesktopUpdateVerification update, BackupEvidence backup) {
+        public HandoffEvidence verifyIndependentUpdater(DesktopUpdateVerification update, BackupEvidence backup) {
             calls.add("handoff");
             boolean verified = failure != UpdateFailureType.HANDOFF;
             return new HandoffEvidence(verified, verified, verified,

@@ -1,12 +1,5 @@
 package gold.debug.windowstolinux.shared.backup.restore;
 
-import gold.debug.windowstolinux.shared.backup.contract.validation.BackupArchiveValidation;
-import gold.debug.windowstolinux.shared.backup.contract.validation.BackupException;
-import gold.debug.windowstolinux.shared.backup.contract.validation.BackupFailureType;
-import gold.debug.windowstolinux.shared.backup.manifest.BackupMember;
-import org.apache.commons.compress.archivers.zip.ZipArchiveEntry;
-import org.apache.commons.compress.archivers.zip.ZipFile;
-
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
@@ -24,6 +17,13 @@ import java.util.Comparator;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.Objects;
+
+import gold.debug.windowstolinux.shared.backup.contract.validation.BackupArchiveValidation;
+import gold.debug.windowstolinux.shared.backup.contract.validation.BackupException;
+import gold.debug.windowstolinux.shared.backup.contract.validation.BackupFailureType;
+import gold.debug.windowstolinux.shared.backup.manifest.BackupMember;
+import org.apache.commons.compress.archivers.zip.ZipArchiveEntry;
+import org.apache.commons.compress.archivers.zip.ZipFile;
 
 /**
  * Extracts a validated archive into a new isolated candidate directory. / 将已校验归档提取到新的隔离候选目录。
@@ -178,13 +178,15 @@ public final class BackupArchiveExtractor {
         MessageDigest digest = sha256();
         long count = 0;
         OpenOption[] options = {StandardOpenOption.CREATE_NEW, StandardOpenOption.WRITE, LinkOption.NOFOLLOW_LINKS};
-        try (input; SeekableByteChannel channel = Files.newByteChannel(target, options);
-             OutputStream output = Channels.newOutputStream(channel)) {
+        try (input;
+                SeekableByteChannel channel = Files.newByteChannel(target, options);
+                OutputStream output = Channels.newOutputStream(channel)) {
             created.add(target);
             byte[] buffer = new byte[BUFFER_SIZE];
             int read;
             while ((read = input.read(buffer)) >= 0) {
-                if (read == 0) continue;
+                if (read == 0)
+                    continue;
                 count = Math.addExact(count, read);
                 if (count > member.size()) {
                     throw BackupException.create(BackupFailureType.INTEGRITY_FAILED,
@@ -214,10 +216,12 @@ public final class BackupArchiveExtractor {
         byte[] buffer = new byte[BUFFER_SIZE];
         try (InputStream input = Files.newInputStream(archive)) {
             int read;
-            while ((read = input.read(buffer)) >= 0) if (read > 0) digest.update(buffer, 0, read);
+            while ((read = input.read(buffer)) >= 0)
+                if (read > 0)
+                    digest.update(buffer, 0, read);
         } catch (IOException exception) {
-            throw BackupException.create(BackupFailureType.ARCHIVE_CHANGED,
-                    "validated archive can no longer be read", exception);
+            throw BackupException.create(BackupFailureType.ARCHIVE_CHANGED, "validated archive can no longer be read",
+                    exception);
         }
         if (!HexFormat.of().formatHex(digest.digest()).equals(expected)) {
             throw BackupException.create(BackupFailureType.ARCHIVE_CHANGED,

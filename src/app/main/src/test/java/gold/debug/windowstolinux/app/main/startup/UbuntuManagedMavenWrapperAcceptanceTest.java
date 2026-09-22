@@ -1,44 +1,43 @@
 package gold.debug.windowstolinux.app.main.startup;
 
-import gold.debug.windowstolinux.app.service.DesktopApplicationFacade;
-import gold.debug.windowstolinux.app.service.deployment.*;
-import gold.debug.windowstolinux.app.service.execution.lifecycle.*;
-import gold.debug.windowstolinux.app.service.server.*;
-import gold.debug.windowstolinux.app.service.source.*;
-
-import gold.debug.windowstolinux.app.db.DesktopPersistence;
-import gold.debug.windowstolinux.app.service.deployment.single.DeploymentHandoff;
-import gold.debug.windowstolinux.app.service.deployment.single.DeploymentOutcome;
-import gold.debug.windowstolinux.app.service.deployment.single.DeploymentHandoff.HttpAccessUrl;
-import gold.debug.windowstolinux.shared.deploy.contract.ReviewedDeploymentRequest;
-import gold.debug.windowstolinux.shared.deploy.contract.result.lifecycle.LifecycleActionResult;
-import gold.debug.windowstolinux.shared.linux.sshd.connection.SshdLinuxGateway;
-import gold.debug.windowstolinux.shared.model.deployment.BuildLimitConfiguration;
-import gold.debug.windowstolinux.shared.model.security.CredentialStorageMode;
-import gold.debug.windowstolinux.shared.model.deployment.DeploymentStatus;
-import gold.debug.windowstolinux.shared.model.health.HealthCheck;
-import gold.debug.windowstolinux.shared.model.lifecycle.LifecycleAction;
-import gold.debug.windowstolinux.shared.model.lifecycle.RuntimeState;
-import gold.debug.windowstolinux.shared.model.health.UserAccessUrl;
-import gold.debug.windowstolinux.shared.model.project.DeploymentBuildToolType;
-import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.condition.EnabledIfSystemProperty;
-import org.junit.jupiter.api.io.TempDir;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.InputStream;
-import java.net.URI;
 import java.net.HttpURLConnection;
+import java.net.URI;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.charset.StandardCharsets;
 import java.util.LinkedHashSet;
 import java.util.Optional;
 import java.util.Set;
 import java.util.zip.GZIPInputStream;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.junit.jupiter.api.Assertions.assertFalse;
+import gold.debug.windowstolinux.app.db.DesktopPersistence;
+import gold.debug.windowstolinux.app.service.DesktopApplicationFacade;
+import gold.debug.windowstolinux.app.service.deployment.*;
+import gold.debug.windowstolinux.app.service.deployment.single.DeploymentHandoff;
+import gold.debug.windowstolinux.app.service.deployment.single.DeploymentHandoff.HttpAccessUrl;
+import gold.debug.windowstolinux.app.service.deployment.single.DeploymentOutcome;
+import gold.debug.windowstolinux.app.service.execution.lifecycle.*;
+import gold.debug.windowstolinux.app.service.server.*;
+import gold.debug.windowstolinux.app.service.source.*;
+import gold.debug.windowstolinux.shared.deploy.contract.result.lifecycle.LifecycleActionResult;
+import gold.debug.windowstolinux.shared.linux.sshd.connection.SshdLinuxGateway;
+import gold.debug.windowstolinux.shared.model.deployment.BuildLimitConfiguration;
+import gold.debug.windowstolinux.shared.model.deployment.DeploymentStatus;
+import gold.debug.windowstolinux.shared.model.health.HealthCheck;
+import gold.debug.windowstolinux.shared.model.health.UserAccessUrl;
+import gold.debug.windowstolinux.shared.model.lifecycle.LifecycleAction;
+import gold.debug.windowstolinux.shared.model.lifecycle.RuntimeState;
+import gold.debug.windowstolinux.shared.model.project.DeploymentBuildToolType;
+import gold.debug.windowstolinux.shared.model.security.CredentialStorageMode;
+import gold.debug.windowstolinux.shared.standard.deploy.contract.ReviewedDeploymentRequest;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.condition.EnabledIfSystemProperty;
+import org.junit.jupiter.api.io.TempDir;
 
 /**
  * Opt-in deployment proving that a standard Maven Wrapper is used only on the Ubuntu candidate.
@@ -69,11 +68,16 @@ class UbuntuManagedMavenWrapperAcceptanceTest {
         assertTrue(Files.isDirectory(source), "Maven Wrapper source directory is required");
 
         int proofPort = Integer.getInteger("managed.wrapper.port", 19097);
-        HealthCheck.Http health = new HealthCheck.Http(URI.create("http://127.0.0.1:" + proofPort + "/wrapper-health"), 200, 20);
+        HealthCheck.Http health = new HealthCheck.Http(URI.create("http://127.0.0.1:" + proofPort + "/wrapper-health"),
+                200, 20);
         UserAccessUrl userAccessUrl = new UserAccessUrl(URI.create(accessUrlProperty));
         try (DesktopPersistence database = DesktopPersistence.open(temporaryDirectory.resolve("desktop-data"))) {
-            DesktopApplicationFacade service = new DesktopApplicationFacade(
-                    database, temporaryDirectory.resolve("work"), new SshdLinuxGateway());
+            DesktopApplicationFacade service = new DesktopApplicationFacade(database,
+                    temporaryDirectory.resolve("work"),
+                    new SshdLinuxGateway(
+                            gold.debug.windowstolinux.shared.standard.deploy.build.DeploymentBuildExecutor::new,
+                            gold.debug.windowstolinux.shared.standard.deploy.distro.extension.registry.DistributionSetupRegistry
+                                    .defaults()));
             ReviewedSourcePreparation preparation = ReviewedMavenAcceptanceFixture.prepare(service, source);
             assertTrue(preparation.archive().isPresent(), "fixture must pass static analysis");
             assertEquals(DeploymentBuildToolType.MAVEN_WRAPPER,
@@ -93,17 +97,17 @@ class UbuntuManagedMavenWrapperAcceptanceTest {
             var server = service.findTrustedServer(profile.id()).orElseThrow();
             ReviewedDeploymentRequest request = ReviewedMavenAcceptanceFixture.request(service, preparation, server,
                     health, Optional.of(userAccessUrl),
-                    new BuildLimitConfiguration(1200, 1024, 4096, 4L * 1024 * 1024,
-                            2L * 1024 * 1024 * 1024, rootBuild), rootBuild);
-            DeploymentOutcome result = service.deployReviewedWithStoredPassword(
-                    request, profile, CredentialStorageMode.MASTER_PASSWORD,
-                    "managed-wrapper-master".toCharArray(), fingerprint -> true);
+                    new BuildLimitConfiguration(1200, 1024, 4096, 4L * 1024 * 1024, 2L * 1024 * 1024 * 1024, rootBuild),
+                    rootBuild);
+            DeploymentOutcome result = service.deployReviewedWithStoredPassword(request, profile,
+                    CredentialStorageMode.MASTER_PASSWORD, "managed-wrapper-master".toCharArray(), fingerprint -> true);
             assertEquals(DeploymentStatus.SUCCEEDED, result.status(), () -> result.events().toString());
             URI accessUrl = requireHttpAccessUrl(result, userAccessUrl.url());
             assertDesktopCanAccess(accessUrl, "deployment-smoke-ok");
             assertEvent(result, "source-upload", true);
-            assertTrue(result.events().stream().anyMatch(event -> "remote-build".equals(event.step())
-                            && event.evidence().contains("MAVEN_WRAPPER")),
+            assertTrue(
+                    result.events().stream().anyMatch(
+                            event -> "remote-build".equals(event.step()) && event.evidence().contains("MAVEN_WRAPPER")),
                     () -> "remote build must prove the fixed Wrapper route: " + result.events());
             assertEvent(result, "snapshot", true);
             assertEvent(result, "publish", true);
@@ -119,10 +123,10 @@ class UbuntuManagedMavenWrapperAcceptanceTest {
     }
 
     private static void assertArchiveContainsWrapper(ReviewedSourcePreparation preparation) throws Exception {
-        Set<String> expectedEntries = new LinkedHashSet<>(Set.of(
-                "mvnw", ".mvn/wrapper/maven-wrapper.properties", ".mvn/wrapper/maven-wrapper.jar"
-        ));
-        try (InputStream input = new GZIPInputStream(Files.newInputStream(preparation.archive().orElseThrow().localArchive()))) {
+        Set<String> expectedEntries = new LinkedHashSet<>(
+                Set.of("mvnw", ".mvn/wrapper/maven-wrapper.properties", ".mvn/wrapper/maven-wrapper.jar"));
+        try (InputStream input = new GZIPInputStream(
+                Files.newInputStream(preparation.archive().orElseThrow().localArchive()))) {
             while (!expectedEntries.isEmpty()) {
                 byte[] header = input.readNBytes(512);
                 assertEquals(512, header.length, "tar archive ended before required Wrapper entries");
@@ -170,10 +174,9 @@ class UbuntuManagedMavenWrapperAcceptanceTest {
     }
 
     private static URI requireHttpAccessUrl(DeploymentOutcome outcome, URI expectedBusinessUrl) {
-        DeploymentHandoff handoff = outcome.handoff().orElseThrow(
-                () -> new AssertionError("部署成功必须向使用者返回访问网址或启动指令: " + outcome));
-        assertTrue(handoff instanceof HttpAccessUrl,
-                () -> "HTTP 健康检查部署成功后必须返回可访问的网址: " + handoff);
+        DeploymentHandoff handoff = outcome.handoff()
+                .orElseThrow(() -> new AssertionError("部署成功必须向使用者返回访问网址或启动指令: " + outcome));
+        assertTrue(handoff instanceof HttpAccessUrl, () -> "HTTP 健康检查部署成功后必须返回可访问的网址: " + handoff);
         URI accessUrl = ((HttpAccessUrl) handoff).url();
         assertEquals(expectedBusinessUrl, accessUrl, "返回网址必须是用户明确声明的业务入口");
         return accessUrl;
@@ -190,17 +193,16 @@ class UbuntuManagedMavenWrapperAcceptanceTest {
             try (InputStream input = status >= 400 ? connection.getErrorStream() : connection.getInputStream()) {
                 body = input == null ? "" : new String(input.readAllBytes(), StandardCharsets.UTF_8);
             }
-            assertEquals(200, status,
-                    () -> "桌面侧访问部署返回的业务网址未得到 200: " + accessUrl);
-            assertTrue(body.contains(expectedBusinessMarker),
-                    () -> "桌面侧 GET 返回的不是业务入口页面: " + accessUrl);
+            assertEquals(200, status, () -> "桌面侧访问部署返回的业务网址未得到 200: " + accessUrl);
+            assertTrue(body.contains(expectedBusinessMarker), () -> "桌面侧 GET 返回的不是业务入口页面: " + accessUrl);
         } finally {
             connection.disconnect();
         }
     }
 
     private static void assertEvent(DeploymentOutcome result, String step, boolean succeeded) {
-        assertTrue(result.events().stream().anyMatch(event -> step.equals(event.step()) && succeeded == event.succeeded()),
+        assertTrue(
+                result.events().stream().anyMatch(event -> step.equals(event.step()) && succeeded == event.succeeded()),
                 () -> "missing event " + step + "=" + succeeded + ": " + result.events());
     }
 

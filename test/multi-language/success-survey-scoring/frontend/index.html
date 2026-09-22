@@ -11,10 +11,7 @@
       <h1>问卷与评分管理</h1>
       <p>草稿编辑 · 不可变发布版本 · 条件题 · Ruby 规则评分</p>
     </header>
-    <nav>
-      <a href="#surveys">问卷列表</a
-      ><button id="back-survey" type="button">当前问卷详情</button>
-    </nav>
+    <nav> <a href="#surveys">问卷列表</a><button id="back-survey" type="button">当前问卷详情</button> </nav>
     <p>
       <label>演示经办人<select id="actor"></select></label>
       固定演示身份，不属于身份认证。
@@ -37,8 +34,7 @@
         </table>
         <h3>新建问卷</h3>
         <form id="create-survey">
-          <label>名称<input id="survey-name" required maxlength="120" /></label
-          ><button>创建草稿</button>
+          <label>名称<input id="survey-name" required maxlength="120" /></label><button>创建草稿</button>
         </form>
       </section>
       <section data-page="detail" hidden>
@@ -72,16 +68,11 @@
       </section>
       <section data-page="edit" hidden>
         <h2 id="edit-title">编辑草稿</h2>
-        <p>
-          发布后不可修改；新增草稿形成下一版本。条件题只引用前面的非条件单选题。选项每行使用“值|文本|分数”。
-        </p>
+        <p> 发布后不可修改；新增草稿形成下一版本。条件题只引用前面的非条件单选题。选项每行使用“值|文本|分数”。 </p>
         <form id="editor">
-          <label
-            >问卷标题<input id="content-title" required maxlength="120"
-          /></label>
+          <label>问卷标题<input id="content-title" required maxlength="120" /></label>
           <div id="questions-editor"></div>
-          <button id="add-question" type="button">增加问题</button
-          ><button>保存草稿</button>
+          <button id="add-question" type="button">增加问题</button><button>保存草稿</button>
         </form>
         <button id="publish">发布已保存草稿</button>
         <p id="edit-version"></p>
@@ -125,8 +116,7 @@
         <p id="hidden-questions"></p>
         <h3>提交时的题目与答案</h3>
         <ul id="original-answers"></ul>
-        <a id="export">导出结果 JSON</a
-        ><button id="result-history">查看本版本历史答卷</button>
+        <a id="export">导出结果 JSON</a><button id="result-history">查看本版本历史答卷</button>
       </section>
       <section data-page="history" hidden>
         <h2 id="history-title">历史答卷</h2>

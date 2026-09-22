@@ -19,7 +19,10 @@ public record ManagedPageState(String applicationId, String output, String typeF
      * @param applicationId managed application identifier / 受管应用标识
      * @param output destination receiving the produced content / 接收所生成内容的目标
      */
-    public ManagedPageState(String applicationId, String output) { this(applicationId, output, "", ""); }
+    public ManagedPageState(String applicationId, String output) {
+        this(applicationId, output, "", "");
+    }
+
     /**
      * Validates and binds the inputs required by managed page state.
      * <p>校验并绑定受管页面状态所需输入。
@@ -33,6 +36,7 @@ public record ManagedPageState(String applicationId, String output, String typeF
     public ManagedPageState {
         Objects.requireNonNull(applicationId, "applicationId");
         Objects.requireNonNull(output, "output");
-        Objects.requireNonNull(typeFilter, "typeFilter"); Objects.requireNonNull(serverFilter, "serverFilter");
+        Objects.requireNonNull(typeFilter, "typeFilter");
+        Objects.requireNonNull(serverFilter, "serverFilter");
     }
 }

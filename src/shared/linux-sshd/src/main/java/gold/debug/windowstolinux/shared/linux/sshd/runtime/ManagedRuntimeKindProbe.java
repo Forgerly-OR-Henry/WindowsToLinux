@@ -1,15 +1,15 @@
 package gold.debug.windowstolinux.shared.linux.sshd.runtime;
 
+import java.util.Locale;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Optional;
+
 import gold.debug.windowstolinux.shared.linux.error.LinuxOperationException;
 import gold.debug.windowstolinux.shared.linux.error.LinuxOperationFailureType;
 import gold.debug.windowstolinux.shared.linux.sshd.execution.protocol.runtime.ManagedRuntimeProtocolExecutor;
 import gold.debug.windowstolinux.shared.model.managed.ManagedApplication;
 import gold.debug.windowstolinux.shared.model.project.DeploymentRuntimeSpecification;
-
-import java.util.Locale;
-import java.util.Map;
-import java.util.Objects;
-import java.util.Optional;
 
 /**
  * Reads the root-owned current-release markers through the fixed helper protocol. / 通过固定 helper 协议读取 root 所有的当前发布标记。
@@ -45,7 +45,8 @@ public final class ManagedRuntimeKindProbe {
                 : gold.debug.windowstolinux.shared.model.project.application.ApplicationWorkload.ExecutionMode.DAEMON;
         return switch (values.getOrDefault("KIND", "")) {
             case "ordinary" -> new ManagedRuntimeIdentity(ManagedRuntimeIdentity.Kind.ORDINARY, Optional.empty());
-            case "deployment" -> new ManagedRuntimeIdentity(ManagedRuntimeIdentity.Kind.DEPLOYMENT, Optional.empty(), mode);
+            case "deployment" ->
+                new ManagedRuntimeIdentity(ManagedRuntimeIdentity.Kind.DEPLOYMENT, Optional.empty(), mode);
             case "container" -> new ManagedRuntimeIdentity(ManagedRuntimeIdentity.Kind.CONTAINER,
                     Optional.of(parseEngine(values.get("ENGINE"))), mode);
             default -> throw LinuxOperationException.create(LinuxOperationFailureType.RUNTIME_OBSERVATION_FAILED,
@@ -65,8 +66,8 @@ public final class ManagedRuntimeKindProbe {
     private static DeploymentRuntimeSpecification.ContainerEngineType parseEngine(String value)
             throws LinuxOperationException {
         try {
-            return DeploymentRuntimeSpecification.ContainerEngineType.valueOf(
-                    Objects.requireNonNull(value, "container engine").toUpperCase(Locale.ROOT));
+            return DeploymentRuntimeSpecification.ContainerEngineType
+                    .valueOf(Objects.requireNonNull(value, "container engine").toUpperCase(Locale.ROOT));
         } catch (IllegalArgumentException | NullPointerException exception) {
             throw LinuxOperationException.create(LinuxOperationFailureType.RUNTIME_OBSERVATION_FAILED,
                     "Controlled helper returned an unsupported managed container engine", exception);

@@ -17,6 +17,7 @@ public interface BackupCollectionMaterialPort {
      * @throws IOException if the required file or stream operation fails / 所需文件或流操作失败时
      */
     Path member(String name) throws IOException;
+
     /**
      * Opens a new material output with the platform's quota and path checks. The collection service closes the returned stream.
      * <p>通过平台配额及路径检查打开新的素材输出。采集服务负责关闭返回流。

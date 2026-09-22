@@ -1,12 +1,12 @@
 package gold.debug.windowstolinux.shared.linux.protocol.restore;
 
-import gold.debug.windowstolinux.shared.model.health.HealthCheck;
-
 import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
 import java.util.Set;
+
+import gold.debug.windowstolinux.shared.model.health.HealthCheck;
 
 /**
  * Complete application-wide activation request bound to one staged archive. / 绑定到一个已暂存归档的完整整应用激活请求。
@@ -21,17 +21,10 @@ import java.util.Set;
  * @param applicationHealthComponentId application health component id / 应用健康组件标识
  * @param applicationHealthCheck independently reviewed whole-application probe / 独立审阅的整应用探测
  */
-public record RemoteRestoreActivationRequest(
-        String applicationId,
-        String candidateId,
-        String candidateToken,
-        String archiveSha256,
-        String remoteCandidateRoot,
-        RemoteRestoreActivationMode mode,
-        List<RemoteRestoreActivationComponent> components,
-        String applicationHealthComponentId,
-        HealthCheck applicationHealthCheck
-) {
+public record RemoteRestoreActivationRequest(String applicationId, String candidateId, String candidateToken,
+        String archiveSha256, String remoteCandidateRoot, RemoteRestoreActivationMode mode,
+        List<RemoteRestoreActivationComponent> components, String applicationHealthComponentId,
+        HealthCheck applicationHealthCheck) {
     /**
      * Validates candidate identity, dependency order and port-mode closure. / 校验候选身份、依赖顺序及端口模式闭合。
      *
@@ -50,7 +43,8 @@ public record RemoteRestoreActivationRequest(
     public RemoteRestoreActivationRequest {
         applicationId = id(applicationId, "applicationId");
         archiveSha256 = Objects.requireNonNull(archiveSha256, "archiveSha256").trim().toLowerCase(Locale.ROOT);
-        if (!archiveSha256.matches("[0-9a-f]{64}")) throw new IllegalArgumentException("archiveSha256 is invalid");
+        if (!archiveSha256.matches("[0-9a-f]{64}"))
+            throw new IllegalArgumentException("archiveSha256 is invalid");
         candidateId = Objects.requireNonNull(candidateId, "candidateId").trim();
         if (!candidateId.equals(applicationId + "-" + archiveSha256.substring(0, 16))) {
             throw new IllegalArgumentException("candidateId differs from archive identity");
@@ -75,7 +69,8 @@ public record RemoteRestoreActivationRequest(
                 throw new IllegalArgumentException("restore activation components are not dependency-first");
             }
             if (mode != RemoteRestoreActivationMode.PARALLEL_LOOPBACK && !component.ports().isEmpty()
-                    || component.ports().stream().anyMatch(binding -> !candidatePorts.add(binding.protocol() + ":" + binding.candidatePort()))) {
+                    || component.ports().stream().anyMatch(
+                            binding -> !candidatePorts.add(binding.protocol() + ":" + binding.candidatePort()))) {
                 throw new IllegalArgumentException("restore activation ports differ from the selected mode");
             }
         }
@@ -98,7 +93,8 @@ public record RemoteRestoreActivationRequest(
      */
     private static String id(String value, String field) {
         value = Objects.requireNonNull(value, field).trim();
-        if (!value.matches("[a-z0-9][a-z0-9-]{0,62}")) throw new IllegalArgumentException(field + " is invalid");
+        if (!value.matches("[a-z0-9][a-z0-9-]{0,62}"))
+            throw new IllegalArgumentException(field + " is invalid");
         return value;
     }
 }

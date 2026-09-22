@@ -1,15 +1,7 @@
 package gold.debug.windowstolinux.app.service.ai;
 
-import gold.debug.windowstolinux.app.db.DesktopPersistence;
-import gold.debug.windowstolinux.app.service.server.DesktopSecretStoreService;
-import gold.debug.windowstolinux.shared.ai.client.OpenAiCompatibleRoleClient;
-import gold.debug.windowstolinux.shared.ai.transport.RoleChatResult;
-import gold.debug.windowstolinux.shared.ai.collaboration.role.AiCollaborationRoleKind;
-import gold.debug.windowstolinux.shared.ai.collaboration.invocation.AiInvocationStatus;
-import gold.debug.windowstolinux.shared.ai.collaboration.role.ProjectAnalysisRoleContext;
-import gold.debug.windowstolinux.shared.model.security.CredentialStorageMode;
-import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.io.TempDir;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.net.URI;
 import java.nio.file.Path;
@@ -19,11 +11,20 @@ import java.time.ZoneOffset;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import gold.debug.windowstolinux.app.db.DesktopPersistence;
+import gold.debug.windowstolinux.app.service.server.DesktopSecretStoreService;
+import gold.debug.windowstolinux.shared.ai.client.OpenAiCompatibleRoleClient;
+import gold.debug.windowstolinux.shared.ai.collaboration.invocation.AiInvocationStatus;
+import gold.debug.windowstolinux.shared.ai.collaboration.role.AiCollaborationRoleKind;
+import gold.debug.windowstolinux.shared.ai.collaboration.role.ProjectAnalysisRoleContext;
+import gold.debug.windowstolinux.shared.ai.transport.RoleChatResult;
+import gold.debug.windowstolinux.shared.model.security.CredentialStorageMode;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 class AiUseCaseFacadeRoleTest {
-    @TempDir Path temporaryDirectory;
+    @TempDir
+    Path temporaryDirectory;
 
     @Test
     void invokesTheEnabledProviderWithTheRequestedRoleContract() throws Exception {
@@ -39,12 +40,15 @@ class AiUseCaseFacadeRoleTest {
         try (DesktopPersistence persistence = DesktopPersistence.open(temporaryDirectory)) {
             AiUseCaseFacade useCases = new AiUseCaseFacade(persistence.aiProfiles(),
                     new DesktopSecretStoreService(persistence.encryptedSecrets()), client);
-            var profile = new AiProviderProfile("analysis", URI.create("https://analysis.example.test/v1/chat/completions"),
-                    "analysis-model", "ai/analysis", CredentialStorageMode.MASTER_PASSWORD);
-            persistence.aiProfiles().saveVerified(profile.stored(),profile.id(),java.time.Instant.now());
-            persistence.aiProfiles().purposes().save(gold.debug.windowstolinux.shared.model.ai.AiPurposeType.DEPLOYMENT,java.util.List.of(new gold.debug.windowstolinux.shared.model.ai.AiPurposeAssignment(profile.id(),true)));
-            try (var store = new DesktopSecretStoreService(persistence.encryptedSecrets()).open(
-                    profile.credentialMode(), "master-password".toCharArray())) {
+            var profile = new AiProviderProfile("analysis",
+                    URI.create("https://analysis.example.test/v1/chat/completions"), "analysis-model", "ai/analysis",
+                    CredentialStorageMode.MASTER_PASSWORD);
+            persistence.aiProfiles().saveVerified(profile.stored(), profile.id(), java.time.Instant.now());
+            persistence.aiProfiles().purposes().save(gold.debug.windowstolinux.shared.model.ai.AiPurposeType.DEPLOYMENT,
+                    java.util.List
+                            .of(new gold.debug.windowstolinux.shared.model.ai.AiPurposeAssignment(profile.id(), true)));
+            try (var store = new DesktopSecretStoreService(persistence.encryptedSecrets())
+                    .open(profile.credentialMode(), "master-password".toCharArray())) {
                 store.save(profile.credentialKey(), "selected-secret".toCharArray());
             }
 

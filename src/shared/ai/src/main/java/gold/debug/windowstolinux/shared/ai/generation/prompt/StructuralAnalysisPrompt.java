@@ -1,8 +1,8 @@
 package gold.debug.windowstolinux.shared.ai.generation.prompt;
 
-import gold.debug.windowstolinux.shared.ai.redaction.RedactedDeploymentProjectFacts;
-
 import java.util.Objects;
+
+import gold.debug.windowstolinux.shared.ai.redaction.RedactedDeploymentProjectFacts;
 
 /**
  * Builds the fixed structural-analysis request from already-redacted facts.
@@ -27,7 +27,7 @@ public final class StructuralAnalysisPrompt {
      * @throws NullPointerException if a required input is absent / 必需输入缺失时
      */
     public static String requestBody(String model, RedactedDeploymentProjectFacts facts,
-                                     AiResponseLanguageType responseLanguage) {
+            AiResponseLanguageType responseLanguage) {
         Objects.requireNonNull(facts, "facts");
         Objects.requireNonNull(responseLanguage, "responseLanguage");
         return """
@@ -35,8 +35,10 @@ public final class StructuralAnalysisPrompt {
                 {"role":"system","content":"Use only the provided redacted static facts. Do not suggest executing commands, reading source code, sending secrets, or overriding deterministic checks. Respond in %s."},
                 {"role":"user","content":"managed deployment static facts: applicationId=%s; projectType=%s; fixedBuildTool=%s. Explain what these facts mean and list at most three non-secret questions that require human confirmation."}
                 ]}
-                """.formatted(escapeJson(model), responseLanguage.promptName(), escapeJson(facts.applicationId()),
-                escapeJson(facts.projectType()), escapeJson(facts.buildTool())).replaceAll("\\R", "");
+                """
+                .formatted(escapeJson(model), responseLanguage.promptName(), escapeJson(facts.applicationId()),
+                        escapeJson(facts.projectType()), escapeJson(facts.buildTool()))
+                .replaceAll("\\R", "");
     }
 
     /**
@@ -47,7 +49,6 @@ public final class StructuralAnalysisPrompt {
      * @return escape json text / 转义JSON文本
      */
     private static String escapeJson(String value) {
-        return value.replace("\\", "\\\\").replace("\"", "\\\"")
-                .replace("\r", "\\r").replace("\n", "\\n");
+        return value.replace("\\", "\\\\").replace("\"", "\\\"").replace("\r", "\\r").replace("\n", "\\n");
     }
 }

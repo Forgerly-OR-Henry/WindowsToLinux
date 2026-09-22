@@ -1,17 +1,17 @@
 wrap_database_runtime() {
-  for name in "${deployment_secret_names[@]}"; do
-    if [[ "$name" =~ ^WINDOWSTOLINUX_SECRET_DB_[0-9A-F]{12}_ENV_[A-Z0-9_]+_FILE$ ]]; then
-      command="/usr/bin/python3 /usr/local/lib/windowstolinux/runtime-db-env $command"
-      break
-    fi
-  done
+    for name in "${deployment_secret_names[@]}"; do
+        if [[ "$name" =~ ^WINDOWSTOLINUX_SECRET_DB_[0-9A-F]{12}_ENV_[A-Z0-9_]+_FILE$ ]]; then
+            command="/usr/bin/python3 /usr/local/lib/windowstolinux/runtime-db-env $command"
+            break
+        fi
+    done
 }
 
 native_database() {
-  [ "$#" -eq 1 ] || reject native-db-arguments
-  case "$1" in inspect|install|start|resume|target|prepare|initialize) ;; *) reject native-db-operation ;; esac
-  cd /
-  /usr/bin/python3 -I - "$1" 3<&0 <<'WTL_NATIVE_DB_PY'
+    [ "$#" -eq 1 ] || reject native-db-arguments
+    case "$1" in inspect | install | start | resume | target | prepare | initialize) ;; *) reject native-db-operation ;; esac
+    cd /
+    /usr/bin/python3 -I - "$1" 3<&0 <<'WTL_NATIVE_DB_PY'
 import base64, contextlib, fcntl, hashlib, json, os, pathlib, re, secrets, shlex, shutil, stat, subprocess, sys, tempfile
 
 class Failure(Exception):

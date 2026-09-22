@@ -1,17 +1,17 @@
 package gold.debug.windowstolinux.app.service.ai;
 
-import gold.debug.windowstolinux.app.db.persistence.repository.AiProfileRepository;
-import gold.debug.windowstolinux.app.secret.SecretStoreException;
-import gold.debug.windowstolinux.app.service.server.DesktopSecretStoreService;
-import gold.debug.windowstolinux.shared.ai.client.OpenAiCompatibleRoleClient;
-import gold.debug.windowstolinux.shared.ai.collaboration.role.AiRoleBinding;
-import gold.debug.windowstolinux.shared.ai.collaboration.role.AiRoleContext;
-import gold.debug.windowstolinux.shared.ai.collaboration.invocation.AiRoleInvocationResult;
-
 import java.sql.SQLException;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
+
+import gold.debug.windowstolinux.app.db.persistence.repository.AiProfileRepository;
+import gold.debug.windowstolinux.app.secret.SecretStoreException;
+import gold.debug.windowstolinux.app.service.server.DesktopSecretStoreService;
+import gold.debug.windowstolinux.shared.ai.client.OpenAiCompatibleRoleClient;
+import gold.debug.windowstolinux.shared.ai.collaboration.invocation.AiRoleInvocationResult;
+import gold.debug.windowstolinux.shared.ai.collaboration.role.AiRoleBinding;
+import gold.debug.windowstolinux.shared.ai.collaboration.role.AiRoleContext;
 
 /**
  * Coordinates grouped model configuration, verification and ordered role invocation.
@@ -23,18 +23,22 @@ public final class AiUseCaseFacade {
      * <p>处理配置资料集合的AI配置资料仓库协作对象。
      */
     private final AiProfileRepository profiles;
+
     /**
      * Role client.
      * <p>角色客户端。
      */
     private final OpenAiCompatibleRoleClient roleClient;
+
     /** Dedicated strict protocol; separate request contexts for decisions and reviews. / 专用严格协议，决策及审批使用独立请求上下文。 */
-    private final gold.debug.windowstolinux.shared.ai.client.DeploymentAiProtocolClient agentClient;
+    private final gold.debug.windowstolinux.shared.ai.client.StructuredAiClient agentClient;
+
     /**
      * Chain.
      * <p>调用链。
      */
     private final AiProviderChain chain;
+
     /**
      * Reviewed configuration snapshot or settings.
      * <p>已审阅配置快照或设置。
@@ -48,18 +52,39 @@ public final class AiUseCaseFacade {
      * @return evidence-linked advice / 关联证据的建议
      * @throws SQLException when routing configuration cannot be read / 无法读取路由配置时
      */
-    public gold.debug.windowstolinux.shared.model.deployment.AssistedDeploymentAdvice assist(String phase,java.util.Map<String,java.util.List<String>> candidates,
-            java.util.Map<String,String> evidence,char[] master)throws SQLException{
-        var result=chain.invoke(master,(profile,key)->{var reply=agentClient.assist(profile.chatCompletionsEndpoint(),profile.model(),key,phase,candidates,evidence);
-            DeploymentAiScope.current().ifPresent(scope->scope.usage(reply.tokens()));
-            return new AiProviderChain.Attempt<>(reply.value(),gold.debug.windowstolinux.shared.ai.collaboration.invocation.AiInvocationStatus.VALIDATED,"assisted-advice-validated");});
-        if(!result.valid())throw new IllegalStateException("deployment-models-unavailable");return result.value().orElseThrow();
+    public gold.debug.windowstolinux.shared.model.deployment.AssistedDeploymentAdvice assist(String phase,
+            java.util.Map<String, java.util.List<String>> candidates, java.util.Map<String, String> evidence,
+            char[] master) throws SQLException {
+        var result = chain.invoke(master, (profile, key) -> {
+            var reply = new gold.debug.windowstolinux.shared.standard.deploy.assistance.execution.protocol.AssistedAiProtocolClient(
+                    agentClient)
+                    .assist(profile.chatCompletionsEndpoint(), profile.model(), key, phase, candidates, evidence);
+            DeploymentAiScope.current().ifPresent(scope -> scope.usage(reply.tokens()));
+            return new AiProviderChain.Attempt<>(reply.value(),
+                    gold.debug.windowstolinux.shared.ai.collaboration.invocation.AiInvocationStatus.VALIDATED,
+                    "assisted-advice-validated");
+        });
+        if (!result.valid())
+            throw new IllegalStateException("deployment-models-unavailable");
+        return result.value().orElseThrow();
     }
+
     /** Opens the independent Agent model ports within a frozen task scope. / 在冻结任务作用域内打开独立 Agent 模型端口。
      * @param master unlock buffer / 解锁缓冲区
      * @return task-owned adapter / 任务所属适配器
      */
-    public DeploymentAgentModelAdapter agentModels(char[] master){return new DeploymentAgentModelAdapter(chain,agentClient,master);}
+    public DeploymentAgentModelAdapter agentModels(char[] master) {
+        return new DeploymentAgentModelAdapter(chain, agentClient, master);
+    }
+
+    /** Opens analysis and registered recovery capabilities without the autonomous engine. / 打开分析及已登记恢复能力，不接入自主引擎。
+     * @param master task unlock buffer / 任务解锁缓冲区
+     * @return task-owned assisted adapter / 任务所属辅助适配器
+     */
+    public AssistedDeploymentModelAdapter assistedModels(char[] master) {
+        return new AssistedDeploymentModelAdapter(chain, agentClient, master);
+    }
+
     /**
      * Tests visual understanding separately from the text save probe. / 独立于文字保存测试验证视觉理解。
      *
@@ -68,7 +93,10 @@ public final class AiUseCaseFacade {
      * @throws Exception if the delegated operation or caller-provided interaction fails / 被委派操作或调用方提供的交互失败时
      * @param capability separately tested text or vision capability / 分别测试的文本或视觉能力
      */
-    public void testCapability(String id, gold.debug.windowstolinux.shared.model.ai.AiCapabilityType capability, char[] master) throws Exception { configuration.testCapability(id, capability, master); }
+    public void testCapability(String id, gold.debug.windowstolinux.shared.model.ai.AiCapabilityType capability,
+            char[] master) throws Exception {
+        configuration.testCapability(id, capability, master);
+    }
 
     /**
      * Initializes ai use case facade through its shared constructor contract.
@@ -90,18 +118,21 @@ public final class AiUseCaseFacade {
      * @param roleClient role client / 角色客户端
      * @throws NullPointerException if a required input is absent / 必需输入缺失时
      */
-    AiUseCaseFacade(AiProfileRepository profiles, DesktopSecretStoreService secrets, OpenAiCompatibleRoleClient roleClient) {
-        this(profiles,secrets,roleClient,new gold.debug.windowstolinux.shared.ai.client.DeploymentAiProtocolClient());
+    AiUseCaseFacade(AiProfileRepository profiles, DesktopSecretStoreService secrets,
+            OpenAiCompatibleRoleClient roleClient) {
+        this(profiles, secrets, roleClient, new gold.debug.windowstolinux.shared.ai.client.StructuredAiClient());
     }
+
     /** Injects both advisory and Agent transports for isolated contract tests. / 为隔离契约测试注入建议及 Agent 传输。
      * @param profiles model repository / 模型仓库
      * @param secrets credential boundary / 凭据边界
      * @param roleClient existing advisory protocol / 既有建议协议
      * @param agentClient strict isolated Agent protocol / 严格独立 Agent 协议
      */
-    AiUseCaseFacade(AiProfileRepository profiles,DesktopSecretStoreService secrets,OpenAiCompatibleRoleClient roleClient,
-            gold.debug.windowstolinux.shared.ai.client.DeploymentAiProtocolClient agentClient){
-        this.agentClient=Objects.requireNonNull(agentClient);
+    AiUseCaseFacade(AiProfileRepository profiles, DesktopSecretStoreService secrets,
+            OpenAiCompatibleRoleClient roleClient,
+            gold.debug.windowstolinux.shared.ai.client.StructuredAiClient agentClient) {
+        this.agentClient = Objects.requireNonNull(agentClient);
         this.profiles = Objects.requireNonNull(profiles, "profiles");
         Objects.requireNonNull(secrets, "secrets");
         this.roleClient = Objects.requireNonNull(roleClient, "roleClient");
@@ -114,22 +145,31 @@ public final class AiUseCaseFacade {
      * @return worker-owned routing scope / 工作线程持有的路由作用域
      * @throws SQLException if configuration cannot be read / 无法读取配置时
      */
-    public DeploymentAiScope openDeployment(gold.debug.windowstolinux.shared.model.deployment.DeploymentAutomationMode mode) throws SQLException {
-        return new DeploymentAiScope(mode,deploymentSnapshot(mode));
+    public DeploymentAiScope openDeployment(
+            gold.debug.windowstolinux.shared.model.deployment.DeploymentAutomationMode mode) throws SQLException {
+        return new DeploymentAiScope(mode, deploymentSnapshot(mode));
     }
+
     /** Captures and validates all purpose lists atomically without invoking a model. / 原子捕获并验证全部用途列表，不调用模型。
      * @param mode requested mode / 请求模式
      * @return immutable verified routing snapshot / 不可变已验证路由快照
      * @throws SQLException on configuration read failure / 配置读取失败时
      */
-    public java.util.Map<gold.debug.windowstolinux.shared.model.ai.AiPurposeType,java.util.List<AiProviderProfile>> deploymentSnapshot(gold.debug.windowstolinux.shared.model.deployment.DeploymentAutomationMode mode)throws SQLException{
-        var snapshot=new java.util.EnumMap<gold.debug.windowstolinux.shared.model.ai.AiPurposeType,java.util.List<AiProviderProfile>>(gold.debug.windowstolinux.shared.model.ai.AiPurposeType.class);
-        if(mode!=gold.debug.windowstolinux.shared.model.deployment.DeploymentAutomationMode.STATIC){
-            profiles.purposeSnapshot().forEach((purpose,values)->snapshot.put(purpose,values.stream().map(v->AiProviderProfile.fromStored(v.profile())).toList()));
-            if(mode==gold.debug.windowstolinux.shared.model.deployment.DeploymentAutomationMode.AGENT&&snapshot.get(gold.debug.windowstolinux.shared.model.ai.AiPurposeType.APPROVAL).isEmpty())
-                throw gold.debug.windowstolinux.app.service.failure.ApplicationServiceException.create(gold.debug.windowstolinux.app.service.failure.ApplicationServiceFailureType.APPROVAL_MODEL_REQUIRED,"No verified enabled approval model is configured");
-            if(snapshot.get(gold.debug.windowstolinux.shared.model.ai.AiPurposeType.DEPLOYMENT).isEmpty())
-                throw gold.debug.windowstolinux.app.service.failure.ApplicationServiceException.create(gold.debug.windowstolinux.app.service.failure.ApplicationServiceFailureType.DEPLOYMENT_MODEL_REQUIRED,"No verified enabled deployment model is configured");
+    public java.util.Map<gold.debug.windowstolinux.shared.model.ai.AiPurposeType, java.util.List<AiProviderProfile>> deploymentSnapshot(
+            gold.debug.windowstolinux.shared.model.deployment.DeploymentAutomationMode mode) throws SQLException {
+        var snapshot = new java.util.EnumMap<gold.debug.windowstolinux.shared.model.ai.AiPurposeType, java.util.List<AiProviderProfile>>(
+                gold.debug.windowstolinux.shared.model.ai.AiPurposeType.class);
+        if (mode != gold.debug.windowstolinux.shared.model.deployment.DeploymentAutomationMode.STATIC) {
+            profiles.purposeSnapshot().forEach((purpose, values) -> snapshot.put(purpose,
+                    values.stream().map(v -> AiProviderProfile.fromStored(v.profile())).toList()));
+            if (snapshot.get(gold.debug.windowstolinux.shared.model.ai.AiPurposeType.APPROVAL).isEmpty())
+                throw gold.debug.windowstolinux.app.service.failure.ApplicationServiceException.create(
+                        gold.debug.windowstolinux.app.service.failure.ApplicationServiceFailureType.APPROVAL_MODEL_REQUIRED,
+                        "No verified enabled approval model is configured");
+            if (snapshot.get(gold.debug.windowstolinux.shared.model.ai.AiPurposeType.DEPLOYMENT).isEmpty())
+                throw gold.debug.windowstolinux.app.service.failure.ApplicationServiceException.create(
+                        gold.debug.windowstolinux.app.service.failure.ApplicationServiceFailureType.DEPLOYMENT_MODEL_REQUIRED,
+                        "No verified enabled deployment model is configured");
         }
         return java.util.Map.copyOf(snapshot);
     }
@@ -141,9 +181,12 @@ public final class AiUseCaseFacade {
      * @throws SQLException if the database cannot complete the requested read or transaction / 数据库无法完成请求的读取或事务时
      */
     public List<AiProviderSummary> configurations() throws SQLException {
-        return profiles.listConfigured().stream().map(value -> new AiProviderSummary(AiProviderProfile.fromStored(value.profile()),
-                value.name(), value.priority(), value.revision(), value.textVerifiedAt(), value.visionVerifiedAt())).toList();
+        return profiles.listConfigured().stream()
+                .map(value -> new AiProviderSummary(AiProviderProfile.fromStored(value.profile()), value.name(),
+                        value.priority(), value.revision(), value.textVerifiedAt(), value.visionVerifiedAt()))
+                .toList();
     }
+
     /**
      * Saves one category-specific probe. / 保存经过对应类别探测的模型。
      *
@@ -155,28 +198,41 @@ public final class AiUseCaseFacade {
      * @throws SecretStoreException if the protected credential cannot be accessed or updated / 无法访问或更新受保护凭据时
      * @param capability verified text or vision capability / 已验证文本或视觉能力
      */
-    public void saveConfiguration(AiProviderProfile profile, String name, char[] master, char[] key, gold.debug.windowstolinux.shared.model.ai.AiCapabilityType capability) throws SQLException, SecretStoreException { configuration.save(profile, name, master, key, capability); }
+    public void saveConfiguration(AiProviderProfile profile, String name, char[] master, char[] key,
+            gold.debug.windowstolinux.shared.model.ai.AiCapabilityType capability)
+            throws SQLException, SecretStoreException {
+        configuration.save(profile, name, master, key, capability);
+    }
+
     /**
      * Reorders one category. / 调整一个类别的顺序。
      *
      * @param ids ids / 标识集合
      * @throws SQLException if the database cannot complete the requested read or transaction / 数据库无法完成请求的读取或事务时
      */
-    public void reorder(List<String> ids) throws SQLException { profiles.reorder(ids); }
+    public void reorder(List<String> ids) throws SQLException {
+        profiles.reorder(ids);
+    }
 
     /** Reads ordered purpose members. / 读取有序用途成员。
      * @param purpose selected purpose / 所选用途
      * @return ordered members / 有序成员
      * @throws SQLException if reading fails / 读取失败时
      */
-    public java.util.List<gold.debug.windowstolinux.shared.model.ai.AiPurposeAssignment> purpose(gold.debug.windowstolinux.shared.model.ai.AiPurposeType purpose) throws SQLException { return profiles.purposes().list(purpose); }
+    public java.util.List<gold.debug.windowstolinux.shared.model.ai.AiPurposeAssignment> purpose(
+            gold.debug.windowstolinux.shared.model.ai.AiPurposeType purpose) throws SQLException {
+        return profiles.purposes().list(purpose);
+    }
+
     /** Saves an entire purpose draft atomically. / 原子保存完整用途草稿。
      * @param purpose selected purpose / 所选用途
      * @param members ordered membership / 有序成员
      * @throws SQLException if saving fails / 保存失败时
      */
-    public void savePurpose(gold.debug.windowstolinux.shared.model.ai.AiPurposeType purpose, java.util.List<gold.debug.windowstolinux.shared.model.ai.AiPurposeAssignment> members) throws SQLException { profiles.purposes().save(purpose,members); }
-
+    public void savePurpose(gold.debug.windowstolinux.shared.model.ai.AiPurposeType purpose,
+            java.util.List<gold.debug.windowstolinux.shared.model.ai.AiPurposeAssignment> members) throws SQLException {
+        profiles.purposes().save(purpose, members);
+    }
 
     /**
      * Preserves fixed role prompts and validators while trying enabled regular-group providers in captured priority order; historical role assignments do not select providers.
@@ -193,17 +249,26 @@ public final class AiUseCaseFacade {
             throws SQLException, SecretStoreException {
         Objects.requireNonNull(context, "context");
         var result = chain.invoke(masterPassword, (profile, key) -> {
-            var value = roleClient.invoke(new AiRoleBinding(context.role(), profile.id(), profile.chatCompletionsEndpoint(), profile.model()), key, context);
+            var value = roleClient.invoke(
+                    new AiRoleBinding(context.role(), profile.id(), profile.chatCompletionsEndpoint(), profile.model()),
+                    key, context);
             return new AiProviderChain.Attempt<>(value, value.evidence().status(), value.evidence().validationDetail());
         });
-        if (result.snapshot().isEmpty()) return Optional.empty();
+        if (result.snapshot().isEmpty())
+            return Optional.empty();
         var evidence = result.value().map(AiRoleInvocationResult::evidence).orElseGet(() -> {
             var last = result.snapshot().getLast();
-            return roleClient.invoke(new AiRoleBinding(context.role(), last.id(), last.chatCompletionsEndpoint(), last.model()), new char[0], context).evidence();
+            return roleClient
+                    .invoke(new AiRoleBinding(context.role(), last.id(), last.chatCompletionsEndpoint(), last.model()),
+                            new char[0], context)
+                    .evidence();
         });
-        if (!result.valid()) evidence = new gold.debug.windowstolinux.shared.ai.collaboration.invocation.AiInvocationEvidence(evidence.role(), evidence.providerId(),
-                evidence.model(), evidence.redactedInputSummary(), evidence.inputSha256(), gold.debug.windowstolinux.shared.ai.collaboration.invocation.AiInvocationStatus.UNAVAILABLE,
-                Optional.empty(), "all-enabled-providers-failed", evidence.observedAt());
+        if (!result.valid())
+            evidence = new gold.debug.windowstolinux.shared.ai.collaboration.invocation.AiInvocationEvidence(
+                    evidence.role(), evidence.providerId(), evidence.model(), evidence.redactedInputSummary(),
+                    evidence.inputSha256(),
+                    gold.debug.windowstolinux.shared.ai.collaboration.invocation.AiInvocationStatus.UNAVAILABLE,
+                    Optional.empty(), "all-enabled-providers-failed", evidence.observedAt());
         return Optional.of(new AiRoleInvocationResult(evidence, result.attempts()));
     }
 

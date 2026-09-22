@@ -1,12 +1,12 @@
 package gold.debug.windowstolinux.shared.backup.restore;
 
-import gold.debug.windowstolinux.shared.backup.contract.spi.DatabaseRestoreEvidence;
-import gold.debug.windowstolinux.shared.model.failure.FailureDescriptor;
-import gold.debug.windowstolinux.shared.model.failure.OperationIdentity;
-
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
+
+import gold.debug.windowstolinux.shared.backup.contract.spi.DatabaseRestoreEvidence;
+import gold.debug.windowstolinux.shared.model.failure.FailureDescriptor;
+import gold.debug.windowstolinux.shared.model.failure.OperationIdentity;
 
 /**
  * Terminal restore result separating health, commit and recovery evidence. / 区分健康、提交和恢复证据的恢复终态结果。
@@ -18,14 +18,9 @@ import java.util.Optional;
  * @param activeReleaseToken active release token / 活跃发布令牌
  * @param failure structured failure occurrence retained for safe reporting / 保留用于安全报告的结构化失败实例
  */
-public record BackupRestoreResult(
-        OperationIdentity operationIdentity,
-        BackupRestoreStatus status,
-        List<RestoreCandidateEvent> events,
-        Optional<DatabaseRestoreEvidence> databaseEvidence,
-        Optional<String> activeReleaseToken,
-        Optional<FailureDescriptor> failure
-) {
+public record BackupRestoreResult(OperationIdentity operationIdentity, BackupRestoreStatus status,
+        List<RestoreCandidateEvent> events, Optional<DatabaseRestoreEvidence> databaseEvidence,
+        Optional<String> activeReleaseToken, Optional<FailureDescriptor> failure) {
     /**
      * Validates status-specific evidence. / 校验终态对应证据。
      *
@@ -45,7 +40,8 @@ public record BackupRestoreResult(
         databaseEvidence = Objects.requireNonNull(databaseEvidence, "databaseEvidence");
         activeReleaseToken = Objects.requireNonNull(activeReleaseToken, "activeReleaseToken");
         failure = Objects.requireNonNull(failure, "failure");
-        if (events.isEmpty()) throw new IllegalArgumentException("restore result requires events");
+        if (events.isEmpty())
+            throw new IllegalArgumentException("restore result requires events");
         if (status == BackupRestoreStatus.SUCCEEDED) {
             if (activeReleaseToken.isEmpty() || failure.isPresent()) {
                 throw new IllegalArgumentException("successful restore requires an active token and no failure");

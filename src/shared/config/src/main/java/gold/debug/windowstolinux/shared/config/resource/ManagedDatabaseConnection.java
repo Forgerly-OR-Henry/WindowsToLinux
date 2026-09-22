@@ -1,9 +1,9 @@
 package gold.debug.windowstolinux.shared.config.resource;
 
+import java.util.Objects;
+
 import gold.debug.windowstolinux.shared.config.secretref.SecretReference;
 import gold.debug.windowstolinux.shared.model.managed.ManagedStorageLocation;
-
-import java.util.Objects;
 
 /**
  * Reviewed non-secret database connection; passwords remain exact secret references. / 经审阅的非秘密数据库连接；密码保持为精确秘密引用。
@@ -26,7 +26,8 @@ public sealed interface ManagedDatabaseConnection
      * @param seedFile seed file / 初始种子文件
      * @param initializationFiles initialization files / 初始化文件集合
      */
-    record Sqlite(String fileName, ManagedStorageLocation location, String accessPath, String seedFile, java.util.List<String> initializationFiles) implements ManagedDatabaseConnection {
+    record Sqlite(String fileName, ManagedStorageLocation location, String accessPath, String seedFile,
+            java.util.List<String> initializationFiles) implements ManagedDatabaseConnection {
         /**
          * Validates one plain file name without path syntax. / 校验不含路径语法的普通文件名。
          *
@@ -39,16 +40,20 @@ public sealed interface ManagedDatabaseConnection
          * @throws NullPointerException if a required input is absent / 必需输入缺失时
          */
         public Sqlite {
-            seedFile = gold.debug.windowstolinux.shared.model.ecosystem.db.SqliteFileRequirement.relativeSourceFile(seedFile);
+            seedFile = gold.debug.windowstolinux.shared.model.ecosystem.db.SqliteFileRequirement
+                    .relativeSourceFile(seedFile);
             initializationFiles = java.util.List.copyOf(initializationFiles);
-            if (initializationFiles.size() > 32) throw new IllegalArgumentException("too many initialization files");
-            initializationFiles.forEach(gold.debug.windowstolinux.shared.model.ecosystem.db.SqliteFileRequirement::relativeSourceFile);
+            if (initializationFiles.size() > 32)
+                throw new IllegalArgumentException("too many initialization files");
+            initializationFiles.forEach(
+                    gold.debug.windowstolinux.shared.model.ecosystem.db.SqliteFileRequirement::relativeSourceFile);
             location = Objects.requireNonNull(location, "location");
             accessPath = Objects.requireNonNull(accessPath, "accessPath").trim();
-            if (!accessPath.isEmpty()) accessPath = ManagedStorageLocation.validatedPath(accessPath);
+            if (!accessPath.isEmpty())
+                accessPath = ManagedStorageLocation.validatedPath(accessPath);
             fileName = Objects.requireNonNull(fileName, "fileName").trim();
-            if (!fileName.matches("[A-Za-z0-9][A-Za-z0-9._-]{0,127}")
-                    || fileName.equals(".") || fileName.equals("..")) {
+            if (!fileName.matches("[A-Za-z0-9][A-Za-z0-9._-]{0,127}") || fileName.equals(".")
+                    || fileName.equals("..")) {
                 throw new IllegalArgumentException("SQLite fileName must be a bounded plain file name");
             }
         }
@@ -61,7 +66,9 @@ public sealed interface ManagedDatabaseConnection
          * @param location the remote URI / 远端 URI
          * @param accessPath access path / 访问路径
          */
-        public Sqlite(String fileName, ManagedStorageLocation location, String accessPath) { this(fileName, location, accessPath, "", java.util.List.of()); }
+        public Sqlite(String fileName, ManagedStorageLocation location, String accessPath) {
+            this(fileName, location, accessPath, "", java.util.List.of());
+        }
 
         /**
          * Initializes sqlite through its shared constructor contract.
@@ -69,7 +76,9 @@ public sealed interface ManagedDatabaseConnection
          *
          * @param fileName file name / 文件名称
          */
-        public Sqlite(String fileName) { this(fileName, ManagedStorageLocation.defaults(), ""); }
+        public Sqlite(String fileName) {
+            this(fileName, ManagedStorageLocation.defaults(), "");
+        }
 
         /**
          * Resolves the SQLite filename beneath the application's managed database location.
@@ -80,7 +89,8 @@ public sealed interface ManagedDatabaseConnection
          * @return the SQLite filename beneath the application's managed database location / 在应用受管数据库位置下解析 SQLite 文件名
          */
         public String physicalPath(String applicationId, String databaseId) {
-            return location.resolve(applicationId, ManagedStorageLocation.StorageResourceType.DATABASE, databaseId) + "/" + fileName;
+            return location.resolve(applicationId, ManagedStorageLocation.StorageResourceType.DATABASE, databaseId)
+                    + "/" + fileName;
         }
 
         /**
@@ -89,7 +99,10 @@ public sealed interface ManagedDatabaseConnection
          *
          * @return engine / 引擎
          */
-        @Override public ManagedDatabaseEngineType engine() { return ManagedDatabaseEngineType.SQLITE; }
+        @Override
+        public ManagedDatabaseEngineType engine() {
+            return ManagedDatabaseEngineType.SQLITE;
+        }
     }
 
     /**
@@ -103,15 +116,8 @@ public sealed interface ManagedDatabaseConnection
      * @param passwordReference password reference / 密码引用
      * @param tlsRequired tls required / tls必需
      */
-    record Server(
-            ManagedDatabaseEngineType engine,
-            String host,
-            int port,
-            String database,
-            String username,
-            SecretReference passwordReference,
-            boolean tlsRequired
-    ) implements ManagedDatabaseConnection {
+    record Server(ManagedDatabaseEngineType engine, String host, int port, String database, String username,
+            SecretReference passwordReference, boolean tlsRequired) implements ManagedDatabaseConnection {
         /**
          * Validates one supported server connection without accepting secret material. / 校验一个受支持且不含秘密内容的服务器连接。
          *
@@ -127,17 +133,16 @@ public sealed interface ManagedDatabaseConnection
          */
         public Server {
             engine = Objects.requireNonNull(engine, "engine");
-            if (engine != ManagedDatabaseEngineType.POSTGRESQL
-                    && engine != ManagedDatabaseEngineType.MYSQL
-                    && engine != ManagedDatabaseEngineType.MARIADB
-                    && engine != ManagedDatabaseEngineType.REDIS) {
+            if (engine != ManagedDatabaseEngineType.POSTGRESQL && engine != ManagedDatabaseEngineType.MYSQL
+                    && engine != ManagedDatabaseEngineType.MARIADB && engine != ManagedDatabaseEngineType.REDIS) {
                 throw new IllegalArgumentException("server connection requires PostgreSQL, MySQL, MariaDB or Redis");
             }
             host = text(host, "host", 253);
             if (host.contains("/") || host.contains("\\") || host.chars().anyMatch(Character::isWhitespace)) {
                 throw new IllegalArgumentException("database host contains path or whitespace syntax");
             }
-            if (port < 1 || port > 65535) throw new IllegalArgumentException("database port is invalid");
+            if (port < 1 || port > 65535)
+                throw new IllegalArgumentException("database port is invalid");
             database = text(database, "database", 128);
             username = text(username, "username", 128);
             passwordReference = Objects.requireNonNull(passwordReference, "passwordReference");

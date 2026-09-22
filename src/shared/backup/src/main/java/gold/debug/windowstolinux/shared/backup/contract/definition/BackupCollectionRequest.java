@@ -1,12 +1,13 @@
 package gold.debug.windowstolinux.shared.backup.contract.definition;
 
+import java.util.*;
+
 import gold.debug.windowstolinux.shared.backup.contract.spi.DatabaseConnectionProfile;
 import gold.debug.windowstolinux.shared.config.resource.ManagedComponentResourceBindings;
 import gold.debug.windowstolinux.shared.deploy.contract.ApplicationHealthGate;
 import gold.debug.windowstolinux.shared.deploy.contract.MultiComponentDeploymentPlan;
 import gold.debug.windowstolinux.shared.model.managed.ManagedApplication;
 import gold.debug.windowstolinux.shared.model.project.DeploymentRuntimeSpecification;
-import java.util.*;
 
 /**
  * Reviewed inputs for one stopped-writer backup window. / 一次停写备份窗口的已审阅输入。
@@ -20,8 +21,7 @@ import java.util.*;
  * @param database reviewed database identity or database operation boundary / 已审阅数据库身份或数据库操作边界
  * @param maximumArtifactBytes maximum size of one downloaded artifact in bytes, from one byte through 64 GiB / 单个下载制品的字节数上限，范围为一字节至 64 GiB
  */
-public record BackupCollectionRequest(
-        MultiComponentDeploymentPlan plan, List<Component> components, String operationId,
+public record BackupCollectionRequest(MultiComponentDeploymentPlan plan, List<Component> components, String operationId,
         boolean ownsMaintenance, ApplicationHealthGate applicationHealth, Set<String> healthTriggers,
         Optional<Database> database, long maximumArtifactBytes) {
     /**
@@ -40,16 +40,20 @@ public record BackupCollectionRequest(
      * @throws NullPointerException if a required input is absent / 必需输入缺失时
      */
     public BackupCollectionRequest {
-        Objects.requireNonNull(plan, "plan"); components = List.copyOf(components);
-        Objects.requireNonNull(operationId, "operationId"); Objects.requireNonNull(applicationHealth, "applicationHealth");
-        healthTriggers = Set.copyOf(healthTriggers); database = Objects.requireNonNull(database, "database");
+        Objects.requireNonNull(plan, "plan");
+        components = List.copyOf(components);
+        Objects.requireNonNull(operationId, "operationId");
+        Objects.requireNonNull(applicationHealth, "applicationHealth");
+        healthTriggers = Set.copyOf(healthTriggers);
+        database = Objects.requireNonNull(database, "database");
         Set<String> ids = new HashSet<>(components.stream().map(Component::id).toList());
         if (ids.size() != components.size() || !ids.equals(new HashSet<>(plan.startOrder()))
                 || !ids.contains(applicationHealth.componentId()) || !ids.containsAll(healthTriggers)
                 || database.isPresent() && !ids.contains(database.orElseThrow().componentId())
                 || !operationId.matches("backup-[a-f0-9]{32}") || maximumArtifactBytes < 1
                 || maximumArtifactBytes > 64L * 1024 * 1024 * 1024) {
-            throw new IllegalArgumentException("Backup inputs must exactly cover the reviewed plan and bounded operation");
+            throw new IllegalArgumentException(
+                    "Backup inputs must exactly cover the reviewed plan and bounded operation");
         }
     }
 
@@ -77,8 +81,10 @@ public record BackupCollectionRequest(
          * @throws NullPointerException if a required input is absent / 必需输入缺失时
          */
         public Component {
-            Objects.requireNonNull(id, "id"); Objects.requireNonNull(application, "application");
-            Objects.requireNonNull(runtime, "runtime"); Objects.requireNonNull(resources, "resources");
+            Objects.requireNonNull(id, "id");
+            Objects.requireNonNull(application, "application");
+            Objects.requireNonNull(runtime, "runtime");
+            Objects.requireNonNull(resources, "resources");
             if (!id.matches("[a-z0-9][a-z0-9-]{0,62}") || !Objects.requireNonNull(releaseSha256).matches("[a-f0-9]{64}")
                     || resources.databaseBindings().isEmpty()) {
                 throw new IllegalArgumentException("Backup requires a successful release and reviewed resources");
@@ -105,7 +111,8 @@ public record BackupCollectionRequest(
          * @throws NullPointerException if a required input is absent / 必需输入缺失时
          */
         public Database {
-            Objects.requireNonNull(componentId, "componentId"); Objects.requireNonNull(profile, "profile");
+            Objects.requireNonNull(componentId, "componentId");
+            Objects.requireNonNull(profile, "profile");
             if (!Objects.requireNonNull(databaseId, "databaseId").matches("[a-z0-9][a-z0-9-]{0,62}"))
                 throw new IllegalArgumentException("Database identity must be bounded");
         }

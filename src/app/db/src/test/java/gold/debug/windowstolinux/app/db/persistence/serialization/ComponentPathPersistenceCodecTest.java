@@ -1,13 +1,13 @@
 package gold.debug.windowstolinux.app.db.persistence.serialization;
 
-import gold.debug.windowstolinux.shared.model.project.component.ComponentDataPath;
-import org.junit.jupiter.api.Test;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import java.util.Arrays;
 import java.util.List;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertThrows;
+import gold.debug.windowstolinux.shared.model.project.component.ComponentDataPath;
+import org.junit.jupiter.api.Test;
 
 class ComponentPathPersistenceCodecTest {
     private final ComponentPathPersistenceCodec codec = new ComponentPathPersistenceCodec();
@@ -24,8 +24,8 @@ class ComponentPathPersistenceCodecTest {
 
     @Test
     void rejectsUnsupportedTruncatedTrailingAndNonCanonicalDocuments() throws Exception {
-        byte[] valid = codec.write(List.of(new ComponentDataPath(
-                "data", ComponentDataPath.AccessMode.READ_WRITE, "data-v1", true)));
+        byte[] valid = codec.write(
+                List.of(new ComponentDataPath("data", ComponentDataPath.AccessMode.READ_WRITE, "data-v1", true)));
         byte[] unsupported = valid.clone();
         unsupported[4] = 99;
         assertThrows(java.io.IOException.class, () -> codec.read(unsupported));
@@ -40,10 +40,10 @@ class ComponentPathPersistenceCodecTest {
 
     @Test
     void rejectsDuplicateReviewedPathsBeforePersistence() {
-        ComponentDataPath first = new ComponentDataPath(
-                "data", ComponentDataPath.AccessMode.READ_WRITE, "data-v1", true);
-        ComponentDataPath second = new ComponentDataPath(
-                "data", ComponentDataPath.AccessMode.READ_ONLY, "data-v2", true);
+        ComponentDataPath first = new ComponentDataPath("data", ComponentDataPath.AccessMode.READ_WRITE, "data-v1",
+                true);
+        ComponentDataPath second = new ComponentDataPath("data", ComponentDataPath.AccessMode.READ_ONLY, "data-v2",
+                true);
 
         assertThrows(java.io.IOException.class, () -> codec.write(List.of(first, second)));
     }

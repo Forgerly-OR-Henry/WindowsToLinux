@@ -3,6 +3,7 @@
 Account/permission commands are stubbed on Windows; no service or container is started.
 The sqlite3 command shim uses the real Python SQLite engine, not fabricated database bytes.
 """
+
 import os
 from contextlib import closing
 import pathlib
@@ -15,7 +16,13 @@ import unittest
 
 ROOT = pathlib.Path(__file__).resolve().parents[2] / 'main/resources/gold/debug/windowstolinux/shared/linux/sshd'
 FRAGMENTS = ROOT / 'execution/protocol/helper/fragments/database'
-CODE = (FRAGMENTS / '64-database-client.sh').read_text(encoding='utf-8') + '\n' + (FRAGMENTS / '65-database-backup.sh').read_text(encoding='utf-8') + '\n' + (FRAGMENTS / '66-database-activation.sh').read_text(encoding='utf-8')
+CODE = (
+    (FRAGMENTS / '64-database-client.sh').read_text(encoding='utf-8')
+    + '\n'
+    + (FRAGMENTS / '65-database-backup.sh').read_text(encoding='utf-8')
+    + '\n'
+    + (FRAGMENTS / '66-database-activation.sh').read_text(encoding='utf-8')
+)
 STORAGE = (ROOT / 'execution/protocol/helper/fragments/input/17-managed-content.sh').read_text(encoding='utf-8')
 CLI = r'''
 import sqlite3, sys, re, pathlib
@@ -93,9 +100,15 @@ class SqliteActivationTest(unittest.TestCase):
 
     def shell(self, action):
         env = dict(os.environ, WTL_SQLITE_PYTHON=sys.executable)
-        return subprocess.run([self.bash, '-s'], cwd=self.root, env=env,
-                              input=CODE+'\n'+STORAGE+'\n'+SETUP+'\n'+action, text=True,
-                              capture_output=True, timeout=30)
+        return subprocess.run(
+            [self.bash, '-s'],
+            cwd=self.root,
+            env=env,
+            input=CODE + '\n' + STORAGE + '\n' + SETUP + '\n' + action,
+            text=True,
+            capture_output=True,
+            timeout=30,
+        )
 
     def databases(self):
         original = sqlite3.connect(self.root / 'original.db')
@@ -105,7 +118,7 @@ class SqliteActivationTest(unittest.TestCase):
         original.execute("insert into records values('original-wal-data')")
         original.commit()
         for suffix in ('', '-wal', '-shm'):
-            shutil.copyfile(str(self.root/'original.db')+suffix, str(self.root/'live/app.db')+suffix)
+            shutil.copyfile(str(self.root / 'original.db') + suffix, str(self.root / 'live/app.db') + suffix)
         original.close()
         with closing(sqlite3.connect(self.root / 'input.db')) as candidate:
             candidate.execute('create table records(value text)')
@@ -115,20 +128,23 @@ class SqliteActivationTest(unittest.TestCase):
     def test_commit_and_recovery_preserve_database_with_uncheckpointed_wal(self):
         self.databases()
         result = self.shell('database_commit_sqlite')
-        self.assertEqual(0,result.returncode,result.stderr)
-        with closing(sqlite3.connect(self.root/'live/app.db')) as active:
-            self.assertEqual('candidate-data',active.execute('select value from records').fetchone()[0])
-        result = self.shell('mapfile -t activation < "$database_activation_state"; database_recover_sqlite "${activation[1]}"')
-        self.assertEqual(0,result.returncode,result.stderr)
-        with closing(sqlite3.connect(self.root/'live/app.db')) as active:
-            self.assertEqual('original-wal-data',active.execute('select value from records').fetchone()[0])
-        self.assertFalse((self.root/'input.db').exists())
+        self.assertEqual(0, result.returncode, result.stderr)
+        with closing(sqlite3.connect(self.root / 'live/app.db')) as active:
+            self.assertEqual('candidate-data', active.execute('select value from records').fetchone()[0])
+        result = self.shell(
+            'mapfile -t activation < "$database_activation_state"; database_recover_sqlite "${activation[1]}"'
+        )
+        self.assertEqual(0, result.returncode, result.stderr)
+        with closing(sqlite3.connect(self.root / 'live/app.db')) as active:
+            self.assertEqual('original-wal-data', active.execute('select value from records').fetchone()[0])
+        self.assertFalse((self.root / 'input.db').exists())
 
     def test_every_file_move_interruption_can_restore_the_original_wal_set(self):
-        for boundary in range(1,5):
+        for boundary in range(1, 5):
             with self.subTest(boundary=boundary):
                 # Each subcase owns an independent temporary tree.
-                case=SqliteActivationTest(); case.setUp()
+                case = SqliteActivationTest()
+                case.setUp()
                 try:
                     case.databases()
                     action = f'''
@@ -136,53 +152,56 @@ moves=0
 mv() {{ moves=$((moves+1)); [ "$moves" != {boundary} ] || return 42; command mv "$@"; }}
 database_commit_sqlite
 '''
-                    result=case.shell(action)
-                    self.assertEqual(42,result.returncode,result.stderr)
-                    result=case.shell('mapfile -t activation < "$database_activation_state"; database_recover_sqlite "${activation[1]}"')
-                    self.assertEqual(0,result.returncode,result.stderr)
-                    with closing(sqlite3.connect(case.root/'live/app.db')) as active:
-                        self.assertEqual('original-wal-data',active.execute('select value from records').fetchone()[0])
-                finally: case.doCleanups()
+                    result = case.shell(action)
+                    self.assertEqual(42, result.returncode, result.stderr)
+                    result = case.shell(
+                        'mapfile -t activation < "$database_activation_state"; database_recover_sqlite "${activation[1]}"'
+                    )
+                    self.assertEqual(0, result.returncode, result.stderr)
+                    with closing(sqlite3.connect(case.root / 'live/app.db')) as active:
+                        self.assertEqual('original-wal-data', active.execute('select value from records').fetchone()[0])
+                finally:
+                    case.doCleanups()
 
     def test_corrupt_candidate_never_replaces_formal_database(self):
         self.databases()
-        (self.root/'input.db').write_bytes(b'not a database')
-        result=self.shell('database_commit_sqlite')
-        self.assertNotEqual(0,result.returncode)
-        self.assertFalse((self.root/'state').exists())
-        with closing(sqlite3.connect(self.root/'live/app.db')) as active:
-            self.assertEqual('original-wal-data',active.execute('select value from records').fetchone()[0])
+        (self.root / 'input.db').write_bytes(b'not a database')
+        result = self.shell('database_commit_sqlite')
+        self.assertNotEqual(0, result.returncode)
+        self.assertFalse((self.root / 'state').exists())
+        with closing(sqlite3.connect(self.root / 'live/app.db')) as active:
+            self.assertEqual('original-wal-data', active.execute('select value from records').fetchone()[0])
 
     def test_seed_and_sql_initialize_once_and_redeployment_preserves_business_data(self):
-        with closing(sqlite3.connect(self.root/'seed.db')) as seed:
+        with closing(sqlite3.connect(self.root / 'seed.db')) as seed:
             seed.execute('create table records(value text)')
             seed.execute("insert into records values('seed-data')")
             seed.commit()
-        (self.root/'init.sql').write_text("insert into records values('initialized');",encoding='utf-8')
-        action='''seed_file=seed.db
+        (self.root / 'init.sql').write_text("insert into records values('initialized');", encoding='utf-8')
+        action = '''seed_file=seed.db
 initialization_files=init.sql
 initialize_managed_sqlite "$root" "$root/live" "$root/live/app.db" fixture
 '''
         for deployment in range(2):
-            result=self.shell(action)
-            self.assertEqual(0,result.returncode,result.stderr)
-            with closing(sqlite3.connect(self.root/'live/app.db')) as active:
-                expected=[('seed-data',),('initialized',)] + ([('business-data',)] if deployment else [])
-                self.assertEqual(expected,active.execute('select value from records').fetchall())
+            result = self.shell(action)
+            self.assertEqual(0, result.returncode, result.stderr)
+            with closing(sqlite3.connect(self.root / 'live/app.db')) as active:
+                expected = [('seed-data',), ('initialized',)] + ([('business-data',)] if deployment else [])
+                self.assertEqual(expected, active.execute('select value from records').fetchall())
                 if not deployment:
                     active.execute("insert into records values('business-data')")
                     active.commit()
-        self.assertEqual([],list((self.root/'live').glob('.initialize.*')))
+        self.assertEqual([], list((self.root / 'live').glob('.initialize.*')))
 
     def test_initialization_failure_does_not_publish_partial_database(self):
-        (self.root/'init.sql').write_text('create table partial(value text); INVALID SQL;',encoding='utf-8')
-        result=self.shell('''seed_file=-
+        (self.root / 'init.sql').write_text('create table partial(value text); INVALID SQL;', encoding='utf-8')
+        result = self.shell('''seed_file=-
 initialization_files=init.sql
 initialize_managed_sqlite "$root" "$root/live" "$root/live/app.db" fixture
 ''')
-        self.assertEqual(64,result.returncode,result.stderr)
-        self.assertFalse((self.root/'live/app.db').exists())
-        self.assertEqual([],list((self.root/'live').glob('.initialize.*')))
+        self.assertEqual(64, result.returncode, result.stderr)
+        self.assertFalse((self.root / 'live/app.db').exists())
+        self.assertEqual([], list((self.root / 'live').glob('.initialize.*')))
 
 
 if __name__ == '__main__':

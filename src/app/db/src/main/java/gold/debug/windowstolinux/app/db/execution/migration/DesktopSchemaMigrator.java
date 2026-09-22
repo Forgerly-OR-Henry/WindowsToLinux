@@ -1,12 +1,12 @@
 package gold.debug.windowstolinux.app.db.execution.migration;
 
-import gold.debug.windowstolinux.app.db.persistence.connection.DesktopConnectionFactory;
-
 import java.sql.Connection;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
 import java.util.Objects;
+
+import gold.debug.windowstolinux.app.db.persistence.connection.DesktopConnectionFactory;
 
 /**
  * Applies ordered SQLite schema migrations while preserving existing desktop records.
@@ -18,7 +18,7 @@ public final class DesktopSchemaMigrator {
      *
      *  <p>公开 {@code CURRENT_SCHEMA_VERSION} 常量。
      */
-    public static final int CURRENT_SCHEMA_VERSION = 19;
+    public static final int CURRENT_SCHEMA_VERSION = 20;
 
     /**
      * Prevents instantiation of this static contract helper.
@@ -40,50 +40,56 @@ public final class DesktopSchemaMigrator {
         try (Connection connection = connections.open(); Statement statement = connection.createStatement()) {
             int version = schemaVersion(statement);
             if (version > CURRENT_SCHEMA_VERSION) {
-                throw new SQLException("database schema is newer than this WindowsToLinux client; downgrade open is rejected");
+                throw new SQLException(
+                        "database schema is newer than this WindowsToLinux client; downgrade open is rejected");
             }
             connection.setAutoCommit(false);
             try {
+                statement.execute(
+                        """
+                                CREATE TABLE IF NOT EXISTS server (
+                                  id TEXT PRIMARY KEY, host TEXT NOT NULL, ssh_port INTEGER NOT NULL, host_key_sha256 TEXT NOT NULL
+                                )
+                                """);
+                statement.execute(
+                        """
+                                CREATE TABLE IF NOT EXISTS managed_application (
+                                  id TEXT PRIMARY KEY, server_id TEXT NOT NULL REFERENCES server(id), systemd_unit TEXT NOT NULL,
+                                  release_root TEXT NOT NULL, ownership_manifest_sha256 TEXT NOT NULL
+                                )
+                                """);
+                statement.execute(
+                        """
+                                CREATE TABLE IF NOT EXISTS managed_application_release (
+                                  application_id TEXT PRIMARY KEY REFERENCES managed_application(id), release_sha256 TEXT NOT NULL,
+                                  published_at INTEGER NOT NULL
+                                )
+                                """);
                 statement.execute("""
-                    CREATE TABLE IF NOT EXISTS server (
-                      id TEXT PRIMARY KEY, host TEXT NOT NULL, ssh_port INTEGER NOT NULL, host_key_sha256 TEXT NOT NULL
-                    )
-                    """);
+                        CREATE TABLE IF NOT EXISTS server_profile (
+                          id TEXT PRIMARY KEY, host TEXT NOT NULL, ssh_port INTEGER NOT NULL, username TEXT NOT NULL,
+                          credential_key TEXT NOT NULL, credential_mode TEXT NOT NULL
+                        )
+                        """);
                 statement.execute("""
-                    CREATE TABLE IF NOT EXISTS managed_application (
-                      id TEXT PRIMARY KEY, server_id TEXT NOT NULL REFERENCES server(id), systemd_unit TEXT NOT NULL,
-                      release_root TEXT NOT NULL, ownership_manifest_sha256 TEXT NOT NULL
-                    )
-                    """);
-                statement.execute("""
-                    CREATE TABLE IF NOT EXISTS managed_application_release (
-                      application_id TEXT PRIMARY KEY REFERENCES managed_application(id), release_sha256 TEXT NOT NULL,
-                      published_at INTEGER NOT NULL
-                    )
-                    """);
-                statement.execute("""
-                    CREATE TABLE IF NOT EXISTS server_profile (
-                      id TEXT PRIMARY KEY, host TEXT NOT NULL, ssh_port INTEGER NOT NULL, username TEXT NOT NULL,
-                      credential_key TEXT NOT NULL, credential_mode TEXT NOT NULL
-                    )
-                    """);
-                statement.execute("""
-                    CREATE TABLE IF NOT EXISTS ai_profile (
-                      id TEXT PRIMARY KEY CHECK(id='default'), endpoint TEXT NOT NULL, model TEXT NOT NULL,
-                      credential_key TEXT NOT NULL, credential_mode TEXT NOT NULL
-                    )
-                    """);
-                statement.execute("""
-                    CREATE TABLE IF NOT EXISTS application_observation (
-                      application_id TEXT PRIMARY KEY REFERENCES managed_application(id), runtime_state TEXT NOT NULL,
-                      autostart_state TEXT NOT NULL, ownership_verified INTEGER NOT NULL, observed_at INTEGER NOT NULL, evidence TEXT NOT NULL
-                    )
-                    """);
-                statement.execute("""
-                    CREATE TABLE IF NOT EXISTS encrypted_secret (
-                      secret_key TEXT PRIMARY KEY, algorithm TEXT NOT NULL, salt BLOB NOT NULL, nonce BLOB NOT NULL, ciphertext BLOB NOT NULL
-                    )
-                    """);
+                        CREATE TABLE IF NOT EXISTS ai_profile (
+                          id TEXT PRIMARY KEY CHECK(id='default'), endpoint TEXT NOT NULL, model TEXT NOT NULL,
+                          credential_key TEXT NOT NULL, credential_mode TEXT NOT NULL
+                        )
+                        """);
+                statement.execute(
+                        """
+                                CREATE TABLE IF NOT EXISTS application_observation (
+                                  application_id TEXT PRIMARY KEY REFERENCES managed_application(id), runtime_state TEXT NOT NULL,
+                                  autostart_state TEXT NOT NULL, ownership_verified INTEGER NOT NULL, observed_at INTEGER NOT NULL, evidence TEXT NOT NULL
+                                )
+                                """);
+                statement.execute(
+                        """
+                                CREATE TABLE IF NOT EXISTS encrypted_secret (
+                                  secret_key TEXT PRIMARY KEY, algorithm TEXT NOT NULL, salt BLOB NOT NULL, nonce BLOB NOT NULL, ciphertext BLOB NOT NULL
+                                )
+                                """);
                 if (version < 2) {
                     statement.execute("""
                             CREATE TABLE IF NOT EXISTS managed_application_runtime_configuration (
@@ -128,19 +134,20 @@ public final class DesktopSchemaMigrator {
                               PRIMARY KEY (application_id, revision)
                             )
                             """);
-                    statement.execute("""
-                            CREATE TABLE IF NOT EXISTS application_configuration_entry (
-                              application_id TEXT NOT NULL,
-                              revision TEXT NOT NULL,
-                              config_key TEXT NOT NULL,
-                              value_type TEXT NOT NULL,
-                              config_scope TEXT NOT NULL,
-                              value_text TEXT NOT NULL,
-                              PRIMARY KEY (application_id, revision, config_key),
-                              FOREIGN KEY (application_id, revision)
-                                REFERENCES application_configuration_snapshot(application_id, revision) ON DELETE RESTRICT
-                            )
-                            """);
+                    statement.execute(
+                            """
+                                    CREATE TABLE IF NOT EXISTS application_configuration_entry (
+                                      application_id TEXT NOT NULL,
+                                      revision TEXT NOT NULL,
+                                      config_key TEXT NOT NULL,
+                                      value_type TEXT NOT NULL,
+                                      config_scope TEXT NOT NULL,
+                                      value_text TEXT NOT NULL,
+                                      PRIMARY KEY (application_id, revision, config_key),
+                                      FOREIGN KEY (application_id, revision)
+                                        REFERENCES application_configuration_snapshot(application_id, revision) ON DELETE RESTRICT
+                                    )
+                                    """);
                     statement.execute("""
                             CREATE TABLE IF NOT EXISTS application_secret_revision (
                               secret_identifier TEXT NOT NULL,
@@ -235,15 +242,14 @@ public final class DesktopSchemaMigrator {
                             )
                             """);
                 }
-                if (version < 8 && !hasColumn(statement,
-                        "managed_application_graph_component", "reviewed_runtime")) {
+                if (version < 8 && !hasColumn(statement, "managed_application_graph_component", "reviewed_runtime")) {
                     statement.execute("""
                             ALTER TABLE managed_application_graph_component
                             ADD COLUMN reviewed_runtime BLOB
                             """);
                 }
-                if (version < 9 && !hasColumn(statement,
-                        "managed_application_graph_component", "reviewed_data_paths")) {
+                if (version < 9
+                        && !hasColumn(statement, "managed_application_graph_component", "reviewed_data_paths")) {
                     statement.execute("""
                             ALTER TABLE managed_application_graph_component
                             ADD COLUMN reviewed_data_paths BLOB
@@ -263,15 +269,14 @@ public final class DesktopSchemaMigrator {
                             )
                             """);
                 }
-                if (version < 10 && !hasColumn(statement,
-                        "managed_application_graph_component", "reviewed_resource_bindings")) {
+                if (version < 10
+                        && !hasColumn(statement, "managed_application_graph_component", "reviewed_resource_bindings")) {
                     statement.execute("""
                             ALTER TABLE managed_application_graph_component
                             ADD COLUMN reviewed_resource_bindings BLOB
                             """);
                 }
-                if (version < 11 && !hasColumn(statement,
-                        "managed_application_graph", "application_health_check")) {
+                if (version < 11 && !hasColumn(statement, "managed_application_graph", "application_health_check")) {
                     statement.execute("""
                             ALTER TABLE managed_application_graph
                             ADD COLUMN application_health_check BLOB
@@ -279,15 +284,18 @@ public final class DesktopSchemaMigrator {
                 }
                 if (version < 12) {
                     if (!hasColumn(statement, "managed_application_runtime_configuration", "identity_policy")) {
-                        statement.execute("ALTER TABLE managed_application_runtime_configuration ADD COLUMN identity_policy TEXT NOT NULL DEFAULT 'LEGACY_UNSPECIFIED'");
+                        statement.execute(
+                                "ALTER TABLE managed_application_runtime_configuration ADD COLUMN identity_policy TEXT NOT NULL DEFAULT 'LEGACY_UNSPECIFIED'");
                     }
                     if (!hasColumn(statement, "server", "host_key_format")) {
-                        statement.execute("ALTER TABLE server ADD COLUMN host_key_format TEXT NOT NULL DEFAULT 'LEGACY_X509'");
+                        statement.execute(
+                                "ALTER TABLE server ADD COLUMN host_key_format TEXT NOT NULL DEFAULT 'LEGACY_X509'");
                     }
                 }
                 if (version < 13) {
                     if (!hasColumn(statement, "server_profile", "display_name")) {
-                        statement.execute("ALTER TABLE server_profile ADD COLUMN display_name TEXT NOT NULL DEFAULT ''");
+                        statement
+                                .execute("ALTER TABLE server_profile ADD COLUMN display_name TEXT NOT NULL DEFAULT ''");
                         statement.execute("UPDATE server_profile SET display_name=id");
                     }
                     if (!hasColumn(statement, "server_profile", "last_checked"))
@@ -295,7 +303,8 @@ public final class DesktopSchemaMigrator {
                     if (!hasColumn(statement, "server_profile", "connected"))
                         statement.execute("ALTER TABLE server_profile ADD COLUMN connected INTEGER NOT NULL DEFAULT 0");
                     if (!hasColumn(statement, "server_profile", "operating_system"))
-                        statement.execute("ALTER TABLE server_profile ADD COLUMN operating_system TEXT NOT NULL DEFAULT ''");
+                        statement.execute(
+                                "ALTER TABLE server_profile ADD COLUMN operating_system TEXT NOT NULL DEFAULT ''");
                 }
                 if (version < 14) {
                     statement.execute("""
@@ -313,11 +322,7 @@ public final class DesktopSchemaMigrator {
                               category TEXT NOT NULL CHECK(category IN ('WEBSITE','APP')), access_url TEXT)
                             """);
                 }
-                if (version < 15) AiPrioritySchemaMigration.apply(statement);
-                if (version < 16) ApplicationRuntimeSchemaMigration.apply(statement);
-                if (version < 17) BrowserRecoverySchemaMigration.apply(statement);
-                if (version < 18) AiPurposeSchemaMigration.apply(statement);
-                if (version < 19) AgentTaskSchemaMigration.apply(statement);
+                migrateTaskAndRuntimeSchemas(statement, version);
                 statement.execute("PRAGMA user_version = " + CURRENT_SCHEMA_VERSION);
                 connection.commit();
             } catch (SQLException exception) {
@@ -325,6 +330,26 @@ public final class DesktopSchemaMigrator {
                 throw exception;
             }
         }
+    }
+
+    /** Applies later task and runtime schemas in the caller's transaction. / 在调用者事务中应用后续任务与运行格式。
+     * @param statement transactional statement / 事务语句
+     * @param version original version / 原始版本
+     * @throws SQLException when any migration fails / 任一迁移失败时
+     */
+    private static void migrateTaskAndRuntimeSchemas(Statement statement, int version) throws SQLException {
+        if (version < 15)
+            AiPrioritySchemaMigration.apply(statement);
+        if (version < 16)
+            ApplicationRuntimeSchemaMigration.apply(statement);
+        if (version < 17)
+            BrowserRecoverySchemaMigration.apply(statement);
+        if (version < 18)
+            AiPurposeSchemaMigration.apply(statement);
+        if (version < 19)
+            AgentTaskSchemaMigration.apply(statement);
+        if (version < 20)
+            AutonomousTaskSchemaMigration.apply(statement);
     }
 
     /**

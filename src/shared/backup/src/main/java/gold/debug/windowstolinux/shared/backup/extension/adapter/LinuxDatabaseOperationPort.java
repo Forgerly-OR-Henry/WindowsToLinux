@@ -1,9 +1,13 @@
 package gold.debug.windowstolinux.shared.backup.extension.adapter;
 
+import java.io.InputStream;
+import java.io.OutputStream;
+import java.util.Objects;
+
 import gold.debug.windowstolinux.shared.backup.contract.spi.DatabaseBackupArtifact;
 import gold.debug.windowstolinux.shared.backup.contract.spi.DatabaseBackupRequest;
-import gold.debug.windowstolinux.shared.backup.contract.spi.DatabaseCompatibilityEvidence;
 import gold.debug.windowstolinux.shared.backup.contract.spi.DatabaseCommitEvidence;
+import gold.debug.windowstolinux.shared.backup.contract.spi.DatabaseCompatibilityEvidence;
 import gold.debug.windowstolinux.shared.backup.contract.spi.DatabaseConnectionProfile;
 import gold.debug.windowstolinux.shared.backup.contract.spi.DatabaseOperationPort;
 import gold.debug.windowstolinux.shared.backup.contract.spi.DatabaseRecoveryEvidence;
@@ -16,10 +20,6 @@ import gold.debug.windowstolinux.shared.backup.manifest.BackupDatabase;
 import gold.debug.windowstolinux.shared.backup.manifest.BackupDatabaseType;
 import gold.debug.windowstolinux.shared.linux.error.LinuxOperationException;
 import gold.debug.windowstolinux.shared.linux.protocol.database.RemoteDatabasePort;
-
-import java.io.InputStream;
-import java.io.OutputStream;
-import java.util.Objects;
 
 /**
  * Adapts the public Linux database contract to backup-owned policy types. / 将 Linux 公共数据库契约适配为备份策略类型。
@@ -77,8 +77,8 @@ public final class LinuxDatabaseOperationPort implements DatabaseOperationPort {
         try {
             return fromRemote(remote.export(toRemote(request), mode(consistencyMode)));
         } catch (LinuxOperationException exception) {
-            throw BackupException.create(BackupFailureType.DATABASE_BACKUP_FAILED,
-                    "remote database export failed", exception);
+            throw BackupException.create(BackupFailureType.DATABASE_BACKUP_FAILED, "remote database export failed",
+                    exception);
         }
     }
 
@@ -93,9 +93,9 @@ public final class LinuxDatabaseOperationPort implements DatabaseOperationPort {
     @Override
     public DatabaseRestoreEvidence restoreCandidate(DatabaseRestoreRequest request) throws BackupException {
         try {
-            RemoteDatabasePort.RestoreEvidence evidence = remote.restoreCandidate(new RemoteDatabasePort.RestoreRequest(
-                    request.applicationId(), request.credentialApplicationId(), request.candidateId(),
-                    connection(request.target()), artifact(request.artifact())));
+            RemoteDatabasePort.RestoreEvidence evidence = remote.restoreCandidate(
+                    new RemoteDatabasePort.RestoreRequest(request.applicationId(), request.credentialApplicationId(),
+                            request.candidateId(), connection(request.target()), artifact(request.artifact())));
             return new DatabaseRestoreEvidence(evidence.candidateId(), evidence.connectionToken(),
                     evidence.integrityVerified(), evidence.schemaReadable(), evidence.evidence());
         } catch (LinuxOperationException exception) {
@@ -156,8 +156,8 @@ public final class LinuxDatabaseOperationPort implements DatabaseOperationPort {
         try {
             remote.discardCandidate(restore(request));
         } catch (LinuxOperationException exception) {
-            throw BackupException.create(BackupFailureType.CLEANUP_FAILED,
-                    "remote database candidate cleanup failed", exception);
+            throw BackupException.create(BackupFailureType.CLEANUP_FAILED, "remote database candidate cleanup failed",
+                    exception);
         }
     }
 
@@ -209,8 +209,8 @@ public final class LinuxDatabaseOperationPort implements DatabaseOperationPort {
         try {
             remote.discardArtifact(artifact(artifact));
         } catch (LinuxOperationException exception) {
-            throw BackupException.create(BackupFailureType.CLEANUP_FAILED,
-                    "remote database artifact cleanup failed", exception);
+            throw BackupException.create(BackupFailureType.CLEANUP_FAILED, "remote database artifact cleanup failed",
+                    exception);
         }
     }
 
@@ -235,8 +235,7 @@ public final class LinuxDatabaseOperationPort implements DatabaseOperationPort {
      */
     private static RemoteDatabasePort.RestoreRequest restore(DatabaseRestoreRequest request) {
         return new RemoteDatabasePort.RestoreRequest(request.applicationId(), request.credentialApplicationId(),
-                request.candidateId(),
-                connection(request.target()), artifact(request.artifact()));
+                request.candidateId(), connection(request.target()), artifact(request.artifact()));
     }
 
     /**
@@ -248,7 +247,8 @@ public final class LinuxDatabaseOperationPort implements DatabaseOperationPort {
      */
     private static RemoteDatabasePort.ConnectionProfile connection(DatabaseConnectionProfile profile) {
         if (profile instanceof DatabaseConnectionProfile.Sqlite sqlite) {
-            return new RemoteDatabasePort.ConnectionProfile.Sqlite(sqlite.bindingId(), sqlite.location(), sqlite.fileName());
+            return new RemoteDatabasePort.ConnectionProfile.Sqlite(sqlite.bindingId(), sqlite.location(),
+                    sqlite.fileName());
         }
         DatabaseConnectionProfile.Server server = (DatabaseConnectionProfile.Server) profile;
         return new RemoteDatabasePort.ConnectionProfile.Server(type(server.type()), server.host(), server.port(),
@@ -265,9 +265,10 @@ public final class LinuxDatabaseOperationPort implements DatabaseOperationPort {
      */
     private static DatabaseBackupArtifact fromRemote(RemoteDatabasePort.BackupArtifact artifact) {
         BackupDatabase database = new BackupDatabase(type(artifact.type()), artifact.reference(),
-                artifact.engineVersion(), artifact.toolVersion(), mode(artifact.consistencyMode()), artifact.limitations());
-        return new DatabaseBackupArtifact(artifact.artifactId(), artifact.byteCount(), artifact.sha256(),
-                database, artifact.evidence());
+                artifact.engineVersion(), artifact.toolVersion(), mode(artifact.consistencyMode()),
+                artifact.limitations());
+        return new DatabaseBackupArtifact(artifact.artifactId(), artifact.byteCount(), artifact.sha256(), database,
+                artifact.evidence());
     }
 
     /**

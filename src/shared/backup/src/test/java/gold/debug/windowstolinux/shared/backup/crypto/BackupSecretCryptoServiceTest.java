@@ -1,21 +1,21 @@
 package gold.debug.windowstolinux.shared.backup.crypto;
 
-import gold.debug.windowstolinux.shared.backup.format.BackupSecretEnvelope;
-import gold.debug.windowstolinux.shared.backup.format.BackupSecretEnvelopeCodec;
-import gold.debug.windowstolinux.shared.config.secretref.ResolvedSecretRevision;
-import gold.debug.windowstolinux.shared.config.secretref.SecretReference;
-import org.junit.jupiter.api.Test;
-
-import java.lang.reflect.Modifier;
-import java.nio.charset.StandardCharsets;
-import java.util.Arrays;
-
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import java.lang.reflect.Modifier;
+import java.nio.charset.StandardCharsets;
+import java.util.Arrays;
+
+import gold.debug.windowstolinux.shared.backup.format.BackupSecretEnvelope;
+import gold.debug.windowstolinux.shared.backup.format.BackupSecretEnvelopeCodec;
+import gold.debug.windowstolinux.shared.config.secretref.ResolvedSecretRevision;
+import gold.debug.windowstolinux.shared.config.secretref.SecretReference;
+import org.junit.jupiter.api.Test;
 
 class BackupSecretCryptoServiceTest {
     private static final char[] PASSWORD = "independent backup password".toCharArray();
@@ -51,9 +51,9 @@ class BackupSecretCryptoServiceTest {
         BackupSecretEnvelope envelope = codec.read(document);
         byte[] tamperedCiphertext = envelope.ciphertext();
         tamperedCiphertext[0] ^= 1;
-        byte[] tampered = codec.write(new BackupSecretEnvelope(
-                envelope.format(), envelope.keyDerivation(), envelope.memoryKiB(), envelope.iterations(),
-                envelope.parallelism(), envelope.salt(), envelope.cipher(), envelope.nonce(), tamperedCiphertext));
+        byte[] tampered = codec.write(new BackupSecretEnvelope(envelope.format(), envelope.keyDerivation(),
+                envelope.memoryKiB(), envelope.iterations(), envelope.parallelism(), envelope.salt(), envelope.cipher(),
+                envelope.nonce(), tamperedCiphertext));
 
         BackupSecretException wrongPassword = assertThrows(BackupSecretException.class,
                 () -> service.decrypt("a different backup password".toCharArray(), document));
@@ -88,10 +88,10 @@ class BackupSecretCryptoServiceTest {
     @Test
     void encryptsAndDecodesAnExactCanonicalRevisionSet() throws Exception {
         BackupSecretCryptoService service = new BackupSecretCryptoService();
-        try (ResolvedSecretRevision second = new ResolvedSecretRevision(
-                new SecretReference("database-password", 2), "数据库-secret".toCharArray());
-             ResolvedSecretRevision first = new ResolvedSecretRevision(
-                     new SecretReference("api-token", 1), "token-value".toCharArray())) {
+        try (ResolvedSecretRevision second = new ResolvedSecretRevision(new SecretReference("database-password", 2),
+                "数据库-secret".toCharArray());
+                ResolvedSecretRevision first = new ResolvedSecretRevision(new SecretReference("api-token", 1),
+                        "token-value".toCharArray())) {
             byte[] encrypted = service.encryptRevisions(PASSWORD, java.util.List.of(second, first));
             try (BackupSecretDocument restored = service.decryptRevisions(PASSWORD, encrypted)) {
                 assertEquals(java.util.List.of(first.reference(), second.reference()),
@@ -126,7 +126,7 @@ class BackupSecretCryptoServiceTest {
         BackupSecretCryptoService service = new BackupSecretCryptoService();
         SecretReference reference = new SecretReference("duplicate", 1);
         try (ResolvedSecretRevision first = new ResolvedSecretRevision(reference, "first-value".toCharArray());
-             ResolvedSecretRevision second = new ResolvedSecretRevision(reference, "second-value".toCharArray())) {
+                ResolvedSecretRevision second = new ResolvedSecretRevision(reference, "second-value".toCharArray())) {
             BackupSecretException failure = assertThrows(BackupSecretException.class,
                     () -> service.encryptRevisions(PASSWORD, java.util.List.of(first, second)));
 
@@ -138,10 +138,10 @@ class BackupSecretCryptoServiceTest {
     @Test
     void preservesDifferentRevisionsOfTheSameIdentifier() throws Exception {
         BackupSecretCryptoService service = new BackupSecretCryptoService();
-        try (ResolvedSecretRevision first = new ResolvedSecretRevision(
-                new SecretReference("rotated-token", 1), "old-value".toCharArray());
-             ResolvedSecretRevision second = new ResolvedSecretRevision(
-                     new SecretReference("rotated-token", 2), "new-value".toCharArray())) {
+        try (ResolvedSecretRevision first = new ResolvedSecretRevision(new SecretReference("rotated-token", 1),
+                "old-value".toCharArray());
+                ResolvedSecretRevision second = new ResolvedSecretRevision(new SecretReference("rotated-token", 2),
+                        "new-value".toCharArray())) {
             byte[] encrypted = service.encryptRevisions(PASSWORD, java.util.List.of(second, first));
 
             try (BackupSecretDocument restored = service.decryptRevisions(PASSWORD, encrypted)) {

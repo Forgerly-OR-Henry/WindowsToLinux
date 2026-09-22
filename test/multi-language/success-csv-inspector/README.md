@@ -40,18 +40,18 @@ WindowsToLinux 部署声明将 `web/worker.php` 纳入 PHP 主服务的受管工
 
 ## 配置
 
-| 变量 | 默认值 / 用途 |
-|---|---|
-| `DATA_DIR` | PHP 默认 `web/data`，页面与 worker 必须一致 |
-| `ANALYZER_URL` | `http://127.0.0.1:18131` |
-| `ANALYZER_TIMEOUT_MS` | 120000，整次调用超时 |
-| `WORKER_POLL_MS` | 200，队列轮询间隔 |
-| `MAX_FILE_BYTES` | 134217728，PHP/Python 均设置相同值 |
-| `MAX_ROWS` | 500000，PHP/Python 均设置相同值 |
-| `MAX_UNIQUE_KEYS` / `MAX_FIELD_CHARS` | Python 每组去重键 500000 / 字段 65536 字符 |
-| `MAX_CONCURRENT_JOBS` | Python 4；PHP 单工作进程顺序发布 |
-| `MAX_PROTOCOL_RECORDS` | PHP 2000000；超过时明确失败 |
-| `INPUT_TIMEOUT_SECONDS` | Python 请求读取超时 30 秒 |
+| 变量                                  | 默认值 / 用途                               |
+| ------------------------------------- | ------------------------------------------- |
+| `DATA_DIR`                            | PHP 默认 `web/data`，页面与 worker 必须一致 |
+| `ANALYZER_URL`                        | `http://127.0.0.1:18131`                    |
+| `ANALYZER_TIMEOUT_MS`                 | 120000，整次调用超时                        |
+| `WORKER_POLL_MS`                      | 200，队列轮询间隔                           |
+| `MAX_FILE_BYTES`                      | 134217728，PHP/Python 均设置相同值          |
+| `MAX_ROWS`                            | 500000，PHP/Python 均设置相同值             |
+| `MAX_UNIQUE_KEYS` / `MAX_FIELD_CHARS` | Python 每组去重键 500000 / 字段 65536 字符  |
+| `MAX_CONCURRENT_JOBS`                 | Python 4；PHP 单工作进程顺序发布            |
+| `MAX_PROTOCOL_RECORDS`                | PHP 2000000；超过时明确失败                 |
+| `INPUT_TIMEOUT_SECONDS`               | Python 请求读取超时 30 秒                   |
 
 只有测试时使用 `SAMPLE_BATCH_DELAY_MS`（默认 0）及 `SAMPLE_FAULT_POINT=job-running|before-report` / `SAMPLE_FAULT_DIR`，故障等待最多 60 秒。正常体验无需设置。
 

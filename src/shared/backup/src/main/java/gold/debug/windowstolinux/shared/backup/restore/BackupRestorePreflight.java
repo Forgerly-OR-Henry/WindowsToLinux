@@ -1,15 +1,15 @@
 package gold.debug.windowstolinux.shared.backup.restore;
 
-import gold.debug.windowstolinux.shared.backup.contract.validation.BackupException;
-import gold.debug.windowstolinux.shared.backup.contract.validation.BackupFailureType;
-import gold.debug.windowstolinux.shared.backup.manifest.BackupDatabaseType;
-import gold.debug.windowstolinux.shared.backup.manifest.BackupRuntime;
-
 import java.nio.file.Files;
 import java.nio.file.LinkOption;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.regex.Pattern;
+
+import gold.debug.windowstolinux.shared.backup.contract.validation.BackupException;
+import gold.debug.windowstolinux.shared.backup.contract.validation.BackupFailureType;
+import gold.debug.windowstolinux.shared.backup.manifest.BackupDatabaseType;
+import gold.debug.windowstolinux.shared.backup.manifest.BackupRuntime;
 
 /**
  * Performs all compatibility and local-boundary checks before restore mutation. / 在恢复修改前执行全部兼容性与本地边界检查。
@@ -78,7 +78,7 @@ public final class BackupRestorePreflight {
         if (sourceDatabase != BackupDatabaseType.NONE) {
             if (!target.databaseCompatibilityVerified()
                     || !versionFamily(plan.validation().manifest().inventory().database().engineVersion())
-                    .equals(versionFamily(target.databaseEngineVersion()))) {
+                            .equals(versionFamily(target.databaseEngineVersion()))) {
                 throw failed("target database compatibility or major version family was not verified");
             }
             evidence.add("database family and major version compatibility were verified before restore");
@@ -99,7 +99,8 @@ public final class BackupRestorePreflight {
      */
     private static String versionFamily(String version) throws BackupException {
         var matcher = Pattern.compile("(?:^|[^0-9])([0-9]+)(?:[^0-9]|$)").matcher(version);
-        if (!matcher.find()) throw failed("database version evidence has no major family");
+        if (!matcher.find())
+            throw failed("database version evidence has no major family");
         return matcher.group(1);
     }
 

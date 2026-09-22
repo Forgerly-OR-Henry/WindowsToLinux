@@ -1,9 +1,10 @@
 package gold.debug.windowstolinux.shared.source.snapshot;
 
-import gold.debug.windowstolinux.shared.source.contract.validation.SourceBoundaryValidator;
 import java.io.IOException;
 import java.nio.file.*;
 import java.nio.file.attribute.BasicFileAttributes;
+
+import gold.debug.windowstolinux.shared.source.contract.validation.SourceBoundaryValidator;
 
 /**
  * A private, source-only directory frozen before analysis and used by every component. / 分析前冻结的私有纯源码目录，供所有组件共同使用。
@@ -14,11 +15,13 @@ public final class SourceDirectorySnapshot implements AutoCloseable {
      * <p>调用方受控存储边界内的目录。
      */
     private final Path directory;
+
     /**
      * Identity.
      * <p>身份。
      */
     private final Object identity;
+
     /**
      * Root of the reviewed source tree.
      * <p>已审阅源码树的根目录。
@@ -60,29 +63,39 @@ public final class SourceDirectorySnapshot implements AutoCloseable {
      */
     public static SourceDirectorySnapshot create(Path source, Path workspace, String sourceName) throws IOException {
         if (sourceName == null || sourceName.isBlank() || sourceName.equals(".") || sourceName.equals("..")
-                || sourceName.matches(".*[\\\\/:*?\"<>|\\p{Cntrl}].*")) throw new IOException("invalid source name");
+                || sourceName.matches(".*[\\\\/:*?\"<>|\\p{Cntrl}].*"))
+            throw new IOException("invalid source name");
         SourceBoundaryValidator validator = new SourceBoundaryValidator();
         Path root = validator.validateSourceDirectory(source);
         Path parent = workspace.toAbsolutePath().normalize();
-        if (parent.startsWith(root)) throw new IOException("snapshot workspace cannot be inside source");
+        if (parent.startsWith(root))
+            throw new IOException("snapshot workspace cannot be inside source");
         Files.createDirectories(parent);
-        if (Files.isSymbolicLink(parent)) throw new IOException("snapshot parent cannot be symbolic");
+        if (Files.isSymbolicLink(parent))
+            throw new IOException("snapshot parent cannot be symbolic");
         var manifest = validator.collect(root);
-        SourceDirectorySnapshot snapshot = new SourceDirectorySnapshot(Files.createTempDirectory(parent, "source-snapshot-"));
+        SourceDirectorySnapshot snapshot = new SourceDirectorySnapshot(
+                Files.createTempDirectory(parent, "source-snapshot-"));
         try {
             snapshot.sourceRoot = Files.createDirectory(snapshot.directory.resolve(sourceName));
             for (var entry : manifest.entries()) {
                 validator.verifyUnchangedRegularFile(root, entry);
                 Path target = snapshot.sourceRoot.resolve(entry.relativePath()).normalize();
-                if (!target.startsWith(snapshot.directory)) throw new IOException("snapshot entry escapes root");
+                if (!target.startsWith(snapshot.directory))
+                    throw new IOException("snapshot entry escapes root");
                 Files.createDirectories(target.getParent());
                 Files.copy(entry.path(), target);
                 validator.verifyUnchangedRegularFile(root, entry);
-                if (Files.mismatch(entry.path(), target) != -1) throw new IOException("source changed during snapshot");
+                if (Files.mismatch(entry.path(), target) != -1)
+                    throw new IOException("source changed during snapshot");
             }
             return snapshot;
         } catch (IOException | RuntimeException failure) {
-            try { snapshot.close(); } catch (IOException cleanup) { failure.addSuppressed(cleanup); }
+            try {
+                snapshot.close();
+            } catch (IOException cleanup) {
+                failure.addSuppressed(cleanup);
+            }
             throw failure;
         }
     }
@@ -92,17 +105,22 @@ public final class SourceDirectorySnapshot implements AutoCloseable {
      *
      * @return the frozen source root / 冻结的源码根目录
      */
-    public Path directory() { return sourceRoot; }
+    public Path directory() {
+        return sourceRoot;
+    }
 
     /**
      * Removes only this exact private directory; replacement or symbolic roots are rejected. / 仅删除本次精确私有目录，拒绝被替换或符号链接形式的根目录。
      *
      * @throws IOException if the required file or stream operation fails / 所需文件或流操作失败时
      */
-    @Override public void close() throws IOException {
-        if (!Files.exists(directory, LinkOption.NOFOLLOW_LINKS)) return;
+    @Override
+    public void close() throws IOException {
+        if (!Files.exists(directory, LinkOption.NOFOLLOW_LINKS))
+            return;
         var attributes = Files.readAttributes(directory, BasicFileAttributes.class, LinkOption.NOFOLLOW_LINKS);
-        if (!attributes.isDirectory() || attributes.isSymbolicLink() || !java.util.Objects.equals(identity, attributes.fileKey()))
+        if (!attributes.isDirectory() || attributes.isSymbolicLink()
+                || !java.util.Objects.equals(identity, attributes.fileKey()))
             throw new IOException("snapshot identity changed before cleanup");
         Files.walkFileTree(directory, new SimpleFileVisitor<>() {
             /**
@@ -114,9 +132,12 @@ public final class SourceDirectorySnapshot implements AutoCloseable {
              * @return constructed or resolved file visit result / 构造或解析得到的文件Visit结果
              * @throws IOException if the required file or stream operation fails / 所需文件或流操作失败时
              */
-            @Override public FileVisitResult visitFile(Path file, BasicFileAttributes value) throws IOException {
-                Files.delete(file); return FileVisitResult.CONTINUE;
+            @Override
+            public FileVisitResult visitFile(Path file, BasicFileAttributes value) throws IOException {
+                Files.delete(file);
+                return FileVisitResult.CONTINUE;
             }
+
             /**
              * Completes the directory traversal step and propagates any traversal failure.
              * <p>完成目录遍历步骤并传播遍历失败。
@@ -126,9 +147,12 @@ public final class SourceDirectorySnapshot implements AutoCloseable {
              * @return constructed or resolved file visit result / 构造或解析得到的文件Visit结果
              * @throws IOException if the required file or stream operation fails / 所需文件或流操作失败时
              */
-            @Override public FileVisitResult postVisitDirectory(Path path, IOException failure) throws IOException {
-                if (failure != null) throw failure;
-                Files.delete(path); return FileVisitResult.CONTINUE;
+            @Override
+            public FileVisitResult postVisitDirectory(Path path, IOException failure) throws IOException {
+                if (failure != null)
+                    throw failure;
+                Files.delete(path);
+                return FileVisitResult.CONTINUE;
             }
         });
     }

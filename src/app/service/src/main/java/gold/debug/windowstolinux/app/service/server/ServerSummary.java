@@ -12,7 +12,8 @@ import java.util.Optional;
  * @param connected connected / 已连接
  * @param operatingSystem operating system / 操作系统
  */
-public record ServerSummary(ServerProfile profile, Optional<Instant> checkedAt, boolean connected, String operatingSystem) {
+public record ServerSummary(ServerProfile profile, Optional<Instant> checkedAt, boolean connected,
+        String operatingSystem) {
     /**
      * Matches a display name or endpoint substring. / 按显示名称或端点子串匹配。
      *

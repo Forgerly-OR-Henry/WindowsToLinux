@@ -1,11 +1,11 @@
 package gold.debug.windowstolinux.app.db.failure;
 
+import java.sql.SQLException;
+import java.util.Objects;
+
 import gold.debug.windowstolinux.shared.model.failure.FailureCarrier;
 import gold.debug.windowstolinux.shared.model.failure.FailureDescriptor;
 import gold.debug.windowstolinux.shared.model.failure.OperationIdentity;
-
-import java.sql.SQLException;
-import java.util.Objects;
 
 /**
  * Structured desktop persistence failure. / 结构化桌面持久化失败。
@@ -37,10 +37,10 @@ public final class DesktopPersistenceException extends SQLException implements F
      * @param cause original failure retained as the nested cause / 保留为嵌套原因的原始失败
      * @return a typed persistence failure / 类型化持久化失败
      */
-    public static DesktopPersistenceException create(
-            DesktopPersistenceFailureType type, String diagnostic, Throwable cause) {
-        return new DesktopPersistenceException(
-                FailureDescriptor.create(type, OperationIdentity.create(), diagnostic), cause);
+    public static DesktopPersistenceException create(DesktopPersistenceFailureType type, String diagnostic,
+            Throwable cause) {
+        return new DesktopPersistenceException(FailureDescriptor.create(type, OperationIdentity.create(), diagnostic),
+                cause);
     }
 
     /**
@@ -49,5 +49,8 @@ public final class DesktopPersistenceException extends SQLException implements F
      *
      * @return structured failure occurrence retained for safe reporting / 保留用于安全报告的结构化失败实例
      */
-    @Override public FailureDescriptor failure() { return failure; }
+    @Override
+    public FailureDescriptor failure() {
+        return failure;
+    }
 }

@@ -1,17 +1,18 @@
 
 package gold.debug.windowstolinux.shared.config.contract.definition;
 
+import java.util.Objects;
+
 import gold.debug.windowstolinux.shared.config.ConfigurationException;
 import gold.debug.windowstolinux.shared.config.ConfigurationFailureType;
-
-import java.util.Objects;
 
 /**
  * A typed non-secret configuration value that cannot carry a shell fragment.
  *
  *  <p>类型化的非秘密配置值，不能携带 Shell 片段。
  */
-public sealed interface ConfigurationValue permits ConfigurationValue.Text, ConfigurationValue.Number, ConfigurationValue.Flag {
+public sealed interface ConfigurationValue
+        permits ConfigurationValue.Text, ConfigurationValue.Number, ConfigurationValue.Flag {
     /**
      * Renders the canonical value used only for immutable snapshot hashing.
      *
@@ -41,7 +42,8 @@ public sealed interface ConfigurationValue permits ConfigurationValue.Text, Conf
             value = Objects.requireNonNull(value, "value").trim();
             if (value.isBlank() || value.length() > 1024 || value.indexOf('\n') >= 0 || value.indexOf('\r') >= 0
                     || value.indexOf('\0') >= 0) {
-                throw ConfigurationException.create(ConfigurationFailureType.TEXT_VALUE_INVALID, "Text configuration values must be bounded single-line text");
+                throw ConfigurationException.create(ConfigurationFailureType.TEXT_VALUE_INVALID,
+                        "Text configuration values must be bounded single-line text");
             }
         }
 

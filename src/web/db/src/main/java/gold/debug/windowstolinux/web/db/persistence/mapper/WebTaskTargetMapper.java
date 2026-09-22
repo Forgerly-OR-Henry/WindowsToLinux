@@ -9,4 +9,5 @@ import org.apache.ibatis.annotations.Mapper;
  * <p>将限定作用域的任务目标记录映射到显式数据库语句。
  */
 @Mapper
-public interface WebTaskTargetMapper extends BaseMapper<WebTaskTargetEntity> { }
+public interface WebTaskTargetMapper extends BaseMapper<WebTaskTargetEntity> {
+}

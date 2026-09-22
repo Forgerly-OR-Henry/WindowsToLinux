@@ -1,18 +1,18 @@
 package gold.debug.windowstolinux.shared.backup.extension.registry;
 
-import gold.debug.windowstolinux.shared.backup.contract.spi.DatabaseBackupAdapter;
-import gold.debug.windowstolinux.shared.backup.contract.spi.DatabaseOperationPort;
-import gold.debug.windowstolinux.shared.backup.extension.adapter.MysqlDatabaseAdapter;
-import gold.debug.windowstolinux.shared.backup.extension.adapter.PostgresqlDatabaseAdapter;
-import gold.debug.windowstolinux.shared.backup.extension.adapter.SqliteDatabaseAdapter;
-import gold.debug.windowstolinux.shared.backup.extension.adapter.LinuxDatabaseOperationPort;
-import gold.debug.windowstolinux.shared.backup.manifest.BackupDatabaseType;
-import gold.debug.windowstolinux.shared.linux.protocol.database.RemoteDatabasePort;
-
 import java.util.EnumMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+
+import gold.debug.windowstolinux.shared.backup.contract.spi.DatabaseBackupAdapter;
+import gold.debug.windowstolinux.shared.backup.contract.spi.DatabaseOperationPort;
+import gold.debug.windowstolinux.shared.backup.extension.adapter.LinuxDatabaseOperationPort;
+import gold.debug.windowstolinux.shared.backup.extension.adapter.MysqlDatabaseAdapter;
+import gold.debug.windowstolinux.shared.backup.extension.adapter.PostgresqlDatabaseAdapter;
+import gold.debug.windowstolinux.shared.backup.extension.adapter.SqliteDatabaseAdapter;
+import gold.debug.windowstolinux.shared.backup.manifest.BackupDatabaseType;
+import gold.debug.windowstolinux.shared.linux.protocol.database.RemoteDatabasePort;
 
 /**
  * Closed database-family adapter registry. / 闭合的数据库族适配器注册表。
@@ -49,11 +49,10 @@ public final class DatabaseAdapterRegistry {
      * @return the complete built-in adapter set / 完整内置适配器集合
      */
     public static DatabaseAdapterRegistry defaults(DatabaseOperationPort operations) {
-        return new DatabaseAdapterRegistry(List.of(
-                new SqliteDatabaseAdapter(operations),
-                new PostgresqlDatabaseAdapter(operations),
-                new MysqlDatabaseAdapter(BackupDatabaseType.MYSQL, operations),
-                new MysqlDatabaseAdapter(BackupDatabaseType.MARIADB, operations)));
+        return new DatabaseAdapterRegistry(
+                List.of(new SqliteDatabaseAdapter(operations), new PostgresqlDatabaseAdapter(operations),
+                        new MysqlDatabaseAdapter(BackupDatabaseType.MYSQL, operations),
+                        new MysqlDatabaseAdapter(BackupDatabaseType.MARIADB, operations)));
     }
 
     /**
@@ -76,7 +75,8 @@ public final class DatabaseAdapterRegistry {
      */
     public DatabaseBackupAdapter require(BackupDatabaseType type) {
         DatabaseBackupAdapter adapter = adapters.get(Objects.requireNonNull(type, "type"));
-        if (adapter == null) throw new IllegalArgumentException("no database backup adapter exists for " + type);
+        if (adapter == null)
+            throw new IllegalArgumentException("no database backup adapter exists for " + type);
         return adapter;
     }
 }

@@ -2,10 +2,7 @@ export function element<T extends HTMLElement = HTMLElement>(id: string): T {
   return document.getElementById(id) as T;
 }
 let pending = 0;
-export async function api<T = unknown>(
-  path: string,
-  options: RequestInit = {},
-): Promise<T> {
+export async function api<T = unknown>(path: string, options: RequestInit = {}): Promise<T> {
   pending++;
   element("loading").textContent = "加载中…";
   try {
@@ -22,8 +19,7 @@ export async function api<T = unknown>(
   }
 }
 export function showError(error: unknown) {
-  element("message").textContent =
-    error instanceof Error ? error.message : String(error);
+  element("message").textContent = error instanceof Error ? error.message : String(error);
 }
 export function cell(value: unknown) {
   const c = document.createElement("td");

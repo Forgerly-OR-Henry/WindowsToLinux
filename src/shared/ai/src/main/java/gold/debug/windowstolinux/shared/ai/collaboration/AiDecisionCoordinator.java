@@ -1,12 +1,12 @@
 package gold.debug.windowstolinux.shared.ai.collaboration;
 
+import java.util.List;
+import java.util.Objects;
+
 import gold.debug.windowstolinux.shared.ai.collaboration.advice.AiAdviceDecision;
 import gold.debug.windowstolinux.shared.ai.collaboration.invocation.AiInvocationEvidence;
 import gold.debug.windowstolinux.shared.ai.collaboration.invocation.AiInvocationStatus;
 import gold.debug.windowstolinux.shared.ai.collaboration.invocation.AiRoleInvocationResult;
-
-import java.util.List;
-import java.util.Objects;
 
 /**
  * Reconciles optional model advice without allowing it to grant execution authority. / 协调可选模型建议且不允许其授予执行权限。
@@ -21,7 +21,7 @@ public final class AiDecisionCoordinator {
      * @throws NullPointerException if a required input is absent / 必需输入缺失时
      */
     public AiCollaborationDecision reconcile(DeterministicDecision deterministic,
-                                             List<AiRoleInvocationResult> invocations) {
+            List<AiRoleInvocationResult> invocations) {
         Objects.requireNonNull(deterministic, "deterministic");
         List<AiInvocationEvidence> evidence = Objects.requireNonNull(invocations, "invocations").stream()
                 .map(AiRoleInvocationResult::evidence).toList();
@@ -41,7 +41,8 @@ public final class AiDecisionCoordinator {
             return decision(CollaborationDisposition.SAFE_STOP, "validated-model-safe-stop", evidence);
         }
         String reason = evidence.stream().anyMatch(item -> item.status() != AiInvocationStatus.VALIDATED)
-                ? "selected-model-unavailable-or-invalid" : "deterministic-allow-preserved";
+                ? "selected-model-unavailable-or-invalid"
+                : "deterministic-allow-preserved";
         return decision(CollaborationDisposition.DETERMINISTIC_ONLY, reason, evidence);
     }
 
@@ -55,7 +56,7 @@ public final class AiDecisionCoordinator {
      * @return ai collaboration decision from the supplied decision inputs / 根据所提供决定输入构建AICollaboration决定
      */
     private static AiCollaborationDecision decision(CollaborationDisposition disposition, String reason,
-                                                     List<AiInvocationEvidence> evidence) {
+            List<AiInvocationEvidence> evidence) {
         return new AiCollaborationDecision(disposition, reason, evidence);
     }
 }

@@ -18,7 +18,12 @@ def extract(archive, destination):
             for m in members:
                 target = root / m.filename
                 total += m.file_size
-                if '\\' in m.filename or root not in target.resolve().parents or total > 8 * MAX_ARCHIVE or (m.external_attr >> 16) & 0o170000 == 0o120000:
+                if (
+                    '\\' in m.filename
+                    or root not in target.resolve().parents
+                    or total > 8 * MAX_ARCHIVE
+                    or (m.external_attr >> 16) & 0o170000 == 0o120000
+                ):
                     fail('archive', 'unsafe ZIP entry')
             data.extractall(root)
             for m in members:
@@ -75,8 +80,15 @@ def extract(archive, destination):
 
 
 def run(command, cwd=None, environment=None):
-    process = subprocess.Popen(command, cwd=cwd, env=environment, stdin=subprocess.DEVNULL,
-                               stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
+    process = subprocess.Popen(
+        command,
+        cwd=cwd,
+        env=environment,
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        start_new_session=True,
+    )
     try:
         code = process.wait(timeout=remaining())
     finally:
@@ -92,8 +104,14 @@ def run(command, cwd=None, environment=None):
 
 def probe_output(command):
     with tempfile.TemporaryFile() as output:
-        process = subprocess.Popen(command, stdin=subprocess.DEVNULL, stdout=output,
-                                   stderr=subprocess.STDOUT, env=os.environ.copy(), start_new_session=True)
+        process = subprocess.Popen(
+            command,
+            stdin=subprocess.DEVNULL,
+            stdout=output,
+            stderr=subprocess.STDOUT,
+            env=os.environ.copy(),
+            start_new_session=True,
+        )
         try:
             code = process.wait(timeout=min(60, remaining()))
         finally:
@@ -121,19 +139,26 @@ def source_dependencies(layout):
         return
     common_apt = ['build-essential', 'pkg-config', 'libssl-dev', 'zlib1g-dev', 'libffi-dev']
     common_dnf = ['gcc', 'gcc-c++', 'make', 'pkgconf-pkg-config', 'openssl-devel', 'zlib-devel', 'libffi-devel']
-    apt = {'python': ['libbz2-dev', 'libreadline-dev', 'libsqlite3-dev', 'liblzma-dev', 'libncurses-dev', 'libgdbm-dev'],
-           'php': ['libonig-dev', 'libcurl4-openssl-dev', 'libxml2-dev', 'libsqlite3-dev', 'libpq-dev'],
-           'ruby': ['libyaml-dev', 'libreadline-dev', 'libgdbm-dev']}[layout]
-    dnf = {'python': ['bzip2-devel', 'readline-devel', 'sqlite-devel', 'xz-devel', 'ncurses-devel', 'gdbm-devel'],
-           'php': ['oniguruma-devel', 'libcurl-devel', 'libxml2-devel', 'sqlite-devel', 'libpq-devel'],
-           'ruby': ['libyaml-devel', 'readline-devel', 'gdbm-devel']}[layout]
+    apt = {
+        'python': ['libbz2-dev', 'libreadline-dev', 'libsqlite3-dev', 'liblzma-dev', 'libncurses-dev', 'libgdbm-dev'],
+        'php': ['libonig-dev', 'libcurl4-openssl-dev', 'libxml2-dev', 'libsqlite3-dev', 'libpq-dev'],
+        'ruby': ['libyaml-dev', 'libreadline-dev', 'libgdbm-dev'],
+    }[layout]
+    dnf = {
+        'python': ['bzip2-devel', 'readline-devel', 'sqlite-devel', 'xz-devel', 'ncurses-devel', 'gdbm-devel'],
+        'php': ['oniguruma-devel', 'libcurl-devel', 'libxml2-devel', 'sqlite-devel', 'libpq-devel'],
+        'ruby': ['libyaml-devel', 'readline-devel', 'gdbm-devel'],
+    }[layout]
     if pathlib.Path('/usr/bin/apt-get').is_file():
         environment = dict(os.environ, DEBIAN_FRONTEND='noninteractive', NEEDRESTART_MODE='l')
-        run(['/usr/bin/apt-get', '-o', 'DPkg::Lock::Timeout=120', 'install', '-y', '--no-install-recommends']
-            + common_apt + apt, environment=environment)
+        run(
+            ['/usr/bin/apt-get', '-o', 'DPkg::Lock::Timeout=120', 'install', '-y', '--no-install-recommends']
+            + common_apt
+            + apt,
+            environment=environment,
+        )
     elif pathlib.Path('/usr/bin/dnf').is_file():
-# @compat:centos-repositories@
+        # @compat:centos-repositories@
         run(['/usr/bin/dnf', '-y'] + repositories + ['install'] + common_dnf + dnf)
     else:
         fail('platform', 'the platform has no supported dependency installer')
-

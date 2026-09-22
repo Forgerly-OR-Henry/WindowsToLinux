@@ -1,9 +1,9 @@
 package gold.debug.windowstolinux.shared.linux.connection;
 
-import org.junit.jupiter.api.Test;
-
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertNotSame;
+
+import org.junit.jupiter.api.Test;
 
 class SshCredentialTest {
     @Test

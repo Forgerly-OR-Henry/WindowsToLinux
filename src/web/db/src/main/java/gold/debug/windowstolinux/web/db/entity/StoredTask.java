@@ -14,5 +14,6 @@ package gold.debug.windowstolinux.web.db.entity;
  * @param updatedAt updated at / 已更新时刻
  * @param finishedAt finished at / 已完成时刻
  */
-public record StoredTask(String id, String kind, String state, String requestJson, String resultJson,
-                         String errorCode, String createdAt, String updatedAt, String finishedAt) { }
+public record StoredTask(String id, String kind, String state, String requestJson, String resultJson, String errorCode,
+        String createdAt, String updatedAt, String finishedAt) {
+}

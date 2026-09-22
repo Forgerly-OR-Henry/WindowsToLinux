@@ -1,9 +1,10 @@
 package gold.debug.windowstolinux.app.db.entity;
 
-import gold.debug.windowstolinux.shared.model.ai.AiPurposeType;
 import java.time.Instant;
 import java.util.Objects;
 import java.util.Optional;
+
+import gold.debug.windowstolinux.shared.model.ai.AiPurposeType;
 
 /** Inventory metadata and capability evidence for an exact profile revision. / 精确模型修订的清单元数据及能力证据。
  * @param profile credential-free connection settings / 不含凭据明文的连接设置
@@ -24,11 +25,14 @@ public record StoredAiProviderConfiguration(StoredAiProviderProfile profile, Str
      * @param visionVerifiedAt image verification / 图像验证
      */
     public StoredAiProviderConfiguration {
-        Objects.requireNonNull(profile); name = Objects.requireNonNull(name).trim();
-        Objects.requireNonNull(textVerifiedAt); Objects.requireNonNull(visionVerifiedAt);
+        Objects.requireNonNull(profile);
+        name = Objects.requireNonNull(name).trim();
+        Objects.requireNonNull(textVerifiedAt);
+        Objects.requireNonNull(visionVerifiedAt);
         if (name.isEmpty() || name.length() > 120 || priority < 0 || revision < 1)
             throw new IllegalArgumentException("invalid AI inventory metadata");
     }
+
     /** Checks the capability needed by the selected purpose. / 检查所选用途需要的能力。
      * @param purpose invocation purpose / 调用用途
      * @return whether current configuration passed the relevant probe / 当前配置是否通过对应测试

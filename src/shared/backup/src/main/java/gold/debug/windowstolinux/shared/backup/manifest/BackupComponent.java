@@ -1,12 +1,12 @@
 package gold.debug.windowstolinux.shared.backup.manifest;
 
-import gold.debug.windowstolinux.shared.config.secretref.SecretReference;
-
 import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
 import java.util.Optional;
+
+import gold.debug.windowstolinux.shared.config.secretref.SecretReference;
 
 /**
  * One ordered managed component with exact archived definitions and reviewed runtime. / 带精确归档定义和经审阅运行时的单个有序受管组件。
@@ -22,24 +22,16 @@ import java.util.Optional;
  * @param releaseSha256 identity digest of the exact successful release / 精确成功发布的身份摘要
  * @param secretReferences immutable identifiers and revisions of required secrets / 所需秘密的不可变标识及修订
  */
-public record BackupComponent(
-        String componentId,
-        String managedApplicationId,
-        String ownershipManifestSha256,
-        String releaseManifestPath,
-        String configurationSnapshotPath,
-        String serviceDefinitionPath,
-        List<String> dependsOn,
-        BackupComponentRuntime runtime,
-        Optional<String> releaseSha256,
-        Optional<List<SecretReference>> secretReferences
-) {
+public record BackupComponent(String componentId, String managedApplicationId, String ownershipManifestSha256,
+        String releaseManifestPath, String configurationSnapshotPath, String serviceDefinitionPath,
+        List<String> dependsOn, BackupComponentRuntime runtime, Optional<String> releaseSha256,
+        Optional<List<SecretReference>> secretReferences) {
     /**
      * SECRET ORDER.
      * <p>秘密顺序。
      */
-    private static final Comparator<SecretReference> SECRET_ORDER = Comparator
-            .comparing(SecretReference::identifier).thenComparingLong(SecretReference::revision);
+    private static final Comparator<SecretReference> SECRET_ORDER = Comparator.comparing(SecretReference::identifier)
+            .thenComparingLong(SecretReference::revision);
 
     /**
      * Creates one schema-v5 component with exact release and secret bindings. / 创建带精确发布及秘密绑定的 schema v5 组件。
@@ -55,21 +47,12 @@ public record BackupComponent(
      * @param releaseSha256 identity digest of the exact successful release / 精确成功发布的身份摘要
      * @param secretReferences immutable identifiers and revisions of required secrets / 所需秘密的不可变标识及修订
      */
-    public BackupComponent(
-            String componentId,
-            String managedApplicationId,
-            String ownershipManifestSha256,
-            String releaseManifestPath,
-            String configurationSnapshotPath,
-            String serviceDefinitionPath,
-            List<String> dependsOn,
-            BackupComponentRuntime runtime,
-            String releaseSha256,
-            List<SecretReference> secretReferences
-    ) {
-        this(componentId, managedApplicationId, ownershipManifestSha256, releaseManifestPath,
-                configurationSnapshotPath, serviceDefinitionPath, dependsOn, runtime,
-                Optional.of(releaseSha256), Optional.of(secretReferences));
+    public BackupComponent(String componentId, String managedApplicationId, String ownershipManifestSha256,
+            String releaseManifestPath, String configurationSnapshotPath, String serviceDefinitionPath,
+            List<String> dependsOn, BackupComponentRuntime runtime, String releaseSha256,
+            List<SecretReference> secretReferences) {
+        this(componentId, managedApplicationId, ownershipManifestSha256, releaseManifestPath, configurationSnapshotPath,
+                serviceDefinitionPath, dependsOn, runtime, Optional.of(releaseSha256), Optional.of(secretReferences));
     }
 
     /**
@@ -91,8 +74,8 @@ public record BackupComponent(
     public BackupComponent {
         componentId = managedId(componentId, "componentId");
         managedApplicationId = managedId(managedApplicationId, "managedApplicationId");
-        ownershipManifestSha256 = Objects.requireNonNull(ownershipManifestSha256, "ownershipManifestSha256")
-                .trim().toLowerCase(Locale.ROOT);
+        ownershipManifestSha256 = Objects.requireNonNull(ownershipManifestSha256, "ownershipManifestSha256").trim()
+                .toLowerCase(Locale.ROOT);
         if (!ownershipManifestSha256.matches("[0-9a-f]{64}")) {
             throw new IllegalArgumentException("ownershipManifestSha256 must be canonical SHA-256");
         }
@@ -128,19 +111,12 @@ public record BackupComponent(
      * @param runtime reviewed language, process and health specification / 已审阅的语言、进程及健康规格
      * @return backup component from the supplied legacy inputs / 根据所提供历史输入构建备份组件
      */
-    static BackupComponent legacy(
-            String componentId,
-            String managedApplicationId,
-            String ownershipManifestSha256,
-            String releaseManifestPath,
-            String configurationSnapshotPath,
-            String serviceDefinitionPath,
-            List<String> dependsOn,
-            BackupComponentRuntime runtime
-    ) {
-        return new BackupComponent(componentId, managedApplicationId, ownershipManifestSha256,
-                releaseManifestPath, configurationSnapshotPath, serviceDefinitionPath, dependsOn, runtime,
-                Optional.empty(), Optional.empty());
+    static BackupComponent legacy(String componentId, String managedApplicationId, String ownershipManifestSha256,
+            String releaseManifestPath, String configurationSnapshotPath, String serviceDefinitionPath,
+            List<String> dependsOn, BackupComponentRuntime runtime) {
+        return new BackupComponent(componentId, managedApplicationId, ownershipManifestSha256, releaseManifestPath,
+                configurationSnapshotPath, serviceDefinitionPath, dependsOn, runtime, Optional.empty(),
+                Optional.empty());
     }
 
     /**

@@ -13,20 +13,20 @@ public enum SelinuxPreparationState {
      * REBOOT PENDING classification within selinux preparation state.
      * <p>Selinux准备状态中的重启待处理分类。
      */
-     REBOOT_PENDING,
+    REBOOT_PENDING,
     /**
      * READY TO ENFORCE classification within selinux preparation state.
      * <p>Selinux准备状态中的就绪目标强制分类。
      */
-     READY_TO_ENFORCE,
+    READY_TO_ENFORCE,
     /**
      * ENFORCEMENT PENDING classification within selinux preparation state.
      * <p>Selinux准备状态中的强制执行待处理分类。
      */
-     ENFORCEMENT_PENDING,
+    ENFORCEMENT_PENDING,
     /**
      * COMPLETE classification within selinux preparation state.
      * <p>Selinux准备状态中的完整分类。
      */
-     COMPLETE
+    COMPLETE
 }

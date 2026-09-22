@@ -1,23 +1,14 @@
 const object = (v) => v !== null && typeof v === "object" && !Array.isArray(v);
 const fields = (v, shape) =>
-  object(v) &&
-  Object.entries(shape).every(([k, t]) =>
-    t === "array" ? Array.isArray(v[k]) : typeof v[k] === t,
-  );
+  object(v) && Object.entries(shape).every(([k, t]) => (t === "array" ? Array.isArray(v[k]) : typeof v[k] === t));
 const list = (v, shape) => Array.isArray(v) && v.every((x) => fields(x, shape));
 export function validResponse(path, method, status, v) {
   if (status >= 400) return fields(v, { error: "string" });
   if (path === "/readyz")
-    return (
-      fields(v, { status: "string", version: "number", component: "string" }) &&
-      v.version === 2
-    );
-  if (path === "/api/actors")
-    return Array.isArray(v) && v.every((x) => typeof x === "string");
+    return fields(v, { status: "string", version: "number", component: "string" }) && v.version === 2;
+  if (path === "/api/actors") return Array.isArray(v) && v.every((x) => typeof x === "string");
   if (path === "/api/categories")
-    return method === "GET"
-      ? list(v, { id: "number", name: "string" })
-      : fields(v, { id: "number", name: "string" });
+    return method === "GET" ? list(v, { id: "number", name: "string" }) : fields(v, { id: "number", name: "string" });
   if (path === "/api/assets" && method === "GET")
     return (
       fields(v, { items: "array", total: "number" }) &&
@@ -73,9 +64,7 @@ export function validResponse(path, method, status, v) {
       items: "array",
       events: "array",
     });
-  if (path === "/api/maintenance")
-    return list(v, { id: "number", assetId: "number", status: "string" });
-  if (path.startsWith("/api/maintenance"))
-    return fields(v, { id: "number", assetId: "number", status: "string" });
+  if (path === "/api/maintenance") return list(v, { id: "number", assetId: "number", status: "string" });
+  if (path.startsWith("/api/maintenance")) return fields(v, { id: "number", assetId: "number", status: "string" });
   return false;
 }

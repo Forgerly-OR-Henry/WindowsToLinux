@@ -16,11 +16,13 @@ public final class WebSchemaMigrator {
      * <p>当前版本。
      */
     public static final int CURRENT_VERSION = 1;
+
     /**
      * JDBC database access.
      * <p>JDBC 数据库访问。
      */
     private final JdbcTemplate jdbc;
+
     /**
      * Transaction.
      * <p>事务。
@@ -33,7 +35,10 @@ public final class WebSchemaMigrator {
      * @param jdbc JDBC database access / JDBC 数据库访问
      * @param transaction transaction / 事务
      */
-    public WebSchemaMigrator(JdbcTemplate jdbc, TransactionTemplate transaction) { this.jdbc = jdbc; this.transaction = transaction; }
+    public WebSchemaMigrator(JdbcTemplate jdbc, TransactionTemplate transaction) {
+        this.jdbc = jdbc;
+        this.transaction = transaction;
+    }
 
     /**
      * Applies supported Web SQLite schema initialization or migrations transactionally and rejects unsupported versions.

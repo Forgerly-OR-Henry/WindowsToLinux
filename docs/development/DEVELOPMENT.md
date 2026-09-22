@@ -21,21 +21,21 @@
 
 ## 1. 产品定位与现行状态
 
-WindowsToLinux 是面向个人和小型自托管场景的部署管理工具。用户选择源码或 Git 版本并提供目标 Linux 服务器后，软件负责确定性分析、连接检查、目标机环境准备、源码传输、目标机构建、受控发布、健康检查和失败恢复。部署成功的内容进入“已部署应用”，可查看安装或运行状态；长期服务提供启动、停止、重启和自启动，一次性工具提供固定使用命令。
+WindowsToLinux 是面向个人和小型自托管场景的部署管理工具。用户选择源码或 Git 版本并提供目标 Linux 服务器后，软件按所选模式使用标准分析或自主 Agent 推导部署方案，并完成连接检查、目标环境准备、源码传输、目标机构建、受管发布、健康检查和失败恢复。部署成功的内容进入“已部署应用”，可查看安装或运行状态；长期服务提供启动、停止、重启和自启动，一次性工具提供固定使用命令。
 
-产品不提供通用 SSH 终端、任意命令执行或官方托管 SaaS。部署、更新、回滚、备份与开机自启仍要求 WindowsToLinux 受管契约和资源归属验证。经扫描并由用户选择接管的外部 systemd 服务或 Docker 容器只开放状态、访问入口、启动、停止、重启；每次操作复核服务器及实际运行目标身份，保留原配置。
+产品的自主命令仅用于经审批的任务沙箱；不提供通用 SSH 终端或官方托管 SaaS。部署、更新、回滚、备份与开机自启仍要求 WindowsToLinux 受管契约和资源归属验证。经扫描并由用户选择接管的外部 systemd 服务或 Docker 容器只开放状态、访问入口、启动、停止、重启；每次操作复核服务器及实际运行目标身份，保留原配置。
 
-| 范围 | 当前代码与入口 | 验证边界 |
-| --- | --- | --- |
-| 工程与桌面 | Java 21、28-POM；Swing 自动部署、手工 Reviewed、多组件、生命周期及备份页面已接线 | 代码核对不等于本次重跑全部产品测试 |
-| 源码与 AI | 本地/Git 快照、确定性分析、结构化建议及缺项表单 | 不执行用户项目代码；私有 Git 凭据和完整真实 AI 组合未接通或未验证 |
-| 部署与身份 | 目标 Linux 构建；root 管理、临时构建身份、固定独立运行身份；helper v9 FHS 与 APP 运行契约 | v7 代表性部署仅为历史记录；v9 的 APP、系统、身份与故障矩阵为 RUNTIME-PENDING |
-| 工具链 | `ToolchainSupportCatalog` 修订 `2026-09-09.1`，按需求选择、准备和固定精确版本 | 允许分支不等于每个补丁、框架和环境都实测 |
-| 持久化与归档 | 桌面 SQLite v16、运行时及备份激活配置 v5、资源载荷 v2、manifest schema v6 | 本地数据库不清空；旧资源/运行时载荷及旧备份明确拒绝，不转换为新布局 |
-| 备份恢复迁移 | 完整桌面用例已接入共享归档及 Linux 端口 | 实际数据库备份恢复及双服务器迁移仍为 RUNTIME-PENDING |
-| 数据库管理 | PostgreSQL/MySQL/MariaDB/Redis 服务型准备；SQLite 文件型部署、初始化与一致性备份恢复 | 整应用备份至多一个受支持数据库；Redis 备份及多数据库归档不在范围，SQLite 实机矩阵待验收 |
-| Web | 第五期服务台采用 Spring Boot 4.1.1 / MVC、MyBatis-Plus 3.5.17 / SQLite 与 Vue；YAML 无参启动，CLASS/JAR 数据根 | 本地验证见五期；真实目标待验收；六期只预留结构和 schema |
-| 正式维护 | 四期具备更新/卸载安全核心 | 官网、官方下载安装与生产维护执行器属于六期，当前不能称为可用 |
+| 范围         | 当前代码与入口                                                                                                 | 验证边界                                                                                |
+| ------------ | -------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
+| 工程与桌面   | Java 21、31-POM；Swing 自动部署、手工 Reviewed、多组件、生命周期及备份页面已接线                               | 本次 JDK 21 完整 reactor、App/UI 和 Web 本地回归已通过；真实验收范围分开记录            |
+| 源码与 AI    | 本地/Git 快照、标准分析及辅助、自主读取/命令修正及缺项表单                                                     | 本机不执行用户项目代码；私有 Git 凭据和完整真实 AI 组合未接通或未验证                   |
+| 部署与身份   | 目标 Linux 构建；root 管理、临时构建身份、固定独立运行身份；helper v10 FHS 与 APP 运行契约                     | v7 代表性部署仅为历史记录；v10 的 Agent、APP、系统、身份与故障矩阵为 RUNTIME-PENDING    |
+| 工具链       | `ToolchainSupportCatalog` 修订 `2026-09-09.1`，按需求选择、准备和固定精确版本                                  | 允许分支不等于每个补丁、框架和环境都实测                                                |
+| 持久化与归档 | 桌面 SQLite v20、运行时 v5/v6 及通用进程 v7、备份激活配置 v5、资源载荷 v2、manifest schema v6                  | 本地数据库不清空；旧资源/运行时载荷及旧备份明确拒绝，不转换为新布局                     |
+| 备份恢复迁移 | 完整桌面用例已接入共享归档及 Linux 端口                                                                        | 实际数据库备份恢复及双服务器迁移仍为 RUNTIME-PENDING                                    |
+| 数据库管理   | PostgreSQL/MySQL/MariaDB/Redis 服务型准备；SQLite 文件型部署、初始化与一致性备份恢复                           | 整应用备份至多一个受支持数据库；Redis 备份及多数据库归档不在范围，SQLite 实机矩阵待验收 |
+| Web          | 第五期服务台采用 Spring Boot 4.1.1 / MVC、MyBatis-Plus 3.5.17 / SQLite 与 Vue；YAML 无参启动，CLASS/JAR 数据根 | 本地验证见五期；真实目标待验收；六期只预留结构和 schema                                 |
+| 正式维护     | 四期具备更新/卸载安全核心                                                                                      | 官网、官方下载安装与生产维护执行器属于六期，当前不能称为可用                            |
 
 实际功能和证据以各期对应章节为准：[四期验收矩阵](PHASE-4.md#acceptance-matrix)。历史 helper v5 的 17 条运行路径与 helper v7 的 25 种源码代表组合分开保存，不相互替代。
 
@@ -43,14 +43,14 @@ WindowsToLinux 是面向个人和小型自托管场景的部署管理工具。�
 
 ## 2. 六期路线与导航
 
-| 期数 | 本期主要增量 | 承接与后续 |
-| --- | --- | --- |
-| [一期](PHASE-1.md) | 本地源码、Maven Spring Boot、Ubuntu/systemd、基础 AI、受管生命周期、桌面最小闭环 | 二期扩展来源和部署类型 |
-| [二期](PHASE-2.md) | Git、配置/秘密、Java/Node/Python/静态/容器适配、Linux 扩展、多 Provider | 三期处理高级语言与整应用编排 |
-| [三期](PHASE-3.md) | 原生生态构建、高级语言、混合组件、整应用事务、多模型、职责分包 | 四期扩展自动化、工具链、数据保护和身份 |
+| 期数               | 本期主要增量                                                                      | 承接与后续                             |
+| ------------------ | --------------------------------------------------------------------------------- | -------------------------------------- |
+| [一期](PHASE-1.md) | 本地源码、Maven Spring Boot、Ubuntu/systemd、基础 AI、受管生命周期、桌面最小闭环  | 二期扩展来源和部署类型                 |
+| [二期](PHASE-2.md) | Git、配置/秘密、Java/Node/Python/静态/容器适配、Linux 扩展、多 Provider           | 三期处理高级语言与整应用编排           |
+| [三期](PHASE-3.md) | 原生生态构建、高级语言、混合组件、整应用事务、多模型、职责分包                    | 四期扩展自动化、工具链、数据保护和身份 |
 | [四期](PHASE-4.md) | 自动部署、AI 补全、DB、动态工具链、身份隔离、职责边界、备份恢复迁移及维护安全核心 | Web 归五期；生产网站和维护执行器归六期 |
-| [五期](PHASE-5.md) | 内部回环 Web 服务台、API/SSE、任务、上传、业务复用 | 不含生产认证、官网和正式发布 |
-| [六期](PHASE-6.md) | 规划官网、生产认证、正式发布下载与 Windows 生产维护 | 详细方案在实际实施前确认 |
+| [五期](PHASE-5.md) | 内部回环 Web 服务台、API/SSE、任务、上传、业务复用                                | 不含生产认证、官网和正式发布           |
+| [六期](PHASE-6.md) | 规划官网、生产认证、正式发布下载与 Windows 生产维护                               | 详细方案在实际实施前确认               |
 
 后期继承前期已经实现的行为，不继承未落地承诺。当前代码出现后期增强时，在首次引入功能的章节链接说明，但不能改写其历史完成时间。阶段划分表达开发增量，当前统一代码只有一套有效执行链。
 
@@ -60,33 +60,33 @@ WindowsToLinux 是面向个人和小型自托管场景的部署管理工具。�
 
 模块名称使用当前职责。早期功能所在模块的现名不表示该模块在当时已独立拆出；无法证明拆分期次的不推断。表内“沿用”表示无新的已确认增量；“未引入”不要求创建空实现；Web 早期骨架只表示工程基线。
 
-| 模块 | 一期 | 二期 | 三期 | 四期 | 五期 | 六期 |
-| --- | --- | --- | --- | --- | --- | --- |
-| `shared/ai` | [新增：单 Provider 结构化建议](PHASE-1.md#ai) | [增强：多 Provider 和类型化只读 Agent 工具](PHASE-2.md#ai) | [增强：三个固定角色、最小上下文和冲突裁决](PHASE-3.md#ai) | [增强：缺项建议、上下文与响应读取界限](PHASE-4.md#ai) | [复用](PHASE-5.md#api) | 沿用 |
-| `shared/analyze` | [新增：Maven Spring Boot 识别与阻断条件](PHASE-1.md#source) | [增强：六类项目、语言证据和显式运行时建议](PHASE-2.md#analysis) | [增强：高级语言、原生构建、组件冲突及依赖分析](PHASE-3.md#components) | [增强：全版本声明、数据库需求及安全排除事实](PHASE-4.md#database) | [复用](PHASE-5.md#api) | 沿用 |
-| `shared/backup` | 未引入 | 未引入 | 未引入 | [新增：schema v6 归档、一致性、秘密信封、恢复与迁移状态机](PHASE-4.md#backup) | [复用](PHASE-5.md#api) | 沿用 |
-| `shared/config` | 未引入 | [新增：不可变配置、秘密引用及发布绑定](PHASE-2.md#configuration) | 沿用 | [增强：资源、数据库和运行事实的精确绑定](PHASE-4.md#backup) | [复用](PHASE-5.md#api) | 沿用 |
-| `shared/deploy` | [新增：计划、短停机事务、健康与失败恢复](PHASE-1.md#deployment) | [增强：更多项目与容器适配，回滚旧运行参数](PHASE-2.md#deployment) | [增强：整应用构建/切换/健康/回滚与依赖生命周期](PHASE-3.md#transaction) | [增强：动态工具链准备、身份约束、恢复事务及失败状态](PHASE-4.md#isolation) | [复用](PHASE-5.md#api) | 沿用 |
-| `shared/git` | 未引入 | [新增：无凭据 URL、固定 Commit、受限 Git 快照](PHASE-2.md#git) | 沿用 | [修复：中断传播、子进程及临时工作区收尾](PHASE-4.md#security) | [复用](PHASE-5.md#api) | 沿用 |
-| `shared/linux` | [新增：SSH、能力、构建发布与生命周期窄契约](PHASE-1.md#deployment) | [增强：运行类型、容器与更多目标能力](PHASE-2.md#linux) | [增强：多组件事务与高级运行类型契约](PHASE-3.md#transaction) | [结构调整：仅依赖 model，备份/恢复端口与原生 DB 失败契约](PHASE-4.md#architecture) | [复用](PHASE-5.md#api) | 沿用 |
-| `shared/linux-sshd` | [新增：Ubuntu、SFTP、受控 helper 与 systemd 实现](PHASE-1.md#deployment) | [增强：语言构建、Docker/Podman 与发行版准备](PHASE-2.md#deployment) | [增强：原生构建 Renderer、更多发行版与运行协议](PHASE-3.md#ecosystem) | [增强：工具链、低权限构建、动态运行、DB 与备份恢复协议](PHASE-4.md#isolation) | [复用](PHASE-5.md#api) | 沿用 |
-| `shared/model` | [新增：项目、健康、受管身份与生命周期契约](PHASE-1.md#source) | [增强：扩展构建、运行时、语言事实与配置绑定](PHASE-2.md#analysis) | [增强：精确构建架构、分级支持、组件图和角色事实](PHASE-3.md#ecosystem) | [增强：工具链目录/绑定、运行身份、数据库与结构化失败模型](PHASE-4.md#toolchains) | [复用](PHASE-5.md#api) | 沿用 |
-| `shared/source` | [新增：可重复归档及路径、秘密排除边界](PHASE-1.md#source) | [增强：Git 与本地共用来源摘要和排除规则](PHASE-2.md#git) | 沿用 | [修复：秘密文件排除与有界快照输入](PHASE-4.md#security) | [复用](PHASE-5.md#api) | 沿用 |
-| `app/db` | [新增：服务器与受管应用持久化](PHASE-1.md#lifecycle) | [增强：配置修订、秘密绑定和发布身份](PHASE-2.md#configuration) | [增强：角色分配和成功整应用图持久化](PHASE-3.md#transaction) | [增强：SQLite v16，运行时编码 v5、资源/健康/秘密/身份及桌面清单持久化](PHASE-4.md#backup) | 沿用 | 沿用 |
-| `app/main` | [新增：CLASS/JAR/APP 启动装配](PHASE-1.md#desktop) | [增强：新增共享能力装配](PHASE-2.md#deployment) | [增强：生态注册与跨模块验收入口](PHASE-3.md#architecture) | [修复：跨模块装配、结构门禁与验收连接收尾](PHASE-4.md#architecture) | 沿用 | [规划：正式维护产品入口及外部执行器交接](PHASE-6.md#maintenance) |
-| `app/secret` | [新增：SSH/AI 凭据存储](PHASE-1.md#desktop) | [增强：应用秘密的标识和修订](PHASE-2.md#configuration) | 沿用 | [增强：精确修订解析及受管凭据删除；备份密码格式归 shared/backup](PHASE-4.md#maintenance) | 沿用 | 沿用 |
-| `app/service` | [新增：桌面用例编排与状态登记](PHASE-1.md#deployment) | [增强：Git、配置、容器和 AI 用例接线](PHASE-2.md#deployment) | [增强：组件审阅、整应用部署及生命周期入口](PHASE-3.md#transaction) | [增强：自动编排、数据库补全、完整备份恢复与离线迁移](PHASE-4.md#automatic) | 沿用 | [规划：正式维护产品入口及外部执行器交接](PHASE-6.md#maintenance) |
-| `app/ui` | [新增：Swing 输入、结果与受管操作](PHASE-1.md#desktop) | [增强：来源、运行时及配置审阅](PHASE-2.md#analysis) | [增强：组件图、运行时审阅和角色配置](PHASE-3.md#components) | [增强：一键部署、高级侧栏、帮助、缺项表单与备份页面](PHASE-4.md#desktop) | 沿用 | [规划：正式维护产品入口及外部执行器交接](PHASE-6.md#maintenance) |
-| `app/windows` | [新增：本地源码准备和固定工作目录](PHASE-1.md#desktop) | 沿用 | 沿用 | [增强：备份材料和无覆盖发布、更新卸载安全核心](PHASE-4.md#maintenance) | 沿用 | [规划：生产更新/卸载执行器、打包及真实替换恢复](PHASE-6.md#maintenance) |
-| `web/api` | 目标骨架，无业务 | 目标骨架，无业务 | 目标骨架，无业务 | 目标骨架，无业务 | [同源业务接口、任务提交和 SSE](PHASE-5.md#api) | [规划：正式服务边界、发布下载接线；部署形态后定](PHASE-6.md#release) |
-| `web/auth` | 目标骨架，无业务 | 目标骨架，无业务 | 目标骨架，无业务 | 目标骨架，无业务 | [规划：本期不实现认证，生产身份功能后移六期](PHASE-5.md#runtime) | [规划：上线身份、会话与访问控制；具体方案后定](PHASE-6.md#security) |
-| `web/db` | 目标骨架，无业务 | 目标骨架，无业务 | 目标骨架，无业务 | 目标骨架，无业务 | [专用测试 SQLite、作用域关系与任务/配置修订](PHASE-5.md#tasks) | [规划：生产数据、凭据和制品管理分工待实施前确认](PHASE-6.md#security) |
-| `web/file` | 目标骨架，无业务 | 目标骨架，无业务 | 目标骨架，无业务 | 目标骨架，无业务 | [受限上传和只读源码工作区](PHASE-5.md#source) | [规划：生产数据、凭据和制品管理分工待实施前确认](PHASE-6.md#security) |
-| `web/frontend` | [工程骨架](PHASE-1.md#desktop) | [工程骨架](PHASE-1.md#desktop) | [工程骨架](PHASE-1.md#desktop) | [工程骨架](PHASE-1.md#desktop) | [内部服务台页面及 HTTP/SSE 交互](PHASE-5.md#frontend) | [规划：官网与正式服务入口](PHASE-6.md#website) |
-| `web/main` | 目标骨架，无业务 | 目标骨架，无业务 | 目标骨架，无业务 | 目标骨架，无业务 | [回环启动、单实例与依赖装配](PHASE-5.md#runtime) | [规划：正式服务边界、发布下载接线；部署形态后定](PHASE-6.md#release) |
-| `web/secret` | 目标骨架，无业务 | 目标骨架，无业务 | 目标骨架，无业务 | 目标骨架，无业务 | [加密 SSH/AI/备份凭据；Git 只读 HTTPS](PHASE-5.md#secrets) | [规划：生产数据、凭据和制品管理分工待实施前确认](PHASE-6.md#security) |
-| `web/service` | 目标骨架，无业务 | 目标骨架，无业务 | 目标骨架，无业务 | 目标骨架，无业务 | [Web 输入与 shared 用例组合](PHASE-5.md#api) | [规划：正式服务边界、发布下载接线；部署形态后定](PHASE-6.md#release) |
-| `web/task` | 目标骨架，无业务 | 目标骨架，无业务 | 目标骨架，无业务 | 目标骨架，无业务 | [任务持久化、事件、取消与重启重新验证](PHASE-5.md#tasks) | 沿用 |
+| 模块                      | 一期                                                                     | 二期                                                                | 三期                                                                    | 四期                                                                                      | 五期                                                             | 六期                                                                    |
+| ------------------------- | ------------------------------------------------------------------------ | ------------------------------------------------------------------- | ----------------------------------------------------------------------- | ----------------------------------------------------------------------------------------- | ---------------------------------------------------------------- | ----------------------------------------------------------------------- |
+| `shared/ai`               | [新增：单 Provider 结构化建议](PHASE-1.md#ai)                            | [增强：多 Provider 和类型化只读 Agent 工具](PHASE-2.md#ai)          | [增强：三个固定角色、最小上下文和冲突裁决](PHASE-3.md#ai)               | [增强：缺项建议、上下文与响应读取界限](PHASE-4.md#ai)                                     | [复用](PHASE-5.md#api)                                           | 沿用                                                                    |
+| `shared/standard/analyze` | [新增：Maven Spring Boot 识别与阻断条件](PHASE-1.md#source)              | [增强：六类项目、语言证据和显式运行时建议](PHASE-2.md#analysis)     | [增强：高级语言、原生构建、组件冲突及依赖分析](PHASE-3.md#components)   | [增强：全版本声明、数据库需求及安全排除事实](PHASE-4.md#database)                         | [复用](PHASE-5.md#api)                                           | 沿用                                                                    |
+| `shared/backup`           | 未引入                                                                   | 未引入                                                              | 未引入                                                                  | [新增：schema v6 归档、一致性、秘密信封、恢复与迁移状态机](PHASE-4.md#backup)             | [复用](PHASE-5.md#api)                                           | 沿用                                                                    |
+| `shared/config`           | 未引入                                                                   | [新增：不可变配置、秘密引用及发布绑定](PHASE-2.md#configuration)    | 沿用                                                                    | [增强：资源、数据库和运行事实的精确绑定](PHASE-4.md#backup)                               | [复用](PHASE-5.md#api)                                           | 沿用                                                                    |
+| `shared/deploy`           | [新增：计划、短停机事务、健康与失败恢复](PHASE-1.md#deployment)          | [增强：更多项目与容器适配，回滚旧运行参数](PHASE-2.md#deployment)   | [增强：整应用构建/切换/健康/回滚与依赖生命周期](PHASE-3.md#transaction) | [增强：动态工具链准备、身份约束、恢复事务及失败状态](PHASE-4.md#isolation)                | [复用](PHASE-5.md#api)                                           | 沿用                                                                    |
+| `shared/git`              | 未引入                                                                   | [新增：无凭据 URL、固定 Commit、受限 Git 快照](PHASE-2.md#git)      | 沿用                                                                    | [修复：中断传播、子进程及临时工作区收尾](PHASE-4.md#security)                             | [复用](PHASE-5.md#api)                                           | 沿用                                                                    |
+| `shared/linux`            | [新增：SSH、能力、构建发布与生命周期窄契约](PHASE-1.md#deployment)       | [增强：运行类型、容器与更多目标能力](PHASE-2.md#linux)              | [增强：多组件事务与高级运行类型契约](PHASE-3.md#transaction)            | [结构调整：仅依赖 model，备份/恢复端口与原生 DB 失败契约](PHASE-4.md#architecture)        | [复用](PHASE-5.md#api)                                           | 沿用                                                                    |
+| `shared/linux-sshd`       | [新增：Ubuntu、SFTP、受控 helper 与 systemd 实现](PHASE-1.md#deployment) | [增强：语言构建、Docker/Podman 与发行版准备](PHASE-2.md#deployment) | [增强：原生构建 Renderer、更多发行版与运行协议](PHASE-3.md#ecosystem)   | [增强：工具链、低权限构建、动态运行、DB 与备份恢复协议](PHASE-4.md#isolation)             | [复用](PHASE-5.md#api)                                           | 沿用                                                                    |
+| `shared/model`            | [新增：项目、健康、受管身份与生命周期契约](PHASE-1.md#source)            | [增强：扩展构建、运行时、语言事实与配置绑定](PHASE-2.md#analysis)   | [增强：精确构建架构、分级支持、组件图和角色事实](PHASE-3.md#ecosystem)  | [增强：工具链目录/绑定、运行身份、数据库与结构化失败模型](PHASE-4.md#toolchains)          | [复用](PHASE-5.md#api)                                           | 沿用                                                                    |
+| `shared/source`           | [新增：可重复归档及路径、秘密排除边界](PHASE-1.md#source)                | [增强：Git 与本地共用来源摘要和排除规则](PHASE-2.md#git)            | 沿用                                                                    | [修复：秘密文件排除与有界快照输入](PHASE-4.md#security)                                   | [复用](PHASE-5.md#api)                                           | 沿用                                                                    |
+| `app/db`                  | [新增：服务器与受管应用持久化](PHASE-1.md#lifecycle)                     | [增强：配置修订、秘密绑定和发布身份](PHASE-2.md#configuration)      | [增强：角色分配和成功整应用图持久化](PHASE-3.md#transaction)            | [增强：SQLite v16，运行时编码 v5、资源/健康/秘密/身份及桌面清单持久化](PHASE-4.md#backup) | 沿用                                                             | 沿用                                                                    |
+| `app/main`                | [新增：CLASS/JAR/APP 启动装配](PHASE-1.md#desktop)                       | [增强：新增共享能力装配](PHASE-2.md#deployment)                     | [增强：生态注册与跨模块验收入口](PHASE-3.md#architecture)               | [修复：跨模块装配、结构门禁与验收连接收尾](PHASE-4.md#architecture)                       | 沿用                                                             | [规划：正式维护产品入口及外部执行器交接](PHASE-6.md#maintenance)        |
+| `app/secret`              | [新增：SSH/AI 凭据存储](PHASE-1.md#desktop)                              | [增强：应用秘密的标识和修订](PHASE-2.md#configuration)              | 沿用                                                                    | [增强：精确修订解析及受管凭据删除；备份密码格式归 shared/backup](PHASE-4.md#maintenance)  | 沿用                                                             | 沿用                                                                    |
+| `app/service`             | [新增：桌面用例编排与状态登记](PHASE-1.md#deployment)                    | [增强：Git、配置、容器和 AI 用例接线](PHASE-2.md#deployment)        | [增强：组件审阅、整应用部署及生命周期入口](PHASE-3.md#transaction)      | [增强：自动编排、数据库补全、完整备份恢复与离线迁移](PHASE-4.md#automatic)                | 沿用                                                             | [规划：正式维护产品入口及外部执行器交接](PHASE-6.md#maintenance)        |
+| `app/ui`                  | [新增：Swing 输入、结果与受管操作](PHASE-1.md#desktop)                   | [增强：来源、运行时及配置审阅](PHASE-2.md#analysis)                 | [增强：组件图、运行时审阅和角色配置](PHASE-3.md#components)             | [增强：一键部署、高级侧栏、帮助、缺项表单与备份页面](PHASE-4.md#desktop)                  | 沿用                                                             | [规划：正式维护产品入口及外部执行器交接](PHASE-6.md#maintenance)        |
+| `app/windows`             | [新增：本地源码准备和固定工作目录](PHASE-1.md#desktop)                   | 沿用                                                                | 沿用                                                                    | [增强：备份材料和无覆盖发布、更新卸载安全核心](PHASE-4.md#maintenance)                    | 沿用                                                             | [规划：生产更新/卸载执行器、打包及真实替换恢复](PHASE-6.md#maintenance) |
+| `web/api`                 | 目标骨架，无业务                                                         | 目标骨架，无业务                                                    | 目标骨架，无业务                                                        | 目标骨架，无业务                                                                          | [同源业务接口、任务提交和 SSE](PHASE-5.md#api)                   | [规划：正式服务边界、发布下载接线；部署形态后定](PHASE-6.md#release)    |
+| `web/auth`                | 目标骨架，无业务                                                         | 目标骨架，无业务                                                    | 目标骨架，无业务                                                        | 目标骨架，无业务                                                                          | [规划：本期不实现认证，生产身份功能后移六期](PHASE-5.md#runtime) | [规划：上线身份、会话与访问控制；具体方案后定](PHASE-6.md#security)     |
+| `web/db`                  | 目标骨架，无业务                                                         | 目标骨架，无业务                                                    | 目标骨架，无业务                                                        | 目标骨架，无业务                                                                          | [专用测试 SQLite、作用域关系与任务/配置修订](PHASE-5.md#tasks)   | [规划：生产数据、凭据和制品管理分工待实施前确认](PHASE-6.md#security)   |
+| `web/file`                | 目标骨架，无业务                                                         | 目标骨架，无业务                                                    | 目标骨架，无业务                                                        | 目标骨架，无业务                                                                          | [受限上传和只读源码工作区](PHASE-5.md#source)                    | [规划：生产数据、凭据和制品管理分工待实施前确认](PHASE-6.md#security)   |
+| `web/frontend`            | [工程骨架](PHASE-1.md#desktop)                                           | [工程骨架](PHASE-1.md#desktop)                                      | [工程骨架](PHASE-1.md#desktop)                                          | [工程骨架](PHASE-1.md#desktop)                                                            | [内部服务台页面及 HTTP/SSE 交互](PHASE-5.md#frontend)            | [规划：官网与正式服务入口](PHASE-6.md#website)                          |
+| `web/main`                | 目标骨架，无业务                                                         | 目标骨架，无业务                                                    | 目标骨架，无业务                                                        | 目标骨架，无业务                                                                          | [回环启动、单实例与依赖装配](PHASE-5.md#runtime)                 | [规划：正式服务边界、发布下载接线；部署形态后定](PHASE-6.md#release)    |
+| `web/secret`              | 目标骨架，无业务                                                         | 目标骨架，无业务                                                    | 目标骨架，无业务                                                        | 目标骨架，无业务                                                                          | [加密 SSH/AI/备份凭据；Git 只读 HTTPS](PHASE-5.md#secrets)       | [规划：生产数据、凭据和制品管理分工待实施前确认](PHASE-6.md#security)   |
+| `web/service`             | 目标骨架，无业务                                                         | 目标骨架，无业务                                                    | 目标骨架，无业务                                                        | 目标骨架，无业务                                                                          | [Web 输入与 shared 用例组合](PHASE-5.md#api)                     | [规划：正式服务边界、发布下载接线；部署形态后定](PHASE-6.md#release)    |
+| `web/task`                | 目标骨架，无业务                                                         | 目标骨架，无业务                                                    | 目标骨架，无业务                                                        | 目标骨架，无业务                                                                          | [任务持久化、事件、取消与重启重新验证](PHASE-5.md#tasks)         | 沿用                                                                    |
 
 <a id="rules"></a>
 
@@ -96,10 +96,10 @@ WindowsToLinux 是面向个人和小型自托管场景的部署管理工具。�
 
 - 优先读取构建文件、锁文件、部署文件、CI 和官方项目配置，再读取文档和示例；记录事实来源、冲突、置信度和缺失项。
 - AI 是可选分析补充，不是部署授权。未配置 AI 时，正式支持范围内的确定性流程必须可用。
-- AI 不接触 SSH、Git、数据库或 API 原始凭据，不获得任意 Shell，不得绕过类型、路径、命令、权限、影响范围和资源归属校验。
-- AI 输出必须转成结构化建议，经确定性校验和必要用户确认后才能进入计划。
-- App 三模式共用 `app/ui/deployment/automatic` 入口；确定性检查和计划归 `app/service/deployment`，模型协议归 `shared/ai`，Agent 执行循环归 `shared/deploy/agent`。
-- 运行时共用启用模型顺序；角色保留独立上下文、提示和结果校验。只有连接、HTTP 或校验失败才切换模型；有效拒绝及风险判断直接返回，取消终止整条链。
+- AI 不接触 SSH、Git、数据库或 API 原始凭据。辅助模式只选注册动作，自主 Agent 的生成命令仅经独立审批在 Linux 任务沙箱执行；不得绕过路径、身份、命令、权限、影响范围和资源归属校验。
+- 标准辅助输出只采用结构化建议与已注册动作；自主 Agent 输出采用严格工具协议，经本地校验、独立 AI 审批和相应用户审核后执行。
+- App 三模式共用 `app/ui/deployment/automatic` 入口；App 服务负责分流和持久化；确定性检查、计划和辅助循环归 `shared/standard`，自主循环归 `shared/agent`，共同的审批、发布与生命周期归 `shared/deploy`，`shared/ai` 只承载通用模型能力。
+- 部署、审批、视觉分别持有启用模型顺序；各用途保留独立上下文、提示和结果校验。只有连接、HTTP 或校验失败才切换模型；有效拒绝及风险判断直接返回，取消终止整条链。
 
 ### 用户项目构建边界
 
@@ -228,7 +228,6 @@ Playwright 浏览器固定保存在 `src/web/frontend/.playwright-browsers`，�
 9. 文档调整同步导航、产品说明、结构索引和本地锚点；历史测试计数、版本与运行范围不因合并重算。保留证据必须注明功能、版本或日期、环境和实际范围；不同批次不相加，不以当前代码倒推历史通过。
 10. `.ai-workspace` 只保存必要辅助工作和阶段进度；正式规则与交付证据不能只在那里。保留其他任务未完成状态，临时验证进程和文件交付前清理。
 
-
 <a id="references"></a>
 
 ## 7. 参考资料
@@ -248,4 +247,4 @@ Playwright 浏览器固定保存在 `src/web/frontend/.playwright-browsers`，�
 - Oracle Linux 10 更新模型：<https://docs.oracle.com/en/operating-systems/oracle-linux/10/>
 - Oracle Linux 10 系统要求：<https://docs.oracle.com/en/operating-systems/oracle-linux/10/install/install-SystemRequirements.html>
 
-当前目录与 SQLite 变更见[第四期 FHS/SQLite](PHASE-4.md#fhs-sqlite)：helper v9、备份 schema v6、激活配置 v5、运行时载荷 v5、资源载荷 v2。旧布局和旧备份拒绝，不迁移；桌面和 Web 共用路径与文件型数据库规则，新实机矩阵仍为 `RUNTIME-PENDING`。
+当前目录与 SQLite 变更见[第四期 FHS/SQLite](PHASE-4.md#fhs-sqlite)：helper v10、备份 schema v6、激活配置 v5、既有运行时载荷 v5/v6 及通用进程 v7、资源载荷 v2。旧布局和旧备份拒绝，不迁移；桌面和 Web 共用路径与文件型数据库规则，新实机矩阵仍为 `RUNTIME-PENDING`。

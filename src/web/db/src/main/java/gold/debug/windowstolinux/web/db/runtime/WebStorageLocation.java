@@ -19,16 +19,17 @@ public record WebStorageLocation(Path root, Mode mode) {
      * <p>选择按类目录或打包执行方式解析 Web 存储路径。
      */
     public enum Mode {
-    /**
-     * CLASS classification within mode.
-     * <p>模式中的类分类。
-     */
-     CLASS,
-    /**
-     * JAR classification within mode.
-     * <p>模式中的JAR分类。
-     */
-     JAR }
+        /**
+         * CLASS classification within mode.
+         * <p>模式中的类分类。
+         */
+        CLASS,
+        /**
+         * JAR classification within mode.
+         * <p>模式中的JAR分类。
+         */
+        JAR
+    }
     /**
      * DATABASE NAME.
      * <p>数据库名称。
@@ -45,7 +46,8 @@ public record WebStorageLocation(Path root, Mode mode) {
      */
     public static WebStorageLocation resolve(String configuredRoot) throws IOException {
         try {
-            return resolve(configuredRoot, WebStorageLocation.class.getProtectionDomain().getCodeSource().getLocation().toURI());
+            return resolve(configuredRoot,
+                    WebStorageLocation.class.getProtectionDomain().getCodeSource().getLocation().toURI());
         } catch (java.net.URISyntaxException | NullPointerException failure) {
             throw new IOException("Cannot identify the Web DB module code source", failure);
         }
@@ -61,7 +63,8 @@ public record WebStorageLocation(Path root, Mode mode) {
      * @throws IOException if the required file or stream operation fails / 所需文件或流操作失败时
      */
     static WebStorageLocation resolve(String configuredRoot, URI codeSource) throws IOException {
-        if (!"file".equals(codeSource.getScheme())) throw new IOException("Web DB must load from classes or an external JAR");
+        if (!"file".equals(codeSource.getScheme()))
+            throw new IOException("Web DB must load from classes or an external JAR");
         Path source = Path.of(codeSource).toAbsolutePath().normalize();
         Mode mode;
         Path base;
@@ -71,10 +74,13 @@ public record WebStorageLocation(Path root, Mode mode) {
         } else if (Files.isDirectory(source, LinkOption.NOFOLLOW_LINKS)) {
             mode = Mode.CLASS;
             base = moduleRoot(source);
-        } else throw new IOException("Unrecognized Web DB code source: " + source);
-        if (configuredRoot == null || configuredRoot.isBlank()) throw new IOException("w2l.storage.root is required");
+        } else
+            throw new IOException("Unrecognized Web DB code source: " + source);
+        if (configuredRoot == null || configuredRoot.isBlank())
+            throw new IOException("w2l.storage.root is required");
         Path configured = Path.of(configuredRoot);
-        if (configured.isAbsolute()) return new WebStorageLocation(configured.normalize(), mode);
+        if (configured.isAbsolute())
+            return new WebStorageLocation(configured.normalize(), mode);
         if (!configuredRoot.equals("db.data") && !configuredRoot.startsWith("db.data/"))
             throw new IOException("w2l.storage.root must be db.data, db.data/subdirectory, or an absolute path");
         Path data = base.resolve("data");
@@ -96,7 +102,8 @@ public record WebStorageLocation(Path root, Mode mode) {
     private static Path moduleRoot(Path source) throws IOException {
         for (Path candidate = source; candidate != null; candidate = candidate.getParent()) {
             Path pom = candidate.resolve("pom.xml");
-            if (Files.isRegularFile(pom) && Files.readString(pom).contains("<artifactId>windowstolinux-web-db</artifactId>"))
+            if (Files.isRegularFile(pom)
+                    && Files.readString(pom).contains("<artifactId>windowstolinux-web-db</artifactId>"))
                 return candidate;
         }
         throw new IOException("Cannot identify the Web DB module root from its classes: " + source);
@@ -108,26 +115,37 @@ public record WebStorageLocation(Path root, Mode mode) {
      *
      * @return reviewed database identity or database operation boundary / 已审阅数据库身份或数据库操作边界
      */
-    public Path database() { return root.resolve(DATABASE_NAME); }
+    public Path database() {
+        return root.resolve(DATABASE_NAME);
+    }
+
     /**
      * Returns controlled filesystem access or reviewed file inventory.
      * <p>返回受控文件系统访问或已审阅文件清单。
      *
      * @return controlled filesystem access or reviewed file inventory / 受控文件系统访问或已审阅文件清单
      */
-    public Path files() { return root.resolve("files"); }
+    public Path files() {
+        return root.resolve("files");
+    }
+
     /**
      * Returns backups.
      * <p>返回备份集合。
      *
      * @return backups / 备份集合
      */
-    public Path backups() { return root.resolve("backups"); }
+    public Path backups() {
+        return root.resolve("backups");
+    }
+
     /**
      * Returns the SQLite JDBC connection URL.
      * <p>返回SQLite JDBC 连接 URL。
      *
      * @return the SQLite JDBC connection URL / SQLite JDBC 连接 URL
      */
-    public String jdbcUrl() { return "jdbc:sqlite:" + database(); }
+    public String jdbcUrl() {
+        return "jdbc:sqlite:" + database();
+    }
 }

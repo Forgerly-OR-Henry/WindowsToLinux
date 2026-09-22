@@ -57,9 +57,8 @@ int run(const std::vector<std::string> &args) {
             fs::directory_iterator it(directory, ec), end;
             if (ec) {
                 problems++;
-                emit({{"type", "problem"},
-                      {"path", utf8(directory.lexically_relative(root))},
-                      {"error", ec.message()}});
+                emit(
+                    {{"type", "problem"}, {"path", utf8(directory.lexically_relative(root))}, {"error", ec.message()}});
                 continue;
             }
             while (it != end) {
@@ -70,9 +69,7 @@ int run(const std::vector<std::string> &args) {
                 try {
                     if (linked(path)) {
                         skipped++;
-                        emit({{"type", "skip"},
-                              {"path", relative},
-                              {"reason", "symbolic-link-or-reparse-point"}});
+                        emit({{"type", "skip"}, {"path", relative}, {"reason", "symbolic-link-or-reparse-point"}});
                     } else if (it->is_directory()) {
                         if (depth >= 128)
                             throw std::runtime_error("directory depth exceeds 128");
@@ -87,21 +84,16 @@ int run(const std::vector<std::string> &args) {
                         const uint64_t ticks =
                             (static_cast<uint64_t>(attributes.ftLastWriteTime.dwHighDateTime) << 32) |
                             attributes.ftLastWriteTime.dwLowDateTime;
-                        const int64_t modified_ns =
-                            (static_cast<int64_t>(ticks) - 116444736000000000LL) * 100;
+                        const int64_t modified_ns = (static_cast<int64_t>(ticks) - 116444736000000000LL) * 100;
                         const uint64_t size =
                             (static_cast<uint64_t>(attributes.nFileSizeHigh) << 32) | attributes.nFileSizeLow;
 #else
                         const auto modified = fs::file_time_type::clock::to_sys(it->last_write_time());
                         const auto modified_ns =
-                            std::chrono::duration_cast<std::chrono::nanoseconds>(modified.time_since_epoch())
-                                .count();
+                            std::chrono::duration_cast<std::chrono::nanoseconds>(modified.time_since_epoch()).count();
                         const auto size = it->file_size();
 #endif
-                        emit({{"type", "entry"},
-                              {"path", relative},
-                              {"size", size},
-                              {"modifiedNs", modified_ns}});
+                        emit({{"type", "entry"}, {"path", relative}, {"size", size}, {"modifiedNs", modified_ns}});
                     } else {
                         problems++;
                         emit({{"type", "problem"}, {"path", relative}, {"error", "unsupported file type"}});

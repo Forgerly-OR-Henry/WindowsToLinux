@@ -76,9 +76,7 @@ def gateway_faults(r, slug, path):
             body = b"{}"
             try:
                 self.send_response(200)
-                self.send_header(
-                    "X-Sample-Protocol", "1" if self.mode == "version" else "2"
-                )
+                self.send_header("X-Sample-Protocol", "1" if self.mode == "version" else "2")
                 self.send_header("Content-Type", "application/json")
                 self.send_header("Content-Length", str(len(body)))
                 self.end_headers()
@@ -176,9 +174,7 @@ def file_transfer(r):
     def fetch(upload):
         return r.json("web", f"/api/uploads/{upload['id']}")
 
-    with check(
-        r, "business", "folder boundaries, chunk conflicts and incomplete download"
-    ):
+    with check(r, "business", "folder boundaries, chunk conflicts and incomplete download"):
         upload = create()
         put(upload, 0)
         assert put(upload, 0)["duplicate"] is True
@@ -194,23 +190,17 @@ def file_transfer(r):
         assert len(fetch(upload)["chunks"]) == 1
         for n in range(1, size // len(block)):
             put(upload, n)
-    with check(
-        r, "scale", f"10 concurrent completions publish exactly one {size} byte version"
-    ):
+    with check(r, "scale", f"10 concurrent completions publish exactly one {size} byte version"):
         results = concurrent(10, lambda _: complete(upload))
         assert len({v["id"] for v in results}) == 1
         version = results[0]
         file_id = version["fileId"]
         assert len(r.json("web", f"/api/files/{file_id}/versions")) == 1
-        code, headers, data = r.request(
-            "web", f"/api/versions/{version['id']}/download"
-        )
+        code, headers, data = r.request("web", f"/api/versions/{version['id']}/download")
         assert (
             code == 200
             and len(data) == size
-            and hashlib.sha256(data).hexdigest()
-            == digest.hexdigest()
-            == headers["x-content-sha256"]
+            and hashlib.sha256(data).hexdigest() == digest.hexdigest() == headers["x-content-sha256"]
         )
         del data
     with check(r, "business", "historical versions and folder isolation"):
@@ -224,9 +214,7 @@ def file_transfer(r):
         assert r.json("web", "/api/files?folderId=1")["items"][0]["version"] == 2
         assert r.json("web", "/api/files?folderId=2")["total"] == 1
         assert (
-            hashlib.sha256(
-                r.request("web", f"/api/versions/{version['id']}/download")[2]
-            ).hexdigest()
+            hashlib.sha256(r.request("web", f"/api/versions/{version['id']}/download")[2]).hexdigest()
             == digest.hexdigest()
         )
     with check(r, "business", "cancel, invalid digest, aborted stream and recovery"):
@@ -244,43 +232,32 @@ def file_transfer(r):
                 + b"partial"
             )
         deadline = time.monotonic() + 5
-        while (
-            list((r.data / "staging").glob("chunk-*")) and time.monotonic() < deadline
-        ):
+        while list((r.data / "staging").glob("chunk-*")) and time.monotonic() < deadline:
             time.sleep(0.05)
         assert not fetch(interrupted)["chunks"]
         put(interrupted, 0)
         complete(interrupted)
-    with check(
-        r, "fault", "crash after chunk fsync and before metadata acknowledgement"
-    ):
-        target = create(
-            name="分块落盘.bin", size=len(block), sha=hashlib.sha256(block).hexdigest()
-        )
+    with check(r, "fault", "crash after chunk fsync and before metadata acknowledgement"):
+        target = create(name="分块落盘.bin", size=len(block), sha=hashlib.sha256(block).hexdigest())
         fault_crash(r, "file-transfer", "chunk-written", lambda: put(target, 0))
         assert fetch(target)["chunks"] == []
         put(target, 0)
         complete(target)
     with check(r, "fault", "crash before publication leaves no visible version"):
-        target = create(
-            name="发布恢复.bin", size=len(block), sha=hashlib.sha256(block).hexdigest()
-        )
+        target = create(name="发布恢复.bin", size=len(block), sha=hashlib.sha256(block).hexdigest())
         put(target, 0)
         fault_crash(r, "file-transfer", "before-publish", lambda: complete(target))
         assert fetch(target)["state"] == "receiving"
         assert (
             r.json(
                 "web",
-                "/api/files?folderId=1&q="
-                + __import__("urllib.parse", fromlist=["quote"]).quote("发布恢复"),
+                "/api/files?folderId=1&q=" + __import__("urllib.parse", fromlist=["quote"]).quote("发布恢复"),
             )["total"]
             == 0
         )
         complete(target)
         assert not list((r.data / "staging").iterdir())
-    with check(
-        r, "browser", "folder, upload, pause/resume, versions, download and history"
-    ):
+    with check(r, "browser", "folder, upload, pause/resume, versions, download and history"):
         browser(r, "file-transfer", r.urls["web"])
     with check(
         r,
@@ -355,9 +332,7 @@ def asset_lending(r):
         page = r.json("web", "/api/assets?limit=25&offset=25")
         assert page["total"] == count + 3 and len(page["items"]) == 25
         selected = r.json("web", "/api/assets?categoryId=2&limit=100")
-        assert selected["total"] == count // 2 + 1 and all(
-            x["categoryId"] == 2 for x in selected["items"]
-        )
+        assert selected["total"] == count // 2 + 1 and all(x["categoryId"] == 2 for x in selected["items"])
         ids = [x["id"] for x in records[:4]]
         json_request(
             r,
@@ -402,16 +377,11 @@ def asset_lending(r):
             "return",
             items=[{"assetId": ids[1], "condition": "damaged", "note": "镜头损坏"}],
         )
-        assert (
-            asset(ids[1])["status"] == "maintenance"
-            and r.json("web", f"/api/loans/{id}")["status"] == "closed"
-        )
+        assert asset(ids[1])["status"] == "maintenance" and r.json("web", f"/api/loans/{id}")["status"] == "closed"
         blocked = loan([ids[1]])
         action(blocked["id"], "submit")
         action(blocked["id"], "approve", 409)
-        work = next(
-            x for x in r.json("web", "/api/maintenance") if x["assetId"] == ids[1]
-        )
+        work = next(x for x in r.json("web", "/api/maintenance") if x["assetId"] == ids[1])
         json_request(
             r,
             f"/api/maintenance/{work['id']}/complete",
@@ -428,14 +398,11 @@ def asset_lending(r):
         assert (
             r.json(
                 "web",
-                "/api/loans?borrower="
-                + __import__("urllib.parse", fromlist=["quote"]).quote("周同学"),
+                "/api/loans?borrower=" + __import__("urllib.parse", fromlist=["quote"]).quote("周同学"),
             )["total"]
             == 0
         )
-    with check(
-        r, "concurrency", "10 competing approvals reserve one asset exactly once"
-    ):
+    with check(r, "concurrency", "10 competing approvals reserve one asset exactly once"):
         contenders = [loan([ids[2]], borrower="周同学") for _ in range(10)]
         for c in contenders:
             action(c["id"], "submit")
@@ -457,9 +424,7 @@ def asset_lending(r):
         action(bad["id"], "submit")
         action(bad["id"], "approve", 409)
         assert asset(ids[3]) == before
-    with check(
-        r, "fault", "killed approval rolls back every asset and permits explicit retry"
-    ):
+    with check(r, "fault", "killed approval rolls back every asset and permits explicit retry"):
         pending = loan([ids[0], ids[3]])
         action(pending["id"], "submit")
         fault_crash(
@@ -580,32 +545,19 @@ def task_board(r):
         f"{count} real task creations, independent SQL filtering and consistent overview",
     ):
         with ThreadPoolExecutor(max_workers=8) as pool:
-            created = list(
-                pool.map(lambda i: call("/api/tasks", payload(i)), range(count))
-            )
+            created = list(pool.map(lambda i: call("/api/tasks", payload(i)), range(count)))
         p1 = r.json("backend", "/api/tasks?projectId=1&size=25&page=2")
         p2 = r.json("backend", "/api/tasks?projectId=2")
-        assert (
-            p1["total"] == count // 2 + 2
-            and p2["total"] == count // 2 + 1
-            and len(p1["items"]) == 25
-        )
+        assert p1["total"] == count // 2 + 2 and p2["total"] == count // 2 + 1 and len(p1["items"]) == 25
         expected = sum(
             1
             for i in range(count)
-            if payload(i)["projectId"] == 1
-            and payload(i)["ownerId"] == 2
-            and payload(i)["priority"] == 3
+            if payload(i)["projectId"] == 1 and payload(i)["ownerId"] == 2 and payload(i)["priority"] == 3
         )
-        filtered = r.json(
-            "backend", "/api/tasks?projectId=1&label=scale&priority=3&ownerId=2"
-        )
+        filtered = r.json("backend", "/api/tasks?projectId=1&label=scale&priority=3&ownerId=2")
         assert filtered["total"] == expected
         assert all(
-            t["projectId"] == 1
-            and t["ownerId"] == 2
-            and t["priority"] == 3
-            and "scale" in t["labels"]
+            t["projectId"] == 1 and t["ownerId"] == 2 and t["priority"] == 3 and "scale" in t["labels"]
             for t in filtered["items"]
         )
         stats = r.json("backend", "/api/stats?projectId=1")
@@ -615,9 +567,7 @@ def task_board(r):
             == sum(s["count"] for s in stats["statuses"])
             == sum(o["count"] for o in stats["owners"])
         )
-        assert stats["overdue"] == sum(
-            1 for i in range(count) if i % 2 == 0 and i % 5 == 0
-        )
+        assert stats["overdue"] == sum(1 for i in range(count) if i % 2 == 0 and i % 5 == 0)
         r.json("backend", "/api/tasks?projectId=1&page=0", expected=400)
     with check(
         r,
@@ -625,17 +575,11 @@ def task_board(r):
         "project boundaries, dependency cycles, invalid transition and required review flow",
     ):
         a = call("/api/tasks", {**payload(0), "title": "依赖任务"})
-        b = call(
-            "/api/tasks", {**payload(0), "title": "后续任务", "dependsOn": [a["id"]]}
-        )
+        b = call("/api/tasks", {**payload(0), "title": "后续任务", "dependsOn": [a["id"]]})
         r.json("backend", f"/api/tasks/{a['id']}?projectId=2", expected=404)
         call("/api/tasks", {**payload(0), "ownerId": 3}, expected=400)
-        call(
-            "/api/tasks", {**payload(0), "dependsOn": [created[1]["id"]]}, expected=404
-        )
-        call(
-            f"/api/tasks/{a['id']}", edit_payload(a, dependsOn=[b["id"]]), "PATCH", 409
-        )
+        call("/api/tasks", {**payload(0), "dependsOn": [created[1]["id"]]}, expected=404)
+        call(f"/api/tasks/{a['id']}", edit_payload(a, dependsOn=[b["id"]]), "PATCH", 409)
         change(b, "done", 409)
         b = change(change(b, "doing"), "review")
         change(b, "done", 409)
@@ -663,10 +607,7 @@ def task_board(r):
         codes = concurrent(10, update)
         assert codes.count(200) == 1 and codes.count(409) == 9, codes
         changed = get(target["id"])
-        assert (
-            changed["version"] == target["version"] + 1
-            and changed["title"] == data["title"]
-        )
+        assert changed["version"] == target["version"] + 1 and changed["title"] == data["title"]
         key = uuid.uuid4().hex
         comments = concurrent(
             10,
@@ -730,9 +671,7 @@ def task_board(r):
                 ).fetchone()[0]
                 == 0
             )
-            r.scale["actualTasks"] = db.execute(
-                "SELECT count(*) FROM tasks"
-            ).fetchone()[0]
+            r.scale["actualTasks"] = db.execute("SELECT count(*) FROM tasks").fetchone()[0]
 
 
 def verify_business(r, slug):
@@ -773,6 +712,4 @@ def verify_business(r, slug):
             scale=r.scale,
             resources=r.metrics,
         )
-        (r.evidence / "report.json").write_text(
-            json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8"
-        )
+        (r.evidence / "report.json").write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")

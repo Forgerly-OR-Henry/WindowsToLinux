@@ -1,11 +1,12 @@
 package gold.debug.windowstolinux.shared.git.snapshot;
 
-import gold.debug.windowstolinux.shared.git.GitSnapshotException;
-import gold.debug.windowstolinux.shared.git.GitSnapshotFailureType;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.LinkOption;
 import java.nio.file.Path;
+
+import gold.debug.windowstolinux.shared.git.GitSnapshotException;
+import gold.debug.windowstolinux.shared.git.GitSnapshotFailureType;
 
 /**
  * Validates and creates only the platform-owned Git workspace boundary. / 仅验证并创建平台拥有的 Git 工作区边界。

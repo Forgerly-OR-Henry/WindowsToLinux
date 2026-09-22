@@ -17,9 +17,7 @@ for i in range(args.count):
             "serial": f"SAMPLE-{args.seed}-{i:06}",
         }
     ).encode()
-    request = urllib.request.Request(
-        args.url + "/api/assets", body, {"Content-Type": "application/json"}
-    )
+    request = urllib.request.Request(args.url + "/api/assets", body, {"Content-Type": "application/json"})
     with urllib.request.urlopen(request, timeout=30) as response:
         json.load(response)
 print(json.dumps({"seed": args.seed, "registered": args.count}))

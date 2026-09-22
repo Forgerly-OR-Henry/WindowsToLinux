@@ -1,7 +1,8 @@
 package gold.debug.windowstolinux.shared.deploy.contract.spi;
 
-import gold.debug.windowstolinux.shared.config.secretref.SecretReference;
 import java.util.Optional;
+
+import gold.debug.windowstolinux.shared.config.secretref.SecretReference;
 
 /**
  * Provides platform-owned immutable database credentials; returned character arrays belong to the caller.
@@ -17,6 +18,7 @@ public interface DatabaseCredentialPort {
      * @throws Exception if the delegated operation or caller-provided interaction fails / 被委派操作或调用方提供的交互失败时
      */
     Optional<SecretReference> latest(String identifier) throws Exception;
+
     /**
      * Loads a caller-owned plaintext copy of the exact stored secret revision; the caller must clear it after use.
      * <p>加载由调用方持有的精确持久化秘密修订明文副本；调用方须在使用后清空。
@@ -26,6 +28,7 @@ public interface DatabaseCredentialPort {
      * @throws Exception if the delegated operation or caller-provided interaction fails / 被委派操作或调用方提供的交互失败时
      */
     char[] load(SecretReference reference) throws Exception;
+
     /**
      * Persists database credential.
      * <p>持久化数据库凭据。

@@ -11,7 +11,9 @@ final class ApplicationRuntimeSchemaMigration {
      * Prevents instantiation of this static contract helper.
      * <p>防止实例化当前静态契约辅助类。
      */
-    private ApplicationRuntimeSchemaMigration() { }
+    private ApplicationRuntimeSchemaMigration() {
+    }
+
     /**
      * Applies application runtime schema migration.
      * <p>应用应用运行时结构迁移。
@@ -38,6 +40,7 @@ final class ApplicationRuntimeSchemaMigration {
                    tcp_stability_seconds,user_access_url,identity_policy FROM managed_application_runtime_configuration
                 """);
         statement.execute("DROP TABLE managed_application_runtime_configuration");
-        statement.execute("ALTER TABLE managed_application_runtime_next RENAME TO managed_application_runtime_configuration");
+        statement.execute(
+                "ALTER TABLE managed_application_runtime_next RENAME TO managed_application_runtime_configuration");
     }
 }

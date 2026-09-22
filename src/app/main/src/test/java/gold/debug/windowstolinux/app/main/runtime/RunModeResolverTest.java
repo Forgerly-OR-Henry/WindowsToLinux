@@ -1,15 +1,15 @@
 package gold.debug.windowstolinux.app.main.runtime;
 
-import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.io.TempDir;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Optional;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 class RunModeResolverTest {
 
@@ -18,12 +18,15 @@ class RunModeResolverTest {
 
     /** Layout fixtures must not inherit an enclosing repository from a workspace JVM temp override. */
     static final class RuntimeFixtureDirectory implements org.junit.jupiter.api.io.TempDirFactory {
-        @Override public Path createTempDirectory(org.junit.jupiter.api.extension.AnnotatedElementContext element,
+        @Override
+        public Path createTempDirectory(org.junit.jupiter.api.extension.AnnotatedElementContext element,
                 org.junit.jupiter.api.extension.ExtensionContext context) throws java.io.IOException {
-            String systemTemp=System.getenv("TEMP");
-            if(systemTemp==null || systemTemp.isBlank())systemTemp=System.getenv("TMPDIR");
-            if(systemTemp==null || systemTemp.isBlank())systemTemp="/tmp";
-            return Files.createTempDirectory(Path.of(systemTemp),"w2l-runtime-layout-");
+            String systemTemp = System.getenv("TEMP");
+            if (systemTemp == null || systemTemp.isBlank())
+                systemTemp = System.getenv("TMPDIR");
+            if (systemTemp == null || systemTemp.isBlank())
+                systemTemp = "/tmp";
+            return Files.createTempDirectory(Path.of(systemTemp), "w2l-runtime-layout-");
         }
     }
 
@@ -54,20 +57,15 @@ class RunModeResolverTest {
     void resolvesValidatedIdeClassOutputToTheDbModuleFromTheMainWorkingDirectory() throws Exception {
         Path repository = temporaryDirectory.resolve("repository");
         Path moduleHome = Files.createDirectories(repository.resolve("src/app/db"));
-        Files.writeString(
-                moduleHome.resolve("pom.xml"),
-                "<project><artifactId>windowstolinux-app-db</artifactId></project>"
-        );
+        Files.writeString(moduleHome.resolve("pom.xml"),
+                "<project><artifactId>windowstolinux-app-db</artifactId></project>");
         Path mainModule = Files.createDirectories(repository.resolve("src/app/main"));
         Files.writeString(mainModule.resolve("pom.xml"),
                 "<project><artifactId>windowstolinux-app-main</artifactId></project>");
         Path ideClasses = Files.createDirectories(repository.resolve("out/production/app-db"));
 
-        RunModeResolver.RuntimeLayout layout = RunModeResolver.resolveFromEvidence(
-                Optional.empty(),
-                Optional.of(ideClasses),
-                Optional.of(mainModule)
-        ).orElseThrow();
+        RunModeResolver.RuntimeLayout layout = RunModeResolver
+                .resolveFromEvidence(Optional.empty(), Optional.of(ideClasses), Optional.of(mainModule)).orElseThrow();
 
         assertEquals(RunModeResolver.RunMode.RUN_CLASS, layout.mode());
         assertEquals(moduleHome.toAbsolutePath(), layout.applicationHome());
@@ -81,8 +79,8 @@ class RunModeResolverTest {
         Path dbDirectory = Files.createDirectories(distribution.resolve("lib"));
         Path jar = Files.createFile(dbDirectory.resolve("DB.jar"));
 
-        RunModeResolver.RuntimeLayout layout = RunModeResolver.resolveFromEvidence(
-                Optional.empty(), Optional.of(jar), Optional.of(distribution)).orElseThrow();
+        RunModeResolver.RuntimeLayout layout = RunModeResolver
+                .resolveFromEvidence(Optional.empty(), Optional.of(jar), Optional.of(distribution)).orElseThrow();
 
         assertEquals(RunModeResolver.RunMode.RUN_JAR, layout.mode());
         assertEquals(dbDirectory.toAbsolutePath(), layout.applicationHome());
@@ -108,8 +106,8 @@ class RunModeResolverTest {
                 "<project><artifactId>windowstolinux-app-main</artifactId></project>");
         Path ideClasses = Files.createDirectories(repository.resolve("out/production/app-db"));
 
-        assertTrue(RunModeResolver.resolveFromEvidence(
-                Optional.empty(), Optional.of(ideClasses), Optional.of(mainModule)).isEmpty());
+        assertTrue(RunModeResolver
+                .resolveFromEvidence(Optional.empty(), Optional.of(ideClasses), Optional.of(mainModule)).isEmpty());
     }
 
     @Test
@@ -120,8 +118,8 @@ class RunModeResolverTest {
         Files.writeString(otherModule.resolve("pom.xml"),
                 "<project><artifactId>windowstolinux-app-db</artifactId></project>");
 
-        RunModeResolver.RuntimeLayout layout = RunModeResolver.resolveFromEvidence(
-                Optional.empty(), Optional.of(classes), Optional.of(otherModule)).orElseThrow();
+        RunModeResolver.RuntimeLayout layout = RunModeResolver
+                .resolveFromEvidence(Optional.empty(), Optional.of(classes), Optional.of(otherModule)).orElseThrow();
 
         assertEquals(moduleHome.resolve("data").toAbsolutePath(), layout.dataDirectory());
     }
@@ -133,10 +131,7 @@ class RunModeResolverTest {
         Path dbDirectory = Files.createDirectories(appImage.resolve("app/lib"));
         Path dbJar = Files.createFile(dbDirectory.resolve("DB.jar"));
 
-        RunModeResolver.RuntimeLayout layout = resolve(
-                Optional.of(executable),
-                Optional.of(dbJar)
-        );
+        RunModeResolver.RuntimeLayout layout = resolve(Optional.of(executable), Optional.of(dbJar));
 
         assertEquals(RunModeResolver.RunMode.RUN_APP, layout.mode());
         assertEquals(appImage.toAbsolutePath(), layout.applicationHome());
@@ -158,10 +153,7 @@ class RunModeResolverTest {
     void rejectsUnknownLayoutInsteadOfUsingWorkingDirectory() throws Exception {
         Path unknown = Files.createDirectories(temporaryDirectory.resolve("classes"));
 
-        assertTrue(RunModeResolver.resolveFromEvidence(
-                Optional.empty(),
-                Optional.of(unknown)
-        ).isEmpty());
+        assertTrue(RunModeResolver.resolveFromEvidence(Optional.empty(), Optional.of(unknown)).isEmpty());
     }
 
     @Test
@@ -178,21 +170,19 @@ class RunModeResolverTest {
 
     @Test
     void exposesNoDataDirectoryOverrideProperty() {
-        assertThrows(
-                NoSuchFieldException.class,
-                () -> RunModeResolver.class.getField("DATA_DIRECTORY_PROPERTY")
-        );
+        assertThrows(NoSuchFieldException.class, () -> RunModeResolver.class.getField("DATA_DIRECTORY_PROPERTY"));
     }
 
     @Test
     void publicDetectionUsesTheDbModuleEvenWhenCalledFromMainTests() throws Exception {
-        Path dbSource=Path.of(gold.debug.windowstolinux.app.db.DesktopPersistence.class
-                .getProtectionDomain().getCodeSource().getLocation().toURI()).toAbsolutePath().normalize();
+        Path dbSource = Path.of(gold.debug.windowstolinux.app.db.DesktopPersistence.class.getProtectionDomain()
+                .getCodeSource().getLocation().toURI()).toAbsolutePath().normalize();
         // Maven test uses classes; verify packages upstream modules before loading this test.
-        boolean packaged=Files.isRegularFile(dbSource);
-        assertEquals(packaged?RunModeResolver.RunMode.RUN_JAR:RunModeResolver.RunMode.RUN_CLASS,RunModeResolver.detect());
-        Path expectedHome=packaged?dbSource.getParent():dbSource.getParent().getParent();
-        assertEquals(expectedHome.resolve("data"),RunModeResolver.resolveDataDirectory());
+        boolean packaged = Files.isRegularFile(dbSource);
+        assertEquals(packaged ? RunModeResolver.RunMode.RUN_JAR : RunModeResolver.RunMode.RUN_CLASS,
+                RunModeResolver.detect());
+        Path expectedHome = packaged ? dbSource.getParent() : dbSource.getParent().getParent();
+        assertEquals(expectedHome.resolve("data"), RunModeResolver.resolveDataDirectory());
     }
 
     private Path createJpackageLayout(String name) throws Exception {
@@ -202,10 +192,7 @@ class RunModeResolverTest {
         return root;
     }
 
-    private static RunModeResolver.RuntimeLayout resolve(
-            Optional<Path> processCommand,
-            Optional<Path> codeSource
-    ) {
+    private static RunModeResolver.RuntimeLayout resolve(Optional<Path> processCommand, Optional<Path> codeSource) {
         return RunModeResolver.resolveFromEvidence(processCommand, codeSource).orElseThrow();
     }
 }

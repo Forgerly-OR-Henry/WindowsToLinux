@@ -1,11 +1,5 @@
 package gold.debug.windowstolinux.shared.linux.sshd.command;
 
-import gold.debug.windowstolinux.shared.linux.error.LinuxOperationException;
-import gold.debug.windowstolinux.shared.linux.error.LinuxOperationFailureType;
-import org.apache.sshd.client.channel.ClientChannel;
-import org.apache.sshd.client.channel.ClientChannelEvent;
-import org.apache.sshd.client.session.ClientSession;
-
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
@@ -18,12 +12,18 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.TimeoutException;
 
+import gold.debug.windowstolinux.shared.linux.error.LinuxOperationException;
+import gold.debug.windowstolinux.shared.linux.error.LinuxOperationFailureType;
+import org.apache.sshd.client.channel.ClientChannel;
+import org.apache.sshd.client.channel.ClientChannelEvent;
+import org.apache.sshd.client.session.ClientSession;
+
 /**
  * Executes only implementation-owned, pre-rendered commands over an authenticated SSHD session.
  *
  *  <p>仅通过已认证的 SSHD 会话执行由实现持有且预先渲染的命令。
  */
-public final class SshCommandExecutor {
+public final class SshCommandExecutor implements gold.debug.windowstolinux.shared.linux.command.RemoteCommandExecutor {
     /**
      * Exposes the {@code MAX_EVIDENCE_CHARS} constant.
      *
@@ -45,7 +45,23 @@ public final class SshCommandExecutor {
      * @throws NullPointerException if a required input is absent / 必需输入缺失时
      */
     public SshCommandExecutor(ClientSession session) {
+        this(session, null);
+    }
+    /** Exact endpoint for task review. / 任务审核使用的精确端点。 */
+    private final String target;
+
+    /** Exact executable stdin for the current synchronous call. / 当前同步调用的精确可执行标准输入。 */
+    private String executableInput = "";
+    /** Binds the authenticated endpoint. / 绑定已认证端点。
+     * @param session authenticated session / 已认证会话
+     * @param endpoint endpoint, absent only for transport tests / 端点，仅传输测试可为空
+     */
+    public SshCommandExecutor(ClientSession session,
+            gold.debug.windowstolinux.shared.linux.connection.SshEndpoint endpoint) {
         this.session = Objects.requireNonNull(session, "session");
+        this.target = endpoint == null
+                ? "unscoped"
+                : endpoint.serverId() + "|" + endpoint.username() + "@" + endpoint.host() + ":" + endpoint.port();
     }
 
     /**
@@ -58,8 +74,8 @@ public final class SshCommandExecutor {
      * @return the operation result / 操作结果
      * @throws LinuxOperationException if the authenticated remote operation fails or its evidence is rejected / 已认证远端操作失败或其证据被拒绝时
      */
-    public CommandResult exec(String script, Duration timeout, boolean preserveOutput)
-            throws LinuxOperationException {
+    public gold.debug.windowstolinux.shared.linux.command.RemoteCommandResult exec(String script, Duration timeout,
+            boolean preserveOutput) throws LinuxOperationException {
         return execute(script, timeout, preserveOutput, false, null);
     }
 
@@ -73,12 +89,17 @@ public final class SshCommandExecutor {
      * @throws LinuxOperationException if the authenticated remote operation fails or its evidence is rejected / 已认证远端操作失败或其证据被拒绝时
      * @throws NullPointerException if a required input is absent / 必需输入缺失时
      */
-    public CommandResult execScript(String script, Duration timeout, boolean preserveOutput)
-            throws LinuxOperationException {
+    public gold.debug.windowstolinux.shared.linux.command.RemoteCommandResult execScript(String script,
+            Duration timeout, boolean preserveOutput) throws LinuxOperationException {
         Objects.requireNonNull(script, "script");
         // Parse the complete group before commands run; installers must not consume the script stream. / 先解析整个命令组，再执行；安装器不能读取剩余的脚本输入。
         byte[] input = ("{\n" + script + "\n} </dev/null\n").getBytes(StandardCharsets.UTF_8);
-        return execute("exec /bin/bash -ls", timeout, preserveOutput, false, input);
+        executableInput = new String(input, StandardCharsets.UTF_8);
+        try {
+            return execute("exec /bin/bash -ls", timeout, preserveOutput, false, input);
+        } finally {
+            executableInput = "";
+        }
     }
 
     /**
@@ -92,8 +113,8 @@ public final class SshCommandExecutor {
      * @return the operation result / 操作结果
      * @throws LinuxOperationException if the authenticated remote operation fails or its evidence is rejected / 已认证远端操作失败或其证据被拒绝时
      */
-    public CommandResult execProtocol(String script, Duration timeout, boolean preserveOutput)
-            throws LinuxOperationException {
+    public gold.debug.windowstolinux.shared.linux.command.RemoteCommandResult execProtocol(String script,
+            Duration timeout, boolean preserveOutput) throws LinuxOperationException {
         return execute(script, timeout, preserveOutput, true, null);
     }
 
@@ -109,8 +130,8 @@ public final class SshCommandExecutor {
      * @throws LinuxOperationException if the authenticated remote operation fails or its evidence is rejected / 已认证远端操作失败或其证据被拒绝时
      * @throws NullPointerException if a required input is absent / 必需输入缺失时
      */
-    public CommandResult execProtocolWithInput(String script, byte[] input, Duration timeout)
-            throws LinuxOperationException {
+    public gold.debug.windowstolinux.shared.linux.command.RemoteCommandResult execProtocolWithInput(String script,
+            byte[] input, Duration timeout) throws LinuxOperationException {
         Objects.requireNonNull(input, "input");
         return execute(script, timeout, true, true, input);
     }
@@ -127,11 +148,17 @@ public final class SshCommandExecutor {
      * @throws IllegalArgumentException if an input violates the constraints checked by this contract / 输入违反当前契约检查的约束时
      * @throws NullPointerException if a required input is absent / 必需输入缺失时
      */
-    public CommandResult execProtocolWithInput(String script, byte[] input, Duration timeout, long maxBytes)
-            throws LinuxOperationException {
+    public gold.debug.windowstolinux.shared.linux.command.RemoteCommandResult execProtocolWithInput(String script,
+            byte[] input, Duration timeout, long maxBytes) throws LinuxOperationException {
         Objects.requireNonNull(input, "input");
-        if (input.length > 1048576) throw new IllegalArgumentException("Controlled build script exceeds 1 MiB");
-        return execute(script, timeout, true, true, input, maxBytes);
+        if (input.length > 1048576)
+            throw new IllegalArgumentException("Controlled build script exceeds 1 MiB");
+        executableInput = new String(input, StandardCharsets.UTF_8);
+        try {
+            return execute(script, timeout, true, true, input, maxBytes);
+        } finally {
+            executableInput = "";
+        }
     }
 
     /**
@@ -146,8 +173,8 @@ public final class SshCommandExecutor {
      * @return constructed or resolved command result / 构造或解析得到的命令结果
      * @throws LinuxOperationException if the authenticated remote operation fails or its evidence is rejected / 已认证远端操作失败或其证据被拒绝时
      */
-    private CommandResult execute(String script, Duration timeout, boolean preserveOutput,
-                                  boolean preserveProtocolOutput, byte[] input) throws LinuxOperationException {
+    private gold.debug.windowstolinux.shared.linux.command.RemoteCommandResult execute(String script, Duration timeout,
+            boolean preserveOutput, boolean preserveProtocolOutput, byte[] input) throws LinuxOperationException {
         return execute(script, timeout, preserveOutput, preserveProtocolOutput, input, 1024 * 1024);
     }
 
@@ -160,8 +187,8 @@ public final class SshCommandExecutor {
      * @return constructed or resolved command result / 构造或解析得到的命令结果
      * @throws LinuxOperationException if the authenticated remote operation fails or its evidence is rejected / 已认证远端操作失败或其证据被拒绝时
      */
-    public CommandResult execWithOutputLimit(String script, Duration timeout, long maxBytes)
-            throws LinuxOperationException {
+    public gold.debug.windowstolinux.shared.linux.command.RemoteCommandResult execWithOutputLimit(String script,
+            Duration timeout, long maxBytes) throws LinuxOperationException {
         return execute(script, timeout, true, false, null, maxBytes);
     }
 
@@ -178,9 +205,12 @@ public final class SshCommandExecutor {
      * @return constructed or resolved command result / 构造或解析得到的命令结果
      * @throws LinuxOperationException if the authenticated remote operation fails or its evidence is rejected / 已认证远端操作失败或其证据被拒绝时
      */
-    private CommandResult execute(String script, Duration timeout, boolean preserveOutput,
-                                  boolean preserveProtocolOutput, byte[] input, long maxBytes) throws LinuxOperationException {
-        return executeRemoteCommand("/bin/bash -lc " + quote(script), timeout, preserveOutput, preserveProtocolOutput, input, maxBytes);
+    private gold.debug.windowstolinux.shared.linux.command.RemoteCommandResult execute(String script, Duration timeout,
+            boolean preserveOutput, boolean preserveProtocolOutput, byte[] input, long maxBytes)
+            throws LinuxOperationException {
+        return executeRemoteCommand(
+                "/bin/bash -lc " + gold.debug.windowstolinux.shared.linux.command.CommandText.quote(script), timeout,
+                preserveOutput, preserveProtocolOutput, input, maxBytes);
     }
 
     /**
@@ -189,9 +219,11 @@ public final class SshCommandExecutor {
      * @throws LinuxOperationException if the authenticated remote operation fails or its evidence is rejected / 已认证远端操作失败或其证据被拒绝时
      */
     public void verifyConnection() throws LinuxOperationException {
-        CommandResult result = executeRemoteCommand("printf 'WTL_SSH_READY\\n'", Duration.ofSeconds(10), true, false, null, 128);
+        gold.debug.windowstolinux.shared.linux.command.RemoteCommandResult result = executeRemoteCommand(
+                "printf 'WTL_SSH_READY\\n'", Duration.ofSeconds(10), true, false, null, 128);
         if (!result.succeeded() || !result.output().trim().equals("WTL_SSH_READY"))
-            throw LinuxOperationException.create(LinuxOperationFailureType.SSH_COMMAND_FAILED, "SSH read-only verification failed");
+            throw LinuxOperationException.create(LinuxOperationFailureType.SSH_COMMAND_FAILED,
+                    "SSH read-only verification failed");
     }
 
     /**
@@ -207,10 +239,14 @@ public final class SshCommandExecutor {
      * @return constructed or resolved command result / 构造或解析得到的命令结果
      * @throws LinuxOperationException if the authenticated remote operation fails or its evidence is rejected / 已认证远端操作失败或其证据被拒绝时
      */
-    private CommandResult executeRemoteCommand(String command, Duration timeout, boolean preserveOutput,
-            boolean preserveProtocolOutput, byte[] input, long maxBytes) throws LinuxOperationException {
+    private gold.debug.windowstolinux.shared.linux.command.RemoteCommandResult executeRemoteCommand(String command,
+            Duration timeout, boolean preserveOutput, boolean preserveProtocolOutput, byte[] input, long maxBytes)
+            throws LinuxOperationException {
+        var dispatch = gold.debug.windowstolinux.shared.linux.command.CommandExecutionScope.before(target, command,
+                executableInput, input, timeout, maxBytes);
         try (ClientChannel channel = session.createExecChannel(command)) {
-            CommandOutputCapture capture = new CommandOutputCapture(maxBytes, preserveOutput, () -> channel.close(true));
+            CommandOutputCapture capture = new CommandOutputCapture(maxBytes, preserveOutput,
+                    () -> channel.close(true));
             if (input != null) {
                 channel.setIn(new ByteArrayInputStream(input));
             }
@@ -227,67 +263,18 @@ public final class SshCommandExecutor {
             String rawOutput = capture.output();
             String evidenceOutput = sanitize(rawOutput);
             String text = preserveProtocolOutput ? rawOutput : evidenceOutput;
-            String errorText = capture.exceeded() ? "SSH output exceeded the confirmed byte limit"
+            String errorText = capture.exceeded()
+                    ? "SSH output exceeded the confirmed byte limit"
                     : preserveOutput ? sanitize(capture.error()) : "";
-            return new CommandResult(succeeded, timedOut, text, evidenceOutput, errorText, exit);
+            var result = new gold.debug.windowstolinux.shared.linux.command.RemoteCommandResult(succeeded, timedOut,
+                    text, evidenceOutput, errorText, capture.exceeded() ? null : exit);
+            dispatch.ifPresent(receipt -> receipt.completed(result));
+            return result;
         } catch (IOException exception) {
+            dispatch.ifPresent(gold.debug.windowstolinux.shared.linux.command.CommandExecutionScope.Dispatch::unknown);
             throw LinuxOperationException.create(LinuxOperationFailureType.SSH_COMMAND_FAILED,
                     "Controlled SSH command could not be executed (" + safeException(exception) + ")", exception);
         }
-    }
-
-    /**
-     * Parses trimmed key-value lines at the first equals sign, retaining the first value for duplicate keys.
-     * <p>按首个等号解析去除首尾空白的键值行，并为重复键保留首个值。
-     *
-     * @param text bounded text consumed or produced by the current formatter / 当前格式化器消费或生成的有界文本
-     * @return the operation result collection / 操作结果集合
-     */
-    public static Map<String, String> lines(String text) {
-        return text.lines()
-                .map(String::trim)
-                .filter(line -> line.contains("="))
-                .map(line -> line.split("=", 2))
-                .collect(java.util.stream.Collectors.toMap(
-                        parts -> parts[0], parts -> parts[1], (first, ignored) -> first));
-    }
-
-    /**
-     * Returns the trimmed first line, or an empty string for empty input.
-     * <p>返回去除首尾空白的首行；输入为空时返回空字符串。
-     *
-     * @param text bounded text consumed or produced by the current formatter / 当前格式化器消费或生成的有界文本
-     * @return the operation result / 操作结果
-     */
-    public static String firstLine(String text) {
-        return text.lines().findFirst().map(String::trim).orElse("");
-    }
-
-    /**
-     * Parses long.
-     * <p>解析长整型。
-     *
-     * @param value candidate content accepted or rejected by this contract / 由当前契约接收或拒绝的候选内容
-     * @return the operation result / 操作结果
-     */
-    public static long parseLong(String value) {
-        try {
-            return Long.parseLong(value);
-        } catch (Exception ignored) {
-            // Invalid bounded numeric evidence is treated as unavailable, not propagated to users. / 无效的有界数字证据视为不可用，不向用户传播。
-            return 0;
-        }
-    }
-
-    /**
-     * Quotes a literal argument for the fixed command-rendering boundary.
-     * <p>为固定命令渲染边界引用字面参数。
-     *
-     * @param value candidate content accepted or rejected by this contract / 由当前契约接收或拒绝的候选内容
-     * @return the operation result / 操作结果
-     */
-    public static String quote(String value) {
-        return "'" + value.replace("'", "'\"'\"'") + "'";
     }
 
     /**
@@ -300,8 +287,8 @@ public final class SshCommandExecutor {
      * @throws NullPointerException if a required input is absent / 必需输入缺失时
      */
     public static boolean isTransientTransportFailure(LinuxOperationException failure) {
-        for (Throwable current = Objects.requireNonNull(failure, "failure"); current != null;
-             current = current.getCause()) {
+        for (Throwable current = Objects.requireNonNull(failure, "failure"); current != null; current = current
+                .getCause()) {
             if (current instanceof TimeoutException) {
                 return true;
             }
@@ -317,11 +304,11 @@ public final class SshCommandExecutor {
      * @return sanitize text / 清洗文本
      */
     private static String sanitize(String text) {
-        String redacted = text
-                .replaceAll("(?i)(password|secret|token|api[_-]?key)\\s*[:=]\\s*\\S+", "$1=<redacted>")
+        String redacted = text.replaceAll("(?i)(password|secret|token|api[_-]?key)\\s*[:=]\\s*\\S+", "$1=<redacted>")
                 .replaceAll("(?i)(https?://)[^\\s/@:]+:[^\\s/@]+@", "$1<redacted>@")
                 .replaceAll("-----BEGIN [A-Z ]+-----[\\s\\S]*?-----END [A-Z ]+-----", "<redacted-key>");
-        if (redacted.length() <= MAX_EVIDENCE_CHARS) return redacted;
+        if (redacted.length() <= MAX_EVIDENCE_CHARS)
+            return redacted;
         String omitted = "\n[... output omitted ...]\n";
         int head = (MAX_EVIDENCE_CHARS - omitted.length()) / 2;
         int tail = MAX_EVIDENCE_CHARS - omitted.length() - head;
@@ -346,73 +333,164 @@ public final class SshCommandExecutor {
      * @param input source content consumed by this operation / 当前操作消费的源内容
      * @param output destination receiving the produced content / 接收所生成内容的目标
      * @param timeout timeout / 超时
+     * @param inputDigest approved data digest / 已批准数据摘要
+     * @param inputBytes approved data size / 已批准数据大小
+     * @param outputLimit approved output limit / 已批准输出限制
      * @return constructed or resolved command result / 构造或解析得到的命令结果
      * @throws LinuxOperationException if the authenticated remote operation fails or its evidence is rejected / 已认证远端操作失败或其证据被拒绝时
      * @throws NullPointerException if a required input is absent / 必需输入缺失时
      */
-    public CommandResult execProtocolStreaming(
-            String script, InputStream input, OutputStream output, Duration timeout) throws LinuxOperationException {
-        Objects.requireNonNull(input, "input");
-        Objects.requireNonNull(output, "output");
-        Objects.requireNonNull(timeout, "timeout");
-        ByteArrayOutputStream error = new ByteArrayOutputStream();
-        String command = "/bin/bash -lc " + quote(script);
+    public gold.debug.windowstolinux.shared.linux.command.RemoteCommandResult execProtocolStreaming(String script,
+            InputStream input, OutputStream output, Duration timeout, String inputDigest, long inputBytes,
+            long outputLimit) throws LinuxOperationException {
+        Objects.requireNonNull(input);
+        Objects.requireNonNull(output);
+        Objects.requireNonNull(timeout);
+        if (!inputDigest.matches("[0-9a-f]{64}") || inputBytes < 0 || inputBytes > 137438953472L || outputLimit < 1
+                || outputLimit > 137438953472L)
+            throw new IllegalArgumentException("invalid stream identity or bounds");
+        String command = "/bin/bash -lc " + gold.debug.windowstolinux.shared.linux.command.CommandText.quote(script);
+        var dispatch = gold.debug.windowstolinux.shared.linux.command.CommandExecutionScope.beforeDigest(target,
+                command, "", inputDigest, timeout, outputLimit);
         try (ClientChannel channel = session.createExecChannel(command)) {
-            channel.setIn(input);
-            channel.setOut(output);
-            channel.setErr(error);
+            var inputHash = java.security.MessageDigest.getInstance("SHA-256");
+            var counted = new CountingStream(input, inputHash, inputBytes);
+            var bounded = new BoundedStream(output, outputLimit, () -> channel.close(true));
+            var errors = new CommandOutputCapture(65536, true, () -> channel.close(true));
+            channel.setIn(counted);
+            channel.setOut(bounded);
+            channel.setErr(errors.stderr());
             channel.open().verify(timeout);
             var events = channel.waitFor(EnumSet.of(ClientChannelEvent.CLOSED), timeout);
             boolean timedOut = !events.contains(ClientChannelEvent.CLOSED);
-            if (timedOut) channel.close(true);
+            if (timedOut)
+                channel.close(true);
             Integer exit = channel.getExitStatus();
-            boolean succeeded = !timedOut && exit != null && exit == 0;
-            return new CommandResult(succeeded, timedOut, "", "", sanitize(error.toString(StandardCharsets.UTF_8)), exit);
-        } catch (IOException exception) {
+            boolean intact = counted.count == inputBytes
+                    && java.util.HexFormat.of().formatHex(inputHash.digest()).equals(inputDigest) && !bounded.exceeded
+                    && !errors.exceeded();
+            var result = new gold.debug.windowstolinux.shared.linux.command.RemoteCommandResult(
+                    !timedOut && intact && exit != null && exit == 0, timedOut, "", "", sanitize(errors.error()),
+                    intact ? exit : null);
+            dispatch.ifPresent(receipt -> receipt.completed(result));
+            if (!intact)
+                throw new IOException("stream differs from reviewed bounds or digest");
+            return result;
+        } catch (IOException failure) {
+            dispatch.ifPresent(gold.debug.windowstolinux.shared.linux.command.CommandExecutionScope.Dispatch::unknown);
             throw LinuxOperationException.create(LinuxOperationFailureType.SSH_COMMAND_FAILED,
-                    "Controlled SSH stream could not be executed (" + safeException(exception) + ")", exception);
+                    "Controlled SSH stream failed (" + safeException(failure) + ")", failure);
+        } catch (java.security.NoSuchAlgorithmException impossible) {
+            throw new IllegalStateException(impossible);
         }
     }
 
-    /**
-     * Represents an immutable {@code CommandResult} value.
-     *
-     *  <p>表示不可变的 {@code CommandResult} 值。
-     *
-     * @param succeeded whether the build and artifact verification succeeded / 构建和产物验证是否成功
-     * @param timedOut timed out / 超时输出
-     * @param output destination receiving the produced content / 接收所生成内容的目标
-     * @param evidenceOutput evidence output / 证据输出
-     * @param error error / 错误
-     * @param exitStatus exit status / 退出状态
-     */
-    public record CommandResult(
-            boolean succeeded,
-            boolean timedOut,
-            String output,
-            String evidenceOutput,
-            String error,
-            Integer exitStatus
-    ) {
-        /**
-         * Returns failure evidence.
-         * <p>返回失败证据。
-         *
-         * @return the operation result / 操作结果
+    /** Measures exact approved stream bytes without retaining data. / 测量精确已批准流字节，不保留数据。 */
+    private static final class CountingStream extends InputStream {
+        /** Caller-owned input. / 调用方持有的输入。 */
+        private final InputStream input;
+
+        /** Exact content digest. / 精确内容摘要。 */
+        private final java.security.MessageDigest digest;
+
+        /** Reviewed byte count. / 已审阅字节数。 */
+        private final long limit;
+
+        /** Observed byte count. / 已观察字节数。 */
+        private long count;
+        /** Binds input integrity. / 绑定输入完整性。
+         * @param input data stream / 数据流
+         * @param digest running digest / 运行摘要
+         * @param limit approved bytes / 已批准字节数
          */
-        public String failureEvidence() {
-            if (timedOut) {
-                return "Remote command timed out";
+        private CountingStream(InputStream input, java.security.MessageDigest digest, long limit) {
+            this.input = input;
+            this.digest = digest;
+            this.limit = limit;
+        }
+
+        /** Reads one bounded byte. / 读取一个有界字节。
+         * @return byte or EOF / 字节或结束标记
+         * @throws IOException when the input exceeds its approval / 输入超出批准时
+         */
+        @Override
+        public int read() throws IOException {
+            byte[] one = new byte[1];
+            int n = read(one, 0, 1);
+            return n < 0 ? -1 : one[0] & 255;
+        }
+
+        /** Reads bounded exact data. / 读取有界精确数据。
+         * @param bytes target buffer / 目标缓冲区
+         * @param offset buffer offset / 缓冲区偏移
+         * @param length requested bytes / 请求字节数
+         * @return bytes read / 已读字节数
+         * @throws IOException when the content exceeds its declaration / 内容超出声明时
+         */
+        @Override
+        public int read(byte[] bytes, int offset, int length) throws IOException {
+            int n = input.read(bytes, offset, length);
+            if (n > 0) {
+                count += n;
+                if (count > limit)
+                    throw new IOException("stream input limit");
+                digest.update(bytes, offset, n);
             }
-            if (!error.isBlank() && !evidenceOutput.isBlank()) {
-                return "exitCode=" + (exitStatus == null ? "unknown" : exitStatus)
-                        + ", error=" + error + ", output=" + evidenceOutput;
+            return n;
+        }
+    }
+
+    /** Stops the actual channel when streamed output exceeds approval. / 流输出超出批准时停止实际通道。 */
+    private static final class BoundedStream extends OutputStream {
+        /** Caller-owned output. / 调用方持有的输出。 */
+        private final OutputStream output;
+
+        /** Approved output bytes. / 已批准输出字节数。 */
+        private final long limit;
+
+        /** Channel stop action. / 通道停止动作。 */
+        private final Runnable stop;
+
+        /** Observed count. / 已观察计数。 */
+        private long count;
+
+        /** Whether output integrity failed. / 输出完整性是否失败。 */
+        private boolean exceeded;
+        /** Binds bounded output. / 绑定有界输出。
+         * @param output destination / 目的地
+         * @param limit maximum bytes / 最大字节数
+         * @param stop actual channel stop / 实际通道停止
+         */
+        private BoundedStream(OutputStream output, long limit, Runnable stop) {
+            this.output = output;
+            this.limit = limit;
+            this.stop = stop;
+        }
+
+        /** Writes one bounded byte. / 写入一个有界字节。
+         * @param value byte / 字节
+         * @throws IOException on exceeded output / 输出超限时
+         */
+        @Override
+        public void write(int value) throws IOException {
+            write(new byte[]{(byte) value}, 0, 1);
+        }
+
+        /** Writes only within the approved byte count. / 仅在批准字节数内写入。
+         * @param bytes source / 来源
+         * @param offset source offset / 来源偏移
+         * @param length byte count / 字节数
+         * @throws IOException on exceeded output / 输出超限时
+         */
+        @Override
+        public void write(byte[] bytes, int offset, int length) throws IOException {
+            count += length;
+            if (count > limit) {
+                exceeded = true;
+                stop.run();
+                throw new IOException("stream output limit");
             }
-            String detail = error.isBlank() ? evidenceOutput : error;
-            if (!detail.isBlank()) {
-                return "exitCode=" + (exitStatus == null ? "unknown" : exitStatus) + ", output=" + detail;
-            }
-            return "exitCode=" + (exitStatus == null ? "unknown" : exitStatus);
+            output.write(bytes, offset, length);
         }
     }
 }

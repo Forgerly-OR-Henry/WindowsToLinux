@@ -1,10 +1,10 @@
 package gold.debug.windowstolinux.shared.git;
 
-import gold.debug.windowstolinux.shared.git.GitReference;
-import gold.debug.windowstolinux.shared.git.GitRemote;
-
 import java.util.Objects;
 import java.util.Set;
+
+import gold.debug.windowstolinux.shared.git.GitReference;
+import gold.debug.windowstolinux.shared.git.GitRemote;
 
 /**
  * Bounded input for a read-only Git analysis snapshot; credentials remain external to this value.
@@ -17,13 +17,8 @@ import java.util.Set;
  * @param maximumArchiveBytes the maximum generated source archive size / 生成源码归档的最大大小
  * @param permitLocalFileRemote whether test or controlled local remotes are permitted / 是否允许测试或受控本地远端
  */
-public record GitSourceRequest(
-        GitRemote remote,
-        GitReference reference,
-        Set<String> allowedHosts,
-        long maximumArchiveBytes,
-        boolean permitLocalFileRemote
-) {
+public record GitSourceRequest(GitRemote remote, GitReference reference, Set<String> allowedHosts,
+        long maximumArchiveBytes, boolean permitLocalFileRemote) {
     /**
      * Validates and binds the inputs required by git source request.
      * <p>校验并绑定Git源码请求所需输入。
@@ -62,8 +57,8 @@ public record GitSourceRequest(
      * @throws NullPointerException if a required input is absent / 必需输入缺失时
      */
     private static Set<String> normalizeAllowedHosts(Set<String> allowedHosts) {
-        return Set.copyOf(Objects.requireNonNull(allowedHosts, "allowedHosts").stream()
-                .map(host -> Objects.requireNonNull(host, "allowedHosts entry").trim().toLowerCase(java.util.Locale.ROOT))
+        return Set.copyOf(Objects.requireNonNull(allowedHosts, "allowedHosts").stream().map(
+                host -> Objects.requireNonNull(host, "allowedHosts entry").trim().toLowerCase(java.util.Locale.ROOT))
                 .peek(host -> {
                     if (!host.matches("[a-z0-9.-]{1,253}")) {
                         throw new IllegalArgumentException("allowedHosts must contain normalized host names");

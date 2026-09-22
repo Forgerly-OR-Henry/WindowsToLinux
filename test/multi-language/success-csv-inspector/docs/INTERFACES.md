@@ -2,18 +2,18 @@
 
 PHP 所有 JSON 响应带 `X-Sample-Protocol: 2`。请求为 UTF-8；业务拒绝返回 400/404/409 及 `error`。异步检查错误保存在任务 `status/error`，不伪装为同步成功报告。
 
-| 接口 | 数据 |
-|---|---|
-| `POST /api/datasets?name=...` | CSV 文件流，Content-Length；返回 id/name/size/sha256 |
-| `GET /api/datasets` | offset/limit（1..100）分页 |
-| `GET/POST /api/templates` | 读取模板 / `{name,rules}` 创建不可变模板 |
-| `POST /api/jobs` | `{datasetId,templateId,requestId}`；同键同参数只创建一次 |
-| `GET /api/jobs` | 数据库分页：items/total/offset/limit |
-| `GET /api/jobs/{id}` | 状态、尝试次数、进度、规则、汇总、历史 |
-| `GET /api/jobs/{id}/issues` | 当前尝试问题明细分页；未完成明细仅供诊断 |
+| 接口                                   | 数据                                                         |
+| -------------------------------------- | ------------------------------------------------------------ |
+| `POST /api/datasets?name=...`          | CSV 文件流，Content-Length；返回 id/name/size/sha256         |
+| `GET /api/datasets`                    | offset/limit（1..100）分页                                   |
+| `GET/POST /api/templates`              | 读取模板 / `{name,rules}` 创建不可变模板                     |
+| `POST /api/jobs`                       | `{datasetId,templateId,requestId}`；同键同参数只创建一次     |
+| `GET /api/jobs`                        | 数据库分页：items/total/offset/limit                         |
+| `GET /api/jobs/{id}`                   | 状态、尝试次数、进度、规则、汇总、历史                       |
+| `GET /api/jobs/{id}/issues`            | 当前尝试问题明细分页；未完成明细仅供诊断                     |
 | `POST /api/jobs/{id}/cancel` / `retry` | `{requestId}`；取消运行/排队任务；显式重试失败/取消/中断任务 |
-| `GET /api/jobs/{id}/export` | 只允许 completed；下载完整 JSON 报告 |
-| `GET /api/compare?left=...&right=...` | 只比较同数据集成功报告；分类差额、added/resolved、原规则 |
+| `GET /api/jobs/{id}/export`            | 只允许 completed；下载完整 JSON 报告                         |
+| `GET /api/compare?left=...&right=...`  | 只比较同数据集成功报告；分类差额、added/resolved、原规则     |
 
 请求标识是 8..80 个 ASCII 字母、数字、下划线或连字符。相同键用于不同参数/动作返回 409。SQLite 外键、请求唯一键、任务状态约束与事务保证身份一致。
 

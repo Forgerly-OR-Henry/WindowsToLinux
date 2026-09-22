@@ -1,14 +1,14 @@
 package gold.debug.windowstolinux.app.main.startup;
 
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import java.nio.file.Path;
+
 import gold.debug.windowstolinux.shared.model.capability.LinuxCapabilityFacts;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIfSystemProperty;
 import org.junit.jupiter.api.io.TempDir;
-
-import java.nio.file.Path;
-
-import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * Opt-in product-entrypoint probe that reports only non-secret deployment capability facts.
@@ -22,7 +22,8 @@ class ManagedDeploymentCapabilityInspectionAcceptanceTest {
 
     @Test
     void reportsTheTypedCapabilityBaselineWithoutTargetMutation() throws Exception {
-        try (LiveTypedDeploymentContext context = new LiveTypedDeploymentContext(temporaryDirectory.resolve("capabilities"))) {
+        try (LiveTypedDeploymentContext context = new LiveTypedDeploymentContext(
+                temporaryDirectory.resolve("capabilities"))) {
             LinuxCapabilityFacts capabilities = context.inspectDeploymentCapabilities();
             assertNotNull(capabilities.distro());
             assertTrue(!capabilities.version().isBlank());
@@ -34,7 +35,8 @@ class ManagedDeploymentCapabilityInspectionAcceptanceTest {
                 org.junit.jupiter.api.Assertions.assertEquals(System.getProperty("managed.expect.firewall-state"),
                         capabilities.securityPosture().firewallState().name());
             }
-            System.out.printf("MANAGED_CAPABILITIES distro=%s version=%s architecture=%s packageArchitecture=%s cpu=%s security=%s firewall=%s firewallState=%s%n",
+            System.out.printf(
+                    "MANAGED_CAPABILITIES distro=%s version=%s architecture=%s packageArchitecture=%s cpu=%s security=%s firewall=%s firewallState=%s%n",
                     capabilities.distro(), capabilities.version(), capabilities.architecture(),
                     capabilities.packageArchitecture(), capabilities.cpuMicroarchitecture(),
                     capabilities.securityPosture().state(), capabilities.securityPosture().firewall(),

@@ -8,10 +8,7 @@ import java.util.Objects;
  * @param databaseId database id / 数据库标识
  * @param connection connection scoped to the current database or remote operation / 限定于当前数据库或远端操作的连接
  */
-public record ManagedDatabaseBinding(
-        String databaseId,
-        ManagedDatabaseConnection connection
-) {
+public record ManagedDatabaseBinding(String databaseId, ManagedDatabaseConnection connection) {
     /**
      * Validates the stable identity and non-secret connection. / 校验稳定身份及非秘密连接。
      *

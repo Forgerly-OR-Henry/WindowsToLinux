@@ -1,14 +1,14 @@
 package gold.debug.windowstolinux.shared.linux.sshd.backup.execution.protocol;
 
+import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
+
 import gold.debug.windowstolinux.shared.linux.error.LinuxOperationException;
 import gold.debug.windowstolinux.shared.linux.error.LinuxOperationFailureType;
 import gold.debug.windowstolinux.shared.linux.protocol.backup.RemoteBackupArtifact;
 import gold.debug.windowstolinux.shared.linux.protocol.backup.RemoteBackupArtifactKind;
 import gold.debug.windowstolinux.shared.linux.sshd.command.SshCommandExecutor;
-
-import java.util.Map;
-import java.util.Objects;
-import java.util.Set;
 
 /**
  * Strict parser for bounded helper backup evidence. / 有界 helper 备份证据的严格解析器。
@@ -28,7 +28,8 @@ public final class ManagedBackupProtocolParser {
     public RemoteBackupArtifact artifact(String operationId, RemoteBackupArtifactKind expectedKind, String output)
             throws LinuxOperationException {
         try {
-            Map<String, String> values = SshCommandExecutor.lines(Objects.requireNonNull(output, "output"));
+            Map<String, String> values = gold.debug.windowstolinux.shared.linux.command.CommandText
+                    .lines(Objects.requireNonNull(output, "output"));
             if (!values.keySet().equals(Set.of("ARTIFACT", "KIND", "SIZE", "SHA256"))
                     || !kind(expectedKind).equals(values.get("KIND"))) {
                 throw new IllegalArgumentException("backup evidence fields or kind differ");

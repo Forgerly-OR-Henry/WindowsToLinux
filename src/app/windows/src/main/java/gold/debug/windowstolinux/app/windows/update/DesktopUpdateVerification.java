@@ -17,16 +17,9 @@ import java.util.Objects;
  * @param verifiedAt verified at / 已验证时刻
  * @param evidence observations supporting the reported result / 支持所报告结果的观测证据
  */
-public record DesktopUpdateVerification(
-        Path packageFile,
-        String releaseId,
-        DesktopReleaseVersion version,
-        DesktopArchitectureType architecture,
-        long packageBytes,
-        String packageSha256,
-        Instant verifiedAt,
-        List<String> evidence
-) {
+public record DesktopUpdateVerification(Path packageFile, String releaseId, DesktopReleaseVersion version,
+        DesktopArchitectureType architecture, long packageBytes, String packageSha256, Instant verifiedAt,
+        List<String> evidence) {
     /**
      * MAXIMUM PATH CHARACTERS.
      * <p>最大路径字符集合。
@@ -57,7 +50,8 @@ public record DesktopUpdateVerification(
         releaseId = identifier(releaseId, "releaseId");
         version = Objects.requireNonNull(version, "version");
         architecture = Objects.requireNonNull(architecture, "architecture");
-        if (packageBytes < 1) throw new IllegalArgumentException("packageBytes must be positive");
+        if (packageBytes < 1)
+            throw new IllegalArgumentException("packageBytes must be positive");
         packageSha256 = Objects.requireNonNull(packageSha256, "packageSha256").trim();
         if (!packageSha256.matches("[0-9a-f]{64}")) {
             throw new IllegalArgumentException("packageSha256 is invalid");

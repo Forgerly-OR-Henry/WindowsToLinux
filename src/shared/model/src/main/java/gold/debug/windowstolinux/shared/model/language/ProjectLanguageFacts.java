@@ -1,7 +1,5 @@
 package gold.debug.windowstolinux.shared.model.language;
 
-import gold.debug.windowstolinux.shared.model.analysis.AnalysisEvidence;
-
 import java.util.ArrayList;
 import java.util.EnumMap;
 import java.util.EnumSet;
@@ -9,6 +7,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+
+import gold.debug.windowstolinux.shared.model.analysis.AnalysisEvidence;
 
 /**
  * Deterministic language facts collected without executing source or choosing a primary language.
@@ -20,12 +20,8 @@ import java.util.Set;
  * @param values exact deterministic language values / 精确的确定性语言值
  * @param evidence bounded evidence for the observations / 观测结果的有界证据
  */
-public record ProjectLanguageFacts(
-        Set<LanguageEcosystemType> ecosystems,
-        Set<SourceLanguageType> sourceLanguages,
-        Map<LanguageFactKind, String> values,
-        List<AnalysisEvidence> evidence
-) {
+public record ProjectLanguageFacts(Set<LanguageEcosystemType> ecosystems, Set<SourceLanguageType> sourceLanguages,
+        Map<LanguageFactKind, String> values, List<AnalysisEvidence> evidence) {
     /**
      * Creates immutable language facts. / 创建不可变语言事实。
      *

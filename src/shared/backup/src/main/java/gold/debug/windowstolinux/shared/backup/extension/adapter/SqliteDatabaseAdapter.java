@@ -1,10 +1,12 @@
 package gold.debug.windowstolinux.shared.backup.extension.adapter;
 
+import java.util.Objects;
+
 import gold.debug.windowstolinux.shared.backup.contract.spi.DatabaseBackupAdapter;
 import gold.debug.windowstolinux.shared.backup.contract.spi.DatabaseBackupArtifact;
 import gold.debug.windowstolinux.shared.backup.contract.spi.DatabaseBackupRequest;
-import gold.debug.windowstolinux.shared.backup.contract.spi.DatabaseCompatibilityEvidence;
 import gold.debug.windowstolinux.shared.backup.contract.spi.DatabaseCommitEvidence;
+import gold.debug.windowstolinux.shared.backup.contract.spi.DatabaseCompatibilityEvidence;
 import gold.debug.windowstolinux.shared.backup.contract.spi.DatabaseOperationPort;
 import gold.debug.windowstolinux.shared.backup.contract.spi.DatabaseRecoveryEvidence;
 import gold.debug.windowstolinux.shared.backup.contract.spi.DatabaseRestoreEvidence;
@@ -13,8 +15,6 @@ import gold.debug.windowstolinux.shared.backup.contract.validation.BackupExcepti
 import gold.debug.windowstolinux.shared.backup.contract.validation.BackupFailureType;
 import gold.debug.windowstolinux.shared.backup.manifest.BackupConsistencyMode;
 import gold.debug.windowstolinux.shared.backup.manifest.BackupDatabaseType;
-
-import java.util.Objects;
 
 /**
  * SQLite policy that forbids copying an actively written database. / 禁止复制活跃写入数据库的 SQLite 策略。
@@ -42,7 +42,10 @@ public final class SqliteDatabaseAdapter implements DatabaseBackupAdapter {
      *
      * @return selected member of the supported type set / 受支持类型集合中的所选项
      */
-    @Override public BackupDatabaseType type() { return BackupDatabaseType.SQLITE; }
+    @Override
+    public BackupDatabaseType type() {
+        return BackupDatabaseType.SQLITE;
+    }
 
     /**
      * Checks SQLite evidence and selects the admitted snapshot or stopped-writer backup strategy.
@@ -80,9 +83,10 @@ public final class SqliteDatabaseAdapter implements DatabaseBackupAdapter {
      */
     @Override
     public DatabaseRestoreEvidence restore(DatabaseRestoreRequest request) throws BackupException {
-        if (request.target().type() != type()) throw new IllegalArgumentException("SQLite restore target is required");
-        DatabaseCompatibilityEvidence evidence = operations.inspect(new DatabaseBackupRequest(
-                request.applicationId(), request.target(), false, false));
+        if (request.target().type() != type())
+            throw new IllegalArgumentException("SQLite restore target is required");
+        DatabaseCompatibilityEvidence evidence = operations
+                .inspect(new DatabaseBackupRequest(request.applicationId(), request.target(), false, false));
         DatabaseAdapterEvidence.requireRestoreCompatible(request, evidence, type());
         return operations.restoreCandidate(request);
     }
@@ -95,8 +99,10 @@ public final class SqliteDatabaseAdapter implements DatabaseBackupAdapter {
      * @return constructed or resolved database commit evidence / 构造或解析得到的数据库提交证据
      * @throws BackupException if backup validation or the controlled backup operation fails / 备份校验或受控备份操作失败时
      */
-    @Override public DatabaseCommitEvidence commitCandidate(DatabaseRestoreRequest request) throws BackupException {
-        requireRestoreType(request); return operations.commitCandidate(request);
+    @Override
+    public DatabaseCommitEvidence commitCandidate(DatabaseRestoreRequest request) throws BackupException {
+        requireRestoreType(request);
+        return operations.commitCandidate(request);
     }
 
     /**
@@ -107,8 +113,10 @@ public final class SqliteDatabaseAdapter implements DatabaseBackupAdapter {
      * @return constructed or resolved database recovery evidence / 构造或解析得到的数据库恢复证据
      * @throws BackupException if backup validation or the controlled backup operation fails / 备份校验或受控备份操作失败时
      */
-    @Override public DatabaseRecoveryEvidence recoverCandidate(DatabaseRestoreRequest request) throws BackupException {
-        requireRestoreType(request); return operations.recoverCandidate(request);
+    @Override
+    public DatabaseRecoveryEvidence recoverCandidate(DatabaseRestoreRequest request) throws BackupException {
+        requireRestoreType(request);
+        return operations.recoverCandidate(request);
     }
 
     /**
@@ -132,7 +140,8 @@ public final class SqliteDatabaseAdapter implements DatabaseBackupAdapter {
      * @throws IllegalArgumentException if an input violates the constraints checked by this contract / 输入违反当前契约检查的约束时
      */
     private void requireRestoreType(DatabaseRestoreRequest request) {
-        if (request.target().type() != type()) throw new IllegalArgumentException("SQLite restore target is required");
+        if (request.target().type() != type())
+            throw new IllegalArgumentException("SQLite restore target is required");
     }
 
     /**
@@ -143,6 +152,7 @@ public final class SqliteDatabaseAdapter implements DatabaseBackupAdapter {
      * @throws IllegalArgumentException if an input violates the constraints checked by this contract / 输入违反当前契约检查的约束时
      */
     private void requireType(DatabaseBackupRequest request) {
-        if (request.connection().type() != type()) throw new IllegalArgumentException("SQLite connection is required");
+        if (request.connection().type() != type())
+            throw new IllegalArgumentException("SQLite connection is required");
     }
 }

@@ -1,12 +1,11 @@
 package gold.debug.windowstolinux.shared.model.managed;
 
-import gold.debug.windowstolinux.shared.model.health.HealthCheck;
-import gold.debug.windowstolinux.shared.model.health.UserAccessUrl;
-
-import gold.debug.windowstolinux.shared.model.project.RuntimeIdentityMode;
-
 import java.util.Objects;
 import java.util.Optional;
+
+import gold.debug.windowstolinux.shared.model.health.HealthCheck;
+import gold.debug.windowstolinux.shared.model.health.UserAccessUrl;
+import gold.debug.windowstolinux.shared.model.project.RuntimeIdentityMode;
 
 /**
  * The last successfully deployed runtime contract for one managed application. It is mutable across successful deployments, unlike the application ownership identity itself.
@@ -18,12 +17,9 @@ import java.util.Optional;
  * @param identityPolicy reviewed process identity and privilege policy / 已审阅进程身份及权限策略
  * @param workload reviewed application execution and resource contract / 已审阅应用执行及资源契约
  */
-public record ManagedApplicationRuntimeConfiguration(
-        HealthCheck healthCheck,
-        Optional<UserAccessUrl> userAccessUrl,
+public record ManagedApplicationRuntimeConfiguration(HealthCheck healthCheck, Optional<UserAccessUrl> userAccessUrl,
         RuntimeIdentityMode identityPolicy,
-        gold.debug.windowstolinux.shared.model.project.application.ApplicationWorkload workload
-) {
+        gold.debug.windowstolinux.shared.model.project.application.ApplicationWorkload workload) {
     /**
      * Initializes managed application runtime configuration through its shared constructor contract.
      * <p>通过共享构造契约初始化受管应用运行时配置。
@@ -33,10 +29,11 @@ public record ManagedApplicationRuntimeConfiguration(
      * @param identityPolicy reviewed process identity and privilege policy / 已审阅进程身份及权限策略
      */
     public ManagedApplicationRuntimeConfiguration(HealthCheck healthCheck, Optional<UserAccessUrl> userAccessUrl,
-                                                   RuntimeIdentityMode identityPolicy) {
+            RuntimeIdentityMode identityPolicy) {
         this(healthCheck, userAccessUrl, identityPolicy,
                 gold.debug.windowstolinux.shared.model.project.application.ApplicationWorkload.unspecified());
     }
+
     /**
      * Reads historical health-only runtime state without inventing an identity policy. / 读取历史健康运行状态，不推断缺失的身份策略。
      *

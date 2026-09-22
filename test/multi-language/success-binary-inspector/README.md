@@ -29,14 +29,14 @@ normal.bin：2 块、5 条记录，其中 3 条测量和 2 条事件；sum=7、m
 
 所有整数小端、固定宽度，无原生结构体填充。CRC-32 使用 IEEE 反射多项式 0xEDB88320，初值/终值异或均为 0xFFFFFFFF，与 Python zlib.crc32 一致。
 
-| 部分 | 字段 |
-|---|---|
-| 文件头 24 字节 | magic="WTL2" 4B；version=u16(2)；headerSize=u16(24)；blockCount=u32；recordCount=u64；reserved=u32(0) |
-| 块头 16 字节 | magic="BLK2" 4B；payloadBytes=u32；recordCount=u32；payloadCRC=u32 |
-| 记录头 4 字节 | kind=u8（1 测量/2 事件）；flags=u8（允许 0..3）；payloadLen=u16 |
-| 测量 payload 12 字节 | id=u32；value=i64 |
-| 事件 payload 4..4100 字节 | id=u32；余下为 0..4096 字节严格 UTF-8 文本 |
-| 文件尾 4 字节 | 整文件头、全部块头和 payload 的 CRC；不包含文件尾自身 |
+| 部分                      | 字段                                                                                                  |
+| ------------------------- | ----------------------------------------------------------------------------------------------------- |
+| 文件头 24 字节            | magic="WTL2" 4B；version=u16(2)；headerSize=u16(24)；blockCount=u32；recordCount=u64；reserved=u32(0) |
+| 块头 16 字节              | magic="BLK2" 4B；payloadBytes=u32；recordCount=u32；payloadCRC=u32                                    |
+| 记录头 4 字节             | kind=u8（1 测量/2 事件）；flags=u8（允许 0..3）；payloadLen=u16                                       |
+| 测量 payload 12 字节      | id=u32；value=i64                                                                                     |
+| 事件 payload 4..4100 字节 | id=u32；余下为 0..4096 字节严格 UTF-8 文本                                                            |
+| 文件尾 4 字节             | 整文件头、全部块头和 payload 的 CRC；不包含文件尾自身                                                 |
 
 每块最多 1 MiB，非空块至少 1 条；最多 65536 块和 1000000 条记录；空文件只含头与尾。数量、长度、边界、未知类型、flags、UTF-8、块 CRC、整文件 CRC 和额外尾字节全部校验。过滤不会绕过未选中记录的格式校验。C 缓冲区最大仅约 4 KiB 单记录加 5 条事件样本，不整体加载大文件。测量单文件选中值求和溢出 int64 时明确报错；Rust 批量合计使用 i128，JSON summary.sum 输出十进制字符串，避免跨文件溢出或精度丢失。
 

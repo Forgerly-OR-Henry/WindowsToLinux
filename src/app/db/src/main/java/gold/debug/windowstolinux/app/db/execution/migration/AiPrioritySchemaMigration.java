@@ -11,7 +11,9 @@ final class AiPrioritySchemaMigration {
      * Prevents instantiation of this static contract helper.
      * <p>防止实例化当前静态契约辅助类。
      */
-    private AiPrioritySchemaMigration() { }
+    private AiPrioritySchemaMigration() {
+    }
+
     /**
      * Applies ai priority schema migration.
      * <p>应用AI优先级结构迁移。
@@ -30,15 +32,16 @@ final class AiPrioritySchemaMigration {
                   display_name TEXT NOT NULL, enabled INTEGER NOT NULL CHECK(enabled IN (0,1)),
                   priority INTEGER NOT NULL CHECK(priority>=0), verified_at TEXT)
                 """);
-        statement.execute("""
-                INSERT OR IGNORE INTO ai_provider_control (profile_id, display_name, enabled, priority, verified_at)
-                SELECT p.profile_id, p.profile_id,
-                  CASE WHEN EXISTS(SELECT 1 FROM ai_role_assignment r WHERE r.profile_id=p.profile_id) THEN 1 ELSE 0 END,
-                  ROW_NUMBER() OVER (ORDER BY
-                    CASE WHEN EXISTS(SELECT 1 FROM ai_role_assignment r WHERE r.profile_id=p.profile_id AND r.role='PROJECT_ANALYSIS') THEN 0
-                         WHEN EXISTS(SELECT 1 FROM ai_role_assignment r WHERE r.profile_id=p.profile_id) THEN 1 ELSE 2 END,
-                    p.profile_id) - 1, NULL
-                FROM ai_provider_profile p
-                """);
+        statement.execute(
+                """
+                        INSERT OR IGNORE INTO ai_provider_control (profile_id, display_name, enabled, priority, verified_at)
+                        SELECT p.profile_id, p.profile_id,
+                          CASE WHEN EXISTS(SELECT 1 FROM ai_role_assignment r WHERE r.profile_id=p.profile_id) THEN 1 ELSE 0 END,
+                          ROW_NUMBER() OVER (ORDER BY
+                            CASE WHEN EXISTS(SELECT 1 FROM ai_role_assignment r WHERE r.profile_id=p.profile_id AND r.role='PROJECT_ANALYSIS') THEN 0
+                                 WHEN EXISTS(SELECT 1 FROM ai_role_assignment r WHERE r.profile_id=p.profile_id) THEN 1 ELSE 2 END,
+                            p.profile_id) - 1, NULL
+                        FROM ai_provider_profile p
+                        """);
     }
 }

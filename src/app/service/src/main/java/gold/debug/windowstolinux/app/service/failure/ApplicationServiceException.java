@@ -1,11 +1,11 @@
 package gold.debug.windowstolinux.app.service.failure;
 
+import java.util.Map;
+import java.util.Objects;
+
 import gold.debug.windowstolinux.shared.model.failure.FailureCarrier;
 import gold.debug.windowstolinux.shared.model.failure.FailureDescriptor;
 import gold.debug.windowstolinux.shared.model.failure.OperationIdentity;
-
-import java.util.Map;
-import java.util.Objects;
 
 /**
  * Unchecked structured failure at a desktop application-service boundary. / 桌面应用服务边界的非受检结构化失败。
@@ -48,8 +48,8 @@ public final class ApplicationServiceException extends RuntimeException implemen
      * @param cause original failure retained as the nested cause / 保留为嵌套原因的原始失败
      * @return a service failure with its original cause / 带原始原因的服务失败
      */
-    public static ApplicationServiceException create(
-            ApplicationServiceFailureType type, String diagnostic, Throwable cause) {
+    public static ApplicationServiceException create(ApplicationServiceFailureType type, String diagnostic,
+            Throwable cause) {
         return create(type, Map.of(), diagnostic, cause);
     }
 
@@ -61,8 +61,8 @@ public final class ApplicationServiceException extends RuntimeException implemen
      * @param diagnostic bounded non-secret detail for diagnostic reporting / 用于诊断报告的有界非秘密详情
      * @return a service failure with safe message arguments / 带安全消息参数的服务失败
      */
-    public static ApplicationServiceException create(
-            ApplicationServiceFailureType type, Map<String, ?> arguments, String diagnostic) {
+    public static ApplicationServiceException create(ApplicationServiceFailureType type, Map<String, ?> arguments,
+            String diagnostic) {
         return create(type, arguments, diagnostic, null);
     }
 
@@ -75,8 +75,8 @@ public final class ApplicationServiceException extends RuntimeException implemen
      * @param cause original failure retained as the nested cause / 保留为嵌套原因的原始失败
      * @return a fully described service failure / 完整描述的服务失败
      */
-    public static ApplicationServiceException create(
-            ApplicationServiceFailureType type, Map<String, ?> arguments, String diagnostic, Throwable cause) {
+    public static ApplicationServiceException create(ApplicationServiceFailureType type, Map<String, ?> arguments,
+            String diagnostic, Throwable cause) {
         return new ApplicationServiceException(
                 FailureDescriptor.create(type, OperationIdentity.create(), arguments, diagnostic), cause);
     }
@@ -105,5 +105,8 @@ public final class ApplicationServiceException extends RuntimeException implemen
      *
      * @return the structured failure / 结构化失败
      */
-    @Override public FailureDescriptor failure() { return failure; }
+    @Override
+    public FailureDescriptor failure() {
+        return failure;
+    }
 }

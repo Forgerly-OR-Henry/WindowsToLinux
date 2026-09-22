@@ -15,5 +15,6 @@ import com.baomidou.mybatisplus.annotation.TableName;
  * @param createdAt instant at which this record was created / 当前记录创建时刻
  */
 @TableName("secrets")
-public record WebSecretEntity(String workspaceId, String id, Integer version, String createdBy,
-                              String purpose, byte[] ciphertext, String createdAt) { }
+public record WebSecretEntity(String workspaceId, String id, Integer version, String createdBy, String purpose,
+        byte[] ciphertext, String createdAt) {
+}

@@ -18,6 +18,7 @@ public final class WindowsRestoreWorkspace {
      * <p>最小剩余字节。
      */
     private static final long MINIMUM_FREE_BYTES = 1024L * 1024L;
+
     /**
      * Restore directory.
      * <p>恢复目录。
@@ -31,8 +32,8 @@ public final class WindowsRestoreWorkspace {
      * @throws NullPointerException if a required input is absent / 必需输入缺失时
      */
     public WindowsRestoreWorkspace(Path workDirectory) {
-        restoreDirectory = Objects.requireNonNull(workDirectory, "workDirectory")
-                .toAbsolutePath().normalize().resolve("restore-candidates");
+        restoreDirectory = Objects.requireNonNull(workDirectory, "workDirectory").toAbsolutePath().normalize()
+                .resolve("restore-candidates");
     }
 
     /**
@@ -48,8 +49,7 @@ public final class WindowsRestoreWorkspace {
             throws WindowsWorkspaceException {
         applicationId = Objects.requireNonNull(applicationId, "applicationId").trim();
         archiveSha256 = Objects.requireNonNull(archiveSha256, "archiveSha256").trim().toLowerCase(Locale.ROOT);
-        if (!applicationId.matches("[a-z0-9][a-z0-9-]{0,62}")
-                || !archiveSha256.matches("[0-9a-f]{64}")) {
+        if (!applicationId.matches("[a-z0-9][a-z0-9-]{0,62}") || !archiveSha256.matches("[0-9a-f]{64}")) {
             throw WindowsWorkspaceException.create(WindowsWorkspaceFailureType.APPLICATION_ID_INVALID,
                     "The restore candidate identity is invalid", null);
         }
@@ -57,8 +57,8 @@ public final class WindowsRestoreWorkspace {
             prepareRoot();
             Path parent = Files.createTempDirectory(restoreDirectory, "attempt-").toAbsolutePath().normalize();
             String candidateId = applicationId + "-" + archiveSha256.substring(0, 16);
-            Object parentFileKey = Files.readAttributes(
-                    parent, BasicFileAttributes.class, LinkOption.NOFOLLOW_LINKS).fileKey();
+            Object parentFileKey = Files.readAttributes(parent, BasicFileAttributes.class, LinkOption.NOFOLLOW_LINKS)
+                    .fileKey();
             return new WindowsRestoreAttempt(parent, parent.resolve(candidateId), candidateId, parentFileKey);
         } catch (WindowsWorkspaceException exception) {
             throw exception;
@@ -82,13 +82,13 @@ public final class WindowsRestoreWorkspace {
             throw WindowsWorkspaceException.create(WindowsWorkspaceFailureType.RESTORE_WORKSPACE_FAILED,
                     "The restore attempt is outside the platform workspace", null);
         }
-        if (!Files.exists(parent, LinkOption.NOFOLLOW_LINKS)) return;
+        if (!Files.exists(parent, LinkOption.NOFOLLOW_LINKS))
+            return;
         try {
-            BasicFileAttributes attributes = Files.readAttributes(
-                    parent, BasicFileAttributes.class, LinkOption.NOFOLLOW_LINKS);
+            BasicFileAttributes attributes = Files.readAttributes(parent, BasicFileAttributes.class,
+                    LinkOption.NOFOLLOW_LINKS);
             if (!attributes.isDirectory() || Files.isSymbolicLink(parent)
-                    || attempt.parentFileKey() != null
-                    && !attempt.parentFileKey().equals(attributes.fileKey())) {
+                    || attempt.parentFileKey() != null && !attempt.parentFileKey().equals(attributes.fileKey())) {
                 throw WindowsWorkspaceException.create(WindowsWorkspaceFailureType.RESTORE_WORKSPACE_FAILED,
                         "The restore attempt parent changed externally and was preserved", null);
             }
@@ -100,7 +100,8 @@ public final class WindowsRestoreWorkspace {
         }
         try (var paths = Files.walk(parent)) {
             for (Path path : paths.sorted(Comparator.reverseOrder()).toList()) {
-                if (!path.startsWith(parent)) throw new IOException("restore cleanup escaped its attempt parent");
+                if (!path.startsWith(parent))
+                    throw new IOException("restore cleanup escaped its attempt parent");
                 Files.deleteIfExists(path);
             }
         } catch (IOException exception) {
@@ -118,8 +119,7 @@ public final class WindowsRestoreWorkspace {
      */
     private void prepareRoot() throws IOException, WindowsWorkspaceException {
         Files.createDirectories(restoreDirectory);
-        if (Files.isSymbolicLink(restoreDirectory)
-                || !Files.isDirectory(restoreDirectory, LinkOption.NOFOLLOW_LINKS)
+        if (Files.isSymbolicLink(restoreDirectory) || !Files.isDirectory(restoreDirectory, LinkOption.NOFOLLOW_LINKS)
                 || !Files.isWritable(restoreDirectory)) {
             throw WindowsWorkspaceException.create(WindowsWorkspaceFailureType.DIRECTORY_UNAVAILABLE,
                     "The restore workspace is not one writable regular directory", null);

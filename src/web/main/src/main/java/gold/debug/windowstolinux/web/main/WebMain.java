@@ -15,5 +15,7 @@ public class WebMain {
      *
      * @param args args / 参数
      */
-    public static void main(String[] args) { SpringApplication.run(WebMain.class, args); }
+    public static void main(String[] args) {
+        SpringApplication.run(WebMain.class, args);
+    }
 }

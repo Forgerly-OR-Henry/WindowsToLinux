@@ -1,6 +1,6 @@
 package gold.debug.windowstolinux.app.main.architecture;
 
-import org.junit.jupiter.api.Test;
+import static org.junit.jupiter.api.Assertions.*;
 
 import java.nio.file.Files;
 import java.util.ArrayList;
@@ -11,13 +11,14 @@ import java.util.Map;
 import java.util.Set;
 import java.util.regex.Pattern;
 
-import static org.junit.jupiter.api.Assertions.*;
+import org.junit.jupiter.api.Test;
 
 /** Keeps implemented packages and planned document nodes distinct. / 区分已实现包与文档中的规划节点。 */
 class DocumentStructureArchitectureTest {
     @Test
     void everyProductionPackageHasADocumentedTargetNode() throws Exception {
-        var violations = structureViolations(document(), productionPackages(), ModuleDependencyArchitectureTest.declaredDependencies().keySet());
+        var violations = structureViolations(document(), productionPackages(),
+                ModuleDependencyArchitectureTest.declaredDependencies().keySet());
         assertTrue(violations.isEmpty(), () -> "document structure violations: " + violations);
     }
 
@@ -25,8 +26,8 @@ class DocumentStructureArchitectureTest {
     void missingNodesFailAndExplicitPlansDoNotRequireEmptyPackages() {
         String fence = String.valueOf((char) 96).repeat(3);
         String tree = "## 1. 完整目标结构\n" + fence + "text\nWindowsToLinux/\n"
-                + "└─ src/\n   └─ shared/\n      └─ deploy/\n         ├─ error/\n"
-                + "         └─ future/ [PLANNED]\n" + fence + "\n";
+                + "└─ src/\n   └─ shared/\n      └─ deploy/\n         ├─ error/\n" + "         └─ future/ [PLANNED]\n"
+                + fence + "\n";
         Set<String> actual = Set.of("src/shared/deploy/error");
         Set<String> modules = Set.of("shared/deploy");
         assertEquals(List.of(), structureViolations(tree, actual, modules));
@@ -54,10 +55,12 @@ class DocumentStructureArchitectureTest {
     private static List<String> structureViolations(String document, Set<String> actual, Set<String> modules) {
         Map<String, Boolean> nodes = targetNodes(document);
         List<String> violations = new ArrayList<>();
-        actual.stream().filter(path -> !nodes.containsKey(path))
-                .sorted().forEach(path -> violations.add("Missing production package " + path));
+        actual.stream().filter(path -> !nodes.containsKey(path)).sorted()
+                .forEach(path -> violations.add("Missing production package " + path));
         nodes.forEach((path, planned) -> {
-            if (planned || modules.stream().noneMatch(module -> path.equals("src/" + module) || path.startsWith("src/" + module + "/"))) return;
+            if (planned || modules.stream()
+                    .noneMatch(module -> path.equals("src/" + module) || path.startsWith("src/" + module + "/")))
+                return;
             if (actual.stream().noneMatch(value -> value.equals(path) || value.startsWith(path + "/")))
                 violations.add("Unimplemented node requires [PLANNED]: " + path);
         });
@@ -75,9 +78,13 @@ class DocumentStructureArchitectureTest {
         Map<String, Boolean> nodes = new LinkedHashMap<>();
         for (String line : tree.lines().toList()) {
             var match = pattern.matcher(line);
-            if (!match.matches()) continue;
+            if (!match.matches())
+                continue;
             int depth = match.group(1).length() / 3;
-            while (stack.size() > depth) { stack.removeLast(); plans.removeLast(); }
+            while (stack.size() > depth) {
+                stack.removeLast();
+                plans.removeLast();
+            }
             assertEquals(depth, stack.size(), "Invalid tree indentation: " + line);
             String name = match.group(2);
             boolean planned = match.group(3).contains("[PLANNED]") || (!plans.isEmpty() && plans.getLast());

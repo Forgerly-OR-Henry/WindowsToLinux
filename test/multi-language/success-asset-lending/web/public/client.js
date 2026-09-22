@@ -32,8 +32,7 @@ async function stats() {
     `资产 ${s.total} 件 · ${s.states.map((x) => `${labels[x.status]} ${x.count}`).join(" / ")} · 逾期单 ${s.overdue} · 待维修 ${s.repairs}`;
 }
 function showCart() {
-  el("cart-count").textContent =
-    `已选 ${cart.size} 件；在“新建借用单”填写用途和期限`;
+  el("cart-count").textContent = `已选 ${cart.size} 件；在“新建借用单”填写用途和期限`;
   el("cart").replaceChildren(
     ...Array.from(cart.values()).map((a) => {
       const li = document.createElement("li");
@@ -92,25 +91,16 @@ async function assets() {
       actions.append(
         action("资产履历", async () => {
           const h = await api(`/api/assets/${a.id}/history`);
-          el("history-title").textContent =
-            h.asset.name + " / " + h.asset.serial;
+          el("history-title").textContent = h.asset.name + " / " + h.asset.serial;
           events("asset-history", h.events);
           location.hash = "asset-history";
         }),
       );
-      row.append(
-        check,
-        cell(a.serial),
-        cell(a.name),
-        cell(a.category),
-        cell(labels[a.status]),
-        actions,
-      );
+      row.append(check, cell(a.serial), cell(a.name), cell(a.category), cell(labels[a.status]), actions);
       return row;
     }),
   );
-  el("asset-count").textContent =
-    `共 ${r.total} 件 · 第 ${assetOffset / 25 + 1} 页`;
+  el("asset-count").textContent = `共 ${r.total} 件 · 第 ${assetOffset / 25 + 1} 页`;
   el("asset-prev").disabled = assetOffset === 0;
   el("asset-next").disabled = assetOffset + 25 >= r.total;
   showCart();
@@ -132,19 +122,11 @@ async function loans() {
       const row = document.createElement("tr"),
         c = cell("");
       c.append(action("详情", () => detail(l.id)));
-      row.append(
-        cell(l.id),
-        cell(l.borrower),
-        cell(l.dueDate),
-        cell(l.itemCount),
-        cell(labels[l.status]),
-        c,
-      );
+      row.append(cell(l.id), cell(l.borrower), cell(l.dueDate), cell(l.itemCount), cell(labels[l.status]), c);
       return row;
     }),
   );
-  el("loan-count").textContent =
-    `共 ${r.total} 单 · 第 ${loanOffset / 25 + 1} 页`;
+  el("loan-count").textContent = `共 ${r.total} 单 · 第 ${loanOffset / 25 + 1} 页`;
   el("loan-prev").disabled = loanOffset === 0;
   el("loan-next").disabled = loanOffset + 25 >= r.total;
   await stats();
@@ -153,8 +135,7 @@ async function detail(id) {
   const loan = await api(`/api/loans/${id}`);
   currentLoan = loan;
   el("loan-title").textContent = `借用单 #${id} · ${labels[loan.status]}`;
-  el("loan-summary").textContent =
-    `申请人 ${loan.borrower} · 期限 ${loan.dueDate} · 用途 ${loan.purpose}`;
+  el("loan-summary").textContent = `申请人 ${loan.borrower} · 期限 ${loan.dueDate} · 用途 ${loan.purpose}`;
   const available =
     {
       draft: ["submit"],
@@ -246,9 +227,7 @@ async function repairs() {
 }
 async function page() {
   const name = location.hash.slice(1) || "assets";
-  document
-    .querySelectorAll("[data-page]")
-    .forEach((p) => (p.hidden = p.dataset.page !== name));
+  document.querySelectorAll("[data-page]").forEach((p) => (p.hidden = p.dataset.page !== name));
   if (name === "assets") await assets();
   if (name === "loans") await loans();
   if (name === "new-loan") showCart();
@@ -290,12 +269,9 @@ form("loan-form", async () => {
   await detail(loan.id);
 });
 form("return-form", async () => {
-  const items = Array.from(
-    document.querySelectorAll("[data-asset]:checked"),
-  ).map((c) => ({
+  const items = Array.from(document.querySelectorAll("[data-asset]:checked")).map((c) => ({
     assetId: Number(c.dataset.asset),
-    condition: document.querySelector(`[data-condition="${c.dataset.asset}"]`)
-      .value,
+    condition: document.querySelector(`[data-condition="${c.dataset.asset}"]`).value,
     note: document.querySelector(`[data-note="${c.dataset.asset}"]`).value,
   }));
   await post(`/api/loans/${currentLoan.id}/return`, { ...request(), items });
@@ -325,9 +301,7 @@ async function start() {
       ...(id === "borrower-filter" ? [new Option("全部", "")] : []),
       ...actors.map((a) => new Option(a, a)),
     );
-  el("due-date").value = new Date(Date.now() + 7 * 86400000)
-    .toISOString()
-    .slice(0, 10);
+  el("due-date").value = new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10);
   await categories();
   await page();
 }

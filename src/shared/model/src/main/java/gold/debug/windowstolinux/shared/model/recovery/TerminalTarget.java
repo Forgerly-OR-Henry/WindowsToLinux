@@ -13,5 +13,8 @@ public record TerminalTarget(String id, String description) {
      *
      * @return description / 说明
      */
-    @Override public String toString() { return description; }
+    @Override
+    public String toString() {
+        return description;
+    }
 }

@@ -12,5 +12,5 @@ Configuration Configuration::load() {
     std::string mode = "smoke";
     const char *label = std::getenv("FIXTURE_LABEL");
     return {static_cast<unsigned short>(number), 200, mode,
-        mode == "config" ? (label ? label : "runtime-config-default") : "deployment-smoke-ok"};
+            mode == "config" ? (label ? label : "runtime-config-default") : "deployment-smoke-ok"};
 }

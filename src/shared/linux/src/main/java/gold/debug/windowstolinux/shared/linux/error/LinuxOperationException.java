@@ -1,11 +1,11 @@
 package gold.debug.windowstolinux.shared.linux.error;
 
+import java.util.Map;
+import java.util.Objects;
+
 import gold.debug.windowstolinux.shared.model.failure.FailureCarrier;
 import gold.debug.windowstolinux.shared.model.failure.FailureDescriptor;
 import gold.debug.windowstolinux.shared.model.failure.OperationIdentity;
-
-import java.util.Map;
-import java.util.Objects;
 
 /**
  * A structured connection, protocol, transfer or controlled-operation failure. / 结构化连接、协议、传输或受控操作失败。
@@ -16,11 +16,13 @@ public final class LinuxOperationException extends Exception implements FailureC
      * <p>保留用于安全报告的结构化失败实例。
      */
     private final FailureDescriptor failure;
+
     /**
      * Completed environment.
      * <p>已完成环境。
      */
     private final gold.debug.windowstolinux.shared.model.deployment.EnvironmentSetupResult completedEnvironment;
+
     /**
      * Environment not started.
      * <p>环境未已启动。
@@ -36,6 +38,7 @@ public final class LinuxOperationException extends Exception implements FailureC
     public LinuxOperationException(FailureDescriptor failure, Throwable cause) {
         this(failure, cause, null, false);
     }
+
     /**
      * Validates and binds the inputs required by linux operation exception.
      * <p>校验并绑定Linux操作异常所需输入。
@@ -49,7 +52,9 @@ public final class LinuxOperationException extends Exception implements FailureC
     private LinuxOperationException(FailureDescriptor failure, Throwable cause,
             gold.debug.windowstolinux.shared.model.deployment.EnvironmentSetupResult completed, boolean notStarted) {
         super(Objects.requireNonNull(failure, "failure").diagnostic(), cause);
-        this.failure = failure; this.completedEnvironment = completed; this.environmentNotStarted = notStarted;
+        this.failure = failure;
+        this.completedEnvironment = completed;
+        this.environmentNotStarted = notStarted;
     }
 
     /**
@@ -71,8 +76,7 @@ public final class LinuxOperationException extends Exception implements FailureC
      * @param cause original failure retained as the nested cause / 保留为嵌套原因的原始失败
      * @return a typed Linux failure with its original cause / 带原始原因的类型化 Linux 失败
      */
-    public static LinuxOperationException create(
-            LinuxOperationFailureType type, String diagnostic, Throwable cause) {
+    public static LinuxOperationException create(LinuxOperationFailureType type, String diagnostic, Throwable cause) {
         return create(type, Map.of(), diagnostic, cause);
     }
 
@@ -84,8 +88,8 @@ public final class LinuxOperationException extends Exception implements FailureC
      * @param diagnostic bounded non-secret detail for diagnostic reporting / 用于诊断报告的有界非秘密详情
      * @return a typed Linux failure with safe message arguments / 带安全消息参数的类型化 Linux 失败
      */
-    public static LinuxOperationException create(
-            LinuxOperationFailureType type, Map<String, ?> arguments, String diagnostic) {
+    public static LinuxOperationException create(LinuxOperationFailureType type, Map<String, ?> arguments,
+            String diagnostic) {
         return create(type, arguments, diagnostic, null);
     }
 
@@ -98,8 +102,8 @@ public final class LinuxOperationException extends Exception implements FailureC
      * @param cause original failure retained as the nested cause / 保留为嵌套原因的原始失败
      * @return a fully described Linux failure / 完整描述的 Linux 失败
      */
-    public static LinuxOperationException create(
-            LinuxOperationFailureType type, Map<String, ?> arguments, String diagnostic, Throwable cause) {
+    public static LinuxOperationException create(LinuxOperationFailureType type, Map<String, ?> arguments,
+            String diagnostic, Throwable cause) {
         return new LinuxOperationException(
                 FailureDescriptor.create(type, OperationIdentity.create(), arguments, diagnostic), cause);
     }
@@ -113,9 +117,11 @@ public final class LinuxOperationException extends Exception implements FailureC
      * @throws NullPointerException if a required input is absent / 必需输入缺失时
      */
     public static LinuxOperationException afterEnvironmentPreparation(
-            gold.debug.windowstolinux.shared.model.deployment.EnvironmentSetupResult completed, LinuxOperationException failure) {
+            gold.debug.windowstolinux.shared.model.deployment.EnvironmentSetupResult completed,
+            LinuxOperationException failure) {
         return new LinuxOperationException(failure.failure(), failure, Objects.requireNonNull(completed), false);
     }
+
     /**
      * Records a connection failure before any ordinary installation was submitted. / 记录尚未提交普通安装前的连接失败。
      *
@@ -125,12 +131,16 @@ public final class LinuxOperationException extends Exception implements FailureC
     public static LinuxOperationException beforeEnvironmentPreparation(LinuxOperationException failure) {
         return new LinuxOperationException(failure.failure(), failure, null, true);
     }
+
     /**
      * Identifies a proven unstarted ordinary installation. / 标识已证明尚未开始的普通安装。
      *
      * @return true when identifies a proven unstarted ordinary installation, false otherwise / 标识已证明尚未开始的普通安装时为 true，否则为 false
      */
-    public boolean environmentNotStarted() { return environmentNotStarted; }
+    public boolean environmentNotStarted() {
+        return environmentNotStarted;
+    }
+
     /**
      * Never implies that an unfinished installation is safe to repeat. / 不表示未完成的安装可以安全重放。
      *
@@ -139,11 +149,15 @@ public final class LinuxOperationException extends Exception implements FailureC
     public java.util.Optional<gold.debug.windowstolinux.shared.model.deployment.EnvironmentSetupResult> completedEnvironment() {
         return java.util.Optional.ofNullable(completedEnvironment);
     }
+
     /**
      * Returns structured failure occurrence retained for safe reporting.
      * <p>返回保留用于安全报告的结构化失败实例。
      *
      * @return structured failure occurrence retained for safe reporting / 保留用于安全报告的结构化失败实例
      */
-    @Override public FailureDescriptor failure() { return failure; }
+    @Override
+    public FailureDescriptor failure() {
+        return failure;
+    }
 }

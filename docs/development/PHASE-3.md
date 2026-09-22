@@ -53,18 +53,18 @@
 
 ## 2. 模块增量总表
 
-| 模块 | 已有基础 | 变化类型 | 本期具体增量 | 功能入口 |
-| --- | --- | --- | --- | --- |
-| `shared/model` | 二期项目与配置模型 | 增强 | 精确构建架构、分级支持、组件图和角色事实 | [生态构建](#ecosystem) |
-| `shared/analyze` | 基础语言分析 | 增强 | 高级语言、原生构建、组件冲突及依赖分析 | [混合项目](#components) |
-| `shared/deploy` | 单组件事务 | 增强 | 整应用构建/切换/健康/回滚与依赖生命周期 | [多组件事务](#transaction) |
-| `shared/linux` | 单组件远程边界 | 增强 | 多组件事务与高级运行类型契约 | [多组件事务](#transaction) |
-| `shared/linux-sshd` | 二期语言和容器 | 增强 | 原生构建 Renderer、更多发行版与运行协议 | [生态构建](#ecosystem) |
-| `shared/ai` | 多 Provider 与只读 Agent | 增强 | 三个固定角色、最小上下文和冲突裁决 | [多模型协作](#ai) |
-| `app/db` | 配置与单应用身份 | 增强 | 角色分配和成功整应用图持久化 | [多组件事务](#transaction) |
-| `app/service` | 单组件桌面用例 | 增强 | 组件审阅、整应用部署及生命周期入口 | [多组件事务](#transaction) |
-| `app/ui` | 单组件和 Provider 表单 | 增强 | 组件图、运行时审阅和角色配置 | [混合项目](#components) |
-| `app/main` | 共享能力装配 | 增强 | 生态注册与跨模块验收入口 | [职责演进](#architecture) |
+| 模块                      | 已有基础                 | 变化类型 | 本期具体增量                             | 功能入口                   |
+| ------------------------- | ------------------------ | -------- | ---------------------------------------- | -------------------------- |
+| `shared/model`            | 二期项目与配置模型       | 增强     | 精确构建架构、分级支持、组件图和角色事实 | [生态构建](#ecosystem)     |
+| `shared/standard/analyze` | 基础语言分析             | 增强     | 高级语言、原生构建、组件冲突及依赖分析   | [混合项目](#components)    |
+| `shared/deploy`           | 单组件事务               | 增强     | 整应用构建/切换/健康/回滚与依赖生命周期  | [多组件事务](#transaction) |
+| `shared/linux`            | 单组件远程边界           | 增强     | 多组件事务与高级运行类型契约             | [多组件事务](#transaction) |
+| `shared/linux-sshd`       | 二期语言和容器           | 增强     | 原生构建 Renderer、更多发行版与运行协议  | [生态构建](#ecosystem)     |
+| `shared/ai`               | 多 Provider 与只读 Agent | 增强     | 三个固定角色、最小上下文和冲突裁决       | [多模型协作](#ai)          |
+| `app/db`                  | 配置与单应用身份         | 增强     | 角色分配和成功整应用图持久化             | [多组件事务](#transaction) |
+| `app/service`             | 单组件桌面用例           | 增强     | 组件审阅、整应用部署及生命周期入口       | [多组件事务](#transaction) |
+| `app/ui`                  | 单组件和 Provider 表单   | 增强     | 组件图、运行时审阅和角色配置             | [混合项目](#components)    |
+| `app/main`                | 共享能力装配             | 增强     | 生态注册与跨模块验收入口                 | [职责演进](#architecture)  |
 
 分析与部署链的职责分工见[功能说明](#architecture)，现行目录统一由结构文档维护。
 
@@ -78,16 +78,16 @@
 
 ### 3.1 语言范围、构建架构与支持分级
 
-**涉及模块与分工：** `shared/model` 定义支持目录与构建身份；`shared/analyze` 提取架构事实；`shared/linux-sshd` 完成探测、受控构建和制品校验。
+**涉及模块与分工：** `shared/model` 定义支持目录与构建身份；`shared/standard/analyze` 提取架构事实；`shared/linux-sshd` 完成探测、受控构建和制品校验。
 
-代码依据：[DeploymentSupportCatalog.java](../../src/shared/model/src/main/java/gold/debug/windowstolinux/shared/model/project/DeploymentSupportCatalog.java)、[DeploymentAdapterRegistry.java](../../src/shared/deploy/src/main/java/gold/debug/windowstolinux/shared/deploy/extension/registry/DeploymentAdapterRegistry.java)。当前 Spring Boot 的 Maven/Gradle、纯 JDK、六类高级语言和 CMake 仍标为试验适配；预构建 JAR、npm、pip、静态站点和单 Dockerfile 容器的正式标记只覆盖目录列明的历史 Ubuntu 矩阵。工具链目录准入与真实运行证据是不同维度。三期原生 JDK 基线是 Java 21；四期扩展 JDK 8 等版本后使用相应原生参数，不再把 `--release 21` 当成全版本命令。
+代码依据：[DeploymentSupportCatalog.java](../../src/shared/model/src/main/java/gold/debug/windowstolinux/shared/model/project/DeploymentSupportCatalog.java)、[DeploymentAdapterRegistry.java](../../src/shared/standard/deploy/src/main/java/gold/debug/windowstolinux/shared/standard/deploy/extension/registry/DeploymentAdapterRegistry.java)。当前 Spring Boot 的 Maven/Gradle、纯 JDK、六类高级语言和 CMake 仍标为试验适配；预构建 JAR、npm、pip、静态站点和单 Dockerfile 容器的正式标记只覆盖目录列明的历史 Ubuntu 矩阵。工具链目录准入与真实运行证据是不同维度。三期原生 JDK 基线是 Java 21；四期扩展 JDK 8 等版本后使用相应原生参数，不再把 `--release 21` 当成全版本命令。
 
-| 等级 | 可以提供 | 禁止声称 |
-| --- | --- | --- |
-| 未识别 | 安全停止、收集最小事实 | 已分析、可部署 |
+| 等级     | 可以提供                                         | 禁止声称                       |
+| -------- | ------------------------------------------------ | ------------------------------ |
+| 未识别   | 安全停止、收集最小事实                           | 已分析、可部署                 |
 | 识别预览 | 展示语言、构建系统、可能入口、缺失信息和计划预览 | 自动安装、构建、发布或正式支持 |
-| 试验适配 | 用户明确确认后在专用测试环境执行，保留全部证据 | 生产可用、兼容所有框架 |
-| 正式支持 | 在声明的语言/框架/发行版/架构矩阵内完成全流程 | 超出矩阵的泛化支持 |
+| 试验适配 | 用户明确确认后在专用测试环境执行，保留全部证据   | 生产可用、兼容所有框架         |
+| 正式支持 | 在声明的语言/框架/发行版/架构矩阵内完成全流程    | 超出矩阵的泛化支持             |
 
 升级为正式支持必须同时通过：版本识别、锁定依赖、目标机构建、产物验证、启动、健康检查、短停机切换、失败恢复、生命周期、秘密脱敏和真实 Linux 验收。
 
@@ -112,13 +112,13 @@
 
 上述清单是适配路线，不是一次性正式支持承诺。每个适配器必须声明语言版本、构建工具、锁文件、产物、运行身份、健康方式、配置/密钥接口、支持发行版和不支持特性。Shell 项目不得因为存在脚本就获得任意命令执行入口。
 
-| 术语 | 定义 |
-| --- | --- |
-| 语言生态 | Java、Node、Python、Go、Rust、DotNet、Kotlin、PHP、Ruby、C/C++ 等语言相关实现的稳定归属。 |
-| 原生架构 | 该语言官方工具链或事实上的基础工具链，可以在不引入应用框架的前提下完成受控构建或直接运行。 |
+| 术语     | 定义                                                                                          |
+| -------- | --------------------------------------------------------------------------------------------- |
+| 语言生态 | Java、Node、Python、Go、Rust、DotNet、Kotlin、PHP、Ruby、C/C++ 等语言相关实现的稳定归属。     |
+| 原生架构 | 该语言官方工具链或事实上的基础工具链，可以在不引入应用框架的前提下完成受控构建或直接运行。    |
 | 扩展架构 | Maven、Gradle、pnpm、Yarn、Poetry、Composer、Bundler 等在原生基线之上的依赖、构建或框架路径。 |
-| 交付架构 | 接收已经产生的制品并验证、发布和运行，不负责从源码编译该制品。 |
-| 架构包 | `analyze.ecosystem.<language>.<architecture>` 中以工具或架构规范名命名的包。 |
+| 交付架构 | 接收已经产生的制品并验证、发布和运行，不负责从源码编译该制品。                                |
+| 架构包   | `analyze.ecosystem.<language>.<architecture>` 中以工具或架构规范名命名的包。                  |
 
 1. 每个分析构建架构必须使用自身规范名包，不得把多个工具隐藏在无名 `build` 包或一个参数化大类中。
 2. 每个已有语言生态的纯语言识别统一放在语言根包；跨架构公共事实、选择器和框架协调器也留在语言根包，架构专属事实与检查进入架构包。语言识别器不得依赖构建架构解析。
@@ -134,15 +134,15 @@
 
 `DeploymentBuildToolType` 按原子迁移增加或细化以下身份；不保留旧名称别名：
 
-| 生态 | 目标身份 |
-| --- | --- |
-| Java | `JDK`；保留 `JAVA` 表示预构建 JAR 交付，保留 Maven/Gradle 身份 |
-| Kotlin | `KOTLINC`；保留 `GRADLE_KOTLIN_WRAPPER` |
-| Node | 保留 `NPM`、`PNPM`、`YARN` |
-| PHP | `PHP_CLI`；保留 `COMPOSER_LOCKED` |
+| 生态   | 目标身份                                                                              |
+| ------ | ------------------------------------------------------------------------------------- |
+| Java   | `JDK`；保留 `JAVA` 表示预构建 JAR 交付，保留 Maven/Gradle 身份                        |
+| Kotlin | `KOTLINC`；保留 `GRADLE_KOTLIN_WRAPPER`                                               |
+| Node   | 保留 `NPM`、`PNPM`、`YARN`                                                            |
+| PHP    | `PHP_CLI`；保留 `COMPOSER_LOCKED`                                                     |
 | Python | 以 `PIP_LOCKED`、`PIPENV_LOCKED`、`POETRY_LOCKED`、`UV_LOCKED` 替换宽泛 `PYTHON_VENV` |
-| Ruby | `RUBY_CLI`；保留 `BUNDLER_LOCKED` |
-| C/C++ | `CMAKE` |
+| Ruby   | `RUBY_CLI`；保留 `BUNDLER_LOCKED`                                                     |
+| C/C++  | `CMAKE`                                                                               |
 
 #### 项目类型
 
@@ -151,18 +151,18 @@
 - CMake 使用独立项目类型，初始只允许一个经审阅的服务可执行文件；库、多二进制和安装脚本留在识别预览。
 - 支持目录必须逐项描述语言、架构、框架、目标发行版、CPU 架构和证据，不以语言枚举值推导支持等级。
 
-| 架构 | 静态输入 | 受控构建或运行 | 合格制品 |
-| --- | --- | --- | --- |
-| `jdk` | 显式源码根、唯一主类、固定 Java 版本；首版禁止外部依赖和注解处理器 | `javac --release 21` 后使用 JDK `jar` 生成可执行 JAR | 单一可执行 JAR、确定清单和主类 |
-| `npm` | `package.json`、唯一 `package-lock.json`、精确 Node 主版本和固定脚本名 | `npm ci`，只调用经审阅的固定 build/start 入口 | 受审阅 Node 服务目录 |
-| `pip` | `pyproject.toml`、唯一 `requirements.lock`、全部依赖哈希和精确 Python 次版本 | 隔离 venv 与 `pip --require-hashes` | 无外部符号链接的项目 venv |
-| `gomodule` | `go.mod`、`go.sum`、唯一 main package | 只读模块模式构建 | 单一 ELF 可执行文件 |
-| `cargo` | `Cargo.toml`、`Cargo.lock`、唯一 binary target | `cargo build --locked` | 单一 ELF 可执行文件 |
-| `dotnetsdk` | 唯一项目文件、锁文件、精确目标框架 | locked restore 与受控 publish | 单一发布目录和固定入口 |
-| `kotlinc` | Kotlin 源码根、唯一主入口、精确 JVM 目标；首版禁止外部依赖 | 固定 `kotlinc` 编译并生成可运行 JAR | 单一 Kotlin/JVM 可执行 JAR |
-| `phpcli` | 显式入口和文档根；首版禁止 Composer 依赖 | PHP CLI 语法检查与受控服务入口 | 受审阅 PHP 源码目录 |
-| `rubycli` | 显式入口和精确 Ruby 版本；首版禁止 Gem 依赖 | Ruby 语法检查与受控服务入口 | 受审阅 Ruby 源码目录 |
-| `cmake` | `CMakeLists.txt`、固定 preset、唯一目标；首版禁止下载依赖和自定义安装脚本 | `cmake` configure/build，生成器和编译器来自受审阅能力事实 | 单一 ELF 可执行文件及动态依赖清单 |
+| 架构        | 静态输入                                                                     | 受控构建或运行                                            | 合格制品                          |
+| ----------- | ---------------------------------------------------------------------------- | --------------------------------------------------------- | --------------------------------- |
+| `jdk`       | 显式源码根、唯一主类、固定 Java 版本；首版禁止外部依赖和注解处理器           | `javac --release 21` 后使用 JDK `jar` 生成可执行 JAR      | 单一可执行 JAR、确定清单和主类    |
+| `npm`       | `package.json`、唯一 `package-lock.json`、精确 Node 主版本和固定脚本名       | `npm ci`，只调用经审阅的固定 build/start 入口             | 受审阅 Node 服务目录              |
+| `pip`       | `pyproject.toml`、唯一 `requirements.lock`、全部依赖哈希和精确 Python 次版本 | 隔离 venv 与 `pip --require-hashes`                       | 无外部符号链接的项目 venv         |
+| `gomodule`  | `go.mod`、`go.sum`、唯一 main package                                        | 只读模块模式构建                                          | 单一 ELF 可执行文件               |
+| `cargo`     | `Cargo.toml`、`Cargo.lock`、唯一 binary target                               | `cargo build --locked`                                    | 单一 ELF 可执行文件               |
+| `dotnetsdk` | 唯一项目文件、锁文件、精确目标框架                                           | locked restore 与受控 publish                             | 单一发布目录和固定入口            |
+| `kotlinc`   | Kotlin 源码根、唯一主入口、精确 JVM 目标；首版禁止外部依赖                   | 固定 `kotlinc` 编译并生成可运行 JAR                       | 单一 Kotlin/JVM 可执行 JAR        |
+| `phpcli`    | 显式入口和文档根；首版禁止 Composer 依赖                                     | PHP CLI 语法检查与受控服务入口                            | 受审阅 PHP 源码目录               |
+| `rubycli`   | 显式入口和精确 Ruby 版本；首版禁止 Gem 依赖                                  | Ruby 语法检查与受控服务入口                               | 受审阅 Ruby 源码目录              |
+| `cmake`     | `CMakeLists.txt`、固定 preset、唯一目标；首版禁止下载依赖和自定义安装脚本    | `cmake` configure/build，生成器和编译器来自受审阅能力事实 | 单一 ELF 可执行文件及动态依赖清单 |
 
 受控架构拒绝任意自定义 Shell、未批准的网络取材、宿主特权、未固定依赖、越界源码路径和不确定制品；锁定依赖的受控安装与官方工具链下载不能被笼统称为禁止的构建期网络访问。原生 JDK/kotlinc 等零依赖架构仍保持其独立限制。
 
@@ -170,9 +170,9 @@
 
 ### 3.2 混合项目分析与组件审阅
 
-**涉及模块与分工：** `shared/analyze` 发现组件和依赖，`shared/model` 保存稳定身份与冲突；`app/service`、`app/ui` 组织审阅。
+**涉及模块与分工：** `shared/standard/analyze` 发现组件和依赖，`shared/model` 保存稳定身份与冲突；`app/service`、`app/ui` 组织审阅。
 
-代码入口：[ProjectComponentDiscovery.java](../../src/shared/analyze/src/main/java/gold/debug/windowstolinux/shared/analyze/component/ProjectComponentDiscovery.java)、[MultiComponentDeploymentPlanner.java](../../src/shared/deploy/src/main/java/gold/debug/windowstolinux/shared/deploy/plan/MultiComponentDeploymentPlanner.java)；多组件不等于任意 Docker Compose 自动执行。
+代码入口：[ProjectComponentDiscovery.java](../../src/shared/standard/analyze/src/main/java/gold/debug/windowstolinux/shared/standard/analyze/component/ProjectComponentDiscovery.java)、[MultiComponentDeploymentPlanner.java](../../src/shared/standard/deploy/src/main/java/gold/debug/windowstolinux/shared/standard/deploy/plan/MultiComponentDeploymentPlanner.java)；多组件不等于任意 Docker Compose 自动执行。
 
 #### 输入
 
@@ -196,7 +196,7 @@
 
 **涉及模块与分工：** `shared/deploy` 编排整应用事务及依赖顺序；Linux 端执行受管步骤；`app/db` 保存成功图，服务层重载和管理。
 
-现行入口：[MultiComponentDeploymentUseCase.java](../../src/app/service/src/main/java/gold/debug/windowstolinux/app/service/deployment/MultiComponentDeploymentUseCase.java) → [ReviewedMultiComponentDeploymentService.java](../../src/shared/deploy/src/main/java/gold/debug/windowstolinux/shared/deploy/execution/transaction/ReviewedMultiComponentDeploymentService.java)；[MultiComponentLifecycleUseCase.java](../../src/app/service/src/main/java/gold/debug/windowstolinux/app/service/deployment/MultiComponentLifecycleUseCase.java) 管理成功图。SQLite v7 是三期历史图语义，当前 SQLite v15 中的资源、身份及桌面清单增强归四期。
+现行入口：[MultiComponentDeploymentUseCase.java](../../src/app/service/src/main/java/gold/debug/windowstolinux/app/service/deployment/MultiComponentDeploymentUseCase.java) → [ReviewedMultiComponentDeploymentService.java](../../src/shared/standard/deploy/src/main/java/gold/debug/windowstolinux/shared/standard/deploy/execution/transaction/ReviewedMultiComponentDeploymentService.java)；[MultiComponentLifecycleUseCase.java](../../src/app/service/src/main/java/gold/debug/windowstolinux/app/service/deployment/MultiComponentLifecycleUseCase.java) 管理成功图。SQLite v7 是三期历史图语义，当前 SQLite v15 中的资源、身份及桌面清单增强归四期。
 
 #### 计划
 
@@ -262,13 +262,13 @@
 
 三期加入 Debian、Rocky Linux、AlmaLinux 和 Oracle Linux 适配，仍以 x86-64 为范围。下表列的是代码内置目标矩阵，与当前发行版策略核对一致；其维护标签不是本次重新查询的上游政策，“可进入运行验收”不等于正式支持。
 
-| 发行版 | 静态适配版本 | 包与 CPU 前置条件 | 安全与容器证据 | 当前验证状态 |
-| --- | --- | --- | --- | --- |
-| CentOS Stream | 9、10 | DNF、`x86_64`；9 为 v2，10 为 v3 | 自动准备要求 SELinux enforcing，采集 firewalld 与 Podman | Stream 9 x86-64 已完成产品入口准备、发布、回滚、生命周期及安全态保持验收；Stream 10 仍为 `RUNTIME-PENDING` |
-| Debian | stable 13；点版本事实参考 13.6，`VERSION_ID=13` | APT、`amd64`、x86-64-v1 | 采集 AppArmor/防火墙；固定 Docker 准备 | 静态通过，实机 `RUNTIME-PENDING` |
-| Rocky Linux | 代码内置小版本 9.8、10.2 | DNF、`x86_64`；9 为 v1，10 为 v3 | 自动准备要求 SELinux enforcing，采集 firewalld 与 Podman | 静态通过，实机 `RUNTIME-PENDING` |
-| AlmaLinux | 代码内置小版本 9.8、10.2 | DNF；9 默认 v1；10 默认 `x86_64` 为 v3 | `x86_64_v2` 可识别但因第三方依赖边界仅返回 CPU 审阅，不自动准备；其余 EL 安全边界同上 | 静态通过，实机 `RUNTIME-PENDING` |
-| Oracle Linux | 代码内置更新快照 9.7、10.2 | DNF、`x86_64`；9 为 v1，10 为 v3；旧更新快照必须先重新评审 | 自动准备要求 SELinux enforcing，采集 firewalld 与 Podman | 静态通过，实机 `RUNTIME-PENDING` |
+| 发行版        | 静态适配版本                                    | 包与 CPU 前置条件                                          | 安全与容器证据                                                                        | 当前验证状态                                                                                               |
+| ------------- | ----------------------------------------------- | ---------------------------------------------------------- | ------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| CentOS Stream | 9、10                                           | DNF、`x86_64`；9 为 v2，10 为 v3                           | 自动准备要求 SELinux enforcing，采集 firewalld 与 Podman                              | Stream 9 x86-64 已完成产品入口准备、发布、回滚、生命周期及安全态保持验收；Stream 10 仍为 `RUNTIME-PENDING` |
+| Debian        | stable 13；点版本事实参考 13.6，`VERSION_ID=13` | APT、`amd64`、x86-64-v1                                    | 采集 AppArmor/防火墙；固定 Docker 准备                                                | 静态通过，实机 `RUNTIME-PENDING`                                                                           |
+| Rocky Linux   | 代码内置小版本 9.8、10.2                        | DNF、`x86_64`；9 为 v1，10 为 v3                           | 自动准备要求 SELinux enforcing，采集 firewalld 与 Podman                              | 静态通过，实机 `RUNTIME-PENDING`                                                                           |
+| AlmaLinux     | 代码内置小版本 9.8、10.2                        | DNF；9 默认 v1；10 默认 `x86_64` 为 v3                     | `x86_64_v2` 可识别但因第三方依赖边界仅返回 CPU 审阅，不自动准备；其余 EL 安全边界同上 | 静态通过，实机 `RUNTIME-PENDING`                                                                           |
+| Oracle Linux  | 代码内置更新快照 9.7、10.2                      | DNF、`x86_64`；9 为 v1，10 为 v3；旧更新快照必须先重新评审 | 自动准备要求 SELinux enforcing，采集 firewalld 与 Podman                              | 静态通过，实机 `RUNTIME-PENDING`                                                                           |
 
 版本依据：[Debian 13 发布与生命周期](https://www.debian.org/releases/trixie/)、[Rocky Linux 版本指南](https://wiki.rockylinux.org/rocky/version/)、[AlmaLinux 发布说明](https://wiki.almalinux.org/release-notes/)、[AlmaLinux 10.2 x86-64-v2 说明](https://wiki.almalinux.org/release-notes/10.2)、[Oracle Linux 10 更新模型](https://docs.oracle.com/en/operating-systems/oracle-linux/10/) 与 [Oracle Linux 10 系统要求](https://docs.oracle.com/en/operating-systems/oracle-linux/10/install/install-SystemRequirements.html)。
 
@@ -276,13 +276,13 @@
 - EL10 系列可能存在 x86-64-v2/v3 差异，必须依据具体发行版官方要求和实际 CPU 检测决定。
 - 非 x86-64、停止维护版本或生命周期不明版本默认只做识别预览，除非用户另行确认适配范围。
 - AppArmor/SELinux、防火墙和包管理变化必须进入计划；禁止为求成功静默关闭安全机制。
-- `ManagedDistributionProductEntryAcceptanceTest` 仅在 `managed.runtime.distribution-acceptance=true` 时运行；每次必须给出无秘密的发行版、版本、包架构、CPU 基线与准备预期。它先采集精确身份和安全/防火墙事实，再经 `DesktopApplicationFacade → SshdLinuxGateway` 执行两次环境准备，复核运行版本的 `ManagedHelperProtocolVersion.CURRENT`（当前代码为 helper v9；原方法登记时为 v4）与安全状态不变，最后复用两组件整应用发布、故障回滚和生命周期事务。AlmaLinux 10 的 x86-64-v2 目标只验证“自动准备被拒绝”，不进入发布成功路径。该框架不是实机证据，普通 Maven 验证不会连接服务器；历史实机结论仍只覆盖当时 helper v3。
+- `ManagedDistributionProductEntryAcceptanceTest` 仅在 `managed.runtime.distribution-acceptance=true` 时运行；每次必须给出无秘密的发行版、版本、包架构、CPU 基线与准备预期。它先采集精确身份和安全/防火墙事实，再经 `DesktopApplicationFacade → SshdLinuxGateway` 执行两次环境准备，复核运行版本的 `ManagedHelperProtocolVersion.CURRENT`（当前代码为 helper v10；原方法登记时为 v4）与安全状态不变，最后复用两组件整应用发布、故障回滚和生命周期事务。AlmaLinux 10 的 x86-64-v2 目标只验证“自动准备被拒绝”，不进入发布成功路径。该框架不是实机证据，普通 Maven 验证不会连接服务器；历史实机结论仍只覆盖当时 helper v3。
 
 <a id="architecture"></a>
 
 ### 3.6 分析与部署链职责
 
-**涉及模块与分工：** `shared/analyze` 产出静态事实，`shared/deploy` 生成计划并组织事务，`shared/linux` 定义窄契约，`shared/linux-sshd` 实现受控构建与远程操作。现行包名、目标树和依赖图统一见[项目结构](../File.md)。
+**涉及模块与分工：** `shared/standard/analyze` 产出静态事实，`shared/deploy` 生成计划并组织事务，`shared/linux` 定义窄契约，`shared/linux-sshd` 实现受控构建与远程操作。现行包名、目标树和依赖图统一见[项目结构](../File.md)。
 
 #### 语言与构建分析
 
@@ -310,13 +310,13 @@
 
 ## 4. 功能依赖与实现约束
 
-| 功能 | 依赖与约束 |
-| --- | --- |
-| 生态构建 | 类型化语言和工具事实先于适配器；每个可部署组合闭合分析、Renderer、能力和运行契约，逐目标验收后才能调整支持等级。 |
-| C/CMake | 唯一可执行目标和显式健康契约；拒绝构建期下载、自定义安装脚本、多目标和跨编译，保持试验适配。 |
-| 多组件事务 | 先验证根路径、资源冲突及无环依赖，再生成构建、切换、健康、回滚和生命周期顺序。 |
-| 多模型协作 | 固定角色只处理必要事实，冲突裁决先于执行授权。 |
-| 结构维护 | 新架构同步生产、测试、UI 映射和文档；遵守现行包规则，不恢复参数化大类、无名工具分支或跨维度组合包。 |
+| 功能       | 依赖与约束                                                                                                       |
+| ---------- | ---------------------------------------------------------------------------------------------------------------- |
+| 生态构建   | 类型化语言和工具事实先于适配器；每个可部署组合闭合分析、Renderer、能力和运行契约，逐目标验收后才能调整支持等级。 |
+| C/CMake    | 唯一可执行目标和显式健康契约；拒绝构建期下载、自定义安装脚本、多目标和跨编译，保持试验适配。                     |
+| 多组件事务 | 先验证根路径、资源冲突及无环依赖，再生成构建、切换、健康、回滚和生命周期顺序。                                   |
+| 多模型协作 | 固定角色只处理必要事实，冲突裁决先于执行授权。                                                                   |
+| 结构维护   | 新架构同步生产、测试、UI 映射和文档；遵守现行包规则，不恢复参数化大类、无名工具分支或跨维度组合包。              |
 
 <a id="acceptance"></a>
 
@@ -394,18 +394,18 @@
 
 当前直接验收入口及四期身份增强见[四期生态验收方法](PHASE-4.md#acceptance-extension)。以下只保留原三期夹具范围。
 
-| 架构 | 验收前置版本门 |
-| --- | --- |
-| Java JDK | Java/Javac 21 与 JDK `jar` |
-| Node npm | Node 18–24 与可探测 npm |
-| Node pnpm | Node 18–24 与 pnpm 9–11 |
-| Node Yarn | Node 18–24 与 Yarn 4 |
-| Python pip/Pipenv | Python 3.12 或 3.11（含 venv）与对应工具 |
-| Python Poetry | Python 3.12 或 3.11（含 venv）与 Poetry 2 |
-| Python uv | Python 3.12 或 3.11（含 venv）与 uv 0.4 或更高版本 |
-| Kotlin kotlinc | Java 21 与精确 Kotlin 1.9.x/2.x 编译器 |
-| PHP/Ruby CLI | 受支持的精确 PHP 8.2–8.4 或 Ruby 3.2–3.4 版本 |
-| CMake | CMake 3.25 或更高版本、Ninja 与 C 编译器；C++ 项目还需 C++ 编译器 |
+| 架构              | 验收前置版本门                                                    |
+| ----------------- | ----------------------------------------------------------------- |
+| Java JDK          | Java/Javac 21 与 JDK `jar`                                        |
+| Node npm          | Node 18–24 与可探测 npm                                           |
+| Node pnpm         | Node 18–24 与 pnpm 9–11                                           |
+| Node Yarn         | Node 18–24 与 Yarn 4                                              |
+| Python pip/Pipenv | Python 3.12 或 3.11（含 venv）与对应工具                          |
+| Python Poetry     | Python 3.12 或 3.11（含 venv）与 Poetry 2                         |
+| Python uv         | Python 3.12 或 3.11（含 venv）与 uv 0.4 或更高版本                |
+| Kotlin kotlinc    | Java 21 与精确 Kotlin 1.9.x/2.x 编译器                            |
+| PHP/Ruby CLI      | 受支持的精确 PHP 8.2–8.4 或 Ruby 3.2–3.4 版本                     |
+| CMake             | CMake 3.25 或更高版本、Ninja 与 C 编译器；C++ 项目还需 C++ 编译器 |
 
 - [x] Java 纯源码可以通过 `jdk` 架构生成受控可执行 JAR；`jar` 继续只表示预构建制品交付。真实目标部署待验收。
 - [x] Node 的 npm、pnpm、Yarn 分别具有架构事实、构建工具身份和具名 Renderer，且 npm 为原生基线。
@@ -422,12 +422,12 @@
 
 > 历史记录：仅证明下列版本、环境和夹具的结果，不作为当前工作区的新验证。
 
-| 功能 | 版本与目标 | 实机证据和限制 |
-| --- | --- | --- |
-| Go/Rust/.NET/Kotlin/PHP/Ruby | 2026-08-13，Ubuntu 24.04 x86-64，helper v3 | 六类各自完成部署、HTTP、启停/重启、故障回滚、秘密脱敏及管理库重开；同进程联合回归 6/6，0 失败/错误，1184 秒。只覆盖精确夹具，不升级框架或发行版支持等级。 |
-| 两组件事务 | 同日、同一 Ubuntu 目标，两个 Java JAR 组件 | 发布、Web 故障候选触发整应用回滚、两个旧版本保留、SQLite v7 图重载和生命周期通过；共享夹具独立回归 1/1，206.2 秒。收尾关闭自启、应用保留运行，不含数据库格式迁移或跨服务器恢复。 |
-| Spring Boot 与 Podman | 同日、同一产品入口与 helper v3 | Reviewed 准备、发布、首次失败恢复、回滚、断连、HTTP/TCP、资源/归属/Wrapper/信任检查，以及 Podman Quadlet 生命周期和自启通过；二期功能的独立证据，不计作新增语言。 |
-| CentOS Stream 9 整应用 | 2026-08-14，x86_64/X86_64_V3，SELinux Enforcing | 两次准备、双组件发布、故障回滚、应用/数据库重启及生命周期通过，安全态保持。VARIANT_ID 可省略、空 nftables、Java 默认版本和只读 SSH 短暂超时已修复；不外推 Stream 10 或其他发行版。 |
+| 功能                         | 版本与目标                                      | 实机证据和限制                                                                                                                                                                     |
+| ---------------------------- | ----------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Go/Rust/.NET/Kotlin/PHP/Ruby | 2026-08-13，Ubuntu 24.04 x86-64，helper v3      | 六类各自完成部署、HTTP、启停/重启、故障回滚、秘密脱敏及管理库重开；同进程联合回归 6/6，0 失败/错误，1184 秒。只覆盖精确夹具，不升级框架或发行版支持等级。                          |
+| 两组件事务                   | 同日、同一 Ubuntu 目标，两个 Java JAR 组件      | 发布、Web 故障候选触发整应用回滚、两个旧版本保留、SQLite v7 图重载和生命周期通过；共享夹具独立回归 1/1，206.2 秒。收尾关闭自启、应用保留运行，不含数据库格式迁移或跨服务器恢复。   |
+| Spring Boot 与 Podman        | 同日、同一产品入口与 helper v3                  | Reviewed 准备、发布、首次失败恢复、回滚、断连、HTTP/TCP、资源/归属/Wrapper/信任检查，以及 Podman Quadlet 生命周期和自启通过；二期功能的独立证据，不计作新增语言。                  |
+| CentOS Stream 9 整应用       | 2026-08-14，x86_64/X86_64_V3，SELinux Enforcing | 两次准备、双组件发布、故障回滚、应用/数据库重启及生命周期通过，安全态保持。VARIANT_ID 可省略、空 nftables、Java 默认版本和只读 SSH 短暂超时已修复；不外推 Stream 10 或其他发行版。 |
 
 Kotlin 夹具固定 Gradle 8.10.2 Wrapper、官方二进制分发 SHA-256 和官方分发域名；目标机下载受超时、重试、断点续传与内容校验约束，只有校验通过的内容寻址 ZIP 才进入加锁受管缓存。PHP 故障夹具返回 HTTP 503，Ruby 锁定 Rack/WEBrick 并显式启动公共监听，确保回滚由真实健康门触发。
 

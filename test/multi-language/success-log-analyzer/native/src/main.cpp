@@ -15,7 +15,5 @@ int wmain(int argc, wchar_t **argv) {
     return run(args);
 }
 #else
-int main(int argc, char **argv) {
-    return run(std::vector<std::string>(argv + 1, argv + argc));
-}
+int main(int argc, char **argv) { return run(std::vector<std::string>(argv + 1, argv + argc)); }
 #endif

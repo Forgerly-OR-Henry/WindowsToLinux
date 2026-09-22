@@ -13,7 +13,8 @@ import java.util.Optional;
  * @param rollbackToken rollback token / 回滚令牌
  * @param evidence observations supporting the reported result / 支持所报告结果的观测证据
  */
-public record ReleaseSnapshot(boolean hasPreviousRelease, boolean previousWasRunning, Optional<String> rollbackToken, String evidence) {
+public record ReleaseSnapshot(boolean hasPreviousRelease, boolean previousWasRunning, Optional<String> rollbackToken,
+        String evidence) {
     /**
      * Validates and binds the inputs required by release snapshot.
      * <p>校验并绑定发布快照所需输入。

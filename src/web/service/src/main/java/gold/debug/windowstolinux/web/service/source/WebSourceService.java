@@ -1,27 +1,26 @@
 package gold.debug.windowstolinux.web.service.source;
 
-import gold.debug.windowstolinux.web.service.contract.validation.WebRequestValidator;
-
-import gold.debug.windowstolinux.web.service.persistence.serialization.WebJsonCodec;
-
-import tools.jackson.databind.JsonNode;
-import gold.debug.windowstolinux.web.db.entity.*;
-import gold.debug.windowstolinux.web.db.persistence.repository.WebResourceRepository;
-import gold.debug.windowstolinux.web.file.workspace.*;
-import gold.debug.windowstolinux.web.file.upload.SourceArchiveUpload;
-import gold.debug.windowstolinux.web.service.contract.*;
-import gold.debug.windowstolinux.shared.source.archive.SafeSourceArchivePreparer;
-import gold.debug.windowstolinux.shared.source.archive.SourceArchive;
-import gold.debug.windowstolinux.shared.source.snapshot.SourceDirectorySnapshot;
-import gold.debug.windowstolinux.shared.git.*;
-import gold.debug.windowstolinux.shared.git.snapshot.GitSnapshotPreparer;
-import gold.debug.windowstolinux.shared.analyze.component.ProjectComponentDiscovery;
-import gold.debug.windowstolinux.shared.analyze.core.DeploymentAnalysisCoordinator;
-import gold.debug.windowstolinux.shared.model.project.DeploymentProjectType;
 import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.*;
+
+import gold.debug.windowstolinux.shared.git.*;
+import gold.debug.windowstolinux.shared.git.snapshot.GitSnapshotPreparer;
+import gold.debug.windowstolinux.shared.model.project.DeploymentProjectType;
+import gold.debug.windowstolinux.shared.source.archive.SafeSourceArchivePreparer;
+import gold.debug.windowstolinux.shared.source.archive.SourceArchive;
+import gold.debug.windowstolinux.shared.source.snapshot.SourceDirectorySnapshot;
+import gold.debug.windowstolinux.shared.standard.analyze.component.ProjectComponentDiscovery;
+import gold.debug.windowstolinux.shared.standard.analyze.core.DeploymentAnalysisCoordinator;
+import gold.debug.windowstolinux.web.db.entity.*;
+import gold.debug.windowstolinux.web.db.persistence.repository.WebResourceRepository;
+import gold.debug.windowstolinux.web.file.upload.SourceArchiveUpload;
+import gold.debug.windowstolinux.web.file.workspace.*;
+import gold.debug.windowstolinux.web.service.contract.*;
+import gold.debug.windowstolinux.web.service.contract.validation.WebRequestValidator;
+import gold.debug.windowstolinux.web.service.persistence.serialization.WebJsonCodec;
+import tools.jackson.databind.JsonNode;
 
 /**
  * Prepares browser-owned uploads and pinned Git snapshots using static reads and canonical archives.
@@ -33,11 +32,13 @@ public final class WebSourceService {
      * <p>处理所属记录的持久化边界的Web资源仓库协作对象。
      */
     private final WebResourceRepository repository;
+
     /**
      * Platform-owned work area with enforced path boundaries.
      * <p>具有路径边界约束的平台工作区。
      */
     private final WebWorkspace workspace;
+
     /**
      * Temporary retention.
      * <p>临时保留。
@@ -51,8 +52,11 @@ public final class WebSourceService {
      * @param workspace platform-owned work area with enforced path boundaries / 具有路径边界约束的平台工作区
      * @param temporaryRetention temporary retention / 临时保留
      */
-    public WebSourceService(WebResourceRepository repository, WebWorkspace workspace, java.time.Duration temporaryRetention) {
-        this.repository = repository; this.workspace = workspace; this.temporaryRetention = temporaryRetention;
+    public WebSourceService(WebResourceRepository repository, WebWorkspace workspace,
+            java.time.Duration temporaryRetention) {
+        this.repository = repository;
+        this.workspace = workspace;
+        this.temporaryRetention = temporaryRetention;
     }
 
     /**
@@ -63,14 +67,20 @@ public final class WebSourceService {
      * @throws Exception if the delegated operation or caller-provided interaction fails / 被委派操作或调用方提供的交互失败时
      */
     public void recoverTemporary(WebRequestContext context) throws Exception {
-        for(var row:repository.list(scope(context),ResourceType.SOURCE)) {
-            var address=address(context,row.id());
-            if("READY".equals(row.attributes().get("state"))) {
-                if(workspace.exists(address))for(String child:List.of("snapshots","git","verify.tar.gz","upload.archive"))workspace.discardChild(address,child);
-            } else if(java.time.Instant.parse(row.updatedAt()).isBefore(java.time.Instant.now().minus(temporaryRetention))) {
-                if(workspace.exists(address))workspace.discard(address);
-                var fields=new LinkedHashMap<>(row.attributes());fields.put("state","FAILED");
-                repository.save(scope(context),ResourceType.SOURCE,row.id(),row.name(),fields,row.document(),row.version());
+        for (var row : repository.list(scope(context), ResourceType.SOURCE)) {
+            var address = address(context, row.id());
+            if ("READY".equals(row.attributes().get("state"))) {
+                if (workspace.exists(address))
+                    for (String child : List.of("snapshots", "git", "verify.tar.gz", "upload.archive"))
+                        workspace.discardChild(address, child);
+            } else if (java.time.Instant.parse(row.updatedAt())
+                    .isBefore(java.time.Instant.now().minus(temporaryRetention))) {
+                if (workspace.exists(address))
+                    workspace.discard(address);
+                var fields = new LinkedHashMap<>(row.attributes());
+                fields.put("state", "FAILED");
+                repository.save(scope(context), ResourceType.SOURCE, row.id(), row.name(), fields, row.document(),
+                        row.version());
             }
         }
     }
@@ -84,8 +94,10 @@ public final class WebSourceService {
      * @throws Exception if the delegated operation or caller-provided interaction fails / 被委派操作或调用方提供的交互失败时
      */
     public JsonNode list(WebRequestContext context) throws Exception {
-        return WebJsonCodec.tree(repository.list(scope(context), ResourceType.SOURCE).stream().map(WebSourceService::view).toList());
+        return WebJsonCodec.tree(
+                repository.list(scope(context), ResourceType.SOURCE).stream().map(WebSourceService::view).toList());
     }
+
     /**
      * Begins json node.
      * <p>开始JSON节点。
@@ -98,12 +110,18 @@ public final class WebSourceService {
      */
     public JsonNode begin(WebRequestContext context, String name) throws Exception {
         String id = UUID.randomUUID().toString();
-        if (name == null || !name.matches("[A-Za-z0-9][A-Za-z0-9_.-]{0,99}")) throw new IllegalArgumentException("Use a plain project name");
+        if (name == null || !name.matches("[A-Za-z0-9][A-Za-z0-9_.-]{0,99}"))
+            throw new IllegalArgumentException("Use a plain project name");
         var fields = new LinkedHashMap<String, Object>();
-        fields.put("state", "UPLOADING"); fields.put("kind", "UPLOAD"); fields.put("digest", null); fields.put("byte_count", 0);
+        fields.put("state", "UPLOADING");
+        fields.put("kind", "UPLOAD");
+        fields.put("digest", null);
+        fields.put("byte_count", 0);
         var stored = repository.save(scope(context), ResourceType.SOURCE, id, name, fields, "{}", 0);
-        workspace.create(address(context, id)); return view(stored);
+        workspace.create(address(context, id));
+        return view(stored);
     }
+
     /**
      * Uploads web source.
      * <p>上传Web源码。
@@ -114,9 +132,12 @@ public final class WebSourceService {
      * @param input source content consumed by this operation / 当前操作消费的源内容
      * @throws Exception if the delegated operation or caller-provided interaction fails / 被委派操作或调用方提供的交互失败时
      */
-    public synchronized void upload(WebRequestContext context, String id, String path, InputStream input) throws Exception {
-        requireUploading(context, id); workspace.upload(address(context, id), path, input);
+    public synchronized void upload(WebRequestContext context, String id, String path, InputStream input)
+            throws Exception {
+        requireUploading(context, id);
+        workspace.upload(address(context, id), path, input);
     }
+
     /**
      * Extracts an archive into the uploading source resource and persists FAILED state when extraction fails.
      * <p>将归档提取到正在上传的源码资源，并在提取失败时持久化 FAILED 状态。
@@ -127,15 +148,21 @@ public final class WebSourceService {
      * @param input source content consumed by this operation / 当前操作消费的源内容
      * @throws Exception if the delegated operation or caller-provided interaction fails / 被委派操作或调用方提供的交互失败时
      */
-    public synchronized void archive(WebRequestContext context, String id, String format, InputStream input) throws Exception {
+    public synchronized void archive(WebRequestContext context, String id, String format, InputStream input)
+            throws Exception {
         var stored = requireUploading(context, id);
-        try { new SourceArchiveUpload(workspace).extract(address(context, id), format, input); }
-        catch (Exception failure) {
-            var fields = new LinkedHashMap<>(stored.attributes()); fields.put("state", "FAILED");
-            repository.save(scope(context), ResourceType.SOURCE, id, stored.name(), fields, stored.document(), stored.version());
-            workspace.discard(address(context, id)); throw failure;
+        try {
+            new SourceArchiveUpload(workspace).extract(address(context, id), format, input);
+        } catch (Exception failure) {
+            var fields = new LinkedHashMap<>(stored.attributes());
+            fields.put("state", "FAILED");
+            repository.save(scope(context), ResourceType.SOURCE, id, stored.name(), fields, stored.document(),
+                    stored.version());
+            workspace.discard(address(context, id));
+            throw failure;
         }
     }
+
     /**
      * Finishes json node.
      * <p>完成JSON节点。
@@ -146,11 +173,17 @@ public final class WebSourceService {
      * @throws Exception if the delegated operation or caller-provided interaction fails / 被委派操作或调用方提供的交互失败时
      */
     public synchronized JsonNode finish(WebRequestContext context, String id) throws Exception {
-        var stored = requireUploading(context, id); var address = address(context, id);
-        SourceArchive archive = new SafeSourceArchivePreparer().archive(workspace.source(address), workspace.directory(address).resolve("source.tar.gz"));
+        var stored = requireUploading(context, id);
+        var address = address(context, id);
+        SourceArchive archive = new SafeSourceArchivePreparer().archive(workspace.source(address),
+                workspace.directory(address).resolve("source.tar.gz"));
         workspace.complete(address);
-        var fields = new LinkedHashMap<>(stored.attributes()); fields.put("state", "READY"); fields.put("digest", archive.contentSha256()); fields.put("byte_count", archive.uncompressedByteCount());
-        return view(repository.save(scope(context), ResourceType.SOURCE, id, stored.name(), fields, "{}", stored.version()));
+        var fields = new LinkedHashMap<>(stored.attributes());
+        fields.put("state", "READY");
+        fields.put("digest", archive.contentSha256());
+        fields.put("byte_count", archive.uncompressedByteCount());
+        return view(repository.save(scope(context), ResourceType.SOURCE, id, stored.name(), fields, "{}",
+                stored.version()));
     }
 
     /**
@@ -166,7 +199,8 @@ public final class WebSourceService {
     public PreparedWebOperation git(WebRequestContext context, JsonNode input) throws Exception {
         WebRequestValidator.fields(input, "url", "referenceKind", "reference", "name");
         GitRemote remote = GitRemote.parse(WebRequestValidator.text(input, "url", 2048));
-        if (!remote.location().getScheme().equals("https")) throw new IllegalArgumentException("Web Git sources require credential-free HTTPS");
+        if (!remote.location().getScheme().equals("https"))
+            throw new IllegalArgumentException("Web Git sources require credential-free HTTPS");
         String host = remote.host().orElseThrow();
         GitReference reference = switch (input.path("referenceKind").asText("default")) {
             case "default" -> new GitReference.DefaultBranch();
@@ -175,32 +209,42 @@ public final class WebSourceService {
             case "commit" -> new GitReference.Commit(WebRequestValidator.text(input, "reference", 40));
             default -> throw new IllegalArgumentException("Invalid Git reference kind");
         };
-        String name = input.path("name").asText(remote.location().getPath().replaceFirst(".*/", "").replaceFirst("\\.git$", ""));
-        var created = begin(context, name); String id = created.path("id").asText();
+        String name = input.path("name")
+                .asText(remote.location().getPath().replaceFirst(".*/", "").replaceFirst("\\.git$", ""));
+        var created = begin(context, name);
+        String id = created.path("id").asText();
         var request = new GitSourceRequest(remote, reference, Set.of(host), workspace.quota().projectBytes(), false);
-        return new PreparedWebOperation("GIT_SNAPSHOT", input, List.of(), List.of(), false, id, null, null, interaction -> {
-            var address = address(context, id);
-            try {
-                interaction.progress("SOURCE_FETCHING", WebJsonCodec.object().put("sourceId", id));
-                Path gitRoot = Files.createDirectory(workspace.directory(address).resolve("git"));
-                var snapshot = prepareGit(request,gitRoot,address);
-                try (var archive = Files.newInputStream(snapshot.archive().archivePath())) {
-                    new SourceArchiveUpload(workspace).extract(address, "tar.gz", archive);
-                }
-                workspace.discardChild(address,"git");
-                interaction.checkCancelled();
-                finish(context, id);
-                var stored = require(context, id);
-                var fields = new LinkedHashMap<>(stored.attributes()); fields.put("kind", "GIT");
-                return view(repository.save(scope(context), ResourceType.SOURCE, id, stored.name(), fields,
-                        WebJsonCodec.write(Map.of("remote", remote.location().toString(), "commit", snapshot.commit())), stored.version()));
-            } catch (Exception failure) {
-                var stored = require(context, id); var fields = new LinkedHashMap<>(stored.attributes()); fields.put("state", "FAILED");
-                repository.save(scope(context), ResourceType.SOURCE, id, stored.name(), fields, stored.document(), stored.version());
-                workspace.discardChild(address,"git"); workspace.discard(address);
-                throw failure;
-            }
-        });
+        return new PreparedWebOperation("GIT_SNAPSHOT", input, List.of(), List.of(), false, id, null, null,
+                interaction -> {
+                    var address = address(context, id);
+                    try {
+                        interaction.progress("SOURCE_FETCHING", WebJsonCodec.object().put("sourceId", id));
+                        Path gitRoot = Files.createDirectory(workspace.directory(address).resolve("git"));
+                        var snapshot = prepareGit(request, gitRoot, address);
+                        try (var archive = Files.newInputStream(snapshot.archive().archivePath())) {
+                            new SourceArchiveUpload(workspace).extract(address, "tar.gz", archive);
+                        }
+                        workspace.discardChild(address, "git");
+                        interaction.checkCancelled();
+                        finish(context, id);
+                        var stored = require(context, id);
+                        var fields = new LinkedHashMap<>(stored.attributes());
+                        fields.put("kind", "GIT");
+                        return view(repository.save(scope(context), ResourceType.SOURCE, id, stored.name(), fields,
+                                WebJsonCodec.write(
+                                        Map.of("remote", remote.location().toString(), "commit", snapshot.commit())),
+                                stored.version()));
+                    } catch (Exception failure) {
+                        var stored = require(context, id);
+                        var fields = new LinkedHashMap<>(stored.attributes());
+                        fields.put("state", "FAILED");
+                        repository.save(scope(context), ResourceType.SOURCE, id, stored.name(), fields,
+                                stored.document(), stored.version());
+                        workspace.discardChild(address, "git");
+                        workspace.discard(address);
+                        throw failure;
+                    }
+                });
     }
 
     /**
@@ -213,21 +257,33 @@ public final class WebSourceService {
      * @return and verifies the pinned Git snapshot in owned storage and records its ready source identity / 在自有存储创建并验证固定 Git 快照，并记录其就绪源码身份
      * @throws Exception if the delegated operation or caller-provided interaction fails / 被委派操作或调用方提供的交互失败时
      */
-    private GitSnapshot prepareGit(GitSourceRequest request,Path directory,WorkspaceAddress address) throws Exception {
-        Thread owner=Thread.currentThread();
-        var exceeded=new java.util.concurrent.atomic.AtomicReference<Exception>();
-        var monitor=Thread.ofVirtual().name("web-git-quota").start(() -> {
+    private GitSnapshot prepareGit(GitSourceRequest request, Path directory, WorkspaceAddress address)
+            throws Exception {
+        Thread owner = Thread.currentThread();
+        var exceeded = new java.util.concurrent.atomic.AtomicReference<Exception>();
+        var monitor = Thread.ofVirtual().name("web-git-quota").start(() -> {
             try {
-                while(!Thread.currentThread().isInterrupted()) { workspace.checkCapacity(address,0); Thread.sleep(250); }
-            } catch(InterruptedException stopped) { Thread.currentThread().interrupt(); }
-            catch(Exception failure) { exceeded.set(failure);owner.interrupt(); }
+                while (!Thread.currentThread().isInterrupted()) {
+                    workspace.checkCapacity(address, 0);
+                    Thread.sleep(250);
+                }
+            } catch (InterruptedException stopped) {
+                Thread.currentThread().interrupt();
+            } catch (Exception failure) {
+                exceeded.set(failure);
+                owner.interrupt();
+            }
         });
-        try { return new GitSnapshotPreparer().prepare(request,directory); }
-        finally {
-            monitor.interrupt(); boolean interrupted=Thread.interrupted();
+        try {
+            return new GitSnapshotPreparer().prepare(request, directory);
+        } finally {
+            monitor.interrupt();
+            boolean interrupted = Thread.interrupted();
             monitor.join();
-            if(exceeded.get()!=null) throw exceeded.get();
-            if(interrupted)owner.interrupt();
+            if (exceeded.get() != null)
+                throw exceeded.get();
+            if (interrupted)
+                owner.interrupt();
         }
     }
 
@@ -242,24 +298,32 @@ public final class WebSourceService {
      */
     public PreparedWebOperation analyze(WebRequestContext context, String id) throws Exception {
         requireReady(context, id);
-        return new PreparedWebOperation("ANALYZE", WebJsonCodec.object().put("sourceId", id), List.of(), List.of(), false, id, null, null,
-                interaction -> {
+        return new PreparedWebOperation("ANALYZE", WebJsonCodec.object().put("sourceId", id), List.of(), List.of(),
+                false, id, null, null, interaction -> {
                     interaction.progress("SOURCE_ANALYZING", WebJsonCodec.object());
                     try (var snapshot = snapshot(context, id)) {
                         var components = new ArrayList<JsonNode>();
                         for (var component : new ProjectComponentDiscovery().discover(snapshot.directory())) {
-                            var value = WebJsonCodec.object().put("id", component.id()).put("path", component.relativeRoot().toString().replace('\\', '/'));
+                            var value = WebJsonCodec.object().put("id", component.id()).put("path",
+                                    component.relativeRoot().toString().replace('\\', '/'));
                             value.set("types", WebJsonCodec.tree(component.types()));
                             if (component.types().size() == 1) {
-                                var assessment = new DeploymentAnalysisCoordinator().analyzeForDatabaseReview(snapshot.directory().resolve(component.relativeRoot()), component.types().getFirst());
+                                var assessment = new DeploymentAnalysisCoordinator().analyzeForDatabaseReview(
+                                        snapshot.directory().resolve(component.relativeRoot()),
+                                        component.types().getFirst());
                                 value.put("admission", assessment.admission().name());
-                                value.set("rejections", WebJsonCodec.tree(assessment.rejections().stream().map(rejection -> rejection.code()).toList()));
-                                assessment.facts().ifPresent(facts -> value.put("applicationId", facts.applicationId()).put("buildTool", facts.buildTool().name()));
-                                assessment.runtimeSuggestion().ifPresent(suggestion -> value.set("suggestion", WebJsonCodec.tree(suggestion)));
+                                value.set("rejections", WebJsonCodec.tree(
+                                        assessment.rejections().stream().map(rejection -> rejection.code()).toList()));
+                                assessment.facts().ifPresent(facts -> value.put("applicationId", facts.applicationId())
+                                        .put("buildTool", facts.buildTool().name()));
+                                assessment.runtimeSuggestion().ifPresent(
+                                        suggestion -> value.set("suggestion", WebJsonCodec.tree(suggestion)));
                             }
-                            components.add(value); interaction.checkCancelled();
+                            components.add(value);
+                            interaction.checkCancelled();
                         }
-                        return WebJsonCodec.object().put("sourceId", id).set("components", WebJsonCodec.tree(components));
+                        return WebJsonCodec.object().put("sourceId", id).set("components",
+                                WebJsonCodec.tree(components));
                     }
                 });
     }
@@ -275,15 +339,22 @@ public final class WebSourceService {
      * @throws IllegalStateException if the required state or runtime facility is unavailable / 所需状态或运行设施不可用时
      */
     public synchronized SourceDirectorySnapshot snapshot(WebRequestContext context, String id) throws Exception {
-        var stored = requireReady(context, id); var address = address(context, id);
+        var stored = requireReady(context, id);
+        var address = address(context, id);
         Path directory = workspace.directory(address);
         // Recompute from the frozen directory so local tampering cannot silently change a reviewed source. / 从冻结目录重新计算，避免本地篡改静默改变已审阅源码。
-        var archive = new SafeSourceArchivePreparer().archive(workspace.source(address), directory.resolve("verify.tar.gz"));
+        var archive = new SafeSourceArchivePreparer().archive(workspace.source(address),
+                directory.resolve("verify.tar.gz"));
         try {
-            if (!archive.contentSha256().equals(stored.attributes().get("digest"))) throw new IllegalStateException("Source digest changed; upload again");
-            return SourceDirectorySnapshot.create(workspace.source(address), directory.resolve("snapshots"), stored.name());
-        } finally { Files.deleteIfExists(directory.resolve("verify.tar.gz")); }
+            if (!archive.contentSha256().equals(stored.attributes().get("digest")))
+                throw new IllegalStateException("Source digest changed; upload again");
+            return SourceDirectorySnapshot.create(workspace.source(address), directory.resolve("snapshots"),
+                    stored.name());
+        } finally {
+            Files.deleteIfExists(directory.resolve("verify.tar.gz"));
+        }
     }
+
     /**
      * Creates an operation-scoped temporary directory beneath a ready source resource; its caller owns cleanup.
      * <p>在就绪源码资源下创建操作专用临时目录；调用方负责清理。
@@ -297,6 +368,7 @@ public final class WebSourceService {
         requireReady(context, id);
         return Files.createTempDirectory(workspace.directory(address(context, id)), "operation-");
     }
+
     /**
      * Validates and returns ready and rejects inputs outside the declared constraints.
      * <p>校验并返回就绪并拒绝超出已声明约束的输入。
@@ -309,9 +381,11 @@ public final class WebSourceService {
      */
     public StoredResource requireReady(WebRequestContext context, String id) throws Exception {
         var stored = require(context, id);
-        if (!"READY".equals(stored.attributes().get("state"))) throw new IllegalStateException("Source upload is not complete");
+        if (!"READY".equals(stored.attributes().get("state")))
+            throw new IllegalStateException("Source upload is not complete");
         return stored;
     }
+
     /**
      * Validates and returns uploading and rejects inputs outside the declared constraints.
      * <p>校验并返回上传中并拒绝超出已声明约束的输入。
@@ -324,8 +398,11 @@ public final class WebSourceService {
      */
     private StoredResource requireUploading(WebRequestContext context, String id) throws Exception {
         var stored = require(context, id);
-        if (!"UPLOADING".equals(stored.attributes().get("state"))) throw new IllegalStateException("Source is not accepting uploads"); return stored;
+        if (!"UPLOADING".equals(stored.attributes().get("state")))
+            throw new IllegalStateException("Source is not accepting uploads");
+        return stored;
     }
+
     /**
      * Validates and returns stored resource.
      * <p>校验并返回已存储资源。
@@ -336,8 +413,10 @@ public final class WebSourceService {
      * @throws Exception if the delegated operation or caller-provided interaction fails / 被委派操作或调用方提供的交互失败时
      */
     private StoredResource require(WebRequestContext context, String id) throws Exception {
-        return repository.find(scope(context), ResourceType.SOURCE, id).orElseThrow(() -> new NoSuchElementException("Source not found"));
+        return repository.find(scope(context), ResourceType.SOURCE, id)
+                .orElseThrow(() -> new NoSuchElementException("Source not found"));
     }
+
     /**
      * Projects stored non-secret resource metadata into its Web response fields.
      * <p>将持久化的非秘密资源元数据投影为 Web 响应字段。
@@ -346,11 +425,15 @@ public final class WebSourceService {
      * @return constructed or resolved json node / 构造或解析得到的JSON节点
      */
     private static JsonNode view(StoredResource row) {
-        var value = WebJsonCodec.object().put("id", row.id()).put("name", row.name()).put("state", (String) row.attributes().get("state"))
-                .put("kind", (String) row.attributes().get("kind")).put("digest", (String) row.attributes().get("digest"))
-                .put("byteCount", ((Number) row.attributes().get("byte_count")).longValue()).put("createdAt", row.createdAt());
-        value.set("provenance", WebJsonCodec.read(row.document())); return value;
+        var value = WebJsonCodec.object().put("id", row.id()).put("name", row.name())
+                .put("state", (String) row.attributes().get("state")).put("kind", (String) row.attributes().get("kind"))
+                .put("digest", (String) row.attributes().get("digest"))
+                .put("byteCount", ((Number) row.attributes().get("byte_count")).longValue())
+                .put("createdAt", row.createdAt());
+        value.set("provenance", WebJsonCodec.read(row.document()));
+        return value;
     }
+
     /**
      * Resolves the ownership scope supplied by the trusted caller.
      * <p>解析可信调用方提供的归属作用域。
@@ -358,7 +441,10 @@ public final class WebSourceService {
      * @param context facts and dependencies scoped to the current operation / 限定于当前操作的事实及依赖
      * @return the ownership scope supplied by the trusted caller / 可信调用方提供的归属作用域
      */
-    private static ResourceScope scope(WebRequestContext context) { return new ResourceScope(context.workspaceId(), context.userId()); }
+    private static ResourceScope scope(WebRequestContext context) {
+        return new ResourceScope(context.workspaceId(), context.userId());
+    }
+
     /**
      * Builds workspace address from the supplied address inputs.
      * <p>根据所提供地址输入构建工作区地址。
@@ -367,5 +453,7 @@ public final class WebSourceService {
      * @param id stable identifier within the owning registry / 所属登记表内的稳定标识
      * @return workspace address from the supplied address inputs / 根据所提供地址输入构建工作区地址
      */
-    private static WorkspaceAddress address(WebRequestContext context, String id) { return new WorkspaceAddress(context.workspaceId(), id); }
+    private static WorkspaceAddress address(WebRequestContext context, String id) {
+        return new WorkspaceAddress(context.workspaceId(), id);
+    }
 }

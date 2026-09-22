@@ -3,7 +3,11 @@ plugins {
     id 'org.springframework.boot' version '3.4.0'
 }
 repositories { mavenCentral() }
-java { toolchain { languageVersion = JavaLanguageVersion.of(21) } }
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(21)
+    }
+}
 dependencies { implementation 'org.springframework.boot:spring-boot-starter-web:3.4.0' }
 
 dependencies { implementation 'org.springframework.boot:spring-boot-starter-validation:3.4.0' }

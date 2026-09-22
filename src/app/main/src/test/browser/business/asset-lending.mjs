@@ -8,9 +8,7 @@ export async function verify(page, expect) {
     await expect(page.locator('[data-page="assets"]')).toBeVisible();
     await page.locator("#query").fill("浏览器相机");
     await page.getByRole("button", { name: "查询", exact: true }).click();
-    await page
-      .getByRole("checkbox", { name: "选择 浏览器相机" + n, exact: true })
-      .check();
+    await page.getByRole("checkbox", { name: "选择 浏览器相机" + n, exact: true }).check();
   }
   await expect(page.locator("#cart-count")).toContainText("已选 2 件");
   await page.getByRole("link", { name: "新建借用单", exact: true }).click();
@@ -25,14 +23,10 @@ export async function verify(page, expect) {
   await expect(page.locator("#loan-title")).toContainText("已批准");
   await page.getByRole("button", { name: "确认领用", exact: true }).click();
   await expect(page.locator("#loan-title")).toContainText("已领用");
-  await page
-    .getByRole("checkbox", { name: "归还 浏览器相机1", exact: true })
-    .check();
+  await page.getByRole("checkbox", { name: "归还 浏览器相机1", exact: true }).check();
   await page.locator("#return-button").click();
   await expect(page.locator("#loan-title")).toContainText("部分归还");
-  const second = page
-    .locator("#loan-items tr")
-    .filter({ hasText: "浏览器相机2" });
+  const second = page.locator("#loan-items tr").filter({ hasText: "浏览器相机2" });
   await second.getByRole("checkbox").check();
   await second.locator("select").selectOption("damaged");
   await second.locator('input[type="text"],input:not([type])').fill("镜头损坏");
@@ -49,9 +43,7 @@ export async function verify(page, expect) {
   const row = page.locator("#assets tr").filter({ hasText: "浏览器相机2" });
   await expect(row).toContainText("可借");
   await row.getByRole("button", { name: "资产履历" }).click();
-  await expect(page.locator("#asset-history")).toContainText(
-    "repair_completed",
-  );
+  await expect(page.locator("#asset-history")).toContainText("repair_completed");
   await page.getByRole("link", { name: "资产登记", exact: true }).click();
   await page.locator("#name").fill("重复编号");
   await page.locator("#serial").fill("BROWSER-1");

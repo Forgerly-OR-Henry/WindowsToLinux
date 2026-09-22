@@ -1,8 +1,9 @@
 package gold.debug.windowstolinux.app.service.ai;
 
-import gold.debug.windowstolinux.shared.model.ai.AiPurposeType;
 import java.time.Instant;
 import java.util.Optional;
+
+import gold.debug.windowstolinux.shared.model.ai.AiPurposeType;
 
 /** Credential-free inventory row with separate capability evidence. / 不含凭据明文且能力证据独立的清单行。
  * @param profile connection settings / 连接设置

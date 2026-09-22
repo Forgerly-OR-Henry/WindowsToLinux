@@ -1,8 +1,8 @@
 package gold.debug.windowstolinux.app.service.backup;
 
-import gold.debug.windowstolinux.shared.backup.crypto.BackupSecretDocument;
-
 import java.util.Objects;
+
+import gold.debug.windowstolinux.shared.backup.crypto.BackupSecretDocument;
 
 /**
  * Local candidate plus its complete authenticated short-lived secret revisions. / 本地候选及其完整已认证短生命周期秘密修订。
@@ -10,10 +10,8 @@ import java.util.Objects;
  * @param candidate candidate / 候选
  * @param secrets credential references or scoped secret-access service / 凭据引用或限定作用域的秘密访问服务
  */
-public record PreparedBackupSecrets(
-        PreparedBackupCandidate candidate,
-        BackupSecretDocument secrets
-) implements AutoCloseable {
+public record PreparedBackupSecrets(PreparedBackupCandidate candidate,
+        BackupSecretDocument secrets) implements AutoCloseable {
     /**
      * Binds one candidate to one owned decoded secret document. / 将一个候选绑定到一个持有的已解码秘密文档。
      *

@@ -39,10 +39,11 @@ public record ApplicationCommand(String entrypoint, List<String> arguments) {
      */
     public static String relative(String value, boolean emptyAllowed) {
         Objects.requireNonNull(value);
-        if (value.isEmpty() && emptyAllowed) return value;
+        if (value.isEmpty() && emptyAllowed)
+            return value;
         if (value.length() > 512 || !value.matches("[\\p{L}\\p{N}_. /-]+") || value.startsWith("/")
-                || value.contains("//") || java.util.Arrays.stream(value.split("/", -1))
-                    .anyMatch(part -> part.equals("..") || part.isEmpty()))
+                || value.contains("//")
+                || java.util.Arrays.stream(value.split("/", -1)).anyMatch(part -> part.equals("..") || part.isEmpty()))
             throw new IllegalArgumentException("application path must be a literal relative path");
         return value;
     }
@@ -53,5 +54,7 @@ public record ApplicationCommand(String entrypoint, List<String> arguments) {
      *
      * @return application command from the supplied primary inputs / 根据所提供主输入构建应用命令
      */
-    public static ApplicationCommand primary() { return new ApplicationCommand("", List.of()); }
+    public static ApplicationCommand primary() {
+        return new ApplicationCommand("", List.of());
+    }
 }

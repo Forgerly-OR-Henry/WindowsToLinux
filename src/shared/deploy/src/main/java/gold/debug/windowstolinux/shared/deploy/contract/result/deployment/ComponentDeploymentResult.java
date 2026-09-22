@@ -1,10 +1,10 @@
 package gold.debug.windowstolinux.shared.deploy.contract.result.deployment;
 
-import gold.debug.windowstolinux.shared.model.lifecycle.LifecycleObservation;
-
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
+
+import gold.debug.windowstolinux.shared.model.lifecycle.LifecycleObservation;
 
 /**
  * Component-scoped deployment evidence and terminal state. / 组件范围的部署证据与终态。
@@ -14,12 +14,8 @@ import java.util.Optional;
  * @param events ordered progress or transaction events / 有序进度或事务事件
  * @param observation observation / 观测
  */
-public record ComponentDeploymentResult(
-        String componentId,
-        ComponentTransactionState state,
-        List<DeploymentEvent> events,
-        Optional<LifecycleObservation> observation
-) {
+public record ComponentDeploymentResult(String componentId, ComponentTransactionState state,
+        List<DeploymentEvent> events, Optional<LifecycleObservation> observation) {
     /**
      * Validates immutable component evidence. / 验证不可变组件证据。
      *

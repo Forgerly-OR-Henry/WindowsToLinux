@@ -1,23 +1,26 @@
 package gold.debug.windowstolinux.shared.git.snapshot;
 
-import org.junit.jupiter.api.Test;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import java.util.List;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
+import org.junit.jupiter.api.Test;
 
 class GitCommandExecutorTest {
-    @org.junit.jupiter.api.io.TempDir java.nio.file.Path directory;
+    @org.junit.jupiter.api.io.TempDir
+    java.nio.file.Path directory;
 
-    @Test void interruptionTerminatesTheStartedProcessAndPreservesInterruptStatus() throws Exception {
+    @Test
+    void interruptionTerminatesTheStartedProcessAndPreservesInterruptStatus() throws Exception {
         var pidFile = directory.resolve("pid");
         var result = new java.util.concurrent.atomic.AtomicReference<Throwable>();
         var interrupted = new java.util.concurrent.atomic.AtomicBoolean();
         String javaExecutable = java.nio.file.Path.of(System.getProperty("java.home"), "bin", "java").toString();
         Thread worker = Thread.ofPlatform().start(() -> {
             try {
-                new GitCommandExecutor().run(directory, List.of(javaExecutable, "-cp", System.getProperty("java.class.path"),
-                        GitInterruptProcessFixture.class.getName(), pidFile.toString()));
+                new GitCommandExecutor().run(directory,
+                        List.of(javaExecutable, "-cp", System.getProperty("java.class.path"),
+                                GitInterruptProcessFixture.class.getName(), pidFile.toString()));
             } catch (Throwable failure) {
                 result.set(failure);
                 interrupted.set(Thread.currentThread().isInterrupted());
@@ -25,7 +28,8 @@ class GitCommandExecutorTest {
         });
         try {
             long deadline = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(10);
-            while (!java.nio.file.Files.exists(pidFile) && System.nanoTime() < deadline) Thread.sleep(20);
+            while (!java.nio.file.Files.exists(pidFile) && System.nanoTime() < deadline)
+                Thread.sleep(20);
             org.junit.jupiter.api.Assertions.assertTrue(java.nio.file.Files.exists(pidFile));
             long pid = Long.parseLong(java.nio.file.Files.readString(pidFile));
             worker.interrupt();
@@ -33,7 +37,8 @@ class GitCommandExecutorTest {
             org.junit.jupiter.api.Assertions.assertFalse(worker.isAlive());
             org.junit.jupiter.api.Assertions.assertInstanceOf(InterruptedException.class, result.get());
             org.junit.jupiter.api.Assertions.assertTrue(interrupted.get());
-            org.junit.jupiter.api.Assertions.assertFalse(ProcessHandle.of(pid).map(ProcessHandle::isAlive).orElse(false));
+            org.junit.jupiter.api.Assertions
+                    .assertFalse(ProcessHandle.of(pid).map(ProcessHandle::isAlive).orElse(false));
         } finally {
             worker.interrupt();
             worker.join(15000);
@@ -47,20 +52,23 @@ class GitCommandExecutorTest {
         }
     }
 
-    @Test void exitedParentCannotLeaveItsOutputHoldingChildBehind() throws Exception {
+    @Test
+    void exitedParentCannotLeaveItsOutputHoldingChildBehind() throws Exception {
         var pidFile = directory.resolve("child-pid");
         String javaExecutable = java.nio.file.Path.of(System.getProperty("java.home"), "bin", "java").toString();
         try {
             org.junit.jupiter.api.Assertions.assertTimeoutPreemptively(java.time.Duration.ofSeconds(25), () -> {
                 try {
-                    new GitCommandExecutor(java.time.Duration.ofSeconds(5)).run(directory, List.of(javaExecutable,
-                            "-cp", System.getProperty("java.class.path"), GitParentProcessFixture.class.getName(), pidFile.toString()));
+                    new GitCommandExecutor(java.time.Duration.ofSeconds(5)).run(directory,
+                            List.of(javaExecutable, "-cp", System.getProperty("java.class.path"),
+                                    GitParentProcessFixture.class.getName(), pidFile.toString()));
                 } catch (gold.debug.windowstolinux.shared.git.GitSnapshotException expected) {
                     // A retained output pipe may fail the command; it must still be cleaned. / 输出管道可导致命令失败，但必须完成清理。
                 }
             });
             long pid = Long.parseLong(java.nio.file.Files.readString(pidFile));
-            org.junit.jupiter.api.Assertions.assertFalse(ProcessHandle.of(pid).map(ProcessHandle::isAlive).orElse(false));
+            org.junit.jupiter.api.Assertions
+                    .assertFalse(ProcessHandle.of(pid).map(ProcessHandle::isAlive).orElse(false));
         } finally {
             if (java.nio.file.Files.exists(pidFile)) {
                 var child = ProcessHandle.of(Long.parseLong(java.nio.file.Files.readString(pidFile)));

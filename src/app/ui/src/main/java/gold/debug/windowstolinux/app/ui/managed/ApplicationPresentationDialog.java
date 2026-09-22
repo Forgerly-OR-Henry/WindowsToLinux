@@ -1,11 +1,13 @@
 package gold.debug.windowstolinux.app.ui.managed;
 
+import java.awt.*;
+
+import javax.swing.*;
+
 import gold.debug.windowstolinux.app.service.contract.ManagedApplicationFacade;
 import gold.debug.windowstolinux.app.service.execution.lifecycle.ApplicationSummary;
 import gold.debug.windowstolinux.app.ui.component.*;
 import gold.debug.windowstolinux.app.ui.i18n.PageMessagePresenter;
-import javax.swing.*;
-import java.awt.*;
 
 /**
  * Edits local application presentation in an independent window. / 在独立窗口中编辑本地应用显示设置。
@@ -22,7 +24,7 @@ public final class ApplicationPresentationDialog extends JDialog {
      * @param saved saved / 已保存
      */
     public ApplicationPresentationDialog(Window owner, ManagedApplicationFacade service, DesktopComponentFactory c,
-                                         PageMessagePresenter messages, ApplicationSummary application, Runnable saved) {
+            PageMessagePresenter messages, ApplicationSummary application, Runnable saved) {
         super(owner, messages.text("apps.edit"), ModalityType.APPLICATION_MODAL);
         JTextField name = new JTextField(application.name(), 28);
         JTextField url = new JTextField(application.accessUrl().map(value -> value.url().toString()).orElse(""), 28);
@@ -41,8 +43,11 @@ public final class ApplicationPresentationDialog extends JDialog {
              * @param focus focus / 焦点
              * @return list cell renderer component / 列表Cell渲染器组件
              */
-            @Override public Component getListCellRendererComponent(JList<?> list, Object value, int index, boolean selected, boolean focus) {
-                return super.getListCellRendererComponent(list, messages.text("apps.category." + value), index, selected, focus);
+            @Override
+            public Component getListCellRendererComponent(JList<?> list, Object value, int index, boolean selected,
+                    boolean focus) {
+                return super.getListCellRendererComponent(list, messages.text("apps.category." + value), index,
+                        selected, focus);
             }
         });
         JPanel form = c.card(new GridBagLayout());
@@ -52,17 +57,38 @@ public final class ApplicationPresentationDialog extends JDialog {
         JLabel status = new JLabel();
         JButton save = c.primaryButton(messages.text("apps.save"));
         save.addActionListener(event -> {
-            String enteredName = name.getText(), enteredCategory = (String) category.getSelectedItem(), enteredUrl = url.getText();
-            save.setEnabled(false); name.setEnabled(false); category.setEnabled(false); url.setEnabled(false);
+            String enteredName = name.getText(), enteredCategory = (String) category.getSelectedItem(),
+                    enteredUrl = url.getText();
+            save.setEnabled(false);
+            name.setEnabled(false);
+            category.setEnabled(false);
+            url.setEnabled(false);
             setDefaultCloseOperation(DO_NOTHING_ON_CLOSE);
-            DesktopTaskExecutor.run(() -> { service.saveApplicationPresentation(application.key(), enteredName, enteredCategory, enteredUrl); return true; },
-                    result -> { saved.run(); dispose(); }, failure -> {
-                        save.setEnabled(true); name.setEnabled(true); category.setEnabled(application.external()); url.setEnabled(true);
-                        setDefaultCloseOperation(DISPOSE_ON_CLOSE); status.setText(messages.safe(failure));
-                    });
+            DesktopTaskExecutor.run(() -> {
+                service.saveApplicationPresentation(application.key(), enteredName, enteredCategory, enteredUrl);
+                return true;
+            }, result -> {
+                saved.run();
+                dispose();
+            }, failure -> {
+                save.setEnabled(true);
+                name.setEnabled(true);
+                category.setEnabled(application.external());
+                url.setEnabled(true);
+                setDefaultCloseOperation(DISPOSE_ON_CLOSE);
+                status.setText(messages.safe(failure));
+            });
         });
-        JPanel body = c.pagePanel(); body.setBorder(BorderFactory.createEmptyBorder(20, 20, 20, 20)); body.add(form, BorderLayout.NORTH);
-        body.add(status); JPanel actions = c.transparent(new FlowLayout(FlowLayout.RIGHT)); actions.add(save); body.add(actions, BorderLayout.SOUTH);
-        setContentPane(body); setSize(580, 320); setLocationRelativeTo(owner); setDefaultCloseOperation(DISPOSE_ON_CLOSE);
+        JPanel body = c.pagePanel();
+        body.setBorder(BorderFactory.createEmptyBorder(20, 20, 20, 20));
+        body.add(form, BorderLayout.NORTH);
+        body.add(status);
+        JPanel actions = c.transparent(new FlowLayout(FlowLayout.RIGHT));
+        actions.add(save);
+        body.add(actions, BorderLayout.SOUTH);
+        setContentPane(body);
+        setSize(580, 320);
+        setLocationRelativeTo(owner);
+        setDefaultCloseOperation(DISPOSE_ON_CLOSE);
     }
 }

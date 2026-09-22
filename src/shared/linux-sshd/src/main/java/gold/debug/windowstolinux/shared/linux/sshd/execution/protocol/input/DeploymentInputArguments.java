@@ -1,10 +1,10 @@
 package gold.debug.windowstolinux.shared.linux.sshd.execution.protocol.input;
 
-import gold.debug.windowstolinux.shared.linux.protocol.RemoteDeploymentInputs;
-
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
+
+import gold.debug.windowstolinux.shared.linux.protocol.RemoteDeploymentInputs;
 
 /**
  * Converts a non-secret input manifest to deterministic helper arguments. / 将非秘密输入清单转换为确定性辅助程序参数。
@@ -14,7 +14,8 @@ public final class DeploymentInputArguments {
      * Prevents instantiation of this static contract helper.
      * <p>防止实例化当前静态契约辅助类。
      */
-    private DeploymentInputArguments() { }
+    private DeploymentInputArguments() {
+    }
 
     /**
      * Reconstructs this typed contract from the supplied source representation.
@@ -26,8 +27,8 @@ public final class DeploymentInputArguments {
      */
     public static List<String> from(RemoteDeploymentInputs inputs) {
         Objects.requireNonNull(inputs, "inputs");
-        List<String> values = new ArrayList<>(List.of(inputs.configurationSha256(),
-                Integer.toString(inputs.secrets().size())));
+        List<String> values = new ArrayList<>(
+                List.of(inputs.configurationSha256(), Integer.toString(inputs.secrets().size())));
         inputs.secrets().forEach(secret -> {
             values.add(secret.identifier());
             values.add(Long.toString(secret.revision()));

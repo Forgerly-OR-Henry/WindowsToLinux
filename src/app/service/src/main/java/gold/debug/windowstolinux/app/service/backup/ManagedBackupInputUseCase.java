@@ -1,13 +1,5 @@
 package gold.debug.windowstolinux.app.service.backup;
 
-import gold.debug.windowstolinux.app.db.entity.CurrentRelease;
-import gold.debug.windowstolinux.app.db.entity.ManagedApplicationGraph;
-import gold.debug.windowstolinux.app.db.persistence.repository.ApplicationSecretRepository;
-import gold.debug.windowstolinux.app.db.persistence.repository.ConfigurationSnapshotRepository;
-import gold.debug.windowstolinux.app.db.persistence.repository.ManagedApplicationGraphRepository;
-import gold.debug.windowstolinux.app.db.persistence.repository.ManagedApplicationRepository;
-import gold.debug.windowstolinux.app.service.backup.ManagedBackupInputAssessment.MissingInputType;
-
 import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -15,6 +7,14 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+
+import gold.debug.windowstolinux.app.db.entity.CurrentRelease;
+import gold.debug.windowstolinux.app.db.entity.ManagedApplicationGraph;
+import gold.debug.windowstolinux.app.db.persistence.repository.ApplicationSecretRepository;
+import gold.debug.windowstolinux.app.db.persistence.repository.ConfigurationSnapshotRepository;
+import gold.debug.windowstolinux.app.db.persistence.repository.ManagedApplicationGraphRepository;
+import gold.debug.windowstolinux.app.db.persistence.repository.ManagedApplicationRepository;
+import gold.debug.windowstolinux.app.service.backup.ManagedBackupInputAssessment.MissingInputType;
 
 /**
  * Assesses exact persisted backup inputs without connecting to or changing a server. / 在不连接或修改服务器的情况下评估精确持久化备份输入。
@@ -25,16 +25,19 @@ public final class ManagedBackupInputUseCase {
      * <p>处理图集合的受管应用图仓库协作对象。
      */
     private final ManagedApplicationGraphRepository graphs;
+
     /**
      * Bound managed application repository collaborator for applications.
      * <p>处理应用集合的受管应用仓库协作对象。
      */
     private final ManagedApplicationRepository applications;
+
     /**
      * Bound configuration snapshot repository collaborator for configurations.
      * <p>处理配置集合的配置快照仓库协作对象。
      */
     private final ConfigurationSnapshotRepository configurations;
+
     /**
      * Bound application secret repository collaborator for credential references or scoped secret-access service.
      * <p>处理凭据引用或限定作用域的秘密访问服务的应用秘密仓库协作对象。
@@ -51,9 +54,8 @@ public final class ManagedBackupInputUseCase {
      * @throws NullPointerException if a required input is absent / 必需输入缺失时
      */
     public ManagedBackupInputUseCase(ManagedApplicationGraphRepository graphs,
-                                     ManagedApplicationRepository applications,
-                                     ConfigurationSnapshotRepository configurations,
-                                     ApplicationSecretRepository secrets) {
+            ManagedApplicationRepository applications, ConfigurationSnapshotRepository configurations,
+            ApplicationSecretRepository secrets) {
         this.graphs = Objects.requireNonNull(graphs, "graphs");
         this.applications = Objects.requireNonNull(applications, "applications");
         this.configurations = Objects.requireNonNull(configurations, "configurations");
@@ -75,27 +77,32 @@ public final class ManagedBackupInputUseCase {
                     List.of(MissingInputType.MANAGED_APPLICATION_GRAPH), Map.of());
         }
         ManagedApplicationGraph graph = initial.orElseThrow();
-        List<String> componentIds = graph.components().stream()
-                .map(ManagedApplicationGraph.Component::componentId).toList();
+        List<String> componentIds = graph.components().stream().map(ManagedApplicationGraph.Component::componentId)
+                .toList();
         LinkedHashMap<String, CurrentRelease> releases = new LinkedHashMap<>();
         LinkedHashMap<String, String> releaseIdentities = new LinkedHashMap<>();
         LinkedHashMap<String, List<MissingInputType>> missing = new LinkedHashMap<>();
-        long databaseCount = graph.components().stream().flatMap(component -> component.reviewedResourceBindings().stream())
+        long databaseCount = graph.components().stream()
+                .flatMap(component -> component.reviewedResourceBindings().stream())
                 .flatMap(resources -> resources.databaseBindings().stream()).mapToLong(List::size).sum();
         for (ManagedApplicationGraph.Component component : graph.components()) {
             List<MissingInputType> componentMissing = new ArrayList<>();
-            if (component.reviewedRuntime().isEmpty()) componentMissing.add(MissingInputType.REVIEWED_RUNTIME);
-            if (component.reviewedDataPaths().isEmpty()) componentMissing.add(MissingInputType.REVIEWED_DATA_PATHS);
+            if (component.reviewedRuntime().isEmpty())
+                componentMissing.add(MissingInputType.REVIEWED_RUNTIME);
+            if (component.reviewedDataPaths().isEmpty())
+                componentMissing.add(MissingInputType.REVIEWED_DATA_PATHS);
             if (component.reviewedResourceBindings().isEmpty()) {
                 componentMissing.add(MissingInputType.REVIEWED_RESOURCE_BINDINGS);
             } else if (component.reviewedResourceBindings().orElseThrow().databaseBindings().isEmpty()) {
                 componentMissing.add(MissingInputType.REVIEWED_DATABASE_BINDINGS);
             }
-            component.reviewedResourceBindings().flatMap(resources -> resources.databaseBindings()).ifPresent(databases -> {
-                if (!databases.isEmpty() && (databaseCount > 1 || databases.stream().anyMatch(binding -> binding.connection().engine()
-                        == gold.debug.windowstolinux.shared.config.resource.ManagedDatabaseEngineType.REDIS)))
-                    componentMissing.add(MissingInputType.UNSUPPORTED_DATABASE_BACKUP);
-            });
+            component.reviewedResourceBindings().flatMap(resources -> resources.databaseBindings())
+                    .ifPresent(databases -> {
+                        if (!databases.isEmpty() && (databaseCount > 1 || databases.stream().anyMatch(binding -> binding
+                                .connection()
+                                .engine() == gold.debug.windowstolinux.shared.config.resource.ManagedDatabaseEngineType.REDIS)))
+                            componentMissing.add(MissingInputType.UNSUPPORTED_DATABASE_BACKUP);
+                    });
             Optional<CurrentRelease> release = applications.findRelease(component.application().id());
             if (release.isEmpty()) {
                 componentMissing.add(MissingInputType.CURRENT_RELEASE);
@@ -110,7 +117,8 @@ public final class ManagedBackupInputUseCase {
                     componentMissing.add(MissingInputType.RELEASE_SECRET_REFERENCES);
                 }
             }
-            if (!componentMissing.isEmpty()) missing.put(component.componentId(), List.copyOf(componentMissing));
+            if (!componentMissing.isEmpty())
+                missing.put(component.componentId(), List.copyOf(componentMissing));
         }
         List<MissingInputType> applicationMissing = new ArrayList<>();
         if (graph.applicationHealthCheck().isEmpty()) {
@@ -134,11 +142,13 @@ public final class ManagedBackupInputUseCase {
      */
     private boolean stable(ManagedApplicationGraph initial, Map<String, CurrentRelease> initialReleases)
             throws SQLException {
-        if (graphs.find(initial.applicationId()).filter(initial::equals).isEmpty()) return false;
+        if (graphs.find(initial.applicationId()).filter(initial::equals).isEmpty())
+            return false;
         for (ManagedApplicationGraph.Component component : initial.components()) {
             Optional<CurrentRelease> current = applications.findRelease(component.application().id());
             CurrentRelease expected = initialReleases.get(component.componentId());
-            if (!current.equals(Optional.ofNullable(expected))) return false;
+            if (!current.equals(Optional.ofNullable(expected)))
+                return false;
         }
         return true;
     }

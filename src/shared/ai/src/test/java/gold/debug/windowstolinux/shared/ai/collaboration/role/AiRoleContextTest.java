@@ -1,19 +1,19 @@
 package gold.debug.windowstolinux.shared.ai.collaboration.role;
 
-import org.junit.jupiter.api.Test;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.List;
 
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import org.junit.jupiter.api.Test;
 
 class AiRoleContextTest {
     @Test
     void contextsExposeOnlyRoleSpecificRedactedFacts() {
-        AiRoleContext project = new ProjectAnalysisRoleContext("sample-app", "JAVA_MAVEN_SPRING_BOOT",
-                "MAVEN_WRAPPER", "FORMALLY_SUPPORTED", List.of("analysis.missing.port"));
-        AiRoleContext risk = new DeploymentRiskRoleContext("sample-app", "a".repeat(64), "UBUNTU", "24.04",
-                "X86_64", "FORMALLY_SUPPORTED", false, List.of("api", "web"));
+        AiRoleContext project = new ProjectAnalysisRoleContext("sample-app", "JAVA_MAVEN_SPRING_BOOT", "MAVEN_WRAPPER",
+                "FORMALLY_SUPPORTED", List.of("analysis.missing.port"));
+        AiRoleContext risk = new DeploymentRiskRoleContext("sample-app", "a".repeat(64), "UBUNTU", "24.04", "X86_64",
+                "FORMALLY_SUPPORTED", false, List.of("api", "web"));
 
         assertFalse(project.redactedSummary().contains("C:\\private\\source"));
         assertFalse(project.redactedSummary().toLowerCase().contains("password"));

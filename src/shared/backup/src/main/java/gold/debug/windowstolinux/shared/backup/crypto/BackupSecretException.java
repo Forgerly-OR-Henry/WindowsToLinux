@@ -1,10 +1,10 @@
 package gold.debug.windowstolinux.shared.backup.crypto;
 
+import java.util.Objects;
+
 import gold.debug.windowstolinux.shared.model.failure.FailureCarrier;
 import gold.debug.windowstolinux.shared.model.failure.FailureDescriptor;
 import gold.debug.windowstolinux.shared.model.failure.OperationIdentity;
-
-import java.util.Objects;
 
 /**
  * Structured checked failure that never carries backup plaintext or passwords. / 绝不携带备份明文或密码的结构化受检失败。
@@ -48,10 +48,10 @@ public final class BackupSecretException extends Exception implements FailureCar
      * @return a module-owned backup-secret failure with its internal cause / 带内部原因的模块自有备份秘密失败
      * @throws NullPointerException if a required input is absent / 必需输入缺失时
      */
-    public static BackupSecretException create(
-            BackupSecretFailureType type, String diagnostic, Throwable cause) {
-        return new BackupSecretException(FailureDescriptor.create(Objects.requireNonNull(type, "type"),
-                OperationIdentity.create(), diagnostic), cause);
+    public static BackupSecretException create(BackupSecretFailureType type, String diagnostic, Throwable cause) {
+        return new BackupSecretException(
+                FailureDescriptor.create(Objects.requireNonNull(type, "type"), OperationIdentity.create(), diagnostic),
+                cause);
     }
 
     /**
@@ -60,5 +60,8 @@ public final class BackupSecretException extends Exception implements FailureCar
      *
      * @return structured failure occurrence retained for safe reporting / 保留用于安全报告的结构化失败实例
      */
-    @Override public FailureDescriptor failure() { return failure; }
+    @Override
+    public FailureDescriptor failure() {
+        return failure;
+    }
 }

@@ -37,21 +37,21 @@
 
 下表按当前模块职责回溯一期功能归属，不表示各模块或包名在一期已经以现名存在；独立拆包的发生期次无法由现状倒推。
 
-| 模块 | 已有基础 | 变化类型 | 本期具体增量 | 功能入口 |
-| --- | --- | --- | --- | --- |
-| `shared/model` | 无部署领域基线 | 新增 | 项目、健康、受管身份与生命周期契约 | [源码与计划](#source) |
-| `shared/analyze` | 无静态分析链 | 新增 | Maven Spring Boot 识别与阻断条件 | [源码与计划](#source) |
-| `shared/source` | 静态读取需求 | 新增 | 可重复归档及路径、秘密排除边界 | [源码与计划](#source) |
-| `shared/linux` | 无远程契约 | 新增 | SSH、能力、构建发布与生命周期窄契约 | [目标机部署](#deployment) |
-| `shared/linux-sshd` | 远程实现需求 | 新增 | Ubuntu、SFTP、受控 helper 与 systemd 实现 | [目标机部署](#deployment) |
-| `shared/deploy` | 领域事实与远程契约 | 新增 | 计划、短停机事务、健康与失败恢复 | [目标机部署](#deployment) |
-| `shared/ai` | 确定性分析 | 新增 | 单 Provider 结构化建议 | [基础 AI](#ai) |
-| `app/db` | 无本地状态 | 新增 | 服务器与受管应用持久化 | [应用管理](#lifecycle) |
-| `app/secret` | 平台认证需求 | 新增 | SSH/AI 凭据存储 | [桌面与凭据](#desktop) |
-| `app/service` | 共享能力 | 新增 | 桌面用例编排与状态登记 | [目标机部署](#deployment) |
-| `app/ui` | 桌面服务 | 新增 | Swing 输入、结果与受管操作 | [桌面与凭据](#desktop) |
-| `app/windows` | Windows 运行环境 | 新增 | 本地源码准备和固定工作目录 | [桌面与凭据](#desktop) |
-| `app/main` | 模块骨架 | 新增 | CLASS/JAR/APP 启动装配 | [桌面与凭据](#desktop) |
+| 模块                      | 已有基础           | 变化类型 | 本期具体增量                              | 功能入口                  |
+| ------------------------- | ------------------ | -------- | ----------------------------------------- | ------------------------- |
+| `shared/model`            | 无部署领域基线     | 新增     | 项目、健康、受管身份与生命周期契约        | [源码与计划](#source)     |
+| `shared/standard/analyze` | 无静态分析链       | 新增     | Maven Spring Boot 识别与阻断条件          | [源码与计划](#source)     |
+| `shared/source`           | 静态读取需求       | 新增     | 可重复归档及路径、秘密排除边界            | [源码与计划](#source)     |
+| `shared/linux`            | 无远程契约         | 新增     | SSH、能力、构建发布与生命周期窄契约       | [目标机部署](#deployment) |
+| `shared/linux-sshd`       | 远程实现需求       | 新增     | Ubuntu、SFTP、受控 helper 与 systemd 实现 | [目标机部署](#deployment) |
+| `shared/deploy`           | 领域事实与远程契约 | 新增     | 计划、短停机事务、健康与失败恢复          | [目标机部署](#deployment) |
+| `shared/ai`               | 确定性分析         | 新增     | 单 Provider 结构化建议                    | [基础 AI](#ai)            |
+| `app/db`                  | 无本地状态         | 新增     | 服务器与受管应用持久化                    | [应用管理](#lifecycle)    |
+| `app/secret`              | 平台认证需求       | 新增     | SSH/AI 凭据存储                           | [桌面与凭据](#desktop)    |
+| `app/service`             | 共享能力           | 新增     | 桌面用例编排与状态登记                    | [目标机部署](#deployment) |
+| `app/ui`                  | 桌面服务           | 新增     | Swing 输入、结果与受管操作                | [桌面与凭据](#desktop)    |
+| `app/windows`             | Windows 运行环境   | 新增     | 本地源码准备和固定工作目录                | [桌面与凭据](#desktop)    |
+| `app/main`                | 模块骨架           | 新增     | CLASS/JAR/APP 启动装配                    | [桌面与凭据](#desktop)    |
 
 <a id="features"></a>
 
@@ -63,9 +63,9 @@
 
 ### 3.1 源码、确定性分析与计划
 
-**涉及模块与分工：** `shared/analyze` 产生事实，`shared/source` 归档，`shared/model` 表达输入与边界；`app/service` 组织审阅。
+**涉及模块与分工：** `shared/standard/analyze` 产生事实，`shared/source` 归档，`shared/model` 表达输入与边界；`app/service` 组织审阅。
 
-现行入口：[SourcePreparationUseCase.java](../../src/app/service/src/main/java/gold/debug/windowstolinux/app/service/source/SourcePreparationUseCase.java) → [DeploymentAnalysisCoordinator.java](../../src/shared/analyze/src/main/java/gold/debug/windowstolinux/shared/analyze/core/DeploymentAnalysisCoordinator.java)；Windows 仅做静态读取和打包。
+现行入口：[SourcePreparationUseCase.java](../../src/app/service/src/main/java/gold/debug/windowstolinux/app/service/source/SourcePreparationUseCase.java) → [DeploymentAnalysisCoordinator.java](../../src/shared/standard/analyze/src/main/java/gold/debug/windowstolinux/shared/standard/analyze/core/DeploymentAnalysisCoordinator.java)；Windows 仅做静态读取和打包。
 
 #### 必需输入
 
@@ -109,7 +109,7 @@
 
 **涉及模块与分工：** `shared/deploy` 编排事务，`shared/linux` 定义窄端口，`shared/linux-sshd` 执行受控协议；`app/service` 登记结果。
 
-现行执行入口：[ReviewedDeploymentService.java](../../src/shared/deploy/src/main/java/gold/debug/windowstolinux/shared/deploy/execution/transaction/ReviewedDeploymentService.java)；请求不得使用 `runAsRoot`，新部署管理连接要求 root。
+现行执行入口：[ReviewedDeploymentService.java](../../src/shared/standard/deploy/src/main/java/gold/debug/windowstolinux/shared/standard/deploy/execution/transaction/ReviewedDeploymentService.java)；请求不得使用 `runAsRoot`，新部署管理连接要求 root。
 
 1. 在 WindowsToLinux 受管工作根下创建绑定应用标识和源码摘要的候选目录。
 2. SFTP 上传受控源码归档，在候选目录内安全解压并复核文件清单。
@@ -159,13 +159,13 @@
 
 #### 动作语义
 
-| 动作 | 前置条件 | 成功条件 | 不得附带的变化 |
-| --- | --- | --- | --- |
-| 启动 | 资源归属有效且当前已停止 | 启动命令成功并通过健康检查 | 不启用自启 |
-| 停止 | 资源归属有效 | systemd 与受管进程均确认停止 | 不停用自启 |
-| 重启 | 资源归属有效 | 重启并通过健康检查 | 不改变自启 |
-| 启用自启 | unit 可受控且归属有效 | 远端复核为 enabled | 不启动当前服务 |
-| 停用自启 | unit 可受控且归属有效 | 远端复核为 disabled | 不停止当前服务 |
+| 动作     | 前置条件                 | 成功条件                     | 不得附带的变化 |
+| -------- | ------------------------ | ---------------------------- | -------------- |
+| 启动     | 资源归属有效且当前已停止 | 启动命令成功并通过健康检查   | 不启用自启     |
+| 停止     | 资源归属有效             | systemd 与受管进程均确认停止 | 不停用自启     |
+| 重启     | 资源归属有效             | 重启并通过健康检查           | 不改变自启     |
+| 启用自启 | unit 可受控且归属有效    | 远端复核为 enabled           | 不启动当前服务 |
+| 停用自启 | unit 可受控且归属有效    | 远端复核为 disabled          | 不停止当前服务 |
 
 连接失败、指纹变化、unit 丢失、清单不符、外部修改或结果无法复核时停止操作并显示未知/异常。应用列表不提供远程删除、原始日志控制台、批量动作、任意 unit 管理或自动重建。
 
@@ -190,11 +190,11 @@
 
 `app/main` 使用 `RunModeResolver` 解析固定位置；CLASS/JAR 以 `app/db` 的 `DesktopPersistence` 类实际加载位置为锚点，APP 仍以启动器 EXE 为准，不提供系统属性、命令行、注册表或指针文件覆盖：
 
-| 模式 | applicationHome | data |
-| --- | --- | --- |
-| CLASS | `src/app/db` | `src/app/db/data` |
-| JAR | DB 模块 JAR 所在目录 | DB JAR 同级 `data` |
-| APP | jpackage EXE/app-image 根目录 | EXE 同级 `data` |
+| 模式  | applicationHome               | data               |
+| ----- | ----------------------------- | ------------------ |
+| CLASS | `src/app/db`                  | `src/app/db/data`  |
+| JAR   | DB 模块 JAR 所在目录          | DB JAR 同级 `data` |
+| APP   | jpackage EXE/app-image 根目录 | EXE 同级 `data`    |
 
 无法识别或目录不可写时停止启动，不回退到当前目录、用户目录或临时目录。jpackage 使用按当前用户安装和可选择安装目录，避免把固定数据位置放到普通用户不可写目录。
 
@@ -202,11 +202,11 @@
 
 ## 4. 功能依赖与实现约束
 
-| 功能 | 依赖与约束 |
-| --- | --- |
-| 源码分析与归档 | 不可变项目事实、固定工作目录和受限静态读取先于部署计划。 |
-| 构建与发布 | 受信 SSH、目标能力和源码摘要先于构建；构建产物校验先于短停机切换，健康检查决定提交或恢复。 |
-| 桌面与生命周期 | 服务层组合凭据、SQLite 和远程契约；登记的受管身份用于实时状态核验，不用缓存代替远端结果。 |
+| 功能           | 依赖与约束                                                                                 |
+| -------------- | ------------------------------------------------------------------------------------------ |
+| 源码分析与归档 | 不可变项目事实、固定工作目录和受限静态读取先于部署计划。                                   |
+| 构建与发布     | 受信 SSH、目标能力和源码摘要先于构建；构建产物校验先于短停机切换，健康检查决定提交或恢复。 |
+| 桌面与生命周期 | 服务层组合凭据、SQLite 和远程契约；登记的受管身份用于实时状态核验，不用缓存代替远端结果。  |
 
 <a id="acceptance"></a>
 
@@ -244,12 +244,12 @@
 
 ### 产品入口与工程证据
 
-| 功能 | 版本与环境 | 已保留证据及限制 |
-| --- | --- | --- |
-| Maven/Spring Boot 部署与恢复 | 一期 2.0.6，2026-08-10，Ubuntu 24.04 x86-64 | 由产品完成裸机工具准备与幂等复核、复杂 Spring Boot 和官方 Maven Wrapper 部署、HTTP/TCP 健康、故障回滚、断连恢复、资源限制及受管归属检查。 |
-| Reviewed 部署与生命周期 | 一期 2.0.8，2026-08-13，同一精确 Ubuntu 目标，helper v3 | 独立完成主机信任、准备、发布、首次失败恢复、旧版回滚、Wrapper、生命周期及业务 URL 交付；不能由迁移前结果代替。 |
-| 源码与制品校验 | 上述一期入口 | Wrapper 需同时存在脚本和 properties；固定 Maven 3.9.12 及分发摘要。拒绝自动数据库结构变更、越界读取及不安全归档；复核 systemd Java 路径和发布前后 JAR 摘要。 |
-| 桌面与前端工程 | 一期本地门禁 | JDK 21 Maven verify、前端类型检查、Vitest、构建及 Chromium 流程已有记录；前端当时仅为骨架，不构成五期业务证据。 |
+| 功能                         | 版本与环境                                              | 已保留证据及限制                                                                                                                                             |
+| ---------------------------- | ------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Maven/Spring Boot 部署与恢复 | 一期 2.0.6，2026-08-10，Ubuntu 24.04 x86-64             | 由产品完成裸机工具准备与幂等复核、复杂 Spring Boot 和官方 Maven Wrapper 部署、HTTP/TCP 健康、故障回滚、断连恢复、资源限制及受管归属检查。                    |
+| Reviewed 部署与生命周期      | 一期 2.0.8，2026-08-13，同一精确 Ubuntu 目标，helper v3 | 独立完成主机信任、准备、发布、首次失败恢复、旧版回滚、Wrapper、生命周期及业务 URL 交付；不能由迁移前结果代替。                                               |
+| 源码与制品校验               | 上述一期入口                                            | Wrapper 需同时存在脚本和 properties；固定 Maven 3.9.12 及分发摘要。拒绝自动数据库结构变更、越界读取及不安全归档；复核 systemd Java 路径和发布前后 JAR 摘要。 |
+| 桌面与前端工程               | 一期本地门禁                                            | JDK 21 Maven verify、前端类型检查、Vitest、构建及 Chromium 流程已有记录；前端当时仅为骨架，不构成五期业务证据。                                              |
 
 HTTP 成功入口曾由桌面实际 GET 验证返回 200 和业务标记，不能以内网健康地址代替用户访问地址；TCP 方案交付受管服务启动指令。历史 root 构建测试只说明当时的批准边界，现行身份规则与验收以[四期](PHASE-4.md#isolation)为准。
 

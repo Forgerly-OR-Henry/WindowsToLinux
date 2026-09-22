@@ -69,16 +69,12 @@ class OwnedProcess:
                 self.job, 9, ctypes.byref(limits), ctypes.sizeof(limits)
             ):
                 raise ctypes.WinError(ctypes.get_last_error())
-            kwargs["creationflags"] = (
-                subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.CREATE_NO_WINDOW
-            )
+            kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.CREATE_NO_WINDOW
         else:
             kwargs["start_new_session"] = True
         try:
             self.process = subprocess.Popen(command, **kwargs)
-            if self.job and not kernel.AssignProcessToJobObject(
-                self.job, int(self.process._handle)
-            ):
+            if self.job and not kernel.AssignProcessToJobObject(self.job, int(self.process._handle)):
                 self.process.kill()
                 self.process.wait()
                 raise ctypes.WinError(ctypes.get_last_error())
@@ -107,9 +103,7 @@ class OwnedProcess:
                 belongs = w.BOOL()
                 if (
                     not self.job
-                    or not kernel.IsProcessInJob(
-                        handle, self.job, ctypes.byref(belongs)
-                    )
+                    or not kernel.IsProcessInJob(handle, self.job, ctypes.byref(belongs))
                     or not belongs.value
                 ):
                     raise RuntimeError("Fault marker PID is not in the task-owned job")
@@ -121,9 +115,7 @@ class OwnedProcess:
                 kernel.CloseHandle(handle)
         else:
             if os.getpgid(pid) != self.process.pid:
-                raise RuntimeError(
-                    "Fault marker PID is not in the task-owned process group"
-                )
+                raise RuntimeError("Fault marker PID is not in the task-owned process group")
             os.kill(pid, signal.SIGKILL)
             if pid == self.process.pid:
                 self.process.wait(timeout=5)
@@ -149,12 +141,8 @@ class OwnedProcess:
                 w.DWORD,
                 ctypes.c_void_p,
             ]
-            if kernel.QueryInformationJobObject(
-                self.job, 9, ctypes.byref(limits), ctypes.sizeof(limits), None
-            ):
-                result.update(
-                    peakProcessBytes=limits.peakProcess, peakJobBytes=limits.peakJob
-                )
+            if kernel.QueryInformationJobObject(self.job, 9, ctypes.byref(limits), ctypes.sizeof(limits), None):
+                result.update(peakProcessBytes=limits.peakProcess, peakJobBytes=limits.peakJob)
         return result
 
     def close(self):

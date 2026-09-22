@@ -18,19 +18,20 @@ public enum DeploymentApprovalFailureType implements FailureDefinition {
      * SERVER MISMATCH classification within deployment approval failure type.
      * <p>部署Approval失败类型中的服务器不匹配分类。
      */
-    SERVER_MISMATCH("deployment.approval.server-mismatch", "approval",
-            "deployment.error.approvalServerMismatch");
+    SERVER_MISMATCH("deployment.approval.server-mismatch", "approval", "deployment.error.approvalServerMismatch");
 
     /**
      * Stable machine-readable classification code.
      * <p>稳定的机器可读分类码。
      */
     private final String code;
+
     /**
      * Stage associated with the result or failure.
      * <p>结果或失败所属阶段。
      */
     private final String phase;
+
     /**
      * Stable localization key for user-facing text.
      * <p>用户可见文本的稳定本地化键。
@@ -57,40 +58,63 @@ public enum DeploymentApprovalFailureType implements FailureDefinition {
      *
      * @return stable machine-readable classification code / 稳定的机器可读分类码
      */
-    @Override public String code() { return code; }
+    @Override
+    public String code() {
+        return code;
+    }
+
     /**
      * Returns the module domain that owns this failure definition.
      * <p>返回持有当前失败定义的模块领域。
      *
      * @return the module domain that owns this failure definition / 持有当前失败定义的模块领域
      */
-    @Override public String domain() { return "deployment"; }
+    @Override
+    public String domain() {
+        return "deployment";
+    }
+
     /**
      * Returns stage associated with the result or failure.
      * <p>返回结果或失败所属阶段。
      *
      * @return stage associated with the result or failure / 结果或失败所属阶段
      */
-    @Override public String phase() { return phase; }
+    @Override
+    public String phase() {
+        return phase;
+    }
+
     /**
      * Returns stable localization key for user-facing text.
      * <p>返回用户可见文本的稳定本地化键。
      *
      * @return stable localization key for user-facing text / 用户可见文本的稳定本地化键
      */
-    @Override public String messageKey() { return messageKey; }
+    @Override
+    public String messageKey() {
+        return messageKey;
+    }
+
     /**
      * Returns the severity assigned to this failure definition.
      * <p>返回当前失败定义的严重级别。
      *
      * @return the severity assigned to this failure definition / 当前失败定义的严重级别
      */
-    @Override public FailureSeverityLevel severity() { return FailureSeverityLevel.ERROR; }
+    @Override
+    public FailureSeverityLevel severity() {
+        return FailureSeverityLevel.ERROR;
+    }
+
     /**
      * Returns the prescribed recovery action for this failure definition.
      * <p>返回当前失败定义规定的恢复动作。
      *
      * @return the prescribed recovery action for this failure definition / 当前失败定义规定的恢复动作
      */
-    @Override public FailureRecoveryAction recoveryAction() { return FailureRecoveryAction.REQUEST_USER_CORRECTION; }
+    @Override
+    public FailureRecoveryAction recoveryAction() {
+        return FailureRecoveryAction.REQUEST_USER_CORRECTION;
+    }
 }

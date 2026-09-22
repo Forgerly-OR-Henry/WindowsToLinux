@@ -1,8 +1,8 @@
 package gold.debug.windowstolinux.app.ui.deployment;
 
-import gold.debug.windowstolinux.app.service.source.ReviewedSourcePreparation;
-
 import java.util.Optional;
+
+import gold.debug.windowstolinux.app.service.source.ReviewedSourcePreparation;
 
 /**
  * Narrow current-review view consumed by the optional AI page. / 可选 AI 页面使用的窄当前审阅视图。

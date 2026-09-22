@@ -1,9 +1,9 @@
 package gold.debug.windowstolinux.shared.model.failure;
 
-import gold.debug.windowstolinux.shared.model.message.LocalizedMessage;
-
 import java.util.Map;
 import java.util.Objects;
+
+import gold.debug.windowstolinux.shared.model.message.LocalizedMessage;
 
 /**
  * Immutable occurrence of a structured, secret-free failure. / 单次结构化无秘密失败的不可变描述。
@@ -15,14 +15,9 @@ import java.util.Objects;
  * @param recoveryAction action required to recover from the classified failure / 从已分类失败中恢复所需的动作
  * @param recoveryDisposition verified or unknown result of the selected recovery action / 所选恢复动作的已验证或未知结果
  */
-public record FailureDescriptor(
-        FailureDefinition definition,
-        OperationIdentity operationIdentity,
-        LocalizedMessage userMessage,
-        String diagnostic,
-        FailureRecoveryAction recoveryAction,
-        FailureRecoveryDisposition recoveryDisposition
-) {
+public record FailureDescriptor(FailureDefinition definition, OperationIdentity operationIdentity,
+        LocalizedMessage userMessage, String diagnostic, FailureRecoveryAction recoveryAction,
+        FailureRecoveryDisposition recoveryDisposition) {
     /**
      * Validates one structured failure occurrence. / 校验一次结构化失败。
      *
@@ -55,11 +50,8 @@ public record FailureDescriptor(
      * @param diagnostic bounded non-secret detail for diagnostic reporting / 用于诊断报告的有界非秘密详情
      * @return an unrecovered failure without message arguments / 无消息参数且尚未恢复的失败
      */
-    public static FailureDescriptor create(
-            FailureDefinition definition,
-            OperationIdentity operationIdentity,
-            String diagnostic
-    ) {
+    public static FailureDescriptor create(FailureDefinition definition, OperationIdentity operationIdentity,
+            String diagnostic) {
         return create(definition, operationIdentity, Map.of(), diagnostic);
     }
 
@@ -73,18 +65,15 @@ public record FailureDescriptor(
      * @return an unrecovered failure with named message arguments / 带命名消息参数且尚未恢复的失败
      * @throws NullPointerException if a required input is absent / 必需输入缺失时
      */
-    public static FailureDescriptor create(
-            FailureDefinition definition,
-            OperationIdentity operationIdentity,
-            Map<String, ?> arguments,
-            String diagnostic
-    ) {
+    public static FailureDescriptor create(FailureDefinition definition, OperationIdentity operationIdentity,
+            Map<String, ?> arguments, String diagnostic) {
         Objects.requireNonNull(definition, "definition");
         FailureRecoveryDisposition disposition = definition.recoveryAction() == FailureRecoveryAction.NONE
-                ? FailureRecoveryDisposition.NOT_REQUIRED : FailureRecoveryDisposition.NOT_ATTEMPTED;
+                ? FailureRecoveryDisposition.NOT_REQUIRED
+                : FailureRecoveryDisposition.NOT_ATTEMPTED;
         return new FailureDescriptor(definition, operationIdentity,
-                LocalizedMessage.of(definition.messageKey(), arguments), diagnostic,
-                definition.recoveryAction(), disposition);
+                LocalizedMessage.of(definition.messageKey(), arguments), diagnostic, definition.recoveryAction(),
+                disposition);
     }
 
     /**
@@ -94,10 +83,7 @@ public record FailureDescriptor(
      * @param disposition disposition / 处置方式
      * @return a copy with the verified recovery result / 带有已验证恢复结果的副本
      */
-    public FailureDescriptor withRecovery(
-            FailureRecoveryAction action,
-            FailureRecoveryDisposition disposition
-    ) {
+    public FailureDescriptor withRecovery(FailureRecoveryAction action, FailureRecoveryDisposition disposition) {
         return new FailureDescriptor(definition, operationIdentity, userMessage, diagnostic, action, disposition);
     }
 
@@ -109,8 +95,8 @@ public record FailureDescriptor(
      * @throws NullPointerException if a required input is absent / 必需输入缺失时
      */
     public FailureDescriptor withOperationIdentity(OperationIdentity identity) {
-        return new FailureDescriptor(definition, Objects.requireNonNull(identity, "identity"), userMessage,
-                diagnostic, recoveryAction, recoveryDisposition);
+        return new FailureDescriptor(definition, Objects.requireNonNull(identity, "identity"), userMessage, diagnostic,
+                recoveryAction, recoveryDisposition);
     }
 
     /**

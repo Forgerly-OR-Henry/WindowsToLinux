@@ -1,15 +1,16 @@
 package gold.debug.windowstolinux.app.ui.display;
 
+import java.awt.Color;
+import java.awt.Font;
+
+import javax.swing.UIManager;
+import javax.swing.plaf.ColorUIResource;
+import javax.swing.plaf.InsetsUIResource;
+
 import com.formdev.flatlaf.FlatDarkLaf;
 import com.formdev.flatlaf.FlatLightLaf;
 import com.formdev.flatlaf.ui.FlatEmptyBorder;
 import com.formdev.flatlaf.ui.FlatRoundBorder;
-
-import javax.swing.UIManager;
-import java.awt.Font;
-import java.awt.Color;
-import javax.swing.plaf.ColorUIResource;
-import javax.swing.plaf.InsetsUIResource;
 
 /**
  * Shared FlatLaf setup for the managed-deployment Swing desktop client.
@@ -59,10 +60,10 @@ public final class DesktopThemeService {
         ThemePalette palette = effectiveTheme == ThemeMode.DARK ? ThemePalette.dark() : ThemePalette.light();
         ColorUIResource buttonBackground = new ColorUIResource(palette.secondaryButtonBackground());
         ColorUIResource buttonForeground = new ColorUIResource(palette.secondaryButtonForeground());
-        ColorUIResource disabledButtonBackground = new ColorUIResource(effectiveTheme == ThemeMode.DARK
-                ? new Color(38, 45, 56) : new Color(239, 241, 245));
-        ColorUIResource disabledButtonText = new ColorUIResource(effectiveTheme == ThemeMode.DARK
-                ? new Color(125, 134, 149) : new Color(143, 149, 159));
+        ColorUIResource disabledButtonBackground = new ColorUIResource(
+                effectiveTheme == ThemeMode.DARK ? new Color(38, 45, 56) : new Color(239, 241, 245));
+        ColorUIResource disabledButtonText = new ColorUIResource(
+                effectiveTheme == ThemeMode.DARK ? new Color(125, 134, 149) : new Color(143, 149, 159));
         UIManager.put("Button.background", buttonBackground);
         UIManager.put("Button.foreground", buttonForeground);
         UIManager.put("Button.focusedBackground", buttonBackground);
@@ -76,7 +77,8 @@ public final class DesktopThemeService {
         UIManager.put("Label.foreground", palette.sidebarForeground());
         UIManager.put("Component.borderColor", palette.inputBorder());
         UIManager.put("Component.focusColor", palette.accent());
-        for (String type : java.util.List.of("TextField", "PasswordField", "FormattedTextField", "TextArea", "ComboBox", "Spinner")) {
+        for (String type : java.util.List.of("TextField", "PasswordField", "FormattedTextField", "TextArea", "ComboBox",
+                "Spinner")) {
             UIManager.put(type + ".background", palette.cardBackground());
             UIManager.put(type + ".foreground", palette.sidebarForeground());
         }

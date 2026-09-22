@@ -1,18 +1,18 @@
 package gold.debug.windowstolinux.shared.backup.execution.migration;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import java.util.ArrayList;
+import java.util.List;
+
 import gold.debug.windowstolinux.shared.backup.contract.spi.OfflineMigrationPort;
 import gold.debug.windowstolinux.shared.backup.contract.spi.OfflineMigrationRequest;
 import gold.debug.windowstolinux.shared.backup.contract.validation.BackupException;
 import gold.debug.windowstolinux.shared.backup.contract.validation.BackupFailureType;
 import org.junit.jupiter.api.Test;
-
-import java.util.ArrayList;
-import java.util.List;
-
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class OfflineMigrationCoordinatorTest {
     @Test
@@ -90,18 +90,21 @@ class OfflineMigrationCoordinatorTest {
 
     @Test
     void endpointsMustDifferBeforeTheFinalBackupDigestExists() {
-        assertThrows(IllegalArgumentException.class, () -> new OfflineMigrationRequest(
-                "migration-1", "sample", "same", "same", 100, true));
+        assertThrows(IllegalArgumentException.class,
+                () -> new OfflineMigrationRequest("migration-1", "sample", "same", "same", 100, true));
     }
 
     private OfflineMigrationRequest request(boolean approved) {
         return new OfflineMigrationRequest("migration-1", "sample", "source", "target", 100, approved);
     }
 
-    private enum MigrationFailureType { NONE, INITIAL_SYNC, FINAL_SYNC, STOP_THROWS, SOURCE_RECOVERY }
+    private enum MigrationFailureType {
+        NONE, INITIAL_SYNC, FINAL_SYNC, STOP_THROWS, SOURCE_RECOVERY
+    }
 
     private static final class RecordingPort implements OfflineMigrationPort {
         private final MigrationFailureType failure;
+
         private final List<String> calls = new ArrayList<>();
 
         private RecordingPort(MigrationFailureType failure) {
@@ -138,24 +141,21 @@ class OfflineMigrationCoordinatorTest {
         }
 
         @Override
-        public SyncEvidence finalSync(
-                OfflineMigrationRequest request, SyncEvidence initial, SourceQuiesceEvidence quiesced)
-                throws BackupException {
+        public SyncEvidence finalSync(OfflineMigrationRequest request, SyncEvidence initial,
+                SourceQuiesceEvidence quiesced) throws BackupException {
             calls.add("final");
             if (failure == MigrationFailureType.FINAL_SYNC || failure == MigrationFailureType.SOURCE_RECOVERY) {
-                throw BackupException.create(BackupFailureType.MIGRATION_SYNC_FAILED,
-                        "final synchronization failed");
+                throw BackupException.create(BackupFailureType.MIGRATION_SYNC_FAILED, "final synchronization failed");
             }
             return new SyncEvidence(100, "a".repeat(64), true, true,
                     List.of("stopped-write final snapshot synchronized and verified"));
         }
 
         @Override
-        public TargetCandidateEvidence restoreAndVerifyTarget(
-                OfflineMigrationRequest request, SyncEvidence finalSync) {
+        public TargetCandidateEvidence restoreAndVerifyTarget(OfflineMigrationRequest request, SyncEvidence finalSync) {
             calls.add("target");
-            return new TargetCandidateEvidence(request.applicationId() + "-" + finalSync.contentSha256().substring(0, 16),
-                    true, true, true,
+            return new TargetCandidateEvidence(
+                    request.applicationId() + "-" + finalSync.contentSha256().substring(0, 16), true, true, true,
                     List.of("target components and application are healthy without external traffic changes"));
         }
 
@@ -166,8 +166,7 @@ class OfflineMigrationCoordinatorTest {
         }
 
         @Override
-        public RecoveryEvidence recoverSource(
-                OfflineMigrationRequest request, SourceQuiesceEvidence quiesced) {
+        public RecoveryEvidence recoverSource(OfflineMigrationRequest request, SourceQuiesceEvidence quiesced) {
             calls.add("recover-source");
             boolean verified = failure != MigrationFailureType.SOURCE_RECOVERY;
             return new RecoveryEvidence(verified, verified,

@@ -8,9 +8,7 @@ import time
 
 
 def linked(info):
-    return stat.S_ISLNK(info.st_mode) or bool(
-        getattr(info, "st_file_attributes", 0) & 0x400
-    )
+    return stat.S_ISLNK(info.st_mode) or bool(getattr(info, "st_file_attributes", 0) & 0x400)
 
 
 def identity(info):
@@ -26,9 +24,7 @@ def identity(info):
 
 def change_time(path=None, fd=None):
     if os.name != "nt":
-        return (
-            os.stat(path).st_ctime_ns if path is not None else os.fstat(fd).st_ctime_ns
-        )
+        return os.stat(path).st_ctime_ns if path is not None else os.fstat(fd).st_ctime_ns
     import ctypes
     from ctypes import wintypes as w
     import msvcrt
@@ -69,9 +65,7 @@ def change_time(path=None, fd=None):
         raise ctypes.WinError(ctypes.get_last_error())
     try:
         info = Basic()
-        if not kernel.GetFileInformationByHandleEx(
-            handle, 0, ctypes.byref(info), ctypes.sizeof(info)
-        ):
+        if not kernel.GetFileInformationByHandleEx(handle, 0, ctypes.byref(info), ctypes.sizeof(info)):
             raise ctypes.WinError(ctypes.get_last_error())
         if info.attributes & 0x400:
             raise OSError("文件变为重解析点")
@@ -108,11 +102,7 @@ def gate(point):
 def digest(root, item, max_bytes):
     path = checked_path(root, item["path"])
     before = path.stat(follow_symlinks=False)
-    if (
-        not stat.S_ISREG(before.st_mode)
-        or before.st_size != item["size"]
-        or before.st_mtime_ns != item["modifiedNs"]
-    ):
+    if not stat.S_ISREG(before.st_mode) or before.st_size != item["size"] or before.st_mtime_ns != item["modifiedNs"]:
         raise OSError("扫描后文件变化: " + item["path"])
     if before.st_size > max_bytes:
         raise OSError("文件超过 --max-file-bytes: " + item["path"])
@@ -120,10 +110,7 @@ def digest(root, item, max_bytes):
     flags = os.O_RDONLY | getattr(os, "O_BINARY", 0) | getattr(os, "O_NOFOLLOW", 0)
     with os.fdopen(os.open(path, flags), "rb") as file:
         opened = os.fstat(file.fileno())
-        if (
-            identity(opened) != identity(before)
-            or change_time(fd=file.fileno()) != changed
-        ):
+        if identity(opened) != identity(before) or change_time(fd=file.fileno()) != changed:
             raise OSError("打开期间文件变化: " + item["path"])
         hasher = hashlib.sha256()
         total = 0
@@ -132,14 +119,10 @@ def digest(root, item, max_bytes):
             if total > max_bytes:
                 raise OSError("读取期间文件超出大小限制")
             hasher.update(chunk)
-        if (
-            identity(os.fstat(file.fileno())) != identity(before)
-            or change_time(fd=file.fileno()) != changed
-        ):
+        if identity(os.fstat(file.fileno())) != identity(before) or change_time(fd=file.fileno()) != changed:
             raise OSError("摘要期间文件变化: " + item["path"])
     if (
-        identity(checked_path(root, item["path"]).stat(follow_symlinks=False))
-        != identity(before)
+        identity(checked_path(root, item["path"]).stat(follow_symlinks=False)) != identity(before)
         or change_time(path=path) != changed
     ):
         raise OSError("摘要后文件变化: " + item["path"])

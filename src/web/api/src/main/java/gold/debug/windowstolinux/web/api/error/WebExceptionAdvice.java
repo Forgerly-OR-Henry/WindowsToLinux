@@ -20,7 +20,8 @@ public final class WebExceptionAdvice {
      */
     @ExceptionHandler(Exception.class)
     public ResponseEntity<WebErrorResponse> handle(Exception failure, HttpServletResponse response) {
-        if (response.isCommitted()) return null;
+        if (response.isCommitted())
+            return null;
         WebErrorResponse error = WebErrorResponse.from(failure);
         return ResponseEntity.status(error.status()).body(error);
     }

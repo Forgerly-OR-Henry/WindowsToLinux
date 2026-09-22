@@ -1,9 +1,10 @@
 package gold.debug.windowstolinux.app.ui.component;
 
-import javax.swing.SwingWorker;
 import java.util.Objects;
 import java.util.concurrent.Callable;
 import java.util.function.Consumer;
+
+import javax.swing.SwingWorker;
 
 /**
  * Runs one background operation and returns completion to the Swing event thread. / 运行后台操作并将完成结果返回 Swing 事件线程。
@@ -26,7 +27,9 @@ public final class DesktopTaskExecutor {
      *
      * @return true when prevents appearance rebuilds from detaching callbacks from any active page operation, false otherwise / 防止外观重建使回调脱离任何正在执行的页面操作时为 true，否则为 false
      */
-    public static boolean hasActiveTasks() { return ACTIVE.get() > 0; }
+    public static boolean hasActiveTasks() {
+        return ACTIVE.get() > 0;
+    }
 
     /**
      * Executes a business-neutral Swing task with explicit success and failure callbacks. / 使用显式成功和失败回调执行无业务依赖的 Swing 任务。
@@ -50,7 +53,8 @@ public final class DesktopTaskExecutor {
      * @return a cancellation handle while retaining completion-after-cleanup semantics / 取消句柄，保持资源清理后才完成的语义
      * @throws NullPointerException if a required input is absent / 必需输入缺失时
      */
-    public static <T> DesktopTaskHandle submit(Callable<T> operation, Consumer<T> success, Consumer<Exception> failure) {
+    public static <T> DesktopTaskHandle submit(Callable<T> operation, Consumer<T> success,
+            Consumer<Exception> failure) {
         Objects.requireNonNull(operation, "operation");
         Objects.requireNonNull(success, "success");
         Objects.requireNonNull(failure, "failure");
@@ -66,8 +70,12 @@ public final class DesktopTaskExecutor {
              */
             @Override
             protected T doInBackground() throws Exception {
-                try { handle.begin(); return operation.call(); }
-                finally { handle.end(); }
+                try {
+                    handle.begin();
+                    return operation.call();
+                } finally {
+                    handle.end();
+                }
             }
 
             /**
@@ -77,7 +85,8 @@ public final class DesktopTaskExecutor {
             @Override
             protected void done() {
                 try {
-                    if (handle.cancelled()) throw new java.util.concurrent.CancellationException("Desktop task cancelled");
+                    if (handle.cancelled())
+                        throw new java.util.concurrent.CancellationException("Desktop task cancelled");
                     success.accept(get());
                 } catch (Exception exception) {
                     failure.accept(exception);

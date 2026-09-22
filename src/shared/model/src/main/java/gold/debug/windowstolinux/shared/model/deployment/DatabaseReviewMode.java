@@ -6,20 +6,26 @@ package gold.debug.windowstolinux.shared.model.deployment;
 public enum DatabaseReviewMode {
     /**
      * No scope has been reviewed. / 尚未审阅范围。
-     */ UNREVIEWED,
+     */
+    UNREVIEWED,
     /**
      * Explicitly no database. / 明确无数据库。
-     */ NONE,
+     */
+    NONE,
     /**
      * PostgreSQL binding. / PostgreSQL 绑定。
-     */ POSTGRESQL,
+     */
+    POSTGRESQL,
     /**
      * MySQL binding. / MySQL 绑定。
-     */ MYSQL,
+     */
+    MYSQL,
     /**
      * MariaDB binding. / MariaDB 绑定。
-     */ MARIADB,
+     */
+    MARIADB,
     /**
      * Embedded SQLite file binding. / 嵌入式 SQLite 文件绑定。
-     */ SQLITE
+     */
+    SQLITE
 }

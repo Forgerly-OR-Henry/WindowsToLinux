@@ -1,9 +1,10 @@
 package gold.debug.windowstolinux.web.db.persistence.mapper;
 
+import java.util.Set;
+
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
 import gold.debug.windowstolinux.web.db.entity.*;
 import org.apache.ibatis.annotations.*;
-import java.util.Set;
 
 /**
  * Maps scoped task records to explicit database statements.
@@ -25,9 +26,9 @@ public interface WebTaskMapper extends BaseMapper<WebTaskEntity> {
      * @param finished finished / 已完成
      * @return number of rows updated, zero when the expected source state did not match / 更新行数；预期源状态不匹配时为零
      */
-    int transition(@Param("scope") ResourceScope scope, @Param("id") String id,
-                   @Param("from") Set<String> from, @Param("to") String to, @Param("result") String result,
-                   @Param("error") String error, @Param("now") String now, @Param("finished") String finished);
+    int transition(@Param("scope") ResourceScope scope, @Param("id") String id, @Param("from") Set<String> from,
+            @Param("to") String to, @Param("result") String result, @Param("error") String error,
+            @Param("now") String now, @Param("finished") String finished);
 
     /**
      * Recovers applications.

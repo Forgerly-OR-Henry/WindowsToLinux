@@ -13,14 +13,8 @@ import java.util.Objects;
  * @param estimatedBytes estimated bytes / 估计字节
  * @param stopWindowApproved stop window approved / 停止窗口已批准
  */
-public record OfflineMigrationRequest(
-        String migrationId,
-        String applicationId,
-        String sourceServerId,
-        String targetServerId,
-        long estimatedBytes,
-        boolean stopWindowApproved
-) {
+public record OfflineMigrationRequest(String migrationId, String applicationId, String sourceServerId,
+        String targetServerId, long estimatedBytes, boolean stopWindowApproved) {
     /**
      * Validates distinct endpoints before the stopped-write final archive exists. / 在停写最终归档产生前校验不同端点。
      *
@@ -40,7 +34,8 @@ public record OfflineMigrationRequest(
         if (sourceServerId.equals(targetServerId)) {
             throw new IllegalArgumentException("offline migration requires different source and target servers");
         }
-        if (estimatedBytes < 1) throw new IllegalArgumentException("estimatedBytes must be positive");
+        if (estimatedBytes < 1)
+            throw new IllegalArgumentException("estimatedBytes must be positive");
     }
 
     /**

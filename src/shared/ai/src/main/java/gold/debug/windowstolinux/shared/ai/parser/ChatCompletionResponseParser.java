@@ -26,15 +26,18 @@ public final class ChatCompletionResponseParser {
      */
     public AiStructuralAssessment parse(String responseBody) throws AiAnalysisException {
         if (responseBody == null || responseBody.length() > 512 * 1024) {
-            throw failure(AiAnalysisFailureType.RESPONSE_INVALID, "AI response is null or exceeds the accepted size limit");
+            throw failure(AiAnalysisFailureType.RESPONSE_INVALID,
+                    "AI response is null or exceeds the accepted size limit");
         }
         int field = responseBody.indexOf("\"content\"");
         if (field < 0) {
-            throw failure(AiAnalysisFailureType.RESPONSE_CONTENT_MISSING, "AI response does not contain an explanation field");
+            throw failure(AiAnalysisFailureType.RESPONSE_CONTENT_MISSING,
+                    "AI response does not contain an explanation field");
         }
         int colon = responseBody.indexOf(':', field + 9);
         if (colon < 0) {
-            throw failure(AiAnalysisFailureType.RESPONSE_FORMAT_INVALID, "AI response has an invalid content field format");
+            throw failure(AiAnalysisFailureType.RESPONSE_FORMAT_INVALID,
+                    "AI response has an invalid content field format");
         }
         int quote = colon + 1;
         while (quote < responseBody.length() && Character.isWhitespace(responseBody.charAt(quote))) {
@@ -51,8 +54,8 @@ public final class ChatCompletionResponseParser {
                 if (text.isBlank()) {
                     throw failure(AiAnalysisFailureType.RESPONSE_EMPTY, "AI response contains an empty explanation");
                 }
-                return new AiStructuralAssessment(text.length() <= MAX_RESPONSE_CHARS
-                        ? text : text.substring(0, MAX_RESPONSE_CHARS) + "…");
+                return new AiStructuralAssessment(
+                        text.length() <= MAX_RESPONSE_CHARS ? text : text.substring(0, MAX_RESPONSE_CHARS) + "…");
             }
             if (current != '\\') {
                 value.append(current);

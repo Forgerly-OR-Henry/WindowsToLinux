@@ -1,17 +1,17 @@
 package gold.debug.windowstolinux.app.db.entity;
 
-import gold.debug.windowstolinux.shared.model.managed.ManagedApplication;
-import gold.debug.windowstolinux.shared.model.managed.ManagedApplicationRuntimeConfiguration;
-import gold.debug.windowstolinux.shared.model.project.DeploymentRuntimeSpecification;
-import gold.debug.windowstolinux.shared.model.project.component.ComponentDataPath;
-import gold.debug.windowstolinux.shared.config.resource.ManagedComponentResourceBindings;
-import gold.debug.windowstolinux.shared.model.health.HealthCheck;
-
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
+
+import gold.debug.windowstolinux.shared.config.resource.ManagedComponentResourceBindings;
+import gold.debug.windowstolinux.shared.model.health.HealthCheck;
+import gold.debug.windowstolinux.shared.model.managed.ManagedApplication;
+import gold.debug.windowstolinux.shared.model.managed.ManagedApplicationRuntimeConfiguration;
+import gold.debug.windowstolinux.shared.model.project.DeploymentRuntimeSpecification;
+import gold.debug.windowstolinux.shared.model.project.component.ComponentDataPath;
 
 /**
  * Durable secret-free topology for one successfully deployed application. / 一个已成功部署应用的持久且不含秘密的拓扑。
@@ -21,12 +21,8 @@ import java.util.Set;
  * @param applicationHealthCheck independently reviewed whole-application probe / 独立审阅的整应用探测
  * @param components reviewed components in the application graph / 应用图中的已审阅组件
  */
-public record ManagedApplicationGraph(
-        String applicationId,
-        String healthComponentId,
-        Optional<HealthCheck> applicationHealthCheck,
-        List<Component> components
-) {
+public record ManagedApplicationGraph(String applicationId, String healthComponentId,
+        Optional<HealthCheck> applicationHealthCheck, List<Component> components) {
     /**
      * Validates the exact bounded graph. / 验证精确且有界的图。
      *
@@ -52,8 +48,8 @@ public record ManagedApplicationGraph(
                 throw new IllegalArgumentException("managed graph component and application identities must be unique");
             }
         }
-        if (!ids.contains(healthComponentId) || components.stream()
-                .anyMatch(component -> !ids.containsAll(component.dependencies()))) {
+        if (!ids.contains(healthComponentId)
+                || components.stream().anyMatch(component -> !ids.containsAll(component.dependencies()))) {
             throw new IllegalArgumentException("managed graph health owner and dependencies must belong to the graph");
         }
         String serverId = components.getFirst().application().server().id();
@@ -73,15 +69,11 @@ public record ManagedApplicationGraph(
      * @param reviewedDataPaths reviewed data paths / 已审阅数据路径集合
      * @param reviewedResourceBindings reviewed resource bindings / 已审阅资源绑定集合
      */
-    public record Component(
-            String componentId,
-            ManagedApplication application,
-            ManagedApplicationRuntimeConfiguration runtimeConfiguration,
-            List<String> dependencies,
+    public record Component(String componentId, ManagedApplication application,
+            ManagedApplicationRuntimeConfiguration runtimeConfiguration, List<String> dependencies,
             Optional<DeploymentRuntimeSpecification> reviewedRuntime,
             Optional<List<ComponentDataPath>> reviewedDataPaths,
-            Optional<ManagedComponentResourceBindings> reviewedResourceBindings
-    ) {
+            Optional<ManagedComponentResourceBindings> reviewedResourceBindings) {
         /**
          * Validates the component without accepting build or secret values. / 验证组件且不接受构建值或秘密值。
          *
@@ -102,20 +94,19 @@ public record ManagedApplicationGraph(
             dependencies = List.copyOf(Objects.requireNonNull(dependencies, "dependencies").stream().sorted().toList());
             reviewedRuntime = Objects.requireNonNull(reviewedRuntime, "reviewedRuntime");
             reviewedDataPaths = Objects.requireNonNull(reviewedDataPaths, "reviewedDataPaths")
-                    .map(values -> List.copyOf(values.stream()
-                            .map(value -> Objects.requireNonNull(value, "reviewed data path"))
-                            .sorted(java.util.Comparator.comparing(ComponentDataPath::path)).toList()));
+                    .map(values -> List
+                            .copyOf(values.stream().map(value -> Objects.requireNonNull(value, "reviewed data path"))
+                                    .sorted(java.util.Comparator.comparing(ComponentDataPath::path)).toList()));
             reviewedResourceBindings = Objects.requireNonNull(reviewedResourceBindings, "reviewedResourceBindings");
-            if (dependencies.stream().distinct().count() != dependencies.size()
-                    || dependencies.contains(componentId)) {
+            if (dependencies.stream().distinct().count() != dependencies.size() || dependencies.contains(componentId)) {
                 throw new IllegalArgumentException("managed component dependencies must be unique and non-self");
             }
             if (reviewedRuntime.isPresent()
                     && !reviewedRuntime.orElseThrow().healthCheck().equals(runtimeConfiguration.healthCheck())) {
                 throw new IllegalArgumentException("reviewed runtime health must match the persisted runtime contract");
             }
-            if (reviewedDataPaths.isPresent() && reviewedDataPaths.orElseThrow().stream()
-                    .map(ComponentDataPath::path).distinct().count() != reviewedDataPaths.orElseThrow().size()) {
+            if (reviewedDataPaths.isPresent() && reviewedDataPaths.orElseThrow().stream().map(ComponentDataPath::path)
+                    .distinct().count() != reviewedDataPaths.orElseThrow().size()) {
                 throw new IllegalArgumentException("reviewed component data paths must be unique");
             }
             if (reviewedResourceBindings.isPresent()) {
@@ -139,9 +130,9 @@ public record ManagedApplicationGraph(
          * @param reviewedDataPaths reviewed data paths / 已审阅数据路径集合
          */
         public Component(String componentId, ManagedApplication application,
-                         ManagedApplicationRuntimeConfiguration runtimeConfiguration, List<String> dependencies,
-                         Optional<DeploymentRuntimeSpecification> reviewedRuntime,
-                         Optional<List<ComponentDataPath>> reviewedDataPaths) {
+                ManagedApplicationRuntimeConfiguration runtimeConfiguration, List<String> dependencies,
+                Optional<DeploymentRuntimeSpecification> reviewedRuntime,
+                Optional<List<ComponentDataPath>> reviewedDataPaths) {
             this(componentId, application, runtimeConfiguration, dependencies, reviewedRuntime, reviewedDataPaths,
                     Optional.empty());
         }
@@ -156,8 +147,8 @@ public record ManagedApplicationGraph(
          * @param reviewedRuntime reviewed runtime / 已审阅运行时
          */
         public Component(String componentId, ManagedApplication application,
-                         ManagedApplicationRuntimeConfiguration runtimeConfiguration, List<String> dependencies,
-                         Optional<DeploymentRuntimeSpecification> reviewedRuntime) {
+                ManagedApplicationRuntimeConfiguration runtimeConfiguration, List<String> dependencies,
+                Optional<DeploymentRuntimeSpecification> reviewedRuntime) {
             this(componentId, application, runtimeConfiguration, dependencies, reviewedRuntime, Optional.empty());
         }
 
@@ -170,7 +161,7 @@ public record ManagedApplicationGraph(
          * @param dependencies component identifiers that must precede this component / 必须先于当前组件执行的组件标识
          */
         public Component(String componentId, ManagedApplication application,
-                         ManagedApplicationRuntimeConfiguration runtimeConfiguration, List<String> dependencies) {
+                ManagedApplicationRuntimeConfiguration runtimeConfiguration, List<String> dependencies) {
             this(componentId, application, runtimeConfiguration, dependencies, Optional.empty(), Optional.empty());
         }
     }

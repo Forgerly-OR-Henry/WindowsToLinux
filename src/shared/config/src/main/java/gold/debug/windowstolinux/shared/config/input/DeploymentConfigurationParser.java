@@ -1,13 +1,13 @@
 package gold.debug.windowstolinux.shared.config.input;
 
-import gold.debug.windowstolinux.shared.config.secretref.SecretReference;
-import gold.debug.windowstolinux.shared.config.contract.definition.ConfigurationScope;
-import gold.debug.windowstolinux.shared.config.contract.definition.ConfigurationValue;
-import gold.debug.windowstolinux.shared.config.revision.ConfigurationEntry;
-
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+
+import gold.debug.windowstolinux.shared.config.contract.definition.ConfigurationScope;
+import gold.debug.windowstolinux.shared.config.contract.definition.ConfigurationValue;
+import gold.debug.windowstolinux.shared.config.revision.ConfigurationEntry;
+import gold.debug.windowstolinux.shared.config.secretref.SecretReference;
 
 /**
  * Parses the bounded desktop build/runtime configuration notation. / 解析桌面端有界构建/运行配置记法。
@@ -17,7 +17,8 @@ public final class DeploymentConfigurationParser {
      * Prevents instantiation of this static contract helper.
      * <p>防止实例化当前静态契约辅助类。
      */
-    private DeploymentConfigurationParser() { }
+    private DeploymentConfigurationParser() {
+    }
 
     /**
      * Parses semicolon-separated entries, defaulting unprefixed keys to runtime scope. / 解析分号分隔项，并将无前缀键默认为运行范围。
@@ -70,6 +71,7 @@ public final class DeploymentConfigurationParser {
         }
         return new ConfigurationValue.Text(value);
     }
+
     /**
      * Parses exact public secret references for configuration and deployment. / 为配置和部署解析精确公开秘密引用。
      *
@@ -81,7 +83,8 @@ public final class DeploymentConfigurationParser {
         List<SecretReference> references = new ArrayList<>();
         for (String item : input.split(";")) {
             String value = item.trim();
-            if (value.isEmpty()) continue;
+            if (value.isEmpty())
+                continue;
             int separator = value.lastIndexOf(':');
             if (separator < 1 || separator == value.length() - 1) {
                 throw new IllegalArgumentException("secret reference must contain an identifier and revision");

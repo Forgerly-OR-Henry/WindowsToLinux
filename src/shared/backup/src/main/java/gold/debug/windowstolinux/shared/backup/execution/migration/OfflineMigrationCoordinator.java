@@ -1,5 +1,10 @@
 package gold.debug.windowstolinux.shared.backup.execution.migration;
 
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Objects;
+import java.util.Optional;
+
 import gold.debug.windowstolinux.shared.backup.contract.spi.OfflineMigrationPort;
 import gold.debug.windowstolinux.shared.backup.contract.spi.OfflineMigrationRequest;
 import gold.debug.windowstolinux.shared.backup.contract.validation.BackupException;
@@ -8,11 +13,6 @@ import gold.debug.windowstolinux.shared.model.failure.FailureDescriptor;
 import gold.debug.windowstolinux.shared.model.failure.FailureRecoveryAction;
 import gold.debug.windowstolinux.shared.model.failure.FailureRecoveryDisposition;
 import gold.debug.windowstolinux.shared.model.failure.OperationIdentity;
-
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Objects;
-import java.util.Optional;
 
 /**
  * Prepares an offline migration through final verification and stops before manual traffic switching. / 将离线迁移准备到最终验证并在人工切流前停止。
@@ -23,6 +23,7 @@ public final class OfflineMigrationCoordinator {
      * <p>目标SPACEMULTIPLIER。
      */
     private static final long TARGET_SPACE_MULTIPLIER = 2;
+
     /**
      * Network port number in the reviewed endpoint.
      * <p>已审阅端点中的网络端口号。
@@ -100,17 +101,17 @@ public final class OfflineMigrationCoordinator {
             events.add(success(state, candidate.evidence()));
             events.add(new OfflineMigrationEvent(OfflineMigrationState.MANUAL_TRAFFIC_SWITCH_REQUIRED, true,
                     "target is verified; external traffic must be switched manually and the source remains retained"));
-            return new OfflineMigrationResult(operation, OfflineMigrationStatus.READY_FOR_MANUAL_TRAFFIC_SWITCH,
-                    events, true, true, false, true, Optional.of(candidate.candidateId()),
-                    Optional.of(stopped.recoveryToken()), Optional.empty());
+            return new OfflineMigrationResult(operation, OfflineMigrationStatus.READY_FOR_MANUAL_TRAFFIC_SWITCH, events,
+                    true, true, false, true, Optional.of(candidate.candidateId()), Optional.of(stopped.recoveryToken()),
+                    Optional.empty());
         } catch (Exception exception) {
             FailureDescriptor original = failure(exception).withOperationIdentity(operation);
             if (events.isEmpty() || events.get(events.size() - 1).state() != state
                     || events.get(events.size() - 1).succeeded()) {
                 events.add(new OfflineMigrationEvent(state, false, original.diagnostic()));
             }
-            return recover(request, operation, events, quiesced, targetMutationAttempted,
-                    sourceMutationAttempted, original);
+            return recover(request, operation, events, quiesced, targetMutationAttempted, sourceMutationAttempted,
+                    original);
         }
     }
 
@@ -127,31 +128,23 @@ public final class OfflineMigrationCoordinator {
      * @param original original / 原始
      * @return constructed or resolved offline migration result / 构造或解析得到的离线迁移结果
      */
-    private OfflineMigrationResult recover(
-            OfflineMigrationRequest request,
-            OperationIdentity operation,
-            List<OfflineMigrationEvent> events,
-            Optional<OfflineMigrationPort.SourceQuiesceEvidence> quiesced,
-            boolean targetMutationAttempted,
-            boolean sourceMutationAttempted,
-            FailureDescriptor original
-    ) {
+    private OfflineMigrationResult recover(OfflineMigrationRequest request, OperationIdentity operation,
+            List<OfflineMigrationEvent> events, Optional<OfflineMigrationPort.SourceQuiesceEvidence> quiesced,
+            boolean targetMutationAttempted, boolean sourceMutationAttempted, FailureDescriptor original) {
         List<Throwable> failures = new ArrayList<>();
         if (targetMutationAttempted) {
             try {
                 OfflineMigrationPort.RecoveryEvidence target = port.discardTargetCandidate(request);
                 if (!target.completed() || !target.verified()) {
                     failures.add(new IllegalStateException("target candidate cleanup is unverified"));
-                    events.add(new OfflineMigrationEvent(
-                            OfflineMigrationState.TARGET_CANDIDATE_RECOVERY_VERIFIED, false,
-                            "target candidate cleanup could not be verified"));
+                    events.add(new OfflineMigrationEvent(OfflineMigrationState.TARGET_CANDIDATE_RECOVERY_VERIFIED,
+                            false, "target candidate cleanup could not be verified"));
                 } else {
                     events.add(success(OfflineMigrationState.TARGET_CANDIDATE_RECOVERY_VERIFIED, target.evidence()));
                 }
             } catch (Exception exception) {
                 failures.add(exception);
-                events.add(new OfflineMigrationEvent(
-                        OfflineMigrationState.TARGET_CANDIDATE_RECOVERY_VERIFIED, false,
+                events.add(new OfflineMigrationEvent(OfflineMigrationState.TARGET_CANDIDATE_RECOVERY_VERIFIED, false,
                         "target candidate cleanup failed before absence could be verified"));
             }
         }
@@ -178,22 +171,25 @@ public final class OfflineMigrationCoordinator {
             }
         }
         if (failures.isEmpty()) {
-            FailureRecoveryAction action = sourceMutationAttempted ? FailureRecoveryAction.ROLLBACK
+            FailureRecoveryAction action = sourceMutationAttempted
+                    ? FailureRecoveryAction.ROLLBACK
                     : targetMutationAttempted ? FailureRecoveryAction.CLEANUP : FailureRecoveryAction.NONE;
             FailureRecoveryDisposition disposition = targetMutationAttempted || sourceMutationAttempted
-                    ? FailureRecoveryDisposition.SUCCEEDED : FailureRecoveryDisposition.NOT_REQUIRED;
+                    ? FailureRecoveryDisposition.SUCCEEDED
+                    : FailureRecoveryDisposition.NOT_REQUIRED;
             FailureDescriptor safe = original.withRecovery(action, disposition);
             OfflineMigrationStatus status = sourceMutationAttempted
                     ? OfflineMigrationStatus.FAILED_SOURCE_RECOVERED
-                    : targetMutationAttempted ? OfflineMigrationStatus.FAILED_TARGET_CLEANED
-                    : OfflineMigrationStatus.PRECONDITION_REJECTED;
+                    : targetMutationAttempted
+                            ? OfflineMigrationStatus.FAILED_TARGET_CLEANED
+                            : OfflineMigrationStatus.PRECONDITION_REJECTED;
             return failed(operation, status, events, safe);
         }
         BackupException recovery = BackupException.create(BackupFailureType.MIGRATION_RECOVERY_FAILED,
                 "target cleanup or source recovery could not be verified");
         failures.forEach(recovery::addSuppressed);
-        FailureDescriptor failed = recovery.failure().withOperationIdentity(operation).withRecovery(
-                FailureRecoveryAction.REQUIRE_MANUAL_RECOVERY, FailureRecoveryDisposition.FAILED);
+        FailureDescriptor failed = recovery.failure().withOperationIdentity(operation)
+                .withRecovery(FailureRecoveryAction.REQUIRE_MANUAL_RECOVERY, FailureRecoveryDisposition.FAILED);
         return failed(operation, OfflineMigrationStatus.MANUAL_RECOVERY_REQUIRED, events, failed);
     }
 
@@ -207,14 +203,10 @@ public final class OfflineMigrationCoordinator {
      * @param failure structured failure occurrence retained for safe reporting / 保留用于安全报告的结构化失败实例
      * @return the failure outcome while retaining available classified evidence / 失败结果并保留可用的分类证据
      */
-    private static OfflineMigrationResult failed(
-            OperationIdentity operation,
-            OfflineMigrationStatus status,
-            List<OfflineMigrationEvent> events,
-            FailureDescriptor failure
-    ) {
-        return new OfflineMigrationResult(operation, status, events, false, false, false, true,
-                Optional.empty(), Optional.empty(), Optional.of(failure));
+    private static OfflineMigrationResult failed(OperationIdentity operation, OfflineMigrationStatus status,
+            List<OfflineMigrationEvent> events, FailureDescriptor failure) {
+        return new OfflineMigrationResult(operation, status, events, false, false, false, true, Optional.empty(),
+                Optional.empty(), Optional.of(failure));
     }
 
     /**
@@ -227,12 +219,8 @@ public final class OfflineMigrationCoordinator {
      * @param diagnostic bounded non-secret detail for diagnostic reporting / 用于诊断报告的有界非秘密详情
      * @throws BackupException if backup validation or the controlled backup operation fails / 备份校验或受控备份操作失败时
      */
-    private static void requireSync(
-            OfflineMigrationPort.SyncEvidence sync,
-            OfflineMigrationRequest request,
-            boolean writesStopped,
-            String diagnostic
-    ) throws BackupException {
+    private static void requireSync(OfflineMigrationPort.SyncEvidence sync, OfflineMigrationRequest request,
+            boolean writesStopped, String diagnostic) throws BackupException {
         if (!sync.digestVerified() || sync.sourceWritesStopped() != writesStopped) {
             throw BackupException.create(BackupFailureType.MIGRATION_SYNC_FAILED, diagnostic);
         }
@@ -246,9 +234,11 @@ public final class OfflineMigrationCoordinator {
      * @return or preserves the module-owned failure for the supplied cause and diagnostic evidence / 为所提供原因及诊断证据创建或保留模块自有失败
      */
     private static FailureDescriptor failure(Exception exception) {
-        if (exception instanceof BackupException backup) return backup.failure();
+        if (exception instanceof BackupException backup)
+            return backup.failure();
         BackupFailureType type = exception instanceof ArithmeticException
-                ? BackupFailureType.MIGRATION_PREFLIGHT_FAILED : BackupFailureType.MIGRATION_SYNC_FAILED;
+                ? BackupFailureType.MIGRATION_PREFLIGHT_FAILED
+                : BackupFailureType.MIGRATION_SYNC_FAILED;
         return BackupException.create(type, "unexpected offline migration failure", exception).failure();
     }
 
@@ -262,7 +252,8 @@ public final class OfflineMigrationCoordinator {
      */
     private static OfflineMigrationEvent success(OfflineMigrationState state, List<String> evidence) {
         String joined = String.join("; ", evidence);
-        if (joined.length() > 1024) joined = joined.substring(0, 1024);
+        if (joined.length() > 1024)
+            joined = joined.substring(0, 1024);
         return new OfflineMigrationEvent(state, true, joined);
     }
 }

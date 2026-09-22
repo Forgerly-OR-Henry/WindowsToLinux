@@ -17,21 +17,25 @@ final class LimitedHttpBodySubscriber implements HttpResponse.BodySubscriber<byt
      * <p>最大字节。
      */
     static final int MAX_BYTES = 512 * 1024;
+
     /**
      * Delegate.
      * <p>被委派对象。
      */
     private final HttpResponse.BodySubscriber<byte[]> delegate = HttpResponse.BodySubscribers.ofByteArray();
+
     /**
      * Body.
      * <p>正文。
      */
     private final CompletableFuture<byte[]> body = new CompletableFuture<>();
+
     /**
      * Subscription.
      * <p>订阅。
      */
     private Flow.Subscription subscription;
+
     /**
      * Bytes received so far against the output bound.
      * <p>当前已计入输出边界的接收字节数。
@@ -44,7 +48,10 @@ final class LimitedHttpBodySubscriber implements HttpResponse.BodySubscriber<byt
      */
     LimitedHttpBodySubscriber() {
         delegate.getBody().whenComplete((bytes, failure) -> {
-            if (failure == null) body.complete(bytes); else body.completeExceptionally(failure);
+            if (failure == null)
+                body.complete(bytes);
+            else
+                body.completeExceptionally(failure);
         });
     }
 
@@ -53,14 +60,18 @@ final class LimitedHttpBodySubscriber implements HttpResponse.BodySubscriber<byt
      *
      * @return the bounded completion / 有界正文完成状态
      */
-    @Override public CompletionStage<byte[]> getBody() { return body; }
+    @Override
+    public CompletionStage<byte[]> getBody() {
+        return body;
+    }
 
     /**
      * Connects upstream cancellation to the delegate. / 将上游取消连接到接收器。
      *
      * @param value candidate content accepted or rejected by this contract / 由当前契约接收或拒绝的候选内容
      */
-    @Override public void onSubscribe(Flow.Subscription value) {
+    @Override
+    public void onSubscribe(Flow.Subscription value) {
         subscription = value;
         delegate.onSubscribe(value);
     }
@@ -70,8 +81,10 @@ final class LimitedHttpBodySubscriber implements HttpResponse.BodySubscriber<byt
      *
      * @param buffers buffers / 缓冲区集合
      */
-    @Override public void onNext(List<ByteBuffer> buffers) {
-        if (body.isDone()) return;
+    @Override
+    public void onNext(List<ByteBuffer> buffers) {
+        if (body.isDone())
+            return;
         for (ByteBuffer buffer : buffers) {
             if (buffer.remaining() > MAX_BYTES - received) {
                 subscription.cancel();
@@ -88,10 +101,16 @@ final class LimitedHttpBodySubscriber implements HttpResponse.BodySubscriber<byt
      *
      * @param failure structured failure occurrence retained for safe reporting / 保留用于安全报告的结构化失败实例
      */
-    @Override public void onError(Throwable failure) { delegate.onError(failure); }
+    @Override
+    public void onError(Throwable failure) {
+        delegate.onError(failure);
+    }
 
     /**
      * Completes a response within the limit. / 完成未超限的响应。
      */
-    @Override public void onComplete() { delegate.onComplete(); }
+    @Override
+    public void onComplete() {
+        delegate.onComplete();
+    }
 }

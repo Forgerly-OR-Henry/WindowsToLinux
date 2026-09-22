@@ -65,7 +65,9 @@ public enum DeploymentProjectType {
     /**
      * Static language and metadata recognition with no deployment path. / 不含部署路径的静态语言与元数据识别。
      */
-    RECOGNITION_PREVIEW(false);
+    RECOGNITION_PREVIEW(false),
+    /** Language-independent managed artifact; excluded from static adapter discovery. / 与语言无关的受管制品，不参与静态适配器发现。 */
+    MANAGED_PROCESS(false);
 
     /**
      * Deployable.

@@ -1,12 +1,13 @@
 package gold.debug.windowstolinux.web.main.config;
 
+import java.nio.file.Path;
+import java.time.Duration;
+import java.util.Objects;
+
 import gold.debug.windowstolinux.web.api.config.WebHttpPolicy;
 import gold.debug.windowstolinux.web.file.quota.UploadQuota;
 import gold.debug.windowstolinux.web.task.model.WebTaskPolicy;
 import org.springframework.boot.context.properties.ConfigurationProperties;
-import java.nio.file.Path;
-import java.time.Duration;
-import java.util.Objects;
 
 /**
  * Validates YAML-supplied runtime, storage, database and secret configuration.
@@ -23,8 +24,8 @@ import java.util.Objects;
  * @param maintenance maintenance / 维护
  */
 @ConfigurationProperties(prefix = "w2l", ignoreUnknownFields = false)
-public record WebRuntimeProperties(String mode, Storage storage, Secrets secrets, Database database,
-        WebHttpPolicy http, WebTaskPolicy tasks, UploadQuota files, UploadQuota backups, Maintenance maintenance) {
+public record WebRuntimeProperties(String mode, Storage storage, Secrets secrets, Database database, WebHttpPolicy http,
+        WebTaskPolicy tasks, UploadQuota files, UploadQuota backups, Maintenance maintenance) {
     /**
      * Validates and binds the inputs required by web runtime properties.
      * <p>校验并绑定Web运行时属性集合所需输入。
@@ -42,9 +43,16 @@ public record WebRuntimeProperties(String mode, Storage storage, Secrets secrets
      * @throws NullPointerException if a required input is absent / 必需输入缺失时
      */
     public WebRuntimeProperties {
-        if (!"internal-test".equals(mode)) throw new IllegalArgumentException("w2l.mode must be internal-test in Phase 5");
-        Objects.requireNonNull(storage); Objects.requireNonNull(secrets); Objects.requireNonNull(database);
-        Objects.requireNonNull(maintenance); Objects.requireNonNull(http); Objects.requireNonNull(tasks); Objects.requireNonNull(files); Objects.requireNonNull(backups);
+        if (!"internal-test".equals(mode))
+            throw new IllegalArgumentException("w2l.mode must be internal-test in Phase 5");
+        Objects.requireNonNull(storage);
+        Objects.requireNonNull(secrets);
+        Objects.requireNonNull(database);
+        Objects.requireNonNull(maintenance);
+        Objects.requireNonNull(http);
+        Objects.requireNonNull(tasks);
+        Objects.requireNonNull(files);
+        Objects.requireNonNull(backups);
     }
     /**
      * Holds the validated switch controlling Web maintenance access.
@@ -84,8 +92,12 @@ public record WebRuntimeProperties(String mode, Storage storage, Secrets secrets
          * @param minimumFreeBytes minimum free disk space in bytes / 最小磁盘剩余空间，单位为字节
          * @throws IllegalArgumentException if an input violates the constraints checked by this contract / 输入违反当前契约检查的约束时
          */
-        public Storage { if (root == null || root.isBlank() || minimumFreeBytes < 0) throw new IllegalArgumentException("Invalid w2l.storage"); }
+        public Storage {
+            if (root == null || root.isBlank() || minimumFreeBytes < 0)
+                throw new IllegalArgumentException("Invalid w2l.storage");
+        }
     }
+
     /**
      * Holds the configured location for the Web master-key material.
      * <p>持有 Web 主密钥素材的已配置位置。
@@ -100,8 +112,12 @@ public record WebRuntimeProperties(String mode, Storage storage, Secrets secrets
          * @param directory directory within the caller's controlled storage boundary / 调用方受控存储边界内的目录
          * @throws IllegalArgumentException if an input violates the constraints checked by this contract / 输入违反当前契约检查的约束时
          */
-        public Secrets { if (directory == null || !directory.isAbsolute()) throw new IllegalArgumentException("w2l.secrets.directory must be absolute"); }
+        public Secrets {
+            if (directory == null || !directory.isAbsolute())
+                throw new IllegalArgumentException("w2l.secrets.directory must be absolute");
+        }
     }
+
     /**
      * Holds the configured Web database and connection settings.
      * <p>持有已配置的 Web 数据库及连接设置。

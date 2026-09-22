@@ -1,12 +1,12 @@
 package gold.debug.windowstolinux.shared.linux.sshd.execution.transfer;
 
-import gold.debug.windowstolinux.shared.linux.error.LinuxOperationException;
-import gold.debug.windowstolinux.shared.linux.error.LinuxOperationFailureType;
-import gold.debug.windowstolinux.shared.model.archive.SourceArchiveDescriptor;
-
 import java.io.IOException;
 import java.nio.file.Files;
 import java.util.Objects;
+
+import gold.debug.windowstolinux.shared.linux.error.LinuxOperationException;
+import gold.debug.windowstolinux.shared.linux.error.LinuxOperationFailureType;
+import gold.debug.windowstolinux.shared.model.archive.SourceArchiveDescriptor;
 
 /**
  * Checks local archive identity, size and readability before remote transfer.

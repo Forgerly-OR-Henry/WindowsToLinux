@@ -1,4 +1,5 @@
 package gold.debug.samples.tasks;
+
 import static gold.debug.samples.tasks.Models.*;
 
 import java.nio.file.*;
@@ -12,6 +13,7 @@ final class Database {
         Files.createDirectories(dir);
         url = "jdbc:sqlite:" + dir.resolve("tasks.db");
     }
+
     Connection open() throws SQLException {
         var c = DriverManager.getConnection(url);
         try {
@@ -23,18 +25,21 @@ final class Database {
             throw e;
         }
     }
+
     static PreparedStatement command(Connection c, String sql, Object... values) throws SQLException {
         var s = c.prepareStatement(sql);
         for (int i = 0; i < values.length; i++)
             s.setObject(i + 1, values[i]);
         return s;
     }
+
     static int exec(Connection c, String sql, Object... values) throws SQLException {
         try (var s = command(c, sql, values)) {
             s.execute();
             return s.getUpdateCount();
         }
     }
+
     static List<Map<String, Object>> rows(Connection c, String sql, Object... values) throws SQLException {
         try (var s = command(c, sql, values); var r = s.executeQuery()) {
             var out = new ArrayList<Map<String, Object>>();
@@ -48,14 +53,16 @@ final class Database {
             return out;
         }
     }
+
     static Map<String, Object> one(Connection c, String sql, Object... values) throws SQLException {
         var list = rows(c, sql, values);
         if (list.isEmpty())
             throw new BusinessError(404, "记录不存在");
         return list.getFirst();
     }
+
     static long scalar(Connection c, String sql, Object... values) throws SQLException {
-        return ((Number)one(c, sql, values).values().iterator().next()).longValue();
+        return ((Number) one(c, sql, values).values().iterator().next()).longValue();
     }
     interface Work<T> {
         T run(Connection c) throws Exception;
@@ -73,11 +80,11 @@ final class Database {
             }
         }
     }
+
     static void fault(String point) throws Exception {
         if (!point.equals(System.getenv("SAMPLE_FAULT_POINT")))
             return;
-        Path dir =
-            Path.of(Objects.requireNonNull(System.getenv("SAMPLE_FAULT_DIR"), "SAMPLE_FAULT_DIR required"));
+        Path dir = Path.of(Objects.requireNonNull(System.getenv("SAMPLE_FAULT_DIR"), "SAMPLE_FAULT_DIR required"));
         Files.createDirectories(dir);
         Files.writeString(dir.resolve(point + ".ready"), Long.toString(ProcessHandle.current().pid()));
         long deadline = System.nanoTime() + 60_000_000_000L;

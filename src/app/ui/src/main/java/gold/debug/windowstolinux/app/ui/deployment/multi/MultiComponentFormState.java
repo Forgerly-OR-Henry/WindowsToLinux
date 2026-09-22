@@ -31,33 +31,12 @@ import java.util.Objects;
  * @param kotlinJvmTarget kotlin jvm target / kotlinJvm目标
  * @param applicationDeclaration application declaration / 应用声明
  */
-public record MultiComponentFormState(
-        String componentId,
-        String relativeRoot,
-        String projectType,
-        String runtimePrimary,
-        String runtimeSecondary,
-        String runtimeVersion,
-        String runtimeArguments,
-        String runtimeAdditional,
-        String healthMode,
-        String healthEndpoint,
-        String expectedStatus,
-        String timeoutSeconds,
-        String stabilitySeconds,
-        String accessUrl,
-        String artifacts,
-        String ports,
-        String dependencies,
-        String configuration,
-        String databaseMode,
-        String databaseDetails,
-        String secrets,
-        boolean required,
-        boolean rootBuild,
-        String kotlinJvmTarget,
-        String applicationDeclaration
-) {
+public record MultiComponentFormState(String componentId, String relativeRoot, String projectType,
+        String runtimePrimary, String runtimeSecondary, String runtimeVersion, String runtimeArguments,
+        String runtimeAdditional, String healthMode, String healthEndpoint, String expectedStatus,
+        String timeoutSeconds, String stabilitySeconds, String accessUrl, String artifacts, String ports,
+        String dependencies, String configuration, String databaseMode, String databaseDetails, String secrets,
+        boolean required, boolean rootBuild, String kotlinJvmTarget, String applicationDeclaration) {
     /**
      * Initializes multi component form state through its shared constructor contract.
      * <p>通过共享构造契约初始化多组件表单状态。
@@ -87,32 +66,16 @@ public record MultiComponentFormState(
      * @param rootBuild root build / 根目录构建
      * @param kotlinJvmTarget kotlin jvm target / kotlinJvm目标
      */
-    public MultiComponentFormState(
-        String componentId,
-        String relativeRoot,
-        String projectType,
-        String runtimePrimary,
-        String runtimeSecondary,
-        String runtimeVersion,
-        String runtimeArguments,
-        String runtimeAdditional,
-        String healthMode,
-        String healthEndpoint,
-        String expectedStatus,
-        String timeoutSeconds,
-        String stabilitySeconds,
-        String accessUrl,
-        String artifacts,
-        String ports,
-        String dependencies,
-        String configuration,
-        String databaseMode,
-        String databaseDetails,
-        String secrets,
-        boolean required,
-        boolean rootBuild,
-        String kotlinJvmTarget) {
-        this(componentId, relativeRoot, projectType, runtimePrimary, runtimeSecondary, runtimeVersion, runtimeArguments, runtimeAdditional, healthMode, healthEndpoint, expectedStatus, timeoutSeconds, stabilitySeconds, accessUrl, artifacts, ports, dependencies, configuration, databaseMode, databaseDetails, secrets, required, rootBuild, kotlinJvmTarget, "");
+    public MultiComponentFormState(String componentId, String relativeRoot, String projectType, String runtimePrimary,
+            String runtimeSecondary, String runtimeVersion, String runtimeArguments, String runtimeAdditional,
+            String healthMode, String healthEndpoint, String expectedStatus, String timeoutSeconds,
+            String stabilitySeconds, String accessUrl, String artifacts, String ports, String dependencies,
+            String configuration, String databaseMode, String databaseDetails, String secrets, boolean required,
+            boolean rootBuild, String kotlinJvmTarget) {
+        this(componentId, relativeRoot, projectType, runtimePrimary, runtimeSecondary, runtimeVersion, runtimeArguments,
+                runtimeAdditional, healthMode, healthEndpoint, expectedStatus, timeoutSeconds, stabilitySeconds,
+                accessUrl, artifacts, ports, dependencies, configuration, databaseMode, databaseDetails, secrets,
+                required, rootBuild, kotlinJvmTarget, "");
     }
 
     /**
@@ -143,30 +106,16 @@ public record MultiComponentFormState(
      * @param required whether the whole application requires this component / 整体应用是否需要此组件
      * @param rootBuild root build / 根目录构建
      */
-    public MultiComponentFormState(String componentId,
-        String relativeRoot,
-        String projectType,
-        String runtimePrimary,
-        String runtimeSecondary,
-        String runtimeVersion,
-        String runtimeArguments,
-        String runtimeAdditional,
-        String healthMode,
-        String healthEndpoint,
-        String expectedStatus,
-        String timeoutSeconds,
-        String stabilitySeconds,
-        String accessUrl,
-        String artifacts,
-        String ports,
-        String dependencies,
-        String configuration,
-        String databaseMode,
-        String databaseDetails,
-        String secrets,
-        boolean required,
-        boolean rootBuild) {
-        this(componentId, relativeRoot, projectType, runtimePrimary, runtimeSecondary, runtimeVersion, runtimeArguments, runtimeAdditional, healthMode, healthEndpoint, expectedStatus, timeoutSeconds, stabilitySeconds, accessUrl, artifacts, ports, dependencies, configuration, databaseMode, databaseDetails, secrets, required, rootBuild, "");
+    public MultiComponentFormState(String componentId, String relativeRoot, String projectType, String runtimePrimary,
+            String runtimeSecondary, String runtimeVersion, String runtimeArguments, String runtimeAdditional,
+            String healthMode, String healthEndpoint, String expectedStatus, String timeoutSeconds,
+            String stabilitySeconds, String accessUrl, String artifacts, String ports, String dependencies,
+            String configuration, String databaseMode, String databaseDetails, String secrets, boolean required,
+            boolean rootBuild) {
+        this(componentId, relativeRoot, projectType, runtimePrimary, runtimeSecondary, runtimeVersion, runtimeArguments,
+                runtimeAdditional, healthMode, healthEndpoint, expectedStatus, timeoutSeconds, stabilitySeconds,
+                accessUrl, artifacts, ports, dependencies, configuration, databaseMode, databaseDetails, secrets,
+                required, rootBuild, "");
     }
 
     /**

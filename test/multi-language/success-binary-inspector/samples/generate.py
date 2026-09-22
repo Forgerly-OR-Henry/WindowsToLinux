@@ -41,9 +41,7 @@ def write(path, count, records, block_records=1024):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument(
-        "--output-dir", type=Path, default=Path(__file__).resolve().parent
-    )
+    parser.add_argument("--output-dir", type=Path, default=Path(__file__).resolve().parent)
     parser.add_argument("--records", type=int)
     args = parser.parse_args()
     args.output_dir.mkdir(parents=True, exist_ok=True)
@@ -54,11 +52,7 @@ if __name__ == "__main__":
             args.output_dir / "large.bin",
             args.records,
             (
-                (
-                    event(i, f"事件 {i}", i % 4)
-                    if i % 4 == 0
-                    else measurement(i, i % 201 - 100, i % 4)
-                )
+                (event(i, f"事件 {i}", i % 4) if i % 4 == 0 else measurement(i, i % 201 - 100, i % 4))
                 for i in range(args.records)
             ),
         )

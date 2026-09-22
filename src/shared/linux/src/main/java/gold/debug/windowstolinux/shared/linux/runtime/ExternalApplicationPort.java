@@ -15,6 +15,7 @@ public interface ExternalApplicationPort {
      * @throws LinuxOperationException if the authenticated remote operation fails or its evidence is rejected / 已认证远端操作失败或其证据被拒绝时
      */
     ExternalApplicationScan scan() throws LinuxOperationException;
+
     /**
      * Executes discovered application.
      * <p>执行已发现应用。
@@ -24,5 +25,6 @@ public interface ExternalApplicationPort {
      * @return constructed or resolved discovered application / 构造或解析得到的已发现应用
      * @throws LinuxOperationException if the authenticated remote operation fails or its evidence is rejected / 已认证远端操作失败或其证据被拒绝时
      */
-    DiscoveredApplication execute(ExternalApplicationTarget target, LifecycleAction action) throws LinuxOperationException;
+    DiscoveredApplication execute(ExternalApplicationTarget target, LifecycleAction action)
+            throws LinuxOperationException;
 }

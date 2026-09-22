@@ -1,11 +1,11 @@
 package gold.debug.windowstolinux.app.windows.uninstall;
 
-import gold.debug.windowstolinux.shared.model.failure.FailureDescriptor;
-import gold.debug.windowstolinux.shared.model.failure.OperationIdentity;
-
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
+
+import gold.debug.windowstolinux.shared.model.failure.FailureDescriptor;
+import gold.debug.windowstolinux.shared.model.failure.OperationIdentity;
 
 /**
  * Result of validating the decision and stopping main-process-owned tasks. / 校验决定并停止主进程任务的结果。
@@ -16,13 +16,9 @@ import java.util.Optional;
  * @param handoff handoff / 交接
  * @param failure structured failure occurrence retained for safe reporting / 保留用于安全报告的结构化失败实例
  */
-public record DesktopUninstallPreparationResult(
-        OperationIdentity operationIdentity,
-        DesktopUninstallPreparationStatus status,
-        List<DesktopUninstallEvent> events,
-        Optional<DesktopUninstallHandoff> handoff,
-        Optional<FailureDescriptor> failure
-) {
+public record DesktopUninstallPreparationResult(OperationIdentity operationIdentity,
+        DesktopUninstallPreparationStatus status, List<DesktopUninstallEvent> events,
+        Optional<DesktopUninstallHandoff> handoff, Optional<FailureDescriptor> failure) {
     /**
      * Validates one exact preparation outcome. / 校验一个精确准备结果。
      *
@@ -40,7 +36,8 @@ public record DesktopUninstallPreparationResult(
         events = List.copyOf(Objects.requireNonNull(events, "events"));
         handoff = Objects.requireNonNull(handoff, "handoff");
         failure = Objects.requireNonNull(failure, "failure");
-        if (events.isEmpty()) throw new IllegalArgumentException("uninstall preparation requires events");
+        if (events.isEmpty())
+            throw new IllegalArgumentException("uninstall preparation requires events");
         if (status == DesktopUninstallPreparationStatus.READY_FOR_HANDOFF) {
             if (handoff.isEmpty() || failure.isPresent()
                     || !handoff.orElseThrow().operationIdentity().equals(operationIdentity)) {

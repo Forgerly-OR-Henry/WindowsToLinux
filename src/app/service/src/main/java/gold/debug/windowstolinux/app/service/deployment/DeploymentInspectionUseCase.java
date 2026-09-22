@@ -1,14 +1,14 @@
 package gold.debug.windowstolinux.app.service.deployment;
 
-import gold.debug.windowstolinux.shared.analyze.core.DeploymentAnalysisCoordinator;
-import gold.debug.windowstolinux.shared.deploy.contract.ReviewedDeploymentPlan;
-import gold.debug.windowstolinux.shared.deploy.plan.ReviewedDeploymentPlanner;
-import gold.debug.windowstolinux.shared.deploy.contract.ReviewedDeploymentRequest;
-import gold.debug.windowstolinux.shared.model.assessment.DeploymentProjectAssessment;
-import gold.debug.windowstolinux.shared.model.project.DeploymentProjectType;
-
 import java.nio.file.Path;
 import java.util.Objects;
+
+import gold.debug.windowstolinux.shared.model.assessment.DeploymentProjectAssessment;
+import gold.debug.windowstolinux.shared.model.project.DeploymentProjectType;
+import gold.debug.windowstolinux.shared.standard.analyze.core.DeploymentAnalysisCoordinator;
+import gold.debug.windowstolinux.shared.standard.deploy.contract.ReviewedDeploymentPlan;
+import gold.debug.windowstolinux.shared.standard.deploy.contract.ReviewedDeploymentRequest;
+import gold.debug.windowstolinux.shared.standard.deploy.plan.ReviewedDeploymentPlanner;
 
 /**
  * Provides bounded deterministic source analysis and deployment plan rendering.
@@ -21,6 +21,7 @@ public final class DeploymentInspectionUseCase {
      * <p>处理分析器的部署分析协调器协作对象。
      */
     private final DeploymentAnalysisCoordinator analyzer;
+
     /**
      * Bound reviewed deployment planner collaborator for planner.
      * <p>处理规划器的已审阅部署规划器协作对象。

@@ -15,25 +15,18 @@ import java.util.Objects;
  * @param nonce nonce / 随机数
  * @param ciphertext ciphertext / 密文
  */
-public record BackupSecretEnvelope(
-        String format,
-        String keyDerivation,
-        int memoryKiB,
-        int iterations,
-        int parallelism,
-        byte[] salt,
-        String cipher,
-        byte[] nonce,
-        byte[] ciphertext
-) {
+public record BackupSecretEnvelope(String format, String keyDerivation, int memoryKiB, int iterations, int parallelism,
+        byte[] salt, String cipher, byte[] nonce, byte[] ciphertext) {
     /**
      * Current secret-envelope format. / 当前秘密信封格式。
      */
     public static final String CURRENT_FORMAT = "windowstolinux-secrets";
+
     /**
      * Current key derivation identifier. / 当前密钥派生标识。
      */
     public static final String CURRENT_KEY_DERIVATION = "Argon2id";
+
     /**
      * Current authenticated cipher identifier. / 当前认证密码标识。
      */
@@ -62,8 +55,8 @@ public record BackupSecretEnvelope(
                 || !CURRENT_CIPHER.equals(cipher)) {
             throw new IllegalArgumentException("unsupported backup secret envelope");
         }
-        if (memoryKiB < 32 * 1024 || memoryKiB > 1024 * 1024 || iterations < 1 || iterations > 16
-                || parallelism < 1 || parallelism > 16) {
+        if (memoryKiB < 32 * 1024 || memoryKiB > 1024 * 1024 || iterations < 1 || iterations > 16 || parallelism < 1
+                || parallelism > 16) {
             throw new IllegalArgumentException("backup key derivation parameters are outside safe bounds");
         }
         salt = Objects.requireNonNull(salt, "salt").clone();
@@ -80,19 +73,30 @@ public record BackupSecretEnvelope(
      *
      * @return salt / 盐
      */
-    @Override public byte[] salt() { return salt.clone(); }
+    @Override
+    public byte[] salt() {
+        return salt.clone();
+    }
+
     /**
      * Returns nonce.
      * <p>返回随机数。
      *
      * @return nonce / 随机数
      */
-    @Override public byte[] nonce() { return nonce.clone(); }
+    @Override
+    public byte[] nonce() {
+        return nonce.clone();
+    }
+
     /**
      * Returns ciphertext.
      * <p>返回密文。
      *
      * @return ciphertext / 密文
      */
-    @Override public byte[] ciphertext() { return ciphertext.clone(); }
+    @Override
+    public byte[] ciphertext() {
+        return ciphertext.clone();
+    }
 }

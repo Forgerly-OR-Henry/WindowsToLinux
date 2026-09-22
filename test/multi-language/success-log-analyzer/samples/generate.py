@@ -20,9 +20,9 @@ files = [
 ]
 try:
     for n in range(args.records):
-        stamp = (
-            datetime(2026, 9, 19, 10, tzinfo=timezone.utc) + timedelta(seconds=n % 3600)
-        ).strftime("%Y-%m-%dT%H:%M:%SZ")
+        stamp = (datetime(2026, 9, 19, 10, tzinfo=timezone.utc) + timedelta(seconds=n % 3600)).strftime(
+            "%Y-%m-%dT%H:%M:%SZ"
+        )
         level = ["INFO", "WARN", "ERROR", "DEBUG"][n % 4]
         service = "worker" if n % 3 == 0 else "api"
         message = f"request {n} timeout" if level == "ERROR" else f"processed {n}"

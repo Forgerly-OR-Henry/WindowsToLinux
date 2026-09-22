@@ -1,8 +1,8 @@
 package gold.debug.windowstolinux.shared.backup.format;
 
-import gold.debug.windowstolinux.shared.backup.manifest.BackupMember;
-
 import java.util.Objects;
+
+import gold.debug.windowstolinux.shared.backup.manifest.BackupMember;
 
 /**
  * One manifest-bound stream used to construct an archive. / 用于构建归档的一个清单绑定流。

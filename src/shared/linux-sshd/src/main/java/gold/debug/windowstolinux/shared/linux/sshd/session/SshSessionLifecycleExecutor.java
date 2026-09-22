@@ -1,10 +1,10 @@
 package gold.debug.windowstolinux.shared.linux.sshd.session;
 
-import org.apache.sshd.client.SshClient;
-import org.apache.sshd.client.session.ClientSession;
-
 import java.io.IOException;
 import java.time.Duration;
+
+import org.apache.sshd.client.SshClient;
+import org.apache.sshd.client.session.ClientSession;
 
 /**
  * Closes Apache SSHD session resources without obscuring the primary operation result. / 关闭 Apache SSHD 会话资源且不掩盖首要操作结果。
@@ -15,6 +15,7 @@ public final class SshSessionLifecycleExecutor {
      * <p>关闭超时。
      */
     private static final Duration CLOSE_TIMEOUT = Duration.ofSeconds(5);
+
     /**
      * WINDOWS NIO 2 COMPLETION GRACE.
      * <p>WindowsNIO2完成GRACE。
@@ -60,12 +61,14 @@ public final class SshSessionLifecycleExecutor {
      */
     private static void closeConnection(org.apache.sshd.common.Closeable connection) {
         try {
-            if (connection.close(false).await(CLOSE_TIMEOUT)) return;
+            if (connection.close(false).await(CLOSE_TIMEOUT))
+                return;
         } catch (IOException | RuntimeException ignored) {
             // A failed graceful close must still reach forced channel cleanup. / 优雅关闭异常后仍须执行强制通道回收。
         }
-        try { connection.close(true).await(CLOSE_TIMEOUT); }
-        catch (IOException | RuntimeException ignored) {
+        try {
+            connection.close(true).await(CLOSE_TIMEOUT);
+        } catch (IOException | RuntimeException ignored) {
             // Preserve the primary operation result. / 保留首要操作结果。
         }
     }

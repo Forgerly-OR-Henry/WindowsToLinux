@@ -14,22 +14,14 @@ def encode(blocks, records=None):
     body = bytearray(struct.pack("<4sHHIQI", b"WTL2", 2, 24, len(blocks), count, 0))
     for block in blocks:
         payload = b"".join(block)
-        body.extend(
-            struct.pack(
-                "<4sIII", b"BLK2", len(payload), len(block), zlib.crc32(payload)
-            )
-        )
+        body.extend(struct.pack("<4sIII", b"BLK2", len(payload), len(block), zlib.crc32(payload)))
         body.extend(payload)
     return bytes(body) + struct.pack("<I", zlib.crc32(body))
 
 
 def binary_inspector(r):
     p = r.work / "success-binary-inspector"
-    exe = (
-        p
-        / "cli/target/release"
-        / ("binary-inspector.exe" if os.name == "nt" else "binary-inspector")
-    )
+    exe = p / "cli/target/release" / ("binary-inspector.exe" if os.name == "nt" else "binary-inspector")
     count = 100000 if r.profile == "standard" else 5000
     path = r.evidence / "中文 分块数据.bin"
     block_records = 1024
@@ -62,9 +54,7 @@ def binary_inspector(r):
                     text = f"事件 {n}".encode()
                     events += 1
                     event_bytes += len(text)
-                    payload.extend(
-                        struct.pack("<BBHI", 2, n % 4, len(text) + 4, n) + text
-                    )
+                    payload.extend(struct.pack("<BBHI", 2, n % 4, len(text) + 4, n) + text)
                 else:
                     value = n % 201 - 100
                     measures.append(value)
@@ -121,9 +111,7 @@ def binary_inspector(r):
         "business",
         "type/range filters still validate complete files, empty file and batch reports",
     ):
-        filtered = invoke(
-            r, command + ["--type", "measurement", "--min", "-10", "--max", "20"]
-        )["items"][0]["result"]
+        filtered = invoke(r, command + ["--type", "measurement", "--min", "-10", "--max", "20"])["items"][0]["result"]
         assert (
             filtered["records"] == count
             and filtered["selected"] == len(selected)
@@ -131,23 +119,12 @@ def binary_inspector(r):
             and filtered["selectedEvents"] == 0
         )
         event_only = invoke(r, command + ["--type", "event"])["items"][0]["result"]
-        assert (
-            event_only["selected"] == events
-            and event_only["min"] is None
-            and event_only["sum"] == 0
-        )
+        assert event_only["selected"] == events and event_only["min"] is None and event_only["sum"] == 0
         empty = r.evidence / "empty.bin"
         empty.write_bytes(encode([]))
-        assert (
-            invoke(r, [exe, "--input", empty, "--format", "json"])["items"][0][
-                "result"
-            ]["records"]
-            == 0
-        )
+        assert invoke(r, [exe, "--input", empty, "--format", "json"])["items"][0]["result"]["records"] == 0
         normal = p / "samples/normal.bin"
-        fixed = invoke(r, [exe, "--input", normal, "--format", "json"])["items"][0][
-            "result"
-        ]
+        fixed = invoke(r, [exe, "--input", normal, "--format", "json"])["items"][0]["result"]
         assert (
             fixed["records"] == 5
             and fixed["measurements"] == 3
@@ -158,9 +135,7 @@ def binary_inspector(r):
         )
         output = r.evidence / "批量 报告.json"
         both = invoke(r, command + ["--input", normal, "--output", output])
-        assert both["summary"]["records"] == count + 5 and both["summary"][
-            "sum"
-        ] == str(sum(measures) + 7)
+        assert both["summary"]["records"] == count + 5 and both["summary"]["sum"] == str(sum(measures) + 7)
         assert json.loads(output.read_text(encoding="utf-8")) == both
         text, _ = invoke(r, [exe, "--input", normal], json_output=False)
         assert "binary-inspector" in text
@@ -200,13 +175,8 @@ def binary_inspector(r):
         for name, data, offset, block in cases:
             badpath = r.evidence / (name + ".bin")
             badpath.write_bytes(data)
-            result = invoke(
-                r, [exe, "--input", badpath, "--input", normal, "--format", "json"], 2
-            )
-            assert (
-                result["status"] == "partial"
-                and result["items"][1]["status"] == "complete"
-            )
+            result = invoke(r, [exe, "--input", badpath, "--input", normal, "--format", "json"], 2)
+            assert result["status"] == "partial" and result["items"][1]["status"] == "complete"
             error = result["items"][0]["error"]
             assert error["offset"] == offset and error["block"] == block, (name, error)
             assert result["summary"]["records"] == 5
@@ -278,11 +248,7 @@ def binary_inspector(r):
             },
         ]
         protocol_faults(r, native_command, valid)
-        helper = (
-            p
-            / "native/build"
-            / ("binary-worker.exe" if os.name == "nt" else "binary-worker")
-        )
+        helper = p / "native/build" / ("binary-worker.exe" if os.name == "nt" else "binary-worker")
         disabled = helper.with_suffix(".disabled")
         helper.rename(disabled)
         try:

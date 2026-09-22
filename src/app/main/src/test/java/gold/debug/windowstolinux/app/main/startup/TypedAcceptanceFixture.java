@@ -1,6 +1,5 @@
 package gold.debug.windowstolinux.app.main.startup;
 
-import javax.tools.ToolProvider;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -10,12 +9,14 @@ import java.util.jar.JarEntry;
 import java.util.jar.JarOutputStream;
 import java.util.jar.Manifest;
 
+import javax.tools.ToolProvider;
+
 /** Prepares deterministic workloads for live typed deployment acceptance. / 为类型化部署实时验收准备确定性工作负载。 */
 final class TypedAcceptanceFixture {
-    private static final String PYTHON_IMAGE_DIGEST =
-            "sha256:6d43704baacd1bfbe7c295d7f13079d5d8104ed33568873133f8fc69980419df";
+    private static final String PYTHON_IMAGE_DIGEST = "sha256:6d43704baacd1bfbe7c295d7f13079d5d8104ed33568873133f8fc69980419df";
 
-    private TypedAcceptanceFixture() { }
+    private TypedAcceptanceFixture() {
+    }
 
     static Path javaJar(Path parent, String applicationId) throws IOException {
         return javaJar(parent, applicationId, "java-live-ok", true);
@@ -24,59 +25,63 @@ final class TypedAcceptanceFixture {
     static Path javaJar(Path parent, String applicationId, String marker, boolean healthy) throws IOException {
         Path root = directory(parent, applicationId);
         Path source = root.resolve("src/acceptance/Probe.java");
-        String program = healthy ? """
-                package acceptance;
-                import java.io.*;
-                import java.net.*;
-                import java.nio.charset.StandardCharsets;
-                public final class Probe {
-                    public static void main(String[] args) throws Exception {
-                        int port = Integer.parseInt(System.getenv("PORT"));
-                        try (ServerSocket server = new ServerSocket(port)) {
-                            while (true) {
-                                try (Socket socket = server.accept()) {
-                                    try {
-                                        socket.setSoTimeout(3000);
-                                        InputStream input = socket.getInputStream();
-                                        int state = 0;
-                                        while (state < 4) {
-                                            int value = input.read();
-                                            if (value < 0) break;
-                                            state = switch (state) {
-                                                case 0 -> value == '\\r' ? 1 : 0;
-                                                case 1 -> value == '\\n' ? 2 : 0;
-                                                case 2 -> value == '\\r' ? 3 : 0;
-                                                default -> value == '\\n' ? 4 : 0;
-                                            };
+        String program = healthy
+                ? """
+                        package acceptance;
+                        import java.io.*;
+                        import java.net.*;
+                        import java.nio.charset.StandardCharsets;
+                        public final class Probe {
+                            public static void main(String[] args) throws Exception {
+                                int port = Integer.parseInt(System.getenv("PORT"));
+                                try (ServerSocket server = new ServerSocket(port)) {
+                                    while (true) {
+                                        try (Socket socket = server.accept()) {
+                                            try {
+                                                socket.setSoTimeout(3000);
+                                                InputStream input = socket.getInputStream();
+                                                int state = 0;
+                                                while (state < 4) {
+                                                    int value = input.read();
+                                                    if (value < 0) break;
+                                                    state = switch (state) {
+                                                        case 0 -> value == '\\r' ? 1 : 0;
+                                                        case 1 -> value == '\\n' ? 2 : 0;
+                                                        case 2 -> value == '\\r' ? 3 : 0;
+                                                        default -> value == '\\n' ? 4 : 0;
+                                                    };
+                                                }
+                                                byte[] body = "%s".getBytes(StandardCharsets.UTF_8);
+                                                String head = "HTTP/1.1 200 OK\\r\\nContent-Length: " + body.length
+                                                        + "\\r\\nConnection: close\\r\\n\\r\\n";
+                                                socket.getOutputStream().write(head.getBytes(StandardCharsets.US_ASCII));
+                                                socket.getOutputStream().write(body);
+                                                socket.getOutputStream().flush();
+                                            } catch (IOException ignored) {
+                                                // A disconnected probe must not terminate the managed process. / 已断开的探测不得终止受管进程。
+                                            }
                                         }
-                                        byte[] body = "%s".getBytes(StandardCharsets.UTF_8);
-                                        String head = "HTTP/1.1 200 OK\\r\\nContent-Length: " + body.length
-                                                + "\\r\\nConnection: close\\r\\n\\r\\n";
-                                        socket.getOutputStream().write(head.getBytes(StandardCharsets.US_ASCII));
-                                        socket.getOutputStream().write(body);
-                                        socket.getOutputStream().flush();
-                                    } catch (IOException ignored) {
-                                        // A disconnected probe must not terminate the managed process. / 已断开的探测不得终止受管进程。
                                     }
                                 }
                             }
                         }
-                    }
-                }
-                """.formatted(marker) : """
-                package acceptance;
-                public final class Probe {
-                    public static void main(String[] args) {
-                        System.exit(36);
-                    }
-                }
-                """;
+                        """
+                        .formatted(marker)
+                : """
+                        package acceptance;
+                        public final class Probe {
+                            public static void main(String[] args) {
+                                System.exit(36);
+                            }
+                        }
+                        """;
         write(source, program);
         Path classes = root.resolve("classes");
         Files.createDirectories(classes);
-        int compiled = ToolProvider.getSystemJavaCompiler().run(null, null, null,
-                "--release", "21", "-d", classes.toString(), source.toString());
-        if (compiled != 0) throw new IOException("acceptance Java fixture compilation failed: " + compiled);
+        int compiled = ToolProvider.getSystemJavaCompiler().run(null, null, null, "--release", "21", "-d",
+                classes.toString(), source.toString());
+        if (compiled != 0)
+            throw new IOException("acceptance Java fixture compilation failed: " + compiled);
         Manifest manifest = new Manifest();
         Attributes attributes = manifest.getMainAttributes();
         attributes.put(Attributes.Name.MANIFEST_VERSION, "1.0");
@@ -92,10 +97,11 @@ final class TypedAcceptanceFixture {
 
     static Path node(Path parent, String applicationId, boolean healthy, String marker) throws IOException {
         Path root = RepositoryServiceFixture.copy(parent, applicationId, "node/npm/http-service", true);
-        RepositoryServiceFixture.replaceText(root, java.util.Map.of("deployment-smoke-ok", marker,
-                "http-service-npm", applicationId));
+        RepositoryServiceFixture.replaceText(root,
+                java.util.Map.of("deployment-smoke-ok", marker, "http-service-npm", applicationId));
         Path build = root.resolve("build.js");
-        Files.writeString(build, "if (process.env.BUILD_LABEL !== 'bounded-build') process.exit(31);\n" + Files.readString(build));
+        Files.writeString(build,
+                "if (process.env.BUILD_LABEL !== 'bounded-build') process.exit(31);\n" + Files.readString(build));
         Path entrypoint = root.resolve("server.js");
         String guard = healthy ? """
                 const crypto = require('node:crypto');
@@ -111,8 +117,8 @@ final class TypedAcceptanceFixture {
 
     static Path python(Path parent, String applicationId) throws IOException {
         Path root = RepositoryServiceFixture.copy(parent, applicationId, "python/pip/http-service", true);
-        RepositoryServiceFixture.replaceText(root, java.util.Map.of("deployment-smoke-ok", "python-live-ok",
-                "http-service-fixture", applicationId));
+        RepositoryServiceFixture.replaceText(root,
+                java.util.Map.of("deployment-smoke-ok", "python-live-ok", "http-service-fixture", applicationId));
         Files.move(root.resolve("http_service_fixture"), root.resolve("demo"));
         return root;
     }

@@ -1,4 +1,6 @@
 <?php
 namespace CsvInspector;
 
-final class ApiError extends \RuntimeException {}
+final class ApiError extends \RuntimeException
+{
+}

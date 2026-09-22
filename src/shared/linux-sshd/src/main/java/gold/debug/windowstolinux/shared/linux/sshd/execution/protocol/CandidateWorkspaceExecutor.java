@@ -1,14 +1,13 @@
 package gold.debug.windowstolinux.shared.linux.sshd.execution.protocol;
 
-import gold.debug.windowstolinux.shared.linux.sshd.execution.protocol.helper.ManagedHelperBundle;
+import java.time.Duration;
+import java.util.Objects;
 
 import gold.debug.windowstolinux.shared.linux.error.LinuxOperationException;
 import gold.debug.windowstolinux.shared.linux.protocol.RemoteStepResult;
 import gold.debug.windowstolinux.shared.linux.sshd.command.SshCommandExecutor;
+import gold.debug.windowstolinux.shared.linux.sshd.execution.protocol.helper.ManagedHelperBundle;
 import gold.debug.windowstolinux.shared.linux.transfer.RemoteWorkspace;
-
-import java.time.Duration;
-import java.util.Objects;
 
 /**
  * Controls only candidate workspace creation and cleanup through fixed helper verbs. / 仅通过固定 helper 动词控制候选工作区创建与清理。
@@ -43,10 +42,12 @@ public final class CandidateWorkspaceExecutor {
         if (maxWorkspaceBytes < 64L * 1024 * 1024 || maxWorkspaceBytes > 128L * 1024 * 1024 * 1024) {
             throw new IllegalArgumentException("candidate workspace budget is outside the supported hard limit");
         }
-        var scope=gold.debug.windowstolinux.shared.linux.transfer.DeploymentRemoteTaskScope.current();
-        String task=scope.map(value->value.preparing(workspace)).orElse("");
-        var result = commands.exec(command(task.isEmpty()?"candidate-create":"candidate-create-task", workspace) + " " + maxWorkspaceBytes
-                +(task.isEmpty()?"":" "+SshCommandExecutor.quote(task)), Duration.ofMinutes(5), true);
+        var scope = gold.debug.windowstolinux.shared.linux.transfer.DeploymentRemoteTaskScope.current();
+        String task = scope.map(value -> value.preparing(workspace)).orElse("");
+        var result = commands.exec(command(task.isEmpty() ? "candidate-create" : "candidate-create-task", workspace)
+                + " " + maxWorkspaceBytes
+                + (task.isEmpty() ? "" : " " + gold.debug.windowstolinux.shared.linux.command.CommandText.quote(task)),
+                Duration.ofMinutes(5), true);
         return new RemoteStepResult(result.succeeded(), result.timedOut(), result.succeeded()
                 ? "Controlled helper created the managed candidate directory"
                 : "Controlled helper could not create the managed candidate directory: " + result.failureEvidence());
@@ -84,25 +85,41 @@ public final class CandidateWorkspaceExecutor {
      * @return bounded verified facts / 有界已验证事实
      * @throws LinuxOperationException if observation fails / 观测失败时
      */
-    public java.util.Map<String,String> inspectTask(RemoteWorkspace workspace,String task)throws LinuxOperationException{
+    public java.util.Map<String, String> inspectTask(RemoteWorkspace workspace, String task)
+            throws LinuxOperationException {
         gold.debug.windowstolinux.shared.linux.transfer.DeploymentRemoteTaskScope.requireTask(task);
-        var result=commands.exec(command("candidate-query-task",workspace)+" "+SshCommandExecutor.quote(task),Duration.ofSeconds(20),true);
-        var values=SshCommandExecutor.lines(result.output());
-        if(!result.succeeded()||!java.util.Set.of("absent","owned").contains(values.getOrDefault("CANDIDATE_STATE","")))
-            throw LinuxOperationException.create(gold.debug.windowstolinux.shared.linux.error.LinuxOperationFailureType.CANDIDATE_PREPARATION_FAILED,"Task candidate could not be safely observed");
-        return java.util.Map.of("candidate",workspace.candidateId(),"state",values.get("CANDIDATE_STATE"),"buildActive",values.getOrDefault("BUILD_ACTIVE","unknown"));
+        var result = commands.exec(
+                command("candidate-query-task", workspace) + " "
+                        + gold.debug.windowstolinux.shared.linux.command.CommandText.quote(task),
+                Duration.ofSeconds(20), true);
+        var values = gold.debug.windowstolinux.shared.linux.command.CommandText.lines(result.output());
+        if (!result.succeeded()
+                || !java.util.Set.of("absent", "owned").contains(values.getOrDefault("CANDIDATE_STATE", "")))
+            throw LinuxOperationException.create(
+                    gold.debug.windowstolinux.shared.linux.error.LinuxOperationFailureType.CANDIDATE_PREPARATION_FAILED,
+                    "Task candidate could not be safely observed");
+        return java.util.Map.of("candidate", workspace.candidateId(), "state", values.get("CANDIDATE_STATE"),
+                "buildActive", values.getOrDefault("BUILD_ACTIVE", "unknown"));
     }
+
     /** Uses the existing process-stop and volume-cleanup implementation after exact task binding. / 精确任务绑定后使用既有进程停止及卷清理实现。
      * @param workspace candidate identity / 候选身份
      * @param task task identity / 任务身份
      * @return verified cleanup result / 已验证清理结果
      * @throws LinuxOperationException if remote execution fails / 远端执行失败时
      */
-    public RemoteStepResult cleanupTask(RemoteWorkspace workspace,String task)throws LinuxOperationException{
+    public RemoteStepResult cleanupTask(RemoteWorkspace workspace, String task) throws LinuxOperationException {
         gold.debug.windowstolinux.shared.linux.transfer.DeploymentRemoteTaskScope.requireTask(task);
-        var result=commands.exec(command("candidate-cleanup-task",workspace)+" "+SshCommandExecutor.quote(task),Duration.ofMinutes(2),true);
-        return new RemoteStepResult(result.succeeded()&&"1".equals(SshCommandExecutor.lines(result.output()).get("CANDIDATE_CLEANED")),result.timedOut(),"Task-bound candidate cleanup; no application data paths are accepted");
+        var result = commands.exec(
+                command("candidate-cleanup-task", workspace) + " "
+                        + gold.debug.windowstolinux.shared.linux.command.CommandText.quote(task),
+                Duration.ofMinutes(2), true);
+        return new RemoteStepResult(
+                result.succeeded() && "1".equals(gold.debug.windowstolinux.shared.linux.command.CommandText
+                        .lines(result.output()).get("CANDIDATE_CLEANED")),
+                result.timedOut(), "Task-bound candidate cleanup; no application data paths are accepted");
     }
+
     /**
      * Renders a fixed helper invocation with individually quoted reviewed arguments; does not execute it.
      * <p>使用逐项引用的已审阅参数渲染固定 helper 调用，不执行该调用。
@@ -114,8 +131,9 @@ public final class CandidateWorkspaceExecutor {
      */
     private static String command(String verb, RemoteWorkspace workspace) {
         Objects.requireNonNull(workspace, "workspace");
-        return SshCommandExecutor.quote(ManagedHelperBundle.PATH) + ' '
-                + SshCommandExecutor.quote(verb) + ' ' + SshCommandExecutor.quote(workspace.applicationId()) + ' '
-                + SshCommandExecutor.quote(workspace.candidateId());
+        return gold.debug.windowstolinux.shared.linux.command.CommandText.quote(ManagedHelperBundle.PATH) + ' '
+                + gold.debug.windowstolinux.shared.linux.command.CommandText.quote(verb) + ' '
+                + gold.debug.windowstolinux.shared.linux.command.CommandText.quote(workspace.applicationId()) + ' '
+                + gold.debug.windowstolinux.shared.linux.command.CommandText.quote(workspace.candidateId());
     }
 }

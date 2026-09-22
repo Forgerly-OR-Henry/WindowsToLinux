@@ -22,11 +22,15 @@ public final class BrowserRecoveryException extends RuntimeException implements 
         super("Isolated browser operation failed", cause);
         failure = FailureDescriptor.create(type, OperationIdentity.create(), "Isolated browser operation failed");
     }
+
     /**
      * Returns structured failure occurrence retained for safe reporting.
      * <p>返回保留用于安全报告的结构化失败实例。
      *
      * @return structured failure occurrence retained for safe reporting / 保留用于安全报告的结构化失败实例
      */
-    @Override public FailureDescriptor failure() { return failure; }
+    @Override
+    public FailureDescriptor failure() {
+        return failure;
+    }
 }

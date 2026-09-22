@@ -69,7 +69,8 @@ final class BackupManifestRules {
      */
     static List<String> distinctTexts(List<String> values, String name, int maximumCount, int maximumLength) {
         Objects.requireNonNull(values, name);
-        if (values.size() > maximumCount) throw new IllegalArgumentException(name + " exceeds its item bound");
+        if (values.size() > maximumCount)
+            throw new IllegalArgumentException(name + " exceeds its item bound");
         List<String> result = new ArrayList<>(values.size());
         Set<String> unique = new HashSet<>();
         for (String value : values) {
@@ -92,14 +93,13 @@ final class BackupManifestRules {
      */
     static String archivePath(String value) {
         value = requiredText(value, "path", 1024);
-        if (value.indexOf('\\') >= 0 || value.startsWith("/") || value.endsWith("/")
-                || value.matches("^[A-Za-z]:.*")) {
+        if (value.indexOf('\\') >= 0 || value.startsWith("/") || value.endsWith("/") || value.matches("^[A-Za-z]:.*")) {
             throw new IllegalArgumentException("archive member path must be relative canonical POSIX text");
         }
         String[] segments = value.split("/", -1);
         for (String segment : segments) {
-            if (segment.isEmpty() || segment.equals(".") || segment.equals("..")
-                    || segment.endsWith(" ") || segment.endsWith(".")) {
+            if (segment.isEmpty() || segment.equals(".") || segment.equals("..") || segment.endsWith(" ")
+                    || segment.endsWith(".")) {
                 throw new IllegalArgumentException("archive member path contains an unsafe segment");
             }
         }

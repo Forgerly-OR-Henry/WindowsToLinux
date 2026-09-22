@@ -25,10 +25,14 @@ public record DeploymentInputField(String id, String labelKey, String helpKey, S
      * @throws NullPointerException if a required input is absent / 必需输入缺失时
      */
     public DeploymentInputField {
-        if (id == null || !id.matches("[a-zA-Z0-9._/-]{1,160}")) throw new IllegalArgumentException("invalid input identifier");
-        Objects.requireNonNull(labelKey); Objects.requireNonNull(helpKey); Objects.requireNonNull(value);
+        if (id == null || !id.matches("[a-zA-Z0-9._/-]{1,160}"))
+            throw new IllegalArgumentException("invalid input identifier");
+        Objects.requireNonNull(labelKey);
+        Objects.requireNonNull(helpKey);
+        Objects.requireNonNull(value);
         choices = List.copyOf(choices);
         int limit = id.equals("applicationDeclaration") || id.endsWith("/applicationDeclaration") ? 65536 : 4096;
-        if (value.length() > limit || choices.size() > 64) throw new IllegalArgumentException("input descriptor exceeds limits");
+        if (value.length() > limit || choices.size() > 64)
+            throw new IllegalArgumentException("input descriptor exceeds limits");
     }
 }

@@ -1,5 +1,13 @@
 package gold.debug.windowstolinux.shared.linux.sshd.execution.transfer;
 
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
+import java.time.Duration;
+import java.util.Map;
+import java.util.Objects;
+
 import gold.debug.windowstolinux.shared.linux.error.LinuxOperationException;
 import gold.debug.windowstolinux.shared.linux.error.LinuxOperationFailureType;
 import gold.debug.windowstolinux.shared.linux.protocol.RemoteStepResult;
@@ -12,14 +20,6 @@ import org.apache.sshd.client.session.ClientSession;
 import org.apache.sshd.sftp.client.SftpClientFactory;
 import org.apache.sshd.sftp.client.fs.SftpFileSystem;
 
-import java.io.IOException;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.StandardCopyOption;
-import java.time.Duration;
-import java.util.Map;
-import java.util.Objects;
-
 /**
  * Streams reviewed source archives into controlled remote staging and verifies transfer evidence.
  * <p>将经审阅源码归档流式传入受控远端暂存区并验证传输证据。
@@ -30,11 +30,13 @@ public final class SshdSourceTransport {
      * <p>当前限定作用域操作使用的会话。
      */
     private final ClientSession session;
+
     /**
      * Bound ssh command executor collaborator for typed remote command boundary.
      * <p>处理类型化远端命令边界的SSH命令执行器协作对象。
      */
     private final SshCommandExecutor commands;
+
     /**
      * Bound candidate workspace executor collaborator for candidates.
      * <p>处理候选集合的候选工作区执行器协作对象。
@@ -51,7 +53,7 @@ public final class SshdSourceTransport {
      * @throws NullPointerException if a required input is absent / 必需输入缺失时
      */
     public SshdSourceTransport(ClientSession session, SshCommandExecutor commands,
-                              CandidateWorkspaceExecutor candidates) {
+            CandidateWorkspaceExecutor candidates) {
         this.session = Objects.requireNonNull(session, "session");
         this.commands = Objects.requireNonNull(commands, "commands");
         this.candidates = Objects.requireNonNull(candidates, "candidates");
@@ -72,7 +74,8 @@ public final class SshdSourceTransport {
         LocalArchivePolicy.verify(archive);
         RemoteStepResult prepared = candidates.create(workspace, maxWorkspaceBytes);
         if (!prepared.succeeded()) {
-            throw LinuxOperationException.create(LinuxOperationFailureType.CANDIDATE_PREPARATION_FAILED, prepared.evidence());
+            throw LinuxOperationException.create(LinuxOperationFailureType.CANDIDATE_PREPARATION_FAILED,
+                    prepared.evidence());
         }
         String remoteArchive = workspace.candidateRoot() + "/mutable/source.tar.gz";
         try (SftpFileSystem fileSystem = SftpClientFactory.instance().createSftpFileSystem(session)) {
@@ -81,21 +84,30 @@ public final class SshdSourceTransport {
         } catch (IOException | RuntimeException exception) {
             cleanupAfterFailure(workspace);
             StackTraceElement[] frames = exception.getStackTrace();
-            throw LinuxOperationException.create(LinuxOperationFailureType.SOURCE_UPLOAD_FAILED,
-                    "SFTP source archive upload failed (" + exception.getClass().getSimpleName()
-                            + (frames.length == 0 ? "" : " at " + java.util.Arrays.stream(frames).limit(5)
-                                    .map(StackTraceElement::toString).collect(java.util.stream.Collectors.joining(" <- ")))
-                            + ")", exception);
+            throw LinuxOperationException
+                    .create(LinuxOperationFailureType.SOURCE_UPLOAD_FAILED,
+                            "SFTP source archive upload failed (" + exception.getClass().getSimpleName()
+                                    + (frames.length == 0
+                                            ? ""
+                                            : " at " + java.util.Arrays.stream(frames).limit(5)
+                                                    .map(StackTraceElement::toString)
+                                                    .collect(java.util.stream.Collectors.joining(" <- ")))
+                                    + ")",
+                            exception);
         }
         String verificationScript = """
                 printf 'DIGEST='; sha256sum %s | awk '{print $1}'
                 printf 'BYTES='; stat -c %%s %s
-                """.formatted(SshCommandExecutor.quote(remoteArchive), SshCommandExecutor.quote(remoteArchive));
-        var verified = commands.exec("/bin/bash -lc " + SshCommandExecutor.quote(verificationScript),
+                """.formatted(gold.debug.windowstolinux.shared.linux.command.CommandText.quote(remoteArchive),
+                gold.debug.windowstolinux.shared.linux.command.CommandText.quote(remoteArchive));
+        var verified = commands.exec(
+                "/bin/bash -lc " + gold.debug.windowstolinux.shared.linux.command.CommandText.quote(verificationScript),
                 Duration.ofSeconds(20), true);
-        Map<String, String> uploaded = SshCommandExecutor.lines(verified.output());
+        Map<String, String> uploaded = gold.debug.windowstolinux.shared.linux.command.CommandText
+                .lines(verified.output());
         if (!verified.succeeded() || !archive.contentSha256().equals(uploaded.get("DIGEST"))
-                || archive.byteCount() != SshCommandExecutor.parseLong(uploaded.get("BYTES"))) {
+                || archive.byteCount() != gold.debug.windowstolinux.shared.linux.command.CommandText
+                        .parseLong(uploaded.get("BYTES"))) {
             cleanupAfterFailure(workspace);
             throw LinuxOperationException.create(LinuxOperationFailureType.UPLOAD_VERIFICATION_FAILED,
                     "Remote archive digest or size verification failed");

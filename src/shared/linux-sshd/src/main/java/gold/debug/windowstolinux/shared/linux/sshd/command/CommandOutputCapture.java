@@ -14,31 +14,37 @@ final class CommandOutputCapture {
      * <p>限制。
      */
     private final long limit;
+
     /**
      * Retain.
      * <p>保留。
      */
     private final boolean retain;
+
     /**
      * Cancel.
      * <p>取消。
      */
     private final Runnable cancel;
+
     /**
      * Stdout.
      * <p>标准输出。
      */
     private final ByteArrayOutputStream stdout = new ByteArrayOutputStream();
+
     /**
      * Stderr.
      * <p>标准错误输出。
      */
     private final ByteArrayOutputStream stderr = new ByteArrayOutputStream();
+
     /**
      * Bytes received so far against the output bound.
      * <p>当前已计入输出边界的接收字节数。
      */
     private long received;
+
     /**
      * Exceeded.
      * <p>已超限。
@@ -56,7 +62,8 @@ final class CommandOutputCapture {
      * @throws NullPointerException if a required input is absent / 必需输入缺失时
      */
     CommandOutputCapture(long limit, boolean retain, Runnable cancel) {
-        if (limit < 1 || limit > 128L * 1024 * 1024 + 65536) throw new IllegalArgumentException("Invalid SSH byte budget");
+        if (limit < 1 || limit > 128L * 1024 * 1024 + 65536)
+            throw new IllegalArgumentException("Invalid SSH byte budget");
         this.limit = limit;
         this.retain = retain;
         this.cancel = Objects.requireNonNull(cancel, "cancel");
@@ -68,35 +75,49 @@ final class CommandOutputCapture {
      *
      * @return stdout / 标准输出
      */
-    OutputStream stdout() { return stream(stdout); }
+    OutputStream stdout() {
+        return stream(stdout);
+    }
+
     /**
      * Returns stderr.
      * <p>返回标准错误输出。
      *
      * @return stderr / 标准错误输出
      */
-    OutputStream stderr() { return stream(stderr); }
+    OutputStream stderr() {
+        return stream(stderr);
+    }
+
     /**
      * Returns exceeded.
      * <p>返回已超限。
      *
      * @return true when returns exceeded, false otherwise / 返回已超限时为 true，否则为 false
      */
-    boolean exceeded() { return exceeded; }
+    boolean exceeded() {
+        return exceeded;
+    }
+
     /**
      * Returns destination receiving the produced content.
      * <p>返回接收所生成内容的目标。
      *
      * @return destination receiving the produced content / 接收所生成内容的目标
      */
-    synchronized String output() { return stdout.toString(StandardCharsets.UTF_8); }
+    synchronized String output() {
+        return stdout.toString(StandardCharsets.UTF_8);
+    }
+
     /**
      * Returns error.
      * <p>返回错误。
      *
      * @return error / 错误
      */
-    synchronized String error() { return stderr.toString(StandardCharsets.UTF_8); }
+    synchronized String error() {
+        return stderr.toString(StandardCharsets.UTF_8);
+    }
 
     /**
      * Builds output stream from the supplied stream inputs.
@@ -112,7 +133,10 @@ final class CommandOutputCapture {
              *
              * @param value candidate content accepted or rejected by this contract / 由当前契约接收或拒绝的候选内容
              */
-            @Override public void write(int value) { write(new byte[]{(byte) value}, 0, 1); }
+            @Override
+            public void write(int value) {
+                write(new byte[]{(byte) value}, 0, 1);
+            }
 
             /**
              * Bounds a chunk before copying it. / 复制数据块前应用上限。
@@ -121,18 +145,22 @@ final class CommandOutputCapture {
              * @param offset offset / 偏移量
              * @param length length / 长度
              */
-            @Override public void write(byte[] bytes, int offset, int length) {
+            @Override
+            public void write(byte[] bytes, int offset, int length) {
                 Objects.checkFromIndexSize(offset, length, bytes.length);
                 boolean overflow;
                 synchronized (CommandOutputCapture.this) {
-                    if (exceeded) return;
+                    if (exceeded)
+                        return;
                     int accepted = (int) Math.min(length, limit - received);
-                    if (retain) target.write(bytes, offset, accepted);
+                    if (retain)
+                        target.write(bytes, offset, accepted);
                     received += accepted;
                     overflow = accepted < length;
                     exceeded = overflow;
                 }
-                if (overflow) cancel.run();
+                if (overflow)
+                    cancel.run();
             }
         };
     }

@@ -1,0 +1,24 @@
+{
+  "tabWidth": 2,
+  "printWidth": 120,
+  "endOfLine": "lf",
+  "proseWrap": "preserve",
+  "embeddedLanguageFormatting": "off",
+  "htmlWhitespaceSensitivity": "strict",
+  "xmlWhitespaceSensitivity": "strict",
+  "plugins": ["@prettier/plugin-xml"],
+  "overrides": [
+    {
+      "files": ["*.vue"],
+      "options": {
+        "embeddedLanguageFormatting": "auto"
+      }
+    },
+    {
+      "files": ["*.xml", "*.csproj", "*.config"],
+      "options": {
+        "xmlWhitespaceSensitivity": "ignore"
+      }
+    }
+  ]
+}

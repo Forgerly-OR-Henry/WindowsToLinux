@@ -24,27 +24,13 @@ def directory_diff(r):
     count = 10000 if r.profile == "standard" else 500
     expected = {}
     for n in range(count):
-        relative = f"层 {n%7}/子 {n%5}/文件 {n}.txt"
-        content = b"" if n % 101 == 0 else f"content-{n%997:04}".encode()
+        relative = f"层 {n % 7}/子 {n % 5}/文件 {n}.txt"
+        content = b"" if n % 101 == 0 else f"content-{n % 997:04}".encode()
         path = folder / relative
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_bytes(content)
         expected[relative] = hashlib.sha256(content).hexdigest()
-    deep = (
-        folder
-        / "深层"
-        / "a"
-        / "b"
-        / "c"
-        / "d"
-        / "e"
-        / "f"
-        / "g"
-        / "h"
-        / "i"
-        / "j"
-        / "空 文件.txt"
-    )
+    deep = folder / "深层" / "a" / "b" / "c" / "d" / "e" / "f" / "g" / "h" / "i" / "j" / "空 文件.txt"
     deep.parent.mkdir(parents=True)
     deep.write_bytes(b"")
     expected[deep.relative_to(folder).as_posix()] = hashlib.sha256(b"").hexdigest()
@@ -88,9 +74,7 @@ def directory_diff(r):
     def diff(before, after, extra=None):
         return invoke(
             r,
-            base
-            + ["diff", "--before", str(before), "--after", str(after)]
-            + (extra or []),
+            base + ["diff", "--before", str(before), "--after", str(after)] + (extra or []),
         )
 
     r.scale = {"files": len(expected), "hashWorkers": 4, "competingRequests": 10}
@@ -101,10 +85,7 @@ def directory_diff(r):
     ):
         first = snapshot("基线")
         assert first["status"] == "complete" and first["files"] == len(expected)
-        assert any(
-            i["path"] == "目录联接" and i["kind"] == "skipped-link"
-            for i in first["issues"]
-        )
+        assert any(i["path"] == "目录联接" and i["kind"] == "skipped-link" for i in first["issues"])
         with sqlite3.connect(database) as db:
             hashes = dict(
                 db.execute(
@@ -129,10 +110,7 @@ def directory_diff(r):
         before = target.stat()
         target.write_bytes(b"changed-0001")
         os.utime(target, ns=(before.st_atime_ns, before.st_mtime_ns))
-        assert (
-            target.stat().st_size == before.st_size
-            and target.stat().st_mtime_ns == before.st_mtime_ns
-        )
+        assert target.stat().st_size == before.st_size and target.stat().st_mtime_ns == before.st_mtime_ns
         removed = "层 2/子 2/文件 2.txt"
         (folder / removed).unlink()
         old = "层 3/子 3/文件 3.txt"
@@ -147,12 +125,8 @@ def directory_diff(r):
             and result["changed"] == ["层 1/子 1/文件 1.txt"]
         )
         assert result["unchanged"] == len(expected) - 3
-        assert result["renameCandidates"] == [
-            {"from": old, "to": [new], "sha256": expected[old]}
-        ]
-        assert diff(first["id"], second["id"], ["--pattern", "层 1/*"])["changed"] == [
-            "层 1/子 1/文件 1.txt"
-        ]
+        assert result["renameCandidates"] == [{"from": old, "to": [new], "sha256": expected[old]}]
+        assert diff(first["id"], second["id"], ["--pattern", "层 1/*"])["changed"] == ["层 1/子 1/文件 1.txt"]
         csvfile = r.evidence / "差异.csv"
         csv_command = r.tool("python") + [
             p / "cli/main.py",
@@ -173,13 +147,11 @@ def directory_diff(r):
         assert len(rows) == 6 and any(row["kind"] == "rename-candidate" for row in rows)
         selected = invoke(
             r,
-            base
-            + ["snapshot", "--root", folder, "--name", "仅一层", "--include", "层 1/*"],
+            base + ["snapshot", "--root", folder, "--name", "仅一层", "--include", "层 1/*"],
         )
         invoke(
             r,
-            base
-            + ["diff", "--before", str(first["id"]), "--after", str(selected["id"])],
+            base + ["diff", "--before", str(first["id"]), "--after", str(selected["id"])],
             2,
             json_output=False,
         )
@@ -240,9 +212,7 @@ def directory_diff(r):
         assert interrupted["status"] == "interrupted"
         assert diff(first["id"], second["id"]) == result
         assert snapshot("中断后可再次扫描")["status"] == "complete"
-    with check(
-        r, "concurrency", "10 competing snapshot names produce one completed snapshot"
-    ):
+    with check(r, "concurrency", "10 competing snapshot names produce one completed snapshot"):
 
         def attempt(_):
             owned = OwnedProcess(
@@ -300,7 +270,9 @@ def directory_diff(r):
             body = (
                 [dict(records[0], protocolVersion=999)]
                 if mode == "version"
-                else records if mode == "missing" else records[:1]
+                else records
+                if mode == "missing"
+                else records[:1]
             )
             cmd = r.tool("python") + [
                 p / "cli/main.py",
@@ -328,11 +300,7 @@ def directory_diff(r):
                 },
             )
             assert value["status"] == "failed" and value["issues"]
-        native = (
-            p
-            / "native/build"
-            / ("scan-worker.exe" if os.name == "nt" else "scan-worker")
-        )
+        native = p / "native/build" / ("scan-worker.exe" if os.name == "nt" else "scan-worker")
         disabled = native.with_suffix(".disabled")
         native.rename(disabled)
         try:

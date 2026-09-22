@@ -3,6 +3,7 @@ from urllib.parse import parse_qs, urlsplit
 from jsonschema.exceptions import ValidationError
 from .service import summarize
 
+
 def handler_for(configuration):
     class Handler(BaseHTTPRequestHandler):
         def do_GET(self):
@@ -12,7 +13,11 @@ def handler_for(configuration):
             url = urlsplit(self.path)
             if status != 503 and (url.path == '/api/summary' or configuration.mode == 'json'):
                 try:
-                    raw = parse_qs(url.query, keep_blank_values=True).get('values', [None])[0] if url.path == '/api/summary' else None
+                    raw = (
+                        parse_qs(url.query, keep_blank_values=True).get('values', [None])[0]
+                        if url.path == '/api/summary'
+                        else None
+                    )
                     body = summarize(raw).to_json()
                     content_type = 'application/json; charset=utf-8'
                 except (ValueError, ValidationError):
@@ -25,4 +30,5 @@ def handler_for(configuration):
 
         def log_message(self, format, *args):
             pass
+
     return Handler

@@ -21,12 +21,16 @@ public interface FailureReportStore {
      *
      * @return matching result, or empty when no admitted value exists / 匹配结果；不存在已准入内容时为空
      */
-    default Optional<Path> diagnosticsDirectory() { return Optional.empty(); }
+    default Optional<Path> diagnosticsDirectory() {
+        return Optional.empty();
+    }
 
     /**
      * Returns a no-write implementation for isolated UI tests. / 返回用于隔离 UI 测试的不写入实现。
      *
      * @return a no-write implementation for isolated UI tests / 用于隔离 UI 测试的不写入实现
      */
-    static FailureReportStore disabled() { return failure -> Optional.empty(); }
+    static FailureReportStore disabled() {
+        return failure -> Optional.empty();
+    }
 }

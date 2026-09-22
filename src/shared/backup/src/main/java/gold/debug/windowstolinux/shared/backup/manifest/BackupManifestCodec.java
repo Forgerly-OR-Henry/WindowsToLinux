@@ -1,18 +1,18 @@
 package gold.debug.windowstolinux.shared.backup.manifest;
 
+import java.io.IOException;
+import java.util.List;
+import java.util.Objects;
+
 import com.fasterxml.jackson.core.JsonFactory;
 import com.fasterxml.jackson.core.StreamReadConstraints;
 import com.fasterxml.jackson.core.StreamReadFeature;
 import com.fasterxml.jackson.databind.DeserializationFeature;
-import com.fasterxml.jackson.databind.MapperFeature;
 import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.MapperFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
 import gold.debug.windowstolinux.shared.config.secretref.SecretReference;
-
-import java.io.IOException;
-import java.util.List;
-import java.util.Objects;
 
 /**
  * Strict and deterministic JSON codec for {@code manifest.json}. / 用于 {@code manifest.json} 的严格确定性 JSON 编解码器。
@@ -81,12 +81,10 @@ public final class BackupManifestCodec {
      */
     private static ObjectMapper createMapper() {
         JsonFactory factory = JsonFactory.builder()
-                .streamReadConstraints(StreamReadConstraints.builder()
-                        .maxNestingDepth(24).maxStringLength(1_048_576).maxDocumentLength(2_097_152).build())
-                .enable(StreamReadFeature.STRICT_DUPLICATE_DETECTION)
-                .build();
-        return new ObjectMapper(factory)
-                .enable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES)
+                .streamReadConstraints(StreamReadConstraints.builder().maxNestingDepth(24).maxStringLength(1_048_576)
+                        .maxDocumentLength(2_097_152).build())
+                .enable(StreamReadFeature.STRICT_DUPLICATE_DETECTION).build();
+        return new ObjectMapper(factory).enable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES)
                 .enable(DeserializationFeature.FAIL_ON_NULL_FOR_PRIMITIVES)
                 .enable(DeserializationFeature.FAIL_ON_TRAILING_TOKENS)
                 .enable(MapperFeature.SORT_PROPERTIES_ALPHABETICALLY)
@@ -105,15 +103,8 @@ public final class BackupManifestCodec {
      * @param members members / 成员集合
      * @param provenance provenance / 来源证据
      */
-    private record ManifestV6(
-            String format,
-            String schemaVersion,
-            String createdAtUtc,
-            String applicationId,
-            InventoryV6 inventory,
-            List<BackupMember> members,
-            BackupProvenance provenance
-    ) {
+    private record ManifestV6(String format, String schemaVersion, String createdAtUtc, String applicationId,
+            InventoryV6 inventory, List<BackupMember> members, BackupProvenance provenance) {
         /**
          * Reconstructs this typed contract from the supplied source representation.
          * <p>根据所提供的源表示重建当前类型化契约。
@@ -162,21 +153,11 @@ public final class BackupManifestCodec {
      * @param runtime reviewed language, process and health specification / 已审阅的语言、进程及健康规格
      * @param recoveryRequirements recovery requirements / 恢复要求集合
      */
-    private record InventoryV6(
-            List<String> releaseManifests,
-            List<String> configurationSnapshots,
-            List<SecretReference> secretReferences,
-            List<String> persistentFiles,
-            List<String> persistentVolumes,
-            BackupDatabase database,
-            IdentityV6 identity,
-            List<String> serviceDefinitions,
-            List<ComponentV6> components,
-            String applicationHealthComponentId,
-            BackupHealthCheck applicationHealthCheck,
-            BackupRuntime runtime,
-            List<String> recoveryRequirements
-    ) {
+    private record InventoryV6(List<String> releaseManifests, List<String> configurationSnapshots,
+            List<SecretReference> secretReferences, List<String> persistentFiles, List<String> persistentVolumes,
+            BackupDatabase database, IdentityV6 identity, List<String> serviceDefinitions, List<ComponentV6> components,
+            String applicationHealthComponentId, BackupHealthCheck applicationHealthCheck, BackupRuntime runtime,
+            List<String> recoveryRequirements) {
         /**
          * Reconstructs this typed contract from the supplied source representation.
          * <p>根据所提供的源表示重建当前类型化契约。
@@ -189,8 +170,8 @@ public final class BackupManifestCodec {
                     inventory.secretReferences(), inventory.persistentFiles(), inventory.persistentVolumes(),
                     inventory.database(), IdentityV6.from(inventory.identity()), inventory.serviceDefinitions(),
                     inventory.components().stream().map(ComponentV6::from).toList(),
-                    inventory.applicationHealthComponentId(), inventory.applicationHealthCheck(),
-                    inventory.runtime(), inventory.recoveryRequirements());
+                    inventory.applicationHealthComponentId(), inventory.applicationHealthCheck(), inventory.runtime(),
+                    inventory.recoveryRequirements());
         }
 
         /**
@@ -201,9 +182,9 @@ public final class BackupManifestCodec {
          * @throws NullPointerException if a required input is absent / 必需输入缺失时
          */
         private BackupInventory toDomain() {
-            return new BackupInventory(releaseManifests, configurationSnapshots, secretReferences,
-                    persistentFiles, persistentVolumes, database,
-                    Objects.requireNonNull(identity, "identity").toDomain(), serviceDefinitions,
+            return new BackupInventory(releaseManifests, configurationSnapshots, secretReferences, persistentFiles,
+                    persistentVolumes, database, Objects.requireNonNull(identity, "identity").toDomain(),
+                    serviceDefinitions,
                     Objects.requireNonNull(components, "components").stream().map(ComponentV6::toDomain).toList(),
                     applicationHealthComponentId, applicationHealthCheck, runtime, recoveryRequirements);
         }
@@ -218,9 +199,7 @@ public final class BackupManifestCodec {
      * @param managedRoot managed root / 受管根目录
      * @param releaseSetSha256 release set sha 256 / 发布集合SHA256
      */
-    private record IdentityV6(
-            String applicationId, String serverId, String managedRoot, String releaseSetSha256
-    ) {
+    private record IdentityV6(String applicationId, String serverId, String managedRoot, String releaseSetSha256) {
         /**
          * Reconstructs this typed contract from the supplied source representation.
          * <p>根据所提供的源表示重建当前类型化契约。
@@ -230,8 +209,8 @@ public final class BackupManifestCodec {
          */
         private static IdentityV6 from(BackupIdentity identity) {
             return new IdentityV6(identity.applicationId(), identity.serverId(), identity.managedRoot(),
-                    identity.releaseSetSha256().orElseThrow(() ->
-                            new IllegalArgumentException("schema-v6 identity lacks releaseSetSha256")));
+                    identity.releaseSetSha256().orElseThrow(
+                            () -> new IllegalArgumentException("schema-v6 identity lacks releaseSetSha256")));
         }
 
         /**
@@ -260,18 +239,10 @@ public final class BackupManifestCodec {
      * @param releaseSha256 identity digest of the exact successful release / 精确成功发布的身份摘要
      * @param secretReferences immutable identifiers and revisions of required secrets / 所需秘密的不可变标识及修订
      */
-    private record ComponentV6(
-            String componentId,
-            String managedApplicationId,
-            String ownershipManifestSha256,
-            String releaseManifestPath,
-            String configurationSnapshotPath,
-            String serviceDefinitionPath,
-            List<String> dependsOn,
-            BackupComponentRuntime runtime,
-            String releaseSha256,
-            List<SecretReference> secretReferences
-    ) {
+    private record ComponentV6(String componentId, String managedApplicationId, String ownershipManifestSha256,
+            String releaseManifestPath, String configurationSnapshotPath, String serviceDefinitionPath,
+            List<String> dependsOn, BackupComponentRuntime runtime, String releaseSha256,
+            List<SecretReference> secretReferences) {
         /**
          * Reconstructs this typed contract from the supplied source representation.
          * <p>根据所提供的源表示重建当前类型化契约。
@@ -283,10 +254,11 @@ public final class BackupManifestCodec {
             return new ComponentV6(component.componentId(), component.managedApplicationId(),
                     component.ownershipManifestSha256(), component.releaseManifestPath(),
                     component.configurationSnapshotPath(), component.serviceDefinitionPath(), component.dependsOn(),
-                    component.runtime(), component.releaseSha256().orElseThrow(() ->
-                            new IllegalArgumentException("schema-v6 component lacks releaseSha256")),
-                    component.secretReferences().orElseThrow(() ->
-                            new IllegalArgumentException("schema-v6 component lacks secretReferences")));
+                    component.runtime(),
+                    component.releaseSha256()
+                            .orElseThrow(() -> new IllegalArgumentException("schema-v6 component lacks releaseSha256")),
+                    component.secretReferences().orElseThrow(
+                            () -> new IllegalArgumentException("schema-v6 component lacks secretReferences")));
         }
 
         /**
@@ -296,9 +268,9 @@ public final class BackupManifestCodec {
          * @return constructed or resolved backup component / 构造或解析得到的备份组件
          */
         private BackupComponent toDomain() {
-            return new BackupComponent(componentId, managedApplicationId, ownershipManifestSha256,
-                    releaseManifestPath, configurationSnapshotPath, serviceDefinitionPath, dependsOn, runtime,
-                    releaseSha256, secretReferences);
+            return new BackupComponent(componentId, managedApplicationId, ownershipManifestSha256, releaseManifestPath,
+                    configurationSnapshotPath, serviceDefinitionPath, dependsOn, runtime, releaseSha256,
+                    secretReferences);
         }
     }
 

@@ -1,8 +1,8 @@
 package gold.debug.windowstolinux.shared.linux.protocol.backup;
 
-import gold.debug.windowstolinux.shared.model.managed.ManagedApplication;
-
 import java.util.Objects;
+
+import gold.debug.windowstolinux.shared.model.managed.ManagedApplication;
 
 /**
  * Identity-bound request for one helper-generated managed backup artifact. / 一个由 helper 生成且绑定身份的受管备份制品请求。
@@ -16,16 +16,9 @@ import java.util.Objects;
  * @param resourceId resource id / 资源标识
  * @param maximumBytes maximum bytes / 最大字节
  */
-public record RemoteBackupArtifactRequest(
-        String operationId,
-        String applicationId,
-        String componentId,
-        ManagedApplication managedApplication,
-        String releaseSha256,
-        RemoteBackupArtifactKind kind,
-        String resourceId,
-        long maximumBytes
-) {
+public record RemoteBackupArtifactRequest(String operationId, String applicationId, String componentId,
+        ManagedApplication managedApplication, String releaseSha256, RemoteBackupArtifactKind kind, String resourceId,
+        long maximumBytes) {
     /**
      * Validates the closed remote collection scope without accepting any path. / 校验封闭远端取材范围且不接受任何路径。
      *

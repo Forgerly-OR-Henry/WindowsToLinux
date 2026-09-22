@@ -1,10 +1,10 @@
 package gold.debug.windowstolinux.shared.config;
 
+import java.util.Objects;
+
 import gold.debug.windowstolinux.shared.model.failure.FailureCarrier;
 import gold.debug.windowstolinux.shared.model.failure.FailureDescriptor;
 import gold.debug.windowstolinux.shared.model.failure.OperationIdentity;
-
-import java.util.Objects;
 
 /**
  * Structured unchecked rejection of invalid deterministic configuration. / 对无效确定性配置的结构化非受检拒绝。
@@ -36,8 +36,7 @@ public final class ConfigurationException extends IllegalArgumentException imple
      * @return a typed configuration failure / 类型化配置失败
      */
     public static ConfigurationException create(ConfigurationFailureType type, String diagnostic) {
-        return new ConfigurationException(
-                FailureDescriptor.create(type, OperationIdentity.create(), diagnostic), null);
+        return new ConfigurationException(FailureDescriptor.create(type, OperationIdentity.create(), diagnostic), null);
     }
 
     /**
@@ -48,10 +47,9 @@ public final class ConfigurationException extends IllegalArgumentException imple
      * @param cause original failure retained as the nested cause / 保留为嵌套原因的原始失败
      * @return a typed configuration failure with its original cause / 带原始原因的类型化配置失败
      */
-    public static ConfigurationException create(
-            ConfigurationFailureType type, String diagnostic, Throwable cause) {
-        return new ConfigurationException(
-                FailureDescriptor.create(type, OperationIdentity.create(), diagnostic), cause);
+    public static ConfigurationException create(ConfigurationFailureType type, String diagnostic, Throwable cause) {
+        return new ConfigurationException(FailureDescriptor.create(type, OperationIdentity.create(), diagnostic),
+                cause);
     }
 
     /**
@@ -60,5 +58,8 @@ public final class ConfigurationException extends IllegalArgumentException imple
      *
      * @return structured failure occurrence retained for safe reporting / 保留用于安全报告的结构化失败实例
      */
-    @Override public FailureDescriptor failure() { return failure; }
+    @Override
+    public FailureDescriptor failure() {
+        return failure;
+    }
 }

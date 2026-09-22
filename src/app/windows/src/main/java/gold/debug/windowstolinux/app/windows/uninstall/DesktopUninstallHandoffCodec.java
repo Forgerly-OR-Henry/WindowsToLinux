@@ -1,11 +1,5 @@
 package gold.debug.windowstolinux.app.windows.uninstall;
 
-import gold.debug.windowstolinux.app.windows.workspace.DesktopHandoffEnvelopeCodec;
-import gold.debug.windowstolinux.app.windows.workspace.WindowsWorkspaceException;
-import gold.debug.windowstolinux.app.windows.workspace.WindowsWorkspaceFailureType;
-import gold.debug.windowstolinux.shared.model.failure.OperationIdentity;
-
-import javax.crypto.SecretKey;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.DataInputStream;
@@ -18,6 +12,13 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 
+import javax.crypto.SecretKey;
+
+import gold.debug.windowstolinux.app.windows.workspace.DesktopHandoffEnvelopeCodec;
+import gold.debug.windowstolinux.app.windows.workspace.WindowsWorkspaceException;
+import gold.debug.windowstolinux.app.windows.workspace.WindowsWorkspaceFailureType;
+import gold.debug.windowstolinux.shared.model.failure.OperationIdentity;
+
 /**
  * Strict authenticated transport codec for an uninstall handoff crossing the process boundary. / 卸载交接跨进程边界使用的严格认证传输编解码器。
  */
@@ -27,11 +28,13 @@ public final class DesktopUninstallHandoffCodec {
      * <p>载荷版本。
      */
     private static final int PAYLOAD_VERSION = 1;
+
     /**
      * MAXIMUM EVENTS.
      * <p>最大事件集合。
      */
     private static final int MAXIMUM_EVENTS = 64;
+
     /**
      * Bound desktop handoff envelope codec collaborator for envelope.
      * <p>处理信封的Desktop交接信封编解码器协作对象。
@@ -47,8 +50,7 @@ public final class DesktopUninstallHandoffCodec {
      * @throws WindowsWorkspaceException if the windows workspace boundary rejects the operation / Windows工作区边界拒绝当前操作时
      * @throws NullPointerException if a required input is absent / 必需输入缺失时
      */
-    public byte[] write(DesktopUninstallHandoff handoff, SecretKey authenticationKey)
-            throws WindowsWorkspaceException {
+    public byte[] write(DesktopUninstallHandoff handoff, SecretKey authenticationKey) throws WindowsWorkspaceException {
         Objects.requireNonNull(handoff, "handoff");
         byte[] payload = null;
         try {
@@ -70,7 +72,8 @@ public final class DesktopUninstallHandoffCodec {
         } catch (IOException | RuntimeException exception) {
             throw invalid("uninstall handoff could not be encoded", exception);
         } finally {
-            if (payload != null) Arrays.fill(payload, (byte) 0);
+            if (payload != null)
+                Arrays.fill(payload, (byte) 0);
         }
     }
 
@@ -82,20 +85,19 @@ public final class DesktopUninstallHandoffCodec {
      * @return constructed or resolved desktop uninstall handoff / 构造或解析得到的Desktop卸载交接
      * @throws WindowsWorkspaceException if the windows workspace boundary rejects the operation / Windows工作区边界拒绝当前操作时
      */
-    public DesktopUninstallHandoff read(byte[] document, SecretKey authenticationKey)
-            throws WindowsWorkspaceException {
-        byte[] payload = envelope.read(DesktopHandoffEnvelopeCodec.PurposeType.UNINSTALL,
-                document, authenticationKey);
+    public DesktopUninstallHandoff read(byte[] document, SecretKey authenticationKey) throws WindowsWorkspaceException {
+        byte[] payload = envelope.read(DesktopHandoffEnvelopeCodec.PurposeType.UNINSTALL, document, authenticationKey);
         try (DataInputStream input = new DataInputStream(new ByteArrayInputStream(payload))) {
             if (input.readInt() != PAYLOAD_VERSION) {
                 throw invalid("uninstall handoff payload version is unsupported", null);
             }
             OperationIdentity operation = OperationIdentity.from(input.readUTF());
             DesktopUninstallRequest request = new DesktopUninstallRequest(
-                    Optional.of(DesktopUninstallDecisionType.valueOf(input.readUTF())),
-                    Path.of(input.readUTF()), Path.of(input.readUTF()), input.readUTF());
+                    Optional.of(DesktopUninstallDecisionType.valueOf(input.readUTF())), Path.of(input.readUTF()),
+                    Path.of(input.readUTF()), input.readUTF());
             List<DesktopUninstallEvent> events = readEvents(input);
-            if (input.available() != 0) throw invalid("uninstall handoff payload has trailing bytes", null);
+            if (input.available() != 0)
+                throw invalid("uninstall handoff payload has trailing bytes", null);
             return new DesktopUninstallHandoff(operation, request, events);
         } catch (WindowsWorkspaceException exception) {
             throw exception;
@@ -133,11 +135,12 @@ public final class DesktopUninstallHandoffCodec {
      */
     private static List<DesktopUninstallEvent> readEvents(DataInputStream input) throws IOException {
         int count = input.readInt();
-        if (count < 1 || count > MAXIMUM_EVENTS) throw new IOException("uninstall event count is invalid");
+        if (count < 1 || count > MAXIMUM_EVENTS)
+            throw new IOException("uninstall event count is invalid");
         List<DesktopUninstallEvent> events = new ArrayList<>(count);
         for (int index = 0; index < count; index++) {
-            events.add(new DesktopUninstallEvent(DesktopUninstallState.valueOf(input.readUTF()),
-                    input.readBoolean(), input.readUTF()));
+            events.add(new DesktopUninstallEvent(DesktopUninstallState.valueOf(input.readUTF()), input.readBoolean(),
+                    input.readUTF()));
         }
         return List.copyOf(events);
     }

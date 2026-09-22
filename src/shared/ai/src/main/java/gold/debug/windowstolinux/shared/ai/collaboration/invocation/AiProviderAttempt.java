@@ -12,7 +12,8 @@ import java.util.Objects;
  * @param detail detail / 详情
  * @param attemptedAt attempted at / 已尝试时刻
  */
-public record AiProviderAttempt(String providerId, String model, AiInvocationStatus status, String detail, Instant attemptedAt) {
+public record AiProviderAttempt(String providerId, String model, AiInvocationStatus status, String detail,
+        Instant attemptedAt) {
     /**
      * Validates a compact attempt record. / 校验精简尝试记录。
      *
@@ -25,7 +26,12 @@ public record AiProviderAttempt(String providerId, String model, AiInvocationSta
      * @throws NullPointerException if a required input is absent / 必需输入缺失时
      */
     public AiProviderAttempt {
-        Objects.requireNonNull(providerId); Objects.requireNonNull(model); Objects.requireNonNull(status); Objects.requireNonNull(detail); Objects.requireNonNull(attemptedAt);
-        if (providerId.length() > 64 || model.length() > 128 || detail.length() > 256) throw new IllegalArgumentException("AI attempt metadata exceeds bounds");
+        Objects.requireNonNull(providerId);
+        Objects.requireNonNull(model);
+        Objects.requireNonNull(status);
+        Objects.requireNonNull(detail);
+        Objects.requireNonNull(attemptedAt);
+        if (providerId.length() > 64 || model.length() > 128 || detail.length() > 256)
+            throw new IllegalArgumentException("AI attempt metadata exceeds bounds");
     }
 }

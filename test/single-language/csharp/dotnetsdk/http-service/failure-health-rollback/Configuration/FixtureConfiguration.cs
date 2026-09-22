@@ -1,5 +1,6 @@
 using System.Text.RegularExpressions;
 namespace Fixture;
+
 public sealed record FixtureConfiguration(int Port, string Mode, int Status, string Label)
 {
     public static FixtureConfiguration Load()

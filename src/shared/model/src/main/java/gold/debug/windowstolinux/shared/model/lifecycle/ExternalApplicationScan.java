@@ -17,8 +17,10 @@ public record ExternalApplicationScan(List<DiscoveredApplication> applications, 
      * @throws IllegalArgumentException if an input violates the constraints checked by this contract / 输入违反当前契约检查的约束时
      */
     public ExternalApplicationScan {
-        applications = List.copyOf(applications); issues = List.copyOf(issues);
-        if (applications.size() > 512 || issues.size() > 32) throw new IllegalArgumentException("scan exceeds bounds");
+        applications = List.copyOf(applications);
+        issues = List.copyOf(issues);
+        if (applications.size() > 512 || issues.size() > 32)
+            throw new IllegalArgumentException("scan exceeds bounds");
         if (applications.stream().map(value -> value.target().key()).distinct().count() != applications.size())
             throw new IllegalArgumentException("duplicate scan identity");
     }

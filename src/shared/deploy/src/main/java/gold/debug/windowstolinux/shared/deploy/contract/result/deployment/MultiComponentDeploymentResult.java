@@ -1,13 +1,13 @@
 package gold.debug.windowstolinux.shared.deploy.contract.result.deployment;
 
+import java.util.List;
+import java.util.Objects;
+import java.util.Optional;
+
 import gold.debug.windowstolinux.shared.model.deployment.DeploymentStatus;
 import gold.debug.windowstolinux.shared.model.failure.FailureDescriptor;
 import gold.debug.windowstolinux.shared.model.failure.FailureSeverityLevel;
 import gold.debug.windowstolinux.shared.model.failure.OperationIdentity;
-
-import java.util.List;
-import java.util.Objects;
-import java.util.Optional;
 
 /**
  * Application-level transaction result that always preserves every component outcome.
@@ -22,15 +22,10 @@ import java.util.Optional;
  * @param nonFatalFailures non fatal failures / 非致命失败集合
  * @param componentReleaseIdentities component release identities / 组件发布身份集合
  */
-public record MultiComponentDeploymentResult(
-        DeploymentStatus status,
-        List<DeploymentEvent> applicationEvents,
-        List<ComponentDeploymentResult> componentResults,
-        Optional<String> applicationReleaseIdentity,
-        OperationIdentity operationIdentity,
-        List<FailureDescriptor> nonFatalFailures,
-        java.util.Map<String, String> componentReleaseIdentities
-) {
+public record MultiComponentDeploymentResult(DeploymentStatus status, List<DeploymentEvent> applicationEvents,
+        List<ComponentDeploymentResult> componentResults, Optional<String> applicationReleaseIdentity,
+        OperationIdentity operationIdentity, List<FailureDescriptor> nonFatalFailures,
+        java.util.Map<String, String> componentReleaseIdentities) {
     /**
      * Validates application and component terminal consistency. / 验证应用与组件终态一致性。
      *
@@ -47,9 +42,12 @@ public record MultiComponentDeploymentResult(
     public MultiComponentDeploymentResult {
         componentReleaseIdentities = java.util.Map.copyOf(componentReleaseIdentities);
         if (!componentReleaseIdentities.isEmpty() && (status != DeploymentStatus.SUCCEEDED
-                || !componentReleaseIdentities.keySet().equals(componentResults.stream().map(ComponentDeploymentResult::componentId).collect(java.util.stream.Collectors.toSet()))
+                || !componentReleaseIdentities.keySet()
+                        .equals(componentResults.stream().map(ComponentDeploymentResult::componentId)
+                                .collect(java.util.stream.Collectors.toSet()))
                 || componentReleaseIdentities.values().stream().anyMatch(value -> !value.matches("[0-9a-f]{64}"))))
-            throw new IllegalArgumentException("published component identities must exactly cover a successful transaction");
+            throw new IllegalArgumentException(
+                    "published component identities must exactly cover a successful transaction");
         status = Objects.requireNonNull(status, "status");
         applicationEvents = List.copyOf(Objects.requireNonNull(applicationEvents, "applicationEvents"));
         componentResults = List.copyOf(Objects.requireNonNull(componentResults, "componentResults").stream()
@@ -57,28 +55,38 @@ public record MultiComponentDeploymentResult(
         applicationReleaseIdentity = Objects.requireNonNull(applicationReleaseIdentity, "applicationReleaseIdentity");
         operationIdentity = Objects.requireNonNull(operationIdentity, "operationIdentity");
         OperationIdentity normalizedIdentity = operationIdentity;
-        applicationEvents = applicationEvents.stream().map(event -> event.withOperationIdentity(normalizedIdentity)).toList();
-        componentResults = componentResults.stream().map(component -> new ComponentDeploymentResult(
-                component.componentId(), component.state(), component.events().stream()
-                .map(event -> event.withOperationIdentity(normalizedIdentity)).toList(), component.observation())).toList();
+        applicationEvents = applicationEvents.stream().map(event -> event.withOperationIdentity(normalizedIdentity))
+                .toList();
+        componentResults = componentResults.stream()
+                .map(component -> new ComponentDeploymentResult(
+                        component.componentId(), component.state(), component.events().stream()
+                                .map(event -> event.withOperationIdentity(normalizedIdentity)).toList(),
+                        component.observation()))
+                .toList();
         nonFatalFailures = List.copyOf(Objects.requireNonNull(nonFatalFailures, "nonFatalFailures").stream()
                 .map(failure -> failure.withOperationIdentity(normalizedIdentity)).toList());
-        if (nonFatalFailures.stream().anyMatch(failure -> failure.definition().severity() != FailureSeverityLevel.WARNING)) {
+        if (nonFatalFailures.stream()
+                .anyMatch(failure -> failure.definition().severity() != FailureSeverityLevel.WARNING)) {
             throw new IllegalArgumentException("nonFatalFailures may contain warning definitions only");
         }
         if (status == DeploymentStatus.SUCCEEDED != applicationReleaseIdentity.isPresent()) {
-            throw new IllegalArgumentException("only a successful application transaction may expose a release identity");
+            throw new IllegalArgumentException(
+                    "only a successful application transaction may expose a release identity");
         }
         applicationReleaseIdentity.ifPresent(value -> {
-            if (!value.matches("[0-9a-f]{64}")) throw new IllegalArgumentException("invalid application release identity");
+            if (!value.matches("[0-9a-f]{64}"))
+                throw new IllegalArgumentException("invalid application release identity");
         });
         if (status == DeploymentStatus.SUCCEEDED && componentResults.stream()
                 .anyMatch(result -> result.state() != ComponentTransactionState.SUCCEEDED)) {
-            throw new IllegalArgumentException("successful application transactions require every component to succeed");
+            throw new IllegalArgumentException(
+                    "successful application transactions require every component to succeed");
         }
-        if (componentResults.stream().anyMatch(result -> result.state() == ComponentTransactionState.MANUAL_RECOVERY_REQUIRED)
+        if (componentResults.stream()
+                .anyMatch(result -> result.state() == ComponentTransactionState.MANUAL_RECOVERY_REQUIRED)
                 && status != DeploymentStatus.MANUAL_RECOVERY_REQUIRED) {
-            throw new IllegalArgumentException("a component recovery failure must make the application manual-recovery required");
+            throw new IllegalArgumentException(
+                    "a component recovery failure must make the application manual-recovery required");
         }
     }
 
@@ -95,7 +103,8 @@ public record MultiComponentDeploymentResult(
     public MultiComponentDeploymentResult(DeploymentStatus status, List<DeploymentEvent> applicationEvents,
             List<ComponentDeploymentResult> componentResults, Optional<String> applicationReleaseIdentity,
             OperationIdentity operationIdentity, List<FailureDescriptor> nonFatalFailures) {
-        this(status, applicationEvents, componentResults, applicationReleaseIdentity, operationIdentity, nonFatalFailures, java.util.Map.of());
+        this(status, applicationEvents, componentResults, applicationReleaseIdentity, operationIdentity,
+                nonFatalFailures, java.util.Map.of());
     }
 
     /**
@@ -120,8 +129,7 @@ public record MultiComponentDeploymentResult(
      * @param applicationReleaseIdentity application release identity / 应用发布身份
      */
     public MultiComponentDeploymentResult(DeploymentStatus status, List<DeploymentEvent> applicationEvents,
-                                          List<ComponentDeploymentResult> componentResults,
-                                          Optional<String> applicationReleaseIdentity) {
+            List<ComponentDeploymentResult> componentResults, Optional<String> applicationReleaseIdentity) {
         this(status, applicationEvents, componentResults, applicationReleaseIdentity,
                 identity(applicationEvents, componentResults), List.of());
     }
@@ -151,12 +159,12 @@ public record MultiComponentDeploymentResult(
      * @throws NullPointerException if a required input is absent / 必需输入缺失时
      */
     private static OperationIdentity identity(List<DeploymentEvent> applicationEvents,
-                                              List<ComponentDeploymentResult> componentResults) {
+            List<ComponentDeploymentResult> componentResults) {
         java.util.stream.Stream<DeploymentEvent> events = java.util.stream.Stream.concat(
                 Objects.requireNonNull(applicationEvents, "applicationEvents").stream(),
                 Objects.requireNonNull(componentResults, "componentResults").stream()
                         .flatMap(component -> component.events().stream()));
-        return events.map(DeploymentEvent::failure).flatMap(Optional::stream)
-                .map(FailureDescriptor::operationIdentity).findFirst().orElseGet(OperationIdentity::create);
+        return events.map(DeploymentEvent::failure).flatMap(Optional::stream).map(FailureDescriptor::operationIdentity)
+                .findFirst().orElseGet(OperationIdentity::create);
     }
 }

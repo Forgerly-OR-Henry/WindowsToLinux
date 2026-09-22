@@ -1,11 +1,11 @@
 package gold.debug.windowstolinux.app.windows.update;
 
+import java.io.IOException;
+import java.util.Objects;
+
 import gold.debug.windowstolinux.shared.model.failure.FailureCarrier;
 import gold.debug.windowstolinux.shared.model.failure.FailureDescriptor;
 import gold.debug.windowstolinux.shared.model.failure.OperationIdentity;
-
-import java.io.IOException;
-import java.util.Objects;
 
 /**
  * Structured checked failure for desktop update verification and replacement. / 桌面更新验证及替换的结构化受检失败。
@@ -49,10 +49,9 @@ public final class DesktopUpdateException extends IOException implements Failure
      * @param cause original failure retained as the nested cause / 保留为嵌套原因的原始失败
      * @return a typed update failure with a safe cause / 带安全原因的类型化更新失败
      */
-    public static DesktopUpdateException create(
-            DesktopUpdateFailureType type, String diagnostic, Throwable cause) {
-        return new DesktopUpdateException(
-                FailureDescriptor.create(type, OperationIdentity.create(), diagnostic), cause);
+    public static DesktopUpdateException create(DesktopUpdateFailureType type, String diagnostic, Throwable cause) {
+        return new DesktopUpdateException(FailureDescriptor.create(type, OperationIdentity.create(), diagnostic),
+                cause);
     }
 
     /**
@@ -61,5 +60,8 @@ public final class DesktopUpdateException extends IOException implements Failure
      *
      * @return structured failure occurrence retained for safe reporting / 保留用于安全报告的结构化失败实例
      */
-    @Override public FailureDescriptor failure() { return failure; }
+    @Override
+    public FailureDescriptor failure() {
+        return failure;
+    }
 }

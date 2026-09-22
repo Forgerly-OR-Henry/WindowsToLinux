@@ -11,13 +11,8 @@ import java.util.List;
  * @param schemaReadable schema readable / 结构可读
  * @param evidence observations supporting the reported result / 支持所报告结果的观测证据
  */
-public record DatabaseRestoreEvidence(
-        String candidateId,
-        String connectionToken,
-        boolean integrityVerified,
-        boolean schemaReadable,
-        List<String> evidence
-) {
+public record DatabaseRestoreEvidence(String candidateId, String connectionToken, boolean integrityVerified,
+        boolean schemaReadable, List<String> evidence) {
     /**
      * Requires complete candidate verification. / 要求完整候选校验。
      *

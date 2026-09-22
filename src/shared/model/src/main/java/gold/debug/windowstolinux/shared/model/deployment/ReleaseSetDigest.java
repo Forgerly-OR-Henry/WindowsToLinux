@@ -17,8 +17,7 @@ public final class ReleaseSetDigest {
      * DOMAIN.
      * <p>领域。
      */
-    private static final byte[] DOMAIN =
-            "windowstolinux-backup-release-set-v1".getBytes(StandardCharsets.UTF_8);
+    private static final byte[] DOMAIN = "windowstolinux-backup-release-set-v1".getBytes(StandardCharsets.UTF_8);
 
     /**
      * Prevents instantiation of this static contract helper.
@@ -46,8 +45,8 @@ public final class ReleaseSetDigest {
             updateLengthPrefixed(digest, DOMAIN);
             digest.update(ByteBuffer.allocate(Integer.BYTES).putInt(components.size()).array());
             for (ComponentRelease component : components) {
-                updateLengthPrefixed(digest, Objects.requireNonNull(component, "component")
-                        .componentId().getBytes(StandardCharsets.UTF_8));
+                updateLengthPrefixed(digest,
+                        Objects.requireNonNull(component, "component").componentId().getBytes(StandardCharsets.UTF_8));
                 updateLengthPrefixed(digest, component.releaseSha256().getBytes(StandardCharsets.US_ASCII));
             }
             return HexFormat.of().formatHex(digest.digest());
@@ -88,8 +87,7 @@ public final class ReleaseSetDigest {
             if (!componentId.matches("[a-z0-9][a-z0-9-]{0,62}")) {
                 throw new IllegalArgumentException("componentId must be a bounded managed identifier");
             }
-            releaseSha256 = Objects.requireNonNull(releaseSha256, "releaseSha256")
-                    .trim().toLowerCase(Locale.ROOT);
+            releaseSha256 = Objects.requireNonNull(releaseSha256, "releaseSha256").trim().toLowerCase(Locale.ROOT);
             if (!releaseSha256.matches("[0-9a-f]{64}")) {
                 throw new IllegalArgumentException("releaseSha256 must be canonical SHA-256");
             }

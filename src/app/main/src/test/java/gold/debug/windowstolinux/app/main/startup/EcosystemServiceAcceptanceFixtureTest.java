@@ -1,20 +1,21 @@
 package gold.debug.windowstolinux.app.main.startup;
 
-import gold.debug.windowstolinux.shared.model.project.DeploymentProjectType;
-import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.io.TempDir;
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Map;
 
-import static org.junit.jupiter.api.Assertions.assertArrayEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import gold.debug.windowstolinux.shared.model.project.DeploymentProjectType;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 /** Verifies failure fixtures exercise the service health gate rather than one request process. / 验证故障夹具触发服务健康门，而不是仅结束一次请求进程。 */
 class EcosystemServiceAcceptanceFixtureTest {
-    @TempDir Path temporaryDirectory;
+    @TempDir
+    Path temporaryDirectory;
 
     @Test
     void phpFailureRespondsUnhealthyWhileTheBuiltInServerRemainsObservable() throws Exception {
@@ -33,7 +34,8 @@ class EcosystemServiceAcceptanceFixtureTest {
         Path original = RepositoryServiceFixture.repositoryRoot()
                 .resolve("test/single-language/java/gradle/spring-boot/success-deployment-smoke");
         byte[] wrapper = Files.readAllBytes(original.resolve("gradle/wrapper/gradle-wrapper.jar"));
-        Path root = RepositoryServiceFixture.copy(temporaryDirectory, "copied-service", "java/gradle/spring-boot", true);
+        Path root = RepositoryServiceFixture.copy(temporaryDirectory, "copied-service", "java/gradle/spring-boot",
+                true);
         RepositoryServiceFixture.replaceText(root, Map.of("gradle", "customized", "deployment-smoke-ok", "copied-ok"));
         assertArrayEquals(wrapper, Files.readAllBytes(root.resolve("gradle/wrapper/gradle-wrapper.jar")));
         assertTrue(Files.readString(root.resolve("gradle/wrapper/gradle-wrapper.properties")).contains("customized"));
@@ -53,8 +55,10 @@ class EcosystemServiceAcceptanceFixtureTest {
                 "kotlin-fixture", "2.0.21", "unhealthy", false, wrapperJar);
 
         String properties = Files.readString(root.resolve("gradle/wrapper/gradle-wrapper.properties"));
-        assertTrue(properties.contains("distributionSha256Sum=31c55713e40233a8303827ceb42ca48a47267a0ad4bab9177123121e71524c26"));
-        assertTrue(properties.contains("distributionUrl=https\\://downloads.gradle.org/distributions/gradle-8.10.2-bin.zip"));
+        assertTrue(properties
+                .contains("distributionSha256Sum=31c55713e40233a8303827ceb42ca48a47267a0ad4bab9177123121e71524c26"));
+        assertTrue(properties
+                .contains("distributionUrl=https\\://downloads.gradle.org/distributions/gradle-8.10.2-bin.zip"));
         assertFalse(properties.contains("services.gradle.org"));
     }
 }

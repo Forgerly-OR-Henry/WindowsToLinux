@@ -10,12 +10,8 @@ import java.util.Objects;
  * @param applicationWritesStopped application writes stopped / 应用写入集合已停止
  * @param exclusiveWriterConfirmed exclusive writer confirmed / 独占写入器已确认
  */
-public record DatabaseBackupRequest(
-        String applicationId,
-        DatabaseConnectionProfile connection,
-        boolean applicationWritesStopped,
-        boolean exclusiveWriterConfirmed
-) {
+public record DatabaseBackupRequest(String applicationId, DatabaseConnectionProfile connection,
+        boolean applicationWritesStopped, boolean exclusiveWriterConfirmed) {
     /**
      * Validates request identity and rejects contradictory write-state claims. / 校验请求身份并拒绝矛盾写入状态声明。
      *

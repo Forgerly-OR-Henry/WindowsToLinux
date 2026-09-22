@@ -1,5 +1,13 @@
 package gold.debug.windowstolinux.app.service.backup;
 
+import java.io.IOException;
+import java.io.OutputStream;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.StandardOpenOption;
+import java.util.List;
+import java.util.Objects;
+
 import gold.debug.windowstolinux.app.windows.workspace.WindowsBackupArchiveAttempt;
 import gold.debug.windowstolinux.app.windows.workspace.WindowsBackupArchiveWorkspace;
 import gold.debug.windowstolinux.app.windows.workspace.WindowsWorkspaceException;
@@ -13,14 +21,6 @@ import gold.debug.windowstolinux.shared.backup.format.BackupArchiveWriter;
 import gold.debug.windowstolinux.shared.backup.manifest.BackupManifest;
 import gold.debug.windowstolinux.shared.backup.manifest.BackupMember;
 
-import java.io.IOException;
-import java.io.OutputStream;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.StandardOpenOption;
-import java.util.List;
-import java.util.Objects;
-
 /**
  * Creates, independently re-reads, and atomically publishes one already-materialized local backup. / 创建、独立回读并原子发布一个已完成取材的本地备份。
  */
@@ -30,21 +30,25 @@ public final class BackupArchiveCreationUseCase {
      * <p>发布OVERHEAD字节。
      */
     private static final long PUBLICATION_OVERHEAD_BYTES = 1024L * 1024L;
+
     /**
      * Bound backup archive policy collaborator for explicit validation and resource-bound policy.
      * <p>处理显式校验及资源边界策略的备份归档策略协作对象。
      */
     private final BackupArchivePolicy policy;
+
     /**
      * Writer.
      * <p>写入器。
      */
     private final BackupArchiveWriter writer;
+
     /**
      * Validator.
      * <p>校验器。
      */
     private final BackupArchiveValidator validator;
+
     /**
      * Platform-owned work area with enforced path boundaries.
      * <p>具有路径边界约束的平台工作区。
@@ -83,19 +87,16 @@ public final class BackupArchiveCreationUseCase {
      * @throws IOException if the required file or stream operation fails / 所需文件或流操作失败时
      * @throws NullPointerException if a required input is absent / 必需输入缺失时
      */
-    public CreatedBackupArchive create(
-            BackupManifest manifest,
-            List<BackupArchiveContent> contents,
-            Path destination
-    ) throws IOException {
+    public CreatedBackupArchive create(BackupManifest manifest, List<BackupArchiveContent> contents, Path destination)
+            throws IOException {
         Objects.requireNonNull(manifest, "manifest");
         Objects.requireNonNull(contents, "contents");
         WindowsBackupArchiveAttempt attempt = workspace.createAttempt(destination, requiredCapacity(manifest));
         BackupArchiveValidation staged = null;
         boolean published = false;
         try {
-            try (OutputStream output = Files.newOutputStream(attempt.temporary(),
-                    StandardOpenOption.WRITE, StandardOpenOption.TRUNCATE_EXISTING)) {
+            try (OutputStream output = Files.newOutputStream(attempt.temporary(), StandardOpenOption.WRITE,
+                    StandardOpenOption.TRUNCATE_EXISTING)) {
                 writer.write(manifest, contents, output);
             }
             staged = validator.validate(attempt.temporary());
@@ -121,8 +122,7 @@ public final class BackupArchiveCreationUseCase {
      */
     private long requiredCapacity(BackupManifest manifest) throws BackupException {
         try {
-            long members = manifest.members().stream().mapToLong(BackupMember::size)
-                    .reduce(0L, Math::addExact);
+            long members = manifest.members().stream().mapToLong(BackupMember::size).reduce(0L, Math::addExact);
             long entryOverhead = Math.multiplyExact((long) manifest.members().size() + 1L, 2048L);
             return Math.addExact(PUBLICATION_OVERHEAD_BYTES,
                     Math.addExact(policy.maximumManifestBytes(), Math.addExact(members, entryOverhead)));
@@ -173,15 +173,13 @@ public final class BackupArchiveCreationUseCase {
      * @param published published / 已发布
      * @param original original / 原始
      */
-    private void cleanup(
-            WindowsBackupArchiveAttempt attempt,
-            BackupArchiveValidation staged,
-            boolean published,
-            Exception original
-    ) {
+    private void cleanup(WindowsBackupArchiveAttempt attempt, BackupArchiveValidation staged, boolean published,
+            Exception original) {
         try {
-            if (published && staged != null) workspace.discardPublished(attempt, staged.archiveSha256());
-            else workspace.discardTemporary(attempt);
+            if (published && staged != null)
+                workspace.discardPublished(attempt, staged.archiveSha256());
+            else
+                workspace.discardTemporary(attempt);
         } catch (WindowsWorkspaceException cleanupFailure) {
             original.addSuppressed(cleanupFailure);
         }

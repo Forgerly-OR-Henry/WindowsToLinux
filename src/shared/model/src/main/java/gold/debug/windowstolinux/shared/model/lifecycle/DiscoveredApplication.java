@@ -12,8 +12,8 @@ import java.util.Objects;
  * @param canStop can stop / 能够停止
  * @param managed managed / 受管
  */
-public record DiscoveredApplication(ExternalApplicationTarget target, String name, RuntimeState state,
-                                    boolean canStart, boolean canStop, boolean managed) {
+public record DiscoveredApplication(ExternalApplicationTarget target, String name, RuntimeState state, boolean canStart,
+        boolean canStop, boolean managed) {
     /**
      * Bounds display metadata without retaining process environments. / 限制显示元数据，不保留进程环境。
      *
@@ -27,8 +27,10 @@ public record DiscoveredApplication(ExternalApplicationTarget target, String nam
      * @throws NullPointerException if a required input is absent / 必需输入缺失时
      */
     public DiscoveredApplication {
-        Objects.requireNonNull(target, "target"); Objects.requireNonNull(state, "state");
-        if (Objects.requireNonNull(name, "name").isBlank() || name.length() > 240 || name.chars().anyMatch(Character::isISOControl))
+        Objects.requireNonNull(target, "target");
+        Objects.requireNonNull(state, "state");
+        if (Objects.requireNonNull(name, "name").isBlank() || name.length() > 240
+                || name.chars().anyMatch(Character::isISOControl))
             throw new IllegalArgumentException("invalid application display name");
     }
 }

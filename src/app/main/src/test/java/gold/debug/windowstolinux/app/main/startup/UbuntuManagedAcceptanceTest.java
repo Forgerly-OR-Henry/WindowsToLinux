@@ -1,44 +1,43 @@
 package gold.debug.windowstolinux.app.main.startup;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import java.io.InputStream;
+import java.net.HttpURLConnection;
+import java.net.URI;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.Optional;
+
+import gold.debug.windowstolinux.app.db.DesktopPersistence;
 import gold.debug.windowstolinux.app.service.DesktopApplicationFacade;
 import gold.debug.windowstolinux.app.service.deployment.*;
+import gold.debug.windowstolinux.app.service.deployment.single.DeploymentHandoff;
+import gold.debug.windowstolinux.app.service.deployment.single.DeploymentHandoff.HttpAccessUrl;
+import gold.debug.windowstolinux.app.service.deployment.single.DeploymentOutcome;
 import gold.debug.windowstolinux.app.service.execution.lifecycle.*;
 import gold.debug.windowstolinux.app.service.server.*;
 import gold.debug.windowstolinux.app.service.source.*;
-
-import gold.debug.windowstolinux.app.db.DesktopPersistence;
-import gold.debug.windowstolinux.app.service.deployment.single.DeploymentHandoff;
-import gold.debug.windowstolinux.app.service.deployment.single.DeploymentOutcome;
-import gold.debug.windowstolinux.app.service.deployment.single.DeploymentHandoff.HttpAccessUrl;
-import gold.debug.windowstolinux.shared.deploy.contract.ReviewedDeploymentRequest;
 import gold.debug.windowstolinux.shared.deploy.contract.result.lifecycle.LifecycleActionResult;
 import gold.debug.windowstolinux.shared.linux.sshd.connection.SshdLinuxGateway;
-import gold.debug.windowstolinux.shared.model.lifecycle.AutostartState;
 import gold.debug.windowstolinux.shared.model.deployment.BuildLimitConfiguration;
-import gold.debug.windowstolinux.shared.model.security.CredentialStorageMode;
 import gold.debug.windowstolinux.shared.model.deployment.DeploymentStatus;
 import gold.debug.windowstolinux.shared.model.health.HealthCheck;
+import gold.debug.windowstolinux.shared.model.health.UserAccessUrl;
+import gold.debug.windowstolinux.shared.model.lifecycle.AutostartState;
 import gold.debug.windowstolinux.shared.model.lifecycle.LifecycleAction;
 import gold.debug.windowstolinux.shared.model.lifecycle.LifecycleObservation;
 import gold.debug.windowstolinux.shared.model.lifecycle.RuntimeState;
-import gold.debug.windowstolinux.shared.model.health.UserAccessUrl;
 import gold.debug.windowstolinux.shared.model.project.DeploymentBuildToolType;
+import gold.debug.windowstolinux.shared.model.security.CredentialStorageMode;
+import gold.debug.windowstolinux.shared.standard.deploy.contract.ReviewedDeploymentRequest;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIfSystemProperty;
 import org.junit.jupiter.api.io.TempDir;
-
-import java.io.InputStream;
-import java.net.URI;
-import java.net.HttpURLConnection;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.charset.StandardCharsets;
-import java.util.Optional;
-
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNotEquals;
-import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.junit.jupiter.api.Assertions.assertFalse;
 
 /**
  * Opt-in real-host acceptance test. It reads the SSH password only from WINDOWSTOLINUX_TEST_SSH_PASSWORD and is never part of ordinary Maven gates.
@@ -60,7 +59,8 @@ class UbuntuManagedAcceptanceTest {
         boolean rootBuild = false;
         assertFalse(Boolean.getBoolean("managed.root-build"), "root builds were removed in helper v7");
         String password = System.getenv("WINDOWSTOLINUX_TEST_SSH_PASSWORD");
-        HealthCheck.Http health = httpHealth(System.getProperty("managed.health.url", "http://127.0.0.1:18080/actuator/health"));
+        HealthCheck.Http health = httpHealth(
+                System.getProperty("managed.health.url", "http://127.0.0.1:18080/actuator/health"));
         assertTrue(sourceProperty != null && !sourceProperty.isBlank(), "managed.hello.source is required");
         assertTrue(accessUrlProperty != null && !accessUrlProperty.isBlank(), "managed.access.url is required");
         assertTrue(businessMarker != null && !businessMarker.isBlank(), "managed.business.marker is required");
@@ -76,10 +76,15 @@ class UbuntuManagedAcceptanceTest {
         char[] sshPassword = password.toCharArray();
         char[] masterPassword = "managed-acceptance-master".toCharArray();
         try (DesktopPersistence database = DesktopPersistence.open(temporaryDirectory.resolve("desktop-data"))) {
-            DesktopApplicationFacade service = new DesktopApplicationFacade(
-                    database, temporaryDirectory.resolve("work"), new SshdLinuxGateway());
+            DesktopApplicationFacade service = new DesktopApplicationFacade(database,
+                    temporaryDirectory.resolve("work"),
+                    new SshdLinuxGateway(
+                            gold.debug.windowstolinux.shared.standard.deploy.build.DeploymentBuildExecutor::new,
+                            gold.debug.windowstolinux.shared.standard.deploy.distro.extension.registry.DistributionSetupRegistry
+                                    .defaults()));
             ReviewedSourcePreparation preparation = ReviewedMavenAcceptanceFixture.prepare(service, source);
-            assertTrue(preparation.archive().isPresent(), "Hello World must pass the managed-deployment static analysis");
+            assertTrue(preparation.archive().isPresent(),
+                    "Hello World must pass the managed-deployment static analysis");
             String applicationId = preparation.assessment().facts().orElseThrow().applicationId();
 
             ServerProfile profile = new ServerProfile("ubuntu-managed", host, 22, username,
@@ -87,18 +92,19 @@ class UbuntuManagedAcceptanceTest {
             service.saveServerProfile(profile, CredentialStorageMode.MASTER_PASSWORD, masterPassword, sshPassword);
             var capabilities = service.verifyServer(profile, CredentialStorageMode.MASTER_PASSWORD,
                     "managed-acceptance-master".toCharArray(), fingerprint -> true);
-            assertTrue(capabilities.supportsManagedDeployment(
-                    preparation.assessment().facts().orElseThrow().buildTool() == DeploymentBuildToolType.MAVEN_WRAPPER,
-                    health), "Ubuntu target must meet all managed-deployment preconditions: " + capabilities);
+            assertTrue(
+                    capabilities.supportsManagedDeployment(preparation.assessment().facts().orElseThrow()
+                            .buildTool() == DeploymentBuildToolType.MAVEN_WRAPPER, health),
+                    "Ubuntu target must meet all managed-deployment preconditions: " + capabilities);
 
             var server = service.findTrustedServer(profile.id()).orElseThrow();
             ReviewedDeploymentRequest request = ReviewedMavenAcceptanceFixture.request(service, preparation, server,
                     health, Optional.of(userAccessUrl),
-                    new BuildLimitConfiguration(1200, 1024, 4096, 4L * 1024 * 1024,
-                            2L * 1024 * 1024 * 1024, rootBuild), rootBuild);
-            DeploymentOutcome deployed = service.deployReviewedWithStoredPassword(
-                    request, profile, CredentialStorageMode.MASTER_PASSWORD,
-                    "managed-acceptance-master".toCharArray(), fingerprint -> true);
+                    new BuildLimitConfiguration(1200, 1024, 4096, 4L * 1024 * 1024, 2L * 1024 * 1024 * 1024, rootBuild),
+                    rootBuild);
+            DeploymentOutcome deployed = service.deployReviewedWithStoredPassword(request, profile,
+                    CredentialStorageMode.MASTER_PASSWORD, "managed-acceptance-master".toCharArray(),
+                    fingerprint -> true);
             assertEquals(DeploymentStatus.SUCCEEDED, deployed.status(), () -> deployed.events().toString());
             URI accessUrl = requireHttpAccessUrl(deployed, userAccessUrl.url());
             assertDesktopCanAccess(accessUrl, businessMarker);
@@ -127,13 +133,11 @@ class UbuntuManagedAcceptanceTest {
 
             LifecycleObservation stoppedWithAutostart = lifecycle(service, applicationId, LifecycleAction.STOP);
             assertState(stoppedWithAutostart, RuntimeState.STOPPED, "STOP 必须停止已启用自启的服务");
-            assertEquals(AutostartState.ENABLED, stoppedWithAutostart.autostartState(),
-                    "STOP 不得因停止服务而禁用自启");
+            assertEquals(AutostartState.ENABLED, stoppedWithAutostart.autostartState(), "STOP 不得因停止服务而禁用自启");
 
             LifecycleObservation startedWithAutostart = lifecycle(service, applicationId, LifecycleAction.START);
             assertState(startedWithAutostart, RuntimeState.RUNNING, "START 必须启动已启用自启的服务");
-            assertEquals(AutostartState.ENABLED, startedWithAutostart.autostartState(),
-                    "START 不得因启动服务而改变自启");
+            assertEquals(AutostartState.ENABLED, startedWithAutostart.autostartState(), "START 不得因启动服务而改变自启");
 
             LifecycleObservation disabled = lifecycle(service, applicationId, LifecycleAction.DISABLE_AUTOSTART);
             assertState(disabled, RuntimeState.RUNNING, "禁用自启不得停止运行中的服务");
@@ -141,11 +145,8 @@ class UbuntuManagedAcceptanceTest {
         }
     }
 
-    private static LifecycleObservation lifecycle(
-            DesktopApplicationFacade service,
-            String applicationId,
-            LifecycleAction action
-    ) throws Exception {
+    private static LifecycleObservation lifecycle(DesktopApplicationFacade service, String applicationId,
+            LifecycleAction action) throws Exception {
         LifecycleActionResult result = service.executePersistedLifecycleResultWithStoredPassword(applicationId, action,
                 "managed-acceptance-master".toCharArray());
         assertTrue(result.accepted(), () -> action + " 未被受理: " + result);
@@ -158,10 +159,9 @@ class UbuntuManagedAcceptanceTest {
     }
 
     private static URI requireHttpAccessUrl(DeploymentOutcome outcome, URI expectedBusinessUrl) {
-        DeploymentHandoff handoff = outcome.handoff().orElseThrow(
-                () -> new AssertionError("部署成功必须向使用者返回访问网址或启动指令: " + outcome));
-        assertTrue(handoff instanceof HttpAccessUrl,
-                () -> "HTTP 健康检查部署成功后必须返回可访问的网址: " + handoff);
+        DeploymentHandoff handoff = outcome.handoff()
+                .orElseThrow(() -> new AssertionError("部署成功必须向使用者返回访问网址或启动指令: " + outcome));
+        assertTrue(handoff instanceof HttpAccessUrl, () -> "HTTP 健康检查部署成功后必须返回可访问的网址: " + handoff);
         URI accessUrl = ((HttpAccessUrl) handoff).url();
         assertEquals(expectedBusinessUrl, accessUrl, "返回网址必须是用户明确声明的业务入口");
         return accessUrl;
@@ -178,10 +178,8 @@ class UbuntuManagedAcceptanceTest {
             try (InputStream input = status >= 400 ? connection.getErrorStream() : connection.getInputStream()) {
                 body = input == null ? "" : new String(input.readAllBytes(), StandardCharsets.UTF_8);
             }
-            assertEquals(200, status,
-                    () -> "桌面侧访问部署返回的业务网址未得到 200: " + accessUrl);
-            assertTrue(body.contains(expectedBusinessMarker),
-                    () -> "桌面侧 GET 返回的不是业务入口页面: " + accessUrl);
+            assertEquals(200, status, () -> "桌面侧访问部署返回的业务网址未得到 200: " + accessUrl);
+            assertTrue(body.contains(expectedBusinessMarker), () -> "桌面侧 GET 返回的不是业务入口页面: " + accessUrl);
         } finally {
             connection.disconnect();
         }

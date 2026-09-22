@@ -1,22 +1,5 @@
-import {
-  api,
-  post,
-  configure,
-  node,
-  url,
-  message,
-  cell,
-  button,
-  form,
-} from "./api";
-import {
-  editor,
-  addQuestion,
-  readContent,
-  renderQuestions,
-  answers,
-  type Content,
-} from "./questions";
+import { api, post, configure, node, url, message, cell, button, form } from "./api";
+import { editor, addQuestion, readContent, renderQuestions, answers, type Content } from "./questions";
 type Revision = {
   id: number;
   surveyId: number;
@@ -46,13 +29,9 @@ async function list() {
 }
 async function detail(id: number) {
   surveyId = id;
-  const [s, stats] = await Promise.all([
-    api(`/api/surveys/${id}`),
-    api(`/api/surveys/${id}/stats`),
-  ]);
+  const [s, stats] = await Promise.all([api(`/api/surveys/${id}`), api(`/api/surveys/${id}/stats`)]);
   node("survey-title").textContent = s.name;
-  node("stats").textContent =
-    `共 ${s.revisions.length} 个版本 · ${stats.total} 份答卷`;
+  node("stats").textContent = `共 ${s.revisions.length} 个版本 · ${stats.total} 份答卷`;
   node("revisions").replaceChildren(
     ...s.revisions.map((v: any) => {
       const row = document.createElement("tr"),
@@ -74,25 +53,14 @@ async function detail(id: number) {
           await history();
         }),
       );
-      row.append(
-        cell(v.number),
-        cell(v.status),
-        cell(stat.count),
-        cell(Number(stat.average).toFixed(2)),
-        c,
-      );
+      row.append(cell(v.number), cell(v.status), cell(stat.count), cell(Number(stat.average).toFixed(2)), c);
       return row;
     }),
   );
   node("events").replaceChildren(
     ...s.events.map((e: any) => {
       const row = document.createElement("tr");
-      row.append(
-        cell(e.action),
-        cell(e.actor),
-        cell(e.revisionId),
-        cell(e.created),
-      );
+      row.append(cell(e.action), cell(e.actor), cell(e.revisionId), cell(e.created));
       return row;
     }),
   );
@@ -118,8 +86,7 @@ async function save() {
       content: readContent(),
     }),
   });
-  node("edit-version").textContent =
-    `已保存，草稿编辑版本 ${editing.editVersion}`;
+  node("edit-version").textContent = `已保存，草稿编辑版本 ${editing.editVersion}`;
 }
 async function fill(id: number) {
   filling = null;
@@ -131,8 +98,7 @@ async function fill(id: number) {
   surveyId = filling.surveyId;
   requestId = crypto.randomUUID();
   node("fill-title").textContent = filling.content.title;
-  node("fill-version").textContent =
-    `发布版本 ${filling.number} · 历史结果固定使用本版规则`;
+  node("fill-version").textContent = `发布版本 ${filling.number} · 历史结果固定使用本版规则`;
   renderQuestions(filling.content);
   node<HTMLButtonElement>("submit").disabled = false;
   location.hash = "fill";
@@ -141,10 +107,8 @@ async function result(id: number) {
   const v = await api(`/api/submissions/${id}`);
   surveyId = v.revision.surveyId;
   historyRevision = v.revisionId;
-  node("result-meta").textContent =
-    `答卷 #${v.id} · ${v.respondent} · 问卷版本 ${v.revision.number} · ${v.created}`;
-  node("score").textContent =
-    `总分 ${v.result.score} / 100 · 加权 ${v.result.weightedTotal} / ${v.result.maximum}`;
+  node("result-meta").textContent = `答卷 #${v.id} · ${v.respondent} · 问卷版本 ${v.revision.number} · ${v.created}`;
+  node("score").textContent = `总分 ${v.result.score} / 100 · 加权 ${v.result.weightedTotal} / ${v.result.maximum}`;
   node("dimensions").replaceChildren(
     ...Object.entries(v.result.dimensions).map(([name, value]) => {
       const d = value as any,
@@ -156,22 +120,15 @@ async function result(id: number) {
   node("parts").replaceChildren(
     ...v.result.parts.map((p: any) => {
       const row = document.createElement("tr");
-      row.append(
-        cell(p.id),
-        cell(p.dimension),
-        cell(`${p.weighted} / ${p.maximum}`),
-        cell(p.explanation),
-      );
+      row.append(cell(p.id), cell(p.dimension), cell(`${p.weighted} / ${p.maximum}`), cell(p.explanation));
       return row;
     }),
   );
-  node("hidden-questions").textContent =
-    "条件隐藏题：" + (v.result.hidden.join(", ") || "无");
+  node("hidden-questions").textContent = "条件隐藏题：" + (v.result.hidden.join(", ") || "无");
   node("original-answers").replaceChildren(
     ...v.revision.content.questions.map((q: any) => {
       const li = document.createElement("li");
-      li.textContent =
-        q.label + "：" + JSON.stringify(v.answers[q.id] ?? "未作答 / 隐藏");
+      li.textContent = q.label + "：" + JSON.stringify(v.answers[q.id] ?? "未作答 / 隐藏");
       return li;
     }),
   );
@@ -179,24 +136,15 @@ async function result(id: number) {
   location.hash = "result";
 }
 async function history() {
-  const v = await api(
-    `/api/submissions?revisionId=${historyRevision}&offset=${offset}&limit=25`,
-  );
+  const v = await api(`/api/submissions?revisionId=${historyRevision}&offset=${offset}&limit=25`);
   node("history-title").textContent = `版本标识 ${historyRevision} 的历史答卷`;
-  node("history-total").textContent =
-    `共 ${v.total} 份 · 第 ${offset / 25 + 1} 页`;
+  node("history-total").textContent = `共 ${v.total} 份 · 第 ${offset / 25 + 1} 页`;
   node("history").replaceChildren(
     ...v.items.map((x: any) => {
       const row = document.createElement("tr"),
         c = cell("");
       c.append(button("答案与评分详情", () => result(x.id)));
-      row.append(
-        cell(x.id),
-        cell(x.respondent),
-        cell(x.score),
-        cell(x.created),
-        c,
-      );
+      row.append(cell(x.id), cell(x.respondent), cell(x.score), cell(x.created), c);
       return row;
     }),
   );
@@ -206,9 +154,7 @@ async function history() {
 }
 function route() {
   const name = location.hash.slice(1) || "surveys";
-  document
-    .querySelectorAll<HTMLElement>("[data-page]")
-    .forEach((s) => (s.hidden = s.dataset.page !== name));
+  document.querySelectorAll<HTMLElement>("[data-page]").forEach((s) => (s.hidden = s.dataset.page !== name));
   if (name === "surveys") list().catch(message);
 }
 form("create-survey", async () => {
@@ -257,8 +203,7 @@ window.onhashchange = route;
 configure()
   .then(async () => {
     const actors = await api<string[]>("/api/actors");
-    for (const id of ["actor", "respondent"])
-      node(id).replaceChildren(...actors.map((a) => new Option(a, a)));
+    for (const id of ["actor", "respondent"]) node(id).replaceChildren(...actors.map((a) => new Option(a, a)));
     location.hash = "surveys";
     route();
   })

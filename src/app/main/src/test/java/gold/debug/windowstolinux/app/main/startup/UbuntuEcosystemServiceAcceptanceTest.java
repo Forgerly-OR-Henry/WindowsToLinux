@@ -1,5 +1,22 @@
 package gold.debug.windowstolinux.app.main.startup;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import java.io.InputStream;
+import java.net.HttpURLConnection;
+import java.net.URI;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.security.MessageDigest;
+import java.security.SecureRandom;
+import java.util.HexFormat;
+import java.util.List;
+import java.util.Optional;
+import java.util.stream.Stream;
+
 import gold.debug.windowstolinux.app.service.source.ReviewedSourcePreparation;
 import gold.debug.windowstolinux.shared.config.contract.definition.ConfigurationScope;
 import gold.debug.windowstolinux.shared.config.contract.definition.ConfigurationValue;
@@ -20,43 +37,31 @@ import org.junit.jupiter.api.TestFactory;
 import org.junit.jupiter.api.condition.EnabledIfSystemProperty;
 import org.junit.jupiter.api.io.TempDir;
 
-import java.io.InputStream;
-import java.net.HttpURLConnection;
-import java.net.URI;
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.security.SecureRandom;
-import java.security.MessageDigest;
-import java.util.HexFormat;
-import java.util.List;
-import java.util.Optional;
-import java.util.stream.Stream;
-
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertTrue;
-
 /** Opt-in product-entrypoint acceptance for all six ecosystem service adapters. / 六个生态服务适配器的可选产品入口验收。 */
 @EnabledIfSystemProperty(named = "managed.runtime.service", matches = "true")
 class UbuntuEcosystemServiceAcceptanceTest {
     private static final int PORT_BASE = 43000 + (int) ((System.currentTimeMillis() / 1000) % 9000);
+
     private static final String RUN_ID = Long.toUnsignedString(System.nanoTime(), 36);
-    @TempDir Path temporaryDirectory;
+
+    @TempDir
+    Path temporaryDirectory;
 
     @TestFactory
     Stream<DynamicTest> deploysBuildsRollsBackAndRestoresEveryEcosystemServiceAdapter() {
         String selected = System.getProperty("managed.runtime.service.type", "all").trim();
-        List<DeploymentProjectType> supported = List.of(DeploymentProjectType.GO_SERVICE, DeploymentProjectType.RUST_SERVICE,
-                        DeploymentProjectType.DOTNET_SERVICE, DeploymentProjectType.KOTLIN_SERVICE,
-                        DeploymentProjectType.PHP_SERVICE, DeploymentProjectType.RUBY_SERVICE);
-        List<DeploymentProjectType> requested = selected.equalsIgnoreCase("all") ? supported
-                : java.util.Arrays.stream(selected.split(",", -1)).map(value -> DeploymentProjectType.valueOf(
-                        value.trim().toUpperCase(java.util.Locale.ROOT))).toList();
+        List<DeploymentProjectType> supported = List.of(DeploymentProjectType.GO_SERVICE,
+                DeploymentProjectType.RUST_SERVICE, DeploymentProjectType.DOTNET_SERVICE,
+                DeploymentProjectType.KOTLIN_SERVICE, DeploymentProjectType.PHP_SERVICE,
+                DeploymentProjectType.RUBY_SERVICE);
+        List<DeploymentProjectType> requested = selected.equalsIgnoreCase("all")
+                ? supported
+                : java.util.Arrays.stream(selected.split(",", -1))
+                        .map(value -> DeploymentProjectType.valueOf(value.trim().toUpperCase(java.util.Locale.ROOT)))
+                        .toList();
         assertTrue(supported.containsAll(requested), "service selection contains an unsupported project type");
-        return requested.stream().distinct()
-                .map(type -> DynamicTest.dynamicTest(
-                type.name().toLowerCase(java.util.Locale.ROOT), () -> exercise(type)));
+        return requested.stream().distinct().map(
+                type -> DynamicTest.dynamicTest(type.name().toLowerCase(java.util.Locale.ROOT), () -> exercise(type)));
     }
 
     private void exercise(DeploymentProjectType projectType) throws Exception {
@@ -88,8 +93,7 @@ class UbuntuEcosystemServiceAcceptanceTest {
                 Path wrapper = projectType == DeploymentProjectType.KOTLIN_SERVICE ? verifiedWrapperJar() : null;
                 Path sourceRoot = EcosystemServiceAcceptanceFixture.create(sources, projectType, applicationId, version,
                         suffix + "-live-v1", true, wrapper);
-                context.saveSecret(firstSecret, "application/service/" + suffix + "/1",
-                        firstSecretValue.toCharArray());
+                context.saveSecret(firstSecret, "application/service/" + suffix + "/1", firstSecretValue.toCharArray());
                 ReviewedSourcePreparation firstSource = context.prepare(sourceRoot, projectType);
                 assertEquals(applicationId, firstSource.assessment().facts().orElseThrow().applicationId());
                 DeploymentRuntimeSpecification runtime = runtime(projectType, version, applicationId, port);
@@ -103,13 +107,16 @@ class UbuntuEcosystemServiceAcceptanceTest {
 
                 context.saveSecret(secondSecret, "application/service/" + suffix + "/2",
                         secondSecretValue.toCharArray());
-                EcosystemServiceAcceptanceFixture.create(sources, projectType, applicationId, version, "unused", false, wrapper);
+                EcosystemServiceAcceptanceFixture.create(sources, projectType, applicationId, version, "unused", false,
+                        wrapper);
                 ReviewedSourcePreparation failedSource = context.prepare(sourceRoot, projectType);
                 DeploymentResult failed = context.deploy(failedSource, 2, configuration(port), List.of(secondSecret),
                         runtime, access(port));
 
                 assertEquals(DeploymentStatus.FAILED_ROLLED_BACK, failed.status(), () -> failed.events().toString());
-                assertTrue(failed.events().stream().anyMatch(event -> event.step().code().equals("rollback") && event.succeeded()),
+                assertTrue(
+                        failed.events().stream()
+                                .anyMatch(event -> event.step().code().equals("rollback") && event.succeeded()),
                         () -> failed.events().toString());
                 assertSecretFree(failed, firstSecretValue);
                 assertSecretFree(failed, secondSecretValue);
@@ -132,8 +139,8 @@ class UbuntuEcosystemServiceAcceptanceTest {
         }
     }
 
-    private static DeploymentRuntimeSpecification runtime(
-            DeploymentProjectType projectType, String version, String applicationId, int port) {
+    private static DeploymentRuntimeSpecification runtime(DeploymentProjectType projectType, String version,
+            String applicationId, int port) {
         String artifact = switch (projectType) {
             case GO_SERVICE -> "w2l-app";
             case RUST_SERVICE -> "w2l_rust";
@@ -153,19 +160,24 @@ class UbuntuEcosystemServiceAcceptanceTest {
             default -> throw new IllegalArgumentException("unsupported ecosystem service type");
         };
         return switch (projectType) {
-            case GO_SERVICE -> new DeploymentRuntimeSpecification.GoService(version, artifact, entrypoint, health(port));
-            case RUST_SERVICE -> new DeploymentRuntimeSpecification.RustService(version, artifact, entrypoint, health(port));
-            case DOTNET_SERVICE -> new DeploymentRuntimeSpecification.DotNetService(version, artifact, entrypoint, health(port));
-            case KOTLIN_SERVICE -> new DeploymentRuntimeSpecification.KotlinService(version, artifact, entrypoint, health(port));
-            case PHP_SERVICE -> new DeploymentRuntimeSpecification.PhpService(version, artifact, entrypoint, port, health(port));
-            case RUBY_SERVICE -> new DeploymentRuntimeSpecification.RubyService(version, artifact, entrypoint, port, health(port));
+            case GO_SERVICE ->
+                new DeploymentRuntimeSpecification.GoService(version, artifact, entrypoint, health(port));
+            case RUST_SERVICE ->
+                new DeploymentRuntimeSpecification.RustService(version, artifact, entrypoint, health(port));
+            case DOTNET_SERVICE ->
+                new DeploymentRuntimeSpecification.DotNetService(version, artifact, entrypoint, health(port));
+            case KOTLIN_SERVICE ->
+                new DeploymentRuntimeSpecification.KotlinService(version, artifact, entrypoint, health(port));
+            case PHP_SERVICE ->
+                new DeploymentRuntimeSpecification.PhpService(version, artifact, entrypoint, port, health(port));
+            case RUBY_SERVICE ->
+                new DeploymentRuntimeSpecification.RubyService(version, artifact, entrypoint, port, health(port));
             default -> throw new IllegalArgumentException("unsupported ecosystem service type");
         };
     }
 
     private static List<ConfigurationEntry> configuration(int port) {
-        return List.of(new ConfigurationEntry("PORT", ConfigurationScope.RUNTIME,
-                new ConfigurationValue.Number(port)));
+        return List.of(new ConfigurationEntry("PORT", ConfigurationScope.RUNTIME, new ConfigurationValue.Number(port)));
     }
 
     private static HealthCheck.Http health(int port) {
@@ -173,8 +185,8 @@ class UbuntuEcosystemServiceAcceptanceTest {
     }
 
     private static Optional<UserAccessUrl> access(int port) {
-        return Optional.of(new UserAccessUrl(URI.create("http://" + requiredProperty("managed.ssh.host")
-                + ":" + port + "/")));
+        return Optional
+                .of(new UserAccessUrl(URI.create("http://" + requiredProperty("managed.ssh.host") + ":" + port + "/")));
     }
 
     private static void assertSuccessful(DeploymentResult result, String applicationId) {
@@ -185,9 +197,11 @@ class UbuntuEcosystemServiceAcceptanceTest {
         assertEquals(RuntimeState.RUNNING, observation.runtimeState());
         assertTrue(observation.ownershipVerified());
         for (String required : List.of("target-capabilities", "typed-host-compatibility", "source-upload",
-                "remote-build", "deployment-inputs", "snapshot", "publish", "candidate-health",
-                "final-observation", "release-retention", "candidate-cleanup")) {
-            assertTrue(result.events().stream().anyMatch(event -> event.step().code().equals(required) && event.succeeded()),
+                "remote-build", "deployment-inputs", "snapshot", "publish", "candidate-health", "final-observation",
+                "release-retention", "candidate-cleanup")) {
+            assertTrue(
+                    result.events().stream()
+                            .anyMatch(event -> event.step().code().equals(required) && event.succeeded()),
                     () -> "missing successful " + required + ": " + result.events());
         }
     }

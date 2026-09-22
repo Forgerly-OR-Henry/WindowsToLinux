@@ -1,26 +1,26 @@
 package gold.debug.windowstolinux.shared.backup.extension.adapter;
 
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Optional;
+
 import gold.debug.windowstolinux.shared.backup.contract.spi.RestoreCandidatePort;
 import gold.debug.windowstolinux.shared.backup.contract.spi.RestoreCandidateRequest;
 import gold.debug.windowstolinux.shared.backup.contract.validation.BackupException;
 import gold.debug.windowstolinux.shared.backup.contract.validation.BackupFailureType;
 import gold.debug.windowstolinux.shared.backup.manifest.BackupComponent;
+import gold.debug.windowstolinux.shared.config.revision.DeploymentInputManifest;
 import gold.debug.windowstolinux.shared.deploy.contract.spi.RestoreDeploymentComponent;
 import gold.debug.windowstolinux.shared.deploy.contract.spi.RestoreDeploymentPort;
 import gold.debug.windowstolinux.shared.deploy.contract.spi.RestoreDeploymentRequest;
-import gold.debug.windowstolinux.shared.config.revision.DeploymentInputManifest;
 import gold.debug.windowstolinux.shared.linux.error.LinuxOperationException;
 import gold.debug.windowstolinux.shared.linux.protocol.RemoteStepResult;
 import gold.debug.windowstolinux.shared.linux.protocol.restore.RemoteRestoreFilePort;
 import gold.debug.windowstolinux.shared.linux.protocol.restore.RemoteRestoreMember;
 import gold.debug.windowstolinux.shared.linux.protocol.restore.RemoteRestoreStagingEvidence;
 import gold.debug.windowstolinux.shared.linux.protocol.restore.RemoteRestoreStagingRequest;
-
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Objects;
-import java.util.Optional;
-import java.util.Map;
 
 /**
  * Maps portable restore evidence onto deploy-owned activation and Linux-owned file staging. / 将可移植恢复证据映射到 deploy 持有的激活及 Linux 持有的文件暂存。
@@ -31,11 +31,13 @@ public final class LinuxRestoreCandidateAdapter implements RestoreCandidatePort 
      * <p>受控文件系统访问或已审阅文件清单。
      */
     private final RemoteRestoreFilePort files;
+
     /**
      * Deployments.
      * <p>部署集合。
      */
     private final RestoreDeploymentPort deployments;
+
     /**
      * Activation inputs.
      * <p>激活输入集合。
@@ -60,11 +62,8 @@ public final class LinuxRestoreCandidateAdapter implements RestoreCandidatePort 
      * @param activationInputs activation inputs / 激活输入集合
      * @throws NullPointerException if a required input is absent / 必需输入缺失时
      */
-    public LinuxRestoreCandidateAdapter(
-            RemoteRestoreFilePort files,
-            RestoreDeploymentPort deployments,
-            Map<String, DeploymentInputManifest> activationInputs
-    ) {
+    public LinuxRestoreCandidateAdapter(RemoteRestoreFilePort files, RestoreDeploymentPort deployments,
+            Map<String, DeploymentInputManifest> activationInputs) {
         this.files = Objects.requireNonNull(files, "files");
         this.deployments = Objects.requireNonNull(deployments, "deployments");
         this.activationInputs = Map.copyOf(Objects.requireNonNull(activationInputs, "activationInputs"));
@@ -83,7 +82,8 @@ public final class LinuxRestoreCandidateAdapter implements RestoreCandidatePort 
         try {
             RemoteRestoreStagingEvidence staged = files.stageRestoreFiles(stagingRequest(request));
             return new FileEvidence(staged.candidateId(), staged.candidateToken(), staged.stagedBytes(),
-                    staged.isolated(), staged.integrityVerified(), staged.existingReleaseUntouched(), staged.evidence());
+                    staged.isolated(), staged.integrityVerified(), staged.existingReleaseUntouched(),
+                    staged.evidence());
         } catch (LinuxOperationException | RuntimeException exception) {
             throw BackupException.create(BackupFailureType.RESTORE_FILE_FAILED,
                     "Linux restore candidate staging failed", exception);
@@ -100,13 +100,12 @@ public final class LinuxRestoreCandidateAdapter implements RestoreCandidatePort 
      * @throws BackupException if backup validation or the controlled backup operation fails / 备份校验或受控备份操作失败时
      */
     @Override
-    public HealthEvidence verifyComponents(
-            RestoreCandidateRequest request, FileEvidence staged, Optional<String> databaseToken)
-            throws BackupException {
+    public HealthEvidence verifyComponents(RestoreCandidateRequest request, FileEvidence staged,
+            Optional<String> databaseToken) throws BackupException {
         requireAutomaticActivation(request);
         try {
-            RestoreDeploymentPort.HealthEvidence health = deployments.verifyComponents(
-                    deploymentRequest(request, staged.candidateToken()), checked(databaseToken));
+            RestoreDeploymentPort.HealthEvidence health = deployments
+                    .verifyComponents(deploymentRequest(request, staged.candidateToken()), checked(databaseToken));
             return new HealthEvidence(health.healthy(), health.evidence());
         } catch (RuntimeException exception) {
             throw BackupException.create(BackupFailureType.RESTORE_HEALTH_FAILED,
@@ -124,13 +123,12 @@ public final class LinuxRestoreCandidateAdapter implements RestoreCandidatePort 
      * @throws BackupException if backup validation or the controlled backup operation fails / 备份校验或受控备份操作失败时
      */
     @Override
-    public HealthEvidence verifyApplication(
-            RestoreCandidateRequest request, FileEvidence staged, Optional<String> databaseToken)
-            throws BackupException {
+    public HealthEvidence verifyApplication(RestoreCandidateRequest request, FileEvidence staged,
+            Optional<String> databaseToken) throws BackupException {
         requireAutomaticActivation(request);
         try {
-            RestoreDeploymentPort.HealthEvidence health = deployments.verifyApplication(
-                    deploymentRequest(request, staged.candidateToken()), checked(databaseToken));
+            RestoreDeploymentPort.HealthEvidence health = deployments
+                    .verifyApplication(deploymentRequest(request, staged.candidateToken()), checked(databaseToken));
             return new HealthEvidence(health.healthy(), health.evidence());
         } catch (RuntimeException exception) {
             throw BackupException.create(BackupFailureType.RESTORE_HEALTH_FAILED,
@@ -149,13 +147,12 @@ public final class LinuxRestoreCandidateAdapter implements RestoreCandidatePort 
      * @throws BackupException if backup validation or the controlled backup operation fails / 备份校验或受控备份操作失败时
      */
     @Override
-    public HealthEvidence prepareCommit(
-            RestoreCandidateRequest request, FileEvidence staged, Optional<String> databaseToken)
-            throws BackupException {
+    public HealthEvidence prepareCommit(RestoreCandidateRequest request, FileEvidence staged,
+            Optional<String> databaseToken) throws BackupException {
         requireAutomaticActivation(request);
         try {
-            RestoreDeploymentPort.HealthEvidence prepared = deployments.prepareCommit(
-                    deploymentRequest(request, staged.candidateToken()), checked(databaseToken));
+            RestoreDeploymentPort.HealthEvidence prepared = deployments
+                    .prepareCommit(deploymentRequest(request, staged.candidateToken()), checked(databaseToken));
             return new HealthEvidence(prepared.healthy(), prepared.evidence());
         } catch (RuntimeException exception) {
             throw BackupException.create(BackupFailureType.RESTORE_COMMIT_FAILED,
@@ -173,18 +170,17 @@ public final class LinuxRestoreCandidateAdapter implements RestoreCandidatePort 
      * @throws BackupException if backup validation or the controlled backup operation fails / 备份校验或受控备份操作失败时
      */
     @Override
-    public CommitEvidence commit(
-            RestoreCandidateRequest request, FileEvidence staged, Optional<String> databaseToken)
+    public CommitEvidence commit(RestoreCandidateRequest request, FileEvidence staged, Optional<String> databaseToken)
             throws BackupException {
         requireAutomaticActivation(request);
         try {
-            RestoreDeploymentPort.CommitEvidence committed = deployments.commit(
-                    deploymentRequest(request, staged.candidateToken()), checked(databaseToken));
+            RestoreDeploymentPort.CommitEvidence committed = deployments
+                    .commit(deploymentRequest(request, staged.candidateToken()), checked(databaseToken));
             return new CommitEvidence(committed.committed(), committed.previousReleaseRetained(),
                     committed.activeReleaseToken(), committed.evidence());
         } catch (RuntimeException exception) {
-            throw BackupException.create(BackupFailureType.RESTORE_COMMIT_FAILED,
-                    "typed restore commit failed", exception);
+            throw BackupException.create(BackupFailureType.RESTORE_COMMIT_FAILED, "typed restore commit failed",
+                    exception);
         }
     }
 
@@ -198,14 +194,14 @@ public final class LinuxRestoreCandidateAdapter implements RestoreCandidatePort 
      * @throws BackupException if backup validation or the controlled backup operation fails / 备份校验或受控备份操作失败时
      */
     @Override
-    public HealthEvidence quiesceForRecovery(
-            RestoreCandidateRequest request, Optional<FileEvidence> staged) throws BackupException {
+    public HealthEvidence quiesceForRecovery(RestoreCandidateRequest request, Optional<FileEvidence> staged)
+            throws BackupException {
         requireAutomaticActivation(request);
         String token = staged.map(FileEvidence::candidateToken)
                 .orElseGet(() -> request.archiveSha256().substring(0, 32));
         try {
-            RestoreDeploymentPort.HealthEvidence stopped = deployments.quiesceForRecovery(
-                    deploymentRequest(request, token));
+            RestoreDeploymentPort.HealthEvidence stopped = deployments
+                    .quiesceForRecovery(deploymentRequest(request, token));
             return new HealthEvidence(stopped.healthy(), stopped.evidence());
         } catch (RuntimeException exception) {
             throw BackupException.create(BackupFailureType.RESTORE_RECOVERY_FAILED,
@@ -223,8 +219,8 @@ public final class LinuxRestoreCandidateAdapter implements RestoreCandidatePort 
      * @throws IllegalStateException if the required state or runtime facility is unavailable / 所需状态或运行设施不可用时
      */
     @Override
-    public RecoveryEvidence recoverExisting(
-            RestoreCandidateRequest request, Optional<FileEvidence> staged) throws BackupException {
+    public RecoveryEvidence recoverExisting(RestoreCandidateRequest request, Optional<FileEvidence> staged)
+            throws BackupException {
         requireAutomaticActivation(request);
         List<String> evidence = new ArrayList<>();
         boolean existingVerified = false;
@@ -233,16 +229,17 @@ public final class LinuxRestoreCandidateAdapter implements RestoreCandidatePort 
         String token = staged.map(FileEvidence::candidateToken)
                 .orElseGet(() -> request.archiveSha256().substring(0, 32));
         try {
-            RestoreDeploymentPort.HealthEvidence stopped = deployments.quiesceForRecovery(
-                    deploymentRequest(request, token));
-            if (!stopped.healthy()) throw new IllegalStateException("restore recovery quiesce was not verified");
+            RestoreDeploymentPort.HealthEvidence stopped = deployments
+                    .quiesceForRecovery(deploymentRequest(request, token));
+            if (!stopped.healthy())
+                throw new IllegalStateException("restore recovery quiesce was not verified");
             evidence.addAll(stopped.evidence());
         } catch (RuntimeException exception) {
             failures.add(exception);
         }
         try {
-            RestoreDeploymentPort.RecoveryEvidence recovered = deployments.recoverExisting(
-                    deploymentRequest(request, token));
+            RestoreDeploymentPort.RecoveryEvidence recovered = deployments
+                    .recoverExisting(deploymentRequest(request, token));
             existingVerified = recovered.existingReleaseVerified();
             evidence.addAll(recovered.evidence());
         } catch (RuntimeException exception) {
@@ -296,7 +293,8 @@ public final class LinuxRestoreCandidateAdapter implements RestoreCandidatePort 
                 request.manifest().inventory().secretReferences(), remoteRoot, candidateToken, components,
                 request.manifest().inventory().applicationHealthComponentId(),
                 request.manifest().inventory().applicationHealthCheck().toHealthCheck(),
-                request.manifest().inventory().database().type() == gold.debug.windowstolinux.shared.backup.manifest.BackupDatabaseType.SQLITE);
+                request.manifest().inventory().database()
+                        .type() == gold.debug.windowstolinux.shared.backup.manifest.BackupDatabaseType.SQLITE);
     }
 
     /**
@@ -309,16 +307,16 @@ public final class LinuxRestoreCandidateAdapter implements RestoreCandidatePort 
      */
     private RestoreDeploymentComponent component(BackupComponent component, RestoreCandidateRequest request) {
         String prefix = "data/" + component.componentId() + "/";
-        List<String> persistent = request.manifest().members().stream()
-                .map(member -> member.path()).filter(path -> path.startsWith(prefix)).sorted().toList();
+        List<String> persistent = request.manifest().members().stream().map(member -> member.path())
+                .filter(path -> path.startsWith(prefix)).sorted().toList();
         Optional<String> oci = request.manifest().members().stream().map(member -> member.path())
                 .filter(path -> path.equals("runtime/" + component.componentId() + ".oci")).findFirst();
         return new RestoreDeploymentComponent(component.componentId(), component.managedApplicationId(),
                 component.ownershipManifestSha256(), component.releaseSha256().orElseThrow(),
                 component.secretReferences().orElseThrow(), component.releaseManifestPath(),
                 component.configurationSnapshotPath(), component.serviceDefinitionPath(), component.dependsOn(),
-                component.runtime().toSpecification(), Optional.ofNullable(activationInputs.get(component.componentId())),
-                persistent, oci);
+                component.runtime().toSpecification(),
+                Optional.ofNullable(activationInputs.get(component.componentId())), persistent, oci);
     }
 
     /**

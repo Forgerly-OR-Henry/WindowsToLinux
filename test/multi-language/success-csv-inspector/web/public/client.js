@@ -8,20 +8,13 @@ function poll(fn) {
 function form(id, fn) {
   document.querySelector(id).addEventListener("submit", (event) => {
     event.preventDefault();
-    const button =
-      event.target.querySelector("button[type=submit]") ||
-      event.target.querySelector("button");
+    const button = event.target.querySelector("button[type=submit]") || event.target.querySelector("button");
     button.disabled = true;
     run(fn).finally(() => (button.disabled = false));
   });
 }
 function options(items, label = "name") {
-  return items
-    .map(
-      (item) =>
-        `<option value="${text(item.id)}">${text(item[label])}</option>`,
-    )
-    .join("");
+  return items.map((item) => `<option value="${text(item.id)}">${text(item[label])}</option>`).join("");
 }
 async function datasets(offset = 0) {
   const data = await api(`/api/datasets?offset=${offset}`);
@@ -47,20 +40,13 @@ async function templates() {
     items.map((t) => [t.name, t.created]),
   )}`;
   const load = () => {
-    const r = items.find(
-      (t) => t.id === document.querySelector("#source").value,
-    ).rules;
+    const r = items.find((t) => t.id === document.querySelector("#source").value).rules;
     document.querySelector("#required").value = r.required.join(",");
     for (const kind of ["types", "ranges", "enums"])
       document.querySelector("#" + kind).value = Object.entries(r[kind])
-        .map(
-          ([k, v]) =>
-            `${k}=${kind === "ranges" ? `${v.min},${v.max}` : Array.isArray(v) ? v.join(",") : v}`,
-        )
+        .map(([k, v]) => `${k}=${kind === "ranges" ? `${v.min},${v.max}` : Array.isArray(v) ? v.join(",") : v}`)
         .join("\n");
-    document.querySelector("#unique").value = r.unique
-      .map((g) => g.join(","))
-      .join("\n");
+    document.querySelector("#unique").value = r.unique.map((g) => g.join(",")).join("\n");
   };
   document.querySelector("#source").addEventListener("change", load);
   load();
@@ -86,8 +72,7 @@ async function templates() {
       ranges: Object.fromEntries(
         pairs("#ranges").map(([k, v]) => {
           const [min, max] = list(v).map(Number);
-          if (!Number.isFinite(min) || !Number.isFinite(max))
-            throw Error("范围需填写两个数字");
+          if (!Number.isFinite(min) || !Number.isFinite(max)) throw Error("范围需填写两个数字");
           return [k, { min, max }];
         }),
       ),
@@ -127,10 +112,7 @@ async function jobs(offset = 0) {
   });
 }
 async function job(id, offset = 0) {
-  const [j, issues] = await Promise.all([
-    api("/api/jobs/" + id),
-    api(`/api/jobs/${id}/issues?offset=${offset}`),
-  ]);
+  const [j, issues] = await Promise.all([api("/api/jobs/" + id), api(`/api/jobs/${id}/issues?offset=${offset}`)]);
   if (location.hash !== `#job/${id}`) return;
   const active = ["queued", "running"].includes(j.status);
   view.innerHTML = `<h2>任务详情</h2><p id="job-id">${j.id}</p><p>数据集：${text(j.datasetName)} · 模板：${text(j.templateName)}</p><p id="job-status">${statuses[j.status]} · 第 ${j.attempt} 次尝试</p><p id="summary">已检查 ${j.progress_rows} 行，${j.issue_count} 个问题${j.summary ? `，${j.summary.validRows} 行有效` : ""}</p>${j.error ? `<p class="error">${text(j.error)}</p>` : ""}${active ? '<button id="cancel">取消检查</button>' : ["failed", "interrupted", "cancelled"].includes(j.status) ? '<button id="retry">重试此任务</button>' : ""}${j.status === "completed" ? `<a id="export" href="/api/jobs/${id}/export">导出 JSON 报告</a>` : "<p>任务未成功，报告不可导出。当前明细仅供诊断。</p>"}<h3>问题明细</h3>${table(

@@ -9,6 +9,7 @@ import java.security.NoSuchAlgorithmException;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.Map;
+
 import gold.debug.windowstolinux.shared.linux.protocol.ManagedHelperProtocol;
 
 /**
@@ -19,36 +20,44 @@ public final class ManagedHelperBundle {
      * Protocol version printed by this exact helper bundle. / 此精确 helper 包输出的协议版本。
      */
     public static final int PROTOCOL_VERSION = ManagedHelperProtocol.VERSION;
+
     /**
      * Platform-owned helper installation directory. / 平台持有的 helper 安装目录。
      */
     public static final String DIRECTORY = "/usr/local/lib/windowstolinux";
+
     /**
      * Fixed root management entrypoint. / 固定的 root 管理入口。
      */
-    public static final String PATH = DIRECTORY + "/managed-helper";
+    public static final String PATH = ManagedHelperProtocol.PATH;
+
     /**
      * Platform-owned Java 21 launcher used by every managed systemd unit. / 每个受管 systemd 单元使用的平台持有 Java 21 启动器。
      */
     public static final String JAVA_RUNTIME_PATH = DIRECTORY + "/java-21";
+
     /**
      * Expected byte-for-byte helper bundle identity. / 预期的 helper 逐字节身份。
      */
-    public static final String EXPECTED_SHA256 = "461cc90a1562fd4ecb91c017465d74b0fe3b5ec7f96c97446cc6014d6ff1ff63";
+    public static final String EXPECTED_SHA256 = "7e8ea768f8cadb4e023fa8f50279b772d0b047ff0820dab1a66ac7bb31d5257f";
+
     /**
      * ROOT.
      * <p>根目录。
      */
     private static final String ROOT = "/gold/debug/windowstolinux/shared/linux/sshd/";
+
     /**
      * RESOURCE INSERTS.
      * <p>资源INSERTS。
      */
-    private static final Map<String, String> RESOURCE_INSERTS = Map.of(
-            "# @compat:apparmor@\n", "execution/protocol/helper/fragments/workspace/apparmor-namespace.sh",
-            "# @compat:systemd-isolation@\n", "runtime/systemd/helper/systemd-manager-isolation.sh",
-            "# @compat:selinux-entry@\n", "runtime/systemd/helper/selinux-command-entry.sh",
-            "# @compat:centos-repositories@\n", "distro/dnf/centos-source-repositories.py");
+    private static final Map<String, String> RESOURCE_INSERTS = Map.of("# @compat:agent-source@\n",
+            "workspace/source-operations.py", "# @compat:apparmor@\n",
+            "execution/protocol/helper/fragments/workspace/apparmor-namespace.sh", "# @compat:systemd-isolation@\n",
+            "runtime/systemd/helper/systemd-manager-isolation.sh", "# @compat:selinux-entry@\n",
+            "runtime/systemd/helper/selinux-command-entry.sh", "# @compat:centos-repositories@\n",
+            "distro/dnf/centos-source-repositories.py");
+
     /**
      * Ordered packaged helper fragments.
      * <p>有序打包 helper 片段。
@@ -67,6 +76,7 @@ public final class ManagedHelperBundle {
             "execution/protocol/helper/fragments/workspace/23-container-builder.sh",
             "execution/protocol/helper/fragments/workspace/25-workspace-recovery.sh",
             "execution/protocol/helper/fragments/workspace/26-build-output.sh",
+            "execution/protocol/helper/fragments/workspace/27-agent-workspace.sh",
             "execution/protocol/helper/fragments/ecosystem/35-ecosystem-dispatch.sh",
             "toolchain/10-release-metadata.py", "toolchain/20-installation-boundaries.py",
             "toolchain/30-managed-installation.py", "toolchain/40-binding-protocol.py",
@@ -98,9 +108,10 @@ public final class ManagedHelperBundle {
      * @throws IllegalStateException if the required state or runtime facility is unavailable / 所需状态或运行设施不可用时
      */
     public static String renderBuildEntry() {
-        try (InputStream stream = ManagedHelperBundle.class.getResourceAsStream(ROOT
-                + "execution/protocol/helper/fragments/workspace/24-build-entry.sh")) {
-            if (stream == null) throw new IllegalStateException("Build entry resource unavailable");
+        try (InputStream stream = ManagedHelperBundle.class
+                .getResourceAsStream(ROOT + "execution/protocol/helper/fragments/workspace/24-build-entry.sh")) {
+            if (stream == null)
+                throw new IllegalStateException("Build entry resource unavailable");
             return new String(stream.readAllBytes(), StandardCharsets.UTF_8).replace("\r\n", "\n");
         } catch (IOException failure) {
             throw new IllegalStateException("Build entry resource unreadable", failure);
@@ -111,7 +122,8 @@ public final class ManagedHelperBundle {
      * Prevents instantiation of this static contract helper.
      * <p>防止实例化当前静态契约辅助类。
      */
-    private ManagedHelperBundle() { }
+    private ManagedHelperBundle() {
+    }
 
     /**
      * Assembles and verifies the immutable helper protocol script. / 拼装并验证不可变 helper 协议脚本。
@@ -151,27 +163,36 @@ public final class ManagedHelperBundle {
         for (String fragment : FRAGMENTS) {
             try (InputStream stream = ManagedHelperBundle.class.getResourceAsStream(ROOT + fragment)) {
                 if (stream == null) {
-                    throw new IllegalStateException("managed-deployment privilege helper fragment is unavailable: " + fragment);
+                    throw new IllegalStateException(
+                            "managed-deployment privilege helper fragment is unavailable: " + fragment);
                 }
                 String content = new String(stream.readAllBytes(), StandardCharsets.UTF_8).replace("\r\n", "\n");
                 content = expandResourceInserts(content);
                 if (fragment.startsWith("toolchain/")) {
-                    if (fragment.endsWith("10-release-metadata.py")) output.write(
-                            ("prepare_official_toolchains() {\n  /usr/bin/python3 -I - \"$@\" <<'WTL_OFFICIAL_TOOLCHAINS'\n"
-                                    + catalogLiteral(catalog)).getBytes(StandardCharsets.UTF_8));
+                    if (fragment.endsWith("10-release-metadata.py"))
+                        output.write(
+                                ("prepare_official_toolchains() {\n  /usr/bin/python3 -I - \"$@\" <<'WTL_OFFICIAL_TOOLCHAINS'\n"
+                                        + catalogLiteral(catalog)).getBytes(StandardCharsets.UTF_8));
                     output.write((content + "\n").getBytes(StandardCharsets.UTF_8));
                     if (fragment.endsWith("40-binding-protocol.py"))
                         output.write("WTL_OFFICIAL_TOOLCHAINS\n}\n".getBytes(StandardCharsets.UTF_8));
                     continue;
                 }
                 if (fragment.endsWith("00-protocol-foundation.sh")) {
-                    content += "build_entry_sha256=" + sha256(renderBuildEntry().getBytes(StandardCharsets.UTF_8)) + "\n";
+                    content += "build_entry_sha256=" + sha256(renderBuildEntry().getBytes(StandardCharsets.UTF_8))
+                            + "\n";
                 }
                 // The embedded Python resource is literal; legacy shell resources retain their established normalization. / 嵌入的 Python 资源保持字面内容，旧版 Shell 资源继续使用既有规范化处理。
-                output.write(((fragment.endsWith("10-native-instances.sh") || fragment.endsWith("20-native-targets.sh") || fragment.endsWith("23-container-builder.sh") || fragment.endsWith("12-container-image-input.sh") || fragment.endsWith("18-container-storage.sh") || fragment.contains("application-")) ? content : content.replace("\\\\", "\\")).getBytes(StandardCharsets.UTF_8));
+                output.write(((fragment.endsWith("27-agent-workspace.sh") || fragment.endsWith("10-native-instances.sh")
+                        || fragment.endsWith("20-native-targets.sh") || fragment.endsWith("23-container-builder.sh")
+                        || fragment.endsWith("12-container-image-input.sh")
+                        || fragment.endsWith("18-container-storage.sh") || fragment.contains("application-"))
+                                ? content
+                                : content.replace("\\\\", "\\"))
+                        .getBytes(StandardCharsets.UTF_8));
             } catch (IOException exception) {
-                throw new IllegalStateException("managed-deployment privilege helper fragment cannot be read: " + fragment,
-                        exception);
+                throw new IllegalStateException(
+                        "managed-deployment privilege helper fragment cannot be read: " + fragment, exception);
             }
         }
         return output.toByteArray();
@@ -188,13 +209,16 @@ public final class ManagedHelperBundle {
      */
     private static String expandResourceInserts(String script) throws IOException {
         for (var insert : RESOURCE_INSERTS.entrySet()) {
-            if (!script.contains(insert.getKey())) continue;
+            if (!script.contains(insert.getKey()))
+                continue;
             try (InputStream input = ManagedHelperBundle.class.getResourceAsStream(ROOT + insert.getValue())) {
                 if (input == null) {
-                    throw new IllegalStateException("managed-deployment privilege helper insert is unavailable: " + insert.getValue());
+                    throw new IllegalStateException(
+                            "managed-deployment privilege helper insert is unavailable: " + insert.getValue());
                 }
-                script = script.replace(insert.getKey(),
-                        new String(input.readAllBytes(), StandardCharsets.UTF_8).replace("\r\n", "\n"));
+                script = script.replaceAll("(?m)^[ \t]*" + java.util.regex.Pattern.quote(insert.getKey()),
+                        java.util.regex.Matcher.quoteReplacement(
+                                new String(input.readAllBytes(), StandardCharsets.UTF_8).replace("\r\n", "\n")));
             }
         }
         return script;
@@ -207,7 +231,8 @@ public final class ManagedHelperBundle {
      * @param catalog catalog / 目录
      * @return catalog literal text / 目录Literal文本
      */
-    private static String catalogLiteral(gold.debug.windowstolinux.shared.model.toolchain.ToolchainSupportCatalog catalog) {
+    private static String catalogLiteral(
+            gold.debug.windowstolinux.shared.model.toolchain.ToolchainSupportCatalog catalog) {
         StringBuilder data = new StringBuilder("SHIPPED_CATALOG = {\n");
         for (var ecosystem : gold.debug.windowstolinux.shared.model.toolchain.ToolchainEcosystemType.values()) {
             data.append("    '").append(ecosystem.name()).append("': [");

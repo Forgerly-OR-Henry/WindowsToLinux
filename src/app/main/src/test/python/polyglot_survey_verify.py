@@ -49,11 +49,7 @@ def survey_scoring(r):
     def expected(i):
         # Counts and arithmetic derive from the published fixed sample, not scorer output.
         participating = i % 2 == 0
-        raw = (
-            (2 + 2 * (i % 5) if participating else 0)
-            + (5 if i % 3 == 0 else 2)
-            + (4 - i % 5)
-        )
+        raw = (2 + 2 * (i % 5) if participating else 0) + (5 if i % 3 == 0 else 2) + (4 - i % 5)
         return round(raw * 100 / (19 if participating else 11), 2)
 
     with check(
@@ -75,11 +71,7 @@ def survey_scoring(r):
         stats = r.json("backend", "/api/surveys/1/stats")
         assert (
             stats["total"] == count
-            and abs(
-                stats["revisions"][0]["average"]
-                - sum(expected(i) for i in range(count)) / count
-            )
-            < 1e-8
+            and abs(stats["revisions"][0]["average"] - sum(expected(i) for i in range(count)) / count) < 1e-8
         )
     with check(
         r,
@@ -88,9 +80,7 @@ def survey_scoring(r):
     ):
         result = submit({"participated": "no", "support": ["docs"], "friction": 2})
         assert result["result"]["score"] == 45.45 and "quality" not in result["answers"]
-        submit(
-            {"participated": "yes", "support": ["docs"], "friction": 2}, expected=400
-        )
+        submit({"participated": "yes", "support": ["docs"], "friction": 2}, expected=400)
         submit({**baseline, "quality": 6}, expected=400)
         submit({**baseline, "support": ["docs", "docs"]}, expected=400)
         submit({**baseline, "unknown": 1}, expected=400)
@@ -147,26 +137,19 @@ def survey_scoring(r):
         submit(baseline, expected=409)
         saved = r.json("backend", f"/api/submissions/{original['id']}")
         assert (
-            saved["result"] == preserved["result"]
-            and saved["revision"]["content"] == preserved["revision"]["content"]
+            saved["result"] == preserved["result"] and saved["revision"]["content"] == preserved["revision"]["content"]
         )
         exported = r.json("backend", f"/api/submissions/{original['id']}/export")
         assert exported == saved
         other = call("/api/surveys", {"name": "独立问卷", "actor": "林同学"})
-        assert (
-            r.json("backend", f"/api/surveys/{other['surveyId']}/stats")["total"] == 0
-        )
-        assert (
-            r.json("backend", f"/api/submissions?revisionId={draft['id']}")["total"]
-            == 1
-        )
+        assert r.json("backend", f"/api/surveys/{other['surveyId']}/stats")["total"] == 0
+        assert r.json("backend", f"/api/submissions?revisionId={draft['id']}")["total"] == 1
         active = draft["id"]
     for point in ["score-returned", "submission-written"]:
         with check(
             r,
             "fault",
-            point
-            + ": interrupted scoring/publication leaves no ghost or duplicate result",
+            point + ": interrupted scoring/publication leaves no ghost or duplicate result",
         ):
             before = r.json("backend", f"/api/submissions?revisionId={active}")["total"]
             key = uuid.uuid4().hex
@@ -176,16 +159,10 @@ def survey_scoring(r):
                 point,
                 lambda: submit(baseline, revision=active, key=key),
             )
-            assert (
-                r.json("backend", f"/api/submissions?revisionId={active}")["total"]
-                == before
-            )
+            assert r.json("backend", f"/api/submissions?revisionId={active}")["total"] == before
             retried = submit(baseline, revision=active, key=key)
             assert submit(baseline, revision=active, key=key)["id"] == retried["id"]
-            assert (
-                r.json("backend", f"/api/submissions?revisionId={active}")["total"]
-                == before + 1
-            )
+            assert r.json("backend", f"/api/submissions?revisionId={active}")["total"] == before + 1
     with check(
         r,
         "fault",
@@ -215,20 +192,13 @@ def survey_scoring(r):
             r.stop("scorer")
             assert "weighted = raw * weight;" in source
             file.write_text(
-                source.replace(
-                    "weighted = raw * weight;", "weighted = (raw * weight) / 2;"
-                ),
+                source.replace("weighted = raw * weight;", "weighted = (raw * weight) / 2;"),
                 encoding="utf-8",
             )
             restart()
             changed = submit(baseline, revision=active)
-            assert (
-                changed["result"]["score"] != expected_before["result"]["score"]
-            ), "Ruby collaboration was bypassed"
-            assert (
-                r.json("backend", f"/api/submissions/{expected_before['id']}")["result"]
-                == expected_before["result"]
-            )
+            assert changed["result"]["score"] != expected_before["result"]["score"], "Ruby collaboration was bypassed"
+            assert r.json("backend", f"/api/submissions/{expected_before['id']}")["result"] == expected_before["result"]
         finally:
             r.stop("scorer")
             file.write_bytes(source_bytes)
@@ -265,11 +235,7 @@ def survey_scoring(r):
                     "component": "ruby-scoring",
                     "revisionId": active,
                 }
-                body = (
-                    b" " * 300000
-                    if self.mode == "oversized"
-                    else json.dumps(value).encode()
-                )
+                body = b" " * 300000 if self.mode == "oversized" else json.dumps(value).encode()
                 try:
                     self.send_response(200)
                     self.send_header("Content-Type", "application/json")
@@ -290,11 +256,7 @@ def survey_scoring(r):
             server.shutdown()
             server.server_close()
             thread.join(5)
-        assert (
-            not thread.is_alive()
-            and r.json("backend", f"/api/submissions?revisionId={active}")["total"]
-            == before
-        )
+        assert not thread.is_alive() and r.json("backend", f"/api/submissions?revisionId={active}")["total"] == before
         r.close()
         r.env.pop("SCORER_TIMEOUT_MS")
         r.start("survey-scoring")
@@ -305,13 +267,9 @@ def survey_scoring(r):
         "question editor, conditional answers, publication, new version, history and explanations",
     ):
         browser(r, "survey-scoring", r.urls["frontend"])
-    with check(
-        r, "recovery", "restart retains original answers, immutable content and scores"
-    ):
+    with check(r, "recovery", "restart retains original answers, immutable content and scores"):
         before = r.json("backend", f"/api/submissions/{original['id']}")
         r.close()
         r.start("survey-scoring")
         assert r.json("backend", f"/api/submissions/{original['id']}") == before
-        r.scale["actualSubmissions"] = sum(
-            s["submissions"] for s in r.json("backend", "/api/surveys")
-        )
+        r.scale["actualSubmissions"] = sum(s["submissions"] for s in r.json("backend", "/api/surveys"))

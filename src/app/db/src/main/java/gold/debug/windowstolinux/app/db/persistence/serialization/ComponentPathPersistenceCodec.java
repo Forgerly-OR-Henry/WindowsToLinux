@@ -1,7 +1,5 @@
 package gold.debug.windowstolinux.app.db.persistence.serialization;
 
-import gold.debug.windowstolinux.shared.model.project.component.ComponentDataPath;
-
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.DataInputStream;
@@ -12,6 +10,8 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Objects;
 
+import gold.debug.windowstolinux.shared.model.project.component.ComponentDataPath;
+
 /**
  * Strict versioned storage codec for reviewed non-secret component data paths. / 经审阅非秘密组件数据路径的严格版本化存储编解码器。
  */
@@ -21,16 +21,19 @@ public final class ComponentPathPersistenceCodec {
      * <p>格式标记。
      */
     private static final int MAGIC = 0x57544c44;
+
     /**
      * VERSION.
      * <p>版本。
      */
     private static final int VERSION = 1;
+
     /**
      * MAX DOCUMENT BYTES.
      * <p>最大文档字节。
      */
     private static final int MAX_DOCUMENT_BYTES = 1_048_576;
+
     /**
      * MAX PATHS.
      * <p>最大路径集合。

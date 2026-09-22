@@ -1,13 +1,13 @@
 package gold.debug.windowstolinux.shared.backup.restore;
 
+import java.nio.file.Path;
+import java.util.Objects;
+import java.util.Optional;
+
 import gold.debug.windowstolinux.shared.backup.contract.spi.DatabaseRestoreRequest;
 import gold.debug.windowstolinux.shared.backup.contract.spi.RestoreCandidateRequest;
 import gold.debug.windowstolinux.shared.backup.contract.validation.BackupArchiveValidation;
 import gold.debug.windowstolinux.shared.backup.manifest.BackupDatabaseType;
-
-import java.nio.file.Path;
-import java.util.Objects;
-import java.util.Optional;
 
 /**
  * Immutable restore plan binding validated local content to one isolated target candidate. / 将已验证本地内容绑定到单个隔离目标候选的不可变恢复计划。
@@ -20,15 +20,9 @@ import java.util.Optional;
  * @param target exact destination or managed target of the operation / 操作的精确目的地或受管目标
  * @param databaseRestore database restore / 数据库恢复
  */
-public record BackupRestorePlan(
-        BackupArchiveValidation validation,
-        BackupRestoreCandidate candidate,
-        Path localCandidateParent,
-        String candidateId,
-        RestoreMaterialKind materialKind,
-        RestoreTargetProfile target,
-        Optional<DatabaseRestoreRequest> databaseRestore
-) {
+public record BackupRestorePlan(BackupArchiveValidation validation, BackupRestoreCandidate candidate,
+        Path localCandidateParent, String candidateId, RestoreMaterialKind materialKind, RestoreTargetProfile target,
+        Optional<DatabaseRestoreRequest> databaseRestore) {
     /**
      * Validates archive, candidate, database and application identity binding. / 校验归档、候选、数据库和应用身份绑定。
      *
@@ -45,8 +39,8 @@ public record BackupRestorePlan(
     public BackupRestorePlan {
         validation = Objects.requireNonNull(validation, "validation");
         candidate = Objects.requireNonNull(candidate, "candidate");
-        localCandidateParent = Objects.requireNonNull(localCandidateParent, "localCandidateParent")
-                .toAbsolutePath().normalize();
+        localCandidateParent = Objects.requireNonNull(localCandidateParent, "localCandidateParent").toAbsolutePath()
+                .normalize();
         if (!candidate.root().getParent().equals(localCandidateParent)) {
             throw new IllegalArgumentException("restore candidate is outside its controlled parent");
         }

@@ -17,5 +17,6 @@ import com.baomidou.mybatisplus.annotation.TableName;
  * @param answeredAt answered at / 已回答时刻
  */
 @TableName("task_decisions")
-public record WebTaskDecisionEntity(String workspaceId, String taskId, String id, String kind,
-        String promptJson, String answerJson, String expiresAt, String answeredBy, String answeredAt) { }
+public record WebTaskDecisionEntity(String workspaceId, String taskId, String id, String kind, String promptJson,
+        String answerJson, String expiresAt, String answeredBy, String answeredAt) {
+}

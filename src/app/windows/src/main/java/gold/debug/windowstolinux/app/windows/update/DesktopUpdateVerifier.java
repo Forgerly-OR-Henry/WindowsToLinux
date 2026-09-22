@@ -33,9 +33,8 @@ public final class DesktopUpdateVerifier {
      * @throws DesktopUpdateException if the desktop update boundary rejects the operation / Desktop更新边界拒绝当前操作时
      * @throws NullPointerException if a required input is absent / 必需输入缺失时
      */
-    public DesktopUpdateVerification verify(
-            Path packageFile, DesktopUpdateManifest manifest, DesktopUpdateTrustPolicy policy)
-            throws DesktopUpdateException {
+    public DesktopUpdateVerification verify(Path packageFile, DesktopUpdateManifest manifest,
+            DesktopUpdateTrustPolicy policy) throws DesktopUpdateException {
         Path normalized = Objects.requireNonNull(packageFile, "packageFile").toAbsolutePath().normalize();
         Objects.requireNonNull(manifest, "manifest");
         Objects.requireNonNull(policy, "policy");
@@ -74,13 +73,13 @@ public final class DesktopUpdateVerifier {
         }
         verifySignature(manifest, policy);
         return new DesktopUpdateVerification(normalized, manifest.releaseId(), manifest.version(),
-                manifest.architecture(), identity.bytes(), identity.sha256(), policy.verificationTime(), List.of(
-                "staged package size and SHA-256 match signed metadata",
-                "Ed25519 signature matches the pinned release trust root",
-                approvedEmergencyRollback
-                        ? "signed emergency rollback was explicitly approved"
-                        : "release version is newer than the running application",
-                "package architecture matches the running application"));
+                manifest.architecture(), identity.bytes(), identity.sha256(), policy.verificationTime(),
+                List.of("staged package size and SHA-256 match signed metadata",
+                        "Ed25519 signature matches the pinned release trust root",
+                        approvedEmergencyRollback
+                                ? "signed emergency rollback was explicitly approved"
+                                : "release version is newer than the running application",
+                        "package architecture matches the running application"));
     }
 
     /**
@@ -99,7 +98,8 @@ public final class DesktopUpdateVerifier {
             try (InputStream input = Files.newInputStream(packageFile)) {
                 int read;
                 while ((read = input.read(buffer)) >= 0) {
-                    if (read == 0) continue;
+                    if (read == 0)
+                        continue;
                     count = Math.addExact(count, read);
                     digest.update(buffer, 0, read);
                 }
@@ -119,8 +119,8 @@ public final class DesktopUpdateVerifier {
      * @param policy explicit validation and resource-bound policy / 显式校验及资源边界策略
      * @throws DesktopUpdateException if the desktop update boundary rejects the operation / Desktop更新边界拒绝当前操作时
      */
-    private static void verifySignature(
-            DesktopUpdateManifest manifest, DesktopUpdateTrustPolicy policy) throws DesktopUpdateException {
+    private static void verifySignature(DesktopUpdateManifest manifest, DesktopUpdateTrustPolicy policy)
+            throws DesktopUpdateException {
         try {
             Signature verifier = Signature.getInstance("Ed25519");
             verifier.initVerify(policy.trustedPublicKey());
@@ -144,5 +144,6 @@ public final class DesktopUpdateVerifier {
      * @param bytes content buffer processed by the current codec or stream / 当前编解码器或流处理的内容缓冲区
      * @param sha256 lower-case hexadecimal SHA-256 digest / 小写十六进制 SHA-256 摘要
      */
-    private record PackageIdentity(long bytes, String sha256) { }
+    private record PackageIdentity(long bytes, String sha256) {
+    }
 }
