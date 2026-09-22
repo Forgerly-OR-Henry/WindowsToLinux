@@ -19,15 +19,11 @@ FILE *open_utf8(const char *path) {
     return fopen(path, "rb");
 #endif
 }
-uint16_t little16(const unsigned char *p) {
-    return (uint16_t)(p[0] | ((uint16_t)p[1] << 8));
-}
+uint16_t little16(const unsigned char *p) { return (uint16_t)(p[0] | ((uint16_t)p[1] << 8)); }
 uint32_t little32(const unsigned char *p) {
     return (uint32_t)p[0] | ((uint32_t)p[1] << 8) | ((uint32_t)p[2] << 16) | ((uint32_t)p[3] << 24);
 }
-uint64_t little64(const unsigned char *p) {
-    return little32(p) | ((uint64_t)little32(p + 4) << 32);
-}
+uint64_t little64(const unsigned char *p) { return little32(p) | ((uint64_t)little32(p + 4) << 32); }
 uint32_t crc_update(uint32_t crc, const unsigned char *data, size_t size) {
     for (size_t i = 0; i < size; i++) {
         crc ^= data[i];
@@ -49,8 +45,7 @@ int read_bytes(Reader *r, unsigned char *target, size_t size, int file_crc, int 
     uint64_t offset = r->offset;
     r->offset += n;
     if (n != size)
-        return fail(r, ferror(r->file) ? "file read error" : "truncated input", offset + n,
-                    ferror(r->file) ? 3 : 2);
+        return fail(r, ferror(r->file) ? "file read error" : "truncated input", offset + n, ferror(r->file) ? 3 : 2);
     if (file_crc)
         r->file_crc = crc_update(r->file_crc, target, size);
     if (block_crc)
@@ -82,8 +77,8 @@ int valid_utf8(const unsigned char *s, size_t size) {
                 return 0;
             value = (value << 6) | (s[i++] & 0x3f);
         }
-        if ((extra == 1 && value < 0x80) || (extra == 2 && value < 0x800) ||
-            (extra == 3 && value < 0x10000) || value > 0x10ffff || (value >= 0xd800 && value <= 0xdfff))
+        if ((extra == 1 && value < 0x80) || (extra == 2 && value < 0x800) || (extra == 3 && value < 0x10000) ||
+            value > 0x10ffff || (value >= 0xd800 && value <= 0xdfff))
             return 0;
     }
     return 1;

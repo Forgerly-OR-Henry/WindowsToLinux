@@ -1,17 +1,17 @@
 package gold.debug.windowstolinux.app.main.startup;
 
-import gold.debug.windowstolinux.shared.analyze.component.ProjectComponentDiscovery;
-import gold.debug.windowstolinux.shared.analyze.core.DeploymentAnalysisCoordinator;
-import gold.debug.windowstolinux.shared.deploy.input.AutomaticRuntimeResolver;
-import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.function.Executable;
+import static org.junit.jupiter.api.Assertions.*;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 
-import static org.junit.jupiter.api.Assertions.*;
+import gold.debug.windowstolinux.shared.standard.analyze.component.ProjectComponentDiscovery;
+import gold.debug.windowstolinux.shared.standard.analyze.core.DeploymentAnalysisCoordinator;
+import gold.debug.windowstolinux.shared.standard.deploy.input.AutomaticRuntimeResolver;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.function.Executable;
 
 /** Keeps the real multilingual fixtures connected to automatic discovery and analysis. / 将真实多语言夹具接入自动发现与分析回归。 */
 class MultilingualDeploymentPlanningTest {
@@ -31,7 +31,8 @@ class MultilingualDeploymentPlanningTest {
                 case "survey-scoring" -> java.util.Set.of("frontend", "backend", "scorer");
                 default -> java.util.Set.of("app");
             };
-            assertEquals(expected, components.stream().map(c -> c.id()).collect(java.util.stream.Collectors.toSet()), project);
+            assertEquals(expected, components.stream().map(c -> c.id()).collect(java.util.stream.Collectors.toSet()),
+                    project);
             for (var component : components) {
                 checks.add(() -> {
                     assertEquals(1, component.types().size(), project + "/" + component.id());
@@ -43,7 +44,9 @@ class MultilingualDeploymentPlanningTest {
                     assertTrue(assessment.facts().isPresent(), assessment::toString);
                     var facts = assessment.facts().orElseThrow();
                     assertTrue(facts.conflicts().isEmpty(), facts.conflicts()::toString);
-                    assertTrue(facts.missingInformation().stream().allMatch(m -> m.key().equals("analysis.db.reviewRequired")),
+                    assertTrue(
+                            facts.missingInformation().stream()
+                                    .allMatch(m -> m.key().equals("analysis.db.reviewRequired")),
                             facts.missingInformation()::toString);
                     var resolver = new AutomaticRuntimeResolver();
                     var values = resolver.defaults(type, assessment.runtimeSuggestion().orElse(null), source);
@@ -57,7 +60,8 @@ class MultilingualDeploymentPlanningTest {
 
     static Path repositoryRoot() {
         for (Path path = Path.of("").toAbsolutePath(); path != null; path = path.getParent()) {
-            if (Files.isRegularFile(path.resolve("test/multi-language/matrix.json"))) return path;
+            if (Files.isRegularFile(path.resolve("test/multi-language/matrix.json")))
+                return path;
         }
         throw new IllegalStateException("repository root not found");
     }

@@ -12,12 +12,8 @@ import java.util.Objects;
  * @param firewall firewall manager / 防火墙管理器
  * @param firewallState firewall service state / 防火墙服务状态
  */
-public record LinuxSecurityPosture(
-        LinuxSecurityModuleType module,
-        LinuxSecurityState state,
-        LinuxFirewallKind firewall,
-        LinuxFirewallState firewallState
-) {
+public record LinuxSecurityPosture(LinuxSecurityModuleType module, LinuxSecurityState state, LinuxFirewallKind firewall,
+        LinuxFirewallState firewallState) {
     /**
      * Creates a coherent posture observation. / 创建连贯的安全态势观测。
      *

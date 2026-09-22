@@ -1,10 +1,5 @@
 package gold.debug.windowstolinux.shared.backup.crypto;
 
-import gold.debug.windowstolinux.shared.backup.crypto.BackupSecretDocument;
-
-import gold.debug.windowstolinux.shared.config.secretref.ResolvedSecretRevision;
-import gold.debug.windowstolinux.shared.config.secretref.SecretReference;
-
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.CharBuffer;
@@ -17,6 +12,10 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Objects;
 
+import gold.debug.windowstolinux.shared.backup.crypto.BackupSecretDocument;
+import gold.debug.windowstolinux.shared.config.secretref.ResolvedSecretRevision;
+import gold.debug.windowstolinux.shared.config.secretref.SecretReference;
+
 /**
  * Strict canonical binary codec whose secret buffers remain clearable. / 秘密缓冲区始终可清零的严格规范二进制编解码器。
  */
@@ -26,16 +25,19 @@ final class BackupSecretDocumentCodec {
      * <p>格式标记。
      */
     private static final byte[] MAGIC = {'W', 'T', 'L', 'S', 'C', 'R', 'T', '1'};
+
     /**
      * MAXIMUM DOCUMENT BYTES.
      * <p>最大文档字节。
      */
     private static final int MAXIMUM_DOCUMENT_BYTES = 64 * 1024 * 1024;
+
     /**
      * MAXIMUM REVISIONS.
      * <p>最大修订集合。
      */
     private static final int MAXIMUM_REVISIONS = 64;
+
     /**
      * ORDER.
      * <p>顺序。
@@ -60,7 +62,8 @@ final class BackupSecretDocumentCodec {
             try {
                 size = Math.addExact(size, Integer.BYTES + identifier.length + Long.BYTES + Integer.BYTES);
                 size = Math.addExact(size, value.length);
-                if (size > MAXIMUM_DOCUMENT_BYTES) throw new IOException("backup secret document exceeds policy");
+                if (size > MAXIMUM_DOCUMENT_BYTES)
+                    throw new IOException("backup secret document exceeds policy");
             } catch (ArithmeticException exception) {
                 throw new IOException("backup secret document size overflow", exception);
             } finally {
@@ -98,7 +101,8 @@ final class BackupSecretDocumentCodec {
         ByteBuffer input = ByteBuffer.wrap(document);
         byte[] magic = new byte[MAGIC.length];
         input.get(magic);
-        if (!Arrays.equals(magic, MAGIC)) throw new IOException("backup secret document format is unsupported");
+        if (!Arrays.equals(magic, MAGIC))
+            throw new IOException("backup secret document format is unsupported");
         int count = input.getInt();
         if (count < 1 || count > MAXIMUM_REVISIONS) {
             throw new IOException("backup secret revision count is invalid");
@@ -125,14 +129,17 @@ final class BackupSecretDocumentCodec {
                     revisions.add(new ResolvedSecretRevision(reference, characters));
                 } finally {
                     Arrays.fill(value, (byte) 0);
-                    if (characters != null) Arrays.fill(characters, '\0');
+                    if (characters != null)
+                        Arrays.fill(characters, '\0');
                 }
             }
-            if (input.hasRemaining()) throw new IOException("backup secret document has trailing bytes");
+            if (input.hasRemaining())
+                throw new IOException("backup secret document has trailing bytes");
             return new BackupSecretDocument(revisions);
         } catch (IOException | RuntimeException exception) {
             revisions.forEach(ResolvedSecretRevision::close);
-            if (exception instanceof IOException ioException) throw ioException;
+            if (exception instanceof IOException ioException)
+                throw ioException;
             throw new IOException("backup secret document is invalid", exception);
         }
     }
@@ -151,8 +158,8 @@ final class BackupSecretDocumentCodec {
         if (source.isEmpty() || source.size() > MAXIMUM_REVISIONS) {
             throw new IllegalArgumentException("backup secret revision count is invalid");
         }
-        List<ResolvedSecretRevision> revisions = source.stream().map(revision ->
-                Objects.requireNonNull(revision, "revision")).sorted(ORDER).toList();
+        List<ResolvedSecretRevision> revisions = source.stream()
+                .map(revision -> Objects.requireNonNull(revision, "revision")).sorted(ORDER).toList();
         if (revisions.stream().map(ResolvedSecretRevision::reference).distinct().count() != revisions.size()) {
             throw new IllegalArgumentException("backup secret revisions must be unique by exact reference");
         }
@@ -179,7 +186,8 @@ final class BackupSecretDocumentCodec {
         }
         requireRemaining(input, Integer.BYTES);
         int length = input.getInt();
-        if (length < minimum || length > maximum) throw new IOException(field + " length is invalid");
+        if (length < minimum || length > maximum)
+            throw new IOException(field + " length is invalid");
         requireRemaining(input, length);
         byte[] value = new byte[length];
         input.get(value);
@@ -201,7 +209,8 @@ final class BackupSecretDocumentCodec {
             return new String(characters);
         } finally {
             Arrays.fill(bytes, (byte) 0);
-            if (characters != null) Arrays.fill(characters, '\0');
+            if (characters != null)
+                Arrays.fill(characters, '\0');
         }
     }
 
@@ -215,13 +224,12 @@ final class BackupSecretDocumentCodec {
      */
     private static char[] characters(byte[] bytes) throws IOException {
         try {
-            CharBuffer decoded = StandardCharsets.UTF_8.newDecoder()
-                    .onMalformedInput(CodingErrorAction.REPORT)
-                    .onUnmappableCharacter(CodingErrorAction.REPORT)
-                    .decode(ByteBuffer.wrap(bytes));
+            CharBuffer decoded = StandardCharsets.UTF_8.newDecoder().onMalformedInput(CodingErrorAction.REPORT)
+                    .onUnmappableCharacter(CodingErrorAction.REPORT).decode(ByteBuffer.wrap(bytes));
             char[] result = new char[decoded.remaining()];
             decoded.get(result);
-            for (int index = 0; index < decoded.limit(); index++) decoded.put(index, '\0');
+            for (int index = 0; index < decoded.limit(); index++)
+                decoded.put(index, '\0');
             return result;
         } catch (CharacterCodingException exception) {
             throw new IOException("backup secret text is not valid UTF-8", exception);
@@ -250,6 +258,7 @@ final class BackupSecretDocumentCodec {
      * @throws IOException if the required file or stream operation fails / 所需文件或流操作失败时
      */
     private static void requireRemaining(ByteBuffer input, int bytes) throws IOException {
-        if (bytes < 0 || input.remaining() < bytes) throw new IOException("backup secret document is truncated");
+        if (bytes < 0 || input.remaining() < bytes)
+            throw new IOException("backup secret document is truncated");
     }
 }

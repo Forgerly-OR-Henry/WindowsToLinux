@@ -30,6 +30,7 @@ public record AiRoleBinding(AiCollaborationRoleKind role, String providerId, URI
         }
         endpoint = Objects.requireNonNull(endpoint, "endpoint");
         model = Objects.requireNonNull(model, "model").trim();
-        if (model.isBlank()) throw new IllegalArgumentException("model cannot be blank");
+        if (model.isBlank())
+            throw new IllegalArgumentException("model cannot be blank");
     }
 }

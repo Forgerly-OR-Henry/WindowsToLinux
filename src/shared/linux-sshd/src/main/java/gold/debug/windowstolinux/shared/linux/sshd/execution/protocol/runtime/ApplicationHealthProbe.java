@@ -1,12 +1,13 @@
 package gold.debug.windowstolinux.shared.linux.sshd.execution.protocol.runtime;
 
+import java.time.Duration;
+
 import gold.debug.windowstolinux.shared.linux.error.LinuxOperationException;
 import gold.debug.windowstolinux.shared.linux.runtime.HealthCheckResult;
 import gold.debug.windowstolinux.shared.linux.sshd.command.SshCommandExecutor;
 import gold.debug.windowstolinux.shared.linux.sshd.execution.protocol.helper.ManagedHelperBundle;
 import gold.debug.windowstolinux.shared.model.health.HealthCheck;
 import gold.debug.windowstolinux.shared.model.managed.ManagedApplication;
-import java.time.Duration;
 
 /**
  * Runs only the verification entry sealed into the owned release.
@@ -17,7 +18,8 @@ public final class ApplicationHealthProbe {
      * Prevents instantiation of this static contract helper.
      * <p>防止实例化当前静态契约辅助类。
      */
-    private ApplicationHealthProbe() { }
+    private ApplicationHealthProbe() {
+    }
 
     /**
      * Checks health check result.
@@ -32,10 +34,14 @@ public final class ApplicationHealthProbe {
     public static HealthCheckResult check(SshCommandExecutor commands, ManagedApplication app, HealthCheck health)
             throws LinuxOperationException {
         var result = commands.exec("sudo -n " + ManagedHelperBundle.PATH + " application-health "
-                + SshCommandExecutor.quote(app.id()) + " " + SshCommandExecutor.quote(app.ownershipManifestSha256()) + " "
-                + SshCommandExecutor.quote(ApplicationWorkloadArguments.healthPayload(health)),
+                + gold.debug.windowstolinux.shared.linux.command.CommandText.quote(app.id()) + " "
+                + gold.debug.windowstolinux.shared.linux.command.CommandText.quote(app.ownershipManifestSha256()) + " "
+                + gold.debug.windowstolinux.shared.linux.command.CommandText
+                        .quote(ApplicationWorkloadArguments.healthPayload(health)),
                 Duration.ofSeconds(health.timeoutSeconds() + 45L), true);
-        return new HealthCheckResult(result.succeeded() && "1".equals(SshCommandExecutor.lines(result.output()).get("HEALTHY")),
+        return new HealthCheckResult(
+                result.succeeded() && "1".equals(gold.debug.windowstolinux.shared.linux.command.CommandText
+                        .lines(result.output()).get("HEALTHY")),
                 result.succeeded() ? "Reviewed application validation completed" : result.failureEvidence());
     }
 }

@@ -1,7 +1,9 @@
 package gold.debug.windowstolinux.app.windows.workspace;
 
-import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.io.TempDir;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -9,13 +11,12 @@ import java.nio.file.Path;
 import java.security.MessageDigest;
 import java.util.HexFormat;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 class WindowsBackupArchiveWorkspaceTest {
-    @TempDir Path temporary;
+    @TempDir
+    Path temporary;
 
     @Test
     void publishesOnlyItsSameDirectoryTemporaryWithoutReplacingExistingDestination() throws Exception {
@@ -56,8 +57,7 @@ class WindowsBackupArchiveWorkspaceTest {
         Files.delete(replaced.destination());
         Files.writeString(replaced.destination(), "external", StandardCharsets.UTF_8);
 
-        assertThrows(WindowsWorkspaceException.class,
-                () -> workspace.discardPublished(replaced, digest(original)));
+        assertThrows(WindowsWorkspaceException.class, () -> workspace.discardPublished(replaced, digest(original)));
         assertTrue(Files.exists(replaced.destination()));
         assertEquals("external", Files.readString(replaced.destination(), StandardCharsets.UTF_8));
     }

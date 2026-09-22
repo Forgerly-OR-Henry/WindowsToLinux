@@ -25,9 +25,7 @@ def exited(pid):
         handle = k.OpenProcess(0x100000, False, pid)
         if handle:
             try:
-                assert (
-                    k.WaitForSingleObject(handle, 0) == 0
-                ), "helper still alive before runner cleanup"
+                assert k.WaitForSingleObject(handle, 0) == 0, "helper still alive before runner cleanup"
             finally:
                 k.CloseHandle(handle)
         else:
@@ -77,11 +75,7 @@ def invoke(r, command, expected=0, env=None, json_output=True):
         }
         with (r.evidence / "native-commands.jsonl").open("a", encoding="utf-8") as file:
             file.write(json.dumps(record, ensure_ascii=False) + "\n")
-        return (
-            json.loads(out)
-            if json_output
-            else (out.decode("utf-8"), err.decode("utf-8", errors="replace"))
-        )
+        return json.loads(out) if json_output else (out.decode("utf-8"), err.decode("utf-8", errors="replace"))
     finally:
         owned.close()
 
@@ -143,19 +137,13 @@ def protocol_faults(r, command, valid_records):
         }
         result = invoke(r, command, 4, env)
         assert result["status"] == "partial" and result["items"][0]["status"] == "error"
-    result = invoke(
-        r, command, 4, {"NATIVE_HELPER": str(r.evidence / "missing-worker")}
-    )
+    result = invoke(r, command, 4, {"NATIVE_HELPER": str(r.evidence / "missing-worker")})
     assert result["items"][0]["exitCode"] == 4
 
 
 def log_analyzer(r):
     p = r.work / "success-log-analyzer"
-    exe = (
-        p
-        / "cli/target/release"
-        / ("log-analyzer.exe" if os.name == "nt" else "log-analyzer")
-    )
+    exe = p / "cli/target/release" / ("log-analyzer.exe" if os.name == "nt" else "log-analyzer")
     count = 100000 if r.profile == "standard" else 5000
     root = r.evidence / "中文 日志"
     root.mkdir()
@@ -226,26 +214,17 @@ def log_analyzer(r):
         "--timeout-ms",
         "15000",
     ]
-    with check(
-        r, "scale", f"{count} multi-file records, gzip and independent aggregate counts"
-    ):
+    with check(r, "scale", f"{count} multi-file records, gzip and independent aggregate counts"):
         result = invoke(r, command, env={"DATA_DIR": str(r.evidence / "temp")})
         summary = result["summary"]
-        assert (
-            summary["lines"] == count + 3
-            and summary["matched"] == count
-            and summary["invalidCount"] == 3
-        )
+        assert summary["lines"] == count + 3 and summary["matched"] == count and summary["invalidCount"] == 3
         assert (
             summary["levels"] == levels
             and summary["services"] == services
             and summary["minutes"] == minutes
             and summary["errors"] == errors
         )
-        assert (
-            len(result["items"]) == 3
-            and sum(i["result"]["invalidCount"] for i in result["items"]) == 3
-        )
+        assert len(result["items"]) == 3 and sum(i["result"]["invalidCount"] for i in result["items"]) == 3
         assert not list((r.evidence / "temp").glob("*"))
         output = r.evidence / "统计.json"
         reverse = [exe, "--format", "json", "--output", output]
@@ -253,8 +232,7 @@ def log_analyzer(r):
             reverse.extend(["--input", path])
         reversed_report = invoke(r, reverse)
         assert (
-            reversed_report["summary"] == summary
-            and json.loads(output.read_text(encoding="utf-8")) == reversed_report
+            reversed_report["summary"] == summary and json.loads(output.read_text(encoding="utf-8")) == reversed_report
         )
         assert (
             invoke(r, reverse + ["--input", paths[0]])["summary"] == summary
@@ -315,19 +293,13 @@ def log_analyzer(r):
             encoding="utf-8",
         )
         single = [exe, "--format", "json", "--input", a]
-        assert (
-            invoke(r, single)["summary"]
-            == invoke(r, [exe, "--format", "json", "--input", b])["summary"]
-        )
+        assert invoke(r, single)["summary"] == invoke(r, [exe, "--format", "json", "--input", b])["summary"]
         invoke(r, single + ["--from", "2026-02-30T00:00:00Z"], 2)
         text, _ = invoke(r, [exe, "--input", a], json_output=False)
         assert "log-analyzer" in text
         multi = r.evidence / "members.gz"
         multi.write_bytes(gzip.compress(a.read_bytes()) + gzip.compress(b.read_bytes()))
-        assert (
-            invoke(r, [exe, "--format", "json", "--input", multi])["summary"]["matched"]
-            == 4
-        )
+        assert invoke(r, [exe, "--format", "json", "--input", multi])["summary"]["matched"] == 4
     with check(
         r,
         "fault",
@@ -359,12 +331,7 @@ def log_analyzer(r):
         assert not list((r.evidence / "temp").glob("*"))
         large = r.evidence / "large-line.log"
         large.write_bytes(b"a" * 70000 + b"\n")
-        assert (
-            invoke(r, [exe, "--format", "json", "--input", a, "--input", large], 3)[
-                "summary"
-            ]["matched"]
-            == 2
-        )
+        assert invoke(r, [exe, "--format", "json", "--input", a, "--input", large], 3)["summary"]["matched"] == 2
         assert invoke(r, single)["summary"]["matched"] == 2
     with check(
         r,
@@ -395,9 +362,7 @@ def log_analyzer(r):
             },
         ]
         protocol_faults(r, single + ["--timeout-ms", "250"], valid)
-        native = (
-            p / "native/build" / ("log-worker.exe" if os.name == "nt" else "log-worker")
-        )
+        native = p / "native/build" / ("log-worker.exe" if os.name == "nt" else "log-worker")
         disabled = native.with_suffix(".disabled")
         native.rename(disabled)
         try:

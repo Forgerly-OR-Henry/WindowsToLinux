@@ -1,6 +1,7 @@
 """Exercise the production SELinux script with inert OS commands and a disposable filesystem.
 使用无副作用的系统命令及临时文件系统验证生产 SELinux 脚本。
 """
+
 import pathlib
 import os
 import re
@@ -9,7 +10,10 @@ import subprocess
 import tempfile
 import unittest
 
-SOURCE = pathlib.Path(__file__).resolve().parents[2] / 'main/resources/gold/debug/windowstolinux/shared/linux/sshd/distro/dnf/selinux-preparation.sh'
+SOURCE = (
+    pathlib.Path(__file__).resolve().parents[2]
+    / 'main/resources/gold/debug/windowstolinux/shared/linux/sshd/distro/dnf/selinux-preparation.sh'
+)
 
 
 class SelinuxPreparationTest(unittest.TestCase):
@@ -20,8 +24,9 @@ class SelinuxPreparationTest(unittest.TestCase):
         # One replacement over path prefixes avoids changing nested placeholders twice.
         # 一次性替换路径前缀，避免重复更改嵌套占位符。
         production = SOURCE.read_text(encoding='utf-8')
-        production = re.sub(r'/(?:etc|var|proc)(?=/|\s|$)|/\.autorelabel',
-                            lambda match: '${TEST_ROOT}' + match.group(0), production)
+        production = re.sub(
+            r'/(?:etc|var|proc)(?=/|\s|$)|/\.autorelabel', lambda match: '${TEST_ROOT}' + match.group(0), production
+        )
         setup = r'''
 set -eu
 export PATH=/usr/bin:/bin:$PATH
@@ -108,8 +113,14 @@ grep -qx 'SELINUX=enforcing' "$TEST_ROOT/etc/selinux/config"
 test ! -e "$TEST_ROOT/rollback-timer"
 '''
         with tempfile.TemporaryDirectory() as directory:
-            result = subprocess.run([bash, '-s', '--', mode, scenario], input=setup + production + '\n' + call,
-                                    text=True, cwd=directory, capture_output=True, timeout=15)
+            result = subprocess.run(
+                [bash, '-s', '--', mode, scenario],
+                input=setup + production + '\n' + call,
+                text=True,
+                cwd=directory,
+                capture_output=True,
+                timeout=15,
+            )
             calls = pathlib.Path(directory, 'calls')
             log = calls.read_text() if calls.exists() else ''
             config_path = pathlib.Path(directory, 'root/etc/selinux/config')
@@ -160,7 +171,17 @@ test ! -e "$TEST_ROOT/rollback-timer"
                 self.assertNotIn('systemd-run ', log)
 
     def test_failed_relabel_audit_and_enforcement_never_commit(self):
-        for mode in ['relabelfail', 'schedulefail', 'relabelpending', 'relabelservicefail', 'avc', 'auditerror', 'enforcefail', 'rollback', 'stopfail']:
+        for mode in [
+            'relabelfail',
+            'schedulefail',
+            'relabelpending',
+            'relabelservicefail',
+            'avc',
+            'auditerror',
+            'enforcefail',
+            'rollback',
+            'stopfail',
+        ]:
             with self.subTest(mode=mode):
                 result, log, config = self.run_case(mode)
                 self.assertNotEqual(0, result.returncode, result.stdout)

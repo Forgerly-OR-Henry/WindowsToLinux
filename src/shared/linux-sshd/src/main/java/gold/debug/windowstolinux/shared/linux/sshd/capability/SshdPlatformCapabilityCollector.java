@@ -1,21 +1,5 @@
 package gold.debug.windowstolinux.shared.linux.sshd.capability;
 
-import gold.debug.windowstolinux.shared.linux.capability.LinuxPlatformCapabilityCollector;
-import gold.debug.windowstolinux.shared.linux.error.LinuxOperationException;
-import gold.debug.windowstolinux.shared.linux.error.LinuxOperationFailureType;
-import gold.debug.windowstolinux.shared.linux.sshd.command.SshCommandExecutor;
-import gold.debug.windowstolinux.shared.model.capability.LinuxCapabilityFacts;
-import gold.debug.windowstolinux.shared.model.server.CpuMicroarchitectureLevel;
-import gold.debug.windowstolinux.shared.model.server.LinuxDistroType;
-import gold.debug.windowstolinux.shared.model.server.security.LinuxFirewallKind;
-import gold.debug.windowstolinux.shared.model.server.security.LinuxFirewallState;
-import gold.debug.windowstolinux.shared.model.server.security.LinuxSecurityModuleType;
-import gold.debug.windowstolinux.shared.model.server.security.LinuxSecurityPosture;
-import gold.debug.windowstolinux.shared.model.server.security.LinuxSecurityState;
-import gold.debug.windowstolinux.shared.model.project.DeploymentProjectType;
-import gold.debug.windowstolinux.shared.model.capability.EcosystemToolType;
-import gold.debug.windowstolinux.shared.linux.sshd.capability.ManagedPlatformCapabilityProbe;
-
 import java.time.Duration;
 import java.util.Arrays;
 import java.util.Locale;
@@ -23,6 +7,22 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.stream.Collectors;
+
+import gold.debug.windowstolinux.shared.linux.capability.LinuxPlatformCapabilityCollector;
+import gold.debug.windowstolinux.shared.linux.error.LinuxOperationException;
+import gold.debug.windowstolinux.shared.linux.error.LinuxOperationFailureType;
+import gold.debug.windowstolinux.shared.linux.sshd.capability.ManagedPlatformCapabilityProbe;
+import gold.debug.windowstolinux.shared.linux.sshd.command.SshCommandExecutor;
+import gold.debug.windowstolinux.shared.model.capability.EcosystemToolType;
+import gold.debug.windowstolinux.shared.model.capability.LinuxCapabilityFacts;
+import gold.debug.windowstolinux.shared.model.project.DeploymentProjectType;
+import gold.debug.windowstolinux.shared.model.server.CpuMicroarchitectureLevel;
+import gold.debug.windowstolinux.shared.model.server.LinuxDistroType;
+import gold.debug.windowstolinux.shared.model.server.security.LinuxFirewallKind;
+import gold.debug.windowstolinux.shared.model.server.security.LinuxFirewallState;
+import gold.debug.windowstolinux.shared.model.server.security.LinuxSecurityModuleType;
+import gold.debug.windowstolinux.shared.model.server.security.LinuxSecurityPosture;
+import gold.debug.windowstolinux.shared.model.server.security.LinuxSecurityState;
 
 /**
  * Apache SSHD implementation of the read-only typed deployment host capability contract.
@@ -35,6 +35,7 @@ public final class SshdPlatformCapabilityCollector implements LinuxPlatformCapab
      * <p>处理类型化远端命令边界的SSH命令执行器协作对象。
      */
     private final SshCommandExecutor commands;
+
     /**
      * Host fingerprint.
      * <p>主机指纹。
@@ -63,12 +64,15 @@ public final class SshdPlatformCapabilityCollector implements LinuxPlatformCapab
      */
     @Override
     public LinuxCapabilityFacts collectDeploymentCapabilities() throws LinuxOperationException {
-        var result = CapabilityReadExecutor.collect(commands, LinuxOperationFailureType.DEPLOYMENT_CAPABILITY_COLLECTION_FAILED, ManagedPlatformCapabilityProbe.render());
+        var result = CapabilityReadExecutor.collect(commands,
+                LinuxOperationFailureType.DEPLOYMENT_CAPABILITY_COLLECTION_FAILED,
+                ManagedPlatformCapabilityProbe.render());
         if (!result.succeeded()) {
             throw LinuxOperationException.create(LinuxOperationFailureType.DEPLOYMENT_CAPABILITY_COLLECTION_FAILED,
                     "Failed to collect typed deployment target capabilities: " + result.failureEvidence());
         }
-        return fromValues(SshCommandExecutor.lines(result.output()), hostFingerprint);
+        return fromValues(gold.debug.windowstolinux.shared.linux.command.CommandText.lines(result.output()),
+                hostFingerprint);
     }
 
     /**
@@ -86,29 +90,29 @@ public final class SshdPlatformCapabilityCollector implements LinuxPlatformCapab
         String variant = normalized(values.getOrDefault("DISTRO_VARIANT", ""));
         String version = normalized(values.getOrDefault("VERSION", "unknown"));
         Set<String> flags = Arrays.stream(values.getOrDefault("CPU_FLAGS", "").split(","))
-                .map(value -> value.trim().toLowerCase(Locale.ROOT))
-                .filter(value -> value.matches("[a-z0-9_.-]{1,64}"))
+                .map(value -> value.trim().toLowerCase(Locale.ROOT)).filter(value -> value.matches("[a-z0-9_.-]{1,64}"))
                 .collect(Collectors.toUnmodifiableSet());
         Set<Integer> javaMajors = integerVersions(values.getOrDefault("JAVA_MAJORS", ""));
         Set<Integer> nodeMajors = integerVersions(values.getOrDefault("NODE_MAJORS", ""));
         Set<String> pythonVersions = Arrays.stream(values.getOrDefault("PYTHON_VERSIONS", "").split(","))
                 .map(String::trim).filter(value -> value.matches("[0-9]{1,3}\\.[0-9]{1,3}"))
                 .collect(Collectors.toUnmodifiableSet());
-        java.util.EnumMap<DeploymentProjectType, Set<String>> serviceVersions =
-                new java.util.EnumMap<>(DeploymentProjectType.class);
+        java.util.EnumMap<DeploymentProjectType, Set<String>> serviceVersions = new java.util.EnumMap<>(
+                DeploymentProjectType.class);
         for (DeploymentProjectType projectType : serviceProjectTypes()) {
             String observed = values.getOrDefault("SERVICE_" + projectType.name().replace("_SERVICE", ""), "").trim();
             if (validServiceVersion(projectType, observed)) {
                 serviceVersions.put(projectType, Set.of(observed));
             }
         }
-        java.util.EnumMap<EcosystemToolType, Set<String>> ecosystemTools =
-                new java.util.EnumMap<>(EcosystemToolType.class);
+        java.util.EnumMap<EcosystemToolType, Set<String>> ecosystemTools = new java.util.EnumMap<>(
+                EcosystemToolType.class);
         for (EcosystemToolType tool : EcosystemToolType.values()) {
             Set<String> observed = Arrays.stream(values.getOrDefault("TOOL_" + tool.name(), "").split(","))
                     .map(String::trim).filter(candidate -> candidate.matches("[0-9A-Za-z][0-9A-Za-z.+_-]{0,63}"))
                     .collect(Collectors.toUnmodifiableSet());
-            if (!observed.isEmpty()) ecosystemTools.put(tool, observed);
+            if (!observed.isEmpty())
+                ecosystemTools.put(tool, observed);
         }
         String architecture = normalized(values.getOrDefault("ARCH", "unknown"));
         String packageManager = normalized(values.getOrDefault("PACKAGE_MANAGER", "unknown"));
@@ -116,26 +120,23 @@ public final class SshdPlatformCapabilityCollector implements LinuxPlatformCapab
         CpuMicroarchitectureLevel cpuLevel = cpuLevel(values.getOrDefault("CPU_LEVEL", "unknown"));
         LinuxSecurityPosture security = security(values);
         String evidence = "SSH host fingerprint verified: " + Objects.requireNonNull(hostFingerprint, "hostFingerprint")
-                + "; distro=" + id + "; version=" + version + "; arch=" + architecture
-                + "; package-manager=" + packageManager + "; package-arch=" + packageArchitecture
-                + "; cpu-level=" + cpuLevel.name().toLowerCase(Locale.ROOT)
-                + "; security=" + security.module().name().toLowerCase(Locale.ROOT) + "/"
-                + security.state().name().toLowerCase(Locale.ROOT)
-                + "; firewall=" + security.firewall().name().toLowerCase(Locale.ROOT) + "/"
-                + security.firewallState().name().toLowerCase(Locale.ROOT)
-                + "; docker=" + values.getOrDefault("DOCKER_OPERATIONAL", "0")
-                + "; podman=" + values.getOrDefault("PODMAN_OPERATIONAL", "0");
+                + "; distro=" + id + "; version=" + version + "; arch=" + architecture + "; package-manager="
+                + packageManager + "; package-arch=" + packageArchitecture + "; cpu-level="
+                + cpuLevel.name().toLowerCase(Locale.ROOT) + "; security="
+                + security.module().name().toLowerCase(Locale.ROOT) + "/"
+                + security.state().name().toLowerCase(Locale.ROOT) + "; firewall="
+                + security.firewall().name().toLowerCase(Locale.ROOT) + "/"
+                + security.firewallState().name().toLowerCase(Locale.ROOT) + "; docker="
+                + values.getOrDefault("DOCKER_OPERATIONAL", "0") + "; podman="
+                + values.getOrDefault("PODMAN_OPERATIONAL", "0");
         return new LinuxCapabilityFacts(classify(id, variant, version), version, architecture, packageManager,
-                packageArchitecture,
-                "1".equals(values.get("SYSTEMD")), "1".equals(values.get("DOCKER_CLIENT")),
-                "1".equals(values.get("PODMAN_CLIENT")), "1".equals(values.get("PODMAN_QUADLET")),
-                javaMajors, nodeMajors, "1".equals(values.get("NPM")), "1".equals(values.get("MAVEN")), pythonVersions,
+                packageArchitecture, "1".equals(values.get("SYSTEMD")), "1".equals(values.get("DOCKER_CLIENT")),
+                "1".equals(values.get("PODMAN_CLIENT")), "1".equals(values.get("PODMAN_QUADLET")), javaMajors,
+                nodeMajors, "1".equals(values.get("NPM")), "1".equals(values.get("MAVEN")), pythonVersions,
                 "1".equals(values.get("PYTHON3")), serviceVersions, ecosystemTools,
-                "1".equals(values.get("DOCKER_OPERATIONAL")),
-                "1".equals(values.get("PODMAN_OPERATIONAL")), cpuLevel, flags, security, evidence);
+                "1".equals(values.get("DOCKER_OPERATIONAL")), "1".equals(values.get("PODMAN_OPERATIONAL")), cpuLevel,
+                flags, security, evidence);
     }
-
-
 
     /**
      * Collects valid one- or two-digit versions from a comma-separated capability field.
@@ -146,9 +147,9 @@ public final class SshdPlatformCapabilityCollector implements LinuxPlatformCapab
      * @throws NullPointerException if a required input is absent / 必需输入缺失时
      */
     private static Set<Integer> integerVersions(String value) {
-        return Arrays.stream(Objects.requireNonNull(value, "value").split(","))
-                .map(String::trim).filter(item -> item.matches("[0-9]{1,2}"))
-                .map(Integer::valueOf).collect(Collectors.toUnmodifiableSet());
+        return Arrays.stream(Objects.requireNonNull(value, "value").split(",")).map(String::trim)
+                .filter(item -> item.matches("[0-9]{1,2}")).map(Integer::valueOf)
+                .collect(Collectors.toUnmodifiableSet());
     }
 
     /**
@@ -254,6 +255,7 @@ public final class SshdPlatformCapabilityCollector implements LinuxPlatformCapab
         value = Objects.requireNonNull(value, "value").trim().toLowerCase(Locale.ROOT);
         return value.isBlank() ? "unknown" : value;
     }
+
     /**
      * Returns service project types.
      * <p>返回服务项目类型集合。

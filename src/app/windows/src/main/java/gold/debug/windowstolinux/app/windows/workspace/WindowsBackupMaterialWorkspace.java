@@ -17,6 +17,7 @@ public final class WindowsBackupMaterialWorkspace {
      * <p>最小剩余字节。
      */
     private static final long MINIMUM_FREE_BYTES = 16L * 1024 * 1024;
+
     /**
      * Root directory defining the filesystem boundary.
      * <p>定义文件系统边界的根目录。
@@ -44,7 +45,8 @@ public final class WindowsBackupMaterialWorkspace {
         try {
             prepareRoot();
             Path directory = Files.createTempDirectory(root, "attempt-").toAbsolutePath().normalize();
-            Object key = Files.readAttributes(directory, BasicFileAttributes.class, LinkOption.NOFOLLOW_LINKS).fileKey();
+            Object key = Files.readAttributes(directory, BasicFileAttributes.class, LinkOption.NOFOLLOW_LINKS)
+                    .fileKey();
             return new WindowsBackupMaterialAttempt(directory, key);
         } catch (WindowsWorkspaceException exception) {
             throw exception;
@@ -76,8 +78,9 @@ public final class WindowsBackupMaterialWorkspace {
             throw WindowsWorkspaceException.create(WindowsWorkspaceFailureType.BACKUP_MATERIAL_WORKSPACE_FAILED,
                     "Backup material member escaped its attempt", null);
         }
-        try { Files.createDirectories(member.getParent()); }
-        catch (IOException exception) {
+        try {
+            Files.createDirectories(member.getParent());
+        } catch (IOException exception) {
             throw WindowsWorkspaceException.create(WindowsWorkspaceFailureType.BACKUP_MATERIAL_WORKSPACE_FAILED,
                     "Backup material parent could not be created", exception);
         }
@@ -93,7 +96,8 @@ public final class WindowsBackupMaterialWorkspace {
      */
     public void discard(WindowsBackupMaterialAttempt attempt) throws WindowsWorkspaceException {
         Objects.requireNonNull(attempt, "attempt");
-        if (!Files.exists(attempt.directory(), LinkOption.NOFOLLOW_LINKS)) return;
+        if (!Files.exists(attempt.directory(), LinkOption.NOFOLLOW_LINKS))
+            return;
         verify(attempt);
         try (var paths = Files.walk(attempt.directory())) {
             for (Path path : paths.sorted(Comparator.reverseOrder()).toList()) {

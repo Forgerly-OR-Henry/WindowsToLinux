@@ -1,10 +1,10 @@
 package gold.debug.windowstolinux.shared.backup.contract.spi;
 
-import gold.debug.windowstolinux.shared.backup.contract.validation.BackupException;
-
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
+
+import gold.debug.windowstolinux.shared.backup.contract.validation.BackupException;
 
 /**
  * Platform/deploy seam for staging, checking, committing and recovering restored files. / 暂存、检查、提交和恢复已还原文件的平台及部署接缝。
@@ -40,8 +40,8 @@ public interface RestoreCandidatePort {
      * @return constructed or resolved health evidence / 构造或解析得到的健康证据
      * @throws BackupException if backup validation or the controlled backup operation fails / 备份校验或受控备份操作失败时
      */
-    HealthEvidence verifyApplication(RestoreCandidateRequest request, FileEvidence files, Optional<String> databaseToken)
-            throws BackupException;
+    HealthEvidence verifyApplication(RestoreCandidateRequest request, FileEvidence files,
+            Optional<String> databaseToken) throws BackupException;
 
     /**
      * Establishes the stopped-write boundary before a database candidate is activated. / 在数据库候选激活前建立停写边界。
@@ -100,15 +100,8 @@ public interface RestoreCandidatePort {
      * @param existingReleaseUntouched existing release untouched / 既有发布Untouched
      * @param evidence observations supporting the reported result / 支持所报告结果的观测证据
      */
-    record FileEvidence(
-            String candidateId,
-            String candidateToken,
-            long stagedBytes,
-            boolean isolated,
-            boolean integrityVerified,
-            boolean existingReleaseUntouched,
-            List<String> evidence
-    ) {
+    record FileEvidence(String candidateId, String candidateToken, long stagedBytes, boolean isolated,
+            boolean integrityVerified, boolean existingReleaseUntouched, List<String> evidence) {
         /**
          * Validates bounded stage evidence. / 校验有界暂存证据。
          *
@@ -124,7 +117,8 @@ public interface RestoreCandidatePort {
         public FileEvidence {
             candidateId = id(candidateId, "candidateId");
             candidateToken = id(candidateToken, "candidateToken");
-            if (stagedBytes < 0) throw new IllegalArgumentException("stagedBytes must not be negative");
+            if (stagedBytes < 0)
+                throw new IllegalArgumentException("stagedBytes must not be negative");
             evidence = validatedEvidence(evidence);
         }
     }
@@ -155,12 +149,8 @@ public interface RestoreCandidatePort {
      * @param activeReleaseToken active release token / 活跃发布令牌
      * @param evidence observations supporting the reported result / 支持所报告结果的观测证据
      */
-    record CommitEvidence(
-            boolean committed,
-            boolean previousReleaseRetained,
-            String activeReleaseToken,
-            List<String> evidence
-    ) {
+    record CommitEvidence(boolean committed, boolean previousReleaseRetained, String activeReleaseToken,
+            List<String> evidence) {
         /**
          * Validates bounded commit evidence. / 校验有界提交证据。
          *
@@ -207,7 +197,8 @@ public interface RestoreCandidatePort {
      */
     private static String id(String value, String field) {
         value = Objects.requireNonNull(value, field).trim();
-        if (!value.matches("[a-z0-9][a-z0-9-]{0,62}")) throw new IllegalArgumentException(field + " is invalid");
+        if (!value.matches("[a-z0-9][a-z0-9-]{0,62}"))
+            throw new IllegalArgumentException(field + " is invalid");
         return value;
     }
 
@@ -222,7 +213,8 @@ public interface RestoreCandidatePort {
      */
     private static List<String> validatedEvidence(List<String> values) {
         Objects.requireNonNull(values, "evidence");
-        if (values.isEmpty() || values.size() > 64) throw new IllegalArgumentException("restore evidence is incomplete");
+        if (values.isEmpty() || values.size() > 64)
+            throw new IllegalArgumentException("restore evidence is incomplete");
         List<String> result = values.stream().map(value -> {
             String item = Objects.requireNonNull(value, "evidence item").trim();
             if (item.isEmpty() || item.length() > 512 || item.chars().anyMatch(Character::isISOControl)) {
@@ -230,7 +222,8 @@ public interface RestoreCandidatePort {
             }
             return item;
         }).distinct().toList();
-        if (result.size() != values.size()) throw new IllegalArgumentException("restore evidence contains duplicates");
+        if (result.size() != values.size())
+            throw new IllegalArgumentException("restore evidence contains duplicates");
         return result;
     }
 }

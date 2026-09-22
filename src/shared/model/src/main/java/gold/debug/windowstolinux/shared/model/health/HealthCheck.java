@@ -8,8 +8,8 @@ import java.util.Objects;
  *
  *  <p>经审阅的网络、进程与隔离安装验证策略。
  */
-public sealed interface HealthCheck permits HealthCheck.Http, HealthCheck.Tcp, HealthCheck.Process,
-        HealthCheck.Command, HealthCheck.Udp {
+public sealed interface HealthCheck
+        permits HealthCheck.Http, HealthCheck.Tcp, HealthCheck.Process, HealthCheck.Command, HealthCheck.Udp {
     /**
      * Process readiness without a network endpoint. / 无网络端口的进程就绪检查。
      *
@@ -40,7 +40,7 @@ public sealed interface HealthCheck permits HealthCheck.Http, HealthCheck.Tcp, H
      * @param timeoutSeconds maximum waiting time in seconds / 最长等待时间，单位为秒
      */
     record Command(gold.debug.windowstolinux.shared.model.project.application.ApplicationCommand command,
-                   String expectedOutput, int timeoutSeconds) implements HealthCheck {
+            String expectedOutput, int timeoutSeconds) implements HealthCheck {
         /**
          * Validates and binds the inputs required by command.
          * <p>校验并绑定命令所需输入。
@@ -52,7 +52,9 @@ public sealed interface HealthCheck permits HealthCheck.Http, HealthCheck.Tcp, H
          * @throws NullPointerException if a required input is absent / 必需输入缺失时
          */
         public Command {
-            Objects.requireNonNull(command); Objects.requireNonNull(expectedOutput); validateTimeout(timeoutSeconds);
+            Objects.requireNonNull(command);
+            Objects.requireNonNull(expectedOutput);
+            validateTimeout(timeoutSeconds);
             if (expectedOutput.length() > 4096 || expectedOutput.indexOf(0) >= 0)
                 throw new IllegalArgumentException("verification output exceeds its bounds");
         }
@@ -68,8 +70,8 @@ public sealed interface HealthCheck permits HealthCheck.Http, HealthCheck.Tcp, H
      * @param timeoutSeconds maximum waiting time in seconds / 最长等待时间，单位为秒
      */
     record Udp(int port, String requestHex, String responseHex,
-               java.util.Optional<gold.debug.windowstolinux.shared.model.project.application.ApplicationCommand> probe,
-               int timeoutSeconds) implements HealthCheck {
+            java.util.Optional<gold.debug.windowstolinux.shared.model.project.application.ApplicationCommand> probe,
+            int timeoutSeconds) implements HealthCheck {
         /**
          * Validates and binds the inputs required by udp.
          * <p>校验并绑定Udp所需输入。
@@ -83,11 +85,15 @@ public sealed interface HealthCheck permits HealthCheck.Http, HealthCheck.Tcp, H
          * @throws NullPointerException if a required input is absent / 必需输入缺失时
          */
         public Udp {
-            validateTimeout(timeoutSeconds); Objects.requireNonNull(probe);
-            Objects.requireNonNull(requestHex); Objects.requireNonNull(responseHex);
-            if (port < 1 || port > 65535) throw new IllegalArgumentException("invalid UDP port");
+            validateTimeout(timeoutSeconds);
+            Objects.requireNonNull(probe);
+            Objects.requireNonNull(requestHex);
+            Objects.requireNonNull(responseHex);
+            if (port < 1 || port > 65535)
+                throw new IllegalArgumentException("invalid UDP port");
             if (probe.isPresent()) {
-                if (!requestHex.isEmpty() || !responseHex.isEmpty()) throw new IllegalArgumentException("mixed UDP probe modes");
+                if (!requestHex.isEmpty() || !responseHex.isEmpty())
+                    throw new IllegalArgumentException("mixed UDP probe modes");
             } else if (!requestHex.matches("(?:[0-9a-fA-F]{2}){1,4096}")
                     || !responseHex.matches("(?:[0-9a-fA-F]{2}){1,4096}"))
                 throw new IllegalArgumentException("UDP health requires bounded request and response bytes");
@@ -103,7 +109,8 @@ public sealed interface HealthCheck permits HealthCheck.Http, HealthCheck.Tcp, H
      */
     default java.util.OptionalInt portNumber() {
         return switch (this) {
-            case Http http -> java.util.OptionalInt.of(http.endpoint().getPort() > 0 ? http.endpoint().getPort()
+            case Http http -> java.util.OptionalInt.of(http.endpoint().getPort() > 0
+                    ? http.endpoint().getPort()
                     : "https".equalsIgnoreCase(http.endpoint().getScheme()) ? 443 : 80);
             case Tcp tcp -> java.util.OptionalInt.of(tcp.port());
             case Udp udp -> java.util.OptionalInt.of(udp.port());
@@ -111,6 +118,7 @@ public sealed interface HealthCheck permits HealthCheck.Http, HealthCheck.Tcp, H
             case Command ignored -> java.util.OptionalInt.empty();
         };
     }
+
     /**
      * Returns maximum waiting time in seconds.
      * <p>返回最长等待时间，单位为秒。
@@ -149,7 +157,8 @@ public sealed interface HealthCheck permits HealthCheck.Http, HealthCheck.Tcp, H
             }
             String host = endpoint.getHost().toLowerCase(java.util.Locale.ROOT);
             if (!host.equals("127.0.0.1") && !host.equals("localhost") && !host.equals("::1")) {
-                throw new IllegalArgumentException("HTTP health endpoint must target the candidate host loopback address");
+                throw new IllegalArgumentException(
+                        "HTTP health endpoint must target the candidate host loopback address");
             }
             if (expectedStatus < 200 || expectedStatus > 399) {
                 throw new IllegalArgumentException("expectedStatus must be a successful HTTP status");

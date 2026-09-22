@@ -1,33 +1,20 @@
 package gold.debug.windowstolinux.app.ui.deployment.automatic;
 
-
-import gold.debug.windowstolinux.app.service.contract.definition.*;
-
-import gold.debug.windowstolinux.app.ui.deployment.ReviewContext;
-
-import gold.debug.windowstolinux.app.service.contract.AutomaticDeploymentApplicationFacade;
-import gold.debug.windowstolinux.app.service.deployment.single.DeploymentHandoff;
-import gold.debug.windowstolinux.app.ui.component.AdvancedOptionsPane;
-import gold.debug.windowstolinux.app.ui.server.ServerSelectionPane;
-import javax.swing.*;
-import java.awt.Dimension;
+import java.awt.BorderLayout;
 import java.awt.Desktop;
-import java.util.LinkedHashMap;
+import java.awt.Dimension;
+import java.awt.FlowLayout;
+import java.awt.GridBagLayout;
+import java.nio.file.Path;
 import java.util.Arrays;
-import gold.debug.windowstolinux.app.service.server.ServerProfile;
-import gold.debug.windowstolinux.app.service.source.ReviewedSourcePreparation;
-import gold.debug.windowstolinux.app.ui.component.DesktopComponentFactory;
-import gold.debug.windowstolinux.app.ui.component.DesktopTaskExecutor;
-import gold.debug.windowstolinux.app.ui.server.ServerContext;
-import gold.debug.windowstolinux.app.ui.i18n.PageMessagePresenter;
-import gold.debug.windowstolinux.shared.model.deployment.DeploymentStatus;
-import gold.debug.windowstolinux.shared.model.deployment.DeploymentAutomationMode;
-import gold.debug.windowstolinux.shared.model.deployment.AgentApprovalMode;
-import gold.debug.windowstolinux.shared.model.health.UserAccessUrl;
-import gold.debug.windowstolinux.shared.model.security.CredentialStorageMode;
+import java.util.LinkedHashMap;
+import java.util.Locale;
+import java.util.Map;
+import java.util.Optional;
+import java.util.function.Consumer;
 
+import javax.swing.*;
 import javax.swing.JButton;
-import gold.debug.windowstolinux.app.ui.component.ToggleSwitch;
 import javax.swing.JComboBox;
 import javax.swing.JFileChooser;
 import javax.swing.JFrame;
@@ -36,14 +23,25 @@ import javax.swing.JPanel;
 import javax.swing.JPasswordField;
 import javax.swing.JTextArea;
 import javax.swing.JTextField;
-import java.awt.BorderLayout;
-import java.awt.FlowLayout;
-import java.awt.GridBagLayout;
-import java.nio.file.Path;
-import java.util.Locale;
-import java.util.Map;
-import java.util.Optional;
-import java.util.function.Consumer;
+
+import gold.debug.windowstolinux.app.service.contract.AutomaticDeploymentApplicationFacade;
+import gold.debug.windowstolinux.app.service.contract.definition.*;
+import gold.debug.windowstolinux.app.service.deployment.single.DeploymentHandoff;
+import gold.debug.windowstolinux.app.service.server.ServerProfile;
+import gold.debug.windowstolinux.app.service.source.ReviewedSourcePreparation;
+import gold.debug.windowstolinux.app.ui.component.AdvancedOptionsPane;
+import gold.debug.windowstolinux.app.ui.component.DesktopComponentFactory;
+import gold.debug.windowstolinux.app.ui.component.DesktopTaskExecutor;
+import gold.debug.windowstolinux.app.ui.component.ToggleSwitch;
+import gold.debug.windowstolinux.app.ui.deployment.ReviewContext;
+import gold.debug.windowstolinux.app.ui.i18n.PageMessagePresenter;
+import gold.debug.windowstolinux.app.ui.server.ServerContext;
+import gold.debug.windowstolinux.app.ui.server.ServerSelectionPane;
+import gold.debug.windowstolinux.shared.model.deployment.AgentApprovalMode;
+import gold.debug.windowstolinux.shared.model.deployment.DeploymentAutomationMode;
+import gold.debug.windowstolinux.shared.model.deployment.DeploymentStatus;
+import gold.debug.windowstolinux.shared.model.health.UserAccessUrl;
+import gold.debug.windowstolinux.shared.model.security.CredentialStorageMode;
 
 /**
  * Owns source selection, review state, deployment forms, and the complete reviewed deployment workflow. / 持有源码选择、审阅状态、部署表单与完整经审阅部署流程。
@@ -57,114 +55,137 @@ public final class DeploymentPage implements ReviewContext {
      * <p>持有操作的组件或资源身份。
      */
     private final JFrame owner;
+
     /**
      * Bound automatic deployment application facade collaborator for application service used by the caller.
      * <p>处理调用方使用的应用服务的自动部署应用门面协作对象。
      */
     private final AutomaticDeploymentApplicationFacade service;
+
     /**
      * Server context.
      * <p>服务器上下文。
      */
     private final ServerContext serverContext;
+
     /**
      * Bound page message presenter collaborator for localized message resolver.
      * <p>处理本地化消息解析器的页面消息展示器协作对象。
      */
     private final PageMessagePresenter messages;
+
     /**
      * Application selection.
      * <p>应用选择。
      */
     private final Consumer<String> applicationSelection;
+
     /**
      * Form.
      * <p>表单。
      */
     private final DeploymentForm form;
+
     /**
      * Swing control for output.
      * <p>输出对应的 Swing 控件。
      */
     private final JTextArea output = DesktopComponentFactory.outputArea();
+
     /**
      * Swing control for panel.
      * <p>面板对应的 Swing 控件。
      */
     private final JPanel panel;
+
     /**
      * Reviewed preparation.
      * <p>已审阅准备。
      */
     private ReviewedSourcePreparation reviewedPreparation;
+
     /**
      * Swing control for source path.
      * <p>源码路径对应的 Swing 控件。
      */
     private final JTextField sourcePath = new JTextField();
+
     /**
      * Swing control for git address.
      * <p>Git地址对应的 Swing 控件。
      */
     private final JTextField gitAddress = new JTextField();
+
     /**
      * Swing control for git reference.
      * <p>Git引用对应的 Swing 控件。
      */
     private final JTextField gitReference = new JTextField();
+
     /**
      * Source mode.
      * <p>源码模式。
      */
     private final JComboBox<String> sourceMode = new JComboBox<>();
+
     /**
      * Git kind.
      * <p>Git种类。
      */
     private final JComboBox<String> gitKind = new JComboBox<>();
+
     /**
      * Detect type.
      * <p>识别类型。
      */
     private final ToggleSwitch detectType = new ToggleSwitch();
+
     /**
      * Swing control for handoffs.
      * <p>交接集合对应的 Swing 控件。
      */
     private final JPanel handoffs = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 0));
+
     /**
      * Swing control for handoff scroll.
      * <p>交接Scroll对应的 Swing 控件。
      */
-    private final JScrollPane handoffScroll = new JScrollPane(handoffs,ScrollPaneConstants.VERTICAL_SCROLLBAR_NEVER,
+    private final JScrollPane handoffScroll = new JScrollPane(handoffs, ScrollPaneConstants.VERTICAL_SCROLLBAR_NEVER,
             ScrollPaneConstants.HORIZONTAL_SCROLLBAR_AS_NEEDED);
+
     /**
      * Server selection.
      * <p>服务器选择。
      */
     private ServerSelectionPane serverSelection;
+
     /**
      * Source card.
      * <p>源码卡片。
      */
     private DeploymentSourceCard sourceCard;
+
     /**
      * Swing control for start.
      * <p>启动对应的 Swing 控件。
      */
     private JButton start;
+
     /**
      * Whether a page action is in progress and conflicting controls must remain disabled.
      * <p>页面动作是否正在进行且冲突控件须保持禁用。
      */
     private boolean busy;
+
     /** Process-local Agent controls and audit history. / 进程内 Agent 控制及审计历史。 */
     private DeploymentTaskControls taskControls;
+
     /**
      * Completed handoffs.
      * <p>已完成交接集合。
      */
     private final Map<String, DeploymentHandoff> completedHandoffs = new LinkedHashMap<>();
+
     /**
      * Reviewed components in the application graph.
      * <p>应用图中的已审阅组件。
@@ -184,8 +205,8 @@ public final class DeploymentPage implements ReviewContext {
      * @param openAi model configuration navigation / 模型配置导航
      */
     public DeploymentPage(JFrame owner, AutomaticDeploymentApplicationFacade service, ServerContext serverContext,
-                          DesktopComponentFactory components, PageMessagePresenter messages, Runnable openServers,
-                          Consumer<String> applicationSelection, Runnable openAi) {
+            DesktopComponentFactory components, PageMessagePresenter messages, Runnable openServers,
+            Consumer<String> applicationSelection, Runnable openAi) {
         this.owner = owner;
         this.service = service;
         this.serverContext = serverContext;
@@ -193,7 +214,7 @@ public final class DeploymentPage implements ReviewContext {
         this.applicationSelection = applicationSelection;
         modeSelector = new DeploymentModeSelector(messages);
         form = new DeploymentForm(messages, () -> reviewedPreparation = null);
-        panel = createPanel(components,openAi,openServers);
+        panel = createPanel(components, openAi, openServers);
     }
 
     /**
@@ -201,14 +222,20 @@ public final class DeploymentPage implements ReviewContext {
      *
      * @return the page panel / 页面面板
      */
-    public JPanel panel() { return panel; }
+    public JPanel panel() {
+        return panel;
+    }
+
     /**
      * Returns reviewed preparation.
      * <p>返回已审阅准备。
      *
      * @return matching result, or empty when no admitted value exists / 匹配结果；不存在已准入内容时为空
      */
-    @Override public Optional<ReviewedSourcePreparation> reviewedPreparation() { return Optional.ofNullable(reviewedPreparation); }
+    @Override
+    public Optional<ReviewedSourcePreparation> reviewedPreparation() {
+        return Optional.ofNullable(reviewedPreparation);
+    }
 
     /**
      * Captures all unsaved deployment and review state. / 捕获全部未保存部署与审阅状态。
@@ -226,7 +253,8 @@ public final class DeploymentPage implements ReviewContext {
      */
     public void restoreState(DeploymentPageState state) {
         form.restore(state);
-        output.setText(state.output()); reviewedPreparation = state.preparation();
+        output.setText(state.output());
+        reviewedPreparation = state.preparation();
     }
 
     /**
@@ -238,45 +266,69 @@ public final class DeploymentPage implements ReviewContext {
      * @param openAi model configuration navigation / 模型配置导航
      * @param openServers server configuration navigation / 服务器配置导航
      */
-    private JPanel createPanel(DesktopComponentFactory c,Runnable openAi,Runnable openServers) {
+    private JPanel createPanel(DesktopComponentFactory c, Runnable openAi, Runnable openServers) {
         components = c;
         JPanel page = c.pagePanel();
         ((BorderLayout) page.getLayout()).setVgap(12);
         AdvancedOptionsPane advanced = new AdvancedOptionsPane(page, c, messages);
         JPanel selection = c.transparent(new BorderLayout(12, 0));
-        JPanel source = c.card(new BorderLayout(0, 12));source.setBorder(BorderFactory.createEmptyBorder(8,18,8,18));
-        source.add(c.sectionHeading(messages.text("auto.source"), messages.text("auto.source.hint")), BorderLayout.NORTH);
-        sourceMode.addItem(messages.text("auto.local")); sourceMode.addItem(messages.text("auto.git"));
+        JPanel source = c.card(new BorderLayout(0, 12));
+        source.setBorder(BorderFactory.createEmptyBorder(8, 18, 8, 18));
+        source.add(c.sectionHeading(messages.text("auto.source"), messages.text("auto.source.hint")),
+                BorderLayout.NORTH);
+        sourceMode.addItem(messages.text("auto.local"));
+        sourceMode.addItem(messages.text("auto.git"));
         sourceCard = new DeploymentSourceCard(service, c, messages, value -> {
             sourceMode.setSelectedIndex(value.directory().isPresent() ? 0 : 1);
-            sourcePath.setText(value.directory().map(Path::toString).orElse("")); gitAddress.setText(value.gitAddress());
+            sourcePath.setText(value.directory().map(Path::toString).orElse(""));
+            gitAddress.setText(value.gitAddress());
         });
         source.add(sourceCard, BorderLayout.CENTER);
-        JPanel target = c.card(new BorderLayout(0, 12));target.setBorder(BorderFactory.createEmptyBorder(8,18,8,18));
-        target.add(c.sectionHeading(messages.text("auto.server"), messages.text("auto.server.hint")), BorderLayout.NORTH);
+        JPanel target = c.card(new BorderLayout(0, 12));
+        target.setBorder(BorderFactory.createEmptyBorder(8, 18, 8, 18));
+        target.add(c.sectionHeading(messages.text("auto.server"), messages.text("auto.server.hint")),
+                BorderLayout.NORTH);
         serverSelection = new ServerSelectionPane(service, c, messages, serverContext::selectProfile);
         target.add(serverSelection, BorderLayout.CENTER);
         JPanel columns = sourceAndTarget(c, source, target);
         selection.add(columns, BorderLayout.CENTER);
-        JPanel top = c.transparent(new BorderLayout(0, 12)); top.add(selection, BorderLayout.CENTER);
+        JPanel top = c.transparent(new BorderLayout(0, 12));
+        top.add(selection, BorderLayout.CENTER);
         start = c.primaryButton(messages.text("auto.start"));
-        Dimension actionSize = start.getPreferredSize(); start.setPreferredSize(new Dimension(Math.max(160, actionSize.width), Math.max(36, actionSize.height)));
+        Dimension actionSize = start.getPreferredSize();
+        start.setPreferredSize(new Dimension(Math.max(160, actionSize.width), Math.max(36, actionSize.height)));
         start.addActionListener(event -> startAutomatic());
-        JPanel actions = c.transparent(new BorderLayout(12, 0)); actions.add(modeSelector, BorderLayout.WEST);
+        JPanel actions = c.transparent(new BorderLayout(12, 0));
+        actions.add(modeSelector, BorderLayout.WEST);
         JPanel launch = c.transparent(new FlowLayout(FlowLayout.RIGHT, 6, 0));
-        JButton models = c.secondaryButton(messages.text("deployment.configureModels")); models.addActionListener(event -> openAi.run());
-        launch.add(models); launch.add(start); actions.add(launch, BorderLayout.EAST);
-        top.add(actions, BorderLayout.SOUTH); page.add(top, BorderLayout.NORTH);
-        output.setName("deployment.output");output.setText(messages.text("auto.idle"));
+        JButton models = c.secondaryButton(messages.text("deployment.configureModels"));
+        models.addActionListener(event -> openAi.run());
+        launch.add(models);
+        launch.add(start);
+        actions.add(launch, BorderLayout.EAST);
+        top.add(actions, BorderLayout.SOUTH);
+        page.add(top, BorderLayout.NORTH);
+        output.setName("deployment.output");
+        output.setText(messages.text("auto.idle"));
         JPanel log = c.outputCard(messages.text("auto.log"), messages.text("auto.log.hint"), output);
-        handoffs.setOpaque(false); handoffScroll.setVisible(false); handoffScroll.setPreferredSize(new Dimension(0,46));
-        taskControls=new DeploymentTaskControls(service,messages,this::append,()->{
-            char[] master=serverContext.masterPassword();return master.length==0?new DeploymentInputDialog(owner,service,c,messages).requestSecret("field.masterPassword"):master;});
-        JPanel logHeader=c.transparent(new BorderLayout(8,0));
-        JComponent logTitle=c.sectionHeading(messages.text("auto.log"),"");logTitle.setToolTipText(messages.text("auto.log.hint"));
-        logHeader.add(logTitle,BorderLayout.WEST);logHeader.add(taskControls,BorderLayout.CENTER);
-        log.add(logHeader,BorderLayout.NORTH);log.add(handoffScroll, BorderLayout.SOUTH); page.add(log, BorderLayout.CENTER);
-        configureAdvanced(advanced, c,openServers);
+        handoffs.setOpaque(false);
+        handoffScroll.setVisible(false);
+        handoffScroll.setPreferredSize(new Dimension(0, 46));
+        taskControls = new DeploymentTaskControls(service, messages, this::append, () -> {
+            char[] master = serverContext.masterPassword();
+            return master.length == 0
+                    ? new DeploymentInputDialog(owner, service, c, messages).requestSecret("field.masterPassword")
+                    : master;
+        });
+        JPanel logHeader = c.transparent(new BorderLayout(8, 0));
+        JComponent logTitle = c.sectionHeading(messages.text("auto.log"), "");
+        logTitle.setToolTipText(messages.text("auto.log.hint"));
+        logHeader.add(logTitle, BorderLayout.WEST);
+        logHeader.add(taskControls, BorderLayout.CENTER);
+        log.add(logHeader, BorderLayout.NORTH);
+        log.add(handoffScroll, BorderLayout.SOUTH);
+        page.add(log, BorderLayout.CENTER);
+        configureAdvanced(advanced, c, openServers);
         return advanced;
     }
 
@@ -292,20 +344,30 @@ public final class DeploymentPage implements ReviewContext {
     private JPanel sourceAndTarget(DesktopComponentFactory c, JPanel source, JPanel target) {
         JPanel columns = c.transparent(new GridBagLayout());
         int height = Math.max(source.getPreferredSize().height, target.getPreferredSize().height);
-        source.setPreferredSize(new Dimension(0, height)); target.setPreferredSize(new Dimension(0, height));
+        source.setPreferredSize(new Dimension(0, height));
+        target.setPreferredSize(new Dimension(0, height));
         JLabel direction = c.badge("");
         direction.setName("deployment.direction");
-        direction.setIcon(gold.debug.windowstolinux.app.ui.component.DesktopIcons.icon("arrow-right", 24, direction::getForeground));
+        direction.setIcon(gold.debug.windowstolinux.app.ui.component.DesktopIcons.icon("arrow-right", 24,
+                direction::getForeground));
         direction.setBorder(BorderFactory.createEmptyBorder(8, 8, 8, 8));
         direction.setToolTipText(messages.text("auto.direction"));
         direction.getAccessibleContext().setAccessibleName(messages.text("auto.direction"));
         var constraints = new java.awt.GridBagConstraints();
-        constraints.fill = java.awt.GridBagConstraints.BOTH; constraints.weightx = 1; constraints.weighty = 1;
+        constraints.fill = java.awt.GridBagConstraints.BOTH;
+        constraints.weightx = 1;
+        constraints.weighty = 1;
         columns.add(source, constraints);
-        constraints.gridx = 1; constraints.weightx = 0; constraints.fill = java.awt.GridBagConstraints.NONE;
-        constraints.insets = new java.awt.Insets(0, 12, 0, 12); columns.add(direction, constraints);
-        constraints.gridx = 2; constraints.weightx = 1; constraints.fill = java.awt.GridBagConstraints.BOTH;
-        constraints.insets = new java.awt.Insets(0, 0, 0, 0); columns.add(target, constraints);
+        constraints.gridx = 1;
+        constraints.weightx = 0;
+        constraints.fill = java.awt.GridBagConstraints.NONE;
+        constraints.insets = new java.awt.Insets(0, 12, 0, 12);
+        columns.add(direction, constraints);
+        constraints.gridx = 2;
+        constraints.weightx = 1;
+        constraints.fill = java.awt.GridBagConstraints.BOTH;
+        constraints.insets = new java.awt.Insets(0, 0, 0, 0);
+        columns.add(target, constraints);
         return columns;
     }
 
@@ -317,12 +379,14 @@ public final class DeploymentPage implements ReviewContext {
      * @param c the themed desktop component factory / 主题化桌面组件工厂
      * @param openServers server configuration navigation / 服务器配置导航
      */
-    private void configureAdvanced(AdvancedOptionsPane advanced, DesktopComponentFactory c,Runnable openServers) {
+    private void configureAdvanced(AdvancedOptionsPane advanced, DesktopComponentFactory c, Runnable openServers) {
         detectType.setSelected(true);
         advanced.field("auto.detectType", detectType);
-        gitKind.addItem(messages.text("git.reference.kind.branch")); gitKind.addItem(messages.text("git.reference.kind.tag"));
+        gitKind.addItem(messages.text("git.reference.kind.branch"));
+        gitKind.addItem(messages.text("git.reference.kind.tag"));
         gitKind.addItem(messages.text("git.reference.kind.commit"));
-        advanced.field("auto.gitKind", gitKind); advanced.field("auto.gitReference", gitReference);
+        advanced.field("auto.gitKind", gitKind);
+        advanced.field("auto.gitReference", gitReference);
         advanced.field("field.projectType", form.projectType);
         advanced.field("field.applicationDeclaration", new JScrollPane(form.applicationDeclaration));
         advanced.field("field.healthMode", form.healthMode);
@@ -346,9 +410,11 @@ public final class DeploymentPage implements ReviewContext {
         advanced.field("field.secretReferences", form.secretReferences);
         advanced.field("experimentalAdapterRisk", form.experimentalAdapterRisk);
         JButton secret = c.secondaryButton(messages.text("button.saveSecretRevision"));
-        secret.addActionListener(event -> saveSecret()); advanced.field("field.secretRevision", secret);
+        secret.addActionListener(event -> saveSecret());
+        advanced.field("field.secretRevision", secret);
         JButton manual = c.secondaryButton(messages.text("auto.components"));
-        manual.addActionListener(event -> openServers.run()); advanced.addOption(manual);
+        manual.addActionListener(event -> openServers.run());
+        advanced.addOption(manual);
     }
 
     /**
@@ -358,8 +424,10 @@ public final class DeploymentPage implements ReviewContext {
      */
     public Map<String, String> captureSelection() {
         return Map.of("sourceMode", Integer.toString(sourceMode.getSelectedIndex()), "source", sourcePath.getText(),
-                "git", gitAddress.getText(), "reference", gitReference.getText(), "kind", Integer.toString(gitKind.getSelectedIndex()),
-                "detect", Boolean.toString(detectType.isSelected()), "server", serverSelection.selectedId(), "sourceText", sourceCard.inputText(), "automation", modeSelector.mode().name(), "approval", modeSelector.approval().name());
+                "git", gitAddress.getText(), "reference", gitReference.getText(), "kind",
+                Integer.toString(gitKind.getSelectedIndex()), "detect", Boolean.toString(detectType.isSelected()),
+                "server", serverSelection.selectedId(), "sourceText", sourceCard.inputText(), "automation",
+                modeSelector.mode().name(), "approval", modeSelector.approval().name());
     }
 
     /**
@@ -368,14 +436,19 @@ public final class DeploymentPage implements ReviewContext {
      * @param state current lifecycle or workflow state / 当前生命周期或工作流状态
      */
     public void restoreSelection(Map<String, String> state) {
-        if (state.isEmpty()) return;
-        sourceMode.setSelectedIndex(Integer.parseInt(state.get("sourceMode"))); sourcePath.setText(state.get("source"));
-        gitAddress.setText(state.get("git")); gitReference.setText(state.get("reference"));
-        gitKind.setSelectedIndex(Integer.parseInt(state.get("kind"))); detectType.setSelected(Boolean.parseBoolean(state.get("detect")));
+        if (state.isEmpty())
+            return;
+        sourceMode.setSelectedIndex(Integer.parseInt(state.get("sourceMode")));
+        sourcePath.setText(state.get("source"));
+        gitAddress.setText(state.get("git"));
+        gitReference.setText(state.get("reference"));
+        gitKind.setSelectedIndex(Integer.parseInt(state.get("kind")));
+        detectType.setSelected(Boolean.parseBoolean(state.get("detect")));
         String acceptedSource = sourceMode.getSelectedIndex() == 0 ? sourcePath.getText() : gitAddress.getText();
         sourceCard.restore(state.getOrDefault("sourceText", acceptedSource), !acceptedSource.isBlank());
         serverSelection.select(state.get("server"));
-        modeSelector.restore(DeploymentAutomationMode.valueOf(state.getOrDefault("automation", "ASSISTED")), AgentApprovalMode.valueOf(state.getOrDefault("approval", "AUTOMATIC")));
+        modeSelector.restore(DeploymentAutomationMode.valueOf(state.getOrDefault("automation", "ASSISTED")),
+                AgentApprovalMode.valueOf(state.getOrDefault("approval", "AUTOMATIC")));
     }
 
     /**
@@ -383,39 +456,62 @@ public final class DeploymentPage implements ReviewContext {
      *
      * @return true when reports active work so an appearance rebuild cannot detach a running operation, false otherwise / 报告正在执行的任务，防止外观重建使操作脱离页面时为 true，否则为 false
      */
-    public boolean busy() { return busy; }
+    public boolean busy() {
+        return busy;
+    }
 
     /**
      * Validates the selected source and server, then runs automatic deployment with page-owned progress and cancellation handling.
      * <p>校验所选源码及服务器，随后运行自动部署，由页面负责进度及取消处理。
      */
     private void startAutomatic() {
-        if (busy) return;
+        if (busy)
+            return;
         try {
             ServerProfile server = serverSelection.profile();
-            if (server == null || (sourceMode.getSelectedIndex() == 0 ? sourcePath.getText().isBlank() : gitAddress.getText().isBlank())) {
-                append(messages.text("auto.selectRequired")); return;
+            if (server == null || (sourceMode.getSelectedIndex() == 0
+                    ? sourcePath.getText().isBlank()
+                    : gitAddress.getText().isBlank())) {
+                append(messages.text("auto.selectRequired"));
+                return;
             }
-            Optional<Path> directory = sourceMode.getSelectedIndex() == 0 ? Optional.of(Path.of(sourcePath.getText())) : Optional.empty();
+            Optional<Path> directory = sourceMode.getSelectedIndex() == 0
+                    ? Optional.of(Path.of(sourcePath.getText()))
+                    : Optional.empty();
             AutomaticDeploymentRequest request = service.createAutomaticDeploymentRequest(
                     new gold.debug.windowstolinux.app.service.contract.definition.DeploymentSourceInput(directory,
-                            gitAddress.getText(), gitKind.getSelectedIndex(), gitReference.getText()), server,
-                    form.input(detectType.isSelected())).withAutomation(modeSelector.mode(), modeSelector.approval());
+                            gitAddress.getText(), gitKind.getSelectedIndex(), gitReference.getText()),
+                    server, form.input(detectType.isSelected()))
+                    .withAutomation(modeSelector.mode(), modeSelector.approval());
             char[] entered = serverContext.masterPassword();
             if (server.credentialMode() == CredentialStorageMode.MASTER_PASSWORD && entered.length == 0)
-                entered = new DeploymentInputDialog(owner, service, components, messages).requestSecret("field.masterPassword");
+                entered = new DeploymentInputDialog(owner, service, components, messages)
+                        .requestSecret("field.masterPassword");
             final char[] master = entered;
             DeploymentInputDialog interaction = new DeploymentInputDialog(owner, service, components, messages);
-            busy = true; modeSelector.setBusy(true); start.setEnabled(false); start.setText(messages.text("auto.running"));
+            busy = true;
+            modeSelector.setBusy(true);
+            start.setEnabled(false);
+            start.setText(messages.text("auto.running"));
             ((AdvancedOptionsPane) panel).setBusy(true);
-            handoffs.removeAll(); handoffScroll.setVisible(false); completedHandoffs.clear(); output.setText("");
-            if(request.automationMode()==DeploymentAutomationMode.AGENT)taskControls.begin(request.taskId());
+            handoffs.removeAll();
+            handoffScroll.setVisible(false);
+            completedHandoffs.clear();
+            output.setText("");
+            if (request.automationMode() != DeploymentAutomationMode.STATIC)
+                taskControls.begin(request.taskId());
             DesktopTaskExecutor.run(() -> {
-                try { service.requireDeploymentModels(request.automationMode()); return service.deployAutomatically(request, master.clone(), interaction, serverContext::confirmFingerprint,
-                        message -> SwingUtilities.invokeLater(() -> append(messages.catalog().text(message)))); }
-                finally { Arrays.fill(master, '\0'); }
+                try {
+                    service.requireDeploymentModels(request.automationMode());
+                    return service.deployAutomatically(request, master.clone(), interaction,
+                            serverContext::confirmFingerprint,
+                            message -> SwingUtilities.invokeLater(() -> append(messages.catalog().text(message))));
+                } finally {
+                    Arrays.fill(master, '\0');
+                }
             }, result -> {
-                finish(); append(messages.text("deployment.status." + result.status().name().toLowerCase(Locale.ROOT)));
+                finish();
+                append(messages.text("deployment.status." + result.status().name().toLowerCase(Locale.ROOT)));
                 if (result.status() == DeploymentStatus.SUCCEEDED) {
                     applicationSelection.accept(result.applicationId());
                     completedHandoffs.putAll(result.handoffs());
@@ -423,11 +519,16 @@ public final class DeploymentPage implements ReviewContext {
                 }
             }, failure -> {
                 finish();
-                Throwable reason = failure; while (reason.getCause() != null) reason = reason.getCause();
-                append(reason instanceof java.util.concurrent.CancellationException ? messages.text("auto.cancelled")
+                Throwable reason = failure;
+                while (reason.getCause() != null)
+                    reason = reason.getCause();
+                append(reason instanceof java.util.concurrent.CancellationException
+                        ? messages.text("auto.cancelled")
                         : messages.safe(failure));
             });
-        } catch (Exception failure) { append(messages.safe(failure)); }
+        } catch (Exception failure) {
+            append(messages.safe(failure));
+        }
     }
 
     /**
@@ -438,7 +539,8 @@ public final class DeploymentPage implements ReviewContext {
      */
     private void append(String text) {
         output.append(text + "\n");
-        if (output.getDocument().getLength() > 250_000) output.setText(output.getText().substring(50_000));
+        if (output.getDocument().getLength() > 250_000)
+            output.setText(output.getText().substring(50_000));
         output.setCaretPosition(output.getDocument().getLength());
     }
 
@@ -447,8 +549,12 @@ public final class DeploymentPage implements ReviewContext {
      * <p>完成部署页面。
      */
     private void finish() {
-        busy = false; taskControls.finish(); ((AdvancedOptionsPane) panel).setBusy(false); modeSelector.setBusy(false);
-        start.setEnabled(true); start.setText(messages.text("auto.start"));
+        busy = false;
+        taskControls.finish();
+        ((AdvancedOptionsPane) panel).setBusy(false);
+        modeSelector.setBusy(false);
+        start.setEnabled(true);
+        start.setText(messages.text("auto.start"));
     }
 
     /**
@@ -456,7 +562,9 @@ public final class DeploymentPage implements ReviewContext {
      *
      * @return constructed or resolved map / 构造或解析得到的映射
      */
-    public Map<String, DeploymentHandoff> captureHandoffs() { return Map.copyOf(completedHandoffs); }
+    public Map<String, DeploymentHandoff> captureHandoffs() {
+        return Map.copyOf(completedHandoffs);
+    }
 
     /**
      * Restores clickable and copyable entries without duplicating the execution log. / 恢复可点击和复制的条目，不重复执行日志。
@@ -464,7 +572,9 @@ public final class DeploymentPage implements ReviewContext {
      * @param saved saved / 已保存
      */
     public void restoreHandoffs(Map<String, DeploymentHandoff> saved) {
-        completedHandoffs.clear(); completedHandoffs.putAll(saved); handoffs.removeAll();
+        completedHandoffs.clear();
+        completedHandoffs.putAll(saved);
+        handoffs.removeAll();
         handoffScroll.setVisible(!saved.isEmpty());
         saved.forEach((id, value) -> showHandoff(id, value, false));
     }
@@ -478,20 +588,31 @@ public final class DeploymentPage implements ReviewContext {
      * @param log log / 日志
      */
     private void showHandoff(String id, DeploymentHandoff result, boolean log) {
-        String text = result instanceof DeploymentHandoff.HttpAccessUrl url ? url.url().toString()
-                : result instanceof DeploymentHandoff.ApplicationEntry entry ? entry.command()
-                : ((DeploymentHandoff.SystemdStartCommand) result).command();
-        if (log) append(id + ": " + text);
+        String text = result instanceof DeploymentHandoff.HttpAccessUrl url
+                ? url.url().toString()
+                : result instanceof DeploymentHandoff.ApplicationEntry entry
+                        ? entry.command()
+                        : ((DeploymentHandoff.SystemdStartCommand) result).command();
+        if (log)
+            append(id + ": " + text);
         JButton copy = components.secondaryButton(id + " · " + messages.text("auto.copy"));
         copy.addActionListener(event -> java.awt.Toolkit.getDefaultToolkit().getSystemClipboard()
                 .setContents(new java.awt.datatransfer.StringSelection(text), null));
-        handoffScroll.setVisible(true); handoffs.add(copy);
+        handoffScroll.setVisible(true);
+        handoffs.add(copy);
         if (result instanceof DeploymentHandoff.HttpAccessUrl url) {
             JButton open = components.secondaryButton(messages.text("auto.open"));
-            open.addActionListener(event -> { try { Desktop.getDesktop().browse(url.url()); } catch (Exception failure) { append(messages.safe(failure)); } });
+            open.addActionListener(event -> {
+                try {
+                    Desktop.getDesktop().browse(url.url());
+                } catch (Exception failure) {
+                    append(messages.safe(failure));
+                }
+            });
             handoffs.add(open);
         }
-        handoffs.revalidate(); handoffs.repaint();
+        handoffs.revalidate();
+        handoffs.repaint();
     }
 
     /**
@@ -499,26 +620,38 @@ public final class DeploymentPage implements ReviewContext {
      * <p>通过服务保存输入的应用秘密，并仅展示其不可变引用。
      */
     private void saveSecret() {
-        if (busy) return;
+        if (busy)
+            return;
         JPasswordField field = new JPasswordField(24);
         try {
             String referenceInput = form.secretReferences.getText();
-            if (JOptionPane.showConfirmDialog(owner, field, messages.text("secret.value.title"), JOptionPane.OK_CANCEL_OPTION,
-                    JOptionPane.WARNING_MESSAGE) != JOptionPane.OK_OPTION) return;
+            if (JOptionPane.showConfirmDialog(owner, field, messages.text("secret.value.title"),
+                    JOptionPane.OK_CANCEL_OPTION, JOptionPane.WARNING_MESSAGE) != JOptionPane.OK_OPTION)
+                return;
             CredentialStorageMode mode = serverContext.credentialMode();
             char[] master = serverContext.masterPassword(), value = field.getPassword();
-            busy = true; ((AdvancedOptionsPane) panel).setBusy(true);
+            busy = true;
+            ((AdvancedOptionsPane) panel).setBusy(true);
             DesktopTaskExecutor.run(() -> {
-                try { return service.saveDeploymentSecretRevision(referenceInput, mode, master, value); }
-                finally { Arrays.fill(master, '\0'); Arrays.fill(value, '\0'); }
+                try {
+                    return service.saveDeploymentSecretRevision(referenceInput, mode, master, value);
+                } finally {
+                    Arrays.fill(master, '\0');
+                    Arrays.fill(value, '\0');
+                }
             }, saved -> {
-                finish(); output.setText(messages.text("secret.saved", Map.of("reference", saved.identifier() + ":" + saved.revision())));
+                finish();
+                output.setText(messages.text("secret.saved",
+                        Map.of("reference", saved.identifier() + ":" + saved.revision())));
             }, failure -> {
-                finish(); output.setText(messages.text("secret.saveFailed", Map.of("detail", messages.safe(failure))));
+                finish();
+                output.setText(messages.text("secret.saveFailed", Map.of("detail", messages.safe(failure))));
             });
         } catch (Exception exception) {
             output.setText(messages.text("secret.saveFailed", Map.of("detail", messages.safe(exception))));
-        } finally { field.setText(""); }
+        } finally {
+            field.setText("");
+        }
     }
 
     /**

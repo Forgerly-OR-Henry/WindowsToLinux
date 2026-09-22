@@ -1,4 +1,5 @@
 package gold.debug.windowstolinux.shared.model.deployment;
+
 /** Human confirmation policy after mandatory local and AI approval. / 强制本地及 AI 审批后的人工确认策略。 */
 public enum AgentApprovalMode {
     /** Confirms each executable instruction. / 确认每条可执行指令。 */

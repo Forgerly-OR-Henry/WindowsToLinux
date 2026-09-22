@@ -1,9 +1,5 @@
 package gold.debug.windowstolinux.shared.config.persistence.serialization;
 
-import gold.debug.windowstolinux.shared.model.health.HealthCheck;
-import gold.debug.windowstolinux.shared.model.project.DeploymentRuntimeSpecification;
-import gold.debug.windowstolinux.shared.model.project.RuntimeIdentityMode;
-
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.DataInputStream;
@@ -15,6 +11,10 @@ import java.util.List;
 import java.util.Map;
 import java.util.OptionalInt;
 
+import gold.debug.windowstolinux.shared.model.health.HealthCheck;
+import gold.debug.windowstolinux.shared.model.project.DeploymentRuntimeSpecification;
+import gold.debug.windowstolinux.shared.model.project.RuntimeIdentityMode;
+
 /**
  * Strict versioned storage codec for one reviewed non-secret runtime definition. / 单个已审阅非秘密运行时定义的严格版本化存储编解码器。
  */
@@ -24,16 +24,19 @@ public final class DeploymentRuntimePersistenceCodec {
      * <p>格式标记。
      */
     private static final int MAGIC = 0x57544c52;
+
     /**
      * VERSION.
      * <p>版本。
      */
     private static final int VERSION = 5;
+
     /**
      * MAX DOCUMENT BYTES.
      * <p>最大文档字节。
      */
     private static final int MAX_DOCUMENT_BYTES = 1_048_576;
+
     /**
      * MAX COLLECTION SIZE.
      * <p>最大采集大小。
@@ -51,10 +54,14 @@ public final class DeploymentRuntimePersistenceCodec {
         ByteArrayOutputStream bytes = new ByteArrayOutputStream();
         try (DataOutputStream output = new DataOutputStream(bytes)) {
             output.writeInt(MAGIC);
-            output.writeByte(runtime.workload().workers().isEmpty() ? VERSION : 6);
+            output.writeByte(runtime instanceof DeploymentRuntimeSpecification.ManagedProcess
+                    ? 7
+                    : runtime.workload().workers().isEmpty() ? VERSION : 6);
             output.writeByte(type(runtime));
             output.writeUTF(runtime.identityPolicy().name());
             writePayload(output, runtime);
+            if (runtime instanceof DeploymentRuntimeSpecification.ManagedProcess)
+                output.writeBoolean(!runtime.workload().workers().isEmpty());
             ApplicationWorkloadCodec.write(output, runtime.workload());
         }
         byte[] document = bytes.toByteArray();
@@ -81,11 +88,15 @@ public final class DeploymentRuntimePersistenceCodec {
                 throw new IOException("reviewed runtime document header is unsupported");
             }
             int version = input.readUnsignedByte();
-            if (version != VERSION && version != 6) throw new IOException("unsupported runtime format");
+            if (version != VERSION && version != 6 && version != 7)
+                throw new IOException("unsupported runtime format");
             int type = input.readUnsignedByte();
+            if ((type == 15) != (version == 7))
+                throw new IOException("runtime format and discriminator mismatch");
             RuntimeIdentityMode policy = RuntimeIdentityMode.valueOf(input.readUTF());
             DeploymentRuntimeSpecification runtime = readPayload(input, type, healthCheck).withIdentityPolicy(policy);
-            runtime = runtime.withWorkload(ApplicationWorkloadCodec.read(input, version == 6));
+            runtime = runtime.withWorkload(
+                    ApplicationWorkloadCodec.read(input, version == 7 ? input.readBoolean() : version == 6));
             if (input.read() != -1) {
                 throw new IOException("reviewed runtime document contains trailing data");
             }
@@ -104,7 +115,8 @@ public final class DeploymentRuntimePersistenceCodec {
      * @throws IOException if the required file or stream operation fails / 所需文件或流操作失败时
      */
     private static int type(DeploymentRuntimeSpecification runtime) throws IOException {
-        if (runtime == null) throw new IOException("reviewed runtime is required");
+        if (runtime == null)
+            throw new IOException("reviewed runtime is required");
         return switch (runtime) {
             case DeploymentRuntimeSpecification.SpringBoot ignored -> 1;
             case DeploymentRuntimeSpecification.JavaJar ignored -> 2;
@@ -120,6 +132,7 @@ public final class DeploymentRuntimePersistenceCodec {
             case DeploymentRuntimeSpecification.PhpService ignored -> 12;
             case DeploymentRuntimeSpecification.RubyService ignored -> 13;
             case DeploymentRuntimeSpecification.CmakeService ignored -> 14;
+            case DeploymentRuntimeSpecification.ManagedProcess ignored -> 15;
         };
     }
 
@@ -131,33 +144,42 @@ public final class DeploymentRuntimePersistenceCodec {
      * @param runtime reviewed language, process and health specification / 已审阅的语言、进程及健康规格
      * @throws IOException if the required file or stream operation fails / 所需文件或流操作失败时
      */
-    private static void writePayload(DataOutputStream output, DeploymentRuntimeSpecification runtime) throws IOException {
+    private static void writePayload(DataOutputStream output, DeploymentRuntimeSpecification runtime)
+            throws IOException {
         switch (runtime) {
+            case DeploymentRuntimeSpecification.ManagedProcess ignored -> {
+            }
             case DeploymentRuntimeSpecification.SpringBoot value -> output.writeUTF(value.javaVersion());
             case DeploymentRuntimeSpecification.JavaJar value -> {
-                output.writeUTF(value.jarRelativePath()); output.writeUTF(value.mainClass());
-                output.writeUTF(value.javaVersion()); writeStrings(output, value.jvmArguments());
+                output.writeUTF(value.jarRelativePath());
+                output.writeUTF(value.mainClass());
+                output.writeUTF(value.javaVersion());
+                writeStrings(output, value.jvmArguments());
                 writeStrings(output, value.applicationArguments());
             }
             case DeploymentRuntimeSpecification.JavaSource value -> {
-                output.writeUTF(value.sourceRoot()); output.writeUTF(value.mainClass());
-                output.writeUTF(value.javaVersion()); writeStrings(output, value.jvmArguments());
+                output.writeUTF(value.sourceRoot());
+                output.writeUTF(value.mainClass());
+                output.writeUTF(value.javaVersion());
+                writeStrings(output, value.jvmArguments());
                 writeStrings(output, value.applicationArguments());
             }
             case DeploymentRuntimeSpecification.NodeService value -> output.writeInt(value.nodeMajorVersion());
             case DeploymentRuntimeSpecification.PythonService value -> {
-                output.writeUTF(value.pythonVersion()); output.writeUTF(value.entrypoint());
+                output.writeUTF(value.pythonVersion());
+                output.writeUTF(value.entrypoint());
             }
             case DeploymentRuntimeSpecification.StaticSite value -> {
-                output.writeUTF(value.outputDirectory()); output.writeInt(value.nodeMajorVersion().orElse(0));
+                output.writeUTF(value.outputDirectory());
+                output.writeInt(value.nodeMajorVersion().orElse(0));
             }
             case DeploymentRuntimeSpecification.Container value -> writeContainer(output, value);
-            case DeploymentRuntimeSpecification.GoService value -> writeService(output, value.version(),
-                    value.artifactName(), value.entrypoint());
-            case DeploymentRuntimeSpecification.RustService value -> writeService(output, value.version(),
-                    value.artifactName(), value.entrypoint());
-            case DeploymentRuntimeSpecification.DotNetService value -> writeService(output, value.version(),
-                    value.artifactName(), value.entrypoint());
+            case DeploymentRuntimeSpecification.GoService value ->
+                writeService(output, value.version(), value.artifactName(), value.entrypoint());
+            case DeploymentRuntimeSpecification.RustService value ->
+                writeService(output, value.version(), value.artifactName(), value.entrypoint());
+            case DeploymentRuntimeSpecification.DotNetService value ->
+                writeService(output, value.version(), value.artifactName(), value.entrypoint());
             case DeploymentRuntimeSpecification.KotlinService value -> {
                 writeService(output, value.version(), value.artifactName(), value.entrypoint());
                 output.writeUTF(value.jvmTarget());
@@ -171,7 +193,9 @@ public final class DeploymentRuntimePersistenceCodec {
                 output.writeInt(value.servicePort());
             }
             case DeploymentRuntimeSpecification.CmakeService value -> {
-                output.writeUTF(value.preset()); output.writeUTF(value.target()); output.writeUTF(value.artifactName());
+                output.writeUTF(value.preset());
+                output.writeUTF(value.target());
+                output.writeUTF(value.artifactName());
             }
         }
     }
@@ -189,6 +213,8 @@ public final class DeploymentRuntimePersistenceCodec {
     private static DeploymentRuntimeSpecification readPayload(DataInputStream input, int type, HealthCheck health)
             throws IOException {
         return switch (type) {
+            case 15 -> new DeploymentRuntimeSpecification.ManagedProcess(health, RuntimeIdentityMode.SYSTEMD_STATIC,
+                    gold.debug.windowstolinux.shared.model.project.application.ApplicationWorkload.unspecified());
             case 1 -> new DeploymentRuntimeSpecification.SpringBoot(input.readUTF(), health);
             case 2 -> new DeploymentRuntimeSpecification.JavaJar(input.readUTF(), input.readUTF(), input.readUTF(),
                     readStrings(input), readStrings(input), health);
@@ -199,16 +225,20 @@ public final class DeploymentRuntimePersistenceCodec {
             case 6 -> new DeploymentRuntimeSpecification.StaticSite(input.readUTF(), optionalVersion(input.readInt()),
                     http(health));
             case 7 -> readContainer(input, health);
-            case 8 -> new DeploymentRuntimeSpecification.GoService(input.readUTF(), input.readUTF(), input.readUTF(), health);
-            case 9 -> new DeploymentRuntimeSpecification.RustService(input.readUTF(), input.readUTF(), input.readUTF(), health);
-            case 10 -> new DeploymentRuntimeSpecification.DotNetService(input.readUTF(), input.readUTF(), input.readUTF(), health);
-            case 11 -> new DeploymentRuntimeSpecification.KotlinService(input.readUTF(), input.readUTF(), input.readUTF(),
+            case 8 ->
+                new DeploymentRuntimeSpecification.GoService(input.readUTF(), input.readUTF(), input.readUTF(), health);
+            case 9 -> new DeploymentRuntimeSpecification.RustService(input.readUTF(), input.readUTF(), input.readUTF(),
+                    health);
+            case 10 -> new DeploymentRuntimeSpecification.DotNetService(input.readUTF(), input.readUTF(),
                     input.readUTF(), health);
+            case 11 -> new DeploymentRuntimeSpecification.KotlinService(input.readUTF(), input.readUTF(),
+                    input.readUTF(), input.readUTF(), health);
             case 12 -> new DeploymentRuntimeSpecification.PhpService(input.readUTF(), input.readUTF(), input.readUTF(),
                     input.readInt(), health);
             case 13 -> new DeploymentRuntimeSpecification.RubyService(input.readUTF(), input.readUTF(), input.readUTF(),
                     input.readInt(), health);
-            case 14 -> new DeploymentRuntimeSpecification.CmakeService(input.readUTF(), input.readUTF(), input.readUTF(), health);
+            case 14 -> new DeploymentRuntimeSpecification.CmakeService(input.readUTF(), input.readUTF(),
+                    input.readUTF(), health);
             default -> throw new IOException("reviewed runtime document type is unsupported");
         };
     }
@@ -227,11 +257,13 @@ public final class DeploymentRuntimePersistenceCodec {
         writeCount(output, value.publishedPorts().size());
         for (Map.Entry<Integer, Integer> port : value.publishedPorts().entrySet().stream()
                 .sorted(Map.Entry.comparingByKey()).toList()) {
-            output.writeInt(port.getKey()); output.writeInt(port.getValue());
+            output.writeInt(port.getKey());
+            output.writeInt(port.getValue());
         }
         writeCount(output, value.volumes().size());
         for (DeploymentRuntimeSpecification.ManagedVolume volume : value.volumes()) {
-            output.writeUTF(volume.name()); output.writeUTF(volume.containerPath());
+            output.writeUTF(volume.name());
+            output.writeUTF(volume.containerPath());
             output.writeByte(volume.readOnly() ? 1 : 0);
         }
     }
@@ -260,8 +292,8 @@ public final class DeploymentRuntimePersistenceCodec {
         }
         List<DeploymentRuntimeSpecification.ManagedVolume> volumes = new ArrayList<>();
         for (int count = readCount(input); count > 0; count--) {
-            volumes.add(new DeploymentRuntimeSpecification.ManagedVolume(
-                    input.readUTF(), input.readUTF(), readBoolean(input)));
+            volumes.add(new DeploymentRuntimeSpecification.ManagedVolume(input.readUTF(), input.readUTF(),
+                    readBoolean(input)));
         }
         return new DeploymentRuntimeSpecification.Container(engine, ports, volumes, health);
     }
@@ -278,7 +310,9 @@ public final class DeploymentRuntimePersistenceCodec {
      */
     private static void writeService(DataOutputStream output, String version, String artifact, String entrypoint)
             throws IOException {
-        output.writeUTF(version); output.writeUTF(artifact); output.writeUTF(entrypoint);
+        output.writeUTF(version);
+        output.writeUTF(artifact);
+        output.writeUTF(entrypoint);
     }
 
     /**
@@ -290,9 +324,11 @@ public final class DeploymentRuntimePersistenceCodec {
      * @throws IOException if the required file or stream operation fails / 所需文件或流操作失败时
      */
     private static void writeStrings(DataOutputStream output, List<String> values) throws IOException {
-        if (values.size() > 32) throw new IOException("reviewed runtime argument list exceeds its bound");
+        if (values.size() > 32)
+            throw new IOException("reviewed runtime argument list exceeds its bound");
         output.writeInt(values.size());
-        for (String value : values) output.writeUTF(value);
+        for (String value : values)
+            output.writeUTF(value);
     }
 
     /**
@@ -305,9 +341,11 @@ public final class DeploymentRuntimePersistenceCodec {
      */
     private static List<String> readStrings(DataInputStream input) throws IOException {
         int count = input.readInt();
-        if (count < 0 || count > 32) throw new IOException("reviewed runtime argument count is invalid");
+        if (count < 0 || count > 32)
+            throw new IOException("reviewed runtime argument count is invalid");
         List<String> values = new ArrayList<>(count);
-        while (count-- > 0) values.add(input.readUTF());
+        while (count-- > 0)
+            values.add(input.readUTF());
         return List.copyOf(values);
     }
 
@@ -367,7 +405,8 @@ public final class DeploymentRuntimePersistenceCodec {
      * @throws IOException if the required file or stream operation fails / 所需文件或流操作失败时
      */
     private static OptionalInt optionalVersion(int version) throws IOException {
-        if (version < 0) throw new IOException("reviewed static-site Node version is invalid");
+        if (version < 0)
+            throw new IOException("reviewed static-site Node version is invalid");
         return version == 0 ? OptionalInt.empty() : OptionalInt.of(version);
     }
 
@@ -380,7 +419,8 @@ public final class DeploymentRuntimePersistenceCodec {
      * @throws IOException if the required file or stream operation fails / 所需文件或流操作失败时
      */
     private static HealthCheck.Http http(HealthCheck health) throws IOException {
-        if (health instanceof HealthCheck.Http value) return value;
+        if (health instanceof HealthCheck.Http value)
+            return value;
         throw new IOException("reviewed static-site health contract must be HTTP");
     }
 }

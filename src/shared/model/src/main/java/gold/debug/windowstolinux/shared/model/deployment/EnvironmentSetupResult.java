@@ -1,8 +1,8 @@
 package gold.debug.windowstolinux.shared.model.deployment;
 
-import gold.debug.windowstolinux.shared.model.capability.ServerCapabilityFacts;
-
 import java.util.Objects;
+
+import gold.debug.windowstolinux.shared.model.capability.ServerCapabilityFacts;
 
 /**
  * A successful fixed-toolset preparation, followed by fresh target capability evidence.
@@ -12,10 +12,7 @@ import java.util.Objects;
  * @param capabilities observed target tools and runtime capabilities / 目标工具及运行能力观测
  * @param evidence observations supporting the reported result / 支持所报告结果的观测证据
  */
-public record EnvironmentSetupResult(
-        ServerCapabilityFacts capabilities,
-        String evidence
-) {
+public record EnvironmentSetupResult(ServerCapabilityFacts capabilities, String evidence) {
     /**
      * Validates and binds the inputs required by environment setup result.
      * <p>校验并绑定环境Setup结果所需输入。

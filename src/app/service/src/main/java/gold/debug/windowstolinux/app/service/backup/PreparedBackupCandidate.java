@@ -1,9 +1,9 @@
 package gold.debug.windowstolinux.app.service.backup;
 
-import gold.debug.windowstolinux.app.windows.workspace.WindowsRestoreAttempt;
-
 import java.nio.file.Path;
 import java.util.Objects;
+
+import gold.debug.windowstolinux.app.windows.workspace.WindowsRestoreAttempt;
 
 /**
  * Locally extracted but never activated restore candidate. / 已在本地提取但从未激活的恢复候选。
@@ -14,16 +14,19 @@ public final class PreparedBackupCandidate {
      * <p>检查。
      */
     private final BackupArchiveInspection inspection;
+
     /**
      * Candidate root.
      * <p>候选根目录。
      */
     private final Path candidateRoot;
+
     /**
      * Extracted bytes.
      * <p>已提取字节。
      */
     private final long extractedBytes;
+
     /**
      * Attempt.
      * <p>尝试。
@@ -37,11 +40,7 @@ public final class PreparedBackupCandidate {
      * @param candidateRoot candidate root / 候选根目录
      * @param extractedBytes extracted bytes / 已提取字节
      */
-    public PreparedBackupCandidate(
-            BackupArchiveInspection inspection,
-            Path candidateRoot,
-            long extractedBytes
-    ) {
+    public PreparedBackupCandidate(BackupArchiveInspection inspection, Path candidateRoot, long extractedBytes) {
         this(inspection, candidateRoot, extractedBytes, null);
     }
 
@@ -56,19 +55,14 @@ public final class PreparedBackupCandidate {
      * @throws IllegalArgumentException if an input violates the constraints checked by this contract / 输入违反当前契约检查的约束时
      * @throws NullPointerException if a required input is absent / 必需输入缺失时
      */
-    PreparedBackupCandidate(
-            BackupArchiveInspection inspection,
-            Path candidateRoot,
-            long extractedBytes,
-            WindowsRestoreAttempt attempt
-    ) {
+    PreparedBackupCandidate(BackupArchiveInspection inspection, Path candidateRoot, long extractedBytes,
+            WindowsRestoreAttempt attempt) {
         this.inspection = Objects.requireNonNull(inspection, "inspection");
         this.candidateRoot = Objects.requireNonNull(candidateRoot, "candidateRoot").toAbsolutePath().normalize();
         this.extractedBytes = extractedBytes;
         this.attempt = attempt;
         String expected = this.inspection.applicationId() + "-" + this.inspection.archiveSha256().substring(0, 16);
-        if (this.candidateRoot.getFileName() == null
-                || !this.candidateRoot.getFileName().toString().equals(expected)
+        if (this.candidateRoot.getFileName() == null || !this.candidateRoot.getFileName().toString().equals(expected)
                 || this.extractedBytes != this.inspection.verifiedBytes()
                 || attempt != null && !attempt.candidateRoot().equals(this.candidateRoot)) {
             throw new IllegalArgumentException("prepared backup candidate differs from validation evidence");

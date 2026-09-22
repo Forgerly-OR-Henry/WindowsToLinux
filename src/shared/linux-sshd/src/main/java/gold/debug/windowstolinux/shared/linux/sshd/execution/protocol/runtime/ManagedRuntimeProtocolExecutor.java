@@ -1,21 +1,20 @@
 package gold.debug.windowstolinux.shared.linux.sshd.execution.protocol.runtime;
 
-import gold.debug.windowstolinux.shared.linux.sshd.execution.protocol.helper.ManagedHelperBundle;
+import java.time.Duration;
+import java.time.Instant;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
 
 import gold.debug.windowstolinux.shared.linux.error.LinuxOperationException;
 import gold.debug.windowstolinux.shared.linux.error.LinuxOperationFailureType;
 import gold.debug.windowstolinux.shared.linux.protocol.RemoteStepResult;
 import gold.debug.windowstolinux.shared.linux.sshd.command.SshCommandExecutor;
-import gold.debug.windowstolinux.shared.model.managed.ManagedApplication;
+import gold.debug.windowstolinux.shared.linux.sshd.execution.protocol.helper.ManagedHelperBundle;
 import gold.debug.windowstolinux.shared.model.lifecycle.AutostartState;
 import gold.debug.windowstolinux.shared.model.lifecycle.LifecycleObservation;
 import gold.debug.windowstolinux.shared.model.lifecycle.RuntimeState;
-import java.time.Instant;
-import java.util.List;
-
-import java.time.Duration;
-import java.util.Map;
-import java.util.Objects;
+import gold.debug.windowstolinux.shared.model.managed.ManagedApplication;
 
 /**
  * Controls only managed runtime observation, lifecycle, and bounded retention through fixed helper verbs. / 仅通过固定 helper 动词控制受管运行时观察、生命周期与有界保留。
@@ -50,7 +49,7 @@ public final class ManagedRuntimeProtocolExecutor {
             throw LinuxOperationException.create(LinuxOperationFailureType.RUNTIME_OBSERVATION_FAILED,
                     "Controlled helper could not identify the managed runtime: " + result.failureEvidence());
         }
-        return SshCommandExecutor.lines(result.output());
+        return gold.debug.windowstolinux.shared.linux.command.CommandText.lines(result.output());
     }
 
     /**
@@ -66,13 +65,16 @@ public final class ManagedRuntimeProtocolExecutor {
         if (!java.util.Set.of("start", "stop", "restart", "enable", "disable").contains(action)) {
             throw new IllegalArgumentException("unsupported managed lifecycle action");
         }
-        String command = SshCommandExecutor.quote(ManagedHelperBundle.PATH) + " 'lifecycle' "
-                + SshCommandExecutor.quote(application.id()) + ' ' + SshCommandExecutor.quote(action) + ' '
-                + SshCommandExecutor.quote(application.ownershipManifestSha256());
-        var result = commands.exec(command,
-                Duration.ofSeconds(60), true);
-        return new RemoteStepResult(result.succeeded(), result.timedOut(), (result.succeeded()
-                ? "Controlled helper executed the ordinary managed lifecycle action" : result.failureEvidence()) + stopEvidence(result.output()));
+        String command = gold.debug.windowstolinux.shared.linux.command.CommandText.quote(ManagedHelperBundle.PATH)
+                + " 'lifecycle' " + gold.debug.windowstolinux.shared.linux.command.CommandText.quote(application.id())
+                + ' ' + gold.debug.windowstolinux.shared.linux.command.CommandText.quote(action) + ' '
+                + gold.debug.windowstolinux.shared.linux.command.CommandText
+                        .quote(application.ownershipManifestSha256());
+        var result = commands.exec(command, Duration.ofSeconds(60), true);
+        return new RemoteStepResult(result.succeeded(), result.timedOut(),
+                (result.succeeded()
+                        ? "Controlled helper executed the ordinary managed lifecycle action"
+                        : result.failureEvidence()) + stopEvidence(result.output()));
     }
 
     /**
@@ -91,11 +93,13 @@ public final class ManagedRuntimeProtocolExecutor {
             case "disabled" -> AutostartState.DISABLED;
             default -> AutostartState.UNKNOWN;
         };
-        String evidence = !owned ? "Managed runtime ownership could not be verified"
-                : (!values.containsKey("QUERY_OK") || ("1".equals(values.get("QUERY_OK"))
-                && !values.keySet().containsAll(List.of("ActiveState", "SubState", "Result", "ExecMainCode", "ExecMainStatus", "MainPID"))))
-                ? "Incomplete helper observation; run environment preparation first"
-                : "Native service observation" + nativeEvidence(values, "");
+        String evidence = !owned
+                ? "Managed runtime ownership could not be verified"
+                : (!values.containsKey("QUERY_OK") || ("1".equals(values.get("QUERY_OK")) && !values.keySet()
+                        .containsAll(List.of("ActiveState", "SubState", "Result", "ExecMainCode", "ExecMainStatus",
+                                "MainPID"))))
+                                        ? "Incomplete helper observation; run environment preparation first"
+                                        : "Native service observation" + nativeEvidence(values, "");
         return new LifecycleObservation(application, state, autostart, owned, Instant.now(), evidence);
     }
 
@@ -107,19 +111,25 @@ public final class ManagedRuntimeProtocolExecutor {
      * @return constructed or resolved runtime state / 构造或解析得到的运行时状态
      */
     private static RuntimeState nativeState(Map<String, String> values) {
-        if (!"1".equals(values.get("QUERY_OK"))) return RuntimeState.UNKNOWN;
+        if (!"1".equals(values.get("QUERY_OK")))
+            return RuntimeState.UNKNOWN;
         for (String key : List.of("ActiveState", "SubState", "Result", "ExecMainCode", "ExecMainStatus", "MainPID")) {
-            if (!values.getOrDefault(key, "").matches("[A-Za-z0-9_-]{1,64}")) return RuntimeState.UNKNOWN;
+            if (!values.getOrDefault(key, "").matches("[A-Za-z0-9_-]{1,64}"))
+                return RuntimeState.UNKNOWN;
         }
         for (String key : List.of("ExecMainCode", "ExecMainStatus", "MainPID")) {
-            if (!values.get(key).matches("[0-9]{1,10}")) return RuntimeState.UNKNOWN;
+            if (!values.get(key).matches("[0-9]{1,10}"))
+                return RuntimeState.UNKNOWN;
         }
         String active = values.get("ActiveState"), sub = values.get("SubState"), result = values.get("Result");
-        if (active.equals("failed") || (active.equals("activating") && sub.equals("auto-restart")
-                && !result.equals("success"))) return RuntimeState.ERROR;
+        if (active.equals("failed")
+                || (active.equals("activating") && sub.equals("auto-restart") && !result.equals("success")))
+            return RuntimeState.ERROR;
         if (active.equals("active") && sub.equals("running") && result.equals("success")
-                && !values.get("MainPID").equals("0")) return RuntimeState.RUNNING;
-        if (active.equals("inactive") && sub.equals("dead") && values.get("MainPID").equals("0")) return RuntimeState.STOPPED;
+                && !values.get("MainPID").equals("0"))
+            return RuntimeState.RUNNING;
+        if (active.equals("inactive") && sub.equals("dead") && values.get("MainPID").equals("0"))
+            return RuntimeState.STOPPED;
         return RuntimeState.UNKNOWN;
     }
 
@@ -133,7 +143,8 @@ public final class ManagedRuntimeProtocolExecutor {
      */
     private static String nativeEvidence(Map<String, String> values, String prefix) {
         StringBuilder evidence = new StringBuilder();
-        for (String key : List.of("QUERY_OK", "ActiveState", "SubState", "Result", "ExecMainCode", "ExecMainStatus", "MainPID")) {
+        for (String key : List.of("QUERY_OK", "ActiveState", "SubState", "Result", "ExecMainCode", "ExecMainStatus",
+                "MainPID")) {
             String value = values.getOrDefault(prefix + key, "missing");
             evidence.append("; ").append(prefix).append(key).append('=')
                     .append(value.matches("[A-Za-z0-9_-]{1,64}") ? value : "invalid");
@@ -148,9 +159,10 @@ public final class ManagedRuntimeProtocolExecutor {
      * @return stop evidence text / 停止证据文本
      */
     public static String stopEvidence(String output) {
-        Map<String, String> values = SshCommandExecutor.lines(output);
+        Map<String, String> values = gold.debug.windowstolinux.shared.linux.command.CommandText.lines(output);
         return values.containsKey("STOP_BEFORE_QUERY_OK")
-                ? nativeEvidence(values, "STOP_BEFORE_") + nativeEvidence(values, "STOP_AFTER_") : "";
+                ? nativeEvidence(values, "STOP_BEFORE_") + nativeEvidence(values, "STOP_AFTER_")
+                : "";
     }
 
     /**
@@ -162,9 +174,10 @@ public final class ManagedRuntimeProtocolExecutor {
      */
     public RemoteStepResult retain(ManagedApplication application) throws LinuxOperationException {
         var result = commands.exec(command("retain", application), Duration.ofSeconds(60), true);
-        return new RemoteStepResult(result.succeeded(), result.timedOut(), result.succeeded()
-                ? "Controlled helper retained the bounded recent verified releases"
-                : "Controlled helper could not finish bounded release retention: " + result.failureEvidence());
+        return new RemoteStepResult(result.succeeded(), result.timedOut(),
+                result.succeeded()
+                        ? "Controlled helper retained the bounded recent verified releases"
+                        : "Controlled helper could not finish bounded release retention: " + result.failureEvidence());
     }
 
     /**
@@ -178,8 +191,10 @@ public final class ManagedRuntimeProtocolExecutor {
      */
     private static String command(String verb, ManagedApplication application) {
         Objects.requireNonNull(application, "application");
-        return SshCommandExecutor.quote(ManagedHelperBundle.PATH) + ' '
-                + SshCommandExecutor.quote(verb) + ' ' + SshCommandExecutor.quote(application.id()) + ' '
-                + SshCommandExecutor.quote(application.ownershipManifestSha256());
+        return gold.debug.windowstolinux.shared.linux.command.CommandText.quote(ManagedHelperBundle.PATH) + ' '
+                + gold.debug.windowstolinux.shared.linux.command.CommandText.quote(verb) + ' '
+                + gold.debug.windowstolinux.shared.linux.command.CommandText.quote(application.id()) + ' '
+                + gold.debug.windowstolinux.shared.linux.command.CommandText
+                        .quote(application.ownershipManifestSha256());
     }
 }

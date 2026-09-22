@@ -14,52 +14,55 @@ import java.util.Optional;
  * @param version version of the relevant protocol, configuration or runtime / 相应协议、配置或运行时的版本
  */
 public record ToolchainRequirement(ToolchainEcosystemType ecosystem, String declaration, String source,
-                                   PurposeType purpose, ConstraintType constraint, Optional<ToolchainVersion> version) {
+        PurposeType purpose, ConstraintType constraint, Optional<ToolchainVersion> version) {
     /**
      * Distinguishes build-time and runtime toolchain requirements.
      * <p>区分构建期及运行期工具链需求。
      */
     public enum PurposeType {
-    /**
-     * BUILD classification within purpose type.
-     * <p>用途类型中的构建分类。
-     */
-     BUILD,
-    /**
-     * RUNTIME classification within purpose type.
-     * <p>用途类型中的运行时分类。
-     */
-     RUNTIME,
-    /**
-     * LANGUAGE TARGET classification within purpose type.
-     * <p>用途类型中的语言目标分类。
-     */
-     LANGUAGE_TARGET }
+        /**
+         * BUILD classification within purpose type.
+         * <p>用途类型中的构建分类。
+         */
+        BUILD,
+        /**
+         * RUNTIME classification within purpose type.
+         * <p>用途类型中的运行时分类。
+         */
+        RUNTIME,
+        /**
+         * LANGUAGE TARGET classification within purpose type.
+         * <p>用途类型中的语言目标分类。
+         */
+        LANGUAGE_TARGET
+    }
+
     /**
      * Identifies the form of a reviewed toolchain version constraint.
      * <p>标识已审阅工具链版本约束的形式。
      */
     public enum ConstraintType {
-    /**
-     * EXACT classification within constraint type.
-     * <p>约束类型中的精确分类。
-     */
-     EXACT,
-    /**
-     * SERIES classification within constraint type.
-     * <p>约束类型中的系列分类。
-     */
-     SERIES,
-    /**
-     * MINIMUM classification within constraint type.
-     * <p>约束类型中的最小分类。
-     */
-     MINIMUM,
-    /**
-     * UNRESOLVED classification within constraint type.
-     * <p>约束类型中的未解析分类。
-     */
-     UNRESOLVED }
+        /**
+         * EXACT classification within constraint type.
+         * <p>约束类型中的精确分类。
+         */
+        EXACT,
+        /**
+         * SERIES classification within constraint type.
+         * <p>约束类型中的系列分类。
+         */
+        SERIES,
+        /**
+         * MINIMUM classification within constraint type.
+         * <p>约束类型中的最小分类。
+         */
+        MINIMUM,
+        /**
+         * UNRESOLVED classification within constraint type.
+         * <p>约束类型中的未解析分类。
+         */
+        UNRESOLVED
+    }
 
     /**
      * Validates and binds the inputs required by toolchain requirement.
@@ -98,16 +101,24 @@ public record ToolchainRequirement(ToolchainEcosystemType ecosystem, String decl
      * @return toolchain requirement from the supplied declared inputs / 根据所提供已声明输入构建工具链要求
      * @throws NullPointerException if a required input is absent / 必需输入缺失时
      */
-    public static ToolchainRequirement declared(ToolchainEcosystemType ecosystem, String declaration, String source, PurposeType purpose) {
+    public static ToolchainRequirement declared(ToolchainEcosystemType ecosystem, String declaration, String source,
+            PurposeType purpose) {
         String value = Objects.requireNonNull(declaration, "declaration").trim();
         boolean minimum = value.startsWith(">=");
         String token = minimum ? value.substring(2).trim() : value.replaceFirst("^(?:==|=)", "").trim();
-        if (!minimum && token.matches("[0-9]+(?:[.][0-9]+)*[.][xX*]")) token = token.substring(0, token.length() - 2);
+        if (!minimum && token.matches("[0-9]+(?:[.][0-9]+)*[.][xX*]"))
+            token = token.substring(0, token.length() - 2);
         Optional<ToolchainVersion> parsed = ToolchainVersion.parse(ecosystem, token);
-        ConstraintType kind = parsed.isEmpty() ? ConstraintType.UNRESOLVED : minimum ? ConstraintType.MINIMUM
-                : parsed.orElseThrow().numbers().size() <= ecosystem.branchSegments()
-                    || ecosystem == ToolchainEcosystemType.DOTNET && parsed.orElseThrow().numbers().size() == 2
-                    && parsed.orElseThrow().numbers().get(1) == 0 ? ConstraintType.SERIES : ConstraintType.EXACT;
+        ConstraintType kind = parsed.isEmpty()
+                ? ConstraintType.UNRESOLVED
+                : minimum
+                        ? ConstraintType.MINIMUM
+                        : parsed.orElseThrow().numbers().size() <= ecosystem.branchSegments()
+                                || ecosystem == ToolchainEcosystemType.DOTNET
+                                        && parsed.orElseThrow().numbers().size() == 2
+                                        && parsed.orElseThrow().numbers().get(1) == 0
+                                                ? ConstraintType.SERIES
+                                                : ConstraintType.EXACT;
         return new ToolchainRequirement(ecosystem, declaration, source, purpose, kind, parsed);
     }
 
@@ -119,7 +130,8 @@ public record ToolchainRequirement(ToolchainEcosystemType ecosystem, String decl
      * @return true when accepts predicate against the supplied evidence, false otherwise / 根据所提供证据检查接受条件时为 true，否则为 false
      */
     public boolean accepts(ToolchainVersion candidate) {
-        if (candidate.ecosystem() != ecosystem || candidate.preview() || version.isEmpty()) return false;
+        if (candidate.ecosystem() != ecosystem || candidate.preview() || version.isEmpty())
+            return false;
         ToolchainVersion requested = version.orElseThrow();
         return switch (constraint) {
             case EXACT -> requested.sameRelease(candidate);

@@ -21,19 +21,13 @@ impl Config {
             .nth(4)
             .ok_or((3, "安装目录不完整".into()))?
             .join("native/build")
-            .join(if cfg!(windows) {
-                "log-worker.exe"
-            } else {
-                "log-worker"
-            });
+            .join(if cfg!(windows) { "log-worker.exe" } else { "log-worker" });
         let mut c = Self {
             inputs: vec![],
             forwarded: vec![],
             format: "text".into(),
             output: None,
-            helper: std::env::var_os("NATIVE_HELPER")
-                .map(PathBuf::from)
-                .unwrap_or(default),
+            helper: std::env::var_os("NATIVE_HELPER").map(PathBuf::from).unwrap_or(default),
             timeout: 30000,
             jobs: 2,
             max_keys: 10000,
@@ -50,11 +44,7 @@ impl Config {
                 std::process::exit(0);
             }
             let value = args.next().ok_or((2, format!("缺少参数值: {key}")))?;
-            let number = || {
-                value
-                    .parse::<u64>()
-                    .map_err(|_| (2, format!("{key} 必须为正整数")))
-            };
+            let number = || value.parse::<u64>().map_err(|_| (2, format!("{key} 必须为正整数")));
             match key.as_str() {
                 "--input" => c.inputs.push(value.into()),
                 "--format" => c.format = value,

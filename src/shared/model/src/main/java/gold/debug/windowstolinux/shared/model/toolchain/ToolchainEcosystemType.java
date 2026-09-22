@@ -13,42 +13,42 @@ public enum ToolchainEcosystemType {
      * NODE classification within toolchain ecosystem type.
      * <p>工具链生态类型中的节点分类。
      */
-     NODE(1),
+    NODE(1),
     /**
      * PYTHON classification within toolchain ecosystem type.
      * <p>工具链生态类型中的PYTHON分类。
      */
-     PYTHON(2),
+    PYTHON(2),
     /**
      * DOTNET classification within toolchain ecosystem type.
      * <p>工具链生态类型中的DOTNET分类。
      */
-     DOTNET(1),
+    DOTNET(1),
     /**
      * KOTLIN classification within toolchain ecosystem type.
      * <p>工具链生态类型中的KOTLIN分类。
      */
-     KOTLIN(2),
+    KOTLIN(2),
     /**
      * GO classification within toolchain ecosystem type.
      * <p>工具链生态类型中的GO分类。
      */
-     GO(2),
+    GO(2),
     /**
      * RUST classification within toolchain ecosystem type.
      * <p>工具链生态类型中的RUST分类。
      */
-     RUST(2),
+    RUST(2),
     /**
      * PHP classification within toolchain ecosystem type.
      * <p>工具链生态类型中的PHP分类。
      */
-     PHP(2),
+    PHP(2),
     /**
      * RUBY classification within toolchain ecosystem type.
      * <p>工具链生态类型中的Ruby分类。
      */
-     RUBY(2),
+    RUBY(2),
     /**
      * C classification within toolchain ecosystem type.
      * <p>工具链生态类型中的C分类。
@@ -58,7 +58,7 @@ public enum ToolchainEcosystemType {
      * CPP classification within toolchain ecosystem type.
      * <p>工具链生态类型中的CPP分类。
      */
-     CPP(1);
+    CPP(1);
 
     /**
      * Branch segments.
@@ -71,12 +71,17 @@ public enum ToolchainEcosystemType {
      *
      * @param branchSegments branch segments / 分支Segments
      */
-    ToolchainEcosystemType(int branchSegments) { this.branchSegments = branchSegments; }
+    ToolchainEcosystemType(int branchSegments) {
+        this.branchSegments = branchSegments;
+    }
+
     /**
      * Returns branch segments.
      * <p>返回分支Segments。
      *
      * @return branch segments / 分支Segments
      */
-    public int branchSegments() { return branchSegments; }
+    public int branchSegments() {
+        return branchSegments;
+    }
 }

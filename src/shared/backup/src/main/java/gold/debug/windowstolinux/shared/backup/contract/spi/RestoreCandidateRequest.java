@@ -1,9 +1,9 @@
 package gold.debug.windowstolinux.shared.backup.contract.spi;
 
-import gold.debug.windowstolinux.shared.backup.manifest.BackupManifest;
-
 import java.nio.file.Path;
 import java.util.Objects;
+
+import gold.debug.windowstolinux.shared.backup.manifest.BackupManifest;
 
 /**
  * Narrow platform request for one already validated restore candidate. / 单个已验证恢复候选的平台窄请求。
@@ -16,15 +16,8 @@ import java.util.Objects;
  * @param targetServerId target server id / 目标服务器标识
  * @param rebuildFromSource rebuild from source / 重建来源源码
  */
-public record RestoreCandidateRequest(
-        BackupManifest manifest,
-        Path localCandidateRoot,
-        String archiveSha256,
-        long verifiedBytes,
-        String candidateId,
-        String targetServerId,
-        boolean rebuildFromSource
-) {
+public record RestoreCandidateRequest(BackupManifest manifest, Path localCandidateRoot, String archiveSha256,
+        long verifiedBytes, String candidateId, String targetServerId, boolean rebuildFromSource) {
     /**
      * Binds immutable archive evidence to a controlled candidate and target. / 将不可变归档证据绑定到受控候选及目标。
      *
@@ -40,13 +33,14 @@ public record RestoreCandidateRequest(
      */
     public RestoreCandidateRequest {
         manifest = Objects.requireNonNull(manifest, "manifest");
-        localCandidateRoot = Objects.requireNonNull(localCandidateRoot, "localCandidateRoot")
-                .toAbsolutePath().normalize();
+        localCandidateRoot = Objects.requireNonNull(localCandidateRoot, "localCandidateRoot").toAbsolutePath()
+                .normalize();
         archiveSha256 = Objects.requireNonNull(archiveSha256, "archiveSha256").trim();
         if (!archiveSha256.matches("[0-9a-f]{64}")) {
             throw new IllegalArgumentException("archiveSha256 is invalid");
         }
-        if (verifiedBytes < 0) throw new IllegalArgumentException("verifiedBytes must not be negative");
+        if (verifiedBytes < 0)
+            throw new IllegalArgumentException("verifiedBytes must not be negative");
         candidateId = Objects.requireNonNull(candidateId, "candidateId").trim();
         String expectedCandidateId = manifest.applicationId() + "-" + archiveSha256.substring(0, 16);
         if (!candidateId.equals(expectedCandidateId)) {

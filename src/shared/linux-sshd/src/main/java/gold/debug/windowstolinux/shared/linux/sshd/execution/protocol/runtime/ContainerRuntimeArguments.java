@@ -1,12 +1,12 @@
 package gold.debug.windowstolinux.shared.linux.sshd.execution.protocol.runtime;
 
-import gold.debug.windowstolinux.shared.model.project.DeploymentRuntimeSpecification;
-
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+
+import gold.debug.windowstolinux.shared.model.project.DeploymentRuntimeSpecification;
 
 /**
  * Converts the constrained container runtime model to deterministic helper arguments.
@@ -36,8 +36,10 @@ public final class ContainerRuntimeArguments {
         var ports = runtime.workload().endpoints();
         values.add(Integer.toString(ports.size()));
         ports.forEach(port -> {
-            values.add(port.protocol().transport()); values.add(port.bindAddress());
-            values.add(Integer.toString(port.hostPort())); values.add(Integer.toString(port.targetPort()));
+            values.add(port.protocol().transport());
+            values.add(port.bindAddress());
+            values.add(Integer.toString(port.hostPort()));
+            values.add(Integer.toString(port.targetPort()));
         });
         List<DeploymentRuntimeSpecification.ManagedVolume> volumes = runtime.volumes().stream()
                 .sorted(Comparator.comparing(DeploymentRuntimeSpecification.ManagedVolume::name)).toList();

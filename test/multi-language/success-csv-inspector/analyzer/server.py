@@ -88,9 +88,7 @@ class Handler(BaseHTTPRequestHandler):
                     records = analyze(stream, rules)
                     first = next(records)
                     self.send_response(200)
-                    self.send_header(
-                        "Content-Type", "application/x-ndjson; charset=utf-8"
-                    )
+                    self.send_header("Content-Type", "application/x-ndjson; charset=utf-8")
                     self.send_header("X-Sample-Protocol", "2")
                     self.send_header("Connection", "close")
                     self.end_headers()
@@ -104,9 +102,7 @@ class Handler(BaseHTTPRequestHandler):
         except Exception as error:
             text = (
                 str(error).split("\n")[0]
-                if isinstance(
-                    error, (ValueError, ValidationError, csv.Error, UnicodeError)
-                )
+                if isinstance(error, (ValueError, ValidationError, csv.Error, UnicodeError))
                 else type(error).__name__
             )
             try:
@@ -123,6 +119,4 @@ class Handler(BaseHTTPRequestHandler):
 
 
 if __name__ == "__main__":
-    ThreadingHTTPServer(
-        (os.getenv("HOST", "127.0.0.1"), int(os.getenv("PORT", "18131"))), Handler
-    ).serve_forever()
+    ThreadingHTTPServer((os.getenv("HOST", "127.0.0.1"), int(os.getenv("PORT", "18131"))), Handler).serve_forever()

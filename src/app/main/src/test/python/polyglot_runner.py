@@ -65,11 +65,7 @@ class Runner:
             return value if isinstance(value, list) else [value]
         found = shutil.which(name, path=self.env["PATH"])
         if not found:
-            raise RuntimeError(
-                "Required tool unavailable: "
-                + name
-                + "; configure --tools, do not count as passed"
-            )
+            raise RuntimeError("Required tool unavailable: " + name + "; configure --tools, do not count as passed")
         return [found]
 
     def command(self, args, cwd, timeout=1800, env=None):
@@ -83,14 +79,17 @@ class Runner:
         self.commands.append(record)
         start = time.monotonic()
         try:
-            with log.open("wb") as output, OwnedProcess(
-                list(map(str, args)),
-                cwd=cwd,
-                env={**self.env, **(env or {})},
-                stdout=output,
-                stderr=subprocess.STDOUT,
-                stdin=subprocess.DEVNULL,
-            ) as p:
+            with (
+                log.open("wb") as output,
+                OwnedProcess(
+                    list(map(str, args)),
+                    cwd=cwd,
+                    env={**self.env, **(env or {})},
+                    stdout=output,
+                    stderr=subprocess.STDOUT,
+                    stdin=subprocess.DEVNULL,
+                ) as p,
+            ):
                 code = p.wait(timeout=timeout)
                 record.update(exitCode=code, status="passed" if code == 0 else "failed")
         except BaseException as error:
@@ -120,11 +119,7 @@ class Runner:
             "binary-inspector": ["cargo", "cmake", "gcc"],
         }[slug]
         for name in names:
-            flag = (
-                ["version"]
-                if name == "go"
-                else ["-version"] if name == "java" else ["--version"]
-            )
+            flag = ["version"] if name == "go" else ["-version"] if name == "java" else ["--version"]
             self.command(self.tool(name) + flag, self.work, timeout=60)
         if slug == "survey-scoring" and "gradle" in self.tools:
             self.command(self.tool("gradle") + ["--version"], self.work, timeout=60)
@@ -133,15 +128,9 @@ class Runner:
         source = FIXTURES / ("success-" + slug)
         dest = self.work / source.name
         if dest.resolve().is_relative_to(FIXTURES.resolve()):
-            raise ValueError(
-                "Isolated work directory must not be inside fixture sources"
-            )
+            raise ValueError("Isolated work directory must not be inside fixture sources")
         manifest = dest / ".fixture-sources.json"
-        previous = (
-            json.loads(manifest.read_text(encoding="utf-8"))
-            if manifest.exists()
-            else []
-        )
+        previous = json.loads(manifest.read_text(encoding="utf-8")) if manifest.exists() else []
         for relative in previous:
             target = dest / relative
             if not target.resolve().is_relative_to(dest.resolve()):
@@ -152,24 +141,17 @@ class Runner:
             source,
             dest,
             dirs_exist_ok=True,
-            ignore=lambda d, n: [
-                v
-                for v in n
-                if v in IGNORED and not (v == "vendor" and Path(d).name == "native")
-            ],
+            ignore=lambda d, n: [v for v in n if v in IGNORED and not (v == "vendor" and Path(d).name == "native")],
         )
         copied = []
         for directory, subdirs, files in os.walk(source):
             subdirs[:] = [
                 name
                 for name in subdirs
-                if name not in IGNORED
-                or (name == "vendor" and Path(directory).name == "native")
+                if name not in IGNORED or (name == "vendor" and Path(directory).name == "native")
             ]
             copied.extend(
-                (Path(directory) / name).relative_to(source).as_posix()
-                for name in files
-                if name not in IGNORED
+                (Path(directory) / name).relative_to(source).as_posix() for name in files if name not in IGNORED
             )
         manifest.write_text(json.dumps(sorted(copied), indent=2), encoding="utf-8")
         return dest
@@ -193,28 +175,19 @@ class Runner:
             )
             self.npm(p / "web")
         elif slug == "asset-lending":
-            source = (
-                ["--source", self.tools["nugetSource"]]
-                if "nugetSource" in self.tools
-                else []
-            )
+            source = ["--source", self.tools["nugetSource"]] if "nugetSource" in self.tools else []
             self.command(
                 self.tool("dotnet") + ["restore", "--locked-mode"] + source,
                 p / "backend",
             )
             self.command(
-                self.tool("dotnet")
-                + ["publish", "--no-restore", "-c", "Release", "-o", "publish"],
+                self.tool("dotnet") + ["publish", "--no-restore", "-c", "Release", "-o", "publish"],
                 p / "backend",
             )
             self.npm(p / "web")
         elif slug == "csv-inspector":
             self.command(self.tool("python") + ["-m", "venv", ".venv"], p / "analyzer")
-            python = (
-                p
-                / "analyzer/.venv"
-                / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
-            )
+            python = p / "analyzer/.venv" / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
             self.command(
                 [
                     python,
@@ -235,15 +208,9 @@ class Runner:
             gradle = (
                 self.tool("gradle")
                 if "gradle" in self.tools
-                else (
-                    ["cmd", "/c", "gradlew.bat"]
-                    if os.name == "nt"
-                    else ["sh", "gradlew"]
-                )
+                else (["cmd", "/c", "gradlew.bat"] if os.name == "nt" else ["sh", "gradlew"])
             )
-            self.command(
-                gradle + ["--no-daemon", "installDist"], p / "backend", timeout=1200
-            )
+            self.command(gradle + ["--no-daemon", "installDist"], p / "backend", timeout=1200)
             self.command(
                 self.tool("bundle") + ["install"],
                 p / "scorer",
@@ -260,9 +227,7 @@ class Runner:
                 p / "native",
             )
             if slug != "directory-diff":
-                self.command(
-                    self.tool("cargo") + ["build", "--locked", "--release"], p / "cli"
-                )
+                self.command(self.tool("cargo") + ["build", "--locked", "--release"], p / "cli")
         return p
 
     def npm(self, p):
@@ -292,9 +257,7 @@ class Runner:
         deadline = time.monotonic() + 60
         while time.monotonic() < deadline:
             if process and process.poll() is not None:
-                raise RuntimeError(
-                    name + " exited; see " + str(self.work / (name + ".log"))
-                )
+                raise RuntimeError(name + " exited; see " + str(self.work / (name + ".log")))
             try:
                 code, _, _ = self.request(name, path)
                 if code == 200:
@@ -315,9 +278,7 @@ class Runner:
 
     def json(self, name, path, method="GET", body=None, expected=200):
         data = None if body is None else json.dumps(body, ensure_ascii=False).encode()
-        code, _, raw = self.request(
-            name, path, method, data, {"Content-Type": "application/json"}
-        )
+        code, _, raw = self.request(name, path, method, data, {"Content-Type": "application/json"})
         assert code == expected, (name, path, code, raw)
         return json.loads(raw)
 
@@ -333,9 +294,7 @@ class Runner:
             "survey-scoring": ["scorer", "backend", "frontend"],
         }[slug]
         self.ports = {name: self.free_port() for name in names}
-        self.urls = {
-            n: "http://" + self.host + ":" + str(v) for n, v in self.ports.items()
-        }
+        self.urls = {n: "http://" + self.host + ":" + str(v) for n, v in self.ports.items()}
         for name in names:
             env = {
                 "PORT": str(self.ports[name]),
@@ -348,12 +307,8 @@ class Runner:
                 (folder / "runtime-config.json").write_text(
                     json.dumps({"apiBase": self.urls["backend"]}), encoding="utf-8"
                 )
-                handler = functools.partial(
-                    http.server.SimpleHTTPRequestHandler, directory=str(folder)
-                )
-                server = http.server.ThreadingHTTPServer(
-                    (self.host, self.ports[name]), handler
-                )
+                handler = functools.partial(http.server.SimpleHTTPRequestHandler, directory=str(folder))
+                server = http.server.ThreadingHTTPServer((self.host, self.ports[name]), handler)
                 thread = threading.Thread(target=server.serve_forever, daemon=True)
                 thread.start()
                 self.stack.callback(
@@ -368,11 +323,7 @@ class Runner:
             if slug == "task-board":
                 args = self.tool("java") + ["-jar", "target/task-board-1.0.0.jar"]
             elif slug == "file-transfer" and name == "backend":
-                args = [
-                    p
-                    / name
-                    / ("file-transfer.exe" if os.name == "nt" else "file-transfer")
-                ]
+                args = [p / name / ("file-transfer.exe" if os.name == "nt" else "file-transfer")]
             elif slug == "asset-lending" and name == "backend":
                 args = self.tool("dotnet") + ["publish/AssetLending.dll"]
             elif slug in ["file-transfer", "asset-lending"]:
@@ -380,10 +331,7 @@ class Runner:
                 env["API_URL"] = self.urls["backend"]
             elif slug == "csv-inspector" and name == "analyzer":
                 args = [
-                    p
-                    / name
-                    / ".venv"
-                    / ("Scripts/python.exe" if os.name == "nt" else "bin/python"),
+                    p / name / ".venv" / ("Scripts/python.exe" if os.name == "nt" else "bin/python"),
                     "server.py",
                 ]
             elif slug == "csv-inspector":
@@ -420,15 +368,9 @@ class Runner:
             deadline = time.monotonic() + 15
             while True:
                 worker = self.json("web", "/api/worker")
-                if (
-                    worker["pid"] == self.processes["worker"].process.pid
-                    and worker["responsive"]
-                ):
+                if worker["pid"] == self.processes["worker"].process.pid and worker["responsive"]:
                     break
-                if (
-                    self.processes["worker"].process.poll() is not None
-                    or time.monotonic() > deadline
-                ):
+                if self.processes["worker"].process.poll() is not None or time.monotonic() > deadline:
                     raise RuntimeError("CSV worker did not become ready")
                 time.sleep(0.05)
         return self.urls[names[-1]]
@@ -438,20 +380,14 @@ class Runner:
 
     def run_cli(self, slug, args):
         if not args:
-            raise ValueError(
-                "CLI run requires --cli-args followed by the tool arguments"
-            )
+            raise ValueError("CLI run requires --cli-args followed by the tool arguments")
         p = self.work / ("success-" + slug)
         command = (
             self.tool("python") + [p / "cli/main.py"]
             if slug == "directory-diff"
-            else [
-                p / "cli/target/release" / (slug + (".exe" if os.name == "nt" else ""))
-            ]
+            else [p / "cli/target/release" / (slug + (".exe" if os.name == "nt" else ""))]
         )
-        with OwnedProcess(
-            list(map(str, command + args)), cwd=p, env=self.env
-        ) as process:
+        with OwnedProcess(list(map(str, command + args)), cwd=p, env=self.env) as process:
             return process.wait()
 
     def close(self):
@@ -474,19 +410,13 @@ def main():
     args = parser.parse_args()
     tools = json.loads(args.tools.read_text(encoding="utf-8")) if args.tools else {}
     projects = (
-        [
-            p["id"]
-            for p in json.loads((FIXTURES / "matrix.json").read_text(encoding="utf-8"))
-        ]
+        [p["id"] for p in json.loads((FIXTURES / "matrix.json").read_text(encoding="utf-8"))]
         if args.action == "verify-all"
         else [args.project]
     )
     if not all(projects):
         parser.error("--project is required")
-    catalog = {
-        p["id"]: p
-        for p in json.loads((FIXTURES / "matrix.json").read_text(encoding="utf-8"))
-    }
+    catalog = {p["id"]: p for p in json.loads((FIXTURES / "matrix.json").read_text(encoding="utf-8"))}
     if any(slug not in catalog for slug in projects):
         parser.error("Unknown project")
     reports = []
@@ -510,12 +440,8 @@ def main():
                         time.sleep(1)
         finally:
             runner.close()
-            (runner.work / "commands.json").write_text(
-                json.dumps(runner.commands, indent=2), encoding="utf-8"
-            )
-    (args.work / "results.json").write_text(
-        json.dumps(reports, ensure_ascii=False, indent=2), encoding="utf-8"
-    )
+            (runner.work / "commands.json").write_text(json.dumps(runner.commands, indent=2), encoding="utf-8")
+    (args.work / "results.json").write_text(json.dumps(reports, ensure_ascii=False, indent=2), encoding="utf-8")
     print(json.dumps(reports, ensure_ascii=False))
 
 

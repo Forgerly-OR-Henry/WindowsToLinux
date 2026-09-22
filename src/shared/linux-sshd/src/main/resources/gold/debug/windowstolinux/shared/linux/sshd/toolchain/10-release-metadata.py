@@ -3,6 +3,7 @@
 The remote entry point accepts typed ecosystem, branch, exact version and timeout scalars.
 It never accepts commands, URLs, install paths or source-controlled scripts as arguments.
 """
+
 import base64
 import hashlib
 import gzip
@@ -26,11 +27,27 @@ import zipfile
 ROOT = pathlib.Path('/usr/local/lib/windowstolinux/toolchains')
 MAX_METADATA = 32 * 1024 * 1024
 MAX_ARCHIVE = 2 * 1024 * 1024 * 1024
-HOSTS = {'api.adoptium.net', 'github.com', 'api.github.com', 'objects.githubusercontent.com',
-         'release-assets.githubusercontent.com', 'nodejs.org', 'go.dev', 'dl.google.com',
-         'static.rust-lang.org', 'www.python.org', 'www.php.net', 'downloads.php.net',
-         'museum.php.net', 'www.ruby-lang.org', 'cache.ruby-lang.org', 'rubygems.org',
-         'builds.dotnet.microsoft.com', 'dotnetcli.blob.core.windows.net', 'ci.dot.net'}
+HOSTS = {
+    'api.adoptium.net',
+    'github.com',
+    'api.github.com',
+    'objects.githubusercontent.com',
+    'release-assets.githubusercontent.com',
+    'nodejs.org',
+    'go.dev',
+    'dl.google.com',
+    'static.rust-lang.org',
+    'www.python.org',
+    'www.php.net',
+    'downloads.php.net',
+    'museum.php.net',
+    'www.ruby-lang.org',
+    'cache.ruby-lang.org',
+    'rubygems.org',
+    'builds.dotnet.microsoft.com',
+    'dotnetcli.blob.core.windows.net',
+    'ci.dot.net',
+}
 
 
 class PreparationFailure(Exception):
@@ -56,7 +73,9 @@ class OfficialRedirect(urllib.request.HTTPRedirectHandler):
 
 
 def fetch(url, limit=MAX_METADATA):
-    request = urllib.request.Request(official_url(url), headers={'User-Agent': 'WindowsToLinux-toolchains/1', 'Accept-Encoding': 'identity'})
+    request = urllib.request.Request(
+        official_url(url), headers={'User-Agent': 'WindowsToLinux-toolchains/1', 'Accept-Encoding': 'identity'}
+    )
     try:
         with urllib.request.build_opener(OfficialRedirect()).open(request, timeout=45) as response:
             data = response.read(limit + 1)
@@ -82,7 +101,10 @@ def download(url, target, algorithm, expected):
     total = 0
     try:
         request = urllib.request.Request(official_url(url), headers={'User-Agent': 'WindowsToLinux-toolchains/1'})
-        with urllib.request.build_opener(OfficialRedirect()).open(request, timeout=45) as response, target.open('xb') as output:
+        with (
+            urllib.request.build_opener(OfficialRedirect()).open(request, timeout=45) as response,
+            target.open('xb') as output,
+        ):
             while True:
                 remaining()
                 block = response.read(1024 * 1024)
@@ -119,9 +141,19 @@ def release_build(version):
 
 def choose(versions, branch, exact):
     prefix = tuple(int(n) for n in branch.split('.'))
-    candidates = [v for v in versions if version_key(v) and version_key(v)[:len(prefix)] == prefix
-                  and (not exact or (version_key(v) == version_key(exact)
-                       and (not release_build(exact) or release_build(v) == release_build(exact))))]
+    candidates = [
+        v
+        for v in versions
+        if version_key(v)
+        and version_key(v)[: len(prefix)] == prefix
+        and (
+            not exact
+            or (
+                version_key(v) == version_key(exact)
+                and (not release_build(exact) or release_build(v) == release_build(exact))
+            )
+        )
+    ]
     if not candidates:
         fail('unavailable', 'no official stable artifact matches the selected branch or exact release')
     return max(candidates, key=lambda v: (version_key(v), release_build(v)))
@@ -156,11 +188,16 @@ def java_release_identity(data):
 def release(ecosystem, branch, exact):
     """Returns exact identity, official artifact URL, algorithm, expected digest, layout."""
     if ecosystem == 'JAVA':
-        assets = json_at('https://api.adoptium.net/v3/assets/feature_releases/' + branch
-                         + '/ga?architecture=x64&heap_size=normal&image_type=jdk&jvm_impl=hotspot&os=linux&page_size=100&vendor=eclipse')
+        assets = json_at(
+            'https://api.adoptium.net/v3/assets/feature_releases/'
+            + branch
+            + '/ga?architecture=x64&heap_size=normal&image_type=jdk&jvm_impl=hotspot&os=linux&page_size=100&vendor=eclipse'
+        )
         versions = {java_release_identity(a['version_data']): a for a in assets}
         v = choose(versions, branch, exact)
-        package = next(b['package'] for b in versions[v]['binaries'] if b['os'] == 'linux' and b['architecture'] == 'x64')
+        package = next(
+            b['package'] for b in versions[v]['binaries'] if b['os'] == 'linux' and b['architecture'] == 'x64'
+        )
         return v, package['link'], 'sha256', package['checksum'], 'archive'
     if ecosystem == 'NODE':
         v = choose([a['version'] for a in json_at('https://nodejs.org/dist/index.json')], branch, exact)
@@ -170,7 +207,9 @@ def release(ecosystem, branch, exact):
     if ecosystem == 'GO':
         assets = {a['version']: a for a in json_at('https://go.dev/dl/?mode=json&include=all') if a['stable']}
         v = choose(assets, branch, exact)
-        f = next(f for f in assets[v]['files'] if f['os'] == 'linux' and f['arch'] == 'amd64' and f['kind'] == 'archive')
+        f = next(
+            f for f in assets[v]['files'] if f['os'] == 'linux' and f['arch'] == 'amd64' and f['kind'] == 'archive'
+        )
         return v[2:], 'https://go.dev/dl/' + f['filename'], 'sha256', f['sha256'], 'archive'
     if ecosystem == 'DOTNET':
         data = json_at('https://builds.dotnet.microsoft.com/dotnet/release-metadata/' + branch + '.0/releases.json')
@@ -185,7 +224,7 @@ def release(ecosystem, branch, exact):
             assets = [json_at('https://api.github.com/repos/JetBrains/kotlin/releases/tags/v' + exact)]
         else:
             refs = json_at('https://api.github.com/repos/JetBrains/kotlin/git/matching-refs/tags/v' + branch + '.')
-            tag = choose([r['ref'][len('refs/tags/v'):] for r in refs], branch, '')
+            tag = choose([r['ref'][len('refs/tags/v') :] for r in refs], branch, '')
             assets = [json_at('https://api.github.com/repos/JetBrains/kotlin/releases/tags/v' + tag)]
         versions = {a['tag_name'].lstrip('v'): a for a in assets if not a['prerelease'] and not a['draft']}
         v = choose(versions, branch, exact)
@@ -193,7 +232,9 @@ def release(ecosystem, branch, exact):
         f = next(f for f in versions[v]['assets'] if f['name'] == name)
         digest = f.get('digest') or ''
         if not digest.startswith('sha256:'):
-            sidecar = next((f for f in versions[v]['assets'] if f['name'] in (name + '.sha256', name + '.sha256.txt')), None)
+            sidecar = next(
+                (f for f in versions[v]['assets'] if f['name'] in (name + '.sha256', name + '.sha256.txt')), None
+            )
             if sidecar is None:
                 sums = re.findall(re.escape(name) + r'[^\r\n]*?\b([a-fA-F0-9]{64})\b', versions[v].get('body', ''))
                 if len(sums) != 1:
@@ -254,4 +295,3 @@ def release(ecosystem, branch, exact):
             fail('metadata', 'Ruby announcement has no unambiguous SHA-256')
         return v, 'https://cache.ruby-lang.org/pub/ruby/' + branch + '/' + name, 'sha256', sums[0].lower(), 'ruby'
     fail('request', 'unsupported installation adapter')
-

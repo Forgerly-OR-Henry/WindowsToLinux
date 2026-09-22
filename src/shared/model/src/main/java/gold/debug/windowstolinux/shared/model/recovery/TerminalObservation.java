@@ -21,20 +21,29 @@ public record TerminalObservation(String text, byte[] image, long generation) {
     public TerminalObservation {
         text = java.util.Objects.requireNonNull(text);
         image = java.util.Objects.requireNonNull(image).clone();
-        if (text.length() > 32000 || image.length > 4 * 1024 * 1024) throw new IllegalArgumentException("observation exceeds limit");
+        if (text.length() > 32000 || image.length > 4 * 1024 * 1024)
+            throw new IllegalArgumentException("observation exceeds limit");
     }
+
     /**
      * Returns image.
      * <p>返回镜像。
      *
      * @return image / 镜像
      */
-    @Override public byte[] image() { return image.clone(); }
+    @Override
+    public byte[] image() {
+        return image.clone();
+    }
+
     /**
      * Returns the diagnostic text representation of this object.
      * <p>返回当前对象的诊断文本表示。
      *
      * @return the diagnostic text representation of this object / 当前对象的诊断文本表示
      */
-    @Override public String toString() { return "TerminalObservation[redacted,generation=" + generation + "]"; }
+    @Override
+    public String toString() {
+        return "TerminalObservation[redacted,generation=" + generation + "]";
+    }
 }

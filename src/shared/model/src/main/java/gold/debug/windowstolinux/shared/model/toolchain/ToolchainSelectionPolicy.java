@@ -19,7 +19,9 @@ public final class ToolchainSelectionPolicy {
      * @param catalog catalog / 目录
      * @throws NullPointerException if a required input is absent / 必需输入缺失时
      */
-    public ToolchainSelectionPolicy(ToolchainSupportCatalog catalog) { this.catalog = Objects.requireNonNull(catalog); }
+    public ToolchainSelectionPolicy(ToolchainSupportCatalog catalog) {
+        this.catalog = Objects.requireNonNull(catalog);
+    }
 
     /**
      * Resolves toolchain version.
@@ -32,14 +34,15 @@ public final class ToolchainSelectionPolicy {
      * @throws IllegalArgumentException if an input violates the constraints checked by this contract / 输入违反当前契约检查的约束时
      */
     public ToolchainVersion resolve(ToolchainRequirement requirement, ToolchainSupportCatalog.Branch branch,
-                                    List<ToolchainVersion> releases) {
-        if (!catalog.candidates(requirement).contains(branch)) throw new IllegalArgumentException("branch is outside reviewed candidates");
+            List<ToolchainVersion> releases) {
+        if (!catalog.candidates(requirement).contains(branch))
+            throw new IllegalArgumentException("branch is outside reviewed candidates");
         boolean direct = requirement.version().isPresent() && !requirement.version().orElseThrow().preview()
                 && requirement.version().orElseThrow().branch().equals(branch.version());
-        return releases.stream().filter(catalog::permits).filter(v -> v.ecosystem() == branch.ecosystem()
-                && v.branch().equals(branch.version()))
-                .filter(v -> !direct || requirement.accepts(v))
-                .max(ToolchainVersion::compareTo).orElseThrow(() -> new IllegalArgumentException("no official release satisfies this candidate"));
+        return releases.stream().filter(catalog::permits)
+                .filter(v -> v.ecosystem() == branch.ecosystem() && v.branch().equals(branch.version()))
+                .filter(v -> !direct || requirement.accepts(v)).max(ToolchainVersion::compareTo)
+                .orElseThrow(() -> new IllegalArgumentException("no official release satisfies this candidate"));
     }
 
 }

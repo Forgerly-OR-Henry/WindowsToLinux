@@ -1,5 +1,12 @@
 package gold.debug.windowstolinux.shared.deploy.execution.lifecycle;
 
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
+
 import gold.debug.windowstolinux.shared.deploy.contract.MultiComponentDeploymentPlan;
 import gold.debug.windowstolinux.shared.deploy.contract.result.lifecycle.MultiComponentLifecycleResult;
 import gold.debug.windowstolinux.shared.linux.connection.DeploymentLinuxGateway;
@@ -11,13 +18,6 @@ import gold.debug.windowstolinux.shared.linux.session.DeploymentRemoteSession;
 import gold.debug.windowstolinux.shared.model.lifecycle.LifecycleAction;
 import gold.debug.windowstolinux.shared.model.lifecycle.LifecycleObservation;
 import gold.debug.windowstolinux.shared.model.message.LocalizedMessage;
-
-import java.util.LinkedHashMap;
-import java.util.LinkedHashSet;
-import java.util.List;
-import java.util.Map;
-import java.util.Objects;
-import java.util.Set;
 
 /**
  * Executes dependency-safe application lifecycle actions from authoritative remote observations. / 根据权威远端观测执行依赖安全的应用生命周期动作。
@@ -37,16 +37,10 @@ public final class MultiComponentLifecycleService {
      * @return constructed or resolved multi component lifecycle result / 构造或解析得到的多组件生命周期结果
      * @throws NullPointerException if a required input is absent / 必需输入缺失时
      */
-    public MultiComponentLifecycleResult execute(
-            MultiComponentDeploymentPlan plan,
-            List<ManagedComponentLifecycle> managedComponents,
-            Set<String> targetComponentIds,
-            LifecycleAction action,
-            DeploymentLinuxGateway gateway,
-            SshEndpoint endpoint,
-            SshCredential credential,
-            HostKeyEvaluator hostKeyVerifier
-    ) {
+    public MultiComponentLifecycleResult execute(MultiComponentDeploymentPlan plan,
+            List<ManagedComponentLifecycle> managedComponents, Set<String> targetComponentIds, LifecycleAction action,
+            DeploymentLinuxGateway gateway, SshEndpoint endpoint, SshCredential credential,
+            HostKeyEvaluator hostKeyVerifier) {
         plan = Objects.requireNonNull(plan, "plan");
         LifecycleAction requestedAction = Objects.requireNonNull(action, "action");
         gateway = Objects.requireNonNull(gateway, "gateway");
@@ -57,8 +51,8 @@ public final class MultiComponentLifecycleService {
         Set<String> targets;
         try {
             components = MultiComponentLifecyclePolicy.components(plan, managedComponents);
-            targets = MultiComponentLifecyclePolicy.normalizedTargets(
-                    components.keySet(), targetComponentIds, requestedAction);
+            targets = MultiComponentLifecyclePolicy.normalizedTargets(components.keySet(), targetComponentIds,
+                    requestedAction);
         } catch (RuntimeException failure) {
             credential.clear();
             throw failure;
@@ -68,25 +62,27 @@ public final class MultiComponentLifecycleService {
         Set<String> failed = new LinkedHashSet<>();
         try (DeploymentRemoteSession session = gateway.connect(endpoint, credential.duplicate(), hostKeyVerifier)) {
             observeAll(plan, components, session, observations);
-            MultiComponentLifecycleResult rejection = MultiComponentLifecyclePolicy.validate(
-                    plan, targets, requestedAction, observations);
-            if (rejection != null) return rejection;
+            MultiComponentLifecycleResult rejection = MultiComponentLifecyclePolicy.validate(plan, targets,
+                    requestedAction, observations);
+            if (rejection != null)
+                return rejection;
             if (requestedAction != LifecycleAction.REFRESH_STATUS) {
-                boolean complete = executeAction(plan, components, targets, requestedAction, session, attempted, failed);
+                boolean complete = executeAction(plan, components, targets, requestedAction, session, attempted,
+                        failed);
                 observeAll(plan, components, session, observations);
-                targets.stream().filter(id -> !MultiComponentLifecyclePolicy.matchesFinal(
-                        requestedAction, observations.get(id))).forEach(failed::add);
-                return MultiComponentLifecyclePolicy.result(complete && failed.isEmpty(), complete && failed.isEmpty()
+                targets.stream().filter(
+                        id -> !MultiComponentLifecyclePolicy.matchesFinal(requestedAction, observations.get(id)))
+                        .forEach(failed::add);
+                return MultiComponentLifecyclePolicy.result(complete && failed.isEmpty(),
+                        complete && failed.isEmpty()
                                 ? LocalizedMessage.of("lifecycle.applicationVerified")
                                 : LocalizedMessage.of("lifecycle.applicationPartialFailure"),
                         plan, observations, attempted, failed);
             }
-            return MultiComponentLifecyclePolicy.result(true,
-                    LocalizedMessage.of("lifecycle.applicationStatusFetched"),
+            return MultiComponentLifecyclePolicy.result(true, LocalizedMessage.of("lifecycle.applicationStatusFetched"),
                     plan, observations, attempted, failed);
         } catch (LinuxOperationException failure) {
-            return MultiComponentLifecyclePolicy.failure(
-                    plan, observations, attempted, failed, failure.failure());
+            return MultiComponentLifecyclePolicy.failure(plan, observations, attempted, failed, failure.failure());
         } finally {
             credential.clear();
         }
@@ -106,18 +102,20 @@ public final class MultiComponentLifecycleService {
      * @return true when executes explicit action selected for the current target, false otherwise / 执行为当前目标显式选择的动作时为 true，否则为 false
      * @throws LinuxOperationException if the authenticated remote operation fails or its evidence is rejected / 已认证远端操作失败或其证据被拒绝时
      */
-    private static boolean executeAction(
-            MultiComponentDeploymentPlan plan, Map<String, ManagedComponentLifecycle> components, Set<String> targets,
-            LifecycleAction action, DeploymentRemoteSession session, Set<String> attempted, Set<String> failed)
-            throws LinuxOperationException {
+    private static boolean executeAction(MultiComponentDeploymentPlan plan,
+            Map<String, ManagedComponentLifecycle> components, Set<String> targets, LifecycleAction action,
+            DeploymentRemoteSession session, Set<String> attempted, Set<String> failed) throws LinuxOperationException {
         if (action == LifecycleAction.RESTART) {
-            if (!executeOrdered(plan.stopOrder(), components, targets, LifecycleAction.STOP, session, attempted, failed)) {
+            if (!executeOrdered(plan.stopOrder(), components, targets, LifecycleAction.STOP, session, attempted,
+                    failed)) {
                 return false;
             }
-            return executeOrdered(plan.startOrder(), components, targets, LifecycleAction.START, session, attempted, failed);
+            return executeOrdered(plan.startOrder(), components, targets, LifecycleAction.START, session, attempted,
+                    failed);
         }
         List<String> order = action == LifecycleAction.STOP || action == LifecycleAction.DISABLE_AUTOSTART
-                ? plan.stopOrder() : plan.startOrder();
+                ? plan.stopOrder()
+                : plan.startOrder();
         return executeOrdered(order, components, targets, action, session, attempted, failed);
     }
 
@@ -135,12 +133,12 @@ public final class MultiComponentLifecycleService {
      * @return true when executes ordered, false otherwise / 执行有序时为 true，否则为 false
      * @throws LinuxOperationException if the authenticated remote operation fails or its evidence is rejected / 已认证远端操作失败或其证据被拒绝时
      */
-    private static boolean executeOrdered(
-            List<String> order, Map<String, ManagedComponentLifecycle> components, Set<String> targets,
-            LifecycleAction action, DeploymentRemoteSession session, Set<String> attempted, Set<String> failed)
-            throws LinuxOperationException {
+    private static boolean executeOrdered(List<String> order, Map<String, ManagedComponentLifecycle> components,
+            Set<String> targets, LifecycleAction action, DeploymentRemoteSession session, Set<String> attempted,
+            Set<String> failed) throws LinuxOperationException {
         for (String id : order) {
-            if (!targets.contains(id)) continue;
+            if (!targets.contains(id))
+                continue;
             ManagedComponentLifecycle component = components.get(id);
             attempted.add(id);
             LifecycleObservation observation = session.executeLifecycle(component.application(), action,
@@ -163,8 +161,7 @@ public final class MultiComponentLifecycleService {
      * @param observations observations / 观测集合
      * @throws LinuxOperationException if the authenticated remote operation fails or its evidence is rejected / 已认证远端操作失败或其证据被拒绝时
      */
-    private static void observeAll(
-            MultiComponentDeploymentPlan plan, Map<String, ManagedComponentLifecycle> components,
+    private static void observeAll(MultiComponentDeploymentPlan plan, Map<String, ManagedComponentLifecycle> components,
             DeploymentRemoteSession session, Map<String, LifecycleObservation> observations)
             throws LinuxOperationException {
         observations.clear();

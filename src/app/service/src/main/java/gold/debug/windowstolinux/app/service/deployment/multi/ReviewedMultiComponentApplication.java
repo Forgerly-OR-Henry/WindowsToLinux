@@ -1,10 +1,10 @@
 package gold.debug.windowstolinux.app.service.deployment.multi;
 
-import gold.debug.windowstolinux.shared.deploy.contract.ApplicationHealthGate;
-import gold.debug.windowstolinux.shared.deploy.contract.MultiComponentDeploymentPlan;
-
 import java.util.List;
 import java.util.Objects;
+
+import gold.debug.windowstolinux.shared.deploy.contract.ApplicationHealthGate;
+import gold.debug.windowstolinux.shared.deploy.contract.MultiComponentDeploymentPlan;
 
 /**
  * Complete secret-free review object for one whole-application transaction. / 一次整应用事务的完整无秘密审阅对象。
@@ -13,11 +13,8 @@ import java.util.Objects;
  * @param components reviewed components in the application graph / 应用图中的已审阅组件
  * @param applicationHealth caller-supplied whole-application health contract / 调用方提供的整应用健康契约
  */
-public record ReviewedMultiComponentApplication(
-        MultiComponentDeploymentPlan plan,
-        List<ReviewedComponentApplication> components,
-        ApplicationHealthGate applicationHealth
-) {
+public record ReviewedMultiComponentApplication(MultiComponentDeploymentPlan plan,
+        List<ReviewedComponentApplication> components, ApplicationHealthGate applicationHealth) {
     /**
      * Validates exact component coverage and health ownership. / 验证精确组件覆盖与健康归属。
      *

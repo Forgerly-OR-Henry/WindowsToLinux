@@ -6,17 +6,22 @@ package gold.debug.windowstolinux.shared.model.server.security;
 public enum LinuxFirewallKind {
     /**
      * firewalld. / firewalld 防火墙服务。
-     */ FIREWALLD,
+     */
+    FIREWALLD,
     /**
      * Uncomplicated Firewall. / 简易防火墙。
-     */ UFW,
+     */
+    UFW,
     /**
      * Native nftables service or tool. / 原生 nftables 服务或工具。
-     */ NFTABLES,
+     */
+    NFTABLES,
     /**
      * No firewall manager was observed. / 未观测到防火墙管理器。
-     */ NONE,
+     */
+    NONE,
     /**
      * The manager could not be determined. / 无法确定管理器。
-     */ UNKNOWN
+     */
+    UNKNOWN
 }

@@ -1,9 +1,9 @@
 package gold.debug.windowstolinux.app.windows.workspace;
 
-import gold.debug.windowstolinux.shared.model.archive.SourceArchiveDescriptor;
-
 import java.util.List;
 import java.util.Objects;
+
+import gold.debug.windowstolinux.shared.model.archive.SourceArchiveDescriptor;
 
 /**
  * Represents an immutable {@code PreparedSourceArchive} value.

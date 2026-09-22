@@ -14,7 +14,9 @@
     "preview": "vite preview",
     "install:e2e-browser": "node scripts/playwright-local.mjs install chromium",
     "test:e2e": "node scripts/playwright-local.mjs test",
-    "test:e2e:boot": "node scripts/playwright-local.mjs test --config playwright.boot.config.ts"
+    "test:e2e:boot": "node scripts/playwright-local.mjs test --config playwright.boot.config.ts",
+    "format:check": "python ../../../.mvn/formatting/format.py --check --only web",
+    "format:write": "python ../../../.mvn/formatting/format.py --write --only web"
   },
   "dependencies": {
     "vue": "3.5.41"

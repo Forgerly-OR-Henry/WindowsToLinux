@@ -1,9 +1,6 @@
 
 package gold.debug.windowstolinux.shared.config.secretref;
 
-import gold.debug.windowstolinux.shared.config.ConfigurationException;
-import gold.debug.windowstolinux.shared.config.ConfigurationFailureType;
-
 import java.nio.ByteBuffer;
 import java.nio.CharBuffer;
 import java.nio.charset.StandardCharsets;
@@ -12,6 +9,9 @@ import java.security.NoSuchAlgorithmException;
 import java.util.Arrays;
 import java.util.HexFormat;
 import java.util.Objects;
+
+import gold.debug.windowstolinux.shared.config.ConfigurationException;
+import gold.debug.windowstolinux.shared.config.ConfigurationFailureType;
 
 /**
  * Short-lived resolved secret bytes used only for an authenticated deployment transfer.
@@ -29,11 +29,13 @@ public final class ResolvedSecretRevision implements AutoCloseable {
      * <p>不可变公开秘密身份。
      */
     private final SecretReference reference;
+
     /**
      * Candidate content accepted or rejected by this contract.
      * <p>由当前契约接收或拒绝的候选内容。
      */
     private final byte[] value;
+
     /**
      * Content identity used for independent verification.
      * <p>独立验证所用的内容身份。
@@ -57,7 +59,8 @@ public final class ResolvedSecretRevision implements AutoCloseable {
         encoded.get(bytes);
         if (bytes.length == 0 || bytes.length > MAX_VALUE_BYTES) {
             Arrays.fill(bytes, (byte) 0);
-            throw ConfigurationException.create(ConfigurationFailureType.SECRET_VALUE_INVALID, "A secret value must be non-empty and bounded");
+            throw ConfigurationException.create(ConfigurationFailureType.SECRET_VALUE_INVALID,
+                    "A secret value must be non-empty and bounded");
         }
         this.value = bytes;
         this.digest = new SecretRevisionDigest(reference, sha256(bytes), bytes.length);
@@ -99,8 +102,7 @@ public final class ResolvedSecretRevision implements AutoCloseable {
         try {
             CharBuffer decoded = StandardCharsets.UTF_8.newDecoder()
                     .onMalformedInput(java.nio.charset.CodingErrorAction.REPORT)
-                    .onUnmappableCharacter(java.nio.charset.CodingErrorAction.REPORT)
-                    .decode(ByteBuffer.wrap(value));
+                    .onUnmappableCharacter(java.nio.charset.CodingErrorAction.REPORT).decode(ByteBuffer.wrap(value));
             char[] result = new char[decoded.remaining()];
             decoded.get(result);
             return result;
@@ -140,7 +142,8 @@ public final class ResolvedSecretRevision implements AutoCloseable {
         try {
             return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(value));
         } catch (NoSuchAlgorithmException exception) {
-            throw ConfigurationException.create(ConfigurationFailureType.HASH_ALGORITHM_UNAVAILABLE, "The required SHA-256 implementation is unavailable", exception);
+            throw ConfigurationException.create(ConfigurationFailureType.HASH_ALGORITHM_UNAVAILABLE,
+                    "The required SHA-256 implementation is unavailable", exception);
         }
     }
 }

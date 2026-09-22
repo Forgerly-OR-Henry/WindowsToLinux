@@ -16,15 +16,9 @@ import java.util.Set;
  * @param verificationTime verification time / 验证时间
  * @param emergencyRollbackApproved emergency rollback approved / 紧急回滚已批准
  */
-public record DesktopUpdateTrustPolicy(
-        DesktopReleaseVersion currentVersion,
-        DesktopArchitectureType currentArchitecture,
-        String trustedKeyId,
-        PublicKey trustedPublicKey,
-        Set<String> revokedReleaseIds,
-        Instant verificationTime,
-        boolean emergencyRollbackApproved
-) {
+public record DesktopUpdateTrustPolicy(DesktopReleaseVersion currentVersion,
+        DesktopArchitectureType currentArchitecture, String trustedKeyId, PublicKey trustedPublicKey,
+        Set<String> revokedReleaseIds, Instant verificationTime, boolean emergencyRollbackApproved) {
     /**
      * Validates a pinned Ed25519 key and immutable revocation set. / 校验固定 Ed25519 密钥及不可变撤销集合。
      *

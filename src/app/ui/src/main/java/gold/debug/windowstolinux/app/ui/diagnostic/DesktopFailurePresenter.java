@@ -1,9 +1,5 @@
 package gold.debug.windowstolinux.app.ui.diagnostic;
 
-import gold.debug.windowstolinux.shared.model.failure.FailureCarrier;
-import gold.debug.windowstolinux.shared.model.failure.FailureDescriptor;
-import gold.debug.windowstolinux.shared.model.message.LocalizedMessage;
-
 import java.awt.Desktop;
 import java.io.IOException;
 import java.nio.file.Path;
@@ -13,6 +9,10 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.function.Function;
 
+import gold.debug.windowstolinux.shared.model.failure.FailureCarrier;
+import gold.debug.windowstolinux.shared.model.failure.FailureDescriptor;
+import gold.debug.windowstolinux.shared.model.message.LocalizedMessage;
+
 /**
  * Converts task failures into safe localized UI text and report references. / 将任务失败转换为安全的本地化 UI 文本和报告引用。
  */
@@ -21,19 +21,22 @@ public final class DesktopFailurePresenter {
      * Pattern matching secret-like assignments for redaction.
      * <p>匹配疑似秘密赋值以供脱敏的模式。
      */
-    private static final java.util.regex.Pattern SENSITIVE_ASSIGNMENT = java.util.regex.Pattern.compile(
-            "(?i)(password|passphrase|private[-_ ]?key|api[-_ ]?key|secret|token)\\s*[:=]\\s*[^\\s,;]+");
+    private static final java.util.regex.Pattern SENSITIVE_ASSIGNMENT = java.util.regex.Pattern
+            .compile("(?i)(password|passphrase|private[-_ ]?key|api[-_ ]?key|secret|token)\\s*[:=]\\s*[^\\s,;]+");
+
     /**
      * Pattern matching bearer authorization material for redaction.
      * <p>匹配 bearer 授权素材以供脱敏的模式。
      */
-    private static final java.util.regex.Pattern BEARER = java.util.regex.Pattern.compile(
-            "(?i)bearer\\s+[A-Za-z0-9._~+/=-]+");
+    private static final java.util.regex.Pattern BEARER = java.util.regex.Pattern
+            .compile("(?i)bearer\\s+[A-Za-z0-9._~+/=-]+");
+
     /**
      * Localized message resolver.
      * <p>本地化消息解析器。
      */
     private final Function<LocalizedMessage, String> messages;
+
     /**
      * Bound failure report store collaborator for reports.
      * <p>处理报告集合的失败报告存储协作对象。
@@ -69,18 +72,15 @@ public final class DesktopFailurePresenter {
             return text("diagnostic.unknown");
         }
         String report = recorded.flatMap(FailureReportRecord::reportPath)
-                .or(() -> recorded.map(FailureReportRecord::diagnosticsDirectory))
-                .map(Path::toString)
+                .or(() -> recorded.map(FailureReportRecord::diagnosticsDirectory)).map(Path::toString)
                 .orElseGet(() -> reports.diagnosticsDirectory().map(Path::toString)
                         .orElse(text("failure.report.unavailable")));
-        return text("failure.presentation", Map.of(
-                "message", messages.apply(descriptor.userMessage()),
-                "code", descriptor.code(),
-                "operationId", descriptor.operationIdentity().toString(),
-                "summary", redact(descriptor.diagnostic()),
-                "recovery", text("failure.recovery."
-                        + descriptor.recoveryDisposition().name().toLowerCase(Locale.ROOT)),
-                "report", report));
+        return text("failure.presentation",
+                Map.of("message", messages.apply(descriptor.userMessage()), "code", descriptor.code(), "operationId",
+                        descriptor.operationIdentity().toString(), "summary", redact(descriptor.diagnostic()),
+                        "recovery",
+                        text("failure.recovery." + descriptor.recoveryDisposition().name().toLowerCase(Locale.ROOT)),
+                        "report", report));
     }
 
     /**
@@ -112,15 +112,20 @@ public final class DesktopFailurePresenter {
          * @throws NullPointerException if a required input is absent / 必需输入缺失时
          */
         private SnapshotFailureException(FailureDescriptor failure) {
-            super("Structured recovery snapshot"); this.failure = Objects.requireNonNull(failure, "failure");
+            super("Structured recovery snapshot");
+            this.failure = Objects.requireNonNull(failure, "failure");
         }
+
         /**
          * Returns structured failure occurrence retained for safe reporting.
          * <p>返回保留用于安全报告的结构化失败实例。
          *
          * @return structured failure occurrence retained for safe reporting / 保留用于安全报告的结构化失败实例
          */
-        @Override public FailureDescriptor failure() { return failure; }
+        @Override
+        public FailureDescriptor failure() {
+            return failure;
+        }
     }
 
     /**
@@ -148,8 +153,7 @@ public final class DesktopFailurePresenter {
      * @return a copyable diagnostic directory path / 可复制的诊断目录路径
      */
     public String diagnosticsPath() {
-        return reports.diagnosticsDirectory().map(Path::toString)
-                .orElse(text("failure.report.unavailable"));
+        return reports.diagnosticsDirectory().map(Path::toString).orElse(text("failure.report.unavailable"));
     }
 
     /**
@@ -180,8 +184,7 @@ public final class DesktopFailurePresenter {
     private static Throwable unwrap(Throwable throwable) {
         Throwable current = throwable;
         while ((current instanceof java.util.concurrent.CompletionException
-                || current instanceof java.util.concurrent.ExecutionException)
-                && current.getCause() != null) {
+                || current instanceof java.util.concurrent.ExecutionException) && current.getCause() != null) {
             current = current.getCause();
         }
         return current;

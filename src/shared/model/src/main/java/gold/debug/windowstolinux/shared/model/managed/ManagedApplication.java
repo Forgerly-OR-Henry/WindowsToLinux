@@ -1,8 +1,8 @@
 package gold.debug.windowstolinux.shared.model.managed;
 
-import gold.debug.windowstolinux.shared.model.server.ServerIdentity;
-
 import java.util.Objects;
+
+import gold.debug.windowstolinux.shared.model.server.ServerIdentity;
 
 /**
  * Immutable identity of an application owned by WindowsToLinux.
@@ -15,13 +15,8 @@ import java.util.Objects;
  * @param releaseRoot release root / 发布根目录
  * @param ownershipManifestSha256 digest binding the managed resource to its ownership manifest / 将受管资源绑定到归属清单的摘要
  */
-public record ManagedApplication(
-        String id,
-        ServerIdentity server,
-        String systemdUnit,
-        String releaseRoot,
-        String ownershipManifestSha256
-) {
+public record ManagedApplication(String id, ServerIdentity server, String systemdUnit, String releaseRoot,
+        String ownershipManifestSha256) {
     /**
      * Validates and binds the inputs required by managed application.
      * <p>校验并绑定受管应用所需输入。
@@ -59,13 +54,8 @@ public record ManagedApplication(
      */
     public static ManagedApplication forManaged(String id, ServerIdentity server, String ownershipManifestSha256) {
         String normalizedId = ServerIdentity.requireIdentifier(id, "id");
-        return new ManagedApplication(
-                normalizedId,
-                server,
-                "windowstolinux-" + normalizedId + ".service",
-                ManagedStorageLocation.installationRoot(normalizedId),
-                ownershipManifestSha256
-        );
+        return new ManagedApplication(normalizedId, server, "windowstolinux-" + normalizedId + ".service",
+                ManagedStorageLocation.installationRoot(normalizedId), ownershipManifestSha256);
     }
 
     /**

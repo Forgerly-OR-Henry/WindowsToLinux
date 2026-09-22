@@ -1,14 +1,19 @@
 package gold.debug.windowstolinux.app.service.contract;
 
+import java.io.IOException;
+import java.nio.file.Path;
+import java.sql.SQLException;
+import java.util.List;
+import java.util.Optional;
+import java.util.function.Predicate;
+
 import gold.debug.windowstolinux.app.secret.SecretStoreException;
 import gold.debug.windowstolinux.app.service.deployment.single.DeploymentOutcome;
 import gold.debug.windowstolinux.app.service.server.ServerProfile;
 import gold.debug.windowstolinux.app.service.source.ReviewedSourcePreparation;
-import gold.debug.windowstolinux.shared.config.revision.ConfigurationSnapshot;
 import gold.debug.windowstolinux.shared.config.resource.ManagedDatabaseBinding;
+import gold.debug.windowstolinux.shared.config.revision.ConfigurationSnapshot;
 import gold.debug.windowstolinux.shared.config.secretref.SecretReference;
-import gold.debug.windowstolinux.shared.deploy.contract.ReviewedDeploymentPlan;
-import gold.debug.windowstolinux.shared.deploy.contract.ReviewedDeploymentRequest;
 import gold.debug.windowstolinux.shared.git.GitSnapshotException;
 import gold.debug.windowstolinux.shared.git.GitSourceRequest;
 import gold.debug.windowstolinux.shared.model.deployment.BuildLimitConfiguration;
@@ -17,13 +22,8 @@ import gold.debug.windowstolinux.shared.model.project.DeploymentProjectType;
 import gold.debug.windowstolinux.shared.model.project.DeploymentRuntimeSpecification;
 import gold.debug.windowstolinux.shared.model.security.CredentialStorageMode;
 import gold.debug.windowstolinux.shared.model.server.ServerIdentity;
-
-import java.io.IOException;
-import java.nio.file.Path;
-import java.sql.SQLException;
-import java.util.List;
-import java.util.Optional;
-import java.util.function.Predicate;
+import gold.debug.windowstolinux.shared.standard.deploy.contract.ReviewedDeploymentPlan;
+import gold.debug.windowstolinux.shared.standard.deploy.contract.ReviewedDeploymentRequest;
 
 /**
  * Narrow application operations required by single-component deployment. / 单组件部署所需的窄应用操作。
@@ -81,10 +81,9 @@ public interface DeploymentApplicationFacade {
      * @return reviewed deployment request / 已审阅部署请求
      * @throws SQLException if the database cannot complete the requested read or transaction / 数据库无法完成请求的读取或事务时
      */
-    ReviewedDeploymentRequest createReviewedDeploymentRequest(
-            ReviewedSourcePreparation preparation, ServerIdentity server, ConfigurationSnapshot configuration,
-            List<SecretReference> secretReferences, Optional<List<ManagedDatabaseBinding>> databaseBindings,
-            DeploymentRuntimeSpecification runtime,
+    ReviewedDeploymentRequest createReviewedDeploymentRequest(ReviewedSourcePreparation preparation,
+            ServerIdentity server, ConfigurationSnapshot configuration, List<SecretReference> secretReferences,
+            Optional<List<ManagedDatabaseBinding>> databaseBindings, DeploymentRuntimeSpecification runtime,
             Optional<UserAccessUrl> userAccessUrl, BuildLimitConfiguration limits, boolean rootBuildConfirmed,
             boolean containerDaemonRiskAccepted, boolean experimentalAdapterRiskAccepted) throws SQLException;
 
@@ -104,11 +103,11 @@ public interface DeploymentApplicationFacade {
      * @return a request whose database scope has not yet been reviewed / 数据库范围尚未审阅的请求
      * @throws SQLException if the database cannot complete the requested read or transaction / 数据库无法完成请求的读取或事务时
      */
-    default ReviewedDeploymentRequest createReviewedDeploymentRequest(
-            ReviewedSourcePreparation preparation, ServerIdentity server, ConfigurationSnapshot configuration,
-            List<SecretReference> secretReferences, DeploymentRuntimeSpecification runtime,
-            Optional<UserAccessUrl> userAccessUrl, BuildLimitConfiguration limits, boolean rootBuildConfirmed,
-            boolean containerDaemonRiskAccepted, boolean experimentalAdapterRiskAccepted) throws SQLException {
+    default ReviewedDeploymentRequest createReviewedDeploymentRequest(ReviewedSourcePreparation preparation,
+            ServerIdentity server, ConfigurationSnapshot configuration, List<SecretReference> secretReferences,
+            DeploymentRuntimeSpecification runtime, Optional<UserAccessUrl> userAccessUrl,
+            BuildLimitConfiguration limits, boolean rootBuildConfirmed, boolean containerDaemonRiskAccepted,
+            boolean experimentalAdapterRiskAccepted) throws SQLException {
         return createReviewedDeploymentRequest(preparation, server, configuration, secretReferences, Optional.empty(),
                 runtime, userAccessUrl, limits, rootBuildConfirmed, containerDaemonRiskAccepted,
                 experimentalAdapterRiskAccepted);
@@ -145,9 +144,9 @@ public interface DeploymentApplicationFacade {
      * @throws SecretStoreException if the protected credential cannot be accessed or updated / 无法访问或更新受保护凭据时
      * @throws SQLException if the database cannot complete the requested read or transaction / 数据库无法完成请求的读取或事务时
      */
-    DeploymentOutcome deployReviewedWithStoredPassword(
-            ReviewedDeploymentRequest request, ServerProfile profile, CredentialStorageMode mode,
-            char[] masterPassword, Predicate<String> confirmation) throws SecretStoreException, SQLException;
+    DeploymentOutcome deployReviewedWithStoredPassword(ReviewedDeploymentRequest request, ServerProfile profile,
+            CredentialStorageMode mode, char[] masterPassword, Predicate<String> confirmation)
+            throws SecretStoreException, SQLException;
 
     /**
      * Persists deployment secret revision.
@@ -162,6 +161,5 @@ public interface DeploymentApplicationFacade {
      * @throws SecretStoreException if the protected credential cannot be accessed or updated / 无法访问或更新受保护凭据时
      */
     SecretReference saveDeploymentSecretRevision(String referenceInput, CredentialStorageMode mode,
-                                      char[] masterPassword, char[] value)
-            throws SQLException, SecretStoreException;
+            char[] masterPassword, char[] value) throws SQLException, SecretStoreException;
 }

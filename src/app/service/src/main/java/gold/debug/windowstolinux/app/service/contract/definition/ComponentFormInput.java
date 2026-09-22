@@ -1,11 +1,9 @@
 package gold.debug.windowstolinux.app.service.contract.definition;
 
-import gold.debug.windowstolinux.shared.model.deployment.DatabaseReviewMode;
-
-
-import gold.debug.windowstolinux.shared.model.project.DeploymentProjectType;
-
 import java.util.Objects;
+
+import gold.debug.windowstolinux.shared.model.deployment.DatabaseReviewMode;
+import gold.debug.windowstolinux.shared.model.project.DeploymentProjectType;
 
 /**
  * Secret-value-free typed form state for one explicitly reviewed component.
@@ -38,33 +36,13 @@ import java.util.Objects;
  * @param kotlinJvmTarget kotlin jvm target / kotlinJvm目标
  * @param applicationDeclaration application declaration / 应用声明
  */
-public record ComponentFormInput(
-        String componentId,
-        String relativeSourceRoot,
-        DeploymentProjectType projectType,
-        String runtimePrimary,
-        String runtimeSecondary,
-        String runtimeVersion,
-        String runtimeArguments,
-        String runtimeAdditional,
-        ComponentHealthMode healthMode,
-        String healthEndpoint,
-        String expectedStatus,
-        String timeoutSeconds,
-        String stabilitySeconds,
-        String userAccessUrl,
-        String artifactPaths,
-        String declaredPorts,
-        String dependencies,
-        String configurationEntries,
-        DatabaseReviewMode databaseMode,
-        String databaseDetails,
-        String secretReferences,
-        boolean required,
-        boolean rootBuild,
-        String kotlinJvmTarget,
-        String applicationDeclaration
-) {
+public record ComponentFormInput(String componentId, String relativeSourceRoot, DeploymentProjectType projectType,
+        String runtimePrimary, String runtimeSecondary, String runtimeVersion, String runtimeArguments,
+        String runtimeAdditional, ComponentHealthMode healthMode, String healthEndpoint, String expectedStatus,
+        String timeoutSeconds, String stabilitySeconds, String userAccessUrl, String artifactPaths,
+        String declaredPorts, String dependencies, String configurationEntries, DatabaseReviewMode databaseMode,
+        String databaseDetails, String secretReferences, boolean required, boolean rootBuild, String kotlinJvmTarget,
+        String applicationDeclaration) {
     /**
      * Initializes component form input through its shared constructor contract.
      * <p>通过共享构造契约初始化组件表单输入。
@@ -94,32 +72,17 @@ public record ComponentFormInput(
      * @param rootBuild root build / 根目录构建
      * @param kotlinJvmTarget kotlin jvm target / kotlinJvm目标
      */
-    public ComponentFormInput(
-        String componentId,
-        String relativeSourceRoot,
-        DeploymentProjectType projectType,
-        String runtimePrimary,
-        String runtimeSecondary,
-        String runtimeVersion,
-        String runtimeArguments,
-        String runtimeAdditional,
-        ComponentHealthMode healthMode,
-        String healthEndpoint,
-        String expectedStatus,
-        String timeoutSeconds,
-        String stabilitySeconds,
-        String userAccessUrl,
-        String artifactPaths,
-        String declaredPorts,
-        String dependencies,
-        String configurationEntries,
-        DatabaseReviewMode databaseMode,
-        String databaseDetails,
-        String secretReferences,
-        boolean required,
-        boolean rootBuild,
-        String kotlinJvmTarget) {
-        this(componentId, relativeSourceRoot, projectType, runtimePrimary, runtimeSecondary, runtimeVersion, runtimeArguments, runtimeAdditional, healthMode, healthEndpoint, expectedStatus, timeoutSeconds, stabilitySeconds, userAccessUrl, artifactPaths, declaredPorts, dependencies, configurationEntries, databaseMode, databaseDetails, secretReferences, required, rootBuild, kotlinJvmTarget, "");
+    public ComponentFormInput(String componentId, String relativeSourceRoot, DeploymentProjectType projectType,
+            String runtimePrimary, String runtimeSecondary, String runtimeVersion, String runtimeArguments,
+            String runtimeAdditional, ComponentHealthMode healthMode, String healthEndpoint, String expectedStatus,
+            String timeoutSeconds, String stabilitySeconds, String userAccessUrl, String artifactPaths,
+            String declaredPorts, String dependencies, String configurationEntries, DatabaseReviewMode databaseMode,
+            String databaseDetails, String secretReferences, boolean required, boolean rootBuild,
+            String kotlinJvmTarget) {
+        this(componentId, relativeSourceRoot, projectType, runtimePrimary, runtimeSecondary, runtimeVersion,
+                runtimeArguments, runtimeAdditional, healthMode, healthEndpoint, expectedStatus, timeoutSeconds,
+                stabilitySeconds, userAccessUrl, artifactPaths, declaredPorts, dependencies, configurationEntries,
+                databaseMode, databaseDetails, secretReferences, required, rootBuild, kotlinJvmTarget, "");
     }
 
     /**
@@ -150,30 +113,16 @@ public record ComponentFormInput(
      * @param required whether the whole application requires this component / 整体应用是否需要此组件
      * @param rootBuild root build / 根目录构建
      */
-    public ComponentFormInput(String componentId,
-        String relativeSourceRoot,
-        DeploymentProjectType projectType,
-        String runtimePrimary,
-        String runtimeSecondary,
-        String runtimeVersion,
-        String runtimeArguments,
-        String runtimeAdditional,
-        ComponentHealthMode healthMode,
-        String healthEndpoint,
-        String expectedStatus,
-        String timeoutSeconds,
-        String stabilitySeconds,
-        String userAccessUrl,
-        String artifactPaths,
-        String declaredPorts,
-        String dependencies,
-        String configurationEntries,
-        DatabaseReviewMode databaseMode,
-        String databaseDetails,
-        String secretReferences,
-        boolean required,
-        boolean rootBuild) {
-        this(componentId, relativeSourceRoot, projectType, runtimePrimary, runtimeSecondary, runtimeVersion, runtimeArguments, runtimeAdditional, healthMode, healthEndpoint, expectedStatus, timeoutSeconds, stabilitySeconds, userAccessUrl, artifactPaths, declaredPorts, dependencies, configurationEntries, databaseMode, databaseDetails, secretReferences, required, rootBuild, "");
+    public ComponentFormInput(String componentId, String relativeSourceRoot, DeploymentProjectType projectType,
+            String runtimePrimary, String runtimeSecondary, String runtimeVersion, String runtimeArguments,
+            String runtimeAdditional, ComponentHealthMode healthMode, String healthEndpoint, String expectedStatus,
+            String timeoutSeconds, String stabilitySeconds, String userAccessUrl, String artifactPaths,
+            String declaredPorts, String dependencies, String configurationEntries, DatabaseReviewMode databaseMode,
+            String databaseDetails, String secretReferences, boolean required, boolean rootBuild) {
+        this(componentId, relativeSourceRoot, projectType, runtimePrimary, runtimeSecondary, runtimeVersion,
+                runtimeArguments, runtimeAdditional, healthMode, healthEndpoint, expectedStatus, timeoutSeconds,
+                stabilitySeconds, userAccessUrl, artifactPaths, declaredPorts, dependencies, configurationEntries,
+                databaseMode, databaseDetails, secretReferences, required, rootBuild, "");
     }
 
     /**
@@ -231,7 +180,8 @@ public record ComponentFormInput(
         secretReferences = text(secretReferences);
         kotlinJvmTarget = text(kotlinJvmTarget);
         applicationDeclaration = Objects.requireNonNull(applicationDeclaration).trim();
-        if (applicationDeclaration.length()>65536) throw new IllegalArgumentException("application declaration too long");
+        if (applicationDeclaration.length() > 65536)
+            throw new IllegalArgumentException("application declaration too long");
     }
 
     /**
@@ -245,7 +195,8 @@ public record ComponentFormInput(
      */
     private static String text(String value) {
         value = Objects.requireNonNull(value, "form value").trim();
-        if (value.length() > 4096) throw new IllegalArgumentException("component form value is too long");
+        if (value.length() > 4096)
+            throw new IllegalArgumentException("component form value is too long");
         return value;
     }
 }

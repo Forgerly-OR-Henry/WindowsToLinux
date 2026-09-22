@@ -20,22 +20,14 @@ import java.util.Objects;
  * @param emergencyRollback emergency rollback / 紧急回滚
  * @param signatureBase64 signature base 64 / 签名基础64
  */
-public record DesktopUpdateManifest(
-        String releaseId,
-        DesktopReleaseVersion version,
-        DesktopArchitectureType architecture,
-        long packageBytes,
-        String packageSha256,
-        Instant issuedAt,
-        Instant expiresAt,
-        String keyId,
-        boolean emergencyRollback,
-        String signatureBase64
-) {
+public record DesktopUpdateManifest(String releaseId, DesktopReleaseVersion version,
+        DesktopArchitectureType architecture, long packageBytes, String packageSha256, Instant issuedAt,
+        Instant expiresAt, String keyId, boolean emergencyRollback, String signatureBase64) {
     /**
      * Current signed metadata schema. / 当前签名元数据 schema。
      */
     public static final int SCHEMA_VERSION = 1;
+
     /**
      * MAXIMUM PACKAGE BYTES.
      * <p>最大软件包字节。
@@ -89,16 +81,11 @@ public record DesktopUpdateManifest(
      * @return signed payload / 已签名载荷
      */
     byte[] signedPayload() {
-        String canonical = "schema=" + SCHEMA_VERSION + '\n'
-                + "releaseId=" + releaseId + '\n'
-                + "version=" + version + '\n'
-                + "architecture=" + architecture + '\n'
-                + "packageBytes=" + packageBytes + '\n'
-                + "packageSha256=" + packageSha256 + '\n'
-                + "issuedAt=" + issuedAt.getEpochSecond() + '\n'
-                + "expiresAt=" + expiresAt.getEpochSecond() + '\n'
-                + "keyId=" + keyId + '\n'
-                + "emergencyRollback=" + emergencyRollback + '\n';
+        String canonical = "schema=" + SCHEMA_VERSION + '\n' + "releaseId=" + releaseId + '\n' + "version=" + version
+                + '\n' + "architecture=" + architecture + '\n' + "packageBytes=" + packageBytes + '\n'
+                + "packageSha256=" + packageSha256 + '\n' + "issuedAt=" + issuedAt.getEpochSecond() + '\n'
+                + "expiresAt=" + expiresAt.getEpochSecond() + '\n' + "keyId=" + keyId + '\n' + "emergencyRollback="
+                + emergencyRollback + '\n';
         return canonical.getBytes(StandardCharsets.UTF_8);
     }
 
@@ -131,7 +118,8 @@ public record DesktopUpdateManifest(
      */
     private static String digest(String value) {
         value = Objects.requireNonNull(value, "packageSha256").trim();
-        if (!value.matches("[0-9a-f]{64}")) throw new IllegalArgumentException("packageSha256 is invalid");
+        if (!value.matches("[0-9a-f]{64}"))
+            throw new IllegalArgumentException("packageSha256 is invalid");
         return value;
     }
 }

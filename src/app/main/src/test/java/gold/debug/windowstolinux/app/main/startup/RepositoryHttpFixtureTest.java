@@ -1,12 +1,7 @@
 package gold.debug.windowstolinux.app.main.startup;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
-import org.junit.jupiter.api.DynamicTest;
-import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.TestFactory;
-import org.junit.jupiter.api.io.TempDir;
+import static org.junit.jupiter.api.Assertions.*;
 
-import javax.tools.ToolProvider;
 import java.net.HttpURLConnection;
 import java.net.ServerSocket;
 import java.net.URI;
@@ -14,26 +9,33 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
-import java.util.List;
 import java.util.ArrayList;
+import java.util.List;
+import java.util.concurrent.TimeUnit;
+import java.util.jar.Attributes;
 import java.util.jar.JarEntry;
 import java.util.jar.JarOutputStream;
 import java.util.jar.Manifest;
-import java.util.jar.Attributes;
-import java.util.concurrent.TimeUnit;
 import java.util.stream.Stream;
 
-import static org.junit.jupiter.api.Assertions.*;
+import javax.tools.ToolProvider;
+
+import com.fasterxml.jackson.databind.ObjectMapper;
+import org.junit.jupiter.api.DynamicTest;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.TestFactory;
+import org.junit.jupiter.api.io.TempDir;
 
 /** Builds complete multi-file JARs and exercises their modules over HTTP. / 构建完整多文件 JAR 并经 HTTP 验证模块协作。 */
 class RepositoryHttpFixtureTest {
-    @TempDir Path temporaryDirectory;
+    @TempDir
+    Path temporaryDirectory;
 
     @TestFactory
     Stream<DynamicTest> successAndHealthFailureHaveDistinctObservableBehavior() {
-        return List.of("success-deployment-smoke", "success-json-api", "success-runtime-config",
-                        "failure-health-rollback").stream()
-                .map(scenario -> DynamicTest.dynamicTest(scenario, () -> exercise(scenario)));
+        return List
+                .of("success-deployment-smoke", "success-json-api", "success-runtime-config", "failure-health-rollback")
+                .stream().map(scenario -> DynamicTest.dynamicTest(scenario, () -> exercise(scenario)));
     }
 
     private void exercise(String scenario) throws Exception {
@@ -42,18 +44,23 @@ class RepositoryHttpFixtureTest {
 
     private void exercise(String scenario, String label) throws Exception {
         Path fixture = repositoryRoot().resolve("test/single-language/java/jdk/http-service").resolve(scenario);
-        Path classes = Files.createDirectories(temporaryDirectory.resolve(scenario + (label == null ? "-default" : "")).resolve("classes"));
+        Path classes = Files.createDirectories(
+                temporaryDirectory.resolve(scenario + (label == null ? "-default" : "")).resolve("classes"));
         assertEquals(0, compile(fixture, classes, false));
         Path artifact = classes.getParent().resolve("app.jar");
         packageJar(classes, artifact);
         int port;
-        try (ServerSocket socket = new ServerSocket(0)) { port = socket.getLocalPort(); }
+        try (ServerSocket socket = new ServerSocket(0)) {
+            port = socket.getLocalPort();
+        }
         Path executable = Path.of(System.getProperty("java.home"), "bin",
                 System.getProperty("os.name").startsWith("Windows") ? "java.exe" : "java");
         ProcessBuilder builder = new ProcessBuilder(executable.toString(), "-jar", artifact.toString());
         builder.environment().put("PORT", Integer.toString(port));
-        if (label == null) builder.environment().remove("FIXTURE_LABEL");
-        else builder.environment().put("FIXTURE_LABEL", label);
+        if (label == null)
+            builder.environment().remove("FIXTURE_LABEL");
+        else
+            builder.environment().put("FIXTURE_LABEL", label);
         builder.redirectErrorStream(true).redirectOutput(classes.getParent().resolve("server.log").toFile());
         Process process = builder.start();
         try {
@@ -67,7 +74,8 @@ class RepositoryHttpFixtureTest {
                     assertEquals(3, json.required("items").size());
                     assertEquals(6, json.required("total").asInt());
                 }
-                case "success-runtime-config" -> assertEquals(label == null ? "runtime-config-default" : label, result.body());
+                case "success-runtime-config" ->
+                    assertEquals(label == null ? "runtime-config-default" : label, result.body());
                 default -> assertEquals("deployment-smoke-ok", result.body());
             }
             if (!scenario.equals("failure-health-rollback")) {
@@ -75,7 +83,10 @@ class RepositoryHttpFixtureTest {
                 assertSummary(request(port, "/api/summary?values=2,3,5"), List.of(2, 3, 5));
                 assertSummary(request(port, "/api/summary?values=0,10000"), List.of(0, 10000));
                 assertSummary(request(port, "/api/summary?values=2%2C3%2C5"), List.of(2, 3, 5));
-                assertSummary(request(port, "/api/summary?values=" + String.join(",", java.util.Collections.nCopies(20, "10000"))), java.util.Collections.nCopies(20, 10000));
+                assertSummary(
+                        request(port,
+                                "/api/summary?values=" + String.join(",", java.util.Collections.nCopies(20, "10000"))),
+                        java.util.Collections.nCopies(20, 10000));
                 for (String invalid : List.of("", "-1", "1.5", "abc", "10001", "1,,2", "1,", "9999999999",
                         String.join(",", java.util.Collections.nCopies(21, "1")))) {
                     assertEquals(400, request(port, "/api/summary?values=" + invalid).status(), invalid);
@@ -103,7 +114,8 @@ class RepositoryHttpFixtureTest {
                 Files.deleteIfExists(artifact);
                 return;
             } catch (java.nio.file.FileSystemException locked) {
-                if (System.nanoTime() >= deadline) throw locked;
+                if (System.nanoTime() >= deadline)
+                    throw locked;
                 Thread.sleep(50);
             }
         }
@@ -122,15 +134,18 @@ class RepositoryHttpFixtureTest {
     }
 
     private static int compile(Path fixture, Path classes, boolean omitModel) throws Exception {
-        List<String> arguments = new ArrayList<>(List.of("--release", "21", "-encoding", "UTF-8", "-d", classes.toString()));
+        List<String> arguments = new ArrayList<>(
+                List.of("--release", "21", "-encoding", "UTF-8", "-d", classes.toString()));
         try (var sources = Files.walk(fixture.resolve("src"))) {
             sources.filter(path -> path.toString().endsWith(".java"))
-                    .filter(path -> !omitModel || !path.getFileName().toString().equals("Summary.java"))
-                    .sorted().forEach(path -> arguments.add(path.toString()));
+                    .filter(path -> !omitModel || !path.getFileName().toString().equals("Summary.java")).sorted()
+                    .forEach(path -> arguments.add(path.toString()));
         }
         var diagnostics = new java.io.ByteArrayOutputStream();
-        int result = ToolProvider.getSystemJavaCompiler().run(null, diagnostics, diagnostics, arguments.toArray(String[]::new));
-        if (!omitModel) assertEquals(0, result, diagnostics.toString(StandardCharsets.UTF_8));
+        int result = ToolProvider.getSystemJavaCompiler().run(null, diagnostics, diagnostics,
+                arguments.toArray(String[]::new));
+        if (!omitModel)
+            assertEquals(0, result, diagnostics.toString(StandardCharsets.UTF_8));
         return result;
     }
 
@@ -139,7 +154,7 @@ class RepositoryHttpFixtureTest {
         manifest.getMainAttributes().put(Attributes.Name.MANIFEST_VERSION, "1.0");
         manifest.getMainAttributes().put(Attributes.Name.MAIN_CLASS, "acceptance.Main");
         try (JarOutputStream output = new JarOutputStream(Files.newOutputStream(artifact), manifest);
-             var files = Files.walk(classes)) {
+                var files = Files.walk(classes)) {
             for (Path file : files.filter(Files::isRegularFile).sorted().toList()) {
                 output.putNextEntry(new JarEntry(classes.relativize(file).toString().replace('\\', '/')));
                 Files.copy(file, output);
@@ -158,7 +173,8 @@ class RepositoryHttpFixtureTest {
     }
 
     private static HttpResult request(int port, String path) throws Exception {
-        HttpURLConnection connection = (HttpURLConnection) URI.create("http://127.0.0.1:" + port + path).toURL().openConnection();
+        HttpURLConnection connection = (HttpURLConnection) URI.create("http://127.0.0.1:" + port + path).toURL()
+                .openConnection();
         connection.setConnectTimeout(1000);
         connection.setReadTimeout(2000);
         try {
@@ -168,7 +184,9 @@ class RepositoryHttpFixtureTest {
                 assertEquals(bytes.length, connection.getContentLengthLong(), "UTF-8 content length");
                 return new HttpResult(status, connection.getContentType(), new String(bytes, StandardCharsets.UTF_8));
             }
-        } finally { connection.disconnect(); }
+        } finally {
+            connection.disconnect();
+        }
     }
 
     private static HttpResult awaitHttp(Process process, int port, Path log) throws Exception {
@@ -176,13 +194,15 @@ class RepositoryHttpFixtureTest {
         Exception lastError = null;
         do {
             assertTrue(process.isAlive(), () -> "fixture stopped before HTTP verification: " + readLog(log));
-            HttpURLConnection connection = (HttpURLConnection) URI.create("http://127.0.0.1:" + port + "/").toURL().openConnection();
+            HttpURLConnection connection = (HttpURLConnection) URI.create("http://127.0.0.1:" + port + "/").toURL()
+                    .openConnection();
             connection.setConnectTimeout(300);
             connection.setReadTimeout(1000);
             try {
                 int status = connection.getResponseCode();
                 try (var input = status >= 400 ? connection.getErrorStream() : connection.getInputStream()) {
-                    return new HttpResult(status, connection.getContentType() == null ? "" : connection.getContentType(),
+                    return new HttpResult(status,
+                            connection.getContentType() == null ? "" : connection.getContentType(),
                             new String(input.readAllBytes(), StandardCharsets.UTF_8));
                 }
             } catch (java.io.IOException error) {
@@ -196,16 +216,21 @@ class RepositoryHttpFixtureTest {
     }
 
     private static String readLog(Path log) {
-        try { return Files.readString(log); }
-        catch (java.io.IOException error) { return error.toString(); }
+        try {
+            return Files.readString(log);
+        } catch (java.io.IOException error) {
+            return error.toString();
+        }
     }
 
     private static Path repositoryRoot() {
         for (Path path = Path.of("").toAbsolutePath().normalize(); path != null; path = path.getParent()) {
-            if (Files.isRegularFile(path.resolve("test/single-language/matrix.json"))) return path;
+            if (Files.isRegularFile(path.resolve("test/single-language/matrix.json")))
+                return path;
         }
         throw new IllegalStateException("fixture repository root was not found");
     }
 
-    private record HttpResult(int status, String contentType, String body) { }
+    private record HttpResult(int status, String contentType, String body) {
+    }
 }

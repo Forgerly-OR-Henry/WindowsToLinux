@@ -2,8 +2,10 @@ import re
 from jsonschema import Draft202012Validator
 from .model import Summary
 
-_validator = Draft202012Validator({'type': 'array', 'minItems': 1, 'maxItems': 20,
-    'items': {'type': 'integer', 'minimum': 0, 'maximum': 10000}})
+_validator = Draft202012Validator(
+    {'type': 'array', 'minItems': 1, 'maxItems': 20, 'items': {'type': 'integer', 'minimum': 0, 'maximum': 10000}}
+)
+
 
 def summarize(raw):
     if raw is None:

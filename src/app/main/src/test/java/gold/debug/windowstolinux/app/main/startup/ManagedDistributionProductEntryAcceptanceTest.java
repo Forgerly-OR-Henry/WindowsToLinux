@@ -1,22 +1,22 @@
 package gold.debug.windowstolinux.app.main.startup;
 
-import gold.debug.windowstolinux.shared.linux.error.LinuxOperationException;
-import gold.debug.windowstolinux.shared.model.deployment.EnvironmentSetupResult;
-import gold.debug.windowstolinux.shared.model.health.HealthCheck;
-import gold.debug.windowstolinux.shared.model.capability.LinuxCapabilityFacts;
-import gold.debug.windowstolinux.shared.model.server.ManagedHelperProtocolVersion;
-import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.condition.EnabledIfSystemProperty;
-import org.junit.jupiter.api.io.TempDir;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.net.URI;
 import java.nio.file.Path;
 import java.util.Locale;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import gold.debug.windowstolinux.shared.linux.error.LinuxOperationException;
+import gold.debug.windowstolinux.shared.model.capability.LinuxCapabilityFacts;
+import gold.debug.windowstolinux.shared.model.deployment.EnvironmentSetupResult;
+import gold.debug.windowstolinux.shared.model.health.HealthCheck;
+import gold.debug.windowstolinux.shared.model.server.ManagedHelperProtocolVersion;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.condition.EnabledIfSystemProperty;
+import org.junit.jupiter.api.io.TempDir;
 
 /**
  * Explicit opt-in product-entrypoint acceptance for one exact non-Ubuntu distribution target.
@@ -30,8 +30,10 @@ class ManagedDistributionProductEntryAcceptanceTest {
 
     @Test
     void preparesTheExactTargetTwicePreservesSecurityAndRunsTheSharedDeploymentTransaction() throws Exception {
-        ManagedDistributionAcceptanceProfile profile = ManagedDistributionAcceptanceProfile.requiredFromSystemProperties();
-        try (LiveTypedDeploymentContext context = new LiveTypedDeploymentContext(temporaryDirectory.resolve("preparation"))) {
+        ManagedDistributionAcceptanceProfile profile = ManagedDistributionAcceptanceProfile
+                .requiredFromSystemProperties();
+        try (LiveTypedDeploymentContext context = new LiveTypedDeploymentContext(
+                temporaryDirectory.resolve("preparation"))) {
             LinuxCapabilityFacts baseline = context.inspectDeploymentCapabilities();
             profile.assertExactBaseline(baseline);
             assertTrue(context.service.listManagedApplications().isEmpty(),
@@ -72,8 +74,9 @@ class ManagedDistributionProductEntryAcceptanceTest {
     private static void assertPreparationOnly(EnvironmentSetupResult result, String stage) {
         assertEquals(ManagedHelperProtocolVersion.CURRENT, result.capabilities().managedHelperProtocolVersion(),
                 () -> stage + " did not expose the exact helper protocol: " + result.capabilities().evidence());
-        assertTrue(result.capabilities().supportsManagedDeployment(false, new HealthCheck.Http(
-                        URI.create("http://127.0.0.1:18080/actuator/health"), 200, 20)),
+        assertTrue(
+                result.capabilities().supportsManagedDeployment(false,
+                        new HealthCheck.Http(URI.create("http://127.0.0.1:18080/actuator/health"), 200, 20)),
                 () -> stage + " did not create the reviewed HTTP deployment baseline: "
                         + result.capabilities().evidence());
         String evidence = result.evidence().toLowerCase(Locale.ROOT);

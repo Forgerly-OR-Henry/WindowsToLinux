@@ -7,96 +7,122 @@ public enum EcosystemToolType {
     /**
      * BUNDLER classification within ecosystem tool type.
      * <p>生态工具类型中的BUNDLER分类。
-     */ BUNDLER,
+     */
+    BUNDLER,
     /**
      * CARGO classification within ecosystem tool type.
      * <p>生态工具类型中的CARGO分类。
-     */ CARGO,
+     */
+    CARGO,
     /**
      * C compiler. / C 编译器。
-     */ C_COMPILER,
+     */
+    C_COMPILER,
     /**
      * CMAKE classification within ecosystem tool type.
      * <p>生态工具类型中的CMAKE分类。
-     */ CMAKE,
+     */
+    CMAKE,
     /**
      * COMPOSER classification within ecosystem tool type.
      * <p>生态工具类型中的COMPOSER分类。
-     */ COMPOSER,
+     */
+    COMPOSER,
     /**
      * C++ compiler. / C++ 编译器。
-     */ CPP_COMPILER,
+     */
+    CPP_COMPILER,
     /**
      * DOTNET classification within ecosystem tool type.
      * <p>生态工具类型中的DOTNET分类。
-     */ DOTNET,
+     */
+    DOTNET,
     /**
      * Go toolchain. / Go 工具链。
-     */ GO,
+     */
+    GO,
     /**
      * JAR archiver. / JAR 归档器。
-     */ JAR,
+     */
+    JAR,
     /**
      * Java runtime. / Java 运行时。
-     */ JAVA,
+     */
+    JAVA,
     /**
      * Java compiler. / Java 编译器。
-     */ JAVAC,
+     */
+    JAVAC,
     /**
      * Kotlin compiler. / Kotlin 编译器。
-     */ KOTLINC,
+     */
+    KOTLINC,
     /**
      * MAVEN classification within ecosystem tool type.
      * <p>生态工具类型中的MAVEN分类。
-     */ MAVEN,
+     */
+    MAVEN,
     /**
      * NODE classification within ecosystem tool type.
      * <p>生态工具类型中的节点分类。
-     */ NODE,
+     */
+    NODE,
     /**
      * NPM classification within ecosystem tool type.
      * <p>生态工具类型中的NPM分类。
-     */ NPM,
+     */
+    NPM,
     /**
      * Ninja build system. / Ninja 构建系统。
-     */ NINJA,
+     */
+    NINJA,
     /**
      * PHP classification within ecosystem tool type.
      * <p>生态工具类型中的PHP分类。
-     */ PHP,
+     */
+    PHP,
     /**
      * PIP classification within ecosystem tool type.
      * <p>生态工具类型中的PIP分类。
-     */ PIP,
+     */
+    PIP,
     /**
      * PIPENV classification within ecosystem tool type.
      * <p>生态工具类型中的PIPENV分类。
-     */ PIPENV,
+     */
+    PIPENV,
     /**
      * PNPM classification within ecosystem tool type.
      * <p>生态工具类型中的PNPM分类。
-     */ PNPM,
+     */
+    PNPM,
     /**
      * POETRY classification within ecosystem tool type.
      * <p>生态工具类型中的POETRY分类。
-     */ POETRY,
+     */
+    POETRY,
     /**
      * PYTHON classification within ecosystem tool type.
      * <p>生态工具类型中的PYTHON分类。
-     */ PYTHON,
+     */
+    PYTHON,
     /**
      * RUBY classification within ecosystem tool type.
      * <p>生态工具类型中的Ruby分类。
-     */ RUBY,
+     */
+    RUBY,
     /**
      * Rust compiler. / Rust 编译器。
-     */ RUSTC,
+     */
+    RUSTC,
     /**
      * UV classification within ecosystem tool type.
      * <p>生态工具类型中的UV分类。
-     */ UV,
+     */
+    UV,
     /**
      * YARN classification within ecosystem tool type.
      * <p>生态工具类型中的YARN分类。
-     */ YARN
+     */
+    YARN
 }

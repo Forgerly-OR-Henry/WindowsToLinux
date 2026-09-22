@@ -20,17 +20,23 @@ public record ExternalApplicationTarget(ExternalApplicationKind kind, String ide
      * @throws NullPointerException if a required input is absent / 必需输入缺失时
      */
     public ExternalApplicationTarget {
-        Objects.requireNonNull(kind, "kind"); Objects.requireNonNull(identity, "identity");
-        if (kind == ExternalApplicationKind.DOCKER ? !identity.matches("[a-f0-9]{64}")
-                : !identity.matches("[A-Za-z0-9_][A-Za-z0-9_.:@\\\\-]{0,240}\\.service") || identity.contains("@.service"))
+        Objects.requireNonNull(kind, "kind");
+        Objects.requireNonNull(identity, "identity");
+        if (kind == ExternalApplicationKind.DOCKER
+                ? !identity.matches("[a-f0-9]{64}")
+                : !identity.matches("[A-Za-z0-9_][A-Za-z0-9_.:@\\\\-]{0,240}\\.service")
+                        || identity.contains("@.service"))
             throw new IllegalArgumentException("invalid external application identity");
         if (!Objects.requireNonNull(fingerprint, "fingerprint").matches("[a-f0-9]{64}"))
             throw new IllegalArgumentException("invalid external application fingerprint");
     }
+
     /**
      * Stable runtime lookup key on one server. / 单服务器上的稳定运行时查询键。
      *
      * @return key text / 键文本
      */
-    public String key() { return kind.name() + "/" + identity; }
+    public String key() {
+        return kind.name() + "/" + identity;
+    }
 }

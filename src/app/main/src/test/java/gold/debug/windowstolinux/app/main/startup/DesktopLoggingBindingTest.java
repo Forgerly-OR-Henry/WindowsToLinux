@@ -1,9 +1,9 @@
 package gold.debug.windowstolinux.app.main.startup;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
+
 import org.junit.jupiter.api.Test;
 import org.slf4j.LoggerFactory;
-
-import static org.junit.jupiter.api.Assertions.assertEquals;
 
 class DesktopLoggingBindingTest {
     @Test

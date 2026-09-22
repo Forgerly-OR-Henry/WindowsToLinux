@@ -23,9 +23,19 @@ nav {
 #questions-editor {
   width: 100%;
 }
-#questions { width: 100%; }
-#questions label { flex-direction: row; justify-content: flex-start; align-items: center; gap: 12px; }
-#questions input[type="radio"], #questions input[type="checkbox"] { width: auto; }
+#questions {
+  width: 100%;
+}
+#questions label {
+  flex-direction: row;
+  justify-content: flex-start;
+  align-items: center;
+  gap: 12px;
+}
+#questions input[type="radio"],
+#questions input[type="checkbox"] {
+  width: auto;
+}
 td {
   overflow-wrap: anywhere;
   max-width: 300px;

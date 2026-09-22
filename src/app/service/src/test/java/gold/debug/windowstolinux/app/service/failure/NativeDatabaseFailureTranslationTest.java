@@ -1,13 +1,13 @@
 package gold.debug.windowstolinux.app.service.failure;
 
+import static org.junit.jupiter.api.Assertions.*;
+
+import java.util.Locale;
+
 import gold.debug.windowstolinux.shared.linux.error.NativeDatabaseException;
 import gold.debug.windowstolinux.shared.linux.error.NativeDatabaseFailureType;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
-
-import java.util.Locale;
-
-import static org.junit.jupiter.api.Assertions.*;
 
 class NativeDatabaseFailureTranslationTest {
     @ParameterizedTest
@@ -18,7 +18,8 @@ class NativeDatabaseFailureTranslationTest {
         var expected = ApplicationServiceFailureType.valueOf("DATABASE_" + reason.name());
         assertSame(expected, serviceFailure.failure().definition());
         assertSame(nativeFailure, serviceFailure.getCause());
-        assertEquals("service.database." + reason.name().toLowerCase(Locale.ROOT).replace('_', '-'), serviceFailure.failure().code());
+        assertEquals("service.database." + reason.name().toLowerCase(Locale.ROOT).replace('_', '-'),
+                serviceFailure.failure().code());
         assertEquals(expected.messageKey(), serviceFailure.failure().userMessage().key());
         assertEquals(expected.recoveryAction(), nativeFailure.failure().recoveryAction());
         assertEquals(expected.recoveryAction(), serviceFailure.failure().recoveryAction());

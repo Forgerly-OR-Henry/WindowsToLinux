@@ -1,15 +1,16 @@
 package gold.debug.windowstolinux.app.windows.workspace;
 
-import org.junit.jupiter.api.Test;
-
-import javax.crypto.SecretKey;
-import javax.crypto.spec.SecretKeySpec;
-import java.nio.charset.StandardCharsets;
-import java.util.Arrays;
-
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+
+import java.nio.charset.StandardCharsets;
+import java.util.Arrays;
+
+import javax.crypto.SecretKey;
+import javax.crypto.spec.SecretKeySpec;
+
+import org.junit.jupiter.api.Test;
 
 class DesktopHandoffEnvelopeCodecTest {
     private final DesktopHandoffEnvelopeCodec codec = new DesktopHandoffEnvelopeCodec();
@@ -32,10 +33,10 @@ class DesktopHandoffEnvelopeCodecTest {
 
         assertFailure(() -> codec.read(DesktopHandoffEnvelopeCodec.PurposeType.UNINSTALL, tampered, key(2)));
         assertFailure(() -> codec.read(DesktopHandoffEnvelopeCodec.PurposeType.UNINSTALL, document, key(3)));
-        assertFailure(() -> codec.read(DesktopHandoffEnvelopeCodec.PurposeType.UNINSTALL,
-                Arrays.copyOf(document, 31), key(2)));
-        assertFailure(() -> codec.write(DesktopHandoffEnvelopeCodec.PurposeType.UPDATE,
-                new byte[]{1}, new SecretKeySpec(new byte[16], "HmacSHA256")));
+        assertFailure(() -> codec.read(DesktopHandoffEnvelopeCodec.PurposeType.UNINSTALL, Arrays.copyOf(document, 31),
+                key(2)));
+        assertFailure(() -> codec.write(DesktopHandoffEnvelopeCodec.PurposeType.UPDATE, new byte[]{1},
+                new SecretKeySpec(new byte[16], "HmacSHA256")));
         assertFailure(() -> codec.read(DesktopHandoffEnvelopeCodec.PurposeType.UNINSTALL, document, null));
         assertFailure(() -> codec.read(DesktopHandoffEnvelopeCodec.PurposeType.UNINSTALL, null, key(2)));
     }

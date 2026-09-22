@@ -1,13 +1,13 @@
 package gold.debug.windowstolinux.shared.backup.manifest;
 
-import gold.debug.windowstolinux.shared.config.secretref.SecretReference;
-import gold.debug.windowstolinux.shared.model.deployment.ReleaseSetDigest;
-
 import java.util.Comparator;
-import java.util.List;
 import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Objects;
 import java.util.Set;
+
+import gold.debug.windowstolinux.shared.config.secretref.SecretReference;
+import gold.debug.windowstolinux.shared.model.deployment.ReleaseSetDigest;
 
 /**
  * Complete structured inventory needed to recreate one managed application. / 重建一个受管应用所需的完整结构化清单。
@@ -27,28 +27,17 @@ import java.util.Set;
  * @param recoveryRequirements recovery requirements / 恢复要求集合
  * @param legacySecretReferences legacy secret references / 历史秘密引用集合
  */
-public record BackupInventory(
-        List<String> releaseManifests,
-        List<String> configurationSnapshots,
-        List<SecretReference> secretReferences,
-        List<String> persistentFiles,
-        List<String> persistentVolumes,
-        BackupDatabase database,
-        BackupIdentity identity,
-        List<String> serviceDefinitions,
-        List<BackupComponent> components,
-        String applicationHealthComponentId,
-        BackupHealthCheck applicationHealthCheck,
-        BackupRuntime runtime,
-        List<String> recoveryRequirements,
-        List<String> legacySecretReferences
-) {
+public record BackupInventory(List<String> releaseManifests, List<String> configurationSnapshots,
+        List<SecretReference> secretReferences, List<String> persistentFiles, List<String> persistentVolumes,
+        BackupDatabase database, BackupIdentity identity, List<String> serviceDefinitions,
+        List<BackupComponent> components, String applicationHealthComponentId, BackupHealthCheck applicationHealthCheck,
+        BackupRuntime runtime, List<String> recoveryRequirements, List<String> legacySecretReferences) {
     /**
      * SECRET ORDER.
      * <p>秘密顺序。
      */
-    private static final Comparator<SecretReference> SECRET_ORDER = Comparator
-            .comparing(SecretReference::identifier).thenComparingLong(SecretReference::revision);
+    private static final Comparator<SecretReference> SECRET_ORDER = Comparator.comparing(SecretReference::identifier)
+            .thenComparingLong(SecretReference::revision);
 
     /**
      * Creates one schema-v5 inventory with exact application secret references. / 创建带精确应用秘密引用的 schema v5 清单。
@@ -67,24 +56,14 @@ public record BackupInventory(
      * @param runtime reviewed language, process and health specification / 已审阅的语言、进程及健康规格
      * @param recoveryRequirements recovery requirements / 恢复要求集合
      */
-    public BackupInventory(
-            List<String> releaseManifests,
-            List<String> configurationSnapshots,
-            List<SecretReference> secretReferences,
-            List<String> persistentFiles,
-            List<String> persistentVolumes,
-            BackupDatabase database,
-            BackupIdentity identity,
-            List<String> serviceDefinitions,
-            List<BackupComponent> components,
-            String applicationHealthComponentId,
-            BackupHealthCheck applicationHealthCheck,
-            BackupRuntime runtime,
-            List<String> recoveryRequirements
-    ) {
-        this(releaseManifests, configurationSnapshots, secretReferences, persistentFiles, persistentVolumes,
-                database, identity, serviceDefinitions, components, applicationHealthComponentId,
-                applicationHealthCheck, runtime, recoveryRequirements, List.of());
+    public BackupInventory(List<String> releaseManifests, List<String> configurationSnapshots,
+            List<SecretReference> secretReferences, List<String> persistentFiles, List<String> persistentVolumes,
+            BackupDatabase database, BackupIdentity identity, List<String> serviceDefinitions,
+            List<BackupComponent> components, String applicationHealthComponentId,
+            BackupHealthCheck applicationHealthCheck, BackupRuntime runtime, List<String> recoveryRequirements) {
+        this(releaseManifests, configurationSnapshots, secretReferences, persistentFiles, persistentVolumes, database,
+                identity, serviceDefinitions, components, applicationHealthComponentId, applicationHealthCheck, runtime,
+                recoveryRequirements, List.of());
     }
 
     /**
@@ -109,8 +88,8 @@ public record BackupInventory(
      */
     public BackupInventory {
         releaseManifests = BackupManifestRules.distinctTexts(releaseManifests, "releaseManifests", 256, 512);
-        configurationSnapshots = BackupManifestRules.distinctTexts(
-                configurationSnapshots, "configurationSnapshots", 256, 512);
+        configurationSnapshots = BackupManifestRules.distinctTexts(configurationSnapshots, "configurationSnapshots",
+                256, 512);
         secretReferences = canonicalSecrets(secretReferences);
         persistentFiles = BackupManifestRules.distinctTexts(persistentFiles, "persistentFiles", 4096, 1024);
         persistentVolumes = BackupManifestRules.distinctTexts(persistentVolumes, "persistentVolumes", 1024, 1024);
@@ -121,17 +100,17 @@ public record BackupInventory(
         if (components.isEmpty() || components.size() > 256) {
             throw new IllegalArgumentException("components must contain one to 256 reviewed values");
         }
-        applicationHealthComponentId = Objects.requireNonNull(
-                applicationHealthComponentId, "applicationHealthComponentId").trim();
+        applicationHealthComponentId = Objects
+                .requireNonNull(applicationHealthComponentId, "applicationHealthComponentId").trim();
         if (!applicationHealthComponentId.matches("[a-z0-9][a-z0-9-]{0,62}")) {
             throw new IllegalArgumentException("applicationHealthComponentId is invalid");
         }
         applicationHealthCheck = Objects.requireNonNull(applicationHealthCheck, "applicationHealthCheck");
         runtime = Objects.requireNonNull(runtime, "runtime");
-        recoveryRequirements = BackupManifestRules.distinctTexts(
-                recoveryRequirements, "recoveryRequirements", 128, 512);
-        legacySecretReferences = BackupManifestRules.distinctTexts(
-                legacySecretReferences, "legacySecretReferences", 256, 256);
+        recoveryRequirements = BackupManifestRules.distinctTexts(recoveryRequirements, "recoveryRequirements", 128,
+                512);
+        legacySecretReferences = BackupManifestRules.distinctTexts(legacySecretReferences, "legacySecretReferences",
+                256, 256);
         if (releaseManifests.isEmpty()) {
             throw new IllegalArgumentException("at least one release manifest is required");
         }
@@ -141,8 +120,8 @@ public record BackupInventory(
         if (serviceDefinitions.isEmpty()) {
             throw new IllegalArgumentException("at least one service or container definition is required");
         }
-        validateComponents(releaseManifests, configurationSnapshots, serviceDefinitions,
-                components, applicationHealthComponentId);
+        validateComponents(releaseManifests, configurationSnapshots, serviceDefinitions, components,
+                applicationHealthComponentId);
         validateVersionBindings(identity, components, secretReferences, legacySecretReferences);
     }
 
@@ -155,11 +134,14 @@ public record BackupInventory(
      */
     public static String computeReleaseSetSha256(List<BackupComponent> components) {
         components = List.copyOf(Objects.requireNonNull(components, "components"));
-        return ReleaseSetDigest.sha256(components.stream().map(component ->
-                new ReleaseSetDigest.ComponentRelease(component.componentId(),
-                        component.releaseSha256().orElseThrow(() ->
-                                new IllegalArgumentException("release-set digest requires exact component releases"))))
-                .toList());
+        return ReleaseSetDigest
+                .sha256(components
+                        .stream().map(
+                                component -> new ReleaseSetDigest.ComponentRelease(component.componentId(),
+                                        component.releaseSha256()
+                                                .orElseThrow(() -> new IllegalArgumentException(
+                                                        "release-set digest requires exact component releases"))))
+                        .toList());
     }
 
     /**
@@ -173,13 +155,8 @@ public record BackupInventory(
      * @param applicationHealthComponentId application health component id / 应用健康组件标识
      * @throws IllegalArgumentException if an input violates the constraints checked by this contract / 输入违反当前契约检查的约束时
      */
-    private static void validateComponents(
-            List<String> releaseManifests,
-            List<String> configurationSnapshots,
-            List<String> serviceDefinitions,
-            List<BackupComponent> components,
-            String applicationHealthComponentId
-    ) {
+    private static void validateComponents(List<String> releaseManifests, List<String> configurationSnapshots,
+            List<String> serviceDefinitions, List<BackupComponent> components, String applicationHealthComponentId) {
         Set<String> componentIds = new LinkedHashSet<>();
         Set<String> managedIds = new LinkedHashSet<>();
         Set<String> seen = new LinkedHashSet<>();
@@ -204,7 +181,8 @@ public record BackupInventory(
         if (!componentReleases.equals(new LinkedHashSet<>(releaseManifests))
                 || !componentConfigurations.equals(new LinkedHashSet<>(configurationSnapshots))
                 || !componentDefinitions.equals(new LinkedHashSet<>(serviceDefinitions))) {
-            throw new IllegalArgumentException("component archive references must exactly cover the inventory definitions");
+            throw new IllegalArgumentException(
+                    "component archive references must exactly cover the inventory definitions");
         }
     }
 
@@ -218,12 +196,8 @@ public record BackupInventory(
      * @param legacySecretReferences legacy secret references / 历史秘密引用集合
      * @throws IllegalArgumentException if an input violates the constraints checked by this contract / 输入违反当前契约检查的约束时
      */
-    private static void validateVersionBindings(
-            BackupIdentity identity,
-            List<BackupComponent> components,
-            List<SecretReference> secretReferences,
-            List<String> legacySecretReferences
-    ) {
+    private static void validateVersionBindings(BackupIdentity identity, List<BackupComponent> components,
+            List<SecretReference> secretReferences, List<String> legacySecretReferences) {
         boolean exact = components.stream().allMatch(BackupComponent::hasExactActivationBindings);
         boolean legacy = components.stream().noneMatch(BackupComponent::hasExactActivationBindings);
         if (!exact && !legacy) {
@@ -232,7 +206,8 @@ public record BackupInventory(
         if (exact) {
             if (identity.releaseSetSha256().isEmpty() || identity.legacyReleaseIdentity().isPresent()
                     || !legacySecretReferences.isEmpty()) {
-                throw new IllegalArgumentException("schema-v5 inventory requires only exact release and secret bindings");
+                throw new IllegalArgumentException(
+                        "schema-v5 inventory requires only exact release and secret bindings");
             }
             String expectedReleaseSet = computeReleaseSetSha256(components);
             if (!identity.releaseSetSha256().orElseThrow().equals(expectedReleaseSet)) {
@@ -241,11 +216,13 @@ public record BackupInventory(
             Set<SecretReference> componentUnion = new LinkedHashSet<>();
             components.forEach(component -> componentUnion.addAll(component.secretReferences().orElseThrow()));
             if (!componentUnion.equals(new LinkedHashSet<>(secretReferences))) {
-                throw new IllegalArgumentException("application secretReferences must equal the component reference union");
+                throw new IllegalArgumentException(
+                        "application secretReferences must equal the component reference union");
             }
         } else if (identity.legacyReleaseIdentity().isEmpty() || identity.releaseSetSha256().isPresent()
                 || !secretReferences.isEmpty()) {
-            throw new IllegalArgumentException("schema-v3 inventory must preserve only its legacy release and secret references");
+            throw new IllegalArgumentException(
+                    "schema-v3 inventory must preserve only its legacy release and secret references");
         }
     }
 

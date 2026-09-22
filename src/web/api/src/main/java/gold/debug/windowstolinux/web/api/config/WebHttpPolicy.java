@@ -16,7 +16,7 @@ import java.time.Duration;
  * @param streamTimeout stream timeout / 流超时
  */
 public record WebHttpPolicy(int requests, int streams, int uploads, int jsonBytes, int queryCharacters,
-                            Duration heartbeat, Duration eventPoll, Duration streamTimeout) {
+        Duration heartbeat, Duration eventPoll, Duration streamTimeout) {
     /**
      * Validates and binds the inputs required by web http policy.
      * <p>校验并绑定WebHTTP策略所需输入。
@@ -33,8 +33,9 @@ public record WebHttpPolicy(int requests, int streams, int uploads, int jsonByte
      */
     public WebHttpPolicy {
         if (requests < 1 || streams < 1 || uploads < 1 || streams + uploads > requests || jsonBytes < 1
-                || jsonBytes > 1_048_576 || queryCharacters < 1 || heartbeat == null || heartbeat.isNegative() || heartbeat.isZero()
-                || eventPoll == null || eventPoll.isNegative() || eventPoll.isZero() || streamTimeout == null
-                || streamTimeout.isNegative()) throw new IllegalArgumentException("Invalid w2l.http limits");
+                || jsonBytes > 1_048_576 || queryCharacters < 1 || heartbeat == null || heartbeat.isNegative()
+                || heartbeat.isZero() || eventPoll == null || eventPoll.isNegative() || eventPoll.isZero()
+                || streamTimeout == null || streamTimeout.isNegative())
+            throw new IllegalArgumentException("Invalid w2l.http limits");
     }
 }

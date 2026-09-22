@@ -12,13 +12,8 @@ import java.util.Objects;
  * @param sha256 lower-case hexadecimal SHA-256 digest / 小写十六进制 SHA-256 摘要
  * @param entries the type-checked entries / 经类型检查的条目
  */
-public record ManagedArtifactEvidence(
-        Path path,
-        ManagedArtifactFormatType format,
-        long byteCount,
-        String sha256,
-        int entries
-) {
+public record ManagedArtifactEvidence(Path path, ManagedArtifactFormatType format, long byteCount, String sha256,
+        int entries) {
     /**
      * Validates local evidence. / 校验本地证据。
      *

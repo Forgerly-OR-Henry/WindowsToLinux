@@ -1,5 +1,25 @@
 package gold.debug.windowstolinux.app.main.startup;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import java.io.InputStream;
+import java.net.HttpURLConnection;
+import java.net.URI;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Path;
+import java.security.SecureRandom;
+import java.util.Arrays;
+import java.util.Comparator;
+import java.util.HexFormat;
+import java.util.List;
+import java.util.Locale;
+import java.util.Optional;
+import java.util.Set;
+import java.util.function.Predicate;
+import java.util.stream.Stream;
+
 import gold.debug.windowstolinux.app.main.startup.EcosystemExtensionAcceptanceFixture.ArchitectureType;
 import gold.debug.windowstolinux.app.service.source.ReviewedSourcePreparation;
 import gold.debug.windowstolinux.shared.config.contract.definition.ConfigurationScope;
@@ -23,26 +43,6 @@ import org.junit.jupiter.api.TestFactory;
 import org.junit.jupiter.api.condition.EnabledIfSystemProperty;
 import org.junit.jupiter.api.io.TempDir;
 
-import java.io.InputStream;
-import java.net.HttpURLConnection;
-import java.net.URI;
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Path;
-import java.security.SecureRandom;
-import java.util.Arrays;
-import java.util.Comparator;
-import java.util.HexFormat;
-import java.util.List;
-import java.util.Locale;
-import java.util.Optional;
-import java.util.Set;
-import java.util.function.Predicate;
-import java.util.stream.Stream;
-
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertTrue;
-
 /**
  * Opt-in product-entrypoint deployment, lifecycle, rollback, and reconnect acceptance for every extension architecture.
  *
@@ -51,24 +51,30 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 @EnabledIfSystemProperty(named = "managed.runtime.extension", matches = "true")
 class EcosystemExtensionProductEntryAcceptanceTest {
     private static final int PORT_BASE = 47000 + (int) ((System.currentTimeMillis() / 1000) % 8000);
+
     private static final String RUN_ID = Long.toUnsignedString(System.nanoTime(), 36);
+
     private static final Object PREPARATION_LOCK = new Object();
+
     private static boolean environmentPrepared;
 
-    @TempDir Path temporaryDirectory;
+    @TempDir
+    Path temporaryDirectory;
 
     @TestFactory
     Stream<DynamicTest> deploysRollsBackAndRestoresEveryChangedArchitecture() {
         String selected = System.getProperty("managed.runtime.extension.type", "all").trim();
-        List<ArchitectureType> architectures = selected.equalsIgnoreCase("all") ? List.of(ArchitectureType.values())
+        List<ArchitectureType> architectures = selected.equalsIgnoreCase("all")
+                ? List.of(ArchitectureType.values())
                 : Arrays.stream(selected.split(",", -1)).map(value -> Arrays.stream(ArchitectureType.values())
                         .filter(architecture -> architecture.key().equalsIgnoreCase(value.trim())
-                                || architecture.name().equalsIgnoreCase(value.trim())).findFirst()
+                                || architecture.name().equalsIgnoreCase(value.trim()))
+                        .findFirst()
                         .orElseThrow(() -> new IllegalArgumentException("unknown extension architecture: " + value)))
                         .distinct().toList();
         assertFalse(architectures.isEmpty(), () -> "unknown managed.runtime.extension.type: " + selected);
-        return architectures.stream().map(architecture -> DynamicTest.dynamicTest(
-                architecture.key(), () -> exercise(architecture)));
+        return architectures.stream()
+                .map(architecture -> DynamicTest.dynamicTest(architecture.key(), () -> exercise(architecture)));
     }
 
     private void exercise(ArchitectureType architecture) throws Exception {
@@ -94,7 +100,8 @@ class EcosystemExtensionProductEntryAcceptanceTest {
                 ReviewedSourcePreparation firstSource = context.prepare(sourceRoot, architecture.projectType());
                 DeploymentProjectFacts firstFacts = firstSource.assessment().facts().orElseThrow();
                 assertEquals(architecture.buildTool(), firstFacts.buildTool());
-                assertEquals(applicationId, firstFacts.applicationId(), "live fixtures must have isolated application identities");
+                assertEquals(applicationId, firstFacts.applicationId(),
+                        "live fixtures must have isolated application identities");
                 DeploymentRuntimeSpecification runtime = runtime(architecture, versions.runtimeVersion(), applicationId,
                         port);
 
@@ -112,11 +119,14 @@ class EcosystemExtensionProductEntryAcceptanceTest {
                 EcosystemExtensionAcceptanceFixture.create(sourceParent, architecture, applicationId,
                         versions.runtimeVersion(), versions.toolVersion(), "unused", false);
                 ReviewedSourcePreparation rejectedSource = context.prepare(sourceRoot, architecture.projectType());
-                DeploymentResult rejected = context.deploy(rejectedSource, 2, configuration(port), List.of(secondSecret),
-                        runtime, access(port));
-                assertEquals(DeploymentStatus.FAILED_ROLLED_BACK, rejected.status(), () -> rejected.events().toString());
-                assertTrue(rejected.events().stream().anyMatch(event -> event.step().code().equals("rollback")
-                                && event.succeeded()), () -> rejected.events().toString());
+                DeploymentResult rejected = context.deploy(rejectedSource, 2, configuration(port),
+                        List.of(secondSecret), runtime, access(port));
+                assertEquals(DeploymentStatus.FAILED_ROLLED_BACK, rejected.status(),
+                        () -> rejected.events().toString());
+                assertTrue(
+                        rejected.events().stream()
+                                .anyMatch(event -> event.step().code().equals("rollback") && event.succeeded()),
+                        () -> rejected.events().toString());
                 assertSecretFree(rejected, firstSecretValue);
                 assertSecretFree(rejected, secondSecretValue);
                 assertRestored(context, applicationId, port, architecture.key() + "-live-v1");
@@ -157,28 +167,29 @@ class EcosystemExtensionProductEntryAcceptanceTest {
                 yield new VersionSelection(Integer.toString(node), manager);
             }
             case PYTHON_PIP, PYTHON_PIPENV, PYTHON_POETRY, PYTHON_UV -> {
-                String python = Stream.of("3.12", "3.11").filter(capabilities.pythonVersions()::contains)
-                        .findFirst().orElseThrow(() -> new AssertionError(
+                String python = Stream.of("3.12", "3.11").filter(capabilities.pythonVersions()::contains).findFirst()
+                        .orElseThrow(() -> new AssertionError(
                                 "target must expose reviewed Python 3.12 or 3.11 with venv support"));
                 yield new VersionSelection(python, "");
             }
             case KOTLIN_KOTLINC -> new VersionSelection("2.0.21", "2.0.21");
             case PHP_CLI -> {
                 String runtime = serviceRuntime(capabilities, architecture);
-                yield new VersionSelection(runtime, requireTool(capabilities, EcosystemToolType.PHP,
-                        runtime::equals, "matching PHP CLI"));
+                yield new VersionSelection(runtime,
+                        requireTool(capabilities, EcosystemToolType.PHP, runtime::equals, "matching PHP CLI"));
             }
             case RUBY_CLI -> {
                 String runtime = serviceRuntime(capabilities, architecture);
-                yield new VersionSelection(runtime, requireTool(capabilities, EcosystemToolType.RUBY,
-                        runtime::equals, "matching Ruby CLI"));
+                yield new VersionSelection(runtime,
+                        requireTool(capabilities, EcosystemToolType.RUBY, runtime::equals, "matching Ruby CLI"));
             }
             case CMAKE -> {
                 requireTool(capabilities, EcosystemToolType.C_COMPILER, ignored -> true, "C compiler");
                 requireTool(capabilities, EcosystemToolType.NINJA, ignored -> true, "Ninja generator");
-                yield new VersionSelection("", requireTool(capabilities, EcosystemToolType.CMAKE,
-                        version -> major(version) > 3 || major(version) == 3 && minor(version) >= 25,
-                        "CMake 3.25 or newer"));
+                yield new VersionSelection("",
+                        requireTool(capabilities, EcosystemToolType.CMAKE,
+                                version -> major(version) > 3 || major(version) == 3 && minor(version) >= 25,
+                                "CMake 3.25 or newer"));
             }
         };
     }
@@ -190,11 +201,11 @@ class EcosystemExtensionProductEntryAcceptanceTest {
     }
 
     private static String requireTool(LinuxCapabilityFacts capabilities, EcosystemToolType tool,
-                                      Predicate<String> accepted, String description) {
-        return capabilities.ecosystemToolVersions().getOrDefault(tool, Set.of()).stream()
-                .filter(accepted).sorted().findFirst().orElseThrow(() -> new AssertionError(
-                        "target does not expose " + description + "; observed " + tool + " versions: "
-                                + capabilities.ecosystemToolVersions().getOrDefault(tool, Set.of())));
+            Predicate<String> accepted, String description) {
+        return capabilities.ecosystemToolVersions().getOrDefault(tool, Set.of()).stream().filter(accepted).sorted()
+                .findFirst()
+                .orElseThrow(() -> new AssertionError("target does not expose " + description + "; observed " + tool
+                        + " versions: " + capabilities.ecosystemToolVersions().getOrDefault(tool, Set.of())));
     }
 
     private static int major(String version) {
@@ -208,7 +219,8 @@ class EcosystemExtensionProductEntryAcceptanceTest {
 
     private static int minor(String version) {
         String[] segments = version.split("[.]", 3);
-        if (segments.length < 2) return 0;
+        if (segments.length < 2)
+            return 0;
         try {
             return Integer.parseInt(segments[1].replaceFirst("[^0-9].*$", ""));
         } catch (NumberFormatException error) {
@@ -216,29 +228,28 @@ class EcosystemExtensionProductEntryAcceptanceTest {
         }
     }
 
-    private static DeploymentRuntimeSpecification runtime(
-            ArchitectureType architecture, String version, String applicationId, int port) {
+    private static DeploymentRuntimeSpecification runtime(ArchitectureType architecture, String version,
+            String applicationId, int port) {
         return switch (architecture) {
-            case JAVA_JDK -> new DeploymentRuntimeSpecification.JavaSource(
-                    "src", "acceptance.Main", "21", List.of(), List.of(), health(port));
+            case JAVA_JDK -> new DeploymentRuntimeSpecification.JavaSource("src", "acceptance.Main", "21", List.of(),
+                    List.of(), health(port));
             case NODE_NPM, NODE_PNPM, NODE_YARN ->
-                    new DeploymentRuntimeSpecification.NodeService(Integer.parseInt(version), health(port));
+                new DeploymentRuntimeSpecification.NodeService(Integer.parseInt(version), health(port));
             case PYTHON_PIP, PYTHON_PIPENV, PYTHON_POETRY, PYTHON_UV ->
-                    new DeploymentRuntimeSpecification.PythonService(version, "http_service_fixture", health(port));
-            case KOTLIN_KOTLINC -> new DeploymentRuntimeSpecification.KotlinService(
-                    version, applicationId, "acceptance.MainKt", health(port));
-            case PHP_CLI -> new DeploymentRuntimeSpecification.PhpService(
-                    version, "public", "public/index.php", port, health(port));
-            case RUBY_CLI -> new DeploymentRuntimeSpecification.RubyService(
-                    version, "source", "server.rb", port, health(port));
-            case CMAKE -> new DeploymentRuntimeSpecification.CmakeService(
-                    "w2l-release", "http_service", "http_service", health(port));
+                new DeploymentRuntimeSpecification.PythonService(version, "http_service_fixture", health(port));
+            case KOTLIN_KOTLINC -> new DeploymentRuntimeSpecification.KotlinService(version, applicationId,
+                    "acceptance.MainKt", health(port));
+            case PHP_CLI -> new DeploymentRuntimeSpecification.PhpService(version, "public", "public/index.php", port,
+                    health(port));
+            case RUBY_CLI ->
+                new DeploymentRuntimeSpecification.RubyService(version, "source", "server.rb", port, health(port));
+            case CMAKE -> new DeploymentRuntimeSpecification.CmakeService("w2l-release", "http_service", "http_service",
+                    health(port));
         };
     }
 
     private static List<ConfigurationEntry> configuration(int port) {
-        return List.of(new ConfigurationEntry("PORT", ConfigurationScope.RUNTIME,
-                new ConfigurationValue.Number(port)));
+        return List.of(new ConfigurationEntry("PORT", ConfigurationScope.RUNTIME, new ConfigurationValue.Number(port)));
     }
 
     private static HealthCheck.Http health(int port) {
@@ -246,8 +257,8 @@ class EcosystemExtensionProductEntryAcceptanceTest {
     }
 
     private static Optional<UserAccessUrl> access(int port) {
-        return Optional.of(new UserAccessUrl(URI.create("http://" + requiredProperty("managed.ssh.host")
-                + ":" + port + "/")));
+        return Optional
+                .of(new UserAccessUrl(URI.create("http://" + requiredProperty("managed.ssh.host") + ":" + port + "/")));
     }
 
     private static void assertSuccessful(DeploymentResult result, String applicationId) {
@@ -258,9 +269,11 @@ class EcosystemExtensionProductEntryAcceptanceTest {
         assertEquals(RuntimeState.RUNNING, observation.runtimeState());
         assertTrue(observation.ownershipVerified());
         for (String required : List.of("target-capabilities", "typed-host-compatibility", "source-upload",
-                "remote-build", "deployment-inputs", "snapshot", "publish", "candidate-health",
-                "final-observation", "release-retention", "candidate-cleanup")) {
-            assertTrue(result.events().stream().anyMatch(event -> event.step().code().equals(required) && event.succeeded()),
+                "remote-build", "deployment-inputs", "snapshot", "publish", "candidate-health", "final-observation",
+                "release-retention", "candidate-cleanup")) {
+            assertTrue(
+                    result.events().stream()
+                            .anyMatch(event -> event.step().code().equals(required) && event.succeeded()),
                     () -> "missing successful " + required + ": " + result.events());
         }
     }
@@ -279,7 +292,7 @@ class EcosystemExtensionProductEntryAcceptanceTest {
     }
 
     private static void assertRestored(LiveTypedDeploymentContext context, String applicationId, int port,
-                                       String marker) throws Exception {
+            String marker) throws Exception {
         LifecycleObservation restored = context.lifecycle(applicationId, LifecycleAction.REFRESH_STATUS);
         assertEquals(RuntimeState.RUNNING, restored.runtimeState());
         assertEquals(AutostartState.DISABLED, restored.autostartState());
@@ -343,5 +356,6 @@ class EcosystemExtensionProductEntryAcceptanceTest {
         return value;
     }
 
-    private record VersionSelection(String runtimeVersion, String toolVersion) { }
+    private record VersionSelection(String runtimeVersion, String toolVersion) {
+    }
 }

@@ -1,11 +1,6 @@
 package gold.debug.windowstolinux.shared.linux.sshd.session;
 
-import org.apache.sshd.client.SshClient;
-import org.apache.sshd.client.channel.ClientChannel;
-import org.apache.sshd.client.channel.ClientChannelEvent;
-import org.apache.sshd.client.session.ClientSession;
-import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.condition.EnabledIfSystemProperty;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import java.io.ByteArrayOutputStream;
 import java.nio.charset.StandardCharsets;
@@ -13,7 +8,12 @@ import java.time.Duration;
 import java.util.Arrays;
 import java.util.EnumSet;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
+import org.apache.sshd.client.SshClient;
+import org.apache.sshd.client.channel.ClientChannel;
+import org.apache.sshd.client.channel.ClientChannelEvent;
+import org.apache.sshd.client.session.ClientSession;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.condition.EnabledIfSystemProperty;
 
 /**
  * Opt-in, read-only diagnostics for a disposable Ubuntu managed-deployment acceptance VM. This does not deploy, build, upload, alter processes, or use sudo.
@@ -33,7 +33,8 @@ class UbuntuManagedDiagnosticsAcceptanceTest {
         SshClient client = SshClient.setUpDefaultClient();
         try {
             client.start();
-            try (ClientSession session = client.connect("ubuntu", host, 22).verify(Duration.ofSeconds(30)).getSession()) {
+            try (ClientSession session = client.connect("ubuntu", host, 22).verify(Duration.ofSeconds(30))
+                    .getSession()) {
                 session.addPasswordIdentity(new String(passwordChars));
                 session.auth().verify(Duration.ofSeconds(30));
                 ByteArrayOutputStream output = new ByteArrayOutputStream();
@@ -41,7 +42,8 @@ class UbuntuManagedDiagnosticsAcceptanceTest {
                     channel.setOut(output);
                     channel.open().verify(Duration.ofSeconds(30));
                     var events = channel.waitFor(EnumSet.of(ClientChannelEvent.CLOSED), Duration.ofSeconds(30));
-                    assertEquals(true, events.contains(ClientChannelEvent.CLOSED), "read-only Ubuntu diagnostics timed out");
+                    assertEquals(true, events.contains(ClientChannelEvent.CLOSED),
+                            "read-only Ubuntu diagnostics timed out");
                     assertEquals(0, channel.getExitStatus(), () -> output.toString(StandardCharsets.UTF_8));
                 }
                 System.out.println("MANAGED_UBUNTU_DIAGNOSTICS=" + output.toString(StandardCharsets.UTF_8).trim());

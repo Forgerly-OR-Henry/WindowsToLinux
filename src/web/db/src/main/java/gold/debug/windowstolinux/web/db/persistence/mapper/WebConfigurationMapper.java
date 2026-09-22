@@ -1,8 +1,9 @@
 package gold.debug.windowstolinux.web.db.persistence.mapper;
 
+import java.util.Map;
+
 import gold.debug.windowstolinux.web.db.entity.ResourceScope;
 import org.apache.ibatis.annotations.*;
-import java.util.Map;
 
 /**
  * Maps scoped configuration records to explicit database statements.
@@ -27,7 +28,8 @@ public interface WebConfigurationMapper {
             AND (s.host!=#{fields.host} OR s.port!=#{fields.port} OR s.username!=#{fields.username}
             OR s.secret_id IS NOT #{fields.secret_id} OR s.secret_version IS NOT #{fields.secret_version})
             """)
-    int activeEndpointChange(@Param("scope") ResourceScope scope, @Param("id") String id, @Param("fields") Map<String,Object> fields);
+    int activeEndpointChange(@Param("scope") ResourceScope scope, @Param("id") String id,
+            @Param("fields") Map<String, Object> fields);
 
     /**
      * Extracts the stored graph only when the document records a successful deployment.
@@ -58,5 +60,5 @@ public interface WebConfigurationMapper {
             WHERE workspace_id=#{scope.workspaceId} AND application_id=#{id} AND digest=#{digest})
             """)
     int append(@Param("scope") ResourceScope scope, @Param("id") String id, @Param("revision") long revision,
-               @Param("graph") String graph, @Param("digest") String digest, @Param("now") String now);
+            @Param("graph") String graph, @Param("digest") String digest, @Param("now") String now);
 }

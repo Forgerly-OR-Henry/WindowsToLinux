@@ -17,13 +17,9 @@ import java.util.Objects;
  * @param applicationMissingInputs application missing inputs / 应用缺失输入集合
  * @param componentMissingInputs component missing inputs / 组件缺失输入集合
  */
-public record ManagedBackupInputAssessment(
-        String applicationId,
-        List<String> componentIds,
-        Map<String, String> currentReleaseIdentities,
-        List<MissingInputType> applicationMissingInputs,
-        Map<String, List<MissingInputType>> componentMissingInputs
-) {
+public record ManagedBackupInputAssessment(String applicationId, List<String> componentIds,
+        Map<String, String> currentReleaseIdentities, List<MissingInputType> applicationMissingInputs,
+        Map<String, List<MissingInputType>> componentMissingInputs) {
     /**
      * Exact reasons that prevent a complete persisted-input result. / 阻止持久化输入完整结果的精确原因。
      */
@@ -109,17 +105,19 @@ public record ManagedBackupInputAssessment(
         if (componentIds.isEmpty() != applicationMissingInputs.contains(MissingInputType.MANAGED_APPLICATION_GRAPH)) {
             throw new IllegalArgumentException("missing graph evidence must match the component list");
         }
-        if (applicationMissingInputs.stream().anyMatch(value -> value != MissingInputType.MANAGED_APPLICATION_GRAPH
-                && value != MissingInputType.APPLICATION_HEALTH_CHECK
-                && value != MissingInputType.LOCAL_STATE_CHANGED_DURING_ASSESSMENT)) {
+        if (applicationMissingInputs.stream()
+                .anyMatch(value -> value != MissingInputType.MANAGED_APPLICATION_GRAPH
+                        && value != MissingInputType.APPLICATION_HEALTH_CHECK
+                        && value != MissingInputType.LOCAL_STATE_CHANGED_DURING_ASSESSMENT)) {
             throw new IllegalArgumentException("application missing inputs contain a component-scoped reason");
         }
         for (String componentId : componentIds) {
             List<MissingInputType> missing = componentMissingInputs.getOrDefault(componentId, List.of());
-            if (missing.stream().anyMatch(value -> value == MissingInputType.MANAGED_APPLICATION_GRAPH
-                    || value == MissingInputType.LOCAL_STATE_CHANGED_DURING_ASSESSMENT)
-                    || currentReleaseIdentities.containsKey(componentId)
-                    == missing.contains(MissingInputType.CURRENT_RELEASE)) {
+            if (missing.stream()
+                    .anyMatch(value -> value == MissingInputType.MANAGED_APPLICATION_GRAPH
+                            || value == MissingInputType.LOCAL_STATE_CHANGED_DURING_ASSESSMENT)
+                    || currentReleaseIdentities.containsKey(componentId) == missing
+                            .contains(MissingInputType.CURRENT_RELEASE)) {
                 throw new IllegalArgumentException("component missing inputs differ from their release evidence");
             }
         }
@@ -168,9 +166,7 @@ public record ManagedBackupInputAssessment(
      * @throws NullPointerException if a required input is absent / 必需输入缺失时
      */
     private static Map<String, List<MissingInputType>> immutableMissingInputs(
-            Map<String, List<MissingInputType>> values,
-            List<String> componentIds
-    ) {
+            Map<String, List<MissingInputType>> values, List<String> componentIds) {
         LinkedHashMap<String, List<MissingInputType>> copied = new LinkedHashMap<>();
         Objects.requireNonNull(values, "componentMissingInputs").forEach((componentId, missing) -> {
             componentId = managedId(componentId, "missing componentId");
@@ -178,7 +174,8 @@ public record ManagedBackupInputAssessment(
                 throw new IllegalArgumentException("missing-input component is not declared");
             }
             List<MissingInputType> distinct = distinctInputs(missing, "component missing inputs");
-            if (distinct.isEmpty()) throw new IllegalArgumentException("empty component missing inputs are not evidence");
+            if (distinct.isEmpty())
+                throw new IllegalArgumentException("empty component missing inputs are not evidence");
             copied.put(componentId, distinct);
         });
         return Collections.unmodifiableMap(copied);

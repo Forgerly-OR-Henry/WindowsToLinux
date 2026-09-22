@@ -1,8 +1,8 @@
 package gold.debug.windowstolinux.shared.model.analysis;
 
-import gold.debug.windowstolinux.shared.model.message.LocalizedMessage;
-
 import java.util.Objects;
+
+import gold.debug.windowstolinux.shared.model.message.LocalizedMessage;
 
 /**
  * A compact, non-secret source of one deterministic project fact.
@@ -14,12 +14,8 @@ import java.util.Objects;
  * @param conclusion conclusion / 结论
  * @param confidence confidence / 置信度
  */
-public record AnalysisEvidence(
-        LocalizedMessage subject,
-        String source,
-        LocalizedMessage conclusion,
-        EvidenceConfidenceLevel confidence
-) {
+public record AnalysisEvidence(LocalizedMessage subject, String source, LocalizedMessage conclusion,
+        EvidenceConfidenceLevel confidence) {
     /**
      * Validates and binds the inputs required by analysis evidence.
      * <p>校验并绑定分析证据所需输入。

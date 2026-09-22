@@ -13,56 +13,60 @@ import java.util.Objects;
  * @param exposure exposure / 暴露
  * @param accessUrl access url / 访问URL
  */
-public record ApplicationEndpoint(String id, ProtocolType protocol, String bindAddress, int hostPort,
-                                  int targetPort, ExposureType exposure, String accessUrl) {
+public record ApplicationEndpoint(String id, ProtocolType protocol, String bindAddress, int hostPort, int targetPort,
+        ExposureType exposure, String accessUrl) {
     /**
      * Identifies the network protocol of a reviewed application endpoint.
      * <p>标识已审阅应用端点的网络协议。
      */
     public enum ProtocolType {
-    /**
-     * HTTP protocol classification within protocol type.
-     * <p>协议类型中的HTTP 协议分类。
-     */
-     HTTP,
-    /**
-     * HTTPS classification within protocol type.
-     * <p>协议类型中的HTTPS分类。
-     */
-     HTTPS,
-    /**
-     * TCP classification within protocol type.
-     * <p>协议类型中的TCP分类。
-     */
-     TCP,
-    /**
-     * UDP classification within protocol type.
-     * <p>协议类型中的UDP分类。
-     */
-     UDP;
+        /**
+         * HTTP protocol classification within protocol type.
+         * <p>协议类型中的HTTP 协议分类。
+         */
+        HTTP,
+        /**
+         * HTTPS classification within protocol type.
+         * <p>协议类型中的HTTPS分类。
+         */
+        HTTPS,
+        /**
+         * TCP classification within protocol type.
+         * <p>协议类型中的TCP分类。
+         */
+        TCP,
+        /**
+         * UDP classification within protocol type.
+         * <p>协议类型中的UDP分类。
+         */
+        UDP;
         /**
          * Returns transport.
          * <p>返回传输。
          *
          * @return transport / 传输
          */
-        public String transport() { return this == UDP ? "udp" : "tcp"; }
+        public String transport() {
+            return this == UDP ? "udp" : "tcp";
+        }
     }
+
     /**
      * Identifies whether an application endpoint is public or restricted in scope.
      * <p>标识应用端点是公开还是限制在特定范围内。
      */
     public enum ExposureType {
-    /**
-     * INTERNAL classification within exposure type.
-     * <p>暴露类型中的内部分类。
-     */
-     INTERNAL,
-    /**
-     * EXTERNAL classification within exposure type.
-     * <p>暴露类型中的外部分类。
-     */
-     EXTERNAL }
+        /**
+         * INTERNAL classification within exposure type.
+         * <p>暴露类型中的内部分类。
+         */
+        INTERNAL,
+        /**
+         * EXTERNAL classification within exposure type.
+         * <p>暴露类型中的外部分类。
+         */
+        EXTERNAL
+    }
 
     /**
      * Validates and binds the inputs required by application endpoint.
@@ -81,13 +85,17 @@ public record ApplicationEndpoint(String id, ProtocolType protocol, String bindA
     public ApplicationEndpoint {
         if (!Objects.requireNonNull(id).matches("[a-z0-9][a-z0-9-]{0,62}"))
             throw new IllegalArgumentException("invalid endpoint identifier");
-        Objects.requireNonNull(protocol); Objects.requireNonNull(exposure); Objects.requireNonNull(accessUrl);
+        Objects.requireNonNull(protocol);
+        Objects.requireNonNull(exposure);
+        Objects.requireNonNull(accessUrl);
         if (!Objects.requireNonNull(bindAddress).matches("[0-9a-fA-F:.]{2,64}")
                 || !(bindAddress.contains(":") || bindAddress.matches("(?:[0-9]{1,3}\\.){3}[0-9]{1,3}")))
             throw new IllegalArgumentException("endpoint binding must be a literal IP address");
         try {
             java.net.InetAddress.getByName(bindAddress);
-        } catch (java.net.UnknownHostException failure) { throw new IllegalArgumentException("invalid endpoint address", failure); }
+        } catch (java.net.UnknownHostException failure) {
+            throw new IllegalArgumentException("invalid endpoint address", failure);
+        }
         if (hostPort < 1 || hostPort > 65535 || targetPort < 1 || targetPort > 65535)
             throw new IllegalArgumentException("endpoint ports must be between 1 and 65535");
         if (!accessUrl.isEmpty()) {
@@ -133,12 +141,8 @@ public record ApplicationEndpoint(String id, ProtocolType protocol, String bindA
         if (normalized.startsWith("[") && normalized.endsWith("]")) {
             normalized = normalized.substring(1, normalized.length() - 1);
         }
-        return normalized.equals("localhost")
-                || normalized.equals("0.0.0.0")
-                || normalized.equals("::")
-                || normalized.equals("::1")
-                || normalized.equals("0:0:0:0:0:0:0:1")
-                || normalized.startsWith("127.");
+        return normalized.equals("localhost") || normalized.equals("0.0.0.0") || normalized.equals("::")
+                || normalized.equals("::1") || normalized.equals("0:0:0:0:0:0:0:1") || normalized.startsWith("127.");
     }
 
     /**
@@ -147,7 +151,10 @@ public record ApplicationEndpoint(String id, ProtocolType protocol, String bindA
      *
      * @return port key / 端口键
      */
-    public String portKey() { return protocol.transport() + ":" + hostPort; }
+    public String portKey() {
+        return protocol.transport() + ":" + hostPort;
+    }
+
     /**
      * Publishes argument.
      * <p>发布参数。
@@ -155,7 +162,7 @@ public record ApplicationEndpoint(String id, ProtocolType protocol, String bindA
      * @return publish argument text / 发布参数文本
      */
     public String publishArgument() {
-        return (bindAddress.contains(":") ? "[" + bindAddress + "]" : bindAddress)
-                + ":" + hostPort + ":" + targetPort + "/" + protocol.transport();
+        return (bindAddress.contains(":") ? "[" + bindAddress + "]" : bindAddress) + ":" + hostPort + ":" + targetPort
+                + "/" + protocol.transport();
     }
 }

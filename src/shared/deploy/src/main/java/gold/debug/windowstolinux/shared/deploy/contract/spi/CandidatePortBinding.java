@@ -15,7 +15,10 @@ public record CandidatePortBinding(int officialPort, int candidatePort, String p
      * @param officialPort official port / 正式端口
      * @param candidatePort candidate port / 候选端口
      */
-    public CandidatePortBinding(int officialPort, int candidatePort) { this(officialPort, candidatePort, "tcp"); }
+    public CandidatePortBinding(int officialPort, int candidatePort) {
+        this(officialPort, candidatePort, "tcp");
+    }
+
     /**
      * Requires two different valid ports. / 要求两个不同的有效端口。
      *
@@ -25,7 +28,8 @@ public record CandidatePortBinding(int officialPort, int candidatePort, String p
      * @throws IllegalArgumentException if an input violates the constraints checked by this contract / 输入违反当前契约检查的约束时
      */
     public CandidatePortBinding {
-        if (!java.util.Set.of("tcp", "udp").contains(protocol)) throw new IllegalArgumentException("invalid port transport");
+        if (!java.util.Set.of("tcp", "udp").contains(protocol))
+            throw new IllegalArgumentException("invalid port transport");
         requirePort(officialPort, "officialPort");
         requirePort(candidatePort, "candidatePort");
         if (officialPort == candidatePort) {
@@ -42,6 +46,7 @@ public record CandidatePortBinding(int officialPort, int candidatePort, String p
      * @throws IllegalArgumentException if an input violates the constraints checked by this contract / 输入违反当前契约检查的约束时
      */
     private static void requirePort(int value, String field) {
-        if (value < 1 || value > 65535) throw new IllegalArgumentException(field + " is invalid");
+        if (value < 1 || value > 65535)
+            throw new IllegalArgumentException(field + " is invalid");
     }
 }

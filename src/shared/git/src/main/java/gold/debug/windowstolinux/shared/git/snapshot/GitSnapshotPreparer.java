@@ -1,13 +1,5 @@
 package gold.debug.windowstolinux.shared.git.snapshot;
 
-import gold.debug.windowstolinux.shared.git.GitReference;
-import gold.debug.windowstolinux.shared.git.GitSnapshot;
-import gold.debug.windowstolinux.shared.git.GitSnapshotException;
-import gold.debug.windowstolinux.shared.git.GitSnapshotFailureType;
-import gold.debug.windowstolinux.shared.git.GitSourceRequest;
-import gold.debug.windowstolinux.shared.source.archive.SafeSourceArchivePreparer;
-import gold.debug.windowstolinux.shared.source.archive.SourceArchive;
-
 import java.io.IOException;
 import java.nio.file.FileVisitResult;
 import java.nio.file.Files;
@@ -18,6 +10,14 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
 
+import gold.debug.windowstolinux.shared.git.GitReference;
+import gold.debug.windowstolinux.shared.git.GitSnapshot;
+import gold.debug.windowstolinux.shared.git.GitSnapshotException;
+import gold.debug.windowstolinux.shared.git.GitSnapshotFailureType;
+import gold.debug.windowstolinux.shared.git.GitSourceRequest;
+import gold.debug.windowstolinux.shared.source.archive.SafeSourceArchivePreparer;
+import gold.debug.windowstolinux.shared.source.archive.SourceArchive;
+
 /**
  * Coordinates clone, pinned checkout, repository policy validation, and safe source archiving. / 协调克隆、固定检出、仓库策略校验和安全源码归档。
  */
@@ -27,26 +27,31 @@ public final class GitSnapshotPreparer {
      * <p>Git 传输暂时失败后允许的额外尝试次数上限。
      */
     private static final int MAX_TRANSIENT_RETRIES = 2;
+
     /**
      * RETRY INTERVAL MILLIS.
      * <p>重试间隔毫秒。
      */
     private static final long RETRY_INTERVAL_MILLIS = 500;
+
     /**
      * Bound safe source archive preparer collaborator for archiver.
      * <p>处理归档生成器的安全源码归档准备器协作对象。
      */
     private final SafeSourceArchivePreparer archiver;
+
     /**
      * Bound git command executor collaborator for typed remote command boundary.
      * <p>处理类型化远端命令边界的Git命令执行器协作对象。
      */
     private final GitCommandExecutor commands;
+
     /**
      * Workspaces.
      * <p>工作区集合。
      */
     private final ControlledGitWorkspaceValidator workspaces;
+
     /**
      * Bound git repository feature policy collaborator for features.
      * <p>处理特性的Git仓库Feature策略协作对象。
@@ -72,7 +77,7 @@ public final class GitSnapshotPreparer {
      * @throws NullPointerException if a required input is absent / 必需输入缺失时
      */
     GitSnapshotPreparer(SafeSourceArchivePreparer archiver, GitCommandExecutor commands,
-                        ControlledGitWorkspaceValidator workspaces, GitRepositoryFeaturePolicy features) {
+            ControlledGitWorkspaceValidator workspaces, GitRepositoryFeaturePolicy features) {
         this.archiver = Objects.requireNonNull(archiver, "archiver");
         this.commands = Objects.requireNonNull(commands, "commands");
         this.workspaces = Objects.requireNonNull(workspaces, "workspaces");
@@ -91,7 +96,7 @@ public final class GitSnapshotPreparer {
     public GitSnapshot prepare(GitSourceRequest request, Path workspaceRoot) throws GitSnapshotException {
         Objects.requireNonNull(request, "request");
         Path root = workspaces.require(workspaceRoot);
-        for (int retry = 0; ; retry++) {
+        for (int retry = 0;; retry++) {
             try {
                 return prepareAttempt(request, root);
             } catch (GitSnapshotException failure) {
@@ -121,12 +126,11 @@ public final class GitSnapshotPreparer {
             Path disabledHooks = Files.createDirectories(operation.resolve("disabled-hooks"));
             commands.run(checkout, List.of("git", "init", "--initial-branch=windowstolinux-snapshot"));
             commands.run(checkout, List.of("git", "config", "core.autocrlf", "false"));
-            commands.run(checkout, List.of("git", "remote", "add", "origin",
-                    request.remote().location().toString()));
+            commands.run(checkout, List.of("git", "remote", "add", "origin", request.remote().location().toString()));
             commands.run(checkout, List.of("git", "-c", "core.hooksPath=" + disabledHooks, "fetch", "--no-tags",
                     "--depth", "1", "origin", referenceName(request)));
-            commands.run(checkout, List.of("git", "-c", "core.hooksPath=" + disabledHooks,
-                    "checkout", "--detach", "FETCH_HEAD"));
+            commands.run(checkout,
+                    List.of("git", "-c", "core.hooksPath=" + disabledHooks, "checkout", "--detach", "FETCH_HEAD"));
             features.verify(checkout, commands.readIndex(checkout));
             String commit = commands.run(checkout, List.of("git", "rev-parse", "HEAD")).trim().toLowerCase(Locale.ROOT);
             if (!commit.matches("[0-9a-f]{40}")) {
@@ -214,7 +218,8 @@ public final class GitSnapshotPreparer {
             }
         }
         IOException cleanup = lastFailure == null
-                ? new IOException("Git workspace still exists after bounded cleanup") : lastFailure;
+                ? new IOException("Git workspace still exists after bounded cleanup")
+                : lastFailure;
         cleanup.addSuppressed(failure);
         return GitSnapshotException.create(GitSnapshotFailureType.CLEANUP_FAILED,
                 "Git temporary workspace cleanup could not be verified", cleanup);
@@ -228,7 +233,8 @@ public final class GitSnapshotPreparer {
      * @throws IOException if the required file or stream operation fails / 所需文件或流操作失败时
      */
     private static void deleteWorkspace(Path operation) throws IOException {
-        if (!Files.exists(operation)) return;
+        if (!Files.exists(operation))
+            return;
         Files.walkFileTree(operation, new SimpleFileVisitor<>() {
             /**
              * Visits file.
@@ -257,7 +263,8 @@ public final class GitSnapshotPreparer {
              */
             @Override
             public FileVisitResult postVisitDirectory(Path directory, IOException exception) throws IOException {
-                if (exception != null) throw exception;
+                if (exception != null)
+                    throw exception;
                 clearReadOnly(directory);
                 Files.deleteIfExists(directory);
                 return FileVisitResult.CONTINUE;

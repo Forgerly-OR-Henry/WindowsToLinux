@@ -1,8 +1,5 @@
 package gold.debug.windowstolinux.shared.git.snapshot;
 
-import gold.debug.windowstolinux.shared.git.GitSnapshotException;
-import gold.debug.windowstolinux.shared.git.GitSnapshotFailureType;
-
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
@@ -11,8 +8,11 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
+
+import gold.debug.windowstolinux.shared.git.GitSnapshotException;
+import gold.debug.windowstolinux.shared.git.GitSnapshotFailureType;
 
 /**
  * Runs bounded, non-interactive Git commands with hooks and LFS materialization disabled. / 以禁用 Hook 和 LFS 物化的方式运行有界非交互 Git 命令。
@@ -23,16 +23,19 @@ final class GitCommandExecutor {
      * <p>命令超时。
      */
     private static final Duration COMMAND_TIMEOUT = Duration.ofMinutes(2);
+
     /**
      * MAX OUTPUT BYTES.
      * <p>最大输出字节。
      */
     private static final int MAX_OUTPUT_BYTES = 16 * 1024;
+
     /**
      * MAX INDEX OUTPUT BYTES.
      * <p>最大索引输出字节。
      */
     private static final int MAX_INDEX_OUTPUT_BYTES = 32 * 1024 * 1024;
+
     /**
      * Command timeout.
      * <p>命令超时。
@@ -124,9 +127,11 @@ final class GitCommandExecutor {
             while (process.isAlive()) {
                 children.addAll(process.descendants().toList());
                 long remaining = deadline - System.nanoTime();
-                if (remaining <= 0) throw GitSnapshotException.create(GitSnapshotFailureType.TIMEOUT,
-                        "Git command exceeded its configured execution limit");
-                process.waitFor(Math.min(100, Math.max(1, TimeUnit.NANOSECONDS.toMillis(remaining))), TimeUnit.MILLISECONDS);
+                if (remaining <= 0)
+                    throw GitSnapshotException.create(GitSnapshotFailureType.TIMEOUT,
+                            "Git command exceeded its configured execution limit");
+                process.waitFor(Math.min(100, Math.max(1, TimeUnit.NANOSECONDS.toMillis(remaining))),
+                        TimeUnit.MILLISECONDS);
             }
             try {
                 finishReader(reader);
@@ -147,8 +152,8 @@ final class GitCommandExecutor {
                 GitSnapshotFailureType type = transientNetworkFailure(output.bytes())
                         ? GitSnapshotFailureType.TRANSIENT_NETWORK_FAILURE
                         : command.contains("fetch")
-                        ? GitSnapshotFailureType.REFERENCE_UNAVAILABLE
-                        : GitSnapshotFailureType.COMMAND_FAILED;
+                                ? GitSnapshotFailureType.REFERENCE_UNAVAILABLE
+                                : GitSnapshotFailureType.COMMAND_FAILED;
                 throw GitSnapshotException.create(type,
                         "Git command returned a controlled non-success result without exposing remote output");
             }
@@ -160,11 +165,14 @@ final class GitCommandExecutor {
             try {
                 cleanup(process, children, reader);
             } catch (IOException cleanupFailure) {
-                if (primaryFailure != null) primaryFailure.addSuppressed(cleanupFailure);
-                else throw GitSnapshotException.create(GitSnapshotFailureType.COMMAND_FAILED,
-                        "Git process cleanup could not be verified", cleanupFailure);
+                if (primaryFailure != null)
+                    primaryFailure.addSuppressed(cleanupFailure);
+                else
+                    throw GitSnapshotException.create(GitSnapshotFailureType.COMMAND_FAILED,
+                            "Git process cleanup could not be verified", cleanupFailure);
             }
-            if (primaryFailure instanceof InterruptedException) Thread.currentThread().interrupt();
+            if (primaryFailure instanceof InterruptedException)
+                Thread.currentThread().interrupt();
         }
     }
 
@@ -177,14 +185,10 @@ final class GitCommandExecutor {
      */
     private static boolean transientNetworkFailure(byte[] output) {
         String text = new String(output, StandardCharsets.UTF_8).toLowerCase(java.util.Locale.ROOT);
-        return text.contains("could not resolve host")
-                || text.contains("failed to connect")
-                || text.contains("connection reset")
-                || text.contains("network is unreachable")
-                || text.contains("remote end hung up")
-                || text.contains("connection timed out")
-                || text.contains("operation timed out")
-                || text.contains("temporary failure in name resolution");
+        return text.contains("could not resolve host") || text.contains("failed to connect")
+                || text.contains("connection reset") || text.contains("network is unreachable")
+                || text.contains("remote end hung up") || text.contains("connection timed out")
+                || text.contains("operation timed out") || text.contains("temporary failure in name resolution");
     }
 
     /**
@@ -197,8 +201,8 @@ final class GitCommandExecutor {
      */
     static List<String> commandForPlatform(List<String> command, String operatingSystem) {
         ArrayList<String> configured = new ArrayList<>(command);
-        if (operatingSystem.toLowerCase(java.util.Locale.ROOT).startsWith("windows")
-                && !configured.isEmpty() && "git".equals(configured.getFirst())) {
+        if (operatingSystem.toLowerCase(java.util.Locale.ROOT).startsWith("windows") && !configured.isEmpty()
+                && "git".equals(configured.getFirst())) {
             configured.add(1, "-c");
             configured.add(2, "http.sslBackend=openssl");
         }
@@ -218,8 +222,12 @@ final class GitCommandExecutor {
             throws IOException {
         boolean interrupted = Thread.interrupted();
         children.addAll(process.descendants().toList());
-        children.forEach(child -> { if (child.isAlive()) child.destroyForcibly(); });
-        if (process.isAlive()) process.destroyForcibly();
+        children.forEach(child -> {
+            if (child.isAlive())
+                child.destroyForcibly();
+        });
+        if (process.isAlive())
+            process.destroyForcibly();
         long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
         try {
             process.getInputStream().close();
@@ -227,12 +235,17 @@ final class GitCommandExecutor {
             process.getErrorStream().close();
             while (System.nanoTime() < deadline
                     && (process.isAlive() || reader.isAlive() || children.stream().anyMatch(ProcessHandle::isAlive))) {
-                try { Thread.sleep(20); } catch (InterruptedException failure) { interrupted = true; }
+                try {
+                    Thread.sleep(20);
+                } catch (InterruptedException failure) {
+                    interrupted = true;
+                }
             }
             if (process.isAlive() || reader.isAlive() || children.stream().anyMatch(ProcessHandle::isAlive))
                 throw new IOException("Task-owned Git process or reader remains after cleanup deadline");
         } finally {
-            if (interrupted) Thread.currentThread().interrupt();
+            if (interrupted)
+                Thread.currentThread().interrupt();
         }
     }
 
@@ -261,21 +274,25 @@ final class GitCommandExecutor {
          * <p>当前操作消费的源内容。
          */
         private final InputStream input;
+
         /**
          * Maximum bytes.
          * <p>最大字节。
          */
         private final int maximumBytes;
+
         /**
          * Captured.
          * <p>已捕获。
          */
         private final java.io.ByteArrayOutputStream captured = new java.io.ByteArrayOutputStream();
+
         /**
          * Returns the first capture failure when asynchronous output collection has failed.
          * <p>异步输出采集失败时返回首个采集失败。
          */
         private final AtomicReference<IOException> failure = new AtomicReference<>();
+
         /**
          * Exceeded.
          * <p>已超限。

@@ -1,10 +1,10 @@
 package gold.debug.windowstolinux.web.api.controller;
 
-import tools.jackson.databind.JsonNode;
 import gold.debug.windowstolinux.web.service.WebApplicationService;
 import gold.debug.windowstolinux.web.service.contract.*;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.*;
+import tools.jackson.databind.JsonNode;
 
 /**
  * Exposes preference HTTP operations through the Web application service.
@@ -18,6 +18,7 @@ public final class WebPreferenceController {
      * <p>处理调用方使用的应用服务的Web应用服务协作对象。
      */
     private final WebApplicationService service;
+
     /**
      * Facts and dependencies scoped to the current operation.
      * <p>限定于当前操作的事实及依赖。
@@ -30,7 +31,10 @@ public final class WebPreferenceController {
      * @param service application service used by the caller / 调用方使用的应用服务
      * @param context facts and dependencies scoped to the current operation / 限定于当前操作的事实及依赖
      */
-    public WebPreferenceController(WebApplicationService service, WebRequestContext context) { this.service = service; this.context = context; }
+    public WebPreferenceController(WebApplicationService service, WebRequestContext context) {
+        this.service = service;
+        this.context = context;
+    }
 
     /**
      * Returns json node.
@@ -39,7 +43,11 @@ public final class WebPreferenceController {
      * @return json node / JSON节点
      * @throws Exception if the delegated operation or caller-provided interaction fails / 被委派操作或调用方提供的交互失败时
      */
-    @GetMapping public JsonNode get() throws Exception { return service.preferences(context); }
+    @GetMapping
+    public JsonNode get() throws Exception {
+        return service.preferences(context);
+    }
+
     /**
      * Persists json node.
      * <p>持久化JSON节点。
@@ -48,5 +56,8 @@ public final class WebPreferenceController {
      * @return constructed or resolved json node / 构造或解析得到的JSON节点
      * @throws Exception if the delegated operation or caller-provided interaction fails / 被委派操作或调用方提供的交互失败时
      */
-    @PutMapping public JsonNode save(@RequestBody JsonNode body) throws Exception { return service.savePreferences(context, body); }
+    @PutMapping
+    public JsonNode save(@RequestBody JsonNode body) throws Exception {
+        return service.savePreferences(context, body);
+    }
 }

@@ -1,14 +1,14 @@
 package gold.debug.windowstolinux.app.service.contract.definition;
 
-import gold.debug.windowstolinux.shared.config.revision.ConfigurationSnapshot;
-import gold.debug.windowstolinux.shared.config.resource.ManagedDatabaseBinding;
-import gold.debug.windowstolinux.shared.config.secretref.SecretReference;
-import gold.debug.windowstolinux.shared.model.deployment.BuildLimitConfiguration;
-import gold.debug.windowstolinux.shared.model.health.UserAccessUrl;
-
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
+
+import gold.debug.windowstolinux.shared.config.resource.ManagedDatabaseBinding;
+import gold.debug.windowstolinux.shared.config.revision.ConfigurationSnapshot;
+import gold.debug.windowstolinux.shared.config.secretref.SecretReference;
+import gold.debug.windowstolinux.shared.model.deployment.BuildLimitConfiguration;
+import gold.debug.windowstolinux.shared.model.health.UserAccessUrl;
 
 /**
  * User-reviewed mutable inputs for one statically admitted component. / 一个静态准入组件由用户审阅的可变输入。
@@ -22,16 +22,10 @@ import java.util.Optional;
  * @param containerDaemonRiskAccepted the explicit Docker daemon risk approval / 显式 Docker 守护进程风险批准
  * @param experimentalAdapterRiskAccepted the fresh experimental-adapter test-environment approval / 本次试验适配器测试环境批准
  */
-public record MultiComponentReviewInput(
-        String componentId,
-        ConfigurationSnapshot configuration,
-        List<SecretReference> secretReferences,
-        Optional<List<ManagedDatabaseBinding>> databaseBindings,
-        Optional<UserAccessUrl> userAccessUrl,
-        BuildLimitConfiguration limits,
-        boolean containerDaemonRiskAccepted,
-        boolean experimentalAdapterRiskAccepted
-) {
+public record MultiComponentReviewInput(String componentId, ConfigurationSnapshot configuration,
+        List<SecretReference> secretReferences, Optional<List<ManagedDatabaseBinding>> databaseBindings,
+        Optional<UserAccessUrl> userAccessUrl, BuildLimitConfiguration limits, boolean containerDaemonRiskAccepted,
+        boolean experimentalAdapterRiskAccepted) {
     /**
      * Validates the bounded component review. / 验证有界组件审阅。
      *
@@ -53,9 +47,8 @@ public record MultiComponentReviewInput(
         }
         configuration = Objects.requireNonNull(configuration, "configuration");
         secretReferences = List.copyOf(Objects.requireNonNull(secretReferences, "secretReferences"));
-        databaseBindings = Objects.requireNonNull(databaseBindings, "databaseBindings")
-                .map(values -> List.copyOf(values.stream()
-                        .map(value -> Objects.requireNonNull(value, "database binding"))
+        databaseBindings = Objects.requireNonNull(databaseBindings, "databaseBindings").map(
+                values -> List.copyOf(values.stream().map(value -> Objects.requireNonNull(value, "database binding"))
                         .sorted(java.util.Comparator.comparing(ManagedDatabaseBinding::databaseId)).toList()));
         userAccessUrl = Objects.requireNonNull(userAccessUrl, "userAccessUrl");
         limits = Objects.requireNonNull(limits, "limits");
@@ -72,15 +65,10 @@ public record MultiComponentReviewInput(
      * @param containerDaemonRiskAccepted the explicit Docker daemon risk approval / 显式 Docker 守护进程风险批准
      * @param experimentalAdapterRiskAccepted the fresh experimental-adapter test-environment approval / 本次试验适配器测试环境批准
      */
-    public MultiComponentReviewInput(
-            String componentId,
-            ConfigurationSnapshot configuration,
-            List<SecretReference> secretReferences,
-            Optional<UserAccessUrl> userAccessUrl,
-            BuildLimitConfiguration limits,
-            boolean containerDaemonRiskAccepted,
-            boolean experimentalAdapterRiskAccepted
-    ) {
+    public MultiComponentReviewInput(String componentId, ConfigurationSnapshot configuration,
+            List<SecretReference> secretReferences, Optional<UserAccessUrl> userAccessUrl,
+            BuildLimitConfiguration limits, boolean containerDaemonRiskAccepted,
+            boolean experimentalAdapterRiskAccepted) {
         this(componentId, configuration, secretReferences, Optional.empty(), userAccessUrl, limits,
                 containerDaemonRiskAccepted, experimentalAdapterRiskAccepted);
     }

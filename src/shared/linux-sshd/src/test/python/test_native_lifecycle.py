@@ -1,4 +1,5 @@
 """Execute the real lifecycle fragments with an inert systemctl command boundary."""
+
 import pathlib
 from compatibility_resources import read_fragment
 import shutil
@@ -15,8 +16,14 @@ class NativeLifecycleTest(unittest.TestCase):
         if not pathlib.Path(bash).is_file():
             self.skipTest('Bash is unavailable')
         identity = read_fragment(SOURCE / 'runtime/systemd/helper/61-service-identity.sh')
-        lifecycle = (SOURCE / ('runtime/systemd/helper/60-lifecycle.sh' if legacy else
-                              'execution/protocol/helper/fragments/runtime/40-typed-runtime.sh')).read_text()
+        lifecycle = (
+            SOURCE
+            / (
+                'runtime/systemd/helper/60-lifecycle.sh'
+                if legacy
+                else 'execution/protocol/helper/fragments/runtime/40-typed-runtime.sh'
+            )
+        ).read_text()
         setup = r'''
 set -eu
 export PATH=/usr/bin:/bin:$PATH
@@ -66,10 +73,23 @@ systemctl() {
             call = 'observe_deployment demo digest\n'
         if action == 'recovery-stop':
             call = 'stop_application_unit demo\n'
-        script = setup + identity.replace('/sys/fs/cgroup', '${CGROUP_ROOT}') + '\n' + lifecycle + '\n' + call * (2 if twice else 1)
+        script = (
+            setup
+            + identity.replace('/sys/fs/cgroup', '${CGROUP_ROOT}')
+            + '\n'
+            + lifecycle
+            + '\n'
+            + call * (2 if twice else 1)
+        )
         with tempfile.TemporaryDirectory() as temporary:
-            result = subprocess.run([bash, '-s', '--', mode, workload], input=script, text=True,
-                                    cwd=temporary, capture_output=True, timeout=10)
+            result = subprocess.run(
+                [bash, '-s', '--', mode, workload],
+                input=script,
+                text=True,
+                cwd=temporary,
+                capture_output=True,
+                timeout=10,
+            )
             calls = pathlib.Path(temporary, 'calls')
             log = calls.read_text() if calls.exists() else ''
         return result, log
@@ -107,13 +127,27 @@ systemctl() {
 
     def test_stop_failure_timeout_residue_and_ownership_never_reset(self):
         for legacy in (False, True):
-            for mode in ('stopfail', 'timeout', 'transition', 'pid', 'residue', 'foreign', 'queryfail', 'loadqueryfail', 'loadempty', 'notfound', 'groupqueryfail', 'afterqueryfail'):
+            for mode in (
+                'stopfail',
+                'timeout',
+                'transition',
+                'pid',
+                'residue',
+                'foreign',
+                'queryfail',
+                'loadqueryfail',
+                'loadempty',
+                'notfound',
+                'groupqueryfail',
+                'afterqueryfail',
+            ):
                 with self.subTest(legacy=legacy, mode=mode):
                     result, calls = self.run_helper(mode, legacy=legacy)
                     self.assertNotEqual(0, result.returncode, result.stdout)
                     self.assertIn('REJECT=', result.stdout, result.stderr)
                     self.assertNotIn('reset-failed', calls)
-                    if mode == 'foreign': self.assertEqual('', calls)
+                    if mode == 'foreign':
+                        self.assertEqual('', calls)
 
     def test_failed_reset_does_not_report_a_successful_stop(self):
         result, calls = self.run_helper('resetfail')

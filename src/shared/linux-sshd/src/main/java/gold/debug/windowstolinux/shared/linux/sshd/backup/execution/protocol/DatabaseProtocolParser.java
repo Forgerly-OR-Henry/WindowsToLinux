@@ -1,13 +1,13 @@
 package gold.debug.windowstolinux.shared.linux.sshd.backup.execution.protocol;
 
-import gold.debug.windowstolinux.shared.linux.error.LinuxOperationException;
-import gold.debug.windowstolinux.shared.linux.error.LinuxOperationFailureType;
-import gold.debug.windowstolinux.shared.linux.protocol.database.RemoteDatabasePort;
-
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+
+import gold.debug.windowstolinux.shared.linux.error.LinuxOperationException;
+import gold.debug.windowstolinux.shared.linux.error.LinuxOperationFailureType;
+import gold.debug.windowstolinux.shared.linux.protocol.database.RemoteDatabasePort;
 
 /**
  * Parses bounded key-value evidence emitted by fixed database helper verbs. / 解析固定数据库 helper 动词输出的有界键值证据。
@@ -18,43 +18,46 @@ public final class DatabaseProtocolParser {
      * <p>最大协议长度。
      */
     private static final int MAXIMUM_PROTOCOL_LENGTH = 16_384;
+
     /**
      * MAXIMUM PROTOCOL LINES.
      * <p>最大协议行集合。
      */
     private static final int MAXIMUM_PROTOCOL_LINES = 32;
+
     /**
      * COMPATIBILITY KEYS.
      * <p>兼容性键集合。
      */
-    private static final Set<String> COMPATIBILITY_KEYS = Set.of(
-            "TYPE", "ENGINE_VERSION", "TOOL_VERSION", "TOOL_AVAILABLE", "ENGINE_COMPATIBLE",
-            "ONLINE_BACKUP_AVAILABLE", "ALL_TABLES_TRANSACTIONAL");
+    private static final Set<String> COMPATIBILITY_KEYS = Set.of("TYPE", "ENGINE_VERSION", "TOOL_VERSION",
+            "TOOL_AVAILABLE", "ENGINE_COMPATIBLE", "ONLINE_BACKUP_AVAILABLE", "ALL_TABLES_TRANSACTIONAL");
+
     /**
      * ARTIFACT KEYS.
      * <p>制品键集合。
      */
-    private static final Set<String> ARTIFACT_KEYS = Set.of(
-            "TYPE", "ENGINE_VERSION", "TOOL_VERSION", "CONSISTENCY_MODE", "ARTIFACT_ID", "BYTE_COUNT",
-            "SHA256", "LIMITED_NON_TRANSACTIONAL");
+    private static final Set<String> ARTIFACT_KEYS = Set.of("TYPE", "ENGINE_VERSION", "TOOL_VERSION",
+            "CONSISTENCY_MODE", "ARTIFACT_ID", "BYTE_COUNT", "SHA256", "LIMITED_NON_TRANSACTIONAL");
+
     /**
      * RESTORE KEYS.
      * <p>恢复键集合。
      */
-    private static final Set<String> RESTORE_KEYS = Set.of(
-            "CANDIDATE_ID", "CONNECTION_TOKEN", "INTEGRITY_VERIFIED", "SCHEMA_READABLE");
+    private static final Set<String> RESTORE_KEYS = Set.of("CANDIDATE_ID", "CONNECTION_TOKEN", "INTEGRITY_VERIFIED",
+            "SCHEMA_READABLE");
+
     /**
      * COMMIT KEYS.
      * <p>提交键集合。
      */
-    private static final Set<String> COMMIT_KEYS = Set.of(
-            "CANDIDATE_ID", "COMMITTED", "PREVIOUS_RETAINED");
+    private static final Set<String> COMMIT_KEYS = Set.of("CANDIDATE_ID", "COMMITTED", "PREVIOUS_RETAINED");
+
     /**
      * RECOVERY KEYS.
      * <p>恢复键集合。
      */
-    private static final Set<String> RECOVERY_KEYS = Set.of(
-            "CANDIDATE_ID", "RECOVERED", "PREVIOUS_VERIFIED", "CANDIDATE_REMOVED");
+    private static final Set<String> RECOVERY_KEYS = Set.of("CANDIDATE_ID", "RECOVERED", "PREVIOUS_VERIFIED",
+            "CANDIDATE_REMOVED");
 
     /**
      * Parses compatibility evidence. / 解析兼容性证据。
@@ -72,11 +75,11 @@ public final class DatabaseProtocolParser {
         boolean compatible = bool(values, "ENGINE_COMPATIBLE");
         boolean online = bool(values, "ONLINE_BACKUP_AVAILABLE");
         boolean transactional = bool(values, "ALL_TABLES_TRANSACTIONAL");
-        return new RemoteDatabasePort.CompatibilityEvidence(type, engine, tool, available, compatible,
-                online, transactional, List.of(
-                "database type and version collected by managed helper",
-                "backup tool availability and compatibility checked",
-                "storage-engine consistency capability checked"));
+        return new RemoteDatabasePort.CompatibilityEvidence(type, engine, tool, available, compatible, online,
+                transactional,
+                List.of("database type and version collected by managed helper",
+                        "backup tool availability and compatibility checked",
+                        "storage-engine consistency capability checked"));
     }
 
     /**
@@ -94,7 +97,8 @@ public final class DatabaseProtocolParser {
         String engineVersion = required(values, "ENGINE_VERSION");
         String toolVersion = required(values, "TOOL_VERSION");
         List<String> limitations = bool(values, "LIMITED_NON_TRANSACTIONAL")
-                ? List.of("non-transactional tables required exclusive stopped writes") : List.of();
+                ? List.of("non-transactional tables required exclusive stopped writes")
+                : List.of();
         long size = positiveLong(values, "BYTE_COUNT");
         String hash = required(values, "SHA256");
         return new RemoteDatabasePort.BackupArtifact(required(values, "ARTIFACT_ID"), size, hash, type, reference,
@@ -113,8 +117,7 @@ public final class DatabaseProtocolParser {
         Map<String, String> values = protocol(output, RESTORE_KEYS);
         return new RemoteDatabasePort.RestoreEvidence(required(values, "CANDIDATE_ID"),
                 required(values, "CONNECTION_TOKEN"), bool(values, "INTEGRITY_VERIFIED"),
-                bool(values, "SCHEMA_READABLE"),
-                List.of("database artifact integrity rechecked before restore",
+                bool(values, "SCHEMA_READABLE"), List.of("database artifact integrity rechecked before restore",
                         "isolated candidate database schema opened successfully"));
     }
 
@@ -127,8 +130,8 @@ public final class DatabaseProtocolParser {
      */
     public RemoteDatabasePort.CommitEvidence commit(String output) throws LinuxOperationException {
         Map<String, String> values = protocol(output, COMMIT_KEYS);
-        return new RemoteDatabasePort.CommitEvidence(required(values, "CANDIDATE_ID"),
-                bool(values, "COMMITTED"), bool(values, "PREVIOUS_RETAINED"),
+        return new RemoteDatabasePort.CommitEvidence(required(values, "CANDIDATE_ID"), bool(values, "COMMITTED"),
+                bool(values, "PREVIOUS_RETAINED"),
                 List.of("database candidate activated after application writes stopped",
                         "previous database retained as a rollback point"));
     }
@@ -142,9 +145,8 @@ public final class DatabaseProtocolParser {
      */
     public RemoteDatabasePort.RecoveryEvidence recovery(String output) throws LinuxOperationException {
         Map<String, String> values = protocol(output, RECOVERY_KEYS);
-        return new RemoteDatabasePort.RecoveryEvidence(required(values, "CANDIDATE_ID"),
-                bool(values, "RECOVERED"), bool(values, "PREVIOUS_VERIFIED"),
-                bool(values, "CANDIDATE_REMOVED"),
+        return new RemoteDatabasePort.RecoveryEvidence(required(values, "CANDIDATE_ID"), bool(values, "RECOVERED"),
+                bool(values, "PREVIOUS_VERIFIED"), bool(values, "CANDIDATE_REMOVED"),
                 List.of("database activation rollback completed", "previous database state verified"));
     }
 
@@ -243,7 +245,8 @@ public final class DatabaseProtocolParser {
     private static long positiveLong(Map<String, String> values, String key) throws LinuxOperationException {
         try {
             long value = Long.parseLong(required(values, key));
-            if (value < 1) throw new NumberFormatException("non-positive");
+            if (value < 1)
+                throw new NumberFormatException("non-positive");
             return value;
         } catch (NumberFormatException exception) {
             throw LinuxOperationException.create(LinuxOperationFailureType.DATABASE_EVIDENCE_INVALID,

@@ -8,4 +8,5 @@ import org.apache.ibatis.annotations.Mapper;
  * <p>将限定作用域的备份记录映射到显式数据库语句。
  */
 @Mapper
-public interface WebBackupMapper extends ResourceRevisionMapper<WebBackupEntity> { }
+public interface WebBackupMapper extends ResourceRevisionMapper<WebBackupEntity> {
+}

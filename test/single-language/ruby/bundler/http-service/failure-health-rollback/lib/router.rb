@@ -5,6 +5,7 @@ module Fixture
     def initialize(configuration)
       @configuration = configuration
     end
+
     def route(path, query)
       status, body, type = @configuration.status, @configuration.label, 'text/plain; charset=utf-8'
       if status != 503 && (path == '/api/summary' || @configuration.mode == 'json')
@@ -16,7 +17,7 @@ module Fixture
           status, body = 400, 'invalid-values'
         end
       end
-      [status, {'content-type' => type, 'content-length' => body.bytesize.to_s}, [body]]
+      [status, { 'content-type' => type, 'content-length' => body.bytesize.to_s }, [body]]
     end
   end
 end

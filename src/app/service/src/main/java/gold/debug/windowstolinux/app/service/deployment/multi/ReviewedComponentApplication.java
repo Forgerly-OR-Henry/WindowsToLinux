@@ -1,12 +1,5 @@
 package gold.debug.windowstolinux.app.service.deployment.multi;
 
-import gold.debug.windowstolinux.shared.deploy.contract.ReviewedDeploymentRequest;
-import gold.debug.windowstolinux.shared.config.resource.ManagedComponentResourceBindings;
-import gold.debug.windowstolinux.shared.config.resource.ManagedDatabaseBinding;
-import gold.debug.windowstolinux.shared.config.resource.ManagedFileBinding;
-import gold.debug.windowstolinux.shared.model.managed.ManagedApplication;
-import gold.debug.windowstolinux.shared.model.project.component.ComponentDataPath;
-
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
@@ -16,6 +9,13 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 
+import gold.debug.windowstolinux.shared.config.resource.ManagedComponentResourceBindings;
+import gold.debug.windowstolinux.shared.config.resource.ManagedDatabaseBinding;
+import gold.debug.windowstolinux.shared.config.resource.ManagedFileBinding;
+import gold.debug.windowstolinux.shared.model.managed.ManagedApplication;
+import gold.debug.windowstolinux.shared.model.project.component.ComponentDataPath;
+import gold.debug.windowstolinux.shared.standard.deploy.contract.ReviewedDeploymentRequest;
+
 /**
  * Secret-free reviewed deployment request and stable identity for one component. / 一个组件不含秘密的经审阅部署请求与稳定身份。
  *
@@ -24,12 +24,8 @@ import java.util.Optional;
  * @param application managed target with its server and ownership identity / 携带服务器及归属身份的受管目标
  * @param resourceBindings resource bindings / 资源绑定集合
  */
-public record ReviewedComponentApplication(
-        String componentId,
-        ReviewedDeploymentRequest request,
-        ManagedApplication application,
-        ManagedComponentResourceBindings resourceBindings
-) {
+public record ReviewedComponentApplication(String componentId, ReviewedDeploymentRequest request,
+        ManagedApplication application, ManagedComponentResourceBindings resourceBindings) {
     /**
      * Validates the exact managed identity. / 验证精确受管身份。
      *
@@ -45,7 +41,8 @@ public record ReviewedComponentApplication(
         request = Objects.requireNonNull(request, "request");
         application = Objects.requireNonNull(application, "application");
         resourceBindings = Objects.requireNonNull(resourceBindings, "resourceBindings");
-        if (!application.id().equals(request.facts().applicationId()) || !application.server().equals(request.server())) {
+        if (!application.id().equals(request.facts().applicationId())
+                || !application.server().equals(request.server())) {
             throw new IllegalArgumentException("reviewed component request must match its managed identity");
         }
     }
@@ -59,11 +56,8 @@ public record ReviewedComponentApplication(
      * @return stable opaque file bindings without interpreting logical paths as physical paths / 稳定不透明文件绑定且不把逻辑路径解释为物理路径
      * @throws NullPointerException if a required input is absent / 必需输入缺失时
      */
-    public static ManagedComponentResourceBindings resourceBindings(
-            String componentId,
-            List<ComponentDataPath> dataPaths,
-            Optional<List<ManagedDatabaseBinding>> databaseBindings
-    ) {
+    public static ManagedComponentResourceBindings resourceBindings(String componentId,
+            List<ComponentDataPath> dataPaths, Optional<List<ManagedDatabaseBinding>> databaseBindings) {
         componentId = managedIdentifier(componentId);
         String stableComponentId = componentId;
         List<ManagedFileBinding> files = List.copyOf(Objects.requireNonNull(dataPaths, "dataPaths").stream()

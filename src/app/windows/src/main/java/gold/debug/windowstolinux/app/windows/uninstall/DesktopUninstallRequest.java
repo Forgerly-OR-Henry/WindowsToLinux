@@ -12,12 +12,8 @@ import java.util.Optional;
  * @param dataRoot data root / 数据根目录
  * @param credentialNamespace credential namespace / 凭据命名空间
  */
-public record DesktopUninstallRequest(
-        Optional<DesktopUninstallDecisionType> decision,
-        Path installRoot,
-        Path dataRoot,
-        String credentialNamespace
-) {
+public record DesktopUninstallRequest(Optional<DesktopUninstallDecisionType> decision, Path installRoot, Path dataRoot,
+        String credentialNamespace) {
     /**
      * MAXIMUM PATH CHARACTERS.
      * <p>最大路径字符集合。

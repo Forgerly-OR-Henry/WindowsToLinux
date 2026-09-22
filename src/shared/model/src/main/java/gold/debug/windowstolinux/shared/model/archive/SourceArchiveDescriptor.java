@@ -14,7 +14,8 @@ import java.util.Objects;
  * @param byteCount measured content length in bytes / 实测内容长度，单位为字节
  * @param uncompressedByteCount uncompressed byte count / 未压缩字节数量
  */
-public record SourceArchiveDescriptor(Path localArchive, String contentSha256, long byteCount, long uncompressedByteCount) {
+public record SourceArchiveDescriptor(Path localArchive, String contentSha256, long byteCount,
+        long uncompressedByteCount) {
     /**
      * Validates and binds the inputs required by source archive descriptor.
      * <p>校验并绑定源码归档描述符所需输入。

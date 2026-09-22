@@ -1,11 +1,11 @@
 package gold.debug.windowstolinux.shared.linux.sshd.execution.protocol.runtime;
 
-import gold.debug.windowstolinux.shared.model.project.DeploymentRuntimeSpecification;
-import gold.debug.windowstolinux.shared.model.project.DeploymentProjectFacts;
-
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
+
+import gold.debug.windowstolinux.shared.model.project.DeploymentProjectFacts;
+import gold.debug.windowstolinux.shared.model.project.DeploymentRuntimeSpecification;
 
 /**
  * Translates one validated non-container runtime definition into helper-validated scalar arguments.
@@ -31,33 +31,43 @@ public final class DeploymentRuntimeArguments {
      * @throws NullPointerException if a required input is absent / 必需输入缺失时
      */
     public static List<String> from(DeploymentProjectFacts facts, DeploymentRuntimeSpecification runtime) {
+        if (runtime instanceof DeploymentRuntimeSpecification.ManagedProcess)
+            return List.of("process");
         facts = Objects.requireNonNull(facts, "facts");
         runtime = Objects.requireNonNull(runtime, "runtime");
         return switch (runtime) {
+            case DeploymentRuntimeSpecification.ManagedProcess ignored -> List.of("process");
             case DeploymentRuntimeSpecification.SpringBoot ignored -> List.of("springboot", facts.buildTool().name());
             case DeploymentRuntimeSpecification.JavaJar javaJar -> javaArguments(javaJar);
             case DeploymentRuntimeSpecification.JavaSource javaSource -> javaSourceArguments(javaSource);
             case DeploymentRuntimeSpecification.NodeService node ->
-                    List.of("node", Integer.toString(node.nodeMajorVersion()), facts.buildTool().name());
+                List.of("node", Integer.toString(node.nodeMajorVersion()), facts.buildTool().name());
             case DeploymentRuntimeSpecification.PythonService python ->
-                    List.of("python", python.pythonVersion(), python.entrypoint(), facts.buildTool().name());
+                List.of("python", python.pythonVersion(), python.entrypoint(), facts.buildTool().name());
             case DeploymentRuntimeSpecification.StaticSite staticSite -> List.of("static", staticSite.outputDirectory(),
                     Integer.toString(httpPort(staticSite)), facts.buildTool().name());
             case DeploymentRuntimeSpecification.Container ignored -> throw new IllegalArgumentException(
                     "container runtimes require the container-specific release protocol");
-            case DeploymentRuntimeSpecification.GoService service -> serviceArguments("go", service.version(), service.artifactName(), service.entrypoint(), null);
-            case DeploymentRuntimeSpecification.RustService service -> serviceArguments("rust", service.version(), service.artifactName(), service.entrypoint(), null);
-            case DeploymentRuntimeSpecification.DotNetService service -> serviceArguments("dotnet", service.version(), service.artifactName(), service.entrypoint(), null);
-            case DeploymentRuntimeSpecification.KotlinService service -> List.of("kotlin", service.jvmTarget(), service.artifactName(),
-                    service.entrypoint(), facts.buildTool().name());
+            case DeploymentRuntimeSpecification.GoService service ->
+                serviceArguments("go", service.version(), service.artifactName(), service.entrypoint(), null);
+            case DeploymentRuntimeSpecification.RustService service ->
+                serviceArguments("rust", service.version(), service.artifactName(), service.entrypoint(), null);
+            case DeploymentRuntimeSpecification.DotNetService service ->
+                serviceArguments("dotnet", service.version(), service.artifactName(), service.entrypoint(), null);
+            case DeploymentRuntimeSpecification.KotlinService service -> List.of("kotlin", service.jvmTarget(),
+                    service.artifactName(), service.entrypoint(), facts.buildTool().name());
             case DeploymentRuntimeSpecification.PhpService service -> serviceArguments(
                     facts.buildTool() == gold.debug.windowstolinux.shared.model.project.DeploymentBuildToolType.PHP_CLI
-                            ? "phpcli" : "php", service.version(), service.artifactName(), service.entrypoint(), service.servicePort());
+                            ? "phpcli"
+                            : "php",
+                    service.version(), service.artifactName(), service.entrypoint(), service.servicePort());
             case DeploymentRuntimeSpecification.RubyService service -> serviceArguments(
                     facts.buildTool() == gold.debug.windowstolinux.shared.model.project.DeploymentBuildToolType.RUBY_CLI
-                            ? "rubycli" : "ruby", service.version(), service.artifactName(), service.entrypoint(), service.servicePort());
+                            ? "rubycli"
+                            : "ruby",
+                    service.version(), service.artifactName(), service.entrypoint(), service.servicePort());
             case DeploymentRuntimeSpecification.CmakeService service ->
-                    List.of("cmake", service.preset(), service.target(), service.artifactName());
+                List.of("cmake", service.preset(), service.target(), service.artifactName());
         };
     }
 
@@ -73,9 +83,10 @@ public final class DeploymentRuntimeArguments {
      * @return the fixed service argument sequence with an optional port value / 包含可选端口值的固定服务参数序列
      */
     private static List<String> serviceArguments(String ecosystem, String version, String artifact, String entrypoint,
-                                                 Integer port) {
+            Integer port) {
         List<String> values = new ArrayList<>(List.of(ecosystem, version, artifact, entrypoint));
-        if (port != null) values.add(Integer.toString(port));
+        if (port != null)
+            values.add(Integer.toString(port));
         return List.copyOf(values);
     }
 

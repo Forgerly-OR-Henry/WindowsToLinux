@@ -10,16 +10,11 @@ const server = http.createServer((req, res) => {
   const url = new URL(req.url || "/", "http://localhost");
   if (url.pathname === "/healthz") {
     res.setHeader("Content-Type", "application/json");
-    res.end(
-      JSON.stringify({ status: "ok", component: "node-gateway", version: 2 }),
-    );
+    res.end(JSON.stringify({ status: "ok", component: "node-gateway", version: 2 }));
     return;
   }
   if (url.pathname.startsWith("/api/") || url.pathname === "/readyz") {
-    const target = new URL(
-      url.pathname === "/readyz" ? "/healthz" : url.pathname + url.search,
-      upstream,
-    );
+    const target = new URL(url.pathname === "/readyz" ? "/healthz" : url.pathname + url.search, upstream);
     const headers = { ...req.headers, host: target.host };
     delete headers.connection;
     const proxy = http.request(
@@ -57,14 +52,7 @@ const server = http.createServer((req, res) => {
           try {
             const body = Buffer.concat(chunks);
             const data = JSON.parse(body.toString("utf8"));
-            if (
-              !validResponse(
-                url.pathname,
-                req.method || "GET",
-                response.statusCode || 502,
-                data,
-              )
-            ) {
+            if (!validResponse(url.pathname, req.method || "GET", response.statusCode || 502, data)) {
               protocolFailure();
               return;
             }
@@ -120,16 +108,10 @@ const server = http.createServer((req, res) => {
       [".js", "text/javascript"],
       [".json", "application/json"],
     ]);
-    res.setHeader(
-      "Content-Type",
-      types[path.extname(file)] || "application/octet-stream",
-    );
+    res.setHeader("Content-Type", types[path.extname(file)] || "application/octet-stream");
     const stream = fs.createReadStream(file);
     stream.on("error", () => res.destroy());
     stream.pipe(res);
   });
 });
-server.listen(
-  Number(process.env.PORT || 18120),
-  process.env.HOST || "127.0.0.1",
-);
+server.listen(Number(process.env.PORT || 18120), process.env.HOST || "127.0.0.1");

@@ -1,13 +1,13 @@
 package gold.debug.windowstolinux.shared.model.assessment;
 
+import java.util.List;
+import java.util.Objects;
+import java.util.Optional;
+
 import gold.debug.windowstolinux.shared.model.analysis.DeploymentAdmissionStatus;
 import gold.debug.windowstolinux.shared.model.analysis.RejectionReason;
 import gold.debug.windowstolinux.shared.model.project.DeploymentProjectFacts;
 import gold.debug.windowstolinux.shared.model.project.DeploymentRuntimeAssessment;
-
-import java.util.List;
-import java.util.Objects;
-import java.util.Optional;
 
 /**
  * A typed deployment static-analysis result that separates missing user decisions from hard safety rejection.
@@ -19,12 +19,8 @@ import java.util.Optional;
  * @param runtimeSuggestion source-backed runtime values that still require user review / 仍需用户审阅的源码依据运行时值
  * @param rejections the hard rejection reasons / 硬性拒绝原因
  */
-public record DeploymentProjectAssessment(
-        DeploymentAdmissionStatus admission,
-        Optional<DeploymentProjectFacts> facts,
-        Optional<DeploymentRuntimeAssessment> runtimeSuggestion,
-        List<RejectionReason> rejections
-) {
+public record DeploymentProjectAssessment(DeploymentAdmissionStatus admission, Optional<DeploymentProjectFacts> facts,
+        Optional<DeploymentRuntimeAssessment> runtimeSuggestion, List<RejectionReason> rejections) {
     /**
      * Validates and binds the inputs required by deployment project assessment.
      * <p>校验并绑定部署项目评估所需输入。
@@ -72,7 +68,8 @@ public record DeploymentProjectAssessment(
      * @return the ready assessment / 可计划评估
      */
     public static DeploymentProjectAssessment ready(DeploymentProjectFacts facts) {
-        return new DeploymentProjectAssessment(DeploymentAdmissionStatus.READY_FOR_PLANNING, Optional.of(facts), Optional.empty(), List.of());
+        return new DeploymentProjectAssessment(DeploymentAdmissionStatus.READY_FOR_PLANNING, Optional.of(facts),
+                Optional.empty(), List.of());
     }
 
     /**
@@ -82,7 +79,8 @@ public record DeploymentProjectAssessment(
      * @param runtimeSuggestion source-backed runtime values that still require user review / 仍需用户审阅的源码依据运行时值
      * @return a ready assessment with source-backed runtime suggestions / 带有源码依据运行时建议的可计划评估
      */
-    public static DeploymentProjectAssessment ready(DeploymentProjectFacts facts, DeploymentRuntimeAssessment runtimeSuggestion) {
+    public static DeploymentProjectAssessment ready(DeploymentProjectFacts facts,
+            DeploymentRuntimeAssessment runtimeSuggestion) {
         return new DeploymentProjectAssessment(DeploymentAdmissionStatus.READY_FOR_PLANNING, Optional.of(facts),
                 Optional.of(runtimeSuggestion), List.of());
     }
@@ -96,7 +94,8 @@ public record DeploymentProjectAssessment(
      * @return the input-required assessment / 需要输入的评估
      */
     public static DeploymentProjectAssessment requiresInput(DeploymentProjectFacts facts) {
-        return new DeploymentProjectAssessment(DeploymentAdmissionStatus.REQUIRES_INPUT, Optional.of(facts), Optional.empty(), List.of());
+        return new DeploymentProjectAssessment(DeploymentAdmissionStatus.REQUIRES_INPUT, Optional.of(facts),
+                Optional.empty(), List.of());
     }
 
     /**
@@ -107,7 +106,7 @@ public record DeploymentProjectAssessment(
      * @return an input-required assessment with source-backed runtime suggestions / 带有源码依据运行时建议的需要输入评估
      */
     public static DeploymentProjectAssessment requiresInput(DeploymentProjectFacts facts,
-                                                            DeploymentRuntimeAssessment runtimeSuggestion) {
+            DeploymentRuntimeAssessment runtimeSuggestion) {
         return new DeploymentProjectAssessment(DeploymentAdmissionStatus.REQUIRES_INPUT, Optional.of(facts),
                 Optional.of(runtimeSuggestion), List.of());
     }
@@ -132,6 +131,7 @@ public record DeploymentProjectAssessment(
      * @return the rejected assessment / 被拒绝的评估
      */
     public static DeploymentProjectAssessment rejected(List<RejectionReason> rejections) {
-        return new DeploymentProjectAssessment(DeploymentAdmissionStatus.REJECTED, Optional.empty(), Optional.empty(), rejections);
+        return new DeploymentProjectAssessment(DeploymentAdmissionStatus.REJECTED, Optional.empty(), Optional.empty(),
+                rejections);
     }
 }

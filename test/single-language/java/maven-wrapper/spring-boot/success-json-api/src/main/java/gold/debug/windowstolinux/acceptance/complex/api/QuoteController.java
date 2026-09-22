@@ -1,5 +1,7 @@
 package gold.debug.windowstolinux.acceptance.complex.api;
 
+import java.util.UUID;
+
 import gold.debug.windowstolinux.acceptance.complex.domain.QuoteRequest;
 import gold.debug.windowstolinux.acceptance.complex.domain.QuoteResponse;
 import gold.debug.windowstolinux.acceptance.complex.service.QuoteService;
@@ -12,8 +14,6 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
-
-import java.util.UUID;
 
 @RestController
 @RequestMapping("/api/quotes")

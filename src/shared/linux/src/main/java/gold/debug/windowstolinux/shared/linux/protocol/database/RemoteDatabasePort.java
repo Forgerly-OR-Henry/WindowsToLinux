@@ -1,7 +1,5 @@
 package gold.debug.windowstolinux.shared.linux.protocol.database;
 
-import gold.debug.windowstolinux.shared.linux.error.LinuxOperationException;
-
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.util.ArrayList;
@@ -11,6 +9,8 @@ import java.util.Locale;
 import java.util.Objects;
 import java.util.Set;
 import java.util.regex.Pattern;
+
+import gold.debug.windowstolinux.shared.linux.error.LinuxOperationException;
 
 /**
  * Typed remote database capability without transport-specific or backup-format types.
@@ -173,7 +173,8 @@ public interface RemoteDatabasePort {
          * @param location the remote URI / 远端 URI
          * @param fileName file name / 文件名称
          */
-        record Sqlite(String bindingId, gold.debug.windowstolinux.shared.model.managed.ManagedStorageLocation location, String fileName) implements ConnectionProfile {
+        record Sqlite(String bindingId, gold.debug.windowstolinux.shared.model.managed.ManagedStorageLocation location,
+                String fileName) implements ConnectionProfile {
             /**
              * Validates a controlled path. / 校验受控路径。
              *
@@ -184,10 +185,14 @@ public interface RemoteDatabasePort {
              * @throws NullPointerException if a required input is absent / 必需输入缺失时
              */
             public Sqlite {
-                if (!Objects.requireNonNull(bindingId).matches("[a-z0-9][a-z0-9-]{0,62}")) throw new IllegalArgumentException("invalid SQLite storage binding");
-            Objects.requireNonNull(location);
-            if (location.type() == gold.debug.windowstolinux.shared.model.managed.ManagedStorageLocation.StorageLocationType.UNRESOLVED) throw new IllegalArgumentException("SQLite location must be reviewed");
-            if (!Objects.requireNonNull(fileName).matches("[A-Za-z0-9][A-Za-z0-9._-]{0,127}")) throw new IllegalArgumentException("invalid SQLite file name");
+                if (!Objects.requireNonNull(bindingId).matches("[a-z0-9][a-z0-9-]{0,62}"))
+                    throw new IllegalArgumentException("invalid SQLite storage binding");
+                Objects.requireNonNull(location);
+                if (location
+                        .type() == gold.debug.windowstolinux.shared.model.managed.ManagedStorageLocation.StorageLocationType.UNRESOLVED)
+                    throw new IllegalArgumentException("SQLite location must be reviewed");
+                if (!Objects.requireNonNull(fileName).matches("[A-Za-z0-9][A-Za-z0-9._-]{0,127}"))
+                    throw new IllegalArgumentException("invalid SQLite file name");
             }
 
             /**
@@ -196,7 +201,10 @@ public interface RemoteDatabasePort {
              *
              * @return selected member of the supported type set / 受支持类型集合中的所选项
              */
-            @Override public DatabaseType type() { return DatabaseType.SQLITE; }
+            @Override
+            public DatabaseType type() {
+                return DatabaseType.SQLITE;
+            }
         }
 
         /**
@@ -211,16 +219,8 @@ public interface RemoteDatabasePort {
          * @param passwordRevision password revision / 密码修订
          * @param tlsRequired tls required / tls必需
          */
-        record Server(
-                DatabaseType type,
-                String host,
-                int port,
-                String database,
-                String username,
-                String passwordReference,
-                long passwordRevision,
-                boolean tlsRequired
-        ) implements ConnectionProfile {
+        record Server(DatabaseType type, String host, int port, String database, String username,
+                String passwordReference, long passwordRevision, boolean tlsRequired) implements ConnectionProfile {
             /**
              * Validates a supported server connection. / 校验受支持服务器连接。
              *
@@ -237,13 +237,16 @@ public interface RemoteDatabasePort {
              */
             public Server {
                 type = Objects.requireNonNull(type, "type");
-                if (type == DatabaseType.SQLITE) throw new IllegalArgumentException("server database type is invalid");
+                if (type == DatabaseType.SQLITE)
+                    throw new IllegalArgumentException("server database type is invalid");
                 host = validatedHost(host);
-                if (port < 1 || port > 65535) throw new IllegalArgumentException("database port is invalid");
+                if (port < 1 || port > 65535)
+                    throw new IllegalArgumentException("database port is invalid");
                 database = name(database, "database");
                 username = name(username, "username");
                 passwordReference = secretIdentifier(passwordReference);
-                if (passwordRevision < 1) throw new IllegalArgumentException("passwordRevision is invalid");
+                if (passwordRevision < 1)
+                    throw new IllegalArgumentException("passwordRevision is invalid");
             }
         }
     }
@@ -256,12 +259,8 @@ public interface RemoteDatabasePort {
      * @param applicationWritesStopped application writes stopped / 应用写入集合已停止
      * @param exclusiveWriterConfirmed exclusive writer confirmed / 独占写入器已确认
      */
-    record BackupRequest(
-            String applicationId,
-            ConnectionProfile connection,
-            boolean applicationWritesStopped,
-            boolean exclusiveWriterConfirmed
-    ) {
+    record BackupRequest(String applicationId, ConnectionProfile connection, boolean applicationWritesStopped,
+            boolean exclusiveWriterConfirmed) {
         /**
          * Validates identity and write-state facts. / 校验身份与写入状态事实。
          *
@@ -293,16 +292,9 @@ public interface RemoteDatabasePort {
      * @param allTablesTransactional all tables transactional / 全部表集合Transactional
      * @param evidence observations supporting the reported result / 支持所报告结果的观测证据
      */
-    record CompatibilityEvidence(
-            DatabaseType type,
-            String engineVersion,
-            String toolVersion,
-            boolean toolAvailable,
-            boolean engineVersionCompatible,
-            boolean onlineBackupAvailable,
-            boolean allTablesTransactional,
-            List<String> evidence
-    ) {
+    record CompatibilityEvidence(DatabaseType type, String engineVersion, String toolVersion, boolean toolAvailable,
+            boolean engineVersionCompatible, boolean onlineBackupAvailable, boolean allTablesTransactional,
+            List<String> evidence) {
         /**
          * Requires bounded explicit evidence. / 要求有界显式证据。
          *
@@ -338,18 +330,9 @@ public interface RemoteDatabasePort {
      * @param limitations localized bounded limitations / 本地化有界限制
      * @param evidence observations supporting the reported result / 支持所报告结果的观测证据
      */
-    record BackupArtifact(
-            String artifactId,
-            long byteCount,
-            String sha256,
-            DatabaseType type,
-            String reference,
-            String engineVersion,
-            String toolVersion,
-            DatabaseConsistencyMode consistencyMode,
-            List<String> limitations,
-            List<String> evidence
-    ) {
+    record BackupArtifact(String artifactId, long byteCount, String sha256, DatabaseType type, String reference,
+            String engineVersion, String toolVersion, DatabaseConsistencyMode consistencyMode, List<String> limitations,
+            List<String> evidence) {
         /**
          * Validates artifact identity and evidence. / 校验制品身份与证据。
          *
@@ -368,9 +351,11 @@ public interface RemoteDatabasePort {
          */
         public BackupArtifact {
             artifactId = identifier(artifactId, "artifactId");
-            if (byteCount < 1) throw new IllegalArgumentException("database artifact must not be empty");
+            if (byteCount < 1)
+                throw new IllegalArgumentException("database artifact must not be empty");
             sha256 = Objects.requireNonNull(sha256, "sha256");
-            if (!sha256.matches("[0-9a-f]{64}")) throw new IllegalArgumentException("artifact hash is invalid");
+            if (!sha256.matches("[0-9a-f]{64}"))
+                throw new IllegalArgumentException("artifact hash is invalid");
             type = Objects.requireNonNull(type, "type");
             reference = text(reference, "reference", 256);
             engineVersion = text(engineVersion, "engineVersion", 128);
@@ -390,13 +375,8 @@ public interface RemoteDatabasePort {
      * @param target exact destination or managed target of the operation / 操作的精确目的地或受管目标
      * @param artifact verified build or backup artifact metadata / 已验证构建或备份制品元数据
      */
-    record RestoreRequest(
-            String applicationId,
-            String credentialApplicationId,
-            String candidateId,
-            ConnectionProfile target,
-            BackupArtifact artifact
-    ) {
+    record RestoreRequest(String applicationId, String credentialApplicationId, String candidateId,
+            ConnectionProfile target, BackupArtifact artifact) {
         /**
          * Validates managed candidate identity and database type. / 校验受管候选身份与数据库类型。
          *
@@ -414,7 +394,8 @@ public interface RemoteDatabasePort {
             candidateId = candidate(applicationId, candidateId);
             target = Objects.requireNonNull(target, "target");
             artifact = Objects.requireNonNull(artifact, "artifact");
-            if (target.type() != artifact.type()) throw new IllegalArgumentException("restore database type differs");
+            if (target.type() != artifact.type())
+                throw new IllegalArgumentException("restore database type differs");
         }
 
         /**
@@ -425,8 +406,8 @@ public interface RemoteDatabasePort {
          * @param target exact destination or managed target of the operation / 操作的精确目的地或受管目标
          * @param artifact verified build or backup artifact metadata / 已验证构建或备份制品元数据
          */
-        public RestoreRequest(String applicationId, String candidateId,
-                              ConnectionProfile target, BackupArtifact artifact) {
+        public RestoreRequest(String applicationId, String candidateId, ConnectionProfile target,
+                BackupArtifact artifact) {
             this(applicationId, applicationId, candidateId, target, artifact);
         }
     }
@@ -440,13 +421,8 @@ public interface RemoteDatabasePort {
      * @param schemaReadable schema readable / 结构可读
      * @param evidence observations supporting the reported result / 支持所报告结果的观测证据
      */
-    record RestoreEvidence(
-            String candidateId,
-            String connectionToken,
-            boolean integrityVerified,
-            boolean schemaReadable,
-            List<String> evidence
-    ) {
+    record RestoreEvidence(String candidateId, String connectionToken, boolean integrityVerified,
+            boolean schemaReadable, List<String> evidence) {
         /**
          * Requires complete candidate verification. / 要求完整候选验证。
          *
@@ -476,7 +452,7 @@ public interface RemoteDatabasePort {
      * @param evidence observations supporting the reported result / 支持所报告结果的观测证据
      */
     record CommitEvidence(String candidateId, boolean committed, boolean previousDatabaseRetained,
-                          List<String> evidence) {
+            List<String> evidence) {
         /**
          * Requires complete activation evidence. / 要求完整激活证据。
          *
@@ -505,7 +481,7 @@ public interface RemoteDatabasePort {
      * @param evidence observations supporting the reported result / 支持所报告结果的观测证据
      */
     record RecoveryEvidence(String candidateId, boolean recovered, boolean previousDatabaseVerified,
-                            boolean candidateRemoved, List<String> evidence) {
+            boolean candidateRemoved, List<String> evidence) {
         /**
          * Requires a complete safe recovery result. / 要求完整安全恢复结果。
          *
@@ -537,7 +513,8 @@ public interface RemoteDatabasePort {
      */
     private static String identifier(String value, String field) {
         value = Objects.requireNonNull(value, field).trim();
-        if (!value.matches("[a-z0-9][a-z0-9-]{0,62}")) throw new IllegalArgumentException(field + " is invalid");
+        if (!value.matches("[a-z0-9][a-z0-9-]{0,62}"))
+            throw new IllegalArgumentException(field + " is invalid");
         return value;
     }
 
@@ -623,8 +600,8 @@ public interface RemoteDatabasePort {
      */
     private static String validatedRelativePath(String value, String field) {
         value = Objects.requireNonNull(value, field).trim();
-        if (!value.matches("[A-Za-z0-9._/-]{1,255}") || value.startsWith("/")
-                || value.matches("^[A-Za-z]:.*") || value.contains("\\") || value.contains("//")) {
+        if (!value.matches("[A-Za-z0-9._/-]{1,255}") || value.startsWith("/") || value.matches("^[A-Za-z]:.*")
+                || value.contains("\\") || value.contains("//")) {
             throw new IllegalArgumentException(field + " is not a controlled relative path");
         }
         for (String segment : value.split("/")) {
@@ -664,7 +641,8 @@ public interface RemoteDatabasePort {
      */
     private static List<String> validatedEvidence(List<String> values) {
         List<String> result = texts(values, "evidence", false);
-        if (result.isEmpty()) throw new IllegalArgumentException("database evidence is incomplete");
+        if (result.isEmpty())
+            throw new IllegalArgumentException("database evidence is incomplete");
         return result;
     }
 
@@ -688,7 +666,8 @@ public interface RemoteDatabasePort {
         Set<String> unique = new HashSet<>();
         for (String value : values) {
             String item = text(value, field, 512);
-            if (!unique.add(item)) throw new IllegalArgumentException(field + " contains duplicates");
+            if (!unique.add(item))
+                throw new IllegalArgumentException(field + " contains duplicates");
             result.add(item);
         }
         return List.copyOf(result);

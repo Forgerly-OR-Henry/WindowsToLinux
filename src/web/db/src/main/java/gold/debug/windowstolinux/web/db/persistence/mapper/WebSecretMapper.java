@@ -9,4 +9,5 @@ import org.apache.ibatis.annotations.Mapper;
  * <p>将限定作用域的秘密记录映射到显式数据库语句。
  */
 @Mapper
-public interface WebSecretMapper extends BaseMapper<WebSecretEntity> { }
+public interface WebSecretMapper extends BaseMapper<WebSecretEntity> {
+}

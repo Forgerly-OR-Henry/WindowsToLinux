@@ -1,6 +1,7 @@
 import re
 from .model import Summary
 
+
 def summarize(raw):
     if raw is None:
         items = [1, 2, 3]

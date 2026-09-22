@@ -1,28 +1,28 @@
 package gold.debug.windowstolinux.app.service.server;
 
-import gold.debug.windowstolinux.app.db.persistence.repository.ServerProfileRepository;
-import gold.debug.windowstolinux.app.secret.SecretStore;
-import gold.debug.windowstolinux.app.secret.SecretStoreException;
-import gold.debug.windowstolinux.app.service.failure.ApplicationServiceException;
-import gold.debug.windowstolinux.app.service.failure.ApplicationServiceFailureType;
-import gold.debug.windowstolinux.shared.linux.connection.HostKeyDecision;
-import gold.debug.windowstolinux.shared.linux.connection.HostKeyEvaluator;
-import gold.debug.windowstolinux.shared.linux.connection.HostKeyObservation;
-import gold.debug.windowstolinux.shared.linux.connection.SshEndpoint;
-import gold.debug.windowstolinux.shared.linux.error.LinuxOperationException;
-import gold.debug.windowstolinux.shared.linux.connection.DeploymentLinuxGateway;
-import gold.debug.windowstolinux.shared.linux.session.DeploymentRemoteSession;
-import gold.debug.windowstolinux.shared.linux.connection.SshCredential;
-import gold.debug.windowstolinux.shared.model.security.CredentialStorageMode;
-import gold.debug.windowstolinux.shared.model.capability.LinuxCapabilityFacts;
-import gold.debug.windowstolinux.shared.model.capability.ServerCapabilityFacts;
-import gold.debug.windowstolinux.shared.model.server.ServerIdentity;
-
 import java.sql.SQLException;
 import java.util.Arrays;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.function.Predicate;
+
+import gold.debug.windowstolinux.app.db.persistence.repository.ServerProfileRepository;
+import gold.debug.windowstolinux.app.secret.SecretStore;
+import gold.debug.windowstolinux.app.secret.SecretStoreException;
+import gold.debug.windowstolinux.app.service.failure.ApplicationServiceException;
+import gold.debug.windowstolinux.app.service.failure.ApplicationServiceFailureType;
+import gold.debug.windowstolinux.shared.linux.connection.DeploymentLinuxGateway;
+import gold.debug.windowstolinux.shared.linux.connection.HostKeyDecision;
+import gold.debug.windowstolinux.shared.linux.connection.HostKeyEvaluator;
+import gold.debug.windowstolinux.shared.linux.connection.HostKeyObservation;
+import gold.debug.windowstolinux.shared.linux.connection.SshCredential;
+import gold.debug.windowstolinux.shared.linux.connection.SshEndpoint;
+import gold.debug.windowstolinux.shared.linux.error.LinuxOperationException;
+import gold.debug.windowstolinux.shared.linux.session.DeploymentRemoteSession;
+import gold.debug.windowstolinux.shared.model.capability.LinuxCapabilityFacts;
+import gold.debug.windowstolinux.shared.model.capability.ServerCapabilityFacts;
+import gold.debug.windowstolinux.shared.model.security.CredentialStorageMode;
+import gold.debug.windowstolinux.shared.model.server.ServerIdentity;
 
 /**
  * Coordinates server profiles, protected credentials, pinned host keys and connection observations.
@@ -38,6 +38,7 @@ public final class ServerUseCaseFacade {
     public java.util.List<ServerProfile> list() throws SQLException {
         return profiles.listServerProfiles().stream().map(ServerProfile::fromStored).toList();
     }
+
     /**
      * Lists server cards using saved check evidence. / 使用已保存的检查证据列出服务器卡片。
      *
@@ -48,7 +49,8 @@ public final class ServerUseCaseFacade {
         java.util.List<ServerSummary> result = new java.util.ArrayList<>();
         for (ServerProfile profile : list()) {
             var observation = profiles.observation(profile.id());
-            result.add(new ServerSummary(profile, observation.checkedAt(), observation.connected(), observation.operatingSystem()));
+            result.add(new ServerSummary(profile, observation.checkedAt(), observation.connected(),
+                    observation.operatingSystem()));
         }
         return java.util.List.copyOf(result);
     }
@@ -57,11 +59,13 @@ public final class ServerUseCaseFacade {
      * <p>处理配置资料集合的服务器配置资料仓库协作对象。
      */
     private final ServerProfileRepository profiles;
+
     /**
      * Bound desktop secret store service collaborator for credential references or scoped secret-access service.
      * <p>处理凭据引用或限定作用域的秘密访问服务的Desktop秘密存储服务协作对象。
      */
     private final DesktopSecretStoreService secrets;
+
     /**
      * Factory for authenticated Linux sessions.
      * <p>已认证 Linux 会话的工厂。
@@ -77,7 +81,8 @@ public final class ServerUseCaseFacade {
      * @param gateway factory for authenticated Linux sessions / 已认证 Linux 会话的工厂
      * @throws NullPointerException if a required input is absent / 必需输入缺失时
      */
-    public ServerUseCaseFacade(ServerProfileRepository profiles, DesktopSecretStoreService secrets, DeploymentLinuxGateway gateway) {
+    public ServerUseCaseFacade(ServerProfileRepository profiles, DesktopSecretStoreService secrets,
+            DeploymentLinuxGateway gateway) {
         this.profiles = Objects.requireNonNull(profiles, "profiles");
         this.secrets = Objects.requireNonNull(secrets, "secrets");
         this.gateway = Objects.requireNonNull(gateway, "gateway");
@@ -96,15 +101,19 @@ public final class ServerUseCaseFacade {
      * @throws IllegalArgumentException if an input violates the constraints checked by this contract / 输入违反当前契约检查的约束时
      * @throws NullPointerException if a required input is absent / 必需输入缺失时
      */
-    public void save(ServerProfile profile, SecretStore store, char[] password) throws SQLException, SecretStoreException {
+    public void save(ServerProfile profile, SecretStore store, char[] password)
+            throws SQLException, SecretStoreException {
         Objects.requireNonNull(profile, "profile");
         Objects.requireNonNull(store, "store");
         try {
             if (password.length == 0) {
-                var existing = profiles.findServerProfile(profile.id()).orElseThrow(() -> new IllegalArgumentException("server password is required"));
-                if (!existing.credentialKey().equals(profile.credentialKey()) || !existing.credentialMode().equals(profile.credentialMode().name()))
+                var existing = profiles.findServerProfile(profile.id())
+                        .orElseThrow(() -> new IllegalArgumentException("server password is required"));
+                if (!existing.credentialKey().equals(profile.credentialKey())
+                        || !existing.credentialMode().equals(profile.credentialMode().name()))
                     throw new IllegalArgumentException("changing credential storage requires a password");
-            } else store.save(profile.credentialKey(), password);
+            } else
+                store.save(profile.credentialKey(), password);
             profiles.saveServerProfile(profile.stored());
         } finally {
             clear(password);
@@ -176,6 +185,7 @@ public final class ServerUseCaseFacade {
              * <p>验证要求的身份、内容或状态。
              */
             private Optional<ServerIdentity> expected = Optional.empty();
+
             /**
              * Accepted.
              * <p>已接受。
@@ -189,7 +199,8 @@ public final class ServerUseCaseFacade {
              * @param fingerprint pinned or freshly observed host-key fingerprint / 固定或新近观测的主机密钥指纹
              * @return constructed or resolved host key decision / 构造或解析得到的主机键决定
              */
-            @Override public HostKeyDecision verify(SshEndpoint endpoint, String fingerprint) {
+            @Override
+            public HostKeyDecision verify(SshEndpoint endpoint, String fingerprint) {
                 return verify(endpoint, new HostKeyObservation(fingerprint, fingerprint));
             }
 
@@ -200,22 +211,27 @@ public final class ServerUseCaseFacade {
              * @param observation observation / 观测
              * @return constructed or resolved host key decision / 构造或解析得到的主机键决定
              */
-            @Override public HostKeyDecision verify(SshEndpoint endpoint, HostKeyObservation observation) {
+            @Override
+            public HostKeyDecision verify(SshEndpoint endpoint, HostKeyObservation observation) {
                 accepted = null;
                 if (!endpoint.host().equals(profile.host()) || endpoint.port() != profile.sshPort()
-                        || !endpoint.username().equals(profile.username())) return HostKeyDecision.REJECT;
+                        || !endpoint.username().equals(profile.username()))
+                    return HostKeyDecision.REJECT;
                 try {
                     expected = profiles.findServer(profile.id());
                     if (expected.isPresent()) {
                         ServerIdentity known = expected.orElseThrow();
                         String matching = profiles.hasLegacyHostKey(known)
-                                ? observation.legacyEncodedSha256() : observation.sshSha256();
+                                ? observation.legacyEncodedSha256()
+                                : observation.sshSha256();
                         if (!known.host().equals(endpoint.host()) || known.sshPort() != endpoint.port()
-                                || !known.hostKeySha256().equals(matching)) return HostKeyDecision.REJECT;
+                                || !known.hostKeySha256().equals(matching))
+                            return HostKeyDecision.REJECT;
                         accepted = observation;
                         return HostKeyDecision.ACCEPT_EXISTING;
                     }
-                    if (!firstUseConfirmation.test(observation.sshSha256())) return HostKeyDecision.REJECT;
+                    if (!firstUseConfirmation.test(observation.sshSha256()))
+                        return HostKeyDecision.REJECT;
                     accepted = observation;
                     return HostKeyDecision.ACCEPT_FIRST_USE;
                 } catch (SQLException failure) {
@@ -230,8 +246,10 @@ public final class ServerUseCaseFacade {
              * @param observation observation / 观测
              * @return true when commits only the same accepted handshake key after authentication, false otherwise / 认证后仅提交同一握手中已接受的公钥时为 true，否则为 false
              */
-            @Override public boolean authenticated(SshEndpoint endpoint, HostKeyObservation observation) {
-                if (!observation.equals(accepted) || !endpoint.equals(profile.endpoint())) return false;
+            @Override
+            public boolean authenticated(SshEndpoint endpoint, HostKeyObservation observation) {
+                if (!observation.equals(accepted) || !endpoint.equals(profile.endpoint()))
+                    return false;
                 try {
                     profiles.saveAuthenticatedServer(new ServerIdentity(profile.id(), profile.host(), profile.sshPort(),
                             observation.sshSha256()), expected);
@@ -273,20 +291,23 @@ public final class ServerUseCaseFacade {
      * @throws LinuxOperationException if the authenticated remote operation fails or its evidence is rejected / 已认证远端操作失败或其证据被拒绝时
      */
     public ServerCapabilityFacts verify(ServerProfile profile, CredentialStorageMode mode, char[] masterPassword,
-                                     Predicate<String> confirmation) throws SecretStoreException, SQLException,
-            LinuxOperationException {
+            Predicate<String> confirmation) throws SecretStoreException, SQLException, LinuxOperationException {
         try {
             requireMatchingMode(profile, mode);
             try (SecretStore store = secrets.open(mode, masterPassword);
-                 DeploymentRemoteSession session = gateway.connect(profile.endpoint(), secrets.loadPassword(profile, store),
-                     hostKeyVerifier(profile, confirmation))) {
+                    DeploymentRemoteSession session = gateway.connect(profile.endpoint(),
+                            secrets.loadPassword(profile, store), hostKeyVerifier(profile, confirmation))) {
                 ServerCapabilityFacts facts = session.collectCapabilities();
-                profiles.recordObservation(profile.stored(), true, facts.operatingSystem() + " / " + facts.architecture());
+                profiles.recordObservation(profile.stored(), true,
+                        facts.operatingSystem() + " / " + facts.architecture());
                 return facts;
             }
         } catch (SecretStoreException | LinuxOperationException failure) {
-            try { profiles.recordObservation(profile.stored(), false, ""); }
-            catch (SQLException recording) { failure.addSuppressed(recording); }
+            try {
+                profiles.recordObservation(profile.stored(), false, "");
+            } catch (SQLException recording) {
+                failure.addSuppressed(recording);
+            }
             throw failure;
         } finally {
             clear(masterPassword);
@@ -306,14 +327,14 @@ public final class ServerUseCaseFacade {
      * @throws SecretStoreException if the saved credential cannot be read / 无法读取已保存凭据时
      * @throws LinuxOperationException if the bounded remote inspection fails / 有界远端检查失败时
      */
-    public LinuxCapabilityFacts inspectDeploymentCapabilities(
-            ServerProfile profile, CredentialStorageMode mode, char[] masterPassword,
-            Predicate<String> confirmation) throws SecretStoreException, LinuxOperationException {
+    public LinuxCapabilityFacts inspectDeploymentCapabilities(ServerProfile profile, CredentialStorageMode mode,
+            char[] masterPassword, Predicate<String> confirmation)
+            throws SecretStoreException, LinuxOperationException {
         try {
             requireMatchingMode(profile, mode);
             try (SecretStore store = secrets.open(mode, masterPassword);
-                 DeploymentRemoteSession session = gateway.connect(profile.endpoint(), secrets.loadPassword(profile, store),
-                         hostKeyVerifier(profile, confirmation))) {
+                    DeploymentRemoteSession session = gateway.connect(profile.endpoint(),
+                            secrets.loadPassword(profile, store), hostKeyVerifier(profile, confirmation))) {
                 return session.collectDeploymentCapabilities();
             }
         } finally {

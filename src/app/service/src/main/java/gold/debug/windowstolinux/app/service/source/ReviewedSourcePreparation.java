@@ -1,13 +1,13 @@
 package gold.debug.windowstolinux.app.service.source;
 
-import gold.debug.windowstolinux.shared.model.assessment.DeploymentProjectAssessment;
-import gold.debug.windowstolinux.shared.model.analysis.DeploymentAdmissionStatus;
-import gold.debug.windowstolinux.shared.model.archive.SourceArchiveDescriptor;
-import gold.debug.windowstolinux.shared.model.project.SourceRevision;
-
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
+
+import gold.debug.windowstolinux.shared.model.analysis.DeploymentAdmissionStatus;
+import gold.debug.windowstolinux.shared.model.archive.SourceArchiveDescriptor;
+import gold.debug.windowstolinux.shared.model.assessment.DeploymentProjectAssessment;
+import gold.debug.windowstolinux.shared.model.project.SourceRevision;
 
 /**
  * Typed source analysis and safe archive result shown before a reviewed deployment is planned.
@@ -19,12 +19,9 @@ import java.util.Optional;
  * @param sourceRevision the immutable local or pinned-Git source identity / 不可变本地或固定 Git 源码身份
  * @param excludedEntries entries excluded by the safe archive policy / 安全归档策略排除的条目
  */
-public record ReviewedSourcePreparation(
-        DeploymentProjectAssessment assessment,
-        Optional<SourceArchiveDescriptor> archive,
-        Optional<SourceRevision> sourceRevision,
-        List<String> excludedEntries
-) {
+public record ReviewedSourcePreparation(DeploymentProjectAssessment assessment,
+        Optional<SourceArchiveDescriptor> archive, Optional<SourceRevision> sourceRevision,
+        List<String> excludedEntries) {
     /**
      * Creates the reviewed source result. / 创建经审阅源码结果。
      *
@@ -46,8 +43,8 @@ public record ReviewedSourcePreparation(
         if (archive.isPresent() != sourceRevision.isPresent()) {
             throw new IllegalArgumentException("a reviewed archive must have exactly one immutable source identity");
         }
-        if (archive.isPresent() && !archive.orElseThrow().contentSha256()
-                .equals(sourceRevision.orElseThrow().sourceSha256())) {
+        if (archive.isPresent()
+                && !archive.orElseThrow().contentSha256().equals(sourceRevision.orElseThrow().sourceSha256())) {
             throw new IllegalArgumentException("source identity must bind the reviewed archive digest");
         }
     }

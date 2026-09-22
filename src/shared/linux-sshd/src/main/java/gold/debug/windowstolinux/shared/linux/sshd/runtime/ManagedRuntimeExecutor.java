@@ -1,25 +1,24 @@
 package gold.debug.windowstolinux.shared.linux.sshd.runtime;
 
-import gold.debug.windowstolinux.shared.linux.sshd.runtime.ContainerRuntimeExecutor;
-import gold.debug.windowstolinux.shared.linux.sshd.runtime.systemd.SystemdHealthProbe;
-import gold.debug.windowstolinux.shared.linux.sshd.runtime.systemd.SystemdLifecycleExecutor;
-import gold.debug.windowstolinux.shared.linux.sshd.runtime.systemd.SystemdOwnershipObserver;
+import java.util.Objects;
+import java.util.Optional;
 
 import gold.debug.windowstolinux.shared.linux.error.LinuxOperationException;
 import gold.debug.windowstolinux.shared.linux.error.LinuxOperationFailureType;
 import gold.debug.windowstolinux.shared.linux.protocol.RemoteStepResult;
 import gold.debug.windowstolinux.shared.linux.sshd.execution.protocol.release.ContainerReleaseProtocolExecutor;
 import gold.debug.windowstolinux.shared.linux.sshd.execution.protocol.release.DeploymentReleaseProtocolExecutor;
+import gold.debug.windowstolinux.shared.linux.sshd.runtime.ContainerRuntimeExecutor;
+import gold.debug.windowstolinux.shared.linux.sshd.runtime.systemd.SystemdHealthProbe;
+import gold.debug.windowstolinux.shared.linux.sshd.runtime.systemd.SystemdLifecycleExecutor;
+import gold.debug.windowstolinux.shared.linux.sshd.runtime.systemd.SystemdOwnershipObserver;
 import gold.debug.windowstolinux.shared.model.health.HealthCheck;
 import gold.debug.windowstolinux.shared.model.lifecycle.AutostartState;
 import gold.debug.windowstolinux.shared.model.lifecycle.LifecycleAction;
 import gold.debug.windowstolinux.shared.model.lifecycle.LifecycleObservation;
 import gold.debug.windowstolinux.shared.model.lifecycle.RuntimeState;
 import gold.debug.windowstolinux.shared.model.managed.ManagedApplication;
-
 import gold.debug.windowstolinux.shared.model.project.DeploymentRuntimeSpecification;
-import java.util.Objects;
-import java.util.Optional;
 
 /**
  * Restores lifecycle control from sealed remote runtime markers after an application restart. / 应用重启后从已封存的远端运行时标记恢复生命周期控制。
@@ -30,31 +29,37 @@ public final class ManagedRuntimeExecutor {
      * <p>运行时种类集合。
      */
     private final ManagedRuntimeKindProbe runtimeKinds;
+
     /**
      * Bound deployment release protocol executor collaborator for deployment protocol.
      * <p>处理部署协议的部署发布协议执行器协作对象。
      */
     private final DeploymentReleaseProtocolExecutor deploymentProtocol;
+
     /**
      * Bound container release protocol executor collaborator for container protocol.
      * <p>处理容器协议的容器发布协议执行器协作对象。
      */
     private final ContainerReleaseProtocolExecutor containerProtocol;
+
     /**
      * Systemd observation.
      * <p>systemd观测。
      */
     private final SystemdOwnershipObserver systemdObservation;
+
     /**
      * Bound systemd lifecycle executor collaborator for systemd lifecycle.
      * <p>处理systemd生命周期的Systemd生命周期执行器协作对象。
      */
     private final SystemdLifecycleExecutor systemdLifecycle;
+
     /**
      * Systemd health.
      * <p>systemd健康。
      */
     private final SystemdHealthProbe systemdHealth;
+
     /**
      * Bound container runtime executor collaborator for container runtime.
      * <p>处理容器运行时的容器运行时执行器协作对象。
@@ -74,12 +79,9 @@ public final class ManagedRuntimeExecutor {
      * @throws NullPointerException if a required input is absent / 必需输入缺失时
      */
     public ManagedRuntimeExecutor(ManagedRuntimeKindProbe runtimeKinds,
-                                  DeploymentReleaseProtocolExecutor deploymentProtocol,
-                                  ContainerReleaseProtocolExecutor containerProtocol,
-                                  SystemdOwnershipObserver systemdObservation,
-                                  SystemdLifecycleExecutor systemdLifecycle,
-                                  SystemdHealthProbe systemdHealth,
-                                  ContainerRuntimeExecutor containerRuntime) {
+            DeploymentReleaseProtocolExecutor deploymentProtocol, ContainerReleaseProtocolExecutor containerProtocol,
+            SystemdOwnershipObserver systemdObservation, SystemdLifecycleExecutor systemdLifecycle,
+            SystemdHealthProbe systemdHealth, ContainerRuntimeExecutor containerRuntime) {
         this.runtimeKinds = Objects.requireNonNull(runtimeKinds, "runtimeKinds");
         this.deploymentProtocol = Objects.requireNonNull(deploymentProtocol, "deploymentProtocol");
         this.containerProtocol = Objects.requireNonNull(containerProtocol, "containerProtocol");
@@ -128,7 +130,7 @@ public final class ManagedRuntimeExecutor {
      * @throws NullPointerException if a required input is absent / 必需输入缺失时
      */
     public LifecycleObservation execute(ManagedApplication application, DeploymentRuntimeSpecification runtime,
-                                        LifecycleAction action) throws LinuxOperationException {
+            LifecycleAction action) throws LinuxOperationException {
         Objects.requireNonNull(runtime, "runtime");
         ManagedRuntimeIdentity identity = runtimeKinds.inspect(application);
         return execute(application, identity, action, runtime.healthCheck(), false);
@@ -156,7 +158,7 @@ public final class ManagedRuntimeExecutor {
         }
         if (identity.kind() != ManagedRuntimeIdentity.Kind.CONTAINER
                 && (before.runtimeState() == RuntimeState.UNKNOWN || (before.runtimeState() == RuntimeState.ERROR
-                && action != LifecycleAction.STOP && action != LifecycleAction.DISABLE_AUTOSTART))) {
+                        && action != LifecycleAction.STOP && action != LifecycleAction.DISABLE_AUTOSTART))) {
             throw LinuxOperationException.create(LinuxOperationFailureType.LIFECYCLE_ACTION_FAILED,
                     "Native runtime state requires refresh or a verified STOP before START; " + before.evidence());
         }
@@ -169,7 +171,8 @@ public final class ManagedRuntimeExecutor {
             verifyPostcondition(action, after);
             return after;
         }
-        if (identity.mode() == gold.debug.windowstolinux.shared.model.project.application.ApplicationWorkload.ExecutionMode.ON_DEMAND)
+        if (identity
+                .mode() == gold.debug.windowstolinux.shared.model.project.application.ApplicationWorkload.ExecutionMode.ON_DEMAND)
             throw LinuxOperationException.create(LinuxOperationFailureType.LIFECYCLE_ACTION_FAILED,
                     "On-demand tools have no lifecycle actions; use the reviewed application command");
         String verb = verb(action);
@@ -181,7 +184,8 @@ public final class ManagedRuntimeExecutor {
         }
         if (action == LifecycleAction.START || action == LifecycleAction.RESTART) {
             boolean healthy = identity.kind() == ManagedRuntimeIdentity.Kind.CONTAINER
-                    ? containerRuntime.checkHealth(application, identity.containerEngine().orElseThrow(), healthCheck).healthy()
+                    ? containerRuntime.checkHealth(application, identity.containerEngine().orElseThrow(), healthCheck)
+                            .healthy()
                     : systemdHealth.check(application, healthCheck).healthy();
             if (!healthy) {
                 throw LinuxOperationException.create(LinuxOperationFailureType.POST_START_HEALTH_FAILED,
@@ -205,9 +209,11 @@ public final class ManagedRuntimeExecutor {
      */
     private LifecycleObservation observe(ManagedApplication application, ManagedRuntimeIdentity identity)
             throws LinuxOperationException {
-        if (identity.mode() == gold.debug.windowstolinux.shared.model.project.application.ApplicationWorkload.ExecutionMode.ON_DEMAND)
+        if (identity
+                .mode() == gold.debug.windowstolinux.shared.model.project.application.ApplicationWorkload.ExecutionMode.ON_DEMAND)
             return new LifecycleObservation(application, RuntimeState.INSTALLED, AutostartState.DISABLED, true,
-                    java.time.Instant.now(), "Owned on-demand application is installed; no persistent process required");
+                    java.time.Instant.now(),
+                    "Owned on-demand application is installed; no persistent process required");
         return switch (identity.kind()) {
             case ORDINARY -> systemdObservation.observe(application);
             case DEPLOYMENT -> deploymentProtocol.observe(application);

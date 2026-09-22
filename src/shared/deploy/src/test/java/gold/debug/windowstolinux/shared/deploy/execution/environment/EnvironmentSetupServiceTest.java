@@ -1,35 +1,34 @@
 package gold.debug.windowstolinux.shared.deploy.execution.environment;
 
-import gold.debug.windowstolinux.shared.linux.error.LinuxOperationException;
-
-import gold.debug.windowstolinux.shared.linux.connection.HostKeyDecision;
-import gold.debug.windowstolinux.shared.linux.connection.HostKeyEvaluator;
-import gold.debug.windowstolinux.shared.linux.connection.LinuxGateway;
-import gold.debug.windowstolinux.shared.linux.session.LinuxRemoteSession;
-import gold.debug.windowstolinux.shared.linux.runtime.HealthCheckResult;
-import gold.debug.windowstolinux.shared.linux.protocol.ManagedHelperProtocol;
-import gold.debug.windowstolinux.shared.linux.transfer.RemoteWorkspace;
-import gold.debug.windowstolinux.shared.linux.connection.SshCredential;
-import gold.debug.windowstolinux.shared.linux.connection.SshEndpoint;
-import gold.debug.windowstolinux.shared.linux.transfer.SourceUploadResult;
-import gold.debug.windowstolinux.shared.model.health.HealthCheck;
-import gold.debug.windowstolinux.shared.model.lifecycle.LifecycleAction;
-import gold.debug.windowstolinux.shared.model.lifecycle.LifecycleObservation;
-import gold.debug.windowstolinux.shared.model.managed.ManagedApplication;
-import gold.debug.windowstolinux.shared.model.deployment.DeploymentApprovalException;
-import gold.debug.windowstolinux.shared.model.deployment.EnvironmentSetupApproval;
-import gold.debug.windowstolinux.shared.model.deployment.EnvironmentSetupResult;
-import gold.debug.windowstolinux.shared.model.capability.ServerCapabilityFacts;
-import gold.debug.windowstolinux.shared.model.archive.SourceArchiveDescriptor;
-import org.junit.jupiter.api.Test;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.time.Instant;
 import java.util.Arrays;
 import java.util.concurrent.atomic.AtomicInteger;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import gold.debug.windowstolinux.shared.linux.connection.HostKeyDecision;
+import gold.debug.windowstolinux.shared.linux.connection.HostKeyEvaluator;
+import gold.debug.windowstolinux.shared.linux.connection.LinuxGateway;
+import gold.debug.windowstolinux.shared.linux.connection.SshCredential;
+import gold.debug.windowstolinux.shared.linux.connection.SshEndpoint;
+import gold.debug.windowstolinux.shared.linux.error.LinuxOperationException;
+import gold.debug.windowstolinux.shared.linux.protocol.ManagedHelperProtocol;
+import gold.debug.windowstolinux.shared.linux.runtime.HealthCheckResult;
+import gold.debug.windowstolinux.shared.linux.session.LinuxRemoteSession;
+import gold.debug.windowstolinux.shared.linux.transfer.RemoteWorkspace;
+import gold.debug.windowstolinux.shared.linux.transfer.SourceUploadResult;
+import gold.debug.windowstolinux.shared.model.archive.SourceArchiveDescriptor;
+import gold.debug.windowstolinux.shared.model.capability.ServerCapabilityFacts;
+import gold.debug.windowstolinux.shared.model.deployment.DeploymentApprovalException;
+import gold.debug.windowstolinux.shared.model.deployment.EnvironmentSetupApproval;
+import gold.debug.windowstolinux.shared.model.deployment.EnvironmentSetupResult;
+import gold.debug.windowstolinux.shared.model.health.HealthCheck;
+import gold.debug.windowstolinux.shared.model.lifecycle.LifecycleAction;
+import gold.debug.windowstolinux.shared.model.lifecycle.LifecycleObservation;
+import gold.debug.windowstolinux.shared.model.managed.ManagedApplication;
+import org.junit.jupiter.api.Test;
 
 class EnvironmentSetupServiceTest {
     @Test
@@ -42,13 +41,17 @@ class EnvironmentSetupServiceTest {
                     gold.debug.windowstolinux.shared.linux.error.LinuxOperationFailureType.CONNECTION_FAILED,
                     "initial connection unavailable");
         };
-        for (boolean systemPreparation : new boolean[] {false, true}) {
+        for (boolean systemPreparation : new boolean[]{false, true}) {
             var password = new SshCredential.Password("test-only".toCharArray());
             var approval = new EnvironmentSetupApproval("server-one", true, Instant.now());
             LinuxOperationException failure = assertThrows(LinuxOperationException.class, () -> {
-                if (systemPreparation) new EnvironmentSetupService().prepare(approval, gateway, endpoint(), password,
-                        acceptingHostKey(), plan -> { throw new AssertionError("no system change can be proposed before SSH"); });
-                else new EnvironmentSetupService().prepare(approval, gateway, endpoint(), password, acceptingHostKey());
+                if (systemPreparation)
+                    new EnvironmentSetupService().prepare(approval, gateway, endpoint(), password, acceptingHostKey(),
+                            plan -> {
+                                throw new AssertionError("no system change can be proposed before SSH");
+                            });
+                else
+                    new EnvironmentSetupService().prepare(approval, gateway, endpoint(), password, acceptingHostKey());
             });
             assertTrue(failure.environmentNotStarted());
             assertTrue(failure.completedEnvironment().isEmpty());
@@ -66,12 +69,10 @@ class EnvironmentSetupServiceTest {
             throw new AssertionError("unconfirmed preparation must not connect");
         };
 
-        DeploymentApprovalException failure = assertThrows(DeploymentApprovalException.class, () ->
-                new EnvironmentSetupService().prepare(
+        DeploymentApprovalException failure = assertThrows(DeploymentApprovalException.class,
+                () -> new EnvironmentSetupService().prepare(
                         new EnvironmentSetupApproval("server-one", false, Instant.now()), gateway, endpoint(), password,
-                        acceptingHostKey()
-                )
-        );
+                        acceptingHostKey()));
 
         assertEquals("deployment.error.confirmationRequired", failure.failure().userMessage().key());
         assertEquals(0, connections.get());
@@ -92,8 +93,7 @@ class EnvironmentSetupServiceTest {
 
         EnvironmentSetupResult result = new EnvironmentSetupService().prepare(
                 new EnvironmentSetupApproval("server-one", true, Instant.now()), gateway, endpoint(), password,
-                acceptingHostKey()
-        );
+                acceptingHostKey());
 
         assertEquals(2, connections.get());
         assertTrue(session.prepared);
@@ -106,15 +106,17 @@ class EnvironmentSetupServiceTest {
         FakeSession session = new FakeSession();
         AtomicInteger connections = new AtomicInteger();
         LinuxGateway gateway = (endpoint, credential, verifier) -> {
-            if (connections.incrementAndGet() == 1) return session;
+            if (connections.incrementAndGet() == 1)
+                return session;
             throw LinuxOperationException.create(
                     gold.debug.windowstolinux.shared.linux.error.LinuxOperationFailureType.CONNECTION_FAILED,
                     "post-install SSH unavailable");
         };
         SshCredential.Password password = new SshCredential.Password("test-only".toCharArray());
-        LinuxOperationException failure = assertThrows(LinuxOperationException.class, () ->
-                new EnvironmentSetupService().prepare(new EnvironmentSetupApproval("server-one", true, Instant.now()),
-                        gateway, endpoint(), password, acceptingHostKey()));
+        LinuxOperationException failure = assertThrows(LinuxOperationException.class,
+                () -> new EnvironmentSetupService().prepare(
+                        new EnvironmentSetupApproval("server-one", true, Instant.now()), gateway, endpoint(), password,
+                        acceptingHostKey()));
         assertTrue(session.prepared);
         assertEquals("post-install SSH unavailable", failure.failure().diagnostic());
         assertTrue(failure.completedEnvironment().isPresent());
@@ -160,7 +162,8 @@ class EnvironmentSetupServiceTest {
 
         /** Performs the {@code uploadSource} operation. / 执行 {@code uploadSource} 操作。 */
         @Override
-        public SourceUploadResult uploadSource(SourceArchiveDescriptor archive, RemoteWorkspace workspace, long maxWorkspaceBytes) {
+        public SourceUploadResult uploadSource(SourceArchiveDescriptor archive, RemoteWorkspace workspace,
+                long maxWorkspaceBytes) {
             throw unsupported();
         }
 
@@ -179,7 +182,7 @@ class EnvironmentSetupServiceTest {
         /** Performs the {@code executeLifecycle} operation. / 执行 {@code executeLifecycle} 操作。 */
         @Override
         public LifecycleObservation executeLifecycle(ManagedApplication application, LifecycleAction action,
-                                                      HealthCheck healthCheck) {
+                HealthCheck healthCheck) {
             throw unsupported();
         }
 
@@ -193,8 +196,8 @@ class EnvironmentSetupServiceTest {
         }
 
         private static ServerCapabilityFacts capabilities() {
-            return new ServerCapabilityFacts("Ubuntu 24.04.1 LTS", "x86_64", true, true, true, true, true, true, true, true,
-                    ManagedHelperProtocol.VERSION, 10L * 1024 * 1024 * 1024, "capabilities freshly collected");
+            return new ServerCapabilityFacts("Ubuntu 24.04.1 LTS", "x86_64", true, true, true, true, true, true, true,
+                    true, ManagedHelperProtocol.VERSION, 10L * 1024 * 1024 * 1024, "capabilities freshly collected");
         }
     }
 }

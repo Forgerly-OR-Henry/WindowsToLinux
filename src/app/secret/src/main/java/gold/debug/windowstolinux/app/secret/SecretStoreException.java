@@ -1,11 +1,11 @@
 package gold.debug.windowstolinux.app.secret;
 
+import java.util.Map;
+import java.util.Objects;
+
 import gold.debug.windowstolinux.shared.model.failure.FailureCarrier;
 import gold.debug.windowstolinux.shared.model.failure.FailureDescriptor;
 import gold.debug.windowstolinux.shared.model.failure.OperationIdentity;
-
-import java.util.Map;
-import java.util.Objects;
 
 /**
  * Sensitive-store failures are intentionally not expanded with plaintext input.
@@ -65,8 +65,8 @@ public final class SecretStoreException extends Exception implements FailureCarr
      * @param cause original failure retained as the nested cause / 保留为嵌套原因的原始失败
      * @return a typed failure with safe message arguments / 带安全消息参数的类型化失败
      */
-    public static SecretStoreException create(
-            SecretStoreFailureType type, Map<String, ?> arguments, String diagnostic, Throwable cause) {
+    public static SecretStoreException create(SecretStoreFailureType type, Map<String, ?> arguments, String diagnostic,
+            Throwable cause) {
         return new SecretStoreException(
                 FailureDescriptor.create(type, OperationIdentity.create(), arguments, diagnostic), cause);
     }
@@ -77,5 +77,8 @@ public final class SecretStoreException extends Exception implements FailureCarr
      *
      * @return structured failure occurrence retained for safe reporting / 保留用于安全报告的结构化失败实例
      */
-    @Override public FailureDescriptor failure() { return failure; }
+    @Override
+    public FailureDescriptor failure() {
+        return failure;
+    }
 }

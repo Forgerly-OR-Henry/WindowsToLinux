@@ -1,10 +1,10 @@
 package gold.debug.windowstolinux.shared.backup.contract.spi;
 
-import gold.debug.windowstolinux.shared.backup.contract.validation.BackupException;
-import gold.debug.windowstolinux.shared.backup.manifest.BackupConsistencyMode;
-
 import java.io.InputStream;
 import java.io.OutputStream;
+
+import gold.debug.windowstolinux.shared.backup.contract.validation.BackupException;
+import gold.debug.windowstolinux.shared.backup.manifest.BackupConsistencyMode;
 
 /**
  * Platform port for fixed database tools and isolated candidate restoration. / 固定数据库工具与隔离候选恢复的平台端口。

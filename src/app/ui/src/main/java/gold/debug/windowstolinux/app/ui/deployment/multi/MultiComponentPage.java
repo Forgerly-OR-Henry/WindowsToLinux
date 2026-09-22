@@ -1,21 +1,13 @@
 package gold.debug.windowstolinux.app.ui.deployment.multi;
 
-import gold.debug.windowstolinux.app.service.contract.definition.ComponentFormInput;
-
-import gold.debug.windowstolinux.app.service.contract.MultiComponentApplicationFacade;
-import gold.debug.windowstolinux.app.service.contract.definition.MultiComponentReviewInput;
-import gold.debug.windowstolinux.app.service.deployment.multi.ReviewedMultiComponentApplication;
-import gold.debug.windowstolinux.app.service.server.ServerProfile;
-import gold.debug.windowstolinux.app.service.source.PreparedMultiComponentSource;
-import gold.debug.windowstolinux.app.ui.component.DesktopComponentFactory;
-import gold.debug.windowstolinux.app.ui.component.DesktopTaskExecutor;
-import gold.debug.windowstolinux.app.ui.server.ServerContext;
-import gold.debug.windowstolinux.app.ui.i18n.PageMessagePresenter;
-import gold.debug.windowstolinux.shared.deploy.contract.ApplicationHealthGate;
-import gold.debug.windowstolinux.shared.model.deployment.DeploymentStatus;
-import gold.debug.windowstolinux.shared.model.lifecycle.LifecycleAction;
-import gold.debug.windowstolinux.shared.model.project.DeploymentProjectType;
-import gold.debug.windowstolinux.shared.model.project.DeploymentSupportLevel;
+import java.awt.BorderLayout;
+import java.awt.GridBagLayout;
+import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.function.Consumer;
 
 import javax.swing.BorderFactory;
 import javax.swing.JButton;
@@ -25,14 +17,22 @@ import javax.swing.JOptionPane;
 import javax.swing.JPanel;
 import javax.swing.JScrollPane;
 import javax.swing.JTextArea;
-import java.awt.BorderLayout;
-import java.awt.GridBagLayout;
-import java.nio.file.Path;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
-import java.util.function.Consumer;
+
+import gold.debug.windowstolinux.app.service.contract.MultiComponentApplicationFacade;
+import gold.debug.windowstolinux.app.service.contract.definition.ComponentFormInput;
+import gold.debug.windowstolinux.app.service.contract.definition.MultiComponentReviewInput;
+import gold.debug.windowstolinux.app.service.deployment.multi.ReviewedMultiComponentApplication;
+import gold.debug.windowstolinux.app.service.server.ServerProfile;
+import gold.debug.windowstolinux.app.service.source.PreparedMultiComponentSource;
+import gold.debug.windowstolinux.app.ui.component.DesktopComponentFactory;
+import gold.debug.windowstolinux.app.ui.component.DesktopTaskExecutor;
+import gold.debug.windowstolinux.app.ui.i18n.PageMessagePresenter;
+import gold.debug.windowstolinux.app.ui.server.ServerContext;
+import gold.debug.windowstolinux.shared.deploy.contract.ApplicationHealthGate;
+import gold.debug.windowstolinux.shared.model.deployment.DeploymentStatus;
+import gold.debug.windowstolinux.shared.model.lifecycle.LifecycleAction;
+import gold.debug.windowstolinux.shared.model.project.DeploymentProjectType;
+import gold.debug.windowstolinux.shared.model.project.DeploymentSupportLevel;
 
 /**
  * Desktop product page for explicit mixed-project review, whole-application deployment, and lifecycle.
@@ -45,61 +45,73 @@ public final class MultiComponentPage {
      * <p>持有操作的组件或资源身份。
      */
     private final JFrame owner;
+
     /**
      * Bound multi component application facade collaborator for application service used by the caller.
      * <p>处理调用方使用的应用服务的多组件应用门面协作对象。
      */
     private final MultiComponentApplicationFacade service;
+
     /**
      * Server context.
      * <p>服务器上下文。
      */
     private final ServerContext serverContext;
+
     /**
      * Bound page message presenter collaborator for localized message resolver.
      * <p>处理本地化消息解析器的页面消息展示器协作对象。
      */
     private final PageMessagePresenter messages;
+
     /**
      * Open servers.
      * <p>打开服务器集合。
      */
     private final Runnable openServers;
+
     /**
      * Application selection.
      * <p>应用选择。
      */
     private final Consumer<String> applicationSelection;
+
     /**
      * Bound multi component result presenter collaborator for presenter.
      * <p>处理展示器的多组件结果展示器协作对象。
      */
     private final MultiComponentResultPresenter presenter;
+
     /**
      * Editor.
      * <p>编辑器。
      */
     private final MultiComponentDraftController editor;
+
     /**
      * Swing control for output.
      * <p>输出对应的 Swing 控件。
      */
     private final JTextArea output = DesktopComponentFactory.outputArea();
+
     /**
      * Swing control for panel.
      * <p>面板对应的 Swing 控件。
      */
     private final JPanel panel;
+
     /**
      * Preparation.
      * <p>准备。
      */
     private PreparedMultiComponentSource preparation;
+
     /**
      * Review.
      * <p>审阅。
      */
     private ReviewedMultiComponentApplication review;
+
     /**
      * Advanced.
      * <p>高级。
@@ -118,8 +130,8 @@ public final class MultiComponentPage {
      * @param applicationSelection application selection / 应用选择
      */
     public MultiComponentPage(JFrame owner, MultiComponentApplicationFacade service, ServerContext serverContext,
-                              DesktopComponentFactory components, PageMessagePresenter messages, Runnable openServers,
-                              Consumer<String> applicationSelection) {
+            DesktopComponentFactory components, PageMessagePresenter messages, Runnable openServers,
+            Consumer<String> applicationSelection) {
         this.owner = owner;
         this.service = service;
         this.serverContext = serverContext;
@@ -136,7 +148,9 @@ public final class MultiComponentPage {
      *
      * @return the page panel / 页面面板
      */
-    public JPanel panel() { return panel; }
+    public JPanel panel() {
+        return panel;
+    }
 
     /**
      * Captures all non-secret editor and review state. / 捕获全部不含秘密的编辑与审阅状态。
@@ -182,8 +196,12 @@ public final class MultiComponentPage {
         servers.addActionListener(event -> openServers.run());
         JButton deploy = components.primaryButton(messages.text("component.button.deploy"));
         deploy.addActionListener(event -> deploy());
-        actions.add(root); actions.add(add); actions.add(remove); actions.add(deploy);
-        advanced.addOption(analyze); advanced.addOption(servers);
+        actions.add(root);
+        actions.add(add);
+        actions.add(remove);
+        actions.add(deploy);
+        advanced.addOption(analyze);
+        advanced.addOption(servers);
         page.add(actions, BorderLayout.NORTH);
 
         JPanel contents = components.transparent(new BorderLayout(0, 12));
@@ -216,7 +234,8 @@ public final class MultiComponentPage {
         advanced.field("auto.field.jvmTarget", editor.kotlinJvmTarget);
         advanced.field("field.jvmArguments", editor.runtimeArguments);
         advanced.field("component.field.runtimeAdditional", editor.runtimeAdditional);
-        advanced.field("field.applicationDeclaration", new javax.swing.JScrollPane(editor.resources.applicationDeclaration));
+        advanced.field("field.applicationDeclaration",
+                new javax.swing.JScrollPane(editor.resources.applicationDeclaration));
         advanced.field("field.healthMode", editor.healthMode);
         advanced.field("field.healthEndpoint", editor.healthEndpoint);
         advanced.field("field.expectedStatus", editor.expectedStatus);
@@ -305,25 +324,26 @@ public final class MultiComponentPage {
      * @throws IllegalArgumentException if an input violates the constraints checked by this contract / 输入违反当前契约检查的约束时
      */
     private void analyze() {
-        if (busy) return;
+        if (busy)
+            return;
         try {
-            if (editor.isEmpty()) throw new IllegalArgumentException(messages.text("component.validation.empty"));
+            if (editor.isEmpty())
+                throw new IllegalArgumentException(messages.text("component.validation.empty"));
             Path root = Path.of(editor.applicationRoot());
             String id = editor.applicationId();
-            List<gold.debug.windowstolinux.shared.analyze.component.ComponentAnalysisRequest> requests =
-                    editor.orderedDrafts().stream().map(service::parseComponentAnalysis).toList();
+            List<gold.debug.windowstolinux.shared.standard.analyze.component.ComponentAnalysisRequest> requests = editor
+                    .orderedDrafts().stream().map(service::parseComponentAnalysis).toList();
             output.setText(messages.text("component.analysis.running"));
             setBusy(true);
-            DesktopTaskExecutor.run(
-                    () -> service.prepareReviewedMultiComponentSource(root, id, requests),
-                    result -> {
-                        setBusy(false);
-                        preparation = result;
-                        review = null;
-                        output.setText(presenter.analysis(preparation));
-                    },
-                    exception -> { setBusy(false); output.setText(messages.text("component.analysis.failed",
-                            Map.of("detail", messages.safe(exception)))); });
+            DesktopTaskExecutor.run(() -> service.prepareReviewedMultiComponentSource(root, id, requests), result -> {
+                setBusy(false);
+                preparation = result;
+                review = null;
+                output.setText(presenter.analysis(preparation));
+            }, exception -> {
+                setBusy(false);
+                output.setText(messages.text("component.analysis.failed", Map.of("detail", messages.safe(exception))));
+            });
         } catch (Exception exception) {
             output.setText(messages.text("component.analysis.failed", Map.of("detail", messages.safe(exception))));
         }
@@ -336,7 +356,8 @@ public final class MultiComponentPage {
      * @throws IllegalArgumentException if an input violates the constraints checked by this contract / 输入违反当前契约检查的约束时
      */
     private void deploy() {
-        if (busy) return;
+        if (busy)
+            return;
         if (preparation == null || preparation.components().isEmpty()) {
             output.setText(messages.text("component.validation.analyzeFirst"));
             return;
@@ -344,18 +365,19 @@ public final class MultiComponentPage {
         try {
             ensureDraftCoverage();
             ServerProfile profile = serverContext.profile();
-            var server = service.findTrustedServer(profile.id()).orElseThrow(
-                    () -> new IllegalStateException(messages.text("deployment.serverFirst")));
-            List<String> dockerComponents = editor.orderedDrafts().stream().filter(draft ->
-                            draft.projectType() == DeploymentProjectType.DOCKERFILE_CONTAINER
-                                    && "DOCKER".equalsIgnoreCase(draft.runtimePrimary()))
+            var server = service.findTrustedServer(profile.id())
+                    .orElseThrow(() -> new IllegalStateException(messages.text("deployment.serverFirst")));
+            List<String> dockerComponents = editor.orderedDrafts().stream()
+                    .filter(draft -> draft.projectType() == DeploymentProjectType.DOCKERFILE_CONTAINER
+                            && "DOCKER".equalsIgnoreCase(draft.runtimePrimary()))
                     .map(ComponentFormInput::componentId).toList();
-            if (!confirmRisk("deployment.dockerRisk.title", "component.dockerRisk", dockerComponents)) return;
-            List<String> experimentalComponents = preparation.assessment().components().stream()
-                    .filter(component -> component.facts().support().level() == DeploymentSupportLevel.EXPERIMENTAL_ADAPTER)
+            if (!confirmRisk("deployment.dockerRisk.title", "component.dockerRisk", dockerComponents))
+                return;
+            List<String> experimentalComponents = preparation.assessment().components().stream().filter(
+                    component -> component.facts().support().level() == DeploymentSupportLevel.EXPERIMENTAL_ADAPTER)
                     .map(component -> component.componentId()).toList();
-            if (!confirmRisk("component.experimentalRisk.title", "component.experimentalRisk",
-                    experimentalComponents)) return;
+            if (!confirmRisk("component.experimentalRisk.title", "component.experimentalRisk", experimentalComponents))
+                return;
             List<MultiComponentReviewInput> inputs = new ArrayList<>();
             for (var component : preparation.assessment().components()) {
                 ComponentFormInput draft = editor.draft(component.componentId());
@@ -365,30 +387,37 @@ public final class MultiComponentPage {
             }
             String healthOwner = editor.healthComponentId();
             ComponentFormInput ownerDraft = editor.draft(healthOwner);
-            if (ownerDraft == null) throw new IllegalArgumentException(messages.text("component.validation.healthOwner"));
-            ReviewedMultiComponentApplication candidate = service.createReviewedMultiComponentApplication(
-                    preparation, server, inputs, new ApplicationHealthGate(healthOwner, service.parseComponentAnalysis(ownerDraft).runtime().orElseThrow().healthCheck()));
-            if (JOptionPane.showConfirmDialog(owner, presenter.review(candidate), messages.text("component.review.title"),
-                    JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE) != JOptionPane.YES_OPTION) return;
+            if (ownerDraft == null)
+                throw new IllegalArgumentException(messages.text("component.validation.healthOwner"));
+            ReviewedMultiComponentApplication candidate = service.createReviewedMultiComponentApplication(preparation,
+                    server, inputs, new ApplicationHealthGate(healthOwner,
+                            service.parseComponentAnalysis(ownerDraft).runtime().orElseThrow().healthCheck()));
+            if (JOptionPane.showConfirmDialog(owner, presenter.review(candidate),
+                    messages.text("component.review.title"), JOptionPane.YES_NO_OPTION,
+                    JOptionPane.WARNING_MESSAGE) != JOptionPane.YES_OPTION)
+                return;
             char[] masterPassword = serverContext.masterPassword();
             var credentialMode = serverContext.credentialMode();
             output.setText(messages.text("component.deployment.running"));
             setBusy(true);
             DesktopTaskExecutor.run(() -> {
-                    for (MultiComponentReviewInput input : inputs) {
-                        service.saveDeploymentConfigurationSnapshot(input.configuration());
-                    }
-                    return service.deployReviewedMultiComponentWithStoredPassword(candidate, profile,
-                            credentialMode, masterPassword, serverContext::confirmFingerprint);
-                }, result -> {
-                    setBusy(false);
-                    output.setText(presenter.deployment(result));
-                    if (result.status() == DeploymentStatus.SUCCEEDED) {
-                        review = candidate;
-                        applicationSelection.accept(candidate.components().getFirst().application().id());
-                    }
-                }, exception -> { setBusy(false); output.setText(messages.text("component.deployment.failed",
-                        Map.of("detail", messages.safe(exception)))); });
+                for (MultiComponentReviewInput input : inputs) {
+                    service.saveDeploymentConfigurationSnapshot(input.configuration());
+                }
+                return service.deployReviewedMultiComponentWithStoredPassword(candidate, profile, credentialMode,
+                        masterPassword, serverContext::confirmFingerprint);
+            }, result -> {
+                setBusy(false);
+                output.setText(presenter.deployment(result));
+                if (result.status() == DeploymentStatus.SUCCEEDED) {
+                    review = candidate;
+                    applicationSelection.accept(candidate.components().getFirst().application().id());
+                }
+            }, exception -> {
+                setBusy(false);
+                output.setText(
+                        messages.text("component.deployment.failed", Map.of("detail", messages.safe(exception))));
+            });
         } catch (Exception exception) {
             output.setText(messages.text("component.deployment.failed", Map.of("detail", messages.safe(exception))));
         }
@@ -401,11 +430,12 @@ public final class MultiComponentPage {
      * @throws IllegalArgumentException if an input violates the constraints checked by this contract / 输入违反当前契约检查的约束时
      */
     private void lifecycle() {
-        if (busy) return;
+        if (busy)
+            return;
         try {
             String managedApplicationId = editor.applicationId();
-            if (managedApplicationId.isEmpty()) throw new IllegalArgumentException(
-                    messages.text("component.validation.applicationId"));
+            if (managedApplicationId.isEmpty())
+                throw new IllegalArgumentException(messages.text("component.validation.applicationId"));
             LifecycleAction action = editor.lifecycleAction();
             Set<String> targets = editor.lifecycleTargets();
             ServerProfile profile = serverContext.profile();
@@ -415,15 +445,20 @@ public final class MultiComponentPage {
             output.setText(messages.text("component.lifecycle.running"));
             setBusy(true);
             DesktopTaskExecutor.run(() -> {
-                    var managed = service.findManagedMultiComponentApplication(managedApplicationId).orElseThrow(
-                            () -> new IllegalStateException(messages.text("component.validation.deployFirst")));
-                    Set<String> effectiveTargets = selectedTargets.isEmpty() && action != LifecycleAction.REFRESH_STATUS
-                            ? Set.copyOf(managed.plan().startOrder()) : selectedTargets;
-                    return service.executeManagedMultiComponentLifecycleWithStoredPassword(managedApplicationId,
-                            effectiveTargets, action, profile, credentialMode, masterPassword);
-                }, result -> { setBusy(false); output.setText(presenter.lifecycle(result)); },
-                    exception -> { setBusy(false); output.setText(messages.text("component.lifecycle.failed",
-                            Map.of("detail", messages.safe(exception)))); });
+                var managed = service.findManagedMultiComponentApplication(managedApplicationId).orElseThrow(
+                        () -> new IllegalStateException(messages.text("component.validation.deployFirst")));
+                Set<String> effectiveTargets = selectedTargets.isEmpty() && action != LifecycleAction.REFRESH_STATUS
+                        ? Set.copyOf(managed.plan().startOrder())
+                        : selectedTargets;
+                return service.executeManagedMultiComponentLifecycleWithStoredPassword(managedApplicationId,
+                        effectiveTargets, action, profile, credentialMode, masterPassword);
+            }, result -> {
+                setBusy(false);
+                output.setText(presenter.lifecycle(result));
+            }, exception -> {
+                setBusy(false);
+                output.setText(messages.text("component.lifecycle.failed", Map.of("detail", messages.safe(exception))));
+            });
         } catch (Exception exception) {
             output.setText(messages.text("component.lifecycle.failed", Map.of("detail", messages.safe(exception))));
         }
@@ -441,7 +476,8 @@ public final class MultiComponentPage {
     private boolean confirmRisk(String titleKey, String messageKey, List<String> componentIds) {
         return componentIds.isEmpty() || JOptionPane.showConfirmDialog(owner,
                 messages.text(messageKey, Map.of("components", String.join(", ", componentIds))),
-                messages.text(titleKey), JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE) == JOptionPane.YES_OPTION;
+                messages.text(titleKey), JOptionPane.YES_NO_OPTION,
+                JOptionPane.WARNING_MESSAGE) == JOptionPane.YES_OPTION;
     }
 
     /**
@@ -455,7 +491,10 @@ public final class MultiComponentPage {
      *
      * @param value candidate content accepted or rejected by this contract / 由当前契约接收或拒绝的候选内容
      */
-    private void setBusy(boolean value) { busy = value; advanced.setBusy(value); }
+    private void setBusy(boolean value) {
+        busy = value;
+        advanced.setBusy(value);
+    }
 
     /**
      * Requires prepared component identifiers and source root to match the current editable drafts.
@@ -466,8 +505,7 @@ public final class MultiComponentPage {
     private void ensureDraftCoverage() {
         Set<String> preparedIds = preparation.components().keySet();
         Path currentRoot = Path.of(editor.applicationRoot()).toAbsolutePath().normalize();
-        if (!preparedIds.equals(editor.draftIds())
-                || !preparation.assessment().applicationRoot().equals(currentRoot)
+        if (!preparedIds.equals(editor.draftIds()) || !preparation.assessment().applicationRoot().equals(currentRoot)
                 || !preparation.assessment().applicationId().equals(editor.applicationId())) {
             throw new IllegalStateException(messages.text("component.validation.graphChanged"));
         }

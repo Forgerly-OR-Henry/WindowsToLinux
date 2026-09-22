@@ -1,30 +1,30 @@
 package gold.debug.windowstolinux.shared.linux.session;
 
-import gold.debug.windowstolinux.shared.linux.protocol.RemoteRuntimeConfiguration;
-import gold.debug.windowstolinux.shared.linux.build.RemoteBuildEnvironment;
-import gold.debug.windowstolinux.shared.linux.protocol.RemoteDeploymentInputs;
-import gold.debug.windowstolinux.shared.linux.protocol.RemoteSecretPayload;
+import java.util.List;
+
 import gold.debug.windowstolinux.shared.linux.build.DeploymentBuildResult;
+import gold.debug.windowstolinux.shared.linux.build.RemoteBuildEnvironment;
 import gold.debug.windowstolinux.shared.linux.error.LinuxOperationException;
 import gold.debug.windowstolinux.shared.linux.protocol.ReleaseSnapshot;
+import gold.debug.windowstolinux.shared.linux.protocol.RemoteDeploymentInputs;
+import gold.debug.windowstolinux.shared.linux.protocol.RemoteRuntimeConfiguration;
+import gold.debug.windowstolinux.shared.linux.protocol.RemoteSecretPayload;
 import gold.debug.windowstolinux.shared.linux.protocol.RemoteStepResult;
-import gold.debug.windowstolinux.shared.linux.protocol.database.RemoteDatabasePort;
 import gold.debug.windowstolinux.shared.linux.protocol.backup.ManagedContentPublication;
 import gold.debug.windowstolinux.shared.linux.protocol.backup.RemoteBackupArtifactPort;
-import gold.debug.windowstolinux.shared.linux.protocol.restore.RemoteRestoreFilePort;
+import gold.debug.windowstolinux.shared.linux.protocol.database.RemoteDatabasePort;
 import gold.debug.windowstolinux.shared.linux.protocol.restore.RemoteRestoreActivationPort;
+import gold.debug.windowstolinux.shared.linux.protocol.restore.RemoteRestoreFilePort;
 import gold.debug.windowstolinux.shared.linux.runtime.HealthCheckResult;
 import gold.debug.windowstolinux.shared.linux.transfer.RemoteWorkspace;
+import gold.debug.windowstolinux.shared.model.capability.LinuxCapabilityFacts;
 import gold.debug.windowstolinux.shared.model.deployment.BuildLimitConfiguration;
 import gold.debug.windowstolinux.shared.model.health.HealthCheck;
-import gold.debug.windowstolinux.shared.model.lifecycle.LifecycleObservation;
 import gold.debug.windowstolinux.shared.model.lifecycle.LifecycleAction;
+import gold.debug.windowstolinux.shared.model.lifecycle.LifecycleObservation;
 import gold.debug.windowstolinux.shared.model.managed.ManagedApplication;
 import gold.debug.windowstolinux.shared.model.project.DeploymentProjectFacts;
 import gold.debug.windowstolinux.shared.model.project.DeploymentRuntimeSpecification;
-import gold.debug.windowstolinux.shared.model.capability.LinuxCapabilityFacts;
-
-import java.util.List;
 
 /**
  * Bounded extension to the verified managed service session for all typed deployment single-component project types.
@@ -32,6 +32,13 @@ import java.util.List;
  *  <p>已验证受管部署会话的有界扩展，覆盖全部部署单组件项目类型。
  */
 public interface DeploymentRemoteSession extends LinuxRemoteSession, RemoteRestoreFilePort {
+    /** Returns protected task-source and sandbox execution operations. / 返回受保护任务源码及沙箱执行操作。
+     * @return scoped project port / 限定作用域项目端口
+     */
+    default gold.debug.windowstolinux.shared.linux.workspace.RemoteProjectPort projects() {
+        throw new UnsupportedOperationException("protected remote project operations unavailable");
+    }
+
     /**
      * Optional discovery capability bound to the authenticated session. / 绑定已认证会话的可选应用发现能力。
      *
@@ -41,6 +48,7 @@ public interface DeploymentRemoteSession extends LinuxRemoteSession, RemoteResto
     default gold.debug.windowstolinux.shared.linux.runtime.ExternalApplicationPort externalApplications() {
         throw new UnsupportedOperationException("external application discovery is unavailable on this transport");
     }
+
     /**
      * Existing database capability bound to this connection. / 绑定当前连接的既有数据库能力。
      *
@@ -71,6 +79,7 @@ public interface DeploymentRemoteSession extends LinuxRemoteSession, RemoteResto
     default gold.debug.windowstolinux.shared.linux.ecosystem.db.NativeDatabasePort nativeDatabases() {
         throw new UnsupportedOperationException("native DB provisioning is unavailable on this transport");
     }
+
     /**
      * Collects distribution and container facts before one typed deployment. / 在类型化部署前采集发行版和容器事实。
      *
@@ -92,8 +101,7 @@ public interface DeploymentRemoteSession extends LinuxRemoteSession, RemoteResto
             DeploymentProjectFacts facts, DeploymentRuntimeSpecification runtime, BuildLimitConfiguration limits)
             throws LinuxOperationException {
         return new gold.debug.windowstolinux.shared.linux.build.ToolchainPreparationResult(
-                new gold.debug.windowstolinux.shared.model.toolchain.ResolvedToolchainSet("legacy", List.of()),
-                collectDeploymentCapabilities());
+                standardBuild().prepare(facts, runtime, limits), collectDeploymentCapabilities());
     }
 
     /**
@@ -107,9 +115,18 @@ public interface DeploymentRemoteSession extends LinuxRemoteSession, RemoteResto
      * @return one analyzed typed deployment candidate / 一个已分析的部署候选版本
      * @throws LinuxOperationException if the authenticated remote operation fails or its evidence is rejected / 已认证远端操作失败或其证据被拒绝时
      */
-    DeploymentBuildResult buildDeployment(DeploymentProjectFacts facts, DeploymentRuntimeSpecification runtime,
-                                      RemoteWorkspace workspace, BuildLimitConfiguration limits, RemoteBuildEnvironment configuration)
-            throws LinuxOperationException;
+    default DeploymentBuildResult buildDeployment(DeploymentProjectFacts facts, DeploymentRuntimeSpecification runtime,
+            RemoteWorkspace workspace, BuildLimitConfiguration limits, RemoteBuildEnvironment configuration)
+            throws LinuxOperationException {
+        return standardBuild().build(facts, runtime, workspace, limits, configuration);
+    }
+
+    /** Returns the explicitly injected standard policy, if available. / 返回显式注入的标准策略（若存在）。
+     * @return standard build port / 标准构建端口
+     */
+    default gold.debug.windowstolinux.shared.linux.build.RemoteBuildPort standardBuild() {
+        throw new UnsupportedOperationException("standard build policy is unavailable");
+    }
 
     /**
      * Seals reviewed runtime configuration and exact secret revisions outside release trees. / 在发布树之外封存经审阅的运行时配置与精确秘密修订。
@@ -120,8 +137,8 @@ public interface DeploymentRemoteSession extends LinuxRemoteSession, RemoteResto
      * @return constructed or resolved remote deployment inputs / 构造或解析得到的远端部署输入集合
      * @throws LinuxOperationException if the authenticated remote operation fails or its evidence is rejected / 已认证远端操作失败或其证据被拒绝时
      */
-    RemoteDeploymentInputs stageDeploymentInputs(ManagedApplication application, RemoteRuntimeConfiguration configuration,
-                                                   List<RemoteSecretPayload> secrets) throws LinuxOperationException;
+    RemoteDeploymentInputs stageDeploymentInputs(ManagedApplication application,
+            RemoteRuntimeConfiguration configuration, List<RemoteSecretPayload> secrets) throws LinuxOperationException;
 
     /**
      * Captures a rollback snapshot for the declared runtime. / 为声明的运行时捕获回滚快照。
@@ -150,11 +167,9 @@ public interface DeploymentRemoteSession extends LinuxRemoteSession, RemoteResto
      * @throws LinuxOperationException if the authenticated remote operation fails or its evidence is rejected / 已认证远端操作失败或其证据被拒绝时
      */
     RemoteStepResult publishDeployment(ManagedApplication application, DeploymentProjectFacts facts,
-                                     RemoteWorkspace workspace, DeploymentBuildResult build,
-                                     String releaseIdentity, DeploymentRuntimeSpecification runtime,
-                                     RemoteDeploymentInputs inputs, ManagedContentPublication contentPublication,
-                                     ReleaseSnapshot snapshot)
-            throws LinuxOperationException;
+            RemoteWorkspace workspace, DeploymentBuildResult build, String releaseIdentity,
+            DeploymentRuntimeSpecification runtime, RemoteDeploymentInputs inputs,
+            ManagedContentPublication contentPublication, ReleaseSnapshot snapshot) throws LinuxOperationException;
 
     /**
      * Rolls back one typed deployment release. / 回滚一个部署版本。
@@ -168,10 +183,9 @@ public interface DeploymentRemoteSession extends LinuxRemoteSession, RemoteResto
      * @return constructed or resolved remote step result / 构造或解析得到的远端步骤结果
      * @throws LinuxOperationException if the authenticated remote operation fails or its evidence is rejected / 已认证远端操作失败或其证据被拒绝时
      */
-    RemoteStepResult rollbackDeployment(ManagedApplication application, ReleaseSnapshot snapshot, DeploymentBuildResult build,
-                                      String releaseIdentity, DeploymentRuntimeSpecification runtime,
-                                      RemoteDeploymentInputs inputs)
-            throws LinuxOperationException;
+    RemoteStepResult rollbackDeployment(ManagedApplication application, ReleaseSnapshot snapshot,
+            DeploymentBuildResult build, String releaseIdentity, DeploymentRuntimeSpecification runtime,
+            RemoteDeploymentInputs inputs) throws LinuxOperationException;
 
     /**
      * Checks a typed deployment runtime and process ownership. / 检查类型化部署运行时及进程归属。
@@ -183,7 +197,7 @@ public interface DeploymentRemoteSession extends LinuxRemoteSession, RemoteResto
      * @throws LinuxOperationException if the authenticated remote operation fails or its evidence is rejected / 已认证远端操作失败或其证据被拒绝时
      */
     HealthCheckResult checkDeploymentHealth(ManagedApplication application, DeploymentRuntimeSpecification runtime,
-                                          HealthCheck healthCheck) throws LinuxOperationException;
+            HealthCheck healthCheck) throws LinuxOperationException;
 
     /**
      * Observes a typed deployment release. / 观察类型化部署版本。
@@ -205,8 +219,8 @@ public interface DeploymentRemoteSession extends LinuxRemoteSession, RemoteResto
      * @return constructed or resolved lifecycle observation / 构造或解析得到的生命周期观测
      * @throws LinuxOperationException if the authenticated remote operation fails or its evidence is rejected / 已认证远端操作失败或其证据被拒绝时
      */
-    LifecycleObservation executeDeploymentLifecycle(ManagedApplication application, DeploymentRuntimeSpecification runtime,
-                                                    LifecycleAction action) throws LinuxOperationException;
+    LifecycleObservation executeDeploymentLifecycle(ManagedApplication application,
+            DeploymentRuntimeSpecification runtime, LifecycleAction action) throws LinuxOperationException;
 
     /**
      * Retains only the bounded number of recent successful releases. / 仅保留有界数量的最近成功发布。

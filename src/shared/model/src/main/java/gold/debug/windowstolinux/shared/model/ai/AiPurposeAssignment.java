@@ -13,6 +13,7 @@ public record AiPurposeAssignment(String profileId, boolean enabled) {
      */
     public AiPurposeAssignment {
         Objects.requireNonNull(profileId);
-        if (profileId.isBlank()) throw new IllegalArgumentException("model identity is required");
+        if (profileId.isBlank())
+            throw new IllegalArgumentException("model identity is required");
     }
 }

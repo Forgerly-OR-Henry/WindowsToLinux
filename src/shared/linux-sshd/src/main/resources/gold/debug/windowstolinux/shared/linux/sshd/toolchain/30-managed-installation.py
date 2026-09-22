@@ -2,10 +2,17 @@ def reuse_system(ecosystem, identity):
     # A shared dotnet root may select another SDK/runtime through global.json or framework roll-forward.
     if ecosystem == 'DOTNET':
         return None
-    binaries = {'JAVA': ['java', 'javac', 'jar', 'javadoc'], 'NODE': ['node', 'npm', 'npx'],
-                'PYTHON': ['python3'], 'DOTNET': ['dotnet'], 'KOTLIN': ['kotlinc', 'kotlin'],
-                'GO': ['go', 'gofmt'], 'RUST': ['rustc', 'cargo', 'rustdoc'],
-                'PHP': ['php'], 'RUBY': ['ruby', 'gem', 'bundle']}[ecosystem]
+    binaries = {
+        'JAVA': ['java', 'javac', 'jar', 'javadoc'],
+        'NODE': ['node', 'npm', 'npx'],
+        'PYTHON': ['python3'],
+        'DOTNET': ['dotnet'],
+        'KOTLIN': ['kotlinc', 'kotlin'],
+        'GO': ['go', 'gofmt'],
+        'RUST': ['rustc', 'cargo', 'rustdoc'],
+        'PHP': ['php'],
+        'RUBY': ['ruby', 'gem', 'bundle'],
+    }[ecosystem]
     launcher = shutil.which(binaries[0], path='/usr/local/bin:/usr/bin:/bin')
     if launcher is None:
         return None
@@ -48,11 +55,31 @@ def reuse_system(ecosystem, identity):
             target = directory / f['name'] if ecosystem == 'DOTNET' else directory / 'bin' / f['name']
             target.symlink_to(f['path'])
         # Keep required runtime libraries reachable while exposing only this ecosystem's commands on PATH.
-        for name in ('lib', 'lib64', 'share', 'conf', 'include', 'jmods', 'jre', 'pkg', 'src', 'misc', 'api', 'VERSION'):
+        for name in (
+            'lib',
+            'lib64',
+            'share',
+            'conf',
+            'include',
+            'jmods',
+            'jre',
+            'pkg',
+            'src',
+            'misc',
+            'api',
+            'VERSION',
+        ):
             if (home / name).exists():
                 (directory / name).symlink_to(home / name, target_is_directory=True)
-        record = {'ecosystem': ecosystem, 'version': identity, 'directory': str(directory), 'origin': 'SYSTEM',
-                  'source': 'system:' + str(executable), 'sha256': digest, 'system_files': files}
+        record = {
+            'ecosystem': ecosystem,
+            'version': identity,
+            'directory': str(directory),
+            'origin': 'SYSTEM',
+            'source': 'system:' + str(executable),
+            'sha256': digest,
+            'system_files': files,
+        }
         marker.write_text(json.dumps(record, sort_keys=True))
         directory.chmod(0o755)
         (directory / 'bin').chmod(0o755)
@@ -69,7 +96,12 @@ def verify_system(record):
     for f in record['system_files']:
         file = pathlib.Path(f['path'])
         owned_directory(file.parent)
-        if file.is_symlink() or file.stat().st_uid != 0 or file.stat().st_mode & 0o022 or hashlib.sha256(file.read_bytes()).hexdigest() != f['sha256']:
+        if (
+            file.is_symlink()
+            or file.stat().st_uid != 0
+            or file.stat().st_mode & 0o022
+            or hashlib.sha256(file.read_bytes()).hexdigest() != f['sha256']
+        ):
             fail('integrity', 'a pinned system tool has changed since preparation')
 
 
@@ -87,8 +119,19 @@ def ruby_legacy_tls(destination, work):
     url = 'https://rubygems.org/downloads/' + gem.name
     download(url, gem, 'sha256', digest)
     environment = dict(os.environ, PATH=str(destination / 'bin') + ':/usr/bin:/bin')
-    run([str(destination / 'bin/ruby'), str(destination / 'bin/gem'), 'install', '--local', str(gem),
-         '--no-document', '--ignore-dependencies'], work, environment)
+    run(
+        [
+            str(destination / 'bin/ruby'),
+            str(destination / 'bin/gem'),
+            'install',
+            '--local',
+            str(gem),
+            '--no-document',
+            '--ignore-dependencies',
+        ],
+        work,
+        environment,
+    )
     return {'version': version, 'source': url, 'sha256': digest}
 
 
@@ -105,7 +148,9 @@ def seal_installation(destination):
 
 
 def install(ecosystem, identity, url, algorithm, expected, layout):
-    if algorithm not in ('sha256', 'sha512') or not re.fullmatch('[a-f0-9]{' + str(64 if algorithm == 'sha256' else 128) + '}', expected):
+    if algorithm not in ('sha256', 'sha512') or not re.fullmatch(
+        '[a-f0-9]{' + str(64 if algorithm == 'sha256' else 128) + '}', expected
+    ):
         fail('metadata', 'invalid official artifact digest')
     key = installation_key(ecosystem, identity, expected)
     destination = ROOT / 'versions' / (ecosystem.lower() + '-' + key)
@@ -138,12 +183,36 @@ def install(ecosystem, identity, url, algorithm, expected, layout):
             else:
                 destination.mkdir(parents=True)
                 if layout == 'rust':
-                    run(['/bin/sh', str(source / 'install.sh'), '--prefix=' + str(destination), '--disable-ldconfig'], source)
+                    run(
+                        ['/bin/sh', str(source / 'install.sh'), '--prefix=' + str(destination), '--disable-ldconfig'],
+                        source,
+                    )
                 else:
                     source_dependencies(layout)
-                    options = {'python': ['--with-ensurepip=install'],
-                               'php': ['--disable-all', '--enable-cli', '--enable-mbstring', '--with-iconv', '--with-openssl', '--with-zlib', '--enable-phar', '--enable-tokenizer', '--enable-session', '--enable-filter', '--with-curl', '--enable-pdo', '--with-pdo-pgsql', '--with-pdo-mysql=mysqlnd', '--with-mysqli=mysqlnd', '--with-pgsql', '--with-sqlite3', '--with-pdo-sqlite'],
-                               'ruby': ['--disable-install-doc']}[layout]
+                    options = {
+                        'python': ['--with-ensurepip=install'],
+                        'php': [
+                            '--disable-all',
+                            '--enable-cli',
+                            '--enable-mbstring',
+                            '--with-iconv',
+                            '--with-openssl',
+                            '--with-zlib',
+                            '--enable-phar',
+                            '--enable-tokenizer',
+                            '--enable-session',
+                            '--enable-filter',
+                            '--with-curl',
+                            '--enable-pdo',
+                            '--with-pdo-pgsql',
+                            '--with-pdo-mysql=mysqlnd',
+                            '--with-mysqli=mysqlnd',
+                            '--with-pgsql',
+                            '--with-sqlite3',
+                            '--with-pdo-sqlite',
+                        ],
+                        'ruby': ['--disable-install-doc'],
+                    }[layout]
                     if layout == 'ruby' and version_key(identity)[:2] == (3, 0):
                         options.append('--with-out-ext=openssl')
                     run([str(source / 'configure'), '--prefix=' + str(destination)] + options, source)
@@ -152,9 +221,17 @@ def install(ecosystem, identity, url, algorithm, expected, layout):
                     if layout == 'ruby' and version_key(identity)[:2] == (3, 0):
                         dependencies['openssl'] = ruby_legacy_tls(destination, work)
             probe(ecosystem, destination, identity)
-            record = {'ecosystem': ecosystem, 'version': identity, 'directory': str(destination),
-                      'origin': 'MANAGED', 'source': url, 'sha256': sha256,
-                      'official_algorithm': algorithm, 'official_digest': expected, 'dependencies': dependencies}
+            record = {
+                'ecosystem': ecosystem,
+                'version': identity,
+                'directory': str(destination),
+                'origin': 'MANAGED',
+                'source': url,
+                'sha256': sha256,
+                'official_algorithm': algorithm,
+                'official_digest': expected,
+                'dependencies': dependencies,
+            }
             marker.write_text(json.dumps(record, sort_keys=True))
             seal_installation(destination)
             return record
@@ -165,28 +242,39 @@ def install(ecosystem, identity, url, algorithm, expected, layout):
 
 
 def probe(ecosystem, directory, expected):
-    commands = {'JAVA': ['bin/java', '-version'], 'NODE': ['bin/node', '--version'],
-                'PYTHON': ['bin/python3', '--version'], 'DOTNET': ['dotnet', '--list-sdks'],
-                'KOTLIN': ['bin/kotlinc', '-version'], 'GO': ['bin/go', 'version'],
-                'RUST': ['bin/rustc', '--version'], 'PHP': ['bin/php', '-r', 'echo PHP_VERSION;'],
-                'RUBY': ['bin/ruby', '-e', 'print RUBY_VERSION']}
+    commands = {
+        'JAVA': ['bin/java', '-version'],
+        'NODE': ['bin/node', '--version'],
+        'PYTHON': ['bin/python3', '--version'],
+        'DOTNET': ['dotnet', '--list-sdks'],
+        'KOTLIN': ['bin/kotlinc', '-version'],
+        'GO': ['bin/go', 'version'],
+        'RUST': ['bin/rustc', '--version'],
+        'PHP': ['bin/php', '-r', 'echo PHP_VERSION;'],
+        'RUBY': ['bin/ruby', '-e', 'print RUBY_VERSION'],
+    }
     command = list(commands[ecosystem])
     command[0] = str(directory / command[0])
     returncode, output = probe_output(command)
     tokens = re.findall(r'\d+(?:[._]\d+)*(?:u\d+)?(?:(?:\+|-b)\d+(?:\.\d+)*)?', output)
     if ecosystem == 'JAVA':
         tokens = [t[2:].replace('_', '.') if t.startswith('1.8') else t for t in tokens]
-    if returncode or not any(version_key(t) == version_key(expected)
-                             and release_build(t) == release_build(expected) for t in tokens):
+    if returncode or not any(
+        version_key(t) == version_key(expected) and release_build(t) == release_build(expected) for t in tokens
+    ):
         fail('probe', 'installed tool did not report the selected exact release')
     if ecosystem == 'JAVA':
         run([str(directory / 'bin/javac'), '-version'])
     if ecosystem == 'PYTHON':
         run([str(directory / 'bin/python3'), '-c', 'import ssl, sqlite3, bz2, lzma, venv, zlib'])
     if ecosystem == 'PHP':
-        run([str(directory / 'bin/php'), '-r',
-             'foreach (["curl", "iconv", "mbstring", "pdo", "pdo_sqlite"] as $extension) '
-             '{ if (!extension_loaded($extension)) { fwrite(STDERR, "missing PHP extension: " . $extension); exit(1); } }'])
+        run(
+            [
+                str(directory / 'bin/php'),
+                '-r',
+                'foreach (["curl", "iconv", "mbstring", "pdo", "pdo_sqlite"] as $extension) '
+                '{ if (!extension_loaded($extension)) { fwrite(STDERR, "missing PHP extension: " . $extension); exit(1); } }',
+            ]
+        )
     if ecosystem == 'RUBY':
         run([str(directory / 'bin/ruby'), '-e', 'require "openssl"; require "zlib"; require "yaml"'])
-

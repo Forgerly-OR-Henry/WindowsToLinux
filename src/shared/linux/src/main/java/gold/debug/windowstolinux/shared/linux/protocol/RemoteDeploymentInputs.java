@@ -22,11 +22,14 @@ public record RemoteDeploymentInputs(String configurationSha256, List<SecretDige
      */
     public RemoteDeploymentInputs {
         Objects.requireNonNull(configurationSha256, "configurationSha256");
-        if (!configurationSha256.matches("[0-9a-f]{64}")) throw new IllegalArgumentException("invalid configuration digest");
+        if (!configurationSha256.matches("[0-9a-f]{64}"))
+            throw new IllegalArgumentException("invalid configuration digest");
         secrets = Objects.requireNonNull(secrets, "secrets").stream()
-                .sorted(Comparator.comparing(SecretDigest::identifier).thenComparingLong(SecretDigest::revision)).toList();
-        if (secrets.size() > 32 || secrets.stream().map(value -> value.identifier().toUpperCase(Locale.ROOT)
-                .replaceAll("[^A-Z0-9]", "_")).distinct().count() != secrets.size())
+                .sorted(Comparator.comparing(SecretDigest::identifier).thenComparingLong(SecretDigest::revision))
+                .toList();
+        if (secrets.size() > 32 || secrets.stream()
+                .map(value -> value.identifier().toUpperCase(Locale.ROOT).replaceAll("[^A-Z0-9]", "_")).distinct()
+                .count() != secrets.size())
             throw new IllegalArgumentException("secret bindings must be bounded and unambiguous");
     }
 
@@ -52,8 +55,8 @@ public record RemoteDeploymentInputs(String configurationSha256, List<SecretDige
         public SecretDigest {
             Objects.requireNonNull(identifier, "identifier");
             Objects.requireNonNull(sha256, "sha256");
-            if (!identifier.matches("[a-z0-9][a-z0-9._-]{0,63}") || revision < 1
-                    || !sha256.matches("[0-9a-f]{64}") || byteCount < 1 || byteCount > 65536)
+            if (!identifier.matches("[a-z0-9][a-z0-9._-]{0,63}") || revision < 1 || !sha256.matches("[0-9a-f]{64}")
+                    || byteCount < 1 || byteCount > 65536)
                 throw new IllegalArgumentException("invalid secret metadata");
         }
     }

@@ -1,13 +1,13 @@
 package gold.debug.windowstolinux.shared.linux.sshd.backup.execution.protocol;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
 import gold.debug.windowstolinux.shared.linux.error.LinuxOperationException;
 import gold.debug.windowstolinux.shared.linux.error.LinuxOperationFailureType;
 import gold.debug.windowstolinux.shared.linux.protocol.database.RemoteDatabasePort;
 import org.junit.jupiter.api.Test;
-
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class DatabaseProtocolParserTest {
     private final DatabaseProtocolParser parser = new DatabaseProtocolParser();
@@ -36,8 +36,7 @@ class DatabaseProtocolParserTest {
 
         assertEquals(RemoteDatabasePort.DatabaseType.POSTGRESQL, compatibility.type());
         assertTrue(compatibility.engineVersionCompatible());
-        assertEquals(RemoteDatabasePort.DatabaseConsistencyMode.POSTGRESQL_LOGICAL_DUMP,
-                artifact.consistencyMode());
+        assertEquals(RemoteDatabasePort.DatabaseConsistencyMode.POSTGRESQL_LOGICAL_DUMP, artifact.consistencyMode());
         assertEquals(4096, artifact.byteCount());
     }
 
@@ -97,22 +96,20 @@ class DatabaseProtocolParserTest {
 
     @Test
     void rejectsDuplicateAndUnknownProtocolFields() {
-        LinuxOperationException duplicate = assertThrows(LinuxOperationException.class,
-                () -> parser.restore("""
-                        CANDIDATE_ID=sample-0123456789abcdef
-                        CANDIDATE_ID=sample-0123456789abcdef
-                        CONNECTION_TOKEN=sample-0123456789abcdef
-                        INTEGRITY_VERIFIED=1
-                        SCHEMA_READABLE=1
-                        """));
-        LinuxOperationException unknown = assertThrows(LinuxOperationException.class,
-                () -> parser.restore("""
-                        CANDIDATE_ID=sample-0123456789abcdef
-                        CONNECTION_TOKEN=sample-0123456789abcdef
-                        INTEGRITY_VERIFIED=1
-                        SCHEMA_READABLE=1
-                        EXTRA=unexpected
-                        """));
+        LinuxOperationException duplicate = assertThrows(LinuxOperationException.class, () -> parser.restore("""
+                CANDIDATE_ID=sample-0123456789abcdef
+                CANDIDATE_ID=sample-0123456789abcdef
+                CONNECTION_TOKEN=sample-0123456789abcdef
+                INTEGRITY_VERIFIED=1
+                SCHEMA_READABLE=1
+                """));
+        LinuxOperationException unknown = assertThrows(LinuxOperationException.class, () -> parser.restore("""
+                CANDIDATE_ID=sample-0123456789abcdef
+                CONNECTION_TOKEN=sample-0123456789abcdef
+                INTEGRITY_VERIFIED=1
+                SCHEMA_READABLE=1
+                EXTRA=unexpected
+                """));
 
         assertEquals(LinuxOperationFailureType.DATABASE_EVIDENCE_INVALID.code(), duplicate.failure().code());
         assertEquals(LinuxOperationFailureType.DATABASE_EVIDENCE_INVALID.code(), unknown.failure().code());

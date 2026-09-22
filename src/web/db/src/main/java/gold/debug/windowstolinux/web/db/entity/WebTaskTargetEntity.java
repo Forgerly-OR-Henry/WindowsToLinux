@@ -12,4 +12,5 @@ import com.baomidou.mybatisplus.annotation.TableName;
  * @param mutating mutating / 变更
  */
 @TableName("task_targets")
-public record WebTaskTargetEntity(String workspaceId, String taskId, String serverId, Integer mutating) { }
+public record WebTaskTargetEntity(String workspaceId, String taskId, String serverId, Integer mutating) {
+}

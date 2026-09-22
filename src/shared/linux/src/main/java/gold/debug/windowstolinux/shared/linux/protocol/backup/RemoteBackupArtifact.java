@@ -11,13 +11,8 @@ import java.util.Objects;
  * @param byteCount measured content length in bytes / 实测内容长度，单位为字节
  * @param sha256 lower-case hexadecimal SHA-256 digest / 小写十六进制 SHA-256 摘要
  */
-public record RemoteBackupArtifact(
-        String operationId,
-        String artifactId,
-        RemoteBackupArtifactKind kind,
-        long byteCount,
-        String sha256
-) {
+public record RemoteBackupArtifact(String operationId, String artifactId, RemoteBackupArtifactKind kind, long byteCount,
+        String sha256) {
     /**
      * Validates bounded helper evidence. / 校验有界 helper 证据。
      *
@@ -34,10 +29,8 @@ public record RemoteBackupArtifact(
         artifactId = Objects.requireNonNull(artifactId, "artifactId").trim();
         kind = Objects.requireNonNull(kind, "kind");
         sha256 = Objects.requireNonNull(sha256, "sha256").trim();
-        if (!operationId.matches("backup-[0-9a-f]{32}")
-                || !artifactId.matches("artifact-[0-9a-f]{32}")
-                || byteCount < 1 || byteCount > 64L * 1024 * 1024 * 1024
-                || !sha256.matches("[0-9a-f]{64}")) {
+        if (!operationId.matches("backup-[0-9a-f]{32}") || !artifactId.matches("artifact-[0-9a-f]{32}") || byteCount < 1
+                || byteCount > 64L * 1024 * 1024 * 1024 || !sha256.matches("[0-9a-f]{64}")) {
             throw new IllegalArgumentException("remote backup artifact evidence is invalid");
         }
     }

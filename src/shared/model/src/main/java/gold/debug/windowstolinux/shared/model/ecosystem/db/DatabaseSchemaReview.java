@@ -14,8 +14,8 @@ import java.util.*;
  * @param firstDeploymentInitializationPlanned first deployment initialization planned / 首次部署初始化已计划
  */
 public record DatabaseSchemaReview(String inspectionSha256, Set<String> databaseIds, Set<String> initializedSqlPaths,
-                                   boolean newOwnedDatabaseInitialized, boolean existingSchemaChangeApproved,
-                                   boolean frameworkMigrationsDisabled, boolean firstDeploymentInitializationPlanned) {
+        boolean newOwnedDatabaseInitialized, boolean existingSchemaChangeApproved, boolean frameworkMigrationsDisabled,
+        boolean firstDeploymentInitializationPlanned) {
     /**
      * Initializes database schema review through its shared constructor contract.
      * <p>通过共享构造契约初始化数据库结构审阅。
@@ -28,9 +28,12 @@ public record DatabaseSchemaReview(String inspectionSha256, Set<String> database
      * @param frameworkMigrationsDisabled framework migrations disabled / 框架迁移集合已禁用
      */
     public DatabaseSchemaReview(String inspectionSha256, Set<String> databaseIds, Set<String> initializedSqlPaths,
-            boolean newOwnedDatabaseInitialized, boolean existingSchemaChangeApproved, boolean frameworkMigrationsDisabled) {
-        this(inspectionSha256,databaseIds,initializedSqlPaths,newOwnedDatabaseInitialized,existingSchemaChangeApproved,frameworkMigrationsDisabled,false);
+            boolean newOwnedDatabaseInitialized, boolean existingSchemaChangeApproved,
+            boolean frameworkMigrationsDisabled) {
+        this(inspectionSha256, databaseIds, initializedSqlPaths, newOwnedDatabaseInitialized,
+                existingSchemaChangeApproved, frameworkMigrationsDisabled, false);
     }
+
     /**
      * Validates and binds the inputs required by database schema review.
      * <p>校验并绑定数据库结构审阅所需输入。
@@ -45,9 +48,13 @@ public record DatabaseSchemaReview(String inspectionSha256, Set<String> database
      * @throws IllegalArgumentException if an input violates the constraints checked by this contract / 输入违反当前契约检查的约束时
      */
     public DatabaseSchemaReview {
-        if (inspectionSha256 == null || !inspectionSha256.matches("[a-f0-9]{64}")) throw new IllegalArgumentException("schema review must bind exact inspected source");
-        databaseIds = Set.copyOf(databaseIds); initializedSqlPaths = Set.copyOf(initializedSqlPaths);
+        if (inspectionSha256 == null || !inspectionSha256.matches("[a-f0-9]{64}"))
+            throw new IllegalArgumentException("schema review must bind exact inspected source");
+        databaseIds = Set.copyOf(databaseIds);
+        initializedSqlPaths = Set.copyOf(initializedSqlPaths);
         if (databaseIds.isEmpty() || databaseIds.size() > 16 || initializedSqlPaths.size() > 64
-                || !newOwnedDatabaseInitialized && !existingSchemaChangeApproved && !firstDeploymentInitializationPlanned) throw new IllegalArgumentException("schema review requires verified DB work");
+                || !newOwnedDatabaseInitialized && !existingSchemaChangeApproved
+                        && !firstDeploymentInitializationPlanned)
+            throw new IllegalArgumentException("schema review requires verified DB work");
     }
 }

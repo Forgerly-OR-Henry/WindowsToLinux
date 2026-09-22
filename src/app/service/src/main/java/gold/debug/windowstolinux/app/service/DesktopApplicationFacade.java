@@ -1,119 +1,127 @@
 package gold.debug.windowstolinux.app.service;
 
-import gold.debug.windowstolinux.shared.backup.crypto.BackupSecretException;
-
-import gold.debug.windowstolinux.shared.deploy.contract.AutomaticDatabasePreparation;
-
-import gold.debug.windowstolinux.shared.deploy.contract.AutomaticDeploymentInteraction;
-
-import gold.debug.windowstolinux.app.service.contract.definition.*;
-import gold.debug.windowstolinux.app.service.contract.DesktopRecoveryInteraction;
-
-import gold.debug.windowstolinux.app.db.DesktopPersistence;
-import gold.debug.windowstolinux.app.secret.SecretStore;
-import gold.debug.windowstolinux.app.secret.SecretStoreException;
-import gold.debug.windowstolinux.app.service.ai.AiProviderProfile;
-import gold.debug.windowstolinux.app.service.ai.AiUseCaseFacade;
-import gold.debug.windowstolinux.app.service.deployment.DeploymentInspectionUseCase;
-import gold.debug.windowstolinux.app.service.lock.ServerOperationLockRegistry;
-import gold.debug.windowstolinux.app.service.config.DeploymentConfigurationUseCase;
-import gold.debug.windowstolinux.app.service.deployment.single.DeploymentOutcome;
-import gold.debug.windowstolinux.app.service.deployment.ReviewedDeploymentUseCase;
-import gold.debug.windowstolinux.app.service.deployment.MultiComponentDeploymentUseCase;
-import gold.debug.windowstolinux.app.service.deployment.MultiComponentLifecycleUseCase;
-import gold.debug.windowstolinux.app.service.deployment.multi.ManagedMultiComponentApplication;
-import gold.debug.windowstolinux.app.service.contract.definition.MultiComponentReviewInput;
-import gold.debug.windowstolinux.app.service.deployment.multi.ReviewedMultiComponentApplication;
-import gold.debug.windowstolinux.app.service.execution.environment.EnvironmentSetupUseCase;
-import gold.debug.windowstolinux.app.service.execution.lifecycle.LifecycleOutcome;
-import gold.debug.windowstolinux.app.service.execution.lifecycle.LifecycleUseCase;
-import gold.debug.windowstolinux.app.service.execution.lifecycle.ManagedApplicationSnapshot;
-import gold.debug.windowstolinux.app.service.contract.AiApplicationFacade;
-import gold.debug.windowstolinux.app.service.contract.BackupApplicationFacade;
-import gold.debug.windowstolinux.app.service.contract.DeploymentApplicationFacade;
-import gold.debug.windowstolinux.app.service.contract.AutomaticDeploymentApplicationFacade;
-import gold.debug.windowstolinux.app.service.contract.ManagedApplicationFacade;
-import gold.debug.windowstolinux.app.service.contract.MultiComponentApplicationFacade;
-import gold.debug.windowstolinux.app.service.contract.ServerApplicationFacade;
-import gold.debug.windowstolinux.app.service.server.DesktopSecretStoreService;
-import gold.debug.windowstolinux.app.service.server.ServerProfile;
-import gold.debug.windowstolinux.app.service.server.ServerUseCaseFacade;
-import gold.debug.windowstolinux.app.service.source.ReviewedSourcePreparation;
-import gold.debug.windowstolinux.app.service.source.SourcePreparationUseCase;
-import gold.debug.windowstolinux.app.service.source.PreparedMultiComponentSource;
-import gold.debug.windowstolinux.app.service.backup.BackupArchiveInspection;
-import gold.debug.windowstolinux.app.service.backup.BackupUseCase;
-import gold.debug.windowstolinux.app.service.backup.ManagedBackupInputAssessment;
-import gold.debug.windowstolinux.app.service.backup.ManagedBackupInputUseCase;
-import gold.debug.windowstolinux.app.service.backup.PreparedBackupCandidate;
-import gold.debug.windowstolinux.app.service.backup.PreparedBackupSecrets;
-import gold.debug.windowstolinux.app.service.backup.CreatedBackupArchive;
-import gold.debug.windowstolinux.app.service.backup.RemoteBackupCreationUseCase;
-import gold.debug.windowstolinux.app.service.backup.ManagedRestoreOutcome;
-import gold.debug.windowstolinux.app.service.backup.ManagedRestoreUseCase;
-import gold.debug.windowstolinux.app.service.backup.ManagedOfflineMigrationOutcome;
-import gold.debug.windowstolinux.app.service.backup.ManagedOfflineMigrationUseCase;
-import gold.debug.windowstolinux.app.db.entity.StoredApplicationSecretRevision;
-import gold.debug.windowstolinux.shared.config.revision.ConfigurationSnapshot;
-import gold.debug.windowstolinux.shared.config.resource.ManagedDatabaseBinding;
-import gold.debug.windowstolinux.shared.config.secretref.SecretReference;
-import gold.debug.windowstolinux.app.windows.workspace.WindowsSourcePreparer;
-import gold.debug.windowstolinux.shared.analyze.core.DeploymentAnalysisCoordinator;
-import gold.debug.windowstolinux.shared.ai.collaboration.role.AiRoleContext;
-import gold.debug.windowstolinux.shared.ai.collaboration.invocation.AiRoleInvocationResult;
-import gold.debug.windowstolinux.shared.deploy.execution.environment.EnvironmentSetupService;
-import gold.debug.windowstolinux.shared.deploy.contract.ReviewedDeploymentPlan;
-import gold.debug.windowstolinux.shared.deploy.contract.ReviewedDeploymentRequest;
-import gold.debug.windowstolinux.shared.deploy.contract.result.lifecycle.LifecycleActionResult;
-import gold.debug.windowstolinux.shared.deploy.contract.result.deployment.MultiComponentDeploymentResult;
-import gold.debug.windowstolinux.shared.deploy.contract.result.lifecycle.MultiComponentLifecycleResult;
-import gold.debug.windowstolinux.shared.deploy.execution.lifecycle.MultiComponentLifecycleService;
-import gold.debug.windowstolinux.shared.deploy.contract.ApplicationHealthGate;
-import gold.debug.windowstolinux.shared.deploy.execution.transaction.ReviewedMultiComponentDeploymentService;
-import gold.debug.windowstolinux.shared.deploy.execution.transaction.ReviewedDeploymentService;
-import gold.debug.windowstolinux.shared.linux.connection.DeploymentLinuxGateway;
-import gold.debug.windowstolinux.shared.linux.connection.HostKeyEvaluator;
-import gold.debug.windowstolinux.shared.linux.error.LinuxOperationException;
-import gold.debug.windowstolinux.shared.linux.connection.SshCredential;
-import gold.debug.windowstolinux.shared.linux.connection.SshEndpoint;
-import gold.debug.windowstolinux.shared.model.deployment.BuildLimitConfiguration;
-import gold.debug.windowstolinux.shared.model.assessment.DeploymentProjectAssessment;
-import gold.debug.windowstolinux.shared.model.project.DeploymentProjectType;
-import gold.debug.windowstolinux.shared.model.deployment.EnvironmentSetupResult;
-import gold.debug.windowstolinux.shared.model.health.HealthCheck;
-import gold.debug.windowstolinux.shared.model.health.UserAccessUrl;
-import gold.debug.windowstolinux.shared.model.lifecycle.LifecycleAction;
-import gold.debug.windowstolinux.shared.model.managed.ManagedApplication;
-import gold.debug.windowstolinux.shared.model.security.CredentialStorageMode;
-import gold.debug.windowstolinux.shared.model.capability.ServerCapabilityFacts;
-import gold.debug.windowstolinux.shared.model.capability.LinuxCapabilityFacts;
-import gold.debug.windowstolinux.shared.model.server.ServerIdentity;
-import gold.debug.windowstolinux.shared.git.GitSnapshotException;
-import gold.debug.windowstolinux.shared.git.GitSourceRequest;
-import gold.debug.windowstolinux.shared.analyze.component.ComponentAnalysisRequest;
-
 import java.io.IOException;
 import java.nio.file.Path;
 import java.sql.SQLException;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
-import java.util.function.Predicate;
 import java.util.Set;
+import java.util.function.Predicate;
+
+import gold.debug.windowstolinux.app.db.DesktopPersistence;
+import gold.debug.windowstolinux.app.db.entity.StoredApplicationSecretRevision;
+import gold.debug.windowstolinux.app.secret.SecretStore;
+import gold.debug.windowstolinux.app.secret.SecretStoreException;
+import gold.debug.windowstolinux.app.service.ai.AiProviderProfile;
+import gold.debug.windowstolinux.app.service.ai.AiUseCaseFacade;
+import gold.debug.windowstolinux.app.service.backup.BackupArchiveInspection;
+import gold.debug.windowstolinux.app.service.backup.BackupUseCase;
+import gold.debug.windowstolinux.app.service.backup.CreatedBackupArchive;
+import gold.debug.windowstolinux.app.service.backup.ManagedBackupInputAssessment;
+import gold.debug.windowstolinux.app.service.backup.ManagedBackupInputUseCase;
+import gold.debug.windowstolinux.app.service.backup.ManagedOfflineMigrationOutcome;
+import gold.debug.windowstolinux.app.service.backup.ManagedOfflineMigrationUseCase;
+import gold.debug.windowstolinux.app.service.backup.ManagedRestoreOutcome;
+import gold.debug.windowstolinux.app.service.backup.ManagedRestoreUseCase;
+import gold.debug.windowstolinux.app.service.backup.PreparedBackupCandidate;
+import gold.debug.windowstolinux.app.service.backup.PreparedBackupSecrets;
+import gold.debug.windowstolinux.app.service.backup.RemoteBackupCreationUseCase;
+import gold.debug.windowstolinux.app.service.config.DeploymentConfigurationUseCase;
+import gold.debug.windowstolinux.app.service.contract.AiApplicationFacade;
+import gold.debug.windowstolinux.app.service.contract.AutomaticDeploymentApplicationFacade;
+import gold.debug.windowstolinux.app.service.contract.BackupApplicationFacade;
+import gold.debug.windowstolinux.app.service.contract.DeploymentApplicationFacade;
+import gold.debug.windowstolinux.app.service.contract.DesktopRecoveryInteraction;
+import gold.debug.windowstolinux.app.service.contract.ManagedApplicationFacade;
+import gold.debug.windowstolinux.app.service.contract.MultiComponentApplicationFacade;
+import gold.debug.windowstolinux.app.service.contract.ServerApplicationFacade;
+import gold.debug.windowstolinux.app.service.contract.definition.*;
+import gold.debug.windowstolinux.app.service.contract.definition.MultiComponentReviewInput;
+import gold.debug.windowstolinux.app.service.deployment.DeploymentInspectionUseCase;
+import gold.debug.windowstolinux.app.service.deployment.MultiComponentDeploymentUseCase;
+import gold.debug.windowstolinux.app.service.deployment.MultiComponentLifecycleUseCase;
+import gold.debug.windowstolinux.app.service.deployment.ReviewedDeploymentUseCase;
+import gold.debug.windowstolinux.app.service.deployment.multi.ManagedMultiComponentApplication;
+import gold.debug.windowstolinux.app.service.deployment.multi.ReviewedMultiComponentApplication;
+import gold.debug.windowstolinux.app.service.deployment.single.DeploymentOutcome;
+import gold.debug.windowstolinux.app.service.execution.environment.EnvironmentSetupUseCase;
+import gold.debug.windowstolinux.app.service.execution.lifecycle.LifecycleOutcome;
+import gold.debug.windowstolinux.app.service.execution.lifecycle.LifecycleUseCase;
+import gold.debug.windowstolinux.app.service.execution.lifecycle.ManagedApplicationSnapshot;
+import gold.debug.windowstolinux.app.service.lock.ServerOperationLockRegistry;
+import gold.debug.windowstolinux.app.service.server.DesktopSecretStoreService;
+import gold.debug.windowstolinux.app.service.server.ServerProfile;
+import gold.debug.windowstolinux.app.service.server.ServerUseCaseFacade;
+import gold.debug.windowstolinux.app.service.source.PreparedMultiComponentSource;
+import gold.debug.windowstolinux.app.service.source.ReviewedSourcePreparation;
+import gold.debug.windowstolinux.app.service.source.SourcePreparationUseCase;
+import gold.debug.windowstolinux.app.windows.workspace.WindowsSourcePreparer;
+import gold.debug.windowstolinux.shared.ai.collaboration.invocation.AiRoleInvocationResult;
+import gold.debug.windowstolinux.shared.ai.collaboration.role.AiRoleContext;
+import gold.debug.windowstolinux.shared.backup.crypto.BackupSecretException;
+import gold.debug.windowstolinux.shared.config.resource.ManagedDatabaseBinding;
+import gold.debug.windowstolinux.shared.config.revision.ConfigurationSnapshot;
+import gold.debug.windowstolinux.shared.config.secretref.SecretReference;
+import gold.debug.windowstolinux.shared.deploy.contract.ApplicationHealthGate;
+import gold.debug.windowstolinux.shared.deploy.contract.AutomaticDeploymentInteraction;
+import gold.debug.windowstolinux.shared.deploy.contract.result.deployment.MultiComponentDeploymentResult;
+import gold.debug.windowstolinux.shared.deploy.contract.result.lifecycle.LifecycleActionResult;
+import gold.debug.windowstolinux.shared.deploy.contract.result.lifecycle.MultiComponentLifecycleResult;
+import gold.debug.windowstolinux.shared.deploy.execution.environment.EnvironmentSetupService;
+import gold.debug.windowstolinux.shared.deploy.execution.lifecycle.MultiComponentLifecycleService;
+import gold.debug.windowstolinux.shared.git.GitSnapshotException;
+import gold.debug.windowstolinux.shared.git.GitSourceRequest;
+import gold.debug.windowstolinux.shared.linux.connection.DeploymentLinuxGateway;
+import gold.debug.windowstolinux.shared.linux.connection.HostKeyEvaluator;
+import gold.debug.windowstolinux.shared.linux.connection.SshCredential;
+import gold.debug.windowstolinux.shared.linux.connection.SshEndpoint;
+import gold.debug.windowstolinux.shared.linux.error.LinuxOperationException;
+import gold.debug.windowstolinux.shared.model.assessment.DeploymentProjectAssessment;
+import gold.debug.windowstolinux.shared.model.capability.LinuxCapabilityFacts;
+import gold.debug.windowstolinux.shared.model.capability.ServerCapabilityFacts;
+import gold.debug.windowstolinux.shared.model.deployment.BuildLimitConfiguration;
+import gold.debug.windowstolinux.shared.model.deployment.EnvironmentSetupResult;
+import gold.debug.windowstolinux.shared.model.health.HealthCheck;
+import gold.debug.windowstolinux.shared.model.health.UserAccessUrl;
+import gold.debug.windowstolinux.shared.model.lifecycle.LifecycleAction;
+import gold.debug.windowstolinux.shared.model.managed.ManagedApplication;
+import gold.debug.windowstolinux.shared.model.project.DeploymentProjectType;
+import gold.debug.windowstolinux.shared.model.security.CredentialStorageMode;
+import gold.debug.windowstolinux.shared.model.server.ServerIdentity;
+import gold.debug.windowstolinux.shared.standard.analyze.component.ComponentAnalysisRequest;
+import gold.debug.windowstolinux.shared.standard.analyze.core.DeploymentAnalysisCoordinator;
+import gold.debug.windowstolinux.shared.standard.deploy.contract.AutomaticDatabasePreparation;
+import gold.debug.windowstolinux.shared.standard.deploy.contract.ReviewedDeploymentPlan;
+import gold.debug.windowstolinux.shared.standard.deploy.contract.ReviewedDeploymentRequest;
+import gold.debug.windowstolinux.shared.standard.deploy.execution.transaction.ReviewedDeploymentService;
+import gold.debug.windowstolinux.shared.standard.deploy.execution.transaction.ReviewedMultiComponentDeploymentService;
 
 /**
  * Stable desktop facade. Package-specific use cases own all implementation details.
  *
  *  <p>稳定的桌面门面。各包专属用例持有全部实现细节。
  */
-public final class DesktopApplicationFacade implements AiApplicationFacade, DeploymentApplicationFacade,
-        MultiComponentApplicationFacade, ServerApplicationFacade, ManagedApplicationFacade, BackupApplicationFacade,
-        gold.debug.windowstolinux.app.service.contract.AutomaticDeploymentApplicationFacade, gold.debug.windowstolinux.app.service.contract.SshRecoveryApplicationFacade {
+public final class DesktopApplicationFacade
+        implements
+            AiApplicationFacade,
+            DeploymentApplicationFacade,
+            MultiComponentApplicationFacade,
+            ServerApplicationFacade,
+            ManagedApplicationFacade,
+            BackupApplicationFacade,
+            gold.debug.windowstolinux.app.service.contract.AutomaticDeploymentApplicationFacade,
+            gold.debug.windowstolinux.app.service.contract.SshRecoveryApplicationFacade {
     /** Checks purpose configuration without opening network connections. / 不打开网络连接地检查用途配置。
      * @param mode deployment mode / 部署模式
      * @throws SQLException if configuration cannot be read / 配置无法读取时
      */
-    @Override public void requireDeploymentModels(gold.debug.windowstolinux.shared.model.deployment.DeploymentAutomationMode mode) throws SQLException { try(var ignored=ai.openDeployment(mode)) { } }
+    @Override
+    public void requireDeploymentModels(gold.debug.windowstolinux.shared.model.deployment.DeploymentAutomationMode mode)
+            throws SQLException {
+        try (var ignored = ai.openDeployment(mode)) {
+        }
+    }
 
     /**
      * Converts the current form using its existing automatic deployment use case. / 使用现有自动部署用例转换当前表单。
@@ -123,10 +131,12 @@ public final class DesktopApplicationFacade implements AiApplicationFacade, Depl
      * @param input source content consumed by this operation / 当前操作消费的源内容
      * @return constructed or resolved automatic deployment request / 构造或解析得到的自动部署请求
      */
-    @Override public gold.debug.windowstolinux.app.service.contract.definition.AutomaticDeploymentRequest createAutomaticDeploymentRequest(
+    @Override
+    public gold.debug.windowstolinux.app.service.contract.definition.AutomaticDeploymentRequest createAutomaticDeploymentRequest(
             gold.debug.windowstolinux.app.service.contract.definition.DeploymentSourceInput source,
             ServerProfile server, gold.debug.windowstolinux.app.service.contract.definition.DeploymentFormInput input) {
-        return gold.debug.windowstolinux.app.service.deployment.automatic.DeploymentFormUseCase.request(source, server, input);
+        return gold.debug.windowstolinux.app.service.deployment.automatic.DeploymentFormUseCase.request(source, server,
+                input);
     }
 
     /**
@@ -146,36 +156,53 @@ public final class DesktopApplicationFacade implements AiApplicationFacade, Depl
      * @return constructed or resolved automatic deployment outcome / 构造或解析得到的自动部署结果
      * @throws Exception if the delegated operation or caller-provided interaction fails / 被委派操作或调用方提供的交互失败时
      */
-    @Override public gold.debug.windowstolinux.app.service.contract.definition.AutomaticDeploymentOutcome deployAutomatically(
+    @Override
+    public gold.debug.windowstolinux.app.service.contract.definition.AutomaticDeploymentOutcome deployAutomatically(
             gold.debug.windowstolinux.app.service.contract.definition.AutomaticDeploymentRequest request, char[] master,
             gold.debug.windowstolinux.shared.deploy.contract.AutomaticDeploymentInteraction interaction,
-            Predicate<String> fingerprint, java.util.function.Consumer<gold.debug.windowstolinux.shared.model.message.LocalizedMessage> progress) throws Exception {
-        try { return automatic.deploy(request, master, interaction, fingerprint, progress); }
-        catch (gold.debug.windowstolinux.shared.linux.error.NativeDatabaseException failure) {
+            Predicate<String> fingerprint,
+            java.util.function.Consumer<gold.debug.windowstolinux.shared.model.message.LocalizedMessage> progress)
+            throws Exception {
+        try {
+            return automatic.deploy(request, master, interaction, fingerprint, progress);
+        } catch (gold.debug.windowstolinux.shared.linux.error.NativeDatabaseException failure) {
             throw gold.debug.windowstolinux.app.service.failure.ApplicationServiceException.nativeDatabase(failure);
-        } finally { java.util.Arrays.fill(master, '\0'); }
+        } finally {
+            java.util.Arrays.fill(master, '\0');
+        }
     }
+
     /**
      * Lists non-secret profiles for all desktop server selectors. / 为所有桌面服务器选择器列出非秘密配置。
      *
      * @return constructed or resolved list / 构造或解析得到的列表
      * @throws SQLException if the database cannot complete the requested read or transaction / 数据库无法完成请求的读取或事务时
      */
-    @Override public List<gold.debug.windowstolinux.app.service.server.ServerSummary> listServerSummaries() throws SQLException { return servers.summaries(); }
+    @Override
+    public List<gold.debug.windowstolinux.app.service.server.ServerSummary> listServerSummaries() throws SQLException {
+        return servers.summaries();
+    }
+
     /**
      * Lists saved connection profiles. / 列出已保存的连接资料。
      *
      * @return constructed or resolved list / 构造或解析得到的列表
      * @throws SQLException if the database cannot complete the requested read or transaction / 数据库无法完成请求的读取或事务时
      */
-    @Override public List<ServerProfile> listServerProfiles() throws SQLException { return servers.list(); }
+    @Override
+    public List<ServerProfile> listServerProfiles() throws SQLException {
+        return servers.list();
+    }
+
     /**
      * Detects the source form through service parsing. / 通过服务解析识别源码输入。
      *
      * @param value candidate content accepted or rejected by this contract / 由当前契约接收或拒绝的候选内容
      * @return constructed or resolved deployment source input / 构造或解析得到的部署源码输入
      */
-    @Override public gold.debug.windowstolinux.app.service.contract.definition.DeploymentSourceInput identifyDeploymentSource(String value) {
+    @Override
+    public gold.debug.windowstolinux.app.service.contract.definition.DeploymentSourceInput identifyDeploymentSource(
+            String value) {
         return gold.debug.windowstolinux.app.service.source.SourceSelectionService.identify(value);
     }
     /**
@@ -183,36 +210,43 @@ public final class DesktopApplicationFacade implements AiApplicationFacade, Depl
      * <p>操作读取的源身份或内容。
      */
     private final SourcePreparationUseCase source;
+
     /**
      * Bound gold debug windowstolinux app db persistence repository desktop preference repository collaborator for recovery preferences.
      * <p>处理恢复偏好的golddebugwindowstolinux应用db持久化仓库Desktop偏好仓库协作对象。
      */
     private final gold.debug.windowstolinux.app.db.persistence.repository.DesktopPreferenceRepository recoveryPreferences;
+
     /**
      * Bound server use case facade collaborator for server-profile and authenticated-session service.
      * <p>处理服务器资料及已认证会话服务的服务器用例门面协作对象。
      */
     private final ServerUseCaseFacade servers;
+
     /**
      * Bound ai use case facade collaborator for the supplied ai use case facade.
      * <p>处理所提供的AI用例门面的AI用例门面协作对象。
      */
     private final AiUseCaseFacade ai;
+
     /**
      * Recovery.
      * <p>恢复。
      */
     private final gold.debug.windowstolinux.app.service.recovery.SshRecoveryUseCase recovery;
+
     /**
      * Deterministic source analysis and deployment planning use case.
      * <p>确定性源码分析和部署规划用例。
      */
     private final DeploymentInspectionUseCase deploymentInspection;
+
     /**
      * Deployment configuration.
      * <p>部署配置。
      */
     private final DeploymentConfigurationUseCase deploymentConfiguration;
+
     /**
      * Automatic databases.
      * <p>自动数据库集合。
@@ -231,11 +265,15 @@ public final class DesktopApplicationFacade implements AiApplicationFacade, Depl
      * @return constructed or resolved assessment / 构造或解析得到的评估
      * @throws Exception if the delegated operation or caller-provided interaction fails / 被委派操作或调用方提供的交互失败时
      */
-    @Override public gold.debug.windowstolinux.shared.analyze.ecosystem.db.DatabaseProjectInspector.Assessment completeAutomaticDatabaseInputs(
-            Path root, String applicationId, gold.debug.windowstolinux.shared.analyze.ecosystem.db.DatabaseProjectInspector.Assessment assessment,
-            char[] master, gold.debug.windowstolinux.shared.deploy.contract.AutomaticDeploymentInteraction interaction) throws Exception {
-        try { return automaticDatabases.completeInputs(root, applicationId, assessment, master, interaction); }
-        catch (gold.debug.windowstolinux.shared.linux.error.NativeDatabaseException failure) {
+    @Override
+    public gold.debug.windowstolinux.shared.standard.analyze.ecosystem.db.DatabaseProjectInspector.Assessment completeAutomaticDatabaseInputs(
+            Path root, String applicationId,
+            gold.debug.windowstolinux.shared.standard.analyze.ecosystem.db.DatabaseProjectInspector.Assessment assessment,
+            char[] master, gold.debug.windowstolinux.shared.deploy.contract.AutomaticDeploymentInteraction interaction)
+            throws Exception {
+        try {
+            return automaticDatabases.completeInputs(root, applicationId, assessment, master, interaction);
+        } catch (gold.debug.windowstolinux.shared.linux.error.NativeDatabaseException failure) {
             throw gold.debug.windowstolinux.app.service.failure.ApplicationServiceException.nativeDatabase(failure);
         }
     }
@@ -255,13 +293,18 @@ public final class DesktopApplicationFacade implements AiApplicationFacade, Depl
      * @return constructed or resolved automatic database preparation / 构造或解析得到的自动数据库准备
      * @throws Exception if the delegated operation or caller-provided interaction fails / 被委派操作或调用方提供的交互失败时
      */
-    @Override public gold.debug.windowstolinux.shared.deploy.contract.AutomaticDatabasePreparation prepareAutomaticDatabases(
+    @Override
+    public gold.debug.windowstolinux.shared.standard.deploy.contract.AutomaticDatabasePreparation prepareAutomaticDatabases(
             Path root, String applicationId, ServerProfile server,
-            gold.debug.windowstolinux.shared.analyze.ecosystem.db.DatabaseProjectInspector.Assessment assessment, char[] master,
-            gold.debug.windowstolinux.shared.deploy.contract.AutomaticDeploymentInteraction interaction,
-            java.util.function.Predicate<String> fingerprint, java.util.function.Consumer<gold.debug.windowstolinux.shared.model.message.LocalizedMessage> progress) throws Exception {
-        try { return automaticDatabases.prepare(root, applicationId, server, assessment, master, interaction, fingerprint, progress); }
-        catch (gold.debug.windowstolinux.shared.linux.error.NativeDatabaseException failure) {
+            gold.debug.windowstolinux.shared.standard.analyze.ecosystem.db.DatabaseProjectInspector.Assessment assessment,
+            char[] master, gold.debug.windowstolinux.shared.deploy.contract.AutomaticDeploymentInteraction interaction,
+            java.util.function.Predicate<String> fingerprint,
+            java.util.function.Consumer<gold.debug.windowstolinux.shared.model.message.LocalizedMessage> progress)
+            throws Exception {
+        try {
+            return automaticDatabases.prepare(root, applicationId, server, assessment, master, interaction, fingerprint,
+                    progress);
+        } catch (gold.debug.windowstolinux.shared.linux.error.NativeDatabaseException failure) {
             throw gold.debug.windowstolinux.app.service.failure.ApplicationServiceException.nativeDatabase(failure);
         }
     }
@@ -270,6 +313,7 @@ public final class DesktopApplicationFacade implements AiApplicationFacade, Depl
      * <p>环境。
      */
     private final EnvironmentSetupUseCase environment;
+
     /**
      * Reviewed deployment.
      * <p>已审阅部署。
@@ -281,9 +325,11 @@ public final class DesktopApplicationFacade implements AiApplicationFacade, Depl
      * @param input source content consumed by this operation / 当前操作消费的源内容
      * @return component form inputs through their owning use case / 通过所属用例解析组件表单输入
      */
-    @Override public gold.debug.windowstolinux.shared.analyze.component.ComponentAnalysisRequest parseComponentAnalysis(
+    @Override
+    public gold.debug.windowstolinux.shared.standard.analyze.component.ComponentAnalysisRequest parseComponentAnalysis(
             gold.debug.windowstolinux.app.service.contract.definition.ComponentFormInput input) {
-        return new gold.debug.windowstolinux.app.service.deployment.automatic.ComponentFormUseCase(input).analysisRequest();
+        return new gold.debug.windowstolinux.app.service.deployment.automatic.ComponentFormUseCase(input)
+                .analysisRequest();
     }
 
     /**
@@ -295,7 +341,8 @@ public final class DesktopApplicationFacade implements AiApplicationFacade, Depl
      * @param experimentalRisk experimental risk / 实验性风险
      * @return review metadata without exposing service internals to UI / 审阅元数据，不向 UI 暴露服务内部实现
      */
-    @Override public MultiComponentReviewInput parseComponentReview(
+    @Override
+    public MultiComponentReviewInput parseComponentReview(
             gold.debug.windowstolinux.app.service.contract.definition.ComponentFormInput input,
             String managedApplicationId, boolean containerRisk, boolean experimentalRisk) {
         return new gold.debug.windowstolinux.app.service.deployment.automatic.ComponentFormUseCase(input)
@@ -307,46 +354,55 @@ public final class DesktopApplicationFacade implements AiApplicationFacade, Depl
      * <p>多组件部署。
      */
     private final MultiComponentDeploymentUseCase multiComponentDeployment;
+
     /**
      * Multi component lifecycle.
      * <p>多组件生命周期。
      */
     private final MultiComponentLifecycleUseCase multiComponentLifecycle;
+
     /**
      * Lifecycle.
      * <p>生命周期。
      */
     private final LifecycleUseCase lifecycle;
+
     /**
      * Application inventory.
      * <p>应用清单。
      */
     private final gold.debug.windowstolinux.app.service.execution.lifecycle.ApplicationInventoryUseCase applicationInventory;
+
     /**
      * External applications.
      * <p>外部应用集合。
      */
     private final gold.debug.windowstolinux.app.service.execution.lifecycle.ExternalApplicationUseCase externalApplications;
+
     /**
      * The local backup page state.
      * <p>本地备份页面状态。
      */
     private final BackupUseCase backup;
+
     /**
      * Backup inputs.
      * <p>备份输入集合。
      */
     private final ManagedBackupInputUseCase backupInputs;
+
     /**
      * Remote backup.
      * <p>远端备份。
      */
     private final RemoteBackupCreationUseCase remoteBackup;
+
     /**
      * Managed restore.
      * <p>受管恢复。
      */
     private final ManagedRestoreUseCase managedRestore;
+
     /**
      * Managed migration.
      * <p>受管迁移。
@@ -361,7 +417,8 @@ public final class DesktopApplicationFacade implements AiApplicationFacade, Depl
      * @param workDirectory work directory / 工作目录
      * @param linuxGateway linux gateway / Linux网关
      */
-    public DesktopApplicationFacade(DesktopPersistence persistence, Path workDirectory, DeploymentLinuxGateway linuxGateway) {
+    public DesktopApplicationFacade(DesktopPersistence persistence, Path workDirectory,
+            DeploymentLinuxGateway linuxGateway) {
         this(persistence, workDirectory, workDirectory.toAbsolutePath().normalize().resolveSibling("backups"),
                 linuxGateway);
     }
@@ -376,36 +433,44 @@ public final class DesktopApplicationFacade implements AiApplicationFacade, Depl
      * @throws NullPointerException if a required input is absent / 必需输入缺失时
      */
     public DesktopApplicationFacade(DesktopPersistence persistence, Path workDirectory, Path backupsDirectory,
-                                    DeploymentLinuxGateway linuxGateway) {
+            DeploymentLinuxGateway linuxGateway) {
         Objects.requireNonNull(persistence, "persistence");
         this.recoveryPreferences = persistence.preferences();
         Objects.requireNonNull(linuxGateway, "linuxGateway");
         ServerOperationLockRegistry locks = new ServerOperationLockRegistry();
         DesktopSecretStoreService secrets = new DesktopSecretStoreService(persistence.encryptedSecrets());
         this.servers = new ServerUseCaseFacade(persistence.servers(), secrets, linuxGateway);
-        this.source = new SourcePreparationUseCase(new DeploymentAnalysisCoordinator(), new WindowsSourcePreparer(workDirectory));
+        this.source = new SourcePreparationUseCase(new DeploymentAnalysisCoordinator(),
+                new WindowsSourcePreparer(workDirectory));
         this.ai = new AiUseCaseFacade(persistence.aiProfiles(), secrets);
-        this.automatic = new gold.debug.windowstolinux.app.service.deployment.automatic.AutomaticDeploymentTaskService(this, ai, source, locks, persistence.agentTasks(), new gold.debug.windowstolinux.app.service.deployment.automatic.AgentRemoteToolService(servers,linuxGateway));
-        this.recovery = new gold.debug.windowstolinux.app.service.recovery.SshRecoveryUseCase(persistence, locks, servers, secrets, linuxGateway);
+        this.automatic = new gold.debug.windowstolinux.app.service.deployment.automatic.AutomaticDeploymentTaskService(
+                this, ai, source, locks, persistence.agentTasks(),
+                new gold.debug.windowstolinux.app.service.deployment.automatic.DeploymentCandidateToolService(servers,
+                        linuxGateway),
+                new gold.debug.windowstolinux.app.service.deployment.AutonomousDeploymentUseCase(persistence, servers,
+                        linuxGateway, source));
+        this.recovery = new gold.debug.windowstolinux.app.service.recovery.SshRecoveryUseCase(persistence, locks,
+                servers, secrets, linuxGateway);
         this.deploymentInspection = new DeploymentInspectionUseCase();
-        this.deploymentConfiguration = new DeploymentConfigurationUseCase(
-                persistence.configurations(), persistence.applicationSecrets(), secrets);
+        this.deploymentConfiguration = new DeploymentConfigurationUseCase(persistence.configurations(),
+                persistence.applicationSecrets(), secrets);
         this.automaticDatabases = new gold.debug.windowstolinux.app.service.deployment.automatic.AutomaticDatabaseUseCase(
                 servers, linuxGateway, persistence.applicationSecrets(), secrets, deploymentConfiguration, this);
-        this.environment = new EnvironmentSetupUseCase(
-                new EnvironmentSetupService(), linuxGateway, servers, locks);
+        this.environment = new EnvironmentSetupUseCase(new EnvironmentSetupService(), linuxGateway, servers, locks);
         this.reviewedDeployment = new ReviewedDeploymentUseCase(persistence.managedApplications(),
-                persistence.managedApplicationGraphs(),
-                persistence.applicationSecrets(), new ReviewedDeploymentService(), linuxGateway, servers, locks);
+                persistence.managedApplicationGraphs(), persistence.applicationSecrets(),
+                new ReviewedDeploymentService(), linuxGateway, servers, locks);
         this.multiComponentDeployment = new MultiComponentDeploymentUseCase(persistence.managedApplications(),
-                persistence.managedApplicationGraphs(),
-                persistence.applicationSecrets(), new ReviewedMultiComponentDeploymentService(),
-                linuxGateway, servers, locks);
+                persistence.managedApplicationGraphs(), persistence.applicationSecrets(),
+                new ReviewedMultiComponentDeploymentService(), linuxGateway, servers, locks);
         this.multiComponentLifecycle = new MultiComponentLifecycleUseCase(persistence.managedApplications(),
-                persistence.managedApplicationGraphs(), new MultiComponentLifecycleService(), linuxGateway, servers, locks);
+                persistence.managedApplicationGraphs(), new MultiComponentLifecycleService(), linuxGateway, servers,
+                locks);
         this.lifecycle = new LifecycleUseCase(persistence.managedApplications(), linuxGateway, servers, locks);
-        this.applicationInventory = new gold.debug.windowstolinux.app.service.execution.lifecycle.ApplicationInventoryUseCase(persistence.managedApplications(), persistence.externalApplications(), servers);
-        this.externalApplications = new gold.debug.windowstolinux.app.service.execution.lifecycle.ExternalApplicationUseCase(persistence.externalApplications(), persistence.managedApplications(), servers, linuxGateway, locks);
+        this.applicationInventory = new gold.debug.windowstolinux.app.service.execution.lifecycle.ApplicationInventoryUseCase(
+                persistence.managedApplications(), persistence.externalApplications(), servers);
+        this.externalApplications = new gold.debug.windowstolinux.app.service.execution.lifecycle.ExternalApplicationUseCase(
+                persistence.externalApplications(), persistence.managedApplications(), servers, linuxGateway, locks);
         this.backup = new BackupUseCase(workDirectory);
         this.backupInputs = new ManagedBackupInputUseCase(persistence.managedApplicationGraphs(),
                 persistence.managedApplications(), persistence.configurations(), persistence.applicationSecrets());
@@ -446,11 +511,9 @@ public final class DesktopApplicationFacade implements AiApplicationFacade, Depl
      * @throws gold.debug.windowstolinux.shared.backup.crypto.BackupSecretException if the backup secret boundary rejects the operation / 备份秘密边界拒绝当前操作时
      */
     @Override
-    public CreatedBackupArchive createManagedBackup(
-            String applicationId, Path destination, char[] backupPassword, char[] masterPassword,
-            Predicate<String> firstUseConfirmation
-    ) throws SQLException, SecretStoreException, LinuxOperationException, IOException,
-            gold.debug.windowstolinux.shared.backup.crypto.BackupSecretException {
+    public CreatedBackupArchive createManagedBackup(String applicationId, Path destination, char[] backupPassword,
+            char[] masterPassword, Predicate<String> firstUseConfirmation) throws SQLException, SecretStoreException,
+            LinuxOperationException, IOException, gold.debug.windowstolinux.shared.backup.crypto.BackupSecretException {
         return remoteBackup.createUsingSavedProfile(applicationId, destination, backupPassword, masterPassword,
                 firstUseConfirmation);
     }
@@ -471,11 +534,9 @@ public final class DesktopApplicationFacade implements AiApplicationFacade, Depl
      * @throws gold.debug.windowstolinux.shared.backup.crypto.BackupSecretException if the backup secret boundary rejects the operation / 备份秘密边界拒绝当前操作时
      */
     @Override
-    public ManagedRestoreOutcome restoreManagedBackup(
-            Path archive, String targetServerId, char[] backupPassword, char[] masterPassword,
-            Predicate<String> firstUseConfirmation
-    ) throws SQLException, SecretStoreException, LinuxOperationException, IOException,
-            gold.debug.windowstolinux.shared.backup.crypto.BackupSecretException {
+    public ManagedRestoreOutcome restoreManagedBackup(Path archive, String targetServerId, char[] backupPassword,
+            char[] masterPassword, Predicate<String> firstUseConfirmation) throws SQLException, SecretStoreException,
+            LinuxOperationException, IOException, gold.debug.windowstolinux.shared.backup.crypto.BackupSecretException {
         return managedRestore.restoreUsingSavedProfile(archive, targetServerId, backupPassword, masterPassword,
                 firstUseConfirmation);
     }
@@ -497,11 +558,10 @@ public final class DesktopApplicationFacade implements AiApplicationFacade, Depl
      * @throws gold.debug.windowstolinux.shared.backup.crypto.BackupSecretException if the backup secret boundary rejects the operation / 备份秘密边界拒绝当前操作时
      */
     @Override
-    public ManagedOfflineMigrationOutcome prepareManagedOfflineMigration(
-            String applicationId, String targetServerId, char[] backupPassword, char[] masterPassword,
-            boolean stopWindowApproved, Predicate<String> firstUseConfirmation
-    ) throws SQLException, SecretStoreException, LinuxOperationException, IOException,
-            gold.debug.windowstolinux.shared.backup.crypto.BackupSecretException {
+    public ManagedOfflineMigrationOutcome prepareManagedOfflineMigration(String applicationId, String targetServerId,
+            char[] backupPassword, char[] masterPassword, boolean stopWindowApproved,
+            Predicate<String> firstUseConfirmation) throws SQLException, SecretStoreException, LinuxOperationException,
+            IOException, gold.debug.windowstolinux.shared.backup.crypto.BackupSecretException {
         return managedMigration.prepare(applicationId, targetServerId, backupPassword, masterPassword,
                 stopWindowApproved, firstUseConfirmation);
     }
@@ -565,7 +625,8 @@ public final class DesktopApplicationFacade implements AiApplicationFacade, Depl
      * @param projectType supported project deployment category / 受支持的项目部署类别
      * @return constructed or resolved deployment project assessment / 构造或解析得到的部署项目评估
      */
-    public DeploymentProjectAssessment analyzeDeploymentSource(Path sourceDirectory, DeploymentProjectType projectType) {
+    public DeploymentProjectAssessment analyzeDeploymentSource(Path sourceDirectory,
+            DeploymentProjectType projectType) {
         return deploymentInspection.analyze(sourceDirectory, projectType);
     }
 
@@ -577,7 +638,8 @@ public final class DesktopApplicationFacade implements AiApplicationFacade, Depl
      * @return constructed or resolved reviewed source preparation / 构造或解析得到的已审阅源码准备
      * @throws IOException if the required file or stream operation fails / 所需文件或流操作失败时
      */
-    public ReviewedSourcePreparation prepareReviewedSource(Path sourceDirectory, DeploymentProjectType projectType) throws IOException {
+    public ReviewedSourcePreparation prepareReviewedSource(Path sourceDirectory, DeploymentProjectType projectType)
+            throws IOException {
         return source.prepare(sourceDirectory, projectType);
     }
 
@@ -590,8 +652,8 @@ public final class DesktopApplicationFacade implements AiApplicationFacade, Depl
      * @return constructed or resolved prepared multi component source / 构造或解析得到的已准备多组件源码
      * @throws IOException if the required file or stream operation fails / 所需文件或流操作失败时
      */
-    public PreparedMultiComponentSource prepareReviewedMultiComponentSource(
-            Path applicationRoot, String applicationId, List<ComponentAnalysisRequest> components) throws IOException {
+    public PreparedMultiComponentSource prepareReviewedMultiComponentSource(Path applicationRoot, String applicationId,
+            List<ComponentAnalysisRequest> components) throws IOException {
         return source.prepareMultiComponent(applicationRoot, applicationId, components);
     }
 
@@ -621,9 +683,8 @@ public final class DesktopApplicationFacade implements AiApplicationFacade, Depl
      * @return constructed or resolved multi component deployment result / 构造或解析得到的多组件部署结果
      * @throws SQLException if the database cannot complete the requested read or transaction / 数据库无法完成请求的读取或事务时
      */
-    public MultiComponentDeploymentResult deployReviewedMultiComponent(
-            ReviewedMultiComponentApplication review, SshEndpoint endpoint, SshCredential credential,
-            HostKeyEvaluator verifier) throws SQLException {
+    public MultiComponentDeploymentResult deployReviewedMultiComponent(ReviewedMultiComponentApplication review,
+            SshEndpoint endpoint, SshCredential credential, HostKeyEvaluator verifier) throws SQLException {
         return multiComponentDeployment.deploy(review, endpoint, credential, verifier);
     }
 
@@ -670,10 +731,9 @@ public final class DesktopApplicationFacade implements AiApplicationFacade, Depl
      * @throws SecretStoreException if the protected credential cannot be accessed or updated / 无法访问或更新受保护凭据时
      * @throws SQLException if the database cannot complete the requested read or transaction / 数据库无法完成请求的读取或事务时
      */
-    public MultiComponentLifecycleResult executeManagedMultiComponentLifecycleWithStoredPassword(
-            String applicationId, Set<String> targetComponentIds, LifecycleAction action,
-            ServerProfile profile, CredentialStorageMode mode, char[] masterPassword)
-            throws SecretStoreException, SQLException {
+    public MultiComponentLifecycleResult executeManagedMultiComponentLifecycleWithStoredPassword(String applicationId,
+            Set<String> targetComponentIds, LifecycleAction action, ServerProfile profile, CredentialStorageMode mode,
+            char[] masterPassword) throws SecretStoreException, SQLException {
         return multiComponentLifecycle.executeLifecycleWithStoredPassword(applicationId, targetComponentIds, action,
                 profile, mode, masterPassword);
     }
@@ -688,8 +748,8 @@ public final class DesktopApplicationFacade implements AiApplicationFacade, Depl
      * @return constructed or resolved reviewed source preparation / 构造或解析得到的已审阅源码准备
      * @throws GitSnapshotException if the git snapshot boundary rejects the operation / Git快照边界拒绝当前操作时
      */
-    public ReviewedSourcePreparation prepareReviewedGitSource(GitSourceRequest request, DeploymentProjectType projectType)
-            throws GitSnapshotException {
+    public ReviewedSourcePreparation prepareReviewedGitSource(GitSourceRequest request,
+            DeploymentProjectType projectType) throws GitSnapshotException {
         return source.prepareGit(request, projectType);
     }
 
@@ -718,7 +778,7 @@ public final class DesktopApplicationFacade implements AiApplicationFacade, Depl
      * @throws SQLException if the database cannot complete the requested read or transaction / 数据库无法完成请求的读取或事务时
      */
     public DeploymentOutcome deployReviewed(ReviewedDeploymentRequest request, SshEndpoint endpoint,
-                                           SshCredential credential, HostKeyEvaluator verifier) throws SQLException {
+            SshCredential credential, HostKeyEvaluator verifier) throws SQLException {
         return reviewedDeployment.deploy(request, endpoint, credential, verifier);
     }
 
@@ -739,16 +799,15 @@ public final class DesktopApplicationFacade implements AiApplicationFacade, Depl
      * @return a reviewed request bound to the desktop-managed application identity / 绑定到桌面受管应用身份的经审阅请求
      * @throws SQLException if the database cannot complete the requested read or transaction / 数据库无法完成请求的读取或事务时
      */
-    public ReviewedDeploymentRequest createReviewedDeploymentRequest(
-            ReviewedSourcePreparation preparation, ServerIdentity server, ConfigurationSnapshot configuration,
-            List<SecretReference> secretReferences, Optional<List<ManagedDatabaseBinding>> databaseBindings,
+    public ReviewedDeploymentRequest createReviewedDeploymentRequest(ReviewedSourcePreparation preparation,
+            ServerIdentity server, ConfigurationSnapshot configuration, List<SecretReference> secretReferences,
+            Optional<List<ManagedDatabaseBinding>> databaseBindings,
             gold.debug.windowstolinux.shared.model.project.DeploymentRuntimeSpecification runtime,
             Optional<UserAccessUrl> userAccessUrl, BuildLimitConfiguration limits, boolean rootBuildConfirmed,
-            boolean containerDaemonRiskAccepted, boolean experimentalAdapterRiskAccepted
-    ) throws SQLException {
+            boolean containerDaemonRiskAccepted, boolean experimentalAdapterRiskAccepted) throws SQLException {
         return reviewedDeployment.createRequest(preparation, server, configuration, secretReferences, databaseBindings,
-                        runtime, userAccessUrl, limits,
-                        rootBuildConfirmed, containerDaemonRiskAccepted, experimentalAdapterRiskAccepted);
+                runtime, userAccessUrl, limits, rootBuildConfirmed, containerDaemonRiskAccepted,
+                experimentalAdapterRiskAccepted);
     }
 
     /**
@@ -768,15 +827,13 @@ public final class DesktopApplicationFacade implements AiApplicationFacade, Depl
      * @throws SQLException if the database cannot complete the requested read or transaction / 数据库无法完成请求的读取或事务时
      */
     @Override
-    public ReviewedDeploymentRequest createReviewedDeploymentRequest(
-            ReviewedSourcePreparation preparation, ServerIdentity server, ConfigurationSnapshot configuration,
-            List<SecretReference> secretReferences,
+    public ReviewedDeploymentRequest createReviewedDeploymentRequest(ReviewedSourcePreparation preparation,
+            ServerIdentity server, ConfigurationSnapshot configuration, List<SecretReference> secretReferences,
             gold.debug.windowstolinux.shared.model.project.DeploymentRuntimeSpecification runtime,
             Optional<UserAccessUrl> userAccessUrl, BuildLimitConfiguration limits, boolean rootBuildConfirmed,
-            boolean containerDaemonRiskAccepted, boolean experimentalAdapterRiskAccepted
-    ) throws SQLException {
-        return AutomaticDeploymentApplicationFacade.super.createReviewedDeploymentRequest(preparation, server, configuration,
-                secretReferences, runtime, userAccessUrl, limits, rootBuildConfirmed,
+            boolean containerDaemonRiskAccepted, boolean experimentalAdapterRiskAccepted) throws SQLException {
+        return AutomaticDeploymentApplicationFacade.super.createReviewedDeploymentRequest(preparation, server,
+                configuration, secretReferences, runtime, userAccessUrl, limits, rootBuildConfirmed,
                 containerDaemonRiskAccepted, experimentalAdapterRiskAccepted);
     }
 
@@ -795,14 +852,13 @@ public final class DesktopApplicationFacade implements AiApplicationFacade, Depl
      * @return a request that cannot enter an experimental adapter / 不能进入试验适配器的请求
      * @throws SQLException if the database cannot complete the requested read or transaction / 数据库无法完成请求的读取或事务时
      */
-    public ReviewedDeploymentRequest createReviewedDeploymentRequest(
-            ReviewedSourcePreparation preparation, ServerIdentity server, ConfigurationSnapshot configuration,
-            List<SecretReference> secretReferences, gold.debug.windowstolinux.shared.model.project.DeploymentRuntimeSpecification runtime,
+    public ReviewedDeploymentRequest createReviewedDeploymentRequest(ReviewedSourcePreparation preparation,
+            ServerIdentity server, ConfigurationSnapshot configuration, List<SecretReference> secretReferences,
+            gold.debug.windowstolinux.shared.model.project.DeploymentRuntimeSpecification runtime,
             Optional<UserAccessUrl> userAccessUrl, BuildLimitConfiguration limits, boolean rootBuildConfirmed,
-            boolean containerDaemonRiskAccepted
-    ) throws SQLException {
-        return createReviewedDeploymentRequest(preparation, server, configuration, secretReferences, runtime, userAccessUrl,
-                limits, rootBuildConfirmed, containerDaemonRiskAccepted, false);
+            boolean containerDaemonRiskAccepted) throws SQLException {
+        return createReviewedDeploymentRequest(preparation, server, configuration, secretReferences, runtime,
+                userAccessUrl, limits, rootBuildConfirmed, containerDaemonRiskAccepted, false);
     }
 
     /**
@@ -818,8 +874,7 @@ public final class DesktopApplicationFacade implements AiApplicationFacade, Depl
      * @throws SQLException if the database cannot complete the requested read or transaction / 数据库无法完成请求的读取或事务时
      */
     public DeploymentOutcome deployReviewedWithStoredPassword(ReviewedDeploymentRequest request, ServerProfile profile,
-                                                              CredentialStorageMode mode, char[] masterPassword,
-                                                              Predicate<String> confirmation)
+            CredentialStorageMode mode, char[] masterPassword, Predicate<String> confirmation)
             throws SecretStoreException, SQLException {
         return reviewedDeployment.deployWithStoredPassword(request, profile, mode, masterPassword, confirmation);
     }
@@ -852,9 +907,8 @@ public final class DesktopApplicationFacade implements AiApplicationFacade, Depl
      * @throws SQLException if the database cannot complete the requested read or transaction / 数据库无法完成请求的读取或事务时
      * @throws SecretStoreException if the protected credential cannot be accessed or updated / 无法访问或更新受保护凭据时
      */
-    public void saveServerProfile(ServerProfile profile, CredentialStorageMode mode,
-                                  char[] masterPassword, char[] password)
-            throws SQLException, SecretStoreException {
+    public void saveServerProfile(ServerProfile profile, CredentialStorageMode mode, char[] masterPassword,
+            char[] password) throws SQLException, SecretStoreException {
         servers.save(profile, mode, masterPassword, password);
     }
 
@@ -924,7 +978,8 @@ public final class DesktopApplicationFacade implements AiApplicationFacade, Depl
      * @throws SQLException if the database cannot complete the requested read or transaction / 数据库无法完成请求的读取或事务时
      * @throws SecretStoreException if the protected credential cannot be accessed or updated / 无法访问或更新受保护凭据时
      */
-    @Override public SecretReference saveDeploymentSecretRevision(String referenceInput, CredentialStorageMode mode,
+    @Override
+    public SecretReference saveDeploymentSecretRevision(String referenceInput, CredentialStorageMode mode,
             char[] masterPassword, char[] value) throws SQLException, SecretStoreException {
         return deploymentConfiguration.saveSecretRevision(referenceInput, mode, masterPassword, value);
     }
@@ -940,8 +995,7 @@ public final class DesktopApplicationFacade implements AiApplicationFacade, Depl
      * @throws SecretStoreException if the protected credential cannot be accessed or updated / 无法访问或更新受保护凭据时
      */
     public void saveDeploymentSecretRevision(StoredApplicationSecretRevision revision, CredentialStorageMode mode,
-                                             char[] masterPassword, char[] value)
-            throws SQLException, SecretStoreException {
+            char[] masterPassword, char[] value) throws SQLException, SecretStoreException {
         deploymentConfiguration.saveSecretRevision(revision, mode, masterPassword, value);
     }
 
@@ -957,8 +1011,8 @@ public final class DesktopApplicationFacade implements AiApplicationFacade, Depl
      * @throws SQLException if the database cannot complete the requested read or transaction / 数据库无法完成请求的读取或事务时
      * @throws SecretStoreException if the protected credential cannot be accessed or updated / 无法访问或更新受保护凭据时
      */
-    public void bindDeploymentReleaseSecrets(String applicationId, String releaseIdentity, List<SecretReference> references,
-                                            char[] masterPassword) throws SQLException, SecretStoreException {
+    public void bindDeploymentReleaseSecrets(String applicationId, String releaseIdentity,
+            List<SecretReference> references, char[] masterPassword) throws SQLException, SecretStoreException {
         deploymentConfiguration.bindReleaseSecrets(applicationId, releaseIdentity, references, masterPassword);
     }
 
@@ -976,9 +1030,8 @@ public final class DesktopApplicationFacade implements AiApplicationFacade, Depl
      * @throws SQLException if the database cannot complete the requested read or transaction / 数据库无法完成请求的读取或事务时
      * @throws LinuxOperationException if the authenticated remote operation fails or its evidence is rejected / 已认证远端操作失败或其证据被拒绝时
      */
-    public ServerCapabilityFacts verifyServer(ServerProfile profile, CredentialStorageMode mode,
-                                           char[] masterPassword, Predicate<String> confirmation)
-            throws SecretStoreException, SQLException, LinuxOperationException {
+    public ServerCapabilityFacts verifyServer(ServerProfile profile, CredentialStorageMode mode, char[] masterPassword,
+            Predicate<String> confirmation) throws SecretStoreException, SQLException, LinuxOperationException {
         return servers.verify(profile, mode, masterPassword, confirmation);
     }
 
@@ -993,9 +1046,9 @@ public final class DesktopApplicationFacade implements AiApplicationFacade, Depl
      * @throws SecretStoreException if the protected credential cannot be accessed or updated / 无法访问或更新受保护凭据时
      * @throws LinuxOperationException if the authenticated remote operation fails or its evidence is rejected / 已认证远端操作失败或其证据被拒绝时
      */
-    public LinuxCapabilityFacts inspectDeploymentCapabilitiesWithStoredPassword(
-            ServerProfile profile, CredentialStorageMode mode, char[] masterPassword,
-            Predicate<String> confirmation) throws SecretStoreException, LinuxOperationException {
+    public LinuxCapabilityFacts inspectDeploymentCapabilitiesWithStoredPassword(ServerProfile profile,
+            CredentialStorageMode mode, char[] masterPassword, Predicate<String> confirmation)
+            throws SecretStoreException, LinuxOperationException {
         return servers.inspectDeploymentCapabilities(profile, mode, masterPassword, confirmation);
     }
 
@@ -1013,10 +1066,9 @@ public final class DesktopApplicationFacade implements AiApplicationFacade, Depl
      * @throws SQLException if the database cannot complete the requested read or transaction / 数据库无法完成请求的读取或事务时
      * @throws LinuxOperationException if the authenticated remote operation fails or its evidence is rejected / 已认证远端操作失败或其证据被拒绝时
      */
-    public EnvironmentSetupResult prepareEnvironmentWithStoredPassword(
-            ServerProfile profile, CredentialStorageMode mode, char[] masterPassword,
-            Predicate<String> confirmation, boolean installationConfirmed)
-            throws SecretStoreException, SQLException, LinuxOperationException {
+    public EnvironmentSetupResult prepareEnvironmentWithStoredPassword(ServerProfile profile,
+            CredentialStorageMode mode, char[] masterPassword, Predicate<String> confirmation,
+            boolean installationConfirmed) throws SecretStoreException, SQLException, LinuxOperationException {
         return environment.prepare(profile, mode, masterPassword, confirmation, installationConfirmed);
     }
 
@@ -1034,12 +1086,13 @@ public final class DesktopApplicationFacade implements AiApplicationFacade, Depl
      * @throws SQLException if the database cannot complete the requested read or transaction / 数据库无法完成请求的读取或事务时
      * @throws LinuxOperationException if the authenticated remote operation fails or its evidence is rejected / 已认证远端操作失败或其证据被拒绝时
      */
-    public EnvironmentSetupResult prepareEnvironmentWithStoredPassword(
-            ServerProfile profile, CredentialStorageMode mode, char[] masterPassword,
-            Predicate<String> confirmation, boolean installationConfirmed,
+    public EnvironmentSetupResult prepareEnvironmentWithStoredPassword(ServerProfile profile,
+            CredentialStorageMode mode, char[] masterPassword, Predicate<String> confirmation,
+            boolean installationConfirmed,
             Predicate<gold.debug.windowstolinux.shared.model.server.security.SelinuxPreparationPlan> systemConfirmation)
             throws SecretStoreException, SQLException, LinuxOperationException {
-        return environment.prepare(profile, mode, masterPassword, confirmation, installationConfirmed, systemConfirmation);
+        return environment.prepare(profile, mode, masterPassword, confirmation, installationConfirmed,
+                systemConfirmation);
     }
 
     /**
@@ -1090,9 +1143,8 @@ public final class DesktopApplicationFacade implements AiApplicationFacade, Depl
      * @throws SecretStoreException if the protected credential cannot be accessed or updated / 无法访问或更新受保护凭据时
      * @throws SQLException if the database cannot complete the requested read or transaction / 数据库无法完成请求的读取或事务时
      */
-    public LifecycleOutcome executePersistedLifecycleWithStoredPassword(
-            String applicationId, LifecycleAction action, char[] masterPassword)
-            throws SecretStoreException, SQLException {
+    public LifecycleOutcome executePersistedLifecycleWithStoredPassword(String applicationId, LifecycleAction action,
+            char[] masterPassword) throws SecretStoreException, SQLException {
         return lifecycle.executePersisted(applicationId, action, masterPassword);
     }
 
@@ -1107,9 +1159,8 @@ public final class DesktopApplicationFacade implements AiApplicationFacade, Depl
      * @throws SecretStoreException if the protected credential cannot be accessed or updated / 无法访问或更新受保护凭据时
      * @throws SQLException if the database cannot complete the requested read or transaction / 数据库无法完成请求的读取或事务时
      */
-    public LifecycleActionResult executePersistedLifecycleResultWithStoredPassword(
-            String applicationId, LifecycleAction action, char[] masterPassword)
-            throws SecretStoreException, SQLException {
+    public LifecycleActionResult executePersistedLifecycleResultWithStoredPassword(String applicationId,
+            LifecycleAction action, char[] masterPassword) throws SecretStoreException, SQLException {
         return lifecycle.executePersistedResult(applicationId, action, masterPassword);
     }
 
@@ -1127,9 +1178,8 @@ public final class DesktopApplicationFacade implements AiApplicationFacade, Depl
      * @throws SecretStoreException if the protected credential cannot be accessed or updated / 无法访问或更新受保护凭据时
      * @throws SQLException if the database cannot complete the requested read or transaction / 数据库无法完成请求的读取或事务时
      */
-    public LifecycleOutcome executeLifecycleWithStoredPassword(
-            ManagedApplication application, LifecycleAction action, HealthCheck healthCheck,
-            ServerProfile profile, CredentialStorageMode mode, char[] masterPassword)
+    public LifecycleOutcome executeLifecycleWithStoredPassword(ManagedApplication application, LifecycleAction action,
+            HealthCheck healthCheck, ServerProfile profile, CredentialStorageMode mode, char[] masterPassword)
             throws SecretStoreException, SQLException {
         return lifecycle.execute(application, action, healthCheck, profile, mode, masterPassword);
     }
@@ -1148,10 +1198,9 @@ public final class DesktopApplicationFacade implements AiApplicationFacade, Depl
      * @throws SecretStoreException if the protected credential cannot be accessed or updated / 无法访问或更新受保护凭据时
      * @throws SQLException if the database cannot complete the requested read or transaction / 数据库无法完成请求的读取或事务时
      */
-    public LifecycleActionResult executeLifecycleResultWithStoredPassword(
-            ManagedApplication application, LifecycleAction action, HealthCheck healthCheck,
-            ServerProfile profile, CredentialStorageMode mode, char[] masterPassword)
-            throws SecretStoreException, SQLException {
+    public LifecycleActionResult executeLifecycleResultWithStoredPassword(ManagedApplication application,
+            LifecycleAction action, HealthCheck healthCheck, ServerProfile profile, CredentialStorageMode mode,
+            char[] masterPassword) throws SecretStoreException, SQLException {
         return lifecycle.executeResult(application, action, healthCheck, profile, mode, masterPassword);
     }
 
@@ -1192,11 +1241,13 @@ public final class DesktopApplicationFacade implements AiApplicationFacade, Depl
      * @return constructed or resolved deployment outcome / 构造或解析得到的部署结果
      * @throws Exception if the delegated operation or caller-provided interaction fails / 被委派操作或调用方提供的交互失败时
      */
-    @Override public DeploymentOutcome deployAutomaticallyReviewed(ReviewedDeploymentRequest request,
-            ServerProfile profile, char[] master, Predicate<String> fingerprint,
-            java.util.function.Consumer<gold.debug.windowstolinux.shared.model.message.LocalizedMessage> progress) throws Exception {
-        return reviewedDeployment.deployWithStoredPassword(request, profile, profile.credentialMode(), master, fingerprint,
-                event -> progress.accept(event.message()));
+    @Override
+    public DeploymentOutcome deployAutomaticallyReviewed(ReviewedDeploymentRequest request, ServerProfile profile,
+            char[] master, Predicate<String> fingerprint,
+            java.util.function.Consumer<gold.debug.windowstolinux.shared.model.message.LocalizedMessage> progress)
+            throws Exception {
+        return reviewedDeployment.deployWithStoredPassword(request, profile, profile.credentialMode(), master,
+                fingerprint, event -> progress.accept(event.message()));
     }
 
     /**
@@ -1210,21 +1261,27 @@ public final class DesktopApplicationFacade implements AiApplicationFacade, Depl
      * @return constructed or resolved multi component deployment result / 构造或解析得到的多组件部署结果
      * @throws Exception if the delegated operation or caller-provided interaction fails / 被委派操作或调用方提供的交互失败时
      */
-    @Override public MultiComponentDeploymentResult deployAutomaticallyReviewed(ReviewedMultiComponentApplication request,
+    @Override
+    public MultiComponentDeploymentResult deployAutomaticallyReviewed(ReviewedMultiComponentApplication request,
             ServerProfile profile, char[] master, Predicate<String> fingerprint,
-            java.util.function.Consumer<gold.debug.windowstolinux.shared.model.message.LocalizedMessage> progress) throws Exception {
-        return multiComponentDeployment.deployWithStoredPassword(request, profile, profile.credentialMode(), master, fingerprint,
-                event -> progress.accept(event.message()));
+            java.util.function.Consumer<gold.debug.windowstolinux.shared.model.message.LocalizedMessage> progress)
+            throws Exception {
+        return multiComponentDeployment.deployWithStoredPassword(request, profile, profile.credentialMode(), master,
+                fingerprint, event -> progress.accept(event.message()));
     }
+
     /**
      * Lists both strict managed and external lifecycle registrations. / 列出严格受管和外部生命周期登记。
      *
      * @return constructed or resolved list / 构造或解析得到的列表
      * @throws SQLException if the database cannot complete the requested read or transaction / 数据库无法完成请求的读取或事务时
      */
-    @Override public java.util.List<gold.debug.windowstolinux.app.service.execution.lifecycle.ApplicationSummary> listApplications() throws SQLException {
+    @Override
+    public java.util.List<gold.debug.windowstolinux.app.service.execution.lifecycle.ApplicationSummary> listApplications()
+            throws SQLException {
         return applicationInventory.list();
     }
+
     /**
      * Saves only local presentation. / 仅保存本地显示设置。
      *
@@ -1234,9 +1291,12 @@ public final class DesktopApplicationFacade implements AiApplicationFacade, Depl
      * @param accessUrl access url / 访问URL
      * @throws SQLException if the database cannot complete the requested read or transaction / 数据库无法完成请求的读取或事务时
      */
-    @Override public void saveApplicationPresentation(String key, String name, String category, String accessUrl) throws SQLException {
+    @Override
+    public void saveApplicationPresentation(String key, String name, String category, String accessUrl)
+            throws SQLException {
         applicationInventory.savePresentation(key, name, category, accessUrl);
     }
+
     /**
      * Scans selected server metadata without mutation. / 扫描所选服务器元数据，不作修改。
      *
@@ -1246,10 +1306,12 @@ public final class DesktopApplicationFacade implements AiApplicationFacade, Depl
      * @return constructed or resolved application scan / 构造或解析得到的应用扫描
      * @throws Exception if the delegated operation or caller-provided interaction fails / 被委派操作或调用方提供的交互失败时
      */
-    @Override public gold.debug.windowstolinux.app.service.execution.lifecycle.ApplicationScan scanApplications(String serverId, char[] master,
-            java.util.function.Predicate<String> confirmation) throws Exception {
+    @Override
+    public gold.debug.windowstolinux.app.service.execution.lifecycle.ApplicationScan scanApplications(String serverId,
+            char[] master, java.util.function.Predicate<String> confirmation) throws Exception {
         return externalApplications.scan(serverId, master, confirmation);
     }
+
     /**
      * Adopts only a freshly rechecked selected identity. / 仅接管刚复核过的所选身份。
      *
@@ -1260,11 +1322,13 @@ public final class DesktopApplicationFacade implements AiApplicationFacade, Depl
      * @return adopt application text / 接管应用文本
      * @throws Exception if the delegated operation or caller-provided interaction fails / 被委派操作或调用方提供的交互失败时
      */
-    @Override public String adoptApplication(gold.debug.windowstolinux.app.service.execution.lifecycle.ApplicationScan scan,
+    @Override
+    public String adoptApplication(gold.debug.windowstolinux.app.service.execution.lifecycle.ApplicationScan scan,
             gold.debug.windowstolinux.shared.model.lifecycle.DiscoveredApplication candidate, char[] master,
             java.util.function.Predicate<String> confirmation) throws Exception {
         return externalApplications.adopt(scan, candidate, master, confirmation);
     }
+
     /**
      * Routes each application through its original ownership and capability contract. / 让每种应用经其原有归属及能力契约执行。
      *
@@ -1276,16 +1340,24 @@ public final class DesktopApplicationFacade implements AiApplicationFacade, Depl
      * @throws Exception if the delegated operation or caller-provided interaction fails / 被委派操作或调用方提供的交互失败时
      * @throws IllegalArgumentException if an input violates the constraints checked by this contract / 输入违反当前契约检查的约束时
      */
-    @Override public gold.debug.windowstolinux.app.service.execution.lifecycle.ApplicationLifecycleResult executeApplicationLifecycle(String key,
-            LifecycleAction action, char[] master, java.util.function.Predicate<String> confirmation) throws Exception {
-        if (key.startsWith("external:")) return externalApplications.execute(key, action, master, confirmation);
+    @Override
+    public gold.debug.windowstolinux.app.service.execution.lifecycle.ApplicationLifecycleResult executeApplicationLifecycle(
+            String key, LifecycleAction action, char[] master, java.util.function.Predicate<String> confirmation)
+            throws Exception {
+        if (key.startsWith("external:"))
+            return externalApplications.execute(key, action, master, confirmation);
         try {
-            if (!key.startsWith("managed:")) throw new IllegalArgumentException("invalid application key");
+            if (!key.startsWith("managed:"))
+                throw new IllegalArgumentException("invalid application key");
             var result = lifecycle.executePersisted(key.substring(8), action, master);
             return new gold.debug.windowstolinux.app.service.execution.lifecycle.ApplicationLifecycleResult(
-                    result.observation().map(value -> value.runtimeState()).orElse(gold.debug.windowstolinux.shared.model.lifecycle.RuntimeState.UNKNOWN),
-                    result.observation().map(value -> value.observedAt()).orElseGet(java.time.Instant::now), java.util.Optional.of(result));
-        } finally { java.util.Arrays.fill(master, '\0'); }
+                    result.observation().map(value -> value.runtimeState())
+                            .orElse(gold.debug.windowstolinux.shared.model.lifecycle.RuntimeState.UNKNOWN),
+                    result.observation().map(value -> value.observedAt()).orElseGet(java.time.Instant::now),
+                    java.util.Optional.of(result));
+        } finally {
+            java.util.Arrays.fill(master, '\0');
+        }
     }
 
     /**
@@ -1294,7 +1366,12 @@ public final class DesktopApplicationFacade implements AiApplicationFacade, Depl
      * @return ordered model cards / 有序模型卡片
      * @throws SQLException if the database cannot complete the requested read or transaction / 数据库无法完成请求的读取或事务时
      */
-    @Override public java.util.List<gold.debug.windowstolinux.app.service.ai.AiProviderSummary> listAiConfigurations() throws SQLException { return ai.configurations(); }
+    @Override
+    public java.util.List<gold.debug.windowstolinux.app.service.ai.AiProviderSummary> listAiConfigurations()
+            throws SQLException {
+        return ai.configurations();
+    }
+
     /**
      * Saves global model order transactionally. / 通过事务保存全局模型顺序。
      *
@@ -1307,7 +1384,13 @@ public final class DesktopApplicationFacade implements AiApplicationFacade, Depl
      * @param capability verified text or vision capability / 已验证文本或视觉能力
      */
 
-    @Override public void saveAiConfiguration(AiProviderProfile profile, String name, char[] master, char[] key, gold.debug.windowstolinux.shared.model.ai.AiCapabilityType capability) throws SQLException, SecretStoreException { ai.saveConfiguration(profile,name,master,key,capability); }
+    @Override
+    public void saveAiConfiguration(AiProviderProfile profile, String name, char[] master, char[] key,
+            gold.debug.windowstolinux.shared.model.ai.AiCapabilityType capability)
+            throws SQLException, SecretStoreException {
+        ai.saveConfiguration(profile, name, master, key, capability);
+    }
+
     /**
      * Reorders ai providers.
      * <p>重新排序AI提供者集合。
@@ -1315,7 +1398,11 @@ public final class DesktopApplicationFacade implements AiApplicationFacade, Depl
      * @param ids ids / 标识集合
      * @throws SQLException if the database cannot complete the requested read or transaction / 数据库无法完成请求的读取或事务时
      */
-    @Override public void reorderAiProviders(java.util.List<String> ids) throws SQLException { ai.reorder(ids); }
+    @Override
+    public void reorderAiProviders(java.util.List<String> ids) throws SQLException {
+        ai.reorder(ids);
+    }
+
     /**
      * Tests one model without changing its group or priority. / 测试单个模型，不改变分组和顺序。
      *
@@ -1324,19 +1411,34 @@ public final class DesktopApplicationFacade implements AiApplicationFacade, Depl
      * @throws Exception if the delegated operation or caller-provided interaction fails / 被委派操作或调用方提供的交互失败时
      * @param capability separately tested text or vision capability / 分别测试的文本或视觉能力
      */
-    @Override public void testAiCapability(String id, gold.debug.windowstolinux.shared.model.ai.AiCapabilityType capability, char[] master) throws Exception { ai.testCapability(id, capability, master); }
+    @Override
+    public void testAiCapability(String id, gold.debug.windowstolinux.shared.model.ai.AiCapabilityType capability,
+            char[] master) throws Exception {
+        ai.testCapability(id, capability, master);
+    }
+
     /** Reads purpose members. / 读取用途成员。
      * @param purpose selected purpose / 所选用途
      * @return ordered members / 有序成员
      * @throws SQLException if reading fails / 读取失败时
      */
-    @Override public java.util.List<gold.debug.windowstolinux.shared.model.ai.AiPurposeAssignment> listAiPurpose(gold.debug.windowstolinux.shared.model.ai.AiPurposeType purpose) throws SQLException { return ai.purpose(purpose); }
+    @Override
+    public java.util.List<gold.debug.windowstolinux.shared.model.ai.AiPurposeAssignment> listAiPurpose(
+            gold.debug.windowstolinux.shared.model.ai.AiPurposeType purpose) throws SQLException {
+        return ai.purpose(purpose);
+    }
+
     /** Saves purpose members. / 保存用途成员。
      * @param purpose selected purpose / 所选用途
      * @param members ordered members / 有序成员
      * @throws SQLException if saving fails / 保存失败时
      */
-    @Override public void saveAiPurpose(gold.debug.windowstolinux.shared.model.ai.AiPurposeType purpose, java.util.List<gold.debug.windowstolinux.shared.model.ai.AiPurposeAssignment> members) throws SQLException { ai.savePurpose(purpose,members); }
+    @Override
+    public void saveAiPurpose(gold.debug.windowstolinux.shared.model.ai.AiPurposeType purpose,
+            java.util.List<gold.debug.windowstolinux.shared.model.ai.AiPurposeAssignment> members) throws SQLException {
+        ai.savePurpose(purpose, members);
+    }
+
     /**
      * Starts APP browser rescue. / 启动 APP 浏览器救援。
      *
@@ -1345,14 +1447,20 @@ public final class DesktopApplicationFacade implements AiApplicationFacade, Depl
      * @param fingerprint pinned or freshly observed host-key fingerprint / 固定或新近观测的主机密钥指纹
      * @return constructed or resolved ssh recovery session / 构造或解析得到的SSH恢复会话
      */
-    @Override public gold.debug.windowstolinux.app.service.contract.SshRecoverySession startSshRecovery(
-            ServerProfile server, char[] master, Predicate<String> fingerprint) {
+    @Override
+    public gold.debug.windowstolinux.app.service.contract.SshRecoverySession startSshRecovery(ServerProfile server,
+            char[] master, Predicate<String> fingerprint) {
         return recovery.start(server, master, fingerprint);
     }
+
     /**
      * Closes all rescue resources. / 关闭全部救援资源。
      */
-    @Override public void closeSshRecovery() { recovery.close(); }
+    @Override
+    public void closeSshRecovery() {
+        recovery.close();
+    }
+
     /**
      * Preserves the current source snapshot and server mutex during rescue. / 救援期间保留当前源码快照与服务器互斥。
      *
@@ -1364,13 +1472,17 @@ public final class DesktopApplicationFacade implements AiApplicationFacade, Depl
      * @return true when preserves the current source snapshot and server mutex during rescue, false otherwise / 救援期间保留当前源码快照与服务器互斥时为 true，否则为 false
      * @throws Exception if the delegated operation or caller-provided interaction fails / 被委派操作或调用方提供的交互失败时
      */
-    @Override public boolean recoverSshForOperation(ServerProfile server, char[] master, Predicate<String> fingerprint,
+    @Override
+    public boolean recoverSshForOperation(ServerProfile server, char[] master, Predicate<String> fingerprint,
             AutomaticDeploymentInteraction interaction, String operation) throws Exception {
         if (!(interaction instanceof DesktopRecoveryInteraction desktop) || !desktop.offerSshRecovery(server)) {
-            java.util.Arrays.fill(master, '\0'); return false;
+            java.util.Arrays.fill(master, '\0');
+            return false;
         }
-        return recovery.recoverInline(server, master, fingerprint, operation, session -> desktop.showSshRecovery(server, session));
+        return recovery.recoverInline(server, master, fingerprint, operation,
+                session -> desktop.showSshRecovery(server, session));
     }
+
     /**
      * Performs a read-only server check with optional browser rescue. / 执行可选浏览器救援的只读服务器检查。
      *
@@ -1382,10 +1494,12 @@ public final class DesktopApplicationFacade implements AiApplicationFacade, Depl
      * @return constructed or resolved server capability facts / 构造或解析得到的服务器能力事实
      * @throws Exception if the delegated operation or caller-provided interaction fails / 被委派操作或调用方提供的交互失败时
      */
-    @Override public ServerCapabilityFacts verifyServerRecovering(ServerProfile profile, CredentialStorageMode mode,
+    @Override
+    public ServerCapabilityFacts verifyServerRecovering(ServerProfile profile, CredentialStorageMode mode,
             char[] master, Predicate<String> fingerprint, DesktopRecoveryInteraction interaction) throws Exception {
         return recovery.verify(profile, mode, master, fingerprint, interaction);
     }
+
     /**
      * Preserves completed installation evidence during manual environment recovery. / 人工环境救援期间保留已完成安装证据。
      *
@@ -1399,36 +1513,52 @@ public final class DesktopApplicationFacade implements AiApplicationFacade, Depl
      * @return constructed or resolved environment setup result / 构造或解析得到的环境Setup结果
      * @throws Exception if the delegated operation or caller-provided interaction fails / 被委派操作或调用方提供的交互失败时
      */
-    @Override public EnvironmentSetupResult prepareEnvironmentRecovering(ServerProfile profile, CredentialStorageMode mode,
+    @Override
+    public EnvironmentSetupResult prepareEnvironmentRecovering(ServerProfile profile, CredentialStorageMode mode,
             char[] master, Predicate<String> fingerprint, boolean confirmed,
             Predicate<gold.debug.windowstolinux.shared.model.server.security.SelinuxPreparationPlan> system,
             DesktopRecoveryInteraction interaction) throws Exception {
         return recovery.prepare(profile, mode, master, fingerprint, confirmed, system, interaction, environment);
     }
+
     /** Requests a safe task control transition. / 请求安全任务控制转换。
      * @param taskId active task identity / 活动任务身份
      * @param command requested transition / 请求转换
      */
-    @Override public void controlDeployment(String taskId,gold.debug.windowstolinux.shared.model.agent.AgentTaskCommandAction command){automatic.control(taskId,command);}
+    @Override
+    public void controlDeployment(String taskId,
+            gold.debug.windowstolinux.shared.model.agent.AgentTaskCommandAction command) {
+        automatic.control(taskId, command);
+    }
 
     /** Reads process-local state and pause reason. / 读取进程内状态及暂停原因。
      * @param taskId active task identity / 活动任务身份
      * @return nonsecret state / 非秘密状态
      */
-    @Override public java.util.Map<String,String> deploymentTaskState(String taskId){return automatic.state(taskId);}
+    @Override
+    public java.util.Map<String, String> deploymentTaskState(String taskId) {
+        return automatic.state(taskId);
+    }
 
     /** Reads recent deployment task history. / 读取最近部署任务历史。
      * @return nonsecret records / 非秘密记录
      * @throws java.sql.SQLException on database failure / 数据库失败时
      */
-    @Override public java.util.List<java.util.Map<String,String>> deploymentTaskHistory() throws java.sql.SQLException{return automatic.history();}
+    @Override
+    public java.util.List<java.util.Map<String, String>> deploymentTaskHistory() throws java.sql.SQLException {
+        return automatic.history();
+    }
 
     /** Reads a task audit trail. / 读取任务审计轨迹。
      * @param taskId task identity / 任务身份
      * @return bounded audit events / 有界审计事件
      * @throws java.sql.SQLException on database failure / 数据库失败时
      */
-    @Override public java.util.List<java.util.Map<String,String>> deploymentTaskEvents(String taskId) throws java.sql.SQLException{return automatic.events(taskId);}
+    @Override
+    public java.util.List<java.util.Map<String, String>> deploymentTaskEvents(String taskId)
+            throws java.sql.SQLException {
+        return automatic.events(taskId);
+    }
 
     /** Queries recorded task candidates without authorizing a retry. / 查询任务候选项，不授权重试。
      * @param taskId task identity / 任务身份
@@ -1436,5 +1566,9 @@ public final class DesktopApplicationFacade implements AiApplicationFacade, Depl
      * @return actual observations / 实际观测
      * @throws Exception when observation fails / 观测失败时
      */
-    @Override public java.util.List<java.util.Map<String,String>> inspectDeploymentTask(String taskId,char[] master)throws Exception{return automatic.inspect(taskId,master);}
+    @Override
+    public java.util.List<java.util.Map<String, String>> inspectDeploymentTask(String taskId, char[] master)
+            throws Exception {
+        return automatic.inspect(taskId, master);
+    }
 }

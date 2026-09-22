@@ -1,10 +1,10 @@
 package gold.debug.windowstolinux.app.service.execution.lifecycle;
 
-import gold.debug.windowstolinux.shared.model.managed.ManagedApplication;
-import gold.debug.windowstolinux.shared.model.managed.ManagedApplicationRuntimeConfiguration;
-
 import java.util.Objects;
 import java.util.Optional;
+
+import gold.debug.windowstolinux.shared.model.managed.ManagedApplication;
+import gold.debug.windowstolinux.shared.model.managed.ManagedApplicationRuntimeConfiguration;
 
 /**
  * Persisted ownership, successful deployment contract and release identity; not a remote runtime claim.
@@ -15,11 +15,8 @@ import java.util.Optional;
  * @param currentReleaseSha256 the current release identity digest / 当前发布身份摘要
  * @param runtimeConfiguration runtime configuration / 运行时配置
  */
-public record ManagedApplicationSnapshot(
-        ManagedApplication application,
-        Optional<String> currentReleaseSha256,
-        Optional<ManagedApplicationRuntimeConfiguration> runtimeConfiguration
-) {
+public record ManagedApplicationSnapshot(ManagedApplication application, Optional<String> currentReleaseSha256,
+        Optional<ManagedApplicationRuntimeConfiguration> runtimeConfiguration) {
     /**
      * Validates and binds the inputs required by managed application snapshot.
      * <p>校验并绑定受管应用快照所需输入。

@@ -21,19 +21,13 @@ import java.util.Set;
  * @param members members / 成员集合
  * @param provenance provenance / 来源证据
  */
-public record BackupManifest(
-        String format,
-        String schemaVersion,
-        String createdAtUtc,
-        String applicationId,
-        BackupInventory inventory,
-        List<BackupMember> members,
-        BackupProvenance provenance
-) {
+public record BackupManifest(String format, String schemaVersion, String createdAtUtc, String applicationId,
+        BackupInventory inventory, List<BackupMember> members, BackupProvenance provenance) {
     /**
      * Current stable archive format identifier. / 当前稳定归档格式标识。
      */
     public static final String CURRENT_FORMAT = "windowstolinux-backup";
+
     /**
      * Current manifest schema version. / 当前清单模式版本。
      */
@@ -60,13 +54,13 @@ public record BackupManifest(
         inventory = Objects.requireNonNull(inventory, "inventory");
         members = List.copyOf(Objects.requireNonNull(members, "members"));
         provenance = Objects.requireNonNull(provenance, "provenance");
-        if (!CURRENT_FORMAT.equals(format)
-                || !CURRENT_SCHEMA_VERSION.equals(schemaVersion)) {
+        if (!CURRENT_FORMAT.equals(format) || !CURRENT_SCHEMA_VERSION.equals(schemaVersion)) {
             throw new IllegalArgumentException("unsupported backup format or schema version");
         }
         try {
             Instant parsed = Instant.parse(createdAtUtc);
-            if (!parsed.toString().equals(createdAtUtc)) throw new IllegalArgumentException("createdAtUtc must be canonical UTC");
+            if (!parsed.toString().equals(createdAtUtc))
+                throw new IllegalArgumentException("createdAtUtc must be canonical UTC");
         } catch (DateTimeParseException exception) {
             throw new IllegalArgumentException("createdAtUtc must be a canonical UTC instant", exception);
         }
@@ -77,7 +71,8 @@ public record BackupManifest(
         if (CURRENT_SCHEMA_VERSION.equals(schemaVersion) != exactActivation) {
             throw new IllegalArgumentException("manifest schema version differs from its release and secret bindings");
         }
-        if (members.isEmpty()) throw new IllegalArgumentException("backup manifest must contain members");
+        if (members.isEmpty())
+            throw new IllegalArgumentException("backup manifest must contain members");
         Set<String> paths = new HashSet<>();
         for (BackupMember member : members) {
             if (!paths.add(member.path().toLowerCase(Locale.ROOT))) {
@@ -97,11 +92,11 @@ public record BackupManifest(
      * @return an unsigned current-format manifest / 当前格式的未签名清单
      * @throws NullPointerException if a required input is absent / 必需输入缺失时
      */
-    public static BackupManifest create(
-            Instant createdAt, String applicationId, BackupInventory inventory, List<BackupMember> members) {
+    public static BackupManifest create(Instant createdAt, String applicationId, BackupInventory inventory,
+            List<BackupMember> members) {
         return new BackupManifest(CURRENT_FORMAT, CURRENT_SCHEMA_VERSION,
-                Objects.requireNonNull(createdAt, "createdAt").toString(), applicationId,
-                inventory, members, BackupProvenance.unsigned());
+                Objects.requireNonNull(createdAt, "createdAt").toString(), applicationId, inventory, members,
+                BackupProvenance.unsigned());
     }
 
     /**
@@ -111,7 +106,8 @@ public record BackupManifest(
      * @return an equivalent manifest with new provenance / 带新来源信息的等价清单
      */
     public BackupManifest withProvenance(BackupProvenance newProvenance) {
-        return new BackupManifest(format, schemaVersion, createdAtUtc, applicationId, inventory, members, newProvenance);
+        return new BackupManifest(format, schemaVersion, createdAtUtc, applicationId, inventory, members,
+                newProvenance);
     }
 
     /**
@@ -170,11 +166,12 @@ public record BackupManifest(
      * @param requiredKind required kind / 必需种类
      * @throws IllegalArgumentException if an input violates the constraints checked by this contract / 输入违反当前契约检查的约束时
      */
-    private static void requireMembers(
-            Map<String, BackupMemberKind> indexed, List<String> requiredPaths, BackupMemberKind requiredKind) {
+    private static void requireMembers(Map<String, BackupMemberKind> indexed, List<String> requiredPaths,
+            BackupMemberKind requiredKind) {
         for (String path : requiredPaths) {
             if (indexed.get(path) != requiredKind) {
-                throw new IllegalArgumentException("inventory definition is missing or has the wrong member kind: " + path);
+                throw new IllegalArgumentException(
+                        "inventory definition is missing or has the wrong member kind: " + path);
             }
         }
     }

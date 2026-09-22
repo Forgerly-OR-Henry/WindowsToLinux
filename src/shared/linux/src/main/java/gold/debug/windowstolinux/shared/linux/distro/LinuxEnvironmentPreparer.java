@@ -10,6 +10,16 @@ import gold.debug.windowstolinux.shared.model.deployment.EnvironmentSetupResult;
  *  <p>感知发行版的环境准备契约。
  */
 public interface LinuxEnvironmentPreparer {
+    /** Installs only managed isolation and helper prerequisites, without project toolchain selection. / 仅安装受管隔离及 helper 前提，不选择项目工具链。
+     * @param approval exact target authorization / 精确目标授权
+     * @return observed platform preparation / 已观察平台准备
+     * @throws LinuxOperationException when platform preparation fails / 平台准备失败时
+     */
+    default EnvironmentSetupResult prepareManagedPlatform(EnvironmentSetupApproval approval)
+            throws LinuxOperationException {
+        throw new UnsupportedOperationException("managed platform preparation unavailable");
+    }
+
     /**
      * Exposes separately confirmed system preparation when the transport supports it. / 提供传输所支持的独立确认系统准备能力。
      *
@@ -21,6 +31,7 @@ public interface LinuxEnvironmentPreparer {
                 gold.debug.windowstolinux.shared.linux.error.LinuxOperationFailureType.ENVIRONMENT_UNSUPPORTED_DISTRO,
                 "SELinux preparation is not supported by this connection");
     }
+
     /**
      * Prepares environment.
      * <p>准备环境。
@@ -29,6 +40,5 @@ public interface LinuxEnvironmentPreparer {
      * @return the operation result / 操作结果
      * @throws LinuxOperationException if the authenticated remote operation fails or its evidence is rejected / 已认证远端操作失败或其证据被拒绝时
      */
-    EnvironmentSetupResult prepareEnvironment(EnvironmentSetupApproval approval)
-            throws LinuxOperationException;
+    EnvironmentSetupResult prepareEnvironment(EnvironmentSetupApproval approval) throws LinuxOperationException;
 }

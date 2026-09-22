@@ -12,8 +12,8 @@
       <p>登记 → 借用单 → 审批占用 → 领用 → 部分归还 / 维修</p>
     </header>
     <nav>
-      <a href="#assets">资产列表</a> <a href="#register">资产登记</a>
-      <a href="#new-loan">新建借用单</a> <a href="#loans">借用单</a>
+      <a href="#assets">资产列表</a> <a href="#register">资产登记</a> <a href="#new-loan">新建借用单</a>
+      <a href="#loans">借用单</a>
       <a href="#maintenance">维修工单</a>
     </nav>
     <p>
@@ -27,8 +27,7 @@
       <section data-page="assets">
         <h2>资产列表</h2>
         <form id="filters">
-          <label>名称 / 编号<input id="query" /></label
-          ><label>分类<select id="category-filter"></select></label
+          <label>名称 / 编号<input id="query" /></label><label>分类<select id="category-filter"></select></label
           ><label
             >状态<select id="status">
               <option value="">全部</option>
@@ -53,8 +52,7 @@
           </thead>
           <tbody id="assets"></tbody>
         </table>
-        <button id="asset-prev">上一页</button
-        ><button id="asset-next">下一页</button>
+        <button id="asset-prev">上一页</button><button id="asset-next">下一页</button>
         <p id="cart-count"></p>
       </section>
       <section data-page="register" hidden>
@@ -62,14 +60,11 @@
         <form id="register">
           <label>名称<input id="name" required maxlength="120" /></label
           ><label>唯一编号<input id="serial" required maxlength="80" /></label
-          ><label>分类<select id="category"></select></label
-          ><button>登记资产</button>
+          ><label>分类<select id="category"></select></label><button>登记资产</button>
         </form>
         <h3>新增分类</h3>
         <form id="category-form">
-          <label
-            >分类名称<input id="category-name" required maxlength="60" /></label
-          ><button>保存分类</button>
+          <label>分类名称<input id="category-name" required maxlength="60" /></label><button>保存分类</button>
         </form>
       </section>
       <section data-page="new-loan" hidden>
@@ -79,8 +74,7 @@
         <form id="loan-form">
           <label>申请人<select id="borrower"></select></label
           ><label>归还期限<input id="due-date" type="date" required /></label
-          ><label>用途<input id="purpose" required maxlength="300" /></label
-          ><button>保存借用草稿</button>
+          ><label>用途<input id="purpose" required maxlength="300" /></label><button>保存借用草稿</button>
         </form>
       </section>
       <section data-page="loans" hidden>
@@ -98,8 +92,7 @@
               <option>partially_returned</option>
               <option>closed</option>
             </select></label
-          ><label><input id="overdue" type="checkbox" />仅逾期</label
-          ><button>查询借用单</button>
+          ><label><input id="overdue" type="checkbox" />仅逾期</label><button>查询借用单</button>
         </form>
         <p id="loan-count"></p>
         <table>
@@ -115,8 +108,7 @@
           </thead>
           <tbody id="loans"></tbody>
         </table>
-        <button id="loan-prev">上一页</button
-        ><button id="loan-next">下一页</button>
+        <button id="loan-prev">上一页</button><button id="loan-next">下一页</button>
       </section>
       <section data-page="detail" hidden>
         <h2 id="loan-title">借用单详情</h2>

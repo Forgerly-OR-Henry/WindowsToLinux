@@ -20,8 +20,7 @@
     <section>
       <label>当前文件夹<select id="folder"></select></label>
       <form id="folder-form">
-        <label>新文件夹<input id="folder-name" required maxlength="80" /></label
-        ><button>创建文件夹</button>
+        <label>新文件夹<input id="folder-name" required maxlength="80" /></label><button>创建文件夹</button>
       </form>
     </section>
     <main>
@@ -51,15 +50,13 @@
           先选择文件；断点续传需重新选择相同文件并填写会话标识。刷新页面后已确认分块仍保留。同文件夹同名文件发布为新版本。
         </p>
         <form id="upload">
-          <label
-            >选择文件<input id="files" type="file" multiple required /></label
+          <label>选择文件<input id="files" type="file" multiple required /></label
           ><label>恢复会话标识（只选一个文件）<input id="session-id" /></label
           ><button id="upload-button">开始 / 继续上传</button>
         </form>
         <progress id="progress" max="100" value="0"></progress>
         <p id="progress-text" role="status"></p>
-        <button id="pause" disabled>暂停</button
-        ><button id="cancel">取消会话</button>
+        <button id="pause" disabled>暂停</button><button id="cancel">取消会话</button>
         <pre id="session-detail"></pre>
       </section>
       <section data-page="history" hidden>

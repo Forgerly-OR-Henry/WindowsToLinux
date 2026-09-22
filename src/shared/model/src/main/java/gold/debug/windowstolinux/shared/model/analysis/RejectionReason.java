@@ -1,8 +1,8 @@
 package gold.debug.windowstolinux.shared.model.analysis;
 
-import gold.debug.windowstolinux.shared.model.message.LocalizedMessage;
-
 import java.util.Objects;
+
+import gold.debug.windowstolinux.shared.model.message.LocalizedMessage;
 
 /**
  * A deterministic reason why a project cannot enter the managed-deployment pipeline.

@@ -14,13 +14,17 @@ public record RedisKeyNamespace(String prefix) {
      * @throws IllegalArgumentException if an input violates the constraints checked by this contract / 输入违反当前契约检查的约束时
      */
     public RedisKeyNamespace {
-        if (prefix == null || !prefix.matches("[a-z][a-z0-9_-]{0,62}:")) throw new IllegalArgumentException("Redis namespace must be an application prefix ending in a colon");
+        if (prefix == null || !prefix.matches("[a-z][a-z0-9_-]{0,62}:"))
+            throw new IllegalArgumentException("Redis namespace must be an application prefix ending in a colon");
     }
+
     /**
      * Returns acl pattern.
      * <p>返回acl匹配模式。
      *
      * @return acl pattern / acl匹配模式
      */
-    public String aclPattern() { return "~" + prefix + "*"; }
+    public String aclPattern() {
+        return "~" + prefix + "*";
+    }
 }

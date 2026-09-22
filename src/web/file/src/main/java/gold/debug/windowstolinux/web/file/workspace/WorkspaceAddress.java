@@ -17,15 +17,18 @@ public record WorkspaceAddress(String workspaceId, String resourceId) {
      * @throws IllegalArgumentException if an input violates the constraints checked by this contract / 输入违反当前契约检查的约束时
      */
     public WorkspaceAddress {
-        if (workspaceId == null || !workspaceId.matches("[A-Za-z0-9][A-Za-z0-9_-]{0,100}")
-                || resourceId == null || !resourceId.matches("[a-f0-9-]{36}"))
+        if (workspaceId == null || !workspaceId.matches("[A-Za-z0-9][A-Za-z0-9_-]{0,100}") || resourceId == null
+                || !resourceId.matches("[a-f0-9-]{36}"))
             throw new IllegalArgumentException("Invalid workspace address");
     }
+
     /**
      * Returns marker.
      * <p>返回标记。
      *
      * @return marker / 标记
      */
-    public String marker() { return workspaceId + ":" + resourceId; }
+    public String marker() {
+        return workspaceId + ":" + resourceId;
+    }
 }

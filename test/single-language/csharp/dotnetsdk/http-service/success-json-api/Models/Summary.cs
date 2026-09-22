@@ -1,5 +1,6 @@
 using Newtonsoft.Json;
 namespace Fixture;
+
 public sealed class Summary
 {
     [JsonProperty("status")] public string Status => "ok";

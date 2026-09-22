@@ -1,5 +1,9 @@
 package gold.debug.windowstolinux.shared.deploy.execution.environment;
 
+import java.time.Duration;
+import java.util.Objects;
+import java.util.function.Predicate;
+
 import gold.debug.windowstolinux.shared.linux.connection.HostKeyDecision;
 import gold.debug.windowstolinux.shared.linux.connection.HostKeyEvaluator;
 import gold.debug.windowstolinux.shared.linux.connection.HostKeyObservation;
@@ -13,10 +17,6 @@ import gold.debug.windowstolinux.shared.model.deployment.DeploymentApprovalFailu
 import gold.debug.windowstolinux.shared.model.server.security.SelinuxPreparationPlan;
 import gold.debug.windowstolinux.shared.model.server.security.SelinuxPreparationState;
 
-import java.time.Duration;
-import java.util.Objects;
-import java.util.function.Predicate;
-
 /**
  * Orchestrates approved system changes, bounded reboot recovery and fresh authenticated verification. / 编排已批准系统变更、有界重启恢复和重新认证验证。
  */
@@ -26,6 +26,7 @@ final class SelinuxPreparationService {
      * <p>超时。
      */
     private final Duration timeout;
+
     /**
      * Interval.
      * <p>间隔。
@@ -70,36 +71,42 @@ final class SelinuxPreparationService {
      * @throws LinuxOperationException if the authenticated remote operation fails or its evidence is rejected / 已认证远端操作失败或其证据被拒绝时
      */
     HostKeyEvaluator prepare(LinuxGateway gateway, SshEndpoint endpoint, SshCredential credential,
-                             HostKeyEvaluator verifier, Predicate<SelinuxPreparationPlan> confirmation)
-            throws LinuxOperationException {
+            HostKeyEvaluator verifier, Predicate<SelinuxPreparationPlan> confirmation) throws LinuxOperationException {
         HostKeyEvaluator pinned = pinned(verifier);
         boolean reboot;
         boolean mutationStarted = false;
         try (var session = gateway.connect(endpoint, credential.duplicate(), pinned)) {
             var operation = session.selinuxPreparation();
             var inspected = operation.inspect();
-            if (inspected.isEmpty()) return pinned;
+            if (inspected.isEmpty())
+                return pinned;
             var plan = inspected.orElseThrow();
-            if (plan.state() == SelinuxPreparationState.COMPLETE) return pinned;
+            if (plan.state() == SelinuxPreparationState.COMPLETE)
+                return pinned;
             if (!endpoint.serverId().equals(plan.serverId()) || !confirmation.test(plan)) {
                 throw new DeploymentApprovalException(DeploymentApprovalFailureType.CONFIRMATION_REQUIRED,
                         "Explicit confirmation is required for SELinux changes and server reboot");
             }
-            if (Thread.currentThread().isInterrupted()) throw incomplete("System preparation cancelled before mutation");
+            if (Thread.currentThread().isInterrupted())
+                throw incomplete("System preparation cancelled before mutation");
             reboot = plan.state() == SelinuxPreparationState.UNPREPARED
                     || plan.state() == SelinuxPreparationState.REBOOT_PENDING;
-            if (reboot) { mutationStarted = true; operation.prepareReboot(plan); }
-            else if (plan.state() == SelinuxPreparationState.READY_TO_ENFORCE) {
-                mutationStarted = true; operation.enableEnforcement(plan);
-            }
-            else if (plan.state() != SelinuxPreparationState.ENFORCEMENT_PENDING) {
+            if (reboot) {
+                mutationStarted = true;
+                operation.prepareReboot(plan);
+            } else if (plan.state() == SelinuxPreparationState.READY_TO_ENFORCE) {
+                mutationStarted = true;
+                operation.enableEnforcement(plan);
+            } else if (plan.state() != SelinuxPreparationState.ENFORCEMENT_PENDING) {
                 throw incomplete("Unexpected SELinux preparation checkpoint");
             }
         } catch (LinuxOperationException failure) {
-            if (!mutationStarted) throw LinuxOperationException.beforeEnvironmentPreparation(failure);
+            if (!mutationStarted)
+                throw LinuxOperationException.beforeEnvironmentPreparation(failure);
             throw failure;
         }
-        if (reboot) waitAndEnforce(gateway, endpoint, credential, pinned);
+        if (reboot)
+            waitAndEnforce(gateway, endpoint, credential, pinned);
         // A new authenticated connection is required after enforcing mode is enabled. / 启用强制模式后必须通过新连接重新认证。
         try (var session = gateway.connect(endpoint, credential.duplicate(), pinned)) {
             var operation = session.selinuxPreparation();
@@ -108,7 +115,8 @@ final class SelinuxPreparationService {
                 throw incomplete("Enforcing verification did not complete; safety rollback remains available");
             }
             operation.commitEnforcement(verified);
-            if (operation.inspect().orElseThrow(() -> incomplete("Target distribution changed")).state() != SelinuxPreparationState.COMPLETE) {
+            if (operation.inspect().orElseThrow(() -> incomplete("Target distribution changed"))
+                    .state() != SelinuxPreparationState.COMPLETE) {
                 throw incomplete("SELinux preparation did not reach its verified final state");
             }
         }
@@ -126,7 +134,7 @@ final class SelinuxPreparationService {
      * @throws LinuxOperationException if the authenticated remote operation fails or its evidence is rejected / 已认证远端操作失败或其证据被拒绝时
      */
     private void waitAndEnforce(LinuxGateway gateway, SshEndpoint endpoint, SshCredential credential,
-                               HostKeyEvaluator verifier) throws LinuxOperationException {
+            HostKeyEvaluator verifier) throws LinuxOperationException {
         long deadline = System.nanoTime() + timeout.toNanos();
         LinuxOperationException last = null;
         while (System.nanoTime() < deadline) {
@@ -134,8 +142,10 @@ final class SelinuxPreparationService {
             try (var session = gateway.connect(endpoint, credential.duplicate(), verifier)) {
                 var operation = session.selinuxPreparation();
                 var plan = operation.inspect().orElseThrow(() -> incomplete("Target distribution changed"));
-                if (plan.state() == SelinuxPreparationState.REBOOT_PENDING) continue;
-                if (plan.state() == SelinuxPreparationState.ENFORCEMENT_PENDING) return;
+                if (plan.state() == SelinuxPreparationState.REBOOT_PENDING)
+                    continue;
+                if (plan.state() == SelinuxPreparationState.ENFORCEMENT_PENDING)
+                    return;
                 if (plan.state() != SelinuxPreparationState.READY_TO_ENFORCE) {
                     throw incomplete("Reboot returned an unexpected SELinux checkpoint");
                 }
@@ -144,12 +154,14 @@ final class SelinuxPreparationService {
             } catch (LinuxOperationException failure) {
                 String code = failure.failure().code();
                 if (!code.equals(LinuxOperationFailureType.CONNECTION_FAILED.code())
-                        && !code.equals(LinuxOperationFailureType.SSH_COMMAND_FAILED.code())) throw failure;
+                        && !code.equals(LinuxOperationFailureType.SSH_COMMAND_FAILED.code()))
+                    throw failure;
                 last = failure;
             }
         }
         throw LinuxOperationException.create(LinuxOperationFailureType.ENVIRONMENT_PREPARATION_FAILED,
-                "Timed out waiting for the approved server reboot; inspect target preparation state before resuming", last);
+                "Timed out waiting for the approved server reboot; inspect target preparation state before resuming",
+                last);
     }
 
     /**
@@ -201,10 +213,13 @@ final class SelinuxPreparationService {
              * @param observed observed / 已观测
              * @return constructed or resolved host key decision / 构造或解析得到的主机键决定
              */
-            @Override public HostKeyDecision verify(SshEndpoint endpoint, String observed) {
-                if (fingerprint != null && !fingerprint.equals(observed)) return HostKeyDecision.REJECT;
+            @Override
+            public HostKeyDecision verify(SshEndpoint endpoint, String observed) {
+                if (fingerprint != null && !fingerprint.equals(observed))
+                    return HostKeyDecision.REJECT;
                 return original.verify(endpoint, observed);
             }
+
             /**
              * Verifies host key decision.
              * <p>验证主机键决定。
@@ -213,10 +228,13 @@ final class SelinuxPreparationService {
              * @param observed observed / 已观测
              * @return constructed or resolved host key decision / 构造或解析得到的主机键决定
              */
-            @Override public HostKeyDecision verify(SshEndpoint endpoint, HostKeyObservation observed) {
-                if (fingerprint != null && !fingerprint.equals(observed.sshSha256())) return HostKeyDecision.REJECT;
+            @Override
+            public HostKeyDecision verify(SshEndpoint endpoint, HostKeyObservation observed) {
+                if (fingerprint != null && !fingerprint.equals(observed.sshSha256()))
+                    return HostKeyDecision.REJECT;
                 return original.verify(endpoint, observed);
             }
+
             /**
              * Tests the authenticated predicate against the supplied evidence.
              * <p>根据所提供证据检查已认证条件。
@@ -225,9 +243,12 @@ final class SelinuxPreparationService {
              * @param observed observed / 已观测
              * @return true when authenticated predicate against the supplied evidence, false otherwise / 根据所提供证据检查已认证条件时为 true，否则为 false
              */
-            @Override public boolean authenticated(SshEndpoint endpoint, HostKeyObservation observed) {
-                if (fingerprint != null && !fingerprint.equals(observed.sshSha256())) return false;
-                if (!original.authenticated(endpoint, observed)) return false;
+            @Override
+            public boolean authenticated(SshEndpoint endpoint, HostKeyObservation observed) {
+                if (fingerprint != null && !fingerprint.equals(observed.sshSha256()))
+                    return false;
+                if (!original.authenticated(endpoint, observed))
+                    return false;
                 fingerprint = observed.sshSha256();
                 return true;
             }

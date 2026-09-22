@@ -1,12 +1,8 @@
 export async function verify(page, expect) {
-  const config = await (
-    await page.request.get(new URL("/runtime-config.json", page.url()).href)
-  ).json();
+  const config = await (await page.request.get(new URL("/runtime-config.json", page.url()).href)).json();
   await page.locator("#project-name").fill("浏览器验收项目");
   await page.getByRole("button", { name: "创建项目", exact: true }).click();
-  await expect(page.locator("#project option:checked")).toHaveText(
-    "浏览器验收项目",
-  );
+  await expect(page.locator("#project option:checked")).toHaveText("浏览器验收项目");
   async function create(title, dependencies = "") {
     await page.getByRole("link", { name: "新建任务", exact: true }).click();
     await page.locator("#title").fill(title);
@@ -16,9 +12,7 @@ export async function verify(page, expect) {
     await page.locator("#due-date").fill("2030-10-01");
     await page.locator("#dependencies").fill(dependencies);
     const pending = page.waitForResponse(
-      (r) =>
-        new URL(r.url()).pathname === "/api/tasks" &&
-        r.request().method() === "POST",
+      (r) => new URL(r.url()).pathname === "/api/tasks" && r.request().method() === "POST",
     );
     await page.getByRole("button", { name: "保存任务", exact: true }).click();
     const response = await pending;
@@ -46,9 +40,7 @@ export async function verify(page, expect) {
     await expect(row).toHaveCount(1);
     return row;
   }
-  await (await find(second.title))
-    .getByRole("button", { name: "详情", exact: true })
-    .click();
+  await (await find(second.title)).getByRole("button", { name: "详情", exact: true }).click();
   await page.getByRole("button", { name: "审核完成", exact: true }).click();
   await page.locator("#comment").fill("审核通过，已核对依赖");
   await page.getByRole("button", { name: "发表评论", exact: true }).click();
@@ -57,32 +49,25 @@ export async function verify(page, expect) {
   await expect(page.locator("#history")).toContainText("transition");
   await expect(page.locator("#history")).toContainText("comment");
   const conflict = await create("浏览器冲突任务");
-  await (await find(conflict.title))
-    .getByRole("button", { name: "编辑", exact: true })
-    .click();
+  await (await find(conflict.title)).getByRole("button", { name: "编辑", exact: true }).click();
   await page.locator("#title").fill("尚未提交的浏览器修改");
   const members = await (
-    await page.request.get(
-      `${config.apiBase}/api/members?projectId=${conflict.projectId}`,
-    )
+    await page.request.get(`${config.apiBase}/api/members?projectId=${conflict.projectId}`)
   ).json();
-  const response = await page.request.patch(
-    `${config.apiBase}/api/tasks/${conflict.id}`,
-    {
-      data: {
-        projectId: conflict.projectId,
-        title: "其他成员的修改",
-        description: conflict.description,
-        ownerId: conflict.ownerId,
-        priority: conflict.priority,
-        labels: conflict.labels,
-        dependsOn: [],
-        dueDate: conflict.dueDate,
-        version: conflict.version,
-        actorId: members[1].id,
-      },
+  const response = await page.request.patch(`${config.apiBase}/api/tasks/${conflict.id}`, {
+    data: {
+      projectId: conflict.projectId,
+      title: "其他成员的修改",
+      description: conflict.description,
+      ownerId: conflict.ownerId,
+      priority: conflict.priority,
+      labels: conflict.labels,
+      dependsOn: [],
+      dueDate: conflict.dueDate,
+      version: conflict.version,
+      actorId: members[1].id,
     },
-  );
+  });
   expect(response.status()).toBe(200);
   await page.getByRole("button", { name: "保存任务", exact: true }).click();
   await expect(page.locator("#message")).toContainText("其他成员修改");
@@ -95,9 +80,7 @@ export async function verify(page, expect) {
   await page.getByRole("link", { name: "项目概览", exact: true }).click();
   await expect(page.locator("#stats")).toContainText("共 3 个任务");
   await page.locator("#project").selectOption("2");
-  await expect(page.locator("#project option:checked")).toHaveText(
-    "实验室建设",
-  );
+  await expect(page.locator("#project option:checked")).toHaveText("实验室建设");
   await page.getByRole("link", { name: "任务列表", exact: true }).click();
   await page.locator("#query").fill("浏览器");
   await page.getByRole("button", { name: "筛选", exact: true }).click();

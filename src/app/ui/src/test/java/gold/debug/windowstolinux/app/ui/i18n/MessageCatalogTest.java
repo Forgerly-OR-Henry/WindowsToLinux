@@ -1,17 +1,8 @@
 package gold.debug.windowstolinux.app.ui.i18n;
 
-
-import gold.debug.windowstolinux.shared.ai.collaboration.role.AiCollaborationRoleKind;
-import gold.debug.windowstolinux.shared.model.message.LocalizedMessage;
-import gold.debug.windowstolinux.shared.model.analysis.EvidenceConfidenceLevel;
-import gold.debug.windowstolinux.shared.model.deployment.DeploymentStatus;
-import gold.debug.windowstolinux.shared.model.deployment.DeploymentTraceEvent;
-import gold.debug.windowstolinux.shared.model.lifecycle.AutostartState;
-import gold.debug.windowstolinux.shared.model.lifecycle.LifecycleAction;
-import gold.debug.windowstolinux.shared.model.lifecycle.RuntimeState;
-import gold.debug.windowstolinux.shared.model.language.LanguageEcosystemType;
-import gold.debug.windowstolinux.shared.model.language.SourceLanguageType;
-import org.junit.jupiter.api.Test;
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -26,13 +17,23 @@ import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertThrows;
+import gold.debug.windowstolinux.shared.ai.collaboration.role.AiCollaborationRoleKind;
+import gold.debug.windowstolinux.shared.model.analysis.EvidenceConfidenceLevel;
+import gold.debug.windowstolinux.shared.model.deployment.DeploymentStatus;
+import gold.debug.windowstolinux.shared.model.deployment.DeploymentTraceEvent;
+import gold.debug.windowstolinux.shared.model.language.LanguageEcosystemType;
+import gold.debug.windowstolinux.shared.model.language.SourceLanguageType;
+import gold.debug.windowstolinux.shared.model.lifecycle.AutostartState;
+import gold.debug.windowstolinux.shared.model.lifecycle.LifecycleAction;
+import gold.debug.windowstolinux.shared.model.lifecycle.RuntimeState;
+import gold.debug.windowstolinux.shared.model.message.LocalizedMessage;
+import org.junit.jupiter.api.Test;
 
 class MessageCatalogTest {
     private static final Pattern PLACEHOLDER = Pattern.compile("\\{([a-zA-Z][a-zA-Z0-9_.-]*)}");
+
     private final MessageCatalog chinese = MessageCatalog.forLanguageTag(MessageCatalog.SIMPLIFIED_CHINESE_TAG);
+
     private final MessageCatalog english = MessageCatalog.forLanguageTag(MessageCatalog.ENGLISH_TAG);
 
     @Test
@@ -41,10 +42,10 @@ class MessageCatalogTest {
         assertEquals("部署", chinese.text("nav.deployment"));
         assertEquals("Backups", english.text("nav.backup"));
         assertEquals("备份", chinese.text("nav.backup"));
-        assertEquals("Deployment failed: network timeout", english.text(
-                LocalizedMessage.of("deployment.failed", Map.of("detail", "network timeout"))));
-        assertEquals("部署失败：network timeout", chinese.text(
-                LocalizedMessage.of("deployment.failed", Map.of("detail", "network timeout"))));
+        assertEquals("Deployment failed: network timeout",
+                english.text(LocalizedMessage.of("deployment.failed", Map.of("detail", "network timeout"))));
+        assertEquals("部署失败：network timeout",
+                chinese.text(LocalizedMessage.of("deployment.failed", Map.of("detail", "network timeout"))));
     }
 
     @Test
@@ -117,13 +118,11 @@ class MessageCatalogTest {
 
     @Test
     void rendersMixedJavaScriptAndTypeScriptFactsWithoutChoosingAPrimaryLanguage() {
-        Map<String, Object> values = Map.of("ecosystems", english.text("language.ecosystem.node_js"),
-                "sources", english.text("language.source.javascript") + ", "
-                        + english.text("language.source.typescript"));
+        Map<String, Object> values = Map.of("ecosystems", english.text("language.ecosystem.node_js"), "sources",
+                english.text("language.source.javascript") + ", " + english.text("language.source.typescript"));
         assertEquals("Language ecosystems: Node.js\nSource languages: JavaScript, TypeScript\n",
                 english.text("source.languageSummary", values));
-        assertEquals("语言生态：Node.js\n源码语言：JavaScript, TypeScript\n",
-                chinese.text("source.languageSummary", values));
+        assertEquals("语言生态：Node.js\n源码语言：JavaScript, TypeScript\n", chinese.text("source.languageSummary", values));
     }
 
     private static Properties properties(String fileName) throws IOException {

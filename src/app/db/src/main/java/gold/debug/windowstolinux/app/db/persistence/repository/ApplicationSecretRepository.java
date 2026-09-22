@@ -1,10 +1,5 @@
 package gold.debug.windowstolinux.app.db.persistence.repository;
 
-import gold.debug.windowstolinux.app.db.persistence.connection.DesktopConnectionFactory;
-import gold.debug.windowstolinux.app.db.entity.StoredApplicationSecretRevision;
-import gold.debug.windowstolinux.shared.config.secretref.SecretReference;
-import gold.debug.windowstolinux.shared.model.security.CredentialStorageMode;
-
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
@@ -15,6 +10,11 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
+
+import gold.debug.windowstolinux.app.db.entity.StoredApplicationSecretRevision;
+import gold.debug.windowstolinux.app.db.persistence.connection.DesktopConnectionFactory;
+import gold.debug.windowstolinux.shared.config.secretref.SecretReference;
+import gold.debug.windowstolinux.shared.model.security.CredentialStorageMode;
 
 /**
  * Stores immutable application-secret metadata and release bindings, never secret values. / 保存不可变应用秘密元数据与发布绑定，绝不保存秘密值。
@@ -117,7 +117,8 @@ public final class ApplicationSecretRepository {
      * @throws IllegalArgumentException if an input violates the constraints checked by this contract / 输入违反当前契约检查的约束时
      * @throws NullPointerException if a required input is absent / 必需输入缺失时
      */
-    public void bindRelease(String applicationId, String releaseIdentity, List<SecretReference> references) throws SQLException {
+    public void bindRelease(String applicationId, String releaseIdentity, List<SecretReference> references)
+            throws SQLException {
         applicationId = identity(applicationId, "applicationId");
         releaseIdentity = identity(releaseIdentity, "releaseIdentity");
         Set<SecretReference> expected = Set.copyOf(Objects.requireNonNull(references, "references"));
@@ -127,7 +128,8 @@ public final class ApplicationSecretRepository {
         String application = applicationId;
         String release = releaseIdentity;
         try (Connection connection = connections.open()) {
-            RepositoryTransactionExecutor.execute(connection, () -> bindRelease(connection, application, release, expected));
+            RepositoryTransactionExecutor.execute(connection,
+                    () -> bindRelease(connection, application, release, expected));
         }
     }
 
@@ -141,8 +143,8 @@ public final class ApplicationSecretRepository {
      * @param expected identity, value or state required for verification / 验证要求的身份、内容或状态
      * @throws SQLException if the database cannot complete the requested read or transaction / 数据库无法完成请求的读取或事务时
      */
-    static void bindRelease(Connection connection, String application, String release,
-                            Set<SecretReference> expected) throws SQLException {
+    static void bindRelease(Connection connection, String application, String release, Set<SecretReference> expected)
+            throws SQLException {
         for (SecretReference reference : expected) {
             if (findRevision(connection, reference).isEmpty()) {
                 throw new SQLException("release secret reference has not been registered");
@@ -187,11 +189,10 @@ public final class ApplicationSecretRepository {
      * @throws SQLException if the database cannot complete the requested read or transaction / 数据库无法完成请求的读取或事务时
      */
     public boolean isReferenced(SecretReference reference) throws SQLException {
-        try (Connection connection = connections.open();
-             PreparedStatement statement = connection.prepareStatement("""
-                     SELECT 1 FROM application_release_secret_reference
-                     WHERE secret_identifier=? AND secret_revision=? LIMIT 1
-                     """)) {
+        try (Connection connection = connections.open(); PreparedStatement statement = connection.prepareStatement("""
+                SELECT 1 FROM application_release_secret_reference
+                WHERE secret_identifier=? AND secret_revision=? LIMIT 1
+                """)) {
             statement.setString(1, reference.identifier());
             statement.setLong(2, reference.revision());
             try (ResultSet result = statement.executeQuery()) {
@@ -210,8 +211,8 @@ public final class ApplicationSecretRepository {
      * @throws SQLException if the database cannot complete the requested read or transaction / 数据库无法完成请求的读取或事务时
      * @throws NullPointerException if a required input is absent / 必需输入缺失时
      */
-    private static Optional<StoredApplicationSecretRevision> findRevision(Connection connection, SecretReference reference)
-            throws SQLException {
+    private static Optional<StoredApplicationSecretRevision> findRevision(Connection connection,
+            SecretReference reference) throws SQLException {
         Objects.requireNonNull(reference, "reference");
         try (PreparedStatement statement = connection.prepareStatement("""
                 SELECT credential_key, credential_mode, created_at FROM application_secret_revision
@@ -224,11 +225,13 @@ public final class ApplicationSecretRepository {
                     return Optional.empty();
                 }
                 try {
-                    return Optional.of(new StoredApplicationSecretRevision(reference, result.getString("credential_key"),
-                            CredentialStorageMode.valueOf(result.getString("credential_mode")),
-                            Instant.ofEpochMilli(result.getLong("created_at"))));
+                    return Optional
+                            .of(new StoredApplicationSecretRevision(reference, result.getString("credential_key"),
+                                    CredentialStorageMode.valueOf(result.getString("credential_mode")),
+                                    Instant.ofEpochMilli(result.getLong("created_at"))));
                 } catch (IllegalArgumentException exception) {
-                    throw new SQLException("saved application secret revision violates current validation rules", exception);
+                    throw new SQLException("saved application secret revision violates current validation rules",
+                            exception);
                 }
             }
         }
@@ -244,8 +247,8 @@ public final class ApplicationSecretRepository {
      * @return release references / 发布引用集合
      * @throws SQLException if the database cannot complete the requested read or transaction / 数据库无法完成请求的读取或事务时
      */
-    private static List<SecretReference> findReleaseReferences(Connection connection, String application, String release)
-            throws SQLException {
+    private static List<SecretReference> findReleaseReferences(Connection connection, String application,
+            String release) throws SQLException {
         try (PreparedStatement statement = connection.prepareStatement("""
                 SELECT secret_identifier, secret_revision FROM application_release_secret_reference
                 WHERE application_id=? AND release_identity=? ORDER BY secret_identifier, secret_revision
@@ -273,7 +276,8 @@ public final class ApplicationSecretRepository {
      * @return true when binding exists predicate against the supplied evidence, false otherwise / 根据所提供证据检查绑定存在条件时为 true，否则为 false
      * @throws SQLException if the database cannot complete the requested read or transaction / 数据库无法完成请求的读取或事务时
      */
-    private static boolean bindingExists(Connection connection, String application, String release) throws SQLException {
+    private static boolean bindingExists(Connection connection, String application, String release)
+            throws SQLException {
         try (PreparedStatement statement = connection.prepareStatement("""
                 SELECT 1 FROM application_release_secret_binding WHERE application_id=? AND release_identity=?
                 """)) {

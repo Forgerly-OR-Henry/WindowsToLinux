@@ -29,21 +29,14 @@ export async function verify(page, expect) {
   await page.locator("#submit").click();
   await expect(page.locator("#score")).toContainText("84.21");
   await expect(page.locator("#parts")).toContainText("反向计分");
-  const [download] = await Promise.all([
-    page.waitForEvent("download"),
-    page.locator("#export").click(),
-  ]);
+  const [download] = await Promise.all([page.waitForEvent("download"), page.locator("#export").click()]);
   const exported = JSON.parse(await fs.readFile(await download.path(), "utf8"));
   expect(exported.result.score).toBe(84.21);
   expect(exported.revision.number).toBe(1);
   await page.locator("#back-survey").click();
   await page.locator("#clone").click();
   await expect(page.locator("#edit-title")).toContainText("版本 2");
-  await page
-    .locator(".question-editor")
-    .nth(1)
-    .locator('[data-field="weight"]')
-    .fill("3");
+  await page.locator(".question-editor").nth(1).locator('[data-field="weight"]').fill("3");
   await page.getByRole("button", { name: "保存草稿", exact: true }).click();
   await expect(page.locator("#edit-version")).toContainText("已保存");
   await page.locator("#publish").click();
@@ -64,17 +57,9 @@ export async function verify(page, expect) {
   const old = page.locator("#revisions tr").nth(1);
   await old.getByRole("button", { name: "关闭版本", exact: true }).click();
   await expect(page.locator("#revisions tr").nth(1)).toContainText("closed");
-  await page
-    .locator("#revisions tr")
-    .nth(1)
-    .getByRole("button", { name: "历史答卷", exact: true })
-    .click();
+  await page.locator("#revisions tr").nth(1).getByRole("button", { name: "历史答卷", exact: true }).click();
   await expect(page.locator("#history-total")).toContainText("共 2 份");
-  await page
-    .locator("#history tr")
-    .first()
-    .getByRole("button", { name: "答案与评分详情" })
-    .click();
+  await page.locator("#history tr").first().getByRole("button", { name: "答案与评分详情" }).click();
   await expect(page.locator("#score")).toContainText("84.21");
   await expect(page.locator("#result-meta")).toContainText("版本 1");
   await expect(page.locator("#original-answers")).toContainText("协作质量");

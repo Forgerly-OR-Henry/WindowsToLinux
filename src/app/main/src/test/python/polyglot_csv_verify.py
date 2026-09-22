@@ -33,9 +33,7 @@ def csv_inspector(r):
     path = r.evidence / "人员 数据.csv"
     expected = set()
     bad = set()
-    counts = dict.fromkeys(
-        ["required", "number", "date", "range", "enum", "duplicate"], 0
-    )
+    counts = dict.fromkeys(["required", "number", "date", "range", "enum", "duplicate"], 0)
     with path.open("w", encoding="utf-8", newline="") as file:
         writer = csv.writer(file)
         writer.writerow(["id", "name", "age", "date", "team"])
@@ -112,9 +110,7 @@ def csv_inspector(r):
 
     def finished(id, status="completed"):
         value = wait_for(
-            lambda: (
-                j if (j := job(id))["status"] not in ["queued", "running"] else None
-            ),
+            lambda: (j if (j := job(id))["status"] not in ["queued", "running"] else None),
             90,
         )
         assert value["status"] == status, value
@@ -133,14 +129,8 @@ def csv_inspector(r):
 
     with check(r, "business", "initialized data and full rule explanations"):
         demo = finished(create("demo")["id"])
-        assert (
-            demo["summary"]["rows"] == 3
-            and demo["summary"]["issueCount"] == 6
-            and demo["summary"]["validRows"] == 1
-        )
-        assert set(
-            i["code"] for i in r.json("web", f"/api/jobs/{demo['id']}/issues")["items"]
-        ) == set(counts)
+        assert demo["summary"]["rows"] == 3 and demo["summary"]["issueCount"] == 6 and demo["summary"]["validRows"] == 1
+        assert set(i["code"] for i in r.json("web", f"/api/jobs/{demo['id']}/issues")["items"]) == set(counts)
         invalid = {
             "name": "坏规则",
             "rules": {
@@ -180,19 +170,11 @@ def csv_inspector(r):
             actual.update((i["row"], i["column"], i["code"]) for i in page["items"])
         assert actual == expected
         report = r.json("web", f"/api/jobs/{id}/export")
-        assert (
-            len(report["issues"]) == len(expected)
-            and report["summary"] == result["summary"]
-        )
-    with check(
-        r, "business", "report comparison keeps dataset and immutable rule boundaries"
-    ):
+        assert len(report["issues"]) == len(expected) and report["summary"] == result["summary"]
+    with check(r, "business", "report comparison keeps dataset and immutable rule boundaries"):
         fewer = finished(create(data["id"], "required")["id"])
         comparison = r.json("web", f"/api/compare?left={id}&right={fewer['id']}")
-        assert (
-            comparison["added"] == 0
-            and comparison["resolved"] == len(expected) - counts["required"]
-        )
+        assert comparison["added"] == 0 and comparison["resolved"] == len(expected) - counts["required"]
         assert comparison["statisticsDelta"]["number"] == -counts["number"]
         r.json("web", f"/api/compare?left={id}&right={demo['id']}", expected=409)
     with check(
@@ -336,13 +318,7 @@ def csv_inspector(r):
             process = r.start_process(
                 "broken-analyzer",
                 [
-                    p
-                    / ".venv"
-                    / (
-                        "Scripts/python.exe"
-                        if __import__("os").name == "nt"
-                        else "bin/python"
-                    ),
+                    p / ".venv" / ("Scripts/python.exe" if __import__("os").name == "nt" else "bin/python"),
                     "server.py",
                 ],
                 p,
@@ -372,14 +348,7 @@ def csv_inspector(r):
         r.start(slug)
         assert job(id)["summary"] == result["summary"]
         with sqlite3.connect(r.data / "csv.sqlite") as db:
-            assert db.execute(
-                "SELECT count(*) FROM issues WHERE job_id=?", (id,)
-            ).fetchone()[0] == len(expected)
-            assert (
-                db.execute(
-                    "SELECT count(*) FROM jobs WHERE status='running'"
-                ).fetchone()[0]
-                == 0
-            )
+            assert db.execute("SELECT count(*) FROM issues WHERE job_id=?", (id,)).fetchone()[0] == len(expected)
+            assert db.execute("SELECT count(*) FROM jobs WHERE status='running'").fetchone()[0] == 0
             assert db.execute("PRAGMA foreign_key_check").fetchall() == []
         assert r.json("web", f"/api/jobs/{id}/export")["summary"] == result["summary"]

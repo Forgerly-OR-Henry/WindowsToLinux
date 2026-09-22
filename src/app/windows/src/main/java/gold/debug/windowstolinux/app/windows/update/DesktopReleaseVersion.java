@@ -9,8 +9,7 @@ import java.util.Objects;
  * @param minor minor / 次版本
  * @param patch patch / 补丁
  */
-public record DesktopReleaseVersion(int major, int minor, int patch)
-        implements Comparable<DesktopReleaseVersion> {
+public record DesktopReleaseVersion(int major, int minor, int patch) implements Comparable<DesktopReleaseVersion> {
     /**
      * Rejects negative version parts. / 拒绝负版本段。
      *
@@ -55,8 +54,10 @@ public record DesktopReleaseVersion(int major, int minor, int patch)
     public int compareTo(DesktopReleaseVersion other) {
         Objects.requireNonNull(other, "other");
         int result = Integer.compare(major, other.major);
-        if (result == 0) result = Integer.compare(minor, other.minor);
-        if (result == 0) result = Integer.compare(patch, other.patch);
+        if (result == 0)
+            result = Integer.compare(minor, other.minor);
+        if (result == 0)
+            result = Integer.compare(patch, other.patch);
         return result;
     }
 
@@ -66,5 +67,8 @@ public record DesktopReleaseVersion(int major, int minor, int patch)
      *
      * @return the diagnostic text representation of this object / 当前对象的诊断文本表示
      */
-    @Override public String toString() { return major + "." + minor + "." + patch; }
+    @Override
+    public String toString() {
+        return major + "." + minor + "." + patch;
+    }
 }

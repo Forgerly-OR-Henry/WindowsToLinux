@@ -1,0 +1,14 @@
+backports.zstd==1.7.0
+brotli==1.2.0
+clang-format==20.1.8
+inflate64==1.0.4
+multivolumefile==0.2.3
+psutil==7.2.2
+py7zr==1.0.0
+pybcj==1.0.8
+pycryptodomex==3.23.0
+pyppmd==1.2.0
+pyzstd==0.19.1
+ruff==0.11.13
+texttable==1.7.0
+typing_extensions==4.16.0

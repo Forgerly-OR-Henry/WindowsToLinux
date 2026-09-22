@@ -1,10 +1,10 @@
 package gold.debug.windowstolinux.web.api.controller;
 
-import tools.jackson.databind.JsonNode;
 import gold.debug.windowstolinux.web.service.WebApplicationService;
 import gold.debug.windowstolinux.web.service.contract.*;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.*;
+import tools.jackson.databind.JsonNode;
 
 /**
  * Exposes backup HTTP operations through the Web application service.
@@ -18,6 +18,7 @@ public final class WebBackupController {
      * <p>处理调用方使用的应用服务的Web应用服务协作对象。
      */
     private final WebApplicationService service;
+
     /**
      * Facts and dependencies scoped to the current operation.
      * <p>限定于当前操作的事实及依赖。
@@ -30,7 +31,10 @@ public final class WebBackupController {
      * @param service application service used by the caller / 调用方使用的应用服务
      * @param context facts and dependencies scoped to the current operation / 限定于当前操作的事实及依赖
      */
-    public WebBackupController(WebApplicationService service, WebRequestContext context) { this.service = service; this.context = context; }
+    public WebBackupController(WebApplicationService service, WebRequestContext context) {
+        this.service = service;
+        this.context = context;
+    }
 
     /**
      * Lists json node.
@@ -39,7 +43,11 @@ public final class WebBackupController {
      * @return constructed or resolved json node / 构造或解析得到的JSON节点
      * @throws Exception if the delegated operation or caller-provided interaction fails / 被委派操作或调用方提供的交互失败时
      */
-    @GetMapping public JsonNode list() throws Exception { return service.listBackups(context); }
+    @GetMapping
+    public JsonNode list() throws Exception {
+        return service.listBackups(context);
+    }
+
     /**
      * Handles the upload HTTP request through the reviewed Web service boundary.
      * <p>通过已审阅 Web 服务边界处理上传 HTTP 请求。
@@ -49,10 +57,13 @@ public final class WebBackupController {
      * @return constructed or resolved json node / 构造或解析得到的JSON节点
      * @throws Exception if the delegated operation or caller-provided interaction fails / 被委派操作或调用方提供的交互失败时
      */
-    @PutMapping(value = "/upload", consumes = "application/octet-stream") @ResponseStatus(HttpStatus.CREATED)
-    public JsonNode upload(@RequestParam String name, jakarta.servlet.http.HttpServletRequest request) throws Exception {
+    @PutMapping(value = "/upload", consumes = "application/octet-stream")
+    @ResponseStatus(HttpStatus.CREATED)
+    public JsonNode upload(@RequestParam String name, jakarta.servlet.http.HttpServletRequest request)
+            throws Exception {
         return service.uploadBackup(context, name, request.getInputStream());
     }
+
     /**
      * Handles the download HTTP request through the reviewed Web service boundary.
      * <p>通过已审阅 Web 服务边界处理下载 HTTP 请求。
@@ -64,7 +75,8 @@ public final class WebBackupController {
     @GetMapping(value = "/{id}/download", produces = "application/zip")
     public void download(@PathVariable String id, jakarta.servlet.http.HttpServletResponse response) throws Exception {
         var file = service.downloadBackup(context, id);
-        response.setContentType("application/zip"); response.setContentLengthLong(java.nio.file.Files.size(file));
+        response.setContentType("application/zip");
+        response.setContentLengthLong(java.nio.file.Files.size(file));
         response.setHeader("Content-Disposition", "attachment; filename=\"backup.zip\"");
         try (var input = java.nio.file.Files.newInputStream(file, java.nio.file.LinkOption.NOFOLLOW_LINKS)) {
             input.transferTo(response.getOutputStream());

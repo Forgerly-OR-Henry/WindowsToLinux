@@ -57,7 +57,6 @@ public enum AiResponseLanguageType {
      */
     public static AiResponseLanguageType fromLanguageTag(String languageTag) {
         Locale locale = Locale.forLanguageTag(languageTag == null ? "" : languageTag);
-        return locale.getLanguage().equals(Locale.CHINESE.getLanguage())
-                ? SIMPLIFIED_CHINESE : ENGLISH;
+        return locale.getLanguage().equals(Locale.CHINESE.getLanguage()) ? SIMPLIFIED_CHINESE : ENGLISH;
     }
 }

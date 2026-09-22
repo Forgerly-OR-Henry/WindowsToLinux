@@ -1,8 +1,9 @@
 # The root controller counts all output independently of project-owned logs.
 monitor_build_output() {
-  local candidate="$1" limit="$2"; shift 2
-  if [ -e "$candidate/.output-used" ]; then assert_root_owned_regular "$candidate/.output-used"; fi
-  /usr/bin/python3 -I - "$candidate" "$limit" "$@" <<'WTL_BUILD_OUTPUT'
+    local candidate="$1" limit="$2"
+    shift 2
+    if [ -e "$candidate/.output-used" ]; then assert_root_owned_regular "$candidate/.output-used"; fi
+    /usr/bin/python3 -I - "$candidate" "$limit" "$@" <<'WTL_BUILD_OUTPUT'
 import os, signal, subprocess, sys
 from pathlib import Path
 candidate, limit = Path(sys.argv[1]), int(sys.argv[2])

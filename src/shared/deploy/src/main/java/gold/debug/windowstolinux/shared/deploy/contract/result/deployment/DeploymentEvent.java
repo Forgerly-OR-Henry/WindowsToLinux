@@ -1,12 +1,12 @@
 package gold.debug.windowstolinux.shared.deploy.contract.result.deployment;
 
-import gold.debug.windowstolinux.shared.model.deployment.DeploymentTraceEvent;
-import gold.debug.windowstolinux.shared.model.failure.FailureDescriptor;
-import gold.debug.windowstolinux.shared.model.message.LocalizedMessage;
-
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+
+import gold.debug.windowstolinux.shared.model.deployment.DeploymentTraceEvent;
+import gold.debug.windowstolinux.shared.model.failure.FailureDescriptor;
+import gold.debug.windowstolinux.shared.model.message.LocalizedMessage;
 
 /**
  * A typed, secret-free deployment trace entry with an optional structured failure. / 可携带结构化失败的类型化无秘密部署跟踪条目。
@@ -17,13 +17,8 @@ import java.util.Optional;
  * @param evidence observations supporting the reported result / 支持所报告结果的观测证据
  * @param failure structured failure occurrence retained for safe reporting / 保留用于安全报告的结构化失败实例
  */
-public record DeploymentEvent(
-        DeploymentTraceEvent step,
-        boolean succeeded,
-        LocalizedMessage message,
-        String evidence,
-        Optional<FailureDescriptor> failure
-) {
+public record DeploymentEvent(DeploymentTraceEvent step, boolean succeeded, LocalizedMessage message, String evidence,
+        Optional<FailureDescriptor> failure) {
     /**
      * Validates one immutable trace event. / 校验一项不可变跟踪事件。
      *
@@ -71,7 +66,8 @@ public record DeploymentEvent(
     public static DeploymentEvent failed(DeploymentTraceEvent step, FailureDescriptor failure) {
         Objects.requireNonNull(failure, "failure");
         return new DeploymentEvent(step, false,
-                LocalizedMessage.of("deployment.event.failed", Map.of("step", step.code(), "detail", failure.diagnostic())),
+                LocalizedMessage.of("deployment.event.failed",
+                        Map.of("step", step.code(), "detail", failure.diagnostic())),
                 failure.diagnostic(), Optional.of(failure));
     }
 
@@ -82,7 +78,8 @@ public record DeploymentEvent(
      * @return this event with a carried failure rebound to the enclosing operation / 将携带失败绑定到外层操作的事件
      * @throws NullPointerException if a required input is absent / 必需输入缺失时
      */
-    public DeploymentEvent withOperationIdentity(gold.debug.windowstolinux.shared.model.failure.OperationIdentity identity) {
+    public DeploymentEvent withOperationIdentity(
+            gold.debug.windowstolinux.shared.model.failure.OperationIdentity identity) {
         Objects.requireNonNull(identity, "identity");
         return failure.map(value -> failed(step, value.withOperationIdentity(identity))).orElse(this);
     }

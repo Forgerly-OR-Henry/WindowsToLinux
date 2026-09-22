@@ -1,48 +1,48 @@
 package gold.debug.windowstolinux.app.service.deployment;
 
-import gold.debug.windowstolinux.app.db.persistence.repository.ApplicationSecretRepository;
-import gold.debug.windowstolinux.app.db.persistence.repository.ManagedApplicationGraphRepository;
-import gold.debug.windowstolinux.app.db.persistence.repository.ManagedApplicationRepository;
+import java.sql.SQLException;
+import java.time.Instant;
+import java.util.Arrays;
+import java.util.List;
+import java.util.Objects;
+import java.util.Optional;
+import java.util.concurrent.locks.ReentrantLock;
+import java.util.function.Predicate;
+
 import gold.debug.windowstolinux.app.db.entity.CurrentRelease;
 import gold.debug.windowstolinux.app.db.entity.ManagedApplicationGraph;
 import gold.debug.windowstolinux.app.db.entity.SuccessfulManagedDeployment;
+import gold.debug.windowstolinux.app.db.persistence.repository.ApplicationSecretRepository;
+import gold.debug.windowstolinux.app.db.persistence.repository.ManagedApplicationGraphRepository;
+import gold.debug.windowstolinux.app.db.persistence.repository.ManagedApplicationRepository;
 import gold.debug.windowstolinux.app.secret.SecretStore;
 import gold.debug.windowstolinux.app.secret.SecretStoreException;
 import gold.debug.windowstolinux.app.secret.SecretStoreFailureType;
+import gold.debug.windowstolinux.app.service.deployment.single.DeploymentOutcome;
 import gold.debug.windowstolinux.app.service.failure.ApplicationServiceException;
 import gold.debug.windowstolinux.app.service.failure.ApplicationServiceFailureType;
-import gold.debug.windowstolinux.app.service.deployment.single.DeploymentOutcome;
 import gold.debug.windowstolinux.app.service.lock.ServerOperationLockRegistry;
 import gold.debug.windowstolinux.app.service.server.ServerProfile;
 import gold.debug.windowstolinux.app.service.server.ServerUseCaseFacade;
 import gold.debug.windowstolinux.app.service.source.ReviewedSourcePreparation;
-import gold.debug.windowstolinux.shared.config.revision.ConfigurationSnapshot;
 import gold.debug.windowstolinux.shared.config.resource.ManagedComponentResourceBindings;
 import gold.debug.windowstolinux.shared.config.resource.ManagedDatabaseBinding;
-import gold.debug.windowstolinux.shared.config.secretref.SecretReference;
+import gold.debug.windowstolinux.shared.config.revision.ConfigurationSnapshot;
 import gold.debug.windowstolinux.shared.config.secretref.ResolvedSecretRevision;
-import gold.debug.windowstolinux.shared.deploy.contract.DeploymentApproval;
-import gold.debug.windowstolinux.shared.deploy.contract.ReviewedDeploymentRequest;
+import gold.debug.windowstolinux.shared.config.secretref.SecretReference;
 import gold.debug.windowstolinux.shared.deploy.contract.result.deployment.DeploymentResult;
-import gold.debug.windowstolinux.shared.deploy.execution.transaction.ReviewedDeploymentService;
 import gold.debug.windowstolinux.shared.linux.connection.DeploymentLinuxGateway;
 import gold.debug.windowstolinux.shared.linux.connection.HostKeyEvaluator;
 import gold.debug.windowstolinux.shared.linux.connection.SshCredential;
 import gold.debug.windowstolinux.shared.linux.connection.SshEndpoint;
 import gold.debug.windowstolinux.shared.model.deployment.DeploymentStatus;
+import gold.debug.windowstolinux.shared.model.failure.FailureDescriptor;
 import gold.debug.windowstolinux.shared.model.managed.ManagedApplication;
 import gold.debug.windowstolinux.shared.model.managed.ManagedApplicationRuntimeConfiguration;
-import gold.debug.windowstolinux.shared.model.failure.FailureDescriptor;
 import gold.debug.windowstolinux.shared.model.server.ServerIdentity;
-
-import java.sql.SQLException;
-import java.time.Instant;
-import java.util.Objects;
-import java.util.Optional;
-import java.util.List;
-import java.util.Arrays;
-import java.util.function.Predicate;
-import java.util.concurrent.locks.ReentrantLock;
+import gold.debug.windowstolinux.shared.standard.deploy.contract.DeploymentApproval;
+import gold.debug.windowstolinux.shared.standard.deploy.contract.ReviewedDeploymentRequest;
+import gold.debug.windowstolinux.shared.standard.deploy.execution.transaction.ReviewedDeploymentService;
 
 /**
  * Persists successful reviewed deployments in the same managed-application inventory as existing deployments.
@@ -55,31 +55,37 @@ public final class ReviewedDeploymentUseCase {
      * <p>处理应用集合的受管应用仓库协作对象。
      */
     private final ManagedApplicationRepository applications;
+
     /**
      * Bound managed application graph repository collaborator for graphs.
      * <p>处理图集合的受管应用图仓库协作对象。
      */
     private final ManagedApplicationGraphRepository graphs;
+
     /**
      * Bound application secret repository collaborator for application secrets.
      * <p>处理应用秘密集合的应用秘密仓库协作对象。
      */
     private final ApplicationSecretRepository applicationSecrets;
+
     /**
      * Bound reviewed deployment service collaborator for application service used by the caller.
      * <p>处理调用方使用的应用服务的已审阅部署服务协作对象。
      */
     private final ReviewedDeploymentService service;
+
     /**
      * Factory for authenticated Linux sessions.
      * <p>已认证 Linux 会话的工厂。
      */
     private final DeploymentLinuxGateway gateway;
+
     /**
      * Bound server use case facade collaborator for server-profile and authenticated-session service.
      * <p>处理服务器资料及已认证会话服务的服务器用例门面协作对象。
      */
     private final ServerUseCaseFacade servers;
+
     /**
      * Shared operation locks indexed by target identity.
      * <p>按目标身份索引的共享操作锁。
@@ -99,9 +105,9 @@ public final class ReviewedDeploymentUseCase {
      * @throws NullPointerException if a required input is absent / 必需输入缺失时
      */
     public ReviewedDeploymentUseCase(ManagedApplicationRepository applications,
-                                     ManagedApplicationGraphRepository graphs,
-                                     ApplicationSecretRepository applicationSecrets, ReviewedDeploymentService service,
-                                     DeploymentLinuxGateway gateway, ServerUseCaseFacade servers, ServerOperationLockRegistry locks) {
+            ManagedApplicationGraphRepository graphs, ApplicationSecretRepository applicationSecrets,
+            ReviewedDeploymentService service, DeploymentLinuxGateway gateway, ServerUseCaseFacade servers,
+            ServerOperationLockRegistry locks) {
         this.applications = Objects.requireNonNull(applications, "applications");
         this.graphs = Objects.requireNonNull(graphs, "graphs");
         this.applicationSecrets = Objects.requireNonNull(applicationSecrets, "applicationSecrets");
@@ -132,13 +138,13 @@ public final class ReviewedDeploymentUseCase {
      * @throws NullPointerException if a required input is absent / 必需输入缺失时
      */
     public ReviewedDeploymentRequest createRequest(ReviewedSourcePreparation preparation, ServerIdentity server,
-                                                    ConfigurationSnapshot configuration, List<SecretReference> secretReferences,
-                                                    Optional<List<ManagedDatabaseBinding>> databaseBindings,
-                                                    gold.debug.windowstolinux.shared.model.project.DeploymentRuntimeSpecification runtime,
-                                                    Optional<gold.debug.windowstolinux.shared.model.health.UserAccessUrl> userAccessUrl,
-                                                    gold.debug.windowstolinux.shared.model.deployment.BuildLimitConfiguration limits,
-                                                    boolean rootBuildConfirmed, boolean containerDaemonRiskAccepted,
-                                                    boolean experimentalAdapterRiskAccepted) throws SQLException {
+            ConfigurationSnapshot configuration, List<SecretReference> secretReferences,
+            Optional<List<ManagedDatabaseBinding>> databaseBindings,
+            gold.debug.windowstolinux.shared.model.project.DeploymentRuntimeSpecification runtime,
+            Optional<gold.debug.windowstolinux.shared.model.health.UserAccessUrl> userAccessUrl,
+            gold.debug.windowstolinux.shared.model.deployment.BuildLimitConfiguration limits,
+            boolean rootBuildConfirmed, boolean containerDaemonRiskAccepted, boolean experimentalAdapterRiskAccepted)
+            throws SQLException {
         preparation = Objects.requireNonNull(preparation, "preparation");
         server = Objects.requireNonNull(server, "server");
         if (preparation.archive().isEmpty() || preparation.assessment().facts().isEmpty()) {
@@ -147,14 +153,18 @@ public final class ReviewedDeploymentUseCase {
         }
         var facts = preparation.assessment().facts().orElseThrow();
         var archive = preparation.archive().orElseThrow();
-        var sourceRevision = preparation.sourceRevision().orElseThrow(() -> ApplicationServiceException.create(
-                ApplicationServiceFailureType.DEPLOYMENT_ANALYSIS_REQUIRED,
-                "Typed deployment requires an immutable source identity bound to the reviewed archive"));
-        ManagedApplication application = ManagedApplicationIdentityResolver.resolve(applications, facts.applicationId(), server);
-        var storage = gold.debug.windowstolinux.shared.deploy.input.ManagedStoragePreparation.prepare(facts.sourceRoot(),facts.applicationId(),configuration,runtime,List.of());
-        return new ReviewedDeploymentRequest(server, facts, sourceRevision,
-                archive, storage.configuration(), secretReferences, databaseBindings, storage.files(), runtime, userAccessUrl, limits,
-                new DeploymentApproval(application.id(), archive.contentSha256(), server.id(), rootBuildConfirmed, Instant.now()),
+        var sourceRevision = preparation.sourceRevision()
+                .orElseThrow(() -> ApplicationServiceException.create(
+                        ApplicationServiceFailureType.DEPLOYMENT_ANALYSIS_REQUIRED,
+                        "Typed deployment requires an immutable source identity bound to the reviewed archive"));
+        ManagedApplication application = ManagedApplicationIdentityResolver.resolve(applications, facts.applicationId(),
+                server);
+        var storage = gold.debug.windowstolinux.shared.standard.deploy.input.ManagedStoragePreparation
+                .prepare(facts.sourceRoot(), facts.applicationId(), configuration, runtime, List.of());
+        return new ReviewedDeploymentRequest(
+                server, facts, sourceRevision, archive, storage.configuration(), secretReferences, databaseBindings,
+                storage.files(), runtime, userAccessUrl, limits, new DeploymentApproval(application.id(),
+                        archive.contentSha256(), server.id(), rootBuildConfirmed, Instant.now()),
                 containerDaemonRiskAccepted, experimentalAdapterRiskAccepted);
     }
 
@@ -175,12 +185,12 @@ public final class ReviewedDeploymentUseCase {
      * @throws SQLException if the database cannot complete the requested read or transaction / 数据库无法完成请求的读取或事务时
      */
     public ReviewedDeploymentRequest createRequest(ReviewedSourcePreparation preparation, ServerIdentity server,
-                                                    ConfigurationSnapshot configuration, List<SecretReference> secretReferences,
-                                                    gold.debug.windowstolinux.shared.model.project.DeploymentRuntimeSpecification runtime,
-                                                    Optional<gold.debug.windowstolinux.shared.model.health.UserAccessUrl> userAccessUrl,
-                                                    gold.debug.windowstolinux.shared.model.deployment.BuildLimitConfiguration limits,
-                                                    boolean rootBuildConfirmed, boolean containerDaemonRiskAccepted,
-                                                    boolean experimentalAdapterRiskAccepted) throws SQLException {
+            ConfigurationSnapshot configuration, List<SecretReference> secretReferences,
+            gold.debug.windowstolinux.shared.model.project.DeploymentRuntimeSpecification runtime,
+            Optional<gold.debug.windowstolinux.shared.model.health.UserAccessUrl> userAccessUrl,
+            gold.debug.windowstolinux.shared.model.deployment.BuildLimitConfiguration limits,
+            boolean rootBuildConfirmed, boolean containerDaemonRiskAccepted, boolean experimentalAdapterRiskAccepted)
+            throws SQLException {
         return createRequest(preparation, server, configuration, secretReferences, Optional.empty(), runtime,
                 userAccessUrl, limits, rootBuildConfirmed, containerDaemonRiskAccepted,
                 experimentalAdapterRiskAccepted);
@@ -202,11 +212,11 @@ public final class ReviewedDeploymentUseCase {
      * @throws SQLException if the database cannot complete the requested read or transaction / 数据库无法完成请求的读取或事务时
      */
     public ReviewedDeploymentRequest createRequest(ReviewedSourcePreparation preparation, ServerIdentity server,
-                                                    ConfigurationSnapshot configuration, List<SecretReference> secretReferences,
-                                                    gold.debug.windowstolinux.shared.model.project.DeploymentRuntimeSpecification runtime,
-                                                    Optional<gold.debug.windowstolinux.shared.model.health.UserAccessUrl> userAccessUrl,
-                                                    gold.debug.windowstolinux.shared.model.deployment.BuildLimitConfiguration limits,
-                                                    boolean rootBuildConfirmed, boolean containerDaemonRiskAccepted) throws SQLException {
+            ConfigurationSnapshot configuration, List<SecretReference> secretReferences,
+            gold.debug.windowstolinux.shared.model.project.DeploymentRuntimeSpecification runtime,
+            Optional<gold.debug.windowstolinux.shared.model.health.UserAccessUrl> userAccessUrl,
+            gold.debug.windowstolinux.shared.model.deployment.BuildLimitConfiguration limits,
+            boolean rootBuildConfirmed, boolean containerDaemonRiskAccepted) throws SQLException {
         return createRequest(preparation, server, configuration, secretReferences, runtime, userAccessUrl, limits,
                 rootBuildConfirmed, containerDaemonRiskAccepted, false);
     }
@@ -226,10 +236,10 @@ public final class ReviewedDeploymentUseCase {
      * @throws SQLException if the database cannot complete the requested read or transaction / 数据库无法完成请求的读取或事务时
      */
     public DeploymentOutcome deployWithStoredPassword(ReviewedDeploymentRequest request, ServerProfile profile,
-                                                      gold.debug.windowstolinux.shared.model.security.CredentialStorageMode mode,
-                                                      char[] masterPassword, Predicate<String> confirmation)
-            throws SecretStoreException, SQLException {
-        return deployWithStoredPassword(request, profile, mode, masterPassword, confirmation, ignored -> { });
+            gold.debug.windowstolinux.shared.model.security.CredentialStorageMode mode, char[] masterPassword,
+            Predicate<String> confirmation) throws SecretStoreException, SQLException {
+        return deployWithStoredPassword(request, profile, mode, masterPassword, confirmation, ignored -> {
+        });
     }
 
     /**
@@ -246,8 +256,9 @@ public final class ReviewedDeploymentUseCase {
      * @throws SQLException if the database cannot complete the requested read or transaction / 数据库无法完成请求的读取或事务时
      */
     public DeploymentOutcome deployWithStoredPassword(ReviewedDeploymentRequest request, ServerProfile profile,
-            gold.debug.windowstolinux.shared.model.security.CredentialStorageMode mode,
-            char[] masterPassword, Predicate<String> confirmation, java.util.function.Consumer<gold.debug.windowstolinux.shared.deploy.contract.result.deployment.DeploymentEvent> progress)
+            gold.debug.windowstolinux.shared.model.security.CredentialStorageMode mode, char[] masterPassword,
+            Predicate<String> confirmation,
+            java.util.function.Consumer<gold.debug.windowstolinux.shared.deploy.contract.result.deployment.DeploymentEvent> progress)
             throws SecretStoreException, SQLException {
         if (profile.credentialMode() != mode) {
             throw ApplicationServiceException.create(ApplicationServiceFailureType.STORAGE_MODE_MISMATCH,
@@ -257,8 +268,8 @@ public final class ReviewedDeploymentUseCase {
         try {
             resolvedSecrets = resolveSecrets(request.secretReferences(), masterPassword);
             try (SecretStore store = servers.secrets().open(mode, masterPassword)) {
-            return deploy(request, profile.endpoint(), servers.loadPassword(profile, store),
-                    servers.hostKeyVerifier(profile, confirmation), resolvedSecrets, progress);
+                return deploy(request, profile.endpoint(), servers.loadPassword(profile, store),
+                        servers.hostKeyVerifier(profile, confirmation), resolvedSecrets, progress);
             }
         } finally {
             resolvedSecrets.forEach(ResolvedSecretRevision::close);
@@ -280,13 +291,14 @@ public final class ReviewedDeploymentUseCase {
      * @return constructed or resolved deployment outcome / 构造或解析得到的部署结果
      * @throws SQLException if the database cannot complete the requested read or transaction / 数据库无法完成请求的读取或事务时
      */
-    public DeploymentOutcome deploy(ReviewedDeploymentRequest request, SshEndpoint endpoint,
-                                   SshCredential credential, HostKeyEvaluator verifier) throws SQLException {
+    public DeploymentOutcome deploy(ReviewedDeploymentRequest request, SshEndpoint endpoint, SshCredential credential,
+            HostKeyEvaluator verifier) throws SQLException {
         if (!request.secretReferences().isEmpty()) {
             throw ApplicationServiceException.create(ApplicationServiceFailureType.APPLICATION_SECRET_REFERENCE_MISSING,
                     "Reviewed deployments with secret references require resolved stored revisions");
         }
-        return deploy(request, endpoint, credential, verifier, List.of(), ignored -> { });
+        return deploy(request, endpoint, credential, verifier, List.of(), ignored -> {
+        });
     }
 
     /**
@@ -303,12 +315,13 @@ public final class ReviewedDeploymentUseCase {
      * @throws SQLException if the database cannot complete the requested read or transaction / 数据库无法完成请求的读取或事务时
      * @throws NullPointerException if a required input is absent / 必需输入缺失时
      */
-    private DeploymentOutcome deploy(ReviewedDeploymentRequest request, SshEndpoint endpoint,
-                                    SshCredential credential, HostKeyEvaluator verifier,
-                                    List<ResolvedSecretRevision> resolvedSecrets, java.util.function.Consumer<gold.debug.windowstolinux.shared.deploy.contract.result.deployment.DeploymentEvent> progress) throws SQLException {
+    private DeploymentOutcome deploy(ReviewedDeploymentRequest request, SshEndpoint endpoint, SshCredential credential,
+            HostKeyEvaluator verifier, List<ResolvedSecretRevision> resolvedSecrets,
+            java.util.function.Consumer<gold.debug.windowstolinux.shared.deploy.contract.result.deployment.DeploymentEvent> progress)
+            throws SQLException {
         request = Objects.requireNonNull(request, "request");
-        ManagedApplication application = ManagedApplicationIdentityResolver.resolve(
-                applications, request.facts().applicationId(), request.server());
+        ManagedApplication application = ManagedApplicationIdentityResolver.resolve(applications,
+                request.facts().applicationId(), request.server());
         ReentrantLock lock = locks.forServer(application.server().id());
         lock.lock();
         try {
@@ -317,14 +330,17 @@ public final class ReviewedDeploymentUseCase {
             if (result.status() == DeploymentStatus.SUCCEEDED) {
                 try {
                     recordSuccessful(graphs, application,
-                            new ManagedApplicationRuntimeConfiguration(request.runtime().healthCheck(), request.userAccessUrl(), request.runtime().identityPolicy(), request.runtime().workload()),
-                            new CurrentRelease(application.id(), result.publishedReleaseSha256().orElseThrow(), Instant.now()),
+                            new ManagedApplicationRuntimeConfiguration(request.runtime().healthCheck(),
+                                    request.userAccessUrl(), request.runtime().identityPolicy(),
+                                    request.runtime().workload()),
+                            new CurrentRelease(application.id(), result.publishedReleaseSha256().orElseThrow(),
+                                    Instant.now()),
                             request.runtime(), request.configuration(), request.secretReferences(),
                             request.databaseBindings(), request.fileBindings());
                 } catch (SQLException failure) {
                     result = result.withNonFatalFailure(FailureDescriptor.create(
-                            ApplicationServiceFailureType.DEPLOYMENT_RECORD_SAVE_FAILED,
-                            result.operationIdentity(), "Remote deployment succeeded but local managed inventory storage failed"));
+                            ApplicationServiceFailureType.DEPLOYMENT_RECORD_SAVE_FAILED, result.operationIdentity(),
+                            "Remote deployment succeeded but local managed inventory storage failed"));
                 }
             }
             if (result.finalObservation().isPresent()) {
@@ -334,8 +350,8 @@ public final class ReviewedDeploymentUseCase {
                     }
                 } catch (SQLException failure) {
                     result = result.withNonFatalFailure(FailureDescriptor.create(
-                            ApplicationServiceFailureType.LOCAL_OBSERVATION_SAVE_FAILED,
-                            result.operationIdentity(), "Remote observation was verified but local history storage failed"));
+                            ApplicationServiceFailureType.LOCAL_OBSERVATION_SAVE_FAILED, result.operationIdentity(),
+                            "Remote observation was verified but local history storage failed"));
                 }
             }
             return DeploymentOutcome.from(result, request, application);
@@ -359,15 +375,13 @@ public final class ReviewedDeploymentUseCase {
      * @throws SQLException if the database cannot complete the requested read or transaction / 数据库无法完成请求的读取或事务时
      * @throws NullPointerException if a required input is absent / 必需输入缺失时
      */
-    static void recordSuccessful(ManagedApplicationGraphRepository graphs,
-                                 ManagedApplication application,
-                                 ManagedApplicationRuntimeConfiguration runtimeConfiguration,
-                                 CurrentRelease release,
-                                 gold.debug.windowstolinux.shared.model.project.DeploymentRuntimeSpecification reviewedRuntime,
-                                 ConfigurationSnapshot configuration,
-                                 List<SecretReference> secretReferences,
-                                 Optional<List<ManagedDatabaseBinding>> databaseBindings,
-                                 List<gold.debug.windowstolinux.shared.config.resource.ManagedFileBinding> fileBindings) throws SQLException {
+    static void recordSuccessful(ManagedApplicationGraphRepository graphs, ManagedApplication application,
+            ManagedApplicationRuntimeConfiguration runtimeConfiguration, CurrentRelease release,
+            gold.debug.windowstolinux.shared.model.project.DeploymentRuntimeSpecification reviewedRuntime,
+            ConfigurationSnapshot configuration, List<SecretReference> secretReferences,
+            Optional<List<ManagedDatabaseBinding>> databaseBindings,
+            List<gold.debug.windowstolinux.shared.config.resource.ManagedFileBinding> fileBindings)
+            throws SQLException {
         Objects.requireNonNull(graphs, "graphs");
         application = Objects.requireNonNull(application, "application");
         runtimeConfiguration = Objects.requireNonNull(runtimeConfiguration, "runtimeConfiguration");
@@ -400,7 +414,8 @@ public final class ReviewedDeploymentUseCase {
             gold.debug.windowstolinux.shared.model.project.DeploymentRuntimeSpecification reviewedRuntime,
             ConfigurationSnapshot configuration, List<SecretReference> secretReferences,
             Optional<List<ManagedDatabaseBinding>> databaseBindings) throws SQLException {
-        recordSuccessful(graphs,application,runtimeConfiguration,release,reviewedRuntime,configuration,secretReferences,databaseBindings,List.of());
+        recordSuccessful(graphs, application, runtimeConfiguration, release, reviewedRuntime, configuration,
+                secretReferences, databaseBindings, List.of());
     }
 
     /**
@@ -418,8 +433,8 @@ public final class ReviewedDeploymentUseCase {
         List<ResolvedSecretRevision> resolved = new java.util.ArrayList<>();
         try {
             for (SecretReference reference : references) {
-                var revision = applicationSecrets.findRevision(reference)
-                        .orElseThrow(() -> SecretStoreException.create(SecretStoreFailureType.APPLICATION_REFERENCE_MISSING,
+                var revision = applicationSecrets.findRevision(reference).orElseThrow(
+                        () -> SecretStoreException.create(SecretStoreFailureType.APPLICATION_REFERENCE_MISSING,
                                 "Application secret revision metadata is missing"));
                 try (SecretStore store = servers.secrets().open(revision.credentialMode(), masterPassword)) {
                     char[] value = store.read(revision.credentialKey())

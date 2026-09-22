@@ -10,12 +10,8 @@ package gold.debug.windowstolinux.shared.model.project.component;
  * @param deviceAccess whether uncontrolled device access is required / 是否需要不受控设备访问
  * @param uncontrolledNetwork whether unrestricted host networking is required / 是否需要不受限宿主网络
  */
-public record ComponentIsolationSpecification(
-        boolean arbitraryShell,
-        boolean hostPrivileges,
-        boolean deviceAccess,
-        boolean uncontrolledNetwork
-) {
+public record ComponentIsolationSpecification(boolean arbitraryShell, boolean hostPrivileges, boolean deviceAccess,
+        boolean uncontrolledNetwork) {
     /**
      * Returns the safe default for a typed managed component. / 返回类型化受管组件的安全默认值。
      *

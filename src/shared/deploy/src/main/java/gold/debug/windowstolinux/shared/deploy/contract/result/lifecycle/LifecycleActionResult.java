@@ -1,14 +1,14 @@
 package gold.debug.windowstolinux.shared.deploy.contract.result.lifecycle;
 
-import gold.debug.windowstolinux.shared.model.lifecycle.LifecycleObservation;
-import gold.debug.windowstolinux.shared.model.message.LocalizedMessage;
-import gold.debug.windowstolinux.shared.model.failure.FailureDescriptor;
-import gold.debug.windowstolinux.shared.model.failure.FailureSeverityLevel;
-import gold.debug.windowstolinux.shared.model.failure.OperationIdentity;
-
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
+
+import gold.debug.windowstolinux.shared.model.failure.FailureDescriptor;
+import gold.debug.windowstolinux.shared.model.failure.FailureSeverityLevel;
+import gold.debug.windowstolinux.shared.model.failure.OperationIdentity;
+import gold.debug.windowstolinux.shared.model.lifecycle.LifecycleObservation;
+import gold.debug.windowstolinux.shared.model.message.LocalizedMessage;
 
 /**
  * Result of a one-resource lifecycle operation.
@@ -22,14 +22,9 @@ import java.util.Optional;
  * @param failure structured failure occurrence retained for safe reporting / 保留用于安全报告的结构化失败实例
  * @param nonFatalFailures non fatal failures / 非致命失败集合
  */
-public record LifecycleActionResult(
-        boolean accepted,
-        LocalizedMessage message,
-        Optional<LifecycleObservation> observation,
-        OperationIdentity operationIdentity,
-        Optional<FailureDescriptor> failure,
-        List<FailureDescriptor> nonFatalFailures
-) {
+public record LifecycleActionResult(boolean accepted, LocalizedMessage message,
+        Optional<LifecycleObservation> observation, OperationIdentity operationIdentity,
+        Optional<FailureDescriptor> failure, List<FailureDescriptor> nonFatalFailures) {
     /**
      * Validates and binds the inputs required by lifecycle action result.
      * <p>校验并绑定生命周期动作结果所需输入。
@@ -55,7 +50,8 @@ public record LifecycleActionResult(
         if (accepted && failure.isPresent()) {
             throw new IllegalArgumentException("an accepted lifecycle result cannot carry a terminal failure");
         }
-        if (nonFatalFailures.stream().anyMatch(value -> value.definition().severity() != FailureSeverityLevel.WARNING)) {
+        if (nonFatalFailures.stream()
+                .anyMatch(value -> value.definition().severity() != FailureSeverityLevel.WARNING)) {
             throw new IllegalArgumentException("nonFatalFailures may contain warning definitions only");
         }
     }
@@ -68,7 +64,7 @@ public record LifecycleActionResult(
      * @param observation observation / 观测
      */
     public LifecycleActionResult(boolean accepted, LocalizedMessage message,
-                                 Optional<LifecycleObservation> observation) {
+            Optional<LifecycleObservation> observation) {
         this(accepted, message, observation, OperationIdentity.create(), Optional.empty(), List.of());
     }
 
@@ -81,8 +77,8 @@ public record LifecycleActionResult(
      */
     public static LifecycleActionResult failed(FailureDescriptor failure) {
         Objects.requireNonNull(failure, "failure");
-        return new LifecycleActionResult(false, failure.userMessage(), Optional.empty(),
-                failure.operationIdentity(), Optional.of(failure), List.of());
+        return new LifecycleActionResult(false, failure.userMessage(), Optional.empty(), failure.operationIdentity(),
+                Optional.of(failure), List.of());
     }
 
     /**

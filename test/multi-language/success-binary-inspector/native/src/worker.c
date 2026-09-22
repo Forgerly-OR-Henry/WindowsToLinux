@@ -71,8 +71,7 @@ static int inspect(Reader *r, const Options *o, Summary *s, uint32_t *blocks) {
             return 0;
         if (memcmp(block, "BLK2", 4))
             return fail(r, "invalid block magic", block_offset, 2);
-        uint32_t bytes = little32(block + 4), count = little32(block + 8),
-                 expected_crc = little32(block + 12);
+        uint32_t bytes = little32(block + 4), count = little32(block + 8), expected_crc = little32(block + 12);
         if (!bytes || bytes > 1048576 || !count || count > bytes / 8 || count > 1000000 - r->records)
             return fail(r, "invalid block length or record count", block_offset + 4, 2);
         uint64_t end = r->offset + bytes;
@@ -89,8 +88,7 @@ static int inspect(Reader *r, const Options *o, Summary *s, uint32_t *blocks) {
                 return fail(r, "unknown record type", record_offset, 2);
             if (flags > 3)
                 return fail(r, "unsupported record flags", record_offset + 1, 2);
-            if ((kind == 1 && length != 12) || (kind == 2 && (length < 4 || length > 4100)) ||
-                length > end - r->offset)
+            if ((kind == 1 && length != 12) || (kind == 2 && (length < 4 || length > 4100)) || length > end - r->offset)
                 return fail(r, "invalid record length", record_offset + 2, 2);
             if (!read_bytes(r, data, length, 1, 1))
                 return 0;
@@ -100,8 +98,7 @@ static int inspect(Reader *r, const Options *o, Summary *s, uint32_t *blocks) {
                 uint64_t raw = little64(data + 4);
                 int64_t value = raw <= INT64_MAX ? (int64_t)raw : -(int64_t)(UINT64_MAX - raw) - 1;
                 if (strcmp(o->type, "event") && value >= o->min && value <= o->max) {
-                    if ((value > 0 && s->sum > INT64_MAX - value) ||
-                        (value < 0 && s->sum < INT64_MIN - value))
+                    if ((value > 0 && s->sum > INT64_MAX - value) || (value < 0 && s->sum < INT64_MIN - value))
                         return fail(r, "selected measurement sum overflows int64", record_offset, 2);
                     if (!s->selected_measurements || value < s->min)
                         s->min = value;
@@ -152,9 +149,7 @@ static int inspect(Reader *r, const Options *o, Summary *s, uint32_t *blocks) {
 int run(int argc, char **argv) {
     Options options;
     if (!parse_options(argc, argv, &options)) {
-        fprintf(
-            stderr,
-            "invalid options: --input FILE [--type all|measurement|event --min N --max N --max-bytes N]\n");
+        fprintf(stderr, "invalid options: --input FILE [--type all|measurement|event --min N --max N --max-bytes N]\n");
         return 2;
     }
     Reader reader = {
@@ -162,8 +157,7 @@ int run(int argc, char **argv) {
     Summary summary = {0};
     uint32_t blocks = 0;
     puts("{\"protocolVersion\":2,\"component\":\"c-binary\",\"type\":\"start\",\"sequence\":0}");
-    int ok = reader.file ? inspect(&reader, &options, &summary, &blocks)
-                         : fail(&reader, "cannot open input", 0, 3);
+    int ok = reader.file ? inspect(&reader, &options, &summary, &blocks) : fail(&reader, "cannot open input", 0, 3);
     if (reader.file)
         fclose(reader.file);
     if (!ok) {
@@ -177,17 +171,16 @@ int run(int argc, char **argv) {
         printf(",\"message\":");
         json_string((const unsigned char *)reader.error, strlen(reader.error));
         puts("}}");
-        fprintf(stderr, "block=%" PRIu32 " offset=%" PRIu64 ": %s\n", reader.block, reader.error_offset,
-                reader.error);
+        fprintf(stderr, "block=%" PRIu32 " offset=%" PRIu64 ": %s\n", reader.block, reader.error_offset, reader.error);
     } else {
         printf("{\"protocolVersion\":2,\"component\":\"c-binary\",\"type\":\"summary\",\"sequence\":1,"
-               "\"blocks\":%" PRIu32 ",\"records\":%" PRIu64 ",\"bytes\":%" PRIu64
-               ",\"measurements\":%" PRIu64 ",\"events\":%" PRIu64 ",\"selected\":%" PRIu64
-               ",\"selectedMeasurements\":%" PRIu64 ",\"selectedEvents\":%" PRIu64 ",\"eventBytes\":%" PRIu64
-               ",\"sum\":%" PRId64 ",\"flagsOr\":%u,\"checksum\":\"%08" PRIx32 "\",\"min\":",
+               "\"blocks\":%" PRIu32 ",\"records\":%" PRIu64 ",\"bytes\":%" PRIu64 ",\"measurements\":%" PRIu64
+               ",\"events\":%" PRIu64 ",\"selected\":%" PRIu64 ",\"selectedMeasurements\":%" PRIu64
+               ",\"selectedEvents\":%" PRIu64 ",\"eventBytes\":%" PRIu64 ",\"sum\":%" PRId64
+               ",\"flagsOr\":%u,\"checksum\":\"%08" PRIx32 "\",\"min\":",
                blocks, reader.records, reader.offset, summary.measurements, summary.events, summary.selected,
-               summary.selected_measurements, summary.selected_events, summary.event_bytes, summary.sum,
-               summary.flags, ~reader.file_crc);
+               summary.selected_measurements, summary.selected_events, summary.event_bytes, summary.sum, summary.flags,
+               ~reader.file_crc);
         if (summary.selected_measurements)
             printf("%" PRId64 ",\"max\":%" PRId64, summary.min, summary.max);
         else

@@ -1,10 +1,16 @@
 package gold.debug.windowstolinux.shared.deploy.execution.environment;
 
+import static org.junit.jupiter.api.Assertions.*;
+
+import java.time.Duration;
+import java.util.*;
+import java.util.function.Predicate;
+
 import gold.debug.windowstolinux.shared.linux.connection.*;
 import gold.debug.windowstolinux.shared.linux.distro.SelinuxEnvironmentPreparer;
 import gold.debug.windowstolinux.shared.linux.error.*;
-import gold.debug.windowstolinux.shared.linux.session.LinuxRemoteSession;
 import gold.debug.windowstolinux.shared.linux.runtime.HealthCheckResult;
+import gold.debug.windowstolinux.shared.linux.session.LinuxRemoteSession;
 import gold.debug.windowstolinux.shared.linux.transfer.*;
 import gold.debug.windowstolinux.shared.model.archive.SourceArchiveDescriptor;
 import gold.debug.windowstolinux.shared.model.capability.ServerCapabilityFacts;
@@ -14,20 +20,18 @@ import gold.debug.windowstolinux.shared.model.lifecycle.*;
 import gold.debug.windowstolinux.shared.model.managed.ManagedApplication;
 import gold.debug.windowstolinux.shared.model.server.security.*;
 import org.junit.jupiter.api.Test;
-import java.time.Duration;
-import java.util.*;
-import java.util.function.Predicate;
-import static org.junit.jupiter.api.Assertions.*;
 
 class SelinuxPreparationServiceTest {
-    @Test void declinedSystemConsentNeverMutatesTheServer() {
+    @Test
+    void declinedSystemConsentNeverMutatesTheServer() {
         Target target = new Target();
         assertThrows(DeploymentApprovalException.class, () -> target.run(plan -> false));
         assertEquals(List.of(), target.mutations);
         assertEquals(target.connections, target.closed);
     }
 
-    @Test void approvedRebootWaitsAndCommitsOnlyAfterAnotherAuthenticatedConnection() throws Exception {
+    @Test
+    void approvedRebootWaitsAndCommitsOnlyAfterAnotherAuthenticatedConnection() throws Exception {
         Target target = new Target();
         target.run(plan -> {
             assertEquals(LinuxSecurityState.DISABLED, plan.securityState());
@@ -41,7 +45,8 @@ class SelinuxPreparationServiceTest {
         assertEquals(3, target.mutations.size());
     }
 
-    @Test void absentRebootTimesOutWithoutTryingEnforcementOrAnotherReboot() {
+    @Test
+    void absentRebootTimesOutWithoutTryingEnforcementOrAnotherReboot() {
         Target target = new Target();
         target.rebootCompletes = false;
         LinuxOperationException failure = assertThrows(LinuxOperationException.class, () -> target.run(plan -> true));
@@ -50,7 +55,8 @@ class SelinuxPreparationServiceTest {
         assertEquals(target.connections, target.closed);
     }
 
-    @Test void aChangedHostKeyIsRejectedDespiteTheOriginalPermissiveTrustCallback() {
+    @Test
+    void aChangedHostKeyIsRejectedDespiteTheOriginalPermissiveTrustCallback() {
         Target target = new Target();
         target.changeHost = true;
         LinuxOperationException failure = assertThrows(LinuxOperationException.class, () -> target.run(plan -> true));
@@ -59,7 +65,8 @@ class SelinuxPreparationServiceTest {
         assertEquals(2, target.connections);
     }
 
-    @Test void authenticationFailureIsNotRetriedAsRebootDelay() {
+    @Test
+    void authenticationFailureIsNotRetriedAsRebootDelay() {
         Target target = new Target();
         target.authenticationFailure = true;
         LinuxOperationException failure = assertThrows(LinuxOperationException.class, () -> target.run(plan -> true));
@@ -68,7 +75,8 @@ class SelinuxPreparationServiceTest {
         assertEquals(List.of("reboot"), target.mutations);
     }
 
-    @Test void incompletePriorEnforcementCanBeConfirmedAndCommittedWithoutReboot() throws Exception {
+    @Test
+    void incompletePriorEnforcementCanBeConfirmedAndCommittedWithoutReboot() throws Exception {
         Target target = new Target();
         target.state = SelinuxPreparationState.ENFORCEMENT_PENDING;
         target.security = LinuxSecurityState.ENFORCING;
@@ -76,7 +84,8 @@ class SelinuxPreparationServiceTest {
         assertEquals(List.of("commit"), target.mutations);
     }
 
-    @Test void enforcementFailureStopsBeforeCommitAndKeepsItsDiagnostics() {
+    @Test
+    void enforcementFailureStopsBeforeCommitAndKeepsItsDiagnostics() {
         Target target = new Target();
         target.enforcementFailure = true;
         LinuxOperationException failure = assertThrows(LinuxOperationException.class, () -> target.run(plan -> true));
@@ -84,14 +93,16 @@ class SelinuxPreparationServiceTest {
         assertEquals(List.of("reboot"), target.mutations);
     }
 
-    @Test void unrelatedDistributionDoesNotAskOrChangeSystemConfiguration() throws Exception {
+    @Test
+    void unrelatedDistributionDoesNotAskOrChangeSystemConfiguration() throws Exception {
         Target target = new Target();
         target.applicable = false;
         target.run(plan -> fail("Unrelated target must not request SELinux changes"));
         assertTrue(target.mutations.isEmpty());
     }
 
-    @Test void interruptedRebootWaitStopsAndPreservesTheInterruptFlag() {
+    @Test
+    void interruptedRebootWaitStopsAndPreservesTheInterruptFlag() {
         Target target = new Target();
         try {
             target.interruptAfterReboot = true;
@@ -105,10 +116,16 @@ class SelinuxPreparationServiceTest {
 
     private static final class Target {
         final List<String> mutations = new ArrayList<>();
+
         int connections, closed, enforcingConnection;
-        boolean rebootCompletes = true, changeHost, authenticationFailure, enforcementFailure, applicable = true, interruptAfterReboot;
+
+        boolean rebootCompletes = true, changeHost, authenticationFailure, enforcementFailure, applicable = true,
+                interruptAfterReboot;
+
         SelinuxPreparationState state = SelinuxPreparationState.UNPREPARED;
+
         LinuxSecurityState security = LinuxSecurityState.DISABLED;
+
         String boot = "11111111-1111-1111-1111-111111111111";
 
         void run(Predicate<SelinuxPreparationPlan> confirmation) throws Exception {
@@ -117,19 +134,23 @@ class SelinuxPreparationServiceTest {
                 new SelinuxPreparationService(Duration.ofMillis(30), Duration.ofMillis(1)).prepare(this::connect,
                         new SshEndpoint("server-one", "example.test", 22, "root"), credential,
                         (endpoint, fingerprint) -> HostKeyDecision.ACCEPT_EXISTING, confirmation);
-            } finally { credential.clear(); }
+            } finally {
+                credential.clear();
+            }
         }
 
         LinuxRemoteSession connect(SshEndpoint endpoint, SshCredential credential, HostKeyEvaluator verifier)
                 throws LinuxOperationException {
             connections++;
             credential.clear();
-            HostKeyObservation key = new HostKeyObservation(connections > 1 && changeHost ? "changed" : "known", "legacy");
+            HostKeyObservation key = new HostKeyObservation(connections > 1 && changeHost ? "changed" : "known",
+                    "legacy");
             if (verifier.verify(endpoint, key) == HostKeyDecision.REJECT) {
                 throw LinuxOperationException.create(LinuxOperationFailureType.HOST_KEY_REJECTED, "changed key");
             }
             if (connections > 1 && authenticationFailure) {
-                throw LinuxOperationException.create(LinuxOperationFailureType.AUTHENTICATION_FAILED, "authentication failed");
+                throw LinuxOperationException.create(LinuxOperationFailureType.AUTHENTICATION_FAILED,
+                        "authentication failed");
             }
             assertTrue(verifier.authenticated(endpoint, key));
             if (state == SelinuxPreparationState.REBOOT_PENDING && rebootCompletes) {
@@ -143,31 +164,86 @@ class SelinuxPreparationServiceTest {
 
     private static final class Session implements LinuxRemoteSession, SelinuxEnvironmentPreparer {
         private final Target target;
+
         private final int connection;
-        Session(Target target, int connection) { this.target = target; this.connection = connection; }
-        @Override public SelinuxEnvironmentPreparer selinuxPreparation() { return this; }
-        @Override public Optional<SelinuxPreparationPlan> inspect() {
-            return target.applicable ? Optional.of(new SelinuxPreparationPlan("server-one", target.boot, "a".repeat(64), target.security, target.state)) : Optional.empty();
+        Session(Target target, int connection) {
+            this.target = target;
+            this.connection = connection;
         }
-        @Override public void prepareReboot(SelinuxPreparationPlan approved) {
-            target.mutations.add("reboot"); target.state = SelinuxPreparationState.REBOOT_PENDING;
-            if (target.interruptAfterReboot) Thread.currentThread().interrupt();
+
+        @Override
+        public SelinuxEnvironmentPreparer selinuxPreparation() {
+            return this;
         }
-        @Override public void enableEnforcement(SelinuxPreparationPlan approved) throws LinuxOperationException {
-            if (target.enforcementFailure) throw LinuxOperationException.create(LinuxOperationFailureType.ENVIRONMENT_PREPARATION_FAILED, "unresolved-avc");
-            target.mutations.add("enforce"); target.enforcingConnection = connection;
-            target.state = SelinuxPreparationState.ENFORCEMENT_PENDING; target.security = LinuxSecurityState.ENFORCING;
+
+        @Override
+        public Optional<SelinuxPreparationPlan> inspect() {
+            return target.applicable
+                    ? Optional.of(new SelinuxPreparationPlan("server-one", target.boot, "a".repeat(64), target.security,
+                            target.state))
+                    : Optional.empty();
         }
-        @Override public void commitEnforcement(SelinuxPreparationPlan approved) {
+
+        @Override
+        public void prepareReboot(SelinuxPreparationPlan approved) {
+            target.mutations.add("reboot");
+            target.state = SelinuxPreparationState.REBOOT_PENDING;
+            if (target.interruptAfterReboot)
+                Thread.currentThread().interrupt();
+        }
+
+        @Override
+        public void enableEnforcement(SelinuxPreparationPlan approved) throws LinuxOperationException {
+            if (target.enforcementFailure)
+                throw LinuxOperationException.create(LinuxOperationFailureType.ENVIRONMENT_PREPARATION_FAILED,
+                        "unresolved-avc");
+            target.mutations.add("enforce");
+            target.enforcingConnection = connection;
+            target.state = SelinuxPreparationState.ENFORCEMENT_PENDING;
+            target.security = LinuxSecurityState.ENFORCING;
+        }
+
+        @Override
+        public void commitEnforcement(SelinuxPreparationPlan approved) {
             assertTrue(connection > target.enforcingConnection);
-            target.mutations.add("commit"); target.state = SelinuxPreparationState.COMPLETE;
+            target.mutations.add("commit");
+            target.state = SelinuxPreparationState.COMPLETE;
         }
-        @Override public void close() { target.closed++; }
-        @Override public ServerCapabilityFacts collectCapabilities() { throw new AssertionError(); }
-        @Override public EnvironmentSetupResult prepareEnvironment(EnvironmentSetupApproval approval) { throw new AssertionError(); }
-        @Override public SourceUploadResult uploadSource(SourceArchiveDescriptor archive, RemoteWorkspace workspace, long max) { throw new AssertionError(); }
-        @Override public HealthCheckResult checkHealth(ManagedApplication app, HealthCheck health) { throw new AssertionError(); }
-        @Override public LifecycleObservation observe(ManagedApplication app) { throw new AssertionError(); }
-        @Override public LifecycleObservation executeLifecycle(ManagedApplication app, LifecycleAction action, HealthCheck health) { throw new AssertionError(); }
+
+        @Override
+        public void close() {
+            target.closed++;
+        }
+
+        @Override
+        public ServerCapabilityFacts collectCapabilities() {
+            throw new AssertionError();
+        }
+
+        @Override
+        public EnvironmentSetupResult prepareEnvironment(EnvironmentSetupApproval approval) {
+            throw new AssertionError();
+        }
+
+        @Override
+        public SourceUploadResult uploadSource(SourceArchiveDescriptor archive, RemoteWorkspace workspace, long max) {
+            throw new AssertionError();
+        }
+
+        @Override
+        public HealthCheckResult checkHealth(ManagedApplication app, HealthCheck health) {
+            throw new AssertionError();
+        }
+
+        @Override
+        public LifecycleObservation observe(ManagedApplication app) {
+            throw new AssertionError();
+        }
+
+        @Override
+        public LifecycleObservation executeLifecycle(ManagedApplication app, LifecycleAction action,
+                HealthCheck health) {
+            throw new AssertionError();
+        }
     }
 }

@@ -1,11 +1,13 @@
 package gold.debug.windowstolinux.shared.linux.protocol.backup;
 
+import static gold.debug.windowstolinux.shared.model.managed.ManagedStorageLocation.StorageResourceType.*;
+import static org.junit.jupiter.api.Assertions.*;
+
+import java.util.List;
+
 import gold.debug.windowstolinux.shared.model.managed.ManagedStorageLocation;
 import gold.debug.windowstolinux.shared.model.project.component.ComponentDataPath;
 import org.junit.jupiter.api.Test;
-import java.util.List;
-import static org.junit.jupiter.api.Assertions.*;
-import static gold.debug.windowstolinux.shared.model.managed.ManagedStorageLocation.StorageResourceType.*;
 
 class ManagedContentPublicationTest {
     @Test

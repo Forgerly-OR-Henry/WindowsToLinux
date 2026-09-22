@@ -1,11 +1,5 @@
 package gold.debug.windowstolinux.app.db.persistence.repository;
 
-import gold.debug.windowstolinux.app.db.persistence.connection.DesktopConnectionFactory;
-import gold.debug.windowstolinux.shared.config.contract.definition.ConfigurationScope;
-import gold.debug.windowstolinux.shared.config.contract.definition.ConfigurationValue;
-import gold.debug.windowstolinux.shared.config.revision.ConfigurationEntry;
-import gold.debug.windowstolinux.shared.config.revision.ConfigurationSnapshot;
-
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
@@ -15,6 +9,12 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
+
+import gold.debug.windowstolinux.app.db.persistence.connection.DesktopConnectionFactory;
+import gold.debug.windowstolinux.shared.config.contract.definition.ConfigurationScope;
+import gold.debug.windowstolinux.shared.config.contract.definition.ConfigurationValue;
+import gold.debug.windowstolinux.shared.config.revision.ConfigurationEntry;
+import gold.debug.windowstolinux.shared.config.revision.ConfigurationSnapshot;
 
 /**
  * Stores immutable ordinary-configuration snapshots, entries, and exact release bindings. / 保存不可变的普通配置快照、条目及精确发布绑定。
@@ -71,10 +71,11 @@ public final class ConfigurationSnapshotRepository {
             statement.setString(1, applicationId);
             statement.setString(2, releaseIdentity);
             try (ResultSet result = statement.executeQuery()) {
-                if (!result.next()) return Optional.empty();
+                if (!result.next())
+                    return Optional.empty();
                 ConfigurationSnapshot snapshot = find(connection, applicationId,
-                        result.getLong("configuration_revision")).orElseThrow(() ->
-                        new SQLException("release configuration binding references a missing snapshot"));
+                        result.getLong("configuration_revision")).orElseThrow(
+                                () -> new SQLException("release configuration binding references a missing snapshot"));
                 if (!snapshot.sha256().equals(result.getString("configuration_sha256"))) {
                     throw new SQLException("release configuration binding digest is inconsistent");
                 }
@@ -142,7 +143,8 @@ public final class ConfigurationSnapshotRepository {
                     return Optional.of(new ConfigurationSnapshot(applicationId, revision, schemaVersion, createdAt,
                             entries, sha256));
                 } catch (IllegalArgumentException exception) {
-                    throw new SQLException("saved application configuration snapshot violates current validation rules", exception);
+                    throw new SQLException("saved application configuration snapshot violates current validation rules",
+                            exception);
                 }
             }
         }
@@ -302,7 +304,8 @@ public final class ConfigurationSnapshotRepository {
                 default -> throw new IllegalArgumentException("unknown configuration value type");
             };
         } catch (IllegalArgumentException exception) {
-            throw new SQLException("saved application configuration entry violates current validation rules", exception);
+            throw new SQLException("saved application configuration entry violates current validation rules",
+                    exception);
         }
     }
 }

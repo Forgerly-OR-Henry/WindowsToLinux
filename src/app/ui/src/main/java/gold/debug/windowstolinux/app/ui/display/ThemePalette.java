@@ -21,21 +21,9 @@ import java.awt.Color;
  * @param badgeBackground badge background / 标记背景
  * @param inputBorder input border / 输入Border
  */
-public record ThemePalette(
-        Color pageBackground,
-        Color cardBackground,
-        Color cardBorder,
-        Color sidebarBackground,
-        Color sidebarForeground,
-        Color navigationActive,
-        Color accent,
-        Color accentDark,
-        Color subduedText,
-        Color secondaryButtonBackground,
-        Color secondaryButtonForeground,
-        Color badgeBackground,
-        Color inputBorder
-) {
+public record ThemePalette(Color pageBackground, Color cardBackground, Color cardBorder, Color sidebarBackground,
+        Color sidebarForeground, Color navigationActive, Color accent, Color accentDark, Color subduedText,
+        Color secondaryButtonBackground, Color secondaryButtonForeground, Color badgeBackground, Color inputBorder) {
     /**
      * Builds theme palette from the supplied light inputs.
      * <p>根据所提供浅色输入构建主题配色。
@@ -43,13 +31,10 @@ public record ThemePalette(
      * @return the operation result / 操作结果
      */
     public static ThemePalette light() {
-        return new ThemePalette(
-                new Color(245, 247, 251), Color.WHITE, new Color(228, 233, 241),
-                new Color(248, 250, 253), new Color(44, 56, 76), new Color(229, 238, 255),
-                new Color(48, 103, 219), new Color(45, 86, 174), new Color(104, 117, 139),
-                new Color(228, 234, 244), new Color(44, 56, 76), new Color(234, 240, 250),
-                new Color(218, 226, 238)
-        );
+        return new ThemePalette(new Color(245, 247, 251), Color.WHITE, new Color(228, 233, 241),
+                new Color(248, 250, 253), new Color(44, 56, 76), new Color(229, 238, 255), new Color(48, 103, 219),
+                new Color(45, 86, 174), new Color(104, 117, 139), new Color(228, 234, 244), new Color(44, 56, 76),
+                new Color(234, 240, 250), new Color(218, 226, 238));
     }
 
     /**
@@ -59,12 +44,9 @@ public record ThemePalette(
      * @return the operation result / 操作结果
      */
     public static ThemePalette dark() {
-        return new ThemePalette(
-                new Color(20, 25, 34), new Color(28, 35, 47), new Color(45, 55, 71),
-                new Color(23, 29, 40), new Color(221, 228, 239), new Color(40, 61, 92),
-                new Color(65, 123, 232), new Color(159, 194, 255), new Color(155, 169, 191),
-                new Color(49, 62, 82), new Color(221, 228, 239), new Color(38, 56, 82),
-                new Color(57, 71, 94)
-        );
+        return new ThemePalette(new Color(20, 25, 34), new Color(28, 35, 47), new Color(45, 55, 71),
+                new Color(23, 29, 40), new Color(221, 228, 239), new Color(40, 61, 92), new Color(65, 123, 232),
+                new Color(159, 194, 255), new Color(155, 169, 191), new Color(49, 62, 82), new Color(221, 228, 239),
+                new Color(38, 56, 82), new Color(57, 71, 94));
     }
 }

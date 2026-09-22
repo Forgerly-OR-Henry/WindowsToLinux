@@ -31,9 +31,7 @@ def output(result, format):
         for path in group["paths"]:
             writer.writerow(["duplicate", path, group["sha256"]])
     for item in result.get("items", []):
-        writer.writerow(
-            ["snapshot", item["name"], json.dumps(item, ensure_ascii=False)]
-        )
+        writer.writerow(["snapshot", item["name"], json.dumps(item, ensure_ascii=False)])
     if "status" in result:
         writer.writerow(["snapshot", result["name"], result["status"]])
     for item in result.get("issues", []):
@@ -43,9 +41,7 @@ def output(result, format):
 
 def main():
     root = Path(__file__).resolve().parents[1]
-    parser = argparse.ArgumentParser(
-        description="C++ 流式扫描、Python 并行摘要、完整快照与 SQLite 比较"
-    )
+    parser = argparse.ArgumentParser(description="C++ 流式扫描、Python 并行摘要、完整快照与 SQLite 比较")
     parser.add_argument(
         "--db",
         type=Path,
@@ -57,11 +53,7 @@ def main():
         default=Path(
             os.getenv(
                 "NATIVE_HELPER",
-                str(
-                    root
-                    / "native/build"
-                    / ("scan-worker.exe" if os.name == "nt" else "scan-worker")
-                ),
+                str(root / "native/build" / ("scan-worker.exe" if os.name == "nt" else "scan-worker")),
             )
         ),
     )
@@ -74,9 +66,7 @@ def main():
     snapshot.add_argument("--name", required=True)
     snapshot.add_argument("--include", action="append", default=[])
     snapshot.add_argument("--exclude", action="append", default=[])
-    snapshot.add_argument(
-        "--workers", type=int, default=int(os.getenv("HASH_WORKERS", "4"))
-    )
+    snapshot.add_argument("--workers", type=int, default=int(os.getenv("HASH_WORKERS", "4")))
     snapshot.add_argument("--max-files", type=int, default=100000)
     snapshot.add_argument("--max-file-bytes", type=int, default=268435456)
     history = sub.add_parser("list")

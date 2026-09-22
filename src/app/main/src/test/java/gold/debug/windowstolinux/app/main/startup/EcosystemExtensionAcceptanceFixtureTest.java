@@ -1,21 +1,22 @@
 package gold.debug.windowstolinux.app.main.startup;
 
-import gold.debug.windowstolinux.shared.analyze.core.DeploymentAnalysisCoordinator;
-import gold.debug.windowstolinux.app.main.startup.EcosystemExtensionAcceptanceFixture.ArchitectureType;
-import gold.debug.windowstolinux.shared.model.analysis.DeploymentAdmissionStatus;
-import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.io.TempDir;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.stream.Stream;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import gold.debug.windowstolinux.app.main.startup.EcosystemExtensionAcceptanceFixture.ArchitectureType;
+import gold.debug.windowstolinux.shared.model.analysis.DeploymentAdmissionStatus;
+import gold.debug.windowstolinux.shared.standard.analyze.core.DeploymentAnalysisCoordinator;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 /** Verifies fixture materialization without running source or connecting to Linux. / 在不运行源码或连接 Linux 的情况下验证夹具实例化。 */
 class EcosystemExtensionAcceptanceFixtureTest {
-    @TempDir Path temporaryDirectory;
+    @TempDir
+    Path temporaryDirectory;
 
     @Test
     void materializesHealthyAndRejectedHealthSourcesForEveryArchitecture() throws Exception {

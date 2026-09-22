@@ -84,9 +84,7 @@ def analyze(stream, rules):
     )
     if not referenced.issubset(fields):
         raise ValueError("检查规则引用了不存在的列")
-    counts = {
-        code: 0 for code in ["required", "number", "date", "range", "enum", "duplicate"]
-    }
+    counts = {code: 0 for code in ["required", "number", "date", "range", "enum", "duplicate"]}
     seen = [{} for _ in rules["unique"]]
     rows = bad_rows = issues = 0
     maximum = int(os.getenv("MAX_ROWS", "500000"))
@@ -118,9 +116,7 @@ def analyze(stream, rules):
             if not row[field].strip():
                 issue(field, "required", row[field], "必填值缺失")
         numeric = {}
-        for field in set(rules["ranges"]) | {
-            k for k, v in rules["types"].items() if v == "number"
-        }:
+        for field in set(rules["ranges"]) | {k for k, v in rules["types"].items() if v == "number"}:
             value = row[field].strip()
             if not value:
                 continue
@@ -140,12 +136,8 @@ def analyze(stream, rules):
                 except ValueError:
                     issue(field, "date", value, "日期必须为有效 YYYY-MM-DD")
         for field, bounds in rules["ranges"].items():
-            if field in numeric and not Decimal(str(bounds["min"])) <= numeric[
-                field
-            ] <= Decimal(str(bounds["max"])):
-                issue(
-                    field, "range", row[field], f"范围 {bounds['min']}..{bounds['max']}"
-                )
+            if field in numeric and not Decimal(str(bounds["min"])) <= numeric[field] <= Decimal(str(bounds["max"])):
+                issue(field, "range", row[field], f"范围 {bounds['min']}..{bounds['max']}")
         for field, values in rules["enums"].items():
             if row[field].strip() and row[field] not in values:
                 issue(field, "enum", row[field], "不在枚举选项中")

@@ -1,10 +1,10 @@
 package gold.debug.windowstolinux.app.service.server;
 
-import gold.debug.windowstolinux.app.db.entity.StoredServerProfile;
-import gold.debug.windowstolinux.shared.model.security.CredentialStorageMode;
-import gold.debug.windowstolinux.shared.linux.connection.SshEndpoint;
-
 import java.util.Objects;
+
+import gold.debug.windowstolinux.app.db.entity.StoredServerProfile;
+import gold.debug.windowstolinux.shared.linux.connection.SshEndpoint;
+import gold.debug.windowstolinux.shared.model.security.CredentialStorageMode;
 
 /**
  * Saved non-secret desktop connection profile.
@@ -19,15 +19,8 @@ import java.util.Objects;
  * @param credentialMode selected platform credential-storage mode / 所选平台凭据存储模式
  * @param displayName display name / 显示名称
  */
-public record ServerProfile(
-        String id,
-        String host,
-        int sshPort,
-        String username,
-        String credentialKey,
-        CredentialStorageMode credentialMode,
-        String displayName
-) {
+public record ServerProfile(String id, String host, int sshPort, String username, String credentialKey,
+        CredentialStorageMode credentialMode, String displayName) {
     /**
      * Preserves profiles created before display names were added. / 保留显示名称引入前创建的资料。
      *
@@ -38,7 +31,8 @@ public record ServerProfile(
      * @param credentialKey opaque lookup key in the platform secret store / 平台秘密存储中的不透明查找键
      * @param credentialMode selected platform credential-storage mode / 所选平台凭据存储模式
      */
-    public ServerProfile(String id, String host, int sshPort, String username, String credentialKey, CredentialStorageMode credentialMode) {
+    public ServerProfile(String id, String host, int sshPort, String username, String credentialKey,
+            CredentialStorageMode credentialMode) {
         this(id, host, sshPort, username, credentialKey, credentialMode, id);
     }
 
@@ -58,7 +52,8 @@ public record ServerProfile(
      */
     public ServerProfile {
         displayName = Objects.requireNonNull(displayName, "displayName").trim();
-        if (displayName.isEmpty() || displayName.length() > 120) throw new IllegalArgumentException("invalid server display name");
+        if (displayName.isEmpty() || displayName.length() > 120)
+            throw new IllegalArgumentException("invalid server display name");
         Objects.requireNonNull(credentialKey, "credentialKey");
         Objects.requireNonNull(credentialMode, "credentialMode");
         new SshEndpoint(id, host, sshPort, username);
@@ -94,9 +89,8 @@ public record ServerProfile(
      * @return the operation result / 操作结果
      */
     public static ServerProfile fromStored(StoredServerProfile profile) {
-        return new ServerProfile(
-                profile.id(), profile.host(), profile.sshPort(), profile.username(), profile.credentialKey(),
-                CredentialStorageMode.valueOf(profile.credentialMode()), profile.displayName()
-        );
+        return new ServerProfile(profile.id(), profile.host(), profile.sshPort(), profile.username(),
+                profile.credentialKey(), CredentialStorageMode.valueOf(profile.credentialMode()),
+                profile.displayName());
     }
 }

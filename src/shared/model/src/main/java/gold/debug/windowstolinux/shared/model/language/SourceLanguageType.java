@@ -8,71 +8,94 @@ package gold.debug.windowstolinux.shared.model.language;
 public enum SourceLanguageType {
     /**
      * No bounded language identity. / 无有界语言身份。
-     */ UNKNOWN,
+     */
+    UNKNOWN,
     /**
      * Java source. / Java 源码。
-     */ JAVA,
+     */
+    JAVA,
     /**
      * JavaScript source. / JavaScript 源码。
-     */ JAVASCRIPT,
+     */
+    JAVASCRIPT,
     /**
      * TypeScript source. / TypeScript 源码。
-     */ TYPESCRIPT,
+     */
+    TYPESCRIPT,
     /**
      * Python source. / Python 源码。
-     */ PYTHON,
+     */
+    PYTHON,
     /**
      * HTML or static web source. / HTML 或静态网页源码。
-     */ HTML,
+     */
+    HTML,
     /**
      * Dockerfile or Containerfile source. / Dockerfile 或 Containerfile 源码。
-     */ CONTAINERFILE,
+     */
+    CONTAINERFILE,
     /**
      * Go source. / Go 源码。
-     */ GO,
+     */
+    GO,
     /**
      * Rust source. / Rust 源码。
-     */ RUST,
+     */
+    RUST,
     /**
      * C# source. / C# 源码。
-     */ CSHARP,
+     */
+    CSHARP,
     /**
      * Kotlin source. / Kotlin 源码。
-     */ KOTLIN,
+     */
+    KOTLIN,
     /**
      * PHP source. / PHP 源码。
-     */ PHP,
+     */
+    PHP,
     /**
      * Ruby source. / Ruby 源码。
-     */ RUBY,
+     */
+    RUBY,
     /**
      * C source. / C 源码。
-     */ C,
+     */
+    C,
     /**
      * C++ source. / C++ 源码。
-     */ CPP,
+     */
+    CPP,
     /**
      * Scala source. / Scala 源码。
-     */ SCALA,
+     */
+    SCALA,
     /**
      * Clojure source. / Clojure 源码。
-     */ CLOJURE,
+     */
+    CLOJURE,
     /**
      * Elixir source. / Elixir 源码。
-     */ ELIXIR,
+     */
+    ELIXIR,
     /**
      * Dart source. / Dart 源码。
-     */ DART,
+     */
+    DART,
     /**
      * Lua source. / Lua 源码。
-     */ LUA,
+     */
+    LUA,
     /**
      * Perl source. / Perl 源码。
-     */ PERL,
+     */
+    PERL,
     /**
      * Swift source. / Swift 源码。
-     */ SWIFT,
+     */
+    SWIFT,
     /**
      * Shell source, which never creates an arbitrary command path. / Shell 源码，绝不创建任意命令路径。
-     */ SHELL
+     */
+    SHELL
 }

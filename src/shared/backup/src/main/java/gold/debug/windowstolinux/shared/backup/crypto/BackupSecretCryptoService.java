@@ -1,14 +1,5 @@
 package gold.debug.windowstolinux.shared.backup.crypto;
 
-import gold.debug.windowstolinux.shared.backup.format.BackupSecretEnvelope;
-import gold.debug.windowstolinux.shared.backup.format.BackupSecretEnvelopeCodec;
-import gold.debug.windowstolinux.shared.config.secretref.ResolvedSecretRevision;
-import org.bouncycastle.crypto.generators.Argon2BytesGenerator;
-import org.bouncycastle.crypto.params.Argon2Parameters;
-
-import javax.crypto.Cipher;
-import javax.crypto.spec.GCMParameterSpec;
-import javax.crypto.spec.SecretKeySpec;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.security.GeneralSecurityException;
@@ -16,6 +7,16 @@ import java.security.SecureRandom;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Objects;
+
+import javax.crypto.Cipher;
+import javax.crypto.spec.GCMParameterSpec;
+import javax.crypto.spec.SecretKeySpec;
+
+import gold.debug.windowstolinux.shared.backup.format.BackupSecretEnvelope;
+import gold.debug.windowstolinux.shared.backup.format.BackupSecretEnvelopeCodec;
+import gold.debug.windowstolinux.shared.config.secretref.ResolvedSecretRevision;
+import org.bouncycastle.crypto.generators.Argon2BytesGenerator;
+import org.bouncycastle.crypto.params.Argon2Parameters;
 
 /**
  * Stateless backup-password encryption that never retains passwords or derived keys. / 不保留密码或派生密钥的无状态备份密码加密。
@@ -25,51 +26,61 @@ public final class BackupSecretCryptoService {
      * Maximum accepted encoded {@code secrets.enc} bytes. / 允许的 {@code secrets.enc} 编码字节上限。
      */
     public static final long MAXIMUM_ENVELOPE_BYTES = 64L * 1024 * 1024;
+
     /**
      * MEMORY KIB.
      * <p>内存KIB。
      */
     private static final int MEMORY_KIB = 64 * 1024;
+
     /**
      * Number of Argon2id derivation passes.
      * <p>Argon2id 派生轮数。
      */
     private static final int ITERATIONS = 3;
+
     /**
      * Number of Argon2id parallel lanes.
      * <p>Argon2id 并行通道数。
      */
     private static final int PARALLELISM = 1;
+
     /**
      * KEY BYTES.
      * <p>键字节。
      */
     private static final int KEY_BYTES = 32;
+
     /**
      * SALT BYTES.
      * <p>盐字节。
      */
     private static final int SALT_BYTES = 16;
+
     /**
      * NONCE BYTES.
      * <p>随机数字节。
      */
     private static final int NONCE_BYTES = 12;
+
     /**
      * ASSOCIATED CONTENT.
      * <p>关联内容。
      */
     private static final byte[] ASSOCIATED_CONTENT = "windowstolinux/secrets.enc/1".getBytes(StandardCharsets.UTF_8);
+
     /**
      * Random.
      * <p>随机。
      */
     private final SecureRandom random;
+
     /**
      * Bound backup secret envelope codec collaborator for codec.
      * <p>处理编解码器的备份秘密信封编解码器协作对象。
      */
     private final BackupSecretEnvelopeCodec codec;
+
     /**
      * Bound backup secret document codec collaborator for document codec.
      * <p>处理文档编解码器的备份秘密文档编解码器协作对象。
@@ -104,7 +115,7 @@ public final class BackupSecretCryptoService {
      * @throws NullPointerException if a required input is absent / 必需输入缺失时
      */
     BackupSecretCryptoService(SecureRandom random, BackupSecretEnvelopeCodec codec,
-                              BackupSecretDocumentCodec documentCodec) {
+            BackupSecretDocumentCodec documentCodec) {
         this.random = Objects.requireNonNull(random, "random");
         this.codec = Objects.requireNonNull(codec, "codec");
         this.documentCodec = Objects.requireNonNull(documentCodec, "documentCodec");
@@ -118,10 +129,8 @@ public final class BackupSecretCryptoService {
      * @return encoded or copied content buffer / 编码或复制得到的内容缓冲区
      * @throws BackupSecretException if the backup secret boundary rejects the operation / 备份秘密边界拒绝当前操作时
      */
-    public byte[] encryptRevisions(
-            char[] backupPassword,
-            List<ResolvedSecretRevision> revisions
-    ) throws BackupSecretException {
+    public byte[] encryptRevisions(char[] backupPassword, List<ResolvedSecretRevision> revisions)
+            throws BackupSecretException {
         byte[] document = null;
         try {
             document = documentCodec.write(revisions);
@@ -179,9 +188,8 @@ public final class BackupSecretCryptoService {
             Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
             cipher.init(Cipher.ENCRYPT_MODE, new SecretKeySpec(key, "AES"), new GCMParameterSpec(128, nonce));
             cipher.updateAAD(ASSOCIATED_CONTENT);
-            BackupSecretEnvelope envelope = new BackupSecretEnvelope(
-                    BackupSecretEnvelope.CURRENT_FORMAT, BackupSecretEnvelope.CURRENT_KEY_DERIVATION,
-                    MEMORY_KIB, ITERATIONS, PARALLELISM, salt,
+            BackupSecretEnvelope envelope = new BackupSecretEnvelope(BackupSecretEnvelope.CURRENT_FORMAT,
+                    BackupSecretEnvelope.CURRENT_KEY_DERIVATION, MEMORY_KIB, ITERATIONS, PARALLELISM, salt,
                     BackupSecretEnvelope.CURRENT_CIPHER, nonce, cipher.doFinal(plaintext));
             return codec.write(envelope);
         } catch (GeneralSecurityException | IOException | RuntimeException exception) {
@@ -270,9 +278,8 @@ public final class BackupSecretCryptoService {
      * @return encoded or copied content buffer / 编码或复制得到的内容缓冲区
      */
     private static byte[] deriveKey(char[] password, byte[] salt, int memoryKiB, int iterations, int parallelism) {
-        Argon2Parameters parameters = new Argon2Parameters.Builder(Argon2Parameters.ARGON2_id)
-                .withSalt(salt).withMemoryAsKB(memoryKiB).withIterations(iterations)
-                .withParallelism(parallelism).build();
+        Argon2Parameters parameters = new Argon2Parameters.Builder(Argon2Parameters.ARGON2_id).withSalt(salt)
+                .withMemoryAsKB(memoryKiB).withIterations(iterations).withParallelism(parallelism).build();
         byte[] key = new byte[KEY_BYTES];
         Argon2BytesGenerator generator = new Argon2BytesGenerator();
         generator.init(parameters);
@@ -301,8 +308,10 @@ public final class BackupSecretCryptoService {
      */
     private static void clear(Object... values) {
         for (Object value : values) {
-            if (value instanceof byte[] bytes) Arrays.fill(bytes, (byte) 0);
-            if (value instanceof char[] characters) Arrays.fill(characters, '\0');
+            if (value instanceof byte[] bytes)
+                Arrays.fill(bytes, (byte) 0);
+            if (value instanceof char[] characters)
+                Arrays.fill(characters, '\0');
         }
     }
 }

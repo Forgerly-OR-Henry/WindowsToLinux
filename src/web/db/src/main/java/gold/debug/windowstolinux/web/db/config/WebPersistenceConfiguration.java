@@ -1,5 +1,7 @@
 package gold.debug.windowstolinux.web.db.config;
 
+import javax.sql.DataSource;
+
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.spring.MybatisSqlSessionFactoryBean;
 import gold.debug.windowstolinux.web.db.execution.migration.WebSchemaMigrator;
@@ -13,7 +15,6 @@ import org.springframework.jdbc.support.JdbcTransactionManager;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.EnableTransactionManagement;
 import org.springframework.transaction.support.TransactionTemplate;
-import javax.sql.DataSource;
 
 /**
  * Assembles the scoped MyBatis persistence and shared transaction infrastructure.
@@ -32,7 +33,9 @@ public class WebPersistenceConfiguration {
      * @return constructed or resolved platform transaction manager / 构造或解析得到的平台事务管理器
      */
     @Bean
-    public PlatformTransactionManager transactionManager(DataSource source) { return new JdbcTransactionManager(source); }
+    public PlatformTransactionManager transactionManager(DataSource source) {
+        return new JdbcTransactionManager(source);
+    }
 
     /**
      * Assembles the web schema migrator managed by the Spring application context.
@@ -61,9 +64,11 @@ public class WebPersistenceConfiguration {
         var configuration = new MybatisConfiguration();
         configuration.setMapUnderscoreToCamelCase(true);
         configuration.setArgNameBasedConstructorAutoMapping(true);
-        configuration.getTypeHandlerRegistry().register(byte[].class, org.apache.ibatis.type.JdbcType.BLOB, new org.apache.ibatis.type.ByteArrayTypeHandler());
+        configuration.getTypeHandlerRegistry().register(byte[].class, org.apache.ibatis.type.JdbcType.BLOB,
+                new org.apache.ibatis.type.ByteArrayTypeHandler());
         var factory = new MybatisSqlSessionFactoryBean();
-        factory.setDataSource(source); factory.setConfiguration(configuration);
+        factory.setDataSource(source);
+        factory.setConfiguration(configuration);
         factory.setMapperLocations(new PathMatchingResourcePatternResolver().getResources("classpath*:mapper/*.xml"));
         return factory.getObject();
     }

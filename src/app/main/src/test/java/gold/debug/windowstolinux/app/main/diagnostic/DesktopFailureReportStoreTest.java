@@ -1,18 +1,17 @@
 package gold.debug.windowstolinux.app.main.diagnostic;
 
-import gold.debug.windowstolinux.shared.model.failure.FailureDescriptor;
-import gold.debug.windowstolinux.shared.model.failure.OperationIdentity;
-
-import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.io.TempDir;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import gold.debug.windowstolinux.shared.model.failure.FailureDescriptor;
+import gold.debug.windowstolinux.shared.model.failure.OperationIdentity;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 class DesktopFailureReportStoreTest {
     @TempDir
@@ -37,8 +36,8 @@ class DesktopFailureReportStoreTest {
         assertFalse(content.contains("top-secret"));
         assertFalse(content.contains("should-never-be-recorded"));
 
-        Path unknown = reports.record(new RuntimeException("secret=unknown-message"))
-                .orElseThrow().reportPath().orElseThrow();
+        Path unknown = reports.record(new RuntimeException("secret=unknown-message")).orElseThrow().reportPath()
+                .orElseThrow();
         assertFalse(Files.readString(unknown).contains("unknown-message"));
 
         for (int index = 0; index < DesktopFailureReportStore.MAX_REPORTS + 10; index++) {
@@ -46,8 +45,8 @@ class DesktopFailureReportStoreTest {
                     "bounded fixture " + index, null));
         }
         try (var files = Files.list(reports.diagnosticsDirectory().orElseThrow())) {
-            assertTrue(files.filter(path -> path.getFileName().toString().endsWith(".txt")).count()
-                    <= DesktopFailureReportStore.MAX_REPORTS);
+            assertTrue(files.filter(path -> path.getFileName().toString().endsWith(".txt"))
+                    .count() <= DesktopFailureReportStore.MAX_REPORTS);
         }
     }
 

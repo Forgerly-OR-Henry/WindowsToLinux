@@ -1,10 +1,10 @@
 package gold.debug.windowstolinux.shared.linux.error;
 
+import java.util.Objects;
+
 import gold.debug.windowstolinux.shared.model.failure.FailureCarrier;
 import gold.debug.windowstolinux.shared.model.failure.FailureDescriptor;
 import gold.debug.windowstolinux.shared.model.failure.OperationIdentity;
-
-import java.util.Objects;
 
 /**
  * An unchecked native database failure containing only a fixed reason. / 只携带固定原因的原生数据库非受检失败。
@@ -32,7 +32,9 @@ public final class NativeDatabaseException extends RuntimeException implements F
      *
      * @return the exact reason used by bounded recovery branches / 有界恢复分支使用的精确原因
      */
-    public NativeDatabaseFailureType reason() { return (NativeDatabaseFailureType) failure.definition(); }
+    public NativeDatabaseFailureType reason() {
+        return (NativeDatabaseFailureType) failure.definition();
+    }
 
     /**
      * Returns structured failure occurrence retained for safe reporting.
@@ -40,5 +42,8 @@ public final class NativeDatabaseException extends RuntimeException implements F
      *
      * @return structured failure occurrence retained for safe reporting / 保留用于安全报告的结构化失败实例
      */
-    @Override public FailureDescriptor failure() { return failure; }
+    @Override
+    public FailureDescriptor failure() {
+        return failure;
+    }
 }

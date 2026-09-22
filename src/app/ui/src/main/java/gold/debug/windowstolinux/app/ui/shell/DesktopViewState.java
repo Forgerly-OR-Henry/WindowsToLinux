@@ -1,5 +1,7 @@
 package gold.debug.windowstolinux.app.ui.shell;
 
+import java.util.Objects;
+
 import gold.debug.windowstolinux.app.ui.ai.AiPageState;
 import gold.debug.windowstolinux.app.ui.backup.BackupPageState;
 import gold.debug.windowstolinux.app.ui.deployment.automatic.DeploymentPageState;
@@ -7,8 +9,6 @@ import gold.debug.windowstolinux.app.ui.deployment.multi.MultiComponentPageState
 import gold.debug.windowstolinux.app.ui.managed.ManagedPageState;
 import gold.debug.windowstolinux.app.ui.server.ServerPageState;
 import gold.debug.windowstolinux.app.ui.setting.SettingPageState;
-
-import java.util.Objects;
 
 /**
  * Aggregates page-owned state while the shell is rebuilt for a hot appearance update.
@@ -27,19 +27,13 @@ import java.util.Objects;
  * @param deploymentSelection deployment selection / 部署选择
  * @param handoffs handoffs / 交接集合
  */
-public record DesktopViewState(
-        String page,
-        DeploymentPageState deployment,
-        MultiComponentPageState multiComponent,
-        ServerPageState server,
-        ManagedPageState managed,
-        BackupPageState backup,
-        AiPageState ai,
-        SettingPageState settings,
-        java.util.Map<String, Boolean> expanded,
+public record DesktopViewState(String page, DeploymentPageState deployment, MultiComponentPageState multiComponent,
+        ServerPageState server, ManagedPageState managed, BackupPageState backup, AiPageState ai,
+        SettingPageState settings, java.util.Map<String, Boolean> expanded,
         java.util.Map<String, String> deploymentSelection,
-        java.util.Map<String, gold.debug.windowstolinux.app.service.deployment.single.DeploymentHandoff> handoffs
-) implements AutoCloseable {
+        java.util.Map<String, gold.debug.windowstolinux.app.service.deployment.single.DeploymentHandoff> handoffs)
+        implements
+            AutoCloseable {
     /**
      * Creates a view state with no expanded inspectors, as on first launch. / 创建所有检查面板均折叠的视图状态，与首次启动一致。
      *
@@ -53,10 +47,12 @@ public record DesktopViewState(
      * @param settings settings / 设置
      */
     public DesktopViewState(String page, DeploymentPageState deployment, MultiComponentPageState multiComponent,
-                            ServerPageState server, ManagedPageState managed, BackupPageState backup,
-                            AiPageState ai, SettingPageState settings) {
-        this(page, deployment, multiComponent, server, managed, backup, ai, settings, java.util.Map.of(), java.util.Map.of(), java.util.Map.of());
+            ServerPageState server, ManagedPageState managed, BackupPageState backup, AiPageState ai,
+            SettingPageState settings) {
+        this(page, deployment, multiComponent, server, managed, backup, ai, settings, java.util.Map.of(),
+                java.util.Map.of(), java.util.Map.of());
     }
+
     /**
      * Validates and binds the inputs required by desktop view state.
      * <p>校验并绑定Desktop视图状态所需输入。

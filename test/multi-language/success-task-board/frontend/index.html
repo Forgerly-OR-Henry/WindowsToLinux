@@ -18,8 +18,7 @@
     <p id="loading" role="status"></p>
     <p id="message" role="alert"></p>
     <section>
-      <label>项目<select id="project"></select></label
-      ><label>演示操作成员<select id="actor"></select></label>
+      <label>项目<select id="project"></select></label><label>演示操作成员<select id="actor"></select></label>
       <p>固定演示成员选择，不属于身份认证。</p>
     </section>
     <main>
@@ -38,15 +37,13 @@
         </table>
         <h3>创建项目</h3>
         <form id="project-form">
-          <label>名称<input id="project-name" required maxlength="80" /></label
-          ><button>创建项目</button>
+          <label>名称<input id="project-name" required maxlength="80" /></label><button>创建项目</button>
         </form>
       </section>
       <section data-page="list" hidden>
         <h2>任务列表</h2>
         <form id="filters">
-          <label>标题<input id="query" /></label
-          ><label>标签<input id="label-filter" /></label
+          <label>标题<input id="query" /></label><label>标签<input id="label-filter" /></label
           ><label>负责人<select id="owner-filter"></select></label
           ><label
             >优先级<select id="priority-filter">
@@ -63,8 +60,7 @@
               <option value="review">待审核</option>
               <option value="done">完成</option>
             </select></label
-          ><label><input id="overdue" type="checkbox" />仅逾期</label
-          ><button>筛选</button>
+          ><label><input id="overdue" type="checkbox" />仅逾期</label><button>筛选</button>
         </form>
         <p id="total"></p>
         <table>
@@ -82,15 +78,13 @@
           </thead>
           <tbody id="rows"></tbody>
         </table>
-        <button id="prev">上一页</button><span id="page"></span
-        ><button id="next">下一页</button>
+        <button id="prev">上一页</button><span id="page"></span><button id="next">下一页</button>
       </section>
       <section data-page="edit" hidden>
         <h2 id="edit-title">新建任务</h2>
         <form id="editor">
           <label>标题<input id="title" required maxlength="120" /></label
-          ><label
-            >描述<textarea id="description" maxlength="2000"></textarea></label
+          ><label>描述<textarea id="description" maxlength="2000"></textarea></label
           ><label>负责人<select id="owner"></select></label
           ><label
             >优先级<select id="priority">
@@ -98,15 +92,11 @@
               <option value="2">重要</option>
               <option value="3">紧急</option>
             </select></label
-          ><label>截止日期<input id="due-date" type="date" /></label
-          ><label>标签（逗号分隔）<input id="labels" /></label
-          ><label>依赖任务编号（逗号分隔）<input id="dependencies" /></label
-          ><button>保存任务</button>
+          ><label>截止日期<input id="due-date" type="date" /></label><label>标签（逗号分隔）<input id="labels" /></label
+          ><label>依赖任务编号（逗号分隔）<input id="dependencies" /></label><button>保存任务</button>
         </form>
         <p id="edit-version"></p>
-        <button id="reload-edit" type="button" hidden>
-          丢弃本次编辑并重新加载
-        </button>
+        <button id="reload-edit" type="button" hidden> 丢弃本次编辑并重新加载 </button>
       </section>
       <section data-page="detail" hidden>
         <h2 id="detail-title"></h2>
@@ -118,13 +108,7 @@
         <h3>评论</h3>
         <ul id="comments"></ul>
         <form id="comment-form">
-          <label
-            >评论内容<textarea
-              id="comment"
-              required
-              maxlength="1000"
-            ></textarea></label
-          ><button>发表评论</button>
+          <label>评论内容<textarea id="comment" required maxlength="1000"></textarea></label><button>发表评论</button>
         </form>
         <button id="history-link">查看操作历史</button>
       </section>

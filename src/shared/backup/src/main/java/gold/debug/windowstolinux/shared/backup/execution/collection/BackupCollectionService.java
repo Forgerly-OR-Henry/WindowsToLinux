@@ -1,5 +1,10 @@
 package gold.debug.windowstolinux.shared.backup.execution.collection;
 
+import java.io.*;
+import java.nio.file.*;
+import java.security.*;
+import java.util.*;
+
 import gold.debug.windowstolinux.shared.backup.contract.definition.*;
 import gold.debug.windowstolinux.shared.backup.contract.spi.*;
 import gold.debug.windowstolinux.shared.backup.contract.validation.*;
@@ -14,10 +19,6 @@ import gold.debug.windowstolinux.shared.model.failure.*;
 import gold.debug.windowstolinux.shared.model.lifecycle.*;
 import gold.debug.windowstolinux.shared.model.project.DeploymentRuntimeSpecification;
 import gold.debug.windowstolinux.shared.model.server.ManagedHelperProtocolVersion;
-import java.io.*;
-import java.nio.file.*;
-import java.security.*;
-import java.util.*;
 
 /**
  * Owns the shared stop, collect, recover and cleanup transaction. / 持有共享的停机、采集、恢复和清理事务。
@@ -61,8 +62,8 @@ public final class BackupCollectionService {
         interaction.checkCancelled();
         var server = session.collectCapabilities();
         var linux = session.collectDeploymentCapabilities();
-        if (server.managedHelperProtocolVersion() != ManagedHelperProtocolVersion.CURRENT
-                || !server.tarAvailable() || !server.nonInteractiveSudoAvailable())
+        if (server.managedHelperProtocolVersion() != ManagedHelperProtocolVersion.CURRENT || !server.tarAvailable()
+                || !server.nonInteractiveSudoAvailable())
             throw failure(request, BackupFailureType.COLLECTION_PREFLIGHT_FAILED,
                     "The target lacks the current managed backup capability", null);
         var original = observeOriginal(request, session, interaction, components);
@@ -80,15 +81,17 @@ public final class BackupCollectionService {
                 session.backupArtifacts().beginMaintenance(component.application(), request.operationId());
                 paused.add(component);
             }
-            for (String id : request.plan().stopOrder()) if (running.contains(id)) {
-                interaction.checkCancelled();
-                stopping.add(id);
-                var component = components.get(id);
-                var stopped = session.executeDeploymentLifecycle(component.application(), component.runtime(), LifecycleAction.STOP);
-                if (!stopped.ownershipVerified() || stopped.runtimeState() != RuntimeState.STOPPED)
-                    throw failure(request, BackupFailureType.COLLECTION_FAILED,
-                            "A component did not enter a verified stopped state", null);
-            }
+            for (String id : request.plan().stopOrder())
+                if (running.contains(id)) {
+                    interaction.checkCancelled();
+                    stopping.add(id);
+                    var component = components.get(id);
+                    var stopped = session.executeDeploymentLifecycle(component.application(), component.runtime(),
+                            LifecycleAction.STOP);
+                    if (!stopped.ownershipVerified() || stopped.runtimeState() != RuntimeState.STOPPED)
+                        throw failure(request, BackupFailureType.COLLECTION_FAILED,
+                                "A component did not enter a verified stopped state", null);
+                }
             collectComponents(request, session, storage, interaction, components, material);
             if (request.database().isPresent()) {
                 interaction.checkCancelled();
@@ -98,7 +101,9 @@ public final class BackupCollectionService {
                                 selected.profile(), true, true));
                 String name = "database/" + selected.databaseId() + ".dump";
                 Path target = storage.member(name);
-                try (var output = storage.open(target)) { databases.copyArtifact(databaseArtifact, output); }
+                try (var output = storage.open(target)) {
+                    databases.copyArtifact(databaseArtifact, output);
+                }
                 BackupMember member = databaseEvidence(name, target);
                 if (member.size() != databaseArtifact.byteCount() || !member.sha256().equals(databaseArtifact.sha256()))
                     throw failure(request, BackupFailureType.DATABASE_EVIDENCE_INVALID,
@@ -106,7 +111,9 @@ public final class BackupCollectionService {
                 material.put(member, target);
             }
             interaction.checkCancelled();
-        } catch (Exception collection) { problem = collection; }
+        } catch (Exception collection) {
+            problem = collection;
+        }
 
         // Cancellation must not prevent restoration of applications stopped by this attempt. / 取消不能阻止恢复本次尝试停止的应用。
         boolean interrupted = Thread.interrupted() || problem instanceof InterruptedException;
@@ -116,19 +123,29 @@ public final class BackupCollectionService {
                 BackupException manual = failure(request, BackupFailureType.COLLECTION_RECOVERY_FAILED,
                         "Original runtime state could not be verified; remote material and maintenance markers were retained",
                         problem == null ? recovery : problem);
-                if (problem != null) manual.addSuppressed(recovery);
+                if (problem != null)
+                    manual.addSuppressed(recovery);
                 throw new BackupException(manual.failure().withRecovery(FailureRecoveryAction.REQUIRE_MANUAL_RECOVERY,
                         FailureRecoveryDisposition.UNVERIFIED), manual);
             }
             problem = cleanup(request, session, paused, databases, databaseArtifact, problem);
-            if (problem instanceof InterruptedException cancellation) throw cancellation;
-            if (problem instanceof LinuxOperationException remote) throw remote;
-            if (problem instanceof IOException io) throw io;
-            if (problem instanceof RuntimeException runtime) throw runtime;
-            if (problem != null) throw failure(request, BackupFailureType.COLLECTION_FAILED, "Backup collection failed", problem);
-            return new BackupCollectionResult(material, databaseArtifact == null ? BackupDatabase.none() : databaseArtifact.database(),
+            if (problem instanceof InterruptedException cancellation)
+                throw cancellation;
+            if (problem instanceof LinuxOperationException remote)
+                throw remote;
+            if (problem instanceof IOException io)
+                throw io;
+            if (problem instanceof RuntimeException runtime)
+                throw runtime;
+            if (problem != null)
+                throw failure(request, BackupFailureType.COLLECTION_FAILED, "Backup collection failed", problem);
+            return new BackupCollectionResult(material,
+                    databaseArtifact == null ? BackupDatabase.none() : databaseArtifact.database(),
                     runtime(request, server, linux), original);
-        } finally { if (interrupted) Thread.currentThread().interrupt(); }
+        } finally {
+            if (interrupted)
+                Thread.currentThread().interrupt();
+        }
     }
 
     /**
@@ -146,14 +163,16 @@ public final class BackupCollectionService {
      */
     private Map<String, LifecycleObservation> observeOriginal(BackupCollectionRequest request,
             DeploymentRemoteSession session, BackupCollectionInteraction interaction,
-            Map<String, BackupCollectionRequest.Component> components) throws IOException, LinuxOperationException, InterruptedException {
+            Map<String, BackupCollectionRequest.Component> components)
+            throws IOException, LinuxOperationException, InterruptedException {
         var original = new LinkedHashMap<String, LifecycleObservation>();
         for (String id : request.plan().startOrder()) {
             interaction.checkCancelled();
             var component = components.get(id);
             var observation = session.observeDeployment(component.application(), component.runtime());
-            if (!observation.ownershipVerified() || !Set.of(RuntimeState.RUNNING, RuntimeState.STOPPED,
-                    RuntimeState.INSTALLED).contains(observation.runtimeState()))
+            if (!observation.ownershipVerified()
+                    || !Set.of(RuntimeState.RUNNING, RuntimeState.STOPPED, RuntimeState.INSTALLED)
+                            .contains(observation.runtimeState()))
                 throw failure(request, BackupFailureType.COLLECTION_PREFLIGHT_FAILED,
                         "Every component requires an authoritative runtime observation", null);
             original.put(id, observation);
@@ -176,19 +195,29 @@ public final class BackupCollectionService {
     private Exception cleanup(BackupCollectionRequest request, DeploymentRemoteSession session,
             List<BackupCollectionRequest.Component> paused, DatabaseOperationPort databases,
             DatabaseBackupArtifact databaseArtifact, Exception problem) {
-            // Independently attempt cleanup steps so a failure does not hide later cleanup failures. / 独立尝试各项清理，避免先发生的故障掩盖后续清理故障。
-            if (databaseArtifact != null) {
-                try { databases.discardArtifact(databaseArtifact); }
-                catch (Exception cleanup) { problem = accumulate(problem, cleanup); }
-            }
-            if (request.ownsMaintenance()) for (var component : paused.reversed()) {
-                try { session.backupArtifacts().endMaintenance(component.application(), request.operationId()); }
-                catch (Exception cleanup) { problem = accumulate(problem, cleanup); }
-            }
+        // Independently attempt cleanup steps so a failure does not hide later cleanup failures. / 独立尝试各项清理，避免先发生的故障掩盖后续清理故障。
+        if (databaseArtifact != null) {
             try {
-                if (!session.backupArtifacts().discardBackupOperation(request.operationId()).succeeded())
-                    throw failure(request, BackupFailureType.CLEANUP_FAILED, "Remote backup operation cleanup failed", null);
-            } catch (Exception cleanup) { problem = accumulate(problem, cleanup); }
+                databases.discardArtifact(databaseArtifact);
+            } catch (Exception cleanup) {
+                problem = accumulate(problem, cleanup);
+            }
+        }
+        if (request.ownsMaintenance())
+            for (var component : paused.reversed()) {
+                try {
+                    session.backupArtifacts().endMaintenance(component.application(), request.operationId());
+                } catch (Exception cleanup) {
+                    problem = accumulate(problem, cleanup);
+                }
+            }
+        try {
+            if (!session.backupArtifacts().discardBackupOperation(request.operationId()).succeeded())
+                throw failure(request, BackupFailureType.CLEANUP_FAILED, "Remote backup operation cleanup failed",
+                        null);
+        } catch (Exception cleanup) {
+            problem = accumulate(problem, cleanup);
+        }
         return problem;
     }
 
@@ -206,23 +235,26 @@ public final class BackupCollectionService {
      */
     private void collectComponents(BackupCollectionRequest request, DeploymentRemoteSession session,
             BackupCollectionMaterialPort storage, BackupCollectionInteraction interaction,
-            Map<String, BackupCollectionRequest.Component> components, Map<BackupMember, Path> material) throws Exception {
-            for (String id : request.plan().startOrder()) {
-                interaction.checkCancelled(); interaction.collecting(id);
-                var component = components.get(id);
-                collectArtifact(request, component, session, storage, material, RemoteBackupArtifactKind.RELEASE_TREE,
-                        "release", "releases/" + id + ".pax", BackupMemberKind.RELEASE);
-                for (var binding : component.resources().fileBindings()) {
-                    interaction.checkCancelled();
-                    collectArtifact(request, component, session, storage, material, RemoteBackupArtifactKind.FILE_TREE,
-                            binding.bindingId(), "data/" + id + "/files/" + binding.bindingId() + ".pax", BackupMemberKind.PERSISTENT_CONTENT);
-                }
-                if (component.runtime() instanceof DeploymentRuntimeSpecification.Container) {
-                    interaction.checkCancelled();
-                    collectArtifact(request, component, session, storage, material, RemoteBackupArtifactKind.OCI_IMAGE,
-                            "image", "runtime/" + id + ".oci", BackupMemberKind.RUNTIME);
-                }
+            Map<String, BackupCollectionRequest.Component> components, Map<BackupMember, Path> material)
+            throws Exception {
+        for (String id : request.plan().startOrder()) {
+            interaction.checkCancelled();
+            interaction.collecting(id);
+            var component = components.get(id);
+            collectArtifact(request, component, session, storage, material, RemoteBackupArtifactKind.RELEASE_TREE,
+                    "release", "releases/" + id + ".pax", BackupMemberKind.RELEASE);
+            for (var binding : component.resources().fileBindings()) {
+                interaction.checkCancelled();
+                collectArtifact(request, component, session, storage, material, RemoteBackupArtifactKind.FILE_TREE,
+                        binding.bindingId(), "data/" + id + "/files/" + binding.bindingId() + ".pax",
+                        BackupMemberKind.PERSISTENT_CONTENT);
             }
+            if (component.runtime() instanceof DeploymentRuntimeSpecification.Container) {
+                interaction.checkCancelled();
+                collectArtifact(request, component, session, storage, material, RemoteBackupArtifactKind.OCI_IMAGE,
+                        "image", "runtime/" + id + ".oci", BackupMemberKind.RUNTIME);
+            }
+        }
     }
 
     /**
@@ -243,20 +275,29 @@ public final class BackupCollectionService {
             var component = components.get(id);
             try {
                 var state = session.observeDeployment(component.application(), component.runtime());
-                if (stopping.contains(id) && state.ownershipVerified()
-                        && (state.runtimeState() == RuntimeState.STOPPED || state.runtimeState() == RuntimeState.INSTALLED))
-                    state = session.executeDeploymentLifecycle(component.application(), component.runtime(), LifecycleAction.START);
+                if (stopping.contains(id) && state.ownershipVerified() && (state.runtimeState() == RuntimeState.STOPPED
+                        || state.runtimeState() == RuntimeState.INSTALLED))
+                    state = session.executeDeploymentLifecycle(component.application(), component.runtime(),
+                            LifecycleAction.START);
                 if (!state.ownershipVerified() || state.runtimeState() != RuntimeState.RUNNING
-                        || !session.checkDeploymentHealth(component.application(), component.runtime(), component.runtime().healthCheck()).healthy())
-                    throw failure(request, BackupFailureType.COLLECTION_RECOVERY_FAILED, "A running component did not recover", null);
-            } catch (Exception recovery) { problem = accumulate(problem, recovery); }
+                        || !session.checkDeploymentHealth(component.application(), component.runtime(),
+                                component.runtime().healthCheck()).healthy())
+                    throw failure(request, BackupFailureType.COLLECTION_RECOVERY_FAILED,
+                            "A running component did not recover", null);
+            } catch (Exception recovery) {
+                problem = accumulate(problem, recovery);
+            }
         }
         if (running.stream().anyMatch(request.healthTriggers()::contains)) {
             var owner = components.get(request.applicationHealth().componentId());
             try {
-                if (!session.checkDeploymentHealth(owner.application(), owner.runtime(), request.applicationHealth().healthCheck()).healthy())
-                    throw failure(request, BackupFailureType.COLLECTION_RECOVERY_FAILED, "Application health did not recover", null);
-            } catch (Exception recovery) { problem = accumulate(problem, recovery); }
+                if (!session.checkDeploymentHealth(owner.application(), owner.runtime(),
+                        request.applicationHealth().healthCheck()).healthy())
+                    throw failure(request, BackupFailureType.COLLECTION_RECOVERY_FAILED,
+                            "Application health did not recover", null);
+            } catch (Exception recovery) {
+                problem = accumulate(problem, recovery);
+            }
         }
         return problem;
     }
@@ -281,14 +322,20 @@ public final class BackupCollectionService {
             DeploymentRemoteSession session, BackupCollectionMaterialPort storage, Map<BackupMember, Path> material,
             RemoteBackupArtifactKind kind, String resource, String name, BackupMemberKind memberKind)
             throws IOException, LinuxOperationException {
-        var remote = session.backupArtifacts().createBackupArtifact(new RemoteBackupArtifactRequest(request.operationId(),
-                request.plan().applicationId(), component.id(), component.application(), component.releaseSha256(), kind, resource,
-                request.maximumArtifactBytes()));
+        var remote = session.backupArtifacts()
+                .createBackupArtifact(new RemoteBackupArtifactRequest(request.operationId(),
+                        request.plan().applicationId(), component.id(), component.application(),
+                        component.releaseSha256(), kind, resource, request.maximumArtifactBytes()));
         Path path = storage.member(name);
-        try (var output = storage.open(path)) { session.backupArtifacts().copyBackupArtifact(remote, output); }
-        var evidence = kind == RemoteBackupArtifactKind.OCI_IMAGE ? validator.validateOci(path) : validator.validatePax(path);
+        try (var output = storage.open(path)) {
+            session.backupArtifacts().copyBackupArtifact(remote, output);
+        }
+        var evidence = kind == RemoteBackupArtifactKind.OCI_IMAGE
+                ? validator.validateOci(path)
+                : validator.validatePax(path);
         if (evidence.byteCount() != remote.byteCount() || !evidence.sha256().equals(remote.sha256()))
-            throw failure(request, BackupFailureType.INTEGRITY_FAILED, "Downloaded material differs from helper evidence", null);
+            throw failure(request, BackupFailureType.INTEGRITY_FAILED,
+                    "Downloaded material differs from helper evidence", null);
         material.put(new BackupMember(name, evidence.byteCount(), evidence.sha256(), memberKind), path);
     }
 
@@ -304,13 +351,19 @@ public final class BackupCollectionService {
      */
     private static BackupMember databaseEvidence(String name, Path path) throws IOException {
         MessageDigest digest;
-        try { digest = MessageDigest.getInstance("SHA-256"); }
-        catch (NoSuchAlgorithmException unavailable) { throw new IllegalStateException("SHA-256 unavailable", unavailable); }
-        try (var input = Files.newInputStream(path)) {
-            byte[] buffer = new byte[65536]; int count;
-            while ((count = input.read(buffer)) != -1) digest.update(buffer, 0, count);
+        try {
+            digest = MessageDigest.getInstance("SHA-256");
+        } catch (NoSuchAlgorithmException unavailable) {
+            throw new IllegalStateException("SHA-256 unavailable", unavailable);
         }
-        return new BackupMember(name, Files.size(path), HexFormat.of().formatHex(digest.digest()), BackupMemberKind.DATABASE);
+        try (var input = Files.newInputStream(path)) {
+            byte[] buffer = new byte[65536];
+            int count;
+            while ((count = input.read(buffer)) != -1)
+                digest.update(buffer, 0, count);
+        }
+        return new BackupMember(name, Files.size(path), HexFormat.of().formatHex(digest.digest()),
+                BackupMemberKind.DATABASE);
     }
 
     /**
@@ -322,15 +375,22 @@ public final class BackupCollectionService {
      * @param linux linux / Linux 操作
      * @return manifest runtime facts from the observed Linux capabilities and reviewed component runtimes / 根据 Linux 能力观测及已审阅组件运行规格构建清单运行事实
      */
-    private static BackupRuntime runtime(BackupCollectionRequest request, ServerCapabilityFacts server, LinuxCapabilityFacts linux) {
-        var capabilities = new TreeSet<String>(); capabilities.add("managed-helper-v" + server.managedHelperProtocolVersion());
-        if (linux.systemdAvailable()) capabilities.add("systemd");
-        if (linux.dockerOperational()) capabilities.add("docker");
-        if (linux.podmanOperational()) capabilities.add("podman");
-        long containers = request.components().stream().filter(component -> component.runtime() instanceof DeploymentRuntimeSpecification.Container).count();
+    private static BackupRuntime runtime(BackupCollectionRequest request, ServerCapabilityFacts server,
+            LinuxCapabilityFacts linux) {
+        var capabilities = new TreeSet<String>();
+        capabilities.add("managed-helper-v" + server.managedHelperProtocolVersion());
+        if (linux.systemdAvailable())
+            capabilities.add("systemd");
+        if (linux.dockerOperational())
+            capabilities.add("docker");
+        if (linux.podmanOperational())
+            capabilities.add("podman");
+        long containers = request.components().stream()
+                .filter(component -> component.runtime() instanceof DeploymentRuntimeSpecification.Container).count();
         return new BackupRuntime(linux.distro().name().toLowerCase(Locale.ROOT), linux.version(),
                 containers == 0 ? "systemd" : containers == request.components().size() ? "container" : "mixed",
-                "managed-helper-" + server.managedHelperProtocolVersion(), linux.architecture(), List.copyOf(capabilities));
+                "managed-helper-" + server.managedHelperProtocolVersion(), linux.architecture(),
+                List.copyOf(capabilities));
     }
 
     /**
@@ -342,8 +402,10 @@ public final class BackupCollectionService {
      * @return the original exception with the additional cause, or the additional exception when no original exists / 附带后续原因的原始异常；原始异常不存在时返回后续异常
      */
     private static Exception accumulate(Exception original, Exception additional) {
-        if (original == null) return additional;
-        if (original != additional) original.addSuppressed(additional);
+        if (original == null)
+            return additional;
+        if (original != additional)
+            original.addSuppressed(additional);
         return original;
     }
 
@@ -357,10 +419,11 @@ public final class BackupCollectionService {
      * @param cause original failure retained as the nested cause / 保留为嵌套原因的原始失败
      * @return a backup-owned failure bound to the UUID encoded by the remote backup operation token / 备份模块持有的失败，并绑定远端备份操作令牌编码的 UUID
      */
-    private static BackupException failure(BackupCollectionRequest request, BackupFailureType type, String diagnostic, Throwable cause) {
+    private static BackupException failure(BackupCollectionRequest request, BackupFailureType type, String diagnostic,
+            Throwable cause) {
         String hex = request.operationId().substring("backup-".length());
-        var identity = OperationIdentity.from(hex.substring(0, 8) + "-" + hex.substring(8, 12) + "-" + hex.substring(12, 16)
-                + "-" + hex.substring(16, 20) + "-" + hex.substring(20));
+        var identity = OperationIdentity.from(hex.substring(0, 8) + "-" + hex.substring(8, 12) + "-"
+                + hex.substring(12, 16) + "-" + hex.substring(16, 20) + "-" + hex.substring(20));
         return new BackupException(FailureDescriptor.create(type, identity, diagnostic), cause);
     }
 }

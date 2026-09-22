@@ -17,6 +17,7 @@ public interface HostKeyEvaluator {
      * @return the operation result / 操作结果
      */
     HostKeyDecision verify(SshEndpoint endpoint, String observedSha256Fingerprint);
+
     /**
      * Verifies one key with both representations for controlled historical migration. / 使用两种表示验证同一公钥，以受控迁移历史记录。
      *

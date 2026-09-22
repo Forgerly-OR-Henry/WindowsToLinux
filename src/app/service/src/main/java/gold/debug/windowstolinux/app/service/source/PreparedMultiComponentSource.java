@@ -1,11 +1,11 @@
 package gold.debug.windowstolinux.app.service.source;
 
-import gold.debug.windowstolinux.shared.model.analysis.DeploymentAdmissionStatus;
-import gold.debug.windowstolinux.shared.model.assessment.MultiComponentProjectAssessment;
-
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Objects;
+
+import gold.debug.windowstolinux.shared.model.analysis.DeploymentAdmissionStatus;
+import gold.debug.windowstolinux.shared.model.assessment.MultiComponentProjectAssessment;
 
 /**
  * Static assessment plus independent immutable archives for a whole mixed application. / 整个混合应用的静态评估及独立不可变归档。
@@ -13,10 +13,8 @@ import java.util.Objects;
  * @param assessment the typed static assessment / 类型化静态评估
  * @param components reviewed components in the application graph / 应用图中的已审阅组件
  */
-public record PreparedMultiComponentSource(
-        MultiComponentProjectAssessment assessment,
-        Map<String, PreparedComponentSource> components
-) {
+public record PreparedMultiComponentSource(MultiComponentProjectAssessment assessment,
+        Map<String, PreparedComponentSource> components) {
     /**
      * Validates exact archive coverage for planning-ready components. / 验证可计划组件的精确归档覆盖。
      *
@@ -28,8 +26,8 @@ public record PreparedMultiComponentSource(
     public PreparedMultiComponentSource {
         assessment = Objects.requireNonNull(assessment, "assessment");
         LinkedHashMap<String, PreparedComponentSource> normalized = new LinkedHashMap<>();
-        Objects.requireNonNull(components, "components").entrySet().stream()
-                .sorted(Map.Entry.comparingByKey()).forEach(entry -> normalized.put(entry.getKey(), entry.getValue()));
+        Objects.requireNonNull(components, "components").entrySet().stream().sorted(Map.Entry.comparingByKey())
+                .forEach(entry -> normalized.put(entry.getKey(), entry.getValue()));
         components = java.util.Collections.unmodifiableMap(normalized);
         var expected = assessment.components().stream().filter(component -> component.runtime().isPresent())
                 .map(component -> component.componentId()).sorted().toList();

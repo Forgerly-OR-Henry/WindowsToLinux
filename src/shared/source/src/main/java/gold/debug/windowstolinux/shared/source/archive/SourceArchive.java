@@ -17,14 +17,8 @@ import java.util.Objects;
  * @param uncompressedByteCount uncompressed byte count / 未压缩字节数量
  * @param excludedEntries entries excluded by the safe archive policy / 安全归档策略排除的条目
  */
-public record SourceArchive(
-        Path archivePath,
-        String contentSha256,
-        long fileCount,
-        long byteCount,
-        long uncompressedByteCount,
-        List<String> excludedEntries
-) {
+public record SourceArchive(Path archivePath, String contentSha256, long fileCount, long byteCount,
+        long uncompressedByteCount, List<String> excludedEntries) {
     /**
      * Validates and binds the inputs required by source archive.
      * <p>校验并绑定源码归档所需输入。

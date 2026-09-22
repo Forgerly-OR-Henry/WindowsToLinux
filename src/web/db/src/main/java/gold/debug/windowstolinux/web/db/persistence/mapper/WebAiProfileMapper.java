@@ -8,4 +8,5 @@ import org.apache.ibatis.annotations.Mapper;
  * <p>将限定作用域的AI配置资料记录映射到显式数据库语句。
  */
 @Mapper
-public interface WebAiProfileMapper extends ResourceRevisionMapper<WebAiProfileEntity> { }
+public interface WebAiProfileMapper extends ResourceRevisionMapper<WebAiProfileEntity> {
+}

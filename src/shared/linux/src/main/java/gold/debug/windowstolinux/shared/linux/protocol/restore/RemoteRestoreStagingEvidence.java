@@ -15,16 +15,9 @@ import java.util.Objects;
  * @param existingReleaseUntouched existing release untouched / 既有发布Untouched
  * @param evidence observations supporting the reported result / 支持所报告结果的观测证据
  */
-public record RemoteRestoreStagingEvidence(
-        String candidateId,
-        String remoteRoot,
-        String candidateToken,
-        long stagedBytes,
-        boolean isolated,
-        boolean integrityVerified,
-        boolean existingReleaseUntouched,
-        List<String> evidence
-) {
+public record RemoteRestoreStagingEvidence(String candidateId, String remoteRoot, String candidateToken,
+        long stagedBytes, boolean isolated, boolean integrityVerified, boolean existingReleaseUntouched,
+        List<String> evidence) {
     /**
      * Validates bounded evidence and managed paths. / 校验有界证据和受管路径。
      *
@@ -46,10 +39,13 @@ public record RemoteRestoreStagingEvidence(
         }
         remoteRoot = Objects.requireNonNull(remoteRoot, "remoteRoot").trim();
         String expectedRoot = "/var/lib/windowstolinux/work/" + candidateId + "/mutable/restore";
-        if (!remoteRoot.equals(expectedRoot)) throw new IllegalArgumentException("remoteRoot is outside the candidate");
+        if (!remoteRoot.equals(expectedRoot))
+            throw new IllegalArgumentException("remoteRoot is outside the candidate");
         candidateToken = Objects.requireNonNull(candidateToken, "candidateToken").trim();
-        if (!candidateToken.matches("[0-9a-f]{32}")) throw new IllegalArgumentException("candidateToken is invalid");
-        if (stagedBytes < 0) throw new IllegalArgumentException("stagedBytes must not be negative");
+        if (!candidateToken.matches("[0-9a-f]{32}"))
+            throw new IllegalArgumentException("candidateToken is invalid");
+        if (stagedBytes < 0)
+            throw new IllegalArgumentException("stagedBytes must not be negative");
         evidence = List.copyOf(Objects.requireNonNull(evidence, "evidence"));
         if (evidence.isEmpty() || evidence.size() > 64 || evidence.stream().anyMatch(value -> value == null
                 || value.isBlank() || value.length() > 512 || value.chars().anyMatch(Character::isISOControl))) {

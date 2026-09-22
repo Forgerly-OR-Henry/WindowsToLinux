@@ -1,9 +1,9 @@
 package gold.debug.windowstolinux.shared.model.project;
 
-import gold.debug.windowstolinux.shared.model.server.LinuxDistroType;
-
 import java.time.LocalDate;
 import java.util.Objects;
+
+import gold.debug.windowstolinux.shared.model.server.LinuxDistroType;
 
 /**
  * One exact target combination backed by real product-entrypoint acceptance evidence.
@@ -15,12 +15,8 @@ import java.util.Objects;
  * @param architecture exact architecture / 精确架构
  * @param validatedOn date of the real acceptance / 真实验收日期
  */
-public record ValidatedDeploymentTarget(
-        LinuxDistroType distro,
-        String version,
-        String architecture,
-        LocalDate validatedOn
-) {
+public record ValidatedDeploymentTarget(LinuxDistroType distro, String version, String architecture,
+        LocalDate validatedOn) {
     /**
      * Validates a non-secret exact target identity. / 验证非秘密的精确目标身份。
      *

@@ -35,15 +35,10 @@ fn execute() -> Result<i32, (i32, String)> {
                 let result = (|| {
                     let path = files[index].as_ref().map_err(Clone::clone)?;
                     let prepared = input::prepare(path, c, index)?;
-                    let mut args = vec![
-                        "--input".into(),
-                        prepared.path.to_string_lossy().into_owned(),
-                    ];
+                    let mut args = vec!["--input".into(), prepared.path.to_string_lossy().into_owned()];
                     args.extend(c.forwarded.clone());
                     let value = worker::invoke(&c.helper, &args, c.timeout)?;
-                    let size = serde_json::to_vec(&value)
-                        .map_err(|e| (4, e.to_string()))?
-                        .len();
+                    let size = serde_json::to_vec(&value).map_err(|e| (4, e.to_string()))?.len();
                     if bytes.fetch_add(size, Ordering::Relaxed) + size > 16 * 1024 * 1024 {
                         return Err((4, "批量汇总数据超过 16 MiB 限制".into()));
                     }
@@ -92,10 +87,7 @@ fn execute() -> Result<i32, (i32, String)> {
             aggregate.matched,
             aggregate.invalid
         );
-        println!(
-            "{}",
-            serde_json::to_string_pretty(&aggregate.json(c.top)).unwrap()
-        );
+        println!("{}", serde_json::to_string_pretty(&aggregate.json(c.top)).unwrap());
     }
     for item in &items {
         if item["status"] == "error" {

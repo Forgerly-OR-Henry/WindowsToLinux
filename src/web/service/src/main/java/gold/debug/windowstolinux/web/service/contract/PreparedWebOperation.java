@@ -1,8 +1,9 @@
 package gold.debug.windowstolinux.web.service.contract;
 
-import tools.jackson.databind.JsonNode;
 import java.util.List;
 import java.util.Objects;
+
+import tools.jackson.databind.JsonNode;
 
 /**
  * Carries server-prepared work whose resource identifiers and physical target locks are resolved before persistence.
@@ -19,7 +20,7 @@ import java.util.Objects;
  * @param work work / 工作
  */
 public record PreparedWebOperation(String kind, JsonNode request, List<String> serverIds, List<String> lockKeys,
-                                   boolean mutating, String sourceId, String applicationId, String backupId, WebWork work) {
+        boolean mutating, String sourceId, String applicationId, String backupId, WebWork work) {
     /**
      * Validates and binds the inputs required by prepared web operation.
      * <p>校验并绑定已准备Web操作所需输入。
@@ -36,20 +37,25 @@ public record PreparedWebOperation(String kind, JsonNode request, List<String> s
      * @throws NullPointerException if a required input is absent / 必需输入缺失时
      */
     public PreparedWebOperation {
-        request = request.deepCopy(); serverIds = List.copyOf(serverIds); lockKeys = List.copyOf(lockKeys); Objects.requireNonNull(work);
+        request = request.deepCopy();
+        serverIds = List.copyOf(serverIds);
+        lockKeys = List.copyOf(lockKeys);
+        Objects.requireNonNull(work);
     }
     /**
      * Runs prepared Web work with its task interaction boundary.
      * <p>通过任务交互边界执行已准备的 Web 工作。
      */
-    @FunctionalInterface public interface WebWork {
-    /**
-     * Executes json node.
-     * <p>执行JSON节点。
-     *
-     * @param interaction caller-owned progress, confirmation and input callbacks / 调用方持有的进度、确认及输入回调
-     * @return constructed or resolved json node / 构造或解析得到的JSON节点
-     * @throws Exception if the delegated operation or caller-provided interaction fails / 被委派操作或调用方提供的交互失败时
-     */
-     JsonNode execute(TaskInteraction interaction) throws Exception; }
+    @FunctionalInterface
+    public interface WebWork {
+        /**
+         * Executes json node.
+         * <p>执行JSON节点。
+         *
+         * @param interaction caller-owned progress, confirmation and input callbacks / 调用方持有的进度、确认及输入回调
+         * @return constructed or resolved json node / 构造或解析得到的JSON节点
+         * @throws Exception if the delegated operation or caller-provided interaction fails / 被委派操作或调用方提供的交互失败时
+         */
+        JsonNode execute(TaskInteraction interaction) throws Exception;
+    }
 }

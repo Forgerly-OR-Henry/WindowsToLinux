@@ -16,13 +16,8 @@ import java.util.Objects;
  * @param backupsDirectory backups directory / 备份集合目录
  * @param diagnosticsDirectory diagnostics directory / 诊断目录
  */
-public record DesktopStorageLayout(
-        Path root,
-        Path databaseFile,
-        Path workDirectory,
-        Path backupsDirectory,
-        Path diagnosticsDirectory
-) {
+public record DesktopStorageLayout(Path root, Path databaseFile, Path workDirectory, Path backupsDirectory,
+        Path diagnosticsDirectory) {
     /**
      * Validates that every shared path is an exact child of the resolved root. / 校验所有共享路径均为解析数据根的精确子项。
      *
@@ -48,8 +43,8 @@ public record DesktopStorageLayout(
      */
     public static DesktopStorageLayout from(Path dataRoot) {
         Path root = normalize(dataRoot, "dataRoot");
-        return new DesktopStorageLayout(root, root.resolve("windowstolinux.db"),
-                root.resolve("work"), root.resolve("backups"), root.resolve("error-logs"));
+        return new DesktopStorageLayout(root, root.resolve("windowstolinux.db"), root.resolve("work"),
+                root.resolve("backups"), root.resolve("error-logs"));
     }
 
     /**
@@ -61,11 +56,12 @@ public record DesktopStorageLayout(
         Files.createDirectories(root);
         requireWritableDirectory(root);
         for (Path directory : List.of(workDirectory, backupsDirectory, diagnosticsDirectory)) {
-            if (!Files.exists(directory, LinkOption.NOFOLLOW_LINKS)) Files.createDirectory(directory);
+            if (!Files.exists(directory, LinkOption.NOFOLLOW_LINKS))
+                Files.createDirectory(directory);
             requireWritableDirectory(directory);
         }
-        if (Files.exists(databaseFile, LinkOption.NOFOLLOW_LINKS)
-                && (Files.isSymbolicLink(databaseFile) || !Files.isRegularFile(databaseFile, LinkOption.NOFOLLOW_LINKS))) {
+        if (Files.exists(databaseFile, LinkOption.NOFOLLOW_LINKS) && (Files.isSymbolicLink(databaseFile)
+                || !Files.isRegularFile(databaseFile, LinkOption.NOFOLLOW_LINKS))) {
             throw new IOException("desktop database path is not a regular file");
         }
     }
@@ -78,8 +74,7 @@ public record DesktopStorageLayout(
      * @throws IOException if the required file or stream operation fails / 所需文件或流操作失败时
      */
     private static void requireWritableDirectory(Path directory) throws IOException {
-        if (Files.isSymbolicLink(directory)
-                || !Files.isDirectory(directory, LinkOption.NOFOLLOW_LINKS)
+        if (Files.isSymbolicLink(directory) || !Files.isDirectory(directory, LinkOption.NOFOLLOW_LINKS)
                 || !Files.isWritable(directory)) {
             throw new IOException("desktop data layout contains an unavailable or unsafe directory");
         }

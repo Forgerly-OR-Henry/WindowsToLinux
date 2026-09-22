@@ -29,7 +29,8 @@ final class GitRepositoryFeaturePolicy {
             throw new IOException("Git symbolic-link entries are not accepted by the source-only snapshot policy");
         }
         if (Files.exists(checkout.resolve(".gitmodules"), LinkOption.NOFOLLOW_LINKS)) {
-            throw new IOException("Git submodules require an explicit controlled policy and are not accepted by this snapshot");
+            throw new IOException(
+                    "Git submodules require an explicit controlled policy and are not accepted by this snapshot");
         }
         Path attributes = checkout.resolve(".gitattributes");
         if (Files.isRegularFile(attributes, LinkOption.NOFOLLOW_LINKS)) {
@@ -38,7 +39,8 @@ final class GitRepositoryFeaturePolicy {
             }
             String content = Files.readString(attributes, StandardCharsets.UTF_8);
             if (content.matches("(?s).*\\bfilter=lfs\\b.*")) {
-                throw new IOException("Git LFS requires an explicit bounded materialization policy and is not accepted by this snapshot");
+                throw new IOException(
+                        "Git LFS requires an explicit bounded materialization policy and is not accepted by this snapshot");
             }
         }
     }

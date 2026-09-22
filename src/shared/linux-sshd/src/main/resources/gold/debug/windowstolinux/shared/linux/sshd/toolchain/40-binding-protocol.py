@@ -60,7 +60,13 @@ def existing_installation(fields):
     if marker.is_symlink() or marker.stat().st_uid != 0 or marker.stat().st_mode & 0o022:
         fail('ownership', 'saved installation marker must be root-owned')
     record = json.loads(marker.read_text())
-    if [record[k] for k in ('ecosystem', 'version', 'directory', 'origin', 'sha256')] != [fields[0], fields[6], fields[7], fields[8], fields[10]]:
+    if [record[k] for k in ('ecosystem', 'version', 'directory', 'origin', 'sha256')] != [
+        fields[0],
+        fields[6],
+        fields[7],
+        fields[8],
+        fields[10],
+    ]:
         fail('integrity', 'saved installation differs from the immutable binding')
     if record['source'] != base64.b64decode(fields[9], validate=True).decode():
         fail('integrity', 'saved installation source differs from the immutable binding')
@@ -86,7 +92,12 @@ def restore(encoded):
     # Saved identities are independent of the currently shipped branch catalog. Still rediscover through official metadata.
     for row in rows[1:]:
         f = row.split('\t')
-        if len(f) != 11 or not version_key(f[6]) or f[8] not in ('MANAGED', 'SYSTEM') or not re.fullmatch('[a-f0-9]{64}', f[10]):
+        if (
+            len(f) != 11
+            or not version_key(f[6])
+            or f[8] not in ('MANAGED', 'SYSTEM')
+            or not re.fullmatch('[a-f0-9]{64}', f[10])
+        ):
             fail('request', 'invalid portable tool identity')
         count = 1 if f[0] in ('JAVA', 'NODE', 'DOTNET') else 2
         branch = '.'.join(str(n) for n in version_key(f[6])[:count])
@@ -102,7 +113,12 @@ def restore(encoded):
         if f[0] == 'JAVA':
             os.environ['JAVA_HOME'] = record['directory']
         # A portable system binding is relocated to the exact official release on the destination host.
-        f[7], f[8], f[9], f[10] = record['directory'], record['origin'], base64.b64encode(record['source'].encode()).decode(), record['sha256']
+        f[7], f[8], f[9], f[10] = (
+            record['directory'],
+            record['origin'],
+            base64.b64encode(record['source'].encode()).decode(),
+            record['sha256'],
+        )
         rows[rows.index(row)] = '\t'.join(f)
     bind(base64.b64encode(('\n'.join(rows) + '\n').encode()).decode(), restoring=True)
 
@@ -152,6 +168,7 @@ def prepare_shared_directories():
 def main(args):
     global DEADLINE
     import fcntl
+
     if os.geteuid() != 0:
         fail('permission', 'managed preparation requires the approved privileged environment boundary')
     prepare_shared_directories()
@@ -187,7 +204,12 @@ def main(args):
         if len(args) == 3 and args[0] == 'relocate-venv':
             relocate_venv(args[1], args[2])
             return
-        if len(args) != 6 or args[0] != 'prepare' or not re.fullmatch(r'\d{1,3}(?:\.\d{1,3})?', args[2]) or not re.fullmatch(r'(?:-|[0-9][0-9.u+_-]{0,95})', args[3]):
+        if (
+            len(args) != 6
+            or args[0] != 'prepare'
+            or not re.fullmatch(r'\d{1,3}(?:\.\d{1,3})?', args[2])
+            or not re.fullmatch(r'(?:-|[0-9][0-9.u+_-]{0,95})', args[3])
+        ):
             fail('request', 'invalid preparation arguments')
         if not admitted(args[1], args[2]):
             fail('unavailable', 'branch is outside the shipped catalog')
@@ -208,7 +230,10 @@ def main(args):
         record = reuse_system(args[1], identity)
         if record is None:
             record = install(args[1], identity, official_url(url), algorithm, digest, layout)
-        print('TOOLCHAIN=' + '|'.join(record[k] for k in ('ecosystem', 'version', 'directory', 'origin', 'source', 'sha256')))
+        print(
+            'TOOLCHAIN='
+            + '|'.join(record[k] for k in ('ecosystem', 'version', 'directory', 'origin', 'source', 'sha256'))
+        )
 
 
 if __name__ == '__main__':

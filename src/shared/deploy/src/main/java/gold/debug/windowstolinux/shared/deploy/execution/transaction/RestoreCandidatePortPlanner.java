@@ -1,5 +1,12 @@
 package gold.debug.windowstolinux.shared.deploy.execution.transaction;
 
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Objects;
+import java.util.Set;
+
 import gold.debug.windowstolinux.shared.deploy.contract.spi.CandidatePortBinding;
 import gold.debug.windowstolinux.shared.deploy.contract.spi.CandidatePortMode;
 import gold.debug.windowstolinux.shared.deploy.contract.spi.CandidatePortPlan;
@@ -7,13 +14,6 @@ import gold.debug.windowstolinux.shared.deploy.contract.spi.RestoreDeploymentCom
 import gold.debug.windowstolinux.shared.deploy.contract.spi.RestoreDeploymentRequest;
 import gold.debug.windowstolinux.shared.model.health.HealthCheck;
 import gold.debug.windowstolinux.shared.model.project.DeploymentRuntimeSpecification;
-
-import java.util.ArrayList;
-import java.util.HashSet;
-import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.Objects;
-import java.util.Set;
 
 /**
  * Selects the fail-closed application-wide restore mode and unique dynamic loopback ports. / 选择故障关闭的整应用恢复模式及唯一动态回环端口。
@@ -24,6 +24,7 @@ public final class RestoreCandidatePortPlanner {
      * <p>首次候选端口。
      */
     public static final int FIRST_CANDIDATE_PORT = 49152;
+
     /**
      * LAST CANDIDATE PORT.
      * <p>上次候选端口。
@@ -51,8 +52,8 @@ public final class RestoreCandidatePortPlanner {
      * @param databaseActivationRequired database activation required / 数据库激活必需
      * @return constructed or resolved candidate port plan / 构造或解析得到的候选端口计划
      */
-    public CandidatePortPlan plan(
-            RestoreDeploymentRequest request, Set<Integer> unavailablePorts, boolean databaseActivationRequired) {
+    public CandidatePortPlan plan(RestoreDeploymentRequest request, Set<Integer> unavailablePorts,
+            boolean databaseActivationRequired) {
         return plan(request, unavailablePorts, Set.of(), databaseActivationRequired);
     }
 
@@ -68,24 +69,31 @@ public final class RestoreCandidatePortPlanner {
      * @throws IllegalStateException if the required state or runtime facility is unavailable / 所需状态或运行设施不可用时
      * @throws NullPointerException if a required input is absent / 必需输入缺失时
      */
-    public CandidatePortPlan plan(RestoreDeploymentRequest request, Set<Integer> tcp, Set<Integer> udp, boolean databaseActivationRequired) {
+    public CandidatePortPlan plan(RestoreDeploymentRequest request, Set<Integer> tcp, Set<Integer> udp,
+            boolean databaseActivationRequired) {
         Objects.requireNonNull(request, "request");
         Set<String> unavailable = new HashSet<>();
-        tcp.forEach(port -> unavailable.add("tcp:" + port)); udp.forEach(port -> unavailable.add("udp:" + port));
+        tcp.forEach(port -> unavailable.add("tcp:" + port));
+        udp.forEach(port -> unavailable.add("udp:" + port));
         boolean parallel = (!databaseActivationRequired || request.isolatedDatabase())
                 && request.components().stream().allMatch(this::supportsTypedOverride);
         LinkedHashMap<String, List<CandidatePortBinding>> bindings = new LinkedHashMap<>();
         if (!parallel) {
             request.components().forEach(component -> bindings.put(component.componentId(), List.of()));
-            return new CandidatePortPlan(request.isolatedDatabase() ? CandidatePortMode.ISOLATED_STOPPED : CandidatePortMode.SHORT_STOP, bindings);
+            return new CandidatePortPlan(
+                    request.isolatedDatabase() ? CandidatePortMode.ISOLATED_STOPPED : CandidatePortMode.SHORT_STOP,
+                    bindings);
         }
-        request.components().forEach(component -> officialPorts(component).forEach(port -> unavailable.add(port.protocol() + ":" + port.officialPort())));
+        request.components().forEach(component -> officialPorts(component)
+                .forEach(port -> unavailable.add(port.protocol() + ":" + port.officialPort())));
         for (RestoreDeploymentComponent component : request.components()) {
             List<CandidatePortBinding> selected = new ArrayList<>();
             for (var port : officialPorts(component)) {
                 int candidate = FIRST_CANDIDATE_PORT;
-                while (candidate <= LAST_CANDIDATE_PORT && unavailable.contains(port.protocol() + ":" + candidate)) candidate++;
-                if (candidate > LAST_CANDIDATE_PORT) throw new IllegalStateException("no candidate port remains");
+                while (candidate <= LAST_CANDIDATE_PORT && unavailable.contains(port.protocol() + ":" + candidate))
+                    candidate++;
+                if (candidate > LAST_CANDIDATE_PORT)
+                    throw new IllegalStateException("no candidate port remains");
                 selected.add(new CandidatePortBinding(port.officialPort(), candidate, port.protocol()));
                 unavailable.add(port.protocol() + ":" + candidate);
             }
@@ -102,7 +110,9 @@ public final class RestoreCandidatePortPlanner {
      * @return true when typed override condition holds for this contract, false otherwise / 当前契约是否满足类型化覆盖项条件时为 true，否则为 false
      */
     private boolean supportsTypedOverride(RestoreDeploymentComponent component) {
-        if (component.runtime().healthCheck().portNumber().isEmpty() && component.runtime().workload().endpoints().isEmpty()) return true;
+        if (component.runtime().healthCheck().portNumber().isEmpty()
+                && component.runtime().workload().endpoints().isEmpty())
+            return true;
         return switch (component.runtime()) {
             case DeploymentRuntimeSpecification.Container ignored -> true;
             case DeploymentRuntimeSpecification.StaticSite ignored -> true;
@@ -119,7 +129,8 @@ public final class RestoreCandidatePortPlanner {
      * @param officialPort official port / 正式端口
      * @param protocol protocol / 协议
      */
-    private record OfficialPort(int officialPort, String protocol) { }
+    private record OfficialPort(int officialPort, String protocol) {
+    }
 
     /**
      * Resolves the component's official host ports and transport protocols from its reviewed runtime.
@@ -130,11 +141,14 @@ public final class RestoreCandidatePortPlanner {
      */
     private List<OfficialPort> officialPorts(RestoreDeploymentComponent component) {
         var runtime = component.runtime();
-        if (!runtime.workload().endpoints().isEmpty()) return runtime.workload().endpoints().stream()
-                .map(endpoint -> new OfficialPort(endpoint.hostPort(), endpoint.protocol().transport())).toList();
-        if (runtime instanceof DeploymentRuntimeSpecification.Container container) return container.publishedPorts().keySet().stream().sorted()
-                .map(port -> new OfficialPort(port, "tcp")).toList();
-        return runtime.healthCheck().portNumber().stream().mapToObj(port -> new OfficialPort(port,
-                runtime.healthCheck() instanceof HealthCheck.Udp ? "udp" : "tcp")).toList();
+        if (!runtime.workload().endpoints().isEmpty())
+            return runtime.workload().endpoints().stream()
+                    .map(endpoint -> new OfficialPort(endpoint.hostPort(), endpoint.protocol().transport())).toList();
+        if (runtime instanceof DeploymentRuntimeSpecification.Container container)
+            return container.publishedPorts().keySet().stream().sorted().map(port -> new OfficialPort(port, "tcp"))
+                    .toList();
+        return runtime.healthCheck().portNumber().stream().mapToObj(
+                port -> new OfficialPort(port, runtime.healthCheck() instanceof HealthCheck.Udp ? "udp" : "tcp"))
+                .toList();
     }
 }

@@ -3,6 +3,7 @@
 The original fixture is never edited. Commands run directly (without a shell).
 Use {fixture} in command arguments to refer to the disposable copy.
 """
+
 import argparse
 import json
 import os
@@ -22,8 +23,7 @@ def verify(source, work_parent, removals, replacements, command, expected, timeo
         raise ValueError('temporary copies must be outside the source tree')
     with tempfile.TemporaryDirectory(prefix='fixture-negative-', dir=work_parent) as temporary:
         root = Path(temporary) / 'fixture'
-        shutil.copytree(source, root, symlinks=True,
-                        ignore=shutil.ignore_patterns('.git', '__pycache__'))
+        shutil.copytree(source, root, symlinks=True, ignore=shutil.ignore_patterns('.git', '__pycache__'))
 
         def target(relative):
             path = root / relative
@@ -45,16 +45,20 @@ def verify(source, work_parent, removals, replacements, command, expected, timeo
             if old not in content:
                 raise ValueError('replacement did not match: ' + relative)
             path.write_text(content.replace(old, new), encoding='utf-8')
-        process = subprocess.Popen([part.replace('{fixture}', str(root)) for part in command],
-                                   cwd=root, env=dict(os.environ, CI='true'), stdin=subprocess.DEVNULL,
-                                   stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                                   start_new_session=os.name != 'nt')
+        process = subprocess.Popen(
+            [part.replace('{fixture}', str(root)) for part in command],
+            cwd=root,
+            env=dict(os.environ, CI='true'),
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            start_new_session=os.name != 'nt',
+        )
         try:
             stdout, _ = process.communicate(timeout=timeout)
         except subprocess.TimeoutExpired:
             if os.name == 'nt':
-                subprocess.run(['taskkill.exe', '/PID', str(process.pid), '/T', '/F'],
-                               capture_output=True, timeout=10)
+                subprocess.run(['taskkill.exe', '/PID', str(process.pid), '/T', '/F'], capture_output=True, timeout=10)
             else:
                 os.killpg(process.pid, signal.SIGKILL)
             process.communicate(timeout=10)
@@ -62,9 +66,13 @@ def verify(source, work_parent, removals, replacements, command, expected, timeo
         output = stdout.decode('utf-8', errors='replace')
         if process.returncode == 0 or expected.lower() not in output.lower():
             raise AssertionError((process.returncode, expected, output[-4000:]))
-        return {'status': 'passed', 'exit_code': process.returncode,
-                'removed': removals, 'changed': [item[0] for item in replacements],
-                'expected_diagnostic': expected}
+        return {
+            'status': 'passed',
+            'exit_code': process.returncode,
+            'removed': removals,
+            'changed': [item[0] for item in replacements],
+            'expected_diagnostic': expected,
+        }
 
 
 def main():
@@ -80,8 +88,9 @@ def main():
     command = args.command[1:] if args.command and args.command[0] == '--' else args.command
     if not command or not (args.remove or args.replace):
         parser.error('provide a mutation and a direct verification command after --')
-    print(json.dumps(verify(args.source, args.work_parent, args.remove, args.replace,
-                            command, args.expect, args.timeout)))
+    print(
+        json.dumps(verify(args.source, args.work_parent, args.remove, args.replace, command, args.expect, args.timeout))
+    )
 
 
 if __name__ == '__main__':

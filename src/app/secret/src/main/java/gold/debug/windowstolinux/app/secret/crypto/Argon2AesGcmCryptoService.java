@@ -1,17 +1,18 @@
 package gold.debug.windowstolinux.app.secret.crypto;
 
-import gold.debug.windowstolinux.app.db.entity.OpaqueSecret;
-import org.bouncycastle.crypto.generators.Argon2BytesGenerator;
-import org.bouncycastle.crypto.params.Argon2Parameters;
-
-import javax.crypto.Cipher;
-import javax.crypto.spec.GCMParameterSpec;
-import javax.crypto.spec.SecretKeySpec;
 import java.nio.ByteBuffer;
 import java.nio.CharBuffer;
 import java.nio.charset.StandardCharsets;
 import java.security.SecureRandom;
 import java.util.Arrays;
+
+import javax.crypto.Cipher;
+import javax.crypto.spec.GCMParameterSpec;
+import javax.crypto.spec.SecretKeySpec;
+
+import gold.debug.windowstolinux.app.db.entity.OpaqueSecret;
+import org.bouncycastle.crypto.generators.Argon2BytesGenerator;
+import org.bouncycastle.crypto.params.Argon2Parameters;
 
 /**
  * Derives encryption keys with Argon2 and authenticates secret ciphertext with AES-GCM.
@@ -23,16 +24,19 @@ public final class Argon2AesGcmCryptoService implements AutoCloseable {
      * <p>盐字节。
      */
     private static final int SALT_BYTES = 16;
+
     /**
      * NONCE BYTES.
      * <p>随机数字节。
      */
     private static final int NONCE_BYTES = 12;
+
     /**
      * Master-password buffer used to unlock protected credentials.
      * <p>用于解锁受保护凭据的主密码缓冲区。
      */
     private final char[] masterPassword;
+
     /**
      * Random.
      * <p>随机。
@@ -108,8 +112,8 @@ public final class Argon2AesGcmCryptoService implements AutoCloseable {
      * @return encoded or copied content buffer / 编码或复制得到的内容缓冲区
      */
     private byte[] deriveKey(byte[] salt) {
-        Argon2Parameters parameters = new Argon2Parameters.Builder(Argon2Parameters.ARGON2_id)
-                .withSalt(salt).withIterations(3).withMemoryAsKB(64 * 1024).withParallelism(1).build();
+        Argon2Parameters parameters = new Argon2Parameters.Builder(Argon2Parameters.ARGON2_id).withSalt(salt)
+                .withIterations(3).withMemoryAsKB(64 * 1024).withParallelism(1).build();
         byte[] key = new byte[32];
         Argon2BytesGenerator generator = new Argon2BytesGenerator();
         generator.init(parameters);
@@ -183,7 +187,10 @@ public final class Argon2AesGcmCryptoService implements AutoCloseable {
          *
          * @return a copy of the salt / 盐值副本
          */
-        @Override public byte[] salt() { return salt.clone(); }
+        @Override
+        public byte[] salt() {
+            return salt.clone();
+        }
 
         /**
          * Returns a defensive copy of the nonce.
@@ -192,7 +199,10 @@ public final class Argon2AesGcmCryptoService implements AutoCloseable {
          *
          * @return a copy of the nonce / 随机数副本
          */
-        @Override public byte[] nonce() { return nonce.clone(); }
+        @Override
+        public byte[] nonce() {
+            return nonce.clone();
+        }
 
         /**
          * Returns a defensive copy of the ciphertext.
@@ -201,6 +211,9 @@ public final class Argon2AesGcmCryptoService implements AutoCloseable {
          *
          * @return a copy of the ciphertext / 密文副本
          */
-        @Override public byte[] ciphertext() { return ciphertext.clone(); }
+        @Override
+        public byte[] ciphertext() {
+            return ciphertext.clone();
+        }
     }
 }

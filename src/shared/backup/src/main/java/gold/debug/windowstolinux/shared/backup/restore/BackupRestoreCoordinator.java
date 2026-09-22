@@ -1,5 +1,10 @@
 package gold.debug.windowstolinux.shared.backup.restore;
 
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Objects;
+import java.util.Optional;
+
 import gold.debug.windowstolinux.shared.backup.contract.spi.DatabaseBackupAdapter;
 import gold.debug.windowstolinux.shared.backup.contract.spi.DatabaseRestoreEvidence;
 import gold.debug.windowstolinux.shared.backup.contract.spi.RestoreCandidatePort;
@@ -13,11 +18,6 @@ import gold.debug.windowstolinux.shared.model.failure.FailureRecoveryAction;
 import gold.debug.windowstolinux.shared.model.failure.FailureRecoveryDisposition;
 import gold.debug.windowstolinux.shared.model.failure.OperationIdentity;
 
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Objects;
-import java.util.Optional;
-
 /**
  * Coordinates preflight, isolated restore, health, commit and verified recovery. / 编排前置检查、隔离恢复、健康、提交和已验证恢复。
  */
@@ -27,11 +27,13 @@ public final class BackupRestoreCoordinator {
      * <p>预检。
      */
     private final BackupRestorePreflight preflight;
+
     /**
      * Candidates.
      * <p>候选集合。
      */
     private final RestoreCandidatePort candidates;
+
     /**
      * Databases.
      * <p>数据库集合。
@@ -46,11 +48,8 @@ public final class BackupRestoreCoordinator {
      * @param databases databases / 数据库集合
      * @throws NullPointerException if a required input is absent / 必需输入缺失时
      */
-    public BackupRestoreCoordinator(
-            BackupRestorePreflight preflight,
-            RestoreCandidatePort candidates,
-            DatabaseAdapterRegistry databases
-    ) {
+    public BackupRestoreCoordinator(BackupRestorePreflight preflight, RestoreCandidatePort candidates,
+            DatabaseAdapterRegistry databases) {
         this.preflight = Objects.requireNonNull(preflight, "preflight");
         this.candidates = Objects.requireNonNull(candidates, "candidates");
         this.databases = Objects.requireNonNull(databases, "databases");
@@ -85,51 +84,52 @@ public final class BackupRestoreCoordinator {
 
             if (plan.databaseRestore().isPresent()) {
                 current = RestoreCandidateState.DATABASE_RESTORED;
-                DatabaseBackupAdapter adapter = databases.require(
-                        plan.validation().manifest().inventory().database().type());
+                DatabaseBackupAdapter adapter = databases
+                        .require(plan.validation().manifest().inventory().database().type());
                 databaseMutationAttempted = true;
                 DatabaseRestoreEvidence restored = adapter.restore(plan.databaseRestore().orElseThrow());
                 database = Optional.of(restored);
                 events.add(success(current, restored.evidence()));
 
-                if (plan.validation().manifest().inventory().database().type() != gold.debug.windowstolinux.shared.backup.manifest.BackupDatabaseType.SQLITE) {
-                current = RestoreCandidateState.DATABASE_COMMITTED;
-                RestoreCandidatePort.HealthEvidence prepared = candidates.prepareCommit(
-                        candidateRequest, staged, Optional.of(restored.connectionToken()));
-                requireHealth(prepared, "stopped-write database activation boundary failed");
-                databaseCommitAttempted = true;
-                var committedDatabase = adapter.commitCandidate(plan.databaseRestore().orElseThrow());
-                events.add(success(current, committedDatabase.evidence()));
+                if (plan.validation().manifest().inventory().database()
+                        .type() != gold.debug.windowstolinux.shared.backup.manifest.BackupDatabaseType.SQLITE) {
+                    current = RestoreCandidateState.DATABASE_COMMITTED;
+                    RestoreCandidatePort.HealthEvidence prepared = candidates.prepareCommit(candidateRequest, staged,
+                            Optional.of(restored.connectionToken()));
+                    requireHealth(prepared, "stopped-write database activation boundary failed");
+                    databaseCommitAttempted = true;
+                    var committedDatabase = adapter.commitCandidate(plan.databaseRestore().orElseThrow());
+                    events.add(success(current, committedDatabase.evidence()));
                 }
             }
 
             Optional<String> databaseToken = database.map(DatabaseRestoreEvidence::connectionToken);
             current = RestoreCandidateState.COMPONENTS_HEALTHY;
-            RestoreCandidatePort.HealthEvidence components = candidates.verifyComponents(
-                    candidateRequest, staged, databaseToken);
+            RestoreCandidatePort.HealthEvidence components = candidates.verifyComponents(candidateRequest, staged,
+                    databaseToken);
             requireHealth(components, "restored component health failed");
             events.add(success(current, components.evidence()));
 
             current = RestoreCandidateState.APPLICATION_HEALTHY;
-            RestoreCandidatePort.HealthEvidence application = candidates.verifyApplication(
-                    candidateRequest, staged, databaseToken);
+            RestoreCandidatePort.HealthEvidence application = candidates.verifyApplication(candidateRequest, staged,
+                    databaseToken);
             requireHealth(application, "whole-application restore health failed");
             events.add(success(current, application.evidence()));
 
-            if (plan.databaseRestore().isPresent() && plan.validation().manifest().inventory().database().type()
-                    == gold.debug.windowstolinux.shared.backup.manifest.BackupDatabaseType.SQLITE) {
+            if (plan.databaseRestore().isPresent() && plan.validation().manifest().inventory().database()
+                    .type() == gold.debug.windowstolinux.shared.backup.manifest.BackupDatabaseType.SQLITE) {
                 current = RestoreCandidateState.DATABASE_COMMITTED;
-                var prepared = candidates.prepareCommit(candidateRequest,staged,databaseToken);
-                requireHealth(prepared,"isolated SQLite candidate and formal graph must stop before activation");
+                var prepared = candidates.prepareCommit(candidateRequest, staged, databaseToken);
+                requireHealth(prepared, "isolated SQLite candidate and formal graph must stop before activation");
                 databaseCommitAttempted = true;
-                var committedDatabase = databases.require(gold.debug.windowstolinux.shared.backup.manifest.BackupDatabaseType.SQLITE)
+                var committedDatabase = databases
+                        .require(gold.debug.windowstolinux.shared.backup.manifest.BackupDatabaseType.SQLITE)
                         .commitCandidate(plan.databaseRestore().orElseThrow());
-                events.add(success(current,committedDatabase.evidence()));
+                events.add(success(current, committedDatabase.evidence()));
             }
 
             current = RestoreCandidateState.COMMITTED;
-            RestoreCandidatePort.CommitEvidence committed = candidates.commit(
-                    candidateRequest, staged, databaseToken);
+            RestoreCandidatePort.CommitEvidence committed = candidates.commit(candidateRequest, staged, databaseToken);
             if (!committed.committed() || !committed.previousReleaseRetained()) {
                 throw BackupException.create(BackupFailureType.RESTORE_COMMIT_FAILED,
                         "restore commit did not retain a verified previous release");
@@ -143,8 +143,8 @@ public final class BackupRestoreCoordinator {
                     || events.get(events.size() - 1).succeeded()) {
                 events.add(new RestoreCandidateEvent(current, false, original.diagnostic()));
             }
-            return recover(plan, operation, events, files, database, mutationAttempted,
-                    databaseMutationAttempted, databaseCommitAttempted, original);
+            return recover(plan, operation, events, files, database, mutationAttempted, databaseMutationAttempted,
+                    databaseCommitAttempted, original);
         }
     }
 
@@ -164,32 +164,27 @@ public final class BackupRestoreCoordinator {
      * @return constructed or resolved backup restore result / 构造或解析得到的备份恢复结果
      * @throws IllegalStateException if the required state or runtime facility is unavailable / 所需状态或运行设施不可用时
      */
-    private BackupRestoreResult recover(
-            BackupRestorePlan plan,
-            OperationIdentity operation,
-            List<RestoreCandidateEvent> events,
-            Optional<RestoreCandidatePort.FileEvidence> files,
-            Optional<DatabaseRestoreEvidence> database,
-            boolean mutationAttempted,
-            boolean databaseMutationAttempted,
-            boolean databaseCommitAttempted,
-            FailureDescriptor original
-    ) {
+    private BackupRestoreResult recover(BackupRestorePlan plan, OperationIdentity operation,
+            List<RestoreCandidateEvent> events, Optional<RestoreCandidatePort.FileEvidence> files,
+            Optional<DatabaseRestoreEvidence> database, boolean mutationAttempted, boolean databaseMutationAttempted,
+            boolean databaseCommitAttempted, FailureDescriptor original) {
         if (!mutationAttempted) {
-            FailureDescriptor safe = original.withRecovery(
-                    FailureRecoveryAction.NONE, FailureRecoveryDisposition.NOT_REQUIRED);
-            return new BackupRestoreResult(operation, BackupRestoreStatus.FAILED_EXISTING_PRESERVED,
-                    events, database, Optional.empty(), Optional.of(safe));
+            FailureDescriptor safe = original.withRecovery(FailureRecoveryAction.NONE,
+                    FailureRecoveryDisposition.NOT_REQUIRED);
+            return new BackupRestoreResult(operation, BackupRestoreStatus.FAILED_EXISTING_PRESERVED, events, database,
+                    Optional.empty(), Optional.of(safe));
         }
         List<Throwable> recoveryFailures = new ArrayList<>();
         boolean recoveryQuiesced = true;
         if (databaseMutationAttempted) {
             try {
-                RestoreCandidatePort.HealthEvidence stopped = candidates.quiesceForRecovery(
-                        plan.candidateRequest(), files);
-                if (!stopped.healthy()) throw new IllegalStateException("database recovery quiesce is unverified");
+                RestoreCandidatePort.HealthEvidence stopped = candidates.quiesceForRecovery(plan.candidateRequest(),
+                        files);
+                if (!stopped.healthy())
+                    throw new IllegalStateException("database recovery quiesce is unverified");
             } catch (Exception exception) {
-                recoveryFailures.add(exception); recoveryQuiesced = false;
+                recoveryFailures.add(exception);
+                recoveryQuiesced = false;
             }
         }
         if (databaseCommitAttempted && recoveryQuiesced) {
@@ -203,11 +198,15 @@ public final class BackupRestoreCoordinator {
             try {
                 databases.require(plan.validation().manifest().inventory().database().type())
                         .discardCandidate(plan.databaseRestore().orElseThrow());
-            } catch (Exception exception) { recoveryFailures.add(exception); }
+            } catch (Exception exception) {
+                recoveryFailures.add(exception);
+            }
         }
         RestoreCandidatePort.RecoveryEvidence recovered = null;
         try {
-            if (!recoveryQuiesced) throw new IllegalStateException("candidate processes may still be using database files; retain them for manual recovery");
+            if (!recoveryQuiesced)
+                throw new IllegalStateException(
+                        "candidate processes may still be using database files; retain them for manual recovery");
             recovered = candidates.recoverExisting(plan.candidateRequest(), files);
             if (!recovered.candidateRemoved() || !recovered.existingReleaseVerified()) {
                 recoveryFailures.add(new IllegalStateException("restore recovery evidence is incomplete"));
@@ -217,19 +216,19 @@ public final class BackupRestoreCoordinator {
         }
         if (recoveryFailures.isEmpty()) {
             events.add(success(RestoreCandidateState.RECOVERY_VERIFIED, recovered.evidence()));
-            FailureDescriptor safe = original.withRecovery(
-                    FailureRecoveryAction.ROLLBACK, FailureRecoveryDisposition.SUCCEEDED);
-            return new BackupRestoreResult(operation, BackupRestoreStatus.FAILED_EXISTING_PRESERVED,
-                    events, database, Optional.empty(), Optional.of(safe));
+            FailureDescriptor safe = original.withRecovery(FailureRecoveryAction.ROLLBACK,
+                    FailureRecoveryDisposition.SUCCEEDED);
+            return new BackupRestoreResult(operation, BackupRestoreStatus.FAILED_EXISTING_PRESERVED, events, database,
+                    Optional.empty(), Optional.of(safe));
         }
         BackupException recovery = BackupException.create(BackupFailureType.RESTORE_RECOVERY_FAILED,
                 "restore candidate cleanup or existing release verification failed");
         recoveryFailures.forEach(recovery::addSuppressed);
-        FailureDescriptor failed = recovery.failure().withOperationIdentity(operation).withRecovery(
-                FailureRecoveryAction.REQUIRE_MANUAL_RECOVERY, FailureRecoveryDisposition.FAILED);
+        FailureDescriptor failed = recovery.failure().withOperationIdentity(operation)
+                .withRecovery(FailureRecoveryAction.REQUIRE_MANUAL_RECOVERY, FailureRecoveryDisposition.FAILED);
         events.add(new RestoreCandidateEvent(RestoreCandidateState.RECOVERY_VERIFIED, false, failed.diagnostic()));
-        return new BackupRestoreResult(operation, BackupRestoreStatus.MANUAL_RECOVERY_REQUIRED,
-                events, database, Optional.empty(), Optional.of(failed));
+        return new BackupRestoreResult(operation, BackupRestoreStatus.MANUAL_RECOVERY_REQUIRED, events, database,
+                Optional.empty(), Optional.of(failed));
     }
 
     /**
@@ -259,7 +258,8 @@ public final class BackupRestoreCoordinator {
      */
     private static void requireHealth(RestoreCandidatePort.HealthEvidence health, String diagnostic)
             throws BackupException {
-        if (!health.healthy()) throw BackupException.create(BackupFailureType.RESTORE_HEALTH_FAILED, diagnostic);
+        if (!health.healthy())
+            throw BackupException.create(BackupFailureType.RESTORE_HEALTH_FAILED, diagnostic);
     }
 
     /**
@@ -270,9 +270,11 @@ public final class BackupRestoreCoordinator {
      * @return or preserves the module-owned failure for the supplied cause and diagnostic evidence / 为所提供原因及诊断证据创建或保留模块自有失败
      */
     private static FailureDescriptor failure(Exception exception) {
-        if (exception instanceof BackupException backup) return backup.failure();
-        return BackupException.create(BackupFailureType.RESTORE_FILE_FAILED,
-                "unexpected restore candidate failure", exception).failure();
+        if (exception instanceof BackupException backup)
+            return backup.failure();
+        return BackupException
+                .create(BackupFailureType.RESTORE_FILE_FAILED, "unexpected restore candidate failure", exception)
+                .failure();
     }
 
     /**
@@ -285,7 +287,8 @@ public final class BackupRestoreCoordinator {
      */
     private static RestoreCandidateEvent success(RestoreCandidateState state, List<String> evidence) {
         String joined = String.join("; ", evidence);
-        if (joined.length() > 1024) joined = joined.substring(0, 1024);
+        if (joined.length() > 1024)
+            joined = joined.substring(0, 1024);
         return new RestoreCandidateEvent(state, true, joined);
     }
 }

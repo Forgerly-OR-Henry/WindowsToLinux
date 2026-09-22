@@ -72,37 +72,24 @@ async function files() {
             const r = document.createElement("tr"),
               d = cell("");
             d.append(download(v.id));
-            r.append(
-              cell(v.number),
-              cell(v.size),
-              cell(v.sha256),
-              cell(v.created),
-              d,
-            );
+            r.append(cell(v.number), cell(v.size), cell(v.sha256), cell(v.created), d);
             return r;
           }),
         );
         location.hash = "detail";
       }),
     );
-    row.append(
-      cell(f.name),
-      cell(f.version),
-      cell(f.size),
-      cell(f.sha256),
-      buttons,
-    );
+    row.append(cell(f.name), cell(f.version), cell(f.size), cell(f.sha256), buttons);
     body.append(row);
   }
-  element("stats").textContent =
-    `共 ${result.total} 个文件 · 第 ${Math.floor(offset / 25) + 1} 页`;
+  element("stats").textContent = `共 ${result.total} 个文件 · 第 ${Math.floor(offset / 25) + 1} 页`;
   element<HTMLButtonElement>("previous").disabled = offset === 0;
   element<HTMLButtonElement>("next").disabled = offset + 25 >= result.total;
 }
 async function history() {
-  const list = await api<
-    { id: string; name: string; state: string; created: string }[]
-  >(`/api/uploads?folderId=${folder()}`);
+  const list = await api<{ id: string; name: string; state: string; created: string }[]>(
+    `/api/uploads?folderId=${folder()}`,
+  );
   element("history").replaceChildren(
     ...list.map((u) => {
       const r = document.createElement("tr"),
@@ -127,30 +114,19 @@ async function session() {
 }
 async function page() {
   const name = location.hash.slice(1) || "list";
-  document
-    .querySelectorAll<HTMLElement>("[data-page]")
-    .forEach((e) => (e.hidden = e.dataset.page !== name));
+  document.querySelectorAll<HTMLElement>("[data-page]").forEach((e) => (e.hidden = e.dataset.page !== name));
   if (name === "list") await files();
   if (name === "history") await history();
 }
 async function upload(file: File, resume: string) {
   element("progress-text").textContent = `计算 ${file.name} 的 SHA-256…`;
-  const sha256 = Array.from(
-    new Uint8Array(
-      await crypto.subtle.digest("SHA-256", await file.arrayBuffer()),
-    ),
-  )
+  const sha256 = Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256", await file.arrayBuffer())))
     .map((x) => x.toString(16).padStart(2, "0"))
     .join("");
   let u: Session;
   if (resume) {
     u = await api<Session>(`/api/uploads/${resume}`);
-    if (
-      u.folderId !== folder() ||
-      u.name !== file.name ||
-      u.size !== file.size ||
-      u.sha256 !== sha256
-    )
+    if (u.folderId !== folder() || u.name !== file.name || u.size !== file.size || u.sha256 !== sha256)
       throw new Error("所选文件或文件夹与上传会话不一致");
     if (u.state !== "receiving") throw new Error("此会话已结束，不能继续上传");
   } else {
@@ -187,8 +163,7 @@ async function upload(file: File, resume: string) {
       }
     }
     element<HTMLProgressElement>("progress").value = ((n + 1) / count) * 100;
-    element("progress-text").textContent =
-      `${file.name}：${n + 1}/${count} 分块已确认 · ${u.id}`;
+    element("progress-text").textContent = `${file.name}：${n + 1}/${count} 分块已确认 · ${u.id}`;
   }
   if (paused) return;
   await api(`/api/uploads/${u.id}/complete`, { method: "POST" });

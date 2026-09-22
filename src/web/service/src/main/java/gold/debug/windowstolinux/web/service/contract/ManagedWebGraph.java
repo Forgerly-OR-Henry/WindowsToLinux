@@ -1,8 +1,9 @@
 package gold.debug.windowstolinux.web.service.contract;
 
-import gold.debug.windowstolinux.shared.deploy.contract.MultiComponentDeploymentPlan;
-import gold.debug.windowstolinux.shared.deploy.plan.MultiComponentDeploymentPlanner;
 import java.util.*;
+
+import gold.debug.windowstolinux.shared.deploy.contract.MultiComponentDeploymentPlan;
+import gold.debug.windowstolinux.shared.standard.deploy.plan.MultiComponentDeploymentPlanner;
 
 /**
  * Carries workspace-owned application topology independent of HTTP and local filesystem paths.
@@ -24,9 +25,11 @@ public record ManagedWebGraph(String applicationId, String healthOwner, List<Man
      */
     public ManagedWebGraph {
         components = List.copyOf(components);
-        if (components.isEmpty() || components.size() > 64 || components.stream().noneMatch(c -> c.id().equals(healthOwner)))
+        if (components.isEmpty() || components.size() > 64
+                || components.stream().noneMatch(c -> c.id().equals(healthOwner)))
             throw new IllegalArgumentException("Invalid managed application graph");
     }
+
     /**
      * Builds multi component deployment plan from the supplied plan inputs.
      * <p>根据所提供计划输入构建多组件部署计划。
@@ -35,9 +38,11 @@ public record ManagedWebGraph(String applicationId, String healthOwner, List<Man
      * @throws IllegalArgumentException if an input violates the constraints checked by this contract / 输入违反当前契约检查的约束时
      */
     public MultiComponentDeploymentPlan plan() {
-        var namespaces = new LinkedHashMap<String, String>(); var dependencies = new LinkedHashMap<String, List<String>>();
+        var namespaces = new LinkedHashMap<String, String>();
+        var dependencies = new LinkedHashMap<String, List<String>>();
         for (var component : components) {
-            if (namespaces.put(component.id(), component.application().id()) != null) throw new IllegalArgumentException("Duplicate component");
+            if (namespaces.put(component.id(), component.application().id()) != null)
+                throw new IllegalArgumentException("Duplicate component");
             dependencies.put(component.id(), component.dependencies());
         }
         return new MultiComponentDeploymentPlanner().restore(applicationId, namespaces, dependencies);

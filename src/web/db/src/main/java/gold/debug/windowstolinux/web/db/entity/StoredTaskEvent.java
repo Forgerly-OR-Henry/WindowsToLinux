@@ -10,4 +10,5 @@ package gold.debug.windowstolinux.web.db.entity;
  * @param detailJson detail json / 详情JSON
  * @param createdAt instant at which this record was created / 当前记录创建时刻
  */
-public record StoredTaskEvent(long sequence, String kind, String message, String detailJson, String createdAt) { }
+public record StoredTaskEvent(long sequence, String kind, String message, String detailJson, String createdAt) {
+}

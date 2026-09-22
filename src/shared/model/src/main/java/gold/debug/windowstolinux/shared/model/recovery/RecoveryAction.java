@@ -24,19 +24,25 @@ public record RecoveryAction(String command, String reason, String expected, boo
      */
     public RecoveryAction {
         command = Objects.requireNonNull(command).trim();
-        reason = Objects.requireNonNull(reason).trim(); expected = Objects.requireNonNull(expected).trim();
-        if (command.length() > 2048 || command.chars().anyMatch(Character::isISOControl)
-                || reason.isBlank() || reason.length() > 2000 || expected.length() > 2000)
+        reason = Objects.requireNonNull(reason).trim();
+        expected = Objects.requireNonNull(expected).trim();
+        if (command.length() > 2048 || command.chars().anyMatch(Character::isISOControl) || reason.isBlank()
+                || reason.length() > 2000 || expected.length() > 2000)
             throw new IllegalArgumentException("invalid recovery proposal");
         String lower = command.toLowerCase(java.util.Locale.ROOT);
-        highImpact |= java.util.regex.Pattern.compile("reboot|shutdown|poweroff|firewall|iptables|nft|selinux|setenforce|passwd|authorized_keys|sshd_config|useradd|usermod|systemctl|service ")
+        highImpact |= java.util.regex.Pattern.compile(
+                "reboot|shutdown|poweroff|firewall|iptables|nft|selinux|setenforce|passwd|authorized_keys|sshd_config|useradd|usermod|systemctl|service ")
                 .matcher(lower).find();
     }
+
     /**
      * Returns the diagnostic text representation of this object.
      * <p>返回当前对象的诊断文本表示。
      *
      * @return the diagnostic text representation of this object / 当前对象的诊断文本表示
      */
-    @Override public String toString() { return "RecoveryAction[redacted]"; }
+    @Override
+    public String toString() {
+        return "RecoveryAction[redacted]";
+    }
 }

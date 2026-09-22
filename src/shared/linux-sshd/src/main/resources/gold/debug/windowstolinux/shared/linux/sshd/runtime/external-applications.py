@@ -17,12 +17,22 @@ LIMIT = 512
 def run(args, timeout=8):
     if time.monotonic() >= DEADLINE:
         raise TimeoutError('scan bound reached')
-    result = subprocess.run(args, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
-                            stderr=subprocess.PIPE, timeout=timeout, env={**os.environ, 'LC_ALL': 'C', 'SYSTEMD_COLORS': '0'})
+    result = subprocess.run(
+        args,
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        timeout=timeout,
+        env={**os.environ, 'LC_ALL': 'C', 'SYSTEMD_COLORS': '0'},
+    )
     if len(result.stdout) > 1048576:
         raise ValueError('output bound exceeded')
     if result.returncode:
-        if b'Permission denied' in result.stderr or b'permission denied' in result.stderr or b'Access denied' in result.stderr:
+        if (
+            b'Permission denied' in result.stderr
+            or b'permission denied' in result.stderr
+            or b'Access denied' in result.stderr
+        ):
             raise PermissionError('permission denied')
         raise RuntimeError('runtime command failed')
     return result.stdout.decode('utf-8', 'strict').rstrip('\r\n')
@@ -35,7 +45,18 @@ def text(value):
 def systemd(unit):
     if not UNIT.fullmatch(unit) or '@.service' in unit:
         raise ValueError('unsupported unit')
-    props = ('Id', 'Description', 'ActiveState', 'SubState', 'FragmentPath', 'DropInPaths', 'LoadState', 'NeedDaemonReload', 'CanStart', 'CanStop')
+    props = (
+        'Id',
+        'Description',
+        'ActiveState',
+        'SubState',
+        'FragmentPath',
+        'DropInPaths',
+        'LoadState',
+        'NeedDaemonReload',
+        'CanStart',
+        'CanStop',
+    )
     output = run(['systemctl', 'show', '--no-pager', '--property=' + ','.join(props), '--', unit])
     values = dict(line.split('=', 1) for line in output.splitlines() if '=' in line)
     identity = values.get('Id', '')
@@ -56,9 +77,25 @@ def systemd(unit):
                 raise ValueError('unit changed while scanning')
             digest.update(path.encode() + b'\0' + str((before.st_dev, before.st_ino)).encode() + b'\0' + contents)
     active = values.get('ActiveState')
-    state = 'RUNNING' if active == 'active' else 'STOPPED' if active == 'inactive' else 'ERROR' if active == 'failed' else 'UNKNOWN'
-    return ('SYSTEMD', identity, digest.hexdigest(), values.get('Description') or identity, state,
-            values.get('CanStart') == 'yes', values.get('CanStop') == 'yes', identity.startswith('windowstolinux-'))
+    state = (
+        'RUNNING'
+        if active == 'active'
+        else 'STOPPED'
+        if active == 'inactive'
+        else 'ERROR'
+        if active == 'failed'
+        else 'UNKNOWN'
+    )
+    return (
+        'SYSTEMD',
+        identity,
+        digest.hexdigest(),
+        values.get('Description') or identity,
+        state,
+        values.get('CanStart') == 'yes',
+        values.get('CanStop') == 'yes',
+        identity.startswith('windowstolinux-'),
+    )
 
 
 def docker(identity):
@@ -68,7 +105,15 @@ def docker(identity):
     fields = run(['docker', 'container', 'inspect', '--format', template, identity]).split('\t')
     if len(fields) != 5 or fields[0] != identity:
         raise ValueError('container identity differs')
-    state = 'RUNNING' if fields[2] == 'running' else 'STOPPED' if fields[2] in ('exited', 'created') else 'ERROR' if fields[2] == 'dead' else 'UNKNOWN'
+    state = (
+        'RUNNING'
+        if fields[2] == 'running'
+        else 'STOPPED'
+        if fields[2] in ('exited', 'created')
+        else 'ERROR'
+        if fields[2] == 'dead'
+        else 'UNKNOWN'
+    )
     name = fields[1].lstrip('/')
     managed = name.startswith('windowstolinux-') or any(value not in ('', '<no value>') for value in fields[3:])
     return ('DOCKER', identity, identity, name, state, True, True, managed)
@@ -77,7 +122,21 @@ def docker(identity):
 def emit(app):
     kind, identity, fingerprint, name, state, start, stop, managed = app
     name = ''.join(char for char in name if char.isprintable())[:240] or identity
-    print('\t'.join(('APP', kind, text(identity), fingerprint, text(name), state, str(int(start)), str(int(stop)), str(int(managed)))))
+    print(
+        '\t'.join(
+            (
+                'APP',
+                kind,
+                text(identity),
+                fingerprint,
+                text(name),
+                state,
+                str(int(start)),
+                str(int(stop)),
+                str(int(managed)),
+            )
+        )
+    )
 
 
 def scan():
@@ -87,7 +146,9 @@ def scan():
             units = set()
             for command in ('list-unit-files', 'list-units'):
                 try:
-                    output = run(['systemctl', command, '--all', '--type=service', '--no-legend', '--no-pager', '--plain'])
+                    output = run(
+                        ['systemctl', command, '--all', '--type=service', '--no-legend', '--no-pager', '--plain']
+                    )
                     units.update(line.split()[0] for line in output.splitlines() if line.split())
                 except PermissionError:
                     issues.add('SYSTEMD_PERMISSION')

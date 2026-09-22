@@ -1,18 +1,19 @@
 package gold.debug.windowstolinux.app.windows.workspace;
 
-import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.io.TempDir;
-
-import java.nio.file.Files;
-import java.nio.file.Path;
-
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.nio.file.Files;
+import java.nio.file.Path;
+
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
+
 class WindowsRestoreWorkspaceTest {
-    @TempDir Path temporary;
+    @TempDir
+    Path temporary;
 
     @Test
     void createsAndDiscardsOnlyOneDigestBoundAttempt() throws Exception {
@@ -29,11 +30,10 @@ class WindowsRestoreWorkspaceTest {
     @Test
     void rejectsUnboundIdentityAndForeignCleanup() throws Exception {
         WindowsRestoreWorkspace workspace = new WindowsRestoreWorkspace(temporary.resolve("work"));
-        assertThrows(WindowsWorkspaceException.class,
-                () -> workspace.createAttempt("Sample", "a".repeat(64)));
+        assertThrows(WindowsWorkspaceException.class, () -> workspace.createAttempt("Sample", "a".repeat(64)));
         Path foreignParent = Files.createDirectory(temporary.resolve("foreign"));
-        WindowsRestoreAttempt foreign = new WindowsRestoreAttempt(
-                foreignParent, foreignParent.resolve("sample-aaaaaaaaaaaaaaaa"), "sample-aaaaaaaaaaaaaaaa");
+        WindowsRestoreAttempt foreign = new WindowsRestoreAttempt(foreignParent,
+                foreignParent.resolve("sample-aaaaaaaaaaaaaaaa"), "sample-aaaaaaaaaaaaaaaa");
         assertThrows(WindowsWorkspaceException.class, () -> workspace.discardAttempt(foreign));
         assertTrue(Files.exists(foreignParent));
     }

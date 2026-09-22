@@ -1,5 +1,15 @@
 package gold.debug.windowstolinux.app.main.startup;
 
+import static org.junit.jupiter.api.Assertions.*;
+
+import java.net.HttpURLConnection;
+import java.net.URI;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.List;
+import java.util.Optional;
+
 import gold.debug.windowstolinux.shared.config.contract.definition.ConfigurationScope;
 import gold.debug.windowstolinux.shared.config.contract.definition.ConfigurationValue;
 import gold.debug.windowstolinux.shared.config.revision.ConfigurationEntry;
@@ -13,22 +23,15 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIfSystemProperty;
 import org.junit.jupiter.api.io.TempDir;
 
-import java.net.URI;
-import java.net.HttpURLConnection;
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.util.List;
-import java.util.Optional;
-
-import static org.junit.jupiter.api.Assertions.*;
-
 /** Covers additional source build combinations through the production service. / 通过生产服务补齐源码构建组合。 */
 @EnabledIfSystemProperty(named = "managed.runtime.additional", matches = "true")
 class UbuntuAdditionalLanguageAcceptanceTest {
     private static final String RUN_ID = Long.toUnsignedString(System.nanoTime(), 36);
+
     private static final int PORT_BASE = 55000 + (int) ((System.currentTimeMillis() / 1000) % 4000);
-    @TempDir Path temporaryDirectory;
+
+    @TempDir
+    Path temporaryDirectory;
 
     @Test
     void deploysLocalMavenSpringBoot() throws Exception {
@@ -41,7 +44,8 @@ class UbuntuAdditionalLanguageAcceptanceTest {
     void deploysCppThroughCmake() throws Exception {
         int port = PORT_BASE + 1;
         exercise("cpp", "c/cmake/cpp-service/success-deployment-smoke", port,
-                new DeploymentRuntimeSpecification.CmakeService("w2l-release", "http_service", "http_service", health(port)),
+                new DeploymentRuntimeSpecification.CmakeService("w2l-release", "http_service", "http_service",
+                        health(port)),
                 "deployment-smoke-ok");
     }
 
@@ -86,11 +90,13 @@ class UbuntuAdditionalLanguageAcceptanceTest {
         Path source = copyFixture(fixture, temporaryDirectory.resolve("sources").resolve(id));
         if (runtime.projectType() == DeploymentProjectType.SPRING_BOOT) {
             for (String name : List.of("pom.xml", "settings.gradle")) {
-                if (Files.isRegularFile(source.resolve(name))) replace(source.resolve(name), "fixture-http-service", id);
+                if (Files.isRegularFile(source.resolve(name)))
+                    replace(source.resolve(name), "fixture-http-service", id);
             }
         } else if (runtime.projectType() == DeploymentProjectType.NODE_SERVICE) {
             for (String name : List.of("package.json", "package-lock.json", "pnpm-lock.yaml", "yarn.lock")) {
-                if (Files.isRegularFile(source.resolve(name))) replace(source.resolve(name), "wtl-typescript-live", id);
+                if (Files.isRegularFile(source.resolve(name)))
+                    replace(source.resolve(name), "wtl-typescript-live", id);
             }
         }
         try (LiveTypedDeploymentContext context = new LiveTypedDeploymentContext(temporaryDirectory.resolve("state"))) {
@@ -117,8 +123,7 @@ class UbuntuAdditionalLanguageAcceptanceTest {
                 }
                 System.out.printf("LIVE_HTTP application=%s url=%s marker=%s%n", applicationId, access, marker);
                 if (kind.equals("typescript-yarn")) {
-                    for (var action : List.of(
-                            gold.debug.windowstolinux.shared.model.lifecycle.LifecycleAction.STOP,
+                    for (var action : List.of(gold.debug.windowstolinux.shared.model.lifecycle.LifecycleAction.STOP,
                             gold.debug.windowstolinux.shared.model.lifecycle.LifecycleAction.STOP,
                             gold.debug.windowstolinux.shared.model.lifecycle.LifecycleAction.START,
                             gold.debug.windowstolinux.shared.model.lifecycle.LifecycleAction.RESTART,
@@ -127,8 +132,10 @@ class UbuntuAdditionalLanguageAcceptanceTest {
                         var observed = context.lifecycle(applicationId, action);
                         assertTrue(observed.ownershipVerified());
                         assertEquals(action == gold.debug.windowstolinux.shared.model.lifecycle.LifecycleAction.STOP
-                                ? RuntimeState.STOPPED : RuntimeState.RUNNING, observed.runtimeState(), observed::toString);
-                        System.out.printf("LIVE_YARN_LIFECYCLE application=%s action=%s evidence=%s%n", applicationId, action, observed.evidence());
+                                ? RuntimeState.STOPPED
+                                : RuntimeState.RUNNING, observed.runtimeState(), observed::toString);
+                        System.out.printf("LIVE_YARN_LIFECYCLE application=%s action=%s evidence=%s%n", applicationId,
+                                action, observed.evidence());
                     }
                 }
             }
@@ -137,14 +144,17 @@ class UbuntuAdditionalLanguageAcceptanceTest {
 
     private static Path copyFixture(String relative, Path target) throws Exception {
         Path repository = Path.of("").toAbsolutePath();
-        while (repository != null && !Files.isDirectory(repository.resolve("test"))) repository = repository.getParent();
+        while (repository != null && !Files.isDirectory(repository.resolve("test")))
+            repository = repository.getParent();
         assertNotNull(repository, "repository fixtures are required");
         Path template = repository.resolve("test/single-language").resolve(relative);
         try (var paths = Files.walk(template)) {
             for (Path path : paths.toList()) {
                 Path destination = target.resolve(template.relativize(path));
-                if (Files.isDirectory(path)) Files.createDirectories(destination);
-                else Files.copy(path, destination);
+                if (Files.isDirectory(path))
+                    Files.createDirectories(destination);
+                else
+                    Files.copy(path, destination);
             }
         }
         return target;

@@ -20,7 +20,8 @@ public interface LinuxSourceTransport {
      * @return the operation result / 操作结果
      * @throws LinuxOperationException if the authenticated remote operation fails or its evidence is rejected / 已认证远端操作失败或其证据被拒绝时
      */
-    SourceUploadResult uploadSource(SourceArchiveDescriptor archive, RemoteWorkspace workspace, long maxWorkspaceBytes) throws LinuxOperationException;
+    SourceUploadResult uploadSource(SourceArchiveDescriptor archive, RemoteWorkspace workspace, long maxWorkspaceBytes)
+            throws LinuxOperationException;
 
     /**
      * Cleans up candidate.
@@ -33,20 +34,23 @@ public interface LinuxSourceTransport {
     default RemoteStepResult cleanupCandidate(RemoteWorkspace workspace) throws LinuxOperationException {
         return new RemoteStepResult(true, false, "Test session did not retain a remote candidate directory");
     }
+
     /** Queries only a candidate with a root-owned task binding; this call cannot execute writes. / 仅查询绑定 root 所有任务身份的候选项，不能写入。
      * @param candidate exact task and candidate / 精确任务及候选项
      * @return bounded presence and process facts / 有界存在及进程事实
      * @throws LinuxOperationException if remote observation fails / 远端观测失败时
      */
-    default java.util.Map<String,String> inspectTaskCandidate(RemoteTaskCandidate candidate)throws LinuxOperationException{
+    default java.util.Map<String, String> inspectTaskCandidate(RemoteTaskCandidate candidate)
+            throws LinuxOperationException {
         throw new UnsupportedOperationException("task candidate inspection not supported");
     }
+
     /** Cancels owned build processes and cleans only the exact task candidate. / 取消所属构建进程并仅清理精确任务候选项。
      * @param candidate exact task and candidate / 精确任务及候选项
      * @return verified cleanup result / 已验证清理结果
      * @throws LinuxOperationException if cleanup cannot be established / 无法确认清理时
      */
-    default RemoteStepResult cleanupTaskCandidate(RemoteTaskCandidate candidate)throws LinuxOperationException{
+    default RemoteStepResult cleanupTaskCandidate(RemoteTaskCandidate candidate) throws LinuxOperationException {
         throw new UnsupportedOperationException("task candidate cleanup not supported");
     }
 }

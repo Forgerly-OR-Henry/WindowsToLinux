@@ -1,12 +1,13 @@
 package gold.debug.windowstolinux.web.db.persistence.repository;
 
+import java.time.Instant;
+import java.util.NoSuchElementException;
+
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import gold.debug.windowstolinux.web.db.entity.*;
 import gold.debug.windowstolinux.web.db.persistence.mapper.WebSecretMapper;
 import org.springframework.stereotype.Repository;
 import org.springframework.transaction.annotation.Transactional;
-import java.time.Instant;
-import java.util.NoSuchElementException;
 
 /**
  * Stores immutable encrypted revisions keyed by workspace, identifier, version and purpose.
@@ -20,6 +21,7 @@ public class WebSecretRepository {
      * <p>访问模式。
      */
     private final ScopeAccess access;
+
     /**
      * Mapper.
      * <p>映射器。
@@ -32,7 +34,10 @@ public class WebSecretRepository {
      * @param access access mode / 访问模式
      * @param mapper mapper / 映射器
      */
-    public WebSecretRepository(ScopeAccess access, WebSecretMapper mapper) { this.access = access; this.mapper = mapper; }
+    public WebSecretRepository(ScopeAccess access, WebSecretMapper mapper) {
+        this.access = access;
+        this.mapper = mapper;
+    }
 
     /**
      * Finds the latest secret revision within the authorized workspace and purpose, returning zero when absent.
@@ -63,8 +68,9 @@ public class WebSecretRepository {
      */
     public void insert(ResourceScope scope, String id, int version, String purpose, byte[] ciphertext) {
         access.require(scope);
-        if (mapper.insert(new WebSecretEntity(scope.workspaceId(), id, version, scope.userId(), purpose,
-                ciphertext, Instant.now().toString())) != 1) throw new IllegalStateException("Credential revision was not saved");
+        if (mapper.insert(new WebSecretEntity(scope.workspaceId(), id, version, scope.userId(), purpose, ciphertext,
+                Instant.now().toString())) != 1)
+            throw new IllegalStateException("Credential revision was not saved");
     }
 
     /**
@@ -81,7 +87,8 @@ public class WebSecretRepository {
         access.require(scope);
         var row = mapper.selectOne(new QueryWrapper<WebSecretEntity>().eq("workspace_id", scope.workspaceId())
                 .eq("id", id).eq("version", version).eq("purpose", purpose));
-        if (row == null) throw new NoSuchElementException("Credential unavailable");
+        if (row == null)
+            throw new NoSuchElementException("Credential unavailable");
         return row.ciphertext();
     }
 }

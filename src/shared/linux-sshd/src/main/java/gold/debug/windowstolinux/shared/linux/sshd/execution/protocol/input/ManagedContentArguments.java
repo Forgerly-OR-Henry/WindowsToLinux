@@ -1,11 +1,11 @@
 package gold.debug.windowstolinux.shared.linux.sshd.execution.protocol.input;
 
-import gold.debug.windowstolinux.shared.linux.protocol.backup.ManagedContentPublication;
-import gold.debug.windowstolinux.shared.model.project.component.ComponentDataPath;
-
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
+
+import gold.debug.windowstolinux.shared.linux.protocol.backup.ManagedContentPublication;
+import gold.debug.windowstolinux.shared.model.project.component.ComponentDataPath;
 
 /**
  * Converts reviewed managed content bindings to deterministic helper scalars. / 将经审阅受管内容绑定转换为确定性 helper 标量。

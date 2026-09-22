@@ -53,9 +53,7 @@ class SnapshotStore:
                 CREATE TABLE IF NOT EXISTS issues(id INTEGER PRIMARY KEY,snapshot_id INTEGER NOT NULL REFERENCES snapshots(id),path TEXT NOT NULL,kind TEXT NOT NULL,detail TEXT NOT NULL);
                 PRAGMA user_version=2;"""
             )
-            for row in c.execute(
-                "SELECT id,owner FROM snapshots WHERE status='building'"
-            ).fetchall():
+            for row in c.execute("SELECT id,owner FROM snapshots WHERE status='building'").fetchall():
                 if not alive(row["owner"]):
                     c.execute(
                         "UPDATE snapshots SET status='interrupted' WHERE id=? AND status='building'",
@@ -121,9 +119,9 @@ class SnapshotStore:
             raise ValueError("SQLite 数据库必须位于被扫描目录之外")
         includes = args.include or ["*"]
         excludes = args.exclude
-        selected = lambda path: any(
-            fnmatch.fnmatchcase(path, p) for p in includes
-        ) and not any(fnmatch.fnmatchcase(path, p) for p in excludes)
+        selected = lambda path: any(fnmatch.fnmatchcase(path, p) for p in includes) and not any(
+            fnmatch.fnmatchcase(path, p) for p in excludes
+        )
         with self.connection() as c:
             try:
                 id = c.execute(
@@ -165,9 +163,7 @@ class SnapshotStore:
 
         def completed(block):
             nonlocal code
-            done, _ = wait(
-                pending, return_when=FIRST_COMPLETED, timeout=None if block else 0
-            )
+            done, _ = wait(pending, return_when=FIRST_COMPLETED, timeout=None if block else 0)
             for future in done:
                 path = pending.pop(future)
                 try:
@@ -182,9 +178,10 @@ class SnapshotStore:
 
         try:
             gate("scan-started")
-            with ThreadPoolExecutor(max_workers=args.workers) as pool, closing(
-                scan(args.helper, root, args.timeout, args.max_files)
-            ) as records:
+            with (
+                ThreadPoolExecutor(max_workers=args.workers) as pool,
+                closing(scan(args.helper, root, args.timeout, args.max_files)) as records,
+            ):
                 for item in records:
                     path = item["path"]
                     if item["type"] == "problem":
@@ -197,9 +194,7 @@ class SnapshotStore:
                         first[path] = (item["size"], item["modifiedNs"])
                         while len(pending) >= args.workers * 2:
                             completed(True)
-                        pending[
-                            pool.submit(digest, root, item, args.max_file_bytes)
-                        ] = path
+                        pending[pool.submit(digest, root, item, args.max_file_bytes)] = path
                         completed(False)
                 while pending:
                     completed(True)
@@ -207,9 +202,7 @@ class SnapshotStore:
             gate("hashes-computed")
             second = {}
             second_links = set()
-            with closing(
-                scan(args.helper, root, args.timeout, args.max_files)
-            ) as records:
+            with closing(scan(args.helper, root, args.timeout, args.max_files)) as records:
                 for item in records:
                     path = item["path"]
                     if item["type"] == "problem":
@@ -221,9 +214,7 @@ class SnapshotStore:
                         second[path] = (item["size"], item["modifiedNs"])
             if first != second or skipped != second_links:
                 code = 3
-                self.issue(
-                    id, "", "changed-tree", "扫描期间路径集合、大小、时间或链接发生变化"
-                )
+                self.issue(id, "", "changed-tree", "扫描期间路径集合、大小、时间或链接发生变化")
             for path, entry in entries.items():
                 try:
                     file = checked_path(root, path)
@@ -332,9 +323,7 @@ class SnapshotStore:
             ).fetchone()[0]
             by_hash = {}
             for item in added:
-                by_hash.setdefault((item["sha256"], item["size"]), []).append(
-                    item["path"]
-                )
+                by_hash.setdefault((item["sha256"], item["size"]), []).append(item["path"])
             candidates = [
                 {
                     "from": item["path"],

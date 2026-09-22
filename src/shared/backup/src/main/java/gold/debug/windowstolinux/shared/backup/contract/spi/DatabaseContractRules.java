@@ -31,7 +31,8 @@ final class DatabaseContractRules {
      */
     static String identifier(String value, String name) {
         value = Objects.requireNonNull(value, name).trim();
-        if (!value.matches("[a-z0-9][a-z0-9-]{0,62}")) throw new IllegalArgumentException(name + " is invalid");
+        if (!value.matches("[a-z0-9][a-z0-9-]{0,62}"))
+            throw new IllegalArgumentException(name + " is invalid");
         return value;
     }
 
@@ -100,8 +101,8 @@ final class DatabaseContractRules {
      */
     static String relativePath(String value, String name) {
         value = Objects.requireNonNull(value, name).trim();
-        if (!value.matches("[A-Za-z0-9._/-]{1,255}") || value.startsWith("/")
-                || value.matches("^[A-Za-z]:.*") || value.contains("\\") || value.contains("//")) {
+        if (!value.matches("[A-Za-z0-9._/-]{1,255}") || value.startsWith("/") || value.matches("^[A-Za-z]:.*")
+                || value.contains("\\") || value.contains("//")) {
             throw new IllegalArgumentException(name + " is not a controlled relative path");
         }
         for (String segment : value.split("/")) {
@@ -142,12 +143,14 @@ final class DatabaseContractRules {
      */
     static List<String> evidence(List<String> values) {
         Objects.requireNonNull(values, "evidence");
-        if (values.isEmpty() || values.size() > 64) throw new IllegalArgumentException("database evidence is incomplete");
+        if (values.isEmpty() || values.size() > 64)
+            throw new IllegalArgumentException("database evidence is incomplete");
         List<String> result = new ArrayList<>(values.size());
         Set<String> unique = new HashSet<>();
         for (String value : values) {
             String text = text(value, "evidence", 512);
-            if (!unique.add(text)) throw new IllegalArgumentException("database evidence contains duplicates");
+            if (!unique.add(text))
+                throw new IllegalArgumentException("database evidence contains duplicates");
             result.add(text);
         }
         return List.copyOf(result);

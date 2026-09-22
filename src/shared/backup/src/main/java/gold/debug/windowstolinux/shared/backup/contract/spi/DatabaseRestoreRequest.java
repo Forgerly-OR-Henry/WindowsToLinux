@@ -11,13 +11,8 @@ import java.util.Objects;
  * @param target exact destination or managed target of the operation / 操作的精确目的地或受管目标
  * @param artifact verified build or backup artifact metadata / 已验证构建或备份制品元数据
  */
-public record DatabaseRestoreRequest(
-        String applicationId,
-        String credentialApplicationId,
-        String candidateId,
-        DatabaseConnectionProfile target,
-        DatabaseBackupArtifact artifact
-) {
+public record DatabaseRestoreRequest(String applicationId, String credentialApplicationId, String candidateId,
+        DatabaseConnectionProfile target, DatabaseBackupArtifact artifact) {
     /**
      * Validates candidate and database type identity. / 校验候选与数据库类型身份。
      *
@@ -31,8 +26,7 @@ public record DatabaseRestoreRequest(
      */
     public DatabaseRestoreRequest {
         applicationId = DatabaseContractRules.identifier(applicationId, "applicationId");
-        credentialApplicationId = DatabaseContractRules.identifier(
-                credentialApplicationId, "credentialApplicationId");
+        credentialApplicationId = DatabaseContractRules.identifier(credentialApplicationId, "credentialApplicationId");
         candidateId = DatabaseContractRules.candidate(applicationId, candidateId);
         target = Objects.requireNonNull(target, "target");
         artifact = Objects.requireNonNull(artifact, "artifact");
@@ -49,12 +43,8 @@ public record DatabaseRestoreRequest(
      * @param target exact destination or managed target of the operation / 操作的精确目的地或受管目标
      * @param artifact verified build or backup artifact metadata / 已验证构建或备份制品元数据
      */
-    public DatabaseRestoreRequest(
-            String applicationId,
-            String candidateId,
-            DatabaseConnectionProfile target,
-            DatabaseBackupArtifact artifact
-    ) {
+    public DatabaseRestoreRequest(String applicationId, String candidateId, DatabaseConnectionProfile target,
+            DatabaseBackupArtifact artifact) {
         this(applicationId, applicationId, candidateId, target, artifact);
     }
 }

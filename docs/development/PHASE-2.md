@@ -32,22 +32,22 @@
 
 ## 2. 模块增量总表
 
-| 模块 | 已有基础 | 变化类型 | 本期具体增量 | 功能入口 |
-| --- | --- | --- | --- | --- |
-| `shared/model` | 一期项目模型 | 增强 | 扩展构建、运行时、语言事实与配置绑定 | [项目事实](#analysis) |
-| `shared/analyze` | Maven Spring Boot | 增强 | 六类项目、语言证据和显式运行时建议 | [项目事实](#analysis) |
-| `shared/git` | 本地来源 | 新增 | 无凭据 URL、固定 Commit、受限 Git 快照 | [Git 来源](#git) |
-| `shared/source` | 本地归档 | 增强 | Git 与本地共用来源摘要和排除规则 | [Git 来源](#git) |
-| `shared/config` | 基础输入 | 新增 | 不可变配置、秘密引用及发布绑定 | [配置与秘密](#configuration) |
-| `shared/deploy` | 单组件事务 | 增强 | 更多项目与容器适配，回滚旧运行参数 | [构建与发布](#deployment) |
-| `shared/linux` | Ubuntu/systemd 契约 | 增强 | 运行类型、容器与更多目标能力 | [Linux 范围](#linux) |
-| `shared/linux-sshd` | Maven/Ubuntu 执行 | 增强 | 语言构建、Docker/Podman 与发行版准备 | [构建与发布](#deployment) |
-| `shared/ai` | 单 Provider 建议 | 增强 | 多 Provider 和类型化只读 Agent 工具 | [AI 扩展](#ai) |
-| `app/db` | 服务器和应用记录 | 增强 | 配置修订、秘密绑定和发布身份 | [配置与秘密](#configuration) |
-| `app/secret` | SSH/AI 平台凭据 | 增强 | 应用秘密的标识和修订 | [配置与秘密](#configuration) |
-| `app/service` | 本地单类型部署 | 增强 | Git、配置、容器和 AI 用例接线 | [构建与发布](#deployment) |
-| `app/ui` | 一期界面 | 增强 | 来源、运行时及配置审阅 | [项目事实](#analysis) |
-| `app/main` | 桌面装配 | 增强 | 新增共享能力装配 | [构建与发布](#deployment) |
+| 模块                      | 已有基础            | 变化类型 | 本期具体增量                           | 功能入口                     |
+| ------------------------- | ------------------- | -------- | -------------------------------------- | ---------------------------- |
+| `shared/model`            | 一期项目模型        | 增强     | 扩展构建、运行时、语言事实与配置绑定   | [项目事实](#analysis)        |
+| `shared/standard/analyze` | Maven Spring Boot   | 增强     | 六类项目、语言证据和显式运行时建议     | [项目事实](#analysis)        |
+| `shared/git`              | 本地来源            | 新增     | 无凭据 URL、固定 Commit、受限 Git 快照 | [Git 来源](#git)             |
+| `shared/source`           | 本地归档            | 增强     | Git 与本地共用来源摘要和排除规则       | [Git 来源](#git)             |
+| `shared/config`           | 基础输入            | 新增     | 不可变配置、秘密引用及发布绑定         | [配置与秘密](#configuration) |
+| `shared/deploy`           | 单组件事务          | 增强     | 更多项目与容器适配，回滚旧运行参数     | [构建与发布](#deployment)    |
+| `shared/linux`            | Ubuntu/systemd 契约 | 增强     | 运行类型、容器与更多目标能力           | [Linux 范围](#linux)         |
+| `shared/linux-sshd`       | Maven/Ubuntu 执行   | 增强     | 语言构建、Docker/Podman 与发行版准备   | [构建与发布](#deployment)    |
+| `shared/ai`               | 单 Provider 建议    | 增强     | 多 Provider 和类型化只读 Agent 工具    | [AI 扩展](#ai)               |
+| `app/db`                  | 服务器和应用记录    | 增强     | 配置修订、秘密绑定和发布身份           | [配置与秘密](#configuration) |
+| `app/secret`              | SSH/AI 平台凭据     | 增强     | 应用秘密的标识和修订                   | [配置与秘密](#configuration) |
+| `app/service`             | 本地单类型部署      | 增强     | Git、配置、容器和 AI 用例接线          | [构建与发布](#deployment)    |
+| `app/ui`                  | 一期界面            | 增强     | 来源、运行时及配置审阅                 | [项目事实](#analysis)        |
+| `app/main`                | 桌面装配            | 增强     | 新增共享能力装配                       | [构建与发布](#deployment)    |
 
 <a id="features"></a>
 
@@ -85,18 +85,18 @@
 
 ### 3.2 项目事实、支持范围与运行时建议
 
-**涉及模块与分工：** `shared/analyze` 提取事实，`shared/model` 表达类型和证据，`app/ui` 展示审阅输入。
+**涉及模块与分工：** `shared/standard/analyze` 提取事实，`shared/model` 表达类型和证据，`app/ui` 展示审阅输入。
 
 本节描述二期引入范围，当前枚举还包含三期生态；当前动态版本选择见四期。
 
-| 类型 | 二期项目目标与必要条件 |
-| --- | --- |
-| Spring Boot | Maven 与 Gradle 不得并存；Gradle 使用完整 Wrapper，Maven 使用完整 Wrapper 或目标机系统 Maven；只接受唯一且具有 Spring Boot 2/3 Launcher 的可执行 JAR |
-| 普通 Java JAR | Java 版本、主类、启动参数和健康策略都可确定 |
-| Node.js | 锁文件、包管理器、构建/启动脚本和监听端口明确 |
-| Python | Python 版本、锁定依赖、入口、虚拟环境和健康策略明确 |
-| 静态站点 | 构建产物目录确定；构建型站点具有精确或人工确认的 Node 主版本，纯静态站点不要求 Node |
-| Dockerfile | 单镜像、单容器、端口/健康/持久化目录明确 |
+| 类型          | 二期项目目标与必要条件                                                                                                                               |
+| ------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Spring Boot   | Maven 与 Gradle 不得并存；Gradle 使用完整 Wrapper，Maven 使用完整 Wrapper 或目标机系统 Maven；只接受唯一且具有 Spring Boot 2/3 Launcher 的可执行 JAR |
+| 普通 Java JAR | Java 版本、主类、启动参数和健康策略都可确定                                                                                                          |
+| Node.js       | 锁文件、包管理器、构建/启动脚本和监听端口明确                                                                                                        |
+| Python        | Python 版本、锁定依赖、入口、虚拟环境和健康策略明确                                                                                                  |
+| 静态站点      | 构建产物目录确定；构建型站点具有精确或人工确认的 Node 主版本，纯静态站点不要求 Node                                                                  |
+| Dockerfile    | 单镜像、单容器、端口/健康/持久化目录明确                                                                                                             |
 
 没有锁文件、入口冲突、需要用户自定义任意命令或无法确定产物的项目只能展示分析结果，不能标记正式支持。多组件受管图属于三期；当前 ContainerDeploymentInspector 仍拒绝 Compose 文件，不能把组件图能力当成 Compose 支持。
 
@@ -200,12 +200,12 @@
 
 ## 4. 功能依赖与实现约束
 
-| 功能 | 依赖与约束 |
-| --- | --- |
-| Git 来源 | 固定 Commit 与安全快照先于类型分析和目标机构建。 |
-| 配置与秘密 | 不可变修订和精确引用参与发布身份，回滚必须恢复原绑定。 |
+| 功能           | 依赖与约束                                                                   |
+| -------------- | ---------------------------------------------------------------------------- |
+| Git 来源       | 固定 Commit 与安全快照先于类型分析和目标机构建。                             |
+| 配置与秘密     | 不可变修订和精确引用参与发布身份，回滚必须恢复原绑定。                       |
 | 类型与容器适配 | 每类项目独立完成分析、计划、构建和验收；发行版能力不能由同语言成功样例外推。 |
-| AI 建议 | 使用已经脱敏的类型化事实，建议必须通过确定性校验后才进入计划。 |
+| AI 建议        | 使用已经脱敏的类型化事实，建议必须通过确定性校验后才进入计划。               |
 
 <a id="acceptance"></a>
 
@@ -243,12 +243,12 @@
 
 ### 项目、Git、容器与系统证据
 
-| 功能 | 版本与环境 | 已验证结果和限制 |
-| --- | --- | --- |
-| 分析、Git、配置与 Provider | 2026-08-12，JDK 21 本地门禁 | 28 模块、160 项测试，0 失败/错误、2 项平台条件跳过；覆盖静态事实、固定 Commit、不可变配置及秘密修订、受限工具、类型化计划和模块边界。前端类型检查、Vitest、构建和 Chromium 骨架流程独立通过。 |
-| 六类部署与公开 Git | 迁移前 Ubuntu 24.04 x86-64，DesktopApplicationService/SSHD | 普通 JAR、Node、Python、静态、Dockerfile 及公开 Git 固定 Commit 的 Gradle Spring Boot 完成分析、归档、构建、发布、健康和观测；不证明后续统一链路。 |
-| Reviewed 与 Podman | 2026-08-13，同一精确 Ubuntu 目标，helper v3 | 统一 Spring Boot 准备、发布、失败恢复、回滚、生命周期、Wrapper、资源/归属及主机信任独立通过；Podman Quadlet 另有 HTTP、回滚、自启及生命周期证据。 |
-| CentOS Stream 9 | 2026-08-14，x86-64-v3，SELinux Enforcing | 可选 VARIANT_ID 识别缺口修复后仍曾在 SSH KEX 前中断；最终产品准备和整应用成功范围见[三期发行版验收](PHASE-3.md#acceptance-linux)。中间失败不计通过，Stream 10、Ubuntu 22.04 和其他目标不据此外推。 |
+| 功能                       | 版本与环境                                                 | 已验证结果和限制                                                                                                                                                                                   |
+| -------------------------- | ---------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 分析、Git、配置与 Provider | 2026-08-12，JDK 21 本地门禁                                | 28 模块、160 项测试，0 失败/错误、2 项平台条件跳过；覆盖静态事实、固定 Commit、不可变配置及秘密修订、受限工具、类型化计划和模块边界。前端类型检查、Vitest、构建和 Chromium 骨架流程独立通过。      |
+| 六类部署与公开 Git         | 迁移前 Ubuntu 24.04 x86-64，DesktopApplicationService/SSHD | 普通 JAR、Node、Python、静态、Dockerfile 及公开 Git 固定 Commit 的 Gradle Spring Boot 完成分析、归档、构建、发布、健康和观测；不证明后续统一链路。                                                 |
+| Reviewed 与 Podman         | 2026-08-13，同一精确 Ubuntu 目标，helper v3                | 统一 Spring Boot 准备、发布、失败恢复、回滚、生命周期、Wrapper、资源/归属及主机信任独立通过；Podman Quadlet 另有 HTTP、回滚、自启及生命周期证据。                                                  |
+| CentOS Stream 9            | 2026-08-14，x86-64-v3，SELinux Enforcing                   | 可选 VARIANT_ID 识别缺口修复后仍曾在 SSH KEX 前中断；最终产品准备和整应用成功范围见[三期发行版验收](PHASE-3.md#acceptance-linux)。中间失败不计通过，Stream 10、Ubuntu 22.04 和其他目标不据此外推。 |
 
 基础语言事实只来自有界元数据，JavaScript/TypeScript 共存不自动形成多组件；构建型静态站点没有隐藏 Node 默认值。公开 Git 和指定平台秘密修订的证据不能代替私有远端凭据验收。
 

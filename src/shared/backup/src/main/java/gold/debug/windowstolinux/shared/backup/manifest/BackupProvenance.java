@@ -27,7 +27,8 @@ public record BackupProvenance(String algorithm, String keyId, String signature)
                 throw new IllegalArgumentException("unsigned provenance cannot contain key material");
             }
         } else {
-            if (!algorithm.equals("Ed25519")) throw new IllegalArgumentException("unsupported backup signature algorithm");
+            if (!algorithm.equals("Ed25519"))
+                throw new IllegalArgumentException("unsupported backup signature algorithm");
             keyId = BackupManifestRules.identifier(keyId, "keyId");
             try {
                 if (Base64.getDecoder().decode(signature).length != 64) {

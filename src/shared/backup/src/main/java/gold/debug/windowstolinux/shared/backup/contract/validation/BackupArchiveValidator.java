@@ -1,18 +1,5 @@
 package gold.debug.windowstolinux.shared.backup.contract.validation;
 
-import gold.debug.windowstolinux.shared.backup.manifest.BackupManifest;
-import gold.debug.windowstolinux.shared.backup.manifest.BackupManifestCodec;
-import gold.debug.windowstolinux.shared.backup.manifest.BackupMember;
-import gold.debug.windowstolinux.shared.backup.manifest.BackupProvenance;
-import org.apache.commons.compress.archivers.zip.UnixStat;
-import org.apache.commons.compress.archivers.zip.UnicodePathExtraField;
-import org.apache.commons.compress.archivers.zip.X000A_NTFS;
-import org.apache.commons.compress.archivers.zip.X5455_ExtendedTimestamp;
-import org.apache.commons.compress.archivers.zip.Zip64ExtendedInformationExtraField;
-import org.apache.commons.compress.archivers.zip.ZipArchiveEntry;
-import org.apache.commons.compress.archivers.zip.ZipExtraField;
-import org.apache.commons.compress.archivers.zip.ZipFile;
-
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
@@ -36,6 +23,19 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.zip.ZipEntry;
 
+import gold.debug.windowstolinux.shared.backup.manifest.BackupManifest;
+import gold.debug.windowstolinux.shared.backup.manifest.BackupManifestCodec;
+import gold.debug.windowstolinux.shared.backup.manifest.BackupMember;
+import gold.debug.windowstolinux.shared.backup.manifest.BackupProvenance;
+import org.apache.commons.compress.archivers.zip.UnicodePathExtraField;
+import org.apache.commons.compress.archivers.zip.UnixStat;
+import org.apache.commons.compress.archivers.zip.X000A_NTFS;
+import org.apache.commons.compress.archivers.zip.X5455_ExtendedTimestamp;
+import org.apache.commons.compress.archivers.zip.Zip64ExtendedInformationExtraField;
+import org.apache.commons.compress.archivers.zip.ZipArchiveEntry;
+import org.apache.commons.compress.archivers.zip.ZipExtraField;
+import org.apache.commons.compress.archivers.zip.ZipFile;
+
 /**
  * Validates an untrusted backup without extracting any member. / 在不提取任何成员的情况下校验不受信备份。
  */
@@ -45,16 +45,19 @@ public final class BackupArchiveValidator {
      * <p>缓冲区大小。
      */
     private static final int BUFFER_SIZE = 64 * 1024;
+
     /**
      * Bound backup archive policy collaborator for explicit validation and resource-bound policy.
      * <p>处理显式校验及资源边界策略的备份归档策略协作对象。
      */
     private final BackupArchivePolicy policy;
+
     /**
      * Signature trust.
      * <p>签名信任。
      */
     private final BackupSignatureTrust signatureTrust;
+
     /**
      * Bound backup manifest codec collaborator for codec.
      * <p>处理编解码器的备份清单编解码器协作对象。
@@ -108,8 +111,8 @@ public final class BackupArchiveValidator {
             throw BackupException.create(BackupFailureType.ARCHIVE_CHANGED,
                     "backup archive changed while it was being validated");
         }
-        return new BackupArchiveValidation(finalArchiveHash, state.manifest(),
-                state.verifiedBytes(), state.provenanceStatus());
+        return new BackupArchiveValidation(finalArchiveHash, state.manifest(), state.verifiedBytes(),
+                state.provenanceStatus());
     }
 
     /**
@@ -214,9 +217,11 @@ public final class BackupArchiveValidator {
      */
     private void validateEntryShape(ZipArchiveEntry entry) throws BackupException {
         String name = entry.getName();
-        if (!"manifest.json".equals(name)) ArchivePathRules.validate(name, policy.maximumPathLength());
+        if (!"manifest.json".equals(name))
+            ArchivePathRules.validate(name, policy.maximumPathLength());
         if (name == null || name.length() > policy.maximumPathLength() || entry.isDirectory()) {
-            throw BackupException.create(BackupFailureType.MEMBER_REJECTED, "directories and invalid paths are rejected");
+            throw BackupException.create(BackupFailureType.MEMBER_REJECTED,
+                    "directories and invalid paths are rejected");
         }
         if (entry.getGeneralPurposeBit().usesEncryption()) {
             throw BackupException.create(BackupFailureType.MEMBER_REJECTED, "ZIP-level encryption is not supported");
@@ -240,10 +245,8 @@ public final class BackupArchiveValidator {
                     "links, devices and non-regular archive members are rejected");
         }
         for (ZipExtraField field : entry.getExtraFields()) {
-            if (!(field instanceof Zip64ExtendedInformationExtraField)
-                    && !(field instanceof X5455_ExtendedTimestamp)
-                    && !(field instanceof X000A_NTFS)
-                    && !(field instanceof UnicodePathExtraField)) {
+            if (!(field instanceof Zip64ExtendedInformationExtraField) && !(field instanceof X5455_ExtendedTimestamp)
+                    && !(field instanceof X000A_NTFS) && !(field instanceof UnicodePathExtraField)) {
                 throw BackupException.create(BackupFailureType.MEMBER_REJECTED,
                         "unrecognized link-capable ZIP metadata is rejected: " + field.getClass().getSimpleName());
             }
@@ -298,7 +301,8 @@ public final class BackupArchiveValidator {
         try (input) {
             int read;
             while ((read = input.read(buffer)) >= 0) {
-                if (read == 0) continue;
+                if (read == 0)
+                    continue;
                 count = Math.addExact(count, read);
                 if (count > expectedSize) {
                     throw BackupException.create(BackupFailureType.INTEGRITY_FAILED,
@@ -309,7 +313,8 @@ public final class BackupArchiveValidator {
         } catch (BackupException exception) {
             throw exception;
         } catch (IOException | ArithmeticException exception) {
-            throw BackupException.create(BackupFailureType.ARCHIVE_INVALID, "archive member could not be read", exception);
+            throw BackupException.create(BackupFailureType.ARCHIVE_INVALID, "archive member could not be read",
+                    exception);
         }
         if (count != expectedSize) {
             throw BackupException.create(BackupFailureType.INTEGRITY_FAILED,
@@ -329,8 +334,10 @@ public final class BackupArchiveValidator {
      */
     private BackupProvenanceStatus verifyProvenance(BackupManifest manifest) throws BackupException {
         BackupProvenance provenance = manifest.provenance();
-        if (!provenance.signed()) return BackupProvenanceStatus.NOT_PRESENT;
-        if (signatureTrust == null) return BackupProvenanceStatus.NOT_VERIFIED;
+        if (!provenance.signed())
+            return BackupProvenanceStatus.NOT_PRESENT;
+        if (signatureTrust == null)
+            return BackupProvenanceStatus.NOT_VERIFIED;
         try {
             PublicKey key = Objects.requireNonNull(signatureTrust.resolve(provenance.keyId()), "trusted key");
             Signature verifier = Signature.getInstance("Ed25519");
@@ -362,11 +369,13 @@ public final class BackupArchiveValidator {
         byte[] buffer = new byte[BUFFER_SIZE];
         try (InputStream input = Files.newInputStream(path)) {
             int read;
-            while ((read = input.read(buffer)) >= 0) if (read > 0) digest.update(buffer, 0, read);
+            while ((read = input.read(buffer)) >= 0)
+                if (read > 0)
+                    digest.update(buffer, 0, read);
             return HexFormat.of().formatHex(digest.digest());
         } catch (IOException exception) {
-            throw BackupException.create(BackupFailureType.ARCHIVE_INVALID,
-                    "backup archive could not be hashed", exception);
+            throw BackupException.create(BackupFailureType.ARCHIVE_INVALID, "backup archive could not be hashed",
+                    exception);
         }
     }
 
@@ -382,15 +391,17 @@ public final class BackupArchiveValidator {
      * @throws BackupException if backup validation or the controlled backup operation fails / 备份校验或受控备份操作失败时
      */
     private static byte[] readBounded(InputStream input, int maximumBytes, BackupFailureType failureType,
-                                      String diagnostic) throws BackupException {
+            String diagnostic) throws BackupException {
         try (input; ByteArrayOutputStream output = new ByteArrayOutputStream(Math.min(maximumBytes, 16 * 1024))) {
             byte[] buffer = new byte[8192];
             int total = 0;
             int read;
             while ((read = input.read(buffer)) >= 0) {
-                if (read == 0) continue;
+                if (read == 0)
+                    continue;
                 total = Math.addExact(total, read);
-                if (total > maximumBytes) throw BackupException.create(failureType, diagnostic);
+                if (total > maximumBytes)
+                    throw BackupException.create(failureType, diagnostic);
                 output.write(buffer, 0, read);
             }
             return output.toByteArray();
@@ -424,7 +435,7 @@ public final class BackupArchiveValidator {
      * @param verifiedBytes verified bytes / 已验证字节
      * @param provenanceStatus provenance status / 来源证据状态
      */
-    private record ValidationState(
-            BackupManifest manifest, long verifiedBytes, BackupProvenanceStatus provenanceStatus) {
+    private record ValidationState(BackupManifest manifest, long verifiedBytes,
+            BackupProvenanceStatus provenanceStatus) {
     }
 }

@@ -1,12 +1,14 @@
 package gold.debug.windowstolinux.app.ui.component;
 
-import gold.debug.windowstolinux.app.ui.i18n.PageMessagePresenter;
-import javax.swing.JOptionPane;
-import javax.swing.JTextArea;
-import javax.swing.SwingUtilities;
 import java.awt.Component;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicBoolean;
+
+import javax.swing.JOptionPane;
+import javax.swing.JTextArea;
+import javax.swing.SwingUtilities;
+
+import gold.debug.windowstolinux.app.ui.i18n.PageMessagePresenter;
 
 /**
  * Shares an explicit, default-declined system-change dialog across product entry points. / 在产品入口间共用默认拒绝的显式系统变更对话框。
@@ -16,7 +18,8 @@ public final class SystemPreparationDialog {
      * Prevents instantiation of this static contract helper.
      * <p>防止实例化当前静态契约辅助类。
      */
-    private SystemPreparationDialog() { }
+    private SystemPreparationDialog() {
+    }
 
     /**
      * Confirms system preparation dialog.
@@ -55,20 +58,22 @@ public final class SystemPreparationDialog {
      * @return true when shows the system-preparation consent dialog on the Swing event thread and returns the user's decision, false otherwise / 在 Swing 事件线程显示系统准备同意对话框，并返回用户决定时为 true，否则为 false
      */
     private static boolean show(Component owner, PageMessagePresenter messages, String title,
-                                java.util.function.Supplier<JTextArea> content) {
-        if (Thread.currentThread().isInterrupted()) return false;
+            java.util.function.Supplier<JTextArea> content) {
+        if (Thread.currentThread().isInterrupted())
+            return false;
         AtomicBoolean accepted = new AtomicBoolean();
         Runnable display = () -> {
             Object[] options = {messages.text("environment.system.accept"), messages.text("environment.system.cancel")};
             javax.swing.JScrollPane description = new javax.swing.JScrollPane(content.get());
             description.setBorder(null);
-            accepted.set(JOptionPane.showOptionDialog(owner, description,
-                    title, JOptionPane.DEFAULT_OPTION,
+            accepted.set(JOptionPane.showOptionDialog(owner, description, title, JOptionPane.DEFAULT_OPTION,
                     JOptionPane.WARNING_MESSAGE, null, options, options[1]) == 0);
         };
         try {
-            if (SwingUtilities.isEventDispatchThread()) display.run();
-            else SwingUtilities.invokeAndWait(display);
+            if (SwingUtilities.isEventDispatchThread())
+                display.run();
+            else
+                SwingUtilities.invokeAndWait(display);
         } catch (InterruptedException interrupted) {
             Thread.currentThread().interrupt();
             return false;
@@ -88,10 +93,11 @@ public final class SystemPreparationDialog {
      */
     static JTextArea content(PageMessagePresenter messages, Map<String, ?> details) {
         String action = Boolean.TRUE.equals(details.get("reboot"))
-                ? messages.text("environment.system.action.reboot") : messages.text("environment.system.action.finish");
-        return description(messages.text("environment.system.confirm", Map.of(
-                "serverId", details.get("serverId"), "host", details.get("host"), "action", action,
-                "security", messages.text("environment.system.security." + details.get("security")))));
+                ? messages.text("environment.system.action.reboot")
+                : messages.text("environment.system.action.finish");
+        return description(messages.text("environment.system.confirm",
+                Map.of("serverId", details.get("serverId"), "host", details.get("host"), "action", action, "security",
+                        messages.text("environment.system.security." + details.get("security")))));
     }
 
     /**

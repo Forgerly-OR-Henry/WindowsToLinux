@@ -14,6 +14,7 @@ public interface DesktopRecoveryInteraction {
      * @return true when asks whether to open an independent console for this failed server, false otherwise / 询问是否为失败的服务器打开独立控制台时为 true，否则为 false
      */
     boolean offerSshRecovery(ServerProfile server);
+
     /**
      * Presents session controls without blocking the service worker. / 展示会话控件，不阻塞服务工作线程。
      *

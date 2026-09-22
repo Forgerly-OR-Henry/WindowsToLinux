@@ -28,8 +28,8 @@ final class ArchivePathRules {
         }
         String[] segments = path.split("/", -1);
         for (String segment : segments) {
-            if (segment.isEmpty() || segment.equals(".") || segment.equals("..")
-                    || segment.endsWith(" ") || segment.endsWith(".")) {
+            if (segment.isEmpty() || segment.equals(".") || segment.equals("..") || segment.endsWith(" ")
+                    || segment.endsWith(".")) {
                 throw BackupException.create(BackupFailureType.MEMBER_REJECTED,
                         "archive member path contains an unsafe segment");
             }

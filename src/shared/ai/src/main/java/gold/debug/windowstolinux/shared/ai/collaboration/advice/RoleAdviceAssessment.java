@@ -24,7 +24,8 @@ public record RoleAdviceAssessment(AiAdviceDecision decision, String summary, Li
         decision = Objects.requireNonNull(decision, "decision");
         summary = bounded(summary, "summary", 512);
         findings = Objects.requireNonNull(findings, "findings");
-        if (findings.size() > 5) throw new IllegalArgumentException("too many findings");
+        if (findings.size() > 5)
+            throw new IllegalArgumentException("too many findings");
         findings = findings.stream().map(value -> bounded(value, "finding", 256)).toList();
     }
 

@@ -15,7 +15,9 @@ final class BackupDatabaseProfileMapper {
      * Prevents instantiation of this static contract helper.
      * <p>防止实例化当前静态契约辅助类。
      */
-    private BackupDatabaseProfileMapper() { }
+    private BackupDatabaseProfileMapper() {
+    }
+
     /**
      * Builds database connection profile from the supplied profile inputs.
      * <p>根据所提供配置资料输入构建数据库连接配置资料。
@@ -23,10 +25,11 @@ final class BackupDatabaseProfileMapper {
      * @param binding binding / 绑定
      * @return database connection profile from the supplied profile inputs / 根据所提供配置资料输入构建数据库连接配置资料
      */
-    static DatabaseConnectionProfile profile(gold.debug.windowstolinux.shared.config.resource.ManagedDatabaseBinding binding) {
+    static DatabaseConnectionProfile profile(
+            gold.debug.windowstolinux.shared.config.resource.ManagedDatabaseBinding binding) {
         var connection = binding.connection();
         if (connection instanceof ManagedDatabaseConnection.Sqlite sqlite) {
-            return new DatabaseConnectionProfile.Sqlite(binding.databaseId(),sqlite.location(),sqlite.fileName());
+            return new DatabaseConnectionProfile.Sqlite(binding.databaseId(), sqlite.location(), sqlite.fileName());
         }
         ManagedDatabaseConnection.Server server = (ManagedDatabaseConnection.Server) connection;
         return new DatabaseConnectionProfile.Server(type(server.engine()), server.host(), server.port(),
@@ -46,7 +49,8 @@ final class BackupDatabaseProfileMapper {
             case POSTGRESQL -> BackupDatabaseType.POSTGRESQL;
             case MYSQL -> BackupDatabaseType.MYSQL;
             case MARIADB -> BackupDatabaseType.MARIADB;
-            case REDIS -> throw ApplicationServiceException.create(ApplicationServiceFailureType.BACKUP_INPUT_INCOMPLETE, "complete Redis backup is unsupported");
+            case REDIS -> throw ApplicationServiceException.create(
+                    ApplicationServiceFailureType.BACKUP_INPUT_INCOMPLETE, "complete Redis backup is unsupported");
         };
     }
 }

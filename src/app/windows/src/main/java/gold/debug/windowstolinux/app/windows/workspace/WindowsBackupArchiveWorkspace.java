@@ -46,8 +46,7 @@ public final class WindowsBackupArchiveWorkspace {
             if (Files.exists(normalized, LinkOption.NOFOLLOW_LINKS)) {
                 throw failure("The selected backup destination already exists", null);
             }
-            temporary = Files.createTempFile(parent, ".windowstolinux-backup-", ".tmp")
-                    .toAbsolutePath().normalize();
+            temporary = Files.createTempFile(parent, ".windowstolinux-backup-", ".tmp").toAbsolutePath().normalize();
             BasicFileAttributes attributes = attributes(temporary);
             temporaryFileKey = attributes.fileKey();
             if (!attributes.isRegularFile() || Files.isSymbolicLink(temporary)) {
@@ -99,7 +98,8 @@ public final class WindowsBackupArchiveWorkspace {
      */
     public void discardTemporary(WindowsBackupArchiveAttempt attempt) throws WindowsWorkspaceException {
         Objects.requireNonNull(attempt, "attempt");
-        if (!Files.exists(attempt.temporary(), LinkOption.NOFOLLOW_LINKS)) return;
+        if (!Files.exists(attempt.temporary(), LinkOption.NOFOLLOW_LINKS))
+            return;
         try {
             requireOwned(attempt.temporary(), attempt.fileKey());
             Files.delete(attempt.temporary());
@@ -122,8 +122,10 @@ public final class WindowsBackupArchiveWorkspace {
             throws WindowsWorkspaceException {
         Objects.requireNonNull(attempt, "attempt");
         expectedSha256 = Objects.requireNonNull(expectedSha256, "expectedSha256").trim();
-        if (!expectedSha256.matches("[0-9a-f]{64}")) throw failure("The expected backup digest is invalid", null);
-        if (!Files.exists(attempt.destination(), LinkOption.NOFOLLOW_LINKS)) return;
+        if (!expectedSha256.matches("[0-9a-f]{64}"))
+            throw failure("The expected backup digest is invalid", null);
+        if (!Files.exists(attempt.destination(), LinkOption.NOFOLLOW_LINKS))
+            return;
         try {
             requireOwned(attempt.destination(), attempt.fileKey());
             if (!expectedSha256.equals(hash(attempt.destination()))) {
@@ -148,8 +150,7 @@ public final class WindowsBackupArchiveWorkspace {
      */
     private static void requireWritableParent(Path parent, long minimumFreeBytes)
             throws IOException, WindowsWorkspaceException {
-        if (Files.isSymbolicLink(parent)
-                || !Files.isDirectory(parent, LinkOption.NOFOLLOW_LINKS)
+        if (Files.isSymbolicLink(parent) || !Files.isDirectory(parent, LinkOption.NOFOLLOW_LINKS)
                 || !Files.isWritable(parent)) {
             throw WindowsWorkspaceException.create(WindowsWorkspaceFailureType.DIRECTORY_NOT_WRITABLE,
                     "The backup destination parent is not one writable regular directory", null);
@@ -169,8 +170,7 @@ public final class WindowsBackupArchiveWorkspace {
      * @throws IOException if the required file or stream operation fails / 所需文件或流操作失败时
      * @throws WindowsWorkspaceException if the windows workspace boundary rejects the operation / Windows工作区边界拒绝当前操作时
      */
-    private static void requireOwned(Path path, Object expectedFileKey)
-            throws IOException, WindowsWorkspaceException {
+    private static void requireOwned(Path path, Object expectedFileKey) throws IOException, WindowsWorkspaceException {
         BasicFileAttributes attributes = attributes(path);
         if (!attributes.isRegularFile() || Files.isSymbolicLink(path)
                 || expectedFileKey != null && !expectedFileKey.equals(attributes.fileKey())) {
@@ -204,7 +204,9 @@ public final class WindowsBackupArchiveWorkspace {
             MessageDigest digest = MessageDigest.getInstance("SHA-256");
             byte[] buffer = new byte[BUFFER_SIZE];
             int read;
-            while ((read = input.read(buffer)) >= 0) if (read > 0) digest.update(buffer, 0, read);
+            while ((read = input.read(buffer)) >= 0)
+                if (read > 0)
+                    digest.update(buffer, 0, read);
             return HexFormat.of().formatHex(digest.digest());
         } catch (NoSuchAlgorithmException exception) {
             throw failure("SHA-256 is unavailable for backup cleanup", exception);
@@ -220,19 +222,21 @@ public final class WindowsBackupArchiveWorkspace {
      * @param original original / 原始
      */
     private static void deleteCreatedTemporary(Path temporary, Object expectedFileKey, Exception original) {
-        if (temporary == null) return;
+        if (temporary == null)
+            return;
         if (expectedFileKey == null) {
-            original.addSuppressed(failure(
-                    "The failed backup temporary output could not be identity-bound and was preserved", null));
+            original.addSuppressed(
+                    failure("The failed backup temporary output could not be identity-bound and was preserved", null));
             return;
         }
         try {
-            if (!Files.exists(temporary, LinkOption.NOFOLLOW_LINKS)) return;
+            if (!Files.exists(temporary, LinkOption.NOFOLLOW_LINKS))
+                return;
             BasicFileAttributes attributes = attributes(temporary);
             if (!attributes.isRegularFile() || Files.isSymbolicLink(temporary)
                     || !expectedFileKey.equals(attributes.fileKey())) {
-                original.addSuppressed(failure(
-                        "The failed backup temporary output changed externally and was preserved", null));
+                original.addSuppressed(
+                        failure("The failed backup temporary output changed externally and was preserved", null));
                 return;
             }
             Files.delete(temporary);

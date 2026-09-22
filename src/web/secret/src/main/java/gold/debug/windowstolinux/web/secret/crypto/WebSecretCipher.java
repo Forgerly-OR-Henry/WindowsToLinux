@@ -1,14 +1,16 @@
 package gold.debug.windowstolinux.web.secret.crypto;
 
-import gold.debug.windowstolinux.web.secret.masterkey.WebMasterKey;
-import javax.crypto.Cipher;
-import javax.crypto.spec.GCMParameterSpec;
-import javax.crypto.spec.SecretKeySpec;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.security.GeneralSecurityException;
 import java.security.SecureRandom;
 import java.util.Arrays;
+
+import javax.crypto.Cipher;
+import javax.crypto.spec.GCMParameterSpec;
+import javax.crypto.spec.SecretKeySpec;
+
+import gold.debug.windowstolinux.web.secret.masterkey.WebMasterKey;
 
 /**
  * Binds authenticated encryption to a secret's workspace, purpose and immutable revision.
@@ -26,7 +28,9 @@ public final class WebSecretCipher {
      *
      * @param key lookup key within the current contract / 当前契约内的查找键
      */
-    public WebSecretCipher(WebMasterKey key) { this.key = key; }
+    public WebSecretCipher(WebMasterKey key) {
+        this.key = key;
+    }
 
     /**
      * Encrypts secret content with authenticated protection under the selected key contract.
@@ -38,10 +42,12 @@ public final class WebSecretCipher {
      * @throws GeneralSecurityException if the requested cryptographic primitive or key cannot be used / 无法使用请求的加密原语或密钥时
      */
     public byte[] encrypt(byte[] plaintext, String associated) throws GeneralSecurityException {
-        byte[] nonce = new byte[12]; new SecureRandom().nextBytes(nonce);
+        byte[] nonce = new byte[12];
+        new SecureRandom().nextBytes(nonce);
         byte[] encrypted = crypt(Cipher.ENCRYPT_MODE, nonce, plaintext, associated);
         return ByteBuffer.allocate(1 + nonce.length + encrypted.length).put((byte) 1).put(nonce).put(encrypted).array();
     }
+
     /**
      * Authenticates encrypted content before returning decrypted secret material.
      * <p>在返回解密秘密素材前认证加密内容。
@@ -52,9 +58,12 @@ public final class WebSecretCipher {
      * @throws GeneralSecurityException if the requested cryptographic primitive or key cannot be used / 无法使用请求的加密原语或密钥时
      */
     public byte[] decrypt(byte[] payload, String associated) throws GeneralSecurityException {
-        if (payload.length < 29 || payload[0] != 1) throw new GeneralSecurityException("Credential format is invalid");
-        return crypt(Cipher.DECRYPT_MODE, Arrays.copyOfRange(payload, 1, 13), Arrays.copyOfRange(payload, 13, payload.length), associated);
+        if (payload.length < 29 || payload[0] != 1)
+            throw new GeneralSecurityException("Credential format is invalid");
+        return crypt(Cipher.DECRYPT_MODE, Arrays.copyOfRange(payload, 1, 13),
+                Arrays.copyOfRange(payload, 13, payload.length), associated);
     }
+
     /**
      * Performs AES-GCM encryption or decryption with authenticated context and clears the temporary key copy.
      * <p>结合认证上下文执行 AES-GCM 加密或解密，并清空临时密钥副本。
@@ -73,6 +82,8 @@ public final class WebSecretCipher {
             cipher.init(mode, new SecretKeySpec(raw, "AES"), new GCMParameterSpec(128, nonce));
             cipher.updateAAD(associated.getBytes(StandardCharsets.UTF_8));
             return cipher.doFinal(input);
-        } finally { Arrays.fill(raw, (byte) 0); }
+        } finally {
+            Arrays.fill(raw, (byte) 0);
+        }
     }
 }

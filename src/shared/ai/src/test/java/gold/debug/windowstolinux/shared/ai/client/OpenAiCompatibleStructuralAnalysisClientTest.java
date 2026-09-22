@@ -1,23 +1,23 @@
 package gold.debug.windowstolinux.shared.ai.client;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import java.nio.file.Path;
+import java.util.List;
+
 import gold.debug.windowstolinux.shared.ai.AiAnalysisException;
-import gold.debug.windowstolinux.shared.ai.parser.ChatCompletionResponseParser;
-import gold.debug.windowstolinux.shared.ai.generation.prompt.StructuralAnalysisPrompt;
 import gold.debug.windowstolinux.shared.ai.generation.prompt.AiResponseLanguageType;
+import gold.debug.windowstolinux.shared.ai.generation.prompt.StructuralAnalysisPrompt;
+import gold.debug.windowstolinux.shared.ai.parser.ChatCompletionResponseParser;
 import gold.debug.windowstolinux.shared.ai.redaction.RedactedDeploymentProjectFacts;
 import gold.debug.windowstolinux.shared.model.project.DeploymentBuildToolType;
 import gold.debug.windowstolinux.shared.model.project.DeploymentProjectFacts;
 import gold.debug.windowstolinux.shared.model.project.DeploymentProjectType;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
-
-import java.nio.file.Path;
-import java.util.List;
-
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class OpenAiCompatibleStructuralAnalysisClientTest {
     @TempDir
@@ -26,17 +26,17 @@ class OpenAiCompatibleStructuralAnalysisClientTest {
     @Test
     void sendsOnlyRedactedStaticFactsAndParsesEscapedContent() throws Exception {
         DeploymentProjectFacts facts = new DeploymentProjectFacts(temporaryDirectory, "demo",
-                DeploymentProjectType.SPRING_BOOT, DeploymentBuildToolType.MAVEN_WRAPPER,
-                List.of(), List.of(), List.of());
+                DeploymentProjectType.SPRING_BOOT, DeploymentBuildToolType.MAVEN_WRAPPER, List.of(), List.of(),
+                List.of());
 
         String body = StructuralAnalysisPrompt.requestBody("gpt-5", RedactedDeploymentProjectFacts.from(facts),
                 AiResponseLanguageType.SIMPLIFIED_CHINESE);
         assertTrue(body.contains("applicationId=demo"));
         assertTrue(body.contains("Respond in Simplified Chinese"));
         assertFalse(body.contains(temporaryDirectory.toString()));
-        assertTrue(new ChatCompletionResponseParser().parse(
-                "{\"choices\":[{\"message\":{\"content\":\"line one\\nline two\"}}]}"
-        ).explanation().contains("line two"));
+        assertTrue(new ChatCompletionResponseParser()
+                .parse("{\"choices\":[{\"message\":{\"content\":\"line one\\nline two\"}}]}").explanation()
+                .contains("line two"));
 
         String english = StructuralAnalysisPrompt.requestBody("gpt-5", RedactedDeploymentProjectFacts.from(facts),
                 AiResponseLanguageType.ENGLISH);

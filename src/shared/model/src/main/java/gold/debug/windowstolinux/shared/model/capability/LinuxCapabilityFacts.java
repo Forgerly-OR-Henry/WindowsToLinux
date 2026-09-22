@@ -1,13 +1,13 @@
 package gold.debug.windowstolinux.shared.model.capability;
 
+import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
+
 import gold.debug.windowstolinux.shared.model.project.DeploymentProjectType;
 import gold.debug.windowstolinux.shared.model.server.CpuMicroarchitectureLevel;
 import gold.debug.windowstolinux.shared.model.server.LinuxDistroType;
 import gold.debug.windowstolinux.shared.model.server.security.LinuxSecurityPosture;
-
-import java.util.Map;
-import java.util.Objects;
-import java.util.Set;
 
 /**
  * Live, non-secret host facts used only to decide whether a typed deployment plan may be offered.
@@ -38,31 +38,14 @@ import java.util.Set;
  * @param securityPosture observed mandatory-access-control and firewall state / 观测到的强制访问控制与防火墙状态
  * @param evidence bounded collection evidence / 有界采集证据
  */
-public record LinuxCapabilityFacts(
-        LinuxDistroType distro,
-        String version,
-        String architecture,
-        String packageManager,
-        String packageArchitecture,
-        boolean systemdAvailable,
-        boolean dockerAvailable,
-        boolean podmanAvailable,
-        boolean podmanQuadletAvailable,
-        Set<Integer> javaMajorVersions,
-        Set<Integer> nodeMajorVersions,
-        boolean npmAvailable,
-        boolean mavenAvailable,
-        Set<String> pythonVersions,
-        boolean python3Available,
+public record LinuxCapabilityFacts(LinuxDistroType distro, String version, String architecture, String packageManager,
+        String packageArchitecture, boolean systemdAvailable, boolean dockerAvailable, boolean podmanAvailable,
+        boolean podmanQuadletAvailable, Set<Integer> javaMajorVersions, Set<Integer> nodeMajorVersions,
+        boolean npmAvailable, boolean mavenAvailable, Set<String> pythonVersions, boolean python3Available,
         Map<DeploymentProjectType, Set<String>> serviceRuntimeVersions,
-        Map<EcosystemToolType, Set<String>> ecosystemToolVersions,
-        boolean dockerOperational,
-        boolean podmanOperational,
-        CpuMicroarchitectureLevel cpuMicroarchitecture,
-        Set<String> cpuFlags,
-        LinuxSecurityPosture securityPosture,
-        String evidence
-) {
+        Map<EcosystemToolType, Set<String>> ecosystemToolVersions, boolean dockerOperational, boolean podmanOperational,
+        CpuMicroarchitectureLevel cpuMicroarchitecture, Set<String> cpuFlags, LinuxSecurityPosture securityPosture,
+        String evidence) {
     /**
      * Validates and binds the inputs required by linux capability facts.
      * <p>校验并绑定Linux能力事实所需输入。
@@ -111,24 +94,25 @@ public record LinuxCapabilityFacts(
         if (pythonVersions.stream().anyMatch(minor -> minor == null || !minor.matches("[0-9]{1,3}\\.[0-9]{1,3}"))) {
             throw new IllegalArgumentException("pythonVersions must contain supported normalized versions");
         }
-        java.util.EnumMap<DeploymentProjectType, Set<String>> normalizedService =
-                new java.util.EnumMap<>(DeploymentProjectType.class);
+        java.util.EnumMap<DeploymentProjectType, Set<String>> normalizedService = new java.util.EnumMap<>(
+                DeploymentProjectType.class);
         Objects.requireNonNull(serviceRuntimeVersions, "serviceRuntimeVersions").forEach((projectType, versions) -> {
             Objects.requireNonNull(projectType, "service runtime project type");
             Set<String> copied = Set.copyOf(Objects.requireNonNull(versions, "service runtime versions"));
-            if (!serviceProjectType(projectType) || copied.stream().anyMatch(candidate -> !validServiceVersion(projectType, candidate))) {
+            if (!serviceProjectType(projectType)
+                    || copied.stream().anyMatch(candidate -> !validServiceVersion(projectType, candidate))) {
                 throw new IllegalArgumentException("service runtime versions must match their bounded project type");
             }
             normalizedService.put(projectType, copied);
         });
         serviceRuntimeVersions = Map.copyOf(normalizedService);
-        java.util.EnumMap<EcosystemToolType, Set<String>> normalizedTools =
-                new java.util.EnumMap<>(EcosystemToolType.class);
+        java.util.EnumMap<EcosystemToolType, Set<String>> normalizedTools = new java.util.EnumMap<>(
+                EcosystemToolType.class);
         Objects.requireNonNull(ecosystemToolVersions, "ecosystemToolVersions").forEach((tool, versions) -> {
             Objects.requireNonNull(tool, "ecosystem tool");
             Set<String> copied = Set.copyOf(Objects.requireNonNull(versions, "ecosystem tool versions"));
-            if (copied.stream().anyMatch(candidate -> candidate == null
-                    || !candidate.matches("[0-9A-Za-z][0-9A-Za-z.+_-]{0,63}"))) {
+            if (copied.stream().anyMatch(
+                    candidate -> candidate == null || !candidate.matches("[0-9A-Za-z][0-9A-Za-z.+_-]{0,63}"))) {
                 throw new IllegalArgumentException("ecosystem tool versions must be bounded normalized values");
             }
             normalizedTools.put(tool, copied);

@@ -1,15 +1,15 @@
 package gold.debug.windowstolinux.app.main.startup;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import org.junit.jupiter.api.Test;
+import static org.junit.jupiter.api.Assertions.*;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.HashSet;
 import java.util.Set;
 
-import static org.junit.jupiter.api.Assertions.*;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import org.junit.jupiter.api.Test;
 
 /** Guards the independent fixture catalog; actual build and business checks use polyglot_runner.py. */
 class MultiLanguageFixtureMatrixTest {
@@ -57,20 +57,20 @@ class MultiLanguageFixtureMatrixTest {
                 assertTrue(Files.isDirectory(directory.resolve(owner)), id);
             }
         }
-        assertEquals(Set.of("JAVA", "KOTLIN", "JAVASCRIPT", "TYPESCRIPT", "GO", "CSHARP",
-                "PHP", "PYTHON", "RUBY", "RUST", "CPP", "C"), languages);
+        assertEquals(Set.of("JAVA", "KOTLIN", "JAVASCRIPT", "TYPESCRIPT", "GO", "CSHARP", "PHP", "PYTHON", "RUBY",
+                "RUST", "CPP", "C"), languages);
         assertEquals(5, browserProjects);
         assertEquals(6, databases);
         try (var directories = Files.list(fixtures)) {
-            assertEquals(paths, directories.filter(Files::isDirectory)
-                    .map(p -> p.getFileName().toString()).collect(java.util.stream.Collectors.toSet()));
+            assertEquals(paths, directories.filter(Files::isDirectory).map(p -> p.getFileName().toString())
+                    .collect(java.util.stream.Collectors.toSet()));
         }
         JsonNode singles = new ObjectMapper().readTree(root.resolve("test/single-language/matrix.json").toFile());
         // The single-language catalog may grow independently; its own matrix test verifies every scenario.
         assertTrue(singles.isArray() && !singles.isEmpty());
         for (JsonNode single : singles) {
-            assertTrue(Files.isDirectory(root.resolve("test/single-language")
-                    .resolve(single.required("path").asText())));
+            assertTrue(
+                    Files.isDirectory(root.resolve("test/single-language").resolve(single.required("path").asText())));
         }
         assertFalse(Files.exists(root.resolve("test/matrix.json")), "Old matrix path must not survive migration");
     }
@@ -78,7 +78,8 @@ class MultiLanguageFixtureMatrixTest {
     private static Path repositoryRoot() {
         for (Path current = Path.of("").toAbsolutePath().normalize(); current != null; current = current.getParent()) {
             if (Files.isRegularFile(current.resolve("test/multi-language/matrix.json"))
-                    && Files.isRegularFile(current.resolve("pom.xml"))) return current;
+                    && Files.isRegularFile(current.resolve("pom.xml")))
+                return current;
         }
         throw new IllegalStateException("WindowsToLinux repository root was not found");
     }

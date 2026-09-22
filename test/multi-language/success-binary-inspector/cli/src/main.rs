@@ -41,8 +41,8 @@ fn execute() -> Result<i32, (i32, String)> {
             }
             Err((code, message)) => {
                 exit = exit.max(code);
-                let error = serde_json::from_str::<serde_json::Value>(&message)
-                    .unwrap_or_else(|_| json!({"message":message}));
+                let error =
+                    serde_json::from_str::<serde_json::Value>(&message).unwrap_or_else(|_| json!({"message":message}));
                 eprintln!("{input}: {error}");
                 items.push(json!({"file":input,"status":"error","exitCode":code,"error":error}));
             }

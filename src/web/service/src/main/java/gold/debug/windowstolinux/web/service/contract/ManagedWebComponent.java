@@ -1,13 +1,14 @@
 package gold.debug.windowstolinux.web.service.contract;
 
+import java.io.IOException;
+import java.util.*;
+
+import gold.debug.windowstolinux.shared.backup.format.BackupConfigurationCodec;
+import gold.debug.windowstolinux.shared.backup.format.BackupConfigurationDocument;
 import gold.debug.windowstolinux.shared.model.managed.ManagedApplication;
 import gold.debug.windowstolinux.shared.model.project.DeploymentProjectType;
 import gold.debug.windowstolinux.shared.model.project.DeploymentRuntimeSpecification;
-import gold.debug.windowstolinux.shared.deploy.input.AutomaticRuntimeResolver;
-import gold.debug.windowstolinux.shared.backup.format.BackupConfigurationCodec;
-import gold.debug.windowstolinux.shared.backup.format.BackupConfigurationDocument;
-import java.io.IOException;
-import java.util.*;
+import gold.debug.windowstolinux.shared.standard.deploy.input.AutomaticRuntimeResolver;
 
 /**
  * Persists exact non-secret component facts for lifecycle operations and subsequent backups.
@@ -23,8 +24,8 @@ import java.util.*;
  * @param runtimeDefinition runtime definition / 运行时定义
  */
 public record ManagedWebComponent(String id, ManagedApplication application, Map<String, String> inputs,
-                                  String activation, List<String> dependencies, String releaseIdentity,
-                                  List<gold.debug.windowstolinux.shared.config.secretref.SecretReference> secrets, String runtimeDefinition) {
+        String activation, List<String> dependencies, String releaseIdentity,
+        List<gold.debug.windowstolinux.shared.config.secretref.SecretReference> secrets, String runtimeDefinition) {
     /**
      * Binds the supplied dependencies and state for managed web component.
      * <p>为受管Web组件绑定传入的依赖及状态。
@@ -38,7 +39,12 @@ public record ManagedWebComponent(String id, ManagedApplication application, Map
      * @param secrets credential references or scoped secret-access service / 凭据引用或限定作用域的秘密访问服务
      * @param runtimeDefinition runtime definition / 运行时定义
      */
-    public ManagedWebComponent { inputs = Map.copyOf(inputs); dependencies = List.copyOf(dependencies); secrets = List.copyOf(secrets); }
+    public ManagedWebComponent {
+        inputs = Map.copyOf(inputs);
+        dependencies = List.copyOf(dependencies);
+        secrets = List.copyOf(secrets);
+    }
+
     /**
      * Builds deployment runtime specification from the supplied runtime inputs.
      * <p>根据所提供运行时输入构建部署运行时规格。
@@ -47,9 +53,15 @@ public record ManagedWebComponent(String id, ManagedApplication application, Map
      * @throws IllegalStateException if the required state or runtime facility is unavailable / 所需状态或运行设施不可用时
      */
     public DeploymentRuntimeSpecification runtime() {
-        try { return new gold.debug.windowstolinux.shared.config.persistence.serialization.DeploymentRuntimePersistenceCodec().read(Base64.getDecoder().decode(runtimeDefinition),configuration().runtimeConfiguration().healthCheck()); }
-        catch(IOException failure) { throw new IllegalStateException("Stored runtime is invalid",failure); }
+        try {
+            return new gold.debug.windowstolinux.shared.config.persistence.serialization.DeploymentRuntimePersistenceCodec()
+                    .read(Base64.getDecoder().decode(runtimeDefinition),
+                            configuration().runtimeConfiguration().healthCheck());
+        } catch (IOException failure) {
+            throw new IllegalStateException("Stored runtime is invalid", failure);
+        }
     }
+
     /**
      * Builds backup configuration document from the supplied configuration inputs.
      * <p>根据所提供配置输入构建备份配置文档。
@@ -57,7 +69,10 @@ public record ManagedWebComponent(String id, ManagedApplication application, Map
      * @return backup configuration document from the supplied configuration inputs / 根据所提供配置输入构建备份配置文档
      * @throws IOException if the required file or stream operation fails / 所需文件或流操作失败时
      */
-    public BackupConfigurationDocument configuration() throws IOException { return new BackupConfigurationCodec().readActivation(Base64.getDecoder().decode(activation)); }
+    public BackupConfigurationDocument configuration() throws IOException {
+        return new BackupConfigurationCodec().readActivation(Base64.getDecoder().decode(activation));
+    }
+
     /**
      * Builds managed web component from the supplied published inputs.
      * <p>根据所提供已发布输入构建受管Web组件。
@@ -65,5 +80,8 @@ public record ManagedWebComponent(String id, ManagedApplication application, Map
      * @param digest content identity used for independent verification / 独立验证所用的内容身份
      * @return managed web component from the supplied published inputs / 根据所提供已发布输入构建受管Web组件
      */
-    public ManagedWebComponent published(String digest) { return new ManagedWebComponent(id, application, inputs, activation, dependencies, digest, secrets,runtimeDefinition); }
+    public ManagedWebComponent published(String digest) {
+        return new ManagedWebComponent(id, application, inputs, activation, dependencies, digest, secrets,
+                runtimeDefinition);
+    }
 }

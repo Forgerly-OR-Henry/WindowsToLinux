@@ -1,7 +1,5 @@
 package gold.debug.windowstolinux.app.main.runtime;
 
-import gold.debug.windowstolinux.app.db.DesktopPersistence;
-
 import java.net.URI;
 import java.net.URL;
 import java.nio.file.Path;
@@ -10,6 +8,8 @@ import java.security.CodeSource;
 import java.security.ProtectionDomain;
 import java.util.Objects;
 import java.util.Optional;
+
+import gold.debug.windowstolinux.app.db.DesktopPersistence;
 
 /**
  * Resolves the fixed {@code data} directory from the DB module in CLASS/JAR mode or the EXE in jpackage mode.
@@ -59,11 +59,7 @@ public final class RunModeResolver {
      * @param applicationHome application home / 应用Home
      * @param dataDirectory data directory / 数据目录
      */
-    public record RuntimeLayout(
-            RunMode mode,
-            Path applicationHome,
-            Path dataDirectory
-    ) {
+    public record RuntimeLayout(RunMode mode, Path applicationHome, Path dataDirectory) {
         /**
          * Validates and binds the inputs required by runtime layout.
          * <p>校验并绑定运行时布局所需输入。
@@ -112,9 +108,7 @@ public final class RunModeResolver {
      * @return the operation result / 操作结果
      */
     public static RunMode detect() {
-        return resolveKnown()
-                .map(RuntimeLayout::mode)
-                .orElse(RunMode.RUN_UNKNOWN);
+        return resolveKnown().map(RuntimeLayout::mode).orElse(RunMode.RUN_UNKNOWN);
     }
 
     /**
@@ -127,8 +121,7 @@ public final class RunModeResolver {
     public static RuntimeLayout resolve() {
         return resolveKnown().orElseThrow(() -> new IllegalStateException(
                 "Application runtime layout could not be recognized; ensure app/db is loaded from "
-                        + "Maven output, its module JAR, or a jpackage application"
-        ));
+                        + "Maven output, its module JAR, or a jpackage application"));
     }
 
     /**
@@ -148,11 +141,8 @@ public final class RunModeResolver {
      * @return matching result, or empty when no admitted value exists / 匹配结果；不存在已准入内容时为空
      */
     private static Optional<RuntimeLayout> resolveKnown() {
-        return resolveFromEvidence(
-                currentProcessCommand(),
-                codeSourcePath(DesktopPersistence.class),
-                currentWorkingDirectory()
-        );
+        return resolveFromEvidence(currentProcessCommand(), codeSourcePath(DesktopPersistence.class),
+                currentWorkingDirectory());
     }
 
     /**
@@ -164,10 +154,7 @@ public final class RunModeResolver {
      * @param codeSource code source / 代码源码
      * @return the optional operation result / 可选操作结果
      */
-    static Optional<RuntimeLayout> resolveFromEvidence(
-            Optional<Path> processCommand,
-            Optional<Path> codeSource
-    ) {
+    static Optional<RuntimeLayout> resolveFromEvidence(Optional<Path> processCommand, Optional<Path> codeSource) {
         return resolveFromEvidence(processCommand, codeSource, Optional.empty());
     }
 
@@ -182,11 +169,8 @@ public final class RunModeResolver {
      * @return the optional operation result / 可选操作结果
      * @throws NullPointerException if a required input is absent / 必需输入缺失时
      */
-    static Optional<RuntimeLayout> resolveFromEvidence(
-            Optional<Path> processCommand,
-            Optional<Path> codeSource,
-            Optional<Path> workingDirectory
-    ) {
+    static Optional<RuntimeLayout> resolveFromEvidence(Optional<Path> processCommand, Optional<Path> codeSource,
+            Optional<Path> workingDirectory) {
         Objects.requireNonNull(processCommand, "processCommand");
         Objects.requireNonNull(codeSource, "codeSource");
         Objects.requireNonNull(workingDirectory, "workingDirectory");
@@ -197,21 +181,17 @@ public final class RunModeResolver {
             return launcherLayout;
         }
 
-        Optional<RuntimeLayout> codeLayout = codeSource
-                .flatMap(RuntimePathResolver::layoutFromCodeSource);
+        Optional<RuntimeLayout> codeLayout = codeSource.flatMap(RuntimePathResolver::layoutFromCodeSource);
         if (codeLayout.isPresent()) {
             return codeLayout;
         }
 
-        boolean classDirectory = codeSource
-                .filter(RuntimePathResolver::isDirectory)
-                .isPresent();
+        boolean classDirectory = codeSource.filter(RuntimePathResolver::isDirectory).isPresent();
         if (!classDirectory) {
             return Optional.empty();
         }
 
-        return workingDirectory
-                .flatMap(RuntimePathResolver::findValidatedDevelopmentModuleHome)
+        return workingDirectory.flatMap(RuntimePathResolver::findValidatedDevelopmentModuleHome)
                 .map(home -> RuntimePathResolver.layout(RunMode.RUN_CLASS, home));
     }
 

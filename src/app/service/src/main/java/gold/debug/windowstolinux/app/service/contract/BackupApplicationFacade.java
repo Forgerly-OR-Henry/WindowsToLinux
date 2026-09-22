@@ -1,20 +1,20 @@
 package gold.debug.windowstolinux.app.service.contract;
 
-import gold.debug.windowstolinux.app.service.backup.BackupArchiveInspection;
-import gold.debug.windowstolinux.app.service.backup.ManagedBackupInputAssessment;
-import gold.debug.windowstolinux.app.service.backup.PreparedBackupCandidate;
-import gold.debug.windowstolinux.app.service.backup.PreparedBackupSecrets;
-import gold.debug.windowstolinux.app.service.backup.CreatedBackupArchive;
-import gold.debug.windowstolinux.app.service.backup.ManagedRestoreOutcome;
-import gold.debug.windowstolinux.app.service.backup.ManagedOfflineMigrationOutcome;
-import gold.debug.windowstolinux.shared.backup.crypto.BackupSecretException;
-import gold.debug.windowstolinux.app.secret.SecretStoreException;
-import gold.debug.windowstolinux.shared.linux.error.LinuxOperationException;
-
 import java.io.IOException;
 import java.nio.file.Path;
 import java.sql.SQLException;
 import java.util.function.Predicate;
+
+import gold.debug.windowstolinux.app.secret.SecretStoreException;
+import gold.debug.windowstolinux.app.service.backup.BackupArchiveInspection;
+import gold.debug.windowstolinux.app.service.backup.CreatedBackupArchive;
+import gold.debug.windowstolinux.app.service.backup.ManagedBackupInputAssessment;
+import gold.debug.windowstolinux.app.service.backup.ManagedOfflineMigrationOutcome;
+import gold.debug.windowstolinux.app.service.backup.ManagedRestoreOutcome;
+import gold.debug.windowstolinux.app.service.backup.PreparedBackupCandidate;
+import gold.debug.windowstolinux.app.service.backup.PreparedBackupSecrets;
+import gold.debug.windowstolinux.shared.backup.crypto.BackupSecretException;
+import gold.debug.windowstolinux.shared.linux.error.LinuxOperationException;
 
 /**
  * UI-facing persisted-input assessment, local inspection, and candidate preparation contract. / 面向 UI 的持久化输入评估、本地检查与候选准备契约。
@@ -26,7 +26,9 @@ public interface BackupApplicationFacade {
      * @return constructed or resolved list / 构造或解析得到的列表
      * @throws SQLException if the database cannot complete the requested read or transaction / 数据库无法完成请求的读取或事务时
      */
-    java.util.List<gold.debug.windowstolinux.app.service.execution.lifecycle.ManagedApplicationSnapshot> listManagedApplicationSummaries() throws SQLException;
+    java.util.List<gold.debug.windowstolinux.app.service.execution.lifecycle.ManagedApplicationSnapshot> listManagedApplicationSummaries()
+            throws SQLException;
+
     /**
      * Lists server profiles.
      * <p>列出服务器配置资料集合。
@@ -60,10 +62,9 @@ public interface BackupApplicationFacade {
      * @throws IOException if the required file or stream operation fails / 所需文件或流操作失败时
      * @throws BackupSecretException if the backup secret boundary rejects the operation / 备份秘密边界拒绝当前操作时
      */
-    CreatedBackupArchive createManagedBackup(
-            String applicationId, Path destination, char[] backupPassword, char[] masterPassword,
-            Predicate<String> firstUseConfirmation
-    ) throws SQLException, SecretStoreException, LinuxOperationException, IOException, BackupSecretException;
+    CreatedBackupArchive createManagedBackup(String applicationId, Path destination, char[] backupPassword,
+            char[] masterPassword, Predicate<String> firstUseConfirmation)
+            throws SQLException, SecretStoreException, LinuxOperationException, IOException, BackupSecretException;
 
     /**
      * Restores one complete archive to a selected saved server profile. / 将一个完整归档恢复到选定的已保存服务器资料。
@@ -80,10 +81,9 @@ public interface BackupApplicationFacade {
      * @throws IOException if the required file or stream operation fails / 所需文件或流操作失败时
      * @throws BackupSecretException if the backup secret boundary rejects the operation / 备份秘密边界拒绝当前操作时
      */
-    ManagedRestoreOutcome restoreManagedBackup(
-            Path archive, String targetServerId, char[] backupPassword, char[] masterPassword,
-            Predicate<String> firstUseConfirmation
-    ) throws SQLException, SecretStoreException, LinuxOperationException, IOException, BackupSecretException;
+    ManagedRestoreOutcome restoreManagedBackup(Path archive, String targetServerId, char[] backupPassword,
+            char[] masterPassword, Predicate<String> firstUseConfirmation)
+            throws SQLException, SecretStoreException, LinuxOperationException, IOException, BackupSecretException;
 
     /**
      * Prepares an offline two-server migration and stops before manual external traffic switching. / 准备离线双服务器迁移并在人工外部切流前停止。
@@ -101,10 +101,10 @@ public interface BackupApplicationFacade {
      * @throws IOException if the required file or stream operation fails / 所需文件或流操作失败时
      * @throws BackupSecretException if the backup secret boundary rejects the operation / 备份秘密边界拒绝当前操作时
      */
-    ManagedOfflineMigrationOutcome prepareManagedOfflineMigration(
-            String applicationId, String targetServerId, char[] backupPassword, char[] masterPassword,
-            boolean stopWindowApproved, Predicate<String> firstUseConfirmation
-    ) throws SQLException, SecretStoreException, LinuxOperationException, IOException, BackupSecretException;
+    ManagedOfflineMigrationOutcome prepareManagedOfflineMigration(String applicationId, String targetServerId,
+            char[] backupPassword, char[] masterPassword, boolean stopWindowApproved,
+            Predicate<String> firstUseConfirmation)
+            throws SQLException, SecretStoreException, LinuxOperationException, IOException, BackupSecretException;
 
     /**
      * Validates one archive without extraction or remote access. / 校验一个归档且不提取、不访问远端。

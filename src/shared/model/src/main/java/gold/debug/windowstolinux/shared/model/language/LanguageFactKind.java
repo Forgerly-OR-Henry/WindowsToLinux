@@ -8,17 +8,22 @@ package gold.debug.windowstolinux.shared.model.language;
 public enum LanguageFactKind {
     /**
      * Java major version. / Java 主版本。
-     */ JAVA_VERSION,
+     */
+    JAVA_VERSION,
     /**
      * Java binary main class. / Java 二进制主类。
-     */ JAVA_MAIN_CLASS,
+     */
+    JAVA_MAIN_CLASS,
     /**
      * Node.js major version. / Node.js 主版本。
-     */ NODE_MAJOR_VERSION,
+     */
+    NODE_MAJOR_VERSION,
     /**
      * Python minor version. / Python 次版本。
-     */ PYTHON_VERSION,
+     */
+    PYTHON_VERSION,
     /**
      * Python module entrypoint. / Python 模块入口。
-     */ PYTHON_ENTRYPOINT
+     */
+    PYTHON_ENTRYPOINT
 }

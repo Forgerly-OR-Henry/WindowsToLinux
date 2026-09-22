@@ -1,23 +1,25 @@
 package gold.debug.windowstolinux.app.service.deployment.automatic;
 
-import gold.debug.windowstolinux.app.db.entity.StoredApplicationSecretRevision;
-import gold.debug.windowstolinux.app.db.persistence.repository.ApplicationSecretRepository;
-import gold.debug.windowstolinux.app.service.config.DeploymentConfigurationUseCase;
-import gold.debug.windowstolinux.app.service.contract.AiApplicationFacade;
-import gold.debug.windowstolinux.app.service.server.*;
-import gold.debug.windowstolinux.shared.analyze.ecosystem.db.DatabaseProjectInspector;
-import gold.debug.windowstolinux.shared.config.secretref.SecretReference;
-import gold.debug.windowstolinux.shared.deploy.contract.*;
-import gold.debug.windowstolinux.shared.deploy.contract.spi.DatabaseCredentialPort;
-import gold.debug.windowstolinux.shared.deploy.execution.environment.NativeDatabasePreparationService;
-import gold.debug.windowstolinux.shared.linux.connection.DeploymentLinuxGateway;
-import gold.debug.windowstolinux.shared.model.deployment.DeploymentInputField;
-import gold.debug.windowstolinux.shared.model.message.LocalizedMessage;
 import java.nio.file.Path;
 import java.time.Instant;
 import java.util.*;
 import java.util.function.Consumer;
 import java.util.function.Predicate;
+
+import gold.debug.windowstolinux.app.db.entity.StoredApplicationSecretRevision;
+import gold.debug.windowstolinux.app.db.persistence.repository.ApplicationSecretRepository;
+import gold.debug.windowstolinux.app.service.config.DeploymentConfigurationUseCase;
+import gold.debug.windowstolinux.app.service.contract.AiApplicationFacade;
+import gold.debug.windowstolinux.app.service.server.*;
+import gold.debug.windowstolinux.shared.config.secretref.SecretReference;
+import gold.debug.windowstolinux.shared.deploy.contract.*;
+import gold.debug.windowstolinux.shared.deploy.contract.spi.DatabaseCredentialPort;
+import gold.debug.windowstolinux.shared.linux.connection.DeploymentLinuxGateway;
+import gold.debug.windowstolinux.shared.model.deployment.DeploymentInputField;
+import gold.debug.windowstolinux.shared.model.message.LocalizedMessage;
+import gold.debug.windowstolinux.shared.standard.analyze.ecosystem.db.DatabaseProjectInspector;
+import gold.debug.windowstolinux.shared.standard.deploy.contract.AutomaticDatabasePreparation;
+import gold.debug.windowstolinux.shared.standard.deploy.execution.environment.NativeDatabasePreparationService;
 
 /**
  * Adapts desktop credentials and user interaction to shared native database preparation.
@@ -29,26 +31,31 @@ public final class AutomaticDatabaseUseCase {
      * <p>处理服务器资料及已认证会话服务的服务器用例门面协作对象。
      */
     private final ServerUseCaseFacade servers;
+
     /**
      * Factory for authenticated Linux sessions.
      * <p>已认证 Linux 会话的工厂。
      */
     private final DeploymentLinuxGateway gateway;
+
     /**
      * Bound application secret repository collaborator for secret metadata.
      * <p>处理秘密元数据的应用秘密仓库协作对象。
      */
     private final ApplicationSecretRepository secretMetadata;
+
     /**
      * Bound desktop secret store service collaborator for stores.
      * <p>处理存储集合的Desktop秘密存储服务协作对象。
      */
     private final DesktopSecretStoreService stores;
+
     /**
      * Configurations.
      * <p>配置集合。
      */
     private final DeploymentConfigurationUseCase configurations;
+
     /**
      * Completion.
      * <p>完成。
@@ -68,9 +75,14 @@ public final class AutomaticDatabaseUseCase {
     public AutomaticDatabaseUseCase(ServerUseCaseFacade servers, DeploymentLinuxGateway gateway,
             ApplicationSecretRepository secretMetadata, DesktopSecretStoreService stores,
             DeploymentConfigurationUseCase configurations, AiApplicationFacade ai) {
-        this.servers=servers; this.gateway=gateway; this.secretMetadata=secretMetadata; this.stores=stores;
-        this.configurations=configurations; this.completion=new AutomaticInputCompletion(ai);
+        this.servers = servers;
+        this.gateway = gateway;
+        this.secretMetadata = secretMetadata;
+        this.stores = stores;
+        this.configurations = configurations;
+        this.completion = new AutomaticInputCompletion(ai);
     }
+
     /**
      * Builds assessment from the supplied complete inputs inputs.
      * <p>根据所提供完整输入集合输入构建评估。
@@ -84,10 +96,16 @@ public final class AutomaticDatabaseUseCase {
      * @throws Exception if the delegated operation or caller-provided interaction fails / 被委派操作或调用方提供的交互失败时
      */
     public DatabaseProjectInspector.Assessment completeInputs(Path root, String applicationId,
-            DatabaseProjectInspector.Assessment assessment, char[] master, AutomaticDeploymentInteraction interaction) throws Exception {
-        try { return new NativeDatabasePreparationService(null).completeInputs(root,applicationId,assessment,withAi(master,interaction)); }
-        finally { Arrays.fill(master,'\0'); }
+            DatabaseProjectInspector.Assessment assessment, char[] master, AutomaticDeploymentInteraction interaction)
+            throws Exception {
+        try {
+            return new NativeDatabasePreparationService(null).completeInputs(root, applicationId, assessment,
+                    withAi(master, interaction));
+        } finally {
+            Arrays.fill(master, '\0');
+        }
     }
+
     /**
      * Prepares automatic database preparation.
      * <p>准备自动数据库准备。
@@ -107,10 +125,15 @@ public final class AutomaticDatabaseUseCase {
             DatabaseProjectInspector.Assessment assessment, char[] master, AutomaticDeploymentInteraction interaction,
             Predicate<String> fingerprint, Consumer<LocalizedMessage> progress) throws Exception {
         try (var store = stores.open(profile.credentialMode(), master);
-             var session = gateway.connect(profile.endpoint(),servers.loadPassword(profile,store),servers.hostKeyVerifier(profile,fingerprint))) {
-            return new NativeDatabasePreparationService(credentials(profile,master)).prepare(root,applicationId,profile.id(),session.nativeDatabases(),assessment,interaction,progress);
-        } finally { Arrays.fill(master,'\0'); }
+                var session = gateway.connect(profile.endpoint(), servers.loadPassword(profile, store),
+                        servers.hostKeyVerifier(profile, fingerprint))) {
+            return new NativeDatabasePreparationService(credentials(profile, master)).prepare(root, applicationId,
+                    profile.id(), session.nativeDatabases(), assessment, interaction, progress);
+        } finally {
+            Arrays.fill(master, '\0');
+        }
     }
+
     /**
      * Returns the contract with the supplied ai applied.
      * <p>返回应用所提供AI后的契约。
@@ -120,7 +143,8 @@ public final class AutomaticDatabaseUseCase {
      * @return the contract with the supplied ai applied / 应用所提供AI后的契约
      */
     private AutomaticDeploymentInteraction withAi(char[] master, AutomaticDeploymentInteraction delegate) {
-        if(gold.debug.windowstolinux.app.service.ai.DeploymentAiScope.current().isPresent())return delegate;
+        if (gold.debug.windowstolinux.app.service.ai.DeploymentAiScope.current().isPresent())
+            return delegate;
         return new AutomaticDeploymentInteraction() {
             /**
              * Resolves the requested non-secret fields through the existing completion and interaction services.
@@ -129,7 +153,11 @@ public final class AutomaticDatabaseUseCase {
              * @param fields allowed or requested input field definitions / 允许或请求的输入字段定义
              * @return matching result, or empty when no admitted value exists / 匹配结果；不存在已准入内容时为空
              */
-            @Override public Optional<Map<String,String>> requestInputs(List<DeploymentInputField> fields) { return Optional.of(completion.resolve(fields,master,delegate)); }
+            @Override
+            public Optional<Map<String, String>> requestInputs(List<DeploymentInputField> fields) {
+                return Optional.of(completion.resolve(fields, master, delegate));
+            }
+
             /**
              * Confirms anonymous.
              * <p>确认匿名。
@@ -138,7 +166,11 @@ public final class AutomaticDatabaseUseCase {
              * @param details details / 详情
              * @return true when confirms anonymous, false otherwise / 确认匿名时为 true，否则为 false
              */
-            @Override public boolean confirm(String key, Map<String,?> details) { return delegate.confirm(key,details); }
+            @Override
+            public boolean confirm(String key, Map<String, ?> details) {
+                return delegate.confirm(key, details);
+            }
+
             /**
              * Confirms database replacement.
              * <p>确认数据库替换。
@@ -146,7 +178,11 @@ public final class AutomaticDatabaseUseCase {
              * @param details details / 详情
              * @return true when confirms database replacement, false otherwise / 确认数据库替换时为 true，否则为 false
              */
-            @Override public boolean confirmDatabaseReplacement(Map<String,?> details) { return delegate.confirmDatabaseReplacement(details); }
+            @Override
+            public boolean confirmDatabaseReplacement(Map<String, ?> details) {
+                return delegate.confirmDatabaseReplacement(details);
+            }
+
             /**
              * Requests transient secret characters from the caller's interaction contract.
              * <p>通过调用方交互契约请求临时秘密字符。
@@ -154,9 +190,13 @@ public final class AutomaticDatabaseUseCase {
              * @param key lookup key within the current contract / 当前契约内的查找键
              * @return encoded or copied content buffer / 编码或复制得到的内容缓冲区
              */
-            @Override public char[] requestSecret(String key) { return delegate.requestSecret(key); }
+            @Override
+            public char[] requestSecret(String key) {
+                return delegate.requestSecret(key);
+            }
         };
     }
+
     /**
      * Builds database credential port from the supplied credentials inputs.
      * <p>根据所提供凭据输入构建数据库凭据端口。
@@ -165,7 +205,7 @@ public final class AutomaticDatabaseUseCase {
      * @param master master-password buffer used for the scoped secret operation / 限定秘密操作使用的主密码缓冲区
      * @return database credential port from the supplied credentials inputs / 根据所提供凭据输入构建数据库凭据端口
      */
-    private DatabaseCredentialPort credentials(ServerProfile profile,char[] master) {
+    private DatabaseCredentialPort credentials(ServerProfile profile, char[] master) {
         return new DatabaseCredentialPort() {
             /**
              * Finds the latest consecutively registered secret revision, or returns empty when revision one is absent.
@@ -175,12 +215,17 @@ public final class AutomaticDatabaseUseCase {
              * @return matching result, or empty when no admitted value exists / 匹配结果；不存在已准入内容时为空
              * @throws Exception if the delegated operation or caller-provided interaction fails / 被委派操作或调用方提供的交互失败时
              */
-            @Override public Optional<SecretReference> latest(String identifier) throws Exception {
-                var reference = new SecretReference(identifier,1);
-                if (secretMetadata.findRevision(reference).isEmpty()) return Optional.empty();
-                while (secretMetadata.findRevision(new SecretReference(identifier,reference.revision()+1)).isPresent()) reference = new SecretReference(identifier,reference.revision()+1);
+            @Override
+            public Optional<SecretReference> latest(String identifier) throws Exception {
+                var reference = new SecretReference(identifier, 1);
+                if (secretMetadata.findRevision(reference).isEmpty())
+                    return Optional.empty();
+                while (secretMetadata.findRevision(new SecretReference(identifier, reference.revision() + 1))
+                        .isPresent())
+                    reference = new SecretReference(identifier, reference.revision() + 1);
                 return Optional.of(reference);
             }
+
             /**
              * Loads the exact application secret revision into caller-owned transient characters.
              * <p>将精确应用秘密修订加载为由调用方持有的临时字符。
@@ -189,10 +234,15 @@ public final class AutomaticDatabaseUseCase {
              * @return caller-owned secret characters to clear after use / 调用方持有且须在使用后清空的秘密字符
              * @throws Exception if the delegated operation or caller-provided interaction fails / 被委派操作或调用方提供的交互失败时
              */
-            @Override public char[] load(SecretReference reference) throws Exception {
+            @Override
+            public char[] load(SecretReference reference) throws Exception {
                 var stored = secretMetadata.findRevision(reference).orElseThrow();
-                try (var store = stores.open(stored.credentialMode(),master)) { return store.read(stored.credentialKey()).orElseThrow(() -> new IllegalStateException("Saved DB credential is missing")); }
+                try (var store = stores.open(stored.credentialMode(), master)) {
+                    return store.read(stored.credentialKey())
+                            .orElseThrow(() -> new IllegalStateException("Saved DB credential is missing"));
+                }
             }
+
             /**
              * Persists anonymous.
              * <p>持久化匿名。
@@ -201,9 +251,13 @@ public final class AutomaticDatabaseUseCase {
              * @param value candidate content accepted or rejected by this contract / 由当前契约接收或拒绝的候选内容
              * @throws Exception if the delegated operation or caller-provided interaction fails / 被委派操作或调用方提供的交互失败时
              */
-            @Override public void save(SecretReference reference,char[] value) throws Exception {
-                String digest = HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256").digest(reference.identifier().getBytes(java.nio.charset.StandardCharsets.UTF_8)));
-                configurations.saveSecretRevision(new StoredApplicationSecretRevision(reference,"application-secret/"+digest+"/"+reference.revision(),profile.credentialMode(),Instant.now()),profile.credentialMode(),master.clone(),value);
+            @Override
+            public void save(SecretReference reference, char[] value) throws Exception {
+                String digest = HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256")
+                        .digest(reference.identifier().getBytes(java.nio.charset.StandardCharsets.UTF_8)));
+                configurations.saveSecretRevision(new StoredApplicationSecretRevision(reference,
+                        "application-secret/" + digest + "/" + reference.revision(), profile.credentialMode(),
+                        Instant.now()), profile.credentialMode(), master.clone(), value);
             }
         };
     }

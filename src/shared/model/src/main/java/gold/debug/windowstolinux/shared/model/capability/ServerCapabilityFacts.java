@@ -1,9 +1,9 @@
 package gold.debug.windowstolinux.shared.model.capability;
 
+import java.util.Objects;
+
 import gold.debug.windowstolinux.shared.model.health.HealthCheck;
 import gold.debug.windowstolinux.shared.model.server.ManagedHelperProtocolVersion;
-
-import java.util.Objects;
 
 /**
  * Facts collected from a target host before any managed-deployment candidate is created.
@@ -24,21 +24,10 @@ import java.util.Objects;
  * @param availableBytes available bytes / 可用字节
  * @param evidence observations supporting the reported result / 支持所报告结果的观测证据
  */
-public record ServerCapabilityFacts(
-        String operatingSystem,
-        String architecture,
-        boolean systemdAvailable,
-        boolean java21Available,
-        boolean mavenAvailable,
-        boolean tarAvailable,
-        boolean curlAvailable,
-        boolean socketInspectionAvailable,
-        boolean buildLimitToolsAvailable,
-        boolean nonInteractiveSudoAvailable,
-        int managedHelperProtocolVersion,
-        long availableBytes,
-        String evidence
-) {
+public record ServerCapabilityFacts(String operatingSystem, String architecture, boolean systemdAvailable,
+        boolean java21Available, boolean mavenAvailable, boolean tarAvailable, boolean curlAvailable,
+        boolean socketInspectionAvailable, boolean buildLimitToolsAvailable, boolean nonInteractiveSudoAvailable,
+        int managedHelperProtocolVersion, long availableBytes, String evidence) {
     /**
      * Validates and binds the inputs required by server capability facts.
      * <p>校验并绑定服务器能力事实所需输入。
@@ -91,15 +80,9 @@ public record ServerCapabilityFacts(
             case HealthCheck.Command ignored -> true;
         };
         boolean supportedOperatingSystem = supportedOperatingSystem();
-        return supportedOperatingSystem
-                && architecture.equals("x86_64")
-                && systemdAvailable
-                && java21Available
-                && tarAvailable
-                && buildLimitToolsAvailable
-                && nonInteractiveSudoAvailable
-                && managedHelperProtocolVersion == ManagedHelperProtocolVersion.CURRENT
-                && healthToolsAvailable
+        return supportedOperatingSystem && architecture.equals("x86_64") && systemdAvailable && java21Available
+                && tarAvailable && buildLimitToolsAvailable && nonInteractiveSudoAvailable
+                && managedHelperProtocolVersion == ManagedHelperProtocolVersion.CURRENT && healthToolsAvailable
                 && (mavenAvailable || sourceUsesMavenWrapper);
     }
 
@@ -110,16 +93,11 @@ public record ServerCapabilityFacts(
      * @return true when supported operating system predicate against the supplied evidence, false otherwise / 根据所提供证据检查受支持操作系统条件时为 true，否则为 false
      */
     private boolean supportedOperatingSystem() {
-        return operatingSystem.contains("Ubuntu 22.04")
-                || operatingSystem.contains("Ubuntu 24.04")
-                || operatingSystem.contains("Debian GNU/Linux 13")
-                || operatingSystem.contains("CentOS Stream 9")
-                || operatingSystem.contains("CentOS Stream 10")
-                || operatingSystem.contains("Rocky Linux 9.8")
-                || operatingSystem.contains("Rocky Linux 10.2")
-                || operatingSystem.contains("AlmaLinux 9.8")
-                || operatingSystem.contains("AlmaLinux 10.2")
-                || operatingSystem.contains("Oracle Linux Server 9.7")
+        return operatingSystem.contains("Ubuntu 22.04") || operatingSystem.contains("Ubuntu 24.04")
+                || operatingSystem.contains("Debian GNU/Linux 13") || operatingSystem.contains("CentOS Stream 9")
+                || operatingSystem.contains("CentOS Stream 10") || operatingSystem.contains("Rocky Linux 9.8")
+                || operatingSystem.contains("Rocky Linux 10.2") || operatingSystem.contains("AlmaLinux 9.8")
+                || operatingSystem.contains("AlmaLinux 10.2") || operatingSystem.contains("Oracle Linux Server 9.7")
                 || operatingSystem.contains("Oracle Linux Server 10.2");
     }
 

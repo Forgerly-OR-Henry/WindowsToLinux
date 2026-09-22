@@ -1,18 +1,18 @@
 package gold.debug.windowstolinux.app.service.backup;
 
-import gold.debug.windowstolinux.app.db.entity.CurrentRelease;
-import gold.debug.windowstolinux.app.db.entity.ManagedApplicationGraph;
-import gold.debug.windowstolinux.app.db.entity.SuccessfulManagedDeployment;
-import gold.debug.windowstolinux.app.db.persistence.repository.ManagedApplicationGraphRepository;
-import gold.debug.windowstolinux.shared.model.managed.ManagedApplication;
-import gold.debug.windowstolinux.shared.model.server.ServerIdentity;
-
 import java.sql.SQLException;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
+
+import gold.debug.windowstolinux.app.db.entity.CurrentRelease;
+import gold.debug.windowstolinux.app.db.entity.ManagedApplicationGraph;
+import gold.debug.windowstolinux.app.db.entity.SuccessfulManagedDeployment;
+import gold.debug.windowstolinux.app.db.persistence.repository.ManagedApplicationGraphRepository;
+import gold.debug.windowstolinux.shared.model.managed.ManagedApplication;
+import gold.debug.windowstolinux.shared.model.server.ServerIdentity;
 
 /**
  * Atomically records an exact restored graph only after formal remote health succeeded. / 仅在远端正式健康成功后原子记录精确恢复图。
@@ -91,9 +91,10 @@ final class RestoredApplicationRecorder {
                     new CurrentRelease(application.id(), component.releaseSha256().orElseThrow(), publishedAt),
                     state.configuration(), component.secretReferences().orElseThrow()));
         }
-        graphs.recordSuccessfulApplication(new ManagedApplicationGraph(manifest.applicationId(),
-                manifest.inventory().applicationHealthComponentId(),
-                Optional.of(manifest.inventory().applicationHealthCheck().toHealthCheck()), graphComponents),
+        graphs.recordSuccessfulApplication(
+                new ManagedApplicationGraph(manifest.applicationId(),
+                        manifest.inventory().applicationHealthComponentId(),
+                        Optional.of(manifest.inventory().applicationHealthCheck().toHealthCheck()), graphComponents),
                 deployments);
     }
 
@@ -108,7 +109,8 @@ final class RestoredApplicationRecorder {
      */
     private static BackupConfigurationDocumentState state(RestoreArchiveModel model, String componentId) {
         var document = model.configurations().get(componentId);
-        if (document == null) throw new IllegalStateException("restored component configuration disappeared");
+        if (document == null)
+            throw new IllegalStateException("restored component configuration disappeared");
         return new BackupConfigurationDocumentState(document.configuration(), document.resourceBindings(),
                 document.runtimeConfiguration());
     }
@@ -124,6 +126,6 @@ final class RestoredApplicationRecorder {
     private record BackupConfigurationDocumentState(
             gold.debug.windowstolinux.shared.config.revision.ConfigurationSnapshot configuration,
             gold.debug.windowstolinux.shared.config.resource.ManagedComponentResourceBindings resources,
-            gold.debug.windowstolinux.shared.model.managed.ManagedApplicationRuntimeConfiguration runtimeConfiguration
-    ) { }
+            gold.debug.windowstolinux.shared.model.managed.ManagedApplicationRuntimeConfiguration runtimeConfiguration) {
+    }
 }

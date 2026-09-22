@@ -33,6 +33,7 @@ public interface WebScopeMapper {
      */
     @Insert("INSERT OR IGNORE INTO users VALUES ('internal','Internal testing','INTERNAL',#{now},#{now})")
     int initializeUser(String now);
+
     /**
      * Initializes platform-owned work area with enforced path boundaries.
      * <p>初始化具有路径边界约束的平台工作区。
@@ -42,6 +43,7 @@ public interface WebScopeMapper {
      */
     @Insert("INSERT OR IGNORE INTO workspaces VALUES ('internal','Internal testing','internal','INTERNAL',#{now},#{now})")
     int initializeWorkspace(String now);
+
     /**
      * Initializes membership.
      * <p>初始化成员关系。

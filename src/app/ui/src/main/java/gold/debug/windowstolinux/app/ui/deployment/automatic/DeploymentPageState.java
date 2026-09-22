@@ -1,8 +1,8 @@
 package gold.debug.windowstolinux.app.ui.deployment.automatic;
 
-import gold.debug.windowstolinux.app.service.source.ReviewedSourcePreparation;
-
 import java.util.Objects;
+
+import gold.debug.windowstolinux.app.service.source.ReviewedSourcePreparation;
 
 /**
  * Represents an immutable {@code DeploymentPageState} value.
@@ -35,32 +35,13 @@ import java.util.Objects;
  * @param kotlinJvmTarget kotlin jvm target / kotlinJvm目标
  * @param applicationDeclaration application declaration / 应用声明
  */
-public record DeploymentPageState(
-        String projectType,
-        String healthMode,
-        String healthEndpoint,
-        String expectedHttpStatus,
-        String healthTimeoutSeconds,
-        String tcpStabilitySeconds,
-        String userAccessUrl,
-        String runtimePrimary,
-        String runtimeSecondary,
-        String javaVersion,
-        String jvmArguments,
-        String applicationArguments,
-        String containerEngine,
-        String containerPorts,
-        String containerVolumes,
-        String configurationEntries,
-        String databaseMode,
-        String databaseDetails,
-        String secretReferences,
-        boolean rootBuild,
-        boolean experimentalAdapterRisk,
-        String output,
-        ReviewedSourcePreparation preparation,
-        String kotlinJvmTarget
-, String applicationDeclaration) {
+public record DeploymentPageState(String projectType, String healthMode, String healthEndpoint,
+        String expectedHttpStatus, String healthTimeoutSeconds, String tcpStabilitySeconds, String userAccessUrl,
+        String runtimePrimary, String runtimeSecondary, String javaVersion, String jvmArguments,
+        String applicationArguments, String containerEngine, String containerPorts, String containerVolumes,
+        String configurationEntries, String databaseMode, String databaseDetails, String secretReferences,
+        boolean rootBuild, boolean experimentalAdapterRisk, String output, ReviewedSourcePreparation preparation,
+        String kotlinJvmTarget, String applicationDeclaration) {
     /**
      * Initializes deployment page state through its shared constructor contract.
      * <p>通过共享构造契约初始化部署页面状态。
@@ -90,33 +71,17 @@ public record DeploymentPageState(
      * @param preparation preparation / 准备
      * @param kotlinJvmTarget kotlin jvm target / kotlinJvm目标
      */
-    public DeploymentPageState(
-        String projectType,
-        String healthMode,
-        String healthEndpoint,
-        String expectedHttpStatus,
-        String healthTimeoutSeconds,
-        String tcpStabilitySeconds,
-        String userAccessUrl,
-        String runtimePrimary,
-        String runtimeSecondary,
-        String javaVersion,
-        String jvmArguments,
-        String applicationArguments,
-        String containerEngine,
-        String containerPorts,
-        String containerVolumes,
-        String configurationEntries,
-        String databaseMode,
-        String databaseDetails,
-        String secretReferences,
-        boolean rootBuild,
-        boolean experimentalAdapterRisk,
-        String output,
-        ReviewedSourcePreparation preparation,
-        String kotlinJvmTarget
-) {
-        this(projectType, healthMode, healthEndpoint, expectedHttpStatus, healthTimeoutSeconds, tcpStabilitySeconds, userAccessUrl, runtimePrimary, runtimeSecondary, javaVersion, jvmArguments, applicationArguments, containerEngine, containerPorts, containerVolumes, configurationEntries, databaseMode, databaseDetails, secretReferences, rootBuild, experimentalAdapterRisk, output, preparation, kotlinJvmTarget, "");
+    public DeploymentPageState(String projectType, String healthMode, String healthEndpoint, String expectedHttpStatus,
+            String healthTimeoutSeconds, String tcpStabilitySeconds, String userAccessUrl, String runtimePrimary,
+            String runtimeSecondary, String javaVersion, String jvmArguments, String applicationArguments,
+            String containerEngine, String containerPorts, String containerVolumes, String configurationEntries,
+            String databaseMode, String databaseDetails, String secretReferences, boolean rootBuild,
+            boolean experimentalAdapterRisk, String output, ReviewedSourcePreparation preparation,
+            String kotlinJvmTarget) {
+        this(projectType, healthMode, healthEndpoint, expectedHttpStatus, healthTimeoutSeconds, tcpStabilitySeconds,
+                userAccessUrl, runtimePrimary, runtimeSecondary, javaVersion, jvmArguments, applicationArguments,
+                containerEngine, containerPorts, containerVolumes, configurationEntries, databaseMode, databaseDetails,
+                secretReferences, rootBuild, experimentalAdapterRisk, output, preparation, kotlinJvmTarget, "");
     }
 
     /**
@@ -147,30 +112,16 @@ public record DeploymentPageState(
      * @param output destination receiving the produced content / 接收所生成内容的目标
      * @param preparation preparation / 准备
      */
-    public DeploymentPageState(String projectType,
-        String healthMode,
-        String healthEndpoint,
-        String expectedHttpStatus,
-        String healthTimeoutSeconds,
-        String tcpStabilitySeconds,
-        String userAccessUrl,
-        String runtimePrimary,
-        String runtimeSecondary,
-        String javaVersion,
-        String jvmArguments,
-        String applicationArguments,
-        String containerEngine,
-        String containerPorts,
-        String containerVolumes,
-        String configurationEntries,
-        String databaseMode,
-        String databaseDetails,
-        String secretReferences,
-        boolean rootBuild,
-        boolean experimentalAdapterRisk,
-        String output,
-        ReviewedSourcePreparation preparation) {
-        this(projectType, healthMode, healthEndpoint, expectedHttpStatus, healthTimeoutSeconds, tcpStabilitySeconds, userAccessUrl, runtimePrimary, runtimeSecondary, javaVersion, jvmArguments, applicationArguments, containerEngine, containerPorts, containerVolumes, configurationEntries, databaseMode, databaseDetails, secretReferences, rootBuild, experimentalAdapterRisk, output, preparation, "");
+    public DeploymentPageState(String projectType, String healthMode, String healthEndpoint, String expectedHttpStatus,
+            String healthTimeoutSeconds, String tcpStabilitySeconds, String userAccessUrl, String runtimePrimary,
+            String runtimeSecondary, String javaVersion, String jvmArguments, String applicationArguments,
+            String containerEngine, String containerPorts, String containerVolumes, String configurationEntries,
+            String databaseMode, String databaseDetails, String secretReferences, boolean rootBuild,
+            boolean experimentalAdapterRisk, String output, ReviewedSourcePreparation preparation) {
+        this(projectType, healthMode, healthEndpoint, expectedHttpStatus, healthTimeoutSeconds, tcpStabilitySeconds,
+                userAccessUrl, runtimePrimary, runtimeSecondary, javaVersion, jvmArguments, applicationArguments,
+                containerEngine, containerPorts, containerVolumes, configurationEntries, databaseMode, databaseDetails,
+                secretReferences, rootBuild, experimentalAdapterRisk, output, preparation, "");
     }
 
     /**

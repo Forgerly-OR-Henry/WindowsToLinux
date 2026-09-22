@@ -1,16 +1,5 @@
 package gold.debug.windowstolinux.app.service.backup;
 
-import gold.debug.windowstolinux.app.service.deployment.MultiComponentLifecycleUseCase;
-import gold.debug.windowstolinux.app.service.deployment.multi.ManagedMultiComponentApplication;
-import gold.debug.windowstolinux.app.service.server.ServerProfile;
-import gold.debug.windowstolinux.shared.backup.contract.spi.OfflineMigrationPort;
-import gold.debug.windowstolinux.shared.backup.contract.spi.OfflineMigrationRequest;
-import gold.debug.windowstolinux.shared.backup.contract.validation.BackupException;
-import gold.debug.windowstolinux.shared.backup.contract.validation.BackupFailureType;
-import gold.debug.windowstolinux.shared.backup.restore.BackupRestoreStatus;
-import gold.debug.windowstolinux.shared.model.lifecycle.ApplicationRuntimeState;
-import gold.debug.windowstolinux.shared.model.lifecycle.LifecycleAction;
-
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -22,6 +11,17 @@ import java.util.Set;
 import java.util.function.Predicate;
 import java.util.stream.Collectors;
 
+import gold.debug.windowstolinux.app.service.deployment.MultiComponentLifecycleUseCase;
+import gold.debug.windowstolinux.app.service.deployment.multi.ManagedMultiComponentApplication;
+import gold.debug.windowstolinux.app.service.server.ServerProfile;
+import gold.debug.windowstolinux.shared.backup.contract.spi.OfflineMigrationPort;
+import gold.debug.windowstolinux.shared.backup.contract.spi.OfflineMigrationRequest;
+import gold.debug.windowstolinux.shared.backup.contract.validation.BackupException;
+import gold.debug.windowstolinux.shared.backup.contract.validation.BackupFailureType;
+import gold.debug.windowstolinux.shared.backup.restore.BackupRestoreStatus;
+import gold.debug.windowstolinux.shared.model.lifecycle.ApplicationRuntimeState;
+import gold.debug.windowstolinux.shared.model.lifecycle.LifecycleAction;
+
 /**
  * Concrete two-server product operations behind the portable offline migration transaction. / 可移植离线迁移事务背后的具体双服务器产品操作。
  */
@@ -31,71 +31,85 @@ final class ManagedOfflineMigrationPort implements OfflineMigrationPort, AutoClo
      * <p>受管应用标识。
      */
     private final String applicationId;
+
     /**
      * Source identity or content read by the operation.
      * <p>操作读取的源身份或内容。
      */
     private final ServerProfile source;
+
     /**
      * Target server id.
      * <p>目标服务器标识。
      */
     private final String targetServerId;
+
     /**
      * Backups.
      * <p>备份集合。
      */
     private final RemoteBackupCreationUseCase backups;
+
     /**
      * Restores.
      * <p>恢复集合。
      */
     private final ManagedRestoreUseCase restores;
+
     /**
      * Lifecycle.
      * <p>生命周期。
      */
     private final MultiComponentLifecycleUseCase lifecycle;
+
     /**
      * Managed.
      * <p>受管。
      */
     private final ManagedMultiComponentApplication managed;
+
     /**
      * Initial.
      * <p>初始。
      */
     private final CreatedBackupArchive initial;
+
     /**
      * Final destination.
      * <p>最终目的地。
      */
     private final Path finalDestination;
+
     /**
      * Independent password for backup secret encryption or decryption.
      * <p>备份秘密加密或解密使用的独立密码。
      */
     private final char[] backupPassword;
+
     /**
      * Master-password buffer used to unlock protected credentials.
      * <p>用于解锁受保护凭据的主密码缓冲区。
      */
     private final char[] masterPassword;
+
     /**
      * Token or decision binding approval to the exact proposed action.
      * <p>将批准绑定到精确提议动作的令牌或决定。
      */
     private final Predicate<String> confirmation;
+
     /**
      * Final archive.
      * <p>最终归档。
      */
     private CreatedBackupArchive finalArchive;
+
     /**
      * Restore outcome.
      * <p>恢复结果。
      */
     private ManagedRestoreOutcome restoreOutcome;
+
     /**
      * The deterministic admission status.
      * <p>确定性准入状态。
@@ -120,20 +134,11 @@ final class ManagedOfflineMigrationPort implements OfflineMigrationPort, AutoClo
      * @param confirmation token or decision binding approval to the exact proposed action / 将批准绑定到精确提议动作的令牌或决定
      * @throws NullPointerException if a required input is absent / 必需输入缺失时
      */
-    ManagedOfflineMigrationPort(
-            String applicationId,
-            ServerProfile source,
-            String targetServerId,
-            RemoteBackupCreationUseCase backups,
-            ManagedRestoreUseCase restores,
-            MultiComponentLifecycleUseCase lifecycle,
-            ManagedMultiComponentApplication managed,
-            CreatedBackupArchive initial,
-            Path finalDestination,
-            char[] backupPassword,
-            char[] masterPassword,
-            Predicate<String> confirmation
-    ) {
+    ManagedOfflineMigrationPort(String applicationId, ServerProfile source, String targetServerId,
+            RemoteBackupCreationUseCase backups, ManagedRestoreUseCase restores,
+            MultiComponentLifecycleUseCase lifecycle, ManagedMultiComponentApplication managed,
+            CreatedBackupArchive initial, Path finalDestination, char[] backupPassword, char[] masterPassword,
+            Predicate<String> confirmation) {
         this.applicationId = Objects.requireNonNull(applicationId, "applicationId");
         this.source = Objects.requireNonNull(source, "source");
         this.targetServerId = Objects.requireNonNull(targetServerId, "targetServerId");
@@ -142,7 +147,8 @@ final class ManagedOfflineMigrationPort implements OfflineMigrationPort, AutoClo
         this.lifecycle = Objects.requireNonNull(lifecycle, "lifecycle");
         this.managed = Objects.requireNonNull(managed, "managed");
         this.initial = Objects.requireNonNull(initial, "initial");
-        this.finalDestination = Objects.requireNonNull(finalDestination, "finalDestination").toAbsolutePath().normalize();
+        this.finalDestination = Objects.requireNonNull(finalDestination, "finalDestination").toAbsolutePath()
+                .normalize();
         this.backupPassword = copy(backupPassword);
         this.masterPassword = copy(masterPassword);
         this.confirmation = Objects.requireNonNull(confirmation, "confirmation");
@@ -182,8 +188,8 @@ final class ManagedOfflineMigrationPort implements OfflineMigrationPort, AutoClo
             return new SyncEvidence(Files.size(initial.archive()), initial.inspection().archiveSha256(), true, false,
                     List.of("complete initial archive was published and independently verified while source service state was restored"));
         } catch (IOException exception) {
-            throw failure(BackupFailureType.MIGRATION_SYNC_FAILED,
-                    "the complete initial archive could not be re-read", exception);
+            throw failure(BackupFailureType.MIGRATION_SYNC_FAILED, "the complete initial archive could not be re-read",
+                    exception);
         }
     }
 
@@ -199,18 +205,21 @@ final class ManagedOfflineMigrationPort implements OfflineMigrationPort, AutoClo
     @Override
     public SourceQuiesceEvidence stopSourceWrites(OfflineMigrationRequest request) throws BackupException {
         try {
-            backups.taskAdmission(applicationId,admission,true,copy(masterPassword),confirmation);
-            var targets=backups.daemonComponents(applicationId);
-            var result = lifecycle.executeLifecycleWithStoredPassword(applicationId, targets.isEmpty()?componentIds():targets,
-                    targets.isEmpty()?LifecycleAction.REFRESH_STATUS:LifecycleAction.STOP, source, source.credentialMode(), copy(masterPassword));
-            if (!result.accepted() || !Set.of(ApplicationRuntimeState.STOPPED,ApplicationRuntimeState.INSTALLED).contains(result.runtimeState())) {
+            backups.taskAdmission(applicationId, admission, true, copy(masterPassword), confirmation);
+            var targets = backups.daemonComponents(applicationId);
+            var result = lifecycle.executeLifecycleWithStoredPassword(applicationId,
+                    targets.isEmpty() ? componentIds() : targets,
+                    targets.isEmpty() ? LifecycleAction.REFRESH_STATUS : LifecycleAction.STOP, source,
+                    source.credentialMode(), copy(masterPassword));
+            if (!result.accepted() || !Set.of(ApplicationRuntimeState.STOPPED, ApplicationRuntimeState.INSTALLED)
+                    .contains(result.runtimeState())) {
                 throw new IllegalStateException("source components did not all enter the authoritative stopped state");
             }
             return new SourceQuiesceEvidence(true, true, admission,
                     List.of("every source component is authoritatively stopped in dependency-safe order"));
         } catch (Exception exception) {
-            return new SourceQuiesceEvidence(false, false, admission,
-                    List.of("source quiesce was not verified; recover daemon state and task admission before retrying"));
+            return new SourceQuiesceEvidence(false, false, admission, List
+                    .of("source quiesce was not verified; recover daemon state and task admission before retrying"));
         }
     }
 
@@ -225,15 +234,14 @@ final class ManagedOfflineMigrationPort implements OfflineMigrationPort, AutoClo
      * @throws BackupException if backup validation or the controlled backup operation fails / 备份校验或受控备份操作失败时
      */
     @Override
-    public SyncEvidence finalSync(OfflineMigrationRequest request, SyncEvidence initial,
-                                  SourceQuiesceEvidence quiesced) throws BackupException {
+    public SyncEvidence finalSync(OfflineMigrationRequest request, SyncEvidence initial, SourceQuiesceEvidence quiesced)
+            throws BackupException {
         try {
-            finalArchive = backups.createUsingSavedProfile(applicationId, finalDestination,
-                    copy(backupPassword), copy(masterPassword), confirmation, admission);
-            return new SyncEvidence(Files.size(finalArchive.archive()), finalArchive.inspection().archiveSha256(),
-                    true, true, List.of(
-                    "complete final archive was collected while every source component remained stopped",
-                    "final archive was atomically published and independently verified"));
+            finalArchive = backups.createUsingSavedProfile(applicationId, finalDestination, copy(backupPassword),
+                    copy(masterPassword), confirmation, admission);
+            return new SyncEvidence(Files.size(finalArchive.archive()), finalArchive.inspection().archiveSha256(), true,
+                    true, List.of("complete final archive was collected while every source component remained stopped",
+                            "final archive was atomically published and independently verified"));
         } catch (Exception exception) {
             throw failure(BackupFailureType.MIGRATION_SYNC_FAILED,
                     "the stopped-write final archive could not be created", exception);
@@ -251,19 +259,20 @@ final class ManagedOfflineMigrationPort implements OfflineMigrationPort, AutoClo
      * @throws IllegalStateException if the required state or runtime facility is unavailable / 所需状态或运行设施不可用时
      */
     @Override
-    public TargetCandidateEvidence restoreAndVerifyTarget(
-            OfflineMigrationRequest request, SyncEvidence finalSync) throws BackupException {
+    public TargetCandidateEvidence restoreAndVerifyTarget(OfflineMigrationRequest request, SyncEvidence finalSync)
+            throws BackupException {
         try {
             restoreOutcome = restores.restoreUsingSavedProfile(finalArchive.archive(), targetServerId,
                     copy(backupPassword), copy(masterPassword), confirmation);
             if (restoreOutcome.restore().status() != BackupRestoreStatus.SUCCEEDED
                     || restoreOutcome.controlState() == ManagedRestoreControlState.FAILED) {
-                throw new IllegalStateException("target restore did not reach verified formal activation and safe local control state");
+                throw new IllegalStateException(
+                        "target restore did not reach verified formal activation and safe local control state");
             }
-            return new TargetCandidateEvidence(applicationId + "-" + finalSync.contentSha256().substring(0, 16),
-                    true, true, true, List.of(
-                    "target components and whole-application formal health passed after candidate commit",
-                    "external traffic was not changed and the source deployment remains retained"));
+            return new TargetCandidateEvidence(applicationId + "-" + finalSync.contentSha256().substring(0, 16), true,
+                    true, true,
+                    List.of("target components and whole-application formal health passed after candidate commit",
+                            "external traffic was not changed and the source deployment remains retained"));
         } catch (Exception exception) {
             throw failure(BackupFailureType.MIGRATION_TARGET_FAILED,
                     "the final archive could not be restored and verified on the target", exception);
@@ -280,15 +289,15 @@ final class ManagedOfflineMigrationPort implements OfflineMigrationPort, AutoClo
     @Override
     public RecoveryEvidence discardTargetCandidate(OfflineMigrationRequest request) {
         if (restoreOutcome == null) {
-            return new RecoveryEvidence(true, true,
-                    List.of("no target restore attempt was entered or its own transaction completed candidate cleanup"));
+            return new RecoveryEvidence(true, true, List
+                    .of("no target restore attempt was entered or its own transaction completed candidate cleanup"));
         }
         if (restoreOutcome.restore().status() == BackupRestoreStatus.FAILED_EXISTING_PRESERVED) {
             return new RecoveryEvidence(true, true,
                     List.of("target restore transaction verified the previous release and removed its candidate"));
         }
-        return new RecoveryEvidence(false, false, List.of(
-                "target state cannot be automatically discarded after formal activation or unverified recovery"));
+        return new RecoveryEvidence(false, false, List
+                .of("target state cannot be automatically discarded after formal activation or unverified recovery"));
     }
 
     /**
@@ -304,16 +313,21 @@ final class ManagedOfflineMigrationPort implements OfflineMigrationPort, AutoClo
     public RecoveryEvidence recoverSource(OfflineMigrationRequest request, SourceQuiesceEvidence quiesced)
             throws BackupException {
         try {
-            var targets=backups.daemonComponents(applicationId);
-            var result = lifecycle.executeLifecycleWithStoredPassword(applicationId, targets.isEmpty()?componentIds():targets,
-                    targets.isEmpty()?LifecycleAction.REFRESH_STATUS:LifecycleAction.START, source, source.credentialMode(), copy(masterPassword));
-            boolean verified = result.accepted() && Set.of(ApplicationRuntimeState.RUNNING,ApplicationRuntimeState.INSTALLED).contains(result.runtimeState());
-            if(verified)backups.taskAdmission(applicationId,admission,false,copy(masterPassword),confirmation);
+            var targets = backups.daemonComponents(applicationId);
+            var result = lifecycle.executeLifecycleWithStoredPassword(applicationId,
+                    targets.isEmpty() ? componentIds() : targets,
+                    targets.isEmpty() ? LifecycleAction.REFRESH_STATUS : LifecycleAction.START, source,
+                    source.credentialMode(), copy(masterPassword));
+            boolean verified = result.accepted()
+                    && Set.of(ApplicationRuntimeState.RUNNING, ApplicationRuntimeState.INSTALLED)
+                            .contains(result.runtimeState());
+            if (verified)
+                backups.taskAdmission(applicationId, admission, false, copy(masterPassword), confirmation);
             return new RecoveryEvidence(verified, verified,
                     List.of("source start recovery was executed and every component runtime was observed"));
         } catch (Exception exception) {
-            throw failure(BackupFailureType.MIGRATION_RECOVERY_FAILED,
-                    "the source could not be restarted and verified", exception);
+            throw failure(BackupFailureType.MIGRATION_RECOVERY_FAILED, "the source could not be restarted and verified",
+                    exception);
         }
     }
 
@@ -331,7 +345,11 @@ final class ManagedOfflineMigrationPort implements OfflineMigrationPort, AutoClo
      * Closes the resources owned by this instance and completes its cleanup boundary.
      * <p>关闭当前实例持有的资源并完成其清理边界。
      */
-    @Override public void close() { clear(backupPassword); clear(masterPassword); }
+    @Override
+    public void close() {
+        clear(backupPassword);
+        clear(masterPassword);
+    }
 
     /**
      * Returns affected component identifiers.
@@ -374,5 +392,8 @@ final class ManagedOfflineMigrationPort implements OfflineMigrationPort, AutoClo
      *
      * @param value candidate content accepted or rejected by this contract / 由当前契约接收或拒绝的候选内容
      */
-    private static void clear(char[] value) { if (value != null) Arrays.fill(value, '\0'); }
+    private static void clear(char[] value) {
+        if (value != null)
+            Arrays.fill(value, '\0');
+    }
 }

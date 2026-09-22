@@ -1,5 +1,11 @@
 package gold.debug.windowstolinux.shared.linux.sshd.distro.dnf;
 
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.time.Duration;
+import java.util.Map;
+import java.util.Objects;
+
 import gold.debug.windowstolinux.shared.linux.distro.SelinuxEnvironmentPreparer;
 import gold.debug.windowstolinux.shared.linux.error.LinuxOperationException;
 import gold.debug.windowstolinux.shared.linux.error.LinuxOperationFailureType;
@@ -7,12 +13,6 @@ import gold.debug.windowstolinux.shared.linux.sshd.command.SshCommandExecutor;
 import gold.debug.windowstolinux.shared.model.server.security.LinuxSecurityState;
 import gold.debug.windowstolinux.shared.model.server.security.SelinuxPreparationPlan;
 import gold.debug.windowstolinux.shared.model.server.security.SelinuxPreparationState;
-
-import java.io.IOException;
-import java.nio.charset.StandardCharsets;
-import java.time.Duration;
-import java.util.Map;
-import java.util.Objects;
 
 /**
  * Executes only fixed, reviewed SELinux preparation steps. / 仅执行固定且经审阅的 SELinux 准备步骤。
@@ -23,6 +23,7 @@ public final class SelinuxPreparationExecutor implements SelinuxEnvironmentPrepa
      * <p>处理类型化远端命令边界的SSH命令执行器协作对象。
      */
     private final SshCommandExecutor commands;
+
     /**
      * Persisted server identifier.
      * <p>持久化服务器标识。
@@ -50,13 +51,17 @@ public final class SelinuxPreparationExecutor implements SelinuxEnvironmentPrepa
      * @throws LinuxOperationException if the authenticated remote operation fails or its evidence is rejected / 已认证远端操作失败或其证据被拒绝时
      * @throws IllegalArgumentException if an input violates the constraints checked by this contract / 输入违反当前契约检查的约束时
      */
-    @Override public java.util.Optional<SelinuxPreparationPlan> inspect() throws LinuxOperationException {
-        Map<String, String> values = SshCommandExecutor.lines(execute("inspect", null));
-        if ("false".equals(values.get("APPLICABLE"))) return java.util.Optional.empty();
+    @Override
+    public java.util.Optional<SelinuxPreparationPlan> inspect() throws LinuxOperationException {
+        Map<String, String> values = gold.debug.windowstolinux.shared.linux.command.CommandText
+                .lines(execute("inspect", null));
+        if ("false".equals(values.get("APPLICABLE")))
+            return java.util.Optional.empty();
         try {
-            if (!"true".equals(values.get("APPLICABLE"))) throw new IllegalArgumentException("Missing applicability");
-            return java.util.Optional.of(new SelinuxPreparationPlan(serverId, values.get("BOOT_ID"), values.get("CONFIG_SHA256"),
-                    LinuxSecurityState.valueOf(values.get("SECURITY_STATE")),
+            if (!"true".equals(values.get("APPLICABLE")))
+                throw new IllegalArgumentException("Missing applicability");
+            return java.util.Optional.of(new SelinuxPreparationPlan(serverId, values.get("BOOT_ID"),
+                    values.get("CONFIG_SHA256"), LinuxSecurityState.valueOf(values.get("SECURITY_STATE")),
                     SelinuxPreparationState.valueOf(values.get("PREPARATION_STATE"))));
         } catch (RuntimeException failure) {
             throw LinuxOperationException.create(LinuxOperationFailureType.ENVIRONMENT_PREPARATION_FAILED,
@@ -71,7 +76,8 @@ public final class SelinuxPreparationExecutor implements SelinuxEnvironmentPrepa
      * @param approved approved / 已批准
      * @throws LinuxOperationException if the authenticated remote operation fails or its evidence is rejected / 已认证远端操作失败或其证据被拒绝时
      */
-    @Override public void prepareReboot(SelinuxPreparationPlan approved) throws LinuxOperationException {
+    @Override
+    public void prepareReboot(SelinuxPreparationPlan approved) throws LinuxOperationException {
         execute("prepare", approved);
     }
 
@@ -82,7 +88,8 @@ public final class SelinuxPreparationExecutor implements SelinuxEnvironmentPrepa
      * @param approved approved / 已批准
      * @throws LinuxOperationException if the authenticated remote operation fails or its evidence is rejected / 已认证远端操作失败或其证据被拒绝时
      */
-    @Override public void enableEnforcement(SelinuxPreparationPlan approved) throws LinuxOperationException {
+    @Override
+    public void enableEnforcement(SelinuxPreparationPlan approved) throws LinuxOperationException {
         execute("enforce", approved);
     }
 
@@ -93,7 +100,8 @@ public final class SelinuxPreparationExecutor implements SelinuxEnvironmentPrepa
      * @param approved approved / 已批准
      * @throws LinuxOperationException if the authenticated remote operation fails or its evidence is rejected / 已认证远端操作失败或其证据被拒绝时
      */
-    @Override public void commitEnforcement(SelinuxPreparationPlan approved) throws LinuxOperationException {
+    @Override
+    public void commitEnforcement(SelinuxPreparationPlan approved) throws LinuxOperationException {
         execute("commit", approved);
     }
 
@@ -113,8 +121,8 @@ public final class SelinuxPreparationExecutor implements SelinuxEnvironmentPrepa
         }
         String arguments = "'" + operation + "'";
         if (approved != null) {
-            arguments += " '" + approved.bootId() + "' '" + approved.configurationSha256()
-                    + "' '" + approved.state().name() + "' '" + approved.securityState().name() + "'";
+            arguments += " '" + approved.bootId() + "' '" + approved.configurationSha256() + "' '"
+                    + approved.state().name() + "' '" + approved.securityState().name() + "'";
         }
         String script;
         try {
@@ -141,7 +149,8 @@ public final class SelinuxPreparationExecutor implements SelinuxEnvironmentPrepa
      */
     static String loadScript() throws IOException {
         try (var input = SelinuxPreparationExecutor.class.getResourceAsStream("selinux-preparation.sh")) {
-            if (input == null) throw new IOException("Missing SELinux preparation resource");
+            if (input == null)
+                throw new IOException("Missing SELinux preparation resource");
             return new String(input.readAllBytes(), StandardCharsets.UTF_8).replace("\r\n", "\n");
         }
     }

@@ -1,13 +1,5 @@
 package gold.debug.windowstolinux.app.db.persistence.serialization;
 
-import gold.debug.windowstolinux.shared.config.resource.ManagedComponentResourceBindings;
-import gold.debug.windowstolinux.shared.config.resource.ManagedDatabaseBinding;
-import gold.debug.windowstolinux.shared.config.resource.ManagedDatabaseConnection;
-import gold.debug.windowstolinux.shared.config.resource.ManagedDatabaseEngineType;
-import gold.debug.windowstolinux.shared.config.resource.ManagedFileBinding;
-import gold.debug.windowstolinux.shared.config.secretref.SecretReference;
-import gold.debug.windowstolinux.shared.model.project.component.ComponentDataPath;
-
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.DataInputStream;
@@ -16,6 +8,14 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+
+import gold.debug.windowstolinux.shared.config.resource.ManagedComponentResourceBindings;
+import gold.debug.windowstolinux.shared.config.resource.ManagedDatabaseBinding;
+import gold.debug.windowstolinux.shared.config.resource.ManagedDatabaseConnection;
+import gold.debug.windowstolinux.shared.config.resource.ManagedDatabaseEngineType;
+import gold.debug.windowstolinux.shared.config.resource.ManagedFileBinding;
+import gold.debug.windowstolinux.shared.config.secretref.SecretReference;
+import gold.debug.windowstolinux.shared.model.project.component.ComponentDataPath;
 
 /**
  * Strict versioned storage codec for reviewed non-secret managed resource bindings. / 经审阅无秘密受管资源绑定的严格版本化存储编解码器。
@@ -30,8 +30,12 @@ public final class ManagedResourcePersistenceCodec {
      * @throws java.io.IOException if the required file or stream operation fails / 所需文件或流操作失败时
      */
     private static java.util.List<String> readInitialization(java.io.DataInputStream input) throws java.io.IOException {
-        int size = input.readInt(); if (size < 0 || size > 32) throw new java.io.IOException("invalid initialization file count");
-        var result = new java.util.ArrayList<String>(); for (int i=0; i<size; i++) result.add(input.readUTF());
+        int size = input.readInt();
+        if (size < 0 || size > 32)
+            throw new java.io.IOException("invalid initialization file count");
+        var result = new java.util.ArrayList<String>();
+        for (int i = 0; i < size; i++)
+            result.add(input.readUTF());
         return java.util.List.copyOf(result);
     }
     /**
@@ -39,21 +43,25 @@ public final class ManagedResourcePersistenceCodec {
      * <p>格式标记。
      */
     private static final int MAGIC = 0x57544c52;
+
     /**
      * VERSION.
      * <p>版本。
      */
     private static final int VERSION = 2;
+
     /**
      * MAX DOCUMENT BYTES.
      * <p>最大文档字节。
      */
     private static final int MAX_DOCUMENT_BYTES = 1_048_576;
+
     /**
      * MAX FILE BINDINGS.
      * <p>最大文件绑定集合。
      */
     private static final int MAX_FILE_BINDINGS = 4_096;
+
     /**
      * MAX DATABASE BINDINGS.
      * <p>最大数据库绑定集合。
@@ -79,7 +87,8 @@ public final class ManagedResourcePersistenceCodec {
             output.writeInt(MAGIC);
             output.writeByte(VERSION);
             output.writeInt(bindings.fileBindings().size());
-            for (ManagedFileBinding binding : bindings.fileBindings()) writeFile(output, binding);
+            for (ManagedFileBinding binding : bindings.fileBindings())
+                writeFile(output, binding);
             output.writeByte(bindings.databaseBindings().isPresent() ? 1 : 0);
             if (bindings.databaseBindings().isPresent()) {
                 output.writeInt(bindings.databaseBindings().orElseThrow().size());
@@ -112,21 +121,24 @@ public final class ManagedResourcePersistenceCodec {
             }
             int fileCount = boundedCount(input.readInt(), MAX_FILE_BINDINGS, "file binding");
             List<ManagedFileBinding> files = new ArrayList<>(fileCount);
-            while (fileCount-- > 0) files.add(readFile(input));
+            while (fileCount-- > 0)
+                files.add(readFile(input));
             Optional<List<ManagedDatabaseBinding>> databases = switch (input.readUnsignedByte()) {
                 case 0 -> Optional.empty();
                 case 1 -> {
                     int databaseCount = boundedCount(input.readInt(), MAX_DATABASE_BINDINGS, "database binding");
                     List<ManagedDatabaseBinding> values = new ArrayList<>(databaseCount);
-                    while (databaseCount-- > 0) values.add(readDatabase(input));
+                    while (databaseCount-- > 0)
+                        values.add(readDatabase(input));
                     yield Optional.of(List.copyOf(values));
                 }
                 default -> throw new IOException("managed database review state is invalid");
             };
-            if (input.read() != -1) throw new IOException("managed resource binding document contains trailing data");
+            if (input.read() != -1)
+                throw new IOException("managed resource binding document contains trailing data");
             ManagedComponentResourceBindings bindings = new ManagedComponentResourceBindings(files, databases);
-            if (!bindings.fileBindings().equals(files)
-                    || databases.isPresent() && !bindings.databaseBindings().orElseThrow().equals(databases.orElseThrow())) {
+            if (!bindings.fileBindings().equals(files) || databases.isPresent()
+                    && !bindings.databaseBindings().orElseThrow().equals(databases.orElseThrow())) {
                 throw new IOException("managed resource binding document is not in canonical order");
             }
             return bindings;
@@ -149,8 +161,11 @@ public final class ManagedResourcePersistenceCodec {
         output.writeByte(binding.dataPath().access() == ComponentDataPath.AccessMode.READ_ONLY ? 1 : 2);
         output.writeUTF(binding.dataPath().schemaId());
         output.writeByte(binding.dataPath().reversible() ? 1 : 0);
-        output.writeUTF(binding.location().type().name()); output.writeUTF(binding.location().path());
-        output.writeUTF(binding.resourceType().name()); output.writeUTF(binding.seedFile()); output.writeUTF(binding.contentSha256());
+        output.writeUTF(binding.location().type().name());
+        output.writeUTF(binding.location().path());
+        output.writeUTF(binding.resourceType().name());
+        output.writeUTF(binding.seedFile());
+        output.writeUTF(binding.contentSha256());
     }
 
     /**
@@ -172,9 +187,13 @@ public final class ManagedResourcePersistenceCodec {
         String schemaId = input.readUTF();
         boolean reversible = readBoolean(input, "managed file binding reversible value");
         var location = new gold.debug.windowstolinux.shared.model.managed.ManagedStorageLocation(
-                gold.debug.windowstolinux.shared.model.managed.ManagedStorageLocation.StorageLocationType.valueOf(input.readUTF()), input.readUTF());
+                gold.debug.windowstolinux.shared.model.managed.ManagedStorageLocation.StorageLocationType
+                        .valueOf(input.readUTF()),
+                input.readUTF());
         return new ManagedFileBinding(bindingId, new ComponentDataPath(path, access, schemaId, reversible), location,
-                gold.debug.windowstolinux.shared.model.managed.ManagedStorageLocation.StorageResourceType.valueOf(input.readUTF()), input.readUTF(), input.readUTF());
+                gold.debug.windowstolinux.shared.model.managed.ManagedStorageLocation.StorageResourceType
+                        .valueOf(input.readUTF()),
+                input.readUTF(), input.readUTF());
     }
 
     /**
@@ -190,9 +209,13 @@ public final class ManagedResourcePersistenceCodec {
         output.writeByte(engineCode(binding.connection().engine()));
         if (binding.connection() instanceof ManagedDatabaseConnection.Sqlite sqlite) {
             output.writeUTF(sqlite.fileName());
-            output.writeUTF(sqlite.location().type().name()); output.writeUTF(sqlite.location().path()); output.writeUTF(sqlite.accessPath());
-            output.writeUTF(sqlite.seedFile()); output.writeInt(sqlite.initializationFiles().size());
-            for (String file : sqlite.initializationFiles()) output.writeUTF(file);
+            output.writeUTF(sqlite.location().type().name());
+            output.writeUTF(sqlite.location().path());
+            output.writeUTF(sqlite.accessPath());
+            output.writeUTF(sqlite.seedFile());
+            output.writeInt(sqlite.initializationFiles().size());
+            for (String file : sqlite.initializationFiles())
+                output.writeUTF(file);
             return;
         }
         ManagedDatabaseConnection.Server server = (ManagedDatabaseConnection.Server) binding.connection();
@@ -218,11 +241,15 @@ public final class ManagedResourcePersistenceCodec {
         ManagedDatabaseEngineType engine = engine(input.readUnsignedByte());
         ManagedDatabaseConnection connection;
         if (engine == ManagedDatabaseEngineType.SQLITE) {
-            connection = new ManagedDatabaseConnection.Sqlite(input.readUTF(), new gold.debug.windowstolinux.shared.model.managed.ManagedStorageLocation(
-                    gold.debug.windowstolinux.shared.model.managed.ManagedStorageLocation.StorageLocationType.valueOf(input.readUTF()), input.readUTF()), input.readUTF(), input.readUTF(), readInitialization(input));
+            connection = new ManagedDatabaseConnection.Sqlite(input.readUTF(),
+                    new gold.debug.windowstolinux.shared.model.managed.ManagedStorageLocation(
+                            gold.debug.windowstolinux.shared.model.managed.ManagedStorageLocation.StorageLocationType
+                                    .valueOf(input.readUTF()),
+                            input.readUTF()),
+                    input.readUTF(), input.readUTF(), readInitialization(input));
         } else {
-            connection = new ManagedDatabaseConnection.Server(engine, input.readUTF(), input.readInt(),
-                    input.readUTF(), input.readUTF(), new SecretReference(input.readUTF(), input.readLong()),
+            connection = new ManagedDatabaseConnection.Server(engine, input.readUTF(), input.readInt(), input.readUTF(),
+                    input.readUTF(), new SecretReference(input.readUTF(), input.readLong()),
                     readBoolean(input, "managed database TLS value"));
         }
         return new ManagedDatabaseBinding(databaseId, connection);
@@ -292,7 +319,8 @@ public final class ManagedResourcePersistenceCodec {
      * @throws IOException if the required file or stream operation fails / 所需文件或流操作失败时
      */
     private static int boundedCount(int count, int maximum, String name) throws IOException {
-        if (count < 0 || count > maximum) throw new IOException(name + " count is invalid");
+        if (count < 0 || count > maximum)
+            throw new IOException(name + " count is invalid");
         return count;
     }
 }

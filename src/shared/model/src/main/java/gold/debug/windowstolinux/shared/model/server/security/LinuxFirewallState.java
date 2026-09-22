@@ -6,11 +6,14 @@ package gold.debug.windowstolinux.shared.model.server.security;
 public enum LinuxFirewallState {
     /**
      * The observed firewall service is active. / 观测到的防火墙服务处于活动状态。
-     */ ACTIVE,
+     */
+    ACTIVE,
     /**
      * The observed firewall manager is installed but inactive. / 观测到的防火墙管理器已安装但未活动。
-     */ INACTIVE,
+     */
+    INACTIVE,
     /**
      * State could not be determined. / 无法确定状态。
-     */ UNKNOWN
+     */
+    UNKNOWN
 }

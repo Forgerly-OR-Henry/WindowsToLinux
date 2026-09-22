@@ -30,7 +30,8 @@ public record RemoteRuntimeConfiguration(String applicationId, String sha256, Ma
         entries = Collections.unmodifiableMap(new TreeMap<>(Objects.requireNonNull(entries, "entries")));
         entries.forEach((key, value) -> {
             if (!key.matches("[A-Z][A-Z0-9_]{0,63}") || value == null || value.length() > 4096
-                    || value.indexOf('\n') >= 0 || value.indexOf('\r') >= 0 || value.indexOf('\0') >= 0) throw new IllegalArgumentException("invalid runtime value");
+                    || value.indexOf('\n') >= 0 || value.indexOf('\r') >= 0 || value.indexOf('\0') >= 0)
+                throw new IllegalArgumentException("invalid runtime value");
         });
     }
 }

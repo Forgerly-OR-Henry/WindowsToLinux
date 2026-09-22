@@ -1,7 +1,19 @@
 package gold.debug.windowstolinux.app.main.startup;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import java.io.InputStream;
+import java.net.HttpURLConnection;
+import java.net.URI;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Path;
+import java.time.Instant;
+import java.util.List;
+import java.util.Optional;
+import java.util.Set;
+
 import gold.debug.windowstolinux.app.service.contract.definition.MultiComponentReviewInput;
-import gold.debug.windowstolinux.shared.analyze.component.ComponentAnalysisRequest;
 import gold.debug.windowstolinux.shared.config.contract.definition.ConfigurationScope;
 import gold.debug.windowstolinux.shared.config.contract.definition.ConfigurationValue;
 import gold.debug.windowstolinux.shared.config.revision.ConfigurationEntry;
@@ -18,19 +30,7 @@ import gold.debug.windowstolinux.shared.model.lifecycle.LifecycleAction;
 import gold.debug.windowstolinux.shared.model.project.DeploymentProjectType;
 import gold.debug.windowstolinux.shared.model.project.DeploymentRuntimeSpecification;
 import gold.debug.windowstolinux.shared.model.project.component.ComponentIsolationSpecification;
-
-import java.io.InputStream;
-import java.net.HttpURLConnection;
-import java.net.URI;
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Path;
-import java.time.Instant;
-import java.util.List;
-import java.util.Optional;
-import java.util.Set;
-
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import gold.debug.windowstolinux.shared.standard.analyze.component.ComponentAnalysisRequest;
 
 /**
  * Reuses one product-entrypoint whole-application transaction for each explicitly selected live distribution.
@@ -67,8 +67,10 @@ final class ManagedMultiComponentDeploymentAcceptanceFixture {
                         .allMatch(component -> component.state() == ComponentTransactionState.SUCCEEDED));
                 assertHttp(apiPort, "api-v1");
                 assertHttp(webPort, "web-v1");
-                context.assertRuntimeIdentity(firstPrepared.components().get("api").facts().applicationId(), runtime(apiPort));
-                context.assertRuntimeIdentity(firstPrepared.components().get("web").facts().applicationId(), runtime(webPort));
+                context.assertRuntimeIdentity(firstPrepared.components().get("api").facts().applicationId(),
+                        runtime(apiPort));
+                context.assertRuntimeIdentity(firstPrepared.components().get("web").facts().applicationId(),
+                        runtime(webPort));
 
                 TypedAcceptanceFixture.javaJar(root, "api", "api-v2", true);
                 TypedAcceptanceFixture.javaJar(root, "web", "unused", false);
@@ -136,31 +138,32 @@ final class ManagedMultiComponentDeploymentAcceptanceFixture {
 
     private static ComponentAnalysisRequest request(String componentId, int port, Set<String> dependencies) {
         return new ComponentAnalysisRequest(componentId, componentId, DeploymentProjectType.JAVA_JAR,
-                Optional.of(runtime(port)), List.of(componentId + "/app.jar"), Set.of(port), List.of("PORT"),
-                List.of(), List.of(), dependencies, true, ComponentIsolationSpecification.managed());
+                Optional.of(runtime(port)), List.of(componentId + "/app.jar"), Set.of(port), List.of("PORT"), List.of(),
+                List.of(), dependencies, true, ComponentIsolationSpecification.managed());
     }
 
     private static List<MultiComponentReviewInput> inputs(
-            gold.debug.windowstolinux.app.service.source.PreparedMultiComponentSource prepared,
-            int apiPort, int webPort, long revision) {
+            gold.debug.windowstolinux.app.service.source.PreparedMultiComponentSource prepared, int apiPort,
+            int webPort, long revision) {
         return List.of(input(prepared, "api", apiPort, revision), input(prepared, "web", webPort, revision));
     }
 
     private static MultiComponentReviewInput input(
-            gold.debug.windowstolinux.app.service.source.PreparedMultiComponentSource prepared,
-            String componentId, int port, long revision) {
+            gold.debug.windowstolinux.app.service.source.PreparedMultiComponentSource prepared, String componentId,
+            int port, long revision) {
         String managedId = prepared.components().get(componentId).facts().applicationId();
         ConfigurationSnapshot configuration = ConfigurationSnapshot.create(managedId, revision, "acceptance-v1",
                 Instant.now(), List.of(new ConfigurationEntry("PORT", ConfigurationScope.RUNTIME,
                         new ConfigurationValue.Number(port))));
         return new MultiComponentReviewInput(componentId, configuration, List.of(),
-                Optional.of(new UserAccessUrl(URI.create("http://" + requiredProperty("managed.ssh.host")
-                        + ":" + port + "/"))), LIMITS, false, false);
+                Optional.of(new UserAccessUrl(
+                        URI.create("http://" + requiredProperty("managed.ssh.host") + ":" + port + "/"))),
+                LIMITS, false, false);
     }
 
     private static DeploymentRuntimeSpecification.JavaJar runtime(int port) {
-        return new DeploymentRuntimeSpecification.JavaJar("app.jar", "acceptance.Probe", "21", List.of(),
-                List.of(), health(port));
+        return new DeploymentRuntimeSpecification.JavaJar("app.jar", "acceptance.Probe", "21", List.of(), List.of(),
+                health(port));
     }
 
     private static HealthCheck.Http health(int port) {

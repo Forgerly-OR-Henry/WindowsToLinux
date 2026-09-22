@@ -1,18 +1,5 @@
 package gold.debug.windowstolinux.app.db;
 
-import gold.debug.windowstolinux.app.db.failure.DesktopPersistenceException;
-import gold.debug.windowstolinux.app.db.failure.DesktopPersistenceFailureType;
-import gold.debug.windowstolinux.app.db.persistence.connection.DesktopConnectionFactory;
-import gold.debug.windowstolinux.app.db.execution.migration.DesktopSchemaMigrator;
-import gold.debug.windowstolinux.app.db.persistence.repository.AiProfileRepository;
-import gold.debug.windowstolinux.app.db.persistence.repository.ApplicationSecretRepository;
-import gold.debug.windowstolinux.app.db.persistence.repository.ConfigurationSnapshotRepository;
-import gold.debug.windowstolinux.app.db.persistence.repository.DesktopPreferenceRepository;
-import gold.debug.windowstolinux.app.db.persistence.repository.EncryptedSecretRepository;
-import gold.debug.windowstolinux.app.db.persistence.repository.ManagedApplicationRepository;
-import gold.debug.windowstolinux.app.db.persistence.repository.ManagedApplicationGraphRepository;
-import gold.debug.windowstolinux.app.db.persistence.repository.ServerProfileRepository;
-
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.sql.Connection;
@@ -20,6 +7,19 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
 import java.util.Locale;
+
+import gold.debug.windowstolinux.app.db.execution.migration.DesktopSchemaMigrator;
+import gold.debug.windowstolinux.app.db.failure.DesktopPersistenceException;
+import gold.debug.windowstolinux.app.db.failure.DesktopPersistenceFailureType;
+import gold.debug.windowstolinux.app.db.persistence.connection.DesktopConnectionFactory;
+import gold.debug.windowstolinux.app.db.persistence.repository.AiProfileRepository;
+import gold.debug.windowstolinux.app.db.persistence.repository.ApplicationSecretRepository;
+import gold.debug.windowstolinux.app.db.persistence.repository.ConfigurationSnapshotRepository;
+import gold.debug.windowstolinux.app.db.persistence.repository.DesktopPreferenceRepository;
+import gold.debug.windowstolinux.app.db.persistence.repository.EncryptedSecretRepository;
+import gold.debug.windowstolinux.app.db.persistence.repository.ManagedApplicationGraphRepository;
+import gold.debug.windowstolinux.app.db.persistence.repository.ManagedApplicationRepository;
+import gold.debug.windowstolinux.app.db.persistence.repository.ServerProfileRepository;
 
 /**
  * Composes focused desktop repositories over the versioned migrated SQLite schema.
@@ -31,6 +31,7 @@ public final class DesktopPersistence implements AutoCloseable {
      * UI locale preference key. / UI 区域设置偏好键。
      */
     public static final String UI_LOCALE_SETTING = "ui.locale";
+
     /**
      * UI theme preference key. / UI 主题偏好键。
      */
@@ -41,48 +42,58 @@ public final class DesktopPersistence implements AutoCloseable {
      * <p>处理外部应用集合的golddebugwindowstolinux应用db持久化仓库外部应用仓库协作对象。
      */
     private final gold.debug.windowstolinux.app.db.persistence.repository.ExternalApplicationRepository externalApplications;
+
     /**
      * Bound server profile repository collaborator for server-profile and authenticated-session service.
      * <p>处理服务器资料及已认证会话服务的服务器配置资料仓库协作对象。
      */
     private final ServerProfileRepository servers;
+
     /**
      * Bound gold debug windowstolinux app db persistence repository browser recovery repository collaborator for recovery.
      * <p>处理恢复的golddebugwindowstolinux应用db持久化仓库浏览器恢复仓库协作对象。
      */
     private final gold.debug.windowstolinux.app.db.persistence.repository.BrowserRecoveryRepository recovery;
+
     /**
      * Bound desktop preference repository collaborator for preferences.
      * <p>处理偏好的Desktop偏好仓库协作对象。
      */
     private final DesktopPreferenceRepository preferences;
+
     /**
      * Bound ai profile repository collaborator for ai profiles.
      * <p>处理AI配置资料集合的AI配置资料仓库协作对象。
      */
     private final AiProfileRepository aiProfiles;
+
     /** Nonsecret deployment task journal. / 非秘密部署任务日志。 */
     private final gold.debug.windowstolinux.app.db.persistence.repository.AgentTaskRepository agentTasks;
+
     /**
      * Bound configuration snapshot repository collaborator for configurations.
      * <p>处理配置集合的配置快照仓库协作对象。
      */
     private final ConfigurationSnapshotRepository configurations;
+
     /**
      * Bound application secret repository collaborator for application secrets.
      * <p>处理应用秘密集合的应用秘密仓库协作对象。
      */
     private final ApplicationSecretRepository applicationSecrets;
+
     /**
      * Bound encrypted secret repository collaborator for encrypted secrets.
      * <p>处理加密秘密集合的加密秘密仓库协作对象。
      */
     private final EncryptedSecretRepository encryptedSecrets;
+
     /**
      * Bound managed application repository collaborator for managed applications.
      * <p>处理受管应用集合的受管应用仓库协作对象。
      */
     private final ManagedApplicationRepository managedApplications;
+
     /**
      * Bound managed application graph repository collaborator for managed application graphs.
      * <p>处理受管应用图集合的受管应用图仓库协作对象。
@@ -99,7 +110,8 @@ public final class DesktopPersistence implements AutoCloseable {
         servers = new ServerProfileRepository(connections);
         agentTasks = new gold.debug.windowstolinux.app.db.persistence.repository.AgentTaskRepository(connections);
         recovery = new gold.debug.windowstolinux.app.db.persistence.repository.BrowserRecoveryRepository(connections);
-        externalApplications = new gold.debug.windowstolinux.app.db.persistence.repository.ExternalApplicationRepository(connections);
+        externalApplications = new gold.debug.windowstolinux.app.db.persistence.repository.ExternalApplicationRepository(
+                connections);
         preferences = new DesktopPreferenceRepository(connections);
         aiProfiles = new AiProfileRepository(connections);
         configurations = new ConfigurationSnapshotRepository(connections);
@@ -130,8 +142,10 @@ public final class DesktopPersistence implements AutoCloseable {
         try {
             verifyIntegrity(connections);
             DesktopSchemaMigrator.migrate(connections);
-            new gold.debug.windowstolinux.app.db.persistence.repository.BrowserRecoveryRepository(connections).interruptUnfinished();
-            new gold.debug.windowstolinux.app.db.persistence.repository.AgentTaskRepository(connections).interruptUnfinished();
+            new gold.debug.windowstolinux.app.db.persistence.repository.BrowserRecoveryRepository(connections)
+                    .interruptUnfinished();
+            new gold.debug.windowstolinux.app.db.persistence.repository.AgentTaskRepository(connections)
+                    .interruptUnfinished();
             verifyIntegrity(connections);
             return new DesktopPersistence(connections);
         } catch (SQLException exception) {
@@ -144,66 +158,97 @@ public final class DesktopPersistence implements AutoCloseable {
      *
      * @return the server/profile repository / 服务器/资料仓库
      */
-    public ServerProfileRepository servers() { return servers; }
+    public ServerProfileRepository servers() {
+        return servers;
+    }
+
     /**
      * Nonsecret rescue journal. / 非秘密救援记录。
      *
      * @return recovery / 恢复
      */
-    public gold.debug.windowstolinux.app.db.persistence.repository.BrowserRecoveryRepository recovery() { return recovery; }
+    public gold.debug.windowstolinux.app.db.persistence.repository.BrowserRecoveryRepository recovery() {
+        return recovery;
+    }
+
     /** Provides the nonsecret task journal. / 提供非秘密任务日志。
      * @return deployment task repository / 部署任务仓库
      */
-    public gold.debug.windowstolinux.app.db.persistence.repository.AgentTaskRepository agentTasks(){return agentTasks;}
+    public gold.debug.windowstolinux.app.db.persistence.repository.AgentTaskRepository agentTasks() {
+        return agentTasks;
+    }
 
     /**
      * Returns external lifecycle registrations and local presentation. / 返回外部生命周期登记与本地显示设置。
      *
      * @return external lifecycle registrations and local presentation / 外部生命周期登记与本地显示设置
      */
-    public gold.debug.windowstolinux.app.db.persistence.repository.ExternalApplicationRepository externalApplications() { return externalApplications; }
+    public gold.debug.windowstolinux.app.db.persistence.repository.ExternalApplicationRepository externalApplications() {
+        return externalApplications;
+    }
+
     /**
      * Returns the preference repository. / 返回偏好仓库。
      *
      * @return the preference repository / 偏好仓库
      */
-    public DesktopPreferenceRepository preferences() { return preferences; }
+    public DesktopPreferenceRepository preferences() {
+        return preferences;
+    }
+
     /**
      * Returns the AI profile repository. / 返回 AI 资料仓库。
      *
      * @return the AI profile repository /  AI 资料仓库
      */
-    public AiProfileRepository aiProfiles() { return aiProfiles; }
+    public AiProfileRepository aiProfiles() {
+        return aiProfiles;
+    }
+
     /**
      * Returns the normal configuration repository. / 返回普通配置仓库。
      *
      * @return the normal configuration repository / 普通配置仓库
      */
-    public ConfigurationSnapshotRepository configurations() { return configurations; }
+    public ConfigurationSnapshotRepository configurations() {
+        return configurations;
+    }
+
     /**
      * Returns the application-secret metadata repository. / 返回应用秘密元数据仓库。
      *
      * @return the application-secret metadata repository / 应用秘密元数据仓库
      */
-    public ApplicationSecretRepository applicationSecrets() { return applicationSecrets; }
+    public ApplicationSecretRepository applicationSecrets() {
+        return applicationSecrets;
+    }
+
     /**
      * Returns the encrypted payload repository. / 返回加密载荷仓库。
      *
      * @return the encrypted payload repository / 加密载荷仓库
      */
-    public EncryptedSecretRepository encryptedSecrets() { return encryptedSecrets; }
+    public EncryptedSecretRepository encryptedSecrets() {
+        return encryptedSecrets;
+    }
+
     /**
      * Returns the managed-application repository. / 返回受管应用仓库。
      *
      * @return the managed-application repository / 受管应用仓库
      */
-    public ManagedApplicationRepository managedApplications() { return managedApplications; }
+    public ManagedApplicationRepository managedApplications() {
+        return managedApplications;
+    }
+
     /**
      * Returns the durable whole-application graph repository. / 返回持久整应用图仓库。
      *
      * @return the durable whole-application graph repository / 持久整应用图仓库
      */
-    public ManagedApplicationGraphRepository managedApplicationGraphs() { return managedApplicationGraphs; }
+    public ManagedApplicationGraphRepository managedApplicationGraphs() {
+        return managedApplicationGraphs;
+    }
 
     /**
      * Closes this resource. / 关闭此资源。
@@ -222,8 +267,8 @@ public final class DesktopPersistence implements AutoCloseable {
      */
     private static void verifyIntegrity(DesktopConnectionFactory connections) throws SQLException {
         try (Connection connection = connections.open();
-             Statement statement = connection.createStatement();
-             ResultSet results = statement.executeQuery("PRAGMA quick_check")) {
+                Statement statement = connection.createStatement();
+                ResultSet results = statement.executeQuery("PRAGMA quick_check")) {
             boolean checked = false;
             while (results.next()) {
                 checked = true;

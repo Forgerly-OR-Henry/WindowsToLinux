@@ -7,7 +7,8 @@ import java.util.Objects;
  *
  *  <p>用户选择的可变或不可变 Git 引用；分析前会将其解析为 Commit。
  */
-public sealed interface GitReference permits GitReference.Branch, GitReference.Tag, GitReference.Commit, GitReference.DefaultBranch {
+public sealed interface GitReference
+        permits GitReference.Branch, GitReference.Tag, GitReference.Commit, GitReference.DefaultBranch {
     /**
      * Remote HEAD, resolved and pinned by the controlled fetch before analysis. / 远端 HEAD，在分析前由受控抓取解析并固定。
      */
@@ -17,7 +18,10 @@ public sealed interface GitReference permits GitReference.Branch, GitReference.T
          *
          * @return the remote default reference / 远端默认引用
          */
-        @Override public String value() { return "HEAD"; }
+        @Override
+        public String value() {
+            return "HEAD";
+        }
     }
     /**
      * Returns the exact reference text passed as one Git argument.
@@ -93,8 +97,8 @@ public sealed interface GitReference permits GitReference.Branch, GitReference.T
      */
     private static String requireName(String value, String name) {
         value = Objects.requireNonNull(value, name).trim();
-        if (!value.matches("[A-Za-z0-9][A-Za-z0-9._/-]{0,254}") || value.contains("..")
-                || value.contains("//") || value.endsWith("/") || value.startsWith("-")) {
+        if (!value.matches("[A-Za-z0-9][A-Za-z0-9._/-]{0,254}") || value.contains("..") || value.contains("//")
+                || value.endsWith("/") || value.startsWith("-")) {
             throw new IllegalArgumentException(name + " is not a safe Git reference name");
         }
         return value;

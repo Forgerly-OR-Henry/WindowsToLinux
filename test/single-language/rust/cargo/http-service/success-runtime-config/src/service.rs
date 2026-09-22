@@ -6,7 +6,9 @@ pub fn summarize(raw: Option<&str>) -> Result<Summary, &'static str> {
             return Err("invalid-values");
         }
         let item = token.parse::<u32>().map_err(|_| "invalid-values")?;
-        if item > 10000 { return Err("invalid-values"); }
+        if item > 10000 {
+            return Err("invalid-values");
+        }
         items.push(item);
     }
     Ok(Summary::new(items))

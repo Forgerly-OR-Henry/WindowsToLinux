@@ -33,8 +33,7 @@ Record parse_record(const std::string &line) {
     if (record.level == "ERR")
         record.level = "ERROR";
     if (!valid_time(record.time) ||
-        !(record.level == "DEBUG" || record.level == "INFO" || record.level == "WARN" ||
-          record.level == "ERROR") ||
+        !(record.level == "DEBUG" || record.level == "INFO" || record.level == "WARN" || record.level == "ERROR") ||
         record.service.empty() || record.service.size() > 100 || record.message.size() > 8192)
         throw std::invalid_argument("invalid time, level, service or message length");
     return record;

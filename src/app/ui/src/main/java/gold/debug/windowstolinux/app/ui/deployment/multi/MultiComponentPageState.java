@@ -1,13 +1,12 @@
 package gold.debug.windowstolinux.app.ui.deployment.multi;
 
-import gold.debug.windowstolinux.app.service.contract.definition.ComponentFormInput;
+import java.util.List;
+import java.util.Objects;
 
+import gold.debug.windowstolinux.app.service.contract.definition.ComponentFormInput;
 import gold.debug.windowstolinux.app.service.deployment.multi.ReviewedMultiComponentApplication;
 import gold.debug.windowstolinux.app.service.source.PreparedMultiComponentSource;
 import gold.debug.windowstolinux.shared.model.lifecycle.LifecycleAction;
-
-import java.util.List;
-import java.util.Objects;
 
 /**
  * Complete non-secret multi-component page state. / 完整且不含秘密的多组件页面状态。
@@ -23,18 +22,10 @@ import java.util.Objects;
  * @param preparation preparation / 准备
  * @param review review / 审阅
  */
-public record MultiComponentPageState(
-        String applicationRoot,
-        String applicationId,
-        String healthComponentId,
-        String lifecycleTargets,
-        LifecycleAction lifecycleAction,
-        MultiComponentFormState form,
-        List<ComponentFormInput> drafts,
-        String output,
-        PreparedMultiComponentSource preparation,
-        ReviewedMultiComponentApplication review
-) {
+public record MultiComponentPageState(String applicationRoot, String applicationId, String healthComponentId,
+        String lifecycleTargets, LifecycleAction lifecycleAction, MultiComponentFormState form,
+        List<ComponentFormInput> drafts, String output, PreparedMultiComponentSource preparation,
+        ReviewedMultiComponentApplication review) {
     /**
      * Preserves immutable collections and required values. / 保留不可变集合与必要值。
      *

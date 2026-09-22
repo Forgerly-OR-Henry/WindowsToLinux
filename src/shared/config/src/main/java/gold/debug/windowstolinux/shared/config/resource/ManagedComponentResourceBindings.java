@@ -11,10 +11,8 @@ import java.util.Optional;
  * @param fileBindings file bindings / 文件绑定集合
  * @param databaseBindings the reviewed database scope, or empty when it was not reviewed / 经审阅数据库范围；未审阅时为空
  */
-public record ManagedComponentResourceBindings(
-        List<ManagedFileBinding> fileBindings,
-        Optional<List<ManagedDatabaseBinding>> databaseBindings
-) {
+public record ManagedComponentResourceBindings(List<ManagedFileBinding> fileBindings,
+        Optional<List<ManagedDatabaseBinding>> databaseBindings) {
     /**
      * Canonicalizes bindings while preserving unknown versus explicitly empty databases. / 规范化绑定并保留数据库未知与显式为空的区别。
      *
@@ -27,12 +25,12 @@ public record ManagedComponentResourceBindings(
         fileBindings = List.copyOf(Objects.requireNonNull(fileBindings, "fileBindings").stream()
                 .map(value -> Objects.requireNonNull(value, "file binding"))
                 .sorted(Comparator.comparing(ManagedFileBinding::bindingId)).toList());
-        databaseBindings = Objects.requireNonNull(databaseBindings, "databaseBindings")
-                .map(values -> List.copyOf(values.stream()
-                        .map(value -> Objects.requireNonNull(value, "database binding"))
+        databaseBindings = Objects.requireNonNull(databaseBindings, "databaseBindings").map(
+                values -> List.copyOf(values.stream().map(value -> Objects.requireNonNull(value, "database binding"))
                         .sorted(Comparator.comparing(ManagedDatabaseBinding::databaseId)).toList()));
         if (fileBindings.stream().map(ManagedFileBinding::bindingId).distinct().count() != fileBindings.size()
-                || fileBindings.stream().map(value -> value.dataPath().path()).distinct().count() != fileBindings.size()) {
+                || fileBindings.stream().map(value -> value.dataPath().path()).distinct().count() != fileBindings
+                        .size()) {
             throw new IllegalArgumentException("managed file binding identities and logical paths must be unique");
         }
         if (databaseBindings.isPresent() && databaseBindings.orElseThrow().stream()

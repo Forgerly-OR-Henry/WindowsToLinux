@@ -1,9 +1,9 @@
 package gold.debug.windowstolinux.shared.ai.collaboration.role;
 
-import gold.debug.windowstolinux.shared.model.project.DeploymentProjectFacts;
-
 import java.util.List;
 import java.util.Objects;
+
+import gold.debug.windowstolinux.shared.model.project.DeploymentProjectFacts;
 
 /**
  * Minimal project facts without source paths, contents, configuration values, or secrets. / 不含源码路径、内容、配置值或秘密的最小项目事实。
@@ -14,13 +14,8 @@ import java.util.Objects;
  * @param supportLevel support level / 支持级别
  * @param missingInputCodes missing input codes / 缺失输入代码集合
  */
-public record ProjectAnalysisRoleContext(
-        String applicationId,
-        String projectType,
-        String buildTool,
-        String supportLevel,
-        List<String> missingInputCodes
-) implements AiRoleContext {
+public record ProjectAnalysisRoleContext(String applicationId, String projectType, String buildTool,
+        String supportLevel, List<String> missingInputCodes) implements AiRoleContext {
     /**
      * Validates the bounded project-analysis context. / 验证有界项目分析上下文。
      *
@@ -38,9 +33,10 @@ public record ProjectAnalysisRoleContext(
         buildTool = token(buildTool, "buildTool");
         supportLevel = token(supportLevel, "supportLevel");
         missingInputCodes = Objects.requireNonNull(missingInputCodes, "missingInputCodes");
-        if (missingInputCodes.size() > 16) throw new IllegalArgumentException("too many missingInputCodes");
-        missingInputCodes = missingInputCodes.stream()
-                .map(value -> token(value, "missing input code")).sorted().distinct().toList();
+        if (missingInputCodes.size() > 16)
+            throw new IllegalArgumentException("too many missingInputCodes");
+        missingInputCodes = missingInputCodes.stream().map(value -> token(value, "missing input code")).sorted()
+                .distinct().toList();
     }
 
     /**
@@ -52,8 +48,9 @@ public record ProjectAnalysisRoleContext(
      */
     public static ProjectAnalysisRoleContext from(DeploymentProjectFacts facts) {
         Objects.requireNonNull(facts, "facts");
-        return new ProjectAnalysisRoleContext(facts.applicationId(), facts.projectType().name(), facts.buildTool().name(),
-                facts.support().level().name(), facts.missingInformation().stream().map(value -> value.key()).toList());
+        return new ProjectAnalysisRoleContext(facts.applicationId(), facts.projectType().name(),
+                facts.buildTool().name(), facts.support().level().name(),
+                facts.missingInformation().stream().map(value -> value.key()).toList());
     }
 
     /**
@@ -62,7 +59,10 @@ public record ProjectAnalysisRoleContext(
      *
      * @return role / 角色
      */
-    @Override public AiCollaborationRoleKind role() { return AiCollaborationRoleKind.PROJECT_ANALYSIS; }
+    @Override
+    public AiCollaborationRoleKind role() {
+        return AiCollaborationRoleKind.PROJECT_ANALYSIS;
+    }
 
     /**
      * Returns redacted summary.
@@ -70,7 +70,8 @@ public record ProjectAnalysisRoleContext(
      *
      * @return redacted summary / 已脱敏摘要
      */
-    @Override public String redactedSummary() {
+    @Override
+    public String redactedSummary() {
         return "applicationId=" + applicationId + ";projectType=" + projectType + ";buildTool=" + buildTool
                 + ";supportLevel=" + supportLevel + ";missingInputCodes=" + String.join(",", missingInputCodes);
     }
@@ -87,7 +88,8 @@ public record ProjectAnalysisRoleContext(
      */
     private static String identifier(String value, String name) {
         value = Objects.requireNonNull(value, name).trim();
-        if (!value.matches("[a-z0-9][a-z0-9-]{0,62}")) throw new IllegalArgumentException(name + " is invalid");
+        if (!value.matches("[a-z0-9][a-z0-9-]{0,62}"))
+            throw new IllegalArgumentException(name + " is invalid");
         return value;
     }
 
@@ -103,7 +105,8 @@ public record ProjectAnalysisRoleContext(
      */
     private static String token(String value, String name) {
         value = Objects.requireNonNull(value, name).trim();
-        if (!value.matches("[A-Za-z0-9._:-]{1,96}")) throw new IllegalArgumentException(name + " is invalid");
+        if (!value.matches("[A-Za-z0-9._:-]{1,96}"))
+            throw new IllegalArgumentException(name + " is invalid");
         return value;
     }
 }

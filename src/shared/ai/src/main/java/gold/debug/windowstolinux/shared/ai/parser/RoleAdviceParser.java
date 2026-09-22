@@ -1,10 +1,10 @@
 package gold.debug.windowstolinux.shared.ai.parser;
 
-import gold.debug.windowstolinux.shared.ai.collaboration.advice.AiAdviceDecision;
-import gold.debug.windowstolinux.shared.ai.collaboration.advice.RoleAdviceAssessment;
-
 import java.util.ArrayList;
 import java.util.List;
+
+import gold.debug.windowstolinux.shared.ai.collaboration.advice.AiAdviceDecision;
+import gold.debug.windowstolinux.shared.ai.collaboration.advice.RoleAdviceAssessment;
 
 /**
  * Strictly parses the exact fixed advisory JSON object and rejects extra fields. / 严格解析固定建议 JSON 对象并拒绝额外字段。
@@ -17,7 +17,8 @@ public final class RoleAdviceParser {
      * @return an exact decision, summary, and findings object / 精确的决策、摘要与发现对象
      */
     public RoleAdviceAssessment parse(String json) {
-        if (json == null || json.length() > 8_192) throw invalid();
+        if (json == null || json.length() > 8_192)
+            throw invalid();
         Cursor cursor = new Cursor(json);
         cursor.symbol('{');
         cursor.name("decision");
@@ -62,6 +63,7 @@ public final class RoleAdviceParser {
          * <p>由当前契约接收或拒绝的候选内容。
          */
         private final String value;
+
         /**
          * Index.
          * <p>索引。
@@ -74,7 +76,9 @@ public final class RoleAdviceParser {
          *
          * @param value candidate content accepted or rejected by this contract / 由当前契约接收或拒绝的候选内容
          */
-        private Cursor(String value) { this.value = value; }
+        private Cursor(String value) {
+            this.value = value;
+        }
 
         /**
          * Requires the next JSON string to match the expected field name, followed by a colon.
@@ -83,7 +87,8 @@ public final class RoleAdviceParser {
          * @param expected identity, value or state required for verification / 验证要求的身份、内容或状态
          */
         private void name(String expected) {
-            if (!expected.equals(string())) throw invalid();
+            if (!expected.equals(string()))
+                throw invalid();
             symbol(':');
         }
 
@@ -91,7 +96,9 @@ public final class RoleAdviceParser {
          * Consumes the required comma separator.
          * <p>消费必需的逗号分隔符。
          */
-        private void comma() { symbol(','); }
+        private void comma() {
+            symbol(',');
+        }
 
         /**
          * Checks symbol syntax and bounds before returning the admitted content.
@@ -101,7 +108,8 @@ public final class RoleAdviceParser {
          */
         private void symbol(char expected) {
             whitespace();
-            if (index >= value.length() || value.charAt(index++) != expected) throw invalid();
+            if (index >= value.length() || value.charAt(index++) != expected)
+                throw invalid();
         }
 
         /**
@@ -112,17 +120,21 @@ public final class RoleAdviceParser {
          */
         private String string() {
             whitespace();
-            if (index >= value.length() || value.charAt(index++) != '"') throw invalid();
+            if (index >= value.length() || value.charAt(index++) != '"')
+                throw invalid();
             StringBuilder result = new StringBuilder();
             while (index < value.length()) {
                 char current = value.charAt(index++);
-                if (current == '"') return result.toString();
-                if (current < 0x20) throw invalid();
+                if (current == '"')
+                    return result.toString();
+                if (current < 0x20)
+                    throw invalid();
                 if (current != '\\') {
                     result.append(current);
                     continue;
                 }
-                if (index >= value.length()) throw invalid();
+                if (index >= value.length())
+                    throw invalid();
                 char escaped = value.charAt(index++);
                 switch (escaped) {
                     case '"', '\\', '/' -> result.append(escaped);
@@ -145,7 +157,8 @@ public final class RoleAdviceParser {
          * @return constructed or resolved char / 构造或解析得到的char
          */
         private char unicode() {
-            if (index + 4 > value.length()) throw invalid();
+            if (index + 4 > value.length())
+                throw invalid();
             try {
                 char parsed = (char) Integer.parseInt(value.substring(index, index + 4), 16);
                 index += 4;
@@ -187,7 +200,8 @@ public final class RoleAdviceParser {
          */
         private void end() {
             whitespace();
-            if (index != value.length()) throw invalid();
+            if (index != value.length())
+                throw invalid();
         }
 
         /**
@@ -195,7 +209,8 @@ public final class RoleAdviceParser {
          * <p>将游标移过连续空白字符。
          */
         private void whitespace() {
-            while (index < value.length() && Character.isWhitespace(value.charAt(index))) index++;
+            while (index < value.length() && Character.isWhitespace(value.charAt(index)))
+                index++;
         }
     }
 }

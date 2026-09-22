@@ -1,10 +1,10 @@
 package gold.debug.windowstolinux.shared.model.project;
 
-import gold.debug.windowstolinux.shared.model.language.SourceLanguageType;
-import gold.debug.windowstolinux.shared.model.message.LocalizedMessage;
-
 import java.util.List;
 import java.util.Objects;
+
+import gold.debug.windowstolinux.shared.model.language.SourceLanguageType;
+import gold.debug.windowstolinux.shared.model.message.LocalizedMessage;
 
 /**
  * The exact language, architecture, framework, support level, validation matrix, evidence, and limitations for one analyzed path.
@@ -19,15 +19,9 @@ import java.util.Objects;
  * @param evidenceReferences bounded product-entrypoint evidence references / 有界产品入口证据引用
  * @param limitations localized bounded limitations / 本地化有界限制
  */
-public record DeploymentSupportProfile(
-        DeploymentSupportLevel level,
-        SourceLanguageType language,
-        String architecture,
-        String framework,
-        List<ValidatedDeploymentTarget> validatedTargets,
-        List<String> evidenceReferences,
-        List<LocalizedMessage> limitations
-) {
+public record DeploymentSupportProfile(DeploymentSupportLevel level, SourceLanguageType language, String architecture,
+        String framework, List<ValidatedDeploymentTarget> validatedTargets, List<String> evidenceReferences,
+        List<LocalizedMessage> limitations) {
     /**
      * Validates a truthful support claim. / 验证真实的支持声明。
      *

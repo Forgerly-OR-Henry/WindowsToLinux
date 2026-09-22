@@ -1,15 +1,16 @@
 package gold.debug.windowstolinux.app.ui.i18n;
 
-import gold.debug.windowstolinux.app.ui.diagnostic.DesktopFailurePresenter;
-import gold.debug.windowstolinux.app.ui.diagnostic.FailureReportStore;
-import gold.debug.windowstolinux.shared.model.lifecycle.LifecycleObservation;
-
-import javax.swing.DefaultListCellRenderer;
-import javax.swing.JComboBox;
 import java.awt.Component;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
+
+import javax.swing.DefaultListCellRenderer;
+import javax.swing.JComboBox;
+
+import gold.debug.windowstolinux.app.ui.diagnostic.DesktopFailurePresenter;
+import gold.debug.windowstolinux.app.ui.diagnostic.FailureReportStore;
+import gold.debug.windowstolinux.shared.model.lifecycle.LifecycleObservation;
 
 /**
  * Shared localization and diagnostic formatting for independent page controllers. / 独立页面控制器共享的本地化与诊断格式化。
@@ -20,6 +21,7 @@ public final class PageMessagePresenter {
      * <p>本地化消息解析器。
      */
     private final MessageCatalog messages;
+
     /**
      * Bound desktop failure presenter collaborator for failures.
      * <p>处理失败集合的Desktop失败展示器协作对象。
@@ -53,7 +55,10 @@ public final class PageMessagePresenter {
      * @param key lookup key within the current contract / 当前契约内的查找键
      * @return one message key / 一项消息键
      */
-    public String text(String key) { return messages.text(key); }
+    public String text(String key) {
+        return messages.text(key);
+    }
+
     /**
      * Resolves one parameterized message key. / 解析一项带参数消息键。
      *
@@ -61,13 +66,18 @@ public final class PageMessagePresenter {
      * @param arguments literal arguments passed to the fixed command or message template / 传给固定命令或消息模板的字面参数
      * @return one parameterized message key / 一项带参数消息键
      */
-    public String text(String key, Map<String, ?> arguments) { return messages.text(key, arguments); }
+    public String text(String key, Map<String, ?> arguments) {
+        return messages.text(key, arguments);
+    }
+
     /**
      * Returns the selected catalog. / 返回已选消息目录。
      *
      * @return the selected catalog / 已选消息目录
      */
-    public MessageCatalog catalog() { return messages; }
+    public MessageCatalog catalog() {
+        return messages;
+    }
 
     /**
      * Formats the supplied failure using shared safe presentation and records only bounded diagnostic metadata.
@@ -98,11 +108,13 @@ public final class PageMessagePresenter {
      * @param value candidate content accepted or rejected by this contract / 由当前契约接收或拒绝的候选内容
      * @return input choice text / 输入选项文本
      */
-    public String inputChoice(gold.debug.windowstolinux.shared.model.deployment.DeploymentInputField field, String value) {
-        if (value.isBlank()) return field.labelKey().equals("db.field.initialize") ? text("db.initialize.none") : value;
+    public String inputChoice(gold.debug.windowstolinux.shared.model.deployment.DeploymentInputField field,
+            String value) {
+        if (value.isBlank())
+            return field.labelKey().equals("db.field.initialize") ? text("db.initialize.none") : value;
         return switch (field.labelKey()) {
-            case "auto.field.type" -> text("project.type."+value.toLowerCase(Locale.ROOT));
-            case "db.field.engine" -> text("db.engine."+value.toLowerCase(Locale.ROOT));
+            case "auto.field.type" -> text("project.type." + value.toLowerCase(Locale.ROOT));
+            case "db.field.engine" -> text("db.engine." + value.toLowerCase(Locale.ROOT));
             case "field.healthMode" -> text("health.mode." + value.toLowerCase(Locale.ROOT));
             case "field.containerEngine" -> text("container.engine." + value.toLowerCase(Locale.ROOT));
             case "field.databaseReviewMode" -> text("database.review.mode." + value.toLowerCase(Locale.ROOT));
@@ -117,7 +129,8 @@ public final class PageMessagePresenter {
      * @param diagnostic bounded non-secret detail for diagnostic reporting / 用于诊断报告的有界非秘密详情
      * @return a localized message with optional raw diagnostic text / 本地化消息与可选原始诊断文本
      */
-    public String localized(gold.debug.windowstolinux.shared.model.message.LocalizedMessage message, String diagnostic) {
+    public String localized(gold.debug.windowstolinux.shared.model.message.LocalizedMessage message,
+            String diagnostic) {
         String headline = messages.text(message);
         return diagnostic == null || diagnostic.isBlank() ? headline : headline + "\n" + diagnostic;
     }
@@ -127,14 +140,18 @@ public final class PageMessagePresenter {
      *
      * @return true when opens the diagnostic directory when supported, false otherwise / 平台支持时打开诊断目录时为 true，否则为 false
      */
-    public boolean openDiagnosticsDirectory() { return failures.openDiagnosticsDirectory(); }
+    public boolean openDiagnosticsDirectory() {
+        return failures.openDiagnosticsDirectory();
+    }
 
     /**
      * Returns the copyable diagnostic directory path. / 返回可复制的诊断目录路径。
      *
      * @return the copyable diagnostic directory path / 可复制的诊断目录路径
      */
-    public String diagnosticsPath() { return failures.diagnosticsPath(); }
+    public String diagnosticsPath() {
+        return failures.diagnosticsPath();
+    }
 
     /**
      * Formats a lifecycle observation. / 格式化生命周期观测。
@@ -146,11 +163,11 @@ public final class PageMessagePresenter {
         if (observation == null) {
             return text("lifecycle.noObservation");
         }
-        return text("lifecycle.observation", Map.of(
-                "runtime", text("runtime.state." + observation.runtimeState().name().toLowerCase(Locale.ROOT)),
-                "autostart", text("autostart.state." + observation.autostartState().name().toLowerCase(Locale.ROOT)),
-                "ownership", text(observation.ownershipVerified() ? "ownership.verified" : "ownership.unverified"),
-                "evidence", observation.evidence()));
+        return text("lifecycle.observation", Map.of("runtime",
+                text("runtime.state." + observation.runtimeState().name().toLowerCase(Locale.ROOT)), "autostart",
+                text("autostart.state." + observation.autostartState().name().toLowerCase(Locale.ROOT)), "ownership",
+                text(observation.ownershipVerified() ? "ownership.verified" : "ownership.unverified"), "evidence",
+                observation.evidence()));
     }
 
     /**
@@ -175,8 +192,10 @@ public final class PageMessagePresenter {
              */
             @Override
             public Component getListCellRendererComponent(javax.swing.JList<?> list, Object value, int index,
-                                                           boolean selected, boolean focus) {
-                Object label = value instanceof Enum<?> item ? text(prefix + item.name().toLowerCase(Locale.ROOT)) : value;
+                    boolean selected, boolean focus) {
+                Object label = value instanceof Enum<?> item
+                        ? text(prefix + item.name().toLowerCase(Locale.ROOT))
+                        : value;
                 return super.getListCellRendererComponent(list, label, index, selected, focus);
             }
         });

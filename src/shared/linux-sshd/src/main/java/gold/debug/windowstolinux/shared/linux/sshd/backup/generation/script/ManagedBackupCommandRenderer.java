@@ -1,15 +1,15 @@
 package gold.debug.windowstolinux.shared.linux.sshd.backup.generation.script;
 
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Locale;
+import java.util.Objects;
+
 import gold.debug.windowstolinux.shared.linux.protocol.backup.RemoteBackupArtifact;
 import gold.debug.windowstolinux.shared.linux.protocol.backup.RemoteBackupArtifactKind;
 import gold.debug.windowstolinux.shared.linux.protocol.backup.RemoteBackupArtifactRequest;
 import gold.debug.windowstolinux.shared.linux.sshd.command.SshCommandExecutor;
 import gold.debug.windowstolinux.shared.linux.sshd.execution.protocol.helper.ManagedHelperBundle;
-
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Locale;
-import java.util.Objects;
 
 /**
  * Renders only fixed managed-backup helper verbs and validated scalar arguments. / 仅渲染固定受管备份 helper 动词及已校验标量参数。
@@ -24,10 +24,11 @@ public final class ManagedBackupCommandRenderer {
      */
     public String create(RemoteBackupArtifactRequest request) {
         Objects.requireNonNull(request, "request");
-        return command("backup-create", List.of(request.operationId(), request.applicationId(), request.componentId(),
-                request.managedApplication().id(), request.releaseSha256(),
-                request.managedApplication().ownershipManifestSha256(), kind(request.kind()), request.resourceId(),
-                Long.toString(request.maximumBytes())));
+        return command("backup-create",
+                List.of(request.operationId(), request.applicationId(), request.componentId(),
+                        request.managedApplication().id(), request.releaseSha256(),
+                        request.managedApplication().ownershipManifestSha256(), kind(request.kind()),
+                        request.resourceId(), Long.toString(request.maximumBytes())));
     }
 
     /**
@@ -80,7 +81,12 @@ public final class ManagedBackupCommandRenderer {
      */
     private static String command(String verb, List<String> values) {
         List<String> all = new ArrayList<>(values.size() + 2);
-        all.add("sudo"); all.add("-n"); all.add(ManagedHelperBundle.PATH); all.add(verb); all.addAll(values);
-        return all.stream().map(SshCommandExecutor::quote).collect(java.util.stream.Collectors.joining(" "));
+        all.add("sudo");
+        all.add("-n");
+        all.add(ManagedHelperBundle.PATH);
+        all.add(verb);
+        all.addAll(values);
+        return all.stream().map(gold.debug.windowstolinux.shared.linux.command.CommandText::quote)
+                .collect(java.util.stream.Collectors.joining(" "));
     }
 }

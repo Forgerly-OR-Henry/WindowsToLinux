@@ -7,7 +7,7 @@ public final class ManagedHelperProtocolVersion {
     /**
      * Current reviewed helper protocol version. / 当前经审阅的 helper 协议版本。
      */
-    public static final int CURRENT = 9;
+    public static final int CURRENT = 10;
 
     /**
      * Prevents instantiation of this static contract helper.

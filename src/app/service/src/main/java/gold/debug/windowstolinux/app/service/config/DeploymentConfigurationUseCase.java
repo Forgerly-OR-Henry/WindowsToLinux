@@ -1,21 +1,20 @@
 package gold.debug.windowstolinux.app.service.config;
 
-import gold.debug.windowstolinux.shared.config.input.DeploymentConfigurationParser;
-
-import gold.debug.windowstolinux.app.db.persistence.repository.ApplicationSecretRepository;
-import gold.debug.windowstolinux.app.db.persistence.repository.ConfigurationSnapshotRepository;
-import gold.debug.windowstolinux.app.db.entity.StoredApplicationSecretRevision;
-import gold.debug.windowstolinux.app.secret.SecretStore;
-import gold.debug.windowstolinux.app.secret.SecretStoreException;
-import gold.debug.windowstolinux.app.secret.SecretStoreFailureType;
-import gold.debug.windowstolinux.app.service.server.DesktopSecretStoreService;
-import gold.debug.windowstolinux.shared.config.revision.ConfigurationSnapshot;
-import gold.debug.windowstolinux.shared.config.secretref.SecretReference;
-
 import java.sql.SQLException;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Objects;
+
+import gold.debug.windowstolinux.app.db.entity.StoredApplicationSecretRevision;
+import gold.debug.windowstolinux.app.db.persistence.repository.ApplicationSecretRepository;
+import gold.debug.windowstolinux.app.db.persistence.repository.ConfigurationSnapshotRepository;
+import gold.debug.windowstolinux.app.secret.SecretStore;
+import gold.debug.windowstolinux.app.secret.SecretStoreException;
+import gold.debug.windowstolinux.app.secret.SecretStoreFailureType;
+import gold.debug.windowstolinux.app.service.server.DesktopSecretStoreService;
+import gold.debug.windowstolinux.shared.config.input.DeploymentConfigurationParser;
+import gold.debug.windowstolinux.shared.config.revision.ConfigurationSnapshot;
+import gold.debug.windowstolinux.shared.config.secretref.SecretReference;
 
 /**
  * Coordinates immutable typed deployment configuration and platform-secret references without returning secret values.
@@ -28,11 +27,13 @@ public final class DeploymentConfigurationUseCase {
      * <p>处理配置集合的配置快照仓库协作对象。
      */
     private final ConfigurationSnapshotRepository configurations;
+
     /**
      * Bound application secret repository collaborator for application secrets.
      * <p>处理应用秘密集合的应用秘密仓库协作对象。
      */
     private final ApplicationSecretRepository applicationSecrets;
+
     /**
      * Bound desktop secret store service collaborator for secret stores.
      * <p>处理秘密存储集合的Desktop秘密存储服务协作对象。
@@ -49,8 +50,7 @@ public final class DeploymentConfigurationUseCase {
      * @throws NullPointerException if a required input is absent / 必需输入缺失时
      */
     public DeploymentConfigurationUseCase(ConfigurationSnapshotRepository configurations,
-                                          ApplicationSecretRepository applicationSecrets,
-                                          DesktopSecretStoreService secretStores) {
+            ApplicationSecretRepository applicationSecrets, DesktopSecretStoreService secretStores) {
         this.configurations = Objects.requireNonNull(configurations, "configurations");
         this.applicationSecrets = Objects.requireNonNull(applicationSecrets, "applicationSecrets");
         this.secretStores = Objects.requireNonNull(secretStores, "secretStores");
@@ -120,17 +120,24 @@ public final class DeploymentConfigurationUseCase {
      * @throws SecretStoreException if the protected credential cannot be accessed or updated / 无法访问或更新受保护凭据时
      * @throws IllegalArgumentException if an input violates the constraints checked by this contract / 输入违反当前契约检查的约束时
      */
-    public SecretReference saveSecretRevision(String referenceInput, gold.debug.windowstolinux.shared.model.security.CredentialStorageMode mode,
-            char[] masterPassword, char[] value) throws SQLException, SecretStoreException {
+    public SecretReference saveSecretRevision(String referenceInput,
+            gold.debug.windowstolinux.shared.model.security.CredentialStorageMode mode, char[] masterPassword,
+            char[] value) throws SQLException, SecretStoreException {
         try {
-            var references = gold.debug.windowstolinux.shared.config.input.DeploymentConfigurationParser.secrets(referenceInput);
-            if (references.size() != 1) throw new IllegalArgumentException("one exact secret revision is required");
+            var references = gold.debug.windowstolinux.shared.config.input.DeploymentConfigurationParser
+                    .secrets(referenceInput);
+            if (references.size() != 1)
+                throw new IllegalArgumentException("one exact secret revision is required");
             var reference = references.getFirst();
             var revision = new StoredApplicationSecretRevision(reference,
-                    "application-secret/" + reference.identifier() + "/" + reference.revision(), mode, java.time.Instant.now());
+                    "application-secret/" + reference.identifier() + "/" + reference.revision(), mode,
+                    java.time.Instant.now());
             saveSecretRevision(revision, mode, masterPassword, value);
             return reference;
-        } finally { clear(masterPassword); clear(value); }
+        } finally {
+            clear(masterPassword);
+            clear(value);
+        }
     }
 
     /**
@@ -143,8 +150,9 @@ public final class DeploymentConfigurationUseCase {
      * @throws SQLException if the database cannot complete the requested read or transaction / 数据库无法完成请求的读取或事务时
      * @throws SecretStoreException if the protected credential cannot be accessed or updated / 无法访问或更新受保护凭据时
      */
-    public void saveSecretRevision(StoredApplicationSecretRevision revision, gold.debug.windowstolinux.shared.model.security.CredentialStorageMode mode,
-                                   char[] masterPassword, char[] value) throws SQLException, SecretStoreException {
+    public void saveSecretRevision(StoredApplicationSecretRevision revision,
+            gold.debug.windowstolinux.shared.model.security.CredentialStorageMode mode, char[] masterPassword,
+            char[] value) throws SQLException, SecretStoreException {
         try (SecretStore store = secretStores.open(mode, masterPassword)) {
             saveSecretRevision(revision, store, value);
         } finally {
@@ -167,12 +175,13 @@ public final class DeploymentConfigurationUseCase {
             throws SQLException, SecretStoreException {
         try {
             for (SecretReference reference : List.copyOf(Objects.requireNonNull(references, "references"))) {
-                StoredApplicationSecretRevision revision = applicationSecrets.findRevision(reference)
-                        .orElseThrow(() -> SecretStoreException.create(SecretStoreFailureType.APPLICATION_REFERENCE_MISSING,
+                StoredApplicationSecretRevision revision = applicationSecrets.findRevision(reference).orElseThrow(
+                        () -> SecretStoreException.create(SecretStoreFailureType.APPLICATION_REFERENCE_MISSING,
                                 "Application secret revision metadata is missing"));
                 try (SecretStore store = secretStores.open(revision.credentialMode(), masterPassword)) {
                     char[] stored = store.read(revision.credentialKey())
-                            .orElseThrow(() -> SecretStoreException.create(SecretStoreFailureType.APPLICATION_REFERENCE_MISSING,
+                            .orElseThrow(() -> SecretStoreException.create(
+                                    SecretStoreFailureType.APPLICATION_REFERENCE_MISSING,
                                     "Application secret revision is not available from the selected platform store"));
                     clear(stored);
                 }
@@ -195,7 +204,7 @@ public final class DeploymentConfigurationUseCase {
      * @throws SecretStoreException if the protected credential cannot be accessed or updated / 无法访问或更新受保护凭据时
      */
     public void bindReleaseSecrets(String applicationId, String releaseIdentity, List<SecretReference> references,
-                                   char[] masterPassword) throws SQLException, SecretStoreException {
+            char[] masterPassword) throws SQLException, SecretStoreException {
         verifySecretReferences(references, masterPassword);
         applicationSecrets.bindRelease(applicationId, releaseIdentity, references);
     }

@@ -1,8 +1,8 @@
 package gold.debug.windowstolinux.shared.linux.sshd.execution.protocol.input;
 
+import java.nio.charset.StandardCharsets;
 
 import gold.debug.windowstolinux.shared.linux.protocol.RemoteRuntimeConfiguration;
-import java.nio.charset.StandardCharsets;
 
 /**
  * Renders immutable runtime configuration for systemd and container consumers. / 为 systemd 与容器使用方渲染不可变运行时配置。
@@ -12,7 +12,8 @@ public final class DeploymentConfigurationRenderer {
      * Prevents instantiation of this static contract helper.
      * <p>防止实例化当前静态契约辅助类。
      */
-    private DeploymentConfigurationRenderer() { }
+    private DeploymentConfigurationRenderer() {
+    }
 
     /**
      * Encodes environment entries as quoted systemd environment-file lines with backslash and quote escaping.
@@ -24,8 +25,7 @@ public final class DeploymentConfigurationRenderer {
     static byte[] systemd(RemoteRuntimeConfiguration snapshot) {
         StringBuilder content = new StringBuilder();
         snapshot.entries().forEach((key, value) -> content.append(key).append("=\"")
-                .append(value.replace("\\", "\\\\").replace("\"", "\\\""))
-                .append("\"\n"));
+                .append(value.replace("\\", "\\\\").replace("\"", "\\\"")).append("\"\n"));
         return content.toString().getBytes(StandardCharsets.UTF_8);
     }
 
@@ -38,8 +38,7 @@ public final class DeploymentConfigurationRenderer {
      */
     static byte[] container(RemoteRuntimeConfiguration snapshot) {
         StringBuilder content = new StringBuilder();
-        snapshot.entries().forEach((key, value) -> content.append(key).append('=')
-                .append(value).append('\n'));
+        snapshot.entries().forEach((key, value) -> content.append(key).append('=').append(value).append('\n'));
         return content.toString().getBytes(StandardCharsets.UTF_8);
     }
 

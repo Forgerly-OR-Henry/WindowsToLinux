@@ -1,15 +1,15 @@
 package gold.debug.windowstolinux.app.service.deployment.single;
 
-import gold.debug.windowstolinux.shared.deploy.contract.ReviewedDeploymentRequest;
+import java.util.List;
+import java.util.Objects;
+import java.util.Optional;
+
 import gold.debug.windowstolinux.shared.deploy.contract.result.deployment.DeploymentEvent;
 import gold.debug.windowstolinux.shared.deploy.contract.result.deployment.DeploymentResult;
 import gold.debug.windowstolinux.shared.model.deployment.DeploymentStatus;
 import gold.debug.windowstolinux.shared.model.health.HealthCheck;
 import gold.debug.windowstolinux.shared.model.managed.ManagedApplication;
-
-import java.util.List;
-import java.util.Objects;
-import java.util.Optional;
+import gold.debug.windowstolinux.shared.standard.deploy.contract.ReviewedDeploymentRequest;
 
 /**
  * Secret-free deployment summary rendered by the desktop UI.
@@ -66,11 +66,8 @@ public record DeploymentOutcome(DeploymentResult result, Optional<DeploymentHand
      * @return the operation result / 操作结果
      * @throws NullPointerException if a required input is absent / 必需输入缺失时
      */
-    public static DeploymentOutcome from(
-            DeploymentResult result,
-            ReviewedDeploymentRequest request,
-            ManagedApplication application
-    ) {
+    public static DeploymentOutcome from(DeploymentResult result, ReviewedDeploymentRequest request,
+            ManagedApplication application) {
         Objects.requireNonNull(result, "result");
         Objects.requireNonNull(request, "request");
         Objects.requireNonNull(application, "application");
@@ -89,8 +86,8 @@ public record DeploymentOutcome(DeploymentResult result, Optional<DeploymentHand
      * @return deployment handoff from the supplied success handoff inputs / 根据所提供成功交接输入构建部署交接
      */
     private static DeploymentHandoff successHandoff(ReviewedDeploymentRequest request, ManagedApplication application) {
-        return new DeploymentHandoff.ApplicationEntry(gold.debug.windowstolinux.shared.model.managed.ApplicationUsage.from(
-                application, request.runtime().workload()));
+        return new DeploymentHandoff.ApplicationEntry(gold.debug.windowstolinux.shared.model.managed.ApplicationUsage
+                .from(application, request.runtime().workload()));
     }
 
 }

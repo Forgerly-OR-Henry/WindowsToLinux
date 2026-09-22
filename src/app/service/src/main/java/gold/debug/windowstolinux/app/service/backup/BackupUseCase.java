@@ -1,23 +1,5 @@
 package gold.debug.windowstolinux.app.service.backup;
 
-import gold.debug.windowstolinux.shared.backup.crypto.BackupSecretCryptoService;
-import gold.debug.windowstolinux.shared.backup.crypto.BackupSecretDocument;
-import gold.debug.windowstolinux.shared.backup.crypto.BackupSecretException;
-import gold.debug.windowstolinux.shared.backup.crypto.BackupSecretFailureType;
-import gold.debug.windowstolinux.app.windows.workspace.WindowsRestoreAttempt;
-import gold.debug.windowstolinux.app.windows.workspace.WindowsRestoreWorkspace;
-import gold.debug.windowstolinux.app.windows.workspace.WindowsWorkspaceException;
-import gold.debug.windowstolinux.app.windows.workspace.WindowsWorkspaceFailureType;
-import gold.debug.windowstolinux.shared.backup.contract.validation.BackupArchivePolicy;
-import gold.debug.windowstolinux.shared.backup.contract.validation.BackupArchiveValidation;
-import gold.debug.windowstolinux.shared.backup.contract.validation.BackupArchiveValidator;
-import gold.debug.windowstolinux.shared.backup.contract.validation.BackupException;
-import gold.debug.windowstolinux.shared.backup.restore.BackupArchiveExtractor;
-import gold.debug.windowstolinux.shared.backup.restore.BackupRestoreCandidate;
-import gold.debug.windowstolinux.shared.backup.manifest.BackupMember;
-import gold.debug.windowstolinux.shared.backup.manifest.BackupMemberKind;
-import gold.debug.windowstolinux.shared.config.secretref.SecretReference;
-
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.LinkOption;
@@ -26,6 +8,24 @@ import java.util.Arrays;
 import java.util.LinkedHashSet;
 import java.util.Objects;
 import java.util.Set;
+
+import gold.debug.windowstolinux.app.windows.workspace.WindowsRestoreAttempt;
+import gold.debug.windowstolinux.app.windows.workspace.WindowsRestoreWorkspace;
+import gold.debug.windowstolinux.app.windows.workspace.WindowsWorkspaceException;
+import gold.debug.windowstolinux.app.windows.workspace.WindowsWorkspaceFailureType;
+import gold.debug.windowstolinux.shared.backup.contract.validation.BackupArchivePolicy;
+import gold.debug.windowstolinux.shared.backup.contract.validation.BackupArchiveValidation;
+import gold.debug.windowstolinux.shared.backup.contract.validation.BackupArchiveValidator;
+import gold.debug.windowstolinux.shared.backup.contract.validation.BackupException;
+import gold.debug.windowstolinux.shared.backup.crypto.BackupSecretCryptoService;
+import gold.debug.windowstolinux.shared.backup.crypto.BackupSecretDocument;
+import gold.debug.windowstolinux.shared.backup.crypto.BackupSecretException;
+import gold.debug.windowstolinux.shared.backup.crypto.BackupSecretFailureType;
+import gold.debug.windowstolinux.shared.backup.manifest.BackupMember;
+import gold.debug.windowstolinux.shared.backup.manifest.BackupMemberKind;
+import gold.debug.windowstolinux.shared.backup.restore.BackupArchiveExtractor;
+import gold.debug.windowstolinux.shared.backup.restore.BackupRestoreCandidate;
+import gold.debug.windowstolinux.shared.config.secretref.SecretReference;
 
 /**
  * Local inspection and isolated extraction use case that performs no remote mutation. / 不执行远端修改的本地检查与隔离提取用例。
@@ -36,16 +36,19 @@ public final class BackupUseCase {
      * <p>校验器。
      */
     private final BackupArchiveValidator validator;
+
     /**
      * Extractor.
      * <p>提取器。
      */
     private final BackupArchiveExtractor extractor;
+
     /**
      * Platform-owned work area with enforced path boundaries.
      * <p>具有路径边界约束的平台工作区。
      */
     private final WindowsRestoreWorkspace workspace;
+
     /**
      * Bound backup secret crypto service collaborator for credential references or scoped secret-access service.
      * <p>处理凭据引用或限定作用域的秘密访问服务的备份秘密加密服务协作对象。
@@ -72,12 +75,8 @@ public final class BackupUseCase {
      * @param secrets credential references or scoped secret-access service / 凭据引用或限定作用域的秘密访问服务
      * @throws NullPointerException if a required input is absent / 必需输入缺失时
      */
-    BackupUseCase(
-            BackupArchiveValidator validator,
-            BackupArchiveExtractor extractor,
-            WindowsRestoreWorkspace workspace,
-            BackupSecretCryptoService secrets
-    ) {
+    BackupUseCase(BackupArchiveValidator validator, BackupArchiveExtractor extractor, WindowsRestoreWorkspace workspace,
+            BackupSecretCryptoService secrets) {
         this.validator = Objects.requireNonNull(validator, "validator");
         this.extractor = Objects.requireNonNull(extractor, "extractor");
         this.workspace = Objects.requireNonNull(workspace, "workspace");
@@ -117,8 +116,7 @@ public final class BackupUseCase {
         Objects.requireNonNull(candidate, "candidate");
         WindowsRestoreAttempt attempt = candidate.attempt();
         if (attempt == null) {
-            throw WindowsWorkspaceException.create(
-                    WindowsWorkspaceFailureType.RESTORE_WORKSPACE_FAILED,
+            throw WindowsWorkspaceException.create(WindowsWorkspaceFailureType.RESTORE_WORKSPACE_FAILED,
                     "The local restore candidate does not carry platform-issued cleanup authority", null);
         }
         workspace.discardAttempt(attempt);
@@ -142,11 +140,14 @@ public final class BackupUseCase {
             document = authenticate(prepared, backupPassword);
             return new PreparedBackupSecrets(candidate(prepared), document);
         } catch (IOException | BackupSecretException | RuntimeException exception) {
-            if (document != null) document.close();
-            if (prepared != null) cleanup(prepared.attempt(), exception);
+            if (document != null)
+                document.close();
+            if (prepared != null)
+                cleanup(prepared.attempt(), exception);
             throw exception;
         } finally {
-            if (backupPassword != null) Arrays.fill(backupPassword, '\0');
+            if (backupPassword != null)
+                Arrays.fill(backupPassword, '\0');
         }
     }
 
@@ -175,11 +176,14 @@ public final class BackupUseCase {
             return new PreparedBackupActivation(prepared.validation(), prepared.candidate(), candidate(prepared),
                     java.util.Optional.ofNullable(document));
         } catch (IOException | BackupSecretException | RuntimeException exception) {
-            if (document != null) document.close();
-            if (prepared != null) cleanup(prepared.attempt(), exception);
+            if (document != null)
+                document.close();
+            if (prepared != null)
+                cleanup(prepared.attempt(), exception);
             throw exception;
         } finally {
-            if (backupPassword != null) Arrays.fill(backupPassword, '\0');
+            if (backupPassword != null)
+                Arrays.fill(backupPassword, '\0');
         }
     }
 
@@ -198,9 +202,8 @@ public final class BackupUseCase {
         byte[] envelope = null;
         try {
             BackupMember secretMember = prepared.validation().manifest().members().stream()
-                    .filter(member -> member.kind() == BackupMemberKind.ENCRYPTED_SECRETS)
-                    .findFirst().orElseThrow(() -> BackupSecretException.create(
-                            BackupSecretFailureType.PAYLOAD_INVALID,
+                    .filter(member -> member.kind() == BackupMemberKind.ENCRYPTED_SECRETS).findFirst()
+                    .orElseThrow(() -> BackupSecretException.create(BackupSecretFailureType.PAYLOAD_INVALID,
                             "the selected backup does not include encrypted secret revisions"));
             Path secretPath = prepared.candidate().root().resolve(secretMember.path()).normalize();
             if (!secretPath.startsWith(prepared.candidate().root())
@@ -224,7 +227,8 @@ public final class BackupUseCase {
                 throw exception;
             }
         } finally {
-            if (envelope != null) Arrays.fill(envelope, (byte) 0);
+            if (envelope != null)
+                Arrays.fill(envelope, (byte) 0);
         }
     }
 
@@ -238,8 +242,8 @@ public final class BackupUseCase {
      */
     private PreparedMaterial prepareValidated(Path archive) throws IOException {
         BackupArchiveValidation validation = validator.validate(archive);
-        WindowsRestoreAttempt attempt = workspace.createAttempt(
-                validation.manifest().applicationId(), validation.archiveSha256());
+        WindowsRestoreAttempt attempt = workspace.createAttempt(validation.manifest().applicationId(),
+                validation.archiveSha256());
         try {
             BackupRestoreCandidate candidate = extractor.extract(archive, attempt.candidateRoot(), validation);
             return new PreparedMaterial(validation, attempt, candidate);
@@ -269,20 +273,16 @@ public final class BackupUseCase {
      * @param document document / 文档
      * @throws BackupSecretException if the backup secret boundary rejects the operation / 备份秘密边界拒绝当前操作时
      */
-    private static void requireManifestReferences(
-            BackupArchiveValidation validation,
-            BackupSecretDocument document
-    ) throws BackupSecretException {
+    private static void requireManifestReferences(BackupArchiveValidation validation, BackupSecretDocument document)
+            throws BackupSecretException {
         boolean matches;
         if (validation.manifest().supportsAutomaticActivation()) {
-            Set<SecretReference> expected = new LinkedHashSet<>(
-                    validation.manifest().inventory().secretReferences());
+            Set<SecretReference> expected = new LinkedHashSet<>(validation.manifest().inventory().secretReferences());
             Set<SecretReference> actual = document.revisions().stream().map(revision -> revision.reference())
                     .collect(java.util.stream.Collectors.toCollection(LinkedHashSet::new));
             matches = !expected.isEmpty() && actual.equals(expected);
         } else {
-            Set<String> expected = new LinkedHashSet<>(
-                    validation.manifest().inventory().legacySecretReferences());
+            Set<String> expected = new LinkedHashSet<>(validation.manifest().inventory().legacySecretReferences());
             Set<String> actual = document.revisions().stream().map(revision -> revision.reference().identifier())
                     .collect(java.util.stream.Collectors.toCollection(LinkedHashSet::new));
             matches = !expected.isEmpty() && actual.equals(expected);
@@ -316,10 +316,7 @@ public final class BackupUseCase {
      * @param attempt attempt / 尝试
      * @param candidate candidate / 候选
      */
-    private record PreparedMaterial(
-            BackupArchiveValidation validation,
-            WindowsRestoreAttempt attempt,
-            BackupRestoreCandidate candidate
-    ) {
+    private record PreparedMaterial(BackupArchiveValidation validation, WindowsRestoreAttempt attempt,
+            BackupRestoreCandidate candidate) {
     }
 }

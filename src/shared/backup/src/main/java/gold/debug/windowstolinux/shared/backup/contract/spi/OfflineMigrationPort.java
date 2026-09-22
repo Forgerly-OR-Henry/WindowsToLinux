@@ -1,9 +1,9 @@
 package gold.debug.windowstolinux.shared.backup.contract.spi;
 
-import gold.debug.windowstolinux.shared.backup.contract.validation.BackupException;
-
 import java.util.List;
 import java.util.Objects;
+
+import gold.debug.windowstolinux.shared.backup.contract.validation.BackupException;
 
 /**
  * Platform seam for an explicitly offline, manually switched migration. / 显式离线且人工切流迁移的平台接缝。
@@ -45,8 +45,7 @@ public interface OfflineMigrationPort {
      * @return constructed or resolved sync evidence / 构造或解析得到的同步证据
      * @throws BackupException if backup validation or the controlled backup operation fails / 备份校验或受控备份操作失败时
      */
-    SyncEvidence finalSync(
-            OfflineMigrationRequest request, SyncEvidence initial, SourceQuiesceEvidence quiesced)
+    SyncEvidence finalSync(OfflineMigrationRequest request, SyncEvidence initial, SourceQuiesceEvidence quiesced)
             throws BackupException;
 
     /**
@@ -57,8 +56,8 @@ public interface OfflineMigrationPort {
      * @return constructed or resolved target candidate evidence / 构造或解析得到的目标候选证据
      * @throws BackupException if backup validation or the controlled backup operation fails / 备份校验或受控备份操作失败时
      */
-    TargetCandidateEvidence restoreAndVerifyTarget(
-            OfflineMigrationRequest request, SyncEvidence finalSync) throws BackupException;
+    TargetCandidateEvidence restoreAndVerifyTarget(OfflineMigrationRequest request, SyncEvidence finalSync)
+            throws BackupException;
 
     /**
      * Removes only the owned uncommitted target candidate. / 仅移除有归属的未提交目标候选。
@@ -77,8 +76,8 @@ public interface OfflineMigrationPort {
      * @return constructed or resolved recovery evidence / 构造或解析得到的恢复证据
      * @throws BackupException if backup validation or the controlled backup operation fails / 备份校验或受控备份操作失败时
      */
-    RecoveryEvidence recoverSource(
-            OfflineMigrationRequest request, SourceQuiesceEvidence quiesced) throws BackupException;
+    RecoveryEvidence recoverSource(OfflineMigrationRequest request, SourceQuiesceEvidence quiesced)
+            throws BackupException;
 
     /**
      * Target preflight evidence. / 目标前置检查证据。
@@ -89,13 +88,8 @@ public interface OfflineMigrationPort {
      * @param availableBytes available bytes / 可用字节
      * @param evidence observations supporting the reported result / 支持所报告结果的观测证据
      */
-    record TargetPreflightEvidence(
-            boolean ownershipVerified,
-            boolean portsAvailable,
-            boolean restoreCompatible,
-            long availableBytes,
-            List<String> evidence
-    ) {
+    record TargetPreflightEvidence(boolean ownershipVerified, boolean portsAvailable, boolean restoreCompatible,
+            long availableBytes, List<String> evidence) {
         /**
          * Validates bounded evidence and capacity. / 校验有界证据及容量。
          *
@@ -107,7 +101,8 @@ public interface OfflineMigrationPort {
          * @throws IllegalArgumentException if an input violates the constraints checked by this contract / 输入违反当前契约检查的约束时
          */
         public TargetPreflightEvidence {
-            if (availableBytes < 0) throw new IllegalArgumentException("availableBytes must not be negative");
+            if (availableBytes < 0)
+                throw new IllegalArgumentException("availableBytes must not be negative");
             evidence = checkedEvidence(evidence);
         }
     }
@@ -121,13 +116,8 @@ public interface OfflineMigrationPort {
      * @param sourceWritesStopped source writes stopped / 源码写入集合已停止
      * @param evidence observations supporting the reported result / 支持所报告结果的观测证据
      */
-    record SyncEvidence(
-            long byteCount,
-            String contentSha256,
-            boolean digestVerified,
-            boolean sourceWritesStopped,
-            List<String> evidence
-    ) {
+    record SyncEvidence(long byteCount, String contentSha256, boolean digestVerified, boolean sourceWritesStopped,
+            List<String> evidence) {
         /**
          * Validates synchronization identity and evidence. / 校验同步身份及证据。
          *
@@ -139,7 +129,8 @@ public interface OfflineMigrationPort {
          * @throws IllegalArgumentException if an input violates the constraints checked by this contract / 输入违反当前契约检查的约束时
          */
         public SyncEvidence {
-            if (byteCount < 1) throw new IllegalArgumentException("byteCount must be positive");
+            if (byteCount < 1)
+                throw new IllegalArgumentException("byteCount must be positive");
             contentSha256 = digest(contentSha256, "contentSha256");
             evidence = checkedEvidence(evidence);
         }
@@ -153,12 +144,8 @@ public interface OfflineMigrationPort {
      * @param recoveryToken recovery token / 恢复令牌
      * @param evidence observations supporting the reported result / 支持所报告结果的观测证据
      */
-    record SourceQuiesceEvidence(
-            boolean writesStopped,
-            boolean noActiveWriters,
-            String recoveryToken,
-            List<String> evidence
-    ) {
+    record SourceQuiesceEvidence(boolean writesStopped, boolean noActiveWriters, String recoveryToken,
+            List<String> evidence) {
         /**
          * Requires a bounded recovery token. / 要求有界恢复令牌。
          *
@@ -182,13 +169,8 @@ public interface OfflineMigrationPort {
      * @param externalTrafficUnchanged external traffic unchanged / 外部流量Unchanged
      * @param evidence observations supporting the reported result / 支持所报告结果的观测证据
      */
-    record TargetCandidateEvidence(
-            String candidateId,
-            boolean componentsHealthy,
-            boolean applicationHealthy,
-            boolean externalTrafficUnchanged,
-            List<String> evidence
-    ) {
+    record TargetCandidateEvidence(String candidateId, boolean componentsHealthy, boolean applicationHealthy,
+            boolean externalTrafficUnchanged, List<String> evidence) {
         /**
          * Validates target candidate evidence. / 校验目标候选证据。
          *
@@ -236,7 +218,8 @@ public interface OfflineMigrationPort {
      */
     private static String digest(String value, String field) {
         value = Objects.requireNonNull(value, field).trim();
-        if (!value.matches("[0-9a-f]{64}")) throw new IllegalArgumentException(field + " is invalid");
+        if (!value.matches("[0-9a-f]{64}"))
+            throw new IllegalArgumentException(field + " is invalid");
         return value;
     }
 
@@ -279,7 +262,8 @@ public interface OfflineMigrationPort {
             }
             return item;
         }).distinct().toList();
-        if (result.size() != values.size()) throw new IllegalArgumentException("migration evidence has duplicates");
+        if (result.size() != values.size())
+            throw new IllegalArgumentException("migration evidence has duplicates");
         return result;
     }
 }

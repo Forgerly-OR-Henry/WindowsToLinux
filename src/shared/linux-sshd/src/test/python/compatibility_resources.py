@@ -1,5 +1,7 @@
 """Loads production fragments with their extracted platform resource inserts."""
+
 from pathlib import Path
+import re
 
 ROOT = Path(__file__).resolve().parents[2] / 'main/resources/gold/debug/windowstolinux/shared/linux/sshd'
 INSERTS = {
@@ -9,9 +11,12 @@ INSERTS = {
     '# @compat:centos-repositories@\n': 'distro/dnf/centos-source-repositories.py',
 }
 
+
 def read_fragment(path):
     text = path.read_text(encoding='utf-8')
     for marker, resource in INSERTS.items():
         if marker in text:
-            text = text.replace(marker, (ROOT / resource).read_text(encoding='utf-8'))
+            text = re.sub(
+                r'(?m)^[ \t]*' + re.escape(marker), lambda _: (ROOT / resource).read_text(encoding='utf-8'), text
+            )
     return text

@@ -1,5 +1,19 @@
 package gold.debug.windowstolinux.app.main.startup;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import java.io.InputStream;
+import java.net.HttpURLConnection;
+import java.net.URI;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.Arrays;
+import java.util.List;
+import java.util.Optional;
+
 import gold.debug.windowstolinux.app.service.backup.CreatedBackupArchive;
 import gold.debug.windowstolinux.app.service.backup.ManagedOfflineMigrationOutcome;
 import gold.debug.windowstolinux.app.service.backup.ManagedRestoreControlState;
@@ -23,27 +37,15 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIfSystemProperty;
 import org.junit.jupiter.api.io.TempDir;
 
-import java.io.InputStream;
-import java.net.HttpURLConnection;
-import java.net.URI;
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.util.Arrays;
-import java.util.List;
-import java.util.Optional;
-
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertTrue;
-
 /** Opt-in product-entrypoint acceptance for managed backup, restore and two-server migration. / 受管备份、恢复及双服务器迁移产品入口的可选验收。 */
 @EnabledIfSystemProperty(named = "managed.backup-restore-migration-acceptance", matches = "true")
 class ManagedBackupRestoreMigrationAcceptanceTest {
     private static final int PORT_BASE = 40000 + (int) ((System.currentTimeMillis() / 1000) % 8000);
+
     private static final String RUN_ID = Long.toUnsignedString(System.nanoTime(), 36);
 
-    @TempDir Path temporaryDirectory;
+    @TempDir
+    Path temporaryDirectory;
 
     @Test
     void createsCompleteArchiveAndRestoresItToSecondServer() throws Exception {
@@ -56,14 +58,12 @@ class ManagedBackupRestoreMigrationAcceptanceTest {
             deployStaticSite(context, applicationId, port);
 
             Path requestedArchive = temporaryDirectory.resolve("archives").resolve(applicationId + ".wtlbak");
-            CreatedBackupArchive created = context.createManagedBackup(applicationId, requestedArchive,
-                    backupPassword);
+            CreatedBackupArchive created = context.createManagedBackup(applicationId, requestedArchive, backupPassword);
             assertEquals(requestedArchive.toAbsolutePath().normalize(), created.archive());
             assertTrue(Files.isRegularFile(created.archive()));
             assertTrue(created.inspection().archiveSha256().matches("[0-9a-f]{64}"));
 
-            ManagedRestoreOutcome restored = context.restoreManagedBackup(created.archive(), target,
-                    backupPassword);
+            ManagedRestoreOutcome restored = context.restoreManagedBackup(created.archive(), target, backupPassword);
             assertEquals(BackupRestoreStatus.SUCCEEDED, restored.restore().status(),
                     () -> restored.restore().events().toString());
             assertEquals(ManagedRestoreControlState.DEFERRED_SOURCE_RETAINED, restored.controlState());
@@ -84,18 +84,18 @@ class ManagedBackupRestoreMigrationAcceptanceTest {
             ServerProfile target = context.registerTargetServer();
             deployStaticSite(context, applicationId, port);
 
-            ManagedOfflineMigrationOutcome outcome = context.prepareManagedOfflineMigration(applicationId,
-                    target, backupPassword);
-            assertEquals(OfflineMigrationStatus.READY_FOR_MANUAL_TRAFFIC_SWITCH,
-                    outcome.migration().status(), () -> outcome.migration().events().toString());
+            ManagedOfflineMigrationOutcome outcome = context.prepareManagedOfflineMigration(applicationId, target,
+                    backupPassword);
+            assertEquals(OfflineMigrationStatus.READY_FOR_MANUAL_TRAFFIC_SWITCH, outcome.migration().status(),
+                    () -> outcome.migration().events().toString());
             assertTrue(outcome.migration().sourceWritesStopped());
             assertTrue(outcome.migration().targetCandidateReady());
             assertTrue(outcome.migration().sourceRetained());
             assertFalse(outcome.migration().externalTrafficSwitched());
             Path finalArchive = outcome.retainedFinalArchive().orElseThrow();
             assertTrue(Files.isRegularFile(finalArchive));
-            assertTrue(finalArchive.startsWith(temporaryDirectory.resolve("migration-context")
-                    .resolve("backups").toAbsolutePath().normalize()));
+            assertTrue(finalArchive.startsWith(
+                    temporaryDirectory.resolve("migration-context").resolve("backups").toAbsolutePath().normalize()));
             assertEquals(RuntimeState.STOPPED,
                     context.lifecycle(applicationId, LifecycleAction.REFRESH_STATUS).runtimeState());
             assertHttp(requiredProperty("managed.target.ssh.host"), port, "static-live-ok");
@@ -104,15 +104,14 @@ class ManagedBackupRestoreMigrationAcceptanceTest {
         }
     }
 
-    private void deployStaticSite(LiveTypedDeploymentContext context, String applicationId, int port)
-            throws Exception {
-        ReviewedSourcePreparation source = context.prepare(TypedAcceptanceFixture.staticSite(
-                temporaryDirectory.resolve("sources"), applicationId), DeploymentProjectType.STATIC_SITE);
+    private void deployStaticSite(LiveTypedDeploymentContext context, String applicationId, int port) throws Exception {
+        ReviewedSourcePreparation source = context.prepare(
+                TypedAcceptanceFixture.staticSite(temporaryDirectory.resolve("sources"), applicationId),
+                DeploymentProjectType.STATIC_SITE);
         DeploymentResult result = context.deploy(source, 1, List.of(
-                        new ConfigurationEntry("ACCEPTANCE_RUN_ID", ConfigurationScope.RUNTIME,
-                                new ConfigurationValue.Text(RUN_ID)),
-                        new ConfigurationEntry("PORT", ConfigurationScope.RUNTIME,
-                                new ConfigurationValue.Number(port))),
+                new ConfigurationEntry("ACCEPTANCE_RUN_ID", ConfigurationScope.RUNTIME,
+                        new ConfigurationValue.Text(RUN_ID)),
+                new ConfigurationEntry("PORT", ConfigurationScope.RUNTIME, new ConfigurationValue.Number(port))),
                 List.of(), new DeploymentRuntimeSpecification.StaticSite("public", health(port)), access(port));
         assertEquals(DeploymentStatus.SUCCEEDED, result.status(), () -> result.events().toString());
         assertHttp(requiredProperty("managed.ssh.host"), port, "static-live-ok");
@@ -123,8 +122,8 @@ class ManagedBackupRestoreMigrationAcceptanceTest {
     }
 
     private static Optional<UserAccessUrl> access(int port) {
-        return Optional.of(new UserAccessUrl(URI.create(
-                "http://" + requiredProperty("managed.ssh.host") + ":" + port + "/")));
+        return Optional
+                .of(new UserAccessUrl(URI.create("http://" + requiredProperty("managed.ssh.host") + ":" + port + "/")));
     }
 
     private static void assertHttp(String host, int port, String marker) throws Exception {

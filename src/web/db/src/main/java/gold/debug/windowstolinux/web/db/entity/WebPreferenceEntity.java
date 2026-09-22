@@ -13,4 +13,5 @@ import com.baomidou.mybatisplus.annotation.TableName;
  * @param updatedAt updated at / 已更新时刻
  */
 @TableName("preferences")
-public record WebPreferenceEntity(String workspaceId, String userId, String name, String value, String updatedAt) { }
+public record WebPreferenceEntity(String workspaceId, String userId, String name, String value, String updatedAt) {
+}

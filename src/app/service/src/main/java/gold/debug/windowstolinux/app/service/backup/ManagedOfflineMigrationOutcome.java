@@ -1,11 +1,11 @@
 package gold.debug.windowstolinux.app.service.backup;
 
-import gold.debug.windowstolinux.shared.backup.execution.migration.OfflineMigrationResult;
-
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
+
+import gold.debug.windowstolinux.shared.backup.execution.migration.OfflineMigrationResult;
 
 /**
  * Product migration result plus the retained stopped-write archive and local cleanup warnings. / 产品迁移结果及保留的停写归档与本地清理警告。
@@ -14,11 +14,8 @@ import java.util.Optional;
  * @param retainedFinalArchive retained final archive / 已保留最终归档
  * @param warnings warnings / 警告集合
  */
-public record ManagedOfflineMigrationOutcome(
-        OfflineMigrationResult migration,
-        Optional<Path> retainedFinalArchive,
-        List<String> warnings
-) {
+public record ManagedOfflineMigrationOutcome(OfflineMigrationResult migration, Optional<Path> retainedFinalArchive,
+        List<String> warnings) {
     /**
      * Preserves a final archive only when one was completely published and verified. / 仅在最终归档完整发布并验证后保留其路径。
      *

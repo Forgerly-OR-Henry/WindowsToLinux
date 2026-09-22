@@ -2,16 +2,16 @@
 
 八个独立项目覆盖 12 种源码语言；每种组合仅一个成功样例。所有数据库均为嵌入式 SQLite，不安装数据库服务。Node.js 是 JavaScript/TypeScript 的运行时，不另外计作源码语言。
 
-| 项目 | 协作链 | SQLite 写入者 |
-|---|---|---|
-| [任务看板](success-task-board/README.md) | TYPESCRIPT + JAVA | backend |
-| [文件收发站](success-file-transfer/README.md) | TYPESCRIPT + GO | backend |
-| [资产借还网站](success-asset-lending/README.md) | JAVASCRIPT + CSHARP | backend |
-| [CSV 数据检查网站](success-csv-inspector/README.md) | JAVASCRIPT + PHP + PYTHON | web |
-| [问卷评分网站](success-survey-scoring/README.md) | TYPESCRIPT + KOTLIN + RUBY | backend |
-| [日志统计工具](success-log-analyzer/README.md) | RUST + CPP | 无 |
-| [目录差异工具](success-directory-diff/README.md) | PYTHON + CPP | cli |
-| [二进制数据检查工具](success-binary-inspector/README.md) | RUST + C | 无 |
+| 项目                                                     | 协作链                     | SQLite 写入者 |
+| -------------------------------------------------------- | -------------------------- | ------------- |
+| [任务看板](success-task-board/README.md)                 | TYPESCRIPT + JAVA          | backend       |
+| [文件收发站](success-file-transfer/README.md)            | TYPESCRIPT + GO            | backend       |
+| [资产借还网站](success-asset-lending/README.md)          | JAVASCRIPT + CSHARP        | backend       |
+| [CSV 数据检查网站](success-csv-inspector/README.md)      | JAVASCRIPT + PHP + PYTHON  | web           |
+| [问卷评分网站](success-survey-scoring/README.md)         | TYPESCRIPT + KOTLIN + RUBY | backend       |
+| [日志统计工具](success-log-analyzer/README.md)           | RUST + CPP                 | 无            |
+| [目录差异工具](success-directory-diff/README.md)         | PYTHON + CPP               | cli           |
+| [二进制数据检查工具](success-binary-inspector/README.md) | RUST + C                   | 无            |
 
 当前为 v2 中型业务样例，每个目录包含业务说明 `BUSINESS.md`、完整源码、真实依赖声明与锁文件、固定样本、规模数据生成器及独立操作步骤。网页按列表、详情、编辑和历史拆分交互；业务状态、版本冲突、事务和持久化由服务端处理。身份为固定演示选择，不属于认证。控制台通过实际 C/C++ 子程序处理文件；移除关键协作模块会使对应验收失败。
 
@@ -56,16 +56,16 @@ python src/app/main/src/test/python/polyglot_runner.py run --project binary-insp
 
 两种配置执行相同的业务和故障检查，主要区别为规模；浏览器使用自己的少量业务数据（CSV 取消重试使用 20000 行）。标准配置是交付门槛，默认即 standard。
 
-| 项目 | quick 的主数据规模 | standard 的主数据规模 |
-|---|---:|---:|
-| 任务看板 | 创建 60 个任务 | 创建 10000 个任务 |
-| 文件收发 | 2 MiB | 64 MiB |
-| 资产借还 | 登记 50 件资产 | 登记 10000 件资产 |
-| CSV 检查 | 5000 行 | 100000 行 |
-| 问卷评分 | 60 次真实评分 | 10000 次真实评分 |
-| 日志分析 | 5000 条 | 100000 条 |
-| 目录快照 | 501 个文件 | 10001 个文件 |
-| 二进制检查 | 5000 条 | 100000 条 |
+| 项目       | quick 的主数据规模 | standard 的主数据规模 |
+| ---------- | -----------------: | --------------------: |
+| 任务看板   |     创建 60 个任务 |     创建 10000 个任务 |
+| 文件收发   |              2 MiB |                64 MiB |
+| 资产借还   |     登记 50 件资产 |     登记 10000 件资产 |
+| CSV 检查   |            5000 行 |             100000 行 |
+| 问卷评分   |      60 次真实评分 |      10000 次真实评分 |
+| 日志分析   |            5000 条 |             100000 条 |
+| 目录快照   |         501 个文件 |          10001 个文件 |
+| 二进制检查 |            5000 条 |             100000 条 |
 
 种子固定为 20260919。带状态的并发检查使用至少 10 个竞争请求；CLI 批量汇总由固定数据和独立参考计算核对。故障检查包含中断、下游不可用、超时、协议/字段/结束标记错误、异常退出和关键模块移除，失败后再次执行正常操作。子程序退出检查在运行器最终清理之前完成。
 

@@ -1,8 +1,8 @@
 package gold.debug.windowstolinux.shared.ai.redaction;
 
-import gold.debug.windowstolinux.shared.model.project.DeploymentProjectFacts;
-
 import java.util.Objects;
+
+import gold.debug.windowstolinux.shared.model.project.DeploymentProjectFacts;
 
 /**
  * Minimal typed deployment facts permitted to leave the deterministic analysis boundary.
@@ -37,6 +37,7 @@ public record RedactedDeploymentProjectFacts(String applicationId, String projec
      */
     public static RedactedDeploymentProjectFacts from(DeploymentProjectFacts facts) {
         Objects.requireNonNull(facts, "facts");
-        return new RedactedDeploymentProjectFacts(facts.applicationId(), facts.projectType().name(), facts.buildTool().name());
+        return new RedactedDeploymentProjectFacts(facts.applicationId(), facts.projectType().name(),
+                facts.buildTool().name());
     }
 }

@@ -1,18 +1,16 @@
 package gold.debug.windowstolinux.app.ui.deployment.automatic;
 
-import gold.debug.windowstolinux.shared.model.deployment.DatabaseReviewMode;
-
+import javax.swing.JComboBox;
+import javax.swing.JTextArea;
+import javax.swing.JTextField;
 
 import gold.debug.windowstolinux.app.service.source.ReviewedSourcePreparation;
-import gold.debug.windowstolinux.app.ui.i18n.PageMessagePresenter;
-import gold.debug.windowstolinux.shared.model.project.DeploymentProjectType;
-import gold.debug.windowstolinux.shared.model.project.DeploymentRuntimeSpecification;
-import gold.debug.windowstolinux.shared.model.project.DeploymentRuntimeAssessment;
-
 import gold.debug.windowstolinux.app.ui.component.ToggleSwitch;
-import javax.swing.JComboBox;
-import javax.swing.JTextField;
-import javax.swing.JTextArea;
+import gold.debug.windowstolinux.app.ui.i18n.PageMessagePresenter;
+import gold.debug.windowstolinux.shared.model.deployment.DatabaseReviewMode;
+import gold.debug.windowstolinux.shared.model.project.DeploymentProjectType;
+import gold.debug.windowstolinux.shared.model.project.DeploymentRuntimeAssessment;
+import gold.debug.windowstolinux.shared.model.project.DeploymentRuntimeSpecification;
 
 /**
  * Owns deployment controls, non-secret form state, and domain input mapping. / 持有部署控件、非秘密表单状态与领域输入映射。
@@ -22,114 +20,137 @@ final class DeploymentForm {
      * Supported project deployment category.
      * <p>受支持的项目部署类别。
      */
-    final JComboBox<DeploymentProjectType> projectType = new JComboBox<>(DeploymentProjectType.values());
+    final JComboBox<DeploymentProjectType> projectType = new JComboBox<>(java.util.Arrays
+            .stream(DeploymentProjectType.values()).filter(type -> type != DeploymentProjectType.MANAGED_PROCESS)
+            .toArray(DeploymentProjectType[]::new));
+
     /**
      * Health mode.
      * <p>健康模式。
      */
     final JComboBox<HealthMode> healthMode = new JComboBox<>(HealthMode.values());
+
     /**
      * Swing control for health endpoint.
      * <p>健康端点对应的 Swing 控件。
      */
     final JTextField healthEndpoint = new JTextField(30);
+
     /**
      * Swing control for expected status.
      * <p>预期状态对应的 Swing 控件。
      */
     final JTextField expectedStatus = new JTextField("200", 4);
+
     /**
      * Swing control for timeout.
      * <p>超时对应的 Swing 控件。
      */
     final JTextField timeout = new JTextField("10", 4);
+
     /**
      * Swing control for stability.
      * <p>稳定性对应的 Swing 控件。
      */
     final JTextField stability = new JTextField("5", 4);
+
     /**
      * Swing control for access url.
      * <p>访问URL对应的 Swing 控件。
      */
     final JTextField accessUrl = new JTextField(30);
+
     /**
      * Swing control for runtime primary.
      * <p>运行时主对应的 Swing 控件。
      */
     final JTextField runtimePrimary = new JTextField(20);
+
     /**
      * Swing control for runtime secondary.
      * <p>运行时次要对应的 Swing 控件。
      */
     final JTextField runtimeSecondary = new JTextField(20);
+
     /**
      * Swing control for runtime version.
      * <p>运行时版本对应的 Swing 控件。
      */
     final JTextField runtimeVersion = new JTextField(6);
+
     /**
      * Swing control for kotlin jvm target.
      * <p>kotlinJvm目标对应的 Swing 控件。
      */
     final JTextField kotlinJvmTarget = new JTextField(6);
+
     /**
      * Swing control for jvm arguments.
      * <p>jvm参数对应的 Swing 控件。
      */
     final JTextField jvmArguments = new JTextField(20);
+
     /**
      * Swing control for application arguments.
      * <p>应用参数对应的 Swing 控件。
      */
     final JTextField applicationArguments = new JTextField(20);
+
     /**
      * Container engine.
      * <p>容器引擎。
      */
-    final JComboBox<DeploymentRuntimeSpecification.ContainerEngineType> containerEngine =
-            new JComboBox<>(DeploymentRuntimeSpecification.ContainerEngineType.values());
+    final JComboBox<DeploymentRuntimeSpecification.ContainerEngineType> containerEngine = new JComboBox<>(
+            DeploymentRuntimeSpecification.ContainerEngineType.values());
+
     /**
      * Swing control for container ports.
      * <p>容器端口集合对应的 Swing 控件。
      */
     final JTextField containerPorts = new JTextField(20);
+
     /**
      * Swing control for container volumes.
      * <p>容器卷集合对应的 Swing 控件。
      */
     final JTextField containerVolumes = new JTextField(20);
+
     /**
      * Swing control for application declaration.
      * <p>应用声明对应的 Swing 控件。
      */
     final JTextArea applicationDeclaration = new JTextArea(6, 30);
+
     /**
      * Swing control for configuration entries.
      * <p>配置条目对应的 Swing 控件。
      */
     final JTextField configurationEntries = new JTextField(30);
+
     /**
      * The explicit database review mode.
      * <p>显式数据库审阅模式。
      */
-    final JComboBox<DatabaseReviewMode> databaseMode =
-            new JComboBox<>(DatabaseReviewMode.values());
+    final JComboBox<DatabaseReviewMode> databaseMode = new JComboBox<>(DatabaseReviewMode.values());
+
     /**
      * Swing control for database details.
      * <p>数据库详情对应的 Swing 控件。
      */
     final JTextField databaseDetails = new JTextField(30);
+
     /**
      * Swing control for secret references.
      * <p>秘密引用集合对应的 Swing 控件。
      */
     final JTextField secretReferences = new JTextField(20);
+
     /**
      * Experimental adapter risk.
      * <p>实验性适配器风险。
      */
     final ToggleSwitch experimentalAdapterRisk;
+
     /**
      * Bound page message presenter collaborator for localized message resolver.
      * <p>处理本地化消息解析器的页面消息展示器协作对象。
@@ -154,8 +175,8 @@ final class DeploymentForm {
             resetRuntimeInputs();
             reviewInvalidation.run();
         });
-        databaseMode.addActionListener(event -> databaseDetails.setEnabled(
-                databaseMode.getSelectedItem() != DatabaseReviewMode.UNREVIEWED
+        databaseMode.addActionListener(
+                event -> databaseDetails.setEnabled(databaseMode.getSelectedItem() != DatabaseReviewMode.UNREVIEWED
                         && databaseMode.getSelectedItem() != DatabaseReviewMode.NONE));
         containerEngine.setSelectedItem(null);
         databaseMode.setSelectedItem(DatabaseReviewMode.UNREVIEWED);
@@ -171,16 +192,18 @@ final class DeploymentForm {
      * @return deployment page state from the supplied capture inputs / 根据所提供捕获输入构建部署页面状态
      */
     DeploymentPageState capture(String output, ReviewedSourcePreparation preparation) {
-        return new DeploymentPageState(projectType().name(),
-                ((HealthMode) healthMode.getSelectedItem()).name(), healthEndpoint.getText(), expectedStatus.getText(),
-                timeout.getText(), stability.getText(), accessUrl.getText(), runtimePrimary.getText(), runtimeSecondary.getText(),
-                runtimeVersion.getText(), jvmArguments.getText(), applicationArguments.getText(),
-                containerEngine.getSelectedItem() == null ? ""
-                : ((DeploymentRuntimeSpecification.ContainerEngineType) containerEngine.getSelectedItem()).name(),
+        return new DeploymentPageState(projectType().name(), ((HealthMode) healthMode.getSelectedItem()).name(),
+                healthEndpoint.getText(), expectedStatus.getText(), timeout.getText(), stability.getText(),
+                accessUrl.getText(), runtimePrimary.getText(), runtimeSecondary.getText(), runtimeVersion.getText(),
+                jvmArguments.getText(), applicationArguments.getText(),
+                containerEngine.getSelectedItem() == null
+                        ? ""
+                        : ((DeploymentRuntimeSpecification.ContainerEngineType) containerEngine.getSelectedItem())
+                                .name(),
                 containerPorts.getText(), containerVolumes.getText(), configurationEntries.getText(),
-                ((DatabaseReviewMode) databaseMode.getSelectedItem()).name(),
-                databaseDetails.getText(), secretReferences.getText(), false, experimentalAdapterRisk.isSelected(),
-                output, preparation, kotlinJvmTarget.getText(), applicationDeclaration.getText());
+                ((DatabaseReviewMode) databaseMode.getSelectedItem()).name(), databaseDetails.getText(),
+                secretReferences.getText(), false, experimentalAdapterRisk.isSelected(), output, preparation,
+                kotlinJvmTarget.getText(), applicationDeclaration.getText());
     }
 
     /**
@@ -204,7 +227,8 @@ final class DeploymentForm {
         kotlinJvmTarget.setText(state.kotlinJvmTarget());
         jvmArguments.setText(state.jvmArguments());
         applicationArguments.setText(state.applicationArguments());
-        containerEngine.setSelectedItem(state.containerEngine().isBlank() ? null
+        containerEngine.setSelectedItem(state.containerEngine().isBlank()
+                ? null
                 : DeploymentRuntimeSpecification.ContainerEngineType.valueOf(state.containerEngine()));
         containerPorts.setText(state.containerPorts());
         containerVolumes.setText(state.containerVolumes());
@@ -232,13 +256,15 @@ final class DeploymentForm {
      * @return constructed or resolved deployment form input / 构造或解析得到的部署表单输入
      */
     gold.debug.windowstolinux.app.service.contract.definition.DeploymentFormInput input(boolean detectType) {
-        return new gold.debug.windowstolinux.app.service.contract.definition.DeploymentFormInput(detectType, projectType(),
-                runtimePrimary.getText(), runtimeSecondary.getText(), runtimeVersion.getText(), kotlinJvmTarget.getText(),
-                configurationEntries.getText(), secretReferences.getText(), (DatabaseReviewMode) databaseMode.getSelectedItem(),
-                databaseDetails.getText(), ((HealthMode) healthMode.getSelectedItem()).name(), healthEndpoint.getText(),
-                expectedStatus.getText(), timeout.getText(), stability.getText(), accessUrl.getText(), jvmArguments.getText(),
+        return new gold.debug.windowstolinux.app.service.contract.definition.DeploymentFormInput(detectType,
+                projectType(), runtimePrimary.getText(), runtimeSecondary.getText(), runtimeVersion.getText(),
+                kotlinJvmTarget.getText(), configurationEntries.getText(), secretReferences.getText(),
+                (DatabaseReviewMode) databaseMode.getSelectedItem(), databaseDetails.getText(),
+                ((HealthMode) healthMode.getSelectedItem()).name(), healthEndpoint.getText(), expectedStatus.getText(),
+                timeout.getText(), stability.getText(), accessUrl.getText(), jvmArguments.getText(),
                 applicationArguments.getText(), containerPorts.getText(), containerVolumes.getText(),
-                (DeploymentRuntimeSpecification.ContainerEngineType) containerEngine.getSelectedItem(), experimentalAdapterRisk.isSelected(), applicationDeclaration.getText());
+                (DeploymentRuntimeSpecification.ContainerEngineType) containerEngine.getSelectedItem(),
+                experimentalAdapterRisk.isSelected(), applicationDeclaration.getText());
     }
 
     /**
@@ -249,22 +275,35 @@ final class DeploymentForm {
      */
     void applyRuntimeSuggestions(ReviewedSourcePreparation preparation) {
         DeploymentRuntimeAssessment suggestion = preparation.assessment().runtimeSuggestion().orElse(null);
-        if (suggestion == null) return;
+        if (suggestion == null)
+            return;
         suggestion.value(DeploymentRuntimeAssessment.RuntimeInputType.JAVA_JAR_PATH).ifPresent(runtimePrimary::setText);
-        suggestion.value(DeploymentRuntimeAssessment.RuntimeInputType.JAVA_SOURCE_ROOT).ifPresent(runtimePrimary::setText);
-        suggestion.value(DeploymentRuntimeAssessment.RuntimeInputType.JAVA_MAIN_CLASS).ifPresent(runtimeSecondary::setText);
-        suggestion.value(DeploymentRuntimeAssessment.RuntimeInputType.KOTLIN_JVM_TARGET).ifPresent(kotlinJvmTarget::setText);
+        suggestion.value(DeploymentRuntimeAssessment.RuntimeInputType.JAVA_SOURCE_ROOT)
+                .ifPresent(runtimePrimary::setText);
+        suggestion.value(DeploymentRuntimeAssessment.RuntimeInputType.JAVA_MAIN_CLASS)
+                .ifPresent(runtimeSecondary::setText);
+        suggestion.value(DeploymentRuntimeAssessment.RuntimeInputType.KOTLIN_JVM_TARGET)
+                .ifPresent(kotlinJvmTarget::setText);
         suggestion.value(DeploymentRuntimeAssessment.RuntimeInputType.JAVA_VERSION).ifPresent(runtimeVersion::setText);
-        suggestion.value(DeploymentRuntimeAssessment.RuntimeInputType.NODE_MAJOR_VERSION).ifPresent(runtimeVersion::setText);
-        suggestion.value(DeploymentRuntimeAssessment.RuntimeInputType.PYTHON_VERSION).ifPresent(runtimePrimary::setText);
-        suggestion.value(DeploymentRuntimeAssessment.RuntimeInputType.PYTHON_ENTRYPOINT).ifPresent(runtimeSecondary::setText);
-        suggestion.value(DeploymentRuntimeAssessment.RuntimeInputType.STATIC_OUTPUT_DIRECTORY).ifPresent(runtimePrimary::setText);
-        suggestion.value(DeploymentRuntimeAssessment.RuntimeInputType.SERVICE_ARTIFACT).ifPresent(runtimePrimary::setText);
-        suggestion.value(DeploymentRuntimeAssessment.RuntimeInputType.SERVICE_ENTRYPOINT).ifPresent(runtimeSecondary::setText);
-        suggestion.value(DeploymentRuntimeAssessment.RuntimeInputType.SERVICE_VERSION).ifPresent(runtimeVersion::setText);
+        suggestion.value(DeploymentRuntimeAssessment.RuntimeInputType.NODE_MAJOR_VERSION)
+                .ifPresent(runtimeVersion::setText);
+        suggestion.value(DeploymentRuntimeAssessment.RuntimeInputType.PYTHON_VERSION)
+                .ifPresent(runtimePrimary::setText);
+        suggestion.value(DeploymentRuntimeAssessment.RuntimeInputType.PYTHON_ENTRYPOINT)
+                .ifPresent(runtimeSecondary::setText);
+        suggestion.value(DeploymentRuntimeAssessment.RuntimeInputType.STATIC_OUTPUT_DIRECTORY)
+                .ifPresent(runtimePrimary::setText);
+        suggestion.value(DeploymentRuntimeAssessment.RuntimeInputType.SERVICE_ARTIFACT)
+                .ifPresent(runtimePrimary::setText);
+        suggestion.value(DeploymentRuntimeAssessment.RuntimeInputType.SERVICE_ENTRYPOINT)
+                .ifPresent(runtimeSecondary::setText);
+        suggestion.value(DeploymentRuntimeAssessment.RuntimeInputType.SERVICE_VERSION)
+                .ifPresent(runtimeVersion::setText);
         suggestion.value(DeploymentRuntimeAssessment.RuntimeInputType.CMAKE_PRESET).ifPresent(runtimeVersion::setText);
-        suggestion.value(DeploymentRuntimeAssessment.RuntimeInputType.CMAKE_TARGET).ifPresent(runtimeSecondary::setText);
-        suggestion.value(DeploymentRuntimeAssessment.RuntimeInputType.CMAKE_ARTIFACT).ifPresent(runtimePrimary::setText);
+        suggestion.value(DeploymentRuntimeAssessment.RuntimeInputType.CMAKE_TARGET)
+                .ifPresent(runtimeSecondary::setText);
+        suggestion.value(DeploymentRuntimeAssessment.RuntimeInputType.CMAKE_ARTIFACT)
+                .ifPresent(runtimePrimary::setText);
         if (!suggestion.suggestedContainerPorts().isEmpty()) {
             containerPorts.setText(suggestion.suggestedContainerPorts().entrySet().stream()
                     .map(entry -> entry.getKey() + ":" + entry.getValue()).reduce((a, b) -> a + ";" + b).orElse(""));
@@ -298,27 +337,30 @@ final class DeploymentForm {
     private enum HealthMode {
         /**
          * Source-backed automatic selection. / 依据源码自动选择。
-         */ AUTOMATIC,
+         */
+        AUTOMATIC,
         /**
          * HTTP health check. / HTTP 健康检查。
-         */ HTTP,
+         */
+        HTTP,
         /**
          * TCP health check. / TCP 健康检查。
-         */ TCP,
+         */
+        TCP,
         /**
          * PROCESS classification within health mode.
          * <p>健康模式中的进程分类。
          */
-         PROCESS,
+        PROCESS,
         /**
          * COMMAND classification within health mode.
          * <p>健康模式中的命令分类。
          */
-         COMMAND,
+        COMMAND,
         /**
          * UDP classification within health mode.
          * <p>健康模式中的UDP分类。
          */
-         UDP
+        UDP
     }
 }

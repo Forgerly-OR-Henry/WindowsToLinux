@@ -1,6 +1,5 @@
 package gold.debug.windowstolinux.shared.linux.protocol.backup;
 
-
 import java.util.Comparator;
 import java.util.List;
 import java.util.Objects;
@@ -12,11 +11,8 @@ import java.util.Objects;
  * @param componentId identifier within the reviewed component graph / 已审阅组件图内的标识
  * @param fileBindings file bindings / 文件绑定集合
  */
-public record ManagedContentPublication(
-        String applicationId,
-        String componentId,
-        List<RemoteManagedFileBinding> fileBindings
-) {
+public record ManagedContentPublication(String applicationId, String componentId,
+        List<RemoteManagedFileBinding> fileBindings) {
     /**
      * Validates stable identities, canonical order and non-overlapping logical paths. / 校验稳定身份、规范顺序及互不重叠的逻辑路径。
      *
@@ -32,19 +28,20 @@ public record ManagedContentPublication(
         fileBindings = List.copyOf(Objects.requireNonNull(fileBindings, "fileBindings").stream()
                 .map(value -> Objects.requireNonNull(value, "file binding"))
                 .sorted(Comparator.comparing(RemoteManagedFileBinding::bindingId)).toList());
-        if (fileBindings.size() > 32
-                || fileBindings.stream().map(RemoteManagedFileBinding::bindingId).distinct().count() != fileBindings.size()) {
+        if (fileBindings.size() > 32 || fileBindings.stream().map(RemoteManagedFileBinding::bindingId).distinct()
+                .count() != fileBindings.size()) {
             throw new IllegalArgumentException("managed file bindings must be bounded and unique");
         }
         for (int first = 0; first < fileBindings.size(); first++) {
             String left = fileBindings.get(first).dataPath().path();
             for (int second = first + 1; second < fileBindings.size(); second++) {
                 String right = fileBindings.get(second).dataPath().path();
-                boolean directories = fileBindings.get(first).resourceType()
-                        != gold.debug.windowstolinux.shared.model.managed.ManagedStorageLocation.StorageResourceType.DATABASE
-                        && fileBindings.get(second).resourceType()
-                        != gold.debug.windowstolinux.shared.model.managed.ManagedStorageLocation.StorageResourceType.DATABASE;
-                if (left.equals(right) || directories && (left.startsWith(right + "/") || right.startsWith(left + "/"))) {
+                boolean directories = fileBindings.get(first)
+                        .resourceType() != gold.debug.windowstolinux.shared.model.managed.ManagedStorageLocation.StorageResourceType.DATABASE
+                        && fileBindings.get(second)
+                                .resourceType() != gold.debug.windowstolinux.shared.model.managed.ManagedStorageLocation.StorageResourceType.DATABASE;
+                if (left.equals(right)
+                        || directories && (left.startsWith(right + "/") || right.startsWith(left + "/"))) {
                     throw new IllegalArgumentException("managed logical data paths must not overlap");
                 }
             }

@@ -15,6 +15,7 @@ public interface SelinuxEnvironmentPreparer {
      * @throws LinuxOperationException if the authenticated remote operation fails or its evidence is rejected / 已认证远端操作失败或其证据被拒绝时
      */
     java.util.Optional<SelinuxPreparationPlan> inspect() throws LinuxOperationException;
+
     /**
      * Prepares reboot.
      * <p>准备重启。
@@ -23,6 +24,7 @@ public interface SelinuxEnvironmentPreparer {
      * @throws LinuxOperationException if the authenticated remote operation fails or its evidence is rejected / 已认证远端操作失败或其证据被拒绝时
      */
     void prepareReboot(SelinuxPreparationPlan approved) throws LinuxOperationException;
+
     /**
      * Enables enforcement.
      * <p>启用强制执行。
@@ -31,6 +33,7 @@ public interface SelinuxEnvironmentPreparer {
      * @throws LinuxOperationException if the authenticated remote operation fails or its evidence is rejected / 已认证远端操作失败或其证据被拒绝时
      */
     void enableEnforcement(SelinuxPreparationPlan approved) throws LinuxOperationException;
+
     /**
      * Commits enforcement.
      * <p>提交强制执行。

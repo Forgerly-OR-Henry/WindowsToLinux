@@ -1,15 +1,15 @@
 package gold.debug.windowstolinux.app.windows.workspace;
 
-import gold.debug.windowstolinux.shared.model.archive.SourceArchiveDescriptor;
-import gold.debug.windowstolinux.shared.source.archive.SafeSourceArchivePreparer;
-import gold.debug.windowstolinux.shared.source.archive.SourceArchive;
-import gold.debug.windowstolinux.shared.source.archive.SourceArchiveException;
-
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Objects;
 import java.util.UUID;
+
+import gold.debug.windowstolinux.shared.model.archive.SourceArchiveDescriptor;
+import gold.debug.windowstolinux.shared.source.archive.SafeSourceArchivePreparer;
+import gold.debug.windowstolinux.shared.source.archive.SourceArchive;
+import gold.debug.windowstolinux.shared.source.archive.SourceArchiveException;
 
 /**
  * Windows desktop entry point for preparing a platform-neutral source archive.
@@ -22,16 +22,19 @@ public final class WindowsSourcePreparer {
      * <p>最小剩余字节。
      */
     private static final long MINIMUM_FREE_BYTES = 1024L * 1024L;
+
     /**
      * Bound safe source archive preparer collaborator for archiver.
      * <p>处理归档生成器的安全源码归档准备器协作对象。
      */
     private final SafeSourceArchivePreparer archiver;
+
     /**
      * Work directory.
      * <p>工作目录。
      */
     private final Path workDirectory;
+
     /**
      * Archive directory.
      * <p>归档目录。
@@ -101,9 +104,8 @@ public final class WindowsSourcePreparer {
             }
             SourceArchive archive = archiver.archive(sourceDirectory,
                     archiveDirectory.resolve(applicationId + "-" + UUID.randomUUID() + ".tar.gz"));
-            return new PreparedSourceArchive(new SourceArchiveDescriptor(
-                    archive.archivePath(), archive.contentSha256(), archive.byteCount(), archive.uncompressedByteCount()
-            ), archive.excludedEntries());
+            return new PreparedSourceArchive(new SourceArchiveDescriptor(archive.archivePath(), archive.contentSha256(),
+                    archive.byteCount(), archive.uncompressedByteCount()), archive.excludedEntries());
         } catch (WindowsWorkspaceException exception) {
             throw exception;
         } catch (SourceArchiveException exception) {

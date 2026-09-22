@@ -1,5 +1,14 @@
 package gold.debug.windowstolinux.shared.deploy.execution.transaction;
 
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Optional;
+import java.util.Set;
+
 import gold.debug.windowstolinux.shared.deploy.contract.spi.CandidatePortMode;
 import gold.debug.windowstolinux.shared.deploy.contract.spi.CandidatePortPlan;
 import gold.debug.windowstolinux.shared.deploy.contract.spi.RestoreDeploymentComponent;
@@ -12,15 +21,6 @@ import gold.debug.windowstolinux.shared.linux.protocol.restore.RemoteRestoreActi
 import gold.debug.windowstolinux.shared.linux.protocol.restore.RemoteRestoreActivationRequest;
 import gold.debug.windowstolinux.shared.linux.protocol.restore.RemoteRestorePortBinding;
 
-import java.util.ArrayList;
-import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Objects;
-import java.util.Optional;
-import java.util.HashSet;
-import java.util.Set;
-
 /**
  * Production deploy implementation for one fail-closed remote restore transaction. / 单个故障关闭远程恢复事务的生产 deploy 实现。
  */
@@ -30,21 +30,25 @@ public final class ManagedRestoreDeploymentPort implements RestoreDeploymentPort
      * <p>不含凭据的远端。
      */
     private final RemoteRestoreActivationPort remote;
+
     /**
      * Bound restore candidate port planner collaborator for planner.
      * <p>处理规划器的恢复候选端口规划器协作对象。
      */
     private final RestoreCandidatePortPlanner planner;
+
     /**
      * Attempts.
      * <p>尝试集合。
      */
     private final Map<String, RemoteRestoreActivationRequest> attempts = new LinkedHashMap<>();
+
     /**
      * Commit prepared.
      * <p>提交已准备。
      */
     private final Set<String> commitPrepared = new HashSet<>();
+
     /**
      * Formal started.
      * <p>正式已启动。
@@ -81,8 +85,8 @@ public final class ManagedRestoreDeploymentPort implements RestoreDeploymentPort
      * @return constructed or resolved health evidence / 构造或解析得到的健康证据
      */
     @Override
-    public synchronized HealthEvidence verifyComponents(
-            RestoreDeploymentRequest request, Optional<String> databaseToken) {
+    public synchronized HealthEvidence verifyComponents(RestoreDeploymentRequest request,
+            Optional<String> databaseToken) {
         requireDatabaseToken(databaseToken);
         try {
             RemoteRestoreActivationRequest activation = attempt(request, databaseToken.isPresent());
@@ -96,7 +100,8 @@ public final class ManagedRestoreDeploymentPort implements RestoreDeploymentPort
                 }
                 if (formalStarted.add(request.candidateId())) {
                     RemoteRestoreActivationPort.StepEvidence started = remote.startRestoreFormal(activation);
-                    if (!started.completed()) return new HealthEvidence(false, started.evidence());
+                    if (!started.completed())
+                        return new HealthEvidence(false, started.evidence());
                 }
             }
             RemoteRestoreActivationPort.StepEvidence verified = remote.verifyRestoreComponents(activation);
@@ -115,14 +120,13 @@ public final class ManagedRestoreDeploymentPort implements RestoreDeploymentPort
      * @return constructed or resolved health evidence / 构造或解析得到的健康证据
      */
     @Override
-    public synchronized HealthEvidence prepareCommit(
-            RestoreDeploymentRequest request, Optional<String> databaseToken) {
+    public synchronized HealthEvidence prepareCommit(RestoreDeploymentRequest request, Optional<String> databaseToken) {
         requireDatabaseToken(databaseToken);
         try {
             RemoteRestoreActivationRequest activation = attempt(request, databaseToken.isPresent());
-            if (!commitPrepared.contains(request.candidateId())) prepareRemote(activation);
-            return new HealthEvidence(true, List.of(
-                    "candidate and previous graph stopped before database activation",
+            if (!commitPrepared.contains(request.candidateId()))
+                prepareRemote(activation);
+            return new HealthEvidence(true, List.of("candidate and previous graph stopped before database activation",
                     "application-wide stopped-write boundary verified by managed helper"));
         } catch (LinuxOperationException | RuntimeException exception) {
             throw operation("remote restore commit preparation failed", exception);
@@ -137,8 +141,8 @@ public final class ManagedRestoreDeploymentPort implements RestoreDeploymentPort
      * @return constructed or resolved health evidence / 构造或解析得到的健康证据
      */
     @Override
-    public synchronized HealthEvidence verifyApplication(
-            RestoreDeploymentRequest request, Optional<String> databaseToken) {
+    public synchronized HealthEvidence verifyApplication(RestoreDeploymentRequest request,
+            Optional<String> databaseToken) {
         requireDatabaseToken(databaseToken);
         try {
             RemoteRestoreActivationRequest activation = requireAttempt(request);
@@ -157,23 +161,24 @@ public final class ManagedRestoreDeploymentPort implements RestoreDeploymentPort
      * @return constructed or resolved commit evidence / 构造或解析得到的提交证据
      */
     @Override
-    public synchronized CommitEvidence commit(
-            RestoreDeploymentRequest request, Optional<String> databaseToken) {
+    public synchronized CommitEvidence commit(RestoreDeploymentRequest request, Optional<String> databaseToken) {
         requireDatabaseToken(databaseToken);
         try {
             RemoteRestoreActivationRequest activation = requireAttempt(request);
-            if (!commitPrepared.contains(request.candidateId())) prepareRemote(activation);
+            if (!commitPrepared.contains(request.candidateId()))
+                prepareRemote(activation);
             if (formalStarted.add(request.candidateId())) {
                 RemoteRestoreActivationPort.StepEvidence started = remote.startRestoreFormal(activation);
-                if (!started.completed()) return new CommitEvidence(false, true,
-                        request.candidateToken(), started.evidence());
+                if (!started.completed())
+                    return new CommitEvidence(false, true, request.candidateToken(), started.evidence());
             }
             RemoteRestoreActivationPort.CommitEvidence committed = remote.commitRestoreActivation(activation);
             if (!committed.formalComponentsHealthy() || !committed.formalApplicationHealthy()) {
-                return new CommitEvidence(false, committed.previousReleaseRetained(),
-                        committed.activeReleaseToken(), committed.evidence());
+                return new CommitEvidence(false, committed.previousReleaseRetained(), committed.activeReleaseToken(),
+                        committed.evidence());
             }
-            if (committed.committed()) clear(request.candidateId());
+            if (committed.committed())
+                clear(request.candidateId());
             return new CommitEvidence(committed.committed(), committed.previousReleaseRetained(),
                     committed.activeReleaseToken(), committed.evidence());
         } catch (LinuxOperationException | RuntimeException exception) {
@@ -194,7 +199,8 @@ public final class ManagedRestoreDeploymentPort implements RestoreDeploymentPort
             RemoteRestoreActivationRequest activation = attempts.get(request.candidateId());
             if (activation == null) {
                 var preflight = remote.inspectRestoreActivation(request.applicationId(), 0);
-                activation = activation(request, planner.plan(request, preflight.occupiedTcpPorts(), preflight.occupiedUdpPorts(), true));
+                activation = activation(request,
+                        planner.plan(request, preflight.occupiedTcpPorts(), preflight.occupiedUdpPorts(), true));
             }
             RemoteRestoreActivationPort.StepEvidence stopped = remote.quiesceRestoreRecovery(activation);
             return new HealthEvidence(stopped.completed(), stopped.evidence());
@@ -215,7 +221,8 @@ public final class ManagedRestoreDeploymentPort implements RestoreDeploymentPort
             RemoteRestoreActivationRequest activation = attempts.get(request.candidateId());
             if (activation == null) {
                 var preflight = remote.inspectRestoreActivation(request.applicationId(), 0);
-                activation = activation(request, planner.plan(request, preflight.occupiedTcpPorts(), preflight.occupiedUdpPorts(), false));
+                activation = activation(request,
+                        planner.plan(request, preflight.occupiedTcpPorts(), preflight.occupiedUdpPorts(), false));
             }
             RemoteRestoreActivationPort.RecoveryEvidence recovered = remote.recoverRestoreActivation(activation);
             if (recovered.candidateRemoved() && recovered.previousGraphVerified()) {
@@ -237,19 +244,22 @@ public final class ManagedRestoreDeploymentPort implements RestoreDeploymentPort
      * @throws LinuxOperationException if the authenticated remote operation fails or its evidence is rejected / 已认证远端操作失败或其证据被拒绝时
      * @throws IllegalStateException if the required state or runtime facility is unavailable / 所需状态或运行设施不可用时
      */
-    private RemoteRestoreActivationRequest attempt(
-            RestoreDeploymentRequest request, boolean databaseActivationRequired) throws LinuxOperationException {
+    private RemoteRestoreActivationRequest attempt(RestoreDeploymentRequest request, boolean databaseActivationRequired)
+            throws LinuxOperationException {
         RemoteRestoreActivationRequest activation = attempts.get(request.candidateId());
-        if (activation != null) return requireAttempt(request);
+        if (activation != null)
+            return requireAttempt(request);
         var preflight = remote.inspectRestoreActivation(request.applicationId(), 0);
         if (!preflight.managedRootWritable() || preflight.foreignApplicationConflict()) {
-            throw new IllegalStateException("restore target preflight rejected activation: "
-                    + String.join("; ", preflight.evidence()));
+            throw new IllegalStateException(
+                    "restore target preflight rejected activation: " + String.join("; ", preflight.evidence()));
         }
-        CandidatePortPlan ports = planner.plan(request, preflight.occupiedTcpPorts(), preflight.occupiedUdpPorts(), databaseActivationRequired);
+        CandidatePortPlan ports = planner.plan(request, preflight.occupiedTcpPorts(), preflight.occupiedUdpPorts(),
+                databaseActivationRequired);
         activation = activation(request, ports);
         RemoteRestoreActivationPort.StepEvidence started = remote.startRestoreActivation(activation);
-        if (!started.completed()) throw new IllegalStateException("restore activation preparation was incomplete");
+        if (!started.completed())
+            throw new IllegalStateException("restore activation preparation was incomplete");
         attempts.put(request.candidateId(), activation);
         return activation;
     }
@@ -264,7 +274,8 @@ public final class ManagedRestoreDeploymentPort implements RestoreDeploymentPort
      */
     private void prepareRemote(RemoteRestoreActivationRequest activation) throws LinuxOperationException {
         RemoteRestoreActivationPort.StepEvidence prepared = remote.prepareRestoreCommit(activation);
-        if (!prepared.completed()) throw new IllegalStateException("restore stopped-write boundary was not verified");
+        if (!prepared.completed())
+            throw new IllegalStateException("restore stopped-write boundary was not verified");
         commitPrepared.add(activation.candidateId());
     }
 
@@ -275,7 +286,9 @@ public final class ManagedRestoreDeploymentPort implements RestoreDeploymentPort
      * @param candidateId identity of the isolated deployment or restore candidate / 隔离部署或恢复候选的身份
      */
     private void clear(String candidateId) {
-        attempts.remove(candidateId); commitPrepared.remove(candidateId); formalStarted.remove(candidateId);
+        attempts.remove(candidateId);
+        commitPrepared.remove(candidateId);
+        formalStarted.remove(candidateId);
     }
 
     /**
@@ -302,14 +315,15 @@ public final class ManagedRestoreDeploymentPort implements RestoreDeploymentPort
      * @param plan deterministic reviewed execution order and targets / 确定的已审阅执行顺序及目标
      * @return remote restore activation request from the supplied activation inputs / 根据所提供激活输入构建远端恢复激活请求
      */
-    private static RemoteRestoreActivationRequest activation(
-            RestoreDeploymentRequest request, CandidatePortPlan plan) {
+    private static RemoteRestoreActivationRequest activation(RestoreDeploymentRequest request, CandidatePortPlan plan) {
         List<RemoteRestoreActivationComponent> components = new ArrayList<>();
         for (RestoreDeploymentComponent component : request.components()) {
-            var inputs = component.inputManifest().orElseThrow(() ->
-                    new IllegalStateException("exact deployment inputs were not staged before restore activation"));
-            var ports = plan.components().get(component.componentId()).stream().map(binding ->
-                    new RemoteRestorePortBinding(binding.officialPort(), binding.candidatePort(), binding.protocol())).toList();
+            var inputs = component.inputManifest().orElseThrow(() -> new IllegalStateException(
+                    "exact deployment inputs were not staged before restore activation"));
+            var ports = plan.components().get(component.componentId()).stream()
+                    .map(binding -> new RemoteRestorePortBinding(binding.officialPort(), binding.candidatePort(),
+                            binding.protocol()))
+                    .toList();
             components.add(new RemoteRestoreActivationComponent(component.componentId(),
                     component.managedApplicationId(), component.ownershipManifestSha256(), component.releaseSha256(),
                     component.releaseManifestPath(), component.persistentArchivePaths(), component.ociArchivePath(),
@@ -317,8 +331,8 @@ public final class ManagedRestoreDeploymentPort implements RestoreDeploymentPort
         }
         return new RemoteRestoreActivationRequest(request.applicationId(), request.candidateId(),
                 request.candidateToken(), request.archiveSha256(), request.remoteCandidateRoot(),
-                RemoteRestoreActivationMode.valueOf(plan.mode().name()),
-                components, request.applicationHealthComponentId(), request.applicationHealthCheck());
+                RemoteRestoreActivationMode.valueOf(plan.mode().name()), components,
+                request.applicationHealthComponentId(), request.applicationHealthCheck());
     }
 
     /**

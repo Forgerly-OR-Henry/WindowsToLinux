@@ -30,7 +30,7 @@ public record CandidatePortPlan(CandidatePortMode mode, Map<String, List<Candida
                 throw new IllegalArgumentException("candidate port component is invalid or duplicated");
             }
         });
-        if (copied.isEmpty()  || mode != CandidatePortMode.PARALLEL_LOOPBACK
+        if (copied.isEmpty() || mode != CandidatePortMode.PARALLEL_LOOPBACK
                 && copied.values().stream().anyMatch(values -> !values.isEmpty())) {
             throw new IllegalArgumentException("candidate port bindings differ from the application mode");
         }

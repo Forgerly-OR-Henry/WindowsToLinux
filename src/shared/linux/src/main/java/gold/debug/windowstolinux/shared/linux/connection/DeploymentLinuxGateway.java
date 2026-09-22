@@ -19,6 +19,6 @@ public interface DeploymentLinuxGateway extends LinuxGateway {
      * @throws LinuxOperationException if the authenticated remote operation fails or its evidence is rejected / 已认证远端操作失败或其证据被拒绝时
      */
     @Override
-    DeploymentRemoteSession connect(SshEndpoint endpoint, SshCredential credential,
-                                  HostKeyEvaluator hostKeyVerifier) throws LinuxOperationException;
+    DeploymentRemoteSession connect(SshEndpoint endpoint, SshCredential credential, HostKeyEvaluator hostKeyVerifier)
+            throws LinuxOperationException;
 }

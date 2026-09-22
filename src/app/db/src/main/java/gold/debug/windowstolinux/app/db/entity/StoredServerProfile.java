@@ -15,15 +15,8 @@ import java.util.Objects;
  * @param credentialMode selected platform credential-storage mode / 所选平台凭据存储模式
  * @param displayName display name / 显示名称
  */
-public record StoredServerProfile(
-        String id,
-        String host,
-        int sshPort,
-        String username,
-        String credentialKey,
-        String credentialMode,
-        String displayName
-) {
+public record StoredServerProfile(String id, String host, int sshPort, String username, String credentialKey,
+        String credentialMode, String displayName) {
     /**
      * Preserves profiles created before display names were added. / 保留显示名称引入前创建的资料。
      *
@@ -34,7 +27,8 @@ public record StoredServerProfile(
      * @param credentialKey opaque lookup key in the platform secret store / 平台秘密存储中的不透明查找键
      * @param credentialMode selected platform credential-storage mode / 所选平台凭据存储模式
      */
-    public StoredServerProfile(String id, String host, int sshPort, String username, String credentialKey, String credentialMode) {
+    public StoredServerProfile(String id, String host, int sshPort, String username, String credentialKey,
+            String credentialMode) {
         this(id, host, sshPort, username, credentialKey, credentialMode, id);
     }
 
@@ -54,7 +48,8 @@ public record StoredServerProfile(
      */
     public StoredServerProfile {
         displayName = Objects.requireNonNull(displayName, "displayName").trim();
-        if (displayName.isEmpty() || displayName.length() > 120) throw new IllegalArgumentException("invalid server display name");
+        if (displayName.isEmpty() || displayName.length() > 120)
+            throw new IllegalArgumentException("invalid server display name");
         id = requireId(id, "id");
         host = requireText(host, "host");
         username = requireText(username, "username");

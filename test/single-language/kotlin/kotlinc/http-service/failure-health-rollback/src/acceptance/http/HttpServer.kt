@@ -1,6 +1,8 @@
 package acceptance.http
+
 import java.io.IOException
 import java.net.ServerSocket
+
 class HttpServer(private val port: Int, private val router: Router) {
     fun run() {
         ServerSocket(port).use { server ->
@@ -19,12 +21,19 @@ class HttpServer(private val port: Int, private val router: Router) {
                     val target = line.split(' ').getOrElse(1) { "/" }
                     val response = router.route(target)
                     val body = response.body.toByteArray(Charsets.UTF_8)
-                    val reason = if (response.status == 200) "OK" else if (response.status == 503) "Service Unavailable" else "Bad Request"
-                    val headers = "HTTP/1.1 ${response.status} $reason\r\nContent-Type: ${response.type}\r\nContent-Length: ${body.size}\r\nConnection: close\r\n\r\n"
+                    val reason =
+                        if (response.status == 200) "OK"
+                        else if (response.status == 503) "Service Unavailable" else "Bad Request"
+                    val headers =
+                        "HTTP/1.1 ${response.status} $reason\r\nContent-Type: ${response.type}\r\nContent-Length: ${body.size}\r\nConnection: close\r\n\r\n"
                     socket.getOutputStream().apply {
-                        write(headers.toByteArray(Charsets.US_ASCII)); write(body); flush()
+                        write(headers.toByteArray(Charsets.US_ASCII))
+                        write(body)
+                        flush()
                     }
-                } catch (error: IOException) { /* Disconnected probes do not stop the service. */ }
+                } catch (error: IOException) {
+                    /* Disconnected probes do not stop the service. */
+                }
             }
         }
     }

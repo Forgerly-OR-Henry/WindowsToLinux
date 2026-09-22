@@ -7,7 +7,8 @@ import java.sql.Statement;
  */
 final class AiPurposeSchemaMigration {
     /** Prevents construction. / 禁止实例化。 */
-    private AiPurposeSchemaMigration() { }
+    private AiPurposeSchemaMigration() {
+    }
 
     /** Migrates existing profiles without changing credential references. / 迁移既有模型且不改变凭据引用。
      * @param statement current migration transaction / 当前迁移事务

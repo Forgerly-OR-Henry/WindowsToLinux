@@ -1,9 +1,5 @@
 package gold.debug.windowstolinux.shared.source.archive;
 
-import gold.debug.windowstolinux.shared.source.contract.validation.SourceBoundaryValidator;
-import gold.debug.windowstolinux.shared.source.manifest.SourceManifest;
-import gold.debug.windowstolinux.shared.source.snapshot.SourceSnapshotAssembler;
-
 import java.io.BufferedInputStream;
 import java.io.IOException;
 import java.io.InputStream;
@@ -15,6 +11,10 @@ import java.security.NoSuchAlgorithmException;
 import java.util.HexFormat;
 import java.util.Locale;
 
+import gold.debug.windowstolinux.shared.source.contract.validation.SourceBoundaryValidator;
+import gold.debug.windowstolinux.shared.source.manifest.SourceManifest;
+import gold.debug.windowstolinux.shared.source.snapshot.SourceSnapshotAssembler;
+
 /**
  * Creates a deterministic, boundary-checked source-only {@code tar.gz}. / 创建确定且经过边界检查的纯源码 {@code tar.gz}。
  */
@@ -24,6 +24,7 @@ public final class SafeSourceArchivePreparer {
      * <p>校验器。
      */
     private final SourceBoundaryValidator validator;
+
     /**
      * Writer.
      * <p>写入器。
@@ -33,7 +34,9 @@ public final class SafeSourceArchivePreparer {
     /**
      * Creates the production source archiver. / 创建生产源码归档器。
      */
-    public SafeSourceArchivePreparer() { this(new SourceBoundaryValidator()); }
+    public SafeSourceArchivePreparer() {
+        this(new SourceBoundaryValidator());
+    }
 
     /**
      * Validates and binds the inputs required by safe source archive preparer.
@@ -75,8 +78,8 @@ public final class SafeSourceArchivePreparer {
             moveIntoPlace(temporaryArchive, archivePath);
             temporaryArchive = null;
             stage = SourceArchiveStageType.HASH;
-            return new SourceArchive(archivePath, sha256Of(archivePath), manifest.entries().size(), Files.size(archivePath),
-                    manifest.byteCount(), manifest.excludedEntries());
+            return new SourceArchive(archivePath, sha256Of(archivePath), manifest.entries().size(),
+                    Files.size(archivePath), manifest.byteCount(), manifest.excludedEntries());
         } catch (IOException | RuntimeException exception) {
             SourceArchiveException structured = map(stage, exception);
             throw cleanupThen(temporaryArchive, structured);
@@ -92,8 +95,7 @@ public final class SafeSourceArchivePreparer {
      * @return constructed or resolved source archive exception / 构造或解析得到的源码归档异常
      */
     private static SourceArchiveException map(SourceArchiveStageType stage, Exception cause) {
-        if (Thread.currentThread().isInterrupted()
-                || cause instanceof java.nio.channels.ClosedByInterruptException) {
+        if (Thread.currentThread().isInterrupted() || cause instanceof java.nio.channels.ClosedByInterruptException) {
             return SourceArchiveException.create(SourceArchiveFailureType.INTERRUPTED,
                     "Source archive preparation was interrupted and its temporary output was cleaned", cause);
         }
@@ -177,7 +179,7 @@ public final class SafeSourceArchivePreparer {
         MessageDigest digest = sha256();
         try (InputStream input = new BufferedInputStream(Files.newInputStream(file))) {
             byte[] buffer = new byte[8192];
-            for (int count; (count = input.read(buffer)) >= 0; ) {
+            for (int count; (count = input.read(buffer)) >= 0;) {
                 digest.update(buffer, 0, count);
             }
         }
@@ -194,7 +196,8 @@ public final class SafeSourceArchivePreparer {
      */
     private static void moveIntoPlace(Path temporaryArchive, Path archivePath) throws IOException {
         try {
-            Files.move(temporaryArchive, archivePath, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
+            Files.move(temporaryArchive, archivePath, StandardCopyOption.ATOMIC_MOVE,
+                    StandardCopyOption.REPLACE_EXISTING);
         } catch (java.nio.file.AtomicMoveNotSupportedException exception) {
             Files.move(temporaryArchive, archivePath, StandardCopyOption.REPLACE_EXISTING);
         }
@@ -220,34 +223,35 @@ public final class SafeSourceArchivePreparer {
      * <p>标识源码归档准备阶段以用于失败报告。
      */
     private enum SourceArchiveStageType {
-    /**
-     * VALIDATE SOURCE classification within source archive stage type.
-     * <p>源码归档阶段类型中的校验源码分类。
-     */
-     VALIDATE_SOURCE,
-    /**
-     * VALIDATE DESTINATION classification within source archive stage type.
-     * <p>源码归档阶段类型中的校验目的地分类。
-     */
-     VALIDATE_DESTINATION,
-    /**
-     * COLLECT classification within source archive stage type.
-     * <p>源码归档阶段类型中的采集分类。
-     */
-     COLLECT,
-    /**
-     * WRITE classification within source archive stage type.
-     * <p>源码归档阶段类型中的写入分类。
-     */
-     WRITE,
-    /**
-     * MOVE classification within source archive stage type.
-     * <p>源码归档阶段类型中的移动分类。
-     */
-     MOVE,
-    /**
-     * HASH classification within source archive stage type.
-     * <p>源码归档阶段类型中的哈希分类。
-     */
-     HASH }
+        /**
+         * VALIDATE SOURCE classification within source archive stage type.
+         * <p>源码归档阶段类型中的校验源码分类。
+         */
+        VALIDATE_SOURCE,
+        /**
+         * VALIDATE DESTINATION classification within source archive stage type.
+         * <p>源码归档阶段类型中的校验目的地分类。
+         */
+        VALIDATE_DESTINATION,
+        /**
+         * COLLECT classification within source archive stage type.
+         * <p>源码归档阶段类型中的采集分类。
+         */
+        COLLECT,
+        /**
+         * WRITE classification within source archive stage type.
+         * <p>源码归档阶段类型中的写入分类。
+         */
+        WRITE,
+        /**
+         * MOVE classification within source archive stage type.
+         * <p>源码归档阶段类型中的移动分类。
+         */
+        MOVE,
+        /**
+         * HASH classification within source archive stage type.
+         * <p>源码归档阶段类型中的哈希分类。
+         */
+        HASH
+    }
 }

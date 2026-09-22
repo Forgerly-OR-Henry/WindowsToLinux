@@ -1,65 +1,73 @@
 package gold.debug.windowstolinux.shared.linux.session;
 
-import gold.debug.windowstolinux.shared.linux.connection.DeploymentLinuxGateway;
-import gold.debug.windowstolinux.shared.linux.connection.LinuxGateway;
-import org.junit.jupiter.api.Test;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.lang.reflect.Method;
 import java.util.Set;
 import java.util.stream.Collectors;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import gold.debug.windowstolinux.shared.linux.connection.DeploymentLinuxGateway;
+import gold.debug.windowstolinux.shared.linux.connection.LinuxGateway;
+import org.junit.jupiter.api.Test;
 
 class ManagedRemoteContractTest {
     @Test
     void exposesOnlyTheBoundedManagedOperationsAndNoRawCommandParameter() {
-        Set<String> methods = java.util.Arrays.stream(LinuxRemoteSession.class.getMethods())
-                .map(Method::getName)
+        Set<String> methods = java.util.Arrays.stream(LinuxRemoteSession.class.getMethods()).map(Method::getName)
                 .collect(Collectors.toSet());
 
-        assertEquals(Set.of(
-                "verifyConnection", "collectCapabilities", "prepareEnvironment", "uploadSource", "cleanupCandidate", "inspectTaskCandidate", "cleanupTaskCandidate", "checkHealth",
-                "observe", "executeLifecycle", "close", "selinuxPreparation"
-        ), methods);
+        assertEquals(
+                Set.of("verifyConnection", "collectCapabilities", "prepareEnvironment", "uploadSource",
+                        "cleanupCandidate", "inspectTaskCandidate", "cleanupTaskCandidate", "checkHealth", "observe",
+                        "executeLifecycle", "close", "selinuxPreparation", "environment", "prepareManagedPlatform"),
+                methods);
         for (Method method : LinuxRemoteSession.class.getMethods()) {
             assertFalse(java.util.Arrays.stream(method.getParameterTypes()).anyMatch(String.class::equals),
                     () -> method + " must not accept an arbitrary shell command, unit name or remote path");
         }
-        assertTrue(java.util.Arrays.stream(LinuxGateway.class.getDeclaredMethods())
-                .allMatch(method -> method.getName().equals("connect")),
+        assertTrue(
+                java.util.Arrays.stream(LinuxGateway.class.getDeclaredMethods())
+                        .allMatch(method -> method.getName().equals("connect")),
                 "gateway must not publish arbitrary SSH, SFTP or systemd entrypoints");
 
         Set<String> deploymentMethods = java.util.Arrays.stream(DeploymentRemoteSession.class.getMethods())
-                .map(Method::getName)
-                .collect(Collectors.toSet());
-        assertEquals(Set.of(
-                "verifyConnection", "collectCapabilities", "prepareEnvironment", "prepareToolchains", "uploadSource", "cleanupCandidate", "inspectTaskCandidate", "cleanupTaskCandidate", "checkHealth",
+                .map(Method::getName).collect(Collectors.toSet());
+        assertEquals(Set.of("verifyConnection", "collectCapabilities", "prepareEnvironment", "prepareToolchains",
+                "uploadSource", "cleanupCandidate", "inspectTaskCandidate", "cleanupTaskCandidate", "checkHealth",
                 "observe", "executeLifecycle", "close", "collectDeploymentCapabilities", "buildDeployment",
                 "stageDeploymentInputs", "snapshotDeployment", "publishDeployment", "rollbackDeployment",
                 "checkDeploymentHealth", "observeDeployment", "executeDeploymentLifecycle",
-                "retainRecentSuccessfulReleases", "stageRestoreFiles", "discardRestoreFiles",
-                "databaseOperations", "backupArtifacts", "restoreActivation", "nativeDatabases", "selinuxPreparation", "externalApplications"
-        ), deploymentMethods);
-        assertFalse(gold.debug.windowstolinux.shared.linux.protocol.database.RemoteDatabasePort.class.isAssignableFrom(DeploymentRemoteSession.class));
-        assertFalse(gold.debug.windowstolinux.shared.linux.protocol.backup.RemoteBackupArtifactPort.class.isAssignableFrom(DeploymentRemoteSession.class));
-        assertFalse(gold.debug.windowstolinux.shared.linux.protocol.restore.RemoteRestoreActivationPort.class.isAssignableFrom(DeploymentRemoteSession.class));
+                "retainRecentSuccessfulReleases", "stageRestoreFiles", "discardRestoreFiles", "databaseOperations",
+                "backupArtifacts", "restoreActivation", "nativeDatabases", "selinuxPreparation", "externalApplications",
+                "environment", "prepareManagedPlatform", "standardBuild", "projects"), deploymentMethods);
+        assertFalse(gold.debug.windowstolinux.shared.linux.protocol.database.RemoteDatabasePort.class
+                .isAssignableFrom(DeploymentRemoteSession.class));
+        assertFalse(gold.debug.windowstolinux.shared.linux.protocol.backup.RemoteBackupArtifactPort.class
+                .isAssignableFrom(DeploymentRemoteSession.class));
+        assertFalse(gold.debug.windowstolinux.shared.linux.protocol.restore.RemoteRestoreActivationPort.class
+                .isAssignableFrom(DeploymentRemoteSession.class));
         assertFalse(deploymentMethods.contains("build"));
         assertFalse(deploymentMethods.contains("snapshot"));
         assertFalse(deploymentMethods.contains("publish"));
         assertFalse(deploymentMethods.contains("rollback"));
-        assertEquals(Set.of("scan", "execute"), java.util.Arrays.stream(gold.debug.windowstolinux.shared.linux.runtime.ExternalApplicationPort.class.getMethods())
+        assertEquals(Set.of("scan", "execute"), java.util.Arrays
+                .stream(gold.debug.windowstolinux.shared.linux.runtime.ExternalApplicationPort.class.getMethods())
                 .map(Method::getName).collect(Collectors.toSet()));
-        for (Method method : gold.debug.windowstolinux.shared.linux.runtime.ExternalApplicationPort.class.getMethods()) {
-            assertFalse(java.util.Arrays.stream(method.getParameterTypes()).anyMatch(String.class::equals), "external lifecycle must not expose raw commands or unbound target names");
+        for (Method method : gold.debug.windowstolinux.shared.linux.runtime.ExternalApplicationPort.class
+                .getMethods()) {
+            assertFalse(java.util.Arrays.stream(method.getParameterTypes()).anyMatch(String.class::equals),
+                    "external lifecycle must not expose raw commands or unbound target names");
         }
-        for (Method method : gold.debug.windowstolinux.shared.linux.distro.SelinuxEnvironmentPreparer.class.getMethods()) {
+        for (Method method : gold.debug.windowstolinux.shared.linux.distro.SelinuxEnvironmentPreparer.class
+                .getMethods()) {
             assertTrue(java.util.Arrays.stream(method.getParameterTypes()).allMatch(
                     gold.debug.windowstolinux.shared.model.server.security.SelinuxPreparationPlan.class::equals),
                     () -> method + " must accept only the previously inspected system preparation plan");
         }
-        assertTrue(java.util.Arrays.stream(DeploymentLinuxGateway.class.getDeclaredMethods())
+        assertTrue(
+                java.util.Arrays.stream(DeploymentLinuxGateway.class.getDeclaredMethods())
                         .allMatch(method -> method.getName().equals("connect")),
                 "typed gateway must expose only its covariant typed connection");
     }

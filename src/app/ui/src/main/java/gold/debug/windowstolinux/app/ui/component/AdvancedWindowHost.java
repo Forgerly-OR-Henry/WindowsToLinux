@@ -1,8 +1,9 @@
 package gold.debug.windowstolinux.app.ui.component;
 
-import javax.swing.*;
 import java.awt.*;
 import java.awt.event.*;
+
+import javax.swing.*;
 
 /**
  * Hosts one active inspector while preserving the primary workspace. / 承载当前检查面板并保持主工作区尺寸。
@@ -13,46 +14,55 @@ public final class AdvancedWindowHost implements AutoCloseable {
      * <p>高级面板宽度，单位为像素。
      */
     public static final int WIDTH = 320;
+
     /**
      * Component or resource identity owning the operation.
      * <p>持有操作的组件或资源身份。
      */
     private final Window owner;
+
     /**
      * Reviewed server hostname or IP address.
      * <p>已审阅服务器主机名或 IP 地址。
      */
     private final Container host;
+
     /**
      * Active.
      * <p>活跃。
      */
     private AdvancedOptionsPane active;
+
     /**
      * Swing control for floating.
      * <p>浮动对应的 Swing 控件。
      */
     private JDialog floating;
+
     /**
      * Swing control for mounted.
      * <p>已挂载对应的 Swing 控件。
      */
     private JComponent mounted;
+
     /**
      * Docked.
      * <p>已停靠。
      */
     private boolean docked;
+
     /**
      * Closing.
      * <p>关闭中。
      */
     private boolean closing;
+
     /**
      * Normal bounds.
      * <p>普通边界集合。
      */
     private Rectangle normalBounds;
+
     /**
      * Maximized.
      * <p>已最大化。
@@ -76,14 +86,21 @@ public final class AdvancedWindowHost implements AutoCloseable {
              *
              * @param event state or UI event being processed / 正在处理的状态或 UI 事件
              */
-            @Override public void componentMoved(ComponentEvent event) { rememberNormalBounds(); }
+            @Override
+            public void componentMoved(ComponentEvent event) {
+                rememberNormalBounds();
+            }
+
             /**
              * Updates the layout and retained state after the component size changes.
              * <p>在组件大小变化后更新布局及保留状态。
              *
              * @param event state or UI event being processed / 正在处理的状态或 UI 事件
              */
-            @Override public void componentResized(ComponentEvent event) { rememberNormalBounds(); }
+            @Override
+            public void componentResized(ComponentEvent event) {
+                rememberNormalBounds();
+            }
         });
         owner.addWindowListener(new WindowAdapter() {
             /**
@@ -92,9 +109,13 @@ public final class AdvancedWindowHost implements AutoCloseable {
              *
              * @param event state or UI event being processed / 正在处理的状态或 UI 事件
              */
-            @Override public void windowClosed(WindowEvent event) { close(); }
+            @Override
+            public void windowClosed(WindowEvent event) {
+                close();
+            }
         });
-        if (owner instanceof JFrame frame) frame.addWindowStateListener(event -> stateChanged(frame));
+        if (owner instanceof JFrame frame)
+            frame.addWindowStateListener(event -> stateChanged(frame));
     }
 
     /**
@@ -107,10 +128,16 @@ public final class AdvancedWindowHost implements AutoCloseable {
         boolean maximum = (frame.getExtendedState() & Frame.MAXIMIZED_BOTH) != 0;
         if (maximum) {
             maximized = true;
-            if (docked) { unmount(); update(active); }
+            if (docked) {
+                unmount();
+                update(active);
+            }
         } else if (maximized && (frame.getExtendedState() & Frame.ICONIFIED) == 0) {
             Rectangle restore = new Rectangle(normalBounds);
-            unmount(); maximized = false; owner.setBounds(restore); update(active);
+            unmount();
+            maximized = false;
+            owner.setBounds(restore);
+            update(active);
         }
     }
 
@@ -119,8 +146,11 @@ public final class AdvancedWindowHost implements AutoCloseable {
      * <p>记录普通窗口边界，排除停靠面板增加的宽度。
      */
     private void rememberNormalBounds() {
-        if (closing || maximized || owner instanceof Frame frame && frame.getExtendedState() != Frame.NORMAL) return;
-        normalBounds = owner.getBounds(); if (docked) normalBounds.width -= WIDTH;
+        if (closing || maximized || owner instanceof Frame frame && frame.getExtendedState() != Frame.NORMAL)
+            return;
+        normalBounds = owner.getBounds();
+        if (docked)
+            normalBounds.width -= WIDTH;
     }
 
     /**
@@ -129,10 +159,16 @@ public final class AdvancedWindowHost implements AutoCloseable {
      * @param pane pane / 面板
      */
     public void activate(AdvancedOptionsPane pane) {
-        if (active == pane) { update(pane); return; }
+        if (active == pane) {
+            update(pane);
+            return;
+        }
         unmount();
         active = pane;
-        if (pane != null) { pane.bind(this); update(pane); }
+        if (pane != null) {
+            pane.bind(this);
+            update(pane);
+        }
     }
 
     /**
@@ -141,9 +177,14 @@ public final class AdvancedWindowHost implements AutoCloseable {
      * @param pane pane / 面板
      */
     public void update(AdvancedOptionsPane pane) {
-        if (pane == null || active != pane) return;
-        if (!pane.expanded()) { unmount(); return; }
-        if (mounted != null) return;
+        if (pane == null || active != pane)
+            return;
+        if (!pane.expanded()) {
+            unmount();
+            return;
+        }
+        if (mounted != null)
+            return;
         mounted = pane.drawer();
         mounted.setVisible(true);
         Rectangle usable = usableBounds(owner);
@@ -159,7 +200,8 @@ public final class AdvancedWindowHost implements AutoCloseable {
             floating.setDefaultCloseOperation(WindowConstants.DISPOSE_ON_CLOSE);
             floating.setContentPane(mounted);
             floating.setSize(WIDTH, Math.max(240, Math.min(owner.getHeight(), usable.height)));
-            floating.setLocation(Math.max(usable.x, Math.min(owner.getX() + owner.getWidth(), usable.x + usable.width - WIDTH)),
+            floating.setLocation(
+                    Math.max(usable.x, Math.min(owner.getX() + owner.getWidth(), usable.x + usable.width - WIDTH)),
                     Math.max(usable.y, Math.min(owner.getY(), usable.y + usable.height - floating.getHeight())));
             floating.addWindowListener(new WindowAdapter() {
                 /**
@@ -168,7 +210,11 @@ public final class AdvancedWindowHost implements AutoCloseable {
                  *
                  * @param event state or UI event being processed / 正在处理的状态或 UI 事件
                  */
-                @Override public void windowClosing(WindowEvent event) { if (!closing) pane.setExpanded(false); }
+                @Override
+                public void windowClosing(WindowEvent event) {
+                    if (!closing)
+                        pane.setExpanded(false);
+                }
             });
             floating.setVisible(true);
         }
@@ -180,9 +226,11 @@ public final class AdvancedWindowHost implements AutoCloseable {
      * @return bounds without the inspector's extra width, for theme rebuilding / 不含检查面板附加宽度的窗口尺寸
      */
     public Rectangle workspaceBounds() {
-        if (maximized || owner instanceof Frame frame && frame.getExtendedState() != Frame.NORMAL) return new Rectangle(normalBounds);
+        if (maximized || owner instanceof Frame frame && frame.getExtendedState() != Frame.NORMAL)
+            return new Rectangle(normalBounds);
         Rectangle bounds = owner.getBounds();
-        if (docked) bounds.width -= WIDTH;
+        if (docked)
+            bounds.width -= WIDTH;
         return bounds;
     }
 
@@ -191,7 +239,10 @@ public final class AdvancedWindowHost implements AutoCloseable {
      *
      * @param bounds bounds / 边界集合
      */
-    public void restoreWorkspaceBounds(Rectangle bounds) { normalBounds = new Rectangle(bounds); owner.setBounds(bounds); }
+    public void restoreWorkspaceBounds(Rectangle bounds) {
+        normalBounds = new Rectangle(bounds);
+        owner.setBounds(bounds);
+    }
 
     /**
      * Detaches the advanced pane, disposes its floating window and restores docked-owner sizing.
@@ -200,16 +251,25 @@ public final class AdvancedWindowHost implements AutoCloseable {
     private void unmount() {
         closing = true;
         try {
-            if (mounted != null && mounted.getParent() != null) mounted.getParent().remove(mounted);
-            if (floating != null) { floating.dispose(); floating = null; }
+            if (mounted != null && mounted.getParent() != null)
+                mounted.getParent().remove(mounted);
+            if (floating != null) {
+                floating.dispose();
+                floating = null;
+            }
             if (docked) {
-                boolean maximized = owner instanceof Frame frame && (frame.getExtendedState() & Frame.MAXIMIZED_BOTH) != 0;
-                if (!maximized) owner.setSize(owner.getWidth() - WIDTH, owner.getHeight());
+                boolean maximized = owner instanceof Frame frame
+                        && (frame.getExtendedState() & Frame.MAXIMIZED_BOTH) != 0;
+                if (!maximized)
+                    owner.setSize(owner.getWidth() - WIDTH, owner.getHeight());
                 docked = false;
             }
             mounted = null;
-            host.revalidate(); host.repaint();
-        } finally { closing = false; }
+            host.revalidate();
+            host.repaint();
+        } finally {
+            closing = false;
+        }
     }
 
     /**
@@ -223,13 +283,19 @@ public final class AdvancedWindowHost implements AutoCloseable {
         GraphicsConfiguration configuration = window.getGraphicsConfiguration();
         Rectangle bounds = new Rectangle(configuration.getBounds());
         Insets insets = Toolkit.getDefaultToolkit().getScreenInsets(configuration);
-        bounds.x += insets.left; bounds.y += insets.top;
-        bounds.width -= insets.left + insets.right; bounds.height -= insets.top + insets.bottom;
+        bounds.x += insets.left;
+        bounds.y += insets.top;
+        bounds.width -= insets.left + insets.right;
+        bounds.height -= insets.top + insets.bottom;
         return bounds;
     }
 
     /**
      * Disposes only this controller's inspector window. / 仅释放本控制器的检查窗口。
      */
-    @Override public void close() { unmount(); active = null; }
+    @Override
+    public void close() {
+        unmount();
+        active = null;
+    }
 }

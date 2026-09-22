@@ -20,16 +20,9 @@ import java.util.Set;
  * @param candidateNamespaces candidate namespaces / 候选命名空间集合
  * @param dependencies component identifiers that must precede this component / 必须先于当前组件执行的组件标识
  */
-public record MultiComponentDeploymentPlan(
-        String applicationId,
-        List<List<String>> buildWaves,
-        List<String> stopOrder,
-        List<String> startOrder,
-        List<String> healthOrder,
-        List<String> rollbackOrder,
-        Map<String, String> candidateNamespaces,
-        Map<String, List<String>> dependencies
-) {
+public record MultiComponentDeploymentPlan(String applicationId, List<List<String>> buildWaves, List<String> stopOrder,
+        List<String> startOrder, List<String> healthOrder, List<String> rollbackOrder,
+        Map<String, String> candidateNamespaces, Map<String, List<String>> dependencies) {
     /**
      * Validates an internally consistent component transaction plan. / 验证内部一致的组件事务计划。
      *
@@ -46,8 +39,7 @@ public record MultiComponentDeploymentPlan(
      */
     public MultiComponentDeploymentPlan {
         applicationId = Objects.requireNonNull(applicationId, "applicationId");
-        buildWaves = List.copyOf(Objects.requireNonNull(buildWaves, "buildWaves").stream()
-                .map(List::copyOf).toList());
+        buildWaves = List.copyOf(Objects.requireNonNull(buildWaves, "buildWaves").stream().map(List::copyOf).toList());
         stopOrder = List.copyOf(Objects.requireNonNull(stopOrder, "stopOrder"));
         startOrder = List.copyOf(Objects.requireNonNull(startOrder, "startOrder"));
         healthOrder = List.copyOf(Objects.requireNonNull(healthOrder, "healthOrder"));
@@ -57,8 +49,8 @@ public record MultiComponentDeploymentPlan(
                 .sorted(Map.Entry.comparingByKey()).forEach(entry -> namespaces.put(entry.getKey(), entry.getValue()));
         candidateNamespaces = java.util.Collections.unmodifiableMap(namespaces);
         LinkedHashMap<String, List<String>> normalizedDependencies = new LinkedHashMap<>();
-        Objects.requireNonNull(dependencies, "dependencies").entrySet().stream()
-                .sorted(Map.Entry.comparingByKey()).forEach(entry -> {
+        Objects.requireNonNull(dependencies, "dependencies").entrySet().stream().sorted(Map.Entry.comparingByKey())
+                .forEach(entry -> {
                     List<String> normalized = entry.getValue().stream().sorted().toList();
                     if (normalized.stream().distinct().count() != normalized.size()) {
                         throw new IllegalArgumentException("component dependencies must be unique");
@@ -68,7 +60,8 @@ public record MultiComponentDeploymentPlan(
         dependencies = java.util.Collections.unmodifiableMap(normalizedDependencies);
         List<String> flattenedBuild = buildWaves.stream().flatMap(List::stream).toList();
         if (!flattenedBuild.equals(startOrder) || !healthOrder.equals(startOrder)) {
-            throw new IllegalArgumentException("build, start, and health ordering must cover the same topological sequence");
+            throw new IllegalArgumentException(
+                    "build, start, and health ordering must cover the same topological sequence");
         }
         List<String> reversed = new java.util.ArrayList<>(startOrder);
         java.util.Collections.reverse(reversed);
@@ -86,7 +79,8 @@ public record MultiComponentDeploymentPlan(
             throw new IllegalArgumentException("component dependencies must exactly cover the planned graph");
         }
         Map<String, Integer> positions = new java.util.HashMap<>();
-        for (int index = 0; index < startOrder.size(); index++) positions.put(startOrder.get(index), index);
+        for (int index = 0; index < startOrder.size(); index++)
+            positions.put(startOrder.get(index), index);
         if (normalizedDependencies.entrySet().stream().anyMatch(entry -> entry.getValue().stream()
                 .anyMatch(dependency -> positions.get(dependency) >= positions.get(entry.getKey())))) {
             throw new IllegalArgumentException("component dependencies must precede their dependents");

@@ -31,10 +31,7 @@
                       "const": "internal-test"
                     }
                   },
-                  "required": [
-                    "status",
-                    "mode"
-                  ]
+                  "required": ["status", "mode"]
                 }
               }
             }
@@ -224,9 +221,7 @@
                     "type": "string"
                   }
                 },
-                "required": [
-                  "name"
-                ]
+                "required": ["name"]
               }
             }
           }
@@ -709,10 +704,7 @@
             "in": "query",
             "required": true,
             "schema": {
-              "enum": [
-                "zip",
-                "tar.gz"
-              ]
+              "enum": ["zip", "tar.gz"]
             }
           },
           {
@@ -1213,10 +1205,7 @@
                     "minimum": 1
                   }
                 },
-                "required": [
-                  "enabled",
-                  "version"
-                ]
+                "required": ["enabled", "version"]
               }
             }
           }
@@ -1287,9 +1276,7 @@
                     "uniqueItems": true
                   }
                 },
-                "required": [
-                  "ids"
-                ]
+                "required": ["ids"]
               }
             }
           }
@@ -1652,11 +1639,7 @@
             "type": "string"
           }
         },
-        "required": [
-          "code",
-          "message",
-          "correlationId"
-        ]
+        "required": ["code", "message", "correlationId"]
       },
       "TaskAccepted": {
         "type": "object",
@@ -1666,9 +1649,7 @@
             "type": "string"
           }
         },
-        "required": [
-          "id"
-        ]
+        "required": ["id"]
       },
       "ServerInput": {
         "type": "object",
@@ -1697,11 +1678,7 @@
             "minimum": 0
           }
         },
-        "required": [
-          "name",
-          "host",
-          "username"
-        ]
+        "required": ["name", "host", "username"]
       },
       "AiInput": {
         "type": "object",
@@ -1725,11 +1702,7 @@
             "minimum": 0
           }
         },
-        "required": [
-          "name",
-          "endpoint",
-          "model"
-        ]
+        "required": ["name", "endpoint", "model"]
       },
       "ApplicationInput": {
         "type": "object",
@@ -1739,12 +1712,7 @@
             "type": "string"
           },
           "category": {
-            "enum": [
-              "",
-              "WEBSITE",
-              "SERVICE",
-              "OTHER"
-            ]
+            "enum": ["", "WEBSITE", "SERVICE", "OTHER"]
           },
           "accessUrl": {
             "type": "string"
@@ -1754,33 +1722,20 @@
             "minimum": 1
           }
         },
-        "required": [
-          "name",
-          "version"
-        ]
+        "required": ["name", "version"]
       },
       "Preferences": {
         "type": "object",
         "additionalProperties": false,
         "properties": {
           "theme": {
-            "enum": [
-              "light",
-              "dark",
-              "system"
-            ]
+            "enum": ["light", "dark", "system"]
           },
           "language": {
-            "enum": [
-              "zh-CN",
-              "en"
-            ]
+            "enum": ["zh-CN", "en"]
           },
           "navigationCollapsed": {
-            "enum": [
-              "true",
-              "false"
-            ]
+            "enum": ["true", "false"]
           }
         },
         "required": []
@@ -1794,9 +1749,7 @@
             "minimum": 1
           }
         },
-        "required": [
-          "version"
-        ]
+        "required": ["version"]
       },
       "Empty": {
         "type": "object",
@@ -1816,9 +1769,7 @@
             "type": "string"
           }
         },
-        "required": [
-          "value"
-        ]
+        "required": ["value"]
       },
       "Decision": {
         "description": "Exact shape depends on the persisted prompt. SECRET accepts only an encrypted secretId. INPUTS accepts only requested field IDs. No raw secret may be answered here.",
@@ -1831,9 +1782,7 @@
                 "type": "boolean"
               }
             },
-            "required": [
-              "accepted"
-            ]
+            "required": ["accepted"]
           },
           {
             "type": "object",
@@ -1843,9 +1792,7 @@
                 "type": "string"
               }
             },
-            "required": [
-              "secretId"
-            ]
+            "required": ["secretId"]
           },
           {
             "type": "object",
@@ -1858,9 +1805,7 @@
                 }
               }
             },
-            "required": [
-              "values"
-            ]
+            "required": ["values"]
           },
           {
             "type": "object",
@@ -1876,11 +1821,7 @@
                 "type": "boolean"
               }
             },
-            "required": [
-              "replacementConfirmed",
-              "backupConfirmed",
-              "downtimeConfirmed"
-            ]
+            "required": ["replacementConfirmed", "backupConfirmed", "downtimeConfirmed"]
           }
         ]
       },
@@ -1901,15 +1842,10 @@
                     "type": "string"
                   }
                 },
-                "required": [
-                  "serverId"
-                ]
+                "required": ["serverId"]
               }
             },
-            "required": [
-              "kind",
-              "input"
-            ]
+            "required": ["kind", "input"]
           },
           {
             "type": "object",
@@ -1926,12 +1862,7 @@
                     "type": "string"
                   },
                   "referenceKind": {
-                    "enum": [
-                      "default",
-                      "branch",
-                      "tag",
-                      "commit"
-                    ]
+                    "enum": ["default", "branch", "tag", "commit"]
                   },
                   "reference": {
                     "type": "string"
@@ -1940,15 +1871,10 @@
                     "type": "string"
                   }
                 },
-                "required": [
-                  "url"
-                ]
+                "required": ["url"]
               }
             },
-            "required": [
-              "kind",
-              "input"
-            ]
+            "required": ["kind", "input"]
           },
           {
             "type": "object",
@@ -1965,15 +1891,10 @@
                     "type": "string"
                   }
                 },
-                "required": [
-                  "sourceId"
-                ]
+                "required": ["sourceId"]
               }
             },
-            "required": [
-              "kind",
-              "input"
-            ]
+            "required": ["kind", "input"]
           },
           {
             "type": "object",
@@ -1999,16 +1920,10 @@
                     }
                   }
                 },
-                "required": [
-                  "sourceId",
-                  "serverId"
-                ]
+                "required": ["sourceId", "serverId"]
               }
             },
-            "required": [
-              "kind",
-              "input"
-            ]
+            "required": ["kind", "input"]
           },
           {
             "type": "object",
@@ -2025,26 +1940,13 @@
                     "type": "string"
                   },
                   "action": {
-                    "enum": [
-                      "REFRESH_STATUS",
-                      "START",
-                      "STOP",
-                      "RESTART",
-                      "ENABLE_AUTOSTART",
-                      "DISABLE_AUTOSTART"
-                    ]
+                    "enum": ["REFRESH_STATUS", "START", "STOP", "RESTART", "ENABLE_AUTOSTART", "DISABLE_AUTOSTART"]
                   }
                 },
-                "required": [
-                  "applicationId",
-                  "action"
-                ]
+                "required": ["applicationId", "action"]
               }
             },
-            "required": [
-              "kind",
-              "input"
-            ]
+            "required": ["kind", "input"]
           },
           {
             "type": "object",
@@ -2061,15 +1963,10 @@
                     "type": "string"
                   }
                 },
-                "required": [
-                  "serverId"
-                ]
+                "required": ["serverId"]
               }
             },
-            "required": [
-              "kind",
-              "input"
-            ]
+            "required": ["kind", "input"]
           },
           {
             "type": "object",
@@ -2089,16 +1986,10 @@
                     "type": "string"
                   }
                 },
-                "required": [
-                  "scanTaskId",
-                  "candidateKey"
-                ]
+                "required": ["scanTaskId", "candidateKey"]
               }
             },
-            "required": [
-              "kind",
-              "input"
-            ]
+            "required": ["kind", "input"]
           },
           {
             "type": "object",
@@ -2115,15 +2006,10 @@
                     "type": "string"
                   }
                 },
-                "required": [
-                  "applicationId"
-                ]
+                "required": ["applicationId"]
               }
             },
-            "required": [
-              "kind",
-              "input"
-            ]
+            "required": ["kind", "input"]
           },
           {
             "type": "object",
@@ -2143,16 +2029,10 @@
                     "type": "string"
                   }
                 },
-                "required": [
-                  "backupId",
-                  "serverId"
-                ]
+                "required": ["backupId", "serverId"]
               }
             },
-            "required": [
-              "kind",
-              "input"
-            ]
+            "required": ["kind", "input"]
           },
           {
             "type": "object",
@@ -2172,16 +2052,10 @@
                     "type": "string"
                   }
                 },
-                "required": [
-                  "backupId",
-                  "serverId"
-                ]
+                "required": ["backupId", "serverId"]
               }
             },
-            "required": [
-              "kind",
-              "input"
-            ]
+            "required": ["kind", "input"]
           },
           {
             "type": "object",
@@ -2201,16 +2075,10 @@
                     "type": "string"
                   }
                 },
-                "required": [
-                  "applicationId",
-                  "targetServerId"
-                ]
+                "required": ["applicationId", "targetServerId"]
               }
             },
-            "required": [
-              "kind",
-              "input"
-            ]
+            "required": ["kind", "input"]
           }
         ]
       },
@@ -2239,10 +2107,7 @@
             "type": "string"
           },
           "fingerprint": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "credentialConfigured": {
             "type": "boolean"
@@ -2274,23 +2139,13 @@
             "type": "string"
           },
           "state": {
-            "enum": [
-              "UPLOADING",
-              "READY",
-              "FAILED"
-            ]
+            "enum": ["UPLOADING", "READY", "FAILED"]
           },
           "kind": {
-            "enum": [
-              "UPLOAD",
-              "GIT"
-            ]
+            "enum": ["UPLOAD", "GIT"]
           },
           "digest": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "byteCount": {
             "type": "integer",
@@ -2303,16 +2158,7 @@
             "type": "object"
           }
         },
-        "required": [
-          "id",
-          "name",
-          "state",
-          "kind",
-          "digest",
-          "byteCount",
-          "createdAt",
-          "provenance"
-        ]
+        "required": ["id", "name", "state", "kind", "digest", "byteCount", "createdAt", "provenance"]
       },
       "Application": {
         "type": "object",
@@ -2328,10 +2174,7 @@
             "type": "string"
           },
           "kind": {
-            "enum": [
-              "MANAGED",
-              "EXTERNAL"
-            ]
+            "enum": ["MANAGED", "EXTERNAL"]
           },
           "version": {
             "type": "integer",
@@ -2350,10 +2193,7 @@
             "type": "string"
           },
           "observation": {
-            "type": [
-              "object",
-              "null"
-            ]
+            "type": ["object", "null"]
           },
           "types": {
             "type": "array",
@@ -2469,25 +2309,10 @@
                 "type": "string"
               }
             },
-            "required": [
-              "application",
-              "schema",
-              "canRestore",
-              "components",
-              "database",
-              "provenance"
-            ]
+            "required": ["application", "schema", "canRestore", "components", "database", "provenance"]
           }
         },
-        "required": [
-          "id",
-          "name",
-          "version",
-          "createdAt",
-          "digest",
-          "byteCount",
-          "inspection"
-        ]
+        "required": ["id", "name", "version", "createdAt", "digest", "byteCount", "inspection"]
       },
       "Task": {
         "type": "object",
@@ -2520,16 +2345,10 @@
             "type": "string"
           },
           "errorCode": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "result": {
-            "type": [
-              "object",
-              "null"
-            ],
+            "type": ["object", "null"],
             "description": "Structured result for the submitted kind; never raw SSH output or credentials."
           },
           "decision": {
@@ -2540,13 +2359,7 @@
                 "type": "string"
               },
               "kind": {
-                "enum": [
-                  "HOST_KEY",
-                  "CONFIRM",
-                  "INPUTS",
-                  "SECRET",
-                  "DATABASE_REPLACEMENT"
-                ]
+                "enum": ["HOST_KEY", "CONFIRM", "INPUTS", "SECRET", "DATABASE_REPLACEMENT"]
               },
               "expiresAt": {
                 "type": "string"
@@ -2555,23 +2368,10 @@
                 "type": "object"
               }
             },
-            "required": [
-              "id",
-              "kind",
-              "expiresAt",
-              "prompt"
-            ]
+            "required": ["id", "kind", "expiresAt", "prompt"]
           }
         },
-        "required": [
-          "id",
-          "kind",
-          "state",
-          "createdAt",
-          "updatedAt",
-          "errorCode",
-          "result"
-        ]
+        "required": ["id", "kind", "state", "createdAt", "updatedAt", "errorCode", "result"]
       },
       "Event": {
         "type": "object",
@@ -2594,13 +2394,7 @@
             "type": "string"
           }
         },
-        "required": [
-          "sequence",
-          "kind",
-          "message",
-          "details",
-          "createdAt"
-        ]
+        "required": ["sequence", "kind", "message", "details", "createdAt"]
       },
       "SecretSaved": {
         "oneOf": [
@@ -2612,9 +2406,7 @@
                 "type": "string"
               }
             },
-            "required": [
-              "secretId"
-            ]
+            "required": ["secretId"]
           },
           {
             "type": "object",
@@ -2628,10 +2420,7 @@
                 "minimum": 0
               }
             },
-            "required": [
-              "identifier",
-              "revision"
-            ]
+            "required": ["identifier", "revision"]
           }
         ]
       }

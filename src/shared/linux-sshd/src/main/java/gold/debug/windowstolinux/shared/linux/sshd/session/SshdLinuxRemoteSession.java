@@ -1,48 +1,50 @@
 package gold.debug.windowstolinux.shared.linux.sshd.session;
 
-import gold.debug.windowstolinux.shared.linux.sshd.command.SshCommandExecutor;
-import gold.debug.windowstolinux.shared.linux.sshd.backup.SshdDatabaseOperationPort;
-import gold.debug.windowstolinux.shared.linux.sshd.backup.SshdBackupArtifactPort;
+import java.util.List;
 
-import gold.debug.windowstolinux.shared.linux.protocol.database.RemoteDatabasePort;
-import gold.debug.windowstolinux.shared.linux.protocol.backup.RemoteBackupArtifactPort;
 import gold.debug.windowstolinux.shared.linux.build.DeploymentBuildResult;
-import gold.debug.windowstolinux.shared.linux.session.DeploymentRemoteSession;
-import gold.debug.windowstolinux.shared.linux.error.LinuxOperationException;
+import gold.debug.windowstolinux.shared.linux.build.RemoteBuildEnvironment;
+import gold.debug.windowstolinux.shared.linux.build.RemoteBuildPort;
 import gold.debug.windowstolinux.shared.linux.connection.SshEndpoint;
+import gold.debug.windowstolinux.shared.linux.error.LinuxOperationException;
 import gold.debug.windowstolinux.shared.linux.protocol.ReleaseSnapshot;
+import gold.debug.windowstolinux.shared.linux.protocol.RemoteDeploymentInputs;
+import gold.debug.windowstolinux.shared.linux.protocol.RemoteRuntimeConfiguration;
+import gold.debug.windowstolinux.shared.linux.protocol.RemoteSecretPayload;
 import gold.debug.windowstolinux.shared.linux.protocol.RemoteStepResult;
+import gold.debug.windowstolinux.shared.linux.protocol.backup.ManagedContentPublication;
+import gold.debug.windowstolinux.shared.linux.protocol.backup.RemoteBackupArtifactPort;
+import gold.debug.windowstolinux.shared.linux.protocol.database.RemoteDatabasePort;
+import gold.debug.windowstolinux.shared.linux.protocol.restore.RemoteRestoreActivationPort;
+import gold.debug.windowstolinux.shared.linux.protocol.restore.RemoteRestoreStagingEvidence;
+import gold.debug.windowstolinux.shared.linux.protocol.restore.RemoteRestoreStagingRequest;
 import gold.debug.windowstolinux.shared.linux.runtime.HealthCheckResult;
-import gold.debug.windowstolinux.shared.linux.sshd.build.DeploymentBuildExecutor;
+import gold.debug.windowstolinux.shared.linux.session.DeploymentRemoteSession;
+import gold.debug.windowstolinux.shared.linux.sshd.backup.SshdBackupArtifactPort;
+import gold.debug.windowstolinux.shared.linux.sshd.backup.SshdDatabaseOperationPort;
 import gold.debug.windowstolinux.shared.linux.sshd.capability.SshdCapabilityCollector;
 import gold.debug.windowstolinux.shared.linux.sshd.capability.SshdPlatformCapabilityCollector;
+import gold.debug.windowstolinux.shared.linux.sshd.command.SshCommandExecutor;
 import gold.debug.windowstolinux.shared.linux.sshd.distro.ManagedEnvironmentExecutor;
-import gold.debug.windowstolinux.shared.linux.sshd.distro.extension.registry.DistributionSetupRegistry;
 import gold.debug.windowstolinux.shared.linux.sshd.execution.protocol.CandidateWorkspaceExecutor;
-import gold.debug.windowstolinux.shared.linux.sshd.execution.protocol.runtime.ManagedRuntimeProtocolExecutor;
-import gold.debug.windowstolinux.shared.linux.sshd.execution.protocol.release.DeploymentReleaseProtocolExecutor;
-import gold.debug.windowstolinux.shared.linux.sshd.execution.protocol.release.ContainerReleaseProtocolExecutor;
 import gold.debug.windowstolinux.shared.linux.sshd.execution.protocol.input.DeploymentInputProtocolExecutor;
+import gold.debug.windowstolinux.shared.linux.sshd.execution.protocol.release.ContainerReleaseProtocolExecutor;
+import gold.debug.windowstolinux.shared.linux.sshd.execution.protocol.release.DeploymentReleaseProtocolExecutor;
 import gold.debug.windowstolinux.shared.linux.sshd.execution.protocol.restore.SshdRestoreActivationPort;
-import gold.debug.windowstolinux.shared.linux.protocol.RemoteRuntimeConfiguration;
-import gold.debug.windowstolinux.shared.linux.build.RemoteBuildEnvironment;
-import gold.debug.windowstolinux.shared.linux.protocol.RemoteDeploymentInputs;
-import gold.debug.windowstolinux.shared.linux.protocol.RemoteSecretPayload;
-import gold.debug.windowstolinux.shared.linux.sshd.runtime.systemd.SystemdHealthProbe;
-import gold.debug.windowstolinux.shared.linux.sshd.runtime.systemd.SystemdLifecycleExecutor;
-import gold.debug.windowstolinux.shared.linux.sshd.runtime.systemd.SystemdOwnershipObserver;
+import gold.debug.windowstolinux.shared.linux.sshd.execution.protocol.runtime.ManagedRuntimeProtocolExecutor;
+import gold.debug.windowstolinux.shared.linux.sshd.execution.transfer.SshdRestoreTransport;
+import gold.debug.windowstolinux.shared.linux.sshd.execution.transfer.SshdSourceTransport;
 import gold.debug.windowstolinux.shared.linux.sshd.runtime.ContainerRuntimeExecutor;
 import gold.debug.windowstolinux.shared.linux.sshd.runtime.ManagedRuntimeExecutor;
 import gold.debug.windowstolinux.shared.linux.sshd.runtime.ManagedRuntimeKindProbe;
-import gold.debug.windowstolinux.shared.linux.sshd.execution.transfer.SshdSourceTransport;
-import gold.debug.windowstolinux.shared.linux.sshd.execution.transfer.SshdRestoreTransport;
-import gold.debug.windowstolinux.shared.linux.protocol.restore.RemoteRestoreStagingEvidence;
-import gold.debug.windowstolinux.shared.linux.protocol.restore.RemoteRestoreStagingRequest;
-import gold.debug.windowstolinux.shared.linux.protocol.restore.RemoteRestoreActivationPort;
-import gold.debug.windowstolinux.shared.linux.protocol.backup.ManagedContentPublication;
+import gold.debug.windowstolinux.shared.linux.sshd.runtime.systemd.SystemdHealthProbe;
+import gold.debug.windowstolinux.shared.linux.sshd.runtime.systemd.SystemdLifecycleExecutor;
+import gold.debug.windowstolinux.shared.linux.sshd.runtime.systemd.SystemdOwnershipObserver;
 import gold.debug.windowstolinux.shared.linux.transfer.RemoteWorkspace;
 import gold.debug.windowstolinux.shared.linux.transfer.SourceUploadResult;
 import gold.debug.windowstolinux.shared.model.archive.SourceArchiveDescriptor;
+import gold.debug.windowstolinux.shared.model.capability.LinuxCapabilityFacts;
+import gold.debug.windowstolinux.shared.model.capability.ServerCapabilityFacts;
 import gold.debug.windowstolinux.shared.model.deployment.BuildLimitConfiguration;
 import gold.debug.windowstolinux.shared.model.deployment.EnvironmentSetupApproval;
 import gold.debug.windowstolinux.shared.model.deployment.EnvironmentSetupResult;
@@ -52,12 +54,8 @@ import gold.debug.windowstolinux.shared.model.lifecycle.LifecycleObservation;
 import gold.debug.windowstolinux.shared.model.managed.ManagedApplication;
 import gold.debug.windowstolinux.shared.model.project.DeploymentProjectFacts;
 import gold.debug.windowstolinux.shared.model.project.DeploymentRuntimeSpecification;
-import gold.debug.windowstolinux.shared.model.capability.ServerCapabilityFacts;
-import gold.debug.windowstolinux.shared.model.capability.LinuxCapabilityFacts;
 import org.apache.sshd.client.SshClient;
 import org.apache.sshd.client.session.ClientSession;
-
-import java.util.List;
 
 /**
  * Unified session facade delegating each typed capability to its implementation package.
@@ -65,101 +63,117 @@ import java.util.List;
  *  <p>将各项类型化能力委派给其实现包的统一会话门面。
  */
 public final class SshdLinuxRemoteSession implements DeploymentRemoteSession {
+    /** Authenticated runtime protocol. / 已认证运行协议。 */
+    private final DeploymentReleaseProtocolExecutor deploymentProtocol;
+
+    /** Authenticated runtime protocol. / 已认证运行协议。 */
+    private final ContainerReleaseProtocolExecutor containerProtocol;
+
+    /** Authenticated runtime protocol. / 已认证运行协议。 */
+    private final ContainerRuntimeExecutor containerRuntime;
+    /** Returns neutral platform and injected standard environment preparation. / 返回通用平台及注入的标准环境准备能力。
+     * @return authenticated environment capability / 已认证环境能力
+     */
+    @Override
+    public gold.debug.windowstolinux.shared.linux.distro.LinuxEnvironmentPreparer environment() {
+        return environment;
+    }
+    /** Task source and sandbox port. / 任务源码及沙箱端口。 */
+    private final gold.debug.windowstolinux.shared.linux.workspace.RemoteProjectPort projects;
+    /** Returns the authenticated project port. / 返回已认证项目端口。
+     * @return protected project operations / 受保护项目操作
+     */
+    @Override
+    public gold.debug.windowstolinux.shared.linux.workspace.RemoteProjectPort projects() {
+        return projects;
+    }
+    /** Authenticated command executor. / 已认证命令执行器。 */
+    private final SshCommandExecutor commands;
+
     /**
      * Client.
      * <p>客户端。
      */
     private final SshClient client;
+
     /**
      * Session used for the current scoped operation.
      * <p>当前限定作用域操作使用的会话。
      */
     private final ClientSession session;
+
     /**
      * Account name used by the reviewed connection.
      * <p>已审阅连接使用的账户名。
      */
     private final String username;
+
     /**
      * Observed target tools and runtime capabilities.
      * <p>目标工具及运行能力观测。
      */
     private final SshdCapabilityCollector capabilities;
+
     /**
      * Deployment capabilities.
      * <p>部署能力。
      */
     private final SshdPlatformCapabilityCollector deploymentCapabilities;
+
     /**
      * Bound managed environment executor collaborator for environment.
      * <p>处理环境的受管环境执行器协作对象。
      */
     private final ManagedEnvironmentExecutor environment;
+
     /**
      * Bound gold debug windowstolinux shared linux distro selinux environment preparer collaborator for selinux.
      * <p>处理selinux 对应的输入或状态的golddebugwindowstolinux共享Linux发行版Selinux环境准备器协作对象。
      */
     private final gold.debug.windowstolinux.shared.linux.distro.SelinuxEnvironmentPreparer selinux;
+
     /**
      * Transfer.
      * <p>传输。
      */
     private final SshdSourceTransport transfer;
+
     /**
      * Restore transfer.
      * <p>恢复传输。
      */
     private final SshdRestoreTransport restoreTransfer;
+
     /**
      * Bound deployment build executor collaborator for deployment build.
      * <p>处理部署构建的部署构建执行器协作对象。
      */
-    private final DeploymentBuildExecutor deploymentBuild;
+    private final RemoteBuildPort deploymentBuild;
+
     /**
      * Bound candidate workspace executor collaborator for candidates.
      * <p>处理候选集合的候选工作区执行器协作对象。
      */
     private final CandidateWorkspaceExecutor candidates;
+
     /**
      * Bound managed runtime protocol executor collaborator for runtimes.
      * <p>处理运行时集合的受管运行时协议执行器协作对象。
      */
     private final ManagedRuntimeProtocolExecutor runtimes;
-    /**
-     * Bound deployment release protocol executor collaborator for deployment protocol.
-     * <p>处理部署协议的部署发布协议执行器协作对象。
-     */
-    private final DeploymentReleaseProtocolExecutor deploymentProtocol;
-    /**
-     * Bound container release protocol executor collaborator for container protocol.
-     * <p>处理容器协议的容器发布协议执行器协作对象。
-     */
-    private final ContainerReleaseProtocolExecutor containerProtocol;
+
     /**
      * Bound deployment input protocol executor collaborator for deployment inputs.
      * <p>处理部署输入集合的部署输入协议执行器协作对象。
      */
     private final DeploymentInputProtocolExecutor deploymentInputs;
+
     /**
      * Systemd health.
      * <p>systemd健康。
      */
     private final SystemdHealthProbe systemdHealth;
-    /**
-     * Systemd observation.
-     * <p>systemd观测。
-     */
-    private final SystemdOwnershipObserver systemdObservation;
-    /**
-     * Bound systemd lifecycle executor collaborator for systemd lifecycle.
-     * <p>处理systemd生命周期的Systemd生命周期执行器协作对象。
-     */
-    private final SystemdLifecycleExecutor systemdLifecycle;
-    /**
-     * Bound container runtime executor collaborator for container runtime.
-     * <p>处理容器运行时的容器运行时执行器协作对象。
-     */
-    private final ContainerRuntimeExecutor containerRuntime;
+
     /**
      * Bound managed runtime executor collaborator for managed runtime.
      * <p>处理受管运行时的受管运行时执行器协作对象。
@@ -170,27 +184,34 @@ public final class SshdLinuxRemoteSession implements DeploymentRemoteSession {
      *
      * @return native DB operations for this already authenticated and trusted connection / 当前已认证且可信连接的原生数据库操作能力
      */
-    @Override public gold.debug.windowstolinux.shared.linux.ecosystem.db.NativeDatabasePort nativeDatabases() { return nativeDatabases; }
+    @Override
+    public gold.debug.windowstolinux.shared.linux.ecosystem.db.NativeDatabasePort nativeDatabases() {
+        return nativeDatabases;
+    }
     /**
      * Databases.
      * <p>数据库集合。
      */
     private final SshdDatabaseOperationPort databases;
+
     /**
      * Native databases.
      * <p>原生数据库集合。
      */
     private final gold.debug.windowstolinux.shared.linux.ecosystem.db.NativeDatabasePort nativeDatabases;
+
     /**
      * Backup artifacts.
      * <p>备份制品集合。
      */
     private final SshdBackupArtifactPort backupArtifacts;
+
     /**
      * Restore activation.
      * <p>恢复激活。
      */
     private final SshdRestoreActivationPort restoreActivation;
+
     /**
      * External applications.
      * <p>外部应用集合。
@@ -201,7 +222,10 @@ public final class SshdLinuxRemoteSession implements DeploymentRemoteSession {
      *
      * @return bounded application discovery on this trusted session / 当前可信会话上的有界应用发现能力
      */
-    @Override public gold.debug.windowstolinux.shared.linux.runtime.ExternalApplicationPort externalApplications() { return externalApplications; }
+    @Override
+    public gold.debug.windowstolinux.shared.linux.runtime.ExternalApplicationPort externalApplications() {
+        return externalApplications;
+    }
 
     /**
      * Creates an instance of this type. / 创建此类型的实例。
@@ -211,23 +235,40 @@ public final class SshdLinuxRemoteSession implements DeploymentRemoteSession {
      * @param endpoint reviewed network endpoint / 已审阅网络端点
      * @param hostFingerprint host fingerprint / 主机指纹
      */
-    public SshdLinuxRemoteSession(SshClient client, ClientSession session,
-                              SshEndpoint endpoint, String hostFingerprint) {
+    public SshdLinuxRemoteSession(SshClient client, ClientSession session, SshEndpoint endpoint,
+            String hostFingerprint) {
+        this(client, session, endpoint, hostFingerprint, null, null);
+    }
+
+    /** Binds optional deployment policy to an authenticated transport. / 向已认证传输绑定可选部署策略。
+     * @param client authenticated session input / 已认证会话输入
+     * @param session authenticated session input / 已认证会话输入
+     * @param endpoint authenticated session input / 已认证会话输入
+     * @param hostFingerprint authenticated session input / 已认证会话输入
+     * @param builds optional standard build strategy / 可选标准构建策略
+     * @param preparation optional standard environment policy / 可选标准环境策略
+     */
+    public SshdLinuxRemoteSession(SshClient client, ClientSession session, SshEndpoint endpoint, String hostFingerprint,
+            RemoteBuildPort.Factory builds,
+            gold.debug.windowstolinux.shared.linux.distro.EnvironmentPreparationPlan preparation) {
         this.client = client;
         this.session = session;
         this.username = endpoint.username();
-        SshCommandExecutor commands = new SshCommandExecutor(session);
-        this.externalApplications = new gold.debug.windowstolinux.shared.linux.sshd.runtime.SshdExternalApplicationPort(commands);
-        this.selinux = new gold.debug.windowstolinux.shared.linux.sshd.distro.dnf.SelinuxPreparationExecutor(commands, endpoint.serverId());
+        this.commands = new SshCommandExecutor(session, endpoint);
+        this.projects = new gold.debug.windowstolinux.shared.linux.sshd.workspace.SshdRemoteProjectPort(commands);
+        this.externalApplications = new gold.debug.windowstolinux.shared.linux.sshd.runtime.SshdExternalApplicationPort(
+                commands);
+        this.selinux = new gold.debug.windowstolinux.shared.linux.sshd.distro.dnf.SelinuxPreparationExecutor(commands,
+                endpoint.serverId());
         this.databases = new SshdDatabaseOperationPort(commands);
-        this.nativeDatabases = new gold.debug.windowstolinux.shared.linux.sshd.execution.protocol.database.SshdNativeDatabasePort(commands);
+        this.nativeDatabases = new gold.debug.windowstolinux.shared.linux.sshd.execution.protocol.database.SshdNativeDatabasePort(
+                commands);
         this.backupArtifacts = new SshdBackupArtifactPort(commands);
         this.restoreActivation = new SshdRestoreActivationPort(commands);
         this.capabilities = new SshdCapabilityCollector(commands, hostFingerprint);
         this.deploymentCapabilities = new SshdPlatformCapabilityCollector(commands, hostFingerprint);
-        this.environment = new ManagedEnvironmentExecutor(
-                commands, capabilities, deploymentCapabilities, endpoint.serverId(), endpoint.username(),
-                DistributionSetupRegistry.defaults());
+        this.environment = new ManagedEnvironmentExecutor(commands, capabilities, deploymentCapabilities,
+                endpoint.serverId(), endpoint.username(), preparation);
         this.candidates = new CandidateWorkspaceExecutor(commands);
         this.runtimes = new ManagedRuntimeProtocolExecutor(commands);
         this.deploymentProtocol = new DeploymentReleaseProtocolExecutor(commands);
@@ -235,15 +276,14 @@ public final class SshdLinuxRemoteSession implements DeploymentRemoteSession {
         this.deploymentInputs = new DeploymentInputProtocolExecutor(commands);
         this.transfer = new SshdSourceTransport(session, commands, candidates);
         this.restoreTransfer = new SshdRestoreTransport(session, candidates);
-        this.deploymentBuild = new DeploymentBuildExecutor(commands, endpoint.username());
+        this.deploymentBuild = builds == null ? null : builds.create(commands, endpoint.username());
         this.systemdHealth = new SystemdHealthProbe(commands);
-        this.systemdObservation = new SystemdOwnershipObserver(commands, endpoint.username());
-        this.systemdLifecycle = new SystemdLifecycleExecutor(
-                commands, runtimes, systemdObservation, systemdHealth, endpoint.username());
+        SystemdOwnershipObserver systemdObservation = new SystemdOwnershipObserver(commands, endpoint.username());
+        SystemdLifecycleExecutor systemdLifecycle = new SystemdLifecycleExecutor(commands, runtimes, systemdObservation,
+                systemdHealth, endpoint.username());
         this.containerRuntime = new ContainerRuntimeExecutor(commands);
-        this.managedRuntime = new ManagedRuntimeExecutor(new ManagedRuntimeKindProbe(runtimes),
-                deploymentProtocol, containerProtocol, systemdObservation, systemdLifecycle, systemdHealth,
-                containerRuntime);
+        this.managedRuntime = new ManagedRuntimeExecutor(new ManagedRuntimeKindProbe(runtimes), deploymentProtocol,
+                containerProtocol, systemdObservation, systemdLifecycle, systemdHealth, containerRuntime);
     }
 
     /**
@@ -263,8 +303,9 @@ public final class SshdLinuxRemoteSession implements DeploymentRemoteSession {
      *
      * @throws LinuxOperationException if the authenticated remote operation fails or its evidence is rejected / 已认证远端操作失败或其证据被拒绝时
      */
-    @Override public void verifyConnection() throws LinuxOperationException {
-        new SshCommandExecutor(session).verifyConnection();
+    @Override
+    public void verifyConnection() throws LinuxOperationException {
+        commands.verifyConnection();
     }
 
     /**
@@ -280,43 +321,12 @@ public final class SshdLinuxRemoteSession implements DeploymentRemoteSession {
     }
 
     /**
-     * Prepares toolchains.
-     * <p>准备工具链集合。
-     *
-     * @param facts typed facts used for deterministic planning / 确定性计划使用的类型化事实
-     * @param runtime reviewed language, process and health specification / 已审阅的语言、进程及健康规格
-     * @param limits resource and time bounds enforced during execution / 执行期间实施的资源及时间边界
-     * @return constructed or resolved toolchain preparation result / 构造或解析得到的工具链准备结果
-     * @throws LinuxOperationException if the authenticated remote operation fails or its evidence is rejected / 已认证远端操作失败或其证据被拒绝时
-     */
-    @Override
-    public gold.debug.windowstolinux.shared.linux.build.ToolchainPreparationResult prepareToolchains(
-            DeploymentProjectFacts facts, DeploymentRuntimeSpecification runtime, BuildLimitConfiguration limits)
-            throws LinuxOperationException {
-        var tools = deploymentBuild.prepare(facts, runtime, limits);
-        return new gold.debug.windowstolinux.shared.linux.build.ToolchainPreparationResult(tools, collectDeploymentCapabilities());
-    }
-
-    /**
-     * Prepares environment.
-     * <p>准备环境。
-     *
-     * @param approval the per-source, per-server approval / 按源码、服务器绑定的批准
-     * @return constructed or resolved environment setup result / 构造或解析得到的环境Setup结果
-     * @throws LinuxOperationException if the authenticated remote operation fails or its evidence is rejected / 已认证远端操作失败或其证据被拒绝时
-     */
-    @Override
-    public EnvironmentSetupResult prepareEnvironment(
-            EnvironmentSetupApproval approval) throws LinuxOperationException {
-        return environment.prepare(approval);
-    }
-
-    /**
      * Returns fixed system preparation for this trusted session. / 返回当前可信会话的固定系统准备能力。
      *
      * @return fixed system preparation for this trusted session / 当前可信会话的固定系统准备能力
      */
-    @Override public gold.debug.windowstolinux.shared.linux.distro.SelinuxEnvironmentPreparer selinuxPreparation() {
+    @Override
+    public gold.debug.windowstolinux.shared.linux.distro.SelinuxEnvironmentPreparer selinuxPreparation() {
         return selinux;
     }
 
@@ -331,29 +341,9 @@ public final class SshdLinuxRemoteSession implements DeploymentRemoteSession {
      * @throws LinuxOperationException if the authenticated remote operation fails or its evidence is rejected / 已认证远端操作失败或其证据被拒绝时
      */
     @Override
-    public SourceUploadResult uploadSource(SourceArchiveDescriptor archive, RemoteWorkspace workspace, long maxWorkspaceBytes)
-            throws LinuxOperationException {
+    public SourceUploadResult uploadSource(SourceArchiveDescriptor archive, RemoteWorkspace workspace,
+            long maxWorkspaceBytes) throws LinuxOperationException {
         return transfer.upload(archive, workspace, maxWorkspaceBytes);
-    }
-
-    /**
-     * Builds deployment.
-     * <p>构建部署。
-     *
-     * @param facts typed facts used for deterministic planning / 确定性计划使用的类型化事实
-     * @param runtime reviewed language, process and health specification / 已审阅的语言、进程及健康规格
-     * @param workspace platform-owned work area with enforced path boundaries / 具有路径边界约束的平台工作区
-     * @param limits resource and time bounds enforced during execution / 执行期间实施的资源及时间边界
-     * @param configuration reviewed configuration snapshot or settings / 已审阅配置快照或设置
-     * @return deployment / 部署
-     * @throws LinuxOperationException if the authenticated remote operation fails or its evidence is rejected / 已认证远端操作失败或其证据被拒绝时
-     */
-    @Override
-    public DeploymentBuildResult buildDeployment(DeploymentProjectFacts facts, DeploymentRuntimeSpecification runtime,
-                                                 RemoteWorkspace workspace, BuildLimitConfiguration limits,
-                                                 RemoteBuildEnvironment configuration)
-            throws LinuxOperationException {
-        return deploymentBuild.build(facts, runtime, workspace, limits, configuration);
     }
 
     /**
@@ -368,8 +358,7 @@ public final class SshdLinuxRemoteSession implements DeploymentRemoteSession {
      */
     @Override
     public RemoteDeploymentInputs stageDeploymentInputs(ManagedApplication application,
-                                                         RemoteRuntimeConfiguration configuration,
-                                                         List<RemoteSecretPayload> secrets)
+            RemoteRuntimeConfiguration configuration, List<RemoteSecretPayload> secrets)
             throws LinuxOperationException {
         return deploymentInputs.stage(application, configuration, secrets);
     }
@@ -392,13 +381,25 @@ public final class SshdLinuxRemoteSession implements DeploymentRemoteSession {
      * @return observed facts / 观测事实
      * @throws LinuxOperationException if observation fails / 观测失败时
      */
-    @Override public java.util.Map<String,String> inspectTaskCandidate(gold.debug.windowstolinux.shared.linux.transfer.RemoteTaskCandidate candidate)throws LinuxOperationException{return candidates.inspectTask(candidate.workspace(),candidate.taskId());}
+    @Override
+    public java.util.Map<String, String> inspectTaskCandidate(
+            gold.debug.windowstolinux.shared.linux.transfer.RemoteTaskCandidate candidate)
+            throws LinuxOperationException {
+        return candidates.inspectTask(candidate.workspace(), candidate.taskId());
+    }
+
     /** Stops and cleans only a task-owned candidate. / 仅停止并清理任务所属候选项。
      * @param candidate exact task and candidate / 精确任务及候选项
      * @return cleanup result / 清理结果
      * @throws LinuxOperationException if execution fails / 执行失败时
      */
-    @Override public RemoteStepResult cleanupTaskCandidate(gold.debug.windowstolinux.shared.linux.transfer.RemoteTaskCandidate candidate)throws LinuxOperationException{return candidates.cleanupTask(candidate.workspace(),candidate.taskId());}
+    @Override
+    public RemoteStepResult cleanupTaskCandidate(
+            gold.debug.windowstolinux.shared.linux.transfer.RemoteTaskCandidate candidate)
+            throws LinuxOperationException {
+        return candidates.cleanupTask(candidate.workspace(), candidate.taskId());
+    }
+
     /**
      * Stages restore files.
      * <p>暂存恢复文件集合。
@@ -480,7 +481,7 @@ public final class SshdLinuxRemoteSession implements DeploymentRemoteSession {
      */
     @Override
     public LifecycleObservation executeLifecycle(ManagedApplication application, LifecycleAction action,
-                                                 HealthCheck healthCheck) throws LinuxOperationException {
+            HealthCheck healthCheck) throws LinuxOperationException {
         return managedRuntime.execute(application, action, healthCheck);
     }
 
@@ -520,11 +521,9 @@ public final class SshdLinuxRemoteSession implements DeploymentRemoteSession {
      */
     @Override
     public RemoteStepResult publishDeployment(ManagedApplication application, DeploymentProjectFacts facts,
-                                              RemoteWorkspace workspace,
-                                              DeploymentBuildResult buildResult, String releaseIdentity,
-                                              DeploymentRuntimeSpecification runtime, RemoteDeploymentInputs inputs,
-                                              ManagedContentPublication contentPublication, ReleaseSnapshot snapshot)
-            throws LinuxOperationException {
+            RemoteWorkspace workspace, DeploymentBuildResult buildResult, String releaseIdentity,
+            DeploymentRuntimeSpecification runtime, RemoteDeploymentInputs inputs,
+            ManagedContentPublication contentPublication, ReleaseSnapshot snapshot) throws LinuxOperationException {
         if (runtime instanceof DeploymentRuntimeSpecification.Container container) {
             return containerProtocol.publish(application, workspace, buildResult, releaseIdentity, container, inputs,
                     contentPublication, snapshot);
@@ -548,9 +547,8 @@ public final class SshdLinuxRemoteSession implements DeploymentRemoteSession {
      */
     @Override
     public RemoteStepResult rollbackDeployment(ManagedApplication application, ReleaseSnapshot snapshot,
-                                               DeploymentBuildResult buildResult, String releaseIdentity,
-                                               DeploymentRuntimeSpecification runtime, RemoteDeploymentInputs inputs)
-            throws LinuxOperationException {
+            DeploymentBuildResult buildResult, String releaseIdentity, DeploymentRuntimeSpecification runtime,
+            RemoteDeploymentInputs inputs) throws LinuxOperationException {
         if (runtime instanceof DeploymentRuntimeSpecification.Container container) {
             return containerProtocol.rollback(application, snapshot, buildResult, releaseIdentity, container, inputs);
         }
@@ -568,8 +566,8 @@ public final class SshdLinuxRemoteSession implements DeploymentRemoteSession {
      * @throws LinuxOperationException if the authenticated remote operation fails or its evidence is rejected / 已认证远端操作失败或其证据被拒绝时
      */
     @Override
-    public HealthCheckResult checkDeploymentHealth(ManagedApplication application, DeploymentRuntimeSpecification runtime,
-                                                   HealthCheck healthCheck) throws LinuxOperationException {
+    public HealthCheckResult checkDeploymentHealth(ManagedApplication application,
+            DeploymentRuntimeSpecification runtime, HealthCheck healthCheck) throws LinuxOperationException {
         if (runtime instanceof DeploymentRuntimeSpecification.Container container) {
             return containerRuntime.checkHealth(application, container, healthCheck);
         }
@@ -586,8 +584,8 @@ public final class SshdLinuxRemoteSession implements DeploymentRemoteSession {
      * @throws LinuxOperationException if the authenticated remote operation fails or its evidence is rejected / 已认证远端操作失败或其证据被拒绝时
      */
     @Override
-    public LifecycleObservation observeDeployment(ManagedApplication application, DeploymentRuntimeSpecification runtime)
-            throws LinuxOperationException {
+    public LifecycleObservation observeDeployment(ManagedApplication application,
+            DeploymentRuntimeSpecification runtime) throws LinuxOperationException {
         return managedRuntime.observe(application);
     }
 
@@ -603,8 +601,7 @@ public final class SshdLinuxRemoteSession implements DeploymentRemoteSession {
      */
     @Override
     public LifecycleObservation executeDeploymentLifecycle(ManagedApplication application,
-                                                            DeploymentRuntimeSpecification runtime,
-                                                            LifecycleAction action) throws LinuxOperationException {
+            DeploymentRuntimeSpecification runtime, LifecycleAction action) throws LinuxOperationException {
         return managedRuntime.execute(application, runtime, action);
     }
 
@@ -613,21 +610,30 @@ public final class SshdLinuxRemoteSession implements DeploymentRemoteSession {
      *
      * @return the connection's database operations / 当前连接的数据库操作能力
      */
-    @Override public RemoteDatabasePort databaseOperations() { return databases; }
+    @Override
+    public RemoteDatabasePort databaseOperations() {
+        return databases;
+    }
 
     /**
      * Returns the connection's backup artifacts. / 返回当前连接的备份制品能力。
      *
      * @return the connection's backup artifacts / 当前连接的备份制品能力
      */
-    @Override public RemoteBackupArtifactPort backupArtifacts() { return backupArtifacts; }
+    @Override
+    public RemoteBackupArtifactPort backupArtifacts() {
+        return backupArtifacts;
+    }
 
     /**
      * Returns the connection's restore activation. / 返回当前连接的恢复激活能力。
      *
      * @return the connection's restore activation / 当前连接的恢复激活能力
      */
-    @Override public RemoteRestoreActivationPort restoreActivation() { return restoreActivation; }
+    @Override
+    public RemoteRestoreActivationPort restoreActivation() {
+        return restoreActivation;
+    }
 
     /**
      * Closes this resource. / 关闭此资源。
@@ -639,5 +645,14 @@ public final class SshdLinuxRemoteSession implements DeploymentRemoteSession {
         } finally {
             SshSessionLifecycleExecutor.closeQuietly(client);
         }
+    }
+
+    /** Requires an explicitly assembled standard strategy. / 要求显式装配标准策略。
+     * @return current strategy / 当前策略
+     */
+    public RemoteBuildPort standardBuild() {
+        if (deploymentBuild == null)
+            throw new IllegalStateException("standard build strategy is not configured");
+        return deploymentBuild;
     }
 }

@@ -1,27 +1,5 @@
 package gold.debug.windowstolinux.shared.linux.sshd.connection;
 
-import gold.debug.windowstolinux.shared.linux.sshd.session.SshdLinuxRemoteSession;
-import gold.debug.windowstolinux.shared.linux.sshd.session.SshSessionLifecycleExecutor;
-import gold.debug.windowstolinux.shared.linux.sshd.command.SshCommandExecutor;
-
-import gold.debug.windowstolinux.shared.linux.connection.HostKeyDecision;
-import gold.debug.windowstolinux.shared.linux.connection.HostKeyObservation;
-import org.apache.sshd.common.config.keys.KeyUtils;
-import org.apache.sshd.common.digest.BuiltinDigests;
-import gold.debug.windowstolinux.shared.linux.connection.HostKeyEvaluator;
-import gold.debug.windowstolinux.shared.linux.error.LinuxOperationException;
-import gold.debug.windowstolinux.shared.linux.error.LinuxOperationFailureType;
-import gold.debug.windowstolinux.shared.linux.connection.DeploymentLinuxGateway;
-import gold.debug.windowstolinux.shared.linux.session.DeploymentRemoteSession;
-import gold.debug.windowstolinux.shared.linux.connection.SshCredential;
-import gold.debug.windowstolinux.shared.linux.connection.SshEndpoint;
-import org.apache.sshd.client.SshClient;
-import org.apache.sshd.client.auth.keyboard.UserAuthKeyboardInteractiveFactory;
-import org.apache.sshd.client.auth.password.UserAuthPasswordFactory;
-import org.apache.sshd.client.auth.pubkey.UserAuthPublicKeyFactory;
-import org.apache.sshd.client.session.ClientSession;
-import org.apache.sshd.core.CoreModuleProperties;
-import org.apache.sshd.common.keyprovider.KeyIdentityProvider;
 import java.io.IOException;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
@@ -33,32 +11,78 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.atomic.AtomicReference;
 
+import gold.debug.windowstolinux.shared.linux.connection.DeploymentLinuxGateway;
+import gold.debug.windowstolinux.shared.linux.connection.HostKeyDecision;
+import gold.debug.windowstolinux.shared.linux.connection.HostKeyEvaluator;
+import gold.debug.windowstolinux.shared.linux.connection.HostKeyObservation;
+import gold.debug.windowstolinux.shared.linux.connection.SshCredential;
+import gold.debug.windowstolinux.shared.linux.connection.SshEndpoint;
+import gold.debug.windowstolinux.shared.linux.error.LinuxOperationException;
+import gold.debug.windowstolinux.shared.linux.error.LinuxOperationFailureType;
+import gold.debug.windowstolinux.shared.linux.session.DeploymentRemoteSession;
+import gold.debug.windowstolinux.shared.linux.sshd.command.SshCommandExecutor;
+import gold.debug.windowstolinux.shared.linux.sshd.session.SshSessionLifecycleExecutor;
+import gold.debug.windowstolinux.shared.linux.sshd.session.SshdLinuxRemoteSession;
+import org.apache.sshd.client.SshClient;
+import org.apache.sshd.client.auth.keyboard.UserAuthKeyboardInteractiveFactory;
+import org.apache.sshd.client.auth.password.UserAuthPasswordFactory;
+import org.apache.sshd.client.auth.pubkey.UserAuthPublicKeyFactory;
+import org.apache.sshd.client.session.ClientSession;
+import org.apache.sshd.common.config.keys.KeyUtils;
+import org.apache.sshd.common.digest.BuiltinDigests;
+import org.apache.sshd.common.keyprovider.KeyIdentityProvider;
+import org.apache.sshd.core.CoreModuleProperties;
+
 /**
  * Apache MINA SSHD implementation of the managed-deployment allowlisted remote contract. It accepts a host key only through the supplied verifier and never exposes a public raw-command method.
  *
  *  <p>受管部署白名单远程契约的 Apache MINA SSHD 实现。它只通过提供的验证器接受主机密钥，并且绝不公开原始命令方法。
  */
 public final class SshdLinuxGateway implements DeploymentLinuxGateway {
+    /** Optional session build strategy. / 可选会话构建策略。 */
+    private final gold.debug.windowstolinux.shared.linux.build.RemoteBuildPort.Factory builds;
+
+    /** Optional standard environment strategy. / 可选标准环境策略。 */
+    private final gold.debug.windowstolinux.shared.linux.distro.EnvironmentPreparationPlan preparation;
+    /** Creates a transport without a standard build strategy. / 创建不含标准构建策略的传输。 */
+    public SshdLinuxGateway() {
+        this(null, null);
+    }
+
+    /** Injects the standard strategy at the application boundary. / 在应用边界注入标准策略。
+     * @param builds optional strategy factory / 可选策略工厂
+     * @param preparation optional standard environment strategy / 可选标准环境策略
+     */
+    public SshdLinuxGateway(gold.debug.windowstolinux.shared.linux.build.RemoteBuildPort.Factory builds,
+            gold.debug.windowstolinux.shared.linux.distro.EnvironmentPreparationPlan preparation) {
+        this.builds = builds;
+        this.preparation = preparation;
+    }
+
     /**
      * CONNECT TIMEOUT.
      * <p>连接超时。
      */
     private static final Duration CONNECT_TIMEOUT = Duration.ofSeconds(30);
+
     /**
      * HEARTBEAT INTERVAL.
      * <p>心跳间隔。
      */
     private static final Duration HEARTBEAT_INTERVAL = Duration.ofSeconds(30);
+
     /**
      * Maximum consecutive unanswered SSH heartbeats before connection failure.
      * <p>判定连接失败前允许的连续未回复 SSH 心跳上限。
      */
     private static final int HEARTBEAT_NO_REPLY_MAX = 3;
+
     /**
      * TRANSIENT CONNECTION ATTEMPTS.
      * <p>暂时连接尝试集合。
      */
     private static final int TRANSIENT_CONNECTION_ATTEMPTS = 3;
+
     /**
      * TRANSIENT RETRY DELAY.
      * <p>暂时重试延迟。
@@ -77,8 +101,8 @@ public final class SshdLinuxGateway implements DeploymentLinuxGateway {
      * @throws NullPointerException if a required input is absent / 必需输入缺失时
      */
     @Override
-    public DeploymentRemoteSession connect(SshEndpoint endpoint, SshCredential credential, HostKeyEvaluator hostKeyVerifier)
-            throws LinuxOperationException {
+    public DeploymentRemoteSession connect(SshEndpoint endpoint, SshCredential credential,
+            HostKeyEvaluator hostKeyVerifier) throws LinuxOperationException {
         Objects.requireNonNull(endpoint, "endpoint");
         Objects.requireNonNull(credential, "credential");
         Objects.requireNonNull(hostKeyVerifier, "hostKeyVerifier");
@@ -111,11 +135,8 @@ public final class SshdLinuxGateway implements DeploymentLinuxGateway {
      * @return constructed or resolved deployment remote session / 构造或解析得到的部署远端会话
      * @throws LinuxOperationException if the authenticated remote operation fails or its evidence is rejected / 已认证远端操作失败或其证据被拒绝时
      */
-    private static DeploymentRemoteSession connectOnce(
-            SshEndpoint endpoint,
-            SshCredential credential,
-            HostKeyEvaluator hostKeyVerifier
-    ) throws LinuxOperationException {
+    private DeploymentRemoteSession connectOnce(SshEndpoint endpoint, SshCredential credential,
+            HostKeyEvaluator hostKeyVerifier) throws LinuxOperationException {
         SshClient client = credentialScopedClient(credential);
         AtomicReference<String> observedFingerprint = new AtomicReference<>();
         AtomicReference<HostKeyObservation> observedKey = new AtomicReference<>();
@@ -133,15 +154,14 @@ public final class SshdLinuxGateway implements DeploymentLinuxGateway {
             client.start();
             ClientSession session;
             try {
-                session = client.connect(endpoint.username(), endpoint.host(), endpoint.port())
-                        .verify(CONNECT_TIMEOUT)
+                session = client.connect(endpoint.username(), endpoint.host(), endpoint.port()).verify(CONNECT_TIMEOUT)
                         .getSession();
             } catch (Exception exception) {
                 SshSessionLifecycleExecutor.closeQuietly(client);
                 String fingerprint = observedFingerprint.get();
                 if (fingerprint != null) {
-                    throw LinuxOperationException.create(LinuxOperationFailureType.HOST_KEY_REJECTED, Map.of(
-                            "fingerprint", fingerprint),
+                    throw LinuxOperationException.create(LinuxOperationFailureType.HOST_KEY_REJECTED,
+                            Map.of("fingerprint", fingerprint),
                             "SSH host fingerprint was not accepted or the connection was rejected: " + fingerprint,
                             exception);
                 }
@@ -158,21 +178,23 @@ public final class SshdLinuxGateway implements DeploymentLinuxGateway {
                             "SSH transport closed before host verification and authentication completed", exception);
                 }
                 if (hostKeyDecision.get() == HostKeyDecision.REJECT && fingerprint != null) {
-                    throw LinuxOperationException.create(LinuxOperationFailureType.HOST_KEY_REJECTED, Map.of(
-                            "fingerprint", fingerprint),
+                    throw LinuxOperationException.create(LinuxOperationFailureType.HOST_KEY_REJECTED,
+                            Map.of("fingerprint", fingerprint),
                             "SSH host fingerprint was not accepted or the connection was rejected: " + fingerprint,
                             exception);
                 }
                 String evidence = fingerprint == null ? "" : "; verified host fingerprint: " + fingerprint;
                 throw LinuxOperationException.create(LinuxOperationFailureType.AUTHENTICATION_FAILED,
                         "SSH authentication failed; verify the SSH user, credential, and server authentication policy"
-                                + evidence, exception);
+                                + evidence,
+                        exception);
             }
             if (observedKey.get() == null || !hostKeyVerifier.authenticated(endpoint, observedKey.get())) {
                 throw LinuxOperationException.create(LinuxOperationFailureType.HOST_KEY_REJECTED,
                         "Authenticated host key could not be committed without replacing a conflicting trust record");
             }
-            return new SshdLinuxRemoteSession(client, session, endpoint, observedFingerprint.get());
+            return new SshdLinuxRemoteSession(client, session, endpoint, observedFingerprint.get(), builds,
+                    preparation);
         } catch (Exception exception) {
             SshSessionLifecycleExecutor.closeQuietly(client);
             if (exception instanceof LinuxOperationException linuxOperationException) {
@@ -252,10 +274,8 @@ public final class SshdLinuxGateway implements DeploymentLinuxGateway {
         CoreModuleProperties.HEARTBEAT_NO_REPLY_MAX.set(client, HEARTBEAT_NO_REPLY_MAX);
         client.setKeyIdentityProvider(KeyIdentityProvider.EMPTY_KEYS_PROVIDER);
         if (credential instanceof SshCredential.Password) {
-            client.setUserAuthFactories(List.of(
-                    UserAuthPasswordFactory.INSTANCE,
-                    UserAuthKeyboardInteractiveFactory.INSTANCE
-            ));
+            client.setUserAuthFactories(
+                    List.of(UserAuthPasswordFactory.INSTANCE, UserAuthKeyboardInteractiveFactory.INSTANCE));
         } else if (credential instanceof SshCredential.PrivateKey) {
             client.setUserAuthFactories(List.of(UserAuthPublicKeyFactory.INSTANCE));
         } else {

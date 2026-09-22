@@ -21,7 +21,8 @@ public interface LinuxRuntimeExecutor {
      * @return the operation result / 操作结果
      * @throws LinuxOperationException if the authenticated remote operation fails or its evidence is rejected / 已认证远端操作失败或其证据被拒绝时
      */
-    HealthCheckResult checkHealth(ManagedApplication application, HealthCheck healthCheck) throws LinuxOperationException;
+    HealthCheckResult checkHealth(ManagedApplication application, HealthCheck healthCheck)
+            throws LinuxOperationException;
 
     /**
      * Observes lifecycle observation.
@@ -43,6 +44,6 @@ public interface LinuxRuntimeExecutor {
      * @return the operation result / 操作结果
      * @throws LinuxOperationException if the authenticated remote operation fails or its evidence is rejected / 已认证远端操作失败或其证据被拒绝时
      */
-    LifecycleObservation executeLifecycle(ManagedApplication application, LifecycleAction action, HealthCheck healthCheck)
-            throws LinuxOperationException;
+    LifecycleObservation executeLifecycle(ManagedApplication application, LifecycleAction action,
+            HealthCheck healthCheck) throws LinuxOperationException;
 }

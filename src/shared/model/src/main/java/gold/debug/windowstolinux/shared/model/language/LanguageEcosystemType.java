@@ -20,32 +20,42 @@ public enum LanguageEcosystemType {
     PYTHON,
     /**
      * Go modules and source. / Go 模块与源码。
-     */ GO,
+     */
+    GO,
     /**
      * Rust Cargo projects and source. / Rust Cargo 项目与源码。
-     */ RUST,
+     */
+    RUST,
     /**
      * .NET projects and source. / .NET 项目与源码。
-     */ DOTNET,
+     */
+    DOTNET,
     /**
      * Kotlin/JVM projects and source. / Kotlin/JVM 项目与源码。
-     */ KOTLIN,
+     */
+    KOTLIN,
     /**
      * PHP Composer projects and source. / PHP Composer 项目与源码。
-     */ PHP,
+     */
+    PHP,
     /**
      * Ruby Bundler projects and source. / Ruby Bundler 项目与源码。
-     */ RUBY,
+     */
+    RUBY,
     /**
      * C and C++ projects. / C 与 C++ 项目。
-     */ NATIVE,
+     */
+    NATIVE,
     /**
      * Other VM or functional-language projects. / 其他虚拟机或函数式语言项目。
-     */ ALTERNATIVE_VM,
+     */
+    ALTERNATIVE_VM,
     /**
      * Script-language projects that remain recognition-only. / 保持仅识别的脚本语言项目。
-     */ SCRIPT,
+     */
+    SCRIPT,
     /**
      * Swift package projects. / Swift Package 项目。
-     */ SWIFT
+     */
+    SWIFT
 }

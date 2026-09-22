@@ -1,9 +1,5 @@
 package gold.debug.windowstolinux.shared.deploy.contract.spi;
 
-import gold.debug.windowstolinux.shared.config.secretref.SecretReference;
-import gold.debug.windowstolinux.shared.model.deployment.ReleaseSetDigest;
-import gold.debug.windowstolinux.shared.model.health.HealthCheck;
-
 import java.util.Comparator;
 import java.util.HashSet;
 import java.util.LinkedHashSet;
@@ -11,6 +7,10 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
 import java.util.Set;
+
+import gold.debug.windowstolinux.shared.config.secretref.SecretReference;
+import gold.debug.windowstolinux.shared.model.deployment.ReleaseSetDigest;
+import gold.debug.windowstolinux.shared.model.health.HealthCheck;
 
 /**
  * Complete typed activation request for one already staged restore candidate. / 单个已暂存恢复候选的完整类型化激活请求。
@@ -28,26 +28,16 @@ import java.util.Set;
  * @param applicationHealthCheck independently reviewed whole-application probe / 独立审阅的整应用探测
  * @param isolatedDatabase isolated database / 隔离数据库
  */
-public record RestoreDeploymentRequest(
-        String applicationId,
-        String targetServerId,
-        String candidateId,
-        String archiveSha256,
-        String releaseSetSha256,
-        List<SecretReference> secretReferences,
-        String remoteCandidateRoot,
-        String candidateToken,
-        List<RestoreDeploymentComponent> components,
-        String applicationHealthComponentId,
-        HealthCheck applicationHealthCheck,
-        boolean isolatedDatabase
-) {
+public record RestoreDeploymentRequest(String applicationId, String targetServerId, String candidateId,
+        String archiveSha256, String releaseSetSha256, List<SecretReference> secretReferences,
+        String remoteCandidateRoot, String candidateToken, List<RestoreDeploymentComponent> components,
+        String applicationHealthComponentId, HealthCheck applicationHealthCheck, boolean isolatedDatabase) {
     /**
      * SECRET ORDER.
      * <p>秘密顺序。
      */
-    private static final Comparator<SecretReference> SECRET_ORDER = Comparator
-            .comparing(SecretReference::identifier).thenComparingLong(SecretReference::revision);
+    private static final Comparator<SecretReference> SECRET_ORDER = Comparator.comparing(SecretReference::identifier)
+            .thenComparingLong(SecretReference::revision);
 
     /**
      * Validates digest binding, dependency order and whole-application health ownership. / 校验摘要绑定、依赖顺序和整应用健康归属。
@@ -74,8 +64,7 @@ public record RestoreDeploymentRequest(
         if (!archiveSha256.matches("[0-9a-f]{64}")) {
             throw new IllegalArgumentException("archiveSha256 must be canonical SHA-256");
         }
-        releaseSetSha256 = Objects.requireNonNull(releaseSetSha256, "releaseSetSha256")
-                .trim().toLowerCase(Locale.ROOT);
+        releaseSetSha256 = Objects.requireNonNull(releaseSetSha256, "releaseSetSha256").trim().toLowerCase(Locale.ROOT);
         if (!releaseSetSha256.matches("[0-9a-f]{64}")) {
             throw new IllegalArgumentException("releaseSetSha256 must be canonical SHA-256");
         }
@@ -90,12 +79,12 @@ public record RestoreDeploymentRequest(
             throw new IllegalArgumentException("candidateId is not bound to the archive digest");
         }
         remoteCandidateRoot = Objects.requireNonNull(remoteCandidateRoot, "remoteCandidateRoot").trim();
-        if (!remoteCandidateRoot.equals(
-                "/var/lib/windowstolinux/work/" + candidateId + "/mutable/restore")) {
+        if (!remoteCandidateRoot.equals("/var/lib/windowstolinux/work/" + candidateId + "/mutable/restore")) {
             throw new IllegalArgumentException("remoteCandidateRoot is outside the staged candidate");
         }
         candidateToken = Objects.requireNonNull(candidateToken, "candidateToken").trim();
-        if (!candidateToken.matches("[0-9a-f]{32}")) throw new IllegalArgumentException("candidateToken is invalid");
+        if (!candidateToken.matches("[0-9a-f]{32}"))
+            throw new IllegalArgumentException("candidateToken is invalid");
         components = List.copyOf(Objects.requireNonNull(components, "components"));
         if (components.isEmpty() || components.size() > 256) {
             throw new IllegalArgumentException("components must contain one to 256 reviewed values");
@@ -108,8 +97,9 @@ public record RestoreDeploymentRequest(
                 throw new IllegalArgumentException("restore components are duplicated or not dependency-first");
             }
         }
-        String expectedReleaseSet = ReleaseSetDigest.sha256(components.stream().map(component ->
-                new ReleaseSetDigest.ComponentRelease(component.componentId(), component.releaseSha256())).toList());
+        String expectedReleaseSet = ReleaseSetDigest.sha256(components.stream().map(
+                component -> new ReleaseSetDigest.ComponentRelease(component.componentId(), component.releaseSha256()))
+                .toList());
         if (!releaseSetSha256.equals(expectedReleaseSet)) {
             throw new IllegalArgumentException("releaseSetSha256 differs from the dependency-ordered components");
         }
@@ -141,11 +131,13 @@ public record RestoreDeploymentRequest(
      * @param applicationHealthComponentId application health component id / 应用健康组件标识
      * @param applicationHealthCheck independently reviewed whole-application probe / 独立审阅的整应用探测
      */
-    public RestoreDeploymentRequest(String applicationId,String targetServerId,String candidateId,String archiveSha256,
-            String releaseSetSha256,List<SecretReference> secretReferences,String remoteCandidateRoot,String candidateToken,
-            List<RestoreDeploymentComponent> components,String applicationHealthComponentId,HealthCheck applicationHealthCheck) {
-        this(applicationId,targetServerId,candidateId,archiveSha256,releaseSetSha256,secretReferences,remoteCandidateRoot,candidateToken,
-                components,applicationHealthComponentId,applicationHealthCheck,false);
+    public RestoreDeploymentRequest(String applicationId, String targetServerId, String candidateId,
+            String archiveSha256, String releaseSetSha256, List<SecretReference> secretReferences,
+            String remoteCandidateRoot, String candidateToken, List<RestoreDeploymentComponent> components,
+            String applicationHealthComponentId, HealthCheck applicationHealthCheck) {
+        this(applicationId, targetServerId, candidateId, archiveSha256, releaseSetSha256, secretReferences,
+                remoteCandidateRoot, candidateToken, components, applicationHealthComponentId, applicationHealthCheck,
+                false);
     }
 
     /**

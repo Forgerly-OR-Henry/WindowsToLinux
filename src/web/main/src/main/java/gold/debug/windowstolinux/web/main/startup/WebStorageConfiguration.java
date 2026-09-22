@@ -1,5 +1,8 @@
 package gold.debug.windowstolinux.web.main.startup;
 
+import java.io.IOException;
+import java.nio.file.*;
+
 import com.zaxxer.hikari.HikariConfig;
 import com.zaxxer.hikari.HikariDataSource;
 import gold.debug.windowstolinux.web.db.runtime.WebStorageLocation;
@@ -12,8 +15,6 @@ import org.springframework.context.annotation.*;
 import org.springframework.core.io.ClassPathResource;
 import org.sqlite.SQLiteConfig;
 import org.sqlite.SQLiteDataSource;
-import java.io.IOException;
-import java.nio.file.*;
 
 /**
  * Wires controlled data locations, instance ownership and master-key storage.
@@ -34,6 +35,7 @@ public class WebStorageConfiguration {
     public WebStorageLocation webDataLocation(WebRuntimeProperties properties) throws IOException {
         return WebStorageLocation.resolve(properties.storage().root());
     }
+
     /**
      * Assembles the web instance lease managed by the Spring application context.
      * <p>装配由 Spring 应用上下文管理的Web实例租约。
@@ -46,11 +48,15 @@ public class WebStorageConfiguration {
      */
     @Bean(destroyMethod = "close")
     public WebInstanceLease webInstanceLease(WebStorageLocation location, WebRuntimeProperties properties,
-                                            @org.springframework.beans.factory.annotation.Value("${server.address}") String address) throws IOException {
-        if (!"127.0.0.1".equals(address)) throw new IOException("Phase 5 server.address must be 127.0.0.1");
-        if (!new ClassPathResource("static/index.html").exists()) throw new IOException("Web frontend is missing; run the Maven build before WebMain");
+            @org.springframework.beans.factory.annotation.Value("${server.address}") String address)
+            throws IOException {
+        if (!"127.0.0.1".equals(address))
+            throw new IOException("Phase 5 server.address must be 127.0.0.1");
+        if (!new ClassPathResource("static/index.html").exists())
+            throw new IOException("Web frontend is missing; run the Maven build before WebMain");
         return WebInstanceLease.acquire(location.root(), properties.storage().minimumFreeBytes());
     }
+
     /**
      * Assembles the Web master key managed by the Spring application context.
      * <p>装配由 Spring 应用上下文管理的Web 主密钥。
@@ -62,9 +68,11 @@ public class WebStorageConfiguration {
      * @throws IOException if the required file or stream operation fails / 所需文件或流操作失败时
      */
     @Bean(destroyMethod = "close")
-    public WebMasterKey webMasterKey(WebStorageLocation location, WebRuntimeProperties properties, WebInstanceLease lease) throws IOException {
+    public WebMasterKey webMasterKey(WebStorageLocation location, WebRuntimeProperties properties,
+            WebInstanceLease lease) throws IOException {
         return new WebMasterKey(WebMasterKeyStore.loadOrCreate(location.root(), properties.secrets().directory()));
     }
+
     /**
      * Assembles the hikari data source managed by the Spring application context.
      * <p>装配由 Spring 应用上下文管理的Hikari数据源码。
@@ -76,15 +84,23 @@ public class WebStorageConfiguration {
      * @throws IOException if the required file or stream operation fails / 所需文件或流操作失败时
      */
     @Bean(destroyMethod = "close")
-    public HikariDataSource dataSource(WebStorageLocation location, WebRuntimeProperties properties, WebMasterKey key) throws IOException {
+    public HikariDataSource dataSource(WebStorageLocation location, WebRuntimeProperties properties, WebMasterKey key)
+            throws IOException {
         WebWorkspace.safeAncestors(location.database());
-        if (Files.exists(location.database(), LinkOption.NOFOLLOW_LINKS) && !Files.isRegularFile(location.database(), LinkOption.NOFOLLOW_LINKS))
+        if (Files.exists(location.database(), LinkOption.NOFOLLOW_LINKS)
+                && !Files.isRegularFile(location.database(), LinkOption.NOFOLLOW_LINKS))
             throw new IOException("Web database path is not a regular file");
-        var sqlite = new SQLiteConfig(); sqlite.enforceForeignKeys(true);
+        var sqlite = new SQLiteConfig();
+        sqlite.enforceForeignKeys(true);
         sqlite.setBusyTimeout(Math.toIntExact(properties.database().busyTimeout().toMillis()));
-        var source = new SQLiteDataSource(sqlite); source.setUrl(location.jdbcUrl());
-        var pool = new HikariConfig(); pool.setDataSource(source); pool.setMaximumPoolSize(1); pool.setMinimumIdle(1);
-        pool.setPoolName("web-sqlite"); pool.setConnectionTimeout(properties.database().connectionTimeout().toMillis());
+        var source = new SQLiteDataSource(sqlite);
+        source.setUrl(location.jdbcUrl());
+        var pool = new HikariConfig();
+        pool.setDataSource(source);
+        pool.setMaximumPoolSize(1);
+        pool.setMinimumIdle(1);
+        pool.setPoolName("web-sqlite");
+        pool.setConnectionTimeout(properties.database().connectionTimeout().toMillis());
         return new HikariDataSource(pool);
     }
 }

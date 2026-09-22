@@ -8,4 +8,5 @@ import org.apache.ibatis.annotations.Mapper;
  * <p>将限定作用域的服务器记录映射到显式数据库语句。
  */
 @Mapper
-public interface WebServerMapper extends ResourceRevisionMapper<WebServerEntity> { }
+public interface WebServerMapper extends ResourceRevisionMapper<WebServerEntity> {
+}

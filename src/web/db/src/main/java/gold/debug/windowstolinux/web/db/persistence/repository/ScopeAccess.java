@@ -21,7 +21,10 @@ public final class ScopeAccess {
      *
      * @param mapper mapper / 映射器
      */
-    public ScopeAccess(WebScopeMapper mapper) { this.mapper = mapper; }
+    public ScopeAccess(WebScopeMapper mapper) {
+        this.mapper = mapper;
+    }
+
     /**
      * Requires scope access and rejects inputs outside the declared constraints.
      * <p>要求作用域访问并拒绝超出已声明约束的输入。
@@ -29,6 +32,7 @@ public final class ScopeAccess {
      * @param scope ownership or configuration scope of the operation / 操作的归属或配置作用域
      */
     public void require(ResourceScope scope) {
-        if (mapper.active(scope) != 1) throw new SecurityException("Resource scope is unavailable");
+        if (mapper.active(scope) != 1)
+            throw new SecurityException("Resource scope is unavailable");
     }
 }

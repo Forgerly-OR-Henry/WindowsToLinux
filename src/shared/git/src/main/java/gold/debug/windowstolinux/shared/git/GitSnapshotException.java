@@ -1,10 +1,10 @@
 package gold.debug.windowstolinux.shared.git;
 
+import java.util.Objects;
+
 import gold.debug.windowstolinux.shared.model.failure.FailureCarrier;
 import gold.debug.windowstolinux.shared.model.failure.FailureDescriptor;
 import gold.debug.windowstolinux.shared.model.failure.OperationIdentity;
-
-import java.util.Objects;
 
 /**
  * A structured Git snapshot failure that never exposes remote output or credentials. / 不暴露远端输出或凭据的结构化 Git 快照失败。
@@ -48,8 +48,7 @@ public final class GitSnapshotException extends Exception implements FailureCarr
      * @return a typed Git snapshot failure with its original cause / 带原始原因的类型化 Git 快照失败
      */
     public static GitSnapshotException create(GitSnapshotFailureType type, String diagnostic, Throwable cause) {
-        return new GitSnapshotException(
-                FailureDescriptor.create(type, OperationIdentity.create(), diagnostic), cause);
+        return new GitSnapshotException(FailureDescriptor.create(type, OperationIdentity.create(), diagnostic), cause);
     }
 
     /**
@@ -58,5 +57,8 @@ public final class GitSnapshotException extends Exception implements FailureCarr
      *
      * @return structured failure occurrence retained for safe reporting / 保留用于安全报告的结构化失败实例
      */
-    @Override public FailureDescriptor failure() { return failure; }
+    @Override
+    public FailureDescriptor failure() {
+        return failure;
+    }
 }

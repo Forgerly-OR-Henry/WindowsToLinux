@@ -5,11 +5,7 @@ use std::{
     thread,
     time::{Duration, Instant},
 };
-pub fn invoke(
-    helper: &Path,
-    args: &[String],
-    timeout: u64,
-) -> Result<serde_json::Value, (i32, String)> {
+pub fn invoke(helper: &Path, args: &[String], timeout: u64) -> Result<serde_json::Value, (i32, String)> {
     let mut child = Command::new(helper)
         .args(args)
         .stdin(Stdio::null())
@@ -21,15 +17,11 @@ pub fn invoke(
     let err = child.stderr.take().unwrap();
     let stdout = thread::spawn(move || {
         let mut data = Vec::new();
-        out.take(8 * 1024 * 1024 + 1)
-            .read_to_end(&mut data)
-            .map(|_| data)
+        out.take(8 * 1024 * 1024 + 1).read_to_end(&mut data).map(|_| data)
     });
     let stderr = thread::spawn(move || {
         let mut data = Vec::new();
-        err.take(1024 * 1024 + 1)
-            .read_to_end(&mut data)
-            .map(|_| data)
+        err.take(1024 * 1024 + 1).read_to_end(&mut data).map(|_| data)
     });
     let start = Instant::now();
     let status = loop {
@@ -125,9 +117,7 @@ pub fn invoke(
         return Err(invalid());
     }
     for sample in samples {
-        if !sample["line"].as_u64().is_some_and(|n| n > 0 && n <= lines)
-            || !sample["reason"].is_string()
-        {
+        if !sample["line"].as_u64().is_some_and(|n| n > 0 && n <= lines) || !sample["reason"].is_string() {
             return Err(invalid());
         }
     }

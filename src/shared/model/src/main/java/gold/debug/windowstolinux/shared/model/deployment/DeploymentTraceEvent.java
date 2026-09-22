@@ -224,9 +224,7 @@ public enum DeploymentTraceEvent {
      * @return the operation result / 操作结果
      */
     public static DeploymentTraceEvent fromCode(String code) {
-        return Arrays.stream(values())
-                .filter(value -> value.code.equals(code))
-                .findFirst()
+        return Arrays.stream(values()).filter(value -> value.code.equals(code)).findFirst()
                 .orElseThrow(() -> new IllegalArgumentException("unsupported deployment step code: " + code));
     }
 }

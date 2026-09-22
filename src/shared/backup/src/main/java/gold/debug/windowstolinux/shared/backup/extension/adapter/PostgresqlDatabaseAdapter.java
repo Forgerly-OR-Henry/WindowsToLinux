@@ -1,10 +1,12 @@
 package gold.debug.windowstolinux.shared.backup.extension.adapter;
 
+import java.util.Objects;
+
 import gold.debug.windowstolinux.shared.backup.contract.spi.DatabaseBackupAdapter;
 import gold.debug.windowstolinux.shared.backup.contract.spi.DatabaseBackupArtifact;
 import gold.debug.windowstolinux.shared.backup.contract.spi.DatabaseBackupRequest;
-import gold.debug.windowstolinux.shared.backup.contract.spi.DatabaseCompatibilityEvidence;
 import gold.debug.windowstolinux.shared.backup.contract.spi.DatabaseCommitEvidence;
+import gold.debug.windowstolinux.shared.backup.contract.spi.DatabaseCompatibilityEvidence;
 import gold.debug.windowstolinux.shared.backup.contract.spi.DatabaseOperationPort;
 import gold.debug.windowstolinux.shared.backup.contract.spi.DatabaseRecoveryEvidence;
 import gold.debug.windowstolinux.shared.backup.contract.spi.DatabaseRestoreEvidence;
@@ -12,8 +14,6 @@ import gold.debug.windowstolinux.shared.backup.contract.spi.DatabaseRestoreReque
 import gold.debug.windowstolinux.shared.backup.contract.validation.BackupException;
 import gold.debug.windowstolinux.shared.backup.manifest.BackupConsistencyMode;
 import gold.debug.windowstolinux.shared.backup.manifest.BackupDatabaseType;
-
-import java.util.Objects;
 
 /**
  * PostgreSQL policy that permits only a version-compatible controlled logical dump. / 仅允许版本兼容受控逻辑导出的 PostgreSQL 策略。
@@ -41,7 +41,10 @@ public final class PostgresqlDatabaseAdapter implements DatabaseBackupAdapter {
      *
      * @return selected member of the supported type set / 受支持类型集合中的所选项
      */
-    @Override public BackupDatabaseType type() { return BackupDatabaseType.POSTGRESQL; }
+    @Override
+    public BackupDatabaseType type() {
+        return BackupDatabaseType.POSTGRESQL;
+    }
 
     /**
      * Checks PostgreSQL readiness and exports using its consistent logical-backup strategy.
@@ -71,9 +74,10 @@ public final class PostgresqlDatabaseAdapter implements DatabaseBackupAdapter {
      */
     @Override
     public DatabaseRestoreEvidence restore(DatabaseRestoreRequest request) throws BackupException {
-        if (request.target().type() != type()) throw new IllegalArgumentException("PostgreSQL restore target is required");
-        DatabaseCompatibilityEvidence evidence = operations.inspect(new DatabaseBackupRequest(
-                request.applicationId(), request.target(), false, false));
+        if (request.target().type() != type())
+            throw new IllegalArgumentException("PostgreSQL restore target is required");
+        DatabaseCompatibilityEvidence evidence = operations
+                .inspect(new DatabaseBackupRequest(request.applicationId(), request.target(), false, false));
         DatabaseAdapterEvidence.requireRestoreCompatible(request, evidence, type());
         return operations.restoreCandidate(request);
     }
@@ -86,8 +90,10 @@ public final class PostgresqlDatabaseAdapter implements DatabaseBackupAdapter {
      * @return constructed or resolved database commit evidence / 构造或解析得到的数据库提交证据
      * @throws BackupException if backup validation or the controlled backup operation fails / 备份校验或受控备份操作失败时
      */
-    @Override public DatabaseCommitEvidence commitCandidate(DatabaseRestoreRequest request) throws BackupException {
-        requireRestoreType(request); return operations.commitCandidate(request);
+    @Override
+    public DatabaseCommitEvidence commitCandidate(DatabaseRestoreRequest request) throws BackupException {
+        requireRestoreType(request);
+        return operations.commitCandidate(request);
     }
 
     /**
@@ -98,8 +104,10 @@ public final class PostgresqlDatabaseAdapter implements DatabaseBackupAdapter {
      * @return constructed or resolved database recovery evidence / 构造或解析得到的数据库恢复证据
      * @throws BackupException if backup validation or the controlled backup operation fails / 备份校验或受控备份操作失败时
      */
-    @Override public DatabaseRecoveryEvidence recoverCandidate(DatabaseRestoreRequest request) throws BackupException {
-        requireRestoreType(request); return operations.recoverCandidate(request);
+    @Override
+    public DatabaseRecoveryEvidence recoverCandidate(DatabaseRestoreRequest request) throws BackupException {
+        requireRestoreType(request);
+        return operations.recoverCandidate(request);
     }
 
     /**
@@ -123,7 +131,8 @@ public final class PostgresqlDatabaseAdapter implements DatabaseBackupAdapter {
      * @throws IllegalArgumentException if an input violates the constraints checked by this contract / 输入违反当前契约检查的约束时
      */
     private void requireRestoreType(DatabaseRestoreRequest request) {
-        if (request.target().type() != type()) throw new IllegalArgumentException("PostgreSQL restore target is required");
+        if (request.target().type() != type())
+            throw new IllegalArgumentException("PostgreSQL restore target is required");
     }
 
     /**
@@ -134,6 +143,7 @@ public final class PostgresqlDatabaseAdapter implements DatabaseBackupAdapter {
      * @throws IllegalArgumentException if an input violates the constraints checked by this contract / 输入违反当前契约检查的约束时
      */
     private void requireType(DatabaseBackupRequest request) {
-        if (request.connection().type() != type()) throw new IllegalArgumentException("PostgreSQL connection is required");
+        if (request.connection().type() != type())
+            throw new IllegalArgumentException("PostgreSQL connection is required");
     }
 }

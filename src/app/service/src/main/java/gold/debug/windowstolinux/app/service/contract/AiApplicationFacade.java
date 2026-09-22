@@ -1,13 +1,14 @@
 package gold.debug.windowstolinux.app.service.contract;
 
+import java.sql.SQLException;
+import java.util.*;
+
 import gold.debug.windowstolinux.app.secret.SecretStoreException;
 import gold.debug.windowstolinux.app.service.ai.AiProviderProfile;
 import gold.debug.windowstolinux.app.service.ai.AiProviderSummary;
-import gold.debug.windowstolinux.shared.ai.collaboration.role.AiRoleContext;
 import gold.debug.windowstolinux.shared.ai.collaboration.invocation.AiRoleInvocationResult;
+import gold.debug.windowstolinux.shared.ai.collaboration.role.AiRoleContext;
 import gold.debug.windowstolinux.shared.model.ai.*;
-import java.sql.SQLException;
-import java.util.*;
 
 /** Desktop model inventory and purpose configuration boundary. / 桌面模型清单及用途配置边界。 */
 public interface AiApplicationFacade {
@@ -18,6 +19,7 @@ public interface AiApplicationFacade {
      * @throws Exception if testing fails / 测试失败时
      */
     void testAiCapability(String id, AiCapabilityType capability, char[] master) throws Exception;
+
     /** Tests and saves one model without enrolling it in a purpose. / 测试并保存模型，不自动加入用途。
      * @param profile model settings / 模型设置
      * @param name display label / 显示名称
@@ -29,28 +31,33 @@ public interface AiApplicationFacade {
      */
     void saveAiConfiguration(AiProviderProfile profile, String name, char[] master, char[] key,
             AiCapabilityType capability) throws SQLException, SecretStoreException;
+
     /** Reorders only the full inventory. / 仅调整完整清单顺序。
      * @param ids full ordered inventory identities / 完整有序清单标识
      * @throws SQLException if storage fails / 保存失败时
      */
     void reorderAiProviders(List<String> ids) throws SQLException;
+
     /** Lists all added models in display order. / 按展示顺序列出所有已添加模型。
      * @return inventory / 清单
      * @throws SQLException if reading fails / 读取失败时
      */
     List<AiProviderSummary> listAiConfigurations() throws SQLException;
+
     /** Reads one purpose's ordered membership. / 读取一个用途的有序成员。
      * @param purpose selected purpose / 所选用途
      * @return members in invocation order / 按调用顺序排列的成员
      * @throws SQLException if reading fails / 读取失败时
      */
     List<AiPurposeAssignment> listAiPurpose(AiPurposeType purpose) throws SQLException;
+
     /** Atomically saves one purpose's draft. / 原子保存一个用途的草稿。
      * @param purpose selected purpose / 所选用途
      * @param assignments ordered members and enablement / 有序成员及启用状态
      * @throws SQLException if validation or storage fails / 校验或保存失败时
      */
     void saveAiPurpose(AiPurposeType purpose, List<AiPurposeAssignment> assignments) throws SQLException;
+
     /** Requests bounded advice through the deployment purpose. / 通过部署用途请求有界建议。
      * @param context structured facts / 结构化事实
      * @param masterPassword unlock buffer / 解锁缓冲区

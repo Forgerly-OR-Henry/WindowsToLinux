@@ -12,14 +12,8 @@ import java.util.List;
  * @param architecture observed machine architecture / 观测到的机器架构
  * @param capabilities observed target tools and runtime capabilities / 目标工具及运行能力观测
  */
-public record BackupRuntime(
-        String distroId,
-        String distroVersion,
-        String runtimeKind,
-        String runtimeVersion,
-        String architecture,
-        List<String> capabilities
-) {
+public record BackupRuntime(String distroId, String distroVersion, String runtimeKind, String runtimeVersion,
+        String architecture, List<String> capabilities) {
     /**
      * Validates bounded runtime compatibility evidence. / 校验有界运行时兼容性证据。
      *

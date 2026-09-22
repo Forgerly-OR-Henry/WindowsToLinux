@@ -1,4 +1,5 @@
 package gold.debug.windowstolinux.shared.model.agent;
+
 /** Explicit process-local task controls. / 显式进程内任务控制。 */
 public enum AgentTaskCommandAction {
     /** Wait at the next safe transaction boundary. / 在下一个安全事务边界等待。 */

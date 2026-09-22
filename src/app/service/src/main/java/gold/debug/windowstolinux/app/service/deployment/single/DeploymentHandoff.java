@@ -95,11 +95,8 @@ public sealed interface DeploymentHandoff permits DeploymentHandoff.HttpAccessUr
             if (normalized.startsWith("[") && normalized.endsWith("]")) {
                 normalized = normalized.substring(1, normalized.length() - 1);
             }
-            return normalized.equals("localhost")
-                    || normalized.equals("0.0.0.0")
-                    || normalized.equals("::")
-                    || normalized.equals("::1")
-                    || normalized.equals("0:0:0:0:0:0:0:1")
+            return normalized.equals("localhost") || normalized.equals("0.0.0.0") || normalized.equals("::")
+                    || normalized.equals("::1") || normalized.equals("0:0:0:0:0:0:0:1")
                     || normalized.startsWith("127.");
         }
     }
@@ -113,8 +110,8 @@ public sealed interface DeploymentHandoff permits DeploymentHandoff.HttpAccessUr
      * @param systemdUnit systemd unit / systemd单元
      * @param ownershipManifestSha256 digest binding the managed resource to its ownership manifest / 将受管资源绑定到归属清单的摘要
      */
-    record SystemdStartCommand(String applicationId, String systemdUnit, String ownershipManifestSha256)
-            implements DeploymentHandoff {
+    record SystemdStartCommand(String applicationId, String systemdUnit,
+            String ownershipManifestSha256) implements DeploymentHandoff {
         /**
          * Validates and binds the inputs required by systemd start command.
          * <p>校验并绑定Systemd启动命令所需输入。
@@ -158,31 +155,38 @@ public sealed interface DeploymentHandoff permits DeploymentHandoff.HttpAccessUr
          * @return the operation result / 操作结果
          */
         public String command() {
-            return "sudo /usr/local/lib/windowstolinux/managed-helper lifecycle "
-                    + applicationId + " start " + ownershipManifestSha256;
+            return "sudo /usr/local/lib/windowstolinux/managed-helper lifecycle " + applicationId + " start "
+                    + ownershipManifestSha256;
         }
     }
+
     /**
      * Associates a successfully deployed application with its local handoff metadata.
      * <p>将成功部署的应用与其本地交接元数据关联。
      *
      * @param usage usage / 用法
      */
-    record ApplicationEntry(gold.debug.windowstolinux.shared.model.managed.ApplicationUsage usage) implements DeploymentHandoff {
+    record ApplicationEntry(
+            gold.debug.windowstolinux.shared.model.managed.ApplicationUsage usage) implements DeploymentHandoff {
         /**
          * Returns selected member of the supported kind set.
          * <p>返回受支持种类集合中的所选项。
          *
          * @return selected member of the supported kind set / 受支持种类集合中的所选项
          */
-        public Kind kind() { return Kind.APPLICATION_ENTRY; }
+        public Kind kind() {
+            return Kind.APPLICATION_ENTRY;
+        }
+
         /**
          * Returns fixed or explicitly reviewed command text.
          * <p>返回固定或显式审阅的命令文本。
          *
          * @return fixed or explicitly reviewed command text / 固定或显式审阅的命令文本
          */
-        public String command() { return usage.endpoints().isEmpty() ? usage.command() : String.join("\n", usage.endpoints()); }
+        public String command() {
+            return usage.endpoints().isEmpty() ? usage.command() : String.join("\n", usage.endpoints());
+        }
     }
 
 }

@@ -1,11 +1,11 @@
 package gold.debug.windowstolinux.shared.ai.collaboration.invocation;
 
-import gold.debug.windowstolinux.shared.ai.collaboration.advice.RoleAdviceAssessment;
-import gold.debug.windowstolinux.shared.ai.collaboration.role.AiCollaborationRoleKind;
-
 import java.time.Instant;
 import java.util.Objects;
 import java.util.Optional;
+
+import gold.debug.windowstolinux.shared.ai.collaboration.advice.RoleAdviceAssessment;
+import gold.debug.windowstolinux.shared.ai.collaboration.role.AiCollaborationRoleKind;
 
 /**
  * Credential-free evidence for one explicitly selected role invocation. / 一次显式选择角色调用的不含凭据证据。
@@ -20,17 +20,9 @@ import java.util.Optional;
  * @param validationDetail validation detail / 校验详情
  * @param observedAt observed at / 已观测时刻
  */
-public record AiInvocationEvidence(
-        AiCollaborationRoleKind role,
-        String providerId,
-        String model,
-        String redactedInputSummary,
-        String inputSha256,
-        AiInvocationStatus status,
-        Optional<RoleAdviceAssessment> output,
-        String validationDetail,
-        Instant observedAt
-) {
+public record AiInvocationEvidence(AiCollaborationRoleKind role, String providerId, String model,
+        String redactedInputSummary, String inputSha256, AiInvocationStatus status,
+        Optional<RoleAdviceAssessment> output, String validationDetail, Instant observedAt) {
     /**
      * Validates the auditable evidence without retaining provider response bodies. / 验证可审计证据且不保留提供者响应正文。
      *
@@ -52,7 +44,8 @@ public record AiInvocationEvidence(
         model = bounded(model, "model", 128);
         redactedInputSummary = bounded(redactedInputSummary, "redactedInputSummary", 8_192);
         inputSha256 = Objects.requireNonNull(inputSha256, "inputSha256");
-        if (!inputSha256.matches("[0-9a-f]{64}")) throw new IllegalArgumentException("inputSha256 is invalid");
+        if (!inputSha256.matches("[0-9a-f]{64}"))
+            throw new IllegalArgumentException("inputSha256 is invalid");
         status = Objects.requireNonNull(status, "status");
         output = Objects.requireNonNull(output, "output");
         validationDetail = bounded(validationDetail, "validationDetail", 256);
@@ -75,7 +68,8 @@ public record AiInvocationEvidence(
      */
     private static String bounded(String value, String name, int maximum) {
         value = Objects.requireNonNull(value, name).trim();
-        if (value.isBlank() || value.length() > maximum) throw new IllegalArgumentException(name + " is invalid");
+        if (value.isBlank() || value.length() > maximum)
+            throw new IllegalArgumentException(name + " is invalid");
         return value;
     }
 }

@@ -2,6 +2,7 @@ import os
 import re
 from dataclasses import dataclass
 
+
 @dataclass(frozen=True)
 class Configuration:
     port: int

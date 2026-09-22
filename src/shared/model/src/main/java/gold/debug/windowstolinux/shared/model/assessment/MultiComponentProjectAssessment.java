@@ -1,11 +1,11 @@
 package gold.debug.windowstolinux.shared.model.assessment;
 
-import gold.debug.windowstolinux.shared.model.analysis.DeploymentAdmissionStatus;
-import gold.debug.windowstolinux.shared.model.project.component.DeploymentComponent;
-
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Objects;
+
+import gold.debug.windowstolinux.shared.model.analysis.DeploymentAdmissionStatus;
+import gold.debug.windowstolinux.shared.model.project.component.DeploymentComponent;
 
 /**
  * Deterministic mixed-project analysis with component-scoped reasons.
@@ -18,13 +18,8 @@ import java.util.Objects;
  * @param components reviewed components in the application graph / 应用图中的已审阅组件
  * @param issues issues / 问题集合
  */
-public record MultiComponentProjectAssessment(
-        DeploymentAdmissionStatus admission,
-        String applicationId,
-        Path applicationRoot,
-        List<DeploymentComponent> components,
-        List<ComponentIssue> issues
-) {
+public record MultiComponentProjectAssessment(DeploymentAdmissionStatus admission, String applicationId,
+        Path applicationRoot, List<DeploymentComponent> components, List<ComponentIssue> issues) {
     /**
      * Validates admission consistency without hiding component issues. / 验证准入一致性且不隐藏组件问题。
      *
@@ -46,16 +41,18 @@ public record MultiComponentProjectAssessment(
         components = List.copyOf(Objects.requireNonNull(components, "components").stream()
                 .sorted(java.util.Comparator.comparing(DeploymentComponent::componentId)).toList());
         issues = List.copyOf(Objects.requireNonNull(issues, "issues"));
-        boolean rejected = issues.stream().anyMatch(issue -> issue.severity() == ComponentIssue.SeverityLevel.SAFETY_REJECTION);
-        boolean needsInput = issues.stream().anyMatch(issue -> issue.severity() == ComponentIssue.SeverityLevel.REQUIRES_INPUT);
+        boolean rejected = issues.stream()
+                .anyMatch(issue -> issue.severity() == ComponentIssue.SeverityLevel.SAFETY_REJECTION);
+        boolean needsInput = issues.stream()
+                .anyMatch(issue -> issue.severity() == ComponentIssue.SeverityLevel.REQUIRES_INPUT);
         if (admission == DeploymentAdmissionStatus.REJECTED != rejected) {
             throw new IllegalArgumentException("rejected mixed assessments must match hard component issues");
         }
         if (!rejected && (admission == DeploymentAdmissionStatus.REQUIRES_INPUT) != needsInput) {
             throw new IllegalArgumentException("input-required mixed assessments must match component issues");
         }
-        if (admission == DeploymentAdmissionStatus.READY_FOR_PLANNING
-                && (components.isEmpty() || components.stream().noneMatch(component -> component.runtime().isPresent()))) {
+        if (admission == DeploymentAdmissionStatus.READY_FOR_PLANNING && (components.isEmpty()
+                || components.stream().noneMatch(component -> component.runtime().isPresent()))) {
             throw new IllegalArgumentException("ready mixed assessments require deployable components");
         }
     }

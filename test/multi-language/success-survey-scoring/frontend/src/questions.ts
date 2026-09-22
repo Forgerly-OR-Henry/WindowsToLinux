@@ -38,10 +38,7 @@ export function addQuestion(q?: Question) {
   };
   const card = document.createElement("section");
   card.className = "question-editor";
-  const controls: Record<
-    string,
-    HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement
-  > = {};
+  const controls: Record<string, HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement> = {};
   for (const [key, label, value, type] of [
     ["id", "题号", question.id, "text"],
     ["label", "题目", question.label, "text"],
@@ -59,11 +56,7 @@ export function addQuestion(q?: Question) {
   }
   const type = document.createElement("select");
   type.dataset.field = "type";
-  type.append(
-    new Option("单选", "single"),
-    new Option("多选", "multi"),
-    new Option("量表", "scale"),
-  );
+  type.append(new Option("单选", "single"), new Option("多选", "multi"), new Option("量表", "scale"));
   type.value = question.type;
   controls.type = type;
   card.append(field("题型", type));
@@ -91,8 +84,7 @@ export function addQuestion(q?: Question) {
   controls.options = options;
   card.append(field("选项（每行 值|文本|分数）", options));
   const refresh = () => {
-    for (const key of ["min", "max"])
-      controls[key].parentElement!.hidden = type.value !== "scale";
+    for (const key of ["min", "max"]) controls[key].parentElement!.hidden = type.value !== "scale";
     options.parentElement!.hidden = type.value === "scale";
   };
   type.onchange = refresh;
@@ -103,11 +95,8 @@ export function addQuestion(q?: Question) {
 export function readContent(): Content {
   return {
     title: node<HTMLInputElement>("content-title").value,
-    questions: Array.from(
-      document.querySelectorAll<HTMLElement>(".question-editor"),
-    ).map((card) => {
-      const get = (key: string) =>
-        card.querySelector<HTMLInputElement>(`[data-field="${key}"]`)!;
+    questions: Array.from(document.querySelectorAll<HTMLElement>(".question-editor")).map((card) => {
+      const get = (key: string) => card.querySelector<HTMLInputElement>(`[data-field="${key}"]`)!;
       const q: Question = {
         id: get("id").value,
         label: get("label").value,
@@ -157,10 +146,7 @@ export function renderQuestions(content: Content) {
         section.append(e);
       } else
         for (const option of q.options!) {
-          const e = input(
-            option.value,
-            q.type === "single" ? "radio" : "checkbox",
-          );
+          const e = input(option.value, q.type === "single" ? "radio" : "checkbox");
           e.name = q.id;
           section.append(field(option.label, e));
         }
@@ -173,9 +159,7 @@ export function renderQuestions(content: Content) {
 export function answers(content: Content) {
   const result: Record<string, string | number | string[]> = {};
   for (const q of content.questions) {
-    const all = Array.from(
-      document.getElementsByName(q.id),
-    ) as HTMLInputElement[];
+    const all = Array.from(document.getElementsByName(q.id)) as HTMLInputElement[];
     if (q.type === "scale") {
       if (all[0].value !== "") result[q.id] = Number(all[0].value);
     } else if (q.type === "single") {
@@ -188,16 +172,11 @@ export function answers(content: Content) {
 function visibility(content: Content) {
   const values = answers(content);
   for (const q of content.questions) {
-    const section = document.querySelector<HTMLElement>(
-      `[data-question="${q.id}"]`,
-    )!;
-    const visible =
-      !q.visibleWhen || values[q.visibleWhen.question] === q.visibleWhen.equals;
+    const section = document.querySelector<HTMLElement>(`[data-question="${q.id}"]`)!;
+    const visible = !q.visibleWhen || values[q.visibleWhen.question] === q.visibleWhen.equals;
     section.hidden = !visible;
     section
       .querySelectorAll<HTMLInputElement>("input")
-      .forEach(
-        (e) => (e.required = visible && q.required && q.type !== "multi"),
-      );
+      .forEach((e) => (e.required = visible && q.required && q.type !== "multi"));
   }
 }

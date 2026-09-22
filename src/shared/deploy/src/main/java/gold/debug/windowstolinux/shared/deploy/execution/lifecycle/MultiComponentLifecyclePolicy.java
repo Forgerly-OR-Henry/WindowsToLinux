@@ -1,17 +1,5 @@
 package gold.debug.windowstolinux.shared.deploy.execution.lifecycle;
 
-import gold.debug.windowstolinux.shared.deploy.contract.MultiComponentDeploymentPlan;
-import gold.debug.windowstolinux.shared.deploy.contract.result.lifecycle.ComponentLifecycleResult;
-import gold.debug.windowstolinux.shared.deploy.contract.result.lifecycle.MultiComponentLifecycleResult;
-import gold.debug.windowstolinux.shared.model.lifecycle.ApplicationAutostartState;
-import gold.debug.windowstolinux.shared.model.lifecycle.ApplicationRuntimeState;
-import gold.debug.windowstolinux.shared.model.lifecycle.AutostartState;
-import gold.debug.windowstolinux.shared.model.lifecycle.LifecycleAction;
-import gold.debug.windowstolinux.shared.model.lifecycle.LifecycleObservation;
-import gold.debug.windowstolinux.shared.model.lifecycle.RuntimeState;
-import gold.debug.windowstolinux.shared.model.message.LocalizedMessage;
-import gold.debug.windowstolinux.shared.model.failure.FailureDescriptor;
-
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -19,6 +7,18 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+
+import gold.debug.windowstolinux.shared.deploy.contract.MultiComponentDeploymentPlan;
+import gold.debug.windowstolinux.shared.deploy.contract.result.lifecycle.ComponentLifecycleResult;
+import gold.debug.windowstolinux.shared.deploy.contract.result.lifecycle.MultiComponentLifecycleResult;
+import gold.debug.windowstolinux.shared.model.failure.FailureDescriptor;
+import gold.debug.windowstolinux.shared.model.lifecycle.ApplicationAutostartState;
+import gold.debug.windowstolinux.shared.model.lifecycle.ApplicationRuntimeState;
+import gold.debug.windowstolinux.shared.model.lifecycle.AutostartState;
+import gold.debug.windowstolinux.shared.model.lifecycle.LifecycleAction;
+import gold.debug.windowstolinux.shared.model.lifecycle.LifecycleObservation;
+import gold.debug.windowstolinux.shared.model.lifecycle.RuntimeState;
+import gold.debug.windowstolinux.shared.model.message.LocalizedMessage;
 
 /**
  * Applies pure target, dependency-impact, final-state, and aggregation rules. / 应用纯目标、依赖影响、最终状态与汇总规则。
@@ -42,25 +42,25 @@ final class MultiComponentLifecyclePolicy {
      * @return constructed or resolved multi component lifecycle result; null when no matching value is available / 构造或解析得到的多组件生命周期结果；没有匹配值时为 null
      */
     static MultiComponentLifecycleResult validate(MultiComponentDeploymentPlan plan, Set<String> targets,
-                                                  LifecycleAction action,
-                                                  Map<String, LifecycleObservation> observations) {
+            LifecycleAction action, Map<String, LifecycleObservation> observations) {
         if (observations.values().stream().anyMatch(observation -> !verified(observation))) {
-            return result(false, LocalizedMessage.of("lifecycle.applicationStateUnverified"),
-                    plan, observations, Set.of(), observations.keySet());
+            return result(false, LocalizedMessage.of("lifecycle.applicationStateUnverified"), plan, observations,
+                    Set.of(), observations.keySet());
         }
-        if (action == LifecycleAction.REFRESH_STATUS) return null;
+        if (action == LifecycleAction.REFRESH_STATUS)
+            return null;
         if (targets.stream().anyMatch(id -> observations.get(id).runtimeState() == RuntimeState.INSTALLED))
-            return result(false, LocalizedMessage.of("lifecycle.onDemandCommandRequired"), plan, observations, Set.of(), targets);
+            return result(false, LocalizedMessage.of("lifecycle.onDemandCommandRequired"), plan, observations, Set.of(),
+                    targets);
         if (action != LifecycleAction.STOP && action != LifecycleAction.DISABLE_AUTOSTART
                 && targets.stream().anyMatch(id -> observations.get(id).runtimeState() == RuntimeState.ERROR)) {
-            return result(false, LocalizedMessage.of("lifecycle.errorRequiresStop"),
-                    plan, observations, Set.of(), targets);
+            return result(false, LocalizedMessage.of("lifecycle.errorRequiresStop"), plan, observations, Set.of(),
+                    targets);
         }
         Set<String> unsafe = dependencyImpact(plan, targets, action, observations);
         if (!unsafe.isEmpty()) {
             return result(false, LocalizedMessage.of("lifecycle.applicationDependencyImpact",
-                            Map.of("components", String.join(", ", unsafe))),
-                    plan, observations, Set.of(), unsafe);
+                    Map.of("components", String.join(", ", unsafe))), plan, observations, Set.of(), unsafe);
         }
         return null;
     }
@@ -74,7 +74,8 @@ final class MultiComponentLifecyclePolicy {
      * @return true when multi component lifecycle policy condition holds for this contract, false otherwise / 当前契约是否满足多组件生命周期策略条件时为 true，否则为 false
      */
     static boolean matches(LifecycleAction action, LifecycleObservation observation) {
-        if (!observation.ownershipVerified()) return false;
+        if (!observation.ownershipVerified())
+            return false;
         return switch (action) {
             case START -> observation.runtimeState() == RuntimeState.RUNNING;
             case STOP -> observation.runtimeState() == RuntimeState.STOPPED;
@@ -109,14 +110,13 @@ final class MultiComponentLifecyclePolicy {
      * @return or preserves the module-owned failure for the supplied cause and diagnostic evidence / 为所提供原因及诊断证据创建或保留模块自有失败
      */
     static MultiComponentLifecycleResult failure(MultiComponentDeploymentPlan plan,
-                                                 Map<String, LifecycleObservation> observations,
-                                                 Set<String> attempted, Set<String> failed,
-                                                 FailureDescriptor failure) {
+            Map<String, LifecycleObservation> observations, Set<String> attempted, Set<String> failed,
+            FailureDescriptor failure) {
         Set<String> unresolved = new LinkedHashSet<>(failed);
         unresolved.addAll(attempted);
         unresolved.addAll(plan.startOrder().stream().filter(id -> !observations.containsKey(id)).toList());
-        MultiComponentLifecycleResult result = result(false, failure.userMessage(),
-                plan, observations, attempted, unresolved);
+        MultiComponentLifecycleResult result = result(false, failure.userMessage(), plan, observations, attempted,
+                unresolved);
         return new MultiComponentLifecycleResult(false, failure.userMessage(), result.runtimeState(),
                 result.autostartState(), result.componentResults(), failure.operationIdentity(),
                 java.util.Optional.of(failure), List.of());
@@ -135,24 +135,27 @@ final class MultiComponentLifecyclePolicy {
      * @return multi component lifecycle result from the supplied result inputs / 根据所提供结果输入构建多组件生命周期结果
      */
     static MultiComponentLifecycleResult result(boolean accepted, LocalizedMessage message,
-                                                MultiComponentDeploymentPlan plan,
-                                                Map<String, LifecycleObservation> observations,
-                                                Set<String> attempted, Set<String> failed) {
+            MultiComponentDeploymentPlan plan, Map<String, LifecycleObservation> observations, Set<String> attempted,
+            Set<String> failed) {
         List<ComponentLifecycleResult> componentResults = plan.startOrder().stream().map(id -> {
             LifecycleObservation observation = observations.get(id);
             boolean componentAccepted = verified(observation) && !failed.contains(id);
             LocalizedMessage componentMessage = failed.contains(id)
                     ? LocalizedMessage.of("lifecycle.componentFailed")
-                    : observation == null ? LocalizedMessage.of("lifecycle.componentUnobserved")
-                    : LocalizedMessage.of("lifecycle.componentObserved");
+                    : observation == null
+                            ? LocalizedMessage.of("lifecycle.componentUnobserved")
+                            : LocalizedMessage.of("lifecycle.componentObserved");
             return new ComponentLifecycleResult(id, attempted.contains(id), componentAccepted, componentMessage,
                     java.util.Optional.ofNullable(observation));
         }).toList();
-        boolean applicationAccepted = accepted && componentResults.stream().allMatch(ComponentLifecycleResult::accepted);
+        boolean applicationAccepted = accepted
+                && componentResults.stream().allMatch(ComponentLifecycleResult::accepted);
         return new MultiComponentLifecycleResult(applicationAccepted, message,
-                observations.size() == plan.startOrder().size() ? runtime(observations.values())
+                observations.size() == plan.startOrder().size()
+                        ? runtime(observations.values())
                         : ApplicationRuntimeState.UNKNOWN,
-                observations.size() == plan.startOrder().size() ? autostart(observations.values())
+                observations.size() == plan.startOrder().size()
+                        ? autostart(observations.values())
                         : ApplicationAutostartState.UNKNOWN,
                 componentResults);
     }
@@ -167,8 +170,8 @@ final class MultiComponentLifecyclePolicy {
      * @throws IllegalArgumentException if an input violates the constraints checked by this contract / 输入违反当前契约检查的约束时
      * @throws NullPointerException if a required input is absent / 必需输入缺失时
      */
-    static LinkedHashMap<String, ManagedComponentLifecycle> components(
-            MultiComponentDeploymentPlan plan, List<ManagedComponentLifecycle> managed) {
+    static LinkedHashMap<String, ManagedComponentLifecycle> components(MultiComponentDeploymentPlan plan,
+            List<ManagedComponentLifecycle> managed) {
         Map<String, ManagedComponentLifecycle> indexed = new LinkedHashMap<>();
         for (ManagedComponentLifecycle component : Objects.requireNonNull(managed, "managedComponents")) {
             if (indexed.putIfAbsent(component.componentId(), component) != null) {
@@ -203,7 +206,8 @@ final class MultiComponentLifecyclePolicy {
     static Set<String> normalizedTargets(Set<String> components, Set<String> requested, LifecycleAction action) {
         Objects.requireNonNull(requested, "targetComponentIds");
         Set<String> targets = new LinkedHashSet<>(requested.stream().sorted().toList());
-        if (action == LifecycleAction.REFRESH_STATUS && targets.isEmpty()) targets.addAll(components);
+        if (action == LifecycleAction.REFRESH_STATUS && targets.isEmpty())
+            targets.addAll(components);
         if (targets.isEmpty() || !components.containsAll(targets)) {
             throw new IllegalArgumentException("lifecycle targets must be a non-empty subset of the component plan");
         }
@@ -221,8 +225,7 @@ final class MultiComponentLifecyclePolicy {
      * @return dependencies or dependents whose observed state makes the selected lifecycle action unsafe / 观测状态使所选生命周期动作不安全的依赖项或被依赖项
      */
     private static Set<String> dependencyImpact(MultiComponentDeploymentPlan plan, Set<String> targets,
-                                                LifecycleAction action,
-                                                Map<String, LifecycleObservation> observations) {
+            LifecycleAction action, Map<String, LifecycleObservation> observations) {
         Set<String> unsafe = new LinkedHashSet<>();
         Map<String, Set<String>> dependents = dependents(plan.dependencies());
         for (String id : targets) {
@@ -232,15 +235,18 @@ final class MultiComponentLifecyclePolicy {
                     boolean ready = action == LifecycleAction.START
                             ? observation.runtimeState() == RuntimeState.RUNNING
                             : observation.autostartState() == AutostartState.ENABLED;
-                    if (!targets.contains(dependency) && !ready) unsafe.add(dependency);
+                    if (!targets.contains(dependency) && !ready)
+                        unsafe.add(dependency);
                 }
             } else {
                 for (String dependent : transitiveDependents(id, dependents)) {
                     LifecycleObservation observation = observations.get(dependent);
                     boolean affected = action == LifecycleAction.DISABLE_AUTOSTART
                             ? observation.autostartState() == AutostartState.ENABLED
-                            : observation.runtimeState() == RuntimeState.RUNNING || observation.runtimeState() == RuntimeState.ERROR;
-                    if (!targets.contains(dependent) && affected) unsafe.add(dependent);
+                            : observation.runtimeState() == RuntimeState.RUNNING
+                                    || observation.runtimeState() == RuntimeState.ERROR;
+                    if (!targets.contains(dependent) && affected)
+                        unsafe.add(dependent);
                 }
             }
         }
@@ -274,7 +280,8 @@ final class MultiComponentLifecyclePolicy {
         List<String> pending = new ArrayList<>(dependents.get(id));
         while (!pending.isEmpty()) {
             String current = pending.removeFirst();
-            if (result.add(current)) pending.addAll(dependents.get(current));
+            if (result.add(current))
+                pending.addAll(dependents.get(current));
         }
         return result;
     }
@@ -301,14 +308,19 @@ final class MultiComponentLifecyclePolicy {
      * @return constructed or resolved application runtime state / 构造或解析得到的应用运行时状态
      */
     private static ApplicationRuntimeState runtime(java.util.Collection<LifecycleObservation> observations) {
-        if (observations.isEmpty() || observations.stream().anyMatch(value -> value.runtimeState() == RuntimeState.UNKNOWN)) {
+        if (observations.isEmpty()
+                || observations.stream().anyMatch(value -> value.runtimeState() == RuntimeState.UNKNOWN)) {
             return ApplicationRuntimeState.UNKNOWN;
         }
-        if (observations.stream().anyMatch(value -> value.runtimeState() == RuntimeState.ERROR)) return ApplicationRuntimeState.ERROR;
-        if (observations.stream().allMatch(value -> value.runtimeState() == RuntimeState.INSTALLED)) return ApplicationRuntimeState.INSTALLED;
+        if (observations.stream().anyMatch(value -> value.runtimeState() == RuntimeState.ERROR))
+            return ApplicationRuntimeState.ERROR;
+        if (observations.stream().allMatch(value -> value.runtimeState() == RuntimeState.INSTALLED))
+            return ApplicationRuntimeState.INSTALLED;
         var daemons = observations.stream().filter(value -> value.runtimeState() != RuntimeState.INSTALLED).toList();
-        if (daemons.stream().allMatch(value -> value.runtimeState() == RuntimeState.RUNNING)) return ApplicationRuntimeState.RUNNING;
-        if (daemons.stream().allMatch(value -> value.runtimeState() == RuntimeState.STOPPED)) return ApplicationRuntimeState.STOPPED;
+        if (daemons.stream().allMatch(value -> value.runtimeState() == RuntimeState.RUNNING))
+            return ApplicationRuntimeState.RUNNING;
+        if (daemons.stream().allMatch(value -> value.runtimeState() == RuntimeState.STOPPED))
+            return ApplicationRuntimeState.STOPPED;
         return ApplicationRuntimeState.PARTIALLY_RUNNING;
     }
 
@@ -320,12 +332,16 @@ final class MultiComponentLifecyclePolicy {
      * @return constructed or resolved application autostart state / 构造或解析得到的应用自动启动状态
      */
     private static ApplicationAutostartState autostart(java.util.Collection<LifecycleObservation> observations) {
-        if (observations.isEmpty() || observations.stream().anyMatch(value -> value.autostartState() == AutostartState.UNKNOWN)) {
+        if (observations.isEmpty()
+                || observations.stream().anyMatch(value -> value.autostartState() == AutostartState.UNKNOWN)) {
             return ApplicationAutostartState.UNKNOWN;
         }
-        if (observations.stream().anyMatch(value -> value.autostartState() == AutostartState.ERROR)) return ApplicationAutostartState.ERROR;
-        if (observations.stream().allMatch(value -> value.autostartState() == AutostartState.ENABLED)) return ApplicationAutostartState.ENABLED;
-        if (observations.stream().allMatch(value -> value.autostartState() == AutostartState.DISABLED)) return ApplicationAutostartState.DISABLED;
+        if (observations.stream().anyMatch(value -> value.autostartState() == AutostartState.ERROR))
+            return ApplicationAutostartState.ERROR;
+        if (observations.stream().allMatch(value -> value.autostartState() == AutostartState.ENABLED))
+            return ApplicationAutostartState.ENABLED;
+        if (observations.stream().allMatch(value -> value.autostartState() == AutostartState.DISABLED))
+            return ApplicationAutostartState.DISABLED;
         return ApplicationAutostartState.PARTIALLY_ENABLED;
     }
 }

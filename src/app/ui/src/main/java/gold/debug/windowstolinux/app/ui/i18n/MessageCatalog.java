@@ -1,7 +1,5 @@
 package gold.debug.windowstolinux.app.ui.i18n;
 
-import gold.debug.windowstolinux.shared.model.message.LocalizedMessage;
-
 import java.util.LinkedHashSet;
 import java.util.Locale;
 import java.util.Map;
@@ -11,6 +9,8 @@ import java.util.ResourceBundle;
 import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+
+import gold.debug.windowstolinux.shared.model.message.LocalizedMessage;
 
 /**
  * Resolves application message keys and non-recursive named placeholders from a locale bundle.
@@ -24,22 +24,26 @@ public final class MessageCatalog {
      *  <p>公开 {@code ENGLISH_TAG} 常量。
      */
     public static final String ENGLISH_TAG = "en";
+
     /**
      * Exposes the {@code SIMPLIFIED_CHINESE_TAG} constant.
      *
      *  <p>公开 {@code SIMPLIFIED_CHINESE_TAG} 常量。
      */
     public static final String SIMPLIFIED_CHINESE_TAG = "zh-CN";
+
     /**
      * SUPPORTED LANGUAGE TAGS.
      * <p>受支持语言标签集合。
      */
     private static final Set<String> SUPPORTED_LANGUAGE_TAGS = Set.of(ENGLISH_TAG, SIMPLIFIED_CHINESE_TAG);
+
     /**
      * BUNDLE NAME.
      * <p>资源包名称。
      */
     private static final String BUNDLE_NAME = "gold.debug.windowstolinux.app.ui.i18n.messages.Messages";
+
     /**
      * Pattern recognizing pattern matching named localization placeholders.
      * <p>用于识别匹配具名本地化占位符的模式的匹配模式。
@@ -51,6 +55,7 @@ public final class MessageCatalog {
      * <p>区域。
      */
     private final Locale locale;
+
     /**
      * Bundle.
      * <p>资源包。
@@ -108,8 +113,7 @@ public final class MessageCatalog {
      */
     public static String defaultLanguageTag(Locale systemLocale) {
         Objects.requireNonNull(systemLocale, "systemLocale");
-        return systemLocale.getLanguage().equals(Locale.CHINESE.getLanguage())
-                ? SIMPLIFIED_CHINESE_TAG : ENGLISH_TAG;
+        return systemLocale.getLanguage().equals(Locale.CHINESE.getLanguage()) ? SIMPLIFIED_CHINESE_TAG : ENGLISH_TAG;
     }
 
     /**

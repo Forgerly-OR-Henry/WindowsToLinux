@@ -1,11 +1,11 @@
 package gold.debug.windowstolinux.app.windows.uninstall;
 
-import gold.debug.windowstolinux.shared.model.failure.FailureDescriptor;
-import gold.debug.windowstolinux.shared.model.failure.OperationIdentity;
-
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
+
+import gold.debug.windowstolinux.shared.model.failure.FailureDescriptor;
+import gold.debug.windowstolinux.shared.model.failure.OperationIdentity;
 
 /**
  * Desktop uninstall result with exact failed residual items. / 带精确失败残留项目的桌面卸载结果。
@@ -17,14 +17,9 @@ import java.util.Optional;
  * @param intentionallyRetainedItems intentionally retained items / 有意已保留项目集合
  * @param failure structured failure occurrence retained for safe reporting / 保留用于安全报告的结构化失败实例
  */
-public record DesktopUninstallResult(
-        OperationIdentity operationIdentity,
-        DesktopUninstallStatus status,
-        List<DesktopUninstallEvent> events,
-        List<String> residualItems,
-        List<String> intentionallyRetainedItems,
-        Optional<FailureDescriptor> failure
-) {
+public record DesktopUninstallResult(OperationIdentity operationIdentity, DesktopUninstallStatus status,
+        List<DesktopUninstallEvent> events, List<String> residualItems, List<String> intentionallyRetainedItems,
+        Optional<FailureDescriptor> failure) {
     /**
      * Validates status, failure and residual consistency. / 校验终态、失败及残留一致性。
      *
@@ -42,10 +37,11 @@ public record DesktopUninstallResult(
         status = Objects.requireNonNull(status, "status");
         events = List.copyOf(Objects.requireNonNull(events, "events"));
         residualItems = List.copyOf(Objects.requireNonNull(residualItems, "residualItems"));
-        intentionallyRetainedItems = List.copyOf(Objects.requireNonNull(
-                intentionallyRetainedItems, "intentionallyRetainedItems"));
+        intentionallyRetainedItems = List
+                .copyOf(Objects.requireNonNull(intentionallyRetainedItems, "intentionallyRetainedItems"));
         failure = Objects.requireNonNull(failure, "failure");
-        if (events.isEmpty()) throw new IllegalArgumentException("uninstall result requires events");
+        if (events.isEmpty())
+            throw new IllegalArgumentException("uninstall result requires events");
         if (status == DesktopUninstallStatus.COMPLETED_WITH_RESIDUALS && residualItems.isEmpty()) {
             throw new IllegalArgumentException("residual terminal status requires exact residual items");
         }

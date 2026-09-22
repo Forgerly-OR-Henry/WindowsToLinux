@@ -3,6 +3,10 @@
   "private": true,
   "version": "1.0.0",
   "type": "module",
-  "engines": {"node": ">=24 <25"},
-  "dependencies": {"@playwright/test": "1.62.1"}
+  "engines": {
+    "node": ">=24 <25"
+  },
+  "dependencies": {
+    "@playwright/test": "1.62.1"
+  }
 }

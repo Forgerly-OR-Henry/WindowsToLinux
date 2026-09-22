@@ -1,12 +1,8 @@
 package gold.debug.windowstolinux.shared.git.snapshot;
 
-import gold.debug.windowstolinux.shared.git.GitSnapshot;
-import gold.debug.windowstolinux.shared.git.GitSnapshotException;
-import gold.debug.windowstolinux.shared.git.GitSourceRequest;
-import gold.debug.windowstolinux.shared.git.GitReference;
-import gold.debug.windowstolinux.shared.git.GitRemote;
-import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.io.TempDir;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -16,9 +12,13 @@ import java.time.Duration;
 import java.util.List;
 import java.util.Set;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import gold.debug.windowstolinux.shared.git.GitReference;
+import gold.debug.windowstolinux.shared.git.GitRemote;
+import gold.debug.windowstolinux.shared.git.GitSnapshot;
+import gold.debug.windowstolinux.shared.git.GitSnapshotException;
+import gold.debug.windowstolinux.shared.git.GitSourceRequest;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 class GitSnapshotPreparerTest {
     @TempDir
@@ -30,7 +30,8 @@ class GitSnapshotPreparerTest {
         Files.writeString(repository.resolve("service.txt"), "source only", StandardCharsets.UTF_8);
         commit(repository, "add source");
 
-        GitSnapshot snapshot = new GitSnapshotPreparer().prepare(request(repository), temporaryDirectory.resolve("workspace"));
+        GitSnapshot snapshot = new GitSnapshotPreparer().prepare(request(repository),
+                temporaryDirectory.resolve("workspace"));
 
         assertTrue(snapshot.commit().matches("[0-9a-f]{40}"));
         assertTrue(Files.isRegularFile(snapshot.archive().archivePath()));
@@ -45,8 +46,10 @@ class GitSnapshotPreparerTest {
         git(repository, "branch", "-M", "production");
         String expected = git(repository, "rev-parse", "HEAD").trim();
         GitSnapshot snapshot = new GitSnapshotPreparer().prepare(new GitSourceRequest(new GitRemote(repository.toUri()),
-                new GitReference.DefaultBranch(), Set.of(), 64L * 1024 * 1024, true), temporaryDirectory.resolve("workspace"));
-        Files.writeString(repository.resolve("after.txt"), "new branch content"); commit(repository, "move branch");
+                new GitReference.DefaultBranch(), Set.of(), 64L * 1024 * 1024, true),
+                temporaryDirectory.resolve("workspace"));
+        Files.writeString(repository.resolve("after.txt"), "new branch content");
+        commit(repository, "move branch");
         assertEquals(expected, snapshot.commit());
         assertTrue(Files.notExists(snapshot.checkoutDirectory().resolve("after.txt")));
     }
@@ -54,7 +57,8 @@ class GitSnapshotPreparerTest {
     @Test
     void rejectsSubmoduleMetadataBeforeReturningASnapshot() throws Exception {
         Path repository = createRepository();
-        Files.writeString(repository.resolve(".gitmodules"), "[submodule \"unsafe\"]\npath = unsafe\nurl = https://example.test/unsafe.git\n");
+        Files.writeString(repository.resolve(".gitmodules"),
+                "[submodule \"unsafe\"]\npath = unsafe\nurl = https://example.test/unsafe.git\n");
         commit(repository, "add submodule metadata");
 
         GitSnapshotException exception = assertThrows(GitSnapshotException.class,
@@ -80,7 +84,8 @@ class GitSnapshotPreparerTest {
 
     @Test
     void rejectsCredentialBearingRemoteUris() {
-        assertThrows(IllegalArgumentException.class, () -> GitRemote.parse("https://token@example.test/repository.git"));
+        assertThrows(IllegalArgumentException.class,
+                () -> GitRemote.parse("https://token@example.test/repository.git"));
     }
 
     @Test
@@ -105,12 +110,14 @@ class GitSnapshotPreparerTest {
     void fetchesOnlyTheExactRequestedCommit() throws Exception {
         Path repository = createRepository();
         String firstCommit = git(repository, "rev-parse", "HEAD").trim();
-        Files.writeString(repository.resolve("later.txt"), "must not enter the pinned snapshot", StandardCharsets.UTF_8);
+        Files.writeString(repository.resolve("later.txt"), "must not enter the pinned snapshot",
+                StandardCharsets.UTF_8);
         commit(repository, "later commit");
         GitSourceRequest request = new GitSourceRequest(new GitRemote(repository.toUri()),
                 new GitReference.Commit(firstCommit), Set.of(), 10 * 1024 * 1024, true);
 
-        GitSnapshot snapshot = new GitSnapshotPreparer().prepare(request, temporaryDirectory.resolve("exact-workspace"));
+        GitSnapshot snapshot = new GitSnapshotPreparer().prepare(request,
+                temporaryDirectory.resolve("exact-workspace"));
 
         assertEquals(firstCommit, snapshot.commit());
         assertTrue(Files.notExists(snapshot.checkoutDirectory().resolve("later.txt")));
@@ -128,7 +135,8 @@ class GitSnapshotPreparerTest {
                 temporaryDirectory.resolve("line-ending-workspace"));
 
         assertEquals("false", git(snapshot.checkoutDirectory(), "config", "core.autocrlf").trim());
-        assertTrue(java.util.Arrays.equals(wrapper, Files.readAllBytes(snapshot.checkoutDirectory().resolve("gradlew"))));
+        assertTrue(
+                java.util.Arrays.equals(wrapper, Files.readAllBytes(snapshot.checkoutDirectory().resolve("gradlew"))));
     }
 
     private GitSourceRequest request(Path repository) {

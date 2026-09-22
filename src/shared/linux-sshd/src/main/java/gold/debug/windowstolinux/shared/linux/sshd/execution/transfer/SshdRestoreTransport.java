@@ -1,18 +1,5 @@
 package gold.debug.windowstolinux.shared.linux.sshd.execution.transfer;
 
-import gold.debug.windowstolinux.shared.linux.error.LinuxOperationException;
-import gold.debug.windowstolinux.shared.linux.error.LinuxOperationFailureType;
-import gold.debug.windowstolinux.shared.linux.protocol.RemoteStepResult;
-import gold.debug.windowstolinux.shared.linux.protocol.restore.RemoteRestoreFilePort;
-import gold.debug.windowstolinux.shared.linux.protocol.restore.RemoteRestoreMember;
-import gold.debug.windowstolinux.shared.linux.protocol.restore.RemoteRestoreStagingEvidence;
-import gold.debug.windowstolinux.shared.linux.protocol.restore.RemoteRestoreStagingRequest;
-import gold.debug.windowstolinux.shared.linux.sshd.execution.protocol.CandidateWorkspaceExecutor;
-import gold.debug.windowstolinux.shared.linux.transfer.RemoteWorkspace;
-import org.apache.sshd.client.session.ClientSession;
-import org.apache.sshd.sftp.client.SftpClientFactory;
-import org.apache.sshd.sftp.client.fs.SftpFileSystem;
-
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.file.Files;
@@ -28,6 +15,19 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.stream.Stream;
 
+import gold.debug.windowstolinux.shared.linux.error.LinuxOperationException;
+import gold.debug.windowstolinux.shared.linux.error.LinuxOperationFailureType;
+import gold.debug.windowstolinux.shared.linux.protocol.RemoteStepResult;
+import gold.debug.windowstolinux.shared.linux.protocol.restore.RemoteRestoreFilePort;
+import gold.debug.windowstolinux.shared.linux.protocol.restore.RemoteRestoreMember;
+import gold.debug.windowstolinux.shared.linux.protocol.restore.RemoteRestoreStagingEvidence;
+import gold.debug.windowstolinux.shared.linux.protocol.restore.RemoteRestoreStagingRequest;
+import gold.debug.windowstolinux.shared.linux.sshd.execution.protocol.CandidateWorkspaceExecutor;
+import gold.debug.windowstolinux.shared.linux.transfer.RemoteWorkspace;
+import org.apache.sshd.client.session.ClientSession;
+import org.apache.sshd.sftp.client.SftpClientFactory;
+import org.apache.sshd.sftp.client.fs.SftpFileSystem;
+
 /**
  * SFTP restore staging with exact local inventory and independent remote read-back. / 使用精确本地清单和独立远端回读的 SFTP 恢复暂存。
  */
@@ -37,11 +37,13 @@ public final class SshdRestoreTransport implements RemoteRestoreFilePort {
      * <p>缓冲区大小。
      */
     private static final int BUFFER_SIZE = 64 * 1024;
+
     /**
      * Session used for the current scoped operation.
      * <p>当前限定作用域操作使用的会话。
      */
     private final ClientSession session;
+
     /**
      * Bound candidate workspace executor collaborator for candidates.
      * <p>处理候选集合的候选工作区执行器协作对象。
@@ -76,8 +78,8 @@ public final class SshdRestoreTransport implements RemoteRestoreFilePort {
         RemoteWorkspace workspace = new RemoteWorkspace(request.applicationId(), request.archiveSha256());
         RemoteStepResult prepared = candidates.createRestore(workspace);
         if (!prepared.succeeded()) {
-            throw LinuxOperationException.create(
-                    LinuxOperationFailureType.CANDIDATE_PREPARATION_FAILED, prepared.evidence());
+            throw LinuxOperationException.create(LinuxOperationFailureType.CANDIDATE_PREPARATION_FAILED,
+                    prepared.evidence());
         }
         String remoteRootText = workspace.candidateRoot() + "/mutable/restore";
         try (SftpFileSystem fileSystem = SftpClientFactory.instance().createSftpFileSystem(session)) {
@@ -139,9 +141,12 @@ public final class SshdRestoreTransport implements RemoteRestoreFilePort {
             Set<String> actual = new HashSet<>();
             try (Stream<Path> stream = Files.walk(root)) {
                 for (Path path : stream.toList()) {
-                    if (path.equals(root)) continue;
-                    if (Files.isSymbolicLink(path)) throw invalidLocal("restore candidate contains a link", null);
-                    if (Files.isDirectory(path, LinkOption.NOFOLLOW_LINKS)) continue;
+                    if (path.equals(root))
+                        continue;
+                    if (Files.isSymbolicLink(path))
+                        throw invalidLocal("restore candidate contains a link", null);
+                    if (Files.isDirectory(path, LinkOption.NOFOLLOW_LINKS))
+                        continue;
                     if (!Files.isRegularFile(path, LinkOption.NOFOLLOW_LINKS)) {
                         throw invalidLocal("restore candidate contains a non-regular member", null);
                     }
@@ -150,7 +155,8 @@ public final class SshdRestoreTransport implements RemoteRestoreFilePort {
             }
             Set<String> expected = request.members().stream().map(RemoteRestoreMember::path)
                     .collect(java.util.stream.Collectors.toSet());
-            if (!actual.equals(expected)) throw invalidLocal("restore candidate files differ from the manifest", null);
+            if (!actual.equals(expected))
+                throw invalidLocal("restore candidate files differ from the manifest", null);
             for (RemoteRestoreMember member : request.members()) {
                 ContentDigest digest = digest(Files.newInputStream(localPath(request, member)));
                 if (digest.size() != member.size() || !digest.sha256().equals(member.sha256())) {
@@ -232,7 +238,8 @@ public final class SshdRestoreTransport implements RemoteRestoreFilePort {
         try (input) {
             int read;
             while ((read = input.read(buffer)) >= 0) {
-                if (read == 0) continue;
+                if (read == 0)
+                    continue;
                 size = Math.addExact(size, read);
                 digest.update(buffer, 0, read);
             }
@@ -275,8 +282,8 @@ public final class SshdRestoreTransport implements RemoteRestoreFilePort {
      * @return the structured failure descriptor for verification failure / 为验证失败构建结构化失败描述
      */
     private static LinuxOperationException verificationFailure(String diagnostic, Throwable cause) {
-        return LinuxOperationException.create(
-                LinuxOperationFailureType.RESTORE_UPLOAD_VERIFICATION_FAILED, diagnostic, cause);
+        return LinuxOperationException.create(LinuxOperationFailureType.RESTORE_UPLOAD_VERIFICATION_FAILED, diagnostic,
+                cause);
     }
 
     /**

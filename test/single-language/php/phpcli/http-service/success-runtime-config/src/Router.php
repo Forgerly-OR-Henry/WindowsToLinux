@@ -1,9 +1,14 @@
 <?php
 declare(strict_types=1);
 namespace Fixture;
-final class Router {
-    public function __construct(private readonly Configuration $configuration) {}
-    public function route(string $target): array {
+
+final class Router
+{
+    public function __construct(private readonly Configuration $configuration)
+    {
+    }
+    public function route(string $target): array
+    {
         $status = $this->configuration->status;
         $body = $this->configuration->label;
         $type = 'text/plain; charset=utf-8';

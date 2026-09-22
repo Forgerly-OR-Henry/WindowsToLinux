@@ -1,5 +1,6 @@
 using System.Text.RegularExpressions;
 namespace Fixture;
+
 public sealed class SummaryService
 {
     public Summary Summarize(string? raw)

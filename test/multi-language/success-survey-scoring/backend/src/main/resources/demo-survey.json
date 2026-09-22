@@ -1,9 +1,46 @@
 {
   "title": "校园协作体验",
   "questions": [
-    {"id":"participated","label":"是否参加过协作活动？","type":"single","required":true,"options":[{"value":"yes","label":"参加过","score":2},{"value":"no","label":"未参加","score":0}],"rule":{"dimension":"参与","weight":1,"reverse":false}},
-    {"id":"quality","label":"协作质量（1 到 5）","type":"scale","required":true,"min":1,"max":5,"visibleWhen":{"question":"participated","equals":"yes"},"rule":{"dimension":"体验","weight":2,"reverse":false}},
-    {"id":"support","label":"获得过哪些支持？","type":"multi","required":true,"options":[{"value":"docs","label":"文档资料","score":2},{"value":"peer","label":"同伴帮助","score":3}],"rule":{"dimension":"参与","weight":1,"reverse":false}},
-    {"id":"friction","label":"遇到困难的频率（1 少，5 多）","type":"scale","required":true,"min":1,"max":5,"rule":{"dimension":"体验","weight":1,"reverse":true}}
+    {
+      "id": "participated",
+      "label": "是否参加过协作活动？",
+      "type": "single",
+      "required": true,
+      "options": [
+        { "value": "yes", "label": "参加过", "score": 2 },
+        { "value": "no", "label": "未参加", "score": 0 }
+      ],
+      "rule": { "dimension": "参与", "weight": 1, "reverse": false }
+    },
+    {
+      "id": "quality",
+      "label": "协作质量（1 到 5）",
+      "type": "scale",
+      "required": true,
+      "min": 1,
+      "max": 5,
+      "visibleWhen": { "question": "participated", "equals": "yes" },
+      "rule": { "dimension": "体验", "weight": 2, "reverse": false }
+    },
+    {
+      "id": "support",
+      "label": "获得过哪些支持？",
+      "type": "multi",
+      "required": true,
+      "options": [
+        { "value": "docs", "label": "文档资料", "score": 2 },
+        { "value": "peer", "label": "同伴帮助", "score": 3 }
+      ],
+      "rule": { "dimension": "参与", "weight": 1, "reverse": false }
+    },
+    {
+      "id": "friction",
+      "label": "遇到困难的频率（1 少，5 多）",
+      "type": "scale",
+      "required": true,
+      "min": 1,
+      "max": 5,
+      "rule": { "dimension": "体验", "weight": 1, "reverse": true }
+    }
   ]
 }

@@ -1,17 +1,17 @@
 package gold.debug.windowstolinux.shared.linux.sshd.connection;
 
-import gold.debug.windowstolinux.shared.linux.session.DeploymentRemoteSession;
-import gold.debug.windowstolinux.shared.linux.connection.HostKeyDecision;
-import gold.debug.windowstolinux.shared.linux.connection.SshCredential;
-import gold.debug.windowstolinux.shared.linux.connection.SshEndpoint;
-import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.condition.EnabledIfSystemProperty;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.Arrays;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
 
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import gold.debug.windowstolinux.shared.linux.connection.HostKeyDecision;
+import gold.debug.windowstolinux.shared.linux.connection.SshCredential;
+import gold.debug.windowstolinux.shared.linux.connection.SshEndpoint;
+import gold.debug.windowstolinux.shared.linux.session.DeploymentRemoteSession;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.condition.EnabledIfSystemProperty;
 
 /** Exercises repeated product transport shutdown against the authorized Linux target. / 针对授权 Linux 目标验证重复的产品传输关闭。 */
 @EnabledIfSystemProperty(named = "managed.ssh.shutdown", matches = "true")
@@ -34,8 +34,8 @@ class UbuntuSshShutdownAcceptanceTest {
                 }
             }
             Thread.sleep(1_500L);
-            assertTrue(asynchronousFailures.isEmpty(), () -> "asynchronous SSH shutdown failures: "
-                    + asynchronousFailures);
+            assertTrue(asynchronousFailures.isEmpty(),
+                    () -> "asynchronous SSH shutdown failures: " + asynchronousFailures);
         } finally {
             Thread.setDefaultUncaughtExceptionHandler(previous);
             Arrays.fill(password, '\0');

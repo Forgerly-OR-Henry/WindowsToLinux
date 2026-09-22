@@ -1,15 +1,5 @@
 package gold.debug.windowstolinux.app.ui.component;
 
-import com.formdev.flatlaf.FlatClientProperties;
-import gold.debug.windowstolinux.app.ui.display.ThemePalette;
-
-import javax.swing.BorderFactory;
-import javax.swing.JButton;
-import javax.swing.JComponent;
-import javax.swing.JLabel;
-import javax.swing.JPanel;
-import javax.swing.JScrollPane;
-import javax.swing.JTextArea;
 import java.awt.BorderLayout;
 import java.awt.Color;
 import java.awt.Component;
@@ -18,6 +8,17 @@ import java.awt.GridBagConstraints;
 import java.awt.Insets;
 import java.awt.LayoutManager;
 import java.util.Objects;
+
+import javax.swing.BorderFactory;
+import javax.swing.JButton;
+import javax.swing.JComponent;
+import javax.swing.JLabel;
+import javax.swing.JPanel;
+import javax.swing.JScrollPane;
+import javax.swing.JTextArea;
+
+import com.formdev.flatlaf.FlatClientProperties;
+import gold.debug.windowstolinux.app.ui.display.ThemePalette;
 
 /**
  * Creates Swing controls using the selected desktop theme and shared visual conventions.
@@ -81,13 +82,17 @@ public final class DesktopComponentFactory {
              *
              * @param graphics graphics / 图形
              */
-            @Override protected void paintComponent(java.awt.Graphics graphics) {
+            @Override
+            protected void paintComponent(java.awt.Graphics graphics) {
                 var g = (java.awt.Graphics2D) graphics.create();
                 try {
-                    g.setRenderingHint(java.awt.RenderingHints.KEY_ANTIALIASING, java.awt.RenderingHints.VALUE_ANTIALIAS_ON);
+                    g.setRenderingHint(java.awt.RenderingHints.KEY_ANTIALIASING,
+                            java.awt.RenderingHints.VALUE_ANTIALIAS_ON);
                     g.setColor(getBackground());
                     g.fillRoundRect(0, 0, getWidth(), getHeight(), getHeight(), getHeight());
-                } finally { g.dispose(); }
+                } finally {
+                    g.dispose();
+                }
                 super.paintComponent(graphics);
             }
         };
@@ -255,8 +260,12 @@ public final class DesktopComponentFactory {
         JLabel heading = new JLabel(title);
         heading.setFont(heading.getFont().deriveFont(Font.BOLD, 15f));
         JTextArea detail = new JTextArea(message.replaceAll("(?i)<br\\s*/?>", "\n").replaceAll("<[^>]+>", ""));
-        detail.setEditable(false); detail.setLineWrap(true); detail.setWrapStyleWord(true); detail.setOpaque(false);
-        detail.setRows(5); detail.setColumns(16);
+        detail.setEditable(false);
+        detail.setLineWrap(true);
+        detail.setWrapStyleWord(true);
+        detail.setOpaque(false);
+        detail.setRows(5);
+        detail.setColumns(16);
         detail.setForeground(palette.subduedText());
         detail.setFont(detail.getFont().deriveFont(13f));
         card.add(heading, BorderLayout.NORTH);
@@ -289,7 +298,7 @@ public final class DesktopComponentFactory {
     private void decorate(JButton button) {
         button.setFocusPainted(true);
         button.setOpaque(false);
-        button.putClientProperty(FlatClientProperties.STYLE, java.util.Map.of(
-                "arc", 12, "borderWidth", 0, "focusWidth", 1));
+        button.putClientProperty(FlatClientProperties.STYLE,
+                java.util.Map.of("arc", 12, "borderWidth", 0, "focusWidth", 1));
     }
 }

@@ -12,7 +12,7 @@ import java.util.Objects;
  * @param state current lifecycle or workflow state / 当前生命周期或工作流状态
  */
 public record SelinuxPreparationPlan(String serverId, String bootId, String configurationSha256,
-                                     LinuxSecurityState securityState, SelinuxPreparationState state) {
+        LinuxSecurityState securityState, SelinuxPreparationState state) {
     /**
      * Validates and binds the inputs required by selinux preparation plan.
      * <p>校验并绑定Selinux准备计划所需输入。

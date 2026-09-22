@@ -1,24 +1,5 @@
 package gold.debug.windowstolinux.app.ui.deployment.multi;
 
-import gold.debug.windowstolinux.app.service.contract.definition.ComponentHealthMode;
-
-import gold.debug.windowstolinux.app.service.contract.definition.ComponentFormInput;
-
-import gold.debug.windowstolinux.shared.model.deployment.DatabaseReviewMode;
-
-import gold.debug.windowstolinux.app.service.deployment.multi.ReviewedMultiComponentApplication;
-import gold.debug.windowstolinux.app.service.source.PreparedMultiComponentSource;
-import gold.debug.windowstolinux.app.service.contract.MultiComponentApplicationFacade;
-import gold.debug.windowstolinux.app.ui.i18n.PageMessagePresenter;
-import gold.debug.windowstolinux.shared.model.lifecycle.LifecycleAction;
-import gold.debug.windowstolinux.shared.model.project.DeploymentProjectType;
-
-import javax.swing.DefaultListModel;
-import gold.debug.windowstolinux.app.ui.component.ToggleSwitch;
-import javax.swing.JComboBox;
-import javax.swing.JList;
-import javax.swing.JTextField;
-import javax.swing.ListSelectionModel;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -27,6 +8,23 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+
+import javax.swing.DefaultListModel;
+import javax.swing.JComboBox;
+import javax.swing.JList;
+import javax.swing.JTextField;
+import javax.swing.ListSelectionModel;
+
+import gold.debug.windowstolinux.app.service.contract.MultiComponentApplicationFacade;
+import gold.debug.windowstolinux.app.service.contract.definition.ComponentFormInput;
+import gold.debug.windowstolinux.app.service.contract.definition.ComponentHealthMode;
+import gold.debug.windowstolinux.app.service.deployment.multi.ReviewedMultiComponentApplication;
+import gold.debug.windowstolinux.app.service.source.PreparedMultiComponentSource;
+import gold.debug.windowstolinux.app.ui.component.ToggleSwitch;
+import gold.debug.windowstolinux.app.ui.i18n.PageMessagePresenter;
+import gold.debug.windowstolinux.shared.model.deployment.DatabaseReviewMode;
+import gold.debug.windowstolinux.shared.model.lifecycle.LifecycleAction;
+import gold.debug.windowstolinux.shared.model.project.DeploymentProjectType;
 
 /**
  * Owns multi-component controls, draft state, selection, and domain input mapping. / 持有多组件控件、草稿状态、选择与领域输入映射。
@@ -37,121 +35,147 @@ final class MultiComponentDraftController {
      * <p>携带服务器及归属身份的受管目标。
      */
     final ApplicationControls application = new ApplicationControls();
+
     /**
      * Swing control for component id.
      * <p>组件标识对应的 Swing 控件。
      */
     final JTextField componentId = new JTextField(14);
+
     /**
      * Swing control for relative root.
      * <p>相对根目录对应的 Swing 控件。
      */
     final JTextField relativeRoot = new JTextField(20);
+
     /**
      * Supported project deployment category.
      * <p>受支持的项目部署类别。
      */
-    final JComboBox<DeploymentProjectType> projectType = new JComboBox<>(DeploymentProjectType.values());
+    final JComboBox<DeploymentProjectType> projectType = new JComboBox<>(java.util.Arrays
+            .stream(DeploymentProjectType.values()).filter(type -> type != DeploymentProjectType.MANAGED_PROCESS)
+            .toArray(DeploymentProjectType[]::new));
+
     /**
      * Swing control for runtime primary.
      * <p>运行时主对应的 Swing 控件。
      */
     final JTextField runtimePrimary = new JTextField(18);
+
     /**
      * Swing control for runtime secondary.
      * <p>运行时次要对应的 Swing 控件。
      */
     final JTextField runtimeSecondary = new JTextField(18);
+
     /**
      * Swing control for kotlin jvm target.
      * <p>kotlinJvm目标对应的 Swing 控件。
      */
     final JTextField kotlinJvmTarget = new JTextField(6);
+
     /**
      * Swing control for runtime version.
      * <p>运行时版本对应的 Swing 控件。
      */
     final JTextField runtimeVersion = new JTextField(10);
+
     /**
      * Swing control for runtime arguments.
      * <p>运行时参数对应的 Swing 控件。
      */
     final JTextField runtimeArguments = new JTextField(18);
+
     /**
      * Swing control for runtime additional.
      * <p>运行时额外对应的 Swing 控件。
      */
     final JTextField runtimeAdditional = new JTextField(18);
+
     /**
      * Health mode.
      * <p>健康模式。
      */
     final JComboBox<ComponentHealthMode> healthMode = new JComboBox<>(ComponentHealthMode.values());
+
     /**
      * Swing control for health endpoint.
      * <p>健康端点对应的 Swing 控件。
      */
     final JTextField healthEndpoint = new JTextField(22);
+
     /**
      * Swing control for expected status.
      * <p>预期状态对应的 Swing 控件。
      */
     final JTextField expectedStatus = new JTextField("200", 6);
+
     /**
      * Swing control for timeout seconds.
      * <p>超时秒对应的 Swing 控件。
      */
     final JTextField timeoutSeconds = new JTextField("20", 6);
+
     /**
      * Swing control for stability seconds.
      * <p>稳定性秒对应的 Swing 控件。
      */
     final JTextField stabilitySeconds = new JTextField("5", 6);
+
     /**
      * Swing control for access url.
      * <p>访问URL对应的 Swing 控件。
      */
     final JTextField accessUrl = new JTextField(22);
+
     /**
      * Swing control for artifacts.
      * <p>制品集合对应的 Swing 控件。
      */
     final JTextField artifacts = new JTextField(20);
+
     /**
      * Swing control for ports.
      * <p>端口集合对应的 Swing 控件。
      */
     final JTextField ports = new JTextField(20);
+
     /**
      * Swing control for dependencies.
      * <p>依赖对应的 Swing 控件。
      */
     final JTextField dependencies = new JTextField(20);
+
     /**
      * Reviewed file, configuration and database bindings for this component.
      * <p>当前组件已审阅的文件、配置及数据库绑定。
      */
     final ResourceControls resources = new ResourceControls();
+
     /**
      * Whether the whole application requires this component.
      * <p>整体应用是否需要此组件。
      */
     final ToggleSwitch required;
+
     /**
      * Lifecycle.
      * <p>生命周期。
      */
     final LifecycleControls lifecycle = new LifecycleControls();
+
     /**
      * Draft controls.
      * <p>草稿控件集合。
      */
     final DraftControls draftControls = new DraftControls();
+
     /**
      * Bound page message presenter collaborator for localized message resolver.
      * <p>处理本地化消息解析器的页面消息展示器协作对象。
      */
     private final PageMessagePresenter messages;
+
     /**
      * Bound multi component application facade collaborator for application service used by the caller.
      * <p>处理调用方使用的应用服务的多组件应用门面协作对象。
@@ -173,14 +197,15 @@ final class MultiComponentDraftController {
         messages.localize(healthMode, "health.mode.");
         messages.localize(resources.databaseMode, "database.review.mode.");
         messages.localize(lifecycle.action, "lifecycle.action.");
-        resources.databaseMode.addActionListener(event -> resources.databaseDetails.setEnabled(
-                resources.databaseMode.getSelectedItem() != DatabaseReviewMode.UNREVIEWED
+        resources.databaseMode.addActionListener(event -> resources.databaseDetails
+                .setEnabled(resources.databaseMode.getSelectedItem() != DatabaseReviewMode.UNREVIEWED
                         && resources.databaseMode.getSelectedItem() != DatabaseReviewMode.NONE));
         resources.databaseMode.setSelectedItem(DatabaseReviewMode.UNREVIEWED);
         resources.databaseDetails.setEnabled(false);
         draftControls.list.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
         draftControls.list.addListSelectionListener(event -> {
-            if (!event.getValueIsAdjusting()) selectedDraft().ifPresent(this::applyDraft);
+            if (!event.getValueIsAdjusting())
+                selectedDraft().ifPresent(this::applyDraft);
         });
     }
 
@@ -194,7 +219,7 @@ final class MultiComponentDraftController {
      * @return multi component page state from the supplied capture inputs / 根据所提供捕获输入构建多组件页面状态
      */
     MultiComponentPageState capture(String output, PreparedMultiComponentSource preparation,
-                                    ReviewedMultiComponentApplication review) {
+            ReviewedMultiComponentApplication review) {
         return new MultiComponentPageState(application.root.getText(), application.id.getText(),
                 application.healthComponentId.getText(), lifecycle.targets.getText(), lifecycleAction(), formState(),
                 orderedDrafts(), output, preparation, review);
@@ -244,7 +269,8 @@ final class MultiComponentDraftController {
     Optional<ComponentFormInput> removeSelected() {
         Optional<ComponentFormInput> selected = selectedDraft();
         selected.ifPresent(draft -> draftControls.drafts.remove(draft.componentId()));
-        if (selected.isPresent()) refreshDraftList();
+        if (selected.isPresent())
+            refreshDraftList();
         return selected;
     }
 
@@ -255,8 +281,8 @@ final class MultiComponentDraftController {
      * @return ordered drafts / 有序草稿集合
      */
     List<ComponentFormInput> orderedDrafts() {
-        return draftControls.drafts.values().stream()
-                .sorted(Comparator.comparing(ComponentFormInput::componentId)).toList();
+        return draftControls.drafts.values().stream().sorted(Comparator.comparing(ComponentFormInput::componentId))
+                .toList();
     }
 
     /**
@@ -351,11 +377,12 @@ final class MultiComponentDraftController {
                 (DeploymentProjectType) projectType.getSelectedItem(), runtimePrimary.getText(),
                 runtimeSecondary.getText(), runtimeVersion.getText(), runtimeArguments.getText(),
                 runtimeAdditional.getText(), (ComponentHealthMode) healthMode.getSelectedItem(),
-                healthEndpoint.getText(), expectedStatus.getText(), timeoutSeconds.getText(), stabilitySeconds.getText(),
-                accessUrl.getText(), artifacts.getText(), ports.getText(), dependencies.getText(),
-                resources.configuration.getText(),
-                (DatabaseReviewMode) resources.databaseMode.getSelectedItem(),
-                resources.databaseDetails.getText(), resources.secrets.getText(), required.isSelected(), false, kotlinJvmTarget.getText(), resources.applicationDeclaration.getText());
+                healthEndpoint.getText(), expectedStatus.getText(), timeoutSeconds.getText(),
+                stabilitySeconds.getText(), accessUrl.getText(), artifacts.getText(), ports.getText(),
+                dependencies.getText(), resources.configuration.getText(),
+                (DatabaseReviewMode) resources.databaseMode.getSelectedItem(), resources.databaseDetails.getText(),
+                resources.secrets.getText(), required.isSelected(), false, kotlinJvmTarget.getText(),
+                resources.applicationDeclaration.getText());
     }
 
     /**
@@ -369,11 +396,12 @@ final class MultiComponentDraftController {
                 ((DeploymentProjectType) projectType.getSelectedItem()).name(), runtimePrimary.getText(),
                 runtimeSecondary.getText(), runtimeVersion.getText(), runtimeArguments.getText(),
                 runtimeAdditional.getText(), ((ComponentHealthMode) healthMode.getSelectedItem()).name(),
-                healthEndpoint.getText(), expectedStatus.getText(), timeoutSeconds.getText(), stabilitySeconds.getText(),
-                accessUrl.getText(), artifacts.getText(), ports.getText(), dependencies.getText(),
-                resources.configuration.getText(),
+                healthEndpoint.getText(), expectedStatus.getText(), timeoutSeconds.getText(),
+                stabilitySeconds.getText(), accessUrl.getText(), artifacts.getText(), ports.getText(),
+                dependencies.getText(), resources.configuration.getText(),
                 ((DatabaseReviewMode) resources.databaseMode.getSelectedItem()).name(),
-                resources.databaseDetails.getText(), resources.secrets.getText(), required.isSelected(), false, kotlinJvmTarget.getText(), resources.applicationDeclaration.getText());
+                resources.databaseDetails.getText(), resources.secrets.getText(), required.isSelected(), false,
+                kotlinJvmTarget.getText(), resources.applicationDeclaration.getText());
     }
 
     /**
@@ -457,7 +485,8 @@ final class MultiComponentDraftController {
      * @throws IllegalArgumentException if an input violates the constraints checked by this contract / 输入违反当前契约检查的约束时
      */
     private static Set<String> identifiers(String value) {
-        if (value.isBlank()) return Set.of();
+        if (value.isBlank())
+            return Set.of();
         LinkedHashSet<String> result = new LinkedHashSet<>();
         for (String token : value.split("[,;]")) {
             String id = token.trim();
@@ -479,11 +508,13 @@ final class MultiComponentDraftController {
          * <p>根目录对应的 Swing 控件。
          */
         final JTextField root = new JTextField(30);
+
         /**
          * Swing control for id.
          * <p>标识对应的 Swing 控件。
          */
         final JTextField id = new JTextField(18);
+
         /**
          * Swing control for health component id.
          * <p>健康组件标识对应的 Swing 控件。
@@ -501,6 +532,7 @@ final class MultiComponentDraftController {
          * <p>目标集合对应的 Swing 控件。
          */
         final JTextField targets = new JTextField(22);
+
         /**
          * Explicit action selected for the current target.
          * <p>为当前目标显式选择的动作。
@@ -517,22 +549,25 @@ final class MultiComponentDraftController {
          * <p>应用声明。
          */
         final javax.swing.JTextArea applicationDeclaration = new javax.swing.JTextArea(6, 30);
+
         /**
          * Swing control for configuration.
          * <p>配置对应的 Swing 控件。
          */
         final JTextField configuration = new JTextField(22);
+
         /**
          * The explicit database review mode.
          * <p>显式数据库审阅模式。
          */
-        final JComboBox<DatabaseReviewMode> databaseMode =
-                new JComboBox<>(DatabaseReviewMode.values());
+        final JComboBox<DatabaseReviewMode> databaseMode = new JComboBox<>(DatabaseReviewMode.values());
+
         /**
          * Swing control for database details.
          * <p>数据库详情对应的 Swing 控件。
          */
         final JTextField databaseDetails = new JTextField(22);
+
         /**
          * Swing control for secrets.
          * <p>秘密集合对应的 Swing 控件。
@@ -550,11 +585,13 @@ final class MultiComponentDraftController {
          * <p>列表模型。
          */
         final DefaultListModel<String> listModel = new DefaultListModel<>();
+
         /**
          * List.
          * <p>列表。
          */
         final JList<String> list = new JList<>(listModel);
+
         /**
          * Drafts.
          * <p>草稿集合。

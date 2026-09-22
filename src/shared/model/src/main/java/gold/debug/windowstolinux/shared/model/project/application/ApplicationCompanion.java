@@ -11,18 +11,19 @@ import java.util.Objects;
  * @param artifactPath artifact path / 制品路径
  * @param environment environment / 环境
  */
-public record ApplicationCompanion(String id, String sourcePath, BuildType projectType,
-                                   String artifactPath, String environment) {
+public record ApplicationCompanion(String id, String sourcePath, BuildType projectType, String artifactPath,
+        String environment) {
     /**
      * Selects the supported build contract for a companion artifact.
      * <p>选择配套制品支持的构建契约。
      */
     public enum BuildType {
-    /**
-     * CMAKE SERVICE classification within build type.
-     * <p>构建类型中的CMAKE服务分类。
-     */
-     CMAKE_SERVICE }
+        /**
+         * CMAKE SERVICE classification within build type.
+         * <p>构建类型中的CMAKE服务分类。
+         */
+        CMAKE_SERVICE
+    }
 
     /**
      * Validates and binds the inputs required by application companion.
@@ -42,9 +43,8 @@ public record ApplicationCompanion(String id, String sourcePath, BuildType proje
         sourcePath = ApplicationCommand.relative(sourcePath, false);
         artifactPath = ApplicationCommand.relative(artifactPath, false);
         Objects.requireNonNull(projectType);
-        if (!Objects.requireNonNull(environment).matches("[A-Z][A-Z0-9_]{0,63}")
-                || environment.startsWith("LD_") || environment.startsWith("PYTHON")
-                || environment.startsWith("RUBY") || environment.startsWith("GEM_")
+        if (!Objects.requireNonNull(environment).matches("[A-Z][A-Z0-9_]{0,63}") || environment.startsWith("LD_")
+                || environment.startsWith("PYTHON") || environment.startsWith("RUBY") || environment.startsWith("GEM_")
                 || environment.startsWith("BUNDLE_") || environment.startsWith("JAVA")
                 || environment.startsWith("NODE_") || environment.startsWith("WINDOWSTOLINUX_")
                 || java.util.Set.of("PATH", "HOME", "SHELL", "ENV", "BASH_ENV", "TMPDIR").contains(environment))

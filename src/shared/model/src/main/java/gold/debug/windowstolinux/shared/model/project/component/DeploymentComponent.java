@@ -1,15 +1,15 @@
 package gold.debug.windowstolinux.shared.model.project.component;
 
-import gold.debug.windowstolinux.shared.model.health.HealthCheck;
-import gold.debug.windowstolinux.shared.model.project.DeploymentProjectFacts;
-import gold.debug.windowstolinux.shared.model.project.DeploymentRuntimeSpecification;
-
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.TreeSet;
+
+import gold.debug.windowstolinux.shared.model.health.HealthCheck;
+import gold.debug.windowstolinux.shared.model.project.DeploymentProjectFacts;
+import gold.debug.windowstolinux.shared.model.project.DeploymentRuntimeSpecification;
 
 /**
  * Complete static record for one component inside a mixed project.
@@ -29,20 +29,10 @@ import java.util.TreeSet;
  * @param required whether the whole application requires this component / 整体应用是否需要此组件
  * @param isolation requested execution capabilities / 请求的执行能力
  */
-public record DeploymentComponent(
-        String componentId,
-        Path sourceRoot,
-        DeploymentProjectFacts facts,
-        Optional<DeploymentRuntimeSpecification> runtime,
-        List<String> artifactPaths,
-        Set<Integer> ports,
-        List<String> configurationKeys,
-        List<String> secretIdentifiers,
-        List<ComponentDataPath> dataPaths,
-        Set<String> dependencies,
-        boolean required,
-        ComponentIsolationSpecification isolation
-) {
+public record DeploymentComponent(String componentId, Path sourceRoot, DeploymentProjectFacts facts,
+        Optional<DeploymentRuntimeSpecification> runtime, List<String> artifactPaths, Set<Integer> ports,
+        List<String> configurationKeys, List<String> secretIdentifiers, List<ComponentDataPath> dataPaths,
+        Set<String> dependencies, boolean required, ComponentIsolationSpecification isolation) {
     /**
      * Validates a complete bounded component record. / 验证完整有界组件记录。
      *
@@ -82,16 +72,17 @@ public record DeploymentComponent(
         TreeSet<Integer> normalizedPorts = new TreeSet<>(Objects.requireNonNull(ports, "ports"));
         normalizedPorts.forEach(DeploymentComponent::requirePort);
         ports = java.util.Collections.unmodifiableSet(new java.util.LinkedHashSet<>(normalizedPorts));
-        configurationKeys = sortedDistinct(configurationKeys, DeploymentComponent::configurationKey, "configurationKeys");
-        secretIdentifiers = sortedDistinct(secretIdentifiers,
-                value -> identifier(value, "secret identifier"), "secretIdentifiers");
+        configurationKeys = sortedDistinct(configurationKeys, DeploymentComponent::configurationKey,
+                "configurationKeys");
+        secretIdentifiers = sortedDistinct(secretIdentifiers, value -> identifier(value, "secret identifier"),
+                "secretIdentifiers");
         dataPaths = List.copyOf(Objects.requireNonNull(dataPaths, "dataPaths"));
         if (dataPaths.stream().map(ComponentDataPath::path).distinct().count() != dataPaths.size()) {
             throw new IllegalArgumentException("component data paths must be unique");
         }
-        dependencies = java.util.Collections.unmodifiableSet(new java.util.LinkedHashSet<>(new TreeSet<>(
-                Objects.requireNonNull(dependencies, "dependencies").stream()
-                        .map(value -> identifier(value, "dependency")).toList())));
+        dependencies = java.util.Collections.unmodifiableSet(
+                new java.util.LinkedHashSet<>(new TreeSet<>(Objects.requireNonNull(dependencies, "dependencies")
+                        .stream().map(value -> identifier(value, "dependency")).toList())));
         isolation = Objects.requireNonNull(isolation, "isolation");
         if (runtime.isPresent() && runtime.orElseThrow().healthCheck().portNumber().isPresent()
                 && !ports.contains(runtime.orElseThrow().healthCheck().portNumber().orElseThrow())) {
@@ -107,7 +98,6 @@ public record DeploymentComponent(
     public Optional<HealthCheck> healthCheck() {
         return runtime.map(DeploymentRuntimeSpecification::healthCheck);
     }
-
 
     /**
      * Validates an identifier against the bounded syntax of the owning contract.
@@ -170,7 +160,8 @@ public record DeploymentComponent(
      * @throws IllegalArgumentException if an input violates the constraints checked by this contract / 输入违反当前契约检查的约束时
      */
     private static void requirePort(int value) {
-        if (value < 1 || value > 65535) throw new IllegalArgumentException("component ports must be valid ports");
+        if (value < 1 || value > 65535)
+            throw new IllegalArgumentException("component ports must be valid ports");
     }
 
     /**
@@ -185,8 +176,7 @@ public record DeploymentComponent(
      * @throws NullPointerException if a required input is absent / 必需输入缺失时
      */
     private static List<String> sortedDistinct(List<String> values,
-                                               java.util.function.Function<String, String> normalizer,
-                                               String name) {
+            java.util.function.Function<String, String> normalizer, String name) {
         Objects.requireNonNull(values, name);
         List<String> normalized = values.stream().map(normalizer).sorted().toList();
         if (normalized.stream().distinct().count() != normalized.size()) {

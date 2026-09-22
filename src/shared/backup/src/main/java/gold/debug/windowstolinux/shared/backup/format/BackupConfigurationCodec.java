@@ -1,5 +1,21 @@
 package gold.debug.windowstolinux.shared.backup.format;
 
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
+import java.io.DataInputStream;
+import java.io.DataOutputStream;
+import java.io.IOException;
+import java.net.URI;
+import java.nio.ByteBuffer;
+import java.nio.charset.CharacterCodingException;
+import java.nio.charset.CodingErrorAction;
+import java.nio.charset.StandardCharsets;
+import java.time.Instant;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.List;
+import java.util.Optional;
+
 import gold.debug.windowstolinux.shared.config.contract.definition.ConfigurationScope;
 import gold.debug.windowstolinux.shared.config.contract.definition.ConfigurationValue;
 import gold.debug.windowstolinux.shared.config.resource.ManagedComponentResourceBindings;
@@ -11,26 +27,10 @@ import gold.debug.windowstolinux.shared.config.revision.ConfigurationEntry;
 import gold.debug.windowstolinux.shared.config.revision.ConfigurationSnapshot;
 import gold.debug.windowstolinux.shared.config.secretref.SecretReference;
 import gold.debug.windowstolinux.shared.model.health.HealthCheck;
-import gold.debug.windowstolinux.shared.model.project.RuntimeIdentityMode;
 import gold.debug.windowstolinux.shared.model.health.UserAccessUrl;
 import gold.debug.windowstolinux.shared.model.managed.ManagedApplicationRuntimeConfiguration;
+import gold.debug.windowstolinux.shared.model.project.RuntimeIdentityMode;
 import gold.debug.windowstolinux.shared.model.project.component.ComponentDataPath;
-
-import java.io.ByteArrayInputStream;
-import java.io.ByteArrayOutputStream;
-import java.io.DataInputStream;
-import java.io.DataOutputStream;
-import java.io.IOException;
-import java.net.URI;
-import java.nio.ByteBuffer;
-import java.nio.charset.CodingErrorAction;
-import java.nio.charset.CharacterCodingException;
-import java.nio.charset.StandardCharsets;
-import java.time.Instant;
-import java.util.ArrayList;
-import java.util.Comparator;
-import java.util.List;
-import java.util.Optional;
 
 /**
  * Strict codec for immutable configuration and the complete non-secret activation state. / 不可变配置及完整无秘密激活状态的严格编解码器。
@@ -41,26 +41,31 @@ public final class BackupConfigurationCodec {
      * <p>格式标记。
      */
     private static final int MAGIC = 0x57544243;
+
     /**
      * INSPECTION VERSION.
      * <p>检查版本。
      */
     private static final int INSPECTION_VERSION = 1;
+
     /**
      * ACTIVATION VERSION.
      * <p>激活版本。
      */
     private static final int ACTIVATION_VERSION = 5;
+
     /**
      * MAX BYTES.
      * <p>最大字节。
      */
     private static final int MAX_BYTES = 4 * 1024 * 1024;
+
     /**
      * MAX FILES.
      * <p>最大文件集合。
      */
     private static final int MAX_FILES = 4_096;
+
     /**
      * MAX DATABASES.
      * <p>最大数据库集合。
@@ -131,7 +136,8 @@ public final class BackupConfigurationCodec {
             throw new IOException("backup configuration document length is invalid");
         }
         try (DataInputStream input = new DataInputStream(new ByteArrayInputStream(document))) {
-            if (input.readInt() != MAGIC) throw new IOException("backup configuration document magic is unsupported");
+            if (input.readInt() != MAGIC)
+                throw new IOException("backup configuration document magic is unsupported");
             int version = input.readUnsignedByte();
             if (version != INSPECTION_VERSION && version != ACTIVATION_VERSION) {
                 throw new IOException("backup configuration document version is unsupported");
@@ -143,9 +149,11 @@ public final class BackupConfigurationCodec {
             Optional<ManagedComponentResourceBindings> resources = Optional.empty();
             Optional<ManagedApplicationRuntimeConfiguration> runtime = Optional.empty();
             if (version == ACTIVATION_VERSION) {
-                resources = Optional.of(readResources(input)); runtime = Optional.of(readRuntime(input));
+                resources = Optional.of(readResources(input));
+                runtime = Optional.of(readRuntime(input));
             }
-            if (input.read() >= 0) throw new IOException("backup configuration document has trailing bytes");
+            if (input.read() >= 0)
+                throw new IOException("backup configuration document has trailing bytes");
             return new Parsed(snapshot, resources, runtime);
         } catch (IOException exception) {
             throw exception;
@@ -166,9 +174,12 @@ public final class BackupConfigurationCodec {
     private static byte[] encode(int version, Writer writer) throws IOException {
         ByteArrayOutputStream bytes = new ByteArrayOutputStream();
         try (DataOutputStream output = new DataOutputStream(bytes)) {
-            output.writeInt(MAGIC); output.writeByte(version); writer.write(output);
+            output.writeInt(MAGIC);
+            output.writeByte(version);
+            writer.write(output);
         }
-        if (bytes.size() > MAX_BYTES) throw new IOException("backup configuration member exceeds policy");
+        if (bytes.size() > MAX_BYTES)
+            throw new IOException("backup configuration member exceeds policy");
         return bytes.toByteArray();
     }
 
@@ -181,19 +192,33 @@ public final class BackupConfigurationCodec {
      * @throws IOException if the required file or stream operation fails / 所需文件或流操作失败时
      */
     private static void writeSnapshot(DataOutputStream output, ConfigurationSnapshot snapshot) throws IOException {
-        text(output, snapshot.applicationId(), 128); output.writeLong(snapshot.revision());
-        text(output, snapshot.schemaVersion(), 128); text(output, snapshot.createdAt().toString(), 128);
+        text(output, snapshot.applicationId(), 128);
+        output.writeLong(snapshot.revision());
+        text(output, snapshot.schemaVersion(), 128);
+        text(output, snapshot.createdAt().toString(), 128);
         text(output, snapshot.sha256(), 64);
         List<ConfigurationEntry> entries = snapshot.entries().stream()
-                .sorted(Comparator.comparing(ConfigurationEntry::key).thenComparing(value -> value.scope().name())).toList();
-        if (entries.size() > 4_096) throw new IOException("configuration entry count exceeds policy");
+                .sorted(Comparator.comparing(ConfigurationEntry::key).thenComparing(value -> value.scope().name()))
+                .toList();
+        if (entries.size() > 4_096)
+            throw new IOException("configuration entry count exceeds policy");
         output.writeInt(entries.size());
         for (ConfigurationEntry entry : entries) {
-            text(output, entry.key(), 64); text(output, entry.scope().name(), 64);
+            text(output, entry.key(), 64);
+            text(output, entry.scope().name(), 64);
             switch (entry.value()) {
-                case ConfigurationValue.Text value -> { output.writeByte(1); text(output, value.value(), 1024); }
-                case ConfigurationValue.Number value -> { output.writeByte(2); output.writeLong(value.value()); }
-                case ConfigurationValue.Flag value -> { output.writeByte(3); output.writeBoolean(value.value()); }
+                case ConfigurationValue.Text value -> {
+                    output.writeByte(1);
+                    text(output, value.value(), 1024);
+                }
+                case ConfigurationValue.Number value -> {
+                    output.writeByte(2);
+                    output.writeLong(value.value());
+                }
+                case ConfigurationValue.Flag value -> {
+                    output.writeByte(3);
+                    output.writeBoolean(value.value());
+                }
             }
         }
     }
@@ -207,12 +232,17 @@ public final class BackupConfigurationCodec {
      * @throws IOException if the required file or stream operation fails / 所需文件或流操作失败时
      */
     private static ConfigurationSnapshot readSnapshot(DataInputStream input) throws IOException {
-        String application = text(input, 128); long revision = input.readLong();
-        String schema = text(input, 128); Instant created = Instant.parse(text(input, 128));
-        String sha256 = text(input, 64); int count = bounded(input.readInt(), 0, 4_096, "configuration entry");
-        List<ConfigurationEntry> entries = new ArrayList<>(count); String previous = null;
+        String application = text(input, 128);
+        long revision = input.readLong();
+        String schema = text(input, 128);
+        Instant created = Instant.parse(text(input, 128));
+        String sha256 = text(input, 64);
+        int count = bounded(input.readInt(), 0, 4_096, "configuration entry");
+        List<ConfigurationEntry> entries = new ArrayList<>(count);
+        String previous = null;
         for (int index = 0; index < count; index++) {
-            String key = text(input, 64); ConfigurationScope scope = ConfigurationScope.valueOf(text(input, 64));
+            String key = text(input, 64);
+            ConfigurationScope scope = ConfigurationScope.valueOf(text(input, 64));
             String order = key + "\0" + scope.name();
             if (previous != null && previous.compareTo(order) >= 0) {
                 throw new IOException("backup configuration entries are not canonical and unique");
@@ -245,16 +275,21 @@ public final class BackupConfigurationCodec {
         }
         output.writeInt(resources.fileBindings().size());
         for (ManagedFileBinding file : resources.fileBindings()) {
-            text(output, file.bindingId(), 63); text(output, file.dataPath().path(), 512);
+            text(output, file.bindingId(), 63);
+            text(output, file.dataPath().path(), 512);
             output.writeByte(file.dataPath().access() == ComponentDataPath.AccessMode.READ_ONLY ? 1 : 2);
-            text(output, file.dataPath().schemaId(), 128); output.writeBoolean(file.dataPath().reversible());
-            text(output, file.location().type().name(), 32); text(output, file.location().path().isEmpty() ? "-" : file.location().path(), 512);
+            text(output, file.dataPath().schemaId(), 128);
+            output.writeBoolean(file.dataPath().reversible());
+            text(output, file.location().type().name(), 32);
+            text(output, file.location().path().isEmpty() ? "-" : file.location().path(), 512);
             text(output, file.resourceType().name(), 32);
-            text(output,file.seedFile().isEmpty() ? "-" : file.seedFile(),512); text(output,file.contentSha256().isEmpty() ? "-" : file.contentSha256(),64);
+            text(output, file.seedFile().isEmpty() ? "-" : file.seedFile(), 512);
+            text(output, file.contentSha256().isEmpty() ? "-" : file.contentSha256(), 64);
         }
         output.writeInt(resources.databaseBindings().orElseThrow().size());
         for (ManagedDatabaseBinding database : resources.databaseBindings().orElseThrow()) {
-            text(output, database.databaseId(), 63); output.writeByte(switch (database.connection().engine()) {
+            text(output, database.databaseId(), 63);
+            output.writeByte(switch (database.connection().engine()) {
                 case SQLITE -> 1;
                 case POSTGRESQL -> 2;
                 case MYSQL -> 3;
@@ -263,16 +298,22 @@ public final class BackupConfigurationCodec {
             });
             if (database.connection() instanceof ManagedDatabaseConnection.Sqlite sqlite) {
                 text(output, sqlite.fileName(), 128);
-                text(output, sqlite.location().type().name(), 32); text(output, sqlite.location().path().isEmpty() ? "-" : sqlite.location().path(), 512);
+                text(output, sqlite.location().type().name(), 32);
+                text(output, sqlite.location().path().isEmpty() ? "-" : sqlite.location().path(), 512);
                 text(output, sqlite.accessPath().isEmpty() ? "-" : sqlite.accessPath(), 512);
                 text(output, sqlite.seedFile().isEmpty() ? "-" : sqlite.seedFile(), 512);
                 output.writeInt(sqlite.initializationFiles().size());
-                for (String file : sqlite.initializationFiles()) text(output,file,512);
+                for (String file : sqlite.initializationFiles())
+                    text(output, file, 512);
             } else {
                 ManagedDatabaseConnection.Server server = (ManagedDatabaseConnection.Server) database.connection();
-                text(output, server.host(), 253); output.writeInt(server.port()); text(output, server.database(), 128);
-                text(output, server.username(), 128); text(output, server.passwordReference().identifier(), 64);
-                output.writeLong(server.passwordReference().revision()); output.writeBoolean(server.tlsRequired());
+                text(output, server.host(), 253);
+                output.writeInt(server.port());
+                text(output, server.database(), 128);
+                text(output, server.username(), 128);
+                text(output, server.passwordReference().identifier(), 64);
+                output.writeLong(server.passwordReference().revision());
+                output.writeBoolean(server.tlsRequired());
             }
         }
     }
@@ -289,20 +330,25 @@ public final class BackupConfigurationCodec {
         int fileCount = bounded(input.readInt(), 0, MAX_FILES, "file binding");
         List<ManagedFileBinding> files = new ArrayList<>(fileCount);
         for (int index = 0; index < fileCount; index++) {
-            String id = text(input, 63); String path = text(input, 512);
+            String id = text(input, 63);
+            String path = text(input, 512);
             ComponentDataPath.AccessMode access = switch (input.readUnsignedByte()) {
                 case 1 -> ComponentDataPath.AccessMode.READ_ONLY;
                 case 2 -> ComponentDataPath.AccessMode.READ_WRITE;
                 default -> throw new IOException("backup file binding access mode is unsupported");
             };
-            String schema = text(input, 128); boolean reversible = input.readBoolean();
-            var locationType = gold.debug.windowstolinux.shared.model.managed.ManagedStorageLocation.StorageLocationType.valueOf(text(input, 32));
+            String schema = text(input, 128);
+            boolean reversible = input.readBoolean();
+            var locationType = gold.debug.windowstolinux.shared.model.managed.ManagedStorageLocation.StorageLocationType
+                    .valueOf(text(input, 32));
             String locationPath = text(input, 512);
-            var location = new gold.debug.windowstolinux.shared.model.managed.ManagedStorageLocation(locationType, locationPath.equals("-") ? "" : locationPath);
-            var resourceType = gold.debug.windowstolinux.shared.model.managed.ManagedStorageLocation.StorageResourceType.valueOf(text(input,32));
-            String seed = text(input,512), digest = text(input,64);
+            var location = new gold.debug.windowstolinux.shared.model.managed.ManagedStorageLocation(locationType,
+                    locationPath.equals("-") ? "" : locationPath);
+            var resourceType = gold.debug.windowstolinux.shared.model.managed.ManagedStorageLocation.StorageResourceType
+                    .valueOf(text(input, 32));
+            String seed = text(input, 512), digest = text(input, 64);
             files.add(new ManagedFileBinding(id, new ComponentDataPath(path, access, schema, reversible), location,
-                    resourceType,seed.equals("-") ? "" : seed, digest.equals("-") ? "" : digest));
+                    resourceType, seed.equals("-") ? "" : seed, digest.equals("-") ? "" : digest));
         }
         int databaseCount = bounded(input.readInt(), 0, MAX_DATABASES, "database binding");
         List<ManagedDatabaseBinding> databases = new ArrayList<>(databaseCount);
@@ -317,9 +363,9 @@ public final class BackupConfigurationCodec {
             };
             ManagedDatabaseConnection connection = engine == ManagedDatabaseEngineType.SQLITE
                     ? readSqlite(input)
-                    : new ManagedDatabaseConnection.Server(engine, text(input, 253), input.readInt(),
-                    text(input, 128), text(input, 128), new SecretReference(text(input, 64), input.readLong()),
-                    input.readBoolean());
+                    : new ManagedDatabaseConnection.Server(engine, text(input, 253), input.readInt(), text(input, 128),
+                            text(input, 128), new SecretReference(text(input, 64), input.readLong()),
+                            input.readBoolean());
             databases.add(new ManagedDatabaseBinding(id, connection));
         }
         ManagedComponentResourceBindings result = new ManagedComponentResourceBindings(files, Optional.of(databases));
@@ -338,11 +384,19 @@ public final class BackupConfigurationCodec {
      * @throws IOException if the required file or stream operation fails / 所需文件或流操作失败时
      */
     private static ManagedDatabaseConnection.Sqlite readSqlite(DataInputStream input) throws IOException {
-        String file = text(input,128), type = text(input,32), path = text(input,512), access = text(input,512), seed = text(input,512);
-        int size = input.readInt(); if (size < 0 || size > 32) throw new IOException("invalid initialization file count");
-        var files = new java.util.ArrayList<String>(); for (int i=0; i<size; i++) files.add(text(input,512));
-        return new ManagedDatabaseConnection.Sqlite(file, new gold.debug.windowstolinux.shared.model.managed.ManagedStorageLocation(
-                gold.debug.windowstolinux.shared.model.managed.ManagedStorageLocation.StorageLocationType.valueOf(type), path.equals("-") ? "" : path),
+        String file = text(input, 128), type = text(input, 32), path = text(input, 512), access = text(input, 512),
+                seed = text(input, 512);
+        int size = input.readInt();
+        if (size < 0 || size > 32)
+            throw new IOException("invalid initialization file count");
+        var files = new java.util.ArrayList<String>();
+        for (int i = 0; i < size; i++)
+            files.add(text(input, 512));
+        return new ManagedDatabaseConnection.Sqlite(file,
+                new gold.debug.windowstolinux.shared.model.managed.ManagedStorageLocation(
+                        gold.debug.windowstolinux.shared.model.managed.ManagedStorageLocation.StorageLocationType
+                                .valueOf(type),
+                        path.equals("-") ? "" : path),
                 access.equals("-") ? "" : access, seed.equals("-") ? "" : seed, files);
     }
 
@@ -356,8 +410,10 @@ public final class BackupConfigurationCodec {
      */
     private static void writeRuntime(DataOutputStream output, ManagedApplicationRuntimeConfiguration runtime)
             throws IOException {
-        byte[] payload = new gold.debug.windowstolinux.shared.config.persistence.serialization.ApplicationRuntimeConfigurationCodec().write(runtime);
-        output.writeInt(payload.length); output.write(payload);
+        byte[] payload = new gold.debug.windowstolinux.shared.config.persistence.serialization.ApplicationRuntimeConfigurationCodec()
+                .write(runtime);
+        output.writeInt(payload.length);
+        output.write(payload);
     }
 
     /**
@@ -370,7 +426,8 @@ public final class BackupConfigurationCodec {
      */
     private static ManagedApplicationRuntimeConfiguration readRuntime(DataInputStream input) throws IOException {
         int length = bounded(input.readInt(), 1, 1_048_576, "runtime payload");
-        return new gold.debug.windowstolinux.shared.config.persistence.serialization.ApplicationRuntimeConfigurationCodec().read(input.readNBytes(length));
+        return new gold.debug.windowstolinux.shared.config.persistence.serialization.ApplicationRuntimeConfigurationCodec()
+                .read(input.readNBytes(length));
     }
 
     /**
@@ -385,7 +442,8 @@ public final class BackupConfigurationCodec {
      * @throws IOException if the required file or stream operation fails / 所需文件或流操作失败时
      */
     private static int bounded(int value, int minimum, int maximum, String field) throws IOException {
-        if (value < minimum || value > maximum) throw new IOException(field + " count is invalid");
+        if (value < minimum || value > maximum)
+            throw new IOException(field + " count is invalid");
         return value;
     }
 
@@ -403,7 +461,8 @@ public final class BackupConfigurationCodec {
         if (bytes.length < 1 || bytes.length > maximum) {
             throw new IOException("backup configuration text length exceeds policy");
         }
-        output.writeInt(bytes.length); output.write(bytes);
+        output.writeInt(bytes.length);
+        output.write(bytes);
     }
 
     /**
@@ -417,9 +476,11 @@ public final class BackupConfigurationCodec {
      */
     private static String text(DataInputStream input, int maximum) throws IOException {
         int length = input.readInt();
-        if (length < 1 || length > maximum) throw new IOException("backup configuration text length is invalid");
+        if (length < 1 || length > maximum)
+            throw new IOException("backup configuration text length is invalid");
         byte[] bytes = input.readNBytes(length);
-        if (bytes.length != length) throw new IOException("backup configuration document is truncated");
+        if (bytes.length != length)
+            throw new IOException("backup configuration document is truncated");
         try {
             return StandardCharsets.UTF_8.newDecoder().onMalformedInput(CodingErrorAction.REPORT)
                     .onUnmappableCharacter(CodingErrorAction.REPORT).decode(ByteBuffer.wrap(bytes)).toString();
@@ -434,14 +495,16 @@ public final class BackupConfigurationCodec {
      */
     @FunctionalInterface
     private interface Writer {
-    /**
-     * Writes writer.
-     * <p>写入写入器。
-     *
-     * @param output destination receiving the produced content / 接收所生成内容的目标
-     * @throws IOException if the required file or stream operation fails / 所需文件或流操作失败时
-     */
-     void write(DataOutputStream output) throws IOException; }
+        /**
+         * Writes writer.
+         * <p>写入写入器。
+         *
+         * @param output destination receiving the produced content / 接收所生成内容的目标
+         * @throws IOException if the required file or stream operation fails / 所需文件或流操作失败时
+         */
+        void write(DataOutputStream output) throws IOException;
+    }
+
     /**
      * Holds decoded backup configuration fields before constructing the validated document.
      * <p>在构造已验证文档前保存解码后的备份配置字段。
@@ -450,7 +513,7 @@ public final class BackupConfigurationCodec {
      * @param resources reviewed file, configuration and database bindings for this component / 当前组件已审阅的文件、配置及数据库绑定
      * @param runtime reviewed language, process and health specification / 已审阅的语言、进程及健康规格
      */
-    private record Parsed(ConfigurationSnapshot configuration,
-                          Optional<ManagedComponentResourceBindings> resources,
-                          Optional<ManagedApplicationRuntimeConfiguration> runtime) { }
+    private record Parsed(ConfigurationSnapshot configuration, Optional<ManagedComponentResourceBindings> resources,
+            Optional<ManagedApplicationRuntimeConfiguration> runtime) {
+    }
 }

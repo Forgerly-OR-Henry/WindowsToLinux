@@ -17,7 +17,8 @@ public final class WebMasterKeyStore {
      * Prevents instantiation of this static contract helper.
      * <p>防止实例化当前静态契约辅助类。
      */
-    private WebMasterKeyStore() { }
+    private WebMasterKeyStore() {
+    }
 
     /**
      * Loads the exact owner-protected master key or creates it for a new installation, checking the persisted identity before use.
@@ -31,24 +32,31 @@ public final class WebMasterKeyStore {
     public static synchronized byte[] loadOrCreate(Path dataDirectory, Path keyDirectory) throws IOException {
         Path data = dataDirectory.toAbsolutePath().normalize();
         Path directory = keyDirectory.toAbsolutePath().normalize();
-        if (directory.startsWith(data) || data.startsWith(directory)) throw new IOException("Key and data locations must be separate");
+        if (directory.startsWith(data) || data.startsWith(directory))
+            throw new IOException("Key and data locations must be separate");
         safeAncestors(directory);
-        UserPrincipal owner = FileSystems.getDefault().getUserPrincipalLookupService().lookupPrincipalByName(System.getProperty("user.name"));
+        UserPrincipal owner = FileSystems.getDefault().getUserPrincipalLookupService()
+                .lookupPrincipalByName(System.getProperty("user.name"));
         createDirectory(directory, owner);
         String identity = identity(data);
         Path lockFile = directory.resolve(identity + ".lock");
         try (var channel = openLock(lockFile, owner); var lock = channel.lock()) {
             Path file = directory.resolve(identity + ".key");
             if (!Files.exists(file, LinkOption.NOFOLLOW_LINKS)) {
-                if (Files.exists(data.resolve(gold.debug.windowstolinux.web.db.runtime.WebStorageLocation.DATABASE_NAME), LinkOption.NOFOLLOW_LINKS))
+                if (Files.exists(
+                        data.resolve(gold.debug.windowstolinux.web.db.runtime.WebStorageLocation.DATABASE_NAME),
+                        LinkOption.NOFOLLOW_LINKS))
                     throw new IOException("Existing Web database requires its original master key");
                 createKey(file, owner);
             }
             verifyPrivate(file, owner, false);
             byte[] bytes;
-            try (var input = Files.newInputStream(file, LinkOption.NOFOLLOW_LINKS)) { bytes = input.readNBytes(33); }
+            try (var input = Files.newInputStream(file, LinkOption.NOFOLLOW_LINKS)) {
+                bytes = input.readNBytes(33);
+            }
             if (bytes.length != 32) {
-                Arrays.fill(bytes, (byte) 0); throw new IOException("Invalid saved Web master key");
+                Arrays.fill(bytes, (byte) 0);
+                throw new IOException("Invalid saved Web master key");
             }
             return bytes;
         }
@@ -64,9 +72,12 @@ public final class WebMasterKeyStore {
      */
     private static void createDirectory(Path path, UserPrincipal owner) throws IOException {
         safeAncestors(path);
-        if (!Files.exists(path.getParent(), LinkOption.NOFOLLOW_LINKS)) createDirectory(path.getParent(), owner);
-        try { Files.createDirectory(path, permissions(path.getParent(), owner, true)); }
-        catch (FileAlreadyExistsException existing) { /* Reuse only after ownership and permission checks below. / 仅在下方归属及权限检查通过后复用。 */ }
+        if (!Files.exists(path.getParent(), LinkOption.NOFOLLOW_LINKS))
+            createDirectory(path.getParent(), owner);
+        try {
+            Files.createDirectory(path, permissions(path.getParent(), owner, true));
+        } catch (FileAlreadyExistsException existing) {
+            /* Reuse only after ownership and permission checks below. / 仅在下方归属及权限检查通过后复用。 */ }
         verifyPrivate(path, owner, true);
     }
 
@@ -80,8 +91,10 @@ public final class WebMasterKeyStore {
      * @throws IOException if the required file or stream operation fails / 所需文件或流操作失败时
      */
     private static FileChannel openLock(Path path, UserPrincipal owner) throws IOException {
-        try { Files.createFile(path, permissions(path.getParent(), owner, false)); }
-        catch (FileAlreadyExistsException existing) { /* Existing lock files must also remain owner-only. / 既有锁文件也必须保持仅所有者可访问。 */ }
+        try {
+            Files.createFile(path, permissions(path.getParent(), owner, false));
+        } catch (FileAlreadyExistsException existing) {
+            /* Existing lock files must also remain owner-only. / 既有锁文件也必须保持仅所有者可访问。 */ }
         verifyPrivate(path, owner, false);
         return FileChannel.open(path, StandardOpenOption.WRITE, LinkOption.NOFOLLOW_LINKS);
     }
@@ -95,13 +108,18 @@ public final class WebMasterKeyStore {
      * @throws IOException if the required file or stream operation fails / 所需文件或流操作失败时
      */
     private static void createKey(Path path, UserPrincipal owner) throws IOException {
-        byte[] bytes = new byte[32]; new SecureRandom().nextBytes(bytes);
-        try (var channel = FileChannel.open(path, Set.of(StandardOpenOption.WRITE, StandardOpenOption.CREATE_NEW, LinkOption.NOFOLLOW_LINKS),
+        byte[] bytes = new byte[32];
+        new SecureRandom().nextBytes(bytes);
+        try (var channel = FileChannel.open(path,
+                Set.of(StandardOpenOption.WRITE, StandardOpenOption.CREATE_NEW, LinkOption.NOFOLLOW_LINKS),
                 permissions(path.getParent(), owner, false))) {
             ByteBuffer buffer = ByteBuffer.wrap(bytes);
-            while (buffer.hasRemaining()) channel.write(buffer);
+            while (buffer.hasRemaining())
+                channel.write(buffer);
             channel.force(true);
-        } finally { Arrays.fill(bytes, (byte) 0); }
+        } finally {
+            Arrays.fill(bytes, (byte) 0);
+        }
     }
 
     /**
@@ -114,9 +132,11 @@ public final class WebMasterKeyStore {
      * @return owner-only filesystem permissions using POSIX attributes or the supported Windows ACL model / 使用 POSIX 属性或受支持 Windows ACL 模型构建仅所有者可访问的文件系统权限
      * @throws IOException if the required file or stream operation fails / 所需文件或流操作失败时
      */
-    private static FileAttribute<?> permissions(Path parent, UserPrincipal owner, boolean directory) throws IOException {
+    private static FileAttribute<?> permissions(Path parent, UserPrincipal owner, boolean directory)
+            throws IOException {
         if (Files.getFileStore(parent).supportsFileAttributeView("posix"))
-            return PosixFilePermissions.asFileAttribute(PosixFilePermissions.fromString(directory ? "rwx------" : "rw-------"));
+            return PosixFilePermissions
+                    .asFileAttribute(PosixFilePermissions.fromString(directory ? "rwx------" : "rw-------"));
         if (Files.getFileStore(parent).supportsFileAttributeView("acl")) {
             var entry = AclEntry.newBuilder().setType(AclEntryType.ALLOW).setPrincipal(owner)
                     .setPermissions(EnumSet.allOf(AclEntryPermission.class)).build();
@@ -127,14 +147,19 @@ public final class WebMasterKeyStore {
                  *
                  * @return the standard {@code acl:acl} attribute name / 标准 {@code acl:acl} 属性名称
                  */
-                public String name() { return "acl:acl"; }
+                public String name() {
+                    return "acl:acl";
+                }
+
                 /**
                  * Returns the single ACL entry granting access only to the selected owner.
                  * <p>返回仅向指定所有者授予访问权限的单条 ACL 记录。
                  *
                  * @return an immutable list containing the owner-only ACL entry / 包含仅所有者可访问 ACL 记录的不可变列表
                  */
-                public List<AclEntry> value() { return List.of(entry); }
+                public List<AclEntry> value() {
+                    return List.of(entry);
+                }
             };
         }
         throw new IOException("Owner-only Web key storage is unavailable on this filesystem");
@@ -152,17 +177,20 @@ public final class WebMasterKeyStore {
     private static void verifyPrivate(Path path, UserPrincipal owner, boolean directory) throws IOException {
         safeAncestors(path);
         var attributes = Files.readAttributes(path, BasicFileAttributes.class, LinkOption.NOFOLLOW_LINKS);
-        if (directory ? !attributes.isDirectory() : !attributes.isRegularFile()) throw new IOException("Invalid Web key storage path");
-        if (!Files.getOwner(path, LinkOption.NOFOLLOW_LINKS).equals(owner)) throw new IOException("Web key storage ownership mismatch");
+        if (directory ? !attributes.isDirectory() : !attributes.isRegularFile())
+            throw new IOException("Invalid Web key storage path");
+        if (!Files.getOwner(path, LinkOption.NOFOLLOW_LINKS).equals(owner))
+            throw new IOException("Web key storage ownership mismatch");
         var posix = Files.getFileAttributeView(path, PosixFileAttributeView.class, LinkOption.NOFOLLOW_LINKS);
         if (posix != null) {
-            if (!posix.readAttributes().permissions().equals(PosixFilePermissions.fromString(directory ? "rwx------" : "rw-------")))
+            if (!posix.readAttributes().permissions()
+                    .equals(PosixFilePermissions.fromString(directory ? "rwx------" : "rw-------")))
                 throw new IOException("Web key storage permissions must be owner-only");
             return;
         }
         var acl = Files.getFileAttributeView(path, AclFileAttributeView.class, LinkOption.NOFOLLOW_LINKS);
-        if (acl == null || acl.getAcl().isEmpty() || acl.getAcl().stream().anyMatch(entry ->
-                entry.type() == AclEntryType.ALLOW && !entry.principal().equals(owner)))
+        if (acl == null || acl.getAcl().isEmpty() || acl.getAcl().stream()
+                .anyMatch(entry -> entry.type() == AclEntryType.ALLOW && !entry.principal().equals(owner)))
             throw new IOException("Web key storage permissions must be owner-only");
     }
 
@@ -177,7 +205,8 @@ public final class WebMasterKeyStore {
         for (Path current = path; current != null; current = current.getParent()) {
             if (Files.exists(current, LinkOption.NOFOLLOW_LINKS)) {
                 var attributes = Files.readAttributes(current, BasicFileAttributes.class, LinkOption.NOFOLLOW_LINKS);
-                if (attributes.isSymbolicLink() || attributes.isOther()) throw new IOException("Linked or special Web key path rejected");
+                if (attributes.isSymbolicLink() || attributes.isOther())
+                    throw new IOException("Linked or special Web key path rejected");
             }
         }
     }
@@ -191,17 +220,23 @@ public final class WebMasterKeyStore {
      * @throws IOException if an existing database lacks its identity, the identity is malformed, or file access fails / 既有数据库缺少身份、身份格式无效，或文件访问失败时
      */
     private static String identity(Path data) throws IOException {
-        Path file = data.resolve(".master-key-id"); safeAncestors(file);
+        Path file = data.resolve(".master-key-id");
+        safeAncestors(file);
         if (!Files.exists(file, LinkOption.NOFOLLOW_LINKS)) {
-            if (Files.exists(data.resolve(gold.debug.windowstolinux.web.db.runtime.WebStorageLocation.DATABASE_NAME), LinkOption.NOFOLLOW_LINKS))
+            if (Files.exists(data.resolve(gold.debug.windowstolinux.web.db.runtime.WebStorageLocation.DATABASE_NAME),
+                    LinkOption.NOFOLLOW_LINKS))
                 throw new IOException("Existing Web database requires its original master key identity");
             Files.writeString(file, UUID.randomUUID().toString(), StandardOpenOption.CREATE_NEW);
         }
         if (!Files.isRegularFile(file, LinkOption.NOFOLLOW_LINKS) || Files.size(file) != 36)
             throw new IOException("Invalid Web master key identity");
         String value = Files.readString(file);
-        try { if (!UUID.fromString(value).toString().equals(value)) throw new IllegalArgumentException(); }
-        catch (IllegalArgumentException invalid) { throw new IOException("Invalid Web master key identity"); }
+        try {
+            if (!UUID.fromString(value).toString().equals(value))
+                throw new IllegalArgumentException();
+        } catch (IllegalArgumentException invalid) {
+            throw new IOException("Invalid Web master key identity");
+        }
         return value;
     }
 }

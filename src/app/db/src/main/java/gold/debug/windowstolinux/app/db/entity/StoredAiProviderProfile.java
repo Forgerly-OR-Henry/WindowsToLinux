@@ -13,13 +13,8 @@ import java.util.Objects;
  * @param credentialKey platform-secret-store key / 平台秘密存储键
  * @param credentialMode selected platform-secret-store mode / 已选择的平台秘密存储模式
  */
-public record StoredAiProviderProfile(
-        String id,
-        String endpoint,
-        String model,
-        String credentialKey,
-        String credentialMode
-) {
+public record StoredAiProviderProfile(String id, String endpoint, String model, String credentialKey,
+        String credentialMode) {
     /**
      * Validates and binds the inputs required by stored ai provider profile.
      * <p>校验并绑定已存储AI提供者配置资料所需输入。

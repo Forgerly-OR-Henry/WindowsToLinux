@@ -1,16 +1,5 @@
 package gold.debug.windowstolinux.shared.backup.format;
 
-import gold.debug.windowstolinux.shared.backup.contract.validation.BackupArchivePolicy;
-import gold.debug.windowstolinux.shared.backup.contract.validation.BackupException;
-import gold.debug.windowstolinux.shared.backup.contract.validation.BackupFailureType;
-import gold.debug.windowstolinux.shared.backup.contract.validation.BackupManifestValidator;
-import gold.debug.windowstolinux.shared.backup.manifest.BackupManifest;
-import gold.debug.windowstolinux.shared.backup.manifest.BackupManifestCodec;
-import gold.debug.windowstolinux.shared.backup.manifest.BackupMember;
-import org.apache.commons.compress.archivers.zip.UnixStat;
-import org.apache.commons.compress.archivers.zip.ZipArchiveEntry;
-import org.apache.commons.compress.archivers.zip.ZipArchiveOutputStream;
-
 import java.io.FilterOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
@@ -23,6 +12,17 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 
+import gold.debug.windowstolinux.shared.backup.contract.validation.BackupArchivePolicy;
+import gold.debug.windowstolinux.shared.backup.contract.validation.BackupException;
+import gold.debug.windowstolinux.shared.backup.contract.validation.BackupFailureType;
+import gold.debug.windowstolinux.shared.backup.contract.validation.BackupManifestValidator;
+import gold.debug.windowstolinux.shared.backup.manifest.BackupManifest;
+import gold.debug.windowstolinux.shared.backup.manifest.BackupManifestCodec;
+import gold.debug.windowstolinux.shared.backup.manifest.BackupMember;
+import org.apache.commons.compress.archivers.zip.UnixStat;
+import org.apache.commons.compress.archivers.zip.ZipArchiveEntry;
+import org.apache.commons.compress.archivers.zip.ZipArchiveOutputStream;
+
 /**
  * Deterministic ZIP writer that verifies every stream against the manifest while writing. / 写入时逐流对照清单校验的确定性 ZIP 写入器。
  */
@@ -32,11 +32,13 @@ public final class BackupArchiveWriter {
      * <p>缓冲区大小。
      */
     private static final int BUFFER_SIZE = 64 * 1024;
+
     /**
      * Bound backup archive policy collaborator for explicit validation and resource-bound policy.
      * <p>处理显式校验及资源边界策略的备份归档策略协作对象。
      */
     private final BackupArchivePolicy policy;
+
     /**
      * Bound backup manifest codec collaborator for codec.
      * <p>处理编解码器的备份清单编解码器协作对象。
@@ -70,8 +72,8 @@ public final class BackupArchiveWriter {
         Objects.requireNonNull(destination, "destination");
         new BackupManifestValidator(policy).validate(manifest);
         Map<String, BackupArchiveContent> indexed = index(contents);
-        if (!indexed.keySet().equals(manifest.members().stream().map(BackupMember::path)
-                .collect(java.util.stream.Collectors.toSet()))) {
+        if (!indexed.keySet().equals(
+                manifest.members().stream().map(BackupMember::path).collect(java.util.stream.Collectors.toSet()))) {
             throw BackupException.create(BackupFailureType.MANIFEST_INVALID,
                     "archive streams do not exactly match manifest members");
         }
@@ -83,7 +85,8 @@ public final class BackupArchiveWriter {
                 throw BackupException.create(BackupFailureType.LIMIT_EXCEEDED, "encoded manifest exceeds policy");
             }
             writeBytes(archive, "manifest.json", manifestDocument);
-            for (BackupMember member : manifest.members()) writeMember(archive, member, indexed.get(member.path()));
+            for (BackupMember member : manifest.members())
+                writeMember(archive, member, indexed.get(member.path()));
             archive.finish();
         } catch (BackupException exception) {
             throw exception;
@@ -146,7 +149,8 @@ public final class BackupArchiveWriter {
         try (InputStream input = content.stream().open()) {
             int read;
             while ((read = input.read(buffer)) >= 0) {
-                if (read == 0) continue;
+                if (read == 0)
+                    continue;
                 count = Math.addExact(count, read);
                 if (count > member.size() || count > policy.maximumMemberBytes()) {
                     throw BackupException.create(BackupFailureType.INTEGRITY_FAILED,
@@ -208,7 +212,10 @@ public final class BackupArchiveWriter {
              *
              * @throws IOException if the required file or stream operation fails / 所需文件或流操作失败时
              */
-            @Override public void close() throws IOException { flush(); }
+            @Override
+            public void close() throws IOException {
+                flush();
+            }
         };
     }
 }

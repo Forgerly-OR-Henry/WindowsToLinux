@@ -1,14 +1,14 @@
 package gold.debug.windowstolinux.shared.model.project;
 
-import gold.debug.windowstolinux.shared.model.analysis.AnalysisEvidence;
-import gold.debug.windowstolinux.shared.model.message.LocalizedMessage;
-
 import java.util.EnumMap;
 import java.util.EnumSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+
+import gold.debug.windowstolinux.shared.model.analysis.AnalysisEvidence;
+import gold.debug.windowstolinux.shared.model.message.LocalizedMessage;
 
 /**
  * Source-backed, reviewable runtime values inferred without running project content.
@@ -23,15 +23,10 @@ import java.util.Optional;
  * @param evidence the deterministic evidence for each suggestion / 每项建议的确定性证据
  * @param requiredUserInput unresolved values that remain an explicit human decision / 仍需人工明确决定的未解析值
  */
-public record DeploymentRuntimeAssessment(
-        DeploymentProjectType projectType,
-        Map<RuntimeInputType, String> values,
-        Optional<Integer> suggestedHealthPort,
-        Map<Integer, Integer> suggestedContainerPorts,
-        List<DeploymentRuntimeSpecification.ManagedVolume> suggestedManagedVolumes,
-        List<AnalysisEvidence> evidence,
-        List<LocalizedMessage> requiredUserInput
-) {
+public record DeploymentRuntimeAssessment(DeploymentProjectType projectType, Map<RuntimeInputType, String> values,
+        Optional<Integer> suggestedHealthPort, Map<Integer, Integer> suggestedContainerPorts,
+        List<DeploymentRuntimeSpecification.ManagedVolume> suggestedManagedVolumes, List<AnalysisEvidence> evidence,
+        List<LocalizedMessage> requiredUserInput) {
     /**
      * Creates a source-backed runtime suggestion. / 创建源码依据的运行时建议。
      *
@@ -59,7 +54,8 @@ public record DeploymentRuntimeAssessment(
         });
         suggestedHealthPort = Objects.requireNonNull(suggestedHealthPort, "suggestedHealthPort");
         suggestedHealthPort.ifPresent(DeploymentRuntimeAssessment::requirePort);
-        suggestedContainerPorts = Map.copyOf(Objects.requireNonNull(suggestedContainerPorts, "suggestedContainerPorts"));
+        suggestedContainerPorts = Map
+                .copyOf(Objects.requireNonNull(suggestedContainerPorts, "suggestedContainerPorts"));
         if (projectType != DeploymentProjectType.DOCKERFILE_CONTAINER && !suggestedContainerPorts.isEmpty()) {
             throw new IllegalArgumentException("only containers may suggest published ports");
         }
@@ -67,7 +63,8 @@ public record DeploymentRuntimeAssessment(
             requirePort(hostPort);
             requirePort(containerPort);
         });
-        suggestedManagedVolumes = List.copyOf(Objects.requireNonNull(suggestedManagedVolumes, "suggestedManagedVolumes"));
+        suggestedManagedVolumes = List
+                .copyOf(Objects.requireNonNull(suggestedManagedVolumes, "suggestedManagedVolumes"));
         if (projectType != DeploymentProjectType.DOCKERFILE_CONTAINER && !suggestedManagedVolumes.isEmpty()) {
             throw new IllegalArgumentException("only containers may suggest managed volumes");
         }
@@ -178,21 +175,22 @@ public record DeploymentRuntimeAssessment(
     private static EnumSet<RuntimeInputType> allowedInputs(DeploymentProjectType projectType) {
         return switch (projectType) {
             case SPRING_BOOT -> EnumSet.of(RuntimeInputType.JAVA_VERSION);
-            case DOCKERFILE_CONTAINER, RECOGNITION_PREVIEW -> EnumSet.noneOf(RuntimeInputType.class);
+            case DOCKERFILE_CONTAINER, RECOGNITION_PREVIEW, MANAGED_PROCESS -> EnumSet.noneOf(RuntimeInputType.class);
             case JAVA_JAR -> EnumSet.of(RuntimeInputType.JAVA_JAR_PATH, RuntimeInputType.JAVA_MAIN_CLASS,
                     RuntimeInputType.JAVA_VERSION);
             case JAVA_SOURCE -> EnumSet.of(RuntimeInputType.JAVA_SOURCE_ROOT, RuntimeInputType.JAVA_MAIN_CLASS,
                     RuntimeInputType.JAVA_VERSION);
             case NODE_SERVICE -> EnumSet.of(RuntimeInputType.NODE_MAJOR_VERSION);
             case PYTHON_SERVICE -> EnumSet.of(RuntimeInputType.PYTHON_VERSION, RuntimeInputType.PYTHON_ENTRYPOINT);
-            case STATIC_SITE -> EnumSet.of(RuntimeInputType.STATIC_OUTPUT_DIRECTORY, RuntimeInputType.NODE_MAJOR_VERSION);
+            case STATIC_SITE ->
+                EnumSet.of(RuntimeInputType.STATIC_OUTPUT_DIRECTORY, RuntimeInputType.NODE_MAJOR_VERSION);
             case KOTLIN_SERVICE -> EnumSet.of(RuntimeInputType.SERVICE_VERSION, RuntimeInputType.SERVICE_ARTIFACT,
                     RuntimeInputType.SERVICE_ENTRYPOINT, RuntimeInputType.KOTLIN_JVM_TARGET);
-            case GO_SERVICE, RUST_SERVICE, DOTNET_SERVICE ->
-                    EnumSet.of(RuntimeInputType.SERVICE_VERSION, RuntimeInputType.SERVICE_ARTIFACT,
-                            RuntimeInputType.SERVICE_ENTRYPOINT);
-            case PHP_SERVICE, RUBY_SERVICE -> EnumSet.of(RuntimeInputType.SERVICE_VERSION,
-                    RuntimeInputType.SERVICE_ARTIFACT, RuntimeInputType.SERVICE_ENTRYPOINT, RuntimeInputType.SERVICE_PORT);
+            case GO_SERVICE, RUST_SERVICE, DOTNET_SERVICE -> EnumSet.of(RuntimeInputType.SERVICE_VERSION,
+                    RuntimeInputType.SERVICE_ARTIFACT, RuntimeInputType.SERVICE_ENTRYPOINT);
+            case PHP_SERVICE, RUBY_SERVICE ->
+                EnumSet.of(RuntimeInputType.SERVICE_VERSION, RuntimeInputType.SERVICE_ARTIFACT,
+                        RuntimeInputType.SERVICE_ENTRYPOINT, RuntimeInputType.SERVICE_PORT);
             case CMAKE_SERVICE -> EnumSet.of(RuntimeInputType.CMAKE_PRESET, RuntimeInputType.CMAKE_TARGET,
                     RuntimeInputType.CMAKE_ARTIFACT);
         };

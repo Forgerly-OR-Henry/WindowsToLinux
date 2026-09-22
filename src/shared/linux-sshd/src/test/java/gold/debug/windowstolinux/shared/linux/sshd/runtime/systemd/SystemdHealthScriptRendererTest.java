@@ -1,12 +1,12 @@
 package gold.debug.windowstolinux.shared.linux.sshd.runtime.systemd;
 
-import gold.debug.windowstolinux.shared.model.health.HealthCheck;
-import org.junit.jupiter.api.Test;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.net.URI;
 
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import gold.debug.windowstolinux.shared.model.health.HealthCheck;
+import org.junit.jupiter.api.Test;
 
 class SystemdHealthScriptRendererTest {
     @Test

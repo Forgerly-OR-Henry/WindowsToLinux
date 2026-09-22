@@ -1,7 +1,8 @@
 package gold.debug.windowstolinux.app.ui.component;
 
-import javax.swing.JPanel;
 import java.awt.*;
+
+import javax.swing.JPanel;
 
 /**
  * One shared, scalable rounded surface. / 共用的可缩放圆角表面。
@@ -34,7 +35,8 @@ final class RoundedCard extends JPanel {
      *
      * @param graphics graphics / 图形
      */
-    @Override protected void paintComponent(Graphics graphics) {
+    @Override
+    protected void paintComponent(Graphics graphics) {
         Graphics2D g = (Graphics2D) graphics.create();
         try {
             g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
@@ -42,7 +44,9 @@ final class RoundedCard extends JPanel {
             g.fillRoundRect(0, 0, getWidth() - 1, getHeight() - 1, 24, 24);
             g.setColor(outline);
             g.drawRoundRect(0, 0, getWidth() - 1, getHeight() - 1, 24, 24);
-        } finally { g.dispose(); }
+        } finally {
+            g.dispose();
+        }
         super.paintComponent(graphics);
     }
 }

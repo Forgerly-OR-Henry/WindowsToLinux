@@ -1,8 +1,9 @@
 package gold.debug.windowstolinux.web.db.persistence.mapper;
 
+import java.util.List;
+
 import gold.debug.windowstolinux.web.db.entity.*;
 import org.apache.ibatis.annotations.*;
-import java.util.List;
 
 /**
  * Maps scoped task journal records to explicit database statements.
@@ -28,7 +29,7 @@ public interface WebTaskJournalMapper {
             FROM task_events WHERE workspace_id=#{scope.workspaceId} AND task_id=#{id}
             """)
     int append(@Param("scope") ResourceScope scope, @Param("id") String id, @Param("kind") String kind,
-               @Param("message") String message, @Param("detail") String detail, @Param("now") String now);
+            @Param("message") String message, @Param("detail") String detail, @Param("now") String now);
 
     /**
      * Appends a task step with the next ordinal and the supplied safe detail document.
@@ -47,7 +48,7 @@ public interface WebTaskJournalMapper {
             FROM task_steps WHERE workspace_id=#{scope.workspaceId} AND task_id=#{id}
             """)
     int step(@Param("scope") ResourceScope scope, @Param("id") String id, @Param("message") String message,
-             @Param("detail") String detail, @Param("now") String now);
+            @Param("detail") String detail, @Param("now") String now);
 
     /**
      * Reads recorded events in the order required by the caller's cursor.
@@ -63,5 +64,6 @@ public interface WebTaskJournalMapper {
             WHERE workspace_id=#{scope.workspaceId} AND task_id=#{id} AND sequence>#{after}
             ORDER BY sequence LIMIT 500
             """)
-    List<StoredTaskEvent> events(@Param("scope") ResourceScope scope, @Param("id") String id, @Param("after") long after);
+    List<StoredTaskEvent> events(@Param("scope") ResourceScope scope, @Param("id") String id,
+            @Param("after") long after);
 }

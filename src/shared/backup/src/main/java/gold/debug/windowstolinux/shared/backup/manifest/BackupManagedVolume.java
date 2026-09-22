@@ -1,8 +1,8 @@
 package gold.debug.windowstolinux.shared.backup.manifest;
 
-import gold.debug.windowstolinux.shared.model.project.DeploymentRuntimeSpecification;
-
 import java.util.Objects;
+
+import gold.debug.windowstolinux.shared.model.project.DeploymentRuntimeSpecification;
 
 /**
  * Portable copy of one platform-managed container volume. / 单个平台受管容器卷的可移植副本。
@@ -20,8 +20,8 @@ public record BackupManagedVolume(String name, String containerPath, boolean rea
      * @param readOnly read only / 读取仅
      */
     public BackupManagedVolume {
-        DeploymentRuntimeSpecification.ManagedVolume checked =
-                new DeploymentRuntimeSpecification.ManagedVolume(name, containerPath, readOnly);
+        DeploymentRuntimeSpecification.ManagedVolume checked = new DeploymentRuntimeSpecification.ManagedVolume(name,
+                containerPath, readOnly);
         name = checked.name();
         containerPath = checked.containerPath();
     }

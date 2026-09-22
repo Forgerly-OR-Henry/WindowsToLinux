@@ -23,8 +23,11 @@ public record DeploymentBuildResult(boolean succeeded, String sourceSha256, Stri
      * @param evidence observations supporting the reported result / 支持所报告结果的观测证据
      */
     public DeploymentBuildResult(boolean succeeded, String sourceSha256, String evidence) {
-        this(succeeded, sourceSha256, evidence, new gold.debug.windowstolinux.shared.model.toolchain.ResolvedToolchainSet("legacy", java.util.List.of()));
+        this(succeeded, sourceSha256, evidence,
+                new gold.debug.windowstolinux.shared.model.toolchain.ResolvedToolchainSet("legacy",
+                        java.util.List.of()));
     }
+
     /**
      * Validates and binds the inputs required by deployment build result.
      * <p>校验并绑定部署构建结果所需输入。

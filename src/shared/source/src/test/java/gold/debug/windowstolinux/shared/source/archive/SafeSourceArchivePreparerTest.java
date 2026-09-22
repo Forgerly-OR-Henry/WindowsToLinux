@@ -1,9 +1,10 @@
 package gold.debug.windowstolinux.shared.source.archive;
 
-import gold.debug.windowstolinux.shared.model.archive.SourceArchiveDescriptor;
-import org.junit.jupiter.api.Assumptions;
-import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.io.TempDir;
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -17,11 +18,10 @@ import java.util.HexFormat;
 import java.util.List;
 import java.util.zip.GZIPInputStream;
 
-import static org.junit.jupiter.api.Assertions.assertArrayEquals;
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import gold.debug.windowstolinux.shared.model.archive.SourceArchiveDescriptor;
+import org.junit.jupiter.api.Assumptions;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 class SafeSourceArchivePreparerTest {
     @TempDir
@@ -38,13 +38,17 @@ class SafeSourceArchivePreparerTest {
         Path declaration = source.resolve("windowstolinux-application.properties");
         Files.writeString(declaration, "version=1\nsource.include=samples/events.log\n");
         var archive = archiver.archive(source, temporaryDirectory.resolve("included.tar.gz"));
-        assertTrue(readTarEntries(archive.archivePath()).stream().anyMatch(entry -> entry.path().equals("samples/events.log")));
+        assertTrue(readTarEntries(archive.archivePath()).stream()
+                .anyMatch(entry -> entry.path().equals("samples/events.log")));
         assertTrue(archive.excludedEntries().contains("debug.log"));
-        for (String forbidden : List.of(".env", "samples/secret.key", "logs/runtime.log", "../outside.log", "./samples/events.log")) {
+        for (String forbidden : List.of(".env", "samples/secret.key", "logs/runtime.log", "../outside.log",
+                "./samples/events.log")) {
             Path file = source.resolve(forbidden).normalize();
-            Files.createDirectories(file.getParent()); Files.writeString(file, "excluded");
+            Files.createDirectories(file.getParent());
+            Files.writeString(file, "excluded");
             Files.writeString(declaration, "version=1\nsource.include=" + forbidden + "\n");
-            assertThrows(SourceArchiveException.class, () -> archiver.archive(source, temporaryDirectory.resolve("forbidden.tar.gz")), forbidden);
+            assertThrows(SourceArchiveException.class,
+                    () -> archiver.archive(source, temporaryDirectory.resolve("forbidden.tar.gz")), forbidden);
         }
     }
 
@@ -64,7 +68,9 @@ class SafeSourceArchivePreparerTest {
         assertEquals(2, archive.fileCount());
         assertEquals(Files.size(source.resolve("pom.xml")) + Files.size(source.resolve("src/main/App.java")),
                 archive.uncompressedByteCount());
-        assertEquals(HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(Files.readAllBytes(archive.archivePath()))),
+        assertEquals(
+                HexFormat.of().formatHex(
+                        MessageDigest.getInstance("SHA-256").digest(Files.readAllBytes(archive.archivePath()))),
                 archive.contentSha256());
         assertArrayEquals(Files.readAllBytes(archive.archivePath()), Files.readAllBytes(repeat.archivePath()));
         assertTrue(archive.archivePath().getFileName().toString().endsWith(".tar.gz"));
@@ -84,11 +90,12 @@ class SafeSourceArchivePreparerTest {
 
         assertEquals(SourceArchiveFailureType.BOUNDARY_ESCAPE, assertThrows(SourceArchiveException.class,
                 () -> archiver.archive(source, source.resolve("source.tar.gz"))).failure().definition());
-        assertEquals(SourceArchiveFailureType.DESTINATION_INVALID, assertThrows(SourceArchiveException.class,
-                () -> archiver.archive(source, temporaryDirectory.resolve("source.zip"))).failure().definition());
-        assertThrows(IllegalArgumentException.class, () -> new SourceArchiveDescriptor(
-                temporaryDirectory.resolve("source.zip"), "a".repeat(64), 1, 1
-        ));
+        assertEquals(SourceArchiveFailureType.DESTINATION_INVALID,
+                assertThrows(SourceArchiveException.class,
+                        () -> archiver.archive(source, temporaryDirectory.resolve("source.zip"))).failure()
+                        .definition());
+        assertThrows(IllegalArgumentException.class,
+                () -> new SourceArchiveDescriptor(temporaryDirectory.resolve("source.zip"), "a".repeat(64), 1, 1));
     }
 
     @Test
@@ -103,15 +110,17 @@ class SafeSourceArchivePreparerTest {
             Assumptions.abort("symbolic links are unavailable in this test environment");
         }
 
-        assertEquals(SourceArchiveFailureType.SYMBOLIC_LINK_REJECTED, assertThrows(SourceArchiveException.class,
-                () -> archiver.archive(source, temporaryDirectory.resolve("out/source.tar.gz")))
-                .failure().definition());
+        assertEquals(SourceArchiveFailureType.SYMBOLIC_LINK_REJECTED,
+                assertThrows(SourceArchiveException.class,
+                        () -> archiver.archive(source, temporaryDirectory.resolve("out/source.tar.gz"))).failure()
+                        .definition());
 
         Path linkedOutputParent = temporaryDirectory.resolve("linked-output");
         Files.createSymbolicLink(linkedOutputParent, source);
-        assertEquals(SourceArchiveFailureType.DESTINATION_INVALID, assertThrows(SourceArchiveException.class,
-                () -> archiver.archive(source, linkedOutputParent.resolve("source.tar.gz")))
-                .failure().definition());
+        assertEquals(SourceArchiveFailureType.DESTINATION_INVALID,
+                assertThrows(SourceArchiveException.class,
+                        () -> archiver.archive(source, linkedOutputParent.resolve("source.tar.gz"))).failure()
+                        .definition());
     }
 
     @Test
