@@ -35,6 +35,19 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 class ModLifecycleIntegrationTest {
+    static gold.debug.windowstolinux.app.service.security.DesktopSecurityService security(PlatformDatabase db)
+            throws Exception {
+        var security = new gold.debug.windowstolinux.app.service.security.DesktopSecurityService(
+                new gold.debug.windowstolinux.app.db.persistence.repository.SecurityRepository(
+                        new gold.debug.windowstolinux.app.db.persistence.connection.RepositoryConnections(
+                                db::openConnection)));
+        if (security.securityState().configured())
+            security.unlock("fixture-password".toCharArray());
+        else
+            security.setupAndUnlock("fixture-password".toCharArray(), "fixture-password".toCharArray());
+        return security;
+    }
+
     @TempDir
     Path root;
 
@@ -215,7 +228,9 @@ class ModLifecycleIntegrationTest {
             var entry = loader.loadClass("example.fixture.Mod");
             try (var db = PlatformDatabase.open(work.resolve("data"), PROTECTION)) {
                 var identity = schema(db);
-                try (var tasks = new PlatformTaskRuntime(db, (owner, version, request) -> claims(identity))) {
+                try (var security = security(db);
+                        var tasks = new PlatformTaskRuntime(db, (owner, version, request) -> claims(identity),
+                                security)) {
                     var pane = new AtomicReference<ExtensionPagePane>();
                     SwingUtilities.invokeAndWait(() -> pane.set(new ExtensionPagePane(key -> {
                     }, owner -> "Fixture", () -> "Locked")));
@@ -273,7 +288,8 @@ class ModLifecycleIntegrationTest {
         entry.getField("failAfterCommit").setBoolean(null, true);
         try (var db = PlatformDatabase.open(work.resolve("data"), PROTECTION)) {
             var identity = schema(db);
-            try (var tasks = new PlatformTaskRuntime(db, (owner, version, request) -> claims(identity))) {
+            try (var security = security(db);
+                    var tasks = new PlatformTaskRuntime(db, (owner, version, request) -> claims(identity), security)) {
                 var pane = new AtomicReference<ExtensionPagePane>();
                 SwingUtilities.invokeAndWait(() -> pane.set(new ExtensionPagePane(key -> {
                 }, owner -> "Fixture", () -> "Locked")));
@@ -310,7 +326,8 @@ class ModLifecycleIntegrationTest {
         entry.getField("failStart").setBoolean(null, true);
         try (var db = PlatformDatabase.open(work.resolve("data"), PROTECTION)) {
             var identity = schema(db);
-            try (var tasks = new PlatformTaskRuntime(db, (owner, version, request) -> claims(identity))) {
+            try (var security = security(db);
+                    var tasks = new PlatformTaskRuntime(db, (owner, version, request) -> claims(identity), security)) {
                 var pane = new AtomicReference<ExtensionPagePane>();
                 SwingUtilities.invokeAndWait(() -> pane.set(new ExtensionPagePane(key -> {
                 }, owner -> "Fixture", () -> "Locked")));
@@ -355,7 +372,8 @@ class ModLifecycleIntegrationTest {
             assertFalse(ledger.complete(original, Outcome.UNKNOWN, "{\"outcome\":\"UNKNOWN\"}", false));
         }
         try (var db = PlatformDatabase.open(work.resolve("data"), PROTECTION);
-                var tasks = new PlatformTaskRuntime(db, (owner, version, request) -> claims(identity))) {
+                var security = security(db);
+                var tasks = new PlatformTaskRuntime(db, (owner, version, request) -> claims(identity), security)) {
             var pane = new AtomicReference<ExtensionPagePane>();
             SwingUtilities.invokeAndWait(() -> pane.set(new ExtensionPagePane(key -> {
             }, owner -> "Fixture", () -> "Locked")));

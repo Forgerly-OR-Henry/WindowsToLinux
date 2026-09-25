@@ -39,7 +39,10 @@ public final class DesktopSecurityService implements SecurityApplicationFacade, 
 
     /** Number of accepted operations retaining authorization. / 仍保留授权的已接纳操作数。
      */
-    private int active;
+    private final java.util.concurrent.atomic.AtomicInteger active = new java.util.concurrent.atomic.AtomicInteger();
+
+    /** Nonblocking counts of retained tasks whose current key scope is absent. / 尚无当前密钥作用域的保留任务的非阻塞计数。 */
+    private final Set<java.util.function.IntSupplier> retainedTasks = new LinkedHashSet<>();
 
     /** Lock generation used to reject stale human responses. / 用于拒绝过期人工响应的锁定代次。
      */
@@ -64,7 +67,32 @@ public final class DesktopSecurityService implements SecurityApplicationFacade, 
      */
     @Override
     public synchronized DesktopSecurityState securityState() {
-        return new DesktopSecurityState(configured, session != null, encrypted, active, changing);
+        return new DesktopSecurityState(configured, session != null, encrypted, activeTasks(), changing);
+    }
+
+    /**
+     * Tracks unfinished task identities across restarts and finalization failures. / 跟踪跨重启及收尾失败的未结束任务身份。
+     * @param count nonblocking in-memory count, never acquiring task or database locks / 不取得任务或数据库锁的非阻塞内存计数
+     * @return registration removed only after its task runtime drains / 仅在任务执行器排空后移除的登记
+     */
+    public synchronized AutoCloseable trackRetainedTasks(java.util.function.IntSupplier count) {
+        if (closed)
+            throw denied("security is closed");
+        retainedTasks.add(Objects.requireNonNull(count));
+        return () -> {
+            synchronized (DesktopSecurityService.this) {
+                retainedTasks.remove(count);
+            }
+        };
+    }
+
+    /** Returns active key scopes plus tasks still needing authorization or reconciliation. / 返回活动密钥作用域及仍需授权或核对的任务总数。
+     * @return bounded unfinished-operation count / 有界未结束操作数 */
+    private int activeTasks() {
+        long total = active.get();
+        for (var count : retainedTasks)
+            total += Math.max(0, count.getAsInt());
+        return (int) Math.min(Integer.MAX_VALUE, total);
     }
 
     /** Creates the first security profile and unlocks only if no newer lock intervened. / 创建首次安全配置，仅在没有后续锁定时解锁。
@@ -218,7 +246,7 @@ public final class DesktopSecurityService implements SecurityApplicationFacade, 
      */
     private synchronized void beginChange() {
         requireUnlocked();
-        if (active != 0)
+        if (activeTasks() != 0)
             throw ApplicationServiceException.create(ApplicationServiceFailureType.SECURITY_BUSY,
                     "active tasks prevent security changes");
         changing = true;
@@ -260,7 +288,7 @@ public final class DesktopSecurityService implements SecurityApplicationFacade, 
         synchronized (this) {
             requireUnlocked();
             task = new Task(session.fork());
-            active++;
+            active.incrementAndGet();
         }
         current.set(task);
         return new Operation(task);
@@ -273,7 +301,7 @@ public final class DesktopSecurityService implements SecurityApplicationFacade, 
     public synchronized Task beginTask() {
         requireUnlocked();
         Task task = new Task(session.fork());
-        active++;
+        active.incrementAndGet();
         return task;
     }
 
@@ -366,7 +394,7 @@ public final class DesktopSecurityService implements SecurityApplicationFacade, 
             throw denied("a background task needs an accepted operation");
         synchronized (this) {
             parent.requireOpen();
-            active++;
+            active.incrementAndGet();
             return new Task(parent.credentials.fork());
         }
     }
@@ -511,10 +539,7 @@ public final class DesktopSecurityService implements SecurityApplicationFacade, 
         */
         private void releaseCredentials() {
             credentials.close();
-            synchronized (DesktopSecurityService.this) {
-                active--;
-                DesktopSecurityService.this.notifyAll();
-            }
+            active.decrementAndGet();
         }
 
         /** Releases this scope and its owned resources. / 释放当前作用域及其持有资源。
@@ -573,7 +598,7 @@ public final class DesktopSecurityService implements SecurityApplicationFacade, 
     @Override
     public void close() {
         synchronized (this) {
-            if (active != 0 || changing)
+            if (activeTasks() != 0 || changing)
                 throw ApplicationServiceException.create(ApplicationServiceFailureType.SECURITY_BUSY,
                         "tasks and security changes must finish before security shutdown");
             closed = true;

@@ -252,6 +252,19 @@ public final class TaskLedger {
      * @throws SQLException if cancellation is unsupported or persistence fails / 不支持取消或持久化失败时
      */
     public boolean cancel(UUID taskId) throws SQLException {
+        return cancel(taskId, () -> {
+        });
+    }
+
+    /**
+     * Releases host authorization before queued cancellation becomes terminal. / 排队取消成为终态前释放宿主授权。
+     * @param taskId accepted task identity / 已接纳任务身份
+     * @param beforeEnd nonblocking host cleanup after resource checks, without database reentry / 资源检查后的非阻塞宿主清理，不重入数据库
+     * @return whether queued cancellation was durably completed / 排队取消是否已持久化完成
+     * @throws SQLException if cancellation or persistence fails / 取消或持久化失败时
+     */
+    public boolean cancel(UUID taskId, Runnable beforeEnd) throws SQLException {
+        Objects.requireNonNull(beforeEnd);
         return locked(() -> {
             try (var c = connections.open();
                     var p = c.prepareStatement("SELECT state,cancellable FROM platform_task WHERE task_id=?")) {
@@ -265,6 +278,7 @@ public final class TaskLedger {
                     if (!r.getBoolean(2))
                         throw new SQLException("Task does not support cancellation");
                     if (state.equals("QUEUED")) {
+                        beforeEnd.run();
                         finish(c, taskId, Outcome.CANCELLED);
                         return true;
                     }
@@ -287,6 +301,23 @@ public final class TaskLedger {
      */
     public boolean complete(UUID taskId, Outcome outcome, String resultJson, boolean reconciliation)
             throws SQLException {
+        return complete(taskId, outcome, resultJson, reconciliation, () -> {
+        });
+    }
+
+    /**
+     * Finalizes host memory resources after explicit cleanup and before durable task end. / 显式清理后、持久化任务结束前收尾宿主内存资源。
+     * @param taskId accepted original identity / 已接纳原身份
+     * @param outcome observed business result / 已观察业务结果
+     * @param resultJson bounded diagnostic evidence / 有界诊断证据
+     * @param reconciliation whether original uncertainty is explicitly resolved / 是否显式核实原不确定性
+     * @param beforeEnd nonblocking host cleanup without database reentry / 不重入数据库的非阻塞宿主清理
+     * @return whether all resources and the known outcome reached terminal state / 全部资源及已知结果是否到达终态
+     * @throws SQLException if state or persistence fails / 状态或持久化失败时
+     */
+    public boolean complete(UUID taskId, Outcome outcome, String resultJson, boolean reconciliation, Runnable beforeEnd)
+            throws SQLException {
+        Objects.requireNonNull(beforeEnd);
         if (resultJson.length() > 65536)
             throw new SQLException("Task result evidence is too large");
         return locked(() -> {
@@ -301,6 +332,7 @@ public final class TaskLedger {
                                 throw new SQLException("A persisted terminal outcome cannot be replaced");
                         }
                     }
+                    beforeEnd.run();
                     return true;
                 }
                 if (state.equals("QUEUED") || state.equals("UNKNOWN") && !reconciliation)
@@ -326,6 +358,7 @@ public final class TaskLedger {
                         }
                     }
                 }
+                beforeEnd.run();
                 finish(c, taskId, outcome);
                 return true;
             }
