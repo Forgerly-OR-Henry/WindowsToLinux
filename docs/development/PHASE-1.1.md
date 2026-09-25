@@ -325,6 +325,12 @@ S0 的规范入口维护在[第 9 节规格索引](#implementation-specification
 - 归档证据：源码阶段工作区含 2,835 个文件（19,574,832 字节），复制前后源集合与逐文件 SHA-256 一致，目标逐项匹配；另将归档说明纳入清单。清单 SHA-256 为 `e337698db89fea6e4974e9b8f5568833ae10b5685267a4ea55b1162ef7e1bd71`。范围、排除项与恢复说明见 [ARCHIVE.md](../../history-src/ARCHIVE.md)。
 - 后续：先关闭 S2 技术验证，再切换新活动工程；每个闭环核对冻结归档并提交。本次本地验收不关闭历史远端待验证项。
 
+#### S2 本机探针记录（2026-09-26，持续更新）
+
+- 用户确认 H2 统一使用 `com.h2database:h2:2.5.250`，由现有 Maven 仓库管理。2.5.252 手动下载包及本次手动安装缓存已移除；冻结归档保留其基线文字，不参与活动依赖。
+- 首轮数据库探针在 JDK 21 / H2 2.5.250 下 5 项通过，零失败、错误或跳过：44 张目标表初始化及重开、Schema 读写/外键/管理员权限拒绝、批处理/保存点/LOB/关闭回滚、迁移只读来源及 DDL 自提交、缺库拒绝与旧 SQLite 字节保全。该结果尚不关闭完整 S2-02 或生产功能验收。
+- 已按运行证据修正 DDL：凭据 nonce 使用 `BINARY VARYING(12)` 支持唯一约束并保留长度校验；引导与普通连接分离引擎设置，普通连接保留 `DATABASE_TO_LOWER=TRUE`，不执行管理员级 `WRITE_DELAY` 设置。
+
 <a id="mod-acceptance"></a>
 
 ## 10. 功能验收与打包步骤
@@ -461,13 +467,13 @@ Maven 同步和 `verify` 使用系统 Maven 本地仓库。依赖尚未同步时
 
 ## 12. 内部工程规格（S0 设计基线）
 
-本章为已形成设计、待 S2 及后续源码任务验证的规格；不是可直接对用户运行库执行的迁移脚本。作者接口及载荷规则只维护在 [Mod API](../Mod.md#public-api-spec)，活动结构只维护在 File.md。H2 版本固定为 2.5.252；本次不连接数据库、不创建生产 SQL 文件、不运行迁移。
+本章为已形成设计、待 S2 及后续源码任务验证的规格；不是可直接对用户运行库执行的迁移脚本。作者接口及载荷规则只维护在 [Mod API](../Mod.md#public-api-spec)，活动结构只维护在 File.md。H2 版本固定为 2.5.250；本次不连接数据库、不创建生产 SQL 文件、不运行迁移。
 
 <a id="h2-ddl"></a>
 
 ### 12.1 H2 物理组织与初始化
 
-数据库为 `data/platform.mv.db`，普通模式、嵌入式、单 APP 进程持有引擎。连接参数固定 `DATABASE_TO_LOWER=TRUE;DB_CLOSE_ON_EXIT=FALSE;AUTO_SERVER=FALSE;LOCK_TIMEOUT=5000;WRITE_DELAY=0`，已有库使用 `IFEXISTS=TRUE`；只有确认文件从未存在的首次初始化允许创建，损坏或不可访问不能当作新库。由 main 的装配调用 app/db，引导完成后才开放 Mod 连接；最后一个受管理连接释放后按正常关闭流程关闭引擎。
+数据库为 `data/platform.mv.db`，普通模式、嵌入式、单 APP 进程持有引擎。管理员引导连接参数固定 `DATABASE_TO_LOWER=TRUE;DB_CLOSE_ON_EXIT=FALSE;AUTO_SERVER=FALSE;LOCK_TIMEOUT=5000;WRITE_DELAY=0`，已有库使用 `IFEXISTS=TRUE`；只有确认文件从未存在的首次初始化允许创建，损坏或不可访问不能当作新库。Mod/迁移非管理员连接使用同一数据库的 `DATABASE_TO_LOWER=TRUE;IFEXISTS=TRUE;LOCK_TIMEOUT=5000`，保留名称解析规则，不重复设置需要管理员权限的引擎选项。由 main 的装配调用 app/db，引导完成后才开放 Mod 连接；最后一个受管理连接释放后按正常关闭流程关闭引擎。
 
 物理 Schema 编码为 `m_`＋稳定 ID UTF-8 的完整 SHA-256 小写十六进制＋`_v`＋清单数据版本，按原文精确编码，不小写化 ID。数据版本最多 64 位十进制数字，名称不超过 133 字符；平台保留 Schema 名 `app`，公共 PUBLIC 不授业务建表权限。每个 Schema 创建一个非管理员所有者用户，名称为 `u_`＋SHA-256(Mod ID＋NUL＋数据版本)；物理编码碰撞或已存在但登记不匹配时停止该项，禁止合并。重建同名 Schema 生成新的 UUID generation，所有引用、日志类别和连接都校验代次。
 
@@ -499,7 +505,7 @@ CREATE TABLE credential (
  security_profile_id INTEGER NOT NULL DEFAULT 1 REFERENCES security_profile(security_profile_id) CHECK(security_profile_id=1),
  storage_format CHARACTER VARYING NOT NULL CHECK(storage_format IN ('PLAIN_V1','AES256_GCM_V1')),
  payload BINARY LARGE OBJECT NOT NULL,
- nonce BINARY LARGE OBJECT,
+ nonce BINARY VARYING(12),
  UNIQUE(security_profile_id,nonce),
  CHECK((storage_format='PLAIN_V1' AND nonce IS NULL AND length(payload)>0) OR
        (storage_format='AES256_GCM_V1' AND nonce IS NOT NULL AND length(nonce)=12 AND length(payload)>16))
