@@ -50,9 +50,9 @@ public final class DesktopUpdateCoordinator {
             state = DesktopUpdateState.BACKUP_CREATED;
             DesktopUpdatePort.BackupEvidence created = port.backupCurrent(update);
             if (!created.programBackedUp() || !created.databaseBackedUp() || !created.dataLocationPreserved()
-                    || !created.credentialModePreserved()) {
+                    || !created.securityProfilePreserved()) {
                 throw DesktopUpdateException.create(DesktopUpdateFailureType.TRANSACTION_FAILED,
-                        "program, SQLite, data location and credential mode were not backed up as one update point");
+                        "program, SQLite, data location and security profile were not backed up as one update point");
             }
             events.add(success(state, created.evidence()));
             DesktopUpdateHandoff handoff = new DesktopUpdateHandoff(operation, update, created, events);
@@ -101,11 +101,10 @@ public final class DesktopUpdateCoordinator {
                     "signed program files could not be replaced and verified");
             events.add(success(state, replaced.evidence()));
 
-            state = DesktopUpdateState.DATABASE_MIGRATED;
-            DesktopUpdatePort.StepEvidence migrated = port.migrateDatabase(update, backup);
-            requireStep(migrated, DesktopUpdateFailureType.TRANSACTION_FAILED,
-                    "SQLite migration did not commit and verify successfully");
-            events.add(success(state, migrated.evidence()));
+            state = DesktopUpdateState.DATABASE_VALIDATED;
+            DesktopUpdatePort.StepEvidence validated = port.validateDatabase(update, backup);
+            requireStep(validated, DesktopUpdateFailureType.TRANSACTION_FAILED, "SQLite schema validation failed");
+            events.add(success(state, validated.evidence()));
 
             state = DesktopUpdateState.NEW_VERSION_HEALTHY;
             DesktopUpdatePort.StepEvidence healthy = port.startAndVerify(update, backup);
@@ -147,7 +146,7 @@ public final class DesktopUpdateCoordinator {
             DesktopUpdatePort.RollbackEvidence rollback = port.rollbackProgramAndDatabase(backup);
             if (!rollback.programRestored() || !rollback.databaseRestored() || !rollback.previousVersionHealthy()) {
                 throw DesktopUpdateException.create(DesktopUpdateFailureType.ROLLBACK_FAILED,
-                        "program and pre-migration SQLite backup were not both restored and verified");
+                        "program and pre-update SQLite backup were not both restored and verified");
             }
             events.add(success(DesktopUpdateState.ROLLBACK_VERIFIED, rollback.evidence()));
             FailureDescriptor safe = original.withRecovery(FailureRecoveryAction.ROLLBACK,

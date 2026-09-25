@@ -80,29 +80,26 @@ public final class RecoveryAiUseCase {
      * Converts text directly or routes images through the configured vision order. / 直接返回文字，或按配置的视觉顺序处理图片。
      *
      * @param observation observation / 观测
-     * @param master master-password buffer used for the scoped secret operation / 限定秘密操作使用的主密码缓冲区
      * @return constructed or resolved result / 构造或解析得到的结果
      * @throws java.sql.SQLException if the database cannot complete the requested read or transaction / 数据库无法完成请求的读取或事务时
      */
-    public Result observe(TerminalObservation observation, char[] master) throws java.sql.SQLException {
+    public Result observe(TerminalObservation observation) throws java.sql.SQLException {
         if (!observation.text().isBlank())
             return new Result("ok", observation.text(), Map.of());
         return invoke(profiles.configuredFor(AiPurposeType.VISION), true, profile -> key -> client
-                .observe(profile.chatCompletionsEndpoint(), profile.model(), key, observation.image()), master);
+                .observe(profile.chatCompletionsEndpoint(), profile.model(), key, observation.image()));
     }
 
     /**
      * Uses regular models only to produce a separate approved-action proposal. / 仅使用常规模型生成独立的待批准动作建议。
      *
      * @param observation observation / 观测
-     * @param master master-password buffer used for the scoped secret operation / 限定秘密操作使用的主密码缓冲区
      * @return constructed or resolved result / 构造或解析得到的结果
      * @throws java.sql.SQLException if the database cannot complete the requested read or transaction / 数据库无法完成请求的读取或事务时
      */
-    public Result decide(String observation, char[] master) throws java.sql.SQLException {
+    public Result decide(String observation) throws java.sql.SQLException {
         return invoke(profiles.configuredFor(AiPurposeType.DEPLOYMENT), false,
-                profile -> key -> client.propose(profile.chatCompletionsEndpoint(), profile.model(), key, observation),
-                master);
+                profile -> key -> client.propose(profile.chatCompletionsEndpoint(), profile.model(), key, observation));
     }
 
     /**
@@ -112,16 +109,15 @@ public final class RecoveryAiUseCase {
      * @param snapshot immutable observation or configuration revision used by the operation / 操作使用的不可变观测或配置修订
      * @param vision vision / 视觉
      * @param invocation invocation / 调用
-     * @param master master-password buffer used for the scoped secret operation / 限定秘密操作使用的主密码缓冲区
      * @return constructed or resolved result / 构造或解析得到的结果
      */
     private Result invoke(List<StoredAiProviderConfiguration> snapshot, boolean vision,
-            java.util.function.Function<AiProviderProfile, Invocation> invocation, char[] master) {
+            java.util.function.Function<AiProviderProfile, Invocation> invocation) {
         return route(snapshot, vision, (stored, ignored) -> {
             char[] key = null;
             try {
                 AiProviderProfile profile = AiProviderProfile.fromStored(stored.profile());
-                try (var store = secrets.open(profile.credentialMode(), master)) {
+                try (var store = secrets.open()) {
                     checkCancelled();
                     key = store.read(profile.credentialKey()).orElseThrow();
                     if (key.length == 0)

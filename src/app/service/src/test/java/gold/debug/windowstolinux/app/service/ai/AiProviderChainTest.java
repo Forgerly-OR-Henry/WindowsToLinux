@@ -9,16 +9,16 @@ import java.util.*;
 import java.util.concurrent.CancellationException;
 
 import gold.debug.windowstolinux.app.db.DesktopPersistence;
+import gold.debug.windowstolinux.app.service.SecurityTestFixture;
 import gold.debug.windowstolinux.app.service.server.DesktopSecretStoreService;
 import gold.debug.windowstolinux.shared.ai.client.OpenAiCompatibleRoleClient;
 import gold.debug.windowstolinux.shared.ai.collaboration.invocation.AiInvocationStatus;
 import gold.debug.windowstolinux.shared.ai.collaboration.role.*;
 import gold.debug.windowstolinux.shared.ai.transport.RoleChatResult;
-import gold.debug.windowstolinux.shared.model.security.CredentialStorageMode;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
-class AiProviderChainTest {
+class AiProviderChainTest extends SecurityTestFixture {
     @TempDir
     Path directory;
 
@@ -26,7 +26,7 @@ class AiProviderChainTest {
             "JAVA_MAVEN_SPRING_BOOT", "MAVEN_WRAPPER", "FORMALLY_SUPPORTED", List.of());
     private AiProviderProfile profile(String id) {
         return new AiProviderProfile(id, URI.create("https://" + id + ".example.test/v1/chat/completions"), id,
-                "ai/" + id, CredentialStorageMode.MASTER_PASSWORD);
+                "ai/" + id);
     }
 
     private char[] master() {
@@ -36,8 +36,7 @@ class AiProviderChainTest {
     private void seed(DesktopPersistence db, String... ids) throws Exception {
         for (String id : ids) {
             var profile = profile(id);
-            try (var store = new DesktopSecretStoreService(db.encryptedSecrets()).open(profile.credentialMode(),
-                    master())) {
+            try (var store = SecurityTestFixture.secrets(db).open()) {
                 store.save(profile.credentialKey(), (id + "-key").toCharArray());
             }
             db.aiProfiles().saveVerified(profile.stored(), id, java.time.Instant.now());
@@ -75,13 +74,10 @@ class AiProviderChainTest {
                     : id.equals("schema") ? new RoleChatResult(200, "{\"content\":\"invalid\"}") : valid("SAFE_STOP");
         }, Clock.systemUTC());
         try (var db = DesktopPersistence.open(directory)) {
-            var facade = new AiUseCaseFacade(db.aiProfiles(), new DesktopSecretStoreService(db.encryptedSecrets()),
-                    client);
+            var facade = new AiUseCaseFacade(db.aiProfiles(), SecurityTestFixture.secrets(db), client);
             seed(db, "disabled", "http", "schema", "refusal", "unused");
             enabled(db, "disabled", false);
-            db.aiProfiles().saveRoleAssignment(
-                    new gold.debug.windowstolinux.app.db.entity.StoredAiRoleAssignment("PROJECT_ANALYSIS", "unused"));
-            var result = facade.invokeRole(context, master()).orElseThrow();
+            var result = facade.invokeRole(context).orElseThrow();
             assertEquals(List.of("http", "schema", "refusal"), calls);
             assertEquals(AiInvocationStatus.VALIDATED, result.evidence().status());
             assertEquals("SAFE_STOP", result.evidence().output().orElseThrow().decision().name());
@@ -106,21 +102,19 @@ class AiProviderChainTest {
                 }
                 return new RoleChatResult(500, "failed");
             }, Clock.systemUTC());
-            var facade = new AiUseCaseFacade(db.aiProfiles(), new DesktopSecretStoreService(db.encryptedSecrets()),
-                    client);
+            var facade = new AiUseCaseFacade(db.aiProfiles(), SecurityTestFixture.secrets(db), client);
             seed(db, "a", "b");
             char[] unlock = master();
-            var first = facade.invokeRole(context, unlock).orElseThrow();
+            var first = facade.invokeRole(context).orElseThrow();
             assertEquals(List.of("a", "b"), calls);
-            assertArrayEquals(new char[unlock.length], unlock);
             assertEquals(2, first.attempts().size());
             assertEquals(AiInvocationStatus.UNAVAILABLE, first.evidence().status());
             assertEquals("all-enabled-providers-failed", first.evidence().validationDetail());
             calls.clear();
-            facade.invokeRole(context, master());
+            facade.invokeRole(context);
             assertEquals(List.of("a"), calls);
             enabled(db, "a", false);
-            assertTrue(facade.invokeRole(context, master()).isEmpty());
+            assertTrue(facade.invokeRole(context).isEmpty());
         }
     }
 
@@ -132,15 +126,13 @@ class AiProviderChainTest {
             throw new InterruptedException("cancelled");
         }, Clock.systemUTC());
         try (var db = DesktopPersistence.open(directory)) {
-            var facade = new AiUseCaseFacade(db.aiProfiles(), new DesktopSecretStoreService(db.encryptedSecrets()),
-                    client);
+            var facade = new AiUseCaseFacade(db.aiProfiles(), SecurityTestFixture.secrets(db), client);
             seed(db, "a", "b");
             char[] unlock = master();
             try {
-                assertThrows(CancellationException.class, () -> facade.invokeRole(context, unlock));
+                assertThrows(CancellationException.class, () -> facade.invokeRole(context));
                 assertTrue(Thread.currentThread().isInterrupted());
                 assertEquals(1, calls.size());
-                assertArrayEquals(new char[unlock.length], unlock);
             } finally {
                 Thread.interrupted();
             }
@@ -148,7 +140,7 @@ class AiProviderChainTest {
     }
 
     @Test
-    void testsOnlySelectedModelBeforeSavingAndRetainsImmutableCredentialVersions() throws Exception {
+    void testsOnlySelectedModelBeforeSavingAndRevisesChangedApiKeyContent() throws Exception {
         List<String> requests = new ArrayList<>();
         boolean[] success = {false};
         var client = new OpenAiCompatibleRoleClient((endpoint, key, body) -> {
@@ -156,15 +148,15 @@ class AiProviderChainTest {
             return success[0] ? valid("CLEAR") : new RoleChatResult(401, "unauthorized");
         }, Clock.systemUTC());
         try (var db = DesktopPersistence.open(directory)) {
-            var secrets = new DesktopSecretStoreService(db.encryptedSecrets());
+            var secrets = SecurityTestFixture.secrets(db);
             var facade = new AiUseCaseFacade(db.aiProfiles(), secrets, client);
             char[] key = "first-key".toCharArray();
-            assertThrows(Exception.class, () -> facade.saveConfiguration(profile("a"), "First", master(), key,
+            assertThrows(Exception.class, () -> facade.saveConfiguration(profile("a"), "First", key,
                     gold.debug.windowstolinux.shared.model.ai.AiCapabilityType.TEXT));
             assertArrayEquals(new char[key.length], key);
             assertTrue(facade.configurations().isEmpty());
             success[0] = true;
-            facade.saveConfiguration(profile("a"), "First", master(), "first-key".toCharArray(),
+            facade.saveConfiguration(profile("a"), "First", "first-key".toCharArray(),
                     gold.debug.windowstolinux.shared.model.ai.AiCapabilityType.TEXT);
             var first = facade.configurations().getFirst();
             assertTrue(first.textVerifiedAt().isPresent());
@@ -172,16 +164,16 @@ class AiProviderChainTest {
             assertTrue(requests.stream()
                     .allMatch(body -> body.contains("connection-test") && !body.contains("local-project")));
             enabled(db, "a", false);
-            facade.saveConfiguration(first.profile(), "Renamed", master(), new char[0],
+            facade.saveConfiguration(first.profile(), "Renamed", new char[0],
                     gold.debug.windowstolinux.shared.model.ai.AiCapabilityType.TEXT);
             assertEquals(first.profile().credentialKey(), facade.configurations().getFirst().profile().credentialKey());
             assertTrue(facade.purpose(gold.debug.windowstolinux.shared.model.ai.AiPurposeType.DEPLOYMENT).isEmpty());
-            facade.saveConfiguration(first.profile(), "Renamed", master(), "second-key".toCharArray(),
+            facade.saveConfiguration(first.profile(), "Renamed", "second-key".toCharArray(),
                     gold.debug.windowstolinux.shared.model.ai.AiCapabilityType.TEXT);
             var second = facade.configurations().getFirst();
-            assertNotEquals(first.profile().credentialKey(), second.profile().credentialKey());
-            try (var store = secrets.open(CredentialStorageMode.MASTER_PASSWORD, master())) {
-                assertEquals("first-key", new String(store.read(first.profile().credentialKey()).orElseThrow()));
+            assertEquals(first.profile().credentialKey(), second.profile().credentialKey());
+            assertTrue(db.aiProfiles().listConfigured().getFirst().revision() > 1);
+            try (var store = secrets.open()) {
                 assertEquals("second-key", new String(store.read(second.profile().credentialKey()).orElseThrow()));
             }
         }

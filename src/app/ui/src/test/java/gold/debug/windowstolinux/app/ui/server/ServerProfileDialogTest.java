@@ -16,7 +16,6 @@ import gold.debug.windowstolinux.app.ui.component.*;
 import gold.debug.windowstolinux.app.ui.display.ThemePalette;
 import gold.debug.windowstolinux.app.ui.i18n.*;
 import gold.debug.windowstolinux.shared.model.capability.ServerCapabilityFacts;
-import gold.debug.windowstolinux.shared.model.security.CredentialStorageMode;
 import org.junit.jupiter.api.Test;
 
 class ServerProfileDialogTest {
@@ -30,7 +29,7 @@ class ServerProfileDialogTest {
                     case "saveServerProfile" -> {
                         assertFalse(SwingUtilities.isEventDispatchThread());
                         saves.incrementAndGet();
-                        assertEquals(0, ((char[]) args[3]).length, "editing can retain the saved credential");
+                        assertEquals(0, ((char[]) args[1]).length, "editing can retain the saved credential");
                         started.countDown();
                         assertTrue(release.await(8, TimeUnit.SECONDS));
                         yield null;
@@ -46,8 +45,7 @@ class ServerProfileDialogTest {
         AtomicReference<ServerProfileDialog> dialog = new AtomicReference<>();
         SwingUtilities.invokeAndWait(() -> {
             dialog.set(new ServerProfileDialog(null, service, new DesktopComponentFactory(ThemePalette.light()),
-                    messages, new ServerProfile("first", "192.0.2.1", 22, "tester", "custom/credential",
-                            CredentialStorageMode.WINDOWS_CREDENTIAL_MANAGER, "Production"),
+                    messages, new ServerProfile("first", "192.0.2.1", 22, "tester", "custom/credential", "Production"),
                     saved -> {
                         assertEquals("custom/credential", saved.credentialKey());
                         notifications.incrementAndGet();

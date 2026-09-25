@@ -31,7 +31,8 @@ public final class BrowserRecoveryRepository {
     public void interruptUnfinished() throws SQLException {
         try (var c = connections.open();
                 var s = c.prepareStatement(
-                        "UPDATE browser_recovery SET state='INTERRUPTED',event_code='app-restarted' WHERE state NOT IN ('RECOVERED','CANCELLED','FAILED','INTERRUPTED')")) {
+                        "UPDATE browser_recovery_task SET task_state='INTERRUPTED',last_event_code='app-restarted',updated_at=? WHERE task_state NOT IN ('RECOVERED','CANCELLED','FAILED','INTERRUPTED')")) {
+            s.setLong(1, Instant.now().toEpochMilli());
             s.executeUpdate();
         }
     }
@@ -54,25 +55,25 @@ public final class BrowserRecoveryRepository {
             throw new IllegalArgumentException("invalid recovery journal");
         try (var c = connections.open()) {
             RepositoryTransactionExecutor.execute(c, () -> {
-                String time = Instant.now().toString();
+                long time = Instant.now().toEpochMilli();
                 try (var s = c.prepareStatement(
-                        "INSERT INTO browser_recovery(id,server_id,operation_id,state,action_digest,event_code,updated_at) VALUES(?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET state=excluded.state,action_digest=excluded.action_digest,event_code=excluded.event_code,updated_at=excluded.updated_at")) {
+                        "INSERT INTO browser_recovery_task(task_id,server_profile_id,operation_id,task_state,last_action_digest,last_event_code,updated_at) VALUES(?,?,?,?,?,?,?) ON CONFLICT(task_id) DO UPDATE SET task_state=excluded.task_state,last_action_digest=excluded.last_action_digest,last_event_code=excluded.last_event_code,updated_at=excluded.updated_at")) {
                     s.setString(1, id);
                     s.setString(2, server);
                     s.setString(3, operation);
                     s.setString(4, state);
                     s.setString(5, digest);
                     s.setString(6, event);
-                    s.setString(7, time);
+                    s.setLong(7, time);
                     s.executeUpdate();
                 }
                 try (var s = c.prepareStatement(
-                        "INSERT INTO browser_recovery_event(recovery_id,state,action_digest,event_code,created_at) VALUES(?,?,?,?,?)")) {
+                        "INSERT INTO browser_recovery_event(task_id,task_state,action_digest,event_code,created_at) VALUES(?,?,?,?,?)")) {
                     s.setString(1, id);
                     s.setString(2, state);
                     s.setString(3, digest);
                     s.setString(4, event);
-                    s.setString(5, time);
+                    s.setLong(5, time);
                     s.executeUpdate();
                 }
             });

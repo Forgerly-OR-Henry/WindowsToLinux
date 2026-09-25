@@ -14,7 +14,6 @@ import gold.debug.windowstolinux.app.service.ai.AiProviderSummary;
 import gold.debug.windowstolinux.app.service.contract.AiApplicationFacade;
 import gold.debug.windowstolinux.app.ui.component.*;
 import gold.debug.windowstolinux.app.ui.i18n.PageMessagePresenter;
-import gold.debug.windowstolinux.shared.model.security.CredentialStorageMode;
 
 /**
  * Independent model form; only a successful fixed probe can save it. / 独立模型表单，仅固定探测成功后才能保存。
@@ -35,17 +34,8 @@ public final class AiProviderDialog extends JDialog {
     /**
      * Swing control for key.
      * <p>键对应的 Swing 控件。
-     * <p>master:
-     * Swing control for master.
-     * <p>主对应的 Swing 控件。
      */
-    private final JPasswordField key = new JPasswordField(28), master = new JPasswordField(28);
-
-    /**
-     * Selected operating or storage mode.
-     * <p>所选运行或存储模式。
-     */
-    private final JComboBox<CredentialStorageMode> mode = new JComboBox<>(CredentialStorageMode.values());
+    private final JPasswordField key = new JPasswordField(28);
 
     /**
      * Swing control for status.
@@ -133,10 +123,6 @@ public final class AiProviderDialog extends JDialog {
         this.saved = saved;
         id = existing == null ? "model-" + UUID.randomUUID().toString().substring(0, 12) : existing.profile().id();
         credentialKey = existing == null ? "ai/provider/" + id + "/api-key" : existing.profile().credentialKey();
-        mode.setSelectedItem(existing == null
-                ? CredentialStorageMode.WINDOWS_CREDENTIAL_MANAGER
-                : existing.profile().credentialMode());
-        messages.localize(mode, "credential.mode.");
         if (existing != null) {
             name.setText(existing.name());
             endpoint.setText(existing.profile().chatCompletionsEndpoint().toString());
@@ -144,16 +130,11 @@ public final class AiProviderDialog extends JDialog {
         }
         key.putClientProperty("JTextField.placeholderText",
                 messages.text(existing == null ? "field.apiKey" : "ai.models.keepKey"));
-        mode.addActionListener(
-                event -> master.setEnabled(mode.getSelectedItem() == CredentialStorageMode.MASTER_PASSWORD));
-        master.setEnabled(mode.getSelectedItem() == CredentialStorageMode.MASTER_PASSWORD);
         form = c.card(new GridBagLayout());
         c.addField(form, 0, 0, messages.text("ai.models.name"), name);
         c.addField(form, 1, 0, messages.text("field.aiEndpoint"), endpoint);
         c.addField(form, 2, 0, messages.text("field.model"), model);
         c.addField(form, 3, 0, messages.text("field.apiKey"), key);
-        c.addField(form, 4, 0, messages.text("field.credentialStorage"), mode);
-        c.addField(form, 5, 0, messages.text("field.masterPassword"), master);
         messages.localize(capability, "ai.capability.");
         if (existing != null && existing.textVerifiedAt().isEmpty() && existing.visionVerifiedAt().isPresent())
             capability.setSelectedItem(gold.debug.windowstolinux.shared.model.ai.AiCapabilityType.VISION);
@@ -200,7 +181,6 @@ public final class AiProviderDialog extends JDialog {
             @Override
             public void windowClosed(WindowEvent event) {
                 key.setText("");
-                master.setText("");
             }
         });
     }
@@ -219,20 +199,19 @@ public final class AiProviderDialog extends JDialog {
                     || name.getText().chars().anyMatch(Character::isISOControl))
                 throw new IllegalArgumentException("invalid model display name");
             var profile = new AiProviderProfile(id, URI.create(endpoint.getText().trim()), model.getText().trim(),
-                    credentialKey, (CredentialStorageMode) mode.getSelectedItem());
+                    credentialKey);
             var selectedCapability = (gold.debug.windowstolinux.shared.model.ai.AiCapabilityType) capability
                     .getSelectedItem();
             String label = name.getText();
-            char[] apiKey = key.getPassword(), unlock = master.getPassword();
+            char[] apiKey = key.getPassword();
             setBusy(true);
             status.setText(messages.text("ai.models.testing"));
             task = DesktopTaskExecutor.submit(() -> {
                 try {
-                    service.saveAiConfiguration(profile, label, unlock, apiKey, selectedCapability);
+                    service.saveAiConfiguration(profile, label, apiKey, selectedCapability);
                     return true;
                 } finally {
                     Arrays.fill(apiKey, '\0');
-                    Arrays.fill(unlock, '\0');
                 }
             }, value -> {
                 setBusy(false);
@@ -276,6 +255,5 @@ public final class AiProviderDialog extends JDialog {
         save.setEnabled(!value);
         for (Component child : form.getComponents())
             child.setEnabled(!value);
-        master.setEnabled(!value && mode.getSelectedItem() == CredentialStorageMode.MASTER_PASSWORD);
     }
 }

@@ -25,7 +25,7 @@ class AutomaticDatabaseUseCaseTest {
         var assessment = new DatabaseProjectInspector.Assessment(
                 List.of(requirement("main", List.of("schema.sql")), requirement("audit", List.of())),
                 List.of("schema.sql"), true, false);
-        var completed = useCase().completeInputs(root, "demo", assessment, new char[0], interaction(false));
+        var completed = useCase().completeInputs(root, "demo", assessment, interaction(false));
         assertEquals(List.of("schema.sql"), completed.databases().getFirst().initializationFiles());
         assertTrue(completed.databases().getLast().initializationFiles().isEmpty());
     }
@@ -35,15 +35,14 @@ class AutomaticDatabaseUseCaseTest {
         var assessment = new DatabaseProjectInspector.Assessment(List.of(requirement("main", List.of("missing.sql"))),
                 List.of(), true, false);
         assertThrows(IllegalArgumentException.class,
-                () -> useCase().completeInputs(root, "demo", assessment, new char[0], interaction(false)));
+                () -> useCase().completeInputs(root, "demo", assessment, interaction(false)));
     }
 
     @Test
     void cancellingUnknownDatabaseSelectionClearsUnlockCopyWithoutConnecting() {
         char[] master = "fixture-unlock".toCharArray();
         assertThrows(CancellationException.class, () -> useCase().completeInputs(root, "demo",
-                new DatabaseProjectInspector.Assessment(List.of(), List.of(), true, true), master, interaction(true)));
-        assertArrayEquals(new char[master.length], master);
+                new DatabaseProjectInspector.Assessment(List.of(), List.of(), true, true), interaction(true)));
     }
 
     @Test

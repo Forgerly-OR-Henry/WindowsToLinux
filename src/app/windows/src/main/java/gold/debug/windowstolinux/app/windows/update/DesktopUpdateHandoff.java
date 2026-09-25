@@ -31,7 +31,7 @@ public record DesktopUpdateHandoff(OperationIdentity operationIdentity, DesktopU
         backup = Objects.requireNonNull(backup, "backup");
         preparationEvents = List.copyOf(Objects.requireNonNull(preparationEvents, "preparationEvents"));
         if (!backup.programBackedUp() || !backup.databaseBackedUp() || !backup.dataLocationPreserved()
-                || !backup.credentialModePreserved() || preparationEvents.size() != 2
+                || !backup.securityProfilePreserved() || preparationEvents.size() != 2
                 || preparationEvents.get(0).state() != DesktopUpdateState.TASKS_QUIESCED
                 || preparationEvents.get(1).state() != DesktopUpdateState.BACKUP_CREATED
                 || preparationEvents.stream().anyMatch(event -> !event.succeeded())) {

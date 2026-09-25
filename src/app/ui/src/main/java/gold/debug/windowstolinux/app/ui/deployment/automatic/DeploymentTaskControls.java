@@ -43,21 +43,17 @@ final class DeploymentTaskControls extends JPanel {
     /** Polls only process-local state while a task is active. / 仅在任务活动时轮询进程内状态。 */
     private final javax.swing.Timer timer;
 
-    /** Supplies a fresh temporary unlock buffer on the UI thread. / 在界面线程提供新的临时解锁缓冲区。 */
-    private final java.util.function.Supplier<char[]> credentials;
     /** Builds controls without starting work or polling. / 构建控件，不启动工作或轮询。
      * @param service narrow task facade / 窄任务门面
      * @param messages localized messages / 本地化消息
-     * @param credentials fresh unlock buffer / 新解锁缓冲区
      * @param output visible log / 可见日志
      */
     DeploymentTaskControls(AutomaticDeploymentApplicationFacade service, PageMessagePresenter messages,
-            Consumer<String> output, java.util.function.Supplier<char[]> credentials) {
+            Consumer<String> output) {
         super(new FlowLayout(FlowLayout.LEFT, 6, 0));
         this.service = service;
         this.messages = messages;
         this.output = output;
-        this.credentials = credentials;
         setOpaque(false);
         pause.setText(messages.text("deployment.task.pause"));
         resume.setText(messages.text("deployment.task.resume"));
@@ -116,6 +112,8 @@ final class DeploymentTaskControls extends JPanel {
 
     /** Reflects safe boundary state without reading secrets or calling a model. / 反映安全边界状态，不读取秘密或调用模型。 */
     private void refresh() {
+        if (gold.debug.windowstolinux.app.ui.component.DesktopTaskExecutor.isLocked())
+            return;
         if (taskId == null)
             return;
         try {
@@ -140,8 +138,8 @@ final class DeploymentTaskControls extends JPanel {
     private void history() {
         DesktopTaskExecutor.run(service::deploymentTaskHistory, rows -> {
             DefaultListModel<String> list = new DefaultListModel<>();
-            rows.forEach(row -> list.addElement(row.get("started_at") + " · " + row.get("server_id") + " · "
-                    + row.get("state") + " · " + messages.text(
+            rows.forEach(row -> list.addElement(row.get("started_at") + " · " + row.get("server_profile_id") + " · "
+                    + row.get("task_state") + " · " + messages.text(
                             "deployment.task.semantics." + row.getOrDefault("execution_semantics_version", "1"))));
             JList<String> tasks = new JList<>(list);
             JTextArea details = new JTextArea(18, 72);
@@ -151,11 +149,11 @@ final class DeploymentTaskControls extends JPanel {
             tasks.addListSelectionListener(event -> {
                 if (event.getValueIsAdjusting() || tasks.getSelectedIndex() < 0)
                     return;
-                String id = rows.get(tasks.getSelectedIndex()).get("id");
+                String id = rows.get(tasks.getSelectedIndex()).get("task_id");
                 DesktopTaskExecutor.run(() -> service.deploymentTaskEvents(id),
                         events -> details.setText(events.stream()
                                 .map(value -> value.get("created_at") + " " + value.get("event_type") + " "
-                                        + value.get("action_id") + " " + value.get("detail"))
+                                        + value.get("action_id") + " " + value.get("event_detail"))
                                 .collect(java.util.stream.Collectors.joining("\n"))),
                         failure -> details.setText(messages.safe(failure)));
             });
@@ -167,14 +165,11 @@ final class DeploymentTaskControls extends JPanel {
             inspect.addActionListener(event -> {
                 if (tasks.getSelectedIndex() < 0)
                     return;
-                String id = rows.get(tasks.getSelectedIndex()).get("id");
-                char[] master = credentials.get();
+                String id = rows.get(tasks.getSelectedIndex()).get("task_id");
                 inspect.setEnabled(false);
                 DesktopTaskExecutor.run(() -> {
-                    try {
-                        return service.inspectDeploymentTask(id, master);
-                    } finally {
-                        Arrays.fill(master, '\0');
+                    {
+                        return service.inspectDeploymentTask(id);
                     }
                 }, observed -> {
                     inspect.setEnabled(true);

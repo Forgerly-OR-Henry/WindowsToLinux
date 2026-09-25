@@ -39,7 +39,6 @@ import gold.debug.windowstolinux.shared.model.lifecycle.LifecycleObservation;
 import gold.debug.windowstolinux.shared.model.project.DeploymentProjectType;
 import gold.debug.windowstolinux.shared.model.project.DeploymentRuntimeSpecification;
 import gold.debug.windowstolinux.shared.model.project.DeploymentSupportLevel;
-import gold.debug.windowstolinux.shared.model.security.CredentialStorageMode;
 import gold.debug.windowstolinux.shared.model.server.ServerIdentity;
 import gold.debug.windowstolinux.shared.standard.analyze.component.ComponentAnalysisRequest;
 import gold.debug.windowstolinux.shared.standard.deploy.contract.DeploymentPlanAction;
@@ -48,11 +47,8 @@ import gold.debug.windowstolinux.shared.standard.deploy.contract.ReviewedDeploym
 
 /** Owns one ephemeral desktop database while every remote action still crosses the production application service. / 持有单个临时桌面数据库，同时确保每个远端动作仍通过生产应用服务。 */
 final class LiveTypedDeploymentContext implements AutoCloseable {
-    private static final CredentialStorageMode MODE = CredentialStorageMode.MASTER_PASSWORD;
 
     private final DesktopPersistence persistence;
-
-    private final char[] masterPassword;
 
     private final ServerProfile profile;
 
@@ -66,24 +62,19 @@ final class LiveTypedDeploymentContext implements AutoCloseable {
         assertEquals("root", username, "managed deployment requires root management");
         assertTrue(!Boolean.getBoolean("managed.root-build"), "root builds were removed in helper v7");
         char[] sshPassword = requiredEnvironment("WINDOWSTOLINUX_TEST_SSH_PASSWORD").toCharArray();
-        this.masterPassword = System.getenv()
+        char[] setupPassword = System.getenv()
                 .getOrDefault("WINDOWSTOLINUX_TEST_MASTER_PASSWORD", "typed-live-acceptance-master").toCharArray();
         this.persistence = DesktopPersistence.open(root.resolve("desktop-data"));
         this.service = new DesktopApplicationFacade(persistence, root.resolve("work"), new SshdLinuxGateway(
                 gold.debug.windowstolinux.shared.standard.deploy.build.DeploymentBuildExecutor::new,
                 gold.debug.windowstolinux.shared.standard.deploy.distro.extension.registry.DistributionSetupRegistry
                         .defaults()));
+        service.setupAndUnlock(setupPassword, setupPassword.clone());
         int port = Integer.getInteger("managed.ssh.port", 22);
-        this.profile = new ServerProfile("typed-live", host, port, username, "ssh/typed-live/password", MODE);
+        this.profile = new ServerProfile("typed-live", host, port, username, "ssh/typed-live/password");
         try {
-            withMaster(master -> {
-                service.saveServerProfile(profile, MODE, master, sshPassword);
-                return null;
-            });
-            withMaster(master -> {
-                service.verifyServer(profile, MODE, master, fingerprint -> true);
-                return null;
-            });
+            service.saveServerProfile(profile, sshPassword);
+            service.verifyServer(profile, fingerprint -> true);
             this.server = service.findTrustedServer(profile.id()).orElseThrow();
         } finally {
             Arrays.fill(sshPassword, '\0');
@@ -123,19 +114,17 @@ final class LiveTypedDeploymentContext implements AutoCloseable {
         for (MultiComponentReviewInput input : inputs) {
             service.saveDeploymentConfigurationSnapshot(input.configuration());
         }
-        return withMaster(master -> service.deployReviewedMultiComponentWithStoredPassword(review, profile, MODE,
-                master, fingerprint -> true));
+        return service.deployReviewedMultiComponentWithStoredPassword(review, profile, fingerprint -> true);
     }
 
     MultiComponentLifecycleResult lifecycleMulti(String applicationId, Set<String> componentIds, LifecycleAction action)
             throws Exception {
-        return withMaster(master -> service.executeManagedMultiComponentLifecycleWithStoredPassword(applicationId,
-                componentIds, action, profile, MODE, master));
+        return service.executeManagedMultiComponentLifecycleWithStoredPassword(applicationId, componentIds, action,
+                profile);
     }
 
     LinuxCapabilityFacts inspectDeploymentCapabilities() throws Exception {
-        return withMaster(master -> service.inspectDeploymentCapabilitiesWithStoredPassword(profile, MODE, master,
-                fingerprint -> true));
+        return service.inspectDeploymentCapabilitiesWithStoredPassword(profile, fingerprint -> true);
     }
 
     ServerIdentity trustedServer() {
@@ -143,15 +132,13 @@ final class LiveTypedDeploymentContext implements AutoCloseable {
     }
 
     EnvironmentSetupResult prepareEnvironment() throws Exception {
-        return withMaster(master -> service.prepareEnvironmentWithStoredPassword(profile, MODE, master,
-                fingerprint -> true, true));
+        return service.prepareEnvironmentWithStoredPassword(profile, fingerprint -> true, true);
     }
 
     EnvironmentSetupResult prepareEnvironmentWithSystemConfirmation(
             java.util.function.Predicate<gold.debug.windowstolinux.shared.model.server.security.SelinuxPreparationPlan> confirmation)
             throws Exception {
-        return withMaster(master -> service.prepareEnvironmentWithStoredPassword(profile, MODE, master,
-                fingerprint -> true, true, confirmation));
+        return service.prepareEnvironmentWithStoredPassword(profile, fingerprint -> true, true, confirmation);
     }
 
     ServerProfile registerTargetServer() throws Exception {
@@ -162,16 +149,10 @@ final class LiveTypedDeploymentContext implements AutoCloseable {
         int port = Integer.getInteger("managed.target.ssh.port", 22);
         char[] sshPassword = requiredEnvironment("WINDOWSTOLINUX_TEST_TARGET_SSH_PASSWORD").toCharArray();
         ServerProfile target = new ServerProfile("typed-live-target", host, port, username,
-                "ssh/typed-live-target/password", MODE);
+                "ssh/typed-live-target/password");
         try {
-            withMaster(master -> {
-                service.saveServerProfile(target, MODE, master, sshPassword);
-                return null;
-            });
-            withMaster(master -> {
-                service.verifyServer(target, MODE, master, fingerprint -> true);
-                return null;
-            });
+            service.saveServerProfile(target, sshPassword);
+            service.verifyServer(target, fingerprint -> true);
             assertTrue(service.findTrustedServer(target.id()).isPresent(),
                     "target server trust must be persisted before managed backup acceptance");
             return target;
@@ -184,8 +165,7 @@ final class LiveTypedDeploymentContext implements AutoCloseable {
             throws Exception {
         char[] copiedBackupPassword = backupPassword.clone();
         try {
-            return withMaster(master -> service.createManagedBackup(applicationId, destination, copiedBackupPassword,
-                    master, fingerprint -> true));
+            return service.createManagedBackup(applicationId, destination, copiedBackupPassword, fingerprint -> true);
         } finally {
             Arrays.fill(copiedBackupPassword, '\0');
         }
@@ -195,8 +175,7 @@ final class LiveTypedDeploymentContext implements AutoCloseable {
             throws Exception {
         char[] copiedBackupPassword = backupPassword.clone();
         try {
-            return withMaster(master -> service.restoreManagedBackup(archive, target.id(), copiedBackupPassword, master,
-                    fingerprint -> true));
+            return service.restoreManagedBackup(archive, target.id(), copiedBackupPassword, fingerprint -> true);
         } finally {
             Arrays.fill(copiedBackupPassword, '\0');
         }
@@ -206,8 +185,8 @@ final class LiveTypedDeploymentContext implements AutoCloseable {
             char[] backupPassword) throws Exception {
         char[] copiedBackupPassword = backupPassword.clone();
         try {
-            return withMaster(master -> service.prepareManagedOfflineMigration(applicationId, target.id(),
-                    copiedBackupPassword, master, true, fingerprint -> true));
+            return service.prepareManagedOfflineMigration(applicationId, target.id(), copiedBackupPassword, true,
+                    fingerprint -> true);
         } finally {
             Arrays.fill(copiedBackupPassword, '\0');
         }
@@ -243,8 +222,8 @@ final class LiveTypedDeploymentContext implements AutoCloseable {
         assertTrue(plan.steps().containsAll(List.of(DeploymentPlanAction.VERIFY_SOURCE_IDENTITY,
                 DeploymentPlanAction.VERIFY_CONFIGURATION_SNAPSHOT, DeploymentPlanAction.VERIFY_SECRET_REVISIONS,
                 DeploymentPlanAction.CHECK_HEALTH, DeploymentPlanAction.ROLLBACK_ON_FAILURE)));
-        DeploymentResult result = withMaster(master -> service
-                .deployReviewedWithStoredPassword(request, profile, MODE, master, fingerprint -> true).result());
+        DeploymentResult result = service.deployReviewedWithStoredPassword(request, profile, fingerprint -> true)
+                .result();
         System.out.printf("LIVE_DEPLOYMENT application=%s type=%s revision=%d status=%s release=%s%n", applicationId,
                 runtime.projectType(), configurationRevision, result.status(),
                 result.publishedReleaseSha256().orElse("none"));
@@ -297,17 +276,12 @@ final class LiveTypedDeploymentContext implements AutoCloseable {
     }
 
     void saveSecret(SecretReference reference, String credentialKey, char[] value) throws Exception {
-        withMaster(master -> {
-            service.saveDeploymentSecretRevision(
-                    new StoredApplicationSecretRevision(reference, credentialKey, MODE, Instant.now()), MODE, master,
-                    value);
-            return null;
-        });
+        service.saveDeploymentSecretRevision(
+                new StoredApplicationSecretRevision(reference, credentialKey, Instant.now()), value);
     }
 
     LifecycleObservation lifecycle(String applicationId, LifecycleAction action) throws Exception {
-        var result = withMaster(
-                master -> service.executePersistedLifecycleResultWithStoredPassword(applicationId, action, master));
+        var result = service.executePersistedLifecycleResultWithStoredPassword(applicationId, action);
         assertTrue(result.accepted(), () -> action + " was rejected: " + result);
         return result.observation().orElseThrow();
     }
@@ -335,29 +309,11 @@ final class LiveTypedDeploymentContext implements AutoCloseable {
             throw failures;
     }
 
-    private char[] master() {
-        return masterPassword.clone();
-    }
-
-    private <T> T withMaster(MasterOperation<T> operation) throws Exception {
-        char[] copiedMasterPassword = master();
-        try {
-            return operation.apply(copiedMasterPassword);
-        } finally {
-            Arrays.fill(copiedMasterPassword, '\0');
-        }
-    }
-
-    @FunctionalInterface
-    private interface MasterOperation<T> {
-        /** Performs the {@code apply} operation. / 执行 {@code apply} 操作。 */
-        T apply(char[] copiedMasterPassword) throws Exception;
-    }
-
     /** Closes this resource. / 关闭此资源。 */
     @Override
     public void close() {
-        Arrays.fill(masterPassword, '\0');
+        service.closeSshRecovery();
+        service.closeSecurity();
         persistence.close();
     }
 

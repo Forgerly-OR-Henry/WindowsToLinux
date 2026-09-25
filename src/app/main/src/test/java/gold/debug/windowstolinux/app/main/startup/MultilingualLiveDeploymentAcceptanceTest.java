@@ -72,7 +72,7 @@ class MultilingualLiveDeploymentAcceptanceTest {
                 var profile = context.service.findServerProfile("typed-live").orElseThrow();
                 var result = context.service.deployAutomatically(
                         new AutomaticDeploymentRequest(Optional.of(source), Optional.empty(), profile, values),
-                        masterPassword(), interaction(), fingerprint -> true,
+                        interaction(), fingerprint -> true,
                         message -> System.out.println("POLYGLOT_PROGRESS " + message));
                 System.out.println("POLYGLOT_DEPLOY " + result);
                 assertEquals(DeploymentStatus.SUCCEEDED, result.status());
@@ -131,8 +131,7 @@ class MultilingualLiveDeploymentAcceptanceTest {
             var result = context.service.deployAutomatically(
                     new AutomaticDeploymentRequest(Optional.of(source), Optional.empty(),
                             context.service.findServerProfile("typed-live").orElseThrow(), values),
-                    masterPassword(), interaction(), fingerprint -> true,
-                    message -> System.out.println("POLYGLOT_PROGRESS " + message));
+                    interaction(), fingerprint -> true, message -> System.out.println("POLYGLOT_PROGRESS " + message));
             System.out.println("POLYGLOT_DEPLOY " + project + " " + result);
             assertEquals(DeploymentStatus.SUCCEEDED, result.status());
             String url = "http://" + host + ":" + webPort;
@@ -207,8 +206,7 @@ class MultilingualLiveDeploymentAcceptanceTest {
             var result = context.service.deployAutomatically(
                     new AutomaticDeploymentRequest(Optional.of(source), Optional.empty(),
                             context.service.findServerProfile("typed-live").orElseThrow(), values),
-                    masterPassword(), interaction(), fingerprint -> true,
-                    message -> System.out.println("POLYGLOT_PROGRESS " + message));
+                    interaction(), fingerprint -> true, message -> System.out.println("POLYGLOT_PROGRESS " + message));
             System.out.println("POLYGLOT_DEPLOY survey-scoring " + result);
             assertEquals(DeploymentStatus.SUCCEEDED, result.status());
             String api = "http://" + host + ":" + apiPort;
@@ -256,8 +254,8 @@ class MultilingualLiveDeploymentAcceptanceTest {
                 AutoCloseable cleanup = context::stopTestApplications) {
             var request = new AutomaticDeploymentRequest(Optional.of(source), Optional.empty(),
                     context.service.findServerProfile("typed-live").orElseThrow(), values);
-            var result = context.service.deployAutomatically(request, masterPassword(), interaction(),
-                    fingerprint -> true, message -> System.out.println("POLYGLOT_PROGRESS " + message));
+            var result = context.service.deployAutomatically(request, interaction(), fingerprint -> true,
+                    message -> System.out.println("POLYGLOT_PROGRESS " + message));
             System.out.println("POLYGLOT_DEPLOY csv-inspector " + result);
             assertEquals(DeploymentStatus.SUCCEEDED, result.status());
             String url = "http://" + host + ":45130";
@@ -336,8 +334,7 @@ class MultilingualLiveDeploymentAcceptanceTest {
             var result = context.service.deployAutomatically(
                     new AutomaticDeploymentRequest(Optional.of(source), Optional.empty(),
                             context.service.findServerProfile("typed-live").orElseThrow(), Map.of()),
-                    masterPassword(), interaction(), fingerprint -> true,
-                    message -> System.out.println("POLYGLOT_PROGRESS " + message));
+                    interaction(), fingerprint -> true, message -> System.out.println("POLYGLOT_PROGRESS " + message));
             System.out.println("POLYGLOT_DEPLOY " + project + " " + result);
             assertEquals(DeploymentStatus.SUCCEEDED, result.status());
             assertEquals(id, result.applicationId());
@@ -465,11 +462,6 @@ class MultilingualLiveDeploymentAcceptanceTest {
                 throw new AssertionError("unexpected secret request: " + key);
             }
         };
-    }
-
-    private static char[] masterPassword() {
-        return System.getenv().getOrDefault("WINDOWSTOLINUX_TEST_MASTER_PASSWORD", "typed-live-acceptance-master")
-                .toCharArray();
     }
 
     private static void assertHttp(String url, String expected) throws Exception {

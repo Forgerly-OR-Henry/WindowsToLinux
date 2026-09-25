@@ -18,7 +18,6 @@ import java.util.concurrent.atomic.AtomicInteger;
 import gold.debug.windowstolinux.app.db.DesktopPersistence;
 import gold.debug.windowstolinux.app.db.entity.CurrentRelease;
 import gold.debug.windowstolinux.app.db.entity.StoredApplicationSecretRevision;
-import gold.debug.windowstolinux.app.secret.Argon2AesSecretStore;
 import gold.debug.windowstolinux.app.service.ai.AiProviderProfile;
 import gold.debug.windowstolinux.app.service.execution.lifecycle.LifecycleOutcome;
 import gold.debug.windowstolinux.app.service.failure.ApplicationServiceException;
@@ -53,7 +52,6 @@ import gold.debug.windowstolinux.shared.model.project.DeploymentProjectFacts;
 import gold.debug.windowstolinux.shared.model.project.DeploymentProjectType;
 import gold.debug.windowstolinux.shared.model.project.DeploymentRuntimeSpecification;
 import gold.debug.windowstolinux.shared.model.project.SourceRevision;
-import gold.debug.windowstolinux.shared.model.security.CredentialStorageMode;
 import gold.debug.windowstolinux.shared.model.server.CpuMicroarchitectureLevel;
 import gold.debug.windowstolinux.shared.model.server.LinuxDistroType;
 import gold.debug.windowstolinux.shared.model.server.ServerIdentity;
@@ -66,19 +64,18 @@ import gold.debug.windowstolinux.shared.standard.deploy.contract.ReviewedDeploym
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
-class DesktopApplicationFacadeTest {
+class DesktopApplicationFacadeTest extends SecurityTestFixture {
     @TempDir
     Path temporaryDirectory;
 
     @Test
     void storesPasswordOutsideProfileAndTrustsOnlyTheFirstConfirmedHostKey() throws Exception {
         ServerProfile profile = new ServerProfile("server-one", "example.test", 22, "deployer",
-                "ssh/server-one/password", CredentialStorageMode.MASTER_PASSWORD);
+                "ssh/server-one/password");
         try (DesktopPersistence database = DesktopPersistence.open(temporaryDirectory);
-                Argon2AesSecretStore secretStore = new Argon2AesSecretStore(database.encryptedSecrets(),
-                        "correct master password".toCharArray())) {
-            DesktopApplicationFacade service = new DesktopApplicationFacade(database,
-                    temporaryDirectory.resolve("work"), unusedGateway());
+                gold.debug.windowstolinux.app.secret.SecretStore secretStore = SecurityTestFixture.store(database)) {
+            DesktopApplicationFacade service = SecurityTestFixture.unlocked(
+                    new DesktopApplicationFacade(database, temporaryDirectory.resolve("work"), unusedGateway()));
             service.saveServerProfile(profile, secretStore, "ssh-password".toCharArray());
 
             assertEquals(profile, service.findServerProfile("server-one").orElseThrow());
@@ -102,13 +99,11 @@ class DesktopApplicationFacadeTest {
     void storesImmutableApplicationSecretsOnlyInThePlatformSecretStore() throws Exception {
         SecretReference reference = new SecretReference("database-password", 1);
         StoredApplicationSecretRevision revision = new StoredApplicationSecretRevision(reference,
-                "application-secret/database-password/1", CredentialStorageMode.MASTER_PASSWORD,
-                Instant.parse("2026-08-12T00:00:00Z"));
+                "application-secret/database-password/1", Instant.parse("2026-08-12T00:00:00Z"));
         try (DesktopPersistence database = DesktopPersistence.open(temporaryDirectory);
-                Argon2AesSecretStore secretStore = new Argon2AesSecretStore(database.encryptedSecrets(),
-                        "correct master password".toCharArray())) {
-            DesktopApplicationFacade service = new DesktopApplicationFacade(database,
-                    temporaryDirectory.resolve("work"), unusedGateway());
+                gold.debug.windowstolinux.app.secret.SecretStore secretStore = SecurityTestFixture.store(database)) {
+            DesktopApplicationFacade service = SecurityTestFixture.unlocked(
+                    new DesktopApplicationFacade(database, temporaryDirectory.resolve("work"), unusedGateway()));
             service.saveDeploymentSecretRevision(revision, secretStore, "database-password".toCharArray());
 
             assertEquals(revision, database.applicationSecrets().findRevision(reference).orElseThrow());
@@ -126,25 +121,21 @@ class DesktopApplicationFacadeTest {
     @Test
     void createsSecretStorageMetadataFromUserInputAndClearsRejectedInputs() throws Exception {
         try (DesktopPersistence database = DesktopPersistence.open(temporaryDirectory)) {
-            DesktopApplicationFacade service = new DesktopApplicationFacade(database,
-                    temporaryDirectory.resolve("work"), unusedGateway());
+            DesktopApplicationFacade service = SecurityTestFixture.unlocked(
+                    new DesktopApplicationFacade(database, temporaryDirectory.resolve("work"), unusedGateway()));
             char[] master = "correct master password".toCharArray(), value = "initial-value".toCharArray();
-            SecretReference reference = service.saveDeploymentSecretRevision(" database-password:7 ",
-                    CredentialStorageMode.MASTER_PASSWORD, master, value);
+            SecretReference reference = service.saveDeploymentSecretRevision(" database-password:7 ", value);
             var saved = database.applicationSecrets().findRevision(reference).orElseThrow();
             assertEquals("application-secret/database-password/7", saved.credentialKey());
-            assertEquals(CredentialStorageMode.MASTER_PASSWORD, saved.credentialMode());
             assertTrue(saved.createdAt().isAfter(Instant.EPOCH));
-            assertArrayEquals(new char[master.length], master);
             assertArrayEquals(new char[value.length], value);
             char[] replacement = "replacement".toCharArray();
-            assertThrows(java.sql.SQLException.class, () -> service.saveDeploymentSecretRevision("database-password:7",
-                    CredentialStorageMode.MASTER_PASSWORD, "correct master password".toCharArray(), replacement));
+            assertThrows(java.sql.SQLException.class,
+                    () -> service.saveDeploymentSecretRevision("database-password:7", replacement));
             assertArrayEquals(new char[replacement.length], replacement);
             char[] invalidMaster = "correct master password".toCharArray(), invalidValue = "unused".toCharArray();
-            assertThrows(IllegalArgumentException.class, () -> service.saveDeploymentSecretRevision("missing-revision",
-                    CredentialStorageMode.MASTER_PASSWORD, invalidMaster, invalidValue));
-            assertArrayEquals(new char[invalidMaster.length], invalidMaster);
+            assertThrows(IllegalArgumentException.class,
+                    () -> service.saveDeploymentSecretRevision("missing-revision", invalidValue));
             assertArrayEquals(new char[invalidValue.length], invalidValue);
         }
     }
@@ -152,11 +143,11 @@ class DesktopApplicationFacadeTest {
     @Test
     void listsConfiguredModelsThroughTheSupportedConfigurationInventory() throws Exception {
         try (DesktopPersistence database = DesktopPersistence.open(temporaryDirectory)) {
-            DesktopApplicationFacade service = new DesktopApplicationFacade(database,
-                    temporaryDirectory.resolve("work"), unusedGateway());
+            DesktopApplicationFacade service = SecurityTestFixture.unlocked(
+                    new DesktopApplicationFacade(database, temporaryDirectory.resolve("work"), unusedGateway()));
             AiProviderProfile provider = new AiProviderProfile("analysis",
-                    URI.create("https://analysis.example.test/v1/chat/completions"), "gpt-5", "ai/analysis/api-key",
-                    CredentialStorageMode.MASTER_PASSWORD);
+                    URI.create("https://analysis.example.test/v1/chat/completions"), "gpt-5", "ai/analysis/api-key");
+            SecurityTestFixture.credential(database, provider.credentialKey());
             database.aiProfiles().saveNamed(provider.stored());
 
             assertEquals(java.util.List.of(provider), service.listAiConfigurations().stream()
@@ -175,8 +166,8 @@ class DesktopApplicationFacadeTest {
                  "packages":{"":{"name":"demo","version":"1.0.0"}}}
                 """);
         try (DesktopPersistence database = DesktopPersistence.open(temporaryDirectory)) {
-            DesktopApplicationFacade service = new DesktopApplicationFacade(database,
-                    temporaryDirectory.resolve("work"), unusedGateway());
+            DesktopApplicationFacade service = SecurityTestFixture.unlocked(
+                    new DesktopApplicationFacade(database, temporaryDirectory.resolve("work"), unusedGateway()));
             assertEquals(gold.debug.windowstolinux.shared.model.analysis.DeploymentAdmissionStatus.READY_FOR_PLANNING,
                     service.analyzeDeploymentSource(source,
                             gold.debug.windowstolinux.shared.model.project.DeploymentProjectType.NODE_SERVICE)
@@ -194,7 +185,8 @@ class DesktopApplicationFacadeTest {
         Files.writeString(source.resolve(".env"), "must-not-be-archived");
         Path work = temporaryDirectory.resolve("fixed-data/work");
         try (DesktopPersistence database = DesktopPersistence.open(temporaryDirectory.resolve("data"))) {
-            ReviewedSourcePreparation preparation = new DesktopApplicationFacade(database, work, unusedGateway())
+            ReviewedSourcePreparation preparation = SecurityTestFixture
+                    .unlocked(new DesktopApplicationFacade(database, work, unusedGateway()))
                     .prepareReviewedSource(source, DeploymentProjectType.SPRING_BOOT);
             assertTrue(preparation.archive().orElseThrow().localArchive().startsWith(work.toAbsolutePath()));
             assertTrue(preparation.excludedEntries().contains(".env"));
@@ -207,9 +199,10 @@ class DesktopApplicationFacadeTest {
         ServerIdentity requestedServer = server("server-one", "192.0.2.10", "SHA256:AAAAAAAAAAAA");
         ManagedApplication saved = ManagedApplication.forManaged("demo", savedServer, "a".repeat(64));
         try (DesktopPersistence database = DesktopPersistence.open(temporaryDirectory.resolve("data"))) {
+            SecurityTestFixture.server(database, saved.server());
             database.managedApplications().save(saved);
-            DesktopApplicationFacade service = new DesktopApplicationFacade(database,
-                    temporaryDirectory.resolve("work"), unusedGateway());
+            DesktopApplicationFacade service = SecurityTestFixture.unlocked(
+                    new DesktopApplicationFacade(database, temporaryDirectory.resolve("work"), unusedGateway()));
 
             ReviewedDeploymentRequest request = createRequest(service, supportedPreparation("demo"), requestedServer,
                     BuildLimitConfiguration.defaultNonRoot(), false);
@@ -225,9 +218,10 @@ class DesktopApplicationFacadeTest {
         ServerIdentity anotherServer = server("server-two", "192.0.2.11", "SHA256:BBBBBBBBBBBB");
         ManagedApplication saved = ManagedApplication.forManaged("demo", savedServer, "a".repeat(64));
         try (DesktopPersistence database = DesktopPersistence.open(temporaryDirectory.resolve("data"))) {
+            SecurityTestFixture.server(database, saved.server());
             database.managedApplications().save(saved);
-            DesktopApplicationFacade service = new DesktopApplicationFacade(database,
-                    temporaryDirectory.resolve("work"), unusedGateway());
+            DesktopApplicationFacade service = SecurityTestFixture.unlocked(
+                    new DesktopApplicationFacade(database, temporaryDirectory.resolve("work"), unusedGateway()));
 
             ApplicationServiceException exception = assertThrows(ApplicationServiceException.class,
                     () -> createRequest(service, supportedPreparation("demo"), anotherServer,
@@ -244,9 +238,10 @@ class DesktopApplicationFacadeTest {
         ManagedApplication nonCanonical = new ManagedApplication("demo", server, "windowstolinux-other.service",
                 "/opt/windowstolinux/apps/demo", "a".repeat(64));
         try (DesktopPersistence database = DesktopPersistence.open(temporaryDirectory.resolve("data"))) {
+            SecurityTestFixture.server(database, nonCanonical.server());
             database.managedApplications().save(nonCanonical);
-            DesktopApplicationFacade service = new DesktopApplicationFacade(database,
-                    temporaryDirectory.resolve("work"), unusedGateway());
+            DesktopApplicationFacade service = SecurityTestFixture.unlocked(
+                    new DesktopApplicationFacade(database, temporaryDirectory.resolve("work"), unusedGateway()));
 
             ApplicationServiceException exception = assertThrows(ApplicationServiceException.class,
                     () -> createRequest(service, supportedPreparation("demo"), server,
@@ -263,8 +258,8 @@ class DesktopApplicationFacadeTest {
         BuildLimitConfiguration rootLimits = new BuildLimitConfiguration(1200, 1024, 4096, 4L * 1024 * 1024,
                 2L * 1024 * 1024 * 1024, true);
         try (DesktopPersistence database = DesktopPersistence.open(temporaryDirectory.resolve("data"))) {
-            DesktopApplicationFacade service = new DesktopApplicationFacade(database,
-                    temporaryDirectory.resolve("work"), unusedGateway());
+            DesktopApplicationFacade service = SecurityTestFixture.unlocked(
+                    new DesktopApplicationFacade(database, temporaryDirectory.resolve("work"), unusedGateway()));
 
             assertThrows(IllegalArgumentException.class,
                     () -> createRequest(service, supportedPreparation("demo"), server, rootLimits, false));
@@ -277,7 +272,7 @@ class DesktopApplicationFacadeTest {
     @Test
     void rejectsEnvironmentPreparationBeforeReadingCredentialsOrOpeningSshWhenConfirmationIsMissing() throws Exception {
         ServerProfile profile = new ServerProfile("server-one", "example.test", 22, "deployer",
-                "ssh/server-one/password", CredentialStorageMode.MASTER_PASSWORD);
+                "ssh/server-one/password");
         char[] masterPassword = "correct master password".toCharArray();
         AtomicInteger connections = new AtomicInteger();
         DeploymentLinuxGateway gateway = (endpoint, credential, verifier) -> {
@@ -285,25 +280,21 @@ class DesktopApplicationFacadeTest {
             throw new AssertionError("unconfirmed environment preparation must not connect");
         };
         try (DesktopPersistence database = DesktopPersistence.open(temporaryDirectory.resolve("data"))) {
-            DesktopApplicationFacade service = new DesktopApplicationFacade(database,
-                    temporaryDirectory.resolve("work"), gateway);
+            DesktopApplicationFacade service = SecurityTestFixture
+                    .unlocked(new DesktopApplicationFacade(database, temporaryDirectory.resolve("work"), gateway));
 
             DeploymentApprovalException failure = assertThrows(DeploymentApprovalException.class,
-                    () -> service.prepareEnvironmentWithStoredPassword(profile, CredentialStorageMode.MASTER_PASSWORD,
-                            masterPassword, fingerprint -> true, false));
+                    () -> service.prepareEnvironmentWithStoredPassword(profile, fingerprint -> true, false));
 
             assertEquals("deployment.error.confirmationRequired", failure.failure().userMessage().key());
             assertEquals(0, connections.get());
         }
-        for (char value : masterPassword) {
-            assertEquals('\0', value);
-        }
     }
 
     @Test
-    void inspectsExactDeploymentCapabilitiesWithoutMutationAndClearsTheMasterPassword() throws Exception {
+    void inspectsExactDeploymentCapabilitiesWithoutMutation() throws Exception {
         ServerProfile profile = new ServerProfile("server-one", "example.test", 22, "deployer",
-                "ssh/server-one/password", CredentialStorageMode.MASTER_PASSWORD);
+                "ssh/server-one/password");
         LinuxCapabilityFacts expected = new LinuxCapabilityFacts(LinuxDistroType.UBUNTU, "24.04", "x86_64", "apt",
                 "amd64", true, false, false, false, Set.of(21), Set.of(22), true, true, Set.of("3.12"), true, Map.of(),
                 Map.of(), false, false, CpuMicroarchitectureLevel.X86_64_V3, Set.of("sse4_2"),
@@ -328,17 +319,15 @@ class DesktopApplicationFacadeTest {
         };
         char[] masterPassword = "capability-master".toCharArray();
         try (DesktopPersistence database = DesktopPersistence.open(temporaryDirectory.resolve("capability-data"))) {
-            DesktopApplicationFacade service = new DesktopApplicationFacade(database,
-                    temporaryDirectory.resolve("work"), gateway);
-            service.saveServerProfile(profile, CredentialStorageMode.MASTER_PASSWORD, "capability-master".toCharArray(),
-                    "ssh-password".toCharArray());
+            DesktopApplicationFacade service = SecurityTestFixture
+                    .unlocked(new DesktopApplicationFacade(database, temporaryDirectory.resolve("work"), gateway));
+            service.saveServerProfile(profile, "ssh-password".toCharArray());
 
-            assertEquals(expected, service.inspectDeploymentCapabilitiesWithStoredPassword(profile,
-                    CredentialStorageMode.MASTER_PASSWORD, masterPassword, fingerprint -> true));
+            assertEquals(expected,
+                    service.inspectDeploymentCapabilitiesWithStoredPassword(profile, fingerprint -> true));
             assertEquals(1, connections.get());
         }
-        for (char value : masterPassword)
-            assertEquals('\0', value);
+
     }
 
     @Test
@@ -347,14 +336,13 @@ class DesktopApplicationFacadeTest {
         ServerIdentity server = server("server-one", "192.0.2.10", "SHA256:AAAAAAAAAAAA");
         ManagedApplication application = ManagedApplication.forManaged("demo", server, "a".repeat(64));
         HealthCheck persistedHealth = new HealthCheck.Tcp(19092, 15, 2);
-        ServerProfile profile = new ServerProfile("server-one", "192.0.2.10", 22, "deployer", "ssh/server-one/password",
-                CredentialStorageMode.MASTER_PASSWORD);
+        ServerProfile profile = new ServerProfile("server-one", "192.0.2.10", 22, "deployer",
+                "ssh/server-one/password");
 
         try (DesktopPersistence database = DesktopPersistence.open(data)) {
-            DesktopApplicationFacade firstDesktop = new DesktopApplicationFacade(database,
-                    temporaryDirectory.resolve("first-work"), unusedGateway());
-            firstDesktop.saveServerProfile(profile, CredentialStorageMode.MASTER_PASSWORD,
-                    "restart-master".toCharArray(), "ssh-password".toCharArray());
+            DesktopApplicationFacade firstDesktop = SecurityTestFixture.unlocked(
+                    new DesktopApplicationFacade(database, temporaryDirectory.resolve("first-work"), unusedGateway()));
+            firstDesktop.saveServerProfile(profile, "ssh-password".toCharArray());
             database.managedApplications().recordSuccessfulDeployment(application,
                     new ManagedApplicationRuntimeConfiguration(persistedHealth, Optional.empty()),
                     new CurrentRelease(application.id(), "b".repeat(64), Instant.parse("2026-08-10T00:00:00Z")));
@@ -362,10 +350,10 @@ class DesktopApplicationFacadeTest {
 
         RecordingGateway gateway = new RecordingGateway();
         try (DesktopPersistence reopened = DesktopPersistence.open(data)) {
-            DesktopApplicationFacade restartedDesktop = new DesktopApplicationFacade(reopened,
-                    temporaryDirectory.resolve("second-work"), gateway);
+            DesktopApplicationFacade restartedDesktop = SecurityTestFixture.unlocked(
+                    new DesktopApplicationFacade(reopened, temporaryDirectory.resolve("second-work"), gateway));
             LifecycleOutcome result = restartedDesktop.executePersistedLifecycleWithStoredPassword(application.id(),
-                    LifecycleAction.RESTART, "restart-master".toCharArray());
+                    LifecycleAction.RESTART);
 
             assertTrue(result.accepted(), result::toString);
             assertEquals(RuntimeState.RUNNING, result.observation().orElseThrow().runtimeState());
@@ -377,25 +365,22 @@ class DesktopApplicationFacadeTest {
     }
 
     @Test
-    void legacyApplicationWithoutPersistedRuntimeConfigurationDoesNotOpenSsh() throws Exception {
+    void incompleteDeploymentWithoutRuntimeConfigurationDoesNotOpenSsh() throws Exception {
         ServerIdentity server = server("server-one", "192.0.2.10", "SHA256:AAAAAAAAAAAA");
         ManagedApplication application = ManagedApplication.forManaged("demo", server, "a".repeat(64));
         RecordingGateway gateway = new RecordingGateway();
         char[] masterPassword = "restart-master".toCharArray();
         try (DesktopPersistence database = DesktopPersistence.open(temporaryDirectory.resolve("legacy-data"))) {
+            SecurityTestFixture.server(database, application.server());
             database.managedApplications().save(application);
-            DesktopApplicationFacade service = new DesktopApplicationFacade(database,
-                    temporaryDirectory.resolve("work"), gateway);
+            DesktopApplicationFacade service = SecurityTestFixture
+                    .unlocked(new DesktopApplicationFacade(database, temporaryDirectory.resolve("work"), gateway));
 
-            ApplicationServiceException failure = assertThrows(ApplicationServiceException.class,
-                    () -> service.executePersistedLifecycleWithStoredPassword(application.id(), LifecycleAction.RESTART,
-                            masterPassword));
+            ApplicationServiceException failure = assertThrows(ApplicationServiceException.class, () -> service
+                    .executePersistedLifecycleWithStoredPassword(application.id(), LifecycleAction.RESTART));
 
             assertEquals("service.error.runtimeMissing", failure.failure().userMessage().key());
             assertEquals(0, gateway.connections.get());
-        }
-        for (char value : masterPassword) {
-            assertEquals('\0', value);
         }
     }
 

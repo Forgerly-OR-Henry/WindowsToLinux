@@ -13,7 +13,6 @@ import gold.debug.windowstolinux.shared.deploy.contract.AutomaticDeploymentInter
 import gold.debug.windowstolinux.shared.deploy.task.AgentTaskControl;
 import gold.debug.windowstolinux.shared.model.agent.*;
 import gold.debug.windowstolinux.shared.model.deployment.*;
-import gold.debug.windowstolinux.shared.model.security.CredentialStorageMode;
 import gold.debug.windowstolinux.shared.standard.deploy.assistance.AssistedActionModelPort;
 import gold.debug.windowstolinux.shared.standard.deploy.assistance.AssistedActionSession;
 import gold.debug.windowstolinux.shared.standard.deploy.assistance.AssistedExecutionPort;
@@ -25,8 +24,7 @@ class AssistedDeploymentBoundaryTest {
     @TempDir
     Path root;
 
-    final ServerProfile server = new ServerProfile("server", "example.invalid", 22, "deploy", "ref",
-            CredentialStorageMode.MASTER_PASSWORD);
+    final ServerProfile server = new ServerProfile("server", "example.invalid", 22, "deploy", "ref");
 
     final AutomaticDeploymentInteraction human = new AutomaticDeploymentInteraction() {
         public Optional<Map<String, String>> requestInputs(List<DeploymentInputField> fields) {

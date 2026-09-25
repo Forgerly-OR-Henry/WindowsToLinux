@@ -41,13 +41,12 @@ import gold.debug.windowstolinux.shared.model.deployment.AgentApprovalMode;
 import gold.debug.windowstolinux.shared.model.deployment.DeploymentAutomationMode;
 import gold.debug.windowstolinux.shared.model.deployment.DeploymentStatus;
 import gold.debug.windowstolinux.shared.model.health.UserAccessUrl;
-import gold.debug.windowstolinux.shared.model.security.CredentialStorageMode;
 
 /**
  * Owns source selection, review state, deployment forms, and the complete reviewed deployment workflow. / 持有源码选择、审阅状态、部署表单与完整经审阅部署流程。
  */
 public final class DeploymentPage implements ReviewContext {
-    /** Session-only automation selection. / 仅会话内的自动化选择。 */
+    /** Persisted selection copied into each task at submission. / 提交任务时复制的持久化自动化选择。 */
     private final DeploymentModeSelector modeSelector;
 
     /**
@@ -194,8 +193,7 @@ public final class DeploymentPage implements ReviewContext {
 
     /**
      * Creates the stateful deployment controller. / 创建有状态部署控制器。
-     *
-     * @param owner component or resource identity owning the operation / 持有操作的组件或资源身份
+     * operation / 持有操作的组件或资源身份
      * @param service application service used by the caller / 调用方使用的应用服务
      * @param serverContext server context / 服务器上下文
      * @param components reviewed components in the application graph / 应用图中的已审阅组件
@@ -203,6 +201,7 @@ public final class DeploymentPage implements ReviewContext {
      * @param openServers open servers / 打开服务器集合
      * @param applicationSelection application selection / 应用选择
      * @param openAi model configuration navigation / 模型配置导航
+     * @param owner owner supplied to this boundary / 传入当前边界的owner值
      */
     public DeploymentPage(JFrame owner, AutomaticDeploymentApplicationFacade service, ServerContext serverContext,
             DesktopComponentFactory components, PageMessagePresenter messages, Runnable openServers,
@@ -213,6 +212,12 @@ public final class DeploymentPage implements ReviewContext {
         this.messages = messages;
         this.applicationSelection = applicationSelection;
         modeSelector = new DeploymentModeSelector(messages);
+        modeSelector.onSelectionChanged(this::savePreferences);
+        modeSelector.addHierarchyListener(event -> {
+            if ((event.getChangeFlags() & java.awt.event.HierarchyEvent.SHOWING_CHANGED) != 0
+                    && modeSelector.isShowing())
+                loadPreferences();
+        });
         form = new DeploymentForm(messages, () -> reviewedPreparation = null);
         panel = createPanel(components, openAi, openServers);
     }
@@ -249,7 +254,37 @@ public final class DeploymentPage implements ReviewContext {
     /**
      * Restores all unsaved deployment and review state. / 恢复全部未保存部署与审阅状态。
      *
-     * @param state current lifecycle or workflow state / 当前生命周期或工作流状态
+     */
+    private void loadPreferences() {
+        if (service == null)
+            return;
+        try {
+            modeSelector.remember(service.deploymentPreferences());
+        } catch (Exception failure) {
+            append(messages.safe(failure));
+        }
+    }
+
+    /** Saves the selected mode immediately or restores the last persisted selection. / 立即保存所选模式，失败时恢复最后已存选择。
+     */
+    private void savePreferences() {
+        if (service == null || modeSelector.savedPreferences() == null)
+            return;
+        var next = new gold.debug.windowstolinux.app.service.contract.definition.DeploymentPreferences(
+                modeSelector.mode(), modeSelector.approval());
+        if (next.equals(modeSelector.savedPreferences()))
+            return;
+        try {
+            service.saveDeploymentPreferences(next);
+            modeSelector.remember(next);
+        } catch (Exception failure) {
+            modeSelector.remember(modeSelector.savedPreferences());
+            append(messages.safe(failure));
+        }
+    }
+
+    /** Restores page values without replaying user actions. / 恢复页面值，不重新执行用户动作。
+     * @param state state supplied to this boundary / 传入当前边界的state值
      */
     public void restoreState(DeploymentPageState state) {
         form.restore(state);
@@ -314,12 +349,7 @@ public final class DeploymentPage implements ReviewContext {
         handoffs.setOpaque(false);
         handoffScroll.setVisible(false);
         handoffScroll.setPreferredSize(new Dimension(0, 46));
-        taskControls = new DeploymentTaskControls(service, messages, this::append, () -> {
-            char[] master = serverContext.masterPassword();
-            return master.length == 0
-                    ? new DeploymentInputDialog(owner, service, c, messages).requestSecret("field.masterPassword")
-                    : master;
-        });
+        taskControls = new DeploymentTaskControls(service, messages, this::append);
         JPanel logHeader = c.transparent(new BorderLayout(8, 0));
         JComponent logTitle = c.sectionHeading(messages.text("auto.log"), "");
         logTitle.setToolTipText(messages.text("auto.log.hint"));
@@ -483,11 +513,6 @@ public final class DeploymentPage implements ReviewContext {
                             gitAddress.getText(), gitKind.getSelectedIndex(), gitReference.getText()),
                     server, form.input(detectType.isSelected()))
                     .withAutomation(modeSelector.mode(), modeSelector.approval());
-            char[] entered = serverContext.masterPassword();
-            if (server.credentialMode() == CredentialStorageMode.MASTER_PASSWORD && entered.length == 0)
-                entered = new DeploymentInputDialog(owner, service, components, messages)
-                        .requestSecret("field.masterPassword");
-            final char[] master = entered;
             DeploymentInputDialog interaction = new DeploymentInputDialog(owner, service, components, messages);
             busy = true;
             modeSelector.setBusy(true);
@@ -501,13 +526,10 @@ public final class DeploymentPage implements ReviewContext {
             if (request.automationMode() != DeploymentAutomationMode.STATIC)
                 taskControls.begin(request.taskId());
             DesktopTaskExecutor.run(() -> {
-                try {
+                {
                     service.requireDeploymentModels(request.automationMode());
-                    return service.deployAutomatically(request, master.clone(), interaction,
-                            serverContext::confirmFingerprint,
+                    return service.deployAutomatically(request, interaction, serverContext::confirmFingerprint,
                             message -> SwingUtilities.invokeLater(() -> append(messages.catalog().text(message))));
-                } finally {
-                    Arrays.fill(master, '\0');
                 }
             }, result -> {
                 finish();
@@ -628,15 +650,13 @@ public final class DeploymentPage implements ReviewContext {
             if (JOptionPane.showConfirmDialog(owner, field, messages.text("secret.value.title"),
                     JOptionPane.OK_CANCEL_OPTION, JOptionPane.WARNING_MESSAGE) != JOptionPane.OK_OPTION)
                 return;
-            CredentialStorageMode mode = serverContext.credentialMode();
-            char[] master = serverContext.masterPassword(), value = field.getPassword();
+            char[] value = field.getPassword();
             busy = true;
             ((AdvancedOptionsPane) panel).setBusy(true);
             DesktopTaskExecutor.run(() -> {
                 try {
-                    return service.saveDeploymentSecretRevision(referenceInput, mode, master, value);
+                    return service.saveDeploymentSecretRevision(referenceInput, value);
                 } finally {
-                    Arrays.fill(master, '\0');
                     Arrays.fill(value, '\0');
                 }
             }, saved -> {

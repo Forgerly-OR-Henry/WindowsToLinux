@@ -83,6 +83,10 @@ public final class DesktopFrame extends JFrame {
      * Localized message resolver.
      * <p>本地化消息解析器。
      */
+    private DesktopLockController securityController;
+
+    /** Localized safe message presenter. / 本地化安全消息呈现器。
+     */
     private final MessageCatalog messages;
 
     /**
@@ -262,12 +266,14 @@ public final class DesktopFrame extends JFrame {
             DesktopDisplayChangeHandler appearanceChangeListener, DesktopViewState viewState,
             FailureReportStore reports, boolean uiDebugEnabled) {
         super(messages.text("app.name"));
+        if (service instanceof gold.debug.windowstolinux.app.service.contract.security.SecurityApplicationFacade security)
+            gold.debug.windowstolinux.app.ui.component.DesktopTaskExecutor.bindSecurity(security);
         this.messages = messages;
         this.palette = palette;
         this.components = new DesktopComponentFactory(palette);
         this.pageCoordinator = new DesktopPageCoordinator(this, service, messages, appearance, components,
                 appearanceChangeListener, this::showPage, reports, uiDebugEnabled);
-        setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
+        setDefaultCloseOperation(JFrame.DISPOSE_ON_CLOSE);
         setMinimumSize(new Dimension(1060, 720));
         setSize(1180, 780);
         setLocationByPlatform(true);
@@ -287,6 +293,16 @@ public final class DesktopFrame extends JFrame {
             pageCoordinator.restoreViewState(viewState);
             viewState.close();
         }
+        securityController = DesktopLockController.attach(this, service, messages, reports, sidebar, components,
+                viewState == null, () -> showPage(PAGE_SETTINGS, "nav.settings", "page.settings.description"));
+    }
+
+    /** Registers the application shutdown callback behind the task guard. / 在任务保护之后注册应用关闭回调。
+     * @param action action supplied to this boundary / 传入当前边界的action值
+     */
+    public void onExit(Runnable action) {
+        if (securityController != null)
+            securityController.onExit(action);
     }
 
     /**
@@ -296,26 +312,7 @@ public final class DesktopFrame extends JFrame {
      * @return the application header with localized product and page context / 包含本地化产品及页面上下文的应用页头
      */
     private JComponent applicationHeader() {
-        JPanel header = new JPanel(new BorderLayout());
-        header.setBackground(palette.cardBackground());
-        header.setBorder(
-                BorderFactory.createCompoundBorder(BorderFactory.createMatteBorder(0, 0, 1, 0, palette.cardBorder()),
-                        BorderFactory.createEmptyBorder(14, 22, 14, 22)));
-
-        JPanel heading = transparent(new BorderLayout(0, 4));
-        pageTitle.setFont(pageTitle.getFont().deriveFont(Font.BOLD, 20f));
-        pageTitle.setForeground(palette.sidebarForeground());
-        pageDescription.setFont(pageDescription.getFont().deriveFont(12f));
-        pageDescription.setForeground(palette.subduedText());
-        heading.add(pageTitle, BorderLayout.NORTH);
-        heading.add(pageDescription, BorderLayout.SOUTH);
-        header.add(heading, BorderLayout.CENTER);
-        JPanel status = transparent(new java.awt.GridBagLayout());
-        status.add(badge(t("app.badge.managed")));
-        headerActions.setOpaque(false);
-        status.add(headerActions);
-        header.add(status, BorderLayout.EAST);
-        return header;
+        return DesktopHeader.create(palette, pageTitle, pageDescription, headerActions, badge(t("app.badge.managed")));
     }
 
     /**
@@ -518,6 +515,8 @@ public final class DesktopFrame extends JFrame {
     public void dispose() {
         if (navigationAnimation != null)
             navigationAnimation.stop();
+        if (securityController != null)
+            securityController.close();
         super.dispose();
     }
 

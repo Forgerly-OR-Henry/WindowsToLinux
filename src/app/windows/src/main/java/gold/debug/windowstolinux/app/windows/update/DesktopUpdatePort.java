@@ -16,7 +16,7 @@ public interface DesktopUpdatePort {
     StepEvidence quiesceTasks() throws DesktopUpdateException;
 
     /**
-     * Backs up the current program, SQLite file, data location and credential mode. / 备份当前程序、SQLite 文件、数据位置及凭据模式。
+     * Backs up the current program, SQLite file, data location and security profile. / 备份当前程序、SQLite 文件、数据位置及安全配置。
      *
      * @param update update / 更新
      * @return constructed or resolved backup evidence / 构造或解析得到的备份证据
@@ -46,17 +46,18 @@ public interface DesktopUpdatePort {
     StepEvidence replaceProgram(DesktopUpdateVerification update, BackupEvidence backup) throws DesktopUpdateException;
 
     /**
-     * Migrates the existing SQLite database with the new program's migrator. / 使用新程序的迁移器迁移现有 SQLite 数据库。
+     * Validates the existing database against the new program schema. / 按新程序结构校验现有数据库。
      *
      * @param update update / 更新
      * @param backup the local backup page state / 本地备份页面状态
      * @return constructed or resolved step evidence / 构造或解析得到的步骤证据
      * @throws DesktopUpdateException if the desktop update boundary rejects the operation / Desktop更新边界拒绝当前操作时
      */
-    StepEvidence migrateDatabase(DesktopUpdateVerification update, BackupEvidence backup) throws DesktopUpdateException;
+    StepEvidence validateDatabase(DesktopUpdateVerification update, BackupEvidence backup)
+            throws DesktopUpdateException;
 
     /**
-     * Starts and verifies the new program against the preserved data location and credential mode. / 使用保留的数据位置及凭据模式启动并验证新程序。
+     * Starts and verifies the new program against the preserved data location and security profile. / 使用保留的数据位置及安全配置启动并验证新程序。
      *
      * @param update update / 更新
      * @param backup the local backup page state / 本地备份页面状态
@@ -66,7 +67,7 @@ public interface DesktopUpdatePort {
     StepEvidence startAndVerify(DesktopUpdateVerification update, BackupEvidence backup) throws DesktopUpdateException;
 
     /**
-     * Restores the old program and pre-migration SQLite backup as one pair. / 将旧程序及迁移前 SQLite 备份作为一对恢复。
+     * Restores the old program and pre-update SQLite backup as one pair. / 将旧程序及更新前 SQLite 备份作为一对恢复。
      *
      * @param backup the local backup page state / 本地备份页面状态
      * @return constructed or resolved rollback evidence / 构造或解析得到的回滚证据
@@ -101,11 +102,11 @@ public interface DesktopUpdatePort {
      * @param programBackedUp program backed up / 程序已备份Up
      * @param databaseBackedUp database backed up / 数据库已备份Up
      * @param dataLocationPreserved data location preserved / 数据位置已保留
-     * @param credentialModePreserved credential mode preserved / 凭据模式已保留
+     * @param securityProfilePreserved security profile preserved / 安全配置已保留
      * @param evidence observations supporting the reported result / 支持所报告结果的观测证据
      */
     record BackupEvidence(String backupToken, boolean programBackedUp, boolean databaseBackedUp,
-            boolean dataLocationPreserved, boolean credentialModePreserved, List<String> evidence) {
+            boolean dataLocationPreserved, boolean securityProfilePreserved, List<String> evidence) {
         /**
          * Validates paired backup evidence. / 校验成对备份证据。
          *
@@ -113,7 +114,7 @@ public interface DesktopUpdatePort {
          * @param programBackedUp program backed up / 程序已备份Up
          * @param databaseBackedUp database backed up / 数据库已备份Up
          * @param dataLocationPreserved data location preserved / 数据位置已保留
-         * @param credentialModePreserved credential mode preserved / 凭据模式已保留
+         * @param securityProfilePreserved security profile preserved / 安全配置已保留
          * @param evidence observations supporting the reported result / 支持所报告结果的观测证据
          */
         public BackupEvidence {

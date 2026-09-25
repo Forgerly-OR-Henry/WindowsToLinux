@@ -32,8 +32,9 @@ class ExternalApplicationRepositoryTest {
     @Test
     void deduplicatesPersistsAndRequiresExplicitReattachmentAfterIdentityChange() throws Exception {
         try (var db = DesktopPersistence.open(directory)) {
-            db.servers().saveServerProfile(new StoredServerProfile("server", "example.test", 22, "tester",
-                    "ssh/server/password", "MASTER_PASSWORD"));
+            gold.debug.windowstolinux.app.db.DatabaseTestFixture.credential(db, "ssh/server/password");
+            db.servers().saveServerProfile(
+                    new StoredServerProfile("server", "example.test", 22, "tester", "ssh/server/password"));
             assertEquals(firstId, db.externalApplications().adopt(registration(firstId, "a".repeat(64))));
             assertEquals(firstId,
                     db.externalApplications().adopt(registration("external:" + UUID.randomUUID(), "a".repeat(64))));

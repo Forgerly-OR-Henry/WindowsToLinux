@@ -23,7 +23,6 @@ import gold.debug.windowstolinux.shared.model.health.HealthCheck;
 import gold.debug.windowstolinux.shared.model.lifecycle.LifecycleAction;
 import gold.debug.windowstolinux.shared.model.managed.ManagedApplication;
 import gold.debug.windowstolinux.shared.model.managed.ManagedApplicationRuntimeConfiguration;
-import gold.debug.windowstolinux.shared.model.security.CredentialStorageMode;
 
 /**
  * Loads persisted ownership and runtime facts before controlled application lifecycle actions.
@@ -110,14 +109,13 @@ public final class LifecycleUseCase {
      *
      * @param applicationId managed application identifier / 受管应用标识
      * @param action explicit action selected for the current target / 为当前目标显式选择的动作
-     * @param masterPassword master-password buffer used to unlock protected credentials / 用于解锁受保护凭据的主密码缓冲区
      * @return the operation result / 操作结果
      * @throws SecretStoreException if the protected credential cannot be accessed or updated / 无法访问或更新受保护凭据时
      * @throws SQLException if the database cannot complete the requested read or transaction / 数据库无法完成请求的读取或事务时
      */
-    public LifecycleOutcome executePersisted(String applicationId, LifecycleAction action, char[] masterPassword)
+    public LifecycleOutcome executePersisted(String applicationId, LifecycleAction action)
             throws SecretStoreException, SQLException {
-        LifecycleActionResult result = executePersistedResult(applicationId, action, masterPassword);
+        LifecycleActionResult result = executePersistedResult(applicationId, action);
         return outcome(result);
     }
 
@@ -127,17 +125,16 @@ public final class LifecycleUseCase {
      *
      * @param applicationId managed application identifier / 受管应用标识
      * @param action explicit action selected for the current target / 为当前目标显式选择的动作
-     * @param masterPassword master-password buffer used to unlock protected credentials / 用于解锁受保护凭据的主密码缓冲区
      * @return the operation result / 操作结果
      * @throws SecretStoreException if the protected credential cannot be accessed or updated / 无法访问或更新受保护凭据时
      * @throws SQLException if the database cannot complete the requested read or transaction / 数据库无法完成请求的读取或事务时
      * @throws NullPointerException if a required input is absent / 必需输入缺失时
      */
-    public LifecycleActionResult executePersistedResult(String applicationId, LifecycleAction action,
-            char[] masterPassword) throws SecretStoreException, SQLException {
+    public LifecycleActionResult executePersistedResult(String applicationId, LifecycleAction action)
+            throws SecretStoreException, SQLException {
         Objects.requireNonNull(applicationId, "applicationId");
         Objects.requireNonNull(action, "action");
-        try {
+        {
             ManagedApplication application = applications.find(applicationId)
                     .orElseThrow(() -> ApplicationServiceException.create(
                             ApplicationServiceFailureType.APPLICATION_NOT_SELECTED,
@@ -150,10 +147,7 @@ public final class LifecycleUseCase {
                     .orElseThrow(() -> ApplicationServiceException.create(
                             ApplicationServiceFailureType.SERVER_PROFILE_MISSING,
                             "Server connection profile for the managed application was not found"));
-            return executeResult(application, action, runtime.healthCheck(), profile, profile.credentialMode(),
-                    masterPassword);
-        } finally {
-            clear(masterPassword);
+            return executeResult(application, action, runtime.healthCheck(), profile);
         }
     }
 
@@ -165,16 +159,13 @@ public final class LifecycleUseCase {
      * @param action explicit action selected for the current target / 为当前目标显式选择的动作
      * @param healthCheck reviewed probe and its success criteria / 已审阅探测及其成功条件
      * @param profile connection or provider settings supplied to the operation / 提供给操作的连接或提供者设置
-     * @param mode selected operating or storage mode / 所选运行或存储模式
-     * @param masterPassword master-password buffer used to unlock protected credentials / 用于解锁受保护凭据的主密码缓冲区
      * @return the operation result / 操作结果
      * @throws SecretStoreException if the protected credential cannot be accessed or updated / 无法访问或更新受保护凭据时
      * @throws SQLException if the database cannot complete the requested read or transaction / 数据库无法完成请求的读取或事务时
      */
     public LifecycleOutcome execute(ManagedApplication application, LifecycleAction action, HealthCheck healthCheck,
-            ServerProfile profile, CredentialStorageMode mode, char[] masterPassword)
-            throws SecretStoreException, SQLException {
-        return outcome(executeResult(application, action, healthCheck, profile, mode, masterPassword));
+            ServerProfile profile) throws SecretStoreException, SQLException {
+        return outcome(executeResult(application, action, healthCheck, profile));
     }
 
     /**
@@ -185,22 +176,19 @@ public final class LifecycleUseCase {
      * @param action explicit action selected for the current target / 为当前目标显式选择的动作
      * @param healthCheck reviewed probe and its success criteria / 已审阅探测及其成功条件
      * @param profile connection or provider settings supplied to the operation / 提供给操作的连接或提供者设置
-     * @param mode selected operating or storage mode / 所选运行或存储模式
-     * @param masterPassword master-password buffer used to unlock protected credentials / 用于解锁受保护凭据的主密码缓冲区
      * @return the operation result / 操作结果
      * @throws SecretStoreException if the protected credential cannot be accessed or updated / 无法访问或更新受保护凭据时
      * @throws SQLException if the database cannot complete the requested read or transaction / 数据库无法完成请求的读取或事务时
      */
     public LifecycleActionResult executeResult(ManagedApplication application, LifecycleAction action,
-            HealthCheck healthCheck, ServerProfile profile, CredentialStorageMode mode, char[] masterPassword)
-            throws SecretStoreException, SQLException {
-        if (!application.server().id().equals(profile.id()) || profile.credentialMode() != mode) {
+            HealthCheck healthCheck, ServerProfile profile) throws SecretStoreException, SQLException {
+        if (!application.server().id().equals(profile.id())) {
             throw ApplicationServiceException.create(ApplicationServiceFailureType.LIFECYCLE_CONTEXT_MISMATCH,
-                    "Lifecycle application, server, and credential storage mode must match");
+                    "Lifecycle application, server, and saved server identity must match");
         }
         ReentrantLock lock = locks.forServer(application.server().id());
         lock.lock();
-        try (SecretStore store = servers.secrets().open(mode, masterPassword)) {
+        try (SecretStore store = servers.secrets().open()) {
             LifecycleActionResult result = new ManagedLifecycleService().execute(application, action, healthCheck,
                     gateway, profile.endpoint(), servers.loadPassword(profile, store),
                     servers.hostKeyVerifier(profile, ignored -> false));
@@ -216,7 +204,7 @@ public final class LifecycleUseCase {
             return result;
         } finally {
             lock.unlock();
-            clear(masterPassword);
+
         }
     }
 

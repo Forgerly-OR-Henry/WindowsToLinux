@@ -274,28 +274,18 @@ public final class ServerInventoryPane extends JPanel {
         var profile = summary.profile();
         if (checking.contains(profile.id()))
             return;
-        JPasswordField password = new JPasswordField(24);
-        if (profile
-                .credentialMode() == gold.debug.windowstolinux.shared.model.security.CredentialStorageMode.MASTER_PASSWORD
-                && JOptionPane.showConfirmDialog(this, password, messages.text("field.masterPassword"),
-                        JOptionPane.OK_CANCEL_OPTION) != JOptionPane.OK_OPTION)
-            return;
-        char[] master = password.getPassword();
-        password.setText("");
         checking.add(profile.id());
         button.setEnabled(false);
         button.setText(messages.text("server.checking"));
         DesktopTaskExecutor.run(() -> {
-            try {
-                return service.verifyServerRecovering(profile, profile.credentialMode(), master,
+            {
+                return service.verifyServerRecovering(profile,
                         fingerprint -> ServerTrustPrompt.confirm(this, messages, fingerprint),
                         new gold.debug.windowstolinux.app.ui.recovery.RecoveryInteractionPresenter(this,
                                 service instanceof gold.debug.windowstolinux.app.service.contract.AiApplicationFacade ai
                                         ? ai
                                         : null,
                                 c, messages));
-            } finally {
-                java.util.Arrays.fill(master, '\0');
             }
         }, result -> {
             checking.remove(profile.id());

@@ -29,7 +29,6 @@ import gold.debug.windowstolinux.shared.deploy.execution.lifecycle.MultiComponen
 import gold.debug.windowstolinux.shared.linux.connection.DeploymentLinuxGateway;
 import gold.debug.windowstolinux.shared.model.failure.FailureDescriptor;
 import gold.debug.windowstolinux.shared.model.lifecycle.LifecycleAction;
-import gold.debug.windowstolinux.shared.model.security.CredentialStorageMode;
 import gold.debug.windowstolinux.shared.standard.deploy.plan.MultiComponentDeploymentPlanner;
 
 /**
@@ -125,23 +124,21 @@ public final class MultiComponentLifecycleUseCase {
      * @param targetComponentIds target component ids / 目标组件标识集合
      * @param action explicit action selected for the current target / 为当前目标显式选择的动作
      * @param profile connection or provider settings supplied to the operation / 提供给操作的连接或提供者设置
-     * @param mode selected operating or storage mode / 所选运行或存储模式
-     * @param masterPassword master-password buffer used to unlock protected credentials / 用于解锁受保护凭据的主密码缓冲区
      * @return constructed or resolved multi component lifecycle result / 构造或解析得到的多组件生命周期结果
      * @throws SecretStoreException if the protected credential cannot be accessed or updated / 无法访问或更新受保护凭据时
      * @throws SQLException if the database cannot complete the requested read or transaction / 数据库无法完成请求的读取或事务时
      */
     public MultiComponentLifecycleResult executeLifecycleWithStoredPassword(String applicationId,
-            Set<String> targetComponentIds, LifecycleAction action, ServerProfile profile, CredentialStorageMode mode,
-            char[] masterPassword) throws SecretStoreException, SQLException {
-        try {
+            Set<String> targetComponentIds, LifecycleAction action, ServerProfile profile)
+            throws SecretStoreException, SQLException {
+        {
             ManagedMultiComponentApplication managed = findManagedApplication(applicationId).orElseThrow(
                     () -> ApplicationServiceException.create(ApplicationServiceFailureType.APPLICATION_NOT_MANAGED,
                             "The selected whole-application graph has no verified successful deployment"));
-            validateProfile(managed, profile, mode);
+            validateProfile(managed, profile);
             ReentrantLock lock = locks.forServer(profile.id());
             lock.lock();
-            try (SecretStore store = servers.secrets().open(mode, masterPassword)) {
+            try (SecretStore store = servers.secrets().open()) {
                 MultiComponentLifecycleResult result = lifecycleService.execute(managed.plan(), managed.components(),
                         targetComponentIds, action, gateway, profile.endpoint(), servers.loadPassword(profile, store),
                         servers.hostKeyVerifier(profile, ignored -> false));
@@ -163,8 +160,6 @@ public final class MultiComponentLifecycleUseCase {
             } finally {
                 lock.unlock();
             }
-        } finally {
-            clear(masterPassword);
         }
     }
 
@@ -174,19 +169,17 @@ public final class MultiComponentLifecycleUseCase {
      *
      * @param application managed target with its server and ownership identity / 携带服务器及归属身份的受管目标
      * @param profile connection or provider settings supplied to the operation / 提供给操作的连接或提供者设置
-     * @param mode selected operating or storage mode / 所选运行或存储模式
      * @throws NullPointerException if a required input is absent / 必需输入缺失时
      */
-    private static void validateProfile(ManagedMultiComponentApplication application, ServerProfile profile,
-            CredentialStorageMode mode) {
+    private static void validateProfile(ManagedMultiComponentApplication application, ServerProfile profile) {
         Objects.requireNonNull(application, "application");
         ServerProfile selectedProfile = Objects.requireNonNull(profile, "profile");
-        if (selectedProfile.credentialMode() != mode || application.components().stream()
+        if (application.components().stream()
                 .anyMatch(component -> !component.application().server().id().equals(selectedProfile.id())
                         || !component.application().server().host().equals(selectedProfile.endpoint().host())
                         || component.application().server().sshPort() != selectedProfile.endpoint().port())) {
             throw ApplicationServiceException.create(ApplicationServiceFailureType.LIFECYCLE_CONTEXT_MISMATCH,
-                    "Managed application, server endpoint, and credential storage mode must match");
+                    "Managed application, server endpoint, and saved server identity must match");
         }
     }
 

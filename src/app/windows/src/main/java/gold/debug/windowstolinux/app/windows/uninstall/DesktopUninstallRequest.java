@@ -10,10 +10,9 @@ import java.util.Optional;
  * @param decision decision / 决定
  * @param installRoot install root / 安装根目录
  * @param dataRoot data root / 数据根目录
- * @param credentialNamespace credential namespace / 凭据命名空间
  */
-public record DesktopUninstallRequest(Optional<DesktopUninstallDecisionType> decision, Path installRoot, Path dataRoot,
-        String credentialNamespace) {
+public record DesktopUninstallRequest(Optional<DesktopUninstallDecisionType> decision, Path installRoot,
+        Path dataRoot) {
     /**
      * MAXIMUM PATH CHARACTERS.
      * <p>最大路径字符集合。
@@ -26,7 +25,6 @@ public record DesktopUninstallRequest(Optional<DesktopUninstallDecisionType> dec
      * @param decision decision / 决定
      * @param installRoot install root / 安装根目录
      * @param dataRoot data root / 数据根目录
-     * @param credentialNamespace credential namespace / 凭据命名空间
      * @throws IllegalArgumentException if an input violates the constraints checked by this contract / 输入违反当前契约检查的约束时
      * @throws NullPointerException if a required input is absent / 必需输入缺失时
      */
@@ -37,10 +35,7 @@ public record DesktopUninstallRequest(Optional<DesktopUninstallDecisionType> dec
         if (installRoot.getParent() == null || !dataRoot.equals(installRoot.resolve("data"))) {
             throw new IllegalArgumentException("desktop data root must be the fixed data child of the install root");
         }
-        credentialNamespace = Objects.requireNonNull(credentialNamespace, "credentialNamespace").trim();
-        if (!credentialNamespace.equals("WindowsToLinux/*")) {
-            throw new IllegalArgumentException("credential namespace is outside the WindowsToLinux boundary");
-        }
+
     }
 
     /**

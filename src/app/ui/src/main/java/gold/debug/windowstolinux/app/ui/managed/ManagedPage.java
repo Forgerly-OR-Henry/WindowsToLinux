@@ -447,27 +447,14 @@ public final class ManagedPage {
     private void execute(ApplicationSummary app, LifecycleAction action) {
         if (busy)
             return;
-        char[] master = serverContext.masterPassword();
-        if (app.needsMasterPassword() && master.length == 0) {
-            JPasswordField field = new JPasswordField(24);
-            if (JOptionPane.showConfirmDialog(panel, field, messages.text("field.masterPassword"),
-                    JOptionPane.OK_CANCEL_OPTION) != JOptionPane.OK_OPTION)
-                return;
-            master = field.getPassword();
-            field.setText("");
-        }
-        final char[] unlock = master;
         applicationId.setText(app.key());
         busy = true;
         ((AdvancedOptionsPane) panel).setBusy(true);
         status.setText(messages.text("lifecycle.running",
                 Map.of("action", messages.text("lifecycle.action." + action.name().toLowerCase(Locale.ROOT)))));
         DesktopTaskExecutor.run(() -> {
-            try {
-                return service.executeApplicationLifecycle(app.key(), action, unlock,
-                        serverContext::confirmFingerprint);
-            } finally {
-                java.util.Arrays.fill(unlock, '\0');
+            {
+                return service.executeApplicationLifecycle(app.key(), action, serverContext::confirmFingerprint);
             }
         }, result -> {
             finish();

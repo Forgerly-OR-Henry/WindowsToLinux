@@ -396,16 +396,14 @@ public final class MultiComponentPage {
                     messages.text("component.review.title"), JOptionPane.YES_NO_OPTION,
                     JOptionPane.WARNING_MESSAGE) != JOptionPane.YES_OPTION)
                 return;
-            char[] masterPassword = serverContext.masterPassword();
-            var credentialMode = serverContext.credentialMode();
             output.setText(messages.text("component.deployment.running"));
             setBusy(true);
             DesktopTaskExecutor.run(() -> {
                 for (MultiComponentReviewInput input : inputs) {
                     service.saveDeploymentConfigurationSnapshot(input.configuration());
                 }
-                return service.deployReviewedMultiComponentWithStoredPassword(candidate, profile, credentialMode,
-                        masterPassword, serverContext::confirmFingerprint);
+                return service.deployReviewedMultiComponentWithStoredPassword(candidate, profile,
+                        serverContext::confirmFingerprint);
             }, result -> {
                 setBusy(false);
                 output.setText(presenter.deployment(result));
@@ -439,8 +437,6 @@ public final class MultiComponentPage {
             LifecycleAction action = editor.lifecycleAction();
             Set<String> targets = editor.lifecycleTargets();
             ServerProfile profile = serverContext.profile();
-            char[] masterPassword = serverContext.masterPassword();
-            var credentialMode = serverContext.credentialMode();
             Set<String> selectedTargets = Set.copyOf(targets);
             output.setText(messages.text("component.lifecycle.running"));
             setBusy(true);
@@ -451,7 +447,7 @@ public final class MultiComponentPage {
                         ? Set.copyOf(managed.plan().startOrder())
                         : selectedTargets;
                 return service.executeManagedMultiComponentLifecycleWithStoredPassword(managedApplicationId,
-                        effectiveTargets, action, profile, credentialMode, masterPassword);
+                        effectiveTargets, action, profile);
             }, result -> {
                 setBusy(false);
                 output.setText(presenter.lifecycle(result));

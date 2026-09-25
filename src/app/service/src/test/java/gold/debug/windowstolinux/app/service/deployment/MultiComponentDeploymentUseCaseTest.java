@@ -17,6 +17,7 @@ import gold.debug.windowstolinux.app.db.entity.CurrentRelease;
 import gold.debug.windowstolinux.app.db.entity.ManagedApplicationGraph;
 import gold.debug.windowstolinux.app.db.entity.SuccessfulManagedDeployment;
 import gold.debug.windowstolinux.app.service.DesktopApplicationFacade;
+import gold.debug.windowstolinux.app.service.SecurityTestFixture;
 import gold.debug.windowstolinux.app.service.contract.definition.MultiComponentReviewInput;
 import gold.debug.windowstolinux.app.service.deployment.multi.ReviewedComponentApplication;
 import gold.debug.windowstolinux.app.service.server.ServerProfile;
@@ -34,14 +35,13 @@ import gold.debug.windowstolinux.shared.model.project.DeploymentProjectType;
 import gold.debug.windowstolinux.shared.model.project.DeploymentRuntimeSpecification;
 import gold.debug.windowstolinux.shared.model.project.component.ComponentDataPath;
 import gold.debug.windowstolinux.shared.model.project.component.ComponentIsolationSpecification;
-import gold.debug.windowstolinux.shared.model.security.CredentialStorageMode;
 import gold.debug.windowstolinux.shared.model.server.ServerIdentity;
 import gold.debug.windowstolinux.shared.standard.analyze.component.ComponentAnalysisRequest;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 /** Tests the desktop whole-application review boundary without opening SSH. / 测试不打开 SSH 的桌面整应用审阅边界。 */
-class MultiComponentDeploymentUseCaseTest {
+class MultiComponentDeploymentUseCaseTest extends SecurityTestFixture {
     @TempDir
     Path temporaryDirectory;
 
@@ -56,8 +56,8 @@ class MultiComponentDeploymentUseCaseTest {
             throw new AssertionError("review validation must not open SSH");
         };
         try (DesktopPersistence persistence = DesktopPersistence.open(temporaryDirectory.resolve("data"))) {
-            DesktopApplicationFacade service = new DesktopApplicationFacade(persistence,
-                    temporaryDirectory.resolve("work"), gateway);
+            DesktopApplicationFacade service = SecurityTestFixture
+                    .unlocked(new DesktopApplicationFacade(persistence, temporaryDirectory.resolve("work"), gateway));
             var prepared = service.prepareReviewedMultiComponentSource(root, "shop",
                     List.of(component("api", "api", 18081, Set.of()), component("web", "web", 18082, Set.of("api"))));
             ServerIdentity server = new ServerIdentity("server-one", "192.0.2.10", 22, "SHA256:AAAAAAAAAAAA");
@@ -91,6 +91,7 @@ class MultiComponentDeploymentUseCaseTest {
                                 .map(binding -> binding.dataPath()).toList()),
                         Optional.of(componentReview.resourceBindings())));
             }
+            SecurityTestFixture.server(persistence, server);
             persistence.managedApplicationGraphs().recordSuccessfulApplication(new ManagedApplicationGraph("shop",
                     "web", Optional.of(review.applicationHealth().healthCheck()), durableComponents), successful);
             var storedGraph = persistence.managedApplicationGraphs().find("shop").orElseThrow();
@@ -111,15 +112,10 @@ class MultiComponentDeploymentUseCaseTest {
                             (endpoint,
                                     fingerprint) -> gold.debug.windowstolinux.shared.linux.connection.HostKeyDecision.ACCEPT_EXISTING));
             assertEquals(0, connections.get());
-
-            char[] masterPassword = "must-clear".toCharArray();
             ServerProfile wrongProfile = new ServerProfile("server-two", "192.0.2.11", 22, "root",
-                    "ssh/server-two/password", CredentialStorageMode.MASTER_PASSWORD);
-            assertThrows(gold.debug.windowstolinux.app.service.failure.ApplicationServiceException.class,
-                    () -> service.deployReviewedMultiComponentWithStoredPassword(review, wrongProfile,
-                            CredentialStorageMode.MASTER_PASSWORD, masterPassword, ignored -> false));
-            for (char value : masterPassword)
-                assertEquals('\0', value);
+                    "ssh/server-two/password");
+            assertThrows(gold.debug.windowstolinux.app.service.failure.ApplicationServiceException.class, () -> service
+                    .deployReviewedMultiComponentWithStoredPassword(review, wrongProfile, ignored -> false));
             assertTrue(connections.get() == 0);
         }
     }

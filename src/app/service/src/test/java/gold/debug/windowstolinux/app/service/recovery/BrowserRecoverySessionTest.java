@@ -11,6 +11,7 @@ import java.util.concurrent.locks.ReentrantLock;
 
 import gold.debug.windowstolinux.app.db.DesktopPersistence;
 import gold.debug.windowstolinux.app.db.entity.StoredAiProviderProfile;
+import gold.debug.windowstolinux.app.service.SecurityTestFixture;
 import gold.debug.windowstolinux.app.service.ai.RecoveryAiUseCase;
 import gold.debug.windowstolinux.app.service.contract.definition.RecoverySnapshot;
 import gold.debug.windowstolinux.app.service.server.*;
@@ -18,11 +19,10 @@ import gold.debug.windowstolinux.app.windows.recovery.BrowserTerminalSession;
 import gold.debug.windowstolinux.shared.ai.recovery.RecoveryModelClient;
 import gold.debug.windowstolinux.shared.ai.transport.RoleChatResult;
 import gold.debug.windowstolinux.shared.model.recovery.*;
-import gold.debug.windowstolinux.shared.model.security.CredentialStorageMode;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
-class BrowserRecoverySessionTest {
+class BrowserRecoverySessionTest extends SecurityTestFixture {
     @TempDir
     Path directory;
     static class Browser implements BrowserTerminalSession {
@@ -96,12 +96,13 @@ class BrowserRecoverySessionTest {
 
     private BrowserRecoverySession create(DesktopPersistence db, Browser browser, AtomicReference<String> ssh,
             ReentrantLock lock, java.util.function.LongSupplier clock, Runnable onDecision) throws Exception {
-        var secrets = new DesktopSecretStoreService(db.encryptedSecrets());
-        try (var store = secrets.open(CredentialStorageMode.MASTER_PASSWORD, "master-password".toCharArray())) {
+        var secrets = SecurityTestFixture.secrets(db);
+        try (var store = secrets.open()) {
             store.save("ai/key", "api-key".toCharArray());
         }
-        db.aiProfiles().saveVerified(new StoredAiProviderProfile("regular", "https://example.test/v1/chat/completions",
-                "regular", "ai/key", "MASTER_PASSWORD"), "regular", java.time.Instant.now());
+        db.aiProfiles().saveVerified(
+                new StoredAiProviderProfile("regular", "https://example.test/v1/chat/completions", "regular", "ai/key"),
+                "regular", java.time.Instant.now());
         db.aiProfiles().purposes().save(gold.debug.windowstolinux.shared.model.ai.AiPurposeType.DEPLOYMENT,
                 java.util.List.of(new gold.debug.windowstolinux.shared.model.ai.AiPurposeAssignment("regular", true)));
         var ai = new RecoveryAiUseCase(db.aiProfiles(), secrets, new RecoveryModelClient((u, k, b) -> {
@@ -110,8 +111,7 @@ class BrowserRecoverySessionTest {
                     "{\"choices\":[{\"message\":{\"content\":\"{\\\"command\\\":\\\"uname -a\\\",\\\"reason\\\":\\\"inspect\\\",\\\"expected\\\":\\\"hello\\\",\\\"highImpact\\\":false}\"}}]}");
         }));
         return new BrowserRecoverySession(browser, ai, () -> probeResult(ssh.get()), ignored -> {
-        }, new ServerProfile("server", "127.0.0.1", 22, "user", "ai/key", CredentialStorageMode.MASTER_PASSWORD),
-                "master-password".toCharArray(), lock, clock);
+        }, new ServerProfile("server", "127.0.0.1", 22, "user", "ai/key"), lock, clock);
     }
 
     private static RecoveryProbeResult probeResult(String code) {
@@ -130,13 +130,21 @@ class BrowserRecoverySessionTest {
                 gold.debug.windowstolinux.shared.linux.error.LinuxOperationException.create(type, "test probe"));
     }
 
+    private Thread worker(DesktopPersistence db, Runnable session) {
+        var task = SecurityTestFixture.secrets(db).captureTask();
+        return new Thread(() -> {
+            try (task) {
+                task.run(session);
+            }
+        });
+    }
+
     @Test
     void journalFailureCannotPreventCompletionOrExposeItsRawMessage() throws Exception {
         var browser = new Browser();
         var session = new BrowserRecoverySession(browser, null, RecoveryProbeResult::recovered, snapshot -> {
             throw new IllegalStateException("terminal-password=never-persist");
-        }, new ServerProfile("server", "example.test", 22, "user", "key", CredentialStorageMode.MASTER_PASSWORD),
-                new char[0], new ReentrantLock());
+        }, new ServerProfile("server", "example.test", 22, "user", "key"), new ReentrantLock());
         session.run();
         var end = session.await();
         assertEquals(FAILED, end.state());
@@ -161,8 +169,7 @@ class BrowserRecoverySessionTest {
             calls.incrementAndGet();
             return RecoveryProbeResult.failed(new InterruptedException());
         }, ignored -> {
-        }, new ServerProfile("server", "example.test", 22, "user", "key", CredentialStorageMode.MASTER_PASSWORD),
-                new char[0], new ReentrantLock());
+        }, new ServerProfile("server", "example.test", 22, "user", "key"), new ReentrantLock());
         session.run();
         assertEquals(1, calls.get());
         assertTrue(browser.closed);
@@ -189,7 +196,7 @@ class BrowserRecoverySessionTest {
         var ssh = new AtomicReference<>("connectionFailed");
         browser.afterSubmit = () -> ssh.set("recovered");
         try (var db = DesktopPersistence.open(directory); var s = create(db, browser, ssh, new ReentrantLock())) {
-            var worker = new Thread(s);
+            var worker = worker(db, s);
             worker.start();
             bind(s);
             String token = s.snapshot().confirmation();
@@ -211,7 +218,7 @@ class BrowserRecoverySessionTest {
         var browser = new Browser();
         var ssh = new AtomicReference<>("connectionFailed");
         try (var db = DesktopPersistence.open(directory); var s = create(db, browser, ssh, new ReentrantLock())) {
-            var worker = new Thread(s);
+            var worker = worker(db, s);
             worker.start();
             bind(s);
             String old = s.snapshot().confirmation();
@@ -239,7 +246,7 @@ class BrowserRecoverySessionTest {
         var ssh = new AtomicReference<>("connectionFailed");
         browser.afterSubmit = () -> browser.generation++;
         try (var db = DesktopPersistence.open(directory); var s = create(db, browser, ssh, new ReentrantLock())) {
-            var worker = new Thread(s);
+            var worker = worker(db, s);
             worker.start();
             bind(s);
             String token = s.snapshot().confirmation();
@@ -270,7 +277,7 @@ class BrowserRecoverySessionTest {
             lock.lock();
             try {
                 var busy = create(db, new Browser(), new AtomicReference<>("connectionFailed"), lock);
-                var worker = new Thread(busy);
+                var worker = worker(db, busy);
                 worker.start();
                 assertEquals("serverBusy", busy.await().messageCode());
                 worker.join(2000);
@@ -288,15 +295,13 @@ class BrowserRecoverySessionTest {
         var session = new BrowserRecoverySession(browser, null,
                 () -> probeResult(attempts.incrementAndGet() == 1 ? "connectionFailed" : "identityConflict"),
                 ignored -> {
-                }, new ServerProfile("server", "127.0.0.1", 22, "user", "key", CredentialStorageMode.MASTER_PASSWORD),
-                password, new ReentrantLock());
+                }, new ServerProfile("server", "127.0.0.1", 22, "user", "key"), new ReentrantLock());
         session.run();
         assertEquals(FAILED, session.await().state());
         assertEquals("identityConflict", session.snapshot().messageCode());
         assertTrue(browser.closed);
         assertEquals(0, browser.submitted);
-        for (char value : password)
-            assertEquals('\0', value);
+
     }
 
     @Test
@@ -306,7 +311,7 @@ class BrowserRecoverySessionTest {
             var waiting = create(db, new Browser(), new AtomicReference<>("connectionFailed"), new ReentrantLock(),
                     time::get, () -> {
                     });
-            var worker = new Thread(waiting);
+            var worker = worker(db, waiting);
             worker.start();
             try {
                 bind(waiting);
@@ -320,7 +325,7 @@ class BrowserRecoverySessionTest {
             }
             var active = create(db, new Browser(), new AtomicReference<>("connectionFailed"), new ReentrantLock(),
                     time::get, () -> time.addAndGet(TimeUnit.MINUTES.toNanos(16)));
-            worker = new Thread(active);
+            worker = worker(db, active);
             worker.start();
             try {
                 until(() -> active.snapshot().state() == WAITING_TERMINAL);
@@ -343,7 +348,7 @@ class BrowserRecoverySessionTest {
                 var s = create(db, browser, new AtomicReference<>("connectionFailed"), new ReentrantLock(), time::get,
                         () -> {
                         })) {
-            var worker = new Thread(s);
+            var worker = worker(db, s);
             worker.start();
             try {
                 bind(s);

@@ -62,6 +62,8 @@ public record DesktopDisplayConfiguration(String localeTag, ThemeMode themeMode)
     public static DesktopDisplayConfiguration fromStoredValues(String storedLocaleTag, String storedThemeMode,
             Locale systemLocale) {
         Objects.requireNonNull(systemLocale, "systemLocale");
+        if (storedLocaleTag != null && !java.util.Set.of("zh-CN", "en-US", "en").contains(storedLocaleTag))
+            throw new IllegalArgumentException("invalid ui_locale preference");
         String localeTag = storedLocaleTag == null
                 ? MessageCatalog.defaultLanguageTag(systemLocale)
                 : MessageCatalog.normalizeLanguageTag(storedLocaleTag);

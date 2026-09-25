@@ -89,20 +89,23 @@ public final class DeploymentConfigurationUseCase {
                     "Application secret values must not be empty");
         }
         try {
-            var existing = applicationSecrets.findRevision(revision.reference());
-            if (existing.isPresent() && !existing.orElseThrow().equals(revision)) {
-                throw new SQLException("application secret revisions are immutable");
-            }
-            char[] stored = store.read(revision.credentialKey()).orElse(null);
-            try {
-                if (stored != null) {
-                    throw new SQLException("application secret revisions cannot overwrite an existing platform secret");
+            store.transaction(() -> {
+                var existing = applicationSecrets.findRevision(revision.reference());
+                if (existing.isPresent() && !existing.orElseThrow().equals(revision)) {
+                    throw new SQLException("application secret revisions are immutable");
                 }
-            } finally {
-                clear(stored);
-            }
-            applicationSecrets.saveRevision(revision);
-            store.save(revision.credentialKey(), value);
+                char[] stored = store.read(revision.credentialKey()).orElse(null);
+                try {
+                    if (stored != null) {
+                        throw new SQLException(
+                                "application secret revisions cannot overwrite an existing platform secret");
+                    }
+                } finally {
+                    clear(stored);
+                }
+                store.save(revision.credentialKey(), value);
+                applicationSecrets.saveRevision(revision);
+            });
         } finally {
             clear(value);
         }
@@ -112,17 +115,14 @@ public final class DeploymentConfigurationUseCase {
      * Parses user input and creates immutable storage metadata in the service. / 在服务内解析用户输入并创建不可变存储元数据。
      *
      * @param referenceInput reference input / 引用输入
-     * @param mode selected operating or storage mode / 所选运行或存储模式
-     * @param masterPassword master-password buffer used to unlock protected credentials / 用于解锁受保护凭据的主密码缓冲区
      * @param value candidate content accepted or rejected by this contract / 由当前契约接收或拒绝的候选内容
      * @return user input and creates immutable storage metadata in the service / 在服务内解析用户输入并创建不可变存储元数据
      * @throws SQLException if the database cannot complete the requested read or transaction / 数据库无法完成请求的读取或事务时
      * @throws SecretStoreException if the protected credential cannot be accessed or updated / 无法访问或更新受保护凭据时
      * @throws IllegalArgumentException if an input violates the constraints checked by this contract / 输入违反当前契约检查的约束时
      */
-    public SecretReference saveSecretRevision(String referenceInput,
-            gold.debug.windowstolinux.shared.model.security.CredentialStorageMode mode, char[] masterPassword,
-            char[] value) throws SQLException, SecretStoreException {
+    public SecretReference saveSecretRevision(String referenceInput, char[] value)
+            throws SQLException, SecretStoreException {
         try {
             var references = gold.debug.windowstolinux.shared.config.input.DeploymentConfigurationParser
                     .secrets(referenceInput);
@@ -130,12 +130,12 @@ public final class DeploymentConfigurationUseCase {
                 throw new IllegalArgumentException("one exact secret revision is required");
             var reference = references.getFirst();
             var revision = new StoredApplicationSecretRevision(reference,
-                    "application-secret/" + reference.identifier() + "/" + reference.revision(), mode,
+                    "application-secret/" + reference.identifier() + "/" + reference.revision(),
                     java.time.Instant.now());
-            saveSecretRevision(revision, mode, masterPassword, value);
+            saveSecretRevision(revision, value);
             return reference;
         } finally {
-            clear(masterPassword);
+
             clear(value);
         }
     }
@@ -144,19 +144,14 @@ public final class DeploymentConfigurationUseCase {
      * Stores one secret revision through the selected desktop-backed secret store. / 通过选定的桌面秘密存储保存一个秘密修订。
      *
      * @param revision immutable configuration or secret revision number / 不可变配置或秘密修订号
-     * @param mode selected operating or storage mode / 所选运行或存储模式
-     * @param masterPassword master-password buffer used to unlock protected credentials / 用于解锁受保护凭据的主密码缓冲区
      * @param value candidate content accepted or rejected by this contract / 由当前契约接收或拒绝的候选内容
      * @throws SQLException if the database cannot complete the requested read or transaction / 数据库无法完成请求的读取或事务时
      * @throws SecretStoreException if the protected credential cannot be accessed or updated / 无法访问或更新受保护凭据时
      */
-    public void saveSecretRevision(StoredApplicationSecretRevision revision,
-            gold.debug.windowstolinux.shared.model.security.CredentialStorageMode mode, char[] masterPassword,
-            char[] value) throws SQLException, SecretStoreException {
-        try (SecretStore store = secretStores.open(mode, masterPassword)) {
+    public void saveSecretRevision(StoredApplicationSecretRevision revision, char[] value)
+            throws SQLException, SecretStoreException {
+        try (SecretStore store = secretStores.open()) {
             saveSecretRevision(revision, store, value);
-        } finally {
-            clear(masterPassword);
         }
     }
 
@@ -166,19 +161,17 @@ public final class DeploymentConfigurationUseCase {
      *  <p>仅短暂打开所选平台存储，以验证每个被引用修订仍可读取。
      *
      * @param references references / 引用集合
-     * @param masterPassword master-password buffer used to unlock protected credentials / 用于解锁受保护凭据的主密码缓冲区
      * @throws SQLException if the database cannot complete the requested read or transaction / 数据库无法完成请求的读取或事务时
      * @throws SecretStoreException if the protected credential cannot be accessed or updated / 无法访问或更新受保护凭据时
      * @throws NullPointerException if a required input is absent / 必需输入缺失时
      */
-    public void verifySecretReferences(List<SecretReference> references, char[] masterPassword)
-            throws SQLException, SecretStoreException {
-        try {
+    public void verifySecretReferences(List<SecretReference> references) throws SQLException, SecretStoreException {
+        {
             for (SecretReference reference : List.copyOf(Objects.requireNonNull(references, "references"))) {
                 StoredApplicationSecretRevision revision = applicationSecrets.findRevision(reference).orElseThrow(
                         () -> SecretStoreException.create(SecretStoreFailureType.APPLICATION_REFERENCE_MISSING,
                                 "Application secret revision metadata is missing"));
-                try (SecretStore store = secretStores.open(revision.credentialMode(), masterPassword)) {
+                try (SecretStore store = secretStores.open()) {
                     char[] stored = store.read(revision.credentialKey())
                             .orElseThrow(() -> SecretStoreException.create(
                                     SecretStoreFailureType.APPLICATION_REFERENCE_MISSING,
@@ -186,8 +179,6 @@ public final class DeploymentConfigurationUseCase {
                     clear(stored);
                 }
             }
-        } finally {
-            clear(masterPassword);
         }
     }
 
@@ -199,13 +190,12 @@ public final class DeploymentConfigurationUseCase {
      * @param applicationId managed application identifier / 受管应用标识
      * @param releaseIdentity digest identifying the exact published release / 标识精确已发布版本的摘要
      * @param references references / 引用集合
-     * @param masterPassword master-password buffer used to unlock protected credentials / 用于解锁受保护凭据的主密码缓冲区
      * @throws SQLException if the database cannot complete the requested read or transaction / 数据库无法完成请求的读取或事务时
      * @throws SecretStoreException if the protected credential cannot be accessed or updated / 无法访问或更新受保护凭据时
      */
-    public void bindReleaseSecrets(String applicationId, String releaseIdentity, List<SecretReference> references,
-            char[] masterPassword) throws SQLException, SecretStoreException {
-        verifySecretReferences(references, masterPassword);
+    public void bindReleaseSecrets(String applicationId, String releaseIdentity, List<SecretReference> references)
+            throws SQLException, SecretStoreException {
+        verifySecretReferences(references);
         applicationSecrets.bindRelease(applicationId, releaseIdentity, references);
     }
 

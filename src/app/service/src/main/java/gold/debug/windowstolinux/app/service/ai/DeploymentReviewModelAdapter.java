@@ -15,7 +15,6 @@ final class DeploymentReviewModelAdapter implements DeploymentReviewPort {
     private final StructuredAiClient client;
 
     /** Caller-owned buffer, wiped by the owning adapter. / 由所属适配器清零的调用方缓冲区。 */
-    private final char[] master;
 
     /** Current immutable model configuration. / 当前不可变模型配置。 */
     private final DeploymentAiScope scope;
@@ -23,14 +22,12 @@ final class DeploymentReviewModelAdapter implements DeploymentReviewPort {
     /** Binds the shared approval transport. / 绑定共享审批传输。
      * @param chain credential route / 凭据路由
      * @param client transport / 传输
-     * @param master caller-owned secret buffer / 调用方秘密缓冲区
      * @param scope task scope / 任务作用域
      */
-    DeploymentReviewModelAdapter(AiProviderChain chain, StructuredAiClient client, char[] master,
-            DeploymentAiScope scope) {
+    DeploymentReviewModelAdapter(AiProviderChain chain, StructuredAiClient client, DeploymentAiScope scope) {
         this.chain = chain;
         this.client = client;
-        this.master = master;
+
         this.scope = scope;
     }
 
@@ -43,7 +40,7 @@ final class DeploymentReviewModelAdapter implements DeploymentReviewPort {
      */
     @Override
     public AgentReview review(String goal, AgentAction action, AgentRiskLevel localRisk) throws Exception {
-        var result = chain.invoke(AiPurposeType.APPROVAL, master.clone(), (profile, key) -> {
+        var result = chain.invoke(AiPurposeType.APPROVAL, (profile, key) -> {
             var reply = new gold.debug.windowstolinux.shared.deploy.approval.DeploymentApprovalClient(client)
                     .review(profile.chatCompletionsEndpoint(), profile.model(), key, goal, action, localRisk);
             scope.usage(reply.tokens());

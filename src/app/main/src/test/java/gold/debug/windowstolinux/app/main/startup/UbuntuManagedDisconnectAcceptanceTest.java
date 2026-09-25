@@ -33,7 +33,6 @@ import gold.debug.windowstolinux.shared.model.health.UserAccessUrl;
 import gold.debug.windowstolinux.shared.model.lifecycle.LifecycleAction;
 import gold.debug.windowstolinux.shared.model.lifecycle.LifecycleObservation;
 import gold.debug.windowstolinux.shared.model.lifecycle.RuntimeState;
-import gold.debug.windowstolinux.shared.model.security.CredentialStorageMode;
 import gold.debug.windowstolinux.shared.standard.deploy.contract.ReviewedDeploymentRequest;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIfSystemProperty;
@@ -45,6 +44,7 @@ import org.junit.jupiter.api.io.TempDir;
  * <p>可选实时传输失败演练。只有测试传输包装器会断开连接；全部候选发布和恢复决策仍由受管部署服务负责。
  */
 @EnabledIfSystemProperty(named = "managed.runtime.disconnect", matches = "true")
+@org.junit.jupiter.api.extension.ExtendWith(MainSecurityFixture.class)
 class UbuntuManagedDisconnectAcceptanceTest {
     @TempDir
     Path temporaryDirectory;
@@ -75,22 +75,21 @@ class UbuntuManagedDisconnectAcceptanceTest {
         UserAccessUrl userAccessUrl = businessUrl(host, proofPort);
         try (DesktopPersistence database = DesktopPersistence.open(temporaryDirectory.resolve("desktop-data"))) {
             Path workDirectory = temporaryDirectory.resolve("work");
-            DesktopApplicationFacade service = new DesktopApplicationFacade(database, workDirectory,
+            DesktopApplicationFacade service = MainSecurityFixture.unlocked(new DesktopApplicationFacade(database,
+                    workDirectory,
                     new SshdLinuxGateway(
                             gold.debug.windowstolinux.shared.standard.deploy.build.DeploymentBuildExecutor::new,
                             gold.debug.windowstolinux.shared.standard.deploy.distro.extension.registry.DistributionSetupRegistry
-                                    .defaults()));
+                                    .defaults())));
             ReviewedSourcePreparation firstPreparation = ReviewedMavenAcceptanceFixture.prepare(service, v1);
             ReviewedSourcePreparation candidatePreparation = ReviewedMavenAcceptanceFixture.prepare(service, v2);
             assertTrue(firstPreparation.archive().isPresent(), "v1 must pass managed-deployment static analysis");
             assertTrue(candidatePreparation.archive().isPresent(), "v2 must pass managed-deployment static analysis");
 
             ServerProfile profile = new ServerProfile("ubuntu-managed-disconnect", host, 22, username,
-                    "ssh/ubuntu-managed-disconnect/password", CredentialStorageMode.MASTER_PASSWORD);
-            service.saveServerProfile(profile, CredentialStorageMode.MASTER_PASSWORD,
-                    "managed-disconnect-master".toCharArray(), password.toCharArray());
-            var capabilities = service.verifyServer(profile, CredentialStorageMode.MASTER_PASSWORD,
-                    "managed-disconnect-master".toCharArray(), fingerprint -> true);
+                    "ssh/ubuntu-managed-disconnect/password");
+            service.saveServerProfile(profile, password.toCharArray());
+            var capabilities = service.verifyServer(profile, fingerprint -> true);
             assertTrue(capabilities.supportsManagedDeployment(firstPreparation.assessment().facts().orElseThrow()
                     .buildTool() == gold.debug.windowstolinux.shared.model.project.DeploymentBuildToolType.MAVEN_WRAPPER,
                     proofHealth), () -> "Ubuntu target must meet managed-deployment preconditions: " + capabilities);
@@ -99,9 +98,7 @@ class UbuntuManagedDisconnectAcceptanceTest {
             ReviewedDeploymentRequest firstRequest = request(service, firstPreparation, server, proofHealth,
                     userAccessUrl, rootBuild);
             DeploymentResult first = service
-                    .deployReviewedWithStoredPassword(firstRequest, profile, CredentialStorageMode.MASTER_PASSWORD,
-                            "managed-disconnect-master".toCharArray(), fingerprint -> true)
-                    .result();
+                    .deployReviewedWithStoredPassword(firstRequest, profile, fingerprint -> true).result();
             assertEquals(DeploymentStatus.SUCCEEDED, first.status(), () -> first.events().toString());
             String firstDigest = first.publishedReleaseSha256().orElseThrow();
 
@@ -113,12 +110,10 @@ class UbuntuManagedDisconnectAcceptanceTest {
                     gold.debug.windowstolinux.shared.standard.deploy.build.DeploymentBuildExecutor::new,
                     gold.debug.windowstolinux.shared.standard.deploy.distro.extension.registry.DistributionSetupRegistry
                             .defaults()));
-            DesktopApplicationFacade disconnectingService = new DesktopApplicationFacade(database, workDirectory,
-                    disconnectingGateway);
+            DesktopApplicationFacade disconnectingService = MainSecurityFixture
+                    .unlocked(new DesktopApplicationFacade(database, workDirectory, disconnectingGateway));
             DeploymentResult candidate = disconnectingService
-                    .deployReviewedWithStoredPassword(candidateRequest, profile, CredentialStorageMode.MASTER_PASSWORD,
-                            "managed-disconnect-master".toCharArray(), fingerprint -> true)
-                    .result();
+                    .deployReviewedWithStoredPassword(candidateRequest, profile, fingerprint -> true).result();
 
             assertEquals(DeploymentStatus.FAILED_ROLLED_BACK, candidate.status(), () -> candidate.events().toString());
             assertEquals(2, disconnectingGateway.connectionCount(),
@@ -132,8 +127,7 @@ class UbuntuManagedDisconnectAcceptanceTest {
             assertEvent(candidate, "rollback-observation", true);
 
             LifecycleActionResult refreshed = service.executePersistedLifecycleResultWithStoredPassword(
-                    firstRequest.facts().applicationId(), LifecycleAction.REFRESH_STATUS,
-                    "managed-disconnect-master".toCharArray());
+                    firstRequest.facts().applicationId(), LifecycleAction.REFRESH_STATUS);
             assertTrue(refreshed.accepted(), refreshed::toString);
             assertEquals(RuntimeState.RUNNING, refreshed.observation().orElseThrow().runtimeState());
             assertEquals(

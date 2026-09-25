@@ -113,8 +113,8 @@ public final class ManagedApplicationGraphRepository {
         applicationId = Objects.requireNonNull(applicationId, "applicationId").trim();
         try (Connection connection = connections.open();
                 PreparedStatement graphStatement = connection.prepareStatement("""
-                        SELECT health_component_id, application_health_check
-                        FROM managed_application_graph WHERE application_id=?
+                        SELECT health_component_id, health_check_payload
+                        FROM managed_application WHERE application_id=?
                         """)) {
             graphStatement.setString(1, applicationId);
             String healthComponentId;
@@ -123,7 +123,7 @@ public final class ManagedApplicationGraphRepository {
                 if (!result.next())
                     return Optional.empty();
                 healthComponentId = result.getString("health_component_id");
-                byte[] storedHealthCheck = result.getBytes("application_health_check");
+                byte[] storedHealthCheck = result.getBytes("health_check_payload");
                 try {
                     applicationHealthCheck = storedHealthCheck == null
                             ? Optional.empty()
@@ -136,16 +136,11 @@ public final class ManagedApplicationGraphRepository {
             List<ManagedApplicationGraph.Component> components = new ArrayList<>();
             try (PreparedStatement statement = connection.prepareStatement(
                     """
-                            SELECT gc.component_id,
-                                   a.id, a.systemd_unit, a.release_root, a.ownership_manifest_sha256,
-                                   s.id AS server_id, s.host, s.ssh_port, s.host_key_sha256,
-                                   r.health_kind, r.http_endpoint, r.http_expected_status, r.tcp_port,
-                                   r.health_timeout_seconds, r.tcp_stability_seconds, r.user_access_url, r.identity_policy, r.runtime_payload,
-                                   gc.reviewed_runtime, gc.reviewed_data_paths, gc.reviewed_resource_bindings
-                            FROM managed_application_graph_component gc
-                            JOIN managed_application a ON a.id=gc.managed_application_id
-                            JOIN server s ON s.id=a.server_id
-                            JOIN managed_application_runtime_configuration r ON r.application_id=a.id
+                            SELECT gc.component_id, a.*,s.trusted_host,s.trusted_ssh_port,s.host_key_sha256,
+                                   gc.reviewed_runtime_payload,gc.reviewed_data_paths_payload,gc.reviewed_resource_bindings_payload
+                            FROM managed_application_component gc
+                            JOIN deployment_unit a ON a.deployment_unit_id=gc.deployment_unit_id
+                            JOIN server_profile s ON s.server_profile_id=a.server_profile_id
                             WHERE gc.application_id=? ORDER BY gc.component_id
                             """)) {
                 statement.setString(1, applicationId);
@@ -153,7 +148,7 @@ public final class ManagedApplicationGraphRepository {
                     while (result.next()) {
                         String componentId = result.getString("component_id");
                         var runtimeConfiguration = ManagedApplicationRepository.readRuntime(result);
-                        byte[] storedRuntime = result.getBytes("reviewed_runtime");
+                        byte[] storedRuntime = result.getBytes("reviewed_runtime_payload");
                         Optional<gold.debug.windowstolinux.shared.model.project.DeploymentRuntimeSpecification> reviewedRuntime = Optional
                                 .empty();
                         if (storedRuntime != null) {
@@ -164,7 +159,7 @@ public final class ManagedApplicationGraphRepository {
                                 throw new SQLException("stored reviewed runtime definition is invalid", exception);
                             }
                         }
-                        byte[] storedDataPaths = result.getBytes("reviewed_data_paths");
+                        byte[] storedDataPaths = result.getBytes("reviewed_data_paths_payload");
                         Optional<List<gold.debug.windowstolinux.shared.model.project.component.ComponentDataPath>> reviewedDataPaths = Optional
                                 .empty();
                         if (storedDataPaths != null) {
@@ -174,7 +169,7 @@ public final class ManagedApplicationGraphRepository {
                                 throw new SQLException("stored reviewed data-path definition is invalid", exception);
                             }
                         }
-                        byte[] storedResourceBindings = result.getBytes("reviewed_resource_bindings");
+                        byte[] storedResourceBindings = result.getBytes("reviewed_resource_bindings_payload");
                         Optional<gold.debug.windowstolinux.shared.config.resource.ManagedComponentResourceBindings> reviewedResourceBindings = Optional
                                 .empty();
                         if (storedResourceBindings != null) {
@@ -207,21 +202,21 @@ public final class ManagedApplicationGraphRepository {
      */
     private static void replaceGraph(Connection connection, ManagedApplicationGraph graph) throws SQLException {
         try (PreparedStatement dependencies = connection
-                .prepareStatement("DELETE FROM managed_application_graph_dependency WHERE application_id=?");
+                .prepareStatement("DELETE FROM managed_application_dependency WHERE application_id=?");
                 PreparedStatement components = connection
-                        .prepareStatement("DELETE FROM managed_application_graph_component WHERE application_id=?")) {
+                        .prepareStatement("DELETE FROM managed_application_component WHERE application_id=?")) {
             dependencies.setString(1, graph.applicationId());
             dependencies.executeUpdate();
             components.setString(1, graph.applicationId());
             components.executeUpdate();
         }
         try (PreparedStatement statement = connection.prepareStatement("""
-                INSERT INTO managed_application_graph (
-                    application_id, server_id, health_component_id, application_health_check, updated_at
+                INSERT INTO managed_application (
+                    application_id, server_profile_id, health_component_id, health_check_payload, updated_at
                 ) VALUES (?, ?, ?, ?, ?)
-                ON CONFLICT(application_id) DO UPDATE SET server_id=excluded.server_id,
+                ON CONFLICT(application_id) DO UPDATE SET server_profile_id=excluded.server_profile_id,
                     health_component_id=excluded.health_component_id,
-                    application_health_check=excluded.application_health_check, updated_at=excluded.updated_at
+                    health_check_payload=excluded.health_check_payload, updated_at=excluded.updated_at
                 """)) {
             statement.setString(1, graph.applicationId());
             statement.setString(2, graph.components().getFirst().application().server().id());
@@ -247,12 +242,13 @@ public final class ManagedApplicationGraphRepository {
      * @throws SQLException if the database cannot complete the requested read or transaction / 数据库无法完成请求的读取或事务时
      */
     private static void insertComponents(Connection connection, ManagedApplicationGraph graph) throws SQLException {
-        try (PreparedStatement statement = connection.prepareStatement("""
-                INSERT INTO managed_application_graph_component (
-                    application_id, component_id, managed_application_id, reviewed_runtime, reviewed_data_paths,
-                    reviewed_resource_bindings
-                ) VALUES (?, ?, ?, ?, ?, ?)
-                """)) {
+        try (PreparedStatement statement = connection.prepareStatement(
+                """
+                        INSERT INTO managed_application_component (
+                            application_id, component_id, deployment_unit_id, reviewed_runtime_payload, reviewed_data_paths_payload,
+                            reviewed_resource_bindings_payload
+                        ) VALUES (?, ?, ?, ?, ?, ?)
+                        """)) {
             for (ManagedApplicationGraph.Component component : graph.components()) {
                 statement.setString(1, graph.applicationId());
                 statement.setString(2, component.componentId());
@@ -282,7 +278,7 @@ public final class ManagedApplicationGraphRepository {
      */
     private static void insertDependencies(Connection connection, ManagedApplicationGraph graph) throws SQLException {
         try (PreparedStatement statement = connection.prepareStatement("""
-                INSERT INTO managed_application_graph_dependency (
+                INSERT INTO managed_application_dependency (
                     application_id, component_id, dependency_component_id
                 ) VALUES (?, ?, ?)
                 """)) {
@@ -312,7 +308,7 @@ public final class ManagedApplicationGraphRepository {
         Map<String, List<String>> values = new LinkedHashMap<>();
         try (PreparedStatement statement = connection.prepareStatement("""
                 SELECT component_id, dependency_component_id
-                FROM managed_application_graph_dependency
+                FROM managed_application_dependency
                 WHERE application_id=? ORDER BY component_id, dependency_component_id
                 """)) {
             statement.setString(1, applicationId);

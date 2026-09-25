@@ -48,14 +48,13 @@ public final class AiUseCaseFacade {
      * @param phase fixed checkpoint / 固定节点
      * @param candidates nonsecret candidate values / 非秘密候选值
      * @param evidence observed nonsecret facts / 已观察非秘密事实
-     * @param master unlock buffer / 解锁缓冲区
      * @return evidence-linked advice / 关联证据的建议
      * @throws SQLException when routing configuration cannot be read / 无法读取路由配置时
      */
     public gold.debug.windowstolinux.shared.model.deployment.AssistedDeploymentAdvice assist(String phase,
-            java.util.Map<String, java.util.List<String>> candidates, java.util.Map<String, String> evidence,
-            char[] master) throws SQLException {
-        var result = chain.invoke(master, (profile, key) -> {
+            java.util.Map<String, java.util.List<String>> candidates, java.util.Map<String, String> evidence)
+            throws SQLException {
+        var result = chain.invoke((profile, key) -> {
             var reply = new gold.debug.windowstolinux.shared.standard.deploy.assistance.execution.protocol.AssistedAiProtocolClient(
                     agentClient)
                     .assist(profile.chatCompletionsEndpoint(), profile.model(), key, phase, candidates, evidence);
@@ -70,32 +69,29 @@ public final class AiUseCaseFacade {
     }
 
     /** Opens the independent Agent model ports within a frozen task scope. / 在冻结任务作用域内打开独立 Agent 模型端口。
-     * @param master unlock buffer / 解锁缓冲区
      * @return task-owned adapter / 任务所属适配器
      */
-    public DeploymentAgentModelAdapter agentModels(char[] master) {
-        return new DeploymentAgentModelAdapter(chain, agentClient, master);
+    public DeploymentAgentModelAdapter agentModels() {
+        return new DeploymentAgentModelAdapter(chain, agentClient);
     }
 
     /** Opens analysis and registered recovery capabilities without the autonomous engine. / 打开分析及已登记恢复能力，不接入自主引擎。
-     * @param master task unlock buffer / 任务解锁缓冲区
      * @return task-owned assisted adapter / 任务所属辅助适配器
      */
-    public AssistedDeploymentModelAdapter assistedModels(char[] master) {
-        return new AssistedDeploymentModelAdapter(chain, agentClient, master);
+    public AssistedDeploymentModelAdapter assistedModels() {
+        return new AssistedDeploymentModelAdapter(chain, agentClient);
     }
 
     /**
      * Tests visual understanding separately from the text save probe. / 独立于文字保存测试验证视觉理解。
      *
      * @param id stable identifier within the owning registry / 所属登记表内的稳定标识
-     * @param master master-password buffer used for the scoped secret operation / 限定秘密操作使用的主密码缓冲区
      * @throws Exception if the delegated operation or caller-provided interaction fails / 被委派操作或调用方提供的交互失败时
      * @param capability separately tested text or vision capability / 分别测试的文本或视觉能力
      */
-    public void testCapability(String id, gold.debug.windowstolinux.shared.model.ai.AiCapabilityType capability,
-            char[] master) throws Exception {
-        configuration.testCapability(id, capability, master);
+    public void testCapability(String id, gold.debug.windowstolinux.shared.model.ai.AiCapabilityType capability)
+            throws Exception {
+        configuration.testCapability(id, capability);
     }
 
     /**
@@ -192,16 +188,15 @@ public final class AiUseCaseFacade {
      *
      * @param profile connection or provider settings supplied to the operation / 提供给操作的连接或提供者设置
      * @param name human-readable name or diagnostic field label / 可读名称或诊断字段标签
-     * @param master master-password buffer used for the scoped secret operation / 限定秘密操作使用的主密码缓冲区
      * @param key API credential characters supplied to the selected operation / 提供给所选操作的 API 凭据字符
      * @throws SQLException if the database cannot complete the requested read or transaction / 数据库无法完成请求的读取或事务时
      * @throws SecretStoreException if the protected credential cannot be accessed or updated / 无法访问或更新受保护凭据时
      * @param capability verified text or vision capability / 已验证文本或视觉能力
      */
-    public void saveConfiguration(AiProviderProfile profile, String name, char[] master, char[] key,
+    public void saveConfiguration(AiProviderProfile profile, String name, char[] key,
             gold.debug.windowstolinux.shared.model.ai.AiCapabilityType capability)
             throws SQLException, SecretStoreException {
-        configuration.save(profile, name, master, key, capability);
+        configuration.save(profile, name, key, capability);
     }
 
     /**
@@ -239,16 +234,15 @@ public final class AiUseCaseFacade {
      * <p>保留固定角色提示及校验器，按捕获优先级顺序尝试已启用常规组提供者；历史角色分配不参与提供者选择。
      *
      * @param context facts and dependencies scoped to the current operation / 限定于当前操作的事实及依赖
-     * @param masterPassword master-password buffer used to unlock protected credentials / 用于解锁受保护凭据的主密码缓冲区
      * @return validated advice or classified unavailable evidence; empty when no enabled provider exists / 已验证建议或分类不可用证据；没有已启用提供者时为空
      * @throws SQLException if the database cannot complete the requested read or transaction / 数据库无法完成请求的读取或事务时
      * @throws SecretStoreException if the protected credential cannot be accessed or updated / 无法访问或更新受保护凭据时
      * @throws NullPointerException if a required input is absent / 必需输入缺失时
      */
-    public Optional<AiRoleInvocationResult> invokeRole(AiRoleContext context, char[] masterPassword)
+    public Optional<AiRoleInvocationResult> invokeRole(AiRoleContext context)
             throws SQLException, SecretStoreException {
         Objects.requireNonNull(context, "context");
-        var result = chain.invoke(masterPassword, (profile, key) -> {
+        var result = chain.invoke((profile, key) -> {
             var value = roleClient.invoke(
                     new AiRoleBinding(context.role(), profile.id(), profile.chatCompletionsEndpoint(), profile.model()),
                     key, context);

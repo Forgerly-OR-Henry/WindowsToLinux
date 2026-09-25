@@ -17,7 +17,6 @@ import gold.debug.windowstolinux.app.ui.component.*;
 import gold.debug.windowstolinux.app.ui.i18n.PageMessagePresenter;
 import gold.debug.windowstolinux.app.ui.server.ServerTrustPrompt;
 import gold.debug.windowstolinux.shared.model.lifecycle.DiscoveredApplication;
-import gold.debug.windowstolinux.shared.model.security.CredentialStorageMode;
 
 /**
  * Independent read-only discovery followed by explicit per-candidate adoption. / 独立只读发现窗口，随后按候选明确接管。
@@ -52,12 +51,6 @@ public final class ApplicationScanDialog extends JDialog {
      * <p>服务器资料及已认证会话服务。
      */
     private final JComboBox<ServerProfile> servers = new JComboBox<>();
-
-    /**
-     * Swing control for master.
-     * <p>主对应的 Swing 控件。
-     */
-    private final JPasswordField master = new JPasswordField(18);
 
     /**
      * Swing control for candidates.
@@ -132,18 +125,12 @@ public final class ApplicationScanDialog extends JDialog {
             candidates.removeAll();
             candidates.revalidate();
             candidates.repaint();
-            master.setEnabled(servers.getSelectedItem() instanceof ServerProfile profile
-                    && profile.credentialMode() == CredentialStorageMode.MASTER_PASSWORD);
         });
         JPanel controls = c.card(new BorderLayout(12, 8));
         controls.add(servers);
         scan = c.primaryButton(messages.text("apps.scan"));
         scan.addActionListener(event -> scan());
         controls.add(scan, BorderLayout.EAST);
-        JPanel unlock = c.transparent(new FlowLayout(FlowLayout.LEFT));
-        unlock.add(new JLabel(messages.text("field.masterPassword")));
-        unlock.add(master);
-        controls.add(unlock, BorderLayout.SOUTH);
         candidates.setLayout(new BoxLayout(candidates, BoxLayout.Y_AXIS));
         candidates.setOpaque(false);
         JScrollPane scroll = new JScrollPane(candidates);
@@ -183,7 +170,6 @@ public final class ApplicationScanDialog extends JDialog {
              */
             @Override
             public void windowClosed(WindowEvent event) {
-                master.setText("");
             }
         });
         scan.setEnabled(false);
@@ -200,18 +186,15 @@ public final class ApplicationScanDialog extends JDialog {
     private void scan() {
         if (busy || !(servers.getSelectedItem() instanceof ServerProfile server))
             return;
-        char[] unlock = master.getPassword();
         setBusy(true);
         result = null;
         candidates.removeAll();
         candidates.repaint();
         status.setText(messages.text("apps.scanning"));
         DesktopTaskExecutor.run(() -> {
-            try {
-                return service.scanApplications(server.id(), unlock,
+            {
+                return service.scanApplications(server.id(),
                         fingerprint -> ServerTrustPrompt.confirm(this, messages, fingerprint));
-            } finally {
-                Arrays.fill(unlock, '\0');
             }
         }, value -> {
             result = value;
@@ -273,14 +256,11 @@ public final class ApplicationScanDialog extends JDialog {
         if (busy || result == null)
             return;
         ApplicationScan selected = result;
-        char[] unlock = master.getPassword();
         setBusy(true);
         DesktopTaskExecutor.run(() -> {
-            try {
-                return service.adoptApplication(selected, candidate, unlock,
+            {
+                return service.adoptApplication(selected, candidate,
                         fingerprint -> ServerTrustPrompt.confirm(this, messages, fingerprint));
-            } finally {
-                Arrays.fill(unlock, '\0');
             }
         }, key -> {
             setBusy(false);
@@ -301,8 +281,6 @@ public final class ApplicationScanDialog extends JDialog {
     private void setBusy(boolean value) {
         busy = value;
         servers.setEnabled(!value);
-        master.setEnabled(!value && servers.getSelectedItem() instanceof ServerProfile server
-                && server.credentialMode() == CredentialStorageMode.MASTER_PASSWORD);
         scan.setEnabled(!value);
         setActions(candidates, !value);
         if (!value && result != null)

@@ -24,7 +24,6 @@ import gold.debug.windowstolinux.shared.model.health.HealthCheck;
 import gold.debug.windowstolinux.shared.model.health.UserAccessUrl;
 import gold.debug.windowstolinux.shared.model.lifecycle.LifecycleAction;
 import gold.debug.windowstolinux.shared.model.lifecycle.RuntimeState;
-import gold.debug.windowstolinux.shared.model.security.CredentialStorageMode;
 import gold.debug.windowstolinux.shared.standard.deploy.contract.ReviewedDeploymentRequest;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIfSystemProperty;
@@ -36,6 +35,7 @@ import org.junit.jupiter.api.io.TempDir;
  * <p>针对启动失败和感知资源归属的 TCP 健康检查的可选实时验收。
  */
 @EnabledIfSystemProperty(named = "managed.runtime.startup-tcp", matches = "true")
+@org.junit.jupiter.api.extension.ExtendWith(MainSecurityFixture.class)
 class UbuntuManagedStartupAndTcpAcceptanceTest {
     @TempDir
     Path temporaryDirectory;
@@ -65,12 +65,12 @@ class UbuntuManagedStartupAndTcpAcceptanceTest {
         HealthCheck.Tcp tcpHealth = new HealthCheck.Tcp(18085, 15, 1);
         UserAccessUrl userAccessUrl = new UserAccessUrl(URI.create("http://" + host + ":18085/"));
         try (DesktopPersistence database = DesktopPersistence.open(temporaryDirectory.resolve("desktop-data"))) {
-            DesktopApplicationFacade service = new DesktopApplicationFacade(database,
+            DesktopApplicationFacade service = MainSecurityFixture.unlocked(new DesktopApplicationFacade(database,
                     temporaryDirectory.resolve("work"),
                     new SshdLinuxGateway(
                             gold.debug.windowstolinux.shared.standard.deploy.build.DeploymentBuildExecutor::new,
                             gold.debug.windowstolinux.shared.standard.deploy.distro.extension.registry.DistributionSetupRegistry
-                                    .defaults()));
+                                    .defaults())));
             ReviewedSourcePreparation baselinePreparation = ReviewedMavenAcceptanceFixture.prepare(service, baseline);
             ReviewedSourcePreparation startupPreparation = ReviewedMavenAcceptanceFixture.prepare(service,
                     startupFailure);
@@ -83,11 +83,9 @@ class UbuntuManagedStartupAndTcpAcceptanceTest {
             assertEquals(applicationId, wrongPortPreparation.assessment().facts().orElseThrow().applicationId());
 
             ServerProfile profile = new ServerProfile("ubuntu-managed-startup-tcp", host, 22, username,
-                    "ssh/ubuntu-managed-startup-tcp/password", CredentialStorageMode.MASTER_PASSWORD);
-            service.saveServerProfile(profile, CredentialStorageMode.MASTER_PASSWORD,
-                    "managed-startup-tcp-master".toCharArray(), password.toCharArray());
-            var capabilities = service.verifyServer(profile, CredentialStorageMode.MASTER_PASSWORD,
-                    "managed-startup-tcp-master".toCharArray(), fingerprint -> true);
+                    "ssh/ubuntu-managed-startup-tcp/password");
+            service.saveServerProfile(profile, password.toCharArray());
+            var capabilities = service.verifyServer(profile, fingerprint -> true);
             assertTrue(capabilities.supportsManagedDeployment(baselinePreparation.assessment().facts().orElseThrow()
                     .buildTool() == gold.debug.windowstolinux.shared.model.project.DeploymentBuildToolType.MAVEN_WRAPPER,
                     httpHealth), () -> "Ubuntu target must meet managed-deployment preconditions: " + capabilities);
@@ -99,8 +97,7 @@ class UbuntuManagedStartupAndTcpAcceptanceTest {
             assertEquals(DeploymentStatus.SUCCEEDED, baselineResult.status(), () -> baselineResult.events().toString());
 
             LifecycleActionResult tcpRestart = service.executePersistedLifecycleResultWithStoredPassword(
-                    baselineRequest.facts().applicationId(), LifecycleAction.RESTART,
-                    "managed-startup-tcp-master".toCharArray());
+                    baselineRequest.facts().applicationId(), LifecycleAction.RESTART);
             assertTrue(tcpRestart.accepted(), tcpRestart::toString);
             assertEquals(RuntimeState.RUNNING, tcpRestart.observation().orElseThrow().runtimeState());
 
@@ -129,8 +126,7 @@ class UbuntuManagedStartupAndTcpAcceptanceTest {
             assertEvent(tcpFailure, "rollback", true);
 
             LifecycleActionResult refreshed = service.executePersistedLifecycleResultWithStoredPassword(
-                    baselineRequest.facts().applicationId(), LifecycleAction.REFRESH_STATUS,
-                    "managed-startup-tcp-master".toCharArray());
+                    baselineRequest.facts().applicationId(), LifecycleAction.REFRESH_STATUS);
             assertTrue(refreshed.accepted(), refreshed::toString);
             assertEquals(RuntimeState.RUNNING, refreshed.observation().orElseThrow().runtimeState());
         }
@@ -138,8 +134,7 @@ class UbuntuManagedStartupAndTcpAcceptanceTest {
 
     private static DeploymentResult deploy(DesktopApplicationFacade service, ReviewedDeploymentRequest request,
             ServerProfile profile) throws Exception {
-        return service.deployReviewedWithStoredPassword(request, profile, CredentialStorageMode.MASTER_PASSWORD,
-                "managed-startup-tcp-master".toCharArray(), fingerprint -> true).result();
+        return service.deployReviewedWithStoredPassword(request, profile, fingerprint -> true).result();
     }
 
     private static ReviewedDeploymentRequest request(DesktopApplicationFacade service,

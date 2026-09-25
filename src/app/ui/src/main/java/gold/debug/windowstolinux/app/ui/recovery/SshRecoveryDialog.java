@@ -191,7 +191,8 @@ public final class SshRecoveryDialog {
              */
             @Override
             public void windowClosed(WindowEvent event) {
-                session.close();
+                if (!gold.debug.windowstolinux.app.ui.component.DesktopTaskExecutor.isLocked())
+                    session.close();
                 timer.stop();
             }
         });
@@ -289,6 +290,8 @@ public final class SshRecoveryDialog {
      * <p>根据最新快照刷新救援状态、安全错误文本及绑定和批准控件的可用性。
      */
     private void update() {
+        if (gold.debug.windowstolinux.app.ui.component.DesktopTaskExecutor.isLocked())
+            return;
         RecoverySnapshot value = session.snapshot();
         if (!value.equals(displayed)) {
             displayed = value;
@@ -325,6 +328,8 @@ public final class SshRecoveryDialog {
      * <p>关闭当前实例持有的资源并完成其清理边界。
      */
     private void close() {
+        if (gold.debug.windowstolinux.app.ui.component.DesktopTaskExecutor.isLocked())
+            return;
         session.close();
         timer.stop();
         details.setText("");

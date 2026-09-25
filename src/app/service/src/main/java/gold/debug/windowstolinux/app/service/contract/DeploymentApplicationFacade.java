@@ -20,7 +20,6 @@ import gold.debug.windowstolinux.shared.model.deployment.BuildLimitConfiguration
 import gold.debug.windowstolinux.shared.model.health.UserAccessUrl;
 import gold.debug.windowstolinux.shared.model.project.DeploymentProjectType;
 import gold.debug.windowstolinux.shared.model.project.DeploymentRuntimeSpecification;
-import gold.debug.windowstolinux.shared.model.security.CredentialStorageMode;
 import gold.debug.windowstolinux.shared.model.server.ServerIdentity;
 import gold.debug.windowstolinux.shared.standard.deploy.contract.ReviewedDeploymentPlan;
 import gold.debug.windowstolinux.shared.standard.deploy.contract.ReviewedDeploymentRequest;
@@ -137,29 +136,24 @@ public interface DeploymentApplicationFacade {
      *
      * @param request reviewed inputs for the requested operation / 所请求操作的已审阅输入
      * @param profile connection or provider settings supplied to the operation / 提供给操作的连接或提供者设置
-     * @param mode selected operating or storage mode / 所选运行或存储模式
-     * @param masterPassword master-password buffer used to unlock protected credentials / 用于解锁受保护凭据的主密码缓冲区
      * @param confirmation token or decision binding approval to the exact proposed action / 将批准绑定到精确提议动作的令牌或决定
      * @return constructed or resolved deployment outcome / 构造或解析得到的部署结果
      * @throws SecretStoreException if the protected credential cannot be accessed or updated / 无法访问或更新受保护凭据时
      * @throws SQLException if the database cannot complete the requested read or transaction / 数据库无法完成请求的读取或事务时
      */
     DeploymentOutcome deployReviewedWithStoredPassword(ReviewedDeploymentRequest request, ServerProfile profile,
-            CredentialStorageMode mode, char[] masterPassword, Predicate<String> confirmation)
-            throws SecretStoreException, SQLException;
+            Predicate<String> confirmation) throws SecretStoreException, SQLException;
 
     /**
      * Persists deployment secret revision.
      * <p>持久化部署秘密修订。
      *
      * @param referenceInput reference input / 引用输入
-     * @param mode selected operating or storage mode / 所选运行或存储模式
-     * @param masterPassword master-password buffer used to unlock protected credentials / 用于解锁受保护凭据的主密码缓冲区
      * @param value candidate content accepted or rejected by this contract / 由当前契约接收或拒绝的候选内容
      * @return constructed or resolved secret reference / 构造或解析得到的秘密引用
      * @throws SQLException if the database cannot complete the requested read or transaction / 数据库无法完成请求的读取或事务时
      * @throws SecretStoreException if the protected credential cannot be accessed or updated / 无法访问或更新受保护凭据时
      */
-    SecretReference saveDeploymentSecretRevision(String referenceInput, CredentialStorageMode mode,
-            char[] masterPassword, char[] value) throws SQLException, SecretStoreException;
+    SecretReference saveDeploymentSecretRevision(String referenceInput, char[] value)
+            throws SQLException, SecretStoreException;
 }

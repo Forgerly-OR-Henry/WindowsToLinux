@@ -15,9 +15,39 @@ public final class DesktopTaskExecutor {
      * <p>活跃。
      */
     private static final java.util.concurrent.atomic.AtomicInteger ACTIVE = new java.util.concurrent.atomic.AtomicInteger();
+
     /**
      * Prevents instantiation of this static contract helper.
      * <p>防止实例化当前静态契约辅助类。
+     */
+    private static volatile gold.debug.windowstolinux.app.service.contract.security.SecurityApplicationFacade security;
+
+    /** Binds task submissions to the current desktop security boundary. / 将任务提交绑定到当前桌面安全边界。
+     * @param value value supplied to this boundary / 传入当前边界的value值
+     */
+    public static void bindSecurity(
+            gold.debug.windowstolinux.app.service.contract.security.SecurityApplicationFacade value) {
+        security = value;
+    }
+
+    /** Removes the binding only when its owning window is disposed. / 仅在所属窗口销毁时移除对应绑定。
+     * @param value value supplied to this boundary / 传入当前边界的value值
+     */
+    public static void unbindSecurity(
+            gold.debug.windowstolinux.app.service.contract.security.SecurityApplicationFacade value) {
+        if (security == value)
+            security = null;
+    }
+
+    /** Reports whether the bound desktop denies interactive access. / 报告已绑定桌面是否拒绝交互访问。
+     * @return the validated result or retained scoped handle / 已验证结果或保留的限定句柄
+     */
+    public static boolean isLocked() {
+        var current = security;
+        return current != null && !current.securityState().unlocked();
+    }
+
+    /** Binds the validated inputs and owned state for this scope. / 绑定当前作用域的已验证输入及持有状态。
      */
     private DesktopTaskExecutor() {
     }
@@ -58,6 +88,14 @@ public final class DesktopTaskExecutor {
         Objects.requireNonNull(operation, "operation");
         Objects.requireNonNull(success, "success");
         Objects.requireNonNull(failure, "failure");
+        var boundary = security;
+        gold.debug.windowstolinux.app.service.contract.security.DesktopTaskAuthorization authorization;
+        try {
+            authorization = boundary == null ? null : boundary.beginTask();
+        } catch (RuntimeException denied) {
+            failure.accept(denied);
+            return new DesktopTaskHandle();
+        }
         ACTIVE.incrementAndGet();
         DesktopTaskHandle handle = new DesktopTaskHandle();
         new SwingWorker<T, Void>() {
@@ -72,8 +110,12 @@ public final class DesktopTaskExecutor {
             protected T doInBackground() throws Exception {
                 try {
                     handle.begin();
-                    return operation.call();
+                    if (handle.cancelled())
+                        throw new java.util.concurrent.CancellationException();
+                    return authorization == null ? operation.call() : authorization.execute(operation);
                 } finally {
+                    if (authorization != null)
+                        authorization.close();
                     handle.end();
                 }
             }

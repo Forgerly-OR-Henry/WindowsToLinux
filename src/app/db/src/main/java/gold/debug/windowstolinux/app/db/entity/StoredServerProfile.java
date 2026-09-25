@@ -12,24 +12,21 @@ import java.util.Objects;
  * @param sshPort ssh port / SSH端口
  * @param username account name used by the reviewed connection / 已审阅连接使用的账户名
  * @param credentialKey opaque lookup key in the platform secret store / 平台秘密存储中的不透明查找键
- * @param credentialMode selected platform credential-storage mode / 所选平台凭据存储模式
  * @param displayName display name / 显示名称
  */
 public record StoredServerProfile(String id, String host, int sshPort, String username, String credentialKey,
-        String credentialMode, String displayName) {
+        String displayName) {
     /**
-     * Preserves profiles created before display names were added. / 保留显示名称引入前创建的资料。
+     * Uses the identifier as the default display name. / 默认以标识作为显示名称。
      *
      * @param id stable identifier within the owning registry / 所属登记表内的稳定标识
      * @param host reviewed server hostname or IP address / 已审阅服务器主机名或 IP 地址
      * @param sshPort ssh port / SSH端口
      * @param username account name used by the reviewed connection / 已审阅连接使用的账户名
      * @param credentialKey opaque lookup key in the platform secret store / 平台秘密存储中的不透明查找键
-     * @param credentialMode selected platform credential-storage mode / 所选平台凭据存储模式
      */
-    public StoredServerProfile(String id, String host, int sshPort, String username, String credentialKey,
-            String credentialMode) {
-        this(id, host, sshPort, username, credentialKey, credentialMode, id);
+    public StoredServerProfile(String id, String host, int sshPort, String username, String credentialKey) {
+        this(id, host, sshPort, username, credentialKey, id);
     }
 
     /**
@@ -41,7 +38,6 @@ public record StoredServerProfile(String id, String host, int sshPort, String us
      * @param sshPort ssh port / SSH端口
      * @param username account name used by the reviewed connection / 已审阅连接使用的账户名
      * @param credentialKey opaque lookup key in the platform secret store / 平台秘密存储中的不透明查找键
-     * @param credentialMode selected platform credential-storage mode / 所选平台凭据存储模式
      * @param displayName display name / 显示名称
      * @throws IllegalArgumentException if an input violates the constraints checked by this contract / 输入违反当前契约检查的约束时
      * @throws NullPointerException if a required input is absent / 必需输入缺失时
@@ -54,7 +50,6 @@ public record StoredServerProfile(String id, String host, int sshPort, String us
         host = requireText(host, "host");
         username = requireText(username, "username");
         credentialKey = requireText(credentialKey, "credentialKey");
-        credentialMode = requireText(credentialMode, "credentialMode");
         if (sshPort < 1 || sshPort > 65535) {
             throw new IllegalArgumentException("sshPort must be between 1 and 65535");
         }

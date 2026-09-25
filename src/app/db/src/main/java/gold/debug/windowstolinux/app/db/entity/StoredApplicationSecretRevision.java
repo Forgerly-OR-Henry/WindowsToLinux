@@ -4,7 +4,6 @@ import java.time.Instant;
 import java.util.Objects;
 
 import gold.debug.windowstolinux.shared.config.secretref.SecretReference;
-import gold.debug.windowstolinux.shared.model.security.CredentialStorageMode;
 
 /**
  * Immutable metadata that locates a secret outside normal configuration and release directories.
@@ -13,25 +12,21 @@ import gold.debug.windowstolinux.shared.model.security.CredentialStorageMode;
  *
  * @param reference immutable public secret identity / 不可变公开秘密身份
  * @param credentialKey platform-secret-store key / 平台秘密存储键
- * @param credentialMode selected platform-secret-store mode / 已选择的平台秘密存储模式
  * @param createdAt immutable revision creation time / 不可变修订创建时间
  */
-public record StoredApplicationSecretRevision(SecretReference reference, String credentialKey,
-        CredentialStorageMode credentialMode, Instant createdAt) {
+public record StoredApplicationSecretRevision(SecretReference reference, String credentialKey, Instant createdAt) {
     /**
      * Validates and binds the inputs required by stored application secret revision.
      * <p>校验并绑定已存储应用秘密修订所需输入。
      *
      * @param reference immutable public secret identity / 不可变公开秘密身份
      * @param credentialKey opaque lookup key in the platform secret store / 平台秘密存储中的不透明查找键
-     * @param credentialMode selected platform credential-storage mode / 所选平台凭据存储模式
      * @param createdAt instant at which this record was created / 当前记录创建时刻
      * @throws NullPointerException if a required input is absent / 必需输入缺失时
      */
     public StoredApplicationSecretRevision {
         reference = Objects.requireNonNull(reference, "reference");
         credentialKey = requireKey(credentialKey);
-        credentialMode = Objects.requireNonNull(credentialMode, "credentialMode");
         createdAt = Objects.requireNonNull(createdAt, "createdAt");
     }
 

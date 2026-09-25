@@ -28,6 +28,10 @@ final class RepositoryTransactionExecutor {
      * @throws SQLException if the database cannot complete the requested read or transaction / 数据库无法完成请求的读取或事务时
      */
     static void execute(Connection connection, SqlWork work) throws SQLException {
+        if (!connection.getAutoCommit()) {
+            work.execute();
+            return;
+        }
         connection.setAutoCommit(false);
         try {
             work.execute();
@@ -53,17 +57,20 @@ final class RepositoryTransactionExecutor {
      * @throws SQLException if the database cannot complete the requested read or transaction / 数据库无法完成请求的读取或事务时
      */
     static void upsertServer(Connection connection, ServerIdentity server) throws SQLException {
-        try (PreparedStatement statement = connection.prepareStatement(
-                """
-                        INSERT INTO server (id, host, ssh_port, host_key_sha256, host_key_format) VALUES (?, ?, ?, ?, 'SSH_WIRE')
-                        ON CONFLICT(id) DO UPDATE SET id=excluded.id
-                        WHERE server.host=excluded.host AND server.ssh_port=excluded.ssh_port
-                          AND server.host_key_sha256=excluded.host_key_sha256
-                        """)) {
-            statement.setString(1, server.id());
-            statement.setString(2, server.host());
-            statement.setInt(3, server.sshPort());
-            statement.setString(4, server.hostKeySha256());
+        try (PreparedStatement statement = connection.prepareStatement("""
+                UPDATE server_profile SET trusted_host=?,trusted_ssh_port=?,host_key_sha256=?,host_key_format='SSH_WIRE'
+                WHERE server_profile_id=? AND host=? AND ssh_port=? AND
+                (host_key_sha256 IS NULL OR (trusted_host=? AND trusted_ssh_port=? AND host_key_sha256=?))
+                """)) {
+            statement.setString(1, server.host());
+            statement.setInt(2, server.sshPort());
+            statement.setString(3, server.hostKeySha256());
+            statement.setString(4, server.id());
+            statement.setString(5, server.host());
+            statement.setInt(6, server.sshPort());
+            statement.setString(7, server.host());
+            statement.setInt(8, server.sshPort());
+            statement.setString(9, server.hostKeySha256());
             if (statement.executeUpdate() != 1)
                 throw new SQLException("server trust identity changed concurrently");
         }

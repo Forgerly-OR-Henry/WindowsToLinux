@@ -16,7 +16,6 @@ import gold.debug.windowstolinux.shared.linux.sshd.connection.SshdLinuxGateway;
 import gold.debug.windowstolinux.shared.model.capability.ServerCapabilityFacts;
 import gold.debug.windowstolinux.shared.model.deployment.EnvironmentSetupResult;
 import gold.debug.windowstolinux.shared.model.health.HealthCheck;
-import gold.debug.windowstolinux.shared.model.security.CredentialStorageMode;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIfSystemProperty;
 import org.junit.jupiter.api.io.TempDir;
@@ -27,6 +26,7 @@ import org.junit.jupiter.api.io.TempDir;
  * <p>针对产品自有 Ubuntu 环境准备操作的可选实时验收。它刻意只调用 {@link DesktopApplicationFacade} 及其生产 SSH 网关，自身绝不打开原始 SSH 会话。<p>SSH 和本地测试主密码秘密只从环境变量读取，因此 Maven 命令行和 Surefire 报告不会接收它们。使用 {@code WINDOWSTOLINUX_TEST_SSH_PASSWORD}，并可选使用 {@code WINDOWSTOLINUX_TEST_MASTER_PASSWORD}。</p>
  */
 @EnabledIfSystemProperty(named = "managed.runtime.environment-provision", matches = "true")
+@org.junit.jupiter.api.extension.ExtendWith(MainSecurityFixture.class)
 class UbuntuManagedEnvironmentSetupAcceptanceTest {
     private static final String DEFAULT_TEST_MASTER_PASSWORD = "managed-environment-preparation-master";
 
@@ -46,19 +46,17 @@ class UbuntuManagedEnvironmentSetupAcceptanceTest {
         char[] sshPasswordChars = sshPassword.toCharArray();
         char[] masterPasswordChars = masterPassword.toCharArray();
         try (DesktopPersistence database = DesktopPersistence.open(temporaryDirectory.resolve("desktop-data"))) {
-            DesktopApplicationFacade service = new DesktopApplicationFacade(database,
+            DesktopApplicationFacade service = MainSecurityFixture.unlocked(new DesktopApplicationFacade(database,
                     temporaryDirectory.resolve("work"),
                     new SshdLinuxGateway(
                             gold.debug.windowstolinux.shared.standard.deploy.build.DeploymentBuildExecutor::new,
                             gold.debug.windowstolinux.shared.standard.deploy.distro.extension.registry.DistributionSetupRegistry
-                                    .defaults()));
+                                    .defaults())));
             ServerProfile profile = new ServerProfile("ubuntu-managed-environment", host, 22, username,
-                    "ssh/ubuntu-managed-environment/password", CredentialStorageMode.MASTER_PASSWORD);
-            service.saveServerProfile(profile, CredentialStorageMode.MASTER_PASSWORD, masterPasswordChars.clone(),
-                    sshPasswordChars.clone());
+                    "ssh/ubuntu-managed-environment/password");
+            service.saveServerProfile(profile, sshPasswordChars.clone());
 
-            ServerCapabilityFacts baseline = service.verifyServer(profile, CredentialStorageMode.MASTER_PASSWORD,
-                    masterPasswordChars.clone(), fingerprint -> true);
+            ServerCapabilityFacts baseline = service.verifyServer(profile, fingerprint -> true);
             assertUbuntu24X8664(baseline);
             System.out.println("MANAGED_ENVIRONMENT_BASELINE " + baselineSummary(baseline));
             if (expectBare) {
@@ -66,15 +64,15 @@ class UbuntuManagedEnvironmentSetupAcceptanceTest {
             }
 
             assertTrue(service.listManagedApplications().isEmpty(), "环境准备前不得存在由本验收创建的部署记录");
-            EnvironmentSetupResult first = service.prepareEnvironmentWithStoredPassword(profile,
-                    CredentialStorageMode.MASTER_PASSWORD, masterPasswordChars.clone(), fingerprint -> true, true);
+            EnvironmentSetupResult first = service.prepareEnvironmentWithStoredPassword(profile, fingerprint -> true,
+                    true);
             assertPreparationOnly(first, "首次准备");
             assertSupportsHttpAndTcpHealth(first.capabilities());
             System.out.println("MANAGED_ENVIRONMENT_AFTER_FIRST_PREPARATION " + baselineSummary(first.capabilities()));
             assertTrue(service.listManagedApplications().isEmpty(), "环境准备不得上传源码、构建或发布应用");
 
-            EnvironmentSetupResult second = service.prepareEnvironmentWithStoredPassword(profile,
-                    CredentialStorageMode.MASTER_PASSWORD, masterPasswordChars.clone(), fingerprint -> true, true);
+            EnvironmentSetupResult second = service.prepareEnvironmentWithStoredPassword(profile, fingerprint -> true,
+                    true);
             assertPreparationOnly(second, "重复准备");
             assertSupportsHttpAndTcpHealth(second.capabilities());
             System.out

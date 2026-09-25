@@ -43,6 +43,49 @@ final class DeploymentModeSelector extends JPanel {
 
     /** Localized messages. / 本地化消息。 */
     private final PageMessagePresenter messages;
+
+    /** Last successfully stored selection for failure rollback. / 用于失败回滚的最后成功保存选择。
+     */
+    private gold.debug.windowstolinux.app.service.contract.definition.DeploymentPreferences savedPreferences;
+
+    /** Returns the last successfully persisted deployment selection. / 返回最后成功保存的部署选择。
+     * @return the validated result or retained scoped handle / 已验证结果或保留的限定句柄
+     */
+    public gold.debug.windowstolinux.app.service.contract.definition.DeploymentPreferences savedPreferences() {
+        return savedPreferences;
+    }
+
+    /** Restores the selection and records its persisted value for rollback. / 恢复选择并记录已保存值以便回滚。
+     * @param preferences preferences supplied to this boundary / 传入当前边界的preferences值
+     */
+    public void remember(gold.debug.windowstolinux.app.service.contract.definition.DeploymentPreferences preferences) {
+        savedPreferences = preferences;
+        restore(preferences.mode(), preferences.approval());
+    }
+
+    /** Suppresses callbacks during preference restoration. / 恢复偏好时抑制回调。
+     */
+    private boolean restoring;
+
+    /** Listener for completed user selection. / 用户完成选择的监听器。
+     */
+    private Runnable selectionChanged = () -> {
+    };
+
+    /** Registers the callback invoked after a user selection settles. / 注册用户选择完成后调用的回调。
+     * @param listener listener supplied to this boundary / 传入当前边界的listener值
+     */
+    void onSelectionChanged(Runnable listener) {
+        selectionChanged = listener;
+    }
+
+    /** Notifies preference changes while suppressing restoration callbacks. / 通知偏好变更，同时抑制恢复状态的回调。
+     */
+    private void changed() {
+        if (!restoring && !slider.getValueIsAdjusting())
+            selectionChanged.run();
+    }
+
     /** Builds standard controls without invoking models. / 构建标准控件且不调用模型。
      * @param messages localized messages / 本地化消息
      */
@@ -110,8 +153,14 @@ final class DeploymentModeSelector extends JPanel {
         modePopup.getAccessibleContext().setAccessibleName(messages.text("deployment.mode.label"));
         installPopupInteractions();
         add(row);
-        slider.addChangeListener(event -> update());
-        approval.addActionListener(event -> update());
+        slider.addChangeListener(event -> {
+            update();
+            changed();
+        });
+        approval.addActionListener(event -> {
+            update();
+            changed();
+        });
         update();
     }
 
@@ -134,9 +183,14 @@ final class DeploymentModeSelector extends JPanel {
      * @param policy confirmation policy / 确认策略
      */
     void restore(DeploymentAutomationMode mode, AgentApprovalMode policy) {
-        slider.setValue(mode.ordinal());
-        approval.setSelectedItem(policy);
-        update();
+        restoring = true;
+        try {
+            slider.setValue(mode.ordinal());
+            approval.setSelectedItem(policy);
+            update();
+        } finally {
+            restoring = false;
+        }
     }
 
     /** Locks both policy controls during an active task. / 活动任务期间锁定两个策略控件。
@@ -201,8 +255,8 @@ final class DeploymentModeSelector extends JPanel {
     /** Keeps selections open until focus leaves, Escape is pressed or an outside click dismisses the popup. / 切档后保持展开，焦点移出、Escape 或外部点击时收起。 */
     private void installPopupInteractions() {
         slider.addFocusListener(new FocusAdapter() {
-            /** Dismisses only when focus moves outside the popup. / 焦点移出弹出面板时才收起。
-             * @param event focus transfer / 焦点转移事件
+            /** Dismisses only when focus moves outside the popup. / 焦点移出弹出面板时才收起。事件
+             * @param event event supplied to this boundary / 传入当前边界的event值
              */
             @Override
             public void focusLost(FocusEvent event) {
@@ -326,7 +380,7 @@ final class DeploymentModeSelector extends JPanel {
         private Timer animation;
 
         /** Starts the visual state at the selected value without an entrance animation. / 以所选档位初始化视觉状态，不播放入场动画。
-         * @param component the new slider / 新安装的滑块
+         * @param component component supplied to this boundary / 传入当前边界的component值
          */
         @Override
         public void installUI(JComponent component) {
@@ -368,9 +422,9 @@ final class DeploymentModeSelector extends JPanel {
                 super.calculateThumbLocation();
         }
 
-        /** Extends native pointer handling with continuous dragging and animated track clicks. / 为原生指针处理添加连续拖动与轨道点击动画。
-         * @param control the deployment slider / 部署滑块
-         * @return pointer handling with smooth visual positions / 带平滑视觉位置的指针处理器
+        /** Extends native pointer handling with continuous dragging and animated track clicks. / 为原生指针处理添加连续拖动与轨道点击动画。andling with smooth visual positions / 带平滑视觉位置的指针处理器
+         * @param control control supplied to this boundary / 传入当前边界的control值
+         * @return the validated result or retained scoped handle / 已验证结果或保留的限定句柄
          */
         @Override
         protected TrackListener createTrackListener(JSlider control) {

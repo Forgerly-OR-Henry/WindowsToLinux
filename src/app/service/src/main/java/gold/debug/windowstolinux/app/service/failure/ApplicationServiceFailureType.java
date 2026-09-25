@@ -8,6 +8,28 @@ import gold.debug.windowstolinux.shared.model.failure.FailureSeverityLevel;
  * Stable failures raised at the desktop application-service boundary. / 桌面应用服务边界抛出的稳定失败。
  */
 public enum ApplicationServiceFailureType implements FailureDefinition {
+    /** An owned native window could not apply privacy. / 自有原生窗口无法应用隐私状态。 */
+    SECURITY_PRIVACY_FAILED("service.security.privacy-failed", "security", "security.error.privacyFailed",
+            FailureSeverityLevel.ERROR, FailureRecoveryAction.REQUEST_USER_CORRECTION),
+    /** New password does not meet the minimum length. / 新密码未满足最小长度。 */
+    SECURITY_PASSWORD_INVALID("service.security.password-invalid", "security", "security.error.passwordInvalid",
+            FailureSeverityLevel.WARNING, FailureRecoveryAction.REQUEST_USER_CORRECTION),
+    /** Interactive authorization is unavailable. / 交互授权不可用。
+     */
+    SECURITY_LOCKED("service.security.locked", "security", "security.error.locked", FailureSeverityLevel.WARNING,
+            FailureRecoveryAction.REQUEST_USER_CORRECTION),
+    /** Accepted tasks prevent a security change. / 已接纳任务阻止安全变更。
+    */
+    SECURITY_BUSY("service.security.busy", "security", "security.error.busy", FailureSeverityLevel.WARNING,
+            FailureRecoveryAction.REQUEST_USER_CORRECTION),
+    /** Repeated password input differs. / 重复密码输入不一致。
+    */
+    SECURITY_PASSWORD_MISMATCH("service.security.password-mismatch", "security", "security.error.passwordMismatch",
+            FailureSeverityLevel.WARNING, FailureRecoveryAction.REQUEST_USER_CORRECTION),
+    /** Security persistence could not be initialized. / 无法初始化安全持久化。
+    */
+    SECURITY_UNAVAILABLE("service.security.unavailable", "security", "security.error.unavailable",
+            FailureSeverityLevel.ERROR, FailureRecoveryAction.REQUIRE_MANUAL_RECOVERY),
     /** Approval models are required before Agent side effects. / Agent 副作用前必须存在审批模型。 */
     APPROVAL_MODEL_REQUIRED("service.ai.approval-model-required", "ai", "service.error.approvalModelRequired",
             FailureSeverityLevel.ERROR, FailureRecoveryAction.REQUEST_USER_CORRECTION),
@@ -85,12 +107,6 @@ public enum ApplicationServiceFailureType implements FailureDefinition {
      * <p>应用服务失败类型中的数据库动作失败分类。
      */
     DATABASE_ACTION_FAILED("service.database.action-failed", "database", "service.error.databaseActionFailed",
-            FailureSeverityLevel.ERROR, FailureRecoveryAction.REQUEST_USER_CORRECTION),
-    /**
-     * STORAGE MODE MISMATCH classification within application service failure type.
-     * <p>应用服务失败类型中的存储模式不匹配分类。
-     */
-    STORAGE_MODE_MISMATCH("service.validation.storage-mode-mismatch", "validation", "service.error.storageModeMismatch",
             FailureSeverityLevel.ERROR, FailureRecoveryAction.REQUEST_USER_CORRECTION),
     /**
      * DEPLOYMENT ANALYSIS REQUIRED classification within application service failure type.

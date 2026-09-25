@@ -124,7 +124,6 @@ public final class ManagedRestoreUseCase {
      * @param archive source or backup archive descriptor or filesystem path / 源码或备份归档描述或文件系统路径
      * @param targetServerId target server id / 目标服务器标识
      * @param backupPassword independent password for backup secret encryption or decryption / 备份秘密加密或解密使用的独立密码
-     * @param masterPassword master-password buffer used to unlock protected credentials / 用于解锁受保护凭据的主密码缓冲区
      * @param firstUseConfirmation first use confirmation / 首次使用确认
      * @return constructed or resolved managed restore outcome / 构造或解析得到的受管恢复结果
      * @throws IOException if the required file or stream operation fails / 所需文件或流操作失败时
@@ -135,7 +134,7 @@ public final class ManagedRestoreUseCase {
      * @throws NullPointerException if a required input is absent / 必需输入缺失时
      */
     public ManagedRestoreOutcome restoreUsingSavedProfile(Path archive, String targetServerId, char[] backupPassword,
-            char[] masterPassword, Predicate<String> firstUseConfirmation)
+            Predicate<String> firstUseConfirmation)
             throws IOException, BackupSecretException, SQLException, SecretStoreException, LinuxOperationException {
         PreparedBackupActivation activation = null;
         List<String> warnings = new ArrayList<>();
@@ -150,7 +149,7 @@ public final class ManagedRestoreUseCase {
             lock.lock();
             RestoreCompletion completion;
             try {
-                completion = restoreLocked(model, profile, masterPassword,
+                completion = restoreLocked(model, profile,
                         java.util.Objects.requireNonNull(firstUseConfirmation, "firstUseConfirmation"), warnings);
             } finally {
                 lock.unlock();
@@ -176,7 +175,7 @@ public final class ManagedRestoreUseCase {
             throw exception;
         } finally {
             clear(backupPassword);
-            clear(masterPassword);
+
         }
     }
 
@@ -186,7 +185,6 @@ public final class ManagedRestoreUseCase {
      * @param archive source or backup archive descriptor or filesystem path / 源码或备份归档描述或文件系统路径
      * @param targetServerId target server id / 目标服务器标识
      * @param backupPassword independent password for backup secret encryption or decryption / 备份秘密加密或解密使用的独立密码
-     * @param masterPassword master-password buffer used to unlock protected credentials / 用于解锁受保护凭据的主密码缓冲区
      * @param firstUseConfirmation first use confirmation / 首次使用确认
      * @return constructed or resolved managed restore preflight outcome / 构造或解析得到的受管恢复预检结果
      * @throws IOException if the required file or stream operation fails / 所需文件或流操作失败时
@@ -197,7 +195,7 @@ public final class ManagedRestoreUseCase {
      * @throws NullPointerException if a required input is absent / 必需输入缺失时
      */
     public ManagedRestorePreflightOutcome preflightUsingSavedProfile(Path archive, String targetServerId,
-            char[] backupPassword, char[] masterPassword, Predicate<String> firstUseConfirmation)
+            char[] backupPassword, Predicate<String> firstUseConfirmation)
             throws IOException, BackupSecretException, SQLException, SecretStoreException, LinuxOperationException {
         PreparedBackupActivation activation = null;
         try {
@@ -209,7 +207,7 @@ public final class ManagedRestoreUseCase {
             RestoreArchiveModel model = RestoreArchiveModel.load(activation);
             ReentrantLock lock = locks.forServer(profile.id());
             lock.lock();
-            try (SecretStore store = servers.secrets().open(profile.credentialMode(), masterPassword)) {
+            try (SecretStore store = servers.secrets().open()) {
                 SshCredential.Password credential = servers.loadPassword(profile, store);
                 try (DeploymentRemoteSession session = gateway.connect(profile.endpoint(), credential,
                         servers.hostKeyVerifier(profile,
@@ -241,7 +239,7 @@ public final class ManagedRestoreUseCase {
                 backups.discard(activation.localCandidate());
             }
             clear(backupPassword);
-            clear(masterPassword);
+
         }
     }
 
@@ -251,7 +249,6 @@ public final class ManagedRestoreUseCase {
      *
      * @param model configured model identifier sent to the provider / 发送给提供者的已配置模型标识
      * @param profile connection or provider settings supplied to the operation / 提供给操作的连接或提供者设置
-     * @param masterPassword master-password buffer used to unlock protected credentials / 用于解锁受保护凭据的主密码缓冲区
      * @param firstUseConfirmation first use confirmation / 首次使用确认
      * @param warnings warnings / 警告集合
      * @return constructed or resolved restore completion / 构造或解析得到的恢复完成
@@ -260,10 +257,10 @@ public final class ManagedRestoreUseCase {
      * @throws LinuxOperationException if the authenticated remote operation fails or its evidence is rejected / 已认证远端操作失败或其证据被拒绝时
      * @throws IOException if the required file or stream operation fails / 所需文件或流操作失败时
      */
-    private RestoreCompletion restoreLocked(RestoreArchiveModel model, ServerProfile profile, char[] masterPassword,
+    private RestoreCompletion restoreLocked(RestoreArchiveModel model, ServerProfile profile,
             Predicate<String> firstUseConfirmation, List<String> warnings)
             throws SQLException, SecretStoreException, LinuxOperationException, IOException {
-        try (SecretStore store = servers.secrets().open(profile.credentialMode(), masterPassword)) {
+        try (SecretStore store = servers.secrets().open()) {
             SshCredential.Password credential = servers.loadPassword(profile, store);
             try (DeploymentRemoteSession session = gateway.connect(profile.endpoint(), credential,
                     servers.hostKeyVerifier(profile, firstUseConfirmation))) {
@@ -299,7 +296,7 @@ public final class ManagedRestoreUseCase {
                         }
                     }
                 }
-                return adopt(model, profile, targetIdentity, masterPassword, result);
+                return adopt(model, profile, targetIdentity, result);
             } finally {
                 credential.clear();
             }
@@ -330,13 +327,12 @@ public final class ManagedRestoreUseCase {
      * @param model configured model identifier sent to the provider / 发送给提供者的已配置模型标识
      * @param profile connection or provider settings supplied to the operation / 提供给操作的连接或提供者设置
      * @param targetIdentity target identity / 目标身份
-     * @param masterPassword master-password buffer used to unlock protected credentials / 用于解锁受保护凭据的主密码缓冲区
      * @param result typed outcome produced by the delegated operation / 被委派操作产生的类型化结果
      * @return restore completion from the supplied adopt inputs / 根据所提供接管输入构建恢复完成
      * @throws SQLException if the database cannot complete the requested read or transaction / 数据库无法完成请求的读取或事务时
      */
     private RestoreCompletion adopt(RestoreArchiveModel model, ServerProfile profile, ServerIdentity targetIdentity,
-            char[] masterPassword, BackupRestoreResult result) throws SQLException {
+            BackupRestoreResult result) throws SQLException {
         if (result.status() != BackupRestoreStatus.SUCCEEDED) {
             return new RestoreCompletion(result, ManagedRestoreControlState.FAILED, Optional.empty());
         }
@@ -345,7 +341,7 @@ public final class ManagedRestoreUseCase {
         }
         try {
             secretRegistrar.register(model.activation().validation().manifest().applicationId(),
-                    model.activation().secrets(), profile.credentialMode(), copy(masterPassword),
+                    model.activation().secrets(),
                     Instant.parse(model.activation().validation().manifest().createdAtUtc()));
             recorder.record(model, targetIdentity);
             return new RestoreCompletion(result, ManagedRestoreControlState.UPDATED, Optional.empty());

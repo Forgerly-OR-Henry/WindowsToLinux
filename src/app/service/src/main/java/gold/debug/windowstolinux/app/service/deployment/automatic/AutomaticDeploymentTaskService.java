@@ -71,20 +71,19 @@ public final class AutomaticDeploymentTaskService {
 
     /** Dispatches a fully checked task; model preflight precedes all effects. / 派发完整检查的任务，模型预检先于全部外部影响。
      * @param request frozen click-time request / 点击时冻结请求
-     * @param master task unlock buffer / 任务解锁缓冲区
      * @param suppliedInteraction user inputs and exact reviews / 用户输入及精确审阅
      * @param suppliedFingerprint first-use host identity confirmation / 首次主机身份确认
      * @param progress structured progress / 结构化进度
      * @return actual verified deployment result / 实际已验证部署结果
      * @throws Exception on failed preflight or deployment / 预检或部署失败时
      */
-    public AutomaticDeploymentOutcome deploy(AutomaticDeploymentRequest request, char[] master,
+    public AutomaticDeploymentOutcome deploy(AutomaticDeploymentRequest request,
             AutomaticDeploymentInteraction suppliedInteraction, Predicate<String> suppliedFingerprint,
             Consumer<LocalizedMessage> progress) throws Exception {
         long started = System.nanoTime();
         var lock = locks.forServer(request.server().id());
         if (!lock.tryLock()) {
-            Arrays.fill(master, '\0');
+
             throw new IllegalStateException("server already has an active operation");
         }
         try (var scope = ai.openDeployment(request.automationMode())) {
@@ -98,18 +97,17 @@ public final class AutomaticDeploymentTaskService {
                 throw new IllegalStateException("deployment.agent.unresolvedOutcome");
             }
             if (request.automationMode() == DeploymentAutomationMode.STATIC)
-                return new AutomaticDeploymentUseCase(service, source, locks).deploy(request, master, interaction,
-                        fingerprint, progress);
-            return deployAiTask(request, master, interaction, fingerprint, progress, scope, started);
+                return new AutomaticDeploymentUseCase(service, source, locks).deploy(request, interaction, fingerprint,
+                        progress);
+            return deployAiTask(request, interaction, fingerprint, progress, scope, started);
         } finally {
-            Arrays.fill(master, '\0');
+
             lock.unlock();
         }
     }
 
     /** Runs the independently reviewed branch inside the frozen model and server scopes. / 在冻结模型及服务器作用域中运行独立审批分支。
      * @param request frozen request / 冻结请求
-     * @param master scoped credentials / 限定凭据
      * @param interaction human port / 人工端口
      * @param fingerprint host trust callback / 主机信任回调
      * @param progress visible progress / 可见进度
@@ -118,7 +116,7 @@ public final class AutomaticDeploymentTaskService {
      * @return verified result / 已验证结果
      * @throws Exception when execution or persistence fails / 执行或持久化失败时
      */
-    private AutomaticDeploymentOutcome deployAiTask(AutomaticDeploymentRequest request, char[] master,
+    private AutomaticDeploymentOutcome deployAiTask(AutomaticDeploymentRequest request,
             AutomaticDeploymentInteraction interaction, Predicate<String> fingerprint,
             Consumer<LocalizedMessage> progress, DeploymentAiScope scope, long started) throws Exception {
         String id = request.taskId();
@@ -138,10 +136,10 @@ public final class AutomaticDeploymentTaskService {
         if (active.putIfAbsent(id, control) != null)
             throw new IllegalStateException("task already running");
         try (var autonomousModels = request.automationMode() == DeploymentAutomationMode.AGENT
-                ? ai.agentModels(master)
+                ? ai.agentModels()
                 : null;
                 var assistedModels = request.automationMode() == DeploymentAutomationMode.ASSISTED
-                        ? ai.assistedModels(master)
+                        ? ai.assistedModels()
                         : null) {
             gold.debug.windowstolinux.shared.deploy.approval.DeploymentReviewPort models = autonomousModels != null
                     ? autonomousModels
@@ -188,8 +186,8 @@ public final class AutomaticDeploymentTaskService {
                             workspace -> journal
                                     .accept(Map.of("type", "REMOTE_CANDIDATE", "action", workspace.candidateId(),
                                             "detail", workspace.applicationId() + "|" + workspace.sourceSha256())))) {
-                        var result = autonomous.deploy(request, master, interaction, fingerprint, progress,
-                                autonomousModels, control, journal, revision::set);
+                        var result = autonomous.deploy(request, interaction, fingerprint, progress, autonomousModels,
+                                control, journal, revision::set);
                         control.finish(result.status() == DeploymentStatus.SUCCEEDED
                                 ? AgentTaskState.SUCCEEDED
                                 : result.status() == DeploymentStatus.MANUAL_RECOVERY_REQUIRED
@@ -216,16 +214,16 @@ public final class AutomaticDeploymentTaskService {
                                         cleanup ? AgentToolType.CLEAN_CANDIDATE : AgentToolType.CANDIDATE_STATUS,
                                         Map.of("candidate", workspace.candidateId(), "task", id, "scope",
                                                 "Exact root-owned task candidate; excludes release, configuration and data directories"),
-                                        () -> true, () -> remoteTools.candidate(request.server(), id, workspace,
-                                                cleanup, master.clone()));
+                                        () -> true,
+                                        () -> remoteTools.candidate(request.server(), id, workspace, cleanup));
                         })) {
                     revision.set(boundary::binding);
                     {
                         var advice = new AssistedDeploymentAdvisor(
-                                (phase, candidates, evidence) -> ai.assist(phase, candidates, evidence, master.clone()),
-                                interaction, progress, assistedModels, boundary.budget());
+                                (phase, candidates, evidence) -> ai.assist(phase, candidates, evidence), interaction,
+                                progress, assistedModels, boundary.budget());
                         var result = new AutomaticDeploymentUseCase(service, source, locks, advice, boundary).deploy(
-                                request, master, new AssistedDeploymentInteraction(interaction, boundary), fingerprint,
+                                request, new AssistedDeploymentInteraction(interaction, boundary), fingerprint,
                                 progress);
                         control.finish(result.status() == DeploymentStatus.SUCCEEDED
                                 ? AgentTaskState.SUCCEEDED
@@ -333,14 +331,13 @@ public final class AutomaticDeploymentTaskService {
 
     /** Queries recorded candidates without clearing uncertainty or authorizing replay. / 查询已记录候选项，不清除不确定状态或授权重放。
      * @param id recorded task / 已记录任务
-     * @param master temporary unlock buffer / 临时解锁缓冲区
      * @return observed facts and remaining uncertainty / 观测事实及剩余不确定性
      * @throws Exception when remote or journal access fails / 远端或日志访问失败时
      */
-    public List<Map<String, String>> inspect(String id, char[] master) throws Exception {
-        try {
+    public List<Map<String, String>> inspect(String id) throws Exception {
+        {
             var task = records.find(id).orElseThrow(() -> new IllegalArgumentException("task missing"));
-            var server = service.findServerProfile(task.get("server_id")).orElseThrow();
+            var server = service.findServerProfile(task.get("server_profile_id")).orElseThrow();
             if (!AgentAction.digest(AssistedDeploymentBoundary.target(server)).equals(task.get("target_digest")))
                 throw new SecurityException("task target changed");
             var lock = locks.forServer(server.id());
@@ -350,13 +347,13 @@ public final class AutomaticDeploymentTaskService {
                 var observations = new ArrayList<Map<String, String>>();
                 var seen = new HashSet<String>();
                 for (var event : records.events(id))
-                    if (event.get("event_type").equals("REMOTE_CANDIDATE") && seen.add(event.get("detail"))) {
-                        String[] fields = event.get("detail").split("\\|", -1);
+                    if (event.get("event_type").equals("REMOTE_CANDIDATE") && seen.add(event.get("event_detail"))) {
+                        String[] fields = event.get("event_detail").split("\\|", -1);
                         if (fields.length != 2)
                             throw new IllegalStateException("invalid candidate evidence");
                         var workspace = new gold.debug.windowstolinux.shared.linux.transfer.RemoteWorkspace(fields[0],
                                 fields[1]);
-                        var observed = remoteTools.candidate(server, id, workspace, false, master.clone());
+                        var observed = remoteTools.candidate(server, id, workspace, false);
                         observations.add(observed.facts());
                         records.event(id, "RECONCILIATION_QUERY", workspace.candidateId(),
                                 new TreeMap<>(observed.facts()).toString());
@@ -367,8 +364,6 @@ public final class AutomaticDeploymentTaskService {
             } finally {
                 lock.unlock();
             }
-        } finally {
-            Arrays.fill(master, '\0');
         }
     }
 

@@ -18,6 +18,7 @@ import gold.debug.windowstolinux.app.db.entity.ManagedApplicationGraph;
 import gold.debug.windowstolinux.app.db.entity.StoredApplicationSecretRevision;
 import gold.debug.windowstolinux.app.db.entity.SuccessfulManagedDeployment;
 import gold.debug.windowstolinux.app.service.DesktopApplicationFacade;
+import gold.debug.windowstolinux.app.service.SecurityTestFixture;
 import gold.debug.windowstolinux.shared.config.contract.definition.ConfigurationScope;
 import gold.debug.windowstolinux.shared.config.contract.definition.ConfigurationValue;
 import gold.debug.windowstolinux.shared.config.resource.ManagedComponentResourceBindings;
@@ -28,13 +29,12 @@ import gold.debug.windowstolinux.shared.model.health.HealthCheck;
 import gold.debug.windowstolinux.shared.model.managed.ManagedApplication;
 import gold.debug.windowstolinux.shared.model.managed.ManagedApplicationRuntimeConfiguration;
 import gold.debug.windowstolinux.shared.model.project.DeploymentRuntimeSpecification;
-import gold.debug.windowstolinux.shared.model.security.CredentialStorageMode;
 import gold.debug.windowstolinux.shared.model.server.ServerIdentity;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 /** Tests structured persisted-input readiness without remote access. / 测试不访问远端的结构化持久化输入准入。 */
-class ManagedBackupInputUseCaseTest {
+class ManagedBackupInputUseCaseTest extends SecurityTestFixture {
     @TempDir
     Path temporaryDirectory;
 
@@ -44,11 +44,11 @@ class ManagedBackupInputUseCaseTest {
         AtomicInteger connections = new AtomicInteger();
         try (DesktopPersistence persistence = DesktopPersistence.open(data)) {
             PersistedInput input = persistComplete(persistence, "demo", "c".repeat(64));
-            DesktopApplicationFacade service = new DesktopApplicationFacade(persistence,
+            DesktopApplicationFacade service = SecurityTestFixture.unlocked(new DesktopApplicationFacade(persistence,
                     temporaryDirectory.resolve("work"), (endpoint, credential, verifier) -> {
                         connections.incrementAndGet();
                         throw new AssertionError("persisted-input assessment must not connect to a server");
-                    });
+                    }));
 
             ManagedBackupInputAssessment assessment = service.assessManagedBackupInputs("demo");
 
@@ -120,6 +120,8 @@ class ManagedBackupInputUseCaseTest {
             Optional<List<gold.debug.windowstolinux.shared.config.resource.ManagedDatabaseBinding>> databaseBindings)
             throws Exception {
         ServerIdentity server = new ServerIdentity("server-one", "192.0.2.10", 22, "SHA256:AAAAAAAAAAAA");
+        SecurityTestFixture.server(persistence, server);
+        SecurityTestFixture.credential(persistence, "application-secret/database-password/1");
         ManagedApplication application = ManagedApplication.forManaged(applicationId, server, "a".repeat(64));
         HealthCheck.Tcp health = new HealthCheck.Tcp(18080, 20, 1);
         DeploymentRuntimeSpecification reviewedRuntime = new DeploymentRuntimeSpecification.NodeService(22, health);
@@ -131,9 +133,8 @@ class ManagedBackupInputUseCaseTest {
                 Instant.parse("2026-08-22T00:00:00Z"), List.of(new ConfigurationEntry("PORT",
                         ConfigurationScope.RUNTIME, new ConfigurationValue.Number(18080))));
         SecretReference secret = new SecretReference("database-password", 1);
-        persistence.applicationSecrets()
-                .saveRevision(new StoredApplicationSecretRevision(secret, "application-secret/database-password/1",
-                        CredentialStorageMode.MASTER_PASSWORD, Instant.parse("2026-08-22T00:00:00Z")));
+        persistence.applicationSecrets().saveRevision(new StoredApplicationSecretRevision(secret,
+                "application-secret/database-password/1", Instant.parse("2026-08-22T00:00:00Z")));
         var component = new ManagedApplicationGraph.Component(applicationId, application, runtime, List.of(),
                 Optional.of(reviewedRuntime), Optional.of(List.of()),
                 Optional.of(new ManagedComponentResourceBindings(List.of(), databaseBindings)));
@@ -147,15 +148,12 @@ class ManagedBackupInputUseCaseTest {
     private static void removeRequiredInputs(Path database, PersistedInput input) throws Exception {
         try (var connection = DriverManager.getConnection("jdbc:sqlite:" + database.toAbsolutePath());
                 var statement = connection.createStatement()) {
-            statement.executeUpdate("UPDATE managed_application_graph_component "
-                    + "SET reviewed_runtime=NULL, reviewed_data_paths=NULL, reviewed_resource_bindings=NULL "
+            statement.executeUpdate("UPDATE managed_application_component "
+                    + "SET reviewed_runtime_payload=NULL, reviewed_data_paths_payload=NULL, reviewed_resource_bindings_payload=NULL "
                     + "WHERE application_id='demo'");
-            statement.executeUpdate("DELETE FROM application_release_configuration_binding "
-                    + "WHERE application_id='demo' AND release_identity='" + input.release().releaseSha256() + "'");
-            statement.executeUpdate("DELETE FROM application_release_secret_reference "
-                    + "WHERE application_id='demo' AND release_identity='" + input.release().releaseSha256() + "'");
-            statement.executeUpdate("DELETE FROM application_release_secret_binding "
-                    + "WHERE application_id='demo' AND release_identity='" + input.release().releaseSha256() + "'");
+            statement.executeUpdate(
+                    "DELETE FROM deployment_unit_release_secret_reference WHERE deployment_unit_id='demo'");
+            statement.executeUpdate("DELETE FROM deployment_unit_release_binding WHERE deployment_unit_id='demo'");
         }
     }
 

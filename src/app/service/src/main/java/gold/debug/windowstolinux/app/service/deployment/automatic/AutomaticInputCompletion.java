@@ -35,19 +35,17 @@ public final class AutomaticInputCompletion {
      * <p>解析映射。
      *
      * @param fields allowed or requested input field definitions / 允许或请求的输入字段定义
-     * @param master master-password buffer used for the scoped secret operation / 限定秘密操作使用的主密码缓冲区
      * @param interaction caller-owned progress, confirmation and input callbacks / 调用方持有的进度、确认及输入回调
      * @return map / 映射
      */
-    public Map<String, String> resolve(List<DeploymentInputField> fields, char[] master,
-            AutomaticDeploymentInteraction interaction) {
+    public Map<String, String> resolve(List<DeploymentInputField> fields, AutomaticDeploymentInteraction interaction) {
         if (fields.isEmpty())
             return Map.of();
         Map<String, String> values = new LinkedHashMap<>();
         try {
             var result = ai.invokeAiRole(new DeploymentInputRoleContext(fields.stream().limit(64).toList(),
                     "Suggest only a uniquely evidenced supplied candidate. Leave conflicts and unknown free text unresolved.",
-                    List.of()), master.clone());
+                    List.of()));
             result.flatMap(response -> response.evidence().output())
                     .filter(advice -> advice.decision() == AiAdviceDecision.CLEAR).ifPresent(advice -> {
                         for (String finding : advice.findings()) {

@@ -15,24 +15,16 @@ class ServerProfileRepositoryTest {
     Path directory;
 
     private final StoredServerProfile old = new StoredServerProfile("first", "example.test", 22, "tester",
-            "ssh/first/password", "MASTER_PASSWORD");
+            "ssh/first/password");
 
     @Test
-    void migratesVersionTwelveAndPreservesNamesChecksAndStableIdentityAcrossReopen() throws Exception {
+    void preservesNamesChecksAndStableIdentityAcrossReopen() throws Exception {
         try (var db = DesktopPersistence.open(directory)) {
+            gold.debug.windowstolinux.app.db.DatabaseTestFixture.credential(db, old.credentialKey());
             db.servers().saveServerProfile(old);
         }
-        try (var connection = DriverManager.getConnection("jdbc:sqlite:" + directory.resolve("windowstolinux.db"));
-                var statement = connection.createStatement()) {
-            for (String column : java.util.List.of("display_name", "last_checked", "connected", "operating_system"))
-                statement.execute("ALTER TABLE server_profile DROP COLUMN " + column);
-            for (String table : java.util.List.of("deployment_agent_event", "deployment_agent_task", "ai_model_purpose",
-                    "ai_model_verification", "ai_model_inventory"))
-                statement.execute("DROP TABLE " + table);
-            statement.execute("PRAGMA user_version=12");
-        }
         StoredServerProfile renamed = new StoredServerProfile(old.id(), old.host(), 22, old.username(),
-                old.credentialKey(), old.credentialMode(), "Production EU");
+                old.credentialKey(), "Production EU");
         try (var db = DesktopPersistence.open(directory)) {
             assertEquals(old, db.servers().findServerProfile("first").orElseThrow());
             assertTrue(db.servers().observation("first").checkedAt().isEmpty());
@@ -44,7 +36,7 @@ class ServerProfileRepositoryTest {
             assertTrue(db.servers().observation("first").connected());
             assertTrue(db.servers().observation("first").checkedAt().isPresent());
             StoredServerProfile changed = new StoredServerProfile(old.id(), "other.test", 2222, old.username(),
-                    old.credentialKey(), old.credentialMode(), renamed.displayName());
+                    old.credentialKey(), renamed.displayName());
             db.servers().saveServerProfile(changed);
             db.servers().recordObservation(old, false, "");
             assertTrue(db.servers().observation("first").checkedAt().isEmpty(),

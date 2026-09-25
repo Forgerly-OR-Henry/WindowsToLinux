@@ -15,22 +15,20 @@ public interface AiApplicationFacade {
     /** Tests one capability and persists evidence for the exact revision. / 测试能力并保存精确修订证据。
      * @param id profile identity / 模型标识
      * @param capability selected capability / 所选能力
-     * @param master unlock buffer consumed by the call / 调用消耗的解锁缓冲区
      * @throws Exception if testing fails / 测试失败时
      */
-    void testAiCapability(String id, AiCapabilityType capability, char[] master) throws Exception;
+    void testAiCapability(String id, AiCapabilityType capability) throws Exception;
 
     /** Tests and saves one model without enrolling it in a purpose. / 测试并保存模型，不自动加入用途。
      * @param profile model settings / 模型设置
      * @param name display label / 显示名称
-     * @param master unlock buffer / 解锁缓冲区
      * @param key supplied credential / 提供的凭据
      * @param capability tested capability / 已测试能力
      * @throws SQLException if storage fails / 保存失败时
      * @throws SecretStoreException if secret access fails / 秘密访问失败时
      */
-    void saveAiConfiguration(AiProviderProfile profile, String name, char[] master, char[] key,
-            AiCapabilityType capability) throws SQLException, SecretStoreException;
+    void saveAiConfiguration(AiProviderProfile profile, String name, char[] key, AiCapabilityType capability)
+            throws SQLException, SecretStoreException;
 
     /** Reorders only the full inventory. / 仅调整完整清单顺序。
      * @param ids full ordered inventory identities / 完整有序清单标识
@@ -60,11 +58,9 @@ public interface AiApplicationFacade {
 
     /** Requests bounded advice through the deployment purpose. / 通过部署用途请求有界建议。
      * @param context structured facts / 结构化事实
-     * @param masterPassword unlock buffer / 解锁缓冲区
      * @return validated result or no available provider / 已校验结果或无可用模型
      * @throws SQLException if configuration access fails / 配置访问失败时
      * @throws SecretStoreException if secret access fails / 秘密访问失败时
      */
-    Optional<AiRoleInvocationResult> invokeAiRole(AiRoleContext context, char[] masterPassword)
-            throws SQLException, SecretStoreException;
+    Optional<AiRoleInvocationResult> invokeAiRole(AiRoleContext context) throws SQLException, SecretStoreException;
 }

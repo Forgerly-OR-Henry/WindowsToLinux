@@ -10,6 +10,7 @@ import java.util.*;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import gold.debug.windowstolinux.app.db.DesktopPersistence;
+import gold.debug.windowstolinux.app.service.SecurityTestFixture;
 import gold.debug.windowstolinux.app.service.contract.AutomaticDeploymentApplicationFacade;
 import gold.debug.windowstolinux.app.service.contract.definition.AutomaticDeploymentRequest;
 import gold.debug.windowstolinux.app.service.deployment.AutonomousDeploymentUseCase;
@@ -35,13 +36,12 @@ import gold.debug.windowstolinux.shared.model.deployment.*;
 import gold.debug.windowstolinux.shared.model.lifecycle.*;
 import gold.debug.windowstolinux.shared.model.managed.ManagedApplication;
 import gold.debug.windowstolinux.shared.model.project.DeploymentRuntimeSpecification;
-import gold.debug.windowstolinux.shared.model.security.CredentialStorageMode;
 import gold.debug.windowstolinux.shared.standard.analyze.core.DeploymentAnalysisCoordinator;
 import org.junit.jupiter.api.*;
 import org.junit.jupiter.api.io.TempDir;
 
 @Timeout(45)
-class AutonomousAppIntegrationTest {
+class AutonomousAppIntegrationTest extends SecurityTestFixture {
     @TempDir
     Path root;
 
@@ -51,17 +51,15 @@ class AutonomousAppIntegrationTest {
     char[] master() {
         return "autonomous fixture password".toCharArray();
     }
-    final ServerProfile server = new ServerProfile("server", "fixture.invalid", 22, "root", "ssh/test",
-            CredentialStorageMode.MASTER_PASSWORD);
+    final ServerProfile server = new ServerProfile("server", "fixture.invalid", 22, "root", "ssh/test");
 
     @Test
     void rejectsAnUnsupportedManagementAccountBeforeReadingSourceOrConnecting() {
-        var unprivileged = new ServerProfile("server", "fixture.invalid", 22, "deploy", "ssh/test",
-                CredentialStorageMode.MASTER_PASSWORD);
+        var unprivileged = new ServerProfile("server", "fixture.invalid", 22, "deploy", "ssh/test");
         var request = new AutomaticDeploymentRequest(Optional.of(root.resolve("unread")), Optional.empty(),
                 unprivileged, Map.of());
         var useCase = new AutonomousDeploymentUseCase(null, null, null, null);
-        assertThrows(SecurityException.class, () -> useCase.deploy(request, master(), null, null, m -> {
+        assertThrows(SecurityException.class, () -> useCase.deploy(request, null, null, m -> {
         }, null, null, e -> {
         }, r -> {
         }));
@@ -92,12 +90,12 @@ class AutonomousAppIntegrationTest {
                     proposals.add(tool("seal", Map.of("component", id)));
                 }
                 proposals.add(tool("deliver", Map.of()));
-                var secrets = new DesktopSecretStoreService(db.encryptedSecrets());
+                var secrets = SecurityTestFixture.secrets(db);
                 for (var purpose : List.of(AiPurposeType.DEPLOYMENT, AiPurposeType.APPROVAL)) {
                     String id = purpose.name().toLowerCase(Locale.ROOT);
                     var profile = new AiProviderProfile(id, URI.create("https://fixture.invalid/v1/chat/completions"),
-                            id, "ai/" + id, CredentialStorageMode.MASTER_PASSWORD);
-                    try (var store = secrets.open(profile.credentialMode(), master())) {
+                            id, "ai/" + id);
+                    try (var store = secrets.open()) {
                         store.save(profile.credentialKey(), "fixture".toCharArray());
                     }
                     db.aiProfiles().saveVerified(profile.stored(), id, Instant.now());
@@ -132,7 +130,7 @@ class AutonomousAppIntegrationTest {
                     return remote(observed);
                 };
                 var servers = new ServerUseCaseFacade(db.servers(), secrets, gateway);
-                try (var store = secrets.open(server.credentialMode(), master())) {
+                try (var store = secrets.open()) {
                     servers.save(server, store, "fixture".toCharArray());
                 }
                 var source = new SourcePreparationUseCase(new DeploymentAnalysisCoordinator(),
@@ -163,7 +161,7 @@ class AutonomousAppIntegrationTest {
                 var request = new AutomaticDeploymentRequest(Optional.of(project), Optional.empty(), server,
                         Map.of("applicationId", "custom" + count))
                         .withAutomation(DeploymentAutomationMode.AGENT, AgentApprovalMode.FULL_CONTROL);
-                var result = task.deploy(request, master(), interaction, f -> true, m -> {
+                var result = task.deploy(request, interaction, f -> true, m -> {
                 });
                 assertEquals(DeploymentStatus.SUCCEEDED, result.status(),
                         db.agentTasks().events(request.taskId()).toString());

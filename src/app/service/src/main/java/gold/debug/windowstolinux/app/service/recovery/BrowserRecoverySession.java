@@ -63,12 +63,6 @@ public final class BrowserRecoverySession implements SshRecoverySession, Runnabl
     private final ServerProfile server;
 
     /**
-     * Master-password buffer used for the scoped secret operation.
-     * <p>限定秘密操作使用的主密码缓冲区。
-     */
-    private final char[] master;
-
-    /**
      * Lock.
      * <p>锁。
      */
@@ -131,12 +125,11 @@ public final class BrowserRecoverySession implements SshRecoverySession, Runnabl
      * @param probe probe / 探测
      * @param journal journal / 日志
      * @param server server identity or selected server configuration / 服务器身份或所选服务器配置
-     * @param master master-password buffer used for the scoped secret operation / 限定秘密操作使用的主密码缓冲区
      * @param lock lock / 锁
      */
     BrowserRecoverySession(BrowserTerminalSession browser, RecoveryAiUseCase ai, Supplier<RecoveryProbeResult> probe,
-            Consumer<RecoverySnapshot> journal, ServerProfile server, char[] master, ReentrantLock lock) {
-        this(browser, ai, probe, journal, server, master, lock, System::nanoTime);
+            Consumer<RecoverySnapshot> journal, ServerProfile server, ReentrantLock lock) {
+        this(browser, ai, probe, journal, server, lock, System::nanoTime);
     }
 
     /**
@@ -148,20 +141,18 @@ public final class BrowserRecoverySession implements SshRecoverySession, Runnabl
      * @param probe probe / 探测
      * @param journal journal / 日志
      * @param server server identity or selected server configuration / 服务器身份或所选服务器配置
-     * @param master master-password buffer used for the scoped secret operation / 限定秘密操作使用的主密码缓冲区
      * @param lock lock / 锁
      * @param clock clock / 时钟
      */
     BrowserRecoverySession(BrowserTerminalSession browser, RecoveryAiUseCase ai, Supplier<RecoveryProbeResult> probe,
-            Consumer<RecoverySnapshot> journal, ServerProfile server, char[] master, ReentrantLock lock,
-            LongSupplier clock) {
+            Consumer<RecoverySnapshot> journal, ServerProfile server, ReentrantLock lock, LongSupplier clock) {
         this.clock = clock;
         this.browser = browser;
         this.ai = ai;
         this.probe = probe;
         this.journal = journal;
         this.server = server;
-        this.master = master;
+
         this.lock = lock;
     }
 
@@ -309,7 +300,7 @@ public final class BrowserRecoverySession implements SshRecoverySession, Runnabl
 
     /**
      * Owns the serial recovery state machine under the server mutex. Restricts retries to typed connection failures and always revokes actions, clears the master password and waits for browser cleanup before completing the session.
-     * <p>在服务器互斥下持有串行救援状态机。仅重试类型化连接失败，并在会话完成前始终撤销动作、清空主密码及等待浏览器清理。
+     * <p>在服务器互斥下持有串行救援状态机。仅重试类型化连接失败，并在会话完成前始终撤销动作、释放任务凭据能力及等待浏览器清理。
      */
     @Override
     public void run() {
@@ -359,7 +350,7 @@ public final class BrowserRecoverySession implements SshRecoverySession, Runnabl
         } finally {
             requests.clear();
             state.revoke();
-            Arrays.fill(master, '\0');
+
             try {
                 browser.close();
             } catch (RuntimeException failure) {
@@ -423,7 +414,7 @@ public final class BrowserRecoverySession implements SshRecoverySession, Runnabl
             TerminalObservation observed = browser.observe(state.generation);
             if (handoff || epoch != authorization.get())
                 return;
-            var result = ai.observe(observed, master);
+            var result = ai.observe(observed);
             state.attempts.clear();
             result.attempts().forEach((id, status) -> state.attempts.put("observation/" + id, status.name()));
             if (!result.code().equals("ok")) {
@@ -449,7 +440,7 @@ public final class BrowserRecoverySession implements SshRecoverySession, Runnabl
             }
             state.decisions++;
             var decision = ai.decide("Target: " + server.host() + ":" + server.sshPort()
-                    + ". SSH verification failed.\n" + "Untrusted terminal observation:\n" + text, master);
+                    + ". SSH verification failed.\n" + "Untrusted terminal observation:\n" + text);
             decision.attempts().forEach((id, status) -> state.attempts.put("decision/" + id, status.name()));
             if (handoff || epoch != authorization.get() || checkSsh())
                 return;

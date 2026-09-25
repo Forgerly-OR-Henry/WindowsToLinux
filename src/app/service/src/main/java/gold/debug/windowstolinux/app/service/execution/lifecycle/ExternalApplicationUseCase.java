@@ -74,15 +74,14 @@ public final class ExternalApplicationUseCase {
      * Scans metadata only and maps already registered identities. / 仅扫描元数据，并映射已登记身份。
      *
      * @param serverId persisted server identifier / 持久化服务器标识
-     * @param master master-password buffer used for the scoped secret operation / 限定秘密操作使用的主密码缓冲区
      * @param confirmation token or decision binding approval to the exact proposed action / 将批准绑定到精确提议动作的令牌或决定
      * @return constructed or resolved application scan / 构造或解析得到的应用扫描
      * @throws Exception if the delegated operation or caller-provided interaction fails / 被委派操作或调用方提供的交互失败时
      */
-    public ApplicationScan scan(String serverId, char[] master, Predicate<String> confirmation) throws Exception {
-        try {
+    public ApplicationScan scan(String serverId, Predicate<String> confirmation) throws Exception {
+        {
             ServerProfile server = requireServer(serverId);
-            var result = withSession(server, master, confirmation, ExternalApplicationPort::scan);
+            var result = withSession(server, confirmation, ExternalApplicationPort::scan);
             Map<String, String> registrations = new HashMap<>();
             for (var app : managed.list())
                 if (app.server().id().equals(serverId)) {
@@ -96,8 +95,6 @@ public final class ExternalApplicationUseCase {
                 if (app.serverId().equals(serverId))
                     registrations.put(app.application().target().key(), app.id());
             return new ApplicationScan(server, result.applications(), result.issues(), registrations);
-        } finally {
-            Arrays.fill(master, '\0');
         }
     }
 
@@ -106,13 +103,12 @@ public final class ExternalApplicationUseCase {
      *
      * @param scan scan / 扫描
      * @param candidate candidate / 候选
-     * @param master master-password buffer used for the scoped secret operation / 限定秘密操作使用的主密码缓冲区
      * @param confirmation token or decision binding approval to the exact proposed action / 将批准绑定到精确提议动作的令牌或决定
      * @return adopt text / 接管文本
      * @throws Exception if the delegated operation or caller-provided interaction fails / 被委派操作或调用方提供的交互失败时
      */
-    public String adopt(ApplicationScan scan, DiscoveredApplication candidate, char[] master,
-            Predicate<String> confirmation) throws Exception {
+    public String adopt(ApplicationScan scan, DiscoveredApplication candidate, Predicate<String> confirmation)
+            throws Exception {
         var lock = locks.forServer(scan.server().id());
         try {
             lock.lockInterruptibly();
@@ -121,7 +117,7 @@ public final class ExternalApplicationUseCase {
             ServerProfile server = requireServer(scan.server().id());
             if (!server.endpoint().equals(scan.server().endpoint()))
                 throw changed();
-            var fresh = withSession(server, master, confirmation,
+            var fresh = withSession(server, confirmation,
                     port -> port.execute(candidate.target(), LifecycleAction.REFRESH_STATUS));
             if (fresh.managed()) {
                 String existing = scan.registrations().getOrDefault(fresh.target().key(), "");
@@ -140,7 +136,7 @@ public final class ExternalApplicationUseCase {
         } finally {
             if (lock.isHeldByCurrentThread())
                 lock.unlock();
-            Arrays.fill(master, '\0');
+
         }
     }
 
@@ -149,14 +145,13 @@ public final class ExternalApplicationUseCase {
      *
      * @param id stable identifier within the owning registry / 所属登记表内的稳定标识
      * @param action explicit action selected for the current target / 为当前目标显式选择的动作
-     * @param master master-password buffer used for the scoped secret operation / 限定秘密操作使用的主密码缓冲区
      * @param confirmation token or decision binding approval to the exact proposed action / 将批准绑定到精确提议动作的令牌或决定
      * @return constructed or resolved application lifecycle result / 构造或解析得到的应用生命周期结果
      * @throws Exception if the delegated operation or caller-provided interaction fails / 被委派操作或调用方提供的交互失败时
      */
-    public ApplicationLifecycleResult execute(String id, LifecycleAction action, char[] master,
-            Predicate<String> confirmation) throws Exception {
-        try {
+    public ApplicationLifecycleResult execute(String id, LifecycleAction action, Predicate<String> confirmation)
+            throws Exception {
+        {
             var stored = applications.find(id)
                     .orElseThrow(() -> new IllegalArgumentException("external application no longer exists"));
             var lock = locks.forServer(stored.serverId());
@@ -166,7 +161,7 @@ public final class ExternalApplicationUseCase {
                 if (!server.host().equals(stored.host()) || server.sshPort() != stored.sshPort()
                         || !server.username().equals(stored.username()))
                     throw changed();
-                var result = withSession(server, master, confirmation,
+                var result = withSession(server, confirmation,
                         port -> port.execute(stored.application().target(), action));
                 if (result.managed())
                     throw ownershipRequired();
@@ -176,8 +171,6 @@ public final class ExternalApplicationUseCase {
             } finally {
                 lock.unlock();
             }
-        } finally {
-            Arrays.fill(master, '\0');
         }
     }
 
@@ -200,15 +193,14 @@ public final class ExternalApplicationUseCase {
      *
      * @param <T> type of the contract payload / 契约载荷的类型
      * @param server server identity or selected server configuration / 服务器身份或所选服务器配置
-     * @param master master-password buffer used for the scoped secret operation / 限定秘密操作使用的主密码缓冲区
      * @param confirmation token or decision binding approval to the exact proposed action / 将批准绑定到精确提议动作的令牌或决定
      * @param work work / 工作
      * @return constructed or resolved T / 构造或解析得到的T
      * @throws Exception if the delegated operation or caller-provided interaction fails / 被委派操作或调用方提供的交互失败时
      */
-    private <T> T withSession(ServerProfile server, char[] master, Predicate<String> confirmation, RemoteWork<T> work)
+    private <T> T withSession(ServerProfile server, Predicate<String> confirmation, RemoteWork<T> work)
             throws Exception {
-        try (var store = servers.secrets().open(server.credentialMode(), master);
+        try (var store = servers.secrets().open();
                 var session = gateway.connect(server.endpoint(), servers.loadPassword(server, store),
                         servers.hostKeyVerifier(server, confirmation))) {
             return work.run(session.externalApplications());

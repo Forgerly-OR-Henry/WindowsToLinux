@@ -27,9 +27,6 @@ public final class AiPage {
     /** Shared component factory. / 共用控件工厂。 */
     private final DesktopComponentFactory c;
 
-    /** Short-lived unlock input. / 短生命周期解锁输入。 */
-    private final JPasswordField masterPassword = new JPasswordField(20);
-
     /** Advice output. / 建议输出。 */
     private final JTextArea output = DesktopComponentFactory.outputArea();
 
@@ -61,7 +58,6 @@ public final class AiPage {
         this.messages = messages;
         inventory = new AiModelInventoryPane(service, c, messages, this::edit);
         panel = new AdvancedOptionsPane(inventory, c, messages);
-        panel.field("field.masterPassword", masterPassword);
         for (var capability : AiCapabilityType.values()) {
             JButton test = c.secondaryButton(messages.text("ai.capability.test." + capability.name()));
             test.addActionListener(event -> test(capability));
@@ -98,19 +94,13 @@ public final class AiPage {
      * @return state snapshot / 状态快照
      */
     public AiPageState captureState() {
-        return new AiPageState(masterPassword.getPassword(), output.getText(), inventory.capture());
+        return new AiPageState(output.getText(), inventory.capture());
     }
 
     /** Restores transient UI state. / 恢复临时界面状态。
      * @param state captured state / 捕获状态
      */
     public void restoreState(AiPageState state) {
-        char[] password = state.masterPassword();
-        try {
-            masterPassword.setText(new String(password));
-        } finally {
-            Arrays.fill(password, '\0');
-        }
         output.setText(state.output());
         inventory.restore(state.inventory());
     }
@@ -132,15 +122,12 @@ public final class AiPage {
         var model = inventory.current();
         if (busy || service == null || model == null)
             return;
-        char[] master = masterPassword.getPassword();
         setBusy(true);
         output.setText(messages.text("ai.models.testing"));
         task = DesktopTaskExecutor.submit(() -> {
-            try {
-                service.testAiCapability(model.profile().id(), capability, master);
+            {
+                service.testAiCapability(model.profile().id(), capability);
                 return true;
-            } finally {
-                Arrays.fill(master, '\0');
             }
         }, done -> {
             setBusy(false);
@@ -161,15 +148,12 @@ public final class AiPage {
             output.setText(messages.text("ai.analyzeFirst"));
             return;
         }
-        char[] master = masterPassword.getPassword();
         setBusy(true);
         output.setText(messages.text("ai.requesting"));
         task = DesktopTaskExecutor.submit(() -> {
-            try {
+            {
                 return service.invokeAiRole(
-                        ProjectAnalysisRoleContext.from(preparation.get().assessment().facts().orElseThrow()), master);
-            } finally {
-                Arrays.fill(master, '\0');
+                        ProjectAnalysisRoleContext.from(preparation.get().assessment().facts().orElseThrow()));
             }
         }, result -> {
             setBusy(false);

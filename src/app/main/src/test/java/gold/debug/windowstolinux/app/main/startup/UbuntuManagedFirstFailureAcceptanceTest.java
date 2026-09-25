@@ -23,7 +23,6 @@ import gold.debug.windowstolinux.shared.model.deployment.DeploymentStatus;
 import gold.debug.windowstolinux.shared.model.health.HealthCheck;
 import gold.debug.windowstolinux.shared.model.health.UserAccessUrl;
 import gold.debug.windowstolinux.shared.model.lifecycle.LifecycleAction;
-import gold.debug.windowstolinux.shared.model.security.CredentialStorageMode;
 import gold.debug.windowstolinux.shared.standard.deploy.contract.ReviewedDeploymentRequest;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIfSystemProperty;
@@ -35,6 +34,7 @@ import org.junit.jupiter.api.io.TempDir;
  * <p>可选实时首次部署失败演练。由程序而非测试操作员执行目标机构建、候选发布和回滚。
  */
 @EnabledIfSystemProperty(named = "managed.runtime.first-failure", matches = "true")
+@org.junit.jupiter.api.extension.ExtendWith(MainSecurityFixture.class)
 class UbuntuManagedFirstFailureAcceptanceTest {
     @TempDir
     Path temporaryDirectory;
@@ -57,23 +57,21 @@ class UbuntuManagedFirstFailureAcceptanceTest {
 
         HealthCheck.Http deliberatelyMissingEndpoint = new HealthCheck.Http(
                 URI.create("http://127.0.0.1:18082/health-missing"), 200, 10);
-        char[] masterPassword = "managed-first-failure-master".toCharArray();
+
         try (DesktopPersistence database = DesktopPersistence.open(temporaryDirectory.resolve("desktop-data"))) {
-            DesktopApplicationFacade service = new DesktopApplicationFacade(database,
+            DesktopApplicationFacade service = MainSecurityFixture.unlocked(new DesktopApplicationFacade(database,
                     temporaryDirectory.resolve("work"),
                     new SshdLinuxGateway(
                             gold.debug.windowstolinux.shared.standard.deploy.build.DeploymentBuildExecutor::new,
                             gold.debug.windowstolinux.shared.standard.deploy.distro.extension.registry.DistributionSetupRegistry
-                                    .defaults()));
+                                    .defaults())));
             ReviewedSourcePreparation preparation = ReviewedMavenAcceptanceFixture.prepare(service, source);
             assertTrue(preparation.archive().isPresent(), "fixture must pass managed-deployment static analysis");
 
             ServerProfile profile = new ServerProfile("ubuntu-managed-first-failure", host, 22, username,
-                    "ssh/ubuntu-managed-first-failure/password", CredentialStorageMode.MASTER_PASSWORD);
-            service.saveServerProfile(profile, CredentialStorageMode.MASTER_PASSWORD, masterPassword,
-                    password.toCharArray());
-            var capabilities = service.verifyServer(profile, CredentialStorageMode.MASTER_PASSWORD,
-                    "managed-first-failure-master".toCharArray(), fingerprint -> true);
+                    "ssh/ubuntu-managed-first-failure/password");
+            service.saveServerProfile(profile, password.toCharArray());
+            var capabilities = service.verifyServer(profile, fingerprint -> true);
             assertTrue(capabilities.supportsManagedDeployment(preparation.assessment().facts().orElseThrow()
                     .buildTool() == gold.debug.windowstolinux.shared.model.project.DeploymentBuildToolType.MAVEN_WRAPPER,
                     deliberatelyMissingEndpoint),
@@ -85,9 +83,7 @@ class UbuntuManagedFirstFailureAcceptanceTest {
                     Optional.of(new UserAccessUrl(URI.create("http://" + host + ":18082/"))),
                     new BuildLimitConfiguration(1200, 1024, 4096, 4L * 1024 * 1024, 2L * 1024 * 1024 * 1024, rootBuild),
                     rootBuild);
-            DeploymentResult result = service
-                    .deployReviewedWithStoredPassword(request, profile, CredentialStorageMode.MASTER_PASSWORD,
-                            "managed-first-failure-master".toCharArray(), fingerprint -> true)
+            DeploymentResult result = service.deployReviewedWithStoredPassword(request, profile, fingerprint -> true)
                     .result();
 
             assertEquals(DeploymentStatus.FAILED_FIRST_DEPLOYMENT, result.status(), () -> result.events().toString());

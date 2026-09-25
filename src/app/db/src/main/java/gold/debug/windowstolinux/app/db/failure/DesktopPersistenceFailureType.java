@@ -45,10 +45,10 @@ public enum DesktopPersistenceFailureType implements FailureDefinition {
     DATABASE_CORRUPTED("persistence.integrity.corrupted", "integrity", "persistence.error.databaseCorrupted",
             FailureRecoveryAction.REQUIRE_MANUAL_RECOVERY),
     /**
-     * SCHEMA NEWER classification within desktop persistence failure type.
-     * <p>Desktop持久化失败类型中的结构更新版本分类。
+     * SCHEMA INCOMPATIBLE classification within desktop persistence failure type.
+     * <p>Desktop持久化失败类型中的结构不兼容分类。
      */
-    SCHEMA_NEWER("persistence.schema.newer-than-client", "migration", "persistence.error.schemaNewer",
+    SCHEMA_INCOMPATIBLE("persistence.schema.incompatible", "schema", "persistence.error.schemaIncompatible",
             FailureRecoveryAction.REQUIRE_MANUAL_RECOVERY),
     /**
      * DISK UNAVAILABLE classification within desktop persistence failure type.

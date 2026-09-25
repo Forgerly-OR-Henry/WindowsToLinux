@@ -12,10 +12,13 @@ import gold.debug.windowstolinux.shared.model.recovery.*;
  * Owns every Playwright object on one serial event-pumping thread. / 在单一串行事件线程上持有全部 Playwright 对象。
  */
 public final class PlaywrightTerminalSession implements BrowserTerminalSession {
-    /**
-     * SELECTOR.
-     * <p>选择器。
-     */
+    /** Native privacy state for this isolated browser process. / 隔离浏览器进程的原生隐私状态。 */
+    private final BrowserWindowPrivacy privacy = new BrowserWindowPrivacy();
+
+    /** Lock observation registration released after browser cleanup. / 浏览器清理后释放的锁定观察登记。 */
+    private final AutoCloseable privacyRegistration;
+
+    /** Terminal element selectors supported by the isolated browser. / 隔离浏览器支持的终端元素选择器。 */
     private static final String SELECTOR = ".xterm, canvas, [role=log], pre[data-terminal], textarea[data-terminal], [data-wtl-terminal]";
 
     /**
@@ -114,8 +117,28 @@ public final class PlaywrightTerminalSession implements BrowserTerminalSession {
      * @param initialUrl initial url / 初始URL
      */
     PlaywrightTerminalSession(boolean headless, String initialUrl) {
+        this(headless, initialUrl, participant -> () -> {
+        });
+    }
+
+    /** Connects the isolated browser to the desktop lock boundary. / 将隔离浏览器连接到桌面锁定边界。
+     * @param observeLock registration supplied by the desktop service / 桌面服务提供的登记
+     */
+    public PlaywrightTerminalSession(
+            java.util.function.Function<java.util.function.Consumer<Boolean>, AutoCloseable> observeLock) {
+        this(false, "about:blank", observeLock);
+    }
+
+    /** Creates an isolated browser with an explicit privacy registration. / 使用显式隐私登记创建隔离浏览器。
+     * @param headless whether no native window is created / 是否不创建原生窗口
+     * @param initialUrl initial page / 初始页面
+     * @param observeLock desktop lock registration / 桌面锁定登记
+     */
+    PlaywrightTerminalSession(boolean headless, String initialUrl,
+            java.util.function.Function<java.util.function.Consumer<Boolean>, AutoCloseable> observeLock) {
         this.headless = headless;
         this.initialUrl = initialUrl;
+        privacyRegistration = observeLock.apply(privacy::setLocked);
     }
 
     /**
@@ -146,6 +169,20 @@ public final class PlaywrightTerminalSession implements BrowserTerminalSession {
             if (channel != null)
                 launch.setChannel(channel);
             browser = playwright.chromium().launch(launch);
+            if (!headless) {
+                var inspector = browser.newBrowserCDPSession();
+                try {
+                    long pid = java.util.stream.StreamSupport
+                            .stream(inspector.send("SystemInfo.getProcessInfo").getAsJsonArray("processInfo")
+                                    .spliterator(), false)
+                            .map(com.google.gson.JsonElement::getAsJsonObject)
+                            .filter(info -> info.get("type").getAsString().equals("browser"))
+                            .mapToLong(info -> info.get("id").getAsLong()).findFirst().orElseThrow();
+                    privacy.identify(pid);
+                } finally {
+                    inspector.detach();
+                }
+            }
             context = browser.newContext(new Browser.NewContextOptions().setViewportSize(1280, 800));
             context.setDefaultTimeout(4000);
             context.onPage(this::watch);
@@ -518,8 +555,15 @@ public final class PlaywrightTerminalSession implements BrowserTerminalSession {
                     }
                 }
             } finally {
-                if (interrupted)
-                    Thread.currentThread().interrupt();
+                privacy.forget();
+                try {
+                    privacyRegistration.close();
+                } catch (Exception failure) {
+                    throw new BrowserRecoveryException(BrowserRecoveryFailureType.CLEANUP_FAILED, null);
+                } finally {
+                    if (interrupted)
+                        Thread.currentThread().interrupt();
+                }
             }
         }
     }

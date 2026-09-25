@@ -16,6 +16,8 @@ class RepositoryTransactionExecutorTest {
     void stopsWithStructuredFailureWhenRollbackCannotBeVerified() {
         Connection connection = (Connection) Proxy.newProxyInstance(Connection.class.getClassLoader(),
                 new Class<?>[]{Connection.class}, (proxy, method, arguments) -> {
+                    if (method.getName().equals("getAutoCommit"))
+                        return true;
                     if (method.getName().equals("rollback")) {
                         throw new SQLException("fixture rollback failure");
                     }

@@ -21,7 +21,6 @@ import gold.debug.windowstolinux.shared.linux.error.LinuxOperationException;
 import gold.debug.windowstolinux.shared.linux.session.DeploymentRemoteSession;
 import gold.debug.windowstolinux.shared.model.capability.LinuxCapabilityFacts;
 import gold.debug.windowstolinux.shared.model.capability.ServerCapabilityFacts;
-import gold.debug.windowstolinux.shared.model.security.CredentialStorageMode;
 import gold.debug.windowstolinux.shared.model.server.ServerIdentity;
 
 /**
@@ -106,15 +105,16 @@ public final class ServerUseCaseFacade {
         Objects.requireNonNull(profile, "profile");
         Objects.requireNonNull(store, "store");
         try {
-            if (password.length == 0) {
-                var existing = profiles.findServerProfile(profile.id())
-                        .orElseThrow(() -> new IllegalArgumentException("server password is required"));
-                if (!existing.credentialKey().equals(profile.credentialKey())
-                        || !existing.credentialMode().equals(profile.credentialMode().name()))
-                    throw new IllegalArgumentException("changing credential storage requires a password");
-            } else
-                store.save(profile.credentialKey(), password);
-            profiles.saveServerProfile(profile.stored());
+            store.transaction(() -> {
+                if (password.length == 0) {
+                    var existing = profiles.findServerProfile(profile.id())
+                            .orElseThrow(() -> new IllegalArgumentException("server password is required"));
+                    if (!existing.credentialKey().equals(profile.credentialKey()))
+                        throw new IllegalArgumentException("changing credential storage requires a password");
+                } else
+                    store.save(profile.credentialKey(), password);
+                profiles.saveServerProfile(profile.stored());
+            });
         } finally {
             clear(password);
         }
@@ -126,18 +126,13 @@ public final class ServerUseCaseFacade {
      *  <p>通过 {@code save} 保存数据。
      *
      * @param profile connection or provider settings supplied to the operation / 提供给操作的连接或提供者设置
-     * @param mode selected operating or storage mode / 所选运行或存储模式
-     * @param masterPassword master-password buffer used to unlock protected credentials / 用于解锁受保护凭据的主密码缓冲区
      * @param password temporary plaintext authentication buffer / 临时明文认证缓冲区
      * @throws SQLException if the database cannot complete the requested read or transaction / 数据库无法完成请求的读取或事务时
      * @throws SecretStoreException if the protected credential cannot be accessed or updated / 无法访问或更新受保护凭据时
      */
-    public void save(ServerProfile profile, CredentialStorageMode mode, char[] masterPassword, char[] password)
-            throws SQLException, SecretStoreException {
-        try (SecretStore store = secrets.open(mode, masterPassword)) {
+    public void save(ServerProfile profile, char[] password) throws SQLException, SecretStoreException {
+        try (SecretStore store = secrets.open()) {
             save(profile, store, password);
-        } finally {
-            clear(masterPassword);
         }
     }
 
@@ -221,9 +216,7 @@ public final class ServerUseCaseFacade {
                     expected = profiles.findServer(profile.id());
                     if (expected.isPresent()) {
                         ServerIdentity known = expected.orElseThrow();
-                        String matching = profiles.hasLegacyHostKey(known)
-                                ? observation.legacyEncodedSha256()
-                                : observation.sshSha256();
+                        String matching = observation.sshSha256();
                         if (!known.host().equals(endpoint.host()) || known.sshPort() != endpoint.port()
                                 || !known.hostKeySha256().equals(matching))
                             return HostKeyDecision.REJECT;
@@ -282,19 +275,16 @@ public final class ServerUseCaseFacade {
      *  <p>通过 {@code verify} 验证输入。
      *
      * @param profile connection or provider settings supplied to the operation / 提供给操作的连接或提供者设置
-     * @param mode selected operating or storage mode / 所选运行或存储模式
-     * @param masterPassword master-password buffer used to unlock protected credentials / 用于解锁受保护凭据的主密码缓冲区
      * @param confirmation token or decision binding approval to the exact proposed action / 将批准绑定到精确提议动作的令牌或决定
      * @return the operation result / 操作结果
      * @throws SecretStoreException if the protected credential cannot be accessed or updated / 无法访问或更新受保护凭据时
      * @throws SQLException if the database cannot complete the requested read or transaction / 数据库无法完成请求的读取或事务时
      * @throws LinuxOperationException if the authenticated remote operation fails or its evidence is rejected / 已认证远端操作失败或其证据被拒绝时
      */
-    public ServerCapabilityFacts verify(ServerProfile profile, CredentialStorageMode mode, char[] masterPassword,
-            Predicate<String> confirmation) throws SecretStoreException, SQLException, LinuxOperationException {
+    public ServerCapabilityFacts verify(ServerProfile profile, Predicate<String> confirmation)
+            throws SecretStoreException, SQLException, LinuxOperationException {
         try {
-            requireMatchingMode(profile, mode);
-            try (SecretStore store = secrets.open(mode, masterPassword);
+            try (SecretStore store = secrets.open();
                     DeploymentRemoteSession session = gateway.connect(profile.endpoint(),
                             secrets.loadPassword(profile, store), hostKeyVerifier(profile, confirmation))) {
                 ServerCapabilityFacts facts = session.collectCapabilities();
@@ -309,8 +299,6 @@ public final class ServerUseCaseFacade {
                 failure.addSuppressed(recording);
             }
             throw failure;
-        } finally {
-            clear(masterPassword);
         }
     }
 
@@ -320,25 +308,19 @@ public final class ServerUseCaseFacade {
      *  <p>通过选定的已保存凭据采集精确的类型化部署能力，且不修改主机。
      *
      * @param profile the saved server profile / 已保存的服务器资料
-     * @param mode the selected credential storage mode / 选定的凭据存储模式
-     * @param masterPassword the optional secret-store master password / 可选的秘密存储主密码
      * @param confirmation first-use host-key confirmation / 首次使用主机密钥确认
      * @return exact non-secret deployment capabilities / 精确且不含秘密的部署能力
      * @throws SecretStoreException if the saved credential cannot be read / 无法读取已保存凭据时
      * @throws LinuxOperationException if the bounded remote inspection fails / 有界远端检查失败时
      */
-    public LinuxCapabilityFacts inspectDeploymentCapabilities(ServerProfile profile, CredentialStorageMode mode,
-            char[] masterPassword, Predicate<String> confirmation)
+    public LinuxCapabilityFacts inspectDeploymentCapabilities(ServerProfile profile, Predicate<String> confirmation)
             throws SecretStoreException, LinuxOperationException {
-        try {
-            requireMatchingMode(profile, mode);
-            try (SecretStore store = secrets.open(mode, masterPassword);
+        {
+            try (SecretStore store = secrets.open();
                     DeploymentRemoteSession session = gateway.connect(profile.endpoint(),
                             secrets.loadPassword(profile, store), hostKeyVerifier(profile, confirmation))) {
                 return session.collectDeploymentCapabilities();
             }
-        } finally {
-            clear(masterPassword);
         }
     }
 
@@ -364,20 +346,4 @@ public final class ServerUseCaseFacade {
         }
     }
 
-    /**
-     * Requires matching mode.
-     * <p>要求匹配模式。
-     *
-     * @param profile connection or provider settings supplied to the operation / 提供给操作的连接或提供者设置
-     * @param mode selected operating or storage mode / 所选运行或存储模式
-     * @throws NullPointerException if a required input is absent / 必需输入缺失时
-     */
-    private static void requireMatchingMode(ServerProfile profile, CredentialStorageMode mode) {
-        Objects.requireNonNull(profile, "profile");
-        Objects.requireNonNull(mode, "mode");
-        if (profile.credentialMode() != mode) {
-            throw ApplicationServiceException.create(ApplicationServiceFailureType.STORAGE_MODE_MISMATCH,
-                    "Credential storage mode does not match the saved server profile");
-        }
-    }
 }

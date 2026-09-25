@@ -25,7 +25,6 @@ import gold.debug.windowstolinux.app.ui.setting.SettingPageState;
 import gold.debug.windowstolinux.shared.ai.collaboration.role.AiCollaborationRoleKind;
 import gold.debug.windowstolinux.shared.backup.contract.validation.BackupProvenanceStatus;
 import gold.debug.windowstolinux.shared.model.lifecycle.LifecycleAction;
-import gold.debug.windowstolinux.shared.model.security.CredentialStorageMode;
 import org.junit.jupiter.api.Test;
 
 class DesktopLanguageSwitchStateTest {
@@ -47,13 +46,11 @@ class DesktopLanguageSwitchStateTest {
                                 "database-password:1", true, false),
                         java.util.List.of(), "component diagnostic", null, null),
                 new ServerPageState("server-two", "198.51.100.24", "2222", "deploy", "ssh-secret".toCharArray(),
-                        CredentialStorageMode.MASTER_PASSWORD, "master-secret".toCharArray(), "server diagnostic"),
+                        "server diagnostic"),
                 new ManagedPageState("demo", "lifecycle diagnostic"),
                 new BackupPageState("demo", "server-two", "C:\\backups\\demo.zip", "C:\\backups\\next.zip",
-                        "backup diagnostic", backupCandidate, 1, "backup-secret".toCharArray(),
-                        "backup-master".toCharArray()),
-                new AiPageState(new char[0], "AI diagnostic",
-                        gold.debug.windowstolinux.app.ui.ai.AiInventoryState.empty()),
+                        "backup diagnostic", backupCandidate, 1, "backup-secret".toCharArray()),
+                new AiPageState("AI diagnostic", gold.debug.windowstolinux.app.ui.ai.AiInventoryState.empty()),
                 new SettingPageState());
 
         DesktopViewState englishState = restoreAndCapture(MessageCatalog.ENGLISH_TAG, initial);
@@ -89,7 +86,6 @@ class DesktopLanguageSwitchStateTest {
             assertEquals("server-two", chineseState.server().id());
             assertEquals("198.51.100.24", chineseState.server().host());
             assertArrayEquals("ssh-secret".toCharArray(), chineseState.server().password());
-            assertArrayEquals("master-secret".toCharArray(), chineseState.server().masterPassword());
             assertEquals("server diagnostic", chineseState.server().output());
             assertEquals("demo", chineseState.managed().applicationId());
             assertEquals("lifecycle diagnostic", chineseState.managed().output());
@@ -100,7 +96,6 @@ class DesktopLanguageSwitchStateTest {
             assertEquals(1, chineseState.backup().task());
             assertEquals("server-two", chineseState.backup().targetServerId());
             assertArrayEquals("backup-secret".toCharArray(), chineseState.backup().backupPassword());
-            assertArrayEquals("backup-master".toCharArray(), chineseState.backup().masterPassword());
             assertEquals("AI diagnostic", chineseState.ai().output());
         } finally {
             chineseState.close();

@@ -32,7 +32,7 @@ class DesktopUpdateCoordinatorTest {
     }
 
     @Test
-    void migrationFailureRestoresProgramAndPreMigrationDatabaseTogether() throws Exception {
+    void validationFailureRestoresProgramAndPreUpdateDatabaseTogether() throws Exception {
         RecordingUpdatePort port = new RecordingUpdatePort(UpdateFailureType.MIGRATION);
 
         DesktopUpdateCoordinator coordinator = new DesktopUpdateCoordinator(port);
@@ -113,10 +113,10 @@ class DesktopUpdateCoordinatorTest {
         }
 
         @Override
-        public StepEvidence migrateDatabase(DesktopUpdateVerification update, BackupEvidence backup) {
+        public StepEvidence validateDatabase(DesktopUpdateVerification update, BackupEvidence backup) {
             calls.add("migrate");
             return step(failure != UpdateFailureType.MIGRATION && failure != UpdateFailureType.ROLLBACK,
-                    "SQLite migration attempted");
+                    "SQLite validation attempted");
         }
 
         @Override
@@ -130,7 +130,7 @@ class DesktopUpdateCoordinatorTest {
             calls.add("rollback");
             boolean verified = failure != UpdateFailureType.ROLLBACK;
             return new RollbackEvidence(verified, verified, verified,
-                    List.of("old program and pre-migration SQLite restored together"));
+                    List.of("old program and pre-update SQLite restored together"));
         }
 
         private static StepEvidence step(boolean verified, String evidence) {

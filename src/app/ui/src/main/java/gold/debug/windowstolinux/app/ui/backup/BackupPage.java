@@ -79,12 +79,6 @@ public final class BackupPage {
     private final JPasswordField backupPassword = new JPasswordField();
 
     /**
-     * Swing control for master password.
-     * <p>主密码对应的 Swing 控件。
-     */
-    private final JPasswordField masterPassword = new JPasswordField();
-
-    /**
      * Swing control for output.
      * <p>输出对应的 Swing 控件。
      */
@@ -201,7 +195,7 @@ public final class BackupPage {
     public BackupPageState captureState() {
         return new BackupPageState(selections.applicationId(), selections.targetServerId(), archivePath.getText(),
                 destinationPath.getText(), output.getText(), preparedCandidate, task.getSelectedIndex(),
-                backupPassword.getPassword(), masterPassword.getPassword());
+                backupPassword.getPassword());
     }
 
     /**
@@ -216,7 +210,6 @@ public final class BackupPage {
         output.setText(state.output());
         preparedCandidate = state.preparedCandidate();
         backupPassword.setText(new String(state.backupPassword()));
-        masterPassword.setText(new String(state.masterPassword()));
         task.setSelectedIndex(state.task());
         updateTask();
         setBusy(false);
@@ -276,10 +269,6 @@ public final class BackupPage {
         for (Component row : inputRows.getComponents())
             ((java.awt.GridBagLayout) inputRows.getLayout()).setConstraints(row, rowConstraints);
 
-        JPanel masterInput = components.transparent(new BorderLayout(8, 0));
-        masterInput.add(new JLabel(messages.text("backup.field.masterPassword")), BorderLayout.WEST);
-        masterInput.add(masterPassword, BorderLayout.CENTER);
-        advanced.field("backup.field.masterPassword", masterPassword);
         controls.add(inputRows, BorderLayout.CENTER);
 
         JPanel actions = actionButtons(components, advanced);
@@ -363,12 +352,9 @@ public final class BackupPage {
         if (!confirmOperation("backup.restore.confirm", Map.of("target", target, "archive", selected)))
             return;
         char[] independent = backupPassword.getPassword();
-        char[] master = masterPassword.getPassword();
         backupPassword.setText("");
-        masterPassword.setText("");
         if (independent.length == 0) {
             Arrays.fill(independent, '\0');
-            Arrays.fill(master, '\0');
             output.setText(messages.text("backup.secretPasswordRequired"));
             return;
         }
@@ -376,10 +362,9 @@ public final class BackupPage {
         output.setText(messages.text("backup.restoring"));
         DesktopTaskExecutor.run(() -> {
             try {
-                return service.restoreManagedBackup(selected, target, independent, master, this::confirmFingerprint);
+                return service.restoreManagedBackup(selected, target, independent, this::confirmFingerprint);
             } finally {
                 Arrays.fill(independent, '\0');
-                Arrays.fill(master, '\0');
             }
         }, restored -> {
             output.setText(formatRestored(restored));
@@ -410,12 +395,9 @@ public final class BackupPage {
             return;
         }
         char[] independent = backupPassword.getPassword();
-        char[] master = masterPassword.getPassword();
         backupPassword.setText("");
-        masterPassword.setText("");
         if (independent.length == 0) {
             Arrays.fill(independent, '\0');
-            Arrays.fill(master, '\0');
             output.setText(messages.text("backup.secretPasswordRequired"));
             return;
         }
@@ -423,11 +405,10 @@ public final class BackupPage {
         output.setText(messages.text("backup.migrating"));
         DesktopTaskExecutor.run(() -> {
             try {
-                return service.prepareManagedOfflineMigration(application, target, independent, master, true,
+                return service.prepareManagedOfflineMigration(application, target, independent, true,
                         this::confirmFingerprint);
             } finally {
                 Arrays.fill(independent, '\0');
-                Arrays.fill(master, '\0');
             }
         }, migrated -> {
             output.setText(formatMigrated(migrated));
@@ -475,12 +456,9 @@ public final class BackupPage {
         if (!confirmOperation("backup.create.confirm", Map.of("application", application)))
             return;
         char[] independent = backupPassword.getPassword();
-        char[] master = masterPassword.getPassword();
         backupPassword.setText("");
-        masterPassword.setText("");
         if (independent.length == 0) {
             Arrays.fill(independent, '\0');
-            Arrays.fill(master, '\0');
             output.setText(messages.text("backup.secretPasswordRequired"));
             return;
         }
@@ -489,11 +467,10 @@ public final class BackupPage {
         Path selectedDestination = destination;
         DesktopTaskExecutor.run(() -> {
             try {
-                return service.createManagedBackup(application, selectedDestination, independent, master,
+                return service.createManagedBackup(application, selectedDestination, independent,
                         this::confirmFingerprint);
             } finally {
                 Arrays.fill(independent, '\0');
-                Arrays.fill(master, '\0');
             }
         }, created -> {
             output.setText(formatCreated(created));
@@ -863,7 +840,6 @@ public final class BackupPage {
         prepareButton.setEnabled(!busy && preparedCandidate == null);
         prepareSecretsButton.setEnabled(!busy && preparedCandidate == null);
         backupPassword.setEnabled(!busy && preparedCandidate == null);
-        masterPassword.setEnabled(!busy);
         discardButton.setEnabled(!busy && preparedCandidate != null);
     }
 

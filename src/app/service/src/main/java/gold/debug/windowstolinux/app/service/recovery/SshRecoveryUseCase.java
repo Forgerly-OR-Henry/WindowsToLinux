@@ -42,6 +42,10 @@ public final class SshRecoveryUseCase implements AutoCloseable {
      */
     private final RecoverySshProbe probe;
 
+    /** Scoped credential access for accepted operations. / 已接纳操作的限定凭据访问。
+     */
+    private final DesktopSecretStoreService secrets;
+
     /**
      * Bound server use case facade collaborator for server-profile and authenticated-session service.
      * <p>处理服务器资料及已认证会话服务的服务器用例门面协作对象。
@@ -77,6 +81,7 @@ public final class SshRecoveryUseCase implements AutoCloseable {
         this.persistence = persistence;
         this.locks = locks;
         this.servers = servers;
+        this.secrets = secrets;
         ai = new RecoveryAiUseCase(persistence.aiProfiles(), secrets, new RecoveryModelClient());
         probe = new RecoverySshProbe(servers, secrets, gateway);
     }
@@ -85,52 +90,56 @@ public final class SshRecoveryUseCase implements AutoCloseable {
      * Starts a manually requested session asynchronously. / 异步启动人工请求的会话。
      *
      * @param profile connection or provider settings supplied to the operation / 提供给操作的连接或提供者设置
-     * @param master master-password buffer used for the scoped secret operation / 限定秘密操作使用的主密码缓冲区
      * @param fingerprint pinned or freshly observed host-key fingerprint / 固定或新近观测的主机密钥指纹
      * @return constructed or resolved ssh recovery session / 构造或解析得到的SSH恢复会话
      */
-    public SshRecoverySession start(ServerProfile profile, char[] master, Predicate<String> fingerprint) {
-        BrowserRecoverySession session = create(profile, master, fingerprint, "manual");
+    public SshRecoverySession start(ServerProfile profile, Predicate<String> fingerprint) {
+        var authorization = secrets.captureTask();
+        BrowserRecoverySession session;
+        try {
+            session = create(profile, fingerprint, "manual");
+        } catch (RuntimeException failure) {
+            authorization.close();
+            throw failure;
+        }
         sessions.add(session);
         try {
             workers.execute(() -> {
-                try {
-                    session.run();
+                try (authorization) {
+                    authorization.run(session);
                 } finally {
                     sessions.remove(session);
                 }
             });
         } catch (RejectedExecutionException failure) {
-            session.close();
-            try {
-                session.run();
+            try (authorization) {
+                session.close();
+                authorization.run(session);
             } finally {
                 sessions.remove(session);
-                Arrays.fill(master, '\0');
             }
             throw failure;
         }
-        return session;
+        return guarded(session);
     }
 
     /**
      * Runs on the operation thread so its existing reentrant server lock stays held. / 在原操作线程运行，保持既有可重入服务器锁。
      *
      * @param profile connection or provider settings supplied to the operation / 提供给操作的连接或提供者设置
-     * @param master master-password buffer used for the scoped secret operation / 限定秘密操作使用的主密码缓冲区
      * @param fingerprint pinned or freshly observed host-key fingerprint / 固定或新近观测的主机密钥指纹
      * @param operation operation / 操作
      * @param show show / 显示
      * @return true when runs on the operation thread so its existing reentrant server lock stays held, false otherwise / 在原操作线程运行，保持既有可重入服务器锁时为 true，否则为 false
      * @throws Exception if the delegated operation or caller-provided interaction fails / 被委派操作或调用方提供的交互失败时
      */
-    public boolean recoverInline(ServerProfile profile, char[] master, Predicate<String> fingerprint, String operation,
+    public boolean recoverInline(ServerProfile profile, Predicate<String> fingerprint, String operation,
             Consumer<SshRecoverySession> show) throws Exception {
-        BrowserRecoverySession session = create(profile, master, fingerprint, operation);
+        BrowserRecoverySession session = create(profile, fingerprint, operation);
         sessions.add(session);
         boolean started = false;
         try {
-            show.accept(session);
+            show.accept(guarded(session));
             started = true;
             session.run();
             RecoverySnapshot result = session.await();
@@ -142,7 +151,7 @@ public final class SshRecoveryUseCase implements AutoCloseable {
                     session.run();
             } finally {
                 sessions.remove(session);
-                Arrays.fill(master, '\0');
+
             }
         }
     }
@@ -151,8 +160,6 @@ public final class SshRecoveryUseCase implements AutoCloseable {
      * Resumes only the original read-only verification under the same mutex. / 在同一互斥内仅继续原只读验证。
      *
      * @param profile connection or provider settings supplied to the operation / 提供给操作的连接或提供者设置
-     * @param mode selected operating or storage mode / 所选运行或存储模式
-     * @param master master-password buffer used for the scoped secret operation / 限定秘密操作使用的主密码缓冲区
      * @param fingerprint pinned or freshly observed host-key fingerprint / 固定或新近观测的主机密钥指纹
      * @param interaction caller-owned progress, confirmation and input callbacks / 调用方持有的进度、确认及输入回调
      * @return constructed or resolved server capability facts / 构造或解析得到的服务器能力事实
@@ -160,7 +167,6 @@ public final class SshRecoveryUseCase implements AutoCloseable {
      * @throws IllegalStateException if the required state or runtime facility is unavailable / 所需状态或运行设施不可用时
      */
     public gold.debug.windowstolinux.shared.model.capability.ServerCapabilityFacts verify(ServerProfile profile,
-            gold.debug.windowstolinux.shared.model.security.CredentialStorageMode mode, char[] master,
             Predicate<String> fingerprint,
             gold.debug.windowstolinux.app.service.contract.DesktopRecoveryInteraction interaction) throws Exception {
         var lock = locks.forServer(profile.id());
@@ -169,14 +175,14 @@ public final class SshRecoveryUseCase implements AutoCloseable {
             if (!acquired)
                 throw new IllegalStateException("server-operation-busy");
             try {
-                return servers.verify(profile, mode, master.clone(), fingerprint);
+                return servers.verify(profile, fingerprint);
             } catch (gold.debug.windowstolinux.shared.linux.error.LinuxOperationException failure) {
-                if (!recoverFailure(profile, master, fingerprint, interaction, failure))
+                if (!recoverFailure(profile, fingerprint, interaction, failure))
                     throw failure;
-                return servers.verify(profile, mode, master.clone(), fingerprint);
+                return servers.verify(profile, fingerprint);
             }
         } finally {
-            Arrays.fill(master, '\0');
+
             if (acquired)
                 lock.unlock();
         }
@@ -186,8 +192,6 @@ public final class SshRecoveryUseCase implements AutoCloseable {
      * Reconciles completed installation without submitting installation again. / 核对已完成安装，不再次提交安装操作。
      *
      * @param profile connection or provider settings supplied to the operation / 提供给操作的连接或提供者设置
-     * @param mode selected operating or storage mode / 所选运行或存储模式
-     * @param master master-password buffer used for the scoped secret operation / 限定秘密操作使用的主密码缓冲区
      * @param fingerprint pinned or freshly observed host-key fingerprint / 固定或新近观测的主机密钥指纹
      * @param confirmed confirmed / 已确认
      * @param system system / 系统
@@ -198,7 +202,6 @@ public final class SshRecoveryUseCase implements AutoCloseable {
      * @throws IllegalStateException if the required state or runtime facility is unavailable / 所需状态或运行设施不可用时
      */
     public gold.debug.windowstolinux.shared.model.deployment.EnvironmentSetupResult prepare(ServerProfile profile,
-            gold.debug.windowstolinux.shared.model.security.CredentialStorageMode mode, char[] master,
             Predicate<String> fingerprint, boolean confirmed,
             Predicate<gold.debug.windowstolinux.shared.model.server.security.SelinuxPreparationPlan> system,
             gold.debug.windowstolinux.app.service.contract.DesktopRecoveryInteraction interaction,
@@ -210,20 +213,19 @@ public final class SshRecoveryUseCase implements AutoCloseable {
             if (!acquired)
                 throw new IllegalStateException("server-operation-busy");
             try {
-                return environment.prepare(profile, mode, master.clone(), fingerprint, confirmed, system);
+                return environment.prepare(profile, fingerprint, confirmed, system);
             } catch (gold.debug.windowstolinux.shared.linux.error.LinuxOperationException failure) {
-                if (!recoverFailure(profile, master, fingerprint, interaction, failure))
+                if (!recoverFailure(profile, fingerprint, interaction, failure))
                     throw failure;
                 if (failure.environmentNotStarted())
-                    return environment.prepare(profile, mode, master.clone(), fingerprint, confirmed, system);
+                    return environment.prepare(profile, fingerprint, confirmed, system);
                 if (failure.completedEnvironment().isEmpty())
                     throw failure;
                 return new gold.debug.windowstolinux.shared.model.deployment.EnvironmentSetupResult(
-                        servers.verify(profile, mode, master.clone(), fingerprint),
-                        failure.completedEnvironment().orElseThrow().evidence());
+                        servers.verify(profile, fingerprint), failure.completedEnvironment().orElseThrow().evidence());
             }
         } finally {
-            Arrays.fill(master, '\0');
+
             if (acquired)
                 lock.unlock();
         }
@@ -234,20 +236,19 @@ public final class SshRecoveryUseCase implements AutoCloseable {
      * <p>恢复保留用于安全报告的结构化失败实例。
      *
      * @param profile connection or provider settings supplied to the operation / 提供给操作的连接或提供者设置
-     * @param master master-password buffer used for the scoped secret operation / 限定秘密操作使用的主密码缓冲区
      * @param fingerprint pinned or freshly observed host-key fingerprint / 固定或新近观测的主机密钥指纹
      * @param interaction caller-owned progress, confirmation and input callbacks / 调用方持有的进度、确认及输入回调
      * @param failure structured failure occurrence retained for safe reporting / 保留用于安全报告的结构化失败实例
      * @return true when recovers structured failure occurrence retained for safe reporting, false otherwise / 恢复保留用于安全报告的结构化失败实例时为 true，否则为 false
      * @throws Exception if the delegated operation or caller-provided interaction fails / 被委派操作或调用方提供的交互失败时
      */
-    private boolean recoverFailure(ServerProfile profile, char[] master, Predicate<String> fingerprint,
+    private boolean recoverFailure(ServerProfile profile, Predicate<String> fingerprint,
             gold.debug.windowstolinux.app.service.contract.DesktopRecoveryInteraction interaction,
             gold.debug.windowstolinux.shared.linux.error.LinuxOperationException failure) throws Exception {
         return failure.failure()
                 .definition() == gold.debug.windowstolinux.shared.linux.error.LinuxOperationFailureType.CONNECTION_FAILED
                 && interaction.offerSshRecovery(profile)
-                && recoverInline(profile, master.clone(), fingerprint, failure.failure().operationIdentity().toString(),
+                && recoverInline(profile, fingerprint, failure.failure().operationIdentity().toString(),
                         session -> interaction.showSshRecovery(profile, session));
     }
 
@@ -256,15 +257,13 @@ public final class SshRecoveryUseCase implements AutoCloseable {
      * <p>在既有服务器锁下装配救援工作线程、隔离浏览器及仅含元数据的日志。模型响应及终端命令正文绝不写入日志。
      *
      * @param server server identity or selected server configuration / 服务器身份或所选服务器配置
-     * @param master master-password buffer used for the scoped secret operation / 限定秘密操作使用的主密码缓冲区
      * @param fingerprint pinned or freshly observed host-key fingerprint / 固定或新近观测的主机密钥指纹
      * @param operation operation / 操作
      * @return constructed or resolved browser recovery session / 构造或解析得到的浏览器恢复会话
      */
-    private BrowserRecoverySession create(ServerProfile server, char[] master, Predicate<String> fingerprint,
-            String operation) {
-        return new BrowserRecoverySession(new PlaywrightTerminalSession(), ai,
-                () -> probe.check(server, master, fingerprint), new Consumer<>() {
+    private BrowserRecoverySession create(ServerProfile server, Predicate<String> fingerprint, String operation) {
+        return new BrowserRecoverySession(new PlaywrightTerminalSession(secrets::observeLock), ai,
+                () -> probe.check(server, fingerprint), new Consumer<>() {
                     /**
                      * Content identity used for independent verification.
                      * <p>独立验证所用的内容身份。
@@ -273,8 +272,8 @@ public final class SshRecoveryUseCase implements AutoCloseable {
                     /**
                      * Accepts anonymous.
                      * <p>接受匿名。
-                     *
-                     * @param snapshot immutable observation or configuration revision used by the operation / 操作使用的不可变观测或配置修订
+                     *operation / 操作使用的不可变观测或配置修订
+                     * @param snapshot snapshot supplied to this boundary / 传入当前边界的snapshot值
                      */
                     @Override
                     public void accept(RecoverySnapshot snapshot) {
@@ -298,12 +297,85 @@ public final class SshRecoveryUseCase implements AutoCloseable {
                                     failure);
                         }
                     }
-                }, server, master, locks.forServer(server.id()));
+                }, server, locks.forServer(server.id()));
     }
 
     /**
      * Closes the resources owned by this instance and completes its cleanup boundary.
      * <p>关闭当前实例持有的资源并完成其清理边界。
+     * @param session session supplied to this boundary / 传入当前边界的session值
+     * @return the validated result or retained scoped handle / 已验证结果或保留的限定句柄
+     */
+    private SshRecoverySession guarded(BrowserRecoverySession session) {
+        return new SshRecoverySession() {
+            /** Reads recovery details only through the interactive authorization gate. / 仅通过交互授权门禁读取救援详情。
+             * @return the validated result or retained scoped handle / 已验证结果或保留的限定句柄
+             */
+            public RecoverySnapshot snapshot() {
+                return secrets.whileUnlocked(session::snapshot);
+            }
+
+            /** Lists recovery terminals only through the interactive authorization gate. / 仅通过交互授权门禁列出救援终端。
+             * @return the validated result or retained scoped handle / 已验证结果或保留的限定句柄
+             */
+            public java.util.List<gold.debug.windowstolinux.shared.model.recovery.TerminalTarget> terminals() {
+                return secrets.whileUnlocked(session::terminals);
+            }
+
+            /** Binds the manually reviewed recovery terminal while unlocked. / 在解锁时绑定人工审阅的救援终端。
+             * @param target target supplied to this boundary / 传入当前边界的target值
+             * @param serverId server id supplied to this boundary / 传入当前边界的serverId值
+             * @param consent consent supplied to this boundary / 传入当前边界的consent值
+             * @param reconciled reconciled supplied to this boundary / 传入当前边界的reconciled值
+             */
+            public void bindTerminal(String target, String serverId, boolean consent, boolean reconciled) {
+                secrets.whileUnlocked(() -> {
+                    session.bindTerminal(target, serverId, consent, reconciled);
+                    return null;
+                });
+            }
+
+            /** Submits approval for the still-current recovery action while unlocked. / 在解锁时为仍有效的救援动作提交审批。
+             * @param token token supplied to this boundary / 传入当前边界的token值
+             * @param approved approved supplied to this boundary / 传入当前边界的approved值
+             */
+            public void confirmAction(String token, boolean approved) {
+                secrets.whileUnlocked(() -> {
+                    session.confirmAction(token, approved);
+                    return null;
+                });
+            }
+
+            /** Pauses the recovery session from an unlocked manual action. / 通过解锁的人工动作暂停救援会话。
+             */
+            public void pause() {
+                secrets.whileUnlocked(() -> {
+                    session.pause();
+                    return null;
+                });
+            }
+
+            /** Resumes the recovery session from an unlocked manual action. / 通过解锁的人工动作恢复救援会话。
+             */
+            public void resume() {
+                secrets.whileUnlocked(() -> {
+                    session.resume();
+                    return null;
+                });
+            }
+
+            /** Releases this scope and its owned resources. / 释放当前作用域及其持有资源。
+             */
+            public void close() {
+                secrets.whileUnlocked(() -> {
+                    session.close();
+                    return null;
+                });
+            }
+        };
+    }
+
+    /** Releases this scope and its owned resources. / 释放当前作用域及其持有资源。
      */
     @Override
     public void close() {
