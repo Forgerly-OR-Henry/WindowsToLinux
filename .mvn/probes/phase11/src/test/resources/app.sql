@@ -2,11 +2,11 @@ CREATE TABLE security_profile (
  security_profile_id INTEGER PRIMARY KEY CHECK(security_profile_id=1),
  is_encryption_enabled INTEGER NOT NULL DEFAULT 1 CHECK(is_encryption_enabled IN (0,1)),
  password_verifier CHARACTER VARYING NOT NULL,
- wrapped_data_key BINARY LARGE OBJECT NOT NULL CHECK(length(wrapped_data_key)=48),
+ wrapped_data_key BINARY LARGE OBJECT NOT NULL CHECK(OCTET_LENGTH(wrapped_data_key)=48),
  key_wrap_algorithm CHARACTER VARYING NOT NULL CHECK(key_wrap_algorithm='AES256_GCM_V1'),
- key_wrap_nonce BINARY LARGE OBJECT NOT NULL CHECK(length(key_wrap_nonce)=12),
+ key_wrap_nonce BINARY LARGE OBJECT NOT NULL CHECK(OCTET_LENGTH(key_wrap_nonce)=12),
  key_derivation_algorithm CHARACTER VARYING NOT NULL CHECK(key_derivation_algorithm='ARGON2ID_V1'),
- key_derivation_salt BINARY LARGE OBJECT NOT NULL CHECK(length(key_derivation_salt)=16),
+ key_derivation_salt BINARY LARGE OBJECT NOT NULL CHECK(OCTET_LENGTH(key_derivation_salt)=16),
  key_derivation_parameters CHARACTER VARYING NOT NULL,
  format_version INTEGER NOT NULL CHECK(format_version=1)
 );
@@ -17,8 +17,8 @@ CREATE TABLE credential (
  payload BINARY LARGE OBJECT NOT NULL,
  nonce BINARY VARYING(12),
  UNIQUE(security_profile_id,nonce),
- CHECK((storage_format='PLAIN_V1' AND nonce IS NULL AND length(payload)>0) OR
-       (storage_format='AES256_GCM_V1' AND nonce IS NOT NULL AND length(nonce)=12 AND length(payload)>16))
+ CHECK((storage_format='PLAIN_V1' AND nonce IS NULL AND OCTET_LENGTH(payload)>0) OR
+       (storage_format='AES256_GCM_V1' AND nonce IS NOT NULL AND OCTET_LENGTH(nonce)=12 AND OCTET_LENGTH(payload)>16))
 );
 CREATE TABLE server_profile (
  server_profile_id CHARACTER VARYING NOT NULL PRIMARY KEY,

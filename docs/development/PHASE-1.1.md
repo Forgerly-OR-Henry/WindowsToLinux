@@ -5,6 +5,7 @@
 - 状态：**源码改造已于 2026-09-26 获授权启动；S1 完整归档和 S2 隔离技术探针已本机通过，S3～S7 尚未完成**。本期内部划分 S0～S7，按[目标任务目录](#goal-catalog)推进。
 - 本次验收边界：完成本机验证；用户明确远端环境尚未准备好，本次无需远端验证。远端能力仍保留未验收标记。每个可验证闭环完成后作本地 Git 提交，不自动推送。
 - S3 当前进度：公开 API 已形成独立 `src/api` 模块；H2 平台库引导、受管 JDBC 和 Windows 当前用户 DPAPI 已实现基础层，本机 17 项测试及新增代码 JDK 21 doclint 通过。旧启动链和根 reactor 尚未切换，这些基础层通过不代表 S3 已完成或现行 APP 已使用 H2。
+- S3 安全接线：既有 Argon2id/AES-GCM 凭据库已接入 H2 事务作用域，新增 3 项 H2 集成测试与 5 项旧安全回归通过；DB 模块 52 项回归和 8 项 H2 DDL/权限/恢复探针通过。二进制 DDL 长度统一使用 OCTET_LENGTH，避免 H2 LENGTH 将密钥/nonce 解释为字符。主体启动仍待切换。
 - 工程编号与软件版本、数据库 schema、helper 协议版本各自独立。原一期至六期改称 0.1～0.6，见[编号对应表](DEVELOPMENT.md#phase-numbering)。
 - 本文的“已确认”指产品方向和约束已确认，**不表示实现已经完成**；工程规格与验证工作见[实施清单](#review-decisions)，具体完成项不等于代码已经实现。
 - [开发总纲](DEVELOPMENT.md) · [当前结构与唯一详细目标目录](../File.md#phase-1-1-target) · [当前文件索引](../AllFile.md) · [当前产品手册](../PRODUCT-MANUAL.md) · [现行数据库与安全](../Runtime.md#app-security-database)
@@ -496,11 +497,11 @@ CREATE TABLE security_profile (
  security_profile_id INTEGER PRIMARY KEY CHECK(security_profile_id=1),
  is_encryption_enabled INTEGER NOT NULL DEFAULT 1 CHECK(is_encryption_enabled IN (0,1)),
  password_verifier CHARACTER VARYING NOT NULL,
- wrapped_data_key BINARY LARGE OBJECT NOT NULL CHECK(length(wrapped_data_key)=48),
+ wrapped_data_key BINARY LARGE OBJECT NOT NULL CHECK(OCTET_LENGTH(wrapped_data_key)=48),
  key_wrap_algorithm CHARACTER VARYING NOT NULL CHECK(key_wrap_algorithm='AES256_GCM_V1'),
- key_wrap_nonce BINARY LARGE OBJECT NOT NULL CHECK(length(key_wrap_nonce)=12),
+ key_wrap_nonce BINARY LARGE OBJECT NOT NULL CHECK(OCTET_LENGTH(key_wrap_nonce)=12),
  key_derivation_algorithm CHARACTER VARYING NOT NULL CHECK(key_derivation_algorithm='ARGON2ID_V1'),
- key_derivation_salt BINARY LARGE OBJECT NOT NULL CHECK(length(key_derivation_salt)=16),
+ key_derivation_salt BINARY LARGE OBJECT NOT NULL CHECK(OCTET_LENGTH(key_derivation_salt)=16),
  key_derivation_parameters CHARACTER VARYING NOT NULL,
  format_version INTEGER NOT NULL CHECK(format_version=1)
 );
@@ -511,8 +512,8 @@ CREATE TABLE credential (
  payload BINARY LARGE OBJECT NOT NULL,
  nonce BINARY VARYING(12),
  UNIQUE(security_profile_id,nonce),
- CHECK((storage_format='PLAIN_V1' AND nonce IS NULL AND length(payload)>0) OR
-       (storage_format='AES256_GCM_V1' AND nonce IS NOT NULL AND length(nonce)=12 AND length(payload)>16))
+ CHECK((storage_format='PLAIN_V1' AND nonce IS NULL AND OCTET_LENGTH(payload)>0) OR
+       (storage_format='AES256_GCM_V1' AND nonce IS NOT NULL AND OCTET_LENGTH(nonce)=12 AND OCTET_LENGTH(payload)>16))
 );
 CREATE TABLE server_profile (
  server_profile_id CHARACTER VARYING NOT NULL PRIMARY KEY,
