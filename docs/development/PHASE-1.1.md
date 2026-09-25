@@ -4,10 +4,11 @@
 
 - 状态：**源码改造已于 2026-09-26 获授权启动；S1 完整归档和 S2 隔离技术探针已本机通过，S3～S7 尚未完成**。本期内部划分 S0～S7，按[目标任务目录](#goal-catalog)推进。
 - 本次验收边界：完成本机验证；用户明确远端环境尚未准备好，本次无需远端验证。远端能力仍保留未验收标记。每个可验证闭环完成后作本地 Git 提交，不自动推送。
-- S3 当前进度：公开 API 已形成独立 `src/api` 模块；H2 平台库引导、受管 JDBC 和 Windows 当前用户 DPAPI 已实现基础层，本机 17 项测试及新增代码 JDK 21 doclint 通过。旧启动链和根 reactor 尚未切换，这些基础层通过不代表 S3 已完成或现行 APP 已使用 H2。
-- S3 安全接线：既有 Argon2id/AES-GCM 凭据库已接入 H2 事务作用域，新增 3 项 H2 集成测试与 5 项旧安全回归通过；DB 模块 52 项回归和 8 项 H2 DDL/权限/恢复探针通过。二进制 DDL 长度统一使用 OCTET_LENGTH，避免 H2 LENGTH 将密钥/nonce 解释为字符。主体启动仍待切换。
+- S3 当前进度：公开 API 已形成独立 `src/api` 模块；H2 平台库引导、受管 JDBC 和 Windows 当前用户 DPAPI 已实现基础层，本机 17 项测试及新增代码 JDK 21 doclint 通过。默认启动链现已切换 H2；根 reactor 完整目标图尚未切换，基础层通过仍不代表 S3 已完成。
+- S3 安全接线：既有 Argon2id/AES-GCM 凭据库已接入 H2 事务作用域，新增 3 项 H2 集成测试与 5 项旧安全回归通过；DB 模块 52 项回归和 8 项 H2 DDL/权限/恢复探针通过。二进制 DDL 长度统一使用 OCTET_LENGTH，避免 H2 LENGTH 将密钥/nonce 解释为字符。主体 H2 启动现已接通，业务迁移仍未完成。
 - S3 平台配置：PlatformPersistence 已将服务器、模型、偏好及救援日志仓库接入同一 H2；4 项新集成与 5 项受影响仓库回归通过，原有 7 项安全会话测试已迁到 H2 且通过。当前仍需完成启动/界面接线、活动模块和业务拆分，旧 SQLite 构造适配只在切换期间保留。
 - S3 Mod 基础：严格清单解析、任意精度版本范围、PF4J 隔离加载器和显式主来源入口构造已迁入 app/mod；18 项本机测试及 doclint 通过，覆盖 CLASS/JAR 类型共享、私有依赖/资源边界、形状不合格入口不执行静态初始化及 Windows JAR 释放。包内容扫描、安装和生命周期注册仍未完成。
+- S3 默认启动：`AppMain → DesktopMain → PlatformRuntime/PlatformFrame` 已使用 H2 与当前用户 DPAPI，程序/数据锚点分离；旧 SQLite 保全，首次安全设置、再次启动锁定及资源占用关闭门禁已接通。41 项相关本机测试通过，含真实 Windows DPAPI、真实 Swing 窗口、原锁定控制器回归，以及在隔离 CLASS/JAR 布局运行真正 AppMain 并正常关闭；5 个生产文件 96 声明双语 Javadoc 与 doclint 通过。入口测试不是完整发行物验收。新入口尚未装配服务器/模型、SSH/救援、包安装或真实 Mod 自动发现；测试手动登记的页面不能作为这些能力的验收。
 - 工程编号与软件版本、数据库 schema、helper 协议版本各自独立。原一期至六期改称 0.1～0.6，见[编号对应表](DEVELOPMENT.md#phase-numbering)。
 - 本文的“已确认”指产品方向和约束已确认，**不表示实现已经完成**；工程规格与验证工作见[实施清单](#review-decisions)，具体完成项不等于代码已经实现。
 - [开发总纲](DEVELOPMENT.md) · [当前结构与唯一详细目标目录](../File.md#phase-1-1-target) · [当前文件索引](../AllFile.md) · [当前产品手册](../PRODUCT-MANUAL.md) · [现行数据库与安全](../Runtime.md#app-security-database)

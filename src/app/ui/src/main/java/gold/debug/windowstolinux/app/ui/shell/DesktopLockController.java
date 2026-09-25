@@ -24,7 +24,7 @@ final class DesktopLockController implements AutoCloseable {
      * @param openSettings opens the settings page / 打开设置页
      * @return attached controller or null for nonsecurity preview facades / 已接入控制器，非安全预览门面为空
      */
-    static DesktopLockController attach(DesktopFrame frame, Object service,
+    static DesktopLockController attach(JFrame frame, Object service,
             gold.debug.windowstolinux.app.ui.i18n.MessageCatalog messages,
             gold.debug.windowstolinux.app.ui.diagnostic.FailureReportStore reports, JPanel sidebar,
             gold.debug.windowstolinux.app.ui.component.DesktopComponentFactory components, boolean initialWindow,
@@ -53,7 +53,7 @@ final class DesktopLockController implements AutoCloseable {
 
     /** Desktop frame owning the lock boundary. / 持有锁定边界的桌面主窗口。
      */
-    private final DesktopFrame frame;
+    private final JFrame frame;
 
     /** Service-owned interactive authorization boundary. / 服务持有的交互授权边界。
      */
@@ -91,12 +91,16 @@ final class DesktopLockController implements AutoCloseable {
     */
     private boolean lastLocked;
 
+    /** Observer notified after the host covers have been applied. / 宿主遮罩应用后通知的观察者。 */
+    private java.util.function.Consumer<Boolean> lockObserver = ignored -> {
+    };
+
     /** Binds the validated inputs and owned state for this scope. / 绑定当前作用域的已验证输入及持有状态。
      * @param frame frame supplied to this boundary / 传入当前边界的frame值
      * @param security security supplied to this boundary / 传入当前边界的security值
      * @param messages messages supplied to this boundary / 传入当前边界的messages值
      */
-    DesktopLockController(DesktopFrame frame, SecurityApplicationFacade security, PageMessagePresenter messages) {
+    DesktopLockController(JFrame frame, SecurityApplicationFacade security, PageMessagePresenter messages) {
         this.frame = frame;
         this.security = security;
         this.messages = messages;
@@ -158,6 +162,15 @@ final class DesktopLockController implements AutoCloseable {
      */
     void onExit(Runnable action) {
         exit = Objects.requireNonNull(action);
+    }
+
+    /**
+     * Connects Mod environment updates after applying the host privacy boundary. / 在应用宿主隐私边界后连接 Mod 环境更新。
+     * @param observer current lock-state observer / 当前锁定状态观察者
+     */
+    void onLockChange(java.util.function.Consumer<Boolean> observer) {
+        lockObserver = Objects.requireNonNull(observer);
+        observer.accept(locked());
     }
 
     /** Drops interactive access while preserving accepted task capabilities. / 释放交互会话，保留已接纳任务的凭据能力。
@@ -226,7 +239,10 @@ final class DesktopLockController implements AutoCloseable {
                     cover.restore();
             }
         }
+        boolean changed = lastLocked != locked;
         lastLocked = locked;
+        if (changed)
+            lockObserver.accept(locked);
     }
 
     /** Clears password controls recursively before covering a window. / 在遮挡窗口前递归清除密码控件。
