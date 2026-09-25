@@ -23,7 +23,7 @@ public final class DeploymentAgentModelAdapter
     @Override
     public gold.debug.windowstolinux.shared.agent.execution.protocol.AgentProposal decide(Map<String, Object> context,
             List<Map<String, String>> history, int remaining) throws Exception {
-        var result = chain.invoke(AiPurposeType.DEPLOYMENT, master.clone(), (profile, key) -> {
+        var result = chain.invoke(AiPurposeType.DEPLOYMENT, (profile, key) -> {
             var reply = new gold.debug.windowstolinux.shared.agent.execution.protocol.AutonomousAiProtocolClient(client)
                     .decide(profile.chatCompletionsEndpoint(), profile.model(), key, context, history, remaining);
             scope.usage(reply.tokens());
@@ -49,19 +49,17 @@ public final class DeploymentAgentModelAdapter
     private final StructuredAiClient client;
 
     /** Task-owned unlock buffer, wiped on close. / 任务所属解锁缓冲区，关闭时清零。 */
-    private final char[] master;
 
     /** Frozen worker scope. / 冻结工作线程作用域。 */
     private final DeploymentAiScope scope;
     /** Binds task-scoped credentials without opening a connection. / 绑定任务凭据，不打开连接。
      * @param chain purpose router / 用途路由器
      * @param client isolated protocol / 独立协议
-     * @param master unlock buffer / 解锁缓冲区
      */
-    DeploymentAgentModelAdapter(AiProviderChain chain, StructuredAiClient client, char[] master) {
+    DeploymentAgentModelAdapter(AiProviderChain chain, StructuredAiClient client) {
         this.chain = chain;
         this.client = client;
-        this.master = master.clone();
+
         this.scope = DeploymentAiScope.current()
                 .orElseThrow(() -> new IllegalStateException("Agent requires deployment scope"));
     }
@@ -75,7 +73,7 @@ public final class DeploymentAgentModelAdapter
      */
     @Override
     public AgentReview review(String goal, AgentAction action, AgentRiskLevel localRisk) throws Exception {
-        return new DeploymentReviewModelAdapter(chain, client, master, scope).review(goal, action, localRisk);
+        return new DeploymentReviewModelAdapter(chain, client, scope).review(goal, action, localRisk);
     }
 
     /** Advances only the deployment route. / 仅推进部署路由。
@@ -88,6 +86,6 @@ public final class DeploymentAgentModelAdapter
     /** Wipes the task unlock buffer. / 清零任务解锁缓冲区。 */
     @Override
     public void close() {
-        Arrays.fill(master, '\0');
+
     }
 }

@@ -19,7 +19,6 @@ import gold.debug.windowstolinux.app.ui.component.DesktopComponentFactory;
 import gold.debug.windowstolinux.app.ui.display.ThemePalette;
 import gold.debug.windowstolinux.app.ui.i18n.*;
 import gold.debug.windowstolinux.shared.model.recovery.*;
-import gold.debug.windowstolinux.shared.model.security.CredentialStorageMode;
 import org.junit.jupiter.api.Test;
 
 class SshRecoveryDialogTest {
@@ -74,8 +73,8 @@ class SshRecoveryDialogTest {
                 });
         SwingUtilities.invokeAndWait(() -> {
             com.formdev.flatlaf.FlatLightLaf.setup();
-            new SshRecoveryDialog(new JPanel(), new ServerProfile("fixture", "example.test", 22, "user", "ssh/fixture",
-                    CredentialStorageMode.MASTER_PASSWORD), session, ai, components, messages);
+            new SshRecoveryDialog(new JPanel(), new ServerProfile("fixture", "example.test", 22, "user", "ssh/fixture"),
+                    session, ai, components, messages);
         });
         try {
             SwingUtilities.invokeAndWait(() -> {

@@ -9,6 +9,7 @@ import java.util.*;
 
 import gold.debug.windowstolinux.app.db.DesktopPersistence;
 import gold.debug.windowstolinux.app.db.entity.*;
+import gold.debug.windowstolinux.app.service.SecurityTestFixture;
 import gold.debug.windowstolinux.app.service.server.*;
 import gold.debug.windowstolinux.shared.model.health.*;
 import gold.debug.windowstolinux.shared.model.lifecycle.*;
@@ -19,7 +20,7 @@ import gold.debug.windowstolinux.shared.model.server.ServerIdentity;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
-class ApplicationInventoryUseCaseTest {
+class ApplicationInventoryUseCaseTest extends SecurityTestFixture {
     @TempDir
     Path directory;
 
@@ -29,8 +30,9 @@ class ApplicationInventoryUseCaseTest {
         var server = new ServerIdentity("server", "example.test", 22, "SHA256:fixture");
         String externalId = "external:" + UUID.randomUUID();
         try (var db = DesktopPersistence.open(directory)) {
+            SecurityTestFixture.credential(db, "ssh/server/password");
             db.servers().saveServerProfile(new StoredServerProfile(server.id(), server.host(), 22, "tester",
-                    "ssh/server/password", "MASTER_PASSWORD", "Production"));
+                    "ssh/server/password", "Production"));
             var workload = new ApplicationWorkload(ApplicationWorkload.ExecutionMode.DAEMON, true,
                     ApplicationCommand.primary(), "",
                     List.of(new ApplicationEndpoint("web", ApplicationEndpoint.ProtocolType.HTTPS, "0.0.0.0", 8080,
@@ -50,7 +52,7 @@ class ApplicationInventoryUseCaseTest {
                     new DiscoveredApplication(new ExternalApplicationTarget(ExternalApplicationKind.SYSTEMD,
                             "external.service", "c".repeat(64)), "External", RuntimeState.STOPPED, true, true, false),
                     time.plusSeconds(1), time.plusSeconds(1)));
-            var servers = new ServerUseCaseFacade(db.servers(), new DesktopSecretStoreService(db.encryptedSecrets()),
+            var servers = new ServerUseCaseFacade(db.servers(), SecurityTestFixture.secrets(db),
                     (endpoint, credential, verifier) -> {
                         throw new AssertionError("inventory reads must not connect");
                     });

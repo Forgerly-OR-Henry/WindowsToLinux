@@ -52,6 +52,16 @@ public record ManagedApplicationGraph(String applicationId, String healthCompone
                 || components.stream().anyMatch(component -> !ids.containsAll(component.dependencies()))) {
             throw new IllegalArgumentException("managed graph health owner and dependencies must belong to the graph");
         }
+        Set<String> resolved = new LinkedHashSet<>();
+        while (resolved.size() < components.size()) {
+            int before = resolved.size();
+            for (Component component : components) {
+                if (resolved.containsAll(component.dependencies()))
+                    resolved.add(component.componentId());
+            }
+            if (resolved.size() == before)
+                throw new IllegalArgumentException("managed application dependencies contain a cycle");
+        }
         String serverId = components.getFirst().application().server().id();
         if (components.stream().anyMatch(component -> !component.application().server().id().equals(serverId))) {
             throw new IllegalArgumentException("managed application graph must belong to one server");

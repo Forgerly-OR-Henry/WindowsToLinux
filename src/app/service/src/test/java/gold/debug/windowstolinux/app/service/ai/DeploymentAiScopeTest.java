@@ -9,6 +9,7 @@ import java.util.*;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import gold.debug.windowstolinux.app.db.DesktopPersistence;
+import gold.debug.windowstolinux.app.service.SecurityTestFixture;
 import gold.debug.windowstolinux.app.service.failure.*;
 import gold.debug.windowstolinux.app.service.server.DesktopSecretStoreService;
 import gold.debug.windowstolinux.shared.ai.client.OpenAiCompatibleRoleClient;
@@ -16,34 +17,31 @@ import gold.debug.windowstolinux.shared.ai.collaboration.role.*;
 import gold.debug.windowstolinux.shared.ai.transport.RoleChatResult;
 import gold.debug.windowstolinux.shared.model.ai.*;
 import gold.debug.windowstolinux.shared.model.deployment.*;
-import gold.debug.windowstolinux.shared.model.security.CredentialStorageMode;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
-class DeploymentAiScopeTest {
+class DeploymentAiScopeTest extends SecurityTestFixture {
     @TempDir
     Path directory;
     private AiProviderProfile profile(String id) {
-        return new AiProviderProfile(id, URI.create("https://example.test/v1/chat/completions"), id, "ai/" + id,
-                CredentialStorageMode.MASTER_PASSWORD);
+        return new AiProviderProfile(id, URI.create("https://example.test/v1/chat/completions"), id, "ai/" + id);
     }
 
     @Test
     void staticScopeNeverInvokesTransportEvenWhenModelsExist() throws Exception {
         try (var db = DesktopPersistence.open(directory)) {
             var calls = new AtomicInteger();
-            var facade = new AiUseCaseFacade(db.aiProfiles(), new DesktopSecretStoreService(db.encryptedSecrets()),
+            var facade = new AiUseCaseFacade(db.aiProfiles(), SecurityTestFixture.secrets(db),
                     new OpenAiCompatibleRoleClient((url, key, body) -> {
                         calls.incrementAndGet();
                         throw new AssertionError("static task must not invoke AI");
                     }, Clock.systemUTC()));
+            SecurityTestFixture.credential(db, "ai/model");
             db.aiProfiles().saveVerified(profile("model").stored(), "model", Instant.now());
             db.aiProfiles().purposes().save(AiPurposeType.DEPLOYMENT, List.of(new AiPurposeAssignment("model", true)));
             try (var scope = facade.openDeployment(DeploymentAutomationMode.STATIC)) {
                 assertFalse(scope.allowsAi());
-                assertTrue(
-                        facade.invokeRole(new ErrorExplanationRoleContext("deploy", "failure"), "master".toCharArray())
-                                .isEmpty());
+                assertTrue(facade.invokeRole(new ErrorExplanationRoleContext("deploy", "failure")).isEmpty());
             }
             assertEquals(0, calls.get());
             assertTrue(DeploymentAiScope.current().isEmpty());
@@ -53,7 +51,8 @@ class DeploymentAiScopeTest {
     @Test
     void agentCannotOpenWithoutExplicitVerifiedApprovalMembership() throws Exception {
         try (var db = DesktopPersistence.open(directory)) {
-            var facade = new AiUseCaseFacade(db.aiProfiles(), new DesktopSecretStoreService(db.encryptedSecrets()));
+            var facade = new AiUseCaseFacade(db.aiProfiles(), SecurityTestFixture.secrets(db));
+            SecurityTestFixture.credential(db, "ai/model");
             db.aiProfiles().saveVerified(profile("model").stored(), "model", Instant.now());
             db.aiProfiles().purposes().save(AiPurposeType.DEPLOYMENT, List.of(new AiPurposeAssignment("model", true)));
             for (var ignored : AgentApprovalMode.values()) {
@@ -77,11 +76,13 @@ class DeploymentAiScopeTest {
     @Test
     void deploymentPurposeRequiredAndInventoryOrderCannotChangeCapturedRouting() throws Exception {
         try (var db = DesktopPersistence.open(directory)) {
-            var facade = new AiUseCaseFacade(db.aiProfiles(), new DesktopSecretStoreService(db.encryptedSecrets()));
+            var facade = new AiUseCaseFacade(db.aiProfiles(), SecurityTestFixture.secrets(db));
             assertThrows(ApplicationServiceException.class,
                     () -> facade.openDeployment(DeploymentAutomationMode.ASSISTED));
-            for (var id : List.of("a", "b"))
+            for (var id : List.of("a", "b")) {
+                SecurityTestFixture.credential(db, "ai/" + id);
                 db.aiProfiles().saveVerified(profile(id).stored(), id, Instant.now());
+            }
             db.aiProfiles().purposes().save(AiPurposeType.DEPLOYMENT,
                     List.of(new AiPurposeAssignment("b", true), new AiPurposeAssignment("a", true)));
             assertThrows(ApplicationServiceException.class,

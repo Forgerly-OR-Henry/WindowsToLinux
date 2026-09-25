@@ -14,43 +14,20 @@ import org.junit.jupiter.api.io.TempDir;
 class AgentTaskRepositoryTest {
     @TempDir
     Path directory;
-    @Test
-    void legacyAgentSemanticsArePreservedByTransactionalMigration() throws Exception {
-        try (var db = DesktopPersistence.open(directory)) {
-            db.agentTasks().create("old", "server", "a".repeat(64), DeploymentAutomationMode.AGENT,
-                    AgentApprovalMode.MANUAL_REVIEW, "b".repeat(64), "deployment-v1", "approval-v1");
-        }
-        try (var connection = java.sql.DriverManager
-                .getConnection("jdbc:sqlite:" + directory.resolve("windowstolinux.db"));
-                var statement = connection.createStatement()) {
-            statement.execute("DROP INDEX deployment_agent_operation_evidence");
-            statement.execute("ALTER TABLE deployment_agent_task DROP COLUMN execution_semantics_version");
-            statement.execute("PRAGMA user_version=19");
-        }
-        try (var db = DesktopPersistence.open(directory)) {
-            var old = db.agentTasks().recent().stream().filter(r -> r.get("id").equals("old")).findFirst()
-                    .orElseThrow();
-            assertEquals("1", old.get("execution_semantics_version"));
-            assertEquals("AGENT", old.get("automation_mode"));
-            db.agentTasks().create("new", "server", "a".repeat(64), DeploymentAutomationMode.AGENT,
-                    AgentApprovalMode.FULL_CONTROL, "b".repeat(64), "autonomous-v2", "approval-v1");
-            assertEquals("2", db.agentTasks().recent().stream().filter(r -> r.get("id").equals("new")).findFirst()
-                    .orElseThrow().get("execution_semantics_version"));
-            assertEquals("INTERRUPTED", old.get("state"));
-        }
-    }
 
     @Test
     void commandAndPatchIntentsRemainBlockedAcrossRestartAndUnrelatedReceipts() throws Exception {
         for (String kind : List.of("COMMAND", "PATCH")) {
             Path database = directory.resolve(kind);
             try (var db = DesktopPersistence.open(database)) {
+                gold.debug.windowstolinux.app.db.DatabaseTestFixture.server(db);
                 var records = db.agentTasks();
                 records.create("task", "server", "a".repeat(64), DeploymentAutomationMode.AGENT,
                         AgentApprovalMode.AUTOMATIC, "b".repeat(64), "v2", "v2");
                 records.event("task", kind + "_EXECUTING", "write", "a".repeat(64));
             }
             try (var db = DesktopPersistence.open(database)) {
+                gold.debug.windowstolinux.app.db.DatabaseTestFixture.server(db);
                 var records = db.agentTasks();
                 assertEquals(List.of("task"), records.unresolved("server"));
                 records.event("task", "RECONCILIATION_QUERY", "write", "candidate=absent");
@@ -65,6 +42,7 @@ class AgentTaskRepositoryTest {
     @Test
     void restartInterruptsUnfinishedTasksWithoutReplayingOrLosingEvents() throws Exception {
         try (var db = DesktopPersistence.open(directory)) {
+            gold.debug.windowstolinux.app.db.DatabaseTestFixture.server(db);
             var records = db.agentTasks();
             records.create("task", "server", "a".repeat(64), DeploymentAutomationMode.AGENT,
                     AgentApprovalMode.AUTOMATIC, "b".repeat(64), "deployment-v1", "approval-v1");
@@ -75,8 +53,9 @@ class AgentTaskRepositoryTest {
                     () -> records.event("task", "raw prompt", "op", "not accepted"));
         }
         try (var db = DesktopPersistence.open(directory)) {
+            gold.debug.windowstolinux.app.db.DatabaseTestFixture.server(db);
             var records = db.agentTasks();
-            assertEquals("INTERRUPTED", records.recent().getFirst().get("state"));
+            assertEquals("INTERRUPTED", records.recent().getFirst().get("task_state"));
             assertEquals(3, records.events("task").size());
             assertEquals(List.of("ACTION_PROPOSED", "EXECUTING", "STATE"),
                     records.events("task").stream().map(e -> e.get("event_type")).toList());
@@ -86,19 +65,22 @@ class AgentTaskRepositoryTest {
     @Test
     void unknownOutcomeRemainsUnknownAcrossRestart() throws Exception {
         try (var db = DesktopPersistence.open(directory)) {
+            gold.debug.windowstolinux.app.db.DatabaseTestFixture.server(db);
             var r = db.agentTasks();
             r.create("task", "server", "a".repeat(64), DeploymentAutomationMode.AGENT, AgentApprovalMode.FULL_CONTROL,
                     "b".repeat(64), "deployment-v1", "approval-v1");
             r.state("task", AgentTaskState.UNKNOWN);
         }
         try (var db = DesktopPersistence.open(directory)) {
-            assertEquals("UNKNOWN", db.agentTasks().recent().getFirst().get("state"));
+            gold.debug.windowstolinux.app.db.DatabaseTestFixture.server(db);
+            assertEquals("UNKNOWN", db.agentTasks().recent().getFirst().get("task_state"));
         }
     }
 
     @Test
     void anUnfinishedDispatchBlocksANewTaskEvenWhenTerminalStateWasWronglyRecorded() throws Exception {
         try (var db = DesktopPersistence.open(directory)) {
+            gold.debug.windowstolinux.app.db.DatabaseTestFixture.server(db);
             var r = db.agentTasks();
             r.create("task", "server", "a".repeat(64), DeploymentAutomationMode.AGENT, AgentApprovalMode.AUTOMATIC,
                     "b".repeat(64), "deployment-v1", "approval-v1");

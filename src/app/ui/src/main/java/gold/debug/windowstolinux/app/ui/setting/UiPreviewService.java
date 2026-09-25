@@ -19,7 +19,6 @@ import gold.debug.windowstolinux.app.service.server.ServerSummary;
 import gold.debug.windowstolinux.app.ui.i18n.PageMessagePresenter;
 import gold.debug.windowstolinux.shared.model.health.UserAccessUrl;
 import gold.debug.windowstolinux.shared.model.lifecycle.*;
-import gold.debug.windowstolinux.shared.model.security.CredentialStorageMode;
 
 /**
  * Fixed preview data with no production service, storage or transport references. / 固定预览数据，不持有真实服务、存储或传输对象。
@@ -66,15 +65,15 @@ final class UiPreviewService {
     UiPreviewService(PageMessagePresenter messages) {
         Instant observed = Instant.parse("2026-09-17T08:00:00Z");
         server = new ServerProfile("preview-server", "192.0.2.10", 22, "root", "preview/ssh",
-                CredentialStorageMode.MASTER_PASSWORD, messages.text("debug.sample.server"));
+                messages.text("debug.sample.server"));
         model = new AiProviderSummary(
                 new AiProviderProfile("preview-model", URI.create("https://example.invalid/v1/chat/completions"),
-                        "preview-model", "ai/provider/preview/api-key", CredentialStorageMode.MASTER_PASSWORD),
+                        "preview-model", "ai/provider/preview/api-key"),
                 messages.text("debug.sample.model"), 0, 1, Optional.of(observed), Optional.of(observed));
         application = new ApplicationSummary("external:preview-app", messages.text("debug.sample.app"), "WEBSITE",
                 server.id(), server.displayName(), server.host(), Optional.empty(), Optional.of(observed),
                 RuntimeState.RUNNING, Optional.of(observed),
-                Optional.of(new UserAccessUrl(URI.create("https://example.invalid"))), true, true, true, true);
+                Optional.of(new UserAccessUrl(URI.create("https://example.invalid"))), true, true, true);
         var scan = new ApplicationScan(server, List.of(
                 new DiscoveredApplication(
                         new ExternalApplicationTarget(ExternalApplicationKind.SYSTEMD, "preview.service",

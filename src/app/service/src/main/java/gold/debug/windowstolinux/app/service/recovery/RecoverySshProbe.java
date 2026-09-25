@@ -46,12 +46,11 @@ final class RecoverySshProbe {
      * <p>打开受保护凭据，验证固定 SSH 身份并执行只读连接检查。使用后清空密码缓冲区，并返回原始分类失败，不将其压缩为连接字符串。
      *
      * @param profile connection or provider settings supplied to the operation / 提供给操作的连接或提供者设置
-     * @param master master-password buffer used for the scoped secret operation / 限定秘密操作使用的主密码缓冲区
      * @param fingerprint pinned or freshly observed host-key fingerprint / 固定或新近观测的主机密钥指纹
      * @return verified recovery or the typed failure retaining its original descriptor / 已验证恢复结果，或保留原始描述的类型化失败
      */
-    RecoveryProbeResult check(ServerProfile profile, char[] master, Predicate<String> fingerprint) {
-        try (var store = secrets.open(profile.credentialMode(), master)) {
+    RecoveryProbeResult check(ServerProfile profile, Predicate<String> fingerprint) {
+        try (var store = secrets.open()) {
             var credential = servers.loadPassword(profile, store);
             try (var session = gateway.connect(profile.endpoint(), credential,
                     servers.hostKeyVerifier(profile, fingerprint))) {

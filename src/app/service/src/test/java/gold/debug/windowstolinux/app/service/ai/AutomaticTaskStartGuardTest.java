@@ -8,6 +8,7 @@ import java.time.Instant;
 import java.util.*;
 
 import gold.debug.windowstolinux.app.db.DesktopPersistence;
+import gold.debug.windowstolinux.app.service.SecurityTestFixture;
 import gold.debug.windowstolinux.app.service.contract.*;
 import gold.debug.windowstolinux.app.service.contract.definition.*;
 import gold.debug.windowstolinux.app.service.deployment.automatic.AutomaticDeploymentTaskService;
@@ -18,19 +19,17 @@ import gold.debug.windowstolinux.shared.ai.client.*;
 import gold.debug.windowstolinux.shared.model.agent.*;
 import gold.debug.windowstolinux.shared.model.ai.*;
 import gold.debug.windowstolinux.shared.model.deployment.*;
-import gold.debug.windowstolinux.shared.model.security.CredentialStorageMode;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
-class AutomaticTaskStartGuardTest {
+class AutomaticTaskStartGuardTest extends SecurityTestFixture {
     @TempDir
     Path root;
 
-    final ServerProfile server = new ServerProfile("server", "example.invalid", 22, "deploy", "ref",
-            CredentialStorageMode.MASTER_PASSWORD);
+    final ServerProfile server = new ServerProfile("server", "example.invalid", 22, "deploy", "ref");
     AiUseCaseFacade ai(DesktopPersistence db) {
-        return new AiUseCaseFacade(db.aiProfiles(), new DesktopSecretStoreService(db.encryptedSecrets()),
-                new OpenAiCompatibleRoleClient(), new StructuredAiClient((url, key, body) -> {
+        return new AiUseCaseFacade(db.aiProfiles(), SecurityTestFixture.secrets(db), new OpenAiCompatibleRoleClient(),
+                new StructuredAiClient((url, key, body) -> {
                     throw new AssertionError("no AI before preflight");
                 }));
     }
@@ -48,7 +47,8 @@ class AutomaticTaskStartGuardTest {
     void allPoliciesBlockEmptyAndDisabledApproversBeforeAnySideEffect() throws Exception {
         try (var db = DesktopPersistence.open(root)) {
             var p = new AiProviderProfile("model", URI.create("https://example.invalid/v1/chat/completions"), "test",
-                    "ai/test", CredentialStorageMode.MASTER_PASSWORD);
+                    "ai/test");
+            SecurityTestFixture.credential(db, p.credentialKey());
             db.aiProfiles().saveVerified(p.stored(), "model", Instant.now());
             db.aiProfiles().purposes().save(AiPurposeType.DEPLOYMENT, List.of(new AiPurposeAssignment("model", true)));
             for (var policy : AgentApprovalMode.values())
@@ -58,12 +58,10 @@ class AutomaticTaskStartGuardTest {
                     var request = new AutomaticDeploymentRequest(Optional.of(root.resolve("source-not-read")),
                             Optional.empty(), server, Map.of()).withAutomation(DeploymentAutomationMode.AGENT, policy);
                     char[] secret = "temporary".toCharArray();
-                    assertThrows(ApplicationServiceException.class,
-                            () -> task(db).deploy(request, secret, null, value -> {
-                                throw new AssertionError();
-                            }, m -> {
-                            }));
-                    assertEquals(0, new String(secret).replace("\0", "").length());
+                    assertThrows(ApplicationServiceException.class, () -> task(db).deploy(request, null, value -> {
+                        throw new AssertionError();
+                    }, m -> {
+                    }));
                     assertTrue(db.agentTasks().recent().isEmpty());
                     assertTrue(DeploymentAiScope.current().isEmpty());
                 }
@@ -79,11 +77,10 @@ class AutomaticTaskStartGuardTest {
             db.agentTasks().state("previous", AgentTaskState.UNKNOWN);
             var request = new AutomaticDeploymentRequest(Optional.of(root.resolve("unread")), Optional.empty(), server,
                     Map.of());
-            var error = assertThrows(IllegalStateException.class,
-                    () -> task(db).deploy(request, "temporary".toCharArray(), null, value -> {
-                        throw new AssertionError();
-                    }, m -> {
-                    }));
+            var error = assertThrows(IllegalStateException.class, () -> task(db).deploy(request, null, value -> {
+                throw new AssertionError();
+            }, m -> {
+            }));
             assertEquals("deployment.agent.unresolvedOutcome", error.getMessage());
             assertEquals(List.of("previous"), db.agentTasks().unresolved("server"));
         }

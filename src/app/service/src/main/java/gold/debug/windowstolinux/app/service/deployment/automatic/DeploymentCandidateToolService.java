@@ -28,16 +28,15 @@ public final class DeploymentCandidateToolService {
      * @param task task identity / 任务身份
      * @param workspace exact candidate / 精确候选项
      * @param cleanup whether the separately approved action is cleanup / 是否为另行批准的清理动作
-     * @param master scoped unlock buffer / 限定解锁缓冲区
      * @return actual bounded observation / 实际有界观测
      * @throws Exception when identity, credentials or remote observation fail / 身份、凭据或远端观测失败时
      */
-    public AgentObservation candidate(ServerProfile server, String task, RemoteWorkspace workspace, boolean cleanup,
-            char[] master) throws Exception {
-        try {
+    public AgentObservation candidate(ServerProfile server, String task, RemoteWorkspace workspace, boolean cleanup)
+            throws Exception {
+        {
             if (!servers.find(server.id()).filter(server::equals).isPresent())
                 throw new SecurityException("server identity changed");
-            try (var store = servers.secrets().open(server.credentialMode(), master);
+            try (var store = servers.secrets().open();
                     var remote = gateway.connect(server.endpoint(), servers.loadPassword(server, store),
                             servers.hostKeyVerifier(server, value -> false))) {
                 var candidate = new gold.debug.windowstolinux.shared.linux.transfer.RemoteTaskCandidate(workspace,
@@ -54,8 +53,6 @@ public final class DeploymentCandidateToolService {
                 facts.put("changed", Boolean.toString(cleared && !before.equals(after)));
                 return new AgentObservation(cleared, cleared, facts);
             }
-        } finally {
-            Arrays.fill(master, '\0');
         }
     }
 }

@@ -11,10 +11,8 @@ import java.util.Objects;
  * @param endpoint OpenAI-compatible endpoint / OpenAI 兼容端点
  * @param model selected model name / 所选模型名称
  * @param credentialKey platform-secret-store key / 平台秘密存储键
- * @param credentialMode selected platform-secret-store mode / 已选择的平台秘密存储模式
  */
-public record StoredAiProviderProfile(String id, String endpoint, String model, String credentialKey,
-        String credentialMode) {
+public record StoredAiProviderProfile(String id, String endpoint, String model, String credentialKey) {
     /**
      * Validates and binds the inputs required by stored ai provider profile.
      * <p>校验并绑定已存储AI提供者配置资料所需输入。
@@ -23,14 +21,12 @@ public record StoredAiProviderProfile(String id, String endpoint, String model, 
      * @param endpoint reviewed network endpoint / 已审阅网络端点
      * @param model configured model identifier sent to the provider / 发送给提供者的已配置模型标识
      * @param credentialKey opaque lookup key in the platform secret store / 平台秘密存储中的不透明查找键
-     * @param credentialMode selected platform credential-storage mode / 所选平台凭据存储模式
      */
     public StoredAiProviderProfile {
         id = requireIdentifier(id, "id");
         endpoint = requireText(endpoint, "endpoint");
         model = requireText(model, "model");
         credentialKey = requireText(credentialKey, "credentialKey");
-        credentialMode = requireText(credentialMode, "credentialMode");
     }
 
     /**

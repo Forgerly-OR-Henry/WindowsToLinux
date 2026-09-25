@@ -38,6 +38,7 @@ import gold.debug.windowstolinux.app.service.contract.MultiComponentApplicationF
 import gold.debug.windowstolinux.app.service.contract.ServerApplicationFacade;
 import gold.debug.windowstolinux.app.service.contract.definition.*;
 import gold.debug.windowstolinux.app.service.contract.definition.MultiComponentReviewInput;
+import gold.debug.windowstolinux.app.service.contract.security.SecurityApplicationFacade;
 import gold.debug.windowstolinux.app.service.deployment.DeploymentInspectionUseCase;
 import gold.debug.windowstolinux.app.service.deployment.MultiComponentDeploymentUseCase;
 import gold.debug.windowstolinux.app.service.deployment.MultiComponentLifecycleUseCase;
@@ -87,7 +88,6 @@ import gold.debug.windowstolinux.shared.model.health.UserAccessUrl;
 import gold.debug.windowstolinux.shared.model.lifecycle.LifecycleAction;
 import gold.debug.windowstolinux.shared.model.managed.ManagedApplication;
 import gold.debug.windowstolinux.shared.model.project.DeploymentProjectType;
-import gold.debug.windowstolinux.shared.model.security.CredentialStorageMode;
 import gold.debug.windowstolinux.shared.model.server.ServerIdentity;
 import gold.debug.windowstolinux.shared.standard.analyze.component.ComponentAnalysisRequest;
 import gold.debug.windowstolinux.shared.standard.analyze.core.DeploymentAnalysisCoordinator;
@@ -111,7 +111,8 @@ public final class DesktopApplicationFacade
             ManagedApplicationFacade,
             BackupApplicationFacade,
             gold.debug.windowstolinux.app.service.contract.AutomaticDeploymentApplicationFacade,
-            gold.debug.windowstolinux.app.service.contract.SshRecoveryApplicationFacade {
+            gold.debug.windowstolinux.app.service.contract.SshRecoveryApplicationFacade,
+            gold.debug.windowstolinux.app.service.contract.security.SecurityApplicationFacade {
     /** Checks purpose configuration without opening network connections. / 不打开网络连接地检查用途配置。
      * @param mode deployment mode / 部署模式
      * @throws SQLException if configuration cannot be read / 配置无法读取时
@@ -119,7 +120,9 @@ public final class DesktopApplicationFacade
     @Override
     public void requireDeploymentModels(gold.debug.windowstolinux.shared.model.deployment.DeploymentAutomationMode mode)
             throws SQLException {
-        try (var ignored = ai.openDeployment(mode)) {
+        try (var authorization = security.enterOperation()) {
+            try (var ignored = ai.openDeployment(mode)) {
+            }
         }
     }
 
@@ -135,8 +138,10 @@ public final class DesktopApplicationFacade
     public gold.debug.windowstolinux.app.service.contract.definition.AutomaticDeploymentRequest createAutomaticDeploymentRequest(
             gold.debug.windowstolinux.app.service.contract.definition.DeploymentSourceInput source,
             ServerProfile server, gold.debug.windowstolinux.app.service.contract.definition.DeploymentFormInput input) {
-        return gold.debug.windowstolinux.app.service.deployment.automatic.DeploymentFormUseCase.request(source, server,
-                input);
+        try (var authorization = security.enterOperation()) {
+            return gold.debug.windowstolinux.app.service.deployment.automatic.DeploymentFormUseCase.request(source,
+                    server, input);
+        }
     }
 
     /**
@@ -149,7 +154,6 @@ public final class DesktopApplicationFacade
      * Executes one automatic desktop operation through the reviewed service contracts. / 通过经审阅的服务契约执行一次桌面自动操作。
      *
      * @param request reviewed inputs for the requested operation / 所请求操作的已审阅输入
-     * @param master master-password buffer used for the scoped secret operation / 限定秘密操作使用的主密码缓冲区
      * @param interaction caller-owned progress, confirmation and input callbacks / 调用方持有的进度、确认及输入回调
      * @param fingerprint pinned or freshly observed host-key fingerprint / 固定或新近观测的主机密钥指纹
      * @param progress progress / 进度
@@ -158,17 +162,19 @@ public final class DesktopApplicationFacade
      */
     @Override
     public gold.debug.windowstolinux.app.service.contract.definition.AutomaticDeploymentOutcome deployAutomatically(
-            gold.debug.windowstolinux.app.service.contract.definition.AutomaticDeploymentRequest request, char[] master,
+            gold.debug.windowstolinux.app.service.contract.definition.AutomaticDeploymentRequest request,
             gold.debug.windowstolinux.shared.deploy.contract.AutomaticDeploymentInteraction interaction,
             Predicate<String> fingerprint,
             java.util.function.Consumer<gold.debug.windowstolinux.shared.model.message.LocalizedMessage> progress)
             throws Exception {
-        try {
-            return automatic.deploy(request, master, interaction, fingerprint, progress);
-        } catch (gold.debug.windowstolinux.shared.linux.error.NativeDatabaseException failure) {
-            throw gold.debug.windowstolinux.app.service.failure.ApplicationServiceException.nativeDatabase(failure);
-        } finally {
-            java.util.Arrays.fill(master, '\0');
+        try (var authorization = security.enterOperation()) {
+            try {
+                return automatic.deploy(request,
+                        security.interaction(AutomaticDeploymentInteraction.class, interaction),
+                        security.confirm(fingerprint), progress);
+            } catch (gold.debug.windowstolinux.shared.linux.error.NativeDatabaseException failure) {
+                throw gold.debug.windowstolinux.app.service.failure.ApplicationServiceException.nativeDatabase(failure);
+            }
         }
     }
 
@@ -180,7 +186,9 @@ public final class DesktopApplicationFacade
      */
     @Override
     public List<gold.debug.windowstolinux.app.service.server.ServerSummary> listServerSummaries() throws SQLException {
-        return servers.summaries();
+        try (var authorization = security.enterOperation()) {
+            return servers.summaries();
+        }
     }
 
     /**
@@ -191,7 +199,9 @@ public final class DesktopApplicationFacade
      */
     @Override
     public List<ServerProfile> listServerProfiles() throws SQLException {
-        return servers.list();
+        try (var authorization = security.enterOperation()) {
+            return servers.list();
+        }
     }
 
     /**
@@ -203,19 +213,15 @@ public final class DesktopApplicationFacade
     @Override
     public gold.debug.windowstolinux.app.service.contract.definition.DeploymentSourceInput identifyDeploymentSource(
             String value) {
-        return gold.debug.windowstolinux.app.service.source.SourceSelectionService.identify(value);
+        try (var authorization = security.enterOperation()) {
+            return gold.debug.windowstolinux.app.service.source.SourceSelectionService.identify(value);
+        }
     }
     /**
      * Source identity or content read by the operation.
      * <p>操作读取的源身份或内容。
      */
     private final SourcePreparationUseCase source;
-
-    /**
-     * Bound gold debug windowstolinux app db persistence repository desktop preference repository collaborator for recovery preferences.
-     * <p>处理恢复偏好的golddebugwindowstolinux应用db持久化仓库Desktop偏好仓库协作对象。
-     */
-    private final gold.debug.windowstolinux.app.db.persistence.repository.DesktopPreferenceRepository recoveryPreferences;
 
     /**
      * Bound server use case facade collaborator for server-profile and authenticated-session service.
@@ -260,7 +266,6 @@ public final class DesktopApplicationFacade
      * @param root root directory defining the filesystem boundary / 定义文件系统边界的根目录
      * @param applicationId managed application identifier / 受管应用标识
      * @param assessment the typed static assessment / 类型化静态评估
-     * @param master master-password buffer used for the scoped secret operation / 限定秘密操作使用的主密码缓冲区
      * @param interaction caller-owned progress, confirmation and input callbacks / 调用方持有的进度、确认及输入回调
      * @return constructed or resolved assessment / 构造或解析得到的评估
      * @throws Exception if the delegated operation or caller-provided interaction fails / 被委派操作或调用方提供的交互失败时
@@ -269,12 +274,15 @@ public final class DesktopApplicationFacade
     public gold.debug.windowstolinux.shared.standard.analyze.ecosystem.db.DatabaseProjectInspector.Assessment completeAutomaticDatabaseInputs(
             Path root, String applicationId,
             gold.debug.windowstolinux.shared.standard.analyze.ecosystem.db.DatabaseProjectInspector.Assessment assessment,
-            char[] master, gold.debug.windowstolinux.shared.deploy.contract.AutomaticDeploymentInteraction interaction)
+            gold.debug.windowstolinux.shared.deploy.contract.AutomaticDeploymentInteraction interaction)
             throws Exception {
-        try {
-            return automaticDatabases.completeInputs(root, applicationId, assessment, master, interaction);
-        } catch (gold.debug.windowstolinux.shared.linux.error.NativeDatabaseException failure) {
-            throw gold.debug.windowstolinux.app.service.failure.ApplicationServiceException.nativeDatabase(failure);
+        try (var authorization = security.enterOperation()) {
+            try {
+                return automaticDatabases.completeInputs(root, applicationId, assessment,
+                        security.interaction(AutomaticDeploymentInteraction.class, interaction));
+            } catch (gold.debug.windowstolinux.shared.linux.error.NativeDatabaseException failure) {
+                throw gold.debug.windowstolinux.app.service.failure.ApplicationServiceException.nativeDatabase(failure);
+            }
         }
     }
 
@@ -286,7 +294,6 @@ public final class DesktopApplicationFacade
      * @param applicationId managed application identifier / 受管应用标识
      * @param server server identity or selected server configuration / 服务器身份或所选服务器配置
      * @param assessment the typed static assessment / 类型化静态评估
-     * @param master master-password buffer used for the scoped secret operation / 限定秘密操作使用的主密码缓冲区
      * @param interaction caller-owned progress, confirmation and input callbacks / 调用方持有的进度、确认及输入回调
      * @param fingerprint pinned or freshly observed host-key fingerprint / 固定或新近观测的主机密钥指纹
      * @param progress progress / 进度
@@ -297,15 +304,18 @@ public final class DesktopApplicationFacade
     public gold.debug.windowstolinux.shared.standard.deploy.contract.AutomaticDatabasePreparation prepareAutomaticDatabases(
             Path root, String applicationId, ServerProfile server,
             gold.debug.windowstolinux.shared.standard.analyze.ecosystem.db.DatabaseProjectInspector.Assessment assessment,
-            char[] master, gold.debug.windowstolinux.shared.deploy.contract.AutomaticDeploymentInteraction interaction,
+            gold.debug.windowstolinux.shared.deploy.contract.AutomaticDeploymentInteraction interaction,
             java.util.function.Predicate<String> fingerprint,
             java.util.function.Consumer<gold.debug.windowstolinux.shared.model.message.LocalizedMessage> progress)
             throws Exception {
-        try {
-            return automaticDatabases.prepare(root, applicationId, server, assessment, master, interaction, fingerprint,
-                    progress);
-        } catch (gold.debug.windowstolinux.shared.linux.error.NativeDatabaseException failure) {
-            throw gold.debug.windowstolinux.app.service.failure.ApplicationServiceException.nativeDatabase(failure);
+        try (var authorization = security.enterOperation()) {
+            try {
+                return automaticDatabases.prepare(root, applicationId, server, assessment,
+                        security.interaction(AutomaticDeploymentInteraction.class, interaction),
+                        security.confirm(fingerprint), progress);
+            } catch (gold.debug.windowstolinux.shared.linux.error.NativeDatabaseException failure) {
+                throw gold.debug.windowstolinux.app.service.failure.ApplicationServiceException.nativeDatabase(failure);
+            }
         }
     }
     /**
@@ -321,15 +331,17 @@ public final class DesktopApplicationFacade
     private final ReviewedDeploymentUseCase reviewedDeployment;
     /**
      * Parses component form inputs through their owning use case. / 通过所属用例解析组件表单输入。
-     *
-     * @param input source content consumed by this operation / 当前操作消费的源内容
+     * by this operation / 当前操作消费的源内容
      * @return component form inputs through their owning use case / 通过所属用例解析组件表单输入
+     * @param input input supplied to this boundary / 传入当前边界的input值
      */
     @Override
     public gold.debug.windowstolinux.shared.standard.analyze.component.ComponentAnalysisRequest parseComponentAnalysis(
             gold.debug.windowstolinux.app.service.contract.definition.ComponentFormInput input) {
-        return new gold.debug.windowstolinux.app.service.deployment.automatic.ComponentFormUseCase(input)
-                .analysisRequest();
+        try (var authorization = security.enterOperation()) {
+            return new gold.debug.windowstolinux.app.service.deployment.automatic.ComponentFormUseCase(input)
+                    .analysisRequest();
+        }
     }
 
     /**
@@ -345,8 +357,10 @@ public final class DesktopApplicationFacade
     public MultiComponentReviewInput parseComponentReview(
             gold.debug.windowstolinux.app.service.contract.definition.ComponentFormInput input,
             String managedApplicationId, boolean containerRisk, boolean experimentalRisk) {
-        return new gold.debug.windowstolinux.app.service.deployment.automatic.ComponentFormUseCase(input)
-                .reviewInput(managedApplicationId, containerRisk, experimentalRisk);
+        try (var authorization = security.enterOperation()) {
+            return new gold.debug.windowstolinux.app.service.deployment.automatic.ComponentFormUseCase(input)
+                    .reviewInput(managedApplicationId, containerRisk, experimentalRisk);
+        }
     }
 
     /**
@@ -435,10 +449,12 @@ public final class DesktopApplicationFacade
     public DesktopApplicationFacade(DesktopPersistence persistence, Path workDirectory, Path backupsDirectory,
             DeploymentLinuxGateway linuxGateway) {
         Objects.requireNonNull(persistence, "persistence");
-        this.recoveryPreferences = persistence.preferences();
         Objects.requireNonNull(linuxGateway, "linuxGateway");
         ServerOperationLockRegistry locks = new ServerOperationLockRegistry();
-        DesktopSecretStoreService secrets = new DesktopSecretStoreService(persistence.encryptedSecrets());
+        this.preferences = persistence.preferences();
+        this.security = new gold.debug.windowstolinux.app.service.security.DesktopSecurityService(
+                persistence.security());
+        DesktopSecretStoreService secrets = new DesktopSecretStoreService(security);
         this.servers = new ServerUseCaseFacade(persistence.servers(), secrets, linuxGateway);
         this.source = new SourcePreparationUseCase(new DeploymentAnalysisCoordinator(),
                 new WindowsSourcePreparer(workDirectory));
@@ -492,7 +508,9 @@ public final class DesktopApplicationFacade
      */
     @Override
     public ManagedBackupInputAssessment assessManagedBackupInputs(String applicationId) throws SQLException {
-        return backupInputs.assess(applicationId);
+        try (var authorization = security.enterOperation()) {
+            return backupInputs.assess(applicationId);
+        }
     }
 
     /**
@@ -501,7 +519,6 @@ public final class DesktopApplicationFacade
      * @param applicationId managed application identifier / 受管应用标识
      * @param destination caller-selected destination inside the permitted boundary / 调用方选择的许可边界内目的地
      * @param backupPassword independent password for backup secret encryption or decryption / 备份秘密加密或解密使用的独立密码
-     * @param masterPassword master-password buffer used to unlock protected credentials / 用于解锁受保护凭据的主密码缓冲区
      * @param firstUseConfirmation first use confirmation / 首次使用确认
      * @return a complete remote backup and publishes it only after independent final-path validation / 完整远端备份，并仅在最终路径独立复验后发布
      * @throws SQLException if the database cannot complete the requested read or transaction / 数据库无法完成请求的读取或事务时
@@ -512,10 +529,12 @@ public final class DesktopApplicationFacade
      */
     @Override
     public CreatedBackupArchive createManagedBackup(String applicationId, Path destination, char[] backupPassword,
-            char[] masterPassword, Predicate<String> firstUseConfirmation) throws SQLException, SecretStoreException,
-            LinuxOperationException, IOException, gold.debug.windowstolinux.shared.backup.crypto.BackupSecretException {
-        return remoteBackup.createUsingSavedProfile(applicationId, destination, backupPassword, masterPassword,
-                firstUseConfirmation);
+            Predicate<String> firstUseConfirmation) throws SQLException, SecretStoreException, LinuxOperationException,
+            IOException, gold.debug.windowstolinux.shared.backup.crypto.BackupSecretException {
+        try (var authorization = security.enterOperation()) {
+            return remoteBackup.createUsingSavedProfile(applicationId, destination, backupPassword,
+                    security.confirm(firstUseConfirmation));
+        }
     }
 
     /**
@@ -524,7 +543,6 @@ public final class DesktopApplicationFacade
      * @param archive source or backup archive descriptor or filesystem path / 源码或备份归档描述或文件系统路径
      * @param targetServerId target server id / 目标服务器标识
      * @param backupPassword independent password for backup secret encryption or decryption / 备份秘密加密或解密使用的独立密码
-     * @param masterPassword master-password buffer used to unlock protected credentials / 用于解锁受保护凭据的主密码缓冲区
      * @param firstUseConfirmation first use confirmation / 首次使用确认
      * @return constructed or resolved managed restore outcome / 构造或解析得到的受管恢复结果
      * @throws SQLException if the database cannot complete the requested read or transaction / 数据库无法完成请求的读取或事务时
@@ -535,10 +553,12 @@ public final class DesktopApplicationFacade
      */
     @Override
     public ManagedRestoreOutcome restoreManagedBackup(Path archive, String targetServerId, char[] backupPassword,
-            char[] masterPassword, Predicate<String> firstUseConfirmation) throws SQLException, SecretStoreException,
-            LinuxOperationException, IOException, gold.debug.windowstolinux.shared.backup.crypto.BackupSecretException {
-        return managedRestore.restoreUsingSavedProfile(archive, targetServerId, backupPassword, masterPassword,
-                firstUseConfirmation);
+            Predicate<String> firstUseConfirmation) throws SQLException, SecretStoreException, LinuxOperationException,
+            IOException, gold.debug.windowstolinux.shared.backup.crypto.BackupSecretException {
+        try (var authorization = security.enterOperation()) {
+            return managedRestore.restoreUsingSavedProfile(archive, targetServerId, backupPassword,
+                    security.confirm(firstUseConfirmation));
+        }
     }
 
     /**
@@ -547,7 +567,6 @@ public final class DesktopApplicationFacade
      * @param applicationId managed application identifier / 受管应用标识
      * @param targetServerId target server id / 目标服务器标识
      * @param backupPassword independent password for backup secret encryption or decryption / 备份秘密加密或解密使用的独立密码
-     * @param masterPassword master-password buffer used to unlock protected credentials / 用于解锁受保护凭据的主密码缓冲区
      * @param stopWindowApproved stop window approved / 停止窗口已批准
      * @param firstUseConfirmation first use confirmation / 首次使用确认
      * @return constructed or resolved managed offline migration outcome / 构造或解析得到的受管离线迁移结果
@@ -559,11 +578,13 @@ public final class DesktopApplicationFacade
      */
     @Override
     public ManagedOfflineMigrationOutcome prepareManagedOfflineMigration(String applicationId, String targetServerId,
-            char[] backupPassword, char[] masterPassword, boolean stopWindowApproved,
-            Predicate<String> firstUseConfirmation) throws SQLException, SecretStoreException, LinuxOperationException,
-            IOException, gold.debug.windowstolinux.shared.backup.crypto.BackupSecretException {
-        return managedMigration.prepare(applicationId, targetServerId, backupPassword, masterPassword,
-                stopWindowApproved, firstUseConfirmation);
+            char[] backupPassword, boolean stopWindowApproved, Predicate<String> firstUseConfirmation)
+            throws SQLException, SecretStoreException, LinuxOperationException, IOException,
+            gold.debug.windowstolinux.shared.backup.crypto.BackupSecretException {
+        try (var authorization = security.enterOperation()) {
+            return managedMigration.prepare(applicationId, targetServerId, backupPassword, stopWindowApproved,
+                    security.confirm(firstUseConfirmation));
+        }
     }
 
     /**
@@ -575,7 +596,9 @@ public final class DesktopApplicationFacade
      */
     @Override
     public BackupArchiveInspection inspectBackup(Path archive) throws IOException {
-        return backup.inspect(archive);
+        try (var authorization = security.enterOperation()) {
+            return backup.inspect(archive);
+        }
     }
 
     /**
@@ -587,18 +610,22 @@ public final class DesktopApplicationFacade
      */
     @Override
     public PreparedBackupCandidate prepareBackupCandidate(Path archive) throws IOException {
-        return backup.prepare(archive);
+        try (var authorization = security.enterOperation()) {
+            return backup.prepare(archive);
+        }
     }
 
     /**
      * Deletes only one exact platform-owned local restore candidate. / 仅删除一个精确的平台持有本地恢复候选。
      *
-     * @param candidate candidate / 候选
      * @throws IOException if the required file or stream operation fails / 所需文件或流操作失败时
+     * @param candidate candidate supplied to this boundary / 传入当前边界的candidate值
      */
     @Override
     public void discardBackupCandidate(PreparedBackupCandidate candidate) throws IOException {
-        backup.discard(candidate);
+        try (var authorization = security.enterOperation()) {
+            backup.discard(candidate);
+        }
     }
 
     /**
@@ -613,7 +640,9 @@ public final class DesktopApplicationFacade
     @Override
     public PreparedBackupSecrets prepareBackupCandidateWithSecrets(Path archive, char[] backupPassword)
             throws IOException, gold.debug.windowstolinux.shared.backup.crypto.BackupSecretException {
-        return backup.prepareWithSecrets(archive, backupPassword);
+        try (var authorization = security.enterOperation()) {
+            return backup.prepareWithSecrets(archive, backupPassword);
+        }
     }
 
     /**
@@ -627,7 +656,9 @@ public final class DesktopApplicationFacade
      */
     public DeploymentProjectAssessment analyzeDeploymentSource(Path sourceDirectory,
             DeploymentProjectType projectType) {
-        return deploymentInspection.analyze(sourceDirectory, projectType);
+        try (var authorization = security.enterOperation()) {
+            return deploymentInspection.analyze(sourceDirectory, projectType);
+        }
     }
 
     /**
@@ -640,21 +671,25 @@ public final class DesktopApplicationFacade
      */
     public ReviewedSourcePreparation prepareReviewedSource(Path sourceDirectory, DeploymentProjectType projectType)
             throws IOException {
-        return source.prepare(sourceDirectory, projectType);
+        try (var authorization = security.enterOperation()) {
+            return source.prepare(sourceDirectory, projectType);
+        }
     }
 
     /**
      * Prepares an explicit component graph with one independent safe archive per component. / 使用每组件独立安全归档准备显式组件图。
      *
-     * @param applicationRoot application root / 应用根目录
-     * @param applicationId managed application identifier / 受管应用标识
-     * @param components reviewed components in the application graph / 应用图中的已审阅组件
      * @return constructed or resolved prepared multi component source / 构造或解析得到的已准备多组件源码
      * @throws IOException if the required file or stream operation fails / 所需文件或流操作失败时
+     * @param applicationRoot application root supplied to this boundary / 传入当前边界的applicationRoot值
+     * @param applicationId application id supplied to this boundary / 传入当前边界的applicationId值
+     * @param components components supplied to this boundary / 传入当前边界的components值
      */
     public PreparedMultiComponentSource prepareReviewedMultiComponentSource(Path applicationRoot, String applicationId,
             List<ComponentAnalysisRequest> components) throws IOException {
-        return source.prepareMultiComponent(applicationRoot, applicationId, components);
+        try (var authorization = security.enterOperation()) {
+            return source.prepareMultiComponent(applicationRoot, applicationId, components);
+        }
     }
 
     /**
@@ -670,72 +705,78 @@ public final class DesktopApplicationFacade
     public ReviewedMultiComponentApplication createReviewedMultiComponentApplication(
             PreparedMultiComponentSource prepared, ServerIdentity server, List<MultiComponentReviewInput> inputs,
             ApplicationHealthGate applicationHealth) throws SQLException {
-        return multiComponentDeployment.createReview(prepared, server, inputs, applicationHealth);
+        try (var authorization = security.enterOperation()) {
+            return multiComponentDeployment.createReview(prepared, server, inputs, applicationHealth);
+        }
     }
 
     /**
      * Executes a reviewed whole-application transaction without stored application secrets. / 执行不含已存应用秘密的经审阅整应用事务。
      *
-     * @param review review / 审阅
-     * @param endpoint reviewed network endpoint / 已审阅网络端点
      * @param credential authentication material scoped to the current connection / 限定于当前连接的认证素材
      * @param verifier verifier / 验证器
      * @return constructed or resolved multi component deployment result / 构造或解析得到的多组件部署结果
      * @throws SQLException if the database cannot complete the requested read or transaction / 数据库无法完成请求的读取或事务时
+     * @param review review supplied to this boundary / 传入当前边界的review值
+     * @param endpoint endpoint supplied to this boundary / 传入当前边界的endpoint值
      */
     public MultiComponentDeploymentResult deployReviewedMultiComponent(ReviewedMultiComponentApplication review,
             SshEndpoint endpoint, SshCredential credential, HostKeyEvaluator verifier) throws SQLException {
-        return multiComponentDeployment.deploy(review, endpoint, credential, verifier);
+        try (var authorization = security.enterOperation()) {
+            return multiComponentDeployment.deploy(review, endpoint, credential, verifier);
+        }
     }
 
     /**
      * Executes a reviewed whole-application transaction with the selected saved credential. / 使用选定已保存凭据执行经审阅整应用事务。
      *
      * @param review review / 审阅
-     * @param profile connection or provider settings supplied to the operation / 提供给操作的连接或提供者设置
-     * @param mode selected operating or storage mode / 所选运行或存储模式
-     * @param masterPassword master-password buffer used to unlock protected credentials / 用于解锁受保护凭据的主密码缓冲区
      * @param confirmation token or decision binding approval to the exact proposed action / 将批准绑定到精确提议动作的令牌或决定
      * @return constructed or resolved multi component deployment result / 构造或解析得到的多组件部署结果
      * @throws SecretStoreException if the protected credential cannot be accessed or updated / 无法访问或更新受保护凭据时
      * @throws SQLException if the database cannot complete the requested read or transaction / 数据库无法完成请求的读取或事务时
+     * @param profile profile supplied to this boundary / 传入当前边界的profile值
      */
     public MultiComponentDeploymentResult deployReviewedMultiComponentWithStoredPassword(
-            ReviewedMultiComponentApplication review, ServerProfile profile, CredentialStorageMode mode,
-            char[] masterPassword, Predicate<String> confirmation) throws SecretStoreException, SQLException {
-        return multiComponentDeployment.deployWithStoredPassword(review, profile, mode, masterPassword, confirmation);
+            ReviewedMultiComponentApplication review, ServerProfile profile, Predicate<String> confirmation)
+            throws SecretStoreException, SQLException {
+        try (var authorization = security.enterOperation()) {
+            return multiComponentDeployment.deployWithStoredPassword(review, profile, security.confirm(confirmation));
+        }
     }
 
     /**
      * Loads a durable secret-free whole-application graph after a desktop restart. / 在桌面应用重启后加载持久且不含秘密的整应用图。
      *
-     * @param applicationId managed application identifier / 受管应用标识
      * @return matching result, or empty when no admitted value exists / 匹配结果；不存在已准入内容时为空
      * @throws SQLException if the database cannot complete the requested read or transaction / 数据库无法完成请求的读取或事务时
+     * @param applicationId application id supplied to this boundary / 传入当前边界的applicationId值
      */
     public Optional<ManagedMultiComponentApplication> findManagedMultiComponentApplication(String applicationId)
             throws SQLException {
-        return multiComponentLifecycle.findManagedApplication(applicationId);
+        try (var authorization = security.enterOperation()) {
+            return multiComponentLifecycle.findManagedApplication(applicationId);
+        }
     }
 
     /**
      * Executes a dependency-safe lifecycle action for a durably managed application graph. / 对持久受管应用图执行依赖安全生命周期动作。
      *
      * @param applicationId managed application identifier / 受管应用标识
-     * @param targetComponentIds target component ids / 目标组件标识集合
-     * @param action explicit action selected for the current target / 为当前目标显式选择的动作
-     * @param profile connection or provider settings supplied to the operation / 提供给操作的连接或提供者设置
-     * @param mode selected operating or storage mode / 所选运行或存储模式
-     * @param masterPassword master-password buffer used to unlock protected credentials / 用于解锁受保护凭据的主密码缓冲区
      * @return constructed or resolved multi component lifecycle result / 构造或解析得到的多组件生命周期结果
      * @throws SecretStoreException if the protected credential cannot be accessed or updated / 无法访问或更新受保护凭据时
      * @throws SQLException if the database cannot complete the requested read or transaction / 数据库无法完成请求的读取或事务时
+     * @param targetComponentIds target component ids supplied to this boundary / 传入当前边界的targetComponentIds值
+     * @param action action supplied to this boundary / 传入当前边界的action值
+     * @param profile profile supplied to this boundary / 传入当前边界的profile值
      */
     public MultiComponentLifecycleResult executeManagedMultiComponentLifecycleWithStoredPassword(String applicationId,
-            Set<String> targetComponentIds, LifecycleAction action, ServerProfile profile, CredentialStorageMode mode,
-            char[] masterPassword) throws SecretStoreException, SQLException {
-        return multiComponentLifecycle.executeLifecycleWithStoredPassword(applicationId, targetComponentIds, action,
-                profile, mode, masterPassword);
+            Set<String> targetComponentIds, LifecycleAction action, ServerProfile profile)
+            throws SecretStoreException, SQLException {
+        try (var authorization = security.enterOperation()) {
+            return multiComponentLifecycle.executeLifecycleWithStoredPassword(applicationId, targetComponentIds, action,
+                    profile);
+        }
     }
 
     /**
@@ -743,14 +784,16 @@ public final class DesktopApplicationFacade
      *
      *  <p>在分析前将一个显式选择且不含凭据的 Git 源固定为分离 Commit 后再准备。
      *
-     * @param request reviewed inputs for the requested operation / 所请求操作的已审阅输入
      * @param projectType supported project deployment category / 受支持的项目部署类别
      * @return constructed or resolved reviewed source preparation / 构造或解析得到的已审阅源码准备
      * @throws GitSnapshotException if the git snapshot boundary rejects the operation / Git快照边界拒绝当前操作时
+     * @param request request supplied to this boundary / 传入当前边界的request值
      */
     public ReviewedSourcePreparation prepareReviewedGitSource(GitSourceRequest request,
             DeploymentProjectType projectType) throws GitSnapshotException {
-        return source.prepareGit(request, projectType);
+        try (var authorization = security.enterOperation()) {
+            return source.prepareGit(request, projectType);
+        }
     }
 
     /**
@@ -762,7 +805,9 @@ public final class DesktopApplicationFacade
      * @return constructed or resolved reviewed deployment plan / 构造或解析得到的已审阅部署计划
      */
     public ReviewedDeploymentPlan planDeployment(ReviewedDeploymentRequest request) {
-        return deploymentInspection.plan(request);
+        try (var authorization = security.enterOperation()) {
+            return deploymentInspection.plan(request);
+        }
     }
 
     /**
@@ -771,15 +816,17 @@ public final class DesktopApplicationFacade
      *  <p>通过已配置的有界网关执行一个先前审阅的类型专属部署。
      *
      * @param request reviewed inputs for the requested operation / 所请求操作的已审阅输入
-     * @param endpoint reviewed network endpoint / 已审阅网络端点
-     * @param credential authentication material scoped to the current connection / 限定于当前连接的认证素材
-     * @param verifier verifier / 验证器
      * @return constructed or resolved deployment outcome / 构造或解析得到的部署结果
      * @throws SQLException if the database cannot complete the requested read or transaction / 数据库无法完成请求的读取或事务时
+     * @param endpoint endpoint supplied to this boundary / 传入当前边界的endpoint值
+     * @param credential credential supplied to this boundary / 传入当前边界的credential值
+     * @param verifier verifier supplied to this boundary / 传入当前边界的verifier值
      */
     public DeploymentOutcome deployReviewed(ReviewedDeploymentRequest request, SshEndpoint endpoint,
             SshCredential credential, HostKeyEvaluator verifier) throws SQLException {
-        return reviewedDeployment.deploy(request, endpoint, credential, verifier);
+        try (var authorization = security.enterOperation()) {
+            return reviewedDeployment.deploy(request, endpoint, credential, verifier);
+        }
     }
 
     /**
@@ -805,9 +852,11 @@ public final class DesktopApplicationFacade
             gold.debug.windowstolinux.shared.model.project.DeploymentRuntimeSpecification runtime,
             Optional<UserAccessUrl> userAccessUrl, BuildLimitConfiguration limits, boolean rootBuildConfirmed,
             boolean containerDaemonRiskAccepted, boolean experimentalAdapterRiskAccepted) throws SQLException {
-        return reviewedDeployment.createRequest(preparation, server, configuration, secretReferences, databaseBindings,
-                runtime, userAccessUrl, limits, rootBuildConfirmed, containerDaemonRiskAccepted,
-                experimentalAdapterRiskAccepted);
+        try (var authorization = security.enterOperation()) {
+            return reviewedDeployment.createRequest(preparation, server, configuration, secretReferences,
+                    databaseBindings, runtime, userAccessUrl, limits, rootBuildConfirmed, containerDaemonRiskAccepted,
+                    experimentalAdapterRiskAccepted);
+        }
     }
 
     /**
@@ -832,9 +881,11 @@ public final class DesktopApplicationFacade
             gold.debug.windowstolinux.shared.model.project.DeploymentRuntimeSpecification runtime,
             Optional<UserAccessUrl> userAccessUrl, BuildLimitConfiguration limits, boolean rootBuildConfirmed,
             boolean containerDaemonRiskAccepted, boolean experimentalAdapterRiskAccepted) throws SQLException {
-        return AutomaticDeploymentApplicationFacade.super.createReviewedDeploymentRequest(preparation, server,
-                configuration, secretReferences, runtime, userAccessUrl, limits, rootBuildConfirmed,
-                containerDaemonRiskAccepted, experimentalAdapterRiskAccepted);
+        try (var authorization = security.enterOperation()) {
+            return AutomaticDeploymentApplicationFacade.super.createReviewedDeploymentRequest(preparation, server,
+                    configuration, secretReferences, runtime, userAccessUrl, limits, rootBuildConfirmed,
+                    containerDaemonRiskAccepted, experimentalAdapterRiskAccepted);
+        }
     }
 
     /**
@@ -857,8 +908,10 @@ public final class DesktopApplicationFacade
             gold.debug.windowstolinux.shared.model.project.DeploymentRuntimeSpecification runtime,
             Optional<UserAccessUrl> userAccessUrl, BuildLimitConfiguration limits, boolean rootBuildConfirmed,
             boolean containerDaemonRiskAccepted) throws SQLException {
-        return createReviewedDeploymentRequest(preparation, server, configuration, secretReferences, runtime,
-                userAccessUrl, limits, rootBuildConfirmed, containerDaemonRiskAccepted, false);
+        try (var authorization = security.enterOperation()) {
+            return createReviewedDeploymentRequest(preparation, server, configuration, secretReferences, runtime,
+                    userAccessUrl, limits, rootBuildConfirmed, containerDaemonRiskAccepted, false);
+        }
     }
 
     /**
@@ -866,17 +919,16 @@ public final class DesktopApplicationFacade
      *
      * @param request reviewed inputs for the requested operation / 所请求操作的已审阅输入
      * @param profile connection or provider settings supplied to the operation / 提供给操作的连接或提供者设置
-     * @param mode selected operating or storage mode / 所选运行或存储模式
-     * @param masterPassword master-password buffer used to unlock protected credentials / 用于解锁受保护凭据的主密码缓冲区
      * @param confirmation token or decision binding approval to the exact proposed action / 将批准绑定到精确提议动作的令牌或决定
      * @return constructed or resolved deployment outcome / 构造或解析得到的部署结果
      * @throws SecretStoreException if the protected credential cannot be accessed or updated / 无法访问或更新受保护凭据时
      * @throws SQLException if the database cannot complete the requested read or transaction / 数据库无法完成请求的读取或事务时
      */
     public DeploymentOutcome deployReviewedWithStoredPassword(ReviewedDeploymentRequest request, ServerProfile profile,
-            CredentialStorageMode mode, char[] masterPassword, Predicate<String> confirmation)
-            throws SecretStoreException, SQLException {
-        return reviewedDeployment.deployWithStoredPassword(request, profile, mode, masterPassword, confirmation);
+            Predicate<String> confirmation) throws SecretStoreException, SQLException {
+        try (var authorization = security.enterOperation()) {
+            return reviewedDeployment.deployWithStoredPassword(request, profile, security.confirm(confirmation));
+        }
     }
 
     /**
@@ -885,14 +937,16 @@ public final class DesktopApplicationFacade
      *  <p>通过 {@code saveServerProfile} 保存数据。
      *
      * @param profile connection or provider settings supplied to the operation / 提供给操作的连接或提供者设置
-     * @param store store / 存储
-     * @param password temporary plaintext authentication buffer / 临时明文认证缓冲区
      * @throws SQLException if the database cannot complete the requested read or transaction / 数据库无法完成请求的读取或事务时
      * @throws SecretStoreException if the protected credential cannot be accessed or updated / 无法访问或更新受保护凭据时
+     * @param store store supplied to this boundary / 传入当前边界的store值
+     * @param password SSH password buffer / SSH 密码缓冲区
      */
     public void saveServerProfile(ServerProfile profile, SecretStore store, char[] password)
             throws SQLException, SecretStoreException {
-        servers.save(profile, store, password);
+        try (var authorization = security.enterOperation()) {
+            servers.save(profile, store, password);
+        }
     }
 
     /**
@@ -901,15 +955,14 @@ public final class DesktopApplicationFacade
      *  <p>通过 {@code saveServerProfile} 保存数据。
      *
      * @param profile connection or provider settings supplied to the operation / 提供给操作的连接或提供者设置
-     * @param mode selected operating or storage mode / 所选运行或存储模式
-     * @param masterPassword master-password buffer used to unlock protected credentials / 用于解锁受保护凭据的主密码缓冲区
      * @param password temporary plaintext authentication buffer / 临时明文认证缓冲区
      * @throws SQLException if the database cannot complete the requested read or transaction / 数据库无法完成请求的读取或事务时
      * @throws SecretStoreException if the protected credential cannot be accessed or updated / 无法访问或更新受保护凭据时
      */
-    public void saveServerProfile(ServerProfile profile, CredentialStorageMode mode, char[] masterPassword,
-            char[] password) throws SQLException, SecretStoreException {
-        servers.save(profile, mode, masterPassword, password);
+    public void saveServerProfile(ServerProfile profile, char[] password) throws SQLException, SecretStoreException {
+        try (var authorization = security.enterOperation()) {
+            servers.save(profile, password);
+        }
     }
 
     /**
@@ -917,26 +970,29 @@ public final class DesktopApplicationFacade
      *
      *  <p>返回 {@code findServerProfile} 生成的值。
      *
-     * @param serverId persisted server identifier / 持久化服务器标识
-     * @return the optional operation result / 可选操作结果
      * @throws SQLException if the database cannot complete the requested read or transaction / 数据库无法完成请求的读取或事务时
+     * @param serverId server id supplied to this boundary / 传入当前边界的serverId值
+     * @return the validated result or retained scoped handle / 已验证结果或保留的限定句柄
      */
     public Optional<ServerProfile> findServerProfile(String serverId) throws SQLException {
-        return servers.find(serverId);
+        try (var authorization = security.enterOperation()) {
+            return servers.find(serverId);
+        }
     }
 
     /**
      * Invokes exactly the provider assigned to the supplied minimal role context. / 精确调用分配给所提供最小角色上下文的提供者。
      *
      * @param context facts and dependencies scoped to the current operation / 限定于当前操作的事实及依赖
-     * @param masterPassword master-password buffer used to unlock protected credentials / 用于解锁受保护凭据的主密码缓冲区
      * @return matching result, or empty when no admitted value exists / 匹配结果；不存在已准入内容时为空
      * @throws SQLException if the database cannot complete the requested read or transaction / 数据库无法完成请求的读取或事务时
      * @throws SecretStoreException if the protected credential cannot be accessed or updated / 无法访问或更新受保护凭据时
      */
-    public Optional<AiRoleInvocationResult> invokeAiRole(AiRoleContext context, char[] masterPassword)
+    public Optional<AiRoleInvocationResult> invokeAiRole(AiRoleContext context)
             throws SQLException, SecretStoreException {
-        return ai.invokeRole(context, masterPassword);
+        try (var authorization = security.enterOperation()) {
+            return ai.invokeRole(context);
+        }
     }
 
     /**
@@ -948,7 +1004,9 @@ public final class DesktopApplicationFacade
      * @throws SQLException if the database cannot complete the requested read or transaction / 数据库无法完成请求的读取或事务时
      */
     public void saveDeploymentConfigurationSnapshot(ConfigurationSnapshot snapshot) throws SQLException {
-        deploymentConfiguration.saveSnapshot(snapshot);
+        try (var authorization = security.enterOperation()) {
+            deploymentConfiguration.saveSnapshot(snapshot);
+        }
     }
 
     /**
@@ -964,39 +1022,41 @@ public final class DesktopApplicationFacade
      */
     public void saveDeploymentSecretRevision(StoredApplicationSecretRevision revision, SecretStore store, char[] value)
             throws SQLException, SecretStoreException {
-        deploymentConfiguration.saveSecretRevision(revision, store, value);
+        try (var authorization = security.enterOperation()) {
+            deploymentConfiguration.saveSecretRevision(revision, store, value);
+        }
     }
 
     /**
      * Saves a user-entered secret reference without accepting storage metadata from UI. / 保存用户输入的秘密引用，不接受 UI 提供的存储元数据。
      *
-     * @param referenceInput reference input / 引用输入
-     * @param mode selected operating or storage mode / 所选运行或存储模式
-     * @param masterPassword master-password buffer used to unlock protected credentials / 用于解锁受保护凭据的主密码缓冲区
      * @param value candidate content accepted or rejected by this contract / 由当前契约接收或拒绝的候选内容
-     * @return constructed or resolved secret reference / 构造或解析得到的秘密引用
      * @throws SQLException if the database cannot complete the requested read or transaction / 数据库无法完成请求的读取或事务时
      * @throws SecretStoreException if the protected credential cannot be accessed or updated / 无法访问或更新受保护凭据时
+     * @param referenceInput reference input supplied to this boundary / 传入当前边界的referenceInput值
+     * @return the validated result or retained scoped handle / 已验证结果或保留的限定句柄
      */
     @Override
-    public SecretReference saveDeploymentSecretRevision(String referenceInput, CredentialStorageMode mode,
-            char[] masterPassword, char[] value) throws SQLException, SecretStoreException {
-        return deploymentConfiguration.saveSecretRevision(referenceInput, mode, masterPassword, value);
+    public SecretReference saveDeploymentSecretRevision(String referenceInput, char[] value)
+            throws SQLException, SecretStoreException {
+        try (var authorization = security.enterOperation()) {
+            return deploymentConfiguration.saveSecretRevision(referenceInput, value);
+        }
     }
 
     /**
      * Stores one immutable application-secret revision through the selected desktop secret store. / 通过选定的桌面秘密存储保存一个不可变应用秘密修订。
      *
-     * @param revision immutable configuration or secret revision number / 不可变配置或秘密修订号
-     * @param mode selected operating or storage mode / 所选运行或存储模式
-     * @param masterPassword master-password buffer used to unlock protected credentials / 用于解锁受保护凭据的主密码缓冲区
      * @param value candidate content accepted or rejected by this contract / 由当前契约接收或拒绝的候选内容
      * @throws SQLException if the database cannot complete the requested read or transaction / 数据库无法完成请求的读取或事务时
      * @throws SecretStoreException if the protected credential cannot be accessed or updated / 无法访问或更新受保护凭据时
+     * @param revision revision supplied to this boundary / 传入当前边界的revision值
      */
-    public void saveDeploymentSecretRevision(StoredApplicationSecretRevision revision, CredentialStorageMode mode,
-            char[] masterPassword, char[] value) throws SQLException, SecretStoreException {
-        deploymentConfiguration.saveSecretRevision(revision, mode, masterPassword, value);
+    public void saveDeploymentSecretRevision(StoredApplicationSecretRevision revision, char[] value)
+            throws SQLException, SecretStoreException {
+        try (var authorization = security.enterOperation()) {
+            deploymentConfiguration.saveSecretRevision(revision, value);
+        }
     }
 
     /**
@@ -1004,16 +1064,17 @@ public final class DesktopApplicationFacade
      *
      *  <p>在可用于部署或回滚前，验证并将不可变秘密修订绑定到发布标识。
      *
-     * @param applicationId managed application identifier / 受管应用标识
-     * @param releaseIdentity digest identifying the exact published release / 标识精确已发布版本的摘要
-     * @param references references / 引用集合
-     * @param masterPassword master-password buffer used to unlock protected credentials / 用于解锁受保护凭据的主密码缓冲区
      * @throws SQLException if the database cannot complete the requested read or transaction / 数据库无法完成请求的读取或事务时
      * @throws SecretStoreException if the protected credential cannot be accessed or updated / 无法访问或更新受保护凭据时
+     * @param applicationId application id supplied to this boundary / 传入当前边界的applicationId值
+     * @param releaseIdentity release identity supplied to this boundary / 传入当前边界的releaseIdentity值
+     * @param references references supplied to this boundary / 传入当前边界的references值
      */
     public void bindDeploymentReleaseSecrets(String applicationId, String releaseIdentity,
-            List<SecretReference> references, char[] masterPassword) throws SQLException, SecretStoreException {
-        deploymentConfiguration.bindReleaseSecrets(applicationId, releaseIdentity, references, masterPassword);
+            List<SecretReference> references) throws SQLException, SecretStoreException {
+        try (var authorization = security.enterOperation()) {
+            deploymentConfiguration.bindReleaseSecrets(applicationId, releaseIdentity, references);
+        }
     }
 
     /**
@@ -1021,35 +1082,34 @@ public final class DesktopApplicationFacade
      *
      *  <p>通过 {@code verifyServer} 验证输入。
      *
-     * @param profile connection or provider settings supplied to the operation / 提供给操作的连接或提供者设置
-     * @param mode selected operating or storage mode / 所选运行或存储模式
-     * @param masterPassword master-password buffer used to unlock protected credentials / 用于解锁受保护凭据的主密码缓冲区
-     * @param confirmation token or decision binding approval to the exact proposed action / 将批准绑定到精确提议动作的令牌或决定
-     * @return the operation result / 操作结果
      * @throws SecretStoreException if the protected credential cannot be accessed or updated / 无法访问或更新受保护凭据时
      * @throws SQLException if the database cannot complete the requested read or transaction / 数据库无法完成请求的读取或事务时
      * @throws LinuxOperationException if the authenticated remote operation fails or its evidence is rejected / 已认证远端操作失败或其证据被拒绝时
+     * @param profile profile supplied to this boundary / 传入当前边界的profile值
+     * @param confirmation repeated password or confirmation callback / 重复密码或确认回调
+     * @return the validated result or retained scoped handle / 已验证结果或保留的限定句柄
      */
-    public ServerCapabilityFacts verifyServer(ServerProfile profile, CredentialStorageMode mode, char[] masterPassword,
-            Predicate<String> confirmation) throws SecretStoreException, SQLException, LinuxOperationException {
-        return servers.verify(profile, mode, masterPassword, confirmation);
+    public ServerCapabilityFacts verifyServer(ServerProfile profile, Predicate<String> confirmation)
+            throws SecretStoreException, SQLException, LinuxOperationException {
+        try (var authorization = security.enterOperation()) {
+            return servers.verify(profile, security.confirm(confirmation));
+        }
     }
 
     /**
      * Collects exact non-secret deployment capabilities without mutating the selected server. / 在不修改所选服务器的情况下采集精确且不含秘密的部署能力。
      *
      * @param profile connection or provider settings supplied to the operation / 提供给操作的连接或提供者设置
-     * @param mode selected operating or storage mode / 所选运行或存储模式
-     * @param masterPassword master-password buffer used to unlock protected credentials / 用于解锁受保护凭据的主密码缓冲区
      * @param confirmation token or decision binding approval to the exact proposed action / 将批准绑定到精确提议动作的令牌或决定
      * @return constructed or resolved linux capability facts / 构造或解析得到的Linux能力事实
      * @throws SecretStoreException if the protected credential cannot be accessed or updated / 无法访问或更新受保护凭据时
      * @throws LinuxOperationException if the authenticated remote operation fails or its evidence is rejected / 已认证远端操作失败或其证据被拒绝时
      */
     public LinuxCapabilityFacts inspectDeploymentCapabilitiesWithStoredPassword(ServerProfile profile,
-            CredentialStorageMode mode, char[] masterPassword, Predicate<String> confirmation)
-            throws SecretStoreException, LinuxOperationException {
-        return servers.inspectDeploymentCapabilities(profile, mode, masterPassword, confirmation);
+            Predicate<String> confirmation) throws SecretStoreException, LinuxOperationException {
+        try (var authorization = security.enterOperation()) {
+            return servers.inspectDeploymentCapabilities(profile, security.confirm(confirmation));
+        }
     }
 
     /**
@@ -1057,42 +1117,41 @@ public final class DesktopApplicationFacade
      * <p>准备环境具有已存储密码。
      *
      * @param profile connection or provider settings supplied to the operation / 提供给操作的连接或提供者设置
-     * @param mode selected operating or storage mode / 所选运行或存储模式
-     * @param masterPassword master-password buffer used to unlock protected credentials / 用于解锁受保护凭据的主密码缓冲区
      * @param confirmation token or decision binding approval to the exact proposed action / 将批准绑定到精确提议动作的令牌或决定
-     * @param installationConfirmed installation confirmed / 安装已确认
      * @return the operation result / 操作结果
      * @throws SecretStoreException if the protected credential cannot be accessed or updated / 无法访问或更新受保护凭据时
      * @throws SQLException if the database cannot complete the requested read or transaction / 数据库无法完成请求的读取或事务时
      * @throws LinuxOperationException if the authenticated remote operation fails or its evidence is rejected / 已认证远端操作失败或其证据被拒绝时
+     * @param installationConfirmed installation confirmed supplied to this boundary / 传入当前边界的installationConfirmed值
      */
     public EnvironmentSetupResult prepareEnvironmentWithStoredPassword(ServerProfile profile,
-            CredentialStorageMode mode, char[] masterPassword, Predicate<String> confirmation,
-            boolean installationConfirmed) throws SecretStoreException, SQLException, LinuxOperationException {
-        return environment.prepare(profile, mode, masterPassword, confirmation, installationConfirmed);
+            Predicate<String> confirmation, boolean installationConfirmed)
+            throws SecretStoreException, SQLException, LinuxOperationException {
+        try (var authorization = security.enterOperation()) {
+            return environment.prepare(profile, security.confirm(confirmation), installationConfirmed);
+        }
     }
 
     /**
      * Prepares the target with a separate, target-bound system-change confirmation. / 使用独立且绑定目标的系统变更确认准备目标机。
      *
      * @param profile connection or provider settings supplied to the operation / 提供给操作的连接或提供者设置
-     * @param mode selected operating or storage mode / 所选运行或存储模式
-     * @param masterPassword master-password buffer used to unlock protected credentials / 用于解锁受保护凭据的主密码缓冲区
      * @param confirmation token or decision binding approval to the exact proposed action / 将批准绑定到精确提议动作的令牌或决定
      * @param installationConfirmed installation confirmed / 安装已确认
-     * @param systemConfirmation system confirmation / 系统确认
      * @return constructed or resolved environment setup result / 构造或解析得到的环境Setup结果
      * @throws SecretStoreException if the protected credential cannot be accessed or updated / 无法访问或更新受保护凭据时
      * @throws SQLException if the database cannot complete the requested read or transaction / 数据库无法完成请求的读取或事务时
      * @throws LinuxOperationException if the authenticated remote operation fails or its evidence is rejected / 已认证远端操作失败或其证据被拒绝时
+     * @param systemConfirmation system confirmation supplied to this boundary / 传入当前边界的systemConfirmation值
      */
     public EnvironmentSetupResult prepareEnvironmentWithStoredPassword(ServerProfile profile,
-            CredentialStorageMode mode, char[] masterPassword, Predicate<String> confirmation,
-            boolean installationConfirmed,
+            Predicate<String> confirmation, boolean installationConfirmed,
             Predicate<gold.debug.windowstolinux.shared.model.server.security.SelinuxPreparationPlan> systemConfirmation)
             throws SecretStoreException, SQLException, LinuxOperationException {
-        return environment.prepare(profile, mode, masterPassword, confirmation, installationConfirmed,
-                systemConfirmation);
+        try (var authorization = security.enterOperation()) {
+            return environment.prepare(profile, security.confirm(confirmation), installationConfirmed,
+                    security.confirm(systemConfirmation));
+        }
     }
 
     /**
@@ -1100,12 +1159,14 @@ public final class DesktopApplicationFacade
      *
      *  <p>返回 {@code findTrustedServer} 生成的值。
      *
-     * @param serverId persisted server identifier / 持久化服务器标识
      * @return the optional operation result / 可选操作结果
      * @throws SQLException if the database cannot complete the requested read or transaction / 数据库无法完成请求的读取或事务时
+     * @param serverId server id supplied to this boundary / 传入当前边界的serverId值
      */
     public Optional<ServerIdentity> findTrustedServer(String serverId) throws SQLException {
-        return servers.findTrusted(serverId);
+        try (var authorization = security.enterOperation()) {
+            return servers.findTrusted(serverId);
+        }
     }
 
     /**
@@ -1117,7 +1178,9 @@ public final class DesktopApplicationFacade
      * @throws SQLException if the database cannot complete the requested read or transaction / 数据库无法完成请求的读取或事务时
      */
     public List<ManagedApplication> listManagedApplications() throws SQLException {
-        return lifecycle.list();
+        try (var authorization = security.enterOperation()) {
+            return lifecycle.list();
+        }
     }
 
     /**
@@ -1129,7 +1192,9 @@ public final class DesktopApplicationFacade
      * @throws SQLException if the database cannot complete the requested read or transaction / 数据库无法完成请求的读取或事务时
      */
     public List<ManagedApplicationSnapshot> listManagedApplicationSummaries() throws SQLException {
-        return lifecycle.summaries();
+        try (var authorization = security.enterOperation()) {
+            return lifecycle.summaries();
+        }
     }
 
     /**
@@ -1137,15 +1202,16 @@ public final class DesktopApplicationFacade
      * <p>执行已持久化生命周期具有已存储密码。
      *
      * @param applicationId managed application identifier / 受管应用标识
-     * @param action explicit action selected for the current target / 为当前目标显式选择的动作
-     * @param masterPassword master-password buffer used to unlock protected credentials / 用于解锁受保护凭据的主密码缓冲区
      * @return the operation result / 操作结果
      * @throws SecretStoreException if the protected credential cannot be accessed or updated / 无法访问或更新受保护凭据时
      * @throws SQLException if the database cannot complete the requested read or transaction / 数据库无法完成请求的读取或事务时
+     * @param action action supplied to this boundary / 传入当前边界的action值
      */
-    public LifecycleOutcome executePersistedLifecycleWithStoredPassword(String applicationId, LifecycleAction action,
-            char[] masterPassword) throws SecretStoreException, SQLException {
-        return lifecycle.executePersisted(applicationId, action, masterPassword);
+    public LifecycleOutcome executePersistedLifecycleWithStoredPassword(String applicationId, LifecycleAction action)
+            throws SecretStoreException, SQLException {
+        try (var authorization = security.enterOperation()) {
+            return lifecycle.executePersisted(applicationId, action);
+        }
     }
 
     /**
@@ -1154,14 +1220,15 @@ public final class DesktopApplicationFacade
      *
      * @param applicationId managed application identifier / 受管应用标识
      * @param action explicit action selected for the current target / 为当前目标显式选择的动作
-     * @param masterPassword master-password buffer used to unlock protected credentials / 用于解锁受保护凭据的主密码缓冲区
      * @return the operation result / 操作结果
      * @throws SecretStoreException if the protected credential cannot be accessed or updated / 无法访问或更新受保护凭据时
      * @throws SQLException if the database cannot complete the requested read or transaction / 数据库无法完成请求的读取或事务时
      */
     public LifecycleActionResult executePersistedLifecycleResultWithStoredPassword(String applicationId,
-            LifecycleAction action, char[] masterPassword) throws SecretStoreException, SQLException {
-        return lifecycle.executePersistedResult(applicationId, action, masterPassword);
+            LifecycleAction action) throws SecretStoreException, SQLException {
+        try (var authorization = security.enterOperation()) {
+            return lifecycle.executePersistedResult(applicationId, action);
+        }
     }
 
     /**
@@ -1172,16 +1239,15 @@ public final class DesktopApplicationFacade
      * @param action explicit action selected for the current target / 为当前目标显式选择的动作
      * @param healthCheck reviewed probe and its success criteria / 已审阅探测及其成功条件
      * @param profile connection or provider settings supplied to the operation / 提供给操作的连接或提供者设置
-     * @param mode selected operating or storage mode / 所选运行或存储模式
-     * @param masterPassword master-password buffer used to unlock protected credentials / 用于解锁受保护凭据的主密码缓冲区
      * @return the operation result / 操作结果
      * @throws SecretStoreException if the protected credential cannot be accessed or updated / 无法访问或更新受保护凭据时
      * @throws SQLException if the database cannot complete the requested read or transaction / 数据库无法完成请求的读取或事务时
      */
     public LifecycleOutcome executeLifecycleWithStoredPassword(ManagedApplication application, LifecycleAction action,
-            HealthCheck healthCheck, ServerProfile profile, CredentialStorageMode mode, char[] masterPassword)
-            throws SecretStoreException, SQLException {
-        return lifecycle.execute(application, action, healthCheck, profile, mode, masterPassword);
+            HealthCheck healthCheck, ServerProfile profile) throws SecretStoreException, SQLException {
+        try (var authorization = security.enterOperation()) {
+            return lifecycle.execute(application, action, healthCheck, profile);
+        }
     }
 
     /**
@@ -1192,16 +1258,16 @@ public final class DesktopApplicationFacade
      * @param action explicit action selected for the current target / 为当前目标显式选择的动作
      * @param healthCheck reviewed probe and its success criteria / 已审阅探测及其成功条件
      * @param profile connection or provider settings supplied to the operation / 提供给操作的连接或提供者设置
-     * @param mode selected operating or storage mode / 所选运行或存储模式
-     * @param masterPassword master-password buffer used to unlock protected credentials / 用于解锁受保护凭据的主密码缓冲区
      * @return the operation result / 操作结果
      * @throws SecretStoreException if the protected credential cannot be accessed or updated / 无法访问或更新受保护凭据时
      * @throws SQLException if the database cannot complete the requested read or transaction / 数据库无法完成请求的读取或事务时
      */
     public LifecycleActionResult executeLifecycleResultWithStoredPassword(ManagedApplication application,
-            LifecycleAction action, HealthCheck healthCheck, ServerProfile profile, CredentialStorageMode mode,
-            char[] masterPassword) throws SecretStoreException, SQLException {
-        return lifecycle.executeResult(application, action, healthCheck, profile, mode, masterPassword);
+            LifecycleAction action, HealthCheck healthCheck, ServerProfile profile)
+            throws SecretStoreException, SQLException {
+        try (var authorization = security.enterOperation()) {
+            return lifecycle.executeResult(application, action, healthCheck, profile);
+        }
     }
 
     /**
@@ -1209,8 +1275,8 @@ public final class DesktopApplicationFacade
      * <p>结合所提供信任确认回调取得服务器主机密钥求值器。
      *
      * @param profile connection or provider settings supplied to the operation / 提供给操作的连接或提供者设置
-     * @param confirmation token or decision binding approval to the exact proposed action / 将批准绑定到精确提议动作的令牌或决定
      * @return constructed or resolved host key evaluator / 构造或解析得到的主机键Evaluator
+     * @param confirmation repeated password or confirmation callback / 重复密码或确认回调
      */
     HostKeyEvaluator hostKeyVerifier(ServerProfile profile, Predicate<String> confirmation) {
         return servers.hostKeyVerifier(profile, confirmation);
@@ -1221,9 +1287,9 @@ public final class DesktopApplicationFacade
      * <p>加载密码凭据。
      *
      * @param profile connection or provider settings supplied to the operation / 提供给操作的连接或提供者设置
-     * @param store store / 存储
      * @return password credential / 密码凭据
      * @throws SecretStoreException if the protected credential cannot be accessed or updated / 无法访问或更新受保护凭据时
+     * @param store store supplied to this boundary / 传入当前边界的store值
      */
     SshCredential.Password loadPasswordCredential(ServerProfile profile, SecretStore store)
             throws SecretStoreException {
@@ -1235,19 +1301,20 @@ public final class DesktopApplicationFacade
      *
      * @param request reviewed inputs for the requested operation / 所请求操作的已审阅输入
      * @param profile connection or provider settings supplied to the operation / 提供给操作的连接或提供者设置
-     * @param master master-password buffer used for the scoped secret operation / 限定秘密操作使用的主密码缓冲区
-     * @param fingerprint pinned or freshly observed host-key fingerprint / 固定或新近观测的主机密钥指纹
-     * @param progress progress / 进度
      * @return constructed or resolved deployment outcome / 构造或解析得到的部署结果
      * @throws Exception if the delegated operation or caller-provided interaction fails / 被委派操作或调用方提供的交互失败时
+     * @param fingerprint fingerprint supplied to this boundary / 传入当前边界的fingerprint值
+     * @param progress progress supplied to this boundary / 传入当前边界的progress值
      */
     @Override
     public DeploymentOutcome deployAutomaticallyReviewed(ReviewedDeploymentRequest request, ServerProfile profile,
-            char[] master, Predicate<String> fingerprint,
+            Predicate<String> fingerprint,
             java.util.function.Consumer<gold.debug.windowstolinux.shared.model.message.LocalizedMessage> progress)
             throws Exception {
-        return reviewedDeployment.deployWithStoredPassword(request, profile, profile.credentialMode(), master,
-                fingerprint, event -> progress.accept(event.message()));
+        try (var authorization = security.enterOperation()) {
+            return reviewedDeployment.deployWithStoredPassword(request, profile, security.confirm(fingerprint),
+                    event -> progress.accept(event.message()));
+        }
     }
 
     /**
@@ -1255,7 +1322,6 @@ public final class DesktopApplicationFacade
      *
      * @param request reviewed inputs for the requested operation / 所请求操作的已审阅输入
      * @param profile connection or provider settings supplied to the operation / 提供给操作的连接或提供者设置
-     * @param master master-password buffer used for the scoped secret operation / 限定秘密操作使用的主密码缓冲区
      * @param fingerprint pinned or freshly observed host-key fingerprint / 固定或新近观测的主机密钥指纹
      * @param progress progress / 进度
      * @return constructed or resolved multi component deployment result / 构造或解析得到的多组件部署结果
@@ -1263,11 +1329,13 @@ public final class DesktopApplicationFacade
      */
     @Override
     public MultiComponentDeploymentResult deployAutomaticallyReviewed(ReviewedMultiComponentApplication request,
-            ServerProfile profile, char[] master, Predicate<String> fingerprint,
+            ServerProfile profile, Predicate<String> fingerprint,
             java.util.function.Consumer<gold.debug.windowstolinux.shared.model.message.LocalizedMessage> progress)
             throws Exception {
-        return multiComponentDeployment.deployWithStoredPassword(request, profile, profile.credentialMode(), master,
-                fingerprint, event -> progress.accept(event.message()));
+        try (var authorization = security.enterOperation()) {
+            return multiComponentDeployment.deployWithStoredPassword(request, profile, security.confirm(fingerprint),
+                    event -> progress.accept(event.message()));
+        }
     }
 
     /**
@@ -1279,7 +1347,9 @@ public final class DesktopApplicationFacade
     @Override
     public java.util.List<gold.debug.windowstolinux.app.service.execution.lifecycle.ApplicationSummary> listApplications()
             throws SQLException {
-        return applicationInventory.list();
+        try (var authorization = security.enterOperation()) {
+            return applicationInventory.list();
+        }
     }
 
     /**
@@ -1294,22 +1364,25 @@ public final class DesktopApplicationFacade
     @Override
     public void saveApplicationPresentation(String key, String name, String category, String accessUrl)
             throws SQLException {
-        applicationInventory.savePresentation(key, name, category, accessUrl);
+        try (var authorization = security.enterOperation()) {
+            applicationInventory.savePresentation(key, name, category, accessUrl);
+        }
     }
 
     /**
      * Scans selected server metadata without mutation. / 扫描所选服务器元数据，不作修改。
      *
-     * @param serverId persisted server identifier / 持久化服务器标识
-     * @param master master-password buffer used for the scoped secret operation / 限定秘密操作使用的主密码缓冲区
-     * @param confirmation token or decision binding approval to the exact proposed action / 将批准绑定到精确提议动作的令牌或决定
      * @return constructed or resolved application scan / 构造或解析得到的应用扫描
      * @throws Exception if the delegated operation or caller-provided interaction fails / 被委派操作或调用方提供的交互失败时
+     * @param serverId server id supplied to this boundary / 传入当前边界的serverId值
+     * @param confirmation repeated password or confirmation callback / 重复密码或确认回调
      */
     @Override
     public gold.debug.windowstolinux.app.service.execution.lifecycle.ApplicationScan scanApplications(String serverId,
-            char[] master, java.util.function.Predicate<String> confirmation) throws Exception {
-        return externalApplications.scan(serverId, master, confirmation);
+            java.util.function.Predicate<String> confirmation) throws Exception {
+        try (var authorization = security.enterOperation()) {
+            return externalApplications.scan(serverId, security.confirm(confirmation));
+        }
     }
 
     /**
@@ -1317,16 +1390,17 @@ public final class DesktopApplicationFacade
      *
      * @param scan scan / 扫描
      * @param candidate candidate / 候选
-     * @param master master-password buffer used for the scoped secret operation / 限定秘密操作使用的主密码缓冲区
      * @param confirmation token or decision binding approval to the exact proposed action / 将批准绑定到精确提议动作的令牌或决定
      * @return adopt application text / 接管应用文本
      * @throws Exception if the delegated operation or caller-provided interaction fails / 被委派操作或调用方提供的交互失败时
      */
     @Override
     public String adoptApplication(gold.debug.windowstolinux.app.service.execution.lifecycle.ApplicationScan scan,
-            gold.debug.windowstolinux.shared.model.lifecycle.DiscoveredApplication candidate, char[] master,
+            gold.debug.windowstolinux.shared.model.lifecycle.DiscoveredApplication candidate,
             java.util.function.Predicate<String> confirmation) throws Exception {
-        return externalApplications.adopt(scan, candidate, master, confirmation);
+        try (var authorization = security.enterOperation()) {
+            return externalApplications.adopt(scan, candidate, security.confirm(confirmation));
+        }
     }
 
     /**
@@ -1334,7 +1408,6 @@ public final class DesktopApplicationFacade
      *
      * @param key lookup key within the current contract / 当前契约内的查找键
      * @param action explicit action selected for the current target / 为当前目标显式选择的动作
-     * @param master master-password buffer used for the scoped secret operation / 限定秘密操作使用的主密码缓冲区
      * @param confirmation token or decision binding approval to the exact proposed action / 将批准绑定到精确提议动作的令牌或决定
      * @return constructed or resolved application lifecycle result / 构造或解析得到的应用生命周期结果
      * @throws Exception if the delegated operation or caller-provided interaction fails / 被委派操作或调用方提供的交互失败时
@@ -1342,21 +1415,20 @@ public final class DesktopApplicationFacade
      */
     @Override
     public gold.debug.windowstolinux.app.service.execution.lifecycle.ApplicationLifecycleResult executeApplicationLifecycle(
-            String key, LifecycleAction action, char[] master, java.util.function.Predicate<String> confirmation)
-            throws Exception {
-        if (key.startsWith("external:"))
-            return externalApplications.execute(key, action, master, confirmation);
-        try {
-            if (!key.startsWith("managed:"))
-                throw new IllegalArgumentException("invalid application key");
-            var result = lifecycle.executePersisted(key.substring(8), action, master);
-            return new gold.debug.windowstolinux.app.service.execution.lifecycle.ApplicationLifecycleResult(
-                    result.observation().map(value -> value.runtimeState())
-                            .orElse(gold.debug.windowstolinux.shared.model.lifecycle.RuntimeState.UNKNOWN),
-                    result.observation().map(value -> value.observedAt()).orElseGet(java.time.Instant::now),
-                    java.util.Optional.of(result));
-        } finally {
-            java.util.Arrays.fill(master, '\0');
+            String key, LifecycleAction action, java.util.function.Predicate<String> confirmation) throws Exception {
+        try (var authorization = security.enterOperation()) {
+            if (key.startsWith("external:"))
+                return externalApplications.execute(key, action, security.confirm(confirmation));
+            {
+                if (!key.startsWith("managed:"))
+                    throw new IllegalArgumentException("invalid application key");
+                var result = lifecycle.executePersisted(key.substring(8), action);
+                return new gold.debug.windowstolinux.app.service.execution.lifecycle.ApplicationLifecycleResult(
+                        result.observation().map(value -> value.runtimeState())
+                                .orElse(gold.debug.windowstolinux.shared.model.lifecycle.RuntimeState.UNKNOWN),
+                        result.observation().map(value -> value.observedAt()).orElseGet(java.time.Instant::now),
+                        java.util.Optional.of(result));
+            }
         }
     }
 
@@ -1369,7 +1441,9 @@ public final class DesktopApplicationFacade
     @Override
     public java.util.List<gold.debug.windowstolinux.app.service.ai.AiProviderSummary> listAiConfigurations()
             throws SQLException {
-        return ai.configurations();
+        try (var authorization = security.enterOperation()) {
+            return ai.configurations();
+        }
     }
 
     /**
@@ -1377,7 +1451,6 @@ public final class DesktopApplicationFacade
      *
      * @param profile connection or provider settings supplied to the operation / 提供给操作的连接或提供者设置
      * @param name human-readable name or diagnostic field label / 可读名称或诊断字段标签
-     * @param master master-password buffer used for the scoped secret operation / 限定秘密操作使用的主密码缓冲区
      * @param key API credential characters supplied to the selected operation / 提供给所选操作的 API 凭据字符
      * @throws SQLException if the database cannot complete the requested read or transaction / 数据库无法完成请求的读取或事务时
      * @throws SecretStoreException if the protected credential cannot be accessed or updated / 无法访问或更新受保护凭据时
@@ -1385,36 +1458,41 @@ public final class DesktopApplicationFacade
      */
 
     @Override
-    public void saveAiConfiguration(AiProviderProfile profile, String name, char[] master, char[] key,
+    public void saveAiConfiguration(AiProviderProfile profile, String name, char[] key,
             gold.debug.windowstolinux.shared.model.ai.AiCapabilityType capability)
             throws SQLException, SecretStoreException {
-        ai.saveConfiguration(profile, name, master, key, capability);
+        try (var authorization = security.enterOperation()) {
+            ai.saveConfiguration(profile, name, key, capability);
+        }
     }
 
     /**
      * Reorders ai providers.
      * <p>重新排序AI提供者集合。
      *
-     * @param ids ids / 标识集合
      * @throws SQLException if the database cannot complete the requested read or transaction / 数据库无法完成请求的读取或事务时
+     * @param ids ids supplied to this boundary / 传入当前边界的ids值
      */
     @Override
     public void reorderAiProviders(java.util.List<String> ids) throws SQLException {
-        ai.reorder(ids);
+        try (var authorization = security.enterOperation()) {
+            ai.reorder(ids);
+        }
     }
 
     /**
      * Tests one model without changing its group or priority. / 测试单个模型，不改变分组和顺序。
      *
-     * @param id stable identifier within the owning registry / 所属登记表内的稳定标识
-     * @param master master-password buffer used for the scoped secret operation / 限定秘密操作使用的主密码缓冲区
      * @throws Exception if the delegated operation or caller-provided interaction fails / 被委派操作或调用方提供的交互失败时
      * @param capability separately tested text or vision capability / 分别测试的文本或视觉能力
+     * @param id stable persisted identifier / 稳定持久化标识
      */
     @Override
-    public void testAiCapability(String id, gold.debug.windowstolinux.shared.model.ai.AiCapabilityType capability,
-            char[] master) throws Exception {
-        ai.testCapability(id, capability, master);
+    public void testAiCapability(String id, gold.debug.windowstolinux.shared.model.ai.AiCapabilityType capability)
+            throws Exception {
+        try (var authorization = security.enterOperation()) {
+            ai.testCapability(id, capability);
+        }
     }
 
     /** Reads purpose members. / 读取用途成员。
@@ -1425,32 +1503,37 @@ public final class DesktopApplicationFacade
     @Override
     public java.util.List<gold.debug.windowstolinux.shared.model.ai.AiPurposeAssignment> listAiPurpose(
             gold.debug.windowstolinux.shared.model.ai.AiPurposeType purpose) throws SQLException {
-        return ai.purpose(purpose);
+        try (var authorization = security.enterOperation()) {
+            return ai.purpose(purpose);
+        }
     }
 
     /** Saves purpose members. / 保存用途成员。
-     * @param purpose selected purpose / 所选用途
      * @param members ordered members / 有序成员
      * @throws SQLException if saving fails / 保存失败时
+     * @param purpose purpose supplied to this boundary / 传入当前边界的purpose值
      */
     @Override
     public void saveAiPurpose(gold.debug.windowstolinux.shared.model.ai.AiPurposeType purpose,
             java.util.List<gold.debug.windowstolinux.shared.model.ai.AiPurposeAssignment> members) throws SQLException {
-        ai.savePurpose(purpose, members);
+        try (var authorization = security.enterOperation()) {
+            ai.savePurpose(purpose, members);
+        }
     }
 
     /**
      * Starts APP browser rescue. / 启动 APP 浏览器救援。
      *
      * @param server server identity or selected server configuration / 服务器身份或所选服务器配置
-     * @param master master-password buffer used for the scoped secret operation / 限定秘密操作使用的主密码缓冲区
      * @param fingerprint pinned or freshly observed host-key fingerprint / 固定或新近观测的主机密钥指纹
      * @return constructed or resolved ssh recovery session / 构造或解析得到的SSH恢复会话
      */
     @Override
     public gold.debug.windowstolinux.app.service.contract.SshRecoverySession startSshRecovery(ServerProfile server,
-            char[] master, Predicate<String> fingerprint) {
-        return recovery.start(server, master, fingerprint);
+            Predicate<String> fingerprint) {
+        try (var authorization = security.enterOperation()) {
+            return recovery.start(server, security.confirm(fingerprint));
+        }
     }
 
     /**
@@ -1465,7 +1548,6 @@ public final class DesktopApplicationFacade
      * Preserves the current source snapshot and server mutex during rescue. / 救援期间保留当前源码快照与服务器互斥。
      *
      * @param server server identity or selected server configuration / 服务器身份或所选服务器配置
-     * @param master master-password buffer used for the scoped secret operation / 限定秘密操作使用的主密码缓冲区
      * @param fingerprint pinned or freshly observed host-key fingerprint / 固定或新近观测的主机密钥指纹
      * @param interaction caller-owned progress, confirmation and input callbacks / 调用方持有的进度、确认及输入回调
      * @param operation operation / 操作
@@ -1473,39 +1555,41 @@ public final class DesktopApplicationFacade
      * @throws Exception if the delegated operation or caller-provided interaction fails / 被委派操作或调用方提供的交互失败时
      */
     @Override
-    public boolean recoverSshForOperation(ServerProfile server, char[] master, Predicate<String> fingerprint,
+    public boolean recoverSshForOperation(ServerProfile server, Predicate<String> fingerprint,
             AutomaticDeploymentInteraction interaction, String operation) throws Exception {
-        if (!(interaction instanceof DesktopRecoveryInteraction desktop) || !desktop.offerSshRecovery(server)) {
-            java.util.Arrays.fill(master, '\0');
-            return false;
+        try (var authorization = security.enterOperation()) {
+            if (!(security.interaction(AutomaticDeploymentInteraction.class,
+                    interaction) instanceof DesktopRecoveryInteraction desktop) || !desktop.offerSshRecovery(server)) {
+
+                return false;
+            }
+            return recovery.recoverInline(server, security.confirm(fingerprint), operation,
+                    session -> desktop.showSshRecovery(server, session));
         }
-        return recovery.recoverInline(server, master, fingerprint, operation,
-                session -> desktop.showSshRecovery(server, session));
     }
 
     /**
      * Performs a read-only server check with optional browser rescue. / 执行可选浏览器救援的只读服务器检查。
      *
      * @param profile connection or provider settings supplied to the operation / 提供给操作的连接或提供者设置
-     * @param mode selected operating or storage mode / 所选运行或存储模式
-     * @param master master-password buffer used for the scoped secret operation / 限定秘密操作使用的主密码缓冲区
      * @param fingerprint pinned or freshly observed host-key fingerprint / 固定或新近观测的主机密钥指纹
      * @param interaction caller-owned progress, confirmation and input callbacks / 调用方持有的进度、确认及输入回调
      * @return constructed or resolved server capability facts / 构造或解析得到的服务器能力事实
      * @throws Exception if the delegated operation or caller-provided interaction fails / 被委派操作或调用方提供的交互失败时
      */
     @Override
-    public ServerCapabilityFacts verifyServerRecovering(ServerProfile profile, CredentialStorageMode mode,
-            char[] master, Predicate<String> fingerprint, DesktopRecoveryInteraction interaction) throws Exception {
-        return recovery.verify(profile, mode, master, fingerprint, interaction);
+    public ServerCapabilityFacts verifyServerRecovering(ServerProfile profile, Predicate<String> fingerprint,
+            DesktopRecoveryInteraction interaction) throws Exception {
+        try (var authorization = security.enterOperation()) {
+            return recovery.verify(profile, security.confirm(fingerprint),
+                    security.interaction(DesktopRecoveryInteraction.class, interaction));
+        }
     }
 
     /**
      * Preserves completed installation evidence during manual environment recovery. / 人工环境救援期间保留已完成安装证据。
      *
      * @param profile connection or provider settings supplied to the operation / 提供给操作的连接或提供者设置
-     * @param mode selected operating or storage mode / 所选运行或存储模式
-     * @param master master-password buffer used for the scoped secret operation / 限定秘密操作使用的主密码缓冲区
      * @param fingerprint pinned or freshly observed host-key fingerprint / 固定或新近观测的主机密钥指纹
      * @param confirmed confirmed / 已确认
      * @param system system / 系统
@@ -1514,11 +1598,14 @@ public final class DesktopApplicationFacade
      * @throws Exception if the delegated operation or caller-provided interaction fails / 被委派操作或调用方提供的交互失败时
      */
     @Override
-    public EnvironmentSetupResult prepareEnvironmentRecovering(ServerProfile profile, CredentialStorageMode mode,
-            char[] master, Predicate<String> fingerprint, boolean confirmed,
+    public EnvironmentSetupResult prepareEnvironmentRecovering(ServerProfile profile, Predicate<String> fingerprint,
+            boolean confirmed,
             Predicate<gold.debug.windowstolinux.shared.model.server.security.SelinuxPreparationPlan> system,
             DesktopRecoveryInteraction interaction) throws Exception {
-        return recovery.prepare(profile, mode, master, fingerprint, confirmed, system, interaction, environment);
+        try (var authorization = security.enterOperation()) {
+            return recovery.prepare(profile, security.confirm(fingerprint), confirmed, security.confirm(system),
+                    security.interaction(DesktopRecoveryInteraction.class, interaction), environment);
+        }
     }
 
     /** Requests a safe task control transition. / 请求安全任务控制转换。
@@ -1528,16 +1615,20 @@ public final class DesktopApplicationFacade
     @Override
     public void controlDeployment(String taskId,
             gold.debug.windowstolinux.shared.model.agent.AgentTaskCommandAction command) {
-        automatic.control(taskId, command);
+        try (var authorization = security.enterOperation()) {
+            automatic.control(taskId, command);
+        }
     }
 
     /** Reads process-local state and pause reason. / 读取进程内状态及暂停原因。
-     * @param taskId active task identity / 活动任务身份
      * @return nonsecret state / 非秘密状态
+     * @param taskId task id supplied to this boundary / 传入当前边界的taskId值
      */
     @Override
     public java.util.Map<String, String> deploymentTaskState(String taskId) {
-        return automatic.state(taskId);
+        try (var authorization = security.enterOperation()) {
+            return automatic.state(taskId);
+        }
     }
 
     /** Reads recent deployment task history. / 读取最近部署任务历史。
@@ -1546,7 +1637,9 @@ public final class DesktopApplicationFacade
      */
     @Override
     public java.util.List<java.util.Map<String, String>> deploymentTaskHistory() throws java.sql.SQLException {
-        return automatic.history();
+        try (var authorization = security.enterOperation()) {
+            return automatic.history();
+        }
     }
 
     /** Reads a task audit trail. / 读取任务审计轨迹。
@@ -1557,18 +1650,136 @@ public final class DesktopApplicationFacade
     @Override
     public java.util.List<java.util.Map<String, String>> deploymentTaskEvents(String taskId)
             throws java.sql.SQLException {
-        return automatic.events(taskId);
+        try (var authorization = security.enterOperation()) {
+            return automatic.events(taskId);
+        }
     }
 
     /** Queries recorded task candidates without authorizing a retry. / 查询任务候选项，不授权重试。
      * @param taskId task identity / 任务身份
-     * @param master scoped credential buffer / 限定凭据缓冲区
      * @return actual observations / 实际观测
      * @throws Exception when observation fails / 观测失败时
      */
     @Override
-    public java.util.List<java.util.Map<String, String>> inspectDeploymentTask(String taskId, char[] master)
-            throws Exception {
-        return automatic.inspect(taskId, master);
+    public java.util.List<java.util.Map<String, String>> inspectDeploymentTask(String taskId) throws Exception {
+        try (var authorization = security.enterOperation()) {
+            return automatic.inspect(taskId);
+        }
+    }
+
+    /** Reads the validated deployment mode and approval preferences. / 读取已验证的部署模式及审批偏好。
+     * @return the validated result or retained scoped handle / 已验证结果或保留的限定句柄
+     * @throws SQLException if validation or the scoped operation fails / 校验或限定操作失败时
+     */
+    @Override
+    public gold.debug.windowstolinux.app.service.contract.definition.DeploymentPreferences deploymentPreferences()
+            throws SQLException {
+        try (var authorization = security.enterOperation()) {
+            var values = preferences.deploymentSelection();
+            return new gold.debug.windowstolinux.app.service.contract.definition.DeploymentPreferences(
+                    gold.debug.windowstolinux.shared.model.deployment.DeploymentAutomationMode
+                            .valueOf(values.get("deploy_mode")),
+                    gold.debug.windowstolinux.shared.model.deployment.AgentApprovalMode
+                            .valueOf(values.get("deploy_approval")));
+        }
+    }
+
+    /** Persists both deployment preferences atomically. / 原子保存两项部署偏好。
+     * @param preferences preferences supplied to this boundary / 传入当前边界的preferences值
+     * @throws SQLException if validation or the scoped operation fails / 校验或限定操作失败时
+     */
+    @Override
+    public void saveDeploymentPreferences(
+            gold.debug.windowstolinux.app.service.contract.definition.DeploymentPreferences preferences)
+            throws SQLException {
+        try (var authorization = security.enterOperation()) {
+            this.preferences.saveAll(java.util.Map.of("deploy_mode", preferences.mode().name(), "deploy_approval",
+                    preferences.approval().name()));
+        }
+    }
+
+    /** Desktop preference persistence. / 桌面偏好持久化。
+     */
+    private final gold.debug.windowstolinux.app.db.persistence.repository.DesktopPreferenceRepository preferences;
+
+    /** Service-owned interactive authorization boundary. / 服务持有的交互授权边界。
+     */
+    private final gold.debug.windowstolinux.app.service.security.DesktopSecurityService security;
+    /** Reports configuration, lock and accepted-task state without secrets. / 返回不含秘密的配置、锁定及已接纳任务状态。
+     * @return the validated result or retained scoped handle / 已验证结果或保留的限定句柄
+     */
+    @Override
+    public gold.debug.windowstolinux.app.service.contract.security.DesktopSecurityState securityState() {
+        return security.securityState();
+    }
+
+    /** Creates the first security profile and unlocks only if no newer lock intervened. / 创建首次安全配置，仅在没有后续锁定时解锁。
+     * @param password master-password buffer cleared after use / 使用后清除的主密码缓冲区
+     * @param confirmation repeated password or confirmation callback / 重复密码或确认回调
+     * @throws SecretStoreException if validation or the scoped operation fails / 校验或限定操作失败时
+     */
+    @Override
+    public void setupAndUnlock(char[] password, char[] confirmation) throws SecretStoreException {
+        security.setupAndUnlock(password, confirmation);
+    }
+
+    /** Verifies the password and opens a session without exposing the data key. / 验证密码并建立会话，不暴露数据密钥。
+     * @param password master-password buffer cleared after use / 使用后清除的主密码缓冲区
+     * @throws SecretStoreException if validation or the scoped operation fails / 校验或限定操作失败时
+     */
+    @Override
+    public void unlock(char[] password) throws SecretStoreException {
+        security.unlock(password);
+    }
+
+    /** Drops interactive access while preserving accepted task capabilities. / 释放交互会话，保留已接纳任务的凭据能力。
+     */
+    @Override
+    public void lock() {
+        security.lock();
+    }
+
+    /** Verifies the current password and rewraps the unchanged data key. / 验证当前密码并重新包装原有数据密钥。
+     * @param current current master-password buffer / 当前主密码缓冲区
+     * @param replacement new master-password buffer / 新主密码缓冲区
+     * @param confirmation repeated password or confirmation callback / 重复密码或确认回调
+     * @throws SecretStoreException if validation or the scoped operation fails / 校验或限定操作失败时
+     */
+    @Override
+    public void changeMasterPassword(char[] current, char[] replacement, char[] confirmation)
+            throws SecretStoreException {
+        security.changeMasterPassword(current, replacement, confirmation);
+    }
+
+    /** Exclusively converts all credentials and the global setting in one transaction. / 独占地在同一事务转换全部凭据及全局设置。
+     * @param current current master-password buffer / 当前主密码缓冲区
+     * @param enabled requested enabled flag / 请求启用标记
+     * @throws SecretStoreException if validation or the scoped operation fails / 校验或限定操作失败时
+     */
+    @Override
+    public void setCredentialEncryption(char[] current, boolean enabled) throws SecretStoreException {
+        security.setCredentialEncryption(current, enabled);
+    }
+
+    /** Waits interruptibly for an unlocked session outside security mutation. / 以可中断方式等待不处于安全变更的解锁会话。
+     * @throws InterruptedException if validation or the scoped operation fails / 校验或限定操作失败时
+     */
+    @Override
+    public void awaitUnlocked() throws InterruptedException {
+        security.awaitUnlocked();
+    }
+
+    /** Atomically captures authorization before scheduling a background task. / 在调度后台任务前原子取得授权。
+     * @return the validated result or retained scoped handle / 已验证结果或保留的限定句柄
+     */
+    @Override
+    public gold.debug.windowstolinux.app.service.contract.security.DesktopTaskAuthorization beginTask() {
+        return security.beginTask();
+    }
+
+    /** Closes desktop security after accepted tasks have released their handles. / 在已接纳任务释放句柄后关闭桌面安全服务。
+     */
+    public void closeSecurity() {
+        security.close();
     }
 }

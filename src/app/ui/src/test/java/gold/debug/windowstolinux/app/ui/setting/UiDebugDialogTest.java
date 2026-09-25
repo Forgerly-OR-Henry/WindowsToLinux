@@ -42,10 +42,9 @@ class UiDebugDialogTest {
                     method.getName());
             assertInstanceOf(UnsupportedOperationException.class, failure.getCause());
         }
-        assertEquals(2,
-                preview.facade.scanApplications("anything", new char[0], value -> fail("No SSH trust request expected"))
-                        .candidates().size());
-        assertTrue(preview.facade.invokeAiRole(null, new char[0]).isEmpty());
+        assertEquals(2, preview.facade.scanApplications("anything", value -> fail("No SSH trust request expected"))
+                .candidates().size());
+        assertTrue(preview.facade.invokeAiRole(null).isEmpty());
     }
 
     @Test

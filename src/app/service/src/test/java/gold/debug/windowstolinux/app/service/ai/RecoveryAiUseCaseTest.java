@@ -7,17 +7,18 @@ import java.time.Instant;
 import java.util.*;
 
 import gold.debug.windowstolinux.app.db.entity.*;
+import gold.debug.windowstolinux.app.service.SecurityTestFixture;
 import gold.debug.windowstolinux.shared.ai.recovery.RecoveryModelClient;
 import gold.debug.windowstolinux.shared.model.ai.*;
 import org.junit.jupiter.api.Test;
 
-class RecoveryAiUseCaseTest {
+class RecoveryAiUseCaseTest extends SecurityTestFixture {
     @org.junit.jupiter.api.io.TempDir
     java.nio.file.Path directory;
     private StoredAiProviderConfiguration model(String id) {
-        return new StoredAiProviderConfiguration(new StoredAiProviderProfile(id,
-                "https://example.test/v1/chat/completions", id, "secret/" + id, "MASTER_PASSWORD"), id, 0, 1,
-                Optional.of(Instant.now()), Optional.of(Instant.now()));
+        return new StoredAiProviderConfiguration(
+                new StoredAiProviderProfile(id, "https://example.test/v1/chat/completions", id, "secret/" + id), id, 0,
+                1, Optional.of(Instant.now()), Optional.of(Instant.now()));
     }
 
     @Test
@@ -52,18 +53,15 @@ class RecoveryAiUseCaseTest {
     @Test
     void imageAndDecisionUseOnlyTheirExplicitPurposeLists() throws Exception {
         try (var db = gold.debug.windowstolinux.app.db.DesktopPersistence.open(directory)) {
-            var secrets = new gold.debug.windowstolinux.app.service.server.DesktopSecretStoreService(
-                    db.encryptedSecrets());
+            var secrets = SecurityTestFixture.secrets(db);
             char[] master = "model-test-master".toCharArray();
-            try (var store = secrets.open(
-                    gold.debug.windowstolinux.shared.model.security.CredentialStorageMode.MASTER_PASSWORD, master)) {
+            try (var store = secrets.open()) {
                 store.save("ai/key", "test-api-key".toCharArray());
             }
             for (String id : List.of("deployment", "vision")) {
                 db.aiProfiles().saveVerified(
-                        new StoredAiProviderProfile(id, "https://example.test/v1/chat/completions", id, "ai/key",
-                                "MASTER_PASSWORD"),
-                        id, Instant.now(), id.equals("vision") ? AiCapabilityType.VISION : AiCapabilityType.TEXT);
+                        new StoredAiProviderProfile(id, "https://example.test/v1/chat/completions", id, "ai/key"), id,
+                        Instant.now(), id.equals("vision") ? AiCapabilityType.VISION : AiCapabilityType.TEXT);
                 db.aiProfiles().purposes().save(id.equals("vision") ? AiPurposeType.VISION : AiPurposeType.DEPLOYMENT,
                         List.of(new AiPurposeAssignment(id, true)));
             }
@@ -81,18 +79,17 @@ class RecoveryAiUseCaseTest {
             });
             var ai = new RecoveryAiUseCase(db.aiProfiles(), secrets, client);
             var observed = ai.observe(
-                    new gold.debug.windowstolinux.shared.model.recovery.TerminalObservation("", new byte[]{1}, 1),
-                    master);
+                    new gold.debug.windowstolinux.shared.model.recovery.TerminalObservation("", new byte[]{1}, 1));
             assertEquals("ok", observed.code());
-            assertEquals("ok", ai.decide(RecoveryModelClient.parseObservation(observed.content()), master).code());
+            assertEquals("ok", ai.decide(RecoveryModelClient.parseObservation(observed.content())).code());
             assertEquals(List.of("vision/true", "deployment/false"), calls);
             calls.clear();
             assertEquals("text shell",
                     ai.observe(new gold.debug.windowstolinux.shared.model.recovery.TerminalObservation("text shell",
-                            new byte[0], 1), master).content());
+                            new byte[0], 1)).content());
             assertTrue(calls.isEmpty());
             db.aiProfiles().purposes().save(AiPurposeType.DEPLOYMENT, List.of());
-            assertEquals("regularUnavailable", ai.decide("facts", master).code());
+            assertEquals("regularUnavailable", ai.decide("facts").code());
             assertTrue(calls.isEmpty());
         }
     }

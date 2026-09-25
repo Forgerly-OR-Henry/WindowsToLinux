@@ -65,7 +65,6 @@ public final class AutonomousDeploymentUseCase {
 
     /** Runs the model loop against a frozen snapshot and actual managed delivery. / 针对冻结快照及实际受管交付运行模型循环。
      * @param request frozen task / 冻结任务
-     * @param master temporary credential buffer / 临时凭据缓冲区
      * @param interaction user input and exact approval / 用户输入及精确审核
      * @param fingerprint authenticated host confirmation / 已认证主机确认
      * @param progress visible observations / 可见观察
@@ -76,7 +75,7 @@ public final class AutonomousDeploymentUseCase {
      * @return verified outcome / 已验证结果
      * @throws Exception on unavailable, rejected or unknown execution / 执行不可用、被拒绝或未知时
      */
-    public AutomaticDeploymentOutcome deploy(AutomaticDeploymentRequest request, char[] master,
+    public AutomaticDeploymentOutcome deploy(AutomaticDeploymentRequest request,
             AutomaticDeploymentInteraction interaction, Predicate<String> fingerprint,
             Consumer<LocalizedMessage> progress, DeploymentAgentModelAdapter models, AgentTaskControl control,
             Consumer<Map<String, String>> journal, Consumer<Supplier<String>> bindRevision) throws Exception {
@@ -105,7 +104,7 @@ public final class AutonomousDeploymentUseCase {
             var patches = new SourcePatchApproval(request.taskId(), target, request.approvalMode(), models,
                     (key, details) -> interaction.confirm(key, details), journal, control,
                     () -> gold.debug.windowstolinux.app.service.ai.DeploymentAiScope.current().orElseThrow().binding());
-            try (var store = servers.secrets().open(request.server().credentialMode(), master);
+            try (var store = servers.secrets().open();
                     var remote = gateway.connect(request.server().endpoint(),
                             servers.loadPassword(request.server(), store),
                             servers.hostKeyVerifier(request.server(), fingerprint))) {

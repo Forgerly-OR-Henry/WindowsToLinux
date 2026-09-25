@@ -53,7 +53,6 @@ public interface BackupApplicationFacade {
      * @param applicationId managed application identifier / 受管应用标识
      * @param destination caller-selected destination inside the permitted boundary / 调用方选择的许可边界内目的地
      * @param backupPassword independent password for backup secret encryption or decryption / 备份秘密加密或解密使用的独立密码
-     * @param masterPassword master-password buffer used to unlock protected credentials / 用于解锁受保护凭据的主密码缓冲区
      * @param firstUseConfirmation first use confirmation / 首次使用确认
      * @return and atomically publishes one complete managed-server backup / 并原子发布一个完整受管服务器备份
      * @throws SQLException if the database cannot complete the requested read or transaction / 数据库无法完成请求的读取或事务时
@@ -63,7 +62,7 @@ public interface BackupApplicationFacade {
      * @throws BackupSecretException if the backup secret boundary rejects the operation / 备份秘密边界拒绝当前操作时
      */
     CreatedBackupArchive createManagedBackup(String applicationId, Path destination, char[] backupPassword,
-            char[] masterPassword, Predicate<String> firstUseConfirmation)
+            Predicate<String> firstUseConfirmation)
             throws SQLException, SecretStoreException, LinuxOperationException, IOException, BackupSecretException;
 
     /**
@@ -72,7 +71,6 @@ public interface BackupApplicationFacade {
      * @param archive source or backup archive descriptor or filesystem path / 源码或备份归档描述或文件系统路径
      * @param targetServerId target server id / 目标服务器标识
      * @param backupPassword independent password for backup secret encryption or decryption / 备份秘密加密或解密使用的独立密码
-     * @param masterPassword master-password buffer used to unlock protected credentials / 用于解锁受保护凭据的主密码缓冲区
      * @param firstUseConfirmation first use confirmation / 首次使用确认
      * @return constructed or resolved managed restore outcome / 构造或解析得到的受管恢复结果
      * @throws SQLException if the database cannot complete the requested read or transaction / 数据库无法完成请求的读取或事务时
@@ -82,7 +80,7 @@ public interface BackupApplicationFacade {
      * @throws BackupSecretException if the backup secret boundary rejects the operation / 备份秘密边界拒绝当前操作时
      */
     ManagedRestoreOutcome restoreManagedBackup(Path archive, String targetServerId, char[] backupPassword,
-            char[] masterPassword, Predicate<String> firstUseConfirmation)
+            Predicate<String> firstUseConfirmation)
             throws SQLException, SecretStoreException, LinuxOperationException, IOException, BackupSecretException;
 
     /**
@@ -91,7 +89,6 @@ public interface BackupApplicationFacade {
      * @param applicationId managed application identifier / 受管应用标识
      * @param targetServerId target server id / 目标服务器标识
      * @param backupPassword independent password for backup secret encryption or decryption / 备份秘密加密或解密使用的独立密码
-     * @param masterPassword master-password buffer used to unlock protected credentials / 用于解锁受保护凭据的主密码缓冲区
      * @param stopWindowApproved stop window approved / 停止窗口已批准
      * @param firstUseConfirmation first use confirmation / 首次使用确认
      * @return constructed or resolved managed offline migration outcome / 构造或解析得到的受管离线迁移结果
@@ -102,8 +99,7 @@ public interface BackupApplicationFacade {
      * @throws BackupSecretException if the backup secret boundary rejects the operation / 备份秘密边界拒绝当前操作时
      */
     ManagedOfflineMigrationOutcome prepareManagedOfflineMigration(String applicationId, String targetServerId,
-            char[] backupPassword, char[] masterPassword, boolean stopWindowApproved,
-            Predicate<String> firstUseConfirmation)
+            char[] backupPassword, boolean stopWindowApproved, Predicate<String> firstUseConfirmation)
             throws SQLException, SecretStoreException, LinuxOperationException, IOException, BackupSecretException;
 
     /**

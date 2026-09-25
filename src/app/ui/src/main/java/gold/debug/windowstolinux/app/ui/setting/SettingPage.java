@@ -32,6 +32,10 @@ public final class SettingPage {
      */
     private final JPanel panel;
 
+    /** Primary settings content, including first-use security setup. / 包含首次安全设置的主要设置内容。
+     */
+    private final JPanel primary;
+
     /**
      * Creates the stateful settings controller. / 创建有状态设置控制器。
      *
@@ -57,6 +61,7 @@ public final class SettingPage {
     public SettingPage(DesktopComponentFactory c, PageMessagePresenter messages, DesktopDisplayConfiguration appearance,
             Consumer<DesktopDisplayConfiguration> applyAppearance, Runnable openUiDebug) {
         JPanel page = c.pagePanel();
+        primary = page;
         var advanced = new gold.debug.windowstolinux.app.ui.component.AdvancedOptionsPane(page, c, messages);
         panel = advanced;
         JPanel cards = c.transparent(new GridLayout(0, 1, 0, 12));
@@ -139,7 +144,19 @@ public final class SettingPage {
     /**
      * Returns the page panel. / 返回页面面板。
      *
-     * @return the page panel / 页面面板
+     * @param service service supplied to this boundary / 传入当前边界的service值
+     * @param components components supplied to this boundary / 传入当前边界的components值
+     * @param messages messages supplied to this boundary / 传入当前边界的messages值
+     */
+    public void addSecurity(gold.debug.windowstolinux.app.service.contract.security.SecurityApplicationFacade service,
+            DesktopComponentFactory components, PageMessagePresenter messages) {
+        JPanel card = components.card(new BorderLayout());
+        card.add(new SecuritySettingsPane(service, components, messages));
+        primary.add(card, BorderLayout.NORTH);
+    }
+
+    /** Returns the assembled settings panel. / 返回装配完成的设置面板。
+     * @return the validated result or retained scoped handle / 已验证结果或保留的限定句柄
      */
     public JPanel panel() {
         return panel;

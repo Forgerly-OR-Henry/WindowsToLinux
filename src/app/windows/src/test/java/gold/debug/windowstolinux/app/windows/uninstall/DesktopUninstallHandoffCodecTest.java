@@ -51,14 +51,14 @@ class DesktopUninstallHandoffCodecTest {
 
         assertThrows(IllegalArgumentException.class,
                 () -> new DesktopUninstallRequest(Optional.of(DesktopUninstallDecisionType.KEEP_DATA_AND_CREDENTIALS),
-                        install, install.resolve("data"), "WindowsToLinux/*"));
+                        install, install.resolve("data")));
     }
 
     private DesktopUninstallHandoff handoff() {
         Path install = temporary.resolve("WindowsToLinux");
         DesktopUninstallRequest request = new DesktopUninstallRequest(
-                Optional.of(DesktopUninstallDecisionType.DELETE_DATA_AND_CREDENTIALS), install, install.resolve("data"),
-                "WindowsToLinux/*");
+                Optional.of(DesktopUninstallDecisionType.DELETE_DATA_AND_CREDENTIALS), install,
+                install.resolve("data"));
         return new DesktopUninstallHandoff(OperationIdentity.from("22222222-2222-2222-2222-222222222222"), request,
                 List.of(new DesktopUninstallEvent(DesktopUninstallState.DECISION_VALIDATED, true,
                         "delete explicitly selected"),

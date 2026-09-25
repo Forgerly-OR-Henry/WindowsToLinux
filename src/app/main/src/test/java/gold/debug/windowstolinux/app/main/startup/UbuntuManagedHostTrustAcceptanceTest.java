@@ -17,7 +17,6 @@ import gold.debug.windowstolinux.app.service.server.*;
 import gold.debug.windowstolinux.app.service.source.*;
 import gold.debug.windowstolinux.shared.linux.error.LinuxOperationException;
 import gold.debug.windowstolinux.shared.linux.sshd.connection.SshdLinuxGateway;
-import gold.debug.windowstolinux.shared.model.security.CredentialStorageMode;
 import gold.debug.windowstolinux.shared.model.server.ServerIdentity;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIfSystemProperty;
@@ -29,6 +28,7 @@ import org.junit.jupiter.api.io.TempDir;
  * <p>可选实时 SSH 信任测试；它绝不修改目标主机或部署应用。
  */
 @EnabledIfSystemProperty(named = "managed.runtime.host-trust", matches = "true")
+@org.junit.jupiter.api.extension.ExtendWith(MainSecurityFixture.class)
 class UbuntuManagedHostTrustAcceptanceTest {
     @TempDir
     Path temporaryDirectory;
@@ -43,23 +43,21 @@ class UbuntuManagedHostTrustAcceptanceTest {
         assertPresent(password, "WINDOWSTOLINUX_TEST_SSH_PASSWORD");
 
         try (DesktopPersistence database = DesktopPersistence.open(temporaryDirectory.resolve("desktop-data"))) {
-            DesktopApplicationFacade service = new DesktopApplicationFacade(database,
+            DesktopApplicationFacade service = MainSecurityFixture.unlocked(new DesktopApplicationFacade(database,
                     temporaryDirectory.resolve("work"),
                     new SshdLinuxGateway(
                             gold.debug.windowstolinux.shared.standard.deploy.build.DeploymentBuildExecutor::new,
                             gold.debug.windowstolinux.shared.standard.deploy.distro.extension.registry.DistributionSetupRegistry
-                                    .defaults()));
+                                    .defaults())));
             ServerProfile profile = new ServerProfile("ubuntu-managed-host-trust", host, 22, username,
-                    "ssh/ubuntu-managed-host-trust/password", CredentialStorageMode.MASTER_PASSWORD);
-            service.saveServerProfile(profile, CredentialStorageMode.MASTER_PASSWORD,
-                    "managed-host-trust-master".toCharArray(), password.toCharArray());
+                    "ssh/ubuntu-managed-host-trust/password");
+            service.saveServerProfile(profile, password.toCharArray());
 
             AtomicReference<String> observedFirstUse = new AtomicReference<>();
-            var capabilities = service.verifyServer(profile, CredentialStorageMode.MASTER_PASSWORD,
-                    "managed-host-trust-master".toCharArray(), fingerprint -> {
-                        observedFirstUse.set(fingerprint);
-                        return true;
-                    });
+            var capabilities = service.verifyServer(profile, fingerprint -> {
+                observedFirstUse.set(fingerprint);
+                return true;
+            });
             assertTrue(capabilities.operatingSystem().contains("Ubuntu 24.04"),
                     () -> "受管部署仅接受 Ubuntu 24.04：" + capabilities.operatingSystem());
             assertEquals("x86_64", capabilities.architecture(), "受管部署仅接受 x86_64 目标机");
@@ -69,18 +67,16 @@ class UbuntuManagedHostTrustAcceptanceTest {
                     "real host fingerprint must be persisted in SHA-256 form");
 
             AtomicBoolean unexpectedPrompt = new AtomicBoolean();
-            service.verifyServer(profile, CredentialStorageMode.MASTER_PASSWORD,
-                    "managed-host-trust-master".toCharArray(), fingerprint -> {
-                        unexpectedPrompt.set(true);
-                        return false;
-                    });
+            service.verifyServer(profile, fingerprint -> {
+                unexpectedPrompt.set(true);
+                return false;
+            });
             assertFalse(unexpectedPrompt.get(), "an unchanged trusted key must not ask for first-use approval again");
 
             String mismatchedFingerprint = "SHA256:" + "x".repeat(43);
             database.servers().saveServer(new ServerIdentity(profile.id(), host, 22, mismatchedFingerprint));
             LinuxOperationException rejection = assertThrows(LinuxOperationException.class,
-                    () -> service.verifyServer(profile, CredentialStorageMode.MASTER_PASSWORD,
-                            "managed-host-trust-master".toCharArray(), fingerprint -> true));
+                    () -> service.verifyServer(profile, fingerprint -> true));
             assertEquals("linux.error.hostKeyRejected", rejection.failure().userMessage().key(),
                     "mismatched trust must be reported as a host-key rejection");
             assertFalse(rejection.failure().diagnostic().contains(password),

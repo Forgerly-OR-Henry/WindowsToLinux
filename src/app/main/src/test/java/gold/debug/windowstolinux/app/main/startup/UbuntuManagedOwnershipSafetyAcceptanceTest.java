@@ -25,7 +25,6 @@ import gold.debug.windowstolinux.shared.model.health.UserAccessUrl;
 import gold.debug.windowstolinux.shared.model.lifecycle.LifecycleAction;
 import gold.debug.windowstolinux.shared.model.lifecycle.RuntimeState;
 import gold.debug.windowstolinux.shared.model.managed.ManagedApplication;
-import gold.debug.windowstolinux.shared.model.security.CredentialStorageMode;
 import gold.debug.windowstolinux.shared.standard.deploy.contract.ReviewedDeploymentRequest;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIfSystemProperty;
@@ -37,6 +36,7 @@ import org.junit.jupiter.api.io.TempDir;
  * <p>针对资源归属漂移、资源缺失和查询失败的可选实时只读检查。
  */
 @EnabledIfSystemProperty(named = "managed.runtime.ownership-safety", matches = "true")
+@org.junit.jupiter.api.extension.ExtendWith(MainSecurityFixture.class)
 class UbuntuManagedOwnershipSafetyAcceptanceTest {
     @TempDir
     Path temporaryDirectory;
@@ -62,20 +62,18 @@ class UbuntuManagedOwnershipSafetyAcceptanceTest {
                 20);
         UserAccessUrl userAccessUrl = new UserAccessUrl(URI.create("http://" + host + ":" + proofPort + "/"));
         try (DesktopPersistence database = DesktopPersistence.open(temporaryDirectory.resolve("desktop-data"))) {
-            DesktopApplicationFacade service = new DesktopApplicationFacade(database,
+            DesktopApplicationFacade service = MainSecurityFixture.unlocked(new DesktopApplicationFacade(database,
                     temporaryDirectory.resolve("work"),
                     new SshdLinuxGateway(
                             gold.debug.windowstolinux.shared.standard.deploy.build.DeploymentBuildExecutor::new,
                             gold.debug.windowstolinux.shared.standard.deploy.distro.extension.registry.DistributionSetupRegistry
-                                    .defaults()));
+                                    .defaults())));
             ReviewedSourcePreparation preparation = ReviewedMavenAcceptanceFixture.prepare(service, source);
             assertTrue(preparation.archive().isPresent(), "fixture must pass static analysis");
             ServerProfile profile = new ServerProfile("ubuntu-managed-ownership", host, 22, username,
-                    "ssh/ubuntu-managed-ownership/password", CredentialStorageMode.MASTER_PASSWORD);
-            service.saveServerProfile(profile, CredentialStorageMode.MASTER_PASSWORD,
-                    "managed-ownership-master".toCharArray(), password.toCharArray());
-            var capabilities = service.verifyServer(profile, CredentialStorageMode.MASTER_PASSWORD,
-                    "managed-ownership-master".toCharArray(), fingerprint -> true);
+                    "ssh/ubuntu-managed-ownership/password");
+            service.saveServerProfile(profile, password.toCharArray());
+            var capabilities = service.verifyServer(profile, fingerprint -> true);
             assertTrue(capabilities.supportsManagedDeployment(preparation.assessment().facts().orElseThrow()
                     .buildTool() == gold.debug.windowstolinux.shared.model.project.DeploymentBuildToolType.MAVEN_WRAPPER,
                     health), () -> "Ubuntu target must meet managed-deployment preconditions: " + capabilities);
@@ -85,9 +83,7 @@ class UbuntuManagedOwnershipSafetyAcceptanceTest {
                     new BuildLimitConfiguration(1200, 1024, 4096, 4L * 1024 * 1024, 2L * 1024 * 1024 * 1024, rootBuild),
                     rootBuild);
             DeploymentResult deployment = service
-                    .deployReviewedWithStoredPassword(request, profile, CredentialStorageMode.MASTER_PASSWORD,
-                            "managed-ownership-master".toCharArray(), fingerprint -> true)
-                    .result();
+                    .deployReviewedWithStoredPassword(request, profile, fingerprint -> true).result();
             assertEquals(DeploymentStatus.SUCCEEDED, deployment.status(), () -> deployment.events().toString());
             ManagedApplication saved = service.listManagedApplications().stream()
                     .filter(application -> application.id().equals(request.facts().applicationId())).findFirst()
@@ -111,10 +107,9 @@ class UbuntuManagedOwnershipSafetyAcceptanceTest {
                     "a missing managed resource must not produce a live observation");
 
             ServerProfile unreachableProfile = new ServerProfile(profile.id(), host, 1, username,
-                    profile.credentialKey(), CredentialStorageMode.MASTER_PASSWORD);
+                    profile.credentialKey());
             LifecycleActionResult queryFailure = service.executeLifecycleResultWithStoredPassword(saved,
-                    LifecycleAction.REFRESH_STATUS, health, unreachableProfile, CredentialStorageMode.MASTER_PASSWORD,
-                    "managed-ownership-master".toCharArray());
+                    LifecycleAction.REFRESH_STATUS, health, unreachableProfile);
             assertFalse(queryFailure.accepted());
             assertTrue(queryFailure.observation().isEmpty(),
                     "a transport failure must not return a locally cached running observation");
@@ -124,7 +119,7 @@ class UbuntuManagedOwnershipSafetyAcceptanceTest {
     private static LifecycleActionResult refresh(DesktopApplicationFacade service, ManagedApplication application,
             HealthCheck health, ServerProfile profile) throws Exception {
         return service.executeLifecycleResultWithStoredPassword(application, LifecycleAction.REFRESH_STATUS, health,
-                profile, CredentialStorageMode.MASTER_PASSWORD, "managed-ownership-master".toCharArray());
+                profile);
     }
 
     private static void assertPresent(String value, String name) {

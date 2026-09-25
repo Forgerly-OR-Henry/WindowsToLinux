@@ -11,7 +11,6 @@ import gold.debug.windowstolinux.app.db.persistence.repository.ManagedApplicatio
 import gold.debug.windowstolinux.app.service.server.ServerUseCaseFacade;
 import gold.debug.windowstolinux.shared.model.health.UserAccessUrl;
 import gold.debug.windowstolinux.shared.model.lifecycle.RuntimeState;
-import gold.debug.windowstolinux.shared.model.security.CredentialStorageMode;
 
 /**
  * Joins native deployment evidence and external registration metadata for the desktop list. / 为桌面列表汇合原生部署证据与外部登记元数据。
@@ -76,9 +75,7 @@ public final class ApplicationInventoryUseCase {
                     Optional.empty(), observation.map(value -> value.runtimeState()).orElse(RuntimeState.UNKNOWN),
                     observation.map(value -> value.observedAt()),
                     presentation.accessUrl().filter(value -> usage.category().equals("WEBSITE")), false,
-                    usage.lifecycle(), usage.lifecycle(),
-                    profile.map(value -> value.credentialMode() == CredentialStorageMode.MASTER_PASSWORD).orElse(false),
-                    Optional.of(usage)));
+                    usage.lifecycle(), usage.lifecycle(), Optional.of(usage)));
         }
         for (var registered : external.list()) {
             var profile = Optional.ofNullable(profiles.get(registered.serverId()));
@@ -88,9 +85,8 @@ public final class ApplicationInventoryUseCase {
             result.add(new ApplicationSummary(presentation.key(), presentation.name(), presentation.category(),
                     registered.serverId(), profile.map(value -> value.displayName()).orElse(registered.serverId()),
                     registered.host(), Optional.empty(), Optional.of(registered.adoptedAt()), app.state(),
-                    Optional.of(registered.observedAt()), presentation.accessUrl(), true, app.canStart(), app.canStop(),
-                    profile.map(value -> value.credentialMode() == CredentialStorageMode.MASTER_PASSWORD)
-                            .orElse(false)));
+                    Optional.of(registered.observedAt()), presentation.accessUrl(), true, app.canStart(),
+                    app.canStop()));
         }
         return result.stream().sorted(ApplicationSummary.newestFirst()).toList();
     }

@@ -75,15 +75,17 @@ public final class DesktopMain {
         } catch (Exception failure) {
             showStartupFailure(reports, initialMessages,
                     DesktopStartupException.create(DesktopSystemFailureType.DATABASE_INITIALIZATION_FAILED,
-                            "Desktop persistence failed its migration or integrity startup checks", failure));
+                            "Desktop persistence failed its schema or integrity startup checks", failure));
             return;
         }
 
         java.util.concurrent.atomic.AtomicReference<DesktopApplicationFacade> rescueOwner = new java.util.concurrent.atomic.AtomicReference<>();
         Runtime.getRuntime().addShutdownHook(new Thread(() -> {
             try {
-                if (rescueOwner.get() != null)
+                if (rescueOwner.get() != null) {
                     rescueOwner.get().closeSshRecovery();
+                    rescueOwner.get().closeSecurity();
+                }
                 database.close();
             } catch (RuntimeException failure) {
                 reports.record(DesktopStartupException.create(DesktopSystemFailureType.SHUTDOWN_FAILED,

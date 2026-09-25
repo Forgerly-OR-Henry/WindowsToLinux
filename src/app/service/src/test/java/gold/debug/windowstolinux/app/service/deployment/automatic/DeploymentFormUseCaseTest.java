@@ -10,7 +10,6 @@ import gold.debug.windowstolinux.app.service.server.ServerProfile;
 import gold.debug.windowstolinux.shared.git.GitReference;
 import gold.debug.windowstolinux.shared.model.deployment.DatabaseReviewMode;
 import gold.debug.windowstolinux.shared.model.project.DeploymentProjectType;
-import gold.debug.windowstolinux.shared.model.security.CredentialStorageMode;
 import org.junit.jupiter.api.Test;
 
 class DeploymentFormUseCaseTest {
@@ -51,7 +50,6 @@ class DeploymentFormUseCaseTest {
     }
 
     private static ServerProfile server() {
-        return new ServerProfile("server", "example.test", 22, "root", "server/password",
-                CredentialStorageMode.MASTER_PASSWORD);
+        return new ServerProfile("server", "example.test", 22, "root", "server/password");
     }
 }

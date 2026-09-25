@@ -53,15 +53,6 @@ public interface DesktopUninstallPort {
     RemovalEvidence removeData(DesktopUninstallRequest request) throws DesktopUninstallException;
 
     /**
-     * Removes only the verified WindowsToLinux credential namespace. / 仅移除已验证的 WindowsToLinux 凭据命名空间。
-     *
-     * @param request reviewed inputs for the requested operation / 所请求操作的已审阅输入
-     * @return constructed or resolved removal evidence / 构造或解析得到的移除证据
-     * @throws DesktopUninstallException if the desktop uninstall boundary rejects the operation / Desktop卸载边界拒绝当前操作时
-     */
-    RemovalEvidence removeCredentials(DesktopUninstallRequest request) throws DesktopUninstallException;
-
-    /**
      * Generic verified uninstall step. / 通用已验证卸载步骤。
      *
      * @param completed completed / 已完成
@@ -110,18 +101,16 @@ public interface DesktopUninstallPort {
      * @param jpackageLayoutVerified jpackage layout verified / jpackage布局已验证
      * @param installMarkerVerified install marker verified / 安装标记已验证
      * @param dataMarkerVerified data marker verified / 数据标记已验证
-     * @param credentialNamespaceVerified credential namespace verified / 凭据命名空间已验证
      * @param evidence observations supporting the reported result / 支持所报告结果的观测证据
      */
     record BoundaryEvidence(boolean jpackageLayoutVerified, boolean installMarkerVerified, boolean dataMarkerVerified,
-            boolean credentialNamespaceVerified, List<String> evidence) {
+            List<String> evidence) {
         /**
          * Validates evidence. / 校验证据。
          *
          * @param jpackageLayoutVerified jpackage layout verified / jpackage布局已验证
          * @param installMarkerVerified install marker verified / 安装标记已验证
          * @param dataMarkerVerified data marker verified / 数据标记已验证
-         * @param credentialNamespaceVerified credential namespace verified / 凭据命名空间已验证
          * @param evidence observations supporting the reported result / 支持所报告结果的观测证据
          */
         public BoundaryEvidence {

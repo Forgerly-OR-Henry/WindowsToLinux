@@ -112,7 +112,7 @@ JDK 21 下的聚焦验证命令：
 mvn -B -ntp -o -pl :windowstolinux-app-main -am -Dtest=NativeArchitectureInspectionTest,PythonBuildInspectorTest,DeploymentBuildRendererTest,EcosystemExtensionFixtureMatrixTest,EcosystemExtensionAcceptanceFixtureTest,EcosystemServiceAcceptanceFixtureTest,RepositoryHttpFixtureTest,PackageStructureArchitectureTest -Dsurefire.failIfNoSpecifiedTests=false test
 ```
 
-PowerShell 中将完整的每个 `-D...` 参数放进单引号，避免参数被拆分。实机验收范围和连接参数见 [四期验收](../../docs/development/PHASE-4.md#acceptance-methods)。25 种源码代表组合已有各自的真实成功记录，具体管理和回滚范围见[实际覆盖](../../docs/development/PHASE-4.md#acceptance-matrix)；125 个场景没有全部执行，不能以代表组合或历史 helper v5 的 17 条路径推定完成。
+PowerShell 中将完整的每个 `-D...` 参数放进单引号，避免参数被拆分。实机验收范围和连接参数见 [0.4 期验收](../../docs/development/PHASE-0.4.md#acceptance-methods)。25 种源码代表组合已有各自的真实成功记录，具体管理和回滚范围见[实际覆盖](../../docs/development/PHASE-0.4.md#acceptance-matrix)；125 个场景没有全部执行，不能以代表组合或历史 helper v5 的 17 条路径推定完成。
 
 ### Python 标准库构建补充
 

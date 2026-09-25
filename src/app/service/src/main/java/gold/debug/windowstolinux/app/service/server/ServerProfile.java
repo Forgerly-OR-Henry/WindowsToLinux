@@ -4,7 +4,6 @@ import java.util.Objects;
 
 import gold.debug.windowstolinux.app.db.entity.StoredServerProfile;
 import gold.debug.windowstolinux.shared.linux.connection.SshEndpoint;
-import gold.debug.windowstolinux.shared.model.security.CredentialStorageMode;
 
 /**
  * Saved non-secret desktop connection profile.
@@ -16,11 +15,10 @@ import gold.debug.windowstolinux.shared.model.security.CredentialStorageMode;
  * @param sshPort ssh port / SSH端口
  * @param username account name used by the reviewed connection / 已审阅连接使用的账户名
  * @param credentialKey opaque lookup key in the platform secret store / 平台秘密存储中的不透明查找键
- * @param credentialMode selected platform credential-storage mode / 所选平台凭据存储模式
  * @param displayName display name / 显示名称
  */
 public record ServerProfile(String id, String host, int sshPort, String username, String credentialKey,
-        CredentialStorageMode credentialMode, String displayName) {
+        String displayName) {
     /**
      * Preserves profiles created before display names were added. / 保留显示名称引入前创建的资料。
      *
@@ -29,11 +27,9 @@ public record ServerProfile(String id, String host, int sshPort, String username
      * @param sshPort ssh port / SSH端口
      * @param username account name used by the reviewed connection / 已审阅连接使用的账户名
      * @param credentialKey opaque lookup key in the platform secret store / 平台秘密存储中的不透明查找键
-     * @param credentialMode selected platform credential-storage mode / 所选平台凭据存储模式
      */
-    public ServerProfile(String id, String host, int sshPort, String username, String credentialKey,
-            CredentialStorageMode credentialMode) {
-        this(id, host, sshPort, username, credentialKey, credentialMode, id);
+    public ServerProfile(String id, String host, int sshPort, String username, String credentialKey) {
+        this(id, host, sshPort, username, credentialKey, id);
     }
 
     /**
@@ -45,7 +41,6 @@ public record ServerProfile(String id, String host, int sshPort, String username
      * @param sshPort ssh port / SSH端口
      * @param username account name used by the reviewed connection / 已审阅连接使用的账户名
      * @param credentialKey opaque lookup key in the platform secret store / 平台秘密存储中的不透明查找键
-     * @param credentialMode selected platform credential-storage mode / 所选平台凭据存储模式
      * @param displayName display name / 显示名称
      * @throws IllegalArgumentException if an input violates the constraints checked by this contract / 输入违反当前契约检查的约束时
      * @throws NullPointerException if a required input is absent / 必需输入缺失时
@@ -55,7 +50,7 @@ public record ServerProfile(String id, String host, int sshPort, String username
         if (displayName.isEmpty() || displayName.length() > 120)
             throw new IllegalArgumentException("invalid server display name");
         Objects.requireNonNull(credentialKey, "credentialKey");
-        Objects.requireNonNull(credentialMode, "credentialMode");
+
         new SshEndpoint(id, host, sshPort, username);
     }
 
@@ -77,7 +72,7 @@ public record ServerProfile(String id, String host, int sshPort, String username
      * @return the operation result / 操作结果
      */
     public StoredServerProfile stored() {
-        return new StoredServerProfile(id, host, sshPort, username, credentialKey, credentialMode.name(), displayName);
+        return new StoredServerProfile(id, host, sshPort, username, credentialKey, displayName);
     }
 
     /**
@@ -90,7 +85,6 @@ public record ServerProfile(String id, String host, int sshPort, String username
      */
     public static ServerProfile fromStored(StoredServerProfile profile) {
         return new ServerProfile(profile.id(), profile.host(), profile.sshPort(), profile.username(),
-                profile.credentialKey(), CredentialStorageMode.valueOf(profile.credentialMode()),
-                profile.displayName());
+                profile.credentialKey(), profile.displayName());
     }
 }

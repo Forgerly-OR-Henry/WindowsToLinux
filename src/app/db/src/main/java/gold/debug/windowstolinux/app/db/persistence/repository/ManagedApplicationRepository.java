@@ -1,11 +1,9 @@
 package gold.debug.windowstolinux.app.db.persistence.repository;
 
-import java.net.URI;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
-import java.sql.Types;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
@@ -18,8 +16,6 @@ import gold.debug.windowstolinux.app.db.entity.SuccessfulManagedDeployment;
 import gold.debug.windowstolinux.app.db.persistence.connection.DesktopConnectionFactory;
 import gold.debug.windowstolinux.shared.config.revision.ConfigurationSnapshot;
 import gold.debug.windowstolinux.shared.config.secretref.SecretReference;
-import gold.debug.windowstolinux.shared.model.health.HealthCheck;
-import gold.debug.windowstolinux.shared.model.health.UserAccessUrl;
 import gold.debug.windowstolinux.shared.model.lifecycle.AutostartState;
 import gold.debug.windowstolinux.shared.model.lifecycle.LifecycleObservation;
 import gold.debug.windowstolinux.shared.model.lifecycle.RuntimeState;
@@ -158,11 +154,13 @@ public final class ManagedApplicationRepository {
      * @throws SQLException if the database cannot complete the requested read or transaction / 数据库无法完成请求的读取或事务时
      */
     public Optional<ManagedApplication> find(String applicationId) throws SQLException {
-        try (Connection connection = connections.open(); PreparedStatement statement = connection.prepareStatement("""
-                SELECT a.id, a.systemd_unit, a.release_root, a.ownership_manifest_sha256,
-                       s.id AS server_id, s.host, s.ssh_port, s.host_key_sha256
-                FROM managed_application a JOIN server s ON a.server_id=s.id WHERE a.id=?
-                """)) {
+        try (Connection connection = connections.open();
+                PreparedStatement statement = connection.prepareStatement(
+                        """
+                                SELECT a.deployment_unit_id, a.systemd_unit_name, a.release_root_path, a.ownership_manifest_sha256,
+                                       s.server_profile_id, s.trusted_host, s.trusted_ssh_port, s.host_key_sha256
+                                FROM deployment_unit a JOIN server_profile s ON a.server_profile_id=s.server_profile_id WHERE a.deployment_unit_id=?
+                                """)) {
             statement.setString(1, applicationId);
             try (ResultSet result = statement.executeQuery()) {
                 return result.next() ? Optional.of(readApplication(result)) : Optional.empty();
@@ -177,11 +175,14 @@ public final class ManagedApplicationRepository {
      * @throws SQLException if the database cannot complete the requested read or transaction / 数据库无法完成请求的读取或事务时
      */
     public List<ManagedApplication> list() throws SQLException {
-        try (Connection connection = connections.open(); PreparedStatement statement = connection.prepareStatement("""
-                SELECT a.id, a.systemd_unit, a.release_root, a.ownership_manifest_sha256,
-                       s.id AS server_id, s.host, s.ssh_port, s.host_key_sha256
-                FROM managed_application a JOIN server s ON a.server_id=s.id ORDER BY a.id
-                """); ResultSet result = statement.executeQuery()) {
+        try (Connection connection = connections.open();
+                PreparedStatement statement = connection.prepareStatement(
+                        """
+                                SELECT a.deployment_unit_id, a.systemd_unit_name, a.release_root_path, a.ownership_manifest_sha256,
+                                       s.server_profile_id, s.trusted_host, s.trusted_ssh_port, s.host_key_sha256
+                                FROM deployment_unit a JOIN server_profile s ON a.server_profile_id=s.server_profile_id ORDER BY a.deployment_unit_id
+                                """);
+                ResultSet result = statement.executeQuery()) {
             List<ManagedApplication> applications = new ArrayList<>();
             while (result.next()) {
                 applications.add(readApplication(result));
@@ -199,9 +200,7 @@ public final class ManagedApplicationRepository {
      */
     public Optional<ManagedApplicationRuntimeConfiguration> findRuntime(String applicationId) throws SQLException {
         try (Connection connection = connections.open(); PreparedStatement statement = connection.prepareStatement("""
-                SELECT health_kind, http_endpoint, http_expected_status, tcp_port, health_timeout_seconds,
-                       tcp_stability_seconds, user_access_url, identity_policy, runtime_payload
-                FROM managed_application_runtime_configuration WHERE application_id=?
+                SELECT runtime_payload FROM deployment_unit WHERE deployment_unit_id=? AND runtime_payload IS NOT NULL
                 """)) {
             statement.setString(1, applicationId);
             try (ResultSet result = statement.executeQuery()) {
@@ -233,14 +232,14 @@ public final class ManagedApplicationRepository {
         try (Connection connection = connections.open();
                 PreparedStatement statement = connection.prepareStatement(
                         """
-                                SELECT application_id, release_sha256, published_at FROM managed_application_release WHERE application_id=?
+                                SELECT deployment_unit_id, current_release_sha256, current_release_published_at FROM deployment_unit WHERE deployment_unit_id=? AND current_release_sha256 IS NOT NULL
                                 """)) {
             statement.setString(1, applicationId);
             try (ResultSet result = statement.executeQuery()) {
                 return result.next()
-                        ? Optional.of(new CurrentRelease(result.getString("application_id"),
-                                result.getString("release_sha256"),
-                                Instant.ofEpochMilli(result.getLong("published_at"))))
+                        ? Optional.of(new CurrentRelease(result.getString("deployment_unit_id"),
+                                result.getString("current_release_sha256"),
+                                Instant.ofEpochMilli(result.getLong("current_release_published_at"))))
                         : Optional.empty();
             }
         }
@@ -254,20 +253,17 @@ public final class ManagedApplicationRepository {
      */
     public void saveObservation(LifecycleObservation observation) throws SQLException {
         try (Connection connection = connections.open(); PreparedStatement statement = connection.prepareStatement("""
-                INSERT INTO application_observation (
-                    application_id, runtime_state, autostart_state, ownership_verified, observed_at, evidence
-                ) VALUES (?, ?, ?, ?, ?, ?)
-                ON CONFLICT(application_id) DO UPDATE SET runtime_state=excluded.runtime_state,
-                    autostart_state=excluded.autostart_state, ownership_verified=excluded.ownership_verified,
-                    observed_at=excluded.observed_at, evidence=excluded.evidence
+                UPDATE deployment_unit SET runtime_state=?,autostart_state=?,is_ownership_verified=?,
+                  observed_at=?,observation_evidence=? WHERE deployment_unit_id=?
                 """)) {
-            statement.setString(1, observation.application().id());
-            statement.setString(2, observation.runtimeState().name());
-            statement.setString(3, observation.autostartState().name());
-            statement.setInt(4, observation.ownershipVerified() ? 1 : 0);
-            statement.setLong(5, observation.observedAt().toEpochMilli());
-            statement.setString(6, observation.evidence());
-            statement.executeUpdate();
+            statement.setString(1, observation.runtimeState().name());
+            statement.setString(2, observation.autostartState().name());
+            statement.setInt(3, observation.ownershipVerified() ? 1 : 0);
+            statement.setLong(4, observation.observedAt().toEpochMilli());
+            statement.setString(5, observation.evidence());
+            statement.setString(6, observation.application().id());
+            if (statement.executeUpdate() != 1)
+                throw new SQLException("deployment unit missing");
         }
     }
 
@@ -280,8 +276,8 @@ public final class ManagedApplicationRepository {
      */
     public Optional<LifecycleObservation> findObservation(ManagedApplication application) throws SQLException {
         try (Connection connection = connections.open(); PreparedStatement statement = connection.prepareStatement("""
-                SELECT runtime_state, autostart_state, ownership_verified, observed_at, evidence
-                FROM application_observation WHERE application_id=?
+                SELECT runtime_state, autostart_state, is_ownership_verified, observed_at, observation_evidence
+                FROM deployment_unit WHERE deployment_unit_id=? AND observed_at IS NOT NULL
                 """)) {
             statement.setString(1, application.id());
             try (ResultSet result = statement.executeQuery()) {
@@ -289,8 +285,9 @@ public final class ManagedApplicationRepository {
                         ? Optional.of(new LifecycleObservation(application,
                                 RuntimeState.valueOf(result.getString("runtime_state")),
                                 AutostartState.valueOf(result.getString("autostart_state")),
-                                result.getInt("ownership_verified") == 1,
-                                Instant.ofEpochMilli(result.getLong("observed_at")), result.getString("evidence")))
+                                result.getInt("is_ownership_verified") == 1,
+                                Instant.ofEpochMilli(result.getLong("observed_at")),
+                                result.getString("observation_evidence")))
                         : Optional.empty();
             }
         }
@@ -305,12 +302,13 @@ public final class ManagedApplicationRepository {
      * @throws SQLException if the database cannot complete the requested read or transaction / 数据库无法完成请求的读取或事务时
      */
     private static void upsertApplication(Connection connection, ManagedApplication application) throws SQLException {
-        try (PreparedStatement statement = connection.prepareStatement("""
-                INSERT INTO managed_application (id, server_id, systemd_unit, release_root, ownership_manifest_sha256)
-                VALUES (?, ?, ?, ?, ?)
-                ON CONFLICT(id) DO UPDATE SET server_id=excluded.server_id, systemd_unit=excluded.systemd_unit,
-                    release_root=excluded.release_root, ownership_manifest_sha256=excluded.ownership_manifest_sha256
-                """)) {
+        try (PreparedStatement statement = connection.prepareStatement(
+                """
+                        INSERT INTO deployment_unit (deployment_unit_id, server_profile_id, systemd_unit_name, release_root_path, ownership_manifest_sha256)
+                        VALUES (?, ?, ?, ?, ?)
+                        ON CONFLICT(deployment_unit_id) DO UPDATE SET server_profile_id=excluded.server_profile_id, systemd_unit_name=excluded.systemd_unit_name,
+                            release_root_path=excluded.release_root_path, ownership_manifest_sha256=excluded.ownership_manifest_sha256
+                        """)) {
             statement.setString(1, application.id());
             statement.setString(2, application.server().id());
             statement.setString(3, application.systemdUnit());
@@ -353,24 +351,14 @@ public final class ManagedApplicationRepository {
      */
     private static void upsertRuntime(Connection connection, String applicationId,
             ManagedApplicationRuntimeConfiguration configuration) throws SQLException {
-        try (PreparedStatement statement = connection.prepareStatement(
-                """
-                        INSERT INTO managed_application_runtime_configuration
-                            (application_id, health_kind, health_timeout_seconds, user_access_url, identity_policy, runtime_payload)
-                        VALUES (?, 'TYPED', ?, ?, ?, ?)
-                        ON CONFLICT(application_id) DO UPDATE SET health_kind=excluded.health_kind,
-                            health_timeout_seconds=excluded.health_timeout_seconds,user_access_url=excluded.user_access_url,
-                            identity_policy=excluded.identity_policy,runtime_payload=excluded.runtime_payload,
-                            http_endpoint=NULL,http_expected_status=NULL,tcp_port=NULL,tcp_stability_seconds=NULL
-                        """)) {
-            statement.setString(1, applicationId);
-            statement.setInt(2, configuration.healthCheck().timeoutSeconds());
-            statement.setString(3, configuration.userAccessUrl().map(url -> url.url().toString()).orElse(null));
-            statement.setString(4, configuration.identityPolicy().name());
-            statement.setBytes(5,
+        try (PreparedStatement statement = connection
+                .prepareStatement("UPDATE deployment_unit SET runtime_payload=? WHERE deployment_unit_id=?")) {
+            statement.setBytes(1,
                     new gold.debug.windowstolinux.shared.config.persistence.serialization.ApplicationRuntimeConfigurationCodec()
                             .write(configuration));
-            statement.executeUpdate();
+            statement.setString(2, applicationId);
+            if (statement.executeUpdate() != 1)
+                throw new SQLException("deployment unit missing");
         } catch (java.io.IOException failure) {
             throw new SQLException("invalid application runtime payload", failure);
         }
@@ -385,15 +373,13 @@ public final class ManagedApplicationRepository {
      * @throws SQLException if the database cannot complete the requested read or transaction / 数据库无法完成请求的读取或事务时
      */
     private static void upsertRelease(Connection connection, CurrentRelease release) throws SQLException {
-        try (PreparedStatement statement = connection.prepareStatement("""
-                INSERT INTO managed_application_release (application_id, release_sha256, published_at) VALUES (?, ?, ?)
-                ON CONFLICT(application_id) DO UPDATE SET release_sha256=excluded.release_sha256,
-                    published_at=excluded.published_at
-                """)) {
-            statement.setString(1, release.applicationId());
-            statement.setString(2, release.releaseSha256());
-            statement.setLong(3, release.publishedAt().toEpochMilli());
-            statement.executeUpdate();
+        try (PreparedStatement statement = connection.prepareStatement(
+                "UPDATE deployment_unit SET current_release_sha256=?,current_release_published_at=? WHERE deployment_unit_id=?")) {
+            statement.setString(1, release.releaseSha256());
+            statement.setLong(2, release.publishedAt().toEpochMilli());
+            statement.setString(3, release.applicationId());
+            if (statement.executeUpdate() != 1)
+                throw new SQLException("deployment unit missing");
         }
     }
 
@@ -406,10 +392,10 @@ public final class ManagedApplicationRepository {
      * @throws SQLException if the database cannot complete the requested read or transaction / 数据库无法完成请求的读取或事务时
      */
     static ManagedApplication readApplication(ResultSet result) throws SQLException {
-        return new ManagedApplication(result.getString("id"),
-                new ServerIdentity(result.getString("server_id"), result.getString("host"), result.getInt("ssh_port"),
-                        result.getString("host_key_sha256")),
-                result.getString("systemd_unit"), result.getString("release_root"),
+        return new ManagedApplication(result.getString("deployment_unit_id"),
+                new ServerIdentity(result.getString("server_profile_id"), result.getString("trusted_host"),
+                        result.getInt("trusted_ssh_port"), result.getString("host_key_sha256")),
+                result.getString("systemd_unit_name"), result.getString("release_root_path"),
                 result.getString("ownership_manifest_sha256"));
     }
 
@@ -423,45 +409,11 @@ public final class ManagedApplicationRepository {
      */
     static ManagedApplicationRuntimeConfiguration readRuntime(ResultSet result) throws SQLException {
         try {
-            if ("TYPED".equals(result.getString("health_kind"))) {
-                try {
-                    return new gold.debug.windowstolinux.shared.config.persistence.serialization.ApplicationRuntimeConfigurationCodec()
-                            .read(result.getBytes("runtime_payload"));
-                } catch (java.io.IOException failure) {
-                    throw new SQLException("application runtime requires reanalysis", failure);
-                }
-            }
-            var policy = gold.debug.windowstolinux.shared.model.project.RuntimeIdentityMode
-                    .valueOf(required(result, "identity_policy"));
-            String kind = result.getString("health_kind");
-            int timeout = result.getInt("health_timeout_seconds");
-            return switch (kind) {
-                case "HTTP" -> new ManagedApplicationRuntimeConfiguration(
-                        new HealthCheck.Http(URI.create(required(result, "http_endpoint")),
-                                result.getInt("http_expected_status"), timeout),
-                        Optional.of(new UserAccessUrl(URI.create(required(result, "user_access_url")))), policy);
-                case "TCP" -> new ManagedApplicationRuntimeConfiguration(
-                        new HealthCheck.Tcp(result.getInt("tcp_port"), timeout, result.getInt("tcp_stability_seconds")),
-                        Optional.empty(), policy);
-                default -> throw new SQLException("saved managed-deployment health-check type is invalid");
-            };
-        } catch (IllegalArgumentException exception) {
-            throw new SQLException("saved managed-deployment runtime configuration violates current validation rules",
-                    exception);
+            return new gold.debug.windowstolinux.shared.config.persistence.serialization.ApplicationRuntimeConfigurationCodec()
+                    .read(result.getBytes("runtime_payload"));
+        } catch (java.io.IOException | IllegalArgumentException failure) {
+            throw new SQLException("invalid saved application runtime configuration", failure);
         }
     }
 
-    /**
-     * Requires the named input to be present and valid before continuing.
-     * <p>继续前要求具名输入存在且有效。
-     *
-     * @param result typed outcome produced by the delegated operation / 被委派操作产生的类型化结果
-     * @param column column / 列
-     * @return required text / 必需文本
-     * @throws SQLException if the database cannot complete the requested read or transaction / 数据库无法完成请求的读取或事务时
-     */
-    private static String required(ResultSet result, String column) throws SQLException {
-        return Optional.ofNullable(result.getString(column)).filter(value -> !value.isBlank()).orElseThrow(
-                () -> new SQLException("saved managed-deployment runtime configuration is missing " + column));
-    }
 }

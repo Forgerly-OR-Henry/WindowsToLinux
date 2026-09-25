@@ -39,6 +39,25 @@ public interface SecretStore extends AutoCloseable {
      */
     boolean delete(String key) throws SecretStoreException;
 
+    /** Atomically changes credentials and their database owners. / 原子更新凭据及其数据库归属。
+     * @param work related writes / 相关写入
+     * @throws SecretStoreException on credential failure / 凭据失败
+     * @throws java.sql.SQLException on metadata failure / 元数据失败
+     */
+    default void transaction(StoreWork work) throws SecretStoreException, java.sql.SQLException {
+        throw new UnsupportedOperationException("this store does not support atomic database writes");
+    }
+
+    /** Related credential and owner updates. / 相关凭据及归属更新。 */
+    @FunctionalInterface
+    interface StoreWork {
+        /** Performs the related updates. / 执行相关更新。
+         * @throws SecretStoreException on credential failure / 凭据失败
+         * @throws java.sql.SQLException on metadata failure / 元数据失败
+         */
+        void run() throws SecretStoreException, java.sql.SQLException;
+    }
+
     /**
      * Closes this resource. / 关闭此资源。
      */

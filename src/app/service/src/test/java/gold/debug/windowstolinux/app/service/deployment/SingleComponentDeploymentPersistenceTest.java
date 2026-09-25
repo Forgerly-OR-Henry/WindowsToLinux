@@ -24,13 +24,12 @@ import gold.debug.windowstolinux.shared.model.health.HealthCheck;
 import gold.debug.windowstolinux.shared.model.managed.ManagedApplication;
 import gold.debug.windowstolinux.shared.model.managed.ManagedApplicationRuntimeConfiguration;
 import gold.debug.windowstolinux.shared.model.project.DeploymentRuntimeSpecification;
-import gold.debug.windowstolinux.shared.model.security.CredentialStorageMode;
 import gold.debug.windowstolinux.shared.model.server.ServerIdentity;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 /** Tests complete single-component success persistence without opening SSH. / 测试不打开 SSH 的完整单组件成功持久化。 */
-class SingleComponentDeploymentPersistenceTest {
+class SingleComponentDeploymentPersistenceTest extends gold.debug.windowstolinux.app.service.SecurityTestFixture {
     @TempDir
     Path temporaryDirectory;
 
@@ -49,9 +48,10 @@ class SingleComponentDeploymentPersistenceTest {
                 new ManagedDatabaseConnection.Sqlite("application.db"));
 
         try (DesktopPersistence persistence = DesktopPersistence.open(temporaryDirectory.resolve("complete"))) {
-            persistence.applicationSecrets()
-                    .saveRevision(new StoredApplicationSecretRevision(secret, "application-secret/database-password/1",
-                            CredentialStorageMode.MASTER_PASSWORD, Instant.parse("2026-08-22T00:00:00Z")));
+            server(persistence, application.server());
+            credential(persistence, "application-secret/database-password/1");
+            persistence.applicationSecrets().saveRevision(new StoredApplicationSecretRevision(secret,
+                    "application-secret/database-password/1", Instant.parse("2026-08-22T00:00:00Z")));
             ReviewedDeploymentUseCase.recordSuccessful(persistence.managedApplicationGraphs(), application, runtime,
                     release, reviewedRuntime, configuration, List.of(secret), Optional.of(List.of(databaseBinding)));
 
@@ -86,6 +86,8 @@ class SingleComponentDeploymentPersistenceTest {
                         new ConfigurationEntry("A_FIRST", ConfigurationScope.RUNTIME,
                                 new ConfigurationValue.Text("first"))));
         try (DesktopPersistence persistence = DesktopPersistence.open(temporaryDirectory.resolve("presaved"))) {
+            server(persistence, application.server());
+            credential(persistence, "application-secret/database-password/1");
             persistence.configurations().save(configuration);
             ReviewedDeploymentUseCase.recordSuccessful(persistence.managedApplicationGraphs(), application,
                     new ManagedApplicationRuntimeConfiguration(health, Optional.empty()),
@@ -111,6 +113,8 @@ class SingleComponentDeploymentPersistenceTest {
                 Instant.parse("2026-08-22T00:00:00Z"));
 
         try (DesktopPersistence persistence = DesktopPersistence.open(temporaryDirectory.resolve("rollback"))) {
+            server(persistence, application.server());
+            credential(persistence, "application-secret/database-password/1");
             assertThrows(SQLException.class,
                     () -> ReviewedDeploymentUseCase.recordSuccessful(persistence.managedApplicationGraphs(),
                             application, runtime, release, reviewedRuntime, configuration(application.id()),

@@ -89,7 +89,6 @@ import gold.debug.windowstolinux.shared.model.lifecycle.LifecycleAction;
 import gold.debug.windowstolinux.shared.model.lifecycle.LifecycleObservation;
 import gold.debug.windowstolinux.shared.model.lifecycle.RuntimeState;
 import gold.debug.windowstolinux.shared.model.project.DeploymentRuntimeSpecification;
-import gold.debug.windowstolinux.shared.model.security.CredentialStorageMode;
 import gold.debug.windowstolinux.shared.model.server.ManagedHelperProtocolVersion;
 import gold.debug.windowstolinux.shared.standard.deploy.plan.MultiComponentDeploymentPlanner;
 
@@ -224,7 +223,6 @@ public final class RemoteBackupCreationUseCase {
      * @param applicationId managed application identifier / 受管应用标识
      * @param destination caller-selected destination inside the permitted boundary / 调用方选择的许可边界内目的地
      * @param backupPassword independent password for backup secret encryption or decryption / 备份秘密加密或解密使用的独立密码
-     * @param masterPassword master-password buffer used to unlock protected credentials / 用于解锁受保护凭据的主密码缓冲区
      * @param firstUseConfirmation first use confirmation / 首次使用确认
      * @return constructed or resolved created backup archive / 构造或解析得到的已创建备份归档
      * @throws SQLException if the database cannot complete the requested read or transaction / 数据库无法完成请求的读取或事务时
@@ -234,10 +232,9 @@ public final class RemoteBackupCreationUseCase {
      * @throws BackupSecretException if the backup secret boundary rejects the operation / 备份秘密边界拒绝当前操作时
      */
     public CreatedBackupArchive createUsingSavedProfile(String applicationId, Path destination, char[] backupPassword,
-            char[] masterPassword, Predicate<String> firstUseConfirmation)
+            Predicate<String> firstUseConfirmation)
             throws SQLException, SecretStoreException, LinuxOperationException, IOException, BackupSecretException {
-        return createUsingSavedProfile(applicationId, destination, backupPassword, masterPassword, firstUseConfirmation,
-                null);
+        return createUsingSavedProfile(applicationId, destination, backupPassword, firstUseConfirmation, null);
     }
 
     /**
@@ -247,7 +244,6 @@ public final class RemoteBackupCreationUseCase {
      * @param applicationId managed application identifier / 受管应用标识
      * @param destination caller-selected destination inside the permitted boundary / 调用方选择的许可边界内目的地
      * @param backupPassword independent password for backup secret encryption or decryption / 备份秘密加密或解密使用的独立密码
-     * @param masterPassword master-password buffer used to unlock protected credentials / 用于解锁受保护凭据的主密码缓冲区
      * @param firstUseConfirmation first use confirmation / 首次使用确认
      * @param heldMaintenance held maintenance / 已持有维护
      * @return using saved profile / 使用已保存配置资料
@@ -258,7 +254,7 @@ public final class RemoteBackupCreationUseCase {
      * @throws BackupSecretException if the backup secret boundary rejects the operation / 备份秘密边界拒绝当前操作时
      */
     public CreatedBackupArchive createUsingSavedProfile(String applicationId, Path destination, char[] backupPassword,
-            char[] masterPassword, Predicate<String> firstUseConfirmation, String heldMaintenance)
+            Predicate<String> firstUseConfirmation, String heldMaintenance)
             throws SQLException, SecretStoreException, LinuxOperationException, IOException, BackupSecretException {
         try {
             Optional<ManagedApplicationGraph> graph = graphs.find(applicationId);
@@ -271,11 +267,10 @@ public final class RemoteBackupCreationUseCase {
                     .orElseThrow(() -> ApplicationServiceException.create(
                             ApplicationServiceFailureType.SERVER_PROFILE_MISSING,
                             "the managed application's saved server profile is unavailable"));
-            return create(applicationId, destination, backupPassword, profile, profile.credentialMode(), masterPassword,
-                    firstUseConfirmation, heldMaintenance);
+            return create(applicationId, destination, backupPassword, profile, firstUseConfirmation, heldMaintenance);
         } finally {
             clear(backupPassword);
-            clear(masterPassword);
+
         }
     }
 
@@ -286,8 +281,6 @@ public final class RemoteBackupCreationUseCase {
      * @param destination caller-selected destination inside the permitted boundary / 调用方选择的许可边界内目的地
      * @param backupPassword independent password for backup secret encryption or decryption / 备份秘密加密或解密使用的独立密码
      * @param profile connection or provider settings supplied to the operation / 提供给操作的连接或提供者设置
-     * @param mode selected operating or storage mode / 所选运行或存储模式
-     * @param masterPassword master-password buffer used to unlock protected credentials / 用于解锁受保护凭据的主密码缓冲区
      * @param firstUseConfirmation first use confirmation / 首次使用确认
      * @return constructed or resolved created backup archive / 构造或解析得到的已创建备份归档
      * @throws SQLException if the database cannot complete the requested read or transaction / 数据库无法完成请求的读取或事务时
@@ -297,11 +290,9 @@ public final class RemoteBackupCreationUseCase {
      * @throws BackupSecretException if the backup secret boundary rejects the operation / 备份秘密边界拒绝当前操作时
      */
     public CreatedBackupArchive create(String applicationId, Path destination, char[] backupPassword,
-            ServerProfile profile, CredentialStorageMode mode, char[] masterPassword,
-            Predicate<String> firstUseConfirmation)
+            ServerProfile profile, Predicate<String> firstUseConfirmation)
             throws SQLException, SecretStoreException, LinuxOperationException, IOException, BackupSecretException {
-        return create(applicationId, destination, backupPassword, profile, mode, masterPassword, firstUseConfirmation,
-                null);
+        return create(applicationId, destination, backupPassword, profile, firstUseConfirmation, null);
     }
 
     /**
@@ -312,8 +303,6 @@ public final class RemoteBackupCreationUseCase {
      * @param destination caller-selected destination inside the permitted boundary / 调用方选择的许可边界内目的地
      * @param backupPassword independent password for backup secret encryption or decryption / 备份秘密加密或解密使用的独立密码
      * @param profile connection or provider settings supplied to the operation / 提供给操作的连接或提供者设置
-     * @param mode selected operating or storage mode / 所选运行或存储模式
-     * @param masterPassword master-password buffer used to unlock protected credentials / 用于解锁受保护凭据的主密码缓冲区
      * @param firstUseConfirmation first use confirmation / 首次使用确认
      * @param heldMaintenance held maintenance / 已持有维护
      * @return created backup archive / 已创建备份归档
@@ -324,8 +313,7 @@ public final class RemoteBackupCreationUseCase {
      * @throws BackupSecretException if the backup secret boundary rejects the operation / 备份秘密边界拒绝当前操作时
      */
     private CreatedBackupArchive create(String applicationId, Path destination, char[] backupPassword,
-            ServerProfile profile, CredentialStorageMode mode, char[] masterPassword,
-            Predicate<String> firstUseConfirmation, String heldMaintenance)
+            ServerProfile profile, Predicate<String> firstUseConfirmation, String heldMaintenance)
             throws SQLException, SecretStoreException, LinuxOperationException, IOException, BackupSecretException {
         try {
             ManagedBackupInputAssessment assessment = inputAssessment.assess(applicationId);
@@ -334,19 +322,19 @@ public final class RemoteBackupCreationUseCase {
                         "complete remote backup creation requires every exact persisted review input");
             }
             BackupContext context = loadContext(assessment.applicationId());
-            validateProfile(context, profile, mode);
+            validateProfile(context, profile);
             validateDatabaseScope(context);
             ReentrantLock lock = locks.forServer(profile.id());
             lock.lock();
             try {
-                return createLocked(context, destination, backupPassword, profile, mode, masterPassword,
-                        firstUseConfirmation, heldMaintenance);
+                return createLocked(context, destination, backupPassword, profile, firstUseConfirmation,
+                        heldMaintenance);
             } finally {
                 lock.unlock();
             }
         } finally {
             clear(backupPassword);
-            clear(masterPassword);
+
         }
     }
 
@@ -356,18 +344,17 @@ public final class RemoteBackupCreationUseCase {
      * @param applicationId managed application identifier / 受管应用标识
      * @param token token / 令牌
      * @param pause pause / 暂停
-     * @param masterPassword master-password buffer used to unlock protected credentials / 用于解锁受保护凭据的主密码缓冲区
      * @param confirmation token or decision binding approval to the exact proposed action / 将批准绑定到精确提议动作的令牌或决定
      * @throws SQLException if the database cannot complete the requested read or transaction / 数据库无法完成请求的读取或事务时
      * @throws SecretStoreException if the protected credential cannot be accessed or updated / 无法访问或更新受保护凭据时
      * @throws LinuxOperationException if the authenticated remote operation fails or its evidence is rejected / 已认证远端操作失败或其证据被拒绝时
      */
-    public void taskAdmission(String applicationId, String token, boolean pause, char[] masterPassword,
-            Predicate<String> confirmation) throws SQLException, SecretStoreException, LinuxOperationException {
-        try {
+    public void taskAdmission(String applicationId, String token, boolean pause, Predicate<String> confirmation)
+            throws SQLException, SecretStoreException, LinuxOperationException {
+        {
             var graph = graphs.find(applicationId).orElseThrow();
             var profile = servers.find(graph.components().getFirst().application().server().id()).orElseThrow();
-            try (SecretStore store = servers.secrets().open(profile.credentialMode(), masterPassword)) {
+            try (SecretStore store = servers.secrets().open()) {
                 var credential = servers.loadPassword(profile, store);
                 try (DeploymentRemoteSession session = gateway.connect(profile.endpoint(), credential,
                         servers.hostKeyVerifier(profile, confirmation))) {
@@ -394,8 +381,6 @@ public final class RemoteBackupCreationUseCase {
                     credential.clear();
                 }
             }
-        } finally {
-            clear(masterPassword);
         }
     }
 
@@ -420,8 +405,6 @@ public final class RemoteBackupCreationUseCase {
      * @param destination caller-selected destination inside the permitted boundary / 调用方选择的许可边界内目的地
      * @param backupPassword independent password for backup secret encryption or decryption / 备份秘密加密或解密使用的独立密码
      * @param profile connection or provider settings supplied to the operation / 提供给操作的连接或提供者设置
-     * @param mode selected operating or storage mode / 所选运行或存储模式
-     * @param masterPassword master-password buffer used to unlock protected credentials / 用于解锁受保护凭据的主密码缓冲区
      * @param firstUseConfirmation first use confirmation / 首次使用确认
      * @param heldMaintenance held maintenance / 已持有维护
      * @return constructed or resolved created backup archive / 构造或解析得到的已创建备份归档
@@ -433,22 +416,21 @@ public final class RemoteBackupCreationUseCase {
      * @throws NullPointerException if a required input is absent / 必需输入缺失时
      */
     private CreatedBackupArchive createLocked(BackupContext context, Path destination, char[] backupPassword,
-            ServerProfile profile, CredentialStorageMode mode, char[] masterPassword,
-            Predicate<String> firstUseConfirmation, String heldMaintenance)
+            ServerProfile profile, Predicate<String> firstUseConfirmation, String heldMaintenance)
             throws SQLException, SecretStoreException, LinuxOperationException, IOException, BackupSecretException {
         WindowsBackupMaterialAttempt attempt = materials.createAttempt();
         CreatedBackupArchive created;
         try {
             HostKeyEvaluator verifier = servers.hostKeyVerifier(profile,
                     Objects.requireNonNull(firstUseConfirmation, "firstUseConfirmation"));
-            try (SecretStore store = servers.secrets().open(mode, masterPassword)) {
+            try (SecretStore store = servers.secrets().open()) {
                 SshCredential.Password credential = servers.loadPassword(profile, store);
                 try (DeploymentRemoteSession session = gateway.connect(profile.endpoint(), credential, verifier)) {
                     credential.clear();
                     CollectedRemoteBackup remote = collectRemote(context, attempt, session, heldMaintenance);
                     List<Material> all = new ArrayList<>(remote.materials());
                     addLocalDefinitions(context, attempt, all);
-                    addEncryptedSecrets(context, attempt, all, backupPassword, masterPassword);
+                    addEncryptedSecrets(context, attempt, all, backupPassword);
                     BackupManifest manifest = manifest(context, remote, all);
                     created = archives.create(manifest, contents(all), destination);
                 } finally {
@@ -592,15 +574,13 @@ public final class RemoteBackupCreationUseCase {
      * @param attempt attempt / 尝试
      * @param target exact destination or managed target of the operation / 操作的精确目的地或受管目标
      * @param backupPassword independent password for backup secret encryption or decryption / 备份秘密加密或解密使用的独立密码
-     * @param masterPassword master-password buffer used to unlock protected credentials / 用于解锁受保护凭据的主密码缓冲区
      * @throws SQLException if the database cannot complete the requested read or transaction / 数据库无法完成请求的读取或事务时
      * @throws SecretStoreException if the protected credential cannot be accessed or updated / 无法访问或更新受保护凭据时
      * @throws BackupSecretException if the backup secret boundary rejects the operation / 备份秘密边界拒绝当前操作时
      * @throws IOException if the required file or stream operation fails / 所需文件或流操作失败时
      */
     private void addEncryptedSecrets(BackupContext context, WindowsBackupMaterialAttempt attempt, List<Material> target,
-            char[] backupPassword, char[] masterPassword)
-            throws SQLException, SecretStoreException, BackupSecretException, IOException {
+            char[] backupPassword) throws SQLException, SecretStoreException, BackupSecretException, IOException {
         List<SecretReference> references = context.components().values().stream()
                 .flatMap(component -> component.secretReferences().stream()).distinct()
                 .sorted(Comparator.comparing(SecretReference::identifier).thenComparingLong(SecretReference::revision))
@@ -614,7 +594,7 @@ public final class RemoteBackupCreationUseCase {
                 var metadata = secretMetadata.findRevision(reference).orElseThrow(
                         () -> SecretStoreException.create(SecretStoreFailureType.APPLICATION_REFERENCE_MISSING,
                                 "Application secret revision metadata is missing"));
-                try (SecretStore store = servers.secrets().open(metadata.credentialMode(), masterPassword)) {
+                try (SecretStore store = servers.secrets().open()) {
                     char[] value = store.read(metadata.credentialKey())
                             .orElseThrow(() -> SecretStoreException.create(
                                     SecretStoreFailureType.APPLICATION_REFERENCE_MISSING,
@@ -733,13 +713,12 @@ public final class RemoteBackupCreationUseCase {
      *
      * @param context facts and dependencies scoped to the current operation / 限定于当前操作的事实及依赖
      * @param profile connection or provider settings supplied to the operation / 提供给操作的连接或提供者设置
-     * @param mode selected operating or storage mode / 所选运行或存储模式
      * @throws NullPointerException if a required input is absent / 必需输入缺失时
      */
-    private static void validateProfile(BackupContext context, ServerProfile profile, CredentialStorageMode mode) {
+    private static void validateProfile(BackupContext context, ServerProfile profile) {
         Objects.requireNonNull(profile, "profile");
-        Objects.requireNonNull(mode, "mode");
-        if (profile.credentialMode() != mode || context.components().values().stream()
+
+        if (context.components().values().stream()
                 .anyMatch(component -> !component.graph().application().server().id().equals(profile.id())
                         || !component.graph().application().server().host().equals(profile.host())
                         || component.graph().application().server().sshPort() != profile.sshPort())) {

@@ -12,17 +12,17 @@ import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import gold.debug.windowstolinux.app.db.DesktopPersistence;
+import gold.debug.windowstolinux.app.service.SecurityTestFixture;
 import gold.debug.windowstolinux.app.service.server.DesktopSecretStoreService;
 import gold.debug.windowstolinux.shared.ai.client.OpenAiCompatibleRoleClient;
 import gold.debug.windowstolinux.shared.ai.collaboration.invocation.AiInvocationStatus;
 import gold.debug.windowstolinux.shared.ai.collaboration.role.AiCollaborationRoleKind;
 import gold.debug.windowstolinux.shared.ai.collaboration.role.ProjectAnalysisRoleContext;
 import gold.debug.windowstolinux.shared.ai.transport.RoleChatResult;
-import gold.debug.windowstolinux.shared.model.security.CredentialStorageMode;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
-class AiUseCaseFacadeRoleTest {
+class AiUseCaseFacadeRoleTest extends SecurityTestFixture {
     @TempDir
     Path temporaryDirectory;
 
@@ -39,21 +39,20 @@ class AiUseCaseFacadeRoleTest {
 
         try (DesktopPersistence persistence = DesktopPersistence.open(temporaryDirectory)) {
             AiUseCaseFacade useCases = new AiUseCaseFacade(persistence.aiProfiles(),
-                    new DesktopSecretStoreService(persistence.encryptedSecrets()), client);
+                    SecurityTestFixture.secrets(persistence), client);
             var profile = new AiProviderProfile("analysis",
-                    URI.create("https://analysis.example.test/v1/chat/completions"), "analysis-model", "ai/analysis",
-                    CredentialStorageMode.MASTER_PASSWORD);
+                    URI.create("https://analysis.example.test/v1/chat/completions"), "analysis-model", "ai/analysis");
+            try (var store = SecurityTestFixture.secrets(persistence).open()) {
+                store.save(profile.credentialKey(), "selected-secret".toCharArray());
+            }
+
             persistence.aiProfiles().saveVerified(profile.stored(), profile.id(), java.time.Instant.now());
             persistence.aiProfiles().purposes().save(gold.debug.windowstolinux.shared.model.ai.AiPurposeType.DEPLOYMENT,
                     java.util.List
                             .of(new gold.debug.windowstolinux.shared.model.ai.AiPurposeAssignment(profile.id(), true)));
-            try (var store = new DesktopSecretStoreService(persistence.encryptedSecrets())
-                    .open(profile.credentialMode(), "master-password".toCharArray())) {
-                store.save(profile.credentialKey(), "selected-secret".toCharArray());
-            }
 
             var result = useCases.invokeRole(new ProjectAnalysisRoleContext("sample-app", "JAVA_MAVEN_SPRING_BOOT",
-                    "MAVEN_WRAPPER", "FORMALLY_SUPPORTED", List.of()), "master-password".toCharArray());
+                    "MAVEN_WRAPPER", "FORMALLY_SUPPORTED", List.of()));
 
             assertTrue(result.isPresent());
             assertEquals(AiInvocationStatus.VALIDATED, result.orElseThrow().evidence().status());

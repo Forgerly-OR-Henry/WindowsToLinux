@@ -17,6 +17,18 @@ public interface AutomaticDeploymentApplicationFacade
             MultiComponentApplicationFacade,
             ServerApplicationFacade,
             AiApplicationFacade {
+    /** Reads the validated deployment mode and approval preferences. / 读取已验证的部署模式及审批偏好。
+     * @return the validated result or retained scoped handle / 已验证结果或保留的限定句柄
+     * @throws java.sql.SQLException if validation or the scoped operation fails / 校验或限定操作失败时
+     */
+    DeploymentPreferences deploymentPreferences() throws java.sql.SQLException;
+
+    /** Persists both deployment preferences atomically. / 原子保存两项部署偏好。
+     * @param preferences preferences supplied to this boundary / 传入当前边界的preferences值
+     * @throws java.sql.SQLException if validation or the scoped operation fails / 校验或限定操作失败时
+     */
+    void saveDeploymentPreferences(DeploymentPreferences preferences) throws java.sql.SQLException;
+
     /** Checks model availability before deployment effects. / 在部署副作用前检查模型可用性。
      * @param mode selected deployment mode / 所选部署模式
      * @throws java.sql.SQLException if configuration cannot be read / 无法读取配置时
@@ -50,7 +62,6 @@ public interface AutomaticDeploymentApplicationFacade
      * @param root root directory defining the filesystem boundary / 定义文件系统边界的根目录
      * @param applicationId managed application identifier / 受管应用标识
      * @param assessment the typed static assessment / 类型化静态评估
-     * @param master master-password buffer used for the scoped secret operation / 限定秘密操作使用的主密码缓冲区
      * @param interaction caller-owned progress, confirmation and input callbacks / 调用方持有的进度、确认及输入回调
      * @return constructed or resolved assessment / 构造或解析得到的评估
      * @throws Exception if the delegated operation or caller-provided interaction fails / 被委派操作或调用方提供的交互失败时
@@ -58,7 +69,7 @@ public interface AutomaticDeploymentApplicationFacade
     gold.debug.windowstolinux.shared.standard.analyze.ecosystem.db.DatabaseProjectInspector.Assessment completeAutomaticDatabaseInputs(
             java.nio.file.Path root, String applicationId,
             gold.debug.windowstolinux.shared.standard.analyze.ecosystem.db.DatabaseProjectInspector.Assessment assessment,
-            char[] master, AutomaticDeploymentInteraction interaction) throws Exception;
+            AutomaticDeploymentInteraction interaction) throws Exception;
 
     /**
      * Prepares automatic databases.
@@ -68,7 +79,6 @@ public interface AutomaticDeploymentApplicationFacade
      * @param applicationId managed application identifier / 受管应用标识
      * @param server server identity or selected server configuration / 服务器身份或所选服务器配置
      * @param assessment the typed static assessment / 类型化静态评估
-     * @param master master-password buffer used for the scoped secret operation / 限定秘密操作使用的主密码缓冲区
      * @param interaction caller-owned progress, confirmation and input callbacks / 调用方持有的进度、确认及输入回调
      * @param fingerprint pinned or freshly observed host-key fingerprint / 固定或新近观测的主机密钥指纹
      * @param progress progress / 进度
@@ -78,14 +88,13 @@ public interface AutomaticDeploymentApplicationFacade
     AutomaticDatabasePreparation prepareAutomaticDatabases(java.nio.file.Path root, String applicationId,
             gold.debug.windowstolinux.app.service.server.ServerProfile server,
             gold.debug.windowstolinux.shared.standard.analyze.ecosystem.db.DatabaseProjectInspector.Assessment assessment,
-            char[] master, AutomaticDeploymentInteraction interaction, Predicate<String> fingerprint,
+            AutomaticDeploymentInteraction interaction, Predicate<String> fingerprint,
             Consumer<LocalizedMessage> progress) throws Exception;
 
     /**
      * Offers APP rescue only when a desktop interaction is available. / 仅在具有桌面交互时提供 APP 救援。
      *
      * @param server server identity or selected server configuration / 服务器身份或所选服务器配置
-     * @param master master-password buffer used for the scoped secret operation / 限定秘密操作使用的主密码缓冲区
      * @param fingerprint pinned or freshly observed host-key fingerprint / 固定或新近观测的主机密钥指纹
      * @param interaction caller-owned progress, confirmation and input callbacks / 调用方持有的进度、确认及输入回调
      * @param operation operation / 操作
@@ -93,9 +102,9 @@ public interface AutomaticDeploymentApplicationFacade
      * @throws Exception if the delegated operation or caller-provided interaction fails / 被委派操作或调用方提供的交互失败时
      */
     default boolean recoverSshForOperation(gold.debug.windowstolinux.app.service.server.ServerProfile server,
-            char[] master, Predicate<String> fingerprint, AutomaticDeploymentInteraction interaction, String operation)
+            Predicate<String> fingerprint, AutomaticDeploymentInteraction interaction, String operation)
             throws Exception {
-        java.util.Arrays.fill(master, '\0');
+
         return false;
     }
 
@@ -104,14 +113,13 @@ public interface AutomaticDeploymentApplicationFacade
      * <p>部署自动。
      *
      * @param request reviewed inputs for the requested operation / 所请求操作的已审阅输入
-     * @param masterPassword master-password buffer used to unlock protected credentials / 用于解锁受保护凭据的主密码缓冲区
      * @param interaction caller-owned progress, confirmation and input callbacks / 调用方持有的进度、确认及输入回调
      * @param firstUseConfirmation first use confirmation / 首次使用确认
      * @param progress progress / 进度
      * @return constructed or resolved automatic deployment outcome / 构造或解析得到的自动部署结果
      * @throws Exception if the delegated operation or caller-provided interaction fails / 被委派操作或调用方提供的交互失败时
      */
-    AutomaticDeploymentOutcome deployAutomatically(AutomaticDeploymentRequest request, char[] masterPassword,
+    AutomaticDeploymentOutcome deployAutomatically(AutomaticDeploymentRequest request,
             AutomaticDeploymentInteraction interaction, Predicate<String> firstUseConfirmation,
             Consumer<LocalizedMessage> progress) throws Exception;
 
@@ -121,7 +129,6 @@ public interface AutomaticDeploymentApplicationFacade
      *
      * @param request reviewed inputs for the requested operation / 所请求操作的已审阅输入
      * @param profile connection or provider settings supplied to the operation / 提供给操作的连接或提供者设置
-     * @param master master-password buffer used for the scoped secret operation / 限定秘密操作使用的主密码缓冲区
      * @param fingerprint pinned or freshly observed host-key fingerprint / 固定或新近观测的主机密钥指纹
      * @param progress progress / 进度
      * @return constructed or resolved deployment outcome / 构造或解析得到的部署结果
@@ -129,8 +136,8 @@ public interface AutomaticDeploymentApplicationFacade
      */
     gold.debug.windowstolinux.app.service.deployment.single.DeploymentOutcome deployAutomaticallyReviewed(
             gold.debug.windowstolinux.shared.standard.deploy.contract.ReviewedDeploymentRequest request,
-            gold.debug.windowstolinux.app.service.server.ServerProfile profile, char[] master,
-            Predicate<String> fingerprint, Consumer<LocalizedMessage> progress) throws Exception;
+            gold.debug.windowstolinux.app.service.server.ServerProfile profile, Predicate<String> fingerprint,
+            Consumer<LocalizedMessage> progress) throws Exception;
 
     /**
      * Deploys automatically reviewed.
@@ -138,7 +145,6 @@ public interface AutomaticDeploymentApplicationFacade
      *
      * @param request reviewed inputs for the requested operation / 所请求操作的已审阅输入
      * @param profile connection or provider settings supplied to the operation / 提供给操作的连接或提供者设置
-     * @param master master-password buffer used for the scoped secret operation / 限定秘密操作使用的主密码缓冲区
      * @param fingerprint pinned or freshly observed host-key fingerprint / 固定或新近观测的主机密钥指纹
      * @param progress progress / 进度
      * @return constructed or resolved multi component deployment result / 构造或解析得到的多组件部署结果
@@ -146,8 +152,8 @@ public interface AutomaticDeploymentApplicationFacade
      */
     gold.debug.windowstolinux.shared.deploy.contract.result.deployment.MultiComponentDeploymentResult deployAutomaticallyReviewed(
             gold.debug.windowstolinux.app.service.deployment.multi.ReviewedMultiComponentApplication request,
-            gold.debug.windowstolinux.app.service.server.ServerProfile profile, char[] master,
-            Predicate<String> fingerprint, Consumer<LocalizedMessage> progress) throws Exception;
+            gold.debug.windowstolinux.app.service.server.ServerProfile profile, Predicate<String> fingerprint,
+            Consumer<LocalizedMessage> progress) throws Exception;
 
     /** Requests a safe task control transition. / 请求安全任务控制转换。
      * @param taskId active task identity / 活动任务身份
@@ -176,9 +182,8 @@ public interface AutomaticDeploymentApplicationFacade
 
     /** Queries recorded task candidates without executing or replaying a deployment. / 查询任务候选项，不执行或重放部署。
      * @param taskId task identity / 任务身份
-     * @param master scoped credential buffer / 限定凭据缓冲区
      * @return actual observations / 实际观测
      * @throws Exception when observation fails / 观测失败时
      */
-    java.util.List<java.util.Map<String, String>> inspectDeploymentTask(String taskId, char[] master) throws Exception;
+    java.util.List<java.util.Map<String, String>> inspectDeploymentTask(String taskId) throws Exception;
 }

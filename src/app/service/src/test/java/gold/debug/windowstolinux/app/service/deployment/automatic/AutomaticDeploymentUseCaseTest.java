@@ -21,7 +21,6 @@ import gold.debug.windowstolinux.shared.deploy.contract.result.deployment.Deploy
 import gold.debug.windowstolinux.shared.model.deployment.*;
 import gold.debug.windowstolinux.shared.model.health.UserAccessUrl;
 import gold.debug.windowstolinux.shared.model.project.DeploymentRuntimeSpecification;
-import gold.debug.windowstolinux.shared.model.security.CredentialStorageMode;
 import gold.debug.windowstolinux.shared.model.server.ServerIdentity;
 import gold.debug.windowstolinux.shared.standard.analyze.core.DeploymentAnalysisCoordinator;
 import gold.debug.windowstolinux.shared.standard.deploy.contract.DeploymentApproval;
@@ -30,7 +29,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 @org.junit.jupiter.api.Timeout(30)
-class AutomaticDeploymentUseCaseTest {
+class AutomaticDeploymentUseCaseTest extends gold.debug.windowstolinux.app.service.SecurityTestFixture {
     @TempDir
     Path directory;
 
@@ -54,15 +53,14 @@ class AutomaticDeploymentUseCaseTest {
 
     private final ServerIdentity server = new ServerIdentity("test-server", "192.0.2.1", 22, "SHA256:test-fingerprint");
 
-    private final ServerProfile profile = new ServerProfile("test-server", "192.0.2.1", 22, "test", "ssh-test",
-            CredentialStorageMode.WINDOWS_CREDENTIAL_MANAGER);
+    private final ServerProfile profile = new ServerProfile("test-server", "192.0.2.1", 22, "test", "ssh-test");
 
     @Test
     void completesOneLocalClickWithGroupedInputAndRealSnapshotWithoutRequiringConfigurationText() throws Exception {
         Path root = node(directory.resolve("source"), "demo");
         char[] master = "temporary-test-value".toCharArray();
         var result = useCase().deploy(
-                new AutomaticDeploymentRequest(Optional.of(root), Optional.empty(), profile, Map.of()), master,
+                new AutomaticDeploymentRequest(Optional.of(root), Optional.empty(), profile, Map.of()),
                 interaction(false), ignored -> true, ignored -> {
                 });
         assertEquals(DeploymentStatus.SUCCEEDED, result.status());
@@ -72,7 +70,6 @@ class AutomaticDeploymentUseCaseTest {
         assertEquals(1, Collections.frequency(calls, "environment-confirmed"));
         assertTrue(calls.indexOf("input") < calls.indexOf("environment"));
         assertTrue(calls.indexOf("environment-confirmed") < calls.indexOf("environment"));
-        assertArrayEquals(new char[master.length], master);
         try (var snapshots = Files.list(directory.resolve("work/source-snapshots"))) {
             assertEquals(0, snapshots.count());
         }
@@ -84,7 +81,7 @@ class AutomaticDeploymentUseCaseTest {
         assertThrows(CancellationException.class,
                 () -> useCase().deploy(
                         new AutomaticDeploymentRequest(Optional.of(root), Optional.empty(), profile, Map.of()),
-                        new char[0], interaction(true), ignored -> true, ignored -> {
+                        interaction(true), ignored -> true, ignored -> {
                         }));
         assertFalse(calls.contains("environment"));
         assertFalse(calls.contains("deploy"));
@@ -95,7 +92,7 @@ class AutomaticDeploymentUseCaseTest {
         Path root = node(directory.resolve("background"), "background");
         Files.delete(root.resolve("windowstolinux-application.properties"));
         var result = useCase().deploy(
-                new AutomaticDeploymentRequest(Optional.of(root), Optional.empty(), profile, Map.of()), new char[0],
+                new AutomaticDeploymentRequest(Optional.of(root), Optional.empty(), profile, Map.of()),
                 interaction(false), ignored -> true, ignored -> {
                 });
         assertEquals(DeploymentStatus.SUCCEEDED, result.status());
@@ -110,13 +107,12 @@ class AutomaticDeploymentUseCaseTest {
         char[] master = "test-only".toCharArray();
         assertThrows(CancellationException.class,
                 () -> useCase().deploy(
-                        new AutomaticDeploymentRequest(Optional.of(root), Optional.empty(), profile, Map.of()), master,
+                        new AutomaticDeploymentRequest(Optional.of(root), Optional.empty(), profile, Map.of()),
                         interaction(false), ignored -> true, ignored -> {
                         }));
         assertTrue(calls.contains("environment-declined"));
         assertFalse(calls.contains("environment"));
         assertFalse(calls.contains("deploy"));
-        assertArrayEquals(new char[master.length], master);
     }
 
     @Test
@@ -125,7 +121,7 @@ class AutomaticDeploymentUseCaseTest {
         Files.writeString(root.resolve("windowstolinux-db.properties"), "db=main\ndb.main.engine=POSTGRESQL\n");
         assertThrows(CancellationException.class, () -> useCase().deploy(
                 new AutomaticDeploymentRequest(Optional.of(root), Optional.empty(), profile, Map.of("port", "18080")),
-                new char[0], interaction(true), ignored -> true, ignored -> {
+                interaction(true), ignored -> true, ignored -> {
                 }));
         assertFalse(calls.contains("verify"));
         assertFalse(calls.contains("environment"));
@@ -164,7 +160,7 @@ class AutomaticDeploymentUseCaseTest {
         var result = useCase().deploy(
                 new AutomaticDeploymentRequest(Optional.of(root), Optional.empty(), profile,
                         Map.of("timeout", "invalid", "configuration", "missing-equals")),
-                new char[0], correcting, ignored -> true, ignored -> {
+                correcting, ignored -> true, ignored -> {
                 });
         assertEquals(DeploymentStatus.SUCCEEDED, result.status());
         assertEquals(1, Collections.frequency(calls, "corrected"));
@@ -199,7 +195,7 @@ class AutomaticDeploymentUseCaseTest {
                 () -> useCase().deploy(
                         new AutomaticDeploymentRequest(Optional.of(root), Optional.empty(), profile,
                                 Map.of("api/port", "18081", "web/port", "18082")),
-                        new char[0], cancelHealth, ignored -> true, ignored -> {
+                        cancelHealth, ignored -> true, ignored -> {
                         }));
         assertFalse(calls.contains("environment"));
         assertFalse(calls.contains("multi-review"));
@@ -229,7 +225,7 @@ class AutomaticDeploymentUseCaseTest {
             var result = useCase().deploy(
                     new AutomaticDeploymentRequest(Optional.of(root), Optional.empty(), profile,
                             Map.of("api/port", "18081", "web/port", "18082")),
-                    new char[0], interaction(false), ignored -> true, ignored -> {
+                    interaction(false), ignored -> true, ignored -> {
                     });
             assertEquals(state, result.status());
             assertEquals(state == DeploymentStatus.SUCCEEDED ? Set.of("api", "web") : Set.of(),
@@ -246,7 +242,7 @@ class AutomaticDeploymentUseCaseTest {
                 () -> useCase().deploy(
                         new AutomaticDeploymentRequest(Optional.of(root), Optional.empty(), profile,
                                 Map.of("api/port", "18081", "web/port", "18082")),
-                        new char[0], interaction(false), ignored -> true, ignored -> {
+                        interaction(false), ignored -> true, ignored -> {
                         }));
         assertTrue(calls.contains("multi-review"));
         assertFalse(calls.contains("environment"));
@@ -259,7 +255,7 @@ class AutomaticDeploymentUseCaseTest {
         node(root.resolve("web"), "web");
         assertThrows(IllegalArgumentException.class, () -> useCase().deploy(
                 new AutomaticDeploymentRequest(Optional.of(root), Optional.empty(), profile, Map.of("port", "18081")),
-                new char[0], interaction(false), ignored -> true, ignored -> {
+                interaction(false), ignored -> true, ignored -> {
                 }));
         assertFalse(calls.contains("multi-review"));
         assertFalse(calls.contains("environment"));
@@ -298,7 +294,7 @@ class AutomaticDeploymentUseCaseTest {
         var result = useCase().deploy(
                 new AutomaticDeploymentRequest(Optional.of(root), Optional.empty(), profile, Map.of())
                         .withAutomation(DeploymentAutomationMode.ASSISTED, AgentApprovalMode.FULL_CONTROL),
-                new char[0], interaction(false), value -> true, value -> {
+                interaction(false), value -> true, value -> {
                 });
         assertEquals(DeploymentStatus.SUCCEEDED, result.status());
         assertEquals(List.of(gold.debug.windowstolinux.shared.model.agent.AgentToolType.ANALYZE_SOURCE,
@@ -316,7 +312,7 @@ class AutomaticDeploymentUseCaseTest {
                 () -> useCase().deploy(
                         new AutomaticDeploymentRequest(Optional.of(root), Optional.empty(), profile, Map.of())
                                 .withAutomation(DeploymentAutomationMode.AGENT, AgentApprovalMode.FULL_CONTROL),
-                        new char[0], interaction(false), value -> true, value -> {
+                        interaction(false), value -> true, value -> {
                         }));
         assertTrue(calls.isEmpty());
     }
@@ -327,9 +323,8 @@ class AutomaticDeploymentUseCaseTest {
         analysisModel = correctingModel("app/version");
         Path root = node(directory.resolve("source"), "demo");
         Files.writeString(root.resolve("README.md"), "Supported Node versions: 22, 20, 18.\n");
-        var result = useCase().deploy(assistedRequest(root, Map.of()), new char[0], interaction(false), ignored -> true,
-                ignored -> {
-                });
+        var result = useCase().deploy(assistedRequest(root, Map.of()), interaction(false), ignored -> true, ignored -> {
+        });
         assertEquals(DeploymentStatus.SUCCEEDED, result.status());
         assertEquals(2, Collections.frequency(calls, "deploy"));
         assertEquals(1, Collections.frequency(calls, "environment"));
@@ -343,9 +338,8 @@ class AutomaticDeploymentUseCaseTest {
         analysisModel = correctingModel("app/version");
         Path root = node(directory.resolve("source"), "demo");
         Files.writeString(root.resolve("README.md"), "Supported Node versions: 22, 20, 18.\n");
-        var result = useCase().deploy(assistedRequest(root, Map.of()), new char[0], interaction(false), ignored -> true,
-                ignored -> {
-                });
+        var result = useCase().deploy(assistedRequest(root, Map.of()), interaction(false), ignored -> true, ignored -> {
+        });
         assertEquals(DeploymentStatus.FAILED_ROLLED_BACK, result.status());
         assertEquals(3, Collections.frequency(calls, "deploy"));
         assertEquals(1, Collections.frequency(calls, "environment"));
@@ -357,7 +351,7 @@ class AutomaticDeploymentUseCaseTest {
         analysisModel = correctingModel("app/version");
         Path root = node(directory.resolve("source"), "demo");
         Files.writeString(root.resolve("README.md"), "Supported Node versions: 22, 20, 18.\n");
-        var result = useCase().deploy(assistedRequest(root, Map.of("version", "22")), new char[0], interaction(false),
+        var result = useCase().deploy(assistedRequest(root, Map.of("version", "22")), interaction(false),
                 ignored -> true, ignored -> {
                 });
         assertEquals(DeploymentStatus.FAILED_ROLLED_BACK, result.status());
@@ -375,9 +369,8 @@ class AutomaticDeploymentUseCaseTest {
                     new AssistedDeploymentAdvice("Human input required", List.of(), List.of()));
         };
         Path root = node(directory.resolve("source"), "demo");
-        var result = useCase().deploy(assistedRequest(root, Map.of()), new char[0], interaction(false), ignored -> true,
-                ignored -> {
-                });
+        var result = useCase().deploy(assistedRequest(root, Map.of()), interaction(false), ignored -> true, ignored -> {
+        });
         assertEquals(DeploymentStatus.MANUAL_RECOVERY_REQUIRED, result.status());
         assertEquals(1, Collections.frequency(calls, "deploy"));
     }
@@ -392,7 +385,7 @@ class AutomaticDeploymentUseCaseTest {
         node(root.resolve("web"), "web");
         Files.writeString(root.resolve("README.md"), "API supports Node 22 and 20; web depends on API.\n");
         var result = useCase().deploy(assistedRequest(root, Map.of("api/port", "18081", "web/port", "18082")),
-                new char[0], interaction(false), ignored -> true, ignored -> {
+                interaction(false), ignored -> true, ignored -> {
                 });
         assertEquals(DeploymentStatus.SUCCEEDED, result.status());
         assertEquals(Set.of("api", "web"), result.handoffs().keySet());
@@ -489,7 +482,7 @@ class AutomaticDeploymentUseCaseTest {
                             (gold.debug.windowstolinux.app.service.contract.AiApplicationFacade) proxy)
                             .completeInputs((Path) args[0], (String) args[1],
                                     (gold.debug.windowstolinux.shared.standard.analyze.ecosystem.db.DatabaseProjectInspector.Assessment) args[2],
-                                    (char[]) args[3], (AutomaticDeploymentInteraction) args[4]);
+                                    (AutomaticDeploymentInteraction) args[3]);
                     case "verifyServer" -> {
                         calls.add("verify");
                         yield null;
@@ -536,10 +529,11 @@ class AutomaticDeploymentUseCaseTest {
                             throw new ReviewReached();
                         try (var persistence = gold.debug.windowstolinux.app.db.DesktopPersistence
                                 .open(directory.resolve("review"))) {
-                            var desktop = new gold.debug.windowstolinux.app.service.DesktopApplicationFacade(
-                                    persistence, directory.resolve("review-work"), (endpoint, credential, verifier) -> {
-                                        throw new AssertionError("review must not connect");
-                                    });
+                            var desktop = gold.debug.windowstolinux.app.service.SecurityTestFixture.unlocked(
+                                    new gold.debug.windowstolinux.app.service.DesktopApplicationFacade(persistence,
+                                            directory.resolve("review-work"), (endpoint, credential, verifier) -> {
+                                                throw new AssertionError("review must not connect");
+                                            }));
                             yield desktop.createReviewedMultiComponentApplication(source, server,
                                     (List<gold.debug.windowstolinux.app.service.contract.definition.MultiComponentReviewInput>) args[2],
                                     (ApplicationHealthGate) args[3]);

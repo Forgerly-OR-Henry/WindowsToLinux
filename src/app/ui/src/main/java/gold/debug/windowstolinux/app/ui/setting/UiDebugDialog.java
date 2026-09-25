@@ -194,7 +194,7 @@ public final class UiDebugDialog extends JDialog {
                                 List.of("postgresql-16 : 5432", "postgresql-17 : 5433")),
                         new DeploymentInputField("db/main/initialize", "db.field.initialize", "db.help.initialize", "",
                                 List.of("", "schema.sql")))));
-        for (String key : List.of("field.masterPassword", "db.adminPassword", "db.applicationPassword")) {
+        for (String key : List.of("db.adminPassword", "db.applicationPassword")) {
             add(key, key, () -> {
                 try {
                     Arrays.fill(input.requestSecret(key), '\0');

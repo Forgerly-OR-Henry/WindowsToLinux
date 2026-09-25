@@ -41,7 +41,6 @@ import gold.debug.windowstolinux.shared.linux.connection.SshEndpoint;
 import gold.debug.windowstolinux.shared.model.deployment.DeploymentStatus;
 import gold.debug.windowstolinux.shared.model.failure.FailureDescriptor;
 import gold.debug.windowstolinux.shared.model.managed.ManagedApplicationRuntimeConfiguration;
-import gold.debug.windowstolinux.shared.model.security.CredentialStorageMode;
 import gold.debug.windowstolinux.shared.model.server.ServerIdentity;
 import gold.debug.windowstolinux.shared.standard.deploy.contract.DeploymentApproval;
 import gold.debug.windowstolinux.shared.standard.deploy.contract.ReviewedDeploymentRequest;
@@ -207,17 +206,14 @@ public final class MultiComponentDeploymentUseCase {
      *
      * @param review review / 审阅
      * @param profile connection or provider settings supplied to the operation / 提供给操作的连接或提供者设置
-     * @param mode selected operating or storage mode / 所选运行或存储模式
-     * @param masterPassword master-password buffer used to unlock protected credentials / 用于解锁受保护凭据的主密码缓冲区
      * @param confirmation token or decision binding approval to the exact proposed action / 将批准绑定到精确提议动作的令牌或决定
      * @return constructed or resolved multi component deployment result / 构造或解析得到的多组件部署结果
      * @throws SecretStoreException if the protected credential cannot be accessed or updated / 无法访问或更新受保护凭据时
      * @throws SQLException if the database cannot complete the requested read or transaction / 数据库无法完成请求的读取或事务时
      */
     public MultiComponentDeploymentResult deployWithStoredPassword(ReviewedMultiComponentApplication review,
-            ServerProfile profile, CredentialStorageMode mode, char[] masterPassword, Predicate<String> confirmation)
-            throws SecretStoreException, SQLException {
-        return deployWithStoredPassword(review, profile, mode, masterPassword, confirmation, ignored -> {
+            ServerProfile profile, Predicate<String> confirmation) throws SecretStoreException, SQLException {
+        return deployWithStoredPassword(review, profile, confirmation, ignored -> {
         });
     }
 
@@ -226,8 +222,6 @@ public final class MultiComponentDeploymentUseCase {
      *
      * @param review review / 审阅
      * @param profile connection or provider settings supplied to the operation / 提供给操作的连接或提供者设置
-     * @param mode selected operating or storage mode / 所选运行或存储模式
-     * @param masterPassword master-password buffer used to unlock protected credentials / 用于解锁受保护凭据的主密码缓冲区
      * @param confirmation token or decision binding approval to the exact proposed action / 将批准绑定到精确提议动作的令牌或决定
      * @param progress progress / 进度
      * @return constructed or resolved multi component deployment result / 构造或解析得到的多组件部署结果
@@ -235,27 +229,26 @@ public final class MultiComponentDeploymentUseCase {
      * @throws SQLException if the database cannot complete the requested read or transaction / 数据库无法完成请求的读取或事务时
      */
     public MultiComponentDeploymentResult deployWithStoredPassword(ReviewedMultiComponentApplication review,
-            ServerProfile profile, CredentialStorageMode mode, char[] masterPassword, Predicate<String> confirmation,
+            ServerProfile profile, Predicate<String> confirmation,
             java.util.function.Consumer<gold.debug.windowstolinux.shared.deploy.contract.result.deployment.DeploymentEvent> progress)
             throws SecretStoreException, SQLException {
         List<ResolvedSecretRevision> resolved = new ArrayList<>();
         try {
-            validateProfile(review, profile, mode);
+            validateProfile(review, profile);
             List<ReviewedComponentDeployment> bound = new ArrayList<>();
             for (ReviewedComponentApplication component : review.components()) {
-                List<ResolvedSecretRevision> componentSecrets = resolveSecrets(component.request().secretReferences(),
-                        masterPassword);
+                List<ResolvedSecretRevision> componentSecrets = resolveSecrets(component.request().secretReferences());
                 resolved.addAll(componentSecrets);
                 bound.add(new ReviewedComponentDeployment(component.componentId(), component.request(),
                         component.application(), componentSecrets, component.resourceBindings()));
             }
-            try (SecretStore store = servers.secrets().open(mode, masterPassword)) {
+            try (SecretStore store = servers.secrets().open()) {
                 return executeDeployment(review, bound, profile.endpoint(), servers.loadPassword(profile, store),
                         servers.hostKeyVerifier(profile, confirmation), progress);
             }
         } finally {
             resolved.forEach(ResolvedSecretRevision::close);
-            clear(masterPassword);
+
         }
     }
 
@@ -352,13 +345,12 @@ public final class MultiComponentDeploymentUseCase {
      * <p>解析凭据引用或限定作用域的秘密访问服务。
      *
      * @param references references / 引用集合
-     * @param masterPassword master-password buffer used to unlock protected credentials / 用于解锁受保护凭据的主密码缓冲区
      * @return credential references or scoped secret-access service / 凭据引用或限定作用域的秘密访问服务
      * @throws SQLException if the database cannot complete the requested read or transaction / 数据库无法完成请求的读取或事务时
      * @throws SecretStoreException if the protected credential cannot be accessed or updated / 无法访问或更新受保护凭据时
      */
     private List<ResolvedSecretRevision> resolveSecrets(
-            List<gold.debug.windowstolinux.shared.config.secretref.SecretReference> references, char[] masterPassword)
+            List<gold.debug.windowstolinux.shared.config.secretref.SecretReference> references)
             throws SQLException, SecretStoreException {
         List<ResolvedSecretRevision> resolved = new ArrayList<>();
         try {
@@ -366,7 +358,7 @@ public final class MultiComponentDeploymentUseCase {
                 var revision = applicationSecrets.findRevision(reference).orElseThrow(
                         () -> SecretStoreException.create(SecretStoreFailureType.APPLICATION_REFERENCE_MISSING,
                                 "Application secret revision metadata is missing"));
-                try (SecretStore store = servers.secrets().open(revision.credentialMode(), masterPassword)) {
+                try (SecretStore store = servers.secrets().open()) {
                     char[] value = store.read(revision.credentialKey())
                             .orElseThrow(() -> SecretStoreException.create(
                                     SecretStoreFailureType.APPLICATION_REFERENCE_MISSING,
@@ -411,19 +403,17 @@ public final class MultiComponentDeploymentUseCase {
      *
      * @param review review / 审阅
      * @param profile connection or provider settings supplied to the operation / 提供给操作的连接或提供者设置
-     * @param mode selected operating or storage mode / 所选运行或存储模式
      * @throws NullPointerException if a required input is absent / 必需输入缺失时
      */
-    private static void validateProfile(ReviewedMultiComponentApplication review, ServerProfile profile,
-            CredentialStorageMode mode) {
+    private static void validateProfile(ReviewedMultiComponentApplication review, ServerProfile profile) {
         Objects.requireNonNull(review, "review");
         ServerProfile selectedProfile = Objects.requireNonNull(profile, "profile");
-        if (selectedProfile.credentialMode() != mode || review.components().stream()
+        if (review.components().stream()
                 .anyMatch(component -> !component.request().server().id().equals(selectedProfile.id())
                         || !component.request().server().host().equals(selectedProfile.endpoint().host())
                         || component.request().server().sshPort() != selectedProfile.endpoint().port())) {
             throw ApplicationServiceException.create(ApplicationServiceFailureType.LIFECYCLE_CONTEXT_MISMATCH,
-                    "Reviewed application, server endpoint, and credential storage mode must match");
+                    "Reviewed application, server endpoint, and saved server identity must match");
         }
     }
 

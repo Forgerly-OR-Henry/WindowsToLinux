@@ -3,8 +3,6 @@ package gold.debug.windowstolinux.app.ui.server;
 import java.util.Arrays;
 import java.util.Objects;
 
-import gold.debug.windowstolinux.shared.model.security.CredentialStorageMode;
-
 /**
  * Holds server selection and connection observations for the desktop server page.
  * <p>持有桌面服务器页面的服务器选择及连接观测。
@@ -41,18 +39,6 @@ public final class ServerPageState implements AutoCloseable {
     private final char[] password;
 
     /**
-     * Selected platform credential-storage mode.
-     * <p>所选平台凭据存储模式。
-     */
-    private final CredentialStorageMode credentialMode;
-
-    /**
-     * Master-password buffer used to unlock protected credentials.
-     * <p>用于解锁受保护凭据的主密码缓冲区。
-     */
-    private final char[] masterPassword;
-
-    /**
      * Destination receiving the produced content.
      * <p>接收所生成内容的目标。
      */
@@ -79,13 +65,10 @@ public final class ServerPageState implements AutoCloseable {
      * @param port network port number in the reviewed endpoint / 已审阅端点中的网络端口号
      * @param username account name used by the reviewed connection / 已审阅连接使用的账户名
      * @param password temporary plaintext authentication buffer / 临时明文认证缓冲区
-     * @param credentialMode selected platform credential-storage mode / 所选平台凭据存储模式
-     * @param masterPassword master-password buffer used to unlock protected credentials / 用于解锁受保护凭据的主密码缓冲区
      * @param output destination receiving the produced content / 接收所生成内容的目标
      */
-    public ServerPageState(String id, String host, String port, String username, char[] password,
-            CredentialStorageMode credentialMode, char[] masterPassword, String output) {
-        this(id, host, port, username, password, credentialMode, masterPassword, output, id, "");
+    public ServerPageState(String id, String host, String port, String username, char[] password, String output) {
+        this(id, host, port, username, password, output, id, "");
     }
 
     /**
@@ -96,17 +79,13 @@ public final class ServerPageState implements AutoCloseable {
      * @param port network port number in the reviewed endpoint / 已审阅端点中的网络端口号
      * @param username account name used by the reviewed connection / 已审阅连接使用的账户名
      * @param password temporary plaintext authentication buffer / 临时明文认证缓冲区
-     * @param credentialMode selected platform credential-storage mode / 所选平台凭据存储模式
-     * @param masterPassword master-password buffer used to unlock protected credentials / 用于解锁受保护凭据的主密码缓冲区
      * @param output destination receiving the produced content / 接收所生成内容的目标
      * @param displayName display name / 显示名称
      * @param search search / 搜索
      */
-    public ServerPageState(String id, String host, String port, String username, char[] password,
-            CredentialStorageMode credentialMode, char[] masterPassword, String output, String displayName,
-            String search) {
-        this(id, host, port, username, password, credentialMode, masterPassword, output, displayName, search,
-                "ssh/" + id + "/password");
+    public ServerPageState(String id, String host, String port, String username, char[] password, String output,
+            String displayName, String search) {
+        this(id, host, port, username, password, output, displayName, search, "ssh/" + id + "/password");
     }
 
     /**
@@ -117,17 +96,14 @@ public final class ServerPageState implements AutoCloseable {
      * @param port network port number in the reviewed endpoint / 已审阅端点中的网络端口号
      * @param username account name used by the reviewed connection / 已审阅连接使用的账户名
      * @param password temporary plaintext authentication buffer / 临时明文认证缓冲区
-     * @param credentialMode selected platform credential-storage mode / 所选平台凭据存储模式
-     * @param masterPassword master-password buffer used to unlock protected credentials / 用于解锁受保护凭据的主密码缓冲区
      * @param output destination receiving the produced content / 接收所生成内容的目标
      * @param displayName display name / 显示名称
      * @param search search / 搜索
      * @param credentialKey opaque lookup key in the platform secret store / 平台秘密存储中的不透明查找键
      * @throws NullPointerException if a required input is absent / 必需输入缺失时
      */
-    public ServerPageState(String id, String host, String port, String username, char[] password,
-            CredentialStorageMode credentialMode, char[] masterPassword, String output, String displayName,
-            String search, String credentialKey) {
+    public ServerPageState(String id, String host, String port, String username, char[] password, String output,
+            String displayName, String search, String credentialKey) {
         this.credentialKey = Objects.requireNonNull(credentialKey, "credentialKey");
         this.displayName = displayName;
         this.search = search;
@@ -136,8 +112,6 @@ public final class ServerPageState implements AutoCloseable {
         this.port = Objects.requireNonNull(port, "port");
         this.username = Objects.requireNonNull(username, "username");
         this.password = password.clone();
-        this.credentialMode = Objects.requireNonNull(credentialMode, "credentialMode");
-        this.masterPassword = masterPassword.clone();
         this.output = Objects.requireNonNull(output, "output");
     }
 
@@ -192,26 +166,6 @@ public final class ServerPageState implements AutoCloseable {
     }
 
     /**
-     * Returns selected platform credential-storage mode.
-     * <p>返回所选平台凭据存储模式。
-     *
-     * @return the operation result / 操作结果
-     */
-    public CredentialStorageMode credentialMode() {
-        return credentialMode;
-    }
-
-    /**
-     * Returns master-password buffer used to unlock protected credentials.
-     * <p>返回用于解锁受保护凭据的主密码缓冲区。
-     *
-     * @return the operation result / 操作结果
-     */
-    public char[] masterPassword() {
-        return masterPassword.clone();
-    }
-
-    /**
      * Returns destination receiving the produced content.
      * <p>返回接收所生成内容的目标。
      *
@@ -254,6 +208,5 @@ public final class ServerPageState implements AutoCloseable {
     @Override
     public void close() {
         Arrays.fill(password, '\0');
-        Arrays.fill(masterPassword, '\0');
     }
 }

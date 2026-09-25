@@ -27,7 +27,7 @@ public final class DesktopUninstallHandoffCodec {
      * PAYLOAD VERSION.
      * <p>载荷版本。
      */
-    private static final int PAYLOAD_VERSION = 1;
+    private static final int PAYLOAD_VERSION = 2;
 
     /**
      * MAXIMUM EVENTS.
@@ -62,7 +62,6 @@ public final class DesktopUninstallHandoffCodec {
                 output.writeUTF(request.decision().orElseThrow().name());
                 output.writeUTF(request.installRoot().toString());
                 output.writeUTF(request.dataRoot().toString());
-                output.writeUTF(request.credentialNamespace());
                 writeEvents(output, handoff.preparationEvents());
             }
             payload = bytes.toByteArray();
@@ -94,7 +93,7 @@ public final class DesktopUninstallHandoffCodec {
             OperationIdentity operation = OperationIdentity.from(input.readUTF());
             DesktopUninstallRequest request = new DesktopUninstallRequest(
                     Optional.of(DesktopUninstallDecisionType.valueOf(input.readUTF())), Path.of(input.readUTF()),
-                    Path.of(input.readUTF()), input.readUTF());
+                    Path.of(input.readUTF()));
             List<DesktopUninstallEvent> events = readEvents(input);
             if (input.available() != 0)
                 throw invalid("uninstall handoff payload has trailing bytes", null);

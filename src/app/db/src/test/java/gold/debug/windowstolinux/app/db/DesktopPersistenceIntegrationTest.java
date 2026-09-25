@@ -17,10 +17,7 @@ import java.util.Optional;
 
 import gold.debug.windowstolinux.app.db.entity.CurrentRelease;
 import gold.debug.windowstolinux.app.db.entity.ManagedApplicationGraph;
-import gold.debug.windowstolinux.app.db.entity.OpaqueSecret;
-import gold.debug.windowstolinux.app.db.entity.StoredAiProfile;
 import gold.debug.windowstolinux.app.db.entity.StoredAiProviderProfile;
-import gold.debug.windowstolinux.app.db.entity.StoredAiRoleAssignment;
 import gold.debug.windowstolinux.app.db.entity.StoredApplicationSecretRevision;
 import gold.debug.windowstolinux.app.db.entity.StoredServerProfile;
 import gold.debug.windowstolinux.app.db.entity.SuccessfulManagedDeployment;
@@ -44,7 +41,6 @@ import gold.debug.windowstolinux.shared.model.managed.ManagedApplication;
 import gold.debug.windowstolinux.shared.model.managed.ManagedApplicationRuntimeConfiguration;
 import gold.debug.windowstolinux.shared.model.project.DeploymentRuntimeSpecification;
 import gold.debug.windowstolinux.shared.model.project.component.ComponentDataPath;
-import gold.debug.windowstolinux.shared.model.security.CredentialStorageMode;
 import gold.debug.windowstolinux.shared.model.server.ServerIdentity;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -61,22 +57,17 @@ class DesktopPersistenceIntegrationTest {
                 AutostartState.ENABLED, true, Instant.now(), "remote observation");
 
         try (DesktopPersistence database = DesktopPersistence.open(temporaryDirectory)) {
+            DatabaseTestFixture.server(database, server);
             database.managedApplications().save(application);
             database.managedApplications().saveRelease(new CurrentRelease("demo", "b".repeat(64), Instant.now()));
             database.managedApplications().saveObservation(observation);
-            database.encryptedSecrets()
-                    .save(new OpaqueSecret("ssh/server-one", "test", new byte[]{1}, new byte[]{2}, new byte[]{3}));
-            database.servers().saveServerProfile(new StoredServerProfile("server-one", "example.test", 22, "deployer",
-                    "ssh/server-one/password", "MASTER_PASSWORD"));
-            database.aiProfiles().saveDefault(new StoredAiProfile("https://example.test/v1/chat/completions", "gpt-5",
-                    "ai/default/api-key", "MASTER_PASSWORD"));
+            database.servers().saveServerProfile(
+                    new StoredServerProfile("server-one", "example.test", 22, "deployer", "ssh/server-one/password"));
 
             assertEquals(server, database.servers().findServer("server-one").orElseThrow());
             assertEquals(RuntimeState.RUNNING,
                     database.managedApplications().findObservation(application).orElseThrow().runtimeState());
-            assertTrue(database.encryptedSecrets().find("ssh/server-one").isPresent());
             assertEquals("deployer", database.servers().findServerProfile("server-one").orElseThrow().username());
-            assertEquals("gpt-5", database.aiProfiles().findDefault().orElseThrow().model());
             assertEquals(application, database.managedApplications().find("demo").orElseThrow());
             assertEquals("b".repeat(64),
                     database.managedApplications().findRelease("demo").orElseThrow().releaseSha256());
@@ -131,22 +122,6 @@ class DesktopPersistenceIntegrationTest {
     }
 
     @Test
-    void migratesVersionTwoDatabaseToPreferenceStorage() throws Exception {
-        Path dataDirectory = Files.createDirectories(temporaryDirectory.resolve("version-two"));
-        Path databaseFile = dataDirectory.resolve("windowstolinux.db");
-        try (Connection connection = DriverManager.getConnection("jdbc:sqlite:" + databaseFile);
-                Statement statement = connection.createStatement()) {
-            createLegacyRuntimeTable(statement);
-            statement.execute("PRAGMA user_version = 2");
-        }
-
-        try (DesktopPersistence database = DesktopPersistence.open(dataDirectory)) {
-            database.preferences().save(DesktopPersistence.UI_THEME_SETTING, "DARK");
-            assertEquals("DARK", database.preferences().find(DesktopPersistence.UI_THEME_SETTING).orElseThrow());
-        }
-    }
-
-    @Test
     void recordsTheSuccessfulRuntimeContractAndReleaseAtomically() throws Exception {
         ServerIdentity server = new ServerIdentity("server-one", "198.51.100.24", 22, "SHA256:exampleFingerprint");
         ManagedApplication application = ManagedApplication.forManaged("demo", server, "a".repeat(64));
@@ -156,6 +131,7 @@ class DesktopPersistenceIntegrationTest {
         Instant initialTime = Instant.parse("2026-08-10T00:00:00Z");
 
         try (DesktopPersistence database = DesktopPersistence.open(temporaryDirectory)) {
+            DatabaseTestFixture.server(database, server);
             database.managedApplications().recordSuccessfulDeployment(application, http,
                     new CurrentRelease(application.id(), "b".repeat(64), initialTime));
 
@@ -184,6 +160,7 @@ class DesktopPersistenceIntegrationTest {
         SecretReference missing = new SecretReference("missing", 1);
 
         try (DesktopPersistence database = DesktopPersistence.open(temporaryDirectory.resolve("atomic-components"))) {
+            DatabaseTestFixture.server(database, server);
             ManagedApplicationGraph graph = new ManagedApplicationGraph("shop", "web",
                     Optional.of(runtime.healthCheck()), List.of(
                             new ManagedApplicationGraph.Component("api", api, runtime, List.of(),
@@ -238,6 +215,7 @@ class DesktopPersistenceIntegrationTest {
                                 Optional.of(List.of()), Optional.of(resources(List.of())))));
 
         try (DesktopPersistence database = DesktopPersistence.open(temporaryDirectory.resolve("durable-graph"))) {
+            DatabaseTestFixture.server(database, server);
             database.managedApplicationGraphs().recordSuccessfulApplication(graph,
                     List.of(new SuccessfulManagedDeployment(api, apiRuntime,
                             new CurrentRelease(api.id(), "c".repeat(64), publishedAt), configuration(api.id()),
@@ -255,162 +233,6 @@ class DesktopPersistenceIntegrationTest {
     }
 
     @Test
-    void migratesVersionSevenGraphsWithoutInventingReviewedRuntimeDefinitions() throws Exception {
-        Path dataDirectory = temporaryDirectory.resolve("version-seven-graph");
-        Path databaseFile = dataDirectory.resolve("windowstolinux.db");
-        ServerIdentity server = new ServerIdentity("server-one", "198.51.100.24", 22, "SHA256:exampleFingerprint");
-        ManagedApplication application = ManagedApplication.forManaged("legacy-app", server, "a".repeat(64));
-        var runtime = new ManagedApplicationRuntimeConfiguration(new HealthCheck.Tcp(18081, 15, 1), Optional.empty());
-        List<ComponentDataPath> dataPaths = List
-                .of(new ComponentDataPath("data", ComponentDataPath.AccessMode.READ_WRITE, "data-v1", true));
-        var graph = new ManagedApplicationGraph("legacy", "app", Optional.of(runtime.healthCheck()),
-                List.of(new ManagedApplicationGraph.Component("app", application, runtime, List.of(),
-                        Optional.of(new DeploymentRuntimeSpecification.NodeService(22, runtime.healthCheck())),
-                        Optional.of(dataPaths), Optional.of(resources(dataPaths)))));
-        try (DesktopPersistence database = DesktopPersistence.open(dataDirectory)) {
-            database.managedApplicationGraphs().recordSuccessfulApplication(graph,
-                    List.of(new SuccessfulManagedDeployment(application, runtime,
-                            new CurrentRelease(application.id(), "b".repeat(64), Instant.now()),
-                            configuration(application.id()), List.of())));
-        }
-        try (Connection connection = DriverManager.getConnection("jdbc:sqlite:" + databaseFile);
-                Statement statement = connection.createStatement()) {
-            statement.execute("UPDATE managed_application_graph_component SET reviewed_runtime=NULL");
-            statement.execute("UPDATE managed_application_graph_component SET reviewed_data_paths=NULL");
-            statement.execute("UPDATE managed_application_graph_component SET reviewed_resource_bindings=NULL");
-            statement.execute("UPDATE managed_application_graph SET application_health_check=NULL");
-            statement.execute("DELETE FROM application_release_configuration_binding");
-            statement.execute(
-                    "UPDATE managed_application_runtime_configuration SET health_kind='TCP', tcp_port=18081, tcp_stability_seconds=1, runtime_payload=NULL");
-            for (String table : java.util.List.of("deployment_agent_event", "deployment_agent_task", "ai_model_purpose",
-                    "ai_model_verification", "ai_model_inventory"))
-                statement.execute("DROP TABLE " + table);
-            statement.execute("PRAGMA user_version = 7");
-        }
-
-        try (DesktopPersistence database = DesktopPersistence.open(dataDirectory)) {
-            assertTrue(
-                    database.managedApplicationGraphs().find("legacy").orElseThrow().components().getFirst()
-                            .reviewedRuntime().isEmpty(),
-                    "v7 rows must remain explicitly unavailable instead of being reconstructed");
-            assertTrue(database.managedApplicationGraphs().find("legacy").orElseThrow().components().getFirst()
-                    .reviewedDataPaths().isEmpty(), "v7 rows must not invent reviewed data paths");
-            assertTrue(
-                    database.managedApplicationGraphs().find("legacy").orElseThrow().components().getFirst()
-                            .reviewedResourceBindings().isEmpty(),
-                    "v7 rows must not invent reviewed resource bindings");
-            assertTrue(
-                    database.managedApplicationGraphs().find("legacy").orElseThrow().applicationHealthCheck().isEmpty(),
-                    "v7 rows must not invent an independently reviewed application health check");
-            assertTrue(database.configurations().findRelease(application.id(), "b".repeat(64)).isEmpty(),
-                    "v7 rows must not invent an exact release configuration binding");
-        }
-        try (Connection connection = DriverManager.getConnection("jdbc:sqlite:" + databaseFile);
-                Statement statement = connection.createStatement();
-                var version = statement.executeQuery("PRAGMA user_version")) {
-            assertTrue(version.next());
-            assertEquals(
-                    gold.debug.windowstolinux.app.db.execution.migration.DesktopSchemaMigrator.CURRENT_SCHEMA_VERSION,
-                    version.getInt(1));
-        }
-    }
-
-    @Test
-    void migratesVersionEightGraphsWithoutInventingReviewedDataPaths() throws Exception {
-        Path dataDirectory = temporaryDirectory.resolve("version-eight-graph");
-        Path databaseFile = dataDirectory.resolve("windowstolinux.db");
-        ServerIdentity server = new ServerIdentity("server-one", "198.51.100.24", 22, "SHA256:exampleFingerprint");
-        ManagedApplication application = ManagedApplication.forManaged("legacy-app", server, "a".repeat(64));
-        var runtime = new ManagedApplicationRuntimeConfiguration(new HealthCheck.Tcp(18081, 15, 1), Optional.empty());
-        var reviewedRuntime = new DeploymentRuntimeSpecification.NodeService(22, runtime.healthCheck());
-        var graph = new ManagedApplicationGraph("legacy", "app", Optional.of(runtime.healthCheck()),
-                List.of(new ManagedApplicationGraph.Component("app", application, runtime, List.of(),
-                        Optional.of(reviewedRuntime), Optional.of(List.of()), Optional.of(resources(List.of())))));
-        try (DesktopPersistence database = DesktopPersistence.open(dataDirectory)) {
-            database.managedApplicationGraphs().recordSuccessfulApplication(graph,
-                    List.of(new SuccessfulManagedDeployment(application, runtime,
-                            new CurrentRelease(application.id(), "b".repeat(64), Instant.now()),
-                            configuration(application.id()), List.of())));
-        }
-        try (Connection connection = DriverManager.getConnection("jdbc:sqlite:" + databaseFile);
-                Statement statement = connection.createStatement()) {
-            statement.execute("UPDATE managed_application_graph_component SET reviewed_data_paths=NULL");
-            statement.execute("UPDATE managed_application_graph_component SET reviewed_resource_bindings=NULL");
-            statement.execute("UPDATE managed_application_graph SET application_health_check=NULL");
-            statement.execute("DELETE FROM application_release_configuration_binding");
-            statement.execute(
-                    "UPDATE managed_application_runtime_configuration SET health_kind='TCP', tcp_port=18081, tcp_stability_seconds=1, runtime_payload=NULL");
-            for (String table : java.util.List.of("deployment_agent_event", "deployment_agent_task", "ai_model_purpose",
-                    "ai_model_verification", "ai_model_inventory"))
-                statement.execute("DROP TABLE " + table);
-            statement.execute("PRAGMA user_version = 8");
-        }
-
-        try (DesktopPersistence database = DesktopPersistence.open(dataDirectory)) {
-            var restored = database.managedApplicationGraphs().find("legacy").orElseThrow().components().getFirst();
-            assertEquals(Optional.of(reviewedRuntime), restored.reviewedRuntime());
-            assertTrue(restored.reviewedDataPaths().isEmpty(),
-                    "v8 rows must remain explicitly unavailable instead of inventing reviewed data paths");
-            assertTrue(restored.reviewedResourceBindings().isEmpty(),
-                    "v8 rows must not invent reviewed resource bindings");
-            assertTrue(
-                    database.managedApplicationGraphs().find("legacy").orElseThrow().applicationHealthCheck().isEmpty(),
-                    "v8 rows must not invent an independently reviewed application health check");
-            assertTrue(database.configurations().findRelease(application.id(), "b".repeat(64)).isEmpty(),
-                    "v8 rows must not invent an exact release configuration binding");
-        }
-    }
-
-    @Test
-    void migratesVersionNineGraphsWithoutInventingReviewedResourceBindings() throws Exception {
-        Path dataDirectory = temporaryDirectory.resolve("version-nine-graph");
-        Path databaseFile = dataDirectory.resolve("windowstolinux.db");
-        ServerIdentity server = new ServerIdentity("server-one", "198.51.100.24", 22, "SHA256:exampleFingerprint");
-        ManagedApplication application = ManagedApplication.forManaged("legacy-app", server, "a".repeat(64));
-        var runtime = new ManagedApplicationRuntimeConfiguration(new HealthCheck.Tcp(18081, 15, 1), Optional.empty());
-        var reviewedRuntime = new DeploymentRuntimeSpecification.NodeService(22, runtime.healthCheck());
-        var graph = new ManagedApplicationGraph("legacy", "app", Optional.of(runtime.healthCheck()),
-                List.of(new ManagedApplicationGraph.Component("app", application, runtime, List.of(),
-                        Optional.of(reviewedRuntime), Optional.of(List.of()), Optional.of(resources(List.of())))));
-        try (DesktopPersistence database = DesktopPersistence.open(dataDirectory)) {
-            database.managedApplicationGraphs().recordSuccessfulApplication(graph,
-                    List.of(new SuccessfulManagedDeployment(application, runtime,
-                            new CurrentRelease(application.id(), "b".repeat(64), Instant.now()),
-                            configuration(application.id()), List.of())));
-        }
-        try (Connection connection = DriverManager.getConnection("jdbc:sqlite:" + databaseFile);
-                Statement statement = connection.createStatement()) {
-            statement.execute("UPDATE managed_application_graph_component SET reviewed_resource_bindings=NULL");
-            statement.execute("UPDATE managed_application_graph SET application_health_check=NULL");
-            statement.execute(
-                    "UPDATE managed_application_runtime_configuration SET health_kind='TCP', tcp_port=18081, tcp_stability_seconds=1, runtime_payload=NULL");
-            for (String table : java.util.List.of("deployment_agent_event", "deployment_agent_task", "ai_model_purpose",
-                    "ai_model_verification", "ai_model_inventory"))
-                statement.execute("DROP TABLE " + table);
-            statement.execute("PRAGMA user_version = 9");
-        }
-
-        try (DesktopPersistence database = DesktopPersistence.open(dataDirectory)) {
-            var restored = database.managedApplicationGraphs().find("legacy").orElseThrow().components().getFirst();
-            assertEquals(Optional.of(reviewedRuntime), restored.reviewedRuntime());
-            assertEquals(Optional.of(List.of()), restored.reviewedDataPaths());
-            assertTrue(restored.reviewedResourceBindings().isEmpty(),
-                    "v9 rows must remain explicitly unavailable instead of inventing managed bindings");
-            assertTrue(
-                    database.managedApplicationGraphs().find("legacy").orElseThrow().applicationHealthCheck().isEmpty(),
-                    "v9 rows must not invent an independently reviewed application health check");
-        }
-        try (Connection connection = DriverManager.getConnection("jdbc:sqlite:" + databaseFile);
-                Statement statement = connection.createStatement();
-                var version = statement.executeQuery("PRAGMA user_version")) {
-            assertTrue(version.next());
-            assertEquals(
-                    gold.debug.windowstolinux.app.db.execution.migration.DesktopSchemaMigrator.CURRENT_SCHEMA_VERSION,
-                    version.getInt(1));
-        }
-    }
-
-    @Test
     void rejectsNewSuccessfulGraphsWithoutReviewedRuntimeDefinitions() throws Exception {
         ServerIdentity server = new ServerIdentity("server-one", "198.51.100.24", 22, "SHA256:exampleFingerprint");
         ManagedApplication application = ManagedApplication.forManaged("missing-runtime", server, "a".repeat(64));
@@ -421,6 +243,7 @@ class DesktopPersistenceIntegrationTest {
                 new CurrentRelease(application.id(), "b".repeat(64), Instant.now()), configuration(application.id()),
                 List.of());
         try (DesktopPersistence database = DesktopPersistence.open(temporaryDirectory.resolve("missing-runtime"))) {
+            DatabaseTestFixture.server(database, server);
             assertThrows(IllegalArgumentException.class,
                     () -> database.managedApplicationGraphs().recordSuccessfulApplication(graph, List.of(deployment)));
             assertTrue(database.managedApplications().find(application.id()).isEmpty());
@@ -439,6 +262,7 @@ class DesktopPersistenceIntegrationTest {
                 new CurrentRelease(application.id(), "b".repeat(64), Instant.now()), configuration(application.id()),
                 List.of());
         try (DesktopPersistence database = DesktopPersistence.open(temporaryDirectory.resolve("missing-data-paths"))) {
+            DatabaseTestFixture.server(database, server);
             assertThrows(IllegalArgumentException.class,
                     () -> database.managedApplicationGraphs().recordSuccessfulApplication(graph, List.of(deployment)));
             assertTrue(database.managedApplications().find(application.id()).isEmpty());
@@ -446,107 +270,22 @@ class DesktopPersistenceIntegrationTest {
     }
 
     @Test
-    void migratesVersionFourArtifactIdentityToVersionFiveReleaseIdentityWithoutDataLoss() throws Exception {
-        Path dataDirectory = Files.createDirectories(temporaryDirectory.resolve("version-four"));
-        Path databaseFile = dataDirectory.resolve("windowstolinux.db");
-        String preservedIdentity = "d".repeat(64);
-        try (Connection connection = DriverManager.getConnection("jdbc:sqlite:" + databaseFile);
-                Statement statement = connection.createStatement()) {
-            statement.execute(
-                    "CREATE TABLE ai_profile (id TEXT PRIMARY KEY, endpoint TEXT NOT NULL, model TEXT NOT NULL, credential_key TEXT NOT NULL, credential_mode TEXT NOT NULL)");
-            statement.execute(
-                    "CREATE TABLE ai_provider_profile (profile_id TEXT PRIMARY KEY, endpoint TEXT NOT NULL, model TEXT NOT NULL, credential_key TEXT NOT NULL, credential_mode TEXT NOT NULL)");
-            statement.execute(
-                    "CREATE TABLE server (id TEXT PRIMARY KEY, host TEXT NOT NULL, ssh_port INTEGER NOT NULL, host_key_sha256 TEXT NOT NULL)");
-            statement.execute(
-                    "CREATE TABLE managed_application (id TEXT PRIMARY KEY, server_id TEXT NOT NULL REFERENCES server(id), systemd_unit TEXT NOT NULL, release_root TEXT NOT NULL, ownership_manifest_sha256 TEXT NOT NULL)");
-            statement.execute(
-                    "CREATE TABLE managed_application_release (application_id TEXT PRIMARY KEY REFERENCES managed_application(id), artifact_sha256 TEXT NOT NULL, published_at INTEGER NOT NULL)");
-            statement.execute("INSERT INTO server VALUES ('server-one', 'example.test', 22, 'SHA256:fixture')");
-            statement.execute(
-                    "INSERT INTO managed_application VALUES ('demo', 'server-one', 'windowstolinux-demo.service', '/opt/windowstolinux/apps/demo', '"
-                            + "a".repeat(64) + "')");
-            statement
-                    .execute("INSERT INTO managed_application_release VALUES ('demo', '" + preservedIdentity + "', 1)");
-            createLegacyRuntimeTable(statement);
-            statement.execute("PRAGMA user_version = 4");
-        }
-
-        try (DesktopPersistence database = DesktopPersistence.open(dataDirectory)) {
-            assertEquals(preservedIdentity,
-                    database.managedApplications().findRelease("demo").orElseThrow().releaseSha256());
-        }
-
-        try (Connection connection = DriverManager.getConnection("jdbc:sqlite:" + databaseFile);
-                Statement statement = connection.createStatement()) {
-            try (var columns = statement.executeQuery("PRAGMA table_info(managed_application_release)")) {
-                java.util.Set<String> names = new java.util.HashSet<>();
-                while (columns.next()) {
-                    names.add(columns.getString("name"));
-                }
-                assertTrue(names.contains("release_sha256"));
-                assertTrue(!names.contains("artifact_sha256"));
-            }
-            try (var version = statement.executeQuery("PRAGMA user_version")) {
-                assertTrue(version.next());
-                assertEquals(
-                        gold.debug.windowstolinux.app.db.execution.migration.DesktopSchemaMigrator.CURRENT_SCHEMA_VERSION,
-                        version.getInt(1));
-            }
-        }
-    }
-
-    @Test
-    void migratesLegacyApplicationsWithoutInventingRuntimeConfiguration() throws Exception {
-        Path dataDirectory = Files.createDirectories(temporaryDirectory.resolve("legacy"));
-        Path databaseFile = dataDirectory.resolve("windowstolinux.db");
-        try (Connection connection = DriverManager.getConnection("jdbc:sqlite:" + databaseFile);
-                Statement statement = connection.createStatement()) {
-            statement.execute(
-                    "CREATE TABLE server (id TEXT PRIMARY KEY, host TEXT NOT NULL, ssh_port INTEGER NOT NULL, host_key_sha256 TEXT NOT NULL)");
-            statement.execute(
-                    "CREATE TABLE managed_application (id TEXT PRIMARY KEY, server_id TEXT NOT NULL REFERENCES server(id), systemd_unit TEXT NOT NULL, release_root TEXT NOT NULL, ownership_manifest_sha256 TEXT NOT NULL)");
-            try (PreparedStatement server = connection
-                    .prepareStatement("INSERT INTO server (id, host, ssh_port, host_key_sha256) VALUES (?, ?, ?, ?)");
-                    PreparedStatement application = connection.prepareStatement(
-                            "INSERT INTO managed_application (id, server_id, systemd_unit, release_root, ownership_manifest_sha256) VALUES (?, ?, ?, ?, ?)")) {
-                server.setString(1, "server-one");
-                server.setString(2, "198.51.100.24");
-                server.setInt(3, 22);
-                server.setString(4, "SHA256:exampleFingerprint");
-                server.executeUpdate();
-                application.setString(1, "demo");
-                application.setString(2, "server-one");
-                application.setString(3, "windowstolinux-demo.service");
-                application.setString(4, "/opt/windowstolinux/apps/demo");
-                application.setString(5, "a".repeat(64));
-                application.executeUpdate();
-            }
-            statement.execute("PRAGMA user_version = 1");
-        }
-
-        try (DesktopPersistence database = DesktopPersistence.open(dataDirectory)) {
-            assertTrue(database.managedApplications().find("demo").isPresent());
-            assertTrue(database.managedApplications().findRuntime("demo").isEmpty(), "旧记录不允许根据观测或 UI 默认值伪造运行配置");
-        }
-    }
-
-    @Test
     void repeatedSecretMetadataUsesPersistedTimePrecisionAndStillRejectsChanges() throws Exception {
         var reference = new SecretReference("precision-test", 1);
         var revision = new StoredApplicationSecretRevision(reference, "application-secret/precision-test/1",
-                CredentialStorageMode.MASTER_PASSWORD, Instant.parse("2026-09-08T07:00:00.123456789Z"));
+                Instant.parse("2026-09-08T07:00:00.123456789Z"));
         try (DesktopPersistence database = DesktopPersistence.open(temporaryDirectory.resolve("secret-precision"))) {
+            DatabaseTestFixture.credential(database, revision.credentialKey());
             database.applicationSecrets().saveRevision(revision);
             database.applicationSecrets().saveRevision(revision);
             assertEquals(Instant.parse("2026-09-08T07:00:00.123Z"),
                     database.applicationSecrets().findRevision(reference).orElseThrow().createdAt());
             assertThrows(java.sql.SQLException.class,
                     () -> database.applicationSecrets().saveRevision(new StoredApplicationSecretRevision(reference,
-                            "application-secret/different/1", revision.credentialMode(), revision.createdAt())));
+                            "application-secret/different/1", revision.createdAt())));
             assertThrows(java.sql.SQLException.class,
                     () -> database.applicationSecrets().saveRevision(new StoredApplicationSecretRevision(reference,
-                            revision.credentialKey(), revision.credentialMode(), revision.createdAt().plusMillis(1))));
+                            revision.credentialKey(), revision.createdAt().plusMillis(1))));
         }
     }
 
@@ -558,10 +297,11 @@ class DesktopPersistenceIntegrationTest {
         SecretReference databasePassword = new SecretReference("database-password", 1);
         SecretReference rotatedPassword = new SecretReference("database-password", 2);
         StoredApplicationSecretRevision firstSecret = new StoredApplicationSecretRevision(databasePassword,
-                "application-secret/database-password/1", CredentialStorageMode.MASTER_PASSWORD,
-                Instant.parse("2026-08-12T00:00:00Z"));
+                "application-secret/database-password/1", Instant.parse("2026-08-12T00:00:00Z"));
 
         try (DesktopPersistence database = DesktopPersistence.open(temporaryDirectory)) {
+            DatabaseTestFixture.credential(database, firstSecret.credentialKey());
+            DatabaseTestFixture.credential(database, "application-secret/database-password/2");
             database.configurations().save(first);
             database.configurations().save(first);
             assertEquals(first, database.configurations().find("demo", 1).orElseThrow());
@@ -573,10 +313,8 @@ class DesktopPersistenceIntegrationTest {
 
             database.applicationSecrets().saveRevision(firstSecret);
             database.applicationSecrets().saveRevision(firstSecret);
-            database.applicationSecrets()
-                    .saveRevision(new StoredApplicationSecretRevision(rotatedPassword,
-                            "application-secret/database-password/2", CredentialStorageMode.MASTER_PASSWORD,
-                            Instant.parse("2026-08-12T00:00:01Z")));
+            database.applicationSecrets().saveRevision(new StoredApplicationSecretRevision(rotatedPassword,
+                    "application-secret/database-password/2", Instant.parse("2026-08-12T00:00:01Z")));
             assertTrue(database.applicationSecrets().findRelease("demo", "release-a").isEmpty());
             database.applicationSecrets().bindRelease("demo", "release-a", java.util.List.of(databasePassword));
             database.applicationSecrets().bindRelease("demo", "release-empty", List.of());
@@ -603,6 +341,7 @@ class DesktopPersistenceIntegrationTest {
         SecretReference missing = new SecretReference("unregistered-secret", 1);
 
         try (DesktopPersistence database = DesktopPersistence.open(temporaryDirectory.resolve("atomic-failure"))) {
+            DatabaseTestFixture.server(database, server);
             assertThrows(java.sql.SQLException.class,
                     () -> database.managedApplications().recordSuccessfulDeployment(application, runtime, release,
                             configuration(application.id()), java.util.List.of(missing)));
@@ -631,6 +370,7 @@ class DesktopPersistenceIntegrationTest {
 
         try (DesktopPersistence database = DesktopPersistence
                 .open(temporaryDirectory.resolve("configuration-binding"))) {
+            DatabaseTestFixture.server(database, server);
             database.managedApplications().recordSuccessfulDeployment(application, runtime, release, first, List.of());
             assertEquals(first,
                     database.configurations().findRelease(application.id(), release.releaseSha256()).orElseThrow());
@@ -643,29 +383,6 @@ class DesktopPersistenceIntegrationTest {
         }
     }
 
-    @Test
-    void keepsNamedAiProviderProfilesIndependentFromTheLegacyDefaultProfile() throws Exception {
-        try (DesktopPersistence database = DesktopPersistence.open(temporaryDirectory)) {
-            database.aiProfiles().saveDefault(new StoredAiProfile("https://default.example.test/v1", "default-model",
-                    "ai/default", "MASTER_PASSWORD"));
-            database.aiProfiles().saveNamed(new StoredAiProviderProfile("analysis", "https://analysis.example.test/v1",
-                    "analysis-model", "ai/analysis", "WINDOWS_CREDENTIAL_MANAGER"));
-            database.aiProfiles().saveNamed(new StoredAiProviderProfile("review", "https://review.example.test/v1",
-                    "review-model", "ai/review", "MASTER_PASSWORD"));
-            database.aiProfiles().saveRoleAssignment(new StoredAiRoleAssignment("PROJECT_ANALYSIS", "analysis"));
-            database.aiProfiles().saveRoleAssignment(new StoredAiRoleAssignment("DEPLOYMENT_RISK_REVIEW", "review"));
-
-            assertEquals("default-model", database.aiProfiles().findDefault().orElseThrow().model());
-            assertEquals(java.util.List.of("analysis", "review"),
-                    database.aiProfiles().listNamed().stream().map(StoredAiProviderProfile::id).toList());
-            assertEquals("analysis", database.aiProfiles().findNamed("analysis").orElseThrow().id());
-            assertEquals(java.util.List.of("review", "analysis"), database.aiProfiles().listRoleAssignments().stream()
-                    .map(StoredAiRoleAssignment::profileId).toList());
-            assertThrows(java.sql.SQLException.class, () -> database.aiProfiles()
-                    .saveRoleAssignment(new StoredAiRoleAssignment("ERROR_EXPLANATION", "missing")));
-        }
-    }
-
     private static ConfigurationSnapshot configuration(String applicationId) {
         return ConfigurationSnapshot.create(applicationId, 1, "v1", Instant.parse("2026-08-22T00:00:00Z"), List
                 .of(new ConfigurationEntry("PORT", ConfigurationScope.RUNTIME, new ConfigurationValue.Number(18080))));
@@ -675,15 +392,6 @@ class DesktopPersistenceIntegrationTest {
         List<ManagedFileBinding> files = java.util.stream.IntStream.range(0, paths.size())
                 .mapToObj(index -> new ManagedFileBinding("file-" + (index + 1), paths.get(index))).toList();
         return new ManagedComponentResourceBindings(files, Optional.of(List.of()));
-    }
-
-    private static void createLegacyRuntimeTable(Statement statement) throws Exception {
-        statement.execute("""
-                CREATE TABLE managed_application_runtime_configuration (
-                    application_id TEXT PRIMARY KEY, health_kind TEXT NOT NULL, http_endpoint TEXT,
-                    http_expected_status INTEGER, tcp_port INTEGER, health_timeout_seconds INTEGER NOT NULL,
-                    tcp_stability_seconds INTEGER, user_access_url TEXT)
-                """);
     }
 
 }

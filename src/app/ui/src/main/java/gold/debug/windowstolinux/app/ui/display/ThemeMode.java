@@ -36,14 +36,6 @@ public enum ThemeMode {
      * @return the operation result / 操作结果
      */
     public static ThemeMode fromStoredValue(String value) {
-        if (value == null || value.isBlank()) {
-            return SYSTEM;
-        }
-        try {
-            return ThemeMode.valueOf(value.trim().toUpperCase(Locale.ROOT));
-        } catch (IllegalArgumentException ignored) {
-            // An unknown persisted preference safely falls back to the system theme. / 未知的持久化偏好安全回退到系统主题。
-            return SYSTEM;
-        }
+        return value == null ? SYSTEM : ThemeMode.valueOf(value);
     }
 }

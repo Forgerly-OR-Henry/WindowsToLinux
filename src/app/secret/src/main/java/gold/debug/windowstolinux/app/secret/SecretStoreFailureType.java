@@ -39,66 +39,6 @@ public enum SecretStoreFailureType implements FailureDefinition {
     DECRYPT_FAILED("secret.persistence.decrypt-failed", "persistence", "secret.error.decryptFailed",
             FailureRecoveryAction.REQUIRE_MANUAL_RECOVERY),
     /**
-     * WINDOWS ONLY classification within secret store failure type.
-     * <p>秘密存储失败类型中的Windows仅分类。
-     */
-    WINDOWS_ONLY("secret.adapter.windows-only", "adapter", "secret.error.windowsOnly",
-            FailureRecoveryAction.REQUEST_USER_CORRECTION),
-    /**
-     * WINDOWS WRITE FAILED classification within secret store failure type.
-     * <p>秘密存储失败类型中的Windows写入失败分类。
-     */
-    WINDOWS_WRITE_FAILED("secret.adapter.windows-write-failed", "adapter", "secret.error.windowsWriteFailed",
-            FailureRecoveryAction.RETRY),
-    /**
-     * WINDOWS DELETE FAILED classification within secret store failure type.
-     * <p>秘密存储失败类型中的Windows删除失败分类。
-     */
-    WINDOWS_DELETE_FAILED("secret.adapter.windows-delete-failed", "adapter", "secret.error.windowsDeleteFailed",
-            FailureRecoveryAction.RETRY),
-    /**
-     * WINDOWS EMPTY RESPONSE classification within secret store failure type.
-     * <p>秘密存储失败类型中的Windows空响应分类。
-     */
-    WINDOWS_EMPTY_RESPONSE("secret.adapter.windows-empty-response", "adapter", "secret.error.windowsEmptyResponse",
-            FailureRecoveryAction.RETRY),
-    /**
-     * WINDOWS INVALID RESPONSE classification within secret store failure type.
-     * <p>秘密存储失败类型中的Windows无效响应分类。
-     */
-    WINDOWS_INVALID_RESPONSE("secret.adapter.windows-invalid-response", "adapter",
-            "secret.error.windowsInvalidResponse", FailureRecoveryAction.REQUIRE_MANUAL_RECOVERY),
-    /**
-     * WINDOWS TIMEOUT classification within secret store failure type.
-     * <p>秘密存储失败类型中的Windows超时分类。
-     */
-    WINDOWS_TIMEOUT("secret.adapter.windows-timeout", "adapter", "secret.error.windowsTimeout",
-            FailureRecoveryAction.RETRY),
-    /**
-     * WINDOWS OPERATION FAILED classification within secret store failure type.
-     * <p>秘密存储失败类型中的Windows操作失败分类。
-     */
-    WINDOWS_OPERATION_FAILED("secret.adapter.windows-operation-failed", "adapter",
-            "secret.error.windowsOperationFailed", FailureRecoveryAction.RETRY),
-    /**
-     * WINDOWS START FAILED classification within secret store failure type.
-     * <p>秘密存储失败类型中的Windows启动失败分类。
-     */
-    WINDOWS_START_FAILED("secret.adapter.windows-start-failed", "adapter", "secret.error.windowsStartFailed",
-            FailureRecoveryAction.RESTART_APPLICATION),
-    /**
-     * WINDOWS INTERRUPTED classification within secret store failure type.
-     * <p>秘密存储失败类型中的Windows已中断分类。
-     */
-    WINDOWS_INTERRUPTED("secret.adapter.windows-interrupted", "adapter", "secret.error.windowsInterrupted",
-            FailureRecoveryAction.NONE),
-    /**
-     * WINDOWS UNCONTROLLED RESPONSE classification within secret store failure type.
-     * <p>秘密存储失败类型中的Windows不受控响应分类。
-     */
-    WINDOWS_UNCONTROLLED_RESPONSE("secret.adapter.windows-uncontrolled-response", "adapter",
-            "secret.error.windowsUncontrolledResponse", FailureRecoveryAction.REQUIRE_MANUAL_RECOVERY),
-    /**
      * APPLICATION VALUE MISSING classification within secret store failure type.
      * <p>秘密存储失败类型中的应用内容缺失分类。
      */

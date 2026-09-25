@@ -8,7 +8,7 @@ import java.sql.SQLException;
 import java.sql.Statement;
 import java.util.Locale;
 
-import gold.debug.windowstolinux.app.db.execution.migration.DesktopSchemaMigrator;
+import gold.debug.windowstolinux.app.db.execution.schema.DesktopSchemaInitializer;
 import gold.debug.windowstolinux.app.db.failure.DesktopPersistenceException;
 import gold.debug.windowstolinux.app.db.failure.DesktopPersistenceFailureType;
 import gold.debug.windowstolinux.app.db.persistence.connection.DesktopConnectionFactory;
@@ -16,26 +16,26 @@ import gold.debug.windowstolinux.app.db.persistence.repository.AiProfileReposito
 import gold.debug.windowstolinux.app.db.persistence.repository.ApplicationSecretRepository;
 import gold.debug.windowstolinux.app.db.persistence.repository.ConfigurationSnapshotRepository;
 import gold.debug.windowstolinux.app.db.persistence.repository.DesktopPreferenceRepository;
-import gold.debug.windowstolinux.app.db.persistence.repository.EncryptedSecretRepository;
 import gold.debug.windowstolinux.app.db.persistence.repository.ManagedApplicationGraphRepository;
 import gold.debug.windowstolinux.app.db.persistence.repository.ManagedApplicationRepository;
+import gold.debug.windowstolinux.app.db.persistence.repository.SecurityRepository;
 import gold.debug.windowstolinux.app.db.persistence.repository.ServerProfileRepository;
 
 /**
- * Composes focused desktop repositories over the versioned migrated SQLite schema.
+ * Composes focused desktop repositories over the validated current SQLite schema.
  *
- *  <p>在版本化迁移的 SQLite schema 上组合聚焦桌面仓库。
+ *  <p>在已校验的当前 SQLite schema 上组合聚焦桌面仓库。
  */
 public final class DesktopPersistence implements AutoCloseable {
     /**
      * UI locale preference key. / UI 区域设置偏好键。
      */
-    public static final String UI_LOCALE_SETTING = "ui.locale";
+    public static final String UI_LOCALE_SETTING = "ui_locale";
 
     /**
      * UI theme preference key. / UI 主题偏好键。
      */
-    public static final String UI_THEME_SETTING = "ui.theme";
+    public static final String UI_THEME_SETTING = "ui_theme";
 
     /**
      * Bound gold debug windowstolinux app db persistence repository external application repository collaborator for external applications.
@@ -86,7 +86,7 @@ public final class DesktopPersistence implements AutoCloseable {
      * Bound encrypted secret repository collaborator for encrypted secrets.
      * <p>处理加密秘密集合的加密秘密仓库协作对象。
      */
-    private final EncryptedSecretRepository encryptedSecrets;
+    private final SecurityRepository security;
 
     /**
      * Bound managed application repository collaborator for managed applications.
@@ -116,13 +116,13 @@ public final class DesktopPersistence implements AutoCloseable {
         aiProfiles = new AiProfileRepository(connections);
         configurations = new ConfigurationSnapshotRepository(connections);
         applicationSecrets = new ApplicationSecretRepository(connections);
-        encryptedSecrets = new EncryptedSecretRepository(connections);
+        security = new SecurityRepository(connections);
         managedApplications = new ManagedApplicationRepository(connections);
         managedApplicationGraphs = new ManagedApplicationGraphRepository(connections);
     }
 
     /**
-     * Opens and migrates desktop persistence. / 打开并迁移桌面持久化。
+     * Opens an empty or current desktop database. / 打开空库或当前结构桌面数据库。
      *
      * @param dataDirectory data directory / 数据目录
      * @return constructed or resolved desktop persistence / 构造或解析得到的Desktop持久化
@@ -141,7 +141,7 @@ public final class DesktopPersistence implements AutoCloseable {
                 "jdbc:sqlite:" + normalized.resolve("windowstolinux.db"));
         try {
             verifyIntegrity(connections);
-            DesktopSchemaMigrator.migrate(connections);
+            DesktopSchemaInitializer.initialize(connections);
             new gold.debug.windowstolinux.app.db.persistence.repository.BrowserRecoveryRepository(connections)
                     .interruptUnfinished();
             new gold.debug.windowstolinux.app.db.persistence.repository.AgentTaskRepository(connections)
@@ -228,8 +228,8 @@ public final class DesktopPersistence implements AutoCloseable {
      *
      * @return the encrypted payload repository / 加密载荷仓库
      */
-    public EncryptedSecretRepository encryptedSecrets() {
-        return encryptedSecrets;
+    public SecurityRepository security() {
+        return security;
     }
 
     /**
@@ -261,9 +261,9 @@ public final class DesktopPersistence implements AutoCloseable {
     /**
      * Verifies integrity.
      * <p>验证完整性。
-     *
-     * @param connections factory for scoped database connections / 限定作用域数据库连接的工厂
+     *ase connections / 限定作用域数据库连接的工厂
      * @throws SQLException if the database cannot complete the requested read or transaction / 数据库无法完成请求的读取或事务时
+     * @param connections connections supplied to this boundary / 传入当前边界的connections值
      */
     private static void verifyIntegrity(DesktopConnectionFactory connections) throws SQLException {
         try (Connection connection = connections.open();
@@ -297,9 +297,9 @@ public final class DesktopPersistence implements AutoCloseable {
                 || message.contains("not a database")) {
             type = DesktopPersistenceFailureType.DATABASE_CORRUPTED;
             diagnostic = "SQLite integrity verification failed; automatic repair is disabled";
-        } else if (message.contains("newer than")) {
-            type = DesktopPersistenceFailureType.SCHEMA_NEWER;
-            diagnostic = "The database schema is newer than this desktop client";
+        } else if (message.contains("unsupported desktop database structure")) {
+            type = DesktopPersistenceFailureType.SCHEMA_INCOMPATIBLE;
+            diagnostic = "The desktop database has an incompatible version or structure";
         } else if (message.contains("locked") || message.contains("busy")) {
             type = DesktopPersistenceFailureType.DATABASE_LOCKED;
             diagnostic = "SQLite remained locked after the configured five-second busy timeout";

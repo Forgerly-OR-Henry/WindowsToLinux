@@ -14,7 +14,6 @@ import java.util.Set;
 import gold.debug.windowstolinux.app.db.entity.StoredApplicationSecretRevision;
 import gold.debug.windowstolinux.app.db.persistence.connection.DesktopConnectionFactory;
 import gold.debug.windowstolinux.shared.config.secretref.SecretReference;
-import gold.debug.windowstolinux.shared.model.security.CredentialStorageMode;
 
 /**
  * Stores immutable application-secret metadata and release bindings, never secret values. / 保存不可变应用秘密元数据与发布绑定，绝不保存秘密值。
@@ -44,29 +43,27 @@ public final class ApplicationSecretRepository {
      * @throws NullPointerException if a required input is absent / 必需输入缺失时
      */
     public void saveRevision(StoredApplicationSecretRevision revision) throws SQLException {
-        Objects.requireNonNull(revision, "revision");
+        Objects.requireNonNull(revision, "secret_revision");
         try (Connection connection = connections.open()) {
             RepositoryTransactionExecutor.execute(connection, () -> {
                 Optional<StoredApplicationSecretRevision> existing = findRevision(connection, revision.reference());
                 if (existing.isPresent()) {
                     StoredApplicationSecretRevision stored = existing.orElseThrow();
                     if (!stored.credentialKey().equals(revision.credentialKey())
-                            || stored.credentialMode() != revision.credentialMode()
                             || stored.createdAt().toEpochMilli() != revision.createdAt().toEpochMilli()) {
                         throw new SQLException("application secret revisions are immutable");
                     }
                     return;
                 }
                 try (PreparedStatement statement = connection.prepareStatement("""
-                        INSERT INTO application_secret_revision (
-                            secret_identifier, revision, credential_key, credential_mode, created_at
-                        ) VALUES (?, ?, ?, ?, ?)
+                        INSERT INTO secret_revision (
+                            secret_id, secret_revision, credential_id, created_at
+                        ) VALUES (?, ?, ?, ?)
                         """)) {
                     statement.setString(1, revision.reference().identifier());
                     statement.setLong(2, revision.reference().revision());
                     statement.setString(3, revision.credentialKey());
-                    statement.setString(4, revision.credentialMode().name());
-                    statement.setLong(5, revision.createdAt().toEpochMilli());
+                    statement.setLong(4, revision.createdAt().toEpochMilli());
                     statement.executeUpdate();
                 }
             });
@@ -158,16 +155,17 @@ public final class ApplicationSecretRepository {
             }
             return;
         }
-        try (PreparedStatement statement = connection.prepareStatement("""
-                INSERT INTO application_release_secret_binding (application_id, release_identity) VALUES (?, ?)
-                """)) {
+        try (PreparedStatement statement = connection.prepareStatement(
+                """
+                        INSERT INTO deployment_unit_release_binding (deployment_unit_id, release_sha256,is_secret_binding_complete) VALUES (?, ?,1) ON CONFLICT(deployment_unit_id,release_sha256) DO UPDATE SET is_secret_binding_complete=1
+                        """)) {
             statement.setString(1, application);
             statement.setString(2, release);
             statement.executeUpdate();
         }
         try (PreparedStatement statement = connection.prepareStatement("""
-                INSERT INTO application_release_secret_reference (
-                    application_id, release_identity, secret_identifier, secret_revision
+                INSERT INTO deployment_unit_release_secret_reference (
+                    deployment_unit_id, release_sha256, secret_id, secret_revision
                 ) VALUES (?, ?, ?, ?)
                 """)) {
             for (SecretReference reference : expected) {
@@ -190,8 +188,8 @@ public final class ApplicationSecretRepository {
      */
     public boolean isReferenced(SecretReference reference) throws SQLException {
         try (Connection connection = connections.open(); PreparedStatement statement = connection.prepareStatement("""
-                SELECT 1 FROM application_release_secret_reference
-                WHERE secret_identifier=? AND secret_revision=? LIMIT 1
+                SELECT 1 FROM deployment_unit_release_secret_reference
+                WHERE secret_id=? AND secret_revision=? LIMIT 1
                 """)) {
             statement.setString(1, reference.identifier());
             statement.setLong(2, reference.revision());
@@ -215,8 +213,8 @@ public final class ApplicationSecretRepository {
             SecretReference reference) throws SQLException {
         Objects.requireNonNull(reference, "reference");
         try (PreparedStatement statement = connection.prepareStatement("""
-                SELECT credential_key, credential_mode, created_at FROM application_secret_revision
-                WHERE secret_identifier=? AND revision=?
+                SELECT credential_id, created_at FROM secret_revision
+                WHERE secret_id=? AND secret_revision=?
                 """)) {
             statement.setString(1, reference.identifier());
             statement.setLong(2, reference.revision());
@@ -225,12 +223,10 @@ public final class ApplicationSecretRepository {
                     return Optional.empty();
                 }
                 try {
-                    return Optional
-                            .of(new StoredApplicationSecretRevision(reference, result.getString("credential_key"),
-                                    CredentialStorageMode.valueOf(result.getString("credential_mode")),
-                                    Instant.ofEpochMilli(result.getLong("created_at"))));
+                    return Optional.of(new StoredApplicationSecretRevision(reference, result.getString("credential_id"),
+                            Instant.ofEpochMilli(result.getLong("created_at"))));
                 } catch (IllegalArgumentException exception) {
-                    throw new SQLException("saved application secret revision violates current validation rules",
+                    throw new SQLException("saved application secret secret_revision violates current validation rules",
                             exception);
                 }
             }
@@ -250,16 +246,16 @@ public final class ApplicationSecretRepository {
     private static List<SecretReference> findReleaseReferences(Connection connection, String application,
             String release) throws SQLException {
         try (PreparedStatement statement = connection.prepareStatement("""
-                SELECT secret_identifier, secret_revision FROM application_release_secret_reference
-                WHERE application_id=? AND release_identity=? ORDER BY secret_identifier, secret_revision
+                SELECT secret_id, secret_revision FROM deployment_unit_release_secret_reference
+                WHERE deployment_unit_id=? AND release_sha256=? ORDER BY secret_id, secret_revision
                 """)) {
             statement.setString(1, application);
             statement.setString(2, release);
             try (ResultSet result = statement.executeQuery()) {
                 List<SecretReference> references = new ArrayList<>();
                 while (result.next()) {
-                    references.add(new SecretReference(result.getString("secret_identifier"),
-                            result.getLong("secret_revision")));
+                    references
+                            .add(new SecretReference(result.getString("secret_id"), result.getLong("secret_revision")));
                 }
                 return List.copyOf(references);
             }
@@ -278,9 +274,10 @@ public final class ApplicationSecretRepository {
      */
     private static boolean bindingExists(Connection connection, String application, String release)
             throws SQLException {
-        try (PreparedStatement statement = connection.prepareStatement("""
-                SELECT 1 FROM application_release_secret_binding WHERE application_id=? AND release_identity=?
-                """)) {
+        try (PreparedStatement statement = connection.prepareStatement(
+                """
+                        SELECT 1 FROM deployment_unit_release_binding WHERE deployment_unit_id=? AND release_sha256=? AND is_secret_binding_complete=1
+                        """)) {
             statement.setString(1, application);
             statement.setString(2, release);
             try (ResultSet result = statement.executeQuery()) {

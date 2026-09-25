@@ -65,13 +65,13 @@ public final class ConfigurationSnapshotRepository {
         releaseIdentity = boundedIdentity(releaseIdentity, "releaseIdentity");
         try (Connection connection = connections.open(); PreparedStatement statement = connection.prepareStatement("""
                 SELECT configuration_revision, configuration_sha256
-                FROM application_release_configuration_binding
-                WHERE application_id=? AND release_identity=?
+                FROM deployment_unit_release_binding
+                WHERE deployment_unit_id=? AND release_sha256=?
                 """)) {
             statement.setString(1, applicationId);
             statement.setString(2, releaseIdentity);
             try (ResultSet result = statement.executeQuery()) {
-                if (!result.next())
+                if (!result.next() || result.getObject("configuration_revision") == null)
                     return Optional.empty();
                 ConfigurationSnapshot snapshot = find(connection, applicationId,
                         result.getLong("configuration_revision")).orElseThrow(
@@ -112,8 +112,8 @@ public final class ConfigurationSnapshotRepository {
     private static Optional<ConfigurationSnapshot> find(Connection connection, String applicationId, long revision)
             throws SQLException {
         try (PreparedStatement statement = connection.prepareStatement("""
-                SELECT schema_version, created_at, sha256 FROM application_configuration_snapshot
-                WHERE application_id=? AND revision=?
+                SELECT schema_version, created_at, configuration_sha256 FROM deployment_unit_configuration_snapshot
+                WHERE deployment_unit_id=? AND configuration_revision=?
                 """)) {
             statement.setString(1, applicationId);
             statement.setLong(2, revision);
@@ -123,18 +123,19 @@ public final class ConfigurationSnapshotRepository {
                 }
                 String schemaVersion = result.getString("schema_version");
                 Instant createdAt = Instant.ofEpochMilli(result.getLong("created_at"));
-                String sha256 = result.getString("sha256");
+                String sha256 = result.getString("configuration_sha256");
                 List<ConfigurationEntry> entries = new ArrayList<>();
-                try (PreparedStatement entriesStatement = connection.prepareStatement("""
-                        SELECT config_key, value_type, config_scope, value_text FROM application_configuration_entry
-                        WHERE application_id=? AND revision=? ORDER BY config_key, config_scope
-                        """)) {
+                try (PreparedStatement entriesStatement = connection.prepareStatement(
+                        """
+                                SELECT configuration_key, value_type, configuration_scope, value_text FROM deployment_unit_configuration_entry
+                                WHERE deployment_unit_id=? AND configuration_revision=? ORDER BY configuration_key, configuration_scope
+                                """)) {
                     entriesStatement.setString(1, applicationId);
                     entriesStatement.setLong(2, revision);
                     try (ResultSet entry = entriesStatement.executeQuery()) {
                         while (entry.next()) {
-                            entries.add(new ConfigurationEntry(entry.getString("config_key"),
-                                    ConfigurationScope.valueOf(entry.getString("config_scope")),
+                            entries.add(new ConfigurationEntry(entry.getString("configuration_key"),
+                                    ConfigurationScope.valueOf(entry.getString("configuration_scope")),
                                     value(entry.getString("value_type"), entry.getString("value_text"))));
                         }
                     }
@@ -169,13 +170,13 @@ public final class ConfigurationSnapshotRepository {
         save(connection, snapshot);
         try (PreparedStatement statement = connection.prepareStatement("""
                 SELECT configuration_revision, configuration_sha256
-                FROM application_release_configuration_binding
-                WHERE application_id=? AND release_identity=?
+                FROM deployment_unit_release_binding
+                WHERE deployment_unit_id=? AND release_sha256=?
                 """)) {
             statement.setString(1, application);
             statement.setString(2, release);
             try (ResultSet result = statement.executeQuery()) {
-                if (result.next()) {
+                if (result.next() && result.getObject("configuration_revision") != null) {
                     if (result.getLong("configuration_revision") != snapshot.revision()
                             || !result.getString("configuration_sha256").equals(snapshot.sha256())) {
                         throw new SQLException("release configuration bindings are immutable");
@@ -184,11 +185,15 @@ public final class ConfigurationSnapshotRepository {
                 }
             }
         }
-        try (PreparedStatement statement = connection.prepareStatement("""
-                INSERT INTO application_release_configuration_binding (
-                    application_id, release_identity, configuration_revision, configuration_sha256
-                ) VALUES (?, ?, ?, ?)
-                """)) {
+        try (PreparedStatement statement = connection.prepareStatement(
+                """
+                        INSERT INTO deployment_unit_release_binding (
+                            deployment_unit_id, release_sha256, configuration_revision, configuration_sha256
+                        ) VALUES (?, ?, ?, ?)
+                        ON CONFLICT(deployment_unit_id,release_sha256) DO UPDATE SET
+                          configuration_revision=excluded.configuration_revision,configuration_sha256=excluded.configuration_sha256
+                        WHERE deployment_unit_release_binding.configuration_revision IS NULL
+                        """)) {
             statement.setString(1, application);
             statement.setString(2, release);
             statement.setLong(3, snapshot.revision());
@@ -218,8 +223,8 @@ public final class ConfigurationSnapshotRepository {
             return;
         }
         try (PreparedStatement statement = connection.prepareStatement("""
-                INSERT INTO application_configuration_snapshot (
-                    application_id, revision, schema_version, created_at, sha256
+                INSERT INTO deployment_unit_configuration_snapshot (
+                    deployment_unit_id, configuration_revision, schema_version, created_at, configuration_sha256
                 ) VALUES (?, ?, ?, ?, ?)
                 """)) {
             statement.setString(1, snapshot.applicationId());
@@ -229,11 +234,12 @@ public final class ConfigurationSnapshotRepository {
             statement.setString(5, snapshot.sha256());
             statement.executeUpdate();
         }
-        try (PreparedStatement statement = connection.prepareStatement("""
-                INSERT INTO application_configuration_entry (
-                    application_id, revision, config_key, value_type, config_scope, value_text
-                ) VALUES (?, ?, ?, ?, ?, ?)
-                """)) {
+        try (PreparedStatement statement = connection.prepareStatement(
+                """
+                        INSERT INTO deployment_unit_configuration_entry (
+                            deployment_unit_id, configuration_revision, configuration_key, value_type, configuration_scope, value_text
+                        ) VALUES (?, ?, ?, ?, ?, ?)
+                        """)) {
             for (ConfigurationEntry entry : snapshot.entries()) {
                 statement.setString(1, snapshot.applicationId());
                 statement.setLong(2, snapshot.revision());

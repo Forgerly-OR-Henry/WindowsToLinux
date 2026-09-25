@@ -90,19 +90,16 @@ public final class AutomaticDatabaseUseCase {
      * @param root root directory defining the filesystem boundary / 定义文件系统边界的根目录
      * @param applicationId managed application identifier / 受管应用标识
      * @param assessment the typed static assessment / 类型化静态评估
-     * @param master master-password buffer used for the scoped secret operation / 限定秘密操作使用的主密码缓冲区
      * @param interaction caller-owned progress, confirmation and input callbacks / 调用方持有的进度、确认及输入回调
      * @return assessment from the supplied complete inputs inputs / 根据所提供完整输入集合输入构建评估
      * @throws Exception if the delegated operation or caller-provided interaction fails / 被委派操作或调用方提供的交互失败时
      */
     public DatabaseProjectInspector.Assessment completeInputs(Path root, String applicationId,
-            DatabaseProjectInspector.Assessment assessment, char[] master, AutomaticDeploymentInteraction interaction)
+            DatabaseProjectInspector.Assessment assessment, AutomaticDeploymentInteraction interaction)
             throws Exception {
-        try {
+        {
             return new NativeDatabasePreparationService(null).completeInputs(root, applicationId, assessment,
-                    withAi(master, interaction));
-        } finally {
-            Arrays.fill(master, '\0');
+                    withAi(interaction));
         }
     }
 
@@ -114,7 +111,6 @@ public final class AutomaticDatabaseUseCase {
      * @param applicationId managed application identifier / 受管应用标识
      * @param profile connection or provider settings supplied to the operation / 提供给操作的连接或提供者设置
      * @param assessment the typed static assessment / 类型化静态评估
-     * @param master master-password buffer used for the scoped secret operation / 限定秘密操作使用的主密码缓冲区
      * @param interaction caller-owned progress, confirmation and input callbacks / 调用方持有的进度、确认及输入回调
      * @param fingerprint pinned or freshly observed host-key fingerprint / 固定或新近观测的主机密钥指纹
      * @param progress progress / 进度
@@ -122,15 +118,13 @@ public final class AutomaticDatabaseUseCase {
      * @throws Exception if the delegated operation or caller-provided interaction fails / 被委派操作或调用方提供的交互失败时
      */
     public AutomaticDatabasePreparation prepare(Path root, String applicationId, ServerProfile profile,
-            DatabaseProjectInspector.Assessment assessment, char[] master, AutomaticDeploymentInteraction interaction,
+            DatabaseProjectInspector.Assessment assessment, AutomaticDeploymentInteraction interaction,
             Predicate<String> fingerprint, Consumer<LocalizedMessage> progress) throws Exception {
-        try (var store = stores.open(profile.credentialMode(), master);
+        try (var store = stores.open();
                 var session = gateway.connect(profile.endpoint(), servers.loadPassword(profile, store),
                         servers.hostKeyVerifier(profile, fingerprint))) {
-            return new NativeDatabasePreparationService(credentials(profile, master)).prepare(root, applicationId,
-                    profile.id(), session.nativeDatabases(), assessment, interaction, progress);
-        } finally {
-            Arrays.fill(master, '\0');
+            return new NativeDatabasePreparationService(credentials(profile)).prepare(root, applicationId, profile.id(),
+                    session.nativeDatabases(), assessment, interaction, progress);
         }
     }
 
@@ -138,11 +132,10 @@ public final class AutomaticDatabaseUseCase {
      * Returns the contract with the supplied ai applied.
      * <p>返回应用所提供AI后的契约。
      *
-     * @param master master-password buffer used for the scoped secret operation / 限定秘密操作使用的主密码缓冲区
      * @param delegate delegate / 被委派对象
      * @return the contract with the supplied ai applied / 应用所提供AI后的契约
      */
-    private AutomaticDeploymentInteraction withAi(char[] master, AutomaticDeploymentInteraction delegate) {
+    private AutomaticDeploymentInteraction withAi(AutomaticDeploymentInteraction delegate) {
         if (gold.debug.windowstolinux.app.service.ai.DeploymentAiScope.current().isPresent())
             return delegate;
         return new AutomaticDeploymentInteraction() {
@@ -155,7 +148,7 @@ public final class AutomaticDatabaseUseCase {
              */
             @Override
             public Optional<Map<String, String>> requestInputs(List<DeploymentInputField> fields) {
-                return Optional.of(completion.resolve(fields, master, delegate));
+                return Optional.of(completion.resolve(fields, delegate));
             }
 
             /**
@@ -202,10 +195,9 @@ public final class AutomaticDatabaseUseCase {
      * <p>根据所提供凭据输入构建数据库凭据端口。
      *
      * @param profile connection or provider settings supplied to the operation / 提供给操作的连接或提供者设置
-     * @param master master-password buffer used for the scoped secret operation / 限定秘密操作使用的主密码缓冲区
      * @return database credential port from the supplied credentials inputs / 根据所提供凭据输入构建数据库凭据端口
      */
-    private DatabaseCredentialPort credentials(ServerProfile profile, char[] master) {
+    private DatabaseCredentialPort credentials(ServerProfile profile) {
         return new DatabaseCredentialPort() {
             /**
              * Finds the latest consecutively registered secret revision, or returns empty when revision one is absent.
@@ -237,7 +229,7 @@ public final class AutomaticDatabaseUseCase {
             @Override
             public char[] load(SecretReference reference) throws Exception {
                 var stored = secretMetadata.findRevision(reference).orElseThrow();
-                try (var store = stores.open(stored.credentialMode(), master)) {
+                try (var store = stores.open()) {
                     return store.read(stored.credentialKey())
                             .orElseThrow(() -> new IllegalStateException("Saved DB credential is missing"));
                 }
@@ -256,8 +248,7 @@ public final class AutomaticDatabaseUseCase {
                 String digest = HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256")
                         .digest(reference.identifier().getBytes(java.nio.charset.StandardCharsets.UTF_8)));
                 configurations.saveSecretRevision(new StoredApplicationSecretRevision(reference,
-                        "application-secret/" + digest + "/" + reference.revision(), profile.credentialMode(),
-                        Instant.now()), profile.credentialMode(), master.clone(), value);
+                        "application-secret/" + digest + "/" + reference.revision(), Instant.now()), value);
             }
         };
     }

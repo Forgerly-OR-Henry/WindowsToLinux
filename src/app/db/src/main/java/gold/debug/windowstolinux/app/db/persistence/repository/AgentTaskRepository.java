@@ -37,12 +37,14 @@ public final class AgentTaskRepository {
             throw new IllegalArgumentException("invalid task digest");
         try (var c = connections.open();
                 var s = c.prepareStatement(
-                        "INSERT INTO deployment_agent_task(id,server_id,target_digest,automation_mode,approval_mode,configuration_digest,deployment_skill,approval_skill,state,started_at,updated_at,execution_semantics_version) VALUES(?,?,?,?,?,?,?,?,?,?,?,2)")) {
-            String now = Instant.now().toString();
+                        "INSERT INTO deployment_agent_task(task_id,server_profile_id,target_digest,automation_mode,approval_mode,configuration_digest,deployment_skill_id,approval_skill_id,task_state,started_at,updated_at,execution_semantics_version) VALUES(?,?,?,?,?,?,?,?,?,?,?,2)")) {
+            long now = Instant.now().toEpochMilli();
             String[] values = {id, server, target, mode.name(), approval.name(), configuration, deploymentSkill,
-                    approvalSkill, AgentTaskState.RUNNING.name(), now, now};
+                    approvalSkill, AgentTaskState.RUNNING.name()};
             for (int i = 0; i < values.length; i++)
                 s.setString(i + 1, values[i]);
+            s.setLong(10, now);
+            s.setLong(11, now);
             s.executeUpdate();
         }
     }
@@ -60,12 +62,12 @@ public final class AgentTaskRepository {
             throw new IllegalArgumentException("invalid task event");
         try (var c = connections.open();
                 var s = c.prepareStatement(
-                        "INSERT INTO deployment_agent_event(task_id,event_type,action_id,detail,created_at) VALUES(?,?,?,?,?)")) {
+                        "INSERT INTO deployment_agent_event(task_id,event_type,action_id,event_detail,created_at) VALUES(?,?,?,?,?)")) {
             s.setString(1, taskId);
             s.setString(2, type);
             s.setString(3, action);
             s.setString(4, detail);
-            s.setString(5, Instant.now().toString());
+            s.setLong(5, Instant.now().toEpochMilli());
             s.executeUpdate();
         }
     }
@@ -78,19 +80,20 @@ public final class AgentTaskRepository {
     public void state(String id, AgentTaskState state) throws SQLException {
         try (var c = connections.open()) {
             RepositoryTransactionExecutor.execute(c, () -> {
-                String now = Instant.now().toString();
-                try (var s = c.prepareStatement("UPDATE deployment_agent_task SET state=?,updated_at=? WHERE id=?")) {
+                long now = Instant.now().toEpochMilli();
+                try (var s = c.prepareStatement(
+                        "UPDATE deployment_agent_task SET task_state=?,updated_at=? WHERE task_id=?")) {
                     s.setString(1, state.name());
-                    s.setString(2, now);
+                    s.setLong(2, now);
                     s.setString(3, id);
                     if (s.executeUpdate() != 1)
                         throw new SQLException("task missing");
                 }
                 try (var s = c.prepareStatement(
-                        "INSERT INTO deployment_agent_event(task_id,event_type,action_id,detail,created_at) VALUES(?,'STATE','',?,?)")) {
+                        "INSERT INTO deployment_agent_event(task_id,event_type,action_id,event_detail,created_at) VALUES(?,'STATE','',?,?)")) {
                     s.setString(1, id);
                     s.setString(2, state.name());
-                    s.setString(3, now);
+                    s.setLong(3, now);
                     s.executeUpdate();
                 }
             });
@@ -103,8 +106,8 @@ public final class AgentTaskRepository {
     public void interruptUnfinished() throws SQLException {
         try (var c = connections.open();
                 var s = c.prepareStatement(
-                        "UPDATE deployment_agent_task SET state='INTERRUPTED',updated_at=? WHERE state IN ('RUNNING','PAUSE_REQUESTED','PAUSED','CANCEL_REQUESTED')")) {
-            s.setString(1, Instant.now().toString());
+                        "UPDATE deployment_agent_task SET task_state='INTERRUPTED',updated_at=? WHERE task_state IN ('RUNNING','PAUSE_REQUESTED','PAUSED','CANCEL_REQUESTED')")) {
+            s.setLong(1, Instant.now().toEpochMilli());
             s.executeUpdate();
         }
     }
@@ -127,12 +130,12 @@ public final class AgentTaskRepository {
     public List<String> unresolved(String server, String endpointDigest) throws SQLException {
         var ids = new ArrayList<String>();
         String sql = """
-                SELECT t.id FROM deployment_agent_task t WHERE (t.server_id=? OR EXISTS(SELECT 1 FROM deployment_agent_event target
-                WHERE target.task_id=t.id AND target.event_type='REMOTE_TARGET' AND target.detail=?)) AND
-                (t.state='UNKNOWN' OR EXISTS(SELECT 1 FROM deployment_agent_event e
-                WHERE e.task_id=t.id AND e.event_type IN ('EXECUTING','COMMAND_EXECUTING','PATCH_EXECUTING') AND NOT EXISTS
+                SELECT t.task_id FROM deployment_agent_task t WHERE (t.server_profile_id=? OR EXISTS(SELECT 1 FROM deployment_agent_event target
+                WHERE target.task_id=t.task_id AND target.event_type='REMOTE_TARGET' AND target.event_detail=?)) AND
+                (t.task_state='UNKNOWN' OR EXISTS(SELECT 1 FROM deployment_agent_event e
+                WHERE e.task_id=t.task_id AND e.event_type IN ('EXECUTING','COMMAND_EXECUTING','PATCH_EXECUTING') AND NOT EXISTS
                 (SELECT 1 FROM deployment_agent_event r WHERE r.task_id=e.task_id AND r.action_id=e.action_id
-                AND r.sequence>e.sequence AND ((e.event_type='EXECUTING' AND r.event_type IN ('RESULT','CANCELLED')) OR (e.event_type='COMMAND_EXECUTING' AND r.event_type IN ('COMMAND_RESULT','COMMAND_CANCELLED')) OR (e.event_type='PATCH_EXECUTING' AND r.event_type IN ('PATCH_RESULT','PATCH_CANCELLED')))))) ORDER BY t.started_at
+                AND r.event_id>e.event_id AND ((e.event_type='EXECUTING' AND r.event_type IN ('RESULT','CANCELLED')) OR (e.event_type='COMMAND_EXECUTING' AND r.event_type IN ('COMMAND_RESULT','COMMAND_CANCELLED')) OR (e.event_type='PATCH_EXECUTING' AND r.event_type IN ('PATCH_RESULT','PATCH_CANCELLED')))))) ORDER BY t.started_at
                 """;
         try (var c = connections.open(); var s = c.prepareStatement(sql)) {
             s.setString(1, server);
@@ -153,12 +156,12 @@ public final class AgentTaskRepository {
         var result = new ArrayList<Map<String, String>>();
         try (var c = connections.open();
                 var s = c.prepareStatement(
-                        "SELECT id,server_id,automation_mode,approval_mode,state,started_at,updated_at,execution_semantics_version FROM deployment_agent_task ORDER BY started_at DESC LIMIT 100");
+                        "SELECT task_id,server_profile_id,automation_mode,approval_mode,task_state,started_at,updated_at,execution_semantics_version FROM deployment_agent_task ORDER BY started_at DESC LIMIT 100");
                 var rows = s.executeQuery()) {
             while (rows.next()) {
                 var row = new LinkedHashMap<String, String>();
-                for (String key : List.of("id", "server_id", "automation_mode", "approval_mode", "state", "started_at",
-                        "updated_at", "execution_semantics_version"))
+                for (String key : List.of("task_id", "server_profile_id", "automation_mode", "approval_mode",
+                        "task_state", "started_at", "updated_at", "execution_semantics_version"))
                     row.put(key, rows.getString(key));
                 result.add(Map.copyOf(row));
             }
@@ -175,12 +178,12 @@ public final class AgentTaskRepository {
         var result = new ArrayList<Map<String, String>>();
         try (var c = connections.open();
                 var s = c.prepareStatement(
-                        "SELECT sequence,event_type,action_id,detail,created_at FROM deployment_agent_event WHERE task_id=? ORDER BY sequence LIMIT 1000")) {
+                        "SELECT event_id,event_type,action_id,event_detail,created_at FROM deployment_agent_event WHERE task_id=? ORDER BY event_id LIMIT 1000")) {
             s.setString(1, id);
             try (var rows = s.executeQuery()) {
                 while (rows.next()) {
                     var row = new LinkedHashMap<String, String>();
-                    for (String key : List.of("sequence", "event_type", "action_id", "detail", "created_at"))
+                    for (String key : List.of("event_id", "event_type", "action_id", "event_detail", "created_at"))
                         row.put(key, rows.getString(key));
                     result.add(Map.copyOf(row));
                 }
@@ -197,12 +200,12 @@ public final class AgentTaskRepository {
     public Optional<Map<String, String>> find(String id) throws SQLException {
         try (var c = connections.open();
                 var s = c.prepareStatement(
-                        "SELECT server_id,target_digest,state FROM deployment_agent_task WHERE id=?")) {
+                        "SELECT server_profile_id,target_digest,task_state FROM deployment_agent_task WHERE task_id=?")) {
             s.setString(1, id);
             try (var rows = s.executeQuery()) {
                 return rows.next()
-                        ? Optional.of(Map.of("server_id", rows.getString(1), "target_digest", rows.getString(2),
-                                "state", rows.getString(3)))
+                        ? Optional.of(Map.of("server_profile_id", rows.getString(1), "target_digest", rows.getString(2),
+                                "task_state", rows.getString(3)))
                         : Optional.empty();
             }
         }

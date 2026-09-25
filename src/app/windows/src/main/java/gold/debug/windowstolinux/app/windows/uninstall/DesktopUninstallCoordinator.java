@@ -97,9 +97,9 @@ public final class DesktopUninstallCoordinator {
             DesktopUninstallPort.BoundaryEvidence boundaries = port.verifyManagedBoundaries(request);
             boolean deleteData = decision == DesktopUninstallDecisionType.DELETE_DATA_AND_CREDENTIALS;
             boolean completeBoundary = boundaries.jpackageLayoutVerified() && boundaries.installMarkerVerified()
-                    && (!deleteData || boundaries.dataMarkerVerified() && boundaries.credentialNamespaceVerified());
+                    && (!deleteData || boundaries.dataMarkerVerified());
             require(completeBoundary, DesktopUninstallFailureType.BOUNDARY_INVALID,
-                    "jpackage, data marker or credential namespace ownership is incomplete");
+                    "jpackage or data marker ownership is incomplete");
             events.add(success(DesktopUninstallState.BOUNDARIES_VERIFIED, boundaries.evidence()));
 
             List<String> residuals = new ArrayList<>();
@@ -111,12 +111,8 @@ public final class DesktopUninstallCoordinator {
                 state = DesktopUninstallState.DATA_REMOVED;
                 DesktopUninstallPort.RemovalEvidence data = port.removeData(request);
                 addRemoval(events, DesktopUninstallState.DATA_REMOVED, data, residuals);
-                state = DesktopUninstallState.CREDENTIALS_REMOVED;
-                DesktopUninstallPort.RemovalEvidence credentials = port.removeCredentials(request);
-                addRemoval(events, DesktopUninstallState.CREDENTIALS_REMOVED, credentials, residuals);
             } else {
                 retained.add(request.dataRoot().toString());
-                retained.add(request.credentialNamespace());
             }
             if (!residuals.isEmpty()) {
                 FailureDescriptor incomplete = FailureDescriptor

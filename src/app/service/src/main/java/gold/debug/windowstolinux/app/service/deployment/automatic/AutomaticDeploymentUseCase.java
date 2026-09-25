@@ -115,7 +115,6 @@ public final class AutomaticDeploymentUseCase {
      * Freezes the source, resolves its runtime, and executes a single reviewed transaction. / 冻结源码、解析运行时并执行一次已审阅事务。
      *
      * @param request reviewed inputs for the requested operation / 所请求操作的已审阅输入
-     * @param master master-password buffer used for the scoped secret operation / 限定秘密操作使用的主密码缓冲区
      * @param interaction caller-owned progress, confirmation and input callbacks / 调用方持有的进度、确认及输入回调
      * @param fingerprint pinned or freshly observed host-key fingerprint / 固定或新近观测的主机密钥指纹
      * @param progress progress / 进度
@@ -123,7 +122,7 @@ public final class AutomaticDeploymentUseCase {
      * @throws Exception if the delegated operation or caller-provided interaction fails / 被委派操作或调用方提供的交互失败时
      * @throws IllegalStateException if the required state or runtime facility is unavailable / 所需状态或运行设施不可用时
      */
-    public AutomaticDeploymentOutcome deploy(AutomaticDeploymentRequest request, char[] master,
+    public AutomaticDeploymentOutcome deploy(AutomaticDeploymentRequest request,
             AutomaticDeploymentInteraction interaction, Predicate<String> fingerprint,
             Consumer<LocalizedMessage> progress) throws Exception {
         if (request.automationMode() == DeploymentAutomationMode.AGENT)
@@ -132,7 +131,7 @@ public final class AutomaticDeploymentUseCase {
             throw new IllegalStateException("assisted deployment requires checkpoint advisor");
         var lock = locks.forServer(request.server().id());
         if (!lock.tryLock()) {
-            Arrays.fill(master, '\0');
+
             throw new IllegalStateException("server already has an active operation");
         }
         try {
@@ -140,16 +139,14 @@ public final class AutomaticDeploymentUseCase {
             if (request.git().isPresent()) {
                 GitSnapshot git = source.snapshotGit(request.git().orElseThrow());
                 try (SourceDirectorySnapshot snapshot = source.snapshot(git)) {
-                    return execute(request, snapshot.directory(), Optional.of(git), master, interaction, fingerprint,
-                            progress);
+                    return execute(request, snapshot.directory(), Optional.of(git), interaction, fingerprint, progress);
                 }
             }
             try (SourceDirectorySnapshot snapshot = source.snapshot(request.directory().orElseThrow())) {
-                return execute(request, snapshot.directory(), Optional.empty(), master, interaction, fingerprint,
-                        progress);
+                return execute(request, snapshot.directory(), Optional.empty(), interaction, fingerprint, progress);
             }
         } finally {
-            Arrays.fill(master, '\0');
+
             lock.unlock();
         }
     }
@@ -161,7 +158,6 @@ public final class AutomaticDeploymentUseCase {
      * @param request reviewed inputs for the requested operation / 所请求操作的已审阅输入
      * @param root root directory defining the filesystem boundary / 定义文件系统边界的根目录
      * @param git Git source / Git 源码
-     * @param master master-password buffer used for the scoped secret operation / 限定秘密操作使用的主密码缓冲区
      * @param interaction caller-owned progress, confirmation and input callbacks / 调用方持有的进度、确认及输入回调
      * @param fingerprint pinned or freshly observed host-key fingerprint / 固定或新近观测的主机密钥指纹
      * @param progress progress / 进度
@@ -169,7 +165,7 @@ public final class AutomaticDeploymentUseCase {
      * @throws Exception if the delegated operation or caller-provided interaction fails / 被委派操作或调用方提供的交互失败时
      */
     private AutomaticDeploymentOutcome execute(AutomaticDeploymentRequest request, Path root, Optional<GitSnapshot> git,
-            char[] master, AutomaticDeploymentInteraction interaction, Predicate<String> fingerprint,
+            AutomaticDeploymentInteraction interaction, Predicate<String> fingerprint,
             Consumer<LocalizedMessage> progress) throws Exception {
         if (boundary != null)
             boundary.freeze(root);
@@ -177,7 +173,7 @@ public final class AutomaticDeploymentUseCase {
             assistance.source(new gold.debug.windowstolinux.shared.source.browse.SourceBrowser(root));
         var resolved = operation(AgentToolType.ANALYZE_SOURCE, Map.of("effect",
                 "Analyze private source snapshot; request unresolved nonsecret inputs; never modify original source"),
-                () -> resolveInputs(request, root, master, interaction, progress));
+                () -> resolveInputs(request, root, interaction, progress));
         var sourceFacts = Map.of("components",
                 String.join(",", resolved.discovered().stream().map(DiscoveredProjectComponent::id).toList()),
                 "sourceRevisions",
@@ -194,8 +190,7 @@ public final class AutomaticDeploymentUseCase {
         progress.accept(LocalizedMessage.of("auto.progress.server"));
         var capabilities = operation(AgentToolType.VERIFY_SERVER,
                 Map.of("effect", "Read host identity and supported deployment capabilities"),
-                () -> service.verifyServer(request.server(), request.server().credentialMode(), master.clone(),
-                        fingerprint));
+                () -> service.verifyServer(request.server(), fingerprint));
         if (capabilities != null)
             serverFacts = Map.of("observedOs", capabilities.operatingSystem(), "observedArchitecture",
                     capabilities.architecture(), "helperVersion",
@@ -205,8 +200,7 @@ public final class AutomaticDeploymentUseCase {
             serverFacts.forEach(boundary::fact);
             boundary.register("server-capabilities", AgentToolType.VERIFY_SERVER,
                     Map.of("effect", "Read current server deployment capabilities"), () -> true, () -> {
-                        var observed = service.verifyServer(request.server(), request.server().credentialMode(),
-                                master.clone(), fingerprint);
+                        var observed = service.verifyServer(request.server(), fingerprint);
                         return new gold.debug.windowstolinux.shared.model.agent.AgentObservation(true, true,
                                 Map.of("operatingSystem", observed.operatingSystem(), "architecture",
                                         observed.architecture(), "availableBytes",
@@ -215,11 +209,9 @@ public final class AutomaticDeploymentUseCase {
             boundary.register("environment-preparation", AgentToolType.PREPARE_ENVIRONMENT, Map.of("effect",
                     "Recheck and prepare existing supported dependencies and helper; no unrelated packages or arbitrary shell"),
                     () -> true, () -> {
-                        var before = service.verifyServer(request.server(), request.server().credentialMode(),
-                                master.clone(), fingerprint);
-                        prepareEnvironmentOnce(request, master, fingerprint, interaction);
-                        var after = service.verifyServer(request.server(), request.server().credentialMode(),
-                                master.clone(), fingerprint);
+                        var before = service.verifyServer(request.server(), fingerprint);
+                        prepareEnvironmentOnce(request, fingerprint, interaction);
+                        var after = service.verifyServer(request.server(), fingerprint);
                         boolean changed = environmentImproved(before, after);
                         return new gold.debug.windowstolinux.shared.model.agent.AgentObservation(true, true,
                                 Map.of("environment", "prepared", "changed", Boolean.toString(changed)));
@@ -232,8 +224,8 @@ public final class AutomaticDeploymentUseCase {
             if (boundary != null)
                 boundary.fact("validatedInputsDigest", inputRevision);
             var outcome = discovered.size() == 1
-                    ? deploySingle(request, root, git, master, interaction, fingerprint, progress, resolved, server)
-                    : deployMultiple(request, root, git, master, interaction, fingerprint, progress, resolved, server);
+                    ? deploySingle(request, root, git, interaction, fingerprint, progress, resolved, server)
+                    : deployMultiple(request, root, git, interaction, fingerprint, progress, resolved, server);
             if (outcome.status() == DeploymentStatus.SUCCEEDED
                     || outcome.status() == DeploymentStatus.MANUAL_RECOVERY_REQUIRED || assistance == null
                     || attempt >= 2 || !assistance.canRecover())
@@ -250,8 +242,7 @@ public final class AutomaticDeploymentUseCase {
                     && boundary.recover(failureEvidence);
             if (!corrected && !recovered)
                 return outcome;
-            var observed = service.verifyServer(request.server(), request.server().credentialMode(), master.clone(),
-                    fingerprint);
+            var observed = service.verifyServer(request.server(), fingerprint);
             if (observed != null)
                 serverFacts = Map.of("observedOs", observed.operatingSystem(), "observedArchitecture",
                         observed.architecture(), "helperVersion",
@@ -368,14 +359,13 @@ public final class AutomaticDeploymentUseCase {
      *
      * @param request reviewed inputs for the requested operation / 所请求操作的已审阅输入
      * @param root root directory defining the filesystem boundary / 定义文件系统边界的根目录
-     * @param master master-password buffer used for the scoped secret operation / 限定秘密操作使用的主密码缓冲区
      * @param interaction caller-owned progress, confirmation and input callbacks / 调用方持有的进度、确认及输入回调
      * @param progress progress / 进度
      * @return constructed or resolved resolved inputs / 构造或解析得到的已解析输入集合
      * @throws Exception if the delegated operation or caller-provided interaction fails / 被委派操作或调用方提供的交互失败时
      * @throws IllegalArgumentException if an input violates the constraints checked by this contract / 输入违反当前契约检查的约束时
      */
-    private ResolvedInputs resolveInputs(AutomaticDeploymentRequest request, Path root, char[] master,
+    private ResolvedInputs resolveInputs(AutomaticDeploymentRequest request, Path root,
             AutomaticDeploymentInteraction interaction, Consumer<LocalizedMessage> progress) throws Exception {
         progress.accept(LocalizedMessage.of("auto.progress.discovery"));
         List<DiscoveredProjectComponent> discovered = new ProjectComponentDiscovery().discover(root);
@@ -396,7 +386,7 @@ public final class AutomaticDeploymentUseCase {
             else
                 questions.add(AutomaticRuntimeResolver.field(component.id(), "type", "", types));
         }
-        answerWithAi(questions, selection, interaction, master, request.automationMode());
+        answerWithAi(questions, selection, interaction, request.automationMode());
         Map<String, ReviewedSourcePreparation> preparations = new LinkedHashMap<>();
         Map<String, gold.debug.windowstolinux.shared.standard.analyze.ecosystem.db.DatabaseProjectInspector.Assessment> databaseAssessments = new LinkedHashMap<>();
         Map<String, Map<String, String>> inputs = new LinkedHashMap<>();
@@ -438,7 +428,7 @@ public final class AutomaticDeploymentUseCase {
                 questions.add(AutomaticRuntimeResolver.field(component.id(), "dependencies", "", List.of()));
         }
         Map<String, String> answers = new LinkedHashMap<>();
-        answerWithAi(questions, answers, interaction, master, request.automationMode());
+        answerWithAi(questions, answers, interaction, request.automationMode());
         answers.forEach((key, value) -> {
             String[] parts = key.split("/", 2);
             inputs.get(parts[0]).put(parts[1], value);
@@ -462,7 +452,7 @@ public final class AutomaticDeploymentUseCase {
                 databaseAssessments.put(component.id(),
                         service.completeAutomaticDatabaseInputs(root.resolve(component.relativeRoot()),
                                 preparations.get(component.id()).assessment().facts().orElseThrow().applicationId(),
-                                assessment, master.clone(), interaction));
+                                assessment, interaction));
             }
         }
         return new ResolvedInputs(discovered, preparations, databaseAssessments, inputs, healthOwner);
@@ -548,7 +538,6 @@ public final class AutomaticDeploymentUseCase {
      * @param request reviewed inputs for the requested operation / 所请求操作的已审阅输入
      * @param root root directory defining the filesystem boundary / 定义文件系统边界的根目录
      * @param git Git source / Git 源码
-     * @param master master-password buffer used for the scoped secret operation / 限定秘密操作使用的主密码缓冲区
      * @param interaction caller-owned progress, confirmation and input callbacks / 调用方持有的进度、确认及输入回调
      * @param fingerprint pinned or freshly observed host-key fingerprint / 固定或新近观测的主机密钥指纹
      * @param progress progress / 进度
@@ -558,8 +547,8 @@ public final class AutomaticDeploymentUseCase {
      * @throws Exception if the delegated operation or caller-provided interaction fails / 被委派操作或调用方提供的交互失败时
      */
     private AutomaticDeploymentOutcome deploySingle(AutomaticDeploymentRequest request, Path root,
-            Optional<GitSnapshot> git, char[] master, AutomaticDeploymentInteraction interaction,
-            Predicate<String> fingerprint, Consumer<LocalizedMessage> progress, ResolvedInputs resolved,
+            Optional<GitSnapshot> git, AutomaticDeploymentInteraction interaction, Predicate<String> fingerprint,
+            Consumer<LocalizedMessage> progress, ResolvedInputs resolved,
             gold.debug.windowstolinux.shared.model.server.ServerIdentity server) throws Exception {
         var discovered = resolved.discovered();
         var preparations = resolved.preparations();
@@ -574,7 +563,7 @@ public final class AutomaticDeploymentUseCase {
         runtime.access(values, server.host());
         limits(values);
         var db = prepareDatabases(root.resolve(discovered.getFirst().relativeRoot()), id,
-                databaseAssessments.get(component), request, values, master, interaction, fingerprint, progress);
+                databaseAssessments.get(component), request, values, interaction, fingerprint, progress);
         if (db.schemaReview().isPresent())
             prepared = source.prepareWithDatabaseReview(root.resolve(discovered.getFirst().relativeRoot()),
                     DeploymentProjectType.valueOf(values.get("type")), db.schemaReview().orElseThrow());
@@ -586,7 +575,7 @@ public final class AutomaticDeploymentUseCase {
         service.planDeployment(reviewed);
         if (boundary != null
                 && service instanceof gold.debug.windowstolinux.app.service.contract.ManagedApplicationFacade managed)
-            AssistedManagedToolCatalog.register(boundary, managed, request.server(), Set.of(id), master);
+            AssistedManagedToolCatalog.register(boundary, managed, request.server(), Set.of(id));
         service.saveDeploymentConfigurationSnapshot(reviewed.configuration());
         var description = AutomaticActionDescription.deployment(reviewed);
         var preflightEvidence = new LinkedHashMap<>(preparationEvidence(resolved));
@@ -594,10 +583,10 @@ public final class AutomaticDeploymentUseCase {
         preflight(preflightEvidence);
         progress.accept(LocalizedMessage.of("auto.progress.environment"));
         if (db.bindings().isEmpty())
-            prepareEnvironment(request, master, fingerprint, interaction);
+            prepareEnvironment(request, fingerprint, interaction);
         progress.accept(LocalizedMessage.of("auto.progress.deploy"));
-        var outcome = operation(AgentToolType.DEPLOY_TRANSACTION, description, () -> service
-                .deployAutomaticallyReviewed(reviewed, request.server(), master.clone(), fingerprint, progress));
+        var outcome = operation(AgentToolType.DEPLOY_TRANSACTION, description,
+                () -> service.deployAutomaticallyReviewed(reviewed, request.server(), fingerprint, progress));
         failureEvidence = DeploymentDiagnosticEvidence.from(outcome);
         return new AutomaticDeploymentOutcome(id, outcome.status(),
                 outcome.handoff().map(value -> Map.of(component, value)).orElse(Map.of()));
@@ -610,7 +599,6 @@ public final class AutomaticDeploymentUseCase {
      * @param request reviewed inputs for the requested operation / 所请求操作的已审阅输入
      * @param root root directory defining the filesystem boundary / 定义文件系统边界的根目录
      * @param git Git source / Git 源码
-     * @param master master-password buffer used for the scoped secret operation / 限定秘密操作使用的主密码缓冲区
      * @param interaction caller-owned progress, confirmation and input callbacks / 调用方持有的进度、确认及输入回调
      * @param fingerprint pinned or freshly observed host-key fingerprint / 固定或新近观测的主机密钥指纹
      * @param progress progress / 进度
@@ -621,8 +609,8 @@ public final class AutomaticDeploymentUseCase {
      * @throws IllegalArgumentException if an input violates the constraints checked by this contract / 输入违反当前契约检查的约束时
      */
     private AutomaticDeploymentOutcome deployMultiple(AutomaticDeploymentRequest request, Path root,
-            Optional<GitSnapshot> git, char[] master, AutomaticDeploymentInteraction interaction,
-            Predicate<String> fingerprint, Consumer<LocalizedMessage> progress, ResolvedInputs resolved,
+            Optional<GitSnapshot> git, AutomaticDeploymentInteraction interaction, Predicate<String> fingerprint,
+            Consumer<LocalizedMessage> progress, ResolvedInputs resolved,
             gold.debug.windowstolinux.shared.model.server.ServerIdentity server) throws Exception {
         var discovered = resolved.discovered();
         var preparations = resolved.preparations();
@@ -662,7 +650,7 @@ public final class AutomaticDeploymentUseCase {
         for (var component : graph.components()) {
             var db = prepareDatabases(component.sourceRoot(), component.facts().applicationId(),
                     databaseAssessments.get(component.componentId()), request, inputs.get(component.componentId()),
-                    master, interaction, fingerprint, progress);
+                    interaction, fingerprint, progress);
             databases.put(component.componentId(), db);
             db.schemaReview().ifPresent(review -> databaseReviews.put(component.componentId(), review));
         }
@@ -691,7 +679,7 @@ public final class AutomaticDeploymentUseCase {
         if (boundary != null
                 && service instanceof gold.debug.windowstolinux.app.service.contract.ManagedApplicationFacade managed)
             AssistedManagedToolCatalog.register(boundary, managed, request.server(), reviewed.components().stream()
-                    .map(c -> c.application().id()).collect(java.util.stream.Collectors.toSet()), master);
+                    .map(c -> c.application().id()).collect(java.util.stream.Collectors.toSet()));
         for (var component : reviewed.components()) {
             service.saveDeploymentConfigurationSnapshot(component.request().configuration());
         }
@@ -700,10 +688,10 @@ public final class AutomaticDeploymentUseCase {
         preflightEvidence.putAll(description);
         preflight(preflightEvidence);
         progress.accept(LocalizedMessage.of("auto.progress.environment"));
-        prepareEnvironment(request, master, fingerprint, interaction);
+        prepareEnvironment(request, fingerprint, interaction);
         progress.accept(LocalizedMessage.of("auto.progress.deploy"));
-        var result = operation(AgentToolType.DEPLOY_TRANSACTION, description, () -> service
-                .deployAutomaticallyReviewed(reviewed, request.server(), master.clone(), fingerprint, progress));
+        var result = operation(AgentToolType.DEPLOY_TRANSACTION, description,
+                () -> service.deployAutomaticallyReviewed(reviewed, request.server(), fingerprint, progress));
         failureEvidence = DeploymentDiagnosticEvidence.from(result);
         Map<String, DeploymentHandoff> handoffs = new LinkedHashMap<>();
         if (result.status() == DeploymentStatus.SUCCEEDED)
@@ -762,7 +750,6 @@ public final class AutomaticDeploymentUseCase {
      * @param assessment the typed static assessment / 类型化静态评估
      * @param request reviewed inputs for the requested operation / 所请求操作的已审阅输入
      * @param values ordered contents supplied to the current conversion or validation / 提供给当前转换或校验的有序内容
-     * @param master master-password buffer used for the scoped secret operation / 限定秘密操作使用的主密码缓冲区
      * @param interaction caller-owned progress, confirmation and input callbacks / 调用方持有的进度、确认及输入回调
      * @param fingerprint pinned or freshly observed host-key fingerprint / 固定或新近观测的主机密钥指纹
      * @param progress progress / 进度
@@ -772,9 +759,8 @@ public final class AutomaticDeploymentUseCase {
      */
     private AutomaticDatabasePreparation prepareDatabases(Path root, String id,
             gold.debug.windowstolinux.shared.standard.analyze.ecosystem.db.DatabaseProjectInspector.Assessment assessment,
-            AutomaticDeploymentRequest request, Map<String, String> values, char[] master,
-            AutomaticDeploymentInteraction interaction, Predicate<String> fingerprint,
-            Consumer<LocalizedMessage> progress) throws Exception {
+            AutomaticDeploymentRequest request, Map<String, String> values, AutomaticDeploymentInteraction interaction,
+            Predicate<String> fingerprint, Consumer<LocalizedMessage> progress) throws Exception {
         if (preparedDatabases.containsKey(id))
             return preparedDatabases.get(id);
         if (assessment.databases().isEmpty() && !assessment.unknownDatabase())
@@ -791,12 +777,12 @@ public final class AutomaticDeploymentUseCase {
             throw new IllegalArgumentException(
                     "native database access from isolated containers requires an explicit reachable database binding; configure the DB binding in advanced options");
         progress.accept(LocalizedMessage.of("auto.progress.environment"));
-        prepareEnvironment(request, master, fingerprint, interaction);
+        prepareEnvironment(request, fingerprint, interaction);
         var prepared = operation(AgentToolType.PREPARE_DATABASE, Map.of("application", id, "effect",
                 "Prepare only the declared reviewed database bindings; preserve existing data unless separately authorized",
                 "assessmentDigest", AgentAction.digest(assessment.toString())),
-                () -> service.prepareAutomaticDatabases(root, id, request.server(), assessment, master.clone(),
-                        interaction, fingerprint, progress));
+                () -> service.prepareAutomaticDatabases(root, id, request.server(), assessment, interaction,
+                        fingerprint, progress));
         preparedDatabases.put(id, prepared);
         return prepared;
     }
@@ -806,12 +792,11 @@ public final class AutomaticDeploymentUseCase {
      * <p>准备环境。
      *
      * @param request reviewed inputs for the requested operation / 所请求操作的已审阅输入
-     * @param master master-password buffer used for the scoped secret operation / 限定秘密操作使用的主密码缓冲区
      * @param fingerprint pinned or freshly observed host-key fingerprint / 固定或新近观测的主机密钥指纹
      * @param interaction caller-owned progress, confirmation and input callbacks / 调用方持有的进度、确认及输入回调
      * @throws Exception if the delegated operation or caller-provided interaction fails / 被委派操作或调用方提供的交互失败时
      */
-    private void prepareEnvironment(AutomaticDeploymentRequest request, char[] master, Predicate<String> fingerprint,
+    private void prepareEnvironment(AutomaticDeploymentRequest request, Predicate<String> fingerprint,
             AutomaticDeploymentInteraction interaction) throws Exception {
         if (environmentPrepared)
             return;
@@ -822,7 +807,7 @@ public final class AutomaticDeploymentUseCase {
         operation(AgentToolType.PREPARE_ENVIRONMENT, Map.of("effect",
                 "Install supported deployment tools and scoped privileged helper; separately review system-security preparation"),
                 () -> {
-                    prepareEnvironmentOnce(request, master, fingerprint, interaction);
+                    prepareEnvironmentOnce(request, fingerprint, interaction);
                     return null;
                 });
         environmentPrepared = true;
@@ -833,15 +818,13 @@ public final class AutomaticDeploymentUseCase {
      * <p>准备环境Once。
      *
      * @param request reviewed inputs for the requested operation / 所请求操作的已审阅输入
-     * @param master master-password buffer used for the scoped secret operation / 限定秘密操作使用的主密码缓冲区
      * @param fingerprint pinned or freshly observed host-key fingerprint / 固定或新近观测的主机密钥指纹
      * @param interaction caller-owned progress, confirmation and input callbacks / 调用方持有的进度、确认及输入回调
      * @throws Exception if the delegated operation or caller-provided interaction fails / 被委派操作或调用方提供的交互失败时
      */
-    private void prepareEnvironmentOnce(AutomaticDeploymentRequest request, char[] master,
-            Predicate<String> fingerprint, AutomaticDeploymentInteraction interaction) throws Exception {
-        service.prepareEnvironmentWithStoredPassword(request.server(), request.server().credentialMode(),
-                master.clone(), fingerprint, true,
+    private void prepareEnvironmentOnce(AutomaticDeploymentRequest request, Predicate<String> fingerprint,
+            AutomaticDeploymentInteraction interaction) throws Exception {
+        service.prepareEnvironmentWithStoredPassword(request.server(), fingerprint, true,
                 plan -> interaction.confirm("environment.system.confirm", Map.of("serverId", request.server().id(),
                         "host", request.server().host(), "security", plan.securityState().name(), "reboot",
                         plan.state() == gold.debug.windowstolinux.shared.model.server.security.SelinuxPreparationState.UNPREPARED
@@ -910,11 +893,10 @@ public final class AutomaticDeploymentUseCase {
      * @param fields allowed or requested input field definitions / 允许或请求的输入字段定义
      * @param values ordered contents supplied to the current conversion or validation / 提供给当前转换或校验的有序内容
      * @param interaction caller-owned progress, confirmation and input callbacks / 调用方持有的进度、确认及输入回调
-     * @param master master-password buffer used for the scoped secret operation / 限定秘密操作使用的主密码缓冲区
      * @param mode task deployment mode / 任务部署模式
      */
     private void answerWithAi(List<DeploymentInputField> fields, Map<String, String> values,
-            AutomaticDeploymentInteraction interaction, char[] master, DeploymentAutomationMode mode) {
+            AutomaticDeploymentInteraction interaction, DeploymentAutomationMode mode) {
         values.putAll(assistance == null
                 ? gold.debug.windowstolinux.shared.standard.deploy.input.DeploymentInputAnswers.ask(fields, interaction)
                 : assistance.complete(fields));

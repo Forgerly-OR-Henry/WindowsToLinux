@@ -33,7 +33,6 @@ import gold.debug.windowstolinux.shared.model.lifecycle.LifecycleAction;
 import gold.debug.windowstolinux.shared.model.lifecycle.LifecycleObservation;
 import gold.debug.windowstolinux.shared.model.lifecycle.RuntimeState;
 import gold.debug.windowstolinux.shared.model.project.DeploymentBuildToolType;
-import gold.debug.windowstolinux.shared.model.security.CredentialStorageMode;
 import gold.debug.windowstolinux.shared.standard.deploy.contract.ReviewedDeploymentRequest;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIfSystemProperty;
@@ -45,6 +44,7 @@ import org.junit.jupiter.api.io.TempDir;
  * <p>可选真实主机验收测试。它只从 WINDOWSTOLINUX_TEST_SSH_PASSWORD 读取 SSH 密码，并且绝不属于常规 Maven 门禁。
  */
 @EnabledIfSystemProperty(named = "managed.runtime", matches = "true")
+@org.junit.jupiter.api.extension.ExtendWith(MainSecurityFixture.class)
 class UbuntuManagedAcceptanceTest {
     @TempDir
     Path temporaryDirectory;
@@ -74,24 +74,23 @@ class UbuntuManagedAcceptanceTest {
         assertNotEquals(health.endpoint(), userAccessUrl.url(), "用户访问 URL 不能是目标机健康端点");
 
         char[] sshPassword = password.toCharArray();
-        char[] masterPassword = "managed-acceptance-master".toCharArray();
+
         try (DesktopPersistence database = DesktopPersistence.open(temporaryDirectory.resolve("desktop-data"))) {
-            DesktopApplicationFacade service = new DesktopApplicationFacade(database,
+            DesktopApplicationFacade service = MainSecurityFixture.unlocked(new DesktopApplicationFacade(database,
                     temporaryDirectory.resolve("work"),
                     new SshdLinuxGateway(
                             gold.debug.windowstolinux.shared.standard.deploy.build.DeploymentBuildExecutor::new,
                             gold.debug.windowstolinux.shared.standard.deploy.distro.extension.registry.DistributionSetupRegistry
-                                    .defaults()));
+                                    .defaults())));
             ReviewedSourcePreparation preparation = ReviewedMavenAcceptanceFixture.prepare(service, source);
             assertTrue(preparation.archive().isPresent(),
                     "Hello World must pass the managed-deployment static analysis");
             String applicationId = preparation.assessment().facts().orElseThrow().applicationId();
 
             ServerProfile profile = new ServerProfile("ubuntu-managed", host, 22, username,
-                    "ssh/ubuntu-managed/password", CredentialStorageMode.MASTER_PASSWORD);
-            service.saveServerProfile(profile, CredentialStorageMode.MASTER_PASSWORD, masterPassword, sshPassword);
-            var capabilities = service.verifyServer(profile, CredentialStorageMode.MASTER_PASSWORD,
-                    "managed-acceptance-master".toCharArray(), fingerprint -> true);
+                    "ssh/ubuntu-managed/password");
+            service.saveServerProfile(profile, sshPassword);
+            var capabilities = service.verifyServer(profile, fingerprint -> true);
             assertTrue(
                     capabilities.supportsManagedDeployment(preparation.assessment().facts().orElseThrow()
                             .buildTool() == DeploymentBuildToolType.MAVEN_WRAPPER, health),
@@ -103,7 +102,6 @@ class UbuntuManagedAcceptanceTest {
                     new BuildLimitConfiguration(1200, 1024, 4096, 4L * 1024 * 1024, 2L * 1024 * 1024 * 1024, rootBuild),
                     rootBuild);
             DeploymentOutcome deployed = service.deployReviewedWithStoredPassword(request, profile,
-                    CredentialStorageMode.MASTER_PASSWORD, "managed-acceptance-master".toCharArray(),
                     fingerprint -> true);
             assertEquals(DeploymentStatus.SUCCEEDED, deployed.status(), () -> deployed.events().toString());
             URI accessUrl = requireHttpAccessUrl(deployed, userAccessUrl.url());
@@ -147,8 +145,7 @@ class UbuntuManagedAcceptanceTest {
 
     private static LifecycleObservation lifecycle(DesktopApplicationFacade service, String applicationId,
             LifecycleAction action) throws Exception {
-        LifecycleActionResult result = service.executePersistedLifecycleResultWithStoredPassword(applicationId, action,
-                "managed-acceptance-master".toCharArray());
+        LifecycleActionResult result = service.executePersistedLifecycleResultWithStoredPassword(applicationId, action);
         assertTrue(result.accepted(), () -> action + " 未被受理: " + result);
         return result.observation().orElseThrow(() -> new AssertionError(action + " 缺少远端观测"));
     }

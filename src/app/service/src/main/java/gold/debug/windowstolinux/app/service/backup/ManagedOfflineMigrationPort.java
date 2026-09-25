@@ -87,12 +87,6 @@ final class ManagedOfflineMigrationPort implements OfflineMigrationPort, AutoClo
     private final char[] backupPassword;
 
     /**
-     * Master-password buffer used to unlock protected credentials.
-     * <p>用于解锁受保护凭据的主密码缓冲区。
-     */
-    private final char[] masterPassword;
-
-    /**
      * Token or decision binding approval to the exact proposed action.
      * <p>将批准绑定到精确提议动作的令牌或决定。
      */
@@ -130,14 +124,13 @@ final class ManagedOfflineMigrationPort implements OfflineMigrationPort, AutoClo
      * @param initial initial / 初始
      * @param finalDestination final destination / 最终目的地
      * @param backupPassword independent password for backup secret encryption or decryption / 备份秘密加密或解密使用的独立密码
-     * @param masterPassword master-password buffer used to unlock protected credentials / 用于解锁受保护凭据的主密码缓冲区
      * @param confirmation token or decision binding approval to the exact proposed action / 将批准绑定到精确提议动作的令牌或决定
      * @throws NullPointerException if a required input is absent / 必需输入缺失时
      */
     ManagedOfflineMigrationPort(String applicationId, ServerProfile source, String targetServerId,
             RemoteBackupCreationUseCase backups, ManagedRestoreUseCase restores,
             MultiComponentLifecycleUseCase lifecycle, ManagedMultiComponentApplication managed,
-            CreatedBackupArchive initial, Path finalDestination, char[] backupPassword, char[] masterPassword,
+            CreatedBackupArchive initial, Path finalDestination, char[] backupPassword,
             Predicate<String> confirmation) {
         this.applicationId = Objects.requireNonNull(applicationId, "applicationId");
         this.source = Objects.requireNonNull(source, "source");
@@ -150,7 +143,7 @@ final class ManagedOfflineMigrationPort implements OfflineMigrationPort, AutoClo
         this.finalDestination = Objects.requireNonNull(finalDestination, "finalDestination").toAbsolutePath()
                 .normalize();
         this.backupPassword = copy(backupPassword);
-        this.masterPassword = copy(masterPassword);
+
         this.confirmation = Objects.requireNonNull(confirmation, "confirmation");
     }
 
@@ -166,7 +159,7 @@ final class ManagedOfflineMigrationPort implements OfflineMigrationPort, AutoClo
     public TargetPreflightEvidence preflightTarget(OfflineMigrationRequest request) throws BackupException {
         try {
             ManagedRestorePreflightOutcome evidence = restores.preflightUsingSavedProfile(initial.archive(),
-                    targetServerId, copy(backupPassword), copy(masterPassword), confirmation);
+                    targetServerId, copy(backupPassword), confirmation);
             return new TargetPreflightEvidence(true, true, true, evidence.availableBytes(), evidence.evidence());
         } catch (Exception exception) {
             throw failure(BackupFailureType.MIGRATION_PREFLIGHT_FAILED,
@@ -205,12 +198,11 @@ final class ManagedOfflineMigrationPort implements OfflineMigrationPort, AutoClo
     @Override
     public SourceQuiesceEvidence stopSourceWrites(OfflineMigrationRequest request) throws BackupException {
         try {
-            backups.taskAdmission(applicationId, admission, true, copy(masterPassword), confirmation);
+            backups.taskAdmission(applicationId, admission, true, confirmation);
             var targets = backups.daemonComponents(applicationId);
             var result = lifecycle.executeLifecycleWithStoredPassword(applicationId,
                     targets.isEmpty() ? componentIds() : targets,
-                    targets.isEmpty() ? LifecycleAction.REFRESH_STATUS : LifecycleAction.STOP, source,
-                    source.credentialMode(), copy(masterPassword));
+                    targets.isEmpty() ? LifecycleAction.REFRESH_STATUS : LifecycleAction.STOP, source);
             if (!result.accepted() || !Set.of(ApplicationRuntimeState.STOPPED, ApplicationRuntimeState.INSTALLED)
                     .contains(result.runtimeState())) {
                 throw new IllegalStateException("source components did not all enter the authoritative stopped state");
@@ -238,7 +230,7 @@ final class ManagedOfflineMigrationPort implements OfflineMigrationPort, AutoClo
             throws BackupException {
         try {
             finalArchive = backups.createUsingSavedProfile(applicationId, finalDestination, copy(backupPassword),
-                    copy(masterPassword), confirmation, admission);
+                    confirmation, admission);
             return new SyncEvidence(Files.size(finalArchive.archive()), finalArchive.inspection().archiveSha256(), true,
                     true, List.of("complete final archive was collected while every source component remained stopped",
                             "final archive was atomically published and independently verified"));
@@ -263,7 +255,7 @@ final class ManagedOfflineMigrationPort implements OfflineMigrationPort, AutoClo
             throws BackupException {
         try {
             restoreOutcome = restores.restoreUsingSavedProfile(finalArchive.archive(), targetServerId,
-                    copy(backupPassword), copy(masterPassword), confirmation);
+                    copy(backupPassword), confirmation);
             if (restoreOutcome.restore().status() != BackupRestoreStatus.SUCCEEDED
                     || restoreOutcome.controlState() == ManagedRestoreControlState.FAILED) {
                 throw new IllegalStateException(
@@ -316,13 +308,12 @@ final class ManagedOfflineMigrationPort implements OfflineMigrationPort, AutoClo
             var targets = backups.daemonComponents(applicationId);
             var result = lifecycle.executeLifecycleWithStoredPassword(applicationId,
                     targets.isEmpty() ? componentIds() : targets,
-                    targets.isEmpty() ? LifecycleAction.REFRESH_STATUS : LifecycleAction.START, source,
-                    source.credentialMode(), copy(masterPassword));
+                    targets.isEmpty() ? LifecycleAction.REFRESH_STATUS : LifecycleAction.START, source);
             boolean verified = result.accepted()
                     && Set.of(ApplicationRuntimeState.RUNNING, ApplicationRuntimeState.INSTALLED)
                             .contains(result.runtimeState());
             if (verified)
-                backups.taskAdmission(applicationId, admission, false, copy(masterPassword), confirmation);
+                backups.taskAdmission(applicationId, admission, false, confirmation);
             return new RecoveryEvidence(verified, verified,
                     List.of("source start recovery was executed and every component runtime was observed"));
         } catch (Exception exception) {
@@ -348,7 +339,7 @@ final class ManagedOfflineMigrationPort implements OfflineMigrationPort, AutoClo
     @Override
     public void close() {
         clear(backupPassword);
-        clear(masterPassword);
+
     }
 
     /**

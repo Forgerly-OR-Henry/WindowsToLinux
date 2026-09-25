@@ -27,7 +27,7 @@ class ApplicationInventoryPageTest {
     private ApplicationSummary app(String name, String type, String server) {
         return new ApplicationSummary("managed:" + name, name, type, server, server, "192.0.2.1",
                 Optional.of(Instant.now()), Optional.empty(), RuntimeState.UNKNOWN, Optional.empty(), Optional.empty(),
-                false, true, true, false);
+                false, true, true);
     }
 
     @Test

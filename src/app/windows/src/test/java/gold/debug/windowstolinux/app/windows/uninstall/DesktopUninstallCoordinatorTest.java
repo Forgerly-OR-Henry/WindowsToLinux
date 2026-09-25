@@ -42,8 +42,7 @@ class DesktopUninstallCoordinatorTest {
 
         assertEquals(DesktopUninstallStatus.SUCCEEDED_DATA_RETAINED, result.status());
         assertEquals(List.of("stop", "handoff", "verify", "program"), port.calls);
-        assertEquals(List.of(request.dataRoot().toString(), request.credentialNamespace()),
-                result.intentionallyRetainedItems());
+        assertEquals(List.of(request.dataRoot().toString()), result.intentionallyRetainedItems());
     }
 
     @Test
@@ -56,7 +55,7 @@ class DesktopUninstallCoordinatorTest {
         DesktopUninstallResult result = coordinator.apply(preparation.handoff().orElseThrow());
 
         assertEquals(DesktopUninstallStatus.SUCCEEDED_DATA_DELETED, result.status());
-        assertEquals(List.of("stop", "handoff", "verify", "program", "data", "credentials"), port.calls);
+        assertEquals(List.of("stop", "handoff", "verify", "program", "data"), port.calls);
         assertTrue(result.residualItems().isEmpty());
     }
 
@@ -101,18 +100,17 @@ class DesktopUninstallCoordinatorTest {
     }
 
     @Test
-    void credentialBoundaryAcceptsOnlyTheFixedApplicationNamespace() {
+    void databaseCredentialsStayInsideTheFixedDataDirectory() {
         Path install = temporary.resolve("WindowsToLinux");
-        assertThrows(IllegalArgumentException.class, () -> new DesktopUninstallRequest(Optional.empty(), install,
-                install.resolve("data"), "WindowsToLinux/desktop"));
-        assertEquals("WindowsToLinux/*",
-                new DesktopUninstallRequest(Optional.empty(), install, install.resolve("data"), "WindowsToLinux/*")
-                        .credentialNamespace());
+        assertThrows(IllegalArgumentException.class,
+                () -> new DesktopUninstallRequest(Optional.empty(), install, install.resolve("other")));
+        assertEquals(install.resolve("data").toAbsolutePath().normalize(),
+                new DesktopUninstallRequest(Optional.empty(), install, install.resolve("data")).dataRoot());
     }
 
     private DesktopUninstallRequest request(Optional<DesktopUninstallDecisionType> decision) {
         Path install = temporary.resolve("WindowsToLinux");
-        return new DesktopUninstallRequest(decision, install, install.resolve("data"), "WindowsToLinux/*");
+        return new DesktopUninstallRequest(decision, install, install.resolve("data"));
     }
 
     private static final class RecordingUninstallPort implements DesktopUninstallPort {
@@ -147,7 +145,7 @@ class DesktopUninstallCoordinatorTest {
         @Override
         public BoundaryEvidence verifyManagedBoundaries(DesktopUninstallRequest request) {
             calls.add("verify");
-            return new BoundaryEvidence(!invalidBoundary, !invalidBoundary, !invalidBoundary, !invalidBoundary,
+            return new BoundaryEvidence(!invalidBoundary, !invalidBoundary, !invalidBoundary,
                     List.of("jpackage, markers and credential namespace checked"));
         }
 
@@ -165,12 +163,6 @@ class DesktopUninstallCoordinatorTest {
                         List.of("locked database file could not be removed"));
             }
             return removed("managed data removed");
-        }
-
-        @Override
-        public RemovalEvidence removeCredentials(DesktopUninstallRequest request) {
-            calls.add("credentials");
-            return removed("managed credential namespace removed");
         }
 
         private static RemovalEvidence removed(String evidence) {

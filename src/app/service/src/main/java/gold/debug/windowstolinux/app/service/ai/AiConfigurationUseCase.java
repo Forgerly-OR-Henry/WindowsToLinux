@@ -78,14 +78,13 @@ final class AiConfigurationUseCase {
      *
      * @param profile connection or provider settings supplied to the operation / 提供给操作的连接或提供者设置
      * @param name human-readable name or diagnostic field label / 可读名称或诊断字段标签
-     * @param master master-password buffer used for the scoped secret operation / 限定秘密操作使用的主密码缓冲区
      * @param suppliedKey API credential characters supplied to the selected operation / 提供给所选操作的 API 凭据字符
      * @param capability independent model capability whose order and enablement apply / 独立模型分组，其顺序及启用设置分别生效
      * @throws SQLException if the database cannot complete the requested read or transaction / 数据库无法完成请求的读取或事务时
      * @throws SecretStoreException if the protected credential cannot be accessed or updated / 无法访问或更新受保护凭据时
      * @throws IllegalArgumentException if an input violates the constraints checked by this contract / 输入违反当前契约检查的约束时
      */
-    void save(AiProviderProfile profile, String name, char[] master, char[] suppliedKey,
+    void save(AiProviderProfile profile, String name, char[] suppliedKey,
             gold.debug.windowstolinux.shared.model.ai.AiCapabilityType capability)
             throws SQLException, SecretStoreException {
         char[] key = null;
@@ -93,18 +92,18 @@ final class AiConfigurationUseCase {
             AiProviderChain.checkCancelled();
             if (name.isBlank() || name.length() > 120 || name.chars().anyMatch(Character::isISOControl))
                 throw new IllegalArgumentException("invalid model display name");
-            var prior = profiles.findNamed(profile.id());
-            try (var store = secrets.open(profile.credentialMode(), master)) {
+            var priorConfiguration = profiles.listConfigured().stream()
+                    .filter(value -> value.profile().id().equals(profile.id())).findFirst();
+            var prior = priorConfiguration.map(value -> value.profile());
+            try (var store = secrets.open()) {
                 if (suppliedKey.length > 0)
                     key = suppliedKey.clone();
                 else {
                     var saved = prior
                             .orElseThrow(() -> new IllegalArgumentException("API key is required for a new model"));
-                    if (!saved.credentialMode().equals(profile.credentialMode().name())
-                            || !saved.credentialKey().equals(profile.credentialKey()))
+                    if (!saved.credentialKey().equals(profile.credentialKey()))
                         throw new IllegalArgumentException("changing credential storage requires an API key");
-                    key = store.read(saved.credentialKey())
-                            .orElseThrow(() -> new IllegalArgumentException("saved API key is unavailable"));
+                    key = existingKey(store, priorConfiguration.orElseThrow());
                 }
                 AiProviderChain.checkCancelled();
                 var context = new ProjectAnalysisRoleContext("connection-test", "JAVA_MAVEN_SPRING_BOOT",
@@ -126,39 +125,47 @@ final class AiConfigurationUseCase {
                 if (probe != null && probe.evidence().status() != AiInvocationStatus.VALIDATED)
                     throw ApplicationServiceException.create(ApplicationServiceFailureType.AI_CONFIGURATION_TEST_FAILED,
                             "Selected model probe failed: " + probe.evidence().validationDetail());
-                String credential = suppliedKey.length > 0
-                        ? "ai/provider/" + profile.id() + "/api-key/" + UUID.randomUUID()
-                        : profile.credentialKey();
-                if (suppliedKey.length > 0)
-                    store.save(credential, key);
+                String credential = prior.map(value -> value.credentialKey())
+                        .orElseGet(() -> "ai/provider/" + profile.id() + "/api-key/" + UUID.randomUUID());
                 var saved = new AiProviderProfile(profile.id(), profile.chatCompletionsEndpoint(), profile.model(),
-                        credential, profile.credentialMode());
+                        credential);
+                char[] verifiedKey = key;
                 AiProviderChain.checkCancelled();
-                profiles.saveVerified(saved.stored(), name, Instant.now(), capability);
+                store.transaction(() -> {
+                    var current = profiles.listConfigured().stream()
+                            .filter(value -> value.profile().id().equals(profile.id())).findFirst();
+                    if (current.isPresent() != priorConfiguration.isPresent() || current.isPresent()
+                            && (!current.get().profile().equals(priorConfiguration.get().profile())
+                                    || current.get().revision() != priorConfiguration.get().revision()))
+                        throw new SQLException("model changed during configuration probe");
+                    store.save(credential, verifiedKey);
+                    profiles.saveVerified(saved.stored(), name, Instant.now(), capability);
+                });
             }
         } finally {
             if (key != null)
                 Arrays.fill(key, '\0');
             Arrays.fill(suppliedKey, '\0');
-            Arrays.fill(master, '\0');
+
         }
     }
 
     /**
-     * Loads the selected model's protected key, performs an image challenge and clears both the key and supplied unlock password.
-     * <p>加载所选模型受保护密钥、执行图像挑战，并清空密钥及传入解锁密码。
+     * Loads the selected model's protected key, performs an image challenge and clears the key.
+     * <p>加载所选模型受保护密钥、执行图像挑战，并清空密钥。
      *
      * @param id stable identifier within the owning registry / 所属登记表内的稳定标识
-     * @param master master-password buffer used for the scoped secret operation / 限定秘密操作使用的主密码缓冲区
      * @throws Exception if the delegated operation or caller-provided interaction fails / 被委派操作或调用方提供的交互失败时
      * @param capability separately tested text or vision capability / 分别测试的文本或视觉能力
      */
-    void testCapability(String id, gold.debug.windowstolinux.shared.model.ai.AiCapabilityType capability, char[] master)
+    void testCapability(String id, gold.debug.windowstolinux.shared.model.ai.AiCapabilityType capability)
             throws Exception {
         char[] key = null;
         try {
-            var profile = AiProviderProfile.fromStored(profiles.findNamed(id).orElseThrow());
-            try (var store = secrets.open(profile.credentialMode(), master)) {
+            var configuration = profiles.listConfigured().stream().filter(value -> value.profile().id().equals(id))
+                    .findFirst().orElseThrow();
+            var profile = AiProviderProfile.fromStored(configuration.profile());
+            try (var store = secrets.open()) {
                 key = store.read(profile.credentialKey()).orElseThrow();
                 if (capability == gold.debug.windowstolinux.shared.model.ai.AiCapabilityType.VISION)
                     vision.probeVision(profile.chatCompletionsEndpoint(), profile.model(), key);
@@ -171,12 +178,42 @@ final class AiConfigurationUseCase {
                         throw new IllegalArgumentException("text capability probe failed");
                 }
                 AiProviderChain.checkCancelled();
-                profiles.recordVerification(profile.stored(), capability, Instant.now());
+                profiles.recordVerification(profile.stored(), configuration.revision(), capability, Instant.now());
             }
         } finally {
             if (key != null)
                 Arrays.fill(key, '\0');
-            Arrays.fill(master, '\0');
+
+        }
+    }
+
+    /** Captures the previous key only while its model revision still matches. / 仅在模型修订仍匹配时取得原密钥。
+     * @param store scoped credential access / 限定凭据访问
+     * @param expected configuration observed before the edit / 编辑前观测的配置
+     * @return caller-owned API key / 调用方持有的 API Key
+     * @throws SQLException when the model changed / 模型变化时
+     * @throws gold.debug.windowstolinux.app.secret.SecretStoreException when credentials cannot be read / 无法读取凭据时
+     */
+    private char[] existingKey(gold.debug.windowstolinux.app.secret.SecretStore store,
+            gold.debug.windowstolinux.app.db.entity.StoredAiProviderConfiguration expected)
+            throws SQLException, gold.debug.windowstolinux.app.secret.SecretStoreException {
+        char[][] captured = new char[1][];
+        boolean success = false;
+        try {
+            store.transaction(() -> {
+                var current = profiles.listConfigured().stream().filter(
+                        value -> value.profile().equals(expected.profile()) && value.revision() == expected.revision())
+                        .findFirst();
+                if (current.isEmpty())
+                    throw new SQLException("model changed before configuration probe");
+                captured[0] = store.read(expected.profile().credentialKey())
+                        .orElseThrow(() -> new IllegalArgumentException("saved API key is unavailable"));
+            });
+            success = true;
+            return captured[0];
+        } finally {
+            if (!success && captured[0] != null)
+                Arrays.fill(captured[0], '\0');
         }
     }
 }

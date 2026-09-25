@@ -17,13 +17,15 @@ class AiPriorityRepositoryTest {
     @TempDir
     Path directory;
     private StoredAiProviderProfile profile(String id) {
-        return new StoredAiProviderProfile(id, "https://example.test/v1/chat/completions", "model", "ai/" + id,
-                "MASTER_PASSWORD");
+        return new StoredAiProviderProfile(id, "https://example.test/v1/chat/completions", "model", "ai/" + id);
     }
 
     @Test
     void displayAndPurposeOrderRemainIndependentAcrossRestart() throws Exception {
         try (var db = DesktopPersistence.open(directory)) {
+            for (String id : List.of("a", "b", "c", "d"))
+                gold.debug.windowstolinux.app.db.DatabaseTestFixture.credential(db, "ai/" + id);
+            gold.debug.windowstolinux.app.db.DatabaseTestFixture.credential(db, "new/exact/key");
             var repo = db.aiProfiles();
             for (var id : List.of("a", "b", "c"))
                 repo.saveVerified(profile(id), id, Instant.now());
@@ -37,6 +39,9 @@ class AiPriorityRepositoryTest {
             repo.saveVerified(profile("a"), "Renamed", Instant.now());
         }
         try (var db = DesktopPersistence.open(directory)) {
+            for (String id : List.of("a", "b", "c", "d"))
+                gold.debug.windowstolinux.app.db.DatabaseTestFixture.credential(db, "ai/" + id);
+            gold.debug.windowstolinux.app.db.DatabaseTestFixture.credential(db, "new/exact/key");
             var repo = db.aiProfiles();
             assertEquals(List.of("c", "a", "b"), repo.listConfigured().stream().map(v -> v.profile().id()).toList());
             assertEquals(List.of("a", "c"), repo.purposes().list(AiPurposeType.DEPLOYMENT).stream()
@@ -54,9 +59,12 @@ class AiPriorityRepositoryTest {
     @Test
     void capabilityChangesInvalidateOldEvidenceAndFailedMembershipSaveIsAtomic() throws Exception {
         try (var db = DesktopPersistence.open(directory)) {
+            for (String id : List.of("a", "b", "c", "d"))
+                gold.debug.windowstolinux.app.db.DatabaseTestFixture.credential(db, "ai/" + id);
+            gold.debug.windowstolinux.app.db.DatabaseTestFixture.credential(db, "new/exact/key");
             var repo = db.aiProfiles();
             repo.saveVerified(profile("a"), "A", Instant.now());
-            repo.recordVerification(profile("a"), AiCapabilityType.VISION, Instant.now());
+            repo.recordVerification(profile("a"), 1, AiCapabilityType.VISION, Instant.now());
             var members = List.of(new AiPurposeAssignment("a", true));
             for (var type : AiPurposeType.values())
                 repo.purposes().save(type, members);
@@ -65,13 +73,12 @@ class AiPriorityRepositoryTest {
             assertThrows(SQLException.class, () -> repo.purposes().save(AiPurposeType.APPROVAL,
                     List.of(new AiPurposeAssignment("missing", true))));
             assertEquals(members, repo.purposes().list(AiPurposeType.APPROVAL));
-            var changed = new StoredAiProviderProfile("a", profile("a").endpoint(), "changed", "new/exact/key",
-                    "MASTER_PASSWORD");
+            var changed = new StoredAiProviderProfile("a", profile("a").endpoint(), "changed", "new/exact/key");
             repo.saveVerified(changed, "A", Instant.now(), AiCapabilityType.TEXT);
             assertTrue(repo.configuredFor(AiPurposeType.VISION).isEmpty());
             assertEquals(1, repo.configuredFor(AiPurposeType.APPROVAL).size());
             assertThrows(SQLException.class,
-                    () -> repo.recordVerification(profile("a"), AiCapabilityType.VISION, Instant.now()));
+                    () -> repo.recordVerification(profile("a"), 1, AiCapabilityType.VISION, Instant.now()));
             assertTrue(repo.listConfigured().getFirst().visionVerifiedAt().isEmpty());
             repo.purposes().save(AiPurposeType.APPROVAL, List.of());
             assertEquals(1, repo.listConfigured().size());
@@ -80,34 +87,34 @@ class AiPriorityRepositoryTest {
     }
 
     @Test
-    void migratesLegacyRoleOrderWithoutInventingApprovalOrVerification() throws Exception {
+    void fourOrdersCanChangeIndependentlyAndDisabledVisionRetainsItsPlace() throws Exception {
         try (var db = DesktopPersistence.open(directory)) {
             var repo = db.aiProfiles();
-            for (var id : List.of("unbound", "review", "analysis"))
-                repo.saveNamed(profile(id));
-            repo.saveDefault(new StoredAiProfile("https://legacy.test/v1/chat/completions", "legacy", "old/exact/key",
-                    "MASTER_PASSWORD"));
-            repo.saveRoleAssignment(new StoredAiRoleAssignment("PROJECT_ANALYSIS", "analysis"));
-            repo.saveRoleAssignment(new StoredAiRoleAssignment("DEPLOYMENT_RISK_REVIEW", "review"));
-        }
-        try (var c = DriverManager.getConnection("jdbc:sqlite:" + directory.resolve("windowstolinux.db"));
-                var s = c.createStatement()) {
-            s.execute("DROP TABLE deployment_agent_event");
-            s.execute("DROP TABLE deployment_agent_task");
-            s.execute("DROP TABLE ai_model_purpose");
-            s.execute("DROP TABLE ai_model_verification");
-            s.execute("DROP TABLE ai_model_inventory");
-            s.execute("PRAGMA user_version=14");
-        }
-        try (var db = DesktopPersistence.open(directory)) {
-            var values = db.aiProfiles().listConfigured();
-            assertEquals(List.of("analysis", "review", "default", "unbound"),
-                    values.stream().map(v -> v.profile().id()).toList());
-            assertEquals(List.of(true, true, false, false), db.aiProfiles().purposes().list(AiPurposeType.DEPLOYMENT)
-                    .stream().map(AiPurposeAssignment::enabled).toList());
-            assertTrue(values.stream().allMatch(v -> v.textVerifiedAt().isEmpty()));
-            assertTrue(db.aiProfiles().purposes().list(AiPurposeType.APPROVAL).isEmpty());
-            assertEquals("old/exact/key", values.get(2).profile().credentialKey());
+            for (String id : List.of("a", "b", "c")) {
+                gold.debug.windowstolinux.app.db.DatabaseTestFixture.credential(db, "ai/" + id);
+                repo.saveVerified(profile(id), id, Instant.now());
+                repo.recordVerification(profile(id), 1, AiCapabilityType.VISION, Instant.now());
+            }
+            repo.purposes().save(AiPurposeType.DEPLOYMENT,
+                    List.of(new AiPurposeAssignment("a", true), new AiPurposeAssignment("b", true)));
+            repo.purposes().save(AiPurposeType.APPROVAL,
+                    List.of(new AiPurposeAssignment("b", true), new AiPurposeAssignment("a", true)));
+            repo.purposes().save(AiPurposeType.VISION, List.of(new AiPurposeAssignment("c", true),
+                    new AiPurposeAssignment("b", true), new AiPurposeAssignment("a", false)));
+            repo.reorder(List.of("b", "a", "c"));
+            repo.purposes().save(AiPurposeType.VISION, List.of(new AiPurposeAssignment("b", true),
+                    new AiPurposeAssignment("c", true), new AiPurposeAssignment("a", false)));
+            assertEquals(List.of("b", "a", "c"), repo.listConfigured().stream().map(v -> v.profile().id()).toList());
+            assertEquals(List.of("a", "b"), repo.purposes().list(AiPurposeType.DEPLOYMENT).stream()
+                    .map(AiPurposeAssignment::profileId).toList());
+            assertEquals(List.of("b", "a"),
+                    repo.purposes().list(AiPurposeType.APPROVAL).stream().map(AiPurposeAssignment::profileId).toList());
+            assertEquals("a", repo.purposes().list(AiPurposeType.VISION).getLast().profileId());
+            assertEquals(List.of("b", "c"),
+                    repo.configuredFor(AiPurposeType.VISION).stream().map(v -> v.profile().id()).toList());
+            repo.purposes().save(AiPurposeType.VISION, List.of(new AiPurposeAssignment("a", false)));
+            assertEquals(1, repo.purposes().list(AiPurposeType.VISION).size());
+            assertEquals(2, repo.purposes().list(AiPurposeType.DEPLOYMENT).size());
         }
     }
 }

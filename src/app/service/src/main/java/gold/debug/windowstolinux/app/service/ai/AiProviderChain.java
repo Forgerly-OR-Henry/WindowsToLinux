@@ -41,29 +41,27 @@ final class AiProviderChain {
      * <p>按捕获的优先级顺序尝试已启用提供者，保留分类尝试证据，并在建议被接受时停止。
      *
      * @param <T> type of the contract payload / 契约载荷的类型
-     * @param master master-password buffer used for the scoped secret operation / 限定秘密操作使用的主密码缓冲区
      * @param invocation invocation / 调用
      * @return constructed or resolved outcome / 构造或解析得到的结果
      * @throws java.sql.SQLException if the database cannot complete the requested read or transaction / 数据库无法完成请求的读取或事务时
      * @throws IllegalStateException if the required state or runtime facility is unavailable / 所需状态或运行设施不可用时
      */
-    <T> Outcome<T> invoke(char[] master, Invocation<T> invocation) throws java.sql.SQLException {
-        return invoke(gold.debug.windowstolinux.shared.model.ai.AiPurposeType.DEPLOYMENT, master, invocation);
+    <T> Outcome<T> invoke(Invocation<T> invocation) throws java.sql.SQLException {
+        return invoke(gold.debug.windowstolinux.shared.model.ai.AiPurposeType.DEPLOYMENT, invocation);
     }
 
     /** Routes only within the frozen purpose chain. / 仅在冻结用途链中路由。
      * @param purpose explicit purpose / 显式用途
-     * @param master secret-store unlock buffer / 秘密存储解锁缓冲区
      * @param invocation bounded request / 有界请求
      * @param <T> response type / 响应类型
      * @return outcome and attempts / 结果及尝试记录
      * @throws java.sql.SQLException when inventory cannot be read / 无法读取模型库时
      */
-    <T> Outcome<T> invoke(gold.debug.windowstolinux.shared.model.ai.AiPurposeType purpose, char[] master,
-            Invocation<T> invocation) throws java.sql.SQLException {
+    <T> Outcome<T> invoke(gold.debug.windowstolinux.shared.model.ai.AiPurposeType purpose, Invocation<T> invocation)
+            throws java.sql.SQLException {
         List<AiProviderAttempt> attempts = new ArrayList<>();
         Optional<T> last = Optional.empty();
-        try {
+        {
             checkCancelled();
             var scope = DeploymentAiScope.current();
             var snapshot = scope.isPresent()
@@ -79,9 +77,18 @@ final class AiProviderChain {
                 AiProviderProfile profile = scope.isPresent() ? candidates.getFirst() : candidates.get(position++);
                 checkCancelled();
                 char[] key = null;
+                char[][] captured = new char[1][];
                 Attempt<T> result = null;
-                try (var store = secrets.open(profile.credentialMode(), master)) {
-                    key = store.read(profile.credentialKey()).orElseGet(() -> new char[0]);
+                try (var store = secrets.open()) {
+                    store.transaction(() -> {
+                        var current = profiles.listConfigured().stream()
+                                .filter(value -> value.profile().equals(profile.stored()) && value.verified(purpose))
+                                .findFirst();
+                        if (current.isEmpty())
+                            throw new java.sql.SQLException("captured model is no longer verified for this endpoint");
+                        captured[0] = store.read(profile.credentialKey()).orElseGet(() -> new char[0]);
+                    });
+                    key = captured[0];
                     if (key.length == 0)
                         throw new IllegalStateException("credential-unavailable");
                     checkCancelled();
@@ -97,6 +104,8 @@ final class AiProviderChain {
                     checkCancelled();
                     result = null;
                 } finally {
+                    if (captured[0] != null)
+                        Arrays.fill(captured[0], '\0');
                     if (key != null)
                         Arrays.fill(key, '\0');
                 }
@@ -113,9 +122,6 @@ final class AiProviderChain {
                 scope.ifPresent(value -> value.advance(purpose));
             }
             return new Outcome<>(last, List.copyOf(attempts), false, snapshot);
-        } finally {
-            if (master != null)
-                Arrays.fill(master, '\0');
         }
     }
 

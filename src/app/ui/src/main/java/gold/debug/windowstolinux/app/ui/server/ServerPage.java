@@ -22,7 +22,6 @@ import gold.debug.windowstolinux.app.ui.component.DesktopComponentFactory;
 import gold.debug.windowstolinux.app.ui.component.DesktopTaskExecutor;
 import gold.debug.windowstolinux.app.ui.i18n.PageMessagePresenter;
 import gold.debug.windowstolinux.shared.model.deployment.EnvironmentSetupResult;
-import gold.debug.windowstolinux.shared.model.security.CredentialStorageMode;
 
 /**
  * Owns the server form, credentials-in-memory state, and server workflows. / 持有服务器表单、内存凭据状态与服务器流程。
@@ -77,18 +76,6 @@ public final class ServerPage implements ServerContext {
     private final JPasswordField password = new JPasswordField(20);
 
     /**
-     * Selected platform credential-storage mode.
-     * <p>所选平台凭据存储模式。
-     */
-    private final JComboBox<CredentialStorageMode> credentialMode = new JComboBox<>(CredentialStorageMode.values());
-
-    /**
-     * Swing control for master password.
-     * <p>主密码对应的 Swing 控件。
-     */
-    private final JPasswordField masterPassword = new JPasswordField(20);
-
-    /**
      * Swing control for output.
      * <p>输出对应的 Swing 控件。
      */
@@ -137,11 +124,6 @@ public final class ServerPage implements ServerContext {
         this.owner = owner;
         this.service = service;
         this.messages = messages;
-        credentialMode.setSelectedItem(CredentialStorageMode.WINDOWS_CREDENTIAL_MANAGER);
-        messages.localize(credentialMode, "credential.mode.");
-        credentialMode.addActionListener(event -> masterPassword
-                .setEnabled(credentialMode.getSelectedItem() == CredentialStorageMode.MASTER_PASSWORD));
-        masterPassword.setEnabled(false);
         panel = createPanel(components);
     }
 
@@ -161,8 +143,7 @@ public final class ServerPage implements ServerContext {
      */
     public ServerPageState captureState() {
         return new ServerPageState(id.getText(), host.getText(), port.getText(), username.getText(),
-                password.getPassword(), credentialMode(), masterPassword(), output.getText(), displayName,
-                inventory.search(), credentialKey);
+                password.getPassword(), output.getText(), displayName, inventory.search(), credentialKey);
     }
 
     /**
@@ -176,8 +157,6 @@ public final class ServerPage implements ServerContext {
         port.setText(state.port());
         username.setText(state.username());
         password.setText(new String(state.password()));
-        credentialMode.setSelectedItem(state.credentialMode());
-        masterPassword.setText(new String(state.masterPassword()));
         output.setText(state.output());
         displayName = state.displayName();
         credentialKey = state.credentialKey();
@@ -194,7 +173,7 @@ public final class ServerPage implements ServerContext {
     public ServerProfile profile() {
         String serverId = id.getText().trim();
         return new ServerProfile(serverId, host.getText().trim(), Integer.parseInt(port.getText().trim()),
-                username.getText().trim(), credentialKey, credentialMode(), displayName);
+                username.getText().trim(), credentialKey, displayName);
     }
 
     /**
@@ -210,30 +189,7 @@ public final class ServerPage implements ServerContext {
         host.setText(profile.host());
         port.setText(Integer.toString(profile.sshPort()));
         username.setText(profile.username());
-        credentialMode.setSelectedItem(profile.credentialMode());
         password.setText("");
-    }
-
-    /**
-     * Returns selected platform credential-storage mode.
-     * <p>返回所选平台凭据存储模式。
-     *
-     * @return selected platform credential-storage mode / 所选平台凭据存储模式
-     */
-    @Override
-    public CredentialStorageMode credentialMode() {
-        return (CredentialStorageMode) credentialMode.getSelectedItem();
-    }
-
-    /**
-     * Returns master-password buffer used to unlock protected credentials.
-     * <p>返回用于解锁受保护凭据的主密码缓冲区。
-     *
-     * @return master-password buffer used to unlock protected credentials / 用于解锁受保护凭据的主密码缓冲区
-     */
-    @Override
-    public char[] masterPassword() {
-        return masterPassword.getPassword();
     }
 
     /**
@@ -260,7 +216,6 @@ public final class ServerPage implements ServerContext {
         var advanced = new gold.debug.windowstolinux.app.ui.component.AdvancedOptionsPane(page, c, messages);
         inventory = new ServerInventoryPane(service, c, messages, false, this::selectProfile);
         page.add(inventory, BorderLayout.CENTER);
-        advanced.field("field.masterPassword", masterPassword);
         JButton prepare = c.secondaryButton(messages.text("button.prepareEnvironment"));
         prepare.addActionListener(event -> prepare(prepare, c));
         advanced.addOption(prepare);
@@ -270,7 +225,7 @@ public final class ServerPage implements ServerContext {
             recover.addActionListener(event -> {
                 try {
                     ServerProfile selected = service.findServerProfile(profile().id()).orElseThrow();
-                    var session = rescue.startSshRecovery(selected, masterPassword(), this::confirmFingerprint);
+                    var session = rescue.startSshRecovery(selected, this::confirmFingerprint);
                     new gold.debug.windowstolinux.app.ui.recovery.SshRecoveryDialog(owner, selected, session, ai, c,
                             messages);
                 } catch (Exception failure) {
@@ -317,10 +272,9 @@ public final class ServerPage implements ServerContext {
                             saved.username()))) {
                 return;
             }
-            char[] master = masterPassword();
             setBusy(true);
             output.setText(messages.text("environment.preparing"));
-            DesktopTaskExecutor.run(() -> service.prepareEnvironmentRecovering(saved, saved.credentialMode(), master,
+            DesktopTaskExecutor.run(() -> service.prepareEnvironmentRecovering(saved,
                     ServerPage.this::confirmFingerprint, true,
                     plan -> gold.debug.windowstolinux.app.ui.component.SystemPreparationDialog.confirm(owner, messages,
                             Map.of("serverId", saved.id(), "host", saved.host(), "security",

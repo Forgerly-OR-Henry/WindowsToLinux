@@ -21,8 +21,8 @@ import gold.debug.windowstolinux.app.db.DesktopPersistence;
 import gold.debug.windowstolinux.app.db.entity.CurrentRelease;
 import gold.debug.windowstolinux.app.db.entity.ManagedApplicationGraph;
 import gold.debug.windowstolinux.app.db.entity.SuccessfulManagedDeployment;
-import gold.debug.windowstolinux.app.secret.Argon2AesSecretStore;
 import gold.debug.windowstolinux.app.service.DesktopApplicationFacade;
+import gold.debug.windowstolinux.app.service.SecurityTestFixture;
 import gold.debug.windowstolinux.app.service.server.ServerProfile;
 import gold.debug.windowstolinux.shared.backup.manifest.BackupMemberKind;
 import gold.debug.windowstolinux.shared.config.contract.definition.ConfigurationScope;
@@ -50,7 +50,6 @@ import gold.debug.windowstolinux.shared.model.managed.ManagedApplication;
 import gold.debug.windowstolinux.shared.model.managed.ManagedApplicationRuntimeConfiguration;
 import gold.debug.windowstolinux.shared.model.project.DeploymentRuntimeSpecification;
 import gold.debug.windowstolinux.shared.model.project.component.ComponentDataPath;
-import gold.debug.windowstolinux.shared.model.security.CredentialStorageMode;
 import gold.debug.windowstolinux.shared.model.server.CpuMicroarchitectureLevel;
 import gold.debug.windowstolinux.shared.model.server.LinuxDistroType;
 import gold.debug.windowstolinux.shared.model.server.ManagedHelperProtocolVersion;
@@ -65,7 +64,7 @@ import org.apache.commons.compress.archivers.tar.TarArchiveOutputStream;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
-class RemoteBackupCreationUseCaseTest {
+class RemoteBackupCreationUseCaseTest extends SecurityTestFixture {
     @TempDir
     Path temporary;
 
@@ -82,16 +81,16 @@ class RemoteBackupCreationUseCaseTest {
         char[] master = "correct master password".toCharArray();
         char[] backupPassword = "independent backup password".toCharArray();
         ServerProfile profile = new ServerProfile("server-one", "example.test", 22, "deployer",
-                "ssh/server-one/password", CredentialStorageMode.MASTER_PASSWORD);
+                "ssh/server-one/password");
 
         try (DesktopPersistence persistence = DesktopPersistence.open(data);
-                Argon2AesSecretStore store = new Argon2AesSecretStore(persistence.encryptedSecrets(),
-                        "correct master password".toCharArray())) {
-            DesktopApplicationFacade facade = new DesktopApplicationFacade(persistence, work, gateway);
+                gold.debug.windowstolinux.app.secret.SecretStore store = SecurityTestFixture.store(persistence)) {
+            DesktopApplicationFacade facade = SecurityTestFixture
+                    .unlocked(new DesktopApplicationFacade(persistence, work, gateway));
             facade.saveServerProfile(profile, store, "ssh-password".toCharArray());
             persistApplication(persistence);
 
-            CreatedBackupArchive created = facade.createManagedBackup("demo", destination, backupPassword, master,
+            CreatedBackupArchive created = facade.createManagedBackup("demo", destination, backupPassword,
                     ignored -> false);
 
             assertEquals(destination.toAbsolutePath(), created.archive());
@@ -112,7 +111,6 @@ class RemoteBackupCreationUseCaseTest {
                 activation.close();
                 localBackups.discard(activation.localCandidate());
             }
-            assertTrue(allCleared(master));
             assertTrue(allCleared(backupPassword));
         }
     }
@@ -130,23 +128,22 @@ class RemoteBackupCreationUseCaseTest {
         char[] master = "correct master password".toCharArray();
         char[] backupPassword = "independent backup password".toCharArray();
         ServerProfile profile = new ServerProfile("server-one", "example.test", 22, "deployer",
-                "ssh/server-one/password", CredentialStorageMode.MASTER_PASSWORD);
+                "ssh/server-one/password");
 
         try (DesktopPersistence persistence = DesktopPersistence.open(data);
-                Argon2AesSecretStore store = new Argon2AesSecretStore(persistence.encryptedSecrets(),
-                        "correct master password".toCharArray())) {
-            DesktopApplicationFacade facade = new DesktopApplicationFacade(persistence, work, gateway);
+                gold.debug.windowstolinux.app.secret.SecretStore store = SecurityTestFixture.store(persistence)) {
+            DesktopApplicationFacade facade = SecurityTestFixture
+                    .unlocked(new DesktopApplicationFacade(persistence, work, gateway));
             facade.saveServerProfile(profile, store, "ssh-password".toCharArray());
             persistApplication(persistence);
 
             assertThrows(LinuxOperationException.class,
-                    () -> facade.createManagedBackup("demo", destination, backupPassword, master, ignored -> false));
+                    () -> facade.createManagedBackup("demo", destination, backupPassword, ignored -> false));
 
             assertEquals(List.of("observe", "pause", "stop", "release", "observe", "start", "health", "health",
                     "resume", "discard"), log);
             assertEquals(RuntimeState.RUNNING, state[0]);
             assertTrue(Files.notExists(destination));
-            assertTrue(allCleared(master));
             assertTrue(allCleared(backupPassword));
         }
     }
@@ -158,28 +155,26 @@ class RemoteBackupCreationUseCaseTest {
         char[] master = "correct master password".toCharArray();
         char[] backupPassword = "independent backup password".toCharArray();
         ServerProfile source = new ServerProfile("server-one", "example.test", 22, "deployer",
-                "ssh/server-one/password", CredentialStorageMode.MASTER_PASSWORD);
+                "ssh/server-one/password");
         ServerProfile target = new ServerProfile("server-two", "target.example.test", 22, "deployer",
-                "ssh/server-two/password", CredentialStorageMode.MASTER_PASSWORD);
+                "ssh/server-two/password");
         try (DesktopPersistence persistence = DesktopPersistence.open(data);
-                Argon2AesSecretStore store = new Argon2AesSecretStore(persistence.encryptedSecrets(),
-                        "correct master password".toCharArray())) {
-            DesktopApplicationFacade facade = new DesktopApplicationFacade(persistence, work,
-                    work.resolveSibling("backups"), (endpoint, credential, verifier) -> {
+                gold.debug.windowstolinux.app.secret.SecretStore store = SecurityTestFixture.store(persistence)) {
+            DesktopApplicationFacade facade = SecurityTestFixture.unlocked(new DesktopApplicationFacade(persistence,
+                    work, work.resolveSibling("backups"), (endpoint, credential, verifier) -> {
                         throw new AssertionError("unapproved migration must not open SSH");
-                    });
+                    }));
             facade.saveServerProfile(source, store, "source-password".toCharArray());
             facade.saveServerProfile(target, store, "target-password".toCharArray());
             persistApplication(persistence);
 
             ManagedOfflineMigrationOutcome outcome = facade.prepareManagedOfflineMigration("demo", "server-two",
-                    backupPassword, master, false, ignored -> false);
+                    backupPassword, false, ignored -> false);
 
             assertEquals(
                     gold.debug.windowstolinux.shared.backup.execution.migration.OfflineMigrationStatus.PRECONDITION_REJECTED,
                     outcome.migration().status());
             assertTrue(outcome.retainedFinalArchive().isEmpty());
-            assertTrue(allCleared(master));
             assertTrue(allCleared(backupPassword));
         }
     }

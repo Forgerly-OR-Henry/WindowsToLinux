@@ -33,10 +33,5 @@ public enum DesktopUninstallState {
      * DATA REMOVED classification within desktop uninstall state.
      * <p>Desktop卸载状态中的数据已移除分类。
      */
-    DATA_REMOVED,
-    /**
-     * CREDENTIALS REMOVED classification within desktop uninstall state.
-     * <p>Desktop卸载状态中的凭据已移除分类。
-     */
-    CREDENTIALS_REMOVED
+    DATA_REMOVED
 }

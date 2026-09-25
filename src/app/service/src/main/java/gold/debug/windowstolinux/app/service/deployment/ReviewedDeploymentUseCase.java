@@ -228,17 +228,14 @@ public final class ReviewedDeploymentUseCase {
      *
      * @param request reviewed inputs for the requested operation / 所请求操作的已审阅输入
      * @param profile connection or provider settings supplied to the operation / 提供给操作的连接或提供者设置
-     * @param mode selected operating or storage mode / 所选运行或存储模式
-     * @param masterPassword master-password buffer used to unlock protected credentials / 用于解锁受保护凭据的主密码缓冲区
      * @param confirmation token or decision binding approval to the exact proposed action / 将批准绑定到精确提议动作的令牌或决定
      * @return the saved server credential only for this bounded reviewed transaction / 仅为本次有界经审阅事务读取已保存的服务器凭据
      * @throws SecretStoreException if the protected credential cannot be accessed or updated / 无法访问或更新受保护凭据时
      * @throws SQLException if the database cannot complete the requested read or transaction / 数据库无法完成请求的读取或事务时
      */
     public DeploymentOutcome deployWithStoredPassword(ReviewedDeploymentRequest request, ServerProfile profile,
-            gold.debug.windowstolinux.shared.model.security.CredentialStorageMode mode, char[] masterPassword,
             Predicate<String> confirmation) throws SecretStoreException, SQLException {
-        return deployWithStoredPassword(request, profile, mode, masterPassword, confirmation, ignored -> {
+        return deployWithStoredPassword(request, profile, confirmation, ignored -> {
         });
     }
 
@@ -247,8 +244,6 @@ public final class ReviewedDeploymentUseCase {
      *
      * @param request reviewed inputs for the requested operation / 所请求操作的已审阅输入
      * @param profile connection or provider settings supplied to the operation / 提供给操作的连接或提供者设置
-     * @param mode selected operating or storage mode / 所选运行或存储模式
-     * @param masterPassword master-password buffer used to unlock protected credentials / 用于解锁受保护凭据的主密码缓冲区
      * @param confirmation token or decision binding approval to the exact proposed action / 将批准绑定到精确提议动作的令牌或决定
      * @param progress progress / 进度
      * @return constructed or resolved deployment outcome / 构造或解析得到的部署结果
@@ -256,26 +251,19 @@ public final class ReviewedDeploymentUseCase {
      * @throws SQLException if the database cannot complete the requested read or transaction / 数据库无法完成请求的读取或事务时
      */
     public DeploymentOutcome deployWithStoredPassword(ReviewedDeploymentRequest request, ServerProfile profile,
-            gold.debug.windowstolinux.shared.model.security.CredentialStorageMode mode, char[] masterPassword,
             Predicate<String> confirmation,
             java.util.function.Consumer<gold.debug.windowstolinux.shared.deploy.contract.result.deployment.DeploymentEvent> progress)
             throws SecretStoreException, SQLException {
-        if (profile.credentialMode() != mode) {
-            throw ApplicationServiceException.create(ApplicationServiceFailureType.STORAGE_MODE_MISMATCH,
-                    "Credential storage mode does not match the saved server profile");
-        }
         List<ResolvedSecretRevision> resolvedSecrets = List.of();
         try {
-            resolvedSecrets = resolveSecrets(request.secretReferences(), masterPassword);
-            try (SecretStore store = servers.secrets().open(mode, masterPassword)) {
+            resolvedSecrets = resolveSecrets(request.secretReferences());
+            try (SecretStore store = servers.secrets().open()) {
                 return deploy(request, profile.endpoint(), servers.loadPassword(profile, store),
                         servers.hostKeyVerifier(profile, confirmation), resolvedSecrets, progress);
             }
         } finally {
             resolvedSecrets.forEach(ResolvedSecretRevision::close);
-            if (masterPassword != null) {
-                Arrays.fill(masterPassword, '\0');
-            }
+
         }
     }
 
@@ -423,12 +411,11 @@ public final class ReviewedDeploymentUseCase {
      * <p>解析凭据引用或限定作用域的秘密访问服务。
      *
      * @param references references / 引用集合
-     * @param masterPassword master-password buffer used to unlock protected credentials / 用于解锁受保护凭据的主密码缓冲区
      * @return credential references or scoped secret-access service / 凭据引用或限定作用域的秘密访问服务
      * @throws SQLException if the database cannot complete the requested read or transaction / 数据库无法完成请求的读取或事务时
      * @throws SecretStoreException if the protected credential cannot be accessed or updated / 无法访问或更新受保护凭据时
      */
-    private List<ResolvedSecretRevision> resolveSecrets(List<SecretReference> references, char[] masterPassword)
+    private List<ResolvedSecretRevision> resolveSecrets(List<SecretReference> references)
             throws SQLException, SecretStoreException {
         List<ResolvedSecretRevision> resolved = new java.util.ArrayList<>();
         try {
@@ -436,7 +423,7 @@ public final class ReviewedDeploymentUseCase {
                 var revision = applicationSecrets.findRevision(reference).orElseThrow(
                         () -> SecretStoreException.create(SecretStoreFailureType.APPLICATION_REFERENCE_MISSING,
                                 "Application secret revision metadata is missing"));
-                try (SecretStore store = servers.secrets().open(revision.credentialMode(), masterPassword)) {
+                try (SecretStore store = servers.secrets().open()) {
                     char[] value = store.read(revision.credentialKey())
                             .orElseThrow(() -> SecretStoreException.create(
                                     SecretStoreFailureType.APPLICATION_REFERENCE_MISSING,

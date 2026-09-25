@@ -38,7 +38,8 @@ public final class ExternalApplicationRepository {
      */
     public List<StoredExternalApplication> list() throws SQLException {
         try (Connection connection = connections.open();
-                var statement = connection.prepareStatement("SELECT * FROM external_application ORDER BY id");
+                var statement = connection
+                        .prepareStatement("SELECT * FROM external_application ORDER BY external_application_id");
                 var rows = statement.executeQuery()) {
             List<StoredExternalApplication> result = new ArrayList<>();
             while (rows.next())
@@ -56,7 +57,8 @@ public final class ExternalApplicationRepository {
      */
     public Optional<StoredExternalApplication> find(String id) throws SQLException {
         try (Connection connection = connections.open();
-                var statement = connection.prepareStatement("SELECT * FROM external_application WHERE id=?")) {
+                var statement = connection
+                        .prepareStatement("SELECT * FROM external_application WHERE external_application_id=?")) {
             statement.setString(1, id);
             try (var rows = statement.executeQuery()) {
                 return rows.next() ? Optional.of(read(rows)) : Optional.empty();
@@ -88,7 +90,7 @@ public final class ExternalApplicationRepository {
             String[] savedId = {application.id()};
             RepositoryTransactionExecutor.execute(connection, () -> {
                 try (var existing = connection.prepareStatement(
-                        "SELECT * FROM external_application WHERE server_id=? AND kind=? AND runtime_identity=?")) {
+                        "SELECT * FROM external_application WHERE server_profile_id=? AND runtime_type=? AND runtime_identity=?")) {
                     existing.setString(1, application.serverId());
                     existing.setString(2, application.application().target().kind().name());
                     existing.setString(3, application.application().target().identity());
@@ -106,20 +108,16 @@ public final class ExternalApplicationRepository {
                             if (!replaceChanged)
                                 throw new SQLException(
                                         "registered application identity changed; rescan and explicitly replace registration");
-                            try (var remove = connection
-                                    .prepareStatement("DELETE FROM external_application WHERE id=?");
-                                    var presentation = connection.prepareStatement(
-                                            "DELETE FROM application_presentation WHERE application_key=?")) {
+                            try (var remove = connection.prepareStatement(
+                                    "DELETE FROM external_application WHERE external_application_id=?")) {
                                 remove.setString(1, prior.id());
                                 remove.executeUpdate();
-                                presentation.setString(1, prior.id());
-                                presentation.executeUpdate();
                             }
                         }
                     }
                 }
-                try (var statement = connection
-                        .prepareStatement("INSERT INTO external_application VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)")) {
+                try (var statement = connection.prepareStatement(
+                        "INSERT INTO external_application(external_application_id,server_profile_id,bound_host,bound_ssh_port,bound_username,runtime_type,runtime_identity,identity_fingerprint,detected_name,runtime_state,can_start,can_stop,adopted_at,observed_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)")) {
                     var app = application.application();
                     var target = app.target();
                     statement.setString(1, application.id());
@@ -134,8 +132,8 @@ public final class ExternalApplicationRepository {
                     statement.setString(10, app.state().name());
                     statement.setBoolean(11, app.canStart());
                     statement.setBoolean(12, app.canStop());
-                    statement.setString(13, application.adoptedAt().toString());
-                    statement.setString(14, application.observedAt().toString());
+                    statement.setLong(13, application.adoptedAt().toEpochMilli());
+                    statement.setLong(14, application.observedAt().toEpochMilli());
                     statement.executeUpdate();
                 }
             });
@@ -154,11 +152,11 @@ public final class ExternalApplicationRepository {
     public void observe(String id, DiscoveredApplication app, Instant time) throws SQLException {
         try (Connection connection = connections.open();
                 var statement = connection.prepareStatement(
-                        "UPDATE external_application SET runtime_state=?, can_start=?, can_stop=?, observed_at=? WHERE id=? AND kind=? AND runtime_identity=? AND fingerprint=?")) {
+                        "UPDATE external_application SET runtime_state=?, can_start=?, can_stop=?, observed_at=? WHERE external_application_id=? AND runtime_type=? AND runtime_identity=? AND identity_fingerprint=?")) {
             statement.setString(1, app.state().name());
             statement.setBoolean(2, app.canStart());
             statement.setBoolean(3, app.canStop());
-            statement.setString(4, time.toString());
+            statement.setLong(4, time.toEpochMilli());
             statement.setString(5, id);
             statement.setString(6, app.target().kind().name());
             statement.setString(7, app.target().identity());
@@ -176,16 +174,17 @@ public final class ExternalApplicationRepository {
      * @throws SQLException if the database cannot complete the requested read or transaction / 数据库无法完成请求的读取或事务时
      */
     public Optional<StoredApplicationPresentation> presentation(String key) throws SQLException {
-        try (Connection connection = connections.open();
-                var statement = connection
-                        .prepareStatement("SELECT * FROM application_presentation WHERE application_key=?")) {
-            statement.setString(1, key);
+        boolean managed = key.startsWith("managed:");
+        String table = managed ? "deployment_unit" : "external_application";
+        String id = managed ? "deployment_unit_id" : "external_application_id";
+        try (var connection = connections.open();
+                var statement = connection.prepareStatement("SELECT display_name,application_category,access_url FROM "
+                        + table + " WHERE " + id + "=? AND has_display_override=1")) {
+            statement.setString(1, managed ? key.substring(8) : key);
             try (var rows = statement.executeQuery()) {
                 return rows.next()
-                        ? Optional.of(new StoredApplicationPresentation(key, rows.getString("display_name"),
-                                rows.getString("category"),
-                                Optional.ofNullable(rows.getString("access_url")).map(URI::create)
-                                        .map(UserAccessUrl::new)))
+                        ? Optional.of(new StoredApplicationPresentation(key, rows.getString(1), rows.getString(2),
+                                Optional.ofNullable(rows.getString(3)).map(URI::create).map(UserAccessUrl::new)))
                         : Optional.empty();
             }
         }
@@ -198,15 +197,19 @@ public final class ExternalApplicationRepository {
      * @throws SQLException if the database cannot complete the requested read or transaction / 数据库无法完成请求的读取或事务时
      */
     public void savePresentation(StoredApplicationPresentation value) throws SQLException {
-        try (Connection connection = connections.open(); var statement = connection.prepareStatement("""
-                INSERT INTO application_presentation VALUES (?,?,?,?) ON CONFLICT(application_key) DO UPDATE SET
-                display_name=excluded.display_name, category=excluded.category, access_url=excluded.access_url
-                """)) {
-            statement.setString(1, value.key());
-            statement.setString(2, value.name());
-            statement.setString(3, value.category());
-            statement.setString(4, value.accessUrl().map(url -> url.url().toString()).orElse(null));
-            statement.executeUpdate();
+        boolean managed = value.key().startsWith("managed:");
+        String table = managed ? "deployment_unit" : "external_application";
+        String id = managed ? "deployment_unit_id" : "external_application_id";
+        try (var connection = connections.open();
+                var statement = connection.prepareStatement("UPDATE " + table
+                        + " SET has_display_override=1,display_name=?,application_category=?,access_url=? WHERE " + id
+                        + "=?")) {
+            statement.setString(1, value.name());
+            statement.setString(2, value.category());
+            statement.setString(3, value.accessUrl().map(url -> url.url().toString()).orElse(null));
+            statement.setString(4, managed ? value.key().substring(8) : value.key());
+            if (statement.executeUpdate() != 1)
+                throw new SQLException("application no longer exists");
         }
     }
 
@@ -219,13 +222,14 @@ public final class ExternalApplicationRepository {
      * @throws SQLException if the database cannot complete the requested read or transaction / 数据库无法完成请求的读取或事务时
      */
     private static StoredExternalApplication read(ResultSet row) throws SQLException {
-        var target = new ExternalApplicationTarget(ExternalApplicationKind.valueOf(row.getString("kind")),
-                row.getString("runtime_identity"), row.getString("fingerprint"));
-        var app = new DiscoveredApplication(target, row.getString("display_name"),
+        var target = new ExternalApplicationTarget(ExternalApplicationKind.valueOf(row.getString("runtime_type")),
+                row.getString("runtime_identity"), row.getString("identity_fingerprint"));
+        var app = new DiscoveredApplication(target, row.getString("detected_name"),
                 RuntimeState.valueOf(row.getString("runtime_state")), row.getBoolean("can_start"),
                 row.getBoolean("can_stop"), false);
-        return new StoredExternalApplication(row.getString("id"), row.getString("server_id"), row.getString("host"),
-                row.getInt("ssh_port"), row.getString("username"), app, Instant.parse(row.getString("adopted_at")),
-                Instant.parse(row.getString("observed_at")));
+        return new StoredExternalApplication(row.getString("external_application_id"),
+                row.getString("server_profile_id"), row.getString("bound_host"), row.getInt("bound_ssh_port"),
+                row.getString("bound_username"), app, Instant.ofEpochMilli(row.getLong("adopted_at")),
+                Instant.ofEpochMilli(row.getLong("observed_at")));
     }
 }

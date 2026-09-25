@@ -18,11 +18,10 @@ final class AssistedManagedToolCatalog {
      * @param lifecycle existing ownership-enforcing lifecycle facade / 强制归属的既有生命周期门面
      * @param server frozen target / 冻结目标
      * @param applicationIds prepared application identities / 已准备应用身份
-     * @param master task unlock buffer / 任务解锁缓冲区
      * @throws java.sql.SQLException when inventory cannot be read / 无法读取清单时
      */
     static void register(AssistedDeploymentBoundary boundary, ManagedApplicationFacade lifecycle, ServerProfile server,
-            Set<String> applicationIds, char[] master) throws java.sql.SQLException {
+            Set<String> applicationIds) throws java.sql.SQLException {
         for (var saved : lifecycle.listManagedApplicationSummaries()) {
             var app = saved.application();
             if (!applicationIds.contains(app.id()) || !app.server().id().equals(server.id())
@@ -48,8 +47,7 @@ final class AssistedManagedToolCatalog {
                                 return false;
                             }
                         }, () -> {
-                            var result = lifecycle.executePersistedLifecycleWithStoredPassword(app.id(), action,
-                                    master.clone());
+                            var result = lifecycle.executePersistedLifecycleWithStoredPassword(app.id(), action);
                             if (result.observation().isEmpty())
                                 return new AgentObservation(false, false,
                                         Map.of("service", app.systemdUnit(), "result", "no-verified-observation"));

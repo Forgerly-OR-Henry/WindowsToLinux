@@ -22,7 +22,6 @@ public final class AssistedDeploymentModelAdapter
     private final AssistedAiProtocolClient client;
 
     /** Task-owned credential buffer. / 任务所属凭据缓冲区。 */
-    private final char[] master;
 
     /** Model scope and metrics. / 模型作用域及度量。 */
     private final DeploymentAiScope scope;
@@ -33,14 +32,13 @@ public final class AssistedDeploymentModelAdapter
     /** Creates assistance-only model capabilities. / 创建仅用于辅助的模型能力。
      * @param chain purpose router / 用途路由
      * @param transport generic model transport / 通用模型传输
-     * @param master task unlock buffer / 任务解锁缓冲区
      */
-    AssistedDeploymentModelAdapter(AiProviderChain chain, StructuredAiClient transport, char[] master) {
+    AssistedDeploymentModelAdapter(AiProviderChain chain, StructuredAiClient transport) {
         this.chain = chain;
         this.client = new AssistedAiProtocolClient(transport);
-        this.master = master.clone();
+
         scope = DeploymentAiScope.current().orElseThrow();
-        reviewer = new DeploymentReviewModelAdapter(chain, transport, this.master, scope);
+        reviewer = new DeploymentReviewModelAdapter(chain, transport, scope);
     }
 
     /** Requests a source-only analysis step. / 请求纯源码分析步骤。
@@ -53,7 +51,7 @@ public final class AssistedDeploymentModelAdapter
     @Override
     public AssistedAnalysisDecision analyze(Map<String, Object> context, List<Map<String, String>> observations,
             int remaining) throws Exception {
-        var result = chain.invoke(AiPurposeType.DEPLOYMENT, master.clone(), (profile, key) -> {
+        var result = chain.invoke(AiPurposeType.DEPLOYMENT, (profile, key) -> {
             var reply = client.analyze(profile.chatCompletionsEndpoint(), profile.model(), key, context, observations,
                     remaining);
             scope.usage(reply.tokens());
@@ -76,7 +74,7 @@ public final class AssistedDeploymentModelAdapter
     @Override
     public AgentDecision decide(String goal, List<AgentAction> actions, List<String> history, int remaining)
             throws Exception {
-        var result = chain.invoke(AiPurposeType.DEPLOYMENT, master.clone(), (profile, key) -> {
+        var result = chain.invoke(AiPurposeType.DEPLOYMENT, (profile, key) -> {
             var reply = client.decide(profile.chatCompletionsEndpoint(), profile.model(), key, goal, actions, history,
                     remaining);
             scope.usage(reply.tokens());
@@ -111,6 +109,6 @@ public final class AssistedDeploymentModelAdapter
     /** Wipes the task-owned unlock buffer. / 清零任务所属解锁缓冲区。 */
     @Override
     public void close() {
-        Arrays.fill(master, '\0');
+
     }
 }

@@ -1,5 +1,6 @@
 # WindowsToLinux 全文件架构索引
 
+> 状态：本索引仍对应当前 0.x 源码；1.1 新模块和类尚未创建，不提前列入。目标目录见 [File.md](File.md#phase-1-1-target)，旧 Web 预留仅说明已有文件，不要求继续实现。
 > 范围：仅记录 `src/` 下的非测试维护文件；省略 Maven 配置文件，测试、编译产物、忽略项和其他目录不纳入。
 > 排序：同级项目按名称字母升序排列；模块的 `resources/` 目录固定置于最后。
 > 粒度：模块、包和文件均有简体中文短注解；Java 文件仅说明与文件同名的顶级主类型。
@@ -8,31 +9,24 @@
 ```text
 src/  # 项目源码与模块根目录
 ├─ app/  # Windows 桌面应用模块分组
-│  ├─ db/  # 桌面 SQLite、事务迁移及应用仓库
-│  │  ├─ DesktopPersistence.java  # 在版本化迁移的 SQLite schema 上组合聚焦桌面仓库
+│  ├─ db/  # 桌面 SQLite v21、事务及应用仓库
+│  │  ├─ DesktopPersistence.java  # 在已校验的当前 SQLite schema 上组合聚焦桌面仓库
 │  │  ├─ entity/  # 持久化记录
 │  │  │  ├─ CurrentRelease.java  # 某个受管应用最后成功发布的发布身份
 │  │  │  ├─ ManagedApplicationGraph.java  # 一个已成功部署应用的持久拓扑、运行时及已审阅数据路径
-│  │  │  ├─ OpaqueSecret.java  # 仅供数据库保存的加密材料；本模块绝不解密它
-│  │  │  ├─ StoredAiProfile.java  # 非秘密 OpenAI 兼容端点元数据；API 密钥保留在 app/secret 中
 │  │  │  ├─ StoredAiProviderConfiguration.java  # 模型显示顺序、配置修订及独立文字和视觉能力记录
 │  │  │  ├─ StoredAiProviderProfile.java  # 命名的非秘密 AI 提供者元数据；仅持久化其不透明的凭据存储键
-│  │  │  ├─ StoredAiRoleAssignment.java  # 从一个固定协作角色到一个命名提供者的非秘密分配
 │  │  │  ├─ StoredApplicationPresentation.java  # 应用名称分类和入口覆盖
 │  │  │  ├─ StoredApplicationSecretRevision.java  # 用于定位普通配置和发布目录之外秘密的不可变元数据
 │  │  │  ├─ StoredExternalApplication.java  # 独立外部应用登记与端点身份
 │  │  │  ├─ StoredServerObservation.java  # 带时间的服务器连接检查证据
+│  │  │  ├─ StoredCredential.java  # 数据库凭据载荷与随机数
+│  │  │  ├─ StoredSecurityProfile.java  # 密码验证及已包装数据密钥
 │  │  │  ├─ StoredServerProfile.java  # 非秘密桌面连接元数据；密码或密钥保留在 app/secret 中
 │  │  │  └─ SuccessfulManagedDeployment.java  # 经验证部署事务后持久化的一个组件状态
 │  │  ├─ execution/  # 执行流程
-│  │  │  └─ migration/  # 版本化迁移
-│  │  │     ├─ AgentTaskSchemaMigration.java  # 在迁移事务内增加非秘密任务及追加动作证据
-│  │  │     ├─ AiPrioritySchemaMigration.java  # 桌面 AI 模型顺序 schema 迁移
-│  │  │     ├─ AiPurposeSchemaMigration.java  # 分离清单排序、已验证能力和用途成员
-│  │  │     ├─ ApplicationRuntimeSchemaMigration.java  # 保留旧记录并新增类型化 APP 运行契约列
-│  │  │     ├─ AutonomousTaskSchemaMigration.java  # 保留旧执行含义并对新任务证据分版本
-│  │  │     ├─ BrowserRecoverySchemaMigration.java  # 模型分组和非秘密救援状态迁移
-│  │  │     └─ DesktopSchemaMigrator.java  # 按版本顺序迁移并校验桌面 SQLite 数据库结构
+│  │  │  └─ schema/  # 全新结构初始化与严格校验
+│  │  │     └─ DesktopSchemaInitializer.java  # 仅创建空库或校验当前结构
 │  │  ├─ failure/  # 跨模块最小结构化失败契约
 │  │  │  ├─ DesktopPersistenceException.java  # 数据目录、完整性、锁定、磁盘及事务回滚的结构化停止失败
 │  │  │  └─ DesktopPersistenceFailureType.java  # 桌面 SQLite 失败码、阶段与恢复边界
@@ -47,7 +41,6 @@ src/  # 项目源码与模块根目录
 │  │     │  ├─ BrowserRecoveryRepository.java  # 保存救援阶段、动作摘要和审计事件
 │  │     │  ├─ ConfigurationSnapshotRepository.java  # 保存不可变的普通配置快照、条目及精确发布绑定
 │  │     │  ├─ DesktopPreferenceRepository.java  # 保存小型非秘密桌面偏好
-│  │     │  ├─ EncryptedSecretRepository.java  # 仅保存加密的不透明秘密载荷
 │  │     │  ├─ ExternalApplicationRepository.java  # 外部登记去重事务及显示设置
 │  │     │  ├─ ManagedApplicationGraphRepository.java  # 将持久整应用拓扑与成功组件版本原子保存
 │  │     │  ├─ ManagedApplicationRepository.java  # 保存受管应用、运行契约、发布和生命周期观测
@@ -70,14 +63,11 @@ src/  # 项目源码与模块根目录
 │  │  └─ startup/  # 应用装配与启动清理
 │  │     ├─ DesktopMain.java  # 使用受管部署要求固定数据目录的生产桌面引导程序
 │  │     └─ DesktopWindowController.java  # 持有一个桌面窗口，并在区域设置或主题变化时安全替换它
-│  ├─ secret/  # Windows Credential Manager 与主密码凭据存储
-│  │  ├─ Argon2AesSecretStore.java  # 使用加密包实现 Argon2id 与 AES-GCM 的数据库秘密存储
+│  ├─ secret/  # 主密码保护的统一数据库凭据存储
 │  │  ├─ crypto/  # 认证加密与备份秘密格式
-│  │  │  └─ Argon2AesGcmCryptoService.java  # 使用平台主密码保护桌面秘密存储
 │  │  ├─ SecretStore.java  # 定义秘密写入、读取、删除与调用方清零责任的平台凭据边界
 │  │  ├─ SecretStoreException.java  # 敏感存储失败被刻意设计为不附加明文输入
 │  │  ├─ SecretStoreFailureType.java  # 秘密存储失败码、阶段与人工恢复边界
-│  │  └─ WindowsCredentialManagerSecretStore.java  # 通过固定 P/Invoke 调用实现的 Windows Credential Manager 适配器
 │  ├─ service/  # App 模式分流、凭据与持久化及共享能力编排
 │  │  ├─ ai/  # AI 模型功能
 │  │  │  ├─ AiConfigurationUseCase.java  # 桌面模型测试、保存与顺序编排
@@ -186,7 +176,7 @@ src/  # 项目源码与模块根目录
 │  │  │  ├─ RecoverySshProbe.java  # 验证 SSH 身份、认证和只读命令执行
 │  │  │  └─ SshRecoveryUseCase.java  # 装配浏览器救援、服务器互斥及原任务衔接
 │  │  ├─ server/  # 服务器配置与观测
-│  │  │  ├─ DesktopSecretStoreService.java  # 按平台能力选择 Windows 凭据或数据库秘密存储
+│  │  │  ├─ DesktopSecretStoreService.java  # 为已接纳操作提供限定数据库凭据访问
 │  │  │  ├─ ServerProfile.java  # 已保存的非秘密桌面连接资料
 │  │  │  ├─ ServerSummary.java  # 服务器卡片与名称地址查询摘要
 │  │  │  └─ ServerUseCaseFacade.java  # 编排服务器资料、主机信任、连接验证与能力探测
@@ -663,7 +653,7 @@ src/  # 项目源码与模块根目录
 │  │  │  │  │  ├─ DeploymentInputArguments.java  # 将非秘密输入清单转换为确定性辅助程序参数
 │  │  │  │  │  ├─ DeploymentInputProtocolExecutor.java  # 在发布前通过 root 所有的辅助程序流式传输并封存运行时输入
 │  │  │  │  │  └─ ManagedContentArguments.java  # 将已审阅普通文件绑定渲染到固定远端受管数据根
-│  │  │  │  ├─ release/  # 发布身份与六期发布预留
+│  │  │  │  ├─ release/  # 发布身份与 0.6 期发布预留
 │  │  │  │  │  ├─ ContainerReleaseProtocolExecutor.java  # 应用彼此独立的 Docker 重启策略与 Podman Quadlet 发布协议
 │  │  │  │  │  └─ DeploymentReleaseProtocolExecutor.java  # 使用 root 所有的辅助程序处理经审阅非容器发布的快照、发布和回滚
 │  │  │  │  ├─ restore/  # 受管恢复候选与激活片段
@@ -690,7 +680,7 @@ src/  # 项目源码与模块根目录
 │  │  │     ├─ SystemdLifecycleExecutor.java  # 仅在归属观察后执行生命周期变更并验证其后置条件
 │  │  │     ├─ SystemdOwnershipObserver.java  # 仅在证明发布与 unit 归属后观察运行状态
 │  │  │     └─ SystemdUnitRenderer.java  # 从类型化运行规格生成固定且受约束的 systemd 单元
-│  │  ├─ session/  # 六期会话预留
+│  │  ├─ session/  # 0.6 期会话预留
 │  │  │  ├─ SshdLinuxRemoteSession.java  # 将各项类型化能力委派给其实现包的统一会话门面
 │  │  │  └─ SshSessionLifecycleExecutor.java  # 关闭 Apache SSHD 会话资源且不掩盖首要操作结果
 │  │  ├─ workspace/  # 受管远端源码与补丁边界
@@ -720,7 +710,7 @@ src/  # 项目源码与模块根目录
 │  │     │           │  ├─ 15-deployment-input.sh  # 解析并校验类型化部署输入、配置和秘密引用
 │  │     │           │  ├─ 16-application-input.sh  # 独立解析和验证 APP 运行协议
 │  │     │           │  └─ 17-managed-content.sh  # 解析、准备并验证普通文件的固定远端受管目录绑定
-│  │     │           ├─ release/  # 发布身份与六期发布预留
+│  │     │           ├─ release/  # 发布身份与 0.6 期发布预留
 │  │     │           │  ├─ 10-typed-release.sh  # 实现受约束的类型化候选发布与发布身份处理
 │  │     │           │  ├─ 12-container-image-input.sh  # rootless 镜像交接与容器数据权限
 │  │     │           │  ├─ 18-container-storage.sh  # 宿主绑定、镜像初始化、只读视图与挂载归属检查
@@ -831,7 +821,7 @@ src/  # 项目源码与模块根目录
 │  │  │  ├─ ExternalApplicationPort.java  # 既有应用发现与生命周期窄端口
 │  │  │  ├─ HealthCheckResult.java  # 完整受管部署健康检查策略的结果，而不只是进程检查
 │  │  │  └─ LinuxRuntimeExecutor.java  # 受管运行时观测、健康检查和生命周期契约
-│  │  ├─ session/  # 六期会话预留
+│  │  ├─ session/  # 0.6 期会话预留
 │  │  │  ├─ DeploymentRemoteSession.java  # 组合类型化部署与远程数据库能力的已验证受管会话
 │  │  │  └─ LinuxRemoteSession.java  # 仅由有界、类型化 Linux 能力组成的单个已验证远程会话
 │  │  ├─ transfer/  # SFTP 源码归档与恢复候选传输包
@@ -1027,7 +1017,7 @@ src/  # 项目源码与模块根目录
 │     │  │  │  └─ cmake/  # CMake 架构分析包
 │     │  │  │     ├─ CmakeDeploymentInspector.java  # 静态检查单目标且禁止下载依赖与自定义安装的 CMake 服务
 │     │  │  │     └─ CmakeFacts.java  # 保存固定 preset、唯一目标与精确 C/C++ 语言集合
-│     │  │  ├─ db/  # 桌面 SQLite、事务迁移及应用仓库
+│     │  │  ├─ db/  # 桌面 SQLite v21、事务及应用仓库
 │     │  │  │  └─ DatabaseProjectInspector.java  # 读取显式 DB 清单与 JDBC、Redis 声明
 │     │  │  ├─ dotnet/  # .NET 语言生态分析包
 │     │  │  │  ├─ DotNetLanguageInspector.java  # 独立于构建架构识别 .NET/C# 语言标记
@@ -1291,12 +1281,12 @@ src/  # 项目源码与模块根目录
 │              ├─ analysis.md  # 独立只读分析及真实证据引用协议
 │              ├─ assisted.md  # 部署前检查及已知失败解释协议
 │              └─ deployment.md  # 部署 Agent 版本化内置流程
-└─ web/  # 第五期 Spring Boot 服务台与第六期结构预留
+└─ web/  # 0.5 期 Spring Boot 服务台与 0.6 期结构预留
    ├─ api/  # Spring MVC 接口、Filter、SSE 与脱敏错误
-   │  ├─ account/  # 六期账号预留
-   │  │  └─ package-info.java  # 六期职责说明，仅预留，不提供可调用实现
-   │  ├─ audit/  # 六期审计预留
-   │  │  └─ package-info.java  # 六期职责说明，仅预留，不提供可调用实现
+   │  ├─ account/  # 0.6 期账号预留
+   │  │  └─ package-info.java  # 0.6 期职责说明，仅预留，不提供可调用实现
+   │  ├─ audit/  # 0.6 期审计预留
+   │  │  └─ package-info.java  # 0.6 期职责说明，仅预留，不提供可调用实现
    │  ├─ config/  # 配置模型与框架配置
    │  │  └─ WebHttpPolicy.java  # HTTP 容量、请求大小和 SSE 时限
    │  ├─ controller/  # 按业务职责划分的 Spring MVC Controller
@@ -1316,27 +1306,27 @@ src/  # 项目源码与模块根目录
    │  ├─ filter/  # 请求来源、容量限制与安全响应头
    │  │  ├─ BoundedWebRequest.java  # 已知及分块 JSON 请求体大小限制
    │  │  └─ WebRequestFilter.java  # 回环同源检查、并发配额与安全响应头
-   │  ├─ release/  # 发布身份与六期发布预留
-   │  │  └─ package-info.java  # 六期职责说明，仅预留，不提供可调用实现
+   │  ├─ release/  # 发布身份与 0.6 期发布预留
+   │  │  └─ package-info.java  # 0.6 期职责说明，仅预留，不提供可调用实现
    │  ├─ workspace/  # 受管远端源码与补丁边界
-   │  │  └─ package-info.java  # 六期职责说明，仅预留，不提供可调用实现
+   │  │  └─ package-info.java  # 0.6 期职责说明，仅预留，不提供可调用实现
    │  └─ resources/  # 生产资源
-   │     └─ openapi.json  # 第五期请求、任务与事件接口契约
+   │     └─ openapi.json  # 0.5 期请求、任务与事件接口契约
    ├─ auth/  # Web 身份认证职责预留模块
-   │  ├─ authorization/  # 六期授权预留
-   │  │  └─ package-info.java  # 六期职责说明，仅预留，不提供可调用实现
-   │  ├─ csrf/  # 六期 CSRF 预留
-   │  │  └─ package-info.java  # 六期职责说明，仅预留，不提供可调用实现
-   │  ├─ identity/  # 六期身份预留
-   │  │  └─ package-info.java  # 六期职责说明，仅预留，不提供可调用实现
-   │  ├─ initialization/  # 六期初始化预留
-   │  │  └─ package-info.java  # 六期职责说明，仅预留，不提供可调用实现
-   │  ├─ login/  # 六期登录预留
-   │  │  └─ package-info.java  # 六期职责说明，仅预留，不提供可调用实现
-   │  ├─ ratelimit/  # 六期速率限制预留
-   │  │  └─ package-info.java  # 六期职责说明，仅预留，不提供可调用实现
-   │  └─ session/  # 六期会话预留
-   │     └─ package-info.java  # 六期职责说明，仅预留，不提供可调用实现
+   │  ├─ authorization/  # 0.6 期授权预留
+   │  │  └─ package-info.java  # 0.6 期职责说明，仅预留，不提供可调用实现
+   │  ├─ csrf/  # 0.6 期 CSRF 预留
+   │  │  └─ package-info.java  # 0.6 期职责说明，仅预留，不提供可调用实现
+   │  ├─ identity/  # 0.6 期身份预留
+   │  │  └─ package-info.java  # 0.6 期职责说明，仅预留，不提供可调用实现
+   │  ├─ initialization/  # 0.6 期初始化预留
+   │  │  └─ package-info.java  # 0.6 期职责说明，仅预留，不提供可调用实现
+   │  ├─ login/  # 0.6 期登录预留
+   │  │  └─ package-info.java  # 0.6 期职责说明，仅预留，不提供可调用实现
+   │  ├─ ratelimit/  # 0.6 期速率限制预留
+   │  │  └─ package-info.java  # 0.6 期职责说明，仅预留，不提供可调用实现
+   │  └─ session/  # 0.6 期会话预留
+   │     └─ package-info.java  # 0.6 期职责说明，仅预留，不提供可调用实现
    ├─ db/  # Spring 数据源事务与 MyBatis-Plus 持久化
    │  ├─ config/  # 配置模型与框架配置
    │  │  └─ WebPersistenceConfiguration.java  # 事务、实体及 Mapper/XML 扫描配置
@@ -1346,17 +1336,17 @@ src/  # 项目源码与模块根目录
    │  │  ├─ StoredResource.java  # 带归属和乐观版本的资源
    │  │  ├─ StoredTask.java  # 持久化任务视图
    │  │  ├─ StoredTaskEvent.java  # 单调序号的任务事件
-   │  │  ├─ WebAiProfileEntity.java  # 第五期业务表持久化实体
-   │  │  ├─ WebApplicationEntity.java  # 第五期业务表持久化实体
-   │  │  ├─ WebBackupEntity.java  # 第五期业务表持久化实体
-   │  │  ├─ WebPreferenceEntity.java  # 第五期业务表持久化实体
+   │  │  ├─ WebAiProfileEntity.java  # 0.5 期业务表持久化实体
+   │  │  ├─ WebApplicationEntity.java  # 0.5 期业务表持久化实体
+   │  │  ├─ WebBackupEntity.java  # 0.5 期业务表持久化实体
+   │  │  ├─ WebPreferenceEntity.java  # 0.5 期业务表持久化实体
    │  │  ├─ WebResourceEntity.java  # 资源的作用域、版本与公共持久化字段
-   │  │  ├─ WebSecretEntity.java  # 第五期业务表持久化实体
-   │  │  ├─ WebServerEntity.java  # 第五期业务表持久化实体
-   │  │  ├─ WebSourceEntity.java  # 第五期业务表持久化实体
-   │  │  ├─ WebTaskDecisionEntity.java  # 第五期业务表持久化实体
-   │  │  ├─ WebTaskEntity.java  # 第五期业务表持久化实体
-   │  │  └─ WebTaskTargetEntity.java  # 第五期业务表持久化实体
+   │  │  ├─ WebSecretEntity.java  # 0.5 期业务表持久化实体
+   │  │  ├─ WebServerEntity.java  # 0.5 期业务表持久化实体
+   │  │  ├─ WebSourceEntity.java  # 0.5 期业务表持久化实体
+   │  │  ├─ WebTaskDecisionEntity.java  # 0.5 期业务表持久化实体
+   │  │  ├─ WebTaskEntity.java  # 0.5 期业务表持久化实体
+   │  │  └─ WebTaskTargetEntity.java  # 0.5 期业务表持久化实体
    │  ├─ execution/  # 执行流程
    │  │  └─ migration/  # 版本化迁移
    │  │     └─ WebSchemaMigrator.java  # 事务性 Web schema 迁移及完整性检查
@@ -1393,7 +1383,7 @@ src/  # 项目源码与模块根目录
    │     │  ├─ WebSourceMapper.xml  # 作用域及版本条件明确的更新 SQL
    │     │  └─ WebTaskMapper.xml  # 作用域及版本条件明确的更新 SQL
    │     ├─ schema/  # 版本化数据库定义
-   │     │  └─ 001-web.sql  # 26 张业务与六期预留表、复合外键和索引
+   │     │  └─ 001-web.sql  # 26 张业务与 0.6 期预留表、复合外键和索引
    │     └─ sql-error-codes.xml  # SQLite 约束与锁错误的 Spring 分类
    ├─ file/  # 流式上传、配额与受管工作区
    │  ├─ quota/  # 上传和存储配额
@@ -1469,15 +1459,15 @@ src/  # 项目源码与模块根目录
    │  ├─ masterkey/  # 测试主密钥生命周期
    │  │  ├─ WebMasterKey.java  # 内存主密钥与关闭清零
    │  │  └─ WebMasterKeyStore.java  # 当前用户权限、持久密钥标识与生成复用
-   │  └─ password/  # 六期密码学边界预留
-   │     └─ package-info.java  # 六期职责说明，仅预留，不提供可调用实现
+   │  └─ password/  # 0.6 期密码学边界预留
+   │     └─ package-info.java  # 0.6 期职责说明，仅预留，不提供可调用实现
    ├─ service/  # Web 业务服务与共享规则组合
-   │  ├─ account/  # 六期账号预留
-   │  │  └─ package-info.java  # 六期职责说明，仅预留，不提供可调用实现
+   │  ├─ account/  # 0.6 期账号预留
+   │  │  └─ package-info.java  # 0.6 期职责说明，仅预留，不提供可调用实现
    │  ├─ ai/  # AI 模型功能
    │  │  └─ WebAiService.java  # 固定模型测试、排序及有界候选建议
-   │  ├─ audit/  # 六期审计预留
-   │  │  └─ package-info.java  # 六期职责说明，仅预留，不提供可调用实现
+   │  ├─ audit/  # 0.6 期审计预留
+   │  │  └─ package-info.java  # 0.6 期职责说明，仅预留，不提供可调用实现
    │  ├─ backup/  # 备份恢复迁移
    │  │  ├─ WebBackupCollection.java  # 停止写入后收集精确材料并生成共享归档
    │  │  ├─ WebBackupRestore.java  # 共享候选恢复与成功图登记
@@ -1507,15 +1497,15 @@ src/  # 项目源码与模块根目录
    │  ├─ persistence/  # 数据编解码职责组
    │  │  └─ serialization/  # 持久化与接口数据序列化
    │  │     └─ WebJsonCodec.java  # 严格 JSON 编解码和对象转换
-   │  ├─ release/  # 发布身份与六期发布预留
-   │  │  └─ package-info.java  # 六期职责说明，仅预留，不提供可调用实现
+   │  ├─ release/  # 发布身份与 0.6 期发布预留
+   │  │  └─ package-info.java  # 0.6 期职责说明，仅预留，不提供可调用实现
    │  ├─ server/  # 服务器配置与观测
    │  │  └─ WebServerService.java  # 服务器资料、固定主机指纹与新鲜观测
    │  ├─ source/  # 源码快照、受控浏览、搜索与归档
    │  │  └─ WebSourceService.java  # 上传及 Git 快照冻结、复验和静态分析
    │  ├─ WebApplicationService.java  # Web 用例入口及排队目标固定
    │  └─ workspace/  # 受管远端源码与补丁边界
-   │     └─ package-info.java  # 六期职责说明，仅预留，不提供可调用实现
+   │     └─ package-info.java  # 0.6 期职责说明，仅预留，不提供可调用实现
    └─ task/  # 持久化任务调度与恢复
       ├─ model/  # 任务状态模型
       │  ├─ TaskState.java  # 持久化任务状态集合
@@ -1523,3 +1513,18 @@ src/  # 项目源码与模块根目录
       └─ scheduler/  # 任务并发与交互调度
          └─ WebTaskScheduler.java  # 持久化任务排队、互斥、取消、决定与重启重新验证
 ```
+
+## APP 安全改造新增节点
+
+- `app/db/resources/schema/desktop.sql`：v21 的 19 张表及约束。
+- `app/secret/CredentialVault.java`、`app/secret/crypto/PasswordKeyCrypto.java`：统一凭据库、密码验证、密钥包装及引用计数句柄。
+- `app/service/contract/security`：`SecurityApplicationFacade`、`DesktopTaskAuthorization`、`DesktopSecurityState`，不向 UI 暴露密钥。
+- `app/service/security/DesktopSecurityService.java`：会话、锁定、任务接纳与安全变更互斥。
+- `app/service/contract/definition/DeploymentPreferences.java`：持久化部署模式与审批选择。
+- `app/ui/shell/DesktopHeader.java`：独立页头布局，控制窗口外壳职责大小。
+- `app/ui/shell/DesktopLockController.java`：主窗口及从属窗口的锁定层与键盘门禁。
+- `app/ui/setting/SecuritySettingsPane.java`：主密码与全局凭据加密设置。
+
+APP 数据库不再维护迁移链或旧结构读取分支；Web 节点保持原实现，后续同步。
+
+- `app/windows/recovery/BrowserWindowPrivacy.java` 与 `window-privacy.ps1`：仅隐藏/恢复归属经过校验的 APP 隔离 Chromium 原生窗口。

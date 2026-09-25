@@ -33,7 +33,6 @@ import gold.debug.windowstolinux.shared.model.health.UserAccessUrl;
 import gold.debug.windowstolinux.shared.model.lifecycle.LifecycleAction;
 import gold.debug.windowstolinux.shared.model.lifecycle.RuntimeState;
 import gold.debug.windowstolinux.shared.model.project.DeploymentBuildToolType;
-import gold.debug.windowstolinux.shared.model.security.CredentialStorageMode;
 import gold.debug.windowstolinux.shared.standard.deploy.contract.ReviewedDeploymentRequest;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIfSystemProperty;
@@ -45,6 +44,7 @@ import org.junit.jupiter.api.io.TempDir;
  * <p>用于证明标准 Maven Wrapper 只在 Ubuntu 候选项上使用的可选部署测试。
  */
 @EnabledIfSystemProperty(named = "managed.runtime.wrapper", matches = "true")
+@org.junit.jupiter.api.extension.ExtendWith(MainSecurityFixture.class)
 class UbuntuManagedMavenWrapperAcceptanceTest {
     @TempDir
     Path temporaryDirectory;
@@ -72,12 +72,12 @@ class UbuntuManagedMavenWrapperAcceptanceTest {
                 200, 20);
         UserAccessUrl userAccessUrl = new UserAccessUrl(URI.create(accessUrlProperty));
         try (DesktopPersistence database = DesktopPersistence.open(temporaryDirectory.resolve("desktop-data"))) {
-            DesktopApplicationFacade service = new DesktopApplicationFacade(database,
+            DesktopApplicationFacade service = MainSecurityFixture.unlocked(new DesktopApplicationFacade(database,
                     temporaryDirectory.resolve("work"),
                     new SshdLinuxGateway(
                             gold.debug.windowstolinux.shared.standard.deploy.build.DeploymentBuildExecutor::new,
                             gold.debug.windowstolinux.shared.standard.deploy.distro.extension.registry.DistributionSetupRegistry
-                                    .defaults()));
+                                    .defaults())));
             ReviewedSourcePreparation preparation = ReviewedMavenAcceptanceFixture.prepare(service, source);
             assertTrue(preparation.archive().isPresent(), "fixture must pass static analysis");
             assertEquals(DeploymentBuildToolType.MAVEN_WRAPPER,
@@ -86,11 +86,9 @@ class UbuntuManagedMavenWrapperAcceptanceTest {
             assertArchiveContainsWrapper(preparation);
 
             ServerProfile profile = new ServerProfile("ubuntu-managed-wrapper", host, 22, username,
-                    "ssh/ubuntu-managed-wrapper/password", CredentialStorageMode.MASTER_PASSWORD);
-            service.saveServerProfile(profile, CredentialStorageMode.MASTER_PASSWORD,
-                    "managed-wrapper-master".toCharArray(), password.toCharArray());
-            var capabilities = service.verifyServer(profile, CredentialStorageMode.MASTER_PASSWORD,
-                    "managed-wrapper-master".toCharArray(), fingerprint -> true);
+                    "ssh/ubuntu-managed-wrapper/password");
+            service.saveServerProfile(profile, password.toCharArray());
+            var capabilities = service.verifyServer(profile, fingerprint -> true);
             assertTrue(capabilities.supportsManagedDeployment(true, health),
                     () -> "Ubuntu target must meet Maven Wrapper preconditions: " + capabilities);
 
@@ -99,8 +97,7 @@ class UbuntuManagedMavenWrapperAcceptanceTest {
                     health, Optional.of(userAccessUrl),
                     new BuildLimitConfiguration(1200, 1024, 4096, 4L * 1024 * 1024, 2L * 1024 * 1024 * 1024, rootBuild),
                     rootBuild);
-            DeploymentOutcome result = service.deployReviewedWithStoredPassword(request, profile,
-                    CredentialStorageMode.MASTER_PASSWORD, "managed-wrapper-master".toCharArray(), fingerprint -> true);
+            DeploymentOutcome result = service.deployReviewedWithStoredPassword(request, profile, fingerprint -> true);
             assertEquals(DeploymentStatus.SUCCEEDED, result.status(), () -> result.events().toString());
             URI accessUrl = requireHttpAccessUrl(result, userAccessUrl.url());
             assertDesktopCanAccess(accessUrl, "deployment-smoke-ok");
@@ -114,8 +111,7 @@ class UbuntuManagedMavenWrapperAcceptanceTest {
             assertEvent(result, "candidate-health", true);
 
             LifecycleActionResult refresh = service.executePersistedLifecycleResultWithStoredPassword(
-                    request.facts().applicationId(), LifecycleAction.REFRESH_STATUS,
-                    "managed-wrapper-master".toCharArray());
+                    request.facts().applicationId(), LifecycleAction.REFRESH_STATUS);
             assertTrue(refresh.accepted(), refresh::toString);
             assertTrue(refresh.observation().orElseThrow().ownershipVerified());
             assertEquals(RuntimeState.RUNNING, refresh.observation().orElseThrow().runtimeState());

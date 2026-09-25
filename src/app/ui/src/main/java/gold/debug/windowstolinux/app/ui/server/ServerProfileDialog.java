@@ -14,7 +14,6 @@ import gold.debug.windowstolinux.app.service.contract.ServerApplicationFacade;
 import gold.debug.windowstolinux.app.service.server.ServerProfile;
 import gold.debug.windowstolinux.app.ui.component.*;
 import gold.debug.windowstolinux.app.ui.i18n.PageMessagePresenter;
-import gold.debug.windowstolinux.shared.model.security.CredentialStorageMode;
 
 /**
  * Independent server editor with the existing secret store and SSH trust flow. / 独立服务器编辑窗口，复用秘密存储及 SSH 信任流程。
@@ -41,17 +40,8 @@ public final class ServerProfileDialog extends JDialog {
     /**
      * Swing control for password.
      * <p>密码对应的 Swing 控件。
-     * <p>master:
-     * Swing control for master.
-     * <p>主对应的 Swing 控件。
      */
-    private final JPasswordField password = new JPasswordField(24), master = new JPasswordField(24);
-
-    /**
-     * Storage.
-     * <p>存储。
-     */
-    private final JComboBox<CredentialStorageMode> storage = new JComboBox<>(CredentialStorageMode.values());
+    private final JPasswordField password = new JPasswordField(24);
 
     /**
      * Swing control for status.
@@ -60,8 +50,8 @@ public final class ServerProfileDialog extends JDialog {
     private final JTextArea status = DesktopComponentFactory.outputArea();
 
     /**
-     * Validates and saves server connection metadata and the selected credential-storage mode, then notifies the owning page.
-     * <p>校验并保存服务器连接元数据及所选凭据存储模式，随后通知所属页面。
+     * Validates and saves server connection metadata and its database credential, then notifies the owning page.
+     * <p>校验并保存服务器连接元数据及对应数据库凭据，随后通知所属页面。
      */
     private final JButton save;
 
@@ -126,11 +116,6 @@ public final class ServerProfileDialog extends JDialog {
         existing = profile != null;
         id = existing ? profile.id() : "server-" + UUID.randomUUID().toString().substring(0, 12);
         credentialKey = existing ? profile.credentialKey() : "ssh/" + id + "/password";
-        storage.setSelectedItem(existing ? profile.credentialMode() : CredentialStorageMode.WINDOWS_CREDENTIAL_MANAGER);
-        messages.localize(storage, "credential.mode.");
-        storage.addActionListener(
-                event -> master.setEnabled(storage.getSelectedItem() == CredentialStorageMode.MASTER_PASSWORD));
-        master.setEnabled(storage.getSelectedItem() == CredentialStorageMode.MASTER_PASSWORD);
         if (existing) {
             name.setText(profile.displayName());
             host.setText(profile.host());
@@ -144,8 +129,6 @@ public final class ServerProfileDialog extends JDialog {
         c.addField(form, 2, 0, messages.text("field.sshPort"), port);
         c.addField(form, 3, 0, messages.text("field.sshUser"), username);
         c.addField(form, 4, 0, messages.text("field.sshPassword"), password);
-        c.addField(form, 5, 0, messages.text("field.credentialStorage"), storage);
-        c.addField(form, 6, 0, messages.text("field.masterPassword"), master);
         save = c.primaryButton(messages.text("button.saveServer"));
         save.addActionListener(event -> save());
         JButton cancel = c.secondaryButton(messages.text("button.cancel"));
@@ -191,15 +174,14 @@ public final class ServerProfileDialog extends JDialog {
             @Override
             public void windowClosed(WindowEvent event) {
                 password.setText("");
-                master.setText("");
             }
         });
         getRootPane().setDefaultButton(save);
     }
 
     /**
-     * Validates and saves server connection metadata and the selected credential-storage mode, then notifies the owning page.
-     * <p>校验并保存服务器连接元数据及所选凭据存储模式，随后通知所属页面。
+     * Validates and saves server connection metadata and its database credential, then notifies the owning page.
+     * <p>校验并保存服务器连接元数据及对应数据库凭据，随后通知所属页面。
      *
      * @throws IllegalArgumentException if an input violates the constraints checked by this contract / 输入违反当前契约检查的约束时
      */
@@ -207,12 +189,10 @@ public final class ServerProfileDialog extends JDialog {
         if (busy)
             return;
         try {
-            var mode = (CredentialStorageMode) storage.getSelectedItem();
             var profile = new ServerProfile(id, host.getText().trim(), Integer.parseInt(port.getText().trim()),
-                    username.getText().trim(), credentialKey, mode, name.getText());
-            char[] secret = password.getPassword(), unlock = master.getPassword();
+                    username.getText().trim(), credentialKey, name.getText());
+            char[] secret = password.getPassword();
             if (!existing && secret.length == 0) {
-                Arrays.fill(unlock, '\0');
                 throw new IllegalArgumentException(messages.text("server.password.required"));
             }
             busy = true;
@@ -222,14 +202,13 @@ public final class ServerProfileDialog extends JDialog {
             var written = new java.util.concurrent.atomic.AtomicBoolean();
             DesktopTaskExecutor.run(() -> {
                 try {
-                    service.saveServerProfile(profile, mode, unlock.clone(), secret);
+                    service.saveServerProfile(profile, secret);
                     written.set(true);
-                    service.verifyServer(profile, mode, unlock.clone(),
+                    service.verifyServer(profile,
                             fingerprint -> ServerTrustPrompt.confirm(this, messages, fingerprint));
                     return profile;
                 } finally {
                     Arrays.fill(secret, '\0');
-                    Arrays.fill(unlock, '\0');
                 }
             }, value -> {
                 busy = false;
@@ -256,6 +235,5 @@ public final class ServerProfileDialog extends JDialog {
     private void setInputs(boolean enabled) {
         for (Component child : form.getComponents())
             child.setEnabled(enabled);
-        master.setEnabled(enabled && storage.getSelectedItem() == CredentialStorageMode.MASTER_PASSWORD);
     }
 }

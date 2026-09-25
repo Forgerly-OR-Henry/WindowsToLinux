@@ -19,7 +19,6 @@ import gold.debug.windowstolinux.shared.linux.connection.LinuxGateway;
 import gold.debug.windowstolinux.shared.linux.error.LinuxOperationException;
 import gold.debug.windowstolinux.shared.model.deployment.EnvironmentSetupApproval;
 import gold.debug.windowstolinux.shared.model.deployment.EnvironmentSetupResult;
-import gold.debug.windowstolinux.shared.model.security.CredentialStorageMode;
 
 /**
  * Adapts desktop credentials and approvals to managed Linux environment preparation.
@@ -73,8 +72,6 @@ public final class EnvironmentSetupUseCase {
      * <p>准备环境Setup结果。
      *
      * @param profile connection or provider settings supplied to the operation / 提供给操作的连接或提供者设置
-     * @param mode selected operating or storage mode / 所选运行或存储模式
-     * @param masterPassword master-password buffer used to unlock protected credentials / 用于解锁受保护凭据的主密码缓冲区
      * @param confirmation token or decision binding approval to the exact proposed action / 将批准绑定到精确提议动作的令牌或决定
      * @param installationConfirmed installation confirmed / 安装已确认
      * @return the operation result / 操作结果
@@ -82,18 +79,15 @@ public final class EnvironmentSetupUseCase {
      * @throws SQLException if the database cannot complete the requested read or transaction / 数据库无法完成请求的读取或事务时
      * @throws LinuxOperationException if the authenticated remote operation fails or its evidence is rejected / 已认证远端操作失败或其证据被拒绝时
      */
-    public EnvironmentSetupResult prepare(ServerProfile profile, CredentialStorageMode mode, char[] masterPassword,
-            Predicate<String> confirmation, boolean installationConfirmed)
-            throws SecretStoreException, SQLException, LinuxOperationException {
-        return prepare(profile, mode, masterPassword, confirmation, installationConfirmed, null);
+    public EnvironmentSetupResult prepare(ServerProfile profile, Predicate<String> confirmation,
+            boolean installationConfirmed) throws SecretStoreException, SQLException, LinuxOperationException {
+        return prepare(profile, confirmation, installationConfirmed, null);
     }
 
     /**
      * Adds dedicated system-change consent without widening ordinary installation approval. / 增加独立系统变更批准，不扩大普通安装批准范围。
      *
      * @param profile connection or provider settings supplied to the operation / 提供给操作的连接或提供者设置
-     * @param mode selected operating or storage mode / 所选运行或存储模式
-     * @param masterPassword master-password buffer used to unlock protected credentials / 用于解锁受保护凭据的主密码缓冲区
      * @param confirmation token or decision binding approval to the exact proposed action / 将批准绑定到精确提议动作的令牌或决定
      * @param installationConfirmed installation confirmed / 安装已确认
      * @param systemConfirmation system confirmation / 系统确认
@@ -103,22 +97,18 @@ public final class EnvironmentSetupUseCase {
      * @throws LinuxOperationException if the authenticated remote operation fails or its evidence is rejected / 已认证远端操作失败或其证据被拒绝时
      * @throws NullPointerException if a required input is absent / 必需输入缺失时
      */
-    public EnvironmentSetupResult prepare(ServerProfile profile, CredentialStorageMode mode, char[] masterPassword,
-            Predicate<String> confirmation, boolean installationConfirmed,
+    public EnvironmentSetupResult prepare(ServerProfile profile, Predicate<String> confirmation,
+            boolean installationConfirmed,
             Predicate<gold.debug.windowstolinux.shared.model.server.security.SelinuxPreparationPlan> systemConfirmation)
             throws SecretStoreException, SQLException, LinuxOperationException {
-        try {
+        {
             Objects.requireNonNull(profile, "profile");
-            if (profile.credentialMode() != mode) {
-                throw ApplicationServiceException.create(ApplicationServiceFailureType.STORAGE_MODE_MISMATCH,
-                        "Credential storage mode does not match the saved server profile");
-            }
             EnvironmentSetupApproval approval = new EnvironmentSetupApproval(profile.id(), installationConfirmed,
                     Instant.now());
             approval.requireAcceptedFor(profile.id());
             ReentrantLock lock = locks.forServer(profile.id());
             lock.lock();
-            try (SecretStore store = servers.secrets().open(mode, masterPassword)) {
+            try (SecretStore store = servers.secrets().open()) {
                 if (systemConfirmation != null) {
                     return service.prepare(approval, gateway, profile.endpoint(), servers.loadPassword(profile, store),
                             servers.hostKeyVerifier(profile, confirmation), systemConfirmation);
@@ -127,10 +117,6 @@ public final class EnvironmentSetupUseCase {
                         servers.hostKeyVerifier(profile, confirmation));
             } finally {
                 lock.unlock();
-            }
-        } finally {
-            if (masterPassword != null) {
-                Arrays.fill(masterPassword, '\0');
             }
         }
     }

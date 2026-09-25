@@ -67,7 +67,8 @@ class PackageStructureArchitectureTest {
             "ProjectLanguageInspector.java");
 
     private static final Set<String> DESKTOP_SHELL = Set.of("DesktopDisplayChangeHandler.java", "DesktopFrame.java",
-            "DesktopPageCoordinator.java", "DesktopViewState.java", "PageNavigationController.java");
+            "DesktopPageCoordinator.java", "DesktopViewState.java", "PageNavigationController.java",
+            "DesktopLockController.java", "DesktopHeader.java");
 
     private static final Set<String> DEPLOYMENT_SHARED = Set.of("ReviewContext.java");
 
@@ -81,10 +82,9 @@ class PackageStructureArchitectureTest {
 
     private static final Set<String> REPOSITORIES = Set.of("AiProfileRepository.java", "AiPurposeRepository.java",
             "AgentTaskRepository.java", "BrowserRecoveryRepository.java", "ApplicationSecretRepository.java",
-            "ConfigurationSnapshotRepository.java", "DesktopPreferenceRepository.java",
-            "EncryptedSecretRepository.java", "ManagedApplicationRepository.java",
-            "ManagedApplicationGraphRepository.java", "RepositoryTransactionExecutor.java",
-            "ServerProfileRepository.java", "ExternalApplicationRepository.java");
+            "ConfigurationSnapshotRepository.java", "DesktopPreferenceRepository.java", "SecurityRepository.java",
+            "ManagedApplicationRepository.java", "ManagedApplicationGraphRepository.java",
+            "RepositoryTransactionExecutor.java", "ServerProfileRepository.java", "ExternalApplicationRepository.java");
 
     private static final Set<String> HELPER_FRAGMENTS = Set.of("27-agent-workspace.sh", "source-operations.py",
             "21-workspace-volume.sh", "22-restricted-build.sh", "23-container-builder.sh", "24-build-entry.sh",
@@ -135,10 +135,10 @@ class PackageStructureArchitectureTest {
             "DistributionSupportRules", "HostSupportDecision", "HostSupportEvaluator", "HostSupportEvaluatorTest",
             "HostSupportStatus", "ManagedHelperBundle", "ManagedHelperBundleTest", "ManagedHelperProtocol",
             "ManagedHelperProtocolVersion", "MultiComponentDraftController", "OracleLinuxSupportPolicy",
-            "PageNavigationController", "RockyLinuxSupportPolicy", "UbuntuSupportPolicy",
-            "WindowsCredentialManagerSecretStore", "WebAiController", "WebApplicationController", "WebBackupController",
-            "WebErrorController", "WebHealthController", "WebPreferenceController", "WebSecretController",
-            "WebServerController", "WebSourceController", "WebTaskController");
+            "PageNavigationController", "RockyLinuxSupportPolicy", "UbuntuSupportPolicy", "DesktopLockController",
+            "WebAiController", "WebApplicationController", "WebBackupController", "WebErrorController",
+            "WebHealthController", "WebPreferenceController", "WebSecretController", "WebServerController",
+            "WebSourceController", "WebTaskController");
 
     private static final Set<String> FORBIDDEN_RESOURCE_TOKENS = Set.of("bean", "checker", "common", "concrete",
             "generic", "impl", "implementation", "legacy", "misc", "new", "object", "old", "processor", "temp",
@@ -151,9 +151,10 @@ class PackageStructureArchitectureTest {
             "rust", "dotnet", "kotlin", "php", "ruby");
 
     private static final Map<String, Set<String>> FUNCTIONAL_GROUP_RESPONSIBILITIES = Map.of("contract",
-            Set.of("capability", "definition", "policy", "profile", "result", "spi", "validation"), "generation",
-            Set.of("prompt", "renderer", "script", "template"), "extension", Set.of("adapter", "registry"), "execution",
-            Set.of("collection", "environment", "lifecycle", "migration", "protocol", "transaction", "transfer"),
+            Set.of("capability", "definition", "security", "policy", "profile", "result", "spi", "validation"),
+            "generation", Set.of("prompt", "renderer", "script", "template"), "extension",
+            Set.of("adapter", "registry"), "execution", Set.of("collection", "environment", "lifecycle", "migration",
+                    "schema", "protocol", "transaction", "transfer"),
             "persistence", Set.of("connection", "mapper", "repository", "serialization"));
 
     private static final Map<String, String> RESPONSIBILITY_FUNCTIONAL_GROUPS = Map.ofEntries(
@@ -162,7 +163,7 @@ class PackageStructureArchitectureTest {
             Map.entry("validation", "contract"), Map.entry("prompt", "generation"), Map.entry("renderer", "generation"),
             Map.entry("script", "generation"), Map.entry("template", "generation"), Map.entry("adapter", "extension"),
             Map.entry("registry", "extension"), Map.entry("environment", "execution"),
-            Map.entry("lifecycle", "execution"), Map.entry("migration", "execution"),
+            Map.entry("lifecycle", "execution"), Map.entry("migration", "execution"), Map.entry("schema", "execution"),
             Map.entry("protocol", "execution"), Map.entry("transaction", "execution"),
             Map.entry("transfer", "execution"), Map.entry("connection", "persistence"),
             Map.entry("mapper", "persistence"), Map.entry("repository", "persistence"),

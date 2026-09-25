@@ -132,8 +132,8 @@ final class DesktopWindowController {
             return;
         }
         try {
-            database.preferences().save(DesktopPersistence.UI_LOCALE_SETTING, selected.localeTag());
-            database.preferences().save(DesktopPersistence.UI_THEME_SETTING, selected.themeMode().name());
+            database.preferences().saveAll(java.util.Map.of(DesktopPersistence.UI_LOCALE_SETTING, selected.localeTag(),
+                    DesktopPersistence.UI_THEME_SETTING, selected.themeMode().name()));
         } catch (SQLException exception) {
             throw new IllegalStateException("desktop preference persistence failed", exception);
         }
@@ -165,34 +165,56 @@ final class DesktopWindowController {
             frame.restoreWorkspaceWindowBounds(bounds);
         }
         try {
-            frame.setNavigationCollapsed(
-                    Boolean.parseBoolean(database.preferences().find("ui.navigationCollapsed").orElse("false")));
+            frame.setNavigationCollapsed(navigationPreference());
         } catch (SQLException failure) {
             throw new IllegalStateException("Navigation preference could not be read", failure);
         }
         frame.onNavigationChange(collapsed -> {
             try {
-                database.preferences().save("ui.navigationCollapsed", Boolean.toString(collapsed));
+                database.preferences().save("ui_navigation_collapsed", Boolean.toString(collapsed));
             } catch (SQLException failure) {
                 throw new IllegalStateException("Navigation preference could not be saved", failure);
             }
+        });
+        frame.onExit(() -> {
+            systemThemeTimer.stop();
+            service.closeSshRecovery();
+            service.closeSecurity();
+            frame.dispose();
+            System.exit(0);
         });
         frame.setExtendedState(windowState);
         frame.setVisible(true);
     }
 
     /**
-     * Refreshes system theme if changed.
-     * <p>刷新系统主题If已变化。
+     * Reads the navigation preference and rejects invalid stored text.
+     * <p>读取导航偏好并拒绝非法已存文本。
+     * @return the validated result or retained scoped handle / 已验证结果或保留的限定句柄
+     * @throws SQLException if validation or the scoped operation fails / 校验或限定操作失败时
+     */
+    private boolean navigationPreference() throws SQLException {
+        String value = database.preferences().find("ui_navigation_collapsed").orElse("false");
+        if (!value.equals("true") && !value.equals("false"))
+            throw new SQLException("invalid ui_navigation_collapsed preference");
+        return Boolean.parseBoolean(value);
+    }
+
+    /** Rebuilds appearance only while the session is unlocked and idle. / 仅在会话解锁且空闲时重建外观。
      */
     private void refreshSystemThemeIfChanged() {
-        if (gold.debug.windowstolinux.app.ui.component.DesktopTaskExecutor.hasActiveTasks()
+        if (service != null && (!service.securityState().unlocked() || service.securityState().activeTasks() > 0)
+                || gold.debug.windowstolinux.app.ui.component.DesktopTaskExecutor.hasActiveTasks()
                 || appearance.themeMode() != ThemeMode.SYSTEM || !checkingSystemTheme.compareAndSet(false, true)) {
             return;
         }
         CompletableFuture.supplyAsync(() -> SystemThemeResolver.effectiveTheme(ThemeMode.SYSTEM))
                 .thenAccept(theme -> SwingUtilities.invokeLater(() -> {
                     checkingSystemTheme.set(false);
+                    if (appearance.themeMode() != ThemeMode.SYSTEM || service != null
+                            && (!service.securityState().unlocked() || service.securityState().activeTasks() > 0)
+                            || gold.debug.windowstolinux.app.ui.component.DesktopTaskExecutor.hasActiveTasks())
+                        return;
                     if (frame != null && theme != effectiveTheme) {
                         DesktopViewState viewState = frame.captureViewState();
                         Rectangle bounds = frame.workspaceWindowBounds();

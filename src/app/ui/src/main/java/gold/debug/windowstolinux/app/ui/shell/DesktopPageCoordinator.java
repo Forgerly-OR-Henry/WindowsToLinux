@@ -165,6 +165,8 @@ final class DesktopPageCoordinator {
                             page -> navigator.show(page, "nav." + page, "page." + page + ".description"))
                             .setVisible(true);
                 } : null);
+        if (service instanceof gold.debug.windowstolinux.app.service.contract.security.SecurityApplicationFacade security)
+            settings.addSecurity(security, components, messages);
     }
 
     /**

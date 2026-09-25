@@ -12,6 +12,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 import com.fasterxml.jackson.databind.*;
 import gold.debug.windowstolinux.app.db.DesktopPersistence;
+import gold.debug.windowstolinux.app.service.SecurityTestFixture;
 import gold.debug.windowstolinux.app.service.server.DesktopSecretStoreService;
 import gold.debug.windowstolinux.shared.ai.client.*;
 import gold.debug.windowstolinux.shared.ai.transport.*;
@@ -19,13 +20,12 @@ import gold.debug.windowstolinux.shared.deploy.contract.AutomaticDeploymentInter
 import gold.debug.windowstolinux.shared.model.agent.*;
 import gold.debug.windowstolinux.shared.model.ai.*;
 import gold.debug.windowstolinux.shared.model.deployment.*;
-import gold.debug.windowstolinux.shared.model.security.CredentialStorageMode;
 import gold.debug.windowstolinux.shared.standard.deploy.assistance.AssistedDeploymentAdvisor;
 import org.junit.jupiter.api.*;
 import org.junit.jupiter.api.io.TempDir;
 
 @Timeout(45)
-class DeploymentModeProtocolTest {
+class DeploymentModeProtocolTest extends SecurityTestFixture {
     @TempDir
     Path directory;
 
@@ -36,15 +36,15 @@ class DeploymentModeProtocolTest {
 
     AiProviderProfile profile(String id) {
         return new AiProviderProfile(id, URI.create("https://" + id + ".invalid/v1/chat/completions"), id,
-                "ai/key/" + id, CredentialStorageMode.MASTER_PASSWORD);
+                "ai/key/" + id);
     }
 
     void seed(DesktopPersistence db, AiPurposeType purpose, String... ids) throws Exception {
-        var secrets = new DesktopSecretStoreService(db.encryptedSecrets());
+        var secrets = SecurityTestFixture.secrets(db);
         var members = new ArrayList<AiPurposeAssignment>();
         for (var id : ids) {
             var profile = profile(id);
-            try (var store = secrets.open(profile.credentialMode(), master())) {
+            try (var store = secrets.open()) {
                 store.save(profile.credentialKey(), ("temporary-" + id).toCharArray());
             }
             db.aiProfiles().saveVerified(profile.stored(), id, Instant.now());
@@ -54,8 +54,8 @@ class DeploymentModeProtocolTest {
     }
 
     AiUseCaseFacade facade(DesktopPersistence db, RoleChatTransport transport) {
-        return new AiUseCaseFacade(db.aiProfiles(), new DesktopSecretStoreService(db.encryptedSecrets()),
-                new OpenAiCompatibleRoleClient(), new StructuredAiClient(transport));
+        return new AiUseCaseFacade(db.aiProfiles(), SecurityTestFixture.secrets(db), new OpenAiCompatibleRoleClient(),
+                new StructuredAiClient(transport));
     }
 
     RoleChatResult reply(Object response) throws java.io.IOException {
@@ -90,8 +90,7 @@ class DeploymentModeProtocolTest {
                 return reply(Map.of("decision", "DENY", "risk", "HIGH", "binding", action.path("binding").asText(),
                         "reason", "scope rejected", "evidence", List.of("identity")));
             });
-            try (var scope = facade.openDeployment(DeploymentAutomationMode.AGENT);
-                    var models = facade.agentModels(master())) {
+            try (var scope = facade.openDeployment(DeploymentAutomationMode.AGENT); var models = facade.agentModels()) {
                 assertEquals(AgentReviewDecision.DENY,
                         models.review("deploy", action(), AgentRiskLevel.NORMAL).decision());
                 assertEquals(List.of("broken", "review"), calls);
@@ -173,8 +172,7 @@ class DeploymentModeProtocolTest {
                 var source = new gold.debug.windowstolinux.shared.source.browse.SourceBrowser(sourceRoot);
                 var analysisCalls = new AtomicInteger();
                 var advisor = new AssistedDeploymentAdvisor(
-                        (phase, candidates, evidence) -> facade.assist(phase, candidates, evidence, master()),
-                        interaction, m -> {
+                        (phase, candidates, evidence) -> facade.assist(phase, candidates, evidence), interaction, m -> {
                         }, (context, observations, left) -> {
                             var advice = new gold.debug.windowstolinux.shared.model.deployment.AssistedDeploymentAdvice(
                                     "source declaration", List.of(), List.of());
@@ -237,8 +235,8 @@ class DeploymentModeProtocolTest {
                 };
                 try (var scope = facade.openDeployment(DeploymentAutomationMode.ASSISTED)) {
                     var advisor = new AssistedDeploymentAdvisor(
-                            (phase, candidates, evidence) -> facade.assist(phase, candidates, evidence, master()),
-                            interaction, m -> {
+                            (phase, candidates, evidence) -> facade.assist(phase, candidates, evidence), interaction,
+                            m -> {
                             });
                     if (accept) {
                         advisor.check("PREFLIGHT", Map.of("source", "verified"));
@@ -262,8 +260,7 @@ class DeploymentModeProtocolTest {
                 calls.incrementAndGet();
                 return new RoleChatResult(503, "unavailable");
             });
-            try (var scope = facade.openDeployment(DeploymentAutomationMode.AGENT);
-                    var models = facade.agentModels(master())) {
+            try (var scope = facade.openDeployment(DeploymentAutomationMode.AGENT); var models = facade.agentModels()) {
                 scope.beforeRequest(() -> {
                     if (calls.get() > 0)
                         throw new CancellationException("cancelled before next provider");
@@ -279,8 +276,7 @@ class DeploymentModeProtocolTest {
                 return reply(Map.of("decision", "DENY", "risk", "HIGH", "binding", action().binding(), "reason",
                         "valid denial", "evidence", List.of("identity")));
             });
-            try (var scope = next.openDeployment(DeploymentAutomationMode.AGENT);
-                    var models = next.agentModels(master())) {
+            try (var scope = next.openDeployment(DeploymentAutomationMode.AGENT); var models = next.agentModels()) {
                 scope.beforeRequest(() -> {
                     try {
                         db.aiProfiles().purposes().save(AiPurposeType.APPROVAL,

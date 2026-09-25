@@ -62,22 +62,21 @@ class AutomaticInputCompletionTest {
     @Test
     void acceptsOnlyUniquelyEvidencedSuggestionAndGroupsRemainingFields() {
         var result = new AutomaticInputCompletion(ai(List.of("api/type=NODE_SERVICE", "api/port=9999"), false))
-                .resolve(fields, new char[0], interaction());
+                .resolve(fields, interaction());
         assertEquals("8080", result.get("api/port"));
         assertEquals(List.of(fields.getLast()), asked);
     }
 
     @Test
     void wrongSuggestionCannotOverrideDeterministicChoices() {
-        new AutomaticInputCompletion(ai(List.of("api/type=JAVA_SOURCE"), false)).resolve(fields, new char[0],
-                interaction());
+        new AutomaticInputCompletion(ai(List.of("api/type=JAVA_SOURCE"), false)).resolve(fields, interaction());
         assertEquals(fields, asked);
     }
 
     @Test
     void unavailableAndTimedOutProvidersBothFallBackToSameGroupedForm() {
         for (boolean timeout : List.of(false, true)) {
-            new AutomaticInputCompletion(ai(null, timeout)).resolve(fields, new char[0], interaction());
+            new AutomaticInputCompletion(ai(null, timeout)).resolve(fields, interaction());
             assertEquals(fields, asked);
         }
     }

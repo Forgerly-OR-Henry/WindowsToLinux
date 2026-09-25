@@ -16,7 +16,6 @@ import gold.debug.windowstolinux.app.secret.SecretStore;
 import gold.debug.windowstolinux.app.secret.SecretStoreException;
 import gold.debug.windowstolinux.app.service.server.DesktopSecretStoreService;
 import gold.debug.windowstolinux.shared.config.secretref.ResolvedSecretRevision;
-import gold.debug.windowstolinux.shared.model.security.CredentialStorageMode;
 
 /**
  * Registers authenticated restored revisions without overwriting a different platform secret. / 注册已认证恢复修订且不覆盖不同的平台秘密。
@@ -48,52 +47,43 @@ final class RestoredSecretRegistrar {
     }
 
     /**
-     * Registers restored secret revisions through the selected credential store and persistent revision metadata.
-     * <p>通过所选凭据存储及持久化修订元数据登记已恢复秘密修订。
+     * Registers restored secret revisions through one database transaction with its revision metadata.
+     * <p>通过同一数据库事务及修订元数据登记已恢复秘密修订。
      *
      * @param applicationId managed application identifier / 受管应用标识
      * @param revisions revisions / 修订集合
-     * @param mode selected operating or storage mode / 所选运行或存储模式
-     * @param masterPassword master-password buffer used to unlock protected credentials / 用于解锁受保护凭据的主密码缓冲区
      * @param createdAt instant at which this record was created / 当前记录创建时刻
      * @throws SQLException if the database cannot complete the requested read or transaction / 数据库无法完成请求的读取或事务时
      * @throws SecretStoreException if the protected credential cannot be accessed or updated / 无法访问或更新受保护凭据时
      */
-    void register(String applicationId, List<ResolvedSecretRevision> revisions, CredentialStorageMode mode,
-            char[] masterPassword, Instant createdAt) throws SQLException, SecretStoreException {
-        try {
-            for (ResolvedSecretRevision revision : revisions) {
-                var existing = metadata.findRevision(revision.reference());
-                CredentialStorageMode selected = existing.map(StoredApplicationSecretRevision::credentialMode)
-                        .orElse(mode);
-                try (SecretStore store = stores.open(selected, masterPassword)) {
-                    register(applicationId, revision, selected, createdAt, store, existing.orElse(null));
+    void register(String applicationId, List<ResolvedSecretRevision> revisions, Instant createdAt)
+            throws SQLException, SecretStoreException {
+        try (SecretStore store = stores.open()) {
+            store.transaction(() -> {
+                for (ResolvedSecretRevision revision : revisions) {
+                    var existing = metadata.findRevision(revision.reference());
+                    register(applicationId, revision, createdAt, store, existing.orElse(null));
                 }
-            }
-        } finally {
-            if (masterPassword != null)
-                Arrays.fill(masterPassword, '\0');
+            });
         }
     }
 
     /**
-     * Registers restored secret revisions through the selected credential store and persistent revision metadata.
-     * <p>通过所选凭据存储及持久化修订元数据登记已恢复秘密修订。
+     * Registers restored secret revisions through one database transaction with its revision metadata.
+     * <p>通过同一数据库事务及修订元数据登记已恢复秘密修订。
      *
      * @param applicationId managed application identifier / 受管应用标识
      * @param revision immutable configuration or secret revision number / 不可变配置或秘密修订号
-     * @param mode selected operating or storage mode / 所选运行或存储模式
      * @param createdAt instant at which this record was created / 当前记录创建时刻
      * @param store store / 存储
      * @param existing existing / 既有
      * @throws SQLException if the database cannot complete the requested read or transaction / 数据库无法完成请求的读取或事务时
      * @throws SecretStoreException if the protected credential cannot be accessed or updated / 无法访问或更新受保护凭据时
      */
-    private void register(String applicationId, ResolvedSecretRevision revision, CredentialStorageMode mode,
-            Instant createdAt, SecretStore store, StoredApplicationSecretRevision existing)
-            throws SQLException, SecretStoreException {
+    private void register(String applicationId, ResolvedSecretRevision revision, Instant createdAt, SecretStore store,
+            StoredApplicationSecretRevision existing) throws SQLException, SecretStoreException {
         String key = existing == null ? "application/" + applicationId + "/" + key(revision) : existing.credentialKey();
-        StoredApplicationSecretRevision expected = new StoredApplicationSecretRevision(revision.reference(), key, mode,
+        StoredApplicationSecretRevision expected = new StoredApplicationSecretRevision(revision.reference(), key,
                 createdAt);
         char[] stored = store.read(key).orElse(null);
         try {
@@ -111,18 +101,8 @@ final class RestoredSecretRegistrar {
                     Arrays.fill(value, '\0');
                 }
             }
-            if (existing == null) {
-                try {
-                    metadata.saveRevision(expected);
-                } catch (SQLException | RuntimeException exception) {
-                    try {
-                        store.delete(key);
-                    } catch (SecretStoreException cleanup) {
-                        exception.addSuppressed(cleanup);
-                    }
-                    throw exception;
-                }
-            }
+            if (existing == null)
+                metadata.saveRevision(expected);
         } finally {
             if (stored != null)
                 Arrays.fill(stored, '\0');

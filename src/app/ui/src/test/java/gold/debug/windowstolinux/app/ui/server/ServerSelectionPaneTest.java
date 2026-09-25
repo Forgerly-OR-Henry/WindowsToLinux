@@ -17,7 +17,6 @@ import gold.debug.windowstolinux.app.ui.component.*;
 import gold.debug.windowstolinux.app.ui.display.ThemePalette;
 import gold.debug.windowstolinux.app.ui.i18n.*;
 import gold.debug.windowstolinux.shared.model.capability.ServerCapabilityFacts;
-import gold.debug.windowstolinux.shared.model.security.CredentialStorageMode;
 import org.junit.jupiter.api.Test;
 
 class ServerSelectionPaneTest {
@@ -25,11 +24,9 @@ class ServerSelectionPaneTest {
 
     private final PageMessagePresenter messages = new PageMessagePresenter(MessageCatalog.forLanguageTag("zh-CN"));
 
-    private final ServerProfile first = new ServerProfile("first", "192.0.2.1", 22, "tester", "ssh/first/password",
-            CredentialStorageMode.WINDOWS_CREDENTIAL_MANAGER);
+    private final ServerProfile first = new ServerProfile("first", "192.0.2.1", 22, "tester", "ssh/first/password");
 
-    private final ServerProfile second = new ServerProfile("second", "192.0.2.2", 22, "tester", "ssh/second/password",
-            CredentialStorageMode.WINDOWS_CREDENTIAL_MANAGER);
+    private final ServerProfile second = new ServerProfile("second", "192.0.2.2", 22, "tester", "ssh/second/password");
 
     @Test
     void initialInventoryPublishesSelectionButRestoringDoesNotOverwriteUnsavedContext() throws Exception {
@@ -76,7 +73,7 @@ class ServerSelectionPaneTest {
     @Test
     void searchesDisplayNamesAndAddressesCaseInsensitively() {
         var named = new ServerProfile(first.id(), first.host(), 22, first.username(), first.credentialKey(),
-                first.credentialMode(), "Production EU");
+                "Production EU");
         var summary = new gold.debug.windowstolinux.app.service.server.ServerSummary(named, Optional.empty(), false,
                 "");
         assertTrue(summary.matches("DUCt"));
@@ -89,7 +86,7 @@ class ServerSelectionPaneTest {
     void appearanceStatePreservesDisplayNameAndCustomCredentialReference() {
         ServerPage before = new ServerPage(null, null, components, messages);
         ServerProfile profile = new ServerProfile(first.id(), first.host(), 22, first.username(), "custom/key",
-                first.credentialMode(), "Production EU");
+                "Production EU");
         before.selectProfile(profile);
         try (var state = before.captureState()) {
             ServerPage after = new ServerPage(null, null, components, messages);

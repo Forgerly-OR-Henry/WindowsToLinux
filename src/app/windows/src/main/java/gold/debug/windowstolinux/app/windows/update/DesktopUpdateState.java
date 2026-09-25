@@ -26,9 +26,9 @@ public enum DesktopUpdateState {
     PROGRAM_REPLACED,
     /**
      * DATABASE MIGRATED classification within desktop update state.
-     * <p>Desktop更新状态中的数据库已迁移分类。
+     * <p>Desktop更新状态中的数据库已校验分类。
      */
-    DATABASE_MIGRATED,
+    DATABASE_VALIDATED,
     /**
      * NEW VERSION HEALTHY classification within desktop update state.
      * <p>Desktop更新状态中的新版本健康分类。

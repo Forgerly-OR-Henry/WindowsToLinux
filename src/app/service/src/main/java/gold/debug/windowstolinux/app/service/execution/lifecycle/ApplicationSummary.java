@@ -24,14 +24,12 @@ import gold.debug.windowstolinux.shared.model.lifecycle.RuntimeState;
  * @param external external / 外部
  * @param canStart can start / 能够启动
  * @param canStop can stop / 能够停止
- * @param needsMasterPassword needs master password / 需要主密码
  * @param usage usage / 用法
  */
 public record ApplicationSummary(String key, String name, String category, String serverId, String serverName,
         String host, Optional<Instant> deployedAt, Optional<Instant> adoptedAt, RuntimeState lastState,
         Optional<Instant> observedAt, Optional<UserAccessUrl> accessUrl, boolean external, boolean canStart,
-        boolean canStop, boolean needsMasterPassword,
-        Optional<gold.debug.windowstolinux.shared.model.managed.ApplicationUsage> usage) {
+        boolean canStop, Optional<gold.debug.windowstolinux.shared.model.managed.ApplicationUsage> usage) {
     /**
      * Initializes application summary through its shared constructor contract.
      * <p>通过共享构造契约初始化应用摘要。
@@ -50,14 +48,13 @@ public record ApplicationSummary(String key, String name, String category, Strin
      * @param external external / 外部
      * @param canStart can start / 能够启动
      * @param canStop can stop / 能够停止
-     * @param needsMasterPassword needs master password / 需要主密码
      */
     public ApplicationSummary(String key, String name, String category, String serverId, String serverName, String host,
             Optional<Instant> deployedAt, Optional<Instant> adoptedAt, RuntimeState lastState,
             Optional<Instant> observedAt, Optional<UserAccessUrl> accessUrl, boolean external, boolean canStart,
-            boolean canStop, boolean needsMasterPassword) {
+            boolean canStop) {
         this(key, name, category, serverId, serverName, host, deployedAt, adoptedAt, lastState, observedAt, accessUrl,
-                external, canStart, canStop, needsMasterPassword, Optional.empty());
+                external, canStart, canStop, Optional.empty());
     }
 
     /**

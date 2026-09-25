@@ -159,7 +159,7 @@ public final class DesktopUpdateHandoffCodec {
         output.writeBoolean(backup.programBackedUp());
         output.writeBoolean(backup.databaseBackedUp());
         output.writeBoolean(backup.dataLocationPreserved());
-        output.writeBoolean(backup.credentialModePreserved());
+        output.writeBoolean(backup.securityProfilePreserved());
         writeTexts(output, backup.evidence());
     }
 

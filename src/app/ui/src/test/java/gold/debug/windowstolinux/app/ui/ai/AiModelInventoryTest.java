@@ -22,7 +22,6 @@ import gold.debug.windowstolinux.app.ui.component.*;
 import gold.debug.windowstolinux.app.ui.display.ThemePalette;
 import gold.debug.windowstolinux.app.ui.i18n.*;
 import gold.debug.windowstolinux.shared.model.ai.*;
-import gold.debug.windowstolinux.shared.model.security.CredentialStorageMode;
 import org.junit.jupiter.api.Test;
 
 class AiModelInventoryTest {
@@ -30,10 +29,8 @@ class AiModelInventoryTest {
 
     private final PageMessagePresenter messages = new PageMessagePresenter(MessageCatalog.forLanguageTag("zh-CN"));
     private AiProviderSummary model(String id, int order) {
-        return new AiProviderSummary(
-                new AiProviderProfile(id, URI.create("https://example.test/v1/chat/completions"), "model-" + id,
-                        "ai/" + id, CredentialStorageMode.MASTER_PASSWORD),
-                id, order, 1, Optional.of(Instant.now()), Optional.of(Instant.now()));
+        return new AiProviderSummary(new AiProviderProfile(id, URI.create("https://example.test/v1/chat/completions"),
+                "model-" + id, "ai/" + id), id, order, 1, Optional.of(Instant.now()), Optional.of(Instant.now()));
     }
 
     @Test
