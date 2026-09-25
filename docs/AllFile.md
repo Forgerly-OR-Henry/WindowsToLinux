@@ -1633,6 +1633,7 @@ APP 数据库不再维护迁移链或旧结构读取分支；Web 节点保持原
 - `app/linux/ssh/SshCommandExecution.java`：一次 SSH 命令发送、有界等待、退出证据及未知结果处理，保留尚未释放的通道和发送线程。
 - `app/linux/ssh/SshCommandFrame.java`：固定 Bash 引导与长度帧，在标准输入上传送脚本及原始二进制输入。
 - `app/linux/ssh/SshOutputCapture.java`：合并限制标准输出和错误输出的保留容量，超限后继续排空。
+- `app/linux/ssh/SftpTransfer.java`：普通文件的排他新建传输、审批摘要与容量核对，保留不确定结果及未释放资源。
 - `app/linux/ssh/SshEndpoint.java`：平台保存的服务器标识及精确连接端点。
 - `app/main/startup/PlatformRuntime.java`：为一次桌面启动持有平台数据库及安全会话。
 - `app/mod/lifecycle/ModRuntimeSession.java`：启用一个已准备的 Mod，并保留部分停止归属直至实际清理。
