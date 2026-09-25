@@ -6,6 +6,7 @@
 - 本次验收边界：完成本机验证；用户明确远端环境尚未准备好，本次无需远端验证。远端能力仍保留未验收标记。每个可验证闭环完成后作本地 Git 提交，不自动推送。
 - S3 当前进度：公开 API 已形成独立 `src/api` 模块；H2 平台库引导、受管 JDBC 和 Windows 当前用户 DPAPI 已实现基础层，本机 17 项测试及新增代码 JDK 21 doclint 通过。旧启动链和根 reactor 尚未切换，这些基础层通过不代表 S3 已完成或现行 APP 已使用 H2。
 - S3 安全接线：既有 Argon2id/AES-GCM 凭据库已接入 H2 事务作用域，新增 3 项 H2 集成测试与 5 项旧安全回归通过；DB 模块 52 项回归和 8 项 H2 DDL/权限/恢复探针通过。二进制 DDL 长度统一使用 OCTET_LENGTH，避免 H2 LENGTH 将密钥/nonce 解释为字符。主体启动仍待切换。
+- S3 平台配置：PlatformPersistence 已将服务器、模型、偏好及救援日志仓库接入同一 H2；4 项新集成与 5 项受影响仓库回归通过，原有 7 项安全会话测试已迁到 H2 且通过。当前仍需完成启动/界面接线、活动模块和业务拆分，旧 SQLite 构造适配只在切换期间保留。
 - 工程编号与软件版本、数据库 schema、helper 协议版本各自独立。原一期至六期改称 0.1～0.6，见[编号对应表](DEVELOPMENT.md#phase-numbering)。
 - 本文的“已确认”指产品方向和约束已确认，**不表示实现已经完成**；工程规格与验证工作见[实施清单](#review-decisions)，具体完成项不等于代码已经实现。
 - [开发总纲](DEVELOPMENT.md) · [当前结构与唯一详细目标目录](../File.md#phase-1-1-target) · [当前文件索引](../AllFile.md) · [当前产品手册](../PRODUCT-MANUAL.md) · [现行数据库与安全](../Runtime.md#app-security-database)

@@ -8,6 +8,7 @@ import java.util.Objects;
 import java.util.Optional;
 
 import gold.debug.windowstolinux.app.db.persistence.connection.DesktopConnectionFactory;
+import gold.debug.windowstolinux.app.db.persistence.connection.RepositoryConnections;
 
 /**
  * Stores small non-secret desktop preferences. / 保存小型非秘密桌面偏好。
@@ -17,7 +18,7 @@ public final class DesktopPreferenceRepository {
      * Factory for scoped database connections.
      * <p>限定作用域数据库连接的工厂。
      */
-    private final DesktopConnectionFactory connections;
+    private final RepositoryConnections connections;
 
     /**
      * Creates the repository. / 创建仓库。
@@ -26,7 +27,14 @@ public final class DesktopPreferenceRepository {
      * @throws NullPointerException if a required input is absent / 必需输入缺失时
      */
     public DesktopPreferenceRepository(DesktopConnectionFactory connections) {
-        this.connections = Objects.requireNonNull(connections, "connections");
+        this(connections.scoped());
+    }
+
+    /** Binds owned platform connections and repository transactions. / 绑定所属平台连接和仓库事务。
+     * @param connections platform transaction scope / 平台事务作用域
+     */
+    public DesktopPreferenceRepository(RepositoryConnections connections) {
+        this.connections = java.util.Objects.requireNonNull(connections);
     }
 
     /**
@@ -41,14 +49,24 @@ public final class DesktopPreferenceRepository {
         if (!name.matches("[a-z][a-z0-9_]*"))
             throw new IllegalArgumentException("preference key must use lowercase underscores");
         requireText(value, "preference_value");
-        try (Connection connection = connections.open(); PreparedStatement statement = connection.prepareStatement("""
-                INSERT INTO desktop_preference (preference_key, preference_value) VALUES (?, ?)
-                ON CONFLICT(preference_key) DO UPDATE SET preference_value=excluded.preference_value
-                """)) {
-            statement.setString(1, name);
-            statement.setString(2, value);
-            statement.executeUpdate();
-        }
+        connections.transaction(() -> {
+            try (var connection = connections.open()) {
+                int changed;
+                try (var update = connection
+                        .prepareStatement("UPDATE desktop_preference SET preference_value=? WHERE preference_key=?")) {
+                    update.setString(1, value);
+                    update.setString(2, name);
+                    changed = update.executeUpdate();
+                }
+                if (changed == 0)
+                    try (var insert = connection.prepareStatement(
+                            "INSERT INTO desktop_preference(preference_key,preference_value) VALUES(?,?)")) {
+                        insert.setString(1, name);
+                        insert.setString(2, value);
+                        insert.executeUpdate();
+                    }
+            }
+        });
     }
 
     /**

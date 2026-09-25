@@ -7,19 +7,27 @@ import java.util.*;
 import gold.debug.windowstolinux.app.db.entity.StoredAiProviderConfiguration;
 import gold.debug.windowstolinux.app.db.entity.StoredAiProviderProfile;
 import gold.debug.windowstolinux.app.db.persistence.connection.DesktopConnectionFactory;
+import gold.debug.windowstolinux.app.db.persistence.connection.RepositoryConnections;
 import gold.debug.windowstolinux.shared.model.ai.*;
 
 /** Stores model connection, capability and routing state in one row. / 在一行中保存模型连接、能力及路由状态。 */
 public final class AiProfileRepository {
     /** Scoped database connection factory. / 限定数据库连接工厂。
      */
-    private final DesktopConnectionFactory connections;
+    private final RepositoryConnections connections;
 
     /** Binds the validated inputs and owned state for this scope. / 绑定当前作用域的已验证输入及持有状态。
      * @param connections connections supplied to this boundary / 传入当前边界的connections值
      */
     public AiProfileRepository(DesktopConnectionFactory connections) {
-        this.connections = Objects.requireNonNull(connections);
+        this(connections.scoped());
+    }
+
+    /** Binds owned platform connections and repository transactions. / 绑定所属平台连接和仓库事务。
+     * @param connections platform transaction scope / 平台事务作用域
+     */
+    public AiProfileRepository(RepositoryConnections connections) {
+        this.connections = java.util.Objects.requireNonNull(connections);
     }
 
     /** Saves model connection settings without inventing capability evidence. / 保存模型连接设置，不生成能力验证证据。
@@ -63,22 +71,30 @@ public final class AiProfileRepository {
             AiCapabilityType capability) throws SQLException {
         new StoredAiProviderConfiguration(profile, name, 0, 1, Optional.empty(), Optional.empty());
         connections.transaction(() -> {
-            try (var c = connections.open();
-                    var s = c.prepareStatement(
-                            """
-                                    INSERT INTO ai_model(model_id,credential_id,endpoint_url,model_name,display_name,display_order)
-                                    VALUES(?,?,?,?,?,(SELECT COALESCE(MAX(display_order),-1)+1 FROM ai_model))
-                                    ON CONFLICT(model_id) DO UPDATE SET credential_id=excluded.credential_id,endpoint_url=excluded.endpoint_url,
-                                    model_name=excluded.model_name,display_name=excluded.display_name,
-                                    configuration_revision=ai_model.configuration_revision+CASE WHEN
-                                    ai_model.credential_id<>excluded.credential_id OR ai_model.endpoint_url<>excluded.endpoint_url OR ai_model.model_name<>excluded.model_name THEN 1 ELSE 0 END
-                                    """)) {
-                s.setString(1, profile.id());
-                s.setString(2, profile.credentialKey());
-                s.setString(3, profile.endpoint());
-                s.setString(4, profile.model());
-                s.setString(5, name.trim());
-                s.executeUpdate();
+            try (var c = connections.open()) {
+                int changed;
+                try (var update = c.prepareStatement(
+                        "UPDATE ai_model SET configuration_revision=configuration_revision+CASE WHEN credential_id<>? OR endpoint_url<>? OR model_name<>? THEN 1 ELSE 0 END,credential_id=?,endpoint_url=?,model_name=?,display_name=? WHERE model_id=?")) {
+                    update.setString(1, profile.credentialKey());
+                    update.setString(2, profile.endpoint());
+                    update.setString(3, profile.model());
+                    update.setString(4, profile.credentialKey());
+                    update.setString(5, profile.endpoint());
+                    update.setString(6, profile.model());
+                    update.setString(7, name.trim());
+                    update.setString(8, profile.id());
+                    changed = update.executeUpdate();
+                }
+                if (changed == 0)
+                    try (var insert = c.prepareStatement(
+                            "INSERT INTO ai_model(model_id,credential_id,endpoint_url,model_name,display_name,display_order) VALUES(?,?,?,?,?,(SELECT COALESCE(MAX(display_order),-1)+1 FROM ai_model))")) {
+                        insert.setString(1, profile.id());
+                        insert.setString(2, profile.credentialKey());
+                        insert.setString(3, profile.endpoint());
+                        insert.setString(4, profile.model());
+                        insert.setString(5, name.trim());
+                        insert.executeUpdate();
+                    }
                 if (verifiedAt != null)
                     writeVerification(c, profile.id(), capability, verifiedAt);
             }

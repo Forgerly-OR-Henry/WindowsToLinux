@@ -4,19 +4,27 @@ import java.sql.SQLException;
 import java.util.*;
 
 import gold.debug.windowstolinux.app.db.persistence.connection.DesktopConnectionFactory;
+import gold.debug.windowstolinux.app.db.persistence.connection.RepositoryConnections;
 import gold.debug.windowstolinux.shared.model.ai.*;
 
 /** Maintains independent purpose membership and order in the model row. / 在模型行维护独立用途成员及顺序。 */
 public final class AiPurposeRepository {
     /** Scoped database connection factory. / 限定数据库连接工厂。
      */
-    private final DesktopConnectionFactory connections;
+    private final RepositoryConnections connections;
 
     /** Binds the validated inputs and owned state for this scope. / 绑定当前作用域的已验证输入及持有状态。
      * @param connections connections supplied to this boundary / 传入当前边界的connections值
      */
     public AiPurposeRepository(DesktopConnectionFactory connections) {
-        this.connections = Objects.requireNonNull(connections);
+        this(connections.scoped());
+    }
+
+    /** Binds owned platform connections and repository transactions. / 绑定所属平台连接和仓库事务。
+     * @param connections platform transaction scope / 平台事务作用域
+     */
+    public AiPurposeRepository(RepositoryConnections connections) {
+        this.connections = java.util.Objects.requireNonNull(connections);
     }
 
     /** Maps a typed purpose to its fixed SQL column prefix. / 将类型化用途映射为固定 SQL 列前缀。
@@ -80,7 +88,7 @@ public final class AiPurposeRepository {
                 try (var update = c.prepareStatement("UPDATE ai_model SET is_" + prefix + "_enabled=?," + prefix
                         + "_call_order=? WHERE model_id=?")) {
                     for (int i = 0; i < members.size(); i++) {
-                        update.setBoolean(1, members.get(i).enabled());
+                        update.setInt(1, members.get(i).enabled() ? 1 : 0);
                         update.setInt(2, i);
                         update.setString(3, members.get(i).profileId());
                         update.addBatch();
