@@ -10,6 +10,7 @@
 - S3 Mod 基础：严格清单解析、任意精度版本范围、PF4J 隔离加载器和显式主来源入口构造已迁入 app/mod；18 项本机测试及 doclint 通过，覆盖 CLASS/JAR 类型共享、私有依赖/资源边界、形状不合格入口不执行静态初始化及 Windows JAR 释放。包内容扫描、安装和生命周期注册仍未完成。
 - S3 默认启动：`AppMain → DesktopMain → PlatformRuntime/PlatformFrame` 已使用 H2 与当前用户 DPAPI，程序/数据锚点分离；旧 SQLite 保全，首次安全设置、再次启动锁定及资源占用关闭门禁已接通。41 项相关本机测试通过，含真实 Windows DPAPI、真实 Swing 窗口、原锁定控制器回归，以及在隔离 CLASS/JAR 布局运行真正 AppMain 并正常关闭；5 个生产文件 96 声明双语 Javadoc 与 doclint 通过。入口测试不是完整发行物验收。新入口尚未装配服务器/模型、SSH/救援、包安装或真实 Mod 自动发现；测试手动登记的页面不能作为这些能力的验收。
 - S3 正常连接基础：实际 `app/linux` 模块已加入活动构建，SSH 连接与认证仅依赖公开 API、JDK 和 SSHD，不引入部署类型。明确选定的账号/密码、SSH 编码公钥指纹、超时、取消和实际连接关闭已有 8 项本机回环测试；SLF4J API 在父 POM 统一为 2.0.16 后，旧 SSH 连接及回环资源管理 14 项回归通过。2 文件 30 声明双语覆盖和 doclint 通过。此项尚未包括公开 LinuxService 宿主接线、命令/传输、默认服务器页面或救援，因此 S3-04 仍未完成。
+- S3 命令传输基础：固定 Bash 引导经标准输入接收长度帧，将 UTF-8 脚本交给独立文件描述符，原始二进制 stdin 保持不变；脚本与 stdin 分别最多 16 MiB，输出合计最多保留 8 MiB，超限继续排空。6 项新测试及 8 项连接回归通过，包含本机真实 Bash/SSH 的长中文脚本、512 KiB 二进制输入、已知非零退出、发送后取消/超时及无退出码关闭；5 个生产文件 71 声明双语覆盖和 doclint 通过。该宿主内部传输层尚未接公开审批/任务/凭据适配，SFTP、默认服务器页面及救援仍待接线；未进行真实 Linux 验证。
 - 工程编号与软件版本、数据库 schema、helper 协议版本各自独立。原一期至六期改称 0.1～0.6，见[编号对应表](DEVELOPMENT.md#phase-numbering)。
 - 本文的“已确认”指产品方向和约束已确认，**不表示实现已经完成**；工程规格与验证工作见[实施清单](#review-decisions)，具体完成项不等于代码已经实现。
 - [开发总纲](DEVELOPMENT.md) · [当前结构与唯一详细目标目录](../File.md#phase-1-1-target) · [当前文件索引](../AllFile.md) · [当前产品手册](../PRODUCT-MANUAL.md) · [现行数据库与安全](../Runtime.md#app-security-database)

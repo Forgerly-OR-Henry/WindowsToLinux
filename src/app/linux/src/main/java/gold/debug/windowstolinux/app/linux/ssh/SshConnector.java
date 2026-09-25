@@ -6,6 +6,8 @@ import java.util.concurrent.atomic.*;
 
 import javax.swing.SwingUtilities;
 
+import gold.debug.windowstolinux.api.linux.CommandRequest;
+import gold.debug.windowstolinux.api.linux.CommandResult;
 import gold.debug.windowstolinux.api.task.*;
 import org.apache.sshd.client.SshClient;
 import org.apache.sshd.client.auth.keyboard.UserAuthKeyboardInteractiveFactory;
@@ -160,6 +162,12 @@ public final class SshConnector implements AutoCloseable {
         /** Confirmed resource release, permitting idempotent close. / 已确认的资源释放，允许幂等关闭。 */
         private volatile boolean closed;
 
+        /** Command channel and input sender still requiring actual cleanup. / 仍需实际清理的命令通道及输入发送线程。 */
+        private SshCommandExecution command;
+
+        /** Prevents ordinary reuse after unconfirmed remote command effects. / 远端命令副作用未确认后阻止普通复用。 */
+        private boolean uncertain;
+
         /**
          * Binds explicit credentials and trust before starting the client. / 在启动客户端前绑定明确凭据范围及信任。
          * @param endpoint exact endpoint / 精确端点
@@ -268,6 +276,37 @@ public final class SshConnector implements AutoCloseable {
         }
 
         /**
+         * Executes the host-authorized request once, retaining any unclosed local resources.
+         * / 执行一次宿主已授权请求，并保留尚未关闭的本地资源。
+         * @param request exact request already checked by the platform approval adapter / 平台审批适配器已核对的精确请求
+         * @param cancellation original task cancellation / 原任务取消请求
+         * @return observed outcome independent of later session release / 独立于后续会话释放的已观测结果
+         * @throws ApiException if admission fails before dispatch / 发送前准入失败时
+         */
+        public OperationResult<CommandResult> execute(CommandRequest request, CancellationToken cancellation)
+                throws ApiException {
+            worker();
+            Objects.requireNonNull(cancellation);
+            if (!operating.compareAndSet(false, true))
+                throw failure(ProblemCode.BUSY, "SSH_CONNECTION_BUSY", "SSH connection work has not returned");
+            try {
+                if (!connected())
+                    throw failure(ProblemCode.UNAVAILABLE, "SSH_CONNECTION_CLOSED", "SSH connection is not available");
+                if (uncertain || command != null)
+                    throw failure(ProblemCode.BUSY, "SSH_CONNECTION_UNCERTAIN",
+                            "SSH connection requires closure after unfinished work");
+                command = new SshCommandExecution(session, request);
+                var result = command.run(cancellation);
+                uncertain = result.outcome() == Outcome.UNKNOWN;
+                if (command.close())
+                    command = null;
+                return result;
+            } finally {
+                operating.set(false);
+            }
+        }
+
+        /**
          * Closes physical resources and verifies that no trust callback remains. / 关闭物理资源并核对没有遗留信任回调。
          * @throws ApiException if actual close is still incomplete / 实际关闭仍未完成时
          */
@@ -282,6 +321,10 @@ public final class SshConnector implements AutoCloseable {
                 if (!client.close(true).awaitUninterruptibly(Duration.ofSeconds(5)) || !client.isClosed()
                         || session != null && !session.isClosed() || callbacks.get() != 0)
                     throw failure(ProblemCode.BUSY, "SSH_CLOSE_PENDING", "SSH connection cleanup remains incomplete");
+                if (command != null && !command.close())
+                    throw failure(ProblemCode.BUSY, "SSH_COMMAND_CLOSE_PENDING",
+                            "SSH command cleanup remains incomplete");
+                command = null;
                 closed = true;
                 synchronized (SshConnector.this) {
                     connections.remove(this);
@@ -331,7 +374,7 @@ public final class SshConnector implements AutoCloseable {
      * @param message safe diagnostic text / 安全诊断文本
      * @return structured exception / 结构化异常
      */
-    private static ApiException failure(ProblemCode code, String detail, String message) {
+    static ApiException failure(ProblemCode code, String detail, String message) {
         return new ApiException(new Problem(code, detail, message, Map.of(), Optional.empty()));
     }
 }
