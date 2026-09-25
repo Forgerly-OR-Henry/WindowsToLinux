@@ -1,0 +1,115 @@
+:root {
+  font-family: system-ui, sans-serif;
+  color: #182a3b;
+  background: #f3f6fa;
+}
+body {
+  margin: 0;
+}
+header {
+  background: #173b52;
+  color: white;
+  padding: 22px 5vw;
+}
+h1 {
+  margin: 0;
+}
+nav {
+  display: flex;
+  gap: 24px;
+  flex-wrap: wrap;
+}
+nav a {
+  color: #d5efff;
+}
+main,
+#message,
+#loading {
+  margin: 18px 5vw;
+}
+form {
+  display: flex;
+  gap: 16px;
+  align-items: end;
+  flex-wrap: wrap;
+  background: white;
+  padding: 20px;
+  border-radius: 10px;
+}
+label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+input,
+select,
+textarea,
+button {
+  font: inherit;
+  padding: 8px;
+  border: 1px solid #91a4b4;
+  border-radius: 5px;
+}
+textarea {
+  min-height: 70px;
+  min-width: 220px;
+}
+button {
+  cursor: pointer;
+  background: #136c86;
+  color: white;
+}
+button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+table {
+  width: 100%;
+  border-collapse: collapse;
+  background: white;
+  margin: 18px 0;
+  font-size: 14px;
+}
+th,
+td {
+  text-align: left;
+  padding: 10px;
+  border-bottom: 1px solid #dce4eb;
+  overflow-wrap: anywhere;
+}
+th {
+  background: #e4edf4;
+}
+a {
+  color: #066482;
+}
+#message,
+.error {
+  color: #9b1c21;
+}
+#pages {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  margin-bottom: 22px;
+}
+pre {
+  background: white;
+  padding: 15px;
+  white-space: pre-wrap;
+}
+#job-status,
+#summary {
+  font-size: 19px;
+}
+@media (max-width: 700px) {
+  main {
+    overflow: auto;
+  }
+  form {
+    display: block;
+  }
+  label {
+    margin: 12px 0;
+  }
+}

@@ -1,0 +1,1570 @@
+# WindowsToLinux 1.1 期工程：APP 平台与 Mod 改造
+
+## 状态与阅读顺序
+
+- 状态：**目标规则与完整技术规格已形成设计，源码和运行验证未开始**。本期内部划分 S0～S7，不提前拆成 1.2、1.3；后续按[目标任务目录](#goal-catalog)指定任务。
+- 文档阶段边界：只维护正式规格和必要进度，不修改源码、测试、构建、运行资源或 IDEA，不创建 history-src，不操作运行数据库。后续源码任务须由明确指令启动。
+- 工程编号与软件版本、数据库 schema、helper 协议版本各自独立。原一期至六期改称 0.1～0.6，见[编号对应表](DEVELOPMENT.md#phase-numbering)。
+- 本文的“已确认”指产品方向和约束已确认，**不表示实现已经完成**；工程规格与验证工作见[实施清单](#review-decisions)，具体完成项不等于代码已经实现。
+- [开发总纲](DEVELOPMENT.md) · [当前结构与唯一详细目标目录](../File.md#phase-1-1-target) · [当前文件索引](../AllFile.md) · [当前产品手册](../PRODUCT-MANUAL.md) · [现行数据库与安全](../Runtime.md#app-security-database)
+- 作者规范：[Mod 开发与包格式](../Mod.md)、[身份与版本](../Mod.md#mod-identity-version)、[三种加载模式](../Mod.md#loading-modes)、[数据库与迁移](../Mod.md#mod-database)、[用户操作与生命周期](../Mod.md#mod-lifecycle)。
+- 结构与交付：[源码结构](../File.md#mod-source-layout)、[标准包名](../File.md#mod-package-naming)、[APP/JAR 发布布局](../APP.md)。工程规格按 D1～D7 索引，实现与验证按独立任务记录。
+
+1. [定位、已确认要求与范围](#scope)
+2. [职责与依赖方向](#architecture)
+3. [当前模块迁移对应表](#migration)
+4. [公开能力、插件协作与数据归属](#contracts)
+5. [旧工程完整归档](#archive)
+6. [旧构建与 IDEA 注册注销](#unregister)
+7. [文档执行、验证和审阅门槛](#documentation)
+8. [源码阶段、验收与回退](#implementation)
+9. [工程规格与实施清单](#review-decisions)
+10. [功能验收与打包步骤](#mod-acceptance)
+11. [工程工作流与质量门禁](#engineering-workflow)
+12. [内部 DDL、状态和并发规格](#internal-specification)
+13. [可独立执行的 36 项目标任务](#goal-catalog)
+14. [文档交付检查](#specification-validation)
+
+<a id="scope"></a>
+
+## 1. 定位、已确认要求与范围
+
+本期将现有内置部署/备份工程改造成 [APP 目标形态](../APP.md)、[Mod 行为规范](../Mod.md) 和 [File 目标结构](../File.md#phase-1-1-target)。本文只维护如何改造、何时验证以及失败后如何恢复，目标行为以对应主题文档为准。
+
+当前代码仍为 `src/app`、`src/shared`、`src/web` 的 31-POM 工程。0.x 的实现与验收是迁移依据，不因本期文档出现而视为完成迁移。旧 Web 回环服务台仍是现有代码的一部分；在源码阶段完整归档之前，本轮不移除它。
+
+### 1.1 改造范围与规范入口
+
+按 [File.md](../File.md#phase-1-1-target)调整活动模块和职责，按 [Mod.md](../Mod.md)实现扩展及数据库行为，按 [APP.md](../APP.md)生成交付物。优先完成主体、部署 Mod、备份 Mod 的本地完整闭环；正常 SSH 和独立救援均保留产品入口，迁移时复核其安全状态、网络条件和指纹信任，不能把内置救援误写成无条件可用。
+
+<a id="website-service"></a>
+
+### 1.2 网站后置范围
+
+网站与商店的目标行为统一见 [APP.md：官网与 Mod 商店](../APP.md#website-service)。本期不复用旧在线执行服务台充当新官网，也不先行实现投稿后台；后置工作见 W1。
+
+### 1.3 本期限制
+
+本期完成 APP 平台和两个官方 Mod 的本地迁移及验收闭环。当前为受控开发，未发布接口可同步调整；公开发布、签名和历史公开 API 兼容不作为完成条件。不借机增加通用跨插件 Agent、云端服务器管理、在线账号体系或新业务插件。网站实施暂缓细化；正式更新执行器、下载通道和插件商店的完整运营方案不因本期立项自动实现。0.x 的未覆盖实机矩阵仍按各自证据记录。
+
+<a id="architecture"></a>
+
+## 2. 迁移时的结构依据
+
+模块、包及依赖的唯一正文为 [File.md 目标依赖](../File.md#phase-1-1-dependencies)，公开能力与跨 Mod 协作为 [Mod.md](../Mod.md#platform-api)。按下节逐项迁移，不把旧 `shared` 整体改名为 API，不把旧 `linux-sshd` 整体搬进平台，也不以动态菜单掩盖主体对业务实现的直接依赖。
+
+API 仅提取真实调用方需要的最小契约；Linux 通用连接与业务 helper 分开归属。迁移保留标准、辅助、自主模式的差异，测试分别验证调用路径。具体签名见 [作者 API](../Mod.md#public-api-spec)，类型共享和适配在 S2 验证。
+
+<a id="migration"></a>
+
+## 3. 当前模块迁移对应表
+
+以下为**待实施迁移设计**，不是当前目录索引。迁移前先完成完整归档；迁移时按责任拆分，不按旧模块整包机械搬运。表内目标简称的物理位置见 File.md。
+
+| 当前来源 | 目标归属 | 拆分与保留要求 |
+| --- | --- | --- |
+| `app/main` | `app/main` | 保留启动、运行模式和数据根装配；把业务引擎硬编码装配改为插件注册。 |
+| `app/ui` | `app/ui` 与两插件的 `ui` | 外壳、设置、服务器、AI、任务、插件管理及救援入口留主体；部署、受管应用及备份业务页面随所属插件迁移。 |
+| `app/service` | `app/service` 与两插件的 `service` | 通用会话、任务授权、互斥和事件留主体；部署、应用生命周期、备份/恢复/迁移编排随插件迁移。 |
+| `app/db` | `app/db` 与 Mod 的 `db` | 服务器、AI、安全和平台偏好归主体；部署配置、应用拓扑、版本和业务记录归插件；不能仅移动类名而继续无边界直读共用表。 |
+| `app/secret` | `app/secret` | 主密码、密钥寿命、加解密、凭据保护留主体；插件通过带所有者与作用域的引用使用秘密，不取得主密钥。 |
+| `app/windows` | `app/windows`、`app/source`、`app/linux/recovery` | 通用本机文件/窗口和维护适配留主体；浏览器救援逻辑移入 Linux；部署文件解释与业务归档策略随插件。 |
+| `shared/model` | API 的必要公共数据、APP 内部模型、两插件私有模型 | 服务器/任务等跨边界最小值对象进入 API；部署、备份、配置、工具链等业务模型留对应插件。 |
+| `shared/source` | `app/source` 与部署插件 `service/core/source` | 有界读取、不可变快照和通用本地取材可复用为主体能力；部署排除规则、项目解释及交付素材归插件。 |
+| `shared/git` | 部署插件 `service/core/git` | 首轮 Git 取材服务部署用例；凭据经平台授权使用，不由插件持久化平台原始凭据。 |
+| `shared/config` | 部署插件 `service/core/config`，跨插件必要部分经部署 API 提供 | 部署配置/运行描述与业务序列化不进入通用 API；备份获取已审阅快照而非私有表。 |
+| `shared/ai` | `app/ai`、平台 API 最小契约及部署插件 `ai` | Provider、传输和通用模型调用留主体；部署提示词、请求/结果适配及专用脱敏进入 Mod ai，业务资料选择、校验与执行由 service 组织。 |
+| `shared/linux` | API Linux 能力、`app/linux` 与部署/备份插件 | 通用连接/受控操作契约归平台边界；构建、工具链、发布、运行和备份端口按业务分拆。 |
+| `shared/linux-sshd` | `app/linux/ssh` 与部署插件 `service/linux` 等业务适配 | SSHD、SFTP、连接和指纹归主体；helper 的业务动作、协议载荷及资源归对应插件。迁移期可由部署插件承载完整 helper bundle，避免同时重写协议。 |
+| `shared/deploy` | `app/service` 的通用任务/审核基础与部署插件 `service/core` | 候选构建交付、健康门槛、版本切换、生命周期与未知状态处理保留业务语义；平台只调度和承载审批。 |
+| `shared/standard` | 部署插件 `service/standard` 包 | 仍区分分析和执行，不与 Agent 合并，不另设聚合模块。 |
+| `shared/standard/analyze` | 部署插件 `service/standard/analyze` | 保留静态证据、分析规则与无 AI 路径。 |
+| `shared/standard/deploy` | 部署插件 `service/standard/deploy` | 保留标准计划、适配器、工具链和 `assistance`；正常步骤确定推进，辅助恢复有界，模型调用经 Mod ai。 |
+| `shared/agent` | 部署插件 `service/agent`、`ai` 及所属资源 | 自主循环、任务状态、工具执行和审批归 service.agent；提示词、模型请求与返回格式适配归 ai，资源仍随所属 JAR；不改写成平台通用 Agent。 |
+| `shared/backup` | `mod/backup` | 保留备份格式、采集、恢复与迁移；把旧 `shared/deploy` 调用改为部署公开 API。 |
+| `web/main/api/service/task` | 完整归档；新 Web 另按官网需求设计 | 旧回环服务台的启动、任务和执行链不默认保留为新官网生产后端。 |
+| `web/auth/db/file/secret` | 完整归档；只供后续网站设计参考 | 旧账号/工作区预留和服务器凭据存储不是新官网要求，不能因已有表而要求下载者登录。 |
+| `web/frontend` | 旧代码完整归档，新 `web` 承接官网方向 | 后续可选取教程、示例和展示素材；不提前实现投稿审核或复用真实操作按钮。 |
+| 根及模块 POM、测试、脚本、资源、锁文件 | 归档保全；新活动工程按新边界配置 | 测试随功能迁移，保留断连、权限、隔离、未知结果和恢复等有效验收，不删除反例来迁就新目录。 |
+
+UI 迁移需要同时调整页面注册、状态模型和后台用例。当前固定的部署/备份页面、门面及 `DesktopViewState` 不能只改为动态菜单，内部仍依赖业务类。数据、任务和日志里的插件归属也必须沿入口落实。
+
+<a id="contracts"></a>
+
+## 4. 公开能力、插件协作与数据归属
+
+### 4.1 契约与协作规范
+
+本期实施以下契约，规范正文统一维护在面向作者的文档中；本章只提供工程入口，不复制规则。
+
+| 工程主题 | 唯一规范正文 |
+| --- | --- |
+| 平台能力、输入输出及主体责任 | [Mod.md：平台公开能力](../Mod.md#platform-api) |
+| 部署与备份协作、helper 迁移边界 | [Mod.md：部署与备份协作](../Mod.md#deployment-backup-contract) |
+| APP、部署、备份、秘密和网站的数据归属 | [Mod.md：数据所有权](../Mod.md#data-ownership) |
+
+<a id="database-design"></a>
+
+### 4.2 数据库方案的实施入口
+
+1.1 的数据库与数据迁移规则统一见 [Mod.md：数据库与 Schema 版本](../Mod.md#mod-database)，用户操作见[生命周期](../Mod.md#mod-lifecycle)。当前 0.x 的数据库、安全和锁定实现统一见 [Runtime.md](../Runtime.md#app-security-database)，两者不混用。表结构适配、执行记录归档、日志保留、迁移恢复与并发的开发步骤见[数据库实施](#database-implementation)。
+
+<a id="archive"></a>
+
+## 5. 旧工程完整归档
+
+本节是**后续源码阶段的第一步**，文档阶段只维护规则，不创建目录或复制旧工程。归档基线是在源码阶段真正开始前的工作区，包含届时已有未提交的源码改动，不能只归档 Git HEAD，也不能直接复用本轮文档修改前的摘要冒充源码阶段基线。
+
+建议保留结构如下；`history-src` 不是活动模块：
+
+```text
+history-src/
+├─ src/                         旧 APP、shared、Web 的全部源码、资源和模块内测试
+├─ test/                        根测试夹具和验收材料
+├─ .mvn/                        旧构建和检查工具的维护文件
+├─ docs/                        与旧工程配套的文档快照
+├─ pom.xml                      旧根构建入口
+├─ README.md
+├─ LICENSE
+├─ 其他必要构建配置             包含锁文件、格式配置、构建和运行脚本
+├─ ARCHIVE.md                   基线、来源、范围、排除项与使用说明
+└─ ARCHIVE-MANIFEST.sha256       相对路径与 SHA-256
+```
+
+执行规则：
+
+1. 记录时间、提交标识、完整工作区状态、文件范围及排除原因。梳理被忽略但属于旧工程的必要源码/构建文件，不能只以 Git 跟踪清单代替工作区清单；软链接或联接单独登记，不递归复制仓库之外的内容。
+2. 保留源码、测试、脚本、资源、锁文件、必要构建配置和文档。模块内测试随 `src` 完整保存，根 `test` 也保留；代码、`package` 声明、旧 POM 与历史配置保持原字节。
+3. 不复制真实凭据、运行数据库及旁文件、日志、缓存、依赖下载目录、编译产物、`.git` 或整个 `.ai-workspace`。旧进度证据在原位置保留。IDE 本地偏好不作为源码归档内容；涉及注销的项目配置另保留本机回退依据，不公开个人状态。
+4. 若必要文件含真实秘密，停止该项复制并明确登记，先解决秘密与可归档内容的分离；不把秘密复制进历史目录，也不能一边漏掉必要源码一边宣称“完整归档”。模板与无秘密配置照常保留。
+5. 先生成源文件清单及摘要，再复制至 `history-src`，核对相对路径集合、数量与逐文件 SHA-256，并再次核对源工作区，确认期间未变。生成的 `ARCHIVE.md` 也加入清单；摘要文件本身不计算自引用摘要。保存摘要清单自身的校验依据及排除清单。
+6. 只有全部预期文件核对通过，才解除旧工程注册并开始迁移。若归档目录已存在，核对其基线和摘要；属于本次完整已验证归档时可按记录继续，不同来源或不完整时停止，禁止直接覆盖、合并或删除。
+7. 完成后冻结。后续开发、自动格式化、索引生成及发布不得改写归档；修复旧行为在新活动工程进行。`ARCHIVE.md` 说明如何在独立工作副本中查阅或复现，不在当前 IDEA 里重新导入归档 POM，也不直接在冻结目录生成构建产物。
+
+“保留完整旧代码”不等于复制运行数据或保证所有外部依赖将来永远可下载。归档清单证明保存范围和内容一致；可复现构建与真实 Linux 能力仍须有各自验证，不能由哈希推定。
+
+<a id="unregister"></a>
+
+## 6. 旧构建与 IDEA 注册注销
+
+“注销包注册”指解除旧工程与**当前构建及 IDE 的关联**，不是删除或重写旧源码中的 Java 包声明。归档可作为普通目录查看，但不能继续作为活动 Java 包树参与新工程。
+
+后续源码阶段按以下清单执行，文档阶段不改这些设置：
+
+- 根 Maven 只聚合新活动模块；`history-src` 不出现在模块、源码根、测试根、资源根、编译/打包输入或插件运行时扫描路径中。
+- 当前 IDEA 的 Maven Projects 不链接归档 POM；解除已归档旧模块的注册及残留内容根、源码/测试/资源根和编译配置，不通过删除源码实现注销。
+- 在 IDEA 把 `history-src` 标为 **Excluded**。IDEA 官方说明：排除目录的文件不参与代码补全、导航与检查，且该标记不等同于部署排除；因此还必须单独处理构建、扫描和打包范围。[Content roots](https://www.jetbrains.com/help/idea/content-roots.html)
+- 重新导入新根 Maven，检查模块列表、Java 包视图、编译范围及重复类来源，确认旧模块或归档源码根未被再次加入。普通目录可见是允许的，不要求为了隐藏文件而删除归档。
+- 只调整与本工程旧注册相关的项目设置，保留其他 IDE 偏好；不删除整个 `.idea`，不改用户全局 IDEA 设置。项目本地设置的改动与版本库内可共享构建规则分开记录。
+- 格式化、架构扫描、文件索引生成和发布打包都明确排除 `history-src`，在含归档的工作区实际验证，而非只写说明。
+- IDE 排除与 Git 忽略是不同机制。归档源码应按项目历史保留要求管理，不通过 `.gitignore` 隐藏它；文档阶段不修改 `.gitignore`，后续也不自动提交或推送。
+
+当前 `ArchitectureSourceInspector` 从活动根 `src` 扫描生产 Java，Maven 模块图从根聚合项遍历；现有文档结构与依赖检查仍针对 0.x。格式工具 [format.py](../../.mvn/formatting/format.py) 会枚举 Git 跟踪及未忽略文件，因此归档若加入工作区，后续必须增加显式排除并验证。所有这些工具调整都在源码阶段实施，不能提前到文档阶段。
+
+<a id="documentation"></a>
+
+## 7. 开发入口与基线要求
+
+文档整理不执行源码迁移。后续收到源码启动指令后，依次推进 S0～S7；阶段所需规格在对应实现前明确，编码后完成所属阶段的验证，不能把新能力测试通过设为尚未开始编码的前提。
+
+开发开始时重新核对当前代码、工作区改动和实际文件索引。S1 的源码归档使用届时工作区，不能复用文档检查的摘要。已确认的字段、行为、数据处理和交互不重复征求选择；普通实现细化在约定边界内完成，发现必须改变产品语义时先修订所属规范。
+
+主题文档描述“当前是什么”或明确标记的“目标是什么”；本文件保存改造步骤、技术细化、门禁和回退。每阶段结束后把已实现事实同步到对应主题文档，AllFile 只收录真实存在的生产文件，Runtime 和产品手册只更新已经接通的行为。
+
+<a id="documentation-evidence"></a>
+
+### 历史文档验证依据
+
+早期文档重编号阶段的验证记录（2026-09-25；不是本次或新架构的验收）：修改前本地引用检查 482 项通过，修改后结果如下。
+
+| 检查 | 修改后结果 | 证据边界 |
+| --- | --- | --- |
+| 现有文档结构 / 模块依赖 / 包结构 | 2 + 5 + 17 = 24 项通过，零失败、错误或跳过；与修改前基线一致 | 只证明当前 0.x 代码与文档兼容，未验证新插件实现 |
+| 本地文档引用 | 543 个本地链接与锚点有效；旧路径只在历史编号对应表中说明 | 外部链接不作为批量本地检查的覆盖范围 |
+| 当前结构与历史证据 | File.md 现有生产目录树和依赖边不变；六份旧分期的代码围栏、技术版本、摘要及显式锚点保留 | 旧真实环境待验收项继续保留，不重新判定通过 |
+| 修改范围 | 2,851 个受保护路径与修改前摘要/存在性一致，无额外非文档新增；原进度完整保留 | 未修改源码、测试、构建配置、运行时资源或 IDEA 配置；未创建 history-src |
+| 文档交付 | 新增 1.1 主文档、重命名六份历史主文档、同步其余 11 份在用说明文档 | 共 18 份文档；该阶段的文档交付数量，不代表源码实现 |
+
+
+2026-09-25 目标规范与开发流程整理的历史验证（不是当前文档或新架构验收）：17 份正式 Markdown 的 773 个本地链接/锚点、代码围栏及两个 JSON 示例检查通过；JDK 21 的 `DocumentStructureArchitectureTest` 两项通过，无失败、错误或跳过。当前生产树与依赖解析区、2,839 个受保护现存仓库文件均未变；未执行新平台实现、完整构建验收或真实环境验收。
+
+<a id="implementation"></a>
+
+## 8. 修改计划、阶段验收与回退
+
+**源码尚未开始。** 产品规则、清单字段、数据库归属与记录生命周期已有结论；当前文档可作为 S0～S7 的开发入口；任务不重新决定已经写明的产品规则。方法签名与作者语义见 Mod.md，DDL、状态和门禁规格见[内部规格](#internal-specification)；实现及适配验证仍未执行。全部阶段仍属于 1.1，不另立期数。既有业务迁移按[对应表](#migration)执行；功能规则只引用 Mod.md、APP.md 和 File.md，不在计划中维护副本。
+
+### 8.1 阶段顺序与完成条件
+
+| 顺序 | 改动范围与交付物 | 进入下一阶段的最低条件 | 失败时的处理 |
+| --- | --- | --- | --- |
+| S0 形成可实施规格 | 以已确认清单、表职责和[日志规则](../Mod.md#database-log-management)为基线，补齐最小 API 签名、DDL/索引、Schema 编码、迁移/日志接口、状态归档、进程消息与超时；核对模块和门禁映射；见第 9 节 | 同一套规格能描述官方部署、备份及最小第三方示例；剩余项明确归属哪个验证阶段，不再留下影响第一步编码的歧义 | 保持文档阶段，只修正不完整规格，不动源码或运行数据 |
+| S1 保存旧工程基线 | 按[完整归档](#archive)核对源码阶段开始时的工作区，包含未提交改动，生成冻结归档、范围与摘要 | 文件集合和逐文件摘要匹配；排除真实秘密/运行库，必要文件无遗漏；旧活动工程尚未先行拆除 | 保留旧活动工程和既有归档；不覆盖来源不同或不完整的归档，不以 Git HEAD 替代工作区 |
+| S2 最小技术验证 | 在不挂入旧根构建的隔离临时工程中验证 PF4J 适配、CLASS/JAR 来源、跨 Mod 类型共享和私有依赖；以隔离临时 H2 验证 Schema 迁移与中断核对 | 两个测试 Mod 能通过公开 API 协作、释放资源；迁移失败/中断不破坏源数据；记录并锁定验证通过的依赖版本 | 旧主体继续可用；只调整适配与规格，验证不成立前不批量迁移业务 |
+| S3 新主体与最小插件闭环 | 按[注册注销规则](#unregister)切换活动根构建、IDE 与扫描范围；落地 API、main/ui/service、db/secret、ai/linux/source/windows 等主体职责；接入已验证加载基础 | 无业务 Mod 时可以管理基础配置、锁定/解锁、进入正常连接和独立救援；最小 Mod 可加载、注册页面并停止；新活动构建及结构门禁通过 | 保留阶段差异与项目配置恢复依据；必要时在独立恢复副本重建旧工程，不能改写冻结归档或覆盖用户后续修改 |
+| S4 Mod 管理与数据闭环 | 完成原始包管理、校验/解压、版本登记、开关/单选、依赖、待重启、重装/删除；接通 Schema 初始化、迁移、引用保护、执行记录归档、日志数量控制与手动清理、并发准入 | 用测试 Mod 跑通从原包到安装、启用、失败、修复和删除的完整路径；对应失败注入、占用和中断恢复用例通过；之后才迁移真实业务 | 失败范围限定到对应 Mod 与本次临时结果；程序、数据库和用户选择分别核对，不以整库回滚修复单 Mod |
+| S5 部署 Mod 迁移 | 按迁移表搬迁页面、模型、持久化、源码/Git、配置、standard/assisted/agent、Linux 业务端口及 helper；实现供备份消费的公开 API | 静态无 AI、辅助和自主路径分别验证；APP 无部署私有依赖；审批、互斥、取消、健康检查、回滚与结果未知语义保持；公开 API 可被外部测试调用方使用 | 保存旧测试与资源字节对照，无法证明等价的功能保留未完成标记；不通过弱化门禁或隐式兼容壳掩盖问题 |
+| S6 备份 Mod 迁移 | 搬迁一致性采集、归档、恢复、双服务器迁移、页面和持久化，全部通过部署公开 API 协作 | 部署→备份→恢复/迁移路径连通；取消后的必要恢复、断连、未知结果、共享服务器互斥、独立归档密码及归属清理有验证 | 包回退和数据恢复分别判断兼容性；不假定旧程序可读新库，不改动用户已有独立备份 |
+| S7 打包、回归与交付 | 按 APP.md 产出开发 JAR 与便携 APP；交付作者构建配置、包校验工具和最小示例；同步运行文档与实际文件索引，执行代表性实机验收 | 新活动工程完整检查通过；CLASS/JAR/APP 路径、资源、救援、生命周期和数据行为有结果；发行物排除历史源码、用户数据及秘密；验收范围和未覆盖项清楚 | 本地结果、真实环境结果和正式发布条件分别报告；缺少必要实机验收时保留相应未验收状态，签名和公开发布不属于本期门槛，也不未经授权发布或推送 |
+
+S2 的测试 Mod 和数据库仅用于验证，不作为新业务功能发布。临时验证工程不成为正式实现的唯一存放位置；验证结论保留，正式能力在 S3/S4 落入批准的模块，临时文件和进程按任务清理规则处理。
+
+### 8.2 第一阶段规格的维护方式
+
+S0 的规范入口维护在[第 9 节规格索引](#implementation-specification)，内部完整规格位于第 12 节。本次规格覆盖 S2～S7 和两个官方 Mod；定稿的接口和数据契约写回所属主题文档，本文件保留实现任务及验证状态，不复制另一份规范正文。
+
+### 8.3 技术验证关闭位置
+
+| 主题 | 规格完成位置 | 实现验证关闭位置 |
+| --- | --- | --- |
+| D1 清单、版本、框架 | S0 | S2 证明适配可行，S4 验证实际安装加载与兼容拒绝。 |
+| D2 平台及跨 Mod API | S0 已定义平台及部署协作接口，S5/S6 按实际调用验证 | S2/S3 验证类型与注册释放，S5/S6 验证真实调用方。 |
+| D3 信任与进程 | S0 | S3/S4 验证来源提示、受管理进程与资源退出。 |
+| D4 数据、迁移与日志 | S0 | S2 验证机制，S4 验证平台实现，S5/S6 验证业务数据不变量。 |
+| D5 安装与生命周期 | S0 | S4 验证交互、依赖、并发、停止及中断恢复，S7 验证发行物中的相同行为。 |
+| D6 发布交付 | 已确认布局与交付方式，S0 明确构建输入和资源来源 | S7；公开发布条件属于后置 W2，不纳入本期完成门槛。 |
+| D7 工程结构与门禁 | S0 | S3 切换新活动结构时同步门禁，S7 检查发布范围与归档保全。 |
+
+### 8.4 验收与回退的共同要求
+
+- S1 以源码开始时的真实工作区重新取基线，不复用本次文档检查摘要冒充源码归档证据；已有未提交修改纳入保存范围。
+- 各阶段先运行受影响用例及相关架构检查；阶段完成前验证本阶段实际活动构建。S7 对新活动工程执行完整验证，不能由测试数量或旧验收日志推定业务等价。
+- 旧 helper 协议、备份格式和资源字节不因 Java 包位置变化而自动升级。确需改变时登记兼容影响并重做相应验证。
+- 源码回退使用阶段差异、项目配置记录及冻结归档；不使用硬重置或覆盖操作丢弃用户新增修改。归档保持冻结，恢复和复现均在独立副本中完成。
+- 运行数据库不属于源码归档。新工程创建独立 H2、不迁移或删除旧 SQLite；源 Schema、失败目标与独立备份分别保护，程序回退不冒充数据回退。试验与自动化使用隔离数据库，不拿真实运行数据做失败注入。
+- 当前 Runtime.md、产品手册和 AllFile.md 只在对应能力确实实现后更新现行行为与实际文件索引；规划期间继续引用 Mod.md 和 APP.md，不能提前把目标能力写成可用功能。
+- 每阶段保存范围、验证结果、已知限制与下一步；结束任务前停止本任务启动的临时进程。生成的交付包可以保留，预览/测试进程不能遗留。
+
+### 8.5 实机范围与后置工作
+
+新架构代表性实机验收至少包含：正常 SSH 与指纹变化；SSH 失败时独立进入救援并复核恢复连接；静态、辅助和自主部署；部署到备份、恢复和双服务器迁移；任务取消、断连和未知结果。服务器、发行版、模型配置、所需权限和失败注入条件在执行前登记，旧 0.x 证据不能替代新链路结果。
+
+发行物验收还须覆盖无业务 Mod 的主体、原始包搜索/解压/删除、版本切换、依赖失效、迁移和删除中断、含空格路径及不同工作目录启动。详细用例见[本期验收清单](#mod-acceptance)，其预期行为引用 Mod.md，不在别处保留另一份开发清单。
+
+官网/商店服务端、投稿审核后台、正式安装器和后台自动更新不并入本次 APP 核心迁移；界面明确尚未接通的商店能力，不伪造下载结果。没有真实服务器或模型条件时可以保存相应本地交付物，但须保留对应待实机验收状态；签名和公开发布属于 W2，在实际需要时再索取必要信息。
+
+<a id="review-decisions"></a>
+
+## 9. 工程规格与实施清单
+
+<a id="implementation-specification"></a>
+
+### 9.1 实现前补齐的契约
+
+下表是工程工作清单，不是重新选择产品方案。完整 JSON 字段、数据库表职责与主要字段、日志后缀和条数、执行记录生命周期均已确认。本次 S0 同时形成平台、部署和备份的完整规格；后续验证不能成立时只修订受影响正文和任务。定稿的行为契约更新所属主题文档，开发步骤与验证状态保留在本文件。
+
+| 编号 | 已形成的规格正文 | 实现与验证关闭位置 |
+| --- | --- | --- |
+| D1 包与加载 | [完整包/CLASS/加载规格](../Mod.md#package-loader-spec) | S2-01、S4-01、S7-01/02；当前未验证。 |
+| D2 公开 API | [九包 API](../Mod.md#public-api-spec)、[部署 API](../Mod.md#deployment-api-spec) | S2-03、S3-03/05、S5-06、S6；当前未实现。 |
+| D3 进程 | [完整进程协议](../Mod.md#810-辅助进程消息协议) | S2-03、S4-04；当前未验证。 |
+| D4 数据 | [JDBC](../Mod.md#84-db作者自主-jdbc-与数据生命周期)、[完整 DDL](#h2-ddl)、[日志一致性](#126-标准日志-ddl-与一致性) | S2-02、S3-02、S4-03/05/06、S5/S6；当前未执行。 |
+| D5 生命周期 | [作者规则](../Mod.md#mod-lifecycle)、[内部状态机](#127-状态转换事务与重启)、[并发](#128-并发与资源释放) | S4-01～S4-06；当前未实现。 |
+| D6 本地交付 | [完整构建与交付契约](../APP.md#build-contract) | S7-01/02/03；公开发布另列 W2。 |
+| D7 结构与工具 | [模块图](../File.md#phase-1-1-module-graph)、[工程门禁映射](#129-工程门禁映射) | S1、S3-01、S7-04；当前未切换。 |
+| W1 后置网站 | [官网与商店范围](../APP.md#website-service) | 不属于本期实现/验收任务。 |
+| W2 首次公开发布 | 签名、公开渠道、公开 API 基线和长期兼容策略 | 本期不执行，不阻塞本地验收交付。 |
+
+<a id="database-implementation"></a>
+
+### 9.2 数据库、执行记录与日志的实施顺序
+
+1. 依据 [数据所有权](../Mod.md#data-ownership)逐表拆分现有持久化类、SQL 和业务调用；建立新的 H2 初始化结构，不打开、迁移或删除旧 SQLite。现有事件表先识别恢复状态与诊断日志，不能直接重命名后按日志清理。
+2. 依据[平台表](../Mod.md#platform-database-tables)与[记录生命周期](../Mod.md#execution-record-lifecycle)，落实[完整 DDL](#h2-ddl)的列、类型、键、索引、状态枚举和引用，以及已定义的稳定 Schema 编码和冲突处理；身份判断读取平台映射。记录目标可用/未完成/未知状态，定义完整性验证、已使用目标识别及人工重新核对入口。设置、操作登记、失败状态和业务引用保持原子一致。
+3. 实现 [JDBC 及迁移接口](../Mod.md#84-db作者自主-jdbc-与数据生命周期)规定的非管理员连接/授权、生命周期类解析和唯一迁移路径。迁移源只读、目标独立，结合数据库约束和作者业务检查；DDL 可能提交事务，失败恢复不能仅依赖整段回滚。
+4. 完成状态恢复与记录归档：执行中、未知及待收尾记录保留；正式业务结果和历史摘要保存成功、无剩余引用后再移除临时执行记录。按拥有者划分提交边界，以操作/任务身份保证重试不重复归档；应急诊断不作为摘要归档成功的依据，日志已清理也不重新生成已结束任务。日志清理不反向删除状态、业务表或仍有引用的 Schema。
+5. 按[完整日志方案](../Mod.md#database-log-management)建立公共记录、目标表与持久化类别登记，落实本章标准日志 H2 DDL、唯一约束、归属/排序索引及初始化校验；验证禁用 Mod、重启和 Schema 重建后的登记生命周期。记录字段、分类、限额、排序和长度直接采用规范，不在此另拟一套数值。落地绑定调用方身份的写入/查询/清理接口与脱敏，接入平台诊断、子进程错误输出和结束摘要。
+6. 实现数据库写入及限额事务、应急 JSON Lines 编码与安全路径、完整记录替换、恢复回填和提交结果核对；同一类别协调写入/回填/清理。覆盖副本删除失败后的继续记录与重试，手动清理不得把旧文件内容重新引入。使用故障注入确认数据库和文件均不可写时反馈真实结果，普通日志失败不阻塞业务收尾判定所需的正式状态保存。
+7. 接入“设置 → 数据库管理”和 Mod 管理界面，展示已登记类别、可读记录、截断/保存失败状态与分项清理结果；数据库不可用和部分失败不能显示为全部成功。使用隔离测试库和测试目录验证下方 A14/A15，禁止针对用户运行数据做清理试验。
+8. 实现迁移失败残留/未知结果核对、手动重试、源保留、共享 Schema 引用、删除排空和临时副本生命周期；模拟删除/迁移中断，验证只清理本次明确归属，不回滚整个数据库。
+
+<a id="loader-verification"></a>
+
+### 9.3 加载框架最小验证
+
+首选 PF4J，封装为本项目适配层，作者仍只依赖平台 API。先在不接入旧根构建的隔离工程中验证既定包格式、CLASS 编译目录/资源、多个 JAR、跨 Mod 公共类型、冲突的私有依赖、单版本运行和停止释放，再锁定验证通过的版本。依据见 [PF4J 类加载文档](https://pf4j.org/doc/class-loading.html)；框架已有能力不能代替项目适配证据。
+
+本期 S2/S7 验证当前 API 的类型共享、真实调用、释放及不兼容拒绝，允许同步重编未发布测试 Mod。首次公开发布时保存实际 API 编译的固定 Mod JAR、版本和摘要，后续升级再做不重编兼容回归；该长期机制属于 W2，不虚构历史公开制品。[兼容边界](../Mod.md#loader-adaptation)。
+
+<a id="structure-gates"></a>
+
+### 9.4 结构与工具迁移
+
+- 按 File.md 的已确认目标实施，不为包名对称额外建立模块。超出目标确需新增模块时，先说明现有模块内替代方案、依赖、迁移成本及文档影响，再确定调整；已经批准的目标模块不重复确认。
+- 根 POM、IDE 输出和代码实际位置一致，结构改动同时更新 File 的当前树、依赖解析区域及受影响开发文档；AllFile 只列真实生产文件。归档排除按第 6 节执行。
+- `PackageStructureArchitectureTest` 当前要求全部顶级类型简单名唯一。新规则只对已登记的 Mod 入口按完整限定名、实际路径和唯一指定入口作限定例外，其他类型唯一性与禁限用词检查保留。
+- 把当前五个功能组、包深度、测试镜像和导入图约束逐项映射到目标结构；保留 standard/agent/core 独立性及反向依赖检查，不用全面放宽门禁消除冲突。
+- `.mvn/formatting/format.py`、架构扫描、索引生成和发布均在含 `history-src` 的真实工作区验证排除效果；只写 IDEA Excluded 或 Git 忽略都不能替代构建/扫描排除。
+- helper 首轮保留完整组装和既有协议；Java 包迁移不自动升级 helper/备份格式。资源字节变化时校验摘要与兼容性，不通过旧产物遮掩迁移问题。
+
+<a id="remaining-review"></a>
+
+### 9.5 已确认规则的历史审阅索引
+
+规则与推进方向已经认可，后续修正已归入下列正文。本表只保留审阅编号与规范入口，不维护第二份规则；具体接口和实现验证仍按 D1～D7 关闭。
+
+| 编号 | 主题与唯一正文 | 对应主题 |
+| --- | --- | --- |
+| R1 | [初次状态与版本选择](../Mod.md#mod-lifecycle) | D5、D6 |
+| R2 | [开关、单选、待重启与失败状态](../Mod.md#mod-lifecycle) | D5 |
+| R3 | [依赖操作、兼容与运行失效](../Mod.md#dependency-availability)；[依赖声明](../Mod.md#manifest-contract) | D1、D5 |
+| R4 | [身份与版本](../Mod.md#mod-identity-version)；[信任边界](../Mod.md#43-mod-进程与信任边界已确认) | D1、D3 |
+| R5 | [安装布局](../APP.md#release-layout)；[数据根](../Runtime.md#desktop-data)；[H2 内部布局](../Mod.md#mod-data-root) | D4、D5、D6 |
+| R6 | [来源确认](../Mod.md#migration-source-selection)、[失败重试](../Mod.md#mod-version-management)、[中断核对](../Mod.md#migration-interruption) | D2、D4 |
+| R7 | [删除范围](../Mod.md#mod-lifecycle)与[Schema 保留](../Mod.md#schema-retention) | D4、D5 |
+| R8 | [加载框架与类型共享验证](#loader-verification) | D1、D7 |
+| R9 | [公开接口与停止协议](../Mod.md#api-stop-contract) | D2、D3、D5 |
+| R10 | [作者工具](../Mod.md#developer-tooling)、[打包交付](../APP.md#5-交付物范围)与[工程验收](#implementation) | D6、D7 |
+
+
+### 9.6 当前完成状态
+
+- 规格：产品规则、完整作者接口、DDL、状态转换、包/加载/构建和目标任务目录已形成设计；本次文档验收证据见[文档交付检查](#specification-validation)。
+- 实现：S1～S7 全部未开始；未归档源码、切换构建、连接 H2、运行新框架或迁移业务。
+- 验证：文档检查和 Java 声明检查只证明文档内部一致性；S2 技术探针、S3～S6 功能验证和 S7 实机交付各自独立关闭。
+- 后续：明确授权源码启动后复核当前工作区及 S0 规格，再从 S1-01 开始；不能复用文档摘要当源码归档证据。
+
+<a id="mod-acceptance"></a>
+
+## 10. 功能验收与打包步骤
+
+### 10.1 Mod 与数据库验收
+
+本表列出测试场景，预期行为只读取右列规范；不在测试清单复制另一份产品规则。S2 验证基础机制，S3/S4 验证平台实现，S5/S6 验证业务协作，S7 在发行物复验。
+
+| 编号 | 覆盖场景 | 预期行为的唯一正文 |
+| --- | --- | --- |
+| A1 | 开启、关闭、版本切换、重启前撤销；初装和新增版本后的单选；删除所选版本；跳转设置和实际重启；任务阻塞、重启失败、业务启动失败 | [生命周期](../Mod.md#mod-lifecycle)、[状态与并发](../Mod.md#runtime-state)。 |
+| A2 | 主动禁用/删除前置依赖、切换到不兼容版本；影响确认和取消；直接与间接依赖；运行失效、失败 Mod 关闭、重启后重新开启及依赖恢复 | [依赖处理](../Mod.md#dependency-availability)。 |
+| A3 | 显示名/Java 包调整、身份改变；同 ID 同版本相同/不同内容；多版本；原包重命名与 CLASS 重新编译 | [稳定身份和版本](../Mod.md#mod-identity-version)。 |
+| A4 | 外层 ZIP 方法、扩展名、根目录和必选文件、main/lib 分工、同作者从包、目录嵌套、主 JAR 与入口；逐文件摘要、资源字节、归档路径越界/重复/Windows 冲突和容量边界 | [包格式](../Mod.md#confirmed-format)、[包内结构](../Mod.md#contents-draft)、[校验恢复](../Mod.md#package-installation)。 |
+| A5 | 清单必填/可选字段、类型、空数组、重复/未知键；中文及不同 ID 的同名显示名称；版本精确/区间与预发布边界、Java/API 不兼容、实际 APP Java 与其他已安装 JDK 版本不同、缺依赖、循环依赖、错误主 JAR/入口；格式有效但不能运行的包 | [清单](../Mod.md#manifest-contract)、[依赖和装载](../Mod.md#open-decisions)。 |
+| A6 | 手动原包与商店下载；两种留存设置、下载/解压/删原包失败；成功留存包再次发现与解压；原始包搜索/刷新/删除；安装与启用状态分别核对 | [原包获取和管理](../Mod.md#package-acquisition)、[安装恢复](../Mod.md#package-installation)。 |
+| A7 | CLASS 未打包调试与断点、编译输出/资源/从模块/第三方依赖；缺编译输出、重复身份、错误入口、不明模式；JAR/APP 不同工作目录、含空格路径、靠近开发仓库与再次启动 | [三种模式](../Mod.md#loading-modes)、[发行布局](../APP.md)。 |
+| A8 | 多个 Mod 共享公开类型、私有依赖冲突、公开包与私有实现；当前 API 的加载、链接、调用与契约行为及不兼容拒绝；平台服务/页面注册释放、Swing 线程、取消、未知结果；入口同名例外及职责包/标准和 Agent 依赖图 | [公开能力](../Mod.md#platform-api)、[装载与停止](../Mod.md#loader-adaptation)、[源码结构](../File.md#mod-source-layout)。 |
+| A9 | 从列表打开业务页、手动固定导航、停用后的入口；托管子进程正常结束/异常/取消、通信断开、数据库请求和资源释放；停止超时与尚未收尾任务 | [生命周期](../Mod.md#mod-lifecycle)、[进程约定](../Mod.md#43-mod-进程与信任边界已确认)、[停止协议](../Mod.md#api-stop-contract)。 |
+| A10 | 新 H2 初始化与重启复用；APP/Mod 归属；作者自主 JDBC、非管理员 SQL/事务；跨 Schema 私有表/外键、子进程直接开库、引擎重复加载和网络服务启动的拒绝路径；旧 SQLite 保全 | [数据库边界](../Mod.md#mod-database)。 |
+| A11 | 首次建表、发布变化但数据版本相同/不同、缺失或歧义迁移路径；缺路径时安装、关闭状态单选、启用/运行版本切换请求及重启复核的不同结果；目标已可用时的复用；无历史、单/多来源、共用 Schema、来源无数据/不可用、预选及用户取消/确认 | [升级规则](../Mod.md#schema-upgrade)、[来源确认](../Mod.md#migration-source-selection)。 |
+| A12 | 首次迁移失败后的界面和手动重试；任务占用/空闲、并发进入、重试再失败；迁移成功但启动失败；明确完成/明确未完成/未知中断、诊断导出和重新核对 | [失败处理](../Mod.md#mod-version-management)、[中断核对](../Mod.md#migration-interruption)。 |
+| A13 | 新旧数据版本切回、旧版本继续写入、已有目标复用；重新建立目标、共享引用、未选中/失败版本、任务占用、最后引用删除、整个 Mod 删除及部分清理失败 | [版本切回](../Mod.md#version-switching)、[Schema 保留](../Mod.md#schema-retention)、[生命周期](../Mod.md#mod-lifecycle)。 |
+| A14 | 正常完成、失败、取消、未知、待收尾及仍被引用的执行记录；正式状态/历史摘要/临时记录的一致性；归档提交中断、重复重试和历史所属安装信息消失；应急写入不替代归档提交、摘要已清理后不重复归档 | [记录生命周期](../Mod.md#execution-record-lifecycle)、[日志与状态边界](../Mod.md#database-log-management)。 |
+| A15 | 公共字段/身份/类别/表后缀校验；无业务 Schema 的 Mod 诊断、旧 Schema 与禁用 Mod 清理；条数边界、并列排序、长度/转义/脱敏/级别；数据库与文件故障、部分清理失败、并发写入/回填；重复 ID/内容冲突、提交未知、文件替换失败、残缺/损坏、归属删除、日志副本不复活；独立备份和状态保护、清理不等于文件压缩 | [完整日志方案](../Mod.md#database-log-management)。 |
+| A16 | Mod 的 AI 结果解析、格式和业务校验、确定性无 AI 路径；service/ai/db 分工及跨 Mod 公开能力调用；部署、备份、恢复、双服务器迁移、取消恢复和维护标记归属 | [作者职责](../Mod.md#source-development)、[AI 分工](../Mod.md#53-使用-ai-时如何分工)、[部署备份协作](../Mod.md#deployment-backup-contract)。 |
+
+### 10.2 新增规格验收
+
+| 编号 | 覆盖场景 | 预期行为的唯一正文 |
+| --- | --- | --- |
+| A17 | 作者复杂 Swing 布局/绘制、页面懒创建与重开、EDT 通知、设置入口、弹窗归属、锁定与任务返回后页面已关闭 | [UI API](../Mod.md#83-ui作者提供-swing-页面) |
+| A18 | 自主管理 JDBC 自动提交/显式事务、多表回滚、批处理、保存点、LOB、结果集；关闭异常、提交未知、连接泄漏、跨线程误用、取消后收尾 | [JDBC API](../Mod.md#84-db作者自主-jdbc-与数据生命周期)、[资源释放](#128-并发与资源释放) |
+| A19 | 九包公开签名/类型、请求拒绝与业务失败、令牌失效、任务与调用方绑定、模型预算、受控来源快照、秘密回调寿命 | [完整 API](../Mod.md#public-api-spec) |
+| A20 | 服务器/凭据 reserve 后业务提交成功、失败、未知；删除并发、禁用与旧 Schema 引用、代次重建、跨 Mod 服务沿用同一任务 | [引用协议](../Mod.md#85-server-与-secret共享配置引用)、[登记表](#platform-state-ddl) |
+| A21 | stdin/stdout 握手、版本、帧长、关联 ID、队列上限、错帧、重复冲突、stderr 大量输出、EOF、取消/停止超时及 PID 复用 | [进程协议](../Mod.md#810-辅助进程消息协议) |
+| A22 | 部署后清单/详情、扫描接管、展示编辑、实时检查、启停重启、发布切换/回滚；三种模式结果一致进入备份、恢复和迁移 | [部署 API](../Mod.md#deployment-api-spec)、[既有迁移范围](#migration) |
+| A23 | 完整工作区归档/摘要、链接和排除项、归档冻结；作者构建与校验退出码；APP/JAR/SDK 依赖清单、空格路径、救援资源和发行物白名单 | [归档](#archive)、[构建交付](../APP.md#build-contract)、[门禁映射](#129-工程门禁映射) |
+| A24 | boot/意图 revision/停用确认、待重启撤销、新旧进程交接失败、未知任务恢复、原任务资源复用与连接/进程未释放的阻塞 | [状态转换](#127-状态转换事务与重启)、[任务 API](../Mod.md#82-task任务结果日志及辅助进程) |
+| A25 | 19 张旧表逐表适配、H2 初始化顺序、循环引用草稿、约束/索引、官方 Mod 新表及 payload；业务提交/平台摘要间崩溃与恢复 | [完整 DDL](#h2-ddl)、[日志一致性](#126-标准日志-ddl-与一致性) |
+
+<a id="packaging-steps"></a>
+
+### 10.3 APP 与 JAR 打包步骤
+
+S7 由构建脚本执行以下步骤，用户无需手动调整发行物：
+
+1. 生成 jpackage `app-image`。
+2. 将平台主体第三方依赖整理到根目录 `lib/`，同步生成启动配置；按最终交付规则准备官方 Mod 和内置救援所需资源。
+3. 从 EXE 启动验证主程序、API、主体依赖以及 Mod 加载；包含安装路径有空格、从其他工作目录启动的场景。
+4. 将验证后的应用镜像打成便携发布包；正式安装器另行实施，届时按 [APP 更新与卸载边界](../APP.md#app-maintenance)验收。
+5. 生成并验证 JAR 发行物：从其他工作目录启动主 JAR，确认主体 `lib/`、`mod-zip/` 和 `mod/` 始终按主 JAR 位置解析；安装路径含空格时同样有效。
+6. 按 [Mod 获取与解压规范](../Mod.md#package-acquisition)验证新增安装和原包留存；重启后已有 Mod 无需再次解压，两种模式均不扫描旁边或工作区中的开发源码模块。
+
+
+<a id="engineering-workflow"></a>
+
+## 11. 工程工作流与质量门禁
+
+每个纵向功能开始前明确所属阶段、输入输出、支持矩阵、模块责任、权限影响、失败状态、回退和验收环境。以下命令描述当前基线工具；新活动工程形成后使用实际根构建执行，不把已归档 Web 的旧路径当作新官网必须存在的模块。
+
+### 常规功能实施顺序
+
+1. **冻结需求**：把用户要求转成可检查验收项，明确非目标和风险决定。
+2. **冻结边界**：确认模块依赖、模型/接口契约、受管路径、命令模板和状态机；同步所属期数的功能说明、模块增量和验收条件。
+3. **实现纵向切片**：按“源码准备→确定性分析→部署决策与编排→Linux 公共契约与具体实现→平台服务→界面/API”贯通一个真实用例，不堆积无调用入口的横向占位代码。
+4. **集中验证**：完成较大纵向切片后统一运行单元、模块集成、静态检查、前端和真实 Linux 验收；修复后只重跑受影响范围和必要总门禁。
+5. **失败演练**：覆盖断连、超时、构建失败、健康失败、回滚失败、状态漂移和权限不足。
+6. **更新状态**：文档和进度必须区分规划、开发中、静态已验证、真实环境待验证、已验收。
+
+### 质量门禁
+
+- Java：使用 JDK 21；子任务执行受影响门禁，阶段完成检查所属活动构建，S7 执行新活动 reactor 完整 `verify`。纯文档按影响执行文档和架构定向检查，禁止循环依赖和未声明的反向依赖。
+- Java 文档：项目自有代码的自然语言注释采用中英双语（生产非 Java 资源按 [Runtime.md 的业务与消息契约](../Runtime.md#8-业务与消息契约)保持英文；第三方、生成内容及协议标记除外），包含 `//`、块注释和 Javadoc；英文说明在前，简体中文说明紧随其后，并在同一注释内表达相同含义。标识符、命令、协议名和原始诊断保持原文，不为满足双语格式而翻译；注释不属于 UI 文案，不进入消息目录。新增或修改注释时必须遵守本规则。当前 `shared`、`app`、`web` 及迁移后的活动模块生产 Java 须覆盖所有显式具名类型、构造器、方法、字段及枚举项，使用标准 Javadoc 并补齐适用标签；record 组件通过类型的 `@param` 说明。不要求局部变量或编译器生成成员注释。 补全适用的参数、泛型参数、返回及真实异常标签；关键约束、单位和资源清理责任与执行路径一致。
+- 注释门禁：`JavadocCoverageTest` 使用 JDK AST 检查声明覆盖、双语正文和标签，包含缺失注释、单语言、缺失标签及匿名类/record 反例；JDK 21 doclint 校验语法与引用。该门禁纳入 Maven `verify`，报告及生成文档位于 `src/app/main/target/`。纯注释批量修改须比较去除注释后的源码，确保表达式、字符串、SQL 和嵌入脚本未变。
+- 前端：仅维护或复现旧 0.x Web 时执行其锁定依赖、类型检查、测试、构建和 Playwright；后置官网不属于新平台门禁。
+- 文档：本地链接、代码围栏、版本、阶段导航、状态和交叉引用一致。
+- 安全：所有外部输入按不可信处理；路径、归档、命令、凭据、日志、AI 和主机指纹具有负向测试。
+- Linux：只有真实发行版/版本/架构上的构建、启动、健康、回滚和生命周期证据才能把适配器升级为正式支持。
+
+Windows 开发机使用系统工具。下方 Maven 是当前基线入口；同一代码块中的 Web 命令仅用于旧 0.x Web 维护/复现，不作为 S3～S7 新平台必须执行的路径：
+
+```powershell
+# 先确认 Maven 确实运行在 JDK 21
+mvn.cmd -version
+mvn.cmd verify
+
+Set-Location src/web/frontend
+
+# 首次锁定依赖；package-lock.json 生成后必须保留
+npm.cmd install
+
+# 后续可重复门禁
+npm.cmd ci
+npm.cmd run typecheck
+npm.cmd run test
+npm.cmd run build
+npm.cmd run install:e2e-browser
+npm.cmd run test:e2e
+```
+
+仅文档变更时按影响选择定向检查，不修改源码或削弱测试来消除文档错误。当前三个相关门禁的组合命令如下；只涉及当前结构文档时可选取其中的文档结构检查：
+
+```powershell
+mvn.cmd -B -ntp -pl src/app/main -am '-Dtest=DocumentStructureArchitectureTest,ModuleDependencyArchitectureTest,PackageStructureArchitectureTest' '-Dsurefire.failIfNoSpecifiedTests=false' test
+```
+
+Maven 同步和 `verify` 使用系统 Maven 本地仓库。依赖尚未同步时允许联网补齐；离线验证只有在插件及其传递依赖已经完整缓存后才具有意义。
+
+旧 0.x Web 验证使用的 Playwright 浏览器固定保存在 `src/web/frontend/.playwright-browsers`，不写入用户目录，也不纳入版本控制。浏览器版本变化后重新执行 `npm.cmd run install:e2e-browser`。
+
+### 完成定义
+
+功能只有同时满足代码完成、自动化门禁通过、失败路径验证、文档同步和必要真实环境验收，才能标记完成。缺少真实 Linux、systemd、容器、数据库或迁移证据时，必须标记“待运行环境验证”，不能以 Windows 编译或模拟结果代替。
+
+
+### 本地化变更
+
+每次本地化变更必须通过英文/中文键与占位符一致性测试、两种语言渲染测试、缺键和缺参数失败测试、未知语言回退英文测试，以及生产字符串与文本资源汉字边界测试。
+
+单独的本地化任务不得改变所在阶段实际数据库 schema、部署与安全流程、凭据所有权或秘密传递边界；需要改变这些边界时必须另行评审。
+
+文档更新与冲突处理统一见[开发总纲](DEVELOPMENT.md#documentation)。
+<a id="format-checks"></a>
+
+### 全仓格式与检查
+
+项目自有源码、测试、脚本、配置和多语言样例统一使用根 `.editorconfig` 与 `.gitattributes`。Java 四空格，`package`、导入区、类型声明之间各保留一个空行，普通与静态导入分组；Web 两空格、Python 四空格，Go 和 Makefile 保留所需制表符。Shell 使用 LF，Windows 批处理使用 CRLF。
+
+固定工具版本、配置、片段处理和例外范围见 [格式工具说明](../../.mvn/formatting/README.md)。`python .mvn/formatting/format.py --check` 只检查；`--write` 才修改。工具缺失须报错，不隐式安装。Java 检查进入 Maven `verify`，前端提供 `format:check`。排除生成产物、第三方、锁文件、二进制和保留证据，不整体排除测试。格式化不得改变字符串、文本块、heredoc、协议载荷和故意失败样例的含义；helper 内容变更同步校验摘要，纯格式变化不升级协议版本。源码阶段交付前必须按已排除 history-src 的活动范围检查通过；确有格式写入时复查无额外差异。纯文档任务不为此执行源码格式写入。
+
+
+<a id="internal-specification"></a>
+
+## 12. 内部工程规格（S0 设计基线）
+
+本章为已形成设计、待 S2 及后续源码任务验证的规格；不是可直接对用户运行库执行的迁移脚本。作者接口及载荷规则只维护在 [Mod API](../Mod.md#public-api-spec)，活动结构只维护在 File.md。H2 版本固定为 2.5.252；本次不连接数据库、不创建生产 SQL 文件、不运行迁移。
+
+<a id="h2-ddl"></a>
+
+### 12.1 H2 物理组织与初始化
+
+数据库为 `data/platform.mv.db`，普通模式、嵌入式、单 APP 进程持有引擎。连接参数固定 `DATABASE_TO_LOWER=TRUE;DB_CLOSE_ON_EXIT=FALSE;AUTO_SERVER=FALSE;LOCK_TIMEOUT=5000;WRITE_DELAY=0`，已有库使用 `IFEXISTS=TRUE`；只有确认文件从未存在的首次初始化允许创建，损坏或不可访问不能当作新库。由 main 的装配调用 app/db，引导完成后才开放 Mod 连接；最后一个受管理连接释放后按正常关闭流程关闭引擎。
+
+物理 Schema 编码为 `m_`＋稳定 ID UTF-8 的完整 SHA-256 小写十六进制＋`_v`＋清单数据版本，按原文精确编码，不小写化 ID。数据版本最多 64 位十进制数字，名称不超过 133 字符；平台保留 Schema 名 `app`，公共 PUBLIC 不授业务建表权限。每个 Schema 创建一个非管理员所有者用户，名称为 `u_`＋SHA-256(Mod ID＋NUL＋数据版本)；物理编码碰撞或已存在但登记不匹配时停止该项，禁止合并。重建同名 Schema 生成新的 UUID generation，所有引用、日志类别和连接都校验代次。
+
+数据库引导凭据使用随机 256 位值，使用 Windows 当前用户 DPAPI（不设置 LOCAL_MACHINE 标志）保护后保存在 `data/db-access.bin`；仅供本机 APP 引导 H2，不代替主密码或业务凭据。初次先原子保存引导材料再建库，恢复时核对两者；已有库缺失或无法解开引导材料时报告失败，不重建或覆盖。main 经 app/windows 取得保护/解保护能力并注入 app/db，db 不反向依赖 UI 或 windows。各 Schema 用户密码由引导密钥、用途前缀和上述编码以 HMAC-SHA-256 派生，仅在内存交给驱动，不向 Mod 暴露；临时迁移读身份另用操作随机密钥。DPAPI 保护的原文为 UTF-8 JSON object，固定 formatVersion=1、databaseGeneration（UUID 字符串）和 key（32 字节随机值的标准 Base64）三个字段；文件只保存 DPAPI 结果字节。引导身份固定 app_internal，新库由此身份建立；引导后复核 app_state.database_generation 与引导材料一致，不接受混配的库和钥匙。文件不是源码或发行物内容，也不放入 history-src。该本机保护方式依据 [Windows DPAPI](https://learn.microsoft.com/en-us/windows/win32/seccrypto/example-c-program-using-cryptprotectdata)，具体调用及异常验证归 S2-02/S3-02。
+
+初始化顺序：引擎/引导身份 → `app` Schema → 下方平台基础表 → 平台登记表 → 标准日志表 → 平台基础配置 → 启动状态恢复；每个 Mod 则先登记新代次及 PREPARING → 创建所有者/Schema → 运行初始化或迁移 → 撤销临时权限、关闭连接 → 校验并标 READY。平台自身升级使用 app_schema_history 顺序登记，不通过 Mod schemaVersion 推导。
+
+每段 SQL 在标题指定的默认 Schema 执行。无显式长度的 CHARACTER VARYING 是业务原有可变文本，不随意截短；受规范限制的标识在 API 校验，注册元数据列另外给出上限。BOOLEAN 使用 H2 布尔类型；从旧表保留的 0/1 列保持 INTEGER 与 CHECK，迁移仓库时显式读写。时间统一 UTC 毫秒 BIGINT。既有二进制序列化沿用对应版本校验，不使用 Java 原生对象反序列化。
+
+### 12.2 APP 基础业务表完整 DDL
+
+本段对应现有 7 张平台表；browser_recovery_event 保存恢复状态，必须随所属恢复任务完成归档后清理，不能按普通日志清理。与 Mod 关联的服务器/秘密引用由后续登记表承担。
+
+```sql
+CREATE TABLE security_profile (
+ security_profile_id INTEGER PRIMARY KEY CHECK(security_profile_id=1),
+ is_encryption_enabled INTEGER NOT NULL DEFAULT 1 CHECK(is_encryption_enabled IN (0,1)),
+ password_verifier CHARACTER VARYING NOT NULL,
+ wrapped_data_key BINARY LARGE OBJECT NOT NULL CHECK(length(wrapped_data_key)=48),
+ key_wrap_algorithm CHARACTER VARYING NOT NULL CHECK(key_wrap_algorithm='AES256_GCM_V1'),
+ key_wrap_nonce BINARY LARGE OBJECT NOT NULL CHECK(length(key_wrap_nonce)=12),
+ key_derivation_algorithm CHARACTER VARYING NOT NULL CHECK(key_derivation_algorithm='ARGON2ID_V1'),
+ key_derivation_salt BINARY LARGE OBJECT NOT NULL CHECK(length(key_derivation_salt)=16),
+ key_derivation_parameters CHARACTER VARYING NOT NULL,
+ format_version INTEGER NOT NULL CHECK(format_version=1)
+);
+CREATE TABLE credential (
+ credential_id CHARACTER VARYING NOT NULL PRIMARY KEY,
+ security_profile_id INTEGER NOT NULL DEFAULT 1 REFERENCES security_profile(security_profile_id) CHECK(security_profile_id=1),
+ storage_format CHARACTER VARYING NOT NULL CHECK(storage_format IN ('PLAIN_V1','AES256_GCM_V1')),
+ payload BINARY LARGE OBJECT NOT NULL,
+ nonce BINARY LARGE OBJECT,
+ UNIQUE(security_profile_id,nonce),
+ CHECK((storage_format='PLAIN_V1' AND nonce IS NULL AND length(payload)>0) OR
+       (storage_format='AES256_GCM_V1' AND nonce IS NOT NULL AND length(nonce)=12 AND length(payload)>16))
+);
+CREATE TABLE server_profile (
+ server_profile_id CHARACTER VARYING NOT NULL PRIMARY KEY,
+ credential_id CHARACTER VARYING NOT NULL REFERENCES credential(credential_id),
+ host CHARACTER VARYING NOT NULL,
+ ssh_port INTEGER NOT NULL CHECK(ssh_port BETWEEN 1 AND 65535),
+ username CHARACTER VARYING NOT NULL,
+ host_key_sha256 CHARACTER VARYING,
+ host_key_format CHARACTER VARYING CHECK(host_key_format='SSH_WIRE'),
+ trusted_host CHARACTER VARYING,
+ trusted_ssh_port INTEGER CHECK(trusted_ssh_port BETWEEN 1 AND 65535),
+ display_name CHARACTER VARYING NOT NULL,
+ last_connection_succeeded INTEGER CHECK(last_connection_succeeded IN (0,1)),
+ last_operating_system CHARACTER VARYING,
+ last_checked_at BIGINT,
+ CHECK((host_key_sha256 IS NULL AND host_key_format IS NULL AND trusted_host IS NULL AND trusted_ssh_port IS NULL) OR
+       (host_key_sha256 IS NOT NULL AND host_key_format IS NOT NULL AND trusted_host IS NOT NULL AND trusted_ssh_port IS NOT NULL))
+);
+CREATE TABLE ai_model (
+ model_id CHARACTER VARYING NOT NULL PRIMARY KEY,
+ credential_id CHARACTER VARYING NOT NULL REFERENCES credential(credential_id),
+ endpoint_url CHARACTER VARYING NOT NULL,
+ model_name CHARACTER VARYING NOT NULL,
+ configuration_revision INTEGER NOT NULL DEFAULT 1 CHECK(configuration_revision>0),
+ text_verified_revision INTEGER CHECK(text_verified_revision>0),
+ text_verified_at BIGINT,
+ vision_verified_revision INTEGER CHECK(vision_verified_revision>0),
+ vision_verified_at BIGINT,
+ is_language_enabled INTEGER NOT NULL DEFAULT 0 CHECK(is_language_enabled IN (0,1)),
+ is_approval_enabled INTEGER NOT NULL DEFAULT 0 CHECK(is_approval_enabled IN (0,1)),
+ is_vision_enabled INTEGER NOT NULL DEFAULT 0 CHECK(is_vision_enabled IN (0,1)),
+ display_name CHARACTER VARYING NOT NULL,
+ display_order INTEGER NOT NULL UNIQUE CHECK(display_order>=0),
+ language_call_order INTEGER UNIQUE CHECK(language_call_order>=0),
+ approval_call_order INTEGER UNIQUE CHECK(approval_call_order>=0),
+ vision_call_order INTEGER UNIQUE CHECK(vision_call_order>=0),
+ CHECK((text_verified_revision IS NULL)=(text_verified_at IS NULL)),
+ CHECK((vision_verified_revision IS NULL)=(vision_verified_at IS NULL)),
+ CHECK(is_language_enabled=0 OR language_call_order IS NOT NULL),
+ CHECK(is_approval_enabled=0 OR approval_call_order IS NOT NULL),
+ CHECK(is_vision_enabled=0 OR vision_call_order IS NOT NULL)
+);
+CREATE TABLE browser_recovery_task (
+ task_id CHARACTER VARYING NOT NULL PRIMARY KEY,
+ server_profile_id CHARACTER VARYING NOT NULL,
+ operation_id CHARACTER VARYING NOT NULL,
+ task_state CHARACTER VARYING NOT NULL,
+ last_action_digest CHARACTER VARYING,
+ last_event_code CHARACTER VARYING NOT NULL,
+ updated_at BIGINT NOT NULL
+);
+CREATE TABLE browser_recovery_event (
+ event_id BIGINT GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
+ task_id CHARACTER VARYING NOT NULL REFERENCES browser_recovery_task(task_id),
+ event_code CHARACTER VARYING NOT NULL,
+ task_state CHARACTER VARYING NOT NULL,
+ action_digest CHARACTER VARYING,
+ created_at BIGINT NOT NULL
+);
+CREATE INDEX browser_recovery_event_task_index ON browser_recovery_event(task_id,event_id);
+CREATE TABLE desktop_preference (
+ preference_key CHARACTER VARYING NOT NULL PRIMARY KEY,
+ preference_value CHARACTER VARYING NOT NULL
+);
+```
+
+### 12.3 部署 Schema 基础业务表完整 DDL
+
+本段对应现有 12 张部署表，跨所有者的 server_profile_id、credential_id 只保留标识，不建立跨 Schema 外键。`managed_application` 先插入 graph_ready=false 的草稿，再在同一业务事务插入组件/依赖、指定健康组件并设 true；对外仅返回 true 的完整图。最终外键在两张表创建后添加，不依赖 SQLite 的延迟外键语法；崩溃后未完成草稿按业务操作记录核对，不冒充受管应用。
+
+```sql
+CREATE TABLE deployment_unit (
+ deployment_unit_id CHARACTER VARYING NOT NULL PRIMARY KEY,
+ server_profile_id CHARACTER VARYING NOT NULL,
+ systemd_unit_name CHARACTER VARYING NOT NULL,
+ release_root_path CHARACTER VARYING NOT NULL,
+ ownership_manifest_sha256 CHARACTER VARYING NOT NULL,
+ current_release_sha256 CHARACTER VARYING,
+ runtime_payload BINARY LARGE OBJECT,
+ runtime_state CHARACTER VARYING,
+ autostart_state CHARACTER VARYING,
+ is_ownership_verified INTEGER CHECK(is_ownership_verified IN (0,1)),
+ observation_evidence CHARACTER VARYING,
+ has_display_override INTEGER NOT NULL DEFAULT 0 CHECK(has_display_override IN (0,1)),
+ display_name CHARACTER VARYING,
+ application_category CHARACTER VARYING CHECK(application_category IN ('WEBSITE','APP')),
+ access_url CHARACTER VARYING,
+ current_release_published_at BIGINT,
+ observed_at BIGINT,
+ CHECK((current_release_sha256 IS NULL)=(current_release_published_at IS NULL)),
+ CHECK((runtime_state IS NULL AND autostart_state IS NULL AND is_ownership_verified IS NULL AND observation_evidence IS NULL AND observed_at IS NULL) OR
+       (runtime_state IS NOT NULL AND autostart_state IS NOT NULL AND is_ownership_verified IS NOT NULL AND observation_evidence IS NOT NULL AND observed_at IS NOT NULL)),
+ CHECK((has_display_override=0 AND display_name IS NULL AND application_category IS NULL AND access_url IS NULL) OR
+       (has_display_override=1 AND display_name IS NOT NULL AND application_category IS NOT NULL))
+);
+CREATE TABLE managed_application (
+ application_id CHARACTER VARYING NOT NULL PRIMARY KEY,
+ server_profile_id CHARACTER VARYING NOT NULL,
+ health_component_id CHARACTER VARYING,
+ health_check_payload BINARY LARGE OBJECT,
+ updated_at BIGINT NOT NULL,
+ graph_ready BOOLEAN NOT NULL DEFAULT FALSE,
+ CHECK(NOT graph_ready OR health_component_id IS NOT NULL)
+);
+CREATE TABLE managed_application_component (
+ application_id CHARACTER VARYING NOT NULL REFERENCES managed_application(application_id),
+ component_id CHARACTER VARYING NOT NULL,
+ deployment_unit_id CHARACTER VARYING NOT NULL UNIQUE REFERENCES deployment_unit(deployment_unit_id),
+ reviewed_runtime_payload BINARY LARGE OBJECT,
+ reviewed_data_paths_payload BINARY LARGE OBJECT,
+ reviewed_resource_bindings_payload BINARY LARGE OBJECT,
+ PRIMARY KEY(application_id,component_id)
+);
+CREATE TABLE managed_application_dependency (
+ application_id CHARACTER VARYING NOT NULL,
+ component_id CHARACTER VARYING NOT NULL,
+ dependency_component_id CHARACTER VARYING NOT NULL,
+ PRIMARY KEY(application_id,component_id,dependency_component_id),
+ FOREIGN KEY(application_id,component_id) REFERENCES managed_application_component(application_id,component_id),
+ FOREIGN KEY(application_id,dependency_component_id) REFERENCES managed_application_component(application_id,component_id),
+ CHECK(component_id<>dependency_component_id)
+);
+CREATE TABLE external_application (
+ external_application_id CHARACTER VARYING NOT NULL PRIMARY KEY,
+ server_profile_id CHARACTER VARYING NOT NULL,
+ runtime_type CHARACTER VARYING NOT NULL CHECK(runtime_type IN ('SYSTEMD','DOCKER')),
+ runtime_identity CHARACTER VARYING NOT NULL,
+ identity_fingerprint CHARACTER VARYING NOT NULL,
+ bound_host CHARACTER VARYING NOT NULL,
+ bound_ssh_port INTEGER NOT NULL CHECK(bound_ssh_port BETWEEN 1 AND 65535),
+ bound_username CHARACTER VARYING NOT NULL,
+ runtime_state CHARACTER VARYING NOT NULL,
+ can_start INTEGER NOT NULL CHECK(can_start IN (0,1)),
+ can_stop INTEGER NOT NULL CHECK(can_stop IN (0,1)),
+ detected_name CHARACTER VARYING NOT NULL,
+ has_display_override INTEGER NOT NULL DEFAULT 0 CHECK(has_display_override IN (0,1)),
+ display_name CHARACTER VARYING,
+ application_category CHARACTER VARYING CHECK(application_category IN ('WEBSITE','APP')),
+ access_url CHARACTER VARYING,
+ adopted_at BIGINT NOT NULL,
+ observed_at BIGINT NOT NULL,
+ UNIQUE(server_profile_id,runtime_type,runtime_identity),
+ CHECK((has_display_override=0 AND display_name IS NULL AND application_category IS NULL AND access_url IS NULL) OR
+       (has_display_override=1 AND display_name IS NOT NULL AND application_category IS NOT NULL))
+);
+CREATE TABLE deployment_unit_configuration_snapshot (
+ deployment_unit_id CHARACTER VARYING NOT NULL,
+ configuration_revision INTEGER NOT NULL CHECK(configuration_revision>0),
+ configuration_sha256 CHARACTER VARYING NOT NULL,
+ schema_version CHARACTER VARYING NOT NULL,
+ created_at BIGINT NOT NULL,
+ PRIMARY KEY(deployment_unit_id,configuration_revision)
+);
+CREATE TABLE deployment_unit_configuration_entry (
+ deployment_unit_id CHARACTER VARYING NOT NULL,
+ configuration_revision INTEGER NOT NULL,
+ configuration_key CHARACTER VARYING NOT NULL,
+ value_type CHARACTER VARYING NOT NULL CHECK(value_type IN ('TEXT','NUMBER','FLAG')),
+ value_text CHARACTER VARYING NOT NULL,
+ configuration_scope CHARACTER VARYING NOT NULL,
+ PRIMARY KEY(deployment_unit_id,configuration_revision,configuration_key),
+ FOREIGN KEY(deployment_unit_id,configuration_revision) REFERENCES deployment_unit_configuration_snapshot(deployment_unit_id,configuration_revision)
+);
+CREATE TABLE deployment_unit_release_binding (
+ deployment_unit_id CHARACTER VARYING NOT NULL,
+ release_sha256 CHARACTER VARYING NOT NULL,
+ configuration_revision INTEGER,
+ configuration_sha256 CHARACTER VARYING,
+ is_secret_binding_complete INTEGER NOT NULL DEFAULT 0 CHECK(is_secret_binding_complete IN (0,1)),
+ PRIMARY KEY(deployment_unit_id,release_sha256),
+ FOREIGN KEY(deployment_unit_id,configuration_revision) REFERENCES deployment_unit_configuration_snapshot(deployment_unit_id,configuration_revision),
+ CHECK((configuration_revision IS NULL)=(configuration_sha256 IS NULL))
+);
+CREATE TABLE secret_revision (
+ secret_id CHARACTER VARYING NOT NULL,
+ secret_revision INTEGER NOT NULL CHECK(secret_revision>0),
+ credential_id CHARACTER VARYING NOT NULL,
+ created_at BIGINT NOT NULL,
+ PRIMARY KEY(secret_id,secret_revision)
+);
+CREATE TABLE deployment_unit_release_secret_reference (
+ deployment_unit_id CHARACTER VARYING NOT NULL,
+ release_sha256 CHARACTER VARYING NOT NULL,
+ secret_id CHARACTER VARYING NOT NULL,
+ secret_revision INTEGER NOT NULL,
+ PRIMARY KEY(deployment_unit_id,release_sha256,secret_id,secret_revision),
+ FOREIGN KEY(deployment_unit_id,release_sha256) REFERENCES deployment_unit_release_binding(deployment_unit_id,release_sha256),
+ FOREIGN KEY(secret_id,secret_revision) REFERENCES secret_revision(secret_id,secret_revision)
+);
+CREATE INDEX release_secret_revision_index ON deployment_unit_release_secret_reference(secret_id,secret_revision);
+CREATE TABLE deployment_agent_task (
+ task_id CHARACTER VARYING NOT NULL PRIMARY KEY,
+ server_profile_id CHARACTER VARYING NOT NULL,
+ target_digest CHARACTER VARYING NOT NULL,
+ configuration_digest CHARACTER VARYING NOT NULL,
+ automation_mode CHARACTER VARYING NOT NULL CHECK(automation_mode IN ('STATIC','ASSISTED','AGENT')),
+ approval_mode CHARACTER VARYING NOT NULL CHECK(approval_mode IN ('MANUAL_REVIEW','AUTOMATIC','FULL_CONTROL')),
+ deployment_skill_id CHARACTER VARYING NOT NULL,
+ approval_skill_id CHARACTER VARYING NOT NULL,
+ execution_semantics_version INTEGER NOT NULL CHECK(execution_semantics_version>0),
+ task_state CHARACTER VARYING NOT NULL,
+ started_at BIGINT NOT NULL,
+ updated_at BIGINT NOT NULL
+);
+CREATE TABLE deployment_agent_event (
+ event_id BIGINT GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
+ task_id CHARACTER VARYING NOT NULL REFERENCES deployment_agent_task(task_id),
+ action_id CHARACTER VARYING,
+ event_type CHARACTER VARYING NOT NULL,
+ event_detail CHARACTER VARYING NOT NULL,
+ created_at BIGINT NOT NULL
+);
+CREATE INDEX deployment_agent_event_task_index ON deployment_agent_event(task_id,event_id);
+CREATE INDEX deployment_agent_event_action_index ON deployment_agent_event(task_id,action_id,event_type,event_id);
+ALTER TABLE managed_application ADD CONSTRAINT managed_health_component_fk
+ FOREIGN KEY(application_id,health_component_id) REFERENCES managed_application_component(application_id,component_id);
+```
+
+<a id="platform-state-ddl"></a>
+
+### 12.4 APP 状态、资源及引用登记完整 DDL
+
+以下表在 `app` 建立；平台内部可管理其登记和标准日志，不以这些接口读取 Mod 任意业务表。`selected_version` 的外键在两表创建后添加，删除所选版本前先清空选择；已安装版本可声明尚未创建的 schemaVersion，因此不为该字段增加指向 mod_schema 的立即外键。运行历史使用身份快照，不强制长期引用安装登记。
+
+```sql
+CREATE TABLE app_state (
+ singleton_id INTEGER PRIMARY KEY CHECK(singleton_id=1),
+ database_generation UUID NOT NULL,
+ boot_id UUID NOT NULL,
+ shutdown_state VARCHAR(16) NOT NULL CHECK(shutdown_state IN ('STARTING','RUNNING','CLEAN','UNKNOWN')),
+ intent_revision BIGINT NOT NULL DEFAULT 0 CHECK(intent_revision>=0),
+ updated_at BIGINT NOT NULL
+);
+CREATE TABLE mod_registry (
+ mod_id VARCHAR(512) PRIMARY KEY,
+ enabled BOOLEAN NOT NULL DEFAULT FALSE,
+ selected_version VARCHAR(512),
+ selection_initialized BOOLEAN NOT NULL DEFAULT FALSE,
+ revision BIGINT NOT NULL DEFAULT 0 CHECK(revision>=0),
+ last_boot_id UUID,
+ last_runtime_state VARCHAR(16) NOT NULL DEFAULT 'STOPPED'
+  CHECK(last_runtime_state IN ('STOPPED','STARTING','RUNNING','STOPPING','FAILED','UNKNOWN')),
+ actual_version VARCHAR(512),
+ failure_code VARCHAR(128),
+ failure_detail CHARACTER LARGE OBJECT,
+ disable_ack_revision BIGINT,
+ updated_at BIGINT NOT NULL,
+ CHECK(NOT enabled OR selected_version IS NOT NULL)
+);
+CREATE TABLE mod_version (
+ mod_id VARCHAR(512) NOT NULL REFERENCES mod_registry(mod_id),
+ version VARCHAR(512) NOT NULL,
+ install_path CHARACTER VARYING NOT NULL,
+ content_sha256 CHAR(64) NOT NULL,
+ archive_sha256 CHAR(64),
+ schema_version VARCHAR(64),
+ manifest_json CHARACTER LARGE OBJECT NOT NULL,
+ origin_kind VARCHAR(16) NOT NULL CHECK(origin_kind IN ('LOCAL','BUNDLED','STORE','CLASS')),
+ installed_at BIGINT NOT NULL,
+ state VARCHAR(16) NOT NULL CHECK(state IN ('READY','REINSTALLING','DELETE_PENDING')),
+ PRIMARY KEY(mod_id,version),
+ CHECK(schema_version IS NULL OR REGEXP_LIKE(schema_version,'^[1-9][0-9]{0,63}$'))
+);
+ALTER TABLE mod_registry ADD CONSTRAINT mod_selection_fk
+ FOREIGN KEY(mod_id,selected_version) REFERENCES mod_version(mod_id,version);
+CREATE TABLE mod_schema (
+ mod_id VARCHAR(512) NOT NULL REFERENCES mod_registry(mod_id),
+ schema_version VARCHAR(64) NOT NULL CHECK(REGEXP_LIKE(schema_version,'^[1-9][0-9]{0,63}$')),
+ generation UUID NOT NULL UNIQUE,
+ physical_name VARCHAR(133) NOT NULL UNIQUE,
+ database_user VARCHAR(66) NOT NULL UNIQUE,
+ state VARCHAR(20) NOT NULL CHECK(state IN ('PREPARING','READY','FAILED','UNKNOWN','DELETE_PENDING')),
+ ever_used BOOLEAN NOT NULL DEFAULT FALSE,
+ created_at BIGINT NOT NULL,
+ validated_at BIGINT,
+ validation_digest CHAR(64),
+ PRIMARY KEY(mod_id,schema_version),
+ UNIQUE(mod_id,schema_version,generation),
+ CHECK(state<>'READY' OR validated_at IS NOT NULL)
+);
+CREATE TABLE mod_operation (
+ operation_id UUID PRIMARY KEY,
+ mod_id VARCHAR(512) NOT NULL,
+ operation_type VARCHAR(24) NOT NULL CHECK(operation_type IN
+  ('INSTALL','REINSTALL','ENABLE','DISABLE','SWITCH','DELETE_VERSION','DELETE_MOD','MIGRATE','RECONCILE')),
+ source_version VARCHAR(512),
+ target_version VARCHAR(512),
+ source_schema_version VARCHAR(64),
+ target_schema_version VARCHAR(64),
+ target_generation UUID,
+ accepted_revision BIGINT,
+ state VARCHAR(16) NOT NULL CHECK(state IN ('REQUESTED','RUNNING','WAITING','FINISHING','UNKNOWN','ENDED')),
+ phase VARCHAR(40) NOT NULL,
+ outcome VARCHAR(16) CHECK(outcome IN ('SUCCEEDED','FAILED','CANCELLED')),
+ request_json CHARACTER LARGE OBJECT NOT NULL,
+ recovery_json CHARACTER LARGE OBJECT NOT NULL,
+ archive_log_id CHAR(36) NOT NULL UNIQUE,
+ failure_code VARCHAR(128),
+ failure_detail CHARACTER LARGE OBJECT,
+ created_at BIGINT NOT NULL,
+ updated_at BIGINT NOT NULL,
+ CHECK(state<>'ENDED' OR outcome IS NOT NULL)
+);
+CREATE INDEX mod_operation_owner_state ON mod_operation(mod_id,state,created_at);
+CREATE TABLE mod_migration_step (
+ operation_id UUID NOT NULL REFERENCES mod_operation(operation_id),
+ step_number INTEGER NOT NULL CHECK(step_number>=0),
+ from_version VARCHAR(64) NOT NULL,
+ to_version VARCHAR(64) NOT NULL,
+ migration_class VARCHAR(512) NOT NULL,
+ source_schema VARCHAR(133) NOT NULL,
+ target_schema VARCHAR(133) NOT NULL,
+ state VARCHAR(16) NOT NULL CHECK(state IN ('PENDING','RUNNING','COMPLETE','FAILED','UNKNOWN')),
+ failure_detail CHARACTER LARGE OBJECT,
+ started_at BIGINT,
+ ended_at BIGINT,
+ PRIMARY KEY(operation_id,step_number)
+);
+CREATE TABLE platform_task (
+ task_id UUID PRIMARY KEY,
+ owner_id VARCHAR(512) NOT NULL,
+ owner_version VARCHAR(512) NOT NULL,
+ task_type VARCHAR(128) NOT NULL,
+ state VARCHAR(20) NOT NULL CHECK(state IN ('QUEUED','RUNNING','CANCEL_REQUESTED','FINISHING','UNKNOWN','ENDED')),
+ outcome VARCHAR(16) CHECK(outcome IN ('SUCCEEDED','FAILED','CANCELLED')),
+ cancellable BOOLEAN NOT NULL,
+ boot_id UUID NOT NULL,
+ request_json CHARACTER LARGE OBJECT NOT NULL,
+ result_json CHARACTER LARGE OBJECT,
+ recovery_json CHARACTER LARGE OBJECT NOT NULL,
+ archive_log_id CHAR(36) NOT NULL UNIQUE,
+ progress_text CHARACTER VARYING NOT NULL,
+ started_at BIGINT NOT NULL,
+ ended_at BIGINT,
+ CHECK(state<>'ENDED' OR (outcome IS NOT NULL AND ended_at IS NOT NULL))
+);
+CREATE INDEX platform_task_owner_state ON platform_task(owner_id,state,started_at);
+CREATE TABLE platform_task_resource (
+ lease_id UUID PRIMARY KEY,
+ task_id UUID NOT NULL REFERENCES platform_task(task_id),
+ resource_kind VARCHAR(24) NOT NULL CHECK(resource_kind IN
+  ('MOD','SCHEMA','SERVER','CONNECTION','PROCESS','FILE','PAGE','CUSTOM')),
+ resource_id CHARACTER VARYING NOT NULL,
+ owner_id VARCHAR(512) NOT NULL,
+ access_mode VARCHAR(12) NOT NULL CHECK(access_mode IN ('SHARED','EXCLUSIVE')),
+ acquired_at BIGINT NOT NULL,
+ released_at BIGINT,
+ recovery_json CHARACTER LARGE OBJECT NOT NULL
+);
+CREATE INDEX task_resource_active ON platform_task_resource(resource_kind,resource_id,released_at);
+CREATE INDEX task_resource_task ON platform_task_resource(task_id,released_at);
+CREATE TABLE mod_credential_reference (
+ reference_id UUID PRIMARY KEY,
+ credential_id CHARACTER VARYING NOT NULL REFERENCES credential(credential_id),
+ mod_id VARCHAR(512) NOT NULL,
+ schema_version VARCHAR(64) NOT NULL,
+ schema_generation UUID NOT NULL,
+ business_key VARCHAR(512) NOT NULL,
+ purpose VARCHAR(128) NOT NULL,
+ state VARCHAR(12) NOT NULL CHECK(state IN ('RESERVED','ACTIVE','UNKNOWN')),
+ updated_at BIGINT NOT NULL,
+ UNIQUE(mod_id,schema_generation,credential_id,business_key),
+ FOREIGN KEY(mod_id,schema_version,schema_generation) REFERENCES mod_schema(mod_id,schema_version,generation)
+);
+CREATE INDEX credential_reference_resource ON mod_credential_reference(credential_id,state);
+CREATE TABLE mod_server_reference (
+ reference_id UUID PRIMARY KEY,
+ server_profile_id CHARACTER VARYING NOT NULL REFERENCES server_profile(server_profile_id),
+ mod_id VARCHAR(512) NOT NULL,
+ schema_version VARCHAR(64) NOT NULL,
+ schema_generation UUID NOT NULL,
+ business_key VARCHAR(512) NOT NULL,
+ state VARCHAR(12) NOT NULL CHECK(state IN ('RESERVED','ACTIVE','UNKNOWN')),
+ updated_at BIGINT NOT NULL,
+ UNIQUE(mod_id,schema_generation,server_profile_id,business_key),
+ FOREIGN KEY(mod_id,schema_version,schema_generation) REFERENCES mod_schema(mod_id,schema_version,generation)
+);
+CREATE INDEX server_reference_resource ON mod_server_reference(server_profile_id,state);
+CREATE TABLE app_schema_history (
+ schema_version INTEGER PRIMARY KEY CHECK(schema_version>0),
+ script_sha256 CHAR(64) NOT NULL,
+ state VARCHAR(16) NOT NULL CHECK(state IN ('RUNNING','READY','FAILED','UNKNOWN')),
+ started_at BIGINT NOT NULL,
+ ended_at BIGINT,
+ failure_detail CHARACTER LARGE OBJECT
+);
+CREATE TABLE log_category (
+ target_key UUID PRIMARY KEY,
+ owner_id VARCHAR(512) NOT NULL,
+ logical_schema VARCHAR(133) NOT NULL,
+ schema_generation UUID NOT NULL,
+ physical_schema VARCHAR(133) NOT NULL,
+ category VARCHAR(64) NOT NULL CHECK(REGEXP_LIKE(category,'^[a-z0-9_]{1,64}$')),
+ target_table VARCHAR(128) NOT NULL CHECK(REGEXP_LIKE(target_table,'^[a-z][a-z0-9_]*_log$')),
+ display_name VARCHAR(256) NOT NULL,
+ format_version INTEGER NOT NULL CHECK(format_version=1),
+ UNIQUE(owner_id,logical_schema,category)
+);
+```
+
+这两张引用表只在 Mod 有业务 Schema 时用于持久关联；无业务 Schema 的 Mod 使用服务器/秘密时仅持有任务资源，不产生持久业务引用。删除共享资源在同一平台事务内锁定其行并检查所有引用和活动资源；reserve 也锁同一资源行，避免检查与新增之间的竞态。新一代 Schema 建立前必须完成旧代次登记清理，日志、引用和故障文件不得跨代次复用。
+
+`recovery_json` 使用 UTF-8 JSON object、固定 `formatVersion=1`，不存秘密，最大 1 MiB；未知版本只读展示并阻止自动恢复。Mod 操作内容为实际规范路径、摘要、文件阶段、源/目标代次、保留副本及最后已知完成步骤；任务内容为业务操作 ID、所涉资源、最后已知动作、核对入口类型；资源内容为创建位置、PID＋进程启动时间或连接/文件身份。字段在所属操作开始时填入，不用空 `{}` 冒充充分恢复依据。
+
+### 12.5 官方 Mod 增量业务表
+
+部署 Schema 在 12.3 后增加以下表；`deployment_execution` 是三种模式共享的正式业务结果及恢复锚点，Agent 专有循环仍使用 deployment_agent_task/event，不因此合并引擎。字段内 JSON 使用已有受管模型的版本化序列化；首次适配沿用现有 runtime/helper 协议版本，改变时必须同步读写双方和夹具，不新增 Java 对象序列化。
+
+```sql
+CREATE TABLE deployment_project (
+ project_id UUID PRIMARY KEY,
+ display_name VARCHAR(256) NOT NULL,
+ source_kind VARCHAR(16) NOT NULL CHECK(source_kind IN ('LOCAL','GIT')),
+ source_location CHARACTER VARYING NOT NULL,
+ git_ref CHARACTER VARYING,
+ git_commit CHAR(40),
+ source_sha256 CHAR(64),
+ created_at BIGINT NOT NULL,
+ updated_at BIGINT NOT NULL,
+ CHECK(source_kind<>'GIT' OR git_ref IS NOT NULL)
+);
+CREATE TABLE deployment_execution (
+ execution_id UUID PRIMARY KEY,
+ platform_task_id UUID NOT NULL UNIQUE,
+ project_id UUID REFERENCES deployment_project(project_id),
+ application_id CHARACTER VARYING,
+ server_profile_id CHARACTER VARYING NOT NULL,
+ mode VARCHAR(16) NOT NULL CHECK(mode IN ('STATIC','ASSISTED','AGENT')),
+ phase VARCHAR(40) NOT NULL,
+ outcome VARCHAR(16) CHECK(outcome IN ('SUCCEEDED','FAILED','CANCELLED','UNKNOWN')),
+ reviewed_revision CHAR(64) NOT NULL,
+ request_payload BINARY LARGE OBJECT NOT NULL,
+ recovery_payload BINARY LARGE OBJECT NOT NULL,
+ result_payload BINARY LARGE OBJECT,
+ business_committed BOOLEAN NOT NULL DEFAULT FALSE,
+ cleanup_complete BOOLEAN NOT NULL DEFAULT FALSE,
+ created_at BIGINT NOT NULL,
+ updated_at BIGINT NOT NULL,
+ CHECK(NOT business_committed OR result_payload IS NOT NULL)
+);
+CREATE INDEX deployment_execution_application ON deployment_execution(application_id,created_at);
+CREATE TABLE deployment_release (
+ application_id CHARACTER VARYING NOT NULL REFERENCES managed_application(application_id),
+ release_id UUID NOT NULL,
+ release_sha256 CHAR(64) NOT NULL,
+ execution_id UUID NOT NULL REFERENCES deployment_execution(execution_id),
+ state VARCHAR(20) NOT NULL CHECK(state IN ('CANDIDATE','ACTIVE','RETIRED','FAILED','UNKNOWN')),
+ runtime_payload BINARY LARGE OBJECT NOT NULL,
+ health_payload BINARY LARGE OBJECT NOT NULL,
+ created_at BIGINT NOT NULL,
+ PRIMARY KEY(application_id,release_id),
+ UNIQUE(application_id,release_sha256)
+);
+CREATE TABLE deployment_handoff (
+ handoff_id UUID PRIMARY KEY,
+ owner_backup_mod VARCHAR(512) NOT NULL,
+ platform_task_id UUID NOT NULL,
+ application_id CHARACTER VARYING NOT NULL,
+ source_server_id CHARACTER VARYING NOT NULL,
+ target_server_id CHARACTER VARYING,
+ revision_sha256 CHAR(64) NOT NULL,
+ state VARCHAR(24) NOT NULL CHECK(state IN
+  ('REVIEWED','MAINTENANCE','COLLECTED','PREPARED','ACTIVATING','ACTIVE','COMPENSATING','FINISHED','UNKNOWN')),
+ maintenance_token CHARACTER VARYING,
+ candidate_id CHARACTER VARYING,
+ request_payload BINARY LARGE OBJECT NOT NULL,
+ recovery_payload BINARY LARGE OBJECT NOT NULL,
+ result_payload BINARY LARGE OBJECT,
+ updated_at BIGINT NOT NULL
+);
+CREATE INDEX deployment_handoff_task ON deployment_handoff(platform_task_id,state);
+CREATE TABLE preference (
+ preference_key VARCHAR(128) PRIMARY KEY,
+ preference_value CHARACTER VARYING NOT NULL
+);
+```
+
+备份 Schema 使用以下完整表结构，都是目标新表，不能标为旧 SQLite 现有表。归档文件在用户选择的独立路径，数据库只保存登记和摘要；删除登记不删除独立文件。导入外部归档须重新检查字节和口令，不把清单内容当作当前远端事实。
+
+```sql
+CREATE TABLE backup_archive (
+ archive_id UUID PRIMARY KEY,
+ application_id CHARACTER VARYING NOT NULL,
+ source_server_id CHARACTER VARYING NOT NULL,
+ source_revision CHAR(64) NOT NULL,
+ archive_path CHARACTER VARYING NOT NULL,
+ archive_sha256 CHAR(64) NOT NULL,
+ archive_size BIGINT NOT NULL CHECK(archive_size>=0),
+ format_version INTEGER NOT NULL CHECK(format_version>0),
+ encrypted BOOLEAN NOT NULL,
+ manifest_payload BINARY LARGE OBJECT NOT NULL,
+ state VARCHAR(16) NOT NULL CHECK(state IN ('READY','MISSING','INVALID','UNKNOWN')),
+ created_at BIGINT NOT NULL,
+ verified_at BIGINT,
+ UNIQUE(archive_path,archive_sha256)
+);
+CREATE TABLE backup_operation (
+ operation_id UUID PRIMARY KEY,
+ platform_task_id UUID NOT NULL UNIQUE,
+ archive_id UUID REFERENCES backup_archive(archive_id),
+ operation_type VARCHAR(16) NOT NULL CHECK(operation_type IN ('BACKUP','INSPECT','RESTORE','MIGRATE')),
+ source_server_id CHARACTER VARYING,
+ target_server_id CHARACTER VARYING,
+ deployment_handoff_id UUID,
+ phase VARCHAR(40) NOT NULL,
+ outcome VARCHAR(16) CHECK(outcome IN ('SUCCEEDED','FAILED','CANCELLED','UNKNOWN')),
+ request_payload BINARY LARGE OBJECT NOT NULL,
+ recovery_payload BINARY LARGE OBJECT NOT NULL,
+ result_payload BINARY LARGE OBJECT,
+ business_committed BOOLEAN NOT NULL DEFAULT FALSE,
+ cleanup_complete BOOLEAN NOT NULL DEFAULT FALSE,
+ created_at BIGINT NOT NULL,
+ updated_at BIGINT NOT NULL,
+ CHECK(NOT business_committed OR result_payload IS NOT NULL)
+);
+CREATE INDEX backup_operation_servers ON backup_operation(source_server_id,target_server_id,phase);
+CREATE TABLE backup_item (
+ operation_id UUID NOT NULL REFERENCES backup_operation(operation_id),
+ item_id VARCHAR(256) NOT NULL,
+ item_kind VARCHAR(20) NOT NULL CHECK(item_kind IN ('CONFIG','DATA','DATABASE','RUNTIME','SECRET_REFERENCE')),
+ component_id VARCHAR(256) NOT NULL,
+ binding_id VARCHAR(256) NOT NULL,
+ relative_path CHARACTER VARYING NOT NULL,
+ content_sha256 CHAR(64),
+ byte_count BIGINT CHECK(byte_count>=0),
+ state VARCHAR(16) NOT NULL CHECK(state IN ('PENDING','COLLECTED','VERIFIED','FAILED','UNKNOWN')),
+ recovery_payload BINARY LARGE OBJECT NOT NULL,
+ PRIMARY KEY(operation_id,item_id)
+);
+CREATE TABLE restore_candidate (
+ operation_id UUID PRIMARY KEY REFERENCES backup_operation(operation_id),
+ deployment_handoff_id UUID NOT NULL,
+ target_server_id CHARACTER VARYING NOT NULL,
+ candidate_id CHARACTER VARYING,
+ expected_archive_sha256 CHAR(64) NOT NULL,
+ state VARCHAR(20) NOT NULL CHECK(state IN ('PREPARING','PREPARED','ACTIVATING','ACTIVE','DISCARDED','UNKNOWN')),
+ recovery_payload BINARY LARGE OBJECT NOT NULL,
+ updated_at BIGINT NOT NULL
+);
+CREATE TABLE preference (
+ preference_key VARCHAR(128) PRIMARY KEY,
+ preference_value CHARACTER VARYING NOT NULL
+);
+```
+
+部署模式与审批偏好写部署 preference，备份位置等写备份 preference，平台主题/语言等仍写 desktop_preference。配置的秘密值不写 payload，使用平台引用；备份格式加密内容沿既有独立口令协议生成。`backup_item` 等临时执行表在结果、清理和归档均已完成后清理；backup_archive、deployment_release 和仍被它们引用的正式业务记录保留，不套用日志限额。
+
+### 12.6 标准日志 DDL 与一致性
+
+下列是唯一维护的日志表模板。`${table}` 在平台初始化时绑定为 `runtime_log`，在部署初始化时绑定为 `deployment_log`，在备份初始化时绑定为 `backup_log`；`${index}` 分别绑定为 `runtime_log_order`、`deployment_log_order`、`backup_log_order`。标识符由构建的固定清单生成，不能来自用户 SQL 参数；替换后就是各 Schema 的完整 DDL，无继承表或隐含列。
+
+```sql
+CREATE TABLE ${table} (
+ log_id CHAR(36) PRIMARY KEY,
+ recorded_at BIGINT NOT NULL,
+ owner_id VARCHAR(512) NOT NULL,
+ category VARCHAR(64) NOT NULL CHECK(REGEXP_LIKE(category,'^[a-z0-9_]{1,64}$')),
+ level VARCHAR(8) NOT NULL CHECK(level IN ('DEBUG','INFO','WARN','ERROR')),
+ event_code VARCHAR(128) NOT NULL,
+ message CHARACTER VARYING NOT NULL,
+ details CHARACTER LARGE OBJECT,
+ subject_mod_id VARCHAR(512),
+ mod_version VARCHAR(512),
+ task_id UUID,
+ operation_id UUID,
+ outcome VARCHAR(16) CHECK(outcome IN ('SUCCEEDED','FAILED','CANCELLED')),
+ truncated BOOLEAN NOT NULL,
+ CHECK(OCTET_LENGTH(message)<=2048)
+);
+CREATE INDEX ${index} ON ${table}(owner_id,category,recorded_at DESC,log_id DESC);
+```
+
+日志 UUID 持久化为规范小写字符串，排序明确采用字符串字典序，保持与应急记录一致。平台四个启动类别的 target_key 使用 UUID.nameUUIDFromBytes，对 UTF-8 的 `WTL-LOG-1`＋NUL＋databaseGeneration＋NUL＋类别名求值；初始化与启动早期使用同一算法。由此在能解开引导材料、已确认数据根而 H2 暂不可用时，仍能生成这些保留类别的应急文件，恢复后与数据库登记逐项核对。引导材料也不可用时只反馈启动 stderr，不落入猜测目录。Mod 类别的 UUID 仍在登记时生成；数据库不可用时未登记的新 Mod 类别不能临时冒充有效目标。平台写普通 Mod 诊断时使用 app 的 runtime_log 并绑定 Mod owner；业务日志由平台受控写入组件只访问登记的标准表，作者普通 JDBC 不因此得到 app 访问权。平台内部管理连接不能交给作者。日志登记校验列名、类型、可空性、主键、归属和 `_log` 后缀；作者任意业务表不成为日志清理目标。
+
+自动保留事务按 owner＋逻辑 Schema＋category 加锁，先去重校验同 ID 内容，再插入、按规范排序保留前 100 条。记录完整 UTF-8 JSON 编码在入库前执行 16 KiB 校验；数据库 CHECK 的 2 KiB 是消息字段底线，不能替代完整编码检查。手动保留 10 条和应急回填只采用 [Mod 日志规则](../Mod.md#database-log-management)，应急文件名为 `<target_key>.log`，最多 100 个完整记录；损坏数据不无限另存副本。
+
+平台操作/任务归档在 app 同一事务内保存固定 `archive_log_id` 摘要、删除已释放资源和迁移步骤、最后删除已无业务/恢复引用的执行行。`archive_log_id` 在执行创建时产生并保存，重试不重建。业务 Mod 先提交正式结果及其业务摘要，再向平台返回已知结果；平台只有核对本次业务结果及资源收尾后才完成自身摘要。跨所有者不依赖单个 JDBC 事务原子提交，平台提交失败保留 FINISHING，重试查询业务状态，不能重做业务动作。执行行已不存在且业务结果已提交时不根据日志是否仍存在重建旧摘要。
+
+### 12.7 状态转换、事务与重启
+
+用户意图为 enabled＋selected_version＋revision，实际结果为 boot_id＋runtime_state＋actual_version；待重启从尚未应用的意图操作推导，不另设可手工修改的待重启开关。平台启动后不能把上次 RUNNING 直接当本次运行成功。
+
+| 操作 | 请求阶段原子变更 | 执行阶段及完成判据 | 异常核对 |
+| --- | --- | --- | --- |
+| 安装 | 保存 INSTALL 操作及包/目标摘要，不改变开关 | VALIDATED → STAGED → FILES_PUBLISHED → REGISTERED → CLEANUP；正式目录校验后同一事务登记 version，初次才设置默认单选 | 文件已发布但未登记时核对全部摘要后补登记；不同内容或身份拒绝；只清理可证明属于本操作的暂存 |
+| 重装 | 检查整个 Mod 已重启停用、版本存在、原内容摘要相同，登记 REINSTALL | STAGED → OLD_SAVED → FILES_PUBLISHED → REGISTERED → CLEANUP；保留旧程序副本直到新目录验证并登记 | 新目录无效且旧副本完整才恢复旧程序；状态含糊转 UNKNOWN，不触碰 Schema |
+| 启用/禁用/切换 | 锁定相关 Mod 行，校验依赖/版本/迁移来源，原子保存全部连带意图与各 operation、revision；请求拒绝不写意图 | ACCEPTED → WAIT_RESTART → APPLYING → VERIFIED；当前受影响者停止接新任务，旧任务收尾；重启逐项应用 | 失败保留已登记意图；来源或迁移路径在启动前失效则标启动失败，不自动改选 |
+| 撤销待变更 | 锁定同一相关集合，基于当前实际状态及其余意图重新校验，更新 revision 并取消被替代的未执行请求 | 重算准入和剩余待重启项；没有有效差异时恢复准入 | 不撤销已发生的安装/数据库效果，不回滚其他独立操作 |
+| 迁移 | 本 Mod 独占、来源确认、目标代次 PREPARING，登记 MIGRATE 和 step | SOURCE_CHECKED → MIGRATING → VALIDATING → READY → CLEANUP；连接全释放，源未改动，目标验证通过 | 来源只读、目标独立；已有 READY 直接复用；未知只核对，首次已核实失败且空闲才允许当前会话手动重试 |
+| 删除版本/整个 Mod | 检查 disable_ack_revision 与当前关闭意图一致、所有占用已释放，登记删除范围与 DELETE_PENDING | QUIESCENT → PROGRAM_REMOVED → DATA_REMOVED → REFERENCES_REMOVED → REGISTRY_REMOVED → CLEANUP | 任一阶段失败保持禁用和待清理；先按最后版本引用判定 Schema，最后注销登记，不能因目录缺失直接声称全部完成 |
+
+操作阶段名是上表的固定枚举集合，实现时按 operation_type 校验合法后继，不能接受任意 phase 字符串。`state` 表示请求/运行/等待/收尾/未知/结束，`phase` 表示具体业务步骤。失败和取消的 outcome 只在已知且必要收尾结束时写入；未知保存 state=UNKNOWN，不能与已结束 outcome 混用。
+
+Schema 状态：PREPARING → READY/FAILED/UNKNOWN；FAILED 经明确首次失败重试重新进入 PREPARING，UNKNOWN 仅经核对转 READY 或 FAILED；READY 不通过启动失败降级为 FAILED。READY 的 `ever_used` 在首次业务连接或业务启动交付前设 true，已使用目标不得当作失败残留删除重建。任意可删除状态经占用/引用检查进入 DELETE_PENDING，确认物理数据、登记文件和引用处理完才注销。中间 Schema 名使用 `t_<operation UUID无连字符>_<步骤序号>`，所有者与对象清单写 recovery_json，不混入可选数据版本。
+
+重启有两个边界：点击“去重启”仅导航；真正重启时封闭整个 APP 新任务准入，排空或由用户取消并收尾，按依赖逆序 stop、在 EDT 移除页面、关闭连接/本地进程/引擎，写 CLEAN 后退出。设置页使用原模式启动参数和程序根启动新进程；JAR 用当前 Java 可执行文件，APP 用原 EXE，CLASS 用原受验证开发启动参数。保留参数中的工作区、classpath 和非秘密 JVM 选项，不把口令放入命令行。启动接续失败显示可重新手动启动，不能预先伪造新 boot_id 已成功。
+
+新版进程取得数据库独占、确认旧 APP 会话退出并核对本地资源归属后记录新的 boot_id；远端及业务未知状态继续保留，不阻止平台外壳显示核对入口。原任务的恢复专用加载按 [Mod 启动模式](../Mod.md#89-mod入口上下文和跨-mod-服务)执行，禁止为恢复而偷偷改变所选业务版本。关闭意图没有残留占用/未知业务且本次不加载该 Mod 时写 disable_ack_revision；该确认是删除准入依据。未干净退出遗留的连接随旧进程消失，但对应业务结果仍要核对；旧 PID 必须结合启动时间核实，不把复用 PID 当作自己的进程，也不终止无归属进程。
+
+### 12.8 并发与资源释放
+
+所有准入按“全局重启门 → Mod ID 升序 → Schema generation → 服务器 ID 升序”取得；一次任务在同一平台事务登记完整初始资源集合，失败则整体退回 QUEUED。Mod/Schema 业务占用共享，迁移/删除/替换占用独占，同服务器执行互斥。跨 Mod 服务调用在原任务上追加提供方共享占用；调用前若目标已进入待重启则拒绝，不能先检查空闲后异步放入任务。需要多台服务器的备份迁移必须在初始请求完整声明，首版不在持有部分服务器时追加另一台锁。
+
+任务、JDBC、进程和文件句柄释放先确认实际结束，再记 released_at；关闭失败保留占用和定位。收尾回调允许使用已经取得的资源执行必要恢复，不允许借取消新增无关业务。UNKNOWN 任务保留维护标记与必要占用，人工核对路径复用该任务的资源，不再排队争抢自己持有的服务器。页面注册及无业务任务的初始化资源记在本次 Mod 操作恢复记录，停止时同样核对，不为它们伪造用户业务任务。
+
+作者 SQL 的提交与平台任务登记不能共享一个私有跨 Schema 事务。操作提交失败必须由所属业务读取自己的正式记录确认结果；业务键、归档 ID 和 handoff ID 支持重试查询，写操作本身不得自动重放。引用 reserve 先于业务提交，UNKNOWN 引用一直保护服务器/凭据；正常确认和解除接口见 [引用协议](../Mod.md#85-server-与-secret共享配置引用)。
+
+### 12.9 工程门禁映射
+
+| 当前约束 | 1.1 保留或替换规则 | 实现及检查位置 |
+| --- | --- | --- |
+| shared/app/web 模块图 | 用 File 目标模块图替换活动图；app 不引用 Mod 私有实现，api 不引用平台实现 | S3-01，ModuleDependencyArchitectureTest |
+| 全局简单类名唯一 | 只对清单登记入口 Mod.java 开放限定例外，其余沿用 | S3-01，PackageStructureArchitectureTest |
+| 五个旧功能组、包深度和测试镜像 | 按 File 目标 app/api/mod 包路径及职责更新映射；不整体取消深度/职责检查 | S3-01，PackageStructureArchitectureTest |
+| standard/agent/core 单向依赖 | 检查同一部署模块内包依赖；两个引擎互不依赖，core 不反向依赖引擎/UI | S5-02～S5-04 |
+| 当前文档生产树/索引 | 新活动模块真实存在后才更新解析区和 AllFile；目标区与历史快照分开 | S3-01、S7-04，DocumentStructureArchitectureTest |
+| 结构化错误、Javadoc、消息目录 | 迁移已有有效失败契约、双语说明和本地化测试，不把公开 API 改成任意字符串失败 | 对应源码任务及 FailureContractArchitectureTest/JavadocCoverageTest |
+| 资源/helper 摘要 | 包路径调整后仍核对资源字节和实际加载来源；语义改变才调整协议与兼容记录 | S5/S6、S7-02 |
+| 格式/索引/扫描/打包 | 所有入口显式排除 history-src，含实际归档工作区验证；IDE Excluded 只承担 IDE 职责 | S3-01、S7-02 |
+
+文档中的 Java 声明仅定义公开表面，正式实现仍按生产注释、包镜像和错误门禁补全。H2、PF4J、SSHD 或 Provider 实现类不得出现在平台 API 签名；公开 Java/Swing/JDBC 类型属于允许的 JDK 依赖。
+
+
+<a id="goal-catalog"></a>
+
+## 13. 可独立指定的目标任务目录
+
+### 13.1 使用方法与共同完成规则
+
+任务编号固定，不因排序调整重编号。S0 为本次文档交付；S1～S7 是后续源码和验证目标。每项只推进自身范围，读取前置任务的真实产物和证据，不根据“曾经计划做过”认定前置完成。依赖不存在或未通过时报告具体缺项，不自动扩张为整期改造；已经获得的同一目标授权不重复请求。
+
+每张任务卡的正常/反例判据与 A 编号共同构成验收。规范归 D，功能实现和验证结果归任务；规格成立不代表 S2 探针通过，S2 通过不代表产品功能完成。普通子任务执行受影响测试，阶段末检查所属活动构建，S7-04 执行完整新 reactor 与发行物核对。不要为所有子任务重复跑旧 Web 全套或循环运行无新信息的检查。
+
+共同恢复规则：保存阶段差异，保护用户新增修改，不硬重置；冻结归档只在独立副本中复现；测试使用隔离数据。每项结束说明范围、验证、限制、下一项；停止本任务启动的临时进程，文档只同步已实现事实。任务卡中的源码路径都是目标归属，当前文档阶段不创建它们。
+
+状态分别记录 `规格=已形成设计/需修订`、`实现=未开始/进行中/已完成`、`验证=未执行/本地通过/待实机/已通过`；文档任务只使用文档完成状态。总体完成须满足本任务规定的验证，不能以实现完成替代验证。当前 S0-01～S0-07 的文档交付已完成并通过下方文档检查；S1～S7 均未开始。
+
+可复制目标：
+
+> 完成 PHASE-1.1 的 S5-05“部署后的应用管理”。先核对前置任务及其证据，按任务卡完成实现、必要验证和文档同步；仅推进该目标，交付时说明通过项与尚缺证据。
+
+> 完成 PHASE-1.1 的 S2-02“H2 权限、事务与迁移验证”。在隔离探针中验证现有规格，不操作运行数据库，不切换活动根构建；保留可复核结论并清理任务临时资源。
+
+### 13.2 任务卡
+
+<a id="s0-01"></a>
+
+#### S0-01 范围与状态统一
+
+- 前置：无。规格：D6,D7。
+- 目标与交付：统一受控开发、本地交付、文档职责及规格/实现/验证状态。
+- 允许范围与边界：正式文档与总纲；不改源码和运行事实。
+- 验收：本地引用、当前/目标区与后置项一致；源码索引不提前变化；覆盖 文档一致性。
+- 失败恢复：保留既有实现及历史证据，只修正文档差异。
+- 证据与同步：记录本任务实际产物、命令/环境、正反结果及未覆盖项；同步 总纲、PHASE、APP。
+
+<a id="s0-02"></a>
+
+#### S0-02 包与加载规格
+
+- 前置：S0-01。规格：D1。
+- 目标与交付：清单、摘要、版本、CLASS 描述、加载顺序和入口契约完整。
+- 允许范围与边界：Mod 作者规范与加载设计。
+- 验收：正反清单及摘要步骤可逐项复核；不声称 PF4J 已验证；覆盖 A3,A4,A5,A7,A8。
+- 失败恢复：规格冲突先修订所属正文，不执行安装。
+- 证据与同步：记录本任务实际产物、命令/环境、正反结果及未覆盖项；同步 Mod、PHASE。
+
+<a id="s0-03"></a>
+
+#### S0-03 平台 API、Swing 与进程
+
+- 前置：S0-02。规格：D2,D3。
+- 目标与交付：完整 Java 声明、字段/线程/错误/取消/资源语义及作者示例。
+- 允许范围与边界：九包公开接口和进程协议；不实现平台服务。
+- 验收：声明可编译；示例类型均已定义；作者可自定义 Swing 与 JDBC；覆盖 A8,A9,A17,A19,A21。
+- 失败恢复：保持受控未发布状态，修正接口及其示例。
+- 证据与同步：记录本任务实际产物、命令/环境、正反结果及未覆盖项；同步 Mod、File、PHASE。
+
+<a id="s0-04"></a>
+
+#### S0-04 JDBC、DDL、迁移与日志
+
+- 前置：S0-03。规格：D4。
+- 目标与交付：全部表、约束/索引、初始化、权限、引用、状态归档和日志协议。
+- 允许范围与边界：数据库技术正文，不连接或改动数据库。
+- 验收：逐表映射 19 张旧表，新增表明确标识；源/目标、未知/失败、状态/日志不冲突；覆盖 A10,A11,A12,A13,A14,A15,A18,A20,A25。
+- 失败恢复：更正规格，不以执行真实库测试弥补文档缺口。
+- 证据与同步：记录本任务实际产物、命令/环境、正反结果及未覆盖项；同步 Mod、PHASE。
+
+<a id="s0-05"></a>
+
+#### S0-05 生命周期与并发
+
+- 前置：S0-04。规格：D5。
+- 目标与交付：完整状态转换、事务边界、重启确认、恢复及排空条件。
+- 允许范围与边界：意图/运行/操作状态和资源准入。
+- 验收：每个用户操作都有接受/拒绝/异常路径，资源未释放不能提前完成；覆盖 A1,A2,A6,A9,A12,A13,A24。
+- 失败恢复：只修订有冲突的状态和调用协议。
+- 证据与同步：记录本任务实际产物、命令/环境、正反结果及未覆盖项；同步 Mod、PHASE。
+
+<a id="s0-06"></a>
+
+#### S0-06 部署与备份契约
+
+- 前置：S0-05。规格：D2,D4。
+- 目标与交付：部署后管理、备份/恢复/迁移及 handoff 的完整边界。
+- 允许范围与边界：两个官方 Mod 的职责、数据和协作接口。
+- 验收：公开签名不含私有类型；三种部署模式均能进入同一备份链；覆盖 A16,A20,A22,A25。
+- 失败恢复：不扩大业务范围；修订受影响契约和验收映射。
+- 证据与同步：记录本任务实际产物、命令/环境、正反结果及未覆盖项；同步 Mod、File、PHASE。
+
+<a id="s0-07"></a>
+
+#### S0-07 构建、验收与任务目录审阅
+
+- 前置：S0-06。规格：D1,D2,D3,D4,D5,D6,D7。
+- 目标与交付：APP/JAR/SDK 构建契约、全部任务卡、D→任务→A 映射。
+- 允许范围与边界：正式文档与必要进度。
+- 验收：任务依赖无环、无悬空规格、文档检查通过、受保护文件摘要不变；覆盖 文档一致性。
+- 失败恢复：未通过项保持文档待修订，不进入源码阶段。
+- 证据与同步：记录本任务实际产物、命令/环境、正反结果及未覆盖项；同步 APP、File、Mod、PHASE、总纲。
+
+<a id="s1-01"></a>
+
+#### S1-01 工作区与归档范围核对
+
+- 前置：S0-07。规格：D7。
+- 目标与交付：包含未提交必要源码/测试/资源/锁文件的归档清单与逐文件摘要。
+- 允许范围与边界：当时工作区的只读清单、秘密排除及本机 IDE 恢复依据。
+- 验收：忽略文件、链接/联接和必要构建输入已核对；与当时工作区对应；覆盖 A23。
+- 失败恢复：发现秘密或无法解释的范围时只停止相关归档项，保留原工作区。
+- 证据与同步：记录本任务实际产物、命令/环境、正反结果及未覆盖项；同步 PHASE、任务进度。
+
+<a id="s1-02"></a>
+
+#### S1-02 完整归档、摘要与恢复说明
+
+- 前置：S1-01。规格：D7。
+- 目标与交付：冻结归档、完整性清单、排除项及独立副本恢复步骤。
+- 允许范围与边界：history-src 及归档说明；不先拆旧活动工程。
+- 验收：源/目标相对路径和 SHA-256 一致；源在复制期间未变；已有归档不覆盖；覆盖 A23。
+- 失败恢复：不完整或来源不同的归档停止处理，旧活动工程继续保留。
+- 证据与同步：记录本任务实际产物、命令/环境、正反结果及未覆盖项；同步 PHASE、ARCHIVE、任务进度。
+
+<a id="s2-01"></a>
+
+#### S2-01 加载与类型共享验证
+
+- 前置：S1-02。规格：D1,D2。
+- 目标与交付：PF4J 适配结论、验证通过的依赖版本和测试包。
+- 允许范围与边界：不挂旧根构建的隔离临时探针。
+- 验收：CLASS/JAR、多个 JAR、共享 API、私有冲突、错误入口、缺/循环依赖和释放均验证；覆盖 A3,A4,A5,A7,A8。
+- 失败恢复：不成立则改适配/规格并重验；不批量搬业务。
+- 证据与同步：记录本任务实际产物、命令/环境、正反结果及未覆盖项；同步 Mod、APP、PHASE、探针证据。
+
+<a id="s2-02"></a>
+
+#### S2-02 H2 权限、事务与迁移验证
+
+- 前置：S1-02。规格：D4。
+- 目标与交付：H2 DDL/权限/事务/迁移方案的实际验证结论。
+- 允许范围与边界：隔离探针库及操作目录，不打开用户数据库。
+- 验收：完整 DDL 能初始化；复杂 JDBC、源只读、跨 Schema 拒绝、DDL 中断和目标复用通过；覆盖 A10,A11,A12,A18,A20,A25。
+- 失败恢复：保留故障证据并清理已知探针资源，先修规格再推进。
+- 证据与同步：记录本任务实际产物、命令/环境、正反结果及未覆盖项；同步 Mod、PHASE、探针证据。
+
+<a id="s2-03"></a>
+
+#### S2-03 Swing、JDBC 与进程释放验证
+
+- 前置：S2-01,S2-02。规格：D2,D3,D5。
+- 目标与交付：页面/任务/连接/辅助进程启动和停止闭环。
+- 允许范围与边界：隔离最小 Mod 探针及 UI/进程测试。
+- 验收：EDT、页面关闭、连接泄漏、取消、协议错帧、进程异常和停止阻塞分别验证；覆盖 A8,A9,A17,A18,A19,A21,A24。
+- 失败恢复：保留原工程；只能停止明确属于探针的进程。
+- 证据与同步：记录本任务实际产物、命令/环境、正反结果及未覆盖项；同步 Mod、PHASE、探针证据。
+
+<a id="s3-01"></a>
+
+#### S3-01 构建与结构门禁切换
+
+- 前置：S2-03。规格：D7。
+- 目标与交付：可编译的真实活动模块及目标门禁；旧归档排除。
+- 允许范围与边界：新活动根、API、启动基础和扫描/IDE 配置。
+- 验收：实际根构建和结构门禁通过，history-src 字节不变；不创建无实现的占位业务模块；覆盖 A8,A23。
+- 失败恢复：按阶段差异与本机配置恢复；旧工程在独立副本复现。
+- 证据与同步：记录本任务实际产物、命令/环境、正反结果及未覆盖项；同步 File、AllFile、PHASE。
+
+<a id="s3-02"></a>
+
+#### S3-02 启动、安全和平台数据库
+
+- 前置：S3-01。规格：D4,D7。
+- 目标与交付：模式/数据根、H2 引导与平台表、锁定解锁和凭据生命周期。
+- 允许范围与边界：app/main、db、secret、windows 及对应 API 接线。
+- 验收：首次/再次启动、引导材料异常、主密码、旧 SQLite 保全和正常关闭通过；覆盖 A7,A10,A18,A25。
+- 失败恢复：隔离失败库与引导材料，不重建现有库；保留可核对状态。
+- 证据与同步：记录本任务实际产物、命令/环境、正反结果及未覆盖项；同步 Runtime、File、AllFile、PHASE。
+
+<a id="s3-03"></a>
+
+#### S3-03 通用配置与能力接线
+
+- 前置：S3-02。规格：D2,D4。
+- 目标与交付：服务器/模型配置、任务/审批、来源快照和平台 API 宿主适配。
+- 允许范围与边界：app/service、ai、source、ui 的平台能力。
+- 验收：真实平台调用方可用；无部署私有依赖；路径、秘密、预算和错误边界通过；覆盖 A8,A19,A20。
+- 失败恢复：恢复本阶段差异；已提交配置按实际状态保护。
+- 证据与同步：记录本任务实际产物、命令/环境、正反结果及未覆盖项；同步 Mod、Runtime、产品手册、File、AllFile、PHASE。
+
+<a id="s3-04"></a>
+
+#### S3-04 正常 SSH 与独立救援
+
+- 前置：S3-03。规格：D2,D3。
+- 目标与交付：正常 SSH、指纹交互、独立救援及恢复后复核。
+- 允许范围与边界：app/linux、windows 及常驻 UI/service 接线。
+- 验收：无业务 Mod 仍可进入两条路径；断连、锁定、指纹变化和资源释放有结果；覆盖 A19,A21,A24。
+- 失败恢复：保留未知恢复状态，不以控制台画面替代 SSH 信任。
+- 证据与同步：记录本任务实际产物、命令/环境、正反结果及未覆盖项；同步 Runtime、产品手册、File、AllFile、PHASE。
+
+<a id="s3-05"></a>
+
+#### S3-05 最小 Mod 页面和任务闭环
+
+- 前置：S3-03,S3-04。规格：D1,D2,D5。
+- 目标与交付：入口→页面→任务→平台能力→结果→停止的生产闭环。
+- 允许范围与边界：app/mod、service、ui 与最小测试 Mod。
+- 验收：无 Mod 主体可用；作者 Swing/JDBC 页面能完成任务并释放；启动失败不残留注册；覆盖 A7,A8,A9,A17,A18,A19。
+- 失败恢复：失败仅撤销本次注册，保留意图及诊断。
+- 证据与同步：记录本任务实际产物、命令/环境、正反结果及未覆盖项；同步 Mod、产品手册、File、AllFile、PHASE。
+
+<a id="s4-01"></a>
+
+#### S4-01 原始包与安装
+
+- 前置：S3-05。规格：D1,D5。
+- 目标与交付：扫描/搜索/刷新、校验、暂存、安装及原包留存。
+- 允许范围与边界：app/mod 安装、原包 UI 和操作登记。
+- 验收：完整/半包、重复/不同内容、Windows 路径冲突、登记中断及原包删除失败通过；覆盖 A3,A4,A5,A6。
+- 失败恢复：只清本操作已确认暂存，不覆盖安装内容或删除失败原包。
+- 证据与同步：记录本任务实际产物、命令/环境、正反结果及未覆盖项；同步 Mod、产品手册、File、AllFile、PHASE。
+
+<a id="s4-02"></a>
+
+#### S4-02 开关、版本、依赖及重启
+
+- 前置：S4-01。规格：D5。
+- 目标与交付：开关/单选/连带确认/撤销/重启应用闭环。
+- 允许范围与边界：Mod 意图、依赖图、设置重启和状态显示。
+- 验收：原 A1/A2 全部通过；拒绝请求不产生待重启，失败保留开关和单选；覆盖 A1,A2,A9,A24。
+- 失败恢复：依规范保留意图及失败状态，不自动切回。
+- 证据与同步：记录本任务实际产物、命令/环境、正反结果及未覆盖项；同步 Mod、产品手册、PHASE。
+
+<a id="s4-03"></a>
+
+#### S4-03 Schema 生命周期
+
+- 前置：S4-02。规格：D4,D5。
+- 目标与交付：初始化、唯一迁移链、源选择、验证、重试和代次保护。
+- 允许范围与边界：app/db、mod 数据准备与引用管理。
+- 验收：同/不同数据版本、多来源、已用目标、失败/未知和共享 Schema 全覆盖；覆盖 A10,A11,A12,A13,A18,A20,A25。
+- 失败恢复：源不写、目标独立；未知先核对，禁止整库回滚。
+- 证据与同步：记录本任务实际产物、命令/环境、正反结果及未覆盖项；同步 Mod、Runtime、产品手册、File、AllFile、PHASE。
+
+<a id="s4-04"></a>
+
+#### S4-04 任务、连接及进程占用
+
+- 前置：S4-02。规格：D2,D3,D5。
+- 目标与交付：持久占用、跨 Mod 同任务协作、取消/恢复/资源定位。
+- 允许范围与边界：平台任务、服务调用、JDBC 包装与进程管理。
+- 验收：同服务器互斥、两服务器原子准入、连接未关、进程错帧与重启阻塞通过；覆盖 A8,A9,A18,A19,A21,A24。
+- 失败恢复：未释放与未知占用保持；不强杀、冒充结束或重发动作。
+- 证据与同步：记录本任务实际产物、命令/环境、正反结果及未覆盖项；同步 Mod、Runtime、产品手册、File、AllFile、PHASE。
+
+<a id="s4-05"></a>
+
+#### S4-05 日志与数据库管理
+
+- 前置：S4-03,S4-04。规格：D4。
+- 目标与交付：日志登记/写入/查看/保留/清理及分项反馈。
+- 允许范围与边界：标准日志、归档、应急文件和设置页面。
+- 验收：100/10 边界、多行/截断、重复/冲突、回填/文件替换失败和状态保护通过；覆盖 A14,A15,A18。
+- 失败恢复：诊断失败不替代状态保存；部分失败明确保留，不伪造成功。
+- 证据与同步：记录本任务实际产物、命令/环境、正反结果及未覆盖项；同步 Mod、Runtime、产品手册、File、AllFile、PHASE。
+
+<a id="s4-06"></a>
+
+#### S4-06 重装、删除及中断恢复
+
+- 前置：S4-01,S4-02,S4-03,S4-04,S4-05。规格：D4,D5。
+- 目标与交付：测试 Mod 从安装到修复与删除的完整闭环。
+- 允许范围与边界：程序/Schema/引用/原包清理及恢复入口。
+- 验收：最后引用、旧版本、未关闭连接、删除中断、原包选项及平台共享配置保护通过；覆盖 A1,A6,A12,A13,A14,A15,A20,A24。
+- 失败恢复：保持禁用和待清理；仅处理明确归属，冻结归档和独立备份不动。
+- 证据与同步：记录本任务实际产物、命令/环境、正反结果及未覆盖项；同步 Mod、Runtime、产品手册、PHASE。
+
+<a id="s5-01"></a>
+
+#### S5-01 部署数据、配置和取材
+
+- 前置：S4-06。规格：D2,D4。
+- 目标与交付：部署 H2、配置修订/秘密引用、源码/Git 固定取材。
+- 允许范围与边界：mod/deployment 的 db、core/source/git/config/model。
+- 验收：旧业务字段/序列化逐项映射；跨所有者引用、快照和错误输入验证；覆盖 A16,A20,A25。
+- 失败恢复：保存资源/模型对照和迁移限制，不直接搬 SQLite SQL。
+- 证据与同步：记录本任务实际产物、命令/环境、正反结果及未覆盖项；同步 Mod、File、AllFile、PHASE。
+
+<a id="s5-02"></a>
+
+#### S5-02 静态部署
+
+- 前置：S5-01。规格：D2,D7。
+- 目标与交付：确定性分析→计划→构建→交付→健康/回滚闭环。
+- 允许范围与边界：deployment service/standard 与 core/linux、对应 UI。
+- 验收：无模型调用；单/多组件及现有成功/失败夹具、取消/未知语义通过；覆盖 A16,A22,A25。
+- 失败恢复：保留原测试语义，不能弱化健康和未知门槛。
+- 证据与同步：记录本任务实际产物、命令/环境、正反结果及未覆盖项；同步 产品手册、Runtime、File、AllFile、PHASE。
+
+<a id="s5-03"></a>
+
+#### S5-03 辅助部署
+
+- 前置：S5-02。规格：D2,D7。
+- 目标与交付：确定步骤与有界 AI 辅助恢复。
+- 允许范围与边界：deployment assistance、ai 与审批接线。
+- 验收：普通步骤不交模型决策；输入/建议校验、审核等级及有限重试验证；覆盖 A16,A19,A22。
+- 失败恢复：辅助失败保留真实原因，不扩大动作或降级审批。
+- 证据与同步：记录本任务实际产物、命令/环境、正反结果及未覆盖项；同步 Mod、产品手册、Runtime、File、AllFile、PHASE。
+
+<a id="s5-04"></a>
+
+#### S5-04 自主部署
+
+- 前置：S5-01,S5-02。规格：D2,D4,D7。
+- 目标与交付：独立自主循环、工具执行、审批及恢复记录。
+- 允许范围与边界：deployment service/agent、ai 和专有状态。
+- 验收：不依赖 standard；真实工具反馈、取消、预算、批准失效及未知停止验证；覆盖 A16,A19,A22,A25。
+- 失败恢复：保留未知任务及动作依据，不以 Mod 重载清空状态。
+- 证据与同步：记录本任务实际产物、命令/环境、正反结果及未覆盖项；同步 Mod、产品手册、Runtime、File、AllFile、PHASE。
+
+<a id="s5-05"></a>
+
+#### S5-05 部署后的应用管理
+
+- 前置：S5-02。规格：D2,D4。
+- 目标与交付：应用清单/详情、扫描接管、状态、启停重启、展示编辑、发布切换与回滚。
+- 允许范围与边界：deployment core/lifecycle/delivery、service 和业务 UI。
+- 验收：远端身份漂移、健康失败、权限/断连、未知、Mod 停用后应用继续运行验证；覆盖 A16,A20,A22,A25。
+- 失败恢复：只恢复本次明确改变的受管状态，不新增远程删除或任意服务管理。
+- 证据与同步：记录本任务实际产物、命令/环境、正反结果及未覆盖项；同步 Mod、产品手册、Runtime、File、AllFile、PHASE。
+
+<a id="s5-06"></a>
+
+#### S5-06 部署公开 API
+
+- 前置：S5-05。规格：D2,D4。
+- 目标与交付：快照、生命周期、采集/恢复 handoff 和外部测试调用方。
+- 允许范围与边界：deployment/api 与 service 协作适配。
+- 验收：共享类型、修订/授权失效、维护归属、重复查询和未知核对验证；覆盖 A8,A16,A20,A22。
+- 失败恢复：业务动作未知不重放；API 私有类型泄漏必须修正。
+- 证据与同步：记录本任务实际产物、命令/环境、正反结果及未覆盖项；同步 Mod、File、AllFile、PHASE。
+
+<a id="s6-01"></a>
+
+#### S6-01 备份采集与归档
+
+- 前置：S5-06。规格：D2,D4。
+- 目标与交付：一致性采集、源恢复、独立加密归档及登记。
+- 允许范围与边界：mod/backup 的 db、collection/archive/crypto/backup、UI。
+- 验收：通过部署 API；采集失败、取消恢复、归档口令、校验和源状态保护通过；覆盖 A16,A20,A25。
+- 失败恢复：原失败与恢复/清理失败分别保留，独立归档不随 Mod 删除。
+- 证据与同步：记录本任务实际产物、命令/环境、正反结果及未覆盖项；同步 Mod、产品手册、Runtime、File、AllFile、PHASE。
+
+<a id="s6-02"></a>
+
+#### S6-02 归档检查与恢复
+
+- 前置：S6-01。规格：D2,D4。
+- 目标与交付：归档核对、候选准备、健康/受管切换及丢弃。
+- 允许范围与边界：backup archive/restore 与部署公开协作。
+- 验收：错误口令、损坏、绑定/目标漂移、候选失败和激活未知验证；覆盖 A16,A20,A22,A25。
+- 失败恢复：未知激活先核对；不通过丢弃候选掩盖已发生切换。
+- 证据与同步：记录本任务实际产物、命令/环境、正反结果及未覆盖项；同步 Mod、产品手册、Runtime、File、AllFile、PHASE。
+
+<a id="s6-03"></a>
+
+#### S6-03 双服务器迁移及失败补偿
+
+- 前置：S6-02。规格：D2,D4,D5。
+- 目标与交付：源/目标双锁、采集恢复、目标部署及完整结果。
+- 允许范围与边界：backup migration 与任务/维护协作。
+- 验收：取消各阶段、两端断连、目标未知、源运行恢复和锁归属验证；覆盖 A16,A20,A21,A24。
+- 失败恢复：保留未知结果与必要资源，不自动删源或释放其他任务维护标记。
+- 证据与同步：记录本任务实际产物、命令/环境、正反结果及未覆盖项；同步 Mod、产品手册、Runtime、PHASE。
+
+<a id="s7-01"></a>
+
+#### S7-01 作者工具与示例
+
+- 前置：S5-06,S6-03。规格：D1,D2,D6。
+- 目标与交付：mvn package 产包、独立 verify、CLASS 描述和作者说明。
+- 允许范围与边界：app/mod CLI、.mvn/mod、SDK 配置和独立示例。
+- 验收：SDK 无私有宿主编译依赖；示例打包/加载/关闭通过；错误包返回规定退出码；覆盖 A4,A5,A7,A8,A17,A18,A23。
+- 失败恢复：工具复用安装校验，不创建另一套元数据/校验实现。
+- 证据与同步：记录本任务实际产物、命令/环境、正反结果及未覆盖项；同步 Mod、APP、File、AllFile、PHASE。
+
+<a id="s7-02"></a>
+
+#### S7-02 APP/JAR 打包
+
+- 前置：S7-01,S5-03,S5-04。规格：D6,D7。
+- 目标与交付：便携 APP、JAR、SDK、清单和开发版本说明。
+- 允许范围与边界：distribution 构建、启动配置、运行环境和救援资源。
+- 验收：EXE/java -jar、空格/不同工作目录、无 Maven 缓存、资源定位及发行物白名单通过；覆盖 A6,A7,A9,A23,A24。
+- 失败恢复：保留已验证包和范围，失败包不标可用；不要求签名/公开发布。
+- 证据与同步：记录本任务实际产物、命令/环境、正反结果及未覆盖项；同步 APP、Runtime、产品手册、File、AllFile、PHASE。
+
+<a id="s7-03"></a>
+
+#### S7-03 代表性实机验收
+
+- 前置：S7-02。规格：D1,D2,D3,D4,D5,D6,D7。
+- 目标与交付：新链路 SSH/救援、三模式、管理、备份恢复迁移的环境证据。
+- 允许范围与边界：已有受控测试配置与发行物，不扩大适配矩阵。
+- 验收：先登记目标/模型/权限；用代表性真实环境覆盖成功及取消、断连、健康失败、未知核对；覆盖 A1,A2,A7,A16,A19,A21,A22,A24。
+- 失败恢复：环境缺失标待实机验证；本地交付可保存但本任务不虚报通过。
+- 证据与同步：记录本任务实际产物、命令/环境、正反结果及未覆盖项；同步 Runtime、产品手册、PHASE、验收证据。
+
+<a id="s7-04"></a>
+
+#### S7-04 文档同步和交付核对
+
+- 前置：S7-03。规格：D1,D2,D3,D4,D5,D6,D7。
+- 目标与交付：新活动工程整体门禁、正式文档和任务状态一致。
+- 允许范围与边界：真实当前文档、索引及交付证据。
+- 验收：全部必需任务关闭；历史归档摘要保全；临时进程退出，未覆盖范围清楚；覆盖 A1,A2,A3,A4,A5,A6,A7,A8,A9,A10,A11,A12,A13,A14,A15,A16,A17,A18,A19,A20,A21,A22,A23,A24,A25。
+- 失败恢复：不以包生成或文档完成替代必要验收，保留未通过状态。
+- 证据与同步：记录本任务实际产物、命令/环境、正反结果及未覆盖项；同步 全部对应主题文档、总纲、任务进度。
+
+### 13.3 D → 任务 → A 追踪
+
+| 规格 | 主要落地任务 | 验收集合 |
+| --- | --- | --- |
+| D1 包与加载 | S2-01、S3-05、S4-01/02、S7-01/02 | A3～A8、A23 |
+| D2 公开能力与业务协作 | S2-03、S3-03/04/05、S4-04、S5、S6 | A8/A9、A16～A22、A24 |
+| D3 辅助进程 | S2-03、S4-04、S7-02/03 | A9、A21、A24 |
+| D4 JDBC、数据和日志 | S2-02、S3-02、S4-03/05/06、S5-01、S6 | A10～A16、A18、A20、A25 |
+| D5 生命周期与并发 | S3-05、S4-01～S4-06、S6-03 | A1/A2/A6/A9、A11～A15、A18、A20/A21/A24 |
+| D6 本地交付 | S7-01～S7-04 | A6～A9、A17/A18、A23/A24 |
+| D7 工程边界 | S1、S3-01、S5、S7-04 | A8、A16、A22/A23/A25 |
+
+所有 A1～A25 至少有一个实现任务负责；S7-04 汇总证据，不重做已经通过且没有新变化的全部定向测试。S7-03 的代表性实机证据是独立结果，不能由旧 0.x 验收替代。
+
+<a id="specification-validation"></a>
+
+## 14. 文档交付检查
+
+本次文档验收应记录：正式 Markdown 的本地链接/锚点、围栏和 JSON；所有 Java 声明及最小示例在 JDK 21 的类型检查；DDL 表/列/引用与原 19 张表的静态映射；36 张任务卡的依赖无环和 A1～A25 覆盖；File 当前生产树与解析区、非授权文件和历史进度正文的摘要保全。
+
+文档类型检查不是 API 实现，也不证明 JDBC/DDL 能在 H2 运行。H2 SQL、权限、DPAPI、PF4J、Swing 交互、进程协议、真实 Linux/模型和发行物的运行验证分别留给对应 S2～S7 任务。本次不连接 H2、不生成生产代码/SQL、不修改 Maven 或 IDEA，不发布或推送。
+
+2026-09-26 本次文档交付结果：17 份 Markdown 的 824 个本地链接/锚点、4 个 JSON 示例及围栏检查通过；36 张任务卡字段完整、前置依赖无环，A1～A25 全部有任务负责。9 个平台 API 包依赖无环，102 个 Java 声明与示例通过 JDK 21.0.10 的 `javac --release 21` 类型检查。44 张目标表（APP 20、部署 18、备份 6）、29 处外键引用、16 个显式索引及原 19 张表全部字段完成静态对应检查，未执行 SQL。
+
+JDK 21 的 DocumentStructureArchitectureTest 两项通过，失败/错误/跳过均为零，git diff --check 及新增文档空白检查通过。2,841 个非授权现存文件的集合与摘要不变，File 当前结构和依赖解析区内容不变；既有进度原文保留。只修改五份正式文档及必要进度/验证记录；Maven 和 javac 已退出，临时检查目录在交付前清理。源码阶段、运行数据库、正式 SDK、打包和实机能力均未启动或实现。

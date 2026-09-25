@@ -1,0 +1,9 @@
+{
+  "name": "windowstolinux-formatting",
+  "private": true,
+  "version": "1.0.0",
+  "devDependencies": {
+    "prettier": "3.6.2",
+    "@prettier/plugin-xml": "3.4.2"
+  }
+}

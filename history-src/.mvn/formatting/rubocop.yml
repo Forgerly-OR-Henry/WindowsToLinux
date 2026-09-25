@@ -1,0 +1,10 @@
+AllCops:
+  NewCops: disable
+  TargetRubyVersion: 3.2
+  SuggestExtensions: false
+Layout/EndOfLine:
+  EnforcedStyle: lf
+Layout/IndentationWidth:
+  Width: 2
+Layout/LineLength:
+  Max: 120

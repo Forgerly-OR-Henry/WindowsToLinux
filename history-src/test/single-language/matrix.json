@@ -1,0 +1,184 @@
+[
+  {
+    "path": "c/cmake/cpp-service",
+    "language": "CPP",
+    "projectType": "CMAKE_SERVICE",
+    "buildTool": "CMAKE",
+    "configurationFault": "remove:CMakePresets.json"
+  },
+  {
+    "path": "c/cmake/http-service",
+    "language": "C",
+    "projectType": "CMAKE_SERVICE",
+    "buildTool": "CMAKE",
+    "configurationFault": "remove:CMakePresets.json"
+  },
+  {
+    "path": "csharp/dotnetsdk/http-service",
+    "language": "CSHARP",
+    "projectType": "DOTNET_SERVICE",
+    "buildTool": "DOTNET_LOCKED",
+    "configurationFault": "remove:packages.lock.json"
+  },
+  {
+    "path": "go/gomodule/http-service",
+    "language": "GO",
+    "projectType": "GO_SERVICE",
+    "buildTool": "GO_MODULE",
+    "configurationFault": "remove:go.sum"
+  },
+  {
+    "path": "java/gradle/spring-boot",
+    "language": "JAVA",
+    "projectType": "SPRING_BOOT",
+    "buildTool": "GRADLE_WRAPPER",
+    "configurationFault": "remove:gradle/wrapper/gradle-wrapper.jar"
+  },
+  {
+    "path": "java/jdk/http-service",
+    "language": "JAVA",
+    "projectType": "JAVA_SOURCE",
+    "buildTool": "JDK",
+    "configurationFault": "java-version"
+  },
+  {
+    "path": "java/maven-wrapper/spring-boot",
+    "language": "JAVA",
+    "projectType": "SPRING_BOOT",
+    "buildTool": "MAVEN_WRAPPER",
+    "configurationFault": "maven-war"
+  },
+  {
+    "path": "java/maven/spring-boot",
+    "language": "JAVA",
+    "projectType": "SPRING_BOOT",
+    "buildTool": "MAVEN",
+    "configurationFault": "maven-war"
+  },
+  {
+    "path": "kotlin/gradle/http-service",
+    "language": "KOTLIN",
+    "projectType": "KOTLIN_SERVICE",
+    "buildTool": "GRADLE_KOTLIN_WRAPPER",
+    "configurationFault": "remove:gradle.lockfile"
+  },
+  {
+    "path": "kotlin/kotlinc/http-service",
+    "language": "KOTLIN",
+    "projectType": "KOTLIN_SERVICE",
+    "buildTool": "KOTLINC",
+    "configurationFault": "kotlin-version"
+  },
+  {
+    "path": "node/npm/http-service",
+    "language": "JAVASCRIPT",
+    "projectType": "NODE_SERVICE",
+    "buildTool": "NPM",
+    "configurationFault": "remove:package-lock.json"
+  },
+  {
+    "path": "node/npm/typescript-service",
+    "language": "TYPESCRIPT",
+    "projectType": "NODE_SERVICE",
+    "buildTool": "NPM",
+    "configurationFault": "remove:package-lock.json"
+  },
+  {
+    "path": "node/pnpm/http-service",
+    "language": "JAVASCRIPT",
+    "projectType": "NODE_SERVICE",
+    "buildTool": "PNPM",
+    "configurationFault": "remove:pnpm-lock.yaml"
+  },
+  {
+    "path": "node/pnpm/typescript-service",
+    "language": "TYPESCRIPT",
+    "projectType": "NODE_SERVICE",
+    "buildTool": "PNPM",
+    "configurationFault": "remove:pnpm-lock.yaml"
+  },
+  {
+    "path": "node/yarn/http-service",
+    "language": "JAVASCRIPT",
+    "projectType": "NODE_SERVICE",
+    "buildTool": "YARN",
+    "configurationFault": "remove:yarn.lock"
+  },
+  {
+    "path": "node/yarn/typescript-service",
+    "language": "TYPESCRIPT",
+    "projectType": "NODE_SERVICE",
+    "buildTool": "YARN",
+    "configurationFault": "remove:yarn.lock"
+  },
+  {
+    "path": "php/composer/http-service",
+    "language": "PHP",
+    "projectType": "PHP_SERVICE",
+    "buildTool": "COMPOSER_LOCKED",
+    "configurationFault": "remove:composer.lock"
+  },
+  {
+    "path": "php/phpcli/http-service",
+    "language": "PHP",
+    "projectType": "PHP_SERVICE",
+    "buildTool": "PHP_CLI",
+    "configurationFault": "php-version"
+  },
+  {
+    "path": "python/pip/http-service",
+    "language": "PYTHON",
+    "projectType": "PYTHON_SERVICE",
+    "buildTool": "PIP_LOCKED",
+    "configurationFault": "remove:requirements.lock"
+  },
+  {
+    "path": "python/pipenv/http-service",
+    "language": "PYTHON",
+    "projectType": "PYTHON_SERVICE",
+    "buildTool": "PIPENV_LOCKED",
+    "configurationFault": "remove:Pipfile.lock"
+  },
+  {
+    "path": "python/poetry/http-service",
+    "language": "PYTHON",
+    "projectType": "PYTHON_SERVICE",
+    "buildTool": "POETRY_LOCKED",
+    "configurationFault": "remove:poetry.lock"
+  },
+  {
+    "path": "python/stdlib/http-service",
+    "language": "PYTHON",
+    "projectType": "PYTHON_SERVICE",
+    "buildTool": "PYTHON_STDLIB",
+    "configurationFault": "omit:dependencies"
+  },
+  {
+    "path": "python/uv/http-service",
+    "language": "PYTHON",
+    "projectType": "PYTHON_SERVICE",
+    "buildTool": "UV_LOCKED",
+    "configurationFault": "remove:uv.lock"
+  },
+  {
+    "path": "ruby/bundler/http-service",
+    "language": "RUBY",
+    "projectType": "RUBY_SERVICE",
+    "buildTool": "BUNDLER_LOCKED",
+    "configurationFault": "remove:Gemfile.lock"
+  },
+  {
+    "path": "ruby/rubycli/http-service",
+    "language": "RUBY",
+    "projectType": "RUBY_SERVICE",
+    "buildTool": "RUBY_CLI",
+    "configurationFault": "ruby-version"
+  },
+  {
+    "path": "rust/cargo/http-service",
+    "language": "RUST",
+    "projectType": "RUST_SERVICE",
+    "buildTool": "CARGO_LOCKED",
+    "configurationFault": "remove:Cargo.lock"
+  }
+]

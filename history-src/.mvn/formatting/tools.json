@@ -1,0 +1,37 @@
+{
+  "python": "3.12",
+  "ruff": "0.11.13",
+  "clang-format": "20.1.8",
+  "py7zr": "1.0.0",
+  "rubocop": "1.68.0",
+  "gofmt": "go1.26.8",
+  "rustfmt": "1.9.0",
+  "dotnet": "10.0.300",
+  "downloads": {
+    "ktfmt.jar": "https://repo.maven.apache.org/maven2/com/facebook/ktfmt/0.54/ktfmt-0.54-jar-with-dependencies.jar",
+    "shfmt.exe": "https://github.com/mvdan/sh/releases/download/v3.12.0/shfmt_v3.12.0_windows_amd64.exe",
+    "php.zip": "https://windows.php.net/downloads/releases/php-8.4.25-nts-Win32-vs17-x64.zip",
+    "php-cs-fixer.phar": "https://github.com/PHP-CS-Fixer/PHP-CS-Fixer/releases/download/v3.82.1/php-cs-fixer.phar",
+    "ruby.7z": "https://github.com/oneclick/rubyinstaller2/releases/download/RubyInstaller-3.4.4-1/rubyinstaller-3.4.4-1-x64.7z"
+  },
+  "sha256": {
+    "ktfmt.jar": "5e7eb28a0b2006d1cefbc9213bfc73a8191ec2f85d639ec4fc4ec0cd04212e82",
+    "shfmt.exe": "c8bda517ba1c640ce4a715c0fa665439ddbe4357ba5e9b77b0e51e70e2b9c94b",
+    "php.zip": "43a8f67ed2e5223fafb21293c85976361808855405278cef2cf3037c3ae2529c",
+    "php-cs-fixer.phar": "3df2d58f3b1bed638b80d4f2d074353fcf4664ff1b3d0c1bc9aa4124e7f54c40",
+    "ruby.7z": "3633b9e6d260f558cc9703f9b82e95bf571d1cf4c12acb43d86a90b749890cbc"
+  },
+  "ruby": "rubyinstaller-3.4.4-1-x64",
+  "gems": {
+    "ast": "2.4.3",
+    "parser": "3.3.7.2",
+    "rubocop-ast": "1.32.3",
+    "language_server-protocol": "3.17.0.5",
+    "parallel": "1.27.0",
+    "rainbow": "3.1.1",
+    "regexp_parser": "2.10.0",
+    "ruby-progressbar": "1.13.0",
+    "unicode-display_width": "2.6.0",
+    "rubocop": "1.68.0"
+  }
+}

@@ -49,6 +49,8 @@ def inventory():
     paths = []
     for name in names:
         path = ROOT / name
+        if name.startswith("history-src/"):
+            continue
         if not name or not path.is_file() or path.is_symlink():
             continue
         if name in EXCEPTIONS["files"] or path.name in EXCEPTIONS["excludedNames"]:
