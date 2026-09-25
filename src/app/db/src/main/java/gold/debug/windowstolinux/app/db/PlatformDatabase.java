@@ -33,7 +33,7 @@ public final class PlatformDatabase implements AutoCloseable {
     private final UUID bootId = UUID.randomUUID();
 
     /** Owned connections still requiring actual close. / 尚待实际关闭的所属连接集合。 */
-    private final Set<Connection> connections = Collections.newSetFromMap(new IdentityHashMap<>());
+    private final Map<Connection, String> connections = new IdentityHashMap<>();
 
     /** Actual closed state; failed close does not set it. / 实际关闭状态；关闭失败不会设置该值。 */
     private boolean closed;
@@ -196,12 +196,32 @@ public final class PlatformDatabase implements AutoCloseable {
     public synchronized Connection openConnection() throws SQLException {
         if (closed)
             throw new SQLException("Database is closed");
-        var physical = DriverManager.getConnection(jdbcUrl, "app_internal", bootstrap.password());
-        connections.add(physical);
+        return openInternalConnection("app", "app_internal", bootstrap.password(), "platform");
+    }
+
+    /**
+     * Opens a tracked connection for an internal prepared identity, never a caller-supplied JDBC URL. / 为内部已准备身份打开跟踪连接，不接收调用方 JDBC 地址。
+     * @param schema exact prepared default schema / 精确的已准备默认数据结构
+     * @param user internal prepared database user / 内部已准备数据库用户
+     * @param password private in-memory driver password / 私有内存驱动口令
+     * @param ownerTag internal resource scope identifier / 内部资源作用域标识
+     * @return an independent thread-bound managed connection / 独立且绑定线程的受管连接
+     * @throws SQLException if the engine is closed or opening fails / 引擎已关闭或打开失败时
+     */
+    public synchronized Connection openInternalConnection(String schema, String user, String password, String ownerTag)
+            throws SQLException {
+        Objects.requireNonNull(schema);
+        Objects.requireNonNull(user);
+        Objects.requireNonNull(password);
+        Objects.requireNonNull(ownerTag);
+        if (closed)
+            throw new SQLException("Database is closed");
+        var physical = DriverManager.getConnection(jdbcUrl, user, password);
+        connections.put(physical, ownerTag);
         var managed = gold.debug.windowstolinux.app.db.persistence.connection.ManagedJdbcConnection.wrap(physical,
                 () -> released(physical));
         try {
-            managed.setSchema("app");
+            managed.setSchema(schema);
             return managed;
         } catch (SQLException failure) {
             try {
@@ -211,6 +231,26 @@ public final class PlatformDatabase implements AutoCloseable {
             }
             throw failure;
         }
+    }
+
+    /**
+     * Derives the private non-administrator owner password for an encoded schema identity. / 为编码后的数据身份派生私有非管理员所有者口令。
+     * @param coordinates exact encoded identity / 精确编码身份
+     * @return private deterministic owner password / 私有确定性所有者口令
+     * @throws java.security.GeneralSecurityException if the required HMAC is unavailable / 所需 HMAC 不可用时
+     */
+    public String schemaPassword(gold.debug.windowstolinux.app.db.schema.SchemaCoordinates coordinates)
+            throws java.security.GeneralSecurityException {
+        return bootstrap.derive("WTL-SCHEMA-OWNER-1\0" + coordinates.databaseUser());
+    }
+
+    /**
+     * Counts connections belonging to one internal operation scope. / 统计属于某一内部操作作用域的连接。
+     * @param ownerTag exact internal scope / 精确的内部作用域
+     * @return connections not yet actually closed / 尚未实际关闭的连接数
+     */
+    public synchronized int openConnections(String ownerTag) {
+        return (int) connections.values().stream().filter(ownerTag::equals).count();
     }
 
     /**
