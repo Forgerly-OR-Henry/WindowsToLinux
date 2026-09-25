@@ -40,6 +40,9 @@
     <sshd.version>2.14.0</sshd.version>
     <slf4j.version>1.7.36</slf4j.version>
     <sqlite.version>3.46.0.0</sqlite.version>
+    <h2.version>2.5.250</h2.version>
+    <jna.version>5.17.0</jna.version>
+    <pf4j.version>3.13.0</pf4j.version>
     <bouncycastle.version>1.78.1</bouncycastle.version>
     <flatlaf.version>3.7.1</flatlaf.version>
     <jackson.version>2.18.1</jackson.version>
