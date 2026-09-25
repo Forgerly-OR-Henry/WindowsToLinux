@@ -10,6 +10,11 @@
   <artifactId>windowstolinux-app-db</artifactId>
   <dependencies>
     <dependency>
+      <groupId>gold.debug.windowstolinux</groupId>
+      <artifactId>windowstolinux-api</artifactId>
+      <version>1.0.0-dev.1</version>
+    </dependency>
+    <dependency>
       <groupId>com.h2database</groupId>
       <artifactId>h2</artifactId>
       <version>${h2.version}</version>
