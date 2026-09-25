@@ -19,11 +19,15 @@ public final class ServerProfileRepository {
     /** Query protecting referenced server identities from rebinding. / 保护被引用服务器身份免于换绑的查询。 */
     private final String referenceQuery;
 
+    /** Whether configuration shares the H2 task-admission lock. / 配置是否共享 H2 任务准入锁。 */
+    private final boolean platform;
+
     /** Binds the database. / 绑定数据库。
      * @param connections connection factory / 连接工厂
      */
     public ServerProfileRepository(DesktopConnectionFactory connections) {
         this.connections = connections.scoped();
+        this.platform = false;
         this.referenceQuery = "SELECT 1 FROM deployment_unit WHERE server_profile_id=? LIMIT 1";
     }
 
@@ -32,6 +36,7 @@ public final class ServerProfileRepository {
      */
     public ServerProfileRepository(RepositoryConnections connections) {
         this.connections = java.util.Objects.requireNonNull(connections);
+        this.platform = true;
         this.referenceQuery = "SELECT 1 FROM mod_server_reference WHERE server_profile_id=? LIMIT 1";
     }
 
@@ -55,9 +60,13 @@ public final class ServerProfileRepository {
      * @throws SQLException on a missing profile or changed identity / 配置缺失或身份变化
      */
     public void saveServer(ServerIdentity server) throws SQLException {
-        try (var c = connections.open()) {
-            RepositoryTransactionExecutor.upsertServer(c, server);
-        }
+        connections.transaction(() -> {
+            try (var c = connections.open()) {
+                if (platform)
+                    RepositoryConnections.lockPlatformState(c);
+                RepositoryTransactionExecutor.upsertServer(c, server);
+            }
+        });
     }
 
     /** Returns the trusted endpoint snapshot, independent of editable connection fields. / 返回独立于可编辑连接字段的信任端点快照。
@@ -97,17 +106,21 @@ public final class ServerProfileRepository {
      */
     public void saveServerProfile(StoredServerProfile profile) throws SQLException {
         connections.transaction(() -> {
-            var prior = findServerProfile(profile.id());
-            boolean changed = prior.isPresent()
-                    && (!prior.get().host().equals(profile.host()) || prior.get().sshPort() != profile.sshPort());
             try (var c = connections.open()) {
+                if (platform)
+                    RepositoryConnections.lockPlatformState(c);
+                var prior = findServerProfile(profile.id());
+                boolean changed = prior.isPresent()
+                        && (!prior.get().host().equals(profile.host()) || prior.get().sshPort() != profile.sshPort());
+                if (platform && prior.isPresent() && (changed || !prior.get().username().equals(profile.username())
+                        || !prior.get().credentialKey().equals(profile.credentialKey())))
+                    gold.debug.windowstolinux.app.db.task.TaskLedger.requireServerIdle(c, profile.id());
                 if (changed) {
                     try (var s = c.prepareStatement(referenceQuery)) {
                         s.setString(1, profile.id());
                         try (var rows = s.executeQuery()) {
                             if (rows.next())
-                                throw new SQLException(
-                                        "a server with managed deployments cannot be rebound; create a new profile");
+                                throw new SQLException("a referenced server cannot be rebound; create a new profile");
                         }
                     }
                 }

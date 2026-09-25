@@ -75,6 +75,22 @@ public final class RepositoryConnections {
         }
     }
 
+    /**
+     * Serializes platform admission and configuration changes until the owning transaction ends. / 将平台准入及配置变更串行化至所属事务结束。
+     * @param connection connection in an existing platform transaction / 已有平台事务内的连接
+     * @throws SQLException if there is no transaction or authoritative state / 不存在事务或权威状态时
+     */
+    public static void lockPlatformState(Connection connection) throws SQLException {
+        if (connection.getAutoCommit())
+            throw new SQLException("Platform state locking requires an owning transaction");
+        try (var statement = connection
+                .prepareStatement("SELECT singleton_id FROM app_state WHERE singleton_id=1 FOR UPDATE");
+                var rows = statement.executeQuery()) {
+            if (!rows.next())
+                throw new SQLException("Platform state is absent");
+        }
+    }
+
     /** Source of internal owned JDBC connections. / 内部所属 JDBC 连接来源。 */
     @FunctionalInterface
     public interface Source {

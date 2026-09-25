@@ -91,11 +91,14 @@ public final class PlatformTaskRuntime implements AutoCloseable {
     /**
      * Seals or reopens new work while accepted tasks retain their original resources. / 封闭或重开新工作，已接纳任务保留原有资源。
      * @param sealed whether to reject new submissions / 是否拒绝新提交
+     * @return previous admission gate, for restoring a rejected shutdown attempt / 原准入门状态，用于恢复被拒绝的关闭尝试
      */
-    public synchronized void seal(boolean sealed) {
+    public synchronized boolean seal(boolean sealed) {
         if (closing && !sealed)
             throw new IllegalStateException("Task runtime is closing");
+        boolean previous = this.sealed;
         this.sealed = sealed;
+        return previous;
     }
 
     /**
@@ -458,13 +461,31 @@ public final class PlatformTaskRuntime implements AutoCloseable {
     public interface Admission {
         /**
          * Validates the running caller and supplies the entire initial resource set. / 验证运行中的调用方并提供完整初始资源集合。
+         * @param connection transaction already holding the platform state lock / 已持有平台状态锁的事务
          * @param ownerId exact caller identity / 精确调用方身份
          * @param version exact running release / 精确运行版本
          * @param request author task request / 作者任务请求
          * @return complete host-validated claims / 完整且经宿主校验的申请
          * @throws ApiException if admission is unavailable or rejected / 准入不可用或拒绝时
+         * @throws SQLException if platform state cannot be read / 无法读取平台状态时
          */
-        List<TaskResource> claims(String ownerId, String version, TaskRequest request) throws ApiException;
+        List<TaskResource> claims(java.sql.Connection connection, String ownerId, String version, TaskRequest request)
+                throws ApiException, SQLException;
+    }
+
+    /** Carries a rejected policy through repository rollback without inventing uncertain work. / 跨仓库回滚传递策略拒绝，不虚构未知工作。 */
+    private static final class AdmissionRejected extends SQLException {
+        /** Original public rejection. / 原始公开拒绝原因。 */
+        private final ApiException rejection;
+
+        /**
+         * Retains the validation result before any task insert. / 在任何任务插入之前保留校验结果。
+         * @param rejection original policy error / 原始策略错误
+         */
+        private AdmissionRejected(ApiException rejection) {
+            super("Task admission rejected", rejection);
+            this.rejection = rejection;
+        }
     }
 
     /**
@@ -522,19 +543,28 @@ public final class PlatformTaskRuntime implements AutoCloseable {
                                 "New business tasks are unavailable");
                     if (blockedOwners.containsKey(owner))
                         throw error(ProblemCode.BUSY, "MOD_ADMISSION_CLOSED", blockedOwners.get(owner));
-                    var claims = List.copyOf(admission.claims(owner, version, request));
-                    for (var claim : claims)
-                        if (claim.kind().equals("MOD") && blockedOwners.containsKey(claim.id()))
-                            throw error(ProblemCode.BUSY, "MOD_DEPENDENCY_CLOSED", blockedOwners.get(claim.id()));
                     UUID id = UUID.randomUUID();
                     try {
-                        ledger.enqueue(id, owner, version, request, claims);
+                        ledger.enqueue(id, owner, version, request, connection -> {
+                            try {
+                                var claims = List.copyOf(admission.claims(connection, owner, version, request));
+                                for (var claim : claims)
+                                    if (claim.kind().equals("MOD") && blockedOwners.containsKey(claim.id()))
+                                        throw error(ProblemCode.BUSY, "MOD_DEPENDENCY_CLOSED",
+                                                blockedOwners.get(claim.id()));
+                                return claims;
+                            } catch (ApiException rejected) {
+                                throw new AdmissionRejected(rejected);
+                            }
+                        });
                         var task = new Execution<>(ledger.snapshot(id), work, request.cancellable());
                         task.authorization = authorization;
                         executions.put(id, task);
                         retained = true;
                         dispatch();
                         return task;
+                    } catch (AdmissionRejected rejected) {
+                        throw rejected.rejection;
                     } catch (SQLException failure) {
                         try {
                             var pending = new Execution<Void>(ledger.snapshot(id), null, request.cancellable());
