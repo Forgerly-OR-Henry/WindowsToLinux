@@ -56,6 +56,9 @@ public final class TaskModDatabase implements ModDatabase {
      */
     @Override
     public Connection openConnection(TaskContext task) throws ApiException, SQLException {
+        if (javax.swing.SwingUtilities.isEventDispatchThread())
+            throw new ApiException(new Problem(ProblemCode.CONTRACT_VIOLATION, "MOD_JDBC_REQUIRES_BACKGROUND",
+                    "Task JDBC access must run on a background thread", Map.of(), Optional.empty()));
         coordinates.requireRegistered(database, Set.of("READY"));
         String password;
         try {

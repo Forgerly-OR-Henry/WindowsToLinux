@@ -113,6 +113,8 @@ class TaskModDatabaseTest {
                 var business = new TaskModDatabase(db, runtime, identity);
                 assertEquals(identity, business.identity());
                 var task = runtime.bind(identity.ownerId(), "1.0.0", false).submit(request(), active -> {
+                    javax.swing.SwingUtilities.invokeAndWait(
+                            () -> assertThrows(ApiException.class, () -> business.openConnection(active)));
                     try (var c = business.openConnection(active); var s = c.createStatement()) {
                         assertSame(c, s.getConnection());
                         assertSame(c, c.getMetaData().getConnection());
