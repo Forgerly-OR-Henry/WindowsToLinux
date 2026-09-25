@@ -1645,7 +1645,7 @@ APP 数据库不再维护迁移链或旧结构读取分支；Web 节点保持原
 - `app/mod/version/VersionRange.java`：判断精确版本或单一区间，并显式限制预发布准入。
 - `app/service/database/TaskModDatabase.java`：将所属业务 JDBC 直接连接到原始任务的资源账本。
 - `app/service/mod/ModHostLease.java`：将实际任务准入门及暂存宿主扩展绑定到一次 Mod 启用。
-- `app/service/task/PlatformTaskRuntime.java`：在持久化准入后运行绑定调用方的作者工作，并保留未完成归属。
+- `app/service/task/PlatformTaskRuntime.java`：在持久化准入后使用保留凭据运行绑定调用方的作者工作，核对资源收尾并保留未完成归属。
 - `app/ui/shell/ExtensionPagePane.java`：挂载已打开的 Mod 视图及按所有者分组的设置，不添加导航固定项。
 - `app/ui/shell/ModPageRegistry.java`：持有暂存页面扩展及限定在 EDT 的作者视图生命周期。
 - `app/ui/shell/PlatformFrame.java`：承载安全控件及独立所属 Mod 视图的平台桌面。

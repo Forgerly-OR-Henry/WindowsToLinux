@@ -2,6 +2,7 @@ package gold.debug.windowstolinux.app.service.task;
 
 import static org.junit.jupiter.api.Assertions.*;
 
+import java.io.IOException;
 import java.nio.file.Path;
 import java.util.*;
 import java.util.concurrent.*;
@@ -15,6 +16,19 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 class PlatformTaskRuntimeTest {
+    static gold.debug.windowstolinux.app.service.security.DesktopSecurityService security(PlatformDatabase db)
+            throws Exception {
+        var security = new gold.debug.windowstolinux.app.service.security.DesktopSecurityService(
+                new gold.debug.windowstolinux.app.db.persistence.repository.SecurityRepository(
+                        new gold.debug.windowstolinux.app.db.persistence.connection.RepositoryConnections(
+                                db::openConnection)));
+        if (security.securityState().configured())
+            security.unlock("fixture-password".toCharArray());
+        else
+            security.setupAndUnlock("fixture-password".toCharArray(), "fixture-password".toCharArray());
+        return security;
+    }
+
     @TempDir
     Path root;
 
@@ -60,7 +74,8 @@ class PlatformTaskRuntimeTest {
     @Test
     void handleCompletesOnlyAfterExplicitResourceReleaseAndContextCannotBeForged() throws Exception {
         try (var db = PlatformDatabase.open(root, PROTECTION);
-                var runtime = new PlatformTaskRuntime(db, PlatformTaskRuntimeTest::claims)) {
+                var security = security(db);
+                var runtime = new PlatformTaskRuntime(db, PlatformTaskRuntimeTest::claims, security)) {
             var resource = new AtomicReference<ResourceLease>();
             var context = new AtomicReference<TaskContext>();
             var task = runtime.bind("example.owner", "1.0.0", false).submit(request("A"), active -> {
@@ -73,6 +88,7 @@ class PlatformTaskRuntimeTest {
                 return success("payload");
             });
             state(task, TaskState.FINISHING);
+            assertEquals(1, security.securityState().activeTasks());
             assertFalse(task.completion().toCompletableFuture().isDone());
             assertEquals(1, task.snapshot().blockers().size());
             TaskContext forged = new TaskContext() {
@@ -96,6 +112,7 @@ class PlatformTaskRuntimeTest {
             assertThrows(ApiException.class, runtime::close);
             resource.get().close();
             assertEquals("payload", result(task).value().orElseThrow());
+            assertEquals(0, security.securityState().activeTasks());
             state(task, TaskState.ENDED);
             assertThrows(ApiException.class, () -> runtime.requireContext(context.get()));
             resource.get().close();
@@ -106,7 +123,8 @@ class PlatformTaskRuntimeTest {
     void queuedTaskHasAtomicServerAdmissionAndOtherServerWorkCanProceed() throws Exception {
         var unblock = new CountDownLatch(1);
         try (var db = PlatformDatabase.open(root, PROTECTION);
-                var runtime = new PlatformTaskRuntime(db, PlatformTaskRuntimeTest::claims)) {
+                var security = security(db);
+                var runtime = new PlatformTaskRuntime(db, PlatformTaskRuntimeTest::claims, security)) {
             var service = runtime.bind("example.owner", "1.0.0", false);
             var started = new CountDownLatch(1);
             var first = service.submit(request("A"), task -> {
@@ -136,7 +154,8 @@ class PlatformTaskRuntimeTest {
     void cancellationIsCooperativeAndNeverRunsCancelledQueuedCallbacks() throws Exception {
         var release = new CountDownLatch(1);
         try (var db = PlatformDatabase.open(root, PROTECTION);
-                var runtime = new PlatformTaskRuntime(db, PlatformTaskRuntimeTest::claims)) {
+                var security = security(db);
+                var runtime = new PlatformTaskRuntime(db, PlatformTaskRuntimeTest::claims, security)) {
             var service = runtime.bind("example.owner", "1.0.0", false);
             var entered = new CountDownLatch(1);
             var ran = new AtomicBoolean();
@@ -168,7 +187,8 @@ class PlatformTaskRuntimeTest {
     @Test
     void callbackFailureStaysUnknownAndRecoveryReusesIdentityWithoutReplay() throws Exception {
         try (var db = PlatformDatabase.open(root, PROTECTION);
-                var runtime = new PlatformTaskRuntime(db, PlatformTaskRuntimeTest::claims)) {
+                var security = security(db);
+                var runtime = new PlatformTaskRuntime(db, PlatformTaskRuntimeTest::claims, security)) {
             var service = runtime.bind("example.owner", "1.0.0", false);
             var invocations = new AtomicInteger();
             var originalLease = new AtomicReference<UUID>();
@@ -215,8 +235,12 @@ class PlatformTaskRuntimeTest {
             assertFalse(ledger.complete(id, Outcome.UNKNOWN, "{}", false));
         }
         try (var db = PlatformDatabase.open(root, PROTECTION);
-                var runtime = new PlatformTaskRuntime(db, PlatformTaskRuntimeTest::claims)) {
+                var security = security(db);
+                var runtime = new PlatformTaskRuntime(db, PlatformTaskRuntimeTest::claims, security)) {
             assertEquals(TaskState.UNKNOWN, runtime.snapshots().getFirst().state());
+            assertEquals(1, security.securityState().activeTasks());
+            assertThrows(gold.debug.windowstolinux.app.service.failure.ApplicationServiceException.class,
+                    () -> security.setCredentialEncryption("fixture-password".toCharArray(), false));
             var recoveryService = runtime.bind("example.owner", "1.0.0", true);
             assertThrows(ApiException.class, () -> recoveryService.submit(request(), task -> success(null)));
             try (var wrong = runtime.bind("example.owner", "2.0.0", true).registerRecovery("fixture",
@@ -240,7 +264,8 @@ class PlatformTaskRuntimeTest {
     void hostCanSealAdmissionAndFutureObservationCannotCompleteTheHostPromise() throws Exception {
         var release = new CountDownLatch(1);
         try (var db = PlatformDatabase.open(root, PROTECTION);
-                var runtime = new PlatformTaskRuntime(db, PlatformTaskRuntimeTest::claims)) {
+                var security = security(db);
+                var runtime = new PlatformTaskRuntime(db, PlatformTaskRuntimeTest::claims, security)) {
             var service = runtime.bind("example.owner", "1.0.0", false);
             runtime.seal(true);
             assertThrows(ApiException.class, () -> service.submit(request(), task -> success(null)));
@@ -262,7 +287,8 @@ class PlatformTaskRuntimeTest {
     @Test
     void failedTerminalCommitRetainsUnknownAndNeverReplaysAuthorWork() throws Exception {
         try (var db = PlatformDatabase.open(root, PROTECTION);
-                var runtime = new PlatformTaskRuntime(db, PlatformTaskRuntimeTest::claims)) {
+                var security = security(db);
+                var runtime = new PlatformTaskRuntime(db, PlatformTaskRuntimeTest::claims, security)) {
             try (var c = db.openConnection(); var s = c.createStatement()) {
                 s.execute("ALTER TABLE platform_task ADD CONSTRAINT fixture_no_end CHECK(state<>'ENDED')");
             }
@@ -273,6 +299,10 @@ class PlatformTaskRuntimeTest {
                 return success("committed business");
             });
             state(task, TaskState.UNKNOWN);
+            assertEquals(1, security.securityState().activeTasks());
+            assertThrows(gold.debug.windowstolinux.app.service.failure.ApplicationServiceException.class,
+                    () -> security.changeMasterPassword("fixture-password".toCharArray(),
+                            "replacement-password".toCharArray(), "replacement-password".toCharArray()));
             var waiting = runtime.bind("example.other", "1.0.0", false).submit(request("A"),
                     active -> success("waiting"));
             state(waiting, TaskState.QUEUED);
@@ -287,13 +317,15 @@ class PlatformTaskRuntimeTest {
             assertEquals(1, calls.get());
             assertTrue(result(task).value().isEmpty());
             assertEquals("waiting", result(waiting).value().orElseThrow());
+            assertEquals(0, security.securityState().activeTasks());
         }
     }
 
     @Test
     void failedReleaseRecordPreservesFinishingUntilTheSameLeaseCanRetry() throws Exception {
         try (var db = PlatformDatabase.open(root, PROTECTION);
-                var runtime = new PlatformTaskRuntime(db, PlatformTaskRuntimeTest::claims)) {
+                var security = security(db);
+                var runtime = new PlatformTaskRuntime(db, PlatformTaskRuntimeTest::claims, security)) {
             var retained = new AtomicReference<ResourceLease>();
             var task = runtime.bind("example.owner", "1.0.0", false).submit(request("A"), active -> {
                 retained.set(active.retain("file", "fixture", "fixture"));
@@ -312,6 +344,97 @@ class PlatformTaskRuntimeTest {
             }
             retained.get().close();
             assertEquals(Outcome.SUCCEEDED, result(task).outcome());
+        }
+    }
+
+    @Test
+    void queuedAndRunningTasksKeepCredentialsAcrossLockWhileNewWorkIsRejected() throws Exception {
+        var release = new CountDownLatch(1);
+        try (var db = PlatformDatabase.open(root, PROTECTION);
+                var security = security(db);
+                var runtime = new PlatformTaskRuntime(db, PlatformTaskRuntimeTest::claims, security)) {
+            try (var operation = security.enterOperation(); var store = security.openCredentials()) {
+                store.save("ssh/fixture", "wire-password".toCharArray());
+            }
+            var service = runtime.bind("example.owner", "1.0.0", false);
+            var entered = new CountDownLatch(1);
+            var running = service.submit(request("A"), context -> {
+                entered.countDown();
+                assertTrue(release.await(8, TimeUnit.SECONDS));
+                try (var store = security.openCredentials()) {
+                    char[] value = store.read("ssh/fixture").orElseThrow();
+                    try {
+                        assertArrayEquals("wire-password".toCharArray(), value);
+                    } finally {
+                        Arrays.fill(value, '\0');
+                    }
+                }
+                return success(null);
+            });
+            assertTrue(entered.await(3, TimeUnit.SECONDS));
+            var queued = service.submit(request("A"), context -> {
+                try (var store = security.openCredentials()) {
+                    assertTrue(store.read("ssh/fixture").isPresent());
+                }
+                return success(null);
+            });
+            var cancelled = service.submit(request("A"), context -> {
+                throw new AssertionError("Cancelled queued task ran");
+            });
+            assertEquals(3, security.securityState().activeTasks());
+            security.lock();
+            assertEquals(ProblemCode.ACCESS_DENIED,
+                    assertThrows(ApiException.class, () -> service.submit(request("B"), context -> success(null)))
+                            .problem().code());
+            cancelled.requestCancel();
+            assertEquals(Outcome.CANCELLED, result(cancelled).outcome());
+            assertEquals(2, security.securityState().activeTasks());
+            release.countDown();
+            assertEquals(Outcome.SUCCEEDED, result(running).outcome());
+            assertEquals(Outcome.SUCCEEDED, result(queued).outcome());
+            assertFalse(security.securityState().unlocked());
+            assertEquals(0, security.securityState().activeTasks());
+        } finally {
+            release.countDown();
+        }
+    }
+
+    @Test
+    void unknownTaskKeepsAuthorizationUntilExplicitUnlockedRecoveryAndRejectsEndedCredentials() throws Exception {
+        try (var db = PlatformDatabase.open(root, PROTECTION);
+                var security = security(db);
+                var runtime = new PlatformTaskRuntime(db, PlatformTaskRuntimeTest::claims, security)) {
+            var service = runtime.bind("example.owner", "1.0.0", false);
+            var calls = new AtomicInteger();
+            var task = service.submit(request("A"), context -> {
+                calls.incrementAndGet();
+                try (var store = security.openCredentials()) {
+                    store.save("ssh/fixture", "retained".toCharArray());
+                }
+                throw new IOException("Unconfirmed business effect");
+            });
+            state(task, TaskState.UNKNOWN);
+            assertEquals(1, security.securityState().activeTasks());
+            try (var recovery = service.registerRecovery("fixture", (previous, original) -> {
+                try (var store = security.openCredentials()) {
+                    assertTrue(store.read("ssh/fixture").isPresent());
+                }
+                assertEquals(task.id(), original.id());
+                return success(null);
+            })) {
+                security.lock();
+                assertEquals(ProblemCode.ACCESS_DENIED,
+                        assertThrows(ApiException.class, () -> runtime.reconcile(task.id())).problem().code());
+                assertEquals(1, security.securityState().activeTasks());
+                security.unlock("fixture-password".toCharArray());
+                assertEquals(TaskState.ENDED,
+                        runtime.reconcile(task.id()).toCompletableFuture().get(8, TimeUnit.SECONDS).state());
+            }
+            assertEquals(Outcome.SUCCEEDED, result(task).outcome());
+            assertEquals(1, calls.get());
+            assertEquals(0, security.securityState().activeTasks());
+            assertThrows(gold.debug.windowstolinux.app.service.failure.ApplicationServiceException.class,
+                    security::openCredentials);
         }
     }
 }

@@ -18,6 +18,19 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 class TaskModDatabaseTest {
+    static gold.debug.windowstolinux.app.service.security.DesktopSecurityService security(PlatformDatabase db)
+            throws Exception {
+        var security = new gold.debug.windowstolinux.app.service.security.DesktopSecurityService(
+                new gold.debug.windowstolinux.app.db.persistence.repository.SecurityRepository(
+                        new gold.debug.windowstolinux.app.db.persistence.connection.RepositoryConnections(
+                                db::openConnection)));
+        if (security.securityState().configured())
+            security.unlock("fixture-password".toCharArray());
+        else
+            security.setupAndUnlock("fixture-password".toCharArray(), "fixture-password".toCharArray());
+        return security;
+    }
+
     @TempDir
     Path root;
 
@@ -109,7 +122,9 @@ class TaskModDatabaseTest {
     void realOwnedJdbcPreservesParentIdentityAndAuthorTransactionControl() throws Exception {
         try (var db = PlatformDatabase.open(root, PROTECTION)) {
             var identity = prepare(db, "example.owner");
-            try (var runtime = new PlatformTaskRuntime(db, (owner, version, request) -> claims(identity, request))) {
+            try (var security = security(db);
+                    var runtime = new PlatformTaskRuntime(db, (owner, version, request) -> claims(identity, request),
+                            security)) {
                 var business = new TaskModDatabase(db, runtime, identity);
                 assertEquals(identity, business.identity());
                 var task = runtime.bind(identity.ownerId(), "1.0.0", false).submit(request(), active -> {
@@ -147,7 +162,9 @@ class TaskModDatabaseTest {
         try (var db = PlatformDatabase.open(root, PROTECTION)) {
             var identity = prepare(db, "example.owner");
             var other = prepare(db, "example.other");
-            try (var runtime = new PlatformTaskRuntime(db, (owner, version, request) -> claims(identity, request))) {
+            try (var security = security(db);
+                    var runtime = new PlatformTaskRuntime(db, (owner, version, request) -> claims(identity, request),
+                            security)) {
                 var foreign = new TaskModDatabase(db, runtime, other);
                 var stale = new TaskModDatabase(db, runtime,
                         new SchemaIdentity(identity.ownerId(), "1", UUID.randomUUID()));
@@ -169,7 +186,9 @@ class TaskModDatabaseTest {
         var close = new CountDownLatch(1);
         try (var db = PlatformDatabase.open(root, PROTECTION)) {
             var identity = prepare(db, "example.owner");
-            try (var runtime = new PlatformTaskRuntime(db, (owner, version, request) -> claims(identity, request));
+            try (var security = security(db);
+                    var runtime = new PlatformTaskRuntime(db, (owner, version, request) -> claims(identity, request),
+                            security);
                     var ownerThread = Executors.newSingleThreadExecutor()) {
                 var business = new TaskModDatabase(db, runtime, identity);
                 var opened = new CompletableFuture<Void>();
@@ -210,7 +229,9 @@ class TaskModDatabaseTest {
         var retry = new CountDownLatch(1);
         try (var db = PlatformDatabase.open(root, PROTECTION)) {
             var identity = prepare(db, "example.owner");
-            try (var runtime = new PlatformTaskRuntime(db, (owner, version, request) -> claims(identity, request))) {
+            try (var security = security(db);
+                    var runtime = new PlatformTaskRuntime(db, (owner, version, request) -> claims(identity, request),
+                            security)) {
                 var business = new TaskModDatabase(db, runtime, identity);
                 var opened = new CountDownLatch(1);
                 var failed = new CountDownLatch(1);
@@ -252,7 +273,9 @@ class TaskModDatabaseTest {
         try (var db = PlatformDatabase.open(root, PROTECTION)) {
             var identity = prepare(db, "example.owner");
             sql(db, "DROP SCHEMA " + new SchemaCoordinates(identity).physicalName() + " CASCADE");
-            try (var runtime = new PlatformTaskRuntime(db, (owner, version, request) -> claims(identity, request))) {
+            try (var security = security(db);
+                    var runtime = new PlatformTaskRuntime(db, (owner, version, request) -> claims(identity, request),
+                            security)) {
                 var business = new TaskModDatabase(db, runtime, identity);
                 var task = runtime.bind(identity.ownerId(), "1.0.0", false).submit(request(), active -> {
                     assertThrows(SQLException.class, () -> business.openConnection(active));
