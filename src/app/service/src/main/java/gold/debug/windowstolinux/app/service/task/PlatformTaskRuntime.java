@@ -28,6 +28,12 @@ public final class PlatformTaskRuntime implements AutoCloseable {
     /** Exact owner/version/type recovery registrations. / 精确所有者、版本及类型的恢复登记。 */
     private final Map<RecoveryKey, TaskRecovery> recoveries = new HashMap<>();
 
+    /** Bound author services revoked when their owning activation closes. / 所属启用关闭时撤销的绑定作者服务。 */
+    private final Set<BoundTasks> bindings = Collections.newSetFromMap(new IdentityHashMap<>());
+
+    /** Owner gates shared by normal submissions and initial dependency claims. / 普通提交及初始依赖申请共用的所有者准入门。 */
+    private final Map<String, String> blockedOwners = new HashMap<>();
+
     /** Whether the host has sealed new business admission. / 宿主是否已封闭新业务准入。 */
     private boolean sealed;
 
@@ -59,8 +65,12 @@ public final class PlatformTaskRuntime implements AutoCloseable {
      * @param recoveryOnly whether normal submissions are forbidden / 是否禁止普通提交
      * @return caller-bound public service / 绑定调用方的公开服务
      */
-    public TaskService bind(String ownerId, String version, boolean recoveryOnly) {
-        return new BoundTasks(ownerId, version, recoveryOnly);
+    public synchronized TaskService bind(String ownerId, String version, boolean recoveryOnly) {
+        if (closing)
+            throw new IllegalStateException("Task runtime is closing");
+        var binding = new BoundTasks(ownerId, version, recoveryOnly);
+        bindings.add(binding);
+        return binding;
     }
 
     /**
@@ -71,6 +81,56 @@ public final class PlatformTaskRuntime implements AutoCloseable {
         if (closing && !sealed)
             throw new IllegalStateException("Task runtime is closing");
         this.sealed = sealed;
+    }
+
+    /**
+     * Seals one Mod before lifecycle occupancy checks. / 生命周期占用检查前封闭一个 Mod。
+     * @param ownerId exact stable Mod identity / 精确稳定的 Mod 身份
+     * @param reason non-secret host blocking reason / 不含秘密的宿主阻断原因
+     */
+    public synchronized void blockOwner(String ownerId, String reason) {
+        blockedOwners.put(Objects.requireNonNull(ownerId), Objects.requireNonNull(reason));
+    }
+
+    /**
+     * Reopens an owner after successful host publication. / 宿主成功发布后重新开放所有者。
+     * @param ownerId exact stable Mod identity / 精确稳定的 Mod 身份
+     */
+    public synchronized void allowOwner(String ownerId) {
+        if (closing)
+            throw new IllegalStateException("Task runtime is closing");
+        blockedOwners.remove(ownerId);
+    }
+
+    /**
+     * Reads all unfinished work that prevents the owner's shutdown. / 读取阻止所有者关闭的全部未结束工作。
+     * @param ownerId exact Mod identity across versions / 跨版本的精确 Mod 身份
+     * @return immutable task blocking descriptions / 不可变任务阻断描述
+     * @throws SQLException if occupancy cannot be verified / 无法核实占用时
+     */
+    public synchronized List<String> ownerBlockers(String ownerId) throws SQLException {
+        return ledger.ownedTasks(ownerId).stream().map(id -> "Task " + id + " still owns Mod resources").toList();
+    }
+
+    /**
+     * Revokes task bindings and original-version recovery callbacks after the owner drains. / 所有者排空后撤销任务绑定及原版本恢复回调。
+     * @param ownerId exact owning Mod identity / 精确所属 Mod 身份
+     * @param version exact original release / 精确原始发布版本
+     * @throws ApiException if work remains or occupancy cannot be verified / 仍有工作或无法核实占用时
+     */
+    public synchronized void revokeOwnerServices(String ownerId, String version) throws ApiException {
+        try {
+            if (!ledger.ownedTasks(ownerId).isEmpty())
+                throw error(ProblemCode.BUSY, "MOD_TASKS_RETAINED", "Mod tasks still require recovery or cleanup");
+        } catch (SQLException failure) {
+            throw error(ProblemCode.IO_FAILURE, "MOD_OCCUPANCY_UNKNOWN", "Mod occupancy could not be verified");
+        }
+        recoveries.keySet().removeIf(key -> key.owner().equals(ownerId) && key.version().equals(version));
+        for (var binding : List.copyOf(bindings))
+            if (binding.owner.equals(ownerId) && binding.version.equals(version)) {
+                binding.revoked = true;
+                bindings.remove(binding);
+            }
     }
 
     /**
@@ -102,6 +162,9 @@ public final class PlatformTaskRuntime implements AutoCloseable {
             throw error(ProblemCode.UNAVAILABLE, "TASK_CALLBACK_RETURNED",
                     "The callback has returned and cannot retain new resources");
         try {
+            if (resource.kind().equals("MOD") && blockedOwners.containsKey(resource.id())
+                    && !ledger.holds(context.id(), resource))
+                throw error(ProblemCode.BUSY, "MOD_DEPENDENCY_CLOSED", blockedOwners.get(resource.id()));
             return new OwnedLease(execution, ledger.retain(context.id(), resource));
         } catch (SQLException failure) {
             throw error(ProblemCode.IO_FAILURE, "TASK_RESOURCE", "Resource registration failed");
@@ -296,6 +359,10 @@ public final class PlatformTaskRuntime implements AutoCloseable {
                 throw error(ProblemCode.IO_FAILURE, "TASK_SHUTDOWN", "Task shutdown state cannot be verified");
             }
             closing = true;
+            for (var binding : bindings)
+                binding.revoked = true;
+            bindings.clear();
+            recoveries.clear();
             workers.shutdown();
         }
         try {
@@ -363,6 +430,9 @@ public final class PlatformTaskRuntime implements AutoCloseable {
 
         /** Whether only recovery registration and observation are permitted. / 是否只允许恢复登记及观察。 */
         private final boolean recoveryOnly;
+
+        /** Whether the owning activation has invalidated this service object. / 所属启用是否已使此服务对象失效。 */
+        private boolean revoked;
         /**
          * Binds trusted host ownership. / 绑定可信宿主归属。
          * @param owner stable Mod identity / 稳定 Mod 身份
@@ -388,9 +458,14 @@ public final class PlatformTaskRuntime implements AutoCloseable {
             Objects.requireNonNull(request);
             Objects.requireNonNull(work);
             synchronized (PlatformTaskRuntime.this) {
-                if (sealed || recoveryOnly)
+                if (sealed || recoveryOnly || revoked)
                     throw error(ProblemCode.UNAVAILABLE, "TASK_ADMISSION_CLOSED", "New business tasks are unavailable");
+                if (blockedOwners.containsKey(owner))
+                    throw error(ProblemCode.BUSY, "MOD_ADMISSION_CLOSED", blockedOwners.get(owner));
                 var claims = List.copyOf(admission.claims(owner, version, request));
+                for (var claim : claims)
+                    if (claim.kind().equals("MOD") && blockedOwners.containsKey(claim.id()))
+                        throw error(ProblemCode.BUSY, "MOD_DEPENDENCY_CLOSED", blockedOwners.get(claim.id()));
                 UUID id = UUID.randomUUID();
                 try {
                     ledger.enqueue(id, owner, version, request, claims);
@@ -432,6 +507,9 @@ public final class PlatformTaskRuntime implements AutoCloseable {
                 throw error(ProblemCode.INVALID_INPUT, "TASK_CURSOR", "Invalid task cursor");
             }
             synchronized (PlatformTaskRuntime.this) {
+                if (revoked)
+                    throw error(ProblemCode.UNAVAILABLE, "MOD_TASK_BINDING_CLOSED",
+                            "The owning Mod activation has closed");
                 var all = executions.values().stream().map(t -> t.snapshot)
                         .filter(s -> s.ownerId().equals(owner) && s.state() != TaskState.ENDED).toList();
                 int start = Math.min(offset, all.size());
@@ -455,6 +533,9 @@ public final class PlatformTaskRuntime implements AutoCloseable {
             var key = new RecoveryKey(owner, version, taskType);
             Objects.requireNonNull(recovery);
             synchronized (PlatformTaskRuntime.this) {
+                if (revoked)
+                    throw error(ProblemCode.UNAVAILABLE, "MOD_TASK_BINDING_CLOSED",
+                            "The owning Mod activation has closed");
                 if (closing || recoveries.putIfAbsent(key, recovery) != null)
                     throw error(ProblemCode.BUSY, "TASK_RECOVERY_DUPLICATE",
                             "Recovery is already registered or runtime is closing");

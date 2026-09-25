@@ -434,6 +434,27 @@ public final class TaskLedger {
     }
 
     /**
+     * Finds unfinished work owned by or currently borrowing the given Mod. / 查找所属或当前借用指定 Mod 的未结束工作。
+     * @param ownerId exact Mod identity across its versions / 跨版本的精确 Mod 身份
+     * @return retained task identities including dependency callers / 包含依赖调用方的保留任务身份
+     * @throws SQLException if occupancy cannot be read / 无法读取占用时
+     */
+    public List<UUID> ownedTasks(String ownerId) throws SQLException {
+        try (var c = connections.open();
+                var p = c.prepareStatement(
+                        "SELECT t.task_id FROM platform_task t WHERE t.state<>'ENDED' AND (t.owner_id=? OR EXISTS(SELECT 1 FROM platform_task_resource r WHERE r.task_id=t.task_id AND r.owner_id=? AND r.released_at IS NULL)) ORDER BY t.started_at,t.task_id")) {
+            p.setString(1, ownerId);
+            p.setString(2, ownerId);
+            try (var r = p.executeQuery()) {
+                var ids = new ArrayList<UUID>();
+                while (r.next())
+                    ids.add(r.getObject(1, UUID.class));
+                return List.copyOf(ids);
+            }
+        }
+    }
+
+    /**
      * Checks an exact already-held host resource without acquiring another lock. / 检查精确的已有宿主资源占用，不取得额外资源锁。
      * @param taskId accepted task identity / 已接纳任务身份
      * @param resource required kind, identity and owner / 所需类型、身份及所有者

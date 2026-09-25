@@ -13,6 +13,9 @@
   </parent>
   <artifactId>windowstolinux-app</artifactId>
   <packaging>pom</packaging>
+  <properties>
+    <maven.compiler.proc>none</maven.compiler.proc>
+  </properties>
   <modules>
     <module>mod</module>
     <module>ui</module>
