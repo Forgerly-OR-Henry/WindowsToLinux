@@ -4,6 +4,7 @@ import java.sql.SQLException;
 import java.time.Instant;
 
 import gold.debug.windowstolinux.app.db.persistence.connection.DesktopConnectionFactory;
+import gold.debug.windowstolinux.app.db.persistence.connection.RepositoryConnections;
 
 /**
  * Stores only bounded state codes and command hashes, never terminal contents. / 仅保存状态码及命令摘要，不保存终端内容。
@@ -13,14 +14,21 @@ public final class BrowserRecoveryRepository {
      * Factory for scoped database connections.
      * <p>限定作用域数据库连接的工厂。
      */
-    private final DesktopConnectionFactory connections;
+    private final RepositoryConnections connections;
     /**
      * Binds the desktop connection factory. / 绑定桌面连接工厂。
      *
      * @param connections factory for scoped database connections / 限定作用域数据库连接的工厂
      */
     public BrowserRecoveryRepository(DesktopConnectionFactory connections) {
-        this.connections = connections;
+        this(connections.scoped());
+    }
+
+    /** Binds owned platform connections and repository transactions. / 绑定所属平台连接和仓库事务。
+     * @param connections platform transaction scope / 平台事务作用域
+     */
+    public BrowserRecoveryRepository(RepositoryConnections connections) {
+        this.connections = java.util.Objects.requireNonNull(connections);
     }
 
     /**
@@ -56,17 +64,30 @@ public final class BrowserRecoveryRepository {
         try (var c = connections.open()) {
             RepositoryTransactionExecutor.execute(c, () -> {
                 long time = Instant.now().toEpochMilli();
-                try (var s = c.prepareStatement(
-                        "INSERT INTO browser_recovery_task(task_id,server_profile_id,operation_id,task_state,last_action_digest,last_event_code,updated_at) VALUES(?,?,?,?,?,?,?) ON CONFLICT(task_id) DO UPDATE SET task_state=excluded.task_state,last_action_digest=excluded.last_action_digest,last_event_code=excluded.last_event_code,updated_at=excluded.updated_at")) {
-                    s.setString(1, id);
-                    s.setString(2, server);
-                    s.setString(3, operation);
-                    s.setString(4, state);
-                    s.setString(5, digest);
-                    s.setString(6, event);
-                    s.setLong(7, time);
-                    s.executeUpdate();
+                int changed;
+                try (var update = c.prepareStatement(
+                        "UPDATE browser_recovery_task SET task_state=?,last_action_digest=?,last_event_code=?,updated_at=? WHERE task_id=? AND server_profile_id=? AND operation_id=?")) {
+                    update.setString(1, state);
+                    update.setString(2, digest);
+                    update.setString(3, event);
+                    update.setLong(4, time);
+                    update.setString(5, id);
+                    update.setString(6, server);
+                    update.setString(7, operation);
+                    changed = update.executeUpdate();
                 }
+                if (changed == 0)
+                    try (var insert = c.prepareStatement(
+                            "INSERT INTO browser_recovery_task(task_id,server_profile_id,operation_id,task_state,last_action_digest,last_event_code,updated_at) VALUES(?,?,?,?,?,?,?)")) {
+                        insert.setString(1, id);
+                        insert.setString(2, server);
+                        insert.setString(3, operation);
+                        insert.setString(4, state);
+                        insert.setString(5, digest);
+                        insert.setString(6, event);
+                        insert.setLong(7, time);
+                        insert.executeUpdate();
+                    }
                 try (var s = c.prepareStatement(
                         "INSERT INTO browser_recovery_event(task_id,task_state,action_digest,event_code,created_at) VALUES(?,?,?,?,?)")) {
                     s.setString(1, id);

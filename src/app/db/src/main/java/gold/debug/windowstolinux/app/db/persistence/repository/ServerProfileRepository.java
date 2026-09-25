@@ -7,19 +7,32 @@ import java.util.*;
 import gold.debug.windowstolinux.app.db.entity.StoredServerObservation;
 import gold.debug.windowstolinux.app.db.entity.StoredServerProfile;
 import gold.debug.windowstolinux.app.db.persistence.connection.DesktopConnectionFactory;
+import gold.debug.windowstolinux.app.db.persistence.connection.RepositoryConnections;
 import gold.debug.windowstolinux.shared.model.server.ServerIdentity;
 
 /** Stores connection metadata and endpoint-bound authenticated trust. / 保存连接元数据和绑定端点的认证信任。 */
 public final class ServerProfileRepository {
     /** Scoped database connection factory. / 限定数据库连接工厂。
      */
-    private final DesktopConnectionFactory connections;
+    private final RepositoryConnections connections;
+
+    /** Query protecting referenced server identities from rebinding. / 保护被引用服务器身份免于换绑的查询。 */
+    private final String referenceQuery;
 
     /** Binds the database. / 绑定数据库。
      * @param connections connection factory / 连接工厂
      */
     public ServerProfileRepository(DesktopConnectionFactory connections) {
-        this.connections = Objects.requireNonNull(connections);
+        this.connections = connections.scoped();
+        this.referenceQuery = "SELECT 1 FROM deployment_unit WHERE server_profile_id=? LIMIT 1";
+    }
+
+    /** Binds owned platform connections and repository transactions. / 绑定所属平台连接和仓库事务。
+     * @param connections platform transaction scope / 平台事务作用域
+     */
+    public ServerProfileRepository(RepositoryConnections connections) {
+        this.connections = java.util.Objects.requireNonNull(connections);
+        this.referenceQuery = "SELECT 1 FROM mod_server_reference WHERE server_profile_id=? LIMIT 1";
     }
 
     /** Lists metadata without credential values. / 列出不含凭据值的元数据。
@@ -89,8 +102,7 @@ public final class ServerProfileRepository {
                     && (!prior.get().host().equals(profile.host()) || prior.get().sshPort() != profile.sshPort());
             try (var c = connections.open()) {
                 if (changed) {
-                    try (var s = c
-                            .prepareStatement("SELECT 1 FROM deployment_unit WHERE server_profile_id=? LIMIT 1")) {
+                    try (var s = c.prepareStatement(referenceQuery)) {
                         s.setString(1, profile.id());
                         try (var rows = s.executeQuery()) {
                             if (rows.next())
@@ -99,19 +111,17 @@ public final class ServerProfileRepository {
                         }
                     }
                 }
-                try (var s = c.prepareStatement(
-                        """
-                                INSERT INTO server_profile(server_profile_id,credential_id,host,ssh_port,username,display_name) VALUES(?,?,?,?,?,?)
-                                ON CONFLICT(server_profile_id) DO UPDATE SET credential_id=excluded.credential_id,host=excluded.host,
-                                ssh_port=excluded.ssh_port,username=excluded.username,display_name=excluded.display_name
-                                """)) {
-                    s.setString(1, profile.id());
-                    s.setString(2, profile.credentialKey());
-                    s.setString(3, profile.host());
-                    s.setInt(4, profile.sshPort());
-                    s.setString(5, profile.username());
-                    s.setString(6, profile.displayName());
-                    s.executeUpdate();
+                String sql = prior.isPresent()
+                        ? "UPDATE server_profile SET credential_id=?,host=?,ssh_port=?,username=?,display_name=? WHERE server_profile_id=?"
+                        : "INSERT INTO server_profile(credential_id,host,ssh_port,username,display_name,server_profile_id) VALUES(?,?,?,?,?,?)";
+                try (var statement = c.prepareStatement(sql)) {
+                    statement.setString(1, profile.credentialKey());
+                    statement.setString(2, profile.host());
+                    statement.setInt(3, profile.sshPort());
+                    statement.setString(4, profile.username());
+                    statement.setString(5, profile.displayName());
+                    statement.setString(6, profile.id());
+                    statement.executeUpdate();
                 }
                 if (changed) {
                     try (var s = c.prepareStatement(
@@ -178,7 +188,7 @@ public final class ServerProfileRepository {
                 var s = c.prepareStatement(
                         "UPDATE server_profile SET last_checked_at=?,last_connection_succeeded=?,last_operating_system=? WHERE server_profile_id=? AND host=? AND ssh_port=? AND username=?")) {
             s.setLong(1, Instant.now().toEpochMilli());
-            s.setBoolean(2, connected);
+            s.setInt(2, connected ? 1 : 0);
             s.setString(3, system);
             s.setString(4, profile.id());
             s.setString(5, profile.host());

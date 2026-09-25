@@ -6,7 +6,9 @@ import java.nio.file.Path;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.*;
 
-import gold.debug.windowstolinux.app.db.DesktopPersistence;
+import gold.debug.windowstolinux.app.db.PlatformDatabase;
+import gold.debug.windowstolinux.app.db.PlatformPersistence;
+import gold.debug.windowstolinux.app.db.bootstrap.DatabaseProtection;
 import gold.debug.windowstolinux.app.secret.SecretStoreException;
 import gold.debug.windowstolinux.app.service.failure.ApplicationServiceException;
 import org.junit.jupiter.api.Test;
@@ -15,6 +17,19 @@ import org.junit.jupiter.api.io.TempDir;
 class DesktopSecurityServiceTest {
     @TempDir
     Path directory;
+    private PlatformPersistence openPlatform() throws Exception {
+        var testProtection = new DatabaseProtection() {
+            public byte[] protect(byte[] clear) {
+                return clear.clone();
+            }
+
+            public byte[] unprotect(byte[] encrypted) {
+                return encrypted.clone();
+            }
+        };
+        return new PlatformPersistence(PlatformDatabase.open(directory, testProtection));
+    }
+
     private char[] password() {
         return "testpass".toCharArray();
     }
@@ -25,7 +40,7 @@ class DesktopSecurityServiceTest {
 
     @Test
     void setupAndEveryNewServiceStartLocked() throws Exception {
-        try (var db = DesktopPersistence.open(directory); var security = new DesktopSecurityService(db.security())) {
+        try (var db = openPlatform(); var security = new DesktopSecurityService(db.security())) {
             assertFalse(security.securityState().unlocked());
             assertFalse(security.securityState().configured());
             assertThrows(ApplicationServiceException.class, security::beginTask);
@@ -43,7 +58,7 @@ class DesktopSecurityServiceTest {
             assertThrows(SecretStoreException.class, () -> security.unlock("wrong password".toCharArray()));
             security.unlock(password());
         }
-        try (var db = DesktopPersistence.open(directory); var security = new DesktopSecurityService(db.security())) {
+        try (var db = openPlatform(); var security = new DesktopSecurityService(db.security())) {
             assertTrue(security.securityState().configured());
             assertFalse(security.securityState().unlocked());
         }
@@ -51,7 +66,7 @@ class DesktopSecurityServiceTest {
 
     @Test
     void acceptedTasksRetainIndependentCapabilitiesUntilLastClose() throws Exception {
-        try (var db = DesktopPersistence.open(directory); var security = new DesktopSecurityService(db.security())) {
+        try (var db = openPlatform(); var security = new DesktopSecurityService(db.security())) {
             initialize(security);
             try (var operation = security.enterOperation(); var store = security.openCredentials()) {
                 store.save("ssh/test", "secret".toCharArray());
@@ -84,7 +99,7 @@ class DesktopSecurityServiceTest {
 
     @Test
     void humanDecisionWaitsForUnlockAndRechecksAfterLockDuringPrompt() throws Exception {
-        try (var db = DesktopPersistence.open(directory); var security = new DesktopSecurityService(db.security())) {
+        try (var db = openPlatform(); var security = new DesktopSecurityService(db.security())) {
             initialize(security);
             var worker = Executors.newSingleThreadExecutor();
             try (var task = security.beginTask()) {
@@ -114,7 +129,7 @@ class DesktopSecurityServiceTest {
 
     @Test
     void securityChangesAndTaskStartAreMutuallyExclusive() throws Exception {
-        try (var db = DesktopPersistence.open(directory); var security = new DesktopSecurityService(db.security())) {
+        try (var db = openPlatform(); var security = new DesktopSecurityService(db.security())) {
             initialize(security);
             try (var task = security.beginTask()) {
                 char[] old = password(), replacement = "replacement-password".toCharArray(),
@@ -139,7 +154,7 @@ class DesktopSecurityServiceTest {
 
     @Test
     void cancellationReleasesWaitingTaskWithoutApprovingAndCloseWaitsForExecution() throws Exception {
-        try (var db = DesktopPersistence.open(directory); var security = new DesktopSecurityService(db.security())) {
+        try (var db = openPlatform(); var security = new DesktopSecurityService(db.security())) {
             initialize(security);
             var worker = Executors.newSingleThreadExecutor();
             var task = security.beginTask();
@@ -179,7 +194,7 @@ class DesktopSecurityServiceTest {
 
     @Test
     void concurrentTaskAdmissionPreservesSecurityMutationExclusion() throws Exception {
-        try (var db = DesktopPersistence.open(directory); var security = new DesktopSecurityService(db.security())) {
+        try (var db = openPlatform(); var security = new DesktopSecurityService(db.security())) {
             initialize(security);
             var pool = Executors.newFixedThreadPool(2);
             var gate = new java.util.concurrent.CyclicBarrier(2);
@@ -229,7 +244,7 @@ class DesktopSecurityServiceTest {
 
     @Test
     void failedNativePrivacyDoesNotClaimThatTheSessionIsLocked() throws Exception {
-        try (var db = DesktopPersistence.open(directory); var security = new DesktopSecurityService(db.security())) {
+        try (var db = openPlatform(); var security = new DesktopSecurityService(db.security())) {
             initialize(security);
             var hidden = new AtomicBoolean();
             try (var registration = security.observeLock(locked -> {
