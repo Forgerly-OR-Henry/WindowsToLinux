@@ -6,17 +6,30 @@ import java.util.*;
 import gold.debug.windowstolinux.app.db.entity.StoredCredential;
 import gold.debug.windowstolinux.app.db.entity.StoredSecurityProfile;
 import gold.debug.windowstolinux.app.db.persistence.connection.DesktopConnectionFactory;
+import gold.debug.windowstolinux.app.db.persistence.connection.RepositoryConnections;
 
 /** Persists opaque security records and atomic credential/owner changes. / 持久化不透明安全记录及原子凭据归属变更。 */
 public final class SecurityRepository {
     /** Scoped database connection factory. / 限定数据库连接工厂。
      */
-    private final DesktopConnectionFactory connections;
+    private final RepositoryConnections connections;
+
+    /** Query for retained business credential references. / 保留业务凭据引用的查询。 */
+    private final String referenceQuery;
     /** Binds the validated inputs and owned state for this scope. / 绑定当前作用域的已验证输入及持有状态。
      * @param connections connections supplied to this boundary / 传入当前边界的connections值
      */
     public SecurityRepository(DesktopConnectionFactory connections) {
+        this.connections = Objects.requireNonNull(connections).scoped();
+        this.referenceQuery = "SELECT 1 FROM secret_revision WHERE credential_id=? LIMIT 1";
+    }
+
+    /** Binds H2 platform transactions and generation-aware Mod references. / 绑定 H2 平台事务及带代次的插件引用。
+     * @param connections platform transaction scope / 平台事务作用域
+     */
+    public SecurityRepository(RepositoryConnections connections) {
         this.connections = Objects.requireNonNull(connections);
+        this.referenceQuery = "SELECT 1 FROM mod_credential_reference WHERE credential_id=? LIMIT 1";
     }
 
     /** Loads the singleton security profile. / 读取唯一安全配置。
@@ -67,7 +80,7 @@ public final class SecurityRepository {
                 ? "UPDATE security_profile SET is_encryption_enabled=?,password_verifier=?,wrapped_data_key=?,key_wrap_algorithm=?,key_wrap_nonce=?,key_derivation_algorithm=?,key_derivation_salt=?,key_derivation_parameters=?,format_version=? WHERE security_profile_id=1"
                 : "INSERT INTO security_profile(is_encryption_enabled,password_verifier,wrapped_data_key,key_wrap_algorithm,key_wrap_nonce,key_derivation_algorithm,key_derivation_salt,key_derivation_parameters,format_version,security_profile_id) VALUES(?,?,?,?,?,?,?,?,?,1)";
         try (var c = connections.open(); var s = c.prepareStatement(sql)) {
-            s.setBoolean(1, profile.encryptionEnabled());
+            s.setInt(1, profile.encryptionEnabled() ? 1 : 0);
             s.setString(2, profile.passwordVerifier());
             s.setBytes(3, profile.wrappedDataKey());
             s.setString(4, profile.keyWrapAlgorithm());
@@ -121,19 +134,27 @@ public final class SecurityRepository {
      */
     public void save(StoredCredential credential, boolean contentChanged) throws SQLException {
         transaction(() -> {
-            try (var c = connections.open();
-                    var s = c.prepareStatement(
-                            """
-                                    INSERT INTO credential(credential_id,storage_format,payload,nonce) VALUES(?,?,?,?)
-                                    ON CONFLICT(credential_id) DO UPDATE SET storage_format=excluded.storage_format,payload=excluded.payload,nonce=excluded.nonce
-                                    """)) {
-                s.setString(1, credential.id());
-                s.setString(2, credential.storageFormat());
+            try (var c = connections.open()) {
                 byte[] payload = credential.payload();
                 try {
-                    s.setBytes(3, payload);
-                    s.setBytes(4, credential.nonce());
-                    s.executeUpdate();
+                    int updated;
+                    try (var s = c.prepareStatement(
+                            "UPDATE credential SET storage_format=?,payload=?,nonce=? WHERE credential_id=?")) {
+                        s.setString(1, credential.storageFormat());
+                        s.setBytes(2, payload);
+                        s.setBytes(3, credential.nonce());
+                        s.setString(4, credential.id());
+                        updated = s.executeUpdate();
+                    }
+                    if (updated == 0)
+                        try (var s = c.prepareStatement(
+                                "INSERT INTO credential(credential_id,storage_format,payload,nonce) VALUES(?,?,?,?)")) {
+                            s.setString(1, credential.id());
+                            s.setString(2, credential.storageFormat());
+                            s.setBytes(3, payload);
+                            s.setBytes(4, credential.nonce());
+                            s.executeUpdate();
+                        }
                 } finally {
                     Arrays.fill(payload, (byte) 0);
                 }
@@ -166,8 +187,7 @@ public final class SecurityRepository {
      * @throws SQLException if validation or the scoped operation fails / 校验或限定操作失败时
      */
     public boolean isVersioned(String id) throws SQLException {
-        try (var c = connections.open();
-                var s = c.prepareStatement("SELECT 1 FROM secret_revision WHERE credential_id=? LIMIT 1")) {
+        try (var c = connections.open(); var s = c.prepareStatement(referenceQuery)) {
             s.setString(1, id);
             try (var rows = s.executeQuery()) {
                 return rows.next();
@@ -179,7 +199,7 @@ public final class SecurityRepository {
      * @param work operation executed within the retained boundary / 保留边界内执行的操作
      * @throws SQLException if validation or the scoped operation fails / 校验或限定操作失败时
      */
-    public void transaction(DesktopConnectionFactory.SqlWork work) throws SQLException {
+    public void transaction(RepositoryConnections.Work work) throws SQLException {
         connections.transaction(work);
     }
 }

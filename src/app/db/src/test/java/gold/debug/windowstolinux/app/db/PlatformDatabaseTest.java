@@ -34,6 +34,31 @@ class PlatformDatabaseTest {
     }
 
     @Test
+    void binarySecurityConstraintsCountBytesIndependentlyOfUtf8Characters() throws Exception {
+        try (var database = PlatformDatabase.open(root, TEST_PROTECTION); var c = database.openConnection()) {
+            byte[] wrapped = "中".repeat(16).getBytes(java.nio.charset.StandardCharsets.UTF_8);
+            byte[] nonce = "中".repeat(4).getBytes(java.nio.charset.StandardCharsets.UTF_8);
+            try (var p = c.prepareStatement(
+                    "INSERT INTO security_profile VALUES(1,1,'fixture',?,'AES256_GCM_V1',?,'ARGON2ID_V1',?,'fixture',1)")) {
+                p.setBytes(1, wrapped);
+                p.setBytes(2, nonce);
+                p.setBytes(3, new byte[16]);
+                assertEquals(1, p.executeUpdate());
+            }
+            try (var p = c.prepareStatement(
+                    "INSERT INTO credential(credential_id,storage_format,payload,nonce) VALUES('fixture','AES256_GCM_V1',?,?)")) {
+                p.setBytes(1, "中".repeat(6).getBytes(java.nio.charset.StandardCharsets.UTF_8));
+                p.setBytes(2, nonce);
+                assertEquals(1, p.executeUpdate());
+            }
+            try (var p = c.prepareStatement("UPDATE credential SET nonce=? WHERE credential_id='fixture'")) {
+                p.setBytes(1, new byte[11]);
+                assertThrows(SQLException.class, p::executeUpdate);
+            }
+        }
+    }
+
+    @Test
     void initializesOnlyPlatformTablesAndReusesTheSameProtectedGeneration() throws Exception {
         var sqlite = root.resolve("windowstolinux.db");
         Files.writeString(sqlite, "unmodified legacy data");

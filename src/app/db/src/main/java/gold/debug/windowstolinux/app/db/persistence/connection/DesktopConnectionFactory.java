@@ -18,7 +18,7 @@ public final class DesktopConnectionFactory {
     private final String jdbcUrl;
 
     /** Connection shared only by the current atomic repository operation. / 仅当前原子仓库操作共享的连接。 */
-    private final ThreadLocal<Connection> transaction = new ThreadLocal<>();
+    private final RepositoryConnections scoped = new RepositoryConnections(this::openPhysical);
 
     /**
      * Validates and binds the inputs required by desktop connection factory.
@@ -39,21 +39,14 @@ public final class DesktopConnectionFactory {
      * @throws SQLException if the database cannot complete the requested read or transaction / 数据库无法完成请求的读取或事务时
      */
     public Connection open() throws SQLException {
-        Connection current = transaction.get();
-        if (current != null) {
-            return (Connection) java.lang.reflect.Proxy.newProxyInstance(Connection.class.getClassLoader(),
-                    new Class<?>[]{Connection.class}, (proxy, method, arguments) -> {
-                        if (method.getName().equals("close"))
-                            return null;
-                        if (java.util.Set.of("commit", "rollback", "setAutoCommit").contains(method.getName()))
-                            throw new SQLException("nested repository cannot complete the owning transaction");
-                        try {
-                            return method.invoke(current, arguments);
-                        } catch (java.lang.reflect.InvocationTargetException failure) {
-                            throw failure.getCause();
-                        }
-                    });
-        }
+        return scoped.open();
+    }
+
+    /** Opens a legacy SQLite connection during the staged migration. / 分阶段迁移期间打开旧 SQLite 连接。
+     * @return owned SQLite connection / 所属 SQLite 连接
+     * @throws SQLException if driver initialization fails / 驱动初始化失败时
+     */
+    private Connection openPhysical() throws SQLException {
         Connection connection = DriverManager.getConnection(jdbcUrl);
         try (Statement statement = connection.createStatement()) {
             statement.execute("PRAGMA foreign_keys = ON");
@@ -72,27 +65,14 @@ public final class DesktopConnectionFactory {
      * @throws SQLException if writing or committing fails / 写入或提交失败
      */
     public void transaction(SqlWork work) throws SQLException {
-        if (transaction.get() != null) {
-            work.run();
-            return;
-        }
-        try (Connection connection = open()) {
-            connection.setAutoCommit(false);
-            transaction.set(connection);
-            try {
-                work.run();
-                connection.commit();
-            } catch (SQLException | RuntimeException | Error failure) {
-                try {
-                    connection.rollback();
-                } catch (SQLException rollback) {
-                    failure.addSuppressed(rollback);
-                }
-                throw failure;
-            } finally {
-                transaction.remove();
-            }
-        }
+        scoped.transaction(work::run);
+    }
+
+    /** Returns shared transaction ownership for repositories. / 返回仓库共享的事务所有权。
+     * @return internal transaction scope / 内部事务作用域
+     */
+    public RepositoryConnections scoped() {
+        return scoped;
     }
 
     /** Related database writes. / 相关数据库写入。 */
