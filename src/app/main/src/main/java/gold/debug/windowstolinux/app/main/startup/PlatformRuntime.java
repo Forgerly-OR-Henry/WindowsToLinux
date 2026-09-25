@@ -11,14 +11,22 @@ import gold.debug.windowstolinux.app.db.PlatformPersistence;
 import gold.debug.windowstolinux.app.db.bootstrap.DatabaseProtection;
 import gold.debug.windowstolinux.app.db.task.TaskLedger;
 import gold.debug.windowstolinux.app.service.security.DesktopSecurityService;
+import gold.debug.windowstolinux.app.service.task.PlatformTaskAdmission;
+import gold.debug.windowstolinux.app.service.task.PlatformTaskRuntime;
 
-/** Owns the platform database and security session for one desktop boot. / 为一次桌面启动持有平台数据库及安全会话。 */
+/** Owns platform storage, task execution and security for one desktop boot. / 为一次桌面启动持有平台存储、任务执行及安全会话。 */
 public final class PlatformRuntime implements AutoCloseable {
     /** Protected platform storage retained until actual shutdown. / 实际关闭前保留的受保护平台存储。 */
     private final PlatformPersistence persistence;
 
     /** Master-password session and accepted credential operations. / 主密码会话及已接纳的凭据操作。 */
     private final DesktopSecurityService security;
+
+    /** Central task owner including retained work from previous boots. / 包含前次启动保留工作的中央任务所有者。 */
+    private final PlatformTaskRuntime tasks;
+
+    /** Whether executor teardown has started and admission must remain sealed. / 执行器拆除是否已开始且准入必须保持封闭。 */
+    private boolean stopping;
 
     /** Whether all owned resources have actually closed. / 所有所属资源是否已实际关闭。 */
     private boolean closed;
@@ -27,10 +35,13 @@ public final class PlatformRuntime implements AutoCloseable {
      * Binds initialized platform resources. / 绑定已初始化的平台资源。
      * @param persistence protected platform repositories / 受保护的平台仓库
      * @param security current boot security owner / 当前启动的安全所有者
+     * @throws SQLException if retained tasks cannot be loaded / 无法加载保留任务时
      */
-    private PlatformRuntime(PlatformPersistence persistence, DesktopSecurityService security) {
+    private PlatformRuntime(PlatformPersistence persistence, DesktopSecurityService security) throws SQLException {
         this.persistence = Objects.requireNonNull(persistence);
         this.security = Objects.requireNonNull(security);
+        tasks = new PlatformTaskRuntime(persistence.database(), new PlatformTaskAdmission(persistence.database()),
+                security);
     }
 
     /**
@@ -43,9 +54,18 @@ public final class PlatformRuntime implements AutoCloseable {
     public static PlatformRuntime open(Path dataDirectory, DatabaseProtection protection) throws Exception {
         requireWorker();
         var persistence = new PlatformPersistence(PlatformDatabase.open(dataDirectory, protection));
+        DesktopSecurityService security = null;
         try {
-            return new PlatformRuntime(persistence, new DesktopSecurityService(persistence.security()));
-        } catch (RuntimeException | Error failure) {
+            security = new DesktopSecurityService(persistence.security());
+            return new PlatformRuntime(persistence, security);
+        } catch (Exception | Error failure) {
+            if (security != null) {
+                try {
+                    security.close();
+                } catch (Exception cleanup) {
+                    failure.addSuppressed(cleanup);
+                }
+            }
             try {
                 persistence.close();
             } catch (Exception cleanup) {
@@ -67,13 +87,19 @@ public final class PlatformRuntime implements AutoCloseable {
         return security;
     }
 
+    /** Returns the central task executor for trusted host composition. / 返回供可信宿主装配使用的中央任务执行器。
+     * @return current boot task owner / 当前启动的任务所有者 */
+    public PlatformTaskRuntime tasks() {
+        return tasks;
+    }
+
     /**
      * Records a successfully constructed desktop in the current boot. / 在当前启动中记录已成功构造的桌面。
      * @throws SQLException if this boot no longer owns the startup marker / 当前启动不再持有启动标记时
      */
     public synchronized void started() throws SQLException {
         requireWorker();
-        if (closed)
+        if (closed || stopping)
             throw new SQLException("Platform runtime is closed");
         try (var connection = persistence.database().openConnection();
                 var statement = connection.prepareStatement(
@@ -94,10 +120,24 @@ public final class PlatformRuntime implements AutoCloseable {
         requireWorker();
         if (closed)
             return;
-        if (!new TaskLedger(persistence.database()).unfinished().isEmpty())
-            throw new SQLException("Unfinished platform tasks require reconciliation before shutdown");
-        if (persistence.database().openConnections() != 0)
-            throw new SQLException("Platform connections must close before shutdown");
+        boolean wasSealed = tasks.seal(true);
+        if (!stopping) {
+            try {
+                if (!new TaskLedger(persistence.database()).unfinished().isEmpty())
+                    throw new SQLException("Unfinished platform tasks require reconciliation before shutdown");
+                if (persistence.database().openConnections() != 0)
+                    throw new SQLException("Platform connections must close before shutdown");
+                var state = security.securityState();
+                if (state.activeTasks() != 0 || state.changing())
+                    throw new IllegalStateException(
+                            "Credential operations and security changes must finish before shutdown");
+            } catch (Exception | Error failure) {
+                tasks.seal(wasSealed);
+                throw failure;
+            }
+            stopping = true;
+        }
+        tasks.close();
         security.close();
         persistence.close();
         closed = true;

@@ -229,8 +229,8 @@ class ModLifecycleIntegrationTest {
             try (var db = PlatformDatabase.open(work.resolve("data"), PROTECTION)) {
                 var identity = schema(db);
                 try (var security = security(db);
-                        var tasks = new PlatformTaskRuntime(db, (owner, version, request) -> claims(identity),
-                                security)) {
+                        var tasks = new PlatformTaskRuntime(db,
+                                (connection, owner, version, request) -> claims(identity), security)) {
                     var pane = new AtomicReference<ExtensionPagePane>();
                     SwingUtilities.invokeAndWait(() -> pane.set(new ExtensionPagePane(key -> {
                     }, owner -> "Fixture", () -> "Locked")));
@@ -289,7 +289,8 @@ class ModLifecycleIntegrationTest {
         try (var db = PlatformDatabase.open(work.resolve("data"), PROTECTION)) {
             var identity = schema(db);
             try (var security = security(db);
-                    var tasks = new PlatformTaskRuntime(db, (owner, version, request) -> claims(identity), security)) {
+                    var tasks = new PlatformTaskRuntime(db, (connection, owner, version, request) -> claims(identity),
+                            security)) {
                 var pane = new AtomicReference<ExtensionPagePane>();
                 SwingUtilities.invokeAndWait(() -> pane.set(new ExtensionPagePane(key -> {
                 }, owner -> "Fixture", () -> "Locked")));
@@ -327,7 +328,8 @@ class ModLifecycleIntegrationTest {
         try (var db = PlatformDatabase.open(work.resolve("data"), PROTECTION)) {
             var identity = schema(db);
             try (var security = security(db);
-                    var tasks = new PlatformTaskRuntime(db, (owner, version, request) -> claims(identity), security)) {
+                    var tasks = new PlatformTaskRuntime(db, (connection, owner, version, request) -> claims(identity),
+                            security)) {
                 var pane = new AtomicReference<ExtensionPagePane>();
                 SwingUtilities.invokeAndWait(() -> pane.set(new ExtensionPagePane(key -> {
                 }, owner -> "Fixture", () -> "Locked")));
@@ -373,7 +375,8 @@ class ModLifecycleIntegrationTest {
         }
         try (var db = PlatformDatabase.open(work.resolve("data"), PROTECTION);
                 var security = security(db);
-                var tasks = new PlatformTaskRuntime(db, (owner, version, request) -> claims(identity), security)) {
+                var tasks = new PlatformTaskRuntime(db, (connection, owner, version, request) -> claims(identity),
+                        security)) {
             var pane = new AtomicReference<ExtensionPagePane>();
             SwingUtilities.invokeAndWait(() -> pane.set(new ExtensionPagePane(key -> {
             }, owner -> "Fixture", () -> "Locked")));

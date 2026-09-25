@@ -1635,7 +1635,7 @@ APP 数据库不再维护迁移链或旧结构读取分支；Web 节点保持原
 - `app/linux/ssh/SshOutputCapture.java`：合并限制标准输出和错误输出的保留容量，超限后继续排空。
 - `app/linux/ssh/SftpTransfer.java`：普通文件的排他新建传输、审批摘要与容量核对，保留不确定结果及未释放资源。
 - `app/linux/ssh/SshEndpoint.java`：平台保存的服务器标识及精确连接端点。
-- `app/main/startup/PlatformRuntime.java`：为一次桌面启动持有平台数据库及安全会话。
+- `app/main/startup/PlatformRuntime.java`：为一次桌面启动持有平台存储、中央任务执行器及安全会话，并核对实际关闭。
 - `app/mod/lifecycle/ModRuntimeSession.java`：启用一个已准备的 Mod，并保留部分停止归属直至实际清理。
 - `app/mod/loader/ModClassLoader.java`：共享声明的公开类型，同时将作者代码与宿主实现隔离。
 - `app/mod/loader/ModEntryFactory.java`：仅在启用期间检查公开形状与来源后构造入口。
@@ -1646,6 +1646,7 @@ APP 数据库不再维护迁移链或旧结构读取分支；Web 节点保持原
 - `app/service/database/TaskModDatabase.java`：将所属业务 JDBC 直接连接到原始任务的资源账本。
 - `app/service/mod/ModHostLease.java`：将实际任务准入门及暂存宿主扩展绑定到一次 Mod 启用。
 - `app/service/task/PlatformTaskRuntime.java`：在持久化准入后使用保留凭据运行绑定调用方的作者工作，核对资源收尾并保留未完成归属。
+- `app/service/task/PlatformTaskAdmission.java`：在锁定的平台事务内核验本次启动的 Mod 版本、就绪 Schema 代次及完整服务器集合。
 - `app/ui/shell/ExtensionPagePane.java`：挂载已打开的 Mod 视图及按所有者分组的设置，不添加导航固定项。
 - `app/ui/shell/ModPageRegistry.java`：持有暂存页面扩展及限定在 EDT 的作者视图生命周期。
 - `app/ui/shell/PlatformFrame.java`：承载安全控件及独立所属 Mod 视图的平台桌面。

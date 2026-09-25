@@ -123,8 +123,8 @@ class TaskModDatabaseTest {
         try (var db = PlatformDatabase.open(root, PROTECTION)) {
             var identity = prepare(db, "example.owner");
             try (var security = security(db);
-                    var runtime = new PlatformTaskRuntime(db, (owner, version, request) -> claims(identity, request),
-                            security)) {
+                    var runtime = new PlatformTaskRuntime(db,
+                            (connection, owner, version, request) -> claims(identity, request), security)) {
                 var business = new TaskModDatabase(db, runtime, identity);
                 assertEquals(identity, business.identity());
                 var task = runtime.bind(identity.ownerId(), "1.0.0", false).submit(request(), active -> {
@@ -163,8 +163,8 @@ class TaskModDatabaseTest {
             var identity = prepare(db, "example.owner");
             var other = prepare(db, "example.other");
             try (var security = security(db);
-                    var runtime = new PlatformTaskRuntime(db, (owner, version, request) -> claims(identity, request),
-                            security)) {
+                    var runtime = new PlatformTaskRuntime(db,
+                            (connection, owner, version, request) -> claims(identity, request), security)) {
                 var foreign = new TaskModDatabase(db, runtime, other);
                 var stale = new TaskModDatabase(db, runtime,
                         new SchemaIdentity(identity.ownerId(), "1", UUID.randomUUID()));
@@ -187,8 +187,8 @@ class TaskModDatabaseTest {
         try (var db = PlatformDatabase.open(root, PROTECTION)) {
             var identity = prepare(db, "example.owner");
             try (var security = security(db);
-                    var runtime = new PlatformTaskRuntime(db, (owner, version, request) -> claims(identity, request),
-                            security);
+                    var runtime = new PlatformTaskRuntime(db,
+                            (connection, owner, version, request) -> claims(identity, request), security);
                     var ownerThread = Executors.newSingleThreadExecutor()) {
                 var business = new TaskModDatabase(db, runtime, identity);
                 var opened = new CompletableFuture<Void>();
@@ -230,8 +230,8 @@ class TaskModDatabaseTest {
         try (var db = PlatformDatabase.open(root, PROTECTION)) {
             var identity = prepare(db, "example.owner");
             try (var security = security(db);
-                    var runtime = new PlatformTaskRuntime(db, (owner, version, request) -> claims(identity, request),
-                            security)) {
+                    var runtime = new PlatformTaskRuntime(db,
+                            (connection, owner, version, request) -> claims(identity, request), security)) {
                 var business = new TaskModDatabase(db, runtime, identity);
                 var opened = new CountDownLatch(1);
                 var failed = new CountDownLatch(1);
@@ -274,8 +274,8 @@ class TaskModDatabaseTest {
             var identity = prepare(db, "example.owner");
             sql(db, "DROP SCHEMA " + new SchemaCoordinates(identity).physicalName() + " CASCADE");
             try (var security = security(db);
-                    var runtime = new PlatformTaskRuntime(db, (owner, version, request) -> claims(identity, request),
-                            security)) {
+                    var runtime = new PlatformTaskRuntime(db,
+                            (connection, owner, version, request) -> claims(identity, request), security)) {
                 var business = new TaskModDatabase(db, runtime, identity);
                 var task = runtime.bind(identity.ownerId(), "1.0.0", false).submit(request(), active -> {
                     assertThrows(SQLException.class, () -> business.openConnection(active));

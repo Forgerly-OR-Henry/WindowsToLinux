@@ -44,7 +44,8 @@ class PlatformTaskRuntimeTest {
             return protect(input);
         }
     };
-    static List<TaskResource> claims(String owner, String version, TaskRequest request) {
+    static List<TaskResource> claims(java.sql.Connection connection, String owner, String version,
+            TaskRequest request) {
         var result = new ArrayList<TaskResource>();
         result.add(new TaskResource("MOD", owner, owner, false));
         for (var server : request.serverIds())
@@ -228,7 +229,7 @@ class PlatformTaskRuntimeTest {
         try (var db = PlatformDatabase.open(root, PROTECTION)) {
             var ledger = new TaskLedger(db);
             var request = request("A");
-            ledger.enqueue(id, "example.owner", "1.0.0", request, claims("example.owner", "1.0.0", request));
+            ledger.enqueue(id, "example.owner", "1.0.0", request, claims(null, "example.owner", "1.0.0", request));
             assertTrue(ledger.tryStart(id));
             originalLease = ledger.retain(id,
                     new TaskResource("CUSTOM", "example.owner/file/pending", "example.owner", false));

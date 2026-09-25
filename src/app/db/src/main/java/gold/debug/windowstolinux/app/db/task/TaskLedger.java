@@ -41,41 +41,99 @@ public final class TaskLedger {
      */
     public UUID enqueue(UUID id, String ownerId, String ownerVersion, TaskRequest request, List<TaskResource> claims)
             throws SQLException {
+        return enqueue(id, ownerId, ownerVersion, request, connection -> claims);
+    }
+
+    /**
+     * Validates live platform state and queues work within one serialized transaction. / 在同一串行事务内校验平台实时状态并将工作入队。
+     * @param id host-generated durable identity / 宿主生成的持久身份
+     * @param ownerId exact caller identity / 精确调用方身份
+     * @param ownerVersion exact running release / 精确运行版本
+     * @param request immutable author request / 不可变作者请求
+     * @param resolver policy using the locked transaction connection / 使用锁定事务连接的策略
+     * @return committed task identity / 已提交任务身份
+     * @throws SQLException if validation or persistence fails / 校验或持久化失败时
+     */
+    public UUID enqueue(UUID id, String ownerId, String ownerVersion, TaskRequest request, InitialClaims resolver)
+            throws SQLException {
         Objects.requireNonNull(id);
         if (ownerId.isBlank() || ownerId.length() > 512 || ownerVersion.isBlank() || ownerVersion.length() > 512
                 || request.type().isBlank() || request.type().length() > 128 || request.title().isBlank()
                 || request.title().length() > 4096)
             throw new SQLException("Invalid task request");
-        var ordered = orderedClaims(claims);
-        var servers = ordered.stream().filter(r -> r.kind().equals("SERVER")).map(TaskResource::id)
-                .collect(java.util.stream.Collectors.toSet());
-        if (!servers.equals(new HashSet<>(request.serverIds())) || ordered.stream()
-                .noneMatch(r -> r.kind().equals("MOD") && r.id().equals(ownerId) && r.ownerId().equals(ownerId)))
-            throw new SQLException("Incomplete initial task resource set");
-        for (var claim : ordered)
-            if (!Set.of("MOD", "SCHEMA", "SERVER").contains(claim.kind()))
-                throw new SQLException("Invalid initial resource kind");
-        long now = System.currentTimeMillis();
         return locked(() -> {
-            try (var c = connections.open();
-                    var p = c.prepareStatement(
-                            "INSERT INTO platform_task(task_id,owner_id,owner_version,task_type,state,cancellable,boot_id,request_json,recovery_json,archive_log_id,progress_text,started_at) VALUES(?,?,?,?,'QUEUED',?,?,?,?,?,?,?)")) {
-                p.setObject(1, id);
-                p.setString(2, ownerId);
-                p.setString(3, ownerVersion);
-                p.setString(4, request.type());
-                p.setBoolean(5, request.cancellable());
-                p.setObject(6, bootId);
-                p.setString(7, encode(Map.of("type", request.type(), "title", request.title(), "serverIds",
-                        request.serverIds(), "cancellable", request.cancellable())));
-                p.setString(8, encode(Map.of("formatVersion", 1, "initialClaims", ordered)));
-                p.setString(9, UUID.randomUUID().toString());
-                p.setString(10, request.title());
-                p.setLong(11, now);
-                p.executeUpdate();
+            try (var connection = connections.open()) {
+                var ordered = orderedClaims(resolver.resolve(connection));
+                var servers = ordered.stream().filter(r -> r.kind().equals("SERVER")).map(TaskResource::id)
+                        .collect(java.util.stream.Collectors.toSet());
+                if (!servers.equals(new HashSet<>(request.serverIds())) || ordered.stream().noneMatch(
+                        r -> r.kind().equals("MOD") && r.id().equals(ownerId) && r.ownerId().equals(ownerId)))
+                    throw new SQLException("Incomplete initial task resource set");
+                for (var claim : ordered)
+                    if (!Set.of("MOD", "SCHEMA", "SERVER").contains(claim.kind()))
+                        throw new SQLException("Invalid initial resource kind");
+                long now = System.currentTimeMillis();
+                try (var c = connections.open();
+                        var p = c.prepareStatement(
+                                "INSERT INTO platform_task(task_id,owner_id,owner_version,task_type,state,cancellable,boot_id,request_json,recovery_json,archive_log_id,progress_text,started_at) VALUES(?,?,?,?,'QUEUED',?,?,?,?,?,?,?)")) {
+                    p.setObject(1, id);
+                    p.setString(2, ownerId);
+                    p.setString(3, ownerVersion);
+                    p.setString(4, request.type());
+                    p.setBoolean(5, request.cancellable());
+                    p.setObject(6, bootId);
+                    p.setString(7, encode(Map.of("type", request.type(), "title", request.title(), "serverIds",
+                            request.serverIds(), "cancellable", request.cancellable())));
+                    p.setString(8, encode(Map.of("formatVersion", 1, "initialClaims", ordered)));
+                    p.setString(9, UUID.randomUUID().toString());
+                    p.setString(10, request.title());
+                    p.setLong(11, now);
+                    p.executeUpdate();
+                }
+                return id;
             }
-            return id;
         });
+    }
+
+    /** Resolves complete initial resources against the locked platform state. / 根据锁定的平台状态解析完整初始资源。 */
+    @FunctionalInterface
+    public interface InitialClaims {
+        /**
+         * Validates state before any task row is written. / 在写入任何任务行之前校验状态。
+         * @param connection current serialized platform transaction / 当前串行平台事务
+         * @return complete initial claims / 完整初始申请
+         * @throws SQLException if validation or queries fail / 校验或查询失败时
+         */
+        List<TaskResource> resolve(Connection connection) throws SQLException;
+    }
+
+    /**
+     * Prevents endpoint changes for accepted work, including queued and uncertain tasks. / 防止修改已接纳工作使用的端点，包括排队及未知任务。
+     * @param connection platform transaction already holding the state lock / 已持有状态锁的平台事务
+     * @param serverId exact saved server identity / 精确已保存服务器身份
+     * @throws SQLException if any accepted task requires the server or metadata cannot be verified / 已接纳任务需要服务器或无法核实元数据时
+     */
+    public static void requireServerIdle(Connection connection, String serverId) throws SQLException {
+        var mapper = new ObjectMapper()
+                .enable(com.fasterxml.jackson.databind.DeserializationFeature.FAIL_ON_TRAILING_TOKENS);
+        try (var statement = connection.prepareStatement("SELECT request_json FROM platform_task WHERE state<>'ENDED'");
+                var rows = statement.executeQuery()) {
+            while (rows.next()) {
+                try {
+                    var ids = mapper.readTree(rows.getString(1)).required("serverIds");
+                    if (!ids.isArray())
+                        throw new SQLException("Accepted task server metadata is invalid");
+                    for (var id : ids) {
+                        if (!id.isTextual() || id.asText().isBlank())
+                            throw new SQLException("Accepted task server metadata is invalid");
+                        if (id.asText().equals(serverId))
+                            throw new SQLException("Accepted tasks still require this server configuration");
+                    }
+                } catch (java.io.IOException | IllegalArgumentException failure) {
+                    throw new SQLException("Accepted task server metadata cannot be verified", failure);
+                }
+            }
+        }
     }
 
     /**
@@ -568,11 +626,8 @@ public final class TaskLedger {
     private <T> T locked(Query<T> work) throws SQLException {
         var result = new java.util.concurrent.atomic.AtomicReference<T>();
         connections.transaction(() -> {
-            try (var c = connections.open();
-                    var p = c.prepareStatement("SELECT singleton_id FROM app_state WHERE singleton_id=1 FOR UPDATE");
-                    var r = p.executeQuery()) {
-                if (!r.next())
-                    throw new SQLException("Platform state is absent");
+            try (var c = connections.open()) {
+                RepositoryConnections.lockPlatformState(c);
             }
             result.set(work.run());
         });
