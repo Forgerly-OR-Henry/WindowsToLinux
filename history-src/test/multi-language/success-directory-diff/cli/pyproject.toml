@@ -1,0 +1,7 @@
+[project]
+name = "directory-diff"
+version = "1.0.0"
+requires-python = ">=3.12,<3.13"
+description = "SQLite snapshots with a C++ filesystem scanner; Python standard library only"
+
+dependencies = []

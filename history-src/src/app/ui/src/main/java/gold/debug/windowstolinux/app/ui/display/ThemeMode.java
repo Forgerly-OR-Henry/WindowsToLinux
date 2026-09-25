@@ -1,0 +1,41 @@
+package gold.debug.windowstolinux.app.ui.display;
+
+import java.util.Locale;
+
+/**
+ * User-selectable desktop appearance preference.
+ *
+ *  <p>用户可选择的桌面外观偏好。
+ */
+public enum ThemeMode {
+    /**
+     * Represents the {@code SYSTEM} option.
+     *
+     *  <p>表示 {@code SYSTEM} 选项。
+     */
+    SYSTEM,
+    /**
+     * Represents the {@code LIGHT} option.
+     *
+     *  <p>表示 {@code LIGHT} 选项。
+     */
+    LIGHT,
+    /**
+     * Represents the {@code DARK} option.
+     *
+     *  <p>表示 {@code DARK} 选项。
+     */
+    DARK;
+
+    /**
+     * Creates a value through {@code fromStoredValue}.
+     *
+     *  <p>通过 {@code fromStoredValue} 创建值。
+     *
+     * @param value candidate content accepted or rejected by this contract / 由当前契约接收或拒绝的候选内容
+     * @return the operation result / 操作结果
+     */
+    public static ThemeMode fromStoredValue(String value) {
+        return value == null ? SYSTEM : ThemeMode.valueOf(value);
+    }
+}

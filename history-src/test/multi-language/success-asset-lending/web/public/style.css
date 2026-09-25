@@ -1,0 +1,106 @@
+:root {
+  font:
+    16px/1.6 system-ui,
+    sans-serif;
+  color: #1c3045;
+  background: #eef3f7;
+}
+[hidden] {
+  display: none !important;
+}
+nav {
+  display: flex;
+  gap: 18px;
+  flex-wrap: wrap;
+}
+td {
+  overflow-wrap: anywhere;
+  max-width: 340px;
+}
+td button,
+td a {
+  margin-right: 8px;
+}
+body {
+  max-width: 1120px;
+  margin: 0 auto;
+  padding: 28px;
+}
+header {
+  border-bottom: 3px solid #287caf;
+  margin-bottom: 24px;
+}
+h1 {
+  margin-bottom: 4px;
+}
+header p {
+  color: #586c7e;
+}
+section {
+  background: white;
+  border: 1px solid #d8e1e9;
+  border-radius: 12px;
+  padding: 20px;
+  margin: 18px 0;
+}
+form,
+.toolbar {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  align-items: end;
+}
+label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+input,
+select,
+textarea,
+button {
+  font: inherit;
+  padding: 7px 11px;
+  border: 1px solid #a8bacb;
+  border-radius: 6px;
+}
+button {
+  background: #17648e;
+  color: white;
+  cursor: pointer;
+}
+button:disabled {
+  opacity: 0.5;
+  cursor: wait;
+}
+table {
+  border-collapse: collapse;
+  width: 100%;
+}
+th,
+td {
+  text-align: left;
+  padding: 10px;
+  border-bottom: 1px solid #e1e8ed;
+}
+pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+#message {
+  min-height: 28px;
+  color: #9b231b;
+}
+.stats {
+  color: #196080;
+  font-weight: 600;
+}
+@media (max-width: 700px) {
+  body {
+    padding: 12px;
+  }
+  table {
+    display: block;
+    overflow: auto;
+  }
+}

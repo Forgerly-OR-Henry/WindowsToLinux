@@ -1,0 +1,69 @@
+server:
+  address: 127.0.0.1
+  port: 8765
+  shutdown: graceful
+  max-http-request-header-size: 16KB
+  tomcat:
+    connection-timeout: 30s
+    keep-alive-timeout: 30s
+    max-connections: 128
+
+spring:
+  application:
+    name: windowstolinux-web
+  main:
+    banner-mode: off
+  lifecycle:
+    timeout-per-shutdown-phase: 45s
+  threads:
+    virtual:
+      enabled: true
+  servlet:
+    multipart:
+      enabled: false
+  web:
+    error:
+      include-message: never
+      include-stacktrace: never
+
+w2l:
+  mode: internal-test
+  storage:
+    root: db.data
+    minimum-free-bytes: 67108864
+  secrets:
+    directory: ${user.home}/.windowstolinux-web-test-keys
+  database:
+    busy-timeout: 5s
+    connection-timeout: 30s
+  http:
+    requests: 64
+    streams: 8
+    uploads: 4
+    json-bytes: 1048576
+    query-characters: 4096
+    heartbeat: 10s
+    event-poll: 250ms
+    stream-timeout: 0s
+  tasks:
+    workers: 4
+    max-active: 32
+    max-events: 10000
+    decision-timeout: 30m
+    shutdown-timeout: 30s
+    forced-shutdown-timeout: 10s
+  maintenance:
+    source-retention: 24h
+    scan-validity: 5m
+  files:
+    file-bytes: 134217728
+    project-bytes: 1073741824
+    total-bytes: 4294967296
+    members: 10000
+    path-length: 240
+  backups:
+    file-bytes: 4294967296
+    project-bytes: 8589934592
+    total-bytes: 17179869184
+    members: 10000
+    path-length: 240
