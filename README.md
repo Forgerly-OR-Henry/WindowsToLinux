@@ -1,11 +1,13 @@
 # WindowsToLinux
 
-WindowsToLinux 是面向个人和小型自托管场景的部署管理工具，提供 Windows 桌面端和 0.5 期回环内部测试 Web 服务台。首页选择本地源码或 Git 地址及目标服务器后，可一键完成识别、补全、环境准备、构建、发布与健康检查。技术参数放入默认收起的右侧高级选项，每项提供问号帮助。
+WindowsToLinux 是面向个人和小型自托管场景的部署管理工具，正在改造为 APP 与 Mod 平台。
+
+**当前检出为 1.1 开发中间状态**：默认 `AppMain` 已使用 H2 平台库、主密码设置与锁定、Mod 页面外壳；服务器、模型、SSH/救援、插件安装和业务迁移尚未全部接入新入口。下方 0.x 功能说明及历史验证不代表当前新入口已可执行这些完整流程。旧源码冻结在 `history-src`，进度见 [1.1 工程](docs/development/PHASE-1.1.md)。
 
 > [!IMPORTANT]
-> 项目仍在开发中，尚未提供正式安装包。当前代码已迁至 31-POM 的标准部署与自主 Agent 结构，helper 协议升级至 v10；本次升级已通过本地验证；此前 helper v9 在 Ubuntu 24 上的八个多语言原生项目通过了代表性部署与业务验收，见[多语言记录](test/multi-language/VERIFICATION.md)；其他平台及备份迁移矩阵仍待验证。helper v7 的代表性部署和历史 helper v5 基线见[0.4 期验收](docs/development/PHASE-0.4.md#acceptance)；数据库、备份恢复和迁移仍为 `RUNTIME-PENDING`。证据仅覆盖记录中的精确夹具与环境。
+> 项目仍在开发中，尚未提供正式安装包。改造前的 0.x 标准部署与自主 Agent 结构及 helper v10 已通过当时本地验证；此前 helper v9 在 Ubuntu 24 上的八个多语言原生项目通过了代表性部署与业务验收，见[多语言记录](test/multi-language/VERIFICATION.md)；其他平台及备份迁移矩阵仍待验证。helper v7 的代表性部署和历史 helper v5 基线见[0.4 期验收](docs/development/PHASE-0.4.md#acceptance)；数据库、备份恢复和迁移仍为 `RUNTIME-PENDING`。证据仅覆盖记录中的精确夹具与环境。
 
-## 1.1 平台化规划（尚未实施）
+## 1.1 平台化改造（进行中）
 
 新方向是以 APP 为主体的开放插件平台：主体提供 UI、服务器与 AI 配置、通用模型调用、任务、安全及插件管理；部署和备份迁为官方插件，现有部署 Agent 归部署插件。Linux 单模块中并列正常 SSH 与内置救援，救援入口不依赖正常连接成功。
 

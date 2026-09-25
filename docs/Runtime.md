@@ -1,7 +1,7 @@
 # WindowsToLinux 运行与行为约定
 
-- 职责：维护当前 0.x 的运行数据目录、部署与恢复行为、数据库、安全及已知验证边界；源码模块、包结构和命名以 [File.md](File.md) 为准。
-- 状态：本文描述当前实现。1.1 目标规则见 Mod.md、APP.md 和 File.md；将当前代码改造成目标的步骤见 [1.1 开发文档](development/PHASE-1.1.md)。
+- 职责：维护运行数据目录、部署与恢复行为、数据库、安全及已知验证边界；源码模块、包结构和命名以 [File.md](File.md) 为准。
+- 状态：1.1 改造进行中。默认入口已切换 H2 平台启动与安全外壳；本文后续部署、备份和 SQLite 行为属于待迁移的 0.x 业务实现，尚未全部接入新入口。1.1 数据库契约见 [Mod.md](Mod.md#mod-database)，进度见 [1.1 开发文档](development/PHASE-1.1.md)。
 - [开发总纲](development/DEVELOPMENT.md) · [1.1 工程](development/PHASE-1.1.md) · [APP 发布方案](APP.md) · [数据库与安全](Runtime.md#app-security-database)
 
 ## 1. 本地化与诊断行为
@@ -37,13 +37,17 @@
 | APP      | `jpackage` 启动器 EXE 所在目录下的 `data`。          |
 
 - `jpackage` 安装包启用按当前用户安装和安装目录选择，避免默认安装到普通用户不可写的 `Program Files`。
-- CLASS/JAR 模式固定使用 `app/db` 的 `DesktopPersistence` 类作为代码源锚点，不依据主入口模块的位置或固定 JAR 文件名猜测数据目录。
+- CLASS/JAR 模式固定使用 `app/db` 的 `PlatformDatabase` 类作为代码源锚点，不依据主入口模块的位置或固定 JAR 文件名猜测数据目录。
 - CLASS 模式优先依据 DB 模块的 Maven `target/classes`/`target/test-classes` 定位模块；JetBrains 等 IDE 输出不在模块内时，只有验证工作区中的 `windowstolinux-app-db` POM 后才解析到 `src/app/db`，不会直接把工作目录当作数据基准目录。
 - 应用启动时必须验证解析出的 `data` 目录可以创建和写入；验证失败则停止启动并提示用户重新安装到可写目录。
 - 不得静默回退到用户目录、临时目录或其他位置，避免同一安装出现多个不一致的数据副本。
 - APP 模式下数据始终跟随 EXE 安装目录；升级和卸载时按 0.4 期文档定义的规则处理。
 
-解析完成后的本地持久化结构固定如下；该结构不改变上述三种运行模式的根目录规则：
+1.1 默认启动仅打开 `platform.mv.db` 与 `db-access.bin`，使用 H2 2.5.250 和 Windows 当前用户 DPAPI；缺失配对、身份错误或材料损坏时拒绝打开，不覆盖重建。首次安全设置后可解锁，再次启动保持锁定。正常退出等待凭据操作、持久化非终态任务及物理连接释放；UNKNOWN 不视作已完成。平台子目录职责见 [Mod 数据布局](Mod.md#mod-database)。
+
+程序目录独立定位：JAR 使用 main.jar 所在目录，数据仍按 db.jar；APP 使用 EXE 目录。CLASS 程序根须是经 DB 模块 POM 和 main 模块位置验证的工作区，主模块输出须位于该工作区内；不从无关工作目录加载 Mod。
+
+以下为保留的 0.x 数据布局。新默认入口不读取或改写 `windowstolinux.db`，也不预建旧业务的 backups 目录；此处记录仍待业务 Mod 迁移的原结构：
 
 ```text
 <resolved-data>/

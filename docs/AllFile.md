@@ -1,6 +1,6 @@
 # WindowsToLinux 全文件架构索引
 
-> 状态：本索引仍对应当前 0.x 源码；1.1 新模块和类尚未创建，不提前列入。目标目录见 [File.md](File.md#phase-1-1-target)，旧 Web 预留仅说明已有文件，不要求继续实现。
+> 状态：1.1 改造进行中；下方目录树保留旧模块基线，文末补充已实际新增的 1.1 生产节点。完整模块树将在 S3 切换时合并；目标目录见 [File.md](File.md#phase-1-1-target)。旧 Web 预留不要求继续实现。
 > 范围：仅记录 `src/` 下的非测试维护文件；省略 Maven 配置文件，测试、编译产物、忽略项和其他目录不纳入。
 > 排序：同级项目按名称字母升序排列；模块的 `resources/` 目录固定置于最后。
 > 粒度：模块、包和文件均有简体中文短注解；Java 文件仅说明与文件同名的顶级主类型。
@@ -58,10 +58,10 @@ src/  # 项目源码与模块根目录
 │  │  │  └─ DesktopUncaughtFailureBoundary.java  # 捕获线程边界失败并对 JVM 致命错误尽力记录后退出
 │  │  ├─ runtime/  # 代码来源解析与运行边界
 │  │  │  ├─ DesktopStorageLayout.java  # 从唯一运行模式 data 根派生数据库、受管应用、工作、备份和诊断路径
-│  │  │  ├─ RunModeResolver.java  # CLASS/JAR 按 DB 模块定位固定 data 目录，jpackage 按 EXE 定位
+│  │  │  ├─ RunModeResolver.java  # 分离程序与数据锚点，CLASS 验证工作区，JAR 数据按 DB 模块，APP 按 EXE
 │  │  │  └─ RuntimePathResolver.java  # 定位并验证受支持的开发、JAR 与 jpackage 文件系统布局
 │  │  └─ startup/  # 应用装配与启动清理
-│  │     ├─ DesktopMain.java  # 使用受管部署要求固定数据目录的生产桌面引导程序
+│  │     ├─ DesktopMain.java  # 默认 H2 平台、安全及 Mod 页面外壳的生产桌面引导程序
 │  │     └─ DesktopWindowController.java  # 持有一个桌面窗口，并在区域设置或主题变化时安全替换它
 │  ├─ secret/  # 主密码保护的统一数据库凭据存储
 │  │  ├─ crypto/  # 认证加密与备份秘密格式
@@ -1528,3 +1528,119 @@ src/  # 项目源码与模块根目录
 APP 数据库不再维护迁移链或旧结构读取分支；Web 节点保持原实现，后续同步。
 
 - `app/windows/recovery/BrowserWindowPrivacy.java` 与 `window-privacy.ps1`：仅隐藏/恢复归属经过校验的 APP 隔离 Chromium 原生窗口。
+
+## 1.1 已落地新增节点
+
+以下节点均已存在于活动源码；只说明文件职责，不代表完整模块切换或全部 API 宿主接线已经完成。
+
+- `api/ai/AiImage.java`：视觉请求使用的不可变图像字节。
+- `api/ai/AiMessage.java`：包含独立图像附件列表的有序模型消息。
+- `api/ai/AiPurpose.java`：平台调用选用的配置模型组。
+- `api/ai/AiRequest.java`：具有明确时间及输出预算的模型调用。
+- `api/ai/AiResponse.java`：不暴露提供方实现类型的模型响应及用量。
+- `api/ai/AiRole.java`：有序模型对话中的消息角色。
+- `api/ai/AiService.java`：绑定调用方并校验任务授权及预算的模型能力。
+- `api/ai/AiUsage.java`：提供方可选报告的非负令牌用量。
+- `api/db/ModDatabase.java`：绑定任务并访问当前所有者数据代次的连接能力。
+- `api/db/ModSchemaLifecycle.java`：业务启动前由作者实现的初始化和只读验证。
+- `api/db/SchemaAccess.java`：初始化与迁移期间绑定操作的连接能力。
+- `api/db/SchemaIdentity.java`：与唯一代次绑定的数据所有者及版本。
+- `api/db/SchemaMigration.java`：从受保护来源到独立目标的作者迁移逻辑。
+- `api/db/ValidationReport.java`：作者对数据结构作出接受或拒绝判断的证据。
+- `api/linux/CommandRequest.java`：带独立输入及输出上限的精确远端脚本。
+- `api/linux/CommandResult.java`：不推断未观察退出状态的远端输出。
+- `api/linux/LinuxService.java`：绑定任务授权及主机信任校验的 SSH 能力。
+- `api/linux/RemoteFacts.java`：已观察的远端平台与认证主机指纹。
+- `api/linux/RemoteSession.java`：产生副作用时需要已审核授权的受管 SSH 会话。
+- `api/linux/TransferRequest.java`：具有明确远端路径及容量限制的文件传输。
+- `api/linux/TransferResult.java`：已观察的传输大小及内容摘要。
+- `api/mod/ModContext.java`：绑定真实启动插件身份的平台能力集合。
+- `api/mod/ModEntrypoint.java`：作者生命周期入口及部分启动失败的清理责任。
+- `api/mod/ModIdentity.java`：独立于显示名和包文件名的稳定插件身份。
+- `api/mod/ModLaunchMode.java`：正常启动或对未完成工作的隔离核对模式。
+- `api/mod/ModServices.java`：使用共享公开类型身份的显式依赖服务。
+- `api/mod/ServiceCall.java`：不得泄漏提供方资源的同步跨插件调用。
+- `api/mod/ServiceHandle.java`：每次调用时获取占用的服务发现句柄。
+- `api/mod/ServiceRegistration.java`：仅在实际释放后撤销的服务注册。
+- `api/mod/StopContext.java`：后台幂等停止所使用的原因上下文。
+- `api/mod/StopReason.java`：不代表资源已经释放的明确生命周期停止原因。
+- `api/secret/SecretConsumer.java`：输入在使用后清零的短期秘密回调。
+- `api/secret/SecretRef.java`：绑定授权用途的不透明秘密引用。
+- `api/secret/SecretReference.java`：保护共享凭据的持久业务引用。
+- `api/secret/SecretService.java`：仅经授权临时回调提供所属秘密的服务。
+- `api/server/ReferenceResolution.java`：业务提交已经核实或仍然未知的结果。
+- `api/server/ReferenceState.java`：持续保护未知引用的预留状态。
+- `api/server/ServerInfo.java`：不含秘密的服务器配置与已观察信任信息。
+- `api/server/ServerRef.java`：平台管理服务器的稳定引用。
+- `api/server/ServerReference.java`：保护共享服务器的业务归属预留。
+- `api/server/ServerService.java`：绑定任务的服务器查询及持久引用管理。
+- `api/source/SnapshotRequest.java`：明确的相对文件集合及总复制容量预算。
+- `api/source/SourceFile.java`：从已授权来源取得的独立字节及摘要。
+- `api/source/SourceReadRequest.java`：限制在已选来源根目录内的有界读取。
+- `api/source/SourceSelection.java`：用户批准的不透明来源选择。
+- `api/source/SourceService.java`：用户选定来源的有界读取及受管不可变快照。
+- `api/source/SourceSnapshot.java`：实际关闭后释放的受管不可变来源目录。
+- `api/task/ActionIntent.java`：绑定任务资源的精确待审核副作用与修订。
+- `api/task/ApiException.java`：报告未接纳的请求或失败的本地能力访问。
+- `api/task/ApprovalGrant.java`：授权效力由宿主核实的不透明审批标识。
+- `api/task/CancellationToken.java`：不强制中断执行的协作取消请求。
+- `api/task/InteractionService.java`：绑定已接纳任务的宿主审核及输入交互。
+- `api/task/LogCategory.java`：包含可选作者日志表的所属诊断类别。
+- `api/task/LogEvent.java`：不得包含凭据材料的诊断事件。
+- `api/task/LogLevel.java`：独立于业务操作状态的诊断级别。
+- `api/task/LogService.java`：明确返回存储结果的所属结构化诊断服务。
+- `api/task/LogStorage.java`：不猜测持久化成功的实际诊断存储结果。
+- `api/task/LogTarget.java`：当前日志所有者的不透明已登记目的地。
+- `api/task/LogWriteResult.java`：已观察的诊断持久化与截断结果。
+- `api/task/ManagedProcess.java`：直到实际退出前持续保留占用的协议进程。
+- `api/task/OperationResult.java`：失败或不确定时具有明确证据的业务结果。
+- `api/task/Outcome.java`：独立于尚待完成资源清理的业务结果。
+- `api/task/PageSlice.java`：独立查询结果集合及可选的后续游标。
+- `api/task/Problem.java`：不暴露实现异常的结构化失败或不确定原因。
+- `api/task/ProblemCode.java`：公开能力边界使用的稳定失败类别。
+- `api/task/ProcessMessage.java`：传输前需要校验 JSON 对象的协议消息。
+- `api/task/ProcessService.java`：不暴露平台凭据的任务所属进程启动。
+- `api/task/ProcessSpec.java`：字面进程参数及有界握手配置。
+- `api/task/RecoveryRegistration.java`：允许人工核对保留任务的恢复注册。
+- `api/task/ResourceLease.java`：仅在实际清理后释放的受追踪资源占用。
+- `api/task/TaskContext.java`：已接纳任务的身份及协作资源登记。
+- `api/task/TaskHandle.java`：仅在必要清理完成后结束的可观察任务结果。
+- `api/task/TaskRecovery.java`：复用原资源且不重放未知副作用的结果核对。
+- `api/task/TaskRequest.java`：包含完整初始服务器资源集合的任务准入请求。
+- `api/task/TaskService.java`：绑定调用方的任务准入、观察与核对服务。
+- `api/task/TaskSnapshot.java`：终态结果保持一致的不可变任务状态。
+- `api/task/TaskState.java`：区分取消请求与业务结果的任务进度状态。
+- `api/task/TaskWork.java`：观察取消并保留未完成资源的作者任务逻辑。
+- `api/ui/ModPage.java`：在事件分发线程创建和释放的作者 Swing 视图。
+- `api/ui/PageFactory.java`：页面重新打开时创建新视图的惰性工厂。
+- `api/ui/PageRegistration.java`：关闭时释放已打开视图的所属页面注册。
+- `api/ui/PageSpec.java`：不会自动固定主导航的本地页面定义。
+- `api/ui/UiEnvironment.java`：当前宿主语言、主题及锁定状态。
+- `api/ui/UiService.java`：不暴露宿主实现类型的所属页面挂载服务。
+- `app/db/PlatformDatabase.java`：持有唯一嵌入式 H2 引擎及受保护引导材料。
+- `app/db/PlatformPersistence.java`：在受保护 H2 引擎上装配平台所属配置仓库。
+- `app/db/bootstrap/DatabaseBootstrap.java`：持有受保护引导字节，不将缺失或损坏状态转换为新数据库。
+- `app/db/bootstrap/DatabaseProtection.java`：宿主注入的当前用户保护能力，独立于数据库实现。
+- `app/db/persistence/connection/ManagedJdbcConnection.java`：追踪 JDBC 所有权，不暴露物理驱动句柄。
+- `app/db/persistence/connection/RepositoryConnections.java`：在嵌套平台仓库事务间共享一个所属连接。
+- `app/db/schema/SchemaAccessScope.java`：持有准备阶段连接及可选的只读验证凭据。
+- `app/db/schema/SchemaCoordinates.java`：将精确逻辑身份编码为有界的 H2 数据结构及所有者名称。
+- `app/db/schema/SchemaProvisioner.java`：创建明确登记的 Mod 数据结构，不接管已有数据库对象。
+- `app/db/task/TaskLedger.java`：独立于业务 SQL 持久化原子准入及实际资源释放。
+- `app/db/task/TaskResource.java`：由平台适配器确定归属的内部资源申请。
+- `app/db/resources/gold/debug/windowstolinux/app/db/schema/platform-v1.sql`：H2 平台首版表与约束。
+- `app/main/startup/PlatformRuntime.java`：为一次桌面启动持有平台数据库及安全会话。
+- `app/mod/lifecycle/ModRuntimeSession.java`：启用一个已准备的 Mod，并保留部分停止归属直至实际清理。
+- `app/mod/loader/ModClassLoader.java`：共享声明的公开类型，同时将作者代码与宿主实现隔离。
+- `app/mod/loader/ModEntryFactory.java`：仅在启用期间检查公开形状与来源后构造入口。
+- `app/mod/manifest/ManifestReader.java`：严格读取有界 UTF-8 作者清单，不加载作者类。
+- `app/mod/manifest/ModManifest.java`：已解析的作者元数据，独立于安装意图及运行状态。
+- `app/mod/version/SemanticVersion.java`：比较规范 SemVer 发布版本，避免整数溢出且不接收构建元数据。
+- `app/mod/version/VersionRange.java`：判断精确版本或单一区间，并显式限制预发布准入。
+- `app/service/database/TaskModDatabase.java`：将所属业务 JDBC 直接连接到原始任务的资源账本。
+- `app/service/mod/ModHostLease.java`：将实际任务准入门及暂存宿主扩展绑定到一次 Mod 启用。
+- `app/service/task/PlatformTaskRuntime.java`：在持久化准入后运行绑定调用方的作者工作，并保留未完成归属。
+- `app/ui/shell/ExtensionPagePane.java`：挂载已打开的 Mod 视图及按所有者分组的设置，不添加导航固定项。
+- `app/ui/shell/ModPageRegistry.java`：持有暂存页面扩展及限定在 EDT 的作者视图生命周期。
+- `app/ui/shell/PlatformFrame.java`：承载安全控件及独立所属 Mod 视图的平台桌面。
+- `app/windows/security/CurrentUserDataProtection.java`：使用 Windows 当前用户 DPAPI 保护引导材料。
