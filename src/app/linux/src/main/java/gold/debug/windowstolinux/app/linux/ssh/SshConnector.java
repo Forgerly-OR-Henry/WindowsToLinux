@@ -8,6 +8,8 @@ import javax.swing.SwingUtilities;
 
 import gold.debug.windowstolinux.api.linux.CommandRequest;
 import gold.debug.windowstolinux.api.linux.CommandResult;
+import gold.debug.windowstolinux.api.linux.TransferRequest;
+import gold.debug.windowstolinux.api.linux.TransferResult;
 import gold.debug.windowstolinux.api.task.*;
 import org.apache.sshd.client.SshClient;
 import org.apache.sshd.client.auth.keyboard.UserAuthKeyboardInteractiveFactory;
@@ -165,6 +167,9 @@ public final class SshConnector implements AutoCloseable {
         /** Command channel and input sender still requiring actual cleanup. / 仍需实际清理的命令通道及输入发送线程。 */
         private SshCommandExecution command;
 
+        /** Transfer resources retained until actual worker and channel release. / 实际工作线程和通道释放前保留的传输资源。 */
+        private SftpTransfer transfer;
+
         /** Prevents ordinary reuse after unconfirmed remote command effects. / 远端命令副作用未确认后阻止普通复用。 */
         private boolean uncertain;
 
@@ -292,7 +297,7 @@ public final class SshConnector implements AutoCloseable {
             try {
                 if (!connected())
                     throw failure(ProblemCode.UNAVAILABLE, "SSH_CONNECTION_CLOSED", "SSH connection is not available");
-                if (uncertain || command != null)
+                if (uncertain || command != null || transfer != null)
                     throw failure(ProblemCode.BUSY, "SSH_CONNECTION_UNCERTAIN",
                             "SSH connection requires closure after unfinished work");
                 command = new SshCommandExecution(session, request);
@@ -300,6 +305,38 @@ public final class SshConnector implements AutoCloseable {
                 uncertain = result.outcome() == Outcome.UNKNOWN;
                 if (command.close())
                     command = null;
+                return result;
+            } finally {
+                operating.set(false);
+            }
+        }
+
+        /**
+         * Transfers one reviewed regular file to a new destination without retries. / 向新目标传输一个已审核普通文件，不进行重试。
+         * @param request exact approved transfer request / 精确已批准传输请求
+         * @param sha256 approved source digest checked before destination creation / 创建目标前核对的已批准源摘要
+         * @param upload whether the destination is remote / 目标是否在远端
+         * @param timeout host total operation deadline / 宿主操作总期限
+         * @param cancellation original task cancellation / 原任务取消
+         * @return verified transfer or explicit uncertainty / 已核验传输或明确不确定性
+         * @throws ApiException if admission fails before transfer / 传输前准入失败时
+         */
+        public OperationResult<TransferResult> transfer(TransferRequest request, String sha256, boolean upload,
+                Duration timeout, CancellationToken cancellation) throws ApiException {
+            worker();
+            if (!operating.compareAndSet(false, true))
+                throw failure(ProblemCode.BUSY, "SSH_CONNECTION_BUSY", "SSH connection work has not returned");
+            try {
+                if (!connected())
+                    throw failure(ProblemCode.UNAVAILABLE, "SSH_CONNECTION_CLOSED", "SSH connection is not available");
+                if (uncertain || command != null || transfer != null)
+                    throw failure(ProblemCode.BUSY, "SSH_CONNECTION_UNCERTAIN",
+                            "SSH connection requires closure after unfinished work");
+                transfer = new SftpTransfer(session, request, sha256, upload, timeout, cancellation);
+                var result = transfer.run();
+                uncertain = result.outcome() == Outcome.UNKNOWN;
+                if (transfer.close())
+                    transfer = null;
                 return result;
             } finally {
                 operating.set(false);
@@ -324,7 +361,10 @@ public final class SshConnector implements AutoCloseable {
                 if (command != null && !command.close())
                     throw failure(ProblemCode.BUSY, "SSH_COMMAND_CLOSE_PENDING",
                             "SSH command cleanup remains incomplete");
+                if (transfer != null && !transfer.close())
+                    throw failure(ProblemCode.BUSY, "SFTP_CLOSE_PENDING", "SFTP cleanup remains incomplete");
                 command = null;
+                transfer = null;
                 closed = true;
                 synchronized (SshConnector.this) {
                     connections.remove(this);
