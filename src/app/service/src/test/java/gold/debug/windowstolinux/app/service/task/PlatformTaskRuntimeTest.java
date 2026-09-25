@@ -175,7 +175,7 @@ class PlatformTaskRuntimeTest {
             var task = service.<String>submit(request("A"), active -> {
                 invocations.incrementAndGet();
                 originalLease.set(active.retain("file", "pending", "待核实句柄").id());
-                        throw new AssertionError("fixture-secret-never-log");
+                throw new AssertionError("fixture-secret-never-log");
             });
             state(task, TaskState.UNKNOWN);
             assertFalse(task.completion().toCompletableFuture().isDone());
