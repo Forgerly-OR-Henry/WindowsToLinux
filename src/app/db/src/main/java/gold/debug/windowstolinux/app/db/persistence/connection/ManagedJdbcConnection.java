@@ -11,8 +11,8 @@ public final class ManagedJdbcConnection {
     /** Physical connection whose confirmed close releases occupancy. / 确认关闭后才释放占用的物理连接。 */
     private final Connection physical;
 
-    /** Host callback invoked once after actual close. / 实际关闭后仅执行一次的宿主回调。 */
-    private final Runnable release;
+    /** Idempotent host callback retried until release is confirmed after actual close. / 实际关闭后重试直到确认释放的幂等宿主回调。 */
+    private final Release release;
 
     /** Thread allowed to use this connection and its descendants. / 允许使用连接及派生对象的线程。 */
     private final Thread owner = Thread.currentThread();
@@ -27,7 +27,7 @@ public final class ManagedJdbcConnection {
      * @param physical owned physical connection / 所属物理连接
      * @param release callback after confirmed close / 确认关闭后的回调
      */
-    private ManagedJdbcConnection(Connection physical, Runnable release) {
+    private ManagedJdbcConnection(Connection physical, Release release) {
         this.physical = java.util.Objects.requireNonNull(physical);
         this.release = java.util.Objects.requireNonNull(release);
     }
@@ -39,7 +39,28 @@ public final class ManagedJdbcConnection {
      * @return thread-bound connection / 绑定线程的连接
      */
     public static Connection wrap(Connection physical, Runnable release) {
+        java.util.Objects.requireNonNull(release);
+        return wrapTracked(physical, release::run);
+    }
+
+    /**
+     * Tracks physical closure and retries failed host release persistence on the same handle. / 跟踪物理关闭，并在同一句柄上重试失败的宿主释放登记。
+     * @param physical owned physical connection / 所属物理连接
+     * @param release idempotent callback after confirmed physical closure / 确认物理关闭后的幂等回调
+     * @return thread-bound connection preserving all JDBC parent handles / 保持全部 JDBC 父句柄关系的线程绑定连接
+     */
+    public static Connection wrapTracked(Connection physical, Release release) {
         return (Connection) new ManagedJdbcConnection(physical, release).managed(physical);
+    }
+
+    /** Idempotent host release after actual physical closure. / 实际物理关闭后的幂等宿主释放。 */
+    @FunctionalInterface
+    public interface Release {
+        /**
+         * Persists release; failures keep the close hook retryable. / 持久化释放；失败使关闭回调保持可重试。
+         * @throws SQLException if host release could not be confirmed / 无法确认宿主释放时
+         */
+        void run() throws SQLException;
     }
 
     /**
@@ -127,8 +148,8 @@ public final class ManagedJdbcConnection {
             physical.close();
             if (!physical.isClosed())
                 throw new SQLException("Connection is still open", "HY000");
-            if (released.compareAndSet(false, true))
-                release.run();
+            release.run();
+            released.set(true);
             return null;
         }
         try {
