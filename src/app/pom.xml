@@ -14,6 +14,7 @@
   <artifactId>windowstolinux-app</artifactId>
   <packaging>pom</packaging>
   <modules>
+    <module>mod</module>
     <module>ui</module>
     <module>windows</module>
     <module>db</module>

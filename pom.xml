@@ -15,6 +15,7 @@
   <description>WindowsToLinux multi-module build root</description>
 
   <modules>
+    <module>src/api</module>
     <module>src/shared</module>
     <module>src/app</module>
     <module>src/web</module>
