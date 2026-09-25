@@ -17,6 +17,7 @@
     <maven.compiler.proc>none</maven.compiler.proc>
   </properties>
   <modules>
+    <module>linux</module>
     <module>mod</module>
     <module>ui</module>
     <module>windows</module>

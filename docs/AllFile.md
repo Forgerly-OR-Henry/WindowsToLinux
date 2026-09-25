@@ -1629,6 +1629,8 @@ APP 数据库不再维护迁移链或旧结构读取分支；Web 节点保持原
 - `app/db/task/TaskLedger.java`：独立于业务 SQL 持久化原子准入及实际资源释放。
 - `app/db/task/TaskResource.java`：由平台适配器确定归属的内部资源申请。
 - `app/db/resources/gold/debug/windowstolinux/app/db/schema/platform-v1.sql`：H2 平台首版表与约束。
+- `app/linux/ssh/SshConnector.java`：明确凭据与指纹授权下的独立 SSH 连接、认证、取消及实际资源释放。
+- `app/linux/ssh/SshEndpoint.java`：平台保存的服务器标识及精确连接端点。
 - `app/main/startup/PlatformRuntime.java`：为一次桌面启动持有平台数据库及安全会话。
 - `app/mod/lifecycle/ModRuntimeSession.java`：启用一个已准备的 Mod，并保留部分停止归属直至实际清理。
 - `app/mod/loader/ModClassLoader.java`：共享声明的公开类型，同时将作者代码与宿主实现隔离。
