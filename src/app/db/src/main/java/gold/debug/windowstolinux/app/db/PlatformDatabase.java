@@ -208,18 +208,42 @@ public final class PlatformDatabase implements AutoCloseable {
      * @return an independent thread-bound managed connection / 独立且绑定线程的受管连接
      * @throws SQLException if the engine is closed or opening fails / 引擎已关闭或打开失败时
      */
-    public synchronized Connection openInternalConnection(String schema, String user, String password, String ownerTag)
+    public Connection openInternalConnection(String schema, String user, String password, String ownerTag)
+            throws SQLException {
+        return openInternalConnection(schema, user, password, ownerTag, () -> {
+        });
+    }
+
+    /**
+     * Opens a single managed identity view with a retryable host close hook. / 打开具有可重试宿主关闭回调的单一受管身份视图。
+     * @param schema prepared default schema / 已准备的默认数据结构
+     * @param user prepared private database identity / 已准备的私有数据库身份
+     * @param password private in-memory driver credential / 私有内存驱动凭据
+     * @param ownerTag physical connection scope / 物理连接作用域
+     * @param afterClose idempotent host action after physical close / 物理关闭后的幂等宿主操作
+     * @return thread-bound managed connection / 绑定线程的受管连接
+     * @throws SQLException if opening or default schema assignment fails / 打开或分配默认数据结构失败时
+     */
+    public Connection openInternalConnection(String schema, String user, String password, String ownerTag,
+            gold.debug.windowstolinux.app.db.persistence.connection.ManagedJdbcConnection.Release afterClose)
             throws SQLException {
         Objects.requireNonNull(schema);
         Objects.requireNonNull(user);
         Objects.requireNonNull(password);
         Objects.requireNonNull(ownerTag);
-        if (closed)
-            throw new SQLException("Database is closed");
-        var physical = DriverManager.getConnection(jdbcUrl, user, password);
-        connections.put(physical, ownerTag);
-        var managed = gold.debug.windowstolinux.app.db.persistence.connection.ManagedJdbcConnection.wrap(physical,
-                () -> released(physical));
+        Objects.requireNonNull(afterClose);
+        Connection physical;
+        synchronized (this) {
+            if (closed)
+                throw new SQLException("Database is closed");
+            physical = DriverManager.getConnection(jdbcUrl, user, password);
+            connections.put(physical, ownerTag);
+        }
+        var managed = gold.debug.windowstolinux.app.db.persistence.connection.ManagedJdbcConnection
+                .wrapTracked(physical, () -> {
+                    released(physical);
+                    afterClose.run();
+                });
         try {
             managed.setSchema(schema);
             return managed;

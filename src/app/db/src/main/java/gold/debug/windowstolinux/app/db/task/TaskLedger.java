@@ -434,6 +434,28 @@ public final class TaskLedger {
     }
 
     /**
+     * Checks an exact already-held host resource without acquiring another lock. / 检查精确的已有宿主资源占用，不取得额外资源锁。
+     * @param taskId accepted task identity / 已接纳任务身份
+     * @param resource required kind, identity and owner / 所需类型、身份及所有者
+     * @return whether an unreleased matching claim exists / 是否存在未释放的匹配占用
+     * @throws SQLException if the ledger cannot be read / 无法读取账本时
+     */
+    public boolean holds(UUID taskId, TaskResource resource) throws SQLException {
+        try (var c = connections.open();
+                var p = c.prepareStatement(
+                        "SELECT COUNT(*) FROM platform_task_resource WHERE task_id=? AND resource_kind=? AND resource_id=? AND owner_id=? AND released_at IS NULL")) {
+            p.setObject(1, taskId);
+            p.setString(2, resource.kind());
+            p.setString(3, resource.id());
+            p.setString(4, resource.ownerId());
+            try (var r = p.executeQuery()) {
+                r.next();
+                return r.getLong(1) > 0;
+            }
+        }
+    }
+
+    /**
      * Retains an uncertain transition without releasing any resource or replaying work. / 保留不确定的状态转换，不释放资源或重放工作。
      * @param taskId possibly accepted task / 可能已经接纳的任务
      * @throws SQLException if uncertainty itself cannot be persisted / 不确定状态本身无法持久化时

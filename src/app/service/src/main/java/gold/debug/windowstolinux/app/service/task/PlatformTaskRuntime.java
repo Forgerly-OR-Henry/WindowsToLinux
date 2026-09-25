@@ -109,6 +109,29 @@ public final class PlatformTaskRuntime implements AutoCloseable {
     }
 
     /**
+     * Retains a JDBC connection only inside the task's already admitted Mod and schema generation. / 仅在任务已接纳的 Mod 与数据代次内保留 JDBC 连接。
+     * @param context authentic original task / 真实原始任务
+     * @param identity bound database generation / 绑定的数据代次
+     * @return connection occupancy marker / 连接占用标记
+     * @throws ApiException if the task lacks either required claim / 任务缺少任一必需占用时
+     */
+    public synchronized ResourceLease retainSchemaConnection(TaskContext context,
+            gold.debug.windowstolinux.api.db.SchemaIdentity identity) throws ApiException {
+        requireContext(context);
+        try {
+            if (!ledger.holds(context.id(), new TaskResource("MOD", identity.ownerId(), identity.ownerId(), false))
+                    || !ledger.holds(context.id(),
+                            new TaskResource("SCHEMA", identity.generation().toString(), identity.ownerId(), false)))
+                throw error(ProblemCode.ACCESS_DENIED, "TASK_SCHEMA_NOT_ADMITTED",
+                        "The task does not own this Mod schema generation");
+            return retain(context,
+                    new TaskResource("CONNECTION", UUID.randomUUID().toString(), identity.ownerId(), false));
+        } catch (SQLException failure) {
+            throw error(ProblemCode.IO_FAILURE, "TASK_SCHEMA_CLAIM", "Schema admission could not be verified");
+        }
+    }
+
+    /**
      * Returns all current-session snapshots for the host task page. / 返回所有当前会话快照，供宿主任务页面使用。
      * @return immutable task snapshots / 不可变任务快照
      */
